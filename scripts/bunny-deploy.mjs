@@ -46,7 +46,11 @@ if (!zone) throw new Error(`storage zone ${NAMES.storage} not found — run bunn
 const base = storageBase(zone);
 const password = zone.Password;
 
-const local = (await walk(DIR)).map((p) => relative(DIR, p).split(sep).join(posix.sep));
+const SKIP = /\.(mp4|mov|mkv)$/i; // video masters belong in Stream, not storage
+
+const local = (await walk(DIR))
+	.map((p) => relative(DIR, p).split(sep).join(posix.sep))
+	.filter((file) => !SKIP.test(file));
 console.log(`uploading ${local.length} files to ${zone.Name}`);
 
 let uploaded = 0;

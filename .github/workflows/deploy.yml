@@ -51,3 +51,24 @@ jobs:
     steps:
       - uses: actions/deploy-pages@v4
         id: deployment
+
+  bunny:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          lfs: true
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - run: bun install --frozen-lockfile
+
+      # Served from the domain root, so no base path.
+      - run: bun run build
+
+      - name: Upload to Bunny storage and purge
+        env:
+          BUNNY_API_KEY: ${{ secrets.BUNNY_API_KEY }}
+        run: node scripts/bunny-deploy.mjs
