@@ -1,0 +1,19 @@
+name: Bunny early-access gate
+
+on: workflow_dispatch
+
+jobs:
+  gate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Deploy the Basic Auth edge script
+        env:
+          BUNNY_API_KEY: ${{ secrets.BUNNY_API_KEY }}
+          EARLY_ACCESS_PW: ${{ secrets.EARLY_ACCESS_PW }}
+        run: node scripts/bunny-gate.mjs
