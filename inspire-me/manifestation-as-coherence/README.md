@@ -21,26 +21,28 @@ quoteBy: Celastrina Calea
 
 Vision board. Affirmations in the mirror. Acting as if. Trusting the universe. And the same life.
 
-The argument here: people are taught what to do, never how it works — so they hop techniques while reality stays put.
+Nearly everyone who tries this has been handed techniques and never a mechanism, so they hop from method to method while reality stays exactly where it was.
 
-Underneath every affirmation, the body is answering one question: am I safe, or am I in survival mode?
+The problem is one level below the words. All day, the body is answering a single question: am I safe, or am I in survival mode?
 
-If shame, fear or hyper-vigilance is the honest answer, that's the signal — and no sentence said out loud overrides it.
+If the honest answer is shame, fear or hyper-vigilance, that is the signal — and no sentence said out loud overrides it. Therefore people can do everything right mentally and still keep the same relationships, the same money ceiling, the same loops, because the nervous system is loyal to what is familiar, not to what is desired.
 
-Which is why people do everything right mentally and keep the same relationships, the same money ceiling, the same loops. The familiar wins.
+So the intention has to change: not wanting harder, but making safety familiar. When safety is familiar you stop choosing chaos; when self-worth is familiar you stop negotiating your value.
 
-Then the second claim, the sharper one: most of us don't think, we remember. Replaying the past, or projecting it forward as fear and hope. A conditioned mind repeats; it doesn't create.
+But there is a second obstacle, and it sits in the thinking itself. Most of us don't think, we remember — replaying the past, or projecting it forward as fear and hope. Memory, however vivid, cannot produce anything that wasn't already in it.
 
-Creation needs the present moment — which is why art, any art, works: it pulls you out of memory into direct experience.
+Therefore creation needs the present moment, and the way in isn't another technique. It's art: writing, painting, music, movement pull you out of memory and into direct experience.
 
-And when emotion and thought finally agree, action stops needing willpower. You move because it's who you are now, and the doing becomes the evidence your body needs.
+Thought then sets direction — beliefs work like lenses, and the job is noticing the old ones rather than stacking new ones on top of them.
+
+And when body and thought finally agree, action stops requiring willpower. It feels inevitable because it fits who you now are, and the doing becomes the evidence the body needed.
+
+So nothing was ever attracted. You became incompatible with the old pattern — and what feels normal in your body is what you end up living.
 
 ## Beliefs that shift
 
 - *Your words set the signal.* → Your body sets the signal; the words only ride on top of it.
 - *You spend your day thinking.* → You spend your day remembering — and memory makes nothing new.
-- *Change starts with wanting it enough.* → Change starts when the old pattern stops feeling like home.
-- *Action runs on discipline.* → Action runs on identity; discipline is what you need when the two disagree.
 - *You get what you want.* → You get what already feels normal in your body.
 
 ## The formula
@@ -61,16 +63,6 @@ Coherence between all three is the point — described in the video as the limbi
 - **Art forces presence.** Writing, painting, music, movement — they bypass conditioning.
 - **Heaviness is a signal, not a character flaw.** Procrastination and self-sabotage right before momentum mean emotion and thought are in conflict.
 - **Action is the proof.** Doing what fits the new self is how the body learns the change is real. That's embodiment.
-
-## For maiaCITY
-
-Let's translate this.
-
-- **Make safety the familiar state.** Stable housing, income floor, belonging. A city that keeps people in survival mode gets survival behaviour, whatever it says in its charter.
-- **Regulation is infrastructure.** Rest, movement, therapy and quiet space belong in the city's basic provision, not in a wellness budget.
-- **Art everywhere, for everyone.** Studios, instruments, workshops — presence practice that keeps a city creating instead of repeating.
-- **Onboarding should hand people proof.** Small, real actions in the first weeks that let a newcomer's body believe the new life is real.
-- **If it takes willpower, the design is wrong.** Make the aligned action the easy one.
 
 ## Open questions
 

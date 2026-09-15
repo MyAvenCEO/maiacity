@@ -18,27 +18,33 @@ quote: "Failure can be a superpower if you let it."
 
 ## The story
 
-Weeks after their wedding, Andrew and his wife decide to go all in. Not 30%. Not 40%. 100%.
+August 23rd: Andrew marries his best friend. A few weeks later they sell the cars.
 
-Cars sold. Lease gone. Friends hugged goodbye. A new life in Barcelona.
+She is European, and they want the life that comes with that — so they go all in. Not 30%, not 40%. Lease given up, friends hugged goodbye, everything they own in one car, a flight to Barcelona.
 
-Because she is European, he needs a marriage visa. They plan for 2–3 months. It takes more than 7.
+But for him to stay, he needs a marriage visa. They budget two to three months.
 
-The waiting isolates them. For one whole week, the worst anxiety of his life circles one nagging question: *did I just fail?*
+It takes more than seven.
 
-They decide the city isn't working and fly back to North America — no apartment, no house, nothing to return to.
+Therefore the plan becomes waiting: no status, no work, no circle, and a constant pressure to make the whole thing worth it.
+
+But waiting is what breaks them. For one week he has the worst anxiety of his life, circling a single question — *did I just fail?*
+
+So they decide. The city isn't going to work. They pack the same bags again and fly back to North America, to no apartment, no house, nothing waiting.
 
 The day before the flight, his visa finally arrives.
 
-Two days after landing, jet-lagged in a room that feels like a hotel, he records this video.
+And the verdict he braced for never comes. Two days after landing, jet-lagged in a room that feels like a hotel, he finds that nobody says he failed — people say it's so sick that he went after it.
+
+Therefore the seven months bought something after all: an answer he could not have reached from home. This city, this version of the life, is not what they want, and now they know it in their bodies rather than in theory.
+
+Failure, he decides, is a superpower if you let it be one.
 
 ## Beliefs that shift
 
 - *Half-committing keeps your options open.* → Half-committing guarantees a half-real attempt.
-- *Failing makes you a loser in their eyes.* → Failing makes you the one who actually went after it.
 - *The cost of failing is yours alone.* → The cost of not trying lands on everyone your attempt would have reached.
-- *Success is staying.* → Success is seeing it through, even on the way out.
-- *Official timelines tell you what to plan for.* → Official timelines are the best case; plan for three times longer.
+- *Failure is a verdict on you.* → Failure is the receipt for finding out what you actually want.
 
 ## What we learn
 
@@ -48,15 +54,6 @@ Two days after landing, jet-lagged in a room that feels like a hotel, he records
 - **Limbo is the real enemy.** Not the move itself — 7 months without status, stability or community.
 - **Finish anyway.** Following through is who you become, whatever the outcome.
 - **"It didn't work out" can be freeing.** Once you say it out loud, you are free to choose again.
-
-## For maiaCITY
-
-Let's translate this. maiaCITY asks people to do exactly what Andrew did: leave everything and move somewhere new.
-
-- **Design the limbo.** Residency will take longer than promised. Give newcomers a clear path, honest timelines, and real work and community while they wait.
-- **Soft landings, not burned bridges.** Trial stays and reversible commitments let people go all in emotionally without betting everything materially.
-- **Plan for the lonely first months.** Buddies, circles and rituals from week one.
-- **Honour the exit.** A shame-free goodbye turns leavers into ambassadors. "It didn't work for us" is data, not failure.
 
 ## Open questions
 

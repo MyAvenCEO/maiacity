@@ -1,7 +1,13 @@
 import { base } from '$app/paths';
 import { marked } from 'marked';
 import { parse as parseYaml } from 'yaml';
-import type { InspirationEntry, InspirationMeta, InspirationSection, SourceType } from '$lib/inspire-me/types';
+import type {
+	Author,
+	InspirationEntry,
+	InspirationMeta,
+	InspirationSection,
+	SourceType
+} from '$lib/inspire-me/types';
 
 // Content lives in /inspiration/<slug>/README.md (report card) and /inspiration/<slug>/source.md (raw source).
 const reports = import.meta.glob('/inspire-me/*/README.md', {
@@ -60,7 +66,9 @@ function parseReport(slug: string, raw: string): { meta: InspirationMeta; body: 
 			source,
 			type: (fm.type ?? 'article') as SourceType,
 			author: optional(fm.author),
+			authorSlug: fm.author ? slugify(String(fm.author)) : undefined,
 			authorUrl: optional(fm.authorUrl),
+			via: optional(fm.via),
 			published: optional(fm.published),
 			added: String(fm.added ?? ''),
 			categories: Array.isArray(fm.categories) ? fm.categories.map(String) : [],
@@ -130,4 +138,30 @@ export function getEntry(slug: string): InspirationEntry | undefined {
 		sourceHtml: source ? toHtml(source) : null,
 		sourceWords: source ? source.split(/\s+/).length : 0
 	};
+}
+
+// Every author gets their own page collecting what they made, across platforms.
+export function listAuthors(): Author[] {
+	const authors = new Map<string, Author>();
+
+	for (const entry of listEntries()) {
+		if (!entry.authorSlug || !entry.author) continue;
+
+		const author = authors.get(entry.authorSlug) ?? {
+			slug: entry.authorSlug,
+			name: entry.author,
+			urls: [],
+			entries: []
+		};
+
+		if (entry.authorUrl && !author.urls.includes(entry.authorUrl)) author.urls.push(entry.authorUrl);
+		author.entries.push(entry);
+		authors.set(author.slug, author);
+	}
+
+	return [...authors.values()].sort((a, b) => a.name.localeCompare(b.name));
+}
+
+export function getAuthor(slug: string): Author | undefined {
+	return listAuthors().find((author) => author.slug === slug);
 }

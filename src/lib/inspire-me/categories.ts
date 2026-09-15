@@ -21,6 +21,7 @@ export const categories: Category[] = [
 	{ id: 'logistics', label: 'Logistics', color: '#d2d8c7', blurb: 'Moving goods: supply chains, storage, delivery' },
 	{ id: 'internet', label: 'Internet', color: '#9fb8d9', blurb: 'Connectivity, networks, protocols' },
 	{ id: 'ai', label: 'AI', color: '#b9b3d6', blurb: 'Models, agents, automation, tools' },
+	{ id: 'code', label: 'Code', color: '#a9c3b5', blurb: 'Software, protocols, open source, tooling' },
 	{ id: 'privacy', label: 'Privacy', color: '#a7b2ae', blurb: 'Identity, data sovereignty, security' },
 	{ id: 'money', label: 'Money', color: '#d3c67f', blurb: 'Currency, value, finance' },
 	{ id: 'coop', label: 'Co-op', color: '#d9a5b3', blurb: 'Governance, shared ownership, co-ops, DAOs' },

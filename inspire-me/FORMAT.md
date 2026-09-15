@@ -1,13 +1,13 @@
-# Inspiration — source format
+# Inspire me — source format
 
-The Inspiration is maiaCITY's library of sources (videos, papers, posts, threads, reports) that shape the city blueprint.
+"Inspire me" is maiaCITY's library of sources (videos, papers, posts, threads, reports) that shape the city blueprint.
 
-Every report card tells one story: **what this source changed in how we see the world — and what we build differently because of it.**
+Every report card tells one story, and that story lands one transformation: **from** an old belief **to** a new one.
 
 ```
 inspire-me/
   <slug>/
-    README.md   ← report card: frontmatter + 5 short sections (AI-written, human-checked)
+    README.md   ← report card: frontmatter + 4 sections (AI-written, human-checked)
     source.md   ← the raw source: transcript, paper text, post, report — pasted as-is
 ```
 
@@ -22,59 +22,80 @@ The folder name becomes the URL: `inspire-me/failure-as-a-superpower/` → `/ins
 
 ## Frontmatter
 
-| Field           | Required | Notes                                                                      |
-| --------------- | -------- | -------------------------------------------------------------------------- |
-| `title`         | yes      | Short, clear working title.                                                |
-| `originalTitle` | no       | The source's own title, when `title` differs. Quote it if it has `#` or `:`. |
-| `source`        | yes      | Canonical link. YouTube links get a thumbnail automatically.               |
-| `type`          | yes      | `video` `podcast` `paper` `article` `post` `thread` `report` `book`        |
-| `author`        | no       | Creator, channel or authors.                                               |
-| `authorUrl`     | no       | Link to the author/channel.                                                |
-| `published`     | no       | `YYYY-MM-DD` if known.                                                     |
-| `added`         | yes      | `YYYY-MM-DD` — the day it entered the Inspiration. Newest shows first.           |
-| `categories`    | yes      | 1–3 ids from the list below. The first sets the accent colour.             |
-| `hook`          | yes      | 1–2 sentences that make you want to read on. Scene or tension, not summary. |
-| `shift.from`    | yes      | The old belief, in one line.                                               |
-| `shift.to`      | yes      | The new understanding, in one line. Shown on the card.                     |
-| `quote`         | no       | One line from the source that carries the shift (under 20 words).          |
-| `quoteBy`       | no       | Who said the quote, when it isn't the author (e.g. an interviewee).        |
-| `language`      | no       | Source language code if not English, e.g. `de`. The report is always English. |
+| Field           | Required | Notes                                                                        |
+| --------------- | -------- | ---------------------------------------------------------------------------- |
+| `title`         | yes      | Short, clear working title.                                                  |
+| `originalTitle` | no       | The source's own title, when `title` differs. Quote it if it has `#` or `:`.  |
+| `source`        | yes      | Canonical link. YouTube links get a thumbnail automatically.                  |
+| `type`          | yes      | `video` `podcast` `paper` `article` `post` `thread` `report` `book`           |
+| `author`        | no       | The creator. Keep the name clean — it becomes their author page.             |
+| `authorUrl`     | no       | Their channel, site or profile. Shown on the author page.                    |
+| `via`           | no       | Where this copy was posted, if not by the author (a reposted clip).          |
+| `published`     | no       | `YYYY-MM-DD` if known.                                                       |
+| `added`         | yes      | `YYYY-MM-DD` — the day it entered the library. Newest shows first.           |
+| `categories`    | yes      | 1–3 ids from the list below. The first sets the accent colour.               |
+| `hook`          | yes      | 1–2 sentences that make you want to read on. Scene or tension, not summary.  |
+| `shift.from`    | yes      | The old belief, in one line.                                                 |
+| `shift.to`      | yes      | The new understanding, in one line. Shown on the card.                       |
+| `quote`         | no       | One line from the source that carries the shift (under 20 words).            |
+| `quoteBy`       | no       | Who said the quote, when it isn't the author (e.g. an interviewee).          |
+| `language`      | no       | Source language code if not English, e.g. `de`. The report is always English.|
+
+**Authors are entities.** Every `author` gets a page at `/inspire-me/by/<author-slug>` listing everything they have in the library, across platforms and formats, with their links. Spell the name identically across sources so they collect on one page.
 
 ## Sections
 
-Five short sections. Every `## Heading` becomes one card.
+Four sections. Every `## Heading` becomes one card on the page.
 
-1. `## The story` — 4–8 one-line paragraphs: setup → tension → turn. What happened, or what the source argues, told as a story.
-2. `## Beliefs that shift` — 3–5 bullets: `*Old belief.* → New understanding.`
-3. `## What we learn` — 3–6 bullets: `**Lesson.** One or two lines.`
-4. `## For maiaCITY` — opens with "Let's translate this.", then 3–5 bullets: `**Move.** What we build or do differently.`
-5. `## Open questions` — 2–4 bullets: claims to verify, gaps, what to research next.
+1. `## The story` — the heart of the report card. See the storytelling pattern below.
+2. `## Beliefs that shift` — **exactly 3**, the strongest ones: `*Old belief.* → New understanding.`
+3. `## What we learn` — 4–7 bullets: `**Lesson.** One or two lines.`
+4. `## Open questions` — 2–4 bullets: claims to verify, gaps, what to research next.
 
-Data-heavy sources may add `## Key numbers` (a table) after "Beliefs that shift". The story and tables render full width.
+Data-heavy sources may add one table section (`## Key numbers`, `## Materials`, `## The five principles`) after the beliefs. The story, the beliefs and tables render full width.
 
-**Style:** short lines, 1–3 sentences per paragraph, no dense blocks. Concrete numbers from the source beat adjectives. Never invent facts the source doesn't give. No filler words (delve, leverage, unlock, elevate, seamless, game-changer).
+## The storytelling pattern
+
+Every story follows the same beats, in this order:
+
+| Beat                      | What it does                                                        |
+| ------------------------- | ------------------------------------------------------------------- |
+| **Hook**                  | One striking line, image or number. No warm-up.                     |
+| **Context**               | Who, where, and what counts as normal here.                         |
+| **Problem**               | The old belief doing damage — `shift.from`, in action.              |
+| **Intention to overcome** | What they set out to do about it.                                   |
+| **Obstacle**              | What stands in the way — usually more than one, in sequence.        |
+| **Solution**              | The turn that lands `shift.to`. The last line delivers it.          |
+
+Two rules keep the beats from becoming a list:
+
+- **Therefore / but, never "and then".** Each beat follows the previous one because of it (*therefore*) or against it (*but*). If two paragraphs could swap places, the arc is broken. Write those words on the page where they carry weight — "But waiting is what breaks them.", "Therefore the work aims downward."
+- **The story answers the shift.** By the last paragraph, the reader has watched `shift.from` fail and `shift.to` arrive. Whoever reads only the story has still received the transformation.
+
+Length: 8–12 paragraphs, 1–3 sentences each. Short lines, plenty of air, concrete numbers from the source. No filler words (delve, leverage, unlock, elevate, seamless, game-changer).
 
 ## Categories
 
-| id             | Covers                                                          |
-| -------------- | --------------------------------------------------------------- |
-| `energy`       | Generation, storage, grids, efficiency                          |
-| `water`        | Sourcing, cycles, sanitation                                    |
-| `food`         | Growing, nutrition, kitchens, soil                              |
-| `health`       | Body, medicine, longevity, care                                 |
-| `housing`      | Homes, shelter, living space, affordability                     |
-| `architecture` | Design, building materials, construction                        |
-| `ecology`      | Land, regeneration, biodiversity, climate                       |
-| `transport`    | Moving people: mobility, vehicles, streets                      |
-| `logistics`    | Moving goods: supply chains, storage, delivery                  |
-| `internet`     | Connectivity, networks, protocols                               |
-| `ai`           | Models, agents, automation, tools                               |
-| `privacy`      | Identity, data sovereignty, security                            |
-| `money`        | Currency, value, finance                                        |
+| id             | Covers                                                               |
+| -------------- | --------------------------------------------------------------------- |
+| `energy`       | Generation, storage, grids, efficiency                               |
+| `water`        | Sourcing, cycles, sanitation                                         |
+| `food`         | Growing, nutrition, kitchens, soil                                   |
+| `health`       | Body, medicine, longevity, care                                      |
+| `housing`      | Homes, shelter, living space, affordability                          |
+| `architecture` | Design, building materials, construction                             |
+| `ecology`      | Land, regeneration, biodiversity, climate                            |
+| `transport`    | Moving people: mobility, vehicles, streets                           |
+| `logistics`    | Moving goods: supply chains, storage, delivery                       |
+| `internet`     | Connectivity, networks, protocols                                    |
+| `ai`           | Models, agents, automation, tools                                    |
+| `code`         | Software, protocols, open source, tooling                            |
+| `privacy`      | Identity, data sovereignty, security                                 |
+| `money`        | Currency, value, finance                                             |
 | `coop`         | How we organise together: governance, shared ownership, co-ops, DAOs |
-| `civic`        | Law, rights, citizenship, residency                             |
-| `education`    | Learning, skills, schools                                       |
-| `self`         | Mind, spirit, belief, passion, purpose                          |
+| `civic`        | Law, rights, citizenship, residency                                  |
+| `education`    | Learning, skills, schools                                            |
+| `self`         | Mind, spirit, belief, passion, purpose                               |
 
 **Add categories freely.** When a source doesn't fit, add a new one to `src/lib/inspire-me/categories.ts` (id, label, colour, blurb) and to this table. Unknown ids still render, in a neutral colour.
 
@@ -83,9 +104,9 @@ Data-heavy sources may add `## Key numbers` (a table) after "Beliefs that shift"
 Copy the block, fill in the link and paste the source at the end.
 
 ```text
-You are writing a report card for the maiaCITY Inspiration — a library of sources that shape the blueprint for a new city, built by 1 million founders.
+You are writing a report card for the maiaCITY "Inspire me" library — sources that shape the blueprint for a new city, built by 1 million founders.
 
-Every report card tells ONE story: what this source changes in how we see the world, and what we build differently because of it.
+Every report card tells ONE story that lands ONE transformation: from an old belief to a new one.
 
 Output ONE Markdown file and nothing else, in exactly this shape:
 
@@ -94,11 +115,12 @@ title: <short, clear working title>
 originalTitle: "<the source's own title — only if different from title>"
 source: <link>
 type: <video | podcast | paper | article | post | thread | report | book>
-author: <creator / channel / authors>
-authorUrl: <link to author or channel, if known>
+author: <the creator's name, spelled consistently — it becomes their author page>
+authorUrl: <their channel, site or profile, if known>
+via: <where this copy was posted — only if someone other than the author posted it>
 published: <YYYY-MM-DD, only if known>
 added: <today, YYYY-MM-DD>
-categories: [<1–3 of: energy, water, food, health, housing, architecture, ecology, transport, logistics, internet, ai, privacy, money, coop, civic, education, self>]
+categories: [<1–3 of: energy, water, food, health, housing, architecture, ecology, transport, logistics, internet, ai, code, privacy, money, coop, civic, education, self>]
 hook: >-
   <1–2 sentences: a scene or tension that makes you want to read on — not a summary>
 shift:
@@ -110,29 +132,31 @@ language: <source language code — only if not English, e.g. de>
 ---
 
 ## The story
-<4–8 one-line paragraphs: setup → tension → turn>
+<8–12 short paragraphs following the beats: HOOK → CONTEXT → PROBLEM → INTENTION TO OVERCOME → OBSTACLE → SOLUTION>
 
 ## Beliefs that shift
 - *<Old belief.>* → <New understanding.>
+(exactly three — the three strongest)
 
 ## What we learn
 - **<Lesson.>** <One or two lines.>
 
-## For maiaCITY
-Let's translate this.
-- **<Move.>** <What we build or do differently in the city.>
-
 ## Open questions
 - <Claim to verify, gap, or next research step.>
 
-Rules:
-- Always write in English, even when the source isn't; translate the quote.
-- Categories: pick from the list. If none fits, use a new short lowercase id (e.g. architecture) and it will be added.
-- Story before lesson. Short lines, 1–3 sentences per paragraph, no dense blocks.
+Rules for the story — these matter most:
+- Connect every beat with THEREFORE or BUT, never "and then". Each paragraph follows from the last one or pushes against it, and those words appear on the page where they carry weight.
+- The story must answer the shift: the reader watches `from` fail and `to` arrive, and the final paragraph delivers `to`.
+- Open on a hook — a striking line, image or number. No throat-clearing.
+- 1–3 sentences per paragraph. Short lines, lots of air.
 - Use the source's own concrete numbers, names and scenes. Never invent facts it doesn't give.
-- Beliefs that shift: 3–5 bullets. What we learn: 3–6. For maiaCITY: 3–5. Open questions: 2–4.
+
+Other rules:
+- Beliefs that shift: exactly 3. What we learn: 4–7. Open questions: 2–4.
 - Anything doubtful or unsourced goes under Open questions.
-- If the source is data-heavy, add "## Key numbers" as a compact table after "Beliefs that shift".
+- Always write in English, even when the source isn't; translate the quote.
+- Categories: pick from the list. If none fits, use a new short lowercase id and it will be added.
+- If the source is data-heavy, add ONE table section after "Beliefs that shift" (e.g. "## Key numbers").
 - No filler: delve, leverage, unlock, elevate, seamless, game-changer, robust.
 - Leave out optional frontmatter fields you don't know rather than guessing.
 

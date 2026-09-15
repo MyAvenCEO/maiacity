@@ -3,7 +3,8 @@ title: 16 plants with more protein than beef
 originalTitle: "16 Plants With MORE Protein Than Beef (You're Eating #9 Wrong)"
 source: https://youtu.be/OUqKpUReINg
 type: video
-author: The Honest Root (Elias Ford)
+author: Elias Ford
+via: The Honest Root
 authorUrl: https://www.youtube.com/@thehonestroot
 added: 2026-09-11
 categories: [food, health, ecology]
@@ -18,22 +19,28 @@ quote: "How much of what you believe about food came from a study?"
 
 ## The story
 
-Every year, Americans spend more than $40 billion on beef.
+A village with no rain for months, no crops in the ground, and no aid trucks getting through. What kept people fed was already standing there.
 
-For most of the 20th century, meat and dairy boards told them a real meal needs meat on the plate. It worked so well that three generations never questioned it.
+Elias Ford opens with that image, then rewinds. Americans spend more than $40 billion a year on beef; every grocery cart has some in it.
 
-Elias Ford counts down 16 plants that match or beat beef on protein — each with the cultures that grew it for thousands of years, and the one kitchen step that makes or breaks it.
+But that isn't nutrition, it's inheritance. For most of the 20th century, meat and dairy boards paid to make one sentence feel like common sense — a real meal has meat on the plate — and it worked so well that three generations never questioned it.
 
-The countdown ends in a village in drought. No crops. No aid.
+Therefore he counts: 16 plants that match or beat beef on protein, gram for gram or per calorie.
 
-What kept people fed was a tree already standing there: moringa. Relief organisations now plant it first.
+Each arrives with a history. Greek and Ayurvedic physicians reaching independently for the same brassicas. Egyptian farmers growing peas 4,800 years ago. Spirulina skimmed off lakes by the Aztecs and the Kanembu, with no contact between them.
+
+But history alone doesn't feed anyone, and most of these foods get ruined in the kitchen. So each one comes with the single step that decides it: chop the sprouts and wait ten minutes before roasting, rinse the saponins off quinoa, boil kidney beans hard for ten full minutes or they will make you ill, keep spirulina under 60 °C.
+
+Done right, the numbers climb. 15 g of protein in a cup of black beans. 25 g in a small serving of seitan. 31 g in a cup of tempeh. Spirulina at 60–70% protein by dry weight, against roughly 26% for beef.
+
+Which brings him back to the village, and to number one. Moringa: about 27 g of complete protein per 100 g of dried leaf, growing fast in poor soil, harvestable several times a season — which is why relief organisations plant it first in malnutrition programmes.
+
+Therefore the butcher's counter isn't wrong, just small. Protein turns out to be something that grows — in beans, seeds, algae and leaves — for anyone who knows the one step each of them needs.
 
 ## Beliefs that shift
 
 - *Protein comes from animals.* → Protein comes from whatever stores amino acids — beans, seeds, algae, leaves.
-- *Leaves are a garnish.* → Dried moringa leaf carries as much protein per 100 g as lean beef.
 - *Plant protein is incomplete protein.* → Soy, quinoa, hemp and moringa carry all nine essential amino acids.
-- *Cheap protein is second-rate protein.* → Peanuts and beans are the cheapest protein and among the most effective.
 - *We eat by evidence.* → We eat by advertising — three generations of it.
 
 ## Key numbers
@@ -66,16 +73,6 @@ What kept people fed was a tree already standing there: moringa. Relief organisa
 - **Fermenting and sprouting pre-digest.** Tempeh and sprouted lentils are easier to absorb.
 - **Cheap is not second-rate.** Peanuts and beans rank among the cheapest protein there is.
 - **Unrelated cultures chose the same crops.** The Aztecs and the Kanembu both harvested spirulina — with no contact between them.
-
-## For maiaCITY
-
-Let's translate this.
-
-- **Build the protein base on plants.** Legumes, seeds, algae and moringa — cheap, storable, locally growable.
-- **Close the soil loop.** Rotate nitrogen-fixing peas, beans and lentils ahead of heavy feeders like tomatoes.
-- **Plant resilience first.** Moringa (warm climates) and spirulina as buffers against drought and supply shocks.
-- **Share the kitchen.** A community kitchen and fermentation co-op for tempeh, sprouting and bulk cooking.
-- **Teach the safety rules.** The kidney-bean boil and mould-safe storage belong in resident onboarding.
 
 ## Open questions
 

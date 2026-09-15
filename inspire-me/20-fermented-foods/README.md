@@ -18,27 +18,27 @@ quote: "If it isn't cold and it doesn't bubble when you open it, it isn't medici
 
 ## The story
 
-While the modern world was pasteurising and sterilising its food supply, older cultures did the opposite.
+Cabbage and salt, left alone in a jar for a week, become one of the most studied medicines in a kitchen.
 
-They let their food come alive.
+That is the promise Homestead Roots opens with, and the contrast underneath it is the whole video: while the modern world pasteurised, sterilised and processed its food supply into something that keeps, older cultures did the opposite. They let food come alive.
 
-Cabbage and salt, left alone for a week, become sauerkraut — billions of bacteria per serving, and enough vitamin C that sailors carried it on long voyages.
+But almost nothing sold under those old names still is. The shelf-stable kraut in the dry-goods aisle is pasteurised and contains zero live bacteria. The supermarket pickle never fermented at all — its acidity is vinegar, poured in. The low-fat yogurt had its CLA stripped out alongside the fat.
 
-Homestead Roots walks through 20 of these living foods, from sauerkraut and kefir to natto, beet kvass and garlic fermented in honey.
+Therefore the video walks 20 living foods and, for each, the thing that separates the real from the counterfeit. Kimchi that sends live cultures in with garlic's prebiotic fibre to feed them. Kefir with 20–60 strains where commercial yogurt has two to seven. Miso, raw aged cheese, sourdough, beet kvass, tempeh, natto, buttermilk, wild fermented fruit.
 
-The pattern repeats: the fermented version digests better, absorbs better and protects more than the raw ingredient.
+The mechanism repeats down the whole list. Fermentation is pre-digestion: it breaks down phytic acid in soy and grain, lactose in milk, gluten proteins in bread, and hands your gut something it can actually take apart.
 
-And the shelf-stable versions on most supermarket shelves — pasteurised kraut, vinegar pickles — carry none of it.
+But heat undoes all of it. Miso goes into hot, never boiling, liquid. Spirulina stays below 60 °C and moringa below 70. Warm it up and you have the flavour without the thing you came for.
 
-The people who built these traditions had no clinical trials. They had observation, and a jar on the counter.
+So he leaves you a test you can run with your hands, in any shop, in a second: if it isn't cold and it doesn't bubble when you open it, it isn't the food being described.
+
+None of these traditions had clinical trials. They had observation, repeated across generations, and a jar on the counter — and that is the turn. The most protective food in the kitchen isn't the sterile one that keeps for a year; it's the living one that needs nothing but salt, time and that jar.
 
 ## Beliefs that shift
 
 - *Processing makes food safe.* → Pasteurising makes food shelf-stable and takes the live cultures out.
 - *A pickle is a pickle.* → A vinegar pickle is preserved; a salt-brined pickle is alive.
-- *Soy is soy.* → Raw soy blocks minerals; fermented soy releases them.
-- *Low-fat is the healthier yogurt.* → Full-fat is the useful yogurt — the CLA sits in the fat.
-- *The brine is what you pour away.* → The brine is as potent as what's sitting in it.
+- *Safe food is sterile food.* → The most protective food in the kitchen is the one still alive.
 
 ## Key numbers
 
@@ -73,15 +73,6 @@ The people who built these traditions had no clinical trials. They had observati
 - **Diversity beats dose.** A Stanford study found a high-fermented-food diet raised microbiome diversity more than a high-fibre diet.
 - **Heat kills live food.** Miso never boils; kraut and pickles stay raw.
 - **The tools are tiny.** Most of these need salt, water, a jar and time.
-
-## For maiaCITY
-
-Let's translate this.
-
-- **A fermentation kitchen in every neighbourhood.** Shared crocks, shared knowledge, a weekly making day.
-- **Preserve the harvest alive.** Lacto-fermentation turns surplus cabbage, beets, peppers and fruit into months of storage — no cans, freezers or vinegar.
-- **A starter-culture library.** Kefir grains, sourdough starters, scobys and koji multiply. Share them like seeds.
-- **Teach the craft and the safety.** Salt ratios, clean jars and spotting spoilage belong in food onboarding.
 
 ## Open questions
 

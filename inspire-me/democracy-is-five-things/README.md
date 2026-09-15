@@ -19,33 +19,35 @@ quoteBy: Adam, in the video
 
 ## The story
 
-A 2024 study asked ordinary citizens what a country needs in order to count as a democracy.
+Ask people what democracy requires and they say free elections — then gender equality, civil rights, state aid for the unemployed, taxing the rich.
 
-Free elections came first, as expected. Then gender equality. Then civil rights. Then state aid for the unemployed, and taxing the rich to subsidise the poor.
+That's from a 2024 study of what ordinary citizens actually mean by the word, and it explains the confusion perfectly: most people use "democracy" as the name for whatever they think good government is.
 
-In other words, most people use "democracy" as the name for whatever they think good government is.
+Which is a problem, because the word is doing serious work right now. It's used to say democracy is in trouble, and to say the US was never supposed to be one, and those two sentences aren't even about the same thing.
 
-So the video borrows a sharper frame: V-Dem's five principles, five different answers to the same question — what does it mean for the people to rule?
+Therefore the video borrows a sharper frame: V-Dem's five principles, five answers to one question — what does it mean for the people to rule?
 
-They rule by choosing who rules. James Madison called that a republic, not a democracy; today it's **electoral democracy**, the thin base of the definition. Though elections only count when losing is possible — Putin's opponents are in prison, in exile, or dead.
+They rule by **choosing who rules**. Madison called that a republic rather than a democracy; today it's electoral democracy, the thin base of the definition. But elections only count when losing is possible — in Russia the serious opponents are in prison, in exile or dead — and when suffrage is broad and the press is free enough to make the choice real.
 
-They rule by staying free. **Liberal democracy**: rights the state cannot violate, rule of law, limits between elections. The wolves cannot vote to eat the sheep.
+They rule by **staying free**. Liberal democracy: rights the state cannot violate, rule of law, checks that constrain power between elections so you don't end up with an elected dictator. The wolves cannot vote to eat the sheep. And "liberal" here means the early-1800s idea of limiting government, not anything left-wing — Australia's and Canada's Liberal parties split on exactly that lineage.
 
-They rule by having equal access to power. **Egalitarian democracy**: one vote each means little when one donor gives hundreds of millions and most people give nothing — or when your boss can fire you for your opinions.
+They rule by **having equal access to power**. Egalitarian democracy: one vote each counts for little when most people give nothing and a few donors give hundreds of millions, when your employer can fire you for your opinions, or when you have no roof, no food and no time.
 
-They rule by taking part between elections. **Participatory democracy**: protest, unions, town halls, public comment, referendums.
+They rule by **taking part between elections**. Participatory democracy: protest, unions, school boards, city councils, referendums — the places where ordinary people actually get input.
 
-And they rule by reasoning together. **Deliberative democracy**: Ireland put its abortion deadlock to 99 randomly selected citizens, who heard evidence in public over weekends, argued, and recommended. Then the country voted.
+But participation without understanding is noise, which is where the "voters are idiots" argument usually wins. Except the famous study says something subtler: asked whether the 1975 Public Affairs Act should be repealed, two-thirds had no opinion and a third answered anyway — about a law that never existed.
 
-The five don't always cooperate. Maximise participation and the meetings fill with whoever has the time.
+Therefore the fifth: they rule by **reasoning together**. Ireland handed its abortion deadlock to 99 randomly selected citizens, who heard evidence in public across weekends, questioned experts, argued, and recommended. They still didn't agree — but the country had held the conversation in miniature, then voted, and a deadlock its politics couldn't touch was settled legitimately.
+
+The five don't always cooperate: maximise participation and the meetings fill with whoever has time to spare, which costs you equality.
+
+So no country is simply a democracy or not. Each one sits high on some of these dials and low on others — and the useful question stops being "is this a democracy?" and becomes "which of the five are we failing at?".
 
 ## Beliefs that shift
 
 - *Democracy is a system of government.* → Democracy is the word most people use for whatever they consider good government.
 - *Elections make a democracy.* → Elections make a democracy only when losing is possible and the press is free.
-- *Democracy is majority rule.* → Democracy is majority rule minus the things a majority may never vote away.
 - *One person one vote means equal power.* → One person one vote plus unlimited donations means deeply unequal power.
-- *Voters are too ignorant for democracy.* → Ask about a law that never existed and a third will still have a view — the gap is deliberation, not intelligence.
 
 ## The five principles
 
@@ -66,16 +68,6 @@ The five don't always cooperate. Maximise participation and the meetings fill wi
 - **Deliberation isn't about flipping people.** It's about being able to justify your position — and understanding why the other side holds theirs.
 - **The dials trade against each other.** Maximise participation and you can weaken equality. There's no configuration that maxes all five.
 - **Check the quote before you repeat it.** Franklin's wolves and Churchill's five-minute conversation are both invented — 1990 and 1992, respectively.
-
-## For maiaCITY
-
-Let's translate this.
-
-- **Score ourselves on all five, publicly, every year.** And name the dial we're worst at, the way V-Dem scores countries.
-- **Use sortition for deadlocks.** Randomly selected residents, evidence heard in public, a recommendation put to a full vote.
-- **Publish who chose the experts.** The convener's bias is the weak point of every assembly, so put that step in the open.
-- **Pay for participation.** Paid time, childcare and rotation — otherwise the town hall belongs to whoever can afford an evening.
-- **Write the limits before we need them.** The rights a majority can never vote away have to exist before the first hard vote.
 
 ## Open questions
 

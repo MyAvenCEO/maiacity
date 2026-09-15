@@ -15,7 +15,9 @@ export interface InspirationMeta {
 	source: string;
 	type: SourceType;
 	author?: string;
+	authorSlug?: string;
 	authorUrl?: string;
+	via?: string;
 	published?: string;
 	added: string;
 	categories: string[];
@@ -37,4 +39,11 @@ export interface InspirationEntry extends InspirationMeta {
 	sections: InspirationSection[];
 	sourceHtml: string | null;
 	sourceWords: number;
+}
+
+export interface Author {
+	slug: string;
+	name: string;
+	urls: string[];
+	entries: InspirationMeta[];
 }

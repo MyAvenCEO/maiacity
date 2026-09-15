@@ -3,7 +3,7 @@ title: Desert rain that stays — water, biology, mulch
 originalTitle: "Turning One Desert Rainstorm Into Months of Water"
 source: https://www.youtube.com/watch?v=jcD-7YvPVQ0
 type: video
-author: Shaun Overton (DUSTUPS)
+author: Shaun Overton
 authorUrl: https://www.youtube.com/@dustupstexas
 added: 2026-09-13
 categories: [water, ecology, food]
@@ -19,31 +19,33 @@ quoteBy: Shaun Overton
 
 ## The story
 
-He has gotten good at harvesting floods. A beaver dam analog back-floods after heavy rain, and two months later there's a thick stand of green grass.
+One storm in the Texas desert, and months of green afterwards. That is the goal.
 
-Then his mentor — anonymous, made his money regenerating ranches across the desert southwest — asks the question that resets the whole project: what if it had water for an extra month? Two? Three?
+He is already good at the first half. A beaver dam analog back-floods after heavy rain, pools water where plants can drink it, and two months later there's a thick stand of grass.
 
-The mentor's first rule sounds backwards on a rain-harvesting ranch: you have to irrigate the first year. Water starts the plants that start the cycle.
+But then his mentor — anonymous, made his money regenerating ranches across the desert southwest — asks the question that resets the project: what if it had water for an extra month? Two? Three?
 
-On his land: broadcast the seed, spray the biology, run a sprinkler for three days, never touch it again.
+And the mentor's first rule sounds backwards on a rain-harvesting ranch. You have to irrigate the first year. Water starts the plants that start the cycle: broadcast the seed, spray the biology, run a sprinkler for three days, never touch it again.
 
-Because the desert here gets rain comparable to Los Angeles. Keeping it is the hard part.
+The reason is a fact about this place that took him years to see. This desert isn't short of rain — it gets about as much as Los Angeles. It is short of retention. What counts isn't the water that lands, it's how long it stays where roots can reach it.
 
-Deep-rooted plants — sunflower, daikon radish, mustard, rapeseed — drill four to seven feet down. The biology decomposes those roots, and the channels they leave behind let water travel deep.
+Therefore the work aims downward. Gentler slopes sink more water. Sunflower, daikon, mustard and rapeseed drill four to seven feet down; the biology decomposes those roots and leaves the channels open behind them. He checks a 2.5-foot observation well by pulling the cap and looking for moisture.
 
-Mulch does the rest: soil up to 30 degrees cooler, and shade from the UV that otherwise kills the microbes outright.
+And for the rare storm, he builds a container: an 18-inch berm all the way around Northfield, one giant bathtub sized for six inches of rain in two or three hours, planted with things that drink it and send it deep.
 
-His mentor's compost mother pile holds 20 years of collections. The community drops its brush for free, a tub grinder turns it into mulch, and other people's waste becomes his fertility.
+But bare soil undoes all of it. The sun irradiates the microbes, and wind lifts the fine particles that hold water. So mulch goes on top — up to 30 degrees cooler, shade for the biology — and the mentor's first principle is not fertiliser but armour.
 
-That's the flywheel: one acre of fertility funds the mulch for the next acre, and the next.
+That much mulch has to come from somewhere, therefore it comes from other people: a community brush pile that neighbours pay to fill, a tub grinder that turns it into carbon, and a 20-year-old compost mother pile that is spread, fed and compounded year after year.
+
+Which is the flywheel he couldn't see until he stood on the ranch. One acre of built fertility — 350 cubic yards of chips, grass, annuals, biology — produces the biomass to build the next acre, starting at the highest point so gravity distributes everything he makes.
+
+So the desert never gets wetter. The water just stops leaving.
 
 ## Beliefs that shift
 
 - *A dry place lacks rain.* → A dry place lacks retention — the rain here matches Los Angeles.
-- *Rain harvesting is measured in volume caught.* → Rain harvesting is measured in months the water stays where roots reach.
 - *Irrigating a dryland project defeats the point.* → Irrigating in year one starts the cycle that ends the irrigating.
 - *Mulch feeds the plants.* → Mulch houses the microbes and shields them from the sun that kills them.
-- *Getting water deep takes machinery.* → Getting water deep takes roots — four to seven feet of them, then decay.
 
 ## Key numbers
 
@@ -67,16 +69,6 @@ That's the flywheel: one acre of fertility funds the mulch for the next acre, an
 - **Biology needs a habitat, not a dose.** Add the organisms, then give them somewhere to live. Two ingredients, endlessly repeated.
 - **Other people's waste is your carbon.** A free community brush drop plus a grinder is fertility delivered to your gate.
 - **Start high and compound.** Begin at the highest point so gravity distributes what you build, then expand acre by acre.
-
-## For maiaCITY
-
-Let's translate this.
-
-- **Make retention time the water metric.** Not millimetres caught, but how long the ground holds water where roots can reach it — same logic as [the El Niño resilience work](/inspire-me/el-nino-agency-at-home).
-- **Start with islands of fertility, uphill.** One small, intensely built area at a high point, expanded outward by its own output.
-- **Run a green-waste-to-mulch loop.** Public drop-off, a grinder, mulch back to gardens and fields. Residents deliver the carbon for free.
-- **Size basins for the 10-year storm.** Berms, swales and bathtub fields designed for the rare event, not the average year.
-- **Instrument it cheaply.** Observation wells and moisture checks across the site, so water decisions rest on readings.
 
 ## Open questions
 

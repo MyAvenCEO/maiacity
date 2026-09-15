@@ -19,37 +19,33 @@ quoteBy: Goethe, via Earl Nightingale
 
 ## The story
 
-His father played white cassette tapes every morning on the drive to the school bus stop. Earl Nightingale, deep voice, 1991.
+A ten-year-old in a green 1991 Nissan pickup, listening to Earl Nightingale on cassette on the way to the school bus stop.
 
-One line lodged and stayed: before you can do something, you must first be something.
+One line lodged and stayed: before you can do something, you must first be something. His father was learning the laws of the mind from those tapes at the same age Shaun Hines is now.
 
-It took years of living to understand it. What it means in practice: carry the attitude of success before it shows up anywhere in your life.
+But the line took years of living to understand, because what it asks is uncomfortable: whatever you're chasing requires you to be someone you have not been, and you have to carry that person's attitude before any of it shows up.
 
-In his coaching, the thing that separates the stuck from the moving is simpler than expected — having a worthy goal. With one, attention gathers around the result and the irrelevant loses its pull.
+In his coaching, the thing that separates stuck from moving turns out to be smaller than expected — a worthy goal. With one, attention gathers around the result and the irrelevant loses its pull.
 
-Because expectations come from identity, and habits reveal the real expectation faster than words do. He watches for it in word choice: a member with a relationship goal who is quietly preparing for betrayal.
+Therefore he starts there. But people arrive with the opposite: a list of the job they hate, the tax bracket they're tired of, every condition and person they want removed. Asked to describe the life they actually want, the room goes quiet.
 
-Once you can name a habit, it stops being a habit. It becomes a choice.
+And the next obstacle is invisible, because expectations come from identity and habits reveal the real expectation faster than words. He hears it in word choice — someone with a relationship goal who is quietly preparing for betrayal.
 
-The rest is protection and practice. Don't walk into the 24-hour firefight every morning. Don't put an unformed goal up for public opinion.
+So the move is to name it. Once you identify a habit it stops being a habit and becomes a choice.
 
-And give the new identity something real to do today: tip well if generosity belongs to the person you're becoming, lead wherever leadership is needed, give if charity is part of the picture.
+But identity is fragile in a world built to hijack it. A text, an email, traffic, rage bait, and by mid-morning the day has decided how you feel about your own life. Therefore he guards the inputs, and keeps unfinished goals off the public record — share one too early and what comes back is other people's limits reflected at you.
+
+And then the practice, which is deliberately physical. Give the new identity something real to do today: tip generously if generosity belongs to the person you're becoming, lead where leadership is needed, write tonight's page dated 30 days out as the person who already did it, spending the words on how it feels rather than how it happens.
+
+Then wake up and be disciplined if the goal needs discipline, consistent if it needs consistency.
+
+So the order is not achieve and then become. Become — in small, visible, daily ways — and let the achieving follow.
 
 ## Beliefs that shift
 
 - *First you achieve, then you become.* → First you become, and the achieving follows.
 - *Identity is built at the mirror.* → Identity is built under pressure, when someone makes you doubt the goal.
-- *A habit is something you have.* → A habit you can name is a choice you are making.
-- *Share the goal and you'll be held to it.* → Share the goal too early and you'll be held to other people's limits.
 - *Knowing what you don't want is direction.* → A list of complaints is not a destination.
-
-## The 30-day exercise
-
-1. Pick one goal you can finish in 30 days — clear enough that you'll know if you fell short.
-2. Tonight, write the date 30 days out at the top of a page.
-3. Write from that date, as the person who already accomplished it.
-4. Keep the accomplishment short. Spend the words on how it feels to have it — relief, pride, or plain normalcy.
-5. Give zero attention to how it happens. Then wake up and practise being that person: disciplined if it needs discipline, consistent if it needs consistency.
 
 ## What we learn
 
@@ -60,16 +56,6 @@ And give the new identity something real to do today: tip well if generosity bel
 - **Everything comes through other people.** Treat each person as the most important one on earth — his practical version of Nightingale's test.
 - **Gratitude and expectancy together.** One keeps you aware of what's already in your hands, the other keeps you preparing for what's next.
 - **While it's forming, only you can see it.** The business, the integrity, the audience at 25 views — invisible to everyone else. That's normal, not evidence against it.
-
-## For maiaCITY
-
-Let's translate this.
-
-- **Start with what people want, not what they'd remove.** Onboarding asks for a written goal, not a list of complaints — most people go silent when asked to describe the life they want.
-- **Hand newcomers something real in week one.** A role or responsibility that lets them practise who they're becoming, not just watch.
-- **Protect attention as a commons.** A city whose defaults are quiet — no feed engineered to hijack the morning.
-- **Small circles for unfinished work.** Somewhere to develop an idea with the people actually involved, before it faces an audience.
-- **Treat every resident as the most important person in the room.** Trust compounds, and it's cheap to start.
 
 ## Open questions
 

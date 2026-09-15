@@ -19,29 +19,31 @@ quoteBy: Falk Gärtner
 
 ## The story
 
-The modern playbook: buy a huge plot, plow the earth, plant one crop, fertilise, spray, harvest. Then buy a bigger plot and do it again.
+A dry, sandy patch of ground 1.5 hours from Berlin, with no tractor on it. It out-earns the average industrial farm.
 
-By that standard, Falk Gärtner does everything wrong. Tiny plot, no machines, no toxins, many crops.
+The playbook it ignores is the familiar one: buy a huge plot, plow the earth, plant one crop, fertilise, spray, harvest — then buy a bigger plot and do it again.
 
-Seven years ago he quit his job in advertising and bought a dry, sandy patch of ground 1.5 hours from Berlin. Coarse sand and small stones — the water ran straight through it.
+Seven years ago Falk Gärtner quit his job in advertising and bought this instead. Coarse sand and small stones; the water went straight through it.
 
-So he dug a swale, packed it with logs and biomass, piled the earth into a hill beside it, and turned the trench into a sponge.
+But you cannot out-water sand, and industrial irrigation was never an option here. So he read the landscape first and dug a swale, packed it with logs and biomass, piled the earth into a hill beside it, and turned the trench into a sponge. The paths between the beds got the same treatment under wood chips.
 
-He never tills. He fertilises with compost and dove droppings. Every row grows something different, replanted up to four times a year.
+Therefore the ground began holding what fell on it — and he never tills, so the topsoil keeps its minerals and its own ecosystem. The fertiliser is compost and dove droppings from nearby: somebody else's waste, which is exactly the point.
 
-The strips between the rows are left completely wild. Birds moved in and took the insects. Big slugs arrived and ate the small slugs that were eating his salads. A fox now handles the mice.
+Every row grows something different and is replanted up to four times a year, so one failure is covered by the rows around it.
 
-He sells by hand, direct to local restaurants and shops, and composts what doesn't sell — food that is basically climate neutral.
+But a farm with no pesticides has to find its pest control somewhere. So the strips between the rows are left completely wild, and the farm starts staffing itself: birds nest in the hedges and eat the insects, bigger slugs arrive and eat the small ones that were eating his salads, a fox turns up for the mice. Only the flea beetle, blowing in from the rapeseed monoculture next door, needs netting — and he budgets for losing up to a quarter of the crop anyway.
 
-And 80% of his revenue is profit, because there is almost nothing to buy: compost and seed.
+He can't compete with big field carrots, therefore he doesn't: he grows fast, high-value produce like snack carrots and sells by hand, direct to local restaurants and shops.
+
+Then the number that reframes the whole thing. 80% of his revenue is profit. No tractor, no sprays, no seed dependency — he buys compost and seed, and that is the entire input list.
+
+So the small, designed, self-feeding plot isn't the charming alternative to the industrial farm. It keeps more of what it earns, because a system that runs on its own doesn't have to be bought again every season.
 
 ## Beliefs that shift
 
 - *Only big farms can feed us.* → Big farms feed us by spending the soil that feeds us next.
 - *Pest control is something you spray.* → Pest control is something you house: hedges, wild strips, predators.
-- *Good soil is worked soil.* → Good soil is undisturbed soil with its ecosystem intact.
-- *Cheap food is efficient food.* → Cheap food is subsidised by cheap labour and a degraded planet.
-- *Losing a quarter of the crop is failure.* → Losing a quarter of the crop is the plan; the other rows cover it.
+- *Small farming can't pay.* → 80% of his revenue is profit, because a self-feeding system barely buys anything.
 
 ## Key numbers
 
@@ -64,16 +66,6 @@ And 80% of his revenue is profit, because there is almost nothing to buy: compos
 - **Grow value, not volume.** Unusual, fast-growing produce like snack carrots, sold direct, because he can't compete on field carrots.
 - **Predators need housing.** Hedges and wild strips are the pest-control system, not decoration.
 - **Big farms can borrow the parts.** Compost, habitat rows between crops, and agroforestry — trees on the field, shade included — work at scale too.
-
-## For maiaCITY
-
-Let's translate this.
-
-- **Many small plots instead of one big field.** Market gardens in and around the city, selling direct: short transport, high value, and a failure never takes everything.
-- **Water design before planting.** Swales, buried wood, mulched paths — and a rule that a plot takes no more water than falls on it.
-- **Habitat is infrastructure.** Reserve a fixed share of every growing area for wild strips and hedges, and count it as pest control.
-- **Close the loops locally.** City compost, animal droppings and wood chips from tree work are the farm's inputs.
-- **Price the real cost.** If food carries its soil, climate and labour cost, this way of farming stops looking expensive. Build the city's food market on that.
 
 ## Open questions
 

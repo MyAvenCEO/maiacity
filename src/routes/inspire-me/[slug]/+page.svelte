@@ -28,11 +28,10 @@
 	<header class="hero">
 		<div class="text">
 			<p class="eyebrow">
-				{typeLabel(entry.type)}{#if entry.author}&ensp;·&ensp;{#if entry.authorUrl}<a
-							href={entry.authorUrl}
-							target="_blank"
-							rel="noopener noreferrer">{entry.author}</a
-						>{:else}{entry.author}{/if}{/if}
+				{typeLabel(entry.type)}{#if entry.author}&ensp;·&ensp;<a
+						class="author"
+						href="{base}/inspire-me/by/{entry.authorSlug}">{entry.author}</a
+					>{/if}{#if entry.via}&ensp;·&ensp;via {entry.via}{/if}
 			</p>
 			<h1>{entry.title}</h1>
 			{#if entry.originalTitle}
@@ -327,8 +326,10 @@
 		}
 
 		.hero :global(.arch) {
-			max-width: 320px;
+			width: 100%;
+			max-width: none;
 			grid-row: 1;
+			margin-inline: 0;
 		}
 
 		.shift {
