@@ -20,7 +20,7 @@ We are building maiaCITY in a game before we build it in soil. A game lets you r
 
 The world is a hex grid, and one hex is the unit we are actually designing. Not the city — the city comes later, and only as copies of this.
 
-Each hex measures 750 metres corner to corner, which works out to 36.5 hectares of land. Small enough to cross on foot in ten minutes. Large enough to live from.
+Each hex measures 750 metres corner to corner — about 650 metres across the flats — which works out to 36.5 hectares of land. Small enough to cross on foot in ten minutes. Large enough to live from.
 
 ![The starting position — a hex grid over open land, almost none of it settled.](/Day03/Overview%201.png)
 
@@ -42,11 +42,20 @@ That ceiling is set before the first tent goes up. Everything that follows is th
 
 ![Level 1: six tent domes at 5 m across, two people each. Containers for tools, a fire ring in the middle.](/Day03/Level%201.png)
 
-Twelve settlers. Six tent domes, five metres across, two people in each, and four shipping containers holding everything that isn't sleep.
+Twelve settlers. Six tent domes, five metres across, two people in each. The tents are only for sleeping.
 
-The fire ring in the middle is not decoration. It is the first piece of infrastructure, because the commons comes before the comfort.
+Everything else lives in four shipping containers, and those four are the settlement's organs:
 
-Nothing here is permanent, which is the point — at this size the settlement can still move, and the land underneath has barely been touched.
+- **Werkstatt** — the workshop. Tools, workbench, spare parts, and the machines that build the next level. Nothing gets added to the hex that wasn't made or repaired here first.
+- **Kitchen** — the one with the chimney. Cooking, preserving, storage; the place the food forest is turned into meals.
+- **Sanitary** — showers, baths, toilets, laundry, with the water tank sitting on the roof. Composting toilets feed the beds; greywater goes back to the trees.
+- **Energy** — batteries, inverters, the solar hookup and the internet uplink. Power and connection for the whole camp out of one box.
+
+Four containers cover work, food, hygiene and power, which is the full list of what a group of people needs to stay somewhere through a winter.
+
+They arrive on a truck and they can leave on one. That matters: everything at this level is reversible, and the land underneath has barely been touched.
+
+The fire ring in the middle is the fifth organ, and the only one that isn't a box. It is the first piece of infrastructure the settlement builds, because the commons comes before the comfort — and 136 metres of dome will eventually stand on that exact spot.
 
 ## Level 2 — the same ground, twice the people
 
