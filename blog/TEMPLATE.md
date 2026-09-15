@@ -30,8 +30,19 @@ The article delivers one transformation. Decide the from → to before writing:
 The last paragraph lands the "to". If the piece could end three paragraphs
 earlier without loss, cut those three paragraphs.
 
+RHYTHM — the rule that matters most:
+Never write evenly. Even paragraphs, even sections and even sentence lengths are
+the signature of a machine, and a reader feels it before they can name it.
+- Vary section length hard. One section can be three lines. The next can run six
+  paragraphs. Do not give every heading the same amount of body.
+- Vary headings. Some are four words. Some are a full sentence with a verb in it.
+- Vary sentences inside a paragraph. Put a forty-word sentence that keeps turning
+  next to a three-word one. Then stop.
+- A one-line paragraph is a legitimate section. Use it when the point lands alone.
+- Read it aloud. If the cadence is the same at the top and the bottom, rewrite it.
+
 Rules of thumb:
-- Short paragraphs, 1–3 sentences. Air on the page.
+- Short paragraphs, 1–3 sentences, most of the time — then break that on purpose.
 - Real numbers from the thing you actually built. No rounded-off adjectives.
 - One image per beat, not per paragraph.
 - No filler: delve, leverage, unlock, elevate, seamless, game-changer.
