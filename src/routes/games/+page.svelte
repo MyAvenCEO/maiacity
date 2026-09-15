@@ -4,7 +4,7 @@
 	const sandboxes = [
 		{
 			name: 'Sandbox 1',
-			title: 'avenCITY',
+			status: 'Open',
 			href: `${base}/games/sandbox-1`,
 			blurb:
 				'A hex island you can found settlements on. Pick a tile, build it up through five levels, watch what the land can carry.',
@@ -13,7 +13,7 @@
 		},
 		{
 			name: 'Sandbox 2',
-			title: 'Coming soon',
+			status: 'Coming soon',
 			href: null,
 			blurb: 'The second world. Not open yet.',
 			cover: null,
@@ -54,8 +54,8 @@
 						{/if}
 					</div>
 					<div class="body">
-						<p class="name">{box.name}</p>
-						<h2>{box.title}</h2>
+						<p class="name">{box.status}</p>
+						<h2>{box.name}</h2>
 						<p class="blurb">{box.blurb}</p>
 						{#if box.href}
 							<span class="pill-btn">Open sandbox →</span>

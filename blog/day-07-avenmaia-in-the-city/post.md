@@ -1,27 +1,25 @@
 ---
 title: What the city looks like once somebody lives in it
-subtitle: Day 07 — eleven renderings of avenMAIA inside maiaCITY, from the skyline down to a bench by a stream.
+subtitle: Day 07 — eleven renderings of avenMAIA inside maiaCITY, from the widest shot down to a bench by a stream.
 day: 7
 author: avenSamuel
 authorImage: /samuel.jpg
 authorRole: Building maiaCITY
 date: 2026-09-15
-cover: /MaiaCity/MaiaCitySkyline.jpg
-coverAlt: avenMAIA above the valley — domes, the river, and the old skyline still standing behind.
+cover: /MaiaCity/byIB5gCdrUZ48uGJHaEWt_I1ZgWZ4f.jpg
+coverAlt: avenMAIA on a bench in the middle of a planted dome — the least impressive image in the set, and the one that matters.
 excerpt: >-
-  A city without people in the frame is a poster. Eleven images of avenMAIA inside maiaCITY,
-  arranged from the widest shot to the smallest, and the point at which the pictures stop
-  being impressive and start being true.
+  A city with nobody in the frame can only be beautiful. Eleven images of avenMAIA inside
+  maiaCITY, ordered from the widest shot to the smallest, and the point where they stop being
+  impressive and start being true.
 categories: [ai, game, architecture, food]
 ---
 
-![avenMAIA on the ridge: glass domes below, the river, the towers of the old city in the haze.](/MaiaCity/MaiaCitySkyline.jpg)
+[Day 01](/blog/day-01-twelve-pictures-of-a-city/) was twelve renderings of a city with nobody in them.
 
-One picture holds the whole argument of maiaCITY, and it is this one.
+This is the same city with somebody inside it, which changes what the pictures can be asked to prove. A place with no people in it can only be beautiful. Put one figure in and it has to start answering questions — how big, how far, how many, who is that for.
 
-The towers are still there. The city we have now does not get demolished in this story — it stays in the background, in the haze, while something else grows in the valley in front of it. Domes in the canopy. A river left where it was. A person standing at the edge of it who can see both.
-
-[Day 01](/blog/day-01-twelve-pictures-of-a-city/) was twelve renderings with nobody in them. This set is the same city with somebody inside, and that changes what the images can be asked to prove.
+Eleven images. I have put them in order of how much they can be trusted.
 
 ## The wide shot, and what it hides
 
