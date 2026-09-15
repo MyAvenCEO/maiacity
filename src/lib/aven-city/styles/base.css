@@ -9,6 +9,22 @@
  * are scoped the same way, for the same reason. */
 
 @layer base {
+	/* We deliberately skip Tailwind's preflight so the host site keeps its own
+	 * styling — which leaves the browser's default button chrome (ButtonFace
+	 * fill, 2px outset border) on every control in here. Reset it locally. */
+	.avencity button {
+		appearance: none;
+		-webkit-appearance: none;
+		margin: 0;
+		padding: 0;
+		border: 0;
+		border-radius: 0;
+		background: transparent;
+		color: inherit;
+		font: inherit;
+		text-align: inherit;
+	}
+
 	.avencity {
 		color-scheme: light;
 		height: 100%;
