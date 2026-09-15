@@ -1,4 +1,5 @@
-import adapter from '@sveltejs/adapter-auto';
+/// <reference types="node" />
+import adapter from '@sveltejs/adapter-static';
 import { sveltekit } from '@sveltejs/kit/vite';
 import { defineConfig } from 'vite';
 
@@ -11,10 +12,16 @@ export default defineConfig({
 					filename.split(/[/\\]/).includes('node_modules') ? undefined : true
 			},
 
-			// adapter-auto only supports some environments, see https://svelte.dev/docs/kit/adapter-auto for a list.
-			// If your environment is not supported, or you settled on a specific environment, switch out the adapter.
-			// See https://svelte.dev/docs/kit/adapters for more information about adapters.
-			adapter: adapter()
+			// The whole site is prerendered and served from GitHub Pages.
+			adapter: adapter({ fallback: '404.html' }),
+
+			// GitHub Pages serves the project site under /<repo>; CI sets BASE_PATH.
+			paths: { base: (process.env.BASE_PATH ?? '') as '' | `/${string}` }
 		})
-	]
+	],
+	server: {
+		// The preview harness assigns a free port via PORT.
+		port: Number(process.env.PORT) || 5173,
+		strictPort: !!process.env.PORT
+	}
 });
