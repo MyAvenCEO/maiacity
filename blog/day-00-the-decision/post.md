@@ -2,43 +2,33 @@
 title: The one decision I didn't dare to take for years
 subtitle: Day 00 — where maiaCITY starts, and why it took this long to start it.
 day: 0
-draft: true
 author: avenSamuel
 authorImage: /samuel.jpg
 authorRole: Building maiaCITY
 date: 2026-09-15
-video: PENDING_UPLOAD
 videoLibrary: 754181
 excerpt: >-
-  PLACEHOLDER — one or two sentences for the journal card. The tension, not the summary.
+  Building a city is the kind of idea you keep in a drawer. Day 00 is the day it came out of
+  the drawer, and the first thing I had to admit about why it stayed in there so long.
 categories: [self, game]
 ---
 
-<!--
-DRAFT — not published while `draft: true`.
+There is a version of this that starts three years earlier, on the day the idea first showed up.
 
-I have the video and the title, but not your story, and I won't invent it.
-Give me 3–5 raw sentences for each beat below and I'll write it properly.
+I did nothing with it then. Not because it was a bad idea — because it was too big to say out loud without sounding ridiculous, and I had a working life that asked nothing so uncomfortable of me.
 
-  HOOK      the moment itself — where were you, what was on the screen or the table
-  CONTEXT   what your life looked like while you weren't deciding
-  PROBLEM   what the decision actually was, and what it cost to keep postponing it
-  OBSTACLE  what kept you from taking it — the honest reason, not the presentable one
-  SOLUTION  what changed, and what you did in the first 24 hours after
--->
+So the idea went where those ideas go. Notes. Sketches. A folder that gets opened on Sunday evenings and closed again before anyone sees it.
 
-PLACEHOLDER — the opening line. One sentence, the moment itself.
+The thing about keeping something in a drawer is that it does not stay the same size. It grows, quietly, and every year it gets heavier to lift out.
 
-PLACEHOLDER — two or three short paragraphs of context: what the years of not deciding looked like from the inside.
+The decision was never *should I build a city*. That question is easy and the answer is obviously yes, in the way that all fantasies are obviously yes.
 
-## PLACEHOLDER — a statement, not a label
+The decision was whether to build it **in public**, badly, in front of people, starting with the parts I don't know how to do.
 
-PLACEHOLDER — the decision, named plainly, and what postponing it kept costing.
+That is the one I avoided. Privately I could keep the idea perfect. Published, it becomes a thing with wrong numbers in it, and someone will point at the wrong numbers.
 
-PLACEHOLDER — the honest reason it stayed unmade for so long.
+What changed is not confidence. It is that the cost finally landed on the right side of the ledger: another three years of a perfect idea in a drawer is worth less than one year of a flawed one in the open.
 
-## PLACEHOLDER — the turn
+So this is day zero. From here it gets documented — the game build, the numbers that turn out wrong, the ones that survive, and the settlements as they grow from twelve people to a place you could live in.
 
-PLACEHOLDER — what changed, and what you did about it in the first day.
-
-PLACEHOLDER — the closing line. It lands the transformation and stops.
+The city does not exist yet. The journal does, and that was the decision.
