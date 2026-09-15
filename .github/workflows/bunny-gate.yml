@@ -23,6 +23,11 @@ jobs:
           BUNNY_API_KEY: ${{ secrets.BUNNY_API_KEY }}
         run: node scripts/bunny-gate-publish.mjs
 
+      - name: Try execution phases
+        env:
+          BUNNY_API_KEY: ${{ secrets.BUNNY_API_KEY }}
+        run: node scripts/bunny-gate-phase.mjs
+
       - name: Probe link endpoints
         env:
           BUNNY_API_KEY: ${{ secrets.BUNNY_API_KEY }}
