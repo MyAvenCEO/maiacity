@@ -2,7 +2,7 @@
 // The password comes from EARLY_ACCESS_PW and is injected into the deployed script.
 import { NAMES, api } from './bunny.mjs';
 
-const SCRIPT_NAME = 'maiacity-early-access';
+const SCRIPT_NAME = process.env.SCRIPT_NAME ?? 'maiacity-gate';
 const USER = process.env.EARLY_ACCESS_USER ?? 'maia';
 const PASS = process.env.EARLY_ACCESS_PW;
 if (!PASS) throw new Error('EARLY_ACCESS_PW is not set');
@@ -57,12 +57,11 @@ const list = await api('/compute/script?page=1&perPage=100');
 let script = list.Items?.find((s) => s.Name === SCRIPT_NAME);
 
 if (!script) {
-	script =
-		(await tryJson('/compute/script', {
-			method: 'POST',
-			body: { Name: SCRIPT_NAME, ScriptType: 1, CreateLinkedPullZone: false }
-		})) ??
-		(await tryJson('/compute/script', { method: 'POST', body: { Name: SCRIPT_NAME, ScriptType: 1 } }));
+	// ScriptType 0 = middleware (runs on a pull zone), 1 = standalone (own hostname).
+	script = await tryJson('/compute/script', {
+		method: 'POST',
+		body: { Name: SCRIPT_NAME, ScriptType: 0 }
+	});
 }
 if (!script) throw new Error('could not create the edge script');
 log(`script: ${script.Name} (id ${script.Id}, type ${script.ScriptType})`);
@@ -73,7 +72,8 @@ const pushed =
 	(await tryJson(`/compute/script/${script.Id}/code`, { method: 'PUT', body: { Code: code } }));
 if (!pushed) log('note: code push failed — see errors above');
 
-await tryJson(`/compute/script/${script.Id}/publish`, { method: 'POST' });
+log('script object: ' + JSON.stringify(await api(`/compute/script/${script.Id}`)).slice(0, 600));
+await tryJson(`/compute/script/${script.Id}/publish`, { method: 'POST', body: { Note: 'early access gate' } });
 
 // 3. Attach it to the pull zone.
 const zones = await api('/pullzone');
