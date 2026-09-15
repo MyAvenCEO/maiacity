@@ -20,7 +20,7 @@ We are building maiaCITY in a game before we build it in soil. A game lets you r
 
 The world is a hex grid, and one hex is the unit we are actually designing. Not the city — the city comes later, and only as copies of this.
 
-Each hex measures 800 metres corner to corner — about 690 metres across the flats — which works out to 41.6 hectares of land. Small enough to cross on foot in ten minutes. Large enough to live from.
+Each hex measures 800 metres corner to corner — about 690 metres across the flats — which works out to 415,692 m², or 41.6 hectares of land. Small enough to cross on foot in ten minutes. Large enough to live from.
 
 ![The starting position — a hex grid over open land, almost none of it settled.](/Day03/Overview%201.png)
 
@@ -50,12 +50,12 @@ Their share of green is 1.2 hectares of food forest and 0.6 under glass — a ga
 
 Everything else lives in four shipping containers, and those four are the settlement's organs:
 
-- **Werkstatt** — the workshop. Tools, workbench, spare parts, and the machines that build the next level. Nothing gets added to the hex that wasn't made or repaired here first.
-- **Kitchen** — the one with the chimney. Cooking, preserving, storage; the place the food forest is turned into meals.
-- **Sanitary** — showers, baths, toilets, laundry, with the water tank sitting on the roof. Composting toilets feed the beds; greywater goes back to the trees.
-- **Energy** — batteries, inverters, the solar hookup and the internet uplink. Power and connection for the whole camp out of one box.
+- **Workshop Box** — tools, workbench, spare parts, and the machines that build the next level. Nothing gets added to the hex that wasn't made or repaired here first.
+- **Kitchen Box** — the one with the chimney. Cooking, preserving, cold storage; where the food forest turns into meals.
+- **Sanitary Box** — showers, baths, toilets and laundry, with the water tank on the roof. Composting toilets feed the beds, greywater goes back to the trees.
+- **Energy Box** — solar hookup, batteries and inverters, the heat store that runs the hot water and the underfloor loops, and the internet uplink. Power, warmth and connection for the whole camp out of one container.
 
-Four containers cover work, food, hygiene and power, which is the full list of what a group of people needs to stay somewhere through a winter.
+Four boxes cover work, food, hygiene, power and heat — the full list of what a group of people needs to stay somewhere through a winter.
 
 They arrive on a truck and they can leave on one. That matters: everything at this level is reversible, and the land underneath has barely been touched.
 
@@ -123,7 +123,7 @@ One machine, to begin with: **[LifeTrac](https://opensourceecology.dozuki.com/c/
 
 It comes out of the Global Village Construction Set — fifty machines whose designs are published for anyone to build — and the rest of that set is for later levels of the works. The first factory makes tractors.
 
-Open source is not the ideology here, it is the maintenance strategy. A machine whose drawings you hold is a machine you can repair in your own Werkstatt, in the same building where you learned to build it.
+Open source is not the ideology here, it is the maintenance strategy. A machine whose drawings you hold is a machine you can repair in your own workshop, in the same building where you learned to build it.
 
 The works dome is 130 metres across and belongs to the settlement — theirs to own, staff, maintain and profit from. The other 40 hectares of that hex keep growing food, because a factory hex is still land.
 
