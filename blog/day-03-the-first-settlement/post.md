@@ -40,11 +40,11 @@ At 216 settlers the hex owes them 21.6 hectares of food forest and 10.8 hectares
 
 That ceiling is set before the first tent goes up. Everything that follows is how you get there without breaking it.
 
-## Level 1 — twelve people and a fire ring
+## Level 1 — twelve people in mini tents
 
-![Level 1: six tent domes at 5 m across, two people each. Containers for tools, a fire ring in the middle.](/Day03/Level%201.png)
+![Level 1: six mini tents at 5 m across, two people each. Four containers, and a fire ring in the middle.](/Day03/Level%201.png)
 
-Twelve settlers. Six tent domes, five metres across, two people in each. The tents are only for sleeping.
+Twelve settlers. Six mini tents, five metres across, two people in each. Sleeping only — nothing else happens in them.
 
 Their share of green is 1.2 hectares of food forest and 0.6 under glass — a garden, planted the first season, for the people who will still be here when it's a canopy.
 
@@ -61,31 +61,35 @@ They arrive on a truck and they can leave on one. That matters: everything at th
 
 The fire ring in the middle is the fifth organ, and the only one that isn't a box. It is the first piece of infrastructure the settlement builds, because the commons comes before the comfort — and 136 metres of dome will eventually stand on that exact spot.
 
-## Level 2 — the same ground, twice the people
+## Level 2 — glamping, and still packable
 
-![Level 2: the domes grow to 8 m across and hold four people each. 24 settlers on the same footprint.](/Day03/Level%202.png)
+![Level 2: eight-metre glamping domes, four people each — comfortable, and still temporary.](/Day03/Level%202.png)
 
 Eight metres across, four people per dome, 24 settlers. Same six positions, same ring, same land — 2.4 hectares of food forest and 1.2 of glass to match.
 
-Growth here costs nothing but better shelter. The food forest around it does not shrink by a single tree, and the walk to the middle is unchanged.
+These are glamping domes: a floor, a stove, a proper bed, and a shell you can still take down in a day. Comfortable enough to get through a winter, light enough that the settlement has not committed to anything yet.
 
-This is the last level that still feels like camping.
+That is the whole purpose of the first two levels. Nothing permanent goes into the ground until the people are sure they want to stay, and the trees planted in year one are further along than the buildings.
 
-## Level 3 — the settlement becomes a place
+## Level 3 — the first permanent domes
 
 ![Level 3: 40 m domes holding twelve people each, 72 settlers, with a roofed commons at the centre.](/Day03/Level%203.png)
 
 Forty metres across, twelve people to a dome, six domes: 72 settlers, 7.2 hectares of food forest, 3.6 hectares under glass.
 
-The jump from 8 m to 40 m is where tents turn into architecture. Arched stone bases, a timber and glass shell, workshops and benches spilling out between them — and in the middle, a roofed commons where the fire ring used to be.
+The jump from 8 m to 40 m is where the settlement stops being packable. Arched stone bases, a timber and glass shell, workshops and benches spilling out between them — and in the middle, a roofed commons where the fire ring used to be.
+
+These six are built to outlive everyone who raised them, and they stay standing through every level that follows.
 
 The commons keeps its position through every level after this. What grows around it changes; the centre does not move.
 
 ## Level 4 — 216 people, the size it was built for
 
-![Level 4: nine domes at 70 m, 24 people each — 216 settlers, the hex at its designed size.](/Day03/Level%204.png)
+![Level 4: six new 70 m domes beside the six from Level 3 — twelve domes, 216 settlers, the hex at its designed size.](/Day03/Level%204.png)
 
-Seventy metres across, 24 people to a dome, nine domes: 216 settlers — the number the hex was sized for.
+This is the first level that adds instead of replacing. Six new domes go up at 70 metres, 24 people each, beside the six 40 m domes that stay exactly where they are.
+
+Six plus six: twelve domes, 144 settlers in the new ring and 72 in the old one. 216 — the number the hex was sized for.
 
 Their green is fully planted now: 21.6 hectares of food forest outside, 10.8 hectares of beds under glass. Every settler still has their 1,500 m², and the land has nothing left to give.
 
