@@ -90,11 +90,12 @@ export async function requestCertificate(hostname) {
 }
 
 export async function ensureStreamLibrary() {
-	const { items } = await videoApi('/library?page=1&perPage=100');
-	const existing = items?.find((l) => l.Name === NAMES.streamLibrary);
+	// Stream libraries are managed through the account API, not video.bunnycdn.com.
+	const { Items } = await api('/videolibrary?page=1&perPage=100');
+	const existing = Items?.find((l) => l.Name === NAMES.streamLibrary);
 	if (existing) return existing;
 
-	return videoApi('/library', { method: 'POST', body: { Name: NAMES.streamLibrary } });
+	return api('/videolibrary', { method: 'POST', body: { Name: NAMES.streamLibrary, ReplicationRegions: [] } });
 }
 
 export const storageBase = (zone) =>
