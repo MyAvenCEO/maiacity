@@ -1,6 +1,6 @@
 ---
 title: What the city looks like once somebody lives in it
-subtitle: Day 07 — eleven renderings of avenMAIA inside maiaCITY, from the widest shot down to a bench by a stream.
+subtitle: Day 07 — ten renderings of avenMAIA inside maiaCITY, from the widest shot down to a bench by a stream.
 day: 7
 author: avenSamuel
 authorImage: /samuel.jpg
@@ -9,7 +9,7 @@ date: 2026-09-15
 cover: /MaiaCity/byIB5gCdrUZ48uGJHaEWt_I1ZgWZ4f.jpg
 coverAlt: avenMAIA on a bench in the middle of a planted dome — the least impressive image in the set, and the one that matters.
 excerpt: >-
-  A city with nobody in the frame can only be beautiful. Eleven images of avenMAIA inside
+  A city with nobody in the frame can only be beautiful. Ten images of avenMAIA inside
   maiaCITY, ordered from the widest shot to the smallest, and the point where they stop being
   impressive and start being true.
 categories: [ai, game, architecture, food]
@@ -19,7 +19,7 @@ categories: [ai, game, architecture, food]
 
 This is the same city with somebody inside it, which changes what the pictures can be asked to prove. A place with no people in it can only be beautiful. Put one figure in and it has to start answering questions — how big, how far, how many, who is that for.
 
-Eleven images. I have put them in order of how much they can be trusted.
+Ten images. I have put them in order of how much they can be trusted.
 
 ## The wide shot, and what it hides
 
@@ -45,17 +45,15 @@ They are not doing anything. That is the point: this is what a city is for, and 
 
 The child is the honest part of the timeline. A city that takes sixteen years to build is not primarily for the people who start it.
 
-## Golden hour, twice
+## Golden hour
 
-![avenMAIA on the hillside at sunset, domes catching the last light, cape moving.](/MaiaCity/8Ha6o6W9PXi1J9yUgIOnm_erZe6AiE.jpg)
+![avenMAIA on the hillside at sunset, the sun low between the mountains, light coming through the domes.](/MaiaCity/nGgyr-JJgbxSIxbaxkfSf_lyPLCyIz.jpg)
 
-![The same moment a few seconds later — the sun lower, the light through the domes.](/MaiaCity/nGgyr-JJgbxSIxbaxkfSf_lyPLCyIz.jpg)
+The hero shot.
 
-Two frames of the hero shot, kept side by side deliberately.
+It is the most beautiful image in the set and the least informative, and both of those are worth knowing about your own material. It belongs on the front of something. It does not belong in a planning conversation, because there is nothing in it anyone can argue with.
 
-They are the most beautiful images in the set and the least informative, and both of those things are worth knowing about your own material. They belong on the front of something. They do not belong in a planning conversation, because there is nothing in them anyone can argue with.
-
-Everything after this point goes in the other direction: closer, smaller, and progressively harder to fake.
+Everything after this goes the other way: closer, smaller, progressively harder to fake.
 
 ## Inside, where it gets specific
 
@@ -111,8 +109,8 @@ This is what an AI in a city could be: not a service you query, not an authority
 
 ---
 
-Eleven images, and the useful ones are all at the bottom of this page.
+Ten images, and the useful ones are all at the bottom of this page.
 
-The sunset shots will be what people share. The bench and the crouch are what the city has to actually deliver — and if the built version ends up looking nothing like the wide shots but exactly like those two, we will have got it right.
+The sunset shot is what people will share. The bench and the crouch are what the city has to actually deliver — and if the built version ends up looking nothing like the wide shots but exactly like those two, we will have got it right.
 
 [Meet avenMAIA properly →](/blog/day-05-avenmaia/)
