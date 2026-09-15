@@ -9,8 +9,12 @@
 	const links = [
 		{ href: base || '/', label: 'Home' },
 		{ href: `${base}/blog`, label: 'Journal' },
-		{ href: `${base}/inspire-me`, label: 'Inspire me' }
+		{ href: `${base}/inspire-me`, label: 'Inspire me' },
+		{ href: `${base}/game`, label: 'avenCITY' }
 	];
+
+	// The game is a leaf: it runs full-screen without the site chrome.
+	const bare = $derived(page.url.pathname.startsWith(`${base}/game`));
 
 	const isActive = (href: string) =>
 		href === (base || '/') ? page.url.pathname === (base || '/') : page.url.pathname.startsWith(href);
@@ -20,7 +24,8 @@
 	<link rel="icon" href={favicon} />
 </svelte:head>
 
-<header class="wrap">
+{#if !bare}
+	<header class="wrap">
 	<nav>
 		<a class="logo" href="{base || '/'}">maia<strong>CITY</strong></a>
 		<ul>
@@ -30,8 +35,9 @@
 				</li>
 			{/each}
 		</ul>
-	</nav>
-</header>
+		</nav>
+	</header>
+{/if}
 
 {@render children()}
 

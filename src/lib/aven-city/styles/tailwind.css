@@ -1,0 +1,6 @@
+/* The game was written against Tailwind. We pull in the theme and utilities only —
+   no preflight — so the site's own styles stay untouched. */
+@import 'tailwindcss/theme.css' layer(theme);
+@import 'tailwindcss/utilities.css' layer(utilities);
+
+@source '../../aven-city';

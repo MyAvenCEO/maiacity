@@ -1,12 +1,6 @@
 name: Bunny setup
 
-on:
-  workflow_dispatch:
-    inputs:
-      inspect:
-        description: Print edge scripting fields
-        type: boolean
-        default: false
+on: workflow_dispatch
 
 jobs:
   setup:
@@ -28,8 +22,3 @@ jobs:
           BUNNY_API_KEY: ${{ secrets.BUNNY_API_KEY }}
         run: node scripts/bunny-tier.mjs
 
-      - name: Inspect edge scripting surface
-        if: inputs.inspect
-        env:
-          BUNNY_API_KEY: ${{ secrets.BUNNY_API_KEY }}
-        run: node scripts/bunny-inspect.mjs
