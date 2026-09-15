@@ -8,6 +8,7 @@
 
 	const links = [
 		{ href: base || '/', label: 'Home' },
+		{ href: `${base}/blog`, label: 'Journal' },
 		{ href: `${base}/inspire-me`, label: 'Inspire me' }
 	];
 
