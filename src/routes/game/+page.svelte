@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { base } from '$app/paths';
 	import { AvenCityGame } from '$lib/aven-city';
 	import '$lib/aven-city/styles/index.css';
 </script>
@@ -10,7 +11,7 @@
 
 <!-- The world owns its own full-screen layout and three.js scene, so the wrapper
      must not create a box around it. -->
-<div class="world"><AvenCityGame /></div>
+<div class="world"><AvenCityGame backHref={base || '/'} /></div>
 
 <style>
 	.world {

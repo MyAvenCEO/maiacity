@@ -7,7 +7,7 @@
  */
 const STORAGE_KEY = 'avencity.hour'
 
-const DEFAULT_HOUR = 11
+const DEFAULT_HOUR = 12
 
 function initial(): number {
 	if (typeof localStorage === 'undefined') return DEFAULT_HOUR

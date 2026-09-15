@@ -136,3 +136,9 @@ Now the unit is complete: 216 people who house, feed and power themselves, and w
 Six tents to a factory in five steps, on ground that never had to be extended. We are running it at 60 frames per second first, where a wrong ceiling costs an afternoon.
 
 Then we pour the first real foundation.
+
+---
+
+**Walk the island yourself.** The world in these screenshots is running live — same hex grid, same dome levels, same zoning. Tap a hex, shift-drag to span, and build the settlement up level by level.
+
+[Open the avenCITY playground →](/game/)

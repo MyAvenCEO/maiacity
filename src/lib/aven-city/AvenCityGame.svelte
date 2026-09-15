@@ -27,13 +27,20 @@ import './styles/index.css'
  * route. Inside avenOS the game is a component in one world rather than an
  * app with routes, so the sandbox became a view this component swaps to.
  */
+let {
+	/** Where "leave the world" goes — the host app decides. */
+	backHref = null
+}: { backHref?: string | null } = $props()
+
 let sandbox = $state(false)
 
 // $state, not a plain `let`: leaving for the sandbox unmounts the canvas and
 // coming back binds a NEW element, and the scene has to follow it.
 let canvas: HTMLCanvasElement | undefined = $state()
 let api: SceneApi | undefined
-let seed = $state(Math.floor(Math.random() * 90000) + 10000)
+// One world, the same one every visit: the journal writes about this island,
+// so a reroll button would make every screenshot unreproducible.
+const seed = 85245
 /** every hex currently selected — one from a click, many from a shift-drag */
 let selected: HexTile[] = $state([])
 /** bumped whenever a building lands, so the rail and the count re-read */
@@ -261,11 +268,6 @@ $effect(() => {
 	}
 })
 
-function newWorld(): void {
-	seed = Math.floor(Math.random() * 90000) + 10000
-	api?.setWorld(seed)
-	builds++
-}
 </script>
 
 <!-- The standalone repo set <svelte:head><title> here. Dropped on the port: this
@@ -287,9 +289,18 @@ function newWorld(): void {
 			<!-- `shrink-0`: the status strip and the build rail keep their size, so the
 			     bottom row is the one that gives way when the screen runs short. -->
 			<div class="flex shrink-0 items-start justify-between gap-2">
-				<div class="hud-pill hud-pill-sm">
-					<span class="font-semibold">avenCITY</span>
-					<span class="hud-label">world {seed}</span>
+				<div class="pointer-events-auto flex items-center gap-1.5">
+					{#if backHref}
+						<a class="hud-pill hud-pill-sm hud-btn font-semibold" href={backHref}>←</a>
+					{/if}
+					<div class="hud-pill hud-pill-sm">
+						<span class="font-semibold">avenCITY</span>
+						<span class="hud-label">world {seed}</span>
+					</div>
+					<div class="hud-switch">
+						<button class="on" type="button">world</button>
+						<button type="button" onclick={() => (sandbox = true)}>biome sandbox</button>
+					</div>
 				</div>
 				<!-- the right-hand column: what stands, then what can be built -->
 				<div class="flex flex-col items-end gap-2">
@@ -342,8 +353,8 @@ function newWorld(): void {
 							</button>
 							{#each zoning as z (z.zone)}
 								<button
-									class="pointer-events-auto flex flex-col gap-1 rounded-xl px-1 py-0.5 text-left transition disabled:cursor-default"
-									class:hover:bg-sky={zoningMode && selected.length > 0}
+									class="zone-row pointer-events-auto flex flex-col gap-1 text-left transition disabled:cursor-default"
+									class:zone-row-armed={zoningMode && selected.length > 0}
 									disabled={!zoningMode || selected.length === 0}
 									onclick={() => zone(z.zone)}
 								>
@@ -355,7 +366,7 @@ function newWorld(): void {
 										</span>
 										<span class="text-ink-soft tabular-nums">/ {Math.round(z.target * 100)}%</span>
 									</div>
-									<div class="bg-sky h-1 overflow-hidden rounded-full">
+									<div class="zone-track h-1 overflow-hidden rounded-full">
 										<div
 											class="h-full rounded-full transition-[width] duration-300"
 											style="width: {Math.min(
@@ -437,18 +448,6 @@ function newWorld(): void {
 				<!-- `shrink-0`: these are the world's controls, so they hold their size and
 				     stay on screen no matter how much is selected on the left. -->
 				<div class="flex shrink-0 items-center gap-1.5">
-					<button
-						class="hud-pill hud-pill-sm hud-btn pointer-events-auto font-semibold"
-						onclick={() => (sandbox = true)}
-					>
-						biome sandbox
-					</button>
-					<button
-						class="hud-pill hud-pill-sm hud-btn pointer-events-auto font-semibold"
-						onclick={newWorld}
-					>
-						↻ new world
-					</button>
 					<DayNightSlider onchange={(h) => api?.setHour(h)} />
 				</div>
 			</div>

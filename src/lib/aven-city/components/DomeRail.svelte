@@ -200,9 +200,12 @@ const TERRACES: Record<number, number> = { 2: 0, 3: 1, 4: 1, 5: 2 }
 	display: flex;
 	gap: 0.2rem;
 	border-radius: 999px;
-	background: color-mix(in srgb, var(--color-sky) 20%, transparent);
-	border: 1px solid color-mix(in srgb, white 35%, transparent);
-	padding: 0.15rem;
+	background: color-mix(in srgb, var(--color-cloud, #fff) 38%, transparent);
+	backdrop-filter: blur(10px) saturate(1.3);
+	-webkit-backdrop-filter: blur(10px) saturate(1.3);
+	border: 1px solid color-mix(in srgb, white 45%, transparent);
+	box-shadow: inset 0 1px 0 color-mix(in srgb, white 65%, transparent);
+	padding: 0.18rem;
 }
 .tabs button {
 	flex: 1;
@@ -216,8 +219,8 @@ const TERRACES: Record<number, number> = { 2: 0, 3: 1, 4: 1, 5: 2 }
 	cursor: pointer;
 }
 .tabs button.on {
-	background: color-mix(in srgb, var(--color-cloud, #fff) 65%, transparent);
-	box-shadow: 0 1px 3px rgb(58 74 80 / 0.12);
+	background: color-mix(in srgb, white 82%, transparent);
+	box-shadow: 0 1px 3px rgb(58 74 80 / 0.14);
 	font-weight: 600;
 	opacity: 1;
 }
@@ -228,9 +231,9 @@ const TERRACES: Record<number, number> = { 2: 0, 3: 1, 4: 1, 5: 2 }
 	align-items: center;
 	gap: 0.1rem;
 	border-radius: 1rem;
-	background: color-mix(in srgb, var(--color-sky) 22%, transparent);
-	border: 1px solid color-mix(in srgb, white 45%, transparent);
-	box-shadow: inset 0 1px 0 color-mix(in srgb, white 60%, transparent);
+	background: color-mix(in srgb, white 26%, transparent);
+	border: 1px solid color-mix(in srgb, white 38%, transparent);
+	box-shadow: inset 0 1px 0 color-mix(in srgb, white 55%, transparent);
 	padding: 0.4rem 0.4rem 0.5rem;
 	transition:
 		transform 0.15s ease,
