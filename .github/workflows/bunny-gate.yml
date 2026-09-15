@@ -17,3 +17,8 @@ jobs:
           BUNNY_API_KEY: ${{ secrets.BUNNY_API_KEY }}
           EARLY_ACCESS_PW: ${{ secrets.EARLY_ACCESS_PW }}
         run: node scripts/bunny-gate.mjs
+
+      - name: Probe link endpoints
+        env:
+          BUNNY_API_KEY: ${{ secrets.BUNNY_API_KEY }}
+        run: node scripts/bunny-link-probe.mjs
