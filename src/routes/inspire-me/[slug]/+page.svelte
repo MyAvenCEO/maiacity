@@ -27,7 +27,10 @@
 
 	<header class="hero">
 		<div class="text">
-			<p class="eyebrow">
+			<p class="eyebrow byline">
+				{#if entry.authorImage}
+					<img class="portrait" src={entry.authorImage} alt="" />
+				{/if}
 				{typeLabel(entry.type)}{#if entry.author}&ensp;·&ensp;<a
 						class="author"
 						href="{base}/inspire-me/by/{entry.authorSlug}">{entry.author}</a
@@ -146,6 +149,20 @@
 
 	.eyebrow a {
 		text-decoration: none;
+	}
+
+	.byline {
+		display: flex;
+		align-items: center;
+		gap: 0.6rem;
+	}
+
+	.portrait {
+		width: 2.1rem;
+		height: 2.1rem;
+		border-radius: 50%;
+		object-fit: cover;
+		background: var(--paper);
 	}
 
 	h1 {

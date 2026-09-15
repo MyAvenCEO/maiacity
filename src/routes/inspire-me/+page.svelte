@@ -61,8 +61,13 @@
 					<a class="card" href="{base}/inspire-me/{entry.slug}">
 						<SourceArt {entry} />
 						<div class="body">
-							<p class="eyebrow">
-								{typeLabel(entry.type)}{#if entry.author}&ensp;·&ensp;{entry.author}{/if}
+							<p class="byline">
+								{#if entry.authorImage}
+									<img class="portrait" src={entry.authorImage} alt="" loading="lazy" />
+								{/if}
+								<span class="eyebrow">
+									{typeLabel(entry.type)}{#if entry.author}&ensp;·&ensp;{entry.author}{/if}
+								</span>
 							</p>
 							<h2>{entry.title}</h2>
 							{#if entry.shift}
@@ -196,6 +201,21 @@
 		flex-direction: column;
 		gap: 0.75rem;
 		padding: 1.4rem 1.5rem 1.6rem;
+	}
+
+	.byline {
+		display: flex;
+		align-items: center;
+		gap: 0.6rem;
+		margin: 0;
+	}
+
+	.portrait {
+		width: 1.85rem;
+		height: 1.85rem;
+		border-radius: 50%;
+		object-fit: cover;
+		background: var(--cream);
 	}
 
 	.card h2 {

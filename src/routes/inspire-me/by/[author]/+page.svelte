@@ -18,6 +18,9 @@
 	<a class="back" href="{base}/inspire-me">← Inspire me</a>
 
 	<header>
+		{#if author.image}
+			<img class="portrait" src={author.image} alt={author.name} />
+		{/if}
 		<p class="eyebrow">Author</p>
 		<h1>{author.name}</h1>
 		<p class="count">
@@ -83,6 +86,15 @@
 	h1 {
 		margin: 0.75rem 0 0;
 		font-size: clamp(2.5rem, 7vw, 5rem);
+	}
+
+	.portrait {
+		width: 5.5rem;
+		height: 5.5rem;
+		margin-bottom: 1.25rem;
+		border-radius: 50%;
+		object-fit: cover;
+		background: var(--paper);
 	}
 
 	.count {
