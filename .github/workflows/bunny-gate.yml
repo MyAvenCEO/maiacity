@@ -23,6 +23,11 @@ jobs:
           BUNNY_API_KEY: ${{ secrets.BUNNY_API_KEY }}
         run: node scripts/bunny-gate-publish.mjs
 
+      - name: Swap to middleware script
+        env:
+          BUNNY_API_KEY: ${{ secrets.BUNNY_API_KEY }}
+        run: node scripts/bunny-gate-swap.mjs
+
       - name: Try execution phases
         env:
           BUNNY_API_KEY: ${{ secrets.BUNNY_API_KEY }}
