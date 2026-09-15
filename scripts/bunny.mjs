@@ -61,7 +61,7 @@ export async function ensurePullZone(storageZone) {
 		method: 'POST',
 		body: {
 			Name: NAMES.pullZone,
-			Type: 0, // premium network
+			Type: 1, // 1 = volume tier (cheapest)
 			OriginType: 2, // storage zone
 			StorageZoneId: storageZone.Id,
 			EnableSmartCache: true

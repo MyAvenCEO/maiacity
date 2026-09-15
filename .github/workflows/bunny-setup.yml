@@ -23,6 +23,11 @@ jobs:
           BUNNY_API_KEY: ${{ secrets.BUNNY_API_KEY }}
         run: node scripts/bunny-setup.mjs
 
+      - name: Set volume tier on CDN and stream
+        env:
+          BUNNY_API_KEY: ${{ secrets.BUNNY_API_KEY }}
+        run: node scripts/bunny-tier.mjs
+
       - name: Inspect edge scripting surface
         if: inputs.inspect
         env:
