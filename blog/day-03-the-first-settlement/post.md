@@ -141,4 +141,4 @@ Then we pour the first real foundation.
 
 **Walk the island yourself.** The world in these screenshots is running live — same hex grid, same dome levels, same zoning. Tap a hex, shift-drag to span, and build the settlement up level by level.
 
-[Open the avenCITY playground →](/game/)
+[Open the avenCITY playground →](/games/sandbox-1/)

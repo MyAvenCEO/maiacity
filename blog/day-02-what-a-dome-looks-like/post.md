@@ -84,4 +84,4 @@ Eight pictures to arrive at something modest: a two-terrace dome on a stone base
 
 The 150 m mega-dome with 10,920 struts was never the goal. It was the thing we had to draw, populate, and reject before the small version looked obviously right.
 
-[See them standing in the world →](/game/)
+[See them standing in the world →](/games/sandbox-1/)

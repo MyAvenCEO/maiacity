@@ -10,11 +10,12 @@
 		{ href: base || '/', label: 'Home' },
 		{ href: `${base}/blog`, label: 'Journal' },
 		{ href: `${base}/inspire-me`, label: 'Inspire me' },
-		{ href: `${base}/game`, label: 'avenCITY' }
+		{ href: `${base}/games`, label: 'Games' }
 	];
 
-	// The game is a leaf: it runs full-screen without the site chrome.
-	const bare = $derived(page.url.pathname.startsWith(`${base}/game`));
+	// A sandbox is a leaf: it runs full-screen without the site chrome. The
+	// games index above it keeps the nav.
+	const bare = $derived(/^\/games\/[^/]+\/?$/.test(page.url.pathname.slice(base.length)));
 
 	const isActive = (href: string) =>
 		href === (base || '/') ? page.url.pathname === (base || '/') : page.url.pathname.startsWith(href);

@@ -5,13 +5,13 @@
 </script>
 
 <svelte:head>
-	<title>avenCITY · maiaCITY</title>
+	<title>Sandbox 1 · maiaCITY</title>
 	<meta name="description" content="The avenCITY world — a procedurally generated hex island." />
 </svelte:head>
 
 <!-- The world owns its own full-screen layout and three.js scene, so the wrapper
      must not create a box around it. -->
-<div class="world"><AvenCityGame backHref={base || '/'} /></div>
+<div class="world"><AvenCityGame backHref="{base}/games" /></div>
 
 <style>
 	.world {
