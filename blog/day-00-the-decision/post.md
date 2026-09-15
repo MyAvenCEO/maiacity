@@ -1,22 +1,25 @@
 ---
 title: The 1 million lives decision I almost didn't dare to take
-subtitle: Day 00 — where maiaCITY starts, and why it took this long to start it.
+subtitle: Day 00 — the decision, why it sat still for three years, and what finally moved it.
 day: 0
 author: avenSamuel
 authorImage: /samuel.jpg
 authorRole: Building maiaCITY
 date: 2026-09-15
 cover: /Day0/day0_banner.png
-coverAlt: Day 00 — where maiaCITY starts.
+coverAlt: Day 00 — press play.
 video: aa637c06-d462-48a2-8cb2-7bd39fac1cfe
 videoLocal: /Day0/DAY000_Intro.mp4
 videoAspect: '1 / 1'
 videoLibrary: 754181
 excerpt: >-
-  Building a city is the kind of idea you keep in a drawer. Day 00 is the day it came out of
-  the drawer, and the first thing I had to admit about why it stayed in there so long.
+  Some decisions sit in a drawer for years — not because you doubt them, but because saying
+  them out loud in front of people commits you. Day 00 is the day this one came out. Watch it
+  first.
 categories: [self, game]
 ---
+
+Watch the film first. Everything below assumes you have.
 
 There is a version of this that starts three years earlier, on the day the idea first showed up.
 

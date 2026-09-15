@@ -1,7 +1,7 @@
 ---
 title: The heaviest thing a person can carry is unused talent
-subtitle: Day 05 — on the weight of potential you have seen and are not living, and the difference between the pain of growing and the pain of not.
-day: 5
+subtitle: Day 06 — on the weight of potential you have seen and are not living, and the difference between the pain of growing and the pain of not.
+day: 6
 author: avenSamuel
 authorImage: /samuel.jpg
 authorRole: Building maiaCITY

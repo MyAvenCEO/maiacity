@@ -117,4 +117,4 @@ Eleven images, and the useful ones are all at the bottom of this page.
 
 The sunset shots will be what people share. The bench and the crouch are what the city has to actually deliver — and if the built version ends up looking nothing like the wide shots but exactly like those two, we will have got it right.
 
-[Meet avenMAIA properly →](/blog/day-06-avenmaia/)
+[Meet avenMAIA properly →](/blog/day-05-avenmaia/)
