@@ -1,5 +1,20 @@
 // Bunny.net helpers. Everything is derived from BUNNY_API_KEY (account API key),
 // so no other secret has to be stored anywhere.
+// Local runs read .env; CI passes the key in the environment.
+import { readFileSync } from 'node:fs';
+
+function loadEnv() {
+	try {
+		for (const line of readFileSync(new URL('../.env', import.meta.url), 'utf8').split('\n')) {
+			const match = line.match(/^\s*([A-Z_][A-Z0-9_]*)\s*=\s*(.*)\s*$/);
+			if (match && !process.env[match[1]]) process.env[match[1]] = match[2].replace(/^["']|["']$/g, '');
+		}
+	} catch {
+		// no .env — CI, or nothing to load
+	}
+}
+loadEnv();
+
 const API = 'https://api.bunny.net';
 const VIDEO_API = 'https://video.bunnycdn.com';
 

@@ -1,35 +1,85 @@
 <script lang="ts">
 	import { base } from '$app/paths';
+	import { categoryById } from '$lib/inspire-me/categories';
+
+	let { data } = $props();
+
+	const post = $derived(data.pinned);
+	const formatted = $derived(
+		post?.date
+			? new Date(post.date).toLocaleDateString('en-GB', {
+					day: 'numeric',
+					month: 'long',
+					year: 'numeric'
+				})
+			: ''
+	);
 </script>
 
 <svelte:head>
 	<title>maiaCITY</title>
-	<meta name="description" content="maiaCITY — coming soon." />
+	<meta name="description" content={post?.excerpt ?? 'maiaCITY — building a city, game first.'} />
 </svelte:head>
 
 <main class="wrap">
-	<div class="text">
-		<p class="eyebrow"><span class="dot"></span> Under construction</p>
+	<section class="hero">
+		<p class="eyebrow"><span class="dot"></span> Building in public</p>
 		<h1>maia<span>CITY</span></h1>
-		<p class="lede">Something is being built here. Check back soon.</p>
-		<a class="pill-btn" href="{base}/inspire-me">Inspire me →</a>
-	</div>
+		<p class="lede">
+			One million founders, one city, sixteen years. Built in a game first, then in soil.
+		</p>
+	</section>
 
-	<div class="arch" aria-hidden="true">
-		<span class="orb a"></span>
-		<span class="orb b"></span>
-		<span class="orb c"></span>
-	</div>
+	{#if post}
+		<article class="pinned">
+			{#if post.video && post.videoLibrary}
+				<figure class="player">
+					<iframe
+						src="https://iframe.mediadelivery.net/embed/{post.videoLibrary}/{post.video}?autoplay=false&preload=true"
+						title={post.title}
+						loading="lazy"
+						allow="accelerometer; gyroscope; autoplay; encrypted-media; picture-in-picture; fullscreen"
+						allowfullscreen
+					></iframe>
+				</figure>
+			{:else if post.cover}
+				<figure class="player">
+					<img src="{base}{post.cover}" alt={post.coverAlt ?? post.title} />
+				</figure>
+			{/if}
+
+			<div class="body">
+				<p class="eyebrow">
+					{#if post.day != null}Day {String(post.day).padStart(2, '0')}&ensp;·&ensp;{/if}{formatted}
+				</p>
+				<h2><a href="{base}/blog/{post.slug}">{post.title}</a></h2>
+				<p class="excerpt">{post.excerpt}</p>
+
+				<div class="foot">
+					{#if post.authorImage}
+						<img class="avatar" src="{base}{post.authorImage}" alt="" />
+					{/if}
+					<span>{post.author}</span>
+					<ul class="tag-list">
+						{#each post.categories as id (id)}
+							<li style:--c={categoryById(id).color}>{categoryById(id).label}</li>
+						{/each}
+					</ul>
+				</div>
+
+				<div class="actions">
+					<a class="pill-btn" href="{base}/blog/{post.slug}">Read day {post.day ?? ''} →</a>
+					<a class="ghost-btn" href="{base}/game">Open the world</a>
+					<a class="ghost-btn" href="{base}/blog">All days</a>
+				</div>
+			</div>
+		</article>
+	{/if}
 </main>
 
 <style>
 	main {
-		display: grid;
-		grid-template-columns: 1.1fr 1fr;
-		align-items: center;
-		gap: 3rem;
-		min-height: calc(100vh - 6rem);
-		padding-block: 3rem;
+		padding-block: 3.5rem 6rem;
 	}
 
 	.dot {
@@ -42,8 +92,8 @@
 	}
 
 	h1 {
-		margin: 1.25rem 0 0;
-		font-size: clamp(3.5rem, 11vw, 8rem);
+		margin: 1rem 0 0;
+		font-size: clamp(3.5rem, 11vw, 7.5rem);
 		font-weight: 300;
 	}
 
@@ -52,57 +102,106 @@
 	}
 
 	.lede {
-		max-width: 30ch;
-		margin: 1.5rem 0 2rem;
+		max-width: 34ch;
+		margin: 1.25rem 0 0;
 		font-size: 1.2rem;
 		color: var(--ink-soft);
 	}
 
-	.arch {
-		position: relative;
-		aspect-ratio: 4 / 5;
-		overflow: hidden;
-		border-radius: 999px 999px var(--radius) var(--radius);
-		background: var(--sage);
+	.pinned {
+		display: grid;
+		grid-template-columns: 1.15fr 1fr;
+		align-items: center;
+		gap: 2.5rem;
+		margin-top: 3.5rem;
+		padding: 1.25rem;
+		border-radius: var(--radius);
+		background: var(--paper);
 	}
 
-	.orb {
-		position: absolute;
+	.player {
+		margin: 0;
+	}
+
+	.player iframe,
+	.player img {
+		display: block;
+		width: 100%;
+		aspect-ratio: 16 / 9;
+		border: 0;
+		border-radius: calc(var(--radius) - 8px);
+		object-fit: cover;
+		background: var(--ink);
+	}
+
+	.body {
+		display: flex;
+		flex-direction: column;
+		gap: 1rem;
+		padding: 0.5rem 1rem 1rem 0;
+	}
+
+	h2 {
+		font-size: clamp(1.8rem, 3.2vw, 2.6rem);
+	}
+
+	h2 a {
+		text-decoration: none;
+	}
+
+	.excerpt {
+		margin: 0;
+		color: var(--ink-soft);
+	}
+
+	.foot {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
+		gap: 0.6rem;
+		font-size: 0.9rem;
+		color: var(--ink-soft);
+	}
+
+	.avatar {
+		width: 1.9rem;
+		height: 1.9rem;
 		border-radius: 50%;
+		object-fit: cover;
 	}
 
-	.a {
-		width: 90%;
-		aspect-ratio: 1;
-		right: -30%;
-		bottom: -20%;
-		background: var(--mustard);
+	.actions {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.6rem;
+		margin-top: 0.25rem;
 	}
 
-	.b {
-		width: 70%;
-		aspect-ratio: 1;
-		right: -10%;
-		bottom: -5%;
-		background: #f6cf85;
+	.ghost-btn {
+		display: inline-flex;
+		align-items: center;
+		padding: 0.75rem 1.35rem;
+		border: 1px solid var(--line);
+		border-radius: 999px;
+		font-size: 0.95rem;
+		font-weight: 500;
+		text-decoration: none;
+		color: var(--ink-soft);
 	}
 
-	.c {
-		width: 45%;
-		aspect-ratio: 1;
-		left: 12%;
-		top: 18%;
-		background: rgb(250 248 242 / 0.35);
+	.ghost-btn:hover {
+		color: var(--ink);
+		background: var(--cream);
 	}
 
-	@media (max-width: 760px) {
-		main {
+	@media (max-width: 860px) {
+		.pinned {
 			grid-template-columns: 1fr;
-			min-height: 0;
+			gap: 1.25rem;
 		}
 
-		.arch {
-			max-width: 360px;
+		.body {
+			padding: 0 0.5rem 0.75rem;
 		}
 	}
 </style>

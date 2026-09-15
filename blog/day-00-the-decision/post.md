@@ -6,6 +6,8 @@ author: avenSamuel
 authorImage: /samuel.jpg
 authorRole: Building maiaCITY
 date: 2026-09-15
+cover: /Day0/day0_banner.png
+coverAlt: Day 00 — where maiaCITY starts.
 videoLibrary: 754181
 excerpt: >-
   Building a city is the kind of idea you keep in a drawer. Day 00 is the day it came out of

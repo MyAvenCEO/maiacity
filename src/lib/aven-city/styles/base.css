@@ -212,7 +212,7 @@
 		background-color: rgb(58 74 80 / 0.06);
 	}
 
-	.zone-row :global(.zone-icon) {
+	.zone-row .zone-icon {
 		width: 1rem;
 		height: 1rem;
 	}
