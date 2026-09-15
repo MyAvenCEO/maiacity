@@ -6,7 +6,7 @@ author: avenSamuel
 authorImage: /samuel.jpg
 authorRole: Building maiaCITY
 date: 2026-09-15
-cover: /Day02/Overview 1.png
+cover: /Day03/Overview 1.png
 coverAlt: avenCITY world 85245. One hex picked out of 2,531 km² of untouched land — everything starts here.
 excerpt: >-
   Twelve people in six tents, on 36.5 hectares. Five levels later the same ground carries 276
@@ -16,7 +16,7 @@ categories: [architecture, food, energy]
 
 Six tents, five metres across. Twelve people. One fire.
 
-![The starting position in avenCITY world 85245 — a hex grid over open land, almost none of it settled.](/Day02/Overview%201.png)
+![The starting position in avenCITY world 85245 — a hex grid over open land, almost none of it settled.](/Day03/Overview%201.png)
 
 We are building maiaCITY in a game before we build it in soil. A game lets you run a settlement forward, watch where it stops working, and start again the same afternoon.
 
@@ -36,7 +36,7 @@ That number is the ceiling, and it is set before the first tent goes up. Everyth
 
 ## Level 1 — twelve people and a fire ring
 
-![Level 1: six tent domes at 5 m across, two people each. Containers for tools, a fire ring in the middle.](/Day02/Level%201.png)
+![Level 1: six tent domes at 5 m across, two people each. Containers for tools, a fire ring in the middle.](/Day03/Level%201.png)
 
 Twelve settlers. Six tent domes, five metres across, two people in each, and four shipping containers holding everything that isn't sleep.
 
@@ -46,7 +46,7 @@ Nothing here is permanent, which is the point — at this size the settlement ca
 
 ## Level 2 — the same ground, twice the people
 
-![Level 2: the domes grow to 8 m across and hold four people each. 24 settlers on the same footprint.](/Day02/Level%202.png)
+![Level 2: the domes grow to 8 m across and hold four people each. 24 settlers on the same footprint.](/Day03/Level%202.png)
 
 Eight metres across, four people per dome, 24 settlers. Same six positions, same ring, same land.
 
@@ -56,7 +56,7 @@ This is the last level that still feels like camping.
 
 ## Level 3 — the settlement becomes a place
 
-![Level 3: 40 m domes holding twelve people each, 72 settlers, with a roofed commons at the centre.](/Day02/Level%203.png)
+![Level 3: 40 m domes holding twelve people each, 72 settlers, with a roofed commons at the centre.](/Day03/Level%203.png)
 
 Forty metres across, twelve people to a dome, six domes: 72 settlers.
 
@@ -66,7 +66,7 @@ The commons keeps its position through every level after this. What grows around
 
 ## Level 4 — 216 people, and the settlement is full
 
-![Level 4: nine domes at 70 m, 24 people each — 216 settlers living on the same 10 hectares they started with.](/Day02/Level%204.png)
+![Level 4: nine domes at 70 m, 24 people each — 216 settlers living on the same 10 hectares they started with.](/Day03/Level%204.png)
 
 Seventy metres across, 24 people per dome, nine domes: 216 settlers.
 
@@ -76,7 +76,7 @@ This is the size where a settlement becomes socially real: enough people for a s
 
 ## Level 5 — the centre becomes the backbone
 
-![Level 5: one 136 m dome at the centre for 60 people, surrounded by the level-4 ring. 276 settlers, and the hex's core systems under one roof.](/Day02/Level%205.png)
+![Level 5: one 136 m dome at the centre for 60 people, surrounded by the level-4 ring. 276 settlers, and the hex's core systems under one roof.](/Day03/Level%205.png)
 
 One dome, 136 metres across, holding 60 people at the heart of the ring. Total: 276 settlers on a hex that feeds 331.
 
@@ -88,7 +88,7 @@ That is what closes the loop. Food from the ground it stands on, power and stora
 
 ## After Level 5 — the settlement takes on a works
 
-![Hex −14,−8: the settlement's own solar works, a 130 m factory dome on the neighbouring hex it owns and runs.](/Day02/Overview%202.png)
+![Hex −14,−8: the settlement's own solar works, a 130 m factory dome on the neighbouring hex it owns and runs.](/Day03/Overview%202.png)
 
 A settlement that only feeds and powers itself is a homestead. The last step is the one that makes it a piece of city: it takes on a works.
 
