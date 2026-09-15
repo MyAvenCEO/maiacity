@@ -54,13 +54,6 @@
 			{/if}
 		</header>
 
-		{#if post.cover}
-			<figure class="cover">
-				<img src="{base}{post.cover}" alt={post.coverAlt ?? post.title} />
-				{#if post.coverAlt}<figcaption>{post.coverAlt}</figcaption>{/if}
-			</figure>
-		{/if}
-
 		<div class="prose article">{@html post.html}</div>
 	</article>
 </main>

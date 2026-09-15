@@ -7,7 +7,7 @@ authorImage: /samuel.jpg
 authorRole: Building maiaCITY
 date: 2026-09-15
 cover: /Day03/Overview 1.png
-coverAlt: avenCITY world 85245. One hex picked out of 2,531 km² of untouched land — everything starts here.
+coverAlt: One hex picked out of open land — everything starts here.
 excerpt: >-
   Twelve people in six tents, on 36.5 hectares. Five levels later the same ground carries 276
   and runs its own power, food and factory. This is the smallest piece of city that stands alone.
@@ -16,13 +16,13 @@ categories: [game, architecture, food, energy]
 
 Six tents, five metres across. Twelve people. One fire.
 
-![The starting position in avenCITY world 85245 — a hex grid over open land, almost none of it settled.](/Day03/Overview%201.png)
-
 We are building maiaCITY in a game before we build it in soil. A game lets you run a settlement forward, watch where it stops working, and start again the same afternoon.
 
-The world is a hex grid. One hex is 750 metres across and holds 36.5 hectares — small enough to walk, large enough to live from.
+The world is a hex grid, and one hex is the unit we are actually designing. Not the city — the city comes later, and only as copies of this.
 
-That single hex is the unit we are actually designing. Not the city. The city comes later, and only as copies of this.
+Each hex measures 750 metres corner to corner, which works out to 36.5 hectares of land. Small enough to cross on foot in ten minutes. Large enough to live from.
+
+![The starting position — a hex grid over open land, almost none of it settled.](/Day03/Overview%201.png)
 
 ## Self-sufficiency is not a feature you add at the end
 
@@ -30,9 +30,13 @@ A settlement that needs a supply chain to exist is not a settlement; it's a subu
 
 So the hex gets designed as one organism. 10 hectares hold the buildings — 27% of the land. The remaining 26.5 hectares stay a food forest: a permaculture homestead in the round, trees and beds and herbs, the same ground that houses people also feeding them.
 
-Inside the domes, another 1.7 hectares of growing beds carry roughly 20% of a full diet year-round. Counting both, the hex can feed 331 people.
+Inside the domes, another 1.7 hectares of growing beds run year-round and carry roughly 20% of a full diet. That share is the part we most want to push: indoor food forest, not planters — growing under glass through winter is what lets a northern hex hold its people without importing the difference.
 
-That number is the ceiling, and it is set before the first tent goes up. Everything that follows is the question of how many people you can bring inside it without breaking it.
+That gives the rule we design to: **2,000 m² of growing space per person**, counting the food forest outside and the beds inside. Not a yield target — a comfort target, the amount of green a person should be able to walk into.
+
+28.2 hectares of growing space per hex, at 2,000 m² each, puts the honest ceiling of one hex near 140 people. Everything above that number has to come out of the domes.
+
+That ceiling is set before the first tent goes up. Everything that follows is the question of how close you dare to run to it.
 
 ## Level 1 — twelve people and a fire ring
 
@@ -66,9 +70,9 @@ The commons keeps its position through every level after this. What grows around
 
 ## Level 4 — 216 people, and the settlement is full
 
-![Level 4: nine domes at 70 m, 24 people each — 216 settlers living on the same 10 hectares they started with.](/Day03/Level%204.png)
+![Level 4: 70 m domes holding 24 people each — 216 settlers living on the same 10 hectares they started with.](/Day03/Level%204.png)
 
-Seventy metres across, 24 people per dome, nine domes: 216 settlers.
+Seventy metres across, 24 people to a dome: 216 settlers.
 
 The same 10 hectares that held twelve people now hold 216, and the food forest is still the same food forest. Density came from building better, not from taking more land.
 
@@ -78,7 +82,7 @@ This is the size where a settlement becomes socially real: enough people for a s
 
 ![Level 5: one 136 m dome at the centre for 60 people, surrounded by the level-4 ring. 276 settlers, and the hex's core systems under one roof.](/Day03/Level%205.png)
 
-One dome, 136 metres across, holding 60 people at the heart of the ring. Total: 276 settlers on a hex that feeds 331.
+One dome, 136 metres across, holding 60 people at the heart of the ring. Total: 276 settlers on 36.5 hectares.
 
 The big dome is the only building that isn't only housing. Under it sit the shared kitchen and hall, the hex's solar and heat plant, the battery bank that carries the settlement through the night, and the compute that runs it all — the AI that watches water, power, harvest and repair, in the same room where people eat.
 
@@ -94,7 +98,7 @@ A settlement that only feeds and powers itself is a homestead. The last step is 
 
 On the neighbouring hex sits a factory dome, 130 metres across, making solar panels. It belongs to the settlement next door — theirs to own, staff, maintain and profit from. The open land around it keeps growing food, 35.2 hectares of it, because a factory hex is still land.
 
-Now the unit is complete: 276 people who house, feed and power themselves, and who make something the rest of the grid needs. 360 citizens across the two hexes, and the reserve still standing at 2,530 km².
+Now the unit is complete: 276 people who house, feed and power themselves, and who make something the rest of the grid needs — with every hectare of it inside a boundary they can walk.
 
 > A city is not a plan drawn above the settlements. It is what happens when enough of them can stand alone — and then choose to trade.
 
