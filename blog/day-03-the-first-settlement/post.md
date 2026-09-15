@@ -1,5 +1,5 @@
 ---
-title: How a settlement grows from twelve people to a city block
+title: How a settlement grows from one person to a city block
 subtitle: Day 03 — building maiaCITY in a game first, one hex at a time, until it can carry itself.
 day: 3
 author: avenSamuel
@@ -9,12 +9,14 @@ date: 2026-09-15
 cover: /Day03/Overview 1.png
 coverAlt: One hex picked out of open land — everything starts here.
 excerpt: >-
-  Twelve people in six tents, on 41.6 hectares. Five levels later the same ground carries 216
-  and runs its own power, food and factory. This is the smallest piece of city that stands alone.
+  One person, one tent, on 41.6 hectares. Five levels later the same ground carries 216 and runs
+  its own power, food and factory. This is the smallest piece of city that stands alone.
 categories: [game, architecture, food, energy]
 ---
 
-Six tents, five metres across. Twelve people. One fire.
+One person. One tent, five metres across. One fire.
+
+That is the whole settlement on the first night, and everything in this post is what grows out of it.
 
 We are building maiaCITY in a game before we build it in soil. A game lets you run a settlement forward, watch where it stops working, and start again the same afternoon.
 
@@ -40,15 +42,17 @@ At 216 settlers the hex owes them 21.6 hectares of food forest and 10.8 hectares
 
 That ceiling is set before the first tent goes up. Everything that follows is how you get there without breaking it.
 
-## Level 1 — twelve people in mini tents
+## Level 1 — one arrives, twelve can stay
 
 ![Level 1: six mini tents at 5 m across, two people each. Four containers, and a fire ring in the middle.](/Day03/Level%201.png)
 
-Twelve settlers. Six mini tents, five metres across, two people in each. Sleeping only — nothing else happens in them.
+It starts with one human on an empty hex.
 
-Their share of green is 1.2 hectares of food forest and 0.6 under glass — a garden, planted the first season, for the people who will still be here when it's a canopy.
+One tent, five metres across, for sleeping and nothing else. Then a second, when somebody else turns up. The level tops out at six tents and twelve settlers, and the gap between the first and the twelfth is however long it takes — a season, a year, whatever it takes to convince eleven other people to come and sleep in a field.
 
-Everything else lives in four shipping containers, and those four are the settlement's organs:
+Their share of green, at twelve, is 1.2 hectares of food forest and 0.6 under glass — a garden planted in the first season, for the people who will still be here when it's a canopy. The first settler plants it long before there is anyone to eat from it.
+
+Everything else lives in four shipping containers, and those four are the settlement's organs — the same four whether one person is here or twelve:
 
 - **Workshop Box** — tools, workbench, spare parts, and the machines that build the next level. Nothing gets added to the hex that wasn't made or repaired here first.
 - **Kitchen Box** — the one with the chimney. Cooking, preserving, cold storage; where the food forest turns into meals.
@@ -133,7 +137,7 @@ Now the unit is complete: 216 people who house, feed and power themselves, and w
 
 > A city is not a plan drawn above the settlements. It is what happens when enough of them can stand alone — and then choose to trade.
 
-Six tents to a factory in five steps, on ground that never had to be extended. We are running it at 60 frames per second first, where a wrong ceiling costs an afternoon.
+One tent to a factory in five steps, on ground that never had to be extended. We are running it at 60 frames per second first, where a wrong ceiling costs an afternoon.
 
 Then we pour the first real foundation.
 
