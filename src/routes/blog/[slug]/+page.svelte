@@ -1,6 +1,6 @@
 <script lang="ts">
-	import { dev } from '$app/environment';
 	import { base } from '$app/paths';
+	import Player from '$lib/blog/Player.svelte';
 	import { categoryById } from '$lib/inspire-me/categories';
 
 	let { data } = $props();
@@ -55,24 +55,7 @@
 			{/if}
 		</header>
 
-		{#if dev && post.videoLocal}
-			<!-- Local master, so the post can be test-run before Stream finishes encoding. -->
-			<figure class="player" style:--aspect={post.videoAspect ?? '16 / 9'}>
-				<video src="{base}{post.videoLocal}" controls playsinline preload="metadata">
-						<track kind="captions" />
-					</video>
-			</figure>
-		{:else if post.video && post.videoLibrary}
-			<figure class="player" style:--aspect={post.videoAspect ?? '16 / 9'}>
-				<iframe
-				src="https://iframe.mediadelivery.net/embed/{post.videoLibrary}/{post.video}?autoplay=false&preload=true"
-				title={post.title}
-				loading="lazy"
-				allow="accelerometer; gyroscope; autoplay; encrypted-media; picture-in-picture; fullscreen"
-				allowfullscreen
-				></iframe>
-			</figure>
-		{/if}
+		<div class="film"><Player {post} /></div>
 
 		<div class="prose article">{@html post.html}</div>
 	</article>
@@ -139,43 +122,13 @@
 		margin-top: 1.25rem;
 	}
 
-
-	.player {
+	/* The film breaks out of the text column, staying centred on it. */
+	.film {
 		width: min(62rem, calc(100vw - 3rem));
-		margin: 2.5rem 0 0;
 		margin-left: 50%;
 		transform: translateX(-50%);
 	}
 
-	.player {
-		display: flex;
-		justify-content: center;
-	}
-
-	.player iframe,
-	.player video {
-		display: block;
-		width: auto;
-		max-width: 100%;
-		height: auto;
-		/* a square film would otherwise run past the fold */
-		max-height: 78vh;
-		aspect-ratio: var(--aspect, 16 / 9);
-		border: 0;
-		border-radius: var(--radius);
-		background: var(--ink);
-	}
-
-	@media (max-width: 820px) {
-		.player {
-			width: 100vw;
-		}
-
-		.player iframe,
-		.player video {
-			border-radius: 0;
-		}
-	}
 
 	.article {
 		margin-top: 2.5rem;
@@ -224,6 +177,10 @@
 	}
 
 	@media (max-width: 820px) {
+		.film {
+			width: 100vw;
+		}
+
 		.article :global(figure) {
 			width: 100vw;
 		}

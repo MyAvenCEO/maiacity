@@ -1,6 +1,6 @@
 <script lang="ts">
-	import { dev } from '$app/environment';
 	import { base } from '$app/paths';
+	import Player from '$lib/blog/Player.svelte';
 	import { categoryById } from '$lib/inspire-me/categories';
 
 	let { data } = $props();
@@ -33,28 +33,7 @@
 
 	{#if post}
 		<article class="pinned">
-			{#if dev && post.videoLocal}
-				<!-- Local master, so the post can be test-run before Stream finishes encoding. -->
-				<figure class="player" style:--aspect={post.videoAspect ?? '16 / 9'}>
-					<video src="{base}{post.videoLocal}" controls playsinline preload="metadata">
-						<track kind="captions" />
-					</video>
-				</figure>
-			{:else if post.video && post.videoLibrary}
-				<figure class="player" style:--aspect={post.videoAspect ?? '16 / 9'}>
-					<iframe
-						src="https://iframe.mediadelivery.net/embed/{post.videoLibrary}/{post.video}?autoplay=false&preload=true"
-						title={post.title}
-						loading="lazy"
-						allow="accelerometer; gyroscope; autoplay; encrypted-media; picture-in-picture; fullscreen"
-						allowfullscreen
-					></iframe>
-				</figure>
-			{:else if post.cover}
-				<figure class="player" style:--aspect={post.videoAspect ?? '16 / 9'}>
-					<img src="{base}{post.cover}" alt={post.coverAlt ?? post.title} />
-				</figure>
-			{/if}
+			<Player {post} maxHeight="72vh" coverOnly />
 
 			<div class="body">
 				<p class="eyebrow">
@@ -124,30 +103,12 @@
 		padding: 1.25rem;
 		border-radius: var(--radius);
 		background: var(--paper);
+		/* the film sits inside the card, so its corners follow the card's */
+		--player-radius: calc(var(--radius) - 8px);
 	}
 
-	.player {
+	.pinned :global(.player) {
 		margin: 0;
-	}
-
-	.player {
-		display: flex;
-		justify-content: center;
-	}
-
-	.player iframe,
-	.player img,
-	.player video {
-		display: block;
-		width: auto;
-		max-width: 100%;
-		height: auto;
-		max-height: 72vh;
-		aspect-ratio: var(--aspect, 16 / 9);
-		border: 0;
-		border-radius: calc(var(--radius) - 8px);
-		object-fit: cover;
-		background: var(--ink);
 	}
 
 	.body {
