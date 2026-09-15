@@ -196,72 +196,77 @@ const TERRACES: Record<number, number> = { 2: 0, 3: 1, 4: 1, 5: 2 }
 </div>
 
 <style>
+/* The rail sits inside a panel, so its parts carry no surface of their own. */
 .tabs {
 	display: flex;
-	gap: 0.2rem;
-	border-radius: 999px;
-	background: color-mix(in srgb, var(--color-cloud, #fff) 38%, transparent);
-	backdrop-filter: blur(10px) saturate(1.3);
-	-webkit-backdrop-filter: blur(10px) saturate(1.3);
-	border: 1px solid color-mix(in srgb, white 45%, transparent);
-	box-shadow: inset 0 1px 0 color-mix(in srgb, white 65%, transparent);
-	padding: 0.18rem;
+	gap: 0.125rem;
+	border-radius: 0.5rem;
+	background: rgb(58 74 80 / 0.06);
+	padding: 0.125rem;
 }
 .tabs button {
 	flex: 1;
-	border-radius: 999px;
-	padding: 0.22rem 0.3rem;
+	border: 0;
+	background: transparent;
+	border-radius: 0.375rem;
+	padding: 0.25rem 0.3rem;
 	font-family: var(--font-mono, monospace);
-	font-size: 0.55rem;
-	letter-spacing: 0.08em;
+	font-size: 0.5625rem;
+	letter-spacing: 0.1em;
 	text-transform: uppercase;
-	opacity: 0.6;
+	color: var(--color-ink-soft);
 	cursor: pointer;
+	transition: background-color 140ms ease, color 140ms ease;
+}
+.tabs button:hover {
+	color: var(--color-ink);
 }
 .tabs button.on {
-	background: color-mix(in srgb, white 82%, transparent);
-	box-shadow: 0 1px 3px rgb(58 74 80 / 0.14);
+	background: rgb(255 255 255 / 0.9);
+	color: var(--color-ink);
 	font-weight: 600;
-	opacity: 1;
 }
 .dome-card {
 	display: flex;
 	width: 6.6rem;
 	flex-direction: column;
 	align-items: center;
-	gap: 0.1rem;
-	border-radius: 1rem;
-	background: color-mix(in srgb, white 26%, transparent);
-	border: 1px solid color-mix(in srgb, white 38%, transparent);
-	box-shadow: inset 0 1px 0 color-mix(in srgb, white 55%, transparent);
-	padding: 0.4rem 0.4rem 0.5rem;
-	transition:
-		transform 0.15s ease,
-		box-shadow 0.15s ease;
+	gap: 0.15rem;
+	border: 0;
+	border-top: 1px solid rgb(58 74 80 / 0.08);
+	border-radius: 0.5rem;
+	background: transparent;
+	padding: 0.5rem 0.4rem;
+	transition: background-color 140ms ease;
 }
-.dome-card:disabled {
-	opacity: 0.45;
-	cursor: not-allowed;
+.dome-card:first-of-type {
+	border-top: 0;
 }
 .dome-card:not(:disabled):hover {
-	transform: translateY(-2px);
-	box-shadow: 0 6px 16px rgb(0 0 0 / 0.12);
+	background: rgb(58 74 80 / 0.05);
+	cursor: pointer;
 }
-.dome-card[aria-pressed="true"] {
-	outline: 2px solid color-mix(in srgb, var(--color-ink) 35%, transparent);
+.dome-card[aria-pressed='true'] {
+	background: rgb(58 74 80 / 0.08);
+}
+.dome-card:disabled {
+	opacity: 0.62;
 }
 .dome-name {
+	font-size: 0.75rem;
 	font-weight: 600;
-	font-size: 0.76rem;
+	color: var(--color-ink);
 }
 .dome-cap {
-	font-size: 0.58rem;
-	opacity: 0.8;
+	font-family: var(--font-mono, monospace);
+	font-size: 0.5625rem;
+	letter-spacing: 0.06em;
+	color: var(--color-ink-soft);
 }
 .dome-note {
 	font-family: var(--font-mono, monospace);
-	font-size: 0.52rem;
+	font-size: 0.5rem;
 	letter-spacing: 0.06em;
-	opacity: 0.55;
+	color: color-mix(in srgb, var(--color-ink-soft) 80%, transparent);
 }
 </style>

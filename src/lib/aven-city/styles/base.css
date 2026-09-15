@@ -37,50 +37,34 @@
 
 @layer components {
 	/*
-	 * Floating glass capsule — the only HUD container.
+	 * One surface, used everywhere.
 	 *
-	 * The world behind it is the point, so the card lets it through: a
-	 * translucent fill over a blur, a bright top edge where light would
-	 * catch, and a darker hairline where it would fall away. Kept subtle —
-	 * enough to read as glass, never enough to fight the island for
-	 * attention.
+	 * Flat and see-through: a white wash over a light blur, a single hairline,
+	 * no inset highlights and no drop shadow. Stacking those effects was what
+	 * made the HUD read as bubbles — now a panel is a pane of frosted glass and
+	 * anything sitting inside it carries no surface of its own.
 	 */
 	.hud-pill {
 		display: inline-flex;
 		align-items: center;
-		gap: 0.625rem;
-		padding: 0.625rem 1.125rem;
-		border-radius: 999px;
-		background-color: color-mix(in srgb, var(--color-cloud) 48%, transparent);
-		backdrop-filter: blur(14px) saturate(1.4);
-		-webkit-backdrop-filter: blur(14px) saturate(1.4);
-		border: 1px solid color-mix(in srgb, white 45%, transparent);
-		box-shadow:
-			var(--hud-shadow),
-			inset 0 1px 0 color-mix(in srgb, white 70%, transparent),
-			inset 0 -1px 0 color-mix(in srgb, var(--color-ink) 6%, transparent);
+		gap: 0.5rem;
+		padding: 0.5rem 0.875rem;
+		border-radius: 0.75rem;
+		background-color: rgb(255 255 255 / 0.72);
+		backdrop-filter: blur(10px);
+		-webkit-backdrop-filter: blur(10px);
+		border: 1px solid rgb(58 74 80 / 0.08);
 		color: var(--color-ink);
-		font-size: 0.875rem;
+		font-size: 0.8125rem;
+		line-height: 1.2;
 		white-space: nowrap;
-	}
-
-	/* Chromium composites a blurred pane wrongly over a moving canvas unless
-	 * it owns a layer, so give every card one. */
-	.hud-pill {
 		transform: translateZ(0);
 	}
 
-	/*
-	 * The readout strip along the top.
-	 *
-	 * Six always-on badges plus the world's name is a lot of furniture to hang
-	 * over the island, so the top row uses a pill at roughly half the height:
-	 * padding cut to a third, type down a step, and the label tightened with it.
-	 * Same glass, same shape — just less of it, so the world stays the subject.
-	 */
 	.hud-pill-sm {
 		gap: 0.375rem;
-		padding: 0.1875rem 0.6875rem;
+		padding: 0.3125rem 0.625rem;
+		border-radius: 0.625rem;
 		font-size: 0.75rem;
 	}
 
@@ -89,21 +73,14 @@
 		letter-spacing: 0.1em;
 	}
 
+	/* Buttons are the same surface; they only change tone. */
 	.hud-btn {
 		cursor: pointer;
-		border: none;
-		transition:
-			transform 140ms cubic-bezier(0.3, 0.6, 0.3, 1),
-			box-shadow 140ms cubic-bezier(0.3, 0.6, 0.3, 1);
+		transition: background-color 140ms ease, color 140ms ease;
 	}
+
 	.hud-btn:hover {
-		transform: translateY(-1px);
-		box-shadow:
-			0 4px 10px rgb(58 74 80 / 0.1),
-			0 16px 40px -12px rgb(58 74 80 / 0.3);
-	}
-	.hud-btn:active {
-		transform: translateY(0);
+		background-color: rgb(255 255 255 / 0.92);
 	}
 
 	.hud-label {
@@ -111,42 +88,40 @@
 		font-size: 0.6875rem;
 		font-weight: 500;
 		text-transform: uppercase;
-		letter-spacing: 0.14em;
+		letter-spacing: 0.12em;
 		color: var(--color-ink-soft);
 	}
-}
 
-@layer components {
 	/*
-	 * Segmented switch — same glass as the pills, one lit segment.
-	 * Used for the world/sandbox choice, which is navigation rather than a
-	 * control, so it sits next to the world's name instead of in the corner.
+	 * Segmented switch — one pane, one lit segment. The segments themselves
+	 * have no border and no shadow, so the control reads as a single object.
 	 */
 	.hud-switch {
 		display: inline-flex;
-		gap: 0.15rem;
-		padding: 0.2rem;
-		border-radius: 999px;
-		background-color: color-mix(in srgb, var(--color-cloud) 38%, transparent);
-		backdrop-filter: blur(14px) saturate(1.4);
-		-webkit-backdrop-filter: blur(14px) saturate(1.4);
-		border: 1px solid color-mix(in srgb, white 45%, transparent);
-		box-shadow:
-			var(--hud-shadow),
-			inset 0 1px 0 color-mix(in srgb, white 70%, transparent);
+		align-items: center;
+		padding: 0.1875rem;
+		border-radius: 0.625rem;
+		background-color: rgb(255 255 255 / 0.72);
+		backdrop-filter: blur(10px);
+		-webkit-backdrop-filter: blur(10px);
+		border: 1px solid rgb(58 74 80 / 0.08);
 		transform: translateZ(0);
 	}
 
 	.hud-switch button {
-		border-radius: 999px;
-		padding: 0.3rem 0.85rem;
-		font-family: var(--font-mono, ui-monospace, monospace);
-		font-size: 0.62rem;
-		letter-spacing: 0.1em;
+		white-space: nowrap;
+		border: 0;
+		background: transparent;
+		border-radius: 0.4375rem;
+		padding: 0.25rem 0.75rem;
+		font-family: var(--font-mono);
+		font-size: 0.5625rem;
+		font-weight: 500;
+		letter-spacing: 0.12em;
 		text-transform: uppercase;
-		color: color-mix(in srgb, var(--color-ink) 62%, transparent);
+		color: var(--color-ink-soft);
 		cursor: pointer;
-		transition: background-color 0.18s ease, color 0.18s ease;
+		transition: background-color 140ms ease, color 140ms ease;
 	}
 
 	.hud-switch button:hover {
@@ -154,28 +129,30 @@
 	}
 
 	.hud-switch button.on {
-		background-color: color-mix(in srgb, white 82%, transparent);
-		box-shadow: 0 1px 3px color-mix(in srgb, var(--color-ink) 14%, transparent);
+		background-color: rgb(58 74 80 / 0.08);
 		color: var(--color-ink);
-		font-weight: 600;
 	}
 
-	/* A zoning row is a tile of the same glass, so the panel reads as stacked
-	 * cards rather than text on a slab. */
+	/*
+	 * Rows inside a panel: no surface of their own, separated by hairlines so
+	 * the columns can line up instead of floating in their own capsules.
+	 */
 	.zone-row {
-		padding: 0.4rem 0.55rem 0.5rem;
-		border-radius: 0.85rem;
-		background-color: color-mix(in srgb, white 26%, transparent);
-		border: 1px solid color-mix(in srgb, white 34%, transparent);
-		box-shadow: inset 0 1px 0 color-mix(in srgb, white 55%, transparent);
+		padding: 0.5rem 0.125rem;
+		border-radius: 0.375rem;
+		border-top: 1px solid rgb(58 74 80 / 0.08);
+		background: transparent;
+	}
+
+	.zone-row:first-of-type {
+		border-top: 0;
 	}
 
 	.zone-row-armed:hover {
-		background-color: color-mix(in srgb, white 46%, transparent);
-		border-color: color-mix(in srgb, white 60%, transparent);
+		background-color: rgb(58 74 80 / 0.05);
 	}
 
 	.zone-track {
-		background-color: color-mix(in srgb, var(--color-ink) 12%, transparent);
+		background-color: rgb(58 74 80 / 0.1);
 	}
 }
