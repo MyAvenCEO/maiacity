@@ -339,46 +339,38 @@ $effect(() => {
 					once a zone has taken land the others were meant to have.
 				-->
 					{#if stats.landHexes > 0}
-						<div
-							class="hud-pill !w-56 shrink-0 !flex-col !items-stretch gap-1.5 !rounded-2xl !px-3 !py-2"
-						>
-							<button
-								class="hud-label pointer-events-auto flex items-center justify-between"
-								onclick={() => (zoningMode = !zoningMode)}
-							>
-								zoning
-								<span class={zoningMode ? 'text-coral' : 'text-ink-soft'}>
+						<div class="zone-panel hud-pill pointer-events-auto !w-60 shrink-0 !flex-col !items-stretch !rounded-2xl">
+							<button class="zone-toggle" onclick={() => (zoningMode = !zoningMode)}>
+								<span class="zone-title">zoning</span>
+								<span class="zone-state" class:on={zoningMode}>
 									{zoningMode ? 'painting' : 'show'}
 								</span>
 							</button>
+
 							{#each zoning as z (z.zone)}
 								<button
-									class="zone-row pointer-events-auto flex flex-col gap-1 text-left transition disabled:cursor-default"
+									class="zone-row"
 									class:zone-row-armed={zoningMode && selected.length > 0}
 									disabled={!zoningMode || selected.length === 0}
 									onclick={() => zone(z.zone)}
 								>
-									<div class="flex items-center gap-2 font-mono text-[0.6rem] tracking-[0.06em]">
-										<Icon name={z.icon} class="h-3.5 w-3.5" style="color: {ZONE_COLORS[z.zone]}" />
-										<span class="text-ink-soft flex-1">{z.label}</span>
-										<span class="tabular-nums {z.over ? 'text-coral' : 'text-ink'}">
-											{Math.round(z.share * 100)}%
-										</span>
-										<span class="text-ink-soft tabular-nums">/ {Math.round(z.target * 100)}%</span>
-									</div>
-									<div class="zone-track h-1 overflow-hidden rounded-full">
-										<div
-											class="h-full rounded-full transition-[width] duration-300"
-											style="width: {Math.min(
-											100,
-											(z.share / z.target) * 100
-										)}%; background: {z.over ? 'var(--color-coral)' : ZONE_COLORS[z.zone]}"
-										></div>
-									</div>
+									<Icon name={z.icon} class="zone-icon" style="color: {ZONE_COLORS[z.zone]}" />
+									<span class="zone-name">{z.label}</span>
+									<span class="zone-now" class:over={z.over}>{Math.round(z.share * 100)}%</span>
+									<span class="zone-target">/ {Math.round(z.target * 100)}%</span>
+									<span class="zone-track">
+										<span
+											class="zone-fill"
+											style="width: {Math.min(100, (z.share / z.target) * 100)}%; background: {z.over
+											? 'var(--color-coral)'
+											: ZONE_COLORS[z.zone]}"
+										></span>
+									</span>
 								</button>
 							{/each}
+
 							{#if zoningMode}
-								<span class="hud-label text-center">
+								<span class="zone-hint">
 									{selected.length > 0
 									? `${selected.length} hexes — pick a use`
 									: 'shift-drag to span'}
