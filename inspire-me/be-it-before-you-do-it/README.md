@@ -23,17 +23,17 @@ A ten-year-old in a green 1991 Nissan pickup, listening to Earl Nightingale on c
 
 One line lodged and stayed: before you can do something, you must first be something. His father was learning the laws of the mind from those tapes at the same age Shaun Hines is now.
 
-But the line took years of living to understand, because what it asks is uncomfortable: whatever you're chasing requires you to be someone you have not been, and you have to carry that person's attitude before any of it shows up.
+The line took years of living to understand, because what it asks is uncomfortable: whatever you're chasing requires you to be someone you have not been, and you have to carry that person's attitude before any of it shows up.
 
 In his coaching, the thing that separates stuck from moving turns out to be smaller than expected — a worthy goal. With one, attention gathers around the result and the irrelevant loses its pull.
 
-Therefore he starts there. But people arrive with the opposite: a list of the job they hate, the tax bracket they're tired of, every condition and person they want removed. Asked to describe the life they actually want, the room goes quiet.
+He starts there. People arrive with the opposite: a list of the job they hate, the tax bracket they're tired of, every condition and person they want removed. Asked to describe the life they actually want, the room goes quiet.
 
 And the next obstacle is invisible, because expectations come from identity and habits reveal the real expectation faster than words. He hears it in word choice — someone with a relationship goal who is quietly preparing for betrayal.
 
 So the move is to name it. Once you identify a habit it stops being a habit and becomes a choice.
 
-But identity is fragile in a world built to hijack it. A text, an email, traffic, rage bait, and by mid-morning the day has decided how you feel about your own life. Therefore he guards the inputs, and keeps unfinished goals off the public record — share one too early and what comes back is other people's limits reflected at you.
+Identity is fragile in a world built to hijack it. A text, an email, traffic, rage bait, and by mid-morning the day has decided how you feel about your own life. He guards the inputs, and keeps unfinished goals off the public record — share one too early and what comes back is other people's limits reflected at you.
 
 And then the practice, which is deliberately physical. Give the new identity something real to do today: tip generously if generosity belongs to the person you're becoming, lead where leadership is needed, write tonight's page dated 30 days out as the person who already did it, spending the words on how it feels rather than how it happens.
 

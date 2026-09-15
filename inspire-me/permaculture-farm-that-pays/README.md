@@ -25,15 +25,15 @@ The playbook it ignores is the familiar one: buy a huge plot, plow the earth, pl
 
 Seven years ago Falk Gärtner quit his job in advertising and bought this instead. Coarse sand and small stones; the water went straight through it.
 
-But you cannot out-water sand, and industrial irrigation was never an option here. So he read the landscape first and dug a swale, packed it with logs and biomass, piled the earth into a hill beside it, and turned the trench into a sponge. The paths between the beds got the same treatment under wood chips.
+You cannot out-water sand, and industrial irrigation was never an option here. He read the landscape first and dug a swale, packed it with logs and biomass, piled the earth into a hill beside it, and turned the trench into a sponge. The paths between the beds got the same treatment under wood chips.
 
-Therefore the ground began holding what fell on it — and he never tills, so the topsoil keeps its minerals and its own ecosystem. The fertiliser is compost and dove droppings from nearby: somebody else's waste, which is exactly the point.
+The ground began holding what fell on it — and he never tills, so the topsoil keeps its minerals and its own ecosystem. The fertiliser is compost and dove droppings from nearby: somebody else's waste, which is exactly the point.
 
 Every row grows something different and is replanted up to four times a year, so one failure is covered by the rows around it.
 
-But a farm with no pesticides has to find its pest control somewhere. So the strips between the rows are left completely wild, and the farm starts staffing itself: birds nest in the hedges and eat the insects, bigger slugs arrive and eat the small ones that were eating his salads, a fox turns up for the mice. Only the flea beetle, blowing in from the rapeseed monoculture next door, needs netting — and he budgets for losing up to a quarter of the crop anyway.
+A farm with no pesticides has to find its pest control somewhere. The strips between the rows are left completely wild, and the farm starts staffing itself: birds nest in the hedges and eat the insects, bigger slugs arrive and eat the small ones that were eating his salads, a fox turns up for the mice. Only the flea beetle, blowing in from the rapeseed monoculture next door, needs netting — and he budgets for losing up to a quarter of the crop anyway.
 
-He can't compete with big field carrots, therefore he doesn't: he grows fast, high-value produce like snack carrots and sells by hand, direct to local restaurants and shops.
+He can't compete with big field carrots, and doesn't try: he grows fast, high-value produce like snack carrots and sells by hand, direct to local restaurants and shops.
 
 Then the number that reframes the whole thing. 80% of his revenue is profit. No tractor, no sprays, no seed dependency — he buys compost and seed, and that is the entire input list.
 

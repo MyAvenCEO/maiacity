@@ -25,13 +25,13 @@ That is the small end of a very large story. El Niño is simple in mechanism: th
 
 NOAA gives this one a greater than 90% chance of becoming a very strong event, peaking through autumn and winter — and it lands on an ocean and atmosphere already warmed. The music, he says, is playing at eight or nine, and El Niño turns it past eleven.
 
-Therefore the effects fan out unevenly. Drier in parts of Australia, Indonesia, South Africa and South Asia — drought, crop failure, fire. Wetter in parts of South America, East Africa and the southern US. Monsoons disrupted, storms relocated, harvests hit, and food prices moving in countries that never saw the weather.
+The effects fan out unevenly. Drier in parts of Australia, Indonesia, South Africa and South Asia — drought, crop failure, fire. Wetter in parts of South America, East Africa and the southern US. Monsoons disrupted, storms relocated, harvests hit, and food prices moving in countries that never saw the weather.
 
 In Britain: a wetter, stormier autumn, possibly a hard cold snap in January or February, and rain falling on ground baked by a long drought, which runs straight off instead of soaking in.
 
-But nobody watching can do anything about the Pacific, which is exactly where most people stop — the planetary scale makes you feel like a rounding error. He names that feeling and refuses it, while being careful that for communities facing the worst of it, none of this is enough.
+Nobody watching can do anything about the Pacific, which is exactly where most people stop — the planetary scale makes you feel like a rounding error. He names that feeling and refuses it, while being careful that for communities facing the worst of it, none of this is enough.
 
-Therefore he redraws the boundary. You have no say in the event. You have every say in what it does to your ground, your water and your food.
+He redraws the boundary. You have no say in the event. You have every say in what it does to your ground, your water and your food.
 
 So: a water butt. Then a member who turned half a whiskey barrel into a pond and kept it topped up through the drought, plus a small pond under a hedge that matters enormously to wildlife when everything dries out. Then one with a river on his land, waders on, building a leaky dam that holds back water and sediment and raised the water table while he waits for beavers.
 

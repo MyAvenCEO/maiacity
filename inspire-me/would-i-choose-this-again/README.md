@@ -25,21 +25,21 @@ Buying a new notebook is deeply optimistic. The person buying it has plans; her 
 
 When you're young, the chapter breaks are handed to you — new timetable, new teachers, shoes that pinch at the heel — and everyone agrees when one chapter has ended.
 
-But adulthood announces nothing. Tuesday becomes Wednesday, and somehow you've used the same dry cleaner for nine years while actively disliking them. Things begin, and then they simply continue, largely because nobody remembered to stop them.
+Adulthood announces nothing. Tuesday becomes Wednesday, and somehow you've used the same dry cleaner for nine years while actively disliking them. Things begin, and then they simply continue, largely because nobody remembered to stop them.
 
-Therefore the drawer fills up, and so does the rest of life: habits, obligations, friendships, opinions, ways of spending Sunday. Some were chosen carefully. Others came in through a side door and stayed.
+The drawer fills up, and so does the rest of life: habits, obligations, friendships, opinions, ways of spending Sunday. Some were chosen carefully. Others came in through a side door and stayed.
 
 She has moved a pair of trousers she doesn't like through three homes, trying them on at every clear-out and putting them back, because time makes familiarity feel like meaning.
 
 And the same thing happens with the expensive items. Goals belonging to a woman she barely remembers being — who may have written them while she still had braces — and who apparently still gets status updates.
 
-So she reaches for the usual fix, "what do you want?", but that question assumes a pristine answer waiting behind a curtain with a clipboard, and most days there isn't one.
+She reaches for the usual fix, "what do you want?" — a question that assumes a pristine answer waiting behind a curtain with a clipboard, and most days there isn't one.
 
-Therefore a smaller question: would I choose this again? Not forever. Now.
+A smaller question, then: would I choose this again? Not forever. Now.
 
 Sometimes the answer is an unqualified yes, and that deserves more attention than it gets — choosing something a second time, with the fantasy gone and February already lived through, is its own kind of love.
 
-But the hard cases are the ones that are fine. No incident, no receipts, nothing to point at. Just four years of "I really should get back to that", which is the only signal you're going to get.
+The hard cases are the ones that are fine. No incident, no receipts, nothing to point at. Just four years of "I really should get back to that", which is the only signal you're going to get.
 
 And you don't need a birthday or a January to notice. You can interrupt yourself — because almost nothing in the drawer was chosen twice. It simply never got asked to leave.
 

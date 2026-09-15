@@ -23,19 +23,19 @@ One storm in the Texas desert, and months of green afterwards. That is the goal.
 
 He is already good at the first half. A beaver dam analog back-floods after heavy rain, pools water where plants can drink it, and two months later there's a thick stand of grass.
 
-But then his mentor — anonymous, made his money regenerating ranches across the desert southwest — asks the question that resets the project: what if it had water for an extra month? Two? Three?
+Then his mentor — anonymous, made his money regenerating ranches across the desert southwest — asks the question that resets the project: what if it had water for an extra month? Two? Three?
 
 And the mentor's first rule sounds backwards on a rain-harvesting ranch. You have to irrigate the first year. Water starts the plants that start the cycle: broadcast the seed, spray the biology, run a sprinkler for three days, never touch it again.
 
 The reason is a fact about this place that took him years to see. This desert isn't short of rain — it gets about as much as Los Angeles. It is short of retention. What counts isn't the water that lands, it's how long it stays where roots can reach it.
 
-Therefore the work aims downward. Gentler slopes sink more water. Sunflower, daikon, mustard and rapeseed drill four to seven feet down; the biology decomposes those roots and leaves the channels open behind them. He checks a 2.5-foot observation well by pulling the cap and looking for moisture.
+The work aims downward. Gentler slopes sink more water. Sunflower, daikon, mustard and rapeseed drill four to seven feet down; the biology decomposes those roots and leaves the channels open behind them. He checks a 2.5-foot observation well by pulling the cap and looking for moisture.
 
 And for the rare storm, he builds a container: an 18-inch berm all the way around Northfield, one giant bathtub sized for six inches of rain in two or three hours, planted with things that drink it and send it deep.
 
-But bare soil undoes all of it. The sun irradiates the microbes, and wind lifts the fine particles that hold water. So mulch goes on top — up to 30 degrees cooler, shade for the biology — and the mentor's first principle is not fertiliser but armour.
+Bare soil undoes all of it. The sun irradiates the microbes, and wind lifts the fine particles that hold water. Mulch goes on top — up to 30 degrees cooler, shade for the biology — and the mentor's first principle is not fertiliser but armour.
 
-That much mulch has to come from somewhere, therefore it comes from other people: a community brush pile that neighbours pay to fill, a tub grinder that turns it into carbon, and a 20-year-old compost mother pile that is spread, fed and compounded year after year.
+That much mulch has to come from somewhere, and it comes from other people: a community brush pile that neighbours pay to fill, a tub grinder that turns it into carbon, and a 20-year-old compost mother pile that is spread, fed and compounded year after year.
 
 Which is the flywheel he couldn't see until he stood on the ranch. One acre of built fertility — 350 cubic yards of chips, grass, annuals, biology — produces the biomass to build the next acre, starting at the highest point so gravity distributes everything he makes.
 

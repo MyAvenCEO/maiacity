@@ -25,9 +25,9 @@ That's from a 2024 study of what ordinary citizens actually mean by the word, an
 
 Which is a problem, because the word is doing serious work right now. It's used to say democracy is in trouble, and to say the US was never supposed to be one, and those two sentences aren't even about the same thing.
 
-Therefore the video borrows a sharper frame: V-Dem's five principles, five answers to one question — what does it mean for the people to rule?
+The video borrows a sharper frame: V-Dem's five principles, five answers to one question — what does it mean for the people to rule?
 
-They rule by **choosing who rules**. Madison called that a republic rather than a democracy; today it's electoral democracy, the thin base of the definition. But elections only count when losing is possible — in Russia the serious opponents are in prison, in exile or dead — and when suffrage is broad and the press is free enough to make the choice real.
+They rule by **choosing who rules**. Madison called that a republic rather than a democracy; today it's electoral democracy, the thin base of the definition. Elections only count when losing is possible — in Russia the serious opponents are in prison, in exile or dead — and when suffrage is broad and the press is free enough to make the choice real.
 
 They rule by **staying free**. Liberal democracy: rights the state cannot violate, rule of law, checks that constrain power between elections so you don't end up with an elected dictator. The wolves cannot vote to eat the sheep. And "liberal" here means the early-1800s idea of limiting government, not anything left-wing — Australia's and Canada's Liberal parties split on exactly that lineage.
 
@@ -35,9 +35,9 @@ They rule by **having equal access to power**. Egalitarian democracy: one vote e
 
 They rule by **taking part between elections**. Participatory democracy: protest, unions, school boards, city councils, referendums — the places where ordinary people actually get input.
 
-But participation without understanding is noise, which is where the "voters are idiots" argument usually wins. Except the famous study says something subtler: asked whether the 1975 Public Affairs Act should be repealed, two-thirds had no opinion and a third answered anyway — about a law that never existed.
+Participation without understanding is noise, which is where the "voters are idiots" argument usually wins. Except the famous study says something subtler: asked whether the 1975 Public Affairs Act should be repealed, two-thirds had no opinion and a third answered anyway — about a law that never existed.
 
-Therefore the fifth: they rule by **reasoning together**. Ireland handed its abortion deadlock to 99 randomly selected citizens, who heard evidence in public across weekends, questioned experts, argued, and recommended. They still didn't agree — but the country had held the conversation in miniature, then voted, and a deadlock its politics couldn't touch was settled legitimately.
+The fifth: they rule by **reasoning together**. Ireland handed its abortion deadlock to 99 randomly selected citizens, who heard evidence in public across weekends, questioned experts, argued, and recommended. They still didn't agree — but the country had held the conversation in miniature, then voted, and a deadlock its politics couldn't touch was settled legitimately.
 
 The five don't always cooperate: maximise participation and the meetings fill with whoever has time to spare, which costs you equality.
 

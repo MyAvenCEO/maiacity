@@ -22,13 +22,13 @@ August 23rd: Andrew marries his best friend. A few weeks later they sell the car
 
 She is European, and they want the life that comes with that — so they go all in. Not 30%, not 40%. Lease given up, friends hugged goodbye, everything they own in one car, a flight to Barcelona.
 
-But for him to stay, he needs a marriage visa. They budget two to three months.
+For him to stay, he needs a marriage visa. They budget two to three months.
 
 It takes more than seven.
 
-Therefore the plan becomes waiting: no status, no work, no circle, and a constant pressure to make the whole thing worth it.
+The plan becomes waiting: no status, no work, no circle, and a constant pressure to make the whole thing worth it.
 
-But waiting is what breaks them. For one week he has the worst anxiety of his life, circling a single question — *did I just fail?*
+Waiting is what breaks them. For one week he has the worst anxiety of his life, circling a single question — *did I just fail?*
 
 So they decide. The city isn't going to work. They pack the same bags again and fly back to North America, to no apartment, no house, nothing waiting.
 
@@ -36,7 +36,7 @@ The day before the flight, his visa finally arrives.
 
 And the verdict he braced for never comes. Two days after landing, jet-lagged in a room that feels like a hotel, he finds that nobody says he failed — people say it's so sick that he went after it.
 
-Therefore the seven months bought something after all: an answer he could not have reached from home. This city, this version of the life, is not what they want, and now they know it in their bodies rather than in theory.
+The seven months bought something after all: an answer he could not have reached from home. This city, this version of the life, is not what they want, and now they know it in their bodies rather than in theory.
 
 Failure, he decides, is a superpower if you let it be one.
 

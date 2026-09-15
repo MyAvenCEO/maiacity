@@ -23,19 +23,19 @@ A village with no rain for months, no crops in the ground, and no aid trucks get
 
 Elias Ford opens with that image, then rewinds. Americans spend more than $40 billion a year on beef; every grocery cart has some in it.
 
-But that isn't nutrition, it's inheritance. For most of the 20th century, meat and dairy boards paid to make one sentence feel like common sense — a real meal has meat on the plate — and it worked so well that three generations never questioned it.
+That isn't nutrition, it's inheritance. For most of the 20th century, meat and dairy boards paid to make one sentence feel like common sense — a real meal has meat on the plate — and it worked so well that three generations never questioned it.
 
-Therefore he counts: 16 plants that match or beat beef on protein, gram for gram or per calorie.
+He counts: 16 plants that match or beat beef on protein, gram for gram or per calorie.
 
 Each arrives with a history. Greek and Ayurvedic physicians reaching independently for the same brassicas. Egyptian farmers growing peas 4,800 years ago. Spirulina skimmed off lakes by the Aztecs and the Kanembu, with no contact between them.
 
-But history alone doesn't feed anyone, and most of these foods get ruined in the kitchen. So each one comes with the single step that decides it: chop the sprouts and wait ten minutes before roasting, rinse the saponins off quinoa, boil kidney beans hard for ten full minutes or they will make you ill, keep spirulina under 60 °C.
+History alone doesn't feed anyone, and most of these foods get ruined in the kitchen. Each one comes with the single step that decides it: chop the sprouts and wait ten minutes before roasting, rinse the saponins off quinoa, boil kidney beans hard for ten full minutes or they will make you ill, keep spirulina under 60 °C.
 
 Done right, the numbers climb. 15 g of protein in a cup of black beans. 25 g in a small serving of seitan. 31 g in a cup of tempeh. Spirulina at 60–70% protein by dry weight, against roughly 26% for beef.
 
 Which brings him back to the village, and to number one. Moringa: about 27 g of complete protein per 100 g of dried leaf, growing fast in poor soil, harvestable several times a season — which is why relief organisations plant it first in malnutrition programmes.
 
-Therefore the butcher's counter isn't wrong, just small. Protein turns out to be something that grows — in beans, seeds, algae and leaves — for anyone who knows the one step each of them needs.
+The butcher's counter isn't wrong, just small. Protein turns out to be something that grows — in beans, seeds, algae and leaves — for anyone who knows the one step each of them needs.
 
 ## Beliefs that shift
 

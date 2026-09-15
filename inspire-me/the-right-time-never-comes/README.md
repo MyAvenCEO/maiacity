@@ -23,21 +23,21 @@ She is not the obvious candidate for any of this. She dislikes being the centre 
 
 The urge had been there since she was a girl. She filed it as a silly little childhood dream and assumed it would fade.
 
-**But** it didn't fade. College came, and she assumed a new dream would replace it somewhere along the way. None did. Year after year the same pull sat at the back of her mind, and every so often a spark of motivation arrived — and every time she found a reason not to go through with it.
+It didn't fade. College came, and she assumed a new dream would replace it somewhere along the way. None did. Year after year the same pull sat at the back of her mind, and every so often a spark of motivation arrived — and every time she found a reason not to go through with it.
 
 Ten years of that. She describes it, accurately, as a decade of experience in convincing herself not to chase it.
 
-The excuse was always the same shape: not yet, not the right time. **Therefore** the plan was to wait for circumstances to line up and for the guts to show up, at which point starting would be a reasonable thing to do rather than a frightening one.
+The excuse was always the same shape: not yet, not the right time. The plan was to wait for circumstances to line up and for the guts to show up, at which point starting would be a reasonable thing to do rather than a frightening one.
 
-**But** a moment like that has no mechanism for arriving. You will always find a reason to wait a little longer. You will probably never feel skilled enough, ready enough, good enough. Waiting on a future condition that has no way of becoming true is simply the more comfortable version of not doing it.
+A moment like that has no mechanism for arriving. You will always find a reason to wait a little longer. You will probably never feel skilled enough, ready enough, good enough. Waiting on a future condition that has no way of becoming true is simply the more comfortable version of not doing it.
 
 Underneath sat the real obstacle, and it was not a schedule. She had built the thing up so high in her head that she believed she needed the goal, the purpose and the strategy worked out before she was allowed to begin — that she had to know what she was doing before doing it. What she was protecting herself from was the embarrassment of learning in public.
 
-**Therefore** the fear was specific: people would make fun of her, she would feel stupid for trying.
+The fear was specific: people would make fun of her, she would feel stupid for trying.
 
 It didn't happen. Nothing much happened. A year in, she says a lot has gone on and not much has changed — no vindication, no collapse.
 
-**But** one thing is different, and it turns out to be the whole point. The what-if stopped nagging. She no longer has to push the creative urge back down, no longer has to call it a silly little dream, no longer has to wait for a right time that was never going to come.
+One thing is different, and it turns out to be the whole point. The what-if stopped nagging. She no longer has to push the creative urge back down, no longer has to call it a silly little dream, no longer has to wait for a right time that was never going to come.
 
 What she reports is pride, and she is careful about where it comes from. Not from having made it, and not from thinking the videos are good — she says plainly that she doesn't. Purely from having tried.
 

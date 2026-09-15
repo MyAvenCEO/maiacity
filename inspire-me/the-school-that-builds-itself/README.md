@@ -28,11 +28,11 @@ Apostolos grew up in Athens and spent years as a web designer in front of a scre
 
 The plan, at the start, was an eco community. That is the standard dream and it is the one they abandoned first.
 
-Because they looked at what they actually knew and found it wasn't enough to run one. Nobody there knew how to build a yurt, filter greywater, or feed fifty people off-grid. **Therefore** the goal changed: not a community, a school — train ourselves and other people, and maybe one day the graduates can build the community properly.
+Because they looked at what they actually knew and found it wasn't enough to run one. Nobody there knew how to build a yurt, filter greywater, or feed fifty people off-grid. The goal changed: not a community, a school — train ourselves and other people, and maybe one day the graduates can build the community properly.
 
 The first yurt is the proof. They stitched it together from several sets of online instructions and made, in his words, many many mistakes. It stood in the wrong spot for thirteen years. Two years ago they took it down, moved it, rebuilt it traditionally with fabrics crowdfunded from the village grandmothers, added a window and better insulation. Fifteen years old and still in service.
 
-**But** a school with no space cannot teach through a Greek winter. So they built the mega yurt — 120 m², four levels, every technique they had learned combined into one structure, basic shell up in twenty days and finished over a run of workshops. At its centre sits a rocket mass heater: the flue runs through a cob bench, the cob traps the heat, and forty-five minutes of fire warms the room for hours.
+A school with no space cannot teach through a Greek winter. So they built the mega yurt — 120 m², four levels, every technique they had learned combined into one structure, basic shell up in twenty days and finished over a run of workshops. At its centre sits a rocket mass heater: the flue runs through a cob bench, the cob traps the heat, and forty-five minutes of fire warms the room for hours.
 
 Everything else is the same logic applied outward. A solar shower for sunny days and a wood-fired one for the rest. Greywater through two beds of bamboo — the roots run parallel to the ground and make a filter layer, stone underneath — then out to the garden. Composting toilets into bins. A cellar dug two metres down because even with solar panels and a good fridge, fifty people need more cold storage than electricity can cheaply give.
 

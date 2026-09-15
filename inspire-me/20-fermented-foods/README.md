@@ -22,13 +22,13 @@ Cabbage and salt, left alone in a jar for a week, become one of the most studied
 
 That is the promise Homestead Roots opens with, and the contrast underneath it is the whole video: while the modern world pasteurised, sterilised and processed its food supply into something that keeps, older cultures did the opposite. They let food come alive.
 
-But almost nothing sold under those old names still is. The shelf-stable kraut in the dry-goods aisle is pasteurised and contains zero live bacteria. The supermarket pickle never fermented at all — its acidity is vinegar, poured in. The low-fat yogurt had its CLA stripped out alongside the fat.
+Almost nothing sold under those old names still is. The shelf-stable kraut in the dry-goods aisle is pasteurised and contains zero live bacteria. The supermarket pickle never fermented at all — its acidity is vinegar, poured in. The low-fat yogurt had its CLA stripped out alongside the fat.
 
-Therefore the video walks 20 living foods and, for each, the thing that separates the real from the counterfeit. Kimchi that sends live cultures in with garlic's prebiotic fibre to feed them. Kefir with 20–60 strains where commercial yogurt has two to seven. Miso, raw aged cheese, sourdough, beet kvass, tempeh, natto, buttermilk, wild fermented fruit.
+The video walks 20 living foods and, for each, the thing that separates the real from the counterfeit. Kimchi that sends live cultures in with garlic's prebiotic fibre to feed them. Kefir with 20–60 strains where commercial yogurt has two to seven. Miso, raw aged cheese, sourdough, beet kvass, tempeh, natto, buttermilk, wild fermented fruit.
 
 The mechanism repeats down the whole list. Fermentation is pre-digestion: it breaks down phytic acid in soy and grain, lactose in milk, gluten proteins in bread, and hands your gut something it can actually take apart.
 
-But heat undoes all of it. Miso goes into hot, never boiling, liquid. Spirulina stays below 60 °C and moringa below 70. Warm it up and you have the flavour without the thing you came for.
+Heat undoes all of it. Miso goes into hot, never boiling, liquid. Spirulina stays below 60 °C and moringa below 70. Warm it up and you have the flavour without the thing you came for.
 
 So he leaves you a test you can run with your hands, in any shop, in a second: if it isn't cold and it doesn't bubble when you open it, it isn't the food being described.
 

@@ -25,13 +25,13 @@ Nearly everyone who tries this has been handed techniques and never a mechanism,
 
 The problem is one level below the words. All day, the body is answering a single question: am I safe, or am I in survival mode?
 
-If the honest answer is shame, fear or hyper-vigilance, that is the signal — and no sentence said out loud overrides it. Therefore people can do everything right mentally and still keep the same relationships, the same money ceiling, the same loops, because the nervous system is loyal to what is familiar, not to what is desired.
+If the honest answer is shame, fear or hyper-vigilance, that is the signal — and no sentence said out loud overrides it. People can do everything right mentally and still keep the same relationships, the same money ceiling, the same loops, because the nervous system is loyal to what is familiar, not to what is desired.
 
-So the intention has to change: not wanting harder, but making safety familiar. When safety is familiar you stop choosing chaos; when self-worth is familiar you stop negotiating your value.
+The intention has to change: not wanting harder, but making safety familiar. When safety is familiar you stop choosing chaos; when self-worth is familiar you stop negotiating your value.
 
-But there is a second obstacle, and it sits in the thinking itself. Most of us don't think, we remember — replaying the past, or projecting it forward as fear and hope. Memory, however vivid, cannot produce anything that wasn't already in it.
+There is a second obstacle, and it sits in the thinking itself. Most of us don't think, we remember — replaying the past, or projecting it forward as fear and hope. Memory, however vivid, cannot produce anything that wasn't already in it.
 
-Therefore creation needs the present moment, and the way in isn't another technique. It's art: writing, painting, music, movement pull you out of memory and into direct experience.
+Creation needs the present moment, and the way in isn't another technique. It's art: writing, painting, music, movement pull you out of memory and into direct experience.
 
 Thought then sets direction — beliefs work like lenses, and the job is noticing the old ones rather than stacking new ones on top of them.
 

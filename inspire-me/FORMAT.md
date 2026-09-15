@@ -67,12 +67,14 @@ Every story follows the same beats, in this order:
 | **Obstacle**              | What stands in the way — usually more than one, in sequence.        |
 | **Solution**              | The turn that lands `shift.to`. The last line delivers it.          |
 
-Two rules keep the beats from becoming a list:
+The beats are a reference for the shape of the arc. They are never labelled on the page, and neither is the logic that connects them.
 
-- **Therefore / but, never "and then".** Each beat follows the previous one because of it (*therefore*) or against it (*but*). If two paragraphs could swap places, the arc is broken. Write those words on the page where they carry weight — "But waiting is what breaks them.", "Therefore the work aims downward."
+- **Each beat follows the last one because of it, or against it.** Never "and then". If two paragraphs could swap places, the arc is broken. This is the test you apply while writing — it is not something the reader should be able to see. Do not write "therefore" or "but" as beat markers, and never in bold. The sentence carries the turn on its own: a claim, then the thing that breaks it, then what that forces.
 - **The story answers the shift.** By the last paragraph, the reader has watched `shift.from` fail and `shift.to` arrive. Whoever reads only the story has still received the transformation.
 
-Length: 8–12 paragraphs, 1–3 sentences each. Short lines, plenty of air, concrete numbers from the source. No filler words (delve, leverage, unlock, elevate, seamless, game-changer).
+**Rhythm.** Never write evenly. Equal paragraph lengths, equal sentence lengths and matching section sizes are the signature of a machine, and a reader feels it before they can name it. Put a long, turning sentence next to a three-word one. Let one paragraph be a single line. Read it aloud, and if the cadence at the bottom matches the cadence at the top, rewrite it.
+
+Length: 8–12 paragraphs, mostly 1–3 sentences — then break that on purpose. Concrete numbers from the source. No filler words (delve, leverage, unlock, elevate, seamless, game-changer).
 
 ## Categories
 
@@ -146,10 +148,10 @@ language: <source language code — only if not English, e.g. de>
 - <Claim to verify, gap, or next research step.>
 
 Rules for the story — these matter most:
-- Connect every beat with THEREFORE or BUT, never "and then". Each paragraph follows from the last one or pushes against it, and those words appear on the page where they carry weight.
+- Every paragraph follows from the last one or pushes against it, never "and then". That logic is the test you apply while writing, NOT something the reader sees: never write "therefore" or "but" as a beat marker, and never in bold. Let the sentences carry the turn.
 - The story must answer the shift: the reader watches `from` fail and `to` arrive, and the final paragraph delivers `to`.
 - Open on a hook — a striking line, image or number. No throat-clearing.
-- 1–3 sentences per paragraph. Short lines, lots of air.
+- Vary the rhythm. Mostly 1–3 sentences per paragraph, then break it — a one-line paragraph, a long turning sentence against a short one. Even cadence reads as machine-written.
 - Use the source's own concrete numbers, names and scenes. Never invent facts it doesn't give.
 
 Other rules:

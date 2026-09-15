@@ -26,21 +26,21 @@ Around 40% of global greenhouse emissions come from making and running buildings
 
 And the building has barely started. Every decade, 750 million more people need housing, and in Africa an estimated 80% of the buildings that will be needed don't exist yet.
 
-But build all of that in reinforced concrete and it adds 70 billion tonnes of CO2, which puts climate neutrality out of reach before the first wall goes up.
+Build all of that in reinforced concrete and it adds 70 billion tonnes of CO2, which puts climate neutrality out of reach before the first wall goes up.
 
-Therefore the film goes looking for materials that grow, and finds them already working.
+The film goes looking for materials that grow, and finds them already working.
 
 In Berlin, a hybrid timber headquarters rises from 450 prefabricated wall elements and emits about 80% less CO2 than a steel-concrete twin; in Norway, Mjøstårnet stands 85 m tall in wood. What made that possible is cross-laminated timber — comparable to reinforced concrete in compressive strength, at a fifth of the weight.
 
-In Chiang Mai, a former doctor builds an entire school from bamboo and clay. Bamboo grows up to a metre a day and needs no watering. But cut too young it is food, not structure, and the huts crumble — so it is cut at four years when the starch is gone, then drilled, treated against pests and dried for weeks. The clay walls hold the temperature steady between 5 °C winters and 45 °C summers, which makes air conditioning unnecessary.
+In Chiang Mai, a former doctor builds an entire school from bamboo and clay. Bamboo grows up to a metre a day and needs no watering. Cut too young it is food, not structure, and the huts crumble, so it is cut at four years when the starch is gone, then drilled, treated against pests and dried for weeks. The clay walls hold the temperature steady between 5 °C winters and 45 °C summers, which makes air conditioning unnecessary.
 
 In a Stockholm lab, wood is made translucent: strip the lignin down to 2%, swap the trapped air for a bio-based polymer, and a 1.2 mm veneer transmits 90% of the light while storing heat like a thermal battery. In German labs, fungus is grown into blocks whose threads fuse wherever they meet. In Arles, salt crystals grown on metal grids by sun and wind over two weeks became 4,600 wall panels in a Gehry tower.
 
 The arithmetic is what turns all of this from aesthetics into strategy. Every cubic metre of wood holds about 300 kg of CO2 taken out of the air; one timber family house stores 42 tonnes and avoids 26 more. A Potsdam study: shift 90% of new building to timber by 2050 and the sector stores 73 gigatonnes — more than it emits.
 
-But doesn't that cost us the forests? No: primary forest stays off-limits, and nearly a billion hectares of already-cleared land are waiting to be replanted — greener planet and building material from the same move.
+Doesn't that cost us the forests? No: primary forest stays off-limits, and nearly a billion hectares of already-cleared land are waiting to be replanted — greener planet and building material from the same move.
 
-Therefore a building stops being a thing that emits and becomes a place to keep carbon. Whole cities, as Schellnhuber puts it, built out of air.
+A building stops being a thing that emits and becomes a place to keep carbon. Whole cities, as Schellnhuber puts it, built out of air.
 
 ## Beliefs that shift
 
