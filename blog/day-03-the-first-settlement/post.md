@@ -119,7 +119,7 @@ Every level so far was built with machines that came in on a truck: the excavato
 
 The last step is a works, on the hex next door, and the first thing it makes is the tractor.
 
-**LifeTrac** — the open-source tractor from Open Source Ecology's Global Village Construction Set. Fifty industrial machines, designs published for anyone to build: tractor, earth brick press, sawmill, power unit. Bolted together from standard steel and hydraulic parts, modular enough that the same power unit drives the brick press on Tuesday and the sawmill on Thursday.
+**[LifeTrac](https://opensourceecology.dozuki.com/c/LifeTrac)** — the open-source tractor from Open Source Ecology's Global Village Construction Set, documented build step by build step, currently at its sixth version. Fifty industrial machines, designs published for anyone to build: tractor, earth brick press, sawmill, power unit. Bolted together from standard steel and hydraulic parts, modular enough that the same power unit drives the brick press on Tuesday and the sawmill on Thursday.
 
 Open source is not the ideology here, it is the maintenance strategy. A machine whose drawings you hold is a machine you can repair in your own Werkstatt, in the same building where you learned to build it.
 
