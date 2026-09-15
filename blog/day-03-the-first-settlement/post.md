@@ -119,13 +119,15 @@ Every level so far was built with machines that came in on a truck: the excavato
 
 The last step is a works, on the hex next door, and the first thing it makes is the tractor.
 
-**[LifeTrac](https://opensourceecology.dozuki.com/c/LifeTrac)** — the open-source tractor from Open Source Ecology's Global Village Construction Set, documented build step by build step, currently at its sixth version. Fifty industrial machines, designs published for anyone to build: tractor, earth brick press, sawmill, power unit. Bolted together from standard steel and hydraulic parts, modular enough that the same power unit drives the brick press on Tuesday and the sawmill on Thursday.
+One machine, to begin with: **[LifeTrac](https://opensourceecology.dozuki.com/c/LifeTrac)**, the open-source tractor from Open Source Ecology, documented step by step and now in its sixth version. Bolted together from standard steel and hydraulic parts, with a detachable power unit and a frame built to be taken apart by whoever is standing next to it.
+
+It comes out of the Global Village Construction Set — fifty machines whose designs are published for anyone to build — and the rest of that set is for later levels of the works. The first factory makes tractors.
 
 Open source is not the ideology here, it is the maintenance strategy. A machine whose drawings you hold is a machine you can repair in your own Werkstatt, in the same building where you learned to build it.
 
 The works dome is 130 metres across and belongs to the settlement — theirs to own, staff, maintain and profit from. The other 40 hectares of that hex keep growing food, because a factory hex is still land.
 
-The brick press makes the walls of the next settlement. The sawmill cuts the timber for its domes. The tractor digs its swales. A hex that can build machines can build another hex.
+One tractor runs the swales, the beds, the timber and the earthworks of a hex this size. The second one built here goes to the next settlement, and the drawings go with it — which is how a hex that can build machines turns into a grid that can build hexes.
 
 Now the unit is complete: 216 people who house, feed and power themselves, and who make the machines the rest of the grid needs — with every hectare of it inside a boundary they can walk.
 
