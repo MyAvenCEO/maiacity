@@ -9,6 +9,7 @@
 <script lang="ts">
 	import { dev } from '$app/environment';
 	import { base } from '$app/paths';
+	import CoverArt from './CoverArt.svelte';
 	import type { PostMeta } from './types';
 
 	let {
@@ -33,9 +34,9 @@
 	const poster = $derived(post.cover ?? null);
 </script>
 
-{#if hasFilm || (coverOnly && poster)}
+{#if hasFilm || coverOnly}
 	<figure class="player" style:--aspect={post.videoAspect ?? '16 / 9'} style:--max-h={maxHeight}>
-		<div class="frame">
+		<div class="frame" class:flat={!poster}>
 			{#if hasFilm && playing}
 				{#if local}
 					<!-- svelte-ignore a11y_media_has_caption -->
@@ -50,19 +51,14 @@
 						allowfullscreen
 					></iframe>
 				{/if}
-			{:else if poster}
-				<img src="{base}{poster}" alt={post.coverAlt ?? post.title} />
+			{:else}
+				<CoverArt {post} eager />
 				{#if hasFilm}
 					<button type="button" onclick={() => (playing = true)}>
 						<span class="glyph" aria-hidden="true"></span>
 						<span class="label">Play</span>
 					</button>
 				{/if}
-			{:else}
-				<button type="button" class="bare" onclick={() => (playing = true)}>
-					<span class="glyph" aria-hidden="true"></span>
-					<span class="label">Play</span>
-				</button>
 			{/if}
 		</div>
 	</figure>
@@ -84,7 +80,14 @@
 		line-height: 0;
 	}
 
-	.frame :is(iframe, video, img) {
+	.frame.flat {
+		width: min(100%, 62rem);
+		aspect-ratio: var(--aspect, 16 / 9);
+		max-height: var(--max-h, 78vh);
+	}
+
+	.frame :is(iframe, video),
+	.frame :global(img) {
 		display: block;
 		width: auto;
 		max-width: 100%;
@@ -109,13 +112,6 @@
 		color: #fff;
 		cursor: pointer;
 		transition: background-color 180ms ease;
-	}
-
-	button.bare {
-		position: static;
-		width: min(100%, 60rem);
-		aspect-ratio: var(--aspect, 16 / 9);
-		background: var(--ink);
 	}
 
 	button:hover .glyph {

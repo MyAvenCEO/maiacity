@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { base } from '$app/paths';
+	import CoverArt from '$lib/blog/CoverArt.svelte';
 	import { categoryById } from '$lib/inspire-me/categories';
 
 	let { data } = $props();
@@ -29,9 +30,7 @@
 		{#each data.posts as post (post.slug)}
 			<li>
 				<a href="{base}/blog/{post.slug}">
-					{#if post.cover}
-						<div class="thumb"><img src="{base}{post.cover}" alt="" loading="lazy" /></div>
-					{/if}
+					<div class="thumb"><CoverArt {post} /></div>
 					<div class="body">
 						<p class="eyebrow">
 							{#if post.day != null}Day {String(post.day).padStart(2, '0')}&ensp;·&ensp;{/if}{formatted(
@@ -109,10 +108,9 @@
 		background: var(--cream);
 	}
 
-	.thumb img {
+	.thumb :global(img) {
 		width: 100%;
 		height: 100%;
-		object-fit: cover;
 	}
 
 	.body {

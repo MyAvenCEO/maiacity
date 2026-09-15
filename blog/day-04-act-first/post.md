@@ -6,8 +6,6 @@ author: avenSamuel
 authorImage: /samuel.jpg
 authorRole: Building maiaCITY
 date: 2026-09-15
-cover: /Day01/alp_tzIhSZCTOCiV6o5nO_g9jR0km3.jpg
-coverAlt: The middle of a dome — terraces, fruit trees, people who can all see the same space.
 excerpt: >-
   Every book tells you to find your why first. Sixty years of research says purpose arrives
   last — after the action, after the identity, after the belief. This is the actual order, and
