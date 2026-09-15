@@ -8,9 +8,12 @@ export interface PostMeta {
 	authorRole?: string;
 	date: string;
 	cover?: string;
+	video?: string;
+	videoLibrary?: string;
 	coverAlt?: string;
 	excerpt: string;
 	categories: string[];
+	draft?: boolean;
 	readingMinutes: number;
 }
 

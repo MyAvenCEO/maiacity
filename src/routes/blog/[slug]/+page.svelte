@@ -54,6 +54,18 @@
 			{/if}
 		</header>
 
+		{#if post.video && post.videoLibrary}
+			<figure class="player">
+				<iframe
+					src="https://iframe.mediadelivery.net/embed/{post.videoLibrary}/{post.video}?autoplay=false&preload=true"
+					title={post.title}
+					loading="lazy"
+					allow="accelerometer; gyroscope; autoplay; encrypted-media; picture-in-picture; fullscreen"
+					allowfullscreen
+				></iframe>
+			</figure>
+		{/if}
+
 		<div class="prose article">{@html post.html}</div>
 	</article>
 </main>
@@ -119,6 +131,32 @@
 		margin-top: 1.25rem;
 	}
 
+
+	.player {
+		width: min(62rem, calc(100vw - 3rem));
+		margin: 2.5rem 0 0;
+		margin-left: 50%;
+		transform: translateX(-50%);
+	}
+
+	.player iframe {
+		display: block;
+		width: 100%;
+		aspect-ratio: 16 / 9;
+		border: 0;
+		border-radius: var(--radius);
+		background: var(--ink);
+	}
+
+	@media (max-width: 820px) {
+		.player {
+			width: 100vw;
+		}
+
+		.player iframe {
+			border-radius: 0;
+		}
+	}
 
 	.article {
 		margin-top: 2.5rem;

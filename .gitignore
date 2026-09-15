@@ -21,3 +21,7 @@ Thumbs.db
 # Vite
 vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
+
+# Video masters live in Bunny Stream, not in git
+static/**/*.mp4
+static/**/*.mov

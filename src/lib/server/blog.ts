@@ -1,3 +1,4 @@
+import { dev } from '$app/environment';
 import { base } from '$app/paths';
 import { marked } from 'marked';
 import { parse as parseYaml } from 'yaml';
@@ -43,18 +44,23 @@ function parsePost(slug: string, raw: string): { meta: PostMeta; body: string } 
 			authorRole: optional(fm.authorRole),
 			date: String(fm.date ?? ''),
 			cover: optional(fm.cover),
+			video: optional(fm.video),
+			videoLibrary: optional(fm.videoLibrary),
 			coverAlt: optional(fm.coverAlt),
 			excerpt: String(fm.excerpt ?? '').trim(),
 			categories: Array.isArray(fm.categories) ? fm.categories.map(String) : [],
+			draft: fm.draft === true,
 			readingMinutes: Math.max(1, Math.round(body.split(/\s+/).length / 200))
 		},
 		body
 	};
 }
 
+// Drafts are visible while developing and never published.
 export function listPosts(): PostMeta[] {
 	return Object.entries(posts)
 		.map(([path, raw]) => parsePost(slugOf(path), raw).meta)
+		.filter((post) => dev || !post.draft)
 		.sort((a, b) => (b.day ?? 0) - (a.day ?? 0) || b.date.localeCompare(a.date));
 }
 
@@ -63,5 +69,6 @@ export function getPost(slug: string): Post | undefined {
 	if (raw === undefined) return undefined;
 
 	const { meta, body } = parsePost(slug, raw);
+	if (meta.draft && !dev) return undefined;
 	return { ...meta, html: asFigures(withBase(marked.parse(body, { async: false }))) };
 }
