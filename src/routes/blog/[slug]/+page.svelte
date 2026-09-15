@@ -119,9 +119,6 @@
 		margin-top: 1.25rem;
 	}
 
-	.cover {
-		margin: 2.5rem 0 0;
-	}
 
 	.article {
 		margin-top: 2.5rem;
@@ -147,7 +144,6 @@
 	}
 
 	/* Figures break out of the text column, staying centred on it. */
-	.cover,
 	.article :global(figure) {
 		width: min(62rem, calc(100vw - 3rem));
 		margin-block: 2.5rem;
@@ -155,7 +151,6 @@
 		transform: translateX(-50%);
 	}
 
-	.cover img,
 	.article :global(figure img) {
 		display: block;
 		width: 100%;
@@ -163,7 +158,6 @@
 		background: var(--paper);
 	}
 
-	.cover figcaption,
 	.article :global(figcaption) {
 		margin-top: 0.75rem;
 		font-size: 0.88rem;
@@ -173,17 +167,14 @@
 	}
 
 	@media (max-width: 820px) {
-		.cover,
 		.article :global(figure) {
 			width: 100vw;
 		}
 
-		.cover img,
 		.article :global(figure img) {
 			border-radius: 0;
 		}
 
-		.cover figcaption,
 		.article :global(figcaption) {
 			padding-inline: 1.5rem;
 			text-align: left;
