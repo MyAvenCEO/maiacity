@@ -10,7 +10,7 @@ cover: /DayNN/<file>.png
 coverAlt: <Caption for the cover image — shown under it.>
 excerpt: >-
   <1–2 sentences for the journal list and the meta description. A scene or a claim, not a summary.>
-categories: [<1–3 ids from src/lib/inspire-me/categories.ts>]
+categories: [<ids from src/lib/inspire-me/categories.ts — start with `game` for anything built in avenCITY>]
 ---
 
 <!--

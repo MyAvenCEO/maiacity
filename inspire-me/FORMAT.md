@@ -90,6 +90,7 @@ Length: 8–12 paragraphs, 1–3 sentences each. Short lines, plenty of air, con
 | `internet`     | Connectivity, networks, protocols                                    |
 | `ai`           | Models, agents, automation, tools                                    |
 | `code`         | Software, protocols, open source, tooling                            |
+| `game`         | avenCITY: building the city in game first                            |
 | `privacy`      | Identity, data sovereignty, security                                 |
 | `money`        | Currency, value, finance                                             |
 | `coop`         | How we organise together: governance, shared ownership, co-ops, DAOs |
@@ -120,7 +121,7 @@ authorUrl: <their channel, site or profile, if known>
 via: <where this copy was posted — only if someone other than the author posted it>
 published: <YYYY-MM-DD, only if known>
 added: <today, YYYY-MM-DD>
-categories: [<1–3 of: energy, water, food, health, housing, architecture, ecology, transport, logistics, internet, ai, code, privacy, money, coop, civic, education, self>]
+categories: [<1–3 of: energy, water, food, health, housing, architecture, ecology, transport, logistics, internet, ai, code, game, privacy, money, coop, civic, education, self>]
 hook: >-
   <1–2 sentences: a scene or tension that makes you want to read on — not a summary>
 shift:

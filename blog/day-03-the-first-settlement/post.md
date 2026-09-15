@@ -11,7 +11,7 @@ coverAlt: avenCITY world 85245. One hex picked out of 2,531 km² of untouched la
 excerpt: >-
   Twelve people in six tents, on 36.5 hectares. Five levels later the same ground carries 276
   and runs its own power, food and factory. This is the smallest piece of city that stands alone.
-categories: [architecture, food, energy]
+categories: [game, architecture, food, energy]
 ---
 
 Six tents, five metres across. Twelve people. One fire.
