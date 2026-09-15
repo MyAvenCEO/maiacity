@@ -32,7 +32,7 @@ So the hex gets designed as one organism, and it starts from one number per pers
 
 **1,000 m² of outdoor food forest. 500 m² of growing space under glass.** 1,500 m² of green per settler — two thirds of it open to the weather, one third working through winter.
 
-The indoor half is the part people underestimate. Beds under glass, year-round, in the same buildings people live in — that is what lets a northern hex carry its population instead of importing the difference in January.
+The indoor third is the part people underestimate. Beds under glass, year-round, in the same buildings people live in — that is what lets a northern hex carry its population instead of importing the difference in January.
 
 At 216 settlers the hex owes them 21.6 hectares of food forest and 10.8 hectares of glass. The buildings themselves take another 5: 3.5 hectares of housing domes and 1.5 for the one at the centre.
 
