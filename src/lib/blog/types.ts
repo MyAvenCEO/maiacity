@@ -9,6 +9,8 @@ export interface PostMeta {
 	date: string;
 	cover?: string;
 	video?: string;
+	videoLocal?: string;
+	videoAspect?: string;
 	videoLibrary?: string;
 	coverAlt?: string;
 	excerpt: string;

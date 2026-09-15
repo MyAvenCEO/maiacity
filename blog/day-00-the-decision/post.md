@@ -1,5 +1,5 @@
 ---
-title: The one decision I didn't dare to take for years
+title: The 1 million lives decision
 subtitle: Day 00 — where maiaCITY starts, and why it took this long to start it.
 day: 0
 author: avenSamuel
@@ -9,6 +9,8 @@ date: 2026-09-15
 cover: /Day0/day0_banner.png
 coverAlt: Day 00 — where maiaCITY starts.
 video: aa637c06-d462-48a2-8cb2-7bd39fac1cfe
+videoLocal: /Day0/DAY000_Intro.mp4
+videoAspect: '1 / 1'
 videoLibrary: 754181
 excerpt: >-
   Building a city is the kind of idea you keep in a drawer. Day 00 is the day it came out of

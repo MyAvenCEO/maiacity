@@ -45,6 +45,8 @@ function parsePost(slug: string, raw: string): { meta: PostMeta; body: string } 
 			date: String(fm.date ?? ''),
 			cover: optional(fm.cover),
 			video: optional(fm.video),
+			videoLocal: optional(fm.videoLocal),
+			videoAspect: optional(fm.videoAspect),
 			videoLibrary: optional(fm.videoLibrary),
 			coverAlt: optional(fm.coverAlt),
 			excerpt: String(fm.excerpt ?? '').trim(),

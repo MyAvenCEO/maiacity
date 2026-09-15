@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { dev } from '$app/environment';
 	import { base } from '$app/paths';
 	import { categoryById } from '$lib/inspire-me/categories';
 
@@ -32,8 +33,15 @@
 
 	{#if post}
 		<article class="pinned">
-			{#if post.video && post.videoLibrary}
-				<figure class="player">
+			{#if dev && post.videoLocal}
+				<!-- Local master, so the post can be test-run before Stream finishes encoding. -->
+				<figure class="player" style:--aspect={post.videoAspect ?? '16 / 9'}>
+					<video src="{base}{post.videoLocal}" controls playsinline preload="metadata">
+						<track kind="captions" />
+					</video>
+				</figure>
+			{:else if post.video && post.videoLibrary}
+				<figure class="player" style:--aspect={post.videoAspect ?? '16 / 9'}>
 					<iframe
 						src="https://iframe.mediadelivery.net/embed/{post.videoLibrary}/{post.video}?autoplay=false&preload=true"
 						title={post.title}
@@ -43,7 +51,7 @@
 					></iframe>
 				</figure>
 			{:else if post.cover}
-				<figure class="player">
+				<figure class="player" style:--aspect={post.videoAspect ?? '16 / 9'}>
 					<img src="{base}{post.cover}" alt={post.coverAlt ?? post.title} />
 				</figure>
 			{/if}
@@ -69,7 +77,6 @@
 
 				<div class="actions">
 					<a class="pill-btn" href="{base}/blog/{post.slug}">Read day {post.day ?? ''} →</a>
-					<a class="ghost-btn" href="{base}/game">Open the world</a>
 					<a class="ghost-btn" href="{base}/blog">All days</a>
 				</div>
 			</div>
@@ -124,10 +131,11 @@
 	}
 
 	.player iframe,
-	.player img {
+	.player img,
+	.player video {
 		display: block;
 		width: 100%;
-		aspect-ratio: 16 / 9;
+		aspect-ratio: var(--aspect, 16 / 9);
 		border: 0;
 		border-radius: calc(var(--radius) - 8px);
 		object-fit: cover;

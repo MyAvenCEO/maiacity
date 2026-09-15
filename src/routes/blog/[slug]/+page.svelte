@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { dev } from '$app/environment';
 	import { base } from '$app/paths';
 	import { categoryById } from '$lib/inspire-me/categories';
 
@@ -54,14 +55,21 @@
 			{/if}
 		</header>
 
-		{#if post.video && post.videoLibrary}
-			<figure class="player">
+		{#if dev && post.videoLocal}
+			<!-- Local master, so the post can be test-run before Stream finishes encoding. -->
+			<figure class="player" style:--aspect={post.videoAspect ?? '16 / 9'}>
+				<video src="{base}{post.videoLocal}" controls playsinline preload="metadata">
+						<track kind="captions" />
+					</video>
+			</figure>
+		{:else if post.video && post.videoLibrary}
+			<figure class="player" style:--aspect={post.videoAspect ?? '16 / 9'}>
 				<iframe
-					src="https://iframe.mediadelivery.net/embed/{post.videoLibrary}/{post.video}?autoplay=false&preload=true"
-					title={post.title}
-					loading="lazy"
-					allow="accelerometer; gyroscope; autoplay; encrypted-media; picture-in-picture; fullscreen"
-					allowfullscreen
+				src="https://iframe.mediadelivery.net/embed/{post.videoLibrary}/{post.video}?autoplay=false&preload=true"
+				title={post.title}
+				loading="lazy"
+				allow="accelerometer; gyroscope; autoplay; encrypted-media; picture-in-picture; fullscreen"
+				allowfullscreen
 				></iframe>
 			</figure>
 		{/if}
@@ -139,10 +147,11 @@
 		transform: translateX(-50%);
 	}
 
-	.player iframe {
+	.player iframe,
+	.player video {
 		display: block;
 		width: 100%;
-		aspect-ratio: 16 / 9;
+		aspect-ratio: var(--aspect, 16 / 9);
 		border: 0;
 		border-radius: var(--radius);
 		background: var(--ink);
@@ -153,7 +162,8 @@
 			width: 100vw;
 		}
 
-		.player iframe {
+		.player iframe,
+		.player video {
 			border-radius: 0;
 		}
 	}
