@@ -109,15 +109,25 @@ Power, intelligence and commons in one structure, in the middle, owned by everyo
 
 That is what closes the loop. Food from the ground it stands on, power and storage from its own roof, decisions and repair from its own people.
 
-## After Level 5 — the settlement takes on a works
+## After Level 5 — the settlement builds its own machines
 
-![The settlement's own solar works — a 130 m factory dome on the neighbouring hex it owns and runs.](/Day03/Overview%202.png)
+![The works dome on the neighbouring hex — 130 metres across, owned and run by the settlement next door.](/Day03/Overview%202.png)
 
-A settlement that only feeds and powers itself is a homestead. The last step is the one that makes it a piece of city: it takes on a works.
+A settlement that feeds and powers itself but cannot fix its own tractor is still on a leash.
 
-On the neighbouring hex sits a factory dome, 130 metres across, making solar panels. It belongs to the settlement next door — theirs to own, staff, maintain and profit from. The works dome takes 1.3 hectares; the other 40 keep growing food, because a factory hex is still land.
+Every level so far was built with machines that came in on a truck: the excavator moving earth for the swales, the loader placing the dome bases, the tractor that does everything else on 41 hectares. Rent them, and the settlement works to someone else's schedule. Buy them, and it owns a black box that only a dealer can open.
 
-Now the unit is complete: 216 people who house, feed and power themselves, and who make something the rest of the grid needs — with every hectare of it inside a boundary they can walk.
+The last step is a works, on the hex next door, and the first thing it makes is the tractor.
+
+**LifeTrac** — the open-source tractor from Open Source Ecology's Global Village Construction Set. Fifty industrial machines, designs published for anyone to build: tractor, earth brick press, sawmill, power unit. Bolted together from standard steel and hydraulic parts, modular enough that the same power unit drives the brick press on Tuesday and the sawmill on Thursday.
+
+Open source is not the ideology here, it is the maintenance strategy. A machine whose drawings you hold is a machine you can repair in your own Werkstatt, in the same building where you learned to build it.
+
+The works dome is 130 metres across and belongs to the settlement — theirs to own, staff, maintain and profit from. The other 40 hectares of that hex keep growing food, because a factory hex is still land.
+
+The brick press makes the walls of the next settlement. The sawmill cuts the timber for its domes. The tractor digs its swales. A hex that can build machines can build another hex.
+
+Now the unit is complete: 216 people who house, feed and power themselves, and who make the machines the rest of the grid needs — with every hectare of it inside a boundary they can walk.
 
 > A city is not a plan drawn above the settlements. It is what happens when enough of them can stand alone — and then choose to trade.
 
