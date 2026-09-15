@@ -153,17 +153,13 @@
 		line-height: 1.45;
 	}
 
-	/* Figures break out of the text column and go edge to edge on phones. */
+	/* Figures break out of the text column, staying centred on it. */
 	.cover,
 	.article :global(figure) {
-		margin-inline: calc(50% - 50vw + 1.5rem);
-		width: calc(100vw - 3rem);
-		max-width: 62rem;
-	}
-
-	.cover,
-	.article :global(figure) {
+		width: min(62rem, calc(100vw - 3rem));
 		margin-block: 2.5rem;
+		margin-left: 50%;
+		transform: translateX(-50%);
 	}
 
 	.cover img,
@@ -186,8 +182,7 @@
 	@media (max-width: 820px) {
 		.cover,
 		.article :global(figure) {
-			margin-inline: -1.5rem;
-			width: calc(100% + 3rem);
+			width: 100vw;
 		}
 
 		.cover img,
