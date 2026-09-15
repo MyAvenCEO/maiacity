@@ -147,10 +147,19 @@
 		transform: translateX(-50%);
 	}
 
+	.player {
+		display: flex;
+		justify-content: center;
+	}
+
 	.player iframe,
 	.player video {
 		display: block;
-		width: 100%;
+		width: auto;
+		max-width: 100%;
+		height: auto;
+		/* a square film would otherwise run past the fold */
+		max-height: 78vh;
 		aspect-ratio: var(--aspect, 16 / 9);
 		border: 0;
 		border-radius: var(--radius);

@@ -1,5 +1,5 @@
 ---
-title: The 1 million lives decision
+title: The 1 million lives decision I almost didn't dare to take
 subtitle: Day 00 — where maiaCITY starts, and why it took this long to start it.
 day: 0
 author: avenSamuel

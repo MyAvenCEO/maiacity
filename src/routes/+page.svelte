@@ -130,11 +130,19 @@
 		margin: 0;
 	}
 
+	.player {
+		display: flex;
+		justify-content: center;
+	}
+
 	.player iframe,
 	.player img,
 	.player video {
 		display: block;
-		width: 100%;
+		width: auto;
+		max-width: 100%;
+		height: auto;
+		max-height: 72vh;
 		aspect-ratio: var(--aspect, 16 / 9);
 		border: 0;
 		border-radius: calc(var(--radius) - 8px);
