@@ -30,7 +30,7 @@ A settlement that needs a supply chain to exist is not a settlement; it's a subu
 
 So the hex gets designed as one organism, and it starts from one number per person rather than from a drawing.
 
-**1,000 m² of outdoor food forest. 500 m² of growing space under glass.** 1,500 m² of green per settler, half of it open to the weather and half of it working through winter.
+**1,000 m² of outdoor food forest. 500 m² of growing space under glass.** 1,500 m² of green per settler — two thirds of it open to the weather, one third working through winter.
 
 The indoor half is the part people underestimate. Beds under glass, year-round, in the same buildings people live in — that is what lets a northern hex carry its population instead of importing the difference in January.
 
