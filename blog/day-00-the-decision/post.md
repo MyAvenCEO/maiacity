@@ -37,6 +37,6 @@ That is the one I avoided. Privately the plan stays clean. Published, it becomes
 
 What changed is not conviction — that was never in question. It is that the cost finally landed on the right side of the ledger: another three years of a clean plan in a drawer is worth less than one year of a rough one in the open.
 
-So this is day zero. From here it gets documented — the game build, the numbers that turn out wrong, the ones that survive, and the settlements as they grow from twelve people to a place you could live in.
+So this is day zero. From here it gets documented — the game build, the numbers that turn out wrong, the ones that survive, and a city that grows from one founder to a million co-founders, every one of them building and owning what they help create.
 
 The city does not exist yet. The journal does, and that was the decision.
