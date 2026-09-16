@@ -5,7 +5,6 @@
 	import '@fontsource-variable/dm-sans/opsz.css';
 	import '@fontsource-variable/fraunces/opsz.css';
 	import '../app.css';
-	import favicon from '$lib/assets/favicon.svg';
 	import { page } from '$app/state';
 	import { socials } from '$lib/social';
 	import SiteFooter from '$lib/SiteFooter.svelte';
@@ -34,10 +33,6 @@
 	const isActive = (href: string) =>
 		href === (base || '/') ? page.url.pathname === (base || '/') : page.url.pathname.startsWith(href);
 </script>
-
-<svelte:head>
-	<link rel="icon" href={favicon} />
-</svelte:head>
 
 {#if !bare}
 	<header class="wrap">
