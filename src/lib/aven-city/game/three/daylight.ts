@@ -37,7 +37,7 @@ const SKY_STOPS: Array<[number, string]> = [
 	[17, '#cde9ec'],
 	[19, '#e8b48c'],
 	// blue hour: the few minutes after sunset when the whole sky turns blue
-	[19.6, '#6f84b8'],
+	[19.9, '#6f84b8'],
 	[20.5, '#3d3f63'],
 	[22, '#101a2e'],
 	[24, '#101a2e']
@@ -120,7 +120,9 @@ export function createDaylight(scene: THREE.Scene, options: DaylightOptions = {}
 		sun.color.copy(sunColor)
 
 		// daylight fades out as the sun sets; a cold fill keeps night readable
-		const day = Math.max(0, Math.min(1, elevation * 3.4))
+		// full light until the sun is low, and still generous in the last
+		// minutes before it sets — golden hour should glow, not go dim
+		const day = Math.max(0, Math.min(1, elevation * 6.5))
 		sun.intensity = 0.12 + day * 2.0
 		sun.visible = elevation > -0.12
 		disc.visible = elevation > -0.05

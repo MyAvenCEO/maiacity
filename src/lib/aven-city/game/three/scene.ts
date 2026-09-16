@@ -146,13 +146,10 @@ export function createScene(canvas: HTMLCanvasElement, options: SceneOptions = {
 	scene.fog = new THREE.Fog(SKY, 130, 320)
 
 	const camera = new THREE.PerspectiveCamera(38, 1, 0.1, 900)
-	// the opening shot is cinematic, not a map view: low over the board, a
-	// few degrees above the horizon, looking across the island toward the
-	// sea — so the first thing you see is domes against the sky, at eye level
+	// placeholder until the world exists — frameOpening() sets the real shot
 	camera.position.set(7, 2.8, 15)
 
 	const rig = createCameraRig(camera, canvas, {
-		target: new THREE.Vector3(-2, 0.9, -5),
 		// close enough to stand among the domes of a single hex
 		minDistance: 0.35,
 		maxDistance: 200,
@@ -273,6 +270,33 @@ export function createScene(canvas: HTMLCanvasElement, options: SceneOptions = {
 		return out
 	}
 
+	/** the hour last set, so the opening shot can face the sun */
+	let hourNow = 12
+
+	/**
+	 * The opening shot: close on a level 5 dome cell, low, looking straight
+	 * into the low sun — so it sits in the middle of the frame, far away,
+	 * behind the domes. Runs once per world; after that the camera is yours.
+	 */
+	function frameOpening(tiles: readonly HexTile[]): void {
+		if (!world) return
+		const byKey = new Map(tiles.map((t) => [key(t.q, t.r), t]))
+		const pick =
+			Object.entries(saved.buildings).find(([, kind]) => kind === 'DOME5') ??
+			Object.entries(saved.buildings).find(([, kind]) => kind === 'DOME4')
+		const tile = pick ? byKey.get(pick[0]) : undefined
+		const gx = world.group.position.x
+		const gz = world.group.position.z
+		const target = new THREE.Vector3(tile ? tile.x + gx : 0, 0.75, tile ? tile.z + gz : 0)
+		// the same azimuth the daylight uses, so "toward the sun" is exact
+		const az = ((hourNow - 5) / 15) * Math.PI * 0.9 + 0.35
+		const toSun = new THREE.Vector3(Math.cos(az), 0, Math.sin(az))
+		controls.target.copy(target)
+		camera.position.copy(target).addScaledVector(toSun, -2.3)
+		camera.position.y = 1.05
+		controls.update()
+	}
+
 	function restore(seed: number, tiles: readonly HexTile[]): void {
 		saveKey = `avencity.world.${seed}.${MAP_SIZE}.v2`
 		saved = { buildings: {} }
@@ -329,6 +353,7 @@ export function createScene(canvas: HTMLCanvasElement, options: SceneOptions = {
 		world.group.position.z = -(minZ + maxZ) / 2
 		scene.add(world.group)
 		restore(seed, map.tiles)
+		frameOpening(map.tiles)
 		selection = []
 		showSelection()
 	}
@@ -522,7 +547,10 @@ export function createScene(canvas: HTMLCanvasElement, options: SceneOptions = {
 		stats() {
 			return world?.stats() ?? EMPTY_STATS
 		},
-		setHour: daylight.setHour,
+		setHour(hour) {
+			hourNow = hour
+			daylight.setHour(hour)
+		},
 		dispose(): void {
 			cancelAnimationFrame(raf)
 			canvas.removeEventListener('pointerdown', onPointerDown)
