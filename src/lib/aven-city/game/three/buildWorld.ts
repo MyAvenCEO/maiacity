@@ -1415,7 +1415,7 @@ interface FactorySpec {
 
 export const FACTORIES: Record<FactoryKind, FactorySpec> = {
 	SOLAR: {
-		label: 'Solar Works',
+		label: 'Solar',
 		output: 'solar panels',
 		diameterM: 130,
 		// a third smaller, then a quarter smaller again — a works should read
@@ -1426,7 +1426,7 @@ export const FACTORIES: Record<FactoryKind, FactorySpec> = {
 	},
 	// the same shell and footprint for every works — only the trade changes
 	POWER_CUBE: {
-		label: 'Power Cube Works',
+		label: 'Power Cube',
 		output: 'Power Cubes',
 		diameterM: 130,
 		scale: 0.19,
@@ -1434,7 +1434,7 @@ export const FACTORIES: Record<FactoryKind, FactorySpec> = {
 		build: factoryDome
 	},
 	LIFETRAC: {
-		label: 'LifeTrac Works',
+		label: 'LifeTrac',
 		output: 'LifeTrac tractors',
 		diameterM: 130,
 		scale: 0.19,
@@ -1442,7 +1442,7 @@ export const FACTORIES: Record<FactoryKind, FactorySpec> = {
 		build: factoryDome
 	},
 	BAMBOO: {
-		label: 'Bamboo Fabric Works',
+		label: 'Bamboo Fabric',
 		output: 'bamboo fabric',
 		diameterM: 130,
 		scale: 0.19,
@@ -1450,7 +1450,7 @@ export const FACTORIES: Record<FactoryKind, FactorySpec> = {
 		build: factoryDome
 	},
 	HEMP: {
-		label: 'Hemp Stone Works',
+		label: 'Hemp Stone',
 		output: 'hempcrete blocks',
 		diameterM: 130,
 		scale: 0.19,

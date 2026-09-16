@@ -38,7 +38,7 @@ let canvas: HTMLCanvasElement | undefined = $state()
 let api: SceneApi | undefined
 // One world, the same one every visit: the journal writes about this island,
 // so a reroll button would make every screenshot unreproducible.
-const seed = 85245
+const seed = 20260916
 /** every hex currently selected — one from a click, many from a shift-drag */
 let selected: HexTile[] = $state([])
 /** bumped whenever a building lands, so the rail and the count re-read */

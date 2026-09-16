@@ -145,11 +145,11 @@ One works is the minimum, not the plan.
 
 Every dome cell owns at least one works dome, built close enough to walk to, and most will grow more. The shell is the same each time — 130 metres, one storey of stone under a shallow dome. What changes is the trade inside it.
 
-- **Solar Works** — panels for its own roofs, and for the next settlement's.
-- **Power Cube Works** — the Power Cube, Open Source Ecology's self-contained hydraulic power unit: the engine that drives LifeTrac and most of the machines that come after it.
-- **LifeTrac Works** — the tractor itself.
-- **Bamboo Fabric Works** — cane from the edge of the food forest, turned into fibre and cloth.
-- **Hemp Stone Works** — hempcrete: hemp and lime, cast into blocks for the walls of the next domes.
+- **Solar** — panels for its own roofs, and for the next settlement's.
+- **Power Cube** — the Power Cube, Open Source Ecology's self-contained hydraulic power unit: the engine that drives LifeTrac and most of the machines that come after it.
+- **LifeTrac** — the tractor itself.
+- **Bamboo Fabric** — cane from the edge of the food forest, turned into fibre and cloth.
+- **Hemp Stone** — hempcrete: hemp and lime, cast into blocks for the walls of the next domes.
 
 Co-location is the whole idea. The land that grows the hemp, the works that turns it into stone and the dome cell that builds with it are a short walk apart. Materials never have to leave the place that uses them.
 

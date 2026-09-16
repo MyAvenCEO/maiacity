@@ -134,7 +134,8 @@ function makeMarquee(parent: HTMLElement): HTMLDivElement {
 
 export function createScene(canvas: HTMLCanvasElement, options: SceneOptions = {}): SceneApi {
 	const renderer = new THREE.WebGLRenderer({ canvas, antialias: true })
-	renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5))
+	// 1.25 is where the extra pixels stop showing and keep costing
+	renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.25))
 	renderer.shadowMap.enabled = true
 	renderer.shadowMap.type = THREE.PCFShadowMap
 	renderer.toneMapping = THREE.ACESFilmicToneMapping
@@ -144,9 +145,10 @@ export function createScene(canvas: HTMLCanvasElement, options: SceneOptions = {
 	scene.background = new THREE.Color(SKY)
 	scene.fog = new THREE.Fog(SKY, 160, 390)
 
-	const camera = new THREE.PerspectiveCamera(38, 1, 0.1, 2600)
-	// framed for the 470-hex island; scale with √MAP_SIZE if that changes
-	camera.position.set(49, 48, 66)
+	const camera = new THREE.PerspectiveCamera(38, 1, 0.1, 900)
+	// framed for the 470-hex island, a little closer than the whole of it;
+	// scale with √MAP_SIZE if that changes
+	camera.position.set(39, 38, 53)
 
 	const rig = createCameraRig(camera, canvas, {
 		// close enough to stand among the domes of a single hex
@@ -159,10 +161,17 @@ export function createScene(canvas: HTMLCanvasElement, options: SceneOptions = {
 	})
 	const controls = rig.controls
 
-	const daylight = createDaylight(scene, { shadowExtent: 90, shadowFar: 280 })
+	// the shadow box only has to cover the island; a tight box spends its
+	// texels on the domes instead of the sea, so a smaller map looks the same
+	const daylight = createDaylight(scene, {
+		shadowExtent: 36,
+		shadowFar: 200,
+		shadowMapSize: 1024
+	})
 
 	// the sea — simple faceted low-poly, static
-	const sea = buildSimpleSea(1700)
+	// only as far as the fog lets you see
+	const sea = buildSimpleSea(800)
 	scene.add(sea)
 
 	// selection rings: one instanced mesh, so selecting a hundred hexes costs
