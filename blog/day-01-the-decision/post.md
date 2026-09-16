@@ -8,8 +8,8 @@ authorRole: Building maiaCITY
 date: 2026-09-09
 cover: /Day0/day0_banner.png
 coverAlt: Day 01 — press play.
-video: aa637c06-d462-48a2-8cb2-7bd39fac1cfe
-videoLocal: /Day0/DAY000_Intro.mp4
+video: e6cac7a1-def6-494f-9c6e-a4c20ace7dd6
+videoLocal: /Day0/DAY0001_TheDecision.mp4
 videoAspect: '1 / 1'
 videoLibrary: 754181
 excerpt: >-
