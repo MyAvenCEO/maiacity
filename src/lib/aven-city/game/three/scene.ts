@@ -143,17 +143,17 @@ export function createScene(canvas: HTMLCanvasElement, options: SceneOptions = {
 
 	const scene = new THREE.Scene()
 	scene.background = new THREE.Color(SKY)
-	scene.fog = new THREE.Fog(SKY, 160, 390)
+	scene.fog = new THREE.Fog(SKY, 130, 320)
 
 	const camera = new THREE.PerspectiveCamera(38, 1, 0.1, 900)
-	// framed for the 470-hex island, a little closer than the whole of it;
+	// framed for the 313-hex island, a little closer than the whole of it;
 	// scale with √MAP_SIZE if that changes
-	camera.position.set(39, 38, 53)
+	camera.position.set(32, 31, 43)
 
 	const rig = createCameraRig(camera, canvas, {
 		// close enough to stand among the domes of a single hex
 		minDistance: 0.35,
-		maxDistance: 240,
+		maxDistance: 200,
 		// eye height stays above the board, so you can walk the island but
 		// never end up under it looking at the sea from below
 		floorY: HEX_HEIGHT + 0.12,
@@ -164,7 +164,7 @@ export function createScene(canvas: HTMLCanvasElement, options: SceneOptions = {
 	// the shadow box only has to cover the island; a tight box spends its
 	// texels on the domes instead of the sea, so a smaller map looks the same
 	const daylight = createDaylight(scene, {
-		shadowExtent: 36,
+		shadowExtent: 30,
 		shadowFar: 200,
 		shadowMapSize: 1024
 	})
@@ -247,9 +247,9 @@ export function createScene(canvas: HTMLCanvasElement, options: SceneOptions = {
 	}
 
 	/**
-	 * A new island never opens empty: 50 domes stand on it already, placed from
-	 * the seed so every visitor starts from the same one. Forty dome cells at
-	 * every level, and ten works — two of each trade.
+	 * A new island never opens empty: 100 domes stand on it already, placed
+	 * from the seed so every visitor starts from the same one. Eighty dome
+	 * cells at every level, and twenty works — four of each trade.
 	 */
 	function seedSettlements(seed: number, tiles: readonly HexTile[]): Record<string, PlacedKind> {
 		const rng = makeRng((seed ^ 0x5eed5) >>> 0)
@@ -260,8 +260,8 @@ export function createScene(canvas: HTMLCanvasElement, options: SceneOptions = {
 			;[open[i], open[j]] = [open[j], open[i]]
 		}
 		const kinds: PlacedKind[] = [
-			...Array.from({ length: 40 }, () => rng.pick(BUILD_ORDER)),
-			...FACTORY_KINDS.flatMap((k) => [k, k])
+			...Array.from({ length: 80 }, () => rng.pick(BUILD_ORDER)),
+			...FACTORY_KINDS.flatMap((k) => [k, k, k, k])
 		]
 		const out: Record<string, PlacedKind> = {}
 		for (const [i, kind] of kinds.entries()) {
