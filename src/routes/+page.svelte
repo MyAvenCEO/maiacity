@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { base } from '$app/paths';
 	import Player from '$lib/blog/Player.svelte';
+	import Manifesto from '$lib/Manifesto.svelte';
 	import { categoryById } from '$lib/inspire-me/categories';
 
 	let { data } = $props();
@@ -19,19 +20,14 @@
 
 <svelte:head>
 	<title>maiaCITY</title>
-	<meta name="description" content={post?.excerpt ?? 'maiaCITY — building a city, game first.'} />
+	<meta name="description" content="We were never built to survive. We were built to thrive." />
 </svelte:head>
 
 <main class="wrap">
-	<section class="hero">
-		<p class="eyebrow"><span class="dot"></span> Building in public</p>
-		<h1>maia<span>CITY</span></h1>
-		<p class="lede">
-			One million founders, one city, sixteen years. Built in a game first, then in soil.
-		</p>
-	</section>
+	<Manifesto />
 
 	{#if post}
+		<p class="start eyebrow">Where it starts</p>
 		<article class="pinned">
 			<Player {post} maxHeight="72vh" coverOnly />
 
@@ -65,33 +61,12 @@
 
 <style>
 	main {
-		padding-block: 3.5rem 6rem;
+		padding-block: 2.5rem 6rem;
 	}
 
-	.dot {
-		display: inline-block;
-		width: 0.5rem;
-		height: 0.5rem;
-		margin-right: 0.35rem;
-		border-radius: 50%;
-		background: var(--mustard);
-	}
-
-	h1 {
-		margin: 1rem 0 0;
-		font-size: clamp(3.5rem, 11vw, 7.5rem);
-		font-weight: 300;
-	}
-
-	h1 span {
-		font-weight: 600;
-	}
-
-	.lede {
-		max-width: 34ch;
-		margin: 1.25rem 0 0;
-		font-size: 1.2rem;
-		color: var(--ink-soft);
+	.start {
+		margin: 4.5rem 0 1.25rem;
+		text-align: center;
 	}
 
 	.pinned {
@@ -99,7 +74,6 @@
 		grid-template-columns: 1.15fr 1fr;
 		align-items: center;
 		gap: 2.5rem;
-		margin-top: 3.5rem;
 		padding: 1.25rem;
 		border-radius: var(--radius);
 		background: var(--paper);
