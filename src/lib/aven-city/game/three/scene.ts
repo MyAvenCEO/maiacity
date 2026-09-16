@@ -146,11 +146,13 @@ export function createScene(canvas: HTMLCanvasElement, options: SceneOptions = {
 	scene.fog = new THREE.Fog(SKY, 130, 320)
 
 	const camera = new THREE.PerspectiveCamera(38, 1, 0.1, 900)
-	// framed for the 313-hex island, a little closer than the whole of it;
-	// scale with √MAP_SIZE if that changes
-	camera.position.set(32, 31, 43)
+	// the opening shot is cinematic, not a map view: low over the board, a
+	// few degrees above the horizon, looking across the island toward the
+	// sea — so the first thing you see is domes against the sky, at eye level
+	camera.position.set(7, 2.8, 15)
 
 	const rig = createCameraRig(camera, canvas, {
+		target: new THREE.Vector3(-2, 0.9, -5),
 		// close enough to stand among the domes of a single hex
 		minDistance: 0.35,
 		maxDistance: 200,

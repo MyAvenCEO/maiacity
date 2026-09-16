@@ -2782,6 +2782,12 @@ export function factoryDome(rng: Rng, kind: FactoryKind): THREE.Group {
 	const crown = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.2, 0.12, 8), facet(STEEL))
 	crown.position.y = DECK_Y + R * 0.5 - 0.02
 	g.add(crown)
+
+	// what the works makes, set on its crown like a sign — sized to the
+	// platform, so a glance tells you the trade without reading a label
+	const product = productModel(kind)
+	product.position.y = crown.position.y + 0.06
+	g.add(product)
 	const stack = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.06, 0.26, 6), facet(STEEL))
 	stack.position.set(0.34, DECK_Y + R * 0.44, -0.2)
 	g.add(stack)
@@ -2877,35 +2883,99 @@ function lifeTracApron(g: THREE.Group, rng: Rng, R: number): void {
 	for (let i = 0; i < 2; i++) {
 		const ang = Math.PI * 0.8 + i * Math.PI * 0.45 + rng.jitter(0, 0.08)
 		const [x, z] = onApron(R, ang, 1.28)
-		const t = new THREE.Group()
-		const body = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.1, 0.2), facet('#6f9a3e'))
-		body.position.y = 0.13
-		t.add(body)
-		const cab = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.1, 0.16), facet('#3a3f45'))
-		cab.position.set(-0.06, 0.23, 0)
-		t.add(cab)
-		// the loader arms reaching forward
-		for (const side of [-1, 1]) {
-			const arm = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.03, 0.03), facet('#6f9a3e'))
-			arm.position.set(0.2, 0.16, side * 0.09)
-			arm.rotation.z = -0.35
-			t.add(arm)
-		}
-		const bucket = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.08, 0.24), facet('#3a3f45'))
-		bucket.position.set(0.32, 0.08, 0)
-		t.add(bucket)
-		for (const wx of [-0.1, 0.1]) {
-			for (const wz of [-0.12, 0.12]) {
-				const wheel = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.07, 0.05, 10), facet('#2b2b2b'))
-				wheel.rotation.x = Math.PI / 2
-				wheel.position.set(wx, 0.07, wz)
-				t.add(wheel)
-			}
-		}
+		const t = tractorModel()
 		t.position.set(x, 0, z)
 		t.rotation.y = -ang + Math.PI / 2
 		g.add(t)
 	}
+}
+
+/** A LifeTrac: body, cab, loader arms and bucket on four wheels, ~0.35 long. */
+function tractorModel(): THREE.Group {
+	const t = new THREE.Group()
+	const body = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.1, 0.2), facet('#6f9a3e'))
+	body.position.y = 0.13
+	t.add(body)
+	const cab = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.1, 0.16), facet('#3a3f45'))
+	cab.position.set(-0.06, 0.23, 0)
+	t.add(cab)
+	// the loader arms reaching forward
+	for (const side of [-1, 1]) {
+		const arm = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.03, 0.03), facet('#6f9a3e'))
+		arm.position.set(0.2, 0.16, side * 0.09)
+		arm.rotation.z = -0.35
+		t.add(arm)
+	}
+	const bucket = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.08, 0.24), facet('#3a3f45'))
+	bucket.position.set(0.32, 0.08, 0)
+	t.add(bucket)
+	for (const wx of [-0.1, 0.1]) {
+		for (const wz of [-0.12, 0.12]) {
+			const wheel = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.07, 0.05, 10), facet('#2b2b2b'))
+			wheel.rotation.x = Math.PI / 2
+			wheel.position.set(wx, 0.07, wz)
+			t.add(wheel)
+		}
+	}
+	return t
+}
+
+/**
+ * The product a works makes, at the size of its crown platform: nothing
+ * wider than the platform's ~0.32 top, nothing towering over it.
+ */
+function productModel(kind: FactoryKind): THREE.Group {
+	const p = new THREE.Group()
+	if (kind === 'SOLAR') {
+		const panel = new THREE.Mesh(new THREE.BoxGeometry(0.26, 0.02, 0.17), facet('#22304a'))
+		panel.position.y = 0.08
+		panel.rotation.x = -0.42
+		p.add(panel)
+		const glint = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.005, 0.13), facet('#8fd3e8'))
+		glint.position.set(0, 0.092, -0.004)
+		glint.rotation.x = -0.42
+		p.add(glint)
+		for (const sx of [-0.1, 0.1]) {
+			const leg = new THREE.Mesh(new THREE.BoxGeometry(0.02, 0.08, 0.02), facet(STEEL))
+			leg.position.set(sx, 0.04, 0.03)
+			p.add(leg)
+		}
+	} else if (kind === 'POWER_CUBE') {
+		const cube = new THREE.Mesh(new THREE.BoxGeometry(0.17, 0.17, 0.17), facet('#e0892a'))
+		cube.position.y = 0.085
+		p.add(cube)
+		const frame = new THREE.Mesh(new THREE.BoxGeometry(0.19, 0.02, 0.19), facet('#3a3f45'))
+		frame.position.y = 0.18
+		p.add(frame)
+	} else if (kind === 'LIFETRAC') {
+		const t = tractorModel()
+		// 0.35 long at full size; 0.8 brings it inside the platform
+		t.scale.setScalar(0.8)
+		t.position.x = -0.1
+		p.add(t)
+	} else if (kind === 'BAMBOO') {
+		const bolt = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 0.24, 10), facet('#e6dfbf'))
+		bolt.rotation.z = Math.PI / 2
+		bolt.position.set(0, 0.05, 0.05)
+		p.add(bolt)
+		for (const [x, h] of [[-0.07, 0.22], [0, 0.26], [0.07, 0.2]] as const) {
+			const cane = new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.014, h, 5), facet('#b8c46a'))
+			cane.position.set(x, h / 2, -0.06)
+			p.add(cane)
+		}
+	} else {
+		for (let l = 0; l < 2; l++) {
+			for (let b = 0; b < 2; b++) {
+				const block = new THREE.Mesh(
+					new THREE.BoxGeometry(0.12, 0.07, 0.2),
+					facet(l % 2 ? '#e4dbc2' : '#d6c9a6')
+				)
+				block.position.set(-0.063 + b * 0.126, 0.035 + l * 0.072, 0)
+				p.add(block)
+			}
+		}
+	}
+	return p
 }
 
 /** Cut bamboo stood in bundles, and bolts of the fabric woven from it. */

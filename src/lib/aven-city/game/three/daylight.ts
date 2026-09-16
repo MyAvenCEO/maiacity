@@ -36,6 +36,8 @@ const SKY_STOPS: Array<[number, string]> = [
 	[7.5, '#cde9ec'],
 	[17, '#cde9ec'],
 	[19, '#e8b48c'],
+	// blue hour: the few minutes after sunset when the whole sky turns blue
+	[19.6, '#6f84b8'],
 	[20.5, '#3d3f63'],
 	[22, '#101a2e'],
 	[24, '#101a2e']

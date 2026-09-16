@@ -5,9 +5,11 @@
  * world always show the same light — set dusk while styling a biome and the
  * island is at dusk when you go back to it.
  */
-const STORAGE_KEY = 'avencity.hour'
+// v2: everyone meets the island at blue hour once, whatever they set before
+const STORAGE_KEY = 'avencity.hour.v2'
 
-const DEFAULT_HOUR = 12
+// blue hour: the sun just under the horizon, the sky gone lilac and cool
+const DEFAULT_HOUR = 19.6
 
 function initial(): number {
 	if (typeof localStorage === 'undefined') return DEFAULT_HOUR
