@@ -28,6 +28,7 @@ export const categories: Category[] = [
 	{ id: 'coop', label: 'Co-op', color: '#d9a5b3', blurb: 'Governance, shared ownership, co-ops, DAOs' },
 	{ id: 'civic', label: 'Civic', color: '#c2b49b', blurb: 'Law, rights, citizenship, residency' },
 	{ id: 'education', label: 'Education', color: '#e8d27f', blurb: 'Learning, skills, schools' },
+	{ id: 'filmmaking', label: 'Film making', color: '#d4a8c7', blurb: 'Cameras, editing, captions, publishing' },
 	{ id: 'self', label: 'Self', color: '#f0c4b0', blurb: 'Mind, spirit, belief, passion, purpose' }
 ];
 

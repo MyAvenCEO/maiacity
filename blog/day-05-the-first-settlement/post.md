@@ -9,8 +9,8 @@ date: 2026-09-13
 cover: /day-05-the-first-settlement/overview-1.png
 coverAlt: One hex picked out of open land — everything starts here.
 excerpt: >-
-  One person, one tent, on 41.6 hectares. Five levels later the same ground carries 216 and runs
-  its own power, food and factory. This is the smallest piece of city that stands alone.
+  One person, one tent, on 41.6 hectares. Five levels later the same ground carries 216 people
+  and runs its own power, water and commons. This is the smallest piece of city that stands alone.
 categories: [game, architecture, food, energy]
 ---
 
@@ -123,8 +123,6 @@ That is what closes the loop. Food from the ground it stands on, power and stora
 
 ![The dome factory on the neighbouring hex — 130 metres across, owned and run by the settlement next door.](/day-05-the-first-settlement/overview-2.png)
 
-A settlement that feeds and powers itself but cannot fix its own tractor is still on a leash.
-
 Every level so far was built with machines that came in on a truck: the excavator moving earth for the swales, the loader placing the dome bases, the tractor that does everything else on 41 hectares. Rent them, and the settlement works to someone else's schedule. Buy them, and it owns a black box that only a dealer can open.
 
 The last step is a dome factory, on the hex next door, and the first thing it makes is the tractor.
@@ -165,46 +163,18 @@ Co-location is the whole idea. The land that grows the hemp, the dome factory th
 
 ![A dome cell and its neighbourhood: the centre dome in the middle, dome cells at every level around it, and a factory on each side.](/day-05-the-first-settlement/dome-cell-neighbourhood.jpg)
 
-## Level 6 — the forest closes over the hex
+Now the unit is almost complete: 216 people who house and power themselves, and who make the machines and materials the rest of the grid needs — with every hectare of it inside a boundary they can walk.
 
-The last level builds nothing.
+Almost. Twelve domes, a centre and a factory take five and a half hectares of a hex that has forty-one. The other thirty-six are still grass, and a cell that has to import its food is a cell on a leash again, just a longer one.
 
-It plants. Every metre the domes and the walks do not take — the 21.6 hectares the cell has owed its people since Level 1 — goes under a food forest, and a food forest is not an orchard. It is seven layers stacked the way a wood stacks them. Walnut, chestnut and mango overhead. Apple, fig, pear and papaya beneath. Berries at waist height, herbs and kale at the knee, strawberries and sweet potato along the ground, grapes and beans up whatever stands still, roots underneath. Bananas and coconut palms where the glass keeps the air warm.
+One tent to a factory in five steps, on ground that never had to be extended. We are running it at 60 frames per second first, where a wrong ceiling costs an afternoon.
 
-![The dome cell at Level 6, late in the day: canopy to the rim of the hex, gravel walks wandering through it.](/day-05-the-first-settlement/forest-golden.jpg)
-
-Under it, the floor is alive. Moss, humus, clover, fallen branches, mushrooms in rings. Nothing gets raked.
-
-Imagine walking home through it.
-
-The path is gravel and it goes straight nowhere. It wanders off toward the next cell, splits, loses a branch somewhere in the trees. You pass a pond with reeds along one bank. Somebody has a fire going in the ring and the benches around it are half full. A swing hangs from a beam. Behind the run, the hens are already in.
-
-![The walks leave the ring of domes toward the neighbouring hexes. None of them close into a circle.](/day-05-the-first-settlement/forest-walks.jpg)
-
-![Every forest hex has a pond, and no two are the same shape.](/day-05-the-first-settlement/forest-pond.jpg)
-
-![The fire ring from the first night, carried out into the forest. The commons never stopped being a fire.](/day-05-the-first-settlement/forest-fire.jpg)
-
-![A swing, benches and the chicken coop beside the gravel.](/day-05-the-first-settlement/forest-coop.jpg)
-
-The walks are the part I did not expect to matter. Twenty-one hectares of planting is a plantation. Twenty-one hectares with a path through it, a bench at the bend and a fire at the end is a place. And the paths run to the rim of the hex on purpose, so that where two forest cells meet, their walks meet too.
-
-![Under the canopy, looking back at the centre dome.](/day-05-the-first-settlement/forest-canopy.jpg)
-
-The factory hexes get the same forest, the same walks, the same pond around their dome. A factory hex is still land.
-
-![Evening in the food forest, the domes behind it.](/day-05-the-first-settlement/forest-evening-walk.jpg)
-
-Now the unit is complete: 216 people who house, feed and power themselves, and who make the machines and materials the rest of the grid needs — with every hectare of it inside a boundary they can walk.
-
-> A city is not a plan drawn above the settlements. It is what happens when enough of them can stand alone — and then choose to trade.
-
-One tent to a forest in six steps, on ground that never had to be extended. We are running it at 60 frames per second first, where a wrong ceiling costs an afternoon.
-
-Then we pour the first real foundation.
+The sixth step builds nothing at all.
 
 ---
 
 **Walk the island yourself.** The world in these screenshots is running live — same hex grid, same dome levels, all five dome factories — and it opens with over a hundred dome cells already standing. Tap a hex, shift-drag to span, and build the settlement up level by level.
 
 [Open avenCITY Sandbox 1 →](/games/sandbox-1/)
+
+[Next: the level that builds nothing, and plants everything →](/blog/day-06-the-food-forest/)

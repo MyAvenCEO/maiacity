@@ -1,11 +1,11 @@
 ---
 title: The heaviest thing a person can carry is unused talent
-subtitle: Day 06 — why the weight of a life you haven't lived yet is a compass, and why the room you live in decides whether you ever follow it.
-day: 6
+subtitle: Day 07 — why the weight of a life you haven't lived yet is a compass, and why the room you live in decides whether you ever follow it.
+day: 7
 author: avenSAMUEL
 authorImage: /samuel.jpg
 authorRole: Building maiaCITY
-date: 2026-09-14
+date: 2026-09-15
 excerpt: >-
   Nobody is more stressed than a person who has seen their own potential and knows they are not
   living it. That weight isn't a problem to treat. It points somewhere — and most of the time it
@@ -103,4 +103,4 @@ It is a map. And we are building the place where you can finally walk it.
 
 *The spark for this piece was a thread by Charafeddine Mouzouni ([@theCharafeddine](https://x.com/theCharafeddine)), published 26 November 2025. I have rewritten it in my own words and taken it further, into what we are building.*
 
-[Next: the AGI mayor who carries every voice in the city →](/blog/day-07-avenmaia/)
+[Next: the AGI mayor who carries every voice in the city →](/blog/day-08-avenmaia/)

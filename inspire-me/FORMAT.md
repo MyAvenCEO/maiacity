@@ -100,8 +100,18 @@ Length: 8–12 paragraphs, mostly 1–3 sentences — then break that on purpose
 | `civic`        | Law, rights, citizenship, residency                                  |
 | `education`    | Learning, skills, schools                                            |
 | `self`         | Mind, spirit, belief, passion, purpose                               |
+| `filmmaking`   | Cameras, editing, captions, publishing                               |
 
 **Add categories freely.** When a source doesn't fit, add a new one to `src/lib/inspire-me/categories.ts` (id, label, colour, blurb) and to this table. Unknown ids still render, in a neutral colour.
+
+## Tutorials
+
+Some sources don't argue a point — they show how to do something. A tutorial report card keeps the same frontmatter, the same story arc and the same transformation, and adds two sections that teach: the concepts, one at a time from the ground up, and the steps. The prompt for those lives in `TUTORIAL.md`; the sections it produces are:
+
+1. `## The story` — same arc as any card. The "before" is the slow way; the "after" is the reader doing it the fast way.
+2. `## From the ground up` — every concept the steps depend on, in the order a beginner meets them, each one explained as if to a twelve-year-old: `**Concept.** What it is, in plain words, and why it matters here.` No concept is used before it is explained.
+3. `## The steps` — a numbered list. One action per step, in the order you do it, with the thing you click named exactly.
+4. `## Beliefs that shift`, `## What we learn`, `## Open questions` — as always.
 
 ## AI prompt
 

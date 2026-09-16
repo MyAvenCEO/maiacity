@@ -12,9 +12,15 @@
 	const tab = $derived(browser && page.url.searchParams.get('tab') === 'source' ? 'source' : 'report');
 	const accent = $derived(categoryById(entry.categories[0] ?? '').color);
 
-	// The story, the belief shifts and table-heavy sections span the full width of the report card.
+	// The story, the belief shifts, a tutorial's concepts and steps, and table-heavy
+	// sections span the full width of the report card.
 	const isWide = (id: string, html: string) =>
-		id === 'intro' || id === 'the-story' || id === 'beliefs-that-shift' || html.includes('<table');
+		id === 'intro' ||
+		id === 'the-story' ||
+		id === 'beliefs-that-shift' ||
+		id === 'from-the-ground-up' ||
+		id === 'the-steps' ||
+		html.includes('<table');
 </script>
 
 <svelte:head>
