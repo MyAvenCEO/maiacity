@@ -99,6 +99,14 @@
 		border: 0;
 	}
 
+	/* The film itself is never cropped: a square cut on a wide screen — and in
+	   fullscreen, where the element fills the display — keeps its whole frame
+	   and takes black at the sides, never a zoom that loses the top and bottom. */
+	.frame video {
+		object-fit: contain;
+		background: #000;
+	}
+
 	button {
 		position: absolute;
 		inset: 0;
