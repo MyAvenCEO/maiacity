@@ -9,7 +9,7 @@ date: 2026-09-11
 cover: /day-03-what-a-dome-looks-like/lplP754hucYk1GP-cdia5_XvA2Z8B6.jpg
 coverAlt: A ring of domes around one larger dome at the centre, joined by walkways and water.
 excerpt: >-
-  We live in boxes that bleed heat and keep the green outside the fence. Step inside one dome
+  We live in boxes that bleed heat and keep the green outside the fence. Step inside one
   dome cell instead: the home, the food forest and the shared centre, all under the shape that does
   the most with the least.
 categories: [architecture, food, energy, housing]
