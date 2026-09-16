@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { base } from '$app/paths';
 	import { categoryById } from './categories';
 	import type { InspirationMeta } from './types';
 
@@ -14,7 +15,8 @@
 	aria-hidden="true"
 >
 	{#if entry.youtubeId}
-		<img src="https://i.ytimg.com/vi/{entry.youtubeId}/hq720.jpg" alt="" loading="lazy" />
+		<!-- copied into static/thumbnails by scripts/fetch-thumbnails.mjs -->
+		<img src="{base}/thumbnails/{entry.youtubeId}.jpg" alt="" loading="lazy" />
 	{:else}
 		<span class="orb one"></span>
 		<span class="orb two"></span>

@@ -18,7 +18,8 @@ The folder name becomes the URL: `inspire-me/failure-as-a-superpower/` → `/ins
 1. Grab the source — YouTube transcript, paper/PDF text, X thread, blog post, report.
 2. Paste it unchanged into `inspire-me/<slug>/source.md` (paragraph breaks are fine).
 3. Give an AI the link + the source + the prompt below. Save the answer as `inspire-me/<slug>/README.md`.
-4. Check the facts, reload `/inspire-me`.
+4. For a YouTube source, run `node scripts/fetch-thumbnails.mjs` — thumbnails are served from our own CDN, never from YouTube.
+5. Check the facts, reload `/inspire-me`.
 
 ## Frontmatter
 

@@ -7,80 +7,8 @@
 import { COMPANY } from './company'
 import type { LegalDocument } from './types'
 
-/** Soft hyphen — break opportunities inside the long compound headings. */
-const SHY = '­'
-
 const c = COMPANY
 const address = [c.legalName, c.street, c.city]
-
-export const IMPRESSUM_DE: LegalDocument = {
-	slug: 'impressum',
-	lang: 'de',
-	title: 'Impressum',
-	path: '/de/impressum/',
-	sections: [
-		{
-			blocks: [
-				{ lines: address },
-				{ lines: [`Handelsregister: ${c.register}`, `Registergericht: ${c.registerCourt}`] },
-				{ lead: 'Vertreten durch:', lines: [c.representative] }
-			]
-		},
-		{
-			level: 2,
-			title: 'Kontakt',
-			blocks: [{ lines: [`Telefon: ${c.phone}`, `E-Mail: ${c.email}`] }]
-		},
-		{
-			level: 2,
-			title: 'Umsatzsteuer-ID',
-			blocks: [
-				{
-					lines: ['Umsatzsteuer-Identifikationsnummer gemäß § 27 a Umsatzsteuergesetz:', c.vatId]
-				}
-			]
-		},
-		{
-			level: 2,
-			title: `Wirtschafts${SHY}identifikations${SHY}nummer`,
-			blocks: [{ lines: [c.businessId] }]
-		},
-		{
-			level: 2,
-			title: 'Redaktionell verantwortlich',
-			blocks: [{ lines: [c.representative, c.street, c.city] }]
-		},
-		{
-			level: 2,
-			title: `Verbraucher${SHY}streit${SHY}beilegung/Universal${SHY}schlichtungs${SHY}stelle`,
-			blocks: [
-				{
-					lines: [
-						'Wir sind nicht bereit oder verpflichtet, an Streitbeilegungsverfahren vor einer Verbraucherschlichtungsstelle teilzunehmen.'
-					]
-				}
-			]
-		},
-		{
-			level: 2,
-			title:
-				'Zentrale Kontaktstelle nach dem Digital Services Act - DSA (Verordnung (EU) 2022/2065)',
-			blocks: [
-				{
-					lines: [
-						'Unsere zentrale Kontaktstelle für Nutzer und Behörden nach Art. 11, 12 DSA erreichen Sie wie folgt:'
-					]
-				},
-				{ lines: [`E-Mail: ${c.email}`] },
-				{
-					lines: [
-						`Die für den Kontakt zur Verfügung stehenden Sprachen sind: ${c.contactLanguages.de}.`
-					]
-				}
-			]
-		}
-	]
-}
 
 export const SITE_NOTICE_EN: LegalDocument = {
 	slug: 'impressum',

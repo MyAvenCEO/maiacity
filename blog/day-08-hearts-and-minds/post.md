@@ -77,23 +77,25 @@ Circles' unique gift — one currency for every human — is not weak. It is hal
 
 So we split money into the two things it was always secretly trying to do.
 
-**Hearts** are the new Circles. Every human mints their own, continuously, without debt. In our design, every citizen starts with 500 hearts of their own and mints 24 more every day, and a gentle demurrage of 7% a year keeps them moving instead of sitting in a drawer.
+**Hearts** are the payment currency — the new Circles. Every human mints their own, continuously, without debt. In our design, every citizen starts with 500 hearts of their own and mints 24 more every day, and a gentle demurrage of 7% a year keeps them moving instead of sitting in a drawer.
 
-**Minds** are ownership.
+**Minds** are the ownership currency. Nobody pays with them. You own with them.
 
-And there is exactly one way to get them.
+A city needs both, and it needs them to stay different.
 
-## Hearts can only be invested, and minds are what you get back
+## Invest your hearts, and they come back as ownership
 
-You cannot trade hearts for minds on a market. You invest your hearts into a cooperative project — a coop — and they are consumed. In return, minds are created: half to you, half to the coop's own treasury.
+You cannot buy minds on a market. There is exactly one way to get them: invest your hearts into a cooperative project — a coop — and in return you receive minds, your share of owning it.
 
-The earliest believers pay the least. Each coop grows through milestones, and every milestone costs a little more per mind than the one before. Back something when it is still an idea, and you own more of it than the people who arrive once it is obviously working. Its life runs in five phases: idea, test, build, scale and hero.
+Your hearts don't vanish when you do.
 
-Minds are not a currency to spend. They are a signal.
+The moment they are invested, they become **maiaHearts**: one shared, city-wide currency, steadier than any single person's hearts, held by the coop's treasury to bring its vision to life. Your personal money turns into the city's money, working on something you believe in.
+
+Minds don't buy anything. They show something.
 
 Where people put their hearts is where their attention and conviction are. Minds make that visible — and they compound. The more people believe in a project, the more hearts flow in, the more real it becomes, the more people believe in it.
 
-Imagine an evening in the centre dome of your cluster. Someone stands up with an idea: a bakery that runs on the wheat and fruit from the forest outside. You put fifty hearts in that night, because you want to wake up to that smell. So do forty of your neighbours. By spring the ovens are lit — and everyone who believed in it early owns a piece of every loaf.
+Imagine an evening in the centre dome of your cluster. Someone stands up with an idea: a bakery that runs on the wheat and fruit from the forest outside. You put fifty hearts in that night, because you want to wake up to that smell. So do forty of your neighbours. Your hearts become maiaHearts in the bakery's treasury, the treasury pays for the ovens — and by spring everyone who believed in it owns a piece of every loaf.
 
 ## Ownership is the income after labour
 
@@ -121,7 +123,7 @@ When ownership sits with a small group, the engine that could lift everyone lift
 
 Here is the whole framework in one breath.
 
-Every human mints hearts — their own money, born from their existence, not from debt. Hearts become minds only when invested in something shared. Minds are ownership and conviction, compounding around the projects people most want to bring to life.
+Every human mints hearts — their own money, born from their existence, not from debt. Invest them in something shared, and two things happen at once. Your hearts become maiaHearts, the city's common currency, held by the project to build with. And you receive minds: ownership and conviction, compounding around the projects people most want to bring to life.
 
 A heart without a mind gives, and nothing grows.
 
@@ -132,6 +134,8 @@ When the two unite in collective action — millions of people pointing their at
 We were never built to survive. Not on a basic income, and not on borrowed money.
 
 We were built to thrive — and to own, together, what we build.
+
+How a single heart becomes a maiaHeart — and why a city needs one currency to pay with and another to own with — is the next story.
 
 It is already being built into avenCITY Sandbox 2, the next world in the game.
 

@@ -8,8 +8,8 @@
 	--mustard: #efb54d;
 	--sage: #a8b88a;
 	--terracotta: #c8744f;
-	--font-display: 'Fraunces', 'Iowan Old Style', Georgia, serif;
-	--font-body: 'DM Sans', system-ui, -apple-system, 'Segoe UI', sans-serif;
+	--font-display: 'Fraunces Variable', 'Iowan Old Style', Georgia, serif;
+	--font-body: 'DM Sans Variable', system-ui, -apple-system, 'Segoe UI', sans-serif;
 	--radius: 22px;
 	color-scheme: light;
 }

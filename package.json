@@ -25,6 +25,8 @@
 		"vite": "^8.0.16"
 	},
 	"dependencies": {
+		"@fontsource-variable/dm-sans": "^5.3.0",
+		"@fontsource-variable/fraunces": "^5.3.0",
 		"@types/three": "^0.186.0",
 		"marked": "^18.0.12",
 		"three": "^0.186.0",
