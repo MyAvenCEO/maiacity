@@ -1,5 +1,11 @@
 // Uploads the built site to the Bunny storage zone and purges the pull zone.
 // Only BUNNY_API_KEY is needed; the storage password is read from the account API.
+//
+// The GitHub workflow runs this on every push. Running it locally at the same
+// time once left the site broken: each deploy deleted the other's hashed
+// chunks as "stale", and the surviving pages pointed at files that were gone.
+// Two guards now: assets go up before the pages that reference them, and
+// only files older than this run are ever deleted.
 import { readdir, readFile, stat } from 'node:fs/promises';
 import { join, posix, relative, sep } from 'node:path';
 import { NAMES, api, storageBase } from './bunny.mjs';
@@ -26,7 +32,7 @@ async function listRemote(base, password, prefix = '') {
 	for (const item of items) {
 		const path = `${prefix}${item.ObjectName}`;
 		if (item.IsDirectory) files.push(...(await listRemote(base, password, `${path}/`)));
-		else files.push(path);
+		else files.push({ path, changed: Date.parse(item.LastChanged) });
 	}
 	return files;
 }
@@ -48,13 +54,16 @@ const password = zone.Password;
 
 const SKIP = /\.(mp4|mov|mkv)$/i; // video masters belong in Stream, not storage
 
+const startedAt = Date.now();
 const local = (await walk(DIR))
 	.map((p) => relative(DIR, p).split(sep).join(posix.sep))
-	.filter((file) => !SKIP.test(file));
+	.filter((file) => !SKIP.test(file))
+	// hashed assets first, pages last: a page is never live before its chunks
+	.sort((a, b) => Number(a.endsWith('.html')) - Number(b.endsWith('.html')));
 console.log(`uploading ${local.length} files to ${zone.Name}`);
 
 let uploaded = 0;
-await pool(local, async (file) => {
+const upload = async (file) => {
 	const body = await readFile(join(DIR, ...file.split('/')));
 	const res = await fetch(`${base}/${file}`, {
 		method: 'PUT',
@@ -63,12 +72,17 @@ await pool(local, async (file) => {
 	});
 	if (!res.ok) throw new Error(`upload ${file} → ${res.status} ${await res.text()}`);
 	uploaded += 1;
-});
+};
+await pool(local.filter((f) => !f.endsWith('.html')), upload);
+await pool(local.filter((f) => f.endsWith('.html')), upload);
 console.log(`uploaded ${uploaded} files`);
 
-// Remove files that no longer exist in the build.
+// Remove files that no longer exist in the build — but never anything written
+// since this run began: that is another deploy's, and it needs its files.
 const remote = await listRemote(base, password);
-const stale = remote.filter((file) => !local.includes(file));
+const stale = remote
+	.filter(({ path, changed }) => !local.includes(path) && !(changed >= startedAt - 60_000))
+	.map(({ path }) => path);
 await pool(stale, async (file) => {
 	await fetch(`${base}/${file}`, { method: 'DELETE', headers: { AccessKey: password } });
 });
