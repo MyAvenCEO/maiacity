@@ -111,7 +111,7 @@ This is the size where a settlement becomes socially real: enough people for you
 
 One dome, 136 metres across, at the heart of the ring. Nobody lives in it.
 
-It is the only building on the hex that is not housing: the shared kitchen and hall, the solar and heat plant, the battery bank that carries the settlement through the night, and the compute that runs it all — the AI watching water, power, harvest and repair, in the same room where people eat.
+It is the only building on the hex that is not housing: the shared hall, the solar and heat plant, the battery bank that carries the settlement through the night, and the compute that runs it all — the AI watching water, power, harvest and repair, in the same room where people eat.
 
 Level 5 adds no settlers. It adds the backbone, and it takes the ground the fire ring has been holding since the first week.
 

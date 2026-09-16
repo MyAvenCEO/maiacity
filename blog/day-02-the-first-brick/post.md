@@ -1,16 +1,16 @@
 ---
-title: The next country is a city of clusters that feed themselves
-subtitle: Day 02 — why resilience is moving from brittle nations to self-sovereign city states, and what a whole city of self-sufficient clusters looks like.
+title: The next country is a city of dome cells that feed themselves
+subtitle: Day 02 — why resilience is moving from brittle nations to self-sovereign city states, and what a whole city of self-sufficient dome cells looks like.
 day: 2
 author: avenSAMUEL
 authorImage: /samuel.jpg
 authorRole: Building maiaCITY
 date: 2026-09-10
 cover: /Day01/maia-village.jpg
-coverAlt: A valley of domes, each cluster sitting inside its own forest, the river left where it was.
+coverAlt: A valley of domes, each dome cell sitting inside its own forest, the river left where it was.
 excerpt: >-
   A country is a promise that the trucks will keep coming. The next generation of sovereignty is
-  a city state that doesn't need them: many small clusters, each feeding, watering and powering
+  a city state that doesn't need them: many small dome cells, each feeding, watering and powering
   itself inside its own food forest.
 categories: [food, ecology, energy, architecture]
 ---
@@ -95,11 +95,11 @@ It is the thread again, just shorter. Somebody ploughs it, a machine harvests it
 
 Now look at the middle of the frame.
 
-## Every cluster grows its own forest
+## Every dome cell grows its own forest
 
 This is the heart of the blueprint, and it is simpler than it sounds.
 
-There are no generic fields. There is no farm belt outside the city, no monoculture feeding it from the edge. Every cluster of domes keeps its own food forest directly around it — planted by the people who live there, tended by them, eaten by them.
+There are no generic fields. There is no farm belt outside the city, no monoculture feeding it from the edge. Every dome cell keeps its own food forest directly around it — planted by the people who live there, tended by them, eaten by them.
 
 A food forest is layered the way a wild forest is. Tall nut and fruit trees on top. Smaller fruit trees under them. Berries, herbs, vegetables and roots on the ground, and vines climbing through all of it. Once it is established it largely feeds itself, it holds water in its soil, and a bad year for one plant is a good year for another.
 
@@ -119,7 +119,7 @@ The river stays where it is. Rain gets caught, slowed down and sunk into the gro
 
 ![A single dome on a stone arcade, a timber footbridge over clear water, forest pressing in on every side.](/Day01/6dIScRIYuNkYoDzenoV8J_Wt3H5dUw.jpg)
 
-The glass that shelters the food also catches the sun. Every roof works, every cluster keeps its own storage, and the lights in your street do not depend on a plant three regions away.
+The glass that shelters the food also catches the sun. Every roof works, every dome cell keeps its own storage, and the lights in your street do not depend on a plant three regions away.
 
 Health stops being something you go out and get. It is the food that was on a branch this morning. It is walking instead of sitting. It is knowing your neighbours by name, because you pass them under the same trees every day.
 
@@ -129,7 +129,7 @@ Imagine a street with no trucks in it.
 
 No delivery vans. No engines idling. No loading bays. The paths belong to people, bikes, children and the forest.
 
-Everything heavy moves underneath — a fully autonomous underground network carrying goods, tools and supplies between clusters, all day, out of sight. Above ground the city is made for walking. Below ground it is made for moving things. The two stop fighting over the same space, and the surface gets given back to life.
+Everything heavy moves underneath — a fully autonomous underground network carrying goods, tools and supplies between dome cells, all day, out of sight. Above ground the city is made for walking. Below ground it is made for moving things. The two stop fighting over the same space, and the surface gets given back to life.
 
 ![Eight domes along a river bend, joined only by footpaths through the trees.](/Day01/PwmKKG7I6Wi3f7TRlKKmV_DgxWHxUM.jpg)
 
@@ -145,7 +145,7 @@ It is beautiful, and it belongs to a city that already feeds itself. Culture sit
 
 Here is the blueprint in one breath.
 
-Not a country held together by a thread that runs around the planet. A city state made of small, living clusters — each with its own food forest, its own water, its own power and its own health — linked underground, and sovereign because every part of it can stand on its own.
+Not a country held together by a thread that runs around the planet. A city state made of small, living dome cells — each with its own food forest, its own water, its own power and its own health — linked underground, and sovereign because every part of it can stand on its own.
 
 ![Four views of one place: the riverside approach, a terrace overlook, the atrium inside, a private terrace at home.](/Day01/hzUX4j7ZpU9VsRCjaYuMO_WG67YZVO.jpg)
 
@@ -157,8 +157,8 @@ Nothing on that list needs the thread.
 
 That is what we are building: the blueprint for a new generation of self-sovereign city states. And its first brick is not a wall.
 
-It is the smallest unit that can stand on its own — a self-sufficient dome cluster of 150 to 250 humans, living inside its own food forest.
+It is the smallest unit that can stand on its own — a self-sufficient dome cell of 150 to 250 humans, living inside its own food forest.
 
 Maia City will be the first city built from them. The first-of-its-kind pilot.
 
-[Next: inside one dome cluster, and the life that runs it →](/blog/day-03-what-a-dome-looks-like/)
+[Next: inside one dome cell, and the life that runs it →](/blog/day-03-what-a-dome-looks-like/)

@@ -1,6 +1,6 @@
 ---
-title: Inside one dome cluster, the forest grows through the home
-subtitle: "Day 03 — how a single cluster works from the inside: Buckminster Fuller's geodesic dome as the home, the food forest inside it, and the shared dome at its heart."
+title: Inside one dome cell, the forest grows through the home
+subtitle: "Day 03 — how a single dome cell works from the inside: Buckminster Fuller's geodesic dome as the home, the food forest inside it, and the shared dome at its heart."
 day: 3
 author: avenSAMUEL
 authorImage: /samuel.jpg
@@ -10,7 +10,7 @@ cover: /Day02/lplP754hucYk1GP-cdia5_XvA2Z8B6.jpg
 coverAlt: A ring of domes around one larger dome at the centre, joined by walkways and water.
 excerpt: >-
   We live in boxes that bleed heat and keep the green outside the fence. Step inside one dome
-  cluster instead: the home, the food forest and the shared centre, all under the shape that does
+  dome cell instead: the home, the food forest and the shared centre, all under the shape that does
   the most with the least.
 categories: [architecture, food, energy, housing]
 ---
@@ -25,7 +25,7 @@ Nobody is heating this space the way you heat a house. It is holding on to the w
 
 ![Under the glass: stone terraces, fruit trees growing through the middle, people talking at the same height.](/MaiaCity/CFMETfOTeKpV2sH6wsZT4_N7LCrDWp.jpg)
 
-[Day 02](/blog/day-02-the-first-brick/) ended on a cluster of domes as the first brick of a sovereign city. This is the brick itself.
+[Day 02](/blog/day-02-the-first-brick/) ended on a dome cell as the first brick of a sovereign city. This is the brick itself.
 
 ## We live in boxes, and the forest stays outside
 
@@ -101,21 +101,21 @@ What Jewel gives a traveller for an hour between flights — life inside the gre
 
 ![A bench beside a stream, inside the planted dome.](/MaiaCity/byIB5gCdrUZ48uGJHaEWt_I1ZgWZ4f.jpg)
 
-## A cluster of domes is a city
+## Domes make a cell
 
-One dome is a home. It was never meant to be a whole city.
+One dome is a home. It was never meant to stand alone.
 
-The domes gather into a cluster: a ring of homes around one larger dome at the centre, with a food forest wrapped around the whole ring, the way each dome holds one inside.
+The domes gather into a dome cell: a ring of homes around one larger dome at the centre, with a food forest wrapped around the whole ring, the way each dome holds one inside.
 
 ![A ring of domes around one larger dome at the centre, joined by walkways and water.](/Day02/lplP754hucYk1GP-cdia5_XvA2Z8B6.jpg)
 
 The centre dome is where nobody lives and everybody goes.
 
-It carries everything the cluster shares. The batteries holding the day's sun. The water. The big kitchen. The library, and the rooms where young and old learn from each other, side by side, every day. The computers that keep it all running, and the room where decisions get made together. Put the essentials at the heart, and every home around it can stay small, light and green.
+It carries everything the dome cell shares. The batteries holding the day's sun. The water. The long tables for the evenings people choose to eat together. The library, and the rooms where young and old learn from each other, side by side, every day. The computers that keep it all running, and the room where decisions get made together. Put the essentials at the heart, and every home around it can stay small, light and green.
 
 Imagine the evening. The paths fill as people walk in from every dome in the ring. Fifty of them sit down to eat together under glass. The lights are on because the roofs caught the sun, and everything on the table grew within sight of the door.
 
-A cluster holds 150 to 250 people. Big enough for three generations to learn from one another and share one kitchen. Small enough that you know every name in it.
+A dome cell holds 150 to 250 people. Big enough for three generations to learn from one another. Small enough that you know every name in it.
 
 ![Kneeling down to a child's height, looking at a plant together.](/MaiaCity/W2amjTRdcn8Qk6_mo8EvR_4NjXWTb4.jpg)
 
@@ -123,9 +123,9 @@ A cluster holds 150 to 250 people. Big enough for three generations to learn fro
 
 So the blueprint builds itself up from the smallest piece.
 
-The dome is the home. The cluster is the small city. And a self-sovereign city state is many clusters side by side — each one warm, fed and powered on its own, linked underground, free on the surface.
+The dome is the home. A ring of domes is a dome cell. And a cluster of dome cells is a city — a self-sovereign city state where every cell is warm, fed and powered on its own, linked underground, free on the surface.
 
-![Two figures on a ridge, looking down over the clusters in the valley.](/MaiaCity/xsN9RYb5ExZtsNYtHDNra_qkM0bNfT.jpg)
+![Two figures on a ridge, looking down over the dome cells in the valley.](/MaiaCity/xsN9RYb5ExZtsNYtHDNra_qkM0bNfT.jpg)
 
 Fuller called it doing more with less.
 

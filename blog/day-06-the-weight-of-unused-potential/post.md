@@ -79,13 +79,13 @@ And some rooms can't be fixed at all. They have to be built again, from the grou
 
 ## So we are building rooms where talent gets used
 
-Imagine a Tuesday morning in a cluster. A woman who spent years in a job she never chose is in the works next door, bolting a hydraulic line onto a LifeTrac — and the thing she always did with her hands on weekends is finally the day's work.
+Imagine a Tuesday morning in a dome cell. A woman who spent years in a job she never chose is in the works next door, bolting a hydraulic line onto a LifeTrac — and the thing she always did with her hands on weekends is finally the day's work.
 
 Imagine an evening in the centre dome. Someone stands up and says out loud the idea they have carried in a drawer for years. Nobody laughs. Three people say: I can help with that.
 
 Imagine an old man in the food forest, showing a fourteen-year-old how to graft an apricot onto a plum. He has known how for forty years. For the first time in decades, somebody needs him to.
 
-That is what a cluster is for.
+That is what a dome cell is for.
 
 Not only food, water, warmth and power. A place built so that nobody's talent has to sit unused: the workshop a short walk away, a room where any idea can be said out loud, and young and old learning from each other every day, so that what you know gets used and what you don't know gets learned.
 

@@ -95,7 +95,7 @@ Minds don't buy anything. They show something.
 
 Where people put their hearts is where their attention and conviction are. Minds make that visible — and they compound. The more people believe in a project, the more hearts flow in, the more real it becomes, the more people believe in it.
 
-Imagine an evening in the centre dome of your cluster. Someone stands up with an idea: a bakery that runs on the wheat and fruit from the forest outside. You put fifty hearts in that night, because you want to wake up to that smell. So do forty of your neighbours. Your hearts become maiaHearts in the bakery's treasury, the treasury pays for the ovens — and by spring everyone who believed in it owns a piece of every loaf.
+Imagine an evening in the centre dome of your dome cell. Someone stands up with an idea: a bakery that runs on the wheat and fruit from the forest outside. You put fifty hearts in that night, because you want to wake up to that smell. So do forty of your neighbours. Your hearts become maiaHearts in the bakery's treasury, the treasury pays for the ovens — and by spring everyone who believed in it owns a piece of every loaf.
 
 ## Ownership is the income after labour
 
