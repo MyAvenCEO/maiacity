@@ -3832,38 +3832,69 @@ export function chickenCoop(rng: Rng): THREE.Group {
 }
 
 export function waterBasin(rng: Rng): THREE.Group {
-	// a small round pond with a stone lip, reeds on one side, a lily or two
+	// a pond, never the same twice: a radius that breathes around the outline,
+	// a size from a puddle to a swimming hole, loose stones along the lip
 	const g = new THREE.Group()
-	const R = rng.range(0.9, 1.2)
-	const lip = shadow(new THREE.Mesh(new THREE.TorusGeometry(R, 0.07, 4, 14), facet(jitterColor(rng, '#9c968a', 0.01, 0.04, 0.05))))
-	lip.rotation.x = Math.PI / 2
-	lip.position.y = 0.04
-	g.add(lip)
-	const bed = new THREE.Mesh(new THREE.CircleGeometry(R * 0.98, 14), facet('#3f6a6e'))
+	const R = rng.range(0.6, 1.5)
+	const k1 = rng.int(2, 3)
+	const k2 = rng.int(4, 5)
+	const p1 = rng.range(0, Math.PI * 2)
+	const p2 = rng.range(0, Math.PI * 2)
+	const amp1 = rng.range(0.12, 0.28)
+	const amp2 = rng.range(0.04, 0.1)
+	const radiusAt = (a: number) => R * (1 + amp1 * Math.sin(k1 * a + p1) + amp2 * Math.sin(k2 * a + p2))
+	const N = 22
+	const outline = (inset: number): THREE.Shape => {
+		const shape = new THREE.Shape()
+		for (let i = 0; i < N; i++) {
+			const a = (i / N) * Math.PI * 2
+			const r = radiusAt(a) - inset
+			if (i === 0) shape.moveTo(Math.cos(a) * r, Math.sin(a) * r)
+			else shape.lineTo(Math.cos(a) * r, Math.sin(a) * r)
+		}
+		shape.closePath()
+		return shape
+	}
+	const bed = new THREE.Mesh(new THREE.ShapeGeometry(outline(0.02)), facet('#3f6a6e'))
 	bed.rotation.x = -Math.PI / 2
 	bed.position.y = 0.012
 	g.add(bed)
 	const water = new THREE.Mesh(
-		new THREE.CircleGeometry(R * 0.98, 14),
+		new THREE.ShapeGeometry(outline(0.03)),
 		new THREE.MeshStandardMaterial({ color: '#5fb0d6', roughness: 0.15, metalness: 0.05, transparent: true, opacity: 0.7 })
 	)
 	water.rotation.x = -Math.PI / 2
 	water.position.y = 0.06
 	g.add(water)
-	const side = rng.range(0, Math.PI * 2)
-	for (let i = 0; i < rng.int(2, 4); i++) {
-		const r = reeds(rng)
-		const a = side + rng.jitter(0, 0.6)
-		r.position.set(Math.cos(a) * R * 0.8, 0.05, Math.sin(a) * R * 0.8)
-		g.add(r)
+	// the lip: stones set around the edge, a gap or two where the bank is grass
+	const stones = Math.round(R * 14)
+	for (let i = 0; i < stones; i++) {
+		if (rng.chance(0.15)) continue
+		const a = (i / stones) * Math.PI * 2 + rng.jitter(0, 0.05)
+		const r = radiusAt(a) + rng.jitter(0, 0.02)
+		const sr = rng.range(0.06, 0.11)
+		const stone = shadow(new THREE.Mesh(new THREE.DodecahedronGeometry(sr, 0), facet(jitterColor(rng, '#9c968a', 0.01, 0.04, 0.06))))
+		stone.scale.set(1, 0.6, 1)
+		stone.rotation.y = rng.range(0, Math.PI)
+		stone.position.set(Math.cos(a) * r, sr * 0.3, Math.sin(a) * r)
+		g.add(stone)
 	}
-	for (let i = 0; i < rng.int(1, 3); i++) {
+	const side = rng.range(0, Math.PI * 2)
+	for (let i = 0; i < rng.int(2, 5); i++) {
+		const reed = reeds(rng)
+		const a = side + rng.jitter(0, 0.8)
+		const r = radiusAt(a) * 0.82
+		reed.position.set(Math.cos(a) * r, 0.05, Math.sin(a) * r)
+		g.add(reed)
+	}
+	for (let i = 0; i < rng.int(1, 4); i++) {
 		const pad = lilyPad(rng)
 		const a = rng.range(0, Math.PI * 2)
-		const d = rng.range(0.2, R * 0.6)
-		pad.position.set(Math.cos(a) * d, 0.06, Math.sin(a) * d)
+		const d = rng.range(0.15, radiusAt(a) * 0.55)
+		pad.position.set(Math.cos(a) * d, 0.062, Math.sin(a) * d)
 		g.add(pad)
 	}
+	g.rotation.y = rng.range(0, Math.PI * 2)
 	return g
 }
 

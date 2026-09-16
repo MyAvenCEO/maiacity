@@ -137,7 +137,10 @@ const facts = $derived.by(() => {
 	const glass = housed * ha(GLASS_M2_PER_PERSON)
 	rows.push(['people', `${housed}`])
 	rows.push(['domes', `${domes.toFixed(1)} ha`])
-	rows.push(['food forest', `${forest.toFixed(1)} ha · ${FOOD_FOREST_M2_PER_PERSON} m² a person`])
+	rows.push([
+		'food forest',
+		`${forest.toFixed(1)} ha ${level >= 6 ? 'planted' : 'owed'} · ${FOOD_FOREST_M2_PER_PERSON} m² a person`
+	])
 	rows.push(['under glass', `${glass.toFixed(1)} ha · ${GLASS_M2_PER_PERSON} m² a person`])
 	rows.push(['left', `${Math.max(0, HEX_HA - domes - forest - glass).toFixed(1)} ha paths, yard and water`])
 	return rows
@@ -159,11 +162,17 @@ function build(kind: PlacedKind): void {
 // Here the sandbox swaps the canvas out and back, so the scene is bound to
 // the element instead: it tears down on the way out and builds on the
 // element it comes back to.
+/** true until the island is built and its first frame is up */
+let loading = $state(true)
+const twoFrames = () =>
+	new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())))
+
 $effect(() => {
 	const el = canvas
 	if (!el) return
 	let disposed = false
-	void import('./game/three/scene').then(({ createScene }) => {
+	loading = true
+	void import('./game/three/scene').then(async ({ createScene }) => {
 		if (disposed) return
 		api = createScene(el, {
 			onSelect(tile) {
@@ -171,10 +180,16 @@ $effect(() => {
 			}
 		})
 		api.setHour(timeOfDay.hour)
+		// building the island is synchronous and takes seconds: give the
+		// loading screen a frame to paint first, or it never shows at all
+		await twoFrames()
+		if (disposed) return
 		api.setWorld(seed)
 		// the readouts derive off `builds`; without a nudge they would keep
 		// reporting the empty island the page started with
 		builds++
+		await twoFrames()
+		loading = false
 	})
 	return () => {
 		disposed = true
@@ -194,6 +209,17 @@ $effect(() => {
 {:else}
 	<div class="avencity fixed inset-0">
 		<canvas bind:this={canvas} class="block h-full w-full"></canvas>
+
+		{#if loading}
+			<!-- the island takes a few seconds to grow; better a word than an empty sky -->
+			<div class="loading" role="status" aria-live="polite">
+				<div class="loading-mark" aria-hidden="true">
+					<span></span><span></span><span></span><span></span><span></span><span></span>
+				</div>
+				<div class="loading-title">avenCITY <span>Sandbox 1</span></div>
+				<div class="loading-note">growing the island · {seed}</div>
+			</div>
+		{/if}
 
 		<!-- HUD. The top padding is deliberately tighter than the rest: the readout
 		     strip reads as a status bar and belongs against the edge, while the
@@ -314,3 +340,62 @@ $effect(() => {
 		</div>
 	</div>
 {/if}
+
+<style>
+/* --- the loading screen --------------------------------------------------- */
+.loading {
+	position: absolute;
+	inset: 0;
+	z-index: 5;
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	justify-content: center;
+	gap: 0.9rem;
+	background: linear-gradient(180deg, #cfdbe6 0%, #e8eef2 60%, #dfe9d9 100%);
+	color: #3b4450;
+}
+.loading-title {
+	font-size: 1.15rem;
+	font-weight: 600;
+	letter-spacing: 0.01em;
+}
+.loading-title span {
+	margin-left: 0.35em;
+	font-weight: 400;
+	opacity: 0.7;
+}
+.loading-note {
+	font-size: 0.72rem;
+	letter-spacing: 0.18em;
+	text-transform: uppercase;
+	opacity: 0.55;
+}
+/* six hexes lighting up in turn: a ring of dome cells being founded */
+.loading-mark {
+	position: relative;
+	width: 64px;
+	height: 64px;
+}
+.loading-mark span {
+	position: absolute;
+	top: 26px;
+	left: 26px;
+	width: 12px;
+	height: 12px;
+	background: #5aa64d;
+	clip-path: polygon(25% 5%, 75% 5%, 100% 50%, 75% 95%, 25% 95%, 0 50%);
+	opacity: 0.25;
+	animation: found 1.8s infinite;
+}
+.loading-mark span:nth-child(1) { transform: translate(0, -24px); animation-delay: 0s; }
+.loading-mark span:nth-child(2) { transform: translate(21px, -12px); animation-delay: 0.3s; }
+.loading-mark span:nth-child(3) { transform: translate(21px, 12px); animation-delay: 0.6s; }
+.loading-mark span:nth-child(4) { transform: translate(0, 24px); animation-delay: 0.9s; }
+.loading-mark span:nth-child(5) { transform: translate(-21px, 12px); animation-delay: 1.2s; }
+.loading-mark span:nth-child(6) { transform: translate(-21px, -12px); animation-delay: 1.5s; }
+@keyframes found {
+	0%, 100% { opacity: 0.25; }
+	20% { opacity: 1; }
+}
+</style>

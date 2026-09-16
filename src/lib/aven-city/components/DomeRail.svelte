@@ -117,7 +117,19 @@ const TERRACES: Record<number, number> = { 2: 0, 3: 1, 4: 1, 5: 2 }
 				onclick={() => onpick(kind)}
 			>
 				<svg viewBox="0 0 72 52" class="h-8 w-12" aria-hidden="true">
-					{#if spec.level === 1}
+					{#if spec.level === 6}
+						<!-- the food forest: canopy over the whole hex, a walk through it -->
+						<path d="M4 46 36 24l32 22Z" fill="#7fb95a" />
+						<path d="M30 46c2-6 8-8 14-6l-4 6Z" fill="#d8c9a6" />
+						<g fill="#3f8a3f">
+							<circle cx="16" cy="34" r="7" /><circle cx="30" cy="27" r="9" /><circle cx="46" cy="30" r="8" /><circle cx="58" cy="37" r="6" />
+						</g>
+						<g fill="#5aa64d">
+							<circle cx="22" cy="40" r="5" /><circle cx="40" cy="37" r="6" /><circle cx="52" cy="41" r="4" />
+						</g>
+						<g stroke="#8a5f3c" stroke-width="1.6"><path d="M16 41v5M30 36v10M46 38v8M58 43v3" /></g>
+						<circle cx="36" cy="43" r="2.2" fill="#5fb0d6" />
+					{:else if spec.level === 1}
 						<!-- the tent -->
 						<ellipse cx="36" cy="45" rx="24" ry="3" fill="#cfc8ba" />
 						<path d="M13 45a23 18 0 0 1 46 0Z" fill="#6d8c5a" />
@@ -188,8 +200,13 @@ const TERRACES: Record<number, number> = { 2: 0, 3: 1, 4: 1, 5: 2 }
 					{/if}
 				</svg>
 				<span class="dome-name">{spec.label}</span>
-				<span class="dome-cap">{spec.count}× · {spec.capacity} people</span>
-				<span class="dome-note">⌀ {spec.diameterM} m</span>
+				{#if spec.level === 6}
+					<span class="dome-cap">food forest</span>
+					<span class="dome-note">walks · commons · pond</span>
+				{:else}
+					<span class="dome-cap">{spec.count}× · {spec.capacity} people</span>
+					<span class="dome-note">⌀ {spec.diameterM} m</span>
+				{/if}
 			</button>
 		{/each}
 	{/if}

@@ -812,6 +812,8 @@ export interface Clearing {
 	shape?: 'dome' | 'tent' | 'box'
 	/** true keeps the food forest's plants out of it as well */
 	keepOut?: boolean
+	/** what stands here, for anyone reading the clearings back */
+	label?: string
 }
 
 // --- park walks: wandering gravel through the food forest --------------------
@@ -1363,7 +1365,7 @@ export const GLASS_M2_PER_PERSON = 500
  * hex reads as a camp that became a town.
  * ------------------------------------------------------------------------ */
 
-export type BuildingKind = 'TENT' | 'GLAMP' | 'DOME3' | 'DOME4' | 'DOME5'
+export type BuildingKind = 'TENT' | 'GLAMP' | 'DOME3' | 'DOME4' | 'DOME5' | 'FOREST'
 
 interface BuildingSpec {
 	label: string
@@ -1632,6 +1634,22 @@ export const BUILDINGS: Record<BuildingKind, BuildingSpec> = {
 		footprint: 0.28,
 		extent: 0.275,
 		build: dome4
+	},
+	FOREST: {
+		label: 'Level 6',
+		level: 6,
+		// no building at all: the last level plants the hex. Seven layers of
+		// food forest over every open metre, walks through it, the commons
+		// along them — the 21.6 ha the cell eats from
+		capacity: 0,
+		diameterM: 0,
+		purpose: 'the food forest, walks and commons',
+		count: 0,
+		radius: 0,
+		scale: 1,
+		footprint: 0,
+		extent: 0,
+		build: () => new THREE.Group()
 	}
 }
 
@@ -1712,12 +1730,18 @@ export function isFactory(kind: PlacedKind): kind is FactoryKind {
 }
 
 /** What stops people on the walk — placed along the gravel, facing it. */
-const COMMONS: Array<{ build: (rng: Rng) => THREE.Group; scale: number; extent: number; count: [number, number] }> = [
-	{ build: waterBasin, scale: 0.085, extent: 0.075, count: [1, 1] },
-	{ build: fireCircle, scale: 0.04, extent: 0.065, count: [1, 1] },
-	{ build: swingSet, scale: 0.085, extent: 0.035, count: [1, 1] },
-	{ build: chickenCoop, scale: 0.085, extent: 0.045, count: [1, 2] },
-	{ build: parkBench, scale: 0.085, extent: 0.02, count: [4, 6] }
+const COMMONS: Array<{
+	label: string
+	build: (rng: Rng) => THREE.Group
+	scale: number
+	extent: number
+	count: [number, number]
+}> = [
+	{ label: 'pond', build: waterBasin, scale: 0.085, extent: 0.105, count: [1, 1] },
+	{ label: 'fire', build: fireCircle, scale: 0.04, extent: 0.065, count: [1, 1] },
+	{ label: 'swing', build: swingSet, scale: 0.085, extent: 0.035, count: [1, 1] },
+	{ label: 'coop', build: chickenCoop, scale: 0.085, extent: 0.045, count: [1, 2] },
+	{ label: 'bench', build: parkBench, scale: 0.085, extent: 0.02, count: [4, 6] }
 ]
 
 /**
@@ -1777,7 +1801,7 @@ function growForest(
 					}
 				})
 				group.add(object)
-				clearings.push({ x: px, z: pz, r: spec.extent * 1.3, extent: spec.extent, keepOut: true })
+				clearings.push({ x: px, z: pz, r: spec.extent * 1.3, extent: spec.extent, keepOut: true, label: spec.label })
 				break
 			}
 		}
@@ -2165,8 +2189,8 @@ function buildSettlementAtOrigin(
 		}
 	}
 
-	// level 5: the food forest grows in around everything, right to the rim
-	if (level >= 5) {
+	// level 6: the food forest grows in around everything, right to the rim
+	if (level >= 6) {
 		const reach = clearings.reduce((m, c) => (c.shape ? Math.max(m, Math.hypot(c.x, c.z) + c.extent) : m), 0)
 		growForest(group, makeRng(seed ^ 0xf00d), clearings, reach + 0.06, tile.x, tile.z)
 	}
@@ -2478,6 +2502,10 @@ interface PlacedBuild {
 	clearings: Clearing[]
 }
 const placedPool = new Map<string, PlacedBuild>()
+if (import.meta.env.DEV) {
+	// read the variant library back from the console
+	;(globalThis as { __avencityPlaced?: unknown }).__avencityPlaced = placedPool
+}
 
 function placedVariant(kind: PlacedKind, variant: number): PlacedBuild {
 	const poolKey = `${kind}#${variant}`
@@ -2498,7 +2526,7 @@ function placedVariant(kind: PlacedKind, variant: number): PlacedBuild {
 
 	const build: PlacedBuild = {
 		parts,
-		impostor: impostorFor(poolKey, clearings, isFactory(kind) || BUILDINGS[kind].level >= 5),
+		impostor: impostorFor(poolKey, clearings, isFactory(kind) || BUILDINGS[kind].level >= 6),
 		clearings
 	}
 	placedPool.set(poolKey, build)
@@ -2755,7 +2783,7 @@ export function buildWorld(world: HexWorld): WorldApi {
 		const pool = new SlotPool(geo, mat, chunk.tiles.length, chunk.bounds)
 		pool.mesh.castShadow = castShadow
 		pool.mesh.receiveShadow = true
-		pool.mesh.name = into === chunk.full ? `full:${poolKey.split('#')[0]}` : 'far'
+		pool.mesh.name = into === chunk.full ? `full:${poolKey.split('#').slice(0, 2).join('#')}` : 'far'
 		pool.mesh.visible = into === chunk.full ? chunk.tier === 0 : chunk.tier !== 0
 		into.set(poolKey, pool)
 		mount(pool.mesh)

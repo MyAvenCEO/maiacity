@@ -138,7 +138,13 @@ export function createScene(canvas: HTMLCanvasElement, options: SceneOptions = {
 	renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.25))
 	if (import.meta.env.DEV) {
 		// a dev-only handle for reading draw counts from the console
-		;(globalThis as { __avencity?: unknown }).__avencity = { renderer, get scene() { return scene }, get camera() { return camera } }
+		;(globalThis as { __avencity?: unknown }).__avencity = {
+			renderer,
+			get scene() { return scene },
+			get camera() { return camera },
+			get rig() { return rig },
+			get world() { return world }
+		}
 	}
 	renderer.shadowMap.enabled = true
 	renderer.shadowMap.type = THREE.PCFShadowMap
@@ -276,7 +282,7 @@ export function createScene(canvas: HTMLCanvasElement, options: SceneOptions = {
 			(t) => AXIAL_DIRS.filter(([dq, dr]) => buildable(t.q + dq, t.r + dr)).length === 6
 		)
 		if (hero) {
-			out[key(hero.q, hero.r)] = 'DOME5'
+			out[key(hero.q, hero.r)] = 'FOREST'
 			const ring1: PlacedKind[] = ['DOME4', 'SOLAR', 'DOME3', 'HEMP', 'GLAMP', 'LIFETRAC']
 			for (const [i, [dq, dr]] of AXIAL_DIRS.entries()) {
 				const t = buildable(hero.q + dq, hero.r + dr)
@@ -286,7 +292,7 @@ export function createScene(canvas: HTMLCanvasElement, options: SceneOptions = {
 			// with a few hexes left open so it reads as a neighbourhood, not a grid
 			const ring2: Array<PlacedKind | null> = [
 				'POWER_CUBE', 'DOME3', null, 'BAMBOO', 'DOME4', 'TENT',
-				null, 'DOME5', 'GLAMP', 'SOLAR', null, 'DOME3'
+				null, 'FOREST', 'GLAMP', 'SOLAR', null, 'DOME3'
 			]
 			let q = hero.q + AXIAL_DIRS[4][0] * 2
 			let r = hero.r + AXIAL_DIRS[4][1] * 2
@@ -330,6 +336,7 @@ export function createScene(canvas: HTMLCanvasElement, options: SceneOptions = {
 		if (!world) return
 		const byKey = new Map(tiles.map((t) => [key(t.q, t.r), t]))
 		const pick =
+			Object.entries(saved.buildings).find(([, kind]) => kind === 'FOREST') ??
 			Object.entries(saved.buildings).find(([, kind]) => kind === 'DOME5') ??
 			Object.entries(saved.buildings).find(([, kind]) => kind === 'DOME4')
 		const tile = pick ? byKey.get(pick[0]) : undefined
@@ -346,7 +353,7 @@ export function createScene(canvas: HTMLCanvasElement, options: SceneOptions = {
 	}
 
 	function restore(seed: number, tiles: readonly HexTile[]): void {
-		saveKey = `avencity.world.${seed}.${MAP_SIZE}.v5`
+		saveKey = `avencity.world.${seed}.${MAP_SIZE}.v6`
 		saved = { buildings: {} }
 		let fresh = true
 		try {
