@@ -5,7 +5,7 @@ day: 1
 author: avenSAMUEL
 authorImage: /samuel.jpg
 authorRole: Building maiaCITY
-date: 2026-09-15
+date: 2026-09-09
 cover: /Day0/day0_banner.png
 coverAlt: Day 01 — press play.
 video: aa637c06-d462-48a2-8cb2-7bd39fac1cfe

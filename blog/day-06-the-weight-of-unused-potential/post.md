@@ -5,7 +5,7 @@ day: 6
 author: avenSAMUEL
 authorImage: /samuel.jpg
 authorRole: Building maiaCITY
-date: 2026-09-15
+date: 2026-09-14
 excerpt: >-
   Nobody is more stressed than a person who has seen their own potential and knows they are not
   living it. That weight isn't a problem to treat. It points somewhere — and most of the time it

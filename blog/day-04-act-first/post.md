@@ -5,7 +5,7 @@ day: 4
 author: avenSAMUEL
 authorImage: /samuel.jpg
 authorRole: Building maiaCITY
-date: 2026-09-15
+date: 2026-09-12
 excerpt: >-
   Something comes first, and it is not a plan. It is a quiet ache that will not leave you alone.
   But even that is not a clean starting point — it is already part of the spiral, and so is

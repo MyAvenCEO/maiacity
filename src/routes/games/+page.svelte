@@ -12,7 +12,7 @@
 			coverAlt: 'The avenCITY island — hex tiles, water, the first settlement standing on one of them.'
 		},
 		{
-			name: 'avenCITY Sandbox 2',
+			name: 'avenCITY - No1',
 			status: 'Coming soon',
 			href: null,
 			blurb: 'The second world. Not open yet.',

@@ -5,7 +5,7 @@ day: 5
 author: avenSAMUEL
 authorImage: /samuel.jpg
 authorRole: Building maiaCITY
-date: 2026-09-15
+date: 2026-09-13
 cover: /Day03/Overview 1.png
 coverAlt: One hex picked out of open land — everything starts here.
 excerpt: >-

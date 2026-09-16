@@ -5,7 +5,7 @@ day: 3
 author: avenSAMUEL
 authorImage: /samuel.jpg
 authorRole: Building maiaCITY
-date: 2026-09-14
+date: 2026-09-11
 cover: /Day02/lplP754hucYk1GP-cdia5_XvA2Z8B6.jpg
 coverAlt: A ring of domes around one larger dome at the centre, joined by walkways and water.
 excerpt: >-

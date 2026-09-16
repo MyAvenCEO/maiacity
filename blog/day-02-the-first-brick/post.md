@@ -5,7 +5,7 @@ day: 2
 author: avenSAMUEL
 authorImage: /samuel.jpg
 authorRole: Building maiaCITY
-date: 2026-09-14
+date: 2026-09-10
 cover: /Day01/maia-village.jpg
 coverAlt: A valley of domes, each cluster sitting inside its own forest, the river left where it was.
 excerpt: >-

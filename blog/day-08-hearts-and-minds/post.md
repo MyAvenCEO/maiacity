@@ -137,6 +137,6 @@ We were built to thrive — and to own, together, what we build.
 
 How a single heart becomes a maiaHeart — and why a city needs one currency to pay with and another to own with — is the next story.
 
-It is already being built into avenCITY Sandbox 2, the next world in the game.
+It is already being built into avenCITY - No1, the next world in the game.
 
 [Read the manifesto →](/)
