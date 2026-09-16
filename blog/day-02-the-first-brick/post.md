@@ -160,5 +160,3 @@ That is what we are building: the blueprint for a new generation of self-soverei
 It is the smallest unit that can stand on its own — a self-sufficient dome cell of 150 to 250 humans, living inside its own food forest.
 
 Maia City will be the first city built from them. The first-of-its-kind pilot.
-
-[Next: inside one dome cell, and the life that runs it →](/blog/day-03-what-a-dome-looks-like/)

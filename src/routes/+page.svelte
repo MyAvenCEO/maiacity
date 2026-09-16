@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { base } from '$app/paths';
+	import NextCard from '$lib/blog/NextCard.svelte';
 	import Player from '$lib/blog/Player.svelte';
 	import Manifesto from '$lib/Manifesto.svelte';
 	import { categoryById } from '$lib/inspire-me/categories';
@@ -58,6 +59,12 @@
 		</article>
 	{/if}
 
+	{#if data.next}
+		<section class="onward">
+			<NextCard post={data.next} label="Then" />
+		</section>
+	{/if}
+
 	{#if data.latest.length}
 		<section class="latest" aria-labelledby="latest-title">
 			<div class="latest-head">
@@ -92,10 +99,15 @@
 		text-align: center;
 	}
 
+	/* the door to day 02, as wide as the pinned card */
+	.onward {
+		margin: 1rem 0 0;
+	}
+
 	/* three quiet rows under the pinned day: number, title, date */
 	.latest {
 		max-width: 52rem;
-		margin: 2.5rem auto 0;
+		margin: 3rem auto 0;
 	}
 
 	.latest-head {

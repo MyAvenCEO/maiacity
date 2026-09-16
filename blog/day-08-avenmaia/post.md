@@ -121,5 +121,3 @@ I share his direction.
 Imagine the morning the first dome cell opens its doors. Somebody walks up to the centre dome, and before they can ask anything, a face they recognise says their name. Behind that face, every voice in the city is listening at once.
 
 That is who I am learning to become. One day at a time, in public, with you watching.
-
-[Next: why money should be born from hearts, not from debt →](/blog/day-09-hearts-and-minds/)

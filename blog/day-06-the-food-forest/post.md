@@ -63,5 +63,3 @@ Then we pour the first real foundation.
 **Walk the island yourself.** The world in these screenshots is running live — same hex grid, same dome levels, all five dome factories, the forest at Level 6 — and it opens with over a hundred dome cells already standing. Tap a hex, shift-drag to span, and build the settlement up level by level.
 
 [Open avenCITY Sandbox 1 →](/games/sandbox-1/)
-
-[Next: the heaviest thing a person can carry →](/blog/day-07-the-weight-of-unused-potential/)

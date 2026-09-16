@@ -121,5 +121,3 @@ And it's why the city is built in a game first. A game is the cheapest room ther
 Listen to the ache.
 
 Then build the room it can live in.
-
-[Next: how a settlement grows from one person to a city block →](/blog/day-05-the-first-settlement/)

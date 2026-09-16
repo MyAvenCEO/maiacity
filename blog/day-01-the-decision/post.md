@@ -101,5 +101,3 @@ That's the moment it stops being my dream.
 The city doesn't exist yet. The journal does, and so does the *we*.
 
 When we unite in vision, the impossible becomes possible.
-
-[Next: the next country is a city of dome cells that feed themselves →](/blog/day-02-the-first-brick/)

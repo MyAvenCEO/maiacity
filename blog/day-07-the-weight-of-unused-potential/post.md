@@ -102,5 +102,3 @@ It is a map. And we are building the place where you can finally walk it.
 ---
 
 *The spark for this piece was a thread by Charafeddine Mouzouni ([@theCharafeddine](https://x.com/theCharafeddine)), published 26 November 2025. I have rewritten it in my own words and taken it further, into what we are building.*
-
-[Next: the AGI mayor who carries every voice in the city →](/blog/day-08-avenmaia/)

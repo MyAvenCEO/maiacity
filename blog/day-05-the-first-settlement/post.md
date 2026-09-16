@@ -176,5 +176,3 @@ The sixth step builds nothing at all.
 **Walk the island yourself.** The world in these screenshots is running live — same hex grid, same dome levels, all five dome factories — and it opens with over a hundred dome cells already standing. Tap a hex, shift-drag to span, and build the settlement up level by level.
 
 [Open avenCITY Sandbox 1 →](/games/sandbox-1/)
-
-[Next: twelve domes, a factory, and nothing to eat →](/blog/day-06-the-food-forest/)

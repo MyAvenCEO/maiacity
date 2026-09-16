@@ -130,5 +130,3 @@ The dome is the home. A ring of domes is a dome cell. And a cluster of dome cell
 Fuller called it doing more with less.
 
 We call it Maia City.
-
-[Next: the quiet ache that comes before every first move →](/blog/day-04-act-first/)

@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { base } from '$app/paths';
+	import NextCard from '$lib/blog/NextCard.svelte';
 	import Player from '$lib/blog/Player.svelte';
 	import { categoryById } from '$lib/inspire-me/categories';
 
@@ -58,6 +59,13 @@
 		<div class="film"><Player {post} /></div>
 
 		<div class="prose article">{@html post.html}</div>
+
+		{#if data.next}
+			<footer class="onward">
+				<p class="eyebrow">Keep reading</p>
+				<NextCard post={data.next} />
+			</footer>
+		{/if}
 	</article>
 </main>
 
@@ -82,6 +90,16 @@
 	h1 {
 		margin: 0.75rem 0 0;
 		font-size: clamp(2.5rem, 6vw, 4.2rem);
+	}
+
+	.onward {
+		margin-top: 4rem;
+		padding-top: 2.5rem;
+		border-top: 1px solid var(--line);
+	}
+
+	.onward .eyebrow {
+		margin: 0 0 1rem;
 	}
 
 	.subtitle {
