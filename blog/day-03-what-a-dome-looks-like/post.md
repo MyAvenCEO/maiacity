@@ -119,7 +119,7 @@ A dome cell holds 150 to 250 people. Big enough for three generations to learn f
 
 ![Kneeling down to a child's height, looking at a plant together.](/MaiaCity/W2amjTRdcn8Qk6_mo8EvR_4NjXWTb4.jpg)
 
-## From one unit, a whole city
+## From one dome cell to a whole city
 
 So the blueprint builds itself up from the smallest piece.
 
