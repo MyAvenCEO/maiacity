@@ -136,9 +136,9 @@
 		inset: 0;
 		background: linear-gradient(
 			to bottom,
-			transparent 42%,
-			color-mix(in srgb, var(--cream) 55%, transparent) 70%,
-			var(--cream) 97%
+			transparent 38%,
+			color-mix(in srgb, var(--cream) 70%, transparent) 68%,
+			var(--cream) 90%
 		);
 	}
 
@@ -161,7 +161,7 @@
 	.with-banner h1 {
 		position: relative;
 		z-index: 1;
-		margin-top: clamp(-13rem, -15vw, -4rem);
+		margin-top: clamp(-10rem, -11vw, -3rem);
 		padding-inline: clamp(0.5rem, 3vw, 2.5rem);
 	}
 

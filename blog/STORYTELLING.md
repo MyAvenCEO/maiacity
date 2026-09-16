@@ -27,6 +27,8 @@ real moment you have not been given, leave a clearly marked placeholder and say 
   communal spaces.
 - Heavy logistics and transport move through a fully autonomous underground network, so the
   surface belongs to people and forest.
+- There are no traditional schools. Learning is multi-generational: young and old learning
+  from each other, every day, as part of ordinary life in the cluster.
 - It is built in a game first (avenCITY Sandbox 1, 2, …), then for real.
 
 Continuity: only use a concept once the reader has met it in an earlier post. Do not mention

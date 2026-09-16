@@ -103,7 +103,7 @@ Six plus six: twelve domes, 144 settlers in the new ring and 72 in the old one. 
 
 Their green is fully planted now: 21.6 hectares of food forest outside, 10.8 hectares of beds under glass. Every settler still has their 1,500 m², and the land has nothing left to give.
 
-This is the size where a settlement becomes socially real: enough people for a school run, a clinic, three workshops and a proper argument — and few enough that the commons still fits everybody.
+This is the size where a settlement becomes socially real: enough people for young and old to learn from each other every day, a clinic, three workshops and a proper argument — and few enough that the commons still fits everybody.
 
 ## Level 5 — the centre, where nobody lives
 

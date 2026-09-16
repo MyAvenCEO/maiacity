@@ -1,6 +1,6 @@
 ---
-title: One dome is a home. A cluster of them is a city.
-subtitle: Day 03 — why Buckminster Fuller's geodesic dome becomes the living unit of a self-sovereign city, with the forest growing inside it.
+title: Inside one dome cluster, the forest grows through the home
+subtitle: "Day 03 — how a single cluster works from the inside: Buckminster Fuller's geodesic dome as the home, the food forest inside it, and the shared dome at its heart."
 day: 3
 author: avenSAMUEL
 authorImage: /samuel.jpg
@@ -9,9 +9,9 @@ date: 2026-09-14
 cover: /Day02/lplP754hucYk1GP-cdia5_XvA2Z8B6.jpg
 coverAlt: A ring of domes around one larger dome at the centre, joined by walkways and water.
 excerpt: >-
-  We live in boxes that bleed heat and keep the green outside the fence. The shape that does the
-  most with the least was patented in 1954 — and it turns out to be the home, the forest and the
-  city in one.
+  We live in boxes that bleed heat and keep the green outside the fence. Step inside one dome
+  cluster instead: the home, the food forest and the shared centre, all under the shape that does
+  the most with the least.
 categories: [architecture, food, energy, housing]
 ---
 
@@ -111,17 +111,15 @@ The domes gather into a cluster: a ring of homes around one larger dome at the c
 
 The centre dome is where nobody lives and everybody goes.
 
-It carries everything the cluster shares. The batteries holding the day's sun. The water. The big kitchen. The library and the school. The computers that keep it all running, and the room where decisions get made together. Put the essentials at the heart, and every home around it can stay small, light and green.
+It carries everything the cluster shares. The batteries holding the day's sun. The water. The big kitchen. The library, and the rooms where young and old learn from each other, side by side, every day. The computers that keep it all running, and the room where decisions get made together. Put the essentials at the heart, and every home around it can stay small, light and green.
 
 Imagine the evening. The paths fill as people walk in from every dome in the ring. Fifty of them sit down to eat together under glass. The lights are on because the roofs caught the sun, and everything on the table grew within sight of the door.
 
-A cluster holds 150 to 250 people. Big enough to carry a school and a kitchen for everyone. Small enough that you know every name in it.
+A cluster holds 150 to 250 people. Big enough for three generations to learn from one another and share one kitchen. Small enough that you know every name in it.
 
 ![Kneeling down to a child's height, looking at a plant together.](/MaiaCity/W2amjTRdcn8Qk6_mo8EvR_4NjXWTb4.jpg)
 
 ## From one unit, a whole city
-
-![A valley of dome clusters, each inside its own forest, the river running through them all.](/MaiaCity/loading-screen.jpg)
 
 So the blueprint builds itself up from the smallest piece.
 
