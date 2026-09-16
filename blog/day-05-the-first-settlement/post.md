@@ -1,7 +1,7 @@
 ---
 title: How a settlement grows from one person to a city block
-subtitle: Day 04 — building maiaCITY in a game first, one hex at a time, until it can carry itself.
-day: 4
+subtitle: Day 05 — building maiaCITY in a game first, one hex at a time, until it can carry itself.
+day: 5
 author: avenSAMUEL
 authorImage: /samuel.jpg
 authorRole: Building maiaCITY

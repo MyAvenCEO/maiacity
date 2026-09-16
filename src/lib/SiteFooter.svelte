@@ -1,6 +1,7 @@
 <!-- Closes every page that isn't a full-screen sandbox. -->
 <script lang="ts">
 	import { base } from '$app/paths';
+	import { LEGAL_LINKS } from './legal';
 	import { socials } from './social';
 	import SocialIcon from './SocialIcon.svelte';
 </script>
@@ -32,6 +33,12 @@
 			<a class="logo" href="{base || '/'}">maia<strong>CITY</strong></a>
 			<span>We were never built to survive. We were built to thrive.</span>
 		</div>
+
+		<nav class="legal" aria-label="Legal">
+			{#each LEGAL_LINKS as l (l.href)}
+				<a href="{base}{l.href}">{l.label}</a>
+			{/each}
+		</nav>
 	</div>
 </footer>
 
@@ -147,6 +154,29 @@
 
 	.logo strong {
 		font-weight: 600;
+	}
+
+	/* the smallest print on the page: one quiet, centred row */
+	.legal {
+		display: flex;
+		flex-wrap: wrap;
+		justify-content: center;
+		gap: 0.25rem 1.1rem;
+		margin-top: 2rem;
+		padding-top: 1rem;
+		border-top: 1px solid var(--line);
+		font-size: 9px;
+		letter-spacing: 0.06em;
+		text-transform: uppercase;
+	}
+
+	.legal a {
+		color: var(--muted);
+		text-decoration: none;
+	}
+
+	.legal a:hover {
+		color: var(--ink);
 	}
 
 	@media (max-width: 820px) {

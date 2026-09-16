@@ -1,7 +1,7 @@
 ---
 title: The first citizen of maiaCITY is an AI, and this is her face
-subtitle: Day 06 — meeting avenMAIA, and the design decisions behind every part of how she looks.
-day: 6
+subtitle: Day 07 — meeting avenMAIA, and the design decisions behind every part of how she looks.
+day: 7
 author: avenSAMUEL
 authorImage: /samuel.jpg
 authorRole: Building maiaCITY

@@ -1,7 +1,7 @@
 ---
 title: You cannot think your way into being someone else
-subtitle: Day 05 — there is no clean beginning. There is an ache you learn to trust, a room that decides whether it gets answered, and a spiral that has no first cause and plenty of places to step on.
-day: 5
+subtitle: Day 04 — there is no clean beginning. There is an ache you learn to trust, a room that decides whether it gets answered, and a spiral that has no first cause and plenty of places to step on.
+day: 4
 author: avenSAMUEL
 authorImage: /samuel.jpg
 authorRole: Building maiaCITY
@@ -31,7 +31,7 @@ Learning to hear it is a skill, and most of us were trained in the opposite one.
 
 Trust it before you can justify it. You won't be able to justify it. The ache never shows up with evidence attached, which is exactly why the part of you that wants a business case first will dismiss it every single time.
 
-[Day 07](/blog/day-07-the-weight-of-unused-potential/) is what happens to someone who hears it clearly and does nothing about it for ten years.
+[Day 06](/blog/day-06-the-weight-of-unused-potential/) is what happens to someone who hears it clearly and does nothing about it for ten years.
 
 ## But where did the ache come from?
 

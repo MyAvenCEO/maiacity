@@ -41,21 +41,25 @@ That combination does not end well for anyone who only owns their time.
 
 I was a co-founder of Circles UBI.
 
-Circles started from an idea so simple it sounds naive, and it is one of the most beautiful ideas in money I know.
+You have probably never heard of it, so here is what it was: an open-source project to build a universal basic income from the bottom up. Not paid out by a government, not funded by taxes — created directly by the people using it, on a public blockchain, with nobody in the middle.
+
+It started from an idea so simple it sounds naive, and it is still one of the most beautiful ideas in money I know.
 
 Every human creates their own currency.
 
-No bank. No loan. No debt. You join, and your personal currency starts to flow into your account, steadily, just because you exist. Money that begins as a credit you hold, not a debt someone owes — what we call *Guthaben* in German.
+No bank. No loan. No debt. You join, and your personal currency starts to flow into your account, steadily, just because you exist. Money that begins as a credit you hold, not a debt someone owes.
 
-The clever part was how those millions of personal currencies connected. You trust the people you know, and by trusting someone you accept their currency as equal to yours. Payments travel along those lines of trust, person to person, across the whole network, without anyone at the centre deciding who is worthy.
+Those personal currencies were meant to connect through trust. You trust the people you know, and by trusting someone you accept their currency as equal to yours. Payments would travel along those lines of trust, person to person, across the whole network, without anyone at the centre deciding who is worthy.
 
 A money system drawn from the bottom up.
 
 ## It didn't catch on
 
-I have to be honest about that, because the lesson is in the failure.
+I have to be honest about that, because the lessons are in the failure.
 
-The trust network worked. That was never the problem; it was the real innovation. The problem was a question we never asked clearly enough.
+The trust network did not work. A currency that can only move along personal trust stays as small as the circles of people who already know each other, and asking everyone to decide whose money they will accept, one person at a time, puts the hardest social question right at the front door.
+
+Underneath that sat a bigger problem: a question we never asked clearly enough.
 
 What does anyone actually get from joining?
 

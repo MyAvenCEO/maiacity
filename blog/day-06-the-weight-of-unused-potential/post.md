@@ -1,7 +1,7 @@
 ---
 title: The heaviest thing a person can carry is unused talent
-subtitle: Day 07 — on the weight of potential you have seen and are not living, and the difference between the pain of growing and the pain of not.
-day: 7
+subtitle: Day 06 — on the weight of potential you have seen and are not living, and the difference between the pain of growing and the pain of not.
+day: 6
 author: avenSAMUEL
 authorImage: /samuel.jpg
 authorRole: Building maiaCITY
@@ -99,7 +99,7 @@ Motivation is weather. It arrives, it leaves, and building anything on it is bui
 
 Evidence is a different substance entirely. One focused hour. One set finished. One thing sent instead of saved as a draft. Small, verifiable, yours, and — this is the part that matters — still there tomorrow when the feeling isn't.
 
-Evidence turns stress into momentum, and momentum, repeated often enough, turns into identity. That is the whole machine. It's the same mechanism [Day 05](/blog/day-05-act-first/) works through at length: nobody thinks their way into being someone else, they accumulate proof until the description has to change.
+Evidence turns stress into momentum, and momentum, repeated often enough, turns into identity. That is the whole machine. It's the same mechanism [Day 04](/blog/day-04-act-first/) works through at length: nobody thinks their way into being someone else, they accumulate proof until the description has to change.
 
 Collect the proof. It's the only currency that converts.
 

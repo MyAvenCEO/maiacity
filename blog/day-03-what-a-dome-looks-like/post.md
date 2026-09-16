@@ -131,4 +131,4 @@ Fuller called it doing more with less.
 
 We call it Maia City.
 
-[Next: how the first cluster grows, starting from one person →](/blog/day-04-the-first-settlement/)
+[Next: the quiet ache that comes before every first move →](/blog/day-04-act-first/)
