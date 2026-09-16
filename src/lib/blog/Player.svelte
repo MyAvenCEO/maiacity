@@ -9,6 +9,7 @@
 <script lang="ts">
 	import { dev } from '$app/environment';
 	import { base } from '$app/paths';
+	import { tick } from 'svelte';
 	import CoverArt from './CoverArt.svelte';
 	import type { PostMeta } from './types';
 
@@ -26,6 +27,24 @@
 	} = $props();
 
 	let playing = $state(false);
+	let frame: HTMLDivElement | undefined = $state();
+
+	/** Play, and go fullscreen on the same click — the film is the post, and a
+	 * square cut wants the whole screen. The player mounts on the click, so we
+	 * wait one tick for it; the click's activation still covers the request.
+	 * Anything that refuses (an old iOS, a browser policy) just plays inline. */
+	async function play(): Promise<void> {
+		playing = true;
+		await tick();
+		const el = frame?.querySelector<HTMLElement>('video, iframe');
+		if (!el) return;
+		try {
+			if (el.requestFullscreen) await el.requestFullscreen();
+			else (el as HTMLVideoElement & { webkitEnterFullscreen?: () => void }).webkitEnterFullscreen?.();
+		} catch {
+			// not allowed here — inline is fine
+		}
+	}
 
 	// the local master, so a post can be test-run before Stream finishes encoding
 	const local = $derived(dev && post.videoLocal ? post.videoLocal : null);
@@ -46,7 +65,7 @@
 		style:--ratio={ratio}
 		style:--max-h={maxHeight}
 	>
-		<div class="frame">
+		<div class="frame" bind:this={frame}>
 			{#if hasFilm && playing}
 				{#if local}
 					<!-- svelte-ignore a11y_media_has_caption -->
@@ -64,7 +83,7 @@
 			{:else}
 				<CoverArt {post} eager />
 				{#if hasFilm}
-					<button type="button" onclick={() => (playing = true)}>
+					<button type="button" onclick={play}>
 						<span class="glyph" aria-hidden="true"></span>
 						<span class="label">Play</span>
 					</button>
