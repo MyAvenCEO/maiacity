@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { base } from '$app/paths';
+	import LatestList from '$lib/blog/LatestList.svelte';
 	import NextCard from '$lib/blog/NextCard.svelte';
 	import Player from '$lib/blog/Player.svelte';
 	import { categoryById } from '$lib/inspire-me/categories';
@@ -60,10 +61,13 @@
 
 		<div class="prose article">{@html post.html}</div>
 
-		{#if data.next}
+		{#if data.next || data.latest.length}
 			<footer class="onward">
-				<p class="eyebrow">Keep reading</p>
-				<NextCard post={data.next} />
+				{#if data.next}
+					<p class="eyebrow">Keep reading</p>
+					<NextCard post={data.next} />
+				{/if}
+				<div class="more"><LatestList posts={data.latest} /></div>
 			</footer>
 		{/if}
 	</article>
@@ -100,6 +104,10 @@
 
 	.onward .eyebrow {
 		margin: 0 0 1rem;
+	}
+
+	.more {
+		margin-top: 2.5rem;
 	}
 
 	.subtitle {

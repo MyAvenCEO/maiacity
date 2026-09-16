@@ -1,10 +1,13 @@
 <!--
-	The post's film, with the post's own banner as the poster.
+	The post's film.
 
-	Bunny Stream's thumbnail URL isn't publicly readable, so the iframe would
-	open on a black square. The cover from the frontmatter stands in until
-	someone presses play, and the embed is only mounted on that click — which
-	also keeps the third-party player out of the page until it is wanted.
+	In production it is Bunny's player, mounted straight away, opening on the
+	post's own banner (set on the video with scripts/bunny-thumbnail.mjs) so
+	one click plays. Mounting it on a click of our own cost a second click:
+	Safari won't autoplay a freshly created cross-origin player with sound.
+
+	In dev the local master plays in a <video>, behind our own poster and
+	play button, so a post can be test-run before Stream finishes encoding.
 -->
 <script lang="ts">
 	import { dev } from '$app/environment';
@@ -59,6 +62,8 @@
 </script>
 
 {#if hasFilm || coverOnly}
+	<!-- the front page shows the banner alone; the post shows the film -->
+	{@const showEmbed = Boolean(embedded) && !local && !coverOnly}
 	<figure
 		class="player"
 		style:--aspect={post.videoAspect ?? '16 / 9'}
@@ -66,23 +71,21 @@
 		style:--max-h={maxHeight}
 	>
 		<div class="frame" bind:this={frame}>
-			{#if hasFilm && playing}
-				{#if local}
-					<!-- svelte-ignore a11y_media_has_caption -->
-					<video src="{base}{local}" poster={poster ? `${base}${poster}` : undefined} controls autoplay playsinline>
-						<track kind="captions" />
-					</video>
-				{:else}
-					<iframe
-						src="https://iframe.mediadelivery.net/embed/{post.videoLibrary}/{post.video}?autoplay=true&preload=true"
-						title={post.title}
-						allow="accelerometer; gyroscope; autoplay; encrypted-media; picture-in-picture; fullscreen"
-						allowfullscreen
-					></iframe>
-				{/if}
+			{#if showEmbed}
+				<iframe
+					src="https://iframe.mediadelivery.net/embed/{post.videoLibrary}/{post.video}?autoplay=false&preload=true"
+					title={post.title}
+					allow="accelerometer; gyroscope; autoplay; encrypted-media; picture-in-picture; fullscreen"
+					allowfullscreen
+				></iframe>
+			{:else if local && playing}
+				<!-- svelte-ignore a11y_media_has_caption -->
+				<video src="{base}{local}" poster={poster ? `${base}${poster}` : undefined} controls autoplay playsinline>
+					<track kind="captions" />
+				</video>
 			{:else}
 				<CoverArt {post} eager />
-				{#if hasFilm}
+				{#if local && !coverOnly}
 					<button type="button" onclick={play}>
 						<span class="glyph" aria-hidden="true"></span>
 						<span class="label">Play</span>
