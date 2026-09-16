@@ -14,9 +14,7 @@ import {
 	HEX_RADIUS_M,
 	isFactory,
 	type PlacedKind,
-	settlementCapacity,
-	ZONE_COLORS,
-	type Zone
+	settlementCapacity
 } from './game/three/buildWorld'
 import type { SceneApi } from './game/three/scene'
 import { timeOfDay } from './game/timeOfDay.svelte'
@@ -65,70 +63,6 @@ function area(hectares: number): string {
 	if (hectares < 1) return `${num(hectares * 10_000, 0)} m²`
 	if (hectares < 10) return `${num(hectares)} ha`
 	return `${num(hectares / 100, 2)} km²`
-}
-
-/**
- * The zoning law.
- *
- * Three land uses, and they are not interchangeable. RESERVE is land left
- * alone — it feeds nobody, which is what makes it a reserve. WORKS is the
- * dome plus the industrial crop around it: hemp, bamboo, fibre, the
- * feedstock the dome runs on. LIVING is the settlement plus the food forest
- * that feeds exactly the people standing on it — every settlement carries
- * its own, so this share can never be raised by borrowing from the others.
- *
- * At these shares a fully built island reaches Munich's population without
- * Munich's trick of eating off someone else's land.
- */
-const ZONING = [
-	{ zone: 'RESERVE', icon: 'reserve', label: 'reserve', target: 0.3 },
-	{ zone: 'WORKS', icon: 'works', label: 'works', target: 0.25 },
-	{ zone: 'LIVING', icon: 'living', label: 'living', target: 0.45 }
-] as const satisfies ReadonlyArray<{
-	zone: Zone
-	icon: IconName
-	label: string
-	target: number
-}>
-
-/** Where each zone stands against its target, as a share of zonable land. */
-const zoning = $derived.by(() => {
-	builds
-	const land = Math.max(1, stats.landHexes)
-	const held: Record<Zone, number> = {
-		RESERVE: stats.zonedReserve,
-		WORKS: stats.zonedWorks,
-		LIVING: stats.zonedLiving
-	}
-	return ZONING.map((z) => {
-		const share = held[z.zone] / land
-		return {
-			...z,
-			hexes: held[z.zone],
-			share,
-			// a zone reads as met once it is within a point of its target,
-			// and over only when it has genuinely eaten another's land
-			over: share > z.target + 0.01
-		}
-	})
-})
-
-/** Painting zones is a different job from founding on them. */
-let zoningMode = $state(false)
-
-$effect(() => {
-	// read it FIRST: inside `api?.showZones(zoningMode)` the argument is
-	// never evaluated while api is still undefined, so the effect would
-	// never take zoningMode as a dependency and never run again
-	const on = zoningMode
-	api?.showZones(on)
-})
-
-/** Designates every selected hex, and leaves the selection to paint on. */
-function zone(z: Zone): void {
-	if (selected.length === 0) return
-	api?.setZone(selected, z)
-	builds++
 }
 
 /**
@@ -328,55 +262,10 @@ $effect(() => {
 			     straight off the bottom of the screen. It shrinks now, and the left
 			     column scrolls inside whatever height is left. -->
 			<div class="flex min-h-0 items-end justify-between gap-2">
-				<!-- Bottom left: the zoning law, and whatever is selected under it. -->
+				<!-- Bottom left: whatever is selected. -->
 				<div
 					class="pointer-events-auto flex max-h-full min-h-0 flex-col items-start gap-2 overflow-y-auto"
 				>
-					<!--
-					The zoning law. The bars are the law and the buttons are how you
-					write it: turn zoning on, span-select ground, and press a use.
-					Nothing is ever blocked — a bar simply fills, and turns amber
-					once a zone has taken land the others were meant to have.
-				-->
-					{#if stats.landHexes > 0}
-						<div class="zone-panel hud-pill pointer-events-auto !w-60 shrink-0 !flex-col !items-stretch !rounded-2xl">
-							<button class="zone-toggle" onclick={() => (zoningMode = !zoningMode)}>
-								<span class="zone-title">zoning</span>
-								<span class="zone-state" class:on={zoningMode}>
-									{zoningMode ? 'painting' : 'show'}
-								</span>
-							</button>
-
-							{#each zoning as z (z.zone)}
-								<button
-									class="zone-row"
-									class:zone-row-armed={zoningMode && selected.length > 0}
-									disabled={!zoningMode || selected.length === 0}
-									onclick={() => zone(z.zone)}
-								>
-									<Icon name={z.icon} class="zone-icon" style="color: {ZONE_COLORS[z.zone]}" />
-									<span class="zone-name">{z.label}</span>
-									<span class="zone-track">
-										<span
-											class="zone-fill"
-											style="width: {Math.min(100, (z.share / z.target) * 100)}%; background: {z.over
-											? 'var(--color-coral)'
-											: ZONE_COLORS[z.zone]}"
-										></span>
-									</span>
-								</button>
-							{/each}
-
-							{#if zoningMode}
-								<span class="zone-hint">
-									{selected.length > 0
-									? `${selected.length} hexes — pick a use`
-									: 'shift-drag to span'}
-								</span>
-							{/if}
-						</div>
-					{/if}
-
 					<!-- Tile inspector -->
 					{#if selected.length > 1}
 						<div

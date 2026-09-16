@@ -1423,6 +1423,39 @@ export const FACTORIES: Record<FactoryKind, FactorySpec> = {
 		scale: 0.19,
 		footprint: 0.28,
 		build: factoryDome
+	},
+	// the same shell and footprint for every works — only the trade changes
+	POWER_CUBE: {
+		label: 'Power Cube Works',
+		output: 'Power Cubes',
+		diameterM: 130,
+		scale: 0.19,
+		footprint: 0.28,
+		build: factoryDome
+	},
+	LIFETRAC: {
+		label: 'LifeTrac Works',
+		output: 'LifeTrac tractors',
+		diameterM: 130,
+		scale: 0.19,
+		footprint: 0.28,
+		build: factoryDome
+	},
+	BAMBOO: {
+		label: 'Bamboo Fabric Works',
+		output: 'bamboo fabric',
+		diameterM: 130,
+		scale: 0.19,
+		footprint: 0.28,
+		build: factoryDome
+	},
+	HEMP: {
+		label: 'Hemp Stone Works',
+		output: 'hempcrete blocks',
+		diameterM: 130,
+		scale: 0.19,
+		footprint: 0.28,
+		build: factoryDome
 	}
 }
 
@@ -1805,13 +1838,8 @@ export interface WorldStats {
 	citizens: number
 	settlements: number
 	works: number
-	/** hexes that can be zoned at all — land, minus the lakes in it */
+	/** hexes anything can stand on — land, minus the lakes in it */
 	landHexes: number
-	/** hexes DESIGNATED for each use — what the law apportions. A hex counts
-	 * where it is zoned, whether or not anything stands on it yet. */
-	zonedLiving: number
-	zonedWorks: number
-	zonedReserve: number
 	/** ground the settlements and works stand on */
 	settledHa: number
 	/** open FOOD land, on living hexes: what feeds the citizens */
@@ -1830,9 +1858,6 @@ export const EMPTY_STATS: WorldStats = {
 	settlements: 0,
 	works: 0,
 	landHexes: 0,
-	zonedLiving: 0,
-	zonedWorks: 0,
-	zonedReserve: 0,
 	settledHa: 0,
 	permacultureHa: 0,
 	cropHa: 0,
@@ -1857,12 +1882,6 @@ export interface WorldApi {
 	stats(): WorldStats
 	/** Every buildable hex, for span selection. */
 	landTiles(): readonly HexTile[]
-	/** Designates hexes for a use. Zoning is a decision, not a building — it
-	 * outlives whatever stands on the hex, and nothing enforces it. */
-	setZone(tiles: readonly HexTile[], zone: Zone): void
-	zoneAt(tile: HexTile): Zone
-	/** Shows or hides the colour wash that makes the zoning readable. */
-	showZones(on: boolean): void
 	/** Re-picks each block's detail for where the eye now is. Call per frame —
 	 * it walks a list of chunks and touches only the ones that changed tier. */
 	updateLod(eye: THREE.Vector3): void
@@ -1904,43 +1923,6 @@ const LOD_MID = 96
 const DECO_SHARE = [1, 0.3, 0.045]
 
 type Tier = 0 | 1 | 2
-
-/**
- * What a hex is FOR — designated, not built.
- *
- * Zoning is a decision made before a thing stands, and it survives the thing
- * being cleared. A hex zoned WORKS with nothing on it is still industrial
- * land; a hex zoned RESERVE is land the city has promised not to take. Every
- * hex starts RESERVE, because the default state of ground is that nobody has
- * claimed it.
- */
-export type Zone = 'RESERVE' | 'WORKS' | 'LIVING'
-
-export const ZONE_COLORS: Record<Zone, string> = {
-	RESERVE: '#5f9e5a',
-	WORKS: '#d59b3c',
-	LIVING: '#e8776a'
-}
-
-/** The flat cap laid over a hex to colour it, built once for all of them. */
-let zoneCapGeometry: THREE.BufferGeometry | null = null
-function zoneCap(): THREE.BufferGeometry {
-	if (zoneCapGeometry) return zoneCapGeometry
-	const r = HEX_RADIUS - BEVEL
-	const pts: number[] = []
-	for (let i = 0; i < 6; i++) {
-		const a0 = (Math.PI / 3) * i
-		const a1 = (Math.PI / 3) * (i + 1)
-		pts.push(0, 0, 0, Math.cos(a1) * r, 0, Math.sin(a1) * r, Math.cos(a0) * r, 0, Math.sin(a0) * r)
-	}
-	const geo = new THREE.BufferGeometry()
-	geo.setAttribute('position', new THREE.Float32BufferAttribute(pts, 3))
-	const normals = new Float32Array(pts.length)
-	for (let i = 1; i < normals.length; i += 3) normals[i] = 1
-	geo.setAttribute('normal', new THREE.BufferAttribute(normals, 3))
-	zoneCapGeometry = geo
-	return geo
-}
 
 /** The matrix a decoration wears while a settlement stands on top of it. */
 const HIDDEN = new THREE.Matrix4().makeScale(0, 0, 0)
@@ -2118,8 +2100,6 @@ interface Chunk {
 	 * it, all wearing the same piece. Sixteen variants of a tree are sixteen
 	 * draws to say what a hundred metres away is a single green texture. */
 	farGroup: THREE.Group
-	/** the zone wash over this block's hexes, one instance a hex */
-	zoneMesh: THREE.InstancedMesh | null
 	/** live settlements: full detail and the far stand-in, kept in step */
 	full: Map<string, SlotPool>
 	far: Map<string, SlotPool>
@@ -2204,7 +2184,6 @@ export function buildWorld(world: HexWorld): WorldApi {
 			nearGroup: staticGroup(),
 			deco: [],
 			farGroup: staticGroup(),
-			zoneMesh: null,
 			full: new Map(),
 			far: new Map(),
 			tier: 0
@@ -2236,58 +2215,6 @@ export function buildWorld(world: HexWorld): WorldApi {
 	}
 
 	const __nature0 = performance.now()
-	// --- the zone wash: one flat cap a hex, coloured by what it is FOR -----
-	const zones = new Map<string, Zone>()
-	const zoneSlot = new Map<
-		string,
-		{ mesh: THREE.InstancedMesh; index: number; x: number; z: number }
-	>()
-	// the wash has to win against a green island under a green scatter, so it
-	// is strong enough to read as a decision rather than a tint
-	const zoneMaterial = new THREE.MeshBasicMaterial({
-		transparent: true,
-		opacity: 0.72,
-		depthWrite: false
-	})
-	const zoneScratch = new THREE.Matrix4()
-	const zoneColor = new THREE.Color()
-
-	for (const chunk of chunks) {
-		const mesh = new THREE.InstancedMesh(zoneCap(), zoneMaterial, chunk.tiles.length)
-		mesh.boundingSphere = chunk.bounds
-		mesh.castShadow = false
-		mesh.receiveShadow = false
-		// the wash is a reading of the map, not part of it: off until asked for
-		mesh.visible = false
-		mesh.renderOrder = 2
-		for (const [i, tile] of chunk.tiles.entries()) {
-			// reserve is the default state of ground, so it wears no paint: the
-			// wash shows DECISIONS, and green-on-green showed nothing at all
-			mesh.setMatrixAt(i, HIDDEN)
-			mesh.setColorAt(i, zoneColor.set(ZONE_COLORS.RESERVE))
-			zoneSlot.set(key(tile.q, tile.r), { mesh, index: i, x: tile.x, z: tile.z })
-		}
-		mesh.instanceMatrix.needsUpdate = true
-		if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true
-		chunk.zoneMesh = mesh
-		mount(mesh)
-	}
-
-	/** Paints a hex's cap to match what it is designated for. */
-	function paintZone(tile: HexTile, zone: Zone): void {
-		const slot = zoneSlot.get(key(tile.q, tile.r))
-		if (!slot) return
-		if (zone === 'RESERVE') {
-			slot.mesh.setMatrixAt(slot.index, HIDDEN)
-		} else {
-			zoneScratch.makeTranslation(slot.x, HEX_HEIGHT + 0.02, slot.z)
-			slot.mesh.setMatrixAt(slot.index, zoneScratch)
-			slot.mesh.setColorAt(slot.index, zoneColor.set(ZONE_COLORS[zone]))
-			if (slot.mesh.instanceColor) slot.mesh.instanceColor.needsUpdate = true
-		}
-		slot.mesh.instanceMatrix.needsUpdate = true
-	}
-
 	// --- the nature, instanced per block and biome variant ----------------
 	// Every piece of a variant within a block draws in one call, and the block
 	// culls as a unit. Each instance is remembered against its hex so a hex can
@@ -2464,7 +2391,6 @@ export function buildWorld(world: HexWorld): WorldApi {
 			})
 			group.clear()
 			material.dispose()
-			zoneMaterial.dispose()
 		},
 		tileAt(point: THREE.Vector3): HexTile | null {
 			// the ground draws in chunks, so a hit is located by geometry:
@@ -2476,17 +2402,6 @@ export function buildWorld(world: HexWorld): WorldApi {
 		},
 		buildingAt: (tile) => buildings.get(key(tile.q, tile.r))?.kind ?? null,
 		landTiles: () => land,
-		setZone(tiles, zone) {
-			for (const tile of tiles) {
-				if (!canBuildOnTile(tile)) continue
-				zones.set(key(tile.q, tile.r), zone)
-				paintZone(tile, zone)
-			}
-		},
-		zoneAt: (tile) => zones.get(key(tile.q, tile.r)) ?? 'RESERVE',
-		showZones(on) {
-			for (const chunk of chunks) if (chunk.zoneMesh) chunk.zoneMesh.visible = on
-		},
 		stats(): WorldStats {
 			let citizens = 0
 			let settlements = 0
@@ -2511,27 +2426,17 @@ export function buildWorld(world: HexWorld): WorldApi {
 					citizens += settlementCapacity(BUILDINGS[kind].level)
 				}
 			}
-			let zonedLiving = 0
-			let zonedWorks = 0
-			for (const zone of zones.values()) {
-				if (zone === 'LIVING') zonedLiving++
-				else if (zone === 'WORKS') zonedWorks++
-			}
 			const claimed = settlements + works
-			// a lake is land, but it is not land anyone can zone: leaving it in
-			// the denominator would quietly move every share off its target
 			return {
 				citizens,
 				settlements,
 				works,
 				landHexes: zonable,
-				zonedLiving,
-				zonedWorks,
-				zonedReserve: Math.max(0, zonable - zonedLiving - zonedWorks),
 				settledHa,
 				permacultureHa,
 				cropHa,
-				reserveHa: Math.max(0, zonable - zonedLiving - zonedWorks) * HEX_HA,
+				// untouched ground: every buildable hex nothing stands on yet
+				reserveHa: Math.max(0, zonable - claimed) * HEX_HA,
 				densityPerKm2: claimed > 0 ? citizens / ((claimed * HEX_HA) / 100) : 0
 			}
 		},
@@ -2574,12 +2479,6 @@ export function buildWorld(world: HexWorld): WorldApi {
 			}
 
 			buildings.set(k, { kind, variant })
-			// founding something IS a zoning decision: a hex you build a works
-			// on is industrial land from that moment, and the law should not
-			// need you to say so twice
-			const zone: Zone = isFactory(kind) ? 'WORKS' : 'LIVING'
-			zones.set(k, zone)
-			paintZone(tile, zone)
 			// nature keeps out of the ground the settlement claims
 			setDeco(tile, build.clearings)
 		}

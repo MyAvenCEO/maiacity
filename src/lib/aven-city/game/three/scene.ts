@@ -6,13 +6,16 @@
  */
 import * as THREE from 'three'
 import { generateMap, type HexTile, key, MAP_SIZE } from '../hexmap'
+import { makeRng } from '../rng'
 import {
+	BUILD_ORDER,
 	buildWorld,
+	canBuildOnTile,
 	EMPTY_STATS,
+	FACTORY_KINDS,
 	type PlacedKind,
 	type WorldApi,
-	type WorldStats,
-	type Zone
+	type WorldStats
 } from './buildWorld'
 import { createCameraRig } from './cameraRig'
 import { createDaylight } from './daylight'
@@ -64,9 +67,6 @@ export interface SceneApi {
 	stats(): WorldStats
 	/** Designates hexes for a use, and shows or hides the colour wash that
 	 * makes the designation readable on the island. */
-	setZone(tiles: readonly HexTile[], zone: Zone): void
-	zoneAt(tile: HexTile): Zone
-	showZones(on: boolean): void
 	/** Moves the sun to the given hour of the day (0..24). */
 	setHour(hour: number): void
 	dispose(): void
@@ -220,14 +220,13 @@ export function createScene(canvas: HTMLCanvasElement, options: SceneOptions = {
 	let world: WorldApi | null = null
 
 	// --- settlements survive a reload -----------------------------------
-	// every dome and zone is written to localStorage per island, so a city you
+	// every dome is written to localStorage per island, so a city you
 	// founded is still standing when you come back. Keyed by seed AND size:
 	// a resized island has different hexes, and old saves must not land on it.
 	interface Saved {
 		buildings: Record<string, PlacedKind>
-		zones: Record<string, Zone>
 	}
-	let saved: Saved = { buildings: {}, zones: {} }
+	let saved: Saved = { buildings: {} }
 	let saveKey = ''
 
 	function persist(): void {
@@ -238,23 +237,50 @@ export function createScene(canvas: HTMLCanvasElement, options: SceneOptions = {
 		}
 	}
 
+	/**
+	 * A new island never opens empty: 50 domes stand on it already, placed from
+	 * the seed so every visitor starts from the same one. Forty dome cells at
+	 * every level, and ten works — two of each trade.
+	 */
+	function seedSettlements(seed: number, tiles: readonly HexTile[]): Record<string, PlacedKind> {
+		const rng = makeRng((seed ^ 0x5eed5) >>> 0)
+		const open = tiles.filter(canBuildOnTile)
+		// Fisher–Yates, so the 50 hexes are spread across the whole island
+		for (let i = open.length - 1; i > 0; i--) {
+			const j = rng.int(0, i)
+			;[open[i], open[j]] = [open[j], open[i]]
+		}
+		const kinds: PlacedKind[] = [
+			...Array.from({ length: 40 }, () => rng.pick(BUILD_ORDER)),
+			...FACTORY_KINDS.flatMap((k) => [k, k])
+		]
+		const out: Record<string, PlacedKind> = {}
+		for (const [i, kind] of kinds.entries()) {
+			const tile = open[i]
+			if (tile) out[key(tile.q, tile.r)] = kind
+		}
+		return out
+	}
+
 	function restore(seed: number, tiles: readonly HexTile[]): void {
-		saveKey = `avencity.world.${seed}.${MAP_SIZE}`
-		saved = { buildings: {}, zones: {} }
+		saveKey = `avencity.world.${seed}.${MAP_SIZE}.v2`
+		saved = { buildings: {} }
+		let fresh = true
 		try {
 			const raw = localStorage.getItem(saveKey)
-			if (raw) saved = { buildings: {}, zones: {}, ...JSON.parse(raw) }
+			if (raw) {
+				saved = { buildings: JSON.parse(raw).buildings ?? {} }
+				fresh = false
+			}
 		} catch {
-			return
+			// storage unavailable: still seed the island, it just won't be kept
 		}
 		if (!world) return
-		const byKey = new Map(tiles.map((t) => [key(t.q, t.r), t]))
-		const zoned = new Map<Zone, HexTile[]>()
-		for (const [k, zone] of Object.entries(saved.zones)) {
-			const tile = byKey.get(k)
-			if (tile) zoned.set(zone, [...(zoned.get(zone) ?? []), tile])
+		if (fresh) {
+			saved.buildings = seedSettlements(seed, tiles)
+			persist()
 		}
-		for (const [zone, list] of zoned) world.setZone(list, zone)
+		const byKey = new Map(tiles.map((t) => [key(t.q, t.r), t]))
 		for (const [k, kind] of Object.entries(saved.buildings)) {
 			const tile = byKey.get(k)
 			if (!tile) continue
@@ -265,8 +291,6 @@ export function createScene(canvas: HTMLCanvasElement, options: SceneOptions = {
 			}
 		}
 	}
-	/** the overlay outlives any one island, so a new world opens as you left it */
-	let zonesVisible = false
 
 	function setWorld(seed: number): void {
 		if (world) {
@@ -294,7 +318,6 @@ export function createScene(canvas: HTMLCanvasElement, options: SceneOptions = {
 		world.group.position.z = -(minZ + maxZ) / 2
 		scene.add(world.group)
 		restore(seed, map.tiles)
-		world.showZones(zonesVisible)
 		selection = []
 		showSelection()
 	}
@@ -487,23 +510,6 @@ export function createScene(canvas: HTMLCanvasElement, options: SceneOptions = {
 		},
 		stats() {
 			return world?.stats() ?? EMPTY_STATS
-		},
-		setZone(tiles, zone) {
-			world?.setZone(tiles, zone)
-			for (const t of tiles) {
-				const k = key(t.q, t.r)
-				// reserve is the default state of ground, so it needs no entry
-				if (zone === 'RESERVE') delete saved.zones[k]
-				else saved.zones[k] = zone
-			}
-			persist()
-		},
-		zoneAt(tile) {
-			return world?.zoneAt(tile) ?? 'RESERVE'
-		},
-		showZones(on) {
-			zonesVisible = on
-			world?.showZones(on)
 		},
 		setHour: daylight.setHour,
 		dispose(): void {

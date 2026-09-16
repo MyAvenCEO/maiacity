@@ -139,7 +139,21 @@ The works dome is 130 metres across and belongs to the settlement — theirs to 
 
 One tractor runs the swales, the beds, the timber and the earthworks of a hex this size. The second one built here goes to the next settlement, and the drawings go with it — which is how a hex that can build machines turns into a grid that can build hexes.
 
-Now the unit is complete: 216 people who house, feed and power themselves, and who make the machines the rest of the grid needs — with every hectare of it inside a boundary they can walk.
+## Every dome cell owns at least one works
+
+One works is the minimum, not the plan.
+
+Every dome cell owns at least one works dome, built close enough to walk to, and most will grow more. The shell is the same each time — 130 metres, one storey of stone under a shallow dome. What changes is the trade inside it.
+
+- **Solar Works** — panels for its own roofs, and for the next settlement's.
+- **Power Cube Works** — the Power Cube, Open Source Ecology's self-contained hydraulic power unit: the engine that drives LifeTrac and most of the machines that come after it.
+- **LifeTrac Works** — the tractor itself.
+- **Bamboo Fabric Works** — cane from the edge of the food forest, turned into fibre and cloth.
+- **Hemp Stone Works** — hempcrete: hemp and lime, cast into blocks for the walls of the next domes.
+
+Co-location is the whole idea. The land that grows the hemp, the works that turns it into stone and the dome cell that builds with it are a short walk apart. Materials never have to leave the place that uses them.
+
+Now the unit is complete: 216 people who house, feed and power themselves, and who make the machines and materials the rest of the grid needs — with every hectare of it inside a boundary they can walk.
 
 > A city is not a plan drawn above the settlements. It is what happens when enough of them can stand alone — and then choose to trade.
 
@@ -149,6 +163,6 @@ Then we pour the first real foundation.
 
 ---
 
-**Walk the island yourself.** The world in these screenshots is running live — same hex grid, same dome levels, same zoning. Tap a hex, shift-drag to span, and build the settlement up level by level.
+**Walk the island yourself.** The world in these screenshots is running live — same hex grid, same dome levels, all five works — and it opens with fifty domes already standing. Tap a hex, shift-drag to span, and build the settlement up level by level.
 
 [Open avenCITY Sandbox 1 →](/games/sandbox-1/)

@@ -2703,7 +2703,7 @@ export function communityStage(rng: Rng): THREE.Group {
  * whole settlement cluster, glazed and panelled above.
  * ------------------------------------------------------------------------ */
 
-export type FactoryKind = 'SOLAR'
+export type FactoryKind = 'SOLAR' | 'POWER_CUBE' | 'LIFETRAC' | 'BAMBOO' | 'HEMP'
 
 /** Dark panels with glass between them — a roof that is mostly collector. */
 const SOLAR_PANES = [
@@ -2717,6 +2717,30 @@ const SOLAR_PANES = [
 	'#1d2839'
 ]
 const STEEL = '#8d949c'
+
+/**
+ * Every works shares one shell and one footprint; what changes is the glass
+ * it wears and the stock standing on its apron, so each reads as its trade
+ * from across the island.
+ */
+const WORKS_PANES: Record<FactoryKind, string[] | undefined> = {
+	SOLAR: SOLAR_PANES,
+	// hydraulic power units: warm amber glass over steel
+	POWER_CUBE: ['#e0a03c', '#f2c36b', '#c9862a', '#8fd3e8', '#e8b155', '#b8742a'],
+	// the open-source tractor works: field green
+	LIFETRAC: ['#7da35a', '#9cc27a', '#5f8a45', '#a5dced', '#88b066', '#6e9650'],
+	// bamboo fabric: pale cane and linen
+	BAMBOO: ['#d8d49a', '#c7cf8c', '#e6e2b8', '#b8c47a', '#efe9c9', '#cfd8a0'],
+	// hemp stone: lime-white and straw
+	HEMP: ['#e7dfc9', '#d8ccae', '#f1ead8', '#c9b98f', '#ece3cc', '#bfae84']
+}
+const WORKS_STRUT: Record<FactoryKind, string> = {
+	SOLAR: STEEL,
+	POWER_CUBE: '#6f757c',
+	LIFETRAC: '#4f5a44',
+	BAMBOO: '#9c8a4e',
+	HEMP: '#8f7f5c'
+}
 
 /**
  * A factory dome: one storey of stone arcade, and above it a single shallow
@@ -2746,8 +2770,8 @@ export function factoryDome(rng: Rng, kind: FactoryKind): THREE.Group {
 	// the shell: wide and shallow, so it reads as a roof over a floor plate
 	const DECK_Y = WALL_H + 0.15
 	const shell = geodesicShell(R * 1.02, 2, {
-		panes: kind === 'SOLAR' ? SOLAR_PANES : undefined,
-		strut: STEEL,
+		panes: WORKS_PANES[kind],
+		strut: WORKS_STRUT[kind],
 		opacity: 0.9
 	})
 	shell.scale.y = 0.5
@@ -2762,7 +2786,37 @@ export function factoryDome(rng: Rng, kind: FactoryKind): THREE.Group {
 	stack.position.set(0.34, DECK_Y + R * 0.44, -0.2)
 	g.add(stack)
 
-	// solar arrays on the apron, angled at the sun
+	if (kind === 'SOLAR') solarApron(g, rng, R)
+	else if (kind === 'POWER_CUBE') powerCubeApron(g, rng, R)
+	else if (kind === 'LIFETRAC') lifeTracApron(g, rng, R)
+	else if (kind === 'BAMBOO') bambooApron(g, rng, R)
+	else hempApron(g, rng, R)
+
+	// stock and crates by the door
+	for (let i = 0; i < 6; i++) {
+		const ang = rng.range(0, Math.PI * 2)
+		const d = R * rng.range(1.08, 1.24)
+		const size = rng.range(0.1, 0.16)
+		const crate = new THREE.Mesh(
+			new THREE.BoxGeometry(size, size * 0.7, size),
+			facet(rng.chance(0.5) ? '#b98c52' : STEEL)
+		)
+		crate.position.set(Math.cos(ang) * d, size * 0.35 + 0.04, Math.sin(ang) * d)
+		crate.rotation.y = rng.jitter(0, 0.5)
+		g.add(crate)
+	}
+
+	g.rotation.y = rng.range(0, Math.PI * 2)
+	return g
+}
+
+/** A point on the apron ring around a works, at angle `ang`. */
+function onApron(R: number, ang: number, d = 1.22): [number, number] {
+	return [Math.cos(ang) * R * d, Math.sin(ang) * R * d]
+}
+
+/** Solar arrays on the apron, angled at the sun. */
+function solarApron(g: THREE.Group, rng: Rng, R: number): void {
 	const arrayGeos: THREE.BufferGeometry[] = []
 	const frameGeos: THREE.BufferGeometry[] = []
 	const rows = 5
@@ -2796,22 +2850,110 @@ export function factoryDome(rng: Rng, kind: FactoryKind): THREE.Group {
 	if (frames) g.add(new THREE.Mesh(frames, facet(STEEL)))
 	for (const geo of [...arrayGeos, ...frameGeos]) geo.dispose()
 
-	// stock and crates by the door
-	for (let i = 0; i < 6; i++) {
-		const ang = rng.range(0, Math.PI * 2)
-		const d = R * rng.range(1.08, 1.24)
-		const size = rng.range(0.1, 0.16)
-		const crate = new THREE.Mesh(
-			new THREE.BoxGeometry(size, size * 0.7, size),
-			facet(rng.chance(0.5) ? '#b98c52' : STEEL)
-		)
-		crate.position.set(Math.cos(ang) * d, size * 0.35 + 0.04, Math.sin(ang) * d)
-		crate.rotation.y = rng.jitter(0, 0.5)
-		g.add(crate)
-	}
+}
 
-	g.rotation.y = rng.range(0, Math.PI * 2)
-	return g
+/** Power Cubes — the open-source hydraulic power unit — waiting on pallets. */
+function powerCubeApron(g: THREE.Group, rng: Rng, R: number): void {
+	for (let i = 0; i < 6; i++) {
+		const ang = Math.PI * 0.55 + (i / 5) * Math.PI * 0.9 + rng.jitter(0, 0.05)
+		const [x, z] = onApron(R, ang)
+		const pallet = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.03, 0.22), facet('#9c7a4c'))
+		pallet.position.set(x, 0.015, z)
+		pallet.rotation.y = -ang
+		g.add(pallet)
+		const cube = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.16, 0.16), facet('#e0892a'))
+		cube.position.set(x, 0.11, z)
+		cube.rotation.y = -ang
+		g.add(cube)
+		const frame = new THREE.Mesh(new THREE.BoxGeometry(0.17, 0.02, 0.17), facet('#3a3f45'))
+		frame.position.set(x, 0.2, z)
+		frame.rotation.y = -ang
+		g.add(frame)
+	}
+}
+
+/** A pair of LifeTrac tractors — the first thing the works makes. */
+function lifeTracApron(g: THREE.Group, rng: Rng, R: number): void {
+	for (let i = 0; i < 2; i++) {
+		const ang = Math.PI * 0.8 + i * Math.PI * 0.45 + rng.jitter(0, 0.08)
+		const [x, z] = onApron(R, ang, 1.28)
+		const t = new THREE.Group()
+		const body = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.1, 0.2), facet('#6f9a3e'))
+		body.position.y = 0.13
+		t.add(body)
+		const cab = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.1, 0.16), facet('#3a3f45'))
+		cab.position.set(-0.06, 0.23, 0)
+		t.add(cab)
+		// the loader arms reaching forward
+		for (const side of [-1, 1]) {
+			const arm = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.03, 0.03), facet('#6f9a3e'))
+			arm.position.set(0.2, 0.16, side * 0.09)
+			arm.rotation.z = -0.35
+			t.add(arm)
+		}
+		const bucket = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.08, 0.24), facet('#3a3f45'))
+		bucket.position.set(0.32, 0.08, 0)
+		t.add(bucket)
+		for (const wx of [-0.1, 0.1]) {
+			for (const wz of [-0.12, 0.12]) {
+				const wheel = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.07, 0.05, 10), facet('#2b2b2b'))
+				wheel.rotation.x = Math.PI / 2
+				wheel.position.set(wx, 0.07, wz)
+				t.add(wheel)
+			}
+		}
+		t.position.set(x, 0, z)
+		t.rotation.y = -ang + Math.PI / 2
+		g.add(t)
+	}
+}
+
+/** Cut bamboo stood in bundles, and bolts of the fabric woven from it. */
+function bambooApron(g: THREE.Group, rng: Rng, R: number): void {
+	for (let i = 0; i < 3; i++) {
+		const ang = Math.PI * 0.6 + i * Math.PI * 0.4 + rng.jitter(0, 0.05)
+		const [x, z] = onApron(R, ang)
+		for (let c = 0; c < 7; c++) {
+			const h = rng.range(0.3, 0.46)
+			const cane = new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.014, h, 5), facet('#b8c46a'))
+			cane.position.set(x + rng.jitter(0, 0.05), h / 2, z + rng.jitter(0, 0.05))
+			g.add(cane)
+		}
+	}
+	for (let i = 0; i < 4; i++) {
+		const ang = Math.PI * 1.55 + i * 0.18
+		const [x, z] = onApron(R, ang, 1.18)
+		const bolt = new THREE.Mesh(
+			new THREE.CylinderGeometry(0.045, 0.045, 0.24, 8),
+			facet(i % 2 ? '#ede6cf' : '#d9d2a6')
+		)
+		bolt.rotation.set(0, -ang, Math.PI / 2)
+		bolt.position.set(x, 0.05, z)
+		g.add(bolt)
+	}
+}
+
+/** Hempcrete blocks stacked on pallets, curing in the air. */
+function hempApron(g: THREE.Group, rng: Rng, R: number): void {
+	for (let i = 0; i < 5; i++) {
+		const ang = Math.PI * 0.55 + (i / 4) * Math.PI * 0.9 + rng.jitter(0, 0.05)
+		const [x, z] = onApron(R, ang)
+		const stack = new THREE.Group()
+		const pallet = new THREE.Mesh(new THREE.BoxGeometry(0.26, 0.03, 0.2), facet('#9c7a4c'))
+		pallet.position.y = 0.015
+		stack.add(pallet)
+		const layers = 2 + Math.floor(rng.range(0, 2))
+		for (let l = 0; l < layers; l++) {
+			for (let b = 0; b < 2; b++) {
+				const block = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.06, 0.18), facet(l % 2 ? '#e4dbc2' : '#d6c9a6'))
+				block.position.set(-0.063 + b * 0.126, 0.06 + l * 0.062, 0)
+				stack.add(block)
+			}
+		}
+		stack.position.set(x, 0, z)
+		stack.rotation.y = -ang
+		g.add(stack)
+	}
 }
 
 /** Glass over green — the panes of a growing dome, not a dwelling. */
