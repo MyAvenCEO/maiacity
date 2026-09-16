@@ -1,5 +1,5 @@
 ---
-title: The first brick of a sovereign city is a food forest
+title: The first brick of a sovereign city is a cluster that feeds itself
 subtitle: Day 02 — why resilience is moving from nations to city states, and why it starts with the ground around the door.
 day: 2
 author: avenSamuel
@@ -10,8 +10,8 @@ cover: /Day01/maia-village.jpg
 coverAlt: A valley of domes, each cluster sitting inside its own forest, the river left where it was.
 excerpt: >-
   A country is a promise that the trucks will keep coming. The next generation of sovereignty is
-  a city state that doesn't need them — and its first brick is a food forest around every cluster
-  of domes.
+  a city state that doesn't need them — and its first brick is a self-sufficient dome cluster of
+  150 to 250 people, living inside its own food forest.
 categories: [food, ecology, energy, architecture]
 ---
 
@@ -157,6 +157,8 @@ Nothing on that list needs the thread.
 
 That is what we are building: the blueprint for a new generation of self-sovereign city states. And its first brick is not a wall.
 
-It is a tree.
+It is the smallest unit that can stand on its own — a self-sufficient dome cluster of 150 to 250 humans, living inside its own food forest.
+
+Maia City will be the first city built from them. The first of its kind.
 
 [Next: what a dome actually looks like →](/blog/day-03-what-a-dome-looks-like/)
