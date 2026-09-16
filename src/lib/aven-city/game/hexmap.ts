@@ -152,7 +152,8 @@ function placeRegions(
 	interior: Array<[number, number]>
 ): RegionCenter[] {
 	const count = Math.max(14, Math.round(cells.length / 34)) + rng.int(0, 3)
-	const lakeCount = rng.int(2, 4)
+	// one or two lakes: on a 470-hex island, more water left too little ground
+	const lakeCount = rng.int(1, 2)
 
 	const biomes: BiomeId[] = []
 	for (let i = 0; i < lakeCount; i++) biomes.push(WATER_BIOME)
@@ -191,7 +192,9 @@ function placeRegions(
 			if (minDist >= 3) break
 		}
 		// abundant biomes also claim more ground per center
-		const pull = biome === WATER_BIOME ? 1 : 0.72 + 0.055 * (BIOME_ABUNDANCE[biome] ?? 1)
+		// lakes pull less ground than any land biome, so they stay ponds and
+		// meres rather than inland seas
+		const pull = biome === WATER_BIOME ? 0.55 : 0.72 + 0.055 * (BIOME_ABUNDANCE[biome] ?? 1)
 		centers.push({ q: best[0], r: best[1], biome, weight: rng.range(0.8, 1.35) * pull })
 	}
 	return centers
@@ -202,7 +205,7 @@ function placeRegions(
  *
  * A level five hex houses 276 people, on land that also grows their food.
  * Under the zoning law 45% of the zonable ground may be lived on, and about
- * 1.1% of an island comes out as lake, which cannot be zoned at all. So:
+ * a few percent of an island comes out as lake, which nothing can stand on. So:
  *
  *   470 × 0.9895 zonable × 0.45 living × 276 people ≈ 58 000
  *
