@@ -6,6 +6,10 @@
 <script lang="ts">
 	import { base } from '$app/paths';
 
+	// the banner is optional: without the illustration the headline simply
+	// stands on the page
+	let { banner = false }: { banner?: boolean } = $props();
+
 	const visions = [
 		'a million founders uniting behind one vision, and discovering what humans have always been able to do the moment they stop competing for scraps.',
 		'a child growing up who never once hears that this is just the way things are.',
@@ -23,7 +27,15 @@
 </script>
 
 <article class="manifesto">
-	<header class="spread">
+	<header class="spread" class:with-banner={banner}>
+		{#if banner}
+			<div class="banner">
+				<img
+					src="{base}/manifesto-banner.jpg"
+					alt="A woman on a mountain top at sunrise, arms wide open over the sea."
+				/>
+			</div>
+		{/if}
 		<p class="kicker"><span>Manifesto</span></p>
 		<h1>
 			<span class="survive">We were never built to survive.</span>
@@ -82,7 +94,7 @@
 		<p class="creed">when we unite in vision, the impossible becomes possible.</p>
 		<p class="signature">
 			<img src="{base}/samuel.jpg" alt="" />
-			<span>avenSamuel</span>
+			<span>avenSAMUEL</span>
 		</p>
 	</footer>
 </article>
@@ -94,8 +106,63 @@
 
 	/* ── the spread ─────────────────────────────────────────── */
 	.spread {
+		position: relative;
 		padding-block: 1rem 3.5rem;
 		border-bottom: 1px solid var(--ink);
+	}
+
+	/* The illustration melts into the page: its lower half fades to the page
+	   colour, and the headline is pulled up into that fade. */
+	.banner {
+		position: relative;
+		overflow: hidden;
+		border-radius: var(--radius);
+		aspect-ratio: 16 / 9;
+		max-height: 74vh;
+		width: 100%;
+	}
+
+	.banner img {
+		display: block;
+		width: 100%;
+		height: 100%;
+		object-fit: cover;
+		object-position: center 35%;
+	}
+
+	.banner::after {
+		content: '';
+		position: absolute;
+		inset: 0;
+		background: linear-gradient(
+			to bottom,
+			transparent 42%,
+			color-mix(in srgb, var(--cream) 55%, transparent) 70%,
+			var(--cream) 97%
+		);
+	}
+
+	.with-banner .kicker {
+		position: absolute;
+		top: 2.25rem;
+		left: 1.75rem;
+		z-index: 1;
+		margin: 0;
+		padding: 0.45rem 0.95rem;
+		border-radius: 999px;
+		background: color-mix(in srgb, var(--paper) 88%, transparent);
+		color: var(--ink);
+	}
+
+	.with-banner .kicker::after {
+		display: none;
+	}
+
+	.with-banner h1 {
+		position: relative;
+		z-index: 1;
+		margin-top: clamp(-13rem, -15vw, -4rem);
+		padding-inline: clamp(0.5rem, 3vw, 2.5rem);
 	}
 
 	.kicker {
@@ -350,6 +417,15 @@
 	}
 
 	@media (max-width: 760px) {
+		.banner {
+			aspect-ratio: 4 / 3;
+		}
+
+		.with-banner .kicker {
+			top: 1.75rem;
+			left: 1rem;
+		}
+
 		.chapter {
 			grid-template-columns: 1fr;
 			gap: 1.25rem;

@@ -2,7 +2,7 @@
 title: The 1 million lives decision I almost didn't dare to take
 subtitle: Day 01 — the decision, why it sat still for three years, and what finally moved it.
 day: 1
-author: avenSamuel
+author: avenSAMUEL
 authorImage: /samuel.jpg
 authorRole: Building maiaCITY
 date: 2026-09-15

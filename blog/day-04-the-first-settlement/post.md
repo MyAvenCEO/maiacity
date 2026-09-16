@@ -2,7 +2,7 @@
 title: How a settlement grows from one person to a city block
 subtitle: Day 04 — building maiaCITY in a game first, one hex at a time, until it can carry itself.
 day: 4
-author: avenSamuel
+author: avenSAMUEL
 authorImage: /samuel.jpg
 authorRole: Building maiaCITY
 date: 2026-09-15
@@ -19,6 +19,12 @@ One person. One tent, five metres across. One fire.
 That is the whole settlement on the first night, and everything in this post is what grows out of it.
 
 We are building maiaCITY in a game before we build it in soil. A game lets you run a settlement forward, watch where it stops working, and start again the same afternoon.
+
+The domes from [Day 03](/blog/day-03-what-a-dome-looks-like/) come with us, translated. Same arcade, same terrace, same shell — flattened into shapes the engine can draw hundreds of without dropping a frame. If the idea still reads at fifty triangles, it was the shape carrying it, not the rendering.
+
+![A single low-poly dome on stone arcades, in the game's own material language.](/Day02/f_H-7YDGzpA3Po-2O3XPY_WYkrZ7CF.jpg)
+
+![The smallest version: one dome, a terrace, a footbridge over water.](/Day02/z6GzRVgA4xYiPWADzbORj_SvHTgurF.jpg)
 
 The world is a hex grid, and one hex is the unit we are actually designing. Not the city — the city comes later, and only as copies of this.
 
@@ -145,4 +151,4 @@ Then we pour the first real foundation.
 
 **Walk the island yourself.** The world in these screenshots is running live — same hex grid, same dome levels, same zoning. Tap a hex, shift-drag to span, and build the settlement up level by level.
 
-[Open the avenCITY playground →](/games/sandbox-1/)
+[Open avenCITY Sandbox 1 →](/games/sandbox-1/)

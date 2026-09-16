@@ -2,7 +2,7 @@
 title: You cannot think your way into being someone else
 subtitle: Day 05 — there is no clean beginning. There is an ache you learn to trust, a room that decides whether it gets answered, and a spiral that has no first cause and plenty of places to step on.
 day: 5
-author: avenSamuel
+author: avenSAMUEL
 authorImage: /samuel.jpg
 authorRole: Building maiaCITY
 date: 2026-09-15

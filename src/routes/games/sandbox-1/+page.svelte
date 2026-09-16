@@ -5,7 +5,7 @@
 </script>
 
 <svelte:head>
-	<title>Sandbox 1 · maiaCITY</title>
+	<title>avenCITY Sandbox 1 · maiaCITY</title>
 	<meta name="description" content="The avenCITY world — a procedurally generated hex island." />
 </svelte:head>
 

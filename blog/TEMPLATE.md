@@ -2,7 +2,7 @@
 title: <Headline — short, concrete, no colon-subtitle>
 subtitle: <One sentence that sharpens the promise. Optional.>
 day: <NN — the day number in the build-in-public series. Optional.>
-author: avenSamuel
+author: avenSAMUEL
 authorImage: /samuel.jpg
 authorRole: Building maiaCITY
 date: <YYYY-MM-DD>
@@ -14,6 +14,8 @@ categories: [<ids from src/lib/inspire-me/categories.ts — start with `game` fo
 ---
 
 <!--
+The full reusable writing prompt lives in blog/STORYTELLING.md — start there.
+
 HOW TO WRITE ONE OF THESE
 
 Same story machine as the Inspire me report cards:

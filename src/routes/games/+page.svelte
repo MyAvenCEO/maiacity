@@ -3,7 +3,7 @@
 
 	const sandboxes = [
 		{
-			name: 'Sandbox 1',
+			name: 'avenCITY Sandbox 1',
 			status: 'Open',
 			href: `${base}/games/sandbox-1`,
 			blurb:
@@ -12,7 +12,7 @@
 			coverAlt: 'The avenCITY island — hex tiles, water, the first settlement standing on one of them.'
 		},
 		{
-			name: 'Sandbox 2',
+			name: 'avenCITY Sandbox 2',
 			status: 'Coming soon',
 			href: null,
 			blurb: 'The second world. Not open yet.',

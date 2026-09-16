@@ -24,7 +24,7 @@
 </svelte:head>
 
 <main class="wrap">
-	<Manifesto />
+	<Manifesto banner={data.banner} />
 
 	{#if post}
 		<p class="start eyebrow">Where it starts</p>

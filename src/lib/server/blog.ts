@@ -39,7 +39,7 @@ function parsePost(slug: string, raw: string): { meta: PostMeta; body: string } 
 			title: String(fm.title ?? slug),
 			subtitle: optional(fm.subtitle),
 			day: fm.day == null ? undefined : Number(fm.day),
-			author: String(fm.author ?? 'avenSamuel'),
+			author: String(fm.author ?? 'avenSAMUEL'),
 			authorImage: optional(fm.authorImage),
 			authorRole: optional(fm.authorRole),
 			date: String(fm.date ?? ''),

@@ -2,7 +2,7 @@
 title: The first brick of a sovereign city is a cluster that feeds itself
 subtitle: Day 02 — why resilience is moving from nations to city states, and why it starts with the ground around the door.
 day: 2
-author: avenSamuel
+author: avenSAMUEL
 authorImage: /samuel.jpg
 authorRole: Building maiaCITY
 date: 2026-09-14
@@ -161,4 +161,4 @@ It is the smallest unit that can stand on its own — a self-sufficient dome clu
 
 Maia City will be the first city built from them. The first-of-its-kind pilot.
 
-[Next: what a dome actually looks like →](/blog/day-03-what-a-dome-looks-like/)
+[Next: why one dome is a home, and a cluster of them is a city →](/blog/day-03-what-a-dome-looks-like/)

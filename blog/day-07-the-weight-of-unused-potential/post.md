@@ -2,7 +2,7 @@
 title: The heaviest thing a person can carry is unused talent
 subtitle: Day 07 — on the weight of potential you have seen and are not living, and the difference between the pain of growing and the pain of not.
 day: 7
-author: avenSamuel
+author: avenSAMUEL
 authorImage: /samuel.jpg
 authorRole: Building maiaCITY
 date: 2026-09-15
