@@ -204,15 +204,15 @@ function placeRegions(
  * Under the zoning law 45% of the zonable ground may be lived on, and about
  * 1.1% of an island comes out as lake, which cannot be zoned at all. So:
  *
- *   7 050 × 0.9895 zonable × 0.45 living × 276 people ≈ 0.87 million
+ *   470 × 0.9895 zonable × 0.45 living × 276 people ≈ 58 000
  *
- * on roughly 2 540 km². Two thirds of what it was: the island was 10 580 hexes
- * and reached Munich's 1.30 million, but every one of those hexes is a beveled
- * clay prism built on the main thread, and the wait to see the world cost more
- * than the headline number was worth. The claim is unchanged in kind — a city
- * of this size still grows the food a city of this size imports.
+ * on roughly 170 km². A fifteenth of what it was: at 7 050 hexes the island
+ * held 0.87 million, but it was far more world than a sandbox needs to be
+ * walked, and every hex is a beveled clay prism built on the main thread.
+ * Small enough to take in at a glance, large enough to found a city of dome
+ * cells on.
  */
-export const MAP_SIZE = 7_050
+export const MAP_SIZE = 470
 
 export function generateMap(seed: number, size = MAP_SIZE): HexWorld {
 	const rng = makeRng(seed)

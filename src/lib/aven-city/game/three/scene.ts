@@ -5,7 +5,7 @@
  * match --color-sky in tokens.css so canvas and page blend seamlessly.
  */
 import * as THREE from 'three'
-import { generateMap, type HexTile } from '../hexmap'
+import { generateMap, type HexTile, key, MAP_SIZE } from '../hexmap'
 import {
 	buildWorld,
 	EMPTY_STATS,
@@ -142,19 +142,20 @@ export function createScene(canvas: HTMLCanvasElement, options: SceneOptions = {
 
 	const scene = new THREE.Scene()
 	scene.background = new THREE.Color(SKY)
-	scene.fog = new THREE.Fog(SKY, 620, 1500)
+	scene.fog = new THREE.Fog(SKY, 160, 390)
 
 	const camera = new THREE.PerspectiveCamera(38, 1, 0.1, 2600)
-	camera.position.set(190, 185, 255)
+	// framed for the 470-hex island; scale with √MAP_SIZE if that changes
+	camera.position.set(49, 48, 66)
 
 	const rig = createCameraRig(camera, canvas, {
 		// close enough to stand among the domes of a single hex
 		minDistance: 0.35,
-		maxDistance: 900,
+		maxDistance: 240,
 		// eye height stays above the board, so you can walk the island but
 		// never end up under it looking at the sea from below
 		floorY: HEX_HEIGHT + 0.12,
-		moveSpeed: 52
+		moveSpeed: 30
 	})
 	const controls = rig.controls
 
@@ -217,6 +218,53 @@ export function createScene(canvas: HTMLCanvasElement, options: SceneOptions = {
 	}
 
 	let world: WorldApi | null = null
+
+	// --- settlements survive a reload -----------------------------------
+	// every dome and zone is written to localStorage per island, so a city you
+	// founded is still standing when you come back. Keyed by seed AND size:
+	// a resized island has different hexes, and old saves must not land on it.
+	interface Saved {
+		buildings: Record<string, PlacedKind>
+		zones: Record<string, Zone>
+	}
+	let saved: Saved = { buildings: {}, zones: {} }
+	let saveKey = ''
+
+	function persist(): void {
+		try {
+			localStorage.setItem(saveKey, JSON.stringify(saved))
+		} catch {
+			// private mode or a full quota: the city just won't survive a reload
+		}
+	}
+
+	function restore(seed: number, tiles: readonly HexTile[]): void {
+		saveKey = `avencity.world.${seed}.${MAP_SIZE}`
+		saved = { buildings: {}, zones: {} }
+		try {
+			const raw = localStorage.getItem(saveKey)
+			if (raw) saved = { buildings: {}, zones: {}, ...JSON.parse(raw) }
+		} catch {
+			return
+		}
+		if (!world) return
+		const byKey = new Map(tiles.map((t) => [key(t.q, t.r), t]))
+		const zoned = new Map<Zone, HexTile[]>()
+		for (const [k, zone] of Object.entries(saved.zones)) {
+			const tile = byKey.get(k)
+			if (tile) zoned.set(zone, [...(zoned.get(zone) ?? []), tile])
+		}
+		for (const [zone, list] of zoned) world.setZone(list, zone)
+		for (const [k, kind] of Object.entries(saved.buildings)) {
+			const tile = byKey.get(k)
+			if (!tile) continue
+			try {
+				world.placeBuilding(tile, kind)
+			} catch {
+				delete saved.buildings[k]
+			}
+		}
+	}
 	/** the overlay outlives any one island, so a new world opens as you left it */
 	let zonesVisible = false
 
@@ -234,11 +282,18 @@ export function createScene(canvas: HTMLCanvasElement, options: SceneOptions = {
 				`[perf] map ${(t1 - t0) | 0} ms · build ${(performance.now() - t1) | 0} ms · ${map.tiles.length} tiles`
 			)
 		}
-		const box = new THREE.Box3().setFromObject(world.group)
-		const center = box.getCenter(new THREE.Vector3())
-		world.group.position.x = -center.x
-		world.group.position.z = -center.z
+		// centre on the land itself, not the group's bounding box — the box can
+		// hold more than the island, which left the opening view on open water
+		let minX = Infinity, maxX = -Infinity, minZ = Infinity, maxZ = -Infinity
+		for (const t of map.tiles) {
+			if (t.kind !== 'LAND') continue
+			minX = Math.min(minX, t.x); maxX = Math.max(maxX, t.x)
+			minZ = Math.min(minZ, t.z); maxZ = Math.max(maxZ, t.z)
+		}
+		world.group.position.x = -(minX + maxX) / 2
+		world.group.position.z = -(minZ + maxZ) / 2
 		scene.add(world.group)
+		restore(seed, map.tiles)
 		world.showZones(zonesVisible)
 		selection = []
 		showSelection()
@@ -416,9 +471,13 @@ export function createScene(canvas: HTMLCanvasElement, options: SceneOptions = {
 		setWorld,
 		placeBuilding(tile, kind) {
 			world?.placeBuilding(tile, kind)
+			saved.buildings[key(tile.q, tile.r)] = kind
+			persist()
 		},
 		removeBuilding(tile) {
 			world?.removeBuilding(tile)
+			delete saved.buildings[key(tile.q, tile.r)]
+			persist()
 		},
 		buildingAt(tile) {
 			return world?.buildingAt(tile) ?? null
@@ -431,6 +490,13 @@ export function createScene(canvas: HTMLCanvasElement, options: SceneOptions = {
 		},
 		setZone(tiles, zone) {
 			world?.setZone(tiles, zone)
+			for (const t of tiles) {
+				const k = key(t.q, t.r)
+				// reserve is the default state of ground, so it needs no entry
+				if (zone === 'RESERVE') delete saved.zones[k]
+				else saved.zones[k] = zone
+			}
+			persist()
 		},
 		zoneAt(tile) {
 			return world?.zoneAt(tile) ?? 'RESERVE'

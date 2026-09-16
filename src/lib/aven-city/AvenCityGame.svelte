@@ -356,8 +356,6 @@ $effect(() => {
 								>
 									<Icon name={z.icon} class="zone-icon" style="color: {ZONE_COLORS[z.zone]}" />
 									<span class="zone-name">{z.label}</span>
-									<span class="zone-now" class:over={z.over}>{Math.round(z.share * 100)}%</span>
-									<span class="zone-target">/ {Math.round(z.target * 100)}%</span>
 									<span class="zone-track">
 										<span
 											class="zone-fill"
