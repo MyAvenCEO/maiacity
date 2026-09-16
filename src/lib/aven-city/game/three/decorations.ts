@@ -339,7 +339,7 @@ export function palm(rng: Rng): THREE.Group {
 	const leaves = rng.int(5, 7)
 	const leafColor = jitterColor(rng, '#5aa86e')
 	for (let i = 0; i < leaves; i++) {
-		const leaf = shadow(new THREE.Mesh(new THREE.CapsuleGeometry(0.03, 0.2, 3, 6), clay(leafColor)))
+		const leaf = shadow(new THREE.Mesh(new THREE.ConeGeometry(0.035, 0.28, 4), clay(leafColor)))
 		leaf.scale.set(1, 1, 0.4)
 		const a = (i / leaves) * Math.PI * 2 + rng.jitter(0, 0.2)
 		leaf.position.set(Math.cos(a) * 0.11, 0.02, Math.sin(a) * 0.11)
@@ -348,7 +348,7 @@ export function palm(rng: Rng): THREE.Group {
 		crown.add(leaf)
 	}
 	for (let i = 0; i < 2; i++) {
-		const nut = shadow(new THREE.Mesh(new THREE.SphereGeometry(0.032, 7, 5), clay('#8a6844')))
+		const nut = shadow(new THREE.Mesh(new THREE.OctahedronGeometry(0.034, 0), clay('#8a6844')))
 		const a = rng.range(0, Math.PI * 2)
 		nut.position.set(Math.cos(a) * 0.05, -0.02, Math.sin(a) * 0.05)
 		crown.add(nut)
@@ -1162,6 +1162,15 @@ function geodesicShell(
 	const c = new THREE.Vector3()
 	const mid = new THREE.Vector3()
 	const tint = new THREE.Color()
+	// every edge of the shell belongs to two panes; one strut is enough. Half
+	// the struts, and each a three-sided prism rather than a capped box, is a
+	// quarter of the triangles for the same silhouette
+	const seen = new Set<string>()
+	const edgeKey = (p: THREE.Vector3, q: THREE.Vector3) => {
+		const k1 = `${p.x.toFixed(4)},${p.y.toFixed(4)},${p.z.toFixed(4)}`
+		const k2 = `${q.x.toFixed(4)},${q.y.toFixed(4)},${q.z.toFixed(4)}`
+		return k1 < k2 ? k1 + '|' + k2 : k2 + '|' + k1
+	}
 
 	for (let t = 0; t < pos.count; t += 3) {
 		a.fromBufferAttribute(pos, t)
@@ -1197,13 +1206,18 @@ function geodesicShell(
 			[b, c],
 			[c, a]
 		] as const) {
-			const strut = new THREE.BoxGeometry(0.036 * R, 0.036 * R, p.distanceTo(q))
+			const ek = edgeKey(p, q)
+			if (seen.has(ek)) continue
+			seen.add(ek)
+			const strut = new THREE.CylinderGeometry(0.024 * R, 0.024 * R, p.distanceTo(q), 3, 1, true)
+			strut.rotateX(Math.PI / 2)
 			const m = new THREE.Object3D()
 			m.position.copy(p).add(q).multiplyScalar(0.5)
 			m.lookAt(q)
 			m.updateMatrix()
 			strut.applyMatrix4(m.matrix)
-			strutGeos.push(strut)
+			strutGeos.push(strut.toNonIndexed())
+			strut.dispose()
 		}
 	}
 	shell.dispose()
@@ -1267,7 +1281,7 @@ function railing(radius: number, height: number, posts: number): THREE.Group {
 		geos.push(post)
 	}
 	for (const h of [height * 0.55, height]) {
-		const rail = new THREE.TorusGeometry(radius, 0.028, 4, posts)
+		const rail = new THREE.TorusGeometry(radius, 0.028, 3, posts)
 		rail.rotateX(Math.PI / 2)
 		rail.translate(0, h, 0)
 		geos.push(rail.toNonIndexed())
@@ -1510,7 +1524,8 @@ function archPanel(
 	hole.closePath()
 	shape.holes.push(hole)
 
-	return new THREE.ExtrudeGeometry(shape, { depth, bevelEnabled: false }).toNonIndexed()
+	// four arc segments: the arch still reads at game scale, at half the triangles
+	return new THREE.ExtrudeGeometry(shape, { depth, bevelEnabled: false, curveSegments: 4 }).toNonIndexed()
 }
 
 /** A spiky low-poly plant — the agave-ish greenery banked around the stone. */
@@ -1620,7 +1635,7 @@ export function dome2(rng: Rng): THREE.Group {
 	g.add(cap)
 
 	const DECK_Y = BASE_H + 0.14
-	const fence = railing(BASE_R * 1.02, 0.26, BAYS * 3)
+	const fence = railing(BASE_R * 1.02, 0.26, BAYS * 2)
 	fence.position.y = DECK_Y
 	g.add(fence)
 
@@ -1837,7 +1852,7 @@ export function dome3(rng: Rng): THREE.Group {
 	g.add(cap)
 
 	const DECK_Y = BASE_H + 0.14
-	const fence = railing(BASE_R * 1.05, 0.24, BAYS * 3)
+	const fence = railing(BASE_R * 1.05, 0.24, BAYS * 2)
 	fence.position.y = DECK_Y
 	g.add(fence)
 
@@ -2065,7 +2080,7 @@ export function dome4(rng: Rng): THREE.Group {
 	g.add(arcadeDrum(rng, BASE_R, BASE_H, BAYS, 0.1))
 
 	const T1_Y = BASE_H + 0.14
-	const fence1 = railing(BASE_R * 1.06, 0.24, BAYS * 3)
+	const fence1 = railing(BASE_R * 1.06, 0.24, BAYS * 2)
 	fence1.position.y = T1_Y
 	g.add(fence1)
 
@@ -2092,7 +2107,7 @@ export function dome4(rng: Rng): THREE.Group {
 
 	// --- second terrace: gabled houses -----------------------------------
 	const T2_Y = T1_Y + SHOP_H + 0.08
-	const fence2 = railing(MID_R * 1.02, 0.22, BAYS * 3)
+	const fence2 = railing(MID_R * 1.02, 0.22, BAYS * 2)
 	fence2.position.y = T2_Y
 	g.add(fence2)
 
@@ -3024,6 +3039,832 @@ function hempApron(g: THREE.Group, rng: Rng, R: number): void {
 		stack.rotation.y = -ang
 		g.add(stack)
 	}
+}
+
+/* --- the food forest -----------------------------------------------------
+ * The green a level 5 dome cell lives inside. Seven layers, as a permaculture
+ * forest garden is planted: canopy, understorey, shrubs, herbs, ground cover,
+ * roots and climbers — with a forest floor of mushrooms, logs and leaf litter
+ * underneath. Every piece is something you can eat. Twenty-plus species, each
+ * with its own colour and habit so the mix reads as diversity from the air.
+ * ------------------------------------------------------------------------ */
+
+const FF_BARK = '#8a5f3c'
+const LEAF = ['#4f9a4a', '#57a24f', '#3f8a45', '#6aab52', '#7fbf77']
+
+/** A trunk of the given height, slightly tapered. */
+function trunk(rng: Rng, h: number, r = 0.06, color = FF_BARK): THREE.Mesh {
+	const t = shadow(
+		new THREE.Mesh(new THREE.CylinderGeometry(r * 0.8, r * 1.2, h, 6), facet(jitterColor(rng, color)))
+	)
+	t.position.y = h / 2
+	return t
+}
+
+/** A lumpy crown of one or more blobs, with fruit hung in it. */
+function crown(
+	rng: Rng,
+	y: number,
+	radius: number,
+	leaf: string,
+	fruit?: { color: string; n: number; size?: number }
+): THREE.Group {
+	const g = new THREE.Group()
+	const lumps = rng.int(2, 3)
+	for (let i = 0; i < lumps; i++) {
+		const r = radius * rng.range(0.8, 1.05)
+		const lump = shadow(
+			new THREE.Mesh(
+				new THREE.IcosahedronGeometry(r, 0),
+				facet(jitterColor(rng, leaf, 0.01, 0.05, 0.04))
+			)
+		)
+		const a = (i / lumps) * Math.PI * 2 + rng.jitter(0, 0.5)
+		lump.position.set(Math.cos(a) * radius * 0.45, y + rng.jitter(0, radius * 0.25), Math.sin(a) * radius * 0.45)
+		lump.scale.y = 0.85
+		g.add(lump)
+	}
+	if (fruit) {
+		for (let i = 0; i < fruit.n; i++) {
+			const f = shadow(new THREE.Mesh(new THREE.OctahedronGeometry(fruit.size ?? 0.04, 0), facet(fruit.color)))
+			const a = rng.range(0, Math.PI * 2)
+			const el = rng.range(-0.6, 0.6)
+			const d = radius * 1.05
+			f.position.set(Math.cos(a) * d * Math.cos(el), y + Math.sin(el) * radius * 0.7, Math.sin(a) * d * Math.cos(el))
+			g.add(f)
+		}
+	}
+	return g
+}
+
+const finish = (g: THREE.Group, rng: Rng, lo = 0.85, hi = 1.15): THREE.Group => {
+	g.rotation.y = rng.range(0, Math.PI * 2)
+	g.scale.setScalar(rng.range(lo, hi))
+	return g
+}
+
+// --- layer 1: canopy — the tall nut and fruit trees ------------------------
+export function walnutTree(rng: Rng): THREE.Group {
+	const g = new THREE.Group()
+	const h = rng.range(1.9, 2.4)
+	g.add(trunk(rng, h * 0.55, 0.09))
+	g.add(crown(rng, h * 0.68, 0.55, '#3f8a45', { color: '#8a6a3e', n: 3, size: 0.035 }))
+	return finish(g, rng)
+}
+export function chestnutTree(rng: Rng): THREE.Group {
+	const g = new THREE.Group()
+	const h = rng.range(1.8, 2.3)
+	g.add(trunk(rng, h * 0.55, 0.085, '#6e4b30'))
+	g.add(crown(rng, h * 0.68, 0.52, '#57a24f', { color: '#a6733f', n: 4, size: 0.035 }))
+	return finish(g, rng)
+}
+export function mangoTree(rng: Rng): THREE.Group {
+	const g = new THREE.Group()
+	const h = rng.range(1.6, 2.0)
+	g.add(trunk(rng, h * 0.5, 0.08))
+	g.add(crown(rng, h * 0.64, 0.5, '#2f7a3d', { color: '#e8a83a', n: 4, size: 0.045 }))
+	return finish(g, rng)
+}
+export function datePalm(rng: Rng): THREE.Group {
+	// the tall palm, with dates hung under the crown
+	const g = palm(rng)
+	g.scale.multiplyScalar(1.35)
+	const dates = shadow(new THREE.Mesh(new THREE.SphereGeometry(0.05, 5, 4), facet('#b5502b')))
+	dates.scale.set(1, 1.6, 1)
+	// the palm's crown sits roughly 0.5 up after three trunk segments
+	dates.position.set(0.06, 0.46, 0)
+	g.add(dates)
+	return g
+}
+export function coconutPalm(rng: Rng): THREE.Group {
+	const g = palm(rng)
+	g.scale.multiplyScalar(1.5)
+	return g
+}
+
+// --- layer 2: understorey — the small fruit trees --------------------------
+export function appleTree(rng: Rng): THREE.Group {
+	const g = new THREE.Group()
+	const h = rng.range(1.0, 1.3)
+	g.add(trunk(rng, h * 0.5, 0.055))
+	g.add(crown(rng, h * 0.65, 0.36, rng.pick(LEAF), { color: rng.chance(0.5) ? '#d23c2f' : '#9ccb3c', n: 5 }))
+	return finish(g, rng)
+}
+export function pearTree(rng: Rng): THREE.Group {
+	const g = new THREE.Group()
+	const h = rng.range(1.1, 1.4)
+	g.add(trunk(rng, h * 0.55, 0.05))
+	g.add(crown(rng, h * 0.7, 0.32, '#5e9f3f', { color: '#c9c447', n: 4 }))
+	return finish(g, rng)
+}
+export function plumTree(rng: Rng): THREE.Group {
+	const g = new THREE.Group()
+	const h = rng.range(1.0, 1.25)
+	g.add(trunk(rng, h * 0.5, 0.05, '#5a3f2e'))
+	g.add(crown(rng, h * 0.65, 0.34, '#4a8c47', { color: '#5b3a8a', n: 6, size: 0.035 }))
+	return finish(g, rng)
+}
+export function cherryTree(rng: Rng): THREE.Group {
+	const g = new THREE.Group()
+	const h = rng.range(1.0, 1.3)
+	g.add(trunk(rng, h * 0.5, 0.05, '#5d3d2a'))
+	g.add(crown(rng, h * 0.66, 0.34, '#66a84c', { color: '#c8203a', n: 8, size: 0.028 }))
+	return finish(g, rng)
+}
+export function figTree(rng: Rng): THREE.Group {
+	const g = new THREE.Group()
+	const h = rng.range(0.9, 1.15)
+	g.add(trunk(rng, h * 0.45, 0.06, '#9a9078'))
+	g.add(crown(rng, h * 0.6, 0.4, '#4f8f3e', { color: '#6d4a7a', n: 4, size: 0.04 }))
+	return finish(g, rng)
+}
+export function lemonTree(rng: Rng): THREE.Group {
+	const g = new THREE.Group()
+	const h = rng.range(0.85, 1.1)
+	g.add(trunk(rng, h * 0.45, 0.045))
+	g.add(crown(rng, h * 0.6, 0.33, '#2f7a3d', { color: '#f2d23c', n: 5 }))
+	return finish(g, rng)
+}
+export function orangeTree(rng: Rng): THREE.Group {
+	const g = new THREE.Group()
+	const h = rng.range(0.85, 1.1)
+	g.add(trunk(rng, h * 0.45, 0.045))
+	g.add(crown(rng, h * 0.6, 0.34, '#2e7238', { color: '#f28a1e', n: 6 }))
+	return finish(g, rng)
+}
+export function oliveTree(rng: Rng): THREE.Group {
+	const g = new THREE.Group()
+	const h = rng.range(0.8, 1.05)
+	g.add(trunk(rng, h * 0.45, 0.07, '#7a6a55'))
+	g.add(crown(rng, h * 0.6, 0.36, '#8aa37a', { color: '#3f4a2c', n: 4, size: 0.025 }))
+	return finish(g, rng)
+}
+export function bananaPlant(rng: Rng): THREE.Group {
+	const g = new THREE.Group()
+	const n = rng.int(5, 7)
+	for (let i = 0; i < n; i++) {
+		const leaf = shadow(new THREE.Mesh(new THREE.ConeGeometry(0.06, 0.6, 4), facet(jitterColor(rng, '#5fb04a'))))
+		leaf.scale.set(1, 1, 0.3)
+		const a = (i / n) * Math.PI * 2 + rng.jitter(0, 0.3)
+		leaf.position.set(Math.cos(a) * 0.1, 0.42, Math.sin(a) * 0.1)
+		leaf.rotation.y = -a
+		leaf.rotation.z = Math.PI / 2 - 0.7 + rng.jitter(0, 0.15)
+		g.add(leaf)
+	}
+	const stem = shadow(new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.07, 0.5, 7), facet('#9bbf5a')))
+	stem.position.y = 0.25
+	g.add(stem)
+	const bunch = shadow(new THREE.Mesh(new THREE.OctahedronGeometry(0.06, 0), facet('#e9d24a')))
+	bunch.scale.set(1, 1.8, 1)
+	bunch.position.set(0.12, 0.42, 0)
+	bunch.rotation.z = 0.3
+	g.add(bunch)
+	return finish(g, rng, 0.9, 1.2)
+}
+
+// --- layer 3: shrubs — berries and nuts at waist height --------------------
+export function blueberryBush(rng: Rng): THREE.Group {
+	const g = bush(rng)
+	for (let i = 0; i < rng.int(5, 8); i++) {
+		const b = shadow(new THREE.Mesh(new THREE.SphereGeometry(0.022, 4, 3), facet('#3b4fa0')))
+		const a = rng.range(0, Math.PI * 2)
+		b.position.set(Math.cos(a) * 0.12, rng.range(0.1, 0.22), Math.sin(a) * 0.12)
+		g.add(b)
+	}
+	return g
+}
+export function currantBush(rng: Rng): THREE.Group {
+	const g = bush(rng)
+	for (let i = 0; i < rng.int(6, 9); i++) {
+		const b = shadow(new THREE.Mesh(new THREE.SphereGeometry(0.02, 4, 3), facet(rng.chance(0.7) ? '#d8232a' : '#f2f2f2')))
+		const a = rng.range(0, Math.PI * 2)
+		b.position.set(Math.cos(a) * 0.13, rng.range(0.08, 0.2), Math.sin(a) * 0.13)
+		g.add(b)
+	}
+	return g
+}
+export function hazelShrub(rng: Rng): THREE.Group {
+	const g = new THREE.Group()
+	const stems = rng.int(3, 5)
+	for (let i = 0; i < stems; i++) {
+		const h = rng.range(0.45, 0.7)
+		const st = shadow(new THREE.Mesh(new THREE.CylinderGeometry(0.015, 0.02, h, 5), facet('#6e5238')))
+		const a = (i / stems) * Math.PI * 2
+		st.position.set(Math.cos(a) * 0.06, h / 2, Math.sin(a) * 0.06)
+		st.rotation.z = Math.cos(a) * 0.25
+		st.rotation.x = -Math.sin(a) * 0.25
+		g.add(st)
+	}
+	g.add(crown(rng, 0.62, 0.3, '#6aab52', { color: '#a98a5c', n: 3, size: 0.025 }))
+	return finish(g, rng)
+}
+export function raspberryCane(rng: Rng): THREE.Group {
+	const g = new THREE.Group()
+	for (let i = 0; i < rng.int(6, 9); i++) {
+		const h = rng.range(0.35, 0.55)
+		const cane = shadow(new THREE.Mesh(new THREE.CylinderGeometry(0.008, 0.012, h, 4), facet('#6f9a3e')))
+		cane.position.set(rng.jitter(0, 0.12), h / 2, rng.jitter(0, 0.12))
+		cane.rotation.z = rng.jitter(0, 0.3)
+		g.add(cane)
+		const berry = shadow(new THREE.Mesh(new THREE.SphereGeometry(0.02, 4, 3), facet('#d8384f')))
+		berry.position.set(cane.position.x, h * 0.9, cane.position.z)
+		g.add(berry)
+	}
+	return finish(g, rng)
+}
+
+// --- layer 4: herbs --------------------------------------------------------
+export function herbPatch(rng: Rng): THREE.Group {
+	const g = new THREE.Group()
+	const color = rng.pick(['#7aa86a', '#9bb37c', '#5f8f5a', '#a8bf8e'])
+	for (let i = 0; i < rng.int(4, 7); i++) {
+		const h = rng.range(0.12, 0.24)
+		const sprig = shadow(new THREE.Mesh(new THREE.ConeGeometry(0.035, h, 5), facet(jitterColor(rng, color))))
+		sprig.position.set(rng.jitter(0, 0.12), h / 2, rng.jitter(0, 0.12))
+		g.add(sprig)
+	}
+	if (rng.chance(0.5)) {
+		const bloom = shadow(new THREE.Mesh(new THREE.SphereGeometry(0.025, 4, 3), facet('#8a6bbf')))
+		bloom.position.set(0, 0.26, 0)
+		g.add(bloom)
+	}
+	return finish(g, rng)
+}
+export function kalePatch(rng: Rng): THREE.Group {
+	const g = new THREE.Group()
+	for (let i = 0; i < rng.int(3, 5); i++) {
+		const leaf = shadow(
+			new THREE.Mesh(new THREE.IcosahedronGeometry(0.09, 0), facet(jitterColor(rng, '#3e6b4a')))
+		)
+		leaf.scale.set(1, 0.7, 1)
+		leaf.position.set(rng.jitter(0, 0.14), 0.08, rng.jitter(0, 0.14))
+		g.add(leaf)
+	}
+	return finish(g, rng)
+}
+
+// --- layer 5: ground cover -------------------------------------------------
+export function strawberryPatch(rng: Rng): THREE.Group {
+	const g = new THREE.Group()
+	for (let i = 0; i < rng.int(6, 10); i++) {
+		const leaf = shadow(new THREE.Mesh(new THREE.SphereGeometry(0.04, 4, 3), facet(jitterColor(rng, '#4a9a3f'))))
+		leaf.scale.set(1, 0.5, 1)
+		leaf.position.set(rng.jitter(0, 0.16), 0.02, rng.jitter(0, 0.16))
+		g.add(leaf)
+		if (rng.chance(0.5)) {
+			const berry = shadow(new THREE.Mesh(new THREE.ConeGeometry(0.018, 0.035, 5), facet('#e0303a')))
+			berry.rotation.x = Math.PI
+			berry.position.set(leaf.position.x + 0.03, 0.03, leaf.position.z)
+			g.add(berry)
+		}
+	}
+	return finish(g, rng)
+}
+export function pumpkinVine(rng: Rng): THREE.Group {
+	const g = new THREE.Group()
+	for (let i = 0; i < rng.int(4, 7); i++) {
+		const leaf = shadow(new THREE.Mesh(new THREE.SphereGeometry(0.06, 4, 3), facet(jitterColor(rng, '#5a9c3c'))))
+		leaf.scale.set(1, 0.35, 1)
+		leaf.position.set(rng.jitter(0, 0.22), 0.025, rng.jitter(0, 0.22))
+		g.add(leaf)
+	}
+	for (let i = 0; i < rng.int(1, 3); i++) {
+		const pk = shadow(
+			new THREE.Mesh(new THREE.SphereGeometry(0.06, 5, 4), facet(jitterColor(rng, '#e2822a')))
+		)
+		pk.scale.set(1, 0.75, 1)
+		pk.position.set(rng.jitter(0, 0.2), 0.045, rng.jitter(0, 0.2))
+		g.add(pk)
+	}
+	return finish(g, rng)
+}
+
+// --- layer 6: roots — the bed you can see the tops of ---------------------
+export function rootBed(rng: Rng): THREE.Group {
+	const g = new THREE.Group()
+	const bed = shadow(new THREE.Mesh(new THREE.BoxGeometry(0.36, 0.05, 0.22), facet('#5b4330')))
+	bed.position.y = 0.025
+	g.add(bed)
+	const carrots = rng.chance(0.5)
+	for (let i = 0; i < 6; i++) {
+		const top = shadow(new THREE.Mesh(new THREE.ConeGeometry(0.03, 0.12, 4), facet(carrots ? '#4d9a3a' : '#6aa64a')))
+		top.position.set(-0.13 + i * 0.052, 0.1, rng.jitter(0, 0.05))
+		g.add(top)
+		if (carrots) {
+			const shoulder = shadow(new THREE.Mesh(new THREE.SphereGeometry(0.014, 4, 3), facet('#f08a2a')))
+			shoulder.position.set(top.position.x, 0.05, top.position.z)
+			g.add(shoulder)
+		}
+	}
+	return finish(g, rng, 0.95, 1.1)
+}
+
+// --- layer 7: climbers — vines up a post or a trunk ------------------------
+export function grapeVine(rng: Rng): THREE.Group {
+	const g = new THREE.Group()
+	const post = shadow(new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.025, 0.6, 5), facet('#7a5a3c')))
+	post.position.y = 0.3
+	g.add(post)
+	const bar = shadow(new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.02, 0.02), facet('#7a5a3c')))
+	bar.position.y = 0.58
+	g.add(bar)
+	for (let i = 0; i < 5; i++) {
+		const leaf = shadow(new THREE.Mesh(new THREE.SphereGeometry(0.05, 4, 3), facet(jitterColor(rng, '#5f9f3a'))))
+		leaf.scale.set(1, 0.6, 1)
+		leaf.position.set(-0.17 + i * 0.085, 0.5 + rng.jitter(0, 0.06), rng.jitter(0, 0.03))
+		g.add(leaf)
+	}
+	for (let i = 0; i < 3; i++) {
+		const bunch = shadow(new THREE.Mesh(new THREE.OctahedronGeometry(0.025, 0), facet(rng.chance(0.5) ? '#5b2d6e' : '#a7c957')))
+		bunch.scale.set(1, 1.8, 1)
+		bunch.position.set(-0.12 + i * 0.12, 0.42, 0.02)
+		g.add(bunch)
+	}
+	return finish(g, rng)
+}
+export function beanPole(rng: Rng): THREE.Group {
+	const g = new THREE.Group()
+	const n = 3
+	for (let i = 0; i < n; i++) {
+		const pole = shadow(new THREE.Mesh(new THREE.CylinderGeometry(0.01, 0.012, 0.7, 4), facet('#9a8460')))
+		const a = (i / n) * Math.PI * 2
+		pole.position.set(Math.cos(a) * 0.08, 0.35, Math.sin(a) * 0.08)
+		pole.rotation.z = -Math.cos(a) * 0.22
+		pole.rotation.x = Math.sin(a) * 0.22
+		g.add(pole)
+		for (let l = 0; l < 4; l++) {
+			const leaf = shadow(new THREE.Mesh(new THREE.SphereGeometry(0.035, 4, 3), facet(jitterColor(rng, '#4e9c44'))))
+			leaf.scale.set(1, 0.6, 1)
+			const t = 0.15 + l * 0.15
+			leaf.position.set(Math.cos(a) * 0.08 * (1 - t * 0.8), t, Math.sin(a) * 0.08 * (1 - t * 0.8))
+			g.add(leaf)
+		}
+	}
+	return finish(g, rng)
+}
+
+// --- the forest floor ------------------------------------------------------
+export function leafLitter(rng: Rng): THREE.Group {
+	const g = new THREE.Group()
+	for (let i = 0; i < rng.int(4, 7); i++) {
+		const leaf = shadow(new THREE.Mesh(new THREE.CircleGeometry(0.035, 5), facet(rng.pick(['#b8863b', '#a2652f', '#c9a24a']))))
+		leaf.rotation.x = -Math.PI / 2 + rng.jitter(0, 0.2)
+		leaf.rotation.z = rng.range(0, Math.PI)
+		leaf.position.set(rng.jitter(0, 0.14), 0.006, rng.jitter(0, 0.14))
+		g.add(leaf)
+	}
+	return g
+}
+
+// --- the living floor: moss, grass and clover carpeting the ground ---------
+export function mossPatch(rng: Rng): THREE.Group {
+	const g = new THREE.Group()
+	const n = rng.int(1, 3)
+	for (let i = 0; i < n; i++) {
+		const r = rng.range(0.3, 0.7)
+		const m = shadow(
+			new THREE.Mesh(new THREE.CircleGeometry(r, 6), facet(jitterColor(rng, rng.pick(['#5f9b3f', '#6aa74a', '#4f8f3a', '#79b455']), 0.01, 0.06, 0.05)))
+		)
+		m.rotation.x = -Math.PI / 2
+		m.rotation.z = rng.range(0, Math.PI)
+		m.position.set(rng.jitter(0, 0.12), 0.006 + i * 0.002, rng.jitter(0, 0.12))
+		g.add(m)
+	}
+	return g
+}
+export function grassClump(rng: Rng): THREE.Group {
+	const g = new THREE.Group()
+	const n = rng.int(3, 5)
+	const color = rng.pick(['#7fc45a', '#8fd06a', '#6bb14b'])
+	for (let i = 0; i < n; i++) {
+		const h = rng.range(0.08, 0.16)
+		const blade = shadow(new THREE.Mesh(new THREE.ConeGeometry(0.018, h, 3), facet(jitterColor(rng, color))))
+		blade.position.set(rng.jitter(0, 0.06), h / 2, rng.jitter(0, 0.06))
+		blade.rotation.z = rng.jitter(0, 0.35)
+		g.add(blade)
+	}
+	return g
+}
+export function cloverPatch(rng: Rng): THREE.Group {
+	const g = new THREE.Group()
+	for (let i = 0; i < rng.int(4, 7); i++) {
+		const leaf = shadow(new THREE.Mesh(new THREE.CircleGeometry(0.05, 5), facet(jitterColor(rng, '#4e9a45'))))
+		leaf.rotation.x = -Math.PI / 2
+		leaf.position.set(rng.jitter(0, 0.2), 0.012, rng.jitter(0, 0.2))
+		g.add(leaf)
+	}
+	if (rng.chance(0.4)) {
+		const bloom = shadow(new THREE.Mesh(new THREE.SphereGeometry(0.018, 4, 3), facet('#f3f0e6')))
+		bloom.position.set(0, 0.03, 0)
+		g.add(bloom)
+	}
+	return g
+}
+
+// --- the tropical corner: what the glass keeps warm spills out around it ----
+export function bananaClump(rng: Rng): THREE.Group {
+	// bananas grow as a stool of two or three stems, never one
+	const g = new THREE.Group()
+	const n = rng.int(2, 3)
+	for (let i = 0; i < n; i++) {
+		const stem = bananaPlant(rng)
+		stem.scale.multiplyScalar(rng.range(0.7, 1))
+		const a = (i / n) * Math.PI * 2
+		stem.position.set(Math.cos(a) * 0.14, 0, Math.sin(a) * 0.14)
+		g.add(stem)
+	}
+	return g
+}
+export function papayaTree(rng: Rng): THREE.Group {
+	// one thin trunk, a top-knot of leaves, fruit clustered right under it
+	const g = new THREE.Group()
+	const h = rng.range(1.2, 1.6)
+	g.add(trunk(rng, h, 0.04, '#9a8a6a'))
+	for (let i = 0; i < rng.int(5, 7); i++) {
+		const leaf = shadow(new THREE.Mesh(new THREE.ConeGeometry(0.07, 0.34, 4), facet(jitterColor(rng, '#5da54e'))))
+		leaf.scale.set(1, 1, 0.3)
+		const a = (i / 6) * Math.PI * 2 + rng.jitter(0, 0.3)
+		leaf.position.set(Math.cos(a) * 0.1, h, Math.sin(a) * 0.1)
+		leaf.rotation.y = -a
+		leaf.rotation.z = Math.PI / 2 - 0.9
+		g.add(leaf)
+	}
+	for (let i = 0; i < 5; i++) {
+		const f = shadow(new THREE.Mesh(new THREE.OctahedronGeometry(0.04, 0), facet(rng.chance(0.5) ? '#c9c94a' : '#e7a03a')))
+		f.scale.set(1, 1.6, 1)
+		const a = (i / 5) * Math.PI * 2
+		f.position.set(Math.cos(a) * 0.055, h - 0.1, Math.sin(a) * 0.055)
+		g.add(f)
+	}
+	return finish(g, rng)
+}
+export function avocadoTree(rng: Rng): THREE.Group {
+	const g = new THREE.Group()
+	const h = rng.range(1.4, 1.8)
+	g.add(trunk(rng, h * 0.5, 0.07))
+	g.add(crown(rng, h * 0.64, 0.46, '#2f6f35', { color: '#3f5a2a', n: 5, size: 0.04 }))
+	return finish(g, rng)
+}
+export function guavaTree(rng: Rng): THREE.Group {
+	const g = new THREE.Group()
+	const h = rng.range(0.9, 1.2)
+	g.add(trunk(rng, h * 0.5, 0.05, '#c2a37c'))
+	g.add(crown(rng, h * 0.62, 0.34, '#6fae4a', { color: '#c8de5a', n: 5, size: 0.035 }))
+	return finish(g, rng)
+}
+export function pomegranateTree(rng: Rng): THREE.Group {
+	const g = new THREE.Group()
+	const h = rng.range(0.8, 1.1)
+	g.add(trunk(rng, h * 0.45, 0.045, '#6b4a34'))
+	g.add(crown(rng, h * 0.6, 0.3, '#4f8f3a', { color: '#c0392b', n: 6, size: 0.04 }))
+	return finish(g, rng)
+}
+export function moringaTree(rng: Rng): THREE.Group {
+	// the drumstick tree: open, feathery, fast
+	const g = new THREE.Group()
+	const h = rng.range(1.4, 1.8)
+	g.add(trunk(rng, h * 0.6, 0.04, '#b9a88c'))
+	g.add(crown(rng, h * 0.72, 0.3, '#8ec46a'))
+	return finish(g, rng)
+}
+export function taroPatch(rng: Rng): THREE.Group {
+	// elephant ears: a few big heart leaves on tall stalks, right on the floor
+	const g = new THREE.Group()
+	for (let i = 0; i < rng.int(3, 5); i++) {
+		const st = rng.range(0.16, 0.28)
+		const stalk = shadow(new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.016, st, 3), facet('#7fa35a')))
+		const px = rng.jitter(0, 0.12)
+		const pz = rng.jitter(0, 0.12)
+		stalk.position.set(px, st / 2, pz)
+		g.add(stalk)
+		const leaf = shadow(new THREE.Mesh(new THREE.ConeGeometry(0.12, 0.2, 4), facet(jitterColor(rng, '#3d8a3f'))))
+		leaf.scale.set(1, 0.25, 1.3)
+		leaf.rotation.y = rng.range(0, Math.PI)
+		leaf.position.set(px, st, pz)
+		g.add(leaf)
+	}
+	return finish(g, rng)
+}
+export function gingerPatch(rng: Rng): THREE.Group {
+	// ginger and turmeric: a stand of leafy shoots with a red or white spike
+	const g = new THREE.Group()
+	const color = rng.pick(['#5f9c4a', '#6fae58'])
+	for (let i = 0; i < rng.int(6, 9); i++) {
+		const h = rng.range(0.2, 0.36)
+		const shoot = shadow(new THREE.Mesh(new THREE.ConeGeometry(0.03, h, 3), facet(jitterColor(rng, color))))
+		shoot.position.set(rng.jitter(0, 0.14), h / 2, rng.jitter(0, 0.14))
+		shoot.rotation.z = rng.jitter(0, 0.25)
+		g.add(shoot)
+	}
+	const spike = shadow(new THREE.Mesh(new THREE.OctahedronGeometry(0.03, 0), facet(rng.chance(0.5) ? '#d84a3a' : '#f2ede0')))
+	spike.scale.set(1, 1.8, 1)
+	spike.position.set(0, 0.12, 0)
+	g.add(spike)
+	return finish(g, rng)
+}
+export function sweetPotatoVine(rng: Rng): THREE.Group {
+	// a sprawl of heart leaves along the ground, a purple flower or two
+	const g = new THREE.Group()
+	for (let i = 0; i < rng.int(7, 11); i++) {
+		const leaf = shadow(new THREE.Mesh(new THREE.ConeGeometry(0.05, 0.05, 4), facet(jitterColor(rng, '#4a9a48'))))
+		leaf.scale.set(1, 0.4, 1.2)
+		leaf.rotation.y = rng.range(0, Math.PI)
+		leaf.position.set(rng.jitter(0, 0.22), 0.02, rng.jitter(0, 0.22))
+		g.add(leaf)
+	}
+	if (rng.chance(0.5)) {
+		const bloom = shadow(new THREE.Mesh(new THREE.OctahedronGeometry(0.022, 0), facet('#b58ad6')))
+		bloom.position.set(rng.jitter(0, 0.1), 0.05, rng.jitter(0, 0.1))
+		g.add(bloom)
+	}
+	return finish(g, rng)
+}
+
+// --- more of the living floor: what a healthy forest actually stands on -----
+export function mossMound(rng: Rng): THREE.Group {
+	// a soft green hump — over a stump, a stone, or nothing
+	const g = new THREE.Group()
+	for (let i = 0; i < rng.int(1, 3); i++) {
+		const r = rng.range(0.14, 0.3)
+		const m = shadow(new THREE.Mesh(new THREE.IcosahedronGeometry(r, 0), facet(jitterColor(rng, rng.pick(['#4c8a35', '#5c9c3d', '#3f7d33', '#6ea84a']), 0.01, 0.06, 0.05))))
+		m.scale.set(1, 0.32, 1)
+		m.position.set(rng.jitter(0, 0.18), r * 0.05, rng.jitter(0, 0.18))
+		g.add(m)
+	}
+	return g
+}
+export function humusPatch(rng: Rng): THREE.Group {
+	// bare dark earth showing between the green, where the litter has rotted down
+	const g = new THREE.Group()
+	const r = rng.range(0.3, 0.7)
+	const m = shadow(new THREE.Mesh(new THREE.CircleGeometry(r, 7), facet(jitterColor(rng, rng.pick(['#5a4633', '#4e3d2c', '#6b563f']), 0.01, 0.05, 0.04))))
+	m.rotation.x = -Math.PI / 2
+	m.rotation.z = rng.range(0, Math.PI)
+	m.scale.set(1, rng.range(0.6, 1), 1)
+	m.position.y = 0.004
+	g.add(m)
+	return g
+}
+export function wildflowers(rng: Rng): THREE.Group {
+	const g = new THREE.Group()
+	const color = rng.pick(['#f2d13a', '#e8e6f0', '#d96b8a', '#8a6bbf', '#f28a3a', '#5b8ad6'])
+	for (let i = 0; i < rng.int(5, 9); i++) {
+		const h = rng.range(0.1, 0.2)
+		const stem = shadow(new THREE.Mesh(new THREE.ConeGeometry(0.012, h, 3), facet('#6faa4c')))
+		const px = rng.jitter(0, 0.16)
+		const pz = rng.jitter(0, 0.16)
+		stem.position.set(px, h / 2, pz)
+		g.add(stem)
+		const head = shadow(new THREE.Mesh(new THREE.TetrahedronGeometry(0.028, 0), facet(jitterColor(rng, color, 0.01, 0.05, 0.06))))
+		head.scale.y = 0.6
+		head.position.set(px, h, pz)
+		g.add(head)
+	}
+	return g
+}
+export function broadleafCover(rng: Rng): THREE.Group {
+	// hosta-like rosettes of big leaves, the shade layer of the floor
+	const g = new THREE.Group()
+	const color = rng.pick(['#3f8a45', '#4d9a4a', '#2f7a3d', '#6fa860'])
+	const n = rng.int(5, 8)
+	for (let i = 0; i < n; i++) {
+		const leaf = shadow(new THREE.Mesh(new THREE.ConeGeometry(0.06, 0.16, 4), facet(jitterColor(rng, color))))
+		leaf.scale.set(1, 0.3, 1.4)
+		const a = (i / n) * Math.PI * 2 + rng.jitter(0, 0.3)
+		leaf.rotation.y = -a
+		leaf.rotation.z = 0.35
+		leaf.position.set(Math.cos(a) * 0.05, 0.03, Math.sin(a) * 0.05)
+		g.add(leaf)
+	}
+	return g
+}
+export function tallGrass(rng: Rng): THREE.Group {
+	const g = new THREE.Group()
+	const color = rng.pick(['#9cc45a', '#a9c96a', '#7fb04c', '#c2c86a'])
+	for (let i = 0; i < rng.int(6, 10); i++) {
+		const h = rng.range(0.16, 0.3)
+		const blade = shadow(new THREE.Mesh(new THREE.ConeGeometry(0.014, h, 3), facet(jitterColor(rng, color))))
+		blade.position.set(rng.jitter(0, 0.1), h / 2, rng.jitter(0, 0.1))
+		blade.rotation.z = rng.jitter(0, 0.4)
+		blade.rotation.x = rng.jitter(0, 0.4)
+		g.add(blade)
+	}
+	return g
+}
+export function lichenRock(rng: Rng): THREE.Group {
+	const g = new THREE.Group()
+	const r = rng.range(0.08, 0.16)
+	const rock = shadow(new THREE.Mesh(new THREE.DodecahedronGeometry(r, 0), facet(jitterColor(rng, '#8d8a80', 0.01, 0.03, 0.06))))
+	rock.scale.set(1, 0.65, 1)
+	rock.rotation.y = rng.range(0, Math.PI)
+	rock.position.y = r * 0.3
+	g.add(rock)
+	const lichen = shadow(new THREE.Mesh(new THREE.CircleGeometry(r * 0.6, 5), facet(rng.pick(['#9fbf6a', '#b7c98a', '#c9c26a']))))
+	lichen.rotation.x = -Math.PI / 2
+	lichen.position.set(r * 0.2, r * 0.66, 0)
+	g.add(lichen)
+	return g
+}
+export function fallenBranch(rng: Rng): THREE.Group {
+	const g = new THREE.Group()
+	const len = rng.range(0.3, 0.6)
+	const branch = shadow(new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.03, len, 4), facet(jitterColor(rng, '#6e5240'))))
+	branch.rotation.z = Math.PI / 2
+	branch.rotation.y = rng.range(0, Math.PI)
+	branch.position.y = 0.025
+	g.add(branch)
+	const moss = shadow(new THREE.Mesh(new THREE.IcosahedronGeometry(0.05, 0), facet('#5c9c3d')))
+	moss.scale.set(1, 0.4, 1)
+	moss.position.set(rng.jitter(0, len * 0.3), 0.04, rng.jitter(0, len * 0.3))
+	g.add(moss)
+	return g
+}
+export function mushroomRing(rng: Rng): THREE.Group {
+	// a fairy ring, or a colony on rotting wood — either way, a lot of them
+	const g = new THREE.Group()
+	const n = rng.int(4, 6)
+	const capColor = rng.pick(['#c4452f', '#a5713f', '#e8dcc0', '#d9a441'])
+	const ringR = rng.range(0.1, 0.2)
+	for (let i = 0; i < n; i++) {
+		const a = (i / n) * Math.PI * 2 + rng.jitter(0, 0.3)
+		const sh = rng.range(0.04, 0.1)
+		const px = Math.cos(a) * ringR
+		const pz = Math.sin(a) * ringR
+		const stem = shadow(new THREE.Mesh(new THREE.CylinderGeometry(0.014, 0.02, sh, 4), facet('#ede3cf')))
+		stem.position.set(px, sh / 2, pz)
+		g.add(stem)
+		const cap = shadow(new THREE.Mesh(new THREE.ConeGeometry(rng.range(0.035, 0.06), 0.05, 4), facet(jitterColor(rng, capColor, 0.008, 0.05, 0.04))))
+		cap.position.set(px, sh + 0.018, pz)
+		g.add(cap)
+	}
+	return g
+}
+
+/** One piece of the living floor — cheap, flat, and everywhere. */
+export function forestFloorPiece(rng: Rng): THREE.Group {
+	const r = rng.next()
+	if (r < 0.3) return mossPatch(rng)
+	if (r < 0.42) return mossMound(rng)
+	if (r < 0.52) return humusPatch(rng)
+	if (r < 0.64) return grassClump(rng)
+	if (r < 0.72) return tallGrass(rng)
+	if (r < 0.8) return cloverPatch(rng)
+	if (r < 0.86) return broadleafCover(rng)
+	if (r < 0.91) return wildflowers(rng)
+	if (r < 0.95) return leafLitter(rng)
+	if (r < 0.975) return rng.pick([mushrooms, mushroomRing])(rng)
+	return rng.pick([lichenRock, fallenBranch, fern])(rng)
+}
+
+/**
+ * One random food forest piece. Weighted so the mix reads as a planted
+ * forest garden: a canopy over an understorey of fruit, shrubs and ground
+ * cover between, and a living floor underneath. The tropical corner is
+ * deliberately heavy — the glass keeps it warm, so bananas, mangos and
+ * coconuts are the ordinary thing here, not the exotic one.
+ */
+export function foodForestPiece(rng: Rng): THREE.Group {
+	const r = rng.next()
+	if (r < 0.12) return rng.pick([walnutTree, chestnutTree, mangoTree, mangoTree, avocadoTree, coconutPalm, coconutPalm])(rng)
+	if (r < 0.3) return rng.pick([bananaClump, bananaPlant, mangoTree, coconutPalm, datePalm, papayaTree, papayaTree])(rng)
+	if (r < 0.5)
+		return rng.pick([appleTree, pearTree, plumTree, cherryTree, figTree, lemonTree, orangeTree, oliveTree, guavaTree, pomegranateTree, moringaTree])(rng)
+	if (r < 0.64) return rng.pick([blueberryBush, currantBush, hazelShrub, raspberryCane, berryBush])(rng)
+	if (r < 0.76) return rng.pick([herbPatch, kalePatch, taroPatch, gingerPatch])(rng)
+	if (r < 0.86) return rng.pick([strawberryPatch, pumpkinVine, sweetPotatoVine])(rng)
+	if (r < 0.9) return rootBed(rng)
+	if (r < 0.95) return rng.pick([grapeVine, beanPole])(rng)
+	return rng.pick([mushrooms, fern, leafLitter, fallenLog])(rng)
+}
+
+// --- the commons of the forest: where people stop on the walk -------------
+export function parkBench(rng: Rng): THREE.Group {
+	const g = new THREE.Group()
+	const wood = jitterColor(rng, TIMBER_DARK, 0.01, 0.05, 0.05)
+	const seat = shadow(new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.04, 0.2), facet(wood)))
+	seat.position.y = 0.16
+	g.add(seat)
+	const back = shadow(new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.16, 0.04), facet(wood)))
+	back.position.set(0, 0.28, -0.09)
+	back.rotation.x = -0.15
+	g.add(back)
+	for (const x of [-0.24, 0.24]) {
+		const leg = shadow(new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.16, 0.18), facet('#7a6a5a')))
+		leg.position.set(x, 0.08, 0)
+		g.add(leg)
+	}
+	g.rotation.y = rng.range(0, Math.PI * 2)
+	return g
+}
+
+export function swingSet(rng: Rng): THREE.Group {
+	const g = new THREE.Group()
+	const wood = jitterColor(rng, TIMBER, 0.01, 0.05, 0.05)
+	// two A-frames and a beam between them
+	for (const x of [-0.45, 0.45]) {
+		for (const dz of [-0.22, 0.22]) {
+			const leg = shadow(new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.035, 0.9, 5), facet(wood)))
+			leg.position.set(x, 0.44, dz / 2)
+			leg.rotation.x = dz > 0 ? -0.25 : 0.25
+			g.add(leg)
+		}
+	}
+	const beam = shadow(new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.035, 1.0, 5), facet(wood)))
+	beam.rotation.z = Math.PI / 2
+	beam.position.y = 0.88
+	g.add(beam)
+	for (const x of [-0.18, 0.18]) {
+		for (const dx of [-0.1, 0.1]) {
+			const rope = shadow(new THREE.Mesh(new THREE.CylinderGeometry(0.008, 0.008, 0.6, 3), facet('#d9cfb8')))
+			rope.position.set(x + dx, 0.58, 0)
+			g.add(rope)
+		}
+		const seat = shadow(new THREE.Mesh(new THREE.BoxGeometry(0.26, 0.03, 0.1), facet('#5a4636')))
+		seat.position.set(x, 0.28, 0)
+		g.add(seat)
+	}
+	g.rotation.y = rng.range(0, Math.PI * 2)
+	return g
+}
+
+export function chickenCoop(rng: Rng): THREE.Group {
+	const g = new THREE.Group()
+	// the hut: a timber box under a pitched roof, on short legs
+	const hut = shadow(new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.36, 0.4), facet(jitterColor(rng, '#a8785a'))))
+	hut.position.set(0, 0.3, 0)
+	g.add(hut)
+	const roof = shadow(new THREE.Mesh(new THREE.ConeGeometry(0.42, 0.24, 4), facet('#6e4f3a')))
+	roof.position.y = 0.6
+	roof.rotation.y = Math.PI / 4
+	roof.scale.set(1, 1, 0.85)
+	g.add(roof)
+	for (const [x, z] of [[-0.2, -0.15], [0.2, -0.15], [-0.2, 0.15], [0.2, 0.15]] as const) {
+		const leg = shadow(new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.12, 0.05), facet('#5a4636')))
+		leg.position.set(x, 0.06, z)
+		g.add(leg)
+	}
+	// the run: a ring of posts and a rail, and the birds in it
+	const posts = 8
+	for (let i = 0; i < posts; i++) {
+		const a = (i / posts) * Math.PI * 2
+		const post = shadow(new THREE.Mesh(new THREE.CylinderGeometry(0.015, 0.015, 0.3, 3), facet('#8a7a66')))
+		post.position.set(Math.cos(a) * 0.62, 0.15, Math.sin(a) * 0.62)
+		g.add(post)
+	}
+	const rail = shadow(new THREE.Mesh(new THREE.TorusGeometry(0.62, 0.012, 3, posts), facet('#8a7a66')))
+	rail.rotation.x = Math.PI / 2
+	rail.position.y = 0.26
+	g.add(rail)
+	for (let i = 0; i < rng.int(3, 5); i++) {
+		const a = rng.range(0, Math.PI * 2)
+		const d = rng.range(0.3, 0.55)
+		const hen = shadow(new THREE.Mesh(new THREE.OctahedronGeometry(0.05, 0), facet(rng.pick(['#f4efe4', '#c9803a', '#3a3230']))))
+		hen.scale.set(1.3, 0.9, 1)
+		hen.rotation.y = rng.range(0, Math.PI * 2)
+		hen.position.set(Math.cos(a) * d, 0.05, Math.sin(a) * d)
+		g.add(hen)
+		const comb = shadow(new THREE.Mesh(new THREE.TetrahedronGeometry(0.018, 0), facet('#d0342c')))
+		comb.position.set(hen.position.x, 0.1, hen.position.z)
+		g.add(comb)
+	}
+	g.rotation.y = rng.range(0, Math.PI * 2)
+	return g
+}
+
+export function waterBasin(rng: Rng): THREE.Group {
+	// a small round pond with a stone lip, reeds on one side, a lily or two
+	const g = new THREE.Group()
+	const R = rng.range(0.9, 1.2)
+	const lip = shadow(new THREE.Mesh(new THREE.TorusGeometry(R, 0.07, 4, 14), facet(jitterColor(rng, '#9c968a', 0.01, 0.04, 0.05))))
+	lip.rotation.x = Math.PI / 2
+	lip.position.y = 0.04
+	g.add(lip)
+	const bed = new THREE.Mesh(new THREE.CircleGeometry(R * 0.98, 14), facet('#3f6a6e'))
+	bed.rotation.x = -Math.PI / 2
+	bed.position.y = 0.012
+	g.add(bed)
+	const water = new THREE.Mesh(
+		new THREE.CircleGeometry(R * 0.98, 14),
+		new THREE.MeshStandardMaterial({ color: '#5fb0d6', roughness: 0.15, metalness: 0.05, transparent: true, opacity: 0.7 })
+	)
+	water.rotation.x = -Math.PI / 2
+	water.position.y = 0.06
+	g.add(water)
+	const side = rng.range(0, Math.PI * 2)
+	for (let i = 0; i < rng.int(2, 4); i++) {
+		const r = reeds(rng)
+		const a = side + rng.jitter(0, 0.6)
+		r.position.set(Math.cos(a) * R * 0.8, 0.05, Math.sin(a) * R * 0.8)
+		g.add(r)
+	}
+	for (let i = 0; i < rng.int(1, 3); i++) {
+		const pad = lilyPad(rng)
+		const a = rng.range(0, Math.PI * 2)
+		const d = rng.range(0.2, R * 0.6)
+		pad.position.set(Math.cos(a) * d, 0.06, Math.sin(a) * d)
+		g.add(pad)
+	}
+	return g
 }
 
 /** Glass over green — the panes of a growing dome, not a dwelling. */

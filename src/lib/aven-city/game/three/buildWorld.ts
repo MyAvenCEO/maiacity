@@ -46,6 +46,12 @@ import {
 	fallenLog,
 	fern,
 	fireCircle,
+	foodForestPiece,
+	forestFloorPiece,
+	parkBench,
+	swingSet,
+	chickenCoop,
+	waterBasin,
 	flower,
 	goldTuft,
 	grassBlades,
@@ -78,7 +84,13 @@ import {
 
 const HEX_RADIUS = 1.0 // flush — tiles form one continuous ground
 const HEX_HEIGHT = 0.5 // uniform — the board is flat
-const BEVEL = 0.042 // soft crease between tiles
+/** The ground's painted top disc floats 0.004 over the prism; anything flat
+ * that should show — a forest floor, a gravel path, a moss patch — goes on
+ * these, above it. */
+const FLOOR_Y = HEX_HEIGHT + 0.0055
+const PATH_Y = HEX_HEIGHT + 0.0062
+const PLANT_Y = HEX_HEIGHT + 0.006
+const BEVEL = 0.024 // soft crease between tiles
 const CLAY_SIDE = '#f5edda'
 const SHORE = '#ecdcae'
 const WET_SAND = '#dcc79b'
@@ -499,8 +511,10 @@ function buildBaseGeo(tile: HexTile, rng: Rng, field: FieldSampler): THREE.Buffe
 		if (y > bevelBottom - 0.001) {
 			const t = Math.min(1, Math.max(0, (y - bevelBottom) / BEVEL))
 			field(tile, tile.x + x, tile.z + z, scratch)
-			scratch.multiplyScalar(0.955 + 0.04 * t)
-			if (t < 0.3) scratch.lerp(sideColor, 1 - t / 0.3)
+			// barely darker toward the crease: the border is a fold in one
+			// ground, not a kerb between two tiles
+			scratch.multiplyScalar(0.975 + 0.02 * t)
+			if (t < 0.12) scratch.lerp(sideColor, 1 - t / 0.12)
 			return scratch
 		}
 		return sideColor
@@ -794,7 +808,230 @@ export interface Clearing {
 	r: number
 	/** how much space the structure itself takes — what collisions use */
 	extent: number
+	/** what the far stand-in draws for it; nothing for clutter */
+	shape?: 'dome' | 'tent' | 'box'
+	/** true keeps the food forest's plants out of it as well */
+	keepOut?: boolean
 }
+
+// --- park walks: wandering gravel through the food forest --------------------
+type Pt = [number, number]
+interface Walk {
+	pts: Pt[]
+	w: number
+}
+
+/** A line between two points that wanders on the way: a few control points
+ * along it, each pushed sideways, smoothed through. Never straight, never a
+ * circle — the way a path gets walked into a wood. */
+function wander(rng: Rng, from: Pt, to: Pt, wobble: number, w: number): Walk {
+	const dx = to[0] - from[0]
+	const dz = to[1] - from[1]
+	const len = Math.hypot(dx, dz)
+	const nx = -dz / len
+	const nz = dx / len
+	const n = 2 + rng.int(0, 2)
+	const ctrl = [new THREE.Vector3(from[0], 0, from[1])]
+	for (let i = 1; i <= n; i++) {
+		const t = i / (n + 1) + rng.jitter(0, 0.3 / (n + 1))
+		const off = rng.jitter(0, wobble)
+		ctrl.push(new THREE.Vector3(from[0] + dx * t + nx * off, 0, from[1] + dz * t + nz * off))
+	}
+	ctrl.push(new THREE.Vector3(to[0], 0, to[1]))
+	const curve = new THREE.CatmullRomCurve3(ctrl, false, 'centripetal')
+	const pts = curve.getPoints(Math.max(10, Math.round(len / 0.025))).map((v): Pt => [v.x, v.z])
+	return { pts, w }
+}
+
+/** Distance from a point to the nearest piece of a walk, against `tol`. */
+function nearWalk(walk: Walk, px: number, pz: number, tol: number): boolean {
+	const t2 = (walk.w / 2 + tol) ** 2
+	const pts = walk.pts
+	for (let i = 1; i < pts.length; i++) {
+		const [ax, az] = pts[i - 1]
+		const [bx, bz] = pts[i]
+		const vx = bx - ax
+		const vz = bz - az
+		const l2 = vx * vx + vz * vz
+		let u = l2 > 0 ? ((px - ax) * vx + (pz - az) * vz) / l2 : 0
+		u = u < 0 ? 0 : u > 1 ? 1 : u
+		const ex = ax + vx * u - px
+		const ez = az + vz * u - pz
+		if (ex * ex + ez * ez < t2) return true
+	}
+	return false
+}
+
+/** Edge k of a flat-top hex faces world angle 30° + 60°·k. */
+const EDGE_ANGLE = (k: number) => Math.PI / 6 + (Math.PI / 3) * k
+
+/**
+ * The walks of one forest hex: a few exits toward neighbouring hexes, each
+ * wandering in from the rim to the ring around the buildings; some of those
+ * joined along the ring, never all of them, so it does not close into a
+ * circle; and a dead end or two out into the trees.
+ */
+function forestWalks(rng: Rng, inner: number): Walk[] {
+	const walks: Walk[] = []
+	const edges = [0, 1, 2, 3, 4, 5]
+	for (let i = edges.length - 1; i > 0; i--) {
+		const j = rng.int(0, i)
+		;[edges[i], edges[j]] = [edges[j], edges[i]]
+	}
+	const exits = edges.slice(0, rng.int(2, 4)).sort((a, b) => a - b)
+	const anchors: Array<{ a: number; p: Pt }> = []
+	for (const k of exits) {
+		const ea = EDGE_ANGLE(k) + rng.jitter(0, 0.1)
+		const er = hexOutlineAt(ea) - 0.012
+		const aa = EDGE_ANGLE(k) + rng.jitter(0, 0.35)
+		const ar = inner + rng.range(0, 0.05)
+		const anchor: Pt = [Math.cos(aa) * ar, Math.sin(aa) * ar]
+		anchors.push({ a: aa, p: anchor })
+		walks.push(wander(rng, anchor, [Math.cos(ea) * er, Math.sin(ea) * er], 0.05, 0.02))
+	}
+	// join neighbours along the ring — but leave one gap (two, with four exits)
+	const skip = new Set<number>()
+	if (anchors.length >= 3) {
+		skip.add(rng.int(0, anchors.length - 1))
+		if (anchors.length === 4 && rng.chance(0.5)) skip.add((([...skip][0] + 2) % 4))
+	}
+	for (let i = 0; i < anchors.length; i++) {
+		if (anchors.length === 2 && i === 1) break
+		if (skip.has(i)) continue
+		let from = anchors[i]
+		let to = anchors[(i + 1) % anchors.length]
+		let a0 = from.a
+		let a1 = to.a
+		while (a1 <= a0) a1 += Math.PI * 2
+		if (anchors.length === 2 && a1 - a0 > Math.PI) {
+			// two exits: go the short way round
+			;[from, to] = [to, from]
+			a0 = from.a
+			a1 = to.a
+			while (a1 <= a0) a1 += Math.PI * 2
+		}
+		const steps = Math.max(3, Math.round(((a1 - a0) * inner) / 0.12))
+		const ctrl: THREE.Vector3[] = []
+		for (let sIdx = 0; sIdx <= steps; sIdx++) {
+			const t = sIdx / steps
+			const a = a0 + (a1 - a0) * t
+			const r = sIdx === 0 || sIdx === steps ? Math.hypot(...(sIdx === 0 ? from.p : to.p)) : inner + rng.range(-0.02, 0.07)
+			ctrl.push(new THREE.Vector3(Math.cos(a) * r, 0, Math.sin(a) * r))
+		}
+		ctrl[0].set(from.p[0], 0, from.p[1])
+		ctrl[steps].set(to.p[0], 0, to.p[1])
+		const curve = new THREE.CatmullRomCurve3(ctrl, false, 'centripetal')
+		walks.push({ pts: curve.getPoints(steps * 6).map((v): Pt => [v.x, v.z]), w: 0.02 })
+	}
+	// dead ends: off a spoke, out into the forest, stopping nowhere special
+	for (let i = 0, n = rng.int(1, 2); i < n; i++) {
+		const spoke = walks[rng.int(0, exits.length - 1)]
+		const start = spoke.pts[rng.int(Math.floor(spoke.pts.length * 0.3), Math.floor(spoke.pts.length * 0.7))]
+		const a = Math.atan2(start[1], start[0]) + rng.jitter(0, 0.9) + (rng.chance(0.5) ? 0.9 : -0.9)
+		const d = rng.range(0.16, 0.3)
+		const end: Pt = [start[0] + Math.cos(a) * d, start[1] + Math.sin(a) * d]
+		const ea = Math.atan2(end[1], end[0])
+		if (Math.hypot(end[0], end[1]) > hexOutlineAt(ea) - 0.06) continue
+		walks.push(wander(rng, start, end, 0.04, 0.016))
+	}
+	return walks
+}
+
+const GRAVEL = ['#d8c9a6', '#cfc09c', '#e0d2b0']
+
+/** The gravel itself: a flat strip along the walk, wound to face up. */
+function walkMesh(walk: Walk, rng: Rng): THREE.Mesh {
+	const verts: number[] = []
+	const pts = walk.pts
+	const side = (i: number): [number, number] => {
+		const p0 = pts[Math.max(0, i - 1)]
+		const p1 = pts[Math.min(pts.length - 1, i + 1)]
+		const tx = p1[0] - p0[0]
+		const tz = p1[1] - p0[1]
+		const l = Math.hypot(tx, tz) || 1
+		return [(-tz / l) * (walk.w / 2), (tx / l) * (walk.w / 2)]
+	}
+	for (let i = 1; i < pts.length; i++) {
+		const [ox0, oz0] = side(i - 1)
+		const [ox1, oz1] = side(i)
+		const [ax, az] = pts[i - 1]
+		const [bx, bz] = pts[i]
+		const l0: Pt = [ax + ox0, az + oz0]
+		const r0: Pt = [ax - ox0, az - oz0]
+		const l1: Pt = [bx + ox1, bz + oz1]
+		const r1: Pt = [bx - ox1, bz - oz1]
+		verts.push(l0[0], 0, l0[1], l1[0], 0, l1[1], r0[0], 0, r0[1], r0[0], 0, r0[1], l1[0], 0, l1[1], r1[0], 0, r1[1])
+	}
+	const geo = new THREE.BufferGeometry()
+	geo.setAttribute('position', new THREE.Float32BufferAttribute(verts, 3))
+	// a strip from a normal pointing left and a winding that could face
+	// either way depending on the walk's direction: fix the normals up
+	const nrm = new Float32Array(verts.length)
+	for (let i = 1; i < nrm.length; i += 3) nrm[i] = 1
+	geo.setAttribute('normal', new THREE.BufferAttribute(nrm, 3))
+	const mesh = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ color: rng.pick(GRAVEL), roughness: 1, side: THREE.DoubleSide }))
+	mesh.receiveShadow = true
+	mesh.userData.flat = true
+	return mesh
+}
+
+const FLOOR = ['#5b9440', '#4f8637', '#699f47', '#5a8a3c', '#74a84e', '#557d3a'].map((c) => new THREE.Color(c))
+
+/**
+ * The forest floor itself: a mottled sheet of moss greens laid over the hex,
+ * so the ground between the plants reads as living cover, not lawn. A fan of
+ * rings, one colour a vertex — a few hundred triangles for the whole hex.
+ */
+function forestFloorDisc(rng: Rng, inset: number): THREE.Mesh {
+	const RINGS = 5
+	const SEGS = 48
+	const pos: number[] = []
+	const col: number[] = []
+	const ringPt = (ring: number, seg: number): [number, number] => {
+		if (ring === 0) return [0, 0]
+		const a = (seg / SEGS) * Math.PI * 2
+		const r = (ring / RINGS) * (hexOutlineAt(a) - inset)
+		return [Math.cos(a) * r, Math.sin(a) * r]
+	}
+	const colours = new Map<string, THREE.Color>()
+	const colourAt = (ring: number, seg: number): THREE.Color => {
+		const k = ring === 0 ? '0' : `${ring},${seg % SEGS}`
+		let c = colours.get(k)
+		if (!c) {
+			c = rng.pick(FLOOR).clone().offsetHSL(rng.jitter(0, 0.01), rng.jitter(0, 0.05), rng.jitter(0, 0.04))
+			colours.set(k, c)
+		}
+		return c
+	}
+	const push = (ring: number, seg: number) => {
+		const [x, z] = ringPt(ring, seg)
+		const c = colourAt(ring, seg)
+		pos.push(x, 0, z)
+		col.push(c.r, c.g, c.b)
+	}
+	for (let ring = 0; ring < RINGS; ring++) {
+		for (let seg = 0; seg < SEGS; seg++) {
+			// two triangles a cell, wound to face up
+			push(ring, seg)
+			push(ring + 1, seg + 1)
+			push(ring + 1, seg)
+			if (ring > 0) {
+				push(ring, seg)
+				push(ring, seg + 1)
+				push(ring + 1, seg + 1)
+			}
+		}
+	}
+	const geo = new THREE.BufferGeometry()
+	geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3))
+	geo.setAttribute('color', new THREE.Float32BufferAttribute(col, 3))
+	geo.computeVertexNormals()
+	const mesh = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1 }))
+	mesh.receiveShadow = true
+	mesh.userData.flat = true
+	return mesh
+}
+
 
 /**
  * Flattens a built piece into ONE vertex-coloured geometry, baking each
@@ -1098,8 +1335,9 @@ export function canBuildOnTile(tile: HexTile): boolean {
  * hex, but that is the land's doing, not the factory's.
  * ------------------------------------------------------------------------ */
 
-/** Hex circumradius in metres — the scale everything else is read against. */
-export const HEX_RADIUS_M = 375
+/** Hex circumradius in metres — 800 m corner to corner, 41.6 ha, as Day 05
+ * lays it out from 1 000 m² of food forest and 500 m² under glass a head. */
+export const HEX_RADIUS_M = 400
 
 /** A hex's land, in hectares. */
 export const HEX_HA = (((3 * Math.sqrt(3)) / 2) * HEX_RADIUS_M ** 2) / 10_000
@@ -1108,8 +1346,10 @@ export const CLUSTER_M = 357
 export const CLUSTER_HA = (Math.PI * (CLUSTER_M / 2) ** 2) / 10_000
 /** What a settled hex has left to grow on. */
 export const OPEN_HA = HEX_HA - CLUSTER_HA
-/** Indoor beds carry a fifth of the diet; the open land carries the rest. */
-export const INDOOR_DIET_SHARE = 0.2
+/** The base calculation every number in the journal follows: a person needs
+ * 1 000 m² of outdoor food forest and 500 m² of growing space under glass. */
+export const FOOD_FOREST_M2_PER_PERSON = 1000
+export const GLASS_M2_PER_PERSON = 500
 
 /* --- settlements ---------------------------------------------------------
  * A hex is not one building — it is a settlement that grows OUTSIDE IN.
@@ -1301,7 +1541,10 @@ const SITE_PIECES: SitePiece[] = [
 		fromLevel: 4,
 		untilLevel: 4,
 		build: (rng, i) => (i < 3 ? digger(rng) : i === 3 ? pickup(rng) : van(rng))
-	}
+	},
+
+	// --- level 5: the food forest grows in, right to the rim of the hex --
+	// (level 5's food forest is grown by growForest, after everything else)
 ]
 
 /**
@@ -1376,11 +1619,11 @@ export const BUILDINGS: Record<BuildingKind, BuildingSpec> = {
 	DOME5: {
 		label: 'Level 5',
 		level: 5,
-		// apartments in its outer storeys, and the whole middle given over to
-		// the commons — kitchens, library, gathering — and indoor growing
-		capacity: 60,
+		// nobody lives in the centre: it carries the commons, the energy and
+		// water backbone, the compute — so a full cell is 72 + 144 = 216 people
+		capacity: 0,
 		diameterM: 136,
-		purpose: 'commons + indoor growing',
+		purpose: 'commons, energy, water and compute',
 		count: 1,
 		radius: 0,
 		// grown until it nearly touches the six domes ringed around it: their
@@ -1468,10 +1711,116 @@ export function isFactory(kind: PlacedKind): kind is FactoryKind {
 	return kind in FACTORIES
 }
 
-/** Puts a works on a hex, and hands back the ground it claims. */
-const factoryPool = new Map<string, THREE.Object3D>()
+/** What stops people on the walk — placed along the gravel, facing it. */
+const COMMONS: Array<{ build: (rng: Rng) => THREE.Group; scale: number; extent: number; count: [number, number] }> = [
+	{ build: waterBasin, scale: 0.085, extent: 0.075, count: [1, 1] },
+	{ build: fireCircle, scale: 0.04, extent: 0.065, count: [1, 1] },
+	{ build: swingSet, scale: 0.085, extent: 0.035, count: [1, 1] },
+	{ build: chickenCoop, scale: 0.085, extent: 0.045, count: [1, 2] },
+	{ build: parkBench, scale: 0.085, extent: 0.02, count: [4, 6] }
+]
 
-function factoryVariant(kind: FactoryKind, variant: number): THREE.Object3D {
+/**
+ * Grows the food forest over a hex: the moss floor, the walks, the commons
+ * along them, and then every open metre planted. `inner` is the ring the
+ * buildings reach to; the walks and the forest start outside it. Everything
+ * it places is pushed to `clearings` so nature and the stand-ins know.
+ */
+function growForest(
+	group: THREE.Group,
+	rng: Rng,
+	clearings: Clearing[],
+	inner: number,
+	ox: number,
+	oz: number
+): void {
+	// out over the crease itself, so two forest hexes meet as one floor
+	const floor = forestFloorDisc(rng, 0.004)
+	floor.position.set(ox, FLOOR_Y, oz)
+	group.add(floor)
+
+	const walks = forestWalks(rng, inner)
+	for (const walk of walks) {
+		const mesh = walkMesh(walk, rng)
+		mesh.position.set(ox, PATH_Y, oz)
+		group.add(mesh)
+	}
+
+	const blocked = (px: number, pz: number, extent: number) =>
+		clearings.some((c) => c.keepOut && Math.hypot(px - c.x, pz - c.z) < c.extent + extent)
+
+	for (const spec of COMMONS) {
+		const n = rng.int(spec.count[0], spec.count[1])
+		for (let i = 0; i < n; i++) {
+			for (let tries = 0; tries < 24; tries++) {
+				const walk = walks[rng.int(0, walks.length - 1)]
+				const idx = rng.int(Math.floor(walk.pts.length * 0.15), Math.floor(walk.pts.length * 0.85))
+				const [px0, pz0] = walk.pts[idx]
+				const [ax, az] = walk.pts[idx - 1]
+				const [bx, bz] = walk.pts[idx + 1]
+				const l = Math.hypot(bx - ax, bz - az) || 1
+				const sign = rng.chance(0.5) ? 1 : -1
+				const d = walk.w / 2 + spec.extent + 0.008
+				const px = px0 + (-(bz - az) / l) * d * sign
+				const pz = pz0 + ((bx - ax) / l) * d * sign
+				const a = Math.atan2(pz, px)
+				if (Math.hypot(px, pz) + spec.extent > hexOutlineAt(a) - 0.04) continue
+				if (blocked(px, pz, spec.extent)) continue
+				if (walks.some((w) => w !== walk && nearWalk(w, px, pz, spec.extent))) continue
+				const object = spec.build(rng)
+				object.scale.setScalar(spec.scale * SITE_SCALE)
+				object.position.set(ox + px, HEX_HEIGHT + 0.004, oz + pz)
+				object.traverse((o) => {
+					if (o instanceof THREE.Mesh) {
+						o.castShadow = true
+						o.receiveShadow = true
+					}
+				})
+				group.add(object)
+				clearings.push({ x: px, z: pz, r: spec.extent * 1.3, extent: spec.extent, keepOut: true })
+				break
+			}
+		}
+	}
+
+	// then the planting: canopy to ground cover, uniform over the open ground,
+	// right to the rim, off the gravel and out of everything standing
+	const plantScale = 0.1 * SITE_SCALE
+	const sow = (count: number, make: (r: Rng) => THREE.Group, margin: number, flat: boolean) => {
+		for (let i = 0; i < count; i++) {
+			for (let tries = 0; tries < 8; tries++) {
+				const a = rng.range(0, Math.PI * 2)
+				const d = Math.sqrt(rng.next()) * (hexOutlineAt(a) - 0.04)
+				const px = Math.cos(a) * d
+				const pz = Math.sin(a) * d
+				if (blocked(px, pz, 0.02)) continue
+				if (walks.some((w) => nearWalk(w, px, pz, margin))) continue
+				const plant = make(rng)
+				plant.scale.multiplyScalar(plantScale)
+				plant.position.set(ox + px, PLANT_Y, oz + pz)
+				plant.traverse((o) => {
+					if (o instanceof THREE.Mesh) {
+						o.castShadow = !flat
+						o.receiveShadow = true
+						if (flat) o.userData.flat = true
+					}
+				})
+				group.add(plant)
+				break
+			}
+		}
+	}
+	sow(480, foodForestPiece, 0.02, false)
+	sow(400, forestFloorPiece, 0.035, true)
+
+	// the wild wood keeps off the whole hex: this is planted ground now
+	clearings.push({ x: 0, z: 0, r: 1.2, extent: 0 })
+}
+
+/** Puts a works on a hex, and hands back the ground it claims. */
+const factoryPool = new Map<string, { object: THREE.Object3D; clearings: Clearing[] }>()
+
+function factoryVariant(kind: FactoryKind, variant: number): { object: THREE.Object3D; clearings: Clearing[] } {
 	const key = `${kind}#${variant}`
 	const cached = factoryPool.get(key)
 	if (cached) return cached
@@ -1489,9 +1838,17 @@ function factoryVariant(kind: FactoryKind, variant: number): THREE.Object3D {
 	})
 	group.add(object)
 
-	const flat = flattenSettlement(group)
-	factoryPool.set(key, flat)
-	return flat
+	// a factory hex is still land: the food forest fills everything outside
+	// the works' own apron, walks, commons and all
+	const clearings: Clearing[] = [
+		{ x: 0, z: 0, r: spec.footprint, extent: spec.footprint * 1.15, shape: 'dome', keepOut: true }
+	]
+	growForest(group, makeRng(0xf00d ^ (variant * 977)), clearings, spec.footprint * 1.15 + 0.08, 0, 0)
+	clearings[0].extent = spec.footprint
+
+	const built = { object: flattenSettlement(group), clearings }
+	factoryPool.set(key, built)
+	return built
 }
 
 /** Puts a works on a hex, and hands back the ground it claims. */
@@ -1502,7 +1859,7 @@ function makeFactory(
 	const spec = FACTORIES[kind]
 	const built = factoryVariant(kind, Math.abs(tile.seed) % SETTLEMENT_VARIANTS)
 	const group = new THREE.Group()
-	for (const child of built.children) {
+	for (const child of built.object.children) {
 		if (!(child instanceof THREE.Mesh)) continue
 		const mesh = new THREE.Mesh(child.geometry, child.material)
 		mesh.castShadow = child.castShadow
@@ -1510,10 +1867,7 @@ function makeFactory(
 		group.add(mesh)
 	}
 	group.position.set(tile.x, 0, tile.z)
-	return {
-		object: group,
-		clearings: [{ x: 0, z: 0, r: spec.footprint, extent: spec.footprint }]
-	}
+	return { object: group, clearings: built.clearings.map((c) => ({ ...c, r: c.r || spec.footprint })) }
 }
 
 /** Every level in build order, outside first. */
@@ -1529,6 +1883,14 @@ export function settlementKinds(level: number): BuildingKind[] {
 	const built = BUILD_ORDER.filter((k) => BUILDINGS[k].level <= level)
 	const retired = new Set(built.map((k) => BUILDINGS[k].retires).filter(Boolean))
 	return built.filter((k) => !retired.has(k))
+}
+
+/** Ground the domes themselves stand on at `level`, in hectares. */
+export function domesHa(level: number): number {
+	return settlementKinds(level).reduce(
+		(sum, k) => sum + BUILDINGS[k].count * ((Math.PI * (BUILDINGS[k].diameterM / 2) ** 2) / 10_000),
+		0
+	)
 }
 
 /** People housed by a settlement built up to and including `level`. */
@@ -1556,6 +1918,9 @@ function flattenSettlement(root: THREE.Object3D): THREE.Group {
 	root.updateMatrixWorld(true)
 	const solid: THREE.BufferGeometry[] = []
 	const glass: THREE.BufferGeometry[] = []
+	// the ground layer — floor sheet, gravel, moss — lies flat and throws no
+	// shadow worth drawing, so it stays out of the shadow pass entirely
+	const flat: THREE.BufferGeometry[] = []
 
 	root.traverse((obj) => {
 		if (!(obj instanceof THREE.Mesh)) return
@@ -1575,7 +1940,7 @@ function flattenSettlement(root: THREE.Object3D): THREE.Group {
 			}
 			geo.setAttribute('color', new THREE.BufferAttribute(arr, 3))
 		}
-		;(mat.transparent && mat.opacity < 0.9 ? glass : solid).push(geo)
+		;(mat.transparent && mat.opacity < 0.9 ? glass : obj.userData.flat ? flat : solid).push(geo)
 		obj.geometry.dispose()
 		mat.dispose()
 	})
@@ -1594,6 +1959,16 @@ function flattenSettlement(root: THREE.Object3D): THREE.Group {
 			})
 		)
 		mesh.castShadow = true
+		mesh.receiveShadow = true
+		group.add(mesh)
+	}
+	const flatGeo = flat.length > 0 ? mergeGeometries(flat, false) : null
+	if (flatGeo) {
+		const mesh = new THREE.Mesh(
+			flatGeo,
+			new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1, metalness: 0, flatShading: true })
+		)
+		mesh.castShadow = false
 		mesh.receiveShadow = true
 		group.add(mesh)
 	}
@@ -1679,7 +2054,14 @@ function buildSettlementAtOrigin(
 				}
 			})
 			group.add(object)
-			clearings.push({ x: px, z: pz, r: spec.footprint * SITE_SCALE, extent: specExtent })
+			clearings.push({
+				x: px,
+				z: pz,
+				r: spec.footprint * SITE_SCALE,
+				extent: specExtent,
+				shape: kind === 'TENT' ? 'tent' : 'dome',
+				keepOut: true
+			})
 		}
 	}
 
@@ -1699,7 +2081,10 @@ function buildSettlementAtOrigin(
 			x: px,
 			z: pz,
 			r: piece.footprint * SITE_SCALE,
-			extent: piece.extent * SITE_SCALE
+			extent: piece.extent * SITE_SCALE,
+			// containers and the stage still show from far off; clutter doesn't
+			shape: piece.extent >= 0.14 ? 'box' : undefined,
+			keepOut: true
 		})
 	}
 
@@ -1778,6 +2163,12 @@ function buildSettlementAtOrigin(
 			const a = (Math.PI * 2 * i) / piece.count + bestPhase
 			placePiece(piece, Math.cos(a) * pieceRadius, Math.sin(a) * pieceRadius, i)
 		}
+	}
+
+	// level 5: the food forest grows in around everything, right to the rim
+	if (level >= 5) {
+		const reach = clearings.reduce((m, c) => (c.shape ? Math.max(m, Math.hypot(c.x, c.z) + c.extent) : m), 0)
+		growForest(group, makeRng(seed ^ 0xf00d), clearings, reach + 0.06, tile.x, tile.z)
 	}
 
 	return { object: flattenSettlement(group), clearings }
@@ -1911,16 +2302,16 @@ export interface WorldApi {
  * eight-hex chunks over a ten-thousand-hex island buried the frame in eight
  * thousand mostly-invisible meshes. Sixteen is where the two stop fighting.
  */
-const CHUNK = 16
+const CHUNK = 4
 
 /** How far a chunk can be, in world units, before it drops a tier. */
-const LOD_NEAR = 34
-const LOD_MID = 96
+const LOD_NEAR = 10
+const LOD_MID = 26
 
 /** How much of a chunk's nature still stands at near / mid / far. A prefix of
  * a shuffled instance list is a uniform sample of it, so thinning is one
  * assignment to `count` — no matrices are rewritten. */
-const DECO_SHARE = [1, 0.3, 0.045]
+const DECO_SHARE = [1, 0.35, 0.06]
 
 type Tier = 0 | 1 | 2
 
@@ -1984,23 +2375,83 @@ class SlotPool {
  */
 const impostorPool = new Map<string, THREE.BufferGeometry | null>()
 
+const STANDIN = {
+	stone: new THREE.Color('#cbc2b0'),
+	glass: new THREE.Color('#8fbdd8'),
+	timber: new THREE.Color('#b8874f'),
+	canvas: new THREE.Color('#ece5d6'),
+	box: new THREE.Color('#8a9aa8'),
+	canopy: ['#3f8a3f', '#4c9a45', '#5aa64d', '#357a3a', '#6cb055'].map((c) => new THREE.Color(c))
+}
+
+function tinted(geo: THREE.BufferGeometry, tint: THREE.Color): THREE.BufferGeometry {
+	const g = geo.toNonIndexed()
+	const count = g.getAttribute('position').count
+	const colour = new Float32Array(count * 3)
+	for (let i = 0; i < count; i++) {
+		colour[i * 3] = tint.r
+		colour[i * 3 + 1] = tint.g
+		colour[i * 3 + 2] = tint.b
+	}
+	g.setAttribute('color', new THREE.BufferAttribute(colour, 3))
+	g.deleteAttribute('uv')
+	if (g !== geo) geo.dispose()
+	return g
+}
+
 function impostorFor(
 	poolKey: string,
 	clearings: readonly Clearing[],
-	tint: THREE.Color
+	forested: boolean
 ): THREE.BufferGeometry | null {
 	const cached = impostorPool.get(poolKey)
 	if (cached !== undefined) return cached
 
 	const parts: THREE.BufferGeometry[] = []
 	for (const c of clearings) {
-		// camp clutter — containers, diggers, a van — is below a pixel by the
-		// time a chunk goes far, so it does not get a stand-in at all
-		if (c.extent < 0.09) continue
-		const dome = new THREE.SphereGeometry(c.extent, 6, 3, 0, Math.PI * 2, 0, Math.PI / 2)
-		dome.scale(1, 0.78, 1)
-		dome.translate(c.x, HEX_HEIGHT, c.z)
-		parts.push(dome.toNonIndexed())
+		if (!c.shape) continue
+		if (c.shape === 'dome') {
+			// a stone drum with a glass cap and a timber ring between: the
+			// same three colours the real thing shows from a hundred metres
+			const baseH = c.extent * 0.32
+			const base = new THREE.CylinderGeometry(c.extent * 0.98, c.extent, baseH, 10)
+			base.translate(c.x, HEX_HEIGHT + baseH / 2, c.z)
+			parts.push(tinted(base, STANDIN.stone))
+			const ring = new THREE.CylinderGeometry(c.extent * 1.0, c.extent * 1.0, c.extent * 0.06, 10)
+			ring.translate(c.x, HEX_HEIGHT + baseH, c.z)
+			parts.push(tinted(ring, STANDIN.timber))
+			const cap = new THREE.SphereGeometry(c.extent * 0.96, 10, 5, 0, Math.PI * 2, 0, Math.PI / 2)
+			cap.scale(1, 0.78, 1)
+			cap.translate(c.x, HEX_HEIGHT + baseH, c.z)
+			parts.push(tinted(cap, STANDIN.glass))
+		} else if (c.shape === 'tent') {
+			const cone = new THREE.ConeGeometry(c.extent * 0.9, c.extent * 1.1, 6)
+			cone.translate(c.x, HEX_HEIGHT + c.extent * 0.55, c.z)
+			parts.push(tinted(cone, STANDIN.canvas))
+		} else {
+			const h = c.extent * 0.5
+			const box = new THREE.BoxGeometry(c.extent * 1.6, h, c.extent * 0.8)
+			box.rotateY(Math.atan2(c.z, c.x) + Math.PI / 2)
+			box.translate(c.x, HEX_HEIGHT + h / 2, c.z)
+			parts.push(tinted(box, STANDIN.box))
+		}
+	}
+	if (forested) {
+		// the food forest from far off: a scatter of canopy lumps out to the
+		// rim, so a planted hex reads green-and-rounded, not bare
+		const rng = makeRng(0xf0e57 ^ hashKey(poolKey))
+		for (let i = 0; i < 90; i++) {
+			const a = rng.range(0, Math.PI * 2)
+			const d = Math.sqrt(rng.next()) * (hexOutlineAt(a) - 0.06)
+			const px = Math.cos(a) * d
+			const pz = Math.sin(a) * d
+			if (clearings.some((c) => c.shape && Math.hypot(px - c.x, pz - c.z) < c.extent + 0.02)) continue
+			const r = rng.range(0.028, 0.05)
+			const lump = new THREE.IcosahedronGeometry(r, 0)
+			lump.scale(1, 0.75, 1)
+			lump.translate(px, HEX_HEIGHT + r * 0.9, pz)
+			parts.push(tinted(lump, rng.pick(STANDIN.canopy)))
+		}
 	}
 	if (parts.length === 0) {
 		impostorPool.set(poolKey, null)
@@ -2009,39 +2460,14 @@ function impostorFor(
 
 	const merged = mergeGeometries(parts, false)
 	for (const p of parts) p.dispose()
-	if (!merged) {
-		impostorPool.set(poolKey, null)
-		return null
-	}
-	const count = merged.getAttribute('position').count
-	const colour = new Float32Array(count * 3)
-	for (let i = 0; i < count; i++) {
-		colour[i * 3] = tint.r
-		colour[i * 3 + 1] = tint.g
-		colour[i * 3 + 2] = tint.b
-	}
-	merged.setAttribute('color', new THREE.BufferAttribute(colour, 3))
 	impostorPool.set(poolKey, merged)
 	return merged
 }
 
-/** The average colour of a built settlement, for its stand-in to wear. */
-function averageColour(meshes: readonly THREE.Mesh[]): THREE.Color {
-	const out = new THREE.Color(0, 0, 0)
-	let n = 0
-	for (const mesh of meshes) {
-		const attr = mesh.geometry.getAttribute('color')
-		if (!attr) continue
-		// a sample is plenty — this only decides a tint seen from 100 units out
-		const step = Math.max(1, Math.floor(attr.count / 256))
-		for (let i = 0; i < attr.count; i += step) {
-			out.r += attr.getX(i)
-			out.g += attr.getY(i)
-			out.b += attr.getZ(i)
-			n++
-		}
-	}
-	return n > 0 ? out.multiplyScalar(1 / n) : new THREE.Color('#e8dcc8')
+function hashKey(text: string): number {
+	let h = 2166136261
+	for (let i = 0; i < text.length; i++) h = Math.imul(h ^ text.charCodeAt(i), 16777619)
+	return h >>> 0
 }
 
 /** Everything a placed kind needs to be instanced: its parts, its stand-in,
@@ -2061,11 +2487,9 @@ function placedVariant(kind: PlacedKind, variant: number): PlacedBuild {
 	let parts: THREE.Mesh[]
 	let clearings: Clearing[]
 	if (isFactory(kind)) {
-		parts = factoryVariant(kind, variant).children.filter(
-			(c): c is THREE.Mesh => c instanceof THREE.Mesh
-		)
-		const spec = FACTORIES[kind]
-		clearings = [{ x: 0, z: 0, r: spec.footprint, extent: spec.footprint }]
+		const built = factoryVariant(kind, variant)
+		parts = built.object.children.filter((c): c is THREE.Mesh => c instanceof THREE.Mesh)
+		clearings = built.clearings
 	} else {
 		const built = settlementVariant(BUILDINGS[kind].level, variant)
 		parts = built.object.children.filter((c): c is THREE.Mesh => c instanceof THREE.Mesh)
@@ -2074,7 +2498,7 @@ function placedVariant(kind: PlacedKind, variant: number): PlacedBuild {
 
 	const build: PlacedBuild = {
 		parts,
-		impostor: impostorFor(poolKey, clearings, averageColour(parts)),
+		impostor: impostorFor(poolKey, clearings, isFactory(kind) || BUILDINGS[kind].level >= 5),
 		clearings
 	}
 	placedPool.set(poolKey, build)
@@ -2210,6 +2634,7 @@ export function buildWorld(world: HexWorld): WorldApi {
 		// difference between one draw pass and two over the whole island
 		mesh.castShadow = false
 		mesh.receiveShadow = true
+		mesh.name = 'ground'
 		chunk.ground = mesh
 		mount(mesh)
 	}
@@ -2258,6 +2683,7 @@ export function buildWorld(world: HexWorld): WorldApi {
 			else farByBiome.set(biome as BiomeId, sampled)
 			const geo = biomeVariants(biome as BiomeId)[Number(variant)]
 			const mesh = new THREE.InstancedMesh(geo, material, entries.length)
+			mesh.name = 'nature'
 			mesh.name = bucket
 			mesh.castShadow = true
 			mesh.receiveShadow = true
@@ -2274,6 +2700,7 @@ export function buildWorld(world: HexWorld): WorldApi {
 		for (const [biome, entries] of farByBiome) {
 			if (entries.length === 0) continue
 			const mesh = new THREE.InstancedMesh(biomeVariants(biome)[0], material, entries.length)
+			mesh.name = 'nature-far'
 			mesh.name = `${biome}#far`
 			// nothing this small casts a shadow anyone can resolve
 			mesh.castShadow = false
@@ -2328,6 +2755,7 @@ export function buildWorld(world: HexWorld): WorldApi {
 		const pool = new SlotPool(geo, mat, chunk.tiles.length, chunk.bounds)
 		pool.mesh.castShadow = castShadow
 		pool.mesh.receiveShadow = true
+		pool.mesh.name = into === chunk.full ? `full:${poolKey.split('#')[0]}` : 'far'
 		pool.mesh.visible = into === chunk.full ? chunk.tier === 0 : chunk.tier !== 0
 		into.set(poolKey, pool)
 		mount(pool.mesh)
@@ -2419,11 +2847,11 @@ export function buildWorld(world: HexWorld): WorldApi {
 					cropHa += Math.max(0, HEX_HA - dome)
 				} else {
 					settlements++
-					// the whole cluster disc counts as settled — the gaps between
-					// domes are squares and paths, not farmland
-					settledHa += CLUSTER_HA
-					permacultureHa += Math.max(0, HEX_HA - CLUSTER_HA)
-					citizens += settlementCapacity(BUILDINGS[kind].level)
+					const housed = settlementCapacity(BUILDINGS[kind].level)
+					settledHa += domesHa(BUILDINGS[kind].level)
+					// the food forest each person is owed, from the base calculation
+					permacultureHa += (housed * FOOD_FOREST_M2_PER_PERSON) / 10_000
+					citizens += housed
 				}
 			}
 			const claimed = settlements + works

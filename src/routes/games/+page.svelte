@@ -8,8 +8,8 @@
 			href: `${base}/games/sandbox-1`,
 			blurb:
 				'A hex island you can found settlements on. Pick a tile, build it up through five levels, watch what the land can carry.',
-			cover: `${base}/Day03/Overview 1.png`,
-			coverAlt: 'The avenCITY island — hex tiles, water, the first settlement standing on one of them.'
+			cover: `${base}/games/sandbox-1.jpg`,
+			coverAlt: 'A dome cell and its dome factories on the avenCITY island.'
 		},
 		{
 			name: 'avenCITY - No1',

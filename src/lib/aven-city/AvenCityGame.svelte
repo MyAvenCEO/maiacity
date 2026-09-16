@@ -8,8 +8,11 @@ import { type HexTile, tileResources } from './game/hexmap'
 import {
 	BUILDINGS,
 	canBuildOnTile,
+	domesHa,
 	EMPTY_STATS,
 	FACTORIES,
+	FOOD_FOREST_M2_PER_PERSON,
+	GLASS_M2_PER_PERSON,
 	HEX_HA,
 	HEX_RADIUS_M,
 	isFactory,
@@ -98,67 +101,45 @@ const standing = $derived.by(() => {
 	return targets.every((t) => (api?.buildingAt(t) ?? null) === first) ? first : null
 })
 
-/* --- what a hex is, in metres and hectares -------------------------- */
-/** a food forest feeds one person off 1 000 m² */
-const FOOD_M2 = 1000
-
-const circleHa = (dM: number) => (Math.PI * (dM / 2) ** 2) / 10_000
-/** The living cluster's span, in metres, and the ground it covers. */
-const CLUSTER_M = 357
-const CLUSTER_HA = circleHa(CLUSTER_M)
-/** Indoor beds, half the commons floor, at five times open yield. */
-const INDOOR_FEEDS = 66
-/** How much of the hex radius the settlement covers. */
-const CLUSTER_SHARE = 0.48
+/* --- what a hex is, in metres and hectares --------------------------
+ * Every figure follows the same base calculation as the journal: a person
+ * needs 1 000 m² of outdoor food forest and 500 m² under glass, a full
+ * dome cell holds 216, and the hex is 800 m corner to corner — 41.6 ha.
+ * -------------------------------------------------------------------- */
+const ha = (m2: number) => m2 / 10_000
 
 /**
- * Ground a hex gives up to growing.
- *
- * A LIVING cluster gives up its whole disc: the domes stand on part of
- * it, but the space between them is squares and paths, not farmland. A
- * WORKS hex only gives up what stands — its yard stays growable.
- */
-function takenHa(kind: PlacedKind | null): number {
-	if (!kind) return 0
-	if (isFactory(kind)) return circleHa(FACTORIES[kind].diameterM)
-	return CLUSTER_HA
-}
-
-/**
- * The real-world facts about whatever is selected. Land splits three ways:
- * what the domes stand on, what is left open to grow on — the gaps between
- * domes are gardens, not pavement — and what grows under glass.
+ * The real-world facts about whatever is selected: the land, the people,
+ * the ground the domes stand on, the food forest and glass those people
+ * are owed, and what is left for paths, yard and water.
  */
 const facts = $derived.by(() => {
 	builds
 	const rows: Array<[string, string]> = [
-		['⌀', `${Math.round(HEX_RADIUS_M * 2)} m across`],
+		['hex', `${HEX_RADIUS_M * 2} m corner to corner`],
 		['land', `${HEX_HA.toFixed(1)} ha`]
 	]
-	const built = takenHa(standing)
-	const open = HEX_HA - built
-	if (built > 0) {
-		rows.push([
-			standing && isFactory(standing) ? 'built' : 'settled',
-			standing && isFactory(standing)
-				? `${built.toFixed(1)} ha · no growing`
-				: `⌀ ${CLUSTER_M} m · ${built.toFixed(1)} ha · ${Math.round((built / HEX_HA) * 100)}% of the land`
-		])
-	}
-	rows.push(['open', `${open.toFixed(1)} ha · feeds ${Math.round((open * 10_000) / FOOD_M2)}`])
-
-	if (!standing) return rows
-	if (isFactory(standing)) {
-		rows.push(['factory', `⌀ ${FACTORIES[standing].diameterM} m`])
-		rows.push(['makes', FACTORIES[standing].output])
+	if (!standing) {
+		rows.push(['food forest', `${HEX_HA.toFixed(1)} ha open · feeds ${Math.floor(HEX_HA / ha(FOOD_FOREST_M2_PER_PERSON))}`])
 		return rows
 	}
-	const housed = settlementCapacity(BUILDINGS[standing].level)
-	rows.push(['houses', `${housed} people`])
-	rows.push(['indoor', `1.7 ha beds · feeds ${INDOOR_FEEDS} · 20% of diet`])
-	const fed = Math.round((open * 10_000) / FOOD_M2) + INDOOR_FEEDS
-	const pct = Math.round((fed / housed - 1) * 100)
-	rows.push(['feeds', `${fed} · ${pct >= 0 ? '+' : ''}${pct}% surplus`])
+	if (isFactory(standing)) {
+		const dome = ha(Math.PI * (FACTORIES[standing].diameterM / 2) ** 2)
+		rows.push(['factory', `⌀ ${FACTORIES[standing].diameterM} m · ${dome.toFixed(1)} ha`])
+		rows.push(['makes', FACTORIES[standing].output])
+		rows.push(['food forest', `${(HEX_HA - dome).toFixed(1)} ha around it`])
+		return rows
+	}
+	const level = BUILDINGS[standing].level
+	const housed = settlementCapacity(level)
+	const domes = domesHa(level)
+	const forest = housed * ha(FOOD_FOREST_M2_PER_PERSON)
+	const glass = housed * ha(GLASS_M2_PER_PERSON)
+	rows.push(['people', `${housed}`])
+	rows.push(['domes', `${domes.toFixed(1)} ha`])
+	rows.push(['food forest', `${forest.toFixed(1)} ha · ${FOOD_FOREST_M2_PER_PERSON} m² a person`])
+	rows.push(['under glass', `${glass.toFixed(1)} ha · ${GLASS_M2_PER_PERSON} m² a person`])
+	rows.push(['left', `${Math.max(0, HEX_HA - domes - forest - glass).toFixed(1)} ha paths, yard and water`])
 	return rows
 })
 
@@ -301,7 +282,7 @@ $effect(() => {
 							<div class="flex flex-col gap-0.5">
 								{#each facts as [name, value]}
 									<div class="flex items-baseline gap-2 font-mono text-[0.62rem] tracking-[0.06em]">
-										<span class="w-12 text-ink-soft">{name}</span>
+										<span class="w-20 shrink-0 text-ink-soft">{name}</span>
 										<span class="text-ink">{value}</span>
 									</div>
 								{/each}

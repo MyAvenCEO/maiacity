@@ -6,10 +6,10 @@ author: avenSAMUEL
 authorImage: /samuel.jpg
 authorRole: Building maiaCITY
 date: 2026-09-09
-cover: /Day0/day0_banner.png
+cover: /day-01-the-decision/banner.png
 coverAlt: Day 01 — press play.
 video: e6cac7a1-def6-494f-9c6e-a4c20ace7dd6
-videoLocal: /Day0/DAY0001_TheDecision.mp4
+videoLocal: /day-01-the-decision/DAY0001_TheDecision.mp4
 videoAspect: '1 / 1'
 videoLibrary: 754181
 excerpt: >-

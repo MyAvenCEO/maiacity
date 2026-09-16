@@ -136,6 +136,10 @@ export function createScene(canvas: HTMLCanvasElement, options: SceneOptions = {
 	const renderer = new THREE.WebGLRenderer({ canvas, antialias: true })
 	// 1.25 is where the extra pixels stop showing and keep costing
 	renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.25))
+	if (import.meta.env.DEV) {
+		// a dev-only handle for reading draw counts from the console
+		;(globalThis as { __avencity?: unknown }).__avencity = { renderer, get scene() { return scene }, get camera() { return camera } }
+	}
 	renderer.shadowMap.enabled = true
 	renderer.shadowMap.type = THREE.PCFShadowMap
 	renderer.toneMapping = THREE.ACESFilmicToneMapping
@@ -298,11 +302,11 @@ export function createScene(canvas: HTMLCanvasElement, options: SceneOptions = {
 			}
 		}
 
-		// then the rest of the island: dome cells at every level and four
+		// then the rest of the island: dome cells at every level and five
 		// factories of each trade, wherever the shuffle lands them
 		const kinds: PlacedKind[] = [
-			...Array.from({ length: 80 }, () => rng.pick(BUILD_ORDER)),
-			...FACTORY_KINDS.flatMap((k) => [k, k, k, k])
+			...Array.from({ length: 100 }, () => rng.pick(BUILD_ORDER)),
+			...FACTORY_KINDS.flatMap((k) => [k, k, k, k, k])
 		]
 		let i = 0
 		for (const tile of open) {
@@ -342,7 +346,7 @@ export function createScene(canvas: HTMLCanvasElement, options: SceneOptions = {
 	}
 
 	function restore(seed: number, tiles: readonly HexTile[]): void {
-		saveKey = `avencity.world.${seed}.${MAP_SIZE}.v3`
+		saveKey = `avencity.world.${seed}.${MAP_SIZE}.v5`
 		saved = { buildings: {} }
 		let fresh = true
 		try {
