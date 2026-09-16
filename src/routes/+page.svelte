@@ -57,6 +57,29 @@
 			</div>
 		</article>
 	{/if}
+
+	{#if data.latest.length}
+		<section class="latest" aria-labelledby="latest-title">
+			<div class="latest-head">
+				<p class="eyebrow" id="latest-title">Latest days</p>
+				<a href="{base}/blog">All days →</a>
+			</div>
+			<ul>
+				{#each data.latest as day (day.slug)}
+					<li>
+						<a href="{base}/blog/{day.slug}">
+							<span class="num">{String(day.day ?? '').padStart(2, '0')}</span>
+							<span class="title">{day.title}</span>
+							<span class="date">
+								{new Date(day.date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}
+							</span>
+							<span class="arrow" aria-hidden="true">→</span>
+						</a>
+					</li>
+				{/each}
+			</ul>
+		</section>
+	{/if}
 </main>
 
 <style>
@@ -67,6 +90,96 @@
 	.start {
 		margin: 4.5rem 0 1.25rem;
 		text-align: center;
+	}
+
+	/* three quiet rows under the pinned day: number, title, date */
+	.latest {
+		max-width: 52rem;
+		margin: 2.5rem auto 0;
+	}
+
+	.latest-head {
+		display: flex;
+		align-items: baseline;
+		justify-content: space-between;
+		padding: 0 0.25rem 0.75rem;
+	}
+
+	.latest-head a {
+		font-size: 0.85rem;
+		text-decoration: none;
+		color: var(--ink-soft);
+	}
+
+	.latest-head a:hover {
+		color: var(--ink);
+	}
+
+	.latest ul {
+		margin: 0;
+		padding: 0;
+		list-style: none;
+		border-top: 1px solid var(--line);
+	}
+
+	.latest li a {
+		display: grid;
+		grid-template-columns: 2.5rem minmax(0, 1fr) auto 1rem;
+		align-items: baseline;
+		gap: 0.9rem;
+		padding: 0.95rem 0.25rem;
+		border-bottom: 1px solid var(--line);
+		text-decoration: none;
+		transition: background-color 150ms ease;
+	}
+
+	.latest li a:hover {
+		background: var(--paper);
+	}
+
+	.num {
+		font-family: var(--font-display);
+		font-size: 1.1rem;
+		color: var(--terracotta);
+	}
+
+	.title {
+		overflow: hidden;
+		font-family: var(--font-display);
+		font-size: 1.15rem;
+		line-height: 1.25;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+
+	.date {
+		font-size: 0.8rem;
+		color: var(--muted);
+		white-space: nowrap;
+	}
+
+	.arrow {
+		color: var(--muted);
+		transition: transform 150ms ease;
+	}
+
+	.latest li a:hover .arrow {
+		transform: translateX(3px);
+		color: var(--ink);
+	}
+
+	@media (max-width: 560px) {
+		.latest li a {
+			grid-template-columns: 2rem minmax(0, 1fr) 1rem;
+		}
+
+		.title {
+			white-space: normal;
+		}
+
+		.date {
+			display: none;
+		}
 	}
 
 	.pinned {
