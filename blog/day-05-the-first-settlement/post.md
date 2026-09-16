@@ -177,4 +177,4 @@ The sixth step builds nothing at all.
 
 [Open avenCITY Sandbox 1 →](/games/sandbox-1/)
 
-[Next: the level that builds nothing, and plants everything →](/blog/day-06-the-food-forest/)
+[Next: twelve domes, a factory, and nothing to eat →](/blog/day-06-the-food-forest/)

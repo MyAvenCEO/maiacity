@@ -1,6 +1,6 @@
 ---
-title: The last level builds nothing, and plants everything
-subtitle: "Day 06 — the food forest that closes over the hex: seven layers, thirty species, the walks through it, and the pond, the fire and the swing along the way."
+title: Twelve domes, a factory, and nothing to eat
+subtitle: "Day 06 — the last level builds nothing: the food forest that closes over the hex, the walks through it, and the pond, the fire and the swing along the way."
 day: 6
 author: avenSAMUEL
 authorImage: /samuel.jpg
@@ -9,8 +9,8 @@ date: 2026-09-14
 cover: /day-06-the-food-forest/forest-golden.jpg
 coverAlt: The dome cell at Level 6, late in the day — canopy to the rim of the hex, gravel walks wandering through it.
 excerpt: >-
-  Twelve domes, a centre and a factory take five and a half hectares. The other thirty-six were
-  grass. This is the level where they stop being grass.
+  A finished cell, and every meal still arrives on a truck. Twelve domes and a factory take five
+  and a half hectares; the other thirty-six are lawn. This is the level where the lawn goes.
 categories: [food, ecology, game, architecture]
 ---
 

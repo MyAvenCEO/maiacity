@@ -32,11 +32,21 @@
 	const embedded = $derived(post.video && post.videoLibrary ? post.video : null);
 	const hasFilm = $derived(Boolean(local || embedded));
 	const poster = $derived(post.cover ?? null);
+	// the aspect as a number, so the frame's width can be capped from its height
+	const ratio = $derived.by(() => {
+		const [w, h] = (post.videoAspect ?? '16 / 9').split('/').map((n) => Number(n.trim()));
+		return w > 0 && h > 0 ? w / h : 16 / 9;
+	});
 </script>
 
 {#if hasFilm || coverOnly}
-	<figure class="player" style:--aspect={post.videoAspect ?? '16 / 9'} style:--max-h={maxHeight}>
-		<div class="frame" class:flat={!poster}>
+	<figure
+		class="player"
+		style:--aspect={post.videoAspect ?? '16 / 9'}
+		style:--ratio={ratio}
+		style:--max-h={maxHeight}
+	>
+		<div class="frame">
 			{#if hasFilm && playing}
 				{#if local}
 					<!-- svelte-ignore a11y_media_has_caption -->
@@ -71,30 +81,30 @@
 		margin: 2.5rem 0 0;
 	}
 
-	/* Shrink-wraps whatever is inside, so the rounding follows the film rather
-	   than a box behind it — no dark corners left over. */
+	/* The frame owns the size: the film's aspect, as wide as the column allows,
+	   and never taller than --max-h (so a square film doesn't run past the
+	   fold — its width is capped from that height through --ratio). Poster,
+	   video and the embedded player all fill it, so the rounding follows the
+	   film whatever is showing, and an iframe can't fall back to its 300px
+	   default. */
 	.frame {
 		position: relative;
+		width: min(100%, 62rem, calc(var(--max-h, 78vh) * var(--ratio, 1.7778)));
+		aspect-ratio: var(--aspect, 16 / 9);
 		border-radius: var(--player-radius, var(--radius));
 		overflow: hidden;
+		/* Safari drops the rounding on an iframe unless the clip is promoted */
+		isolation: isolate;
+		transform: translateZ(0);
 		line-height: 0;
-	}
-
-	.frame.flat {
-		width: min(100%, 62rem);
-		aspect-ratio: var(--aspect, 16 / 9);
-		max-height: var(--max-h, 78vh);
+		background: #000;
 	}
 
 	.frame :is(iframe, video),
 	.frame :global(img) {
 		display: block;
-		width: auto;
-		max-width: 100%;
-		height: auto;
-		/* a square film would otherwise run past the fold */
-		max-height: var(--max-h, 78vh);
-		aspect-ratio: var(--aspect, 16 / 9);
+		width: 100%;
+		height: 100%;
 		object-fit: cover;
 		border: 0;
 	}
