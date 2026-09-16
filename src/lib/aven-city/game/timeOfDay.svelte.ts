@@ -6,10 +6,10 @@
  * island is at dusk when you go back to it.
  */
 // v2: everyone meets the island at blue hour once, whatever they set before
-const STORAGE_KEY = 'avencity.hour.v3'
+const STORAGE_KEY = 'avencity.hour.v4'
 
 // a moment before sundown: the sun low on the horizon, the sky turning blue
-const DEFAULT_HOUR = 19.6
+const DEFAULT_HOUR = 19.25
 
 function initial(): number {
 	if (typeof localStorage === 'undefined') return DEFAULT_HOUR

@@ -79,7 +79,7 @@ And some rooms can't be fixed at all. They have to be built again, from the grou
 
 ## So we are building rooms where talent gets used
 
-Imagine a Tuesday morning in a dome cell. A woman who spent years in a job she never chose is in the works next door, bolting a hydraulic line onto a LifeTrac — and the thing she always did with her hands on weekends is finally the day's work.
+Imagine a Tuesday morning in a dome cell. A woman who spent years in a job she never chose is in the dome factory next door, bolting a hydraulic line onto a LifeTrac — and the thing she always did with her hands on weekends is finally the day's work.
 
 Imagine an evening in the centre dome. Someone stands up and says out loud the idea they have carried in a drawer for years. Nobody laughs. Three people say: I can help with that.
 

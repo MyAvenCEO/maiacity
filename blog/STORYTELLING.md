@@ -31,7 +31,8 @@ certainty. Her honesty about what she cannot do yet is canon, not hedging.
 - Food is local: every dome cell keeps its own permaculture food forest directly around
   it. Never generic fields, never monoculture belts at the edge of the city.
 - The individual unit is the geodesic dome. A dome cell — a ring of domes around a larger centre dome, 150–250 people — is
-  the small city unit. The ladder is: a dome is a home, a ring of domes is a dome cell, a cluster of dome cells is a city. The largest dome at the centre of a dome cell carries the shared essentials and the
+  the small city unit. Every dome cell owns at least one dome factory nearby (Solar, Power Cube,
+  LifeTrac, Bamboo Fabric, Hemp Stone) — always "dome factory", never "works". The ladder is: a dome is a home, a ring of domes is a dome cell, a cluster of dome cells is a city. The largest dome at the centre of a dome cell carries the shared essentials and the
   communal spaces.
 - Heavy logistics and transport move through a fully autonomous underground network, so the
   surface belongs to people and forest.

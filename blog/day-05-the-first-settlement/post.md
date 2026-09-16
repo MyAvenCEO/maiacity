@@ -121,29 +121,31 @@ That is what closes the loop. Food from the ground it stands on, power and stora
 
 ## After Level 5 — the settlement builds its own machines
 
-![The works dome on the neighbouring hex — 130 metres across, owned and run by the settlement next door.](/Day03/Overview%202.png)
+![The dome factory on the neighbouring hex — 130 metres across, owned and run by the settlement next door.](/Day03/Overview%202.png)
 
 A settlement that feeds and powers itself but cannot fix its own tractor is still on a leash.
 
 Every level so far was built with machines that came in on a truck: the excavator moving earth for the swales, the loader placing the dome bases, the tractor that does everything else on 41 hectares. Rent them, and the settlement works to someone else's schedule. Buy them, and it owns a black box that only a dealer can open.
 
-The last step is a works, on the hex next door, and the first thing it makes is the tractor.
+The last step is a dome factory, on the hex next door, and the first thing it makes is the tractor.
 
 One machine, to begin with: **[LifeTrac](https://opensourceecology.dozuki.com/c/LifeTrac)**, the open-source tractor from Open Source Ecology, documented step by step and now in its sixth version. Bolted together from standard steel and hydraulic parts, with a detachable power unit and a frame built to be taken apart by whoever is standing next to it.
 
-It comes out of the Global Village Construction Set — fifty machines whose designs are published for anyone to build — and the rest of that set is for later levels of the works. The first factory makes tractors.
+It comes out of the Global Village Construction Set — fifty machines whose designs are published for anyone to build — and the rest of that set is for later dome factories. The first one makes tractors.
 
 Open source is not the ideology here, it is the maintenance strategy. A machine whose drawings you hold is a machine you can repair in your own workshop, in the same building where you learned to build it.
 
-The works dome is 130 metres across and belongs to the settlement — theirs to own, staff, maintain and profit from. The other 40 hectares of that hex keep growing food, because a factory hex is still land.
+The dome factory is 130 metres across and belongs to the settlement — theirs to own, staff, maintain and profit from. The other 40 hectares of that hex keep growing food, because a factory hex is still land.
 
 One tractor runs the swales, the beds, the timber and the earthworks of a hex this size. The second one built here goes to the next settlement, and the drawings go with it — which is how a hex that can build machines turns into a grid that can build hexes.
 
-## Every dome cell owns at least one works
+## Every dome cell owns at least one dome factory
 
-One works is the minimum, not the plan.
+One is the minimum, not the plan.
 
-Every dome cell owns at least one works dome, built close enough to walk to, and most will grow more. The shell is the same each time — 130 metres, one storey of stone under a shallow dome. What changes is the trade inside it.
+Every dome cell owns at least one dome factory, built close enough to walk to, and most will grow more. The shell is the same each time — 130 metres, one storey of stone under a shallow dome. What changes is the trade inside it, and each one wears what it makes on its crown, so you can read the trade from across the valley.
+
+![A LifeTrac dome factory — the tractor on its crown, and the first two finished ones parked on the apron.](/Day05/factory-lifetrac.jpg)
 
 - **Solar** — panels for its own roofs, and for the next settlement's.
 - **Power Cube** — the Power Cube, Open Source Ecology's self-contained hydraulic power unit: the engine that drives LifeTrac and most of the machines that come after it.
@@ -151,7 +153,17 @@ Every dome cell owns at least one works dome, built close enough to walk to, and
 - **Bamboo Fabric** — cane from the edge of the food forest, turned into fibre and cloth.
 - **Hemp Stone** — hempcrete: hemp and lime, cast into blocks for the walls of the next domes.
 
-Co-location is the whole idea. The land that grows the hemp, the works that turns it into stone and the dome cell that builds with it are a short walk apart. Materials never have to leave the place that uses them.
+![The solar dome factory: a roof that is mostly collector, arrays angled at the sun on the apron.](/Day05/factory-solar.jpg)
+
+![The Power Cube factory — amber glass, and the hydraulic units waiting on pallets.](/Day05/factory-power-cube.jpg)
+
+![Bamboo fabric: cane stood in bundles by the door, bolts of the finished cloth beside them.](/Day05/factory-bamboo.jpg)
+
+![Hemp stone: hempcrete blocks stacked on pallets, curing in the air.](/Day05/factory-hemp.jpg)
+
+Co-location is the whole idea. The land that grows the hemp, the dome factory that turns it into stone and the dome cell that builds with it are a short walk apart. Materials never have to leave the place that uses them.
+
+![A dome cell and its neighbourhood: the centre dome in the middle, dome cells at every level around it, and a factory on each side.](/Day05/dome-cell-neighbourhood.jpg)
 
 Now the unit is complete: 216 people who house, feed and power themselves, and who make the machines and materials the rest of the grid needs — with every hectare of it inside a boundary they can walk.
 
@@ -163,6 +175,6 @@ Then we pour the first real foundation.
 
 ---
 
-**Walk the island yourself.** The world in these screenshots is running live — same hex grid, same dome levels, all five works — and it opens with fifty domes already standing. Tap a hex, shift-drag to span, and build the settlement up level by level.
+**Walk the island yourself.** The world in these screenshots is running live — same hex grid, same dome levels, all five dome factories — and it opens with a hundred domes already standing. Tap a hex, shift-drag to span, and build the settlement up level by level.
 
 [Open avenCITY Sandbox 1 →](/games/sandbox-1/)

@@ -30,7 +30,7 @@ let {
 	onpick: (kind: PlacedKind) => void
 } = $props()
 
-/** A hex carries a settlement OR a works, so the rail has two tracks. */
+/** A hex carries a dome cell OR a dome factory, so the rail has two tracks. */
 let tab: 'domes' | 'works' = $state('domes')
 // follow whatever is standing, so the rail opens on the right track
 $effect(() => {
@@ -68,7 +68,7 @@ const TERRACES: Record<number, number> = { 2: 0, 3: 1, 4: 1, 5: 2 }
 
 	<div class="tabs">
 		<button class:on={tab === 'domes'} onclick={() => (tab = 'domes')}>domes</button>
-		<button class:on={tab === 'works'} onclick={() => (tab = 'works')}>works</button>
+		<button class:on={tab === 'works'} onclick={() => (tab = 'works')}>factories</button>
 	</div>
 	{#if tab === 'works'}
 		{#each FACTORY_KINDS as kind}

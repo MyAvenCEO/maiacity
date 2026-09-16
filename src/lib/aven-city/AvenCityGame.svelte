@@ -149,7 +149,7 @@ const facts = $derived.by(() => {
 
 	if (!standing) return rows
 	if (isFactory(standing)) {
-		rows.push(['works', `⌀ ${FACTORIES[standing].diameterM} m`])
+		rows.push(['factory', `⌀ ${FACTORIES[standing].diameterM} m`])
 		rows.push(['makes', FACTORIES[standing].output])
 		return rows
 	}

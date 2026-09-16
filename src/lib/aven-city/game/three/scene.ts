@@ -5,7 +5,7 @@
  * match --color-sky in tokens.css so canvas and page blend seamlessly.
  */
 import * as THREE from 'three'
-import { generateMap, type HexTile, key, MAP_SIZE } from '../hexmap'
+import { AXIAL_DIRS, generateMap, type HexTile, key, MAP_SIZE } from '../hexmap'
 import { makeRng } from '../rng'
 import {
 	BUILD_ORDER,
@@ -252,20 +252,64 @@ export function createScene(canvas: HTMLCanvasElement, options: SceneOptions = {
 	 */
 	function seedSettlements(seed: number, tiles: readonly HexTile[]): Record<string, PlacedKind> {
 		const rng = makeRng((seed ^ 0x5eed5) >>> 0)
+		const byKey = new Map(tiles.map((t) => [key(t.q, t.r), t]))
+		const buildable = (q: number, r: number) => {
+			const t = byKey.get(key(q, r))
+			return t && canBuildOnTile(t) ? t : undefined
+		}
 		const open = tiles.filter(canBuildOnTile)
-		// Fisher–Yates, so the 50 hexes are spread across the whole island
+		// Fisher–Yates, so the random domes spread across the whole island
 		for (let i = open.length - 1; i > 0; i--) {
 			const j = rng.int(0, i)
 			;[open[i], open[j]] = [open[j], open[i]]
 		}
+		const out: Record<string, PlacedKind> = {}
+
+		// The hero: a level 5 dome cell with a neighbourhood around it — the
+		// opening shot frames it, so the hexes behind it can't be empty. It is
+		// written first, so the camera finds it first.
+		const hero = open.find(
+			(t) => AXIAL_DIRS.filter(([dq, dr]) => buildable(t.q + dq, t.r + dr)).length === 6
+		)
+		if (hero) {
+			out[key(hero.q, hero.r)] = 'DOME5'
+			const ring1: PlacedKind[] = ['DOME4', 'SOLAR', 'DOME3', 'HEMP', 'GLAMP', 'LIFETRAC']
+			for (const [i, [dq, dr]] of AXIAL_DIRS.entries()) {
+				const t = buildable(hero.q + dq, hero.r + dr)
+				if (t) out[key(t.q, t.r)] = ring1[i]
+			}
+			// the second ring, walked hex by hex: a mix of levels and factories,
+			// with a few hexes left open so it reads as a neighbourhood, not a grid
+			const ring2: Array<PlacedKind | null> = [
+				'POWER_CUBE', 'DOME3', null, 'BAMBOO', 'DOME4', 'TENT',
+				null, 'DOME5', 'GLAMP', 'SOLAR', null, 'DOME3'
+			]
+			let q = hero.q + AXIAL_DIRS[4][0] * 2
+			let r = hero.r + AXIAL_DIRS[4][1] * 2
+			let n = 0
+			for (let side = 0; side < 6; side++) {
+				for (let step = 0; step < 2; step++) {
+					const kind = ring2[n++]
+					const t = buildable(q, r)
+					if (t && kind) out[key(t.q, t.r)] = kind
+					q += AXIAL_DIRS[side][0]
+					r += AXIAL_DIRS[side][1]
+				}
+			}
+		}
+
+		// then the rest of the island: dome cells at every level and four
+		// factories of each trade, wherever the shuffle lands them
 		const kinds: PlacedKind[] = [
 			...Array.from({ length: 80 }, () => rng.pick(BUILD_ORDER)),
 			...FACTORY_KINDS.flatMap((k) => [k, k, k, k])
 		]
-		const out: Record<string, PlacedKind> = {}
-		for (const [i, kind] of kinds.entries()) {
-			const tile = open[i]
-			if (tile) out[key(tile.q, tile.r)] = kind
+		let i = 0
+		for (const tile of open) {
+			if (i >= kinds.length) break
+			const k = key(tile.q, tile.r)
+			if (k in out) continue
+			out[k] = kinds[i++]
 		}
 		return out
 	}
@@ -298,7 +342,7 @@ export function createScene(canvas: HTMLCanvasElement, options: SceneOptions = {
 	}
 
 	function restore(seed: number, tiles: readonly HexTile[]): void {
-		saveKey = `avencity.world.${seed}.${MAP_SIZE}.v2`
+		saveKey = `avencity.world.${seed}.${MAP_SIZE}.v3`
 		saved = { buildings: {} }
 		let fresh = true
 		try {
