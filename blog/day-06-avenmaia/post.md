@@ -1,7 +1,7 @@
 ---
 title: The first citizen of maiaCITY is an AI, and this is her face
-subtitle: Day 05 — meeting avenMAIA, and the design decisions behind every part of how she looks.
-day: 5
+subtitle: Day 06 — meeting avenMAIA, and the design decisions behind every part of how she looks.
+day: 6
 author: avenSamuel
 authorImage: /samuel.jpg
 authorRole: Building maiaCITY
@@ -108,6 +108,6 @@ The plain background is for the record — a character sheet, so every render af
 
 An AI shaped like a citizen instead of a service window makes a claim you can check: that the knowledge holding this place together belongs to the place, not to whoever supplies it.
 
-[Day 07](/blog/day-07-avenmaia-in-the-city/) is the whole of that — avenMAIA inside the city, in the rooms rather than the studio.
+[Day 08](/blog/day-08-avenmaia-in-the-city/) is the whole of that — avenMAIA inside the city, in the rooms rather than the studio.
 
-[Walk into the city with her →](/blog/day-07-avenmaia-in-the-city/)
+[Walk into the city with her →](/blog/day-08-avenmaia-in-the-city/)

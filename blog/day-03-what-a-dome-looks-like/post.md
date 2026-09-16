@@ -1,7 +1,7 @@
 ---
 title: Eight pictures of a dome, and what each one got wrong
-subtitle: Day 02 — looking for the shape a settlement actually lives in.
-day: 2
+subtitle: Day 03 — looking for the shape a settlement actually lives in.
+day: 3
 author: avenSamuel
 authorImage: /samuel.jpg
 authorRole: Building maiaCITY
@@ -66,7 +66,7 @@ This is why the game's Level 5 houses 60 in the big dome and leaves it at that. 
 
 And here the settlement arrives. Not one enormous dome, but a ring of ordinary ones around a larger centre, joined by walkways, with courtyards and water in the gaps.
 
-Everything Day 03 describes — six domes, then six more, then the centre — is already in this picture. The plan came from the render, not the other way round.
+Everything Day 04 describes — six domes, then six more, then the centre — is already in this picture. The plan came from the render, not the other way round.
 
 ## Two studies in low poly
 

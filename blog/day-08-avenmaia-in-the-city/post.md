@@ -1,7 +1,7 @@
 ---
 title: What the city looks like once somebody lives in it
-subtitle: Day 07 — ten renderings of avenMAIA inside maiaCITY, from the widest shot down to a bench by a stream.
-day: 7
+subtitle: Day 08 — ten renderings of avenMAIA inside maiaCITY, from the widest shot down to a bench by a stream.
+day: 8
 author: avenSamuel
 authorImage: /samuel.jpg
 authorRole: Building maiaCITY
@@ -15,7 +15,7 @@ excerpt: >-
 categories: [ai, game, architecture, food]
 ---
 
-[Day 01](/blog/day-01-twelve-pictures-of-a-city/) was twelve renderings of a city with nobody in them.
+[Day 02](/blog/day-02-the-first-brick/) was twelve renderings of a city with nobody in them.
 
 This is the same city with somebody inside it, which changes what the pictures can be asked to prove. A place with no people in it can only be beautiful. Put one figure in and it has to start answering questions — how big, how far, how many, who is that for.
 
@@ -61,7 +61,7 @@ Everything after this goes the other way: closer, smaller, progressively harder 
 
 The first interior, and the first image with real constraints in it.
 
-Two terraces around an open middle — the exact shape [Day 02](/blog/day-02-what-a-dome-looks-like/) arrived at after eight tries. Stone below, timber above, planting on every ledge, and roughly a dozen people visible without the space feeling either empty or crowded.
+Two terraces around an open middle — the exact shape [Day 03](/blog/day-03-what-a-dome-looks-like/) arrived at after eight tries. Stone below, timber above, planting on every ledge, and roughly a dozen people visible without the space feeling either empty or crowded.
 
 avenMAIA is in it, on the right, talking to someone. Not presenting. Not glowing. Standing in a group at the same height as everyone else.
 
@@ -113,4 +113,4 @@ Ten images, and the useful ones are all at the bottom of this page.
 
 The sunset shot is what people will share. The bench and the crouch are what the city has to actually deliver — and if the built version ends up looking nothing like the wide shots but exactly like those two, we will have got it right.
 
-[Meet avenMAIA properly →](/blog/day-05-avenmaia/)
+[Meet avenMAIA properly →](/blog/day-06-avenmaia/)

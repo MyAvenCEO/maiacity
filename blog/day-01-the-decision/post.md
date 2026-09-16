@@ -1,20 +1,20 @@
 ---
 title: The 1 million lives decision I almost didn't dare to take
-subtitle: Day 00 — the decision, why it sat still for three years, and what finally moved it.
-day: 0
+subtitle: Day 01 — the decision, why it sat still for three years, and what finally moved it.
+day: 1
 author: avenSamuel
 authorImage: /samuel.jpg
 authorRole: Building maiaCITY
 date: 2026-09-15
 cover: /Day0/day0_banner.png
-coverAlt: Day 00 — press play.
+coverAlt: Day 01 — press play.
 video: aa637c06-d462-48a2-8cb2-7bd39fac1cfe
 videoLocal: /Day0/DAY000_Intro.mp4
 videoAspect: '1 / 1'
 videoLibrary: 754181
 excerpt: >-
   Some decisions sit in a drawer for years — not because you doubt them, but because saying
-  them out loud in front of people commits you. Day 00 is the day this one came out. Watch it
+  them out loud in front of people commits you. Day 01 is the day this one came out. Watch it
   first.
 categories: [self, game]
 ---
@@ -37,6 +37,6 @@ That is the one I avoided. Privately the plan stays clean. Published, it becomes
 
 What changed is not conviction — that was never in question. It is that the cost finally landed on the right side of the ledger: another three years of a clean plan in a drawer is worth less than one year of a rough one in the open.
 
-So this is day zero. From here it gets documented — the game build, the numbers that turn out wrong, the ones that survive, and a city that grows from one founder to a million co-founders, every one of them building and owning what they help create.
+So this is day one. From here it gets documented — the game build, the numbers that turn out wrong, the ones that survive, and a city that grows from one founder to a million co-founders, every one of them building and owning what they help create.
 
 The city does not exist yet. The journal does, and that was the decision.
