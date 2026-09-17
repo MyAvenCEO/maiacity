@@ -1,6 +1,6 @@
 ---
-title: Twelve domes, a factory, and nothing to eat
-subtitle: "Day 06 — the last level builds nothing: the food forest that closes over the hex, the walks through it, and the pond, the fire and the swing along the way."
+title: The last level builds nothing, and it's the one that finally feeds everyone
+subtitle: "Day 06 — the food forest that closes over the hex: seven layers, thirty species, the walks through it, and the pond, the fire and the swing along the way."
 day: 6
 author: avenSAMUEL
 authorImage: /samuel.jpg
@@ -14,13 +14,13 @@ excerpt: >-
 categories: [food, ecology, game, architecture]
 ---
 
-The last level builds nothing.
+Imagine the hex from above in year one. Twelve domes, a centre, a factory next door, and around them: lawn. Mown, green, empty.
 
-[Day 05](/blog/day-05-the-first-settlement/) ended with 216 people who house and power themselves and build their own machines — on five and a half hectares of a hex that has forty-one. Every other level added a building. This one adds a forest, and the forest is the part I would have left out a year ago.
+It looks finished. Every meal on it still arrives by truck.
 
-Imagine the hex from above in year one. Twelve domes, a centre, a factory next door, and around them: lawn. Mown, green, empty. It looks finished. It is a cell that has to be fed from a truck.
+[Day 05](/blog/day-05-the-first-settlement/) ended with 216 people who house and power themselves and build their own machines — on five and a half hectares of a hex that has forty-one. Every level so far added a building. This one adds a forest, and the forest is the part I would have left out a year ago.
 
-Level 6 is where that stops.
+Level 6 is where the lawn stops.
 
 ## Level 6 — the forest closes over the hex
 

@@ -1,5 +1,5 @@
 ---
-title: The next country is a city of dome cells that feed themselves
+title: Your country needs trucks. We're building one that needs 200 neighbours
 subtitle: Day 02 — why resilience is moving from brittle nations to self-sovereign city states, and what a whole city of self-sufficient dome cells looks like.
 day: 2
 author: avenSAMUEL

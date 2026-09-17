@@ -1,5 +1,5 @@
 ---
-title: Inside one dome cell, the forest grows through the home
+title: We took the corners out of the home, and the forest moved in
 subtitle: "Day 03 — how a single dome cell works from the inside: Buckminster Fuller's geodesic dome as the home, the food forest inside it, and the shared dome at its heart."
 day: 3
 author: avenSAMUEL

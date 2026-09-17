@@ -1,6 +1,6 @@
 ---
-title: Money should be born from hearts, not from debt
-subtitle: Day 09 — two and a half years building Circles, what its failure taught me, and the two-currency upgrade for an economy after labour.
+title: I spent two and a half years building money that starts with people, not debt. It failed.
+subtitle: Day 09 — where money is born, what Circles got right, and the missing half that turns earning into owning.
 day: 9
 author: avenSAMUEL
 authorImage: /samuel.jpg

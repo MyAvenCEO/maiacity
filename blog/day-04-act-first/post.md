@@ -1,5 +1,5 @@
 ---
-title: You cannot think your way into being someone else
+title: You can't think your way into a new life. I tried it for years.
 subtitle: Day 04 — change starts with an ache you learn to trust, grows through small actions, and only lasts in a room built to let it.
 day: 4
 author: avenSAMUEL

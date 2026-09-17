@@ -1,5 +1,5 @@
 ---
-title: The heaviest thing a person can carry is unused talent
+title: The most stressed person you know isn't overworked. They've seen who they could be.
 subtitle: Day 07 — why the weight of a life you haven't lived yet is a compass, and why the room you live in decides whether you ever follow it.
 day: 7
 author: avenSAMUEL
@@ -13,9 +13,7 @@ excerpt: >-
 categories: [self, education, civic]
 ---
 
-Nobody on earth is more stressed than a person who has seen their own potential and knows they are not living it.
-
-Not the overworked. Not the underpaid.
+Not the overworked one. Not the underpaid one.
 
 The one who caught a glimpse of who they could be, went back to normal life, and has been quietly negotiating with that memory ever since.
 
