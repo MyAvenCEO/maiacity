@@ -24,39 +24,41 @@ For years, the only person who knew the size of this was me.
 
 Not a secret. A size.
 
-A city. Built and owned by the people who live in it. Grown from one founder to a million co-founders. I could see it with my eyes closed — the domes, the forest between them, the morning light — clear, alive, obviously possible. I never doubted it for a day. That was never the struggle.
+A city. Built and owned by the people who live in it. Grown from one founder to a million co-founders. I could see it with my eyes closed — the domes, the forest between them, the morning light, a child running barefoot under glass in January. Clear, alive, obviously possible. I never doubted it for a day. That was never the struggle.
 
-The struggle was that it lived in a folder.
+The struggle was that a dream this size lived in a folder.
 
-## Private is the most comfortable place a dream can be
+## A dream in a drawer helps nobody
 
-Imagine a Sunday evening. The house is quiet. You open the folder, read the plan again, move a number, close it. Nobody saw. Nothing can go wrong.
+Imagine a Sunday evening. The house is quiet. You open the folder, read it again, move a number, close it. Nobody saw. Nothing can go wrong.
 
 That is exactly the problem.
 
-A plan nobody sees never has wrong numbers in it. Nobody argues with it. Nobody laughs at it. And nobody joins it either. Private is safe, and safe is where a city of a million people cannot be built, because a million people cannot join something they have never heard of.
+A dream nobody hears has no wrong numbers in it. Nobody argues with it. Nobody laughs at it. And nobody wakes up the next morning a little braver because of it. A dream kept private is safe, and safe is the one thing a dream is not for.
 
-Four startups before this taught me what building looks like from the inside: the ideas that don't survive first contact, the numbers that turn out wrong, the pivots. None of it dented the vision. It made me better at building. It also made me very good at knowing exactly what going public costs.
+Four startups before this taught me what building looks like from the inside: the ideas that don't survive first contact, the numbers that turn out wrong, the pivots. None of it dented the vision. It made me better at building. It also made me very good at knowing exactly what saying it out loud costs.
 
 So the folder stayed closed. Not out of doubt. Out of comfort.
 
-## The unknown is not the size. It is the door.
+## A plan is owned. A dream is shared.
 
-Here is what I had to admit to myself.
+Martin Luther King did not stand on the steps of the Lincoln Memorial in 1963 and say "I have a plan."
 
-I was not afraid of the city. I was afraid of the moment it stops being mine to edit in private and becomes something other people can see, question, and — this is the part — depend on. The day you say it out loud, you owe it to someone.
+He said "I have a dream," and a quarter of a million people on the Mall that day heard their own dream inside it. A plan belongs to whoever wrote it. A dream belongs to everyone who recognises it.
 
-That is the whole transformation of this journal. Private to public. From I to we.
+That is what I had to admit to myself. I was never afraid of the size of the city. I was holding it the wrong way — as a plan, mine to edit in private — when the whole point of it was that it is not mine. A city of a million co-founders cannot be one person's plan. It can only be a dream enough people recognise as their own.
 
-And it comes with a trap, because the number is large, and a large number makes the first step look impossible. A million co-founders. Where do you even start?
+The day you say it out loud, it stops being yours. That is not the risk. That is the point.
+
+And it comes with a trap, because the number is large, and a large number makes the first step look impossible. A million. Where do you even start?
 
 ## Step one is one. Step two is two.
 
 Nobody needs a million people on day one.
 
-Step one was my own decision. One person, all in, out loud. That happened on the day this film was shot, and it is the only step that has to be taken alone.
+Step one was my own decision. One person, all in, out loud. That happened on the day this film was shot, and it is the only step anyone ever has to take alone.
 
-Step two is not a million. It is two. One more person who reads this, watches the film, and says: me too. That is the whole of step two, and it is the hardest one after the first, because it is the first time the dream is not only mine.
+Step two is not a million. It is two. One person who reads this, watches the film, and hears their own dream inside it. That is the whole of step two, and it is the one that changes everything, because it is the moment the dream is not only mine.
 
 From there the ladder is already written. It has been written for eight hundred years.
 
@@ -64,13 +66,13 @@ From there the ladder is already written. It has been written for eight hundred 
 
 Thirty-one steps. Each one only slightly braver than the last.
 
-Imagine step five. Five people on a call, arguing about the size of a dome, and one of them has never met the other four. Imagine step thirteen: a room, a real one, with a whiteboard nobody wants to erase. By step twenty-one you are no longer in every conversation, and that is the point. The city is growing the way living things grow — from what is already there.
+Imagine step five. Five people on a call, arguing about the size of a dome, and one of them has never met the other four. Imagine step thirteen: a room, a real one, with a whiteboard nobody wants to erase. By step twenty-one nobody is in every conversation any more, and that is the point. The city grows the way living things grow — from what is already there.
 
 ## So this is day one
 
 What changed today is not the vision. The vision never moved.
 
-What changed is where it lives.
+What changed is who it belongs to.
 
 From today it gets built in public, in the open, in front of everyone: the game first, then the real thing. The numbers that turn out wrong, and the ones that survive. Every day, one entry in this journal. Every founder who joins, a co-owner of what they help create.
 
@@ -78,6 +80,6 @@ Imagine the morning someone you have never met reads this, closes their own fold
 
 That is step two.
 
-The city doesn't exist yet. The journal does, and so does the decision.
+The city doesn't exist yet. The journal does, and so does the dream — and from today it is not mine alone to carry.
 
 One, then two, then we.
