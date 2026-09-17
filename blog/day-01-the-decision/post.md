@@ -1,6 +1,6 @@
 ---
-title: The day my dream stopped being private
-subtitle: Day 01 — a city of a million co-founders, carried alone for years, and the decision to build it in front of everyone, starting with one.
+title: The 1 million lives decision I almost didn't dare to take
+subtitle: Day 01 — a city of a million co-founders, carried alone for years, and the day the dream stopped being mine alone to carry.
 day: 1
 author: avenSAMUEL
 authorImage: /samuel.jpg
