@@ -18,11 +18,9 @@ excerpt: >-
 categories: [self, game]
 ---
 
-Watch the film first. Everything below assumes you have.
-
 There is a city I have walked through a thousand times, and nobody else has ever been there.
 
-Imagine it with me. It is early. Light comes through glass, and under the glass there are lemon trees. A path of gravel runs between round houses and disappears into a forest that people planted on purpose. A child runs ahead of you, barefoot, in January. There is no engine anywhere. Somebody you know waves from a doorway, and the house behind them is theirs — not rented, not owed. Built by them. Owned by them. A million people live like this, and every one of them helped raise it.
+Imagine it with me. It is early. Light comes through glass, and under the glass there are lemon trees. A path of gravel runs between round houses and disappears into a forest that people planted on purpose. A child runs ahead of you, barefoot, in January. There is no engine anywhere. Somebody you know waves from a doorway, and the house behind them is one they helped raise — with their own hands, next to people they chose. A million people live like this, and every one of them helped build it.
 
 I have seen that morning with my eyes closed for years. Never once did it flicker. It was never a question of whether. It was obviously possible, the way a seed is obviously a tree.
 
