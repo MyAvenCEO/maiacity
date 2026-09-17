@@ -55,33 +55,65 @@ The whole post exists to walk the reader from one to the other. The final paragr
 
 ━━ THE TITLE AND THE HOOK ━━
 The title sells the click. The first two lines sell the read. Write them LAST, once you know
-what the post actually delivers, and rewrite them more often than anything else in it.
+what the post delivers, and rewrite them more than anything else in it.
 
-NAME THE OUTCOME, NOT THE TOPIC. A topic is what the post is about. An outcome is what changes
-for the reader. Nobody opens "How the settlement levels work" — they open the thing a level
-gives them. Ask what the reader wants, not what you want to explain, then title that.
-  topic:   The food forest around a dome cell     → outcome: Twelve domes, a factory, and nothing to eat
-  topic:   Why I am building in public            → outcome: The 1 million lives decision I almost didn't dare to take
-  topic:   Geodesic domes are efficient           → outcome: Inside one dome cell, the forest grows through the home
+A hook is built from six parts. Four are required. Assemble, do not free-write.
 
-Write five titles. Keep one. Test each against all four:
-- Does it leave a question in the reader's head? If not, it is a label, not a title.
-- Does the post actually pay it off? A promise the body can't cover is felt by paragraph three.
-- Would somebody who has never heard of maiaCITY understand every word? No inside language.
+1. SUBJECT — who this happens to: I, we, you, or a named thing. Nothing else can be the
+   subject. A line with no subject is a proverb, and proverbs do not get clicked.
+2. ACTION — the verb the subject does. Grew. Took out. Stopped. Built. Spent.
+3. END STATE — what the subject ends up with. The more it should not be possible, the better.
+   This is the payload; everything else exists to carry it.
+4. CONTRAST — the base state the reader believes right now, set against the new one.
+   One tent → 216 people. Corners → no corners. Debt → people. Without contrast the end
+   state is just a fact, and facts are not curiosity.
+5. PROOF (optional) — why this voice is worth hearing: "two and a half years", "four
+   startups", "again". Needed for anything that teaches. Skip it for a scene.
+6. TIME (optional) — how long it took or how fast it happens: "in five steps", "in January",
+   "in a single afternoon". Speed makes a result feel more desirable.
+
+Worked example, assembled part by part:
+  end state: a settlement of 216 people that feeds and powers itself
+  subject:   we
+  action:    grew
+  contrast:  one tent → 216 people, on the same ground
+  title:     "We grew one tent into 216 people on the same 41.6 hectares"
+
+THE FAILURE MODE, and it is the one we keep hitting: a clever, quotable line with no subject
+and no action. "The shape you live in was never chosen for you." "216 people, and not one
+more." These are aphorisms. They sound finished, which is exactly the problem — nothing is
+happening, nobody is doing it, and there is nothing to click for. Before keeping a title,
+point at its subject, its verb and its contrast. If you cannot point at all three, it is not
+a hook yet.
+
+NAME THE END STATE, NEVER THE TOPIC. A topic is what the post is about. An end state is what
+the reader walks away with. Ask what they want, not what you want to explain.
+  topic:      why I am building in public
+  end state:  a city with a million co-founders, and the first one is me
+  topic:      geodesic domes are thermally efficient
+  end state:  the heating bill leaves and the forest moves in
+
+Write five. Keep one. Test each against all four:
+- Can you point at subject, action and contrast?
+- Does the body actually pay the promise off? A promise it cannot cover is felt by paragraph three.
+- Would somebody who has never heard of maiaCITY understand every word? No inside language,
+  and no term the reader has not met in an earlier post.
 - Can a word come out? Take it out. Titles die of length.
 
-Shapes that work, when the material honestly fits — never forced:
-- the number that shouldn't be true: "216 people on 41.6 hectares"
-- the refusal: "The last level builds nothing"
-- the confession: "…the decision I almost didn't dare to take"
-- the wrong thing everyone does: "We live in boxes, and the forest stays outside"
-Banned: colon-subtitles, listicles ("7 ways to…"), clickbait the post doesn't earn, and any
+Banned: colon-subtitles, listicles ("7 ways to…"), clickbait the post does not earn, and any
 question the subtitle immediately answers.
 
-THE HOOK is the first line of the body and it has one job: make the second line unavoidable.
-A scene the reader can see, a number that doesn't add up, or a flat contradiction. Never a
-warm-up — no "in this post", no "recently I've been thinking", no context before the hook.
-One sentence is often the whole hook.
+THE HOOK is the first line of the body and it is built from the same six parts. Its one job
+is to make the second line unavoidable. Never repeat the title — the title is the promise,
+the hook is the first step inside it. No warm-up: no "in this post", no "recently I have been
+thinking", no context before the hook. One sentence is often the whole hook.
+
+DISQUALIFY THE OBVIOUS ANSWER in the two lines after the hook. "Not the overworked. Not the
+underpaid." The reader's first guess is the biggest threat to the second paragraph.
+
+COPY WORK. When a hook lands anywhere — a video, a headline, a thread — write it out by hand,
+mark its six parts, then swap our subject, action and end state into the same frame. Rhythm
+is learned by copying, not by theory.
 
 ━━ THE ARC (reference, never visible) ━━
 HOOK → CONTEXT → PROBLEM → INTENTION TO OVERCOME → OBSTACLE → SOLUTION
@@ -186,7 +218,8 @@ categories: [<ids from src/lib/inspire-me/categories.ts>]
 ━━ BEFORE YOU HAND IT BACK ━━
 □ One transformation, decided first, delivered in the closing lines
 □ Arc intact, and nowhere visible: no "therefore"/"but" markers, no beat labels
-□ Title names an outcome, not a topic — and the body pays that promise off
+□ Title has a subject, a verb and a contrast you can point at — not an aphorism
+□ Title names an end state, not a topic — and the body pays that promise off
 □ Opens on a hook — a scene, a number or a contradiction — no warm-up
 □ Every heading is a rehook, not a label
 □ The mechanism is never named before the reader has earned it; nothing pays off early
