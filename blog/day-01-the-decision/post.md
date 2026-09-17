@@ -1,6 +1,6 @@
 ---
 title: The 1 million lives decision I almost didn't dare to take
-subtitle: Day 01 — a city of a million co-founders, carried alone for years, and the day the dream stopped being mine alone to carry.
+subtitle: Day 01 — a city of a million co-founders, carried alone for years, and the day the vision stopped being mine alone to carry.
 day: 1
 author: avenSAMUEL
 authorImage: /samuel.jpg
@@ -30,23 +30,23 @@ There was only one thing wrong with it.
 
 I was the only one who had ever been there.
 
-## A dream that only one person can see has no door
+## A vision that only one person can see has no door
 
 For years it lived in a folder. Sketches, numbers, whole neighbourhoods. On a quiet evening I would open it, walk the streets again, close it. Nobody saw.
 
-Four startups before this taught me exactly what it costs to say a thing out loud. The number somebody points at. The idea that does not survive its first contact with a stranger. I knew that price by heart, and a dream this size felt too precious to pay it.
+Four startups before this taught me exactly what it costs to say a thing out loud. The number somebody points at. The idea that does not survive its first contact with a stranger. I knew that price by heart, and a vision this size felt too precious to pay it.
 
 So it stayed perfect, and private, and useless.
 
-A dream kept private is not safe. It is sealed. Nobody can argue with it, and nobody can walk into it either. It cannot make one single person braver on a Tuesday morning, because nobody knows it is there.
+A vision kept private is not safe. It is sealed. Nobody can argue with it, and nobody can walk into it either. It cannot make one single person braver on a Tuesday morning, because nobody knows it is there.
 
-That is the whole difference between a dream and a daydream. A daydream is yours. A dream has a door.
+That is the whole difference between a vision and a daydream. A daydream is yours. A vision has a door.
 
 ## Martin Luther King did not say "I have a plan"
 
 Standing on the steps of the Lincoln Memorial in August 1963, in front of a quarter of a million people, he said "I have a dream" — and every person on the Mall heard their own inside it.
 
-That is what a dream is for. A plan belongs to whoever wrote it. A dream belongs to everyone who recognises it.
+A dream, a vision — the word matters less than what it does. A plan belongs to whoever wrote it. A vision belongs to everyone who recognises it.
 
 And that was the turn. I was not afraid of the size of the city. I was holding it wrong — like a plan, mine to edit in private — when the entire point of a city of a million co-founders is that it cannot be one person's. Not because one person is too small. Because a city is, by definition, the thing we build together.
 
@@ -84,7 +84,7 @@ Imagine the morning someone I have never met reads this, opens their own folder,
 
 That is the second seed.
 
-The city doesn't exist yet. The dream is out of the drawer, and there is room in it for you.
+The city doesn't exist yet. The vision is out of the drawer, and there is room in it for you.
 
 One. Then two. Then we.
 
