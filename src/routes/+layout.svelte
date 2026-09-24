@@ -16,7 +16,8 @@
 		{ href: base || '/', label: 'Home' },
 		{ href: `${base}/blog`, label: 'Journal' },
 		{ href: `${base}/inspire-me`, label: 'Inspire me' },
-		{ href: `${base}/games`, label: 'Games' }
+		{ href: `${base}/games`, label: 'Games' },
+		{ href: `${base}/join`, label: 'Join' }
 	];
 
 	// A sandbox is a leaf: it runs full-screen without the site chrome. The

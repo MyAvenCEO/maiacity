@@ -1,0 +1,6 @@
+name: maiacity
+runtime:
+  name: nodejs
+  options:
+    packagemanager: bun
+description: Hetzner server for the maiaCITY signup API

@@ -1,0 +1,11 @@
+{
+  "name": "maiacity-infra",
+  "private": true,
+  "type": "module",
+  "scripts": { "check": "tsc --noEmit" },
+  "dependencies": {
+    "@pulumi/hcloud": "^1.21.0",
+    "@pulumi/pulumi": "^3.140.0"
+  },
+  "devDependencies": { "typescript": "^5.7.0" }
+}

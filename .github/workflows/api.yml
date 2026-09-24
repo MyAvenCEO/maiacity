@@ -1,0 +1,270 @@
+name: API
+
+# The signup service at api.maia.city. Runs only when something it depends on
+# changes — a journal entry must never redeploy a server.
+#
+#   image  – build the api container, push to GHCR tagged with the commit
+#   infra  – Pulumi: Hetzner server, volume, firewall (state in the `pulumi-state`
+#            branch, so no Pulumi Cloud account is needed)
+#   dns    – point api.maia.city at the server (Hetzner DNS; skipped without a token)
+#   deploy – over SSH: compose files + .env, then pull and up
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'api/**'
+      - 'infra/**'
+      - 'deploy/**'
+      - 'docker-compose*.yml'
+      - '.github/workflows/api.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: api
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+  packages: write
+
+env:
+  APP_DIR: /opt/maia-city
+  API_HOST: api.maia.city
+
+jobs:
+  image:
+    name: Build and push the API image
+    runs-on: ubuntu-latest
+    outputs:
+      image: ${{ steps.meta.outputs.image }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - id: meta
+        run: echo "image=ghcr.io/${GITHUB_REPOSITORY,,}-api" >> "$GITHUB_OUTPUT"
+      - uses: docker/build-push-action@v6
+        with:
+          context: ./api
+          push: true
+          tags: |
+            ${{ steps.meta.outputs.image }}:${{ github.sha }}
+            ${{ steps.meta.outputs.image }}:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  infra:
+    name: Hetzner (Pulumi)
+    runs-on: ubuntu-latest
+    outputs:
+      ipv4: ${{ steps.out.outputs.ipv4 }}
+      data_mount: ${{ steps.out.outputs.data_mount }}
+    env:
+      HCLOUD_TOKEN: ${{ secrets.HETZNER_API_KEY }}
+      # Encrypts the local Pulumi state that lives in the pulumi-state branch.
+      PULUMI_CONFIG_PASSPHRASE: ${{ secrets.PULUMI_PASSPHRASE }}
+    steps:
+      - name: Check the Pulumi passphrase is set
+        run: |
+          [ -n "$PULUMI_CONFIG_PASSPHRASE" ] || { echo "::error::Secret PULUMI_PASSPHRASE is missing — without it the Pulumi state cannot be read."; exit 1; }
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: .bun-version
+      - uses: pulumi/actions@v6
+      - name: Dependencies
+        working-directory: infra
+        run: bun install
+      - name: Type check
+        working-directory: infra
+        run: bun run check
+      - name: Derive the public deploy key
+        run: |
+          install -m 600 /dev/null deploy_key
+          printf '%s\n' "${{ secrets.DEPLOY_SSH_KEY }}" > deploy_key
+          echo "SSH_PUBLIC_KEY=$(ssh-keygen -y -f deploy_key)" >> "$GITHUB_ENV"
+          rm deploy_key
+      - name: Fetch the Pulumi state from the pulumi-state branch
+        run: |
+          if git fetch origin pulumi-state:pulumi-state 2>/dev/null; then
+            git worktree add .pulumi-state pulumi-state
+          else
+            git worktree add --detach .pulumi-state
+            git -C .pulumi-state checkout --orphan pulumi-state
+            git -C .pulumi-state rm -rfq . || true
+          fi
+      - name: pulumi up
+        working-directory: infra
+        run: |
+          pulumi login "file://$GITHUB_WORKSPACE/.pulumi-state"
+          pulumi stack select prod --create
+          pulumi up --yes --skip-preview --non-interactive
+      - name: Outputs
+        id: out
+        working-directory: infra
+        run: |
+          pulumi login "file://$GITHUB_WORKSPACE/.pulumi-state" >/dev/null
+          pulumi stack select prod
+          echo "ipv4=$(pulumi stack output ipv4)" >> "$GITHUB_OUTPUT"
+          echo "data_mount=$(pulumi stack output dataMount)" >> "$GITHUB_OUTPUT"
+      - name: Write the Pulumi state back
+        if: always()
+        run: |
+          cd .pulumi-state
+          rm -rf .pulumi/backups
+          git add -A
+          if ! git diff --cached --quiet; then
+            git -c user.name=github-actions -c user.email=actions@github.com commit -qm "pulumi state ${GITHUB_SHA::7}"
+            git push origin HEAD:pulumi-state
+          fi
+
+  dns:
+    name: Point api.maia.city at the server
+    needs: infra
+    runs-on: ubuntu-latest
+    steps:
+      # Hetzner DNS has its own API and its own token — the cloud token does not
+      # open it. Without HETZNER_DNS_TOKEN the record has to be set by hand once,
+      # and the rest of the pipeline carries on regardless.
+      - name: Upsert the A record
+        env:
+          TOKEN: ${{ secrets.HETZNER_DNS_TOKEN }}
+          IP: ${{ needs.infra.outputs.ipv4 }}
+        run: |
+          if [ -z "$TOKEN" ]; then
+            echo "::notice::No HETZNER_DNS_TOKEN — add an A record for $API_HOST pointing at $IP by hand (Hetzner DNS console)."
+            exit 0
+          fi
+          ZONE=$(curl -fsS -H "Auth-API-Token: $TOKEN" 'https://dns.hetzner.com/api/v1/zones?name=maia.city' | jq -r '.zones[0].id')
+          [ -n "$ZONE" ] && [ "$ZONE" != null ] || { echo "::error::Zone maia.city not found under this DNS token."; exit 1; }
+          REC=$(curl -fsS -H "Auth-API-Token: $TOKEN" "https://dns.hetzner.com/api/v1/records?zone_id=$ZONE" \
+                | jq -r '.records[] | select(.type=="A" and .name=="api") | .id' | head -1)
+          BODY=$(jq -nc --arg z "$ZONE" --arg v "$IP" '{zone_id:$z,type:"A",name:"api",value:$v,ttl:300}')
+          if [ -n "$REC" ]; then
+            curl -fsS -X PUT -H "Auth-API-Token: $TOKEN" -H 'Content-Type: application/json' \
+              -d "$BODY" "https://dns.hetzner.com/api/v1/records/$REC" >/dev/null
+            echo "A record updated: $API_HOST -> $IP"
+          else
+            curl -fsS -X POST -H "Auth-API-Token: $TOKEN" -H 'Content-Type: application/json' \
+              -d "$BODY" 'https://dns.hetzner.com/api/v1/records' >/dev/null
+            echo "A record created: $API_HOST -> $IP"
+          fi
+
+  deploy:
+    name: Roll out over SSH
+    needs: [image, infra, dns]
+    runs-on: ubuntu-latest
+    env:
+      HOST: ${{ needs.infra.outputs.ipv4 }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prepare SSH
+        run: |
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          printf '%s\n' "${{ secrets.DEPLOY_SSH_KEY }}" > ~/.ssh/id_ed25519 && chmod 600 ~/.ssh/id_ed25519
+          # First contact with a freshly created server: take its host key.
+          for i in $(seq 1 30); do ssh-keyscan -T 5 -H "$HOST" >> ~/.ssh/known_hosts 2>/dev/null && break; sleep 5; done
+          printf 'Host prod\n  HostName %s\n  User deploy\n  IdentityFile ~/.ssh/id_ed25519\n  StrictHostKeyChecking yes\n' "$HOST" > ~/.ssh/config
+      - name: Wait for cloud-init (is Docker there yet?)
+        run: ssh prod 'sudo cloud-init status --wait >/dev/null || true; docker --version'
+      - name: Mount the Hetzner volume (fstab by stable device id; automount is not reliable)
+        env:
+          DATA_MOUNT: ${{ needs.infra.outputs.data_mount }}
+        run: |
+          ssh prod "bash -s" <<EOS
+          set -e
+          M="$DATA_MOUNT"; DEV="/dev/disk/by-id/scsi-0HC_Volume_\${M##*_}"
+          if ! mountpoint -q "\$M"; then
+            sudo mkdir -p "\$M"
+            grep -q "\$DEV" /etc/fstab || echo "\$DEV \$M ext4 discard,nofail,defaults 0 0" | sudo tee -a /etc/fstab >/dev/null
+            sudo systemctl daemon-reload
+            sudo mount "\$M"
+          fi
+          mountpoint "\$M" && df -h "\$M" | tail -1
+          EOS
+      - name: Copy the compose files
+        run: |
+          ssh prod "mkdir -p $APP_DIR/deploy"
+          scp docker-compose.yml docker-compose.prod.yml prod:$APP_DIR/
+          scp deploy/Caddyfile prod:$APP_DIR/deploy/
+      - name: Write .env (the database password is generated once and stays on the server)
+        env:
+          IMAGE: ${{ needs.image.outputs.image }}:${{ github.sha }}
+          DATA_MOUNT: ${{ needs.infra.outputs.data_mount }}
+        run: |
+          ssh prod "cd $APP_DIR && bash -s" <<EOS
+          set -e
+          # Postgres keeps this password inside its own data directory, so it is
+          # created once next to that data and never rotated automatically.
+          PWFILE="$DATA_MOUNT/.postgres_password"
+          if [ ! -f "\$PWFILE" ]; then
+            if [ -f .env ] && grep -q '^POSTGRES_PASSWORD=' .env; then
+              grep '^POSTGRES_PASSWORD=' .env | cut -d= -f2- | sudo tee "\$PWFILE" >/dev/null
+            else
+              openssl rand -hex 24 | sudo tee "\$PWFILE" >/dev/null
+            fi
+            sudo chown deploy "\$PWFILE"; sudo chmod 600 "\$PWFILE"
+          fi
+          PW=\$(cat "\$PWFILE")
+          cat > .env <<EOF2
+          POSTGRES_DB=maiacity
+          POSTGRES_USER=maiacity
+          POSTGRES_PASSWORD=\$PW
+          PGDATA_PATH=$DATA_MOUNT/postgres
+          API_IMAGE=$IMAGE
+          API_ADDRESS=$API_HOST
+          RP_ID=maia.city
+          RP_NAME=maiaCITY
+          SITE_ORIGIN=https://maia.city,https://www.maia.city
+          COOKIE_DOMAIN=.maia.city
+          EOF2
+          chmod 600 .env
+          sudo mkdir -p "$DATA_MOUNT/postgres"
+          EOS
+      - name: Rotate SSH keys (if set, exactly this list is authorised)
+        env:
+          AUTHORIZED_KEYS: ${{ secrets.DEPLOY_SSH_AUTHORIZED_KEYS }}
+        run: |
+          if [ -n "$AUTHORIZED_KEYS" ]; then
+            printf '%s\n' "$AUTHORIZED_KEYS" | ssh prod 'umask 077; cat > ~/.ssh/authorized_keys.new && mv ~/.ssh/authorized_keys.new ~/.ssh/authorized_keys'
+          fi
+      - name: Update the containers
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # The token goes to the server over stdin, never as a process argument.
+          printf '%s' "$GHCR_TOKEN" | ssh prod "docker login ghcr.io -u '${{ github.actor }}' --password-stdin >/dev/null"
+          ssh prod "cd $APP_DIR
+            docker compose -f docker-compose.yml -f docker-compose.prod.yml pull -q
+            docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --remove-orphans
+            docker logout ghcr.io >/dev/null
+            docker image prune -f >/dev/null"
+      # Health is judged on the server, not through DNS: a missing A record must
+      # not make a good deploy look broken.
+      - name: Health check (on the server)
+        run: |
+          for i in $(seq 1 30); do
+            if ssh prod "cd $APP_DIR && docker compose -f docker-compose.yml -f docker-compose.prod.yml exec -T api \
+                 bun -e \"fetch('http://localhost:3000/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\"" 2>/dev/null; then
+              echo "api is healthy on the server"; exit 0
+            fi
+            sleep 5
+          done
+          ssh prod "cd $APP_DIR && docker compose -f docker-compose.yml -f docker-compose.prod.yml logs --tail 50 api"
+          exit 1
+      # And then through the front door, which also needs DNS and a certificate.
+      # Warn rather than fail: the first certificate takes a moment, and without
+      # a DNS token the record is still a manual step.
+      - name: Reachable from outside?
+        run: |
+          for i in $(seq 1 24); do
+            if curl -fsS "https://$API_HOST/api/health" >/dev/null; then echo "OK: https://$API_HOST"; exit 0; fi
+            sleep 5
+          done
+          echo "::warning::https://$API_HOST is not answering yet — check the A record and let Caddy finish its certificate."

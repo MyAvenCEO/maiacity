@@ -1,0 +1,6 @@
+# One name, one upstream. Caddy fetches and renews the certificate itself —
+# passkeys only work in a secure context, so HTTPS is not optional here.
+{$API_ADDRESS} {
+	encode zstd gzip
+	reverse_proxy api:3000
+}

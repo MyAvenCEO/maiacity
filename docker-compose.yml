@@ -1,0 +1,55 @@
+# The signup service, locally: `docker compose up -d --build`
+#   api – Bun: passkey signup, session, profile, founder count
+#   db  – Postgres 17, data in the `pgdata` volume
+# Values come from .env (see .env.example). The journal itself is not in here:
+# it stays a static site on the CDN and only calls this from the browser.
+name: maia-city
+
+services:
+  db:
+    image: postgres:17-alpine
+    container_name: maia-city-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-maiacity}
+      POSTGRES_USER: ${POSTGRES_USER:-maiacity}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-maiacity}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    # Useful locally (psql, running the api outside Docker); the prod file closes it.
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-maiacity} -d ${POSTGRES_DB:-maiacity}"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  api:
+    build: ./api
+    image: ${API_IMAGE:-maia-city-api:local}
+    container_name: maia-city-api
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      PORT: 3000
+      TZ: ${TZ:-Europe/Berlin}
+      DATABASE_URL: postgres://${POSTGRES_USER:-maiacity}:${POSTGRES_PASSWORD:-maiacity}@db:5432/${POSTGRES_DB:-maiacity}
+      # The relying party is the SITE, not this API — a passkey created on
+      # maia.city stays valid across its subdomains.
+      RP_ID: ${RP_ID:-localhost}
+      RP_NAME: ${RP_NAME:-maiaCITY}
+      SITE_ORIGIN: ${SITE_ORIGIN:-http://localhost:5173}
+      COOKIE_DOMAIN: ${COOKIE_DOMAIN:-}
+    ports:
+      - "${API_PORT:-3000}:3000"
+    healthcheck:
+      test: ["CMD-SHELL", "bun -e \"fetch('http://localhost:3000/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\""]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  pgdata:

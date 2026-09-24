@@ -1,0 +1,3 @@
+config:
+  maiacity:location: nbg1
+  maiacity:volumeSize: "10"

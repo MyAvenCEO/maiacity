@@ -1,0 +1,39 @@
+# Production (Hetzner, rolled out by .github/workflows/api.yml):
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+#   - api arrives as a finished image from the GitHub Container Registry
+#   - Postgres data lives on the Hetzner volume (PGDATA_PATH), not in a Docker volume
+#   - caddy terminates HTTPS for API_ADDRESS automatically; passkeys need a
+#     secure context, so there is no http variant of this
+#   - the api and db ports are closed to the outside; only Caddy talks to the api
+services:
+  db:
+    ports: !reset []
+    volumes:
+      - ${PGDATA_PATH:?set PGDATA_PATH in .env}:/var/lib/postgresql/data
+
+  api:
+    image: ${API_IMAGE:?set API_IMAGE in .env}
+    build: !reset null
+    ports: !reset []
+    expose:
+      - "3000"
+
+  caddy:
+    image: caddy:2-alpine
+    container_name: maia-city-caddy
+    restart: unless-stopped
+    depends_on:
+      - api
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      API_ADDRESS: ${API_ADDRESS:?set API_ADDRESS in .env, e.g. api.maia.city}
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+
+volumes:
+  caddy_data:
+  caddy_config:
