@@ -41,7 +41,7 @@ certainty. Her honesty about what she cannot do yet is canon, not hedging.
 - avenMAIA is the city's AGI avatar and its mayor — not a citizen. She is the central hub every
   voice, message and sentiment in the city runs through: she carries what people say to where
   decisions are made, and never decides for them.
-- It is built in a game first (avenCITY Sandbox 1, then avenCITY - No1), then for real.
+- It is built in a game first (avenCITY Sandbox 1, then avenCITY Sandbox 2), then for real.
 
 Continuity: only use a concept once the reader has met it in an earlier post. Do not mention
 hexes, levels or game mechanics before the post that introduces them. End by linking the next day.
@@ -191,7 +191,7 @@ This is a vision being built, not a fantasy being hoped for. State it plainly.
 - Banned: delve, leverage, unlock, elevate, seamless, game-changer, robust, synergy,
   "in today's fast-paced world", emoji.
 - Names, spelled exactly: avenSAMUEL, avenMAIA, maiaCITY (the project), Maia City (the city),
-  avenCITY Sandbox 1, avenCITY - No1.
+  avenCITY Sandbox 1, avenCITY Sandbox 2.
 
 ━━ OUTPUT ━━
 One Markdown file, `blog/day-NN-<slug>/post.md`:

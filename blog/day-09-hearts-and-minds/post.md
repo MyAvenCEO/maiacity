@@ -89,13 +89,13 @@ You cannot buy minds on a market. There is exactly one way to get them: invest y
 
 Your hearts don't vanish when you do.
 
-The moment they are invested, they become **maiaHearts**: one shared, city-wide currency, steadier than any single person's hearts, held by the coop's treasury to bring its vision to life. Your personal money turns into the city's money, working on something you believe in.
+The moment they are invested, they become **maiaHEARTS**: one shared, city-wide currency, steadier than any single person's hearts, held by the coop's treasury to bring its vision to life. One for one — a hundred of your hearts become a hundred maiaHEARTS. Nothing is burned and nothing is skimmed. Your personal money turns into the city's money, working on something you believe in.
 
 Minds don't buy anything. They show something.
 
 Where people put their hearts is where their attention and conviction are. Minds make that visible — and they compound. The more people believe in a project, the more hearts flow in, the more real it becomes, the more people believe in it.
 
-Imagine an evening in the centre dome of your dome cell. Someone stands up with an idea: a bakery that runs on the wheat and fruit from the forest outside. You put fifty hearts in that night, because you want to wake up to that smell. So do forty of your neighbours. Your hearts become maiaHearts in the bakery's treasury, the treasury pays for the ovens — and by spring everyone who believed in it owns a piece of every loaf.
+Imagine an evening in the centre dome of your dome cell. Someone stands up with an idea: a bakery that runs on the wheat and fruit from the forest outside. You put fifty hearts in that night, because you want to wake up to that smell. So do forty of your neighbours. Your hearts become maiaHEARTS in the bakery's treasury, the treasury pays for the ovens — and the minds go to the people who put the hearts in. By spring everyone who believed in it owns a piece of every loaf.
 
 ## Ownership is the income after labour
 
@@ -123,7 +123,7 @@ When ownership sits with a small group, the engine that could lift everyone lift
 
 Here is the whole framework in one breath.
 
-Every human mints hearts — their own money, born from their existence, not from debt. Invest them in something shared, and two things happen at once. Your hearts become maiaHearts, the city's common currency, held by the project to build with. And you receive minds: ownership and conviction, compounding around the projects people most want to bring to life.
+Every human mints hearts — their own money, born from their existence, not from debt. Invest them in something shared, and two things happen at once. Your hearts become maiaHEARTS, the city's common currency, held by the project to build with. And you receive its minds — every one of them goes to the people who backed it: ownership and conviction, compounding around the projects people most want to bring to life.
 
 A heart without a mind gives, and nothing grows.
 
@@ -135,8 +135,10 @@ We were never built to survive. Not on a basic income, and not on borrowed money
 
 We were built to thrive — and to own, together, what we build.
 
-How a single heart becomes a maiaHeart — and why a city needs one currency to pay with and another to own with — is the next story.
+How a single heart is born, and how it becomes a maiaHEART, is the next story.
 
-It is already being built into avenCITY - No1, the next world in the game.
+You do not have to wait for it. It already runs in avenCITY Sandbox 2: sign up, mint your first hearts, and back a coop on the planet.
 
-[Read the manifesto →](/)
+[Open avenCITY Sandbox 2 →](/games/sandbox-2/)
+
+[Next: a year of money in twelve days →](/blog/day-10-a-heart-every-two-minutes/)

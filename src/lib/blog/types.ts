@@ -8,6 +8,8 @@ export interface PostMeta {
 	authorRole?: string;
 	date: string;
 	cover?: string;
+	/** The film's own still, when the cover is a different picture. Falls back to the cover. */
+	poster?: string;
 	video?: string;
 	videoLocal?: string;
 	videoAspect?: string;

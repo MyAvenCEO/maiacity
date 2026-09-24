@@ -1,0 +1,38 @@
+{
+	"$description": "Who may do what. Two kinds of player — citizens, the crowd who invest as widely as they can, and coop founders, who launch coops that generate income — plus the admin. A role is a bundle of capabilities and may inherit another's; the API checks capabilities, never role names, so a new role is a row here and no change to any route.",
+	"default": "citizen",
+	"firstSignupBecomes": "admin",
+	"assignable": [
+		"citizen",
+		"founder"
+	],
+	"roles": {
+		"citizen": {
+			"$description": "The crowd. Mints their income, invests it as diversely as they like, holds MINDs.",
+			"capabilities": [
+				"hearts:mint",
+				"hearts:send",
+				"coop:invest",
+				"ledger:read"
+			]
+		},
+		"founder": {
+			"$description": "Launches and runs coops, and sees the makers' board: the intents. In the real world this role comes with a cost; here it is granted by the admin.",
+			"inherits": "citizen",
+			"capabilities": [
+				"coop:create",
+				"coop:manage",
+				"intent:read"
+			]
+		},
+		"admin": {
+			"$description": "The first citizen to sign up. Promotes citizens to founders and back, for now by hand.",
+			"inherits": "founder",
+			"capabilities": [
+				"citizen:promote",
+				"citizen:demote",
+				"city:admin"
+			]
+		}
+	}
+}

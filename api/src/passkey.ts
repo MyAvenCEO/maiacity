@@ -85,8 +85,10 @@ export async function registerFinish(body: any): Promise<Result<Founder>> {
   const { credential } = verification.registrationInfo;
   const id = randomUUID();
   const [founder] = await sql`
-    INSERT INTO founders (id, name) VALUES (${id}, ${pending.name})
-    RETURNING id, number, name, created`;
+    INSERT INTO founders (id, name, role)
+    VALUES (${id}, ${pending.name},
+            CASE WHEN EXISTS (SELECT 1 FROM founders WHERE role = 'admin') THEN 'citizen' ELSE 'admin' END)
+    RETURNING id, number, name, created`; // the first founder runs the city
   await sql`
     INSERT INTO passkeys (id, founder_id, public_key, counter, transports)
     VALUES (${credential.id}, ${id}, ${b64url(credential.publicKey)}, ${credential.counter},

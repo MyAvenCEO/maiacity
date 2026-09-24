@@ -8,7 +8,9 @@
 
 	// the banner is optional: without the illustration the headline simply
 	// stands on the page
-	let { banner = false }: { banner?: boolean } = $props();
+	import type { Snippet } from 'svelte';
+
+	let { banner = false, afterHero }: { banner?: boolean; afterHero?: Snippet } = $props();
 
 	const visions = [
 		'a million founders uniting behind one vision, and discovering what humans have always been able to do the moment they stop competing for scraps.',
@@ -42,6 +44,9 @@
 			<span class="thrive">We were built to <mark>thrive.</mark></span>
 		</h1>
 	</header>
+
+	<!-- whatever the page wants seen before the first chapter — the Day 01 film -->
+	{#if afterHero}<div class="after-hero">{@render afterHero()}</div>{/if}
 
 	<section class="chapter">
 		<p class="marker">I<span>The old blueprint</span></p>
@@ -113,6 +118,14 @@
 
 	/* The illustration melts into the page: its lower half fades to the page
 	   colour, and the headline is pulled up into that fade. */
+	.after-hero {
+		margin: 2.5rem 0 1rem;
+	}
+
+	.after-hero :global(.player) {
+		margin: 0;
+	}
+
 	.banner {
 		position: relative;
 		overflow: hidden;

@@ -1,0 +1,48 @@
+{
+	"$description": "The monetary policy of avenCITY, as data. Every number the ledger uses comes from here; the code holds no constants of its own. Hearts are Circles: every human issues their OWN currency — maia♥, samuel♥ — at the same rate, continuously, and a gentle demurrage keeps value moving. The currencies become interchangeable later, as a layer on top; the notes never change.",
+	"currency": {
+		"name": "Hearts",
+		"symbol": "♥",
+		"code": "HEARTS",
+		"decimals": 18,
+		"personal": true,
+		"naming": "<citizen>♥",
+		"$description": "One token per citizen, written as their name and the heart — maia♥ — minted only by them. 18 decimals like an ERC-20, so an upgrade to a real token contract changes no amount."
+	},
+	"time": {
+		"epoch": "2026-09-03T00:00:00Z",
+		"realDayIsGameMonth": true,
+		"monthsPerYear": 12,
+		"$description": "One real day is one game month of thirty game days; twelve real days are a game year. Game time therefore runs thirty times faster than real time. The epoch is the city's founding — day 0, month 1 of year 1."
+	},
+	"issuance": {
+		"kind": "ubi",
+		"toEveryHuman": true,
+		"perHour": "1",
+		"perDay": "24",
+		"maxBacklogDays": 14,
+		"$description": "One heart per GAME hour — 24 a game day, which is one every two real minutes, since a game day is 48 real minutes — accruing continuously and minted whenever the citizen likes. Unclaimed hearts stop accruing after 14 game days, as in Circles: money is for the present, not a savings plan you forgot about. A citizen's very first mint also carries the starting hearts — the founding stake every citizen enters the city with.",
+		"starting": "500"
+	},
+	"demurrage": {
+		"ratePerGameYear": 0.07,
+		"$description": "7% per game year (twelve real days), the Circles rate. Applied at display time only: notes are accounted in inflationary units and never change, and issuance rises to keep the demurraged 24 a day constant — so a heart earned today and a heart earned next year buy the same, and hoarding slowly loses."
+	},
+	"ledger": {
+		"domain": "hearts",
+		"kind": "zeto",
+		"schema": "ZetoCoin",
+		"circuit": "anon_nullifier",
+		"$description": "Shaped after Paladin's Zeto domain: a note is a Poseidon commitment over (amount, salt, owner key); spending publishes a nullifier; a zero-knowledge proof shows value is conserved. No notary sees the notes. Today the server runs the circuit's checks itself and records a mock proof; the base ledger is a table of commitments and nullifiers. The schema is the contract that lets it become a Paladin node without changing a note."
+	},
+	"interchange": {
+		"kind": "later",
+		"$description": "Personal currencies are not fungible with each other. The one bridge today is investment: personal hearts put into a coop become maiaHEARTS, the city's common currency, one for one."
+	},
+	"city": {
+		"$description": "maiaHEARTS: the city's common currency. Nobody mints it directly — it comes into being only when a citizen invests their personal hearts into a coop, one for one, and it is held by that coop's treasury. It is the steadier, shared money the city builds with.",
+		"identity": "city/maia",
+		"token": "maiaHEARTS",
+		"symbol": "♥"
+	}
+}

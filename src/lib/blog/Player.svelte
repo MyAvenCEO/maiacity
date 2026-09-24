@@ -53,7 +53,7 @@
 	const local = $derived(dev && post.videoLocal ? post.videoLocal : null);
 	const embedded = $derived(post.video && post.videoLibrary ? post.video : null);
 	const hasFilm = $derived(Boolean(local || embedded));
-	const poster = $derived(post.cover ?? null);
+	const poster = $derived(post.poster ?? post.cover ?? null);
 	// the aspect as a number, so the frame's width can be capped from its height
 	const ratio = $derived.by(() => {
 		const [w, h] = (post.videoAspect ?? '16 / 9').split('/').map((n) => Number(n.trim()));
@@ -84,7 +84,8 @@
 					<track kind="captions" />
 				</video>
 			{:else}
-				<CoverArt {post} eager />
+				<!-- a film waiting to play shows its own still, not the post's cover -->
+				<CoverArt post={coverOnly ? post : { ...post, cover: poster ?? undefined }} eager />
 				{#if local && !coverOnly}
 					<button type="button" onclick={play}>
 						<span class="glyph" aria-hidden="true"></span>

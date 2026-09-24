@@ -1,0 +1,513 @@
+{
+	"$description": "How a coop's cap table forms. Invested hearts are not burned: they convert one for one into maiaHEARTS, the city's common currency, which the coop's treasury holds to build with. In return the investor receives the coop's MINDs — its ownership currency. Milestones are counted in MINDs: milestone n is reached when the total supply is the n-th Fibonacci number of MINDs — 1, 2, 3, 5, 8, 13 … — so it emits the difference to the milestone before, at a price of 10 × n hearts per MIND. The earliest believers pay the least per MIND; everyone inside one milestone pays the same price, like a round.",
+	"emission": {
+		"$description": "Of every MIND minted, this share goes to the investor; the rest to the coop's treasury. The treasury is already paid — it holds the maiaHEARTS — so the MINDs, the ownership, go to the people who backed it.",
+		"toInvestor": 1.0,
+		"toTreasury": 0.0
+	},
+	"milestones": {
+		"$description": "Milestone n is filled when the total supply reaches fib(n) MINDs; it emits fib(n) − fib(n−1) MINDs at 10 × n hearts each — 10♥ in milestone 1, 20♥ in 2 — and opens once every earlier milestone is filled. The schedule runs until the max supply of 8 billion MINDs: the last milestone emits only what is left under the cap, then the coop is sold out. A coop's total supply is always exactly what its milestones have emitted so far. The table is generated from the rule by scripts/coops-table.ts.",
+		"rule": "total(n) = min(fib(n), maxSupply); minds(n) = total(n) - total(n-1); heartsPerMind(n) = n * heartsPerMindStep; cost(n) = minds(n) * heartsPerMind(n)",
+		"heartsPerMindStep": "10",
+		"maxSupplyMinds": "8000000000",
+		"table": [
+			{
+				"milestone": 1,
+				"minds": "1",
+				"heartsPerMind": "10",
+				"costHearts": "10",
+				"opensAtHearts": "0",
+				"cumulativeMinds": "1",
+				"cumulativeHearts": "10"
+			},
+			{
+				"milestone": 2,
+				"minds": "1",
+				"heartsPerMind": "20",
+				"costHearts": "20",
+				"opensAtHearts": "10",
+				"cumulativeMinds": "2",
+				"cumulativeHearts": "30"
+			},
+			{
+				"milestone": 3,
+				"minds": "1",
+				"heartsPerMind": "30",
+				"costHearts": "30",
+				"opensAtHearts": "30",
+				"cumulativeMinds": "3",
+				"cumulativeHearts": "60"
+			},
+			{
+				"milestone": 4,
+				"minds": "2",
+				"heartsPerMind": "40",
+				"costHearts": "80",
+				"opensAtHearts": "60",
+				"cumulativeMinds": "5",
+				"cumulativeHearts": "140"
+			},
+			{
+				"milestone": 5,
+				"minds": "3",
+				"heartsPerMind": "50",
+				"costHearts": "150",
+				"opensAtHearts": "140",
+				"cumulativeMinds": "8",
+				"cumulativeHearts": "290"
+			},
+			{
+				"milestone": 6,
+				"minds": "5",
+				"heartsPerMind": "60",
+				"costHearts": "300",
+				"opensAtHearts": "290",
+				"cumulativeMinds": "13",
+				"cumulativeHearts": "590"
+			},
+			{
+				"milestone": 7,
+				"minds": "8",
+				"heartsPerMind": "70",
+				"costHearts": "560",
+				"opensAtHearts": "590",
+				"cumulativeMinds": "21",
+				"cumulativeHearts": "1150"
+			},
+			{
+				"milestone": 8,
+				"minds": "13",
+				"heartsPerMind": "80",
+				"costHearts": "1040",
+				"opensAtHearts": "1150",
+				"cumulativeMinds": "34",
+				"cumulativeHearts": "2190"
+			},
+			{
+				"milestone": 9,
+				"minds": "21",
+				"heartsPerMind": "90",
+				"costHearts": "1890",
+				"opensAtHearts": "2190",
+				"cumulativeMinds": "55",
+				"cumulativeHearts": "4080"
+			},
+			{
+				"milestone": 10,
+				"minds": "34",
+				"heartsPerMind": "100",
+				"costHearts": "3400",
+				"opensAtHearts": "4080",
+				"cumulativeMinds": "89",
+				"cumulativeHearts": "7480"
+			},
+			{
+				"milestone": 11,
+				"minds": "55",
+				"heartsPerMind": "110",
+				"costHearts": "6050",
+				"opensAtHearts": "7480",
+				"cumulativeMinds": "144",
+				"cumulativeHearts": "13530"
+			},
+			{
+				"milestone": 12,
+				"minds": "89",
+				"heartsPerMind": "120",
+				"costHearts": "10680",
+				"opensAtHearts": "13530",
+				"cumulativeMinds": "233",
+				"cumulativeHearts": "24210"
+			},
+			{
+				"milestone": 13,
+				"minds": "144",
+				"heartsPerMind": "130",
+				"costHearts": "18720",
+				"opensAtHearts": "24210",
+				"cumulativeMinds": "377",
+				"cumulativeHearts": "42930"
+			},
+			{
+				"milestone": 14,
+				"minds": "233",
+				"heartsPerMind": "140",
+				"costHearts": "32620",
+				"opensAtHearts": "42930",
+				"cumulativeMinds": "610",
+				"cumulativeHearts": "75550"
+			},
+			{
+				"milestone": 15,
+				"minds": "377",
+				"heartsPerMind": "150",
+				"costHearts": "56550",
+				"opensAtHearts": "75550",
+				"cumulativeMinds": "987",
+				"cumulativeHearts": "132100"
+			},
+			{
+				"milestone": 16,
+				"minds": "610",
+				"heartsPerMind": "160",
+				"costHearts": "97600",
+				"opensAtHearts": "132100",
+				"cumulativeMinds": "1597",
+				"cumulativeHearts": "229700"
+			},
+			{
+				"milestone": 17,
+				"minds": "987",
+				"heartsPerMind": "170",
+				"costHearts": "167790",
+				"opensAtHearts": "229700",
+				"cumulativeMinds": "2584",
+				"cumulativeHearts": "397490"
+			},
+			{
+				"milestone": 18,
+				"minds": "1597",
+				"heartsPerMind": "180",
+				"costHearts": "287460",
+				"opensAtHearts": "397490",
+				"cumulativeMinds": "4181",
+				"cumulativeHearts": "684950"
+			},
+			{
+				"milestone": 19,
+				"minds": "2584",
+				"heartsPerMind": "190",
+				"costHearts": "490960",
+				"opensAtHearts": "684950",
+				"cumulativeMinds": "6765",
+				"cumulativeHearts": "1175910"
+			},
+			{
+				"milestone": 20,
+				"minds": "4181",
+				"heartsPerMind": "200",
+				"costHearts": "836200",
+				"opensAtHearts": "1175910",
+				"cumulativeMinds": "10946",
+				"cumulativeHearts": "2012110"
+			},
+			{
+				"milestone": 21,
+				"minds": "6765",
+				"heartsPerMind": "210",
+				"costHearts": "1420650",
+				"opensAtHearts": "2012110",
+				"cumulativeMinds": "17711",
+				"cumulativeHearts": "3432760"
+			},
+			{
+				"milestone": 22,
+				"minds": "10946",
+				"heartsPerMind": "220",
+				"costHearts": "2408120",
+				"opensAtHearts": "3432760",
+				"cumulativeMinds": "28657",
+				"cumulativeHearts": "5840880"
+			},
+			{
+				"milestone": 23,
+				"minds": "17711",
+				"heartsPerMind": "230",
+				"costHearts": "4073530",
+				"opensAtHearts": "5840880",
+				"cumulativeMinds": "46368",
+				"cumulativeHearts": "9914410"
+			},
+			{
+				"milestone": 24,
+				"minds": "28657",
+				"heartsPerMind": "240",
+				"costHearts": "6877680",
+				"opensAtHearts": "9914410",
+				"cumulativeMinds": "75025",
+				"cumulativeHearts": "16792090"
+			},
+			{
+				"milestone": 25,
+				"minds": "46368",
+				"heartsPerMind": "250",
+				"costHearts": "11592000",
+				"opensAtHearts": "16792090",
+				"cumulativeMinds": "121393",
+				"cumulativeHearts": "28384090"
+			},
+			{
+				"milestone": 26,
+				"minds": "75025",
+				"heartsPerMind": "260",
+				"costHearts": "19506500",
+				"opensAtHearts": "28384090",
+				"cumulativeMinds": "196418",
+				"cumulativeHearts": "47890590"
+			},
+			{
+				"milestone": 27,
+				"minds": "121393",
+				"heartsPerMind": "270",
+				"costHearts": "32776110",
+				"opensAtHearts": "47890590",
+				"cumulativeMinds": "317811",
+				"cumulativeHearts": "80666700"
+			},
+			{
+				"milestone": 28,
+				"minds": "196418",
+				"heartsPerMind": "280",
+				"costHearts": "54997040",
+				"opensAtHearts": "80666700",
+				"cumulativeMinds": "514229",
+				"cumulativeHearts": "135663740"
+			},
+			{
+				"milestone": 29,
+				"minds": "317811",
+				"heartsPerMind": "290",
+				"costHearts": "92165190",
+				"opensAtHearts": "135663740",
+				"cumulativeMinds": "832040",
+				"cumulativeHearts": "227828930"
+			},
+			{
+				"milestone": 30,
+				"minds": "514229",
+				"heartsPerMind": "300",
+				"costHearts": "154268700",
+				"opensAtHearts": "227828930",
+				"cumulativeMinds": "1346269",
+				"cumulativeHearts": "382097630"
+			},
+			{
+				"milestone": 31,
+				"minds": "832040",
+				"heartsPerMind": "310",
+				"costHearts": "257932400",
+				"opensAtHearts": "382097630",
+				"cumulativeMinds": "2178309",
+				"cumulativeHearts": "640030030"
+			},
+			{
+				"milestone": 32,
+				"minds": "1346269",
+				"heartsPerMind": "320",
+				"costHearts": "430806080",
+				"opensAtHearts": "640030030",
+				"cumulativeMinds": "3524578",
+				"cumulativeHearts": "1070836110"
+			},
+			{
+				"milestone": 33,
+				"minds": "2178309",
+				"heartsPerMind": "330",
+				"costHearts": "718841970",
+				"opensAtHearts": "1070836110",
+				"cumulativeMinds": "5702887",
+				"cumulativeHearts": "1789678080"
+			},
+			{
+				"milestone": 34,
+				"minds": "3524578",
+				"heartsPerMind": "340",
+				"costHearts": "1198356520",
+				"opensAtHearts": "1789678080",
+				"cumulativeMinds": "9227465",
+				"cumulativeHearts": "2988034600"
+			},
+			{
+				"milestone": 35,
+				"minds": "5702887",
+				"heartsPerMind": "350",
+				"costHearts": "1996010450",
+				"opensAtHearts": "2988034600",
+				"cumulativeMinds": "14930352",
+				"cumulativeHearts": "4984045050"
+			},
+			{
+				"milestone": 36,
+				"minds": "9227465",
+				"heartsPerMind": "360",
+				"costHearts": "3321887400",
+				"opensAtHearts": "4984045050",
+				"cumulativeMinds": "24157817",
+				"cumulativeHearts": "8305932450"
+			},
+			{
+				"milestone": 37,
+				"minds": "14930352",
+				"heartsPerMind": "370",
+				"costHearts": "5524230240",
+				"opensAtHearts": "8305932450",
+				"cumulativeMinds": "39088169",
+				"cumulativeHearts": "13830162690"
+			},
+			{
+				"milestone": 38,
+				"minds": "24157817",
+				"heartsPerMind": "380",
+				"costHearts": "9179970460",
+				"opensAtHearts": "13830162690",
+				"cumulativeMinds": "63245986",
+				"cumulativeHearts": "23010133150"
+			},
+			{
+				"milestone": 39,
+				"minds": "39088169",
+				"heartsPerMind": "390",
+				"costHearts": "15244385910",
+				"opensAtHearts": "23010133150",
+				"cumulativeMinds": "102334155",
+				"cumulativeHearts": "38254519060"
+			},
+			{
+				"milestone": 40,
+				"minds": "63245986",
+				"heartsPerMind": "400",
+				"costHearts": "25298394400",
+				"opensAtHearts": "38254519060",
+				"cumulativeMinds": "165580141",
+				"cumulativeHearts": "63552913460"
+			},
+			{
+				"milestone": 41,
+				"minds": "102334155",
+				"heartsPerMind": "410",
+				"costHearts": "41957003550",
+				"opensAtHearts": "63552913460",
+				"cumulativeMinds": "267914296",
+				"cumulativeHearts": "105509917010"
+			},
+			{
+				"milestone": 42,
+				"minds": "165580141",
+				"heartsPerMind": "420",
+				"costHearts": "69543659220",
+				"opensAtHearts": "105509917010",
+				"cumulativeMinds": "433494437",
+				"cumulativeHearts": "175053576230"
+			},
+			{
+				"milestone": 43,
+				"minds": "267914296",
+				"heartsPerMind": "430",
+				"costHearts": "115203147280",
+				"opensAtHearts": "175053576230",
+				"cumulativeMinds": "701408733",
+				"cumulativeHearts": "290256723510"
+			},
+			{
+				"milestone": 44,
+				"minds": "433494437",
+				"heartsPerMind": "440",
+				"costHearts": "190737552280",
+				"opensAtHearts": "290256723510",
+				"cumulativeMinds": "1134903170",
+				"cumulativeHearts": "480994275790"
+			},
+			{
+				"milestone": 45,
+				"minds": "701408733",
+				"heartsPerMind": "450",
+				"costHearts": "315633929850",
+				"opensAtHearts": "480994275790",
+				"cumulativeMinds": "1836311903",
+				"cumulativeHearts": "796628205640"
+			},
+			{
+				"milestone": 46,
+				"minds": "1134903170",
+				"heartsPerMind": "460",
+				"costHearts": "522055458200",
+				"opensAtHearts": "796628205640",
+				"cumulativeMinds": "2971215073",
+				"cumulativeHearts": "1318683663840"
+			},
+			{
+				"milestone": 47,
+				"minds": "1836311903",
+				"heartsPerMind": "470",
+				"costHearts": "863066594410",
+				"opensAtHearts": "1318683663840",
+				"cumulativeMinds": "4807526976",
+				"cumulativeHearts": "2181750258250"
+			},
+			{
+				"milestone": 48,
+				"minds": "2971215073",
+				"heartsPerMind": "480",
+				"costHearts": "1426183235040",
+				"opensAtHearts": "2181750258250",
+				"cumulativeMinds": "7778742049",
+				"cumulativeHearts": "3607933493290"
+			},
+			{
+				"milestone": 49,
+				"minds": "221257951",
+				"heartsPerMind": "490",
+				"costHearts": "108416395990",
+				"opensAtHearts": "3607933493290",
+				"cumulativeMinds": "8000000000",
+				"cumulativeHearts": "3716349889280"
+			}
+		]
+	},
+	"founding": {
+		"$description": "What it takes to open a coop: a pitch, the six-field canvas, and the founder's own first conversion of 500 hearts — the founding stake, which takes the coop through its first milestones on the founder's belief alone.",
+		"founderStakeHearts": "500",
+		"pitchMaxChars": 280,
+		"canvas": [
+			"who it is for",
+			"the problem",
+			"the offer",
+			"the price",
+			"how it reaches them",
+			"how it makes money"
+		]
+	},
+	"phases": {
+		"$description": "A coop's life in five phases, ten milestones each; the last phase runs to the max supply.",
+		"table": [
+			{
+				"name": "IDEA",
+				"from": 1,
+				"to": 10
+			},
+			{
+				"name": "TEST",
+				"from": 11,
+				"to": 20
+			},
+			{
+				"name": "BUILD",
+				"from": 21,
+				"to": 30
+			},
+			{
+				"name": "SCALE",
+				"from": 31,
+				"to": 40
+			},
+			{
+				"name": "HERO",
+				"from": 41,
+				"to": 49
+			}
+		]
+	},
+	"signal": {
+		"$description": "The support signal a season is judged on — the number behind the real-world investment. Weights are tunable; the formula is public in the game. There is NO cap on how much one backer may invest: the signal weighs breadth and momentum instead.",
+		"weights": {
+			"heartsRaised": 0.5,
+			"distinctBackers": 0.3,
+			"momentumLastThreeMonths": 0.2
+		}
+	},
+	"conversion": {
+		"$description": "What an investment does to the hearts: every personal heart invested is taken out of the investor's own currency and the same amount of maiaHEARTS is minted into the coop's treasury. One for one, in spendable units.",
+		"into": "maiaHEARTS",
+		"rate": "1"
+	}
+}

@@ -46,6 +46,7 @@ function parsePost(slug: string, raw: string): { meta: PostMeta; body: string } 
 			cover: optional(fm.cover),
 			video: optional(fm.video),
 			videoLocal: optional(fm.videoLocal),
+			poster: optional(fm.poster),
 			videoAspect: optional(fm.videoAspect),
 			videoLibrary: optional(fm.videoLibrary),
 			coverAlt: optional(fm.coverAlt),

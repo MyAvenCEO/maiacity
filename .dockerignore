@@ -1,0 +1,7 @@
+# Only the API and the shared rules go into the image — never the site, its
+# images, or anyone's node_modules.
+*
+!api/package.json
+!api/bun.lock
+!api/src
+!game

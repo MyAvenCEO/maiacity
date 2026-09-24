@@ -5,7 +5,10 @@ import { dev } from '$app/environment';
 import { startAuthentication, startRegistration } from '@simplewebauthn/browser';
 
 /** api.maia.city in production, the local container in development. */
-export const API = dev ? 'http://localhost:3000' : 'https://api.maia.city';
+// 3100 locally, so it can run beside other projects' stacks on 3000.
+export const API = dev
+	? ((import.meta.env.VITE_API_URL as string | undefined) ?? 'http://localhost:3100')
+	: 'https://api.maia.city';
 
 export type Founder = {
 	id: string;

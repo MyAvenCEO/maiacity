@@ -26,13 +26,15 @@
 </svelte:head>
 
 <main class="wrap">
-	<Manifesto banner={data.banner} />
+	<Manifesto banner={data.banner}>
+		{#snippet afterHero()}
+			{#if post}<Player {post} maxHeight="78vh" />{/if}
+		{/snippet}
+	</Manifesto>
 
 	{#if post}
 		<p class="start eyebrow">Where it starts</p>
 		<article class="pinned">
-			<Player {post} maxHeight="72vh" coverOnly />
-
 			<div class="body">
 				<p class="eyebrow">
 					{#if post.day != null}Day {String(post.day).padStart(2, '0')}&ensp;·&ensp;{/if}{formatted}
@@ -90,12 +92,15 @@
 		margin: 3rem auto 0;
 	}
 
+	/* the film now opens the page, so this card is the words only */
 	.pinned {
 		display: grid;
-		grid-template-columns: 1.15fr 1fr;
+		grid-template-columns: 1fr;
+		max-width: 46rem;
+		margin: 0 auto;
 		align-items: center;
 		gap: 2.5rem;
-		padding: 1.25rem;
+		padding: 1.25rem 1.5rem;
 		border-radius: var(--radius);
 		background: var(--paper);
 		/* the film sits inside the card, so its corners follow the card's */

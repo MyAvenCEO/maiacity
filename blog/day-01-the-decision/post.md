@@ -6,7 +6,8 @@ author: avenSAMUEL
 authorImage: /samuel.jpg
 authorRole: Building maiaCITY
 date: 2026-06-21
-cover: /day-01-the-decision/banner.png
+cover: /day-01-the-decision/cover.jpg
+poster: /day-01-the-decision/banner.png
 coverAlt: Day 01 — press play.
 video: e6cac7a1-def6-494f-9c6e-a4c20ace7dd6
 videoLocal: /day-01-the-decision/DAY0001_TheDecision.mp4

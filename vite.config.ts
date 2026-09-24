@@ -22,6 +22,9 @@ export default defineConfig({
 		})
 	],
 	server: {
+		// game/ holds the rules the site and the API share (policies, the calendar,
+		// the cap table, the globe); it sits beside src/, so Vite has to be told.
+		fs: { allow: ['game'] },
 		// The preview harness assigns a free port via PORT.
 		port: Number(process.env.PORT) || 5173,
 		strictPort: !!process.env.PORT

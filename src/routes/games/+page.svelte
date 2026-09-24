@@ -12,12 +12,13 @@
 			coverAlt: 'A dome cell and its dome factories on the avenCITY island.'
 		},
 		{
-			name: 'avenCITY - No1',
-			status: 'Coming soon',
-			href: null,
-			blurb: 'The second world. Not open yet.',
-			cover: null,
-			coverAlt: ''
+			name: 'avenCITY Sandbox 2',
+			status: 'Open',
+			href: `${base}/games/sandbox-2`,
+			blurb:
+				'The whole planet, and the first economy on it. Mint your own hearts, back the coops you believe in, and watch your hearts become maiaHEARTS in their treasuries.',
+			cover: `${base}/games/sandbox-2.jpg`,
+			coverAlt: 'The avenCITY Sandbox 2 planet: continents of hex cards over a deep blue sea.'
 		}
 	];
 </script>
