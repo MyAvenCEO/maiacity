@@ -71,11 +71,26 @@ const goose = (coat: string) =>
 	])
 
 export type Patch = { x: number; z: number; r: number; n: number }
-type Kind = 'hen' | 'goat' | 'goose'
+/** A frog, facing +z, squatting on its folded back legs, its eyes up. */
+const frog = (coat: string) =>
+	model([
+		{ geo: ball, color: coat, at: [0, 0.05, 0], scale: [0.055, 0.035, 0.07] },
+		{ geo: ball, color: coat, at: [0, 0.075, 0.045], scale: [0.04, 0.025, 0.035] },
+		{ geo: ball, color: '#e8d27a', at: [0, 0.03, 0.01], scale: [0.045, 0.02, 0.06] },
+		...([-1, 1] as const).flatMap((sd) => [
+			{ geo: ball, color: '#1d2a14', at: [sd * 0.022, 0.1, 0.055] as [number, number, number], scale: [0.012, 0.012, 0.012] as [number, number, number] },
+			{ geo: ball, color: coat, at: [sd * 0.05, 0.03, -0.035] as [number, number, number], scale: [0.02, 0.018, 0.045] as [number, number, number] },
+			{ geo: ball, color: coat, at: [sd * 0.035, 0.015, 0.05] as [number, number, number], scale: [0.012, 0.012, 0.02] as [number, number, number] }
+		])
+	])
+
+type Kind = 'hen' | 'goat' | 'goose' | 'frog'
 const KINDS: Record<Kind, { make: (coat: string) => THREE.BufferGeometry; coats: string[]; speed: number; turn: number; stop: [number, number]; walk: [number, number] }> = {
 	hen: { make: hen, coats: ['#f4efe4', '#b8703a', '#3b3430', '#d9a066'], speed: 0.45, turn: 3, stop: [0.6, 3], walk: [0.5, 2] },
 	goat: { make: goat, coats: ['#f1ede4', '#8a5a36', '#3b332e'], speed: 0.6, turn: 1.4, stop: [2, 7], walk: [1, 4] },
-	goose: { make: goose, coats: ['#f7f5ef', '#f7f5ef', '#9aa0a0'], speed: 0.4, turn: 1.2, stop: [1, 4], walk: [1.5, 5] }
+	goose: { make: goose, coats: ['#f7f5ef', '#f7f5ef', '#9aa0a0'], speed: 0.4, turn: 1.2, stop: [1, 4], walk: [1.5, 5] },
+	// a frog sits still a long while, then hops once or twice
+	frog: { make: frog, coats: ['#4f7a2e', '#6b8f3a', '#3d5f2a'], speed: 1.3, turn: 4, stop: [3, 10], walk: [0.25, 0.6] }
 }
 
 type Animal = { x: number; z: number; yaw: number; home: Patch; walking: boolean; until: number; coat: number; phase: number }
@@ -134,7 +149,7 @@ export function herd(kind: Kind, patches: Patch[], seed: number): { object: THRE
 			const pause = !an.walking
 			const pitch = pause ? (kind === 'hen' ? Math.max(0, Math.sin(t * 5 + an.phase)) * 0.55 : kind === 'goat' ? 0.25 : 0) : 0
 			const roll = an.walking && kind === 'goose' ? Math.sin(t * 7 + an.phase) * 0.08 : 0
-			const bob = an.walking ? Math.abs(Math.sin(t * (kind === 'hen' ? 12 : 6) + an.phase)) * (kind === 'goat' ? 0.03 : 0.02) : 0
+			const bob = !an.walking ? 0 : kind === 'frog' ? Math.abs(Math.sin(t * 9 + an.phase)) * 0.14 : Math.abs(Math.sin(t * (kind === 'hen' ? 12 : 6) + an.phase)) * (kind === 'goat' ? 0.03 : 0.02)
 			q.setFromEuler(e.set(pitch, an.yaw, roll))
 			m.compose(p.set(an.x, bob, an.z), q, one)
 			meshes[an.coat]!.setMatrixAt(slot[an.coat]!++, m)

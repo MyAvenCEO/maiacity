@@ -154,7 +154,8 @@ export async function mountVillage(container: HTMLElement, onProgress: (label: s
 	await pause('Letting in the light')
 
 	/* ── the ground: the hexagon of the cell, meadow beyond ── */
-	const meadow = new THREE.Mesh(new THREE.PlaneGeometry(6000, 6000), new THREE.MeshStandardMaterial({ color: '#c9d9a8', roughness: 1 }))
+	// the meadow beyond the cell: a ring, so it never shows through the hole over the master's theatre
+	const meadow = new THREE.Mesh(new THREE.RingGeometry(WORLD * 0.8, 3000, 64, 1), new THREE.MeshStandardMaterial({ color: '#c9d9a8', roughness: 1 }))
 	meadow.rotation.x = -Math.PI / 2
 	meadow.position.y = -0.05
 	meadow.receiveShadow = true
@@ -751,13 +752,24 @@ export async function mountVillage(container: HTMLElement, onProgress: (label: s
 	}
 	// goats browsing between the domes, geese on the stream
 	{
-		const goatPatches = [0.5, 2.6, 4.7].map((a) => ({ x: Math.sin(a) * 275, z: Math.cos(a) * 275, r: 12, n: 4 }))
-		const goosePatches = streams.slice(0, 4).map((ps, i) => {
-			const p = ps[Math.floor(ps.length * (0.2 + i * 0.2))]!
-			return { x: p.x, z: p.z, r: 6, n: 5 }
-		})
-		const goats = herd('goat', goatPatches, 71), geese = herd('goose', goosePatches, 72)
-		for (const f of [goats, geese]) {
+		// goats: browsing between every pair of domes, and out in the edge forest
+		const goatPatches = [
+			...Array.from({ length: 6 }, (_, k) => polar(176, (k * Math.PI) / 3 + Math.PI / 6 + 0.35)),
+			...Array.from({ length: 6 }, (_, k) => polar(268, (k * Math.PI) / 3 + 0.2))
+		].map(([x, z]) => ({ x, z, r: 11, n: 5 }))
+		// geese: along the river and on every creek, near its pond
+		const goosePatches = [
+			...Array.from({ length: 6 }, (_, k) => streams[0]![Math.floor((streams[0]!.length * (k + 0.3)) / 6)]!),
+			...streams.slice(1).map((ps) => ps[Math.floor(ps.length * 0.75)]!)
+		].map((p) => ({ x: p.x, z: p.z, r: 7, n: 6 }))
+		// frogs: at the end of every creek, by its pond, and here and there on the river bank
+		const frogPatches = [
+			...streams.slice(1).map((ps) => ps[ps.length - 1]!),
+			...Array.from({ length: 4 }, (_, k) => streams[0]![Math.floor((streams[0]!.length * (k + 0.7)) / 4)]!)
+		].map((p) => ({ x: p.x, z: p.z, r: 4, n: 5 }))
+		const goats = herd('goat', goatPatches, 71), geese = herd('goose', goosePatches, 72), frogs = herd('frog', frogPatches, 74)
+		herds.frogs = frogs.where
+		for (const f of [goats, geese, frogs]) {
 			scene.add(f.object)
 			animated.push(f.update)
 		}
@@ -984,6 +996,8 @@ export async function mountVillage(container: HTMLElement, onProgress: (label: s
 
 	;(window as unknown as { __village: unknown }).__village = {
 		camera,
+		scene,
+		THREE,
 		domes,
 		fly: (x: number, y: number, z: number, yw: number, p: number) => (flying = [x, y, z, yw, p]),
 		place: (x: number, z: number, yw: number, p: number, y = 0) => {

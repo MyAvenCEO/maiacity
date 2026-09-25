@@ -11,17 +11,18 @@
  */
 import { base } from '$app/paths'
 
-export type SoundName = 'forest' | 'inside' | 'water' | 'hens' | 'geese' | 'goats'
+export type SoundName = 'forest' | 'inside' | 'water' | 'hens' | 'geese' | 'goats' | 'frogs'
 const FILES: Record<SoundName, string> = {
 	forest: 'forest_nature.mp3',
 	inside: 'soft-nature.mp3',
 	water: 'water_stream.mp3',
 	hens: 'chickens.mp3',
 	geese: 'geese.mp3',
-	goats: 'sheep.mp3'
+	goats: 'sheep.mp3',
+	frogs: 'frog.mp3'
 }
 /** how loud each is at its loudest */
-const LOUDEST: Record<SoundName, number> = { forest: 0.45, inside: 0.45, water: 0.55, hens: 0.5, geese: 0.45, goats: 0.4 }
+const LOUDEST: Record<SoundName, number> = { forest: 0.45, inside: 0.45, water: 0.69, hens: 0.5, geese: 0.45, goats: 0.4, frogs: 0.5 }
 
 export type Ambience = {
 	/** how near each sound is, 0 (silent) to 1 (right there), and whether you are under glass */
@@ -102,7 +103,7 @@ export function ambience(): Ambience {
 
 type Where = () => { x: number; z: number }[]
 /** The sounds a walker at (x, z) should hear: the forest outside, and how near the water and each herd are. */
-export function levelsAt(x: number, z: number, indoors: boolean, water: { x: number; z: number }[], herds: Partial<Record<'hens' | 'geese' | 'goats', Where>>) {
+export function levelsAt(x: number, z: number, indoors: boolean, water: { x: number; z: number }[], herds: Partial<Record<'hens' | 'geese' | 'goats' | 'frogs', Where>>) {
 	const nearest = (pts: { x: number; z: number }[]) => {
 		let best = Infinity
 		for (const p of pts) {
@@ -117,6 +118,7 @@ export function levelsAt(x: number, z: number, indoors: boolean, water: { x: num
 		water: nearness(nearest(water), 3, 32),
 		hens: herds.hens ? nearness(nearest(herds.hens()), 2, 26) : 0,
 		geese: herds.geese ? nearness(nearest(herds.geese()), 3, 32) : 0,
-		goats: herds.goats ? nearness(nearest(herds.goats()), 3, 30) : 0
+		goats: herds.goats ? nearness(nearest(herds.goats()), 3, 30) : 0,
+		frogs: herds.frogs ? nearness(nearest(herds.frogs()), 2, 18) : 0
 	}
 }

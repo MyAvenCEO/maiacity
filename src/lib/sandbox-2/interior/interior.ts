@@ -857,9 +857,11 @@ export async function mountInterior(container: HTMLElement, kind: DomeKind, onPr
 			const [x, z] = polar(beyond, a)
 			return { x, z, r: lite ? 7 : 10, n: lite ? 2 : 4 }
 		}
+		const at = (i: number) => streamOut[Math.min(i, streamOut.length - 1)]!
 		const flocks = [
-			herd('goat', [goatAt(Math.PI / 2 + 0.05), goatAt(-Math.PI / 2 + 0.3)], 71),
-			herd('goose', [60, 190].map((i) => streamOut[Math.min(i, streamOut.length - 1)]!).map((p) => ({ x: p.x, z: p.z, r: 5, n: 5 })), 72),
+			herd('goat', [0.05, 1.6, 3.2, 4.7].map((a) => goatAt(a + Math.PI / 4)), 71),
+			herd('goose', [40, 110, 180, 240].map(at).map((p) => ({ x: p.x, z: p.z, r: 6, n: 5 })), 72),
+			herd('frog', [20, 75, 150, 215].map(at).map((p) => ({ x: p.x, z: p.z, r: 3.5, n: 4 })), 74),
 			...(kind === 'master' ? [herd('hen', henPatches(squareR), 73)] : [])
 		]
 		for (const f of flocks) {
@@ -868,7 +870,8 @@ export async function mountInterior(container: HTMLElement, kind: DomeKind, onPr
 		}
 		herds.goats = flocks[0]!.where
 		herds.geese = flocks[1]!.where
-		if (flocks[2]) herds.hens = flocks[2].where
+		herds.frogs = flocks[2]!.where
+		if (flocks[3]) herds.hens = flocks[3].where
 	}
 	await pause('Planting the food forest outside')
 

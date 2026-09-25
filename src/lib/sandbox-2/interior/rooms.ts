@@ -83,12 +83,23 @@ export function furnish(room: Room): { group: THREE.Group; colliders: RoomCollid
 	// ── a curved built-in bench of plaster by the door, with felt cushions, a round table and two stools
 	{
 		const arc = along(3.4)
-		const bench = new THREE.Mesh(new THREE.CylinderGeometry(rIn + 0.55, rIn + 0.55, 0.45, 24, 1, false, a0 + span * fBench, span * arc), plaster)
-		bench.position.y = y + 0.225
-		g.add(bench)
-		const back = new THREE.Mesh(new THREE.CylinderGeometry(rIn + 0.25, rIn + 0.25, 0.9, 24, 1, true, a0 + span * fBench, span * arc), plaster)
+		// a curved slab of plaster: its front face, its seat, its back, following the wall
+		// (open-ended curves only: a closed one would fan out to the middle of the dome)
+		const aS = a0 + span * fBench, aL = span * arc
+		const front = new THREE.Mesh(new THREE.CylinderGeometry(rIn + 0.8, rIn + 0.8, 0.45, 24, 1, true, aS, aL), plaster)
+		front.position.y = y + 0.225
+		g.add(front)
+		const seat = new THREE.Mesh(new THREE.RingGeometry(rIn + 0.2, rIn + 0.8, 24, 1, Math.PI / 2 - aS - aL, aL), plaster)
+		seat.rotation.x = Math.PI / 2
+		seat.position.y = y + 0.45
+		g.add(seat)
+		const back = new THREE.Mesh(new THREE.CylinderGeometry(rIn + 0.25, rIn + 0.25, 0.9, 24, 1, true, aS, aL), plaster)
 		back.position.y = y + 0.45
 		g.add(back)
+		const backTop = new THREE.Mesh(new THREE.RingGeometry(rIn + 0.1, rIn + 0.3, 24, 1, Math.PI / 2 - aS - aL, aL), plaster)
+		backTop.rotation.x = Math.PI / 2
+		backTop.position.y = y + 0.9
+		g.add(backTop)
 		for (let i = 0; i < 3; i++) put(new THREE.Mesh(round(0.8, 0.12, 0.45, 0.06), accent).translateY(0.51), fBench + along(0.6 + i * 1.1), 0.6, facing(fBench + along(0.6 + i * 1.1)) + Math.PI)
 		const table = new THREE.Group()
 		table.add(new THREE.Mesh(new THREE.CylinderGeometry(0.55, 0.55, 0.06, 32), M.wood()).translateY(0.72))
