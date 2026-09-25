@@ -102,4 +102,4 @@ Somebody founds the first one. Somebody else gets the first invitation home.
 
 [Open avenCITY Sandbox 2 →](/games/sandbox-2/)
 
-[Read the manifesto →](/)
+[Next: one tent to a village of 233 →](/blog/day-14-one-tent-to-233/)
