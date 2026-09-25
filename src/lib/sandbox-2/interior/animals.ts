@@ -159,3 +159,50 @@ export function herd(kind: Kind, patches: Patch[], seed: number): { object: THRE
 	update(0)
 	return { object, update, where: () => animals }
 }
+
+/**
+ * Bee hives: painted wooden boxes stacked on a stand under a tin roof, and
+ * their bees, a few dozen tiny specks each, looping round the hive and out to
+ * the flowers and back.
+ */
+export function apiary(spots: { x: number; z: number; rot: number }[], seed: number): { object: THREE.Group; update: (t: number) => void; where: () => { x: number; z: number }[] } {
+	const r = seeded(seed)
+	const object = new THREE.Group()
+	const paints = ['#f2e6c8', '#e8c46a', '#9fb7a0', '#d9a07a', '#b9c7d9']
+	const hive = (paint: string) =>
+		model([
+			{ geo: block, color: '#6b4f36', at: [0, 0.2, 0], scale: [0.62, 0.06, 0.62] },
+			...([-1, 1] as const).flatMap((sx) => ([-1, 1] as const).map((sz) => ({ geo: block, color: '#6b4f36', at: [sx * 0.24, 0.1, sz * 0.24] as [number, number, number], scale: [0.05, 0.2, 0.05] as [number, number, number] }))),
+			{ geo: block, color: paint, at: [0, 0.4, 0], scale: [0.5, 0.34, 0.42] },
+			{ geo: block, color: paint, at: [0, 0.75, 0], scale: [0.5, 0.34, 0.42] },
+			{ geo: block, color: '#e8e4da', at: [0, 0.94, 0], scale: [0.5, 0.04, 0.42] },
+			{ geo: block, color: '#9aa2a8', at: [0, 1.0, 0], scale: [0.58, 0.06, 0.5] },
+			{ geo: block, color: '#2a2622', at: [0, 0.26, 0.215], scale: [0.3, 0.03, 0.01] }
+		])
+	const models = paints.map(hive)
+	const mat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.8 })
+	spots.forEach((s, i) => {
+		const m = new THREE.Mesh(models[i % models.length]!, mat)
+		m.position.set(s.x, 0, s.z)
+		m.rotation.y = s.rot
+		m.castShadow = true
+		object.add(m)
+	})
+	const PER = 26
+	const bees = new THREE.InstancedMesh(new THREE.SphereGeometry(0.018, 5, 4), new THREE.MeshBasicMaterial({ color: '#2b2412' }), spots.length * PER)
+	bees.frustumCulled = false
+	object.add(bees)
+	const paths = spots.flatMap((s) => Array.from({ length: PER }, () => ({ s, rad: 0.4 + r() * 2.2, h: 0.4 + r() * 1.4, speed: (0.8 + r() * 1.6) * (r() < 0.5 ? -1 : 1), phase: r() * 10, wob: r() * 3 })))
+	const m4 = new THREE.Matrix4()
+	const update = (t: number) => {
+		paths.forEach((b, i) => {
+			const a = t * b.speed + b.phase
+			const rr = b.rad * (0.6 + 0.4 * Math.sin(t * 0.7 + b.wob))
+			m4.makeTranslation(b.s.x + Math.sin(a) * rr, b.h + Math.sin(t * 3 + b.wob) * 0.15, b.s.z + Math.cos(a) * rr)
+			bees.setMatrixAt(i, m4)
+		})
+		bees.instanceMatrix.needsUpdate = true
+	}
+	update(0)
+	return { object, update, where: () => spots }
+}

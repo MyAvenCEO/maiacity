@@ -25,10 +25,10 @@ import { Sky } from 'three/addons/objects/Sky.js'
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js'
 import { flagstone, leaves, limestone, oak, soil, water } from './textures'
 import { cafes, coops, coopsAround, henPatches, squaresAround, workshops, type Kit } from './spaces'
-import { herd } from './animals'
+import { apiary, herd } from './animals'
 import { buildFactory, LEVELS as FACTORY_LEVELS, NAMES as FACTORY_NAMES } from './factory'
 import { buildTent } from './tent'
-import { furnish } from './rooms'
+import { furnish, terraceSet } from './rooms'
 import { ambience, levelsAt } from './ambience'
 import { gameHour } from '../../../../game/time'
 import { appleTree, banana, berryBush, canopyTree, climber, clover, coconutPalm, comfrey, crop, CROPS, fruitTree, ginger, grapePergola, herb, papaya, passionVine, potted, seeded, shrub, smallFruitTree, squash, strawberries, tropicalShrub, vineAlong, type Plant } from './plants'
@@ -218,6 +218,7 @@ export function geodesic(spec: Spec, m: Mats, kind: DomeKind): { group: THREE.Gr
 	const ico = new THREE.IcosahedronGeometry(R, spec.detail)
 	const p = ico.attributes.position!
 	const glass: number[] = []
+	const clear: number[] = []
 	const cloth: number[] = []
 	const edges = new Map<string, [THREE.Vector3, THREE.Vector3]>()
 	const key = (v: THREE.Vector3) => `${v.x.toFixed(2)},${v.y.toFixed(2)},${v.z.toFixed(2)}`
@@ -261,7 +262,10 @@ export function geodesic(spec: Spec, m: Mats, kind: DomeKind): { group: THREE.Gr
 		if (skip.has(i)) return
 		// the glamping dome is canvas behind the sleeping nooks, glass toward the living spaces and the sky
 		const isWindow = kind !== 'glamp' || c.y > R * 0.78 || (Math.abs(ca) < 1.8 && c.y > R * 0.08 && c.y < R * 0.62)
-		;(isWindow ? glass : cloth).push(...tri.flatMap((v) => [v.x, v.y, v.z]))
+		// in front of the rooms the glass is clear, no cells in it: a window onto the terrace and the land
+		const gal = spec.gallery
+		const byRooms = gal && [gal.height, ...(gal.floors === 2 ? [gal.height + 3.6] : [])].some((f) => c.y > f - 0.4 && c.y < f + 3.4)
+		;(!isWindow ? cloth : byRooms ? clear : glass).push(...tri.flatMap((v) => [v.x, v.y, v.z]))
 		for (let k = 0; k < 3; k++) {
 			const a = tri[k]!, b = tri[(k + 1) % 3]!
 			const id = [key(a), key(b)].sort().join('|')
@@ -282,6 +286,7 @@ export function geodesic(spec: Spec, m: Mats, kind: DomeKind): { group: THREE.Gr
 		g.add(mesh)
 	}
 	shell(glass, m.solar, false)
+	shell(clear, m.glass, false)
 	shell(cloth, m.canvas, true)
 
 	const strut = new THREE.CylinderGeometry(spec.strut, spec.strut, 1, 6)
@@ -430,7 +435,7 @@ export type InteriorHandle = {
 }
 
 /** Where to come in, and what to do on walking back out (Sandbox 4's village). */
-export type InteriorOptions = { entry?: number; onLeave?: (door: number) => void; host?: DomeHost }
+export type InteriorOptions = { entry?: number; onLeave?: (door: number) => void; host?: DomeHost; cancelled?: () => boolean }
 /**
  * Building a dome into someone else's world (Sandbox 4's village): its scene,
  * camera and renderer, and where the dome stands. The dome then brings no sky,
@@ -456,20 +461,31 @@ export type EmbeddedDome = {
 export async function mountInterior(container: HTMLElement, kind: DomeKind, onProgress?: (label: string) => void, opts: InteriorOptions = {}): Promise<InteriorHandle> {
 	/** Let the page paint between the heavy steps, so the loading screen keeps moving. */
 	let lastYield = performance.now()
+	/** a build no longer wanted stops at its next breath, and leaves the page to the next one */
+	const stopIfCancelled = () => {
+		if (opts.cancelled?.()) throw new Error('cancelled')
+	}
+	const prof = { work: 0, slices: 0, t0: performance.now(), mark: performance.now() }
+	;(window as unknown as { __prof?: unknown }).__prof = prof
 	const pause = async (label: string) => {
+		stopIfCancelled()
 		const w = window as unknown as { __buildLog?: string[] }
-		w.__buildLog?.push(`${label} ${Math.round(performance.now() - lastYield)}ms`)
+		w.__buildLog?.push(`${kind} ${label}: work ${Math.round(prof.work + performance.now() - lastYield)}ms in ${prof.slices} slices, wall ${Math.round(performance.now() - prof.t0)}ms`)
 		onProgress?.(label)
 		await new Promise((r) => requestAnimationFrame(() => setTimeout(r, 0)))
 		lastYield = performance.now()
+		stopIfCancelled()
 	}
 	const bakeIn = (group: THREE.Group, shadows = true) => bakeSliced(group, shadows, slice)
 	/** Hand the page back for a frame whenever this build has held it for more than a few milliseconds. */
 	const slice = async () => {
 		// the standalone view is behind its loading screen: it can work in longer stretches
 		if (performance.now() - lastYield < (host ? 24 : 60)) return
+		prof.work += performance.now() - lastYield
+		prof.slices++
 		await new Promise((r) => requestAnimationFrame(() => setTimeout(r, 0)))
 		lastYield = performance.now()
+		stopIfCancelled()
 	}
 	const spec = DOMES[kind]
 	const R = spec.diameter / 2
@@ -687,7 +703,8 @@ export async function mountInterior(container: HTMLElement, kind: DomeKind, onPr
 	/* the stone arcade that carries the terrace round a big dome, and the ring
 	   where the forest starts */
 	const G = spec.gallery
-	const Rt = G ? R + 3.5 : R + 0.8
+	// the terraces are wide: room for tables, daybeds and benches, and to walk past them
+	const Rt = G ? R + 6 : R + 0.8
 	const outsideColliders: { x: number; z: number; r: number }[] = []
 	const outerR = lite ? R + 44 : R + Math.min(60, R * 0.9 + 25)
 	const ringPath = kind === 'tent' ? R + 5 : lite ? R + 4.2 : Rt + 2.6
@@ -871,6 +888,16 @@ export async function mountInterior(container: HTMLElement, kind: DomeKind, onPr
 		herds.goats = flocks[0]!.where
 		herds.geese = flocks[1]!.where
 		herds.frogs = flocks[2]!.where
+		// two apiaries in the forest, three hives each
+		const hiveSpots = [0.9, 3.9].flatMap((aa) => {
+			const [cx, cz] = polar(ringPath + (outerR - ringPath) * 0.55, aa)
+			return [0, 1, 2].map((j) => ({ x: cx + j * 1.3, z: cz + (j % 2) * 0.6, rot: aa + Math.PI }))
+		})
+		const hives = apiary(hiveSpots, 75)
+		scene.add(hives.object)
+		animated.push(hives.update)
+		herds.bees = hives.where
+		for (const hs of hiveSpots) outsideColliders.push({ x: hs.x, z: hs.z, r: 0.5 })
 		if (flocks[3]) herds.hens = flocks[3].where
 	}
 	await pause('Planting the food forest outside')
@@ -1592,24 +1619,28 @@ export async function mountInterior(container: HTMLElement, kind: DomeKind, onPr
 			rail.position.y = y + 0.98
 			terrace.add(rail)
 			const rr = seeded(seed)
-			const sets = Math.round((Math.PI * 2 * Rt) / 14)
+			const sets = Math.round((Math.PI * 2 * Rt) / 10)
 			// clear of the pillars of the storey above
 			const clear = (a: number) => pillarAngles.every((p) => Math.abs(adiff(a, p)) * Rt > 1.3)
 			for (let k = 0; k < sets; k++) {
 				const a = ((k + 0.5 + (seed % 2) * 0.5) / sets) * Math.PI * 2
 				const [tx, tz] = polar((rInner + Rt) / 2 - 0.3, a)
-				const t = table(m, 1.4, 4)
-				t.position.set(tx, y, tz)
-				t.rotation.y = a + Math.PI / 2
-				terrace.add(t)
-				// a lamp hung in the pergola over every table
+				// a table under the vines, daybeds, a curved bench, hanging chairs: in turn round the ring
+				const variant = (k + seed) % 4
+				const set = terraceSet(variant, seed * 40 + k)
+				set.position.set(tx, y, tz)
+				set.rotation.y = a
+				terrace.add(set)
+				// a lamp hung over every set
 				terrace.add(box(0.22, 0.22, 0.22, glowMat, tx, y + 2.2, tz))
 				addLamp(tx, y + 2.1, tz, 6, 8)
-				// a pergola of grapevines over the table, the Mediterranean way
-				const pg = grapePergola(seed * 50 + k, 3, 2.8, 2.45)
-				pg.position.set(tx, y, tz)
-				pg.rotation.y = a
-				terrace.add(pg)
+				// the table has a pergola of grapevines over it, the Mediterranean way
+				if (variant === 0) {
+					const pg = grapePergola(seed * 50 + k, 3.2, 3, 2.45)
+					pg.position.set(tx, y, tz)
+					pg.rotation.y = a
+					terrace.add(pg)
+				}
 				for (const off of [-1, 1]) {
 					const pa = a + (off * 2.8) / Rt
 					if (!clear(pa)) continue
@@ -1835,10 +1866,17 @@ export async function mountInterior(container: HTMLElement, kind: DomeKind, onPr
 		scene.traverse((o) => o !== scene && (o as THREE.Mesh).isMesh && o.visible && pieces.push(o))
 		for (const p of pieces) p.visible = false
 		host.scene.add(scene)
-		for (let i = 0; i < pieces.length; i += 6) {
-			for (const p of pieces.slice(i, i + 6)) p.visible = true
-			await new Promise((r) => requestAnimationFrame(() => r(null)))
+		// about a quarter of a million vertices a frame: small pieces come in dozens, a big merged forest alone
+		let budget = 0
+		for (const p of pieces) {
+			p.visible = true
+			budget += (p as THREE.Mesh).geometry?.attributes.position?.count ?? 0
+			if (budget > 250_000) {
+				budget = 0
+				await new Promise((r) => requestAnimationFrame(() => r(null)))
+			}
 		}
+		;(window as unknown as { __buildLog?: string[] }).__buildLog?.push(`${kind} shown: ${pieces.length} pieces`)
 		lastYield = performance.now()
 		onProgress?.('ready')
 		return { lift: () => null, liftStep: () => {}, embedded, dispose: disposeAll }

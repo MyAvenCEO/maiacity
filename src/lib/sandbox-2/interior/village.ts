@@ -19,7 +19,7 @@ import { DOMES, DOORS, adiff, bake, box, geodesic, lantern, mats, mountInterior,
 import { cafes, coops, coopsAround, henPatches, squaresAround, type Kit } from './spaces'
 import { water } from './textures'
 import { appleTree, banana, berryBush, canopyTree, climber, clover, coconutPalm, comfrey, fruitTree, ginger, herb, papaya, passionVine, seeded, smallFruitTree, squash, strawberries, tropicalShrub, type Plant } from './plants'
-import { herd } from './animals'
+import { apiary, herd } from './animals'
 import { gameHour } from '../../../../game/time'
 import { ambience, levelsAt } from './ambience'
 
@@ -43,7 +43,7 @@ const WORLD = 380
 function layout(): VillageDome[] {
 	const make = (kind: DomeKind, x: number, z: number): VillageDome => {
 		const R = DOMES[kind].diameter / 2
-		return { kind, x, z, R, ext: R + 3.5 }
+		return { kind, x, z, R, ext: R + 6 }
 	}
 	const out = [make('master', 0, 0)]
 	for (let k = 0; k < 6; k++) out.push(make('large', ...polar(150, (k * Math.PI) / 3)))
@@ -769,7 +769,18 @@ export async function mountVillage(container: HTMLElement, onProgress: (label: s
 		].map((p) => ({ x: p.x, z: p.z, r: 4, n: 5 }))
 		const goats = herd('goat', goatPatches, 71), geese = herd('goose', goosePatches, 72), frogs = herd('frog', frogPatches, 74)
 		herds.frogs = frogs.where
-		for (const f of [goats, geese, frogs]) {
+		// bee hives, three or four together, in clearings of the forest round the cell
+		const hiveSpots: { x: number; z: number; rot: number }[] = []
+		for (let k = 0; k < 9; k++) {
+			const aim = (k / 9) * Math.PI * 2 + 0.5
+			let [cx, cz] = polar(k % 2 ? 232 : 118, aim)
+			for (let tries = 0; tries < 20 && (nearPath(cx, cz, 5) || nearWater(cx, cz, 6) || domes.some((d) => Math.hypot(cx - d.x, cz - d.z) < d.ext + 8)); tries++) [cx, cz] = polar((k % 2 ? 232 : 118) + tries * 2, aim + tries * 0.02)
+			for (let j = 0; j < 3 + (k % 2); j++) hiveSpots.push({ x: cx + j * 1.3, z: cz + (j % 2) * 0.6, rot: aim + Math.PI })
+		}
+		const hives = apiary(hiveSpots, 75)
+		herds.bees = hives.where
+		for (const hs of hiveSpots) colliders.push({ x: hs.x, z: hs.z, r: 0.5 })
+		for (const f of [goats, geese, frogs, hives]) {
 			scene.add(f.object)
 			animated.push(f.update)
 		}
@@ -856,12 +867,14 @@ export async function mountVillage(container: HTMLElement, onProgress: (label: s
 		const d = domes[i]!
 		const o: Open = { i, dome: null, cancelled: false }
 		open = o
-		void mountInterior(container, d.kind, () => {}, { host: { scene, camera, renderer, x: d.x, z: d.z } }).then((h) => {
-			if (o.cancelled || !h.embedded) return h.dispose()
-			o.dome = h.embedded
-			o.dome.setHour(hourNow())
-			show(i, false)
-		})
+		mountInterior(container, d.kind, () => {}, { host: { scene, camera, renderer, x: d.x, z: d.z }, cancelled: () => o.cancelled })
+			.then((h) => {
+				if (o.cancelled || !h.embedded) return h.dispose()
+				o.dome = h.embedded
+				o.dome.setHour(hourNow())
+				show(i, false)
+			})
+			.catch(() => {})
 	}
 	const closeDome = () => {
 		if (!open) return

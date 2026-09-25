@@ -29,6 +29,7 @@ const M = {
 	felt: ['#b8674a', '#7d8f5c', '#c9a15a', '#6f7fa0'].map((c) => shared(() => new THREE.MeshStandardMaterial({ color: c, roughness: 1 }))),
 	stone: shared(() => new THREE.MeshStandardMaterial({ color: '#a39d92', roughness: 0.85 })),
 	pebble: shared(() => new THREE.MeshStandardMaterial({ color: '#8d877c', roughness: 0.9 })),
+	basket: shared(() => new THREE.MeshStandardMaterial({ color: '#c9a978', roughness: 1, side: THREE.DoubleSide })),
 	water: shared(() => new THREE.MeshStandardMaterial({ color: '#7fc9cf', roughness: 0.08, metalness: 0.1, transparent: true, opacity: 0.8 })),
 	brass: shared(() => new THREE.MeshStandardMaterial({ color: '#b08d57', roughness: 0.35, metalness: 0.8 })),
 	book: ['#8a4b3a', '#4f6b5a', '#c9a15a', '#5b6a8a', '#a8683a'].map((c) => shared(() => new THREE.MeshStandardMaterial({ color: c, roughness: 0.8 })))
@@ -138,6 +139,9 @@ export function furnish(room: Room): { group: THREE.Group; colliders: RoomCollid
 		put(rug, fRug, depth * 0.45, 0)
 		for (const [f, out] of [[fRug - along(0.6), depth * 0.4], [fRug + along(0.5), depth * 0.55]] as const) put(new THREE.Mesh(round(0.55, 0.16, 0.55, 0.08), M.wool()).translateY(0.08), f, out, r() * 3)
 	}
+	// ── the balcony door, at the glass, out onto the terrace
+	put(balconyDoor(), fRug, depth + 0.2, facing(fRug))
+
 	// ── the natural stone bath by the glass: an oval of rough stone, pebbles round it, the water in it
 	{
 		const bath = new THREE.Group()
@@ -253,4 +257,100 @@ export function furnish(room: Room): { group: THREE.Group; colliders: RoomCollid
 	hanging.position.y = 2.2
 	put(hanging, fRug, depth * 0.3, 0)
 	return { group: g, colliders }
+}
+
+/**
+ * A balcony door: a round-headed timber frame at the glass, its glazed leaf
+ * standing open onto the terrace. Built facing +z (outward), standing on y 0.
+ */
+export function balconyDoor(): THREE.Group {
+	const g = new THREE.Group()
+	const w = 0.95, h = 2.1
+	for (const sx of [-1, 1]) g.add(new THREE.Mesh(round(0.12, h, 0.14, 0.04), M.wood()).translateX(sx * (w / 2 + 0.06)).translateY(h / 2))
+	const arch = new THREE.Mesh(new THREE.TorusGeometry(w / 2 + 0.06, 0.06, 8, 20, Math.PI), M.wood())
+	arch.position.y = h
+	g.add(arch)
+	g.add(new THREE.Mesh(round(w + 0.3, 0.05, 0.5, 0.02), M.stone()).translateY(0.025))
+	// the leaf, open against the frame
+	const leaf = new THREE.Group()
+	leaf.add(new THREE.Mesh(new THREE.BoxGeometry(w, h - 0.05, 0.03), new THREE.MeshStandardMaterial({ color: '#dfeef0', roughness: 0.05, transparent: true, opacity: 0.25 })).translateX(w / 2).translateY(h / 2))
+	for (const x of [0, w]) leaf.add(new THREE.Mesh(new THREE.BoxGeometry(0.05, h, 0.05), M.wood()).translateX(x).translateY(h / 2))
+	leaf.position.x = -w / 2
+	leaf.rotation.y = 1.9
+	g.add(leaf)
+	return g
+}
+
+/**
+ * The terraces' furniture: rounded, handmade, and never twice the same in a row.
+ * Built in a local frame: +z points out over the balustrade, the set centred on
+ * the origin; kind 0..3 picks which.
+ */
+export function terraceSet(kind: number, seed: number): THREE.Group {
+	const r = seeded(seed)
+	const g = new THREE.Group()
+	const plaster = PLASTER[seed % PLASTER.length]!()
+	const accent = M.felt[seed % M.felt.length]!()
+	if (kind === 0) {
+		// a round table for six under the vines, round stools all round
+		g.add(new THREE.Mesh(new THREE.CylinderGeometry(0.75, 0.75, 0.06, 32), M.wood()).translateY(0.74))
+		g.add(new THREE.Mesh(new THREE.CylinderGeometry(0.14, 0.34, 0.74, 16), M.darkWood()).translateY(0.37))
+		for (let i = 0; i < 6; i++) {
+			const a = (i / 6) * Math.PI * 2
+			g.add(new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.17, 0.45, 18), M.wood()).translateX(Math.sin(a) * 1.15).translateY(0.225).translateZ(Math.cos(a) * 1.15))
+		}
+		g.add(new THREE.Mesh(new THREE.SphereGeometry(0.16, 16, 8, 0, Math.PI * 2, Math.PI / 2, Math.PI / 2), M.darkWood()).translateY(0.94))
+	} else if (kind === 1) {
+		// two daybeds, rounded and cushioned, facing out over the forest, a low round table between
+		for (const x of [-0.95, 0.95]) {
+			const bed = new THREE.Group()
+			bed.add(new THREE.Mesh(round(0.8, 0.3, 1.9, 0.14), M.wood()).translateY(0.15))
+			bed.add(new THREE.Mesh(round(0.74, 0.16, 1.8, 0.08), M.wool()).translateY(0.38))
+			const back = new THREE.Mesh(round(0.74, 0.14, 0.7, 0.07), accent)
+			back.position.set(0, 0.6, -0.62)
+			back.rotation.x = 0.7
+			bed.add(back)
+			bed.position.x = x
+			g.add(bed)
+		}
+		g.add(new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.3, 0.4, 20), plaster).translateY(0.2))
+	} else if (kind === 2) {
+		// a curved plaster bench round a low table, felt cushions, a big round planter at each end
+		const bench = new THREE.Mesh(new THREE.TorusGeometry(1.25, 0.24, 10, 28, Math.PI), plaster)
+		bench.rotation.x = Math.PI / 2
+		bench.scale.z = 1.4
+		bench.position.set(0, 0.3, -0.2)
+		g.add(bench)
+		for (let i = 0; i < 4; i++) {
+			const a = Math.PI * (0.15 + (i / 3) * 0.7)
+			g.add(new THREE.Mesh(round(0.45, 0.1, 0.45, 0.05), accent).translateX(Math.cos(a) * 1.25).translateY(0.58).translateZ(-0.2 - Math.sin(a) * 1.25))
+		}
+		g.add(new THREE.Mesh(new THREE.CylinderGeometry(0.5, 0.45, 0.4, 24), M.wood()).translateY(0.2).translateZ(0.35))
+		for (const x of [-1.8, 1.8]) {
+			g.add(new THREE.Mesh(new THREE.SphereGeometry(0.45, 18, 10, 0, Math.PI * 2, 0, Math.PI / 1.6), plaster).translateX(x).translateY(0.1).rotateX(Math.PI))
+			const olive = potted('olive', seed + Math.round(x * 10), 0.9)
+			olive.position.set(x, 0.1, 0)
+			g.add(olive)
+		}
+	} else {
+		// two hanging egg chairs from a curved timber frame, a sheepskin in each
+		const frame = new THREE.Mesh(new THREE.TorusGeometry(1.4, 0.07, 8, 24, Math.PI), M.wood())
+		frame.position.y = 0.05
+		g.add(frame)
+		for (const x of [-0.7, 0.7]) {
+			g.add(new THREE.Mesh(new THREE.CylinderGeometry(0.015, 0.015, 0.7, 6), M.darkWood()).translateX(x).translateY(1.2))
+			const egg = new THREE.Mesh(new THREE.SphereGeometry(0.5, 20, 14, 0, Math.PI * 2, 0.35, Math.PI - 0.35), M.basket())
+			egg.scale.set(1, 1.2, 1)
+			egg.position.set(x, 0.85, 0)
+			egg.rotation.x = -0.25
+			g.add(egg)
+			g.add(new THREE.Mesh(round(0.55, 0.1, 0.5, 0.05), M.wool()).translateX(x).translateY(0.52).translateZ(0.05))
+		}
+		g.add(houseplant('monstera', seed + 3, 1.3).translateX(1.9))
+	}
+	for (let i = 0; i < 2; i++) {
+		const kind = r() < 0.5 ? 'lavender' : 'rosemary'
+		g.add(potted(kind, seed * 3 + i, 1.2).translateX(i ? 2.2 : -2.2).translateZ(0.6))
+	}
+	return g
 }
