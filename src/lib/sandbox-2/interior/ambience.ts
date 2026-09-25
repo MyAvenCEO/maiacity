@@ -23,9 +23,9 @@ const FILES: Record<SoundName, string> = {
 	bees: 'bees.mp3'
 }
 /** how loud each is at its loudest */
-const LOUDEST: Record<SoundName, number> = { forest: 0.45, inside: 0.45, water: 0.69, hens: 0.5, geese: 0.45, goats: 0.4, frogs: 0.5, bees: 0.45 }
+const LOUDEST: Record<SoundName, number> = { forest: 0.27, inside: 0.45, water: 0.69, hens: 0.5, geese: 0.45, goats: 0.4, frogs: 0.5, bees: 0.45 }
 /** the recordings are not equally loud: this brings each to the same level (measured, mean ≈ −28 dB) */
-const LEVEL: Partial<Record<SoundName, number>> = { goats: 15.8, frogs: 0.35, bees: 0.66 }
+const LEVEL: Partial<Record<SoundName, number>> = { goats: 22.1, frogs: 0.35, bees: 0.66, geese: 1.5 }
 
 export type Ambience = {
 	/** how near each sound is, 0 (silent) to 1 (right there), and whether you are under glass */

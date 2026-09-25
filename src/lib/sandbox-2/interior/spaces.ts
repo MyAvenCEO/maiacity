@@ -665,3 +665,83 @@ export function henPatches(squareR: number): { x: number; z: number; r: number; 
 export function coops(k: Kit, squareR: number): Space[] {
 	return coopsAround(squareR).map(({ a, r }, i) => place(coop(k, 3 + i), r, a))
 }
+
+/* ── the playgrounds between the domes: all wood, all rounded ─────────── */
+
+const wood = new THREE.MeshStandardMaterial({ color: '#b98a5a', roughness: 0.75 })
+const darkWood = new THREE.MeshStandardMaterial({ color: '#8a6040', roughness: 0.8 })
+const rope = new THREE.MeshStandardMaterial({ color: '#d8c8a0', roughness: 1 })
+const sand = new THREE.MeshStandardMaterial({ color: '#e3cf9c', roughness: 1 })
+
+/** A log: a round timber from a to b. */
+function log(g: THREE.Group, a: THREE.Vector3, b: THREE.Vector3, r: number, mat: THREE.Material = wood) {
+	const m = new THREE.Mesh(new THREE.CylinderGeometry(r, r, a.distanceTo(b), 10), mat)
+	m.position.copy(a).add(b).multiplyScalar(0.5)
+	m.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), b.clone().sub(a).normalize())
+	m.castShadow = true
+	g.add(m)
+}
+const v = (x: number, y: number, z: number) => new THREE.Vector3(x, y, z)
+
+/**
+ * A wooden playground: a sandpit ring of logs, a climbing tower with a tent roof
+ * and a slide, a two-seat swing, balance logs and stepping stumps. About 16 m across.
+ */
+export function playground(seed: number): Space {
+	const r = seeded(seed)
+	const g = new THREE.Group()
+	const cs: Collider[] = []
+	// the sandpit, ringed by half-buried logs
+	const pit = new THREE.Mesh(new THREE.CircleGeometry(4.2, 40), sand)
+	pit.rotation.x = -Math.PI / 2
+	pit.position.y = 0.03
+	g.add(pit)
+	for (let i = 0; i < 18; i++) {
+		const a = (i / 18) * Math.PI * 2
+		const stump = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.22, 0.35 + r() * 0.25, 10), darkWood)
+		stump.position.set(Math.sin(a) * 4.3, 0.2, Math.cos(a) * 4.3)
+		g.add(stump)
+	}
+	// the tower: four round posts, a platform, a tent roof, a ladder of rungs, a slide down into the sand
+	const T = { x: -1.2, z: -0.8, h: 1.6 }
+	for (const [sx, sz] of [[-1, -1], [1, -1], [-1, 1], [1, 1]] as const) log(g, v(T.x + sx * 0.8, 0, T.z + sz * 0.8), v(T.x + sx * 0.8, T.h + 1.6, T.z + sz * 0.8), 0.09)
+	g.add(new THREE.Mesh(new THREE.CylinderGeometry(1.15, 1.15, 0.1, 24), wood).translateX(T.x).translateY(T.h).translateZ(T.z))
+	const roof = new THREE.Mesh(new THREE.ConeGeometry(1.35, 1, 4), new THREE.MeshStandardMaterial({ color: '#c9623f', roughness: 0.9 }))
+	roof.position.set(T.x, T.h + 2.1, T.z)
+	roof.rotation.y = Math.PI / 4
+	g.add(roof)
+	for (let i = 0; i < 5; i++) log(g, v(T.x - 0.8, 0.3 + i * 0.3, T.z + 1.1), v(T.x + 0.8, 0.3 + i * 0.3, T.z + 1.1), 0.03)
+	for (const sx of [-0.8, 0.8]) log(g, v(T.x + sx, 0, T.z + 1.1), v(T.x + sx, T.h, T.z + 0.8), 0.05)
+	// the slide: a curved chute from the platform down into the sand
+	const slidePath = new THREE.CatmullRomCurve3([v(T.x + 0.9, T.h, T.z), v(T.x + 2.2, T.h * 0.6, T.z - 0.3), v(T.x + 3.4, 0.25, T.z - 0.2)])
+	const chute = new THREE.Mesh(new THREE.TubeGeometry(slidePath, 20, 0.4, 10, false), new THREE.MeshStandardMaterial({ color: '#d9b36a', roughness: 0.4, side: THREE.DoubleSide }))
+	chute.scale.y = 0.6
+	chute.position.y = 0.25
+	g.add(chute)
+	cs.push({ x: T.x, z: T.z, r: 1.3 })
+	// the swing: an A-frame of logs, two seats on ropes
+	const S = { x: 1.8, z: 2.2 }
+	for (const sx of [-1.4, 1.4]) {
+		log(g, v(S.x + sx, 0, S.z - 0.8), v(S.x + sx, 2.4, S.z), 0.08)
+		log(g, v(S.x + sx, 0, S.z + 0.8), v(S.x + sx, 2.4, S.z), 0.08)
+	}
+	log(g, v(S.x - 1.5, 2.4, S.z), v(S.x + 1.5, 2.4, S.z), 0.09)
+	for (const sx of [-0.6, 0.6]) {
+		for (const dz of [-0.18, 0.18]) log(g, v(S.x + sx + dz, 2.4, S.z), v(S.x + sx + dz, 0.55, S.z), 0.012, rope)
+		g.add(new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.05, 0.22), wood).translateX(S.x + sx).translateY(0.53).translateZ(S.z))
+	}
+	cs.push({ x: S.x - 1.4, z: S.z, r: 0.6 }, { x: S.x + 1.4, z: S.z, r: 0.6 })
+	// balance logs and stepping stumps, out from the sand
+	for (let i = 0; i < 3; i++) {
+		const a = 3.6 + i * 0.5
+		log(g, v(Math.sin(a) * 5.2, 0.25, Math.cos(a) * 5.2), v(Math.sin(a + 0.35) * 6.8, 0.25, Math.cos(a + 0.35) * 6.8), 0.15, darkWood)
+	}
+	for (let i = 0; i < 7; i++) {
+		const a = 0.9 + i * 0.28
+		const st = new THREE.Mesh(new THREE.CylinderGeometry(0.28, 0.3, 0.2 + i * 0.08, 12), wood)
+		st.position.set(Math.sin(a) * 6.2, (0.2 + i * 0.08) / 2, Math.cos(a) * 6.2)
+		g.add(st)
+	}
+	g.traverse((o) => (o as THREE.Mesh).isMesh && (((o as THREE.Mesh).castShadow = true), ((o as THREE.Mesh).receiveShadow = true)))
+	return { group: g, colliders: cs }
+}

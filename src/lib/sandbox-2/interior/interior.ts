@@ -23,15 +23,16 @@
 import * as THREE from 'three'
 import { Sky } from 'three/addons/objects/Sky.js'
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js'
-import { flagstone, leaves, limestone, oak, soil, water } from './textures'
+import { flagstone, grass, leaves, limestone, oak, soil, water } from './textures'
 import { cafes, coops, coopsAround, henPatches, squaresAround, workshops, type Kit } from './spaces'
 import { apiary, herd } from './animals'
 import { buildFactory, LEVELS as FACTORY_LEVELS, NAMES as FACTORY_NAMES } from './factory'
 import { buildTent } from './tent'
 import { furnish, terraceSet } from './rooms'
 import { ambience, levelsAt } from './ambience'
+import { flow, pond as pondShape, shore, stream as streamShape } from './water'
 import { gameHour } from '../../../../game/time'
-import { appleTree, banana, berryBush, canopyTree, climber, clover, coconutPalm, comfrey, crop, CROPS, fruitTree, ginger, grapePergola, herb, papaya, passionVine, potted, seeded, shrub, smallFruitTree, squash, strawberries, tropicalShrub, vineAlong, type Plant } from './plants'
+import { forestFloor, floorPick, grassTuft, appleTree, banana, berryBush, canopyTree, climber, clover, coconutPalm, comfrey, crop, CROPS, fruitTree, ginger, grapePergola, herb, papaya, passionVine, potted, seeded, shrub, smallFruitTree, squash, strawberries, tropicalShrub, vineAlong, type Plant } from './plants'
 
 export type DomeKind = 'tent' | 'glamp' | 'home' | 'large' | 'master' | 'factory'
 
@@ -112,6 +113,28 @@ function surface<T extends THREE.Material>(key: string, make: () => T): T {
 }
 const k2 = (v: number) => Math.round(v * 20) / 20
 
+/**
+ * The lawn: the grass texture laid down in world space, about three metres to a
+ * tile, so it never stretches whatever shape the ground is; and a slow drift
+ * of lighter and darker patches over tens of metres, so no two stretches of
+ * meadow look the same.
+ */
+let meadowCache: THREE.MeshStandardMaterial | null = null
+function meadow(): THREE.MeshStandardMaterial {
+	if (meadowCache) return meadowCache
+	const mat = new THREE.MeshStandardMaterial({ map: grass(), roughness: 1 })
+	mat.onBeforeCompile = (sh) => {
+		sh.vertexShader = sh.vertexShader
+			.replace('#include <common>', '#include <common>\nvarying vec2 vGround;')
+			.replace('#include <uv_vertex>', '#include <uv_vertex>\nvec4 gp = modelMatrix * vec4(position, 1.0);\nvGround = gp.xz;\nvMapUv = gp.xz / 3.2;')
+		sh.fragmentShader = sh.fragmentShader
+			.replace('#include <common>', '#include <common>\nvarying vec2 vGround;')
+			.replace('#include <map_fragment>', '#include <map_fragment>\nfloat drift = texture2D(map, vGround / 61.0).g * 0.6 + texture2D(map, vGround / 23.0 + 0.3).r * 0.4;\ndiffuseColor.rgb *= mix(0.78, 1.18, drift);')
+	}
+	mat.customProgramCacheKey = () => 'meadow'
+	return (meadowCache = mat)
+}
+
 export const mats = () => {
 	const flag = flagstone()
 	return {
@@ -134,7 +157,7 @@ export const mats = () => {
 		rug: new THREE.MeshStandardMaterial({ color: '#b9a589', roughness: 1 }),
 		pebble: new THREE.MeshStandardMaterial({ color: '#8d8a83', roughness: 0.9 }),
 		tank: new THREE.MeshStandardMaterial({ color: '#56666b', roughness: 0.5, metalness: 0.3 }),
-		grass: new THREE.MeshStandardMaterial({ color: '#7fa35a', roughness: 1 })
+		grass: meadow()
 	}
 }
 export type Mats = ReturnType<typeof mats>
@@ -751,24 +774,9 @@ export async function mountInterior(container: HTMLElement, kind: DomeKind, onPr
 		}
 		streamOut.push(...new THREE.CatmullRomCurve3(pts).getSpacedPoints(260))
 		waterPts.push(...streamOut)
-		const pos: number[] = [], uv: number[] = [], idx: number[] = []
-		streamOut.forEach((p0, i) => {
-			const p1 = streamOut[Math.min(streamOut.length - 1, i + 1)]!, pm = streamOut[Math.max(0, i - 1)]!
-			const dir = p1.clone().sub(pm).normalize()
-			const side = new THREE.Vector3(-dir.z, 0, dir.x).multiplyScalar(streamW / 2)
-			pos.push(p0.x - side.x, 0.09, p0.z - side.z, p0.x + side.x, 0.09, p0.z + side.z)
-			uv.push(0, i / 6, 1, i / 6)
-			if (i < streamOut.length - 1) idx.push(i * 2, i * 2 + 2, i * 2 + 1, i * 2 + 1, i * 2 + 2, i * 2 + 3)
-		})
-		const geo = new THREE.BufferGeometry()
-		geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3))
-		geo.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2))
-		geo.setIndex(idx)
-		geo.computeVertexNormals()
-		const wtex = tiled(water(), 1, 1)
-		const wm = new THREE.MeshStandardMaterial({ map: wtex, color: '#7fe8ef', emissive: '#1f9aa3', emissiveIntensity: 0.5, roughness: 0.12, metalness: 0.1, side: THREE.DoubleSide })
-		scene.add(new THREE.Mesh(geo, wm))
-		animated.push((t) => (wtex.offset.y = -t * 0.3))
+		scene.add(streamShape(streamOut, streamW, 0.09))
+		scene.add(bake(shore(streamOut, streamW / 2, 31), false))
+		animated.push(flow)
 		const banks = new THREE.Group()
 		const rs = seeded(17)
 		for (let i = 0; i < streamOut.length; i += 2) {
@@ -845,6 +853,9 @@ export async function mountInterior(container: HTMLElement, kind: DomeKind, onPr
 			around(4, 2.6, (sd) => clover(sd))
 			if (r() < 0.55) around(1, 2.8, (sd) => squash(sd))
 			if (r() < 0.4) around(1, 1.9, (sd) => climber(sd, 2 + r()).object)
+			// the forest floor: moss, mycelium, earth, fallen wood, stones, an ant hill, a rock
+			around(2, 3.2, (sd) => forestFloor(floorPick(r), sd))
+			around(8, 4, () => grassTuft(0.4 + r() * 0.35))
 		}
 		scene.add(bake(trees))
 		scene.add(bake(under, false))
@@ -889,7 +900,7 @@ export async function mountInterior(container: HTMLElement, kind: DomeKind, onPr
 		herds.geese = flocks[1]!.where
 		herds.frogs = flocks[2]!.where
 		// two apiaries in the forest, three hives each
-		const hiveSpots = [0.9, 3.9].flatMap((aa) => {
+		const hiveSpots = [0.9, 2.4, 3.9, 5.4].flatMap((aa) => {
 			const [cx, cz] = polar(ringPath + (outerR - ringPath) * 0.55, aa)
 			return [0, 1, 2].map((j) => ({ x: cx + j * 1.3, z: cz + (j % 2) * 0.6, rot: aa + Math.PI }))
 		})
@@ -1188,29 +1199,9 @@ export async function mountInterior(container: HTMLElement, kind: DomeKind, onPr
 		waterPts.push(...samples)
 		const width = Math.max(0.9, R * 0.035)
 		{
-			const pos: number[] = [], uv: number[] = []
-			for (let i = 0; i < samples.length; i++) {
-				const p0 = samples[i]!, p1 = samples[Math.min(samples.length - 1, i + 1)]!, pm = samples[Math.max(0, i - 1)]!
-				const dir = p1.clone().sub(pm).setY(0).normalize()
-				const side = new THREE.Vector3(-dir.z, 0, dir.x).multiplyScalar(width / 2)
-				pos.push(p0.x - side.x, 0.04, p0.z - side.z, p0.x + side.x, 0.04, p0.z + side.z)
-				uv.push(0, i / 8, 1, i / 8)
-			}
-			const idx: number[] = []
-			for (let i = 0; i < samples.length - 1; i++) {
-				const a = i * 2
-				idx.push(a, a + 2, a + 1, a + 1, a + 2, a + 3)
-			}
-			const geo = new THREE.BufferGeometry()
-			geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3))
-			geo.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2))
-			geo.setIndex(idx)
-			geo.computeVertexNormals()
-			const wm = m.water(1)
-			const stream = new THREE.Mesh(geo, wm)
-			stream.receiveShadow = true
-			scene.add(stream)
-			animated.push((t) => (wm.map!.offset.y = -t * 0.35))
+			scene.add(streamShape(samples, width, 0.05))
+			scene.add(await bakeIn(shore(samples, width / 2, 17), false))
+			animated.push(flow)
 			// stones along both banks
 			const stones = new THREE.Group()
 			const r = seeded(7)
@@ -1227,12 +1218,14 @@ export async function mountInterior(container: HTMLElement, kind: DomeKind, onPr
 			}
 			scene.add(await bakeIn(stones))
 			const end = samples[samples.length - 1]!
-			const pond = new THREE.Mesh(new THREE.CircleGeometry(width * 2.8, 40), m.water(2))
-			pond.rotation.x = -Math.PI / 2
-			pond.position.set(end.x, 0.045, end.z)
-			scene.add(pond)
+			// the pond it runs into: an irregular shape, deeper in the middle, reeds and lilies round it
+			const pd = pondShape(end.x, end.z, width * 3.6, 91, 0.05)
+			scene.add(pd.group)
+			scene.add(await bakeIn(shore(pd.outline, 0, 19, { x: end.x, z: end.z }), false))
+			waterPts.push(...pd.outline)
 		}
-		const nearStream = (x: number, z: number, d: number) => samples.some((p) => Math.hypot(p.x - x, p.z - z) < d)
+		const pondAt = samples[samples.length - 1]!
+		const nearStream = (x: number, z: number, d: number) => Math.hypot(pondAt.x - x, pondAt.z - z) < width * 3.6 * 1.35 + d || samples.some((p) => Math.hypot(p.x - x, p.z - z) < d)
 
 		await slice()
 		/* the kitchen garden: beds along both sides of the ring path, for everything that wants a greenhouse —
@@ -1333,6 +1326,7 @@ export async function mountInterior(container: HTMLElement, kind: DomeKind, onPr
 			around(2, 2.4, (sd) => (r() < 0.5 ? strawberries(sd) : clover(sd)))
 			around(1, 2, (sd) => (r() < 0.5 ? ginger(sd, 0.8 + r() * 0.4) : squash(sd)))
 			if (r() < 0.3) around(1, 0.9, (sd) => passionVine(sd, 2.6 + r()).object)
+			around(1, 2.6, (sd) => forestFloor(r() < 0.5 ? 'moss' : r() < 0.5 ? 'mycelium' : r() < 0.6 ? 'log' : 'stones', sd))
 		}
 		for (let i = 0; i < Math.min(area * 0.6, kind === 'master' ? 1400 : 1800); i++) {
 			if (i % 50 === 0) await slice()
@@ -1829,7 +1823,8 @@ export async function mountInterior(container: HTMLElement, kind: DomeKind, onPr
 				if (rr <= wallLimit(y) || terraceAt(rr, y)) return true
 				if (y > 0.5) return false
 				const a = Math.atan2(x, z)
-				return doorsOf(kind).some((d) => Math.abs(adiff(a, d)) < 0.5 && Math.abs(adiff(a, d)) * rr < doorHalf) && rr < R + 4
+				// through the doorway and out past the arcade, as wide as the terraces now are
+				return doorsOf(kind).some((d) => Math.abs(adiff(a, d)) < 0.5 && Math.abs(adiff(a, d)) * rr < doorHalf) && rr < Rt + 1.5
 			},
 			hits: (x, z, y) => stands.some((c) => Math.abs(y - (c.y ?? 0)) < 1 && Math.abs(c.x - x) < c.r + 0.3 && Math.abs(c.z - z) < c.r + 0.3 && Math.hypot(c.x - x, c.z - z) < c.r + 0.25),
 			spots,

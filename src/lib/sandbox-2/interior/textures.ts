@@ -259,3 +259,80 @@ export function frond(): THREE.CanvasTexture {
 	cache.set(key, tex)
 	return tex
 }
+
+/** Meadow grass seen from above: mottled greens, thousands of short blades, dry tips, clover. */
+export function grass(): THREE.CanvasTexture {
+	const key = 'grass'
+	const hit = cache.get(key)
+	if (hit) return hit
+	const size = 512
+	const canvas = document.createElement('canvas')
+	canvas.width = canvas.height = size
+	const x = canvas.getContext('2d')!
+	const base = fbm(size, 81, 6, 5)
+	const img = x.createImageData(size, size)
+	for (let i = 0; i < size * size; i++) {
+		const g = base(i % size, (i / size) | 0)
+		set(img, i * 4, 70 + g * 40, 112 + g * 48, 44 + g * 20)
+	}
+	x.putImageData(img, 0, 0)
+	const r = rng(83)
+	// the blades, short strokes in many greens, some turning straw at the tip
+	for (let i = 0; i < 9000; i++) {
+		const bx = r() * size, by = r() * size
+		const len = 4 + r() * 9, a = -Math.PI / 2 + (r() - 0.5) * 1.2
+		const dry = r() < 0.12
+		const gg = 110 + r() * 80
+		x.strokeStyle = dry ? `rgba(${170 + r() * 40},${160 + r() * 30},${90 + r() * 30},0.8)` : `rgba(${50 + r() * 50},${gg},${40 + r() * 30},0.75)`
+		x.lineWidth = 0.8 + r() * 1.1
+		x.beginPath()
+		x.moveTo(bx, by)
+		x.lineTo(bx + Math.cos(a) * len, by + Math.sin(a) * len)
+		x.stroke()
+	}
+	// clover and a few tiny flowers
+	for (let i = 0; i < 260; i++) {
+		const cx = r() * size, cy = r() * size
+		x.fillStyle = r() < 0.8 ? `rgba(60,${120 + r() * 40},50,0.9)` : ['#f4f1e8', '#e9d35a', '#b9a2d8'][Math.floor(r() * 3)]!
+		for (let k = 0; k < 3; k++) {
+			x.beginPath()
+			x.arc(cx + Math.cos(k * 2.1) * 2, cy + Math.sin(k * 2.1) * 2, 1.8, 0, Math.PI * 2)
+			x.fill()
+		}
+	}
+	const tex = new THREE.CanvasTexture(canvas)
+	tex.wrapS = tex.wrapT = THREE.RepeatWrapping
+	tex.colorSpace = THREE.SRGBColorSpace
+	tex.anisotropy = 8
+	cache.set(key, tex)
+	return tex
+}
+
+/** A clump of grass blades on transparent ground, for the tufts that stand up out of the lawn. */
+export function grassBlades(): THREE.CanvasTexture {
+	const key = 'grass-blades'
+	const hit = cache.get(key)
+	if (hit) return hit
+	const w = 128, h = 128
+	const canvas = document.createElement('canvas')
+	canvas.width = w
+	canvas.height = h
+	const x = canvas.getContext('2d')!
+	const r = rng(91)
+	for (let i = 0; i < 70; i++) {
+		const bx = 8 + r() * (w - 16)
+		const top = 10 + r() * 60
+		const lean = (r() - 0.5) * 40
+		const gg = 110 + r() * 90
+		x.strokeStyle = r() < 0.1 ? `rgb(${180 + r() * 30},${170 + r() * 20},${100})` : `rgb(${50 + r() * 50},${gg},${40 + r() * 30})`
+		x.lineWidth = 1.5 + r() * 2
+		x.beginPath()
+		x.moveTo(bx, h)
+		x.quadraticCurveTo(bx + lean * 0.3, (h + top) / 2, bx + lean, top)
+		x.stroke()
+	}
+	const tex = new THREE.CanvasTexture(canvas)
+	tex.colorSpace = THREE.SRGBColorSpace
+	cache.set(key, tex)
+	return tex
+}

@@ -5,7 +5,7 @@
  * kind, so a dome can hold a hundred trees and stay light.
  */
 import * as THREE from 'three'
-import { bark, frond, leaves } from './textures'
+import { bark, frond, grassBlades, leaves } from './textures'
 
 type Rand = () => number
 
@@ -768,5 +768,173 @@ export function houseplant(kind: 'monstera' | 'fig' | 'snake' | 'pothos', seed: 
 			leaf.rotation.set(r() * 3, a, r() * 3)
 			g.add(leaf)
 		}
+	return g
+}
+
+/* ── the forest floor: what a healthy food forest stands in ─────────────
+   moss, the white threads of mycelium and the mushrooms it sends up, bare
+   earth and leaf litter, ant hills, rotting logs and fallen branches, stones
+   and small outcrops of rock. Each drawn once; the caller scatters copies. */
+
+const floor = {
+	moss: shared(() => new THREE.MeshStandardMaterial({ color: '#4f6f2c', roughness: 1 })),
+	mossLight: shared(() => new THREE.MeshStandardMaterial({ color: '#7a9a3c', roughness: 1 })),
+	earth: shared(() => new THREE.MeshStandardMaterial({ color: '#5a4230', roughness: 1 })),
+	litter: shared(() => new THREE.MeshStandardMaterial({ color: '#8a6a3c', roughness: 1, side: THREE.DoubleSide })),
+	mycelium: shared(() => new THREE.MeshStandardMaterial({ color: '#efeadb', roughness: 1, transparent: true, opacity: 0.8 })),
+	cap: shared(() => new THREE.MeshStandardMaterial({ color: '#b98a5a', roughness: 0.7 })),
+	capRed: shared(() => new THREE.MeshStandardMaterial({ color: '#b8402a', roughness: 0.6 })),
+	stem: shared(() => new THREE.MeshStandardMaterial({ color: '#efe8d6', roughness: 0.8 })),
+	ants: shared(() => new THREE.MeshStandardMaterial({ color: '#7a5a3a', roughness: 1, flatShading: true })),
+	rot: shared(() => new THREE.MeshStandardMaterial({ color: '#5e4a36', roughness: 1 })),
+	rock: shared(() => new THREE.MeshStandardMaterial({ color: '#8d8a80', roughness: 0.95, flatShading: true }))
+}
+/** A soft irregular patch on the ground: a disc with a wobbling edge. */
+function patch(r: Rand, radius: number, mat: THREE.Material, y: number): THREE.Mesh {
+	const s = new THREE.Shape()
+	const n = 14
+	for (let i = 0; i <= n; i++) {
+		const a = (i / n) * Math.PI * 2
+		const rr = radius * (0.7 + r() * 0.45)
+		if (i === 0) s.moveTo(Math.cos(a) * rr, Math.sin(a) * rr)
+		else s.lineTo(Math.cos(a) * rr, Math.sin(a) * rr)
+	}
+	const m = new THREE.Mesh(new THREE.ShapeGeometry(s), mat)
+	m.rotation.x = -Math.PI / 2
+	m.position.y = y
+	return m
+}
+
+export type FloorKind = 'moss' | 'mycelium' | 'earth' | 'anthill' | 'log' | 'branches' | 'stones' | 'rock'
+export const FLOOR_KINDS: FloorKind[] = ['moss', 'mycelium', 'earth', 'anthill', 'log', 'branches', 'stones', 'rock']
+
+export function forestFloor(kind: FloorKind, seed: number): THREE.Group {
+	const r = seeded(seed)
+	const g = new THREE.Group()
+	if (kind === 'moss') {
+		g.add(patch(r, 1.1, floor.moss(), 0.012), patch(r, 0.6, floor.mossLight(), 0.016))
+		for (let i = 0; i < 9; i++) {
+			const cush = new THREE.Mesh(sphere(), i % 2 ? floor.moss() : floor.mossLight())
+			cush.scale.set(0.12 + r() * 0.1, 0.05, 0.12 + r() * 0.1)
+			cush.position.set((r() - 0.5) * 1.4, 0.02, (r() - 0.5) * 1.4)
+			g.add(cush)
+		}
+	} else if (kind === 'mycelium') {
+		// the white web of it through the litter, and a ring of mushrooms it has sent up
+		g.add(patch(r, 0.9, floor.litter(), 0.012), patch(r, 0.6, floor.mycelium(), 0.016))
+		const red = r() < 0.3
+		for (let i = 0; i < 7; i++) {
+			const a = (i / 7) * Math.PI * 2 + r() * 0.4
+			const d = 0.35 + r() * 0.2
+			const h = 0.05 + r() * 0.07
+			const stem = new THREE.Mesh(sphere(), floor.stem())
+			stem.scale.set(0.012, h, 0.012)
+			stem.position.set(Math.cos(a) * d, h, Math.sin(a) * d)
+			g.add(stem)
+			const cap = new THREE.Mesh(sphere(), red ? floor.capRed() : floor.cap())
+			cap.scale.set(0.045 + r() * 0.03, 0.022, 0.045 + r() * 0.03)
+			cap.position.set(Math.cos(a) * d, h * 2, Math.sin(a) * d)
+			g.add(cap)
+		}
+	} else if (kind === 'earth') {
+		// bare dark earth, a scatter of fallen leaves on it
+		g.add(patch(r, 1, floor.earth(), 0.012))
+		for (let i = 0; i < 20; i++) {
+			const leaf = new THREE.Mesh(card(), floor.litter())
+			leaf.scale.setScalar(0.1 + r() * 0.06)
+			leaf.rotation.set(-Math.PI / 2 + (r() - 0.5) * 0.4, 0, r() * 6)
+			leaf.position.set((r() - 0.5) * 1.6, 0.02, (r() - 0.5) * 1.6)
+			g.add(leaf)
+		}
+	} else if (kind === 'anthill') {
+		// a mound of needles and earth, pale ant-trails leading off it
+		const mound = new THREE.Mesh(new THREE.ConeGeometry(0.55, 0.5, 10, 3), floor.ants())
+		mound.position.y = 0.25
+		mound.scale.y = 0.9 + r() * 0.4
+		g.add(mound, patch(r, 0.8, floor.earth(), 0.01))
+		for (let i = 0; i < 18; i++) {
+			const ant = new THREE.Mesh(sphere(), floor.rot())
+			const a = r() * 6.28, d = 0.5 + r() * 0.6
+			ant.scale.set(0.012, 0.008, 0.02)
+			ant.position.set(Math.cos(a) * d, 0.01, Math.sin(a) * d)
+			g.add(ant)
+		}
+	} else if (kind === 'log') {
+		// a fallen trunk, rotting, moss along its top, mushrooms on its side
+		const len = 2.2 + r() * 2.5, rad = 0.16 + r() * 0.14
+		const log = new THREE.Mesh(new THREE.CylinderGeometry(rad, rad * 1.1, len, 10), r() < 0.5 ? barkMat() : floor.rot())
+		log.rotation.z = Math.PI / 2
+		log.position.y = rad * 0.85
+		g.add(log)
+		const top = new THREE.Mesh(new THREE.CylinderGeometry(rad * 1.02, rad * 1.12, len * 0.8, 10, 1, true, -0.9, 1.8), floor.moss())
+		top.rotation.z = Math.PI / 2
+		top.position.y = rad * 0.87
+		g.add(top)
+		for (let i = 0; i < 5; i++) {
+			const shelf = new THREE.Mesh(sphere(), floor.cap())
+			shelf.scale.set(0.07, 0.02, 0.05)
+			shelf.position.set((r() - 0.5) * len * 0.8, rad * (0.5 + r() * 0.6), rad + 0.02)
+			g.add(shelf)
+		}
+		g.add(patch(r, len * 0.45, floor.litter(), 0.01))
+	} else if (kind === 'branches') {
+		for (let i = 0; i < 6; i++) {
+			const len = 0.5 + r() * 1.1
+			const b = new THREE.Mesh(new THREE.CylinderGeometry(0.02 + r() * 0.03, 0.03 + r() * 0.03, len, 5), i % 2 ? barkMat() : floor.rot())
+			b.rotation.set(Math.PI / 2, r() * 6, 0, 'YXZ')
+			b.rotation.z = Math.PI / 2
+			b.rotation.y = r() * 6
+			b.position.set((r() - 0.5) * 1.2, 0.04, (r() - 0.5) * 1.2)
+			g.add(b)
+		}
+		g.add(patch(r, 0.8, floor.litter(), 0.01))
+	} else if (kind === 'stones') {
+		for (let i = 0; i < 7; i++) {
+			const st = new THREE.Mesh(new THREE.DodecahedronGeometry(0.08 + r() * 0.14, 0), floor.rock())
+			st.scale.y = 0.6
+			st.position.set((r() - 0.5) * 1.3, 0.05, (r() - 0.5) * 1.3)
+			st.rotation.set(r(), r() * 6, r())
+			g.add(st)
+		}
+		g.add(patch(r, 0.6, floor.moss(), 0.012))
+	} else {
+		// a little outcrop of rock, moss in its cracks, ferns at its foot
+		for (let i = 0; i < 4; i++) {
+			const size = 0.35 + r() * 0.55
+			const rock = new THREE.Mesh(new THREE.DodecahedronGeometry(size, 0), floor.rock())
+			rock.scale.set(1.2, 0.7 + r() * 0.4, 1)
+			rock.position.set((r() - 0.5) * 1.2, size * 0.45, (r() - 0.5) * 1.2)
+			rock.rotation.set(r(), r() * 6, r())
+			g.add(rock)
+		}
+		g.add(patch(r, 1.3, floor.moss(), 0.012))
+		for (let i = 0; i < 3; i++) {
+			const fern = new THREE.Group()
+			canopy(fern, r, 0, 0.3, 0, 0.35, 0.25, 8, leafMat(), 0.4)
+			fern.position.set((r() - 0.5) * 2, 0, (r() - 0.5) * 2)
+			g.add(fern)
+		}
+	}
+	g.traverse((o) => ((o as THREE.Mesh).isMesh && ((o as THREE.Mesh).receiveShadow = true)))
+	return g
+}
+
+/** A good mix for a forest floor: mostly moss, earth and litter, fallen wood and stones, now and then an ant hill or a rock. */
+export function floorPick(r: Rand): FloorKind {
+	const x = r()
+	return x < 0.24 ? 'moss' : x < 0.38 ? 'earth' : x < 0.5 ? 'mycelium' : x < 0.64 ? 'branches' : x < 0.76 ? 'stones' : x < 0.87 ? 'log' : x < 0.92 ? 'anthill' : 'rock'
+}
+
+/** A tuft of meadow grass: three crossed cards of blades, about knee-high at full size. */
+const tuftMat = shared(() => new THREE.MeshStandardMaterial({ map: grassBlades(), alphaTest: 0.5, side: THREE.DoubleSide, roughness: 0.9 }))
+export function grassTuft(size = 0.5): THREE.Group {
+	const g = new THREE.Group()
+	for (let i = 0; i < 3; i++) {
+		const c = new THREE.Mesh(card(), tuftMat())
+		c.scale.set(size * 1.2, size, 1)
+		c.position.y = size / 2
+		c.rotation.y = (i / 3) * Math.PI
+		g.add(c)
+	}
 	return g
 }

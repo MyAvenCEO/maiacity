@@ -16,10 +16,11 @@
 import * as THREE from 'three'
 import { Sky } from 'three/addons/objects/Sky.js'
 import { DOMES, DOORS, adiff, bake, box, geodesic, lantern, mats, mountInterior, polar, portal, sofa, table, type DomeKind, type EmbeddedDome } from './interior'
-import { cafes, coops, coopsAround, henPatches, squaresAround, type Kit } from './spaces'
+import { cafes, coops, coopsAround, henPatches, playground, squaresAround, type Kit } from './spaces'
 import { water } from './textures'
-import { appleTree, banana, berryBush, canopyTree, climber, clover, coconutPalm, comfrey, fruitTree, ginger, herb, papaya, passionVine, seeded, smallFruitTree, squash, strawberries, tropicalShrub, type Plant } from './plants'
+import { appleTree, banana, berryBush, canopyTree, climber, clover, coconutPalm, comfrey, fruitTree, ginger, herb, papaya, passionVine, seeded, smallFruitTree, squash, strawberries, tropicalShrub, forestFloor, FLOOR_KINDS, floorPick, grassTuft, type Plant } from './plants'
 import { apiary, herd } from './animals'
+import { flow, pond, shore, stream } from './water'
 import { gameHour } from '../../../../game/time'
 import { ambience, levelsAt } from './ambience'
 
@@ -155,7 +156,7 @@ export async function mountVillage(container: HTMLElement, onProgress: (label: s
 
 	/* ── the ground: the hexagon of the cell, meadow beyond ── */
 	// the meadow beyond the cell: a ring, so it never shows through the hole over the master's theatre
-	const meadow = new THREE.Mesh(new THREE.RingGeometry(WORLD * 0.8, 3000, 64, 1), new THREE.MeshStandardMaterial({ color: '#c9d9a8', roughness: 1 }))
+	const meadow = new THREE.Mesh(new THREE.RingGeometry(WORLD * 0.8, 3000, 64, 1), m.grass)
 	meadow.rotation.x = -Math.PI / 2
 	meadow.position.y = -0.05
 	meadow.receiveShadow = true
@@ -180,7 +181,12 @@ export async function mountVillage(container: HTMLElement, onProgress: (label: s
 
 	/** The café squares and hen coops round the master dome, as in Sandbox 3 (spaces.ts). */
 	const SQUARE_R = domes[0]!.ext + 2.6 + 7.5
-	const AROUND_MASTER = [
+	/** three wooden playgrounds in the forest between the domes */
+	const PLAYGROUNDS = [0.2, 2.3, 4.4].map((a) => {
+		const [x, z] = polar(118, a + Math.PI / 6)
+		return { x, z, r: 8.5 }
+	})
+	const AROUND_MASTER = [...PLAYGROUNDS,
 		...squaresAround().map(({ a, radius }) => ({ x: Math.sin(a) * SQUARE_R, z: Math.cos(a) * SQUARE_R, r: radius })),
 		...coopsAround(SQUARE_R).map(({ a, r }) => ({ x: Math.sin(a) * r, z: Math.cos(a) * r, r: 5 }))
 	]
@@ -313,11 +319,14 @@ export async function mountVillage(container: HTMLElement, onProgress: (label: s
 	await pause('Laying the paths')
 
 	/* ── the stream: a winding loop round the cell, and creeks in between the domes to ponds ── */
-	const wtex = water().clone()
-	wtex.wrapS = wtex.wrapT = THREE.RepeatWrapping
-	wtex.needsUpdate = true
-	const wmat = new THREE.MeshStandardMaterial({ map: wtex, color: '#7fe8ef', emissive: '#1f9aa3', emissiveIntensity: 0.5, roughness: 0.12, metalness: 0.1, side: THREE.DoubleSide })
 	const streams: THREE.Vector3[][] = []
+	/** a smooth line through the points, a sample every metre and a half */
+	const along = (pts: THREE.Vector3[], closed = false) => {
+		const curve = new THREE.CatmullRomCurve3(pts, closed)
+		return curve.getSpacedPoints(Math.max(8, Math.round(curve.getLength() / 1.5)))
+	}
+	const waterside = new THREE.Group()
+	const ponds: { x: number; z: number; outline: THREE.Vector3[] }[] = []
 	const W = 3.6
 	{
 		const riverR = 305
@@ -326,20 +335,28 @@ export async function mountVillage(container: HTMLElement, onProgress: (label: s
 			const rr = riverR + Math.sin(a * 7) * 14 + Math.sin(a * 3 + 1) * 8
 			return new THREE.Vector3(Math.sin(a) * rr, 0, Math.cos(a) * rr)
 		}), 8, false)
-		streams.push(ribbon(river, W, wmat, 0.08, true))
+		const riverLine = along(river, true)
+		scene.add(stream(riverLine, W, 0.08, true))
+		waterside.add(shore(riverLine, W / 2, 31))
+		streams.push(riverLine)
 		// creeks, in between the domes towards the centre, each ending in a pond
 		for (let k = 0; k < 6; k++) {
 			const aim = (k * Math.PI) / 3 + Math.PI / 6 + (k % 2 ? 0.14 : -0.14)
 			const a = new THREE.Vector3(Math.sin(aim) * riverR, 0, Math.cos(aim) * riverR)
 			const end = new THREE.Vector3(Math.sin(aim + 0.3) * 104, 0, Math.cos(aim + 0.3) * 104)
 			const creek = clear(meander(a, end, 12, 600 + k), 7, false)
-			streams.push(ribbon(creek, W * 0.7, wmat, 0.08))
-			const last = creek[creek.length - 1]!
-			const pond = new THREE.Mesh(new THREE.CircleGeometry(6 + (k % 3), 32), wmat)
-			pond.rotation.x = -Math.PI / 2
-			pond.position.set(last.x, 0.085, last.z)
-			scene.add(pond)
+			const creekLine = along(creek)
+			scene.add(stream(creekLine, W * 0.7, 0.08))
+			waterside.add(shore(creekLine, (W * 0.7) / 2, 40 + k))
+			streams.push(creekLine)
+			// and where it ends, a pond: never round, deeper in its middle, reeds and lilies round it
+			const last = creekLine[creekLine.length - 1]!
+			const p = pond(last.x, last.z, 9 + (k % 3) * 2, 700 + k, 0.08)
+			scene.add(p.group)
+			waterside.add(shore(p.outline, 0, 50 + k, { x: last.x, z: last.z }))
+			ponds.push({ x: last.x, z: last.z, outline: p.outline })
 		}
+		scene.add(bake(waterside, false))
 		// stones along the banks
 		const stones = new THREE.InstancedMesh(new THREE.DodecahedronGeometry(1, 0), m.pebble, 2600)
 		const rs = seeded(17)
@@ -359,7 +376,9 @@ export async function mountVillage(container: HTMLElement, onProgress: (label: s
 		stones.count = n
 		scene.add(stones)
 	}
-	const nearWater = near(streams)
+	// the ponds' water, filled in point by point, so nothing is planted in them
+	const pondFill = ponds.map((pd) => [0.25, 0.5, 0.75, 1].flatMap((f) => pd.outline.filter((_, i) => i % 2 === 0).map((o) => new THREE.Vector3(pd.x + (o.x - pd.x) * f, 0, pd.z + (o.z - pd.z) * f))))
+	const nearWater = near([...streams, ...pondFill])
 	// timber bridges wherever a path crosses water
 	{
 		const bridges = new THREE.Group()
@@ -563,6 +582,14 @@ export async function mountVillage(container: HTMLElement, onProgress: (label: s
 			scene.add(bake(sq.group))
 			colliders.push(...sq.colliders)
 		}
+		for (const [i, pg] of PLAYGROUNDS.entries()) {
+			const p = playground(90 + i)
+			p.group.position.set(pg.x, 0, pg.z)
+			p.group.rotation.y = Math.atan2(pg.x, pg.z)
+			scene.add(bake(p.group))
+			const c = Math.cos(p.group.rotation.y), sn = Math.sin(p.group.rotation.y)
+			for (const q of p.colliders) colliders.push({ x: pg.x + q.x * c + q.z * sn, z: pg.z - q.x * sn + q.z * c, r: q.r })
+		}
 		const hens = herd('hen', henPatches(SQUARE_R), 73)
 		herds.hens = hens.where
 		scene.add(hens.object)
@@ -618,14 +645,20 @@ export async function mountVillage(container: HTMLElement, onProgress: (label: s
 		species(passionVine(3011, 2.8).object, false),
 		species(herb(3012, 0.4), false)
 	]
+	// the forest floor, one of each kind drawn once and scattered: moss, mycelium, earth, ant hills, wood, stones, rock
+	const FLOOR = FLOOR_KINDS.map((k, i) => species(forestFloor(k, 4000 + i), false))
+	const floorIndex = (r: () => number) => FLOOR_KINDS.indexOf(floorPick(r))
+	// and tufts of meadow grass standing up out of the lawn, drawn with the floor, near you
+	FLOOR.push(species(grassTuft(0.55), false))
+	const TUFT = FLOOR.length - 1
 	const TILE = 70
-	type Tile = { cx: number; cz: number; main: THREE.Matrix4[][]; under: THREE.Matrix4[][]; far: THREE.Matrix4[]; farCrowns: THREE.Matrix4[]; farColors: THREE.Color[]; dense: THREE.Matrix4[]; denseCrowns: THREE.Matrix4[]; denseColors: THREE.Color[]; near?: THREE.Group; farMesh?: THREE.Group }
+	type Tile = { cx: number; cz: number; main: THREE.Matrix4[][]; under: THREE.Matrix4[][]; floor: THREE.Matrix4[][]; far: THREE.Matrix4[]; farCrowns: THREE.Matrix4[]; farColors: THREE.Color[]; dense: THREE.Matrix4[]; denseCrowns: THREE.Matrix4[]; denseColors: THREE.Color[]; near?: THREE.Group; farMesh?: THREE.Group; ground?: THREE.Group }
 	const tiles = new Map<string, Tile>()
 	const tileAt = (x: number, z: number) => {
 		const ix = Math.floor(x / TILE), iz = Math.floor(z / TILE)
 		const key = `${ix},${iz}`
 		let t = tiles.get(key)
-		if (!t) tiles.set(key, (t = { cx: (ix + 0.5) * TILE, cz: (iz + 0.5) * TILE, main: MAIN.map(() => []), under: UNDER.map(() => []), far: [], farCrowns: [], farColors: [], dense: [], denseCrowns: [], denseColors: [] }))
+		if (!t) tiles.set(key, (t = { cx: (ix + 0.5) * TILE, cz: (iz + 0.5) * TILE, main: MAIN.map(() => []), under: UNDER.map(() => []), floor: FLOOR.map(() => []), far: [], farCrowns: [], farColors: [], dense: [], denseCrowns: [], denseColors: [] }))
 		return t
 	}
 	const greens = ['#3f7a34', '#4f8a38', '#5b9a40', '#2f6a30', '#6aa84a', '#477f3a'].map((c) => new THREE.Color(c))
@@ -665,6 +698,12 @@ export async function mountVillage(container: HTMLElement, onProgress: (label: s
 						tileAt(ox, oz).under[kind]!.push(mat(ox, 0, oz, r() * 6.28, 0.7 + r() * 0.5))
 					}
 				}
+				// and under it all, the forest floor
+				for (let j = 0; j < (r() < 0.6 ? 1 : 0); j++) {
+					const b = r() * 6.28, dd = 1.5 + r() * 2.5
+					const ox = x + Math.cos(b) * dd, oz = z + Math.sin(b) * dd
+					if (!inDome(ox, oz, 2) && !nearPath(ox, oz, 2) && !nearWater(ox, oz, W / 2 + 0.8)) tileAt(ox, oz).floor[floorIndex(r)]!.push(mat(ox, 0, oz, r() * 6.28, 0.8 + r() * 0.5))
+				}
 				around(2, 2.2, [0, 1])
 				around(3, 1.6, [2])
 				around(4, 2.6, [3])
@@ -691,6 +730,7 @@ export async function mountVillage(container: HTMLElement, onProgress: (label: s
 				t.far.push(mat(x, 0, z, rot, 1, h, 1))
 				t.farCrowns.push(mat(x, h + sz * 1.3, z, rot, sz * 2.4, sz * 2, sz * 2.4))
 				t.farColors.push(greens[Math.floor(r() * greens.length)]!)
+				if (r() < 0.45 && !nearPath(x + 2, z, 2) && !nearWater(x + 2, z, W / 2 + 0.8)) tileAt(x + 2, z).floor[floorIndex(r)]!.push(mat(x + 2, 0, z + r(), r() * 6.28, 0.8 + r() * 0.6))
 				for (let j = 0; j < 3; j++) {
 					const b = r() * 6.28, dd = 1.2 + r() * 1.6
 					const ox = x + Math.cos(b) * dd, oz = z + Math.sin(b) * dd
@@ -699,6 +739,15 @@ export async function mountVillage(container: HTMLElement, onProgress: (label: s
 				}
 				if (++n % 500 === 0) await pause('Planting the edges')
 			}
+	}
+	// the tufts: everywhere there is open grass
+	{
+		const r = seeded(123)
+		for (let i = 0; i < 26000; i++) {
+			const x = (r() - 0.5) * WORLD * 2, z = (r() - 0.5) * WORLD * 2
+			if (!inHex(x, z) || inDome(x, z, 1) || inSquare(x, z) || nearPath(x, z, 1.6) || nearWater(x, z, W / 2 + 0.4)) continue
+			tileAt(x, z).floor[TUFT]!.push(mat(x, 0, z, r() * 6.28, 0.6 + r() * 0.8))
+		}
 	}
 	await pause('Planting the edges')
 	{
@@ -718,6 +767,12 @@ export async function mountVillage(container: HTMLElement, onProgress: (label: s
 			const near = new THREE.Group()
 			t.main.forEach((ms, k) => ms.length && MAIN[k]!.parts.forEach((pt) => near.add(inst(pt.geo, pt.mat, ms, pt.shadow))))
 			t.under.forEach((ms, k) => ms.length && UNDER[k]!.forEach((pt) => near.add(inst(pt.geo, pt.mat, ms, false))))
+			// the forest floor has its own, closer reach: it is only seen near your feet
+			const ground = new THREE.Group()
+			t.floor.forEach((ms, k) => ms.length && FLOOR[k]!.forEach((pt) => ground.add(inst(pt.geo, pt.mat, ms, false))))
+			ground.visible = false
+			scene.add(ground)
+			t.ground = ground
 			near.visible = false
 			scene.add(near)
 			t.near = near
@@ -729,12 +784,13 @@ export async function mountVillage(container: HTMLElement, onProgress: (label: s
 		}
 	}
 	/** Near you the forest in full, further off its stand-ins. */
-	const NEAR = 85
+	const NEAR = 72
 	const levelOfDetail = (x: number, z: number) => {
 		for (const t of tiles.values()) {
 			const near = Math.hypot(t.cx - x, t.cz - z) < NEAR
 			if (t.near) t.near.visible = near
 			if (t.farMesh) t.farMesh.visible = !near
+			if (t.ground) t.ground.visible = Math.hypot(t.cx - x, t.cz - z) < 50
 		}
 	}
 	// little lights along the paths, for walking home at night
@@ -763,18 +819,25 @@ export async function mountVillage(container: HTMLElement, onProgress: (label: s
 			...streams.slice(1).map((ps) => ps[Math.floor(ps.length * 0.75)]!)
 		].map((p) => ({ x: p.x, z: p.z, r: 7, n: 6 }))
 		// frogs: at the end of every creek, by its pond, and here and there on the river bank
+		// on the bank, beside the water rather than in it
+		const bank = (ps: THREE.Vector3[], i: number) => {
+			const p = ps[Math.max(1, Math.min(ps.length - 2, i))]!, q = ps[Math.max(1, Math.min(ps.length - 2, i)) + 1]!
+			const d = q.clone().sub(p).normalize()
+			return { x: p.x - d.z * (W / 2 + 1.6), z: p.z + d.x * (W / 2 + 1.6) }
+		}
 		const frogPatches = [
-			...streams.slice(1).map((ps) => ps[ps.length - 1]!),
-			...Array.from({ length: 4 }, (_, k) => streams[0]![Math.floor((streams[0]!.length * (k + 0.7)) / 4)]!)
-		].map((p) => ({ x: p.x, z: p.z, r: 4, n: 5 }))
+			...streams.slice(1).map((ps) => bank(ps, ps.length - 12)),
+			...Array.from({ length: 4 }, (_, k) => bank(streams[0]!, Math.floor((streams[0]!.length * (k + 0.7)) / 4)))
+		].map((p) => ({ x: p.x, z: p.z, r: 1.6, n: 5 }))
 		const goats = herd('goat', goatPatches, 71), geese = herd('goose', goosePatches, 72), frogs = herd('frog', frogPatches, 74)
 		herds.frogs = frogs.where
 		// bee hives, three or four together, in clearings of the forest round the cell
 		const hiveSpots: { x: number; z: number; rot: number }[] = []
-		for (let k = 0; k < 9; k++) {
-			const aim = (k / 9) * Math.PI * 2 + 0.5
+		for (let k = 0; k < 16; k++) {
+			const aim = (k / 16) * Math.PI * 2 + 0.5
 			let [cx, cz] = polar(k % 2 ? 232 : 118, aim)
-			for (let tries = 0; tries < 20 && (nearPath(cx, cz, 5) || nearWater(cx, cz, 6) || domes.some((d) => Math.hypot(cx - d.x, cz - d.z) < d.ext + 8)); tries++) [cx, cz] = polar((k % 2 ? 232 : 118) + tries * 2, aim + tries * 0.02)
+			// never on a path, by the water, against a dome, or on a playground or café square
+			for (let tries = 0; tries < 40 && (nearPath(cx, cz, 5) || nearWater(cx, cz, 6) || domes.some((d) => Math.hypot(cx - d.x, cz - d.z) < d.ext + 8) || AROUND_MASTER.some((c) => Math.hypot(cx - c.x, cz - c.z) < c.r + 5)); tries++) [cx, cz] = polar((k % 2 ? 232 : 118) + tries * 2, aim + tries * 0.02)
 			for (let j = 0; j < 3 + (k % 2); j++) hiveSpots.push({ x: cx + j * 1.3, z: cz + (j % 2) * 0.6, rot: aim + Math.PI })
 		}
 		const hives = apiary(hiveSpots, 75)
@@ -786,8 +849,8 @@ export async function mountVillage(container: HTMLElement, onProgress: (label: s
 		}
 		herds.goats = goats.where
 		herds.geese = geese.where
-		for (const ps of streams) waterPts.push(...ps.filter((_, i) => i % 3 === 0))
-		animated.push((t) => (wtex.offset.y = -t * 0.3))
+		for (const ps of [...streams, ...pondFill]) waterPts.push(...ps.filter((_, i) => i % 3 === 0))
+		animated.push(flow)
 	}
 	await pause('Opening the doors')
 
@@ -928,10 +991,12 @@ export async function mountVillage(container: HTMLElement, onProgress: (label: s
 				const nf = open.dome.floorAt(dx, dz, feet)
 				return open.dome.inside(dx, dz, nf) && !open.dome.blocked(dx, dz, here) && !open.dome.hits(dx, dz, nf)
 			}
-			// any other dome: its doorway, no further, until it has opened
+			// a dome still growing: in through a door and anywhere on its ground floor, while its
+			// full inside arrives round you (the galleries and stairs come with it)
+			if (here > 0.5) return false
+			if (rr < d.R - 0.8) return true
 			const a = Math.atan2(dx, dz)
-			const door = DOORS.find((dd) => Math.abs(adiff(a, dd)) < 0.5 && Math.abs(adiff(a, dd)) * rr < DOOR_HALF)
-			return door !== undefined && rr > d.R + 1
+			return DOORS.some((dd) => Math.abs(adiff(a, dd)) < 0.5 && Math.abs(adiff(a, dd)) * rr < DOOR_HALF)
 		}
 		if (here > 0.5) return false
 		const ix = Math.floor(x / 8), iz = Math.floor(z / 8)
@@ -1011,6 +1076,7 @@ export async function mountVillage(container: HTMLElement, onProgress: (label: s
 		camera,
 		scene,
 		THREE,
+		herds,
 		domes,
 		fly: (x: number, y: number, z: number, yw: number, p: number) => (flying = [x, y, z, yw, p]),
 		place: (x: number, z: number, yw: number, p: number, y = 0) => {
