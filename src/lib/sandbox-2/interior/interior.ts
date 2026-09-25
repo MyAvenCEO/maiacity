@@ -1239,7 +1239,7 @@ export async function mountInterior(container: HTMLElement, kind: DomeKind, onPr
 		const turn = (keys.has('arrowleft') ? 1 : 0) - (keys.has('arrowright') ? 1 : 0)
 		yaw += turn * 1.8 * dt
 		if (f || s) {
-			const speed = (keys.has('shift') ? 7.5 : 3.3) * dt
+			const speed = (keys.has('shift') ? 11.25 : 4.95) * dt
 			const dx = (-Math.sin(yaw) * f + Math.cos(yaw) * s) * speed
 			const dz = (-Math.cos(yaw) * f - Math.sin(yaw) * s) * speed
 			for (const [mx, mz] of [[dx, dz], [dx, 0], [0, dz]] as const) {
