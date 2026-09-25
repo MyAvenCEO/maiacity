@@ -5,6 +5,7 @@
 	headcount has reached. Nothing is kept in the browser.
 -->
 <script lang="ts">
+	import { untrack } from 'svelte';
 	import type { HexTile } from '../../../game/island/hexmap';
 	import { buildingForLevel, type PlacedKind } from './island/buildWorld';
 	import type { SceneApi } from './island/scene';
@@ -39,14 +40,20 @@
 		)
 	);
 
+	/* The parent hands in a fresh expression on every data refresh; a derived only
+	   changes when the seed itself does, so a refresh never rebuilds the island. */
+	const seedNow = $derived(seed);
+
 	const twoFrames = () => new Promise<void>((r) => requestAnimationFrame(() => requestAnimationFrame(() => r())));
 
 	$effect(() => {
 		const el = canvas;
+		const island = seedNow; // another city is another island: rebuild
 		if (!el) return;
 		let disposed = false;
 		loading = true;
-		const first = $state.snapshot(buildings);
+		// read once, untracked: new settlement data updates the island below, it never rebuilds it
+		const first = untrack(() => $state.snapshot(buildings));
 		void import('./island/scene').then(async ({ createScene }) => {
 			if (disposed) return;
 			// Growing the island clears its selection; only picks after that are the player's.
@@ -56,7 +63,7 @@
 			// growing the island takes a moment: let the loading word paint first
 			await twoFrames();
 			if (disposed) return scene.dispose();
-			scene.setWorld(seed);
+			scene.setWorld(island);
 			ready = true;
 			api = scene;
 			await twoFrames();

@@ -178,6 +178,8 @@ export function createScene(canvas: HTMLCanvasElement, options: SceneOptions = {
 		moveSpeed: 30
 	})
 	const controls = rig.controls
+	/* a dev hook, like the planet's __world: inspect the island camera from the console */
+	;(window as unknown as { __island: unknown }).__island = { camera, controls }
 
 	// the shadow box only has to cover the island; a tight box spends its
 	// texels on the domes instead of the sea, so a smaller map looks the same
