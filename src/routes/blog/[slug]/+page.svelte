@@ -86,7 +86,8 @@
 	}
 
 	.hero {
-		margin: 0;
+		/* the same gap below the navbar as the navbar keeps from the top of the page */
+		margin: 1.25rem 0 0;
 		width: 100%;
 		height: 50vh;
 		height: 50svh;
