@@ -33,7 +33,7 @@ export type VillageHandle = {
 }
 
 const EYE = 1.65
-const WORLD = 330
+const WORLD = 380
 
 /** The cell: the master dome, six large domes round it, six medium domes further out between them. */
 function layout(): VillageDome[] {
@@ -42,8 +42,8 @@ function layout(): VillageDome[] {
 		return { kind, x, z, R, ext: R + 3.5 }
 	}
 	const out = [make('master', 0, 0)]
-	for (let k = 0; k < 6; k++) out.push(make('large', ...polar(122, (k * Math.PI) / 3)))
-	for (let k = 0; k < 6; k++) out.push(make('home', ...polar(160, Math.PI / 6 + (k * Math.PI) / 3)))
+	for (let k = 0; k < 6; k++) out.push(make('large', ...polar(150, (k * Math.PI) / 3)))
+	for (let k = 0; k < 6; k++) out.push(make('home', ...polar(200, Math.PI / 6 + (k * Math.PI) / 3)))
 	return out
 }
 
@@ -92,8 +92,8 @@ export async function mountVillage(container: HTMLElement, onProgress: (label: s
 	sunLight.castShadow = true
 	sunLight.shadow.mapSize.set(4096, 4096)
 	const sc = sunLight.shadow.camera
-	sc.left = sc.bottom = -260
-	sc.right = sc.top = 260
+	sc.left = sc.bottom = -170
+	sc.right = sc.top = 170
 	sc.near = 10
 	sc.far = 1400
 	sunLight.shadow.bias = -0.0005
@@ -105,12 +105,21 @@ export async function mountVillage(container: HTMLElement, onProgress: (label: s
 	const glowMat = new THREE.MeshStandardMaterial({ color: '#fff0d0', emissive: '#ffc070', emissiveIntensity: 0.1 })
 	const warm = new THREE.Color('#ffb070'), white = new THREE.Color('#fff1d8'), moon = new THREE.Color('#8ea6dc')
 	let envAt: THREE.Vector3 | null = null
+	/** where the light comes from, sun or moon: the shadows follow you, the direction stays the sky's */
+	const lightDir = new THREE.Vector3(0, 1, 0)
+	const aimLight = (x: number, z: number) => {
+		// snapped to a grid, so the shadows do not shimmer as you walk
+		const gx = Math.round(x / 8) * 8, gz = Math.round(z / 8) * 8
+		sunLight.target.position.set(gx, 0, gz)
+		sunLight.position.copy(lightDir).multiplyScalar(700).add(sunLight.target.position)
+	}
 	const setSun = (hour: number) => {
 		const { dir, e } = sunAt(hour)
 		const day = THREE.MathUtils.smoothstep(e, -0.05, 0.35)
 		const low = 1 - THREE.MathUtils.smoothstep(e, 0, 0.6)
 		u['sunPosition']!.value.copy(dir)
-		sunLight.position.copy(e > -0.02 ? dir : dir.clone().negate().setY(Math.abs(dir.y) + 0.4).normalize()).multiplyScalar(700)
+		lightDir.copy(e > -0.02 ? dir : dir.clone().negate().setY(Math.abs(dir.y) + 0.4).normalize())
+		aimLight(sunLight.target.position.x, sunLight.target.position.z)
 		sunLight.color.copy(e > -0.02 ? white.clone().lerp(warm, low) : moon)
 		sunLight.intensity = e > -0.02 ? 0.5 + 2.5 * day : 1.1
 		fill.intensity = 0.34 + 0.08 * day
@@ -233,7 +242,7 @@ export async function mountVillage(container: HTMLElement, onProgress: (label: s
 		addPath(clear(meander(a, d.kind === 'large' ? target : b, 5, 300 + i), 3))
 	})
 	// a loop round the whole cell, and a short path out to it from every outer door
-	const loopR = 212
+	const loopR = 252
 	const loop = clear(Array.from({ length: 40 }, (_, i) => {
 		const a = (i / 40) * Math.PI * 2
 		const rr = loopR + Math.sin(a * 5) * 9
@@ -265,7 +274,7 @@ export async function mountVillage(container: HTMLElement, onProgress: (label: s
 	const streams: THREE.Vector3[][] = []
 	const W = 3.6
 	{
-		const riverR = 262
+		const riverR = 305
 		const river = clear(Array.from({ length: 48 }, (_, i) => {
 			const a = (i / 48) * Math.PI * 2
 			const rr = riverR + Math.sin(a * 7) * 14 + Math.sin(a * 3 + 1) * 8
@@ -276,7 +285,7 @@ export async function mountVillage(container: HTMLElement, onProgress: (label: s
 		for (let k = 0; k < 6; k++) {
 			const aim = (k * Math.PI) / 3 + Math.PI / 6 + (k % 2 ? 0.14 : -0.14)
 			const a = new THREE.Vector3(Math.sin(aim) * riverR, 0, Math.cos(aim) * riverR)
-			const end = new THREE.Vector3(Math.sin(aim + 0.3) * 96, 0, Math.cos(aim + 0.3) * 96)
+			const end = new THREE.Vector3(Math.sin(aim + 0.3) * 104, 0, Math.cos(aim + 0.3) * 104)
 			const creek = clear(meander(a, end, 12, 600 + k), 7, false)
 			streams.push(ribbon(creek, W * 0.7, wmat, 0.08))
 			const last = creek[creek.length - 1]!
@@ -461,11 +470,17 @@ export async function mountVillage(container: HTMLElement, onProgress: (label: s
 	/* ── the food forest outside, in seven layers, planted as guilds between it all ── */
 	{
 		const r = seeded(99)
-		const trees = new THREE.Group()
-		const under = new THREE.Group()
+		// planted in tiles of 100 m, each baked on its own, so what is off screen is skipped
+		const tiles = new Map<string, { trees: THREE.Group; under: THREE.Group }>()
+		const tile = (x: number, z: number) => {
+			const key = `${Math.floor(x / 100)},${Math.floor(z / 100)}`
+			let t = tiles.get(key)
+			if (!t) tiles.set(key, (t = { trees: new THREE.Group(), under: new THREE.Group() }))
+			return t
+		}
 		const inDome = (x: number, z: number, margin: number) => domes.some((d) => Math.hypot(x - d.x, z - d.z) < d.ext + margin)
 		let placed = 0
-		for (let tries = 0; placed < 520 && tries < 6000; tries++) {
+		for (let tries = 0; placed < 600 && tries < 8000; tries++) {
 			const x = (r() - 0.5) * WORLD * 2, z = (r() - 0.5) * WORLD * 2
 			if (!inHex(x, z) || Math.hypot(x, z) > WORLD * 0.95) continue
 			if (inDome(x, z, 6) || onPath(x, z, 3.2) || nearStream(x, z, W / 2 + 2.4)) continue
@@ -480,6 +495,7 @@ export async function mountVillage(container: HTMLElement, onProgress: (label: s
 				: banana(2500 + placed, 2.6 + r())
 			main.object.position.set(x, 0, z)
 			main.object.rotation.y = r() * 6.28
+			const { trees, under } = tile(x, z)
 			trees.add(main.object)
 			colliders.push({ x, z, r: main.radius + 0.25 })
 			const around = (n: number, dist: number, make: (seed: number) => THREE.Object3D) => {
@@ -500,8 +516,10 @@ export async function mountVillage(container: HTMLElement, onProgress: (label: s
 			if (r() < 0.25) around(1, 1.9, (sd) => climber(sd, 2 + r()).object)
 			if (placed % 130 === 0) await pause('Planting the food forest')
 		}
-		scene.add(bake(trees))
-		scene.add(bake(under, false))
+		for (const { trees, under } of tiles.values()) {
+			scene.add(bake(trees))
+			scene.add(bake(under, false))
+		}
 	}
 	// little lights along the paths, for walking home at night
 	{
@@ -519,7 +537,7 @@ export async function mountVillage(container: HTMLElement, onProgress: (label: s
 	// goats browsing between the domes, geese on the stream
 	const animated: ((t: number) => void)[] = []
 	{
-		const goatPatches = [0.5, 2.6, 4.7].map((a) => ({ x: Math.sin(a) * 236, z: Math.cos(a) * 236, r: 12, n: 4 }))
+		const goatPatches = [0.5, 2.6, 4.7].map((a) => ({ x: Math.sin(a) * 275, z: Math.cos(a) * 275, r: 12, n: 4 }))
 		const goosePatches = streams.slice(0, 4).map((ps, i) => {
 			const p = ps[Math.floor(ps.length * (0.2 + i * 0.2))]!
 			return { x: p.x, z: p.z, r: 6, n: 5 }
@@ -611,9 +629,7 @@ export async function mountVillage(container: HTMLElement, onProgress: (label: s
 		camera.position.set(pos.x, EYE, pos.z)
 		camera.rotation.set(pitch, yaw, 0, 'YXZ')
 		// the sun's shadows follow you round the cell
-		sunLight.target.position.set(pos.x, 0, pos.z)
-		const off = sunLight.position.clone().normalize().multiplyScalar(700)
-		sunLight.position.copy(off).add(sunLight.target.position)
+		aimLight(pos.x, pos.z)
 	}
 
 	const onResize = () => {
