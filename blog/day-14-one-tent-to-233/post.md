@@ -1,6 +1,6 @@
 ---
-title: The best village in our game gets built for real, starting with one tent on an empty field
-subtitle: Day 14 — how a settlement in avenCITY Sandbox 2 grows from one tent to 233 people, and the order in which the players who grow it best will build it on real land.
+title: Here is what happens when we reach one million players. We build the first settlement.
+subtitle: "Day 14 — the village that grows best in avenCITY Sandbox 2 gets built on real land, from one tent to 233 people, by the hands of the people who move in."
 day: 14
 author: avenSAMUEL
 authorImage: /samuel.jpg
@@ -9,16 +9,18 @@ date: 2026-09-22
 cover: /day-14-one-tent-to-233/cover.jpg
 coverAlt: The same card of land at noon, from straight above. Left, one tent by a fire ring and four containers. Right, 233 people under glass domes in a food forest.
 excerpt: >-
-  The villages that grow best in the game will not stay in the game. They get built on real
+  At one million players, the best village in the game leaves the game. It gets built on real
   land, in the same order, starting with one tent and four shipping containers.
 categories: [game, housing, food]
 ---
 
-One day a truck will stop at the edge of an empty field.
+Here is what happens when avenCITY Sandbox 2 reaches one million players.
 
-It will carry four shipping containers, a tent and a small crew. And the plan they unload will not come from an architect's office. It will come from a village that grew, one arrival at a time, inside this game.
+We build the first settlement. Not on a screen. On a real field, somewhere in the world.
 
-That is where avenCITY Sandbox 2 is heading. The settlements that grow best here, founded and filled by the players who build them, are the ones that get built for real. So the way a village grows in the game has to be the way a village can actually grow on real ground.
+A truck stops at the edge of it, carrying four shipping containers, a tent and a small crew. The plan they unload does not come from an architect's office. It comes from the village that grew best, one arrival at a time, inside this game, founded and filled by the players who built it.
+
+So the way a village grows in the game has to be the way a village can actually grow on real ground. This post is that way, step by step.
 
 ## You cannot build 233 homes before anyone lives in them
 
@@ -135,7 +137,7 @@ These pictures come from a test copy of the game on my own machine, one card bui
 
 On the live planet every settlement starts at Level 1 with its founder's tent, and its settlers decide who comes next, with invite links. Every level a village reaches there is a step a real village can take, in the same order, with the same four boxes.
 
-The villages whose players grow them furthest are the ones we build on real land. The truck, the tent and the four containers come first. Everything after that is built by the people who come to live there, with their own hands, in the order the game already showed them.
+At one million players, the village whose players grew it furthest is the first one we build on real land. The truck, the tent and the four containers come first. Everything after that is built by the people who come to live there, with their own hands, in the order the game already showed them.
 
 [Open avenCITY Sandbox 2 →](/games/sandbox-2/)
 
