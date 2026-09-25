@@ -61,7 +61,10 @@ const set = (img: ImageData, i: number, r: number, g: number, b: number, a = 255
 }
 
 /** Irregular flagstones with sunken joints: a Voronoi of stones, each its own shade. */
+let flagCache: { map: THREE.CanvasTexture; bump: THREE.CanvasTexture } | null = null
 export function flagstone(): { map: THREE.CanvasTexture; bump: THREE.CanvasTexture } {
+	// the Voronoi of stones is the slow part: work it out once, for every dome
+	if (flagCache) return flagCache
 	const size = 512
 	const r = rng(11)
 	const pts = Array.from({ length: 42 }, () => [r() * size, r() * size, 0.85 + r() * 0.3] as const)
@@ -96,7 +99,7 @@ export function flagstone(): { map: THREE.CanvasTexture; bump: THREE.CanvasTextu
 			set(img, i * 4, v, v, v)
 		}
 	}, 1, false)
-	return { map, bump }
+	return (flagCache = { map, bump })
 }
 
 /** Pale limestone blocks in courses, for the pillars and knee walls. */

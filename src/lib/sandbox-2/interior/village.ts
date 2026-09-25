@@ -262,10 +262,8 @@ export async function mountVillage(container: HTMLElement, onProgress: (label: s
 
 	/* ── the paths: a ring round every dome, a ring round the master, and meandering
 	   paths from door to door, out to a loop round the cell and on to its edges ── */
-	const pathMat = m.stone(1)
+	const pathMat = m.stone(1).clone()
 	pathMat.side = THREE.DoubleSide
-	;(pathMat.map as THREE.Texture).repeat.set(1, 1)
-	;(pathMat.bumpMap as THREE.Texture).repeat.set(1, 1)
 	const paths: THREE.Vector3[][] = []
 	const addPath = (pts: THREE.Vector3[], width = 2.4, closed = false) => paths.push(ribbon(pts, width, pathMat, 0.03, closed))
 	for (const d of domes) {
@@ -866,10 +864,11 @@ export async function mountVillage(container: HTMLElement, onProgress: (label: s
 		if (open) {
 			const d = domes[open.i]!
 			const away = Math.hypot(pos.x - d.x, pos.z - d.z) - d.ext
-			if (open.i !== best && gap < 45 && away > 20) closeDome()
-			else if (away > 110) closeDome()
+			if (open.i !== best && gap < 70 && away > 30) closeDome()
+			else if (away > 140) closeDome()
 		}
-		if (!open && gap < 55) openDome(best)
+		// start early: by the time you reach the door the dome has had its time to grow
+		if (!open && gap < 90) openDome(best)
 	}
 
 	/** Where you may stand, and how high: the land, or inside the open dome on its own floors. */

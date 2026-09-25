@@ -97,14 +97,27 @@ function solarGlass(): THREE.MeshPhysicalMaterial {
 	return solarCache
 }
 
+/**
+ * The surfaces are shared: every call for oak at the same scale, in any dome, gets the
+ * same material. A dome that asked for a new one each time had nearly two thousand, and
+ * every one of them cost the graphics card its own work.
+ */
+const surfaces = new Map<string, THREE.Material>()
+function surface<T extends THREE.Material>(key: string, make: () => T): T {
+	let s = surfaces.get(key) as T | undefined
+	if (!s) surfaces.set(key, (s = make()))
+	return s
+}
+const k2 = (v: number) => Math.round(v * 20) / 20
+
 export const mats = () => {
 	const flag = flagstone()
 	return {
-		stone: (rep: number) => new THREE.MeshStandardMaterial({ map: tiled(flag.map, rep), bumpMap: tiled(flag.bump, rep), bumpScale: 2, roughness: 0.85 }),
-		lime: (rx: number, ry = rx) => new THREE.MeshStandardMaterial({ map: tiled(limestone(), rx, ry), roughness: 0.9 }),
-		oak: (rx: number, ry = rx) => new THREE.MeshStandardMaterial({ map: tiled(oak(), rx, ry), roughness: 0.82, envMapIntensity: 0.4 }),
-		soil: (rep: number) => new THREE.MeshStandardMaterial({ map: tiled(soil(), rep), roughness: 1 }),
-		water: (rep: number) => new THREE.MeshPhysicalMaterial({ map: tiled(water(), rep), roughness: 0.08, metalness: 0, transparent: true, opacity: 0.88, envMapIntensity: 1.4 }),
+		stone: (rx: number, ry = rx) => surface(`stone ${k2(rx)} ${k2(ry)}`, () => new THREE.MeshStandardMaterial({ map: tiled(flag.map, k2(rx), k2(ry)), bumpMap: tiled(flag.bump, k2(rx), k2(ry)), bumpScale: 2, roughness: 0.85 })),
+		lime: (rx: number, ry = rx) => surface(`lime ${k2(rx)} ${k2(ry)}`, () => new THREE.MeshStandardMaterial({ map: tiled(limestone(), k2(rx), k2(ry)), roughness: 0.9 })),
+		oak: (rx: number, ry = rx) => surface(`oak ${k2(rx)} ${k2(ry)}`, () => new THREE.MeshStandardMaterial({ map: tiled(oak(), k2(rx), k2(ry)), roughness: 0.82, envMapIntensity: 0.4 })),
+		soil: (rep: number) => surface(`soil ${k2(rep)}`, () => new THREE.MeshStandardMaterial({ map: tiled(soil(), k2(rep)), roughness: 1 })),
+		water: (rep: number) => surface(`water ${k2(rep)}`, () => new THREE.MeshPhysicalMaterial({ map: tiled(water(), k2(rep)), roughness: 0.08, metalness: 0, transparent: true, opacity: 0.88, envMapIntensity: 1.4 })),
 		steel: new THREE.MeshStandardMaterial({ color: '#2e3236', roughness: 0.4, metalness: 0.7 }),
 		timberFrame: new THREE.MeshStandardMaterial({ color: '#9c6b3f', roughness: 0.6 }),
 		solar: solarGlass(),
@@ -133,6 +146,38 @@ export function box(w: number, h: number, d: number, mat: THREE.Material, x = 0,
 	m.rotation.y = rotY
 	m.castShadow = m.receiveShadow = true
 	return m
+}
+
+/**
+ * bake(), a slice at a time: the same meshes, but the page gets a frame back every few
+ * milliseconds while it works, and big materials are merged in chunks rather than all at once.
+ */
+export async function bakeSliced(group: THREE.Group, shadows: boolean, slice: () => Promise<void>): Promise<THREE.Group> {
+	group.updateMatrixWorld(true)
+	const meshes: THREE.Mesh[] = []
+	group.traverse((o) => o instanceof THREE.Mesh && meshes.push(o))
+	const byMat = new Map<THREE.Material, THREE.BufferGeometry[]>()
+	for (let i = 0; i < meshes.length; i++) {
+		const o = meshes[i]!
+		const g = o.geometry.clone().applyMatrix4(o.matrixWorld)
+		for (const k of Object.keys(g.attributes)) if (!['position', 'normal', 'uv'].includes(k)) g.deleteAttribute(k)
+		const list = byMat.get(o.material as THREE.Material) ?? []
+		list.push(g.index ? g.toNonIndexed() : g)
+		byMat.set(o.material as THREE.Material, list)
+		if (i % 32 === 0) await slice()
+	}
+	const out = new THREE.Group()
+	for (const [mat, geos] of byMat)
+		for (let i = 0; i < geos.length; i += 400) {
+			const merged = mergeGeometries(geos.slice(i, i + 400))
+			await slice()
+			if (!merged) continue
+			const m = new THREE.Mesh(merged, mat)
+			m.castShadow = shadows
+			m.receiveShadow = true
+			out.add(m)
+		}
+	return out
 }
 
 /** Bakes a group into one mesh per material, so a forest costs a handful of draw calls. */
@@ -408,9 +453,21 @@ export type EmbeddedDome = {
 
 export async function mountInterior(container: HTMLElement, kind: DomeKind, onProgress?: (label: string) => void, opts: InteriorOptions = {}): Promise<InteriorHandle> {
 	/** Let the page paint between the heavy steps, so the loading screen keeps moving. */
+	let lastYield = performance.now()
 	const pause = async (label: string) => {
+		const w = window as unknown as { __buildLog?: string[] }
+		w.__buildLog?.push(`${label} ${Math.round(performance.now() - lastYield)}ms`)
 		onProgress?.(label)
 		await new Promise((r) => requestAnimationFrame(() => setTimeout(r, 0)))
+		lastYield = performance.now()
+	}
+	const bakeIn = (group: THREE.Group, shadows = true) => bakeSliced(group, shadows, slice)
+	/** Hand the page back for a frame whenever this build has held it for more than a few milliseconds. */
+	const slice = async () => {
+		// the standalone view is behind its loading screen: it can work in longer stretches
+		if (performance.now() - lastYield < (host ? 24 : 60)) return
+		await new Promise((r) => requestAnimationFrame(() => setTimeout(r, 0)))
+		lastYield = performance.now()
 	}
 	const spec = DOMES[kind]
 	const R = spec.diameter / 2
@@ -433,11 +490,9 @@ export async function mountInterior(container: HTMLElement, kind: DomeKind, onPr
 
 	// built into a host's world, the dome is a scene of its own standing in it
 	const scene = new THREE.Scene()
-	if (host) {
-		// a hair above the host's ground, so its grass never shows through the dome's floor
-		scene.position.set(host.x, 0.03, host.z)
-		host.scene.add(scene)
-	}
+	// a hair above the host's ground, so its grass never shows through the dome's floor;
+	// it joins the host's world only when it is complete (see the end)
+	if (host) scene.position.set(host.x, 0.03, host.z)
 	const camera = host?.camera ?? new THREE.PerspectiveCamera(68, container.clientWidth / container.clientHeight, 0.05, R * 30 + 500)
 
 	/* the sun stands where the in-game clock says: it rises in the east, crosses
@@ -636,10 +691,7 @@ export async function mountInterior(container: HTMLElement, kind: DomeKind, onPr
 		scene.add(stoneRing)
 		for (const d of doorsOf(kind)) {
 			const len = outerR - R + 4
-			const strip = new THREE.Mesh(new THREE.PlaneGeometry(2.2, len), m.stone(1))
-			const mat = strip.material as THREE.MeshStandardMaterial
-			mat.map!.repeat.set(2.2 / 3, len / 3)
-			mat.bumpMap!.repeat.set(2.2 / 3, len / 3)
+			const strip = new THREE.Mesh(new THREE.PlaneGeometry(2.2, len), m.stone(2.2 / 3, Math.round(len / 3)))
 			strip.rotation.set(-Math.PI / 2, 0, -d)
 			const [x, z] = polar(R - 1 + len / 2, d)
 			strip.position.set(x, 0.022, z)
@@ -1053,21 +1105,18 @@ export async function mountInterior(container: HTMLElement, kind: DomeKind, onPr
 			const sideWall = new THREE.Mesh(new THREE.CylinderGeometry(Rc, Rc, 0.3, 96, 1, true), seat)
 			sideWall.position.y = -0.15
 			bowl.add(sideWall)
-			scene.add(bake(bowl))
+			scene.add(await bakeIn(bowl))
 		}
 		flat(new THREE.RingGeometry(Rp - 1.1, Rp + 1.1, 128), m.stone((Rp * 2) / 3))
 		// under the gallery the floor is stone too: the covered commons round the edge
 		flat(new THREE.RingGeometry(rIn - 0.4, R, 128), m.stone((R * 2) / 3))
 		for (const a of DOORS) {
 			const len = R - Rc
-			const strip = flat(new THREE.PlaneGeometry(2, len), m.stone(1), 0.021)
+			const strip = flat(new THREE.PlaneGeometry(2, len), m.stone(2 / 3, Math.round(len / 3)), 0.021)
 			const [x, z] = polar(Rc + len / 2, a)
 			strip.position.x = x
 			strip.position.z = z
 			strip.rotation.z = -a
-			const mat = strip.material as THREE.MeshStandardMaterial
-			mat.map!.repeat.set(2 / 3, len / 3)
-			mat.bumpMap!.repeat.set(2 / 3, len / 3)
 		}
 
 		/* limestone knee wall round the base, open at the four doors */
@@ -1130,7 +1179,7 @@ export async function mountInterior(container: HTMLElement, kind: DomeKind, onPr
 					stones.add(st)
 				}
 			}
-			scene.add(bake(stones))
+			scene.add(await bakeIn(stones))
 			const end = samples[samples.length - 1]!
 			const pond = new THREE.Mesh(new THREE.CircleGeometry(width * 2.8, 40), m.water(2))
 			pond.rotation.x = -Math.PI / 2
@@ -1139,6 +1188,7 @@ export async function mountInterior(container: HTMLElement, kind: DomeKind, onPr
 		}
 		const nearStream = (x: number, z: number, d: number) => samples.some((p) => Math.hypot(p.x - x, p.z - z) < d)
 
+		await slice()
 		/* the kitchen garden: beds along both sides of the ring path, for everything that wants a greenhouse —
 		   in the medium dome, where the ground is narrower, eight beds on the diagonals */
 		const bedLen = 3
@@ -1166,8 +1216,9 @@ export async function mountInterior(container: HTMLElement, kind: DomeKind, onPr
 					colliders.push({ x, z, r: 1.3 }, { x: x + Math.cos(a), z: z - Math.sin(a), r: 0.9 }, { x: x - Math.cos(a), z: z + Math.sin(a), r: 0.9 })
 				}
 		}
-		scene.add(bake(garden, false))
+		scene.add(await bakeIn(garden, false))
 
+		await slice()
 		/* the food forest in the open ground, in seven layers: tall palms, fruit
 		   trees, shrubs, herbs, ground cover, roots and climbers, planted as guilds */
 		const forest = new THREE.Group()
@@ -1180,6 +1231,7 @@ export async function mountInterior(container: HTMLElement, kind: DomeKind, onPr
 		const tall = kind === 'home' ? 7 : 10
 		let placed = 0
 		for (let tries = 0; placed < trees && tries < trees * 20; tries++) {
+			await slice()
 			const a = r() * Math.PI * 2
 			const rr = Rc + 1.5 + r() * (rIn - Rc - 3)
 			if (onPath(rr, a)) continue
@@ -1223,6 +1275,7 @@ export async function mountInterior(container: HTMLElement, kind: DomeKind, onPr
 		}
 		const cover = new THREE.Group()
 		for (let i = 0; i < Math.min(area * 0.6, kind === 'master' ? 1400 : 1800); i++) {
+			if (i % 50 === 0) await slice()
 			const a = r() * Math.PI * 2
 			const rr = Rc + 1.2 + r() * (rIn - Rc - 1.6)
 			if (onPath(rr, a)) continue
@@ -1232,11 +1285,12 @@ export async function mountInterior(container: HTMLElement, kind: DomeKind, onPr
 			hb.position.set(x, 0, z)
 			cover.add(hb)
 		}
-		scene.add(bake(cover, false))
-		scene.add(bake(forest))
-		scene.add(bake(understorey, false))
+		scene.add(await bakeIn(cover, false))
+		scene.add(await bakeIn(forest))
+		scene.add(await bakeIn(understorey, false))
 		await pause('Planting the forest inside')
 
+		await slice()
 		/* the plaza: a long table, sofas, and lanterns — and in the master dome, the theatre */
 		if (kind === 'master') {
 			// lanterns in a ring high over the stage, and a few instruments waiting on it
@@ -1262,7 +1316,7 @@ export async function mountInterior(container: HTMLElement, kind: DomeKind, onPr
 			const drum = new THREE.Mesh(new THREE.CylinderGeometry(0.35, 0.3, 0.6, 20), m.cushion)
 			drum.position.set(0, floorY + 0.3, 0)
 			props.add(drum)
-			scene.add(bake(props))
+			scene.add(await bakeIn(props))
 		} else {
 			const t = table(m, 4.2, 10)
 			t.position.set(0, 0, -Rc * 0.3)
@@ -1285,6 +1339,7 @@ export async function mountInterior(container: HTMLElement, kind: DomeKind, onPr
 			}
 		}
 
+		await slice()
 		/* the balconies, Mediterranean: terracotta pots along the rails, and grapevines trained along their tops */
 		const balconyPot = (k: number, x: number, y: number, z: number) => {
 			const p = potted(k % 12 === 0 ? 'olive' : k % 12 === 6 ? 'lemon' : k % 2 ? 'rosemary' : 'lavender', 5000 + k, k % 6 === 0 ? 0.8 : 1)
@@ -1304,6 +1359,7 @@ export async function mountInterior(container: HTMLElement, kind: DomeKind, onPr
 			}
 		}
 
+		await slice()
 		/* the gallery: an oak ring on limestone pillars, with a glass railing */
 		const galleryFloor = new THREE.Mesh(new THREE.RingGeometry(rIn, R, 160), m.oak(R / 2))
 		galleryFloor.rotation.x = -Math.PI / 2
@@ -1353,7 +1409,7 @@ export async function mountInterior(container: HTMLElement, kind: DomeKind, onPr
 				vines.add(balconyPot(k, px, H, pz))
 			}
 			railVines(vines, H, STAIRS)
-			scene.add(bake(vines))
+			scene.add(await bakeIn(vines))
 		}
 		const pillars = Math.round((2 * Math.PI * rIn) / 6)
 		for (let k = 0; k < pillars; k++) {
@@ -1365,10 +1421,11 @@ export async function mountInterior(container: HTMLElement, kind: DomeKind, onPr
 			colliders.push({ x, z, r: 0.55 })
 		}
 
+		await slice()
 		/* the private rooms, facing out through the glass — one floor, or two */
 		const roomH = 3
 		const rFront = rIn + walkway
-		const roomsAt = (Hf: number, turn: number) => {
+		const roomsAt = async (Hf: number, turn: number) => {
 			const rooms = g.rooms
 			const topR = Math.sqrt(R * R - (Hf + roomH) ** 2)
 			const group = new THREE.Group()
@@ -1405,9 +1462,10 @@ export async function mountInterior(container: HTMLElement, kind: DomeKind, onPr
 				// the room's lamp lights the room
 				addLamp(lx, Hf + 2.1, lz, 8, 8, Hf)
 			}
-			scene.add(bake(group))
+			scene.add(await bakeIn(group))
 		}
-		roomsAt(H, 0)
+		await slice()
+		await roomsAt(H, 0)
 
 		const H2 = H + roomH + 0.6
 		const twoFloors = g.floors === 2
@@ -1416,6 +1474,7 @@ export async function mountInterior(container: HTMLElement, kind: DomeKind, onPr
 		const span2 = run2 / rMid2
 		// each of the four stairs has a second flight, climbing round the walkway beside it
 		const STAIRS2 = STAIRS.map((as) => as + (stairHalf * 2 + 1.2) / rMid2)
+		await slice()
 		if (twoFloors) {
 			/* the second floor: an oak ring over the first floor's rooms, open where its stair comes up */
 			const outerBand = new THREE.Mesh(new THREE.RingGeometry(rFront, R, 160), m.oak(R / 2))
@@ -1446,8 +1505,8 @@ export async function mountInterior(container: HTMLElement, kind: DomeKind, onPr
 					const [x, z] = polar(rMid2, a)
 					stair2.add(box(run2 / steps2 + 0.03, 0.06, walkway - 0.3, m.oak(1), x, H + ((i + 1) / steps2) * (H2 - H) - 0.06, z, a))
 				}
-			scene.add(bake(stair2))
-			roomsAt(H2, Math.PI / g.rooms)
+			scene.add(await bakeIn(stair2))
+			await roomsAt(H2, Math.PI / g.rooms)
 			// the second floor's rail gets the same pots and vines as the first
 			const balcony2 = new THREE.Group()
 			const pots2 = Math.round((2 * Math.PI * rIn) / 2.7)
@@ -1456,15 +1515,16 @@ export async function mountInterior(container: HTMLElement, kind: DomeKind, onPr
 				balcony2.add(balconyPot(k * 3 + 1, px, H2, pz))
 			}
 			railVines(balcony2, H2, [])
-			scene.add(bake(balcony2))
+			scene.add(await bakeIn(balcony2))
 		}
 
+		await slice()
 		/* the terraces outside the glass, one to each floor of rooms, carried on a two-storey stone arcade */
 		const rWall2 = Math.sqrt(R * R - H2 * H2)
 		const perQuarter = Math.max(3, Math.round(((Math.PI / 2) * Rt) / 5.2))
 		const arcStep = Math.PI / 2 / perQuarter
 		const pillarAngles = Array.from({ length: perQuarter * 4 }, (_, k) => (k + 0.5) * arcStep)
-		const terraceRing = (y: number, base: number, rInner: number, seed: number) => {
+		const terraceRing = async (y: number, base: number, rInner: number, seed: number) => {
 			const terrace = new THREE.Group()
 			const deck = new THREE.Mesh(new THREE.RingGeometry(rInner, Rt, 160), m.stone(R / 1.5))
 			deck.rotation.x = -Math.PI / 2
@@ -1528,12 +1588,15 @@ export async function mountInterior(container: HTMLElement, kind: DomeKind, onPr
 					terrace.add(pl)
 				}
 			}
-			scene.add(bake(terrace))
+			scene.add(await bakeIn(terrace))
 		}
-		terraceRing(H, 0, rWall - 0.4, 23)
-		if (twoFloors) terraceRing(H2, H, rWall2 - 0.4, 24)
+		await slice()
+		await terraceRing(H, 0, rWall - 0.4, 23)
+		await slice()
+		if (twoFloors) await terraceRing(H2, H, rWall2 - 0.4, 24)
 		await pause('Making the beds')
 
+		await slice()
 		/* under the gallery: the kitchen, and the aquaponics */
 		{
 			const ak = aStair + Math.PI
@@ -1573,16 +1636,19 @@ export async function mountInterior(container: HTMLElement, kind: DomeKind, onPr
 			}
 		}
 
+		await slice()
 		/* in the master dome, the rest of the ring is the village's workshops */
 		if (kind === 'master')
 			for (const w of workshops(kit, (rIn + rWall) / 2 + 0.5)) {
-				scene.add(bake(w.group))
+				await slice()
+				scene.add(await bakeIn(w.group))
 				colliders.push(...w.colliders)
 				// working lights over every workshop
 				scene.add(box(1.2, 0.06, 0.4, glowMat, w.group.position.x, H - 0.52, w.group.position.z, w.group.rotation.y))
 				addLamp(w.group.position.x, H - 0.7, w.group.position.z, 18, 14)
 			}
 
+		await slice()
 		/* lamps for the night: pendants over the gallery walkway, lights in the ceiling of the
 		   commons under it, and little lights along the ring path through the forest */
 		{
@@ -1604,6 +1670,7 @@ export async function mountInterior(container: HTMLElement, kind: DomeKind, onPr
 			pathLights(Rp + 1.35, 6)
 		}
 
+		await slice()
 		/* the four stairs from the commons up to the gallery, with a handrail on each side */
 		for (const aStair of STAIRS) {
 			const steps = Math.ceil(H / 0.18)
@@ -1709,6 +1776,37 @@ export async function mountInterior(container: HTMLElement, kind: DomeKind, onPr
 			setHour: (hour) => setSun(hour),
 			dispose: disposeAll
 		}
+		/* before it joins the village, ready everything the graphics card will need, a little at
+		   a time: its shaders compiled in the background, its textures sent across one by one.
+		   Otherwise the first frame that sees it does all of that at once, and the world freezes. */
+		const log = (window as unknown as { __buildLog?: string[] }).__buildLog
+		let tt = performance.now()
+		scene.updateMatrixWorld(true)
+		await renderer.compileAsync(scene, camera, host.scene)
+		log?.push(`compile ${Math.round(performance.now() - tt)}ms`)
+		tt = performance.now()
+		const textures = new Set<THREE.Texture>()
+		scene.traverse((o) => {
+			const mt = (o as THREE.Mesh).material as THREE.Material | THREE.Material[] | undefined
+			for (const mm of Array.isArray(mt) ? mt : mt ? [mt] : [])
+				for (const v of Object.values(mm)) if (v instanceof THREE.Texture) textures.add(v)
+		})
+		for (const t of textures) {
+			renderer.initTexture(t)
+			await slice()
+		}
+		log?.push(`textures ${textures.size} ${Math.round(performance.now() - tt)}ms`)
+		// then into the world a few pieces at a time, so their buffers go to the graphics card
+		// over several frames instead of all in one
+		const pieces: THREE.Object3D[] = []
+		scene.traverse((o) => o !== scene && (o as THREE.Mesh).isMesh && o.visible && pieces.push(o))
+		for (const p of pieces) p.visible = false
+		host.scene.add(scene)
+		for (let i = 0; i < pieces.length; i += 6) {
+			for (const p of pieces.slice(i, i + 6)) p.visible = true
+			await new Promise((r) => requestAnimationFrame(() => r(null)))
+		}
+		lastYield = performance.now()
 		onProgress?.('ready')
 		return { lift: () => null, liftStep: () => {}, embedded, dispose: disposeAll }
 	}
