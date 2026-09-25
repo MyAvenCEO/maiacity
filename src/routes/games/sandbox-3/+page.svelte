@@ -9,8 +9,8 @@
 
 	const DOMES_IN_ORDER: { kind: DomeKind; image: string; text: string }[] = [
 		{ kind: 'glamp', image: 'glamping-room', text: 'The first homes after the tents: a home for four in zones round a garden, and a door onto a deck and the forest outside.' },
-		{ kind: 'home', image: 'home-from-the-gallery', text: 'The first permanent ring. A shared food forest on the ground floor, private rooms on the gallery facing out.' },
-		{ kind: 'large', image: 'large-food-forest', text: 'The second ring, nearly twice the size: a deeper forest, a wider plaza, a stream running to a pond.' },
+		{ kind: 'home', image: 'home-from-the-gallery', text: 'The first permanent ring. A shared food forest on the ground floor, private rooms on the gallery facing out, a terrace on a stone arcade, four doors.' },
+		{ kind: 'large', image: 'large-food-forest', text: 'The second ring, nearly twice the size: two floors of private rooms, a deeper forest, a stream running to a pond.' },
 		{ kind: 'master', image: 'master-waterfall', text: 'The centre of the village. The shared hall, and a waterfall falling from the crown into a stone pool.' }
 	];
 

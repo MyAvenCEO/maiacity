@@ -40,9 +40,9 @@ It is laid out in zones round a garden. In the middle, under the skylight, a lem
 
 The garden does not stop at the planter. Raised beds and potted bananas and shrubs stand along the glass, where the light is best.
 
-![The glamping dome from outside: the door open onto a timber deck, a path running out into the food forest.](/day-15-inside-the-domes/glamping-door.jpg)
+![The glamping dome from outside: its stone foundation ring, the door open onto a timber deck, a path running out into the food forest.](/day-15-inside-the-domes/glamping-door.jpg)
 
-And it has a door. You can walk out onto a timber deck with a table on it, and follow a stone path into the forest.
+And it has a door. You can walk out onto a timber deck with a table on it, and follow a stone path into the forest. The dome sits on a low ring of stone, its foundation.
 
 ## Outside, the forest has seven layers
 
@@ -52,7 +52,23 @@ Every dome now stands in a food forest built the way permaculture builds one, in
 
 ![Apple trees heavy with fruit, and the layers under them.](/day-15-inside-the-domes/forest-guilds.jpg)
 
+A turquoise stream winds through the forest round every dome, with stones along its banks and a timber bridge wherever a path crosses it. A stone path rings each dome, and from every door another runs straight out into the trees.
+
+![The stream outside a large dome, winding between the fruit trees.](/day-15-inside-the-domes/stream-outside.jpg)
+
 They are planted as guilds. Each tree has its own circle of plants round it that feed, shade and protect each other, the same idea as the forest that closes round a finished village on [Day 14](/blog/day-14-one-tent-to-233/).
+
+## Every big dome stands on a stone arcade, with a door to each point of the compass
+
+![A large dome from the forest: the path leads to a door under the stone arcade, the terrace above it.](/day-15-inside-the-domes/large-from-outside.jpg)
+
+From outside, the three big domes share one shape. The glass sits on a ring of stone arches, the dome's foundation, and the arches carry a terrace that runs all the way round at the height of the first floor.
+
+There are four doors, one facing each point of the compass. Each one is a round-headed opening in a limestone wall, its glazed door standing open, at the end of a path that runs straight in from the forest.
+
+![Walking under the arcade toward a door.](/day-15-inside-the-domes/stone-arcade.jpg)
+
+![Standing in a doorway, looking out between the arches at the forest.](/day-15-inside-the-domes/door-from-inside.jpg)
 
 ## The dome home: forty metres, twelve people
 
@@ -68,7 +84,11 @@ Upstairs, a timber gallery runs all the way round on limestone pillars, with a g
 
 ![A private room upstairs: the bed faces out through the glass.](/day-15-inside-the-domes/home-private-room.jpg)
 
-The private rooms are on the gallery, behind timber walls, and every one faces outwards. The bed stands against the glass. You wake up looking at the forest outside, and walk out of your door onto a balcony over the forest inside.
+The private rooms are on the gallery, behind timber walls, and every one faces outwards. The bed stands against the glass. You wake up looking at the forest outside, and walk out of your door onto a balcony over the forest inside. Step the other way, through the glass, and you are on the terrace outside.
+
+![The terrace round a dome: stone paving, a timber balustrade, planters and tables, the forest below.](/day-15-inside-the-domes/terrace.jpg)
+
+The terrace is the outdoor room of every home: tables for eating outside, planters of berries and shrubs, and the whole forest spread out below.
 
 Imagine the first morning in one of these. Light through the frame, the sound of the stream downstairs, and breakfast picked from a tree on the way to the table.
 
@@ -77,6 +97,10 @@ Imagine the first morning in one of these. Light through the frame, the sound of
 ![The plaza of a large dome, with the food forest rising round it.](/day-15-inside-the-domes/large-plaza.jpg)
 
 The large domes of the second ring follow the same plan at nearly twice the size. The plaza is wider, the palms are taller, and the forest is deep enough to get lost in for a minute.
+
+And they have two floors of rooms. A second stair climbs round the first-floor walkway to a second gallery, with another ring of private rooms above the first, each one facing out through the glass.
+
+![From the second-floor gallery of a large dome, looking down over the forest inside.](/day-15-inside-the-domes/second-floor.jpg)
 
 ![From the gallery of a large dome: winding stone paths through the forest, the stream and its pond.](/day-15-inside-the-domes/large-food-forest.jpg)
 
@@ -92,9 +116,17 @@ The forest here is a real forest. Paths wind between mango, avocado and citrus t
 
 ![The master dome's forest, with the waterfall showing through the trees.](/day-15-inside-the-domes/master-forest.jpg)
 
-Its gallery holds twelve rooms. They house whoever the two rings cannot fit yet, the 17 people of a complete village, so even the last to arrive wakes up above the forest.
+![The master dome from the forest: the arcade, the terrace, and the water falling inside.](/day-15-inside-the-domes/master-from-outside.jpg)
+
+Its two galleries hold twelve rooms each. They house whoever the two rings cannot fit yet, the 17 people of a complete village, so even the last to arrive wakes up above the forest.
 
 From every private room, in every dome, the view through the glass is the seven-layer forest outside.
+
+## The doors open while it is built
+
+![While a dome is built, two timber doors stand closed, with the step being done written between them.](/day-15-inside-the-domes/opening-the-doors.jpg)
+
+A big dome takes a few seconds to grow: the forest outside, the shell, the forest inside, the rooms. While it does, two timber doors stand closed on the screen, with the step being done written between them. When the dome is ready, they swing open.
 
 ## What we built it with
 
