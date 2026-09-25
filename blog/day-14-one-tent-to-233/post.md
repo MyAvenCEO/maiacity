@@ -133,8 +133,6 @@ Imagine walking home through it at dusk. The path bends between the apple trees,
 
 ## From the game to the ground
 
-These pictures come from a test copy of the game on my own machine, one card built up level by level.
-
 On the live planet every settlement starts at Level 1 with its founder's tent, and its settlers decide who comes next, with invite links. Every level a village reaches there is a step a real village can take, in the same order, with the same four boxes.
 
 At one million players, the village whose players grew it furthest is the first one we build on real land. The truck, the tent and the four containers come first. Everything after that is built by the people who come to live there, with their own hands, in the order the game already showed them.

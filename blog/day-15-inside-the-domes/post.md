@@ -22,11 +22,21 @@ Today we opened the door.
 
 ## A roof you can see through changes what a home is
 
-Every dome in avenCITY Sandbox 2 can now be walked through. Choose a settlement on its island, press "Step inside", and you are standing on the ground floor, at eye height, free to walk anywhere a person could. Or open [Sandbox 3](/games/sandbox-3/), where all four domes stand ready without a village around them.
+Every dome in avenCITY Sandbox 2 can now be walked through. Choose a settlement on its island, press "Step inside", and you are standing on the ground floor, at eye height, free to walk anywhere a person could. Or open [Sandbox 3](/games/sandbox-3/), where the four domes and the tent before them stand ready without a village around them.
 
 What we built inside follows one idea. When the whole roof is glass, the inside of the house is a garden. So the ground floor belongs to the plants and to everyone, and the private rooms go upstairs, round the edge, where they look out through the glass at the land.
 
-There are four sizes, and each one lives differently.
+There are four sizes, and each one lives differently. But every village starts smaller than any of them.
+
+## Before the first dome, a tent for two
+
+![The bell tent for two, a campfire and two chairs outside the door.](/day-15-inside-the-domes/tent.jpg)
+
+The first settlers sleep under canvas. A bell tent, four metres across, on one pole: tall enough in the middle to stand up in, two sleeping bags at the back, a lantern hanging from the pole, a wooden crate for a table.
+
+Outside the door, a campfire in a ring of stones and two folding chairs.
+
+It is the smallest home in the village, and the one nobody forgets.
 
 ## The glamping dome: sixteen metres, four people
 
@@ -194,13 +204,13 @@ A big dome takes a few seconds to grow: the forest outside, the shell, the fores
 
 ## What we built it with
 
-Everything you see is drawn by the game as you walk. There are no photographs in it. The flagstones, the limestone, the oak boards, the soil and the bark are painted in code, stone by stone and board by board, the moment you step inside. The light is a real sky model, and every picture in this post was taken in the warm light of late afternoon. In the game it is noon.
+Everything you see is drawn by the game as you walk. There are no photographs in it. The flagstones, the limestone, the oak boards, the soil and the bark are painted in code, stone by stone and board by board, the moment you step inside. The light is a real sky model, and the sun follows the in-game clock: it rises over the forest in the morning, crosses the glass at midday, sets warm in the evening, and at night a pale moon lights the paths. Every picture in this post was taken in the warm light of late afternoon.
 
 It is a first version. The plants are simple, the people are not there yet, and the rooms are sparse. What it already gets right is the plan: shared ground, private views, and food growing between them.
 
-These pictures come from a test copy of the game on my own machine. On the live planet, any settlement's domes open the same way.
+You do not need a village to try it. Sandbox 3 has all the domes side by side: choose one and walk in.
 
-You do not need a village to try it. Sandbox 3 has all four domes side by side: choose one and walk in.
+Every one of these domes is made of glass triangles. Tomorrow, the dome that makes them: [the solar factory dome →](/blog/day-16-the-solar-factory-dome/)
 
 [Walk inside the domes in avenCITY Sandbox 3 →](/games/sandbox-3/)
 

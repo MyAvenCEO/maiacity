@@ -11,6 +11,7 @@
 	import { base } from '$app/paths';
 	import { onDestroy, onMount } from 'svelte';
 	import { DOMES, type DomeKind, type InteriorHandle } from './interior/interior';
+	import { gameClock } from '../../../game/time';
 
 	let { kind, place, onclose }: { kind: DomeKind; place: string; onclose: () => void } = $props();
 
@@ -23,6 +24,12 @@
 	let done = $state(0);
 	const STEPS = 5;
 	const spec = $derived(DOMES[kind]);
+	/** the in-game clock the sun follows, shown in the corner */
+	let clock = $state(gameClock().label);
+	/** standing in the factory's lift: which floor, so the panel can say how to ride it */
+	let lift = $state<{ floor: number; name: string; top: number } | null>(null);
+	const clockTimer = setInterval(() => (clock = gameClock().label), 1000);
+	const liftTimer = setInterval(() => (lift = handle?.lift() ?? null), 200);
 
 	onMount(() => {
 		// let the closed doors paint before the heavy build starts
@@ -43,6 +50,8 @@
 		);
 	});
 	onDestroy(() => {
+		clearInterval(clockTimer);
+		clearInterval(liftTimer);
 		destroyed = true;
 		handle?.dispose();
 	});
@@ -60,8 +69,19 @@
 			<strong>{spec.label}</strong>
 			<span>{place} · {spec.diameter} m across · {spec.people}</span>
 		</div>
+		<div class="clock" title="In-game time: a game hour passes every two real minutes">{clock}</div>
 	</div>
-	<p class="help">Drag to look · WASD to walk · Shift to hurry{spec.gallery ? ' · the stairs lead up to the private rooms and the terrace' : ' · the door leads out into the forest'}</p>
+	{#if lift}
+		<div class="lift" role="status" aria-live="polite">
+			<p class="where">Floor {lift.floor} · {lift.name}</p>
+			<div class="keys">
+				<button onclick={() => handle?.liftStep(1)} disabled={lift.floor >= lift.top} aria-label="Up a floor">↑</button>
+				<button onclick={() => handle?.liftStep(-1)} disabled={lift.floor <= 0} aria-label="Down a floor">↓</button>
+			</div>
+			<p class="how">Press <kbd>↑</kbd> or <kbd>↓</kbd> to ride one floor; the lift stops at every floor. Hold the key to ride on. Walk out through a door when it stops.</p>
+		</div>
+	{/if}
+	<p class="help">Drag to look · WASD to walk · Shift to hurry{kind === 'factory' ? ' · in the great lift, ↑ and ↓ ride between the five floors' : kind === 'tent' ? ' · the door leads out to the campfire' : spec.gallery ? ' · the stairs lead up to the private rooms and the terrace' : ' · the door leads out into the forest'}</p>
 
 	{#if doors !== 'open'}
 		<div class="loading" class:opening={doors === 'opening'} role="status" aria-live="polite">
@@ -100,7 +120,8 @@
 		z-index: 2;
 	}
 	.out,
-	.title {
+	.title,
+	.clock {
 		padding: 0.55rem 0.9rem;
 		border: 0;
 		border-radius: 999px;
@@ -112,6 +133,9 @@
 	}
 	.out {
 		cursor: pointer;
+	}
+	.clock {
+		font-variant-numeric: tabular-nums;
 	}
 	.title span {
 		margin-left: 0.4rem;
@@ -129,6 +153,61 @@
 		color: #f2efe7;
 		font-size: 0.8rem;
 		white-space: nowrap;
+	}
+
+	/* the lift's panel, bottom centre, above the help line */
+	.lift {
+		position: absolute;
+		left: 50%;
+		bottom: calc(4.2rem + env(safe-area-inset-bottom, 0px));
+		transform: translateX(-50%);
+		z-index: 2;
+		width: min(24rem, calc(100vw - 2rem));
+		padding: 1rem 1.2rem;
+		border-radius: 1rem;
+		background: rgb(31 42 35 / 0.72);
+		backdrop-filter: blur(8px);
+		color: #f2efe7;
+		text-align: center;
+		pointer-events: none;
+	}
+	.where {
+		margin: 0;
+		font-size: 1.05rem;
+		font-weight: 600;
+	}
+	.keys {
+		display: flex;
+		justify-content: center;
+		gap: 0.6rem;
+		margin: 0.7rem 0;
+	}
+	.keys button {
+		pointer-events: auto;
+		width: 3rem;
+		height: 3rem;
+		border: 0;
+		border-radius: 0.7rem;
+		background: #f2efe7;
+		color: #1f2a23;
+		font-size: 1.4rem;
+		cursor: pointer;
+	}
+	.keys button:disabled {
+		opacity: 0.35;
+		cursor: default;
+	}
+	.how {
+		margin: 0;
+		font-size: 0.8rem;
+		line-height: 1.45;
+		color: rgb(242 239 231 / 0.85);
+	}
+	kbd {
+		padding: 0 0.3rem;
+		border-radius: 0.25rem;
+		background: rgb(242 239 231 / 0.2);
+		font: inherit;
 	}
 
 	/* the valley of domes, drawing slowly closer while the dome is built */

@@ -64,8 +64,6 @@ The roles went in early on the second morning, as capabilities rather than ranks
 
 Why the gate? Because founding is not free. It claims a card for good, one coop per card, and it spends 500 of your own hearts before anybody else has spent one. The first version asked for 50 hearts. Twenty minutes later it was 500. A coop should begin with a founder who believes in it enough to go first.
 
-To give the planet some life for this post, I ran the game on a test copy on my own machine and created six test citizens: Mara, Jonas, Lea, Tomas, Ines and Rui. None of them are real people. Mara and Jonas got the founder role. The live planet starts empty.
-
 ## Founding a coop takes one card, one line and 500 hearts
 
 You click a card of land. An orange ring settles around it, and a sheet opens on the right.

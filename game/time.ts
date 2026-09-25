@@ -48,6 +48,12 @@ export function gameClock(now = new Date()): { date: Date; label: string } {
 	return { date, label }
 }
 
+/** The hour of the in-game day, 0..24 with minutes as a fraction: what the sun follows. */
+export function gameHour(now = new Date()): number {
+	const d = gameClock(now).date
+	return d.getUTCHours() + d.getUTCMinutes() / 60 + d.getUTCSeconds() / 3600
+}
+
 /**
  * How long ago, in GAME time: a real second is thirty game seconds, so what
  * happened two real minutes ago happened an in-game hour ago.

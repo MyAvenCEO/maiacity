@@ -26,24 +26,29 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js'
 import { flagstone, leaves, limestone, oak, soil, water } from './textures'
 import { cafes, coops, coopsAround, henPatches, squaresAround, workshops, type Kit } from './spaces'
 import { herd } from './animals'
+import { buildFactory, LEVELS as FACTORY_LEVELS, NAMES as FACTORY_NAMES } from './factory'
+import { buildTent } from './tent'
+import { gameHour } from '../../../../game/time'
 import { appleTree, banana, berryBush, canopyTree, climber, clover, coconutPalm, comfrey, crop, CROPS, fruitTree, ginger, grapePergola, herb, papaya, passionVine, potted, seeded, shrub, smallFruitTree, squash, strawberries, tropicalShrub, vineAlong, type Plant } from './plants'
 
-export type DomeKind = 'glamp' | 'home' | 'large' | 'master'
+export type DomeKind = 'tent' | 'glamp' | 'home' | 'large' | 'master' | 'factory'
 
 type Spec = { diameter: number; detail: number; strut: number; gallery?: { height: number; depth: number; rooms: number; floors: 1 | 2 } }
 export const DOMES: Record<DomeKind, Spec & { label: string; people: string }> = {
+	tent: { label: 'Bell tent', people: 'two people', diameter: 4.2, detail: 0, strut: 0 },
 	glamp: { label: 'Glamping dome', people: 'four people', diameter: 16, detail: 3, strut: 0.06 },
 	home: { label: 'Medium dome', people: 'twelve people', diameter: 40, detail: 4, strut: 0.09, gallery: { height: 4.2, depth: 6.5, rooms: 6, floors: 1 } },
 	large: { label: 'Large dome', people: 'twenty-four people', diameter: 70, detail: 5, strut: 0.12, gallery: { height: 5, depth: 8, rooms: 8, floors: 2 } },
-	master: { label: 'Master dome', people: 'the commons, and whoever the rings cannot house yet', diameter: 136, detail: 7, strut: 0.16, gallery: { height: 6, depth: 10, rooms: 12, floors: 2 } }
+	master: { label: 'Master dome', people: 'the commons', diameter: 136, detail: 7, strut: 0.16, gallery: { height: 6, depth: 10, rooms: 12, floors: 2 } },
+	factory: { label: 'Solar factory dome', people: 'the factory coop', diameter: 136, detail: 7, strut: 0.16 }
 }
 
 const EYE = 1.65
 /** The big domes have four doors, one to each point of the compass; the glamping dome has one. */
 const DOORS = [0, Math.PI / 2, Math.PI, -Math.PI / 2]
-const doorsOf = (kind: DomeKind) => (kind === 'glamp' ? [0] : DOORS)
+const doorsOf = (kind: DomeKind) => (kind === 'glamp' || kind === 'tent' ? [0] : DOORS)
 /** A door's half-width, and its height at the top of the arch (the glamping door is square-headed). */
-const doorSize = (kind: DomeKind) => (kind === 'glamp' ? { dw: 0.75, dh: 2.5, top: 2.5 } : { dw: 1.3, dh: 3, top: 3 + 1.3 * 0.4 })
+const doorSize = (kind: DomeKind) => (kind === 'tent' ? { dw: 0.55, dh: 1.8, top: 1.8 } : kind === 'glamp' ? { dw: 0.75, dh: 2.5, top: 2.5 } : { dw: 1.3, dh: 3, top: 3 + 1.3 * 0.4 })
 /** The signed difference between two angles, in -π..π. */
 const adiff = (a: number, b: number) => Math.atan2(Math.sin(a - b), Math.cos(a - b))
 
@@ -80,7 +85,7 @@ const mats = () => {
 		grass: new THREE.MeshStandardMaterial({ color: '#7fa35a', roughness: 1 })
 	}
 }
-type Mats = ReturnType<typeof mats>
+export type Mats = ReturnType<typeof mats>
 
 /** Polar placement: angle 0 faces +z, clockwise to +x — the same sense as three's cylinders. */
 const polar = (r: number, a: number): [number, number] => [r * Math.sin(a), r * Math.cos(a)]
@@ -328,7 +333,13 @@ function raisedBed(m: Mats, len: number, seed: number): THREE.Group {
 
 /* ── the scene ───────────────────────────────────────────────────────── */
 
-export type InteriorHandle = { dispose: () => void }
+export type InteriorHandle = {
+	dispose: () => void
+	/** in the factory's lift: the floor it stands at and its name; null anywhere else */
+	lift: () => { floor: number; name: string; top: number } | null
+	/** send the lift a floor up (1) or down (-1), as the arrow keys do */
+	liftStep: (dir: 1 | -1) => void
+}
 
 export async function mountInterior(container: HTMLElement, kind: DomeKind, onProgress?: (label: string) => void): Promise<InteriorHandle> {
 	/** Let the page paint between the heavy steps, so the loading screen keeps moving. */
@@ -341,7 +352,10 @@ export async function mountInterior(container: HTMLElement, kind: DomeKind, onPr
 	const m = mats()
 
 	const renderer = new THREE.WebGLRenderer({ antialias: true })
-	renderer.setPixelRatio(Math.min(kind === 'master' ? 1.25 : 1.5, window.devicePixelRatio))
+	const huge = kind === 'master' || kind === 'factory'
+	/** the tent and the glamping dome stand in the forest the same way: small, one door */
+	const lite = kind === 'glamp' || kind === 'tent'
+	renderer.setPixelRatio(Math.min(huge ? 1.25 : 1.5, window.devicePixelRatio))
 	renderer.setSize(container.clientWidth, container.clientHeight)
 	renderer.toneMapping = THREE.ACESFilmicToneMapping
 	renderer.toneMappingExposure = 0.42
@@ -352,11 +366,22 @@ export async function mountInterior(container: HTMLElement, kind: DomeKind, onPr
 	const scene = new THREE.Scene()
 	const camera = new THREE.PerspectiveCamera(68, container.clientWidth / container.clientHeight, 0.05, R * 30 + 500)
 
-	/* noon: a physical sky for the light, the reflections and the view out. A dev
-	   hook (window.__interiorLight = 'golden') lowers the sun to late afternoon,
-	   for the journal's pictures. */
-	const golden = (window as unknown as { __interiorLight?: string }).__interiorLight === 'golden'
-	const sun = new THREE.Vector3().setFromSphericalCoords(1, THREE.MathUtils.degToRad(golden ? 62 : 22), THREE.MathUtils.degToRad(golden ? 200 : 160))
+	/* the sun stands where the in-game clock says: it rises in the east, crosses
+	   the south, sets in the west, and the sky, the light and the reflections
+	   follow it through the day and into the night. A dev hook
+	   (window.__interiorLight = 'golden') holds it at late afternoon for the
+	   journal's pictures, and window.__interiorHour pins any hour. */
+	const dev = window as unknown as { __interiorLight?: string; __interiorHour?: number }
+	const golden = dev.__interiorLight === 'golden'
+	const hourNow = () => dev.__interiorHour ?? (golden ? 17.8 : gameHour())
+	/** The sun's direction at an hour, and how high it stands (-1..1, 0 at the horizon). */
+	const sunAt = (hour: number) => {
+		const e = Math.sin(((hour - 5) / 15) * Math.PI)
+		const altitude = e * THREE.MathUtils.degToRad(68)
+		const azimuth = THREE.MathUtils.degToRad(90 + ((hour - 5) / 15) * 180)
+		return { dir: new THREE.Vector3().setFromSphericalCoords(1, Math.PI / 2 - altitude, azimuth), e }
+	}
+	const sun = sunAt(hourNow()).dir
 	const sky = new Sky()
 	sky.scale.setScalar(R * 40 + 2000)
 	const u = sky.material.uniforms
@@ -376,10 +401,10 @@ export async function mountInterior(container: HTMLElement, kind: DomeKind, onPr
 	scene.environment = pmrem.fromScene(envScene).texture
 	scene.environmentIntensity = 0.3
 
-	const sunLight = new THREE.DirectionalLight(golden ? '#ffd29a' : '#fff1d8', golden ? 3 : 2.4)
+	const sunLight = new THREE.DirectionalLight('#fff1d8', 2.4)
 	sunLight.position.copy(sun).multiplyScalar(R * 3 + 20)
 	sunLight.castShadow = true
-	sunLight.shadow.mapSize.set(kind === 'master' ? 2048 : 3072, kind === 'master' ? 2048 : 3072)
+	sunLight.shadow.mapSize.set(huge ? 2048 : 3072, huge ? 2048 : 3072)
 	const sc = sunLight.shadow.camera
 	sc.left = sc.bottom = -R * 1.2
 	sc.right = sc.top = R * 1.2
@@ -388,8 +413,117 @@ export async function mountInterior(container: HTMLElement, kind: DomeKind, onPr
 	sunLight.shadow.bias = -0.0004
 	sunLight.shadow.normalBias = 0.02
 	scene.add(sunLight)
-	scene.add(new THREE.HemisphereLight(golden ? '#ffe2c0' : '#f4f0e6', '#6d5a3c', 0.4))
-	scene.fog = new THREE.Fog(golden ? '#e9d6bd' : '#e3e9e6', R * 1.2, R * 9 + 60)
+	const fill = new THREE.HemisphereLight('#f4f0e6', '#6d5a3c', 0.4)
+	scene.add(fill)
+	scene.fog = new THREE.Fog('#e3e9e6', R * 1.2, R * 9 + 60)
+	/* one dial, the hour, sets it all: the sun's place and colour, the sky, the
+	   fill, the fog; below the horizon a pale moon keeps the night walkable */
+	const warm = new THREE.Color('#ffb070'), white = new THREE.Color('#fff1d8'), moon = new THREE.Color('#8ea6dc')
+	const fogDay = new THREE.Color('#e3e9e6'), fogDusk = new THREE.Color('#e9c9a8'), fogNight = new THREE.Color('#1c2438')
+	let envAt = sun.clone()
+
+	/* the night: warm lamps that come on as the light goes, not bright, just enough
+	   to walk by and sit under. Each is a real light, and the hanging ones let a
+	   soft cone of it fall to the floor; small lights glow along the paths. */
+	/** lights with a place of their own (the tent's lantern), dimmed and lit with the hour */
+	const lamps: { light: THREE.PointLight; base: number }[] = []
+	/** every other lamp in the dome, as a spot: its place, how bright, how far it reaches */
+	const spots: { x: number; y: number; z: number; base: number; reach: number }[] = []
+	/* A browser lights a scene with only so many real lights at once. So a pool of
+	   them follows you: the lamps nearest you light their rooms, their stairs and
+	   their stretch of path, and every lamp further off glows where it hangs. */
+	const POOL = 8
+	const pool = Array.from({ length: POOL }, () => {
+		const light = new THREE.PointLight('#ffc98a', 0, 10, 2)
+		scene.add(light)
+		return light
+	})
+	let nightNow = 0
+	const lightNearest = () => {
+		const cx = camera.position.x, cy = camera.position.y, cz = camera.position.z
+		const near = nightNow > 0.01 ? spots.map((sp, i) => ({ i, d: (sp.x - cx) ** 2 + (sp.y - cy) ** 2 * 4 + (sp.z - cz) ** 2 })).sort((a, b) => a.d - b.d).slice(0, POOL) : []
+		pool.forEach((light, j) => {
+			const n = near[j]
+			if (!n) return void (light.intensity = 0)
+			const sp = spots[n.i]!
+			light.position.set(sp.x, sp.y, sp.z)
+			light.distance = sp.reach
+			light.intensity = sp.base * nightNow
+		})
+	}
+	const beamMat = (() => {
+		const c = document.createElement('canvas')
+		c.width = 4
+		c.height = 64
+		const x = c.getContext('2d')!
+		const grad = x.createLinearGradient(0, 0, 0, 64)
+		grad.addColorStop(0, '#ffffff')
+		grad.addColorStop(0.35, '#6a6a6a')
+		grad.addColorStop(1, '#000000')
+		x.fillStyle = grad
+		x.fillRect(0, 0, 4, 64)
+		return new THREE.MeshBasicMaterial({ color: '#ffcf8f', alphaMap: new THREE.CanvasTexture(c), transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide, fog: false })
+	})()
+	const glowMat = new THREE.MeshStandardMaterial({ color: '#fff0d0', emissive: '#ffc070', emissiveIntensity: 0.1, roughness: 0.5 })
+	/** A lamp at (x, y, z): its light, reaching `reach` metres; with `floor`, a cone of light falling to it. */
+	const addLamp = (x: number, y: number, z: number, base: number, reach: number, floor?: number) => {
+		spots.push({ x, y, z, base, reach })
+		if (floor !== undefined) {
+			const h = y - floor
+			const cone = new THREE.Mesh(new THREE.ConeGeometry(Math.min(h * 0.42, 4.5), h, 28, 1, true), beamMat)
+			cone.position.set(x, floor + h / 2, z)
+			cone.renderOrder = 3
+			scene.add(cone)
+		}
+	}
+	/** Little lights along a path round the centre, at radius `rr`. */
+	const pathLights = (rr: number, every: number, y = 0) => {
+		const n = Math.max(8, Math.round((2 * Math.PI * rr) / every))
+		const posts = new THREE.InstancedMesh(new THREE.CylinderGeometry(0.06, 0.08, 0.55, 8).translate(0, 0.275, 0), m.dark, n)
+		const tops = new THREE.InstancedMesh(new THREE.SphereGeometry(0.09, 10, 8), glowMat, n)
+		const m4 = new THREE.Matrix4()
+		for (let i = 0; i < n; i++) {
+			const [x, z] = polar(rr, ((i + 0.5) / n) * Math.PI * 2)
+			posts.setMatrixAt(i, m4.makeTranslation(x, y, z))
+			tops.setMatrixAt(i, m4.makeTranslation(x, y + 0.6, z))
+			spots.push({ x, y: y + 0.7, z, base: 2.5, reach: 6 })
+		}
+		scene.add(posts, tops)
+	}
+
+	const setSun = (hour: number) => {
+		const { dir, e } = sunAt(hour)
+		const day = THREE.MathUtils.smoothstep(e, -0.05, 0.35)
+		const low = 1 - THREE.MathUtils.smoothstep(e, 0, 0.6)
+		u['sunPosition']!.value.copy(dir)
+		// by night the light comes from the moon, opposite the sun
+		sunLight.position.copy(e > -0.02 ? dir : dir.clone().negate().setY(Math.abs(dir.y) + 0.4).normalize()).multiplyScalar(R * 3 + 20)
+		sunLight.color.copy(e > -0.02 ? white.clone().lerp(warm, low) : moon)
+		sunLight.intensity = e > -0.02 ? 0.5 + 2.5 * day : 1.1
+		// the factory works through the night under its own lights
+		fill.intensity = 0.34 + 0.08 * day + (kind === 'factory' ? 1.1 * (1 - day) : 0)
+		fill.color.set('#f4f0e6').lerp(moon, (1 - day) * (kind === 'factory' ? 0.3 : 1))
+		;(scene.fog as THREE.Fog).color.copy(fogDay).lerp(fogDusk, low * day).lerp(fogNight, 1 - day)
+		scene.environmentIntensity = 0.12 + 0.18 * day
+		renderer.toneMappingExposure = 0.42 + 0.5 * (1 - day)
+		// and as the light goes, the lamps come on
+		const night = 1 - THREE.MathUtils.smoothstep(e, -0.02, 0.18)
+		nightNow = night
+		for (const l of lamps) l.light.intensity = l.base * night
+		lightNearest()
+		beamMat.opacity = 0.15 * night
+		glowMat.emissiveIntensity = 0.1 + 2.4 * night
+		m.paper.emissiveIntensity = 0.6 + 2.2 * night
+		// the reflections are baked from the sky: bake them again once the sun has moved on
+		if (scene.environment && envAt.angleTo(dir) > 0.04) {
+			envAt = dir.clone()
+			envSky.material.uniforms['sunPosition']!.value.copy(dir)
+			const old = scene.environment
+			scene.environment = pmrem.fromScene(envScene).texture
+			old.dispose()
+		}
+	}
+	setSun(hourNow())
 
 	await pause('Letting in the light')
 	const animated: ((t: number) => void)[] = []
@@ -406,8 +540,8 @@ export async function mountInterior(container: HTMLElement, kind: DomeKind, onPr
 	const G = spec.gallery
 	const Rt = G ? R + 3.5 : R + 0.8
 	const outsideColliders: { x: number; z: number; r: number }[] = []
-	const outerR = kind === 'glamp' ? R + 44 : R + Math.min(60, R * 0.9 + 25)
-	const ringPath = kind === 'glamp' ? R + 4.2 : Rt + 2.6
+	const outerR = lite ? R + 44 : R + Math.min(60, R * 0.9 + 25)
+	const ringPath = kind === 'tent' ? R + 5 : lite ? R + 4.2 : Rt + 2.6
 
 	/* paths: a ring round the dome, and one from each door out into the forest */
 	{
@@ -432,6 +566,7 @@ export async function mountInterior(container: HTMLElement, kind: DomeKind, onPr
 	// round the master dome, café squares just off the ring path, where the forest leaves room
 	const squareR = ringPath + 7.5
 	const squares = kind === 'master' ? [...squaresAround().map((q) => ({ ...q, r: squareR })), ...coopsAround(squareR)].map(({ a, r, radius }) => ({ at: polar(r, a), radius })) : []
+	pathLights(ringPath + 1.6, 7)
 	const onOutsidePath = (x: number, z: number) => {
 		const rr = Math.hypot(x, z), a = Math.atan2(x, z)
 		return Math.abs(rr - ringPath) < 2.4 || squares.some(({ at: [sx, sz], radius }) => Math.hypot(x - sx, z - sz) < radius + 1.5) || doorsOf(kind).some((d) => Math.abs(adiff(a, d)) < Math.PI / 2 && Math.abs(adiff(a, d)) * rr < 2.6)
@@ -439,7 +574,7 @@ export async function mountInterior(container: HTMLElement, kind: DomeKind, onPr
 
 	/* a turquoise stream winding round the dome, stones on its banks, a bridge where each path crosses */
 	const streamOut: THREE.Vector3[] = []
-	const streamW = kind === 'glamp' ? 2.6 : 3.6
+	const streamW = lite ? 2.6 : 3.6
 	{
 		const mid = (ringPath + 6 + outerR) / 2
 		const band = (outerR - ringPath - 10) / 2
@@ -559,6 +694,7 @@ export async function mountInterior(container: HTMLElement, kind: DomeKind, onPr
 		for (const sq of cafes(kit, squareR)) {
 			scene.add(bake(sq.group))
 			outsideColliders.push(...sq.colliders)
+			addLamp(sq.group.position.x, 3, sq.group.position.z, 10, 12)
 		}
 	// and the hens, in coops among the trees beyond the squares
 	if (kind === 'master')
@@ -572,7 +708,7 @@ export async function mountInterior(container: HTMLElement, kind: DomeKind, onPr
 		const beyond = ringPath + (outerR - ringPath) * 0.35
 		const goatAt = (a: number) => {
 			const [x, z] = polar(beyond, a)
-			return { x, z, r: kind === 'glamp' ? 7 : 10, n: kind === 'glamp' ? 2 : 4 }
+			return { x, z, r: lite ? 7 : 10, n: lite ? 2 : 4 }
 		}
 		const flocks = [
 			herd('goat', [goatAt(Math.PI / 2 + 0.05), goatAt(-Math.PI / 2 + 0.3)], 71),
@@ -586,19 +722,45 @@ export async function mountInterior(container: HTMLElement, kind: DomeKind, onPr
 	}
 	await pause('Planting the food forest outside')
 
-	const shell = geodesic(spec, m, kind)
-	scene.add(shell.group)
-	for (const hole of shell.holes) scene.add(portal(m, hole, kind))
-	await pause('Raising the dome')
+	if (kind !== 'tent') {
+		const shell = geodesic(spec, m, kind)
+		scene.add(shell.group)
+		for (const hole of shell.holes) scene.add(portal(m, hole, kind))
+	}
+	await pause(kind === 'tent' ? 'Pitching the tent' : 'Raising the dome')
 
 	/* colliders and floors, for walking */
-	const colliders: { x: number; z: number; r: number }[] = []
+	/** things in the way, each on the floor it stands on (y, the ground if unset) */
+	const colliders: { x: number; z: number; r: number; y?: number }[] = []
 	let floorAt = (_x: number, _z: number, _feet: number) => 0
 	let blocked = (_x: number, _z: number, _feet: number) => false
 	let start = { x: 0, z: R * 0.5, look: 0 }
 	let terraceAt = (_rr: number, _y: number) => false
+	/** a building's own keys (the factory lift's ↑ and ↓), and where the walker is each frame */
+	let onAction = (_k: string, _down: boolean) => false
+	let onWalk = (_x: number, _z: number, _feet: number) => {}
+	let liftFloor = () => -1
 
-	if (kind === 'glamp') {
+	if (kind === 'tent') {
+		const tent = buildTent({ scene, R, m, box, bake })
+		colliders.push(...tent.colliders)
+		lamps.push({ light: tent.lamp, base: 3 })
+		start = tent.start
+		animated.push(tent.update)
+	} else if (kind === 'factory') {
+		/* the solar factory dome: five floors of lines round the great lift (factory.ts) */
+		await pause('Starting the lines')
+		const works = buildFactory({ scene, R, m, box, bake })
+		colliders.push(...works.colliders)
+		floorAt = works.floorAt
+		blocked = works.blocked
+		start = works.start
+		animated.push(works.update)
+		onWalk = works.tick
+		onAction = works.onKey
+		liftFloor = works.floor
+		await pause('Waking the robots')
+	} else if (kind === 'glamp') {
 		/* a home for four, in zones round the room: the door at +z (angle 0), the
 		   living room to its left, the kitchen and table to its right, and at the
 		   back, behind timber screens, two sleeping nooks and the bathroom. The
@@ -696,6 +858,14 @@ export async function mountInterior(container: HTMLElement, kind: DomeKind, onPr
 		const [lx, lz] = at(4.6, 1.2)
 		l2.position.set(lx, 0, lz)
 		scene.add(l2)
+		addLamp(0, 3.1, 0, 16, 11, 0.56)
+		addLamp(lx, 2.35, lz, 10, 8, 0)
+		// over the kitchen counter, and a reading light in each sleeping nook
+		for (const [rr, a, base] of [[6.4, 1.1, 10], [5.8, 2.65, 6], [5.8, -3.02, 6], [5.4, -1.05, 8]] as const) {
+			const [x, z] = at(rr, a)
+			scene.add(box(0.3, 0.06, 0.3, glowMat, x, 2.45, z))
+			addLamp(x, 2.3, z, base, 7)
+		}
 		// the stone foundation ring the dome stands on, open at the door
 		const gh = 1.1 / R
 		const plinth = new THREE.Mesh(new THREE.CylinderGeometry(R + 0.35, R + 0.45, 0.45, 96, 1, true, gh, Math.PI * 2 - 2 * gh), m.lime((Math.PI * R) / 1.5, 0.3))
@@ -991,6 +1161,7 @@ export async function mountInterior(container: HTMLElement, kind: DomeKind, onPr
 				const [x, z] = polar(Rc * 0.62, (k * Math.PI) / 6)
 				l.position.set(x, 0, z)
 				scene.add(l)
+				if (k % 3 === 0) addLamp(x, H + 11.4, z, 220, 46, -pit + 0.55)
 			}
 			const props = new THREE.Group()
 			const floorY = -pit + 0.55
@@ -1026,6 +1197,7 @@ export async function mountInterior(container: HTMLElement, kind: DomeKind, onPr
 				const [x, z] = polar(Rc * 0.5, (k * Math.PI * 2) / 5)
 				l.position.set(x, 0, z)
 				scene.add(l)
+				addLamp(x, H + 1.5 + (k % 3), z, 30, 20, 0)
 			}
 		}
 
@@ -1146,6 +1318,8 @@ export async function mountInterior(container: HTMLElement, kind: DomeKind, onPr
 				const [lx, lz] = polar((rFront + topR) / 2, mid)
 				l.position.set(lx, 0, lz)
 				group.add(l)
+				// the room's lamp lights the room
+				addLamp(lx, Hf + 2.1, lz, 8, 8, Hf)
 			}
 			scene.add(bake(group))
 		}
@@ -1252,6 +1426,9 @@ export async function mountInterior(container: HTMLElement, kind: DomeKind, onPr
 				t.position.set(tx, y, tz)
 				t.rotation.y = a + Math.PI / 2
 				terrace.add(t)
+				// a lamp hung in the pergola over every table
+				terrace.add(box(0.22, 0.22, 0.22, glowMat, tx, y + 2.2, tz))
+				addLamp(tx, y + 2.1, tz, 6, 8)
 				// a pergola of grapevines over the table, the Mediterranean way
 				const pg = grapePergola(seed * 50 + k, 3, 2.8, 2.45)
 				pg.position.set(tx, y, tz)
@@ -1317,7 +1494,31 @@ export async function mountInterior(container: HTMLElement, kind: DomeKind, onPr
 			for (const w of workshops(kit, (rIn + rWall) / 2 + 0.5)) {
 				scene.add(bake(w.group))
 				colliders.push(...w.colliders)
+				// working lights over every workshop
+				scene.add(box(1.2, 0.06, 0.4, glowMat, w.group.position.x, H - 0.52, w.group.position.z, w.group.rotation.y))
+				addLamp(w.group.position.x, H - 0.7, w.group.position.z, 18, 14)
 			}
+
+		/* lamps for the night: pendants over the gallery walkway, lights in the ceiling of the
+		   commons under it, and little lights along the ring path through the forest */
+		{
+			const count = kind === 'home' ? 6 : 8
+			for (let k = 0; k < count; k++) {
+				const a = ((k + 0.5) / count) * Math.PI * 2
+				const [x, z] = polar(rIn + walkway / 2, a)
+				const l = lantern(m, 0.22, H + 2.7)
+				l.position.set(x, 0, z)
+				scene.add(l)
+				addLamp(x, H + 2.45, z, 10, 11, H)
+			}
+			for (let k = 0; k < 4; k++) {
+				const a = DOORS[k]! + Math.PI / 4 + 0.35
+				const [x, z] = polar((rIn + rWall) / 2, a)
+				scene.add(box(0.6, 0.06, 0.6, glowMat, x, H - 0.52, z))
+				addLamp(x, H - 0.7, z, 16, 14, 0)
+			}
+			pathLights(Rp + 1.35, 6)
+		}
 
 		/* the four stairs from the commons up to the gallery, with a handrail on each side */
 		for (const aStair of STAIRS) {
@@ -1327,6 +1528,12 @@ export async function mountInterior(container: HTMLElement, kind: DomeKind, onPr
 				const rr = r0 + ((i + 0.5) / steps) * run
 				const [x, z] = polar(rr, aStair)
 				stair.add(box(stairHalf * 2, 0.06, run / steps + 0.02, m.oak(1), x, ((i + 1) / steps) * H - 0.06, z, aStair))
+				// a small light in the stringer every few steps, to see the treads by at night
+				if (i % 4 === 2)
+					for (const sd of [-1, 1]) {
+						const [ox, oz] = polar(stairHalf - 0.05, aStair + Math.PI / 2)
+						stair.add(box(0.05, 0.05, 0.12, glowMat, x + ox * sd, ((i + 1) / steps) * H + 0.05, z + oz * sd, aStair))
+					}
 			}
 			for (const side of [-1, 1]) {
 				const [ox, oz] = polar(stairHalf, aStair + Math.PI / 2)
@@ -1341,6 +1548,9 @@ export async function mountInterior(container: HTMLElement, kind: DomeKind, onPr
 				stair.add(handrail)
 			}
 			scene.add(stair)
+			// and a lamp over the middle of each flight
+			const [mx, mz] = polar(r0 + run / 2, aStair)
+			addLamp(mx, H / 2 + 2.3, mz, 7, 10)
 		}
 
 		const inStair = (x: number, z: number) => {
@@ -1384,6 +1594,9 @@ export async function mountInterior(container: HTMLElement, kind: DomeKind, onPr
 		start = { x: 0, z: Rc + 2, look: 0 }
 	}
 
+	// the lamps are all in place: set them for the hour
+	setSun(hourNow())
+
 	/* ── walking ─────────────────────────────────────────────────────── */
 	const pos = new THREE.Vector3(start.x, 0, start.z)
 	let yaw = start.look
@@ -1393,6 +1606,11 @@ export async function mountInterior(container: HTMLElement, kind: DomeKind, onPr
 	const dom = renderer.domElement
 	const onKey = (e: KeyboardEvent, down: boolean) => {
 		const k = e.key.toLowerCase()
+		if (onAction(k, down)) {
+			e.preventDefault()
+			keys.delete(k)
+			return
+		}
 		if (['w', 'a', 's', 'd', 'arrowup', 'arrowdown', 'arrowleft', 'arrowright', 'shift'].includes(k)) {
 			if (down) keys.add(k)
 			else keys.delete(k)
@@ -1420,9 +1638,10 @@ export async function mountInterior(container: HTMLElement, kind: DomeKind, onPr
 	window.addEventListener('mousemove', onMove)
 	window.addEventListener('mouseup', onUp)
 
-	const wallLimit = (y: number) => Math.sqrt(Math.max(0, R * R - (y + 1.8) ** 2)) - (kind === 'glamp' ? 0.4 : 0.8)
+	// in the tent, only where there is headroom under the canvas
+	const wallLimit = (y: number) => (kind === 'tent' ? 1.15 : Math.sqrt(Math.max(0, R * R - (y + 1.8) ** 2)) - (kind === 'glamp' ? 0.4 : 0.8))
 	/** Where a walker may stand: inside the dome, through a door out on the land, or on the terrace. */
-	const doorHalf = kind === 'glamp' ? 0.6 : 1.1
+	const doorHalf = kind === 'tent' ? 0.45 : kind === 'glamp' ? 0.6 : 1.1
 	const walkable = (x: number, z: number, y: number) => {
 		const rr = Math.hypot(x, z)
 		if (rr <= wallLimit(y)) return true
@@ -1449,7 +1668,7 @@ export async function mountInterior(container: HTMLElement, kind: DomeKind, onPr
 				const nf = floorAt(nx, nz, feet)
 				if (!walkable(nx, nz, nf)) continue
 				if (blocked(nx, nz, here)) continue
-				if (nf < 0.3 && [...colliders, ...outsideColliders].some((c) => Math.hypot(c.x - nx, c.z - nz) < c.r + 0.25)) continue
+				if ([...colliders, ...outsideColliders].some((c) => Math.abs(nf - ((c as { y?: number }).y ?? 0)) < 1 && Math.hypot(c.x - nx, c.z - nz) < c.r + 0.25)) continue
 				pos.x = nx
 				pos.z = nz
 				break
@@ -1457,6 +1676,7 @@ export async function mountInterior(container: HTMLElement, kind: DomeKind, onPr
 		}
 		const target = floorAt(pos.x, pos.z, feet)
 		feet += (target - feet) * Math.min(1, dt * 12)
+		onWalk(pos.x, pos.z, feet)
 		camera.position.set(pos.x, feet + EYE, pos.z)
 		camera.rotation.set(pitch, yaw, 0, 'YXZ')
 	}
@@ -1471,12 +1691,28 @@ export async function mountInterior(container: HTMLElement, kind: DomeKind, onPr
 	let frame = 0
 	let last = performance.now()
 	const clock0 = performance.now()
+	let sunChecked = 0
+	let lampsChecked = 0
+	/** a free camera for the journal's overview pictures (dev hook), walking paused while it is set */
+	let flying: [number, number, number, number, number] | null = null
 	const tick = () => {
 		const now = performance.now()
-		step(Math.min(0.1, (now - last) / 1000))
+		if (flying) {
+			camera.position.set(flying[0], flying[1], flying[2])
+			camera.rotation.set(flying[4], flying[3], 0, 'YXZ')
+		} else step(Math.min(0.1, (now - last) / 1000))
 		last = now
 		const t = (now - clock0) / 1000
 		for (const a of animated) a(t)
+		if (now - lampsChecked > 300) {
+			lampsChecked = now
+			lightNearest()
+		}
+		// the sun moves with the game clock: a game hour is two real minutes, so a look every second is plenty
+		if (now - sunChecked > 1000) {
+			sunChecked = now
+			setSun(hourNow())
+		}
 		renderer.render(scene, camera)
 		frame = requestAnimationFrame(tick)
 	}
@@ -1489,7 +1725,10 @@ export async function mountInterior(container: HTMLElement, kind: DomeKind, onPr
 	;(window as unknown as { __interior: unknown }).__interior = {
 		camera,
 		scene,
+		fly: (x: number, y: number, z: number, yw: number, p: number) => (flying = [x, y, z, yw, p]),
+		land: () => (flying = null),
 		place: (x: number, z: number, y: number, yw: number, p: number) => {
+			flying = null
 			pos.set(x, 0, z)
 			feet = y
 			yaw = yw
@@ -1498,6 +1737,15 @@ export async function mountInterior(container: HTMLElement, kind: DomeKind, onPr
 	}
 
 	return {
+		lift: () => {
+			const f = liftFloor()
+			return f < 0 ? null : { floor: f, name: FACTORY_NAMES[f]!, top: FACTORY_LEVELS.length - 1 }
+		},
+		liftStep: (dir) => {
+			const k = dir > 0 ? 'arrowup' : 'arrowdown'
+			onAction(k, true)
+			setTimeout(() => onAction(k, false), 120)
+		},
 		dispose() {
 			cancelAnimationFrame(frame)
 			window.removeEventListener('keydown', kd)

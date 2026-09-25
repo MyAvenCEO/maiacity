@@ -16,7 +16,7 @@ categories: [game, money, coop]
 
 This afternoon I put 100 hearts into Solar and got 1.11 pieces of it.
 
-Mara, the test citizen who founded Solar on my test copy of the game, paid less than half as much for each of hers.
+Mara, who founded Solar, paid less than half as much for each of hers.
 
 Nobody sold me anything. Nobody haggled. There is no market in avenCITY Sandbox 2, and no one sets the price by hand. The price was waiting for me, and it will be higher still for whoever comes after me.
 
@@ -91,8 +91,6 @@ It all happens as one step. Your hearts leave, the maiaHEARTS arrive, your minds
 Imagine the morning Solar's first dome factory opens. The machines were paid for with maiaHEARTS from its treasury: the hearts of its backers, turned into the city's money. Everyone who put hearts in owns a piece of every panel that leaves the building, and the earliest owns the most per heart.
 
 ## Where the hearts are going
-
-This is my test copy of the sandbox this evening.
 
 ![The coops: Solar at milestone 9, Bakery and HempStone at milestone 7.](/day-12-the-first-believer-pays-least/the-coops.jpg)
 

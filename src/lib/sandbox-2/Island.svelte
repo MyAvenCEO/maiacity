@@ -9,7 +9,7 @@
 	import type { HexTile } from '../../../game/island/hexmap';
 	import { buildingForLevel, type PlacedKind } from './island/buildWorld';
 	import type { SceneApi } from './island/scene';
-	import { timeOfDay } from './island/timeOfDay.svelte';
+	import { gameHour } from '../../../game/time';
 
 	let {
 		seed,
@@ -51,6 +51,7 @@
 		const island = seedNow; // another city is another island: rebuild
 		if (!el) return;
 		let disposed = false;
+		let sunTimer: ReturnType<typeof setInterval> | undefined;
 		loading = true;
 		// read once, untracked: new settlement data updates the island below, it never rebuilds it
 		const first = untrack(() => $state.snapshot(buildings));
@@ -59,7 +60,9 @@
 			// Growing the island clears its selection; only picks after that are the player's.
 			let ready = false;
 			const scene = createScene(el, { buildings: first, focus, onSelect: (tiles) => ready && onpick(tiles[0] ?? null) });
-			scene.setHour(timeOfDay.hour);
+			// the sun stands where the in-game clock says, and moves on with it
+			scene.setHour(gameHour());
+			sunTimer = setInterval(() => scene.setHour(gameHour()), 2000);
 			// growing the island takes a moment: let the loading word paint first
 			await twoFrames();
 			if (disposed) return scene.dispose();
@@ -71,6 +74,7 @@
 		});
 		return () => {
 			disposed = true;
+			clearInterval(sunTimer);
 			api?.dispose();
 			api = undefined;
 		};

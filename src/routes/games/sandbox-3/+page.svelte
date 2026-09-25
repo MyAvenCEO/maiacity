@@ -1,6 +1,7 @@
 <!--
-	avenCITY Sandbox 3 — inside the domes. The four domes of a village, each one
-	open to walk through, without an account and without a village around it.
+	avenCITY Sandbox 3 — inside the domes. The tent a settler starts in, the four
+	domes of a village and the factory that makes their glass, each one open to
+	walk through, without an account and without a village around it.
 -->
 <script lang="ts">
 	import { base } from '$app/paths';
@@ -8,18 +9,21 @@
 	import { DOMES, type DomeKind } from '$lib/sandbox-2/interior/interior';
 
 	const DOMES_IN_ORDER: { kind: DomeKind; image: string; text: string }[] = [
+		{ kind: 'tent', image: '/games/sandbox-3/tent.jpg', text: 'Where it starts: a canvas bell tent for two, mats and sleeping bags, a lantern on the pole, and a campfire outside the door.' },
 		{ kind: 'glamp', image: 'glamping-room', text: 'The first homes after the tents: a home for four in zones round a garden, and a door onto a deck and the forest outside.' },
-		{ kind: 'home', image: 'home-from-the-gallery', text: 'The first permanent ring. A seven-layer food forest and a kitchen garden on the ground floor, private rooms on the gallery facing out, a terrace under grapevines, four doors.' },
-		{ kind: 'large', image: 'large-terraces', text: 'The second ring, nearly twice the size: two floors of private rooms, a deeper forest, a stream running to a pond.' },
-		{ kind: 'master', image: 'master-stage', text: 'The centre of the village. A round stage sunk into the floor, tiers of stone all round it, and the workshops, studios and kitchens of the village round the edge.' }
+		{ kind: 'home', image: 'home-from-the-gallery', text: 'The first permanent ring: a seven-layer forest and a kitchen garden below, rooms on the gallery above, a terrace under vines.' },
+		{ kind: 'large', image: 'large-terraces', text: 'The second ring, nearly twice the size: two floors of rooms, a deeper forest, a stream running to a pond.' },
+		{ kind: 'master', image: 'master-stage', text: 'The centre of the village: a round stage sunk into the floor, and the workshops and kitchens round its edge.' },
+		{ kind: 'factory', image: '/games/sandbox-3/factory.jpg', text: 'The factory coop that makes the domes’ glass from sand, quartz and copper: five floors round one great lift.' }
 	];
+	const src = (image: string) => (image.startsWith('/') ? `${base}${image}` : `${base}/day-15-inside-the-domes/${image}.jpg`);
 
 	let walking = $state<DomeKind | null>(null);
 </script>
 
 <svelte:head>
 	<title>avenCITY Sandbox 3 · Inside the domes · maiaCITY</title>
-	<meta name="description" content="Walk inside the four domes of a maiaCITY village: the glamping dome, the medium dome, the large dome and the master dome." />
+	<meta name="description" content="Walk inside a maiaCITY village: the bell tent, the glamping dome, the medium dome, the large dome, the master dome, and the solar factory dome." />
 </svelte:head>
 
 <div class="page">
@@ -27,14 +31,14 @@
 		<a class="back" href="{base}/games">← Games</a>
 		<p class="eyebrow">avenCITY Sandbox 3</p>
 		<h1>Inside the domes</h1>
-		<p class="lede">Every village grows four kinds of dome. Choose one and step inside: drag to look, WASD to walk, Shift to hurry.</p>
+		<p class="lede">A village starts in tents, grows four kinds of dome, and makes their glass itself. Choose one and step inside: drag to look, WASD to walk, Shift to hurry.</p>
 	</header>
 
 	<ul class="grid">
 		{#each DOMES_IN_ORDER as d (d.kind)}
 			<li>
 				<button class="card" onclick={() => (walking = d.kind)}>
-					<img src="{base}/day-15-inside-the-domes/{d.image}.jpg" alt="Inside the {DOMES[d.kind].label.toLowerCase()}" loading="lazy" />
+					<img src={src(d.image)} alt="Inside the {DOMES[d.kind].label.toLowerCase()}" loading="lazy" />
 					<span class="body">
 						<span class="size">{DOMES[d.kind].diameter} m across · {DOMES[d.kind].people}</span>
 						<strong>{DOMES[d.kind].label}</strong>

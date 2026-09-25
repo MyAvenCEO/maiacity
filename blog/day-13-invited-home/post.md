@@ -92,9 +92,7 @@ The moment you become a citizen, it tells you so, names step two, and goes quiet
 
 ![The last note: you are a citizen. Now find a home.](/day-13-invited-home/a-citizen.jpg)
 
-## A test world, and an empty planet
-
-Everything in these pictures happened on a test copy on my own machine: Maia, Porto, Riverside with its twenty-seven settlers, Mara, Lea and everyone else. None of them are real people.
+## An empty planet
 
 The live planet started over with this change. Every account is still there, and every first mint pays the new 30,000. No city stands on it yet.
 
