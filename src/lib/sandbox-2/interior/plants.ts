@@ -5,6 +5,7 @@
  * kind, so a dome can hold a hundred trees and stay light.
  */
 import * as THREE from 'three'
+import { mergeVertices } from 'three/addons/utils/BufferGeometryUtils.js'
 import { bark, frond, grassBlades, leaves } from './textures'
 
 type Rand = () => number
@@ -27,8 +28,18 @@ const bananaStemMat = shared(() => new THREE.MeshStandardMaterial({ color: '#6f8
 const bananaLeafMat = shared(() => new THREE.MeshStandardMaterial({ color: '#5d9a3c', side: THREE.DoubleSide, roughness: 0.55 }))
 const card = shared(() => new THREE.PlaneGeometry(1, 1))
 const trunkGeo = shared(() => new THREE.CylinderGeometry(0.7, 1, 1, 8, 1).translate(0, 0.5, 0))
-// fruit, berries and cushions: twenty triangles each; a master dome carries thousands of them
-const sphere = shared(() => new THREE.IcosahedronGeometry(1, 0))
+// fruit, berries and flowers: twenty triangles each (a forest carries tens of thousands), shaded
+// smooth across its corners so it still reads as round
+const sphere = shared(() => {
+	const g = new THREE.IcosahedronGeometry(1, 0)
+	g.deleteAttribute('normal')
+	g.deleteAttribute('uv')
+	const round = mergeVertices(g)
+	round.computeVertexNormals()
+	// a blank uv, so it still bakes together with everything else of its colour
+	round.setAttribute('uv', new THREE.BufferAttribute(new Float32Array(round.attributes.position!.count * 2), 2))
+	return round
+})
 
 const fruit = {
 	mango: shared(() => new THREE.MeshStandardMaterial({ color: '#e7a13a', roughness: 0.45 })),

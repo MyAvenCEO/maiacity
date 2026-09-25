@@ -966,8 +966,15 @@ export async function mountVillage(container: HTMLElement, onProgress: (label: s
 	   reach its door. A built dome is drawn once as it arrives (so the graphics card
 	   has it), then simply shown when you are near and hidden when you are not. */
 	const KEEP = 6
-	// only the dome you are at or in is drawn in full; the others show their simple selves
+	// the dome you are at is drawn in full, and the nearest one in full from further off,
+	// so its forest is there as you walk up; the others show their simple selves
 	const SHOW_WITHIN = 22
+	const SHOW_NEAREST = 50
+	const nearestBuilt = () => {
+		let best = -1, gap = SHOW_NEAREST
+		for (const i of built.keys()) if (gapTo(i) < gap) (gap = gapTo(i)), (best = i)
+		return best
+	}
 	const build = (i: number) => {
 		const d = domes[i]!
 		const job = { i, cancelled: false }
@@ -989,7 +996,7 @@ export async function mountVillage(container: HTMLElement, onProgress: (label: s
 	const place = (i: number) => {
 		const dm = built.get(i)
 		if (!dm) return
-		const near = gapTo(i) < SHOW_WITHIN
+		const near = gapTo(i) < SHOW_WITHIN || i === nearestBuilt()
 		if (dm.root.visible !== near) renderer.shadowMap.needsUpdate = true
 		dm.root.visible = near
 		show(i, !near)
@@ -1052,6 +1059,8 @@ export async function mountVillage(container: HTMLElement, onProgress: (label: s
 			// full inside arrives round you (the galleries and stairs come with it)
 			if (here > 0.5) return false
 			if (rr < d.R - 0.8) return true
+			// outside the glass, under the terrace arcade, it is open ground: only the pillars stand in it
+			if (rr > d.R + 0.4) break
 			const a = Math.atan2(dx, dz)
 			return DOORS.some((dd) => Math.abs(adiff(a, dd)) < 0.5 && Math.abs(adiff(a, dd)) * rr < DOOR_HALF)
 		}
@@ -1130,7 +1139,7 @@ export async function mountVillage(container: HTMLElement, onProgress: (label: s
 			const fps = (frames * 1000) / (now - fpsSince)
 			const pr = renderer.getPixelRatio()
 			const top = Math.min(1.25, window.devicePixelRatio)
-			if (fps < 40 && pr > 0.85) renderer.setPixelRatio(Math.max(0.85, pr - 0.15))
+			if (fps < 40 && pr > 1) renderer.setPixelRatio(Math.max(1, pr - 0.1))
 			else if (fps > 56 && pr < top) renderer.setPixelRatio(Math.min(top, pr + 0.1))
 			frames = 0
 			fpsSince = now

@@ -197,6 +197,7 @@ export async function bakeSliced(group: THREE.Group, shadows: boolean, slice: ()
 			const merged = mergeGeometries(geos.slice(i, i + 400))
 			await slice()
 			if (!merged) continue
+			merged.userData.baked = true
 			const m = new THREE.Mesh(merged, mat)
 			m.castShadow = shadows
 			m.receiveShadow = true
@@ -221,6 +222,7 @@ export function bake(group: THREE.Group, shadows = true): THREE.Group {
 	for (const [mat, geos] of byMat) {
 		const merged = mergeGeometries(geos)
 		if (!merged) continue
+		merged.userData.baked = true
 		const m = new THREE.Mesh(merged, mat)
 		m.castShadow = shadows
 		m.receiveShadow = true
@@ -1089,6 +1091,14 @@ export async function mountInterior(container: HTMLElement, kind: DomeKind, onPr
 		const rIn = rWall - g.depth
 		const Rc = Math.max(4.5, R * 0.22)
 		const Rp = (Rc + rIn) / 2
+		/* the medium dome is a garden before it is a house: no ring path through its forest, and
+		   under its gallery only a walk along the front, the kitchen and the fish tanks are paved;
+		   the rest, out to the glass, is planted */
+		const lush = kind === 'home'
+		const commonsW = 2.2
+		const kitchenA = Math.PI * 0.25 + Math.PI, aquaA = Math.PI * 0.25 - Math.PI / 2
+		const PAVED = [[kitchenA, 0.3], [aquaA, 0.4]] as const
+		const paved = (a: number) => PAVED.some(([c, w]) => Math.abs(adiff(a, c)) < w)
 		// the stair on a diagonal, so each spoke runs clear from the plaza to its door
 		const aStair = Math.PI * 0.25
 		// four stairs up to the gallery, one on each diagonal between the doors
@@ -1171,9 +1181,13 @@ export async function mountInterior(container: HTMLElement, kind: DomeKind, onPr
 			bowl.add(sideWall)
 			scene.add(await bakeIn(bowl))
 		}
-		flat(new THREE.RingGeometry(Rp - 1.1, Rp + 1.1, 128), m.stone((Rp * 2) / 3))
+		if (!lush) flat(new THREE.RingGeometry(Rp - 1.1, Rp + 1.1, 128), m.stone((Rp * 2) / 3))
 		// under the gallery the floor is stone too: the covered commons round the edge
-		flat(new THREE.RingGeometry(rIn - 0.4, R, 128), m.stone((R * 2) / 3))
+		if (!lush) flat(new THREE.RingGeometry(rIn - 0.4, R, 128), m.stone((R * 2) / 3))
+		else {
+			flat(new THREE.RingGeometry(rIn - 0.4, rIn + commonsW, 128), m.stone((R * 2) / 3))
+			for (const [a, w] of PAVED) flat(new THREE.RingGeometry(rIn + commonsW - 0.01, R, 24, 1, a - w - Math.PI / 2, 2 * w), m.stone((R * 2) / 3))
+		}
 		for (const a of DOORS) {
 			const len = R - Rc
 			const strip = flat(new THREE.PlaneGeometry(2, len), m.stone(2 / 3, Math.round(len / 3)), 0.021)
@@ -1291,9 +1305,9 @@ export async function mountInterior(container: HTMLElement, kind: DomeKind, onPr
 		}
 		const r = seeded(kind === 'home' ? 3 : kind === 'large' ? 5 : 9)
 		const area = Math.PI * (rIn * rIn - Rc * Rc)
-		const trees = Math.min(kind === 'master' ? 200 : 230, Math.round(area / 26))
+		const trees = Math.min(kind === 'master' ? 200 : 230, Math.round(area / (lush ? 17 : 26)))
 		const onPath = (rr: number, a: number) =>
-			rr < Rc + 1.2 || Math.abs(rr - Rp) < (small ? 1.8 : 3.4) || [...DOORS, ...STAIRS].some((d) => Math.abs(adiff(a, d)) < Math.PI / 2 && Math.abs(adiff(a, d)) * rr < 1.8)
+			rr < Rc + 1.2 || (!lush && Math.abs(rr - Rp) < (small ? 1.8 : 3.4)) || [...DOORS, ...STAIRS].some((d) => Math.abs(adiff(a, d)) < Math.PI / 2 && Math.abs(adiff(a, d)) * rr < 1.8)
 		const tall = kind === 'home' ? 7 : 10
 		let placed = 0
 		for (let tries = 0; placed < trees && tries < trees * 20; tries++) {
@@ -1350,6 +1364,51 @@ export async function mountInterior(container: HTMLElement, kind: DomeKind, onPr
 			const hb = herb(3000 + i, 0.2 + r() * 0.25)
 			hb.position.set(x, 0, z)
 			sectorAt(x, z).cover.add(hb)
+		}
+		if (lush) {
+			/* the planted band under the gallery, out to the glass: nothing taller than the
+			   ceiling, everything that likes a little shade — coffee and cacao, berries, ginger,
+			   comfrey, strawberries, herbs, moss on the ground */
+			const r0b = rIn + commonsW + 0.6, r1b = R - 1.1
+			const bandArea = Math.PI * (r1b * r1b - r0b * r0b)
+			const offBand = (rr: number, a: number) => paved(a) || DOORS.some((d) => Math.abs(adiff(a, d)) * rr < 1.7)
+			let n = 0
+			for (let tries = 0; n < bandArea / 4.5 && tries < 2000; tries++) {
+				if (tries % 20 === 0) await slice()
+				const a = r() * Math.PI * 2
+				const rr = r0b + r() * (r1b - r0b)
+				if (offBand(rr, a)) continue
+				const [x, z] = polar(rr, a)
+				if (colliders.some((c) => Math.hypot(c.x - x, c.z - z) < 1.6)) continue
+				const pick = r()
+				const shrub = pick < 0.3 ? tropicalShrub('coffee', 7000 + n, 1.1 + r() * 0.4) : pick < 0.55 ? tropicalShrub('cacao', 7000 + n, 1.2 + r() * 0.3) : berryBush(7000 + n, 0.8 + r() * 0.4)
+				shrub.object.position.set(x, 0, z)
+				shrub.object.rotation.y = r() * 6.28
+				sectorAt(x, z).forest.add(shrub.object)
+				colliders.push({ x, z, r: shrub.radius * 0.8 })
+				n++
+				for (let j = 0; j < 4; j++) {
+					const b = r() * 6.28, dd = 0.9 + r() * 1.1
+					const ox = x + Math.cos(b) * dd, oz = z + Math.sin(b) * dd
+					const orr = Math.hypot(ox, oz)
+					if (orr < r0b - 0.3 || orr > R - 0.8 || offBand(orr, Math.atan2(ox, oz))) continue
+					const sd = 7500 + n * 11 + j
+					const o = j === 0 ? (r() < 0.5 ? ginger(sd, 0.7 + r() * 0.4) : comfrey(sd, 0.6 + r() * 0.3)) : j === 1 ? (r() < 0.5 ? strawberries(sd) : clover(sd)) : j === 2 ? herb(sd, 0.25 + r() * 0.2) : forestFloor(r() < 0.6 ? 'moss' : 'mycelium', sd)
+					o.position.set(ox, 0, oz)
+					o.rotation.y = r() * 6.28
+					sectorAt(ox, oz)[j === 3 ? 'cover' : 'understorey'].add(o)
+				}
+			}
+			for (let i = 0; i < bandArea * 0.5; i++) {
+				if (i % 50 === 0) await slice()
+				const a = r() * Math.PI * 2
+				const rr = r0b - 0.3 + r() * (R - 0.8 - r0b)
+				if (offBand(rr, a)) continue
+				const [x, z] = polar(rr, a)
+				const hb = herb(9000 + i, 0.2 + r() * 0.25)
+				hb.position.set(x, 0, z)
+				sectorAt(x, z).cover.add(hb)
+			}
 		}
 		for (const sc of sectors.values()) {
 			const small = new THREE.Group()
@@ -1739,7 +1798,7 @@ export async function mountInterior(container: HTMLElement, kind: DomeKind, onPr
 				scene.add(box(0.6, 0.06, 0.6, glowMat, x, H - 0.52, z))
 				addLamp(x, H - 0.7, z, 16, 14, 0)
 			}
-			pathLights(Rp + 1.35, 6)
+			pathLights(lush ? rIn + commonsW + 0.3 : Rp + 1.35, 6)
 		}
 
 		await slice()
@@ -1846,6 +1905,8 @@ export async function mountInterior(container: HTMLElement, kind: DomeKind, onPr
 				const rr = Math.hypot(x, z)
 				if (rr <= wallLimit(y) || terraceAt(rr, y)) return true
 				if (y > 0.5) return false
+				// outside the glass, under the terrace arcade: open ground, only its pillars stand in it
+				if (rr > R + 0.4 && rr < Rt + 1.5) return true
 				const a = Math.atan2(x, z)
 				// through the doorway and out past the arcade, as wide as the terraces now are
 				return doorsOf(kind).some((d) => Math.abs(adiff(a, d)) < 0.5 && Math.abs(adiff(a, d)) * rr < doorHalf) && rr < Rt + 1.5
@@ -1884,6 +1945,7 @@ export async function mountInterior(container: HTMLElement, kind: DomeKind, onPr
 		const pieces: THREE.Object3D[] = []
 		scene.traverse((o) => o !== scene && (o as THREE.Mesh).isMesh && o.visible && pieces.push(o))
 		for (const p of pieces) p.visible = false
+		const unculled: THREE.Object3D[] = []
 		// once the graphics card has a piece, the page lets go of its own copy: a village keeps
 		// several domes built, and their geometry would otherwise sit in memory twice. Measuring
 		// the pieces is spread over frames too: done all at once it holds the world for half a second.
@@ -1895,9 +1957,12 @@ export async function mountInterior(container: HTMLElement, kind: DomeKind, onPr
 			geo.computeBoundingBox()
 			await slice()
 			// drawn once even while out of view, so it reaches the graphics card now, not at the door
+			if (mesh.frustumCulled) unculled.push(mesh)
 			mesh.frustumCulled = false
+			// only a dome's own baked geometry is let go of: a shape shared between plants (a leaf,
+			// a fruit) is copied again by the next dome that bakes it, and must keep its data
+			if (!geo.userData.baked) continue
 			for (const attr of Object.values(geo.attributes)) (attr as THREE.BufferAttribute).onUpload(function (this: THREE.BufferAttribute) {
-				mesh.frustumCulled = true
 				;(this as unknown as { array: unknown }).array = new Float32Array(0)
 			})
 			geo.index?.onUpload(function (this: THREE.BufferAttribute) {
@@ -1915,6 +1980,9 @@ export async function mountInterior(container: HTMLElement, kind: DomeKind, onPr
 				await new Promise((r) => requestAnimationFrame(() => r(null)))
 			}
 		}
+		// every piece has now been drawn once, so the graphics card has it: out of view is out of mind again
+		for (let k = 0; k < 2; k++) await new Promise((r) => requestAnimationFrame(() => r(null)))
+		for (const p of unculled) p.frustumCulled = true
 		;(window as unknown as { __buildLog?: string[] }).__buildLog?.push(`${kind} shown: ${pieces.length} pieces`)
 		lastYield = performance.now()
 		onProgress?.('ready')
@@ -2072,7 +2140,7 @@ export async function mountInterior(container: HTMLElement, kind: DomeKind, onPr
 			const fps = (frames * 1000) / (now - fpsSince)
 			const pr = renderer.getPixelRatio()
 			const top = Math.min(huge ? 1.25 : 1.5, window.devicePixelRatio)
-			if (fps < 40 && pr > 0.85) renderer.setPixelRatio(Math.max(0.85, pr - 0.15))
+			if (fps < 40 && pr > 1) renderer.setPixelRatio(Math.max(1, pr - 0.1))
 			else if (fps > 56 && pr < top) renderer.setPixelRatio(Math.min(top, pr + 0.1))
 			frames = 0
 			fpsSince = now
