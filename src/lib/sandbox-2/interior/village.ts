@@ -75,7 +75,11 @@ export async function mountVillage(container: HTMLElement, onProgress: (label: s
 	const herds: Parameters<typeof levelsAt>[4] = {}
 	const sound = ambience()
 	/** the dome whose full inside is built into the village, and how dark it is */
-	let open: { i: number; dome: EmbeddedDome | null; cancelled: boolean } | null = null
+	/** the domes whose full inside is built, kept once built; the one being built now; when each was last near */
+	const built = new Map<number, EmbeddedDome>()
+	const shown = new Set<number>()
+	let building: { i: number; cancelled: boolean } | null = null
+	const lastNear = new Map<number, number>()
 	let nightNow = 0
 
 	/* ── the sky, and a sun that follows the in-game clock ── */
@@ -120,9 +124,16 @@ export async function mountVillage(container: HTMLElement, onProgress: (label: s
 	let envAt: THREE.Vector3 | null = null
 	/** where the light comes from, sun or moon: the shadows follow you, the direction stays the sky's */
 	const lightDir = new THREE.Vector3(0, 1, 0)
+	const lastDir = new THREE.Vector3()
+	renderer.shadowMap.autoUpdate = false
 	const aimLight = (x: number, z: number) => {
-		// snapped to a grid, so the shadows do not shimmer as you walk
+		// snapped to a grid, so the shadows do not shimmer as you walk; and drawn again only
+		// when that changes or the sun has moved, not every frame
 		const gx = Math.round(x / 8) * 8, gz = Math.round(z / 8) * 8
+		if (gx !== sunLight.target.position.x || gz !== sunLight.target.position.z || !lightDir.equals(lastDir)) {
+			renderer.shadowMap.needsUpdate = true
+			lastDir.copy(lightDir)
+		}
 		sunLight.target.position.set(gx, 0, gz)
 		sunLight.position.copy(lightDir).multiplyScalar(700).add(sunLight.target.position)
 	}
@@ -142,7 +153,7 @@ export async function mountVillage(container: HTMLElement, onProgress: (label: s
 		renderer.toneMappingExposure = 0.42 + 0.5 * (1 - day)
 		glowMat.emissiveIntensity = 0.1 + 2.4 * (1 - THREE.MathUtils.smoothstep(e, -0.02, 0.18))
 		nightNow = 1 - THREE.MathUtils.smoothstep(e, -0.02, 0.18)
-		open?.dome?.setHour(hour)
+		for (const dm of built.values()) dm.setHour(hour)
 		if (!envAt || envAt.angleTo(dir) > 0.04) {
 			envAt = dir.clone()
 			envSky.material.uniforms['sunPosition']!.value.copy(dir)
@@ -894,8 +905,8 @@ export async function mountVillage(container: HTMLElement, onProgress: (label: s
 	}
 	const onMove = (e: MouseEvent) => {
 		if (document.pointerLockElement === dom || dragging) {
-			yaw -= e.movementX * 0.0025
-			pitch = Math.max(-1.4, Math.min(1.4, pitch - e.movementY * 0.0025))
+			yaw -= e.movementX * 0.0042
+			pitch = Math.max(-1.4, Math.min(1.4, pitch - e.movementY * 0.0042))
 		}
 	}
 	const onUp = () => (dragging = false)
@@ -915,16 +926,26 @@ export async function mountVillage(container: HTMLElement, onProgress: (label: s
 	   village a piece at a time, and the simple one steps aside. You walk in through the
 	   door with nothing to wait for: its floors, stairs, galleries and terraces are the
 	   dome's own (interior.ts). Walk far enough away and it is taken down again. ── */
-	type Open = { i: number; dome: EmbeddedDome | null; cancelled: boolean }
-	/** a few real lights, following you from lamp to lamp inside the open dome */
+	/** a few real lights, following you from lamp to lamp inside the dome you are in or at */
 	const pool = Array.from({ length: 8 }, () => {
 		const light = new THREE.PointLight('#ffc98a', 0, 10, 2)
 		scene.add(light)
 		return light
 	})
+	/** the shown dome nearest you, if you are in it or near it */
+	const hereDome = (): number => {
+		let best = -1, gap = 30
+		for (const i of shown) {
+			const d = domes[i]!
+			const g = Math.hypot(pos.x - d.x, pos.z - d.z) - d.ext
+			if (g < gap) (gap = g), (best = i)
+		}
+		return best
+	}
 	const lightNearest = () => {
-		const d = open?.dome ? domes[open.i]! : null
-		const spots = open?.dome && nightNow > 0.01 ? open.dome.spots : []
+		const i = hereDome()
+		const d = i >= 0 ? domes[i]! : null
+		const spots = d && nightNow > 0.01 ? built.get(i)!.spots : []
 		const near = spots
 			.map((sp, k) => ({ k, dist: (sp.x + d!.x - camera.position.x) ** 2 + (sp.y - camera.position.y) ** 2 * 4 + (sp.z + d!.z - camera.position.z) ** 2 }))
 			.sort((a, b) => a.dist - b.dist)
@@ -939,56 +960,78 @@ export async function mountVillage(container: HTMLElement, onProgress: (label: s
 		})
 	}
 	const show = (i: number, on: boolean) => simple[i]!.forEach((o) => (o.visible = on))
-	const openDome = (i: number) => {
+	const gapTo = (i: number) => Math.hypot(pos.x - domes[i]!.x, pos.z - domes[i]!.z) - domes[i]!.ext
+	/* Every dome is built once, in the background, the nearest first, while you walk
+	   about, and kept: a dome you walk up to is almost always ready long before you
+	   reach its door. A built dome is drawn once as it arrives (so the graphics card
+	   has it), then simply shown when you are near and hidden when you are not. */
+	const KEEP = 6
+	// only the dome you are at or in is drawn in full; the others show their simple selves
+	const SHOW_WITHIN = 22
+	const build = (i: number) => {
 		const d = domes[i]!
-		const o: Open = { i, dome: null, cancelled: false }
-		open = o
-		mountInterior(container, d.kind, () => {}, { host: { scene, camera, renderer, x: d.x, z: d.z }, cancelled: () => o.cancelled, hurry: () => Math.hypot(pos.x - d.x, pos.z - d.z) < d.ext + 12 })
+		const job = { i, cancelled: false }
+		building = job
+		mountInterior(container, d.kind, () => {}, { host: { scene, camera, renderer, x: d.x, z: d.z }, cancelled: () => job.cancelled, hurry: () => gapTo(i) < 12, background: () => gapTo(i) > 45 })
 			.then((h) => {
-				if (o.cancelled || !h.embedded) return h.dispose()
-				o.dome = h.embedded
-				o.dome.setHour(hourNow())
-				show(i, false)
+				if (building === job) building = null
+				if (job.cancelled || !h.embedded) return h.dispose()
+				built.set(i, h.embedded)
+				h.embedded.setHour(hourNow())
+				lastNear.set(i, performance.now())
+				place(i)
 			})
-			.catch(() => {})
+			.catch(() => {
+				if (building === job) building = null
+			})
 	}
-	const closeDome = () => {
-		if (!open) return
-		open.cancelled = true
-		if (open.dome) {
-			open.dome.dispose()
-			show(open.i, true)
-		}
-		open = null
-	}
-	/** Open the dome you are walking up to; close the one you have walked away from. */
-	const nearestDome = () => {
-		let best = -1, gap = Infinity
-		domes.forEach((d, i) => {
-			const g = Math.hypot(pos.x - d.x, pos.z - d.z) - d.ext
-			if (g < gap) (gap = g), (best = i)
-		})
-		return { best, gap }
+	/** show a built dome in full when you are near it, its simple self when you are not */
+	const place = (i: number) => {
+		const dm = built.get(i)
+		if (!dm) return
+		const near = gapTo(i) < SHOW_WITHIN
+		if (dm.root.visible !== near) renderer.shadowMap.needsUpdate = true
+		dm.root.visible = near
+		show(i, !near)
+		if (near) shown.add(i)
+		else shown.delete(i)
 	}
 	const manageDomes = () => {
-		const { best, gap } = nearestDome()
-		if (open) {
-			const d = domes[open.i]!
-			const away = Math.hypot(pos.x - d.x, pos.z - d.z) - d.ext
-			if (open.i !== best && gap < 70 && away > 30) closeDome()
-			else if (away > 140) closeDome()
+		const order = domes.map((_, i) => i).sort((a, b) => gapTo(a) - gapTo(b))
+		for (const i of built.keys()) {
+			place(i)
+			if (gapTo(i) < SHOW_WITHIN) lastNear.set(i, performance.now())
 		}
-		// start early: by the time you reach the door the dome has had its time to grow
-		if (!open && gap < 90) openDome(best)
+		// the dome you are nearly at comes first: drop a build far away for it
+		const urgent = order.find((i) => !built.has(i) && gapTo(i) < 40)
+		if (building && urgent !== undefined && building.i !== urgent && gapTo(building.i) > gapTo(urgent) + 40) {
+			building.cancelled = true
+			building = null
+		}
+		if (!building) {
+			const next = order.find((i) => !built.has(i))
+			if (next !== undefined) {
+				// room for it: let go of the dome you were near longest ago
+				if (built.size >= KEEP) {
+					const old = [...built.keys()].filter((i) => !shown.has(i)).sort((a, b) => (lastNear.get(a) ?? 0) - (lastNear.get(b) ?? 0))[0]
+					if (old !== undefined && gapTo(old) > gapTo(next)) {
+						built.get(old)!.dispose()
+						built.delete(old)
+						show(old, true)
+					}
+				}
+				if (built.size < KEEP) build(next)
+			}
+		}
 	}
 
 	/** Where you may stand, and how high: the land, or inside the open dome on its own floors. */
 	const DOOR_HALF = 1.1
 	let feet = 0
 	const floorHere = (x: number, z: number, f: number) => {
-		if (open?.dome) {
-			const d = domes[open.i]!
-			if (Math.hypot(x - d.x, z - d.z) < d.ext + 0.3) return open.dome.floorAt(x - d.x, z - d.z, f)
+		for (const i of shown) {
+			const d = domes[i]!
+			if (Math.hypot(x - d.x, z - d.z) < d.ext + 0.3) return built.get(i)!.floorAt(x - d.x, z - d.z, f)
 		}
 		return 0
 	}
@@ -1000,9 +1043,10 @@ export async function mountVillage(container: HTMLElement, onProgress: (label: s
 			const rr = Math.hypot(dx, dz)
 			if (rr > d.ext + 0.3) continue
 			// the open dome: its own floors, walls, rails and furniture
-			if (open?.i === i && open.dome) {
-				const nf = open.dome.floorAt(dx, dz, feet)
-				return open.dome.inside(dx, dz, nf) && !open.dome.blocked(dx, dz, here) && !open.dome.hits(dx, dz, nf)
+			const full = shown.has(i) ? built.get(i) : undefined
+			if (full) {
+				const nf = full.floorAt(dx, dz, feet)
+				return full.inside(dx, dz, nf) && !full.blocked(dx, dz, here) && !full.hits(dx, dz, nf)
 			}
 			// a dome still growing: in through a door and anywhere on its ground floor, while its
 			// full inside arrives round you (the galleries and stairs come with it)
@@ -1053,6 +1097,7 @@ export async function mountVillage(container: HTMLElement, onProgress: (label: s
 	const clock0 = performance.now()
 	let sunChecked = 0
 	let lodChecked = 0
+	let frames = 0, fpsSince = performance.now()
 	let flying: number[] | null = null
 	const tick = () => {
 		if (!running) return
@@ -1077,8 +1122,19 @@ export async function mountVillage(container: HTMLElement, onProgress: (label: s
 			const indoors = domes.some((d) => Math.hypot(pos.x - d.x, pos.z - d.z) < d.R - 0.3)
 			sound.set(levelsAt(pos.x, pos.z, indoors, waterPts, herds), indoors)
 		}
-		open?.dome?.update(t)
+		for (const i of shown) built.get(i)!.update(t)
 		renderer.render(scene, camera)
+		// keep it smooth: lower the resolution a little when frames get slow, raise it when there is room
+		frames++
+		if (now - fpsSince > 1500) {
+			const fps = (frames * 1000) / (now - fpsSince)
+			const pr = renderer.getPixelRatio()
+			const top = Math.min(1.25, window.devicePixelRatio)
+			if (fps < 40 && pr > 0.85) renderer.setPixelRatio(Math.max(0.85, pr - 0.15))
+			else if (fps > 56 && pr < top) renderer.setPixelRatio(Math.min(top, pr + 0.1))
+			frames = 0
+			fpsSince = now
+		}
 		frame = requestAnimationFrame(tick)
 	}
 	step(0)
@@ -1090,6 +1146,9 @@ export async function mountVillage(container: HTMLElement, onProgress: (label: s
 		scene,
 		THREE,
 		herds,
+		renderer,
+		built,
+		shown,
 		domes,
 		fly: (x: number, y: number, z: number, yw: number, p: number) => (flying = [x, y, z, yw, p]),
 		place: (x: number, z: number, yw: number, p: number, y = 0) => {
@@ -1103,7 +1162,7 @@ export async function mountVillage(container: HTMLElement, onProgress: (label: s
 
 	return {
 		domes,
-		opening: () => (open && !open.dome ? DOMES[domes[open.i]!.kind].label : null),
+		opening: () => (building && gapTo(building.i) < 25 ? DOMES[domes[building.i]!.kind].label : null),
 		pause: () => {
 			sound.set({}, false)
 			running = false
@@ -1125,7 +1184,8 @@ export async function mountVillage(container: HTMLElement, onProgress: (label: s
 		dispose() {
 			running = false
 			cancelAnimationFrame(frame)
-			closeDome()
+			if (building) building.cancelled = true
+			for (const dm of built.values()) dm.dispose()
 			sound.dispose()
 			window.removeEventListener('keydown', kd)
 			window.removeEventListener('keyup', ku)

@@ -27,7 +27,8 @@ const bananaStemMat = shared(() => new THREE.MeshStandardMaterial({ color: '#6f8
 const bananaLeafMat = shared(() => new THREE.MeshStandardMaterial({ color: '#5d9a3c', side: THREE.DoubleSide, roughness: 0.55 }))
 const card = shared(() => new THREE.PlaneGeometry(1, 1))
 const trunkGeo = shared(() => new THREE.CylinderGeometry(0.7, 1, 1, 8, 1).translate(0, 0.5, 0))
-const sphere = shared(() => new THREE.SphereGeometry(1, 10, 8))
+// fruit, berries and cushions: twenty triangles each; a master dome carries thousands of them
+const sphere = shared(() => new THREE.IcosahedronGeometry(1, 0))
 
 const fruit = {
 	mango: shared(() => new THREE.MeshStandardMaterial({ color: '#e7a13a', roughness: 0.45 })),

@@ -458,7 +458,7 @@ export type InteriorHandle = {
 }
 
 /** Where to come in, and what to do on walking back out (Sandbox 4's village). */
-export type InteriorOptions = { entry?: number; onLeave?: (door: number) => void; host?: DomeHost; cancelled?: () => boolean; hurry?: () => boolean }
+export type InteriorOptions = { entry?: number; onLeave?: (door: number) => void; host?: DomeHost; cancelled?: () => boolean; hurry?: () => boolean; background?: () => boolean }
 /**
  * Building a dome into someone else's world (Sandbox 4's village): its scene,
  * camera and renderer, and where the dome stands. The dome then brings no sky,
@@ -504,7 +504,8 @@ export async function mountInterior(container: HTMLElement, kind: DomeKind, onPr
 	const slice = async () => {
 		// the standalone view is behind its loading screen: it can work in longer stretches
 		// in a village it works in short breaths; when you are at its door waiting, in long ones
-		if (performance.now() - lastYield < (host ? (opts.hurry?.() ? 70 : 24) : 60)) return
+		// a dome built in the background, far from you, takes only a sliver of each frame
+		if (performance.now() - lastYield < (host ? (opts.hurry?.() ? 70 : opts.background?.() ? 7 : 24) : 60)) return
 		prof.work += performance.now() - lastYield
 		prof.slices++
 		await new Promise((r) => requestAnimationFrame(() => setTimeout(r, 0)))
@@ -679,6 +680,10 @@ export async function mountInterior(container: HTMLElement, kind: DomeKind, onPr
 		u['sunPosition']!.value.copy(dir)
 		// by night the light comes from the moon, opposite the sun
 		sunLight.position.copy(e > -0.02 ? dir : dir.clone().negate().setY(Math.abs(dir.y) + 0.4).normalize()).multiplyScalar(R * 3 + 20)
+		// the shadows are drawn again only when the light has moved (the factory, busy with
+		// machines and a lift, keeps drawing them every frame)
+		renderer.shadowMap.autoUpdate = kind === 'factory'
+		renderer.shadowMap.needsUpdate = true
 		sunLight.color.copy(e > -0.02 ? white.clone().lerp(warm, low) : moon)
 		sunLight.intensity = e > -0.02 ? 0.5 + 2.5 * day : 1.1
 		// the factory works through the night under its own lights
@@ -1879,6 +1884,26 @@ export async function mountInterior(container: HTMLElement, kind: DomeKind, onPr
 		const pieces: THREE.Object3D[] = []
 		scene.traverse((o) => o !== scene && (o as THREE.Mesh).isMesh && o.visible && pieces.push(o))
 		for (const p of pieces) p.visible = false
+		// once the graphics card has a piece, the page lets go of its own copy: a village keeps
+		// several domes built, and their geometry would otherwise sit in memory twice. Measuring
+		// the pieces is spread over frames too: done all at once it holds the world for half a second.
+		for (const p of pieces) {
+			const mesh = p as THREE.Mesh
+			const geo = mesh.geometry
+			if (!geo) continue
+			geo.computeBoundingSphere()
+			geo.computeBoundingBox()
+			await slice()
+			// drawn once even while out of view, so it reaches the graphics card now, not at the door
+			mesh.frustumCulled = false
+			for (const attr of Object.values(geo.attributes)) (attr as THREE.BufferAttribute).onUpload(function (this: THREE.BufferAttribute) {
+				mesh.frustumCulled = true
+				;(this as unknown as { array: unknown }).array = new Float32Array(0)
+			})
+			geo.index?.onUpload(function (this: THREE.BufferAttribute) {
+				;(this as unknown as { array: unknown }).array = new Uint32Array(0)
+			})
+		}
 		host.scene.add(scene)
 		// about a quarter of a million vertices a frame: small pieces come in dozens, a big merged forest alone
 		let budget = 0
@@ -1928,8 +1953,8 @@ export async function mountInterior(container: HTMLElement, kind: DomeKind, onPr
 	window.addEventListener('keyup', ku)
 	let dragging = false
 	const look = (dx: number, dy: number) => {
-		yaw -= dx * 0.0025
-		pitch = Math.max(-1.4, Math.min(1.4, pitch - dy * 0.0025))
+		yaw -= dx * 0.0042
+		pitch = Math.max(-1.4, Math.min(1.4, pitch - dy * 0.0042))
 	}
 	const onDown = () => {
 		dragging = true
@@ -2004,6 +2029,7 @@ export async function mountInterior(container: HTMLElement, kind: DomeKind, onPr
 	const clock0 = performance.now()
 	let sunChecked = 0
 	let lampsChecked = 0
+	let frames = 0, fpsSince = performance.now()
 	const sound = ambience()
 	/** a free camera for the journal's overview pictures (dev hook), walking paused while it is set */
 	let flying: [number, number, number, number, number] | null = null
@@ -2040,6 +2066,17 @@ export async function mountInterior(container: HTMLElement, kind: DomeKind, onPr
 			setSun(hourNow())
 		}
 		renderer.render(scene, camera)
+		// keep it smooth: lower the resolution a little when frames get slow, raise it when there is room
+		frames++
+		if (now - fpsSince > 1500) {
+			const fps = (frames * 1000) / (now - fpsSince)
+			const pr = renderer.getPixelRatio()
+			const top = Math.min(huge ? 1.25 : 1.5, window.devicePixelRatio)
+			if (fps < 40 && pr > 0.85) renderer.setPixelRatio(Math.max(0.85, pr - 0.15))
+			else if (fps > 56 && pr < top) renderer.setPixelRatio(Math.min(top, pr + 0.1))
+			frames = 0
+			fpsSince = now
+		}
 		frame = requestAnimationFrame(tick)
 	}
 	step(0)
