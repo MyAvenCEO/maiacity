@@ -6,11 +6,11 @@ author: avenSAMUEL
 authorImage: /samuel.jpg
 authorRole: Building maiaCITY
 date: 2026-09-23
-cover: /day-15-inside-the-domes/home-from-the-gallery.jpg
-coverAlt: Looking down from the gallery of a medium dome onto its food forest, stone paths and dining table.
+cover: /day-15-inside-the-domes/kitchen-garden.jpg
+coverAlt: "The kitchen garden inside a large dome: tomatoes on their stakes, beds of salad and chard along a stone path, the food forest rising behind."
 excerpt: >-
-  On Day 14 the village grew from above. Today we opened the door. Mango trees on the ground
-  floor, bedrooms upstairs facing the view, and a stream running between them.
+  On Day 14 the village grew from above. Today we opened the door. A seven-layer forest and a
+  kitchen garden on the ground floor, bedrooms upstairs facing the view, grapes over the terraces.
 categories: [game, housing, food]
 ---
 
@@ -58,6 +58,12 @@ A turquoise stream winds through the forest round every dome, with stones along 
 
 They are planted as guilds. Each tree has its own circle of plants round it that feed, shade and protect each other, the same idea as the forest that closes round a finished village on [Day 14](/blog/day-14-one-tent-to-233/).
 
+The forest has animals in it too, and they move. Small herds of goats wander between the trees, browsing, stopping, walking on. Geese keep to the stream, waddling along its banks. Each one goes its own way, inside its own patch of land.
+
+![Geese on the stream bank and goats by the bridge, outside a large dome.](/day-15-inside-the-domes/geese.jpg)
+
+![Goats browsing under the fruit trees.](/day-15-inside-the-domes/goats.jpg)
+
 ## Every big dome stands on a stone arcade, with a door to each point of the compass
 
 ![A large dome from the forest: the path leads to a door under the stone arcade, two terraces above it.](/day-15-inside-the-domes/large-from-outside.jpg)
@@ -74,21 +80,35 @@ There are four doors, one facing each point of the compass. Each one is a round-
 
 ![The ground floor of a medium dome: a stone plaza with a long table, sofas, lanterns, and fruit trees all round.](/day-15-inside-the-domes/home-commons.jpg)
 
-Step into a medium dome and you are in a garden with a roof. In the middle is a stone plaza with a long table, sofas and paper lanterns hanging from the frame. Round it grows a food forest: mango and avocado trees heavy with fruit, citrus, bananas, coconut palms, and berry bushes underneath.
+Step into a medium dome and you are in a garden with a roof. In the middle is a stone plaza with a long table, sofas and paper lanterns hanging from the frame. Round it grows a food forest, and inside the glass it has seven layers too, only warmer:
 
-A stream starts beside the plaza and winds through the trees to a pond. Stone paths ring the forest and cut across it to the stair. Raised beds of herbs line the paths.
+1. **Tall palms.** Coconut palms, up to fourteen metres, the tallest things under the glass.
+2. **Fruit trees.** Mango and avocado heavy with fruit, oranges and lemons, papaya, figs and pomegranates.
+3. **Shrubs.** Coffee with its red cherries, cacao with its pods on the trunk, berry bushes.
+4. **Herbs.** Comfrey and flowering herbs, and bananas, which are herbs too, only very big.
+5. **Ground cover.** Strawberries and clover.
+6. **Roots.** Ginger and turmeric, and squash sprawling over the soil.
+7. **Climbers.** Passion fruit winding up poles among the trees.
 
-![From the gallery of a medium dome: the food forest, the stream, the paths and the plaza below.](/day-15-inside-the-domes/home-from-the-gallery.jpg)
+The trees are big enough that the forest closes over your head as you walk.
 
-Upstairs, a timber gallery runs all the way round on limestone pillars, with a glass railing and plants spilling over it. Under the gallery, round the edge of the ground floor, are the shared rooms that need a roof over them: the kitchen with its long counters, and the aquaponics, where fish tanks feed the growing troughs beside them.
+![From the gallery of a medium dome, at the top of the stair: the food forest, the paths and the beds below.](/day-15-inside-the-domes/home-from-the-gallery.jpg)
+
+A stream starts beside the plaza and winds through the trees to a pond. Stone paths ring the forest and cut across it to the stairs. Along them is the kitchen garden, for the food that needs a greenhouse: beds of lettuce, green and red, tomatoes tied to stakes, cucumbers climbing netted A-frames, peppers and aubergines, rainbow chard, beans on teepees of cane, strawberries and herbs.
+
+Four stairs lead up, one on each side between the doors, each with a handrail either side so nobody steps off the edge.
+
+![One of the four stairs up to the gallery, through the forest.](/day-15-inside-the-domes/stairs.jpg)
+
+Upstairs, a timber gallery runs all the way round on limestone pillars, with a glass railing. The balconies are Mediterranean. Terracotta pots stand along the rail, lavender and rosemary, a small olive or a lemon tree now and then, and grapevines are trained along the top of the rail with their bunches hanging over. Under the gallery, round the edge of the ground floor, are the shared rooms that need a roof over them: the kitchen with its long counters, and the aquaponics, where fish tanks feed the growing troughs beside them.
 
 ![A private room upstairs: the bed faces out through the glass.](/day-15-inside-the-domes/home-private-room.jpg)
 
 The private rooms are on the gallery, behind timber walls, and every one faces outwards. The bed stands against the glass. You wake up looking at the forest outside, and walk out of your door onto a balcony over the forest inside. Step the other way, through the glass, and you are on the terrace outside.
 
-![The terrace round a dome: stone paving, a timber balustrade, planters and tables, the forest below.](/day-15-inside-the-domes/terrace.jpg)
+![The terrace round a dome: a pergola of grapevines over a table, terracotta pots, the stone arcade.](/day-15-inside-the-domes/terrace.jpg)
 
-The terrace is the outdoor room of every home: tables for eating outside, planters of berries and shrubs, and the whole forest spread out below.
+The terrace is the outdoor room of every home, and it is Mediterranean too. Every table stands under its own timber pergola with a grapevine grown over the top and its grapes hanging through. Olive and lemon trees and lavender stand in terracotta pots along the balustrade, and the whole forest is spread out below.
 
 Imagine the first morning in one of these. Light through the frame, the sound of the stream downstairs, and breakfast picked from a tree on the way to the table.
 
@@ -98,19 +118,25 @@ Imagine the first morning in one of these. Light through the frame, the sound of
 
 The large domes of the second ring follow the same plan at nearly twice the size. The plaza is wider, the palms are taller, and the forest is deep enough to get lost in for a minute.
 
-And they have two floors of rooms. A second stair climbs round the first-floor walkway to a second gallery, with another ring of private rooms above the first, each one facing out through the glass.
+The kitchen garden runs both sides of the ring path here, a bed every few steps: salad, tomatoes, cucumbers, peppers, chard, beans, aubergines, strawberries, herbs, and round again.
+
+![The kitchen garden along the ring path: tomatoes on stakes, beds of salad and chard, the forest behind.](/day-15-inside-the-domes/kitchen-garden.jpg)
+
+And they have two floors of rooms. Beside each of the four stairs, a second flight climbs round the first-floor walkway to a second gallery, with another ring of private rooms above the first, each one facing out through the glass.
 
 ![From the second-floor gallery of a large dome, looking down over the forest inside.](/day-15-inside-the-domes/second-floor.jpg)
 
-![From the gallery of a large dome: winding stone paths through the forest, the stream and its pond.](/day-15-inside-the-domes/large-food-forest.jpg)
+![In the forest of a large dome: a bed of beans on their canes, fruit trees and palms all round.](/day-15-inside-the-domes/large-food-forest.jpg)
+
+![Along the gallery: terracotta pots and grapevines on the rail.](/day-15-inside-the-domes/balcony.jpg)
 
 ![A private room in a large dome, the bed against the glass and the land beyond.](/day-15-inside-the-domes/large-private-room.jpg)
 
 ![The two-storey arcade of a large dome: a terrace for each floor of rooms.](/day-15-inside-the-domes/large-terraces.jpg)
 
-The second floor has its own terrace too, the same as the first: stone paving, a timber balustrade, tables and planters, one storey higher and with a longer view.
+The second floor has its own terrace too, the same as the first: stone paving, a timber balustrade, grape pergolas over the tables and pots along the rail, one storey higher and with a longer view.
 
-![On the second-floor terrace, above the first, the forest spread out below.](/day-15-inside-the-domes/terrace-second-floor.jpg)
+![On the second-floor terrace: grape pergolas, lemon trees in pots, the forest spread out below.](/day-15-inside-the-domes/terrace-second-floor.jpg)
 
 ## The master dome: 136 metres, and a stage in the middle
 
@@ -120,9 +146,11 @@ The master dome is the one Day 14 saved for last, and the biggest thing a villag
 
 ![From the stage, looking up at the tiers.](/day-15-inside-the-domes/master-onstage.jpg)
 
-Round the theatre grows a real forest. Paths wind between mango, avocado and citrus trees, bananas and palms, and a stream runs through it to a pond.
+Round the theatre grows a real forest, all seven layers of it. Paths wind between mango, avocado and citrus trees, papayas, bananas and palms, a stream runs through it to a pond, and the kitchen garden lines both sides of the ring path.
 
 ![The master dome's forest.](/day-15-inside-the-domes/master-forest.jpg)
+
+![The kitchen garden in the master dome: chard, strawberries and tomatoes along the path.](/day-15-inside-the-domes/master-garden.jpg)
 
 ### The ring where the village works
 
@@ -148,9 +176,9 @@ Outside, the ring path round the master dome opens onto twelve small squares, th
 
 ![The restaurant square: long tables under a pergola strung with lights.](/day-15-inside-the-domes/master-restaurant.jpg)
 
-Between the squares and the forest are the hens. Eight coops stand among the trees, each a timber henhouse on legs with nesting boxes, a ramp and a fenced run. Some of the hens stay in the run and some are out foraging under the fruit trees, which is what hens in a food forest are for. They eat the pests and the fallen fruit, and they give back eggs and manure.
+Between the squares and the forest are the hens. Eight coops stand among the trees, each a timber henhouse on legs with nesting boxes, a ramp and a fenced run. The hens are never still. They scratch about the run, stop to peck, and wander on, and some are out foraging under the fruit trees, which is what hens in a food forest are for. They eat the pests and the fallen fruit, and they give back eggs and manure.
 
-![A chicken coop among the trees, hens in the run and out under the trees.](/day-15-inside-the-domes/master-coop.jpg)
+![A chicken coop among the trees, hens scratching in the run.](/day-15-inside-the-domes/master-coop.jpg)
 
 ![The master dome from the forest: the two-storey arcade, the terraces, and the squares round it.](/day-15-inside-the-domes/master-from-outside.jpg)
 

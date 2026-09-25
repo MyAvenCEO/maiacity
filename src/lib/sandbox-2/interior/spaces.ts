@@ -602,45 +602,7 @@ export function cafes(k: Kit, rr: number): Space[] {
 
 /* ── outside: the hens ─────────────────────────────────────────────────── */
 
-const feathers = ['#f4efe4', '#b8703a', '#3b3430', '#d9a066'].map((c) => col(c, 0.9))
-const comb = col('#c7362c', 0.6)
-const beak = col('#e2a93b', 0.6)
-
-/** A hen, pecking or looking about. */
-function hen(x: number, z: number, seed: number): THREE.Group {
-	const r = seeded(seed)
-	const g = new THREE.Group()
-	const coat = feathers[Math.floor(r() * feathers.length)]!
-	const body = new THREE.Mesh(new THREE.SphereGeometry(0.17, 10, 8), coat)
-	body.scale.set(0.8, 0.85, 1.25)
-	body.position.y = 0.24
-	g.add(body)
-	const tail = new THREE.Mesh(new THREE.ConeGeometry(0.09, 0.2, 6), coat)
-	tail.position.set(0, 0.36, -0.2)
-	tail.rotation.x = -0.7
-	g.add(tail)
-	const peck = r() < 0.4
-	const head = new THREE.Group()
-	const skull = new THREE.Mesh(new THREE.SphereGeometry(0.075, 8, 6), coat)
-	head.add(skull)
-	const bill = new THREE.Mesh(new THREE.ConeGeometry(0.025, 0.07, 5), beak)
-	bill.rotation.x = Math.PI / 2
-	bill.position.z = 0.09
-	head.add(bill)
-	const c = new THREE.Mesh(new THREE.BoxGeometry(0.02, 0.06, 0.08), comb)
-	c.position.set(0, 0.07, 0.01)
-	head.add(c)
-	head.position.set(0, peck ? 0.14 : 0.42, peck ? 0.26 : 0.18)
-	head.rotation.x = peck ? 0.9 : 0
-	g.add(head)
-	for (const side of [-1, 1]) g.add(new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.012, 0.12, 4), beak).translateX(side * 0.05).translateY(0.06))
-	g.position.set(x, 0, z)
-	g.rotation.y = r() * Math.PI * 2
-	g.traverse((o) => (o.castShadow = true))
-	return g
-}
-
-/** A coop: a timber henhouse on legs, a ramp down, a fenced run, and hens in and out of it. */
+/** A coop: a timber henhouse on legs, a ramp down, and a fenced run (the hens are in animals.ts). */
 function coop(k: Kit, seed: number): Space {
 	const g = new THREE.Group()
 	const r = seeded(seed)
@@ -678,12 +640,7 @@ function coop(k: Kit, seed: number): Space {
 	straw.position.y = 0.035
 	g.add(straw)
 	g.add(k.box(0.8, 0.15, 0.25, k.steel, -1.6, 0, 1.4))
-	for (let i = 0; i < 7; i++) g.add(hen(-2 + r() * 4, -0.2 + r() * 1.9, seed * 31 + i))
-	// and a few out foraging under the trees, as hens in a food forest do
-	for (let i = 0; i < 5; i++) {
-		const a = r() * Math.PI * 2, dd = 3.5 + r() * 3
-		g.add(hen(Math.sin(a) * dd, Math.cos(a) * dd, seed * 37 + i))
-	}
+	void r
 	return { group: g, colliders: [{ x: 0, z: -1.2, r: 1.3 }, { x: -1.3, z: 0.8, r: 1.3 }, { x: 1.3, z: 0.8, r: 1.3 }] }
 }
 
@@ -692,6 +649,17 @@ export function coopsAround(squareR: number): { a: number; r: number; radius: nu
 	const out: { a: number; r: number; radius: number }[] = []
 	for (let q = 0; q < 4; q++) for (const off of [-0.21, 0.21]) out.push({ a: Math.PI / 4 + (q * Math.PI) / 2 + off, r: squareR + 5, radius: 4 })
 	return out
+}
+
+/** Where each coop's hens wander: inside its run, and out under the trees round it. */
+export function henPatches(squareR: number): { x: number; z: number; r: number; n: number }[] {
+	return coopsAround(squareR).flatMap(({ a, r }) => {
+		const [cx, cz] = polar(r, a)
+		const c = Math.cos(a), s = Math.sin(a)
+		// the run's middle, in the coop's own frame (0, 0.8)
+		const rx = cx + 0.8 * s, rz = cz + 0.8 * c
+		return [{ x: rx, z: rz, r: 1.5, n: 6 }, { x: cx, z: cz, r: 8, n: 4 }]
+	})
 }
 
 export function coops(k: Kit, squareR: number): Space[] {

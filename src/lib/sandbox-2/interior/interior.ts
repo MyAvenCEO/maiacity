@@ -24,8 +24,9 @@ import * as THREE from 'three'
 import { Sky } from 'three/addons/objects/Sky.js'
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js'
 import { flagstone, leaves, limestone, oak, soil, water } from './textures'
-import { cafes, coops, coopsAround, squaresAround, workshops, type Kit } from './spaces'
-import { appleTree, banana, berryBush, canopyTree, climber, clover, coconutPalm, comfrey, fruitTree, herb, seeded, shrub, squash, type Plant } from './plants'
+import { cafes, coops, coopsAround, henPatches, squaresAround, workshops, type Kit } from './spaces'
+import { herd } from './animals'
+import { appleTree, banana, berryBush, canopyTree, climber, clover, coconutPalm, comfrey, crop, CROPS, fruitTree, ginger, grapePergola, herb, papaya, passionVine, potted, seeded, shrub, smallFruitTree, squash, strawberries, tropicalShrub, vineAlong, type Plant } from './plants'
 
 export type DomeKind = 'glamp' | 'home' | 'large' | 'master'
 
@@ -565,6 +566,24 @@ export async function mountInterior(container: HTMLElement, kind: DomeKind, onPr
 			scene.add(bake(c.group))
 			outsideColliders.push(...c.colliders)
 		}
+	/* the animals, wandering: hens round the master dome's coops, goats browsing
+	   the forest round every dome, geese along the stream */
+	{
+		const beyond = ringPath + (outerR - ringPath) * 0.35
+		const goatAt = (a: number) => {
+			const [x, z] = polar(beyond, a)
+			return { x, z, r: kind === 'glamp' ? 7 : 10, n: kind === 'glamp' ? 2 : 4 }
+		}
+		const flocks = [
+			herd('goat', [goatAt(Math.PI / 2 + 0.05), goatAt(-Math.PI / 2 + 0.3)], 71),
+			herd('goose', [60, 190].map((i) => streamOut[Math.min(i, streamOut.length - 1)]!).map((p) => ({ x: p.x, z: p.z, r: 5, n: 5 })), 72),
+			...(kind === 'master' ? [herd('hen', henPatches(squareR), 73)] : [])
+		]
+		for (const f of flocks) {
+			scene.add(f.object)
+			animated.push(f.update)
+		}
+	}
 	await pause('Planting the food forest outside')
 
 	const shell = geodesic(spec, m, kind)
@@ -703,6 +722,8 @@ export async function mountInterior(container: HTMLElement, kind: DomeKind, onPr
 		const Rp = (Rc + rIn) / 2
 		// the stair on a diagonal, so each spoke runs clear from the plaza to its door
 		const aStair = Math.PI * 0.25
+		// four stairs up to the gallery, one on each diagonal between the doors
+		const STAIRS = [0, 1, 2, 3].map((k) => aStair + (k * Math.PI) / 2)
 		const run = H * 1.9
 		const r0 = rIn - run
 		const stairHalf = 0.9
@@ -735,7 +756,7 @@ export async function mountInterior(container: HTMLElement, kind: DomeKind, onPr
 		const tierIn = (i: number) => Rc - (tiers - i) * tier.w
 		/** The floor in the bowl at a radius: the stage, the aisle round it, or a tier. */
 		const bowlAt = (rr: number) => {
-			if (rr >= Rc) return 0
+			if (!theatre || rr >= Rc) return 0
 			if (rr <= stageR) return -pit + 0.55
 			if (rr < tierIn(0)) return -pit
 			return -pit + (Math.floor((rr - tierIn(0)) / tier.w) + 1) * tier.h
@@ -864,14 +885,45 @@ export async function mountInterior(container: HTMLElement, kind: DomeKind, onPr
 		}
 		const nearStream = (x: number, z: number, d: number) => samples.some((p) => Math.hypot(p.x - x, p.z - z) < d)
 
-		/* the food forest in the open ground */
+		/* the kitchen garden: beds along both sides of the ring path, for everything that wants a greenhouse —
+		   in the medium dome, where the ground is narrower, eight beds on the diagonals */
+		const bedLen = 3
+		const garden = new THREE.Group()
+		const small = kind === 'home'
+		{
+			const perSide = small ? 8 : Math.min(28, Math.floor((2 * Math.PI * Rp) / 4))
+			let n = 0
+			for (const side of small ? [1] : [-1, 1])
+				for (let k = 0; k < perSide; k++) {
+					const rr = Rp + side * (small ? 2.2 : 2.05)
+					const a = small ? Math.PI / 4 + Math.floor(k / 2) * (Math.PI / 2) + (k % 2 ? 0.28 : -0.28) : ((k + (side > 0 ? 0.5 : 0)) / perSide) * Math.PI * 2
+					if ([...DOORS, ...STAIRS].some((d) => Math.abs(adiff(a, d)) * rr < 3.2)) continue
+					const [x, z] = polar(rr, a)
+					if (nearStream(x, z, width + 2)) continue
+					const bed = new THREE.Group()
+					bed.add(box(bedLen, 0.4, 1.15, m.oak(bedLen / 2, 0.3)))
+					bed.add(box(bedLen - 0.1, 0.02, 1.05, m.soil(bedLen / 2), 0, 0.4))
+					const c = crop(CROPS[n++ % CROPS.length]!, 800 + n, bedLen - 0.2)
+					c.position.y = 0.42
+					bed.add(c)
+					bed.position.set(x, 0, z)
+					bed.rotation.y = a + Math.PI / 2
+					garden.add(bed)
+					colliders.push({ x, z, r: 1.3 }, { x: x + Math.cos(a), z: z - Math.sin(a), r: 0.9 }, { x: x - Math.cos(a), z: z + Math.sin(a), r: 0.9 })
+				}
+		}
+		scene.add(bake(garden, false))
+
+		/* the food forest in the open ground, in seven layers: tall palms, fruit
+		   trees, shrubs, herbs, ground cover, roots and climbers, planted as guilds */
 		const forest = new THREE.Group()
 		const understorey = new THREE.Group()
 		const r = seeded(kind === 'home' ? 3 : kind === 'large' ? 5 : 9)
 		const area = Math.PI * (rIn * rIn - Rc * Rc)
-		const trees = Math.min(kind === 'master' ? 230 : 260, Math.round(area / 24))
+		const trees = Math.min(kind === 'master' ? 200 : 230, Math.round(area / 26))
 		const onPath = (rr: number, a: number) =>
-			rr < Rc + 1.2 || Math.abs(rr - Rp) < 1.8 || [...DOORS, aStair].some((d) => Math.abs(adiff(a, d)) < Math.PI / 2 && Math.abs(adiff(a, d)) * rr < 1.8)
+			rr < Rc + 1.2 || Math.abs(rr - Rp) < (small ? 1.8 : 3.4) || [...DOORS, ...STAIRS].some((d) => Math.abs(adiff(a, d)) < Math.PI / 2 && Math.abs(adiff(a, d)) * rr < 1.8)
+		const tall = kind === 'home' ? 7 : 10
 		let placed = 0
 		for (let tries = 0; placed < trees && tries < trees * 20; tries++) {
 			const a = r() * Math.PI * 2
@@ -879,23 +931,44 @@ export async function mountInterior(container: HTMLElement, kind: DomeKind, onPr
 			if (onPath(rr, a)) continue
 			const [x, z] = polar(rr, a)
 			if (nearStream(x, z, width + 1.4)) continue
-			if (colliders.some((c) => Math.hypot(c.x - x, c.z - z) < 2.6)) continue
+			if (colliders.some((c) => Math.hypot(c.x - x, c.z - z) < 2.8)) continue
 			const pick = r()
-			const s = 0.8 + r() * 0.6
+			const s = 1 + r() * 0.7
 			let plant: Plant
-			if (pick < 0.24) plant = fruitTree('mango', 100 + placed, s)
-			else if (pick < 0.44) plant = fruitTree('avocado', 200 + placed, s)
-			else if (pick < 0.6) plant = fruitTree('citrus', 300 + placed, s)
-			else if (pick < 0.8) plant = coconutPalm(400 + placed, (kind === 'home' ? 6 : 9) + r() * 4)
-			else plant = banana(600 + placed, 2.6 + r())
+			if (pick < 0.16) plant = coconutPalm(400 + placed, tall + r() * 4)
+			else if (pick < 0.36) plant = fruitTree('mango', 100 + placed, s)
+			else if (pick < 0.52) plant = fruitTree('avocado', 200 + placed, s)
+			else if (pick < 0.64) plant = fruitTree('citrus', 300 + placed, s)
+			else if (pick < 0.73) plant = papaya(500 + placed, 3.4 + r() * 1.6)
+			else if (pick < 0.8) plant = smallFruitTree('fig', 520 + placed, s)
+			else if (pick < 0.86) plant = smallFruitTree('pomegranate', 540 + placed, s * 0.9)
+			else plant = banana(600 + placed, 3 + r() * 1.2)
 			plant.object.position.set(x, 0, z)
 			plant.object.rotation.y = r() * 6.28
 			forest.add(plant.object)
 			colliders.push({ x, z, r: plant.radius + 0.2 })
 			placed++
+			// its guild, round it
+			const around = (count: number, dist: number, make: (seed: number) => THREE.Object3D) => {
+				for (let j = 0; j < count; j++) {
+					const b = r() * 6.28, dd = dist * (0.6 + r() * 0.6)
+					const ox = x + Math.cos(b) * dd, oz = z + Math.sin(b) * dd
+					const orr = Math.hypot(ox, oz)
+					if (orr > rIn - 0.8 || onPath(orr, Math.atan2(ox, oz)) || nearStream(ox, oz, width * 0.8)) continue
+					const o = make(5000 + placed * 17 + j)
+					o.position.set(ox, 0, oz)
+					o.rotation.y = r() * 6.28
+					understorey.add(o)
+				}
+			}
+			around(1, 2.3, (sd) => (r() < 0.5 ? tropicalShrub('coffee', sd, 1.2 + r() * 0.5) : r() < 0.5 ? tropicalShrub('cacao', sd, 1.5 + r() * 0.4) : berryBush(sd, 0.8 + r() * 0.4)).object)
+			around(1, 1.7, (sd) => comfrey(sd, 0.6 + r() * 0.3))
+			around(2, 2.4, (sd) => (r() < 0.5 ? strawberries(sd) : clover(sd)))
+			around(1, 2, (sd) => (r() < 0.5 ? ginger(sd, 0.8 + r() * 0.4) : squash(sd)))
+			if (r() < 0.3) around(1, 0.9, (sd) => passionVine(sd, 2.6 + r()).object)
 		}
 		const cover = new THREE.Group()
-		for (let i = 0; i < Math.min(area * 1.4, kind === 'master' ? 3200 : 4000); i++) {
+		for (let i = 0; i < Math.min(area * 0.6, kind === 'master' ? 1400 : 1800); i++) {
 			const a = r() * Math.PI * 2
 			const rr = Rc + 1.2 + r() * (rIn - Rc - 1.6)
 			if (onPath(rr, a)) continue
@@ -906,31 +979,9 @@ export async function mountInterior(container: HTMLElement, kind: DomeKind, onPr
 			cover.add(hb)
 		}
 		scene.add(bake(cover, false))
-		for (let i = 0; i < Math.min(trees * 4, 700); i++) {
-			const a = r() * Math.PI * 2
-			const rr = Rc + 1.3 + r() * (rIn - Rc - 2)
-			if (onPath(rr, a)) continue
-			const [x, z] = polar(rr, a)
-			if (nearStream(x, z, width)) continue
-			const sh = shrub(900 + i, 0.6 + r() * 0.8)
-			sh.object.position.set(x, 0, z)
-			understorey.add(sh.object)
-		}
 		scene.add(bake(forest))
 		scene.add(bake(understorey, false))
 		await pause('Planting the forest inside')
-
-		/* raised beds along the ring path */
-		for (let k = 0; k < 8; k++) {
-			// on the diagonals, either side, clear of the spokes and the stair
-			const a = Math.PI / 4 + Math.floor(k / 2) * (Math.PI / 2) + (k % 2 ? 0.28 : -0.28)
-			const [x, z] = polar(Rp + 2.2, a)
-			const bedGroup = raisedBed(m, 3, 40 + k)
-			bedGroup.position.set(x, 0, z)
-			bedGroup.rotation.y = a + Math.PI / 2
-			scene.add(bedGroup)
-			colliders.push({ x, z, r: 1.4 })
-		}
 
 		/* the plaza: a long table, sofas, and lanterns — and in the master dome, the theatre */
 		if (kind === 'master') {
@@ -978,6 +1029,25 @@ export async function mountInterior(container: HTMLElement, kind: DomeKind, onPr
 			}
 		}
 
+		/* the balconies, Mediterranean: terracotta pots along the rails, and grapevines trained along their tops */
+		const balconyPot = (k: number, x: number, y: number, z: number) => {
+			const p = potted(k % 12 === 0 ? 'olive' : k % 12 === 6 ? 'lemon' : k % 2 ? 'rosemary' : 'lavender', 5000 + k, k % 6 === 0 ? 0.8 : 1)
+			p.position.set(x, y, z)
+			return p
+		}
+		const railVines = (group: THREE.Group, y: number, gaps: number[]) => {
+			const segs = Math.round((2 * Math.PI * rIn) / 2.6)
+			for (let k = 0; k < segs; k++) {
+				const a = ((k + 0.5) / segs) * Math.PI * 2
+				if (gaps.some((gp) => Math.abs(adiff(a, gp)) * rIn < 2.6) || k % 4 === 3) continue
+				const v = vineAlong(6000 + k + Math.round(y) * 100, 2.4)
+				const [x, z] = polar(rIn, a)
+				v.position.set(x, y + 1.05, z)
+				v.rotation.y = a + Math.PI / 2
+				group.add(v)
+			}
+		}
+
 		/* the gallery: an oak ring on limestone pillars, with a glass railing */
 		const galleryFloor = new THREE.Mesh(new THREE.RingGeometry(rIn, R, 160), m.oak(R / 2))
 		galleryFloor.rotation.x = -Math.PI / 2
@@ -989,18 +1059,21 @@ export async function mountInterior(container: HTMLElement, kind: DomeKind, onPr
 		fascia.position.y = H - 0.22
 		fascia.castShadow = true
 		scene.add(fascia)
+		// the glass railing, open where each of the four stairs arrives
 		const gap = (stairHalf * 1.3) / rIn
-		const rail = new THREE.Mesh(new THREE.CylinderGeometry(rIn, rIn, 1.05, 160, 1, true, aStair + gap, Math.PI * 2 - 2 * gap), m.glass)
-		rail.position.y = H + 0.52
-		scene.add(rail)
-		// a torus arc starts at +x and runs toward -z once laid flat; turn it to start past the stair
-		const top = new THREE.Mesh(new THREE.TorusGeometry(rIn, 0.035, 8, 200, Math.PI * 2 - 2 * gap), m.steel)
-		top.rotation.x = -Math.PI / 2
-		const topRing = new THREE.Group()
-		topRing.add(top)
-		topRing.rotation.y = aStair + gap - Math.PI / 2
-		topRing.position.y = H + 1.05
-		scene.add(topRing)
+		for (const as of STAIRS) {
+			const rail = new THREE.Mesh(new THREE.CylinderGeometry(rIn, rIn, 1.05, 48, 1, true, as + gap, Math.PI / 2 - 2 * gap), m.glass)
+			rail.position.y = H + 0.52
+			scene.add(rail)
+			// a torus arc starts at +x and runs toward -z once laid flat; turn it to start past the stair
+			const top = new THREE.Mesh(new THREE.TorusGeometry(rIn, 0.035, 8, 60, Math.PI / 2 - 2 * gap), m.steel)
+			top.rotation.x = -Math.PI / 2
+			const topRing = new THREE.Group()
+			topRing.add(top)
+			topRing.rotation.y = as + gap - Math.PI / 2
+			topRing.position.y = H + 1.05
+			scene.add(topRing)
+		}
 		{
 			const vines = new THREE.Group()
 			const vr = seeded(11)
@@ -1008,7 +1081,7 @@ export async function mountInterior(container: HTMLElement, kind: DomeKind, onPr
 			const vineMat = new THREE.MeshStandardMaterial({ map: leaves('fine'), alphaTest: 0.45, side: THREE.DoubleSide, roughness: 0.7 })
 			for (let k = 0; k < drops; k++) {
 				const a = (k / drops) * Math.PI * 2
-				if (Math.abs(Math.atan2(Math.sin(a - aStair), Math.cos(a - aStair))) * rIn < 2) continue
+				if (STAIRS.some((as) => Math.abs(adiff(a, as)) * rIn < 2)) continue
 				if (vr() < 0.35) continue
 				const len = 0.6 + vr() * (H * 0.55)
 				const [x, z] = polar(rIn - 0.05, a)
@@ -1018,18 +1091,18 @@ export async function mountInterior(container: HTMLElement, kind: DomeKind, onPr
 					c.rotation.set(vr() * 3, vr() * 3, vr() * 3)
 					vines.add(c)
 				}
-				// a planter on the rail, spilling over
-				const [px, pz] = polar(rIn + 0.35, a)
-				const pl = herb(5000 + k, 0.35)
-				pl.position.set(px, H + 0.05, pz)
-				vines.add(pl)
+				// terracotta along the rail: lavender and rosemary, an olive or a lemon now and then
+				if (k % 3) continue
+				const [px, pz] = polar(rIn + 0.45, a)
+				vines.add(balconyPot(k, px, H, pz))
 			}
+			railVines(vines, H, STAIRS)
 			scene.add(bake(vines))
 		}
 		const pillars = Math.round((2 * Math.PI * rIn) / 6)
 		for (let k = 0; k < pillars; k++) {
 			const a = (k / pillars) * Math.PI * 2 + 0.05
-			if ([aStair, ...DOORS].some((d) => Math.abs(adiff(a, d)) * rIn < 2)) continue
+			if ([...STAIRS, ...DOORS].some((d) => Math.abs(adiff(a, d)) * rIn < 2)) continue
 			const [x, z] = polar(rIn + 0.4, a)
 			const pl = box(0.7, H, 0.7, m.lime(0.5, H / 2), x, 0, z, a)
 			scene.add(pl)
@@ -1083,12 +1156,13 @@ export async function mountInterior(container: HTMLElement, kind: DomeKind, onPr
 		const rMid2 = rIn + walkway / 2
 		const run2 = (H2 - H) * 1.9
 		const span2 = run2 / rMid2
-		const aS2 = aStair + (stairHalf * 2 + 1.2) / rMid2
+		// each of the four stairs has a second flight, climbing round the walkway beside it
+		const STAIRS2 = STAIRS.map((as) => as + (stairHalf * 2 + 1.2) / rMid2)
 		if (twoFloors) {
 			/* the second floor: an oak ring over the first floor's rooms, open where its stair comes up */
 			const outerBand = new THREE.Mesh(new THREE.RingGeometry(rFront, R, 160), m.oak(R / 2))
-			const innerBand = new THREE.Mesh(new THREE.RingGeometry(rIn, rFront, 160, 1, aS2 + span2 - Math.PI / 2, Math.PI * 2 - span2), m.oak(R / 2))
-			for (const band of [outerBand, innerBand]) {
+			const innerBands = STAIRS2.map((a2) => new THREE.Mesh(new THREE.RingGeometry(rIn, rFront, 40, 1, a2 + span2 - Math.PI / 2, Math.PI / 2 - span2), m.oak(R / 2)))
+			for (const band of [outerBand, ...innerBands]) {
 				band.rotation.x = -Math.PI / 2
 				band.position.y = H2
 				band.castShadow = band.receiveShadow = true
@@ -1108,13 +1182,23 @@ export async function mountInterior(container: HTMLElement, kind: DomeKind, onPr
 			/* its stair climbs round the first-floor walkway */
 			const steps2 = Math.ceil((H2 - H) / 0.18)
 			const stair2 = new THREE.Group()
-			for (let i = 0; i < steps2; i++) {
-				const a = aS2 + ((i + 0.5) / steps2) * span2
-				const [x, z] = polar(rMid2, a)
-				stair2.add(box(run2 / steps2 + 0.03, 0.06, walkway - 0.3, m.oak(1), x, H + ((i + 1) / steps2) * (H2 - H) - 0.06, z, a))
-			}
+			for (const a2 of STAIRS2)
+				for (let i = 0; i < steps2; i++) {
+					const a = a2 + ((i + 0.5) / steps2) * span2
+					const [x, z] = polar(rMid2, a)
+					stair2.add(box(run2 / steps2 + 0.03, 0.06, walkway - 0.3, m.oak(1), x, H + ((i + 1) / steps2) * (H2 - H) - 0.06, z, a))
+				}
 			scene.add(bake(stair2))
 			roomsAt(H2, Math.PI / g.rooms)
+			// the second floor's rail gets the same pots and vines as the first
+			const balcony2 = new THREE.Group()
+			const pots2 = Math.round((2 * Math.PI * rIn) / 2.7)
+			for (let k = 0; k < pots2; k++) {
+				const [px, pz] = polar(rIn + 0.45, ((k + 0.5) / pots2) * Math.PI * 2)
+				balcony2.add(balconyPot(k * 3 + 1, px, H2, pz))
+			}
+			railVines(balcony2, H2, [])
+			scene.add(bake(balcony2))
 		}
 
 		/* the terraces outside the glass, one to each floor of rooms, carried on a two-storey stone arcade */
@@ -1168,15 +1252,18 @@ export async function mountInterior(container: HTMLElement, kind: DomeKind, onPr
 				t.position.set(tx, y, tz)
 				t.rotation.y = a + Math.PI / 2
 				terrace.add(t)
+				// a pergola of grapevines over the table, the Mediterranean way
+				const pg = grapePergola(seed * 50 + k, 3, 2.8, 2.45)
+				pg.position.set(tx, y, tz)
+				pg.rotation.y = a
+				terrace.add(pg)
 				for (const off of [-1, 1]) {
 					const pa = a + (off * 2.8) / Rt
 					if (!clear(pa)) continue
 					const [px, pz] = polar(Rt - 0.8, pa)
-					const pot = new THREE.Mesh(new THREE.CylinderGeometry(0.35, 0.28, 0.55, 14), m.lime(1, 0.4))
-					pot.position.set(px, y + 0.27, pz)
-					terrace.add(pot)
-					const pl = rr() < 0.5 ? shrub(seed * 30 + k * 2 + (off > 0 ? 1 : 0), 1.1).object : berryBush(seed * 33 + k * 2 + (off > 0 ? 1 : 0), 0.9).object
-					pl.position.set(px, y + 0.5, pz)
+					const kind = rr() < 0.4 ? 'olive' : rr() < 0.5 ? 'lemon' : 'lavender'
+					const pl = potted(kind, seed * 30 + k * 2 + (off > 0 ? 1 : 0), kind === 'lavender' ? 1.4 : 1)
+					pl.position.set(px, y, pz)
 					terrace.add(pl)
 				}
 			}
@@ -1232,8 +1319,8 @@ export async function mountInterior(container: HTMLElement, kind: DomeKind, onPr
 				colliders.push(...w.colliders)
 			}
 
-		/* the stair from the commons up to the gallery */
-		{
+		/* the four stairs from the commons up to the gallery, with a handrail on each side */
+		for (const aStair of STAIRS) {
 			const steps = Math.ceil(H / 0.18)
 			const stair = new THREE.Group()
 			for (let i = 0; i < steps; i++) {
@@ -1259,15 +1346,18 @@ export async function mountInterior(container: HTMLElement, kind: DomeKind, onPr
 		const inStair = (x: number, z: number) => {
 			const rr = Math.hypot(x, z)
 			const a = Math.atan2(x, z)
-			const off = Math.abs(Math.atan2(Math.sin(a - aStair), Math.cos(a - aStair))) * rr
-			return off < stairHalf && rr >= r0 - 0.3 && rr <= rIn + 0.4 ? Math.max(0, Math.min(1, (rr - r0) / run)) * H : null
+			if (rr < r0 - 0.3 || rr > rIn + 0.4) return null
+			return STAIRS.some((as) => Math.abs(adiff(a, as)) * rr < stairHalf) ? Math.max(0, Math.min(1, (rr - r0) / run)) * H : null
 		}
 		const inStair2 = (x: number, z: number) => {
 			if (!twoFloors) return null
 			const rr = Math.hypot(x, z)
 			if (rr < rIn + 0.1 || rr > rFront - 0.1) return null
-			const o = adiff(Math.atan2(x, z), aS2)
-			return o >= 0 && o <= span2 ? H + (o / span2) * (H2 - H) : null
+			for (const a2 of STAIRS2) {
+				const o = adiff(Math.atan2(x, z), a2)
+				if (o >= 0 && o <= span2) return H + (o / span2) * (H2 - H)
+			}
+			return null
 		}
 		floorAt = (x, z, feet) => {
 			const rr = Math.hypot(x, z)
@@ -1284,11 +1374,11 @@ export async function mountInterior(container: HTMLElement, kind: DomeKind, onPr
 		terraceAt = (rr, y) => (Math.abs(y - H) < 0.3 || (twoFloors && Math.abs(y - H2) < 0.3)) && rr < Rt - 0.5
 		blocked = (x, z, feet) => {
 			const rr = Math.hypot(x, z)
-			// on the galleries, the railings keep you from stepping off
-			if (feet > H - 0.6 && rr < rIn && inStair(x, z) === null) return true
+			// on the galleries the railings keep you from stepping off, and on a stair its
+			// handrails keep you on the treads: up off the ground, only a stair holds you
+			if (feet > 0.25 && rr < rIn && inStair(x, z) === null) return true
 			// and outside, the balustrade round the terrace
 			if (feet > H - 0.6 && rr > Rt - 0.5) return true
-			// on the stair, the stringers keep you on the treads
 			return false
 		}
 		start = { x: 0, z: Rc + 2, look: 0 }
@@ -1349,14 +1439,16 @@ export async function mountInterior(container: HTMLElement, kind: DomeKind, onPr
 		const turn = (keys.has('arrowleft') ? 1 : 0) - (keys.has('arrowright') ? 1 : 0)
 		yaw += turn * 1.8 * dt
 		if (f || s) {
-			const speed = (keys.has('shift') ? 11.25 : 4.95) * dt
+			const speed = (keys.has('shift') ? 14.6 : 6.45) * dt
 			const dx = (-Math.sin(yaw) * f + Math.cos(yaw) * s) * speed
 			const dz = (-Math.cos(yaw) * f - Math.sin(yaw) * s) * speed
+			// the floor underfoot now, not the eased camera height, decides what holds you
+			const here = floorAt(pos.x, pos.z, feet)
 			for (const [mx, mz] of [[dx, dz], [dx, 0], [0, dz]] as const) {
 				const nx = pos.x + mx, nz = pos.z + mz
 				const nf = floorAt(nx, nz, feet)
 				if (!walkable(nx, nz, nf)) continue
-				if (blocked(nx, nz, feet)) continue
+				if (blocked(nx, nz, here)) continue
 				if (nf < 0.3 && [...colliders, ...outsideColliders].some((c) => Math.hypot(c.x - nx, c.z - nz) < c.r + 0.25)) continue
 				pos.x = nx
 				pos.z = nz
@@ -1396,6 +1488,7 @@ export async function mountInterior(container: HTMLElement, kind: DomeKind, onPr
 	/* a dev hook, like the planet's __world: move the camera from the console */
 	;(window as unknown as { __interior: unknown }).__interior = {
 		camera,
+		scene,
 		place: (x: number, z: number, y: number, yw: number, p: number) => {
 			pos.set(x, 0, z)
 			feet = y
