@@ -11,16 +11,17 @@
  */
 import { base } from '$app/paths'
 
-export type SoundName = 'forest' | 'water' | 'hens' | 'geese' | 'goats'
+export type SoundName = 'forest' | 'inside' | 'water' | 'hens' | 'geese' | 'goats'
 const FILES: Record<SoundName, string> = {
 	forest: 'forest_nature.mp3',
+	inside: 'soft-nature.mp3',
 	water: 'water_stream.mp3',
 	hens: 'chickens.mp3',
 	geese: 'geese.mp3',
 	goats: 'sheep.mp3'
 }
 /** how loud each is at its loudest */
-const LOUDEST: Record<SoundName, number> = { forest: 0.45, water: 0.55, hens: 0.5, geese: 0.45, goats: 0.4 }
+const LOUDEST: Record<SoundName, number> = { forest: 0.45, inside: 0.45, water: 0.55, hens: 0.5, geese: 0.45, goats: 0.4 }
 
 export type Ambience = {
 	/** how near each sound is, 0 (silent) to 1 (right there), and whether you are under glass */
@@ -55,7 +56,8 @@ export function ambience(): Ambience {
 			el.crossOrigin = 'anonymous'
 			const gain = ctx.createGain()
 			gain.gain.value = 0
-			ctx.createMediaElementSource(el).connect(gain).connect(filter)
+			// the soft nature inside is heard in the room itself, not through the glass
+			ctx.createMediaElementSource(el).connect(gain).connect(name === 'inside' ? ctx.destination : filter)
 			// every loop starts somewhere else, so two visits never sound the same
 			el.addEventListener('loadedmetadata', () => (el.currentTime = Math.random() * Math.max(0, el.duration - 1)), { once: true })
 			void el.play().catch(() => {})
@@ -67,7 +69,7 @@ export function ambience(): Ambience {
 		if (!ctx || !filter) return
 		const now = ctx.currentTime
 		for (const [name, { gain }] of tracks) {
-			const v = (wanted[name] ?? 0) * LOUDEST[name] * (underGlass && name !== 'forest' ? 0.5 : 1)
+			const v = (wanted[name] ?? 0) * LOUDEST[name] * (underGlass && name !== 'forest' && name !== 'inside' ? 0.5 : 1)
 			// a slow glide, so nothing ever switches on or off
 			gain.gain.setTargetAtTime(v, now, 0.6)
 		}
@@ -110,7 +112,8 @@ export function levelsAt(x: number, z: number, indoors: boolean, water: { x: num
 		return best
 	}
 	return {
-		forest: indoors ? 0.35 : 1,
+		forest: indoors ? 0.25 : 1,
+		inside: indoors ? 1 : 0,
 		water: nearness(nearest(water), 3, 32),
 		hens: herds.hens ? nearness(nearest(herds.hens()), 2, 26) : 0,
 		geese: herds.geese ? nearness(nearest(herds.geese()), 3, 32) : 0,
