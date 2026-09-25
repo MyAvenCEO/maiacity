@@ -1459,7 +1459,8 @@ const SITE_PIECES: SitePiece[] = [
 		footprint: 0.14,
 		extent: 0.14,
 		fromLevel: 1,
-		untilLevel: 2,
+		// Sandbox 2: the fire stays the heart of the village until the master dome takes the centre
+		untilLevel: 4,
 		build: (rng) => fireCircle(rng)
 	},
 	{
@@ -1500,8 +1501,9 @@ const SITE_PIECES: SitePiece[] = [
 		scale: 0.075,
 		footprint: 0.24,
 		extent: 0.24,
-		fromLevel: 3,
-		untilLevel: 3,
+		// Sandbox 2: no pavilion in the middle — from above it reads as the centre dome come early
+		fromLevel: 99,
+		untilLevel: 99,
 		build: (rng) => communityStage(rng)
 	},
 	{

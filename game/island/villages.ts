@@ -7,10 +7,13 @@
  *   TENT   2 people, a camp tent             GLAMP  4, a glamping dome
  *   DOME3 12, apartments round a commons     DOME4 24, the large dome homes
  *
- * From level 10 the MASTER DOME stands in the centre — the 136 m dome of the
- * shared essentials — and the people the rings do not house yet live in it.
- * At 233 the village is complete: six dome homes, six large domes (216) and
- * 17 in the master dome, with the food forest planted all round.
+ * Nothing is torn down at once: tents are swapped for glamping domes a few at a
+ * time, glamping domes for dome homes, dome homes are joined by large domes —
+ * the way people actually upgrade a place they are committing to. Only
+ * when both rings are whole, at level 11, the MASTER DOME in the centre, the
+ * 136 m dome of the shared essentials, where the people the rings cannot
+ * house live. At 233 the food forest is planted and the village is complete:
+ * 216 in the rings and 17 in the master dome.
  */
 import { coopPolicy } from '../coops'
 
@@ -36,18 +39,18 @@ const BEDS: Record<RingBuilding, number> = { TENT: 2, GLAMP: 4, DOME3: 12, DOME4
 export const LEVELS: number[] = coopPolicy.settlement.levels
 
 const PLANS: Omit<VillagePlan, 'level' | 'from' | 'to'>[] = [
-	{ counts: { TENT: 1 }, master: false, forest: false, stage: 1 }, //  1        2 beds
-	{ counts: { TENT: 1 }, master: false, forest: false, stage: 1 }, //  2        2
-	{ counts: { TENT: 2 }, master: false, forest: false, stage: 1 }, //  3–4      4
-	{ counts: { TENT: 4 }, master: false, forest: false, stage: 1 }, //  5–7      8
-	{ counts: { TENT: 6 }, master: false, forest: false, stage: 1 }, //  8–12    12
-	{ counts: { GLAMP: 5 }, master: false, forest: false, stage: 2 }, // 13–20   20: the tents retire
-	{ counts: { GLAMP: 6, DOME3: 1 }, master: false, forest: false, stage: 3 }, // 21–33   36
-	{ counts: { GLAMP: 6, DOME3: 3 }, master: false, forest: false, stage: 3 }, // 34–54   60
-	{ counts: { GLAMP: 4, DOME3: 6 }, master: false, forest: false, stage: 3 }, // 55–88   88
-	{ counts: { DOME3: 6, DOME4: 2 }, master: true, forest: false, stage: 5 }, //  89–143 120 + master
-	{ counts: { DOME3: 6, DOME4: 6 }, master: true, forest: false, stage: 5 }, // 144–232 216 + master
-	{ counts: { DOME3: 6, DOME4: 6 }, master: true, forest: true, stage: 6 } //   233    216 + 17
+	{ counts: { TENT: 1 }, master: false, forest: false, stage: 1 }, //  1       2 beds: one person, one tent
+	{ counts: { TENT: 1 }, master: false, forest: false, stage: 1 }, //  2       2: the tent is shared
+	{ counts: { TENT: 2 }, master: false, forest: false, stage: 1 }, //  3–4     4
+	{ counts: { TENT: 4 }, master: false, forest: false, stage: 1 }, //  5–7     8
+	{ counts: { TENT: 6 }, master: false, forest: false, stage: 1 }, //  8–12   12: a camp round the fire
+	{ counts: { TENT: 4, GLAMP: 3 }, master: false, forest: false, stage: 2 }, // 13–20  20: tents swapped for glamping domes
+	{ counts: { TENT: 2, GLAMP: 5, DOME3: 1 }, master: false, forest: false, stage: 3 }, // 21–33  36: the first dome home
+	{ counts: { GLAMP: 6, DOME3: 3 }, master: false, forest: false, stage: 3 }, // 34–54  60: the last tent comes down
+	{ counts: { GLAMP: 4, DOME3: 6 }, master: false, forest: false, stage: 3 }, // 55–88  88: the ring of dome homes is whole
+	{ counts: { GLAMP: 2, DOME3: 6, DOME4: 3 }, master: false, forest: false, stage: 4 }, //  89–143 152: large domes replace glamping
+	{ counts: { DOME3: 6, DOME4: 6 }, master: true, forest: false, stage: 5 }, // 144–232 216 + master: both rings whole, then the master dome
+	{ counts: { DOME3: 6, DOME4: 6 }, master: true, forest: true, stage: 6 } //   233    216 + 17, and the food forest
 ]
 
 export const VILLAGE_PLANS: VillagePlan[] = PLANS.map((p, i) => ({

@@ -609,7 +609,7 @@ export function createScene(canvas: HTMLCanvasElement, options: SceneOptions = {
 	}
 	animate()
 
-	return {
+	const api: SceneApi = {
 		setWorld,
 		placeBuilding(tile, kind) {
 			world?.placeBuilding(tile, kind)
@@ -670,4 +670,6 @@ export function createScene(canvas: HTMLCanvasElement, options: SceneOptions = {
 			renderer.dispose()
 		}
 	}
+	;(window as unknown as { __island: Record<string, unknown> }).__island.api = api
+	return api
 }

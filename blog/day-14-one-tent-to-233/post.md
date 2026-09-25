@@ -1,126 +1,126 @@
 ---
-title: We grew one tent into a village of 233 in twelve steps
-subtitle: Day 14 — how a village in avenCITY Sandbox 2 now grows, one step for every number in a sequence, until the food forest closes around it.
+title: No real village is built in a day. Ours starts with one tent and grows to 233 people.
+subtitle: Day 14 — how a settlement in avenCITY Sandbox 2 grows the way a real one would, one arrival and one upgrade at a time, until the food forest closes around it.
 day: 14
 author: avenSAMUEL
 authorImage: /samuel.jpg
 authorRole: Building maiaCITY
 date: 2026-09-22
 cover: /day-14-one-tent-to-233/cover.jpg
-coverAlt: The same card of land from above. Left, one tent by a fire ring. Right, 233 people under glass domes in a food forest.
+coverAlt: The same card of land at noon, from straight above. Left, one tent by a fire ring. Right, 233 people under glass domes in a food forest.
 excerpt: >-
-  The first settler sleeps in a tent. The 233rd sleeps under a glass dome in the middle of a
-  food forest. In between are twelve steps, and nobody arrives to find no bed.
+  Nobody moves 233 people onto an empty field at once. The first one arrives with a tent. Every
+  picture in this post is that same field, from the same height, at noon.
 categories: [game, housing, food]
 ---
 
-The first settler sleeps in a tent.
+Nobody moves 233 people onto an empty field at once.
 
-The 233rd sleeps under a glass dome, in the middle of a food forest.
+Not in the real world. There is no plan so good, no budget so big, that a whole village appears on a Monday with every dome built and every bed made.
 
-Nobody built that in one go, and nobody drew it on paper first. It grew, one arrival at a time, on a single card of land. Every picture in this post is one card, seen from the same height, so you can compare them.
+What happens instead is slower and much more human. One person arrives with a tent. A second one comes because the first one is there.
 
-## A village that jumps is a village nobody watches
+## A village is a sequence of small, reversible yeses
 
-On [Day 05](/blog/day-05-the-first-settlement/) a settlement grew in five levels: a camp of tents, glamping domes, dome homes, a full ring, the centre dome. On [Day 13](/blog/day-13-invited-home/) those five levels became the way a settlement grows in Sandbox 2, one settler at a time.
+Nobody tears down a camp to build a village. They swap one tent for something sturdier, then another, while people keep living there the whole time.
 
-It worked. It also moved in lurches.
+That is the rule this game now follows. A settlement in avenCITY Sandbox 2 grows with its people, and it never jumps. Tents are exchanged for glamping domes a few at a time. Glamping domes give way to dome homes one by one. Only when the ring of homes is whole do the large domes arrive, and only when both rings are whole does the master dome go up in the middle.
 
-The twelfth settler arrived to a camp of tents. The thirteenth arrived and the whole camp came down at once, replaced by glamping domes. Then nothing happened for dozens of arrivals, while the next ring waited for its number.
-
-A village should answer when someone moves in. Early on, one person is a lot of village. Later, one more person is a room.
-
-## Equal steps get it wrong at both ends
-
-The obvious fix is a step every twenty people. It is wrong twice.
-
-At the start, twenty is the whole village. The first nineteen settlers would live in a camp that never changes. At the end, twenty is almost nothing. A step every twenty people means a new building every few days in a place of two hundred, which is noise, not growth.
-
-What a village needs is steps that start small and get bigger as it does. Quick changes while it is young, slower ones once it is established.
+It grows in steps that fit a real village, too: quick while it is small, slower once it is established.
 
 ## The steps are the numbers that price the coops
 
-There is a sequence that does exactly that, and it is already in this game.
+On [Day 12](/blog/day-12-the-first-believer-pays-least/) every coop followed a sequence: 1, 2, 3, 5, 8, 13, 21, 34, 55, 89, 144, 233. Each number is the sum of the two before it.
 
-On [Day 12](/blog/day-12-the-first-believer-pays-least/) the milestones of every coop followed it: 1, 2, 3, 5, 8, 13, 21, 34, 55, 89, 144, 233. Each number is the sum of the two before it. Leonardo of Pisa, called Fibonacci, brought it to Europe in 1202.
+A village now levels up on the same numbers. Twelve levels, one for each. Every level builds enough beds for everyone who will arrive before the next one, so nobody ever turns up to find no bed.
 
-The same numbers now decide when a village levels up. Twelve levels, one for each number, up to 233. Every level builds enough beds for everyone who will arrive before the next one. Nobody ever turns up to find no bed.
+Every picture below is the same card of grass, seen from straight above at noon.
 
-Here is the card, level by level.
+## Level 1 — one person, one tent
 
-## One tent, then a camp
+![Level 1: one tent beside a fire ring, the camp's containers around it.](/day-14-one-tent-to-233/level-01.jpg)
 
-![Level 1: one settler, one tent by the fire ring, and the camp's containers.](/day-14-one-tent-to-233/level-01.jpg)
+The founder arrives with a tent five metres across, a fire ring and a few shipping containers holding tools, water and food. That is the whole village. It is enough to sleep, to cook, and to start clearing ground.
 
-**Level 1, one settler.** One tent, five metres across, beside a fire ring, with the camp's containers around it.
+## Level 2 — two people
 
-![Level 2: two settlers, still one tent.](/day-14-one-tent-to-233/level-02.jpg)
+![Level 2: still one tent, now shared.](/day-14-one-tent-to-233/level-02.jpg)
 
-**Level 2, two settlers.** Still one tent. It sleeps two.
+Somebody else decides to come. Nothing new is built: the tent sleeps two. The first thing a village learns is that the second person matters more than the second building.
 
-![Level 3: three settlers, two tents.](/day-14-one-tent-to-233/level-03.jpg)
+## Level 3 — three people
 
-**Level 3, three settlers.** A second tent.
+![Level 3: a second tent.](/day-14-one-tent-to-233/level-03.jpg)
 
-![Level 4: five settlers, four tents.](/day-14-one-tent-to-233/level-04.jpg)
+A second tent goes up beside the first. There is now a choice of where to sleep, the first small sign that this is a place and not a campsite.
 
-**Level 4, five settlers.** Four tents, beds for eight.
+## Level 4 — five people
 
-![Level 5: eight settlers, six tents around the fire.](/day-14-one-tent-to-233/level-05.jpg)
+![Level 4: four tents in a loose circle.](/day-14-one-tent-to-233/level-04.jpg)
 
-**Level 5, eight settlers.** Six tents in a loose circle around the fire, beds for twelve.
+Four tents, beds for eight. They face the fire, because that is where everyone ends up in the evening.
 
-Imagine the evening the seventh settler arrives. A tent is already standing for them. The camp put it up when the fifth settler came, because it builds for everyone until the next step.
+## Level 5 — eight people
 
-## The tents come down
+![Level 5: six tents around the fire.](/day-14-one-tent-to-233/level-05.jpg)
 
-![Level 6: thirteen settlers, five glamping domes; the tents are gone.](/day-14-one-tent-to-233/level-06.jpg)
+Six tents in a circle, beds for twelve. Two of them stand empty, waiting.
 
-**Level 6, thirteen settlers.** The tents retire. Five glamping domes take their place, eight metres across, four people each.
+Imagine the evening the tenth settler arrives. A tent is already standing for them, because the camp builds for everyone until the next step.
 
-![Level 7: twenty-one settlers, and the first dome home.](/day-14-one-tent-to-233/level-07.jpg)
+## Level 6 — thirteen people, the first glamping domes
 
-**Level 7, twenty-one settlers.** The first real dome home goes up: forty metres across, apartments ringed around a shared commons, twelve people.
+![Level 6: four tents and three glamping domes.](/day-14-one-tent-to-233/level-06.jpg)
 
-## A ring starts to close
+The first upgrade, and it is gradual. Three glamping domes go up, eight metres across, four people each, and two tents come down. Everyone else keeps their tent for now.
 
-![Level 8: thirty-four settlers, three dome homes among the glamping domes.](/day-14-one-tent-to-233/level-08.jpg)
+## Level 7 — twenty-one people, the first real home
 
-**Level 8, thirty-four settlers.** Three dome homes.
+![Level 7: two tents, five glamping domes and the first dome home.](/day-14-one-tent-to-233/level-07.jpg)
 
-![Level 9: fifty-five settlers, six dome homes in a ring.](/day-14-one-tent-to-233/level-09.jpg)
+The first real dome home is built: forty metres across, apartments ringed around a shared commons, twelve people inside. Two tents are still standing, and two more glamping domes join the others.
 
-**Level 9, fifty-five settlers.** Six dome homes in a ring, the last glamping domes still between them, beds for 88.
+## Level 8 — thirty-four people, the last tent comes down
 
-## The master dome arrives
+![Level 8: six glamping domes and three dome homes.](/day-14-one-tent-to-233/level-08.jpg)
 
-![Level 10: eighty-nine settlers, the master dome in the centre and the first two large domes.](/day-14-one-tent-to-233/level-10.jpg)
+Three dome homes now, and six glamping domes around them. The last tent is packed away. From here on, nobody sleeps under canvas.
 
-**Level 10, eighty-nine settlers.** The centre fills. The master dome goes up in the middle: 136 metres across, holding the commons, the energy, the water and the compute, and the place where everyone meets. The first two large domes join the ring, seventy metres each, twenty-four people inside.
+## Level 9 — fifty-five people, a ring of homes
 
-The master dome houses people too. Whoever the ring cannot fit yet lives there, under the same roof as the commons, until their own dome is built.
+![Level 9: six dome homes in a ring, four glamping domes between them.](/day-14-one-tent-to-233/level-09.jpg)
 
-![Level 11: one hundred and forty-four settlers, the full ring of twelve domes around the master dome.](/day-14-one-tent-to-233/level-11.jpg)
+The six dome homes close into a ring around the fire, with four glamping domes still in use between them: beds for 88. For the first time the village has a shape you can recognise from above.
 
-**Level 11, one hundred and forty-four settlers.** Six dome homes and six large domes, the full ring: 216 beds.
+## Level 10 — eighty-nine people, the large domes arrive
 
-## At 233, the forest closes in
+![Level 10: the ring of six dome homes, three large domes, and the last two glamping domes.](/day-14-one-tent-to-233/level-10.jpg)
 
-![Level 12: two hundred and thirty-three settlers. The ring, the master dome, paths, and the food forest across the whole card.](/day-14-one-tent-to-233/level-12.jpg)
+Three large domes join the ring, seventy metres across, twenty-four people each. The last two glamping domes are still standing, for whoever arrived most recently. The fire still burns in the middle. That spot is being kept for something.
 
-**Level 12, two hundred and thirty-three settlers.** The last number. 216 people in the ring, 17 in the master dome, and the village is complete.
+## Level 11 — one hundred and forty-four people, the master dome
 
-This is the level that plants the food forest. Until now the land between the domes was open ground. At 233 it becomes forest from the domes out to the edge of the card: fruit and nut trees, berry bushes, herbs, paths winding through it, a pond. It follows the rule from Day 05, 1,000 square metres of food forest for every person. For 233 people, that is 23.3 hectares of forest around their homes.
+![Level 11: six dome homes and six large domes around the master dome.](/day-14-one-tent-to-233/level-11.jpg)
 
-Day 05's dome cell stopped at 216. This one stops at 233, because the ring still holds 216 and the master dome makes room for 17 more.
+Six dome homes and six large domes: both rings are whole, with beds for 216. Only now does the master dome go up in the middle, 136 metres across, where the fire used to be. It holds the commons, the energy, the water and the compute, and it houses whoever the rings cannot fit yet.
 
-Imagine walking home through it at dusk. The path bends between the apple trees, somebody is picking the last figs, and the glass of the master dome is lit from inside because dinner is on.
+That is why it comes last. The centre of a village is built by the people who already live there, for everyone who will.
+
+## Level 12 — two hundred and thirty-three people, the food forest
+
+![Level 12: the finished village, the master dome in the centre, paths winding through a food forest across the whole card.](/day-14-one-tent-to-233/level-12.jpg)
+
+The last number. 216 people in the rings, 17 in the master dome, and the village is complete.
+
+This is the level that plants the permaculture food forest. Until now the land around the domes was open grass. At 233 it becomes forest from the domes out to the edge of the card: fruit and nut trees, berry bushes, herbs, paths winding through it, a pond. It follows the rule from [Day 05](/blog/day-05-the-first-settlement/): 1,000 square metres of food forest for every person. For 233 people, that is 23.3 hectares around their homes.
+
+Imagine walking home through it at dusk. The path bends between the apple trees, somebody is picking the last figs, and the master dome is lit from inside because dinner is on.
 
 ## How to see it for yourself
 
-The pictures come from a test island I built on my own machine for this post: one village at each of the twelve levels, side by side, with test settlers who are not real people.
+These pictures come from a test copy of the game on my own machine, one card built up level by level. On the live planet every settlement starts at Level 1 with its founder's tent, and its settlers decide who comes next, with invite links.
 
-On the live planet, every settlement starts at Level 1 with its founder's tent. Its settlers decide who arrives next, with invite links. It reaches Level 12 on the day its 233rd person moves in.
+It reaches Level 12 on the day its 233rd person moves in.
 
 [Open avenCITY Sandbox 2 →](/games/sandbox-2/)
 
