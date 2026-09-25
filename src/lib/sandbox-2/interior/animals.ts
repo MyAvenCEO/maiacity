@@ -206,3 +206,64 @@ export function apiary(spots: { x: number; z: number; rot: number }[], seed: num
 	update(0)
 	return { object, update, where: () => spots }
 }
+
+/**
+ * Fish: carp and tilapia in the ponds and the aquaponics tanks, circling and
+ * turning, and a few working their way up and down a stream. Each a slim body
+ * and a tail, just under the surface.
+ */
+export function fishes(pools: { x: number; z: number; r: number; y: number; n: number }[], streams: { line: { x: number; z: number }[]; y: number; n: number }[], seed: number): { object: THREE.Group; update: (t: number) => void } {
+	const r = seeded(seed)
+	const object = new THREE.Group()
+	const coats = ['#e8742a', '#f2f0ea', '#8a8f86', '#d9a23a']
+	const body = (c: string) =>
+		model([
+			{ geo: ball, color: c, at: [0, 0, 0], scale: [0.045, 0.035, 0.12] },
+			{ geo: cone, color: c, at: [0, 0, -0.14], rot: [-Math.PI / 2, 0, 0], scale: [0.035, 0.08, 0.012] }
+		])
+	type F = { pool?: (typeof pools)[number]; line?: (typeof streams)[number]; rad: number; speed: number; phase: number; coat: number }
+	const fish: F[] = []
+	for (const pool of pools) for (let i = 0; i < pool.n; i++) fish.push({ pool, rad: pool.r * (0.3 + r() * 0.6), speed: (0.3 + r() * 0.5) * (r() < 0.5 ? -1 : 1), phase: r() * 10, coat: Math.floor(r() * coats.length) })
+	for (const line of streams) for (let i = 0; i < line.n; i++) fish.push({ line, rad: 0, speed: 0.02 + r() * 0.03, phase: r() * 10, coat: Math.floor(r() * coats.length) })
+	const mat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.4 })
+	const meshes = coats.map((c, k) => {
+		const count = fish.filter((f) => f.coat === k).length
+		const m = new THREE.InstancedMesh(body(c), mat, Math.max(1, count))
+		m.count = count
+		m.frustumCulled = false
+		object.add(m)
+		return m
+	})
+	const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), e = new THREE.Euler(), p = new THREE.Vector3(), one = new THREE.Vector3(1, 1, 1)
+	const update = (t: number) => {
+		const slot = coats.map(() => 0)
+		for (const f of fish) {
+			let x = 0, z = 0, y = 0, yaw = 0
+			if (f.pool) {
+				// round the pool, wandering in and out, the tail wagging
+				const a = t * f.speed + f.phase
+				const rr = f.rad * (0.8 + 0.2 * Math.sin(t * 0.3 + f.phase))
+				x = f.pool.x + Math.sin(a) * rr
+				z = f.pool.z + Math.cos(a) * rr
+				y = f.pool.y
+				yaw = a + (f.speed > 0 ? Math.PI / 2 : -Math.PI / 2)
+			} else if (f.line) {
+				// up and down the stream, slowly
+				const L = f.line.line
+				const u = (Math.sin(t * f.speed + f.phase) * 0.5 + 0.5) * (L.length - 2)
+				const i = Math.floor(u), k = u - i
+				const a = L[i]!, b = L[i + 1]!
+				x = a.x + (b.x - a.x) * k
+				z = a.z + (b.z - a.z) * k
+				y = f.line.y
+				const dir = Math.cos(t * f.speed + f.phase) > 0 ? 1 : -1
+				yaw = Math.atan2((b.x - a.x) * dir, (b.z - a.z) * dir)
+			}
+			q.setFromEuler(e.set(0, yaw + Math.sin(t * 8 + f.phase) * 0.15, 0))
+			meshes[f.coat]!.setMatrixAt(slot[f.coat]!++, m4.compose(p.set(x, y, z), q, one))
+		}
+		for (const m of meshes) m.instanceMatrix.needsUpdate = true
+	}
+	update(0)
+	return { object, update }
+}

@@ -11,7 +11,7 @@
  */
 import { base } from '$app/paths'
 
-export type SoundName = 'forest' | 'inside' | 'water' | 'hens' | 'geese' | 'goats' | 'frogs' | 'bees'
+export type SoundName = 'forest' | 'inside' | 'water' | 'hens' | 'geese' | 'goats' | 'frogs' | 'bees' | 'factory' | 'machine' | 'lift'
 const FILES: Record<SoundName, string> = {
 	forest: 'forest_nature.mp3',
 	inside: 'soft-nature.mp3',
@@ -20,12 +20,15 @@ const FILES: Record<SoundName, string> = {
 	geese: 'geese.mp3',
 	goats: 'sheep.mp3',
 	frogs: 'frog.mp3',
-	bees: 'bees.mp3'
+	bees: 'bees.mp3',
+	factory: 'factory-ambience.mp3',
+	machine: 'machine.mp3',
+	lift: 'lift.mp3'
 }
 /** how loud each is at its loudest */
-const LOUDEST: Record<SoundName, number> = { forest: 0.27, inside: 0.45, water: 0.69, hens: 0.5, geese: 0.45, goats: 0.4, frogs: 0.5, bees: 0.45 }
+const LOUDEST: Record<SoundName, number> = { forest: 0.27, inside: 0.45, water: 0.69, hens: 0.5, geese: 0.45, goats: 0.4, frogs: 0.5, bees: 0.45, factory: 0.5, machine: 0.55, lift: 0.6 }
 /** the recordings are not equally loud: this brings each to the same level (measured, mean ≈ −28 dB) */
-const LEVEL: Partial<Record<SoundName, number>> = { goats: 22.1, frogs: 0.35, bees: 0.66, geese: 1.5 }
+const LEVEL: Partial<Record<SoundName, number>> = { goats: 22.1, frogs: 0.35, bees: 0.66, geese: 1.5, factory: 2.37, machine: 0.21, lift: 1.37 }
 
 export type Ambience = {
 	/** how near each sound is, 0 (silent) to 1 (right there), and whether you are under glass */
@@ -61,7 +64,7 @@ export function ambience(): Ambience {
 			const gain = ctx.createGain()
 			gain.gain.value = 0
 			// the soft nature inside is heard in the room itself, not through the glass
-			ctx.createMediaElementSource(el).connect(gain).connect(name === 'inside' ? ctx.destination : filter)
+			ctx.createMediaElementSource(el).connect(gain).connect(name === 'inside' || name === 'factory' || name === 'machine' || name === 'lift' ? ctx.destination : filter)
 			// every loop starts somewhere else, so two visits never sound the same
 			el.addEventListener('loadedmetadata', () => (el.currentTime = Math.random() * Math.max(0, el.duration - 1)), { once: true })
 			void el.play().catch(() => {})
@@ -73,7 +76,7 @@ export function ambience(): Ambience {
 		if (!ctx || !filter) return
 		const now = ctx.currentTime
 		for (const [name, { gain }] of tracks) {
-			const v = (wanted[name] ?? 0) * LOUDEST[name] * (LEVEL[name] ?? 1) * (underGlass && name !== 'forest' && name !== 'inside' ? 0.5 : 1)
+			const v = (wanted[name] ?? 0) * LOUDEST[name] * (LEVEL[name] ?? 1) * (underGlass && !['forest', 'inside', 'factory', 'machine', 'lift'].includes(name) ? 0.5 : 1)
 			// a slow glide, so nothing ever switches on or off
 			gain.gain.setTargetAtTime(v, now, 0.6)
 		}

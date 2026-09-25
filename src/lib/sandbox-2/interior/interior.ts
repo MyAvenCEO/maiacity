@@ -25,11 +25,11 @@ import { Sky } from 'three/addons/objects/Sky.js'
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js'
 import { flagstone, grass, leaves, limestone, oak, soil, water } from './textures'
 import { cafes, coops, coopsAround, henPatches, squaresAround, workshops, type Kit } from './spaces'
-import { apiary, herd } from './animals'
+import { apiary, fishes, herd } from './animals'
 import { buildFactory, LEVELS as FACTORY_LEVELS, NAMES as FACTORY_NAMES } from './factory'
 import { buildTent } from './tent'
 import { furnish, terraceSet } from './rooms'
-import { ambience, levelsAt } from './ambience'
+import { ambience, levelsAt, nearness } from './ambience'
 import { flow, pond as pondShape, shore, stream as streamShape } from './water'
 import { gameHour } from '../../../../game/time'
 import { forestFloor, floorPick, grassTuft, appleTree, banana, berryBush, canopyTree, climber, clover, coconutPalm, comfrey, crop, CROPS, fruitTree, ginger, grapePergola, herb, papaya, passionVine, potted, seeded, shrub, smallFruitTree, squash, strawberries, tropicalShrub, vineAlong, type Plant } from './plants'
@@ -458,7 +458,7 @@ export type InteriorHandle = {
 }
 
 /** Where to come in, and what to do on walking back out (Sandbox 4's village). */
-export type InteriorOptions = { entry?: number; onLeave?: (door: number) => void; host?: DomeHost; cancelled?: () => boolean }
+export type InteriorOptions = { entry?: number; onLeave?: (door: number) => void; host?: DomeHost; cancelled?: () => boolean; hurry?: () => boolean }
 /**
  * Building a dome into someone else's world (Sandbox 4's village): its scene,
  * camera and renderer, and where the dome stands. The dome then brings no sky,
@@ -503,7 +503,8 @@ export async function mountInterior(container: HTMLElement, kind: DomeKind, onPr
 	/** Hand the page back for a frame whenever this build has held it for more than a few milliseconds. */
 	const slice = async () => {
 		// the standalone view is behind its loading screen: it can work in longer stretches
-		if (performance.now() - lastYield < (host ? 24 : 60)) return
+		// in a village it works in short breaths; when you are at its door waiting, in long ones
+		if (performance.now() - lastYield < (host ? (opts.hurry?.() ? 70 : 24) : 60)) return
 		prof.work += performance.now() - lastYield
 		prof.slices++
 		await new Promise((r) => requestAnimationFrame(() => setTimeout(r, 0)))
@@ -931,6 +932,7 @@ export async function mountInterior(container: HTMLElement, kind: DomeKind, onPr
 	let onAction = (_k: string, _down: boolean) => false
 	let onWalk = (_x: number, _z: number, _feet: number) => {}
 	let liftFloor = () => -1
+	let factorySounds: ((x: number, z: number, feet: number) => { machine: number; lift: number }) | null = null
 
 	if (kind === 'tent') {
 		const tent = buildTent({ scene, R, m, box, bake })
@@ -949,6 +951,7 @@ export async function mountInterior(container: HTMLElement, kind: DomeKind, onPr
 		animated.push(works.update)
 		onWalk = works.tick
 		onAction = works.onKey
+		factorySounds = works.sounds
 		liftFloor = works.floor
 		await pause('Waking the robots')
 	} else if (kind === 'glamp') {
@@ -1223,6 +1226,10 @@ export async function mountInterior(container: HTMLElement, kind: DomeKind, onPr
 			scene.add(pd.group)
 			scene.add(await bakeIn(shore(pd.outline, 0, 19, { x: end.x, z: end.z }), false))
 			waterPts.push(...pd.outline)
+			// fish in the pond, and a few in the stream
+			const fish = fishes([{ x: end.x, z: end.z, r: width * 3.2, y: 0.02, n: kind === 'master' ? 22 : 12 }], [{ line: samples, y: 0.02, n: kind === 'master' ? 10 : 5 }], 61)
+			scene.add(fish.object)
+			animated.push(fish.update)
 		}
 		const pondAt = samples[samples.length - 1]!
 		const nearStream = (x: number, z: number, d: number) => Math.hypot(pondAt.x - x, pondAt.z - z) < width * 3.6 * 1.35 + d || samples.some((p) => Math.hypot(p.x - x, p.z - z) < d)
@@ -1679,6 +1686,9 @@ export async function mountInterior(container: HTMLElement, kind: DomeKind, onPr
 				tank.position.set(x, 0.55, z)
 				tank.castShadow = true
 				scene.add(tank)
+				const tankFish = fishes([{ x, z, r: 0.55, y: 0.92, n: 5 }], [], 62 + i)
+				scene.add(tankFish.object)
+				animated.push(tankFish.update)
 				const surf = new THREE.Mesh(new THREE.CircleGeometry(0.7, 24), m.water(1))
 				surf.rotation.x = -Math.PI / 2
 				surf.position.set(x, 1.08, z)
@@ -1797,6 +1807,15 @@ export async function mountInterior(container: HTMLElement, kind: DomeKind, onPr
 			if (feet > 0.25 && rr < rIn && inStair(x, z) === null) return true
 			// and outside, the balustrade round the terrace
 			if (feet > H - 0.6 && rr > Rt - 0.5) return true
+			// the rooms' walls: their fronts on the walkway, open only at each room's door, and the walls between them
+			for (const [Hf, turn] of twoFloors ? [[H, 0], [H2, Math.PI / g.rooms]] : [[H, 0]]) {
+				if (Math.abs(feet - Hf!) > 0.5 || rr < rFront - 0.35 || rr > R) continue
+				const span = (Math.PI * 2) / g.rooms
+				const rel = (((Math.atan2(x, z) - (aStair + turn! + span / 2)) % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2)
+				const along = (rel / span - Math.floor(rel / span)) * span
+				if (Math.abs(rr - rFront) < 0.3 && along * rFront > 1.4) return true
+				if (rr > rFront - 0.1 && Math.min(along, span - along) * rr < 0.3) return true
+			}
 			return false
 		}
 		start = { x: 0, z: Rc + 2, look: 0 }
@@ -2003,7 +2022,17 @@ export async function mountInterior(container: HTMLElement, kind: DomeKind, onPr
 			keepDetail(camera.position.x, camera.position.z)
 			// and the sounds, for where you stand: under the glass, everything outside is muffled
 			const indoors = Math.hypot(pos.x, pos.z) < R - 0.3
-			sound.set(levelsAt(pos.x, pos.z, indoors, waterPts, herds), indoors)
+			const heard: Parameters<typeof sound.set>[0] = levelsAt(pos.x, pos.z, indoors, waterPts, herds)
+			// in the factory: the hall's own hum instead of the soft nature, the machines near you, the lift
+			if (factorySounds && indoors) {
+				const f = factorySounds(pos.x, pos.z, feet)
+				heard.inside = 0
+				heard.forest = 0.08
+				heard.factory = 1
+				heard.machine = nearness(f.machine, 4, 22)
+				heard.lift = nearness(f.lift, 3, 24)
+			}
+			sound.set(heard, indoors)
 		}
 		// the sun moves with the game clock: a game hour is two real minutes, so a look every second is plenty
 		if (now - sunChecked > 1000) {

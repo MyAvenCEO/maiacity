@@ -34,7 +34,14 @@ const M = {
 	brass: shared(() => new THREE.MeshStandardMaterial({ color: '#b08d57', roughness: 0.35, metalness: 0.8 })),
 	book: ['#8a4b3a', '#4f6b5a', '#c9a15a', '#5b6a8a', '#a8683a'].map((c) => shared(() => new THREE.MeshStandardMaterial({ color: c, roughness: 0.8 })))
 }
-const round = (w: number, h: number, d: number, r = 0.08) => new RoundedBoxGeometry(w, h, d, 3, Math.min(r, w / 2 - 0.001, h / 2 - 0.001, d / 2 - 0.001))
+/** A rounded box, made once for each size and shared: every room asks for the same few. */
+const rounded = new Map<string, THREE.BufferGeometry>()
+const round = (w: number, h: number, d: number, r = 0.08) => {
+	const key = `${w} ${h} ${d} ${r}`
+	let geo = rounded.get(key)
+	if (!geo) rounded.set(key, (geo = new RoundedBoxGeometry(w, h, d, 3, Math.min(r, w / 2 - 0.001, h / 2 - 0.001, d / 2 - 0.001))))
+	return geo
+}
 
 export type Room = { a0: number; span: number; rIn: number; rOut: number; y: number; seed: number }
 export type RoomColliders = { x: number; z: number; r: number; y: number }[]

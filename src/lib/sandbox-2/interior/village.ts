@@ -19,7 +19,7 @@ import { DOMES, DOORS, adiff, bake, box, geodesic, lantern, mats, mountInterior,
 import { cafes, coops, coopsAround, henPatches, playground, squaresAround, type Kit } from './spaces'
 import { water } from './textures'
 import { appleTree, banana, berryBush, canopyTree, climber, clover, coconutPalm, comfrey, fruitTree, ginger, herb, papaya, passionVine, seeded, smallFruitTree, squash, strawberries, tropicalShrub, forestFloor, FLOOR_KINDS, floorPick, grassTuft, type Plant } from './plants'
-import { apiary, herd } from './animals'
+import { apiary, fishes, herd } from './animals'
 import { flow, pond, shore, stream } from './water'
 import { gameHour } from '../../../../game/time'
 import { ambience, levelsAt } from './ambience'
@@ -386,7 +386,16 @@ export async function mountVillage(container: HTMLElement, onProgress: (label: s
 		for (const ps of paths)
 			for (let i = 1; i < ps.length - 1; i++) {
 				const p = ps[i]!
-				if (!nearWater(p.x, p.z, W / 2 + 0.6) || placed.some((b) => b.distanceTo(p) < 8)) continue
+				if (!nearWater(p.x, p.z, W / 2 + 0.6) || placed.some((b) => b.distanceTo(p) < 14)) continue
+				// only where the path crosses the water, not where it runs along the bank
+				const pd = ps[i + 1]!.clone().sub(ps[i - 1]!).setY(0).normalize()
+				let wd: THREE.Vector3 | null = null, best = Infinity
+				for (const line of streams)
+					for (let j = 1; j < line.length - 1; j += 2) {
+						const dd = Math.hypot(line[j]!.x - p.x, line[j]!.z - p.z)
+						if (dd < best) (best = dd), (wd = line[j + 1]!.clone().sub(line[j - 1]!).setY(0).normalize())
+					}
+				if (!wd || best > W || Math.abs(pd.dot(wd)) > 0.55) continue
 				placed.push(p)
 				const dir = ps[i + 1]!.clone().sub(ps[i - 1]!)
 				const a = Math.atan2(dir.x, dir.z)
@@ -840,6 +849,10 @@ export async function mountVillage(container: HTMLElement, onProgress: (label: s
 			for (let tries = 0; tries < 40 && (nearPath(cx, cz, 5) || nearWater(cx, cz, 6) || domes.some((d) => Math.hypot(cx - d.x, cz - d.z) < d.ext + 8) || AROUND_MASTER.some((c) => Math.hypot(cx - c.x, cz - c.z) < c.r + 5)); tries++) [cx, cz] = polar((k % 2 ? 232 : 118) + tries * 2, aim + tries * 0.02)
 			for (let j = 0; j < 3 + (k % 2); j++) hiveSpots.push({ x: cx + j * 1.3, z: cz + (j % 2) * 0.6, rot: aim + Math.PI })
 		}
+		// fish in every pond
+		const pondFish = fishes(ponds.map((pd) => ({ x: pd.x, z: pd.z, r: 6, y: 0.04, n: 10 })), [], 76)
+		scene.add(pondFish.object)
+		animated.push(pondFish.update)
 		const hives = apiary(hiveSpots, 75)
 		herds.bees = hives.where
 		for (const hs of hiveSpots) colliders.push({ x: hs.x, z: hs.z, r: 0.5 })
@@ -930,7 +943,7 @@ export async function mountVillage(container: HTMLElement, onProgress: (label: s
 		const d = domes[i]!
 		const o: Open = { i, dome: null, cancelled: false }
 		open = o
-		mountInterior(container, d.kind, () => {}, { host: { scene, camera, renderer, x: d.x, z: d.z }, cancelled: () => o.cancelled })
+		mountInterior(container, d.kind, () => {}, { host: { scene, camera, renderer, x: d.x, z: d.z }, cancelled: () => o.cancelled, hurry: () => Math.hypot(pos.x - d.x, pos.z - d.z) < d.ext + 12 })
 			.then((h) => {
 				if (o.cancelled || !h.embedded) return h.dispose()
 				o.dome = h.embedded

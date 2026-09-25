@@ -48,6 +48,8 @@ export type FactoryWalk = {
 	onKey: (k: string, down: boolean) => boolean
 	/** the floor the lift stands at, while you are in it; -1 outside */
 	floor: () => number
+	/** how far the nearest machine is, and the running lift (Infinity if it stands still) */
+	sounds: (x: number, z: number, feet: number) => { machine: number; lift: number }
 }
 
 /** The five floors, ground up. */
@@ -563,6 +565,8 @@ export function buildFactory(ctx: FactoryCtx): FactoryWalk {
 	const blink: THREE.Mesh[] = []
 	const slabOuter = (y: number) => Math.sqrt(R * R - (y + 2.5) ** 2) - 1.2
 	const stationAngles: { a: number; r: number }[][] = []
+	/** every machine, for the sound of the one nearest you */
+	const machines: { x: number; z: number; y: number }[] = []
 
 	/* the belt runs flat all the way round; where the paths from the doors meet it,
 	   people climb a footbridge over it instead */
@@ -863,6 +867,8 @@ export function buildFactory(ctx: FactoryCtx): FactoryWalk {
 			const outerEnd = rs + half * scale
 			spokes.push({ a, inner, outer: outerEnd, si: i })
 			placedAt.push({ a, r: inner - 1.3 })
+			const [mx, mz] = polar((inner + outerEnd) / 2, a)
+			machines.push({ x: mx, z: mz, y })
 			// a dev hook for the journal's camera: where every station stands
 			;((window as unknown as { __factoryStations?: object[] }).__factoryStations ??= []).push({ k, a, name: st.name, inner, outer: outerEnd })
 			const [x, z] = polar(rs, a)
@@ -1460,6 +1466,12 @@ export function buildFactory(ctx: FactoryCtx): FactoryWalk {
 			return true
 		},
 		floor: () => (inCabin(px, pz) ? nearestLevel(cabY) : -1),
+		// what the factory sounds like where you stand: the nearest machine, and the lift while it runs
+		sounds: (x, z, feet) => {
+			let near = Infinity
+			for (const mc of machines) if (Math.abs(mc.y - feet) < 3) near = Math.min(near, Math.hypot(mc.x - x, mc.z - z))
+			return { machine: near, lift: idle() ? Infinity : Math.hypot(x, z) + Math.abs(cabY - feet) * 0.5 }
+		},
 		start: { x: 0, z: R - 8, look: 0 },
 		update: (time) => {
 			for (const u of updates) u(time, 0)
