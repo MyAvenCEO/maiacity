@@ -1,6 +1,6 @@
 ---
 title: From outside it is a glass bubble. We walked inside, and there is a food forest under it.
-subtitle: Day 15 — every dome in avenCITY Sandbox 2 can now be walked through, from the eight-metre glamping dome to the master dome with a waterfall falling from its crown.
+subtitle: Day 15 — every dome in avenCITY Sandbox 2 can now be walked through, from the sixteen-metre glamping dome to the master dome with a waterfall falling from its crown.
 day: 15
 author: avenSAMUEL
 authorImage: /samuel.jpg
@@ -28,15 +28,31 @@ What we built inside follows one idea. When the whole roof is glass, the inside 
 
 There are four sizes, and each one lives differently.
 
-## The glamping dome: one room, eight metres
+## The glamping dome: sixteen metres, four people
 
-![Inside a glamping dome: a timber frame, canvas panels, a bed, a stove and a paper lantern.](/day-15-inside-the-domes/glamping-room.jpg)
+![Inside a glamping dome: a lemon tree in a stone planter under the skylight, the sleeping nooks behind timber screens, the kitchen on the right.](/day-15-inside-the-domes/glamping-room.jpg)
 
-This is where the first settlers sleep once the tents come down. A timber frame, canvas panels, and glass where the view is and in the crown. A bed, a wood stove with its flue running up through the roof, a small table, a sofa and a lantern. Four people, one room.
+This is where the first settlers live once the tents come down, and it is a real home for four. Sixteen metres across, a timber frame, canvas where the beds are and glass everywhere else.
 
-![Through the glass panels of a glamping dome: the food forest outside.](/day-15-inside-the-domes/glamping-window.jpg)
+It is laid out in zones round a garden. In the middle, under the skylight, a lemon tree grows in a stone planter with herbs at its feet. To one side of the door is the living room: a sofa, a rug, a low table and a wood stove with its flue running up through the roof. To the other side, the kitchen runs along the glass, with a table for four. At the back, behind timber screens, are two sleeping nooks, one with a double bed and one with two singles, and a round bathroom.
 
-The windows face the land on purpose. Even the smallest home in the village looks out at the trees its people are planting.
+![Past the lemon tree toward the door: the kitchen, raised beds and potted bananas along the glass.](/day-15-inside-the-domes/glamping-window.jpg)
+
+The garden does not stop at the planter. Raised beds and potted bananas and shrubs stand along the glass, where the light is best.
+
+![The glamping dome from outside: the door open onto a timber deck, a path running out into the food forest.](/day-15-inside-the-domes/glamping-door.jpg)
+
+And it has a door. You can walk out onto a timber deck with a table on it, and follow a stone path into the forest.
+
+## Outside, the forest has seven layers
+
+![Among the guilds outside: grape vines on timber poles, berry bushes, flowering herbs, clover and pumpkins under the trees.](/day-15-inside-the-domes/forest-layers.jpg)
+
+Every dome now stands in a food forest built the way permaculture builds one, in seven layers: tall chestnut and walnut trees, apple, mango, avocado and citrus below them, then berry bushes, comfrey and flowering herbs, a ground cover of clover, pumpkins and squash sprawling over the ground, and grape vines climbing timber poles.
+
+![Apple trees heavy with fruit, and the layers under them.](/day-15-inside-the-domes/forest-guilds.jpg)
+
+They are planted as guilds. Each tree has its own circle of plants round it that feed, shade and protect each other, the same idea as the forest that closes round a finished village on [Day 14](/blog/day-14-one-tent-to-233/).
 
 ## The dome home: forty metres, twelve people
 
@@ -52,7 +68,7 @@ Upstairs, a timber gallery runs all the way round on limestone pillars, with a g
 
 ![A private room upstairs: the bed faces out through the glass.](/day-15-inside-the-domes/home-private-room.jpg)
 
-The private rooms are on the gallery, behind timber walls, and every one faces outwards. The bed stands against the glass. You wake up to the land, and walk out of your door onto a balcony over the forest.
+The private rooms are on the gallery, behind timber walls, and every one faces outwards. The bed stands against the glass. You wake up looking at the forest outside, and walk out of your door onto a balcony over the forest inside.
 
 Imagine the first morning in one of these. Light through the frame, the sound of the stream downstairs, and breakfast picked from a tree on the way to the table.
 
@@ -77,6 +93,8 @@ The forest here is a real forest. Paths wind between mango, avocado and citrus t
 ![The master dome's forest, with the waterfall showing through the trees.](/day-15-inside-the-domes/master-forest.jpg)
 
 Its gallery holds twelve rooms. They house whoever the two rings cannot fit yet, the 17 people of a complete village, so even the last to arrive wakes up above the forest.
+
+From every private room, in every dome, the view through the glass is the seven-layer forest outside.
 
 ## What we built it with
 

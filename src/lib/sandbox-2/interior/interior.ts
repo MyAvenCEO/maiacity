@@ -1,7 +1,7 @@
 /**
  * INSIDE A DOME — a walkable, first-person interior for each dome of a village:
  *
- *   glamp    8 m   one room under canvas and glass: bed, stove, table
+ *   glamp   16 m   a home for four under canvas and glass, a door onto a deck
  *   home    40 m   the dome homes of the first ring
  *   large   70 m   the large domes of the second ring
  *   master 136 m   the master dome in the centre, with a waterfall from its crown
@@ -19,13 +19,13 @@ import * as THREE from 'three'
 import { Sky } from 'three/addons/objects/Sky.js'
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js'
 import { flagstone, leaves, limestone, oak, soil, water } from './textures'
-import { banana, coconutPalm, fruitTree, herb, seeded, shrub, type Plant } from './plants'
+import { appleTree, banana, berryBush, canopyTree, climber, clover, coconutPalm, comfrey, fruitTree, herb, seeded, shrub, squash, type Plant } from './plants'
 
 export type DomeKind = 'glamp' | 'home' | 'large' | 'master'
 
 type Spec = { diameter: number; detail: number; strut: number; gallery?: { height: number; depth: number; rooms: number } }
 export const DOMES: Record<DomeKind, Spec & { label: string; people: string }> = {
-	glamp: { label: 'Glamping dome', people: 'four people', diameter: 8, detail: 2, strut: 0.035 },
+	glamp: { label: 'Glamping dome', people: 'four people', diameter: 16, detail: 3, strut: 0.06 },
 	home: { label: 'Dome home', people: 'twelve people', diameter: 40, detail: 4, strut: 0.09, gallery: { height: 4.2, depth: 6.5, rooms: 6 } },
 	large: { label: 'Large dome', people: 'twenty-four people', diameter: 70, detail: 5, strut: 0.12, gallery: { height: 5, depth: 8, rooms: 8 } },
 	master: { label: 'Master dome', people: 'the commons, and whoever the rings cannot house yet', diameter: 136, detail: 7, strut: 0.16, gallery: { height: 6, depth: 10, rooms: 12 } }
@@ -47,7 +47,7 @@ const mats = () => {
 	return {
 		stone: (rep: number) => new THREE.MeshStandardMaterial({ map: tiled(flag.map, rep), bumpMap: tiled(flag.bump, rep), bumpScale: 2, roughness: 0.85 }),
 		lime: (rx: number, ry = rx) => new THREE.MeshStandardMaterial({ map: tiled(limestone(), rx, ry), roughness: 0.9 }),
-		oak: (rx: number, ry = rx) => new THREE.MeshStandardMaterial({ map: tiled(oak(), rx, ry), roughness: 0.55 }),
+		oak: (rx: number, ry = rx) => new THREE.MeshStandardMaterial({ map: tiled(oak(), rx, ry), roughness: 0.82, envMapIntensity: 0.4 }),
 		soil: (rep: number) => new THREE.MeshStandardMaterial({ map: tiled(soil(), rep), roughness: 1 }),
 		water: (rep: number) => new THREE.MeshPhysicalMaterial({ map: tiled(water(), rep), roughness: 0.08, metalness: 0, transparent: true, opacity: 0.88, envMapIntensity: 1.4 }),
 		steel: new THREE.MeshStandardMaterial({ color: '#2e3236', roughness: 0.4, metalness: 0.7 }),
@@ -116,8 +116,11 @@ function geodesic(spec: Spec, m: Mats, kind: DomeKind): THREE.Group {
 		if ((tri[0]!.y + tri[1]!.y + tri[2]!.y) / 3 < -R * 0.02) continue
 		for (const v of tri) v.y = Math.max(0, v.y)
 		const c = tri.reduce((s, v) => s.add(v), new THREE.Vector3()).divideScalar(3)
-		// the glamping dome is canvas, with glass windows facing the view and a skylight
-		const isWindow = kind !== 'glamp' || c.y > R * 0.82 || (c.z > R * 0.3 && c.y > R * 0.15 && c.y < R * 0.7)
+		const ca = Math.atan2(c.x, c.z)
+		// the glamping dome's door, facing +z: the panels there are left out, a timber portal fills the gap
+		if (kind === 'glamp' && c.y < R * 0.3 && Math.abs(ca) < 0.2) continue
+		// the glamping dome is canvas behind the beds, glass toward the kitchen, the living room and the sky
+		const isWindow = kind !== 'glamp' || c.y > R * 0.78 || (Math.abs(ca) < 2.2 && c.y > R * 0.08 && c.y < R * 0.62)
 		;(isWindow ? glass : cloth).push(...tri.flatMap((v) => [v.x, v.y, v.z]))
 		for (let k = 0; k < 3; k++) {
 			const a = tri[k]!, b = tri[(k + 1) % 3]!
@@ -283,17 +286,49 @@ export function mountInterior(container: HTMLElement, kind: DomeKind, onReady?: 
 	outside.position.y = -0.02
 	outside.receiveShadow = true
 	scene.add(outside)
+	/* the food forest outside, in all seven layers, planted as guilds: a canopy
+	   tree or a fruit tree, and round it shrubs, herbs, clover, squash and a vine */
+	const outsideColliders: { x: number; z: number; r: number }[] = []
 	{
 		const r = seeded(99)
-		const ring = new THREE.Group()
-		for (let i = 0; i < 70; i++) {
-			const a = r() * Math.PI * 2, d = R * (1.5 + r() * 4) + 12
-			const t = r() < 0.5 ? fruitTree('mango', 500 + i, 1.2 + r()) : fruitTree('avocado', 700 + i, 1.2 + r())
+		const inner = kind === 'glamp' ? R + 6 : R + 3
+		const outer = kind === 'glamp' ? R + 42 : R + Math.min(60, R * 0.9 + 25)
+		const guilds = Math.min(340, Math.round((Math.PI * (outer * outer - inner * inner)) / 38))
+		const forest = new THREE.Group()
+		for (let i = 0; i < guilds; i++) {
+			const a = r() * Math.PI * 2
+			const d = inner + Math.sqrt(r()) * (outer - inner)
 			const [x, z] = polar(d, a)
-			t.object.position.set(x, 0, z)
-			ring.add(t.object)
+			// keep the path from the glamping dome's door clear
+			if (kind === 'glamp' && Math.abs(x) < 2.2 && z > 0) continue
+			const k = r()
+			const main: Plant =
+				k < 0.22 ? canopyTree(2000 + i, 0.9 + r() * 0.6)
+				: k < 0.45 ? appleTree(2100 + i, 0.9 + r() * 0.5)
+				: k < 0.62 ? fruitTree('mango', 2200 + i, 0.9 + r() * 0.4)
+				: k < 0.76 ? fruitTree('avocado', 2300 + i, 0.9 + r() * 0.4)
+				: k < 0.88 ? fruitTree('citrus', 2400 + i, 1 + r() * 0.4)
+				: banana(2500 + i, 2.6 + r())
+			main.object.position.set(x, 0, z)
+			main.object.rotation.y = r() * 6.28
+			forest.add(main.object)
+			outsideColliders.push({ x, z, r: main.radius + 0.25 })
+			const around = (n: number, dist: number, make: (seed: number) => THREE.Object3D) => {
+				for (let j = 0; j < n; j++) {
+					const b = r() * 6.28, dd = dist * (0.6 + r() * 0.6)
+					const o = make(3000 + i * 13 + j)
+					o.position.set(x + Math.cos(b) * dd, 0, z + Math.sin(b) * dd)
+					o.rotation.y = r() * 6.28
+					forest.add(o)
+				}
+			}
+			around(2, 2.2, (sd) => berryBush(sd, 0.7 + r() * 0.5).object)
+			around(3, 1.6, (sd) => comfrey(sd, 0.5 + r() * 0.4))
+			around(4, 2.6, (sd) => clover(sd))
+			if (r() < 0.55) around(1, 2.8, (sd) => squash(sd))
+			if (r() < 0.4) around(1, 1.9, (sd) => climber(sd, 2 + r()).object)
 		}
-		scene.add(bake(ring))
+		scene.add(bake(forest))
 	}
 
 	scene.add(geodesic(spec, m, kind))
@@ -307,41 +342,153 @@ export function mountInterior(container: HTMLElement, kind: DomeKind, onReady?: 
 	const animated: ((t: number) => void)[] = []
 
 	if (kind === 'glamp') {
-		const floor = new THREE.Mesh(new THREE.CircleGeometry(R, 48), m.oak(3))
+		/* a home for four, in zones round the room: the door at +z (angle 0), the
+		   living room to its left, the kitchen and table to its right, and at the
+		   back, behind timber screens, two sleeping nooks and the bathroom. The
+		   middle is a garden under the skylight. */
+		const floor = new THREE.Mesh(new THREE.CircleGeometry(R, 64), m.oak(R / 1.5))
 		floor.rotation.x = -Math.PI / 2
+		floor.position.y = 0.01
 		floor.receiveShadow = true
 		scene.add(floor)
-		const rug = new THREE.Mesh(new THREE.CircleGeometry(1.4, 40), m.rug)
+		const at = (rr: number, a: number) => polar(rr, a)
+		const put = (o: THREE.Object3D, rr: number, a: number, face = a + Math.PI, collide = 0) => {
+			const [x, z] = at(rr, a)
+			o.position.set(x, o.position.y, z)
+			o.rotation.y = face
+			scene.add(o)
+			if (collide) colliders.push({ x, z, r: collide })
+		}
+		// the living room: sofa, rug, a low table, the wood stove
+		const rug = new THREE.Mesh(new THREE.CircleGeometry(1.8, 40), m.rug)
 		rug.rotation.x = -Math.PI / 2
-		rug.position.set(0.3, 0.01, 0.6)
-		scene.add(rug)
-		const b = bed(m, 1.8)
-		b.position.set(0, 0, -2.2)
-		scene.add(b)
-		const s = sofa(m, 2)
-		s.position.set(1.8, 0, 1.2)
-		s.rotation.y = -Math.PI / 2 - 0.4
-		scene.add(s)
-		const t = table(m, 1, 2)
-		t.position.set(-1.6, 0, 1.2)
-		t.rotation.y = 0.5
-		scene.add(t)
-		// a wood stove and its flue up through the crown
-		const stove = box(0.55, 0.7, 0.5, m.dark, -2.6, 0, -0.4)
-		scene.add(stove)
-		const flue = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.07, R, 10), m.dark)
-		flue.position.set(-2.6, 0.7 + R / 2, -0.4)
+		rug.position.y = 0.02
+		put(rug, 4.4, -1.05)
+		rug.rotation.set(-Math.PI / 2, 0, 0)
+		put(sofa(m, 2.8), 5.6, -1.05, -1.05 + Math.PI, 1.4)
+		put(box(1.1, 0.4, 0.6, m.oak(1)), 4.2, -1.05, -1.05, 0.6)
+		const stove = box(0.6, 0.75, 0.55, m.dark)
+		put(stove, 6.6, -1.75, -1.75 + Math.PI, 0.5)
+		const [fx, fz] = at(6.6, -1.75)
+		const flue = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.08, R * 0.9, 10), m.dark)
+		flue.position.set(fx * 0.9, 0.75 + (R * 0.9) / 2, fz * 0.9)
 		scene.add(flue)
-		scene.add(box(0.9, 1.8, 0.35, m.oak(1), 2.4, 0, -1.9, -0.7))
-		const pot = new THREE.Mesh(new THREE.CylinderGeometry(0.25, 0.2, 0.4, 16), m.dark)
-		pot.position.set(2.3, 0.2, 2.4)
-		scene.add(pot)
-		const mon = shrub(12, 1.3)
-		mon.object.position.set(2.3, 0.35, 2.4)
-		scene.add(mon.object)
-		scene.add(lantern(m, 0.35, 2.6))
-		colliders.push({ x: 0, z: -2.2, r: 1.1 }, { x: -2.6, z: -0.4, r: 0.45 })
-		start = { x: 0, z: 2.8, look: 0 }
+		put(box(1.2, 2, 0.4, m.oak(1)), 6.9, -0.55, -0.55 + Math.PI)
+		// the kitchen along the glass, and a table for four
+		for (let k = 0; k < 4; k++) {
+			const a = 0.85 + k * 0.17
+			put(box(1.05, 0.9, 0.62, m.oak(1)), 7, a, a + Math.PI, 0.55)
+			put(box(1.08, 0.05, 0.66, m.counter), 7, a, a + Math.PI)
+			const c = scene.children[scene.children.length - 1]!
+			c.position.y = 0.9
+		}
+		put(box(1, 0.9, 0.5, m.dark), 7.1, 1.55, 1.55 + Math.PI)
+		put(table(m, 1.6, 4), 4.6, 1.2, 1.2 + Math.PI / 2, 1.2)
+		// behind the screens: a sleeping nook for two, one with two single beds, and the bathroom
+		const screen = (rr0: number, rr1: number, a: number) => {
+			const [x, z] = at((rr0 + rr1) / 2, a)
+			scene.add(box(0.1, 2.2, rr1 - rr0, m.oak(0.5, 1), x, 0, z, a))
+		}
+		for (const a of [2.35, 2.95, -2.95, -2.35]) screen(3.4, 7.2, a)
+		put(bed(m, 1.7), 6.2, 2.65, 2.65 + Math.PI, 1.1)
+		const b1 = bed(m, 0.95)
+		put(b1, 6.2, 3.14 - 0.12, 3.14, 0.7)
+		const b2 = bed(m, 0.95)
+		put(b2, 6.2, -3.14 + 0.12, 3.14, 0.7)
+		const pod = new THREE.Mesh(new THREE.CylinderGeometry(1.2, 1.2, 2.3, 24, 1, true, 0.5, Math.PI * 2 - 1), m.oak(3, 1))
+		;(pod.material as THREE.Material).side = THREE.DoubleSide
+		const [px, pz] = at(5.9, -2.65)
+		pod.position.set(px, 1.15, pz)
+		pod.rotation.y = -2.65 + Math.PI
+		scene.add(pod)
+		colliders.push({ x: px, z: pz, r: 1.25 })
+		// the garden inside: raised beds under the glass, a lemon tree under the skylight, herbs everywhere
+		const planter = new THREE.Mesh(new THREE.CylinderGeometry(1.3, 1.4, 0.55, 32), m.lime(3, 0.3))
+		planter.position.y = 0.275
+		scene.add(planter)
+		const planterSoil = new THREE.Mesh(new THREE.CircleGeometry(1.25, 32), m.soil(1))
+		planterSoil.rotation.x = -Math.PI / 2
+		planterSoil.position.y = 0.56
+		scene.add(planterSoil)
+		const lemon = fruitTree('citrus', 77, 0.75)
+		lemon.object.position.y = 0.55
+		scene.add(lemon.object)
+		colliders.push({ x: 0, z: 0, r: 1.5 })
+		for (let k = 0; k < 6; k++) {
+			const h = herb(80 + k, 0.25)
+			const [hx, hz] = at(0.9, k)
+			h.position.set(hx, 0.56, hz)
+			scene.add(h)
+		}
+		for (const a of [-0.55, 0.55, 1.95]) {
+			const bedG = raisedBed(m, 2.2, 90 + Math.round(a * 10))
+			put(bedG, 7.3, a, a + Math.PI / 2, 0.9)
+		}
+		for (let k = 0; k < 5; k++) {
+			const potA = -1.9 + k * 0.28
+			const pot = new THREE.Mesh(new THREE.CylinderGeometry(0.28, 0.22, 0.45, 16), m.dark)
+			const [x, z] = at(7.4, potA)
+			pot.position.set(x, 0.22, z)
+			scene.add(pot)
+			const plant = k % 2 ? shrub(120 + k, 1.1) : banana(130 + k, 1.6)
+			plant.object.position.set(x, 0.4, z)
+			scene.add(plant.object)
+		}
+		scene.add(lantern(m, 0.4, 3.4))
+		const l2 = lantern(m, 0.3, 2.6)
+		const [lx, lz] = at(4.6, 1.2)
+		l2.position.set(lx, 0, lz)
+		scene.add(l2)
+		// the door: a timber portal in the gap, the glazed door standing open
+		const portal = new THREE.Group()
+		portal.add(box(0.2, 2.5, 0.25, m.timberFrame, -0.8, 0, 0))
+		portal.add(box(0.2, 2.5, 0.25, m.timberFrame, 0.8, 0, 0))
+		portal.add(box(1.8, 0.25, 0.3, m.timberFrame, 0, 2.5, 0))
+		portal.add(box(2.8, 0.08, 1.6, m.timberFrame, 0, 2.75, 0.6))
+		const leaf = new THREE.Group()
+		leaf.add(box(1.4, 2.35, 0.06, m.glass, 0.7, 0, 0))
+		leaf.add(box(0.08, 2.35, 0.08, m.timberFrame, 0, 0, 0))
+		leaf.add(box(0.08, 2.35, 0.08, m.timberFrame, 1.4, 0, 0))
+		leaf.position.set(0.75, 0, 0.05)
+		leaf.rotation.y = -1.9
+		portal.add(leaf)
+		// the door stands where the shell meets the ground, in a canvas wall that closes the gap
+		portal.position.set(0, 0, R - 0.9)
+		scene.add(portal)
+		const wallShape = new THREE.Shape()
+		wallShape.moveTo(-1.7, 0)
+		wallShape.lineTo(1.7, 0)
+		wallShape.lineTo(1.7, 2.9)
+		wallShape.lineTo(-1.7, 2.9)
+		wallShape.closePath()
+		const doorway = new THREE.Path()
+		doorway.moveTo(-0.7, 0)
+		doorway.lineTo(0.7, 0)
+		doorway.lineTo(0.7, 2.5)
+		doorway.lineTo(-0.7, 2.5)
+		doorway.closePath()
+		wallShape.holes.push(doorway)
+		const doorWall = new THREE.Mesh(new THREE.ShapeGeometry(wallShape), m.canvas)
+		doorWall.position.set(0, 0, R - 0.95)
+		doorWall.castShadow = true
+		scene.add(doorWall)
+		// a deck outside the door, a table on it, and a path into the forest
+		const deck = new THREE.Mesh(new THREE.CircleGeometry(3.4, 48), m.oak(4))
+		deck.rotation.x = -Math.PI / 2
+		deck.position.set(0, 0.04, R + 2.2)
+		deck.receiveShadow = true
+		scene.add(deck)
+		const outTable = table(m, 1.2, 4)
+		outTable.position.set(1.8, 0.06, R + 2.4)
+		scene.add(outTable)
+		colliders.push({ x: 1.8, z: R + 2.4, r: 1.1 })
+		const path = new THREE.Mesh(new THREE.PlaneGeometry(1.8, 36), m.stone(1))
+		;(path.material as THREE.MeshStandardMaterial).map!.repeat.set(0.6, 12)
+		path.rotation.x = -Math.PI / 2
+		path.position.set(0, 0.03, R + 3 + 18)
+		path.receiveShadow = true
+		scene.add(path)
+		start = { x: 0, z: R - 2.2, look: 0 }
 	} else {
 		const g = spec.gallery!
 		const H = g.height
@@ -790,6 +937,14 @@ export function mountInterior(container: HTMLElement, kind: DomeKind, onReady?: 
 	window.addEventListener('mouseup', onUp)
 
 	const wallLimit = (y: number) => Math.sqrt(Math.max(0, R * R - (y + 1.8) ** 2)) - (kind === 'glamp' ? 0.4 : 0.8)
+	/** Where a walker may stand: inside the dome, or — through the glamping dome's door — out on the land. */
+	const walkable = (x: number, z: number, y: number) => {
+		const rr = Math.hypot(x, z)
+		if (rr <= wallLimit(y)) return true
+		if (kind !== 'glamp') return false
+		const inDoor = Math.abs(x) < 0.65 && z > 0 && rr < R + 1.2
+		return inDoor || (rr > R + 0.4 && rr < R + 44)
+	}
 
 	const step = (dt: number) => {
 		const f = (keys.has('w') || keys.has('arrowup') ? 1 : 0) - (keys.has('s') || keys.has('arrowdown') ? 1 : 0)
@@ -803,9 +958,9 @@ export function mountInterior(container: HTMLElement, kind: DomeKind, onReady?: 
 			for (const [mx, mz] of [[dx, dz], [dx, 0], [0, dz]] as const) {
 				const nx = pos.x + mx, nz = pos.z + mz
 				const nf = floorAt(nx, nz, feet)
-				if (Math.hypot(nx, nz) > wallLimit(nf)) continue
+				if (!walkable(nx, nz, nf)) continue
 				if (blocked(nx, nz, feet)) continue
-				if (nf < 0.3 && colliders.some((c) => Math.hypot(c.x - nx, c.z - nz) < c.r + 0.25)) continue
+				if (nf < 0.3 && [...colliders, ...outsideColliders].some((c) => Math.hypot(c.x - nx, c.z - nz) < c.r + 0.25)) continue
 				pos.x = nx
 				pos.z = nz
 				break
