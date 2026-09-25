@@ -9,6 +9,7 @@ import { migrateLedger } from "../src/ledger/store";
 import { account, balanceOf, claim, identityOf, totalSupply } from "../src/ledger/hearts";
 import { acceptInvite, cityIdentity, cityOf, coopDetail, coopIdentity, createInvite, foundCity, foundSettlement, invest, inviteInfo, listCities, settlementOf } from "../src/ledger/coopstore";
 import { buildable, cellKey, islandCells, islandSeed, settlementLevel } from "../../game/island/island";
+import { housing, planFor } from "../../game/island/villages";
 import { ledgerView } from "../src/ledger/view";
 import { heartsIssuer } from "../src/ledger/schema";
 import { buildGlobe, FREQUENCY, LAND, WATER } from "../../game/globe";
@@ -201,8 +202,17 @@ describe("the second step: a home in a settlement, founded or joined by invitati
     expect(maia.settlements.map((c) => [c.slug, c.settlers, c.cell])).toEqual([["riverside", 2, cellsOf(landTiles[0])[0]]]);
   });
 
-  test("a settlement grows through the Sandbox 1 levels by headcount", () => {
-    expect([1, 12, 13, 24, 25, 72, 73, 215, 216].map(settlementLevel)).toEqual([1, 1, 2, 2, 3, 3, 4, 4, 5]);
+  test("a settlement levels up on the Fibonacci numbers, up to 233", () => {
+    expect([1, 2, 3, 4, 5, 8, 12, 13, 21, 34, 55, 88, 89, 143, 144, 232, 233].map(settlementLevel)).toEqual([1, 2, 3, 3, 4, 5, 5, 6, 7, 8, 9, 9, 10, 10, 11, 11, 12]);
+  });
+
+  test("every headcount has a bed: the rings, then the master dome for the surplus", () => {
+    for (let n = 1; n <= 233; n++) {
+      const h = housing(n);
+      expect(h.ring + h.master).toBe(n);
+      expect(h.master === 0 || planFor(h.level).master).toBe(true);
+    }
+    expect(housing(233)).toEqual({ level: 12, ring: 216, master: 17 });
   });
 
   test("the ledger tells the investor what happened", async () => {

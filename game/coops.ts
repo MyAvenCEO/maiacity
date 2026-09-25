@@ -26,7 +26,7 @@ export type CoopPolicy = {
 	milestones: { rule: string; maxSupplyMinds: string; heartsPerMindStep: string; table: MilestoneRow[] }
 	founding: { founderStakeHearts: string; pitchMaxChars: number; canvas: string[] }
 	city: { citizenshipMinHearts: string }
-	settlement: { joinMinHearts: string; maxSettlers: number; levelUpTo: number[]; inviteDays: number }
+	settlement: { joinMinHearts: string; maxSettlers: number; levels: number[]; inviteDays: number }
 	phases: { table: Phase[] }
 	signal: { weights: Record<string, number> }
 }

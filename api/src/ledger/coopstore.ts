@@ -27,6 +27,7 @@ import { coopPolicy, LAST, milestoneFor, mindsFor, phaseOf, room, schedule, sold
 import { ONE } from '../../../game/policy'
 import { calendar, format, toDemurraged, toInflationary } from '../../../game/time'
 import { buildable, islandCells, islandSeed, settlementLevel } from '../../../game/island/island'
+import { housing, LEVELS } from '../../../game/island/villages'
 import { balanceOf, burn, identityOf, LedgerError, mint, totalSupply } from './hearts'
 import { cityIdentity, coopIdentity, heartsIssuer, heartsToken, mindsToken } from './schema'
 
@@ -73,6 +74,10 @@ export type CoopSummary = {
 	/** How many players live in the settlement, and its Sandbox 1 level from that. */
 	settlers: number
 	level: number
+	/** The headcount the next level starts at — null at the top. */
+	nextLevelAt: number | null
+	/** Settlers living in the master dome, beyond the ring buildings. */
+	inMasterDome: number
 }
 
 export type CitySummary = CoopSummary & { island: number; settlements: CoopSummary[] }
@@ -154,7 +159,9 @@ function summary(r: Row): CoopSummary {
 		backers: Number(r.backers),
 		citizens: Number(r.citizens),
 		settlers: Number(r.settlers),
-		level: r.kind === 'settlement' ? settlementLevel(Number(r.settlers)) : 0
+		level: r.kind === 'settlement' ? settlementLevel(Number(r.settlers)) : 0,
+		nextLevelAt: r.kind === 'settlement' ? (LEVELS[settlementLevel(Number(r.settlers))] ?? null) : null,
+		inMasterDome: r.kind === 'settlement' ? housing(Number(r.settlers)).master : 0
 	}
 }
 

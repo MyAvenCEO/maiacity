@@ -624,13 +624,18 @@
 						{#if c.kind === 'city'}
 							<div><dt>Citizens</dt><dd>{c.citizens}</dd></div>
 						{:else}
-							<div><dt>Settlers</dt><dd>{c.settlers} <small>level {c.level}</small></dd></div>
+							<div><dt>Settlers</dt><dd>{c.settlers} <small>level {c.level} of 12</small></dd></div>
 						{/if}
 						<div><dt>In the treasury</dt><dd>{c.treasuryLabel} <small>{c.heartsToken}</small></dd></div>
 						<div><dt>Supply</dt><dd>{c.supplyLabel} <small>{c.mindToken}</small></dd></div>
 						<div><dt>Raised</dt><dd>{c.raisedLabel}♥</dd></div>
 					</dl>
 
+					{#if c.kind === 'settlement'}
+						<p class="dim small village">
+							{#if c.nextLevelAt}Level {c.level + 1} at {c.nextLevelAt} settlers{:else}Complete: every dome built, the food forest planted{/if}{#if c.inMasterDome > 0}{" · "}{c.inMasterDome} live in the master dome{/if}
+						</p>
+					{/if}
 					<p class="milestone">{c.milestoneOf}</p>
 					<div class="bar" aria-label="Progress of this milestone"><span style:width="{c.fill}%"></span></div>
 					<p class="dim small">{c.priceLabel} · {c.nextLabel}</p>

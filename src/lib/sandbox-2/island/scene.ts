@@ -9,7 +9,7 @@ import * as THREE from 'three'
 import { AXIAL_DIRS, generateMap, type HexTile, key, MAP_SIZE } from '../../../../game/island/hexmap'
 import { makeRng } from '../../../../game/island/rng'
 import {
-	BUILD_ORDER,
+	VILLAGE_KINDS,
 	buildWorld,
 	canBuildOnTile,
 	EMPTY_STATS,
@@ -295,8 +295,8 @@ export function createScene(canvas: HTMLCanvasElement, options: SceneOptions = {
 			(t) => AXIAL_DIRS.filter(([dq, dr]) => buildable(t.q + dq, t.r + dr)).length === 6
 		)
 		if (hero) {
-			out[key(hero.q, hero.r)] = 'FOREST'
-			const ring1: PlacedKind[] = ['DOME4', 'SOLAR', 'DOME3', 'HEMP', 'GLAMP', 'LIFETRAC']
+			out[key(hero.q, hero.r)] = 'V12'
+			const ring1: PlacedKind[] = ['V11', 'SOLAR', 'V9', 'HEMP', 'V6', 'LIFETRAC']
 			for (const [i, [dq, dr]] of AXIAL_DIRS.entries()) {
 				const t = buildable(hero.q + dq, hero.r + dr)
 				if (t) out[key(t.q, t.r)] = ring1[i]
@@ -304,8 +304,8 @@ export function createScene(canvas: HTMLCanvasElement, options: SceneOptions = {
 			// the second ring, walked hex by hex: a mix of levels and factories,
 			// with a few hexes left open so it reads as a neighbourhood, not a grid
 			const ring2: Array<PlacedKind | null> = [
-				'POWER_CUBE', 'DOME3', null, 'BAMBOO', 'DOME4', 'TENT',
-				null, 'FOREST', 'GLAMP', 'SOLAR', null, 'DOME3'
+				'POWER_CUBE', 'V9', null, 'BAMBOO', 'V11', 'V5',
+				null, 'V12', 'V6', 'SOLAR', null, 'V9'
 			]
 			let q = hero.q + AXIAL_DIRS[4][0] * 2
 			let r = hero.r + AXIAL_DIRS[4][1] * 2
@@ -324,7 +324,7 @@ export function createScene(canvas: HTMLCanvasElement, options: SceneOptions = {
 		// then the rest of the island: dome cells at every level and five
 		// factories of each trade, wherever the shuffle lands them
 		const kinds: PlacedKind[] = [
-			...Array.from({ length: 100 }, () => rng.pick(BUILD_ORDER)),
+			...Array.from({ length: 100 }, () => rng.pick(VILLAGE_KINDS)),
 			...FACTORY_KINDS.flatMap((k) => [k, k, k, k, k])
 		]
 		let i = 0
@@ -350,9 +350,9 @@ export function createScene(canvas: HTMLCanvasElement, options: SceneOptions = {
 		const byKey = new Map(tiles.map((t) => [key(t.q, t.r), t]))
 		const pick =
 			(options.focus && byKey.has(options.focus) ? [options.focus] : undefined) ??
-			Object.entries(saved.buildings).find(([, kind]) => kind === 'FOREST') ??
-			Object.entries(saved.buildings).find(([, kind]) => kind === 'DOME5') ??
-			Object.entries(saved.buildings).find(([, kind]) => kind === 'DOME4')
+			Object.entries(saved.buildings).find(([, kind]) => kind === 'V12') ??
+			Object.entries(saved.buildings).find(([, kind]) => kind === 'V11') ??
+			Object.entries(saved.buildings).find(([, kind]) => kind === 'V10')
 		const tile = pick ? byKey.get(pick[0]) : undefined
 		const gx = world.group.position.x
 		const gz = world.group.position.z

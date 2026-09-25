@@ -4,7 +4,6 @@
  * planet — so a city is always the same island, in the browser and in the API.
  */
 import { generateMap, WATER_BIOME, type HexTile } from './hexmap'
-import { coopPolicy } from '../coops'
 
 /** The island seed of a planet card: stable, spread out, never zero. */
 export const islandSeed = (tile: number) => ((Math.imul(tile + 1, 2654435761) >>> 0) % 999_983) + 1
@@ -26,8 +25,5 @@ export function islandCells(seed: number): Map<string, HexTile> {
 	return cells
 }
 
-/** A settlement's Sandbox 1 level from its headcount: tents to 12, glamping to 24, then 72, a full ring, and the centre dome at 216. */
-export function settlementLevel(settlers: number): number {
-	const i = coopPolicy.settlement.levelUpTo.findIndex((max) => settlers <= max)
-	return i < 0 ? coopPolicy.settlement.levelUpTo.length : i + 1
-}
+/** A settlement's level from its headcount: one for every Fibonacci number reached, up to 233. */
+export { villageLevel as settlementLevel } from './villages'

@@ -510,10 +510,10 @@
 		"citizenshipMinHearts": "25000"
 	},
 	"settlement": {
-		"$description": "The second step into a city. The city opens as an island of cells; a settlement is a dome cluster on one of them, and itself a coop with its own MINDS. A citizen founds one, or joins one with an invite link from one of its settlers — at least 5,000 personal hearts either way, which become the city's HEARTS in the settlement's treasury. One settlement per player, for good. It grows by headcount through the Sandbox 1 levels: tents up to 12 settlers, glamping to 24, then 72, then a full ring of 216, whose centre dome completes it.",
+		"$description": "The second step into a city. The city opens as an island of cells; a settlement is a village of domes on one of them, and itself a coop with its own MINDS. A citizen founds one, or joins one with an invite link from one of its settlers — at least 5,000 personal hearts either way, which become the city's HEARTS in the settlement's treasury. One settlement per player, for good. It grows by headcount through twelve levels, one for every Fibonacci number up to 233: a level is reached when the settlers reach its number, and it builds enough beds for everyone until the next. The buildings for each level are in game/island/villages.ts.",
 		"joinMinHearts": "5000",
-		"maxSettlers": 216,
-		"levelUpTo": [12, 24, 72, 215, 216],
+		"maxSettlers": 233,
+		"levels": [1, 2, 3, 5, 8, 13, 21, 34, 55, 89, 144, 233],
 		"inviteDays": 7
 	},
 	"conversion": {

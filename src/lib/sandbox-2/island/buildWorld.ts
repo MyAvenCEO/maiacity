@@ -23,6 +23,7 @@ import * as THREE from 'three'
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js'
 import { AXIAL_DIRS, type BiomeId, type HexTile, type HexWorld, key, WATER_BIOME } from '../../../../game/island/hexmap'
 import { hash2, makeRng, type Rng } from '../../../../game/island/rng'
+import { planFor, ringBeds, VILLAGE_PLANS, type RingBuilding } from '../../../../game/island/villages'
 import {
 	berryBush,
 	birchTree,
@@ -1232,7 +1233,7 @@ export function buildBiomeTile(
 		options.building && canBuildOn(biome)
 			? isFactory(options.building)
 				? makeFactory(tile, options.building)
-				: makeSettlement(tile, BUILDINGS[options.building].level)
+				: makeSettlement(tile, levelOf(options.building))
 			: null
 	const clearings = settlement?.clearings ?? []
 	for (const p of planTileDeco(tile, makeRng(seed ^ 0xdec0))) {
@@ -1724,7 +1725,16 @@ export const FACTORIES: Record<FactoryKind, FactorySpec> = {
 export const FACTORY_KINDS = Object.keys(FACTORIES) as FactoryKind[]
 
 /** Anything a hex can carry: a settlement level, or a works. */
-export type PlacedKind = BuildingKind | FactoryKind
+/**
+ * Sandbox 2's settlements are VILLAGES that level up on the Fibonacci numbers
+ * (game/island/villages.ts): V1 … V12, each a mix of the ring buildings below.
+ */
+export type VillageKind = `V${number}`
+export const VILLAGE_KINDS: VillageKind[] = VILLAGE_PLANS.map((p) => `V${p.level}` as VillageKind)
+export const villageKind = (level: number): VillageKind => `V${Math.max(1, Math.min(VILLAGE_KINDS.length, level))}` as VillageKind
+export const levelOf = (kind: VillageKind): number => Number(kind.slice(1))
+
+export type PlacedKind = VillageKind | FactoryKind
 
 export function isFactory(kind: PlacedKind): kind is FactoryKind {
 	return kind in FACTORIES
@@ -1904,30 +1914,28 @@ export const BUILD_ORDER: BuildingKind[] = (Object.keys(BUILDINGS) as BuildingKi
  * What actually stands on a hex built to `level`: everything laid up to it,
  * minus the housing that later levels retired.
  */
-export function settlementKinds(level: number): BuildingKind[] {
-	const built = BUILD_ORDER.filter((k) => BUILDINGS[k].level <= level)
-	const retired = new Set(built.map((k) => BUILDINGS[k].retires).filter(Boolean))
-	return built.filter((k) => !retired.has(k))
+export function settlementKinds(level: number): Array<[BuildingKind, number]> {
+	const plan = planFor(level)
+	const rings = (['TENT', 'GLAMP', 'DOME3', 'DOME4'] as RingBuilding[]).flatMap((k): Array<[BuildingKind, number]> => (plan.counts[k] ? [[k, plan.counts[k]!]] : []))
+	return plan.master ? [...rings, ['DOME5', 1]] : rings
 }
 
 /** Ground the domes themselves stand on at `level`, in hectares. */
 export function domesHa(level: number): number {
 	return settlementKinds(level).reduce(
-		(sum, k) => sum + BUILDINGS[k].count * ((Math.PI * (BUILDINGS[k].diameterM / 2) ** 2) / 10_000),
+		(sum, [k, n]) => sum + n * ((Math.PI * (BUILDINGS[k].diameterM / 2) ** 2) / 10_000),
 		0
 	)
 }
 
-/** People housed by a settlement built up to and including `level`. */
+/** People a village at `level` houses: its ring beds, and the master dome's share up to the next level. */
 export function settlementCapacity(level: number): number {
-	return settlementKinds(level).reduce(
-		(sum, k) => sum + BUILDINGS[k].capacity * BUILDINGS[k].count,
-		0
-	)
+	const plan = planFor(level)
+	return Math.max(ringBeds(plan), plan.master ? plan.to : 0)
 }
 
-export function buildingForLevel(level: number): BuildingKind | null {
-	return BUILD_ORDER.find((k) => BUILDINGS[k].level === level) ?? null
+export function buildingForLevel(level: number): VillageKind {
+	return villageKind(level)
 }
 
 /**
@@ -2034,10 +2042,27 @@ function buildSettlementAtOrigin(
 	const clearings: Clearing[] = []
 	const rng = makeRng(seed ^ 0x5e77)
 
-	for (const kind of settlementKinds(level)) {
+	const plan = planFor(level)
+	for (const [kind, n] of settlementKinds(level)) {
 		const spec = BUILDINGS[kind]
+		/* A ring of n, evenly spaced, turned as one until it clears whatever already stands. */
+		let phase = (spec.level * Math.PI) / Math.max(1, n)
+		if (!spec.scatter && spec.radius > 0 && clearings.length) {
+			let best = -Infinity
+			for (let step = 0; step < 36; step++) {
+				const tryPhase = (step * Math.PI * 2) / (36 * n)
+				let worst = Infinity
+				for (let i = 0; i < n; i++) {
+					const a = (Math.PI * 2 * i) / n + tryPhase
+					const x = Math.cos(a) * spec.radius * SITE_SCALE
+					const z = Math.sin(a) * spec.radius * SITE_SCALE
+					for (const c of clearings) worst = Math.min(worst, Math.hypot(x - c.x, z - c.z) - c.extent - spec.extent * SITE_SCALE)
+				}
+				if (worst > best) [best, phase] = [worst, tryPhase]
+			}
+		}
 
-		for (let i = 0; i < spec.count; i++) {
+		for (let i = 0; i < n; i++) {
 			let px = 0
 			let pz = 0
 
@@ -2062,10 +2087,9 @@ function buildSettlementAtOrigin(
 					// each ring is turned half a step against the one outside it,
 					// so domes sit in the gaps rather than lining up radially —
 					// unless it is pinned to another ring's spots
-					const ring = spec.alignWith ? BUILDINGS[spec.alignWith] : spec
-					const a = (Math.PI * 2 * i) / ring.count + (ring.level * Math.PI) / ring.count
-					px = Math.cos(a) * ring.radius * SITE_SCALE
-					pz = Math.sin(a) * ring.radius * SITE_SCALE
+					const a = (Math.PI * 2 * i) / n + phase
+					px = Math.cos(a) * spec.radius * SITE_SCALE
+					pz = Math.sin(a) * spec.radius * SITE_SCALE
 				}
 			}
 
@@ -2118,7 +2142,7 @@ function buildSettlementAtOrigin(
 		!clearings.some((c) => Math.hypot(px - c.x, pz - c.z) < c.extent + extent)
 
 	for (const piece of SITE_PIECES) {
-		if (level < piece.fromLevel || level > piece.untilLevel) continue
+		if (plan.stage < piece.fromLevel || plan.stage > piece.untilLevel) continue
 		const rng = makeRng(tile.seed ^ (0xc0de + piece.fromLevel * 64))
 		const pieceRadius = piece.radius * SITE_SCALE
 		const pieceExtent = piece.extent * SITE_SCALE
@@ -2190,8 +2214,8 @@ function buildSettlementAtOrigin(
 		}
 	}
 
-	// level 6: the food forest grows in around everything, right to the rim
-	if (level >= 6) {
+	// the last level: the food forest grows in around everything, right to the rim
+	if (plan.forest) {
 		const reach = clearings.reduce((m, c) => (c.shape ? Math.max(m, Math.hypot(c.x, c.z) + c.extent) : m), 0)
 		growForest(group, makeRng(seed ^ 0xf00d), clearings, reach + 0.06, tile.x, tile.z)
 	}
@@ -2520,14 +2544,14 @@ function placedVariant(kind: PlacedKind, variant: number): PlacedBuild {
 		parts = built.object.children.filter((c): c is THREE.Mesh => c instanceof THREE.Mesh)
 		clearings = built.clearings
 	} else {
-		const built = settlementVariant(BUILDINGS[kind].level, variant)
+		const built = settlementVariant(levelOf(kind), variant)
 		parts = built.object.children.filter((c): c is THREE.Mesh => c instanceof THREE.Mesh)
 		clearings = built.clearings
 	}
 
 	const build: PlacedBuild = {
 		parts,
-		impostor: impostorFor(poolKey, clearings, isFactory(kind) || BUILDINGS[kind].level >= 6),
+		impostor: impostorFor(poolKey, clearings, isFactory(kind) || planFor(levelOf(kind)).forest),
 		clearings
 	}
 	placedPool.set(poolKey, build)
@@ -2876,8 +2900,8 @@ export function buildWorld(world: HexWorld): WorldApi {
 					cropHa += Math.max(0, HEX_HA - dome)
 				} else {
 					settlements++
-					const housed = settlementCapacity(BUILDINGS[kind].level)
-					settledHa += domesHa(BUILDINGS[kind].level)
+					const housed = settlementCapacity(levelOf(kind))
+					settledHa += domesHa(levelOf(kind))
 					// the food forest each person is owed, from the base calculation
 					permacultureHa += (housed * FOOD_FOREST_M2_PER_PERSON) / 10_000
 					citizens += housed
@@ -2902,7 +2926,7 @@ export function buildWorld(world: HexWorld): WorldApi {
 			// on it, which settlementCapacity already resolves from the level
 			let total = 0
 			for (const { kind } of buildings.values()) {
-				if (!isFactory(kind)) total += settlementCapacity(BUILDINGS[kind].level)
+				if (!isFactory(kind)) total += settlementCapacity(levelOf(kind))
 			}
 			return total
 		},

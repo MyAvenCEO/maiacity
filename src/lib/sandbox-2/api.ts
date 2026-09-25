@@ -15,6 +15,8 @@ export type CoopSummary = {
 	citizens: number;
 	settlers: number;
 	level: number;
+	nextLevelAt: number | null;
+	inMasterDome: number;
 	milestone: number;
 	phase: string;
 	raised: string;
