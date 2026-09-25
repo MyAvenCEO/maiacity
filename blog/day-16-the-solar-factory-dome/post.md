@@ -136,6 +136,8 @@ People and humanoid robots work side by side on every floor. Some stand at their
 
 Imagine a morning here. The sun comes through the glass of a dome whose glass was made on the floor below you. A tray of cells goes past on the belt, still warm from the firing furnace. Somewhere under your feet, a forklift lifts a rack of triangles that will be a roof in a new village next month.
 
+Tomorrow, all the domes in one world: [a whole dome cell to walk →](/blog/day-17-one-world-thirteen-domes/)
+
 [Walk through the solar factory dome in avenCITY Sandbox 3 →](/games/sandbox-3/)
 
 [Read the manifesto →](/)

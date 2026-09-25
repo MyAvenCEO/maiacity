@@ -1,15 +1,13 @@
 <!--
 	avenCITY Sandbox 4 — a whole dome cell in one world: the master dome, six
 	large domes, six medium domes, the paths and streams between them and the
-	food forest round it all (interior/village.ts). Walk through any door and
-	that dome's full inside opens (DomeInterior); walk back out of a door and
-	you are in the village again, outside it.
+	food forest round it all (interior/village.ts). Walk up to any dome and its
+	full inside is built into the village as you come; walk in through its door
+	with nothing to wait for.
 -->
 <script lang="ts">
 	import { base } from '$app/paths';
 	import { onDestroy, onMount } from 'svelte';
-	import DomeInterior from '$lib/sandbox-2/DomeInterior.svelte';
-	import type { DomeKind } from '$lib/sandbox-2/interior/interior';
 	import type { VillageHandle } from '$lib/sandbox-2/interior/village';
 	import { gameClock } from '../../../../game/time';
 
@@ -21,8 +19,9 @@
 	let step = $state('Letting in the light');
 	let done = $state(0);
 	const STEPS = 8;
-	/** the dome you walked into: which one, and through which door */
-	let inside = $state<{ i: number; kind: DomeKind; door: number } | null>(null);
+	/** the dome being opened as you walk up to it */
+	let opening = $state<string | null>(null);
+	const openingTimer = setInterval(() => (opening = village?.opening() ?? null), 300);
 	let clock = $state(gameClock().label);
 	const clockTimer = setInterval(() => (clock = gameClock().label), 1000);
 
@@ -36,10 +35,6 @@
 						if (label === 'ready') return;
 						step = label;
 						done += 1;
-					},
-					(i, kind, door) => {
-						v.pause();
-						inside = { i, kind, door };
 					}
 				);
 				if (destroyed) return v.dispose();
@@ -53,16 +48,9 @@
 	onDestroy(() => {
 		destroyed = true;
 		clearInterval(clockTimer);
+		clearInterval(openingTimer);
 		village?.dispose();
 	});
-
-	/** Back out of a dome, standing outside the door you left by. */
-	const leave = (door: number) => {
-		if (!inside) return;
-		village?.placeAtDoor(inside.i, door);
-		inside = null;
-		village?.resume();
-	};
 </script>
 
 <svelte:head>
@@ -78,6 +66,7 @@
 		<div class="clock" title="In-game time: a game hour passes every two real minutes">{clock}</div>
 	</div>
 	<p class="help">Drag to look · WASD to walk · Shift to hurry · walk through any door to step inside</p>
+	{#if opening}<p class="opening">The {opening.toLowerCase()} ahead is opening its doors…</p>{/if}
 
 	{#if loading}
 		<div class="loading" class:opening={fading} role="status" aria-live="polite">
@@ -93,11 +82,6 @@
 		</div>
 	{/if}
 
-	{#if inside}
-		<div class="walk">
-			<DomeInterior kind={inside.kind} place="Sandbox 4" entry={inside.door} onleave={leave} onclose={() => leave(inside!.door)} />
-		</div>
-	{/if}
 </div>
 
 <style>
@@ -111,10 +95,18 @@
 		inset: 0;
 		cursor: grab;
 	}
-	.walk {
-		position: fixed;
-		inset: 0;
-		z-index: 50;
+	.opening {
+		position: absolute;
+		bottom: calc(3.8rem + env(safe-area-inset-bottom, 0px));
+		left: 50%;
+		transform: translateX(-50%);
+		margin: 0;
+		padding: 0.45rem 0.9rem;
+		border-radius: 999px;
+		background: rgb(250 248 242 / 0.9);
+		color: #1f2a23;
+		font-size: 0.8rem;
+		white-space: nowrap;
 	}
 	.bar {
 		position: absolute;

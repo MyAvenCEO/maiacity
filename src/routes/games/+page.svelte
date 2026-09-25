@@ -34,7 +34,7 @@
 			status: 'Open',
 			href: `${base}/games/sandbox-4`,
 			blurb:
-				'A whole dome cell in one world: the master dome, six large domes and six medium domes, meandering paths and a stream between them, the food forest all round. Walk through any door and step inside.',
+				'A whole dome cell in one world: thirteen domes, paths and a stream between them, a food forest all round. Walk up to any dome and straight in, with no loading screen.',
 			cover: `${base}/games/sandbox-4.jpg`,
 			coverAlt: 'The dome cell of avenCITY Sandbox 4: the master dome among its ring of domes, paths and a stream through the forest.'
 		}
