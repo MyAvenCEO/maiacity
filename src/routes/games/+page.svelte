@@ -19,6 +19,15 @@
 				'The whole planet, and the first cities on it. Found a city on a card of land or join one for good, launch coops inside it, and watch your hearts become the city\'s own HEARTS.',
 			cover: `${base}/games/sandbox-2.jpg`,
 			coverAlt: 'The avenCITY Sandbox 2 planet: continents of hex cards over a deep blue sea.'
+		},
+		{
+			name: 'avenCITY Sandbox 3',
+			status: 'Open',
+			href: `${base}/games/sandbox-3`,
+			blurb:
+				'Inside the domes. Choose the glamping dome, a dome home, a large dome or the master dome, and walk through it: the food forest downstairs, the private rooms upstairs facing out.',
+			cover: `${base}/games/sandbox-3.jpg`,
+			coverAlt: 'Looking down from the gallery of a dome home onto its food forest.'
 		}
 	];
 </script>

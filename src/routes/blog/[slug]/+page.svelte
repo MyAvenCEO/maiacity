@@ -24,6 +24,13 @@
 	<meta name="description" content={post.excerpt} />
 </svelte:head>
 
+{#if post.cover}
+	<!-- the cover, edge to edge, before anything else -->
+	<figure class="hero">
+		<img src="{base}{post.cover}" alt={post.coverAlt ?? post.title} fetchpriority="high" />
+	</figure>
+{/if}
+
 <main class="wrap">
 	<a class="back" href="{base}/blog">← Journal</a>
 
@@ -76,6 +83,22 @@
 <style>
 	main {
 		padding-block: 2.5rem 6rem;
+	}
+
+	.hero {
+		margin: 0;
+		width: 100%;
+		height: 50vh;
+		height: 50svh;
+		min-height: 16rem;
+		background: var(--paper);
+	}
+
+	.hero img {
+		display: block;
+		width: 100%;
+		height: 100%;
+		object-fit: cover;
 	}
 
 	.back {

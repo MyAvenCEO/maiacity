@@ -191,7 +191,7 @@ This is a vision being built, not a fantasy being hoped for. State it plainly.
 - Banned: delve, leverage, unlock, elevate, seamless, game-changer, robust, synergy,
   "in today's fast-paced world", emoji.
 - Names, spelled exactly: avenSAMUEL, avenMAIA, maiaCITY (the project), Maia City (the city),
-  avenCITY Sandbox 1, avenCITY Sandbox 2.
+  avenCITY Sandbox 1, avenCITY Sandbox 2, avenCITY Sandbox 3.
 
 ━━ OUTPUT ━━
 One Markdown file, `blog/day-NN-<slug>/post.md`:

@@ -22,7 +22,7 @@ Today we opened the door.
 
 ## A roof you can see through changes what a home is
 
-Every dome in avenCITY Sandbox 2 can now be walked through. Choose a settlement on its island, press "Step inside", and you are standing on the ground floor, at eye height, free to walk anywhere a person could.
+Every dome in avenCITY Sandbox 2 can now be walked through. Choose a settlement on its island, press "Step inside", and you are standing on the ground floor, at eye height, free to walk anywhere a person could. Or open [Sandbox 3](/games/sandbox-3/), where all four domes stand ready without a village around them.
 
 What we built inside follows one idea. When the whole roof is glass, the inside of the house is a garden. So the ground floor belongs to the plants and to everyone, and the private rooms go upstairs, round the edge, where they look out through the glass at the land.
 
@@ -85,6 +85,10 @@ Everything you see is drawn by the game as you walk. There are no photographs in
 It is a first version. The plants are simple, the people are not there yet, and the rooms are sparse. What it already gets right is the plan: shared ground, private views, and food growing between them.
 
 These pictures come from a test copy of the game on my own machine. On the live planet, any settlement's domes open the same way.
+
+You do not need a village to try it. Sandbox 3 has all four domes side by side: choose one and walk in.
+
+[Walk inside the domes in avenCITY Sandbox 3 →](/games/sandbox-3/)
 
 [Open avenCITY Sandbox 2 →](/games/sandbox-2/)
 
