@@ -23,6 +23,9 @@
 	import * as api from '$lib/sandbox-2/api';
 	import Island from '$lib/sandbox-2/Island.svelte';
 	import Tour, { type TourStep } from '$lib/sandbox-2/Tour.svelte';
+	import DomeInterior from '$lib/sandbox-2/DomeInterior.svelte';
+	import { planFor } from '../../../../game/island/villages';
+	import type { DomeKind } from '$lib/sandbox-2/interior/interior';
 	import type { WorldHandle } from '$lib/sandbox-2/world/world';
 
 	const CITIZENSHIP = BigInt(coopPolicy.city.citizenshipMinHearts) * ONE;
@@ -63,6 +66,19 @@
 	let inviteLink = $state('');
 
 	let ledgerData = $state<api.LedgerView | null>(null);
+
+	/** The dome being walked through, over the island. */
+	let walking = $state<{ kind: DomeKind; place: string } | null>(null);
+	/** The domes a settlement has at its level, each one you can step inside. */
+	function domesOf(level: number): { kind: DomeKind; label: string }[] {
+		const plan = planFor(level);
+		const out: { kind: DomeKind; label: string }[] = [];
+		if (plan.counts.GLAMP) out.push({ kind: 'glamp', label: 'a glamping dome' });
+		if (plan.counts.DOME3) out.push({ kind: 'home', label: 'a dome home' });
+		if (plan.counts.DOME4) out.push({ kind: 'large', label: 'a large dome' });
+		if (plan.master) out.push({ kind: 'master', label: 'the master dome' });
+		return out;
+	}
 
 	/* ── the first-time tour: one hint at a time until the first citizenship ── */
 	let tourOff = $state(true);
@@ -495,6 +511,10 @@
 
 	<Tour step={tourStep} onskip={endTour} ondone={endTour} />
 
+	{#if walking}
+		<DomeInterior kind={walking.kind} place={walking.place} onclose={() => (walking = null)} />
+	{/if}
+
 	{#if selected}
 		<aside class="sheet right">
 			<button class="close" onclick={() => (selected = null)} aria-label="Close">×</button>
@@ -642,6 +662,15 @@
 
 					{#if me && c.myMindsLabel && c.myMindsLabel !== '0.00'}
 						<p class="yours">You own <strong>{c.myMindsLabel} {c.mindToken}</strong></p>
+					{/if}
+
+					{#if c.kind === 'settlement' && domesOf(c.level).length}
+						<div class="inside">
+							<span class="dim small">Step inside</span>
+							{#each domesOf(c.level) as d (d.kind)}
+								<button class="secondary" onclick={() => (walking = { kind: d.kind, place: c.name })}>{d.label}</button>
+							{/each}
+						</div>
 					{/if}
 
 					{#if c.kind === 'city' && !insideSlug}
@@ -878,6 +907,8 @@
 	.pill.brand strong { font-family: 'Sun', var(--font-display, serif); font-weight: 500; }
 	.pill.cta { background: #1f2a23; color: #f2efe7; }
 	.pill.home strong { font-weight: 600; }
+	.inside { display: flex; flex-wrap: wrap; gap: 0.4rem; align-items: center; margin: 0.8rem 0; }
+	.inside .secondary { margin: 0; padding: 0.45rem 0.9rem; font-size: 0.82rem; }
 	.stage.hidden { visibility: hidden; }
 	.dive { position: absolute; inset: 0; background: #f2efe7; animation: dive 1.1s ease-in forwards; pointer-events: none; }
 	@keyframes dive { 0% { opacity: 0; } 70% { opacity: 0.2; } 100% { opacity: 1; } }
