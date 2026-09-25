@@ -285,7 +285,9 @@ export function mountWorld(container: HTMLElement, options: WorldOptions = { cit
 		for (const group of groupByCity.values()) {
 			const tower = group.userData.tower as THREE.Group
 			tower.visible = !near
-			tower.scale.set(grow * 0.55, grow, grow * 0.55)
+			/* Taller from afar so a city stays readable, but never wider than its own card. */
+			const girth = Math.min(1.5, 1 + (grow - 1) * 0.08)
+			tower.scale.set(girth, grow, girth)
 			;(group.userData.domes as THREE.Group).visible = near
 		}
 	}
