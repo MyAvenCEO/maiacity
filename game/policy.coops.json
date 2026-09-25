@@ -505,6 +505,17 @@
 			"momentumLastThreeMonths": 0.2
 		}
 	},
+	"city": {
+		"$description": "A card of the planet is unlocked by founding a city on it; a city is itself a coop, with the same milestones, whose MINDS carry the city's name. Becoming a citizen takes an investment of at least 25,000 personal hearts into the city — founding counts as the first. A player is a citizen of one city for good.",
+		"citizenshipMinHearts": "25000"
+	},
+	"settlement": {
+		"$description": "The second step into a city. The city opens as an island of cells; a settlement is a dome cluster on one of them, and itself a coop with its own MINDS. A citizen founds one, or joins one with an invite link from one of its settlers — at least 5,000 personal hearts either way, which become the city's HEARTS in the settlement's treasury. One settlement per player, for good. It grows by headcount through the Sandbox 1 levels: tents up to 12 settlers, glamping to 24, then 72, then a full ring of 216, whose centre dome completes it.",
+		"joinMinHearts": "5000",
+		"maxSettlers": 216,
+		"levelUpTo": [12, 24, 72, 215, 216],
+		"inviteDays": 7
+	},
 	"conversion": {
 		"$description": "What an investment does to the hearts: every personal heart invested is taken out of the investor's own currency and the same amount of maiaHEARTS is minted into the coop's treasury. One for one, in spendable units.",
 		"into": "maiaHEARTS",

@@ -243,7 +243,7 @@ export async function account(founderId: string, now = new Date()): Promise<Acco
 	const held = (await holdings(key.bjjPublic)).map((h): Holding => {
 		const issuer = byContract.get(h.contractAddress) ?? 'unknown'
 		const balance = toDemurraged(h.total, day)
-		const kind = h.contractAddress === mine ? 'own' : issuer.startsWith('coop/') ? 'minds' : issuer === policy.city.identity ? 'city' : 'hearts'
+		const kind = h.contractAddress === mine ? 'own' : issuer.startsWith('coop/') || issuer.startsWith('city/') ? 'minds' : issuer.startsWith('hearts/') ? 'city' : 'hearts'
 		return { issuer, token: tokenLabel(issuer, nameOf), contractAddress: h.contractAddress, balance, balanceLabel: format(balance), notes: h.notes, kind }
 	})
 	held.sort((a, b) => (a.kind === 'own' ? -1 : b.kind === 'own' ? 1 : 0))

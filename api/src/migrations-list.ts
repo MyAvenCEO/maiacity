@@ -71,5 +71,68 @@ export const MIGRATIONS: Migration[] = [
       CREATE INDEX ix_investments_coop ON investments (coop_id, founder_id);
     `,
   },
+  {
+    // Sandbox 2, reshaped: a card of the planet holds a CITY; the city opens
+    // as an island of cells, and settlements (dome clusters) stand on them. The game starts over — every note, coop and investment goes —
+    // but every account stays, and everyone's first mint pays the (now 30,000
+    // heart) stake again. The ledger recreates its own tables at boot.
+    id: "0003-cities",
+    sql: `
+      DROP TABLE IF EXISTS ledger_tx_states, ledger_transactions, ledger_blocks, ledger_states, ledger_keys CASCADE;
+      DROP TABLE IF EXISTS invites;
+      DROP TABLE IF EXISTS investments;
+      ALTER TABLE founders DROP COLUMN IF EXISTS city_id;
+      ALTER TABLE founders DROP COLUMN IF EXISTS settlement_id;
+      DROP TABLE IF EXISTS coops;
+      UPDATE founders SET last_claim_at = now(), stake_at = NULL;
+
+      -- One table for all three: a city IS a coop, on its own card of the
+      -- planet; a settlement is a coop on a cell of its city's island; later
+      -- coops (a solar works …) stand on cells too.
+      CREATE TABLE coops (
+        id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        slug       TEXT NOT NULL UNIQUE,
+        kind       TEXT NOT NULL CHECK (kind IN ('city', 'settlement', 'coop')),
+        city_id    UUID REFERENCES coops(id),
+        name       TEXT NOT NULL,
+        founder_id TEXT NOT NULL REFERENCES founders(id),
+        pitch      TEXT NOT NULL,
+        tile       INTEGER NOT NULL,
+        -- the sub-hex on the city's island, "q,r"
+        cell       TEXT,
+        raised     NUMERIC(78, 0) NOT NULL DEFAULT 0,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+        CHECK ((kind = 'city' AND city_id IS NULL AND cell IS NULL) OR (kind <> 'city' AND city_id IS NOT NULL AND cell IS NOT NULL))
+      );
+      CREATE UNIQUE INDEX ux_city_tile ON coops (tile) WHERE kind = 'city';
+      CREATE UNIQUE INDEX ux_cell ON coops (city_id, cell) WHERE kind <> 'city';
+
+      CREATE TABLE investments (
+        id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        coop_id    UUID NOT NULL REFERENCES coops(id),
+        founder_id TEXT NOT NULL REFERENCES founders(id),
+        hearts     NUMERIC(78, 0) NOT NULL,
+        minds      NUMERIC(78, 0) NOT NULL,
+        milestone  INTEGER NOT NULL,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+      );
+      CREATE INDEX ix_investments_coop ON investments (coop_id, founder_id);
+
+      -- A player is a citizen of one city and a settler of one settlement, for good.
+      ALTER TABLE founders ADD COLUMN city_id UUID REFERENCES coops(id);
+      ALTER TABLE founders ADD COLUMN settlement_id UUID REFERENCES coops(id);
+
+      -- A settlement grows by invitation: a settler makes a link, one person uses it.
+      CREATE TABLE invites (
+        token         TEXT PRIMARY KEY,
+        settlement_id UUID NOT NULL REFERENCES coops(id),
+        created_by    TEXT NOT NULL REFERENCES founders(id),
+        created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+        expires_at    TIMESTAMPTZ NOT NULL,
+        used_by       TEXT REFERENCES founders(id),
+        used_at       TIMESTAMPTZ
+      );
+    `,
+  },
 ];
 

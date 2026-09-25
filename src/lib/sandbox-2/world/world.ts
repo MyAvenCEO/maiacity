@@ -17,10 +17,11 @@ import { buildGlobe, FREQUENCY, LAND, WATER, type Tile, type Vec3 } from '../../
 import type { BiomeMap, DepthMap, LandMask } from '../../../../game/map'
 
 /** A coop as the world places it. */
-export type CoopMarker = { slug: string; tile: number; milestone: number }
+/** A city on its card, and the coops standing inside it. */
+export type CityMarker = { slug: string; tile: number; citizens: number; milestone: number; coops: { slug: string; slot: number; milestone: number }[] }
 export type TilePick = { tile: number; biome: 'land' | 'water'; coop: string | null }
-export type WorldOptions = { coops: CoopMarker[]; onTile?: (pick: TilePick) => void; /** The map: where the land is. Without it, the noise invents continents. */ isLand?: LandMask; /** The map: what kind of land is where. */ kindOf?: BiomeMap; /** The map: where the mountain ranges are. */ isMountain?: LandMask; /** The map: how deep the sea is. */ depthOf?: DepthMap }
-export type WorldHandle = { setCoops: (coops: CoopMarker[]) => void; /** Hold the camera and give the mouse back, while a sheet is open. */ setFrozen: (on: boolean) => void; /** Mark a card as chosen (-1 clears it). */ setChosen: (tile: number) => void; /** Fly the camera to a card and mark it; `at` is where on the screen it should land (-1..1, 0 is the middle). */ focus: (tile: number, at?: { x: number; y: number }) => void; dispose: () => void }
+export type WorldOptions = { cities: CityMarker[]; onTile?: (pick: TilePick) => void; /** The map: where the land is. Without it, the noise invents continents. */ isLand?: LandMask; /** The map: what kind of land is where. */ kindOf?: BiomeMap; /** The map: where the mountain ranges are. */ isMountain?: LandMask; /** The map: how deep the sea is. */ depthOf?: DepthMap }
+export type WorldHandle = { setCities: (cities: CityMarker[]) => void; /** Hold the camera and give the mouse back, while a sheet is open. */ setFrozen: (on: boolean) => void; /** Mark a card as chosen (-1 clears it). */ setChosen: (tile: number) => void; /** Fly the camera to a card and mark it; `at` is where on the screen it should land (-1..1, 0 is the middle); `zoom` how close. */ focus: (tile: number, at?: { x: number; y: number }, zoom?: number) => void; /** Stop drawing while another view has the screen. */ setPaused: (on: boolean) => void; dispose: () => void }
 
 /** Resolve a token that may be `var(--x)` to a colour three.js can parse. */
 function colour(name: string, fallback: string): THREE.Color {
@@ -149,7 +150,7 @@ function forests(tiles: Tile[]): THREE.Object3D {
 	return group
 }
 
-export function mountWorld(container: HTMLElement, options: WorldOptions = { coops: [] }): WorldHandle {
+export function mountWorld(container: HTMLElement, options: WorldOptions = { cities: [] }): WorldHandle {
 	const sky = colour('--color-surface-page', '#f2efe7')
 
 	const renderer = new THREE.WebGLRenderer({ antialias: true })
@@ -175,68 +176,120 @@ export function mountWorld(container: HTMLElement, options: WorldOptions = { coo
 	const globe = new THREE.Mesh(geometry, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.92, metalness: 0 }))
 	scene.add(globe)
 
-	/* ── towers: one hex prism per coop, a storey per milestone ──────────────
-	   Each level the coop has reached is one band, in its own shade, so the
-	   height reads as a count. The steps are small: a card is about two units
-	   across, a storey is a fraction of that, and the girth creeps up. */
-	const towers = new THREE.Group()
-	scene.add(towers)
+	/* ── cities: from afar a tower, close up a cluster of domes ─────────────
+	   Seen from high up, every city is one hex tower whose height counts its
+	   citizens: a band per step, alternating light and dark. Come down low
+	   enough and the tower gives way to what stands inside the card: the city
+	   itself as the centre dome, and every coop as a smaller dome on its slot
+	   around it, growing with its milestone. A card is about two units across. */
+	const cityGroups = new THREE.Group()
+	scene.add(cityGroups)
 	const storeyGeo = new THREE.CylinderGeometry(1, 1, 1, 6)
 	storeyGeo.rotateY(Math.PI / 6)
 	storeyGeo.translate(0, 0.5, 0)
+	const domeGeo = new THREE.SphereGeometry(1, 18, 9, 0, Math.PI * 2, 0, Math.PI / 2)
 	const STOREY = 0.16
-	const BASE = 0.42
-	const towerByCoop = new Map<string, THREE.Group>()
+	/** Below this zoom the towers give way to the domes. */
+	const DOMES_BELOW = 0.55
+	/** Where a coop stands inside its city's card: six around the centre, twelve further out. */
+	const SLOTS: [number, number][] = [
+		...Array.from({ length: 6 }, (_, i) => [0.44, ((i * 60 + 30) * Math.PI) / 180] as [number, number]),
+		...Array.from({ length: 12 }, (_, i) => [0.74, ((i * 30) * Math.PI) / 180] as [number, number])
+	].map(([r, a]) => [Math.cos(a) * r, Math.sin(a) * r])
 	const hue = (slug: string) => {
 		let h = 0
 		for (const ch of slug) h = (h * 31 + ch.charCodeAt(0)) % 360
 		return h
 	}
-	/* Band `level` of a coop: the hue walks a little with every level, and
-	   neighbouring bands alternate light and dark so each step is visible. */
-	const bandMaterial = (slug: string, level: number) =>
+	/* Warm, bright bands, so a city never melts into the forest or the grass around it. */
+	const material = (slug: string, step: number, light = 0.62) =>
 		new THREE.MeshStandardMaterial({
-			color: new THREE.Color().setHSL(((hue(slug) + level * 7) % 360) / 360, 0.5, level % 2 ? 0.46 : 0.64),
+			color: new THREE.Color().setHSL(((20 + (hue(slug) % 40) + step * 3) % 360) / 360, 0.72, step % 2 ? light - 0.1 : light + 0.12),
 			roughness: 0.55,
 			metalness: 0.05,
 			flatShading: true
 		})
-	const build = (group: THREE.Group, slug: string, milestone: number) => {
+	/** Storeys for a head count: quick at first, slower as the city grows — 1 citizen is 3, 7 are 9, 1,000 are 30. */
+	const storeysFor = (citizens: number) => Math.max(1, Math.ceil(Math.log2(citizens + 1) * 3))
+	const clear = (group: THREE.Group) => {
 		for (const child of [...group.children]) {
 			group.remove(child)
 			;((child as THREE.Mesh).material as THREE.Material).dispose()
 		}
-		for (let level = 1; level <= milestone; level++) {
-			const storey = new THREE.Mesh(storeyGeo, bandMaterial(slug, level))
-			storey.userData.slug = slug
-			const radius = Math.min(0.75, BASE + level * 0.006)
+	}
+	const buildCity = (group: THREE.Group, c: CityMarker) => {
+		const tower = group.userData.tower as THREE.Group
+		const domes = group.userData.domes as THREE.Group
+		clear(tower)
+		clear(domes)
+		const storeys = storeysFor(c.citizens)
+		for (let level = 1; level <= storeys; level++) {
+			const storey = new THREE.Mesh(storeyGeo, material(c.slug, level))
+			storey.userData.slug = c.slug
+			const radius = Math.min(0.75, 0.42 + level * 0.006)
 			storey.position.y = (level - 1) * STOREY
 			storey.scale.set(radius, STOREY, radius)
-			group.add(storey)
+			tower.add(storey)
 		}
-		group.userData.milestone = milestone
+		const centre = new THREE.Mesh(domeGeo, material(c.slug, 0, 0.6))
+		centre.userData.slug = c.slug
+		const r = Math.min(0.42, 0.3 + c.milestone * 0.004)
+		centre.scale.set(r, r * 0.9, r)
+		domes.add(centre)
+		for (const coop of c.coops) {
+			const at = SLOTS[coop.slot]
+			if (!at) continue
+			const dome = new THREE.Mesh(domeGeo, material(coop.slug, 1, 0.55))
+			dome.userData.slug = coop.slug
+			const d = Math.min(0.22, 0.12 + coop.milestone * 0.005)
+			dome.scale.set(d, d * 0.9, d)
+			dome.position.set(at[0], 0, at[1])
+			domes.add(dome)
+		}
+		group.userData.signature = JSON.stringify([c.citizens, c.milestone, c.coops])
 	}
-	const setCoops = (coops: CoopMarker[]) => {
+	const groupByCity = new Map<string, THREE.Group>()
+	const setCityMarkers = (cities: CityMarker[]) => {
 		const seen = new Set<string>()
-		for (const c of coops) {
+		for (const c of cities) {
 			seen.add(c.slug)
 			const t = tiles[c.tile]
 			if (!t) continue
-			let group = towerByCoop.get(c.slug)
+			let group = groupByCity.get(c.slug)
 			if (!group) {
 				group = new THREE.Group()
-				group.userData.slug = c.slug
-				towers.add(group)
-				towerByCoop.set(c.slug, group)
+				const tower = new THREE.Group()
+				const domes = new THREE.Group()
+				group.add(tower, domes)
+				group.userData = { slug: c.slug, tower, domes }
+				cityGroups.add(group)
+				groupByCity.set(c.slug, group)
 				const up = new THREE.Vector3(...t.centre)
 				group.position.copy(up).multiplyScalar(cardTop(t))
 				group.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), up)
 			}
-			if (group.userData.milestone !== c.milestone) build(group, c.slug, c.milestone)
+			if (group.userData.signature !== JSON.stringify([c.citizens, c.milestone, c.coops])) buildCity(group, c)
 		}
-		for (const [slug, group] of towerByCoop) if (!seen.has(slug)) { build(group, slug, 0); towers.remove(group); towerByCoop.delete(slug) }
+		for (const [slug, group] of groupByCity) if (!seen.has(slug)) {
+			clear(group.userData.tower)
+			clear(group.userData.domes)
+			cityGroups.remove(group)
+			groupByCity.delete(slug)
+		}
 	}
-	setCoops(options.coops)
+	/** Tower or domes, by how close the camera is. From high up the tower grows
+	    with the altitude, so a city stays readable from orbit. */
+	const showDetail = () => {
+		const near = rig.zoom < DOMES_BELOW
+		const grow = Math.min(9, Math.max(1, rig.altitude / 14))
+		for (const group of groupByCity.values()) {
+			const tower = group.userData.tower as THREE.Group
+			tower.visible = !near
+			tower.scale.set(grow * 0.55, grow, grow * 0.55)
+			;(group.userData.domes as THREE.Group).visible = near
+		}
+	}
+	setCityMarkers(options.cities)
 
 	/* ── picking: a click (not a drag) on a card ─────────────────────────── */
 	/* ── finding the card under a point ──────────────────────────────────
@@ -283,10 +336,12 @@ export function mountWorld(container: HTMLElement, options: WorldOptions = { coo
 	/** The card under a point of the view, in normalised device coordinates. */
 	const pick = (ndc: THREE.Vector2): { tile: number; coop: string | null } | null => {
 		raycaster.setFromCamera(ndc, camera)
-		const towerHits = raycaster.intersectObjects(towers.children, true)
-		if (towerHits[0]) {
-			const slug = (towerHits[0].object as THREE.Mesh).userData.slug as string
-			const c = currentCoops.find((x) => x.slug === slug)
+		/* Only what is drawn can be hit: the tower from afar, the domes up close. */
+		const shown = (o: THREE.Object3D | null): boolean => !o || (o.visible && shown(o.parent))
+		const hit = raycaster.intersectObjects(cityGroups.children, true).find((h) => shown(h.object))
+		if (hit) {
+			const slug = (hit.object as THREE.Mesh).userData.slug as string
+			const c = currentCities.find((x) => x.slug === slug || x.coops.some((k) => k.slug === slug))
 			if (c) return { tile: c.tile, coop: slug }
 		}
 		if (!raycaster.ray.intersectSphere(sphere, hitPoint)) return null
@@ -298,7 +353,7 @@ export function mountWorld(container: HTMLElement, options: WorldOptions = { coo
 		if (raycaster.ray.intersectSphere(sphere, hitPoint)) tile = tileAt(hitPoint.normalize())
 		sphere.radius = RADIUS
 		if (tile < 0) return null
-		return { tile, coop: currentCoops.find((c) => c.tile === tile)?.slug ?? null }
+		return { tile, coop: currentCities.find((c) => c.tile === tile)?.slug ?? null }
 	}
 
 	/* ── the rings: a light band around the card under the pointer, a warm
@@ -371,8 +426,8 @@ export function mountWorld(container: HTMLElement, options: WorldOptions = { coo
 		options.onTile?.(lastPick)
 	})
 	let lastPick: TilePick | null = null
-	let currentCoops: CoopMarker[] = options.coops
-	const updateCoops = (coops: CoopMarker[]) => { currentCoops = coops; setCoops(coops) }
+	let currentCities: CityMarker[] = options.cities
+	const updateCities = (cities: CityMarker[]) => { currentCities = cities; setCityMarkers(cities) }
 
 	/* The core: a dark sphere just under the lowest tops, so a seam between
 	   two cards shows the deep instead of the sky. */
@@ -395,15 +450,21 @@ export function mountWorld(container: HTMLElement, options: WorldOptions = { coo
 	}
 
 	/* A dev hook: inspect the camera and the globe from the console. */
-	;(window as unknown as { __world: unknown }).__world = { camera, rig, globe, tiles, setCoops: updateCoops, pick, lastPick: () => lastPick }
+	;(window as unknown as { __world: unknown }).__world = { camera, rig, globe, tiles, setCities: updateCities, pick, lastPick: () => lastPick }
 
 	let frame = 0
 	let last = performance.now()
+	let paused = false
 	const tick = () => {
+		if (paused) {
+			frame = requestAnimationFrame(tick)
+			return
+		}
 		const now = performance.now()
 		rig.update(Math.min(0.1, (now - last) / 1000))
 		last = now
 		updateHover()
+		showDetail()
 		placeSun()
 		renderer.render(scene, camera)
 		frame = requestAnimationFrame(tick)
@@ -420,17 +481,21 @@ export function mountWorld(container: HTMLElement, options: WorldOptions = { coo
 	window.addEventListener('resize', onResize)
 
 	return {
-		setCoops: updateCoops,
+		setCities: updateCities,
 		setFrozen: (on) => {
 			rig.freeze(on)
 			if (on) setHover(-1)
 		},
 		setChosen,
-		focus: (tile, at) => {
+		focus: (tile, at, zoom = 0.5) => {
 			const t = tiles[tile]
 			if (!t) return
 			setChosen(tile)
-			rig.flyTo(new THREE.Vector3(...t.centre), 0.5, new THREE.Vector2(at?.x ?? 0, at?.y ?? 0))
+			rig.flyTo(new THREE.Vector3(...t.centre), zoom, new THREE.Vector2(at?.x ?? 0, at?.y ?? 0))
+		},
+		setPaused: (on) => {
+			paused = on
+			if (!on) last = performance.now()
 		},
 		dispose: () => {
 			cancelAnimationFrame(frame)

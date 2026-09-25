@@ -8,10 +8,12 @@
 	],
 	"roles": {
 		"citizen": {
-			"$description": "The crowd. Mints their income, invests it as diversely as they like, holds MINDs.",
+			"$description": "Every player. Mints their income, founds or joins one city for good, launches coops inside it and backs them, holds MINDS.",
 			"capabilities": [
 				"hearts:mint",
 				"hearts:send",
+				"city:create",
+				"coop:create",
 				"coop:invest",
 				"ledger:read"
 			]
@@ -20,7 +22,6 @@
 			"$description": "Launches and runs coops, and sees the makers' board: the intents. In the real world this role comes with a cost; here it is granted by the admin.",
 			"inherits": "citizen",
 			"capabilities": [
-				"coop:create",
 				"coop:manage",
 				"intent:read"
 			]

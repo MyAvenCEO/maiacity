@@ -11,9 +11,9 @@
  * is a Zeto contract of its own, at an address derived from the issuer's
  * identity. Only the issuer mints it. That is Circles: one currency per human.
  *
- * THE CITY'S CURRENCY. `maiaHEARTS` has one issuer, the city, and comes into
- * being only when a citizen invests: their personal hearts go out, the same
- * amount of maiaHEARTS comes into the coop's treasury.
+ * CITY CURRENCIES. Each city's HEARTS have one issuer and come into being only
+ * when someone invests: their personal hearts go out, the same amount of the
+ * city's HEARTS comes into the treasury of the city or the coop they back.
  */
 import { keccak256, toHex } from 'viem'
 import { poseidon3, poseidon4 } from 'poseidon-lite'
@@ -74,23 +74,31 @@ export function tokenAddress(issuerIdentity: string): EthAddress {
 /** `samuel♥` — a citizen's own currency: their name and the heart. */
 export const tokenName = (issuerName: string) => `${issuerName}${policy.currency.symbol}`
 
-/** `solar☉` — a coop's currency, its MINDs; ☉ is to MINDs what ♥ is to hearts. */
-export const mindName = (slug: string) => `${slug}☉`
-
-/** The city's identity on the ledger — the only issuer of maiaHEARTS. */
-export const CITY = policy.city.identity
-
-/** `maiaHEARTS` — the city's common currency, born only from investment. */
-export const CITY_TOKEN = policy.city.token
+/**
+ * A CITY'S TWO CURRENCIES. Every city is named, and its name makes both:
+ * `maiaHEARTS`, the city's common money, and `maiaMINDS`, the ownership of the
+ * city itself. A coop inside the city owns with its own MINDS — `bakeryMINDS` —
+ * and fills its treasury with the city's HEARTS.
+ *
+ *   hearts/<city>   issues <city>HEARTS — only ever minted by an investment
+ *   city/<city>     the city's treasury; issues <city>MINDS
+ *   coop/<coop>     a coop's treasury;   issues <coop>MINDS
+ */
+export const heartsIssuer = (city: string) => `hearts/${city}`
+export const cityIdentity = (city: string) => `city/${city}`
+export const coopIdentity = (coop: string) => `coop/${coop}`
+export const heartsToken = (city: string) => `${city}${policy.city.heartsSuffix}`
+export const mindsToken = (slug: string) => `${slug}${policy.city.mindsSuffix}`
 
 /**
  * What a token is called, from its issuer's identity. Citizens are keyed by
  * their account id — names change and repeat — so the caller supplies the
- * current name: `citizen/<id>` → `samuel♥`, `coop/solar` → `solar☉`,
- * `city/maia` → `maiaHEARTS`.
+ * current name: `citizen/<id>` → `samuel♥`, `hearts/maia` → `maiaHEARTS`,
+ * `city/maia` → `maiaMINDS`, `coop/bakery` → `bakeryMINDS`.
  */
 export function tokenLabel(issuerIdentity: string, nameOf: (founderId: string) => string): string {
-	if (issuerIdentity === CITY) return CITY_TOKEN
-	if (issuerIdentity.startsWith('coop/')) return mindName(issuerIdentity.slice('coop/'.length))
-	return tokenName(nameOf(issuerIdentity.replace(/^citizen\//, '')))
+	const [kind, rest] = [issuerIdentity.slice(0, issuerIdentity.indexOf('/')), issuerIdentity.slice(issuerIdentity.indexOf('/') + 1)]
+	if (kind === 'hearts') return heartsToken(rest)
+	if (kind === 'city' || kind === 'coop') return mindsToken(rest)
+	return tokenName(nameOf(rest))
 }

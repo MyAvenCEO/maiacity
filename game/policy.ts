@@ -8,8 +8,8 @@ export type Policy = {
 	demurrage: { ratePerGameYear: number }
 	interchange: { kind: 'later' }
 	ledger: { domain: string; kind: 'zeto'; schema: string; circuit: string }
-	/** The city's own currency: maiaHEARTS, born only by investing personal hearts into a coop. */
-	city: { identity: string; token: string; symbol: string }
+	/** Every city's own two currencies are its name plus these: maia + HEARTS, maia + MINDS. */
+	city: { heartsSuffix: string; mindsSuffix: string }
 }
 
 export const policy = policyJson as unknown as Policy

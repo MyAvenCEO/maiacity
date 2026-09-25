@@ -21,8 +21,8 @@
 		"perHour": "1",
 		"perDay": "24",
 		"maxBacklogDays": 14,
-		"$description": "One heart per GAME hour — 24 a game day, which is one every two real minutes, since a game day is 48 real minutes — accruing continuously and minted whenever the citizen likes. Unclaimed hearts stop accruing after 14 game days, as in Circles: money is for the present, not a savings plan you forgot about. A citizen's very first mint also carries the starting hearts — the founding stake every citizen enters the city with.",
-		"starting": "500"
+		"$description": "One heart per GAME hour — 24 a game day, which is one every two real minutes, since a game day is 48 real minutes — accruing continuously and minted whenever the citizen likes. Unclaimed hearts stop accruing after 14 game days, as in Circles: money is for the present, not a savings plan you forgot about. A player's very first mint also carries the starting hearts — 30,000, enough to become the citizen of a city (25,000) and still back its coops.",
+		"starting": "30000"
 	},
 	"demurrage": {
 		"ratePerGameYear": 0.07,
@@ -37,12 +37,11 @@
 	},
 	"interchange": {
 		"kind": "later",
-		"$description": "Personal currencies are not fungible with each other. The one bridge today is investment: personal hearts put into a coop become maiaHEARTS, the city's common currency, one for one."
+		"$description": "Personal currencies are not fungible with each other. The one bridge today is investment: personal hearts put into a city or one of its coops become that city's HEARTS, one for one."
 	},
 	"city": {
-		"$description": "maiaHEARTS: the city's common currency. Nobody mints it directly — it comes into being only when a citizen invests their personal hearts into a coop, one for one, and it is held by that coop's treasury. It is the steadier, shared money the city builds with.",
-		"identity": "city/maia",
-		"token": "maiaHEARTS",
-		"symbol": "♥"
+		"$description": "Every city issues its own two currencies, named after it: <name>HEARTS, the city's common money, and <name>MINDS, the ownership of the city itself — Maia gives maiaHEARTS and maiaMINDS. Nobody mints a city's HEARTS directly: they come into being only when a player invests their personal hearts into the city or one of its coops, one for one, and they sit in that city's or coop's treasury.",
+		"heartsSuffix": "HEARTS",
+		"mindsSuffix": "MINDS"
 	}
 }

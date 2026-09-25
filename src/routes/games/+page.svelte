@@ -16,7 +16,7 @@
 			status: 'Open',
 			href: `${base}/games/sandbox-2`,
 			blurb:
-				'The whole planet, and the first economy on it. Mint your own hearts, back the coops you believe in, and watch your hearts become maiaHEARTS in their treasuries.',
+				'The whole planet, and the first cities on it. Found a city on a card of land or join one for good, launch coops inside it, and watch your hearts become the city\'s own HEARTS.',
 			cover: `${base}/games/sandbox-2.jpg`,
 			coverAlt: 'The avenCITY Sandbox 2 planet: continents of hex cards over a deep blue sea.'
 		}

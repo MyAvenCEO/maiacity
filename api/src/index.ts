@@ -11,7 +11,7 @@ import { loginFinish, loginOptions, registerFinish, registerOptions } from "./pa
 import { fromBunSql, useDb } from "./pg";
 import { migrateLedger } from "./ledger/store";
 import { account, claim, LedgerError } from "./ledger/hearts";
-import { buildableCards, coopDetail, createCoop, invest, listCoops, plain } from "./ledger/coopstore";
+import { acceptInvite, buildableCards, cityOf, coopDetail, createInvite, foundCity, foundSettlement, invest, inviteInfo, listCities, plain, settlementOf } from "./ledger/coopstore";
 import { ledgerView } from "./ledger/view";
 import { capabilities, can, rolesPolicy } from "./acl";
 import { format, gameClock, calendar, parse } from "../../game/time";
@@ -171,14 +171,14 @@ const server = Bun.serve({
     },
 
     // ─────────────────────────────── avenCITY Sandbox 2 ───────────────────────────
-    // Looking is free: the planet, every coop and its cap table need no account.
+    // Looking is free: the planet, every city, every coop and its cap table need no account.
     "/api/city": async (req) => {
       const now = new Date();
-      const [coops, [row]] = await Promise.all([listCoops(now), sql`SELECT count(*)::int AS n FROM founders`]);
+      const [cities, [row]] = await Promise.all([listCities(now), sql`SELECT count(*)::int AS n FROM founders`]);
       const c = calendar(now);
       return big(req, {
-        coops: coops.map(plain),
-        citizens: row.n,
+        cities: cities.map(plain),
+        players: row.n,
         buildable: buildableCards(),
         clock: gameClock(now).label,
         calendarLabel: `Y${c.year} · M${c.month}`,
@@ -201,8 +201,9 @@ const server = Bun.serve({
       GET: async (req) => {
         const me = await viewer(req);
         if (!me) return json(req, { error: "not signed in" }, { status: 401 });
-        const a = await account(me.id);
-        return big(req, { ...a, caps: [...capabilities(me.role)] });
+        const [a, city, home] = await Promise.all([account(me.id), cityOf(me.id), settlementOf(me.id)]);
+        const place = (p: { slug: string; name: string } | null) => (p ? { slug: p.slug, name: p.name } : null);
+        return big(req, { ...a, city: place(city), settlement: place(home), caps: [...capabilities(me.role)] });
       },
     },
     "/api/hearts/claim": {
@@ -218,15 +219,72 @@ const server = Bun.serve({
         }
       },
     },
-    "/api/coops": {
+    // A card of land is unlocked by founding a city on it; the founder is its first citizen.
+    "/api/cities": {
       OPTIONS: preflight,
       POST: async (req) => {
         const me = await viewer(req);
-        if (!can(me, "coop:create")) return json(req, { error: "Founding a coop needs the coop founder role." }, { status: 403 });
+        if (!can(me, "city:create")) return json(req, { error: "Sign up to found a city." }, { status: 401 });
         try {
           const body = await readJson(req);
-          return big(req, plain(await createCoop(me!.id, { name: body?.name, pitch: body?.pitch, tile: body?.tile })));
+          const hearts = parse(String(body?.hearts ?? ""));
+          return big(req, plain(await foundCity(me!.id, { name: body?.name, pitch: body?.pitch, tile: body?.tile, hearts })));
         } catch (e) {
+          if (e instanceof Error && !(e instanceof LedgerError)) return json(req, { error: e.message }, { status: 400 });
+          return fail(req, e);
+        }
+      },
+    },
+    // The second step into a city: a home on a cell of its island.
+    "/api/settlements": {
+      OPTIONS: preflight,
+      POST: async (req) => {
+        const me = await viewer(req);
+        if (!can(me, "coop:create")) return json(req, { error: "Sign up to found a settlement." }, { status: 401 });
+        try {
+          const body = await readJson(req);
+          const hearts = parse(String(body?.hearts ?? ""));
+          return big(req, plain(await foundSettlement(me!.id, { name: body?.name, pitch: body?.pitch, cell: body?.cell, hearts })));
+        } catch (e) {
+          if (e instanceof Error && !(e instanceof LedgerError)) return json(req, { error: e.message }, { status: 400 });
+          return fail(req, e);
+        }
+      },
+    },
+    // A settler makes an invite link — one person, one week.
+    "/api/settlements/:slug/invites": {
+      OPTIONS: preflight,
+      POST: async (req) => {
+        const me = await viewer(req);
+        if (!me) return json(req, { error: "Sign up to invite people." }, { status: 401 });
+        try {
+          return json(req, await createInvite(me.id, req.params.slug));
+        } catch (e) {
+          return fail(req, e);
+        }
+      },
+    },
+    // Anyone holding the link may see where it leads.
+    "/api/invites/:token": {
+      OPTIONS: preflight,
+      GET: async (req) => {
+        try {
+          return json(req, await inviteInfo(req.params.token));
+        } catch (e) {
+          return fail(req, e);
+        }
+      },
+    },
+    "/api/invites/:token/accept": {
+      OPTIONS: preflight,
+      POST: async (req) => {
+        const me = await viewer(req);
+        if (!can(me, "coop:invest")) return json(req, { error: "Sign up to accept the invite." }, { status: 401 });
+        try {
+          const hearts = parse(String((await readJson(req))?.hearts ?? ""));
+          return big(req, plain(await acceptInvite(me!.id, req.params.token, hearts)));
+        } catch (e) {
+          if (e instanceof Error && !(e instanceof LedgerError)) return json(req, { error: e.message }, { status: 400 });
           return fail(req, e);
         }
       },

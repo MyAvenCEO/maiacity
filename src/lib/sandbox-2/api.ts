@@ -1,13 +1,20 @@
 // The browser half of avenCITY Sandbox 2's economy. Looking needs no account —
-// the planet, the coops and their cap tables are public. Minting, founding and
-// investing are signed with the same passkey session as /join.
+// the planet, its cities, their coops and cap tables are public. Minting,
+// founding a city, joining one, launching and backing coops are signed with the
+// same passkey session as /join.
 import { API } from '$lib/auth/client';
 
 export type CoopSummary = {
 	slug: string;
+	kind: 'city' | 'settlement' | 'coop';
 	name: string;
 	founder: string;
 	tile: number;
+	cell: string | null;
+	city: { slug: string; name: string };
+	citizens: number;
+	settlers: number;
+	level: number;
 	milestone: number;
 	phase: string;
 	raised: string;
@@ -31,23 +38,28 @@ export type ScheduleLine = {
 	phaseHeading: string;
 };
 
+export type CitySummary = CoopSummary & { island: number; settlements: CoopSummary[] };
+
 export type CoopDetail = CoopSummary & {
 	pitch: string;
 	mindToken: string;
+	heartsToken: string;
+	settlements: CoopSummary[];
+	island: number;
+	entryLabel: string;
 	priceLabel: string;
 	nextLabel: string;
 	fill: number;
 	myMindsLabel: string;
 	treasuryLabel: string;
-	treasuryToken: string;
 	milestoneOf: string;
 	soldOut: boolean;
 	schedule: ScheduleLine[];
 };
 
 export type City = {
-	coops: CoopSummary[];
-	citizens: number;
+	cities: CitySummary[];
+	players: number;
 	buildable: number;
 	clock: string;
 	calendarLabel: string;
@@ -68,14 +80,16 @@ export type Account = {
 	startingPending: boolean;
 	holdings: Holding[];
 	calendarLabel: string;
+	/** The city the player is a citizen of, for good — null until they found or join one. */
+	city: { slug: string; name: string } | null;
+	/** Their home in that city, for good — null until they found one or accept an invite. */
+	settlement: { slug: string; name: string } | null;
 };
 
 export type LedgerView = {
 	holdings: Holding[];
 	transactions: { id: string; title: string; token: string; indexed: string; figure: string; sign: '+' | '-' }[];
 };
-
-export type Citizen = { id: string; number: number; name: string; role: string };
 
 async function call<T>(path: string, init: RequestInit = {}): Promise<T> {
 	const res = await fetch(`${API}${path}`, {
@@ -103,12 +117,17 @@ export const mint = () => call<{ claimedLabel: string }>('/api/hearts/claim', { 
 export const invest = (slug: string, hearts: string) =>
 	call<CoopDetail>(`/api/coops/${slug}/invest`, { method: 'POST', body: JSON.stringify({ hearts }) });
 
-export const found = (input: { name: string; pitch: string; tile: number }) =>
-	call<CoopDetail>('/api/coops', { method: 'POST', body: JSON.stringify(input) });
+export const foundCity = (input: { name: string; pitch: string; tile: number; hearts: string }) =>
+	call<CoopDetail>('/api/cities', { method: 'POST', body: JSON.stringify(input) });
+
+export const foundSettlement = (input: { name: string; pitch: string; cell: string; hearts: string }) =>
+	call<CoopDetail>('/api/settlements', { method: 'POST', body: JSON.stringify(input) });
+
+export type Invite = { token: string; expiresAt: string; settlement: { slug: string; name: string }; city: { slug: string; name: string }; invitedBy: string; usable: boolean; reason: string };
+
+export const createInvite = (slug: string) => call<Invite>(`/api/settlements/${slug}/invites`, { method: 'POST' });
+export const invite = (token: string) => call<Invite>(`/api/invites/${token}`);
+export const acceptInvite = (token: string, hearts: string) =>
+	call<CoopDetail>(`/api/invites/${token}/accept`, { method: 'POST', body: JSON.stringify({ hearts }) });
 
 export const ledger = () => call<LedgerView>('/api/ledger');
-
-export const citizens = () => call<Citizen[]>('/api/citizens');
-
-export const setRole = (id: string, role: 'citizen' | 'founder') =>
-	call<{ id: string; role: string }>(`/api/citizens/${id}/role`, { method: 'POST', body: JSON.stringify({ role }) });
