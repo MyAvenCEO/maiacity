@@ -141,4 +141,4 @@ At one million players, the village whose players grew it furthest is the first 
 
 [Open avenCITY Sandbox 2 →](/games/sandbox-2/)
 
-[Read the manifesto →](/)
+[Next: we walked inside the domes →](/blog/day-15-inside-the-domes/)
