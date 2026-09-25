@@ -84,7 +84,7 @@ type Animal = { x: number; z: number; yaw: number; home: Patch; walking: boolean
  * A kind of animal spread over its patches of ground. `update(t)` moves every
  * one of them and writes their places into the instanced meshes.
  */
-export function herd(kind: Kind, patches: Patch[], seed: number): { object: THREE.Group; update: (t: number) => void } {
+export function herd(kind: Kind, patches: Patch[], seed: number): { object: THREE.Group; update: (t: number) => void; where: () => { x: number; z: number }[] } {
 	const spec = KINDS[kind]
 	const r = seeded(seed)
 	const animals: Animal[] = []
@@ -142,5 +142,5 @@ export function herd(kind: Kind, patches: Patch[], seed: number): { object: THRE
 		for (const mesh of meshes) mesh.instanceMatrix.needsUpdate = true
 	}
 	update(0)
-	return { object, update }
+	return { object, update, where: () => animals }
 }

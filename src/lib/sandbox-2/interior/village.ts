@@ -21,6 +21,7 @@ import { water } from './textures'
 import { appleTree, banana, berryBush, canopyTree, climber, clover, coconutPalm, comfrey, fruitTree, ginger, herb, papaya, passionVine, seeded, smallFruitTree, squash, strawberries, tropicalShrub, type Plant } from './plants'
 import { herd } from './animals'
 import { gameHour } from '../../../../game/time'
+import { ambience, levelsAt } from './ambience'
 
 export type VillageDome = { kind: DomeKind; x: number; z: number; R: number; ext: number }
 export type VillageHandle = {
@@ -68,6 +69,10 @@ export async function mountVillage(container: HTMLElement, onProgress: (label: s
 	const m = mats()
 	const domes = layout()
 	const animated: ((t: number) => void)[] = []
+	/** what can be heard: the water, and where each herd is */
+	const waterPts: { x: number; z: number }[] = []
+	const herds: Parameters<typeof levelsAt>[4] = {}
+	const sound = ambience()
 	/** the dome whose full inside is built into the village, and how dark it is */
 	let open: { i: number; dome: EmbeddedDome | null; cancelled: boolean } | null = null
 	let nightNow = 0
@@ -558,6 +563,7 @@ export async function mountVillage(container: HTMLElement, onProgress: (label: s
 			colliders.push(...sq.colliders)
 		}
 		const hens = herd('hen', henPatches(SQUARE_R), 73)
+		herds.hens = hens.where
 		scene.add(hens.object)
 		animated.push(hens.update)
 	}
@@ -750,10 +756,14 @@ export async function mountVillage(container: HTMLElement, onProgress: (label: s
 			const p = ps[Math.floor(ps.length * (0.2 + i * 0.2))]!
 			return { x: p.x, z: p.z, r: 6, n: 5 }
 		})
-		for (const f of [herd('goat', goatPatches, 71), herd('goose', goosePatches, 72)]) {
+		const goats = herd('goat', goatPatches, 71), geese = herd('goose', goosePatches, 72)
+		for (const f of [goats, geese]) {
 			scene.add(f.object)
 			animated.push(f.update)
 		}
+		herds.goats = goats.where
+		herds.geese = geese.where
+		for (const ps of streams) waterPts.push(...ps.filter((_, i) => i % 3 === 0))
 		animated.push((t) => (wtex.offset.y = -t * 0.3))
 	}
 	await pause('Opening the doors')
@@ -960,6 +970,9 @@ export async function mountVillage(container: HTMLElement, onProgress: (label: s
 			levelOfDetail(camera.position.x, camera.position.z)
 			if (!flying) manageDomes()
 			lightNearest()
+			// the sounds for where you stand: the forest, the water, the animals; muffled under glass
+			const indoors = domes.some((d) => Math.hypot(pos.x - d.x, pos.z - d.z) < d.R - 0.3)
+			sound.set(levelsAt(pos.x, pos.z, indoors, waterPts, herds), indoors)
 		}
 		open?.dome?.update(t)
 		renderer.render(scene, camera)
@@ -986,6 +999,7 @@ export async function mountVillage(container: HTMLElement, onProgress: (label: s
 		domes,
 		opening: () => (open && !open.dome ? DOMES[domes[open.i]!.kind].label : null),
 		pause: () => {
+			sound.set({}, false)
 			running = false
 			cancelAnimationFrame(frame)
 		},
@@ -1006,6 +1020,7 @@ export async function mountVillage(container: HTMLElement, onProgress: (label: s
 			running = false
 			cancelAnimationFrame(frame)
 			closeDome()
+			sound.dispose()
 			window.removeEventListener('keydown', kd)
 			window.removeEventListener('keyup', ku)
 			window.removeEventListener('mousemove', onMove)

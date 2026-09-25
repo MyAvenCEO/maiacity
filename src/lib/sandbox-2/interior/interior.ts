@@ -29,6 +29,7 @@ import { herd } from './animals'
 import { buildFactory, LEVELS as FACTORY_LEVELS, NAMES as FACTORY_NAMES } from './factory'
 import { buildTent } from './tent'
 import { furnish } from './rooms'
+import { ambience, levelsAt } from './ambience'
 import { gameHour } from '../../../../game/time'
 import { appleTree, banana, berryBush, canopyTree, climber, clover, coconutPalm, comfrey, crop, CROPS, fruitTree, ginger, grapePergola, herb, papaya, passionVine, potted, seeded, shrub, smallFruitTree, squash, strawberries, tropicalShrub, vineAlong, type Plant } from './plants'
 
@@ -667,6 +668,9 @@ export async function mountInterior(container: HTMLElement, kind: DomeKind, onPr
 
 	await pause('Letting in the light')
 	const animated: ((t: number) => void)[] = []
+	/** what can be heard: the water, and where each herd is */
+	const waterPts: { x: number; z: number }[] = []
+	const herds: Parameters<typeof levelsAt>[4] = {}
 	/** the small plants of each forest sector, hidden when you are far from them */
 	const detail: { group: THREE.Object3D; x: number; z: number }[] = []
 	const keepDetail = (cx: number, cz: number) => {
@@ -729,6 +733,7 @@ export async function mountInterior(container: HTMLElement, kind: DomeKind, onPr
 			pts.push(new THREE.Vector3(x, 0, z))
 		}
 		streamOut.push(...new THREE.CatmullRomCurve3(pts).getSpacedPoints(260))
+		waterPts.push(...streamOut)
 		const pos: number[] = [], uv: number[] = [], idx: number[] = []
 		streamOut.forEach((p0, i) => {
 			const p1 = streamOut[Math.min(streamOut.length - 1, i + 1)]!, pm = streamOut[Math.max(0, i - 1)]!
@@ -861,6 +866,9 @@ export async function mountInterior(container: HTMLElement, kind: DomeKind, onPr
 			scene.add(f.object)
 			animated.push(f.update)
 		}
+		herds.goats = flocks[0]!.where
+		herds.geese = flocks[1]!.where
+		if (flocks[2]) herds.hens = flocks[2].where
 	}
 	await pause('Planting the food forest outside')
 
@@ -1147,6 +1155,7 @@ export async function mountInterior(container: HTMLElement, kind: DomeKind, onPr
 		}
 		const curve = new THREE.CatmullRomCurve3(streamPts)
 		const samples = curve.getSpacedPoints(160)
+		waterPts.push(...samples)
 		const width = Math.max(0.9, R * 0.035)
 		{
 			const pos: number[] = [], uv: number[] = []
@@ -1940,6 +1949,7 @@ export async function mountInterior(container: HTMLElement, kind: DomeKind, onPr
 	const clock0 = performance.now()
 	let sunChecked = 0
 	let lampsChecked = 0
+	const sound = ambience()
 	/** a free camera for the journal's overview pictures (dev hook), walking paused while it is set */
 	let flying: [number, number, number, number, number] | null = null
 	const tick = () => {
@@ -1955,6 +1965,9 @@ export async function mountInterior(container: HTMLElement, kind: DomeKind, onPr
 			lampsChecked = now
 			lightNearest()
 			keepDetail(camera.position.x, camera.position.z)
+			// and the sounds, for where you stand: under the glass, everything outside is muffled
+			const indoors = Math.hypot(pos.x, pos.z) < R - 0.3
+			sound.set(levelsAt(pos.x, pos.z, indoors, waterPts, herds), indoors)
 		}
 		// the sun moves with the game clock: a game hour is two real minutes, so a look every second is plenty
 		if (now - sunChecked > 1000) {
@@ -1996,6 +2009,7 @@ export async function mountInterior(container: HTMLElement, kind: DomeKind, onPr
 		},
 		dispose() {
 			cancelAnimationFrame(frame)
+			sound.dispose()
 			window.removeEventListener('keydown', kd)
 			window.removeEventListener('keyup', ku)
 			window.removeEventListener('mousemove', onMove)
