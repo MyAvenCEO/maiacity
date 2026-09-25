@@ -87,6 +87,8 @@ The sun follows the in-game clock, so the cell has its evenings and its nights. 
 
 Imagine walking home through it. You leave the café square by the master dome, cross the bridge over the creek, and follow the lights between the trees to the medium dome where you live. By the time you reach the door, the lamps are on in your gallery.
 
+Tomorrow, the rooms become homes and the forest finds its voice: [baths, terraces and the sound of the cell →](/blog/day-18-homes-and-the-sound-of-the-forest/)
+
 [Walk the dome cell in avenCITY Sandbox 4 →](/games/sandbox-4/)
 
 [Read the manifesto →](/)
