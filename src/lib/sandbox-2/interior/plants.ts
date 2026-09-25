@@ -694,3 +694,79 @@ export function grapePergola(seed: number, w: number, d: number, h = 2.5): THREE
 	}
 	return g
 }
+
+/* ── houseplants, for the rooms ───────────────────────────────────────── */
+
+const house = {
+	monstera: shared(() => new THREE.MeshStandardMaterial({ color: '#2f6b3a', roughness: 0.55, side: THREE.DoubleSide })),
+	fig: shared(() => new THREE.MeshStandardMaterial({ color: '#3d7a3a', roughness: 0.45, side: THREE.DoubleSide })),
+	snake: shared(() => new THREE.MeshStandardMaterial({ color: '#4f7d3c', roughness: 0.6, side: THREE.DoubleSide })),
+	pothos: shared(() => new THREE.MeshStandardMaterial({ color: '#6aa84a', roughness: 0.6, side: THREE.DoubleSide })),
+	stem: shared(() => new THREE.MeshStandardMaterial({ color: '#58743a', roughness: 0.8 })),
+	clay: shared(() => new THREE.MeshStandardMaterial({ color: '#b9703f', roughness: 0.95 })),
+	basket: shared(() => new THREE.MeshStandardMaterial({ color: '#c9a978', roughness: 1 }))
+}
+/** A leaf: a flat oval, with a notch cut into it for the monstera. */
+const leafGeo = shared(() => {
+	const s = new THREE.Shape()
+	s.moveTo(0, 0)
+	s.bezierCurveTo(0.45, 0.15, 0.45, 0.85, 0, 1)
+	s.bezierCurveTo(-0.45, 0.85, -0.45, 0.15, 0, 0)
+	return new THREE.ShapeGeometry(s, 6)
+})
+/** A houseplant in a round clay pot or a woven basket: monstera, fiddle-leaf fig, snake plant, or a trailing pothos. */
+export function houseplant(kind: 'monstera' | 'fig' | 'snake' | 'pothos', seed: number, size = 1): THREE.Group {
+	const r = seeded(seed)
+	const g = new THREE.Group()
+	const pr = 0.22 * size, ph = 0.3 * size
+	const pot = new THREE.Mesh(new THREE.CylinderGeometry(pr, pr * 0.8, ph, 16), r() < 0.5 ? house.clay() : house.basket())
+	pot.position.y = ph / 2
+	g.add(pot)
+	if (kind === 'monstera')
+		for (let i = 0; i < 8; i++) {
+			const a = (i / 8) * Math.PI * 2 + r()
+			const len = (0.5 + r() * 0.4) * size
+			const stem = new THREE.Mesh(sphere(), house.stem())
+			stem.scale.set(0.012, len / 2, 0.012)
+			stem.position.set(Math.sin(a) * 0.1, ph + len / 2, Math.cos(a) * 0.1)
+			stem.rotation.set(Math.cos(a) * 0.5, 0, -Math.sin(a) * 0.5)
+			g.add(stem)
+			const leaf = new THREE.Mesh(leafGeo(), house.monstera())
+			leaf.scale.setScalar((0.45 + r() * 0.2) * size)
+			leaf.position.set(Math.sin(a) * len * 0.5, ph + len * 0.9, Math.cos(a) * len * 0.5)
+			leaf.rotation.set(-0.9 - r() * 0.4, a, 0, 'YXZ')
+			g.add(leaf)
+		}
+	else if (kind === 'fig') {
+		const t = new THREE.Mesh(sphere(), barkMat())
+		t.scale.set(0.03 * size, 0.7 * size, 0.03 * size)
+		t.position.y = ph + 0.6 * size
+		g.add(t)
+		for (let i = 0; i < 22; i++) {
+			const leaf = new THREE.Mesh(leafGeo(), house.fig())
+			leaf.scale.setScalar((0.22 + r() * 0.08) * size)
+			leaf.position.set((r() - 0.5) * 0.4 * size, ph + (0.6 + r() * 0.9) * size, (r() - 0.5) * 0.4 * size)
+			leaf.rotation.set(r() * 3, r() * 6, r() * 3)
+			g.add(leaf)
+		}
+	} else if (kind === 'snake')
+		for (let i = 0; i < 9; i++) {
+			const leaf = new THREE.Mesh(leafGeo(), house.snake())
+			leaf.scale.set(0.12 * size, (0.6 + r() * 0.4) * size, 1)
+			leaf.position.set((r() - 0.5) * 0.18, ph, (r() - 0.5) * 0.18)
+			leaf.rotation.set((r() - 0.5) * 0.3, r() * 6, (r() - 0.5) * 0.3)
+			g.add(leaf)
+		}
+	else
+		// trailing over the rim and down
+		for (let i = 0; i < 30; i++) {
+			const a = r() * Math.PI * 2
+			const down = r() * 0.8 * size
+			const leaf = new THREE.Mesh(leafGeo(), house.pothos())
+			leaf.scale.setScalar(0.1 * size)
+			leaf.position.set(Math.sin(a) * (pr + 0.02), ph - down, Math.cos(a) * (pr + 0.02))
+			leaf.rotation.set(r() * 3, a, r() * 3)
+			g.add(leaf)
+		}
+	return g
+}

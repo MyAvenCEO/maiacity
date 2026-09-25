@@ -28,6 +28,7 @@ import { cafes, coops, coopsAround, henPatches, squaresAround, workshops, type K
 import { herd } from './animals'
 import { buildFactory, LEVELS as FACTORY_LEVELS, NAMES as FACTORY_NAMES } from './factory'
 import { buildTent } from './tent'
+import { furnish } from './rooms'
 import { gameHour } from '../../../../game/time'
 import { appleTree, banana, berryBush, canopyTree, climber, clover, coconutPalm, comfrey, crop, CROPS, fruitTree, ginger, grapePergola, herb, papaya, passionVine, potted, seeded, shrub, smallFruitTree, squash, strawberries, tropicalShrub, vineAlong, type Plant } from './plants'
 
@@ -37,9 +38,9 @@ type Spec = { diameter: number; detail: number; strut: number; gallery?: { heigh
 export const DOMES: Record<DomeKind, Spec & { label: string; people: string }> = {
 	tent: { label: 'Bell tent', people: 'two people', diameter: 4.2, detail: 0, strut: 0 },
 	glamp: { label: 'Glamping dome', people: 'four people', diameter: 16, detail: 3, strut: 0.06 },
-	home: { label: 'Medium dome', people: 'twelve people', diameter: 40, detail: 4, strut: 0.09, gallery: { height: 4.2, depth: 6.5, rooms: 6, floors: 1 } },
-	large: { label: 'Large dome', people: 'twenty-four people', diameter: 70, detail: 5, strut: 0.12, gallery: { height: 5, depth: 8, rooms: 8, floors: 2 } },
-	master: { label: 'Master dome', people: 'the commons', diameter: 136, detail: 7, strut: 0.16, gallery: { height: 6, depth: 10, rooms: 12, floors: 2 } },
+	home: { label: 'Medium dome', people: 'twelve people', diameter: 40, detail: 4, strut: 0.09, gallery: { height: 4.2, depth: 8, rooms: 6, floors: 1 } },
+	large: { label: 'Large dome', people: 'twenty-four people', diameter: 70, detail: 5, strut: 0.12, gallery: { height: 5, depth: 10.5, rooms: 10, floors: 2 } },
+	master: { label: 'Master dome', people: 'the commons', diameter: 136, detail: 7, strut: 0.16, gallery: { height: 6, depth: 12.5, rooms: 16, floors: 2 } },
 	factory: { label: 'Solar factory dome', people: 'the factory coop', diameter: 136, detail: 7, strut: 0.16 }
 }
 
@@ -666,6 +667,11 @@ export async function mountInterior(container: HTMLElement, kind: DomeKind, onPr
 
 	await pause('Letting in the light')
 	const animated: ((t: number) => void)[] = []
+	/** the small plants of each forest sector, hidden when you are far from them */
+	const detail: { group: THREE.Object3D; x: number; z: number }[] = []
+	const keepDetail = (cx: number, cz: number) => {
+		for (const d of detail) d.group.visible = Math.hypot(d.x - cx, d.z - cz) < Math.max(30, R * 0.45)
+	}
 
 	/* the land outside, seen through the glass */
 	// a ring, not a disc, so nothing lies over the master dome's sunken theatre
@@ -1030,7 +1036,8 @@ export async function mountInterior(container: HTMLElement, kind: DomeKind, onPr
 		const aStair = Math.PI * 0.25
 		// four stairs up to the gallery, one on each diagonal between the doors
 		const STAIRS = [0, 1, 2, 3].map((k) => aStair + (k * Math.PI) / 2)
-		const run = H * 1.9
+		// the medium dome's stair is steeper, so it still lands clear of the plaza
+		const run = H * (kind === 'home' ? 1.6 : 1.9)
 		const r0 = rIn - run
 		const stairHalf = 0.9
 		const walkway = 2.4
@@ -1221,8 +1228,23 @@ export async function mountInterior(container: HTMLElement, kind: DomeKind, onPr
 		await slice()
 		/* the food forest in the open ground, in seven layers: tall palms, fruit
 		   trees, shrubs, herbs, ground cover, roots and climbers, planted as guilds */
-		const forest = new THREE.Group()
-		const understorey = new THREE.Group()
+		/* in sectors, so what is behind you is not drawn at all, and far away the
+		   small plants under the trees are left out: the forest keeps its detail
+		   where you are standing */
+		type Sector = { forest: THREE.Group; understorey: THREE.Group; cover: THREE.Group; x: number; z: number }
+		const sectors = new Map<string, Sector>()
+		const sectorAt = (x: number, z: number) => {
+			const a = Math.floor(((Math.atan2(x, z) + Math.PI) / (Math.PI * 2)) * 16)
+			const band = Math.hypot(x, z) < (Rc + rIn) / 2 ? 0 : 1
+			const key = `${a},${band}`
+			let sc = sectors.get(key)
+			if (!sc) {
+				const ca = ((a + 0.5) / 16) * Math.PI * 2 - Math.PI
+				const [cx, cz] = polar(band ? (rIn + (Rc + rIn) / 2) / 2 : (Rc + (Rc + rIn) / 2) / 2, ca)
+				sectors.set(key, (sc = { forest: new THREE.Group(), understorey: new THREE.Group(), cover: new THREE.Group(), x: cx, z: cz }))
+			}
+			return sc
+		}
 		const r = seeded(kind === 'home' ? 3 : kind === 'large' ? 5 : 9)
 		const area = Math.PI * (rIn * rIn - Rc * Rc)
 		const trees = Math.min(kind === 'master' ? 200 : 230, Math.round(area / 26))
@@ -1251,7 +1273,7 @@ export async function mountInterior(container: HTMLElement, kind: DomeKind, onPr
 			else plant = banana(600 + placed, 3 + r() * 1.2)
 			plant.object.position.set(x, 0, z)
 			plant.object.rotation.y = r() * 6.28
-			forest.add(plant.object)
+			sectorAt(x, z).forest.add(plant.object)
 			colliders.push({ x, z, r: plant.radius + 0.2 })
 			placed++
 			// its guild, round it
@@ -1264,7 +1286,7 @@ export async function mountInterior(container: HTMLElement, kind: DomeKind, onPr
 					const o = make(5000 + placed * 17 + j)
 					o.position.set(ox, 0, oz)
 					o.rotation.y = r() * 6.28
-					understorey.add(o)
+					sectorAt(ox, oz).understorey.add(o)
 				}
 			}
 			around(1, 2.3, (sd) => (r() < 0.5 ? tropicalShrub('coffee', sd, 1.2 + r() * 0.5) : r() < 0.5 ? tropicalShrub('cacao', sd, 1.5 + r() * 0.4) : berryBush(sd, 0.8 + r() * 0.4)).object)
@@ -1273,7 +1295,6 @@ export async function mountInterior(container: HTMLElement, kind: DomeKind, onPr
 			around(1, 2, (sd) => (r() < 0.5 ? ginger(sd, 0.8 + r() * 0.4) : squash(sd)))
 			if (r() < 0.3) around(1, 0.9, (sd) => passionVine(sd, 2.6 + r()).object)
 		}
-		const cover = new THREE.Group()
 		for (let i = 0; i < Math.min(area * 0.6, kind === 'master' ? 1400 : 1800); i++) {
 			if (i % 50 === 0) await slice()
 			const a = r() * Math.PI * 2
@@ -1283,11 +1304,14 @@ export async function mountInterior(container: HTMLElement, kind: DomeKind, onPr
 			if (nearStream(x, z, width * 0.7)) continue
 			const hb = herb(3000 + i, 0.2 + r() * 0.25)
 			hb.position.set(x, 0, z)
-			cover.add(hb)
+			sectorAt(x, z).cover.add(hb)
 		}
-		scene.add(await bakeIn(cover, false))
-		scene.add(await bakeIn(forest))
-		scene.add(await bakeIn(understorey, false))
+		for (const sc of sectors.values()) {
+			const small = new THREE.Group()
+			small.add(await bakeIn(sc.cover, false), await bakeIn(sc.understorey, false))
+			scene.add(await bakeIn(sc.forest), small)
+			detail.push({ group: small, x: sc.x, z: sc.z })
+		}
 		await pause('Planting the forest inside')
 
 		await slice()
@@ -1425,6 +1449,7 @@ export async function mountInterior(container: HTMLElement, kind: DomeKind, onPr
 		/* the private rooms, facing out through the glass — one floor, or two */
 		const roomH = 3
 		const rFront = rIn + walkway
+		const roomPlaster = new THREE.MeshStandardMaterial({ color: '#efe4d2', roughness: 0.96, side: THREE.DoubleSide })
 		const roomsAt = async (Hf: number, turn: number) => {
 			const rooms = g.rooms
 			const topR = Math.sqrt(R * R - (Hf + roomH) ** 2)
@@ -1432,29 +1457,24 @@ export async function mountInterior(container: HTMLElement, kind: DomeKind, onPr
 			for (let k = 0; k < rooms; k++) {
 				const a1 = aStair + turn + ((k + 0.5) / rooms) * Math.PI * 2
 				const span = (Math.PI * 2) / rooms
+				// the partition: a plaster wall with a rounded end toward the walkway
 				const [px, pz] = polar((rFront + topR) / 2, a1)
-				group.add(box(0.2, roomH, topR - rFront, m.lime(1, 1), px, Hf, pz, a1))
-				const door = 1.3 / rFront
-				const front = new THREE.Mesh(new THREE.CylinderGeometry(rFront, rFront, roomH, 24, 1, true, a1 + door, span - door), m.oak((span * rFront) / 2.5, 1.2))
-				;(front.material as THREE.Material).side = THREE.DoubleSide
+				group.add(box(0.24, roomH, topR - rFront, roomPlaster, px, Hf, pz, a1))
+				const cap = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.12, roomH, 16), roomPlaster)
+				const [cx, cz] = polar(rFront, a1)
+				cap.position.set(cx, Hf + roomH / 2, cz)
+				group.add(cap)
+				// the front, toward the walkway: plaster, with the door by the first wall
+				const door = 1.4 / rFront
+				const front = new THREE.Mesh(new THREE.CylinderGeometry(rFront, rFront, roomH, 32, 1, true, a1 + door, span - door), roomPlaster)
 				front.position.y = Hf + roomH / 2
 				group.add(front)
 				const mid = a1 + span / 2
-				const b = bed(m, 1.6)
-				const [bx, bz] = polar(topR - 1.4, mid - span * 0.2)
-				b.position.set(bx, Hf, bz)
-				b.rotation.y = mid + Math.PI
-				group.add(b)
-				const so = sofa(m, 2)
-				const [sx, sz] = polar(rFront + 1.4, mid + span * 0.15)
-				so.position.set(sx, Hf, sz)
-				so.rotation.y = mid
-				group.add(so)
-				const t = table(m, 0.9, 2)
-				const [tx, tz] = polar((rFront + topR) / 2, mid + span * 0.2)
-				t.position.set(tx, Hf, tz)
-				t.rotation.y = mid
-				group.add(t)
+				// and inside it, the room itself (rooms.ts)
+				const room = furnish({ a0: a1, span, rIn: rFront + 0.15, rOut: topR - 0.3, y: Hf, seed: Math.round(Hf * 10) + k * 17 })
+				group.add(room.group)
+				colliders.push(...room.colliders)
+				await slice()
 				const l = lantern(m, 0.3, Hf + 2.4)
 				const [lx, lz] = polar((rFront + topR) / 2, mid)
 				l.position.set(lx, 0, lz)
@@ -1772,6 +1792,7 @@ export async function mountInterior(container: HTMLElement, kind: DomeKind, onPr
 			spots,
 			update: (t) => {
 				for (const a of animated) a(t)
+				keepDetail(camera.position.x - host.x, camera.position.z - host.z)
 			},
 			setHour: (hour) => setSun(hour),
 			dispose: disposeAll
@@ -1933,6 +1954,7 @@ export async function mountInterior(container: HTMLElement, kind: DomeKind, onPr
 		if (now - lampsChecked > 300) {
 			lampsChecked = now
 			lightNearest()
+			keepDetail(camera.position.x, camera.position.z)
 		}
 		// the sun moves with the game clock: a game hour is two real minutes, so a look every second is plenty
 		if (now - sunChecked > 1000) {
