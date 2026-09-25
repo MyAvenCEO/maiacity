@@ -13,7 +13,13 @@
 	import { DOMES, type DomeKind, type InteriorHandle } from './interior/interior';
 	import { gameClock } from '../../../game/time';
 
-	let { kind, place, onclose }: { kind: DomeKind; place: string; onclose: () => void } = $props();
+	let {
+		kind,
+		place,
+		onclose,
+		entry,
+		onleave
+	}: { kind: DomeKind; place: string; onclose: () => void; entry?: number; onleave?: (door: number) => void } = $props();
 
 	let stage: HTMLDivElement;
 	let handle: InteriorHandle | null = null;
@@ -36,11 +42,16 @@
 		requestAnimationFrame(() =>
 			requestAnimationFrame(async () => {
 				const { mountInterior } = await import('./interior/interior');
-				const h = await mountInterior(stage, kind, (label) => {
-					if (label === 'ready') return;
-					step = label;
-					done += 1;
-				});
+				const h = await mountInterior(
+					stage,
+					kind,
+					(label) => {
+						if (label === 'ready') return;
+						step = label;
+						done += 1;
+					},
+					{ entry, onLeave: onleave }
+				);
 				if (destroyed) return h.dispose();
 				handle = h;
 				done = STEPS;

@@ -45,12 +45,12 @@ export const DOMES: Record<DomeKind, Spec & { label: string; people: string }> =
 
 const EYE = 1.65
 /** The big domes have four doors, one to each point of the compass; the glamping dome has one. */
-const DOORS = [0, Math.PI / 2, Math.PI, -Math.PI / 2]
-const doorsOf = (kind: DomeKind) => (kind === 'glamp' || kind === 'tent' ? [0] : DOORS)
+export const DOORS = [0, Math.PI / 2, Math.PI, -Math.PI / 2]
+export const doorsOf = (kind: DomeKind) => (kind === 'glamp' || kind === 'tent' ? [0] : DOORS)
 /** A door's half-width, and its height at the top of the arch (the glamping door is square-headed). */
 const doorSize = (kind: DomeKind) => (kind === 'tent' ? { dw: 0.55, dh: 1.8, top: 1.8 } : kind === 'glamp' ? { dw: 0.75, dh: 2.5, top: 2.5 } : { dw: 1.3, dh: 3, top: 3 + 1.3 * 0.4 })
 /** The signed difference between two angles, in -π..π. */
-const adiff = (a: number, b: number) => Math.atan2(Math.sin(a - b), Math.cos(a - b))
+export const adiff = (a: number, b: number) => Math.atan2(Math.sin(a - b), Math.cos(a - b))
 
 /** A texture tiled to a world size: `metres` of surface per repeat of the image. */
 function tiled(tex: THREE.Texture, repeatX: number, repeatY = repeatX): THREE.Texture {
@@ -61,7 +61,7 @@ function tiled(tex: THREE.Texture, repeatX: number, repeatY = repeatX): THREE.Te
 	return t
 }
 
-const mats = () => {
+export const mats = () => {
 	const flag = flagstone()
 	return {
 		stone: (rep: number) => new THREE.MeshStandardMaterial({ map: tiled(flag.map, rep), bumpMap: tiled(flag.bump, rep), bumpScale: 2, roughness: 0.85 }),
@@ -88,9 +88,9 @@ const mats = () => {
 export type Mats = ReturnType<typeof mats>
 
 /** Polar placement: angle 0 faces +z, clockwise to +x — the same sense as three's cylinders. */
-const polar = (r: number, a: number): [number, number] => [r * Math.sin(a), r * Math.cos(a)]
+export const polar = (r: number, a: number): [number, number] => [r * Math.sin(a), r * Math.cos(a)]
 
-function box(w: number, h: number, d: number, mat: THREE.Material, x = 0, y = 0, z = 0, rotY = 0): THREE.Mesh {
+export function box(w: number, h: number, d: number, mat: THREE.Material, x = 0, y = 0, z = 0, rotY = 0): THREE.Mesh {
 	const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat)
 	m.position.set(x, y + h / 2, z)
 	m.rotation.y = rotY
@@ -99,7 +99,7 @@ function box(w: number, h: number, d: number, mat: THREE.Material, x = 0, y = 0,
 }
 
 /** Bakes a group into one mesh per material, so a forest costs a handful of draw calls. */
-function bake(group: THREE.Group, shadows = true): THREE.Group {
+export function bake(group: THREE.Group, shadows = true): THREE.Group {
 	group.updateMatrixWorld(true)
 	const byMat = new Map<THREE.Material, THREE.BufferGeometry[]>()
 	group.traverse((o) => {
@@ -129,7 +129,7 @@ export type DoorHole = { a: number; halfWidth: number; height: number; depth: nu
  * on every edge. At each of the four doors the lowest panels are left out; the
  * hole is measured and returned, so a portal wall can close it round the door.
  */
-function geodesic(spec: Spec, m: Mats, kind: DomeKind): { group: THREE.Group; holes: DoorHole[] } {
+export function geodesic(spec: Spec, m: Mats, kind: DomeKind): { group: THREE.Group; holes: DoorHole[] } {
 	const R = spec.diameter / 2
 	const ico = new THREE.IcosahedronGeometry(R, spec.detail)
 	const p = ico.attributes.position!
@@ -218,7 +218,7 @@ function geodesic(spec: Spec, m: Mats, kind: DomeKind): { group: THREE.Group; ho
  * glamping dome, limestone on the big ones — with an opening, a timber frame,
  * and the glazed door standing open.
  */
-function portal(m: Mats, hole: DoorHole, kind: DomeKind): THREE.Group {
+export function portal(m: Mats, hole: DoorHole, kind: DomeKind): THREE.Group {
 	const g = new THREE.Group()
 	const W = hole.halfWidth + 0.15
 	const Ht = Math.max(hole.height, 3.2)
@@ -341,7 +341,10 @@ export type InteriorHandle = {
 	liftStep: (dir: 1 | -1) => void
 }
 
-export async function mountInterior(container: HTMLElement, kind: DomeKind, onProgress?: (label: string) => void): Promise<InteriorHandle> {
+/** Where to come in, and what to do on walking back out (Sandbox 4's village). */
+export type InteriorOptions = { entry?: number; onLeave?: (door: number) => void }
+
+export async function mountInterior(container: HTMLElement, kind: DomeKind, onProgress?: (label: string) => void, opts: InteriorOptions = {}): Promise<InteriorHandle> {
 	/** Let the page paint between the heavy steps, so the loading screen keeps moving. */
 	const pause = async (label: string) => {
 		onProgress?.(label)
@@ -1598,7 +1601,13 @@ export async function mountInterior(container: HTMLElement, kind: DomeKind, onPr
 	setSun(hourNow())
 
 	/* ── walking ─────────────────────────────────────────────────────── */
+	// coming in from the village: just inside the door you walked through, facing in
+	if (opts.entry !== undefined) {
+		const [ex, ez] = polar(R - (kind === 'glamp' ? 2 : 3.5), opts.entry)
+		start = { x: ex, z: ez, look: opts.entry }
+	}
 	const pos = new THREE.Vector3(start.x, 0, start.z)
+	let left = false
 	let yaw = start.look
 	let pitch = -0.05
 	let feet = 0
@@ -1673,6 +1682,12 @@ export async function mountInterior(container: HTMLElement, kind: DomeKind, onPr
 				pos.z = nz
 				break
 			}
+		}
+		// out through a door and away from the wall: back to the village, outside that door
+		if (opts.onLeave && !left && feet < 0.5 && Math.hypot(pos.x, pos.z) > R + 4) {
+			const a = Math.atan2(pos.x, pos.z)
+			left = true
+			opts.onLeave(doorsOf(kind).reduce((best, d) => (Math.abs(adiff(a, d)) < Math.abs(adiff(a, best)) ? d : best)))
 		}
 		const target = floorAt(pos.x, pos.z, feet)
 		feet += (target - feet) * Math.min(1, dt * 12)

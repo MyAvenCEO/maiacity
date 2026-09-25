@@ -28,6 +28,15 @@
 				'Inside the domes. Choose the glamping dome, a medium dome, a large dome or the master dome, and walk through it: the food forest downstairs, the private rooms upstairs facing out.',
 			cover: `${base}/games/sandbox-3.jpg`,
 			coverAlt: 'Looking down from the gallery of a medium dome onto its food forest.'
+		},
+		{
+			name: 'avenCITY Sandbox 4',
+			status: 'Open',
+			href: `${base}/games/sandbox-4`,
+			blurb:
+				'A whole dome cell in one world: the master dome, six large domes and six medium domes, meandering paths and a stream between them, the food forest all round. Walk through any door and step inside.',
+			cover: `${base}/games/sandbox-4.jpg`,
+			coverAlt: 'The dome cell of avenCITY Sandbox 4: the master dome among its ring of domes, paths and a stream through the forest.'
 		}
 	];
 </script>
