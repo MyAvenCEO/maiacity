@@ -74,7 +74,7 @@
 		const plan = planFor(level);
 		const out: { kind: DomeKind; label: string }[] = [];
 		if (plan.counts.GLAMP) out.push({ kind: 'glamp', label: 'a glamping dome' });
-		if (plan.counts.DOME3) out.push({ kind: 'home', label: 'a dome home' });
+		if (plan.counts.DOME3) out.push({ kind: 'home', label: 'a medium dome' });
 		if (plan.counts.DOME4) out.push({ kind: 'large', label: 'a large dome' });
 		if (plan.master) out.push({ kind: 'master', label: 'the master dome' });
 		return out;

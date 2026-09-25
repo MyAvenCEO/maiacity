@@ -21,8 +21,9 @@
 	];
 
 	// A sandbox is a leaf: it runs full-screen without the site chrome. The
-	// games index above it keeps the nav.
-	const bare = $derived(/^\/games\/[^/]+\/?$/.test(page.url.pathname.slice(base.length)));
+	// games index above it keeps the nav, and so does Sandbox 3, a page of cards
+	// whose domes open over it.
+	const bare = $derived(/^\/games\/(?!sandbox-3\/?$)[^/]+\/?$/.test(page.url.pathname.slice(base.length)));
 
 	// the phone menu; it closes itself whenever the page changes
 	let menuOpen = $state(false);

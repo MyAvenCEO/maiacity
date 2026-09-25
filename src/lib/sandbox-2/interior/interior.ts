@@ -2,9 +2,10 @@
  * INSIDE A DOME — a walkable, first-person interior for each dome of a village:
  *
  *   glamp   16 m   a home for four under canvas and glass, a door onto a deck
- *   home    40 m   the dome homes of the first ring
+ *   home    40 m   the medium domes of the first ring
  *   large   70 m   the large domes of the second ring
- *   master 136 m   the master dome in the centre, with a waterfall from its crown
+ *   master 136 m   the master dome in the centre: a round theatre sunk into its floor,
+ *                  and its ground ring given to the village's workshops
  *
  * The big domes have four doors, one to each point of the compass (the
  * glamping dome one), and every dome stands in a
@@ -23,6 +24,7 @@ import * as THREE from 'three'
 import { Sky } from 'three/addons/objects/Sky.js'
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js'
 import { flagstone, leaves, limestone, oak, soil, water } from './textures'
+import { cafes, coops, coopsAround, squaresAround, workshops, type Kit } from './spaces'
 import { appleTree, banana, berryBush, canopyTree, climber, clover, coconutPalm, comfrey, fruitTree, herb, seeded, shrub, squash, type Plant } from './plants'
 
 export type DomeKind = 'glamp' | 'home' | 'large' | 'master'
@@ -30,7 +32,7 @@ export type DomeKind = 'glamp' | 'home' | 'large' | 'master'
 type Spec = { diameter: number; detail: number; strut: number; gallery?: { height: number; depth: number; rooms: number; floors: 1 | 2 } }
 export const DOMES: Record<DomeKind, Spec & { label: string; people: string }> = {
 	glamp: { label: 'Glamping dome', people: 'four people', diameter: 16, detail: 3, strut: 0.06 },
-	home: { label: 'Dome home', people: 'twelve people', diameter: 40, detail: 4, strut: 0.09, gallery: { height: 4.2, depth: 6.5, rooms: 6, floors: 1 } },
+	home: { label: 'Medium dome', people: 'twelve people', diameter: 40, detail: 4, strut: 0.09, gallery: { height: 4.2, depth: 6.5, rooms: 6, floors: 1 } },
 	large: { label: 'Large dome', people: 'twenty-four people', diameter: 70, detail: 5, strut: 0.12, gallery: { height: 5, depth: 8, rooms: 8, floors: 2 } },
 	master: { label: 'Master dome', people: 'the commons, and whoever the rings cannot house yet', diameter: 136, detail: 7, strut: 0.16, gallery: { height: 6, depth: 10, rooms: 12, floors: 2 } }
 }
@@ -39,6 +41,8 @@ const EYE = 1.65
 /** The big domes have four doors, one to each point of the compass; the glamping dome has one. */
 const DOORS = [0, Math.PI / 2, Math.PI, -Math.PI / 2]
 const doorsOf = (kind: DomeKind) => (kind === 'glamp' ? [0] : DOORS)
+/** A door's half-width, and its height at the top of the arch (the glamping door is square-headed). */
+const doorSize = (kind: DomeKind) => (kind === 'glamp' ? { dw: 0.75, dh: 2.5, top: 2.5 } : { dw: 1.3, dh: 3, top: 3 + 1.3 * 0.4 })
 /** The signed difference between two angles, in -π..π. */
 const adiff = (a: number, b: number) => Math.atan2(Math.sin(a - b), Math.cos(a - b))
 
@@ -135,18 +139,25 @@ function geodesic(spec: Spec, m: Mats, kind: DomeKind): { group: THREE.Group; ho
 		const c = tri.reduce((s, v) => s.clone().add(v), new THREE.Vector3()).divideScalar(3)
 		tris.push({ tri, c, ca: Math.atan2(c.x, c.z) })
 	}
-	// the door panels: the low triangles nearest each door's line, and their neighbours across it
-	const low = kind === 'glamp' ? R * 0.3 : (spec.gallery!.height) * 0.62
+	// the door panels: every triangle any part of which, seen head-on, falls in the doorway —
+	// so no panel and no strut is left crossing it
+	const { dw, top } = doorSize(kind)
 	const skip = new Set<number>()
 	const holes: DoorHole[] = []
 	for (const d of doorsOf(kind)) {
 		const tang = (v: THREE.Vector3) => v.x * Math.cos(d) - v.z * Math.sin(d)
-		const cand = tris.map((t, i) => ({ i, t })).filter(({ t }) => t.c.y < low && Math.abs(adiff(t.ca, d)) < Math.PI / 4)
-		if (!cand.length) continue
-		const nearest = Math.min(...cand.map(({ t }) => Math.abs(tang(t.c))))
+		const inDoorway = (v: THREE.Vector3) => Math.abs(tang(v)) < dw + 0.35 && v.y < top + 0.35
+		const cand = tris.map((t, i) => ({ i, t })).filter(({ t }) => Math.abs(adiff(t.ca, d)) < Math.PI / 4)
+		// the glamping dome's panels are small: its door takes the lowest ones nearest the door's line
+		const nearest = Math.min(...cand.filter(({ t }) => t.c.y < R * 0.3).map(({ t }) => Math.abs(tang(t.c))))
 		let halfWidth = 0, height = 0, depth = Infinity
 		for (const { i, t } of cand) {
-			if (Math.abs(tang(t.c)) > nearest + (kind === 'glamp' ? 0.6 : 1.8)) continue
+			const [a, b, c] = t.tri as [THREE.Vector3, THREE.Vector3, THREE.Vector3]
+			let hit = kind === 'glamp' && t.c.y < R * 0.3 && Math.abs(tang(t.c)) <= nearest + 0.6
+			if (kind === 'glamp' && !hit) continue
+			for (let u = 0; u <= 6 && !hit; u++)
+				for (let w = 0; w <= 6 - u && !hit; w++) hit = inDoorway(a.clone().multiplyScalar(u / 6).addScaledVector(b, w / 6).addScaledVector(c, (6 - u - w) / 6))
+			if (!hit) continue
 			skip.add(i)
 			for (const v of t.tri) {
 				halfWidth = Math.max(halfWidth, Math.abs(tang(v)))
@@ -205,8 +216,8 @@ function portal(m: Mats, hole: DoorHole, kind: DomeKind): THREE.Group {
 	const g = new THREE.Group()
 	const W = hole.halfWidth + 0.15
 	const Ht = Math.max(hole.height, 3.2)
-	const dw = kind === 'glamp' ? 0.75 : 1.3
-	const dh = kind === 'glamp' ? 2.5 : 3
+	const { dw, dh } = doorSize(kind)
+	const spring = dh - dw * 0.6
 	const shape = new THREE.Shape()
 	shape.moveTo(-W, 0)
 	shape.lineTo(W, 0)
@@ -216,20 +227,31 @@ function portal(m: Mats, hole: DoorHole, kind: DomeKind): THREE.Group {
 	const opening = new THREE.Path()
 	opening.moveTo(-dw, 0)
 	opening.lineTo(dw, 0)
-	opening.lineTo(dw, dh - dw * 0.6)
 	// a round-headed arch over the big domes' doors
 	if (kind === 'glamp') opening.lineTo(dw, dh), opening.lineTo(-dw, dh)
-	else opening.absarc(0, dh - dw * 0.6, dw, 0, Math.PI, false)
+	else opening.lineTo(dw, spring), opening.absarc(0, spring, dw, 0, Math.PI, false)
 	opening.lineTo(-dw, 0)
 	shape.holes.push(opening)
 	const geo = new THREE.ShapeGeometry(shape, 16)
-	const wall = new THREE.Mesh(geo, kind === 'glamp' ? m.canvas : m.lime(W / 1.5, Ht / 1.5))
+	// a shape's uvs are its own metres: one course of blocks every 40 cm, as on the knee wall
+	const wall = new THREE.Mesh(geo, kind === 'glamp' ? m.canvas : m.lime(1 / 3.2, 1 / 3.2))
 	;(wall.material as THREE.Material).side = THREE.DoubleSide
 	wall.castShadow = wall.receiveShadow = true
 	g.add(wall)
-	g.add(box(0.18, dh, 0.3, m.timberFrame, -dw - 0.05, 0, 0))
-	g.add(box(0.18, dh, 0.3, m.timberFrame, dw + 0.05, 0, 0))
-	g.add(box(dw * 2 + 0.3, 0.2, 0.32, m.timberFrame, 0, dh, 0))
+	if (kind === 'glamp') {
+		g.add(box(0.18, dh, 0.3, m.timberFrame, -dw - 0.05, 0, 0))
+		g.add(box(0.18, dh, 0.3, m.timberFrame, dw + 0.05, 0, 0))
+		g.add(box(dw * 2 + 0.3, 0.2, 0.32, m.timberFrame, 0, dh, 0))
+	} else {
+		// a dressed limestone surround: jambs to the spring of the arch, and a ring of voussoirs over it
+		const trim = m.lime(0.5, 1)
+		for (const side of [-1, 1]) g.add(box(0.4, spring, 0.5, trim, side * (dw + 0.2), 0, 0))
+		const arch = new THREE.Mesh(new THREE.TorusGeometry(dw + 0.2, 0.22, 8, 24, Math.PI), trim)
+		arch.scale.z = 1.1
+		arch.position.y = spring
+		arch.castShadow = true
+		g.add(arch)
+	}
 	const leaf = new THREE.Group()
 	leaf.add(box(dw, dh - 0.15, 0.05, m.glass, dw / 2, 0, 0))
 	leaf.add(box(0.07, dh - 0.15, 0.07, m.timberFrame, 0, 0, 0))
@@ -372,7 +394,8 @@ export async function mountInterior(container: HTMLElement, kind: DomeKind, onPr
 	const animated: ((t: number) => void)[] = []
 
 	/* the land outside, seen through the glass */
-	const outside = new THREE.Mesh(new THREE.CircleGeometry(R * 20 + 200, 64), m.grass)
+	// a ring, not a disc, so nothing lies over the master dome's sunken theatre
+	const outside = new THREE.Mesh(new THREE.RingGeometry(R * 0.5, R * 20 + 200, 96, 1), m.grass)
 	outside.rotation.x = -Math.PI / 2
 	outside.position.y = -0.02
 	outside.receiveShadow = true
@@ -405,9 +428,12 @@ export async function mountInterior(container: HTMLElement, kind: DomeKind, onPr
 			scene.add(strip)
 		}
 	}
+	// round the master dome, café squares just off the ring path, where the forest leaves room
+	const squareR = ringPath + 7.5
+	const squares = kind === 'master' ? [...squaresAround().map((q) => ({ ...q, r: squareR })), ...coopsAround(squareR)].map(({ a, r, radius }) => ({ at: polar(r, a), radius })) : []
 	const onOutsidePath = (x: number, z: number) => {
 		const rr = Math.hypot(x, z), a = Math.atan2(x, z)
-		return Math.abs(rr - ringPath) < 2.4 || doorsOf(kind).some((d) => Math.abs(adiff(a, d)) < Math.PI / 2 && Math.abs(adiff(a, d)) * rr < 2.6)
+		return Math.abs(rr - ringPath) < 2.4 || squares.some(({ at: [sx, sz], radius }) => Math.hypot(x - sx, z - sz) < radius + 1.5) || doorsOf(kind).some((d) => Math.abs(adiff(a, d)) < Math.PI / 2 && Math.abs(adiff(a, d)) * rr < 2.6)
 	}
 
 	/* a turquoise stream winding round the dome, stones on its banks, a bridge where each path crosses */
@@ -523,6 +549,22 @@ export async function mountInterior(container: HTMLElement, kind: DomeKind, onPr
 		scene.add(bake(trees))
 		scene.add(bake(under, false))
 	}
+	const kit: Kit = {
+		box, table: (len, chairs) => table(m, len, chairs), sofa: (len) => sofa(m, len), lantern: (r, y) => lantern(m, r, y),
+		oak: m.oak(1), lime: m.lime(1), stone: (rep) => m.stone(rep), dark: m.dark, steel: m.steel, counter: m.counter,
+		timber: m.timberFrame, linen: m.linen, cushion: m.cushion, rug: m.rug, paper: m.paper
+	}
+	if (kind === 'master')
+		for (const sq of cafes(kit, squareR)) {
+			scene.add(bake(sq.group))
+			outsideColliders.push(...sq.colliders)
+		}
+	// and the hens, in coops among the trees beyond the squares
+	if (kind === 'master')
+		for (const c of coops(kit, squareR)) {
+			scene.add(bake(c.group))
+			outsideColliders.push(...c.colliders)
+		}
 	await pause('Planting the food forest outside')
 
 	const shell = geodesic(spec, m, kind)
@@ -667,7 +709,9 @@ export async function mountInterior(container: HTMLElement, kind: DomeKind, onPr
 		const walkway = 2.4
 
 		/* ground: soil, a stone plaza, a ring path and spokes */
-		const ground = new THREE.Mesh(new THREE.CircleGeometry(R, 96), m.soil(R / 2))
+		// the master dome's centre is a theatre sunk into the ground, so its floor is a ring round the bowl
+		const theatre = kind === 'master'
+		const ground = new THREE.Mesh(theatre ? new THREE.RingGeometry(Rc, R, 96, 1) : new THREE.CircleGeometry(R, 96), m.soil(R / 2))
 		ground.rotation.x = -Math.PI / 2
 		ground.receiveShadow = true
 		scene.add(ground)
@@ -679,7 +723,63 @@ export async function mountInterior(container: HTMLElement, kind: DomeKind, onPr
 			scene.add(mesh)
 			return mesh
 		}
-		flat(new THREE.CircleGeometry(Rc, 64), m.stone((Rc * 2) / 3))
+		if (theatre) flat(new THREE.RingGeometry(Rc, Rc + 2.4, 96), m.stone(((Rc + 2.4) * 2) / 3))
+		else flat(new THREE.CircleGeometry(Rc, 64), m.stone((Rc * 2) / 3))
+		/* the theatre: a round stage at the bottom of a bowl of stone tiers, seated all the way round */
+		// six tiers of seats, and the rest of the bowl a wide stage
+		const aisle = 1.2
+		const tier = { w: 0.9, h: 0.42 }
+		const tiers = 6
+		const stageR = Rc - aisle - tiers * tier.w
+		const pit = tiers * tier.h
+		const tierIn = (i: number) => Rc - (tiers - i) * tier.w
+		/** The floor in the bowl at a radius: the stage, the aisle round it, or a tier. */
+		const bowlAt = (rr: number) => {
+			if (rr >= Rc) return 0
+			if (rr <= stageR) return -pit + 0.55
+			if (rr < tierIn(0)) return -pit
+			return -pit + (Math.floor((rr - tierIn(0)) / tier.w) + 1) * tier.h
+		}
+		if (theatre) {
+			const bowl = new THREE.Group()
+			const seat = m.lime(Rc / 2, 0.2)
+			for (let i = 0; i < tiers; i++) {
+				const r0t = tierIn(i), top = -pit + (i + 1) * tier.h
+				const tread = new THREE.Mesh(new THREE.RingGeometry(r0t, r0t + tier.w, 128), m.stone((Rc * 2) / 3))
+				tread.rotation.x = -Math.PI / 2
+				tread.position.y = top
+				bowl.add(tread)
+				const riser = new THREE.Mesh(new THREE.CylinderGeometry(r0t, r0t, tier.h, 128, 1, true), seat)
+				riser.position.y = top - tier.h / 2
+				;(riser.material as THREE.Material).side = THREE.DoubleSide
+				bowl.add(riser)
+				// stairs down the four spokes: a half step cut into the tier below each riser
+				for (const a of DOORS) {
+					const [x, z] = polar(r0t - tier.w / 4, a)
+					bowl.add(box(1.6, tier.h / 2, tier.w / 2, m.lime(1, 0.3), x, top - tier.h, z, a))
+				}
+			}
+			const floor = new THREE.Mesh(new THREE.RingGeometry(stageR, tierIn(0), 96), m.stone(4))
+			floor.rotation.x = -Math.PI / 2
+			floor.position.y = -pit
+			bowl.add(floor)
+			const wall = new THREE.Mesh(new THREE.CylinderGeometry(tierIn(0), tierIn(0), 0.2, 96, 1, true), seat)
+			wall.position.y = -pit + 0.1
+			bowl.add(wall)
+			// the stage: an oak drum with a limestone edge
+			const stage = new THREE.Mesh(new THREE.CylinderGeometry(stageR, stageR, 0.55, 96), m.oak(stageR, stageR))
+			stage.position.y = -pit + 0.275
+			bowl.add(stage)
+			const lip = new THREE.Mesh(new THREE.TorusGeometry(stageR, 0.09, 8, 128), m.lime(20, 1))
+			lip.rotation.x = -Math.PI / 2
+			lip.position.y = -pit + 0.55
+			bowl.add(lip)
+			// the bowl's sides, down to its floor, so the ground never shows through
+			const sideWall = new THREE.Mesh(new THREE.CylinderGeometry(Rc, Rc, 0.3, 96, 1, true), seat)
+			sideWall.position.y = -0.15
+			bowl.add(sideWall)
+			scene.add(bake(bowl))
+		}
 		flat(new THREE.RingGeometry(Rp - 1.1, Rp + 1.1, 128), m.stone((Rp * 2) / 3))
 		// under the gallery the floor is stone too: the covered commons round the edge
 		flat(new THREE.RingGeometry(rIn - 0.4, R, 128), m.stone((R * 2) / 3))
@@ -832,35 +932,31 @@ export async function mountInterior(container: HTMLElement, kind: DomeKind, onPr
 			colliders.push({ x, z, r: 1.4 })
 		}
 
-		/* the plaza: a long table, sofas, and lanterns — and in the master dome, the waterfall */
+		/* the plaza: a long table, sofas, and lanterns — and in the master dome, the theatre */
 		if (kind === 'master') {
-			const poolR = Rc * 0.45
-			const rim = new THREE.Mesh(new THREE.TorusGeometry(poolR, 0.35, 12, 96), m.lime(20, 1))
-			rim.rotation.x = -Math.PI / 2
-			rim.position.y = 0.35
-			scene.add(rim)
-			const pool = new THREE.Mesh(new THREE.CircleGeometry(poolR, 64), m.water(4))
-			pool.rotation.x = -Math.PI / 2
-			pool.position.y = 0.25
-			scene.add(pool)
-			const fallTex = water().clone()
-			fallTex.repeat.set(3, 1)
-			fallTex.needsUpdate = true
-			const fallMat = new THREE.MeshStandardMaterial({ map: fallTex, color: '#ffffff', emissive: '#dff3f6', emissiveIntensity: 0.35, transparent: true, opacity: 0.38, roughness: 0.2, side: THREE.DoubleSide, depthWrite: false })
-			const fall = new THREE.Mesh(new THREE.CylinderGeometry(poolR * 0.35, poolR * 0.6, R * 0.92, 48, 1, true), fallMat)
-			fall.position.y = (R * 0.92) / 2
-			scene.add(fall)
-			animated.push((t) => (fallTex.offset.y = t * 1.2))
-			colliders.push({ x: 0, z: 0, r: poolR + 0.5 })
-			for (let k = 0; k < 6; k++) {
-				const a = (k * Math.PI) / 3
-				const t = table(m, 3, 8)
-				const [x, z] = polar(Rc * 0.78, a)
-				t.position.set(x, 0, z)
-				t.rotation.y = a
-				scene.add(t)
-				colliders.push({ x, z, r: 1.7 })
+			// lanterns in a ring high over the stage, and a few instruments waiting on it
+			for (let k = 0; k < 12; k++) {
+				const l = lantern(m, 0.7, H + 12 + (k % 3) * 1.5)
+				const [x, z] = polar(Rc * 0.62, (k * Math.PI) / 6)
+				l.position.set(x, 0, z)
+				scene.add(l)
 			}
+			const props = new THREE.Group()
+			const floorY = -pit + 0.55
+			const rug = new THREE.Mesh(new THREE.CircleGeometry(stageR * 0.45, 48), m.rug)
+			rug.rotation.x = -Math.PI / 2
+			rug.position.y = floorY + 0.01
+			props.add(rug)
+			for (let k = 0; k < 5; k++) {
+				const [x, z] = polar(stageR * 0.3, (k * Math.PI * 2) / 5)
+				const st = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.22, 0.5, 14), m.oak(1))
+				st.position.set(x, floorY + 0.25, z)
+				props.add(st)
+			}
+			const drum = new THREE.Mesh(new THREE.CylinderGeometry(0.35, 0.3, 0.6, 20), m.cushion)
+			drum.position.set(0, floorY + 0.3, 0)
+			props.add(drum)
+			scene.add(bake(props))
 		} else {
 			const t = table(m, 4.2, 10)
 			t.position.set(0, 0, -Rc * 0.3)
@@ -1021,66 +1117,73 @@ export async function mountInterior(container: HTMLElement, kind: DomeKind, onPr
 			roomsAt(H2, Math.PI / g.rooms)
 		}
 
-		/* the terrace outside the glass, carried on a stone arcade — the dome's foundation ring */
-		{
+		/* the terraces outside the glass, one to each floor of rooms, carried on a two-storey stone arcade */
+		const rWall2 = Math.sqrt(R * R - H2 * H2)
+		const perQuarter = Math.max(3, Math.round(((Math.PI / 2) * Rt) / 5.2))
+		const arcStep = Math.PI / 2 / perQuarter
+		const pillarAngles = Array.from({ length: perQuarter * 4 }, (_, k) => (k + 0.5) * arcStep)
+		const terraceRing = (y: number, base: number, rInner: number, seed: number) => {
 			const terrace = new THREE.Group()
-			const deck = new THREE.Mesh(new THREE.RingGeometry(rWall - 0.4, Rt, 160), m.stone(R / 1.5))
+			const deck = new THREE.Mesh(new THREE.RingGeometry(rInner, Rt, 160), m.stone(R / 1.5))
 			deck.rotation.x = -Math.PI / 2
-			deck.position.y = H + 0.02
+			deck.position.y = y + 0.02
 			terrace.add(deck)
-			const under = new THREE.Mesh(new THREE.RingGeometry(rWall - 0.4, Rt, 160), m.lime(R / 2))
+			const under = new THREE.Mesh(new THREE.RingGeometry(rInner, Rt, 160), m.lime(R / 2))
 			under.rotation.x = Math.PI / 2
-			under.position.y = H - 0.35
+			under.position.y = y - 0.35
 			terrace.add(under)
 			const edge = new THREE.Mesh(new THREE.CylinderGeometry(Rt, Rt, 0.4, 160, 1, true), m.lime((Math.PI * Rt) / 2, 0.2))
-			edge.position.y = H - 0.15
+			edge.position.y = y - 0.15
 			terrace.add(edge)
 			// pillars between the doors, and round arches from pillar to pillar
-			const perQuarter = Math.max(3, Math.round(((Math.PI / 2) * Rt) / 5.2))
-			const step = Math.PI / 2 / perQuarter
-			const archR = (step * Rt) / 2 - 0.4
-			for (let k = 0; k < perQuarter * 4; k++) {
-				const a = (k + 0.5) * step
+			const archR = (arcStep * Rt) / 2 - 0.4
+			pillarAngles.forEach((a, k) => {
 				const [x, z] = polar(Rt - 0.45, a)
-				terrace.add(box(0.8, H - 0.3, 0.8, m.lime(0.6, H / 2), x, 0, z, a))
-				outsideColliders.push({ x, z, r: 0.6 })
+				terrace.add(box(0.8, y - base - 0.3, 0.8, m.lime(0.6, (y - base) / 2), x, base, z, a))
+				if (base === 0) outsideColliders.push({ x, z, r: 0.6 })
 				const arch = new THREE.Mesh(new THREE.TorusGeometry(archR, 0.4, 8, 24, Math.PI), m.lime(2, 0.3))
-				const [ax, az] = polar(Rt - 0.45, k * step)
-				arch.position.set(ax, H - 0.35 - archR, az)
-				arch.rotation.y = k * step
+				const [ax, az] = polar(Rt - 0.45, k * arcStep)
+				arch.position.set(ax, y - 0.35 - archR, az)
+				arch.rotation.y = k * arcStep
 				terrace.add(arch)
-			}
+			})
 			// a timber balustrade, planters, tables
 			const posts = Math.round((Math.PI * 2 * Rt) / 1.1)
 			for (let k = 0; k < posts; k++) {
 				const [x, z] = polar(Rt - 0.2, (k / posts) * Math.PI * 2)
-				terrace.add(box(0.1, 0.95, 0.1, m.timberFrame, x, H, z))
+				terrace.add(box(0.1, 0.95, 0.1, m.timberFrame, x, y, z))
 			}
 			const rail = new THREE.Mesh(new THREE.TorusGeometry(Rt - 0.2, 0.07, 6, 240), m.timberFrame)
 			rail.rotation.x = -Math.PI / 2
-			rail.position.y = H + 0.98
+			rail.position.y = y + 0.98
 			terrace.add(rail)
-			const rr = seeded(23)
+			const rr = seeded(seed)
 			const sets = Math.round((Math.PI * 2 * Rt) / 14)
+			// clear of the pillars of the storey above
+			const clear = (a: number) => pillarAngles.every((p) => Math.abs(adiff(a, p)) * Rt > 1.3)
 			for (let k = 0; k < sets; k++) {
-				const a = ((k + 0.5) / sets) * Math.PI * 2
-				const [tx, tz] = polar((rWall + Rt) / 2 + 0.3, a)
+				const a = ((k + 0.5 + (seed % 2) * 0.5) / sets) * Math.PI * 2
+				const [tx, tz] = polar((rInner + Rt) / 2 - 0.3, a)
 				const t = table(m, 1.4, 4)
-				t.position.set(tx, H, tz)
+				t.position.set(tx, y, tz)
 				t.rotation.y = a + Math.PI / 2
 				terrace.add(t)
 				for (const off of [-1, 1]) {
-					const [px, pz] = polar(Rt - 0.8, a + (off * 2.8) / Rt)
+					const pa = a + (off * 2.8) / Rt
+					if (!clear(pa)) continue
+					const [px, pz] = polar(Rt - 0.8, pa)
 					const pot = new THREE.Mesh(new THREE.CylinderGeometry(0.35, 0.28, 0.55, 14), m.lime(1, 0.4))
-					pot.position.set(px, H + 0.27, pz)
+					pot.position.set(px, y + 0.27, pz)
 					terrace.add(pot)
-					const pl = rr() < 0.5 ? shrub(700 + k * 2 + (off > 0 ? 1 : 0), 1.1).object : berryBush(760 + k * 2 + (off > 0 ? 1 : 0), 0.9).object
-					pl.position.set(px, H + 0.5, pz)
+					const pl = rr() < 0.5 ? shrub(seed * 30 + k * 2 + (off > 0 ? 1 : 0), 1.1).object : berryBush(seed * 33 + k * 2 + (off > 0 ? 1 : 0), 0.9).object
+					pl.position.set(px, y + 0.5, pz)
 					terrace.add(pl)
 				}
 			}
 			scene.add(bake(terrace))
 		}
+		terraceRing(H, 0, rWall - 0.4, 23)
+		if (twoFloors) terraceRing(H2, H, rWall2 - 0.4, 24)
 		await pause('Making the beds')
 
 		/* under the gallery: the kitchen, and the aquaponics */
@@ -1122,6 +1225,13 @@ export async function mountInterior(container: HTMLElement, kind: DomeKind, onPr
 			}
 		}
 
+		/* in the master dome, the rest of the ring is the village's workshops */
+		if (kind === 'master')
+			for (const w of workshops(kit, (rIn + rWall) / 2 + 0.5)) {
+				scene.add(bake(w.group))
+				colliders.push(...w.colliders)
+			}
+
 		/* the stair from the commons up to the gallery */
 		{
 			const steps = Math.ceil(H / 0.18)
@@ -1161,7 +1271,7 @@ export async function mountInterior(container: HTMLElement, kind: DomeKind, onPr
 		}
 		floorAt = (x, z, feet) => {
 			const rr = Math.hypot(x, z)
-			const options = [0]
+			const options = [bowlAt(rr)]
 			const s = inStair(x, z)
 			if (s !== null) options.push(s)
 			const s2 = inStair2(x, z)
@@ -1170,8 +1280,8 @@ export async function mountInterior(container: HTMLElement, kind: DomeKind, onPr
 			if (twoFloors && rr >= rIn - 0.05 && s2 === null) options.push(H2)
 			return Math.max(...options.filter((h) => h <= feet + 0.55))
 		}
-		// out through the glass onto the terrace, at the first floor
-		terraceAt = (rr, y) => Math.abs(y - H) < 0.3 && rr < Rt - 0.5
+		// out through the glass onto the terraces, at the first floor and the second
+		terraceAt = (rr, y) => (Math.abs(y - H) < 0.3 || (twoFloors && Math.abs(y - H2) < 0.3)) && rr < Rt - 0.5
 		blocked = (x, z, feet) => {
 			const rr = Math.hypot(x, z)
 			// on the galleries, the railings keep you from stepping off

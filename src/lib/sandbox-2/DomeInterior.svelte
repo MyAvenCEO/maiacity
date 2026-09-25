@@ -3,10 +3,12 @@
 	over the island. Drag or click to look, WASD or the arrows to walk, Shift to
 	hurry, Esc and the button to come back out.
 
-	While the dome is built, two timber doors stand closed over it with the step
-	being done written between them; when it is ready they swing open.
+	While the dome is built, the valley of domes from Day 03 fills the screen,
+	slowly drawing closer, with the step being done and a progress bar; when the
+	dome is ready it fades away.
 -->
 <script lang="ts">
+	import { base } from '$app/paths';
 	import { onDestroy, onMount } from 'svelte';
 	import { DOMES, type DomeKind, type InteriorHandle } from './interior/interior';
 
@@ -15,9 +17,11 @@
 	let stage: HTMLDivElement;
 	let handle: InteriorHandle | null = null;
 	let destroyed = false;
-	/** closed → opening (the doors swing) → open (gone) */
+	/** closed → opening (the picture fades) → open (gone) */
 	let doors = $state<'closed' | 'opening' | 'open'>('closed');
 	let step = $state('Opening the doors');
+	let done = $state(0);
+	const STEPS = 5;
 	const spec = $derived(DOMES[kind]);
 
 	onMount(() => {
@@ -28,11 +32,13 @@
 				const h = await mountInterior(stage, kind, (label) => {
 					if (label === 'ready') return;
 					step = label;
+					done += 1;
 				});
 				if (destroyed) return h.dispose();
 				handle = h;
+				done = STEPS;
 				doors = 'opening';
-				setTimeout(() => (doors = 'open'), 1300);
+				setTimeout(() => (doors = 'open'), 1100);
 			})
 		);
 	});
@@ -59,11 +65,14 @@
 
 	{#if doors !== 'open'}
 		<div class="loading" class:opening={doors === 'opening'} role="status" aria-live="polite">
-			<div class="door left"><span class="panel"></span><span class="panel"></span><span class="handle"></span></div>
-			<div class="door right"><span class="panel"></span><span class="panel"></span><span class="handle"></span></div>
+			<img src="{base}/day-03-what-a-dome-looks-like/xsN9RYb5ExZtsNYtHDNra_qkM0bNfT.jpg" alt="" />
+			<div class="shade"></div>
 			<div class="label">
+				<p class="eyebrow">Stepping inside</p>
 				<strong>{spec.label}</strong>
-				<span>{doors === 'opening' ? 'Welcome in' : `${step}…`}</span>
+				<span class="size">{spec.diameter} m across · {spec.people}</span>
+				<div class="progress"><span style:width="{Math.min(100, (done / STEPS) * 100)}%"></span></div>
+				<span class="step">{doors === 'opening' ? 'Welcome in' : `${step}…`}</span>
 			</div>
 		</div>
 	{/if}
@@ -122,92 +131,85 @@
 		white-space: nowrap;
 	}
 
-	/* the closed doors, and their swing */
+	/* the valley of domes, drawing slowly closer while the dome is built */
 	.loading {
 		position: absolute;
 		inset: 0;
 		z-index: 3;
-		perspective: 1600px;
-		background: linear-gradient(#cfe6f0, #f2efe7 70%);
-		transition: background 1.2s ease;
+		overflow: hidden;
+		background: #1f2a23;
+		transition: opacity 1s ease;
 	}
 	.loading.opening {
-		background: transparent;
+		opacity: 0;
 	}
-	.door {
+	.loading img {
 		position: absolute;
-		top: 0;
-		bottom: 0;
-		width: 50%;
-		display: grid;
-		grid-template-rows: 1fr 1fr;
-		gap: 3vh;
-		padding: 6vh 4vw;
-		box-sizing: border-box;
-		background: repeating-linear-gradient(90deg, #8a5a33 0 18px, #93613a 18px 36px, #7f5230 36px 54px);
-		box-shadow: inset 0 0 0 10px #6b4427;
-		transition: transform 1.2s cubic-bezier(0.6, 0, 0.3, 1);
+		inset: 0;
+		width: 100%;
+		height: 100%;
+		object-fit: cover;
+		transform: scale(1.08);
+		transform-origin: 45% 45%;
+		animation: closer 16s ease-out forwards;
 	}
-	.door.left {
-		left: 0;
-		transform-origin: left center;
+	@keyframes closer {
+		to {
+			transform: scale(1.22);
+		}
 	}
-	.door.right {
-		right: 0;
-		transform-origin: right center;
-	}
-	.opening .door.left {
-		transform: rotateY(-100deg);
-	}
-	.opening .door.right {
-		transform: rotateY(100deg);
-	}
-	.panel {
-		border-radius: 999px 999px 8px 8px;
-		background: linear-gradient(rgb(220 240 245 / 0.55), rgb(200 225 232 / 0.35));
-		box-shadow: inset 0 0 0 6px #6b4427;
-	}
-	.handle {
+	.shade {
 		position: absolute;
-		top: 50%;
-		width: 10px;
-		height: 70px;
-		border-radius: 6px;
-		background: #2e3236;
-		transform: translateY(-50%);
-	}
-	.left .handle {
-		right: 22px;
-	}
-	.right .handle {
-		left: 22px;
+		inset: 0;
+		background: linear-gradient(to top, rgb(20 26 22 / 0.85) 0%, rgb(20 26 22 / 0.35) 38%, transparent 62%);
 	}
 	.label {
 		position: absolute;
 		left: 50%;
-		top: 50%;
-		transform: translate(-50%, -50%);
+		bottom: calc(10vh + env(safe-area-inset-bottom, 0px));
+		transform: translateX(-50%);
+		width: min(34rem, calc(100vw - 3rem));
 		display: flex;
 		flex-direction: column;
 		align-items: center;
-		gap: 0.3rem;
-		padding: 1rem 1.6rem;
-		border-radius: 18px;
-		background: rgb(31 42 35 / 0.88);
+		gap: 0.45rem;
 		color: #f2efe7;
 		text-align: center;
-		transition: opacity 0.6s ease;
 	}
-	.opening .label {
-		opacity: 0;
+	.eyebrow {
+		margin: 0;
+		font-size: 0.75rem;
+		letter-spacing: 0.18em;
+		text-transform: uppercase;
+		color: #f0c49a;
 	}
 	.label strong {
 		font-family: var(--font-display, serif);
-		font-size: 1.4rem;
-		font-weight: 500;
+		font-size: clamp(2.2rem, 5vw, 3.4rem);
+		font-weight: 400;
+		line-height: 1.05;
+		text-shadow: 0 2px 20px rgb(0 0 0 / 0.35);
 	}
-	.label span {
-		font-size: 0.9rem;
-		color: #f0a47c;
+	.size {
+		font-size: 0.95rem;
+		color: rgb(242 239 231 / 0.85);
+	}
+	.progress {
+		width: 100%;
+		height: 3px;
+		margin-top: 1rem;
+		border-radius: 3px;
+		background: rgb(242 239 231 / 0.25);
+		overflow: hidden;
+	}
+	.progress span {
+		display: block;
+		height: 100%;
+		background: #f0a47c;
+		transition: width 0.6s ease;
+	}
+	.step {
+		font-size: 0.85rem;
+		color: #f0c49a;
 	}
 </style>

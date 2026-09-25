@@ -25,9 +25,9 @@
 			status: 'Open',
 			href: `${base}/games/sandbox-3`,
 			blurb:
-				'Inside the domes. Choose the glamping dome, a dome home, a large dome or the master dome, and walk through it: the food forest downstairs, the private rooms upstairs facing out.',
+				'Inside the domes. Choose the glamping dome, a medium dome, a large dome or the master dome, and walk through it: the food forest downstairs, the private rooms upstairs facing out.',
 			cover: `${base}/games/sandbox-3.jpg`,
-			coverAlt: 'Looking down from the gallery of a dome home onto its food forest.'
+			coverAlt: 'Looking down from the gallery of a medium dome onto its food forest.'
 		}
 	];
 </script>

@@ -10,8 +10,8 @@
 	const DOMES_IN_ORDER: { kind: DomeKind; image: string; text: string }[] = [
 		{ kind: 'glamp', image: 'glamping-room', text: 'The first homes after the tents: a home for four in zones round a garden, and a door onto a deck and the forest outside.' },
 		{ kind: 'home', image: 'home-from-the-gallery', text: 'The first permanent ring. A shared food forest on the ground floor, private rooms on the gallery facing out, a terrace on a stone arcade, four doors.' },
-		{ kind: 'large', image: 'large-food-forest', text: 'The second ring, nearly twice the size: two floors of private rooms, a deeper forest, a stream running to a pond.' },
-		{ kind: 'master', image: 'master-waterfall', text: 'The centre of the village. The shared hall, and a waterfall falling from the crown into a stone pool.' }
+		{ kind: 'large', image: 'large-terraces', text: 'The second ring, nearly twice the size: two floors of private rooms, a deeper forest, a stream running to a pond.' },
+		{ kind: 'master', image: 'master-stage', text: 'The centre of the village. A round stage sunk into the floor, tiers of stone all round it, and the workshops, studios and kitchens of the village round the edge.' }
 	];
 
 	let walking = $state<DomeKind | null>(null);
@@ -19,7 +19,7 @@
 
 <svelte:head>
 	<title>avenCITY Sandbox 3 · Inside the domes · maiaCITY</title>
-	<meta name="description" content="Walk inside the four domes of a maiaCITY village: the glamping dome, the dome home, the large dome and the master dome." />
+	<meta name="description" content="Walk inside the four domes of a maiaCITY village: the glamping dome, the medium dome, the large dome and the master dome." />
 </svelte:head>
 
 <div class="page">
