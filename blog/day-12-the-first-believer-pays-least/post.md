@@ -106,4 +106,4 @@ On the live planet no coop has sold its first mind yet. The first believer there
 
 [Open avenCITY Sandbox 2 →](/games/sandbox-2/)
 
-[Read the manifesto →](/)
+[Next: invited home →](/blog/day-13-invited-home/)
