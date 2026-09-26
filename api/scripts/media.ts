@@ -185,9 +185,31 @@ async function sync() {
   await call("/api/media/tags", { method: "PUT", body: JSON.stringify({ tags: Object.fromEntries([...tags].map(([c, t]) => [c, [...t]])) }) });
   say(`tagged ${tags.size} files`);
 
+  // videos a post already streams keep their Stream copy (its `video:` guid for its `videoLocal:` file)
+  const byPath = new Map(files.map((f) => [f.path, f.cid]));
+  for (const post of await readdir(join(ROOT, "blog"), { withFileTypes: true })) {
+    if (!post.isDirectory()) continue;
+    const md = await readFile(join(ROOT, "blog", post.name, "post.md"), "utf8").catch(() => "");
+    const guid = /^video:\s*([0-9a-f-]{36})\s*$/m.exec(md)?.[1];
+    const cid = byPath.get(/^videoLocal:\s*(\S+)\s*$/m.exec(md)?.[1] ?? "");
+    const known = after.find((m) => m.cid === cid);
+    if (guid && cid && known?.stream_guid !== guid) {
+      await call("/api/media/streamed", { method: "POST", body: JSON.stringify({ cid, stream_guid: guid }) });
+      say(`${post.name}: its film stays the Stream video ${guid}`);
+    }
+  }
+
   say("making the public copies on Bunny…");
-  const d = await call<{ done: number; failed: string[] }>("/api/media/distribute", { method: "POST" }).catch((e) => ({ done: 0, failed: [], error: (e as Error).message }) as never);
-  say((d as { error?: string }).error ? `  not now: ${(d as { error?: string }).error}` : `  ${d.done} new copies${d.failed.length ? `, ${d.failed.length} failed (sync again)` : ""}`);
+  try {
+    let waiting = Infinity;
+    for (let i = 0; i < 180 && waiting > 0; i++) {
+      waiting = (await call<{ waiting: number }>("/api/media/distribute", { method: "POST" })).waiting;
+      if (waiting) process.stdout.write(`\r  ${waiting} still to copy   `), await Bun.sleep(5000);
+    }
+    say(waiting ? "\n  some copies are still being made — sync again later" : "\r  every file has its public copy   ");
+  } catch (e) {
+    say(`  not now: ${(e as Error).message}`);
+  }
 
   const manifest = await (await fetch(`${API}/api/media/manifest`)).json();
   await writeFile(MANIFEST, JSON.stringify(manifest, null, "\t") + "\n");

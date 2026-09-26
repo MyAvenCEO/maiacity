@@ -16,7 +16,7 @@ import { ledgerView } from "./ledger/view";
 import { assignRole, can, capabilities, createRole, deleteRole, initRoles, listRoles, RoleError, setRoleCaps } from "./acl";
 import { CAPABILITIES } from "./caps";
 import { addIdea, deleteIdea, IdeaError, listIdeas, updateIdea } from "./ideas";
-import { finishUpload, have, listMedia, MediaError, mediaInfo, namePath, publicManifest, putPart, readMedia, retag, startUpload } from "./media";
+import { finishUpload, have, listMedia, markDistributed, MediaError, mediaInfo, namePath, publicManifest, putPart, readMedia, retag, startUpload, undistributed } from "./media";
 import { approveDevice, deviceInfo, KeyError, keyHolder, redeemDevice, revokeKey, startDevice } from "./keys";
 import { canDistribute, distributePending } from "./bunny";
 import { format, gameClock, calendar, parse } from "../../game/time";
@@ -125,6 +125,8 @@ await initRoles();
 
 const server = Bun.serve({
   port: PORT,
+  // finishing a large upload (its CID is computed from every byte) takes longer than Bun's default 10 s
+  idleTimeout: 255,
   routes: {
     // Health, for the container and for the deploy job.
     "/api/health": (req) => json(req, { ok: true }),
@@ -582,14 +584,28 @@ const server = Bun.serve({
         }
       },
     },
-    // Make every missing public copy now, and say how it went (the terminal waits for it).
+    // Start making every missing public copy; the answer says how many are still waiting (the terminal asks again).
     "/api/media/distribute": {
       OPTIONS: preflight,
       POST: async (req) => {
         const me = await allowed(req, "media:admin");
         if (me instanceof Response) return me;
         if (!canDistribute()) return json(req, { error: "This server has no BUNNY_API_KEY." }, { status: 503 });
-        return json(req, await distributePending());
+        void distributePending();
+        return json(req, { waiting: (await undistributed()).length });
+      },
+    },
+    // A video a post already streams: record its Stream copy, so it is not uploaded to Stream a second time.
+    "/api/media/streamed": {
+      OPTIONS: preflight,
+      POST: async (req) => {
+        const me = await allowed(req, "media:admin");
+        if (me instanceof Response) return me;
+        const body = await readJson(req);
+        const cid = String(body?.cid ?? ""), guid = String(body?.stream_guid ?? "");
+        if (!/^[0-9a-f-]{36}$/.test(guid) || !(await have([cid])).length) return json(req, { error: "Give a CID the library holds and a Stream video guid." }, { status: 400 });
+        await markDistributed(cid, { stream_guid: guid });
+        return json(req, { ok: true });
       },
     },
 

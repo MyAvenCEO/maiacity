@@ -1,1 +1,994 @@
-{}
+{
+	"/authors/andrew.jpg": {
+		"cid": "bafkreib2t7zozoxhelmzzhc44ef4bwhxfvmfq34i7wenigl7tjdzc4adia",
+		"url": "/media/bafkreib2t7zozoxhelmzzhc44ef4bwhxfvmfq34i7wenigl7tjdzc4adia.jpg"
+	},
+	"/authors/arte.jpg": {
+		"cid": "bafkreihaulfpjkrvlwfs2ej4txaesw76qll3445flmsfuqgzbucsfztcga",
+		"url": "/media/bafkreihaulfpjkrvlwfs2ej4txaesw76qll3445flmsfuqgzbucsfztcga.jpg"
+	},
+	"/authors/celastrina-calea.jpg": {
+		"cid": "bafkreian2n7vmwzqd3pzlry7lqbip72xztx6ykzkj7ervyk7ftvdodhd54",
+		"url": "/media/bafkreian2n7vmwzqd3pzlry7lqbip72xztx6ykzkj7ervyk7ftvdodhd54.jpg"
+	},
+	"/authors/chris-williamson.jpg": {
+		"cid": "bafkreie5e7obpxnssrasmdxn2iyvlxaf2cde2vo37rfl5iag7qxckfzrf4",
+		"url": "/media/bafkreie5e7obpxnssrasmdxn2iyvlxaf2cde2vo37rfl5iag7qxckfzrf4.jpg"
+	},
+	"/authors/dw-planet-a.jpg": {
+		"cid": "bafkreifrd6ygmwy7rgji6qmlhbjlqo2y2b6z7pvb6bzjzdaxsiwgb5bxaa",
+		"url": "/media/bafkreifrd6ygmwy7rgji6qmlhbjlqo2y2b6z7pvb6bzjzdaxsiwgb5bxaa.jpg"
+	},
+	"/authors/elias-ford.jpg": {
+		"cid": "bafkreiapfrzxtppcrcbgg6zpjesr77ri2kvva3mxknrafg63iy3gq6wfiu",
+		"url": "/media/bafkreiapfrzxtppcrcbgg6zpjesr77ri2kvva3mxknrafg63iy3gq6wfiu.jpg"
+	},
+	"/authors/homestead-roots.jpg": {
+		"cid": "bafkreierqcaksl3imnrhy5zbf5hl4zumoa3hex7d7wx7cyo2oe2xhgpiyq",
+		"url": "/media/bafkreierqcaksl3imnrhy5zbf5hl4zumoa3hex7d7wx7cyo2oe2xhgpiyq.jpg"
+	},
+	"/authors/johnny-harris.jpg": {
+		"cid": "bafkreihpemgjjezstgfg5otljprruwtpcrrma2p6tnztv3wyhirhxfvw7q",
+		"url": "/media/bafkreihpemgjjezstgfg5otljprruwtpcrrma2p6tnztv3wyhirhxfvw7q.jpg"
+	},
+	"/authors/leave-curious.jpg": {
+		"cid": "bafkreidvee2cpo6lddm5uzqdcwol2cmlmdus7d4ylgylfntvz5cps3txbq",
+		"url": "/media/bafkreidvee2cpo6lddm5uzqdcwol2cmlmdus7d4ylgylfntvz5cps3txbq.jpg"
+	},
+	"/authors/shaun-hines.jpg": {
+		"cid": "bafkreidodruqvnaoopfdtyywpuc5rze2f5xdffuh2x3ferrfyua22djo6q",
+		"url": "/media/bafkreidodruqvnaoopfdtyywpuc5rze2f5xdffuh2x3ferrfyua22djo6q.jpg"
+	},
+	"/authors/shaun-overton.jpg": {
+		"cid": "bafkreiacr7kfqa3tr5a5fwjx666nsreldllms4mzvefzoelyuuiawtst5e",
+		"url": "/media/bafkreiacr7kfqa3tr5a5fwjx666nsreldllms4mzvefzoelyuuiawtst5e.jpg"
+	},
+	"/authors/the-ash-files.jpg": {
+		"cid": "bafkreicma7yerh765koebsgk55pgulwtsdjwj5l7dmd5w4ayyvwy7jhm3y",
+		"url": "/media/bafkreicma7yerh765koebsgk55pgulwtsdjwj5l7dmd5w4ayyvwy7jhm3y.jpg"
+	},
+	"/day-01-the-decision/banner.png": {
+		"cid": "bafybeigbh6cqekv5kj6lg7wqp7bgeg7ssvpblgvouldwly7dp6d3664wfe",
+		"url": "/media/bafybeigbh6cqekv5kj6lg7wqp7bgeg7ssvpblgvouldwly7dp6d3664wfe.png"
+	},
+	"/day-01-the-decision/cover.jpg": {
+		"cid": "bafybeifeluwlsey3m6cto3th3ak22lb2g7cum627fwp6ivvu4mi6nk4voi",
+		"url": "/media/bafybeifeluwlsey3m6cto3th3ak22lb2g7cum627fwp6ivvu4mi6nk4voi.jpg"
+	},
+	"/day-02-the-first-brick/6_3jR_-wbqUweA7iZy396_3nsjI3Wg.jpg": {
+		"cid": "bafybeidlxbk75toyq3pg574ciqzfaf2ep3kf44ogzseklmtmuwi5s3jpfm",
+		"url": "/media/bafybeidlxbk75toyq3pg574ciqzfaf2ep3kf44ogzseklmtmuwi5s3jpfm.jpg"
+	},
+	"/day-02-the-first-brick/6dIScRIYuNkYoDzenoV8J_Wt3H5dUw.jpg": {
+		"cid": "bafybeickgal3i43zycctaue4rtc2lt5ec2u2ix4pugb72gqseqojx6k7g4",
+		"url": "/media/bafybeickgal3i43zycctaue4rtc2lt5ec2u2ix4pugb72gqseqojx6k7g4.jpg"
+	},
+	"/day-02-the-first-brick/Lu7L8HWPvs_bMctUIgqOC_csCmDl8j.jpg": {
+		"cid": "bafybeibrdwd2fqbjhltxvpbohmzxphwr4qfm5u6orbbvbbikkcgw3a5frm",
+		"url": "/media/bafybeibrdwd2fqbjhltxvpbohmzxphwr4qfm5u6orbbvbbikkcgw3a5frm.jpg"
+	},
+	"/day-02-the-first-brick/NKVIRh7Iu3I3oLE2EHJwZ_NrAiJlj7.jpg": {
+		"cid": "bafybeic75lwtffacroif25aqhjp3ez4nkfjfo72qz65ix4hfegpom4tyla",
+		"url": "/media/bafybeic75lwtffacroif25aqhjp3ez4nkfjfo72qz65ix4hfegpom4tyla.jpg"
+	},
+	"/day-02-the-first-brick/PwmKKG7I6Wi3f7TRlKKmV_DgxWHxUM.jpg": {
+		"cid": "bafybeiajrbfnkds6cpwu26c3ri7llswevkhtidu4jcqwdbwyv7f57jtkq4",
+		"url": "/media/bafybeiajrbfnkds6cpwu26c3ri7llswevkhtidu4jcqwdbwyv7f57jtkq4.jpg"
+	},
+	"/day-02-the-first-brick/alp_tzIhSZCTOCiV6o5nO_g9jR0km3.jpg": {
+		"cid": "bafybeieiwbf2i2f42sjb4q7t523wwnmlu5zhb74jkwjhvjhhxoaimaucmm",
+		"url": "/media/bafybeieiwbf2i2f42sjb4q7t523wwnmlu5zhb74jkwjhvjhhxoaimaucmm.jpg"
+	},
+	"/day-02-the-first-brick/hzUX4j7ZpU9VsRCjaYuMO_WG67YZVO.jpg": {
+		"cid": "bafybeiekl5cqpeh2ljpbaimu5czsmk3svu6inl74mhtnfn5rh67fyfk4ia",
+		"url": "/media/bafybeiekl5cqpeh2ljpbaimu5czsmk3svu6inl74mhtnfn5rh67fyfk4ia.jpg"
+	},
+	"/day-02-the-first-brick/maia-village.jpg": {
+		"cid": "bafybeibf7t7f3hetseqmmkrpfuqngmjwtu6bxmweboays7dzsn36bkwstm",
+		"url": "/media/bafybeibf7t7f3hetseqmmkrpfuqngmjwtu6bxmweboays7dzsn36bkwstm.jpg"
+	},
+	"/day-02-the-first-brick/nQwFJ5NkfH1DL1fVV35PN_LOahOJDP.jpg": {
+		"cid": "bafybeibqrlvenmbhvnkjv7wykckcni2nne2rpdtozwjzd4g4sjx3gawa5u",
+		"url": "/media/bafybeibqrlvenmbhvnkjv7wykckcni2nne2rpdtozwjzd4g4sjx3gawa5u.jpg"
+	},
+	"/day-02-the-first-brick/sYtFCtO9iKSBQ8TrfnJbw_UUCj632a.jpg": {
+		"cid": "bafybeiconqxhsc3xentgl6ertqkwxxug2vlijhsl7i4ck3u5iiyhvgg7qy",
+		"url": "/media/bafybeiconqxhsc3xentgl6ertqkwxxug2vlijhsl7i4ck3u5iiyhvgg7qy.jpg"
+	},
+	"/day-03-what-a-dome-looks-like/7Wz4fBD8lsbefrDfSsm0q_gNeZVF2m.jpg": {
+		"cid": "bafybeigqlxfthpwklvszhn7l5toqzkodpgqyuvcccbukl4vw3x2ajqvbvq",
+		"url": "/media/bafybeigqlxfthpwklvszhn7l5toqzkodpgqyuvcccbukl4vw3x2ajqvbvq.jpg"
+	},
+	"/day-03-what-a-dome-looks-like/CFMETfOTeKpV2sH6wsZT4_N7LCrDWp.jpg": {
+		"cid": "bafybeih7x73qielq3zswbfkfclo5hrlx5cuvea56qrrdpjwsq72zuyxehq",
+		"url": "/media/bafybeih7x73qielq3zswbfkfclo5hrlx5cuvea56qrrdpjwsq72zuyxehq.jpg"
+	},
+	"/day-03-what-a-dome-looks-like/JVxhHZgPZ8roIr9pwFwq8_XuQkLkxI.jpg": {
+		"cid": "bafybeiaos26l67jhejmtcwxauoztww75ixq3xhkfvyd6szrvptyt45cpyi",
+		"url": "/media/bafybeiaos26l67jhejmtcwxauoztww75ixq3xhkfvyd6szrvptyt45cpyi.jpg"
+	},
+	"/day-03-what-a-dome-looks-like/SqdC2j4cdisCvDXNNjSP9_dgzM1r9U.jpg": {
+		"cid": "bafybeifvuhsrz2p5pz4nhkm44ydcmmr3zgnpzte2elgta2g57grxbwn7gq",
+		"url": "/media/bafybeifvuhsrz2p5pz4nhkm44ydcmmr3zgnpzte2elgta2g57grxbwn7gq.jpg"
+	},
+	"/day-03-what-a-dome-looks-like/W2amjTRdcn8Qk6_mo8EvR_4NjXWTb4.jpg": {
+		"cid": "bafybeih7gm52ssvroddwaeqabet7ckxsq5g6wkvjpwhkmah7g37kjcfevi",
+		"url": "/media/bafybeih7gm52ssvroddwaeqabet7ckxsq5g6wkvjpwhkmah7g37kjcfevi.jpg"
+	},
+	"/day-03-what-a-dome-looks-like/byIB5gCdrUZ48uGJHaEWt_I1ZgWZ4f.jpg": {
+		"cid": "bafybeihikj5fn2ypgl7wmpts67yiojrccng2ihegovcpasdtz3cqu4rrm4",
+		"url": "/media/bafybeihikj5fn2ypgl7wmpts67yiojrccng2ihegovcpasdtz3cqu4rrm4.jpg"
+	},
+	"/day-03-what-a-dome-looks-like/lNrmpq-PNt9IPXwAzJWqx_aH4SqMKK.jpg": {
+		"cid": "bafybeickyfggtd47zzsomah3bi6n2szhqoyeieq6rpoidhxwurjt7glghe",
+		"url": "/media/bafybeickyfggtd47zzsomah3bi6n2szhqoyeieq6rpoidhxwurjt7glghe.jpg"
+	},
+	"/day-03-what-a-dome-looks-like/lplP754hucYk1GP-cdia5_XvA2Z8B6.jpg": {
+		"cid": "bafybeidmmdlzowqrp6j23pc532jkdde6am5ycounlv7q3u3eptg7gekesa",
+		"url": "/media/bafybeidmmdlzowqrp6j23pc532jkdde6am5ycounlv7q3u3eptg7gekesa.jpg"
+	},
+	"/day-03-what-a-dome-looks-like/pSGwwwR6k_PMUnCsN_oVW_Qx0n05t4.jpg": {
+		"cid": "bafybeifo4ae7yd74ihuk5mmhhflglnyacfvpeczkrxw5l7nuu47kkje64a",
+		"url": "/media/bafybeifo4ae7yd74ihuk5mmhhflglnyacfvpeczkrxw5l7nuu47kkje64a.jpg"
+	},
+	"/day-03-what-a-dome-looks-like/xsN9RYb5ExZtsNYtHDNra_qkM0bNfT.jpg": {
+		"cid": "bafybeiecc63xwsuxnj27a2xgyddi5wxoji6ksjgrtdhboou6agyag2fata",
+		"url": "/media/bafybeiecc63xwsuxnj27a2xgyddi5wxoji6ksjgrtdhboou6agyag2fata.jpg"
+	},
+	"/day-05-the-first-settlement/dome-cell-neighbourhood.jpg": {
+		"cid": "bafkreidb6dx5ija5yeewxvlliz7nvhqurcrxwk4uozka476of6b26zocxa",
+		"url": "/media/bafkreidb6dx5ija5yeewxvlliz7nvhqurcrxwk4uozka476of6b26zocxa.jpg"
+	},
+	"/day-05-the-first-settlement/f_H-7YDGzpA3Po-2O3XPY_WYkrZ7CF.jpg": {
+		"cid": "bafybeih4yyf4chicgq55chevarfzm63n2vjlwtaew2tgkabuikcgvpc2a4",
+		"url": "/media/bafybeih4yyf4chicgq55chevarfzm63n2vjlwtaew2tgkabuikcgvpc2a4.jpg"
+	},
+	"/day-05-the-first-settlement/factory-bamboo.jpg": {
+		"cid": "bafkreihkylj5jhpppwtamg3rissrfi563t3ynpsddg4tzy7s5vmma75qui",
+		"url": "/media/bafkreihkylj5jhpppwtamg3rissrfi563t3ynpsddg4tzy7s5vmma75qui.jpg"
+	},
+	"/day-05-the-first-settlement/factory-dome-1.png": {
+		"cid": "bafybeic7j2mtxnimme6qlil6kdvqa3x2cy5wm54zaxu663mimekssfrqa4",
+		"url": "/media/bafybeic7j2mtxnimme6qlil6kdvqa3x2cy5wm54zaxu663mimekssfrqa4.png"
+	},
+	"/day-05-the-first-settlement/factory-dome-2.png": {
+		"cid": "bafybeiau34pecjiweugoyefuv7k3uhcvqqsswohyzuycz3eedsh43e2qau",
+		"url": "/media/bafybeiau34pecjiweugoyefuv7k3uhcvqqsswohyzuycz3eedsh43e2qau.png"
+	},
+	"/day-05-the-first-settlement/factory-dome-3.png": {
+		"cid": "bafybeica4p4vcxvpptmioiuyvadwr2xy27piotbz5pq52wvk4qrn5orqmi",
+		"url": "/media/bafybeica4p4vcxvpptmioiuyvadwr2xy27piotbz5pq52wvk4qrn5orqmi.png"
+	},
+	"/day-05-the-first-settlement/factory-dome-4.png": {
+		"cid": "bafybeic4jm3kafm4dmrytgqwqfhvgapogn7i6n25uezgkt2iczqmh3qcdq",
+		"url": "/media/bafybeic4jm3kafm4dmrytgqwqfhvgapogn7i6n25uezgkt2iczqmh3qcdq.png"
+	},
+	"/day-05-the-first-settlement/factory-hemp.jpg": {
+		"cid": "bafkreiffwcca62bwfyu2o36swlm6zygrylqwsq3ptplqjuj2jblseb7fwe",
+		"url": "/media/bafkreiffwcca62bwfyu2o36swlm6zygrylqwsq3ptplqjuj2jblseb7fwe.jpg"
+	},
+	"/day-05-the-first-settlement/factory-lifetrac.jpg": {
+		"cid": "bafkreial4ohpafkbelyghie4tp6vpiukdxb2oqhcy6dnutv3xmsmpz5yum",
+		"url": "/media/bafkreial4ohpafkbelyghie4tp6vpiukdxb2oqhcy6dnutv3xmsmpz5yum.jpg"
+	},
+	"/day-05-the-first-settlement/factory-power-cube.jpg": {
+		"cid": "bafkreibvu6aexsiifvzgrwkygmimzmluhn5tp4kkqnblmlh7hlwoicygsa",
+		"url": "/media/bafkreibvu6aexsiifvzgrwkygmimzmluhn5tp4kkqnblmlh7hlwoicygsa.jpg"
+	},
+	"/day-05-the-first-settlement/factory-solar.jpg": {
+		"cid": "bafkreidbu27uyyxn4dvid255ghdqlk6dui2r2v5foe4cucaiir2rcljhqa",
+		"url": "/media/bafkreidbu27uyyxn4dvid255ghdqlk6dui2r2v5foe4cucaiir2rcljhqa.jpg"
+	},
+	"/day-05-the-first-settlement/level-1.png": {
+		"cid": "bafybeichrshko3dbstqpronxlxemh7aswi3ska4o6bg3xindz3wfzhoq7a",
+		"url": "/media/bafybeichrshko3dbstqpronxlxemh7aswi3ska4o6bg3xindz3wfzhoq7a.png"
+	},
+	"/day-05-the-first-settlement/level-2.png": {
+		"cid": "bafybeig2qkd5hrqd4hsbhec77l2dbfdvimt7fkobxhssiraw6n2r3dcvv4",
+		"url": "/media/bafybeig2qkd5hrqd4hsbhec77l2dbfdvimt7fkobxhssiraw6n2r3dcvv4.png"
+	},
+	"/day-05-the-first-settlement/level-3.png": {
+		"cid": "bafybeigwpyluiczqvgo7ivsptwhy7r3my5uhphbhczv5npim5qxizmz7cq",
+		"url": "/media/bafybeigwpyluiczqvgo7ivsptwhy7r3my5uhphbhczv5npim5qxizmz7cq.png"
+	},
+	"/day-05-the-first-settlement/level-4.png": {
+		"cid": "bafybeigmwypglzwafzxgzq4i6rxdadxn2oixppk6nihgdwt672wh3kt4pm",
+		"url": "/media/bafybeigmwypglzwafzxgzq4i6rxdadxn2oixppk6nihgdwt672wh3kt4pm.png"
+	},
+	"/day-05-the-first-settlement/level-5.png": {
+		"cid": "bafybeicrqkota27vkup4ejfe2uc6wh2ilf6u3qte6o24xuxcx57srqdm7u",
+		"url": "/media/bafybeicrqkota27vkup4ejfe2uc6wh2ilf6u3qte6o24xuxcx57srqdm7u.png"
+	},
+	"/day-05-the-first-settlement/overview-1.png": {
+		"cid": "bafybeifzf6h3ppfcf5m4ufyykhckkpgjrotop7rvhdz6xzlew6tq3ljuyu",
+		"url": "/media/bafybeifzf6h3ppfcf5m4ufyykhckkpgjrotop7rvhdz6xzlew6tq3ljuyu.png"
+	},
+	"/day-05-the-first-settlement/overview-2.png": {
+		"cid": "bafybeigjz5yznvsi6q6ubxyx565jjt4x5bqhoohlw3xbyjnetpwzg6nmvm",
+		"url": "/media/bafybeigjz5yznvsi6q6ubxyx565jjt4x5bqhoohlw3xbyjnetpwzg6nmvm.png"
+	},
+	"/day-05-the-first-settlement/z6GzRVgA4xYiPWADzbORj_SvHTgurF.jpg": {
+		"cid": "bafkreifiphjalmso2w77nls62tvuuiqgb5h6n336cmic7hztelyyvrut7q",
+		"url": "/media/bafkreifiphjalmso2w77nls62tvuuiqgb5h6n336cmic7hztelyyvrut7q.jpg"
+	},
+	"/day-06-the-food-forest/forest-canopy.jpg": {
+		"cid": "bafybeib6dxd3hpuoutwvltjn4v645ud3mttaffeu7zhu2ndl4tgim2nigi",
+		"url": "/media/bafybeib6dxd3hpuoutwvltjn4v645ud3mttaffeu7zhu2ndl4tgim2nigi.jpg"
+	},
+	"/day-06-the-food-forest/forest-coop.jpg": {
+		"cid": "bafybeicainjst73mfljxz6ujhmwbkiza2dns3hzfkvhdsyhabwj2psx2dy",
+		"url": "/media/bafybeicainjst73mfljxz6ujhmwbkiza2dns3hzfkvhdsyhabwj2psx2dy.jpg"
+	},
+	"/day-06-the-food-forest/forest-evening-walk.jpg": {
+		"cid": "bafybeid2cykgdxwarojhjpfljswivmdlcdp3uglynacievducpexvqxiri",
+		"url": "/media/bafybeid2cykgdxwarojhjpfljswivmdlcdp3uglynacievducpexvqxiri.jpg"
+	},
+	"/day-06-the-food-forest/forest-fire.jpg": {
+		"cid": "bafybeicgl23wu7j5mxsd5uwxhm4dbqkojwnpyrvlbozucxptp3kng5urr4",
+		"url": "/media/bafybeicgl23wu7j5mxsd5uwxhm4dbqkojwnpyrvlbozucxptp3kng5urr4.jpg"
+	},
+	"/day-06-the-food-forest/forest-golden.jpg": {
+		"cid": "bafybeicf2vqsvhjm4bahluzmqiztw2fmrm72bv4agbqsunebwk5svd2l3y",
+		"url": "/media/bafybeicf2vqsvhjm4bahluzmqiztw2fmrm72bv4agbqsunebwk5svd2l3y.jpg"
+	},
+	"/day-06-the-food-forest/forest-pond.jpg": {
+		"cid": "bafybeicuuk4r2mfszu4hcbusbhiopha7evskbwonwaztplg6lidx3gqnce",
+		"url": "/media/bafybeicuuk4r2mfszu4hcbusbhiopha7evskbwonwaztplg6lidx3gqnce.jpg"
+	},
+	"/day-06-the-food-forest/forest-swing.jpg": {
+		"cid": "bafybeihwqjr7liunzza5vfnc4j3sesuz4id7bwkpglrmzdbaylvodpf6cy",
+		"url": "/media/bafybeihwqjr7liunzza5vfnc4j3sesuz4id7bwkpglrmzdbaylvodpf6cy.jpg"
+	},
+	"/day-06-the-food-forest/forest-walks.jpg": {
+		"cid": "bafybeigedmw6dsle4uk5iguqhsfjn3zqwtd6yh65m4pxq33bcdgxx5x6bm",
+		"url": "/media/bafybeigedmw6dsle4uk5iguqhsfjn3zqwtd6yh65m4pxq33bcdgxx5x6bm.jpg"
+	},
+	"/day-08-avenmaia/4R_wS4Iy3MJS1t-MiaDJE_Ac5am0m3.jpg": {
+		"cid": "bafybeievccju2l3o5iojkjyckfk2yuddv4d4a6i3p3fv5iiqn5fgav6iim",
+		"url": "/media/bafybeievccju2l3o5iojkjyckfk2yuddv4d4a6i3p3fv5iiqn5fgav6iim.jpg"
+	},
+	"/day-08-avenmaia/AvenMaia.jpg": {
+		"cid": "bafybeiem4dwsswaqvl5g2zz3m47tph5idqtalkmxvddw7bzv5pcaitrsom",
+		"url": "/media/bafybeiem4dwsswaqvl5g2zz3m47tph5idqtalkmxvddw7bzv5pcaitrsom.jpg"
+	},
+	"/day-08-avenmaia/R4t60oBqyYJegXF5x0Hiv_mQfvDpEm.jpg": {
+		"cid": "bafybeid3pxubimt3z3ggiso2zjkcuueowyac4mrqouf6fe7tjdizrkawlu",
+		"url": "/media/bafybeid3pxubimt3z3ggiso2zjkcuueowyac4mrqouf6fe7tjdizrkawlu.jpg"
+	},
+	"/day-08-avenmaia/RzfxdTccoGNzyw8Ntwyw9_KxWeEKbJ.jpg": {
+		"cid": "bafybeifqv4ggxeyhol4ur4ofths34p6yexhoefamyp55kdevmucy4o35dm",
+		"url": "/media/bafybeifqv4ggxeyhol4ur4ofths34p6yexhoefamyp55kdevmucy4o35dm.jpg"
+	},
+	"/day-08-avenmaia/jfw8_bLrbTgGfzoAJ0G1M_2tJJpuNy.jpg": {
+		"cid": "bafybeiee3z5223ur53uaz3lclm5adx62vdzwrccukbfynfyz7zxygq5jg4",
+		"url": "/media/bafybeiee3z5223ur53uaz3lclm5adx62vdzwrccukbfynfyz7zxygq5jg4.jpg"
+	},
+	"/day-08-avenmaia/kdNOd8GVpIwzUHKBT8T4-_CMV3EzuM.jpg": {
+		"cid": "bafybeiedfeua6cy7nvhvlovk3hjzeec7gzhvsktq7ljgtxp46yrug2sh24",
+		"url": "/media/bafybeiedfeua6cy7nvhvlovk3hjzeec7gzhvsktq7ljgtxp46yrug2sh24.jpg"
+	},
+	"/day-08-avenmaia/maia.jpg": {
+		"cid": "bafybeifuvjjq3qqxrysdykiczmaf7kodfkydf4c3hygfnfyouhk5jie2ju",
+		"url": "/media/bafybeifuvjjq3qqxrysdykiczmaf7kodfkydf4c3hygfnfyouhk5jie2ju.jpg"
+	},
+	"/day-08-avenmaia/xQynnN_TAMJEnQResy0u4_6jjbRbcb.jpg": {
+		"cid": "bafybeibsue5jkgjccnwzftrjcg4wdwdnsx2ggrooslctxwecfvcu7pmy3u",
+		"url": "/media/bafybeibsue5jkgjccnwzftrjcg4wdwdnsx2ggrooslctxwecfvcu7pmy3u.jpg"
+	},
+	"/day-10-a-heart-every-two-minutes/first-login.jpg": {
+		"cid": "bafkreifxski5dgh52krenelzm333twvhcbdhuct3kcm4l3q47cgm5ca5he",
+		"url": "/media/bafkreifxski5dgh52krenelzm333twvhcbdhuct3kcm4l3q47cgm5ca5he.jpg"
+	},
+	"/day-10-a-heart-every-two-minutes/first-mint.jpg": {
+		"cid": "bafkreiatcvryc2f3uk7kiu6njxafosplbrvaqsywlyuen4tvq24lafotvq",
+		"url": "/media/bafkreiatcvryc2f3uk7kiu6njxafosplbrvaqsywlyuen4tvq24lafotvq.jpg"
+	},
+	"/day-10-a-heart-every-two-minutes/mint-waiting.jpg": {
+		"cid": "bafkreiac3rz4e5guc7a5hm22sddyfvsskak6a5sst57i4subv2uawmwg7e",
+		"url": "/media/bafkreiac3rz4e5guc7a5hm22sddyfvsskak6a5sst57i4subv2uawmwg7e.jpg"
+	},
+	"/day-11-the-earth-in-cards/bakery-founded.jpg": {
+		"cid": "bafybeihmgp5mbjvcxdcrrf7lwwvwtfyyrz76qlkxzgmltevl6ecyf7pig4",
+		"url": "/media/bafybeihmgp5mbjvcxdcrrf7lwwvwtfyyrz76qlkxzgmltevl6ecyf7pig4.jpg"
+	},
+	"/day-11-the-earth-in-cards/choosing-a-card.jpg": {
+		"cid": "bafybeidl6xvzeon2biogdc5dwzg3jcvdoa6lriqehp3bet4bimorhyjuqq",
+		"url": "/media/bafybeidl6xvzeon2biogdc5dwzg3jcvdoa6lriqehp3bet4bimorhyjuqq.jpg"
+	},
+	"/day-11-the-earth-in-cards/citizens.jpg": {
+		"cid": "bafkreia3m55ifzqshqjud6kccuv2cngdneeqv4d2gnterlttackz4jrgjy",
+		"url": "/media/bafkreia3m55ifzqshqjud6kccuv2cngdneeqv4d2gnterlttackz4jrgjy.jpg"
+	},
+	"/day-11-the-earth-in-cards/europe.jpg": {
+		"cid": "bafybeigouozvy6ji6ggmg4owq2idkakqnb3cah5uhf77dbh33d3eoqjnii",
+		"url": "/media/bafybeigouozvy6ji6ggmg4owq2idkakqnb3cah5uhf77dbh33d3eoqjnii.jpg"
+	},
+	"/day-11-the-earth-in-cards/the-founding-form.jpg": {
+		"cid": "bafybeihlgao5lpdbijrbyf3twtgcyjgugumqczaohhm7mmm6z7m3lfkwr4",
+		"url": "/media/bafybeihlgao5lpdbijrbyf3twtgcyjgugumqczaohhm7mmm6z7m3lfkwr4.jpg"
+	},
+	"/day-11-the-earth-in-cards/the-real-earth.jpg": {
+		"cid": "bafybeifoiwgql3rhg7afmfwdayt3sk22oztcx2uzcwpqfuf6hh7hcfqczm",
+		"url": "/media/bafybeifoiwgql3rhg7afmfwdayt3sk22oztcx2uzcwpqfuf6hh7hcfqczm.jpg"
+	},
+	"/day-11-the-earth-in-cards/three-towers.jpg": {
+		"cid": "bafkreihqvad5gyvqnx3ss5n4v67fakbuxetjl2xf3s3omyjmj7tg7xegja",
+		"url": "/media/bafkreihqvad5gyvqnx3ss5n4v67fakbuxetjl2xf3s3omyjmj7tg7xegja.jpg"
+	},
+	"/day-12-the-first-believer-pays-least/before-investing.jpg": {
+		"cid": "bafkreihd7uac6frwkruegzqpvtqm7gj6ez6om3vizy6wfxkf4fpnhqocem",
+		"url": "/media/bafkreihd7uac6frwkruegzqpvtqm7gj6ez6om3vizy6wfxkf4fpnhqocem.jpg"
+	},
+	"/day-12-the-first-believer-pays-least/emission.jpg": {
+		"cid": "bafkreibyyxh6savdubcjil7mb7cauye5facacxvxovmkacnte2va6xfknq",
+		"url": "/media/bafkreibyyxh6savdubcjil7mb7cauye5facacxvxovmkacnte2va6xfknq.jpg"
+	},
+	"/day-12-the-first-believer-pays-least/ledger.jpg": {
+		"cid": "bafkreietcm3jzu7sa62lzg6bwxyqdqadi46b66baepc6cyzw76dbw4y4tq",
+		"url": "/media/bafkreietcm3jzu7sa62lzg6bwxyqdqadi46b66baepc6cyzw76dbw4y4tq.jpg"
+	},
+	"/day-12-the-first-believer-pays-least/the-coops.jpg": {
+		"cid": "bafkreiepk5f3vwdfxpmklrkdfykltlg6l5ybkn463o2qdp23ilzswgajca",
+		"url": "/media/bafkreiepk5f3vwdfxpmklrkdfykltlg6l5ybkn463o2qdp23ilzswgajca.jpg"
+	},
+	"/day-12-the-first-believer-pays-least/towers-up-close.jpg": {
+		"cid": "bafkreibuzb47ghihq26hwjmmzfvylhpperjgrm5ea4bxabpxbjgpfmo5ay",
+		"url": "/media/bafkreibuzb47ghihq26hwjmmzfvylhpperjgrm5ea4bxabpxbjgpfmo5ay.jpg"
+	},
+	"/day-13-invited-home/a-citizen.jpg": {
+		"cid": "bafybeibsbjhpo5ympbq4ddde4xqezhvon2c4luzoup6rbyemqswkgtvngy",
+		"url": "/media/bafybeibsbjhpo5ympbq4ddde4xqezhvon2c4luzoup6rbyemqswkgtvngy.jpg"
+	},
+	"/day-13-invited-home/citizenship.jpg": {
+		"cid": "bafybeifehn5jpnnz25m2dm7mci4bfshgisvkoc5hy7psdj6ros2lrtxcae",
+		"url": "/media/bafybeifehn5jpnnz25m2dm7mci4bfshgisvkoc5hy7psdj6ros2lrtxcae.jpg"
+	},
+	"/day-13-invited-home/first-hearts.jpg": {
+		"cid": "bafkreigta54qlbxhyt4vghoef7h3ilhlvauyyww6aa3y73543iaznm2emy",
+		"url": "/media/bafkreigta54qlbxhyt4vghoef7h3ilhlvauyyww6aa3y73543iaznm2emy.jpg"
+	},
+	"/day-13-invited-home/home.jpg": {
+		"cid": "bafybeifgqbuftq3ltw6jlwms6huhz7lj2pr5jw22ozm7ut5vdopr5vqqya",
+		"url": "/media/bafybeifgqbuftq3ltw6jlwms6huhz7lj2pr5jw22ozm7ut5vdopr5vqqya.jpg"
+	},
+	"/day-13-invited-home/riverside.jpg": {
+		"cid": "bafkreic23hzhjv5t2zihhv6nvbrtvt373zvwvz7eijkk5nbsnh2rymtftq",
+		"url": "/media/bafkreic23hzhjv5t2zihhv6nvbrtvt373zvwvz7eijkk5nbsnh2rymtftq.jpg"
+	},
+	"/day-13-invited-home/the-invitation.jpg": {
+		"cid": "bafybeiharwui6hfbkflvkm5tuwq346wp4o3qak2jr6vddob4zeus7b2cry",
+		"url": "/media/bafybeiharwui6hfbkflvkm5tuwq346wp4o3qak2jr6vddob4zeus7b2cry.jpg"
+	},
+	"/day-13-invited-home/the-island.jpg": {
+		"cid": "bafkreib5cibe3pf6x55ftzto3yqka6kb4ht3cmxz6h7qyzx3jw44nm7sgu",
+		"url": "/media/bafkreib5cibe3pf6x55ftzto3yqka6kb4ht3cmxz6h7qyzx3jw44nm7sgu.jpg"
+	},
+	"/day-13-invited-home/the-planet.jpg": {
+		"cid": "bafybeicafiplfeyys2w6qlgp3slpe5p5ch4lzsdrlbrhe2ngfglhhxiafi",
+		"url": "/media/bafybeicafiplfeyys2w6qlgp3slpe5p5ch4lzsdrlbrhe2ngfglhhxiafi.jpg"
+	},
+	"/day-14-one-tent-to-233/cover.jpg": {
+		"cid": "bafkreigwihkbogtk66poocacgudis3rrr6ler2rmgnfdmpxnjupbkmi6xq",
+		"url": "/media/bafkreigwihkbogtk66poocacgudis3rrr6ler2rmgnfdmpxnjupbkmi6xq.jpg"
+	},
+	"/day-14-one-tent-to-233/level-01.jpg": {
+		"cid": "bafkreigiahc735viqlld6uikt5bv34m3b5rscp7pfjo2xaj6qvy6vp5s3a",
+		"url": "/media/bafkreigiahc735viqlld6uikt5bv34m3b5rscp7pfjo2xaj6qvy6vp5s3a.jpg"
+	},
+	"/day-14-one-tent-to-233/level-02.jpg": {
+		"cid": "bafkreiaecoji3fxqs6mitgyphyqyoauz44eblwbyafxfv7jht4rmb6ihtq",
+		"url": "/media/bafkreiaecoji3fxqs6mitgyphyqyoauz44eblwbyafxfv7jht4rmb6ihtq.jpg"
+	},
+	"/day-14-one-tent-to-233/level-03.jpg": {
+		"cid": "bafkreierv4blz62fogogoe6dw2mfkcaizcl77p34pfegvbjx3babv3i2ne",
+		"url": "/media/bafkreierv4blz62fogogoe6dw2mfkcaizcl77p34pfegvbjx3babv3i2ne.jpg"
+	},
+	"/day-14-one-tent-to-233/level-04.jpg": {
+		"cid": "bafkreigab75kg6l2dyezdsyagzoplgkhus7nzdzsussejou547p74mzyya",
+		"url": "/media/bafkreigab75kg6l2dyezdsyagzoplgkhus7nzdzsussejou547p74mzyya.jpg"
+	},
+	"/day-14-one-tent-to-233/level-05.jpg": {
+		"cid": "bafkreigvoihx2iwofcrf2ce6ccngkobrtztaw6wjlfqqeh35us4qsy72f4",
+		"url": "/media/bafkreigvoihx2iwofcrf2ce6ccngkobrtztaw6wjlfqqeh35us4qsy72f4.jpg"
+	},
+	"/day-14-one-tent-to-233/level-06.jpg": {
+		"cid": "bafkreidgdneqgljtsdzyy5cpv4tytjl5ro5e4kc5v6xvkqqnbcbinwwd2q",
+		"url": "/media/bafkreidgdneqgljtsdzyy5cpv4tytjl5ro5e4kc5v6xvkqqnbcbinwwd2q.jpg"
+	},
+	"/day-14-one-tent-to-233/level-07.jpg": {
+		"cid": "bafkreibfr2djce7tnzfdaw5tqfutvyulm3vpupb5uxq4x4y3rf37xsfs4e",
+		"url": "/media/bafkreibfr2djce7tnzfdaw5tqfutvyulm3vpupb5uxq4x4y3rf37xsfs4e.jpg"
+	},
+	"/day-14-one-tent-to-233/level-08.jpg": {
+		"cid": "bafkreiahzypfhykdldiedz7ivsbsfhc6y4vmmyemscwiuo53mmqbat73su",
+		"url": "/media/bafkreiahzypfhykdldiedz7ivsbsfhc6y4vmmyemscwiuo53mmqbat73su.jpg"
+	},
+	"/day-14-one-tent-to-233/level-09.jpg": {
+		"cid": "bafkreidcsfyyj5gwvtosc7ziiyfztol4t74nlv44kkzlsbnfmfi3qrz4i4",
+		"url": "/media/bafkreidcsfyyj5gwvtosc7ziiyfztol4t74nlv44kkzlsbnfmfi3qrz4i4.jpg"
+	},
+	"/day-14-one-tent-to-233/level-10.jpg": {
+		"cid": "bafkreihgpmt3bq5s3o52wvpdqsw72q4jozw7rqnk3hucxpfnevonsa6ezy",
+		"url": "/media/bafkreihgpmt3bq5s3o52wvpdqsw72q4jozw7rqnk3hucxpfnevonsa6ezy.jpg"
+	},
+	"/day-14-one-tent-to-233/level-11.jpg": {
+		"cid": "bafkreig65lvbfzkfxla22cxycrh3t2fmvnckyib2dwyrlxqw2klmw7kooe",
+		"url": "/media/bafkreig65lvbfzkfxla22cxycrh3t2fmvnckyib2dwyrlxqw2klmw7kooe.jpg"
+	},
+	"/day-14-one-tent-to-233/level-12.jpg": {
+		"cid": "bafkreiaquort5ndrfh4qjuiwo4jlso6azz65fhntvfz3vpzuv2iuu6dpo4",
+		"url": "/media/bafkreiaquort5ndrfh4qjuiwo4jlso6azz65fhntvfz3vpzuv2iuu6dpo4.jpg"
+	},
+	"/day-15-inside-the-domes/balcony.jpg": {
+		"cid": "bafybeigk72v3vjv7cjlp7x6yvcnnm7aze4iz6xypiwkhbasxhqvfmvgtnq",
+		"url": "/media/bafybeigk72v3vjv7cjlp7x6yvcnnm7aze4iz6xypiwkhbasxhqvfmvgtnq.jpg"
+	},
+	"/day-15-inside-the-domes/door-from-inside.jpg": {
+		"cid": "bafkreibxxlw5pd2th2mqm5oyyvx5wqsyb56msg727tdoz7q7k3fmsxkuze",
+		"url": "/media/bafkreibxxlw5pd2th2mqm5oyyvx5wqsyb56msg727tdoz7q7k3fmsxkuze.jpg"
+	},
+	"/day-15-inside-the-domes/forest-guilds.jpg": {
+		"cid": "bafybeidceyf4n6nldycil7kowhpbad7h3bf6hojsxzjgx752bva4zabh4q",
+		"url": "/media/bafybeidceyf4n6nldycil7kowhpbad7h3bf6hojsxzjgx752bva4zabh4q.jpg"
+	},
+	"/day-15-inside-the-domes/forest-layers.jpg": {
+		"cid": "bafybeig4unhqo5l2xnz2icoywy5ajhi7g6qyzg5utphkwp2q6qpef42afq",
+		"url": "/media/bafybeig4unhqo5l2xnz2icoywy5ajhi7g6qyzg5utphkwp2q6qpef42afq.jpg"
+	},
+	"/day-15-inside-the-domes/geese.jpg": {
+		"cid": "bafybeifdqzdl6ppstzef7wgjuxt5syp6anrhlwlv5anwt4w2eophkpvjzq",
+		"url": "/media/bafybeifdqzdl6ppstzef7wgjuxt5syp6anrhlwlv5anwt4w2eophkpvjzq.jpg"
+	},
+	"/day-15-inside-the-domes/glamping-door.jpg": {
+		"cid": "bafybeifmnf2q6cykqdepjwoacclxezxe7ogmkeexxevol6fm3najn7mpbu",
+		"url": "/media/bafybeifmnf2q6cykqdepjwoacclxezxe7ogmkeexxevol6fm3najn7mpbu.jpg"
+	},
+	"/day-15-inside-the-domes/glamping-room.jpg": {
+		"cid": "bafybeianomshfgfzo6qtlaa4uvcidnytxgxqtyrr2ed3tv6vq6hcmmegvy",
+		"url": "/media/bafybeianomshfgfzo6qtlaa4uvcidnytxgxqtyrr2ed3tv6vq6hcmmegvy.jpg"
+	},
+	"/day-15-inside-the-domes/glamping-window.jpg": {
+		"cid": "bafybeib3qa5nmscpb2sxelo4j73fft7jgnnouwogtiao2k7hb6bvlgfwxu",
+		"url": "/media/bafybeib3qa5nmscpb2sxelo4j73fft7jgnnouwogtiao2k7hb6bvlgfwxu.jpg"
+	},
+	"/day-15-inside-the-domes/goats.jpg": {
+		"cid": "bafybeiclxy6mmey6l76eeoxwrx2x3bvb52szhrmtbjdhdb32z4cgmd2vua",
+		"url": "/media/bafybeiclxy6mmey6l76eeoxwrx2x3bvb52szhrmtbjdhdb32z4cgmd2vua.jpg"
+	},
+	"/day-15-inside-the-domes/home-commons.jpg": {
+		"cid": "bafybeibvot3un24y66tmpuehokqvskjg6w2rfzal5lcilomnogkmiyoh34",
+		"url": "/media/bafybeibvot3un24y66tmpuehokqvskjg6w2rfzal5lcilomnogkmiyoh34.jpg"
+	},
+	"/day-15-inside-the-domes/home-from-outside.jpg": {
+		"cid": "bafybeihpmew4vpancegu6tfzyh2fo4jcsreltlp6cgnykf7tqhclzfedly",
+		"url": "/media/bafybeihpmew4vpancegu6tfzyh2fo4jcsreltlp6cgnykf7tqhclzfedly.jpg"
+	},
+	"/day-15-inside-the-domes/home-from-the-gallery.jpg": {
+		"cid": "bafybeic6zaq6rv6wqzq3t7yaretzhrqceyr6lke2tuhhp3flk7qryq6ik4",
+		"url": "/media/bafybeic6zaq6rv6wqzq3t7yaretzhrqceyr6lke2tuhhp3flk7qryq6ik4.jpg"
+	},
+	"/day-15-inside-the-domes/home-private-room.jpg": {
+		"cid": "bafybeibnqdpgenp32lk44fguax6vqszav2uwggmcnk4ifjdbugkh2rfvea",
+		"url": "/media/bafybeibnqdpgenp32lk44fguax6vqszav2uwggmcnk4ifjdbugkh2rfvea.jpg"
+	},
+	"/day-15-inside-the-domes/kitchen-garden.jpg": {
+		"cid": "bafybeign2isep3a7pidbvpbmnyq6ec37vhu6xua3bewjv2qqpyfsa3soqi",
+		"url": "/media/bafybeign2isep3a7pidbvpbmnyq6ec37vhu6xua3bewjv2qqpyfsa3soqi.jpg"
+	},
+	"/day-15-inside-the-domes/large-food-forest.jpg": {
+		"cid": "bafybeigfvkrseaplpsiyc5vcb42wvtlxdmz67lmlojnecdvacfrnhsd43y",
+		"url": "/media/bafybeigfvkrseaplpsiyc5vcb42wvtlxdmz67lmlojnecdvacfrnhsd43y.jpg"
+	},
+	"/day-15-inside-the-domes/large-from-outside.jpg": {
+		"cid": "bafybeid4qoaulad5mgr36f264ms7cusktudwgb4fsdg5xn74bf77r43lua",
+		"url": "/media/bafybeid4qoaulad5mgr36f264ms7cusktudwgb4fsdg5xn74bf77r43lua.jpg"
+	},
+	"/day-15-inside-the-domes/large-plaza.jpg": {
+		"cid": "bafybeianxgh5s6aqbrzf7adea76xdwmmurli3qk6rmpoulj62fvdeeajiy",
+		"url": "/media/bafybeianxgh5s6aqbrzf7adea76xdwmmurli3qk6rmpoulj62fvdeeajiy.jpg"
+	},
+	"/day-15-inside-the-domes/large-private-room.jpg": {
+		"cid": "bafybeid6y5oknbazpotdwnrpkovritnlip3ozufrsnc4pzn76htzuu3tqq",
+		"url": "/media/bafybeid6y5oknbazpotdwnrpkovritnlip3ozufrsnc4pzn76htzuu3tqq.jpg"
+	},
+	"/day-15-inside-the-domes/large-terraces.jpg": {
+		"cid": "bafybeifuphgcpqvqlx7dqybbwbnnschpet23z36jvvoqczdzbxndri6wam",
+		"url": "/media/bafybeifuphgcpqvqlx7dqybbwbnnschpet23z36jvvoqczdzbxndri6wam.jpg"
+	},
+	"/day-15-inside-the-domes/master-bakery.jpg": {
+		"cid": "bafybeifa6by2jgibxfl7gotchgqueg4mifntbw6wqgjct5vdbdn3t7sfiq",
+		"url": "/media/bafybeifa6by2jgibxfl7gotchgqueg4mifntbw6wqgjct5vdbdn3t7sfiq.jpg"
+	},
+	"/day-15-inside-the-domes/master-cafe.jpg": {
+		"cid": "bafybeihbyxhnss5e6h2fc6kr5l3lyyddditq3zdzyxerprf7jd72x4uacq",
+		"url": "/media/bafybeihbyxhnss5e6h2fc6kr5l3lyyddditq3zdzyxerprf7jd72x4uacq.jpg"
+	},
+	"/day-15-inside-the-domes/master-coop.jpg": {
+		"cid": "bafkreifra357acxyp24qyy64zi6re6zbpwaxm5e4icov4y57gppowbtw7m",
+		"url": "/media/bafkreifra357acxyp24qyy64zi6re6zbpwaxm5e4icov4y57gppowbtw7m.jpg"
+	},
+	"/day-15-inside-the-domes/master-cowork.jpg": {
+		"cid": "bafybeiafwhd2cxclvc4or6dmeqb5hu2mn7ui6fillvcvtz5vh5g6xnfiiu",
+		"url": "/media/bafybeiafwhd2cxclvc4or6dmeqb5hu2mn7ui6fillvcvtz5vh5g6xnfiiu.jpg"
+	},
+	"/day-15-inside-the-domes/master-forest.jpg": {
+		"cid": "bafybeie26ig57sngmwxxecmt2hmnfnuwem5j2ei3aa4z72rovvk7faeiya",
+		"url": "/media/bafybeie26ig57sngmwxxecmt2hmnfnuwem5j2ei3aa4z72rovvk7faeiya.jpg"
+	},
+	"/day-15-inside-the-domes/master-from-outside.jpg": {
+		"cid": "bafybeidd2dzoahupdha6c3ikw7g6pu42u7u5plxn5t67iihuuf6oiiputy",
+		"url": "/media/bafybeidd2dzoahupdha6c3ikw7g6pu42u7u5plxn5t67iihuuf6oiiputy.jpg"
+	},
+	"/day-15-inside-the-domes/master-garden.jpg": {
+		"cid": "bafybeiczmoikvoublco3tcexkbxpimzeix5ubxeqmlwe5dyqqkeeq4qzoa",
+		"url": "/media/bafybeiczmoikvoublco3tcexkbxpimzeix5ubxeqmlwe5dyqqkeeq4qzoa.jpg"
+	},
+	"/day-15-inside-the-domes/master-onstage.jpg": {
+		"cid": "bafybeif3brasfau7rreha54bntc2ldzu7oqzhislxr3vwqdybouy3d6ahi",
+		"url": "/media/bafybeif3brasfau7rreha54bntc2ldzu7oqzhislxr3vwqdybouy3d6ahi.jpg"
+	},
+	"/day-15-inside-the-domes/master-restaurant.jpg": {
+		"cid": "bafybeibrqh5fjfffcxb4subshx4qsvbwkihakft3hfbo7fudjz6r4pedra",
+		"url": "/media/bafybeibrqh5fjfffcxb4subshx4qsvbwkihakft3hfbo7fudjz6r4pedra.jpg"
+	},
+	"/day-15-inside-the-domes/master-stage.jpg": {
+		"cid": "bafybeificalvj37mltyqcx22es6te5dsizh7cqbxe7zh4do3urme44m3bi",
+		"url": "/media/bafybeificalvj37mltyqcx22es6te5dsizh7cqbxe7zh4do3urme44m3bi.jpg"
+	},
+	"/day-15-inside-the-domes/master-studio.jpg": {
+		"cid": "bafybeiduupoc2g3kpfkgobkpgrkir4ip3b52bjlle77qcrjni7ihag67iq",
+		"url": "/media/bafybeiduupoc2g3kpfkgobkpgrkir4ip3b52bjlle77qcrjni7ihag67iq.jpg"
+	},
+	"/day-15-inside-the-domes/master-woodshop.jpg": {
+		"cid": "bafybeibp7tnnay5r7mfexgdwmi6wbvtb44qkmswjfv5nlcpek6svwjrue4",
+		"url": "/media/bafybeibp7tnnay5r7mfexgdwmi6wbvtb44qkmswjfv5nlcpek6svwjrue4.jpg"
+	},
+	"/day-15-inside-the-domes/second-floor.jpg": {
+		"cid": "bafybeietna3l6kdyvdzrra5txkj37iybxbhwdx2ln4omxpaxpsqaor77ve",
+		"url": "/media/bafybeietna3l6kdyvdzrra5txkj37iybxbhwdx2ln4omxpaxpsqaor77ve.jpg"
+	},
+	"/day-15-inside-the-domes/stairs.jpg": {
+		"cid": "bafybeifwtdibjb6k65cgmylhmh2h63oimqzgwwfzre3jvwxe4xokpcfgei",
+		"url": "/media/bafybeifwtdibjb6k65cgmylhmh2h63oimqzgwwfzre3jvwxe4xokpcfgei.jpg"
+	},
+	"/day-15-inside-the-domes/stepping-inside.jpg": {
+		"cid": "bafkreihthlydt3dwjkhvtqb2vr5yuifxvogv47qy2uh2d42ijyy6huwgk4",
+		"url": "/media/bafkreihthlydt3dwjkhvtqb2vr5yuifxvogv47qy2uh2d42ijyy6huwgk4.jpg"
+	},
+	"/day-15-inside-the-domes/stone-arcade.jpg": {
+		"cid": "bafybeietaqxfyxuljr4cpfcfcl62rhbhufrykzey3vatu2zbtgbjjajlri",
+		"url": "/media/bafybeietaqxfyxuljr4cpfcfcl62rhbhufrykzey3vatu2zbtgbjjajlri.jpg"
+	},
+	"/day-15-inside-the-domes/stream-outside.jpg": {
+		"cid": "bafybeidhsjtrkhd3izafq6vwycbvfvweok3lrk4elwnsmchoz5v456jeey",
+		"url": "/media/bafybeidhsjtrkhd3izafq6vwycbvfvweok3lrk4elwnsmchoz5v456jeey.jpg"
+	},
+	"/day-15-inside-the-domes/tent.jpg": {
+		"cid": "bafybeigrxussxd34hh5e4ua5y2evqu3ehvvutqh3x75mclie7ewsmtmn54",
+		"url": "/media/bafybeigrxussxd34hh5e4ua5y2evqu3ehvvutqh3x75mclie7ewsmtmn54.jpg"
+	},
+	"/day-15-inside-the-domes/terrace-second-floor.jpg": {
+		"cid": "bafybeiacdoje6uikg73k2un75w2l2vtzy45e4quzszfjojkm7w4bis5lxm",
+		"url": "/media/bafybeiacdoje6uikg73k2un75w2l2vtzy45e4quzszfjojkm7w4bis5lxm.jpg"
+	},
+	"/day-15-inside-the-domes/terrace.jpg": {
+		"cid": "bafkreiastlly3plvcygycgcx5b3u2cwfyj2vuvte4xplw5tzs66m3z7n54",
+		"url": "/media/bafkreiastlly3plvcygycgcx5b3u2cwfyj2vuvte4xplw5tzs66m3z7n54.jpg"
+	},
+	"/day-16-the-solar-factory-dome/arc-furnace.jpg": {
+		"cid": "bafkreidacjkmzdeczyoq55qrkp3dtk573lcfzhrv3h673w35kypyx5bnfq",
+		"url": "/media/bafkreidacjkmzdeczyoq55qrkp3dtk573lcfzhrv3h673w35kypyx5bnfq.jpg"
+	},
+	"/day-16-the-solar-factory-dome/cable-drums.jpg": {
+		"cid": "bafkreicejjjdb5rdj52rvixfcdb2h6s5oz5dbahyjjgjdb2gjah3235yfy",
+		"url": "/media/bafkreicejjjdb5rdj52rvixfcdb2h6s5oz5dbahyjjgjdb2gjah3235yfy.jpg"
+	},
+	"/day-16-the-solar-factory-dome/diffusion.jpg": {
+		"cid": "bafkreickqvwpxv56k5qqrx6gxle3zaw5hpbzj5kosj75hh5uf4cjm5ysly",
+		"url": "/media/bafkreickqvwpxv56k5qqrx6gxle3zaw5hpbzj5kosj75hh5uf4cjm5ysly.jpg"
+	},
+	"/day-16-the-solar-factory-dome/dome-kits.jpg": {
+		"cid": "bafkreicgipopc5bdbp4fetzcilawxpnsr3nwvcbisnc7l4gfm4reknznwm",
+		"url": "/media/bafkreicgipopc5bdbp4fetzcilawxpnsr3nwvcbisnc7l4gfm4reknznwm.jpg"
+	},
+	"/day-16-the-solar-factory-dome/float-bath.jpg": {
+		"cid": "bafkreiecayk7ky4a7qmtlruzsiwwux4nyhsnvclvbjhgpm5mxtkpygq3dy",
+		"url": "/media/bafkreiecayk7ky4a7qmtlruzsiwwux4nyhsnvclvbjhgpm5mxtkpygq3dy.jpg"
+	},
+	"/day-16-the-solar-factory-dome/footbridge.jpg": {
+		"cid": "bafkreictuetmvhpdj22tyxcplb2dv6pbfrx2tqjq5bmx3kh7qnjyxnxhwi",
+		"url": "/media/bafkreictuetmvhpdj22tyxcplb2dv6pbfrx2tqjq5bmx3kh7qnjyxnxhwi.jpg"
+	},
+	"/day-16-the-solar-factory-dome/forklift.jpg": {
+		"cid": "bafkreid3aih5ur4sb37go3kpzcmezdyopxm4a675ya5f4svhpnpx3lwchu",
+		"url": "/media/bafkreid3aih5ur4sb37go3kpzcmezdyopxm4a675ya5f4svhpnpx3lwchu.jpg"
+	},
+	"/day-16-the-solar-factory-dome/ingot-pullers.jpg": {
+		"cid": "bafkreicjbi7e5a53jwx63rtn7tkum3au4u7gnwe2zj3hxjhoso3unw33ym",
+		"url": "/media/bafkreicjbi7e5a53jwx63rtn7tkum3au4u7gnwe2zj3hxjhoso3unw33ym.jpg"
+	},
+	"/day-16-the-solar-factory-dome/laminators.jpg": {
+		"cid": "bafkreiafv7yjvtsl73pgpr233nypwqxrlxwcu5ifvrnbgtticzk6g74rie",
+		"url": "/media/bafkreiafv7yjvtsl73pgpr233nypwqxrlxwcu5ifvrnbgtticzk6g74rie.jpg"
+	},
+	"/day-16-the-solar-factory-dome/lanes-cables.jpg": {
+		"cid": "bafkreice3elwes6hbc6ghhf5aig46ov4hgxt4nawukpsknnkhp4pjcae3q",
+		"url": "/media/bafkreice3elwes6hbc6ghhf5aig46ov4hgxt4nawukpsknnkhp4pjcae3q.jpg"
+	},
+	"/day-16-the-solar-factory-dome/lanes-cells.jpg": {
+		"cid": "bafkreihuetjnnjww7fmdwcc346o6m3jj2mltahknqch3anuxif2ew7asqy",
+		"url": "/media/bafkreihuetjnnjww7fmdwcc346o6m3jj2mltahknqch3anuxif2ew7asqy.jpg"
+	},
+	"/day-16-the-solar-factory-dome/lanes-glass.jpg": {
+		"cid": "bafkreifrssarqo3wxbnbk5npnenmydj7ixtui4seimax4uqjudji4tbxhm",
+		"url": "/media/bafkreifrssarqo3wxbnbk5npnenmydj7ixtui4seimax4uqjudji4tbxhm.jpg"
+	},
+	"/day-16-the-solar-factory-dome/lanes-kits.jpg": {
+		"cid": "bafkreidz2tlthwrkbyisrm4er4r5mf4ctiexkmpuqm3u3klr4agu7fv2ge",
+		"url": "/media/bafkreidz2tlthwrkbyisrm4er4r5mf4ctiexkmpuqm3u3klr4agu7fv2ge.jpg"
+	},
+	"/day-16-the-solar-factory-dome/lift-cabin.jpg": {
+		"cid": "bafkreifehyf335hk666ovuofwphxm4aqt7ptdmyaeoliuzbary7bd4doqe",
+		"url": "/media/bafkreifehyf335hk666ovuofwphxm4aqt7ptdmyaeoliuzbary7bd4doqe.jpg"
+	},
+	"/day-16-the-solar-factory-dome/outside.jpg": {
+		"cid": "bafybeig45wxfdyhumukdeqqmmwr3deahmfefvopodemc722by7d5wyxgxu",
+		"url": "/media/bafybeig45wxfdyhumukdeqqmmwr3deahmfefvopodemc722by7d5wyxgxu.jpg"
+	},
+	"/day-16-the-solar-factory-dome/reflow.jpg": {
+		"cid": "bafkreidgqhybskoxfycq24twvjmfbqw5c77jm3kop7liil5c6lyz2jw2mm",
+		"url": "/media/bafkreidgqhybskoxfycq24twvjmfbqw5c77jm3kop7liil5c6lyz2jw2mm.jpg"
+	},
+	"/day-16-the-solar-factory-dome/star.jpg": {
+		"cid": "bafkreid4mjs7g2q7tatzkpux3ragrqq7tstx3r3u2tkxw2aosnucbdim6m",
+		"url": "/media/bafkreid4mjs7g2q7tatzkpux3ragrqq7tstx3r3u2tkxw2aosnucbdim6m.jpg"
+	},
+	"/day-16-the-solar-factory-dome/stringer.jpg": {
+		"cid": "bafkreig36nhvf4xvps2kyabxd6gumll3jmdzut5ba3nezdvuude7ug3duu",
+		"url": "/media/bafkreig36nhvf4xvps2kyabxd6gumll3jmdzut5ba3nezdvuude7ug3duu.jpg"
+	},
+	"/day-16-the-solar-factory-dome/sun-simulator.jpg": {
+		"cid": "bafkreicpxzdk7s67jswna5lpqq3wfgg264j6poekxe4f3d33brpayd3yjq",
+		"url": "/media/bafkreicpxzdk7s67jswna5lpqq3wfgg264j6poekxe4f3d33brpayd3yjq.jpg"
+	},
+	"/day-16-the-solar-factory-dome/tempering.jpg": {
+		"cid": "bafkreifd2nerqt2zirkpjyqlmscncnj7jnif5oanzs7vmrqiyysya4kzoy",
+		"url": "/media/bafkreifd2nerqt2zirkpjyqlmscncnj7jnif5oanzs7vmrqiyysya4kzoy.jpg"
+	},
+	"/day-16-the-solar-factory-dome/warehouse.jpg": {
+		"cid": "bafkreifqhrchqcnxude3mufa2lkjg4judou4ciqd6fs3vjimz6ypcipjkq",
+		"url": "/media/bafkreifqhrchqcnxude3mufa2lkjg4judou4ciqd6fs3vjimz6ypcipjkq.jpg"
+	},
+	"/day-17-one-world-thirteen-domes/aerial.jpg": {
+		"cid": "bafybeiffld6axaecyxr3oq74bzlo3ym5dfapvxptqrokgt7naaxzsqp4oe",
+		"url": "/media/bafybeiffld6axaecyxr3oq74bzlo3ym5dfapvxptqrokgt7naaxzsqp4oe.jpg"
+	},
+	"/day-17-one-world-thirteen-domes/between.jpg": {
+		"cid": "bafybeicszbyydl2mezk3gbtxsnk2mnbxk2cbkimcj42y2ndpd2qpq2w6a4",
+		"url": "/media/bafybeicszbyydl2mezk3gbtxsnk2mnbxk2cbkimcj42y2ndpd2qpq2w6a4.jpg"
+	},
+	"/day-17-one-world-thirteen-domes/cafe.jpg": {
+		"cid": "bafybeia7oc7srhwgpap4pn357ci4fko3scdqbscylnxapqu6zagxgkc7vy",
+		"url": "/media/bafybeia7oc7srhwgpap4pn357ci4fko3scdqbscylnxapqu6zagxgkc7vy.jpg"
+	},
+	"/day-17-one-world-thirteen-domes/coop.jpg": {
+		"cid": "bafybeia44khzkebxjl2gu6foru3wpwlnmsphuq6ctligavygcv7oe66any",
+		"url": "/media/bafybeia44khzkebxjl2gu6foru3wpwlnmsphuq6ctligavygcv7oe66any.jpg"
+	},
+	"/day-17-one-world-thirteen-domes/detail-ring.jpg": {
+		"cid": "bafybeihfydodtzi75eftm2jkg4eyrwmnxbuxbbqi6xaieokfw7kaz7yspy",
+		"url": "/media/bafybeihfydodtzi75eftm2jkg4eyrwmnxbuxbbqi6xaieokfw7kaz7yspy.jpg"
+	},
+	"/day-17-one-world-thirteen-domes/door.jpg": {
+		"cid": "bafybeihw3mty6s5jouclpncggrwpsxbxdupjwkv3p2sukpaoe5l527ievi",
+		"url": "/media/bafybeihw3mty6s5jouclpncggrwpsxbxdupjwkv3p2sukpaoe5l527ievi.jpg"
+	},
+	"/day-17-one-world-thirteen-domes/edge.jpg": {
+		"cid": "bafybeiduvdhl5bi2u353ezludpvn3xsmi2fnodo6s4mqyyvnngpbafjq2u",
+		"url": "/media/bafybeiduvdhl5bi2u353ezludpvn3xsmi2fnodo6s4mqyyvnngpbafjq2u.jpg"
+	},
+	"/day-17-one-world-thirteen-domes/glass.jpg": {
+		"cid": "bafybeicqkczxcgf6zp5f362fldwf2lu554y7asug25vlp5nblpocg7mptm",
+		"url": "/media/bafybeicqkczxcgf6zp5f362fldwf2lu554y7asug25vlp5nblpocg7mptm.jpg"
+	},
+	"/day-17-one-world-thirteen-domes/in.jpg": {
+		"cid": "bafybeidppa36buvhqimnu6ofuemdehwenxrcm7tsiufrze52kscw2ctnde",
+		"url": "/media/bafybeidppa36buvhqimnu6ofuemdehwenxrcm7tsiufrze52kscw2ctnde.jpg"
+	},
+	"/day-17-one-world-thirteen-domes/night.jpg": {
+		"cid": "bafkreicxgqbe5ruoy5mi2b4zbi2zbrmjd5fd5vkcrguyq7kk2d5sorghba",
+		"url": "/media/bafkreicxgqbe5ruoy5mi2b4zbi2zbrmjd5fd5vkcrguyq7kk2d5sorghba.jpg"
+	},
+	"/day-18-homes-and-the-sound-of-the-forest/bath.jpg": {
+		"cid": "bafybeihvesaqpsf6dxu6kr2zgmxeirqc4cs26ahfflfv3vpkte7hxqy4hq",
+		"url": "/media/bafybeihvesaqpsf6dxu6kr2zgmxeirqc4cs26ahfflfv3vpkte7hxqy4hq.jpg"
+	},
+	"/day-18-homes-and-the-sound-of-the-forest/bed.jpg": {
+		"cid": "bafybeialgryk4zwtwrd6tgnge3sv3pn7cw32vvggcph5mew57ez5ccfjoa",
+		"url": "/media/bafybeialgryk4zwtwrd6tgnge3sv3pn7cw32vvggcph5mew57ez5ccfjoa.jpg"
+	},
+	"/day-18-homes-and-the-sound-of-the-forest/daybeds.jpg": {
+		"cid": "bafybeiafiviltkp3akgyc6tez5zgvfu7czexycqr25wpnoycaianixqn4q",
+		"url": "/media/bafybeiafiviltkp3akgyc6tez5zgvfu7czexycqr25wpnoycaianixqn4q.jpg"
+	},
+	"/day-18-homes-and-the-sound-of-the-forest/desk.jpg": {
+		"cid": "bafybeidgrkirdenfiv5cukncgy3acj5kaz7js7rrsvj6tgdhgciwlmluym",
+		"url": "/media/bafybeidgrkirdenfiv5cukncgy3acj5kaz7js7rrsvj6tgdhgciwlmluym.jpg"
+	},
+	"/day-18-homes-and-the-sound-of-the-forest/door.jpg": {
+		"cid": "bafybeid6nb4pjnkokdjjrkq24cckhkkopxyoovmol7pr2sad2lls3mpvyu",
+		"url": "/media/bafybeid6nb4pjnkokdjjrkq24cckhkkopxyoovmol7pr2sad2lls3mpvyu.jpg"
+	},
+	"/day-18-homes-and-the-sound-of-the-forest/forest-floor.jpg": {
+		"cid": "bafybeifzsn4z3sqg5kv2pcdbz7ws4e2mgnlamcyjgqbccgfmnlekcej3u4",
+		"url": "/media/bafybeifzsn4z3sqg5kv2pcdbz7ws4e2mgnlamcyjgqbccgfmnlekcej3u4.jpg"
+	},
+	"/day-18-homes-and-the-sound-of-the-forest/geese.jpg": {
+		"cid": "bafybeih6xnp4yo6vvphmiaanf67buev54ehhbvgmstscaqkfkgt7ri5hny",
+		"url": "/media/bafybeih6xnp4yo6vvphmiaanf67buev54ehhbvgmstscaqkfkgt7ri5hny.jpg"
+	},
+	"/day-18-homes-and-the-sound-of-the-forest/goats.jpg": {
+		"cid": "bafybeihq2fufxv33px64xr3s33osi5aplcmxpguohho45wp4bf3jre5l7e",
+		"url": "/media/bafybeihq2fufxv33px64xr3s33osi5aplcmxpguohho45wp4bf3jre5l7e.jpg"
+	},
+	"/day-18-homes-and-the-sound-of-the-forest/hives.jpg": {
+		"cid": "bafybeiailhelwuia4qdyexsotfj5i4brekr6ouhdivbvfb5rmnbstyltwi",
+		"url": "/media/bafybeiailhelwuia4qdyexsotfj5i4brekr6ouhdivbvfb5rmnbstyltwi.jpg"
+	},
+	"/day-18-homes-and-the-sound-of-the-forest/log.jpg": {
+		"cid": "bafybeigxyo3kdjorgytrjow2nqn6hw3iddljvuufduiomigry46735y6f4",
+		"url": "/media/bafybeigxyo3kdjorgytrjow2nqn6hw3iddljvuufduiomigry46735y6f4.jpg"
+	},
+	"/day-18-homes-and-the-sound-of-the-forest/playground.jpg": {
+		"cid": "bafybeigba7ie5xsgrgq2hjoccyt7plxn6427u7nkxm6e76m6ca7r4eo7dm",
+		"url": "/media/bafybeigba7ie5xsgrgq2hjoccyt7plxn6427u7nkxm6e76m6ca7r4eo7dm.jpg"
+	},
+	"/day-18-homes-and-the-sound-of-the-forest/pond.jpg": {
+		"cid": "bafybeibdcj6ns5dv2j3lu5mx4ji2gabs7gp2r3kv63rn2z5zdxpszaweem",
+		"url": "/media/bafybeibdcj6ns5dv2j3lu5mx4ji2gabs7gp2r3kv63rn2z5zdxpszaweem.jpg"
+	},
+	"/day-18-homes-and-the-sound-of-the-forest/room.jpg": {
+		"cid": "bafybeifpqvwp6wkixtdf3poesyfrvmf6gyffehpn6v2q5dufg7wlmdtpta",
+		"url": "/media/bafybeifpqvwp6wkixtdf3poesyfrvmf6gyffehpn6v2q5dufg7wlmdtpta.jpg"
+	},
+	"/day-18-homes-and-the-sound-of-the-forest/terrace-upper.jpg": {
+		"cid": "bafybeielpynx4d77nb7k7rlyn7jpo6ao63pto66rurgj2kjusqb3o6f6na",
+		"url": "/media/bafybeielpynx4d77nb7k7rlyn7jpo6ao63pto66rurgj2kjusqb3o6f6na.jpg"
+	},
+	"/day-18-homes-and-the-sound-of-the-forest/terrace.jpg": {
+		"cid": "bafybeihmp4w5gmtxdlsvx3nsyzymdhmuunljytesktf6pnaomkzqenc3rq",
+		"url": "/media/bafybeihmp4w5gmtxdlsvx3nsyzymdhmuunljytesktf6pnaomkzqenc3rq.jpg"
+	},
+	"/games/sandbox-1.jpg": {
+		"cid": "bafkreidb6dx5ija5yeewxvlliz7nvhqurcrxwk4uozka476of6b26zocxa",
+		"url": "/media/bafkreidb6dx5ija5yeewxvlliz7nvhqurcrxwk4uozka476of6b26zocxa.jpg"
+	},
+	"/games/sandbox-2.jpg": {
+		"cid": "bafkreihvabwjkwgkv3v7lr5726p346iovu4zrekaaf2w7qerxbvicwg5mm",
+		"url": "/media/bafkreihvabwjkwgkv3v7lr5726p346iovu4zrekaaf2w7qerxbvicwg5mm.jpg"
+	},
+	"/games/sandbox-3.jpg": {
+		"cid": "bafybeigx5mtrbdzh3idwbfrkureiwnfyhw3jtyclg55vuyc67sxdo6w5fa",
+		"url": "/media/bafybeigx5mtrbdzh3idwbfrkureiwnfyhw3jtyclg55vuyc67sxdo6w5fa.jpg"
+	},
+	"/games/sandbox-3/factory.jpg": {
+		"cid": "bafkreih6fhval3nn5odqkgzh76olvb5t3ctmdyc6uwnbj2x6jvu5iumu6u",
+		"url": "/media/bafkreih6fhval3nn5odqkgzh76olvb5t3ctmdyc6uwnbj2x6jvu5iumu6u.jpg"
+	},
+	"/games/sandbox-3/tent.jpg": {
+		"cid": "bafkreidbpfwbdcwxzvmb53r6en6uba6njf4etileuyanbicgegznq422r4",
+		"url": "/media/bafkreidbpfwbdcwxzvmb53r6en6uba6njf4etileuyanbicgegznq422r4.jpg"
+	},
+	"/games/sandbox-4.jpg": {
+		"cid": "bafybeiatftbwtb5x7b2bd7zh5dtefhytka27q36djxsn2hmwwtcdd7gxgm",
+		"url": "/media/bafybeiatftbwtb5x7b2bd7zh5dtefhytka27q36djxsn2hmwwtcdd7gxgm.jpg"
+	},
+	"/manifesto-banner.jpg": {
+		"cid": "bafybeifeluwlsey3m6cto3th3ak22lb2g7cum627fwp6ivvu4mi6nk4voi",
+		"url": "/media/bafybeifeluwlsey3m6cto3th3ak22lb2g7cum627fwp6ivvu4mi6nk4voi.jpg"
+	},
+	"/samuel.jpg": {
+		"cid": "bafybeigc4o3dpecqu3pvrzldsjie6b2xs7sdjeetuafxbjqckqnabiy5d4",
+		"url": "/media/bafybeigc4o3dpecqu3pvrzldsjie6b2xs7sdjeetuafxbjqckqnabiy5d4.jpg"
+	},
+	"/sandbox-2/globe-01.png": {
+		"cid": "bafybeiaknxxqgyswj4xnd2btyq446t3f2yd4bmsbqm6vfhdhiolwto7nsi",
+		"url": "/media/bafybeiaknxxqgyswj4xnd2btyq446t3f2yd4bmsbqm6vfhdhiolwto7nsi.png"
+	},
+	"/sandbox-2/globe-02.png": {
+		"cid": "bafybeiacnyv2fra5yri6rguc2vmml6o5vrqn4vaojk46hvpyovezxfx63y",
+		"url": "/media/bafybeiacnyv2fra5yri6rguc2vmml6o5vrqn4vaojk46hvpyovezxfx63y.png"
+	},
+	"/sandbox-2/globe-03.png": {
+		"cid": "bafybeifmaucl3codwjfpu6kmnw6gmnhqm4hcp5qkxv2mr4a4bf3yjo7oxe",
+		"url": "/media/bafybeifmaucl3codwjfpu6kmnw6gmnhqm4hcp5qkxv2mr4a4bf3yjo7oxe.png"
+	},
+	"/sandbox-2/globe-04.png": {
+		"cid": "bafybeidvgxaarsscx3jj5nd7sdqjbf7s3ywttb7sxyailpdq6ivkg7clie",
+		"url": "/media/bafybeidvgxaarsscx3jj5nd7sdqjbf7s3ywttb7sxyailpdq6ivkg7clie.png"
+	},
+	"/sandbox-2/globe-05.png": {
+		"cid": "bafybeihpeajysjdjhtafk7onjaijtlvji5xocebbkjh25dczggadgvzllm",
+		"url": "/media/bafybeihpeajysjdjhtafk7onjaijtlvji5xocebbkjh25dczggadgvzllm.png"
+	},
+	"/sandbox-2/globe-06.png": {
+		"cid": "bafybeihry6mgtwp3heximh3jhw6istp2sakifl56gkohcnnjv67ol24qem",
+		"url": "/media/bafybeihry6mgtwp3heximh3jhw6istp2sakifl56gkohcnnjv67ol24qem.png"
+	},
+	"/sandbox-2/globe-07.png": {
+		"cid": "bafybeid73woukgnebhzlm7pltv5hvftvif5aqid5kbwdldvoev2riy4et4",
+		"url": "/media/bafybeid73woukgnebhzlm7pltv5hvftvif5aqid5kbwdldvoev2riy4et4.png"
+	},
+	"/sandbox-2/globe-08.png": {
+		"cid": "bafybeihyc6mie6pew367jzzopl24vz7ymenitersfekwl6btruo6fxfry4",
+		"url": "/media/bafybeihyc6mie6pew367jzzopl24vz7ymenitersfekwl6btruo6fxfry4.png"
+	},
+	"/sounds/bees.mp3": {
+		"cid": "bafybeiery7dtnfprkwgtxxpagsm54oxsbsahktiyf3frcjjwd4sq7b6hoi",
+		"url": "/media/bafybeiery7dtnfprkwgtxxpagsm54oxsbsahktiyf3frcjjwd4sq7b6hoi.mp3"
+	},
+	"/sounds/chickens.mp3": {
+		"cid": "bafkreigdnriq3agzxwr54tpbw5y34ul2cirojczyorlya7duuhqo3at4le",
+		"url": "/media/bafkreigdnriq3agzxwr54tpbw5y34ul2cirojczyorlya7duuhqo3at4le.mp3"
+	},
+	"/sounds/factory-ambience.mp3": {
+		"cid": "bafybeic6fjuvactqgno3kmoehrtfgqqrq3u5fm4445nivd7drofobx6p4a",
+		"url": "/media/bafybeic6fjuvactqgno3kmoehrtfgqqrq3u5fm4445nivd7drofobx6p4a.mp3"
+	},
+	"/sounds/forest_nature.mp3": {
+		"cid": "bafybeico4zfwof2xi4pbo2ypke6mquppztq6yqvxra4ylt464waiakcgly",
+		"url": "/media/bafybeico4zfwof2xi4pbo2ypke6mquppztq6yqvxra4ylt464waiakcgly.mp3"
+	},
+	"/sounds/frog.mp3": {
+		"cid": "bafybeiez76uxmjf3lw7szaguqcwcgoh7lh55zu5eqr32zu526ljxbjjrfy",
+		"url": "/media/bafybeiez76uxmjf3lw7szaguqcwcgoh7lh55zu5eqr32zu526ljxbjjrfy.mp3"
+	},
+	"/sounds/geese.mp3": {
+		"cid": "bafybeid6pjgd4qfleeipy5ojyzfz5nx3vpt6fm3l2wxhur4rysoytxkaze",
+		"url": "/media/bafybeid6pjgd4qfleeipy5ojyzfz5nx3vpt6fm3l2wxhur4rysoytxkaze.mp3"
+	},
+	"/sounds/lift.mp3": {
+		"cid": "bafkreiaq4k5xgzzdkwjnvbirorxkhmsqfofruxbaojq3opqrqek7jbo4ou",
+		"url": "/media/bafkreiaq4k5xgzzdkwjnvbirorxkhmsqfofruxbaojq3opqrqek7jbo4ou.mp3"
+	},
+	"/sounds/machine.mp3": {
+		"cid": "bafybeiefqt2zfmcpr5bovpxbdrgnq5auxwis2eom45rygghtbsew3xiday",
+		"url": "/media/bafybeiefqt2zfmcpr5bovpxbdrgnq5auxwis2eom45rygghtbsew3xiday.mp3"
+	},
+	"/sounds/sheep.mp3": {
+		"cid": "bafybeihelcqshzlwyy5s2hofvkf776fk5djwdnqo2abnfuvyvpp3ylew34",
+		"url": "/media/bafybeihelcqshzlwyy5s2hofvkf776fk5djwdnqo2abnfuvyvpp3ylew34.mp3"
+	},
+	"/sounds/soft-nature.mp3": {
+		"cid": "bafybeidcygcrgevwld4brioqtqy723ws637u7jvfvplojp5nghsyboar2a",
+		"url": "/media/bafybeidcygcrgevwld4brioqtqy723ws637u7jvfvplojp5nghsyboar2a.mp3"
+	},
+	"/sounds/water_stream.mp3": {
+		"cid": "bafybeicbzq5tkd5426bkg7n2b3pjasv2gn2aquevc2irskh2fsezpoxxwy",
+		"url": "/media/bafybeicbzq5tkd5426bkg7n2b3pjasv2gn2aquevc2irskh2fsezpoxxwy.mp3"
+	},
+	"/thumbnails/1bqjt-xrlqk.jpg": {
+		"cid": "bafybeic5nmph5tdoosydmikxtcdb57x4rgfholl6gmvgbwts372iogny6a",
+		"url": "/media/bafybeic5nmph5tdoosydmikxtcdb57x4rgfholl6gmvgbwts372iogny6a.jpg"
+	},
+	"/thumbnails/5vbl5FL-nsI.jpg": {
+		"cid": "bafkreigsdnlpjgybb3cp7lkhbivex226fn43ztcw2v375orizjfq44xory",
+		"url": "/media/bafkreigsdnlpjgybb3cp7lkhbivex226fn43ztcw2v375orizjfq44xory.jpg"
+	},
+	"/thumbnails/9Ro0gp7xOlg.jpg": {
+		"cid": "bafkreibolieuqw7wmepww3cl7oixascr5mjetwbbdqcrgwduztjar2gs5m",
+		"url": "/media/bafkreibolieuqw7wmepww3cl7oixascr5mjetwbbdqcrgwduztjar2gs5m.jpg"
+	},
+	"/thumbnails/BblaJ_Hb0vA.jpg": {
+		"cid": "bafkreiezfpoas4pbmgys5ndaidphil2t3rgh4mapveodbthqxzi3fj2f2a",
+		"url": "/media/bafkreiezfpoas4pbmgys5ndaidphil2t3rgh4mapveodbthqxzi3fj2f2a.jpg"
+	},
+	"/thumbnails/D1INOZltmyw.jpg": {
+		"cid": "bafkreiggcfd77lhfylesr4et5rknwyduagfhcqydqvwthcsdnlxpnvfkeu",
+		"url": "/media/bafkreiggcfd77lhfylesr4et5rknwyduagfhcqydqvwthcsdnlxpnvfkeu.jpg"
+	},
+	"/thumbnails/DD7bHSxV-EM.jpg": {
+		"cid": "bafkreidjh677xclt7ljyw5xaxrc7hed22xjhmtajpw5u5xg4fdnd6mzgya",
+		"url": "/media/bafkreidjh677xclt7ljyw5xaxrc7hed22xjhmtajpw5u5xg4fdnd6mzgya.jpg"
+	},
+	"/thumbnails/EMbZ72cCAzI.jpg": {
+		"cid": "bafkreihrt7mb5ou62zzl6kbkqex4mdeoebga66xi2zkqgthyunxlcvtqte",
+		"url": "/media/bafkreihrt7mb5ou62zzl6kbkqex4mdeoebga66xi2zkqgthyunxlcvtqte.jpg"
+	},
+	"/thumbnails/GCfUT7jPkvk.jpg": {
+		"cid": "bafybeifjwgp4y3srlqjvv2cwoqjm6epzcp5sctxgt3ksiqtscwblbhjaey",
+		"url": "/media/bafybeifjwgp4y3srlqjvv2cwoqjm6epzcp5sctxgt3ksiqtscwblbhjaey.jpg"
+	},
+	"/thumbnails/I0rQNYMwzfY.jpg": {
+		"cid": "bafkreic7yl7mj6lbusk5y7lfzu7qsofbms3jfcsorti3rxpymv5dqxjfui",
+		"url": "/media/bafkreic7yl7mj6lbusk5y7lfzu7qsofbms3jfcsorti3rxpymv5dqxjfui.jpg"
+	},
+	"/thumbnails/KYObF1-4SMU.jpg": {
+		"cid": "bafkreihkhdb422ev6bwjsh4zfouhy32xd5z2e6wisydkwul4qldri2lzbq",
+		"url": "/media/bafkreihkhdb422ev6bwjsh4zfouhy32xd5z2e6wisydkwul4qldri2lzbq.jpg"
+	},
+	"/thumbnails/LoLYw--s-5w.jpg": {
+		"cid": "bafkreihlzy3mg3j7h7f4ldqvpe32lgw27mqoq2xksk442d5pf6oqirvhly",
+		"url": "/media/bafkreihlzy3mg3j7h7f4ldqvpe32lgw27mqoq2xksk442d5pf6oqirvhly.jpg"
+	},
+	"/thumbnails/O7LvhSQ5Te4.jpg": {
+		"cid": "bafkreihluasq3lmdrdywzzmu3fbghcxgqkfas3h5zj4odvlqpizui2hy7i",
+		"url": "/media/bafkreihluasq3lmdrdywzzmu3fbghcxgqkfas3h5zj4odvlqpizui2hy7i.jpg"
+	},
+	"/thumbnails/OU1ijmTK6-k.jpg": {
+		"cid": "bafkreibjcv6vstwbisxhylwcwuq7olnn5f3aroqorhmi52vdarpea4rmdm",
+		"url": "/media/bafkreibjcv6vstwbisxhylwcwuq7olnn5f3aroqorhmi52vdarpea4rmdm.jpg"
+	},
+	"/thumbnails/OUqKpUReINg.jpg": {
+		"cid": "bafkreihycg5zsuzdqujh2engzqchekay56iaxanx4ix6lwnl7fp4mxsudi",
+		"url": "/media/bafkreihycg5zsuzdqujh2engzqchekay56iaxanx4ix6lwnl7fp4mxsudi.jpg"
+	},
+	"/thumbnails/R2_V8Fe5-_A.jpg": {
+		"cid": "bafkreiedqssdwlsuzued4fmthitl6kh5excsiunzi7y4o5jukoog54qh5q",
+		"url": "/media/bafkreiedqssdwlsuzued4fmthitl6kh5excsiunzi7y4o5jukoog54qh5q.jpg"
+	},
+	"/thumbnails/WzijH3lgzHI.jpg": {
+		"cid": "bafkreigpsykoxcbszljs27kvrbgm72f7yk4az7p6hepiwpyn23o76edc3u",
+		"url": "/media/bafkreigpsykoxcbszljs27kvrbgm72f7yk4az7p6hepiwpyn23o76edc3u.jpg"
+	},
+	"/thumbnails/a5DzxKy0yQQ.jpg": {
+		"cid": "bafkreihvu3jt6jpve26i7zviqgklwwgdlk74yrmoe6o7qbxosvcqmoppqe",
+		"url": "/media/bafkreihvu3jt6jpve26i7zviqgklwwgdlk74yrmoe6o7qbxosvcqmoppqe.jpg"
+	},
+	"/thumbnails/cOEUq0RuyjQ.jpg": {
+		"cid": "bafkreifvtx5a74tlw6ygqon6drohcbhs6m736mqabcrcghvjh3e3qlpeba",
+		"url": "/media/bafkreifvtx5a74tlw6ygqon6drohcbhs6m736mqabcrcghvjh3e3qlpeba.jpg"
+	},
+	"/thumbnails/eAV-ui_MB-A.jpg": {
+		"cid": "bafkreifpkxdv377kr5omdtsggijmsnsxknh4jvtuqu3mtjailgj7nvqg74",
+		"url": "/media/bafkreifpkxdv377kr5omdtsggijmsnsxknh4jvtuqu3mtjailgj7nvqg74.jpg"
+	},
+	"/thumbnails/hDIBkEFP_x4.jpg": {
+		"cid": "bafybeieseajztaoucluztlekifaod2rschqp4aicebnpp3ek4ty7hjgzvm",
+		"url": "/media/bafybeieseajztaoucluztlekifaod2rschqp4aicebnpp3ek4ty7hjgzvm.jpg"
+	},
+	"/thumbnails/jZb6_jlUJXs.jpg": {
+		"cid": "bafybeihzfos7lgpzykkn74vhhd2gwp525axxoqkclphvshtxvxffe4dtly",
+		"url": "/media/bafybeihzfos7lgpzykkn74vhhd2gwp525axxoqkclphvshtxvxffe4dtly.jpg"
+	},
+	"/thumbnails/jcD-7YvPVQ0.jpg": {
+		"cid": "bafybeibtug4jtm5xx55wknknqlageu37hgnappvfwy3t4u55pbquvqb4zu",
+		"url": "/media/bafybeibtug4jtm5xx55wknknqlageu37hgnappvfwy3t4u55pbquvqb4zu.jpg"
+	},
+	"/thumbnails/ks3Rgl4oC3E.jpg": {
+		"cid": "bafkreihkttaqkd3rauglwilyorjllxkgdj67gphbccpftmnmvna6r3kxze",
+		"url": "/media/bafkreihkttaqkd3rauglwilyorjllxkgdj67gphbccpftmnmvna6r3kxze.jpg"
+	},
+	"/thumbnails/mnuOZcmoGD8.jpg": {
+		"cid": "bafkreiety3brdseims6cg5emyjhjtovpkzlfo67yrowe4pphcczctiw3lq",
+		"url": "/media/bafkreiety3brdseims6cg5emyjhjtovpkzlfo67yrowe4pphcczctiw3lq.jpg"
+	},
+	"/thumbnails/rDVn-bvuYmo.jpg": {
+		"cid": "bafkreigxf53flvtdwjgxixiazkrqerklbh3u7d2j2b5sdp4k7owqqiduvq",
+		"url": "/media/bafkreigxf53flvtdwjgxixiazkrqerklbh3u7d2j2b5sdp4k7owqqiduvq.jpg"
+	},
+	"/thumbnails/sTcvKn92TlI.jpg": {
+		"cid": "bafkreidfi2dosr63v5xsr7ctpv4rfxpjykgebzz3f7uwdf6taoc35pqj3q",
+		"url": "/media/bafkreidfi2dosr63v5xsr7ctpv4rfxpjykgebzz3f7uwdf6taoc35pqj3q.jpg"
+	},
+	"/thumbnails/twGcjDnOb_U.jpg": {
+		"cid": "bafkreih3cfvh7ugodiavvz4rxo5f3v5hxhvgjzv2hywuhp5ate23m5hdba",
+		"url": "/media/bafkreih3cfvh7ugodiavvz4rxo5f3v5hxhvgjzv2hywuhp5ate23m5hdba.jpg"
+	},
+	"/thumbnails/vgq14_IqdYM.jpg": {
+		"cid": "bafkreib2jkx72zp35awh2zc37lyojzvpngawnqrqzkjeql3zfkqw74mwqy",
+		"url": "/media/bafkreib2jkx72zp35awh2zc37lyojzvpngawnqrqzkjeql3zfkqw74mwqy.jpg"
+	},
+	"/thumbnails/y_uQHoVhhcw.jpg": {
+		"cid": "bafkreih2hw36r5m4m432gg63jpzwvuezdkgjnie7rk7p4zvoplhyndeayq",
+		"url": "/media/bafkreih2hw36r5m4m432gg63jpzwvuezdkgjnie7rk7p4zvoplhyndeayq.jpg"
+	},
+	"/thumbnails/z-UsCjTfAD0.jpg": {
+		"cid": "bafkreihte7fncc4uutltkq5kjhqtfzp5ba7kzourhdttnd3xjhtixj7ds4",
+		"url": "/media/bafkreihte7fncc4uutltkq5kjhqtfzp5ba7kzourhdttnd3xjhtixj7ds4.jpg"
+	},
+	"/thumbnails/zIsHKrP-66s.jpg": {
+		"cid": "bafkreibnalrtf4huw2cznmle6ebiivmqiyrzqikli5fgabw4mksjto6pvu",
+		"url": "/media/bafkreibnalrtf4huw2cznmle6ebiivmqiyrzqikli5fgabw4mksjto6pvu.jpg"
+	}
+}
