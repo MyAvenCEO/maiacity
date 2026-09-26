@@ -1,7 +1,8 @@
 <!--
 	Stepping inside a dome: a full-screen, walkable interior (interior/interior.ts)
 	over the island. Drag or click to look, WASD or the arrows to walk, Shift to
-	hurry, Esc and the button to come back out.
+	hurry, Esc and the button to come back out. On a phone, as in Sandbox 4: a
+	joystick in the lower left walks, any other finger on the world looks round.
 
 	While the dome is built, the valley of domes from Day 03 fills the screen,
 	slowly drawing closer, with the step being done and a progress bar; when the
@@ -37,7 +38,90 @@
 	const clockTimer = setInterval(() => (clock = gameClock().label), 1000);
 	const liftTimer = setInterval(() => (lift = handle?.lift() ?? null), 200);
 
+	/* on a phone: the joystick walks (push it to the rim to hurry), any other finger on the
+	   world looks round. Touch events, each finger by its own identifier, so both work at once.
+	   The ring stays where it is, in the lower left; the knob goes wherever the thumb goes,
+	   past the rim too, so it is always under the thumb. How far out, up to the rim, sets the pace. */
+	let root: HTMLDivElement;
+	let stickEl: HTMLDivElement;
+	let knobEl: HTMLSpanElement;
+	let hurrying = $state(false);
+	let stickFinger: number | null = null;
+	/** the ring's centre and radius, measured as the thumb comes down */
+	let stick = { x: 0, y: 0, r: 64 };
+	let lookFinger: { id: number; x: number; y: number } | null = null;
+	/** a finger on the bar's or the lift's buttons: followed when it lifts where it came down */
+	const taps = new Map<number, { el: HTMLElement; x: number; y: number }>();
+	const stickTo = (t: Touch) => {
+		const x = t.clientX - stick.x;
+		const y = t.clientY - stick.y;
+		knobEl.style.transform = `translate3d(${x}px, ${y}px, 0)`;
+		// full walking pace three quarters of the way to the rim, a hurry at the rim and beyond
+		const d = Math.hypot(x, y);
+		const m = Math.min(1, d / stick.r);
+		const pace = m < 0.08 ? 0 : Math.min(1, m / 0.75);
+		hurrying = m > 0.95;
+		handle?.move((x / (d || 1)) * pace, (-y / (d || 1)) * pace, hurrying);
+	};
+	const stickRelease = () => {
+		stickFinger = null;
+		knobEl.style.transform = '';
+		hurrying = false;
+		handle?.move(0, 0, false);
+	};
+	const onTouchStart = (e: TouchEvent) => {
+		let ours = false;
+		for (const t of Array.from(e.changedTouches)) {
+			// Safari can name the text under the finger rather than its element
+			const el = ((t.target as Node).nodeType === Node.TEXT_NODE ? (t.target as Node).parentElement : t.target) as Element;
+			const tap = el?.closest?.('.bar button, .lift button') as HTMLElement | null;
+			if (tap) {
+				taps.set(t.identifier, { el: tap, x: t.clientX, y: t.clientY });
+				ours = true;
+			} else if (stickFinger === null && stickEl.contains(el)) {
+				stickFinger = t.identifier;
+				const box = stickEl.getBoundingClientRect();
+				stick = { x: box.left + box.width / 2, y: box.top + box.height / 2, r: box.width / 2 };
+				stickTo(t);
+				ours = true;
+			} else if (stage.contains(el)) {
+				if (lookFinger === null) lookFinger = { id: t.identifier, x: t.clientX, y: t.clientY };
+				ours = true;
+			}
+		}
+		// no scrolling, zooming, long-press menu or second, browser-made click
+		if (ours) e.preventDefault();
+	};
+	const onTouchMove = (e: TouchEvent) => {
+		for (const t of Array.from(e.changedTouches)) {
+			if (t.identifier === stickFinger) stickTo(t);
+			else if (lookFinger && t.identifier === lookFinger.id) {
+				handle?.look(t.clientX - lookFinger.x, t.clientY - lookFinger.y);
+				lookFinger.x = t.clientX;
+				lookFinger.y = t.clientY;
+			}
+		}
+		if (stickFinger !== null || lookFinger) e.preventDefault();
+	};
+	const onTouchEnd = (e: TouchEvent) => {
+		for (const t of Array.from(e.changedTouches)) {
+			const tap = taps.get(t.identifier);
+			if (tap) {
+				taps.delete(t.identifier);
+				if (e.type === 'touchend' && Math.hypot(t.clientX - tap.x, t.clientY - tap.y) < 14) tap.el.click();
+			} else if (t.identifier === stickFinger) stickRelease();
+			else if (lookFinger && t.identifier === lookFinger.id) lookFinger = null;
+		}
+	};
+	const noPinch = (e: Event) => e.preventDefault();
+
 	onMount(() => {
+		root.addEventListener('touchstart', onTouchStart, { passive: false });
+		root.addEventListener('touchmove', onTouchMove, { passive: false });
+		root.addEventListener('touchend', onTouchEnd);
+		root.addEventListener('touchcancel', onTouchEnd);
+		// Safari's own pinch, which touch-action alone does not always stop
+		document.addEventListener('gesturestart', noPinch);
 		// let the closed doors paint before the heavy build starts
 		requestAnimationFrame(() =>
 			requestAnimationFrame(async () => {
@@ -63,6 +147,7 @@
 	onDestroy(() => {
 		clearInterval(clockTimer);
 		clearInterval(liftTimer);
+		document.removeEventListener('gesturestart', noPinch);
 		destroyed = true;
 		handle?.dispose();
 	});
@@ -72,7 +157,7 @@
 
 <svelte:window onkeydown={onKey} />
 
-<div class="interior">
+<div class="interior" bind:this={root}>
 	<div class="stage" bind:this={stage}></div>
 	<div class="bar">
 		<button class="out" onclick={onclose}>← Back outside</button>
@@ -89,10 +174,17 @@
 				<button onclick={() => handle?.liftStep(1)} disabled={lift.floor >= lift.top} aria-label="Up a floor">↑</button>
 				<button onclick={() => handle?.liftStep(-1)} disabled={lift.floor <= 0} aria-label="Down a floor">↓</button>
 			</div>
-			<p class="how">Press <kbd>↑</kbd> or <kbd>↓</kbd> to ride one floor; the lift stops at every floor. Hold the key to ride on. Walk out through a door when it stops.</p>
+			<p class="how keys-how">Press <kbd>↑</kbd> or <kbd>↓</kbd> to ride one floor; the lift stops at every floor. Hold the key to ride on. Walk out through a door when it stops.</p>
+			<p class="how touch-how">Tap ↑ or ↓ to ride one floor; the lift stops at every floor. Walk out through a door when it stops.</p>
 		</div>
 	{/if}
-	<p class="help">Drag to look · WASD to walk · Shift to hurry{kind === 'factory' ? ' · in the great lift, ↑ and ↓ ride between the five floors' : kind === 'tent' ? ' · the door leads out to the campfire' : spec.gallery ? ' · the stairs lead up to the private rooms and the terrace' : ' · the door leads out into the forest'}</p>
+	<p class="help">
+		<span class="keys-how">Drag to look · WASD to walk · Shift to hurry{kind === 'factory' ? ' · in the great lift, ↑ and ↓ ride between the five floors' : kind === 'tent' ? ' · the door leads out to the campfire' : spec.gallery ? ' · the stairs lead up to the private rooms and the terrace' : ' · the door leads out into the forest'}</span>
+		<span class="touch-how">Swipe to look · joystick to walk · push to the rim to hurry</span>
+	</p>
+	<div class="stick" class:hurrying bind:this={stickEl}>
+		<span class="knob" bind:this={knobEl}></span>
+	</div>
 
 	{#if doors !== 'open'}
 		<div class="loading" class:opening={doors === 'opening'} role="status" aria-live="polite">
@@ -301,5 +393,108 @@
 	.step {
 		font-size: 0.85rem;
 		color: #f0c49a;
+	}
+
+	/* ── the touch joystick, only where there is no mouse ── */
+	.touch-how,
+	.stick {
+		display: none;
+	}
+	.stick {
+		position: absolute;
+		left: calc(1.5rem + env(safe-area-inset-left, 0px));
+		bottom: calc(1.5rem + env(safe-area-inset-bottom, 0px));
+		z-index: 2;
+		width: 8rem;
+		height: 8rem;
+		border-radius: 50%;
+		background: rgb(250 248 242 / 0.18);
+		border: 1.5px solid rgb(250 248 242 / 0.55);
+		backdrop-filter: blur(6px);
+		align-items: center;
+		justify-content: center;
+		touch-action: none;
+		user-select: none;
+		-webkit-user-select: none;
+		-webkit-touch-callout: none;
+	}
+	/* a thumb landing just outside the ring still takes the knob */
+	.stick::before {
+		content: '';
+		position: absolute;
+		inset: -1.5rem;
+		border-radius: 50%;
+	}
+	.stick.hurrying {
+		border-color: #f0a47c;
+	}
+	.knob {
+		width: 3.4rem;
+		height: 3.4rem;
+		border-radius: 50%;
+		background: rgb(250 248 242 / 0.9);
+		box-shadow: 0 2px 10px rgb(0 0 0 / 0.25);
+		pointer-events: none;
+		will-change: transform;
+	}
+	.stick.hurrying .knob {
+		background: #f0a47c;
+	}
+	@media (hover: none) and (pointer: coarse) {
+		.stick {
+			display: flex;
+			will-change: transform;
+		}
+		.keys-how {
+			display: none;
+		}
+		.touch-how {
+			display: inline;
+		}
+		p.touch-how {
+			display: block;
+		}
+		.help {
+			top: calc(4.2rem + env(safe-area-inset-top, 0px));
+			bottom: auto;
+		}
+		/* the lift's panel above the joystick, not over it */
+		.lift {
+			bottom: calc(11rem + env(safe-area-inset-bottom, 0px));
+		}
+	}
+
+	/* ── a narrow screen: a shorter bar that fits ── */
+	@media (max-width: 640px) {
+		.bar {
+			left: 0.75rem;
+			right: 0.75rem;
+			gap: 0.35rem;
+		}
+		.out,
+		.title,
+		.clock {
+			padding: 0.5rem 0.75rem;
+			font-size: 0.8rem;
+			white-space: nowrap;
+		}
+		.title {
+			min-width: 0;
+			overflow: hidden;
+			text-overflow: ellipsis;
+		}
+		.title span {
+			display: none;
+		}
+		.clock {
+			margin-left: auto;
+		}
+		.help {
+			max-width: calc(100vw - 2rem);
+			width: max-content;
+			white-space: normal;
+			text-align: center;
+			font-size: 0.75rem;
+		}
 	}
 </style>
