@@ -25,15 +25,26 @@
 	let clock = $state(gameClock().label);
 	const clockTimer = setInterval(() => (clock = gameClock().label), 1000);
 
-	/* the touch joystick: drag the knob to walk, push it to the rim to hurry */
+	/* the sky kept at day while the clock runs on; every visit starts on the real sky */
+	let alwaysDay = $state(false);
+	const toggleDay = () => {
+		alwaysDay = !alwaysDay;
+		village?.alwaysDay(alwaysDay);
+	};
+
+	/* on a phone: the joystick walks (push it to the rim to hurry), any other finger on the
+	   world looks round. Touch events, each finger by its own identifier, so both work at once. */
+	let root: HTMLDivElement;
+	let stickEl: HTMLDivElement;
 	const RIM = 48;
 	let knob = $state({ x: 0, y: 0 });
 	let hurrying = $state(false);
 	let stickFinger: number | null = null;
 	let stickCentre = { x: 0, y: 0 };
-	const stickTo = (e: PointerEvent) => {
-		let x = e.clientX - stickCentre.x;
-		let y = e.clientY - stickCentre.y;
+	let lookFinger: { id: number; x: number; y: number } | null = null;
+	const stickTo = (t: Touch) => {
+		let x = t.clientX - stickCentre.x;
+		let y = t.clientY - stickCentre.y;
 		const d = Math.hypot(x, y);
 		if (d > RIM) {
 			x *= RIM / d;
@@ -43,26 +54,56 @@
 		hurrying = d > RIM * 1.15;
 		village?.move(x / RIM, -y / RIM, hurrying);
 	};
-	const stickDown = (e: PointerEvent) => {
-		if (stickFinger !== null) return;
-		stickFinger = e.pointerId;
-		const box = (e.currentTarget as HTMLElement).getBoundingClientRect();
-		stickCentre = { x: box.left + box.width / 2, y: box.top + box.height / 2 };
-		(e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
-		stickTo(e);
-	};
-	const stickMove = (e: PointerEvent) => {
-		if (e.pointerId === stickFinger) stickTo(e);
-	};
-	const stickUp = (e: PointerEvent) => {
-		if (e.pointerId !== stickFinger) return;
+	const stickRelease = () => {
 		stickFinger = null;
 		knob = { x: 0, y: 0 };
 		hurrying = false;
 		village?.move(0, 0, false);
 	};
+	const onTouchStart = (e: TouchEvent) => {
+		let ours = false;
+		for (const t of Array.from(e.changedTouches)) {
+			const el = t.target as Node;
+			if (stickFinger === null && stickEl.contains(el)) {
+				stickFinger = t.identifier;
+				const box = stickEl.getBoundingClientRect();
+				stickCentre = { x: box.left + box.width / 2, y: box.top + box.height / 2 };
+				stickTo(t);
+				ours = true;
+			} else if (stage.contains(el)) {
+				if (lookFinger === null) lookFinger = { id: t.identifier, x: t.clientX, y: t.clientY };
+				ours = true;
+			}
+		}
+		// no scrolling, zooming or long-press menu over the world; the bar's links and buttons still tap
+		if (ours) e.preventDefault();
+	};
+	const onTouchMove = (e: TouchEvent) => {
+		for (const t of Array.from(e.changedTouches)) {
+			if (t.identifier === stickFinger) stickTo(t);
+			else if (lookFinger && t.identifier === lookFinger.id) {
+				village?.look(t.clientX - lookFinger.x, t.clientY - lookFinger.y);
+				lookFinger.x = t.clientX;
+				lookFinger.y = t.clientY;
+			}
+		}
+		if (stickFinger !== null || lookFinger) e.preventDefault();
+	};
+	const onTouchEnd = (e: TouchEvent) => {
+		for (const t of Array.from(e.changedTouches)) {
+			if (t.identifier === stickFinger) stickRelease();
+			else if (lookFinger && t.identifier === lookFinger.id) lookFinger = null;
+		}
+	};
+	const noPinch = (e: Event) => e.preventDefault();
 
 	onMount(() => {
+		root.addEventListener('touchstart', onTouchStart, { passive: false });
+		root.addEventListener('touchmove', onTouchMove, { passive: false });
+		root.addEventListener('touchend', onTouchEnd);
+		root.addEventListener('touchcancel', onTouchEnd);
+		// Safari's own pinch, which touch-action alone does not always stop
+		document.addEventListener('gesturestart', noPinch);
 		requestAnimationFrame(() =>
 			requestAnimationFrame(async () => {
 				const { mountVillage } = await import('$lib/sandbox-2/interior/village');
@@ -86,6 +127,7 @@
 		destroyed = true;
 		clearInterval(clockTimer);
 		clearInterval(openingTimer);
+		document.removeEventListener('gesturestart', noPinch);
 		village?.dispose();
 	});
 </script>
@@ -95,26 +137,34 @@
 	<meta name="description" content="Walk a whole maiaCITY dome cell: the master dome, six large domes and six medium domes, with paths, streams and a food forest between them. Step into any of them." />
 </svelte:head>
 
-<div class="village">
+<div class="village" bind:this={root}>
 	<div class="stage" bind:this={stage}></div>
 	<div class="bar">
 		<a class="out" href="{base}/games">← Games</a>
 		<div class="title"><strong>avenCITY Sandbox 4</strong><span>A dome cell · thirteen domes</span></div>
 		<div class="clock" title="In-game time: a game hour passes every two real minutes">{clock}</div>
+		<button
+			class="daylight"
+			class:on={alwaysDay}
+			aria-label="Always day"
+			aria-pressed={alwaysDay}
+			title={alwaysDay ? 'Kept at day — tap for the real sky again' : 'The real sky: sun and moon follow the clock — tap to keep it day'}
+			onclick={toggleDay}
+		>
+			{#if alwaysDay}
+				<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4.5" /><path d="M12 2v2.5M12 19.5V22M2 12h2.5M19.5 12H22M4.9 4.9l1.8 1.8M17.3 17.3l1.8 1.8M4.9 19.1l1.8-1.8M17.3 6.7l1.8-1.8" /></svg>
+				<span>Day</span>
+			{:else}
+				<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5z" /></svg>
+				<span>Real sky</span>
+			{/if}
+		</button>
 	</div>
 	<p class="help">
 		<span class="keys">Drag to look · WASD to walk · Shift to hurry · walk through any door to step inside</span>
 		<span class="touch">Swipe to look · joystick to walk · push to the rim to hurry</span>
 	</p>
-	<div
-		class="stick"
-		class:hurrying
-		role="presentation"
-		onpointerdown={stickDown}
-		onpointermove={stickMove}
-		onpointerup={stickUp}
-		onpointercancel={stickUp}
-	>
+	<div class="stick" class:hurrying bind:this={stickEl}>
 		<span class="knob" style:transform="translate({knob.x}px, {knob.y}px)"></span>
 	</div>
 	{#if opening}<p class="opening">The {opening.toLowerCase()} ahead is opening its doors…</p>{/if}
@@ -154,7 +204,10 @@
 		margin: 0;
 		padding: 0.45rem 0.9rem;
 		border-radius: 999px;
-		background: rgb(250 248 242 / 0.9);
+		background: rgb(250 248 242 / 0.6);
+		border: 1px solid rgb(255 255 255 / 0.35);
+		-webkit-backdrop-filter: blur(12px) saturate(1.2);
+		backdrop-filter: blur(12px) saturate(1.2);
 		color: #1f2a23;
 		font-size: 0.8rem;
 		white-space: nowrap;
@@ -163,21 +216,48 @@
 		position: absolute;
 		top: calc(1rem + env(safe-area-inset-top, 0px));
 		left: 1rem;
+		right: 1rem;
 		display: flex;
 		gap: 0.5rem;
 		align-items: center;
 		z-index: 2;
 	}
+	/* see-through pills: the world shows through, blurred */
 	.out,
 	.title,
-	.clock {
+	.clock,
+	.daylight {
 		padding: 0.55rem 0.9rem;
 		border-radius: 999px;
-		background: rgb(250 248 242 / 0.9);
-		backdrop-filter: blur(10px);
+		background: rgb(250 248 242 / 0.55);
+		border: 1px solid rgb(255 255 255 / 0.35);
+		-webkit-backdrop-filter: blur(12px) saturate(1.2);
+		backdrop-filter: blur(12px) saturate(1.2);
 		font-size: 0.85rem;
 		color: #1f2a23;
 		text-decoration: none;
+	}
+	.daylight {
+		margin-left: auto;
+		display: inline-flex;
+		align-items: center;
+		gap: 0.4rem;
+		font: inherit;
+		font-size: 0.85rem;
+		cursor: pointer;
+		transition: background 0.2s ease;
+	}
+	.daylight svg {
+		width: 1.05em;
+		height: 1.05em;
+		fill: none;
+		stroke: currentColor;
+		stroke-width: 2;
+		stroke-linecap: round;
+		stroke-linejoin: round;
+	}
+	.daylight.on {
+		background: rgb(240 196 154 / 0.7);
 	}
 	.title span {
 		margin-left: 0.4rem;
@@ -194,7 +274,9 @@
 		margin: 0;
 		padding: 0.5rem 0.9rem;
 		border-radius: 999px;
-		background: rgb(31 42 35 / 0.75);
+		background: rgb(31 42 35 / 0.45);
+		-webkit-backdrop-filter: blur(10px);
+		backdrop-filter: blur(10px);
 		color: #f2efe7;
 		font-size: 0.8rem;
 		white-space: nowrap;
@@ -344,7 +426,8 @@
 		}
 		.out,
 		.title,
-		.clock {
+		.clock,
+		.daylight {
 			padding: 0.5rem 0.75rem;
 			font-size: 0.8rem;
 			white-space: nowrap;
@@ -359,6 +442,14 @@
 		}
 		.clock {
 			margin-left: auto;
+		}
+		/* just the sun or moon on a phone */
+		.daylight {
+			margin-left: 0;
+			padding: 0.5rem 0.6rem;
+		}
+		.daylight span {
+			display: none;
 		}
 		.help,
 		.opening {
