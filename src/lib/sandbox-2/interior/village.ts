@@ -1046,6 +1046,8 @@ export async function mountVillage(container: HTMLElement, onProgress: (label: s
 
 	/** Where you may stand, and how high: the land, or inside the open dome on its own floors. */
 	const DOOR_HALF = 1.1
+	/** the floor you truly stand on, and your feet easing after it (for a smooth eye) */
+	let ground = 0
 	let feet = 0
 	const floorHere = (x: number, z: number, f: number) => {
 		for (const i of shown) {
@@ -1064,7 +1066,7 @@ export async function mountVillage(container: HTMLElement, onProgress: (label: s
 			// the open dome: its own floors, walls, rails and furniture
 			const full = shown.has(i) ? built.get(i) : undefined
 			if (full) {
-				const nf = full.floorAt(dx, dz, feet)
+				const nf = full.floorAt(dx, dz, ground)
 				return full.inside(dx, dz, nf) && !full.blocked(dx, dz, here) && !full.hits(dx, dz, nf)
 			}
 			// a dome still growing: in through a door and anywhere on its ground floor, while its
@@ -1092,15 +1094,22 @@ export async function mountVillage(container: HTMLElement, onProgress: (label: s
 			const speed = (keys.has('shift') || stick.hurry ? 14.6 : 6.45) * dt
 			const dx = (-Math.sin(yaw) * f + Math.cos(yaw) * s) * speed
 			const dz = (-Math.cos(yaw) * f - Math.sin(yaw) * s) * speed
-			const here = floorHere(pos.x, pos.z, feet)
-			for (const [mx, mz] of [[dx, dz], [dx, 0], [0, dz]] as const) {
-				if (!check(pos.x + mx, pos.z + mz, here)) continue
-				pos.x += mx
-				pos.z += mz
-				break
+			// in short strides, each reaching up from the floor you stand on, so a stair climbs
+			// as well at a hurry, and on a slow phone, as at a stroll
+			const n = Math.max(1, Math.ceil(Math.hypot(dx, dz) / 0.25))
+			for (let k = 0; k < n; k++) {
+				const here = floorHere(pos.x, pos.z, ground)
+				for (const [mx, mz] of [[dx / n, dz / n], [dx / n, 0], [0, dz / n]] as const) {
+					if (!check(pos.x + mx, pos.z + mz, here)) continue
+					pos.x += mx
+					pos.z += mz
+					break
+				}
+				ground = floorHere(pos.x, pos.z, ground)
 			}
 		}
-		feet += (floorHere(pos.x, pos.z, feet) - feet) * Math.min(1, dt * 12)
+		ground = floorHere(pos.x, pos.z, ground)
+		feet += (ground - feet) * Math.min(1, dt * 12)
 		camera.position.set(pos.x, feet + EYE, pos.z)
 		camera.rotation.set(pitch, yaw, 0, 'YXZ')
 		// the sun's shadows follow you round the cell
@@ -1175,7 +1184,7 @@ export async function mountVillage(container: HTMLElement, onProgress: (label: s
 		fly: (x: number, y: number, z: number, yw: number, p: number) => (flying = [x, y, z, yw, p]),
 		place: (x: number, z: number, yw: number, p: number, y = 0) => {
 			flying = null
-			feet = y
+			ground = feet = y
 			pos.set(x, 0, z)
 			yaw = yw
 			pitch = p
