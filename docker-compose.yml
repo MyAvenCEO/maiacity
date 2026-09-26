@@ -45,6 +45,9 @@ services:
       RP_NAME: ${RP_NAME:-maiaCITY}
       SITE_ORIGIN: ${SITE_ORIGIN:-http://localhost:5173}
       COOKIE_DOMAIN: ${COOKIE_DOMAIN:-}
+      # Bunny, for the media library's public copies. Its own name, so a local .env that holds
+      # BUNNY_API_KEY for the deploy scripts never lets a local API write to the live CDN.
+      BUNNY_API_KEY: ${API_BUNNY_API_KEY:-}
     ports:
       - "${API_PORT:-3100}:3000"
     healthcheck:

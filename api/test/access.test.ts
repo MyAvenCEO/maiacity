@@ -7,6 +7,7 @@ import { MIGRATIONS } from "../src/migrations-list";
 import { assignRole, can, capabilities, createRole, deleteRole, initRoles, listRoles, setRoleCaps } from "../src/acl";
 import { ALL_CAPS, CITIZEN_CAPS, ROLE_CAPS } from "../src/caps";
 import { addIdea, deleteIdea, listIdeas, updateIdea } from "../src/ideas";
+import { approveDevice, deviceInfo, keyHolder, redeemDevice, revokeKey, startDevice } from "../src/keys";
 
 const pg = new PGlite();
 const founder = (id: string, role: string) => pg.query("INSERT INTO founders (id, name, role) VALUES ($1, $1, $2)", [id, role]);
@@ -85,5 +86,30 @@ describe("the admin's notebook", () => {
     await expect(addIdea("first", "   ")).rejects.toThrow(/Write something/);
     await deleteIdea(a.id);
     expect((await listIdeas()).length).toBe(1);
+  });
+});
+
+describe("a terminal signs in with the admin's approval", () => {
+  const bearer = (key: string) => new Request("http://x/", { headers: { authorization: `Bearer ${key}` } });
+
+  test("code → approval → a key that can do what was asked, until it is revoked", async () => {
+    const d = await startDevice("media:admin", "bun media on a laptop");
+    expect(d.user_code).toMatch(/^[A-Z2-9]{4}-[A-Z2-9]{4}$/);
+    expect(await redeemDevice(d.device_code)).toEqual({ pending: true });
+    expect((await deviceInfo(d.user_code.toLowerCase())).scope).toEqual(["media:admin"]);
+    await expect(approveDevice(d.user_code, { id: "second", role: "citizen" })).rejects.toThrow(/cannot hand on/);
+    await approveDevice(d.user_code, { id: "first", role: "admin" });
+    const r = await redeemDevice(d.device_code);
+    const key = (r as { key: string }).key;
+    expect(key).toStartWith("mck_");
+    await expect(redeemDevice(d.device_code)).rejects.toThrow(/used or expired/);
+    expect(await keyHolder(bearer(key))).toEqual({ id: "first", role: "admin", scope: ["media:admin"] });
+    expect(await keyHolder(bearer("mck_wrong"))).toBeNull();
+    expect(await revokeKey(bearer(key))).toBe(true);
+    expect(await keyHolder(bearer(key))).toBeNull();
+  });
+
+  test("only known capabilities can be asked for", async () => {
+    await expect(startDevice("everything", "x")).rejects.toThrow(/known capabilities/);
   });
 });

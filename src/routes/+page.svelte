@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { asset } from '$lib/media/url';
 	import { base } from '$app/paths';
 	import LatestList from '$lib/blog/LatestList.svelte';
 	import NextCard from '$lib/blog/NextCard.svelte';
@@ -44,7 +45,7 @@
 
 				<div class="foot">
 					{#if post.authorImage}
-						<img class="avatar" src="{base}{post.authorImage}" alt="" />
+						<img class="avatar" src={asset(post.authorImage)} alt="" />
 					{/if}
 					<span>{post.author}</span>
 					<ul class="tag-list">

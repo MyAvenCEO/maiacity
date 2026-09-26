@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { asset } from '$lib/media/url';
 	import { base } from '$app/paths';
 	import LatestList from '$lib/blog/LatestList.svelte';
 	import NextCard from '$lib/blog/NextCard.svelte';
@@ -27,7 +28,7 @@
 {#if post.cover}
 	<!-- the cover, edge to edge, before anything else -->
 	<figure class="hero">
-		<img src="{base}{post.cover}" alt={post.coverAlt ?? post.title} fetchpriority="high" />
+		<img src={asset(post.cover)} alt={post.coverAlt ?? post.title} fetchpriority="high" />
 	</figure>
 {/if}
 
@@ -44,7 +45,7 @@
 
 			<div class="byline">
 				{#if post.authorImage}
-					<img class="avatar" src="{base}{post.authorImage}" alt={post.author} />
+					<img class="avatar" src={asset(post.authorImage)} alt={post.author} />
 				{/if}
 				<div>
 					<p class="author">{post.author}</p>

@@ -25,3 +25,14 @@ vite.config.ts.timestamp-*
 # Video masters live in Bunny Stream, not in git
 static/**/*.mp4
 static/**/*.mov
+
+# Journal media live in the media library — production Postgres, by CID, served from the CDN.
+# `bun media sync` puts them there; git does not carry them. (Media the site's code loads directly —
+# sounds, sandbox and game images, portraits — stay in static/ and in git for now.)
+static/day-*/**/*.jpg
+static/day-*/**/*.jpeg
+static/day-*/**/*.png
+static/day-*/**/*.webp
+static/day-*/**/*.gif
+static/day-*/**/*.mp3
+static/day-*/**/*.pdf

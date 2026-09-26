@@ -20,6 +20,7 @@ export const CAPABILITIES: Record<string, string> = {
   // the admin
   "roles:admin": "Manage roles: what each role holds, and who has which role",
   "ideas:admin": "Write down ideas and notes in the admin notebook",
+  "media:admin": "See the media library: every image, sound and video, stored by its CID",
 };
 
 /** Every capability, written out — the bundle of the admin role (never '*'). */

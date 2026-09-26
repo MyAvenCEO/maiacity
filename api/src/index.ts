@@ -16,6 +16,9 @@ import { ledgerView } from "./ledger/view";
 import { assignRole, can, capabilities, createRole, deleteRole, initRoles, listRoles, RoleError, setRoleCaps } from "./acl";
 import { CAPABILITIES } from "./caps";
 import { addIdea, deleteIdea, IdeaError, listIdeas, updateIdea } from "./ideas";
+import { finishUpload, have, listMedia, MediaError, mediaInfo, namePath, publicManifest, putPart, readMedia, retag, startUpload } from "./media";
+import { approveDevice, deviceInfo, KeyError, keyHolder, redeemDevice, revokeKey, startDevice } from "./keys";
+import { canDistribute, distributePending } from "./bunny";
 import { format, gameClock, calendar, parse } from "../../game/time";
 
 const PORT = Number(process.env.PORT ?? 3000);
@@ -33,8 +36,8 @@ function cors(req: Request): Record<string, string> {
   return {
     "Access-Control-Allow-Origin": origin,
     "Access-Control-Allow-Credentials": "true",
-    "Access-Control-Allow-Headers": "content-type",
-    "Access-Control-Allow-Methods": "GET,POST,PATCH,DELETE,OPTIONS",
+    "Access-Control-Allow-Headers": "content-type, authorization",
+    "Access-Control-Allow-Methods": "GET,POST,PUT,PATCH,DELETE,OPTIONS",
     Vary: "Origin",
   };
 }
@@ -86,6 +89,12 @@ async function viewer(req: Request): Promise<{ id: string; role: string } | null
  * Every admin route starts here, so none of them ever asks for a role by name.
  */
 async function allowed(req: Request, cap: string): Promise<{ id: string; role: string } | Response> {
+  // a terminal signs in with a key the admin approved: it may do what the key was given, and the person still holds
+  const key = await keyHolder(req);
+  if (key) {
+    if (key.scope.includes(cap) && can(key, cap)) return key;
+    return json(req, { error: `This key cannot ${(CAPABILITIES[cap] ?? cap).toLowerCase()}.` }, { status: 403 });
+  }
   const me = await viewer(req);
   if (!me) return json(req, { error: "Please sign in." }, { status: 401 });
   if (!can(me, cap)) return json(req, { error: `This needs the right to ${(CAPABILITIES[cap] ?? cap).toLowerCase()}.` }, { status: 403 });
@@ -94,7 +103,7 @@ async function allowed(req: Request, cap: string): Promise<{ id: string; role: s
 
 /** Turn a thrown ledger, role or notebook error into a response a person can read. */
 function fail(req: Request, e: unknown) {
-  if (e instanceof LedgerError || e instanceof RoleError || e instanceof IdeaError) return json(req, { error: e.message }, { status: e.status });
+  if (e instanceof LedgerError || e instanceof RoleError || e instanceof IdeaError || e instanceof KeyError || e instanceof MediaError) return json(req, { error: e.message }, { status: e.status });
   console.error(e);
   return json(req, { error: "Something went wrong on our side." }, { status: 500 });
 }
@@ -431,6 +440,179 @@ const server = Bun.serve({
         } catch (e) {
           return fail(req, e);
         }
+      },
+    },
+
+    // The media library: every file in Postgres, known by its CID. The public copies are on Bunny;
+    // these are the originals, for the admin's eyes.
+    "/api/media": {
+      OPTIONS: preflight,
+      GET: async (req) => {
+        const me = await allowed(req, "media:admin");
+        if (me instanceof Response) return me;
+        const url = new URL(req.url);
+        const media = await listMedia({ kind: url.searchParams.get("kind") ?? undefined, q: url.searchParams.get("q") ?? undefined });
+        return json(req, { media, total: media.reduce((n, m) => n + m.size, 0) });
+      },
+    },
+    // ── the media library, from a terminal: sign in with the admin's passkey, then upload by CID ──
+    "/api/device/start": {
+      OPTIONS: preflight,
+      POST: async (req) => {
+        try {
+          const body = await readJson(req);
+          return json(req, await startDevice(body?.scope, body?.label));
+        } catch (e) {
+          return fail(req, e);
+        }
+      },
+    },
+    "/api/device/token": {
+      OPTIONS: preflight,
+      POST: async (req) => {
+        try {
+          const r = await redeemDevice((await readJson(req))?.device_code);
+          return "pending" in r ? json(req, r, { status: 428 }) : json(req, r);
+        } catch (e) {
+          return fail(req, e);
+        }
+      },
+    },
+    "/api/device/key": {
+      OPTIONS: preflight,
+      DELETE: async (req) => (await revokeKey(req)) ? new Response(null, { status: 204, headers: cors(req) }) : json(req, { error: "No such key." }, { status: 404 }),
+    },
+    "/api/device/:code": {
+      OPTIONS: preflight,
+      GET: async (req) => {
+        if (!(await viewer(req))) return json(req, { error: "Please sign in." }, { status: 401 });
+        try {
+          return json(req, await deviceInfo(req.params.code));
+        } catch (e) {
+          return fail(req, e);
+        }
+      },
+    },
+    "/api/device/:code/approve": {
+      OPTIONS: preflight,
+      POST: async (req) => {
+        const me = await viewer(req);
+        if (!me) return json(req, { error: "Please sign in." }, { status: 401 });
+        try {
+          await approveDevice(req.params.code, me);
+          return json(req, { ok: true });
+        } catch (e) {
+          return fail(req, e);
+        }
+      },
+    },
+    // Public: the site's build reads it to load each image from its CID on the CDN.
+    "/api/media/manifest": async (req) => json(req, await publicManifest(), { headers: { "Cache-Control": "no-store" } }),
+    "/api/media/have": {
+      OPTIONS: preflight,
+      POST: async (req) => {
+        const me = await allowed(req, "media:admin");
+        if (me instanceof Response) return me;
+        const cids = (await readJson(req))?.cids;
+        return json(req, { have: await have(Array.isArray(cids) ? cids.map(String) : []) });
+      },
+    },
+    "/api/media/paths": {
+      OPTIONS: preflight,
+      POST: async (req) => {
+        const me = await allowed(req, "media:admin");
+        if (me instanceof Response) return me;
+        try {
+          const body = await readJson(req);
+          await namePath(body?.path, body?.cid);
+          return json(req, { ok: true });
+        } catch (e) {
+          return fail(req, e);
+        }
+      },
+    },
+    "/api/media/tags": {
+      OPTIONS: preflight,
+      PUT: async (req) => {
+        const me = await allowed(req, "media:admin");
+        if (me instanceof Response) return me;
+        const body = (await readJson(req))?.tags;
+        if (!body || typeof body !== "object") return json(req, { error: "Send { tags: { cid: [tag, …] } }." }, { status: 400 });
+        const known = new Set(await have(Object.keys(body)));
+        await retag(new Map(Object.entries(body).filter(([cid]) => known.has(cid)).map(([cid, t]) => [cid, new Set((t as unknown[]).map(String))])));
+        return json(req, { tagged: known.size });
+      },
+    },
+    "/api/media/uploads": {
+      OPTIONS: preflight,
+      POST: async (req) => {
+        const me = await allowed(req, "media:admin");
+        if (me instanceof Response) return me;
+        try {
+          return json(req, await startUpload(me.id, (await readJson(req)) ?? {}));
+        } catch (e) {
+          return fail(req, e);
+        }
+      },
+    },
+    "/api/media/uploads/:id/finish": {
+      OPTIONS: preflight,
+      POST: async (req) => {
+        const me = await allowed(req, "media:admin");
+        if (me instanceof Response) return me;
+        try {
+          const r = await finishUpload(me.id, req.params.id);
+          void distributePending(); // the public copy follows on its own
+          return json(req, r);
+        } catch (e) {
+          return fail(req, e);
+        }
+      },
+    },
+    "/api/media/uploads/:id/:idx": {
+      OPTIONS: preflight,
+      PUT: async (req) => {
+        const me = await allowed(req, "media:admin");
+        if (me instanceof Response) return me;
+        try {
+          await putPart(me.id, req.params.id, Number(req.params.idx), new Uint8Array(await req.arrayBuffer()));
+          return new Response(null, { status: 204, headers: cors(req) });
+        } catch (e) {
+          return fail(req, e);
+        }
+      },
+    },
+    // Make every missing public copy now, and say how it went (the terminal waits for it).
+    "/api/media/distribute": {
+      OPTIONS: preflight,
+      POST: async (req) => {
+        const me = await allowed(req, "media:admin");
+        if (me instanceof Response) return me;
+        if (!canDistribute()) return json(req, { error: "This server has no BUNNY_API_KEY." }, { status: 503 });
+        return json(req, await distributePending());
+      },
+    },
+
+    "/api/media/:cid": {
+      OPTIONS: preflight,
+      GET: async (req) => {
+        const me = await allowed(req, "media:admin");
+        if (me instanceof Response) return me;
+        const info = await mediaInfo(req.params.cid);
+        if (!info) return json(req, { error: "No such file." }, { status: 404 });
+        // a CID never changes its bytes: cache it for good, and answer byte ranges so a video can seek
+        const head = { ...cors(req), "Content-Type": info.mime, "Accept-Ranges": "bytes", ETag: `"${req.params.cid}"`, "Cache-Control": "private, max-age=31536000, immutable" };
+        const range = /^bytes=(\d*)-(\d*)$/.exec(req.headers.get("range") ?? "");
+        if (range && info.size > 0) {
+          const start = range[1] ? Number(range[1]) : Math.max(0, info.size - Number(range[2]));
+          const end = range[1] && range[2] ? Math.min(Number(range[2]), info.size - 1) : info.size - 1;
+          if (start > end || start >= info.size) return new Response(null, { status: 416, headers: { ...head, "Content-Range": `bytes */${info.size}` } });
+          return new Response(readMedia(req.params.cid, start, end), {
+            status: 206,
+            headers: { ...head, "Content-Range": `bytes ${start}-${end}/${info.size}`, "Content-Length": String(end - start + 1) },
+          });
+        }
+        return new Response(readMedia(req.params.cid, 0, Math.max(0, info.size - 1)), { headers: { ...head, "Content-Length": String(info.size) } });
       },
     },
 

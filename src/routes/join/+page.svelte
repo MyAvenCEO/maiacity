@@ -117,8 +117,8 @@
 			{#if saved}<p class="note ok">Saved.</p>{/if}
 			{#if error}<p class="note bad">{error}</p>{/if}
 
-			{#if may(founder, 'ideas:admin')}
-				<p class="already"><a class="quiet" href="{base}/admin/ideas/">Open the ideas notebook →</a></p>
+			{#if may(founder, 'ideas:admin') || may(founder, 'media:admin')}
+				<p class="already"><a class="quiet" href="{base}/admin/">Open the admin: ideas and media →</a></p>
 			{/if}
 
 			<button class="quiet" onclick={leave}>Sign out on this device</button>

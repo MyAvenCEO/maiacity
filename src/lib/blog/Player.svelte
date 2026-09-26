@@ -10,6 +10,7 @@
 	play button, so a post can be test-run before Stream finishes encoding.
 -->
 <script lang="ts">
+	import { asset } from '$lib/media/url';
 	import { dev } from '$app/environment';
 	import { base } from '$app/paths';
 	import { tick } from 'svelte';
@@ -80,7 +81,7 @@
 				></iframe>
 			{:else if local && playing}
 				<!-- svelte-ignore a11y_media_has_caption -->
-				<video src="{base}{local}" poster={poster ? `${base}${poster}` : undefined} controls autoplay playsinline>
+				<video src="{base}{local}" poster={asset(poster)} controls autoplay playsinline>
 					<track kind="captions" />
 				</video>
 			{:else}

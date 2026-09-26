@@ -97,3 +97,30 @@ export async function deleteIdea(id: string): Promise<void> {
 	const res = await fetch(`${API}/api/ideas/${id}`, { method: 'DELETE', credentials: 'include' });
 	if (!res.ok) throw new Error((await res.json().catch(() => null))?.error ?? 'Could not delete it.');
 }
+
+// ─────────────────────────────── the media library ───────────────────────────────
+
+export type MediaItem = {
+	cid: string;
+	mime: string;
+	kind: 'image' | 'video' | 'audio' | 'document' | 'other';
+	size: number;
+	created: string;
+	paths: string[];
+	/** where it is used: "Day 18", "cover", "in the post", "site", its folder, "unused" */
+	tags: string[];
+	cdn_path: string | null;
+	stream_guid: string | null;
+	distributed_at: string | null;
+};
+
+export const listMedia = () => call<{ media: MediaItem[]; total: number }>('/api/media');
+
+// ─────────────────────────────── signing a terminal in ───────────────────────────────
+
+export type DeviceRequest = { scope: string[]; descriptions: string[]; label: string; approved_at: string | null; expires_at: string };
+
+export const deviceRequest = (code: string) => call<DeviceRequest>(`/api/device/${encodeURIComponent(code)}`);
+
+export const approveDevice = (code: string) =>
+	call<{ ok: true }>(`/api/device/${encodeURIComponent(code)}/approve`, { method: 'POST' });

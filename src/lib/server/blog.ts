@@ -3,6 +3,7 @@ import { base } from '$app/paths';
 import { marked } from 'marked';
 import { parse as parseYaml } from 'yaml';
 import type { Post, PostMeta } from '$lib/blog/types';
+import { asset } from '$lib/media/url';
 
 // Hand-written articles live in /blog/<slug>/post.md.
 const posts = import.meta.glob('/blog/*/post.md', {
@@ -17,8 +18,9 @@ const slugOf = (path: string) => path.split('/').at(-2)!;
 
 const optional = (value: unknown) => (value == null || value === '' ? undefined : String(value));
 
+// every image from its CID on the CDN once it is there, else under the site's base path (see $lib/media/url)
 const withBase = (html: string) =>
-	html.replace(/src="\//g, `src="${base}/`).replace(/href="\//g, `href="${base}/`);
+	html.replace(/src="(\/[^"]*)"/g, (_, src: string) => `src="${asset(src)}"`).replace(/href="\//g, `href="${base}/`);
 
 // A standalone image becomes a figure; its alt text becomes the caption.
 const asFigures = (html: string) =>

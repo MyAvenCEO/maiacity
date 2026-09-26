@@ -17,6 +17,7 @@
 		type Founder,
 		type Idea
 	} from '$lib/auth/client';
+	import AdminNav from '$lib/admin/AdminNav.svelte';
 
 	let founder = $state<Founder | null>(null);
 	let phase = $state<'loading' | 'signed-out' | 'forbidden' | 'ready'>('loading');
@@ -140,7 +141,7 @@
 
 <main class="wrap">
 	<article>
-		<p class="eyebrow">Admin</p>
+		<AdminNav />
 		<h1>Ideas</h1>
 
 		{#if phase === 'loading'}

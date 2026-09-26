@@ -10,5 +10,5 @@
     "skipLibCheck": true,
     "verbatimModuleSyntax": true
   },
-  "include": ["src/**/*.ts", "../game/**/*.ts"]
+  "include": ["src/**/*.ts", "scripts/**/*.ts", "../game/**/*.ts"]
 }

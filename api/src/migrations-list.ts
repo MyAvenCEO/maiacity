@@ -158,5 +158,100 @@ export const MIGRATIONS: Migration[] = [
       CREATE INDEX ix_ideas_open ON ideas (done, created_at DESC);
     `,
   },
+  {
+    // The media library. Postgres is the single source of truth for every image, sound and video:
+    // the bytes, in 1 MiB chunks, under the IPFS CID of the whole file (see media.ts). Paths are the
+    // names files are known by on the site; many paths may name one CID. The public copies live on
+    // Bunny (the CDN for images and sounds, Stream for videos) and each row remembers where.
+    id: "0005-media",
+    sql: `
+      CREATE TABLE media (
+        cid            TEXT PRIMARY KEY,
+        mime           TEXT NOT NULL,
+        kind           TEXT NOT NULL CHECK (kind IN ('image', 'video', 'audio', 'document', 'other')),
+        size           BIGINT NOT NULL,
+        created        TIMESTAMPTZ NOT NULL DEFAULT now(),
+        -- where the public copy went: a path in the Bunny storage zone, or a Bunny Stream video
+        cdn_path       TEXT,
+        stream_guid    TEXT,
+        distributed_at TIMESTAMPTZ
+      );
+      CREATE INDEX ix_media_kind ON media (kind, created DESC);
+
+      CREATE TABLE media_chunks (
+        cid   TEXT NOT NULL REFERENCES media(cid) ON DELETE CASCADE,
+        idx   INTEGER NOT NULL,
+        bytes BYTEA NOT NULL,
+        PRIMARY KEY (cid, idx)
+      );
+
+      CREATE TABLE media_paths (
+        path    TEXT PRIMARY KEY,
+        cid     TEXT NOT NULL REFERENCES media(cid),
+        updated TIMESTAMPTZ NOT NULL DEFAULT now()
+      );
+      CREATE INDEX ix_media_paths_cid ON media_paths (cid);
+    `,
+  },
+  {
+    // Tags on the media library: where each file is used — "Day 18", "cover", "in the post", the folder,
+    // "unused" — derived from the journal and the site's code at every upload, so the library can be
+    // filtered by them. Wholly derived: replaced each time, never edited by hand.
+    id: "0006-media-tags",
+    sql: `
+      CREATE TABLE media_tags (
+        cid TEXT NOT NULL REFERENCES media(cid) ON DELETE CASCADE,
+        tag TEXT NOT NULL,
+        PRIMARY KEY (cid, tag)
+      );
+      CREATE INDEX ix_media_tags_tag ON media_tags (tag);
+    `,
+  },
+  {
+    // Signing a terminal in with a passkey, and uploading through the API.
+    // A terminal asks for a device code; the admin approves it on maia.city with their passkey; the
+    // terminal receives a key that can do only what was asked (for now media:admin). Only the key's hash
+    // is kept. Uploads arrive in parts, are staged, and become media once their CID is checked.
+    id: "0007-device-keys-and-uploads",
+    sql: `
+      CREATE TABLE device_codes (
+        device_code TEXT PRIMARY KEY,      -- the terminal's secret, polled with
+        user_code   TEXT NOT NULL UNIQUE,  -- what the person sees and approves
+        scope       TEXT NOT NULL,         -- the capabilities asked for, comma list
+        label       TEXT NOT NULL,
+        founder_id  TEXT REFERENCES founders(id) ON DELETE CASCADE,
+        approved_at TIMESTAMPTZ,
+        used_at     TIMESTAMPTZ,
+        expires_at  TIMESTAMPTZ NOT NULL
+      );
+
+      CREATE TABLE api_keys (
+        id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        founder_id TEXT NOT NULL REFERENCES founders(id) ON DELETE CASCADE,
+        hash       TEXT NOT NULL UNIQUE,   -- sha256 of the key; the key itself is shown once
+        scope      TEXT NOT NULL,
+        label      TEXT NOT NULL,
+        created    TIMESTAMPTZ NOT NULL DEFAULT now(),
+        last_used  TIMESTAMPTZ,
+        revoked_at TIMESTAMPTZ
+      );
+
+      CREATE TABLE uploads (
+        id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        founder_id TEXT NOT NULL REFERENCES founders(id) ON DELETE CASCADE,
+        path       TEXT NOT NULL,
+        mime       TEXT NOT NULL,
+        size       BIGINT NOT NULL,
+        cid        TEXT NOT NULL,          -- what the uploader says it is; checked at the end
+        created    TIMESTAMPTZ NOT NULL DEFAULT now()
+      );
+      CREATE TABLE upload_chunks (
+        upload_id UUID NOT NULL REFERENCES uploads(id) ON DELETE CASCADE,
+        idx       INTEGER NOT NULL,
+        bytes     BYTEA NOT NULL,
+        PRIMARY KEY (upload_id, idx)
+      );
+    `,
+  },
 ];
 

@@ -225,6 +225,7 @@ jobs:
           RP_NAME=maiaCITY
           SITE_ORIGIN=https://maia.city,https://www.maia.city
           COOKIE_DOMAIN=.maia.city
+          API_BUNNY_API_KEY=${{ secrets.BUNNY_API_KEY }}
           EOF2
           chmod 600 .env
           sudo mkdir -p "$DATA_MOUNT/postgres"

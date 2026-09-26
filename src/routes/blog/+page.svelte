@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { asset } from '$lib/media/url';
 	import { base } from '$app/paths';
 	import CoverArt from '$lib/blog/CoverArt.svelte';
 	import { categoryById } from '$lib/inspire-me/categories';
@@ -41,7 +42,7 @@
 						<p class="excerpt">{post.excerpt}</p>
 						<div class="foot">
 							{#if post.authorImage}
-								<img class="avatar" src="{base}{post.authorImage}" alt="" />
+								<img class="avatar" src={asset(post.authorImage)} alt="" />
 							{/if}
 							<span>{post.author}</span>
 							<ul class="tag-list">

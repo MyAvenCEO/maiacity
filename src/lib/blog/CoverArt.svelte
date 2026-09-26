@@ -6,6 +6,7 @@
 	title instead — same shape, same weight in the layout, no invented image.
 -->
 <script lang="ts">
+	import { asset } from '$lib/media/url';
 	import { base } from '$app/paths';
 	import type { PostMeta } from './types';
 
@@ -21,7 +22,7 @@
 
 {#if post.cover}
 	<img
-		src="{base}{post.cover}"
+		src={asset(post.cover)}
 		alt={post.coverAlt ?? post.title}
 		loading={eager ? 'eager' : 'lazy'}
 	/>

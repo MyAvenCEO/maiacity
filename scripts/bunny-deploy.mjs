@@ -81,7 +81,8 @@ console.log(`uploaded ${uploaded} files`);
 // since this run began: that is another deploy's, and it needs its files.
 const remote = await listRemote(base, password);
 const stale = remote
-	.filter(({ path, changed }) => !local.includes(path) && !(changed >= startedAt - 60_000))
+	// media/ holds the media library's public copies (by CID), put there by api/scripts/media-distribute.ts — not the build's
+	.filter(({ path, changed }) => !path.startsWith('media/') && !local.includes(path) && !(changed >= startedAt - 60_000))
 	.map(({ path }) => path);
 await pool(stale, async (file) => {
 	await fetch(`${base}/${file}`, { method: 'DELETE', headers: { AccessKey: password } });
