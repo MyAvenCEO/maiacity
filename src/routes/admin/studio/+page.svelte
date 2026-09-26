@@ -106,8 +106,23 @@
 		}
 		return out;
 	});
-	const voiceNow = $derived(at('A1', time));
-	const caption = $derived(voiceNow ? captionWords.filter((w) => w.clip === voiceNow.id) : []);
+	// words become phrases — a few at a time, broken at the punctuation — the way a film's subtitles run
+	const phrases = $derived.by(() => {
+		const out: { words: { word: string; t: number }[]; start: number; end: number; clip: string }[] = [];
+		for (const c of clips.filter((c) => c.track === 'A1')) {
+			let cur: { word: string; t: number }[] = [];
+			const flush = () => cur.length && out.push({ words: cur, start: cur[0]!.t, end: cur.at(-1)!.t + 0.5, clip: c.id });
+			for (const w of captionWords.filter((w) => w.clip === c.id)) {
+				cur.push(w);
+				const text = cur.map((x) => x.word).join(' ');
+				if ((/[.,;:!?]$/.test(w.word) && (cur.length >= 3 || /[.;:!?]$/.test(w.word))) || text.length > 38) flush(), (cur = []);
+			}
+			flush();
+		}
+		// each phrase stays until the next one begins (or a moment after its last word)
+		return out.map((p, i) => ({ ...p, end: out[i + 1] && out[i + 1]!.clip === p.clip ? Math.min(out[i + 1]!.start, p.end + 1.2) : p.end + 0.6 }));
+	});
+	const caption = $derived(phrases.find((p) => time >= p.start - 0.08 && time < p.end)?.words ?? []);
 
 	const clockText = (t: number) => {
 		const m = Math.floor(t / 60), s = Math.floor(t % 60), cs = Math.floor((t % 1) * 100);
@@ -1013,6 +1028,12 @@
 		text-align: center;
 		color: rgb(255 255 255 / 0.35);
 		text-shadow: 0 1px 12px rgb(0 0 0 / 0.5);
+		/* a subtitle is never more than two lines */
+		display: -webkit-box;
+		-webkit-box-orient: vertical;
+		-webkit-line-clamp: 2;
+		line-clamp: 2;
+		overflow: hidden;
 	}
 
 	.caption .lit {
