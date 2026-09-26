@@ -6,14 +6,15 @@
 //   bun media sync        upload what is missing (by CID, resumable), name every path, tag everything,
 //                         make the public copies on Bunny, and write src/lib/media/manifest.json
 //   bun media release     let git go of journal media production now serves by CID (the files stay on disk)
+//   bun media library     mirror production into library/: every file as <cid>.<ext>, and index.json
 //   bun media logout      revoke this terminal's key
 //
 //   --local               against the local API (http://localhost:3100) instead of api.maia.city
 import { $ } from "bun";
-import { mkdir, readdir, readFile, stat, writeFile } from "node:fs/promises";
+import { copyFile, link, mkdir, readdir, readFile, stat, writeFile } from "node:fs/promises";
 import { homedir, hostname } from "node:os";
 import { join, relative, sep } from "node:path";
-import { cidOf, kindOf, mimeOf } from "../src/media";
+import { cidOf, EXT, kindOf, mimeOf } from "../src/media";
 import { deriveTags } from "./media-tags";
 
 const ROOT = join(import.meta.dir, "../..");
@@ -123,7 +124,7 @@ async function here(): Promise<Local[]> {
   return out;
 }
 
-type Remote = { cid: string; paths: string[]; cdn_path: string | null; stream_guid: string | null; size: number };
+type Remote = { cid: string; mime: string; kind: string; paths: string[]; tags: string[]; cdn_path: string | null; stream_guid: string | null; size: number };
 const library = async () => (await call<{ media: Remote[] }>("/api/media")).media;
 
 async function status() {
@@ -229,10 +230,51 @@ async function release() {
   if (left) say(`${left} journal files are still in git: not on the CDN yet (run sync first)`);
 }
 
+// ─────────────────────────────── library ───────────────────────────────
+
+/**
+ * A plain, flat copy of the library: library/<cid>.<ext> for every file production holds, and library/index.json
+ * (cid → paths, tags, public copy). Local files are hard-linked (no extra disk), the rest downloaded. A file's name
+ * is its content: two folders can be compared by listing them.
+ */
+async function mirror() {
+  const DIR = join(ROOT, "library");
+  await mkdir(DIR, { recursive: true });
+  const lib = await library();
+  const localByCid = new Map((await here()).map((f) => [f.cid, f.file]));
+  const present = new Set(await readdir(DIR));
+  let linked = 0, fetched = 0;
+  for (const m of lib) {
+    const name = `${m.cid}.${EXT[m.mime] ?? "bin"}`;
+    if (present.has(name)) continue;
+    const target = join(DIR, name);
+    const from = localByCid.get(m.cid);
+    if (from) {
+      await link(from, target).catch(() => copyFile(from, target));
+      linked++;
+    } else {
+      const res = await fetch(`${API}/api/media/${m.cid}`, { headers: { authorization: `Bearer ${await keyFor()}` } });
+      if (!res.ok) throw new Error(`download ${m.cid}: ${res.status}`);
+      const bytes = new Uint8Array(await res.arrayBuffer());
+      if ((await cidOf(bytes)) !== m.cid) throw new Error(`${m.cid} arrived with different bytes`);
+      await writeFile(target, bytes);
+      fetched++;
+    }
+  }
+  const index = Object.fromEntries(
+    lib.map((m) => [m.cid, { file: `${m.cid}.${EXT[m.mime] ?? "bin"}`, mime: m.mime, kind: m.kind, size: m.size, paths: m.paths, tags: m.tags, cdn: m.cdn_path ? `https://maia.city/${m.cdn_path}` : null, stream: m.stream_guid }]),
+  );
+  await writeFile(join(DIR, "index.json"), JSON.stringify(index, null, 2) + "\n");
+  const names = new Set(Object.values(index).map((e) => e.file));
+  const extra = (await readdir(DIR)).filter((f) => f !== "index.json" && !names.has(f));
+  say(`library/: ${lib.length} files (${linked} linked from static/, ${fetched} downloaded), index.json written`);
+  if (extra.length) say(`  ${extra.length} files here that production does not hold: ${extra.slice(0, 5).join(", ")}${extra.length > 5 ? " …" : ""}`);
+}
+
 const cmd = process.argv.slice(2).find((a) => !a.startsWith("--")) ?? "status";
-const run = { login, logout, status, sync, release }[cmd as "login"];
+const run = { login, logout, status, sync, release, library: mirror }[cmd as "login"];
 if (!run) {
-  say("usage: bun media login | status | sync | release | logout  [--local]");
+  say("usage: bun media login | status | sync | release | library | logout  [--local]");
   process.exit(1);
 }
 try {

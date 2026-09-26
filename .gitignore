@@ -36,3 +36,6 @@ static/day-*/**/*.webp
 static/day-*/**/*.gif
 static/day-*/**/*.mp3
 static/day-*/**/*.pdf
+
+# The local mirror of the media library: every file as <cid>.<ext> (`bun media library`)
+/library/
