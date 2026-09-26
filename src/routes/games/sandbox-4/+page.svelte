@@ -39,44 +39,31 @@
 
 	/* on a phone: the joystick walks (push it to the rim to hurry), any other finger on the
 	   world looks round. Touch events, each finger by its own identifier, so both work at once.
-	   The joystick floats: a thumb set down anywhere in the lower left brings the ring to it,
-	   the knob stays under the thumb wherever it goes, and past the rim the ring is drawn
-	   after it. So the knob can never be anywhere but under the thumb. */
+	   The ring stays where it is, in the lower left; the knob goes wherever the thumb goes,
+	   past the rim too, so it is always under the thumb. How far out, up to the rim, sets the pace. */
 	let root: HTMLDivElement;
 	let stickEl: HTMLDivElement;
 	let knobEl: HTMLSpanElement;
 	let hurrying = $state(false);
 	let stickFinger: number | null = null;
-	/** where the ring rests, where it is now (under the thumb's first touch, drawn after it), its radius */
-	let stick = { homeX: 0, homeY: 0, x: 0, y: 0, r: 64 };
+	/** the ring's centre and radius, measured as the thumb comes down */
+	let stick = { x: 0, y: 0, r: 64 };
 	let lookFinger: { id: number; x: number; y: number } | null = null;
 	/** a finger on the bar's links: followed when it lifts where it came down */
 	const taps = new Map<number, { el: HTMLElement; x: number; y: number }>();
-	/** the lower left, where a thumb takes the joystick (only on a phone, where the ring shows) */
-	const inStickZone = (t: Touch) => stickEl.offsetWidth > 0 && t.clientX < innerWidth * 0.45 && t.clientY > innerHeight * 0.4;
 	const stickTo = (t: Touch) => {
-		let x = t.clientX - stick.x;
-		let y = t.clientY - stick.y;
+		const x = t.clientX - stick.x;
+		const y = t.clientY - stick.y;
+		knobEl.style.transform = `translate3d(${x}px, ${y}px, 0)`;
+		// full walking pace three quarters of the way to the rim, a hurry at the rim and beyond
 		const d = Math.hypot(x, y);
-		// past the rim, the ring is drawn after the thumb
-		if (d > stick.r) {
-			stick.x += (x * (d - stick.r)) / d;
-			stick.y += (y * (d - stick.r)) / d;
-			x = t.clientX - stick.x;
-			y = t.clientY - stick.y;
-		}
-		stickEl.style.transform = `translate(${stick.x - stick.homeX}px, ${stick.y - stick.homeY}px)`;
-		knobEl.style.transform = `translate(${x}px, ${y}px)`;
-		// full walking pace three quarters of the way out, a hurry with the knob on the rim
-		const m = Math.min(1, Math.hypot(x, y) / stick.r);
+		const m = Math.min(1, d / stick.r);
 		const pace = m < 0.08 ? 0 : Math.min(1, m / 0.75);
-		const n = Math.hypot(x, y) || 1;
 		hurrying = m > 0.95;
-		village?.move((x / n) * pace, (-y / n) * pace, hurrying);
+		village?.move((x / (d || 1)) * pace, (-y / (d || 1)) * pace, hurrying);
 	};
 	const stickRelease = () => {
 		stickFinger = null;
-		stickEl.style.transform = '';
 		knobEl.style.transform = '';
 		hurrying = false;
 		village?.move(0, 0, false);
@@ -84,8 +71,9 @@
 	const onTouchStart = (e: TouchEvent) => {
 		let ours = false;
 		for (const t of Array.from(e.changedTouches)) {
-			const el = t.target as Element;
-			const tap = el.closest?.('.bar a, .bar button') as HTMLElement | null;
+			// Safari can name the text under the finger rather than its element
+			const el = ((t.target as Node).nodeType === Node.TEXT_NODE ? (t.target as Node).parentElement : t.target) as Element;
+			const tap = el?.closest?.('.bar a, .bar button') as HTMLElement | null;
 			if (tap?.classList.contains('daylight')) {
 				// the switch flips as the finger comes down: no click to wait for, which a browser
 				// will not make while another finger is down, nor if the press is taken from it
@@ -95,12 +83,10 @@
 			} else if (tap) {
 				taps.set(t.identifier, { el: tap, x: t.clientX, y: t.clientY });
 				ours = true;
-			} else if (stickFinger === null && (stickEl.contains(el) || (stage.contains(el) && inStickZone(t)))) {
+			} else if (stickFinger === null && stickEl.contains(el)) {
 				stickFinger = t.identifier;
-				stickEl.style.transform = '';
 				const box = stickEl.getBoundingClientRect();
-				const homeX = box.left + box.width / 2, homeY = box.top + box.height / 2;
-				stick = { homeX, homeY, x: t.clientX, y: t.clientY, r: box.width / 2 };
+				stick = { x: box.left + box.width / 2, y: box.top + box.height / 2, r: box.width / 2 };
 				stickTo(t);
 				ours = true;
 			} else if (stage.contains(el)) {
@@ -199,7 +185,7 @@
 	</div>
 	<p class="help">
 		<span class="keys">Drag to look · WASD to walk · Shift to hurry · walk through any door to step inside</span>
-		<span class="touch">Swipe to look · thumb down lower left to walk · to the rim to hurry</span>
+		<span class="touch">Swipe to look · joystick to walk · push to the rim to hurry</span>
 	</p>
 	<div class="stick" class:hurrying bind:this={stickEl}>
 		<span class="knob" bind:this={knobEl}></span>
@@ -283,6 +269,10 @@
 		font-size: 0.85rem;
 		cursor: pointer;
 		transition: background 0.2s ease;
+	}
+	/* a finger on the icon or the words is a finger on the switch */
+	.daylight > * {
+		pointer-events: none;
 	}
 	.daylight svg {
 		width: 1.05em;
@@ -425,7 +415,7 @@
 	.stick::before {
 		content: '';
 		position: absolute;
-		inset: -1.25rem;
+		inset: -1.5rem;
 		border-radius: 50%;
 	}
 	.stick.hurrying {
@@ -462,16 +452,6 @@
 		}
 		.stick {
 			will-change: transform;
-		}
-	}
-	/* a phone on its side: Safari's address bar sits at the top, and once it has shrunk, a tap
-	   near the top edge opens it again instead of reaching the page; so the bar stands clear of it */
-	@media (hover: none) and (pointer: coarse) and (orientation: landscape) {
-		.bar {
-			top: calc(2.6rem + env(safe-area-inset-top, 0px));
-		}
-		.help {
-			top: calc(5.8rem + env(safe-area-inset-top, 0px));
 		}
 	}
 
