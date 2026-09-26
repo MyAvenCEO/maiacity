@@ -27,36 +27,48 @@
 
 	/* the sky kept at day while the clock runs on; every visit starts on the real sky */
 	let alwaysDay = $state(false);
+	/** when a finger last flipped it, so a click the browser makes of the same press is not a second flip */
+	let dayTouched = 0;
 	const toggleDay = () => {
 		alwaysDay = !alwaysDay;
 		village?.alwaysDay(alwaysDay);
 	};
+	const clickDay = () => {
+		if (performance.now() - dayTouched > 800) toggleDay();
+	};
 
 	/* on a phone: the joystick walks (push it to the rim to hurry), any other finger on the
-	   world looks round. Touch events, each finger by its own identifier, so both work at once. */
+	   world looks round. Touch events, each finger by its own identifier, so both work at once.
+	   The joystick floats: a thumb set down anywhere in the lower left brings the ring to it,
+	   the knob stays under the thumb wherever it goes, and past the rim the ring is drawn
+	   after it. So the knob can never be anywhere but under the thumb. */
 	let root: HTMLDivElement;
 	let stickEl: HTMLDivElement;
 	let knobEl: HTMLSpanElement;
 	let hurrying = $state(false);
 	let stickFinger: number | null = null;
-	/** the ring's centre and radius, measured as the thumb comes down */
-	let stick = { x: 0, y: 0, r: 64 };
+	/** where the ring rests, where it is now (under the thumb's first touch, drawn after it), its radius */
+	let stick = { homeX: 0, homeY: 0, x: 0, y: 0, r: 64 };
 	let lookFinger: { id: number; x: number; y: number } | null = null;
-	/** a finger on the bar's links and buttons: tapped when it lifts where it came down */
+	/** a finger on the bar's links: followed when it lifts where it came down */
 	const taps = new Map<number, { el: HTMLElement; x: number; y: number }>();
-	const knobAt = (x: number, y: number) => (knobEl.style.transform = `translate(${x}px, ${y}px)`);
+	/** the lower left, where a thumb takes the joystick (only on a phone, where the ring shows) */
+	const inStickZone = (t: Touch) => stickEl.offsetWidth > 0 && t.clientX < innerWidth * 0.45 && t.clientY > innerHeight * 0.4;
 	const stickTo = (t: Touch) => {
-		// the knob sits under the thumb out to the rim, then waits on the rim in the thumb's direction
 		let x = t.clientX - stick.x;
 		let y = t.clientY - stick.y;
 		const d = Math.hypot(x, y);
+		// past the rim, the ring is drawn after the thumb
 		if (d > stick.r) {
-			x *= stick.r / d;
-			y *= stick.r / d;
+			stick.x += (x * (d - stick.r)) / d;
+			stick.y += (y * (d - stick.r)) / d;
+			x = t.clientX - stick.x;
+			y = t.clientY - stick.y;
 		}
-		knobAt(x, y);
+		stickEl.style.transform = `translate(${stick.x - stick.homeX}px, ${stick.y - stick.homeY}px)`;
+		knobEl.style.transform = `translate(${x}px, ${y}px)`;
 		// full walking pace three quarters of the way out, a hurry with the knob on the rim
-		const m = Math.min(1, d / stick.r);
+		const m = Math.min(1, Math.hypot(x, y) / stick.r);
 		const pace = m < 0.08 ? 0 : Math.min(1, m / 0.75);
 		const n = Math.hypot(x, y) || 1;
 		hurrying = m > 0.95;
@@ -64,7 +76,8 @@
 	};
 	const stickRelease = () => {
 		stickFinger = null;
-		knobAt(0, 0);
+		stickEl.style.transform = '';
+		knobEl.style.transform = '';
 		hurrying = false;
 		village?.move(0, 0, false);
 	};
@@ -73,15 +86,21 @@
 		for (const t of Array.from(e.changedTouches)) {
 			const el = t.target as Element;
 			const tap = el.closest?.('.bar a, .bar button') as HTMLElement | null;
-			if (tap) {
-				// a browser makes no click of a tap while another finger is down, and in landscape
-				// a thumb is nearly always on the joystick or the world: so the tap is ours to make
+			if (tap?.classList.contains('daylight')) {
+				// the switch flips as the finger comes down: no click to wait for, which a browser
+				// will not make while another finger is down, nor if the press is taken from it
+				dayTouched = performance.now();
+				toggleDay();
+				ours = true;
+			} else if (tap) {
 				taps.set(t.identifier, { el: tap, x: t.clientX, y: t.clientY });
 				ours = true;
-			} else if (stickFinger === null && stickEl.contains(el)) {
+			} else if (stickFinger === null && (stickEl.contains(el) || (stage.contains(el) && inStickZone(t)))) {
 				stickFinger = t.identifier;
+				stickEl.style.transform = '';
 				const box = stickEl.getBoundingClientRect();
-				stick = { x: box.left + box.width / 2, y: box.top + box.height / 2, r: box.width / 2 };
+				const homeX = box.left + box.width / 2, homeY = box.top + box.height / 2;
+				stick = { homeX, homeY, x: t.clientX, y: t.clientY, r: box.width / 2 };
 				stickTo(t);
 				ours = true;
 			} else if (stage.contains(el)) {
@@ -167,7 +186,7 @@
 			aria-label="Always day"
 			aria-pressed={alwaysDay}
 			title={alwaysDay ? 'Kept at day — tap for the real sky again' : 'The real sky: sun and moon follow the clock — tap to keep it day'}
-			onclick={toggleDay}
+			onclick={clickDay}
 		>
 			{#if alwaysDay}
 				<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4.5" /><path d="M12 2v2.5M12 19.5V22M2 12h2.5M19.5 12H22M4.9 4.9l1.8 1.8M17.3 17.3l1.8 1.8M4.9 19.1l1.8-1.8M17.3 6.7l1.8-1.8" /></svg>
@@ -180,7 +199,7 @@
 	</div>
 	<p class="help">
 		<span class="keys">Drag to look · WASD to walk · Shift to hurry · walk through any door to step inside</span>
-		<span class="touch">Swipe to look · joystick to walk · push to the rim to hurry</span>
+		<span class="touch">Swipe to look · thumb down lower left to walk · to the rim to hurry</span>
 	</p>
 	<div class="stick" class:hurrying bind:this={stickEl}>
 		<span class="knob" bind:this={knobEl}></span>
@@ -419,6 +438,7 @@
 		background: rgb(250 248 242 / 0.9);
 		box-shadow: 0 2px 10px rgb(0 0 0 / 0.25);
 		pointer-events: none;
+		will-change: transform;
 	}
 	.stick.hurrying .knob {
 		background: #f0a47c;
@@ -439,6 +459,19 @@
 		}
 		.opening {
 			bottom: calc(11rem + env(safe-area-inset-bottom, 0px));
+		}
+		.stick {
+			will-change: transform;
+		}
+	}
+	/* a phone on its side: Safari's address bar sits at the top, and once it has shrunk, a tap
+	   near the top edge opens it again instead of reaching the page; so the bar stands clear of it */
+	@media (hover: none) and (pointer: coarse) and (orientation: landscape) {
+		.bar {
+			top: calc(2.6rem + env(safe-area-inset-top, 0px));
+		}
+		.help {
+			top: calc(5.8rem + env(safe-area-inset-top, 0px));
 		}
 	}
 
