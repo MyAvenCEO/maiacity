@@ -262,5 +262,22 @@ export const MIGRATIONS: Migration[] = [
       ALTER TABLE uploads ADD COLUMN meta JSONB NOT NULL DEFAULT '{}';
     `,
   },
+  {
+    // The studio's timelines: a named edit — its clips (each a CID with where it sits, where it is trimmed
+    // and how loud), its frame and its tags — kept with the library it is cut from.
+    id: "0009-timelines",
+    sql: `
+      CREATE TABLE timelines (
+        id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        name       TEXT NOT NULL,
+        aspect     TEXT NOT NULL DEFAULT '1:1',
+        tags       TEXT[] NOT NULL DEFAULT '{}',
+        clips      JSONB NOT NULL DEFAULT '[]',
+        founder_id TEXT REFERENCES founders(id) ON DELETE SET NULL,
+        created    TIMESTAMPTZ NOT NULL DEFAULT now(),
+        updated    TIMESTAMPTZ NOT NULL DEFAULT now()
+      );
+    `,
+  },
 ];
 

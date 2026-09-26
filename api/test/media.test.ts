@@ -100,3 +100,19 @@ test("a known CID needs no upload: its path is named; tags are replaced whole; t
   await markDistributed(cid, { cdn_path: `media/${cid}.jpg` });
   expect((await publicManifest())["/b/two.jpg"]).toEqual({ cid, url: `/media/${cid}.jpg` });
 });
+
+test("a timeline is an edit over the library: created, saved, listed, deleted", async () => {
+  const { createTimeline, deleteTimeline, listTimelines, saveTimeline } = await import("../src/timelines");
+  const cid = await cidOf(new TextEncoder().encode("a take"));
+  const t = await createTimeline("admin", { name: "Day 19 · George", tags: ["Day 19"], clips: [{ id: "a", cid, track: "A1", start: 0.5, in: 0, dur: 7.7, vol: 1 }] });
+  expect(t.aspect).toBe("1:1");
+  expect(t.clips[0]!.dur).toBe(7.7);
+  const saved = await saveTimeline(t.id, { clips: [{ id: "a", cid, track: "A1", start: 1, in: 0.2, dur: 6, vol: 0.8 }], aspect: "16:9" });
+  expect(saved.clips[0]!.start).toBe(1);
+  expect(saved.aspect).toBe("16:9");
+  expect(saved.name).toBe("Day 19 · George");
+  await expect(saveTimeline(t.id, { clips: [{ cid: "nope" }] })).rejects.toThrow(/names a CID/);
+  expect((await listTimelines()).map((x) => x.id)).toContain(t.id);
+  await deleteTimeline(t.id);
+  expect((await listTimelines()).map((x) => x.id)).not.toContain(t.id);
+});

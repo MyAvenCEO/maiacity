@@ -19,6 +19,7 @@ import { addIdea, deleteIdea, IdeaError, listIdeas, updateIdea } from "./ideas";
 import { finishUpload, have, listMedia, markDistributed, MediaError, mediaInfo, namePath, publicManifest, putPart, readMedia, retag, startUpload, undistributed } from "./media";
 import { approveDevice, deviceInfo, KeyError, keyHolder, redeemDevice, revokeKey, startDevice } from "./keys";
 import { canDistribute, distributePending } from "./bunny";
+import { createTimeline, deleteTimeline, listTimelines, saveTimeline, TimelineError } from "./timelines";
 import { format, gameClock, calendar, parse } from "../../game/time";
 
 const PORT = Number(process.env.PORT ?? 3000);
@@ -103,7 +104,7 @@ async function allowed(req: Request, cap: string): Promise<{ id: string; role: s
 
 /** Turn a thrown ledger, role or notebook error into a response a person can read. */
 function fail(req: Request, e: unknown) {
-  if (e instanceof LedgerError || e instanceof RoleError || e instanceof IdeaError || e instanceof KeyError || e instanceof MediaError) return json(req, { error: e.message }, { status: e.status });
+  if (e instanceof LedgerError || e instanceof RoleError || e instanceof IdeaError || e instanceof KeyError || e instanceof MediaError || e instanceof TimelineError) return json(req, { error: e.message }, { status: e.status });
   console.error(e);
   return json(req, { error: "Something went wrong on our side." }, { status: 500 });
 }
@@ -630,6 +631,47 @@ const server = Bun.serve({
           });
         }
         return new Response(readMedia(req.params.cid, 0, Math.max(0, info.size - 1)), { headers: { ...head, "Content-Length": String(info.size) } });
+      },
+    },
+
+    // The studio's timelines: edits over the library, kept with it.
+    "/api/timelines": {
+      OPTIONS: preflight,
+      GET: async (req) => {
+        const me = await allowed(req, "media:admin");
+        if (me instanceof Response) return me;
+        return json(req, await listTimelines());
+      },
+      POST: async (req) => {
+        const me = await allowed(req, "media:admin");
+        if (me instanceof Response) return me;
+        try {
+          return json(req, await createTimeline(me.id, (await readJson(req)) ?? {}), { status: 201 });
+        } catch (e) {
+          return fail(req, e);
+        }
+      },
+    },
+    "/api/timelines/:id": {
+      OPTIONS: preflight,
+      PUT: async (req) => {
+        const me = await allowed(req, "media:admin");
+        if (me instanceof Response) return me;
+        try {
+          return json(req, await saveTimeline(req.params.id, (await readJson(req)) ?? {}));
+        } catch (e) {
+          return fail(req, e);
+        }
+      },
+      DELETE: async (req) => {
+        const me = await allowed(req, "media:admin");
+        if (me instanceof Response) return me;
+        try {
+          await deleteTimeline(req.params.id);
+          return new Response(null, { status: 204, headers: cors(req) });
+        } catch (e) {
+          return fail(req, e);
+        }
       },
     },
 

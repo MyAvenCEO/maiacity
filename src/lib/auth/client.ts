@@ -127,3 +127,17 @@ export const deviceRequest = (code: string) => call<DeviceRequest>(`/api/device/
 
 export const approveDevice = (code: string) =>
 	call<{ ok: true }>(`/api/device/${encodeURIComponent(code)}/approve`, { method: 'POST' });
+
+// ─────────────────────────────── the studio's timelines ───────────────────────────────
+
+export type TimelineClip = { id: string; cid: string; track: 'V1' | 'A1' | 'A2'; start: number; in: number; dur: number; vol: number };
+export type Timeline = { id: string; name: string; aspect: string; tags: string[]; clips: TimelineClip[]; created: string; updated: string };
+
+export const listTimelines = () => call<Timeline[]>('/api/timelines');
+export const createTimeline = (t: Partial<Timeline>) => call<Timeline>('/api/timelines', { method: 'POST', body: JSON.stringify(t) });
+export const saveTimeline = (id: string, t: Partial<Timeline>) =>
+	call<Timeline>(`/api/timelines/${id}`, { method: 'PUT', body: JSON.stringify(t) });
+export async function deleteTimeline(id: string): Promise<void> {
+	const res = await fetch(`${API}/api/timelines/${id}`, { method: 'DELETE', credentials: 'include' });
+	if (!res.ok) throw new Error('Could not delete the timeline.');
+}

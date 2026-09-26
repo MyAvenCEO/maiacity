@@ -9,11 +9,22 @@
 <script lang="ts">
 	import { base } from '$app/paths';
 	import { onDestroy, onMount } from 'svelte';
-	import { API, listMedia, may, me, type MediaItem } from '$lib/auth/client';
+	import {
+		API,
+		createTimeline,
+		deleteTimeline,
+		listMedia,
+		listTimelines,
+		may,
+		me,
+		saveTimeline,
+		type MediaItem,
+		type Timeline
+	} from '$lib/auth/client';
 
 	type Track = 'V1' | 'A1' | 'A2';
 	type Clip = { id: string; cid: string; track: Track; start: number; in: number; dur: number; vol: number };
-	type Source = { url: string; duration: number; peaks: number[] };
+	type Source = { url: string; duration: number; peaks: number[]; buffer?: AudioBuffer };
 	type Timed = { word: string; start: number; end: number };
 
 	const TRACKS: { id: Track | 'T1'; label: string; accepts: string[] }[] = [
@@ -22,12 +33,16 @@
 		{ id: 'A2', label: 'Music', accepts: ['audio'] },
 		{ id: 'T1', label: 'Captions', accepts: [] }
 	];
-	const STORE = 'maia-studio-project-v1';
+	const ASPECTS = ['1:1', '16:9', '9:16', '4:5'];
+	const LAST = 'maia-studio-last-timeline';
 	const IMAGE_LEN = 4;
 
 	let phase = $state<'loading' | 'signed-out' | 'forbidden' | 'ready'>('loading');
 	let error = $state('');
 	let library = $state<MediaItem[]>([]);
+	let timelines = $state<Timeline[]>([]);
+	let current = $state<Timeline | null>(null);
+	let saving = $state<'saved' | 'saving' | 'unsaved'>('saved');
 	let kind = $state<'all' | 'image' | 'video' | 'audio'>('all');
 	let tag = $state<string | null>(null);
 	let q = $state('');
@@ -42,9 +57,8 @@
 	let studio = $state<HTMLElement | null>(null);
 
 	const byCid = $derived(new Map(library.map((m) => [m.cid, m])));
-	const els = new Map<string, HTMLAudioElement>();
+	const aspect = $derived(current?.aspect ?? '1:1');
 	let frame = 0;
-	let clock0 = 0, time0 = 0;
 
 	// ── the library on the left ─────────────────────────────────────────────
 	const ROLES = ['cover', 'in the post', 'poster', 'film', 'author', 'site'];
@@ -54,13 +68,14 @@
 	);
 	const shown = $derived(
 		library.filter((m) => {
-			if (!['image', 'video', 'audio'].includes(m.kind)) return false;
+			if (!['image', 'video', 'audio'].includes(m.kind) || !m.paths.length) return false;
 			if (kind !== 'all' && m.kind !== kind) return false;
 			if (tag && !m.tags.includes(tag)) return false;
 			const f = q.trim().toLowerCase();
 			return !f || m.cid.includes(f) || m.paths.some((p) => p.toLowerCase().includes(f)) || String(m.meta?.text ?? '').toLowerCase().includes(f);
 		})
 	);
+	const shownTimelines = $derived(timelines.filter((t) => !tag || t.tags.includes(tag)));
 	const name = (m: MediaItem | undefined) => m?.paths[0]?.split('/').pop()?.replace(/\.[^.]+$/, '') ?? m?.cid.slice(0, 10) ?? '';
 	const raw = (cid: string) => `${API}/api/media/${cid}`;
 	// thumbnails from the CDN copy when there is one (cached, public), else from the library itself
@@ -106,26 +121,85 @@
 			return void (phase = 'signed-out');
 		}
 		try {
-			library = (await listMedia()).media;
+			[library, timelines] = await Promise.all([listMedia().then((r) => r.media), listTimelines()]);
 		} catch (e) {
 			error = (e as Error).message;
 		}
 		phase = 'ready';
-		let saved: { clips?: Clip[]; pxPerSec?: number } = {};
+		let last: string | null = null;
 		try {
-			saved = JSON.parse(localStorage.getItem(STORE) ?? '{}');
+			last = localStorage.getItem(LAST);
 		} catch {
-			/* private window or cleared storage: start fresh */
+			/* no storage: open the newest */
 		}
-		if (saved.pxPerSec) pxPerSec = saved.pxPerSec;
-		const known = (saved.clips ?? []).filter((c) => byCid.has(c.cid));
-		if (known.length) clips = known;
-		else await starter();
-		for (const c of clips) void source(c.cid).catch((e) => (error = (e as Error).message));
+		const open = timelines.find((t) => t.id === last) ?? timelines[0];
+		if (open) await openTimeline(open);
+		else await newTimeline();
 	});
 
-	/** A first edit to start from: a still, the newest voice take on it, the first music bed under it. */
-	async function starter() {
+	async function openTimeline(t: Timeline) {
+		stop();
+		await flush();
+		current = t;
+		clips = t.clips.filter((c) => byCid.has(c.cid)) as Clip[];
+		selected = null;
+		time = 0;
+		saving = 'saved';
+		try {
+			localStorage.setItem(LAST, t.id);
+		} catch {
+			/* fine */
+		}
+		for (const c of clips) void source(c.cid).catch((e) => (error = (e as Error).message));
+	}
+
+	async function newTimeline() {
+		const made = await starter();
+		const t = await createTimeline({ name: `Timeline ${timelines.length + 1}`, aspect: '1:1', tags: [], clips: made });
+		timelines = [t, ...timelines];
+		await openTimeline(t);
+	}
+
+	async function removeTimeline(t: Timeline) {
+		if (!confirm(`Delete the timeline “${t.name}”? The files stay in the library.`)) return;
+		await deleteTimeline(t.id);
+		timelines = timelines.filter((x) => x.id !== t.id);
+		if (current?.id === t.id) {
+			current = null;
+			if (timelines[0]) await openTimeline(timelines[0]);
+			else await newTimeline();
+		}
+	}
+
+	// every change is saved, a moment after the last one
+	let saveTimer: ReturnType<typeof setTimeout> | null = null;
+	function changed() {
+		saving = 'unsaved';
+		if (saveTimer) clearTimeout(saveTimer);
+		saveTimer = setTimeout(() => void flush(), 700);
+	}
+	async function flush() {
+		if (saveTimer) clearTimeout(saveTimer), (saveTimer = null);
+		if (!current || saving !== 'unsaved') return;
+		saving = 'saving';
+		try {
+			const t = await saveTimeline(current.id, { name: current.name, aspect: current.aspect, tags: current.tags, clips });
+			timelines = [t, ...timelines.filter((x) => x.id !== t.id)];
+			current = { ...current, updated: t.updated };
+			saving = 'saved';
+		} catch (e) {
+			error = (e as Error).message;
+			saving = 'unsaved';
+		}
+	}
+	const setMeta = (patch: Partial<Timeline>) => {
+		if (!current) return;
+		current = { ...current, ...patch };
+		changed();
+	};
+
+	/** A first edit to start from: a still, the newest voice take on it, a music bed under it. */
+	async function starter(): Promise<Clip[]> {
 		const voices = library.filter((m) => m.kind === 'audio' && m.paths.some((p) => p.startsWith('/studio/voice/')));
 		const voice = voices.find((m) => Array.isArray(m.meta?.words) && (m.meta.words as unknown[]).length) ?? voices[0];
 		const bed = library.find((m) => m.kind === 'audio' && m.paths.some((p) => p.startsWith('/music/')));
@@ -134,11 +208,8 @@
 		const next: Clip[] = [];
 		if (still) next.push(clip(still.cid, 'V1', 0, 0, vlen + 2));
 		if (voice) next.push(clip(voice.cid, 'A1', 0.5, 0, vlen));
-		if (bed) {
-			await source(bed.cid);
-			next.push({ ...clip(bed.cid, 'A2', 0, 0, vlen + 2.5), vol: 0.3 });
-		}
-		clips = next;
+		if (bed) next.push({ ...clip(bed.cid, 'A2', 0, 0, vlen + 2.5), vol: 0.3 });
+		return next;
 	}
 
 	const clip = (cid: string, track: Track, start: number, from: number, dur: number): Clip => ({
@@ -151,14 +222,20 @@
 		vol: 1
 	});
 
+	// ── sound: one Web Audio clock; every clip is scheduled on it, sample-exact ──
+	// (Safari lets a page make sound only from a click: the context is woken by the Play button)
+	let ctx: AudioContext | null = null;
+	const audioCtx = () => (ctx ??= new AudioContext());
+	let playing_nodes: { src: AudioBufferSourceNode; gain: GainNode }[] = [];
+	let ctxStart = 0, timeStart = 0;
+
 	const pending = new Map<string, Promise<Source>>();
-	/** Fetch a file once: its bytes become a playable URL, and for sound a waveform. */
+	/** Fetch a file once: sound is decoded (for playing and for its waveform); a still is only shown. */
 	function source(cid: string): Promise<Source> {
 		if (sources[cid]) return Promise.resolve(sources[cid]!);
 		if (pending.has(cid)) return pending.get(cid)!;
 		const m0 = byCid.get(cid);
 		if (m0?.kind === 'image') {
-			// a still is only shown, never decoded: no need to fetch its bytes
 			const s = { url: thumb(m0), duration: IMAGE_LEN, peaks: [] };
 			sources[cid] = s;
 			return Promise.resolve(s);
@@ -169,13 +246,11 @@
 			if (!res.ok) throw new Error(`Could not load ${name(m)} (${res.status}).`);
 			const bytes = await res.arrayBuffer();
 			const url = URL.createObjectURL(new Blob([bytes], { type: m?.mime }));
-			let duration = IMAGE_LEN, peaks: number[] = [];
+			let duration = IMAGE_LEN, peaks: number[] = [], buffer: AudioBuffer | undefined;
 			if (m?.kind === 'audio') {
-				const ctx = new AudioContext();
-				const buf = await ctx.decodeAudioData(bytes.slice(0));
-				void ctx.close();
-				duration = buf.duration;
-				const data = buf.getChannelData(0), n = Math.min(8000, Math.ceil(buf.duration * 100)), step = Math.floor(data.length / n);
+				buffer = await audioCtx().decodeAudioData(bytes.slice(0));
+				duration = buffer.duration;
+				const data = buffer.getChannelData(0), n = Math.min(8000, Math.ceil(buffer.duration * 100)), step = Math.floor(data.length / n);
 				peaks = Array.from({ length: n }, (_, i) => {
 					let max = 0;
 					for (let j = i * step; j < (i + 1) * step; j++) max = Math.max(max, Math.abs(data[j] ?? 0));
@@ -190,7 +265,7 @@
 					v.src = url;
 				});
 			}
-			const s = { url, duration, peaks };
+			const s = { url, duration, peaks, buffer };
 			sources[cid] = s;
 			return s;
 		})();
@@ -198,87 +273,100 @@
 		return p;
 	}
 
-	// keep the edit
-	$effect(() => {
-		const snapshot = JSON.stringify({ clips, pxPerSec });
-		try {
-			localStorage.setItem(STORE, snapshot);
-		} catch {
-			/* not saved: fine */
+	function silence() {
+		for (const { src } of playing_nodes) {
+			try {
+				src.stop();
+			} catch {
+				/* already ended */
+			}
 		}
-	});
+		playing_nodes = [];
+	}
+
+	/** Lay every sound clip on the clock from the playhead on: each starts, trims and fades exactly where it should. */
+	function schedule() {
+		silence();
+		const ac = audioCtx();
+		ctxStart = ac.currentTime + 0.05;
+		timeStart = time;
+		for (const c of clips) {
+			const buf = sources[c.cid]?.buffer;
+			if (!buf || c.start + c.dur <= time) continue;
+			const from = Math.max(time, c.start); // timeline time the sound begins
+			const offset = c.in + (from - c.start); // how far into the file
+			const length = c.start + c.dur - from;
+			if (length <= 0.01 || offset >= buf.duration) continue;
+			const when = ctxStart + (from - time);
+			const src = ac.createBufferSource();
+			src.buffer = buf;
+			const gain = ac.createGain();
+			// a short fade in at the clip's head and out at its tail, so a cut never clicks
+			const fadeIn = from === c.start ? 0.06 : 0.02, fadeOut = Math.min(0.3, length / 3);
+			gain.gain.setValueAtTime(0, when);
+			gain.gain.linearRampToValueAtTime(c.vol, when + fadeIn);
+			gain.gain.setValueAtTime(c.vol, when + length - fadeOut);
+			gain.gain.linearRampToValueAtTime(0, when + length);
+			src.connect(gain).connect(ac.destination);
+			src.start(when, offset, length);
+			playing_nodes.push({ src, gain });
+		}
+	}
 
 	onDestroy(() => {
 		if (typeof window === 'undefined') return; // also runs while the page is prerendered
 		cancelAnimationFrame(frame);
-		for (const el of els.values()) el.pause();
-		for (const s of Object.values(sources)) URL.revokeObjectURL(s.url);
+		silence();
+		void flush();
+		void ctx?.close();
+		for (const s of Object.values(sources)) if (s.url.startsWith('blob:')) URL.revokeObjectURL(s.url);
 	});
 
-	// ── playback: one clock, every clip follows it ───────────────────────────
-	function sync(force = false) {
-		for (const c of clips) {
-			const m = byCid.get(c.cid);
-			if (m?.kind !== 'audio') continue;
-			const src = sources[c.cid];
-			if (!src) continue;
-			let el = els.get(c.id);
-			if (!el || el.src !== src.url) (el = new Audio(src.url)), els.set(c.id, el);
-			const inside = time >= c.start && time < c.start + c.dur;
-			const local = c.in + (time - c.start);
-			// a short fade at both ends of every sound clip, so a cut never clicks
-			const edge = Math.min(1, (time - c.start) / 0.08, (c.start + c.dur - time) / 0.25);
-			el.volume = Math.max(0, Math.min(1, c.vol * Math.max(0, edge)));
-			if (playing && inside) {
-				if (el.paused || force || Math.abs(el.currentTime - local) > 0.2) el.currentTime = local;
-				if (el.paused) void el.play();
-			} else if (!el.paused) el.pause();
-		}
-		for (const [id, el] of els) if (!clips.some((c) => c.id === id)) (el.pause(), els.delete(id));
-		// the picture track's video, if it is one
-		if (monitorVideo && picture && pictureItem?.kind === 'video') {
-			const local = picture.in + (time - picture.start);
-			monitorVideo.volume = picture.vol;
-			if (force || Math.abs(monitorVideo.currentTime - local) > 0.2) monitorVideo.currentTime = local;
-			if (playing && monitorVideo.paused) void monitorVideo.play();
-			if (!playing && !monitorVideo.paused) monitorVideo.pause();
-		}
+	// ── playback ────────────────────────────────────────────────────────────
+	function syncVideo(force = false) {
+		if (!monitorVideo || !picture || pictureItem?.kind !== 'video') return;
+		const local = picture.in + (time - picture.start);
+		monitorVideo.volume = picture.vol;
+		if (force || Math.abs(monitorVideo.currentTime - local) > 0.25) monitorVideo.currentTime = local;
+		if (playing && monitorVideo.paused) void monitorVideo.play();
+		if (!playing && !monitorVideo.paused) monitorVideo.pause();
 	}
 
 	function tick() {
-		time = time0 + (performance.now() - clock0) / 1000;
+		if (!ctx) return;
+		time = timeStart + Math.max(0, ctx.currentTime - ctxStart);
 		if (time >= end) {
 			time = end;
-			stop();
-			return;
+			return stop();
 		}
-		sync();
-		if (playing) frame = requestAnimationFrame(tick);
+		syncVideo();
+		frame = requestAnimationFrame(tick);
 	}
 
-	function play() {
+	async function play() {
 		if (!clips.length) return;
 		if (time >= end - 0.02) time = 0;
+		await audioCtx().resume();
+		await Promise.all(clips.map((c) => source(c.cid).catch(() => null)));
 		playing = true;
-		clock0 = performance.now();
-		time0 = time;
-		sync(true);
+		schedule();
+		syncVideo(true);
 		frame = requestAnimationFrame(tick);
 	}
 
 	function stop() {
 		playing = false;
 		cancelAnimationFrame(frame);
-		sync();
+		silence();
+		syncVideo();
 	}
 
-	const toggle = () => (playing ? stop() : play());
+	const toggle = () => (playing ? stop() : void play());
 
 	function seek(t: number) {
 		time = Math.min(Math.max(0, t), span);
-		time0 = time;
-		clock0 = performance.now();
-		sync(true);
+		if (playing) schedule();
+		syncVideo(true);
 	}
 
 	// ── by hand: move, trim, seek, drop ────────────────────────────────────
@@ -291,8 +379,10 @@
 		const x0 = e.clientX, s0 = c.start, i0 = c.in, d0 = c.dur;
 		const isImage = byCid.get(c.cid)?.kind === 'image';
 		const max = isImage ? Infinity : (sources[c.cid]?.duration ?? d0 + i0);
+		let moved = false;
 		const move = (ev: PointerEvent) => {
 			const dt = (ev.clientX - x0) / pxPerSec;
+			if (Math.abs(ev.clientX - x0) > 1) moved = true;
 			const i = clips.findIndex((k) => k.id === c.id);
 			if (i < 0) return;
 			const k = { ...clips[i]! };
@@ -306,9 +396,15 @@
 			}
 			if (mode === 'right') k.dur = Math.min(Math.max(0.2, snap(d0 + dt)), max - i0);
 			clips[i] = k;
-			if (playing) sync(true);
 		};
-		const up = () => (window.removeEventListener('pointermove', move), window.removeEventListener('pointerup', up));
+		const up = () => {
+			window.removeEventListener('pointermove', move);
+			window.removeEventListener('pointerup', up);
+			if (moved) {
+				changed();
+				if (playing) schedule();
+			}
+		};
 		window.addEventListener('pointermove', move);
 		window.addEventListener('pointerup', up);
 	}
@@ -334,6 +430,8 @@
 			if (track === 'A2') c.vol = 0.3;
 			clips = [...clips, c];
 			selected = c.id;
+			changed();
+			if (playing) schedule();
 		} catch (e) {
 			error = (e as Error).message;
 		}
@@ -353,13 +451,15 @@
 		if (!id) return;
 		clips = clips.filter((c) => c.id !== id);
 		selected = null;
-		sync();
+		changed();
+		if (playing) schedule();
 	}
 
 	function setClip(patch: Partial<Clip>) {
 		const i = clips.findIndex((c) => c.id === selected);
 		if (i >= 0) clips[i] = { ...clips[i]!, ...patch };
-		sync(true);
+		changed();
+		if (playing) schedule();
 	}
 
 	function onKey(e: KeyboardEvent) {
@@ -374,13 +474,6 @@
 	async function fullscreen() {
 		if (document.fullscreenElement) await document.exitFullscreen();
 		else await studio?.requestFullscreen().catch(() => {});
-	}
-
-	async function reset() {
-		stop();
-		selected = null;
-		time = 0;
-		await starter();
 	}
 
 	/** Draws the part of a sound's waveform that the clip plays. */
@@ -430,15 +523,37 @@
 		<header class="bar">
 			<a class="back" href="{base}/admin/media/">← Admin</a>
 			<strong>Studio</strong>
-			<span class="sub">{clips.length} clips · {clockText(end)}</span>
+			{#if current}
+				<input class="tname" value={current.name} onchange={(e) => setMeta({ name: e.currentTarget.value.trim() || current!.name })} aria-label="Timeline name" />
+				<input class="ttags" value={current.tags.join(', ')} placeholder="tags" onchange={(e) => setMeta({ tags: e.currentTarget.value.split(',').map((t) => t.trim()).filter(Boolean) })} aria-label="Timeline tags" />
+				<select value={current.aspect} onchange={(e) => setMeta({ aspect: e.currentTarget.value })} aria-label="Frame">
+					{#each ASPECTS as a (a)}<option value={a}>{a}</option>{/each}
+				</select>
+			{/if}
+			<span class="sub">{clips.length} clips · {clockText(end)} · {saving === 'saved' ? 'saved' : saving === 'saving' ? 'saving…' : 'unsaved'}</span>
 			{#if error}<span class="err">{error}</span>{/if}
 			<span class="grow"></span>
-			<button class="ghost" onclick={reset}>Start over</button>
 			<button class="ghost" onclick={fullscreen}>⛶ Full screen</button>
 		</header>
 
 		<!-- the library -->
 		<aside class="bin">
+			<div class="tl-head">
+				<h3>Timelines</h3>
+				<button class="ghost small" onclick={newTimeline}>+ New</button>
+			</div>
+			<ul class="tls">
+				{#each shownTimelines as t (t.id)}
+					<li class:on={current?.id === t.id}>
+						<button class="tl" onclick={() => openTimeline(t)}>
+							<span class="nm">{t.name}</span>
+							<span class="tg">{t.aspect} · {t.clips.length} clips{t.tags.length ? ` · ${t.tags.join(', ')}` : ''}</span>
+						</button>
+						<button class="x" onclick={() => removeTimeline(t)} aria-label="Delete timeline">×</button>
+					</li>
+				{/each}
+			</ul>
+			<h3>Library</h3>
 			<div class="kinds">
 				{#each [['all', 'All'], ['image', 'Images'], ['video', 'Video'], ['audio', 'Sound']] as [k, label] (k)}
 					<button class:on={kind === k} onclick={() => (kind = k as typeof kind)}>{label}</button>
@@ -475,7 +590,7 @@
 
 		<!-- the program monitor -->
 		<div class="monitor">
-			<div class="frame">
+			<div class="frame" style:aspect-ratio={aspect.replace(':', ' / ')}>
 				{#if pictureItem?.kind === 'image'}
 					<img src={thumb(pictureItem)} alt="" />
 				{:else if pictureItem?.kind === 'video' && picture && sources[picture.cid]}
@@ -821,7 +936,6 @@
 		height: 100%;
 		max-width: 100%;
 		max-height: 100%;
-		aspect-ratio: 16 / 9;
 		overflow: hidden;
 		border-radius: 6px;
 		background: #111;
@@ -1189,6 +1303,112 @@
 		height: 12px;
 		border-radius: 0 0 50% 50%;
 		background: #e5483d;
+	}
+
+	.tname {
+		width: 16rem;
+		padding: 0.3rem 0.6rem;
+		border: 1px solid transparent;
+		border-radius: 6px;
+		background: transparent;
+		font: inherit;
+		font-weight: 600;
+		color: var(--ink);
+	}
+
+	.ttags {
+		width: 9rem;
+		padding: 0.3rem 0.6rem;
+		border: 1px solid var(--edge);
+		border-radius: 999px;
+		background: #fff;
+		font: inherit;
+		font-size: 0.75rem;
+		color: var(--ink);
+	}
+
+	.tname:hover,
+	.tname:focus {
+		border-color: var(--edge);
+		background: #fff;
+	}
+
+	.bar select {
+		padding: 0.25rem 0.4rem;
+		border: 1px solid var(--edge);
+		border-radius: 6px;
+		background: #fff;
+		font: inherit;
+		font-size: 0.78rem;
+		color: var(--ink);
+	}
+
+	.bin h3 {
+		margin: 0.2rem 0 0;
+		font-family: var(--font-body);
+		font-size: 0.7rem;
+		font-weight: 600;
+		letter-spacing: 0.12em;
+		text-transform: uppercase;
+		color: var(--dim);
+	}
+
+	.tl-head {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+	}
+
+	.ghost.small {
+		padding: 0.2rem 0.6rem;
+		font-size: 0.72rem;
+	}
+
+	.tls {
+		flex: none;
+		max-height: 11rem;
+		margin: 0;
+		padding: 0;
+		overflow: auto;
+		list-style: none;
+	}
+
+	.tls li {
+		display: flex;
+		align-items: center;
+		border-radius: 8px;
+	}
+
+	.tls li.on {
+		background: #f3e3c1;
+	}
+
+	.tl {
+		display: flex;
+		flex: 1;
+		flex-direction: column;
+		min-width: 0;
+		padding: 0.4rem 0.55rem;
+		border: 0;
+		background: none;
+		font: inherit;
+		text-align: left;
+		color: var(--ink);
+		cursor: pointer;
+	}
+
+	.tls .x {
+		padding: 0 0.5rem;
+		border: 0;
+		background: none;
+		font-size: 1rem;
+		color: var(--dim);
+		cursor: pointer;
+		opacity: 0.4;
+	}
+
+	.tls li:hover .x {
+		opacity: 1;
 	}
 
 	@media (max-width: 900px) {
