@@ -526,7 +526,7 @@ const server = Bun.serve({
         if (me instanceof Response) return me;
         try {
           const body = await readJson(req);
-          await namePath(body?.path, body?.cid);
+          await namePath(body?.path, body?.cid, body?.meta);
           return json(req, { ok: true });
         } catch (e) {
           return fail(req, e);
@@ -617,7 +617,8 @@ const server = Bun.serve({
         const info = await mediaInfo(req.params.cid);
         if (!info) return json(req, { error: "No such file." }, { status: 404 });
         // a CID never changes its bytes: cache it for good, and answer byte ranges so a video can seek
-        const head = { ...cors(req), "Content-Type": info.mime, "Accept-Ranges": "bytes", ETag: `"${req.params.cid}"`, "Cache-Control": "private, max-age=31536000, immutable" };
+        // Vary: Origin, always: an <img> (no Origin) and a fetch (with one) must not share a cached answer
+        const head = { ...cors(req), Vary: "Origin", "Content-Type": info.mime, "Accept-Ranges": "bytes", ETag: `"${req.params.cid}"`, "Cache-Control": "private, max-age=31536000, immutable" };
         const range = /^bytes=(\d*)-(\d*)$/.exec(req.headers.get("range") ?? "");
         if (range && info.size > 0) {
           const start = range[1] ? Number(range[1]) : Math.max(0, info.size - Number(range[2]));

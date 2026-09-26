@@ -1,3 +1,4 @@
+import { asset } from '$lib/media/url';
 import { base } from '$app/paths';
 import { marked } from 'marked';
 import { parse as parseYaml } from 'yaml';
@@ -30,7 +31,7 @@ const portraits = new Set(
 );
 
 const portraitFor = (slug?: string) =>
-	slug && portraits.has(slug) ? `${base}/authors/${slug}.jpg` : undefined;
+	slug && portraits.has(slug) ? asset(`/authors/${slug}.jpg`) : undefined;
 
 const FRONTMATTER = /^---\r?\n([\s\S]*?)\r?\n---\r?\n?([\s\S]*)$/;
 

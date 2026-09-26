@@ -4,6 +4,7 @@
 //   "cover", "in the post", "poster", "film", "author"   how a post uses it
 //   "site"         the site's own code loads it directly (sounds, game covers, …)
 //   "sounds", "sandbox-2", …   the folder it lives in, when that is not a post's
+//   "voice"        a narration take from the studio (bun voice)
 //   "unused"       nothing names it at all
 import { readdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
@@ -67,6 +68,9 @@ export async function deriveTags(root: string, paths: { path: string; cid: strin
       if (how !== "author") set.add(p.day); // a portrait on every post is not a day's picture
     }
     if (site.includes(path) || site.includes(path.slice(1))) (used = true), set.add("site");
+    // the studio's own material — voice takes, music beds — is kept to be used, not left over
+    if (path.startsWith("/studio/voice/")) (used = true), set.add("voice");
+    if (path.startsWith("/music/")) used = true;
     if (!used) set.add("unused");
   }
   return tags;

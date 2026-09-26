@@ -109,12 +109,15 @@ export type MediaItem = {
 	paths: string[];
 	/** where it is used: "Day 18", "cover", "in the post", "site", its folder, "unused" */
 	tags: string[];
+	/** what the file is about: a voice take's words, voice, model, duration */
+	meta: Record<string, unknown>;
 	cdn_path: string | null;
 	stream_guid: string | null;
 	distributed_at: string | null;
 };
 
-export const listMedia = () => call<{ media: MediaItem[]; total: number }>('/api/media');
+export const listMedia = (q?: { kind?: string; q?: string }) =>
+	call<{ media: MediaItem[]; total: number }>(`/api/media${q ? `?${new URLSearchParams(q as Record<string, string>)}` : ''}`);
 
 // ─────────────────────────────── signing a terminal in ───────────────────────────────
 

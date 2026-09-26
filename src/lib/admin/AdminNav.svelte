@@ -5,7 +5,8 @@
 
 	const pages = [
 		{ href: `${base}/admin/ideas/`, label: 'Ideas' },
-		{ href: `${base}/admin/media/`, label: 'Media' }
+		{ href: `${base}/admin/media/`, label: 'Media' },
+		{ href: `${base}/admin/studio/`, label: 'Studio' }
 	];
 </script>
 

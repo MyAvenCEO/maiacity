@@ -6,6 +6,7 @@
 //   bun media sync        upload what is missing (by CID, resumable), name every path, tag everything,
 //                         make the public copies on Bunny, and write src/lib/media/manifest.json
 //   bun media release     let git go of journal media production now serves by CID (the files stay on disk)
+//   bun media add <file> </path>   put one file into the library under that path
 //   bun media library     mirror production into library/: every file as <cid>.<ext>, and index.json
 //   bun media logout      revoke this terminal's key
 //
@@ -13,48 +14,14 @@
 import { $ } from "bun";
 import { copyFile, link, mkdir, readdir, readFile, stat, writeFile } from "node:fs/promises";
 import { homedir, hostname } from "node:os";
+import { API, call, keyFor, local, mb, readJson, ROOT, saveKey, say, SITE, upload as uploadBytes } from "./media-client";
 import { join, relative, sep } from "node:path";
 import { cidOf, EXT, kindOf, mimeOf } from "../src/media";
 import { deriveTags } from "./media-tags";
 
-const ROOT = join(import.meta.dir, "../..");
 const STATIC = join(ROOT, "static");
 const MANIFEST = join(ROOT, "src/lib/media/manifest.json");
-const local = process.argv.includes("--local");
-const API = local ? "http://localhost:3100" : "https://api.maia.city";
-const SITE = local ? "http://localhost:5173" : "https://maia.city";
-const CONFIG = join(homedir(), ".config", "maiacity");
-const KEYS = join(CONFIG, "media-keys.json");
 const CACHE = join(homedir(), ".cache", "maiacity", "cids.json");
-
-const say = (s: string) => console.log(s);
-const mb = (n: number) => `${(n / 1e6).toFixed(1)} MB`;
-
-async function readJson<T>(file: string, fallback: T): Promise<T> {
-  try {
-    return JSON.parse(await readFile(file, "utf8")) as T;
-  } catch {
-    return fallback;
-  }
-}
-
-async function keyFor(): Promise<string> {
-  const k = (await readJson<Record<string, string>>(KEYS, {}))[API];
-  if (!k) throw new Error(`Not signed in to ${API}. Run: bun media login${local ? " --local" : ""}`);
-  return k;
-}
-
-async function call<T>(path: string, init: RequestInit & { key?: string } = {}): Promise<T> {
-  const key = init.key ?? (await keyFor());
-  const res = await fetch(`${API}${path}`, {
-    ...init,
-    headers: { authorization: `Bearer ${key}`, ...(init.body && !(init.body instanceof Uint8Array) ? { "content-type": "application/json" } : {}), ...(init.headers ?? {}) },
-  });
-  if (res.status === 204) return undefined as T;
-  const body = await res.json().catch(() => null);
-  if (!res.ok) throw new Error(`${path}: ${body?.error ?? res.status}`);
-  return body as T;
-}
 
 // ─────────────────────────────── login / logout ───────────────────────────────
 
@@ -76,21 +43,16 @@ async function login() {
     if (r.status === 428) continue;
     const body = (await r.json()) as { key?: string; error?: string };
     if (!r.ok || !body.key) throw new Error(body.error ?? "not approved");
-    await mkdir(CONFIG, { recursive: true });
-    const keys = await readJson<Record<string, string>>(KEYS, {});
-    keys[API] = body.key;
-    await writeFile(KEYS, JSON.stringify(keys, null, 2), { mode: 0o600 });
-    return say(`Signed in to ${API}. The key is in ${KEYS}.`);
+    await saveKey(body.key);
+    return say(`Signed in to ${API}. The key is kept in ~/.config/maiacity/media-keys.json.`);
   }
   throw new Error("The code expired before it was approved. Run login again.");
 }
 
 async function logout() {
-  const keys = await readJson<Record<string, string>>(KEYS, {});
-  if (!keys[API]) return say("Not signed in.");
+  if (!(await keyFor().catch(() => null))) return say("Not signed in.");
   await call("/api/device/key", { method: "DELETE" }).catch(() => {});
-  delete keys[API];
-  await writeFile(KEYS, JSON.stringify(keys, null, 2), { mode: 0o600 });
+  await saveKey(null);
   say("Signed out; the key is revoked.");
 }
 
@@ -124,7 +86,7 @@ async function here(): Promise<Local[]> {
   return out;
 }
 
-type Remote = { cid: string; mime: string; kind: string; paths: string[]; tags: string[]; cdn_path: string | null; stream_guid: string | null; size: number };
+type Remote = { cid: string; mime: string; kind: string; paths: string[]; tags: string[]; meta: Record<string, unknown>; cdn_path: string | null; stream_guid: string | null; size: number };
 const library = async () => (await call<{ media: Remote[] }>("/api/media")).media;
 
 async function status() {
@@ -146,26 +108,7 @@ async function status() {
 
 // ─────────────────────────────── sync ───────────────────────────────
 
-async function upload(f: Local) {
-  const start = await call<{ id: string; chunk: number; parts: number; received: number[] }>("/api/media/uploads", {
-    method: "POST",
-    body: JSON.stringify({ path: f.path, size: f.size, cid: f.cid, mime: mimeOf(f.file) }),
-  });
-  const bytes = new Uint8Array(await readFile(f.file));
-  const todo = [...Array(start.parts).keys()].filter((i) => !start.received.includes(i));
-  let next = 0, sent = start.received.length;
-  const worker = async () => {
-    while (next < todo.length) {
-      const i = todo[next++]!;
-      await call(`/api/media/uploads/${start.id}/${i}`, { method: "PUT", body: bytes.subarray(i * start.chunk, (i + 1) * start.chunk), headers: { "content-type": "application/octet-stream" } });
-      sent++;
-      if (start.parts > 8) process.stdout.write(`\r  ${f.path}  ${Math.round((sent / start.parts) * 100)}%   `);
-    }
-  };
-  await Promise.all(Array.from({ length: 4 }, worker));
-  if (start.parts > 8) process.stdout.write("\n");
-  return call<{ cid: string; stored: boolean }>(`/api/media/uploads/${start.id}/finish`, { method: "POST" });
-}
+const upload = async (f: Local) => uploadBytes(new Uint8Array(await readFile(f.file)), f.path, { cid: f.cid, mime: mimeOf(f.file), progress: true });
 
 async function sync() {
   const { files, lib, missing } = await status();
@@ -181,10 +124,7 @@ async function sync() {
   for (const f of unnamed) await call("/api/media/paths", { method: "POST", body: JSON.stringify({ path: f.path, cid: f.cid }) });
   if (unnamed.length) say(`named ${unnamed.length} paths`);
 
-  const after = await library();
-  const tags = await deriveTags(ROOT, after.flatMap((m) => m.paths.map((path) => ({ path, cid: m.cid }))));
-  await call("/api/media/tags", { method: "PUT", body: JSON.stringify({ tags: Object.fromEntries([...tags].map(([c, t]) => [c, [...t]])) }) });
-  say(`tagged ${tags.size} files`);
+  const after = await retagAll();
 
   // videos a post already streams keep their Stream copy (its `video:` guid for its `videoLocal:` file)
   const byPath = new Map(files.map((f) => [f.path, f.cid]));
@@ -230,6 +170,48 @@ async function release() {
   if (left) say(`${left} journal files are still in git: not on the CDN yet (run sync first)`);
 }
 
+/**
+ * Tags are derived — from the journal, the site's code and the folders — plus whatever tags were given by hand
+ * (kept in each file's meta.tags). All of them are sent at once, so the library's tags are always the whole truth.
+ */
+async function retagAll() {
+  const lib = await library();
+  const tags = await deriveTags(ROOT, lib.flatMap((m) => m.paths.map((path) => ({ path, cid: m.cid }))));
+  for (const m of lib) {
+    const given = Array.isArray(m.meta?.tags) ? (m.meta.tags as unknown[]).map(String) : [];
+    if (!given.length) continue;
+    const set = tags.get(m.cid) ?? new Set<string>();
+    given.forEach((t) => set.add(t));
+    set.delete("unused"); // tagged by hand is not unused
+    tags.set(m.cid, set);
+  }
+  await call("/api/media/tags", { method: "PUT", body: JSON.stringify({ tags: Object.fromEntries([...tags].map(([c, t]) => [c, [...t]])) }) });
+  say(`tagged ${tags.size} files`);
+  return lib;
+}
+
+// ─────────────────────────────── add ───────────────────────────────
+
+/**
+ * Put one file into the library under a path of your choosing:
+ *   bun media add <file> </path> [--tags music,cinematic] [--meta '{"title":"…"}']
+ * A sidecar <file without extension>.json (as `bun voice` writes) travels along as the file's meta.
+ */
+async function add() {
+  const argv = process.argv.slice(3);
+  const opt = (k: string) => (argv.includes(`--${k}`) ? argv[argv.indexOf(`--${k}`) + 1] : undefined);
+  const [file, path] = argv.filter((a, i) => !a.startsWith("--") && !argv[i - 1]?.match(/^--(tags|meta)$/));
+  if (!file || !path?.startsWith("/")) throw new Error("usage: bun media add <file> </path/in/the/library> [--tags a,b] [--meta '{…}']");
+  const sidecar = await readJson<Record<string, unknown>>(file.replace(/\.[^./]+$/, ".json"), {});
+  const meta: Record<string, unknown> = { ...sidecar, ...(opt("meta") ? JSON.parse(opt("meta")!) : {}) };
+  const tags = opt("tags")?.split(",").map((t) => t.trim()).filter(Boolean);
+  if (tags?.length) meta.tags = tags;
+  const r = await uploadBytes(new Uint8Array(await readFile(file)), path, { progress: true, meta: Object.keys(meta).length ? meta : undefined });
+  say(`${r.stored ? "stored" : "known "} ${r.cid}  ${path}`);
+  await retagAll();
+  await call("/api/media/distribute", { method: "POST" }).catch(() => {});
+}
+
 // ─────────────────────────────── library ───────────────────────────────
 
 /**
@@ -272,9 +254,9 @@ async function mirror() {
 }
 
 const cmd = process.argv.slice(2).find((a) => !a.startsWith("--")) ?? "status";
-const run = { login, logout, status, sync, release, library: mirror }[cmd as "login"];
+const run = { login, logout, status, sync, release, add, library: mirror }[cmd as "login"];
 if (!run) {
-  say("usage: bun media login | status | sync | release | library | logout  [--local]");
+  say("usage: bun media login | status | sync | add <file> </path> | release | library | logout  [--local]");
   process.exit(1);
 }
 try {

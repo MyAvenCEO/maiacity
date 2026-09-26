@@ -39,3 +39,7 @@ static/day-*/**/*.pdf
 
 # The local mirror of the media library: every file as <cid>.<ext> (`bun media library`)
 /library/
+
+# Voice takes and previews (`bun voice`): their bytes live in the media library; the designed voices stay in git
+/studio/*
+!/studio/voices.json

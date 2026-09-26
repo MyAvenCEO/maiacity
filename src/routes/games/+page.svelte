@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { base } from '$app/paths';
+	import { asset } from '$lib/media/url';
 
 	const sandboxes = [
 		{
@@ -8,7 +9,7 @@
 			href: `${base}/games/sandbox-1`,
 			blurb:
 				'A hex island you can found settlements on. Pick a tile, build it up through five levels, watch what the land can carry.',
-			cover: `${base}/games/sandbox-1.jpg`,
+			cover: asset('/games/sandbox-1.jpg'),
 			coverAlt: 'A dome cell and its dome factories on the avenCITY island.'
 		},
 		{
@@ -17,7 +18,7 @@
 			href: `${base}/games/sandbox-2`,
 			blurb:
 				'The whole planet, and the first cities on it. Found a city on a card of land or join one for good, launch coops inside it, and watch your hearts become the city\'s own HEARTS.',
-			cover: `${base}/games/sandbox-2.jpg`,
+			cover: asset('/games/sandbox-2.jpg'),
 			coverAlt: 'The avenCITY Sandbox 2 planet: continents of hex cards over a deep blue sea.'
 		},
 		{
@@ -26,7 +27,7 @@
 			href: `${base}/games/sandbox-3`,
 			blurb:
 				'Inside the domes. Choose the glamping dome, a medium dome, a large dome or the master dome, and walk through it: the food forest downstairs, the private rooms upstairs facing out.',
-			cover: `${base}/games/sandbox-3.jpg`,
+			cover: asset('/games/sandbox-3.jpg'),
 			coverAlt: 'Looking down from the gallery of a medium dome onto its food forest.'
 		},
 		{
@@ -35,7 +36,7 @@
 			href: `${base}/games/sandbox-4`,
 			blurb:
 				'A whole dome cell in one world: thirteen domes, paths and a stream between them, a food forest all round. Walk up to any dome and straight in, with no loading screen.',
-			cover: `${base}/games/sandbox-4.jpg`,
+			cover: asset('/games/sandbox-4.jpg'),
 			coverAlt: 'The dome cell of avenCITY Sandbox 4: the master dome among its ring of domes, paths and a stream through the forest.'
 		}
 	];

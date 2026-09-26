@@ -1,0 +1,8 @@
+{
+  "narrator": {
+    "id": "ttv-voice-2026092619302926-SNqMwIUC",
+    "prompt": "An elderly British male naturalist narrator. Deep, resonant chest voice with a soft gravelly vibration, warm and hushed, unhurried, every pause full of quiet wonder. Classic nature-documentary delivery, intimate as if whispering beside the listener.",
+    "model": "fal-ai/minimax/voice-design",
+    "created": "2026-09-26T11:30:38.518Z"
+  }
+}

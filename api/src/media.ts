@@ -72,6 +72,7 @@ export type MediaRow = {
   created: string;
   paths: string[];
   tags: string[];
+  meta: Record<string, unknown>;
   cdn_path: string | null;
   stream_guid: string | null;
   distributed_at: string | null;
@@ -80,7 +81,7 @@ export type MediaRow = {
 /** The library: newest first, every path that names each file, and where its public copy is. */
 export async function listMedia(filter: { kind?: string; q?: string } = {}): Promise<MediaRow[]> {
   const { rows } = await db.query<MediaRow>(
-    `SELECT m.cid, m.mime, m.kind, m.size, m.created, m.cdn_path, m.stream_guid, m.distributed_at,
+    `SELECT m.cid, m.mime, m.kind, m.size, m.created, m.meta, m.cdn_path, m.stream_guid, m.distributed_at,
             coalesce(array_agg(DISTINCT p.path) FILTER (WHERE p.path IS NOT NULL), '{}') AS paths,
             coalesce((SELECT array_agg(t.tag ORDER BY t.tag) FROM media_tags t WHERE t.cid = m.cid), '{}') AS tags
        FROM media m LEFT JOIN media_paths p ON p.cid = m.cid
@@ -181,12 +182,13 @@ export async function have(cids: string[]): Promise<string[]> {
   return rows.map((r) => r.cid);
 }
 
-/** Name a path after bytes the library already holds. */
-export async function namePath(path: unknown, cid: unknown) {
+/** Name a path after bytes the library already holds (and add to what is known about them). */
+export async function namePath(path: unknown, cid: unknown, meta?: unknown) {
   const p = String(path ?? ""), c = String(cid ?? "");
   if (!p.startsWith("/")) throw new MediaError("A path starts with /.");
   if (!(await have([c])).length) throw new MediaError("The library does not hold that CID.", 404);
   await nameIt(db, p, c);
+  if (meta) await db.query("UPDATE media SET meta = meta || ($2::text)::jsonb WHERE cid = $1", [c, metaOf(meta)]);
 }
 
 const partsOf = (size: number) => Math.max(1, Math.ceil(size / CHUNK));
@@ -195,7 +197,9 @@ const partsOf = (size: number) => Math.max(1, Math.ceil(size / CHUNK));
  * Begin (or resume) an upload: the file's path, size and the CID the uploader computed. The parts already
  * received come back, so an interrupted upload carries on where it stopped.
  */
-export async function startUpload(founderId: string, body: { path?: unknown; size?: unknown; cid?: unknown; mime?: unknown }) {
+const metaOf = (v: unknown) => JSON.stringify(v && typeof v === "object" && !Array.isArray(v) ? v : {});
+
+export async function startUpload(founderId: string, body: { path?: unknown; size?: unknown; cid?: unknown; mime?: unknown; meta?: unknown }) {
   const path = String(body.path ?? ""), cid = String(body.cid ?? ""), size = Number(body.size);
   if (!path.startsWith("/")) throw new MediaError("A path starts with /.");
   if (!/^baf[a-z2-7]{20,}$/.test(cid)) throw new MediaError("Give the file's CID (CIDv1).");
@@ -207,7 +211,7 @@ export async function startUpload(founderId: string, body: { path?: unknown; siz
   );
   const id =
     old[0]?.id ??
-    (await db.query<{ id: string }>("INSERT INTO uploads (founder_id, path, mime, size, cid) VALUES ($1, $2, $3, $4, $5) RETURNING id", [founderId, path, mime, size, cid])).rows[0]!.id;
+    (await db.query<{ id: string }>("INSERT INTO uploads (founder_id, path, mime, size, cid, meta) VALUES ($1, $2, $3, $4, $5, ($6::text)::jsonb) RETURNING id", [founderId, path, mime, size, cid, metaOf(body.meta)])).rows[0]!.id;
   const { rows } = await db.query<{ idx: number }>("SELECT idx FROM upload_chunks WHERE upload_id = $1 ORDER BY idx", [id]);
   return { id, chunk: CHUNK, parts: partsOf(size), received: rows.map((r) => r.idx) };
 }
@@ -231,8 +235,8 @@ export async function putPart(founderId: string, id: string, idx: number, bytes:
  * become media (or, when the library holds them already, are simply let go of). Either way the path now names it.
  */
 export async function finishUpload(founderId: string, id: string): Promise<{ cid: string; stored: boolean }> {
-  const { rows } = await db.query<{ path: string; mime: string; size: number; cid: string }>(
-    "SELECT path, mime, size, cid FROM uploads WHERE id = $1 AND founder_id = $2",
+  const { rows } = await db.query<{ path: string; mime: string; size: number; cid: string; meta: unknown }>(
+    "SELECT path, mime, size, cid, meta FROM uploads WHERE id = $1 AND founder_id = $2",
     [id, founderId],
   );
   const up = rows[0];
@@ -258,6 +262,7 @@ export async function finishUpload(founderId: string, id: string): Promise<{ cid
       await tx.query("INSERT INTO media (cid, mime, kind, size) VALUES ($1, $2, $3, $4)", [cid, up.mime, kindOf(up.mime), size]);
       await tx.query("INSERT INTO media_chunks (cid, idx, bytes) SELECT $1, idx, bytes FROM upload_chunks WHERE upload_id = $2", [cid, id]);
     }
+    await tx.query("UPDATE media SET meta = meta || ($2::text)::jsonb WHERE cid = $1", [cid, metaOf(up.meta)]);
     await tx.query("DELETE FROM uploads WHERE id = $1", [id]);
     await nameIt(tx, up.path, cid);
     return !known.length;

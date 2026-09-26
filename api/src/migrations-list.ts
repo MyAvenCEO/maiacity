@@ -253,5 +253,14 @@ export const MIGRATIONS: Migration[] = [
       );
     `,
   },
+  {
+    // What a file is about, beyond its bytes: the words a voice take speaks, the voice and model that made it.
+    // Free-form JSON, merged as it arrives; the studio shows it.
+    id: "0008-media-meta",
+    sql: `
+      ALTER TABLE media   ADD COLUMN meta JSONB NOT NULL DEFAULT '{}';
+      ALTER TABLE uploads ADD COLUMN meta JSONB NOT NULL DEFAULT '{}';
+    `,
+  },
 ];
 

@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { asset } from '$lib/media/url';
 	import { base } from '$app/paths';
 	import { categoryById } from './categories';
 	import type { InspirationMeta } from './types';
@@ -16,7 +17,7 @@
 >
 	{#if entry.youtubeId}
 		<!-- copied into static/thumbnails by scripts/fetch-thumbnails.mjs -->
-		<img src="{base}/thumbnails/{entry.youtubeId}.jpg" alt="" loading="lazy" />
+		<img src={asset(`/thumbnails/${entry.youtubeId}.jpg`)} alt="" loading="lazy" />
 	{:else}
 		<span class="orb one"></span>
 		<span class="orb two"></span>
