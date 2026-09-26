@@ -1159,6 +1159,8 @@ export async function mountVillage(container: HTMLElement, onProgress: (label: s
 		if (flying) {
 			camera.position.set(flying[0]!, flying[1]!, flying[2]!)
 			camera.rotation.set(flying[4]!, flying[3]!, 0, 'YXZ')
+			// the sun's shadows follow the camera while it flies (the film camera, scripts/film)
+			aimLight(flying[0]!, flying[2]!)
 		} else step(Math.min(0.1, (now - last) / 1000))
 		last = now
 		const t = (now - clock0) / 1000
@@ -1180,6 +1182,8 @@ export async function mountVillage(container: HTMLElement, onProgress: (label: s
 		renderer.render(scene, camera)
 		// keep it smooth: lower the resolution a little when frames get slow, raise it when there is room
 		frames++
+		// while a film is shot (scripts/film) every frame is rendered at the resolution it asks for
+		if ((window as unknown as { __film?: { virtual: boolean } }).__film?.virtual) frames = 0, (fpsSince = now)
 		if (now - fpsSince > 1500) {
 			const fps = (frames * 1000) / (now - fpsSince)
 			const pr = renderer.getPixelRatio()
@@ -1204,6 +1208,8 @@ export async function mountVillage(container: HTMLElement, onProgress: (label: s
 		built,
 		shown,
 		domes,
+		water: waterPts,
+		playgrounds: PLAYGROUNDS,
 		fly: (x: number, y: number, z: number, yw: number, p: number) => (flying = [x, y, z, yw, p]),
 		place: (x: number, z: number, yw: number, p: number, y = 0) => {
 			flying = null

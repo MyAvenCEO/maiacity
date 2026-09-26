@@ -130,7 +130,7 @@ export const approveDevice = (code: string) =>
 
 // ─────────────────────────────── the studio's timelines ───────────────────────────────
 
-export type TimelineClip = { id: string; cid: string; track: 'V1' | 'A1' | 'A2'; start: number; in: number; dur: number; vol: number };
+export type TimelineClip = { id: string; cid: string; track: 'V1' | 'A1' | 'A2' | 'A3'; start: number; in: number; dur: number; vol: number };
 export type Timeline = { id: string; name: string; aspect: string; tags: string[]; clips: TimelineClip[]; created: string; updated: string };
 
 export const listTimelines = () => call<Timeline[]>('/api/timelines');

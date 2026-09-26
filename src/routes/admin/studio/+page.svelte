@@ -22,7 +22,7 @@
 		type Timeline
 	} from '$lib/auth/client';
 
-	type Track = 'V1' | 'A1' | 'A2';
+	type Track = 'V1' | 'A1' | 'A2' | 'A3';
 	type Clip = { id: string; cid: string; track: Track; start: number; in: number; dur: number; vol: number };
 	type Source = { url: string; duration: number; peaks: number[]; buffer?: AudioBuffer };
 	type Timed = { word: string; start: number; end: number };
@@ -31,6 +31,7 @@
 		{ id: 'V1', label: 'Picture', accepts: ['image', 'video'] },
 		{ id: 'A1', label: 'Voice', accepts: ['audio'] },
 		{ id: 'A2', label: 'Music', accepts: ['audio'] },
+		{ id: 'A3', label: 'Sound', accepts: ['audio'] },
 		{ id: 'T1', label: 'Captions', accepts: [] }
 	];
 	const ASPECTS = ['1:1', '16:9', '9:16', '4:5'];
@@ -55,6 +56,7 @@
 	let lanes = $state<HTMLDivElement | null>(null);
 	let monitorVideo = $state<HTMLVideoElement | null>(null);
 	let studio = $state<HTMLElement | null>(null);
+	let screen = $state<HTMLElement | null>(null);
 
 	const byCid = $derived(new Map(library.map((m) => [m.cid, m])));
 	const aspect = $derived(current?.aspect ?? '1:1');
@@ -235,6 +237,21 @@
 		if (sources[cid]) return Promise.resolve(sources[cid]!);
 		if (pending.has(cid)) return pending.get(cid)!;
 		const m0 = byCid.get(cid);
+		if (m0?.kind === 'video') {
+			// a video streams straight from the library (it answers byte ranges): no need to download it first
+			const url = raw(cid);
+			const p = new Promise<Source>((ok) => {
+				const v = document.createElement('video');
+				v.preload = 'metadata';
+				v.crossOrigin = 'use-credentials';
+				const done = (duration: number) => ok((sources[cid] = { url, duration, peaks: [] }));
+				v.onloadedmetadata = () => done(v.duration || IMAGE_LEN);
+				v.onerror = () => done(Number(m0.meta?.duration_s) || IMAGE_LEN);
+				v.src = url;
+			});
+			pending.set(cid, p);
+			return p;
+		}
 		if (m0?.kind === 'image') {
 			const s = { url: thumb(m0), duration: IMAGE_LEN, peaks: [] };
 			sources[cid] = s;
@@ -428,6 +445,7 @@
 			const s = await source(cid);
 			const c = clip(cid, track, Math.max(0, snap(start)), 0, m.kind === 'image' ? IMAGE_LEN : s.duration);
 			if (track === 'A2') c.vol = 0.3;
+			if (track === 'A3') c.vol = 0.2;
 			clips = [...clips, c];
 			selected = c.id;
 			changed();
@@ -445,7 +463,13 @@
 	}
 
 	const defaultTrack = (m: MediaItem): Track =>
-		m.kind === 'audio' ? (m.paths.some((p) => p.startsWith('/music/')) ? 'A2' : 'A1') : 'V1';
+		m.kind === 'audio'
+			? m.paths.some((p) => p.startsWith('/music/'))
+				? 'A2'
+				: m.paths.some((p) => p.startsWith('/sounds/')) || m.tags.includes('sfx')
+					? 'A3'
+					: 'A1'
+			: 'V1';
 
 	function remove(id: string | null) {
 		if (!id) return;
@@ -469,6 +493,13 @@
 		else if (e.code === 'ArrowLeft') seek(time - (e.shiftKey ? 1 : 0.1));
 		else if (e.code === 'ArrowRight') seek(time + (e.shiftKey ? 1 : 0.1));
 		else if ((e.code === 'Delete' || e.code === 'Backspace') && selected) (e.preventDefault(), remove(selected));
+	}
+
+	/** The picture alone, full screen, playing from the start (Esc leaves it). */
+	async function playFullscreen() {
+		await screen?.requestFullscreen().catch(() => {});
+		seek(0);
+		if (!playing) await play();
 	}
 
 	async function fullscreen() {
@@ -589,13 +620,13 @@
 		</aside>
 
 		<!-- the program monitor -->
-		<div class="monitor">
+		<div class="monitor" bind:this={screen}>
 			<div class="frame" style:aspect-ratio={aspect.replace(':', ' / ')}>
 				{#if pictureItem?.kind === 'image'}
 					<img src={thumb(pictureItem)} alt="" />
 				{:else if pictureItem?.kind === 'video' && picture && sources[picture.cid]}
 					<!-- svelte-ignore a11y_media_has_caption -->
-					<video bind:this={monitorVideo} src={sources[picture.cid]!.url} playsinline></video>
+					<video bind:this={monitorVideo} src={sources[picture.cid]!.url} crossorigin="use-credentials" playsinline muted></video>
 				{/if}
 				<div class="grade"></div>
 				{#if caption.length}
@@ -637,6 +668,7 @@
 			<button class="tbtn" onclick={() => seek(0)} aria-label="To the start">⏮</button>
 			<button class="tbtn play" onclick={toggle} aria-label={playing ? 'Pause' : 'Play'}>{playing ? '❚❚' : '▶'}</button>
 			<span class="time">{clockText(time)} <span>/ {clockText(end)}</span></span>
+			<button class="ghost" onclick={playFullscreen}>⛶ Play full screen</button>
 			<label class="zoom">Zoom <input type="range" min="8" max="200" step="1" bind:value={pxPerSec} /></label>
 			<span class="hint">Space play · Delete removes · ← → nudge</span>
 		</div>
@@ -684,7 +716,7 @@
 										{#if m?.kind === 'image'}
 											<img src={thumb(m)} alt="" draggable="false" />
 										{:else if m?.kind === 'audio' && s}
-											<canvas use:wave={{ peaks: s.peaks, from: c.in, to: c.in + c.dur, total: s.duration, color: t.id === 'A1' ? '#a8741a' : '#2f7d6a' }}></canvas>
+											<canvas use:wave={{ peaks: s.peaks, from: c.in, to: c.in + c.dur, total: s.duration, color: t.id === 'A1' ? '#a8741a' : t.id === 'A3' ? '#4a5f93' : '#2f7d6a' }}></canvas>
 										{/if}
 										<span class="label">{String(m?.meta?.title ?? name(m))}</span>
 										<i class="edge l" onpointerdown={(e) => grab(e, c, 'left')}></i>
@@ -931,6 +963,20 @@
 		background: var(--bg);
 	}
 
+	.monitor:fullscreen {
+		padding: 0;
+		background: #000;
+	}
+
+	.monitor:fullscreen .frame {
+		border-radius: 0;
+		box-shadow: none;
+	}
+
+	.monitor:fullscreen .caption {
+		font-size: clamp(1.2rem, 3.2vh, 2.6rem);
+	}
+
 	.frame {
 		position: relative;
 		height: 100%;
@@ -1124,7 +1170,7 @@
 
 	.heads {
 		display: grid;
-		grid-template-rows: 1.5rem repeat(4, 1fr);
+		grid-template-rows: 1.5rem repeat(5, 1fr);
 		border-right: 1px solid var(--edge);
 		background: var(--panel);
 	}
@@ -1152,7 +1198,7 @@
 	.lanes {
 		position: relative;
 		display: grid;
-		grid-template-rows: 1.5rem repeat(4, 1fr);
+		grid-template-rows: 1.5rem repeat(5, 1fr);
 		min-width: 100%;
 		height: 100%;
 		cursor: text;
@@ -1219,6 +1265,11 @@
 	.clip.audio.A2 {
 		border-color: #6fb3a1;
 		background: #d6eee8;
+	}
+
+	.clip.audio.A3 {
+		border-color: #8fa0c9;
+		background: #e1e7f5;
 	}
 
 	.clip canvas {
