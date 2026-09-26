@@ -32,6 +32,7 @@ import { furnish, terraceSet } from './rooms'
 import { ambience, levelsAt, nearness } from './ambience'
 import { flow, pond as pondShape, shore, stream as streamShape } from './water'
 import { gameHour } from '../../../../game/time'
+import { createWalker, obstacles } from './walk'
 import { forestFloor, floorPick, grassTuft, appleTree, banana, berryBush, canopyTree, climber, clover, coconutPalm, comfrey, crop, CROPS, fruitTree, ginger, grapePergola, herb, papaya, passionVine, potted, seeded, shrub, smallFruitTree, squash, strawberries, tropicalShrub, vineAlong, type Plant } from './plants'
 
 export type DomeKind = 'tent' | 'glamp' | 'home' | 'large' | 'master' | 'factory'
@@ -46,7 +47,6 @@ export const DOMES: Record<DomeKind, Spec & { label: string; people: string }> =
 	factory: { label: 'Solar factory dome', people: 'the factory coop', diameter: 136, detail: 7, strut: 0.16 }
 }
 
-const EYE = 1.65
 /** The big domes have four doors, one to each point of the compass; the glamping dome has one. */
 export const DOORS = [0, Math.PI / 2, Math.PI, -Math.PI / 2]
 export const doorsOf = (kind: DomeKind) => (kind === 'glamp' || kind === 'tent' ? [0] : DOORS)
@@ -1999,49 +1999,7 @@ export async function mountInterior(container: HTMLElement, kind: DomeKind, onPr
 		const [ex, ez] = polar(R - (kind === 'glamp' ? 2 : 3.5), opts.entry)
 		start = { x: ex, z: ez, look: opts.entry }
 	}
-	const pos = new THREE.Vector3(start.x, 0, start.z)
 	let left = false
-	let yaw = start.look
-	let pitch = -0.05
-	let feet = 0
-	const keys = new Set<string>()
-	const dom = renderer.domElement
-	const onKey = (e: KeyboardEvent, down: boolean) => {
-		const k = e.key.toLowerCase()
-		if (onAction(k, down)) {
-			e.preventDefault()
-			keys.delete(k)
-			return
-		}
-		if (['w', 'a', 's', 'd', 'arrowup', 'arrowdown', 'arrowleft', 'arrowright', 'shift'].includes(k)) {
-			if (down) keys.add(k)
-			else keys.delete(k)
-			e.preventDefault()
-		}
-	}
-	const kd = (e: KeyboardEvent) => onKey(e, true)
-	const ku = (e: KeyboardEvent) => onKey(e, false)
-	window.addEventListener('keydown', kd)
-	window.addEventListener('keyup', ku)
-	let dragging = false
-	const look = (dx: number, dy: number) => {
-		yaw -= dx * 0.0042
-		pitch = Math.max(-1.4, Math.min(1.4, pitch - dy * 0.0042))
-	}
-	const onDown = () => {
-		dragging = true
-		dom.requestPointerLock?.()
-	}
-	const onMove = (e: MouseEvent) => {
-		if (document.pointerLockElement === dom || dragging) look(e.movementX, e.movementY)
-	}
-	const onUp = () => (dragging = false)
-	dom.addEventListener('mousedown', onDown)
-	window.addEventListener('mousemove', onMove)
-	window.addEventListener('mouseup', onUp)
-	// on a phone the page's fingers walk (move) and look round (look)
-	dom.style.touchAction = 'none'
-	const stick = { x: 0, y: 0, hurry: false }
 
 	// in the tent, only where there is headroom under the canvas
 	const wallLimit = (y: number) => (kind === 'tent' ? 1.15 : Math.sqrt(Math.max(0, R * R - (y + 1.8) ** 2)) - (kind === 'glamp' ? 0.4 : 0.8))
@@ -2057,40 +2015,32 @@ export async function mountInterior(container: HTMLElement, kind: DomeKind, onPr
 		return inDoor || (rr > R + 0.4 && rr < outerR)
 	}
 
-	const step = (dt: number) => {
-		const clamp = (v: number) => Math.max(-1, Math.min(1, v))
-		const f = clamp((keys.has('w') || keys.has('arrowup') ? 1 : 0) - (keys.has('s') || keys.has('arrowdown') ? 1 : 0) + stick.y)
-		const s = clamp((keys.has('d') ? 1 : 0) - (keys.has('a') ? 1 : 0) + stick.x)
-		const turn = (keys.has('arrowleft') ? 1 : 0) - (keys.has('arrowright') ? 1 : 0)
-		yaw += turn * 1.8 * dt
-		if (f || s) {
-			const speed = (keys.has('shift') || stick.hurry ? 14.6 : 6.45) * dt
-			const dx = (-Math.sin(yaw) * f + Math.cos(yaw) * s) * speed
-			const dz = (-Math.cos(yaw) * f - Math.sin(yaw) * s) * speed
-			// the floor underfoot now, not the eased camera height, decides what holds you
-			const here = floorAt(pos.x, pos.z, feet)
-			for (const [mx, mz] of [[dx, dz], [dx, 0], [0, dz]] as const) {
-				const nx = pos.x + mx, nz = pos.z + mz
-				const nf = floorAt(nx, nz, feet)
-				if (!walkable(nx, nz, nf)) continue
-				if (blocked(nx, nz, here)) continue
-				if ([...colliders, ...outsideColliders].some((c) => Math.abs(nf - ((c as { y?: number }).y ?? 0)) < 1 && Math.hypot(c.x - nx, c.z - nz) < c.r + 0.25)) continue
-				pos.x = nx
-				pos.z = nz
-				break
+	/* the walking itself is the walker's (walk.js), as it is in the village: this dome only
+	   says where its floors are and what stands in the way */
+	const standing = obstacles([...colliders, ...outsideColliders])
+	const walker = createWalker(
+		camera,
+		renderer.domElement,
+		{
+			floorAt: (x, z, from) => floorAt(x, z, from),
+			canStep: (x, z, here, from) => {
+				const nf = floorAt(x, z, here)
+				return walkable(x, z, nf) && !blocked(x, z, here) && !standing(x, z, nf, from)
 			}
-		}
+		},
+		{ x: start.x, z: start.z, yaw: start.look, pitch: -0.05 },
+		(k, down) => onAction(k, down)
+	)
+	const pos = walker.pos
+	const step = (dt: number) => {
+		walker.step(dt)
 		// out through a door and away from the wall: back to the village, outside that door
-		if (opts.onLeave && !left && feet < 0.5 && Math.hypot(pos.x, pos.z) > R + 4) {
+		if (opts.onLeave && !left && walker.ground < 0.5 && Math.hypot(pos.x, pos.z) > R + 4) {
 			const a = Math.atan2(pos.x, pos.z)
 			left = true
 			opts.onLeave(doorsOf(kind).reduce((best, d) => (Math.abs(adiff(a, d)) < Math.abs(adiff(a, best)) ? d : best)))
 		}
-		const target = floorAt(pos.x, pos.z, feet)
-		feet += (target - feet) * Math.min(1, dt * 12)
-		onWalk(pos.x, pos.z, feet)
-		camera.position.set(pos.x, feet + EYE, pos.z)
-		camera.rotation.set(pitch, yaw, 0, 'YXZ')
+		onWalk(pos.x, pos.z, walker.ground)
 	}
 
 	const onResize = () => {
@@ -2127,7 +2077,7 @@ export async function mountInterior(container: HTMLElement, kind: DomeKind, onPr
 			const heard: Parameters<typeof sound.set>[0] = levelsAt(pos.x, pos.z, indoors, waterPts, herds)
 			// in the factory: the hall's own hum instead of the soft nature, the machines near you, the lift
 			if (factorySounds && indoors) {
-				const f = factorySounds(pos.x, pos.z, feet)
+				const f = factorySounds(pos.x, pos.z, walker.ground)
 				heard.inside = 0
 				heard.forest = 0.08
 				heard.factory = 1
@@ -2168,10 +2118,7 @@ export async function mountInterior(container: HTMLElement, kind: DomeKind, onPr
 		land: () => (flying = null),
 		place: (x: number, z: number, y: number, yw: number, p: number) => {
 			flying = null
-			pos.set(x, 0, z)
-			feet = y
-			yaw = yw
-			pitch = p
+			walker.place(x, z, yw, p, y)
 		}
 	}
 
@@ -2185,27 +2132,19 @@ export async function mountInterior(container: HTMLElement, kind: DomeKind, onPr
 			onAction(k, true)
 			setTimeout(() => onAction(k, false), 120)
 		},
-		move: (x, y, hurry) => Object.assign(stick, { x, y, hurry }),
-		look: (dx, dy) => {
-			yaw -= dx * 0.0065
-			pitch = Math.max(-1.4, Math.min(1.4, pitch - dy * 0.0065))
-		},
+		move: walker.move,
+		look: walker.look,
 		dispose() {
 			cancelAnimationFrame(frame)
 			sound.dispose()
-			window.removeEventListener('keydown', kd)
-			window.removeEventListener('keyup', ku)
-			window.removeEventListener('mousemove', onMove)
-			window.removeEventListener('mouseup', onUp)
+			walker.dispose()
 			window.removeEventListener('resize', onResize)
-			dom.removeEventListener('mousedown', onDown)
-			if (document.pointerLockElement === dom) document.exitPointerLock()
 			scene.traverse((o) => {
 				if (o instanceof THREE.Mesh) o.geometry.dispose()
 			})
 			pmrem.dispose()
 			renderer.dispose()
-			dom.remove()
+			renderer.domElement.remove()
 		}
 	}
 }

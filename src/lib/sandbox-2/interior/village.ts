@@ -23,6 +23,7 @@ import { apiary, fishes, herd } from './animals'
 import { flow, pond, shore, stream } from './water'
 import { gameHour } from '../../../../game/time'
 import { ambience, levelsAt } from './ambience'
+import { createWalker, obstacles } from './walk'
 
 export type VillageDome = { kind: DomeKind; x: number; z: number; R: number; ext: number }
 export type VillageHandle = {
@@ -43,7 +44,6 @@ export type VillageHandle = {
 	dispose: () => void
 }
 
-const EYE = 1.65
 const WORLD = 380
 
 /** The cell: the master dome, six large domes round it, six medium domes further out between them. */
@@ -888,52 +888,19 @@ export async function mountVillage(container: HTMLElement, onProgress: (label: s
 	await pause('Opening the doors')
 
 	/* ── walking: WASD or the touch joystick, drag to look; through a door, into the dome ── */
+	/* the walking itself is the walker's (walk.js), as it is inside a dome on its own: the
+	   cell only says where its floors are (floorHere) and what stands in the way (check) */
 	const start = doorPoint(master, Math.PI, 10)
-	const pos = new THREE.Vector3(start.x, 0, start.z)
-	// facing the master dome
-	let yaw = Math.PI
-	let pitch = 0.08
-	const keys = new Set<string>()
-	const onKey = (e: KeyboardEvent, down: boolean) => {
-		const k = e.key.toLowerCase()
-		if (['w', 'a', 's', 'd', 'arrowup', 'arrowdown', 'arrowleft', 'arrowright', 'shift'].includes(k)) {
-			if (down) keys.add(k)
-			else keys.delete(k)
-			e.preventDefault()
-		}
-	}
-	const kd = (e: KeyboardEvent) => onKey(e, true)
-	const ku = (e: KeyboardEvent) => onKey(e, false)
-	window.addEventListener('keydown', kd)
-	window.addEventListener('keyup', ku)
-	const dom = renderer.domElement
-	let dragging = false
-	const onDown = () => {
-		dragging = true
-		dom.requestPointerLock?.()
-	}
-	const onMove = (e: MouseEvent) => {
-		if (document.pointerLockElement === dom || dragging) {
-			yaw -= e.movementX * 0.0042
-			pitch = Math.max(-1.4, Math.min(1.4, pitch - e.movementY * 0.0042))
-		}
-	}
-	const onUp = () => (dragging = false)
-	dom.addEventListener('mousedown', onDown)
-	window.addEventListener('mousemove', onMove)
-	window.addEventListener('mouseup', onUp)
-	// on a phone the page's fingers walk (move) and look round (look)
-	dom.style.touchAction = 'none'
-	const stick = { x: 0, y: 0, hurry: false }
-
-	// every tree, pillar and table, filed by 8 m cells for walking
-	const blockers = new Map<string, { x: number; z: number; r: number }[]>()
-	for (const c of colliders) {
-		const key = `${Math.floor(c.x / 8)},${Math.floor(c.z / 8)}`
-		const list = blockers.get(key)
-		if (list) list.push(c)
-		else blockers.set(key, [c])
-	}
+	const walker = createWalker(
+		camera,
+		renderer.domElement,
+		{ floorAt: (x, z, from) => floorHere(x, z, from), canStep: (x, z, here, from) => check(x, z, here, from) },
+		// facing the master dome
+		{ x: start.x, z: start.z, yaw: Math.PI, pitch: 0.08 }
+	)
+	const pos = walker.pos
+	// every tree, pillar and table, filed by cells for walking
+	const standing = obstacles(colliders)
 	/* ── the full insides: as you walk up to a dome, its whole inside is built into the
 	   village a piece at a time, and the simple one steps aside. You walk in through the
 	   door with nothing to wait for: its floors, stairs, galleries and terraces are the
@@ -1046,9 +1013,6 @@ export async function mountVillage(container: HTMLElement, onProgress: (label: s
 
 	/** Where you may stand, and how high: the land, or inside the open dome on its own floors. */
 	const DOOR_HALF = 1.1
-	/** the floor you truly stand on, and your feet easing after it (for a smooth eye) */
-	let ground = 0
-	let feet = 0
 	const floorHere = (x: number, z: number, f: number) => {
 		for (const i of shown) {
 			const d = domes[i]!
@@ -1056,7 +1020,7 @@ export async function mountVillage(container: HTMLElement, onProgress: (label: s
 		}
 		return 0
 	}
-	const check = (x: number, z: number, here: number): boolean => {
+	const check = (x: number, z: number, here: number, from?: { x: number; z: number }): boolean => {
 		if (!inHex(x, z)) return false
 		for (let i = 0; i < domes.length; i++) {
 			const d = domes[i]!
@@ -1066,7 +1030,7 @@ export async function mountVillage(container: HTMLElement, onProgress: (label: s
 			// the open dome: its own floors, walls, rails and furniture
 			const full = shown.has(i) ? built.get(i) : undefined
 			if (full) {
-				const nf = full.floorAt(dx, dz, ground)
+				const nf = full.floorAt(dx, dz, here)
 				return full.inside(dx, dz, nf) && !full.blocked(dx, dz, here) && !full.hits(dx, dz, nf)
 			}
 			// a dome still growing: in through a door and anywhere on its ground floor, while its
@@ -1078,63 +1042,10 @@ export async function mountVillage(container: HTMLElement, onProgress: (label: s
 			const a = Math.atan2(dx, dz)
 			return DOORS.some((dd) => Math.abs(adiff(a, dd)) < 0.5 && Math.abs(adiff(a, dd)) * rr < DOOR_HALF)
 		}
-		if (here > 0.5) return false
-		const ix = Math.floor(x / 8), iz = Math.floor(z / 8)
-		for (let dx = -1; dx <= 1; dx++)
-			for (let dz = -1; dz <= 1; dz++)
-				for (const c of blockers.get(`${ix + dx},${iz + dz}`) ?? []) if (Math.hypot(c.x - x, c.z - z) < c.r + 0.25) return false
-		return true
-	}
-	/* round a tree, a pillar or a wall rather than stopping at it: the stride is turned a little
-	   at a time, either way, until it is free, and slowed the further it must turn. The side
-	   last taken is tried first, so you keep going round the same way and do not waver. */
-	const TURNS = [25, 50, 75, 90].map((d) => (d * Math.PI) / 180)
-	let side = 1
-	const round = (go: (mx: number, mz: number) => boolean, sx: number, sz: number) => {
-		for (const a of TURNS) {
-			const len = Math.max(0.4, Math.cos(a))
-			for (const sg of [side, -side]) {
-				const c = Math.cos(a * sg), sn = Math.sin(a * sg)
-				if (go((sx * c - sz * sn) * len, (sx * sn + sz * c) * len)) {
-					side = sg
-					return true
-				}
-			}
-		}
-		return false
+		return here <= 0.5 && !standing(x, z, 0, from)
 	}
 	const step = (dt: number) => {
-		const clamp = (v: number) => Math.max(-1, Math.min(1, v))
-		const f = clamp((keys.has('w') || keys.has('arrowup') ? 1 : 0) - (keys.has('s') || keys.has('arrowdown') ? 1 : 0) + stick.y)
-		const s = clamp((keys.has('d') ? 1 : 0) - (keys.has('a') ? 1 : 0) + stick.x)
-		yaw += ((keys.has('arrowleft') ? 1 : 0) - (keys.has('arrowright') ? 1 : 0)) * 1.8 * dt
-		if (f || s) {
-			const speed = (keys.has('shift') || stick.hurry ? 14.6 : 6.45) * dt
-			const dx = (-Math.sin(yaw) * f + Math.cos(yaw) * s) * speed
-			const dz = (-Math.cos(yaw) * f - Math.sin(yaw) * s) * speed
-			// in short strides, each reaching up from the floor you stand on, so a stair climbs
-			// as well at a hurry, and on a slow phone, as at a stroll
-			const n = Math.max(1, Math.ceil(Math.hypot(dx, dz) / 0.25))
-			const sx = dx / n, sz = dz / n
-			for (let k = 0; k < n; k++) {
-				const here = floorHere(pos.x, pos.z, ground)
-				const go = (mx: number, mz: number) => {
-					if (!check(pos.x + mx, pos.z + mz, here)) return false
-					pos.x += mx
-					pos.z += mz
-					return true
-				}
-				if (!go(sx, sz) && !round(go, sx, sz)) {
-					// nothing to step round to: slide along the ground's own axes, as before
-					if (!go(sx, 0)) go(0, sz)
-				}
-				ground = floorHere(pos.x, pos.z, ground)
-			}
-		}
-		ground = floorHere(pos.x, pos.z, ground)
-		feet += (ground - feet) * Math.min(1, dt * 12)
-		camera.position.set(pos.x, feet + EYE, pos.z)
-		camera.rotation.set(pitch, yaw, 0, 'YXZ')
+		walker.step(dt)
 		// the sun's shadows follow you round the cell
 		aimLight(pos.x, pos.z)
 	}
@@ -1213,10 +1124,7 @@ export async function mountVillage(container: HTMLElement, onProgress: (label: s
 		fly: (x: number, y: number, z: number, yw: number, p: number) => (flying = [x, y, z, yw, p]),
 		place: (x: number, z: number, yw: number, p: number, y = 0) => {
 			flying = null
-			ground = feet = y
-			pos.set(x, 0, z)
-			yaw = yw
-			pitch = p
+			walker.place(x, z, yw, p, y)
 		}
 	}
 
@@ -1232,21 +1140,15 @@ export async function mountVillage(container: HTMLElement, onProgress: (label: s
 			if (running) return
 			running = true
 			last = performance.now()
-			keys.clear()
-			Object.assign(stick, { x: 0, y: 0, hurry: false })
+			walker.halt()
 			tick()
 		},
 		placeAtDoor: (i, door) => {
 			const p = doorPoint(domes[i]!, door, 3)
-			pos.set(p.x, 0, p.z)
-			yaw = door + Math.PI
-			pitch = 0.02
+			walker.place(p.x, p.z, door + Math.PI, 0.02)
 		},
-		move: (x, y, hurry) => Object.assign(stick, { x, y, hurry }),
-		look: (dx, dy) => {
-			yaw -= dx * 0.0065
-			pitch = Math.max(-1.4, Math.min(1.4, pitch - dy * 0.0065))
-		},
+		move: walker.move,
+		look: walker.look,
 		alwaysDay: (on) => {
 			keepDay = on
 			setSun(hourNow())
@@ -1257,19 +1159,15 @@ export async function mountVillage(container: HTMLElement, onProgress: (label: s
 			if (building) building.cancelled = true
 			for (const dm of built.values()) dm.dispose()
 			sound.dispose()
-			window.removeEventListener('keydown', kd)
-			window.removeEventListener('keyup', ku)
-			window.removeEventListener('mousemove', onMove)
-			window.removeEventListener('mouseup', onUp)
+			walker.dispose()
 			window.removeEventListener('resize', onResize)
-			if (document.pointerLockElement === dom) document.exitPointerLock()
 			scene.traverse((o) => {
 				const mesh = o as THREE.Mesh
 				mesh.geometry?.dispose()
 			})
 			pmrem.dispose()
 			renderer.dispose()
-			dom.remove()
+			renderer.domElement.remove()
 		}
 	}
 }
