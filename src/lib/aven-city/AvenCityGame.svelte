@@ -22,6 +22,7 @@ import {
 import type { SceneApi } from './game/three/scene'
 import { timeOfDay } from './game/timeOfDay.svelte'
 import './styles/index.css'
+import TouchStick from '../touch/TouchStick.svelte'
 
 /**
  * The standalone repo reached the biome sandbox through its own `/sandbox`
@@ -271,7 +272,7 @@ $effect(() => {
 			<div class="flex min-h-0 items-end justify-between gap-2">
 				<!-- Bottom left: whatever is selected. -->
 				<div
-					class="pointer-events-auto flex max-h-full min-h-0 flex-col items-start gap-2 overflow-y-auto"
+					class="touch-lift pointer-events-auto flex max-h-full min-h-0 flex-col items-start gap-2 overflow-y-auto"
 				>
 					<!-- Tile inspector -->
 					{#if selected.length > 1}
@@ -326,7 +327,9 @@ $effect(() => {
 						</div>
 					{:else}
 						<span class="hud-pill hud-pill-sm hud-label shrink-0"
-							>tap a hex · shift-drag to span</span
+							><span class="keys-how">tap a hex · shift-drag to span</span><span class="touch-how"
+								>tap a hex</span
+							></span
 						>
 					{/if}
 				</div>
@@ -338,10 +341,29 @@ $effect(() => {
 				</div>
 			</div>
 		</div>
+
+		<!-- on a phone: the joystick travels the island as WASD does; one finger still turns, two zoom -->
+		<TouchStick move={(x, y, hurry) => api?.move(x, y, hurry)} />
 	</div>
 {/if}
 
 <style>
+/* --- on a phone: the joystick in the lower left, what is selected above it --- */
+.touch-how {
+	display: none;
+}
+@media (hover: none) and (pointer: coarse) {
+	.keys-how {
+		display: none;
+	}
+	.touch-how {
+		display: inline;
+	}
+	.touch-lift {
+		margin-bottom: 9rem;
+	}
+}
+
 /* --- the loading screen --------------------------------------------------- */
 .loading {
 	position: absolute;

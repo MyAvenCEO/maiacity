@@ -21,7 +21,7 @@ import type { BiomeMap, DepthMap, LandMask } from '../../../../game/map'
 export type CityMarker = { slug: string; tile: number; citizens: number; milestone: number; coops: { slug: string; slot: number; milestone: number }[] }
 export type TilePick = { tile: number; biome: 'land' | 'water'; coop: string | null }
 export type WorldOptions = { cities: CityMarker[]; onTile?: (pick: TilePick) => void; /** The map: where the land is. Without it, the noise invents continents. */ isLand?: LandMask; /** The map: what kind of land is where. */ kindOf?: BiomeMap; /** The map: where the mountain ranges are. */ isMountain?: LandMask; /** The map: how deep the sea is. */ depthOf?: DepthMap }
-export type WorldHandle = { setCities: (cities: CityMarker[]) => void; /** Hold the camera and give the mouse back, while a sheet is open. */ setFrozen: (on: boolean) => void; /** Mark a card as chosen (-1 clears it). */ setChosen: (tile: number) => void; /** Fly the camera to a card and mark it; `at` is where on the screen it should land (-1..1, 0 is the middle); `zoom` how close. */ focus: (tile: number, at?: { x: number; y: number }, zoom?: number) => void; /** Stop drawing while another view has the screen. */ setPaused: (on: boolean) => void; dispose: () => void }
+export type WorldHandle = { setCities: (cities: CityMarker[]) => void; /** Hold the camera and give the mouse back, while a sheet is open. */ setFrozen: (on: boolean) => void; /** Walk from a touch joystick: x to the right, y ahead, each -1…1. */ move: (x: number, y: number, hurry: boolean) => void; /** Mark a card as chosen (-1 clears it). */ setChosen: (tile: number) => void; /** Fly the camera to a card and mark it; `at` is where on the screen it should land (-1..1, 0 is the middle); `zoom` how close. */ focus: (tile: number, at?: { x: number; y: number }, zoom?: number) => void; /** Stop drawing while another view has the screen. */ setPaused: (on: boolean) => void; dispose: () => void }
 
 /** Resolve a token that may be `var(--x)` to a colour three.js can parse. */
 function colour(name: string, fallback: string): THREE.Color {
@@ -408,8 +408,23 @@ export function mountWorld(container: HTMLElement, options: WorldOptions = { cit
 
 	/* ── a click: the card, or the coop standing on it ─────────────────── */
 	let downAt: { x: number; y: number } | null = null
-	renderer.domElement.addEventListener('pointerdown', (e) => { downAt = { x: e.clientX, y: e.clientY } })
+	/* a pinch on a phone picks nothing, whichever finger lifts last */
+	let fingersDown = 0
+	let pinched = false
+	renderer.domElement.addEventListener('pointerdown', (e) => {
+		downAt = { x: e.clientX, y: e.clientY }
+		if (++fingersDown > 1) pinched = true
+	})
+	renderer.domElement.addEventListener('pointercancel', () => {
+		fingersDown = Math.max(0, fingersDown - 1)
+		if (!fingersDown) pinched = false
+		downAt = null
+	})
 	renderer.domElement.addEventListener('pointerup', (e) => {
+		fingersDown = Math.max(0, fingersDown - 1)
+		const wasPinch = pinched
+		if (!fingersDown) pinched = false
+		if (wasPinch) downAt = null
 		if (!downAt) return
 		const moved = Math.hypot(e.clientX - downAt.x, e.clientY - downAt.y)
 		downAt = null
@@ -489,6 +504,7 @@ export function mountWorld(container: HTMLElement, options: WorldOptions = { cit
 			if (on) setHover(-1)
 		},
 		setChosen,
+		move: (x, y, hurry) => rig.move(x, y, hurry),
 		focus: (tile, at, zoom = 0.5) => {
 			const t = tiles[tile]
 			if (!t) return

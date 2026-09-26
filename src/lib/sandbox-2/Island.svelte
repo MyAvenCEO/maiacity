@@ -10,6 +10,7 @@
 	import { buildingForLevel, type PlacedKind } from './island/buildWorld';
 	import type { SceneApi } from './island/scene';
 	import { gameHour } from '../../../game/time';
+	import TouchStick from '$lib/touch/TouchStick.svelte';
 
 	let {
 		seed,
@@ -93,6 +94,8 @@
 
 <div class="island">
 	<canvas bind:this={canvas}></canvas>
+	<!-- on a phone: the joystick travels the island as WASD does; one finger still turns, two zoom -->
+	<TouchStick move={(x, y, hurry) => api?.move(x, y, hurry)} />
 	{#if loading}
 		<div class="loading" role="status"><span>Landing on the island…</span></div>
 	{/if}

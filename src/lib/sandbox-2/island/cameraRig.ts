@@ -4,7 +4,7 @@
  * the sandbox.
  *
  * It follows what Age of Empires, Anno and Cities: Skylines settled on:
- *   · WASD / arrow keys travel the map
+ *   · WASD / arrow keys travel the map, and so does a phone's joystick
  *   · the wheel zooms toward whatever the cursor is over
  *   · drag turns and tilts, right-drag slides, Q/E turn from the keyboard
  *   · a click stays a click, so it can still select
@@ -32,6 +32,8 @@ export interface CameraRigOptions {
 
 export interface CameraRig {
 	controls: OrbitControls
+	/** travel from a touch joystick: x to the right, y ahead, each -1…1; hurry when pushed to the edge */
+	move(x: number, y: number, hurry: boolean): void
 	/** call once per frame with the frame delta in seconds */
 	update(dt: number): void
 	dispose(): void
@@ -81,6 +83,7 @@ export function createCameraRig(
 	}
 
 	const held = new Set<string>()
+	const stick = { x: 0, y: 0, hurry: false }
 	const forward = new THREE.Vector3()
 	const right = new THREE.Vector3()
 	const move = new THREE.Vector3()
@@ -124,7 +127,7 @@ export function createCameraRig(
 		if (held.has('q')) turn(TURN_SPEED * step)
 		if (held.has('e')) turn(-TURN_SPEED * step)
 
-		if (freeMove && held.size > 0) {
+		if (freeMove && (held.size > 0 || stick.x || stick.y)) {
 			camera.getWorldDirection(forward)
 			forward.y = 0
 			if (forward.lengthSq() < 1e-6) forward.set(0, 0, -1)
@@ -136,12 +139,16 @@ export function createCameraRig(
 			if (held.has('s') || held.has('arrowdown')) move.sub(forward)
 			if (held.has('d') || held.has('arrowright')) move.add(right)
 			if (held.has('a') || held.has('arrowleft')) move.sub(right)
+			move.addScaledVector(forward, stick.y).addScaledVector(right, stick.x)
 
-			if (move.lengthSq() > 0) {
+			const length = move.length()
+			if (length > 0) {
 				// travel scales with how far out you are: a step that feels right
 				// on the board view would be a teleport at ground level
 				const zoomScale = Math.max(0.08, camera.position.distanceTo(controls.target) / 60)
-				move.normalize().multiplyScalar(speed * zoomScale * step)
+				// never faster than one key's worth; a half-pushed stick goes at half pace
+				const pace = Math.min(1, length) / length
+				move.multiplyScalar(pace * speed * zoomScale * step * (stick.hurry ? 2.2 : 1))
 				camera.position.add(move)
 				controls.target.add(move)
 			}
@@ -159,6 +166,9 @@ export function createCameraRig(
 
 	return {
 		controls,
+		move(x, y, hurry) {
+			Object.assign(stick, { x, y, hurry })
+		},
 		update,
 		dispose(): void {
 			window.removeEventListener('keydown', onKeyDown)

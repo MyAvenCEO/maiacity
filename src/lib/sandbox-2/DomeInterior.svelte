@@ -1,8 +1,9 @@
 <!--
 	Stepping inside a dome: a full-screen, walkable interior (interior/interior.ts)
 	over the island. Drag or click to look, WASD or the arrows to walk, Shift to
-	hurry, Esc and the button to come back out. On a phone, as in Sandbox 4: a
-	joystick in the lower left walks, any other finger on the world looks round.
+	hurry, Esc and the button to come back out. On a phone, as in every sandbox: a
+	joystick in the lower left walks, any other finger on the world looks round
+	($lib/touch/TouchStick).
 
 	While the dome is built, the valley of domes from Day 03 fills the screen,
 	slowly drawing closer, with the step being done and a progress bar; when the
@@ -13,6 +14,7 @@
 	import { onDestroy, onMount } from 'svelte';
 	import { DOMES, type DomeKind, type InteriorHandle } from './interior/interior';
 	import { gameClock } from '../../../game/time';
+	import TouchStick from '$lib/touch/TouchStick.svelte';
 
 	let {
 		kind,
@@ -22,7 +24,7 @@
 		onleave
 	}: { kind: DomeKind; place: string; onclose: () => void; entry?: number; onleave?: (door: number) => void } = $props();
 
-	let stage: HTMLDivElement;
+	let stage = $state<HTMLDivElement>();
 	let handle: InteriorHandle | null = null;
 	let destroyed = false;
 	/** closed → opening (the picture fades) → open (gone) */
@@ -38,96 +40,13 @@
 	const clockTimer = setInterval(() => (clock = gameClock().label), 1000);
 	const liftTimer = setInterval(() => (lift = handle?.lift() ?? null), 200);
 
-	/* on a phone: the joystick walks (push it to the rim to hurry), any other finger on the
-	   world looks round. Touch events, each finger by its own identifier, so both work at once.
-	   The ring stays where it is, in the lower left; the knob goes wherever the thumb goes,
-	   past the rim too, so it is always under the thumb. How far out, up to the rim, sets the pace. */
-	let root: HTMLDivElement;
-	let stickEl: HTMLDivElement;
-	let knobEl: HTMLSpanElement;
-	let hurrying = $state(false);
-	let stickFinger: number | null = null;
-	/** the ring's centre and radius, measured as the thumb comes down */
-	let stick = { x: 0, y: 0, r: 64 };
-	let lookFinger: { id: number; x: number; y: number } | null = null;
-	/** a finger on the bar's or the lift's buttons: followed when it lifts where it came down */
-	const taps = new Map<number, { el: HTMLElement; x: number; y: number }>();
-	const stickTo = (t: Touch) => {
-		const x = t.clientX - stick.x;
-		const y = t.clientY - stick.y;
-		knobEl.style.transform = `translate3d(${x}px, ${y}px, 0)`;
-		// full walking pace three quarters of the way to the rim, a hurry at the rim and beyond
-		const d = Math.hypot(x, y);
-		const m = Math.min(1, d / stick.r);
-		const pace = m < 0.08 ? 0 : Math.min(1, m / 0.75);
-		hurrying = m > 0.95;
-		handle?.move((x / (d || 1)) * pace, (-y / (d || 1)) * pace, hurrying);
-	};
-	const stickRelease = () => {
-		stickFinger = null;
-		knobEl.style.transform = '';
-		hurrying = false;
-		handle?.move(0, 0, false);
-	};
-	const onTouchStart = (e: TouchEvent) => {
-		let ours = false;
-		for (const t of Array.from(e.changedTouches)) {
-			// Safari can name the text under the finger rather than its element
-			const el = ((t.target as Node).nodeType === Node.TEXT_NODE ? (t.target as Node).parentElement : t.target) as Element;
-			const tap = el?.closest?.('.bar button, .lift button') as HTMLElement | null;
-			if (tap) {
-				taps.set(t.identifier, { el: tap, x: t.clientX, y: t.clientY });
-				ours = true;
-			} else if (stickFinger === null && stickEl.contains(el)) {
-				stickFinger = t.identifier;
-				const box = stickEl.getBoundingClientRect();
-				stick = { x: box.left + box.width / 2, y: box.top + box.height / 2, r: box.width / 2 };
-				stickTo(t);
-				ours = true;
-			} else if (stage.contains(el)) {
-				if (lookFinger === null) lookFinger = { id: t.identifier, x: t.clientX, y: t.clientY };
-				ours = true;
-			}
-		}
-		// no scrolling, zooming, long-press menu or second, browser-made click
-		if (ours) e.preventDefault();
-	};
-	const onTouchMove = (e: TouchEvent) => {
-		for (const t of Array.from(e.changedTouches)) {
-			if (t.identifier === stickFinger) stickTo(t);
-			else if (lookFinger && t.identifier === lookFinger.id) {
-				handle?.look(t.clientX - lookFinger.x, t.clientY - lookFinger.y);
-				lookFinger.x = t.clientX;
-				lookFinger.y = t.clientY;
-			}
-		}
-		if (stickFinger !== null || lookFinger) e.preventDefault();
-	};
-	const onTouchEnd = (e: TouchEvent) => {
-		for (const t of Array.from(e.changedTouches)) {
-			const tap = taps.get(t.identifier);
-			if (tap) {
-				taps.delete(t.identifier);
-				if (e.type === 'touchend' && Math.hypot(t.clientX - tap.x, t.clientY - tap.y) < 14) tap.el.click();
-			} else if (t.identifier === stickFinger) stickRelease();
-			else if (lookFinger && t.identifier === lookFinger.id) lookFinger = null;
-		}
-	};
-	const noPinch = (e: Event) => e.preventDefault();
-
 	onMount(() => {
-		root.addEventListener('touchstart', onTouchStart, { passive: false });
-		root.addEventListener('touchmove', onTouchMove, { passive: false });
-		root.addEventListener('touchend', onTouchEnd);
-		root.addEventListener('touchcancel', onTouchEnd);
-		// Safari's own pinch, which touch-action alone does not always stop
-		document.addEventListener('gesturestart', noPinch);
 		// let the closed doors paint before the heavy build starts
 		requestAnimationFrame(() =>
 			requestAnimationFrame(async () => {
 				const { mountInterior } = await import('./interior/interior');
 				const h = await mountInterior(
-					stage,
+					stage!,
 					kind,
 					(label) => {
 						if (label === 'ready') return;
@@ -147,7 +66,6 @@
 	onDestroy(() => {
 		clearInterval(clockTimer);
 		clearInterval(liftTimer);
-		document.removeEventListener('gesturestart', noPinch);
 		destroyed = true;
 		handle?.dispose();
 	});
@@ -157,7 +75,7 @@
 
 <svelte:window onkeydown={onKey} />
 
-<div class="interior" bind:this={root}>
+<div class="interior">
 	<div class="stage" bind:this={stage}></div>
 	<div class="bar">
 		<button class="out" onclick={onclose}>← Back outside</button>
@@ -182,9 +100,7 @@
 		<span class="keys-how">Drag to look · WASD to walk · Shift to hurry{kind === 'factory' ? ' · in the great lift, ↑ and ↓ ride between the five floors' : kind === 'tent' ? ' · the door leads out to the campfire' : spec.gallery ? ' · the stairs lead up to the private rooms and the terrace' : ' · the door leads out into the forest'}</span>
 		<span class="touch-how">Swipe to look · joystick to walk · push to the rim to hurry</span>
 	</p>
-	<div class="stick" class:hurrying bind:this={stickEl}>
-		<span class="knob" bind:this={knobEl}></span>
-	</div>
+	<TouchStick move={(x, y, hurry) => handle?.move(x, y, hurry)} look={(dx, dy) => handle?.look(dx, dy)} {stage} taps=".bar button, .lift button" />
 
 	{#if doors !== 'open'}
 		<div class="loading" class:opening={doors === 'opening'} role="status" aria-live="polite">
@@ -395,56 +311,11 @@
 		color: #f0c49a;
 	}
 
-	/* ── the touch joystick, only where there is no mouse ── */
-	.touch-how,
-	.stick {
+	/* ── on a phone: the joystick's words, and the lift's panel above the joystick ── */
+	.touch-how {
 		display: none;
 	}
-	.stick {
-		position: absolute;
-		left: calc(1.5rem + env(safe-area-inset-left, 0px));
-		bottom: calc(1.5rem + env(safe-area-inset-bottom, 0px));
-		z-index: 2;
-		width: 8rem;
-		height: 8rem;
-		border-radius: 50%;
-		background: rgb(250 248 242 / 0.18);
-		border: 1.5px solid rgb(250 248 242 / 0.55);
-		backdrop-filter: blur(6px);
-		align-items: center;
-		justify-content: center;
-		touch-action: none;
-		user-select: none;
-		-webkit-user-select: none;
-		-webkit-touch-callout: none;
-	}
-	/* a thumb landing just outside the ring still takes the knob */
-	.stick::before {
-		content: '';
-		position: absolute;
-		inset: -1.5rem;
-		border-radius: 50%;
-	}
-	.stick.hurrying {
-		border-color: #f0a47c;
-	}
-	.knob {
-		width: 3.4rem;
-		height: 3.4rem;
-		border-radius: 50%;
-		background: rgb(250 248 242 / 0.9);
-		box-shadow: 0 2px 10px rgb(0 0 0 / 0.25);
-		pointer-events: none;
-		will-change: transform;
-	}
-	.stick.hurrying .knob {
-		background: #f0a47c;
-	}
 	@media (hover: none) and (pointer: coarse) {
-		.stick {
-			display: flex;
-			will-change: transform;
-		}
 		.keys-how {
 			display: none;
 		}
