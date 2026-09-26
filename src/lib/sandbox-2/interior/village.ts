@@ -36,6 +36,10 @@ export type VillageHandle = {
 	placeAtDoor: (i: number, door: number) => void
 	/** walk from a touch joystick: x to the right, y ahead, each -1…1; hurry when pushed to the edge */
 	move: (x: number, y: number, hurry: boolean) => void
+	/** turn the view by a finger's drag, in pixels */
+	look: (dx: number, dy: number) => void
+	/** keep the sky at day whatever the hour (the clock runs on), or follow the clock again */
+	alwaysDay: (on: boolean) => void
 	dispose: () => void
 }
 
@@ -86,7 +90,10 @@ export async function mountVillage(container: HTMLElement, onProgress: (label: s
 
 	/* ── the sky, and a sun that follows the in-game clock ── */
 	const dev = window as unknown as { __interiorHour?: number }
-	const hourNow = () => dev.__interiorHour ?? gameHour()
+	/** the hour the sky shows when it is kept at day: late morning, the shadows still long enough to read */
+	const DAY_HOUR = 11
+	let keepDay = false
+	const hourNow = () => dev.__interiorHour ?? (keepDay ? DAY_HOUR : gameHour())
 	const sunAt = (hour: number) => {
 		const e = Math.sin(((hour - 5) / 15) * Math.PI)
 		const alt = e * THREE.MathUtils.degToRad(68)
@@ -915,28 +922,8 @@ export async function mountVillage(container: HTMLElement, onProgress: (label: s
 	dom.addEventListener('mousedown', onDown)
 	window.addEventListener('mousemove', onMove)
 	window.addEventListener('mouseup', onUp)
-	// on a phone: one finger on the world looks round; the joystick (on the page) walks
+	// on a phone the page's fingers walk (move) and look round (look)
 	dom.style.touchAction = 'none'
-	let finger: { id: number; x: number; y: number } | null = null
-	const onTouchDown = (e: PointerEvent) => {
-		if (e.pointerType === 'mouse' || finger) return
-		finger = { id: e.pointerId, x: e.clientX, y: e.clientY }
-		dom.setPointerCapture(e.pointerId)
-	}
-	const onTouchMove = (e: PointerEvent) => {
-		if (!finger || e.pointerId !== finger.id) return
-		yaw -= (e.clientX - finger.x) * 0.0065
-		pitch = Math.max(-1.4, Math.min(1.4, pitch - (e.clientY - finger.y) * 0.0065))
-		finger.x = e.clientX
-		finger.y = e.clientY
-	}
-	const onTouchUp = (e: PointerEvent) => {
-		if (finger && e.pointerId === finger.id) finger = null
-	}
-	dom.addEventListener('pointerdown', onTouchDown)
-	dom.addEventListener('pointermove', onTouchMove)
-	dom.addEventListener('pointerup', onTouchUp)
-	dom.addEventListener('pointercancel', onTouchUp)
 	const stick = { x: 0, y: 0, hurry: false }
 
 	// every tree, pillar and table, filed by 8 m cells for walking
@@ -1209,7 +1196,6 @@ export async function mountVillage(container: HTMLElement, onProgress: (label: s
 			last = performance.now()
 			keys.clear()
 			Object.assign(stick, { x: 0, y: 0, hurry: false })
-			finger = null
 			tick()
 		},
 		placeAtDoor: (i, door) => {
@@ -1219,6 +1205,14 @@ export async function mountVillage(container: HTMLElement, onProgress: (label: s
 			pitch = 0.02
 		},
 		move: (x, y, hurry) => Object.assign(stick, { x, y, hurry }),
+		look: (dx, dy) => {
+			yaw -= dx * 0.0065
+			pitch = Math.max(-1.4, Math.min(1.4, pitch - dy * 0.0065))
+		},
+		alwaysDay: (on) => {
+			keepDay = on
+			setSun(hourNow())
+		},
 		dispose() {
 			running = false
 			cancelAnimationFrame(frame)
