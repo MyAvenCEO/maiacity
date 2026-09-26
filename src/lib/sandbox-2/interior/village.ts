@@ -34,6 +34,8 @@ export type VillageHandle = {
 	resume: () => void
 	/** stand outside dome i's door, facing away from it */
 	placeAtDoor: (i: number, door: number) => void
+	/** walk from a touch joystick: x to the right, y ahead, each -1…1; hurry when pushed to the edge */
+	move: (x: number, y: number, hurry: boolean) => void
 	dispose: () => void
 }
 
@@ -878,7 +880,7 @@ export async function mountVillage(container: HTMLElement, onProgress: (label: s
 	}
 	await pause('Opening the doors')
 
-	/* ── walking: WASD, drag to look; through a door, into the dome ── */
+	/* ── walking: WASD or the touch joystick, drag to look; through a door, into the dome ── */
 	const start = doorPoint(master, Math.PI, 10)
 	const pos = new THREE.Vector3(start.x, 0, start.z)
 	// facing the master dome
@@ -913,6 +915,29 @@ export async function mountVillage(container: HTMLElement, onProgress: (label: s
 	dom.addEventListener('mousedown', onDown)
 	window.addEventListener('mousemove', onMove)
 	window.addEventListener('mouseup', onUp)
+	// on a phone: one finger on the world looks round; the joystick (on the page) walks
+	dom.style.touchAction = 'none'
+	let finger: { id: number; x: number; y: number } | null = null
+	const onTouchDown = (e: PointerEvent) => {
+		if (e.pointerType === 'mouse' || finger) return
+		finger = { id: e.pointerId, x: e.clientX, y: e.clientY }
+		dom.setPointerCapture(e.pointerId)
+	}
+	const onTouchMove = (e: PointerEvent) => {
+		if (!finger || e.pointerId !== finger.id) return
+		yaw -= (e.clientX - finger.x) * 0.0065
+		pitch = Math.max(-1.4, Math.min(1.4, pitch - (e.clientY - finger.y) * 0.0065))
+		finger.x = e.clientX
+		finger.y = e.clientY
+	}
+	const onTouchUp = (e: PointerEvent) => {
+		if (finger && e.pointerId === finger.id) finger = null
+	}
+	dom.addEventListener('pointerdown', onTouchDown)
+	dom.addEventListener('pointermove', onTouchMove)
+	dom.addEventListener('pointerup', onTouchUp)
+	dom.addEventListener('pointercancel', onTouchUp)
+	const stick = { x: 0, y: 0, hurry: false }
 
 	// every tree, pillar and table, filed by 8 m cells for walking
 	const blockers = new Map<string, { x: number; z: number; r: number }[]>()
@@ -1072,11 +1097,12 @@ export async function mountVillage(container: HTMLElement, onProgress: (label: s
 		return true
 	}
 	const step = (dt: number) => {
-		const f = (keys.has('w') || keys.has('arrowup') ? 1 : 0) - (keys.has('s') || keys.has('arrowdown') ? 1 : 0)
-		const s = (keys.has('d') ? 1 : 0) - (keys.has('a') ? 1 : 0)
+		const clamp = (v: number) => Math.max(-1, Math.min(1, v))
+		const f = clamp((keys.has('w') || keys.has('arrowup') ? 1 : 0) - (keys.has('s') || keys.has('arrowdown') ? 1 : 0) + stick.y)
+		const s = clamp((keys.has('d') ? 1 : 0) - (keys.has('a') ? 1 : 0) + stick.x)
 		yaw += ((keys.has('arrowleft') ? 1 : 0) - (keys.has('arrowright') ? 1 : 0)) * 1.8 * dt
 		if (f || s) {
-			const speed = (keys.has('shift') ? 14.6 : 6.45) * dt
+			const speed = (keys.has('shift') || stick.hurry ? 14.6 : 6.45) * dt
 			const dx = (-Math.sin(yaw) * f + Math.cos(yaw) * s) * speed
 			const dz = (-Math.cos(yaw) * f - Math.sin(yaw) * s) * speed
 			const here = floorHere(pos.x, pos.z, feet)
@@ -1182,6 +1208,8 @@ export async function mountVillage(container: HTMLElement, onProgress: (label: s
 			running = true
 			last = performance.now()
 			keys.clear()
+			Object.assign(stick, { x: 0, y: 0, hurry: false })
+			finger = null
 			tick()
 		},
 		placeAtDoor: (i, door) => {
@@ -1190,6 +1218,7 @@ export async function mountVillage(container: HTMLElement, onProgress: (label: s
 			yaw = door + Math.PI
 			pitch = 0.02
 		},
+		move: (x, y, hurry) => Object.assign(stick, { x, y, hurry }),
 		dispose() {
 			running = false
 			cancelAnimationFrame(frame)
