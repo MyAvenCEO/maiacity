@@ -134,5 +134,29 @@ export const MIGRATIONS: Migration[] = [
       );
     `,
   },
+  {
+    // Roles become rows: a role is a name and the capabilities it holds, edited by the admin
+    // instead of fixed in a file. The rows themselves are seeded at boot from caps.ts (ROLE_CAPS),
+    // so the list of what exists lives in one place. And the admin gets a notebook for ideas.
+    id: "0004-roles-and-ideas",
+    sql: `
+      CREATE TABLE roles (
+        name         TEXT PRIMARY KEY,
+        -- a comma list of capability ids from caps.ts; only what is named here is held
+        capabilities TEXT NOT NULL DEFAULT '',
+        created      TIMESTAMPTZ NOT NULL DEFAULT now()
+      );
+
+      CREATE TABLE ideas (
+        id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        author_id  TEXT REFERENCES founders(id) ON DELETE SET NULL,
+        body       TEXT NOT NULL,
+        done       BOOLEAN NOT NULL DEFAULT false,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+      );
+      CREATE INDEX ix_ideas_open ON ideas (done, created_at DESC);
+    `,
+  },
 ];
 

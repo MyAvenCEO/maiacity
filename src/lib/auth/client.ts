@@ -16,7 +16,13 @@ export type Founder = {
 	number: number;
 	name: string;
 	since: string;
+	/** only on /api/me: their role, and every capability it holds */
+	role?: string;
+	caps?: string[];
 };
+
+/** May they? The API decides for real; this only keeps the site from offering what it would refuse. */
+export const may = (founder: Founder | null | undefined, cap: string) => !!founder?.caps?.includes(cap);
 
 /** Every call carries the session cookie, and every failure carries a sentence
  *  a person can read rather than a status code. */
@@ -67,3 +73,27 @@ export async function signIn(): Promise<Founder> {
 /** Does this browser do passkeys at all? Checked before anything is promised. */
 export const passkeysAvailable = () =>
 	typeof window !== 'undefined' && !!window.PublicKeyCredential;
+
+// ─────────────────────────────── the admin's notebook ───────────────────────────────
+
+export type Idea = {
+	id: string;
+	body: string;
+	done: boolean;
+	author: string | null;
+	created_at: string;
+	updated_at: string;
+};
+
+export const listIdeas = () => call<Idea[]>('/api/ideas');
+
+export const addIdea = (body: string) =>
+	call<Idea>('/api/ideas', { method: 'POST', body: JSON.stringify({ body }) });
+
+export const updateIdea = (id: string, patch: { body?: string; done?: boolean }) =>
+	call<Idea>(`/api/ideas/${id}`, { method: 'PATCH', body: JSON.stringify(patch) });
+
+export async function deleteIdea(id: string): Promise<void> {
+	const res = await fetch(`${API}/api/ideas/${id}`, { method: 'DELETE', credentials: 'include' });
+	if (!res.ok) throw new Error((await res.json().catch(() => null))?.error ?? 'Could not delete it.');
+}

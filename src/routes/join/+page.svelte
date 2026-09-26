@@ -7,9 +7,11 @@
 	server, and none of them run until someone acts.
 -->
 <script lang="ts">
+	import { base } from '$app/paths';
 	import { onMount } from 'svelte';
 	import {
 		founderCount,
+		may,
 		me,
 		passkeysAvailable,
 		rename,
@@ -114,6 +116,10 @@
 
 			{#if saved}<p class="note ok">Saved.</p>{/if}
 			{#if error}<p class="note bad">{error}</p>{/if}
+
+			{#if may(founder, 'ideas:admin')}
+				<p class="already"><a class="quiet" href="{base}/admin/ideas/">Open the ideas notebook →</a></p>
+			{/if}
 
 			<button class="quiet" onclick={leave}>Sign out on this device</button>
 		{:else}

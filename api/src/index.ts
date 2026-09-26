@@ -13,7 +13,9 @@ import { migrateLedger } from "./ledger/store";
 import { account, claim, LedgerError } from "./ledger/hearts";
 import { acceptInvite, buildableCards, cityOf, coopDetail, createInvite, foundCity, foundSettlement, invest, inviteInfo, listCities, plain, settlementOf } from "./ledger/coopstore";
 import { ledgerView } from "./ledger/view";
-import { capabilities, can, rolesPolicy } from "./acl";
+import { assignRole, can, capabilities, createRole, deleteRole, initRoles, listRoles, RoleError, setRoleCaps } from "./acl";
+import { CAPABILITIES } from "./caps";
+import { addIdea, deleteIdea, IdeaError, listIdeas, updateIdea } from "./ideas";
 import { format, gameClock, calendar, parse } from "../../game/time";
 
 const PORT = Number(process.env.PORT ?? 3000);
@@ -79,9 +81,20 @@ async function viewer(req: Request): Promise<{ id: string; role: string } | null
   return row ?? null;
 }
 
-/** Turn a thrown ledger error into a response a person can read. */
+/**
+ * The signed-in founder, if they hold the capability — or the response that says why not.
+ * Every admin route starts here, so none of them ever asks for a role by name.
+ */
+async function allowed(req: Request, cap: string): Promise<{ id: string; role: string } | Response> {
+  const me = await viewer(req);
+  if (!me) return json(req, { error: "Please sign in." }, { status: 401 });
+  if (!can(me, cap)) return json(req, { error: `This needs the right to ${(CAPABILITIES[cap] ?? cap).toLowerCase()}.` }, { status: 403 });
+  return me;
+}
+
+/** Turn a thrown ledger, role or notebook error into a response a person can read. */
 function fail(req: Request, e: unknown) {
-  if (e instanceof LedgerError) return json(req, { error: e.message }, { status: e.status });
+  if (e instanceof LedgerError || e instanceof RoleError || e instanceof IdeaError) return json(req, { error: e.message }, { status: e.status });
   console.error(e);
   return json(req, { error: "Something went wrong on our side." }, { status: 500 });
 }
@@ -99,6 +112,7 @@ await migrate();
 useDb(fromBunSql(sql));
 await migrateLedger();
 await initSessions();
+await initRoles();
 
 const server = Bun.serve({
   port: PORT,
@@ -153,9 +167,10 @@ const server = Bun.serve({
       GET: async (req) => {
         const id = founderIdFrom(req);
         if (!id) return json(req, { error: "not signed in" }, { status: 401 });
-        const [founder] = await sql`SELECT id, number, name, created FROM founders WHERE id = ${id}`;
+        const [founder] = await sql`SELECT id, number, name, created, role FROM founders WHERE id = ${id}`;
         if (!founder) return json(req, { error: "not signed in" }, { status: 401 });
-        return json(req, publicFounder(founder));
+        // what they may do comes with who they are, so the site can show them only what they can use
+        return json(req, { ...publicFounder(founder), role: founder.role, caps: [...capabilities(founder.role)] });
       },
       // The only thing a founder can change: the name they are known by.
       PATCH: async (req) => {
@@ -312,11 +327,13 @@ const server = Bun.serve({
         return big(req, await ledgerView(me!.id));
       },
     },
+    // ─────────────────────────────── the admin ───────────────────────────
+    // Who has which role, and what each role holds. Every route asks for a capability, never a role.
     "/api/citizens": {
       OPTIONS: preflight,
       GET: async (req) => {
-        const me = await viewer(req);
-        if (!can(me, "citizen:promote")) return json(req, { error: "Only the admin sees roles." }, { status: 403 });
+        const me = await allowed(req, "roles:admin");
+        if (me instanceof Response) return me;
         const rows = await sql`SELECT id, number, name, role, created FROM founders ORDER BY number`;
         return json(req, rows.map((r: any) => ({ ...r, number: Number(r.number) })));
       },
@@ -324,14 +341,96 @@ const server = Bun.serve({
     "/api/citizens/:id/role": {
       OPTIONS: preflight,
       POST: async (req) => {
-        const me = await viewer(req);
-        const role = String((await readJson(req))?.role ?? "");
-        if (!rolesPolicy.assignable.includes(role)) return json(req, { error: "Not an assignable role." }, { status: 400 });
-        const cap = role === "founder" ? "citizen:promote" : "citizen:demote";
-        if (!can(me, cap)) return json(req, { error: "Only the admin assigns roles." }, { status: 403 });
-        const [row] = await sql`UPDATE founders SET role = ${role} WHERE id = ${req.params.id} AND role <> 'admin' RETURNING id, role`;
-        if (!row) return json(req, { error: "No such citizen, or they are the admin." }, { status: 404 });
-        return json(req, row);
+        const me = await allowed(req, "roles:admin");
+        if (me instanceof Response) return me;
+        try {
+          return json(req, await assignRole(req.params.id, (await readJson(req))?.role));
+        } catch (e) {
+          return fail(req, e);
+        }
+      },
+    },
+    "/api/roles": {
+      OPTIONS: preflight,
+      GET: async (req) => {
+        const me = await allowed(req, "roles:admin");
+        if (me instanceof Response) return me;
+        return json(req, { roles: await listRoles(), catalogue: CAPABILITIES });
+      },
+      POST: async (req) => {
+        const me = await allowed(req, "roles:admin");
+        if (me instanceof Response) return me;
+        try {
+          const body = await readJson(req);
+          await createRole(body?.name, body?.capabilities ?? []);
+          return json(req, { roles: await listRoles() }, { status: 201 });
+        } catch (e) {
+          return fail(req, e);
+        }
+      },
+    },
+    "/api/roles/:name": {
+      OPTIONS: preflight,
+      PATCH: async (req) => {
+        const me = await allowed(req, "roles:admin");
+        if (me instanceof Response) return me;
+        try {
+          await setRoleCaps(req.params.name, (await readJson(req))?.capabilities);
+          return json(req, { roles: await listRoles() });
+        } catch (e) {
+          return fail(req, e);
+        }
+      },
+      DELETE: async (req) => {
+        const me = await allowed(req, "roles:admin");
+        if (me instanceof Response) return me;
+        try {
+          await deleteRole(req.params.name);
+          return json(req, { roles: await listRoles() });
+        } catch (e) {
+          return fail(req, e);
+        }
+      },
+    },
+
+    // The admin's notebook: ideas and notes, written down the moment they come.
+    "/api/ideas": {
+      OPTIONS: preflight,
+      GET: async (req) => {
+        const me = await allowed(req, "ideas:admin");
+        if (me instanceof Response) return me;
+        return json(req, await listIdeas());
+      },
+      POST: async (req) => {
+        const me = await allowed(req, "ideas:admin");
+        if (me instanceof Response) return me;
+        try {
+          return json(req, await addIdea(me.id, (await readJson(req))?.body), { status: 201 });
+        } catch (e) {
+          return fail(req, e);
+        }
+      },
+    },
+    "/api/ideas/:id": {
+      OPTIONS: preflight,
+      PATCH: async (req) => {
+        const me = await allowed(req, "ideas:admin");
+        if (me instanceof Response) return me;
+        try {
+          return json(req, await updateIdea(req.params.id, (await readJson(req)) ?? {}));
+        } catch (e) {
+          return fail(req, e);
+        }
+      },
+      DELETE: async (req) => {
+        const me = await allowed(req, "ideas:admin");
+        if (me instanceof Response) return me;
+        try {
+          await deleteIdea(req.params.id);
+          return new Response(null, { status: 204, headers: cors(req) });
+        } catch (e) {
+          return fail(req, e);
+        }
       },
     },
 

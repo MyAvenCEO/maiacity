@@ -9,6 +9,7 @@ import {
 } from "@simplewebauthn/server";
 import { randomUUID } from "node:crypto";
 import { sql, type Founder, type Passkey } from "./db";
+import { DEFAULT_ROLE, FIRST_SIGNUP_ROLE } from "./caps";
 
 // The page doing the WebAuthn ceremony is maia.city; this API only verifies
 // what the browser produced. So the relying party is the site, never the API
@@ -84,11 +85,12 @@ export async function registerFinish(body: any): Promise<Result<Founder>> {
 
   const { credential } = verification.registrationInfo;
   const id = randomUUID();
+  // the very first signup runs the city; everyone after them starts as a citizen
   const [founder] = await sql`
     INSERT INTO founders (id, name, role)
     VALUES (${id}, ${pending.name},
-            CASE WHEN EXISTS (SELECT 1 FROM founders WHERE role = 'admin') THEN 'citizen' ELSE 'admin' END)
-    RETURNING id, number, name, created`; // the first founder runs the city
+            CASE WHEN EXISTS (SELECT 1 FROM founders) THEN ${DEFAULT_ROLE} ELSE ${FIRST_SIGNUP_ROLE} END)
+    RETURNING id, number, name, created`;
   await sql`
     INSERT INTO passkeys (id, founder_id, public_key, counter, transports)
     VALUES (${credential.id}, ${id}, ${b64url(credential.publicKey)}, ${credential.counter},
