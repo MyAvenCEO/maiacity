@@ -70,6 +70,8 @@ export interface SceneApi {
 	 * makes the designation readable on the island. */
 	/** Moves the sun to the given hour of the day (0..24). */
 	setHour(hour: number): void
+	/** Travels the map from a touch joystick: x to the right, y ahead, each -1…1. */
+	move(x: number, y: number, hurry: boolean): void
 	/** Replaces everything standing with exactly these, by "q,r" — the server owns them. */
 	setBuildings(buildings: Record<string, PlacedKind>): void
 	/** Brings a hex to the middle of the view, keeping the camera's angle. */
@@ -629,6 +631,9 @@ export function createScene(canvas: HTMLCanvasElement, options: SceneOptions = {
 		},
 		stats() {
 			return world?.stats() ?? EMPTY_STATS
+		},
+		move(x, y, hurry) {
+			rig.move(x, y, hurry)
 		},
 		setHour(hour) {
 			hourNow = hour

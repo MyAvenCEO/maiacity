@@ -10,6 +10,9 @@
  *   drag          far: pan the globe · near: turn (left–right) and walk (up–down)
  *   wheel / pinch altitude, on a log scale
  *   W A S D / ↑↓←→  walk and strafe · Q E turn
+ *   on a phone    a joystick walks as the keys do ($lib/touch/TouchStick); two
+ *                 fingers pinch the altitude; at walking height one finger looks
+ *                 round, as in Sandbox 4
  *   the walk    zooming in past the threshold hands the gaze to the mouse by
  *                 itself (pointer lock): the cursor goes, a reticle marks the
  *                 centre, and every movement of the mouse turns the gaze — all
@@ -46,6 +49,10 @@ export type RigOptions = {
 const WALK = 0.38
 /** Radians of gaze per pixel of mouse: a full circle in about 1,250 px. */
 const LOOK = 0.005
+/** Radians of gaze per pixel of a finger's swipe, as in Sandbox 4. */
+const SWIPE = 0.0065
+/** A phone: no mouse to hand the gaze to, a finger swipes it round instead. */
+const touchOnly = () => typeof matchMedia === 'function' && matchMedia('(hover: none) and (pointer: coarse)').matches
 
 const WORLD_UP = new THREE.Vector3(0, 1, 0)
 const smooth = (a: number, b: number, x: number) => {
@@ -78,6 +85,12 @@ export class CameraRig {
 	private engaged = false
 	/** Where the mouse is, −1..1 across and down the view — the unlocked gaze steers by it. */
 	private readonly stick = new THREE.Vector2()
+	/** A touch joystick's push: x to the right, y ahead, each −1..1. */
+	private readonly joystick = { x: 0, y: 0, hurry: false }
+	/** The fingers down on the view, for a pinch. */
+	private readonly fingers = new Map<number, { x: number; y: number }>()
+	/** The fingers' spread at the last step of a pinch; 0 when there is none. */
+	private pinch = 0
 	/** While a sheet is open the camera holds still and the mouse is its own again. */
 	frozen = false
 	/** A flight in progress: the point on the globe to bring into the middle of the view. */
@@ -159,6 +172,7 @@ export class CameraRig {
 
 	/** Hand the gaze to the mouse: lock the pointer, or follow it unlocked where that is refused. */
 	private engage() {
+		if (touchOnly()) return
 		const soft = () => {
 			this.softLook = true
 			this.show()
@@ -178,6 +192,7 @@ export class CameraRig {
 		if (on) {
 			this.letGo()
 			this.keys.clear()
+			Object.assign(this.joystick, { x: 0, y: 0, hurry: false })
 			this.dragging = false
 			this.inertia.set(0, 0)
 			this.target = this.altitude
@@ -189,6 +204,13 @@ export class CameraRig {
 		const was = this.lockClick
 		this.lockClick = false
 		return was
+	}
+
+	/** Walk from a touch joystick: x to the right, y ahead, each −1..1; hurry when pushed to the edge. */
+	move(x: number, y: number, hurry: boolean) {
+		if (this.frozen) return
+		if (x || y) this.flight = null
+		Object.assign(this.joystick, { x, y, hurry })
 	}
 
 	private drag(dx: number, dy: number) {
@@ -204,8 +226,19 @@ export class CameraRig {
 
 	private listen() {
 		const dom = this.dom
+		const spread = () => {
+			const [a, b] = [...this.fingers.values()]
+			return a && b ? Math.hypot(a.x - b.x, a.y - b.y) : 0
+		}
 		const down = (e: PointerEvent) => {
 			if (e.button !== 0 || this.looking || this.frozen) return
+			if (e.pointerType === 'touch') {
+				this.fingers.set(e.pointerId, { x: e.clientX, y: e.clientY })
+				if (this.fingers.size === 2) {
+					this.pinch = spread()
+					this.inertia.set(0, 0)
+				}
+			}
 			this.dragging = true
 			this.last = { x: e.clientX, y: e.clientY }
 			this.inertia.set(0, 0)
@@ -214,13 +247,38 @@ export class CameraRig {
 		const move = (e: PointerEvent) => {
 			if (!this.dragging) return
 			this.flight = null
+			if (this.fingers.has(e.pointerId)) this.fingers.set(e.pointerId, { x: e.clientX, y: e.clientY })
+			/* Two fingers: spread them to come down, pinch them to rise. */
+			if (this.fingers.size >= 2) {
+				const now = spread()
+				if (this.pinch && now) this.target = Math.min(this.ceiling, Math.max(this.eye, this.target * (this.pinch / now)))
+				this.pinch = now
+				return
+			}
 			const dx = e.clientX - this.last.x
 			const dy = e.clientY - this.last.y
 			this.last = { x: e.clientX, y: e.clientY }
+			/* At walking height a finger looks round, as in Sandbox 4; higher up it drags the ground. */
+			if (e.pointerType === 'touch' && this.zoom < WALK) {
+				this.heading += dx * SWIPE
+				this.lookPitch = Math.min(THREE.MathUtils.degToRad(70), Math.max(THREE.MathUtils.degToRad(-55), this.lookPitch - dy * SWIPE))
+				this.inertia.set(0, 0)
+				return
+			}
 			this.drag(dx, dy)
 			this.inertia.set(dx, dy)
 		}
 		const up = (e: PointerEvent) => {
+			if (this.fingers.delete(e.pointerId)) {
+				this.pinch = 0
+				/* The finger left after a pinch carries on from where it is, not from where the other one was. */
+				const rest = [...this.fingers.values()][0]
+				if (rest) {
+					this.last = { ...rest }
+					this.inertia.set(0, 0)
+					return
+				}
+			}
 			if (!this.dragging) return
 			this.dragging = false
 			if (dom.hasPointerCapture(e.pointerId)) dom.releasePointerCapture(e.pointerId)
@@ -295,12 +353,14 @@ export class CameraRig {
 	update(dt: number) {
 		if (this.frozen) return this.place()
 		const k = this.keys
-		if (k.size) {
+		const j = this.joystick
+		if (k.size || j.x || j.y) {
 			const { forward, right } = this.frame()
 			/* Ground speed grows with altitude — a stroll at eye height, a sweep from orbit — up to a cap. */
-			const a = Math.min(1.2, (2.8 * Math.max(this.altitude, this.eye)) / this.surface) * dt
-			const f = (k.has('w') || k.has('W') || k.has('ArrowUp') ? 1 : 0) - (k.has('s') || k.has('S') || k.has('ArrowDown') ? 1 : 0)
-			const r = (k.has('d') || k.has('D') ? 1 : 0) - (k.has('a') || k.has('A') ? 1 : 0)
+			const a = Math.min(1.2, (2.8 * Math.max(this.altitude, this.eye)) / this.surface) * dt * (j.hurry ? 2.2 : 1)
+			const clamp = (v: number) => Math.max(-1, Math.min(1, v))
+			const f = clamp((k.has('w') || k.has('W') || k.has('ArrowUp') ? 1 : 0) - (k.has('s') || k.has('S') || k.has('ArrowDown') ? 1 : 0) + j.y)
+			const r = clamp((k.has('d') || k.has('D') ? 1 : 0) - (k.has('a') || k.has('A') ? 1 : 0) + j.x)
 			const turn = (k.has('e') || k.has('E') || k.has('ArrowRight') ? 1 : 0) - (k.has('q') || k.has('Q') || k.has('ArrowLeft') ? 1 : 0)
 			this.step(forward, f * a)
 			this.step(right, r * a)

@@ -24,6 +24,7 @@
 	import Island from '$lib/sandbox-2/Island.svelte';
 	import Tour, { type TourStep } from '$lib/sandbox-2/Tour.svelte';
 	import DomeInterior from '$lib/sandbox-2/DomeInterior.svelte';
+	import TouchStick from '$lib/touch/TouchStick.svelte';
 	import { planFor } from '../../../../game/island/villages';
 	import type { DomeKind } from '$lib/sandbox-2/interior/interior';
 	import type { WorldHandle } from '$lib/sandbox-2/world/world';
@@ -447,6 +448,9 @@
 			onpick={(t) => void onCell(t)}
 		/>
 	{/if}
+
+	<!-- on a phone: the joystick walks the planet as WASD does (the island has its own) -->
+	{#if !inside}<TouchStick move={(x, y, hurry) => world?.move(x, y, hurry)} />{/if}
 
 	{#if diving}<div class="dive" aria-hidden="true"></div>{/if}
 
@@ -1138,6 +1142,11 @@
 	@media (max-width: 1180px) {
 		.tr { top: calc(4rem + env(safe-area-inset-top, 0px)); }
 		.sheet { top: calc(7.5rem + env(safe-area-inset-top, 0px)); }
+	}
+
+	/* on a phone the joystick has the lower left: Mint moves to the lower right */
+	@media (hover: none) and (pointer: coarse) {
+		.corner.bc { left: auto; right: 1rem; transform: none; }
 	}
 
 	@media (max-width: 640px) {
