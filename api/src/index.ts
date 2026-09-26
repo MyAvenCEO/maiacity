@@ -20,6 +20,7 @@ import { finishUpload, have, listMedia, markDistributed, MediaError, mediaInfo, 
 import { approveDevice, deviceInfo, KeyError, keyHolder, redeemDevice, revokeKey, startDevice } from "./keys";
 import { canDistribute, distributePending } from "./bunny";
 import { createTimeline, deleteTimeline, listTimelines, saveTimeline, TimelineError } from "./timelines";
+import { CHANNELS, ContentError, createContent, deleteContent, KINDS, listContent, saveContent, STATUSES } from "./content";
 import { format, gameClock, calendar, parse } from "../../game/time";
 
 const PORT = Number(process.env.PORT ?? 3000);
@@ -104,7 +105,7 @@ async function allowed(req: Request, cap: string): Promise<{ id: string; role: s
 
 /** Turn a thrown ledger, role or notebook error into a response a person can read. */
 function fail(req: Request, e: unknown) {
-  if (e instanceof LedgerError || e instanceof RoleError || e instanceof IdeaError || e instanceof KeyError || e instanceof MediaError || e instanceof TimelineError) return json(req, { error: e.message }, { status: e.status });
+  if (e instanceof LedgerError || e instanceof RoleError || e instanceof IdeaError || e instanceof KeyError || e instanceof MediaError || e instanceof TimelineError || e instanceof ContentError) return json(req, { error: e.message }, { status: e.status });
   console.error(e);
   return json(req, { error: "Something went wrong on our side." }, { status: 500 });
 }
@@ -668,6 +669,48 @@ const server = Bun.serve({
         if (me instanceof Response) return me;
         try {
           await deleteTimeline(req.params.id);
+          return new Response(null, { status: 204, headers: cors(req) });
+        } catch (e) {
+          return fail(req, e);
+        }
+      },
+    },
+
+    // The publishing calendar.
+    "/api/content": {
+      OPTIONS: preflight,
+      GET: async (req) => {
+        const me = await allowed(req, "content:admin");
+        if (me instanceof Response) return me;
+        const u = new URL(req.url);
+        return json(req, { items: await listContent(u.searchParams.get("from") ?? undefined, u.searchParams.get("to") ?? undefined), kinds: KINDS, channels: CHANNELS, statuses: STATUSES });
+      },
+      POST: async (req) => {
+        const me = await allowed(req, "content:admin");
+        if (me instanceof Response) return me;
+        try {
+          return json(req, await createContent(me.id, (await readJson(req)) ?? {}), { status: 201 });
+        } catch (e) {
+          return fail(req, e);
+        }
+      },
+    },
+    "/api/content/:id": {
+      OPTIONS: preflight,
+      PUT: async (req) => {
+        const me = await allowed(req, "content:admin");
+        if (me instanceof Response) return me;
+        try {
+          return json(req, await saveContent(req.params.id, (await readJson(req)) ?? {}));
+        } catch (e) {
+          return fail(req, e);
+        }
+      },
+      DELETE: async (req) => {
+        const me = await allowed(req, "content:admin");
+        if (me instanceof Response) return me;
+        try {
+          await deleteContent(req.params.id);
           return new Response(null, { status: 204, headers: cors(req) });
         } catch (e) {
           return fail(req, e);

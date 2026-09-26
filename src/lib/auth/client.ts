@@ -141,3 +141,32 @@ export async function deleteTimeline(id: string): Promise<void> {
 	const res = await fetch(`${API}/api/timelines/${id}`, { method: 'DELETE', credentials: 'include' });
 	if (!res.ok) throw new Error('Could not delete the timeline.');
 }
+
+// ─────────────────────────────── the publishing calendar ───────────────────────────────
+
+export type ContentItem = {
+	id: string;
+	title: string;
+	kind: string;
+	channels: string[];
+	status: 'idea' | 'draft' | 'ready' | 'scheduled' | 'published';
+	scheduled_at: string | null;
+	body: string;
+	cids: string[];
+	link: string | null;
+	tags: string[];
+	created: string;
+	updated: string;
+};
+
+export const listContent = (from?: string, to?: string) =>
+	call<{ items: ContentItem[]; kinds: string[]; channels: string[]; statuses: string[] }>(
+		`/api/content${from ? `?${new URLSearchParams({ from, to: to ?? '' })}` : ''}`
+	);
+export const createContent = (item: Partial<ContentItem>) => call<ContentItem>('/api/content', { method: 'POST', body: JSON.stringify(item) });
+export const saveContent = (id: string, item: Partial<ContentItem>) =>
+	call<ContentItem>(`/api/content/${id}`, { method: 'PUT', body: JSON.stringify(item) });
+export async function deleteContent(id: string): Promise<void> {
+	const res = await fetch(`${API}/api/content/${id}`, { method: 'DELETE', credentials: 'include' });
+	if (!res.ok) throw new Error('Could not delete it.');
+}

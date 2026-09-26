@@ -279,5 +279,28 @@ export const MIGRATIONS: Migration[] = [
       );
     `,
   },
+  {
+    // The publishing calendar: everything we put out — films, reels, posts, threads, articles — from the
+    // first idea to the day it goes live, on which channels, with the library files it carries (by CID).
+    id: "0010-content-calendar",
+    sql: `
+      CREATE TABLE content_items (
+        id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        title        TEXT NOT NULL,
+        kind         TEXT NOT NULL,
+        channels     TEXT[] NOT NULL DEFAULT '{}',
+        status       TEXT NOT NULL DEFAULT 'idea' CHECK (status IN ('idea', 'draft', 'ready', 'scheduled', 'published')),
+        scheduled_at TIMESTAMPTZ,
+        body         TEXT NOT NULL DEFAULT '',
+        cids         TEXT[] NOT NULL DEFAULT '{}',
+        link         TEXT,
+        tags         TEXT[] NOT NULL DEFAULT '{}',
+        founder_id   TEXT REFERENCES founders(id) ON DELETE SET NULL,
+        created      TIMESTAMPTZ NOT NULL DEFAULT now(),
+        updated      TIMESTAMPTZ NOT NULL DEFAULT now()
+      );
+      CREATE INDEX ix_content_when ON content_items (scheduled_at);
+    `,
+  },
 ];
 
