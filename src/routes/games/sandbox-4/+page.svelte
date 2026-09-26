@@ -36,38 +36,52 @@
 	   world looks round. Touch events, each finger by its own identifier, so both work at once. */
 	let root: HTMLDivElement;
 	let stickEl: HTMLDivElement;
-	const RIM = 48;
-	let knob = $state({ x: 0, y: 0 });
+	let knobEl: HTMLSpanElement;
 	let hurrying = $state(false);
 	let stickFinger: number | null = null;
-	let stickCentre = { x: 0, y: 0 };
+	/** the ring's centre and radius, measured as the thumb comes down */
+	let stick = { x: 0, y: 0, r: 64 };
 	let lookFinger: { id: number; x: number; y: number } | null = null;
+	/** a finger on the bar's links and buttons: tapped when it lifts where it came down */
+	const taps = new Map<number, { el: HTMLElement; x: number; y: number }>();
+	const knobAt = (x: number, y: number) => (knobEl.style.transform = `translate(${x}px, ${y}px)`);
 	const stickTo = (t: Touch) => {
-		let x = t.clientX - stickCentre.x;
-		let y = t.clientY - stickCentre.y;
+		// the knob sits under the thumb out to the rim, then waits on the rim in the thumb's direction
+		let x = t.clientX - stick.x;
+		let y = t.clientY - stick.y;
 		const d = Math.hypot(x, y);
-		if (d > RIM) {
-			x *= RIM / d;
-			y *= RIM / d;
+		if (d > stick.r) {
+			x *= stick.r / d;
+			y *= stick.r / d;
 		}
-		knob = { x, y };
-		hurrying = d > RIM * 1.15;
-		village?.move(x / RIM, -y / RIM, hurrying);
+		knobAt(x, y);
+		// full walking pace three quarters of the way out, a hurry with the knob on the rim
+		const m = Math.min(1, d / stick.r);
+		const pace = m < 0.08 ? 0 : Math.min(1, m / 0.75);
+		const n = Math.hypot(x, y) || 1;
+		hurrying = m > 0.95;
+		village?.move((x / n) * pace, (-y / n) * pace, hurrying);
 	};
 	const stickRelease = () => {
 		stickFinger = null;
-		knob = { x: 0, y: 0 };
+		knobAt(0, 0);
 		hurrying = false;
 		village?.move(0, 0, false);
 	};
 	const onTouchStart = (e: TouchEvent) => {
 		let ours = false;
 		for (const t of Array.from(e.changedTouches)) {
-			const el = t.target as Node;
-			if (stickFinger === null && stickEl.contains(el)) {
+			const el = t.target as Element;
+			const tap = el.closest?.('.bar a, .bar button') as HTMLElement | null;
+			if (tap) {
+				// a browser makes no click of a tap while another finger is down, and in landscape
+				// a thumb is nearly always on the joystick or the world: so the tap is ours to make
+				taps.set(t.identifier, { el: tap, x: t.clientX, y: t.clientY });
+				ours = true;
+			} else if (stickFinger === null && stickEl.contains(el)) {
 				stickFinger = t.identifier;
 				const box = stickEl.getBoundingClientRect();
-				stickCentre = { x: box.left + box.width / 2, y: box.top + box.height / 2 };
+				stick = { x: box.left + box.width / 2, y: box.top + box.height / 2, r: box.width / 2 };
 				stickTo(t);
 				ours = true;
 			} else if (stage.contains(el)) {
@@ -75,7 +89,7 @@
 				ours = true;
 			}
 		}
-		// no scrolling, zooming or long-press menu over the world; the bar's links and buttons still tap
+		// no scrolling, zooming, long-press menu or second, browser-made click
 		if (ours) e.preventDefault();
 	};
 	const onTouchMove = (e: TouchEvent) => {
@@ -91,7 +105,11 @@
 	};
 	const onTouchEnd = (e: TouchEvent) => {
 		for (const t of Array.from(e.changedTouches)) {
-			if (t.identifier === stickFinger) stickRelease();
+			const tap = taps.get(t.identifier);
+			if (tap) {
+				taps.delete(t.identifier);
+				if (e.type === 'touchend' && Math.hypot(t.clientX - tap.x, t.clientY - tap.y) < 14) tap.el.click();
+			} else if (t.identifier === stickFinger) stickRelease();
 			else if (lookFinger && t.identifier === lookFinger.id) lookFinger = null;
 		}
 	};
@@ -165,7 +183,7 @@
 		<span class="touch">Swipe to look · joystick to walk · push to the rim to hurry</span>
 	</p>
 	<div class="stick" class:hurrying bind:this={stickEl}>
-		<span class="knob" style:transform="translate({knob.x}px, {knob.y}px)"></span>
+		<span class="knob" bind:this={knobEl}></span>
 	</div>
 	{#if opening}<p class="opening">The {opening.toLowerCase()} ahead is opening its doors…</p>{/if}
 
@@ -383,6 +401,13 @@
 		user-select: none;
 		-webkit-user-select: none;
 		-webkit-touch-callout: none;
+	}
+	/* a thumb landing just outside the ring still takes the knob */
+	.stick::before {
+		content: '';
+		position: absolute;
+		inset: -1.25rem;
+		border-radius: 50%;
 	}
 	.stick.hurrying {
 		border-color: #f0a47c;
