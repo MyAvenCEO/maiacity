@@ -1085,6 +1085,24 @@ export async function mountVillage(container: HTMLElement, onProgress: (label: s
 				for (const c of blockers.get(`${ix + dx},${iz + dz}`) ?? []) if (Math.hypot(c.x - x, c.z - z) < c.r + 0.25) return false
 		return true
 	}
+	/* round a tree, a pillar or a wall rather than stopping at it: the stride is turned a little
+	   at a time, either way, until it is free, and slowed the further it must turn. The side
+	   last taken is tried first, so you keep going round the same way and do not waver. */
+	const TURNS = [25, 50, 75, 90].map((d) => (d * Math.PI) / 180)
+	let side = 1
+	const round = (go: (mx: number, mz: number) => boolean, sx: number, sz: number) => {
+		for (const a of TURNS) {
+			const len = Math.max(0.4, Math.cos(a))
+			for (const sg of [side, -side]) {
+				const c = Math.cos(a * sg), sn = Math.sin(a * sg)
+				if (go((sx * c - sz * sn) * len, (sx * sn + sz * c) * len)) {
+					side = sg
+					return true
+				}
+			}
+		}
+		return false
+	}
 	const step = (dt: number) => {
 		const clamp = (v: number) => Math.max(-1, Math.min(1, v))
 		const f = clamp((keys.has('w') || keys.has('arrowup') ? 1 : 0) - (keys.has('s') || keys.has('arrowdown') ? 1 : 0) + stick.y)
@@ -1097,13 +1115,18 @@ export async function mountVillage(container: HTMLElement, onProgress: (label: s
 			// in short strides, each reaching up from the floor you stand on, so a stair climbs
 			// as well at a hurry, and on a slow phone, as at a stroll
 			const n = Math.max(1, Math.ceil(Math.hypot(dx, dz) / 0.25))
+			const sx = dx / n, sz = dz / n
 			for (let k = 0; k < n; k++) {
 				const here = floorHere(pos.x, pos.z, ground)
-				for (const [mx, mz] of [[dx / n, dz / n], [dx / n, 0], [0, dz / n]] as const) {
-					if (!check(pos.x + mx, pos.z + mz, here)) continue
+				const go = (mx: number, mz: number) => {
+					if (!check(pos.x + mx, pos.z + mz, here)) return false
 					pos.x += mx
 					pos.z += mz
-					break
+					return true
+				}
+				if (!go(sx, sz) && !round(go, sx, sz)) {
+					// nothing to step round to: slide along the ground's own axes, as before
+					if (!go(sx, 0)) go(0, sz)
 				}
 				ground = floorHere(pos.x, pos.z, ground)
 			}
