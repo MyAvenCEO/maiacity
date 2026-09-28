@@ -70,7 +70,16 @@ export async function upload(bytes: Uint8Array, opts: Described & { cid?: string
   const worker = async () => {
     while (next < todo.length) {
       const i = todo[next++]!;
-      await call(`/api/media/uploads/${start.id}/${i}`, { method: "PUT", body: new Blob([bytes.subarray(i * start.chunk, (i + 1) * start.chunk) as BlobPart]), headers: { "content-type": "application/octet-stream" } });
+      // a part that fails (a 502 from the proxy, a dropped connection) is sent again, not the whole file
+      for (let attempt = 1; ; attempt++) {
+        try {
+          await call(`/api/media/uploads/${start.id}/${i}`, { method: "PUT", body: new Blob([bytes.subarray(i * start.chunk, (i + 1) * start.chunk) as BlobPart]), headers: { "content-type": "application/octet-stream" } });
+          break;
+        } catch (e) {
+          if (attempt >= 5) throw e;
+          await Bun.sleep(2000 * attempt);
+        }
+      }
       sent++;
       if (opts.progress && start.parts > 8) process.stdout.write(`\r  ${opts.label ?? opts.title ?? cid}  ${Math.round((sent / start.parts) * 100)}%   `);
     }

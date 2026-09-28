@@ -116,19 +116,26 @@ export type Block = { key: string; label: string | null; items: MediaItem[] };
 export type Section = { key: string; title: string; count: number; blocks: Block[] };
 
 /**
- * One day's files, colocated: a section per scene in film order, a row per shot inside it; then what has no scene,
- * by what it is for. A file in two scenes shows in both — pools, not folders.
+ * One day's files, colocated: the film first (every render, the newest cut on top), then a section per scene in
+ * film order, a row per shot inside it; then what has no scene, by what it is for. A file in two scenes shows in both — pools, not folders.
  */
 export function byScene(items: MediaItem[], parsed: (m: MediaItem) => Parsed): Section[] {
 	const scenes = new Map<string, MediaItem[]>();
 	const rest: MediaItem[] = [];
+	const films: MediaItem[] = [];
 	for (const m of items) {
+		const roles = parsed(m).facets.get('role') ?? [];
+		if (roles.includes('render') || roles.includes('film')) {
+			films.push(m);
+			continue;
+		}
 		const s = parsed(m).facets.get('scene');
 		if (s?.length) for (const v of s) scenes.set(v, [...(scenes.get(v) ?? []), m]);
 		else rest.push(m);
 	}
 	const sorted = (list: MediaItem[]) => [...list].sort((a, b) => compare(parsed(a), parsed(b), a, b));
-	const out: Section[] = [];
+	// the film itself first: what the day's pieces became
+	const out: Section[] = films.length ? [{ key: 'film', title: 'The film', count: films.length, blocks: [{ key: '', label: null, items: newestCut(films, parsed) }] }] : [];
 	for (const scene of [...scenes.keys()].sort(valueOrder('scene'))) {
 		const list = sorted(scenes.get(scene)!);
 		const shots = new Map<string, MediaItem[]>();
@@ -159,6 +166,21 @@ export function byScene(items: MediaItem[], parsed: (m: MediaItem) => Parsed): S
 		if (g.items.length) out.push({ key: `role:${g.title}`, title: g.title, count: g.items.length, blocks: [{ key: '', label: null, items: sorted(g.items) }] });
 	if (other.length) out.push({ key: 'other', title: 'Everything else', count: other.length, blocks: [{ key: '', label: null, items: sorted(other) }] });
 	return out;
+}
+
+/** The renders, the newest cut first; in each cut its master (HEVC) before the copies, then the newest. */
+function newestCut(items: MediaItem[], parsed: (m: MediaItem) => Parsed): MediaItem[] {
+	const cut = (m: MediaItem) => first(parsed(m), 'cut') ?? '';
+	const latest = new Map<string, string>();
+	for (const m of items) if (m.created > (latest.get(cut(m)) ?? '')) latest.set(cut(m), m.created);
+	const master = (m: MediaItem) => (parsed(m).facets.get('codec')?.includes('hevc') ? 0 : 1);
+	return [...items].sort(
+		(a, b) =>
+			latest.get(cut(b))!.localeCompare(latest.get(cut(a))!) ||
+			cut(b).localeCompare(cut(a)) ||
+			master(a) - master(b) ||
+			b.created.localeCompare(a.created)
+	);
 }
 
 /** Every day at once: a section per day, newest first, then the files that belong to none. */
