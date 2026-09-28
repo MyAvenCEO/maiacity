@@ -2,6 +2,7 @@
 title: A big idea has to be built under someone, block by block
 originalTitle: "How to explain something complicated"
 source: https://www.youtube.com/watch?v=EMbZ72cCAzI
+thumbnail: bafkreihrt7mb5ou62zzl6kbkqex4mdeoebga66xi2zkqgthyunxlcvtqte.jpg
 type: video
 author: TED-Ed
 authorUrl: https://www.youtube.com/@TEDEd

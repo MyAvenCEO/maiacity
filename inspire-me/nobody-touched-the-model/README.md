@@ -2,6 +2,7 @@
 title: 300 tries instead of 51,000, and nobody touched the model
 originalTitle: "Did Google just kickstart the intelligence explosion?"
 source: https://www.youtube.com/watch?v=LoLYw--s-5w
+thumbnail: bafkreihlzy3mg3j7h7f4ldqvpe32lgw27mqoq2xksk442d5pf6oqirvhly.jpg
 type: video
 author: Fireship
 authorUrl: https://www.youtube.com/@Fireship

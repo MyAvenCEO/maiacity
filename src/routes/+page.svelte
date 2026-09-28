@@ -5,11 +5,27 @@
 	import NextCard from '$lib/blog/NextCard.svelte';
 	import Player from '$lib/blog/Player.svelte';
 	import Manifesto from '$lib/Manifesto.svelte';
+	import StatusBadge from '$lib/blog/StatusBadge.svelte';
+	import { boardDays, mergeDays, postHref } from '$lib/blog/drafts';
+	import type { PostMeta } from '$lib/blog/types';
 	import { categoryById } from '$lib/inspire-me/categories';
 
 	let { data } = $props();
 
-	const post = $derived(data.pinned);
+	// an admin's browser also shows the days not published yet: the front door, the day after, the latest rows
+	let days = $state<PostMeta[] | null>(null);
+	$effect(() => {
+		boardDays().then((d) => (days = d));
+	});
+
+	const post = $derived(data.pinned ?? days?.find((d) => d.day === 1) ?? null);
+	const next = $derived(
+		data.next ?? (post?.day != null ? (days?.find((d) => d.day === post.day! + 1) ?? null) : null)
+	);
+	// the static latest are the newest the site carries, so mixing the board in and taking three stays right
+	const latest = $derived(
+		days ? mergeDays(data.latest, days).filter((p) => p.day !== post?.day).slice(0, 3) : data.latest
+	);
 	const formatted = $derived(
 		post?.date
 			? new Date(post.date).toLocaleDateString('en-GB', {
@@ -39,8 +55,9 @@
 			<div class="body">
 				<p class="eyebrow">
 					{#if post.day != null}Day {String(post.day).padStart(2, '0')}&ensp;·&ensp;{/if}{formatted}
+					{#if post.board}&ensp;<StatusBadge {post} />{/if}
 				</p>
-				<h2><a href="{base}/blog/{post.slug}">{post.title}</a></h2>
+				<h2><a href={postHref(post)}>{post.title}</a></h2>
 				<p class="excerpt">{post.excerpt}</p>
 
 				<div class="foot">
@@ -56,20 +73,20 @@
 				</div>
 
 				<div class="actions">
-					<a class="pill-btn" href="{base}/blog/{post.slug}">Read day {post.day ?? ''} →</a>
+					<a class="pill-btn" href={postHref(post)}>Read day {post.day ?? ''} →</a>
 					<a class="ghost-btn" href="{base}/blog">All days</a>
 				</div>
 			</div>
 		</article>
 	{/if}
 
-	{#if data.next}
+	{#if next}
 		<section class="onward">
-			<NextCard post={data.next} label="Then" />
+			<NextCard post={next} label="Then" />
 		</section>
 	{/if}
 
-	<div class="latest"><LatestList posts={data.latest} /></div>
+	<div class="latest"><LatestList posts={latest} /></div>
 </main>
 
 <style>

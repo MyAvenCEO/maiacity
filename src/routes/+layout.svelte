@@ -9,27 +9,42 @@
 	import { socials } from '$lib/social';
 	import SiteFooter from '$lib/SiteFooter.svelte';
 	import SocialIcon from '$lib/SocialIcon.svelte';
+	import { me } from '$lib/auth/client';
+	import { remember, signedInHere } from '$lib/app/session';
 
 	let { children } = $props();
 
 	const links = [
 		{ href: base || '/', label: 'Home' },
 		{ href: `${base}/blog`, label: 'Journal' },
-		{ href: `${base}/inspire-me`, label: 'Inspire me' },
-		{ href: `${base}/games`, label: 'Games' },
-		{ href: `${base}/join`, label: 'Join' }
+		{ href: `${base}/inspire-me`, label: 'Inspire me' }
 	];
 
-	// A sandbox is a leaf: it runs full-screen without the site chrome. The
-	// games index above it keeps the nav, and so does Sandbox 3, a page of cards
-	// whose domes open over it.
-	const bare = $derived(/^\/games\/(?!sandbox-3\/?$)[^/]+\/?$/.test(page.url.pathname.slice(base.length)));
+	// The signed-in app (/app/: the dashboard, the games, the admin's tools) is its own place: none of the public
+	// site's chrome there, it brings its own. (An old /games or /admin address only passes through on its way.)
+	const bare = $derived(/^\/(app|games|admin)(\/|$)/.test(page.url.pathname.slice(base.length)));
 
 	// the phone menu; it closes itself whenever the page changes
 	let menuOpen = $state(false);
 	$effect(() => {
 		page.url.pathname;
 		menuOpen = false;
+	});
+
+	// Whoever is signed in on this browser gets the dashboard in the nav, everyone else the way to join. The site stays
+	// static for a visitor: the API is only asked once this browser has been signed in before (a hint, checked here).
+	let signedIn = $state(false);
+	$effect(() => {
+		void page.url.pathname;
+		signedIn = signedInHere();
+		if (!signedIn) return;
+		me()
+			.then(() => true)
+			.catch(() => false)
+			.then((yes) => {
+				signedIn = yes;
+				remember(yes);
+			});
 	});
 
 	const isActive = (href: string) =>
@@ -68,6 +83,13 @@
 						<a href={link.href} aria-current={isActive(link.href) ? 'page' : undefined}>{link.label}</a>
 					</li>
 				{/each}
+				<li>
+					{#if signedIn}
+						<a class="admin" href="{base}/app/">Dashboard</a>
+					{:else}
+						<a href="{base}/join" aria-current={isActive(`${base}/join`) ? 'page' : undefined}>Join</a>
+					{/if}
+				</li>
 			</ul>
 		</nav>
 	</header>
@@ -162,6 +184,10 @@
 	.pages a[aria-current='page'] {
 		background: var(--ink);
 		color: var(--cream);
+	}
+
+	.pages a.admin:not([aria-current='page']) {
+		box-shadow: inset 0 0 0 1px var(--line);
 	}
 
 	.burger {

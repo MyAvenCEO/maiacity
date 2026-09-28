@@ -26,16 +26,19 @@ vite.config.ts.timestamp-*
 static/**/*.mp4
 static/**/*.mov
 
-# Journal media live in the media library — production Postgres, by CID, served from the CDN.
-# `bun media sync` puts them there; git does not carry them. (Media the site's code loads directly —
-# sounds, sandbox and game images, portraits — stay in static/ and in git for now.)
-static/day-*/**/*.jpg
-static/day-*/**/*.jpeg
-static/day-*/**/*.png
-static/day-*/**/*.webp
-static/day-*/**/*.gif
-static/day-*/**/*.mp3
-static/day-*/**/*.pdf
+# Every media file lives in the media library — production Postgres, by CID, served from the CDN; the site loads
+# each through asset() and the manifest. `bun media sync` puts them there; git does not carry them. static/ keeps
+# only what is not media (robots.txt, the sandbox's map data).
+static/**/*.jpg
+static/**/*.jpeg
+static/**/*.png
+static/**/*.webp
+static/**/*.gif
+static/**/*.svg
+static/**/*.mp3
+static/**/*.wav
+static/**/*.ogg
+static/**/*.pdf
 
 # The local mirror of the media library: every file as <cid>.<ext> (`bun media library`)
 /library/
@@ -43,3 +46,6 @@ static/day-*/**/*.pdf
 # Voice takes and previews (`bun voice`): their bytes live in the media library; the designed voices stay in git
 /studio/*
 !/studio/voices.json
+
+# the local database's manifest (bun media seed --local): the site loads unsynced files from the local API
+/src/lib/media/manifest.local.json

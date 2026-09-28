@@ -4,6 +4,8 @@
 -->
 <script lang="ts">
 	import { base } from '$app/paths';
+	import { postHref } from './drafts';
+	import StatusBadge from './StatusBadge.svelte';
 	import type { PostMeta } from './types';
 
 	let { posts, title = 'Latest days' }: { posts: PostMeta[]; title?: string } = $props();
@@ -18,11 +20,15 @@
 		<ul>
 			{#each posts as day (day.slug)}
 				<li>
-					<a href="{base}/blog/{day.slug}">
+					<a href={postHref(day)} class:marked={day.board}>
 						<span class="num">{String(day.day ?? '').padStart(2, '0')}</span>
 						<span class="title">{day.title}</span>
 						<span class="date">
-							{new Date(day.date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}
+							{#if day.board}
+								<StatusBadge post={day} />
+							{:else}
+								{new Date(day.date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}
+							{/if}
 						</span>
 						<span class="arrow" aria-hidden="true">→</span>
 					</a>
@@ -112,11 +118,16 @@
 			grid-template-columns: 2rem minmax(0, 1fr) 1rem;
 		}
 
+		/* an unpublished day keeps its badge */
+		li a.marked {
+			grid-template-columns: 2rem minmax(0, 1fr) auto 1rem;
+		}
+
 		.title {
 			white-space: normal;
 		}
 
-		.date {
+		li a:not(.marked) .date {
 			display: none;
 		}
 	}

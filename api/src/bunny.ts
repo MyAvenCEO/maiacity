@@ -36,12 +36,12 @@ const stream = () =>
     return { id: l.Id as number, key: l.ApiKey as string };
   }));
 
-async function distributeOne(m: { cid: string; mime: string; kind: string; path: string | null }) {
+async function distributeOne(m: { cid: string; mime: string; kind: string; title: string }) {
   const body = new Blob([(await mediaBytes(m.cid)) as BlobPart]);
   if (m.kind === "video") {
     const { id, key: libKey } = await stream();
     const vapi = `https://video.bunnycdn.com/library/${id}`;
-    const title = m.path?.split("/").pop()?.replace(/\.[^.]+$/, "") ?? m.cid;
+    const title = m.title || m.cid;
     const created = await (await fetch(`${vapi}/videos`, { method: "POST", headers: { AccessKey: libKey, "content-type": "application/json" }, body: JSON.stringify({ title }) })).json();
     const up = await fetch(`${vapi}/videos/${created.guid}`, { method: "PUT", headers: { AccessKey: libKey }, body });
     if (!up.ok) throw new Error(`Stream upload ${m.cid} → ${up.status}`);

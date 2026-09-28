@@ -1,5 +1,5 @@
-import { existsSync } from 'node:fs';
 import { listPosts } from '$lib/server/blog';
+import { media } from '$lib/media/url';
 import type { PageServerLoad } from './$types';
 
 // Day 01 is the front door: the intro video stays pinned to the root page.
@@ -14,6 +14,6 @@ export const load: PageServerLoad = () => {
 		latest: posts.filter((post) => post.slug !== pinned?.slug).slice(0, 3),
 		// checked at build time: a prerendered page can't catch a missing image
 		// before it has already painted the gap
-		banner: existsSync('static/manifesto-banner.jpg')
+		banner: Boolean(media('bafybeifeluwlsey3m6cto3th3ak22lb2g7cum627fwp6ivvu4mi6nk4voi.jpg'))
 	};
 };

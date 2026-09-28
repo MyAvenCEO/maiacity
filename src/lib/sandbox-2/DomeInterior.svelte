@@ -8,7 +8,7 @@
 	dome is ready it fades away.
 -->
 <script lang="ts">
-	import { base } from '$app/paths';
+	import { asset } from '$lib/media/url';
 	import { onDestroy, onMount } from 'svelte';
 	import { DOMES, type DomeKind, type InteriorHandle } from './interior/interior';
 	import { gameClock } from '../../../game/time';
@@ -96,7 +96,7 @@
 
 	{#if doors !== 'open'}
 		<div class="loading" class:opening={doors === 'opening'} role="status" aria-live="polite">
-			<img src="{base}/day-03-what-a-dome-looks-like/xsN9RYb5ExZtsNYtHDNra_qkM0bNfT.jpg" alt="" />
+			<img src={asset('bafybeiecc63xwsuxnj27a2xgyddi5wxoji6ksjgrtdhboou6agyag2fata.jpg') /* Day 03: a dome from inside */} alt="" />
 			<div class="shade"></div>
 			<div class="label">
 				<p class="eyebrow">Stepping inside</p>

@@ -2,8 +2,10 @@
 title: Cities grown from air — wood, bamboo, fungi and salt
 originalTitle: "Von Holz zu Bambus - Wunderstoffe | Doku HD Reupload | ARTE"
 source: https://www.youtube.com/watch?v=hDIBkEFP_x4
+thumbnail: bafybeieseajztaoucluztlekifaod2rschqp4aicebnpp3ek4ty7hjgzvm.jpg
 type: video
 author: ARTE
+authorImage: bafkreihaulfpjkrvlwfs2ej4txaesw76qll3445flmsfuqgzbucsfztcga.jpg
 authorUrl: https://www.youtube.com/@ARTEde
 language: de
 added: 2026-09-11

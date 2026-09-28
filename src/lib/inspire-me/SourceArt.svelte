@@ -15,9 +15,9 @@
 	style:--b={colors[1] ?? 'var(--mustard)'}
 	aria-hidden="true"
 >
-	{#if entry.youtubeId}
-		<!-- copied into static/thumbnails by scripts/fetch-thumbnails.mjs -->
-		<img src={asset(`/thumbnails/${entry.youtubeId}.jpg`)} alt="" loading="lazy" />
+	{#if entry.thumbnail}
+		<!-- brought into the media library by scripts/fetch-thumbnails.mjs; the source names it by CID -->
+		<img src={asset(entry.thumbnail)} alt="" loading="lazy" />
 	{:else}
 		<span class="orb one"></span>
 		<span class="orb two"></span>

@@ -1,7 +1,7 @@
 /**
  * The sounds of the land: the forest always, the stream as you come near
  * it, the hens, the geese and the goats as you walk up to them. Each is a
- * looping recording (static/sounds), streamed rather than decoded, so the
+ * looping recording (/sounds/ in the media library, from the CDN), streamed rather than decoded, so the
  * five-minute forest costs next to nothing in memory; Web Audio sets its
  * volume, easing it up and down as the distances change. Under the glass of
  * a dome everything outside is muffled.
@@ -9,21 +9,22 @@
  * Browsers only let a page make sound after you have touched it, so the
  * sounds start with your first click or key.
  */
-import { base } from '$app/paths'
+import { asset } from '$lib/media/url'
 
 export type SoundName = 'forest' | 'inside' | 'water' | 'hens' | 'geese' | 'goats' | 'frogs' | 'bees' | 'factory' | 'machine' | 'lift'
+/** each sound's recording, by CID */
 const FILES: Record<SoundName, string> = {
-	forest: 'forest_nature.mp3',
-	inside: 'soft-nature.mp3',
-	water: 'water_stream.mp3',
-	hens: 'chickens.mp3',
-	geese: 'geese.mp3',
-	goats: 'sheep.mp3',
-	frogs: 'frog.mp3',
-	bees: 'bees.mp3',
-	factory: 'factory-ambience.mp3',
-	machine: 'machine.mp3',
-	lift: 'lift.mp3'
+	forest: 'bafybeico4zfwof2xi4pbo2ypke6mquppztq6yqvxra4ylt464waiakcgly.mp3', // forest_nature.mp3
+	inside: 'bafybeidcygcrgevwld4brioqtqy723ws637u7jvfvplojp5nghsyboar2a.mp3', // soft-nature.mp3
+	water: 'bafybeicbzq5tkd5426bkg7n2b3pjasv2gn2aquevc2irskh2fsezpoxxwy.mp3', // water_stream.mp3
+	hens: 'bafkreigdnriq3agzxwr54tpbw5y34ul2cirojczyorlya7duuhqo3at4le.mp3', // chickens.mp3
+	geese: 'bafybeid6pjgd4qfleeipy5ojyzfz5nx3vpt6fm3l2wxhur4rysoytxkaze.mp3', // geese.mp3
+	goats: 'bafybeihelcqshzlwyy5s2hofvkf776fk5djwdnqo2abnfuvyvpp3ylew34.mp3', // sheep.mp3
+	frogs: 'bafybeiez76uxmjf3lw7szaguqcwcgoh7lh55zu5eqr32zu526ljxbjjrfy.mp3', // frog.mp3
+	bees: 'bafybeiery7dtnfprkwgtxxpagsm54oxsbsahktiyf3frcjjwd4sq7b6hoi.mp3', // bees.mp3
+	factory: 'bafybeic6fjuvactqgno3kmoehrtfgqqrq3u5fm4445nivd7drofobx6p4a.mp3', // factory-ambience.mp3
+	machine: 'bafybeiefqt2zfmcpr5bovpxbdrgnq5auxwis2eom45rygghtbsew3xiday.mp3', // machine.mp3
+	lift: 'bafkreiaq4k5xgzzdkwjnvbirorxkhmsqfofruxbaojq3opqrqek7jbo4ou.mp3' // lift.mp3
 }
 /** how loud each is at its loudest */
 const LOUDEST: Record<SoundName, number> = { forest: 0.27, inside: 0.45, water: 0.69, hens: 0.5, geese: 0.45, goats: 0.4, frogs: 0.5, bees: 0.45, factory: 0.5, machine: 0.55, lift: 0.6 }
@@ -57,7 +58,7 @@ export function ambience(): Ambience {
 		filter.frequency.value = 20000
 		filter.connect(ctx.destination)
 		for (const name of Object.keys(FILES) as SoundName[]) {
-			const el = new Audio(`${base}/sounds/${FILES[name]}`)
+			const el = new Audio(asset(FILES[name]))
 			el.loop = true
 			el.preload = 'auto'
 			el.crossOrigin = 'anonymous'

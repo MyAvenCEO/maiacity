@@ -1,10 +1,10 @@
-// Copies every YouTube thumbnail the "Inspire me" library uses into
-// static/thumbnails/<id>.jpg, so pages load them from our own CDN instead of
-// from YouTube. Run after adding a source: `node scripts/fetch-thumbnails.mjs`.
-import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
-
-const OUT = 'static/thumbnails';
-mkdirSync(OUT, { recursive: true });
+// Brings the YouTube thumbnail of every "Inspire me" source that has none yet into the media library, so pages load
+// it from our own CDN instead of from YouTube, and names it in the source by CID (`thumbnail: <cid>.jpg` in its
+// README.md). Run after adding a source: `node scripts/fetch-thumbnails.mjs [--local]`.
+import { execFileSync } from 'node:child_process';
+import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 
 function youtubeId(url) {
 	try {
@@ -15,23 +15,30 @@ function youtubeId(url) {
 	return null;
 }
 
-const ids = readdirSync('inspire-me', { withFileTypes: true })
-	.filter((d) => d.isDirectory() && existsSync(`inspire-me/${d.name}/README.md`))
-	.map((d) => readFileSync(`inspire-me/${d.name}/README.md`, 'utf8').match(/^source:\s*(\S+)/m)?.[1])
-	.map((src) => (src ? youtubeId(src) : null))
-	.filter(Boolean);
-
-for (const id of ids) {
-	const file = `${OUT}/${id}.jpg`;
-	if (existsSync(file)) continue;
+const tmp = mkdtempSync(join(tmpdir(), 'thumbnails-'));
+let added = 0;
+for (const d of readdirSync('inspire-me', { withFileTypes: true })) {
+	const readme = `inspire-me/${d.name}/README.md`;
+	if (!d.isDirectory() || !existsSync(readme)) continue;
+	const text = readFileSync(readme, 'utf8');
+	const source = text.match(/^source:\s*(\S+)/m)?.[1];
+	const id = source ? youtubeId(source) : null;
+	if (!id || /^thumbnail:/m.test(text)) continue;
 	// hq720 is missing on some older videos; hqdefault always exists
 	for (const size of ['hq720', 'hqdefault']) {
 		const res = await fetch(`https://i.ytimg.com/vi/${id}/${size}.jpg`);
-		if (res.ok) {
-			writeFileSync(file, Buffer.from(await res.arrayBuffer()));
-			console.log(`saved ${file} (${size})`);
-			break;
-		}
+		if (!res.ok) continue;
+		const file = join(tmp, `${id}.jpg`);
+		writeFileSync(file, Buffer.from(await res.arrayBuffer()));
+		const out = execFileSync('bun', ['api/scripts/media.ts', 'add', file, '--title', `${d.name} · video thumbnail`,
+			'--tags', `role:source-thumbnail,youtube:${id}`, '--public', ...(process.argv.includes('--local') ? ['--local'] : [])], { encoding: 'utf8' });
+		const cid = /(?:stored|known) +(baf[a-z2-7]+)/.exec(out)?.[1];
+		if (!cid) throw new Error(`${id}: not added — ${out}`);
+		writeFileSync(readme, text.replace(/^(source:.*)$/m, `$1\nthumbnail: ${cid}.jpg`));
+		console.log(`${d.name}: ${id} (${size}) → ${cid}`);
+		added++;
+		break;
 	}
 }
-console.log(`${ids.length} thumbnails in ${OUT}`);
+rmSync(tmp, { recursive: true, force: true });
+console.log(`${added} thumbnails brought into the library`);

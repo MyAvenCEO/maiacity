@@ -4,8 +4,9 @@
 	so the journal always hands the reader on rather than ending.
 -->
 <script lang="ts">
-	import { base } from '$app/paths';
 	import CoverArt from './CoverArt.svelte';
+	import { postHref } from './drafts';
+	import StatusBadge from './StatusBadge.svelte';
 	import type { PostMeta } from './types';
 
 	let {
@@ -25,11 +26,12 @@
 	);
 </script>
 
-<a class="next" href="{base}/blog/{post.slug}">
+<a class="next" href={postHref(post)}>
 	<div class="thumb"><CoverArt {post} /></div>
 	<div class="body">
 		<p class="eyebrow">
 			{label}{#if day}&ensp;·&ensp;Day {day}{/if}{#if formatted}&ensp;·&ensp;{formatted}{/if}
+			{#if post.board}&ensp;<StatusBadge {post} />{/if}
 		</p>
 		<h3>{post.title}</h3>
 		<p class="excerpt">{post.excerpt}</p>
@@ -59,7 +61,7 @@
 	}
 
 	.thumb {
-		aspect-ratio: 4 / 3;
+		aspect-ratio: 16 / 9; /* the title cards are 16:9: shown whole, never cropped */
 		border-radius: calc(var(--radius) - 8px);
 		overflow: hidden;
 		background: var(--cream);
@@ -126,7 +128,7 @@
 		}
 
 		.thumb {
-			aspect-ratio: 16 / 10;
+			aspect-ratio: 16 / 9;
 		}
 
 		.body {

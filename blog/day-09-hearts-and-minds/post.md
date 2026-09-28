@@ -3,7 +3,7 @@ title: I spent two and a half years building money that starts with people, not 
 subtitle: Day 09 — where money is born, what Circles got right, and the missing half that turns earning into owning.
 day: 9
 author: avenSAMUEL
-authorImage: /samuel.jpg
+authorImage: bafybeigc4o3dpecqu3pvrzldsjie6b2xs7sdjeetuafxbjqckqnabiy5d4.jpg
 authorRole: Building maiaCITY
 date: 2026-09-17
 excerpt: >-
@@ -11,6 +11,7 @@ excerpt: >-
   building money that starts from people instead — and it took its failure to show me the
   missing half.
 categories: [money, coop, ai]
+draft: true
 ---
 
 Almost every euro in your bank account was born as somebody's debt.

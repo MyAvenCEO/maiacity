@@ -5,11 +5,13 @@
 //   bun voice say "<the line>" --eleven George [--stability 0.4]      ElevenLabs v3, with each word's timing
 //
 // A voice is designed with MiniMax Voice Design and kept by name in studio/voices.json. A line is spoken with
-// MiniMax Speech 2.8 HD, saved to studio/<slug>.mp3, and put into the media library as /studio/voice/<slug>.mp3 —
-// with its words, voice and settings — where /admin/studio plays it back. Needs FAL_API_KEY in .env.
+// MiniMax Speech 2.8 HD and put into the media library (library/<cid>.mp3, described with its words, voice and
+// settings; then the database), where /admin/studio plays it back. A shot list names the take by the CID it prints.
+// Needs FAL_API_KEY in .env.
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { call, readJson, ROOT, say, upload } from "./media-client";
+import { readJson, ROOT, say, upload } from "./media-client";
+import { put } from "./library";
 
 const FAL = "https://fal.run";
 const SPEECH = "fal-ai/minimax/speech-2.8-hd";
@@ -53,8 +55,8 @@ async function design() {
   const voices = await readJson<Record<string, Voice>>(VOICES, {});
   voices[name] = { id: r.custom_voice_id, prompt, model: DESIGN, created: new Date().toISOString() };
   await writeFile(VOICES, JSON.stringify(voices, null, 2) + "\n");
-  await writeFile(join(STUDIO, `${name}-preview.mp3`), await download(r.audio.url));
-  say(`voice "${name}" → ${r.custom_voice_id} (studio/voices.json); preview in studio/${name}-preview.mp3`);
+  const d = await put(await download(r.audio.url), { mime: "audio/mpeg", title: `${name} · voice preview`, description: preview, tags: ["role:voice-preview", `voice:${name}`] });
+  say(`voice "${name}" → ${r.custom_voice_id} (studio/voices.json); preview in the library as ${d.cid}.mp3`);
 }
 
 type Word = { word: string; start: number; end: number };
@@ -120,15 +122,10 @@ async function speak() {
     meta = { text, voice: voiceName, voiceId, model: SPEECH, speed, pitch, duration_ms };
   }
   const slug = flag("name") ?? `${new Date().toISOString().slice(0, 10)}-${slugify(text)}`;
-  await mkdir(STUDIO, { recursive: true });
-  await writeFile(join(STUDIO, `${slug}.mp3`), bytes);
   meta.made = new Date().toISOString();
-  // the words beside the take, so `bun media add studio/<slug>.mp3 …` elsewhere carries them too
-  await writeFile(join(STUDIO, `${slug}.json`), JSON.stringify(meta, null, 2) + "\n");
-  const path = `/studio/voice/${slug}.mp3`;
-  const up = await upload(bytes, path, { meta });
-  await call("/api/media/distribute", { method: "POST" }).catch(() => {});
-  say(`${(duration_ms / 1000).toFixed(1)} s · studio/${slug}.mp3 · in the library as ${path} (${up.cid})`);
+  const d = await put(bytes, { mime: "audio/mpeg", title: slug, description: text, tags: ["role:voice", `take:${slug}`, `voice:${String(meta.voice ?? "")}`], meta });
+  await upload(bytes, { cid: d.cid, mime: d.mime, title: d.title, description: d.description, tags: d.tags, meta: d.meta, public: d.public });
+  say(`${(duration_ms / 1000).toFixed(1)} s · ${slug} · in the library as ${d.cid}.mp3`);
 }
 
 const run = { design, say: speak }[positional[0] as "design"];

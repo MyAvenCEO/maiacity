@@ -2,8 +2,10 @@
 title: Permaculture — the farm that pays for itself
 originalTitle: "Permaculture: Producing food without destroying the planet"
 source: https://www.youtube.com/watch?v=I0rQNYMwzfY
+thumbnail: bafkreic7yl7mj6lbusk5y7lfzu7qsofbms3jfcsorti3rxpymv5dqxjfui.jpg
 type: video
 author: DW Planet A
+authorImage: bafkreifrd6ygmwy7rgji6qmlhbjlqo2y2b6z7pvb6bzjzdaxsiwgb5bxaa.jpg
 authorUrl: https://www.youtube.com/@DWPlanetA
 added: 2026-09-12
 categories: [food, ecology, money]

@@ -2,6 +2,7 @@
 title: One video got 34 million views. The next got 30,000.
 originalTitle: "How To Write A Killer YouTube Shorts Script That Is Impossible To Skip"
 source: https://www.youtube.com/watch?v=vgq14_IqdYM
+thumbnail: bafkreib2jkx72zp35awh2zc37lyojzvpngawnqrqzkjeql3zfkqw74mwqy.jpg
 type: video
 author: Daniel Bitton Extra
 authorUrl: https://www.youtube.com/@dbittonextra

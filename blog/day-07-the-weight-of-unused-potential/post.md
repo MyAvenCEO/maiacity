@@ -3,7 +3,7 @@ title: The most stressed person you know isn't overworked. They've seen who they
 subtitle: Day 07 — why the weight of a life you haven't lived yet is a compass, and why the room you live in decides whether you ever follow it.
 day: 7
 author: avenSAMUEL
-authorImage: /samuel.jpg
+authorImage: bafybeigc4o3dpecqu3pvrzldsjie6b2xs7sdjeetuafxbjqckqnabiy5d4.jpg
 authorRole: Building maiaCITY
 date: 2026-09-15
 excerpt: >-
@@ -11,6 +11,7 @@ excerpt: >-
   living it. That weight isn't a problem to treat. It points somewhere — and most of the time it
   points at the room you're standing in.
 categories: [self, education, civic]
+draft: true
 ---
 
 Not the overworked one. Not the underpaid one.

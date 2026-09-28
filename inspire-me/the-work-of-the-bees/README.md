@@ -2,6 +2,7 @@
 title: In the world's biggest pear region, people now do the work of the bees
 originalTitle: "How Can We Rethink Our Food Systems? | Impact Cut | How to Live on Earth"
 source: https://www.youtube.com/watch?v=rDVn-bvuYmo
+thumbnail: bafkreigxf53flvtdwjgxixiazkrqerklbh3u7d2j2b5sdp4k7owqqiduvq.jpg
 type: video
 author: How to Live on Earth
 authorUrl: https://www.youtube.com/@HowToLiveOnEarthOfficial

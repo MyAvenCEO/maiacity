@@ -24,6 +24,7 @@
 	<img
 		src={asset(post.cover)}
 		alt={post.coverAlt ?? post.title}
+		style:object-position={post.coverPosition}
 		loading={eager ? 'eager' : 'lazy'}
 	/>
 {:else}

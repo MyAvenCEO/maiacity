@@ -2,6 +2,7 @@
 title: A civilization starter kit
 originalTitle: "Open-sourced blueprints for civilization"
 source: https://www.youtube.com/watch?v=zIsHKrP-66s
+thumbnail: bafkreibnalrtf4huw2cznmle6ebiivmqiyrzqikli5fgabw4mksjto6pvu.jpg
 type: video
 author: Marcin Jakubowski
 authorUrl: https://www.opensourceecology.org

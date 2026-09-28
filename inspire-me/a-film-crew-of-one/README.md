@@ -2,6 +2,7 @@
 title: One person, one bedroom, and a film that looks like it had a crew
 originalTitle: "How I Master Solo Filmmaking: 3 Rules for Cinematic Videos in 2026"
 source: https://www.youtube.com/watch?v=R2_V8Fe5-_A
+thumbnail: bafkreiedqssdwlsuzued4fmthitl6kh5excsiunzi7y4o5jukoog54qh5q.jpg
 type: video
 author: kaye.creatives
 authorUrl: https://www.youtube.com/@Kaye.creates

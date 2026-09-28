@@ -2,8 +2,10 @@
 title: Be it before you do it — self-concept as practice
 originalTitle: "build an identity so strong, it scares people."
 source: https://www.youtube.com/watch?v=eAV-ui_MB-A
+thumbnail: bafkreifpkxdv377kr5omdtsggijmsnsxknh4jvtuqu3mtjailgj7nvqg74.jpg
 type: video
 author: Shaun Hines
+authorImage: bafkreidodruqvnaoopfdtyywpuc5rze2f5xdffuh2x3ferrfyua22djo6q.jpg
 authorUrl: https://www.youtube.com/@Shaun-Hines
 added: 2026-09-13
 categories: [self]

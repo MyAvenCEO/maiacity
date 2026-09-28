@@ -3,15 +3,16 @@ title: You can join any city on the planet. You can only move in if someone invi
 subtitle: Day 13 — cities that open into islands, a home you are invited into, and why joining a city now takes two steps.
 day: 13
 author: avenSAMUEL
-authorImage: /samuel.jpg
+authorImage: bafybeigc4o3dpecqu3pvrzldsjie6b2xs7sdjeetuafxbjqckqnabiy5d4.jpg
 authorRole: Building maiaCITY
 date: 2026-09-21
-cover: /day-13-invited-home/riverside.jpg
+cover: bafkreic23hzhjv5t2zihhv6nvbrtvt373zvwvz7eijkk5nbsnh2rymtftq.jpg
 coverAlt: Riverside, a settlement of dome homes on Maia's island.
 excerpt: >-
   Money can make you a citizen. It cannot make you a neighbour. So a city in avenCITY Sandbox 2
   now takes two steps to join, and the second one needs somebody to open the door.
 categories: [game, coop, civic]
+draft: true
 ---
 
 Twenty-five thousand hearts make you a citizen of Maia.
@@ -38,7 +39,7 @@ Becoming a citizen takes at least 25,000 of your own hearts. That is why the fir
 
 And it is for good. One city per player. No second founding, no switching when a shinier city appears.
 
-![The planet from orbit: every tower is a city, and its height counts its citizens.](/day-13-invited-home/the-planet.jpg)
+![The planet from orbit: every tower is a city, and its height counts its citizens.](bafybeicafiplfeyys2w6qlgp3slpe5p5ch4lzsdrlbrhe2ngfglhhxiafi.jpg)
 
 From orbit every city is a tower, and its height counts its citizens. Maia's grew with every player who joined. Porto, founded by one, stayed a stub.
 
@@ -50,7 +51,7 @@ This is where the two sandboxes met.
 
 Now they are one game. Click a city and the camera dives into its card, all the way down, and the card opens as the city's own island: more than ten thousand cells of forest, meadow and coast, generated from the card itself, so a city is always the same place.
 
-![Maia's island: the card of the planet, opened up.](/day-13-invited-home/the-island.jpg)
+![Maia's island: the card of the planet, opened up.](bafkreib5cibe3pf6x55ftzto3yqka6kb4ht3cmxz6h7qyzx3jw44nm7sgu.jpg)
 
 Imagine flying over the planet at dusk, spotting a tall tower on the coast and dropping into it. The sea comes up, then the forest, then the domes of the people who got there before you.
 
@@ -70,11 +71,11 @@ A settler makes an invite link. It admits one person, and it expires after a wee
 
 This is the heart of the change. A city can be open to anyone with the hearts to join it. A home cannot. The people you will share a kitchen, a food forest and your evenings with get a say in whether you arrive, and the simplest honest way to give them that say is a door only they can open.
 
-![Mara's invitation: citizenship first, then home.](/day-13-invited-home/the-invitation.jpg)
+![Mara's invitation: citizenship first, then home.](bafybeiharwui6hfbkflvkm5tuwq346wp4o3qak2jr6vddob4zeus7b2cry.jpg)
 
 The invitation walks you through both steps. If you are not yet a citizen of that city, it asks for the 25,000 first. Then the 5,000, and the link is spent.
 
-![Home: Riverside, in Maia. Twenty-seven settlers, grown to Level 3.](/day-13-invited-home/home.jpg)
+![Home: Riverside, in Maia. Twenty-seven settlers, grown to Level 3.](bafybeifgqbuftq3ltw6jlwms6huhz7lj2pr5jw22ozm7ut5vdopr5vqqya.jpg)
 
 Imagine a friend sending you that link on a Sunday night. You tap it, you land on their island, and the dome next to theirs is where you will wake up.
 
@@ -82,15 +83,15 @@ Imagine a friend sending you that link on a Sunday night. You tap it, you land o
 
 The first time you open the planet, a small dark note points at the next thing to do. Sign up. Mint your first 30,000 hearts. Find a city. Invest the 25,000.
 
-![The first hint for a signed-in player: mint your first hearts.](/day-13-invited-home/first-hearts.jpg)
+![The first hint for a signed-in player: mint your first hearts.](bafkreigta54qlbxhyt4vghoef7h3ilhlvauyyww6aa3y73543iaznm2emy.jpg)
 
 It says one thing at a time, and only about what is in front of you.
 
-![Step one, pointed out right where it happens.](/day-13-invited-home/citizenship.jpg)
+![Step one, pointed out right where it happens.](bafybeifehn5jpnnz25m2dm7mci4bfshgisvkoc5hy7psdj6ros2lrtxcae.jpg)
 
 The moment you become a citizen, it tells you so, names step two, and goes quiet for good.
 
-![The last note: you are a citizen. Now find a home.](/day-13-invited-home/a-citizen.jpg)
+![The last note: you are a citizen. Now find a home.](bafybeibsbjhpo5ympbq4ddde4xqezhvon2c4luzoup6rbyemqswkgtvngy.jpg)
 
 ## An empty planet
 

@@ -1,10 +1,19 @@
 <script lang="ts">
 	import { asset } from '$lib/media/url';
-	import { base } from '$app/paths';
 	import CoverArt from '$lib/blog/CoverArt.svelte';
+	import StatusBadge from '$lib/blog/StatusBadge.svelte';
+	import { boardDays, mergeDays, postHref } from '$lib/blog/drafts';
+	import type { PostMeta } from '$lib/blog/types';
 	import { categoryById } from '$lib/inspire-me/categories';
 
 	let { data } = $props();
+
+	// an admin's browser also lists the days not published yet, each in its place, marked with where it stands
+	let days = $state<PostMeta[] | null>(null);
+	$effect(() => {
+		boardDays().then((d) => (days = d));
+	});
+	const posts = $derived(mergeDays(data.posts, days));
 
 	const formatted = (date: string) =>
 		date
@@ -28,15 +37,16 @@
 	</section>
 
 	<ul class="posts">
-		{#each data.posts as post (post.slug)}
+		{#each posts as post (post.slug)}
 			<li>
-				<a href="{base}/blog/{post.slug}">
+				<a href={postHref(post)}>
 					<div class="thumb"><CoverArt {post} /></div>
 					<div class="body">
 						<p class="eyebrow">
 							{#if post.day != null}Day {String(post.day).padStart(2, '0')}&ensp;·&ensp;{/if}{formatted(
 								post.date
 							)}&ensp;·&ensp;{post.readingMinutes} min
+							{#if post.board}&ensp;<StatusBadge {post} />{/if}
 						</p>
 						<h2>{post.title}</h2>
 						<p class="excerpt">{post.excerpt}</p>
@@ -104,7 +114,7 @@
 
 	.thumb {
 		overflow: hidden;
-		aspect-ratio: 16 / 10;
+		aspect-ratio: 16 / 9; /* the title cards are 16:9: shown whole, never cropped */
 		border-radius: calc(var(--radius) - 8px);
 		background: var(--cream);
 	}

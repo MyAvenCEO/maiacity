@@ -11,7 +11,8 @@
 		"check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
 		"check:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch",
 		"media": "bun api/scripts/media.ts",
-		"voice": "bun api/scripts/voice.ts"
+		"voice": "bun api/scripts/voice.ts",
+		"film": "bun scripts/film/worker.ts"
 	},
 	"devDependencies": {
 		"@sveltejs/adapter-auto": "^7.0.1",

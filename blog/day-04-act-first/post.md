@@ -3,13 +3,14 @@ title: You can't think your way into a new life. I tried it for years.
 subtitle: Day 04 — change starts with an ache you learn to trust, grows through small actions, and only lasts in a room built to let it.
 day: 4
 author: avenSAMUEL
-authorImage: /samuel.jpg
+authorImage: bafybeigc4o3dpecqu3pvrzldsjie6b2xs7sdjeetuafxbjqckqnabiy5d4.jpg
 authorRole: Building maiaCITY
 date: 2026-09-12
 excerpt: >-
   Something comes first, and it isn't a plan. It's a quiet ache that won't leave you alone — and
   whether it ever turns into a life depends less on willpower than on the room you're standing in.
 categories: [self, education, civic]
+draft: true
 ---
 
 Something in you already knows.

@@ -1,27 +1,27 @@
-// The media library, from the terminal. Production Postgres is the single source of truth for every image, sound
-// and video, each kept under its IPFS CID; Bunny hands out the public copies. This keeps static/ and it in sync.
+// The media library, from the terminal. library/ is the single source of truth: every file once as <cid>.<ext>,
+// described beside it in <cid>.json (title, description, tags, meta, public) — no paths. The databases are seeded
+// from it; the site and the servers only read the databases (in production, the CDN copies of the public files).
 //
-//   bun media login       sign this terminal in: approve it on maia.city with the admin's passkey
-//   bun media status      what production holds, and what is only here
-//   bun media sync        upload what is missing (by CID, resumable), name every path, tag everything,
-//                         make the public copies on Bunny, and write src/lib/media/manifest.json
-//   bun media release     let git go of journal media production now serves by CID (the files stay on disk)
-//   bun media add <file> </path>   put one file into the library under that path
-//   bun media library     mirror production into library/: every file as <cid>.<ext>, and index.json
-//   bun media logout      revoke this terminal's key
+//   bun media login        sign this terminal in: approve it on maia.city with the admin's passkey
+//   bun media status       what library/ holds, and how the database differs from it
+//   bun media seed         make the database match library/: upload the files it lacks, describe every file as
+//                          library/ does, make the public copies (production), write the site's manifest
+//                          (--public: upload only the public files — the site's — and still describe all it holds)
+//   bun media add <file> [--title "…"] [--description "…"] [--tags a,b] [--replaces <cid>] [--public]
+//                          bring a file into library/ (copied, described) and into the database; the file it
+//                          replaces (by CID) is marked superseded
+//   bun media manifest     write the site's manifest from the database (public files by CID, with their tags)
+//   bun media logout       revoke this terminal's key
 //
-//   --local               against the local API (http://localhost:3100) instead of api.maia.city
+//   --local                against the local database (http://localhost:3100) instead of production
 import { $ } from "bun";
-import { copyFile, link, mkdir, readdir, readFile, stat, writeFile } from "node:fs/promises";
-import { homedir, hostname } from "node:os";
-import { API, call, keyFor, local, mb, readJson, ROOT, saveKey, say, SITE, upload as uploadBytes } from "./media-client";
-import { join, relative, sep } from "node:path";
-import { cidOf, EXT, kindOf, mimeOf } from "../src/media";
-import { deriveTags } from "./media-tags";
+import { readFile, writeFile } from "node:fs/promises";
+import { hostname } from "node:os";
+import { join } from "node:path";
+import { API, call, keyFor, local, mb, ROOT, saveKey, say, SITE, upload } from "./media-client";
+import { all, fileOf, get, put, type Doc } from "./library";
 
-const STATIC = join(ROOT, "static");
-const MANIFEST = join(ROOT, "src/lib/media/manifest.json");
-const CACHE = join(homedir(), ".cache", "maiacity", "cids.json");
+const MANIFEST = join(ROOT, "src/lib/media", local ? "manifest.local.json" : "manifest.json");
 
 // ─────────────────────────────── login / logout ───────────────────────────────
 
@@ -33,7 +33,7 @@ async function login() {
   });
   const start = (await res.json()) as { device_code: string; user_code: string; expires_in: number; interval: number; error?: string };
   if (!res.ok) throw new Error(start.error ?? "could not start");
-  const url = `${SITE}/admin/device/?code=${start.user_code}`;
+  const url = `${SITE}/app/device/?code=${start.user_code}`;
   say(`\nApprove this terminal with your passkey:\n\n  ${url}\n\n  code ${start.user_code}\n`);
   await $`open ${url}`.quiet().nothrow();
   const until = Date.now() + start.expires_in * 1000;
@@ -56,207 +56,101 @@ async function logout() {
   say("Signed out; the key is revoked.");
 }
 
-// ─────────────────────────────── what is here ───────────────────────────────
+// ─────────────────────────────── status / seed ───────────────────────────────
 
-type Local = { path: string; file: string; size: number; cid: string };
+type Row = { cid: string; mime: string; kind: string; size: number; title: string; description: string; tags: string[]; meta: Record<string, unknown>; public: boolean };
+const database = async () => (await call<{ media: Row[] }>("/api/media")).media;
 
-async function walk(dir: string): Promise<string[]> {
-  const out: string[] = [];
-  for (const e of await readdir(dir, { withFileTypes: true })) {
-    const p = join(dir, e.name);
-    if (e.isDirectory()) out.push(...(await walk(p)));
-    else out.push(p);
-  }
-  return out;
+/** Whether the database describes a file as library/ does. */
+const same = (d: Doc, r: Row) =>
+  d.title === r.title && d.description === r.description && d.public === r.public &&
+  JSON.stringify([...d.tags].sort()) === JSON.stringify([...r.tags].sort()) && JSON.stringify(d.meta) === JSON.stringify(r.meta ?? {});
+
+async function compare() {
+  const docs = await all();
+  const rows = new Map((await database()).map((r) => [r.cid, r]));
+  const missing = docs.filter((d) => !rows.has(d.cid));
+  const differ = docs.filter((d) => rows.has(d.cid) && !same(d, rows.get(d.cid)!));
+  const extra = [...rows.values()].filter((r) => !docs.some((d) => d.cid === r.cid));
+  return { docs, missing, differ, extra };
 }
-
-/** Every media file in static/, with its CID — remembered by size and time, so 600 MB is not hashed every run. */
-async function here(): Promise<Local[]> {
-  const cache = await readJson<Record<string, { size: number; mtime: number; cid: string }>>(CACHE, {});
-  const out: Local[] = [];
-  for (const file of (await walk(STATIC)).filter((f) => kindOf(mimeOf(f)) !== "other")) {
-    const st = await stat(file);
-    const hit = cache[file];
-    const cid = hit && hit.size === st.size && hit.mtime === st.mtimeMs ? hit.cid : await cidOf(new Uint8Array(await readFile(file)));
-    cache[file] = { size: st.size, mtime: st.mtimeMs, cid };
-    out.push({ path: "/" + relative(STATIC, file).split(sep).join("/"), file, size: st.size, cid });
-  }
-  await mkdir(join(CACHE, ".."), { recursive: true });
-  await writeFile(CACHE, JSON.stringify(cache));
-  return out;
-}
-
-type Remote = { cid: string; mime: string; kind: string; paths: string[]; tags: string[]; meta: Record<string, unknown>; cdn_path: string | null; stream_guid: string | null; size: number };
-const library = async () => (await call<{ media: Remote[] }>("/api/media")).media;
 
 async function status() {
-  const files = await here();
-  const lib = await library();
-  const held = new Map(lib.map((m) => [m.cid, m]));
-  const missing = files.filter((f) => !held.has(f.cid));
-  const unnamed = files.filter((f) => held.has(f.cid) && !held.get(f.cid)!.paths.includes(f.path));
-  const noCopy = lib.filter((m) => !m.cdn_path && !m.stream_guid);
-  say(`production (${API}) holds ${lib.length} files, ${mb(lib.reduce((n, m) => n + m.size, 0))}`);
-  say(`here: ${files.length} files in static/`);
-  say(`  in production:                  ${files.length - missing.length}`);
-  say(`  only here — sync uploads them:  ${missing.length}${missing.length ? ` (${mb(missing.reduce((n, f) => n + f.size, 0))})` : ""}`);
-  for (const f of missing) say(`    ${f.cid}  ${f.path}`);
-  if (unnamed.length) say(`  in production under another name: ${unnamed.length} — sync names them`);
-  say(`production files without a public copy on Bunny: ${noCopy.length}`);
-  return { files, lib, missing };
+  const { docs, missing, differ, extra } = await compare();
+  say(`library/: ${docs.length} files, ${mb(docs.reduce((n, d) => n + d.size, 0))} — ${docs.filter((d) => d.public).length} public`);
+  say(`${API}:`);
+  say(`  to upload:     ${missing.length}${missing.length ? ` (${mb(missing.reduce((n, d) => n + d.size, 0))})` : ""}`);
+  say(`  to describe:   ${differ.length}`);
+  if (extra.length) say(`  not in library/: ${extra.length} — the database holds them, library/ does not (${extra.slice(0, 3).map((r) => r.title || r.cid).join(", ")}${extra.length > 3 ? " …" : ""})`);
 }
 
-// ─────────────────────────────── sync ───────────────────────────────
-
-const upload = async (f: Local) => uploadBytes(new Uint8Array(await readFile(f.file)), f.path, { cid: f.cid, mime: mimeOf(f.file), progress: true });
-
-async function sync() {
-  const { files, lib, missing } = await status();
-  say("");
-  const unique = [...new Map(missing.map((f) => [f.cid, f])).values()];
-  for (const [i, f] of unique.entries()) {
-    const r = await upload(f);
-    say(`${String(i + 1).padStart(4)}/${unique.length} ${r.stored ? "stored" : "known "} ${r.cid}  ${f.path} (${mb(f.size)})`);
+async function seed() {
+  const all = await compare();
+  const { docs, differ, extra } = all;
+  // --public: only the files the site shows go up (production's volume is not the place for the working files)
+  const missing = process.argv.includes("--public") ? all.missing.filter((d) => d.public) : all.missing;
+  if (missing.length < all.missing.length) say(`${all.missing.length - missing.length} private files stay in library/ (--public)`);
+  say(`${API}: ${missing.length} to upload (${mb(missing.reduce((n, d) => n + d.size, 0))}), ${differ.length} to describe`);
+  for (const [i, d] of missing.entries()) {
+    const r = await upload(new Uint8Array(await readFile(await fileOf(d.cid))), { cid: d.cid, mime: d.mime, title: d.title, description: d.description, tags: d.tags, meta: d.meta, public: d.public, progress: true });
+    say(`${String(i + 1).padStart(4)}/${missing.length} ${r.stored ? "stored" : "known "} ${d.cid}  ${d.title} (${mb(d.size)})`);
   }
-  // every path names its CID — the duplicates too, and files production had under another name
-  const named = new Map(lib.map((m) => [m.cid, new Set(m.paths)]));
-  const unnamed = files.filter((f) => !named.get(f.cid)?.has(f.path) && !unique.some((u) => u.path === f.path));
-  for (const f of unnamed) await call("/api/media/paths", { method: "POST", body: JSON.stringify({ path: f.path, cid: f.cid }) });
-  if (unnamed.length) say(`named ${unnamed.length} paths`);
-
-  const after = await retagAll();
-
-  // videos a post already streams keep their Stream copy (its `video:` guid for its `videoLocal:` file)
-  const byPath = new Map(files.map((f) => [f.path, f.cid]));
-  for (const post of await readdir(join(ROOT, "blog"), { withFileTypes: true })) {
-    if (!post.isDirectory()) continue;
-    const md = await readFile(join(ROOT, "blog", post.name, "post.md"), "utf8").catch(() => "");
-    const guid = /^video:\s*([0-9a-f-]{36})\s*$/m.exec(md)?.[1];
-    const cid = byPath.get(/^videoLocal:\s*(\S+)\s*$/m.exec(md)?.[1] ?? "");
-    const known = after.find((m) => m.cid === cid);
-    if (guid && cid && known?.stream_guid !== guid) {
-      await call("/api/media/streamed", { method: "POST", body: JSON.stringify({ cid, stream_guid: guid }) });
-      say(`${post.name}: its film stays the Stream video ${guid}`);
-    }
-  }
-
-  say("making the public copies on Bunny…");
+  for (const d of differ)
+    await call("/api/media/describe", { method: "POST", body: JSON.stringify({ cid: d.cid, title: d.title, description: d.description, tags: d.tags, meta: d.meta, public: d.public }) });
+  if (differ.length) say(`described ${differ.length}`);
+  if (extra.length) say(`  ${extra.length} files the database holds that library/ does not — left as they are`);
+  // the public copies (production has the Bunny key; a local database has none)
   try {
     let waiting = Infinity;
     for (let i = 0; i < 180 && waiting > 0; i++) {
       waiting = (await call<{ waiting: number }>("/api/media/distribute", { method: "POST" })).waiting;
-      if (waiting) process.stdout.write(`\r  ${waiting} still to copy   `), await Bun.sleep(5000);
+      if (waiting) process.stdout.write(`\r  ${waiting} public copies still to make   `), await Bun.sleep(5000);
     }
-    say(waiting ? "\n  some copies are still being made — sync again later" : "\r  every file has its public copy   ");
+    say(waiting ? "\n  some copies are still being made — seed again later" : "\r  every public file has its copy on the CDN   ");
   } catch (e) {
-    say(`  not now: ${(e as Error).message}`);
+    say(`public copies: not here (${(e as Error).message})`);
   }
-
-  const manifest = await (await fetch(`${API}/api/media/manifest`)).json();
-  await writeFile(MANIFEST, JSON.stringify(manifest, null, "\t") + "\n");
-  say(`manifest: ${Object.keys(manifest).length} paths on the CDN → src/lib/media/manifest.json`);
+  await manifest(docs.length);
 }
 
-// ─────────────────────────────── release ───────────────────────────────
-
-/** Journal media (static/day-*) that production serves by CID leave git; they stay on disk, and .gitignore keeps them out. */
-async function release() {
-  const manifest = await readJson<Record<string, { cid: string; url: string }>>(MANIFEST, {});
-  const tracked = (await $`git -C ${ROOT} ls-files static`.text()).split("\n").filter((f) => /^static\/day-[^/]+\//.test(f));
-  const go = tracked.filter((f) => manifest[f.slice("static".length)]?.url);
-  for (let i = 0; i < go.length; i += 100) await $`git -C ${ROOT} rm -q --cached -- ${go.slice(i, i + 100)}`;
-  say(go.length ? `released ${go.length} files from git — commit to make it so; they stay on disk, production holds them by CID` : "nothing to release");
-  const left = tracked.length - go.length;
-  if (left) say(`${left} journal files are still in git: not on the CDN yet (run sync first)`);
-}
+// ─────────────────────────────── manifest ───────────────────────────────
 
 /**
- * Tags are derived — from the journal, the site's code and the folders — plus whatever tags were given by hand
- * (kept in each file's meta.tags). All of them are sent at once, so the library's tags are always the whole truth.
+ * The site's list of public files, by CID, with their titles and tags (the site finds a picture by CID, or a set —
+ * the author portraits, the sounds — by tag). From production: where each is on the CDN (src/lib/media/manifest.json,
+ * in git). From the local database: the same, loaded from the local API (manifest.local.json, not in git).
  */
-async function retagAll() {
-  const lib = await library();
-  const tags = await deriveTags(ROOT, lib.flatMap((m) => m.paths.map((path) => ({ path, cid: m.cid }))));
-  for (const m of lib) {
-    const given = Array.isArray(m.meta?.tags) ? (m.meta.tags as unknown[]).map(String) : [];
-    if (!given.length) continue;
-    const set = tags.get(m.cid) ?? new Set<string>();
-    given.forEach((t) => set.add(t));
-    set.delete("unused"); // tagged by hand is not unused
-    tags.set(m.cid, set);
-  }
-  await call("/api/media/tags", { method: "PUT", body: JSON.stringify({ tags: Object.fromEntries([...tags].map(([c, t]) => [c, [...t]])) }) });
-  say(`tagged ${tags.size} files`);
-  return lib;
+async function manifest(_n?: number) {
+  const out: Record<string, unknown> = {};
+  if (local) {
+    for (const r of await database()) if (r.public) out[r.cid] = { url: null, mime: r.mime, title: r.title, description: r.description, tags: r.tags };
+  } else Object.assign(out, await (await fetch(`${API}/api/media/manifest`)).json());
+  await writeFile(MANIFEST, JSON.stringify(out, null, "\t") + "\n");
+  say(`manifest: ${Object.keys(out).length} public files → ${MANIFEST.slice(ROOT.length + 1)}`);
 }
 
 // ─────────────────────────────── add ───────────────────────────────
 
-/**
- * Put one file into the library under a path of your choosing:
- *   bun media add <file> </path> [--tags music,cinematic] [--meta '{"title":"…"}']
- * A sidecar <file without extension>.json (as `bun voice` writes) travels along as the file's meta.
- */
 async function add() {
   const argv = process.argv.slice(3);
   const opt = (k: string) => (argv.includes(`--${k}`) ? argv[argv.indexOf(`--${k}`) + 1] : undefined);
-  const [file, path] = argv.filter((a, i) => !a.startsWith("--") && !argv[i - 1]?.match(/^--(tags|meta)$/));
-  if (!file || !path?.startsWith("/")) throw new Error("usage: bun media add <file> </path/in/the/library> [--tags a,b] [--meta '{…}']");
-  const sidecar = await readJson<Record<string, unknown>>(file.replace(/\.[^./]+$/, ".json"), {});
-  const meta: Record<string, unknown> = { ...sidecar, ...(opt("meta") ? JSON.parse(opt("meta")!) : {}) };
-  const tags = opt("tags")?.split(",").map((t) => t.trim()).filter(Boolean);
-  if (tags?.length) meta.tags = tags;
-  const r = await uploadBytes(new Uint8Array(await readFile(file)), path, { progress: true, meta: Object.keys(meta).length ? meta : undefined });
-  say(`${r.stored ? "stored" : "known "} ${r.cid}  ${path}`);
-  await retagAll();
-  await call("/api/media/distribute", { method: "POST" }).catch(() => {});
-}
-
-// ─────────────────────────────── library ───────────────────────────────
-
-/**
- * A plain, flat copy of the library: library/<cid>.<ext> for every file production holds, and library/index.json
- * (cid → paths, tags, public copy). Local files are hard-linked (no extra disk), the rest downloaded. A file's name
- * is its content: two folders can be compared by listing them.
- */
-async function mirror() {
-  const DIR = join(ROOT, "library");
-  await mkdir(DIR, { recursive: true });
-  const lib = await library();
-  const localByCid = new Map((await here()).map((f) => [f.cid, f.file]));
-  const present = new Set(await readdir(DIR));
-  let linked = 0, fetched = 0;
-  for (const m of lib) {
-    const name = `${m.cid}.${EXT[m.mime] ?? "bin"}`;
-    if (present.has(name)) continue;
-    const target = join(DIR, name);
-    const from = localByCid.get(m.cid);
-    if (from) {
-      await link(from, target).catch(() => copyFile(from, target));
-      linked++;
-    } else {
-      const res = await fetch(`${API}/api/media/${m.cid}`, { headers: { authorization: `Bearer ${await keyFor()}` } });
-      if (!res.ok) throw new Error(`download ${m.cid}: ${res.status}`);
-      const bytes = new Uint8Array(await res.arrayBuffer());
-      if ((await cidOf(bytes)) !== m.cid) throw new Error(`${m.cid} arrived with different bytes`);
-      await writeFile(target, bytes);
-      fetched++;
-    }
+  const list = (k: string) => opt(k)?.split(",").map((t) => t.trim()).filter(Boolean);
+  const [file] = argv.filter((a, i) => !a.startsWith("--") && !argv[i - 1]?.match(/^--(title|description|tags|replaces)$/));
+  if (!file) throw new Error('usage: bun media add <file> [--title "…"] [--description "…"] [--tags a,b] [--replaces <cid>] [--public] [--local]');
+  const d = await put(file, { title: opt("title"), description: opt("description"), tags: list("tags"), replaces: list("replaces"), public: argv.includes("--public") ? true : undefined });
+  const r = await upload(new Uint8Array(await readFile(await fileOf(d.cid))), { cid: d.cid, mime: d.mime, title: d.title, description: d.description, tags: d.tags, meta: d.meta, public: d.public, progress: true });
+  say(`${r.stored ? "stored" : "known "} ${d.cid}  ${d.title} [${d.tags.join(", ")}]`);
+  // the file it replaces is described again (superseded)
+  for (const old of list("replaces") ?? []) {
+    const o = await get(old);
+    if (o) await call("/api/media/describe", { method: "POST", body: JSON.stringify({ cid: o.cid, tags: o.tags }) }).catch(() => {});
   }
-  const index = Object.fromEntries(
-    lib.map((m) => [m.cid, { file: `${m.cid}.${EXT[m.mime] ?? "bin"}`, mime: m.mime, kind: m.kind, size: m.size, paths: m.paths, tags: m.tags, cdn: m.cdn_path ? `https://maia.city/${m.cdn_path}` : null, stream: m.stream_guid }]),
-  );
-  await writeFile(join(DIR, "index.json"), JSON.stringify(index, null, 2) + "\n");
-  const names = new Set(Object.values(index).map((e) => e.file));
-  const extra = (await readdir(DIR)).filter((f) => f !== "index.json" && !names.has(f));
-  say(`library/: ${lib.length} files (${linked} linked from static/, ${fetched} downloaded), index.json written`);
-  if (extra.length) say(`  ${extra.length} files here that production does not hold: ${extra.slice(0, 5).join(", ")}${extra.length > 5 ? " …" : ""}`);
 }
 
 const cmd = process.argv.slice(2).find((a) => !a.startsWith("--")) ?? "status";
-const run = { login, logout, status, sync, release, add, library: mirror }[cmd as "login"];
+const run = { login, logout, status, seed, add, manifest: () => manifest() }[cmd as "login"];
 if (!run) {
-  say("usage: bun media login | status | sync | add <file> </path> | release | library | logout  [--local]");
+  say("usage: bun media login | status | seed | add <file> … | manifest | logout  [--local]");
   process.exit(1);
 }
 try {

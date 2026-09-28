@@ -18,9 +18,9 @@ const slugOf = (path: string) => path.split('/').at(-2)!;
 
 const optional = (value: unknown) => (value == null || value === '' ? undefined : String(value));
 
-// every image from its CID on the CDN once it is there, else under the site's base path (see $lib/media/url)
+// every image by its CID: from the CDN once its copy is there, else from the API (see $lib/media/url)
 const withBase = (html: string) =>
-	html.replace(/src="(\/[^"]*)"/g, (_, src: string) => `src="${asset(src)}"`).replace(/href="\//g, `href="${base}/`);
+	html.replace(/src="(baf[^"]*)"/g, (_, src: string) => `src="${asset(src)}"`).replace(/href="\//g, `href="${base}/`);
 
 // A standalone image becomes a figure; its alt text becomes the caption.
 const asFigures = (html: string) =>
@@ -52,6 +52,8 @@ function parsePost(slug: string, raw: string): { meta: PostMeta; body: string } 
 			videoAspect: optional(fm.videoAspect),
 			videoLibrary: optional(fm.videoLibrary),
 			coverAlt: optional(fm.coverAlt),
+			coverPosition: optional(fm.coverPosition),
+			banner: optional(fm.banner),
 			excerpt: String(fm.excerpt ?? '').trim(),
 			categories: Array.isArray(fm.categories) ? fm.categories.map(String) : [],
 			draft: fm.draft === true,

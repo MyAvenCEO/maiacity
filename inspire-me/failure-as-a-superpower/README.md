@@ -2,8 +2,10 @@
 title: Failure as a superpower
 originalTitle: "it's time to talk about this."
 source: https://www.youtube.com/watch?v=GCfUT7jPkvk
+thumbnail: bafybeifjwgp4y3srlqjvv2cwoqjm6epzcp5sctxgt3ksiqtscwblbhjaey.jpg
 type: video
 author: Andrew
+authorImage: bafkreib2t7zozoxhelmzzhc44ef4bwhxfvmfq34i7wenigl7tjdzc4adia.jpg
 authorUrl: https://www.youtube.com/@AndrewPaul1
 added: 2026-09-11
 categories: [self, civic]

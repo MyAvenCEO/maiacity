@@ -2,8 +2,10 @@
 title: A new school, a new personality, and exactly the same fear
 originalTitle: "Your Personality Isn't You (This explains why)"
 source: https://www.youtube.com/watch?v=D1INOZltmyw
+thumbnail: bafkreiggcfd77lhfylesr4et5rknwyduagfhcqydqvwthcsdnlxpnvfkeu.jpg
 type: video
 author: Celastrina Calea
+authorImage: bafkreian2n7vmwzqd3pzlry7lqbip72xztx6ykzkj7ervyk7ftvdodhd54.jpg
 authorUrl: https://www.youtube.com/@celastrinacalea
 added: 2026-09-21
 categories: [self, health]

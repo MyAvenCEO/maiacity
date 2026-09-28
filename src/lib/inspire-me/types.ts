@@ -28,6 +28,8 @@ export interface InspirationMeta {
 	quoteBy?: string;
 	language?: string;
 	youtubeId?: string;
+	/** the source's own picture (a video's thumbnail), by CID */
+	thumbnail?: string;
 }
 
 export interface InspirationSection {

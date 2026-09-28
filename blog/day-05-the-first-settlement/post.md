@@ -3,15 +3,16 @@ title: We grew one tent into 216 people on the same 41.6 hectares
 subtitle: Day 05 — building maiaCITY in a game first, one hex at a time, until it can carry itself.
 day: 5
 author: avenSAMUEL
-authorImage: /samuel.jpg
+authorImage: bafybeigc4o3dpecqu3pvrzldsjie6b2xs7sdjeetuafxbjqckqnabiy5d4.jpg
 authorRole: Building maiaCITY
 date: 2026-09-13
-cover: /day-05-the-first-settlement/overview-1.png
+cover: bafybeifzf6h3ppfcf5m4ufyykhckkpgjrotop7rvhdz6xzlew6tq3ljuyu.png
 coverAlt: One hex picked out of open land — everything starts here.
 excerpt: >-
   One person, one tent, on 41.6 hectares. Five levels later the same ground carries 216 people
   and runs its own power, water and commons. This is the smallest piece of city that stands alone.
 categories: [game, architecture, food, energy]
+draft: true
 ---
 
 One person. One tent, five metres across. One fire.
@@ -22,15 +23,15 @@ We are building maiaCITY in a game before we build it in soil. A game lets you r
 
 The domes from [Day 03](/blog/day-03-what-a-dome-looks-like/) come with us, translated. Same arcade, same terrace, same shell — flattened into shapes the engine can draw hundreds of without dropping a frame. If the idea still reads at fifty triangles, it was the shape carrying it, not the rendering.
 
-![A single low-poly dome on stone arcades, in the game's own material language.](/day-05-the-first-settlement/f_H-7YDGzpA3Po-2O3XPY_WYkrZ7CF.jpg)
+![A single low-poly dome on stone arcades, in the game's own material language.](bafybeih4yyf4chicgq55chevarfzm63n2vjlwtaew2tgkabuikcgvpc2a4.jpg)
 
-![The smallest version: one dome, a terrace, a footbridge over water.](/day-05-the-first-settlement/z6GzRVgA4xYiPWADzbORj_SvHTgurF.jpg)
+![The smallest version: one dome, a terrace, a footbridge over water.](bafkreifiphjalmso2w77nls62tvuuiqgb5h6n336cmic7hztelyyvrut7q.jpg)
 
 The world is a hex grid, and one hex is the unit we are actually designing. Not the city — the city comes later, and only as copies of this.
 
 Each hex measures 800 metres corner to corner — about 690 metres across the flats — which works out to 415,692 m², or 41.6 hectares of land. Small enough to cross on foot in ten minutes. Large enough to live from.
 
-![The starting position — a hex grid over open land, almost none of it settled.](/day-05-the-first-settlement/overview-1.png)
+![The starting position — a hex grid over open land, almost none of it settled.](bafybeifzf6h3ppfcf5m4ufyykhckkpgjrotop7rvhdz6xzlew6tq3ljuyu.png)
 
 ## Self-sufficiency is not a feature you add at the end
 
@@ -50,7 +51,7 @@ That ceiling is set before the first tent goes up. Everything that follows is ho
 
 ## Level 1 — one arrives, twelve can stay
 
-![Level 1: six mini tents at 5 m across, two people each. Four containers, and a fire ring in the middle.](/day-05-the-first-settlement/level-1.png)
+![Level 1: six mini tents at 5 m across, two people each. Four containers, and a fire ring in the middle.](bafybeichrshko3dbstqpronxlxemh7aswi3ska4o6bg3xindz3wfzhoq7a.png)
 
 It starts with one human on an empty hex.
 
@@ -73,7 +74,7 @@ The fire ring in the middle is the fifth organ, and the only one that isn't a bo
 
 ## Level 2 — glamping, and still packable
 
-![Level 2: eight-metre glamping domes, four people each — comfortable, and still temporary.](/day-05-the-first-settlement/level-2.png)
+![Level 2: eight-metre glamping domes, four people each — comfortable, and still temporary.](bafybeig2qkd5hrqd4hsbhec77l2dbfdvimt7fkobxhssiraw6n2r3dcvv4.png)
 
 Eight metres across, four people per dome, 24 settlers. Same six positions, same ring, same land — 2.4 hectares of food forest and 1.2 of glass to match.
 
@@ -83,7 +84,7 @@ That is the whole purpose of the first two levels. Nothing permanent goes into t
 
 ## Level 3 — the first permanent domes
 
-![Level 3: 40 m domes holding twelve people each, 72 settlers, with a roofed commons at the centre.](/day-05-the-first-settlement/level-3.png)
+![Level 3: 40 m domes holding twelve people each, 72 settlers, with a roofed commons at the centre.](bafybeigwpyluiczqvgo7ivsptwhy7r3my5uhphbhczv5npim5qxizmz7cq.png)
 
 Forty metres across, twelve people to a dome, six domes: 72 settlers, 7.2 hectares of food forest, 3.6 hectares under glass.
 
@@ -95,7 +96,7 @@ The commons keeps its position through every level after this. What grows around
 
 ## Level 4 — 216 people, the size it was built for
 
-![Level 4: six new 70 m domes beside the six from Level 3 — twelve domes, 216 settlers, the hex at its designed size.](/day-05-the-first-settlement/level-4.png)
+![Level 4: six new 70 m domes beside the six from Level 3 — twelve domes, 216 settlers, the hex at its designed size.](bafybeigmwypglzwafzxgzq4i6rxdadxn2oixppk6nihgdwt672wh3kt4pm.png)
 
 This is the first level that adds instead of replacing. Six new domes go up at 70 metres, 24 people each, beside the six 40 m domes that stay exactly where they are.
 
@@ -107,7 +108,7 @@ This is the size where a settlement becomes socially real: enough people for you
 
 ## Level 5 — the centre, where nobody lives
 
-![Level 5: one 136 m dome at the centre of the ring — commons, energy, storage and compute under a single roof.](/day-05-the-first-settlement/level-5.png)
+![Level 5: one 136 m dome at the centre of the ring — commons, energy, storage and compute under a single roof.](bafybeicrqkota27vkup4ejfe2uc6wh2ilf6u3qte6o24xuxcx57srqdm7u.png)
 
 One dome, 136 metres across, at the heart of the ring. Nobody lives in it.
 
@@ -121,7 +122,7 @@ That is what closes the loop. Food from the ground it stands on, power and stora
 
 ## After Level 5 — the settlement builds its own machines
 
-![The dome factory on the neighbouring hex — 130 metres across, owned and run by the settlement next door.](/day-05-the-first-settlement/overview-2.png)
+![The dome factory on the neighbouring hex — 130 metres across, owned and run by the settlement next door.](bafybeigjz5yznvsi6q6ubxyx565jjt4x5bqhoohlw3xbyjnetpwzg6nmvm.png)
 
 Every level so far was built with machines that came in on a truck: the excavator moving earth for the swales, the loader placing the dome bases, the tractor that does everything else on 41 hectares. Rent them, and the settlement works to someone else's schedule. Buy them, and it owns a black box that only a dealer can open.
 
@@ -143,7 +144,7 @@ One is the minimum, not the plan.
 
 Every dome cell owns at least one dome factory, built close enough to walk to, and most will grow more. The shell is the same each time — 130 metres, one storey of stone under a shallow dome. What changes is the trade inside it, and each one wears what it makes on its crown, so you can read the trade from across the valley.
 
-![A LifeTrac dome factory — the tractor on its crown, and the first two finished ones parked on the apron.](/day-05-the-first-settlement/factory-lifetrac.jpg)
+![A LifeTrac dome factory — the tractor on its crown, and the first two finished ones parked on the apron.](bafkreial4ohpafkbelyghie4tp6vpiukdxb2oqhcy6dnutv3xmsmpz5yum.jpg)
 
 - **Solar** — panels for its own roofs, and for the next settlement's.
 - **Power Cube** — the Power Cube, Open Source Ecology's self-contained hydraulic power unit: the engine that drives LifeTrac and most of the machines that come after it.
@@ -151,17 +152,17 @@ Every dome cell owns at least one dome factory, built close enough to walk to, a
 - **Bamboo Fabric** — cane from the edge of the food forest, turned into fibre and cloth.
 - **Hemp Stone** — hempcrete: hemp and lime, cast into blocks for the walls of the next domes.
 
-![The solar dome factory: a roof that is mostly collector, arrays angled at the sun on the apron.](/day-05-the-first-settlement/factory-solar.jpg)
+![The solar dome factory: a roof that is mostly collector, arrays angled at the sun on the apron.](bafkreidbu27uyyxn4dvid255ghdqlk6dui2r2v5foe4cucaiir2rcljhqa.jpg)
 
-![The Power Cube factory — amber glass, and the hydraulic units waiting on pallets.](/day-05-the-first-settlement/factory-power-cube.jpg)
+![The Power Cube factory — amber glass, and the hydraulic units waiting on pallets.](bafkreibvu6aexsiifvzgrwkygmimzmluhn5tp4kkqnblmlh7hlwoicygsa.jpg)
 
-![Bamboo fabric: cane stood in bundles by the door, bolts of the finished cloth beside them.](/day-05-the-first-settlement/factory-bamboo.jpg)
+![Bamboo fabric: cane stood in bundles by the door, bolts of the finished cloth beside them.](bafkreihkylj5jhpppwtamg3rissrfi563t3ynpsddg4tzy7s5vmma75qui.jpg)
 
-![Hemp stone: hempcrete blocks stacked on pallets, curing in the air.](/day-05-the-first-settlement/factory-hemp.jpg)
+![Hemp stone: hempcrete blocks stacked on pallets, curing in the air.](bafkreiffwcca62bwfyu2o36swlm6zygrylqwsq3ptplqjuj2jblseb7fwe.jpg)
 
 Co-location is the whole idea. The land that grows the hemp, the dome factory that turns it into stone and the dome cell that builds with it are a short walk apart. Materials never have to leave the place that uses them.
 
-![A dome cell and its neighbourhood: the centre dome in the middle, dome cells at every level around it, and a factory on each side.](/day-05-the-first-settlement/dome-cell-neighbourhood.jpg)
+![A dome cell and its neighbourhood: the centre dome in the middle, dome cells at every level around it, and a factory on each side.](bafkreidb6dx5ija5yeewxvlliz7nvhqurcrxwk4uozka476of6b26zocxa.jpg)
 
 Now the unit is almost complete: 216 people who house and power themselves, and who make the machines and materials the rest of the grid needs — with every hectare of it inside a boundary they can walk.
 

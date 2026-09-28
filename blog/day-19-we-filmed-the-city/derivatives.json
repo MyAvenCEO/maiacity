@@ -1,0 +1,78 @@
+{
+  "project": "Day 19",
+  "title": "Day 19 · We filmed one whole day inside the city we are building",
+  "scheduled_at": "2026-09-28T18:00:00+02:00",
+  "posts": [
+    {
+      "platform": "journal",
+      "format": "article",
+      "title": "We filmed one whole day inside the city we are building",
+      "text": "Until today, the city showed up in this journal as still pictures.\n\nSo today we filmed one. A whole day in a dome cell, from the first light on the glass to the lanterns at night.",
+      "scheduled_at": "2026-09-28T09:00:00+02:00",
+      "aspect": "16:9",
+      "codec": "h264",
+      "variant": "G"
+    },
+    {
+      "platform": "youtube",
+      "aspect": "16:9",
+      "codec": "hevc",
+      "title": "233 settlers grow almost everything they eat a few minutes from bed — Maia City, day 19",
+      "text": "Two hundred and thirty-three people.\nThirteen domes in one ring.\nAnd almost nothing they eat travels further than a few minutes' walk.\n\nNot long ago, the food came from far away — carried by trucks across a tired land.\nHere, breakfast grows twenty paces from the bed.\n\nOne full day inside a dome cell, in 2 minutes 49 seconds: the sunrise through the glass, mango and fig, coffee and cacao climbing toward the light, the food forest with its hens and geese and bees, the commons where young and old learn from each other — and the night.\n\nNothing here was handed down from a distant capital.\nEvery dome was raised by the people who now live beneath it.\n\nThis is day 19 of building Maia City in public — first in game, then in real.\nThe goal: a city with 1 million co-founders.\n\nFollow the build → https://maia.city\n\n0:00 Sunrise over the domes\n0:26 Where the food used to come from\n0:38 Breakfast, twenty paces from the bed\n1:17 The food forest\n1:48 Thirteen domes around the commons\n2:21 Night falls\n\nVoice: Spuds Oxley · original score · filmed inside avenCITY Sandbox 4 · a self-sufficient city of geodesic domes, food forests and solar glass",
+      "format": "video",
+      "variant": "G",
+      "scheduled_at": "2026-09-28T11:00:00+02:00"
+    },
+    {
+      "platform": "linkedin",
+      "aspect": "16:9",
+      "codec": "h264",
+      "text": "Not long ago, the people who live here bought almost everything they ate from far away — carried by trucks across a tired land.\n\nToday, 233 of them grow almost all of it a few minutes' walk from where they sleep.\n\nUnder the glass, mango and fig, coffee and cacao climb in layers toward the light.\nThe glass that shelters them is also their power.\nBetween the domes: a food forest, hens beneath the trees, geese by the water, bees among the blossoms.\n\n13 domes stand in one ring — one dome cell.\nAt its centre, the great dome is the commons: workshops where young and old learn from each other, and a stone theatre open to every one of them.\n\nNothing here was handed down from a distant capital. Every dome was raised by the people who now live beneath it.\n\nThis is day 19 of building Maia City in public — first in game, then in real. The film runs 2 minutes 49 seconds: one full day, sunrise to night.\n\nThe goal is a city with 1 million co-founders.\nThe first dome cell has 233.\n\nWould you live here?",
+      "format": "video",
+      "variant": "G",
+      "scheduled_at": "2026-09-28T12:30:00+02:00"
+    },
+    {
+      "platform": "x",
+      "format": "thread",
+      "scheduled_at": "2026-09-28T14:00:00+02:00",
+      "text": "We filmed one whole day inside the city we are building.\n\n2 minutes 49 seconds, 42 shots, all inside our game. How:",
+      "thread": [
+        "We filmed one whole day inside the city we are building.\n\n2 minutes 49 seconds, 42 shots, all inside our game. How:",
+        "A game draws each frame as fast as it can — record it while it plays and every heavy frame stutters. So our camera takes the clock away from the game: every frame exactly 1/30 s after the last. The world waits for the camera.",
+        "The script came first, from what is true in the game: 233 people, 13 domes, almost nothing they eat from further than a few minutes' walk. Every shot is cut on its word — the mango is on screen when you hear \"mango\".",
+        "One line had nothing to show: \"carried by trucks across a tired land\". Beyond the game's edge was an empty plain. So we built a set just for the camera: ploughed fields, a highway, power lines, eight trucks.",
+        "Then the traffic stops dead. One beat of silence. Birds. \"Here… breakfast grows twenty paces from the bed.\"\n\nThe full film: link below. Day 19 of building Maia City — first in game, then in real."
+      ]
+    },
+    {
+      "platform": "x",
+      "aspect": "16:9",
+      "codec": "h264",
+      "text": "233 people.\n13 domes.\nAlmost nothing they eat travels further than a few minutes' walk.\n\nDay 19 of building Maia City: one full day inside a dome cell, sunrise to night, in 2:49.\n\nFirst in game, then in real.",
+      "format": "video",
+      "variant": "G",
+      "scheduled_at": "2026-09-28T18:00:00+02:00"
+    },
+    {
+      "platform": "instagram",
+      "aspect": "9:16",
+      "codec": "h264",
+      "text": "Not long ago, their food came from far away.\nNow breakfast grows twenty paces from the bed.\n\n233 settlers, 13 geodesic domes and a food forest: day 19 of building Maia City, a self-sufficient city — first in game, then in real.\n\nThe full film is on our profile.",
+      "placement": "reel",
+      "format": "reel",
+      "variant": "H",
+      "scheduled_at": "2026-09-28T17:00:00+02:00"
+    },
+    {
+      "platform": "instagram",
+      "aspect": "1:1",
+      "codec": "h264",
+      "text": "Breakfast grows twenty paces from the bed.\n\n233 settlers. 13 geodesic domes. A food forest of mango, fig, coffee and cacao — and almost nothing they eat travels further than a few minutes' walk.\n\nOne full day inside a self-sufficient dome cell, sunrise to night: day 19 of building Maia City, first in game, then in real.",
+      "placement": "feed",
+      "format": "video",
+      "variant": "G",
+      "scheduled_at": "2026-09-28T19:30:00+02:00"
+    }
+  ]
+}

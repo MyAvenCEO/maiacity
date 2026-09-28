@@ -8,10 +8,11 @@
 -->
 <script lang="ts">
 	import { base } from '$app/paths';
+	import { goto } from '$app/navigation';
 	import { onMount } from 'svelte';
+	import { remember } from '$lib/app/session';
 	import {
 		founderCount,
-		may,
 		me,
 		passkeysAvailable,
 		rename,
@@ -52,7 +53,9 @@
 		try {
 			founder = await run();
 			name = founder.name;
-			count = await founderCount().catch(() => count);
+			remember(true);
+			// signed in: on into the city's own rooms
+			return void (await goto(`${base}/app/`));
 		} catch (e) {
 			// A cancelled passkey prompt is not a failure worth shouting about.
 			const message = (e as Error).message ?? '';
@@ -78,6 +81,7 @@
 
 	async function leave() {
 		await signOut();
+		remember(false);
 		founder = null;
 		name = '';
 	}
@@ -117,9 +121,7 @@
 			{#if saved}<p class="note ok">Saved.</p>{/if}
 			{#if error}<p class="note bad">{error}</p>{/if}
 
-			{#if may(founder, 'ideas:admin') || may(founder, 'media:admin')}
-				<p class="already"><a class="quiet" href="{base}/admin/">Open the admin: ideas and media →</a></p>
-			{/if}
+			<p class="already"><a class="pill-btn" href="{base}/app/">Open your dashboard →</a></p>
 
 			<button class="quiet" onclick={leave}>Sign out on this device</button>
 		{:else}

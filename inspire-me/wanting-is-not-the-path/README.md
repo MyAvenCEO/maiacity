@@ -2,6 +2,7 @@
 title: A decision cuts off every other option
 originalTitle: "The Moment You Decide, Everything Changes"
 source: https://www.youtube.com/watch?v=DD7bHSxV-EM
+thumbnail: bafkreidjh677xclt7ljyw5xaxrc7hed22xjhmtajpw5u5xg4fdnd6mzgya.jpg
 type: video
 author: Jodie Jackson
 authorUrl: https://www.youtube.com/@ItsJodieJackson

@@ -89,7 +89,7 @@ export async function mountVillage(container: HTMLElement, onProgress: (label: s
 	let nightNow = 0
 
 	/* ── the sky, and a sun that follows the in-game clock ── */
-	const dev = window as unknown as { __interiorHour?: number }
+	const dev = window as unknown as { __interiorHour?: number; __exposure?: number }
 	/** the hour the sky shows when it is kept at day: late morning, the shadows still long enough to read */
 	const DAY_HOUR = 11
 	let keepDay = false
@@ -159,7 +159,8 @@ export async function mountVillage(container: HTMLElement, onProgress: (label: s
 		fill.color.set('#f4f0e6').lerp(moon, 1 - day)
 		;(scene.fog as THREE.Fog).color.set('#e3e9e6').lerp(new THREE.Color('#1c2438'), 1 - day)
 		scene.environmentIntensity = 0.12 + 0.18 * day
-		renderer.toneMappingExposure = 0.42 + 0.5 * (1 - day)
+		// the film camera (scripts/film) may open the lens for a dark shot: a multiplier, 1 in the game
+		renderer.toneMappingExposure = (0.42 + 0.5 * (1 - day)) * (dev.__exposure ?? 1)
 		glowMat.emissiveIntensity = 0.1 + 2.4 * (1 - THREE.MathUtils.smoothstep(e, -0.02, 0.18))
 		nightNow = 1 - THREE.MathUtils.smoothstep(e, -0.02, 0.18)
 		for (const dm of built.values()) dm.setHour(hour)
@@ -1210,6 +1211,8 @@ export async function mountVillage(container: HTMLElement, onProgress: (label: s
 		domes,
 		water: waterPts,
 		playgrounds: PLAYGROUNDS,
+		/** set the sun to an hour now, not at the next once-a-second check (the film's time-lapses) */
+		sun: (hour: number) => setSun(hour),
 		fly: (x: number, y: number, z: number, yw: number, p: number) => (flying = [x, y, z, yw, p]),
 		place: (x: number, z: number, yw: number, p: number, y = 0) => {
 			flying = null

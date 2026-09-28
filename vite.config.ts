@@ -18,7 +18,16 @@ export default defineConfig({
 			adapter: adapter({ fallback: '404.html' }),
 
 			// GitHub Pages serves the project site under /<repo>; CI sets BASE_PATH.
-			paths: { base: (process.env.BASE_PATH ?? '') as '' | `/${string}` }
+			paths: { base: (process.env.BASE_PATH ?? '') as '' | `/${string}` },
+
+			// a link to a journal day that is not published yet: its page comes with it being published — a warning,
+			// not a failed build; any other missing page still stops the build
+			prerender: {
+				handleHttpError: ({ path, referrer, message }) => {
+					if (/^\/blog\/day-/.test(path)) return console.warn(`not published yet: ${path} (linked from ${referrer})`);
+					throw new Error(message);
+				}
+			}
 		})
 	],
 	server: {

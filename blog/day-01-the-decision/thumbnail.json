@@ -1,0 +1,37 @@
+{
+  "frame": "bafybeigbh6cqekv5kj6lg7wqp7bgeg7ssvpblgvouldwly7dp6d3664wfe.png",
+  "shapes": [
+    "16x9",
+    "1x1",
+    "9x16",
+    "5x2"
+  ],
+  "title": {
+    "kicker": "The",
+    "big": "1 million lives",
+    "line": "decision",
+    "after": "\u2014 I almost didn't dare to take"
+  },
+  "place": {
+    "1x1": "bottom",
+    "9x16": "bottom"
+  },
+  "width": {
+    "16x9": "46%",
+    "5x2": "38%"
+  },
+  "frames": {
+    "9x16": "bafybeid3pj26yr3r3wpy7lywjcjofu53fqwqwmcyelpeuakohqwp6xjutm.jpg"
+  },
+  "cards": {
+    "16x9": "bafybeihm6zduqv4ne2giebbtla7gudrnrxivjk4bg6lmeepg6uv2udv5je",
+    "1x1": "bafkreihpxfd3piyklvwpxqzkmmfzq3heuloalbatpguf5eyytlx3gh4f7u",
+    "9x16": "bafybeif7vxspiikzwtvvp3v4cnfcnqj43u3gyqqixrewlutrmvycgufnou",
+    "5x2": "bafybeigfmdeszs4sehqv4ohxptpjk4mymc6qi2alc7ilghz6gzmadrjo7i"
+  },
+  "hooks": {
+    "16x9": "bafybeibjuy3ql64epmmzfzxsb4xi35n4kjm6u22nh6mv4xqc6g6w5rhmge",
+    "1x1": "bafkreicdwjol3w2moaerkjeab2hbpkk5we6ydjmhr5ut4lntrsgazpir6u",
+    "9x16": "bafybeifgozfn7l6gny3aruydh5ydgzhoeuxlen3gvpk7xg6flpjofyai6y"
+  }
+}

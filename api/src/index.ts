@@ -16,11 +16,12 @@ import { ledgerView } from "./ledger/view";
 import { assignRole, can, capabilities, createRole, deleteRole, initRoles, listRoles, RoleError, setRoleCaps } from "./acl";
 import { CAPABILITIES } from "./caps";
 import { addIdea, deleteIdea, IdeaError, listIdeas, updateIdea } from "./ideas";
-import { finishUpload, have, listMedia, markDistributed, MediaError, mediaInfo, namePath, publicManifest, putPart, readMedia, retag, startUpload, undistributed } from "./media";
+import { describe, finishUpload, have, listMedia, markDistributed, MediaError, mediaInfo, publicManifest, putPart, readMedia, retag, startUpload, undistributed } from "./media";
 import { approveDevice, deviceInfo, KeyError, keyHolder, redeemDevice, revokeKey, startDevice } from "./keys";
 import { canDistribute, distributePending } from "./bunny";
 import { createTimeline, deleteTimeline, listTimelines, saveTimeline, TimelineError } from "./timelines";
-import { CHANNELS, ContentError, createContent, deleteContent, KINDS, listContent, saveContent, STATUSES } from "./content";
+import { claimRender, queueRender, RenderError, rendersOf, reportRender } from "./renders";
+import { CHANNELS, ContentError, createContent, deleteContent, FORMATS, KINDS, listContent, saveContent, saveDay, savePosts, STATUSES } from "./content";
 import { format, gameClock, calendar, parse } from "../../game/time";
 
 const PORT = Number(process.env.PORT ?? 3000);
@@ -105,7 +106,7 @@ async function allowed(req: Request, cap: string): Promise<{ id: string; role: s
 
 /** Turn a thrown ledger, role or notebook error into a response a person can read. */
 function fail(req: Request, e: unknown) {
-  if (e instanceof LedgerError || e instanceof RoleError || e instanceof IdeaError || e instanceof KeyError || e instanceof MediaError || e instanceof TimelineError || e instanceof ContentError) return json(req, { error: e.message }, { status: e.status });
+  if (e instanceof LedgerError || e instanceof RoleError || e instanceof IdeaError || e instanceof KeyError || e instanceof MediaError || e instanceof TimelineError || e instanceof ContentError || e instanceof RenderError) return json(req, { error: e.message }, { status: e.status });
   console.error(e);
   return json(req, { error: "Something went wrong on our side." }, { status: 500 });
 }
@@ -521,14 +522,15 @@ const server = Bun.serve({
         return json(req, { have: await have(Array.isArray(cids) ? cids.map(String) : []) });
       },
     },
-    "/api/media/paths": {
+    // what is known about a file the library holds: title, description, tags, meta, public (the seed step sends it)
+    "/api/media/describe": {
       OPTIONS: preflight,
       POST: async (req) => {
         const me = await allowed(req, "media:admin");
         if (me instanceof Response) return me;
         try {
           const body = await readJson(req);
-          await namePath(body?.path, body?.cid, body?.meta);
+          await describe(body?.cid, body);
           return json(req, { ok: true });
         } catch (e) {
           return fail(req, e);
@@ -611,16 +613,16 @@ const server = Bun.serve({
       },
     },
 
+    // a file by its CID, for anyone who has the CID (the list stays the admin's): the site loads a file from here
+    // until its copy on the CDN is made — locally, always
     "/api/media/:cid": {
       OPTIONS: preflight,
       GET: async (req) => {
-        const me = await allowed(req, "media:admin");
-        if (me instanceof Response) return me;
         const info = await mediaInfo(req.params.cid);
         if (!info) return json(req, { error: "No such file." }, { status: 404 });
         // a CID never changes its bytes: cache it for good, and answer byte ranges so a video can seek
         // Vary: Origin, always: an <img> (no Origin) and a fetch (with one) must not share a cached answer
-        const head = { ...cors(req), Vary: "Origin", "Content-Type": info.mime, "Accept-Ranges": "bytes", ETag: `"${req.params.cid}"`, "Cache-Control": "private, max-age=31536000, immutable" };
+        const head = { ...cors(req), Vary: "Origin", "Content-Type": info.mime, "Accept-Ranges": "bytes", ETag: `"${req.params.cid}"`, "Cache-Control": "public, max-age=31536000, immutable" };
         const range = /^bytes=(\d*)-(\d*)$/.exec(req.headers.get("range") ?? "");
         if (range && info.size > 0) {
           const start = range[1] ? Number(range[1]) : Math.max(0, info.size - Number(range[2]));
@@ -676,6 +678,86 @@ const server = Bun.serve({
       },
     },
 
+    // Exporting a timeline: the studio queues a render; a worker claims it, reports, and hands back the film.
+    "/api/timelines/:id/renders": {
+      OPTIONS: preflight,
+      GET: async (req) => {
+        const me = await allowed(req, "media:admin");
+        if (me instanceof Response) return me;
+        return json(req, await rendersOf(req.params.id));
+      },
+      POST: async (req) => {
+        const me = await allowed(req, "media:admin");
+        if (me instanceof Response) return me;
+        try {
+          return json(req, await queueRender(me.id, req.params.id), { status: 201 });
+        } catch (e) {
+          return fail(req, e);
+        }
+      },
+    },
+    "/api/renders/claim": {
+      OPTIONS: preflight,
+      POST: async (req) => {
+        const me = await allowed(req, "media:admin");
+        if (me instanceof Response) return me;
+        const job = await claimRender();
+        return job ? json(req, job) : new Response(null, { status: 204, headers: cors(req) });
+      },
+    },
+    "/api/renders/:id": {
+      OPTIONS: preflight,
+      PUT: async (req) => {
+        const me = await allowed(req, "media:admin");
+        if (me instanceof Response) return me;
+        try {
+          return json(req, await reportRender(req.params.id, (await readJson(req)) ?? {}));
+        } catch (e) {
+          return fail(req, e);
+        }
+      },
+    },
+
+    // A film's posts, written where the film is made (the same key as the media and the render worker)
+    "/api/timelines/:id/posts": {
+      OPTIONS: preflight,
+      PUT: async (req) => {
+        const me = await allowed(req, "media:admin");
+        if (me instanceof Response) return me;
+        try {
+          const body = ((await readJson(req)) ?? {}) as { title?: string; posts?: unknown };
+          return json(req, await savePosts(me.id, req.params.id, body.posts as never, body.title));
+        } catch (e) {
+          return fail(req, e);
+        }
+      },
+    },
+
+    // The days on the board, for the pipeline (publish step): where each stands and when it goes out
+    "/api/content/days": {
+      OPTIONS: preflight,
+      GET: async (req) => {
+        const me = await allowed(req, "media:admin");
+        if (me instanceof Response) return me;
+        const items = (await listContent()).filter((i) => i.project);
+        return json(req, { items: items.map(({ project, title, status, scheduled_at, source }) => ({ project, title, status, scheduled_at, source })) });
+      },
+    },
+
+    // A day, derived from its base article: written where the article is (the same key as the film pipeline)
+    "/api/content/days/:project": {
+      OPTIONS: preflight,
+      PUT: async (req) => {
+        const me = await allowed(req, "media:admin");
+        if (me instanceof Response) return me;
+        try {
+          return json(req, await saveDay(me.id, decodeURIComponent(req.params.project), ((await readJson(req)) ?? {}) as never));
+        } catch (e) {
+          return fail(req, e);
+        }
+      },
+    },
+
     // The publishing calendar.
     "/api/content": {
       OPTIONS: preflight,
@@ -683,7 +765,7 @@ const server = Bun.serve({
         const me = await allowed(req, "content:admin");
         if (me instanceof Response) return me;
         const u = new URL(req.url);
-        return json(req, { items: await listContent(u.searchParams.get("from") ?? undefined, u.searchParams.get("to") ?? undefined), kinds: KINDS, channels: CHANNELS, statuses: STATUSES });
+        return json(req, { items: await listContent(u.searchParams.get("from") ?? undefined, u.searchParams.get("to") ?? undefined), kinds: KINDS, channels: CHANNELS, formats: FORMATS, statuses: STATUSES });
       },
       POST: async (req) => {
         const me = await allowed(req, "content:admin");

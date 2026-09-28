@@ -4,7 +4,10 @@
 	a crescendo whose lines grow as they build, and the creed as the close.
 -->
 <script lang="ts">
-	import { base } from '$app/paths';
+	import { asset } from '$lib/media/url';
+	// the banner (a woman on a mountain top at sunrise) and Samuel's portrait, by CID
+	const BANNER = 'bafybeifeluwlsey3m6cto3th3ak22lb2g7cum627fwp6ivvu4mi6nk4voi.jpg';
+	const SAMUEL = 'bafybeigc4o3dpecqu3pvrzldsjie6b2xs7sdjeetuafxbjqckqnabiy5d4.jpg';
 
 	// the banner is optional: without the illustration the headline simply
 	// stands on the page
@@ -33,7 +36,7 @@
 		{#if banner}
 			<div class="banner">
 				<img
-					src="{base}/manifesto-banner.jpg"
+					src={asset(BANNER)}
 					alt="A woman on a mountain top at sunrise, arms wide open over the sea."
 				/>
 			</div>
@@ -98,7 +101,7 @@
 		</p>
 		<p class="creed">when we unite in vision, the impossible becomes possible.</p>
 		<p class="signature">
-			<img src="{base}/samuel.jpg" alt="" />
+			<img src={asset(SAMUEL)} alt="" />
 			<span>avenSAMUEL</span>
 		</p>
 	</footer>

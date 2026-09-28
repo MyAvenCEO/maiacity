@@ -302,5 +302,129 @@ export const MIGRATIONS: Migration[] = [
       CREATE INDEX ix_content_when ON content_items (scheduled_at);
     `,
   },
+  {
+    // Timelines grouped as variants of one project: "Day 19" with its variants A, B, C… — a new cut is a variant
+    // of the same film, not a new film.
+    id: "0011-timeline-variants",
+    sql: `
+      ALTER TABLE timelines ADD COLUMN project TEXT;
+      ALTER TABLE timelines ADD COLUMN variant TEXT;
+      CREATE INDEX ix_timelines_project ON timelines (project, variant);
+    `,
+  },
+  {
+    // Render jobs: the studio asks for a timeline to be exported; a render worker (bun film worker, wherever
+    // ffmpeg and Chrome are) takes the job, renders the timeline and puts the film into the library.
+    id: "0012-render-jobs",
+    sql: `
+      CREATE TABLE render_jobs (
+        id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        timeline_id UUID NOT NULL REFERENCES timelines(id) ON DELETE CASCADE,
+        status      TEXT NOT NULL DEFAULT 'queued' CHECK (status IN ('queued', 'rendering', 'done', 'failed')),
+        progress    REAL NOT NULL DEFAULT 0,
+        note        TEXT,
+        output_cid  TEXT,
+        founder_id  TEXT REFERENCES founders(id) ON DELETE SET NULL,
+        created     TIMESTAMPTZ NOT NULL DEFAULT now(),
+        updated     TIMESTAMPTZ NOT NULL DEFAULT now()
+      );
+      CREATE INDEX ix_render_jobs_open ON render_jobs (status, created);
+    `,
+  },
+  {
+    // A line on what a timeline variant is — "40 stills cut on the words, own score" — shown under its title.
+    id: "0013-timeline-description",
+    sql: `ALTER TABLE timelines ADD COLUMN description TEXT;`,
+  },
+  {
+    // A render's files on the calendar: every format a film is delivered in, each with the channels it is for
+    // (YouTube: the 4K master; X, LinkedIn: 1080 H.264; TikTok, Reels, Shorts: 9:16) — ready for the upload step
+    // (Zernio) to post. One calendar item per timeline, updated by each new render.
+    id: "0014-content-deliveries",
+    sql: `
+      ALTER TABLE content_items ADD COLUMN deliveries JSONB NOT NULL DEFAULT '[]';
+      ALTER TABLE content_items ADD COLUMN timeline_id UUID REFERENCES timelines(id) ON DELETE SET NULL;
+      CREATE UNIQUE INDEX ix_content_timeline ON content_items (timeline_id) WHERE timeline_id IS NOT NULL;
+    `,
+  },
+  {
+    // The posts a film goes out as, one per platform: its title, text and hashtags, which of the film's files and
+    // which thumbnail it carries — written ready for the upload step (Zernio), shown in the calendar as previews.
+    id: "0015-content-posts",
+    sql: `ALTER TABLE content_items ADD COLUMN posts JSONB NOT NULL DEFAULT '[]';`,
+  },
+  {
+    // One board for everything we put out: a content snippet moves idea → draft → review → scheduled → delivered.
+    // The ideas notebook's open ideas become its first column (the swipe file). A film is one snippet, whatever
+    // its cuts: every timeline of a project (the full film, the Reel) delivers onto the same item. Four channels
+    // for now: YouTube, LinkedIn, Instagram, X.
+    id: "0016-content-flow",
+    sql: `
+      ALTER TABLE content_items DROP CONSTRAINT IF EXISTS content_items_status_check;
+      UPDATE content_items SET status = CASE status WHEN 'ready' THEN 'review' WHEN 'published' THEN 'delivered' ELSE status END;
+      ALTER TABLE content_items ADD CONSTRAINT content_items_status_check CHECK (status IN ('idea', 'draft', 'review', 'scheduled', 'delivered'));
+      UPDATE content_items SET channels = ARRAY(SELECT c FROM unnest(channels) c WHERE c IN ('youtube', 'linkedin', 'instagram', 'x'));
+      ALTER TABLE content_items ADD COLUMN project TEXT;
+      UPDATE content_items i SET project = t.project FROM timelines t WHERE i.timeline_id = t.id AND t.project IS NOT NULL;
+      UPDATE content_items SET project = NULL
+        WHERE project IS NOT NULL AND id NOT IN (SELECT DISTINCT ON (project) id FROM content_items WHERE project IS NOT NULL ORDER BY project, created);
+      DROP INDEX IF EXISTS ix_content_timeline;
+      CREATE UNIQUE INDEX ix_content_project ON content_items (project) WHERE project IS NOT NULL;
+      INSERT INTO content_items (title, kind, status, body, founder_id, created)
+        SELECT left(split_part(body, E'\n', 1), 200), 'post', 'idea', body, author_id, created_at FROM ideas WHERE NOT done;
+      UPDATE ideas SET done = true WHERE NOT done;
+    `,
+  },
+  {
+    // A day's base article: the single source everything that day derives from (the film's script, the posts, the
+    // X thread, the Reel). The article lives in the repo (blog/day-NN-…/post.md); the item keeps its text and path.
+    id: "0017-content-source",
+    sql: `ALTER TABLE content_items ADD COLUMN source TEXT;`,
+  },
+  {
+    // Draft is the base article alone; moving on to "derivatives" locks it, and everything is derived from it then.
+    // "review" was the same stage under another name.
+    id: "0018-content-derivatives-stage",
+    sql: `
+      ALTER TABLE content_items DROP CONSTRAINT IF EXISTS content_items_status_check;
+      UPDATE content_items SET status = 'derivatives' WHERE status = 'review';
+      ALTER TABLE content_items ADD CONSTRAINT content_items_status_check CHECK (status IN ('idea', 'draft', 'derivatives', 'scheduled', 'delivered'));
+    `,
+  },
+  {
+    // The last stage of a card is "published" — the blog post is out, and its derivatives with it.
+    id: "0019-content-published",
+    sql: `
+      ALTER TABLE content_items DROP CONSTRAINT IF EXISTS content_items_status_check;
+      UPDATE content_items SET status = 'published' WHERE status = 'delivered';
+      ALTER TABLE content_items ADD CONSTRAINT content_items_status_check CHECK (status IN ('idea', 'draft', 'derivatives', 'scheduled', 'published'));
+    `,
+  },
+  {
+    // Before the article: the hook — the day's title, set into its title cards (every thumbnail, every shape).
+    // The article is written from it.
+    id: "0020-content-hook",
+    sql: `
+      ALTER TABLE content_items DROP CONSTRAINT IF EXISTS content_items_status_check;
+      ALTER TABLE content_items ADD CONSTRAINT content_items_status_check CHECK (status IN ('idea', 'hook', 'draft', 'derivatives', 'scheduled', 'published'));
+      ALTER TABLE content_items ADD COLUMN hook TEXT;
+    `,
+  },
+  {
+    // The library is flat: a file is its CID, and what is known about it — a title, a description, tags, whether it
+    // is public (made into a copy on the CDN). Names (paths) are gone; a file is found by its CID or its tags.
+    id: "0021-media-without-paths",
+    sql: `
+      ALTER TABLE media ADD COLUMN IF NOT EXISTS title TEXT NOT NULL DEFAULT '';
+      ALTER TABLE media ADD COLUMN IF NOT EXISTS description TEXT NOT NULL DEFAULT '';
+      ALTER TABLE media ADD COLUMN IF NOT EXISTS public BOOLEAN NOT NULL DEFAULT false;
+      UPDATE media m SET title = coalesce(nullif(m.meta->>'title', ''),
+        (SELECT regexp_replace(regexp_replace(min(p.path), '^.*/', ''), '[.][^.]+$', '') FROM media_paths p WHERE p.cid = m.cid), '');
+      UPDATE media SET public = true WHERE distributed_at IS NOT NULL;
+      ALTER TABLE uploads ALTER COLUMN path DROP NOT NULL;
+      ALTER TABLE uploads ADD COLUMN IF NOT EXISTS info JSONB NOT NULL DEFAULT '{}'::jsonb;
+      DROP TABLE media_paths;
+    `,
+  },
 ];
 

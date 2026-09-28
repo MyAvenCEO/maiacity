@@ -3,20 +3,23 @@ title: The 1 million lives decision I almost didn't dare to take
 subtitle: Day 01 — a city of a million co-founders, carried alone for years, and the day the vision stopped being mine alone to carry.
 day: 1
 author: avenSAMUEL
-authorImage: /samuel.jpg
+authorImage: bafybeigc4o3dpecqu3pvrzldsjie6b2xs7sdjeetuafxbjqckqnabiy5d4.jpg
 authorRole: Building maiaCITY
 date: 2026-06-21
-cover: /day-01-the-decision/cover.jpg
-poster: /day-01-the-decision/banner.png
-coverAlt: Day 01 — press play.
+cover: bafybeihm6zduqv4ne2giebbtla7gudrnrxivjk4bg6lmeepg6uv2udv5je.jpg
+coverPosition: top
+banner: bafybeigfmdeszs4sehqv4ohxptpjk4mymc6qi2alc7ilghz6gzmadrjo7i.jpg
+poster: bafkreihpxfd3piyklvwpxqzkmmfzq3heuloalbatpguf5eyytlx3gh4f7u.jpg
+coverAlt: Samuel on a garden bench — "The 1 million lives decision — I almost didn't dare to take".
 video: e6cac7a1-def6-494f-9c6e-a4c20ace7dd6
-videoLocal: /day-01-the-decision/DAY0001_TheDecision.mp4
+videoLocal: bafybeihknzv6kdnp2iyw72ctzrcnmm5iwgvbfkisr6xn2toixbcl4kocry.mp4
 videoAspect: '1 / 1'
 videoLibrary: 754181
 excerpt: >-
   There is a city I have walked through a thousand times, and nobody else has ever been there.
   Day 01 is the day the door opens. Watch it first.
 categories: [self, game]
+draft: true
 ---
 
 There is a city I have walked through a thousand times, and nobody else has ever been there.

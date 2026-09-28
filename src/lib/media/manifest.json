@@ -1,994 +1,2765 @@
 {
-	"/authors/andrew.jpg": {
-		"cid": "bafkreib2t7zozoxhelmzzhc44ef4bwhxfvmfq34i7wenigl7tjdzc4adia",
-		"url": "/media/bafkreib2t7zozoxhelmzzhc44ef4bwhxfvmfq34i7wenigl7tjdzc4adia.jpg"
-	},
-	"/authors/arte.jpg": {
-		"cid": "bafkreihaulfpjkrvlwfs2ej4txaesw76qll3445flmsfuqgzbucsfztcga",
-		"url": "/media/bafkreihaulfpjkrvlwfs2ej4txaesw76qll3445flmsfuqgzbucsfztcga.jpg"
-	},
-	"/authors/celastrina-calea.jpg": {
-		"cid": "bafkreian2n7vmwzqd3pzlry7lqbip72xztx6ykzkj7ervyk7ftvdodhd54",
-		"url": "/media/bafkreian2n7vmwzqd3pzlry7lqbip72xztx6ykzkj7ervyk7ftvdodhd54.jpg"
-	},
-	"/authors/chris-williamson.jpg": {
-		"cid": "bafkreie5e7obpxnssrasmdxn2iyvlxaf2cde2vo37rfl5iag7qxckfzrf4",
-		"url": "/media/bafkreie5e7obpxnssrasmdxn2iyvlxaf2cde2vo37rfl5iag7qxckfzrf4.jpg"
-	},
-	"/authors/dw-planet-a.jpg": {
-		"cid": "bafkreifrd6ygmwy7rgji6qmlhbjlqo2y2b6z7pvb6bzjzdaxsiwgb5bxaa",
-		"url": "/media/bafkreifrd6ygmwy7rgji6qmlhbjlqo2y2b6z7pvb6bzjzdaxsiwgb5bxaa.jpg"
-	},
-	"/authors/elias-ford.jpg": {
-		"cid": "bafkreiapfrzxtppcrcbgg6zpjesr77ri2kvva3mxknrafg63iy3gq6wfiu",
-		"url": "/media/bafkreiapfrzxtppcrcbgg6zpjesr77ri2kvva3mxknrafg63iy3gq6wfiu.jpg"
-	},
-	"/authors/homestead-roots.jpg": {
-		"cid": "bafkreierqcaksl3imnrhy5zbf5hl4zumoa3hex7d7wx7cyo2oe2xhgpiyq",
-		"url": "/media/bafkreierqcaksl3imnrhy5zbf5hl4zumoa3hex7d7wx7cyo2oe2xhgpiyq.jpg"
-	},
-	"/authors/johnny-harris.jpg": {
-		"cid": "bafkreihpemgjjezstgfg5otljprruwtpcrrma2p6tnztv3wyhirhxfvw7q",
-		"url": "/media/bafkreihpemgjjezstgfg5otljprruwtpcrrma2p6tnztv3wyhirhxfvw7q.jpg"
-	},
-	"/authors/leave-curious.jpg": {
-		"cid": "bafkreidvee2cpo6lddm5uzqdcwol2cmlmdus7d4ylgylfntvz5cps3txbq",
-		"url": "/media/bafkreidvee2cpo6lddm5uzqdcwol2cmlmdus7d4ylgylfntvz5cps3txbq.jpg"
-	},
-	"/authors/shaun-hines.jpg": {
-		"cid": "bafkreidodruqvnaoopfdtyywpuc5rze2f5xdffuh2x3ferrfyua22djo6q",
-		"url": "/media/bafkreidodruqvnaoopfdtyywpuc5rze2f5xdffuh2x3ferrfyua22djo6q.jpg"
-	},
-	"/authors/shaun-overton.jpg": {
-		"cid": "bafkreiacr7kfqa3tr5a5fwjx666nsreldllms4mzvefzoelyuuiawtst5e",
-		"url": "/media/bafkreiacr7kfqa3tr5a5fwjx666nsreldllms4mzvefzoelyuuiawtst5e.jpg"
-	},
-	"/authors/the-ash-files.jpg": {
-		"cid": "bafkreicma7yerh765koebsgk55pgulwtsdjwj5l7dmd5w4ayyvwy7jhm3y",
-		"url": "/media/bafkreicma7yerh765koebsgk55pgulwtsdjwj5l7dmd5w4ayyvwy7jhm3y.jpg"
-	},
-	"/day-01-the-decision/banner.png": {
-		"cid": "bafybeigbh6cqekv5kj6lg7wqp7bgeg7ssvpblgvouldwly7dp6d3664wfe",
-		"url": "/media/bafybeigbh6cqekv5kj6lg7wqp7bgeg7ssvpblgvouldwly7dp6d3664wfe.png"
-	},
-	"/day-01-the-decision/cover.jpg": {
-		"cid": "bafybeifeluwlsey3m6cto3th3ak22lb2g7cum627fwp6ivvu4mi6nk4voi",
-		"url": "/media/bafybeifeluwlsey3m6cto3th3ak22lb2g7cum627fwp6ivvu4mi6nk4voi.jpg"
-	},
-	"/day-02-the-first-brick/6_3jR_-wbqUweA7iZy396_3nsjI3Wg.jpg": {
-		"cid": "bafybeidlxbk75toyq3pg574ciqzfaf2ep3kf44ogzseklmtmuwi5s3jpfm",
-		"url": "/media/bafybeidlxbk75toyq3pg574ciqzfaf2ep3kf44ogzseklmtmuwi5s3jpfm.jpg"
-	},
-	"/day-02-the-first-brick/6dIScRIYuNkYoDzenoV8J_Wt3H5dUw.jpg": {
-		"cid": "bafybeickgal3i43zycctaue4rtc2lt5ec2u2ix4pugb72gqseqojx6k7g4",
-		"url": "/media/bafybeickgal3i43zycctaue4rtc2lt5ec2u2ix4pugb72gqseqojx6k7g4.jpg"
-	},
-	"/day-02-the-first-brick/Lu7L8HWPvs_bMctUIgqOC_csCmDl8j.jpg": {
-		"cid": "bafybeibrdwd2fqbjhltxvpbohmzxphwr4qfm5u6orbbvbbikkcgw3a5frm",
-		"url": "/media/bafybeibrdwd2fqbjhltxvpbohmzxphwr4qfm5u6orbbvbbikkcgw3a5frm.jpg"
-	},
-	"/day-02-the-first-brick/NKVIRh7Iu3I3oLE2EHJwZ_NrAiJlj7.jpg": {
-		"cid": "bafybeic75lwtffacroif25aqhjp3ez4nkfjfo72qz65ix4hfegpom4tyla",
-		"url": "/media/bafybeic75lwtffacroif25aqhjp3ez4nkfjfo72qz65ix4hfegpom4tyla.jpg"
-	},
-	"/day-02-the-first-brick/PwmKKG7I6Wi3f7TRlKKmV_DgxWHxUM.jpg": {
-		"cid": "bafybeiajrbfnkds6cpwu26c3ri7llswevkhtidu4jcqwdbwyv7f57jtkq4",
-		"url": "/media/bafybeiajrbfnkds6cpwu26c3ri7llswevkhtidu4jcqwdbwyv7f57jtkq4.jpg"
-	},
-	"/day-02-the-first-brick/alp_tzIhSZCTOCiV6o5nO_g9jR0km3.jpg": {
-		"cid": "bafybeieiwbf2i2f42sjb4q7t523wwnmlu5zhb74jkwjhvjhhxoaimaucmm",
-		"url": "/media/bafybeieiwbf2i2f42sjb4q7t523wwnmlu5zhb74jkwjhvjhhxoaimaucmm.jpg"
-	},
-	"/day-02-the-first-brick/hzUX4j7ZpU9VsRCjaYuMO_WG67YZVO.jpg": {
-		"cid": "bafybeiekl5cqpeh2ljpbaimu5czsmk3svu6inl74mhtnfn5rh67fyfk4ia",
-		"url": "/media/bafybeiekl5cqpeh2ljpbaimu5czsmk3svu6inl74mhtnfn5rh67fyfk4ia.jpg"
-	},
-	"/day-02-the-first-brick/maia-village.jpg": {
-		"cid": "bafybeibf7t7f3hetseqmmkrpfuqngmjwtu6bxmweboays7dzsn36bkwstm",
-		"url": "/media/bafybeibf7t7f3hetseqmmkrpfuqngmjwtu6bxmweboays7dzsn36bkwstm.jpg"
-	},
-	"/day-02-the-first-brick/nQwFJ5NkfH1DL1fVV35PN_LOahOJDP.jpg": {
-		"cid": "bafybeibqrlvenmbhvnkjv7wykckcni2nne2rpdtozwjzd4g4sjx3gawa5u",
-		"url": "/media/bafybeibqrlvenmbhvnkjv7wykckcni2nne2rpdtozwjzd4g4sjx3gawa5u.jpg"
-	},
-	"/day-02-the-first-brick/sYtFCtO9iKSBQ8TrfnJbw_UUCj632a.jpg": {
-		"cid": "bafybeiconqxhsc3xentgl6ertqkwxxug2vlijhsl7i4ck3u5iiyhvgg7qy",
-		"url": "/media/bafybeiconqxhsc3xentgl6ertqkwxxug2vlijhsl7i4ck3u5iiyhvgg7qy.jpg"
-	},
-	"/day-03-what-a-dome-looks-like/7Wz4fBD8lsbefrDfSsm0q_gNeZVF2m.jpg": {
-		"cid": "bafybeigqlxfthpwklvszhn7l5toqzkodpgqyuvcccbukl4vw3x2ajqvbvq",
-		"url": "/media/bafybeigqlxfthpwklvszhn7l5toqzkodpgqyuvcccbukl4vw3x2ajqvbvq.jpg"
-	},
-	"/day-03-what-a-dome-looks-like/CFMETfOTeKpV2sH6wsZT4_N7LCrDWp.jpg": {
-		"cid": "bafybeih7x73qielq3zswbfkfclo5hrlx5cuvea56qrrdpjwsq72zuyxehq",
-		"url": "/media/bafybeih7x73qielq3zswbfkfclo5hrlx5cuvea56qrrdpjwsq72zuyxehq.jpg"
-	},
-	"/day-03-what-a-dome-looks-like/JVxhHZgPZ8roIr9pwFwq8_XuQkLkxI.jpg": {
-		"cid": "bafybeiaos26l67jhejmtcwxauoztww75ixq3xhkfvyd6szrvptyt45cpyi",
-		"url": "/media/bafybeiaos26l67jhejmtcwxauoztww75ixq3xhkfvyd6szrvptyt45cpyi.jpg"
-	},
-	"/day-03-what-a-dome-looks-like/SqdC2j4cdisCvDXNNjSP9_dgzM1r9U.jpg": {
-		"cid": "bafybeifvuhsrz2p5pz4nhkm44ydcmmr3zgnpzte2elgta2g57grxbwn7gq",
-		"url": "/media/bafybeifvuhsrz2p5pz4nhkm44ydcmmr3zgnpzte2elgta2g57grxbwn7gq.jpg"
-	},
-	"/day-03-what-a-dome-looks-like/W2amjTRdcn8Qk6_mo8EvR_4NjXWTb4.jpg": {
-		"cid": "bafybeih7gm52ssvroddwaeqabet7ckxsq5g6wkvjpwhkmah7g37kjcfevi",
-		"url": "/media/bafybeih7gm52ssvroddwaeqabet7ckxsq5g6wkvjpwhkmah7g37kjcfevi.jpg"
-	},
-	"/day-03-what-a-dome-looks-like/byIB5gCdrUZ48uGJHaEWt_I1ZgWZ4f.jpg": {
-		"cid": "bafybeihikj5fn2ypgl7wmpts67yiojrccng2ihegovcpasdtz3cqu4rrm4",
-		"url": "/media/bafybeihikj5fn2ypgl7wmpts67yiojrccng2ihegovcpasdtz3cqu4rrm4.jpg"
-	},
-	"/day-03-what-a-dome-looks-like/lNrmpq-PNt9IPXwAzJWqx_aH4SqMKK.jpg": {
-		"cid": "bafybeickyfggtd47zzsomah3bi6n2szhqoyeieq6rpoidhxwurjt7glghe",
-		"url": "/media/bafybeickyfggtd47zzsomah3bi6n2szhqoyeieq6rpoidhxwurjt7glghe.jpg"
-	},
-	"/day-03-what-a-dome-looks-like/lplP754hucYk1GP-cdia5_XvA2Z8B6.jpg": {
-		"cid": "bafybeidmmdlzowqrp6j23pc532jkdde6am5ycounlv7q3u3eptg7gekesa",
-		"url": "/media/bafybeidmmdlzowqrp6j23pc532jkdde6am5ycounlv7q3u3eptg7gekesa.jpg"
-	},
-	"/day-03-what-a-dome-looks-like/pSGwwwR6k_PMUnCsN_oVW_Qx0n05t4.jpg": {
-		"cid": "bafybeifo4ae7yd74ihuk5mmhhflglnyacfvpeczkrxw5l7nuu47kkje64a",
-		"url": "/media/bafybeifo4ae7yd74ihuk5mmhhflglnyacfvpeczkrxw5l7nuu47kkje64a.jpg"
-	},
-	"/day-03-what-a-dome-looks-like/xsN9RYb5ExZtsNYtHDNra_qkM0bNfT.jpg": {
-		"cid": "bafybeiecc63xwsuxnj27a2xgyddi5wxoji6ksjgrtdhboou6agyag2fata",
-		"url": "/media/bafybeiecc63xwsuxnj27a2xgyddi5wxoji6ksjgrtdhboou6agyag2fata.jpg"
-	},
-	"/day-05-the-first-settlement/dome-cell-neighbourhood.jpg": {
-		"cid": "bafkreidb6dx5ija5yeewxvlliz7nvhqurcrxwk4uozka476of6b26zocxa",
-		"url": "/media/bafkreidb6dx5ija5yeewxvlliz7nvhqurcrxwk4uozka476of6b26zocxa.jpg"
-	},
-	"/day-05-the-first-settlement/f_H-7YDGzpA3Po-2O3XPY_WYkrZ7CF.jpg": {
-		"cid": "bafybeih4yyf4chicgq55chevarfzm63n2vjlwtaew2tgkabuikcgvpc2a4",
-		"url": "/media/bafybeih4yyf4chicgq55chevarfzm63n2vjlwtaew2tgkabuikcgvpc2a4.jpg"
-	},
-	"/day-05-the-first-settlement/factory-bamboo.jpg": {
-		"cid": "bafkreihkylj5jhpppwtamg3rissrfi563t3ynpsddg4tzy7s5vmma75qui",
-		"url": "/media/bafkreihkylj5jhpppwtamg3rissrfi563t3ynpsddg4tzy7s5vmma75qui.jpg"
-	},
-	"/day-05-the-first-settlement/factory-dome-1.png": {
-		"cid": "bafybeic7j2mtxnimme6qlil6kdvqa3x2cy5wm54zaxu663mimekssfrqa4",
-		"url": "/media/bafybeic7j2mtxnimme6qlil6kdvqa3x2cy5wm54zaxu663mimekssfrqa4.png"
-	},
-	"/day-05-the-first-settlement/factory-dome-2.png": {
-		"cid": "bafybeiau34pecjiweugoyefuv7k3uhcvqqsswohyzuycz3eedsh43e2qau",
-		"url": "/media/bafybeiau34pecjiweugoyefuv7k3uhcvqqsswohyzuycz3eedsh43e2qau.png"
-	},
-	"/day-05-the-first-settlement/factory-dome-3.png": {
-		"cid": "bafybeica4p4vcxvpptmioiuyvadwr2xy27piotbz5pq52wvk4qrn5orqmi",
-		"url": "/media/bafybeica4p4vcxvpptmioiuyvadwr2xy27piotbz5pq52wvk4qrn5orqmi.png"
-	},
-	"/day-05-the-first-settlement/factory-dome-4.png": {
-		"cid": "bafybeic4jm3kafm4dmrytgqwqfhvgapogn7i6n25uezgkt2iczqmh3qcdq",
-		"url": "/media/bafybeic4jm3kafm4dmrytgqwqfhvgapogn7i6n25uezgkt2iczqmh3qcdq.png"
-	},
-	"/day-05-the-first-settlement/factory-hemp.jpg": {
-		"cid": "bafkreiffwcca62bwfyu2o36swlm6zygrylqwsq3ptplqjuj2jblseb7fwe",
-		"url": "/media/bafkreiffwcca62bwfyu2o36swlm6zygrylqwsq3ptplqjuj2jblseb7fwe.jpg"
-	},
-	"/day-05-the-first-settlement/factory-lifetrac.jpg": {
-		"cid": "bafkreial4ohpafkbelyghie4tp6vpiukdxb2oqhcy6dnutv3xmsmpz5yum",
-		"url": "/media/bafkreial4ohpafkbelyghie4tp6vpiukdxb2oqhcy6dnutv3xmsmpz5yum.jpg"
-	},
-	"/day-05-the-first-settlement/factory-power-cube.jpg": {
-		"cid": "bafkreibvu6aexsiifvzgrwkygmimzmluhn5tp4kkqnblmlh7hlwoicygsa",
-		"url": "/media/bafkreibvu6aexsiifvzgrwkygmimzmluhn5tp4kkqnblmlh7hlwoicygsa.jpg"
-	},
-	"/day-05-the-first-settlement/factory-solar.jpg": {
-		"cid": "bafkreidbu27uyyxn4dvid255ghdqlk6dui2r2v5foe4cucaiir2rcljhqa",
-		"url": "/media/bafkreidbu27uyyxn4dvid255ghdqlk6dui2r2v5foe4cucaiir2rcljhqa.jpg"
-	},
-	"/day-05-the-first-settlement/level-1.png": {
-		"cid": "bafybeichrshko3dbstqpronxlxemh7aswi3ska4o6bg3xindz3wfzhoq7a",
-		"url": "/media/bafybeichrshko3dbstqpronxlxemh7aswi3ska4o6bg3xindz3wfzhoq7a.png"
-	},
-	"/day-05-the-first-settlement/level-2.png": {
-		"cid": "bafybeig2qkd5hrqd4hsbhec77l2dbfdvimt7fkobxhssiraw6n2r3dcvv4",
-		"url": "/media/bafybeig2qkd5hrqd4hsbhec77l2dbfdvimt7fkobxhssiraw6n2r3dcvv4.png"
-	},
-	"/day-05-the-first-settlement/level-3.png": {
-		"cid": "bafybeigwpyluiczqvgo7ivsptwhy7r3my5uhphbhczv5npim5qxizmz7cq",
-		"url": "/media/bafybeigwpyluiczqvgo7ivsptwhy7r3my5uhphbhczv5npim5qxizmz7cq.png"
-	},
-	"/day-05-the-first-settlement/level-4.png": {
-		"cid": "bafybeigmwypglzwafzxgzq4i6rxdadxn2oixppk6nihgdwt672wh3kt4pm",
-		"url": "/media/bafybeigmwypglzwafzxgzq4i6rxdadxn2oixppk6nihgdwt672wh3kt4pm.png"
-	},
-	"/day-05-the-first-settlement/level-5.png": {
-		"cid": "bafybeicrqkota27vkup4ejfe2uc6wh2ilf6u3qte6o24xuxcx57srqdm7u",
-		"url": "/media/bafybeicrqkota27vkup4ejfe2uc6wh2ilf6u3qte6o24xuxcx57srqdm7u.png"
-	},
-	"/day-05-the-first-settlement/overview-1.png": {
-		"cid": "bafybeifzf6h3ppfcf5m4ufyykhckkpgjrotop7rvhdz6xzlew6tq3ljuyu",
-		"url": "/media/bafybeifzf6h3ppfcf5m4ufyykhckkpgjrotop7rvhdz6xzlew6tq3ljuyu.png"
-	},
-	"/day-05-the-first-settlement/overview-2.png": {
-		"cid": "bafybeigjz5yznvsi6q6ubxyx565jjt4x5bqhoohlw3xbyjnetpwzg6nmvm",
-		"url": "/media/bafybeigjz5yznvsi6q6ubxyx565jjt4x5bqhoohlw3xbyjnetpwzg6nmvm.png"
-	},
-	"/day-05-the-first-settlement/z6GzRVgA4xYiPWADzbORj_SvHTgurF.jpg": {
-		"cid": "bafkreifiphjalmso2w77nls62tvuuiqgb5h6n336cmic7hztelyyvrut7q",
-		"url": "/media/bafkreifiphjalmso2w77nls62tvuuiqgb5h6n336cmic7hztelyyvrut7q.jpg"
-	},
-	"/day-06-the-food-forest/forest-canopy.jpg": {
-		"cid": "bafybeib6dxd3hpuoutwvltjn4v645ud3mttaffeu7zhu2ndl4tgim2nigi",
-		"url": "/media/bafybeib6dxd3hpuoutwvltjn4v645ud3mttaffeu7zhu2ndl4tgim2nigi.jpg"
-	},
-	"/day-06-the-food-forest/forest-coop.jpg": {
-		"cid": "bafybeicainjst73mfljxz6ujhmwbkiza2dns3hzfkvhdsyhabwj2psx2dy",
-		"url": "/media/bafybeicainjst73mfljxz6ujhmwbkiza2dns3hzfkvhdsyhabwj2psx2dy.jpg"
-	},
-	"/day-06-the-food-forest/forest-evening-walk.jpg": {
-		"cid": "bafybeid2cykgdxwarojhjpfljswivmdlcdp3uglynacievducpexvqxiri",
-		"url": "/media/bafybeid2cykgdxwarojhjpfljswivmdlcdp3uglynacievducpexvqxiri.jpg"
-	},
-	"/day-06-the-food-forest/forest-fire.jpg": {
-		"cid": "bafybeicgl23wu7j5mxsd5uwxhm4dbqkojwnpyrvlbozucxptp3kng5urr4",
-		"url": "/media/bafybeicgl23wu7j5mxsd5uwxhm4dbqkojwnpyrvlbozucxptp3kng5urr4.jpg"
-	},
-	"/day-06-the-food-forest/forest-golden.jpg": {
-		"cid": "bafybeicf2vqsvhjm4bahluzmqiztw2fmrm72bv4agbqsunebwk5svd2l3y",
-		"url": "/media/bafybeicf2vqsvhjm4bahluzmqiztw2fmrm72bv4agbqsunebwk5svd2l3y.jpg"
-	},
-	"/day-06-the-food-forest/forest-pond.jpg": {
-		"cid": "bafybeicuuk4r2mfszu4hcbusbhiopha7evskbwonwaztplg6lidx3gqnce",
-		"url": "/media/bafybeicuuk4r2mfszu4hcbusbhiopha7evskbwonwaztplg6lidx3gqnce.jpg"
-	},
-	"/day-06-the-food-forest/forest-swing.jpg": {
-		"cid": "bafybeihwqjr7liunzza5vfnc4j3sesuz4id7bwkpglrmzdbaylvodpf6cy",
-		"url": "/media/bafybeihwqjr7liunzza5vfnc4j3sesuz4id7bwkpglrmzdbaylvodpf6cy.jpg"
-	},
-	"/day-06-the-food-forest/forest-walks.jpg": {
-		"cid": "bafybeigedmw6dsle4uk5iguqhsfjn3zqwtd6yh65m4pxq33bcdgxx5x6bm",
-		"url": "/media/bafybeigedmw6dsle4uk5iguqhsfjn3zqwtd6yh65m4pxq33bcdgxx5x6bm.jpg"
-	},
-	"/day-08-avenmaia/4R_wS4Iy3MJS1t-MiaDJE_Ac5am0m3.jpg": {
-		"cid": "bafybeievccju2l3o5iojkjyckfk2yuddv4d4a6i3p3fv5iiqn5fgav6iim",
-		"url": "/media/bafybeievccju2l3o5iojkjyckfk2yuddv4d4a6i3p3fv5iiqn5fgav6iim.jpg"
-	},
-	"/day-08-avenmaia/AvenMaia.jpg": {
-		"cid": "bafybeiem4dwsswaqvl5g2zz3m47tph5idqtalkmxvddw7bzv5pcaitrsom",
-		"url": "/media/bafybeiem4dwsswaqvl5g2zz3m47tph5idqtalkmxvddw7bzv5pcaitrsom.jpg"
-	},
-	"/day-08-avenmaia/R4t60oBqyYJegXF5x0Hiv_mQfvDpEm.jpg": {
-		"cid": "bafybeid3pxubimt3z3ggiso2zjkcuueowyac4mrqouf6fe7tjdizrkawlu",
-		"url": "/media/bafybeid3pxubimt3z3ggiso2zjkcuueowyac4mrqouf6fe7tjdizrkawlu.jpg"
-	},
-	"/day-08-avenmaia/RzfxdTccoGNzyw8Ntwyw9_KxWeEKbJ.jpg": {
-		"cid": "bafybeifqv4ggxeyhol4ur4ofths34p6yexhoefamyp55kdevmucy4o35dm",
-		"url": "/media/bafybeifqv4ggxeyhol4ur4ofths34p6yexhoefamyp55kdevmucy4o35dm.jpg"
-	},
-	"/day-08-avenmaia/jfw8_bLrbTgGfzoAJ0G1M_2tJJpuNy.jpg": {
-		"cid": "bafybeiee3z5223ur53uaz3lclm5adx62vdzwrccukbfynfyz7zxygq5jg4",
-		"url": "/media/bafybeiee3z5223ur53uaz3lclm5adx62vdzwrccukbfynfyz7zxygq5jg4.jpg"
-	},
-	"/day-08-avenmaia/kdNOd8GVpIwzUHKBT8T4-_CMV3EzuM.jpg": {
-		"cid": "bafybeiedfeua6cy7nvhvlovk3hjzeec7gzhvsktq7ljgtxp46yrug2sh24",
-		"url": "/media/bafybeiedfeua6cy7nvhvlovk3hjzeec7gzhvsktq7ljgtxp46yrug2sh24.jpg"
-	},
-	"/day-08-avenmaia/maia.jpg": {
-		"cid": "bafybeifuvjjq3qqxrysdykiczmaf7kodfkydf4c3hygfnfyouhk5jie2ju",
-		"url": "/media/bafybeifuvjjq3qqxrysdykiczmaf7kodfkydf4c3hygfnfyouhk5jie2ju.jpg"
-	},
-	"/day-08-avenmaia/xQynnN_TAMJEnQResy0u4_6jjbRbcb.jpg": {
-		"cid": "bafybeibsue5jkgjccnwzftrjcg4wdwdnsx2ggrooslctxwecfvcu7pmy3u",
-		"url": "/media/bafybeibsue5jkgjccnwzftrjcg4wdwdnsx2ggrooslctxwecfvcu7pmy3u.jpg"
-	},
-	"/day-10-a-heart-every-two-minutes/first-login.jpg": {
-		"cid": "bafkreifxski5dgh52krenelzm333twvhcbdhuct3kcm4l3q47cgm5ca5he",
-		"url": "/media/bafkreifxski5dgh52krenelzm333twvhcbdhuct3kcm4l3q47cgm5ca5he.jpg"
-	},
-	"/day-10-a-heart-every-two-minutes/first-mint.jpg": {
-		"cid": "bafkreiatcvryc2f3uk7kiu6njxafosplbrvaqsywlyuen4tvq24lafotvq",
-		"url": "/media/bafkreiatcvryc2f3uk7kiu6njxafosplbrvaqsywlyuen4tvq24lafotvq.jpg"
-	},
-	"/day-10-a-heart-every-two-minutes/mint-waiting.jpg": {
-		"cid": "bafkreiac3rz4e5guc7a5hm22sddyfvsskak6a5sst57i4subv2uawmwg7e",
-		"url": "/media/bafkreiac3rz4e5guc7a5hm22sddyfvsskak6a5sst57i4subv2uawmwg7e.jpg"
-	},
-	"/day-11-the-earth-in-cards/bakery-founded.jpg": {
-		"cid": "bafybeihmgp5mbjvcxdcrrf7lwwvwtfyyrz76qlkxzgmltevl6ecyf7pig4",
-		"url": "/media/bafybeihmgp5mbjvcxdcrrf7lwwvwtfyyrz76qlkxzgmltevl6ecyf7pig4.jpg"
-	},
-	"/day-11-the-earth-in-cards/choosing-a-card.jpg": {
-		"cid": "bafybeidl6xvzeon2biogdc5dwzg3jcvdoa6lriqehp3bet4bimorhyjuqq",
-		"url": "/media/bafybeidl6xvzeon2biogdc5dwzg3jcvdoa6lriqehp3bet4bimorhyjuqq.jpg"
-	},
-	"/day-11-the-earth-in-cards/citizens.jpg": {
-		"cid": "bafkreia3m55ifzqshqjud6kccuv2cngdneeqv4d2gnterlttackz4jrgjy",
-		"url": "/media/bafkreia3m55ifzqshqjud6kccuv2cngdneeqv4d2gnterlttackz4jrgjy.jpg"
-	},
-	"/day-11-the-earth-in-cards/europe.jpg": {
-		"cid": "bafybeigouozvy6ji6ggmg4owq2idkakqnb3cah5uhf77dbh33d3eoqjnii",
-		"url": "/media/bafybeigouozvy6ji6ggmg4owq2idkakqnb3cah5uhf77dbh33d3eoqjnii.jpg"
-	},
-	"/day-11-the-earth-in-cards/the-founding-form.jpg": {
-		"cid": "bafybeihlgao5lpdbijrbyf3twtgcyjgugumqczaohhm7mmm6z7m3lfkwr4",
-		"url": "/media/bafybeihlgao5lpdbijrbyf3twtgcyjgugumqczaohhm7mmm6z7m3lfkwr4.jpg"
-	},
-	"/day-11-the-earth-in-cards/the-real-earth.jpg": {
-		"cid": "bafybeifoiwgql3rhg7afmfwdayt3sk22oztcx2uzcwpqfuf6hh7hcfqczm",
-		"url": "/media/bafybeifoiwgql3rhg7afmfwdayt3sk22oztcx2uzcwpqfuf6hh7hcfqczm.jpg"
-	},
-	"/day-11-the-earth-in-cards/three-towers.jpg": {
-		"cid": "bafkreihqvad5gyvqnx3ss5n4v67fakbuxetjl2xf3s3omyjmj7tg7xegja",
-		"url": "/media/bafkreihqvad5gyvqnx3ss5n4v67fakbuxetjl2xf3s3omyjmj7tg7xegja.jpg"
-	},
-	"/day-12-the-first-believer-pays-least/before-investing.jpg": {
-		"cid": "bafkreihd7uac6frwkruegzqpvtqm7gj6ez6om3vizy6wfxkf4fpnhqocem",
-		"url": "/media/bafkreihd7uac6frwkruegzqpvtqm7gj6ez6om3vizy6wfxkf4fpnhqocem.jpg"
-	},
-	"/day-12-the-first-believer-pays-least/emission.jpg": {
-		"cid": "bafkreibyyxh6savdubcjil7mb7cauye5facacxvxovmkacnte2va6xfknq",
-		"url": "/media/bafkreibyyxh6savdubcjil7mb7cauye5facacxvxovmkacnte2va6xfknq.jpg"
-	},
-	"/day-12-the-first-believer-pays-least/ledger.jpg": {
-		"cid": "bafkreietcm3jzu7sa62lzg6bwxyqdqadi46b66baepc6cyzw76dbw4y4tq",
-		"url": "/media/bafkreietcm3jzu7sa62lzg6bwxyqdqadi46b66baepc6cyzw76dbw4y4tq.jpg"
-	},
-	"/day-12-the-first-believer-pays-least/the-coops.jpg": {
-		"cid": "bafkreiepk5f3vwdfxpmklrkdfykltlg6l5ybkn463o2qdp23ilzswgajca",
-		"url": "/media/bafkreiepk5f3vwdfxpmklrkdfykltlg6l5ybkn463o2qdp23ilzswgajca.jpg"
-	},
-	"/day-12-the-first-believer-pays-least/towers-up-close.jpg": {
-		"cid": "bafkreibuzb47ghihq26hwjmmzfvylhpperjgrm5ea4bxabpxbjgpfmo5ay",
-		"url": "/media/bafkreibuzb47ghihq26hwjmmzfvylhpperjgrm5ea4bxabpxbjgpfmo5ay.jpg"
-	},
-	"/day-13-invited-home/a-citizen.jpg": {
-		"cid": "bafybeibsbjhpo5ympbq4ddde4xqezhvon2c4luzoup6rbyemqswkgtvngy",
-		"url": "/media/bafybeibsbjhpo5ympbq4ddde4xqezhvon2c4luzoup6rbyemqswkgtvngy.jpg"
-	},
-	"/day-13-invited-home/citizenship.jpg": {
-		"cid": "bafybeifehn5jpnnz25m2dm7mci4bfshgisvkoc5hy7psdj6ros2lrtxcae",
-		"url": "/media/bafybeifehn5jpnnz25m2dm7mci4bfshgisvkoc5hy7psdj6ros2lrtxcae.jpg"
-	},
-	"/day-13-invited-home/first-hearts.jpg": {
-		"cid": "bafkreigta54qlbxhyt4vghoef7h3ilhlvauyyww6aa3y73543iaznm2emy",
-		"url": "/media/bafkreigta54qlbxhyt4vghoef7h3ilhlvauyyww6aa3y73543iaznm2emy.jpg"
-	},
-	"/day-13-invited-home/home.jpg": {
-		"cid": "bafybeifgqbuftq3ltw6jlwms6huhz7lj2pr5jw22ozm7ut5vdopr5vqqya",
-		"url": "/media/bafybeifgqbuftq3ltw6jlwms6huhz7lj2pr5jw22ozm7ut5vdopr5vqqya.jpg"
-	},
-	"/day-13-invited-home/riverside.jpg": {
-		"cid": "bafkreic23hzhjv5t2zihhv6nvbrtvt373zvwvz7eijkk5nbsnh2rymtftq",
-		"url": "/media/bafkreic23hzhjv5t2zihhv6nvbrtvt373zvwvz7eijkk5nbsnh2rymtftq.jpg"
-	},
-	"/day-13-invited-home/the-invitation.jpg": {
-		"cid": "bafybeiharwui6hfbkflvkm5tuwq346wp4o3qak2jr6vddob4zeus7b2cry",
-		"url": "/media/bafybeiharwui6hfbkflvkm5tuwq346wp4o3qak2jr6vddob4zeus7b2cry.jpg"
-	},
-	"/day-13-invited-home/the-island.jpg": {
-		"cid": "bafkreib5cibe3pf6x55ftzto3yqka6kb4ht3cmxz6h7qyzx3jw44nm7sgu",
-		"url": "/media/bafkreib5cibe3pf6x55ftzto3yqka6kb4ht3cmxz6h7qyzx3jw44nm7sgu.jpg"
-	},
-	"/day-13-invited-home/the-planet.jpg": {
-		"cid": "bafybeicafiplfeyys2w6qlgp3slpe5p5ch4lzsdrlbrhe2ngfglhhxiafi",
-		"url": "/media/bafybeicafiplfeyys2w6qlgp3slpe5p5ch4lzsdrlbrhe2ngfglhhxiafi.jpg"
-	},
-	"/day-14-one-tent-to-233/cover.jpg": {
-		"cid": "bafkreigwihkbogtk66poocacgudis3rrr6ler2rmgnfdmpxnjupbkmi6xq",
-		"url": "/media/bafkreigwihkbogtk66poocacgudis3rrr6ler2rmgnfdmpxnjupbkmi6xq.jpg"
-	},
-	"/day-14-one-tent-to-233/level-01.jpg": {
-		"cid": "bafkreigiahc735viqlld6uikt5bv34m3b5rscp7pfjo2xaj6qvy6vp5s3a",
-		"url": "/media/bafkreigiahc735viqlld6uikt5bv34m3b5rscp7pfjo2xaj6qvy6vp5s3a.jpg"
-	},
-	"/day-14-one-tent-to-233/level-02.jpg": {
-		"cid": "bafkreiaecoji3fxqs6mitgyphyqyoauz44eblwbyafxfv7jht4rmb6ihtq",
-		"url": "/media/bafkreiaecoji3fxqs6mitgyphyqyoauz44eblwbyafxfv7jht4rmb6ihtq.jpg"
-	},
-	"/day-14-one-tent-to-233/level-03.jpg": {
-		"cid": "bafkreierv4blz62fogogoe6dw2mfkcaizcl77p34pfegvbjx3babv3i2ne",
-		"url": "/media/bafkreierv4blz62fogogoe6dw2mfkcaizcl77p34pfegvbjx3babv3i2ne.jpg"
-	},
-	"/day-14-one-tent-to-233/level-04.jpg": {
-		"cid": "bafkreigab75kg6l2dyezdsyagzoplgkhus7nzdzsussejou547p74mzyya",
-		"url": "/media/bafkreigab75kg6l2dyezdsyagzoplgkhus7nzdzsussejou547p74mzyya.jpg"
-	},
-	"/day-14-one-tent-to-233/level-05.jpg": {
-		"cid": "bafkreigvoihx2iwofcrf2ce6ccngkobrtztaw6wjlfqqeh35us4qsy72f4",
-		"url": "/media/bafkreigvoihx2iwofcrf2ce6ccngkobrtztaw6wjlfqqeh35us4qsy72f4.jpg"
-	},
-	"/day-14-one-tent-to-233/level-06.jpg": {
-		"cid": "bafkreidgdneqgljtsdzyy5cpv4tytjl5ro5e4kc5v6xvkqqnbcbinwwd2q",
-		"url": "/media/bafkreidgdneqgljtsdzyy5cpv4tytjl5ro5e4kc5v6xvkqqnbcbinwwd2q.jpg"
-	},
-	"/day-14-one-tent-to-233/level-07.jpg": {
-		"cid": "bafkreibfr2djce7tnzfdaw5tqfutvyulm3vpupb5uxq4x4y3rf37xsfs4e",
-		"url": "/media/bafkreibfr2djce7tnzfdaw5tqfutvyulm3vpupb5uxq4x4y3rf37xsfs4e.jpg"
-	},
-	"/day-14-one-tent-to-233/level-08.jpg": {
-		"cid": "bafkreiahzypfhykdldiedz7ivsbsfhc6y4vmmyemscwiuo53mmqbat73su",
-		"url": "/media/bafkreiahzypfhykdldiedz7ivsbsfhc6y4vmmyemscwiuo53mmqbat73su.jpg"
-	},
-	"/day-14-one-tent-to-233/level-09.jpg": {
-		"cid": "bafkreidcsfyyj5gwvtosc7ziiyfztol4t74nlv44kkzlsbnfmfi3qrz4i4",
-		"url": "/media/bafkreidcsfyyj5gwvtosc7ziiyfztol4t74nlv44kkzlsbnfmfi3qrz4i4.jpg"
-	},
-	"/day-14-one-tent-to-233/level-10.jpg": {
-		"cid": "bafkreihgpmt3bq5s3o52wvpdqsw72q4jozw7rqnk3hucxpfnevonsa6ezy",
-		"url": "/media/bafkreihgpmt3bq5s3o52wvpdqsw72q4jozw7rqnk3hucxpfnevonsa6ezy.jpg"
-	},
-	"/day-14-one-tent-to-233/level-11.jpg": {
-		"cid": "bafkreig65lvbfzkfxla22cxycrh3t2fmvnckyib2dwyrlxqw2klmw7kooe",
-		"url": "/media/bafkreig65lvbfzkfxla22cxycrh3t2fmvnckyib2dwyrlxqw2klmw7kooe.jpg"
-	},
-	"/day-14-one-tent-to-233/level-12.jpg": {
-		"cid": "bafkreiaquort5ndrfh4qjuiwo4jlso6azz65fhntvfz3vpzuv2iuu6dpo4",
-		"url": "/media/bafkreiaquort5ndrfh4qjuiwo4jlso6azz65fhntvfz3vpzuv2iuu6dpo4.jpg"
-	},
-	"/day-15-inside-the-domes/balcony.jpg": {
-		"cid": "bafybeigk72v3vjv7cjlp7x6yvcnnm7aze4iz6xypiwkhbasxhqvfmvgtnq",
-		"url": "/media/bafybeigk72v3vjv7cjlp7x6yvcnnm7aze4iz6xypiwkhbasxhqvfmvgtnq.jpg"
-	},
-	"/day-15-inside-the-domes/door-from-inside.jpg": {
-		"cid": "bafkreibxxlw5pd2th2mqm5oyyvx5wqsyb56msg727tdoz7q7k3fmsxkuze",
-		"url": "/media/bafkreibxxlw5pd2th2mqm5oyyvx5wqsyb56msg727tdoz7q7k3fmsxkuze.jpg"
-	},
-	"/day-15-inside-the-domes/forest-guilds.jpg": {
-		"cid": "bafybeidceyf4n6nldycil7kowhpbad7h3bf6hojsxzjgx752bva4zabh4q",
-		"url": "/media/bafybeidceyf4n6nldycil7kowhpbad7h3bf6hojsxzjgx752bva4zabh4q.jpg"
-	},
-	"/day-15-inside-the-domes/forest-layers.jpg": {
-		"cid": "bafybeig4unhqo5l2xnz2icoywy5ajhi7g6qyzg5utphkwp2q6qpef42afq",
-		"url": "/media/bafybeig4unhqo5l2xnz2icoywy5ajhi7g6qyzg5utphkwp2q6qpef42afq.jpg"
-	},
-	"/day-15-inside-the-domes/geese.jpg": {
-		"cid": "bafybeifdqzdl6ppstzef7wgjuxt5syp6anrhlwlv5anwt4w2eophkpvjzq",
-		"url": "/media/bafybeifdqzdl6ppstzef7wgjuxt5syp6anrhlwlv5anwt4w2eophkpvjzq.jpg"
-	},
-	"/day-15-inside-the-domes/glamping-door.jpg": {
-		"cid": "bafybeifmnf2q6cykqdepjwoacclxezxe7ogmkeexxevol6fm3najn7mpbu",
-		"url": "/media/bafybeifmnf2q6cykqdepjwoacclxezxe7ogmkeexxevol6fm3najn7mpbu.jpg"
-	},
-	"/day-15-inside-the-domes/glamping-room.jpg": {
-		"cid": "bafybeianomshfgfzo6qtlaa4uvcidnytxgxqtyrr2ed3tv6vq6hcmmegvy",
-		"url": "/media/bafybeianomshfgfzo6qtlaa4uvcidnytxgxqtyrr2ed3tv6vq6hcmmegvy.jpg"
-	},
-	"/day-15-inside-the-domes/glamping-window.jpg": {
-		"cid": "bafybeib3qa5nmscpb2sxelo4j73fft7jgnnouwogtiao2k7hb6bvlgfwxu",
-		"url": "/media/bafybeib3qa5nmscpb2sxelo4j73fft7jgnnouwogtiao2k7hb6bvlgfwxu.jpg"
-	},
-	"/day-15-inside-the-domes/goats.jpg": {
-		"cid": "bafybeiclxy6mmey6l76eeoxwrx2x3bvb52szhrmtbjdhdb32z4cgmd2vua",
-		"url": "/media/bafybeiclxy6mmey6l76eeoxwrx2x3bvb52szhrmtbjdhdb32z4cgmd2vua.jpg"
-	},
-	"/day-15-inside-the-domes/home-commons.jpg": {
-		"cid": "bafybeibvot3un24y66tmpuehokqvskjg6w2rfzal5lcilomnogkmiyoh34",
-		"url": "/media/bafybeibvot3un24y66tmpuehokqvskjg6w2rfzal5lcilomnogkmiyoh34.jpg"
-	},
-	"/day-15-inside-the-domes/home-from-outside.jpg": {
-		"cid": "bafybeihpmew4vpancegu6tfzyh2fo4jcsreltlp6cgnykf7tqhclzfedly",
-		"url": "/media/bafybeihpmew4vpancegu6tfzyh2fo4jcsreltlp6cgnykf7tqhclzfedly.jpg"
-	},
-	"/day-15-inside-the-domes/home-from-the-gallery.jpg": {
-		"cid": "bafybeic6zaq6rv6wqzq3t7yaretzhrqceyr6lke2tuhhp3flk7qryq6ik4",
-		"url": "/media/bafybeic6zaq6rv6wqzq3t7yaretzhrqceyr6lke2tuhhp3flk7qryq6ik4.jpg"
-	},
-	"/day-15-inside-the-domes/home-private-room.jpg": {
-		"cid": "bafybeibnqdpgenp32lk44fguax6vqszav2uwggmcnk4ifjdbugkh2rfvea",
-		"url": "/media/bafybeibnqdpgenp32lk44fguax6vqszav2uwggmcnk4ifjdbugkh2rfvea.jpg"
-	},
-	"/day-15-inside-the-domes/kitchen-garden.jpg": {
-		"cid": "bafybeign2isep3a7pidbvpbmnyq6ec37vhu6xua3bewjv2qqpyfsa3soqi",
-		"url": "/media/bafybeign2isep3a7pidbvpbmnyq6ec37vhu6xua3bewjv2qqpyfsa3soqi.jpg"
-	},
-	"/day-15-inside-the-domes/large-food-forest.jpg": {
-		"cid": "bafybeigfvkrseaplpsiyc5vcb42wvtlxdmz67lmlojnecdvacfrnhsd43y",
-		"url": "/media/bafybeigfvkrseaplpsiyc5vcb42wvtlxdmz67lmlojnecdvacfrnhsd43y.jpg"
-	},
-	"/day-15-inside-the-domes/large-from-outside.jpg": {
-		"cid": "bafybeid4qoaulad5mgr36f264ms7cusktudwgb4fsdg5xn74bf77r43lua",
-		"url": "/media/bafybeid4qoaulad5mgr36f264ms7cusktudwgb4fsdg5xn74bf77r43lua.jpg"
-	},
-	"/day-15-inside-the-domes/large-plaza.jpg": {
-		"cid": "bafybeianxgh5s6aqbrzf7adea76xdwmmurli3qk6rmpoulj62fvdeeajiy",
-		"url": "/media/bafybeianxgh5s6aqbrzf7adea76xdwmmurli3qk6rmpoulj62fvdeeajiy.jpg"
-	},
-	"/day-15-inside-the-domes/large-private-room.jpg": {
-		"cid": "bafybeid6y5oknbazpotdwnrpkovritnlip3ozufrsnc4pzn76htzuu3tqq",
-		"url": "/media/bafybeid6y5oknbazpotdwnrpkovritnlip3ozufrsnc4pzn76htzuu3tqq.jpg"
-	},
-	"/day-15-inside-the-domes/large-terraces.jpg": {
-		"cid": "bafybeifuphgcpqvqlx7dqybbwbnnschpet23z36jvvoqczdzbxndri6wam",
-		"url": "/media/bafybeifuphgcpqvqlx7dqybbwbnnschpet23z36jvvoqczdzbxndri6wam.jpg"
-	},
-	"/day-15-inside-the-domes/master-bakery.jpg": {
-		"cid": "bafybeifa6by2jgibxfl7gotchgqueg4mifntbw6wqgjct5vdbdn3t7sfiq",
-		"url": "/media/bafybeifa6by2jgibxfl7gotchgqueg4mifntbw6wqgjct5vdbdn3t7sfiq.jpg"
-	},
-	"/day-15-inside-the-domes/master-cafe.jpg": {
-		"cid": "bafybeihbyxhnss5e6h2fc6kr5l3lyyddditq3zdzyxerprf7jd72x4uacq",
-		"url": "/media/bafybeihbyxhnss5e6h2fc6kr5l3lyyddditq3zdzyxerprf7jd72x4uacq.jpg"
-	},
-	"/day-15-inside-the-domes/master-coop.jpg": {
-		"cid": "bafkreifra357acxyp24qyy64zi6re6zbpwaxm5e4icov4y57gppowbtw7m",
-		"url": "/media/bafkreifra357acxyp24qyy64zi6re6zbpwaxm5e4icov4y57gppowbtw7m.jpg"
-	},
-	"/day-15-inside-the-domes/master-cowork.jpg": {
-		"cid": "bafybeiafwhd2cxclvc4or6dmeqb5hu2mn7ui6fillvcvtz5vh5g6xnfiiu",
-		"url": "/media/bafybeiafwhd2cxclvc4or6dmeqb5hu2mn7ui6fillvcvtz5vh5g6xnfiiu.jpg"
-	},
-	"/day-15-inside-the-domes/master-forest.jpg": {
-		"cid": "bafybeie26ig57sngmwxxecmt2hmnfnuwem5j2ei3aa4z72rovvk7faeiya",
-		"url": "/media/bafybeie26ig57sngmwxxecmt2hmnfnuwem5j2ei3aa4z72rovvk7faeiya.jpg"
-	},
-	"/day-15-inside-the-domes/master-from-outside.jpg": {
-		"cid": "bafybeidd2dzoahupdha6c3ikw7g6pu42u7u5plxn5t67iihuuf6oiiputy",
-		"url": "/media/bafybeidd2dzoahupdha6c3ikw7g6pu42u7u5plxn5t67iihuuf6oiiputy.jpg"
-	},
-	"/day-15-inside-the-domes/master-garden.jpg": {
-		"cid": "bafybeiczmoikvoublco3tcexkbxpimzeix5ubxeqmlwe5dyqqkeeq4qzoa",
-		"url": "/media/bafybeiczmoikvoublco3tcexkbxpimzeix5ubxeqmlwe5dyqqkeeq4qzoa.jpg"
-	},
-	"/day-15-inside-the-domes/master-onstage.jpg": {
-		"cid": "bafybeif3brasfau7rreha54bntc2ldzu7oqzhislxr3vwqdybouy3d6ahi",
-		"url": "/media/bafybeif3brasfau7rreha54bntc2ldzu7oqzhislxr3vwqdybouy3d6ahi.jpg"
-	},
-	"/day-15-inside-the-domes/master-restaurant.jpg": {
-		"cid": "bafybeibrqh5fjfffcxb4subshx4qsvbwkihakft3hfbo7fudjz6r4pedra",
-		"url": "/media/bafybeibrqh5fjfffcxb4subshx4qsvbwkihakft3hfbo7fudjz6r4pedra.jpg"
-	},
-	"/day-15-inside-the-domes/master-stage.jpg": {
-		"cid": "bafybeificalvj37mltyqcx22es6te5dsizh7cqbxe7zh4do3urme44m3bi",
-		"url": "/media/bafybeificalvj37mltyqcx22es6te5dsizh7cqbxe7zh4do3urme44m3bi.jpg"
-	},
-	"/day-15-inside-the-domes/master-studio.jpg": {
-		"cid": "bafybeiduupoc2g3kpfkgobkpgrkir4ip3b52bjlle77qcrjni7ihag67iq",
-		"url": "/media/bafybeiduupoc2g3kpfkgobkpgrkir4ip3b52bjlle77qcrjni7ihag67iq.jpg"
-	},
-	"/day-15-inside-the-domes/master-woodshop.jpg": {
-		"cid": "bafybeibp7tnnay5r7mfexgdwmi6wbvtb44qkmswjfv5nlcpek6svwjrue4",
-		"url": "/media/bafybeibp7tnnay5r7mfexgdwmi6wbvtb44qkmswjfv5nlcpek6svwjrue4.jpg"
-	},
-	"/day-15-inside-the-domes/second-floor.jpg": {
-		"cid": "bafybeietna3l6kdyvdzrra5txkj37iybxbhwdx2ln4omxpaxpsqaor77ve",
-		"url": "/media/bafybeietna3l6kdyvdzrra5txkj37iybxbhwdx2ln4omxpaxpsqaor77ve.jpg"
-	},
-	"/day-15-inside-the-domes/stairs.jpg": {
-		"cid": "bafybeifwtdibjb6k65cgmylhmh2h63oimqzgwwfzre3jvwxe4xokpcfgei",
-		"url": "/media/bafybeifwtdibjb6k65cgmylhmh2h63oimqzgwwfzre3jvwxe4xokpcfgei.jpg"
-	},
-	"/day-15-inside-the-domes/stepping-inside.jpg": {
-		"cid": "bafkreihthlydt3dwjkhvtqb2vr5yuifxvogv47qy2uh2d42ijyy6huwgk4",
-		"url": "/media/bafkreihthlydt3dwjkhvtqb2vr5yuifxvogv47qy2uh2d42ijyy6huwgk4.jpg"
-	},
-	"/day-15-inside-the-domes/stone-arcade.jpg": {
-		"cid": "bafybeietaqxfyxuljr4cpfcfcl62rhbhufrykzey3vatu2zbtgbjjajlri",
-		"url": "/media/bafybeietaqxfyxuljr4cpfcfcl62rhbhufrykzey3vatu2zbtgbjjajlri.jpg"
-	},
-	"/day-15-inside-the-domes/stream-outside.jpg": {
-		"cid": "bafybeidhsjtrkhd3izafq6vwycbvfvweok3lrk4elwnsmchoz5v456jeey",
-		"url": "/media/bafybeidhsjtrkhd3izafq6vwycbvfvweok3lrk4elwnsmchoz5v456jeey.jpg"
-	},
-	"/day-15-inside-the-domes/tent.jpg": {
-		"cid": "bafybeigrxussxd34hh5e4ua5y2evqu3ehvvutqh3x75mclie7ewsmtmn54",
-		"url": "/media/bafybeigrxussxd34hh5e4ua5y2evqu3ehvvutqh3x75mclie7ewsmtmn54.jpg"
-	},
-	"/day-15-inside-the-domes/terrace-second-floor.jpg": {
-		"cid": "bafybeiacdoje6uikg73k2un75w2l2vtzy45e4quzszfjojkm7w4bis5lxm",
-		"url": "/media/bafybeiacdoje6uikg73k2un75w2l2vtzy45e4quzszfjojkm7w4bis5lxm.jpg"
-	},
-	"/day-15-inside-the-domes/terrace.jpg": {
-		"cid": "bafkreiastlly3plvcygycgcx5b3u2cwfyj2vuvte4xplw5tzs66m3z7n54",
-		"url": "/media/bafkreiastlly3plvcygycgcx5b3u2cwfyj2vuvte4xplw5tzs66m3z7n54.jpg"
-	},
-	"/day-16-the-solar-factory-dome/arc-furnace.jpg": {
-		"cid": "bafkreidacjkmzdeczyoq55qrkp3dtk573lcfzhrv3h673w35kypyx5bnfq",
-		"url": "/media/bafkreidacjkmzdeczyoq55qrkp3dtk573lcfzhrv3h673w35kypyx5bnfq.jpg"
-	},
-	"/day-16-the-solar-factory-dome/cable-drums.jpg": {
-		"cid": "bafkreicejjjdb5rdj52rvixfcdb2h6s5oz5dbahyjjgjdb2gjah3235yfy",
-		"url": "/media/bafkreicejjjdb5rdj52rvixfcdb2h6s5oz5dbahyjjgjdb2gjah3235yfy.jpg"
-	},
-	"/day-16-the-solar-factory-dome/diffusion.jpg": {
-		"cid": "bafkreickqvwpxv56k5qqrx6gxle3zaw5hpbzj5kosj75hh5uf4cjm5ysly",
-		"url": "/media/bafkreickqvwpxv56k5qqrx6gxle3zaw5hpbzj5kosj75hh5uf4cjm5ysly.jpg"
-	},
-	"/day-16-the-solar-factory-dome/dome-kits.jpg": {
-		"cid": "bafkreicgipopc5bdbp4fetzcilawxpnsr3nwvcbisnc7l4gfm4reknznwm",
-		"url": "/media/bafkreicgipopc5bdbp4fetzcilawxpnsr3nwvcbisnc7l4gfm4reknznwm.jpg"
-	},
-	"/day-16-the-solar-factory-dome/float-bath.jpg": {
-		"cid": "bafkreiecayk7ky4a7qmtlruzsiwwux4nyhsnvclvbjhgpm5mxtkpygq3dy",
-		"url": "/media/bafkreiecayk7ky4a7qmtlruzsiwwux4nyhsnvclvbjhgpm5mxtkpygq3dy.jpg"
-	},
-	"/day-16-the-solar-factory-dome/footbridge.jpg": {
-		"cid": "bafkreictuetmvhpdj22tyxcplb2dv6pbfrx2tqjq5bmx3kh7qnjyxnxhwi",
-		"url": "/media/bafkreictuetmvhpdj22tyxcplb2dv6pbfrx2tqjq5bmx3kh7qnjyxnxhwi.jpg"
-	},
-	"/day-16-the-solar-factory-dome/forklift.jpg": {
-		"cid": "bafkreid3aih5ur4sb37go3kpzcmezdyopxm4a675ya5f4svhpnpx3lwchu",
-		"url": "/media/bafkreid3aih5ur4sb37go3kpzcmezdyopxm4a675ya5f4svhpnpx3lwchu.jpg"
-	},
-	"/day-16-the-solar-factory-dome/ingot-pullers.jpg": {
-		"cid": "bafkreicjbi7e5a53jwx63rtn7tkum3au4u7gnwe2zj3hxjhoso3unw33ym",
-		"url": "/media/bafkreicjbi7e5a53jwx63rtn7tkum3au4u7gnwe2zj3hxjhoso3unw33ym.jpg"
-	},
-	"/day-16-the-solar-factory-dome/laminators.jpg": {
-		"cid": "bafkreiafv7yjvtsl73pgpr233nypwqxrlxwcu5ifvrnbgtticzk6g74rie",
-		"url": "/media/bafkreiafv7yjvtsl73pgpr233nypwqxrlxwcu5ifvrnbgtticzk6g74rie.jpg"
-	},
-	"/day-16-the-solar-factory-dome/lanes-cables.jpg": {
-		"cid": "bafkreice3elwes6hbc6ghhf5aig46ov4hgxt4nawukpsknnkhp4pjcae3q",
-		"url": "/media/bafkreice3elwes6hbc6ghhf5aig46ov4hgxt4nawukpsknnkhp4pjcae3q.jpg"
-	},
-	"/day-16-the-solar-factory-dome/lanes-cells.jpg": {
-		"cid": "bafkreihuetjnnjww7fmdwcc346o6m3jj2mltahknqch3anuxif2ew7asqy",
-		"url": "/media/bafkreihuetjnnjww7fmdwcc346o6m3jj2mltahknqch3anuxif2ew7asqy.jpg"
-	},
-	"/day-16-the-solar-factory-dome/lanes-glass.jpg": {
-		"cid": "bafkreifrssarqo3wxbnbk5npnenmydj7ixtui4seimax4uqjudji4tbxhm",
-		"url": "/media/bafkreifrssarqo3wxbnbk5npnenmydj7ixtui4seimax4uqjudji4tbxhm.jpg"
-	},
-	"/day-16-the-solar-factory-dome/lanes-kits.jpg": {
-		"cid": "bafkreidz2tlthwrkbyisrm4er4r5mf4ctiexkmpuqm3u3klr4agu7fv2ge",
-		"url": "/media/bafkreidz2tlthwrkbyisrm4er4r5mf4ctiexkmpuqm3u3klr4agu7fv2ge.jpg"
-	},
-	"/day-16-the-solar-factory-dome/lift-cabin.jpg": {
-		"cid": "bafkreifehyf335hk666ovuofwphxm4aqt7ptdmyaeoliuzbary7bd4doqe",
-		"url": "/media/bafkreifehyf335hk666ovuofwphxm4aqt7ptdmyaeoliuzbary7bd4doqe.jpg"
-	},
-	"/day-16-the-solar-factory-dome/outside.jpg": {
-		"cid": "bafybeig45wxfdyhumukdeqqmmwr3deahmfefvopodemc722by7d5wyxgxu",
-		"url": "/media/bafybeig45wxfdyhumukdeqqmmwr3deahmfefvopodemc722by7d5wyxgxu.jpg"
-	},
-	"/day-16-the-solar-factory-dome/reflow.jpg": {
-		"cid": "bafkreidgqhybskoxfycq24twvjmfbqw5c77jm3kop7liil5c6lyz2jw2mm",
-		"url": "/media/bafkreidgqhybskoxfycq24twvjmfbqw5c77jm3kop7liil5c6lyz2jw2mm.jpg"
-	},
-	"/day-16-the-solar-factory-dome/star.jpg": {
-		"cid": "bafkreid4mjs7g2q7tatzkpux3ragrqq7tstx3r3u2tkxw2aosnucbdim6m",
-		"url": "/media/bafkreid4mjs7g2q7tatzkpux3ragrqq7tstx3r3u2tkxw2aosnucbdim6m.jpg"
-	},
-	"/day-16-the-solar-factory-dome/stringer.jpg": {
-		"cid": "bafkreig36nhvf4xvps2kyabxd6gumll3jmdzut5ba3nezdvuude7ug3duu",
-		"url": "/media/bafkreig36nhvf4xvps2kyabxd6gumll3jmdzut5ba3nezdvuude7ug3duu.jpg"
-	},
-	"/day-16-the-solar-factory-dome/sun-simulator.jpg": {
-		"cid": "bafkreicpxzdk7s67jswna5lpqq3wfgg264j6poekxe4f3d33brpayd3yjq",
-		"url": "/media/bafkreicpxzdk7s67jswna5lpqq3wfgg264j6poekxe4f3d33brpayd3yjq.jpg"
-	},
-	"/day-16-the-solar-factory-dome/tempering.jpg": {
-		"cid": "bafkreifd2nerqt2zirkpjyqlmscncnj7jnif5oanzs7vmrqiyysya4kzoy",
-		"url": "/media/bafkreifd2nerqt2zirkpjyqlmscncnj7jnif5oanzs7vmrqiyysya4kzoy.jpg"
-	},
-	"/day-16-the-solar-factory-dome/warehouse.jpg": {
-		"cid": "bafkreifqhrchqcnxude3mufa2lkjg4judou4ciqd6fs3vjimz6ypcipjkq",
-		"url": "/media/bafkreifqhrchqcnxude3mufa2lkjg4judou4ciqd6fs3vjimz6ypcipjkq.jpg"
-	},
-	"/day-17-one-world-thirteen-domes/aerial.jpg": {
-		"cid": "bafybeiffld6axaecyxr3oq74bzlo3ym5dfapvxptqrokgt7naaxzsqp4oe",
-		"url": "/media/bafybeiffld6axaecyxr3oq74bzlo3ym5dfapvxptqrokgt7naaxzsqp4oe.jpg"
-	},
-	"/day-17-one-world-thirteen-domes/between.jpg": {
-		"cid": "bafybeicszbyydl2mezk3gbtxsnk2mnbxk2cbkimcj42y2ndpd2qpq2w6a4",
-		"url": "/media/bafybeicszbyydl2mezk3gbtxsnk2mnbxk2cbkimcj42y2ndpd2qpq2w6a4.jpg"
-	},
-	"/day-17-one-world-thirteen-domes/cafe.jpg": {
-		"cid": "bafybeia7oc7srhwgpap4pn357ci4fko3scdqbscylnxapqu6zagxgkc7vy",
-		"url": "/media/bafybeia7oc7srhwgpap4pn357ci4fko3scdqbscylnxapqu6zagxgkc7vy.jpg"
-	},
-	"/day-17-one-world-thirteen-domes/coop.jpg": {
-		"cid": "bafybeia44khzkebxjl2gu6foru3wpwlnmsphuq6ctligavygcv7oe66any",
-		"url": "/media/bafybeia44khzkebxjl2gu6foru3wpwlnmsphuq6ctligavygcv7oe66any.jpg"
-	},
-	"/day-17-one-world-thirteen-domes/detail-ring.jpg": {
-		"cid": "bafybeihfydodtzi75eftm2jkg4eyrwmnxbuxbbqi6xaieokfw7kaz7yspy",
-		"url": "/media/bafybeihfydodtzi75eftm2jkg4eyrwmnxbuxbbqi6xaieokfw7kaz7yspy.jpg"
-	},
-	"/day-17-one-world-thirteen-domes/door.jpg": {
-		"cid": "bafybeihw3mty6s5jouclpncggrwpsxbxdupjwkv3p2sukpaoe5l527ievi",
-		"url": "/media/bafybeihw3mty6s5jouclpncggrwpsxbxdupjwkv3p2sukpaoe5l527ievi.jpg"
-	},
-	"/day-17-one-world-thirteen-domes/edge.jpg": {
-		"cid": "bafybeiduvdhl5bi2u353ezludpvn3xsmi2fnodo6s4mqyyvnngpbafjq2u",
-		"url": "/media/bafybeiduvdhl5bi2u353ezludpvn3xsmi2fnodo6s4mqyyvnngpbafjq2u.jpg"
-	},
-	"/day-17-one-world-thirteen-domes/glass.jpg": {
-		"cid": "bafybeicqkczxcgf6zp5f362fldwf2lu554y7asug25vlp5nblpocg7mptm",
-		"url": "/media/bafybeicqkczxcgf6zp5f362fldwf2lu554y7asug25vlp5nblpocg7mptm.jpg"
-	},
-	"/day-17-one-world-thirteen-domes/in.jpg": {
-		"cid": "bafybeidppa36buvhqimnu6ofuemdehwenxrcm7tsiufrze52kscw2ctnde",
-		"url": "/media/bafybeidppa36buvhqimnu6ofuemdehwenxrcm7tsiufrze52kscw2ctnde.jpg"
-	},
-	"/day-17-one-world-thirteen-domes/night.jpg": {
-		"cid": "bafkreicxgqbe5ruoy5mi2b4zbi2zbrmjd5fd5vkcrguyq7kk2d5sorghba",
-		"url": "/media/bafkreicxgqbe5ruoy5mi2b4zbi2zbrmjd5fd5vkcrguyq7kk2d5sorghba.jpg"
-	},
-	"/day-18-homes-and-the-sound-of-the-forest/bath.jpg": {
-		"cid": "bafybeihvesaqpsf6dxu6kr2zgmxeirqc4cs26ahfflfv3vpkte7hxqy4hq",
-		"url": "/media/bafybeihvesaqpsf6dxu6kr2zgmxeirqc4cs26ahfflfv3vpkte7hxqy4hq.jpg"
-	},
-	"/day-18-homes-and-the-sound-of-the-forest/bed.jpg": {
-		"cid": "bafybeialgryk4zwtwrd6tgnge3sv3pn7cw32vvggcph5mew57ez5ccfjoa",
-		"url": "/media/bafybeialgryk4zwtwrd6tgnge3sv3pn7cw32vvggcph5mew57ez5ccfjoa.jpg"
-	},
-	"/day-18-homes-and-the-sound-of-the-forest/daybeds.jpg": {
-		"cid": "bafybeiafiviltkp3akgyc6tez5zgvfu7czexycqr25wpnoycaianixqn4q",
-		"url": "/media/bafybeiafiviltkp3akgyc6tez5zgvfu7czexycqr25wpnoycaianixqn4q.jpg"
-	},
-	"/day-18-homes-and-the-sound-of-the-forest/desk.jpg": {
-		"cid": "bafybeidgrkirdenfiv5cukncgy3acj5kaz7js7rrsvj6tgdhgciwlmluym",
-		"url": "/media/bafybeidgrkirdenfiv5cukncgy3acj5kaz7js7rrsvj6tgdhgciwlmluym.jpg"
-	},
-	"/day-18-homes-and-the-sound-of-the-forest/door.jpg": {
-		"cid": "bafybeid6nb4pjnkokdjjrkq24cckhkkopxyoovmol7pr2sad2lls3mpvyu",
-		"url": "/media/bafybeid6nb4pjnkokdjjrkq24cckhkkopxyoovmol7pr2sad2lls3mpvyu.jpg"
-	},
-	"/day-18-homes-and-the-sound-of-the-forest/forest-floor.jpg": {
-		"cid": "bafybeifzsn4z3sqg5kv2pcdbz7ws4e2mgnlamcyjgqbccgfmnlekcej3u4",
-		"url": "/media/bafybeifzsn4z3sqg5kv2pcdbz7ws4e2mgnlamcyjgqbccgfmnlekcej3u4.jpg"
-	},
-	"/day-18-homes-and-the-sound-of-the-forest/geese.jpg": {
-		"cid": "bafybeih6xnp4yo6vvphmiaanf67buev54ehhbvgmstscaqkfkgt7ri5hny",
-		"url": "/media/bafybeih6xnp4yo6vvphmiaanf67buev54ehhbvgmstscaqkfkgt7ri5hny.jpg"
-	},
-	"/day-18-homes-and-the-sound-of-the-forest/goats.jpg": {
-		"cid": "bafybeihq2fufxv33px64xr3s33osi5aplcmxpguohho45wp4bf3jre5l7e",
-		"url": "/media/bafybeihq2fufxv33px64xr3s33osi5aplcmxpguohho45wp4bf3jre5l7e.jpg"
-	},
-	"/day-18-homes-and-the-sound-of-the-forest/hives.jpg": {
-		"cid": "bafybeiailhelwuia4qdyexsotfj5i4brekr6ouhdivbvfb5rmnbstyltwi",
-		"url": "/media/bafybeiailhelwuia4qdyexsotfj5i4brekr6ouhdivbvfb5rmnbstyltwi.jpg"
-	},
-	"/day-18-homes-and-the-sound-of-the-forest/log.jpg": {
-		"cid": "bafybeigxyo3kdjorgytrjow2nqn6hw3iddljvuufduiomigry46735y6f4",
-		"url": "/media/bafybeigxyo3kdjorgytrjow2nqn6hw3iddljvuufduiomigry46735y6f4.jpg"
-	},
-	"/day-18-homes-and-the-sound-of-the-forest/playground.jpg": {
-		"cid": "bafybeigba7ie5xsgrgq2hjoccyt7plxn6427u7nkxm6e76m6ca7r4eo7dm",
-		"url": "/media/bafybeigba7ie5xsgrgq2hjoccyt7plxn6427u7nkxm6e76m6ca7r4eo7dm.jpg"
-	},
-	"/day-18-homes-and-the-sound-of-the-forest/pond.jpg": {
-		"cid": "bafybeibdcj6ns5dv2j3lu5mx4ji2gabs7gp2r3kv63rn2z5zdxpszaweem",
-		"url": "/media/bafybeibdcj6ns5dv2j3lu5mx4ji2gabs7gp2r3kv63rn2z5zdxpszaweem.jpg"
-	},
-	"/day-18-homes-and-the-sound-of-the-forest/room.jpg": {
-		"cid": "bafybeifpqvwp6wkixtdf3poesyfrvmf6gyffehpn6v2q5dufg7wlmdtpta",
-		"url": "/media/bafybeifpqvwp6wkixtdf3poesyfrvmf6gyffehpn6v2q5dufg7wlmdtpta.jpg"
-	},
-	"/day-18-homes-and-the-sound-of-the-forest/terrace-upper.jpg": {
-		"cid": "bafybeielpynx4d77nb7k7rlyn7jpo6ao63pto66rurgj2kjusqb3o6f6na",
-		"url": "/media/bafybeielpynx4d77nb7k7rlyn7jpo6ao63pto66rurgj2kjusqb3o6f6na.jpg"
-	},
-	"/day-18-homes-and-the-sound-of-the-forest/terrace.jpg": {
-		"cid": "bafybeihmp4w5gmtxdlsvx3nsyzymdhmuunljytesktf6pnaomkzqenc3rq",
-		"url": "/media/bafybeihmp4w5gmtxdlsvx3nsyzymdhmuunljytesktf6pnaomkzqenc3rq.jpg"
-	},
-	"/games/sandbox-1.jpg": {
-		"cid": "bafkreidb6dx5ija5yeewxvlliz7nvhqurcrxwk4uozka476of6b26zocxa",
-		"url": "/media/bafkreidb6dx5ija5yeewxvlliz7nvhqurcrxwk4uozka476of6b26zocxa.jpg"
-	},
-	"/games/sandbox-2.jpg": {
-		"cid": "bafkreihvabwjkwgkv3v7lr5726p346iovu4zrekaaf2w7qerxbvicwg5mm",
-		"url": "/media/bafkreihvabwjkwgkv3v7lr5726p346iovu4zrekaaf2w7qerxbvicwg5mm.jpg"
-	},
-	"/games/sandbox-3.jpg": {
-		"cid": "bafybeigx5mtrbdzh3idwbfrkureiwnfyhw3jtyclg55vuyc67sxdo6w5fa",
-		"url": "/media/bafybeigx5mtrbdzh3idwbfrkureiwnfyhw3jtyclg55vuyc67sxdo6w5fa.jpg"
-	},
-	"/games/sandbox-3/factory.jpg": {
-		"cid": "bafkreih6fhval3nn5odqkgzh76olvb5t3ctmdyc6uwnbj2x6jvu5iumu6u",
-		"url": "/media/bafkreih6fhval3nn5odqkgzh76olvb5t3ctmdyc6uwnbj2x6jvu5iumu6u.jpg"
-	},
-	"/games/sandbox-3/tent.jpg": {
-		"cid": "bafkreidbpfwbdcwxzvmb53r6en6uba6njf4etileuyanbicgegznq422r4",
-		"url": "/media/bafkreidbpfwbdcwxzvmb53r6en6uba6njf4etileuyanbicgegznq422r4.jpg"
-	},
-	"/games/sandbox-4.jpg": {
-		"cid": "bafybeiatftbwtb5x7b2bd7zh5dtefhytka27q36djxsn2hmwwtcdd7gxgm",
-		"url": "/media/bafybeiatftbwtb5x7b2bd7zh5dtefhytka27q36djxsn2hmwwtcdd7gxgm.jpg"
-	},
-	"/manifesto-banner.jpg": {
-		"cid": "bafybeifeluwlsey3m6cto3th3ak22lb2g7cum627fwp6ivvu4mi6nk4voi",
-		"url": "/media/bafybeifeluwlsey3m6cto3th3ak22lb2g7cum627fwp6ivvu4mi6nk4voi.jpg"
-	},
-	"/samuel.jpg": {
-		"cid": "bafybeigc4o3dpecqu3pvrzldsjie6b2xs7sdjeetuafxbjqckqnabiy5d4",
-		"url": "/media/bafybeigc4o3dpecqu3pvrzldsjie6b2xs7sdjeetuafxbjqckqnabiy5d4.jpg"
-	},
-	"/sandbox-2/globe-01.png": {
-		"cid": "bafybeiaknxxqgyswj4xnd2btyq446t3f2yd4bmsbqm6vfhdhiolwto7nsi",
-		"url": "/media/bafybeiaknxxqgyswj4xnd2btyq446t3f2yd4bmsbqm6vfhdhiolwto7nsi.png"
-	},
-	"/sandbox-2/globe-02.png": {
-		"cid": "bafybeiacnyv2fra5yri6rguc2vmml6o5vrqn4vaojk46hvpyovezxfx63y",
-		"url": "/media/bafybeiacnyv2fra5yri6rguc2vmml6o5vrqn4vaojk46hvpyovezxfx63y.png"
-	},
-	"/sandbox-2/globe-03.png": {
-		"cid": "bafybeifmaucl3codwjfpu6kmnw6gmnhqm4hcp5qkxv2mr4a4bf3yjo7oxe",
-		"url": "/media/bafybeifmaucl3codwjfpu6kmnw6gmnhqm4hcp5qkxv2mr4a4bf3yjo7oxe.png"
-	},
-	"/sandbox-2/globe-04.png": {
-		"cid": "bafybeidvgxaarsscx3jj5nd7sdqjbf7s3ywttb7sxyailpdq6ivkg7clie",
-		"url": "/media/bafybeidvgxaarsscx3jj5nd7sdqjbf7s3ywttb7sxyailpdq6ivkg7clie.png"
-	},
-	"/sandbox-2/globe-05.png": {
-		"cid": "bafybeihpeajysjdjhtafk7onjaijtlvji5xocebbkjh25dczggadgvzllm",
-		"url": "/media/bafybeihpeajysjdjhtafk7onjaijtlvji5xocebbkjh25dczggadgvzllm.png"
-	},
-	"/sandbox-2/globe-06.png": {
-		"cid": "bafybeihry6mgtwp3heximh3jhw6istp2sakifl56gkohcnnjv67ol24qem",
-		"url": "/media/bafybeihry6mgtwp3heximh3jhw6istp2sakifl56gkohcnnjv67ol24qem.png"
-	},
-	"/sandbox-2/globe-07.png": {
-		"cid": "bafybeid73woukgnebhzlm7pltv5hvftvif5aqid5kbwdldvoev2riy4et4",
-		"url": "/media/bafybeid73woukgnebhzlm7pltv5hvftvif5aqid5kbwdldvoev2riy4et4.png"
-	},
-	"/sandbox-2/globe-08.png": {
-		"cid": "bafybeihyc6mie6pew367jzzopl24vz7ymenitersfekwl6btruo6fxfry4",
-		"url": "/media/bafybeihyc6mie6pew367jzzopl24vz7ymenitersfekwl6btruo6fxfry4.png"
-	},
-	"/sounds/bees.mp3": {
-		"cid": "bafybeiery7dtnfprkwgtxxpagsm54oxsbsahktiyf3frcjjwd4sq7b6hoi",
-		"url": "/media/bafybeiery7dtnfprkwgtxxpagsm54oxsbsahktiyf3frcjjwd4sq7b6hoi.mp3"
-	},
-	"/sounds/chickens.mp3": {
-		"cid": "bafkreigdnriq3agzxwr54tpbw5y34ul2cirojczyorlya7duuhqo3at4le",
-		"url": "/media/bafkreigdnriq3agzxwr54tpbw5y34ul2cirojczyorlya7duuhqo3at4le.mp3"
-	},
-	"/sounds/factory-ambience.mp3": {
-		"cid": "bafybeic6fjuvactqgno3kmoehrtfgqqrq3u5fm4445nivd7drofobx6p4a",
-		"url": "/media/bafybeic6fjuvactqgno3kmoehrtfgqqrq3u5fm4445nivd7drofobx6p4a.mp3"
-	},
-	"/sounds/forest_nature.mp3": {
-		"cid": "bafybeico4zfwof2xi4pbo2ypke6mquppztq6yqvxra4ylt464waiakcgly",
-		"url": "/media/bafybeico4zfwof2xi4pbo2ypke6mquppztq6yqvxra4ylt464waiakcgly.mp3"
-	},
-	"/sounds/frog.mp3": {
-		"cid": "bafybeiez76uxmjf3lw7szaguqcwcgoh7lh55zu5eqr32zu526ljxbjjrfy",
-		"url": "/media/bafybeiez76uxmjf3lw7szaguqcwcgoh7lh55zu5eqr32zu526ljxbjjrfy.mp3"
-	},
-	"/sounds/geese.mp3": {
-		"cid": "bafybeid6pjgd4qfleeipy5ojyzfz5nx3vpt6fm3l2wxhur4rysoytxkaze",
-		"url": "/media/bafybeid6pjgd4qfleeipy5ojyzfz5nx3vpt6fm3l2wxhur4rysoytxkaze.mp3"
-	},
-	"/sounds/lift.mp3": {
-		"cid": "bafkreiaq4k5xgzzdkwjnvbirorxkhmsqfofruxbaojq3opqrqek7jbo4ou",
-		"url": "/media/bafkreiaq4k5xgzzdkwjnvbirorxkhmsqfofruxbaojq3opqrqek7jbo4ou.mp3"
-	},
-	"/sounds/machine.mp3": {
-		"cid": "bafybeiefqt2zfmcpr5bovpxbdrgnq5auxwis2eom45rygghtbsew3xiday",
-		"url": "/media/bafybeiefqt2zfmcpr5bovpxbdrgnq5auxwis2eom45rygghtbsew3xiday.mp3"
-	},
-	"/sounds/sheep.mp3": {
-		"cid": "bafybeihelcqshzlwyy5s2hofvkf776fk5djwdnqo2abnfuvyvpp3ylew34",
-		"url": "/media/bafybeihelcqshzlwyy5s2hofvkf776fk5djwdnqo2abnfuvyvpp3ylew34.mp3"
-	},
-	"/sounds/soft-nature.mp3": {
-		"cid": "bafybeidcygcrgevwld4brioqtqy723ws637u7jvfvplojp5nghsyboar2a",
-		"url": "/media/bafybeidcygcrgevwld4brioqtqy723ws637u7jvfvplojp5nghsyboar2a.mp3"
-	},
-	"/sounds/water_stream.mp3": {
-		"cid": "bafybeicbzq5tkd5426bkg7n2b3pjasv2gn2aquevc2irskh2fsezpoxxwy",
-		"url": "/media/bafybeicbzq5tkd5426bkg7n2b3pjasv2gn2aquevc2irskh2fsezpoxxwy.mp3"
-	},
-	"/thumbnails/1bqjt-xrlqk.jpg": {
-		"cid": "bafybeic5nmph5tdoosydmikxtcdb57x4rgfholl6gmvgbwts372iogny6a",
-		"url": "/media/bafybeic5nmph5tdoosydmikxtcdb57x4rgfholl6gmvgbwts372iogny6a.jpg"
-	},
-	"/thumbnails/5vbl5FL-nsI.jpg": {
-		"cid": "bafkreigsdnlpjgybb3cp7lkhbivex226fn43ztcw2v375orizjfq44xory",
-		"url": "/media/bafkreigsdnlpjgybb3cp7lkhbivex226fn43ztcw2v375orizjfq44xory.jpg"
-	},
-	"/thumbnails/9Ro0gp7xOlg.jpg": {
-		"cid": "bafkreibolieuqw7wmepww3cl7oixascr5mjetwbbdqcrgwduztjar2gs5m",
-		"url": "/media/bafkreibolieuqw7wmepww3cl7oixascr5mjetwbbdqcrgwduztjar2gs5m.jpg"
-	},
-	"/thumbnails/BblaJ_Hb0vA.jpg": {
-		"cid": "bafkreiezfpoas4pbmgys5ndaidphil2t3rgh4mapveodbthqxzi3fj2f2a",
-		"url": "/media/bafkreiezfpoas4pbmgys5ndaidphil2t3rgh4mapveodbthqxzi3fj2f2a.jpg"
-	},
-	"/thumbnails/D1INOZltmyw.jpg": {
-		"cid": "bafkreiggcfd77lhfylesr4et5rknwyduagfhcqydqvwthcsdnlxpnvfkeu",
-		"url": "/media/bafkreiggcfd77lhfylesr4et5rknwyduagfhcqydqvwthcsdnlxpnvfkeu.jpg"
-	},
-	"/thumbnails/DD7bHSxV-EM.jpg": {
-		"cid": "bafkreidjh677xclt7ljyw5xaxrc7hed22xjhmtajpw5u5xg4fdnd6mzgya",
-		"url": "/media/bafkreidjh677xclt7ljyw5xaxrc7hed22xjhmtajpw5u5xg4fdnd6mzgya.jpg"
-	},
-	"/thumbnails/EMbZ72cCAzI.jpg": {
-		"cid": "bafkreihrt7mb5ou62zzl6kbkqex4mdeoebga66xi2zkqgthyunxlcvtqte",
-		"url": "/media/bafkreihrt7mb5ou62zzl6kbkqex4mdeoebga66xi2zkqgthyunxlcvtqte.jpg"
-	},
-	"/thumbnails/GCfUT7jPkvk.jpg": {
-		"cid": "bafybeifjwgp4y3srlqjvv2cwoqjm6epzcp5sctxgt3ksiqtscwblbhjaey",
-		"url": "/media/bafybeifjwgp4y3srlqjvv2cwoqjm6epzcp5sctxgt3ksiqtscwblbhjaey.jpg"
-	},
-	"/thumbnails/I0rQNYMwzfY.jpg": {
-		"cid": "bafkreic7yl7mj6lbusk5y7lfzu7qsofbms3jfcsorti3rxpymv5dqxjfui",
-		"url": "/media/bafkreic7yl7mj6lbusk5y7lfzu7qsofbms3jfcsorti3rxpymv5dqxjfui.jpg"
-	},
-	"/thumbnails/KYObF1-4SMU.jpg": {
-		"cid": "bafkreihkhdb422ev6bwjsh4zfouhy32xd5z2e6wisydkwul4qldri2lzbq",
-		"url": "/media/bafkreihkhdb422ev6bwjsh4zfouhy32xd5z2e6wisydkwul4qldri2lzbq.jpg"
-	},
-	"/thumbnails/LoLYw--s-5w.jpg": {
-		"cid": "bafkreihlzy3mg3j7h7f4ldqvpe32lgw27mqoq2xksk442d5pf6oqirvhly",
-		"url": "/media/bafkreihlzy3mg3j7h7f4ldqvpe32lgw27mqoq2xksk442d5pf6oqirvhly.jpg"
-	},
-	"/thumbnails/O7LvhSQ5Te4.jpg": {
-		"cid": "bafkreihluasq3lmdrdywzzmu3fbghcxgqkfas3h5zj4odvlqpizui2hy7i",
-		"url": "/media/bafkreihluasq3lmdrdywzzmu3fbghcxgqkfas3h5zj4odvlqpizui2hy7i.jpg"
-	},
-	"/thumbnails/OU1ijmTK6-k.jpg": {
-		"cid": "bafkreibjcv6vstwbisxhylwcwuq7olnn5f3aroqorhmi52vdarpea4rmdm",
-		"url": "/media/bafkreibjcv6vstwbisxhylwcwuq7olnn5f3aroqorhmi52vdarpea4rmdm.jpg"
-	},
-	"/thumbnails/OUqKpUReINg.jpg": {
-		"cid": "bafkreihycg5zsuzdqujh2engzqchekay56iaxanx4ix6lwnl7fp4mxsudi",
-		"url": "/media/bafkreihycg5zsuzdqujh2engzqchekay56iaxanx4ix6lwnl7fp4mxsudi.jpg"
-	},
-	"/thumbnails/R2_V8Fe5-_A.jpg": {
-		"cid": "bafkreiedqssdwlsuzued4fmthitl6kh5excsiunzi7y4o5jukoog54qh5q",
-		"url": "/media/bafkreiedqssdwlsuzued4fmthitl6kh5excsiunzi7y4o5jukoog54qh5q.jpg"
-	},
-	"/thumbnails/WzijH3lgzHI.jpg": {
-		"cid": "bafkreigpsykoxcbszljs27kvrbgm72f7yk4az7p6hepiwpyn23o76edc3u",
-		"url": "/media/bafkreigpsykoxcbszljs27kvrbgm72f7yk4az7p6hepiwpyn23o76edc3u.jpg"
-	},
-	"/thumbnails/a5DzxKy0yQQ.jpg": {
-		"cid": "bafkreihvu3jt6jpve26i7zviqgklwwgdlk74yrmoe6o7qbxosvcqmoppqe",
-		"url": "/media/bafkreihvu3jt6jpve26i7zviqgklwwgdlk74yrmoe6o7qbxosvcqmoppqe.jpg"
-	},
-	"/thumbnails/cOEUq0RuyjQ.jpg": {
-		"cid": "bafkreifvtx5a74tlw6ygqon6drohcbhs6m736mqabcrcghvjh3e3qlpeba",
-		"url": "/media/bafkreifvtx5a74tlw6ygqon6drohcbhs6m736mqabcrcghvjh3e3qlpeba.jpg"
-	},
-	"/thumbnails/eAV-ui_MB-A.jpg": {
-		"cid": "bafkreifpkxdv377kr5omdtsggijmsnsxknh4jvtuqu3mtjailgj7nvqg74",
-		"url": "/media/bafkreifpkxdv377kr5omdtsggijmsnsxknh4jvtuqu3mtjailgj7nvqg74.jpg"
-	},
-	"/thumbnails/hDIBkEFP_x4.jpg": {
-		"cid": "bafybeieseajztaoucluztlekifaod2rschqp4aicebnpp3ek4ty7hjgzvm",
-		"url": "/media/bafybeieseajztaoucluztlekifaod2rschqp4aicebnpp3ek4ty7hjgzvm.jpg"
-	},
-	"/thumbnails/jZb6_jlUJXs.jpg": {
-		"cid": "bafybeihzfos7lgpzykkn74vhhd2gwp525axxoqkclphvshtxvxffe4dtly",
-		"url": "/media/bafybeihzfos7lgpzykkn74vhhd2gwp525axxoqkclphvshtxvxffe4dtly.jpg"
-	},
-	"/thumbnails/jcD-7YvPVQ0.jpg": {
-		"cid": "bafybeibtug4jtm5xx55wknknqlageu37hgnappvfwy3t4u55pbquvqb4zu",
-		"url": "/media/bafybeibtug4jtm5xx55wknknqlageu37hgnappvfwy3t4u55pbquvqb4zu.jpg"
-	},
-	"/thumbnails/ks3Rgl4oC3E.jpg": {
-		"cid": "bafkreihkttaqkd3rauglwilyorjllxkgdj67gphbccpftmnmvna6r3kxze",
-		"url": "/media/bafkreihkttaqkd3rauglwilyorjllxkgdj67gphbccpftmnmvna6r3kxze.jpg"
-	},
-	"/thumbnails/mnuOZcmoGD8.jpg": {
-		"cid": "bafkreiety3brdseims6cg5emyjhjtovpkzlfo67yrowe4pphcczctiw3lq",
-		"url": "/media/bafkreiety3brdseims6cg5emyjhjtovpkzlfo67yrowe4pphcczctiw3lq.jpg"
-	},
-	"/thumbnails/rDVn-bvuYmo.jpg": {
-		"cid": "bafkreigxf53flvtdwjgxixiazkrqerklbh3u7d2j2b5sdp4k7owqqiduvq",
-		"url": "/media/bafkreigxf53flvtdwjgxixiazkrqerklbh3u7d2j2b5sdp4k7owqqiduvq.jpg"
-	},
-	"/thumbnails/sTcvKn92TlI.jpg": {
-		"cid": "bafkreidfi2dosr63v5xsr7ctpv4rfxpjykgebzz3f7uwdf6taoc35pqj3q",
-		"url": "/media/bafkreidfi2dosr63v5xsr7ctpv4rfxpjykgebzz3f7uwdf6taoc35pqj3q.jpg"
-	},
-	"/thumbnails/twGcjDnOb_U.jpg": {
-		"cid": "bafkreih3cfvh7ugodiavvz4rxo5f3v5hxhvgjzv2hywuhp5ate23m5hdba",
-		"url": "/media/bafkreih3cfvh7ugodiavvz4rxo5f3v5hxhvgjzv2hywuhp5ate23m5hdba.jpg"
-	},
-	"/thumbnails/vgq14_IqdYM.jpg": {
-		"cid": "bafkreib2jkx72zp35awh2zc37lyojzvpngawnqrqzkjeql3zfkqw74mwqy",
-		"url": "/media/bafkreib2jkx72zp35awh2zc37lyojzvpngawnqrqzkjeql3zfkqw74mwqy.jpg"
-	},
-	"/thumbnails/y_uQHoVhhcw.jpg": {
-		"cid": "bafkreih2hw36r5m4m432gg63jpzwvuezdkgjnie7rk7p4zvoplhyndeayq",
-		"url": "/media/bafkreih2hw36r5m4m432gg63jpzwvuezdkgjnie7rk7p4zvoplhyndeayq.jpg"
-	},
-	"/thumbnails/z-UsCjTfAD0.jpg": {
-		"cid": "bafkreihte7fncc4uutltkq5kjhqtfzp5ba7kzourhdttnd3xjhtixj7ds4",
-		"url": "/media/bafkreihte7fncc4uutltkq5kjhqtfzp5ba7kzourhdttnd3xjhtixj7ds4.jpg"
-	},
-	"/thumbnails/zIsHKrP-66s.jpg": {
-		"cid": "bafkreibnalrtf4huw2cznmle6ebiivmqiyrzqikli5fgabw4mksjto6pvu",
-		"url": "/media/bafkreibnalrtf4huw2cznmle6ebiivmqiyrzqikli5fgabw4mksjto6pvu.jpg"
+	"bafkreia3m55ifzqshqjud6kccuv2cngdneeqv4d2gnterlttackz4jrgjy": {
+		"url": "/media/bafkreia3m55ifzqshqjud6kccuv2cngdneeqv4d2gnterlttackz4jrgjy.jpg",
+		"mime": "image/jpeg",
+		"title": "citizens",
+		"description": "The citizens sheet: who may found coops, granted one person at a time.",
+		"tags": [
+			"Day 11",
+			"in the post",
+			"role:in-post"
+		]
+	},
+	"bafkreiac3rz4e5guc7a5hm22sddyfvsskak6a5sst57i4subv2uawmwg7e": {
+		"url": "/media/bafkreiac3rz4e5guc7a5hm22sddyfvsskak6a5sst57i4subv2uawmwg7e.jpg",
+		"mime": "image/jpeg",
+		"title": "mint waiting",
+		"description": "The planet in avenCITY Sandbox 2, with 180 hearts waiting to be minted.",
+		"tags": [
+			"Day 10",
+			"cover",
+			"role:cover"
+		]
+	},
+	"bafkreiacr7kfqa3tr5a5fwjx666nsreldllms4mzvefzoelyuuiawtst5e": {
+		"url": "/media/bafkreiacr7kfqa3tr5a5fwjx666nsreldllms4mzvefzoelyuuiawtst5e.jpg",
+		"mime": "image/jpeg",
+		"title": "shaun overton",
+		"description": "",
+		"tags": [
+			"author:shaun-overton",
+			"authors",
+			"role:author"
+		]
+	},
+	"bafkreiaecoji3fxqs6mitgyphyqyoauz44eblwbyafxfv7jht4rmb6ihtq": {
+		"url": "/media/bafkreiaecoji3fxqs6mitgyphyqyoauz44eblwbyafxfv7jht4rmb6ihtq.jpg",
+		"mime": "image/jpeg",
+		"title": "level 02",
+		"description": "Level 2: still one tent, now shared.",
+		"tags": [
+			"Day 14",
+			"in the post",
+			"role:in-post"
+		]
+	},
+	"bafkreiafv7yjvtsl73pgpr233nypwqxrlxwcu5ifvrnbgtticzk6g74rie": {
+		"url": "/media/bafkreiafv7yjvtsl73pgpr233nypwqxrlxwcu5ifvrnbgtticzk6g74rie.jpg",
+		"mime": "image/jpeg",
+		"title": "laminators",
+		"description": "The laminators, three presses stacked, their lids lifting in turn.",
+		"tags": [
+			"Day 16",
+			"in the post",
+			"role:in-post"
+		]
+	},
+	"bafkreiahzypfhykdldiedz7ivsbsfhc6y4vmmyemscwiuo53mmqbat73su": {
+		"url": "/media/bafkreiahzypfhykdldiedz7ivsbsfhc6y4vmmyemscwiuo53mmqbat73su.jpg",
+		"mime": "image/jpeg",
+		"title": "level 08",
+		"description": "Level 8: six glamping domes and three dome homes.",
+		"tags": [
+			"Day 14",
+			"in the post",
+			"role:in-post"
+		]
+	},
+	"bafkreial4ohpafkbelyghie4tp6vpiukdxb2oqhcy6dnutv3xmsmpz5yum": {
+		"url": "/media/bafkreial4ohpafkbelyghie4tp6vpiukdxb2oqhcy6dnutv3xmsmpz5yum.jpg",
+		"mime": "image/jpeg",
+		"title": "factory lifetrac",
+		"description": "A LifeTrac dome factory — the tractor on its crown, and the first two finished ones parked on the apron.",
+		"tags": [
+			"Day 05",
+			"in the post",
+			"role:in-post"
+		]
+	},
+	"bafkreian2n7vmwzqd3pzlry7lqbip72xztx6ykzkj7ervyk7ftvdodhd54": {
+		"url": "/media/bafkreian2n7vmwzqd3pzlry7lqbip72xztx6ykzkj7ervyk7ftvdodhd54.jpg",
+		"mime": "image/jpeg",
+		"title": "celastrina calea",
+		"description": "",
+		"tags": [
+			"author:celastrina-calea",
+			"authors",
+			"role:author"
+		]
+	},
+	"bafkreiapfrzxtppcrcbgg6zpjesr77ri2kvva3mxknrafg63iy3gq6wfiu": {
+		"url": "/media/bafkreiapfrzxtppcrcbgg6zpjesr77ri2kvva3mxknrafg63iy3gq6wfiu.jpg",
+		"mime": "image/jpeg",
+		"title": "elias ford",
+		"description": "",
+		"tags": [
+			"author:elias-ford",
+			"authors",
+			"role:author"
+		]
+	},
+	"bafkreiaq4k5xgzzdkwjnvbirorxkhmsqfofruxbaojq3opqrqek7jbo4ou": {
+		"url": "/media/bafkreiaq4k5xgzzdkwjnvbirorxkhmsqfofruxbaojq3opqrqek7jbo4ou.mp3",
+		"mime": "audio/mpeg",
+		"title": "Lift",
+		"description": "",
+		"tags": [
+			"nature",
+			"role:ambience",
+			"role:sfx",
+			"sfx",
+			"sound effect",
+			"sound:lift",
+			"sounds"
+		]
+	},
+	"bafkreiaquort5ndrfh4qjuiwo4jlso6azz65fhntvfz3vpzuv2iuu6dpo4": {
+		"url": "/media/bafkreiaquort5ndrfh4qjuiwo4jlso6azz65fhntvfz3vpzuv2iuu6dpo4.jpg",
+		"mime": "image/jpeg",
+		"title": "level 12",
+		"description": "Level 12: the finished village, the master dome in the centre, paths winding through a food forest across the whole card.",
+		"tags": [
+			"Day 14",
+			"in the post",
+			"role:in-post"
+		]
+	},
+	"bafkreiastlly3plvcygycgcx5b3u2cwfyj2vuvte4xplw5tzs66m3z7n54": {
+		"url": "/media/bafkreiastlly3plvcygycgcx5b3u2cwfyj2vuvte4xplw5tzs66m3z7n54.jpg",
+		"mime": "image/jpeg",
+		"title": "terrace",
+		"description": "The terrace round a dome: a pergola of grapevines over a table, terracotta pots, the stone arcade.",
+		"tags": [
+			"Day 15",
+			"in the post",
+			"role:in-post"
+		]
+	},
+	"bafkreiatcvryc2f3uk7kiu6njxafosplbrvaqsywlyuen4tvq24lafotvq": {
+		"url": "/media/bafkreiatcvryc2f3uk7kiu6njxafosplbrvaqsywlyuen4tvq24lafotvq.jpg",
+		"mime": "image/jpeg",
+		"title": "first mint",
+		"description": "The first mint: 500 hearts, owed to nobody.",
+		"tags": [
+			"Day 10",
+			"in the post",
+			"role:in-post"
+		]
+	},
+	"bafkreib2jkx72zp35awh2zc37lyojzvpngawnqrqzkjeql3zfkqw74mwqy": {
+		"url": "/media/bafkreib2jkx72zp35awh2zc37lyojzvpngawnqrqzkjeql3zfkqw74mwqy.jpg",
+		"mime": "image/jpeg",
+		"title": "vgq14 IqdYM",
+		"description": "",
+		"tags": [
+			"role:source-thumbnail",
+			"thumbnails",
+			"youtube:vgq14_IqdYM"
+		]
+	},
+	"bafkreib2t7zozoxhelmzzhc44ef4bwhxfvmfq34i7wenigl7tjdzc4adia": {
+		"url": "/media/bafkreib2t7zozoxhelmzzhc44ef4bwhxfvmfq34i7wenigl7tjdzc4adia.jpg",
+		"mime": "image/jpeg",
+		"title": "andrew",
+		"description": "",
+		"tags": [
+			"author:andrew",
+			"authors",
+			"role:author"
+		]
+	},
+	"bafkreib5cibe3pf6x55ftzto3yqka6kb4ht3cmxz6h7qyzx3jw44nm7sgu": {
+		"url": "/media/bafkreib5cibe3pf6x55ftzto3yqka6kb4ht3cmxz6h7qyzx3jw44nm7sgu.jpg",
+		"mime": "image/jpeg",
+		"title": "the island",
+		"description": "Maia's island: the card of the planet, opened up.",
+		"tags": [
+			"Day 13",
+			"in the post",
+			"role:in-post"
+		]
+	},
+	"bafkreibfr2djce7tnzfdaw5tqfutvyulm3vpupb5uxq4x4y3rf37xsfs4e": {
+		"url": "/media/bafkreibfr2djce7tnzfdaw5tqfutvyulm3vpupb5uxq4x4y3rf37xsfs4e.jpg",
+		"mime": "image/jpeg",
+		"title": "level 07",
+		"description": "Level 7: two tents, five glamping domes and the first dome home.",
+		"tags": [
+			"Day 14",
+			"in the post",
+			"role:in-post"
+		]
+	},
+	"bafkreibjcv6vstwbisxhylwcwuq7olnn5f3aroqorhmi52vdarpea4rmdm": {
+		"url": "/media/bafkreibjcv6vstwbisxhylwcwuq7olnn5f3aroqorhmi52vdarpea4rmdm.jpg",
+		"mime": "image/jpeg",
+		"title": "OU1ijmTK6 k",
+		"description": "",
+		"tags": [
+			"role:source-thumbnail",
+			"thumbnails",
+			"youtube:OU1ijmTK6-k"
+		]
+	},
+	"bafkreibnalrtf4huw2cznmle6ebiivmqiyrzqikli5fgabw4mksjto6pvu": {
+		"url": "/media/bafkreibnalrtf4huw2cznmle6ebiivmqiyrzqikli5fgabw4mksjto6pvu.jpg",
+		"mime": "image/jpeg",
+		"title": "zIsHKrP 66s",
+		"description": "",
+		"tags": [
+			"role:source-thumbnail",
+			"thumbnails",
+			"youtube:zIsHKrP-66s"
+		]
+	},
+	"bafkreibolieuqw7wmepww3cl7oixascr5mjetwbbdqcrgwduztjar2gs5m": {
+		"url": "/media/bafkreibolieuqw7wmepww3cl7oixascr5mjetwbbdqcrgwduztjar2gs5m.jpg",
+		"mime": "image/jpeg",
+		"title": "9Ro0gp7xOlg",
+		"description": "",
+		"tags": [
+			"role:source-thumbnail",
+			"thumbnails",
+			"youtube:9Ro0gp7xOlg"
+		]
+	},
+	"bafkreibuzb47ghihq26hwjmmzfvylhpperjgrm5ea4bxabpxbjgpfmo5ay": {
+		"url": "/media/bafkreibuzb47ghihq26hwjmmzfvylhpperjgrm5ea4bxabpxbjgpfmo5ay.jpg",
+		"mime": "image/jpeg",
+		"title": "towers up close",
+		"description": "Three coop towers on the coast of Portugal in avenCITY Sandbox 2.",
+		"tags": [
+			"Day 12",
+			"cover",
+			"role:cover"
+		]
+	},
+	"bafkreibvu6aexsiifvzgrwkygmimzmluhn5tp4kkqnblmlh7hlwoicygsa": {
+		"url": "/media/bafkreibvu6aexsiifvzgrwkygmimzmluhn5tp4kkqnblmlh7hlwoicygsa.jpg",
+		"mime": "image/jpeg",
+		"title": "factory power cube",
+		"description": "The Power Cube factory — amber glass, and the hydraulic units waiting on pallets.",
+		"tags": [
+			"Day 05",
+			"in the post",
+			"role:in-post"
+		]
+	},
+	"bafkreibxxlw5pd2th2mqm5oyyvx5wqsyb56msg727tdoz7q7k3fmsxkuze": {
+		"url": "/media/bafkreibxxlw5pd2th2mqm5oyyvx5wqsyb56msg727tdoz7q7k3fmsxkuze.jpg",
+		"mime": "image/jpeg",
+		"title": "door from inside",
+		"description": "Standing inside a door, looking out through its arch at the path and the forest.",
+		"tags": [
+			"Day 15",
+			"in the post",
+			"role:in-post"
+		]
+	},
+	"bafkreibyyxh6savdubcjil7mb7cauye5facacxvxovmkacnte2va6xfknq": {
+		"url": "/media/bafkreibyyxh6savdubcjil7mb7cauye5facacxvxovmkacnte2va6xfknq.jpg",
+		"mime": "image/jpeg",
+		"title": "emission",
+		"description": "The emission tab: every milestone, the minds it releases, the price and the total supply.",
+		"tags": [
+			"Day 12",
+			"in the post",
+			"role:in-post"
+		]
+	},
+	"bafkreic23hzhjv5t2zihhv6nvbrtvt373zvwvz7eijkk5nbsnh2rymtftq": {
+		"url": "/media/bafkreic23hzhjv5t2zihhv6nvbrtvt373zvwvz7eijkk5nbsnh2rymtftq.jpg",
+		"mime": "image/jpeg",
+		"title": "riverside",
+		"description": "Riverside, a settlement of dome homes on Maia's island.",
+		"tags": [
+			"Day 13",
+			"cover",
+			"role:cover"
+		]
+	},
+	"bafkreic7yl7mj6lbusk5y7lfzu7qsofbms3jfcsorti3rxpymv5dqxjfui": {
+		"url": "/media/bafkreic7yl7mj6lbusk5y7lfzu7qsofbms3jfcsorti3rxpymv5dqxjfui.jpg",
+		"mime": "image/jpeg",
+		"title": "I0rQNYMwzfY",
+		"description": "",
+		"tags": [
+			"role:source-thumbnail",
+			"thumbnails",
+			"youtube:I0rQNYMwzfY"
+		]
+	},
+	"bafkreice3elwes6hbc6ghhf5aig46ov4hgxt4nawukpsknnkhp4pjcae3q": {
+		"url": "/media/bafkreice3elwes6hbc6ghhf5aig46ov4hgxt4nawukpsknnkhp4pjcae3q.jpg",
+		"mime": "image/jpeg",
+		"title": "lanes cables",
+		"description": "A spoke on floor 3: a cable drum and ribbon spools riding in, plug housings added on the way out.",
+		"tags": [
+			"Day 16",
+			"in the post",
+			"role:in-post"
+		]
+	},
+	"bafkreicejjjdb5rdj52rvixfcdb2h6s5oz5dbahyjjgjdb2gjah3235yfy": {
+		"url": "/media/bafkreicejjjdb5rdj52rvixfcdb2h6s5oz5dbahyjjgjdb2gjah3235yfy.jpg",
+		"mime": "image/jpeg",
+		"title": "cable drums",
+		"description": "Cable drums turning as the solar cable winds onto them.",
+		"tags": [
+			"Day 16",
+			"in the post",
+			"role:in-post"
+		]
+	},
+	"bafkreicgipopc5bdbp4fetzcilawxpnsr3nwvcbisnc7l4gfm4reknznwm": {
+		"url": "/media/bafkreicgipopc5bdbp4fetzcilawxpnsr3nwvcbisnc7l4gfm4reknznwm.jpg",
+		"mime": "image/jpeg",
+		"title": "dome kits",
+		"description": "Dome kits: a gantry sorting triangles for one dome.",
+		"tags": [
+			"Day 16",
+			"in the post",
+			"role:in-post"
+		]
+	},
+	"bafkreicjbi7e5a53jwx63rtn7tkum3au4u7gnwe2zj3hxjhoso3unw33ym": {
+		"url": "/media/bafkreicjbi7e5a53jwx63rtn7tkum3au4u7gnwe2zj3hxjhoso3unw33ym.jpg",
+		"mime": "image/jpeg",
+		"title": "ingot pullers",
+		"description": "Two ingot pullers: tall steel chambers, a glow in each window.",
+		"tags": [
+			"Day 16",
+			"in the post",
+			"role:in-post"
+		]
+	},
+	"bafkreickqvwpxv56k5qqrx6gxle3zaw5hpbzj5kosj75hh5uf4cjm5ysly": {
+		"url": "/media/bafkreickqvwpxv56k5qqrx6gxle3zaw5hpbzj5kosj75hh5uf4cjm5ysly.jpg",
+		"mime": "image/jpeg",
+		"title": "diffusion",
+		"description": "The diffusion furnace, glowing along its length.",
+		"tags": [
+			"Day 16",
+			"in the post",
+			"role:in-post"
+		]
+	},
+	"bafkreicma7yerh765koebsgk55pgulwtsdjwj5l7dmd5w4ayyvwy7jhm3y": {
+		"url": "/media/bafkreicma7yerh765koebsgk55pgulwtsdjwj5l7dmd5w4ayyvwy7jhm3y.jpg",
+		"mime": "image/jpeg",
+		"title": "the ash files",
+		"description": "",
+		"tags": [
+			"author:the-ash-files",
+			"authors",
+			"role:author"
+		]
+	},
+	"bafkreicpxzdk7s67jswna5lpqq3wfgg264j6poekxe4f3d33brpayd3yjq": {
+		"url": "/media/bafkreicpxzdk7s67jswna5lpqq3wfgg264j6poekxe4f3d33brpayd3yjq.jpg",
+		"mime": "image/jpeg",
+		"title": "sun simulator",
+		"description": "The sun simulator: every panel meets a flash of 1000 watts a square metre.",
+		"tags": [
+			"Day 16",
+			"in the post",
+			"role:in-post"
+		]
+	},
+	"bafkreictuetmvhpdj22tyxcplb2dv6pbfrx2tqjq5bmx3kh7qnjyxnxhwi": {
+		"url": "/media/bafkreictuetmvhpdj22tyxcplb2dv6pbfrx2tqjq5bmx3kh7qnjyxnxhwi.jpg",
+		"mime": "image/jpeg",
+		"title": "footbridge",
+		"description": "A footbridge over the loop: yellow rails, steps up and down, trays of sand riding underneath.",
+		"tags": [
+			"Day 16",
+			"in the post",
+			"role:in-post"
+		]
+	},
+	"bafkreicxgqbe5ruoy5mi2b4zbi2zbrmjd5fd5vkcrguyq7kk2d5sorghba": {
+		"url": "/media/bafkreicxgqbe5ruoy5mi2b4zbi2zbrmjd5fd5vkcrguyq7kk2d5sorghba.jpg",
+		"mime": "image/jpeg",
+		"title": "night",
+		"description": "The master dome at night, lit from inside, a path light at the edge of the forest.",
+		"tags": [
+			"Day 17",
+			"in the post",
+			"role:in-post"
+		]
+	},
+	"bafkreid3aih5ur4sb37go3kpzcmezdyopxm4a675ya5f4svhpnpx3lwchu": {
+		"url": "/media/bafkreid3aih5ur4sb37go3kpzcmezdyopxm4a675ya5f4svhpnpx3lwchu.jpg",
+		"mime": "image/jpeg",
+		"title": "forklift",
+		"description": "A driverless forklift in a rack aisle, lifting its pallet.",
+		"tags": [
+			"Day 16",
+			"in the post",
+			"role:in-post"
+		]
+	},
+	"bafkreid4mjs7g2q7tatzkpux3ragrqq7tstx3r3u2tkxw2aosnucbdim6m": {
+		"url": "/media/bafkreid4mjs7g2q7tatzkpux3ragrqq7tstx3r3u2tkxw2aosnucbdim6m.jpg",
+		"mime": "image/jpeg",
+		"title": "star",
+		"description": "Floor 4 from above: the loop near the glass, the stations on their spokes, the lift in the middle.",
+		"tags": [
+			"Day 16",
+			"in the post",
+			"role:in-post"
+		]
+	},
+	"bafkreidacjkmzdeczyoq55qrkp3dtk573lcfzhrv3h673w35kypyx5bnfq": {
+		"url": "/media/bafkreidacjkmzdeczyoq55qrkp3dtk573lcfzhrv3h673w35kypyx5bnfq.jpg",
+		"mime": "image/jpeg",
+		"title": "arc furnace",
+		"description": "The arc furnace on the top floor of the solar factory dome, three electrodes down into the glow, the glass dome above.",
+		"tags": [
+			"Day 16",
+			"cover",
+			"role:cover"
+		]
+	},
+	"bafkreidb6dx5ija5yeewxvlliz7nvhqurcrxwk4uozka476of6b26zocxa": {
+		"url": "/media/bafkreidb6dx5ija5yeewxvlliz7nvhqurcrxwk4uozka476of6b26zocxa.jpg",
+		"mime": "image/jpeg",
+		"title": "dome cell neighbourhood",
+		"description": "A dome cell and its neighbourhood: the centre dome in the middle, dome cells at every level around it, and a factory on each side.",
+		"tags": [
+			"Day 05",
+			"game:sandbox-1",
+			"games",
+			"in the post",
+			"role:game-cover",
+			"role:in-post",
+			"site"
+		]
+	},
+	"bafkreidbpfwbdcwxzvmb53r6en6uba6njf4etileuyanbicgegznq422r4": {
+		"url": "/media/bafkreidbpfwbdcwxzvmb53r6en6uba6njf4etileuyanbicgegznq422r4.jpg",
+		"mime": "image/jpeg",
+		"title": "tent",
+		"description": "",
+		"tags": [
+			"card:tent",
+			"game:sandbox-3",
+			"games",
+			"role:game-card",
+			"site"
+		]
+	},
+	"bafkreidbu27uyyxn4dvid255ghdqlk6dui2r2v5foe4cucaiir2rcljhqa": {
+		"url": "/media/bafkreidbu27uyyxn4dvid255ghdqlk6dui2r2v5foe4cucaiir2rcljhqa.jpg",
+		"mime": "image/jpeg",
+		"title": "factory solar",
+		"description": "The solar dome factory: a roof that is mostly collector, arrays angled at the sun on the apron.",
+		"tags": [
+			"Day 05",
+			"in the post",
+			"role:in-post"
+		]
+	},
+	"bafkreidcsfyyj5gwvtosc7ziiyfztol4t74nlv44kkzlsbnfmfi3qrz4i4": {
+		"url": "/media/bafkreidcsfyyj5gwvtosc7ziiyfztol4t74nlv44kkzlsbnfmfi3qrz4i4.jpg",
+		"mime": "image/jpeg",
+		"title": "level 09",
+		"description": "Level 9: six dome homes in a ring, four glamping domes between them.",
+		"tags": [
+			"Day 14",
+			"in the post",
+			"role:in-post"
+		]
+	},
+	"bafkreidfi2dosr63v5xsr7ctpv4rfxpjykgebzz3f7uwdf6taoc35pqj3q": {
+		"url": "/media/bafkreidfi2dosr63v5xsr7ctpv4rfxpjykgebzz3f7uwdf6taoc35pqj3q.jpg",
+		"mime": "image/jpeg",
+		"title": "sTcvKn92TlI",
+		"description": "",
+		"tags": [
+			"role:source-thumbnail",
+			"thumbnails",
+			"youtube:sTcvKn92TlI"
+		]
+	},
+	"bafkreidgdneqgljtsdzyy5cpv4tytjl5ro5e4kc5v6xvkqqnbcbinwwd2q": {
+		"url": "/media/bafkreidgdneqgljtsdzyy5cpv4tytjl5ro5e4kc5v6xvkqqnbcbinwwd2q.jpg",
+		"mime": "image/jpeg",
+		"title": "level 06",
+		"description": "Level 6: four tents and three glamping domes.",
+		"tags": [
+			"Day 14",
+			"in the post",
+			"role:in-post"
+		]
+	},
+	"bafkreidgqhybskoxfycq24twvjmfbqw5c77jm3kop7liil5c6lyz2jw2mm": {
+		"url": "/media/bafkreidgqhybskoxfycq24twvjmfbqw5c77jm3kop7liil5c6lyz2jw2mm.jpg",
+		"mime": "image/jpeg",
+		"title": "reflow",
+		"description": "The reflow oven on the electronics line.",
+		"tags": [
+			"Day 16",
+			"in the post",
+			"role:in-post"
+		]
+	},
+	"bafkreidjh677xclt7ljyw5xaxrc7hed22xjhmtajpw5u5xg4fdnd6mzgya": {
+		"url": "/media/bafkreidjh677xclt7ljyw5xaxrc7hed22xjhmtajpw5u5xg4fdnd6mzgya.jpg",
+		"mime": "image/jpeg",
+		"title": "DD7bHSxV EM",
+		"description": "",
+		"tags": [
+			"role:source-thumbnail",
+			"thumbnails",
+			"youtube:DD7bHSxV-EM"
+		]
+	},
+	"bafkreidodruqvnaoopfdtyywpuc5rze2f5xdffuh2x3ferrfyua22djo6q": {
+		"url": "/media/bafkreidodruqvnaoopfdtyywpuc5rze2f5xdffuh2x3ferrfyua22djo6q.jpg",
+		"mime": "image/jpeg",
+		"title": "shaun hines",
+		"description": "",
+		"tags": [
+			"author:shaun-hines",
+			"authors",
+			"role:author"
+		]
+	},
+	"bafkreidvee2cpo6lddm5uzqdcwol2cmlmdus7d4ylgylfntvz5cps3txbq": {
+		"url": "/media/bafkreidvee2cpo6lddm5uzqdcwol2cmlmdus7d4ylgylfntvz5cps3txbq.jpg",
+		"mime": "image/jpeg",
+		"title": "leave curious",
+		"description": "",
+		"tags": [
+			"author:leave-curious",
+			"authors",
+			"role:author"
+		]
+	},
+	"bafkreidz2tlthwrkbyisrm4er4r5mf4ctiexkmpuqm3u3klr4agu7fv2ge": {
+		"url": "/media/bafkreidz2tlthwrkbyisrm4er4r5mf4ctiexkmpuqm3u3klr4agu7fv2ge.jpg",
+		"mime": "image/jpeg",
+		"title": "lanes kits",
+		"description": "A spoke on the ground floor: framed panels with their struts riding in, a hub added on the way out.",
+		"tags": [
+			"Day 16",
+			"in the post",
+			"role:in-post"
+		]
+	},
+	"bafkreie5e7obpxnssrasmdxn2iyvlxaf2cde2vo37rfl5iag7qxckfzrf4": {
+		"url": "/media/bafkreie5e7obpxnssrasmdxn2iyvlxaf2cde2vo37rfl5iag7qxckfzrf4.jpg",
+		"mime": "image/jpeg",
+		"title": "chris williamson",
+		"description": "",
+		"tags": [
+			"author:chris-williamson",
+			"authors",
+			"role:author"
+		]
+	},
+	"bafkreiecayk7ky4a7qmtlruzsiwwux4nyhsnvclvbjhgpm5mxtkpygq3dy": {
+		"url": "/media/bafkreiecayk7ky4a7qmtlruzsiwwux4nyhsnvclvbjhgpm5mxtkpygq3dy.jpg",
+		"mime": "image/jpeg",
+		"title": "float bath",
+		"description": "The float bath: molten glass floating on liquid tin behind the glowing ports.",
+		"tags": [
+			"Day 16",
+			"in the post",
+			"role:in-post"
+		]
+	},
+	"bafkreiedqssdwlsuzued4fmthitl6kh5excsiunzi7y4o5jukoog54qh5q": {
+		"url": "/media/bafkreiedqssdwlsuzued4fmthitl6kh5excsiunzi7y4o5jukoog54qh5q.jpg",
+		"mime": "image/jpeg",
+		"title": "R2 V8Fe5 A",
+		"description": "",
+		"tags": [
+			"role:source-thumbnail",
+			"thumbnails",
+			"youtube:R2_V8Fe5-_A"
+		]
+	},
+	"bafkreiepk5f3vwdfxpmklrkdfykltlg6l5ybkn463o2qdp23ilzswgajca": {
+		"url": "/media/bafkreiepk5f3vwdfxpmklrkdfykltlg6l5ybkn463o2qdp23ilzswgajca.jpg",
+		"mime": "image/jpeg",
+		"title": "the coops",
+		"description": "The coops: Solar at milestone 9, Bakery and HempStone at milestone 7.",
+		"tags": [
+			"Day 12",
+			"in the post",
+			"role:in-post"
+		]
+	},
+	"bafkreierqcaksl3imnrhy5zbf5hl4zumoa3hex7d7wx7cyo2oe2xhgpiyq": {
+		"url": "/media/bafkreierqcaksl3imnrhy5zbf5hl4zumoa3hex7d7wx7cyo2oe2xhgpiyq.jpg",
+		"mime": "image/jpeg",
+		"title": "homestead roots",
+		"description": "",
+		"tags": [
+			"author:homestead-roots",
+			"authors",
+			"role:author"
+		]
+	},
+	"bafkreierv4blz62fogogoe6dw2mfkcaizcl77p34pfegvbjx3babv3i2ne": {
+		"url": "/media/bafkreierv4blz62fogogoe6dw2mfkcaizcl77p34pfegvbjx3babv3i2ne.jpg",
+		"mime": "image/jpeg",
+		"title": "level 03",
+		"description": "Level 3: a second tent.",
+		"tags": [
+			"Day 14",
+			"in the post",
+			"role:in-post"
+		]
+	},
+	"bafkreietcm3jzu7sa62lzg6bwxyqdqadi46b66baepc6cyzw76dbw4y4tq": {
+		"url": "/media/bafkreietcm3jzu7sa62lzg6bwxyqdqadi46b66baepc6cyzw76dbw4y4tq.jpg",
+		"mime": "image/jpeg",
+		"title": "ledger",
+		"description": "My ledger: the hearts I minted, the hearts that became maiaHEARTS, and the minds I received back.",
+		"tags": [
+			"Day 12",
+			"in the post",
+			"role:in-post"
+		]
+	},
+	"bafkreiety3brdseims6cg5emyjhjtovpkzlfo67yrowe4pphcczctiw3lq": {
+		"url": "/media/bafkreiety3brdseims6cg5emyjhjtovpkzlfo67yrowe4pphcczctiw3lq.jpg",
+		"mime": "image/jpeg",
+		"title": "mnuOZcmoGD8",
+		"description": "",
+		"tags": [
+			"role:source-thumbnail",
+			"thumbnails",
+			"youtube:mnuOZcmoGD8"
+		]
+	},
+	"bafkreiezfpoas4pbmgys5ndaidphil2t3rgh4mapveodbthqxzi3fj2f2a": {
+		"url": "/media/bafkreiezfpoas4pbmgys5ndaidphil2t3rgh4mapveodbthqxzi3fj2f2a.jpg",
+		"mime": "image/jpeg",
+		"title": "BblaJ Hb0vA",
+		"description": "",
+		"tags": [
+			"role:source-thumbnail",
+			"thumbnails",
+			"youtube:BblaJ_Hb0vA"
+		]
+	},
+	"bafkreifd2nerqt2zirkpjyqlmscncnj7jnif5oanzs7vmrqiyysya4kzoy": {
+		"url": "/media/bafkreifd2nerqt2zirkpjyqlmscncnj7jnif5oanzs7vmrqiyysya4kzoy.jpg",
+		"mime": "image/jpeg",
+		"title": "tempering",
+		"description": "The tempering furnace.",
+		"tags": [
+			"Day 16",
+			"in the post",
+			"role:in-post"
+		]
+	},
+	"bafkreifehyf335hk666ovuofwphxm4aqt7ptdmyaeoliuzbary7bd4doqe": {
+		"url": "/media/bafkreifehyf335hk666ovuofwphxm4aqt7ptdmyaeoliuzbary7bd4doqe.jpg",
+		"mime": "image/jpeg",
+		"title": "lift cabin",
+		"description": "Inside the great lift: a round cabin with glass walls and a rack of finished glass riding along.",
+		"tags": [
+			"Day 16",
+			"in the post",
+			"role:in-post"
+		]
+	},
+	"bafkreiffwcca62bwfyu2o36swlm6zygrylqwsq3ptplqjuj2jblseb7fwe": {
+		"url": "/media/bafkreiffwcca62bwfyu2o36swlm6zygrylqwsq3ptplqjuj2jblseb7fwe.jpg",
+		"mime": "image/jpeg",
+		"title": "factory hemp",
+		"description": "Hemp stone: hempcrete blocks stacked on pallets, curing in the air.",
+		"tags": [
+			"Day 05",
+			"in the post",
+			"role:in-post"
+		]
+	},
+	"bafkreifiphjalmso2w77nls62tvuuiqgb5h6n336cmic7hztelyyvrut7q": {
+		"url": "/media/bafkreifiphjalmso2w77nls62tvuuiqgb5h6n336cmic7hztelyyvrut7q.jpg",
+		"mime": "image/jpeg",
+		"title": "z6GzRVgA4xYiPWADzbORj SvHTgurF",
+		"description": "The smallest version: one dome, a terrace, a footbridge over water.",
+		"tags": [
+			"Day 05",
+			"in the post",
+			"role:in-post"
+		]
+	},
+	"bafkreifpkxdv377kr5omdtsggijmsnsxknh4jvtuqu3mtjailgj7nvqg74": {
+		"url": "/media/bafkreifpkxdv377kr5omdtsggijmsnsxknh4jvtuqu3mtjailgj7nvqg74.jpg",
+		"mime": "image/jpeg",
+		"title": "eAV ui MB A",
+		"description": "",
+		"tags": [
+			"role:source-thumbnail",
+			"thumbnails",
+			"youtube:eAV-ui_MB-A"
+		]
+	},
+	"bafkreifqhrchqcnxude3mufa2lkjg4judou4ciqd6fs3vjimz6ypcipjkq": {
+		"url": "/media/bafkreifqhrchqcnxude3mufa2lkjg4judou4ciqd6fs3vjimz6ypcipjkq.jpg",
+		"mime": "image/jpeg",
+		"title": "warehouse",
+		"description": "The warehouse aisles, racks of pallets on both sides.",
+		"tags": [
+			"Day 16",
+			"in the post",
+			"role:in-post"
+		]
+	},
+	"bafkreifra357acxyp24qyy64zi6re6zbpwaxm5e4icov4y57gppowbtw7m": {
+		"url": "/media/bafkreifra357acxyp24qyy64zi6re6zbpwaxm5e4icov4y57gppowbtw7m.jpg",
+		"mime": "image/jpeg",
+		"title": "master coop",
+		"description": "A chicken coop among the trees, hens scratching in the run.",
+		"tags": [
+			"Day 15",
+			"in the post",
+			"role:in-post"
+		]
+	},
+	"bafkreifrd6ygmwy7rgji6qmlhbjlqo2y2b6z7pvb6bzjzdaxsiwgb5bxaa": {
+		"url": "/media/bafkreifrd6ygmwy7rgji6qmlhbjlqo2y2b6z7pvb6bzjzdaxsiwgb5bxaa.jpg",
+		"mime": "image/jpeg",
+		"title": "dw planet a",
+		"description": "",
+		"tags": [
+			"author:dw-planet-a",
+			"authors",
+			"role:author"
+		]
+	},
+	"bafkreifrssarqo3wxbnbk5npnenmydj7ixtui4seimax4uqjudji4tbxhm": {
+		"url": "/media/bafkreifrssarqo3wxbnbk5npnenmydj7ixtui4seimax4uqjudji4tbxhm.jpg",
+		"mime": "image/jpeg",
+		"title": "lanes glass",
+		"description": "A spoke on floor 2: flat float glass going in, cut triangles coming out.",
+		"tags": [
+			"Day 16",
+			"in the post",
+			"role:in-post"
+		]
+	},
+	"bafkreifvtx5a74tlw6ygqon6drohcbhs6m736mqabcrcghvjh3e3qlpeba": {
+		"url": "/media/bafkreifvtx5a74tlw6ygqon6drohcbhs6m736mqabcrcghvjh3e3qlpeba.jpg",
+		"mime": "image/jpeg",
+		"title": "cOEUq0RuyjQ",
+		"description": "",
+		"tags": [
+			"role:source-thumbnail",
+			"thumbnails",
+			"youtube:cOEUq0RuyjQ"
+		]
+	},
+	"bafkreifxski5dgh52krenelzm333twvhcbdhuct3kcm4l3q47cgm5ca5he": {
+		"url": "/media/bafkreifxski5dgh52krenelzm333twvhcbdhuct3kcm4l3q47cgm5ca5he.jpg",
+		"mime": "image/jpeg",
+		"title": "first login",
+		"description": "A new citizen: 0.00 in the wallet, and +500 waiting on the Mint button.",
+		"tags": [
+			"Day 10",
+			"in the post",
+			"role:in-post"
+		]
+	},
+	"bafkreig36nhvf4xvps2kyabxd6gumll3jmdzut5ba3nezdvuude7ug3duu": {
+		"url": "/media/bafkreig36nhvf4xvps2kyabxd6gumll3jmdzut5ba3nezdvuude7ug3duu.jpg",
+		"mime": "image/jpeg",
+		"title": "stringer",
+		"description": "A stringer, its infrared lamps soldering cells into strings.",
+		"tags": [
+			"Day 16",
+			"in the post",
+			"role:in-post"
+		]
+	},
+	"bafkreig65lvbfzkfxla22cxycrh3t2fmvnckyib2dwyrlxqw2klmw7kooe": {
+		"url": "/media/bafkreig65lvbfzkfxla22cxycrh3t2fmvnckyib2dwyrlxqw2klmw7kooe.jpg",
+		"mime": "image/jpeg",
+		"title": "level 11",
+		"description": "Level 11: six dome homes and six large domes around the master dome.",
+		"tags": [
+			"Day 14",
+			"in the post",
+			"role:in-post"
+		]
+	},
+	"bafkreigab75kg6l2dyezdsyagzoplgkhus7nzdzsussejou547p74mzyya": {
+		"url": "/media/bafkreigab75kg6l2dyezdsyagzoplgkhus7nzdzsussejou547p74mzyya.jpg",
+		"mime": "image/jpeg",
+		"title": "level 04",
+		"description": "Level 4: four tents in a loose circle.",
+		"tags": [
+			"Day 14",
+			"in the post",
+			"role:in-post"
+		]
+	},
+	"bafkreigdnriq3agzxwr54tpbw5y34ul2cirojczyorlya7duuhqo3at4le": {
+		"url": "/media/bafkreigdnriq3agzxwr54tpbw5y34ul2cirojczyorlya7duuhqo3at4le.mp3",
+		"mime": "audio/mpeg",
+		"title": "Hens",
+		"description": "",
+		"tags": [
+			"Day 19",
+			"nature",
+			"role:ambience",
+			"role:sfx",
+			"sfx",
+			"sound effect",
+			"sound:chickens",
+			"sounds"
+		]
+	},
+	"bafkreiggcfd77lhfylesr4et5rknwyduagfhcqydqvwthcsdnlxpnvfkeu": {
+		"url": "/media/bafkreiggcfd77lhfylesr4et5rknwyduagfhcqydqvwthcsdnlxpnvfkeu.jpg",
+		"mime": "image/jpeg",
+		"title": "D1INOZltmyw",
+		"description": "",
+		"tags": [
+			"role:source-thumbnail",
+			"thumbnails",
+			"youtube:D1INOZltmyw"
+		]
+	},
+	"bafkreigiahc735viqlld6uikt5bv34m3b5rscp7pfjo2xaj6qvy6vp5s3a": {
+		"url": "/media/bafkreigiahc735viqlld6uikt5bv34m3b5rscp7pfjo2xaj6qvy6vp5s3a.jpg",
+		"mime": "image/jpeg",
+		"title": "level 01",
+		"description": "Level 1: one tent beside a fire ring, the four containers of the camp around it.",
+		"tags": [
+			"Day 14",
+			"in the post",
+			"role:in-post"
+		]
+	},
+	"bafkreigpsykoxcbszljs27kvrbgm72f7yk4az7p6hepiwpyn23o76edc3u": {
+		"url": "/media/bafkreigpsykoxcbszljs27kvrbgm72f7yk4az7p6hepiwpyn23o76edc3u.jpg",
+		"mime": "image/jpeg",
+		"title": "WzijH3lgzHI",
+		"description": "",
+		"tags": [
+			"role:source-thumbnail",
+			"thumbnails",
+			"youtube:WzijH3lgzHI"
+		]
+	},
+	"bafkreigsdnlpjgybb3cp7lkhbivex226fn43ztcw2v375orizjfq44xory": {
+		"url": "/media/bafkreigsdnlpjgybb3cp7lkhbivex226fn43ztcw2v375orizjfq44xory.jpg",
+		"mime": "image/jpeg",
+		"title": "5vbl5FL nsI",
+		"description": "",
+		"tags": [
+			"role:source-thumbnail",
+			"thumbnails",
+			"youtube:5vbl5FL-nsI"
+		]
+	},
+	"bafkreigta54qlbxhyt4vghoef7h3ilhlvauyyww6aa3y73543iaznm2emy": {
+		"url": "/media/bafkreigta54qlbxhyt4vghoef7h3ilhlvauyyww6aa3y73543iaznm2emy.jpg",
+		"mime": "image/jpeg",
+		"title": "first hearts",
+		"description": "The first hint for a signed-in player: mint your first hearts.",
+		"tags": [
+			"Day 13",
+			"in the post",
+			"role:in-post"
+		]
+	},
+	"bafkreigvoihx2iwofcrf2ce6ccngkobrtztaw6wjlfqqeh35us4qsy72f4": {
+		"url": "/media/bafkreigvoihx2iwofcrf2ce6ccngkobrtztaw6wjlfqqeh35us4qsy72f4.jpg",
+		"mime": "image/jpeg",
+		"title": "level 05",
+		"description": "Level 5: six tents around the fire.",
+		"tags": [
+			"Day 14",
+			"in the post",
+			"role:in-post"
+		]
+	},
+	"bafkreigwihkbogtk66poocacgudis3rrr6ler2rmgnfdmpxnjupbkmi6xq": {
+		"url": "/media/bafkreigwihkbogtk66poocacgudis3rrr6ler2rmgnfdmpxnjupbkmi6xq.jpg",
+		"mime": "image/jpeg",
+		"title": "cover",
+		"description": "The same card of land at noon, from straight above. Left, one tent by a fire ring and four containers. Right, 233 people under glass domes in a food forest.",
+		"tags": [
+			"Day 14",
+			"cover",
+			"role:cover"
+		]
+	},
+	"bafkreigxf53flvtdwjgxixiazkrqerklbh3u7d2j2b5sdp4k7owqqiduvq": {
+		"url": "/media/bafkreigxf53flvtdwjgxixiazkrqerklbh3u7d2j2b5sdp4k7owqqiduvq.jpg",
+		"mime": "image/jpeg",
+		"title": "rDVn bvuYmo",
+		"description": "",
+		"tags": [
+			"role:source-thumbnail",
+			"thumbnails",
+			"youtube:rDVn-bvuYmo"
+		]
+	},
+	"bafkreih2hw36r5m4m432gg63jpzwvuezdkgjnie7rk7p4zvoplhyndeayq": {
+		"url": "/media/bafkreih2hw36r5m4m432gg63jpzwvuezdkgjnie7rk7p4zvoplhyndeayq.jpg",
+		"mime": "image/jpeg",
+		"title": "y uQHoVhhcw",
+		"description": "",
+		"tags": [
+			"role:source-thumbnail",
+			"thumbnails",
+			"youtube:y_uQHoVhhcw"
+		]
+	},
+	"bafkreih3cfvh7ugodiavvz4rxo5f3v5hxhvgjzv2hywuhp5ate23m5hdba": {
+		"url": "/media/bafkreih3cfvh7ugodiavvz4rxo5f3v5hxhvgjzv2hywuhp5ate23m5hdba.jpg",
+		"mime": "image/jpeg",
+		"title": "twGcjDnOb U",
+		"description": "",
+		"tags": [
+			"role:source-thumbnail",
+			"thumbnails",
+			"youtube:twGcjDnOb_U"
+		]
+	},
+	"bafkreih6fhval3nn5odqkgzh76olvb5t3ctmdyc6uwnbj2x6jvu5iumu6u": {
+		"url": "/media/bafkreih6fhval3nn5odqkgzh76olvb5t3ctmdyc6uwnbj2x6jvu5iumu6u.jpg",
+		"mime": "image/jpeg",
+		"title": "factory",
+		"description": "",
+		"tags": [
+			"card:factory",
+			"game:sandbox-3",
+			"games",
+			"role:game-card",
+			"site"
+		]
+	},
+	"bafkreihaulfpjkrvlwfs2ej4txaesw76qll3445flmsfuqgzbucsfztcga": {
+		"url": "/media/bafkreihaulfpjkrvlwfs2ej4txaesw76qll3445flmsfuqgzbucsfztcga.jpg",
+		"mime": "image/jpeg",
+		"title": "arte",
+		"description": "",
+		"tags": [
+			"author:arte",
+			"authors",
+			"role:author"
+		]
+	},
+	"bafkreihd7uac6frwkruegzqpvtqm7gj6ez6om3vizy6wfxkf4fpnhqocem": {
+		"url": "/media/bafkreihd7uac6frwkruegzqpvtqm7gj6ez6om3vizy6wfxkf4fpnhqocem.jpg",
+		"mime": "image/jpeg",
+		"title": "before investing",
+		"description": "Before investing: 100 of my hearts would buy 1.11 solar☉ and become 100 maiaHEARTS in Solar's treasury.",
+		"tags": [
+			"Day 12",
+			"in the post",
+			"role:in-post"
+		]
+	},
+	"bafkreihgpmt3bq5s3o52wvpdqsw72q4jozw7rqnk3hucxpfnevonsa6ezy": {
+		"url": "/media/bafkreihgpmt3bq5s3o52wvpdqsw72q4jozw7rqnk3hucxpfnevonsa6ezy.jpg",
+		"mime": "image/jpeg",
+		"title": "level 10",
+		"description": "Level 10: the ring of six dome homes, three large domes, and the last two glamping domes.",
+		"tags": [
+			"Day 14",
+			"in the post",
+			"role:in-post"
+		]
+	},
+	"bafkreihkhdb422ev6bwjsh4zfouhy32xd5z2e6wisydkwul4qldri2lzbq": {
+		"url": "/media/bafkreihkhdb422ev6bwjsh4zfouhy32xd5z2e6wisydkwul4qldri2lzbq.jpg",
+		"mime": "image/jpeg",
+		"title": "KYObF1 4SMU",
+		"description": "",
+		"tags": [
+			"role:source-thumbnail",
+			"thumbnails",
+			"youtube:KYObF1-4SMU"
+		]
+	},
+	"bafkreihkttaqkd3rauglwilyorjllxkgdj67gphbccpftmnmvna6r3kxze": {
+		"url": "/media/bafkreihkttaqkd3rauglwilyorjllxkgdj67gphbccpftmnmvna6r3kxze.jpg",
+		"mime": "image/jpeg",
+		"title": "ks3Rgl4oC3E",
+		"description": "",
+		"tags": [
+			"role:source-thumbnail",
+			"thumbnails",
+			"youtube:ks3Rgl4oC3E"
+		]
+	},
+	"bafkreihkylj5jhpppwtamg3rissrfi563t3ynpsddg4tzy7s5vmma75qui": {
+		"url": "/media/bafkreihkylj5jhpppwtamg3rissrfi563t3ynpsddg4tzy7s5vmma75qui.jpg",
+		"mime": "image/jpeg",
+		"title": "factory bamboo",
+		"description": "Bamboo fabric: cane stood in bundles by the door, bolts of the finished cloth beside them.",
+		"tags": [
+			"Day 05",
+			"in the post",
+			"role:in-post"
+		]
+	},
+	"bafkreihluasq3lmdrdywzzmu3fbghcxgqkfas3h5zj4odvlqpizui2hy7i": {
+		"url": "/media/bafkreihluasq3lmdrdywzzmu3fbghcxgqkfas3h5zj4odvlqpizui2hy7i.jpg",
+		"mime": "image/jpeg",
+		"title": "O7LvhSQ5Te4",
+		"description": "",
+		"tags": [
+			"role:source-thumbnail",
+			"thumbnails",
+			"youtube:O7LvhSQ5Te4"
+		]
+	},
+	"bafkreihlzy3mg3j7h7f4ldqvpe32lgw27mqoq2xksk442d5pf6oqirvhly": {
+		"url": "/media/bafkreihlzy3mg3j7h7f4ldqvpe32lgw27mqoq2xksk442d5pf6oqirvhly.jpg",
+		"mime": "image/jpeg",
+		"title": "LoLYw s 5w",
+		"description": "",
+		"tags": [
+			"role:source-thumbnail",
+			"thumbnails",
+			"youtube:LoLYw--s-5w"
+		]
+	},
+	"bafkreihpemgjjezstgfg5otljprruwtpcrrma2p6tnztv3wyhirhxfvw7q": {
+		"url": "/media/bafkreihpemgjjezstgfg5otljprruwtpcrrma2p6tnztv3wyhirhxfvw7q.jpg",
+		"mime": "image/jpeg",
+		"title": "johnny harris",
+		"description": "",
+		"tags": [
+			"author:johnny-harris",
+			"authors",
+			"role:author"
+		]
+	},
+	"bafkreihqvad5gyvqnx3ss5n4v67fakbuxetjl2xf3s3omyjmj7tg7xegja": {
+		"url": "/media/bafkreihqvad5gyvqnx3ss5n4v67fakbuxetjl2xf3s3omyjmj7tg7xegja.jpg",
+		"mime": "image/jpeg",
+		"title": "three towers",
+		"description": "Three coops on the coast of Portugal: Bakery, Solar and HempStone.",
+		"tags": [
+			"Day 11",
+			"in the post",
+			"role:in-post"
+		]
+	},
+	"bafkreihrt7mb5ou62zzl6kbkqex4mdeoebga66xi2zkqgthyunxlcvtqte": {
+		"url": "/media/bafkreihrt7mb5ou62zzl6kbkqex4mdeoebga66xi2zkqgthyunxlcvtqte.jpg",
+		"mime": "image/jpeg",
+		"title": "EMbZ72cCAzI",
+		"description": "",
+		"tags": [
+			"role:source-thumbnail",
+			"thumbnails",
+			"youtube:EMbZ72cCAzI"
+		]
+	},
+	"bafkreihte7fncc4uutltkq5kjhqtfzp5ba7kzourhdttnd3xjhtixj7ds4": {
+		"url": "/media/bafkreihte7fncc4uutltkq5kjhqtfzp5ba7kzourhdttnd3xjhtixj7ds4.jpg",
+		"mime": "image/jpeg",
+		"title": "z UsCjTfAD0",
+		"description": "",
+		"tags": [
+			"role:source-thumbnail",
+			"thumbnails",
+			"youtube:z-UsCjTfAD0"
+		]
+	},
+	"bafkreihthlydt3dwjkhvtqb2vr5yuifxvogv47qy2uh2d42ijyy6huwgk4": {
+		"url": "/media/bafkreihthlydt3dwjkhvtqb2vr5yuifxvogv47qy2uh2d42ijyy6huwgk4.jpg",
+		"mime": "image/jpeg",
+		"title": "stepping inside",
+		"description": "While a dome is built, the valley of domes from Day 03 fills the screen, with the dome's name, a progress bar and the step being done.",
+		"tags": [
+			"Day 15",
+			"in the post",
+			"role:in-post"
+		]
+	},
+	"bafkreihuetjnnjww7fmdwcc346o6m3jj2mltahknqch3anuxif2ew7asqy": {
+		"url": "/media/bafkreihuetjnnjww7fmdwcc346o6m3jj2mltahknqch3anuxif2ew7asqy.jpg",
+		"mime": "image/jpeg",
+		"title": "lanes cells",
+		"description": "A spoke on floor 4: grey wafers going in on one lane, coated blue cells coming out on the other.",
+		"tags": [
+			"Day 16",
+			"in the post",
+			"role:in-post"
+		]
+	},
+	"bafkreihvabwjkwgkv3v7lr5726p346iovu4zrekaaf2w7qerxbvicwg5mm": {
+		"url": "/media/bafkreihvabwjkwgkv3v7lr5726p346iovu4zrekaaf2w7qerxbvicwg5mm.jpg",
+		"mime": "image/jpeg",
+		"title": "sandbox 2",
+		"description": "",
+		"tags": [
+			"game:sandbox-2",
+			"games",
+			"role:game-cover",
+			"site"
+		]
+	},
+	"bafkreihvu3jt6jpve26i7zviqgklwwgdlk74yrmoe6o7qbxosvcqmoppqe": {
+		"url": "/media/bafkreihvu3jt6jpve26i7zviqgklwwgdlk74yrmoe6o7qbxosvcqmoppqe.jpg",
+		"mime": "image/jpeg",
+		"title": "a5DzxKy0yQQ",
+		"description": "",
+		"tags": [
+			"role:source-thumbnail",
+			"thumbnails",
+			"youtube:a5DzxKy0yQQ"
+		]
+	},
+	"bafkreihycg5zsuzdqujh2engzqchekay56iaxanx4ix6lwnl7fp4mxsudi": {
+		"url": "/media/bafkreihycg5zsuzdqujh2engzqchekay56iaxanx4ix6lwnl7fp4mxsudi.jpg",
+		"mime": "image/jpeg",
+		"title": "OUqKpUReINg",
+		"description": "",
+		"tags": [
+			"role:source-thumbnail",
+			"thumbnails",
+			"youtube:OUqKpUReINg"
+		]
+	},
+	"bafybeia44khzkebxjl2gu6foru3wpwlnmsphuq6ctligavygcv7oe66any": {
+		"url": "/media/bafybeia44khzkebxjl2gu6foru3wpwlnmsphuq6ctligavygcv7oe66any.jpg",
+		"mime": "image/jpeg",
+		"title": "coop",
+		"description": "A hen coop in the trees beside the master dome.",
+		"tags": [
+			"Day 17",
+			"in the post",
+			"role:in-post"
+		]
+	},
+	"bafybeia7oc7srhwgpap4pn357ci4fko3scdqbscylnxapqu6zagxgkc7vy": {
+		"url": "/media/bafybeia7oc7srhwgpap4pn357ci4fko3scdqbscylnxapqu6zagxgkc7vy.jpg",
+		"mime": "image/jpeg",
+		"title": "cafe",
+		"description": "A restaurant square beside the master dome, the forest behind it.",
+		"tags": [
+			"Day 17",
+			"in the post",
+			"role:in-post"
+		]
+	},
+	"bafybeiacdoje6uikg73k2un75w2l2vtzy45e4quzszfjojkm7w4bis5lxm": {
+		"url": "/media/bafybeiacdoje6uikg73k2un75w2l2vtzy45e4quzszfjojkm7w4bis5lxm.jpg",
+		"mime": "image/jpeg",
+		"title": "terrace second floor",
+		"description": "On the second-floor terrace: grape pergolas, lemon trees in pots, the forest spread out below.",
+		"tags": [
+			"Day 15",
+			"in the post",
+			"role:in-post"
+		]
+	},
+	"bafybeiacnyv2fra5yri6rguc2vmml6o5vrqn4vaojk46hvpyovezxfx63y": {
+		"url": "/media/bafybeiacnyv2fra5yri6rguc2vmml6o5vrqn4vaojk46hvpyovezxfx63y.png",
+		"mime": "image/png",
+		"title": "globe 02",
+		"description": "",
+		"tags": [
+			"game:sandbox-2",
+			"role:globe",
+			"sandbox-2"
+		]
+	},
+	"bafybeiafiviltkp3akgyc6tez5zgvfu7czexycqr25wpnoycaianixqn4q": {
+		"url": "/media/bafybeiafiviltkp3akgyc6tez5zgvfu7czexycqr25wpnoycaianixqn4q.jpg",
+		"mime": "image/jpeg",
+		"title": "daybeds",
+		"description": "Daybeds on the terrace, looking out through the arcade.",
+		"tags": [
+			"Day 18",
+			"in the post",
+			"role:in-post"
+		]
+	},
+	"bafybeiafwhd2cxclvc4or6dmeqb5hu2mn7ui6fillvcvtz5vh5g6xnfiiu": {
+		"url": "/media/bafybeiafwhd2cxclvc4or6dmeqb5hu2mn7ui6fillvcvtz5vh5g6xnfiiu.jpg",
+		"mime": "image/jpeg",
+		"title": "master cowork",
+		"description": "Co-working: long desks with laptops, a pinboard of plans, lanterns overhead.",
+		"tags": [
+			"Day 15",
+			"in the post",
+			"role:in-post"
+		]
+	},
+	"bafybeiailhelwuia4qdyexsotfj5i4brekr6ouhdivbvfb5rmnbstyltwi": {
+		"url": "/media/bafybeiailhelwuia4qdyexsotfj5i4brekr6ouhdivbvfb5rmnbstyltwi.jpg",
+		"mime": "image/jpeg",
+		"title": "hives",
+		"description": "Beehives in the food forest.",
+		"tags": [
+			"Day 18",
+			"in the post",
+			"role:in-post"
+		]
+	},
+	"bafybeiajrbfnkds6cpwu26c3ri7llswevkhtidu4jcqwdbwyv7f57jtkq4": {
+		"url": "/media/bafybeiajrbfnkds6cpwu26c3ri7llswevkhtidu4jcqwdbwyv7f57jtkq4.jpg",
+		"mime": "image/jpeg",
+		"title": "PwmKKG7I6Wi3f7TRlKKmV DgxWHxUM",
+		"description": "Eight domes along a river bend, joined only by footpaths through the trees.",
+		"tags": [
+			"Day 02",
+			"in the post",
+			"role:in-post"
+		]
+	},
+	"bafybeiaknxxqgyswj4xnd2btyq446t3f2yd4bmsbqm6vfhdhiolwto7nsi": {
+		"url": "/media/bafybeiaknxxqgyswj4xnd2btyq446t3f2yd4bmsbqm6vfhdhiolwto7nsi.png",
+		"mime": "image/png",
+		"title": "globe 01",
+		"description": "",
+		"tags": [
+			"game:sandbox-2",
+			"role:globe",
+			"sandbox-2"
+		]
+	},
+	"bafybeialgryk4zwtwrd6tgnge3sv3pn7cw32vvggcph5mew57ez5ccfjoa": {
+		"url": "/media/bafybeialgryk4zwtwrd6tgnge3sv3pn7cw32vvggcph5mew57ez5ccfjoa.jpg",
+		"mime": "image/jpeg",
+		"title": "bed",
+		"description": "The bed, the plants and the curved bench, the forest outside the glass.",
+		"tags": [
+			"Day 18",
+			"in the post",
+			"role:in-post"
+		]
+	},
+	"bafybeianomshfgfzo6qtlaa4uvcidnytxgxqtyrr2ed3tv6vq6hcmmegvy": {
+		"url": "/media/bafybeianomshfgfzo6qtlaa4uvcidnytxgxqtyrr2ed3tv6vq6hcmmegvy.jpg",
+		"mime": "image/jpeg",
+		"title": "glamping room",
+		"description": "Inside a glamping dome: a lemon tree in a stone planter under the skylight, the sleeping nooks behind timber screens, the kitchen on the right.",
+		"tags": [
+			"Day 15",
+			"in the post",
+			"role:in-post"
+		]
+	},
+	"bafybeianxgh5s6aqbrzf7adea76xdwmmurli3qk6rmpoulj62fvdeeajiy": {
+		"url": "/media/bafybeianxgh5s6aqbrzf7adea76xdwmmurli3qk6rmpoulj62fvdeeajiy.jpg",
+		"mime": "image/jpeg",
+		"title": "large plaza",
+		"description": "The plaza of a large dome, with the food forest rising round it.",
+		"tags": [
+			"Day 15",
+			"in the post",
+			"role:in-post"
+		]
+	},
+	"bafybeiaos26l67jhejmtcwxauoztww75ixq3xhkfvyd6szrvptyt45cpyi": {
+		"url": "/media/bafybeiaos26l67jhejmtcwxauoztww75ixq3xhkfvyd6szrvptyt45cpyi.jpg",
+		"mime": "image/jpeg",
+		"title": "JVxhHZgPZ8roIr9pwFwq8 XuQkLkxI",
+		"description": "A kitchen opening straight onto the food forest under the dome.",
+		"tags": [
+			"Day 03",
+			"in the post",
+			"role:in-post"
+		]
+	},
+	"bafybeiatftbwtb5x7b2bd7zh5dtefhytka27q36djxsn2hmwwtcdd7gxgm": {
+		"url": "/media/bafybeiatftbwtb5x7b2bd7zh5dtefhytka27q36djxsn2hmwwtcdd7gxgm.jpg",
+		"mime": "image/jpeg",
+		"title": "sandbox 4",
+		"description": "",
+		"tags": [
+			"game:sandbox-4",
+			"games",
+			"role:game-cover",
+			"site"
+		]
+	},
+	"bafybeiau34pecjiweugoyefuv7k3uhcvqqsswohyzuycz3eedsh43e2qau": {
+		"url": "/media/bafybeiau34pecjiweugoyefuv7k3uhcvqqsswohyzuycz3eedsh43e2qau.png",
+		"mime": "image/png",
+		"title": "factory dome 2",
+		"description": "",
+		"tags": [
+			"Day 05"
+		]
+	},
+	"bafybeib3qa5nmscpb2sxelo4j73fft7jgnnouwogtiao2k7hb6bvlgfwxu": {
+		"url": "/media/bafybeib3qa5nmscpb2sxelo4j73fft7jgnnouwogtiao2k7hb6bvlgfwxu.jpg",
+		"mime": "image/jpeg",
+		"title": "glamping window",
+		"description": "Past the lemon tree toward the door: the kitchen, raised beds and potted bananas along the glass.",
+		"tags": [
+			"Day 15",
+			"in the post",
+			"role:in-post"
+		]
+	},
+	"bafybeib6dxd3hpuoutwvltjn4v645ud3mttaffeu7zhu2ndl4tgim2nigi": {
+		"url": "/media/bafybeib6dxd3hpuoutwvltjn4v645ud3mttaffeu7zhu2ndl4tgim2nigi.jpg",
+		"mime": "image/jpeg",
+		"title": "forest canopy",
+		"description": "Under the canopy, looking back at the centre dome.",
+		"tags": [
+			"Day 06",
+			"in the post",
+			"role:in-post"
+		]
+	},
+	"bafybeibdcj6ns5dv2j3lu5mx4ji2gabs7gp2r3kv63rn2z5zdxpszaweem": {
+		"url": "/media/bafybeibdcj6ns5dv2j3lu5mx4ji2gabs7gp2r3kv63rn2z5zdxpszaweem.jpg",
+		"mime": "image/jpeg",
+		"title": "pond",
+		"description": "A pond from above: its shallows and deep water, a bridge, reeds along the shore, a playground beside it.",
+		"tags": [
+			"Day 18",
+			"in the post",
+			"role:in-post"
+		]
+	},
+	"bafybeibf7t7f3hetseqmmkrpfuqngmjwtu6bxmweboays7dzsn36bkwstm": {
+		"url": "/media/bafybeibf7t7f3hetseqmmkrpfuqngmjwtu6bxmweboays7dzsn36bkwstm.jpg",
+		"mime": "image/jpeg",
+		"title": "maia village",
+		"description": "A valley of domes, each dome cell sitting inside its own forest, the river left where it was.",
+		"tags": [
+			"Day 02",
+			"cover",
+			"role:cover"
+		]
+	},
+	"bafybeibnqdpgenp32lk44fguax6vqszav2uwggmcnk4ifjdbugkh2rfvea": {
+		"url": "/media/bafybeibnqdpgenp32lk44fguax6vqszav2uwggmcnk4ifjdbugkh2rfvea.jpg",
+		"mime": "image/jpeg",
+		"title": "home private room",
+		"description": "A private room upstairs: the bed faces out through the glass.",
+		"tags": [
+			"Day 15",
+			"in the post",
+			"role:in-post"
+		]
+	},
+	"bafybeibp7tnnay5r7mfexgdwmi6wbvtb44qkmswjfv5nlcpek6svwjrue4": {
+		"url": "/media/bafybeibp7tnnay5r7mfexgdwmi6wbvtb44qkmswjfv5nlcpek6svwjrue4.jpg",
+		"mime": "image/jpeg",
+		"title": "master woodshop",
+		"description": "The woodshop: workbenches with vices, a saw, a rack of boards along the glass and a pegboard of tools.",
+		"tags": [
+			"Day 15",
+			"in the post",
+			"role:in-post"
+		]
+	},
+	"bafybeibqrlvenmbhvnkjv7wykckcni2nne2rpdtozwjzd4g4sjx3gawa5u": {
+		"url": "/media/bafybeibqrlvenmbhvnkjv7wykckcni2nne2rpdtozwjzd4g4sjx3gawa5u.jpg",
+		"mime": "image/jpeg",
+		"title": "nQwFJ5NkfH1DL1fVV35PN LOahOJDP",
+		"description": "Dozens of domes spread along a coastal plain, a river cascading between them toward the sea.",
+		"tags": [
+			"Day 02",
+			"in the post",
+			"role:in-post"
+		]
+	},
+	"bafybeibrdwd2fqbjhltxvpbohmzxphwr4qfm5u6orbbvbbikkcgw3a5frm": {
+		"url": "/media/bafybeibrdwd2fqbjhltxvpbohmzxphwr4qfm5u6orbbvbbikkcgw3a5frm.jpg",
+		"mime": "image/jpeg",
+		"title": "Lu7L8HWPvs bMctUIgqOC csCmDl8j",
+		"description": "A dozen domes on stone bases, sunk into green canopy, a turquoise stream threading between them.",
+		"tags": [
+			"Day 02",
+			"in the post",
+			"role:in-post"
+		]
+	},
+	"bafybeibrqh5fjfffcxb4subshx4qsvbwkihakft3hfbo7fudjz6r4pedra": {
+		"url": "/media/bafybeibrqh5fjfffcxb4subshx4qsvbwkihakft3hfbo7fudjz6r4pedra.jpg",
+		"mime": "image/jpeg",
+		"title": "master restaurant",
+		"description": "The restaurant square: long tables under a pergola strung with lights.",
+		"tags": [
+			"Day 15",
+			"in the post",
+			"role:in-post"
+		]
+	},
+	"bafybeibsbjhpo5ympbq4ddde4xqezhvon2c4luzoup6rbyemqswkgtvngy": {
+		"url": "/media/bafybeibsbjhpo5ympbq4ddde4xqezhvon2c4luzoup6rbyemqswkgtvngy.jpg",
+		"mime": "image/jpeg",
+		"title": "a citizen",
+		"description": "The last note: you are a citizen. Now find a home.",
+		"tags": [
+			"Day 13",
+			"in the post",
+			"role:in-post"
+		]
+	},
+	"bafybeibsue5jkgjccnwzftrjcg4wdwdnsx2ggrooslctxwecfvcu7pmy3u": {
+		"url": "/media/bafybeibsue5jkgjccnwzftrjcg4wdwdnsx2ggrooslctxwecfvcu7pmy3u.jpg",
+		"mime": "image/jpeg",
+		"title": "xQynnN TAMJEnQResy0u4 6jjbRbcb",
+		"description": "Half length, one hand on the hip, the sash bag across the body.",
+		"tags": [
+			"Day 08",
+			"in the post",
+			"role:in-post"
+		]
+	},
+	"bafybeibtug4jtm5xx55wknknqlageu37hgnappvfwy3t4u55pbquvqb4zu": {
+		"url": "/media/bafybeibtug4jtm5xx55wknknqlageu37hgnappvfwy3t4u55pbquvqb4zu.jpg",
+		"mime": "image/jpeg",
+		"title": "jcD 7YvPVQ0",
+		"description": "",
+		"tags": [
+			"role:source-thumbnail",
+			"thumbnails",
+			"youtube:jcD-7YvPVQ0"
+		]
+	},
+	"bafybeibvot3un24y66tmpuehokqvskjg6w2rfzal5lcilomnogkmiyoh34": {
+		"url": "/media/bafybeibvot3un24y66tmpuehokqvskjg6w2rfzal5lcilomnogkmiyoh34.jpg",
+		"mime": "image/jpeg",
+		"title": "home commons",
+		"description": "The ground floor of a medium dome: a stone plaza with a long table, sofas, lanterns, and fruit trees all round.",
+		"tags": [
+			"Day 15",
+			"in the post",
+			"role:in-post"
+		]
+	},
+	"bafybeic4jm3kafm4dmrytgqwqfhvgapogn7i6n25uezgkt2iczqmh3qcdq": {
+		"url": "/media/bafybeic4jm3kafm4dmrytgqwqfhvgapogn7i6n25uezgkt2iczqmh3qcdq.png",
+		"mime": "image/png",
+		"title": "factory dome 4",
+		"description": "",
+		"tags": [
+			"Day 05"
+		]
+	},
+	"bafybeic5nmph5tdoosydmikxtcdb57x4rgfholl6gmvgbwts372iogny6a": {
+		"url": "/media/bafybeic5nmph5tdoosydmikxtcdb57x4rgfholl6gmvgbwts372iogny6a.jpg",
+		"mime": "image/jpeg",
+		"title": "1bqjt xrlqk",
+		"description": "",
+		"tags": [
+			"role:source-thumbnail",
+			"thumbnails",
+			"youtube:1bqjt-xrlqk"
+		]
+	},
+	"bafybeic6fjuvactqgno3kmoehrtfgqqrq3u5fm4445nivd7drofobx6p4a": {
+		"url": "/media/bafybeic6fjuvactqgno3kmoehrtfgqqrq3u5fm4445nivd7drofobx6p4a.mp3",
+		"mime": "audio/mpeg",
+		"title": "Factory hall",
+		"description": "",
+		"tags": [
+			"nature",
+			"role:ambience",
+			"role:sfx",
+			"sfx",
+			"sound effect",
+			"sound:factory ambience",
+			"sound:factory-ambience",
+			"sounds"
+		]
+	},
+	"bafybeic6zaq6rv6wqzq3t7yaretzhrqceyr6lke2tuhhp3flk7qryq6ik4": {
+		"url": "/media/bafybeic6zaq6rv6wqzq3t7yaretzhrqceyr6lke2tuhhp3flk7qryq6ik4.jpg",
+		"mime": "image/jpeg",
+		"title": "home from the gallery",
+		"description": "From the gallery of a medium dome, at the top of the stair: the food forest, the paths and the beds below.",
+		"tags": [
+			"Day 15",
+			"in the post",
+			"role:in-post"
+		]
+	},
+	"bafybeic75lwtffacroif25aqhjp3ez4nkfjfo72qz65ix4hfegpom4tyla": {
+		"url": "/media/bafybeic75lwtffacroif25aqhjp3ez4nkfjfo72qz65ix4hfegpom4tyla.jpg",
+		"mime": "image/jpeg",
+		"title": "NKVIRh7Iu3I3oLE2EHJwZ NrAiJlj7",
+		"description": "Two ways to feed a city in one frame: patchwork fields along the coast, and domes sitting inside their own forest along the river.",
+		"tags": [
+			"Day 02",
+			"in the post",
+			"role:in-post"
+		]
+	},
+	"bafybeic7j2mtxnimme6qlil6kdvqa3x2cy5wm54zaxu663mimekssfrqa4": {
+		"url": "/media/bafybeic7j2mtxnimme6qlil6kdvqa3x2cy5wm54zaxu663mimekssfrqa4.png",
+		"mime": "image/png",
+		"title": "factory dome 1",
+		"description": "",
+		"tags": [
+			"Day 05"
+		]
+	},
+	"bafybeica4p4vcxvpptmioiuyvadwr2xy27piotbz5pq52wvk4qrn5orqmi": {
+		"url": "/media/bafybeica4p4vcxvpptmioiuyvadwr2xy27piotbz5pq52wvk4qrn5orqmi.png",
+		"mime": "image/png",
+		"title": "factory dome 3",
+		"description": "",
+		"tags": [
+			"Day 05"
+		]
+	},
+	"bafybeicafiplfeyys2w6qlgp3slpe5p5ch4lzsdrlbrhe2ngfglhhxiafi": {
+		"url": "/media/bafybeicafiplfeyys2w6qlgp3slpe5p5ch4lzsdrlbrhe2ngfglhhxiafi.jpg",
+		"mime": "image/jpeg",
+		"title": "the planet",
+		"description": "The planet from orbit: every tower is a city, and its height counts its citizens.",
+		"tags": [
+			"Day 13",
+			"in the post",
+			"role:in-post"
+		]
+	},
+	"bafybeicainjst73mfljxz6ujhmwbkiza2dns3hzfkvhdsyhabwj2psx2dy": {
+		"url": "/media/bafybeicainjst73mfljxz6ujhmwbkiza2dns3hzfkvhdsyhabwj2psx2dy.jpg",
+		"mime": "image/jpeg",
+		"title": "forest coop",
+		"description": "A swing, benches and the chicken coop beside the gravel.",
+		"tags": [
+			"Day 06",
+			"in the post",
+			"role:in-post"
+		]
+	},
+	"bafybeicbzq5tkd5426bkg7n2b3pjasv2gn2aquevc2irskh2fsezpoxxwy": {
+		"url": "/media/bafybeicbzq5tkd5426bkg7n2b3pjasv2gn2aquevc2irskh2fsezpoxxwy.mp3",
+		"mime": "audio/mpeg",
+		"title": "19 Stream over stones",
+		"description": "",
+		"tags": [
+			"Day 19",
+			"nature",
+			"role:ambience",
+			"role:sfx",
+			"sfx",
+			"sound effect",
+			"sound:water stream",
+			"sound:water_stream",
+			"sounds"
+		]
+	},
+	"bafybeicf2vqsvhjm4bahluzmqiztw2fmrm72bv4agbqsunebwk5svd2l3y": {
+		"url": "/media/bafybeicf2vqsvhjm4bahluzmqiztw2fmrm72bv4agbqsunebwk5svd2l3y.jpg",
+		"mime": "image/jpeg",
+		"title": "forest golden",
+		"description": "The dome cell at Level 6, late in the day — canopy to the rim of the hex, gravel walks wandering through it.",
+		"tags": [
+			"Day 06",
+			"cover",
+			"role:cover"
+		]
+	},
+	"bafybeicgl23wu7j5mxsd5uwxhm4dbqkojwnpyrvlbozucxptp3kng5urr4": {
+		"url": "/media/bafybeicgl23wu7j5mxsd5uwxhm4dbqkojwnpyrvlbozucxptp3kng5urr4.jpg",
+		"mime": "image/jpeg",
+		"title": "forest fire",
+		"description": "The fire ring from the first night, carried out into the forest. The commons never stopped being a fire.",
+		"tags": [
+			"Day 06",
+			"in the post",
+			"role:in-post"
+		]
+	},
+	"bafybeichrshko3dbstqpronxlxemh7aswi3ska4o6bg3xindz3wfzhoq7a": {
+		"url": "/media/bafybeichrshko3dbstqpronxlxemh7aswi3ska4o6bg3xindz3wfzhoq7a.png",
+		"mime": "image/png",
+		"title": "level 1",
+		"description": "Level 1: six mini tents at 5 m across, two people each. Four containers, and a fire ring in the middle.",
+		"tags": [
+			"Day 05",
+			"in the post",
+			"role:in-post"
+		]
+	},
+	"bafybeickgal3i43zycctaue4rtc2lt5ec2u2ix4pugb72gqseqojx6k7g4": {
+		"url": "/media/bafybeickgal3i43zycctaue4rtc2lt5ec2u2ix4pugb72gqseqojx6k7g4.jpg",
+		"mime": "image/jpeg",
+		"title": "6dIScRIYuNkYoDzenoV8J Wt3H5dUw",
+		"description": "A single dome on a stone arcade, a timber footbridge over clear water, forest pressing in on every side.",
+		"tags": [
+			"Day 02",
+			"in the post",
+			"role:in-post"
+		]
+	},
+	"bafybeickyfggtd47zzsomah3bi6n2szhqoyeieq6rpoidhxwurjt7glghe": {
+		"url": "/media/bafybeickyfggtd47zzsomah3bi6n2szhqoyeieq6rpoidhxwurjt7glghe.jpg",
+		"mime": "image/jpeg",
+		"title": "lNrmpq PNt9IPXwAzJWqx aH4SqMKK",
+		"description": "Two terraces, a stone arcade and a single glass shell.",
+		"tags": [
+			"Day 03",
+			"in the post",
+			"role:in-post"
+		]
+	},
+	"bafybeiclxy6mmey6l76eeoxwrx2x3bvb52szhrmtbjdhdb32z4cgmd2vua": {
+		"url": "/media/bafybeiclxy6mmey6l76eeoxwrx2x3bvb52szhrmtbjdhdb32z4cgmd2vua.jpg",
+		"mime": "image/jpeg",
+		"title": "goats",
+		"description": "Goats browsing under the fruit trees.",
+		"tags": [
+			"Day 15",
+			"in the post",
+			"role:in-post"
+		]
+	},
+	"bafybeico4zfwof2xi4pbo2ypke6mquppztq6yqvxra4ylt464waiakcgly": {
+		"url": "/media/bafybeico4zfwof2xi4pbo2ypke6mquppztq6yqvxra4ylt464waiakcgly.mp3",
+		"mime": "audio/mpeg",
+		"title": "19 Forest morning",
+		"description": "",
+		"tags": [
+			"Day 19",
+			"nature",
+			"role:ambience",
+			"role:sfx",
+			"sfx",
+			"sound effect",
+			"sound:forest nature",
+			"sound:forest_nature",
+			"sounds"
+		]
+	},
+	"bafybeiconqxhsc3xentgl6ertqkwxxug2vlijhsl7i4ck3u5iiyhvgg7qy": {
+		"url": "/media/bafybeiconqxhsc3xentgl6ertqkwxxug2vlijhsl7i4ck3u5iiyhvgg7qy.jpg",
+		"mime": "image/jpeg",
+		"title": "sYtFCtO9iKSBQ8TrfnJbw UUCj632a",
+		"description": "A terrace in the morning light, a table set, and forest and domes running down to the sea.",
+		"tags": [
+			"Day 02",
+			"in the post",
+			"role:in-post"
+		]
+	},
+	"bafybeicqkczxcgf6zp5f362fldwf2lu554y7asug25vlp5nblpocg7mptm": {
+		"url": "/media/bafybeicqkczxcgf6zp5f362fldwf2lu554y7asug25vlp5nblpocg7mptm.jpg",
+		"mime": "image/jpeg",
+		"title": "glass",
+		"description": "Looking up from inside the master dome through the solar glass.",
+		"tags": [
+			"Day 17",
+			"in the post",
+			"role:in-post"
+		]
+	},
+	"bafybeicrqkota27vkup4ejfe2uc6wh2ilf6u3qte6o24xuxcx57srqdm7u": {
+		"url": "/media/bafybeicrqkota27vkup4ejfe2uc6wh2ilf6u3qte6o24xuxcx57srqdm7u.png",
+		"mime": "image/png",
+		"title": "level 5",
+		"description": "Level 5: one 136 m dome at the centre of the ring — commons, energy, storage and compute under a single roof.",
+		"tags": [
+			"Day 05",
+			"in the post",
+			"role:in-post"
+		]
+	},
+	"bafybeicszbyydl2mezk3gbtxsnk2mnbxk2cbkimcj42y2ndpd2qpq2w6a4": {
+		"url": "/media/bafybeicszbyydl2mezk3gbtxsnk2mnbxk2cbkimcj42y2ndpd2qpq2w6a4.jpg",
+		"mime": "image/jpeg",
+		"title": "between",
+		"description": "Between two domes: fruit trees, berry bushes and flowers along the path.",
+		"tags": [
+			"Day 17",
+			"in the post",
+			"role:in-post"
+		]
+	},
+	"bafybeicuuk4r2mfszu4hcbusbhiopha7evskbwonwaztplg6lidx3gqnce": {
+		"url": "/media/bafybeicuuk4r2mfszu4hcbusbhiopha7evskbwonwaztplg6lidx3gqnce.jpg",
+		"mime": "image/jpeg",
+		"title": "forest pond",
+		"description": "Every forest hex has a pond, and no two are the same shape.",
+		"tags": [
+			"Day 06",
+			"in the post",
+			"role:in-post"
+		]
+	},
+	"bafybeiczmoikvoublco3tcexkbxpimzeix5ubxeqmlwe5dyqqkeeq4qzoa": {
+		"url": "/media/bafybeiczmoikvoublco3tcexkbxpimzeix5ubxeqmlwe5dyqqkeeq4qzoa.jpg",
+		"mime": "image/jpeg",
+		"title": "master garden",
+		"description": "The kitchen garden in the master dome: chard, strawberries and tomatoes along the path.",
+		"tags": [
+			"Day 15",
+			"in the post",
+			"role:in-post"
+		]
+	},
+	"bafybeid2cykgdxwarojhjpfljswivmdlcdp3uglynacievducpexvqxiri": {
+		"url": "/media/bafybeid2cykgdxwarojhjpfljswivmdlcdp3uglynacievducpexvqxiri.jpg",
+		"mime": "image/jpeg",
+		"title": "forest evening walk",
+		"description": "Evening in the food forest, the domes behind it.",
+		"tags": [
+			"Day 06",
+			"in the post",
+			"role:in-post"
+		]
+	},
+	"bafybeid3pxubimt3z3ggiso2zjkcuueowyac4mrqouf6fe7tjdizrkawlu": {
+		"url": "/media/bafybeid3pxubimt3z3ggiso2zjkcuueowyac4mrqouf6fe7tjdizrkawlu.jpg",
+		"mime": "image/jpeg",
+		"title": "R4t60oBqyYJegXF5x0Hiv mQfvDpEm",
+		"description": "Full length — the patterned suit, the light cape, the flat sandals.",
+		"tags": [
+			"Day 08",
+			"in the post",
+			"role:in-post"
+		]
+	},
+	"bafybeid4qoaulad5mgr36f264ms7cusktudwgb4fsdg5xn74bf77r43lua": {
+		"url": "/media/bafybeid4qoaulad5mgr36f264ms7cusktudwgb4fsdg5xn74bf77r43lua.jpg",
+		"mime": "image/jpeg",
+		"title": "large from outside",
+		"description": "A large dome from the forest: the path leads to a door under the stone arcade, two terraces above it.",
+		"tags": [
+			"Day 15",
+			"in the post",
+			"role:in-post"
+		]
+	},
+	"bafybeid6nb4pjnkokdjjrkq24cckhkkopxyoovmol7pr2sad2lls3mpvyu": {
+		"url": "/media/bafybeid6nb4pjnkokdjjrkq24cckhkkopxyoovmol7pr2sad2lls3mpvyu.jpg",
+		"mime": "image/jpeg",
+		"title": "door",
+		"description": "Looking back at a room's glass door from the terrace.",
+		"tags": [
+			"Day 18",
+			"in the post",
+			"role:in-post"
+		]
+	},
+	"bafybeid6pjgd4qfleeipy5ojyzfz5nx3vpt6fm3l2wxhur4rysoytxkaze": {
+		"url": "/media/bafybeid6pjgd4qfleeipy5ojyzfz5nx3vpt6fm3l2wxhur4rysoytxkaze.mp3",
+		"mime": "audio/mpeg",
+		"title": "19 Geese",
+		"description": "",
+		"tags": [
+			"Day 19",
+			"nature",
+			"role:ambience",
+			"role:sfx",
+			"sfx",
+			"sound effect",
+			"sound:geese",
+			"sounds"
+		]
+	},
+	"bafybeid6y5oknbazpotdwnrpkovritnlip3ozufrsnc4pzn76htzuu3tqq": {
+		"url": "/media/bafybeid6y5oknbazpotdwnrpkovritnlip3ozufrsnc4pzn76htzuu3tqq.jpg",
+		"mime": "image/jpeg",
+		"title": "large private room",
+		"description": "A private room in a large dome, the bed against the glass and the land beyond.",
+		"tags": [
+			"Day 15",
+			"in the post",
+			"role:in-post"
+		]
+	},
+	"bafybeid73woukgnebhzlm7pltv5hvftvif5aqid5kbwdldvoev2riy4et4": {
+		"url": "/media/bafybeid73woukgnebhzlm7pltv5hvftvif5aqid5kbwdldvoev2riy4et4.png",
+		"mime": "image/png",
+		"title": "globe 07",
+		"description": "",
+		"tags": [
+			"game:sandbox-2",
+			"role:globe",
+			"sandbox-2"
+		]
+	},
+	"bafybeidceyf4n6nldycil7kowhpbad7h3bf6hojsxzjgx752bva4zabh4q": {
+		"url": "/media/bafybeidceyf4n6nldycil7kowhpbad7h3bf6hojsxzjgx752bva4zabh4q.jpg",
+		"mime": "image/jpeg",
+		"title": "forest guilds",
+		"description": "Apple trees heavy with fruit, and the layers under them.",
+		"tags": [
+			"Day 15",
+			"in the post",
+			"role:in-post"
+		]
+	},
+	"bafybeidcygcrgevwld4brioqtqy723ws637u7jvfvplojp5nghsyboar2a": {
+		"url": "/media/bafybeidcygcrgevwld4brioqtqy723ws637u7jvfvplojp5nghsyboar2a.mp3",
+		"mime": "audio/mpeg",
+		"title": "19 Soft nature under glass",
+		"description": "",
+		"tags": [
+			"Day 19",
+			"nature",
+			"role:ambience",
+			"role:sfx",
+			"sfx",
+			"sound effect",
+			"sound:soft nature",
+			"sound:soft-nature",
+			"sounds"
+		]
+	},
+	"bafybeidd2dzoahupdha6c3ikw7g6pu42u7u5plxn5t67iihuuf6oiiputy": {
+		"url": "/media/bafybeidd2dzoahupdha6c3ikw7g6pu42u7u5plxn5t67iihuuf6oiiputy.jpg",
+		"mime": "image/jpeg",
+		"title": "master from outside",
+		"description": "The master dome from the forest: the two-storey arcade, the terraces, and the squares round it.",
+		"tags": [
+			"Day 15",
+			"in the post",
+			"role:in-post"
+		]
+	},
+	"bafybeidgrkirdenfiv5cukncgy3acj5kaz7js7rrsvj6tgdhgciwlmluym": {
+		"url": "/media/bafybeidgrkirdenfiv5cukncgy3acj5kaz7js7rrsvj6tgdhgciwlmluym.jpg",
+		"mime": "image/jpeg",
+		"title": "desk",
+		"description": "A desk and an armchair by the window.",
+		"tags": [
+			"Day 18",
+			"in the post",
+			"role:in-post"
+		]
+	},
+	"bafybeidhsjtrkhd3izafq6vwycbvfvweok3lrk4elwnsmchoz5v456jeey": {
+		"url": "/media/bafybeidhsjtrkhd3izafq6vwycbvfvweok3lrk4elwnsmchoz5v456jeey.jpg",
+		"mime": "image/jpeg",
+		"title": "stream outside",
+		"description": "The stream outside a large dome, winding between the fruit trees.",
+		"tags": [
+			"Day 15",
+			"in the post",
+			"role:in-post"
+		]
+	},
+	"bafybeidl6xvzeon2biogdc5dwzg3jcvdoa6lriqehp3bet4bimorhyjuqq": {
+		"url": "/media/bafybeidl6xvzeon2biogdc5dwzg3jcvdoa6lriqehp3bet4bimorhyjuqq.jpg",
+		"mime": "image/jpeg",
+		"title": "choosing a card",
+		"description": "Choosing a card: the orange ring marks it, and the founding sheet opens.",
+		"tags": [
+			"Day 11",
+			"in the post",
+			"role:in-post"
+		]
+	},
+	"bafybeidlxbk75toyq3pg574ciqzfaf2ep3kf44ogzseklmtmuwi5s3jpfm": {
+		"url": "/media/bafybeidlxbk75toyq3pg574ciqzfaf2ep3kf44ogzseklmtmuwi5s3jpfm.jpg",
+		"mime": "image/jpeg",
+		"title": "6 3jR wbqUweA7iZy396 3nsjI3Wg",
+		"description": "A theatre under a glass dome at night, hundreds of people facing a lit stage.",
+		"tags": [
+			"Day 02",
+			"in the post",
+			"role:in-post"
+		]
+	},
+	"bafybeidmmdlzowqrp6j23pc532jkdde6am5ycounlv7q3u3eptg7gekesa": {
+		"url": "/media/bafybeidmmdlzowqrp6j23pc532jkdde6am5ycounlv7q3u3eptg7gekesa.jpg",
+		"mime": "image/jpeg",
+		"title": "lplP754hucYk1GP cdia5 XvA2Z8B6",
+		"description": "A ring of domes around one larger dome at the centre, joined by walkways and water.",
+		"tags": [
+			"Day 03",
+			"cover",
+			"role:cover"
+		]
+	},
+	"bafybeidppa36buvhqimnu6ofuemdehwenxrcm7tsiufrze52kscw2ctnde": {
+		"url": "/media/bafybeidppa36buvhqimnu6ofuemdehwenxrcm7tsiufrze52kscw2ctnde.jpg",
+		"mime": "image/jpeg",
+		"title": "in",
+		"description": "Through the door of the master dome and straight into its forest.",
+		"tags": [
+			"Day 17",
+			"in the post",
+			"role:in-post"
+		]
+	},
+	"bafybeiduupoc2g3kpfkgobkpgrkir4ip3b52bjlle77qcrjni7ihag67iq": {
+		"url": "/media/bafybeiduupoc2g3kpfkgobkpgrkir4ip3b52bjlle77qcrjni7ihag67iq.jpg",
+		"mime": "image/jpeg",
+		"title": "master studio",
+		"description": "The art studio: easels in a row facing the glass, a table of paints.",
+		"tags": [
+			"Day 15",
+			"in the post",
+			"role:in-post"
+		]
+	},
+	"bafybeiduvdhl5bi2u353ezludpvn3xsmi2fnodo6s4mqyyvnngpbafjq2u": {
+		"url": "/media/bafybeiduvdhl5bi2u353ezludpvn3xsmi2fnodo6s4mqyyvnngpbafjq2u.jpg",
+		"mime": "image/jpeg",
+		"title": "edge",
+		"description": "The food forest at the edge of the cell, every layer full.",
+		"tags": [
+			"Day 17",
+			"in the post",
+			"role:in-post"
+		]
+	},
+	"bafybeidvgxaarsscx3jj5nd7sdqjbf7s3ywttb7sxyailpdq6ivkg7clie": {
+		"url": "/media/bafybeidvgxaarsscx3jj5nd7sdqjbf7s3ywttb7sxyailpdq6ivkg7clie.png",
+		"mime": "image/png",
+		"title": "globe 04",
+		"description": "",
+		"tags": [
+			"game:sandbox-2",
+			"role:globe",
+			"sandbox-2"
+		]
+	},
+	"bafybeie26ig57sngmwxxecmt2hmnfnuwem5j2ei3aa4z72rovvk7faeiya": {
+		"url": "/media/bafybeie26ig57sngmwxxecmt2hmnfnuwem5j2ei3aa4z72rovvk7faeiya.jpg",
+		"mime": "image/jpeg",
+		"title": "master forest",
+		"description": "The master dome's forest.",
+		"tags": [
+			"Day 15",
+			"in the post",
+			"role:in-post"
+		]
+	},
+	"bafybeiecc63xwsuxnj27a2xgyddi5wxoji6ksjgrtdhboou6agyag2fata": {
+		"url": "/media/bafybeiecc63xwsuxnj27a2xgyddi5wxoji6ksjgrtdhboou6agyag2fata.jpg",
+		"mime": "image/jpeg",
+		"title": "xsN9RYb5ExZtsNYtHDNra qkM0bNfT",
+		"description": "Two figures on a ridge, looking down over the dome cells in the valley.",
+		"tags": [
+			"Day 03",
+			"in the post",
+			"role:in-post",
+			"site"
+		]
+	},
+	"bafybeiedfeua6cy7nvhvlovk3hjzeec7gzhvsktq7ljgtxp46yrug2sh24": {
+		"url": "/media/bafybeiedfeua6cy7nvhvlovk3hjzeec7gzhvsktq7ljgtxp46yrug2sh24.jpg",
+		"mime": "image/jpeg",
+		"title": "kdNOd8GVpIwzUHKBT8T4 CMV3EzuM",
+		"description": "Close portrait, the calm version of the same face.",
+		"tags": [
+			"Day 08",
+			"in the post",
+			"role:in-post"
+		]
+	},
+	"bafybeiee3z5223ur53uaz3lclm5adx62vdzwrccukbfynfyz7zxygq5jg4": {
+		"url": "/media/bafybeiee3z5223ur53uaz3lclm5adx62vdzwrccukbfynfyz7zxygq5jg4.jpg",
+		"mime": "image/jpeg",
+		"title": "jfw8 bLrbTgGfzoAJ0G1M 2tJJpuNy",
+		"description": "A plainer version: knit suit, woven bag.",
+		"tags": [
+			"Day 08",
+			"in the post",
+			"role:in-post"
+		]
+	},
+	"bafybeiefqt2zfmcpr5bovpxbdrgnq5auxwis2eom45rygghtbsew3xiday": {
+		"url": "/media/bafybeiefqt2zfmcpr5bovpxbdrgnq5auxwis2eom45rygghtbsew3xiday.mp3",
+		"mime": "audio/mpeg",
+		"title": "Machine",
+		"description": "",
+		"tags": [
+			"nature",
+			"role:ambience",
+			"role:sfx",
+			"sfx",
+			"sound effect",
+			"sound:machine",
+			"sounds"
+		]
+	},
+	"bafybeieiwbf2i2f42sjb4q7t523wwnmlu5zhb74jkwjhvjhhxoaimaucmm": {
+		"url": "/media/bafybeieiwbf2i2f42sjb4q7t523wwnmlu5zhb74jkwjhvjhhxoaimaucmm.jpg",
+		"mime": "image/jpeg",
+		"title": "alp tzIhSZCTOCiV6o5nO g9jR0km3",
+		"description": "Inside a dome: terraces stacked around an open middle, fruit trees growing through it, people at tables below.",
+		"tags": [
+			"Day 02",
+			"in the post",
+			"role:in-post"
+		]
+	},
+	"bafybeiekl5cqpeh2ljpbaimu5czsmk3svu6inl74mhtnfn5rh67fyfk4ia": {
+		"url": "/media/bafybeiekl5cqpeh2ljpbaimu5czsmk3svu6inl74mhtnfn5rh67fyfk4ia.jpg",
+		"mime": "image/jpeg",
+		"title": "hzUX4j7ZpU9VsRCjaYuMO WG67YZVO",
+		"description": "Four views of one place: the riverside approach, a terrace overlook, the atrium inside, a private terrace at home.",
+		"tags": [
+			"Day 02",
+			"in the post",
+			"role:in-post"
+		]
+	},
+	"bafybeielpynx4d77nb7k7rlyn7jpo6ao63pto66rurgj2kjusqb3o6f6na": {
+		"url": "/media/bafybeielpynx4d77nb7k7rlyn7jpo6ao63pto66rurgj2kjusqb3o6f6na.jpg",
+		"mime": "image/jpeg",
+		"title": "terrace upper",
+		"description": "The upper terrace of a large dome, high above the forest.",
+		"tags": [
+			"Day 18",
+			"Day 19",
+			"in the post",
+			"role:in-post",
+			"site"
+		]
+	},
+	"bafybeiem4dwsswaqvl5g2zz3m47tph5idqtalkmxvddw7bzv5pcaitrsom": {
+		"url": "/media/bafybeiem4dwsswaqvl5g2zz3m47tph5idqtalkmxvddw7bzv5pcaitrsom.jpg",
+		"mime": "image/jpeg",
+		"title": "AvenMaia",
+		"description": "avenMAIA, at eye level, on a plain background.",
+		"tags": [
+			"Day 08",
+			"cover",
+			"role:cover"
+		]
+	},
+	"bafybeiery7dtnfprkwgtxxpagsm54oxsbsahktiyf3frcjjwd4sq7b6hoi": {
+		"url": "/media/bafybeiery7dtnfprkwgtxxpagsm54oxsbsahktiyf3frcjjwd4sq7b6hoi.mp3",
+		"mime": "audio/mpeg",
+		"title": "19 Bees",
+		"description": "",
+		"tags": [
+			"Day 19",
+			"nature",
+			"role:ambience",
+			"role:sfx",
+			"sfx",
+			"sound effect",
+			"sound:bees",
+			"sounds"
+		]
+	},
+	"bafybeieseajztaoucluztlekifaod2rschqp4aicebnpp3ek4ty7hjgzvm": {
+		"url": "/media/bafybeieseajztaoucluztlekifaod2rschqp4aicebnpp3ek4ty7hjgzvm.jpg",
+		"mime": "image/jpeg",
+		"title": "hDIBkEFP x4",
+		"description": "",
+		"tags": [
+			"role:source-thumbnail",
+			"thumbnails",
+			"youtube:hDIBkEFP_x4"
+		]
+	},
+	"bafybeietaqxfyxuljr4cpfcfcl62rhbhufrykzey3vatu2zbtgbjjajlri": {
+		"url": "/media/bafybeietaqxfyxuljr4cpfcfcl62rhbhufrykzey3vatu2zbtgbjjajlri.jpg",
+		"mime": "image/jpeg",
+		"title": "stone arcade",
+		"description": "Walking under the arcade toward a door.",
+		"tags": [
+			"Day 15",
+			"in the post",
+			"role:in-post"
+		]
+	},
+	"bafybeietna3l6kdyvdzrra5txkj37iybxbhwdx2ln4omxpaxpsqaor77ve": {
+		"url": "/media/bafybeietna3l6kdyvdzrra5txkj37iybxbhwdx2ln4omxpaxpsqaor77ve.jpg",
+		"mime": "image/jpeg",
+		"title": "second floor",
+		"description": "From the second-floor gallery of a large dome, looking down over the forest inside.",
+		"tags": [
+			"Day 15",
+			"in the post",
+			"role:in-post"
+		]
+	},
+	"bafybeievccju2l3o5iojkjyckfk2yuddv4d4a6i3p3fv5iiqn5fgav6iim": {
+		"url": "/media/bafybeievccju2l3o5iojkjyckfk2yuddv4d4a6i3p3fv5iiqn5fgav6iim.jpg",
+		"mime": "image/jpeg",
+		"title": "4R wS4Iy3MJS1t MiaDJE Ac5am0m3",
+		"description": "Three-quarter profile, looking off frame.",
+		"tags": [
+			"Day 08",
+			"in the post",
+			"role:in-post"
+		]
+	},
+	"bafybeiez76uxmjf3lw7szaguqcwcgoh7lh55zu5eqr32zu526ljxbjjrfy": {
+		"url": "/media/bafybeiez76uxmjf3lw7szaguqcwcgoh7lh55zu5eqr32zu526ljxbjjrfy.mp3",
+		"mime": "audio/mpeg",
+		"title": "19 Frogs",
+		"description": "",
+		"tags": [
+			"Day 19",
+			"nature",
+			"role:ambience",
+			"role:sfx",
+			"sfx",
+			"sound effect",
+			"sound:frog",
+			"sounds"
+		]
+	},
+	"bafybeif3brasfau7rreha54bntc2ldzu7oqzhislxr3vwqdybouy3d6ahi": {
+		"url": "/media/bafybeif3brasfau7rreha54bntc2ldzu7oqzhislxr3vwqdybouy3d6ahi.jpg",
+		"mime": "image/jpeg",
+		"title": "master onstage",
+		"description": "From the stage, looking up at the tiers.",
+		"tags": [
+			"Day 15",
+			"in the post",
+			"role:in-post"
+		]
+	},
+	"bafybeifa6by2jgibxfl7gotchgqueg4mifntbw6wqgjct5vdbdn3t7sfiq": {
+		"url": "/media/bafybeifa6by2jgibxfl7gotchgqueg4mifntbw6wqgjct5vdbdn3t7sfiq.jpg",
+		"mime": "image/jpeg",
+		"title": "master bakery",
+		"description": "The bakery and cooking school: the bread oven, two cooking islands, and a long table.",
+		"tags": [
+			"Day 15",
+			"in the post",
+			"role:in-post"
+		]
+	},
+	"bafybeifdqzdl6ppstzef7wgjuxt5syp6anrhlwlv5anwt4w2eophkpvjzq": {
+		"url": "/media/bafybeifdqzdl6ppstzef7wgjuxt5syp6anrhlwlv5anwt4w2eophkpvjzq.jpg",
+		"mime": "image/jpeg",
+		"title": "geese",
+		"description": "Geese on the stream bank and goats by the bridge, outside a large dome.",
+		"tags": [
+			"Day 15",
+			"in the post",
+			"role:in-post"
+		]
+	},
+	"bafybeifehn5jpnnz25m2dm7mci4bfshgisvkoc5hy7psdj6ros2lrtxcae": {
+		"url": "/media/bafybeifehn5jpnnz25m2dm7mci4bfshgisvkoc5hy7psdj6ros2lrtxcae.jpg",
+		"mime": "image/jpeg",
+		"title": "citizenship",
+		"description": "Step one, pointed out right where it happens.",
+		"tags": [
+			"Day 13",
+			"in the post",
+			"role:in-post"
+		]
+	},
+	"bafybeifeluwlsey3m6cto3th3ak22lb2g7cum627fwp6ivvu4mi6nk4voi": {
+		"url": "/media/bafybeifeluwlsey3m6cto3th3ak22lb2g7cum627fwp6ivvu4mi6nk4voi.jpg",
+		"mime": "image/jpeg",
+		"title": "cover",
+		"description": "",
+		"tags": [
+			"Day 01",
+			"role:manifesto-banner",
+			"site"
+		]
+	},
+	"bafybeiffld6axaecyxr3oq74bzlo3ym5dfapvxptqrokgt7naaxzsqp4oe": {
+		"url": "/media/bafybeiffld6axaecyxr3oq74bzlo3ym5dfapvxptqrokgt7naaxzsqp4oe.jpg",
+		"mime": "image/jpeg",
+		"title": "aerial",
+		"description": "A dome cell from the air, the master dome in the middle, six large and six medium domes round it, paths and a stream through a thick food forest.",
+		"tags": [
+			"Day 17",
+			"cover",
+			"role:cover"
+		]
+	},
+	"bafybeifgqbuftq3ltw6jlwms6huhz7lj2pr5jw22ozm7ut5vdopr5vqqya": {
+		"url": "/media/bafybeifgqbuftq3ltw6jlwms6huhz7lj2pr5jw22ozm7ut5vdopr5vqqya.jpg",
+		"mime": "image/jpeg",
+		"title": "home",
+		"description": "Home: Riverside, in Maia. Twenty-seven settlers, grown to Level 3.",
+		"tags": [
+			"Day 13",
+			"in the post",
+			"role:in-post"
+		]
+	},
+	"bafybeificalvj37mltyqcx22es6te5dsizh7cqbxe7zh4do3urme44m3bi": {
+		"url": "/media/bafybeificalvj37mltyqcx22es6te5dsizh7cqbxe7zh4do3urme44m3bi.jpg",
+		"mime": "image/jpeg",
+		"title": "master stage",
+		"description": "The master dome's theatre: six tiers of stone round a wide oak stage, sunk into the floor, the forest rising beyond.",
+		"tags": [
+			"Day 15",
+			"in the post",
+			"role:in-post"
+		]
+	},
+	"bafybeifjwgp4y3srlqjvv2cwoqjm6epzcp5sctxgt3ksiqtscwblbhjaey": {
+		"url": "/media/bafybeifjwgp4y3srlqjvv2cwoqjm6epzcp5sctxgt3ksiqtscwblbhjaey.jpg",
+		"mime": "image/jpeg",
+		"title": "GCfUT7jPkvk",
+		"description": "",
+		"tags": [
+			"role:source-thumbnail",
+			"thumbnails",
+			"youtube:GCfUT7jPkvk"
+		]
+	},
+	"bafybeifmaucl3codwjfpu6kmnw6gmnhqm4hcp5qkxv2mr4a4bf3yjo7oxe": {
+		"url": "/media/bafybeifmaucl3codwjfpu6kmnw6gmnhqm4hcp5qkxv2mr4a4bf3yjo7oxe.png",
+		"mime": "image/png",
+		"title": "globe 03",
+		"description": "",
+		"tags": [
+			"game:sandbox-2",
+			"role:globe",
+			"sandbox-2"
+		]
+	},
+	"bafybeifmnf2q6cykqdepjwoacclxezxe7ogmkeexxevol6fm3najn7mpbu": {
+		"url": "/media/bafybeifmnf2q6cykqdepjwoacclxezxe7ogmkeexxevol6fm3najn7mpbu.jpg",
+		"mime": "image/jpeg",
+		"title": "glamping door",
+		"description": "The glamping dome from outside: its stone foundation ring, the door open onto a timber deck, a path running out into the food forest.",
+		"tags": [
+			"Day 15",
+			"in the post",
+			"role:in-post"
+		]
+	},
+	"bafybeifo4ae7yd74ihuk5mmhhflglnyacfvpeczkrxw5l7nuu47kkje64a": {
+		"url": "/media/bafybeifo4ae7yd74ihuk5mmhhflglnyacfvpeczkrxw5l7nuu47kkje64a.jpg",
+		"mime": "image/jpeg",
+		"title": "pSGwwwR6k PMUnCsN oVW Qx0n05t4",
+		"description": "The same dome, filled with people at true scale.",
+		"tags": [
+			"Day 03",
+			"in the post",
+			"role:in-post"
+		]
+	},
+	"bafybeifoiwgql3rhg7afmfwdayt3sk22oztcx2uzcwpqfuf6hh7hcfqczm": {
+		"url": "/media/bafybeifoiwgql3rhg7afmfwdayt3sk22oztcx2uzcwpqfuf6hh7hcfqczm.jpg",
+		"mime": "image/jpeg",
+		"title": "the real earth",
+		"description": "The real Earth, drawn in hex cards: Europe, Africa and the Atlantic from orbit.",
+		"tags": [
+			"Day 11",
+			"in the post",
+			"role:in-post"
+		]
+	},
+	"bafybeifpqvwp6wkixtdf3poesyfrvmf6gyffehpn6v2q5dufg7wlmdtpta": {
+		"url": "/media/bafybeifpqvwp6wkixtdf3poesyfrvmf6gyffehpn6v2q5dufg7wlmdtpta.jpg",
+		"mime": "image/jpeg",
+		"title": "room",
+		"description": "A room in the gallery of a dome, rounded plaster furniture on a timber floor, plants in pots, clear glass looking out over the terrace.",
+		"tags": [
+			"Day 18",
+			"cover",
+			"role:cover"
+		]
+	},
+	"bafybeifqv4ggxeyhol4ur4ofths34p6yexhoefamyp55kdevmucy4o35dm": {
+		"url": "/media/bafybeifqv4ggxeyhol4ur4ofths34p6yexhoefamyp55kdevmucy4o35dm.jpg",
+		"mime": "image/jpeg",
+		"title": "RzfxdTccoGNzyw8Ntwyw9 KxWeEKbJ",
+		"description": "The long-sleeved version, structured at the shoulder.",
+		"tags": [
+			"Day 08",
+			"in the post",
+			"role:in-post"
+		]
+	},
+	"bafybeifuphgcpqvqlx7dqybbwbnnschpet23z36jvvoqczdzbxndri6wam": {
+		"url": "/media/bafybeifuphgcpqvqlx7dqybbwbnnschpet23z36jvvoqczdzbxndri6wam.jpg",
+		"mime": "image/jpeg",
+		"title": "large terraces",
+		"description": "The two-storey arcade of a large dome: a terrace for each floor of rooms.",
+		"tags": [
+			"Day 15",
+			"in the post",
+			"role:in-post"
+		]
+	},
+	"bafybeifuvjjq3qqxrysdykiczmaf7kodfkydf4c3hygfnfyouhk5jie2ju": {
+		"url": "/media/bafybeifuvjjq3qqxrysdykiczmaf7kodfkydf4c3hygfnfyouhk5jie2ju.jpg",
+		"mime": "image/jpeg",
+		"title": "maia",
+		"description": "The portrait with the necklace — beaded strands, cream knit, gold in the hair.",
+		"tags": [
+			"Day 08",
+			"in the post",
+			"role:in-post"
+		]
+	},
+	"bafybeifvuhsrz2p5pz4nhkm44ydcmmr3zgnpzte2elgta2g57grxbwn7gq": {
+		"url": "/media/bafybeifvuhsrz2p5pz4nhkm44ydcmmr3zgnpzte2elgta2g57grxbwn7gq.jpg",
+		"mime": "image/jpeg",
+		"title": "SqdC2j4cdisCvDXNNjSP9 dgzM1r9U",
+		"description": "Dry stone below, glass and timber above — the dome grown out of Apulian trulli.",
+		"tags": [
+			"Day 03",
+			"in the post",
+			"role:in-post"
+		]
+	},
+	"bafybeifwtdibjb6k65cgmylhmh2h63oimqzgwwfzre3jvwxe4xokpcfgei": {
+		"url": "/media/bafybeifwtdibjb6k65cgmylhmh2h63oimqzgwwfzre3jvwxe4xokpcfgei.jpg",
+		"mime": "image/jpeg",
+		"title": "stairs",
+		"description": "One of the four stairs up to the gallery, through the forest.",
+		"tags": [
+			"Day 15",
+			"in the post",
+			"role:in-post"
+		]
+	},
+	"bafybeifzf6h3ppfcf5m4ufyykhckkpgjrotop7rvhdz6xzlew6tq3ljuyu": {
+		"url": "/media/bafybeifzf6h3ppfcf5m4ufyykhckkpgjrotop7rvhdz6xzlew6tq3ljuyu.png",
+		"mime": "image/png",
+		"title": "overview 1",
+		"description": "One hex picked out of open land — everything starts here.",
+		"tags": [
+			"Day 05",
+			"cover",
+			"role:cover"
+		]
+	},
+	"bafybeifzsn4z3sqg5kv2pcdbz7ws4e2mgnlamcyjgqbccgfmnlekcej3u4": {
+		"url": "/media/bafybeifzsn4z3sqg5kv2pcdbz7ws4e2mgnlamcyjgqbccgfmnlekcej3u4.jpg",
+		"mime": "image/jpeg",
+		"title": "forest floor",
+		"description": "The forest floor between the domes: grass, moss, stones and low plants under the trees.",
+		"tags": [
+			"Day 18",
+			"in the post",
+			"role:in-post"
+		]
+	},
+	"bafybeig2qkd5hrqd4hsbhec77l2dbfdvimt7fkobxhssiraw6n2r3dcvv4": {
+		"url": "/media/bafybeig2qkd5hrqd4hsbhec77l2dbfdvimt7fkobxhssiraw6n2r3dcvv4.png",
+		"mime": "image/png",
+		"title": "level 2",
+		"description": "Level 2: eight-metre glamping domes, four people each — comfortable, and still temporary.",
+		"tags": [
+			"Day 05",
+			"in the post",
+			"role:in-post"
+		]
+	},
+	"bafybeig45wxfdyhumukdeqqmmwr3deahmfefvopodemc722by7d5wyxgxu": {
+		"url": "/media/bafybeig45wxfdyhumukdeqqmmwr3deahmfefvopodemc722by7d5wyxgxu.jpg",
+		"mime": "image/jpeg",
+		"title": "outside",
+		"description": "The solar factory dome from the forest: the glass shell, five floors of lines inside, the warehouse racks along the bottom.",
+		"tags": [
+			"Day 16",
+			"in the post",
+			"role:in-post"
+		]
+	},
+	"bafybeig4unhqo5l2xnz2icoywy5ajhi7g6qyzg5utphkwp2q6qpef42afq": {
+		"url": "/media/bafybeig4unhqo5l2xnz2icoywy5ajhi7g6qyzg5utphkwp2q6qpef42afq.jpg",
+		"mime": "image/jpeg",
+		"title": "forest layers",
+		"description": "Among the guilds outside: grape vines on timber poles, berry bushes, flowering herbs, clover and pumpkins under the trees.",
+		"tags": [
+			"Day 15",
+			"in the post",
+			"role:in-post"
+		]
+	},
+	"bafybeigba7ie5xsgrgq2hjoccyt7plxn6427u7nkxm6e76m6ca7r4eo7dm": {
+		"url": "/media/bafybeigba7ie5xsgrgq2hjoccyt7plxn6427u7nkxm6e76m6ca7r4eo7dm.jpg",
+		"mime": "image/jpeg",
+		"title": "playground",
+		"description": "A wooden playground between the domes, the master dome behind it.",
+		"tags": [
+			"Day 18",
+			"in the post",
+			"role:in-post"
+		]
+	},
+	"bafybeigbh6cqekv5kj6lg7wqp7bgeg7ssvpblgvouldwly7dp6d3664wfe": {
+		"url": "/media/bafybeigbh6cqekv5kj6lg7wqp7bgeg7ssvpblgvouldwly7dp6d3664wfe.png",
+		"mime": "image/png",
+		"title": "banner",
+		"description": "",
+		"tags": [
+			"Day 01"
+		]
+	},
+	"bafybeigc4o3dpecqu3pvrzldsjie6b2xs7sdjeetuafxbjqckqnabiy5d4": {
+		"url": "/media/bafybeigc4o3dpecqu3pvrzldsjie6b2xs7sdjeetuafxbjqckqnabiy5d4.jpg",
+		"mime": "image/jpeg",
+		"title": "samuel",
+		"description": "",
+		"tags": [
+			"author",
+			"person:samuel",
+			"role:portrait",
+			"site"
+		]
+	},
+	"bafybeigedmw6dsle4uk5iguqhsfjn3zqwtd6yh65m4pxq33bcdgxx5x6bm": {
+		"url": "/media/bafybeigedmw6dsle4uk5iguqhsfjn3zqwtd6yh65m4pxq33bcdgxx5x6bm.jpg",
+		"mime": "image/jpeg",
+		"title": "forest walks",
+		"description": "The walks leave the ring of domes toward the neighbouring hexes. None of them close into a circle.",
+		"tags": [
+			"Day 06",
+			"in the post",
+			"role:in-post"
+		]
+	},
+	"bafybeigfvkrseaplpsiyc5vcb42wvtlxdmz67lmlojnecdvacfrnhsd43y": {
+		"url": "/media/bafybeigfvkrseaplpsiyc5vcb42wvtlxdmz67lmlojnecdvacfrnhsd43y.jpg",
+		"mime": "image/jpeg",
+		"title": "large food forest",
+		"description": "In the forest of a large dome: a bed of beans on their canes, fruit trees and palms all round.",
+		"tags": [
+			"Day 15",
+			"in the post",
+			"role:in-post"
+		]
+	},
+	"bafybeigjz5yznvsi6q6ubxyx565jjt4x5bqhoohlw3xbyjnetpwzg6nmvm": {
+		"url": "/media/bafybeigjz5yznvsi6q6ubxyx565jjt4x5bqhoohlw3xbyjnetpwzg6nmvm.png",
+		"mime": "image/png",
+		"title": "overview 2",
+		"description": "The dome factory on the neighbouring hex — 130 metres across, owned and run by the settlement next door.",
+		"tags": [
+			"Day 05",
+			"in the post",
+			"role:in-post"
+		]
+	},
+	"bafybeigk72v3vjv7cjlp7x6yvcnnm7aze4iz6xypiwkhbasxhqvfmvgtnq": {
+		"url": "/media/bafybeigk72v3vjv7cjlp7x6yvcnnm7aze4iz6xypiwkhbasxhqvfmvgtnq.jpg",
+		"mime": "image/jpeg",
+		"title": "balcony",
+		"description": "Along the gallery: terracotta pots and grapevines on the rail.",
+		"tags": [
+			"Day 15",
+			"in the post",
+			"role:in-post"
+		]
+	},
+	"bafybeigmwypglzwafzxgzq4i6rxdadxn2oixppk6nihgdwt672wh3kt4pm": {
+		"url": "/media/bafybeigmwypglzwafzxgzq4i6rxdadxn2oixppk6nihgdwt672wh3kt4pm.png",
+		"mime": "image/png",
+		"title": "level 4",
+		"description": "Level 4: six new 70 m domes beside the six from Level 3 — twelve domes, 216 settlers, the hex at its designed size.",
+		"tags": [
+			"Day 05",
+			"in the post",
+			"role:in-post"
+		]
+	},
+	"bafybeign2isep3a7pidbvpbmnyq6ec37vhu6xua3bewjv2qqpyfsa3soqi": {
+		"url": "/media/bafybeign2isep3a7pidbvpbmnyq6ec37vhu6xua3bewjv2qqpyfsa3soqi.jpg",
+		"mime": "image/jpeg",
+		"title": "kitchen garden",
+		"description": "The kitchen garden inside a large dome: tomatoes on their stakes, beds of salad and chard along a stone path, the food forest rising behind.",
+		"tags": [
+			"Day 15",
+			"cover",
+			"role:cover"
+		]
+	},
+	"bafybeigouozvy6ji6ggmg4owq2idkakqnb3cah5uhf77dbh33d3eoqjnii": {
+		"url": "/media/bafybeigouozvy6ji6ggmg4owq2idkakqnb3cah5uhf77dbh33d3eoqjnii.jpg",
+		"mime": "image/jpeg",
+		"title": "europe",
+		"description": "Europe in avenCITY Sandbox 2, one hex card at a time.",
+		"tags": [
+			"Day 11",
+			"cover",
+			"role:cover"
+		]
+	},
+	"bafybeigqlxfthpwklvszhn7l5toqzkodpgqyuvcccbukl4vw3x2ajqvbvq": {
+		"url": "/media/bafybeigqlxfthpwklvszhn7l5toqzkodpgqyuvcccbukl4vw3x2ajqvbvq.jpg",
+		"mime": "image/jpeg",
+		"title": "7Wz4fBD8lsbefrDfSsm0q gNeZVF2m",
+		"description": "A 150-metre geodesic dome, specified to the strut: 10,920 struts, 5,461 nodes, 7,280 panels.",
+		"tags": [
+			"Day 03",
+			"in the post",
+			"role:in-post"
+		]
+	},
+	"bafybeigrxussxd34hh5e4ua5y2evqu3ehvvutqh3x75mclie7ewsmtmn54": {
+		"url": "/media/bafybeigrxussxd34hh5e4ua5y2evqu3ehvvutqh3x75mclie7ewsmtmn54.jpg",
+		"mime": "image/jpeg",
+		"title": "tent",
+		"description": "The bell tent for two, a campfire and two chairs outside the door.",
+		"tags": [
+			"Day 15",
+			"in the post",
+			"role:in-post"
+		]
+	},
+	"bafybeigwpyluiczqvgo7ivsptwhy7r3my5uhphbhczv5npim5qxizmz7cq": {
+		"url": "/media/bafybeigwpyluiczqvgo7ivsptwhy7r3my5uhphbhczv5npim5qxizmz7cq.png",
+		"mime": "image/png",
+		"title": "level 3",
+		"description": "Level 3: 40 m domes holding twelve people each, 72 settlers, with a roofed commons at the centre.",
+		"tags": [
+			"Day 05",
+			"in the post",
+			"role:in-post"
+		]
+	},
+	"bafybeigx5mtrbdzh3idwbfrkureiwnfyhw3jtyclg55vuyc67sxdo6w5fa": {
+		"url": "/media/bafybeigx5mtrbdzh3idwbfrkureiwnfyhw3jtyclg55vuyc67sxdo6w5fa.jpg",
+		"mime": "image/jpeg",
+		"title": "sandbox 3",
+		"description": "",
+		"tags": [
+			"game:sandbox-3",
+			"games",
+			"role:game-cover",
+			"site"
+		]
+	},
+	"bafybeigxyo3kdjorgytrjow2nqn6hw3iddljvuufduiomigry46735y6f4": {
+		"url": "/media/bafybeigxyo3kdjorgytrjow2nqn6hw3iddljvuufduiomigry46735y6f4.jpg",
+		"mime": "image/jpeg",
+		"title": "log",
+		"description": "A rotting log on the forest floor.",
+		"tags": [
+			"Day 18",
+			"in the post",
+			"role:in-post"
+		]
+	},
+	"bafybeih4yyf4chicgq55chevarfzm63n2vjlwtaew2tgkabuikcgvpc2a4": {
+		"url": "/media/bafybeih4yyf4chicgq55chevarfzm63n2vjlwtaew2tgkabuikcgvpc2a4.jpg",
+		"mime": "image/jpeg",
+		"title": "f H 7YDGzpA3Po 2O3XPY WYkrZ7CF",
+		"description": "A single low-poly dome on stone arcades, in the game's own material language.",
+		"tags": [
+			"Day 05",
+			"in the post",
+			"role:in-post"
+		]
+	},
+	"bafybeih6xnp4yo6vvphmiaanf67buev54ehhbvgmstscaqkfkgt7ri5hny": {
+		"url": "/media/bafybeih6xnp4yo6vvphmiaanf67buev54ehhbvgmstscaqkfkgt7ri5hny.jpg",
+		"mime": "image/jpeg",
+		"title": "geese",
+		"description": "Geese on the stream between the domes.",
+		"tags": [
+			"Day 18",
+			"in the post",
+			"role:in-post"
+		]
+	},
+	"bafybeih7gm52ssvroddwaeqabet7ckxsq5g6wkvjpwhkmah7g37kjcfevi": {
+		"url": "/media/bafybeih7gm52ssvroddwaeqabet7ckxsq5g6wkvjpwhkmah7g37kjcfevi.jpg",
+		"mime": "image/jpeg",
+		"title": "W2amjTRdcn8Qk6 mo8EvR 4NjXWTb4",
+		"description": "Kneeling down to a child's height, looking at a plant together.",
+		"tags": [
+			"Day 03",
+			"in the post",
+			"role:in-post"
+		]
+	},
+	"bafybeih7x73qielq3zswbfkfclo5hrlx5cuvea56qrrdpjwsq72zuyxehq": {
+		"url": "/media/bafybeih7x73qielq3zswbfkfclo5hrlx5cuvea56qrrdpjwsq72zuyxehq.jpg",
+		"mime": "image/jpeg",
+		"title": "CFMETfOTeKpV2sH6wsZT4 N7LCrDWp",
+		"description": "Under the glass: stone terraces, fruit trees growing through the middle, people talking at the same height.",
+		"tags": [
+			"Day 03",
+			"in the post",
+			"role:in-post"
+		]
+	},
+	"bafybeiharwui6hfbkflvkm5tuwq346wp4o3qak2jr6vddob4zeus7b2cry": {
+		"url": "/media/bafybeiharwui6hfbkflvkm5tuwq346wp4o3qak2jr6vddob4zeus7b2cry.jpg",
+		"mime": "image/jpeg",
+		"title": "the invitation",
+		"description": "Mara's invitation: citizenship first, then home.",
+		"tags": [
+			"Day 13",
+			"in the post",
+			"role:in-post"
+		]
+	},
+	"bafybeihbyxhnss5e6h2fc6kr5l3lyyddditq3zdzyxerprf7jd72x4uacq": {
+		"url": "/media/bafybeihbyxhnss5e6h2fc6kr5l3lyyddditq3zdzyxerprf7jd72x4uacq.jpg",
+		"mime": "image/jpeg",
+		"title": "master cafe",
+		"description": "A café square outside the master dome: a kiosk under its awning, bistro tables under parasols.",
+		"tags": [
+			"Day 15",
+			"in the post",
+			"role:in-post"
+		]
+	},
+	"bafybeihelcqshzlwyy5s2hofvkf776fk5djwdnqo2abnfuvyvpp3ylew34": {
+		"url": "/media/bafybeihelcqshzlwyy5s2hofvkf776fk5djwdnqo2abnfuvyvpp3ylew34.mp3",
+		"mime": "audio/mpeg",
+		"title": "19 Goats",
+		"description": "",
+		"tags": [
+			"Day 19",
+			"nature",
+			"role:ambience",
+			"role:sfx",
+			"sfx",
+			"sound effect",
+			"sound:sheep",
+			"sounds"
+		]
+	},
+	"bafybeihfydodtzi75eftm2jkg4eyrwmnxbuxbbqi6xaieokfw7kaz7yspy": {
+		"url": "/media/bafybeihfydodtzi75eftm2jkg4eyrwmnxbuxbbqi6xaieokfw7kaz7yspy.jpg",
+		"mime": "image/jpeg",
+		"title": "detail ring",
+		"description": "Looking down between the domes: the paths, the stream and its creeks, the forest.",
+		"tags": [
+			"Day 17",
+			"in the post",
+			"role:in-post"
+		]
+	},
+	"bafybeihikj5fn2ypgl7wmpts67yiojrccng2ihegovcpasdtz3cqu4rrm4": {
+		"url": "/media/bafybeihikj5fn2ypgl7wmpts67yiojrccng2ihegovcpasdtz3cqu4rrm4.jpg",
+		"mime": "image/jpeg",
+		"title": "byIB5gCdrUZ48uGJHaEWt I1ZgWZ4f",
+		"description": "A bench beside a stream, inside the planted dome.",
+		"tags": [
+			"Day 03",
+			"in the post",
+			"role:in-post"
+		]
+	},
+	"bafybeihlgao5lpdbijrbyf3twtgcyjgugumqczaohhm7mmm6z7m3lfkwr4": {
+		"url": "/media/bafybeihlgao5lpdbijrbyf3twtgcyjgugumqczaohhm7mmm6z7m3lfkwr4.jpg",
+		"mime": "image/jpeg",
+		"title": "the founding form",
+		"description": "Founding the Bakery: a name, one line, and the stake.",
+		"tags": [
+			"Day 11",
+			"in the post",
+			"role:in-post"
+		]
+	},
+	"bafybeihmgp5mbjvcxdcrrf7lwwvwtfyyrz76qlkxzgmltevl6ecyf7pig4": {
+		"url": "/media/bafybeihmgp5mbjvcxdcrrf7lwwvwtfyyrz76qlkxzgmltevl6ecyf7pig4.jpg",
+		"mime": "image/jpeg",
+		"title": "bakery founded",
+		"description": "Bakery, founded: 500 maiaHEARTS in its treasury, and 11.50 pieces of it in my hands.",
+		"tags": [
+			"Day 11",
+			"in the post",
+			"role:in-post"
+		]
+	},
+	"bafybeihmp4w5gmtxdlsvx3nsyzymdhmuunljytesktf6pnaomkzqenc3rq": {
+		"url": "/media/bafybeihmp4w5gmtxdlsvx3nsyzymdhmuunljytesktf6pnaomkzqenc3rq.jpg",
+		"mime": "image/jpeg",
+		"title": "terrace",
+		"description": "The terrace in front of the rooms: daybeds, plants, the stone arcade.",
+		"tags": [
+			"Day 18",
+			"in the post",
+			"role:in-post"
+		]
+	},
+	"bafybeihpeajysjdjhtafk7onjaijtlvji5xocebbkjh25dczggadgvzllm": {
+		"url": "/media/bafybeihpeajysjdjhtafk7onjaijtlvji5xocebbkjh25dczggadgvzllm.png",
+		"mime": "image/png",
+		"title": "globe 05",
+		"description": "",
+		"tags": [
+			"game:sandbox-2",
+			"role:globe",
+			"sandbox-2"
+		]
+	},
+	"bafybeihpmew4vpancegu6tfzyh2fo4jcsreltlp6cgnykf7tqhclzfedly": {
+		"url": "/media/bafybeihpmew4vpancegu6tfzyh2fo4jcsreltlp6cgnykf7tqhclzfedly.jpg",
+		"mime": "image/jpeg",
+		"title": "home from outside",
+		"description": "",
+		"tags": [
+			"Day 15"
+		]
+	},
+	"bafybeihq2fufxv33px64xr3s33osi5aplcmxpguohho45wp4bf3jre5l7e": {
+		"url": "/media/bafybeihq2fufxv33px64xr3s33osi5aplcmxpguohho45wp4bf3jre5l7e.jpg",
+		"mime": "image/jpeg",
+		"title": "goats",
+		"description": "Goats beside a path between the domes.",
+		"tags": [
+			"Day 18",
+			"in the post",
+			"role:in-post"
+		]
+	},
+	"bafybeihry6mgtwp3heximh3jhw6istp2sakifl56gkohcnnjv67ol24qem": {
+		"url": "/media/bafybeihry6mgtwp3heximh3jhw6istp2sakifl56gkohcnnjv67ol24qem.png",
+		"mime": "image/png",
+		"title": "globe 06",
+		"description": "",
+		"tags": [
+			"game:sandbox-2",
+			"role:globe",
+			"sandbox-2"
+		]
+	},
+	"bafybeihvesaqpsf6dxu6kr2zgmxeirqc4cs26ahfflfv3vpkte7hxqy4hq": {
+		"url": "/media/bafybeihvesaqpsf6dxu6kr2zgmxeirqc4cs26ahfflfv3vpkte7hxqy4hq.jpg",
+		"mime": "image/jpeg",
+		"title": "bath",
+		"description": "A stone bath in a room of the gallery, pebbles round it, an armchair beside it.",
+		"tags": [
+			"Day 18",
+			"in the post",
+			"role:in-post"
+		]
+	},
+	"bafybeihw3mty6s5jouclpncggrwpsxbxdupjwkv3p2sukpaoe5l527ievi": {
+		"url": "/media/bafybeihw3mty6s5jouclpncggrwpsxbxdupjwkv3p2sukpaoe5l527ievi.jpg",
+		"mime": "image/jpeg",
+		"title": "door",
+		"description": "Walking up to the master dome: by the time you reach the door, its full inside is there.",
+		"tags": [
+			"Day 17",
+			"in the post",
+			"role:in-post"
+		]
+	},
+	"bafybeihwqjr7liunzza5vfnc4j3sesuz4id7bwkpglrmzdbaylvodpf6cy": {
+		"url": "/media/bafybeihwqjr7liunzza5vfnc4j3sesuz4id7bwkpglrmzdbaylvodpf6cy.jpg",
+		"mime": "image/jpeg",
+		"title": "forest swing",
+		"description": "",
+		"tags": [
+			"Day 06"
+		]
+	},
+	"bafybeihyc6mie6pew367jzzopl24vz7ymenitersfekwl6btruo6fxfry4": {
+		"url": "/media/bafybeihyc6mie6pew367jzzopl24vz7ymenitersfekwl6btruo6fxfry4.png",
+		"mime": "image/png",
+		"title": "globe 08",
+		"description": "",
+		"tags": [
+			"game:sandbox-2",
+			"role:globe",
+			"sandbox-2"
+		]
+	},
+	"bafybeihzfos7lgpzykkn74vhhd2gwp525axxoqkclphvshtxvxffe4dtly": {
+		"url": "/media/bafybeihzfos7lgpzykkn74vhhd2gwp525axxoqkclphvshtxvxffe4dtly.jpg",
+		"mime": "image/jpeg",
+		"title": "jZb6 jlUJXs",
+		"description": "",
+		"tags": [
+			"role:source-thumbnail",
+			"thumbnails",
+			"youtube:jZb6_jlUJXs"
+		]
 	}
 }

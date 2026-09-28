@@ -2,10 +2,10 @@
 //
 //   node scripts/film/assemble.mjs scripts/film/day-19.mjs
 //
-// The shots dissolve into one another where the shot list cuts them; the voice comes in after its lead; the music
+// The shots dissolve into one another where the shot list cuts them; each voice take comes in where the list places it; the music
 // sits under it at the levels the list gives and fades out at the end. The captions are the voice's own words, in
 // short phrases, timed to the moment each is spoken — set in the site's display face by Chrome, laid over by ffmpeg.
-// Voice and music are taken from library/ (bun media library) by their library paths.
+// Voice and music are taken from library/ by their CIDs.
 import puppeteer from 'puppeteer-core';
 import { execFileSync } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, rmSync } from 'node:fs';
@@ -17,34 +17,34 @@ if (!listFile) throw new Error('usage: node scripts/film/assemble.mjs <shot list
 const film = (await import(pathToFileURL(resolve(listFile)).href)).default;
 const SIZE = film.size ?? 1080, FPS = film.fps ?? 30, XF = 0.6;
 const DIR = resolve('studio/film', film.name);
-const index = JSON.parse(readFileSync('library/index.json', 'utf8'));
-const fromLibrary = (path) => {
-	const hit = Object.entries(index).find(([, e]) => e.paths.includes(path));
-	if (!hit) throw new Error(`${path} is not in library/ — run: bun media library`);
-	return { file: resolve('library', hit[1].file), meta: hit[1] };
+// a file by its CID: library/<cid>.<ext>, and what library/<cid>.json says about it
+const fromLibrary = (ref) => {
+	const cid = ref.replace(/\.[a-z0-9]+$/, '');
+	if (!existsSync(resolve('library', `${cid}.json`))) throw new Error(`library/ does not hold ${cid}`);
+	const doc = JSON.parse(readFileSync(resolve('library', `${cid}.json`), 'utf8'));
+	return { file: resolve('library', doc.file), meta: doc };
 };
-const voice = fromLibrary(film.voice);
+// every voice take, where the shot list places it on the film
+const voices = film.voices.map((v) => ({ ...v, ...fromLibrary(v.cid) }));
 // the game's recordings are not equally loud: the same factors as the game's ambience (src/lib/sandbox-2/interior/ambience.ts)
-const NORMALIZE = { '/sounds/sheep.mp3': 22.1, '/sounds/frog.mp3': 0.35, '/sounds/bees.mp3': 0.66, '/sounds/geese.mp3': 1.5 };
+const NORMALIZE = { 'bafybeihelcqshzlwyy5s2hofvkf776fk5djwdnqo2abnfuvyvpp3ylew34.mp3': 22.1, 'bafybeiez76uxmjf3lw7szaguqcwcgoh7lh55zu5eqr32zu526ljxbjjrfy.mp3': 0.35, 'bafybeiery7dtnfprkwgtxxpagsm54oxsbsahktiyf3frcjjwd4sq7b6hoi.mp3': 0.66, 'bafybeid6pjgd4qfleeipy5ojyzfz5nx3vpt6fm3l2wxhur4rysoytxkaze.mp3': 1.5 };
 let seed = 7;
 const rand = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
 const music = fromLibrary(film.music);
 const total = film.cuts.at(-1).end;
-const lead = film.voiceOffset ?? 2;
 
-// ── captions: the take's words, in phrases of a few words, broken at the punctuation ──────────────
-const words = JSON.parse(readFileSync(resolve('studio', film.voice.split('/').pop().replace(/\.mp3$/, '.json')), 'utf8')).words;
+// ── captions: each take's words, in phrases of a few words broken at the punctuation, on the film's clock ──
 const phrases = [];
-let cur = [];
-for (const w of words) {
-	cur.push(w);
-	const text = cur.map((x) => x.word).join(' ');
-	if (/[.,;:!?]$/.test(w.word) && (cur.length >= 3 || /[.;:!?]$/.test(w.word)) || text.length > 34) {
-		phrases.push({ text, start: cur[0].start, end: cur.at(-1).end });
-		cur = [];
+for (const v of voices) {
+	let cur = [];
+	const flush = () => cur.length && phrases.push({ text: cur.map((x) => x.word).join(' '), start: v.at + cur[0].start, end: v.at + cur.at(-1).end });
+	for (const w of v.words) {
+		cur.push(w);
+		const text = cur.map((x) => x.word).join(' ');
+		if ((/[.,;:!?…]$/.test(w.word) && (cur.length >= 3 || /[.;:!?…]$/.test(w.word))) || text.length > 34) flush(), (cur = []);
 	}
+	flush();
 }
-if (cur.length) phrases.push({ text: cur.map((x) => x.word).join(' '), start: cur[0].start, end: cur.at(-1).end });
 
 const CAPS = join(DIR, '.captions');
 rmSync(CAPS, { recursive: true, force: true });
@@ -73,7 +73,8 @@ for (const s of shots) if (!existsSync(s)) throw new Error(`missing ${s} — run
 
 const inputs = [];
 for (const s of shots) inputs.push('-i', s);
-inputs.push('-i', voice.file, '-i', music.file);
+for (const v of voices) inputs.push('-i', v.file);
+inputs.push('-i', music.file);
 phrases.forEach((_, i) => inputs.push('-loop', '1', '-t', String(total), '-framerate', String(FPS), '-i', join(CAPS, `${String(i).padStart(3, '0')}.png`)));
 // the sound of each shot: its recordings, looped, from somewhere in the middle, for the length of the shot and its dissolve
 const sounds = [];
@@ -97,21 +98,26 @@ for (let i = 1; i < shots.length; i++) {
 }
 f.push(`[${last}]trim=0:${total.toFixed(3)},fade=t=in:st=0:d=1.4,fade=t=out:st=${(total - 2.5).toFixed(3)}:d=2.5[pic]`);
 // captions in, each fading in and out on its phrase
-const V = shots.length, A = V, M = V + 1, C0 = V + 2;
+const V = shots.length, A = V, M = V + voices.length, C0 = M + 1;
 last = 'pic';
 phrases.forEach((p, i) => {
-	const a = lead + p.start - 0.08, b = lead + p.end + 0.3;
+	const a = p.start - 0.08, b = p.end + 0.3;
 	f.push(`[${C0 + i}:v]format=rgba,fade=t=in:st=${a.toFixed(2)}:d=0.25:alpha=1,fade=t=out:st=${(b - 0.25).toFixed(2)}:d=0.25:alpha=1[c${i}]`);
 	f.push(`[${last}][c${i}]overlay=0:0:shortest=1[o${i}]`);
 	last = `o${i}`;
 });
 f.push(`[${last}]format=yuv420p[vout]`);
-// the voice after its lead; the music low under the first lines, lifting for the last ones, fading out
+// every take where it lands; the music low under the voice, lifting later, fading out at its end or the film's
 const [low, high, liftAt] = film.musicLevels ?? [0.24, 0.42, 55];
-f.push(`[${A}:a]adelay=${Math.round(lead * 1000)}|${Math.round(lead * 1000)},volume=1.0[vo]`);
+voices.forEach((v, k) => {
+	const ms = Math.max(0, Math.round(v.at * 1000));
+	f.push(`[${A + k}:a]aformat=channel_layouts=stereo,adelay=${ms}|${ms}[vo${k}]`);
+});
+const musicLength = Number(execFileSync('ffprobe', ['-v', 'quiet', '-show_entries', 'format=duration', '-of', 'csv=p=0', music.file]).toString());
+const musicEnd = Math.min(total, musicLength);
 f.push(
-	`[${M}:a]atrim=0:${total.toFixed(3)},volume=eval=frame:volume='if(lt(t,${liftAt}),${low},if(lt(t,${liftAt + 4}),${low}+(t-${liftAt})/4*${(high - low).toFixed(3)},${high}))',` +
-		`afade=t=in:d=1.5,afade=t=out:st=${(total - 3.5).toFixed(3)}:d=3.5[mu]`
+	`[${M}:a]atrim=0:${musicEnd.toFixed(3)},volume=eval=frame:volume='if(lt(t,${liftAt}),${low},if(lt(t,${liftAt + 4}),${low}+(t-${liftAt})/4*${(high - low).toFixed(3)},${high}))',` +
+		`afade=t=in:d=1.5,afade=t=out:st=${(musicEnd - 4).toFixed(3)}:d=4[mu]`
 );
 // each recording fades in over the dissolve into its shot and out over the dissolve out of it
 sounds.forEach((x, i) => {
@@ -119,7 +125,8 @@ sounds.forEach((x, i) => {
 	f.push(`[${x.input}:a]atrim=0:${x.dur.toFixed(3)},asetpts=PTS-STARTPTS,aformat=channel_layouts=stereo,volume=${x.level.toFixed(3)},afade=t=in:d=${fade.toFixed(2)},afade=t=out:st=${(x.dur - fade).toFixed(3)}:d=${fade.toFixed(2)},adelay=${Math.round(x.start * 1000)}|${Math.round(x.start * 1000)}[fx${i}]`);
 });
 const beds = sounds.map((_, i) => `[fx${i}]`).join('');
-f.push(`[vo][mu]${beds}amix=inputs=${2 + sounds.length}:normalize=0:duration=longest,alimiter=limit=0.95,atrim=0:${total.toFixed(3)}[aout]`);
+const vox = voices.map((_, k) => `[vo${k}]`).join('');
+f.push(`${vox}[mu]${beds}amix=inputs=${voices.length + 1 + sounds.length}:normalize=0:duration=longest,alimiter=limit=0.95,atrim=0:${total.toFixed(3)}[aout]`);
 
 const out = resolve('studio/film', `${film.name}.mp4`);
 execFileSync('ffmpeg', ['-y', '-loglevel', 'error', ...inputs, '-filter_complex', f.join(';'), '-map', '[vout]', '-map', '[aout]',

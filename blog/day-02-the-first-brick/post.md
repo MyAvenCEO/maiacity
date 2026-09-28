@@ -3,16 +3,17 @@ title: Your country needs trucks. We're building one that needs 200 neighbours
 subtitle: Day 02 — why resilience is moving from brittle nations to self-sovereign city states, and what a whole city of self-sufficient dome cells looks like.
 day: 2
 author: avenSAMUEL
-authorImage: /samuel.jpg
+authorImage: bafybeigc4o3dpecqu3pvrzldsjie6b2xs7sdjeetuafxbjqckqnabiy5d4.jpg
 authorRole: Building maiaCITY
 date: 2026-09-10
-cover: /day-02-the-first-brick/maia-village.jpg
+cover: bafybeibf7t7f3hetseqmmkrpfuqngmjwtu6bxmweboays7dzsn36bkwstm.jpg
 coverAlt: A valley of domes, each dome cell sitting inside its own forest, the river left where it was.
 excerpt: >-
   A country is a promise that the trucks will keep coming. The next generation of sovereignty is
   a city state that doesn't need them: many small dome cells, each feeding, watering and powering
   itself inside its own food forest.
 categories: [food, ecology, energy, architecture]
+draft: true
 ---
 
 Imagine you step outside at seven in the morning.
@@ -23,7 +24,7 @@ You pick breakfast on the way to work.
 
 Nothing on your plate travelled further than you did.
 
-![A terrace in the morning light, a table set, and forest and domes running down to the sea.](/day-02-the-first-brick/sYtFCtO9iKSBQ8TrfnJbw_UUCj632a.jpg)
+![A terrace in the morning light, a table set, and forest and domes running down to the sea.](bafybeiconqxhsc3xentgl6ertqkwxxug2vlijhsl7i4ck3u5iiyhvgg7qy.jpg)
 
 That scene is the reason this whole project exists. It took me years to understand why.
 
@@ -57,7 +58,7 @@ What is the smallest place that can feed, water, power and heal itself — and s
 
 I didn't have that answer in words. So I started drawing it, one rendering after another, and watched what kept coming back.
 
-![A valley of glass domes stepping down to the sea, a bright river left running through the middle of it.](/day-02-the-first-brick/maia-village.jpg)
+![A valley of glass domes stepping down to the sea, a bright river left running through the middle of it.](bafybeibf7t7f3hetseqmmkrpfuqngmjwtu6bxmweboays7dzsn36bkwstm.jpg)
 
 It kept coming back small. Many small buildings instead of a few big ones. The river left where it was. Green between everything. Never a tower, never a wall.
 
@@ -69,7 +70,7 @@ Venice ran a maritime empire for centuries out of a lagoon. The Hanseatic cities
 
 Small. Tight. Sovereign. The distance between the people and the decisions that shape their lives was short enough to walk.
 
-![Dozens of domes spread along a coastal plain, a river cascading between them toward the sea.](/day-02-the-first-brick/nQwFJ5NkfH1DL1fVV35PN_LOahOJDP.jpg)
+![Dozens of domes spread along a coastal plain, a river cascading between them toward the sea.](bafybeibqrlvenmbhvnkjv7wykckcni2nne2rpdtozwjzd4g4sjx3gawa5u.jpg)
 
 ## Singapore also shows the catch
 
@@ -85,7 +86,7 @@ The first brick has to be resilience itself. Food, water, energy and health, clo
 
 ## The second trap is the field
 
-![Two ways to feed a city in one frame: patchwork fields along the coast, and domes sitting inside their own forest along the river.](/day-02-the-first-brick/NKVIRh7Iu3I3oLE2EHJwZ_NrAiJlj7.jpg)
+![Two ways to feed a city in one frame: patchwork fields along the coast, and domes sitting inside their own forest along the river.](bafybeic75lwtffacroif25aqhjp3ez4nkfjfo72qz65ix4hfegpom4tyla.jpg)
 
 Look at the left side of that picture.
 
@@ -103,7 +104,7 @@ There are no generic fields. There is no farm belt outside the city, no monocult
 
 A food forest is layered the way a wild forest is. Tall nut and fruit trees on top. Smaller fruit trees under them. Berries, herbs, vegetables and roots on the ground, and vines climbing through all of it. Once it is established it largely feeds itself, it holds water in its soil, and a bad year for one plant is a good year for another.
 
-![A dozen domes on stone bases, sunk into green canopy, a turquoise stream threading between them.](/day-02-the-first-brick/Lu7L8HWPvs_bMctUIgqOC_csCmDl8j.jpg)
+![A dozen domes on stone bases, sunk into green canopy, a turquoise stream threading between them.](bafybeibrdwd2fqbjhltxvpbohmzxphwr4qfm5u6orbbvbbikkcgw3a5frm.jpg)
 
 Imagine the walk home.
 
@@ -111,13 +112,13 @@ The apricots on your left. Beans climbing an old walnut. A neighbour up a ladder
 
 What the forest cannot carry through winter, the domes do. Beds under glass, inside the same buildings people live in — permaculture domes, warm in January, green in the middle of everything.
 
-![Inside a dome: terraces stacked around an open middle, fruit trees growing through it, people at tables below.](/day-02-the-first-brick/alp_tzIhSZCTOCiV6o5nO_g9jR0km3.jpg)
+![Inside a dome: terraces stacked around an open middle, fruit trees growing through it, people at tables below.](bafybeieiwbf2i2f42sjb4q7t523wwnmlu5zhb74jkwjhvjhhxoaimaucmm.jpg)
 
 ## Water, power and health you can touch
 
 The river stays where it is. Rain gets caught, slowed down and sunk into the ground instead of being rushed away through pipes.
 
-![A single dome on a stone arcade, a timber footbridge over clear water, forest pressing in on every side.](/day-02-the-first-brick/6dIScRIYuNkYoDzenoV8J_Wt3H5dUw.jpg)
+![A single dome on a stone arcade, a timber footbridge over clear water, forest pressing in on every side.](bafybeickgal3i43zycctaue4rtc2lt5ec2u2ix4pugb72gqseqojx6k7g4.jpg)
 
 The glass that shelters the food also catches the sun. Every roof works, every dome cell keeps its own storage, and the lights in your street do not depend on a plant three regions away.
 
@@ -131,11 +132,11 @@ No delivery vans. No engines idling. No loading bays. The paths belong to people
 
 Everything heavy moves underneath — a fully autonomous underground network carrying goods, tools and supplies between dome cells, all day, out of sight. Above ground the city is made for walking. Below ground it is made for moving things. The two stop fighting over the same space, and the surface gets given back to life.
 
-![Eight domes along a river bend, joined only by footpaths through the trees.](/day-02-the-first-brick/PwmKKG7I6Wi3f7TRlKKmV_DgxWHxUM.jpg)
+![Eight domes along a river bend, joined only by footpaths through the trees.](bafybeiajrbfnkds6cpwu26c3ri7llswevkhtidu4jcqwdbwyv7f57jtkq4.jpg)
 
 ## The grand hall comes after the foundation
 
-![A theatre under a glass dome at night, hundreds of people facing a lit stage.](/day-02-the-first-brick/6_3jR_-wbqUweA7iZy396_3nsjI3Wg.jpg)
+![A theatre under a glass dome at night, hundreds of people facing a lit stage.](bafybeidlxbk75toyq3pg574ciqzfaf2ep3kf44ogzseklmtmuwi5s3jpfm.jpg)
 
 I rendered this one too.
 
@@ -147,7 +148,7 @@ Here is the blueprint in one breath.
 
 Not a country held together by a thread that runs around the planet. A city state made of small, living dome cells — each with its own food forest, its own water, its own power and its own health — linked underground, and sovereign because every part of it can stand on its own.
 
-![Four views of one place: the riverside approach, a terrace overlook, the atrium inside, a private terrace at home.](/day-02-the-first-brick/hzUX4j7ZpU9VsRCjaYuMO_WG67YZVO.jpg)
+![Four views of one place: the riverside approach, a terrace overlook, the atrium inside, a private terrace at home.](bafybeiekl5cqpeh2ljpbaimu5czsmk3svu6inl74mhtnfn5rh67fyfk4ia.jpg)
 
 Imagine the day that comes out of it.
 

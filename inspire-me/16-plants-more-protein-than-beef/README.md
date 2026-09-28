@@ -2,8 +2,10 @@
 title: 16 plants with more protein than beef
 originalTitle: "16 Plants With MORE Protein Than Beef (You're Eating #9 Wrong)"
 source: https://youtu.be/OUqKpUReINg
+thumbnail: bafkreihycg5zsuzdqujh2engzqchekay56iaxanx4ix6lwnl7fp4mxsudi.jpg
 type: video
 author: Elias Ford
+authorImage: bafkreiapfrzxtppcrcbgg6zpjesr77ri2kvva3mxknrafg63iy3gq6wfiu.jpg
 via: The Honest Root
 authorUrl: https://www.youtube.com/@thehonestroot
 added: 2026-09-11

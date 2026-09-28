@@ -2,8 +2,10 @@
 title: Democracy is five things
 originalTitle: "I don't get democracy"
 source: https://www.youtube.com/watch?v=O7LvhSQ5Te4
+thumbnail: bafkreihluasq3lmdrdywzzmu3fbghcxgqkfas3h5zj4odvlqpizui2hy7i.jpg
 type: video
 author: Johnny Harris
+authorImage: bafkreihpemgjjezstgfg5otljprruwtpcrrma2p6tnztv3wyhirhxfvw7q.jpg
 authorUrl: https://www.youtube.com/@johnnyharris
 added: 2026-09-14
 categories: [civic, coop]

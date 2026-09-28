@@ -3,15 +3,16 @@ title: We put thirteen domes in one world, and you can walk into every one witho
 subtitle: Day 17 — avenCITY Sandbox 4 is a whole dome cell to walk, from the café squares round the master dome to the food forest at its edges, and what it took to make a browser carry it.
 day: 17
 author: avenSAMUEL
-authorImage: /samuel.jpg
+authorImage: bafybeigc4o3dpecqu3pvrzldsjie6b2xs7sdjeetuafxbjqckqnabiy5d4.jpg
 authorRole: Building maiaCITY
 date: 2026-09-25
-cover: /day-17-one-world-thirteen-domes/aerial.jpg
+cover: bafybeiffld6axaecyxr3oq74bzlo3ym5dfapvxptqrokgt7naaxzsqp4oe.jpg
 coverAlt: A dome cell from the air, the master dome in the middle, six large and six medium domes round it, paths and a stream through a thick food forest.
 excerpt: >-
   Until today every dome stood alone, behind a loading screen. Now thirteen of them stand in one
   world, and the moment you step into a doorway you are simply inside.
 categories: [game, housing, food, code]
+draft: true
 ---
 
 Until today, every dome stood alone.
@@ -22,35 +23,35 @@ A village is not a list of buildings. It is the walk between them.
 
 ## A dome cell is thirteen domes and everything between them
 
-![A dome cell from the air: the master dome in the middle, the rings of domes round it, paths and a stream through the forest.](/day-17-one-world-thirteen-domes/aerial.jpg)
+![A dome cell from the air: the master dome in the middle, the rings of domes round it, paths and a stream through the forest.](bafybeiffld6axaecyxr3oq74bzlo3ym5dfapvxptqrokgt7naaxzsqp4oe.jpg)
 
 In [avenCITY Sandbox 4](/games/sandbox-4/) you stand in a whole dome cell. The master dome is in the middle. Six large domes stand in a ring round it, and six medium domes stand further out, between them. They are the same domes you walked through on [Day 15](/blog/day-15-inside-the-domes/): the same glass, the same stone arcades and terraces, the same four doors.
 
 Between them, paths wander from door to door, in to the ring round the master dome and out to a loop round the whole cell. A turquoise stream winds round the edge and sends its creeks in between the domes, each one ending in a pond, with a timber bridge wherever a path crosses the water.
 
-![Looking down between the domes: the paths, the stream and its creeks, the forest.](/day-17-one-world-thirteen-domes/detail-ring.jpg)
+![Looking down between the domes: the paths, the stream and its creeks, the forest.](bafybeihfydodtzi75eftm2jkg4eyrwmnxbuxbbqi6xaieokfw7kaz7yspy.jpg)
 
 ## The land between the domes is a forest you can eat
 
 Round a single dome on Day 15, the forest was dense: a tree every few metres, each with its guild of shrubs, herbs, clover, squash and climbing vines. I wanted the same density everywhere in the cell, not a thin scatter of trees between the domes.
 
-![Between two domes: fruit trees, berry bushes and flowers along the path.](/day-17-one-world-thirteen-domes/between.jpg)
+![Between two domes: fruit trees, berry bushes and flowers along the path.](bafybeicszbyydl2mezk3gbtxsnk2mnbxk2cbkimcj42y2ndpd2qpq2w6a4.jpg)
 
 Beyond the medium domes, out to the edges of the cell, the forest gets thicker still. Every layer is full there, and every kind is in it: chestnut and walnut, apple, mango, avocado and citrus, papaya, fig, pomegranate, coconut palms and bananas. Under them grow coffee and cacao, berries, comfrey, ginger, strawberries, pumpkins and passion fruit. It is the part of the cell that feeds it.
 
-![The food forest at the edge of the cell, every layer full.](/day-17-one-world-thirteen-domes/edge.jpg)
+![The food forest at the edge of the cell, every layer full.](bafybeiduvdhl5bi2u353ezludpvn3xsmi2fnodo6s4mqyyvnngpbafjq2u.jpg)
 
 The master dome has everything round it that it has in Sandbox 3. There are twelve café squares off its ring path: cafés, restaurants under strings of lights, fruit bars, pizza ovens. The hens scratch about their coops among the trees.
 
-![A restaurant square beside the master dome, the forest behind it.](/day-17-one-world-thirteen-domes/cafe.jpg)
+![A restaurant square beside the master dome, the forest behind it.](bafybeia7oc7srhwgpap4pn357ci4fko3scdqbscylnxapqu6zagxgkc7vy.jpg)
 
-![A hen coop in the trees beside the master dome.](/day-17-one-world-thirteen-domes/coop.jpg)
+![A hen coop in the trees beside the master dome.](bafybeia44khzkebxjl2gu6foru3wpwlnmsphuq6ctligavygcv7oe66any.jpg)
 
 ## The roof is solar glass, and you can still see the sky
 
 The glass of every dome is now what it is meant to be: solar glass. Each triangle has rows of dark blue cells laid into it, with clear gaps between them, so it is lightly tinted from outside. From inside you look up through a lattice of cells at the sky, and the light still falls through to the forest.
 
-![Looking up from inside the master dome through the solar glass.](/day-17-one-world-thirteen-domes/glass.jpg)
+![Looking up from inside the master dome through the solar glass.](bafybeicqkczxcgf6zp5f362fldwf2lu554y7asug25vlp5nblpocg7mptm.jpg)
 
 ## You walk in, and there is no loading screen
 
@@ -60,11 +61,11 @@ A dome's full inside is heavy. The master dome has thousands of plants, a theatr
 
 So the cell uses a trick games have always used: *level of detail*. From a distance, every dome is a simple version of itself. It has its real glass, arcade and terraces, but only a sketch of the inside: the soil, the plaza, the beds, the galleries and rooms, simple trees, the master's stone tiers. As you walk up to a dome, the game quietly builds its full inside into the world, a piece at a time, while you are still walking. When it is ready, the simple version steps aside.
 
-![Walking up to the master dome: by the time you reach the door, its full inside is there.](/day-17-one-world-thirteen-domes/door.jpg)
+![Walking up to the master dome: by the time you reach the door, its full inside is there.](bafybeihw3mty6s5jouclpncggrwpsxbxdupjwkv3p2sukpaoe5l527ievi.jpg)
 
 By the time you reach the door, the dome is complete. You walk through it into the real thing: the food forest, the kitchen garden, the stairs up to the galleries, the terraces. There is no screen in between and no second world. Walk away across the cell and the inside is taken down again, to make room for the next dome you walk towards.
 
-![Through the door of the master dome and straight into its forest.](/day-17-one-world-thirteen-domes/in.jpg)
+![Through the door of the master dome and straight into its forest.](bafybeidppa36buvhqimnu6ofuemdehwenxrcm7tsiufrze52kscw2ctnde.jpg)
 
 ## What it takes to carry a whole cell
 
@@ -83,7 +84,7 @@ On my laptop the cell runs at about 40 frames a second out in the forest, and a 
 
 The sun follows the in-game clock, so the cell has its evenings and its nights. When it gets dark, small lights come on along every path, and the domes glow warm through their glass.
 
-![The master dome at night, lit from inside, a path light at the edge of the forest.](/day-17-one-world-thirteen-domes/night.jpg)
+![The master dome at night, lit from inside, a path light at the edge of the forest.](bafkreicxgqbe5ruoy5mi2b4zbi2zbrmjd5fd5vkcrguyq7kk2d5sorghba.jpg)
 
 Imagine walking home through it. You leave the café square by the master dome, cross the bridge over the creek, and follow the lights between the trees to the medium dome where you live. By the time you reach the door, the lamps are on in your gallery.
 

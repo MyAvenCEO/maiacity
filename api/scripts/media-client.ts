@@ -3,7 +3,7 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { cidOf, mimeOf } from "../src/media";
+import { cidOf } from "../src/media";
 
 export const ROOT = join(import.meta.dir, "../..");
 export const local = process.argv.includes("--local");
@@ -49,18 +49,21 @@ export async function call<T>(path: string, init: RequestInit & { key?: string }
   return body as T;
 }
 
-/** Upload one file under a path, in resumable parts; the server checks the CID. Known bytes are only named. */
-export async function upload(bytes: Uint8Array, path: string, opts: { cid?: string; mime?: string; meta?: Record<string, unknown>; progress?: boolean } = {}) {
+/** What is known about a file, as the library/ folder has it (library/<cid>.json). */
+export type Described = { title?: string; description?: string; tags?: string[]; meta?: Record<string, unknown>; public?: boolean };
+
+/** Upload one file, in resumable parts, with its description; the server checks the CID. Known bytes are only described. */
+export async function upload(bytes: Uint8Array, opts: Described & { cid?: string; mime: string; progress?: boolean; label?: string }) {
   const cid = opts.cid ?? (await cidOf(bytes));
-  const mime = opts.mime ?? mimeOf(path);
+  const about: Described = { title: opts.title, description: opts.description, tags: opts.tags, meta: opts.meta, public: opts.public };
   const { have } = await call<{ have: string[] }>("/api/media/have", { method: "POST", body: JSON.stringify({ cids: [cid] }) });
   if (have.length) {
-    await call("/api/media/paths", { method: "POST", body: JSON.stringify({ path, cid, meta: opts.meta }) });
+    await call("/api/media/describe", { method: "POST", body: JSON.stringify({ cid, ...about }) });
     return { cid, stored: false };
   }
   const start = await call<{ id: string; chunk: number; parts: number; received: number[] }>("/api/media/uploads", {
     method: "POST",
-    body: JSON.stringify({ path, size: bytes.length, cid, mime, meta: opts.meta }),
+    body: JSON.stringify({ cid, size: bytes.length, mime: opts.mime, ...about }),
   });
   const todo = [...Array(start.parts).keys()].filter((i) => !start.received.includes(i));
   let next = 0, sent = start.received.length;
@@ -69,7 +72,7 @@ export async function upload(bytes: Uint8Array, path: string, opts: { cid?: stri
       const i = todo[next++]!;
       await call(`/api/media/uploads/${start.id}/${i}`, { method: "PUT", body: new Blob([bytes.subarray(i * start.chunk, (i + 1) * start.chunk) as BlobPart]), headers: { "content-type": "application/octet-stream" } });
       sent++;
-      if (opts.progress && start.parts > 8) process.stdout.write(`\r  ${path}  ${Math.round((sent / start.parts) * 100)}%   `);
+      if (opts.progress && start.parts > 8) process.stdout.write(`\r  ${opts.label ?? opts.title ?? cid}  ${Math.round((sent / start.parts) * 100)}%   `);
     }
   };
   await Promise.all(Array.from({ length: 4 }, worker));

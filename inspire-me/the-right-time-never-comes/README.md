@@ -1,6 +1,7 @@
 ---
 title: The right time never comes
 source: https://www.youtube.com/watch?v=a5DzxKy0yQQ
+thumbnail: bafkreihvu3jt6jpve26i7zviqgklwwgdlk74yrmoe6o7qbxosvcqmoppqe.jpg
 type: video
 added: 2026-09-16
 categories: [self, education]

@@ -1,0 +1,269 @@
+<!--
+	A post, as the journal shows it: the film or the cover first, the header, the words, and the door onward. The
+	post's own page and the preview of an unpublished day both render through this, so they can't drift apart.
+-->
+<script lang="ts">
+	import { asset } from '$lib/media/url';
+	import { base } from '$app/paths';
+	import { dev } from '$app/environment';
+	import type { Snippet } from 'svelte';
+	import Banner from './Banner.svelte';
+	import LatestList from './LatestList.svelte';
+	import NextCard from './NextCard.svelte';
+	import Player from './Player.svelte';
+	import { categoryById } from '$lib/inspire-me/categories';
+	import type { Post, PostMeta } from './types';
+
+	let {
+		post,
+		next = null,
+		latest = [],
+		top
+	}: {
+		post: Post;
+		next?: PostMeta | null;
+		latest?: PostMeta[];
+		/** above everything, the preview's "only admins see this" bar */
+		top?: Snippet;
+	} = $props();
+
+	// a post with a film opens on it: the player, its poster the title card, first thing on the page
+	const hasFilm = $derived(Boolean((dev && post.videoLocal) || (post.video && post.videoLibrary)));
+	const formatted = $derived(
+		post.date
+			? new Date(post.date).toLocaleDateString('en-GB', {
+					day: 'numeric',
+					month: 'long',
+					year: 'numeric'
+				})
+			: ''
+	);
+</script>
+
+<svelte:head>
+	<title>{post.title} · maiaCITY</title>
+	<meta name="description" content={post.excerpt} />
+</svelte:head>
+
+{@render top?.()}
+
+{#if hasFilm}
+	<!-- the header, edge to edge, before anything else: a film post's film (its banner the poster, played in place),
+	     or the banner itself — one frame, one height, for both -->
+	<div class="hero"><Player {post} hero /></div>
+{:else if post.cover}
+	<figure class="hero"><Banner {post} /></figure>
+{/if}
+
+<main class="wrap">
+	<a class="back" href="{base}/blog">← Journal</a>
+
+	<article>
+		<header>
+			{#if post.day != null}
+				<p class="eyebrow">Day {String(post.day).padStart(2, '0')}</p>
+			{/if}
+			<h1>{post.title}</h1>
+			{#if post.subtitle}<p class="subtitle">{post.subtitle}</p>{/if}
+
+			<div class="byline">
+				{#if post.authorImage}
+					<img class="avatar" src={asset(post.authorImage)} alt={post.author} />
+				{/if}
+				<div>
+					<p class="author">{post.author}</p>
+					<p class="meta">
+						{#if post.authorRole}{post.authorRole}&ensp;·&ensp;{/if}{formatted}&ensp;·&ensp;{post.readingMinutes}
+						min read
+					</p>
+				</div>
+			</div>
+
+			{#if post.categories.length}
+				<ul class="tag-list">
+					{#each post.categories as id (id)}
+						<li style:--c={categoryById(id).color}>{categoryById(id).label}</li>
+					{/each}
+				</ul>
+			{/if}
+		</header>
+
+		{#if !hasFilm}<div class="film"><Player {post} /></div>{/if}
+
+		<div class="prose article">{@html post.html}</div>
+
+		{#if next || latest.length}
+			<footer class="onward">
+				{#if next}
+					<p class="eyebrow">Keep reading</p>
+					<NextCard post={next} />
+				{/if}
+				<div class="more"><LatestList posts={latest} /></div>
+			</footer>
+		{/if}
+	</article>
+</main>
+
+<style>
+	main {
+		padding-block: 2.5rem 6rem;
+	}
+
+	.hero {
+		/* the same gap below the navbar as the navbar keeps from the top of the page */
+		margin: 1.25rem 0 0;
+		width: 100%;
+		/* one height for a banner and a film: on a wide screen the 5:2 banner's own (a title card shown whole), on a
+		   phone the 16:9 cover's */
+		height: min(40vw, 80vh);
+		height: min(40vw, 80svh);
+		background: var(--paper);
+	}
+
+	.back {
+		display: inline-block;
+		margin-bottom: 2rem;
+		font-size: 0.9rem;
+		text-decoration: none;
+		color: var(--ink-soft);
+	}
+
+	article {
+		max-width: 46rem;
+		margin: 0 auto;
+	}
+
+	h1 {
+		margin: 0.75rem 0 0;
+		font-size: clamp(2.5rem, 6vw, 4.2rem);
+	}
+
+	.onward {
+		margin-top: 4rem;
+		padding-top: 2.5rem;
+		border-top: 1px solid var(--line);
+	}
+
+	.onward .eyebrow {
+		margin: 0 0 1rem;
+	}
+
+	.more {
+		margin-top: 2.5rem;
+	}
+
+	.subtitle {
+		margin: 1rem 0 0;
+		font-family: var(--font-display);
+		font-size: 1.4rem;
+		font-weight: 300;
+		line-height: 1.35;
+		color: var(--ink-soft);
+	}
+
+	.byline {
+		display: flex;
+		align-items: center;
+		gap: 0.9rem;
+		margin: 2rem 0 0;
+	}
+
+	.avatar {
+		width: 3rem;
+		height: 3rem;
+		border-radius: 50%;
+		object-fit: cover;
+	}
+
+	.author {
+		margin: 0;
+		font-weight: 500;
+	}
+
+	.meta {
+		margin: 0.15rem 0 0;
+		font-size: 0.85rem;
+		color: var(--muted);
+	}
+
+	.tag-list {
+		margin-top: 1.25rem;
+	}
+
+	/* The film breaks out of the text column, staying centred on it. */
+	.film {
+		width: min(62rem, calc(100vw - 3rem));
+		margin-left: 50%;
+		transform: translateX(-50%);
+	}
+
+
+	.article {
+		margin-top: 2.5rem;
+		font-size: 1.12rem;
+		line-height: 1.7;
+	}
+
+	.article :global(h2) {
+		margin: 2.75rem 0 1rem;
+		font-size: clamp(1.8rem, 3.5vw, 2.4rem);
+	}
+
+	.article :global(h3) {
+		margin: 2rem 0 0.75rem;
+		font-size: 1.35rem;
+	}
+
+	.article :global(blockquote) {
+		margin: 2rem 0;
+		padding-left: 1.25rem;
+		font-size: 1.35rem;
+		line-height: 1.45;
+	}
+
+	/* Figures break out of the text column, staying centred on it. */
+	.article :global(figure) {
+		width: min(62rem, calc(100vw - 3rem));
+		margin-block: 2.5rem;
+		margin-left: 50%;
+		transform: translateX(-50%);
+	}
+
+	.article :global(figure img) {
+		display: block;
+		width: 100%;
+		border-radius: var(--radius);
+		background: var(--paper);
+	}
+
+	.article :global(figcaption) {
+		margin-top: 0.75rem;
+		font-size: 0.88rem;
+		line-height: 1.5;
+		color: var(--muted);
+		text-align: center;
+	}
+
+	@media (max-width: 820px) {
+		.hero {
+			height: 56.25vw;
+		}
+
+		.film {
+			width: 100vw;
+		}
+
+		.article :global(figure) {
+			width: 100vw;
+		}
+
+		.article :global(figure img) {
+			border-radius: 0;
+		}
+
+		.article :global(figcaption) {
+			padding-inline: 1.5rem;
+			text-align: left;
+		}
+	}
+</style>

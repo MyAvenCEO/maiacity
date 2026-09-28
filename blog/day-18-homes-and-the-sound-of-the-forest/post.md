@@ -3,16 +3,17 @@ title: We turned bare rooms into homes and gave the silent forest its sound
 subtitle: Day 18 — the rooms in every dome got their baths, beds and terrace doors, the land between them got its geese, bees, frogs and ponds, and for the first time you can hear all of it.
 day: 18
 author: avenSAMUEL
-authorImage: /samuel.jpg
+authorImage: bafybeigc4o3dpecqu3pvrzldsjie6b2xs7sdjeetuafxbjqckqnabiy5d4.jpg
 authorRole: Building maiaCITY
 date: 2026-09-25
-cover: /day-18-homes-and-the-sound-of-the-forest/room.jpg
+cover: bafybeifpqvwp6wkixtdf3poesyfrvmf6gyffehpn6v2q5dufg7wlmdtpta.jpg
 coverAlt: A room in the gallery of a dome, rounded plaster furniture on a timber floor, plants in pots, clear glass looking out over the terrace.
 excerpt: >-
   Yesterday you could walk through thirteen domes and never hear a thing. Today the stream
   gets louder as you come near it, the geese call across the water, and the room at the top
   of the stairs has a bath in it.
 categories: [game, housing, ecology, code]
+draft: true
 ---
 
 The forest had no sound.
@@ -27,19 +28,19 @@ On [Day 17](/blog/day-17-one-world-thirteen-domes/) every dome stood in one worl
 
 A home is the corner where you read in the morning. It is the bath you step into after a day in the forest, the door you open onto the terrace, the plant on the shelf that needs water. So every room got the things a person actually lives with.
 
-![A room in the gallery of a dome: rounded furniture, a timber floor, plants, and the clear glass beyond.](/day-18-homes-and-the-sound-of-the-forest/room.jpg)
+![A room in the gallery of a dome: rounded furniture, a timber floor, plants, and the clear glass beyond.](bafybeifpqvwp6wkixtdf3poesyfrvmf6gyffehpn6v2q5dufg7wlmdtpta.jpg)
 
 A wide bed with soft rounded edges. A curved bench along the wall with cushions on it, a round table and stools. A niche with shelves, a rug. A desk by the window with a deep armchair. And plants: in pots on the floor, on the shelves, climbing by the door.
 
 None of it has a sharp corner. The furniture is plastered by hand, the way Waldorf buildings are, every edge rounded and every surface soft to the eye. You feel the difference before you can name it.
 
-![The bed, the plants and the curved bench, the forest outside the glass.](/day-18-homes-and-the-sound-of-the-forest/bed.jpg)
+![The bed, the plants and the curved bench, the forest outside the glass.](bafybeialgryk4zwtwrd6tgnge3sv3pn7cw32vvggcph5mew57ez5ccfjoa.jpg)
 
 Every room has its own bath: a bowl of smooth stone, low and wide, set into the floor with pebbles round it. Behind a curved wall there is a shower, closed and warm.
 
-![A stone bath in a room of the gallery, pebbles round it, an armchair beside it.](/day-18-homes-and-the-sound-of-the-forest/bath.jpg)
+![A stone bath in a room of the gallery, pebbles round it, an armchair beside it.](bafybeihvesaqpsf6dxu6kr2zgmxeirqc4cs26ahfflfv3vpkte7hxqy4hq.jpg)
 
-![A desk and an armchair by the window.](/day-18-homes-and-the-sound-of-the-forest/desk.jpg)
+![A desk and an armchair by the window.](bafybeidgrkirdenfiv5cukncgy3acj5kaz7js7rrsvj6tgdhgciwlmluym.jpg)
 
 The walls between the rooms are solid now. You cannot walk through them, only through the door.
 
@@ -51,7 +52,7 @@ On Day 17 the whole dome became solar glass, every triangle laid with dark blue 
 
 So the glass in front of the rooms is clear, and the solar cells stay above and around it. From your room you look straight out at the forest, the terrace and the sky. And in the glass there is a door.
 
-![Looking back at a room's glass door from the terrace.](/day-18-homes-and-the-sound-of-the-forest/door.jpg)
+![Looking back at a room's glass door from the terrace.](bafybeid6nb4pjnkokdjjrkq24cckhkkopxyoovmol7pr2sad2lls3mpvyu.jpg)
 
 ## Every terrace is wide enough to live on
 
@@ -64,11 +65,11 @@ They are two and a half metres wider now, wide enough for a whole life outside. 
 - a curved plaster bench round a low table, felt cushions, a big planter at each end
 - two hanging egg chairs from a curved timber frame, a sheepskin in each
 
-![The terrace in front of the rooms: daybeds, plants, the stone arcade.](/day-18-homes-and-the-sound-of-the-forest/terrace.jpg)
+![The terrace in front of the rooms: daybeds, plants, the stone arcade.](bafybeihmp4w5gmtxdlsvx3nsyzymdhmuunljytesktf6pnaomkzqenc3rq.jpg)
 
-![Daybeds on the terrace, looking out through the arcade.](/day-18-homes-and-the-sound-of-the-forest/daybeds.jpg)
+![Daybeds on the terrace, looking out through the arcade.](bafybeiafiviltkp3akgyc6tez5zgvfu7czexycqr25wpnoycaianixqn4q.jpg)
 
-![The upper terrace of a large dome, high above the forest.](/day-18-homes-and-the-sound-of-the-forest/terrace-upper.jpg)
+![The upper terrace of a large dome, high above the forest.](bafybeielpynx4d77nb7k7rlyn7jpo6ao63pto66rurgj2kjusqb3o6f6na.jpg)
 
 Imagine an evening out here. Somebody from three doors down has brought a bowl of figs from the forest. The children are asleep inside, the glass door open a hand's width so you can hear them.
 
@@ -92,15 +93,15 @@ A sound needs someone making it.
 
 There are more goats now, grazing in small flocks between the domes and along the paths.
 
-![Goats beside a path between the domes.](/day-18-homes-and-the-sound-of-the-forest/goats.jpg)
+![Goats beside a path between the domes.](bafybeihq2fufxv33px64xr3s33osi5aplcmxpguohho45wp4bf3jre5l7e.jpg)
 
 The geese keep to the water.
 
-![Geese on the stream between the domes.](/day-18-homes-and-the-sound-of-the-forest/geese.jpg)
+![Geese on the stream between the domes.](bafybeih6xnp4yo6vvphmiaanf67buev54ehhbvgmstscaqkfkgt7ri5hny.jpg)
 
 Frogs sit on the banks of every pond and stream, and you hear them long before you see them. Fish swim in the ponds and the streams, and in the tanks of the aquaponics beds on the master dome's ground floor, where a small stream of its own runs through. And in the forest between the domes stand groups of beehives, the bees circling round them.
 
-![Beehives in the food forest.](/day-18-homes-and-the-sound-of-the-forest/hives.jpg)
+![Beehives in the food forest.](bafybeiailhelwuia4qdyexsotfj5i4brekr6ouhdivbvfb5rmnbstyltwi.jpg)
 
 ## The ground was a green sheet
 
@@ -108,17 +109,17 @@ Walk through a real forest and look down. There is almost no plain ground in it.
 
 So the forest floor got what a forest floor has: moss, the white threads of mycelium, patches of bare dark earth, ant hills, rotting logs going soft, stones and small rocks, low bushes. The grass got blades.
 
-![The forest floor between the domes: grass, moss, stones and low plants under the trees.](/day-18-homes-and-the-sound-of-the-forest/forest-floor.jpg)
+![The forest floor between the domes: grass, moss, stones and low plants under the trees.](bafybeifzsn4z3sqg5kv2pcdbz7ws4e2mgnlamcyjgqbccgfmnlekcej3u4.jpg)
 
-![A rotting log on the forest floor.](/day-18-homes-and-the-sound-of-the-forest/log.jpg)
+![A rotting log on the forest floor.](bafybeigxyo3kdjorgytrjow2nqn6hw3iddljvuufduiomigry46735y6f4.jpg)
 
 The ponds were round blue discs. Now they have real shapes, shallow edges where the water is pale over sand and deep middles where it turns dark, reeds and lily pads along the shore. And no tree stands in the water anymore.
 
-![A pond from above: its shallows and deep water, a bridge, reeds along the shore, a playground beside it.](/day-18-homes-and-the-sound-of-the-forest/pond.jpg)
+![A pond from above: its shallows and deep water, a bridge, reeds along the shore, a playground beside it.](bafybeibdcj6ns5dv2j3lu5mx4ji2gabs7gp2r3kv63rn2z5zdxpszaweem.jpg)
 
 Between the domes stand three wooden playgrounds: a sandpit ringed with half-buried logs, a tower with a tent roof and a slide down into the sand, a swing on an A-frame of logs, stumps to jump between. The hives are never near them.
 
-![A wooden playground between the domes, the master dome behind it.](/day-18-homes-and-the-sound-of-the-forest/playground.jpg)
+![A wooden playground between the domes, the master dome behind it.](bafybeigba7ie5xsgrgq2hjoccyt7plxn6427u7nkxm6e76m6ca7r4eo7dm.jpg)
 
 ## You can walk into any dome, any time
 

@@ -1,13 +1,14 @@
 /**
  * THE MEDIA LIBRARY — every image, sound and video, kept in Postgres and known by its CID.
  *
- * Postgres is the single source of truth: the bytes live here, in 1 MiB chunks, under the IPFS content
- * identifier of the whole file. The CID is computed exactly as `ipfs add --cid-version 1` computes it (UnixFS,
- * raw leaves, sha2-256), so the same file has the same name here, on any IPFS node, and in any object store it
- * moves to later. The same bytes are stored once, however many paths point at them.
+ * The bytes live here, in 1 MiB chunks, under the IPFS content identifier of the whole file. The CID is computed
+ * exactly as `ipfs add --cid-version 1` computes it (UnixFS, raw leaves, sha2-256), so the same file has the same
+ * name here, on any IPFS node, and in the repo's library/ folder, which seeds this database. The same bytes are
+ * stored once. There are no paths: a file is its CID, and what is known about it — a title, a description, tags
+ * (how it is found and sorted), its meta, and whether it is public.
  *
- * Distribution is not done from here: images and sounds are copied to the Bunny storage zone and served by its CDN,
- * videos to Bunny Stream. Each row remembers where its copy went.
+ * Distribution is not done from here: public images and sounds are copied to the Bunny storage zone and served by
+ * its CDN, public videos to Bunny Stream. Each row remembers where its copy went.
  */
 import { importByteStream, importBytes } from "ipfs-unixfs-importer";
 import { db, type Queryable } from "./pg";
@@ -36,11 +37,11 @@ export const mimeOf = (path: string) => MIME[path.split(".").pop()?.toLowerCase(
 export const kindOf = (mime: string): MediaKind =>
   mime.startsWith("image/") ? "image" : mime.startsWith("video/") ? "video" : mime.startsWith("audio/") ? "audio" : mime === "application/pdf" ? "document" : "other";
 
-/**
- * Keep a file: store its bytes under their CID unless they are already here, and let `path` name it.
- * Returns the CID and whether the bytes were new.
- */
-export async function putMedia(bytes: Uint8Array, path: string, mime = mimeOf(path)): Promise<{ cid: string; stored: boolean }> {
+/** What is known about a file, besides its bytes. */
+export type Description = { title?: string; description?: string; tags?: string[]; meta?: Record<string, unknown>; public?: boolean };
+
+/** Keep a file: store its bytes under their CID unless they are already here, and describe it. */
+export async function putMedia(bytes: Uint8Array, mime: string, about: Description = {}): Promise<{ cid: string; stored: boolean }> {
   const cid = await cidOf(bytes);
   const stored = await db.transaction(async (tx) => {
     const { rows } = await tx.query("SELECT 1 FROM media WHERE cid = $1", [cid]);
@@ -49,20 +50,43 @@ export async function putMedia(bytes: Uint8Array, path: string, mime = mimeOf(pa
       for (let i = 0, n = 0; i < bytes.length || n === 0; i += CHUNK, n++)
         await tx.query("INSERT INTO media_chunks (cid, idx, bytes) VALUES ($1, $2, $3)", [cid, n, bytes.subarray(i, i + CHUNK)]);
     }
-    await nameIt(tx, path, cid);
+    await describeIn(tx, cid, about);
     return !rows.length;
   });
   return { cid, stored };
 }
 
-/** Point a path at a CID. A path that named something else before now names this. */
-export async function nameIt(q: Queryable, path: string, cid: string) {
-  await q.query(
-    `INSERT INTO media_paths (path, cid) VALUES ($1, $2)
-     ON CONFLICT (path) DO UPDATE SET cid = EXCLUDED.cid, updated = now() WHERE media_paths.cid <> EXCLUDED.cid`,
-    [path, cid],
-  );
+/** Set what is known about a file: each field given replaces the one before (tags as a whole set). */
+async function describeIn(q: Queryable, cid: string, about: Description) {
+  if (about.title !== undefined) await q.query("UPDATE media SET title = $2 WHERE cid = $1", [cid, String(about.title).slice(0, 300)]);
+  if (about.description !== undefined) await q.query("UPDATE media SET description = $2 WHERE cid = $1", [cid, String(about.description).slice(0, 5000)]);
+  if (about.meta !== undefined) await q.query("UPDATE media SET meta = ($2::text)::jsonb WHERE cid = $1", [cid, metaOf(about.meta)]);
+  if (about.public !== undefined) await q.query("UPDATE media SET public = $2 WHERE cid = $1", [cid, Boolean(about.public)]);
+  if (about.tags !== undefined) {
+    await q.query("DELETE FROM media_tags WHERE cid = $1", [cid]);
+    for (const tag of new Set(about.tags.map((t) => String(t).trim()).filter(Boolean)))
+      await q.query("INSERT INTO media_tags (cid, tag) VALUES ($1, $2) ON CONFLICT DO NOTHING", [cid, tag]);
+  }
 }
+
+/** Describe a file the library holds (the seed step sends what library/<cid>.json says). */
+export async function describe(cid: unknown, about: unknown): Promise<void> {
+  const c = String(cid ?? "");
+  if (!(await have([c])).length) throw new MediaError("The library does not hold that CID.", 404);
+  await db.transaction((tx) => describeIn(tx, c, aboutOf(about)));
+}
+
+/** A description from a request body: only the fields it has, of the right kinds. */
+const aboutOf = (v: unknown): Description => {
+  const o = (v && typeof v === "object" ? v : {}) as Record<string, unknown>;
+  return {
+    ...(typeof o.title === "string" ? { title: o.title } : {}),
+    ...(typeof o.description === "string" ? { description: o.description } : {}),
+    ...(Array.isArray(o.tags) ? { tags: o.tags.map(String) } : {}),
+    ...(o.meta && typeof o.meta === "object" && !Array.isArray(o.meta) ? { meta: o.meta as Record<string, unknown> } : {}),
+    ...(typeof o.public === "boolean" ? { public: o.public } : {}),
+  };
+};
 
 export type MediaRow = {
   cid: string;
@@ -70,24 +94,26 @@ export type MediaRow = {
   kind: MediaKind;
   size: number;
   created: string;
-  paths: string[];
+  title: string;
+  description: string;
   tags: string[];
   meta: Record<string, unknown>;
+  public: boolean;
   cdn_path: string | null;
   stream_guid: string | null;
   distributed_at: string | null;
 };
 
-/** The library: newest first, every path that names each file, and where its public copy is. */
+/** The library, newest first: what is known about each file, and where its public copy is. */
 export async function listMedia(filter: { kind?: string; q?: string } = {}): Promise<MediaRow[]> {
   const { rows } = await db.query<MediaRow>(
-    `SELECT m.cid, m.mime, m.kind, m.size, m.created, m.meta, m.cdn_path, m.stream_guid, m.distributed_at,
-            coalesce(array_agg(DISTINCT p.path) FILTER (WHERE p.path IS NOT NULL), '{}') AS paths,
+    `SELECT m.cid, m.mime, m.kind, m.size, m.created, m.title, m.description, m.meta, m.public, m.cdn_path, m.stream_guid, m.distributed_at,
             coalesce((SELECT array_agg(t.tag ORDER BY t.tag) FROM media_tags t WHERE t.cid = m.cid), '{}') AS tags
-       FROM media m LEFT JOIN media_paths p ON p.cid = m.cid
+       FROM media m
       WHERE ($1::text IS NULL OR m.kind = $1)
-        AND ($2::text IS NULL OR m.cid = $2 OR EXISTS (SELECT 1 FROM media_paths q WHERE q.cid = m.cid AND q.path ILIKE '%' || $2 || '%'))
-      GROUP BY m.cid ORDER BY m.created DESC, m.cid`,
+        AND ($2::text IS NULL OR m.cid = $2 OR m.title ILIKE '%' || $2 || '%' OR m.description ILIKE '%' || $2 || '%'
+             OR EXISTS (SELECT 1 FROM media_tags q WHERE q.cid = m.cid AND q.tag ILIKE '%' || $2 || '%'))
+      ORDER BY m.created DESC, m.cid`,
     [filter.kind || null, filter.q?.trim() || null],
   );
   return rows.map((r) => ({ ...r, size: Number(r.size) }));
@@ -115,12 +141,9 @@ export function readMedia(cid: string, start: number, end: number): ReadableStre
   });
 }
 
-/** Every file whose public copy has not been made yet. */
-export async function undistributed(): Promise<{ cid: string; mime: string; kind: MediaKind; size: number; path: string | null }[]> {
-  const { rows } = await db.query<any>(
-    `SELECT m.cid, m.mime, m.kind, m.size, (SELECT min(path) FROM media_paths p WHERE p.cid = m.cid) AS path
-       FROM media m WHERE m.distributed_at IS NULL ORDER BY m.size`,
-  );
+/** Every public file whose copy on the CDN has not been made yet (a private one never gets one). */
+export async function undistributed(): Promise<{ cid: string; mime: string; kind: MediaKind; size: number; title: string }[]> {
+  const { rows } = await db.query<any>("SELECT cid, mime, kind, size, title FROM media WHERE public AND distributed_at IS NULL ORDER BY size");
   return rows.map((r) => ({ ...r, size: Number(r.size) }));
 }
 
@@ -142,25 +165,26 @@ export async function mediaBytes(cid: string): Promise<Uint8Array> {
   return out;
 }
 
-/** path → where the site should load it from: the CDN copy of its CID, once there is one. */
-export async function manifest(): Promise<Record<string, { cid: string; url: string | null }>> {
-  const { rows } = await db.query<{ path: string; cid: string; cdn_path: string | null }>(
-    "SELECT p.path, p.cid, m.cdn_path FROM media_paths p JOIN media m ON m.cid = p.cid ORDER BY p.path",
+/** What the site knows of a file: where to load it (its CDN copy, once there is one), and how it is described. */
+export type ManifestEntry = { url: string | null; mime: string; title: string; description: string; tags: string[]; stream?: string };
+
+/** Every public file, by CID — the site finds its pictures and sounds by CID or by tag in this. */
+export async function manifest(): Promise<Record<string, ManifestEntry>> {
+  const { rows } = await db.query<{ cid: string; mime: string; title: string; description: string; cdn_path: string | null; stream_guid: string | null; tags: string[] }>(
+    `SELECT m.cid, m.mime, m.title, m.description, m.cdn_path, m.stream_guid,
+            coalesce((SELECT array_agg(t.tag ORDER BY t.tag) FROM media_tags t WHERE t.cid = m.cid), '{}') AS tags
+       FROM media m WHERE m.public ORDER BY m.cid`,
   );
-  return Object.fromEntries(rows.map((r) => [r.path, { cid: r.cid, url: r.cdn_path ? `/${r.cdn_path}` : null }]));
+  return Object.fromEntries(rows.map((r) => [r.cid, {
+    url: r.cdn_path ? `/${r.cdn_path}` : null, mime: r.mime, title: r.title, description: r.description, tags: r.tags,
+    ...(r.stream_guid ? { stream: r.stream_guid } : {}),
+  }]));
 }
 
-/** Every path the library knows, and the CID it names. */
-export async function allPaths(): Promise<{ path: string; cid: string }[]> {
-  return (await db.query<{ path: string; cid: string }>("SELECT path, cid FROM media_paths ORDER BY path")).rows;
-}
-
-/** Replace every tag: they are derived (see scripts/media-tags.ts), so the new set is the whole truth. */
+/** Tags for many files at once: each file's set replaced by the one given. */
 export async function retag(tags: Map<string, Set<string>>): Promise<void> {
   await db.transaction(async (tx) => {
-    await tx.query("DELETE FROM media_tags");
-    for (const [cid, set] of tags)
-      for (const tag of set) await tx.query("INSERT INTO media_tags (cid, tag) VALUES ($1, $2) ON CONFLICT DO NOTHING", [cid, tag]);
+    for (const [cid, set] of tags) await describeIn(tx, cid, { tags: [...set] });
   });
 }
 
@@ -172,7 +196,7 @@ export class MediaError extends Error {
   }
 }
 
-/** Which of these CIDs does the library already hold? Those need no upload, only their path. */
+/** Which of these CIDs does the library already hold? Those need no upload, only their description. */
 export async function have(cids: string[]): Promise<string[]> {
   if (!cids.length) return [];
   const { rows } = await db.query<{ cid: string }>(
@@ -182,36 +206,28 @@ export async function have(cids: string[]): Promise<string[]> {
   return rows.map((r) => r.cid);
 }
 
-/** Name a path after bytes the library already holds (and add to what is known about them). */
-export async function namePath(path: unknown, cid: unknown, meta?: unknown) {
-  const p = String(path ?? ""), c = String(cid ?? "");
-  if (!p.startsWith("/")) throw new MediaError("A path starts with /.");
-  if (!(await have([c])).length) throw new MediaError("The library does not hold that CID.", 404);
-  await nameIt(db, p, c);
-  if (meta) await db.query("UPDATE media SET meta = meta || ($2::text)::jsonb WHERE cid = $1", [c, metaOf(meta)]);
-}
-
 const partsOf = (size: number) => Math.max(1, Math.ceil(size / CHUNK));
 
 /**
- * Begin (or resume) an upload: the file's path, size and the CID the uploader computed. The parts already
- * received come back, so an interrupted upload carries on where it stopped.
+ * Begin (or resume) an upload: the file's CID (as the uploader computed it), size, type and description. The parts
+ * already received come back, so an interrupted upload carries on where it stopped.
  */
 const metaOf = (v: unknown) => JSON.stringify(v && typeof v === "object" && !Array.isArray(v) ? v : {});
 
-export async function startUpload(founderId: string, body: { path?: unknown; size?: unknown; cid?: unknown; mime?: unknown; meta?: unknown }) {
-  const path = String(body.path ?? ""), cid = String(body.cid ?? ""), size = Number(body.size);
-  if (!path.startsWith("/")) throw new MediaError("A path starts with /.");
+export async function startUpload(founderId: string, body: Record<string, unknown>) {
+  const cid = String(body.cid ?? ""), size = Number(body.size), mime = String(body.mime ?? "");
   if (!/^baf[a-z2-7]{20,}$/.test(cid)) throw new MediaError("Give the file's CID (CIDv1).");
   if (!Number.isSafeInteger(size) || size < 0) throw new MediaError("Give the file's size in bytes.");
-  const mime = typeof body.mime === "string" && body.mime ? body.mime : mimeOf(path);
+  if (!/^[a-z]+\/[a-z0-9.+-]+$/.test(mime)) throw new MediaError("Give the file's type (image/jpeg, video/mp4, …).");
   const { rows: old } = await db.query<{ id: string }>(
-    "SELECT id FROM uploads WHERE founder_id = $1 AND path = $2 AND cid = $3 AND size = $4 ORDER BY created DESC LIMIT 1",
-    [founderId, path, cid, size],
+    "SELECT id FROM uploads WHERE founder_id = $1 AND cid = $2 AND size = $3 ORDER BY created DESC LIMIT 1",
+    [founderId, cid, size],
   );
+  const info = JSON.stringify(aboutOf(body));
   const id =
     old[0]?.id ??
-    (await db.query<{ id: string }>("INSERT INTO uploads (founder_id, path, mime, size, cid, meta) VALUES ($1, $2, $3, $4, $5, ($6::text)::jsonb) RETURNING id", [founderId, path, mime, size, cid, metaOf(body.meta)])).rows[0]!.id;
+    (await db.query<{ id: string }>("INSERT INTO uploads (founder_id, mime, size, cid, info) VALUES ($1, $2, $3, $4, ($5::text)::jsonb) RETURNING id", [founderId, mime, size, cid, info])).rows[0]!.id;
+  if (old[0]) await db.query("UPDATE uploads SET info = ($2::text)::jsonb WHERE id = $1", [id, info]);
   const { rows } = await db.query<{ idx: number }>("SELECT idx FROM upload_chunks WHERE upload_id = $1 ORDER BY idx", [id]);
   return { id, chunk: CHUNK, parts: partsOf(size), received: rows.map((r) => r.idx) };
 }
@@ -232,11 +248,11 @@ export async function putPart(founderId: string, id: string, idx: number, bytes:
 
 /**
  * Every part is in: compute the CID from the staged bytes. Only if it is the CID the uploader promised do the bytes
- * become media (or, when the library holds them already, are simply let go of). Either way the path now names it.
+ * become media (or, when the library holds them already, are simply let go of). Either way it is described.
  */
 export async function finishUpload(founderId: string, id: string): Promise<{ cid: string; stored: boolean }> {
-  const { rows } = await db.query<{ path: string; mime: string; size: number; cid: string; meta: unknown }>(
-    "SELECT path, mime, size, cid, meta FROM uploads WHERE id = $1 AND founder_id = $2",
+  const { rows } = await db.query<{ mime: string; size: number; cid: string; info: unknown }>(
+    "SELECT mime, size, cid, info FROM uploads WHERE id = $1 AND founder_id = $2",
     [id, founderId],
   );
   const up = rows[0];
@@ -262,16 +278,14 @@ export async function finishUpload(founderId: string, id: string): Promise<{ cid
       await tx.query("INSERT INTO media (cid, mime, kind, size) VALUES ($1, $2, $3, $4)", [cid, up.mime, kindOf(up.mime), size]);
       await tx.query("INSERT INTO media_chunks (cid, idx, bytes) SELECT $1, idx, bytes FROM upload_chunks WHERE upload_id = $2", [cid, id]);
     }
-    await tx.query("UPDATE media SET meta = meta || ($2::text)::jsonb WHERE cid = $1", [cid, metaOf(up.meta)]);
+    await describeIn(tx, cid, aboutOf(up.info));
     await tx.query("DELETE FROM uploads WHERE id = $1", [id]);
-    await nameIt(tx, up.path, cid);
     return !known.length;
   });
   return { cid, stored };
 }
 
-/** What the site needs to know, and anyone may: every path with a public copy, and where it is. */
-export async function publicManifest(): Promise<Record<string, { cid: string; url: string }>> {
-  const all = await manifest();
-  return Object.fromEntries(Object.entries(all).filter(([, v]) => v.url).map(([k, v]) => [k, { cid: v.cid, url: v.url! }]));
+/** What the site needs to know, and anyone may: every public file with its copy on the CDN, by CID. */
+export async function publicManifest(): Promise<Record<string, ManifestEntry>> {
+  return Object.fromEntries(Object.entries(await manifest()).filter(([, v]) => v.url || v.stream));
 }

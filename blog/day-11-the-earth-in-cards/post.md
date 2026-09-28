@@ -3,15 +3,16 @@ title: We rebuilt the Earth as 51,842 cards so a coop can stand on one of them
 subtitle: Day 11 — the planet in avenCITY Sandbox 2, the morning it stopped being invented, and what it takes to found a coop on a card of it.
 day: 11
 author: avenSAMUEL
-authorImage: /samuel.jpg
+authorImage: bafybeigc4o3dpecqu3pvrzldsjie6b2xs7sdjeetuafxbjqckqnabiy5d4.jpg
 authorRole: Building maiaCITY
 date: 2026-09-19
-cover: /day-11-the-earth-in-cards/europe.jpg
+cover: bafybeigouozvy6ji6ggmg4owq2idkakqnb3cah5uhf77dbh33d3eoqjnii.jpg
 coverAlt: Europe in avenCITY Sandbox 2, one hex card at a time.
 excerpt: >-
   The first planet I built had no Portugal on it. The second one does, and on the first card of
   it I chose there now stands a bakery.
 categories: [game, coop, civic]
+draft: true
 ---
 
 The first planet I built had no Portugal on it.
@@ -38,13 +39,13 @@ Minutes later it had the real coastline, taken from Natural Earth, a free public
 
 Then came the climate. Every card got its kind of land from the Köppen-Geiger grid, the map scientists use to divide the world into climate zones: forest, grass, bare earth, sand, taiga, snow. The mountain ranges went in as their own kind of card. The sea got its depth, pale over the shelves and dark over the deep ocean. Pack ice became its own card, with an edge that is not a perfect circle.
 
-![The real Earth, drawn in hex cards: Europe, Africa and the Atlantic from orbit.](/day-11-the-earth-in-cards/the-real-earth.jpg)
+![The real Earth, drawn in hex cards: Europe, Africa and the Atlantic from orbit.](bafybeifoiwgql3rhg7afmfwdayt3sk22oztcx2uzcwpqfuf6hh7hcfqczm.jpg)
 
 The whole Earth is now 51,842 cards. 15,090 of them are land you can build on.
 
 There was one more rule, added before lunch. The browser that draws the planet and the ledger that records the coops build the globe from the same numbers and the same coastline. Card 4,297 is the same place on your screen as it is in the database. A coop can never end up in the sea because two programs disagreed about where the sea is.
 
-![Zoomed in, the cards take on the land they stand for: forest, grass, earth, sand.](/day-11-the-earth-in-cards/europe.jpg)
+![Zoomed in, the cards take on the land they stand for: forest, grass, earth, sand.](bafybeigouozvy6ji6ggmg4owq2idkakqnb3cah5uhf77dbh33d3eoqjnii.jpg)
 
 ## You can walk it
 
@@ -60,7 +61,7 @@ To mint hearts and back a coop, you join. To found one, you need one more thing:
 
 The roles went in early on the second morning, as capabilities rather than ranks, like keys on a ring rather than steps on a ladder. A citizen can mint and invest. A coop founder can also open a coop on an empty card. An admin grants the founder role. The first person to sign up becomes the admin, and in the sandbox that is me.
 
-![The citizens sheet: who may found coops, granted one person at a time.](/day-11-the-earth-in-cards/citizens.jpg)
+![The citizens sheet: who may found coops, granted one person at a time.](bafkreia3m55ifzqshqjud6kccuv2cngdneeqv4d2gnterlttackz4jrgjy.jpg)
 
 Why the gate? Because founding is not free. It claims a card for good, one coop per card, and it spends 500 of your own hearts before anybody else has spent one. The first version asked for 50 hearts. Twenty minutes later it was 500. A coop should begin with a founder who believes in it enough to go first.
 
@@ -68,7 +69,7 @@ Why the gate? Because founding is not free. It claims a card for good, one coop 
 
 You click a card of land. An orange ring settles around it, and a sheet opens on the right.
 
-![Choosing a card: the orange ring marks it, and the founding sheet opens.](/day-11-the-earth-in-cards/choosing-a-card.jpg)
+![Choosing a card: the orange ring marks it, and the founding sheet opens.](bafybeidl6xvzeon2biogdc5dwzg3jcvdoa6lriqehp3bet4bimorhyjuqq.jpg)
 
 The first time I tried this in Sandbox 2, the button stayed grey and I could not tell why. The example name in the field looked like one I had typed. The examples are faint now, and a line under the button tells you what is still missing.
 
@@ -76,7 +77,7 @@ It asks for three things. A name. One line on what the coop is for, who it is fo
 
 I chose card 4,297, on the coast north of Porto, and called it Bakery.
 
-![Founding the Bakery: a name, one line, and the stake.](/day-11-the-earth-in-cards/the-founding-form.jpg)
+![Founding the Bakery: a name, one line, and the stake.](bafybeihlgao5lpdbijrbyf3twtgcyjgugumqczaohhm7mmm6z7m3lfkwr4.jpg)
 
 Imagine a Thursday evening in the centre dome of your dome cell. Someone has been baking at home for years and everyone knows it. Tonight she stops talking about it and founds it: a name, one sentence, her own hearts on the table first. By the time the plates are cleared, the bakery exists, and it has a place.
 
@@ -84,7 +85,7 @@ One press, and four things happen as a single step. It takes 500 of my own heart
 
 If any one of those steps fails, none of them happen.
 
-![Bakery, founded: 500 maiaHEARTS in its treasury, and 11.50 pieces of it in my hands.](/day-11-the-earth-in-cards/bakery-founded.jpg)
+![Bakery, founded: 500 maiaHEARTS in its treasury, and 11.50 pieces of it in my hands.](bafybeihmgp5mbjvcxdcrrf7lwwvwtfyyrz76qlkxzgmltevl6ecyf7pig4.jpg)
 
 ## Three towers on the coast of Portugal
 
@@ -92,7 +93,7 @@ Mara founded Solar just inland from mine: solar panels for every dome cell, made
 
 Every tower grows a storey with every milestone its coop reaches. Right now they are small.
 
-![Three coops on the coast of Portugal: Bakery, Solar and HempStone.](/day-11-the-earth-in-cards/three-towers.jpg)
+![Three coops on the coast of Portugal: Bakery, Solar and HempStone.](bafkreihqvad5gyvqnx3ss5n4v67fakbuxetjl2xf3s3omyjmj7tg7xegja.jpg)
 
 Imagine flying over this planet a year from now. Not three towers but thousands of them, clustered wherever people decided something should exist: the tall ones where many people believed, the short ones still waiting for their first neighbours.
 

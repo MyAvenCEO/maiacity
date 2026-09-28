@@ -2,8 +2,10 @@
 title: Would I choose this again?
 originalTitle: "your life won't change itself."
 source: https://www.youtube.com/watch?v=sTcvKn92TlI
+thumbnail: bafkreidfi2dosr63v5xsr7ctpv4rfxpjykgebzz3f7uwdf6taoc35pqj3q.jpg
 type: video
 author: The Ash Files
+authorImage: bafkreicma7yerh765koebsgk55pgulwtsdjwj5l7dmd5w4ayyvwy7jhm3y.jpg
 authorUrl: https://www.youtube.com/@the.ashfiles
 added: 2026-09-13
 categories: [self, coop]

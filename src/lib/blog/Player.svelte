@@ -10,17 +10,18 @@
 	play button, so a post can be test-run before Stream finishes encoding.
 -->
 <script lang="ts">
-	import { asset } from '$lib/media/url';
 	import { dev } from '$app/environment';
-	import { base } from '$app/paths';
+	import { asset } from '$lib/media/url';
 	import { tick } from 'svelte';
+	import Banner from './Banner.svelte';
 	import CoverArt from './CoverArt.svelte';
 	import type { PostMeta } from './types';
 
 	let {
 		post,
 		maxHeight = '78vh',
-		coverOnly = false
+		coverOnly = false,
+		hero = false
 	}: {
 		post: PostMeta;
 		/** how much of the viewport a tall (square, portrait) film may take */
@@ -28,6 +29,8 @@
 		/** show the banner on its own when the post has no film — the article
 		    itself doesn't, because its cover is usually its first figure */
 		coverOnly?: boolean;
+		/** the post's header: edge to edge at the header's height, the banner its poster, the film played in it whole */
+		hero?: boolean;
 	} = $props();
 
 	let playing = $state(false);
@@ -54,7 +57,8 @@
 	const local = $derived(dev && post.videoLocal ? post.videoLocal : null);
 	const embedded = $derived(post.video && post.videoLibrary ? post.video : null);
 	const hasFilm = $derived(Boolean(local || embedded));
-	const poster = $derived(post.poster ?? post.cover ?? null);
+	// the header waits on the post's banner (its title card); a film in the text on its own still
+	const poster = $derived((hero ? (post.cover ?? post.poster) : (post.poster ?? post.cover)) ?? null);
 	// the aspect as a number, so the frame's width can be capped from its height
 	const ratio = $derived.by(() => {
 		const [w, h] = (post.videoAspect ?? '16 / 9').split('/').map((n) => Number(n.trim()));
@@ -67,6 +71,7 @@
 	{@const showEmbed = Boolean(embedded) && !local && !coverOnly}
 	<figure
 		class="player"
+		class:hero
 		style:--aspect={post.videoAspect ?? '16 / 9'}
 		style:--ratio={ratio}
 		style:--max-h={maxHeight}
@@ -80,13 +85,15 @@
 					allowfullscreen
 				></iframe>
 			{:else if local && playing}
+				<!-- no poster on the element: Safari draws it behind a letterboxed film in fullscreen (our still shows until
+				     play is pressed, then the film starts at once) -->
 				<!-- svelte-ignore a11y_media_has_caption -->
-				<video src="{base}{local}" poster={asset(poster)} controls autoplay playsinline>
+				<video src={asset(local)} controls autoplay playsinline>
 					<track kind="captions" />
 				</video>
 			{:else}
-				<!-- a film waiting to play shows its own still, not the post's cover -->
-				<CoverArt post={coverOnly ? post : { ...post, cover: poster ?? undefined }} eager />
+				<!-- a film waiting to play shows its own still, not the post's cover (in the header: the header's picture) -->
+				{#if hero}<Banner {post} />{:else}<CoverArt post={coverOnly ? post : { ...post, cover: poster ?? undefined }} eager />{/if}
 				{#if local && !coverOnly}
 					<button type="button" onclick={play}>
 						<span class="glyph" aria-hidden="true"></span>
@@ -183,6 +190,19 @@
 		letter-spacing: 0.14em;
 		line-height: 1;
 		text-transform: uppercase;
+	}
+
+	/* the header: the whole width and height it is given, square corners; the film inside keeps its whole frame */
+	.player.hero {
+		height: 100%;
+		margin: 0;
+	}
+
+	.player.hero .frame {
+		width: 100%;
+		height: 100%;
+		aspect-ratio: auto;
+		border-radius: 0;
 	}
 
 	@media (max-width: 820px) {

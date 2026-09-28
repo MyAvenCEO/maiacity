@@ -10,8 +10,10 @@
 // 1.5× the output size and scaled down, for clean edges; ffmpeg gives each shot a light film grade.
 // Needs the dev server (bun run dev) and Chrome.
 import puppeteer from 'puppeteer-core';
+import { sets } from './props.mjs';
+import { exposureFor, lookOf } from './grade.mjs';
 import { execFileSync } from 'node:child_process';
-import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
@@ -19,11 +21,12 @@ const args = process.argv.slice(2);
 const listFile = args.find((a) => !a.startsWith('--') && !/^[\d,]+$/.test(a));
 if (!listFile) throw new Error('usage: node scripts/film/shoot.mjs <shot list> [--stills] [--only 1,4]');
 const flag = (k) => (args.includes(`--${k}`) ? args[args.indexOf(`--${k}`) + 1] : undefined);
-const stills = args.includes('--stills');
+const stills = args.includes('--stills') || args.includes('--mid');
+const midOnly = args.includes('--mid'); // one still per shot, from its middle: the storyboard
 const only = flag('only')?.split(',').map(Number);
 const film = (await import(pathToFileURL(resolve(listFile)).href)).default;
 const SITE = process.env.SITE ?? 'http://localhost:5173';
-const SIZE = film.size ?? 1080, FPS = film.fps ?? 30, SCALE = 1.5;
+const SIZE = Number(process.env.FILM_SIZE) || (film.size ?? 1080), FPS = film.fps ?? 30, SCALE = 1.5; // FILM_SIZE: a bigger frame, e.g. a thumbnail's background
 const OUT = resolve('studio/film', film.name);
 mkdirSync(OUT, { recursive: true });
 
@@ -77,26 +80,51 @@ async function stage(shot) {
 		window.__interiorHour = s.hour;
 		window.__village.place(s.stand[0], s.stand[1], 0, 0);
 	}, shot);
+	// a set built into the world for this shot (scripts/film/props.mjs): once, then it stays
+	if (shot.props) await page.evaluate(sets[shot.props]);
 	if (shot.dome !== undefined) {
 		await page.waitForFunction((i) => window.__village.built.has(i) && window.__village.shown.has(i), { timeout: 240000, polling: 500 }, shot.dome);
 		await sleep(1500);
 	} else await sleep(2500);
 }
 
-async function frameAt(shot, t, warm = 0) {
-	const pose = shot.path(t);
+async function frameAt(shot, t, warm = 0, dt = 0) {
+	// the hour and the lens can move within a shot too: a sunrise in time-lapse, a slow zoom
+	const lerp = (a, b) => (b === undefined ? a : a + (b - a) * t);
+	const hour = lerp(shot.hour, shot.hourTo), fov = lerp(shot.fov ?? 45, shot.fovTo);
+	// a shot with `blur` is exposed over the frame's time, as a real shutter does: a whip pan smears, a still holds
+	const n = shot.blur ? shot.blur : 1;
+	const clock = (shot.start ?? 0) + t * (shot.seconds ?? 0); // the film's time at this frame: the set's trucks drive on it
+	const poses = Array.from({ length: n }, (_, i) => shot.path(Math.min(1, t + (dt * i) / n)));
 	return page.evaluate(
-		(pose, fov, warm, ms, scale) => {
+		(poses, hour, fov, warm, ms, scale, clock, exposure) => {
 			const v = window.__village, F = window.__film;
+			window.__props?.(clock);
+			// the world looks at the clock once a second; a time-lapse needs the sun set on every frame
+			// the lens opened for a dark shot (`exposure`), and the sun set at once when either changes
+			if (window.__interiorHour !== hour || window.__exposure !== exposure) (window.__interiorHour = hour), (window.__exposure = exposure), v.sun(hour);
 			v.camera.fov = fov;
 			v.camera.updateProjectionMatrix();
 			v.renderer.setPixelRatio(scale);
-			v.fly(...pose);
+			v.fly(...poses[0]);
 			for (let i = 0; i < warm; i++) F.step(ms); // let the sun, the shadows and the far forest settle
-			F.step(ms);
-			return v.renderer.domElement.toDataURL('image/jpeg', 0.94);
+			if (poses.length === 1) {
+				F.step(ms);
+				return v.renderer.domElement.toDataURL('image/jpeg', 0.94);
+			}
+			const src = v.renderer.domElement, acc = document.createElement('canvas');
+			acc.width = src.width;
+			acc.height = src.height;
+			const g = acc.getContext('2d');
+			for (const [i, p] of poses.entries()) {
+				v.fly(...p);
+				F.step(ms / poses.length);
+				g.globalAlpha = 1 / (i + 1);
+				g.drawImage(src, 0, 0);
+			}
+			return acc.toDataURL('image/jpeg', 0.94);
 		},
-		pose, shot.fov ?? 45, warm, 1000 / FPS, SCALE
+		poses, hour, fov, warm, 1000 / FPS, SCALE, clock, shot.exposure ?? 1
 	);
 }
 
@@ -114,7 +142,7 @@ for (const [i, shot] of film.shots.entries()) {
 	await page.waitForFunction(() => window.__film.queue.size > 0, { timeout: 10000, polling: 16 });
 	if (stills) {
 		let first = true;
-		for (const [k, t] of [['a', 0], ['b', 0.5], ['c', 1]]) {
+		for (const [k, t] of midOnly ? [['b', 0.5]] : [['a', 0], ['b', 0.5], ['c', 1]]) {
 			save(join(OUT, `${tag}-${k}.jpg`), await frameAt(shot, t, first ? 45 : 0));
 			first = false;
 		}
@@ -124,13 +152,22 @@ for (const [i, shot] of film.shots.entries()) {
 		rmSync(dir, { recursive: true, force: true });
 		mkdirSync(dir, { recursive: true });
 		for (let f = 0; f < frames; f++) {
-			save(join(dir, `${String(f).padStart(5, '0')}.jpg`), await frameAt(shot, frames === 1 ? 0 : f / (frames - 1), f === 0 ? 45 : 0));
+			save(join(dir, `${String(f).padStart(5, '0')}.jpg`), await frameAt(shot, frames === 1 ? 0 : f / (frames - 1), f === 0 ? 45 : 0, frames === 1 ? 0 : 1 / (frames - 1)));
 			if (f % 30 === 0) process.stdout.write(`\r${tag}: ${f}/${frames}   `);
 		}
-		// scale the 1.5× frames down to the film's size and give them a light grade: a touch of contrast, a vignette
+		// the master: the 1.5× frames scaled down to the film's size, ungraded, kept (NN-name.raw.mp4) so a shot can be
+		// graded again without rendering it again (node scripts/film/grade.mjs)
+		const raw = join(OUT, `${tag}.raw.mp4`);
 		execFileSync('ffmpeg', ['-y', '-loglevel', 'error', '-framerate', String(FPS), '-i', join(dir, '%05d.jpg'),
-			'-vf', `scale=${SIZE}:${SIZE}:flags=lanczos,eq=contrast=1.05:saturation=1.06:gamma=0.98,${shot.grade ? `${shot.grade},` : ''}vignette=angle=PI/5`,
-			'-c:v', 'libx264', '-preset', 'slow', '-crf', '17', '-pix_fmt', 'yuv420p', join(OUT, `${tag}.mp4`)]);
+			'-vf', `scale=${SIZE}:${SIZE}:flags=lanczos`, '-c:v', 'libx264', '-preset', 'slow', '-crf', '12', '-pix_fmt', 'yuv420p', raw]);
+		// the grade (grade.mjs): brightness and black level for its hour, measured finished, then the light look
+		const sample = [0, 0.25, 0.5, 0.75, 1].map((k) => join(dir, `${String(Math.round(k * (frames - 1))).padStart(5, '0')}.jpg`));
+		const chain = (exposure) => `scale=${SIZE}:${SIZE}:flags=lanczos,${exposure ? `${exposure},` : ''}${lookOf(shot)}`;
+		const exposure = exposureFor(shot, sample, chain);
+		execFileSync('ffmpeg', ['-y', '-loglevel', 'error', '-i', raw, '-vf', `${exposure ? `${exposure},` : ''}${lookOf(shot)}`,
+			'-c:v', 'libx264', '-preset', 'slow', '-crf', '16', '-pix_fmt', 'yuv420p', join(OUT, `.${tag}.part.mp4`)]);
+		// in place in one step: whatever watches the folder never sees a half-written shot
+		renameSync(join(OUT, `.${tag}.part.mp4`), join(OUT, `${tag}.mp4`));
 		rmSync(dir, { recursive: true, force: true });
 		process.stdout.write(`\r${tag}: ${frames} frames → ${tag}.mp4 (${Math.round((Date.now() - t0) / 1000)} s)\n`);
 	}

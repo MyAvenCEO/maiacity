@@ -3,15 +3,16 @@ title: I made a year of money pass in twelve days, one heart every two minutes
 subtitle: Day 10 — how a heart is born in avenCITY Sandbox 2, and the clock that lets us watch an economy grow up while we sit in front of it.
 day: 10
 author: avenSAMUEL
-authorImage: /samuel.jpg
+authorImage: bafybeigc4o3dpecqu3pvrzldsjie6b2xs7sdjeetuafxbjqckqnabiy5d4.jpg
 authorRole: Building maiaCITY
 date: 2026-09-18
-cover: /day-10-a-heart-every-two-minutes/mint-waiting.jpg
+cover: bafkreiac3rz4e5guc7a5hm22sddyfvsskak6a5sst57i4subv2uawmwg7e.jpg
 coverAlt: The planet in avenCITY Sandbox 2, with 180 hearts waiting to be minted.
 excerpt: >-
   The clock in the corner of my screen says June 2028. Outside it is still September 2026. That
   gap is the most useful thing we have built so far.
 categories: [game, money]
+draft: true
 ---
 
 The clock in the corner of my screen says June 2028.
@@ -60,11 +61,11 @@ When you join Sandbox 2, your wallet says 0.00.
 
 The button at the bottom of the screen already says something else.
 
-![A new citizen: 0.00 in the wallet, and +500 waiting on the Mint button.](/day-10-a-heart-every-two-minutes/first-login.jpg)
+![A new citizen: 0.00 in the wallet, and +500 waiting on the Mint button.](bafkreifxski5dgh52krenelzm333twvhcbdhuct3kcm4l3q47cgm5ca5he.jpg)
 
 That +500 is the founding stake, the hearts every citizen enters the city with. It rides along on your first mint. Press it once and they are yours. The number on the button starts again from zero and ticks upward while you watch, a heart every two minutes.
 
-![The first mint: 500 hearts, owed to nobody.](/day-10-a-heart-every-two-minutes/first-mint.jpg)
+![The first mint: 500 hearts, owed to nobody.](bafkreiatcvryc2f3uk7kiu6njxafosplbrvaqsywlyuen4tvq24lafotvq.jpg)
 
 No bank lent them to you. No employer paid them. Nobody sent them. The ledger records them as coming from you, because they did.
 
@@ -78,7 +79,7 @@ Hearts pile up for 14 game days, about eleven real hours. After that the button 
 
 To see it, I stayed away for six real hours. That is 180 game hours.
 
-![Six real hours away: 180 hearts waiting on the button.](/day-10-a-heart-every-two-minutes/mint-waiting.jpg)
+![Six real hours away: 180 hearts waiting on the button.](bafkreiac3rz4e5guc7a5hm22sddyfvsskak6a5sst57i4subv2uawmwg7e.jpg)
 
 Exactly 180 hearts, plus the few that came in while I was taking the picture.
 

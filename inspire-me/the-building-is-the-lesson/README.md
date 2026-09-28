@@ -2,6 +2,7 @@
 title: The building is the lesson
 originalTitle: "This eco-friendly school in Bali is built mainly from bamboo, mud and grass | Remarkable Living"
 source: https://www.youtube.com/watch?v=OU1ijmTK6-k
+thumbnail: bafkreibjcv6vstwbisxhylwcwuq7olnn5f3aroqorhmi52vdarpea4rmdm.jpg
 type: video
 author: CNA
 authorUrl: https://www.youtube.com/@channelnewsasia

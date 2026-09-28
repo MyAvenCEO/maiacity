@@ -23,15 +23,6 @@ const sources = import.meta.glob('/inspire-me/*/source.md', {
 	eager: true
 }) as Record<string, string>;
 
-// Author portraits live in static/authors/<slug>.jpg and are optional.
-const portraits = new Set(
-	Object.keys(import.meta.glob('/static/authors/*.jpg')).map((path) =>
-		path.split('/').at(-1)!.replace(/\.jpg$/, '')
-	)
-);
-
-const portraitFor = (slug?: string) =>
-	slug && portraits.has(slug) ? asset(`/authors/${slug}.jpg`) : undefined;
 
 const FRONTMATTER = /^---\r?\n([\s\S]*?)\r?\n---\r?\n?([\s\S]*)$/;
 
@@ -78,7 +69,9 @@ function parseReport(slug: string, raw: string): { meta: InspirationMeta; body: 
 			type: (fm.type ?? 'article') as SourceType,
 			author: optional(fm.author),
 			authorSlug: fm.author ? slugify(String(fm.author)) : undefined,
-			authorImage: fm.author ? portraitFor(slugify(String(fm.author))) : undefined,
+			// the author's portrait and the source's own picture, by CID, when there are ones
+			authorImage: asset(optional(fm.authorImage)),
+			thumbnail: optional(fm.thumbnail),
 			authorUrl: optional(fm.authorUrl),
 			via: optional(fm.via),
 			published: optional(fm.published),
