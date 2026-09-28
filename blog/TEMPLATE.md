@@ -14,7 +14,7 @@ categories: [<ids from src/lib/inspire-me/categories.ts — start with `game` fo
 ---
 
 <!--
-The full reusable writing prompt lives in blog/STORYTELLING.md — start there.
+The full reusable writing prompt lives in the story-producer skill — start there.
 
 HOW TO WRITE ONE OF THESE
 

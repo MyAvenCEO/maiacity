@@ -7,7 +7,7 @@
 	import { page } from '$app/state';
 	import type { Founder } from '$lib/auth/client';
 	import Icon from './Icon.svelte';
-	import { ADMIN, holds } from './places';
+	import { ADMIN, APPS, holds } from './places';
 
 	let { founder, onsignout }: { founder: Founder; onsignout: () => void } = $props();
 
@@ -28,6 +28,11 @@
 	<a class="item home" href="{base}/app/" aria-current={here(`${base}/app/`) ? 'page' : undefined} title="Dashboard">
 		<Icon name="home" /><span>Home</span>
 	</a>
+	{#each APPS as t (t.href)}
+		<a class="item" href={t.href} aria-current={here(t.href) ? 'page' : undefined} title={t.label}>
+			<Icon name={t.icon} /><span>{t.label}</span>
+		</a>
+	{/each}
 	{#each tools as t (t.href)}
 		<a class="item" href={t.href} aria-current={here(t.href) ? 'page' : undefined} title={t.label}>
 			<Icon name={t.icon} /><span>{t.label}</span>

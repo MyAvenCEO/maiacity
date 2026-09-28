@@ -1,0 +1,30 @@
+{
+  "split": {
+    "old": "bafybeiap7lzdrzcygm6kivfjmwifsnxl5curkspmmikoh7p2eop4ttih2q.jpg",
+    "new": "bafybeiajrbfnkds6cpwu26c3ri7llswevkhtidu4jcqwdbwyv7f57jtkq4.jpg"
+  },
+  "title": {
+    "old": {
+      "kicker": "Every city on earth is",
+      "big": "built wrong."
+    },
+    "new": {
+      "kicker": "This is what",
+      "big": "starting over",
+      "after": "looks like."
+    }
+  },
+  "shapes": [
+    "16x9",
+    "1x1",
+    "9x16",
+    "5x2"
+  ],
+  "cards": {
+    "16x9": "bafybeiairoduppa7gu4otoaiuckbnsr6ih6wjddxiita7ko6rytw47cgje",
+    "1x1": "bafybeid6lqvjwxcuajcjrn24g6uuakgbls5uc36vn4dm6nau4wzt676kba",
+    "5x2": "bafybeiggyweyyswbetfh6jcsfukniadvsc5k3sni3i6m6uqjbmsggv3nbu",
+    "9x16": "bafybeibdvc3c3zn6yvp23aqgzyxw7brydaeocfio7crkwfuytr2iqcwzcu"
+  },
+  "hooks": {}
+}

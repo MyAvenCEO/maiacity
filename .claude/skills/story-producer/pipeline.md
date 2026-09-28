@@ -1,0 +1,123 @@
+# Production pipeline
+
+From an approved story to a rendered film in the media library.
+
+## Local first, in two steps
+
+**Work locally unless the user explicitly says production.** `bun voice`, `bun media` and `bun film worker` talk to
+`https://api.maia.city` by default; `--local` points them at `http://localhost:3100`. Pass `--local` on every command.
+
+Local setup: the API and Postgres run from `docker compose up` (API on :3100), the site with `bun run dev` (:5173),
+the terminal is signed in with `bun media login --local`. `FAL_API_KEY` lives in `.env`. Film scripts need Node 22
+(`~/.nvm/versions/node/v22.15.0/bin/node`).
+
+**Step 1: the storyboard (cheap, fast, judge the whole film)**
+1. The story: transformation, arching question, hook, arc (`arc.md`, `hooks.md`) — approved by Samuel.
+2. Voice takes, one per line (`sound.md`); each prints its CID.
+3. The shot list, `scripts/film/<film>.mjs` (anatomy below).
+4. The score, cues and sound effects (`sound.md`).
+5. Storyboard stills: `node scripts/film/shoot.mjs scripts/film/<film>.mjs --mid` (one frame from the middle of each
+   shot) or `--stills` (first, middle, last).
+6. The storyboard timeline: for Day 19 D, `bun api/scripts/.animatic.ts --local` (hard-wired to `day-19-d`; copy it
+   for a new film). It grades each still like its shot, brings it into the library, and lays stills on V1, takes on
+   A1, the score on A2, sfx on A3.
+7. Play it at `http://localhost:5173/app/studio`, full screen. Run the audit (below). Repeat until approved.
+
+**Step 2: the film (slow, expensive, only after approval)**
+1. Shoot: `node scripts/film/shoot.mjs scripts/film/<film>.mjs` (`--only 3,7` reshoots shots 3 and 7).
+2. Into the library: `bun api/scripts/.full-timeline.ts --local --variant G` brings every shot in and builds the
+   timeline; or `api/scripts/.live-timeline.ts` swaps each shot into the storyboard the moment it is written.
+   (`studio/film/` is only the shooting's scratch folder — the library holds the result.)
+3. In the studio, **+ Variant** branches the edit under the project's next letter.
+4. Export: **⤓ Render** in the studio, with `bun film worker --local` running. The worker renders the timeline exactly
+   as edited into every shape (16:9 4K HEVC master + 1080 H.264, 9:16, 1:1), lays the hook text over the social
+   copies' first seconds, and brings each file into the library and onto the content board.
+
+**Projects and variants:** timelines are grouped by `project` ("Day 19") with variants A, B, C…; each variant is its own
+timeline.
+
+## Shot list anatomy (`day-19-d.mjs`, `shoot.mjs`)
+
+| Field | Meaning |
+|---|---|
+| `name`, `size` | slug for the file; EWS · WS · MS · CU · ECU · macro |
+| `cue: [line, 'words']` | cut 0.12 s before those words are spoken in that take |
+| `after: [line, s]` | cut s seconds after a line ends |
+| `at: s` | cut at an absolute time (the cold open) |
+| `hour`, `hourTo` | sun position, and a time-lapse to |
+| `fov`, `fovTo` | lens: 10–20 long, 40–55 wide (default 45) |
+| `stand: [x, z]`, `dome: i` | where the walker stands; wait for dome i |
+| `exposure`, `mood`, `grade` | the lens opened for a dark shot; the arc's look; an extra ffmpeg filter |
+| `sfx: [[cid, level]]` | sounds under the shot, looped for its length (by CID) |
+| `props` | a set built into the scene while filming |
+| `path: (t) => pose` | camera pose over t = 0…1 (`camera.mjs`) |
+
+Voice takes and music are named by CID (`{ take, cid, pause }`, `music: { cid, chunks, cues }`). Each shot runs from its
+start to the next shot's start; the last to `total` = the last line's end + `TAIL`.
+
+## The studio and the library
+
+**Studio** (`/app/studio`): tracks **V1 Picture**, **A1 Voice**, **A2 Music**, **A3 Sound**, **T1 Captions** (built from
+the A1 takes' word timings, phrase by phrase, two lines at most). Drag files onto tracks, drag clips to move, edges to
+trim; Space plays, ←/→ seek. Frames 1:1, 16:9, 9:16, 4:5. One Web Audio clock, sample-exact. **⛶ Play full screen**
+plays the picture alone. **⤓ Render** queues a job for the worker.
+
+**Media library** (`/app/media`, `api/scripts/media.ts`): `library/` is the single source of truth — every file once as
+`<cid>.<ext>` with `<cid>.json` (title, description, tags, meta, public). **Everything references a file by its CID;
+tags only sort.** `bun media status | seed | add <file> [--title] [--tags] [--replaces <cid>] [--public]`. Only public
+files get CDN copies. Scripts use `api/scripts/library.ts` (`put`, `bring`, `get`, `fileOf`).
+
+## Title card and first frame
+
+Every day's title cards and hook layers come from `scripts/film/thumbnail.mjs` (`content-derivatives` skill): four
+ratios, the hook set big like a YouTube thumbnail (`hooks.md`), the day's badge. The social copies carry the hook as
+text over their first 2.5 s of moving picture — never a still card at the start.
+
+## The audit — before every render
+
+- [ ] Each shot shows what the words say, at the word
+- [ ] Each line gets 2–4 shots; no two same-size shots in a row; heights, lenses and moves vary
+- [ ] The lens is clear: no leaves filling the frame, no pillar in the way
+- [ ] The sound matches the picture: animals audible when seen, the low sounds cold, frogs at night
+- [ ] No black flashes between cuts, no dissolves; motion never starts or stops on screen
+- [ ] The visual hook within 3 s, the spoken hook within ~10 s
+- [ ] The intensity curve holds: the low is really cold, the peak is late and highest, the end is warm
+- [ ] Captions on, at most two lines, in sync
+- [ ] Every fact true; nothing promised that the world can't show (no people)
+
+## Checklists
+
+**Before recording:** the transformation and the arching question are written down; the hook is as extreme as the
+facts allow and the last line pays it off; every fact is checked; each line has its audio tag and "…" breaths; each
+line is its own take with `--local` and the voice **id**.
+
+**Before shooting:** every line has 2–4 shots; every named thing has a `cue` on its word and every `cue` resolves; each
+shot has its `sfx`, `mood` and `exposure`; the `music.chunks` boundaries sit on the arc's turns; the score and cues are
+made and chosen; the storyboard was played in the studio and approved.
+
+**Before rendering:** the stills pass is clean; the shots are in the library; the variant was branched; the audit
+passes; the worker runs with `--local`, and the render is checked at every cut.
+
+**Before publishing:** the title cards and hook layers are made; captions on; the loop ending lands; Samuel explicitly
+asked for production — only then drop `--local`. Never deploy locally; pushing to main deploys.
+
+## Lessons learned
+
+- **One take for the whole script sounded rushed.** One take per line; pauses in the shot list.
+- **Generic forest under specific words** loses the viewer. Show the named thing on its word.
+- **Words promising what isn't on screen** (people eating) break trust. Sandbox 4 has no people.
+- **The master dome was once "where everyone eats".** Wrong: it is the commons.
+- **Dissolves and dips to black** read as slideshow and flashed black. Hard cuts.
+- **One shot per line** felt monotone. D has 40 shots cut on words.
+- **A licensed stock track** couldn't follow the arc. Compose the score to the film's clock.
+- **Uploading to production when local was meant.** Always `--local`.
+- **Cold open:** open on a 3.5 s visual (dew, dawn birds), then the spoken hook states the end state before the
+  sunrise.
+- **Shots that eased in and out** made every cut feel like a stop. Moves glide through the cut.
+- **"The sun rises" never showed the sun:** film towards +x, keep the disc clear, run the hour as a time-lapse.
+- **Dark shots:** exposure set per shot, graded to target brightness and black level.
+- **An 11-second low on one static empty plain:** nothing happened. Five moving shots on a built set carry the words.
+- **A soft return after the low** didn't land. The turn needs loudness, rhythm and brightness at once.
+- **A still title card at the start of the film** stopped it in the second that decides whether people stay. The hook
+  is text over moving picture.
+- **Night frames** show a black sky band. Shoot at dusk and fill the square with lit domes.

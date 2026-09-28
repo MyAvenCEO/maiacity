@@ -7,7 +7,13 @@ import type { Founder } from '$lib/auth/client';
 
 export type Release = 'draft' | 'published';
 export type Place = { href: string; label: string; icon: IconName; cap?: string; note?: string; /** a picture, by CID */ cover?: string; release?: Release };
-export type IconName = 'home' | 'play' | 'board' | 'calendar' | 'media' | 'studio' | 'journal' | 'spark' | 'user' | 'key';
+export type IconName = 'home' | 'play' | 'board' | 'calendar' | 'media' | 'studio' | 'journal' | 'spark' | 'user' | 'key' | 'ledger' | 'coops';
+
+// a founder's own apps: their money, and the cities and coops they back — the economy of Sandbox 2, without the globe
+export const APPS: Place[] = [
+	{ href: `${base}/app/ledger/`, label: 'Ledger', icon: 'ledger', note: 'Your hearts, what you hold, what happened' },
+	{ href: `${base}/app/coops/`, label: 'Coops', icon: 'coops', note: 'The cities and settlements you back' }
+];
 
 export const PLAY: Place[] = [
 	{ href: `${base}/app/games/sandbox-1/`, label: 'Sandbox 1', icon: 'play', release: 'draft', note: 'A hex island to settle', cover: 'bafkreidb6dx5ija5yeewxvlliz7nvhqurcrxwk4uozka476of6b26zocxa.jpg' },
@@ -18,7 +24,7 @@ export const PLAY: Place[] = [
 
 export const READ: Place[] = [
 	{ href: `${base}/blog/`, label: 'Journal', icon: 'journal', note: 'Day by day' },
-	{ href: `${base}/inspire-me/`, label: 'Inspire me', icon: 'spark', note: 'Ideas we learn from' }
+	{ href: `${base}/blog/inspire-me/`, label: 'Inspire me', icon: 'spark', note: 'Ideas we learn from' }
 ];
 
 export const ADMIN: Place[] = [
@@ -45,5 +51,7 @@ export function placeOf(path: string): string {
 	const rel = path.slice(base.length).replace(/\/+$/, '/');
 	if (rel === '/app/') return 'Dashboard';
 	if (rel.startsWith('/app/games/')) return PLAY.find((p) => path.startsWith(p.href))?.label ?? 'Games';
+	const app = APPS.find((p) => path.startsWith(p.href));
+	if (app) return app.label;
 	return ADMIN.find((p) => path.startsWith(p.href))?.label ?? '';
 }

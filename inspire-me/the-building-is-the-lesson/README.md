@@ -65,4 +65,4 @@ That is the argument the campus is making without saying it. The buildings are a
 - "As long as wooden buildings" is a claim without a number. The oldest treated-bamboo structures are roughly two decades old, so the durability figure is a projection, not a record.
 - Speakers are not named in the clip, and the campus architecture is credited only to "my team and I". Confirm attribution before citing anyone.
 - How does an open-air, jungle-adjacent campus translate to a northern climate? Our dome cells solve weather with glass; the pedagogy transfers, the building may not.
-- Overlaps with [Cities grown from air](/inspire-me/wood-bamboo-wonder-materials) on bamboo as a structural material, and with [The school that builds itself](/inspire-me/the-school-that-builds-itself) on learning by building. Worth reading as a set.
+- Overlaps with [Cities grown from air](/blog/inspire-me/wood-bamboo-wonder-materials) on bamboo as a structural material, and with [The school that builds itself](/blog/inspire-me/the-school-that-builds-itself) on learning by building. Worth reading as a set.

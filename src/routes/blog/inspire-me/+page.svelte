@@ -1,4 +1,5 @@
 <script lang="ts">
+	import BlogTabs from '$lib/blog/BlogTabs.svelte';
 	import { browser } from '$app/environment';
 	import { base } from '$app/paths';
 	import { page } from '$app/state';
@@ -27,6 +28,7 @@
 </svelte:head>
 
 <main class="wrap">
+	<BlogTabs on="inspire" />
 	<section class="intro">
 		<p class="eyebrow">The blueprint library</p>
 		<h1>Inspire me</h1>
@@ -37,7 +39,7 @@
 	</section>
 
 	<nav class="filters" aria-label="Filter by category">
-		<a href="{base}/inspire-me" class:on={!active} data-sveltekit-noscroll>
+		<a href="{base}/blog/inspire-me" class:on={!active} data-sveltekit-noscroll>
 			All <span>{data.entries.length}</span>
 		</a>
 		{#each categories as c (c.id)}
@@ -58,7 +60,7 @@
 		<ul class="grid">
 			{#each visible as entry (entry.slug)}
 				<li>
-					<a class="card" href="{base}/inspire-me/{entry.slug}">
+					<a class="card" href="{base}/blog/inspire-me/{entry.slug}">
 						<SourceArt {entry} />
 						<div class="body">
 							<p class="byline">

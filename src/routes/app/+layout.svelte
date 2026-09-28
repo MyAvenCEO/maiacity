@@ -2,7 +2,8 @@
 	The signed-in app (/app/): its own place, apart from the public site — no public header, no footer. Whoever opens it
 	is asked who they are first (their passkey); then the dashboard, the games and — for whoever holds them — the
 	admin's tools, with a slim top bar and the nav pill at the bottom to move between them and back home.
-	A sandbox runs full screen (it has its own way back), and so does the studio's editor: no bar, no pill there.
+	A sandbox runs full screen (it has its own way back), and so does the studio's editor: no bar, no pill there — nor
+	while a game has gone full screen over its own page (Sandbox 3's domes).
 -->
 <script lang="ts">
 	import { base } from '$app/paths';
@@ -12,6 +13,7 @@
 	import { me, signIn, signOut, type Founder } from '$lib/auth/client';
 	import { remember } from '$lib/app/session';
 	import NavPill from '$lib/app/NavPill.svelte';
+	import { immersive as fullScreen } from '$lib/app/immersive.svelte';
 	import { gameAt, placeOf, released } from '$lib/app/places';
 
 	let { children } = $props();
@@ -55,7 +57,7 @@
 
 	const rel = $derived(page.url.pathname.slice(base.length));
 	// full screen: a sandbox (Sandbox 3 is a page of cards, it keeps the bar), and the studio's editor
-	const immersive = $derived(/^\/app\/games\/(?!sandbox-3\/?$)[^/]+\/?$/.test(rel) || rel.startsWith('/app/studio'));
+	const immersive = $derived(/^\/app\/games\/(?!sandbox-3\/?$)[^/]+\/?$/.test(rel) || rel.startsWith('/app/studio') || fullScreen.on);
 	const title = $derived(placeOf(page.url.pathname));
 	// a draft game is the admins' only; anyone else with its link is told so
 	const game = $derived(gameAt(page.url.pathname));

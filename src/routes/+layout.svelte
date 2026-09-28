@@ -16,8 +16,7 @@
 
 	const links = [
 		{ href: base || '/', label: 'Home' },
-		{ href: `${base}/blog`, label: 'Journal' },
-		{ href: `${base}/inspire-me`, label: 'Inspire me' }
+		{ href: `${base}/blog`, label: 'Blog' }
 	];
 
 	// The signed-in app (/app/: the dashboard, the games, the admin's tools) is its own place: none of the public

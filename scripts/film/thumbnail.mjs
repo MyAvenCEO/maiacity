@@ -89,14 +89,66 @@ ${!hook && Number.isFinite(day) ? `<div class="d">DAY ${String(day).padStart(2, 
 	const out = join(dir, hook ? `hook-${s.tag}.png` : `thumbnail-${s.tag}.jpg`);
 	await page.screenshot(hook ? { path: out, type: 'png', omitBackground: true } : { path: out, type: 'jpeg', quality: 92 });
 }
-for (const s of SHAPES.filter((x) => !only || only.includes(x.tag))) await draw(s, false);
-// the hook layers, for the shapes a film is delivered in (not the X Article's cover)
-for (const s of SHAPES.filter((x) => x.tag !== '5x2')) await draw(s, true);
+/**
+ * The split card: the old world against the new, the title in two halves — "split": { "old": <cid>, "new": <cid> },
+ * "title": { "old": "Every city on earth is built wrong.", "new": "This is what starting over looks like." }. The old
+ * half cold and grey, the new warm; side by side in a wide card, stacked in a square or tall one. The last words of
+ * each half set big (the old in white, the new in gold); the day's badge on the new half.
+ */
+async function drawSplit(s) {
+	const wide = s.w / s.h > 1.2;
+	const u = (px) => `${Math.round(px * s.unit * (wide ? 0.82 : 0.95))}px`;
+	const half = (side, img, part) => {
+		const { kicker, big, after } = parts(part);
+		return `<div class="half ${side}"><div class="bg" style="background-image:url(${image(fromLibrary(img))})"></div><div class="shade"></div>
+<div class="t">${kicker ? `<div class="k">${kicker}</div>` : ''}<div class="n">${big}</div>${after ? `<div class="x">${after}</div>` : ''}</div></div>`;
+	};
+	await page.setViewport({ width: s.w, height: s.h });
+	await page.setContent(`<!doctype html><html><head><style>
+@font-face { font-family: F; src: url(${font}) format('woff2'); font-weight: 100 900; }
+html,body{margin:0;width:${s.w}px;height:${s.h}px;overflow:hidden;background:#111;font-family:F,serif}
+.wrap{display:flex;flex-direction:${wide ? 'row' : 'column'};width:100%;height:100%}
+.half{position:relative;flex:1;overflow:hidden}
+.bg{position:absolute;inset:0;background-size:cover;background-position:center}
+.old .bg{filter:grayscale(.85) contrast(1.05) brightness(.8)}
+.new .bg{filter:saturate(1.2) contrast(1.08)}
+.shade{position:absolute;inset:0}
+.old .shade{background:linear-gradient(${wide ? 'to bottom' : 'to bottom'}, rgba(10,12,14,.82) 0%, rgba(10,12,14,.35) 55%, rgba(10,12,14,.15) 100%)}
+.new .shade{background:linear-gradient(to bottom, rgba(6,10,8,.82) 0%, rgba(6,10,8,.3) 55%, rgba(6,10,8,0) 100%)}
+.x{font-weight:620;font-style:italic;font-size:${u(62)};line-height:1.1;margin-top:${u(14)}}
+.t{position:absolute;left:${u(64)};right:${u(64)};top:${u(wide ? 110 : 70)};color:#fff;text-shadow:0 4px 18px rgba(0,0,0,.6),0 2px 3px rgba(0,0,0,.45)}
+.k{font-weight:780;font-size:${u(58)};line-height:1.05;letter-spacing:-.01em}
+.n{font-weight:880;font-size:${u(150)};line-height:.9;letter-spacing:-.03em;margin-top:${u(10)}}
+.old .n{color:#fff}
+.new .n{color:#f6c75a}
+.seam{position:absolute;${wide ? `top:0;bottom:0;left:calc(50% - ${u(4)});width:${u(8)}` : `left:0;right:0;top:calc(50% - ${u(4)});height:${u(8)}`};background:#f6c75a;box-shadow:0 0 30px rgba(0,0,0,.5)}
+.d{position:absolute;right:${u(56)};bottom:${u(48)};padding:${u(8)} ${u(20)} ${u(10)};border:${u(4)} solid #f6c75a;border-radius:${u(12)};background:rgba(6,10,8,.62);color:#fff;font-weight:820;font-size:${u(46)};line-height:1;letter-spacing:.1em}
+</style></head><body><div class="wrap">${half('old', settings.split.old, TITLE.old)}${half('new', settings.split.new, TITLE.new)}</div>
+<div class="seam"></div>${Number.isFinite(day) ? `<div class="d">DAY ${String(day).padStart(2, '0')}</div>` : ''}
+</body></html>`, { waitUntil: 'load' });
+	await page.evaluate(() => document.fonts.ready);
+	await page.screenshot({ path: join(dir, `thumbnail-${s.tag}.jpg`), type: 'jpeg', quality: 92 });
+}
+// a half's words: { kicker, big, after } as given, or a plain line whose last two words are set big
+function parts(v) {
+	if (v && typeof v === 'object') return v;
+	const words = String(v).trim().split(/\s+/);
+	const n = words.length > 4 ? 2 : 1;
+	return { kicker: words.slice(0, -n).join(' '), big: words.slice(-n).join(' ') };
+}
+
+if (settings.split) {
+	for (const s of SHAPES.filter((x) => !only || only.includes(x.tag))) await drawSplit(s);
+} else {
+	for (const s of SHAPES.filter((x) => !only || only.includes(x.tag))) await draw(s, false);
+	// the hook layers, for the shapes a film is delivered in (not the X Article's cover)
+	for (const s of SHAPES.filter((x) => x.tag !== '5x2')) await draw(s, true);
+}
 await browser.close();
 
 // into the library, each in its place; their CIDs back into thumbnail.json
 const DAY = `Day ${String(day).padStart(2, '0')}`;
-const hookLine = ['kicker', 'big', 'line', 'after'].map((k) => TITLE[k] ?? '').join(' ').replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim();
+const hookLine = ['kicker', 'big', 'line', 'after', 'old', 'new'].map((k) => (TITLE[k] && typeof TITLE[k] === 'object' ? Object.values(TITLE[k]).join(' ') : TITLE[k] ?? '')).join(' ').replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim();
 const add = (file, role, shape, isPublic, replaces) => {
 	const out = execFileSync('bun', ['api/scripts/media.ts', 'add', file, '--title', `${DAY} · ${role === 'hook' ? 'hook layer' : 'title card'} ${shape.replace('x', ':')}`,
 		'--description', hookLine, '--tags', [DAY, `role:${role}`, `shape:${shape}`].join(','), ...(replaces ? ['--replaces', replaces] : []),

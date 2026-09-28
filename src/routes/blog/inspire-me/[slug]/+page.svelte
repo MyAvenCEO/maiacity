@@ -29,7 +29,7 @@
 </svelte:head>
 
 <main class="wrap" style:--accent={accent}>
-	<a class="back" href="{base}/inspire-me">← Inspire me</a>
+	<a class="back" href="{base}/blog/inspire-me">← Inspire me</a>
 
 	<header class="hero">
 		<div class="text">
@@ -39,7 +39,7 @@
 				{/if}
 				{typeLabel(entry.type)}{#if entry.author}&ensp;·&ensp;<a
 						class="author"
-						href="{base}/inspire-me/by/{entry.authorSlug}">{entry.author}</a
+						href="{base}/blog/inspire-me/by/{entry.authorSlug}">{entry.author}</a
 					>{/if}{#if entry.via}&ensp;·&ensp;via {entry.via}{/if}
 			</p>
 			<h1>{entry.title}</h1>
@@ -50,7 +50,7 @@
 			<ul class="tag-list">
 				{#each entry.categories as id (id)}
 					<li style:--c={categoryById(id).color}>
-						<a href="{base}/inspire-me?c={id}">{categoryById(id).label}</a>
+						<a href="{base}/blog/inspire-me?c={id}">{categoryById(id).label}</a>
 					</li>
 				{/each}
 			</ul>

@@ -66,4 +66,4 @@ So confidence never comes first. Action does — and confidence is the receipt i
 - This is one person's experience, well told. Where's the evidence for "act first, identity follows"? Behavioural activation and self-perception theory are the places to look.
 - He raises the victim-blaming objection to "adversity is a terrible thing to waste" and doesn't resolve it. Where is the line?
 - The 1–2 year identity lag is a claim from Mark Manson, not a finding. Check it.
-- Overlaps with [Be it before you do it](/inspire-me/be-it-before-you-do-it) and [Manifestation as coherence](/inspire-me/manifestation-as-coherence) — but reverses their order: act first, then feel. That contradiction is worth settling.
+- Overlaps with [Be it before you do it](/blog/inspire-me/be-it-before-you-do-it) and [Manifestation as coherence](/blog/inspire-me/manifestation-as-coherence) — but reverses their order: act first, then feel. That contradiction is worth settling.

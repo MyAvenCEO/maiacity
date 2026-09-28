@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { asset } from '$lib/media/url';
+	import BlogTabs from '$lib/blog/BlogTabs.svelte';
 	import CoverArt from '$lib/blog/CoverArt.svelte';
 	import StatusBadge from '$lib/blog/StatusBadge.svelte';
 	import { boardDays, mergeDays, postHref } from '$lib/blog/drafts';
@@ -27,6 +28,7 @@
 </svelte:head>
 
 <main class="wrap">
+	<BlogTabs on="journal" />
 	<section class="intro">
 		<p class="eyebrow">Building in public</p>
 		<h1>Journal</h1>

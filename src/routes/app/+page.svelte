@@ -6,7 +6,7 @@
 	import { onMount } from 'svelte';
 	import { founderCount, me, type Founder } from '$lib/auth/client';
 	import Icon from '$lib/app/Icon.svelte';
-	import { ADMIN, PLAY, READ, holds, released } from '$lib/app/places';
+	import { ADMIN, APPS, PLAY, READ, holds, released } from '$lib/app/places';
 	import { asset } from '$lib/media/url';
 
 	let founder = $state<Founder | null>(null);
@@ -33,6 +33,13 @@
 		<h1>{hello}{founder ? `, ${founder.name}` : ''}.</h1>
 		{#if count}<p class="lede">{count} {count === 1 ? 'founder is' : 'founders are'} in the line.</p>{/if}
 	</header>
+
+	<p class="divider">Your apps</p>
+	<div class="tiles two">
+		{#each APPS as t (t.href)}
+			<a class="tile" href={t.href}><Icon name={t.icon} size={34} /><b>{t.label}</b><span>{t.note}</span></a>
+		{/each}
+	</div>
 
 	{#if games.length}
 	<p class="divider">Play</p>
@@ -170,6 +177,14 @@
 		display: grid;
 		grid-template-columns: repeat(3, minmax(0, 1fr));
 		gap: 14px;
+	}
+
+	.tiles.two {
+		grid-template-columns: repeat(2, minmax(0, 1fr));
+	}
+
+	.tiles.two .tile {
+		aspect-ratio: 2.4 / 1;
 	}
 
 	.tile {

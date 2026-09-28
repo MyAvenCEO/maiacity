@@ -60,10 +60,10 @@ for (const p of day.posts) {
 // the hook: thumbnail.json's words, the line every title card carries ("The 1 million lives decision — I almost…")
 type File = { cid: string; channels: string[]; aspect: string; codec: string; kind?: "video" | "thumbnail"; format?: string; note?: string };
 const cards = existsSync(join(dir, "thumbnail.json"))
-  ? (JSON.parse(readFileSync(join(dir, "thumbnail.json"), "utf8")) as { cards?: Record<string, string>; title: Record<string, string> })
+  ? (JSON.parse(readFileSync(join(dir, "thumbnail.json"), "utf8")) as { cards?: Record<string, string>; title: Record<string, unknown> })
   : null;
 const hook = cards
-  ? ["kicker", "big", "line", "after"].map((k) => cards.title[k] ?? "").join(" ").replace(/<[^>]+>/g, "").replace(/\s+/g, " ").trim()
+  ? ["kicker", "big", "line", "after", "old", "new"].map((k) => { const v = cards.title[k] as unknown; return v && typeof v === "object" ? Object.values(v).join(" ") : (v as string) ?? ""; }).join(" ").replace(/<[^>]+>/g, "").replace(/\s+/g, " ").trim()
   : undefined;
 // its title cards, by CID (thumbnail.json's "cards", written when they are rendered), and where each shape goes
 const SHAPES: Record<string, { aspect: string; channels: string[]; format: string }> = {

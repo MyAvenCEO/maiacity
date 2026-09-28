@@ -62,6 +62,6 @@ So the order is not achieve and then become. Become — in small, visible, daily
 ## Open questions
 
 - The video ends in a pitch for the author's paid programme, and its evidence is personal history and client anecdotes.
-- It overlaps heavily with [Manifestation as coherence](/inspire-me/manifestation-as-coherence): same core claim, different vocabulary. Compare them rather than counting them twice.
+- It overlaps heavily with [Manifestation as coherence](/blog/inspire-me/manifestation-as-coherence): same core claim, different vocabulary. Compare them rather than counting them twice.
 - Goal-setting and implementation intentions have real research behind them. "Your environment is a mirror of your attitude" does not. Keep the two apart.
 - Research on announcing goals is mixed — check before adopting "silence" as a rule.

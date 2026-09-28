@@ -7,6 +7,7 @@
 	import { asset } from '$lib/media/url';
 	import { base } from '$app/paths';
 	import DomeInterior from '$lib/sandbox-2/DomeInterior.svelte';
+	import { enter } from '$lib/app/immersive.svelte';
 	import { DOMES, type DomeKind } from '$lib/sandbox-2/interior/interior';
 
 	const DOMES_IN_ORDER: { kind: DomeKind; image: string; text: string }[] = [
@@ -20,6 +21,10 @@
 	const src = (image: string) => asset(image);
 
 	let walking = $state<DomeKind | null>(null);
+	// inside a dome the world has the whole screen: the app's bar and pill step aside
+	$effect(() => {
+		if (walking) return enter();
+	});
 </script>
 
 <svelte:head>

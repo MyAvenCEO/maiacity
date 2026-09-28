@@ -15,7 +15,7 @@
 </svelte:head>
 
 <main class="wrap">
-	<a class="back" href="{base}/inspire-me">← Inspire me</a>
+	<a class="back" href="{base}/blog/inspire-me">← Inspire me</a>
 
 	<header>
 		{#if author.image}
@@ -39,7 +39,7 @@
 	<ul class="grid">
 		{#each author.entries as entry (entry.slug)}
 			<li>
-				<a class="card" href="{base}/inspire-me/{entry.slug}">
+				<a class="card" href="{base}/blog/inspire-me/{entry.slug}">
 					<SourceArt {entry} />
 					<div class="body">
 						<p class="eyebrow">{typeLabel(entry.type)}&ensp;·&ensp;{entry.added}</p>

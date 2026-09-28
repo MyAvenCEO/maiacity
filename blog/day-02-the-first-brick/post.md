@@ -1,163 +1,161 @@
 ---
-title: Your country needs trucks. We're building one that needs 200 neighbours
-subtitle: Day 02 — why resilience is moving from brittle nations to self-sovereign city states, and what a whole city of self-sufficient dome cells looks like.
+title: Every city on earth is built wrong. This is what starting over looks like
+subtitle: Day 02 — the streets, the food, the homes and the evenings of a city built from scratch, for 1 million people.
 day: 2
 author: avenSAMUEL
 authorImage: bafybeigc4o3dpecqu3pvrzldsjie6b2xs7sdjeetuafxbjqckqnabiy5d4.jpg
 authorRole: Building maiaCITY
 date: 2026-09-10
-cover: bafybeibf7t7f3hetseqmmkrpfuqngmjwtu6bxmweboays7dzsn36bkwstm.jpg
-coverAlt: A valley of domes, each dome cell sitting inside its own forest, the river left where it was.
+cover: bafybeiairoduppa7gu4otoaiuckbnsr6ih6wjddxiita7ko6rytw47cgje.jpg
+banner: bafybeiggyweyyswbetfh6jcsfukniadvsc5k3sni3i6m6uqjbmsggv3nbu.jpg
+coverAlt: Every city on earth is built wrong — Manhattan's steel towers over a jammed avenue on the left, domes along a river in their forest on the right.
 excerpt: >-
-  A country is a promise that the trucks will keep coming. The next generation of sovereignty is
-  a city state that doesn't need them: many small dome cells, each feeding, watering and powering
-  itself inside its own food forest.
-categories: [food, ecology, energy, architecture]
+  Every city on earth is built wrong, and you live in one. Walk through the one we are building instead — the streets,
+  the food, the homes, the evenings — and see what you have been missing.
+categories: [food, ecology, energy, architecture, housing]
 draft: true
 ---
 
-Imagine you step outside at seven in the morning.
+Every city on earth is built wrong, and you live in one.
 
-The air is cool. The path is still damp from the night. Twenty steps from your door there is a fig tree, and it is yours — not yours alone, yours the way a street used to be yours: shared, looked after, walked past every day by people you know.
+Not a commune in the woods. Not a greenhouse you visit on a Sunday. A whole city, for 1 million people — started over from the ground up.
 
-You pick breakfast on the way to work.
-
-Nothing on your plate travelled further than you did.
-
-![A terrace in the morning light, a table set, and forest and domes running down to the sea.](bafybeiconqxhsc3xentgl6ertqkwxxug2vlijhsl7i4ck3u5iiyhvgg7qy.jpg)
-
-That scene is the reason this whole project exists. It took me years to understand why.
-
-## A country is a promise that the trucks will come
-
-For most of my life I believed what almost everyone believes. Safety comes from size. A big country, a national grid, a supply chain that reaches around the planet — those are the walls that keep us fed and warm.
-
-Then you look at how thin those walls are.
-
-In March 2021 one ship turned sideways in the Suez Canal and sat there for six days, and a large part of the world's trade simply waited behind it.
-
-A month earlier, a winter storm knocked out much of the Texas power grid, and millions of people spent days in the cold in one of the richest places on earth.
-
-And anyone who lived through 2020 remembers the empty shelves.
-
-None of these were wars. None of them were the end of the world. They were ordinary knots in a thread that is far longer than anyone likes to think about.
-
-A modern country looks solid on a map. Up close it is a promise — that the trucks keep coming, that a power station you have never seen keeps running, that water keeps arriving from a place you have never been.
-
-Countries were drawn for a century of empires and railways.
-
-This century keeps pulling on the thread.
-
-## So I went looking for the smallest place that could stand on its own
-
-The question I was asking changed.
-
-Not how to make the thread stronger. How short it could get.
-
-What is the smallest place that can feed, water, power and heal itself — and still be somewhere you would want to raise a child?
-
-I didn't have that answer in words. So I started drawing it, one rendering after another, and watched what kept coming back.
+Walk through it with me: the streets, the food, the homes, the evenings. By the end you will know what you have been missing.
 
 ![A valley of glass domes stepping down to the sea, a bright river left running through the middle of it.](bafybeibf7t7f3hetseqmmkrpfuqngmjwtu6bxmweboays7dzsn36bkwstm.jpg)
 
-It kept coming back small. Many small buildings instead of a few big ones. The river left where it was. Green between everything. Never a tower, never a wall.
+For most of my life I believed what almost everyone believes. That this is simply how a city looks. Streets for engines, food from somewhere else, homes that keep the green outside the fence.
 
-## City states are older than countries
+It took me years to see it for what it is.
 
-This is not a new idea wearing a new coat.
+A design. And a design can be drawn again.
 
-Venice ran a maritime empire for centuries out of a lagoon. The Hanseatic cities traded across northern Europe as a league of self-governing towns. Singapore went from a port to one of the most capable places on earth inside a single lifetime.
+## Your street belongs to the trucks
 
-Small. Tight. Sovereign. The distance between the people and the decisions that shape their lives was short enough to walk.
+Stand on your street at eight in the morning.
 
-![Dozens of domes spread along a coastal plain, a river cascading between them toward the sea.](bafybeibqrlvenmbhvnkjv7wykckcni2nne2rpdtozwjzd4g4sjx3gawa5u.jpg)
+Delivery vans double-parked. Engines idling. A lorry backing into a loading bay, beeping. The asphalt was laid for them, the kerbs are cut for them, and you walk along the edge of it all, on the strip they left over.
 
-## Singapore also shows the catch
+Now stand on a street in Maia City.
 
-Singapore imports more than ninety percent of its food.
+There are no vans. There are no engines. The path belongs to people, bikes, children and the forest, and the loudest thing at eight in the morning is a blackbird.
 
-Sovereign in its parliament. Dependent at the dinner table. And the country knows it — its goal is to grow thirty percent of its nutritional needs locally by 2030, on one of the most crowded islands in the world.
+Everything heavy moves underneath. A fully autonomous network of robots carries food, goods, tools and supplies between the dome cells, all day, out of sight, from storage that sits underground beneath every cell. Nobody drives it. Nobody waits for it. Above ground the city is made for walking; below ground it is made for moving things — and the two stop fighting over the same space.
 
-That was the moment the picture turned for me.
-
-Sovereignty is not a size. A city state that ships its food in is just a smaller country with the same long thread.
-
-The first brick has to be resilience itself. Food, water, energy and health, close enough to walk to.
-
-## The second trap is the field
-
-![Two ways to feed a city in one frame: patchwork fields along the coast, and domes sitting inside their own forest along the river.](bafybeic75lwtffacroif25aqhjp3ez4nkfjfo72qz65ix4hfegpom4tyla.jpg)
-
-Look at the left side of that picture.
-
-Patchwork fields, one crop per patch, laid along the coast. That is how nearly every city on earth is fed today, and from above it looks like abundance.
-
-It is the thread again, just shorter. Somebody ploughs it, a machine harvests it, a truck brings it in — and one pest or one dry year takes the whole patch at once, because every plant in it is the same plant.
-
-Now look at the middle of the frame.
-
-## Every dome cell grows its own forest
-
-This is the heart of the blueprint, and it is simpler than it sounds.
-
-There are no generic fields. There is no farm belt outside the city, no monoculture feeding it from the edge. Every dome cell keeps its own food forest directly around it — planted by the people who live there, tended by them, eaten by them.
-
-A food forest is layered the way a wild forest is. Tall nut and fruit trees on top. Smaller fruit trees under them. Berries, herbs, vegetables and roots on the ground, and vines climbing through all of it. Once it is established it largely feeds itself, it holds water in its soil, and a bad year for one plant is a good year for another.
-
-![A dozen domes on stone bases, sunk into green canopy, a turquoise stream threading between them.](bafybeibrdwd2fqbjhltxvpbohmzxphwr4qfm5u6orbbvbbikkcgw3a5frm.jpg)
-
-Imagine the walk home.
-
-The apricots on your left. Beans climbing an old walnut. A neighbour up a ladder handing plums down to a kid holding a basket. Your kitchen is a few hundred steps away, and the nearest supermarket is not part of the picture at all.
-
-What the forest cannot carry through winter, the domes do. Beds under glass, inside the same buildings people live in — permaculture domes, warm in January, green in the middle of everything.
-
-![Inside a dome: terraces stacked around an open middle, fruit trees growing through it, people at tables below.](bafybeieiwbf2i2f42sjb4q7t523wwnmlu5zhb74jkwjhvjhhxoaimaucmm.jpg)
-
-## Water, power and health you can touch
-
-The river stays where it is. Rain gets caught, slowed down and sunk into the ground instead of being rushed away through pipes.
-
-![A single dome on a stone arcade, a timber footbridge over clear water, forest pressing in on every side.](bafybeickgal3i43zycctaue4rtc2lt5ec2u2ix4pugb72gqseqojx6k7g4.jpg)
-
-The glass that shelters the food also catches the sun. Every roof works, every dome cell keeps its own storage, and the lights in your street do not depend on a plant three regions away.
-
-Health stops being something you go out and get. It is the food that was on a branch this morning. It is walking instead of sitting. It is knowing your neighbours by name, because you pass them under the same trees every day.
-
-## Nothing heavy moves on the surface
-
-Imagine a street with no trucks in it.
-
-No delivery vans. No engines idling. No loading bays. The paths belong to people, bikes, children and the forest.
-
-Everything heavy moves underneath — a fully autonomous underground network carrying goods, tools and supplies between dome cells, all day, out of sight. Above ground the city is made for walking. Below ground it is made for moving things. The two stop fighting over the same space, and the surface gets given back to life.
+Imagine sending your child out to play on that street. There is nothing on it that can hurt her.
 
 ![Eight domes along a river bend, joined only by footpaths through the trees.](bafybeiajrbfnkds6cpwu26c3ri7llswevkhtidu4jcqwdbwyv7f57jtkq4.jpg)
 
-## The grand hall comes after the foundation
+## Your food travels further than you ever will
 
-![A theatre under a glass dome at night, hundreds of people facing a lit stage.](bafybeidlxbk75toyq3pg574ciqzfaf2ep3kf44ogzseklmtmuwi5s3jpfm.jpg)
+Look at your plate tonight and ask where each thing on it grew.
 
-I rendered this one too.
+Most of the answers are places you have never been. Fields you will never see — one crop per field, ploughed by a machine, harvested by a machine, brought in by truck, and lost all at once to one pest or one dry year, because every plant in the field is the same plant.
 
-It is beautiful, and it belongs to a city that already feeds itself. Culture sits on top of resilience, never in its place — the hall goes up in the year the forests feed everyone, and not a day earlier.
+![Two ways to feed a city in one frame: patchwork fields along the coast, and domes sitting inside their own forest along the river.](bafybeic75lwtffacroif25aqhjp3ez4nkfjfo72qz65ix4hfegpom4tyla.jpg)
 
-## A new generation of city states
+In Maia City there are no fields.
 
-Here is the blueprint in one breath.
+Every dome cell lives inside its own food forest, planted by the people who live there, tended by them, eaten by them. It grows the way a wild forest grows, in seven layers: tall nut and fruit trees on top, smaller fruit trees under them, then shrubs and berries, herbs, vegetables, roots in the soil, and vines climbing through all of it. Once it is established it largely feeds itself. It holds water in its ground. A bad year for one plant is a good year for another.
 
-Not a country held together by a thread that runs around the planet. A city state made of small, living dome cells — each with its own food forest, its own water, its own power and its own health — linked underground, and sovereign because every part of it can stand on its own.
+Imagine the walk to work. The apricots on your left. Beans climbing an old walnut. A neighbour up a ladder handing plums down to a kid with a basket.
+
+You pick breakfast on the way.
+
+Nothing on your plate travelled further than you did.
+
+![A dozen domes on stone bases, sunk into green canopy, a turquoise stream threading between them.](bafybeibrdwd2fqbjhltxvpbohmzxphwr4qfm5u6orbbvbbikkcgw3a5frm.jpg)
+
+## Your home bleeds heat and keeps the forest outside
+
+Almost every building I have ever lived in was a box.
+
+Flat walls. Corners where the air goes still. A roof that bleeds heat all winter and bakes all summer, and a heating bill that arrives regardless. The garden, if there is one, starts at the door and stops at the fence — something you look at from a window, never something you live inside.
+
+That shape was never chosen for people. It was chosen because it stacks, it sells, and it can be cut with a straight saw.
+
+Now it's January.
+
+Outside, frost has turned the grass white and your breath hangs in the air. You step through a door in a stone wall, and the air changes on your face — warm, damp, smelling of soil after rain. A lemon tree stands in the middle of the room. A child runs barefoot on the path beneath it.
+
+Nobody is heating this space the way you heat a house. It is holding on to the warmth the sun put into it this morning.
+
+![Under the glass: stone terraces, fruit trees growing through the middle, people talking at the same height.](bafybeih7x73qielq3zswbfkfclo5hrlx5cuvea56qrrdpjwsq72zuyxehq.jpg)
+
+This is a home in Maia City. A glass dome on a base of dry stone — the stone keeps the inside steady, the glass lets the low winter sun straight in, and the forest grows up through the middle, where a courtyard would be. Two terraces of homes around it. Twenty steps from the stove to the lemon tree. Basil growing out of the counter. Your children picking strawberries under the same glass that keeps your home warm.
+
+![A kitchen opening straight onto the food forest under the dome.](bafybeiaos26l67jhejmtcwxauoztww75ixq3xhkfvyd6szrvptyt45cpyi.jpg)
+
+## The lights come from a plant you have never seen
+
+In Maia City they come from your roof.
+
+The glass that shelters the food also catches the sun. Every dome cell keeps its own storage, so the lights in your street never depend on a power station three regions away.
+
+## The rain gets rushed away through pipes
+
+Here it stays.
+
+The river runs where it always ran. Rain gets caught, slowed down and sunk into the ground, where the forest drinks it.
+
+## The shape that does the most with the least
+
+Why a dome?
+
+Buckminster Fuller spent his life asking how to do more with less — less material, less energy, less waste, for more shelter and more life. In 1954 he patented the geodesic dome: a shell built entirely from triangles, each handing its load to the ones beside it, until the whole thing carries weight like a single piece. A sphere holds more space inside less surface than any other shape, and less surface is less skin to lose heat through.
+
+![A 150-metre geodesic dome, specified to the strut: 10,920 struts, 5,461 nodes, 7,280 panels.](bafybeigqlxfthpwklvszhn7l5toqzkodpgqyuvcccbukl4vw3x2ajqvbvq.jpg)
+
+And the number that won me over: on a dome like this, 93.4% of the panels are the same plain triangle.
+
+One jig. One cut. Repeated until the shell closes.
+
+A shape you can build by repeating one simple thing is a shape a community can build for itself.
+
+## The easy answer is one giant dome
+
+The same spec sheet claimed 3,000 to 5,000 people could live under that single roof.
+
+Exactly the kind of number that sounds like progress.
+
+![The same dome, filled with people at true scale.](bafybeifo4ae7yd74ihuk5mmhhflglnyacfvpeczkrxw5l7nuu47kkje64a.jpg)
+
+Fill it at true scale and the promise collapses. The terraces turn into a train platform at rush hour. Nobody on the top floor knows anyone on the bottom one. One failing system fails five thousand people at once.
+
+It is the apartment block again, only rounder. Built wrong, again.
+
+## 233 people, and you know every name
+
+So we started over one more time, and went small.
+
+A dome for a couple of dozen people. Then a ring of those domes around one larger dome at the centre, with the food forest wrapped around the whole ring — the way each dome holds a forest inside. That ring is a dome cell, and it is home to 233 people.
+
+![A ring of domes around one larger dome at the centre, joined by walkways and water.](bafybeidmmdlzowqrp6j23pc532jkdde6am5ycounlv7q3u3eptg7gekesa.jpg)
+
+The centre dome is where nobody lives and everybody goes. The workshops. The library, and the rooms where young and old learn from each other every day, side by side. The long tables for the evenings people choose to eat together. The room where decisions get made.
+
+Big enough for three generations to learn from one another. Small enough that you know every name in it.
+
+## A day in the new world
+
+Imagine it, from the first light.
+
+You wake to birds under glass. You walk out through the forest and pick a fig on the way to work. The street is quiet; somewhere beneath it, a robot is carrying the week's flour to the next cell. You spend the morning in the workshops of the centre dome, next to someone forty years older than you and someone twenty years younger. At lunch you eat on a terrace above the forest that grew it.
+
+In the evening the paths fill as people walk in from every dome in the ring. Fifty of them sit down together under the glass. The lights are on because the roofs caught the sun, and everything on the table grew within sight of the door.
+
+Nobody on that list needed a truck, a supermarket or a heating bill.
 
 ![Four views of one place: the riverside approach, a terrace overlook, the atrium inside, a private terrace at home.](bafybeiekl5cqpeh2ljpbaimu5czsmk3svu6inl74mhtnfn5rh67fyfk4ia.jpg)
 
-Imagine the day that comes out of it.
+## This is what starting over looks like
 
-A walk along the river in the morning. Lunch on a terrace above the forest that grew it. Work in a commons under glass. Home, through a door that opens straight onto green.
+One dome cell of 233 people, living inside its own forest. Then the next, and the next, joined underground and free on the surface, until they make a city of 1 million co-founders — every one of them building and owning what they help create.
 
-Nothing on that list needs the thread.
+![Two figures on a ridge, looking down over the dome cells in the valley.](bafybeiecc63xwsuxnj27a2xgyddi5wxoji6ksjgrtdhboou6agyag2fata.jpg)
 
-That is what we are building: the blueprint for a new generation of self-sovereign city states. And its first brick is not a wall.
+Some people call a world like this solarpunk.
 
-It is the smallest unit that can stand on its own — a self-sufficient dome cell of 150 to 250 humans, living inside its own food forest.
+We call it Maia City.
 
-Maia City will be the first city built from them. The first-of-its-kind pilot.
+I am not asking you to imagine it. I am asking you to build it with me.

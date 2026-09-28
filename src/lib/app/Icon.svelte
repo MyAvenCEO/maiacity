@@ -24,6 +24,10 @@
 		<path d="M12 3.5v4M12 16.5v4M3.5 12h4M16.5 12h4M6 6l2.8 2.8M15.2 15.2 18 18M18 6l-2.8 2.8M8.8 15.2 6 18" />
 	{:else if name === 'user'}
 		<circle cx="12" cy="8.5" r="3.5" /><path d="M5 20a7 7 0 0 1 14 0" />
+	{:else if name === 'ledger'}
+		<path d="M4.5 7.5h15v12h-15z" /><path d="M4.5 7.5 7 4.5h10l2.5 3" /><path d="M15.5 13.5h4" /><circle cx="15.5" cy="13.5" r="0.6" fill="currentColor" />
+	{:else if name === 'coops'}
+		<circle cx="12" cy="7" r="2.6" /><circle cx="6" cy="16" r="2.6" /><circle cx="18" cy="16" r="2.6" /><path d="M10.4 9 7.4 13.8M13.6 9l3 4.8M8.6 16h6.8" />
 	{:else if name === 'key'}
 		<circle cx="8" cy="14" r="4" /><path d="m11 11 8.5-8.5M16 6l2.5 2.5M13.5 8.5 16 11" />
 	{/if}
