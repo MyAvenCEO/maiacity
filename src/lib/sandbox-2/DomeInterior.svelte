@@ -1,7 +1,9 @@
 <!--
 	Stepping inside a dome: a full-screen, walkable interior (interior/interior.ts)
 	over the island. Drag or click to look, WASD or the arrows to walk, Shift to
-	hurry, Esc and the button to come back out.
+	hurry, Esc and the button to come back out. On a phone, as in every sandbox: a
+	joystick in the lower left walks, any other finger on the world looks round
+	($lib/touch/TouchStick).
 
 	While the dome is built, the valley of domes from Day 03 fills the screen,
 	slowly drawing closer, with the step being done and a progress bar; when the
@@ -12,6 +14,7 @@
 	import { onDestroy, onMount } from 'svelte';
 	import { DOMES, type DomeKind, type InteriorHandle } from './interior/interior';
 	import { gameClock } from '../../../game/time';
+	import TouchStick from '$lib/touch/TouchStick.svelte';
 
 	let {
 		kind,
@@ -21,7 +24,7 @@
 		onleave
 	}: { kind: DomeKind; place: string; onclose: () => void; entry?: number; onleave?: (door: number) => void } = $props();
 
-	let stage: HTMLDivElement;
+	let stage = $state<HTMLDivElement>();
 	let handle: InteriorHandle | null = null;
 	let destroyed = false;
 	/** closed → opening (the picture fades) → open (gone) */
@@ -43,7 +46,7 @@
 			requestAnimationFrame(async () => {
 				const { mountInterior } = await import('./interior/interior');
 				const h = await mountInterior(
-					stage,
+					stage!,
 					kind,
 					(label) => {
 						if (label === 'ready') return;
@@ -89,10 +92,15 @@
 				<button onclick={() => handle?.liftStep(1)} disabled={lift.floor >= lift.top} aria-label="Up a floor">↑</button>
 				<button onclick={() => handle?.liftStep(-1)} disabled={lift.floor <= 0} aria-label="Down a floor">↓</button>
 			</div>
-			<p class="how">Press <kbd>↑</kbd> or <kbd>↓</kbd> to ride one floor; the lift stops at every floor. Hold the key to ride on. Walk out through a door when it stops.</p>
+			<p class="how keys-how">Press <kbd>↑</kbd> or <kbd>↓</kbd> to ride one floor; the lift stops at every floor. Hold the key to ride on. Walk out through a door when it stops.</p>
+			<p class="how touch-how">Tap ↑ or ↓ to ride one floor; the lift stops at every floor. Walk out through a door when it stops.</p>
 		</div>
 	{/if}
-	<p class="help">Drag to look · WASD to walk · Shift to hurry{kind === 'factory' ? ' · in the great lift, ↑ and ↓ ride between the five floors' : kind === 'tent' ? ' · the door leads out to the campfire' : spec.gallery ? ' · the stairs lead up to the private rooms and the terrace' : ' · the door leads out into the forest'}</p>
+	<p class="help">
+		<span class="keys-how">Drag to look · WASD to walk · Shift to hurry{kind === 'factory' ? ' · in the great lift, ↑ and ↓ ride between the five floors' : kind === 'tent' ? ' · the door leads out to the campfire' : spec.gallery ? ' · the stairs lead up to the private rooms and the terrace' : ' · the door leads out into the forest'}</span>
+		<span class="touch-how">Swipe to look · joystick to walk · push to the rim to hurry</span>
+	</p>
+	<TouchStick move={(x, y, hurry) => handle?.move(x, y, hurry)} look={(dx, dy) => handle?.look(dx, dy)} {stage} taps=".bar button, .lift button" />
 
 	{#if doors !== 'open'}
 		<div class="loading" class:opening={doors === 'opening'} role="status" aria-live="polite">
@@ -301,5 +309,63 @@
 	.step {
 		font-size: 0.85rem;
 		color: #f0c49a;
+	}
+
+	/* ── on a phone: the joystick's words, and the lift's panel above the joystick ── */
+	.touch-how {
+		display: none;
+	}
+	@media (hover: none) and (pointer: coarse) {
+		.keys-how {
+			display: none;
+		}
+		.touch-how {
+			display: inline;
+		}
+		p.touch-how {
+			display: block;
+		}
+		.help {
+			top: calc(4.2rem + env(safe-area-inset-top, 0px));
+			bottom: auto;
+		}
+		/* the lift's panel above the joystick, not over it */
+		.lift {
+			bottom: calc(11rem + env(safe-area-inset-bottom, 0px));
+		}
+	}
+
+	/* ── a narrow screen: a shorter bar that fits ── */
+	@media (max-width: 640px) {
+		.bar {
+			left: 0.75rem;
+			right: 0.75rem;
+			gap: 0.35rem;
+		}
+		.out,
+		.title,
+		.clock {
+			padding: 0.5rem 0.75rem;
+			font-size: 0.8rem;
+			white-space: nowrap;
+		}
+		.title {
+			min-width: 0;
+			overflow: hidden;
+			text-overflow: ellipsis;
+		}
+		.title span {
+			display: none;
+		}
+		.clock {
+			margin-left: auto;
+		}
+		.help {
+			max-width: calc(100vw - 2rem);
+			width: max-content;
+			white-space: normal;
+			text-align: center;
+			font-size: 0.75rem;
+		}
 	}
 </style>

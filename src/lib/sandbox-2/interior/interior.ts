@@ -455,6 +455,10 @@ export type InteriorHandle = {
 	lift: () => { floor: number; name: string; top: number } | null
 	/** send the lift a floor up (1) or down (-1), as the arrow keys do */
 	liftStep: (dir: 1 | -1) => void
+	/** walk from a touch joystick: x to the right, y ahead, each -1…1; hurry when pushed to the edge */
+	move: (x: number, y: number, hurry: boolean) => void
+	/** turn the view by a finger's drag, in pixels */
+	look: (dx: number, dy: number) => void
 	/** built into a host world: its floors and lamps */
 	embedded?: EmbeddedDome
 }
@@ -1986,7 +1990,7 @@ export async function mountInterior(container: HTMLElement, kind: DomeKind, onPr
 		;(window as unknown as { __buildLog?: string[] }).__buildLog?.push(`${kind} shown: ${pieces.length} pieces`)
 		lastYield = performance.now()
 		onProgress?.('ready')
-		return { lift: () => null, liftStep: () => {}, embedded, dispose: disposeAll }
+		return { lift: () => null, liftStep: () => {}, move: () => {}, look: () => {}, embedded, dispose: disposeAll }
 	}
 
 	/* ── walking ─────────────────────────────────────────────────────── */
@@ -2035,6 +2039,9 @@ export async function mountInterior(container: HTMLElement, kind: DomeKind, onPr
 	dom.addEventListener('mousedown', onDown)
 	window.addEventListener('mousemove', onMove)
 	window.addEventListener('mouseup', onUp)
+	// on a phone the page's fingers walk (move) and look round (look)
+	dom.style.touchAction = 'none'
+	const stick = { x: 0, y: 0, hurry: false }
 
 	// in the tent, only where there is headroom under the canvas
 	const wallLimit = (y: number) => (kind === 'tent' ? 1.15 : Math.sqrt(Math.max(0, R * R - (y + 1.8) ** 2)) - (kind === 'glamp' ? 0.4 : 0.8))
@@ -2051,12 +2058,13 @@ export async function mountInterior(container: HTMLElement, kind: DomeKind, onPr
 	}
 
 	const step = (dt: number) => {
-		const f = (keys.has('w') || keys.has('arrowup') ? 1 : 0) - (keys.has('s') || keys.has('arrowdown') ? 1 : 0)
-		const s = (keys.has('d') ? 1 : 0) - (keys.has('a') ? 1 : 0)
+		const clamp = (v: number) => Math.max(-1, Math.min(1, v))
+		const f = clamp((keys.has('w') || keys.has('arrowup') ? 1 : 0) - (keys.has('s') || keys.has('arrowdown') ? 1 : 0) + stick.y)
+		const s = clamp((keys.has('d') ? 1 : 0) - (keys.has('a') ? 1 : 0) + stick.x)
 		const turn = (keys.has('arrowleft') ? 1 : 0) - (keys.has('arrowright') ? 1 : 0)
 		yaw += turn * 1.8 * dt
 		if (f || s) {
-			const speed = (keys.has('shift') ? 14.6 : 6.45) * dt
+			const speed = (keys.has('shift') || stick.hurry ? 14.6 : 6.45) * dt
 			const dx = (-Math.sin(yaw) * f + Math.cos(yaw) * s) * speed
 			const dz = (-Math.cos(yaw) * f - Math.sin(yaw) * s) * speed
 			// the floor underfoot now, not the eased camera height, decides what holds you
@@ -2176,6 +2184,11 @@ export async function mountInterior(container: HTMLElement, kind: DomeKind, onPr
 			const k = dir > 0 ? 'arrowup' : 'arrowdown'
 			onAction(k, true)
 			setTimeout(() => onAction(k, false), 120)
+		},
+		move: (x, y, hurry) => Object.assign(stick, { x, y, hurry }),
+		look: (dx, dy) => {
+			yaw -= dx * 0.0065
+			pitch = Math.max(-1.4, Math.min(1.4, pitch - dy * 0.0065))
 		},
 		dispose() {
 			cancelAnimationFrame(frame)
