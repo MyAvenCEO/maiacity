@@ -56,8 +56,6 @@ Look at your plate tonight and ask where each thing on it grew.
 
 Most of the answers are places you have never been. Fields you will never see — one crop per field, ploughed by a machine, harvested by a machine, brought in by truck, and lost all at once to one pest or one dry year, because every plant in the field is the same plant.
 
-![Two ways to feed a city in one frame: patchwork fields along the coast, and domes sitting inside their own forest along the river.](bafybeic75lwtffacroif25aqhjp3ez4nkfjfo72qz65ix4hfegpom4tyla.jpg)
-
 In Maia City there are no fields.
 
 Every dome cell lives inside its own food forest, planted by the people who live there, tended by them, eaten by them. It grows the way a wild forest grows, in seven layers: tall nut and fruit trees on top, smaller fruit trees under them, then shrubs and berries, herbs, vegetables, roots in the soil, and vines climbing through all of it. Once it is established it largely feeds itself. It holds water in its ground. A bad year for one plant is a good year for another.
