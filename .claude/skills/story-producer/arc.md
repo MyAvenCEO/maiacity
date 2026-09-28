@@ -32,6 +32,18 @@ It is the spine: every section moves toward its answer, and the reader cannot le
 - When it closes, **end fast**. The reader came for the answer, not a wrap-up. The last line is the door to tomorrow,
   never a recap.
 
+## Lead with the pain
+
+Every intro educates first: **what is wrong**, before any of the vision. Right after the hook, name the pain in the
+reader's own life — concrete, felt, specific (*the street outside your door was laid for engines, not for your
+children*; *your food grew in fields you will never see*). Two to four lines, then one line that makes it visible
+(*we have lived inside this so long that we stopped seeing it*). Only then the new world.
+
+- The pain is the reader's, today — never ours, never abstract ("cities are inefficient").
+- It is the *from* of the transformation made tangible: the reader must feel the wrong before the right can land.
+- Pain is not dread. No doom, no crisis, no fear-selling: it is how we live now, seen clearly, against how we could.
+- Every section repeats the move in small: the old way first (a short, sharp low), then the new (the high).
+
 ## Hook → story → lessons (what it means for you)
 
 The shape that keeps working for small channels and big ones alike, in three parts — all three are needed:

@@ -199,9 +199,9 @@ From every private room, in every dome, the view through the glass is the seven-
 
 ## The valley waits while it is built
 
-![While a dome is built, the valley of domes from Day 03 fills the screen, with the dome's name, a progress bar and the step being done.](bafkreihthlydt3dwjkhvtqb2vr5yuifxvogv47qy2uh2d42ijyy6huwgk4.jpg)
+![While a dome is built, the valley of domes from Day 02 fills the screen, with the dome's name, a progress bar and the step being done.](bafkreihthlydt3dwjkhvtqb2vr5yuifxvogv47qy2uh2d42ijyy6huwgk4.jpg)
 
-A big dome takes a few seconds to grow: the forest outside, the shell, the forest inside, the rooms. While it does, the screen shows the picture from [Day 03](/blog/day-03-what-a-dome-looks-like/), two people on a ridge above a valley of domes, drawing slowly closer. Below it are the dome's name, a thin bar filling up, and the step being done. When the dome is ready, the valley fades and you are standing inside.
+A big dome takes a few seconds to grow: the forest outside, the shell, the forest inside, the rooms. While it does, the screen shows the picture from [Day 02](/blog/day-02-the-first-brick/), two people on a ridge above a valley of domes, drawing slowly closer. Below it are the dome's name, a thin bar filling up, and the step being done. When the dome is ready, the valley fades and you are standing inside.
 
 ## What we built it with
 

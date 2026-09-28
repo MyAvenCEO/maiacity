@@ -18,7 +18,11 @@ draft: true
 
 Every city on earth is built wrong, and you live in one.
 
-Not a commune in the woods. Not a greenhouse you visit on a Sunday. A whole city, for 1 million people — started over from the ground up.
+Look at it for a second. The street outside your door was laid for engines, not for your children. The food on your plate grew in fields you will never see. Your home loses its warmth through the roof all winter, and the only green inside it stands in a pot on the windowsill.
+
+We have lived inside this so long that we stopped seeing it.
+
+So we are starting over. Not a commune in the woods. Not a greenhouse you visit on a Sunday. A whole city, for 1 million people — from the ground up.
 
 Walk through it with me: the streets, the food, the homes, the evenings. By the end you will know what you have been missing.
 

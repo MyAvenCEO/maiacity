@@ -8,7 +8,7 @@ description: The maiaCITY master skill for telling stories — journal posts, fi
 One skill for every story maiaCITY tells — on the page and on screen. The same few laws carry a journal post, a
 90-second reel and a title card; the sub-skills below are how each is applied.
 
-## The three laws (never break them)
+## The four laws (never break them)
 
 1. **The hook goes as extreme as the truth allows.** The biggest, strangest end state the facts can carry, set
    against the reader's biggest belief. A mild hook is a lost reader. → `hooks.md`
@@ -18,6 +18,8 @@ One skill for every story maiaCITY tells — on the page and on screen. The same
 3. **The biggest possible transformation for the reader.** Decide *from* (what they believe arriving) and *to* (what
    they leave with) before a word is written. The larger the distance between the two, the stronger everything else
    gets. → `arc.md`
+4. **Lead with the pain.** Every intro educates first: what is wrong, concretely, in the reader's own life — then
+   the new world. The reader must feel the wrong before the right can land. Pain, never dread. → `arc.md`
 
 And always: **every fact true** (nothing invented about Samuel's life, the readers, attempts or results), **full
 conviction** (a vision being built, not hoped for), **contrast on every axis** (a high only reads against a low).

@@ -21,7 +21,7 @@ That is the whole settlement on the first night, and everything in this post is 
 
 We are building maiaCITY in a game before we build it in soil. A game lets you run a settlement forward, watch where it stops working, and start again the same afternoon.
 
-The domes from [Day 03](/blog/day-03-what-a-dome-looks-like/) come with us, translated. Same arcade, same terrace, same shell — flattened into shapes the engine can draw hundreds of without dropping a frame. If the idea still reads at fifty triangles, it was the shape carrying it, not the rendering.
+The domes from [Day 02](/blog/day-02-the-first-brick/) come with us, translated. Same arcade, same terrace, same shell — flattened into shapes the engine can draw hundreds of without dropping a frame. If the idea still reads at fifty triangles, it was the shape carrying it, not the rendering.
 
 ![A single low-poly dome on stone arcades, in the game's own material language.](bafybeih4yyf4chicgq55chevarfzm63n2vjlwtaew2tgkabuikcgvpc2a4.jpg)
 

@@ -116,6 +116,7 @@ draft: true
 - [ ] One transformation, as large as the truth allows, landed in the closing lines
 - [ ] One arching question, opened in the first line, answered only at the end — then it ends fast
 - [ ] The hook is as extreme as the facts allow; subject, verb, end state and contrast can be pointed at
+- [ ] The intro leads with the pain: what is wrong in the reader's own life, concretely, before the vision
 - [ ] The hook carries an emotional anchor *and* a clear promise to the reader; the next line heads off their objection
 - [ ] Samuel's real before and after carries the trust; every piece turns to "what this means for you"
 - [ ] Progress is felt: pieces that each bring the answer closer; obstacles against them; a false summit before the peak

@@ -83,6 +83,10 @@ becomes irresistible.
 me"* — is answered before they act on it: *"Before you think it's a village with a vegetable patch — it isn't."* The
 line after the hook disqualifies the obvious answer.
 
+**Then the pain.** Straight after the hook, before any promise of the new world, the intro names what is wrong in the
+reader's life today — two to four concrete lines (`arc.md`, "Lead with the pain"). The hook opens the loop; the pain
+makes it personal.
+
 ## The six power words
 
 A hook is built from six parts (after Callaway's "six hook power words"). Four are required.
