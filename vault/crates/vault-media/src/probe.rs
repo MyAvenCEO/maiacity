@@ -1,0 +1,93 @@
+//! What a file is, read by AVFoundation — the fields the render worker took from ffprobe: codec, frame size and rate,
+//! length, bit depth, and the colour tags (primaries, transfer, matrix, range) that decide its input transform.
+
+use std::path::Path;
+
+use anyhow::{Context, Result, bail};
+use objc2::rc::Retained;
+use objc2_av_foundation::{AVAssetTrack, AVMediaTypeAudio, AVMediaTypeVideo, AVURLAsset};
+use objc2_core_foundation::{CFBoolean, CFNumber, CFString, CFType};
+use objc2_core_media::{
+    CMFormatDescription, kCMFormatDescriptionExtension_BitsPerComponent, kCMFormatDescriptionExtension_ColorPrimaries,
+    kCMFormatDescriptionExtension_Depth, kCMFormatDescriptionExtension_FullRangeVideo,
+    kCMFormatDescriptionExtension_TransferFunction, kCMFormatDescriptionExtension_YCbCrMatrix,
+};
+use objc2_foundation::{NSString, NSURL};
+use serde::Serialize;
+
+#[derive(Debug, Clone, Serialize, Default)]
+pub struct Probe {
+    /// the codec's four-character code: "hvc1", "avc1", "apcn" (ProRes 422), "ap4h" (ProRes 4444) …
+    pub codec: String,
+    pub width: u32,
+    pub height: u32,
+    pub fps: f64,
+    pub seconds: f64,
+    /// frames, from the track's length and rate
+    pub frames: u64,
+    /// bits per component, when the file says (10 for HEVC Main10, ProRes …)
+    pub bits: Option<u32>,
+    /// the colour tags as the file carries them (CoreMedia's names: "ITU_R_709_2", "P3_D65", "ITU_R_2100_HLG",
+    /// "SMPTE_ST_2084_PQ", "AppleLog" …)
+    pub primaries: Option<String>,
+    pub transfer: Option<String>,
+    pub matrix: Option<String>,
+    pub full_range: Option<bool>,
+    pub audio: bool,
+    pub bit_rate: f64,
+}
+
+/// Probe a movie file (MOV, MP4, M4V).
+pub fn probe(path: &Path) -> Result<Probe> {
+    let path = std::fs::canonicalize(path).with_context(|| format!("{}", path.display()))?;
+    // SAFETY: plain AVFoundation calls on objects we own; the synchronous accessors block until loaded.
+    unsafe {
+        let url = NSURL::fileURLWithPath(&NSString::from_str(&path.to_string_lossy()));
+        let asset = AVURLAsset::URLAssetWithURL_options(&url, None);
+        let duration = asset.duration();
+        let seconds = if duration.timescale > 0 { duration.value as f64 / duration.timescale as f64 } else { 0.0 };
+
+        #[allow(deprecated)]
+        let videos = asset.tracksWithMediaType(AVMediaTypeVideo.context("AVMediaTypeVideo")?);
+        #[allow(deprecated)]
+        let audios = asset.tracksWithMediaType(AVMediaTypeAudio.context("AVMediaTypeAudio")?);
+        let Some(track) = videos.firstObject() else { bail!("{} has no video track", path.display()) };
+        let track: Retained<AVAssetTrack> = Retained::cast_unchecked(track);
+
+        let size = track.naturalSize();
+        let fps = track.nominalFrameRate() as f64;
+        let mut p = Probe {
+            width: size.width.round() as u32,
+            height: size.height.round() as u32,
+            fps,
+            seconds,
+            frames: (seconds * fps).round() as u64,
+            audio: audios.count() > 0,
+            bit_rate: track.estimatedDataRate() as f64,
+            ..Default::default()
+        };
+
+        if let Some(desc) = track.formatDescriptions().firstObject() {
+            let desc: &CMFormatDescription = &*(Retained::as_ptr(&desc) as *const CMFormatDescription);
+            p.codec = fourcc(desc.media_sub_type());
+            let text = |key: &CFString| desc.extension(key).and_then(|v| v.downcast::<CFString>().ok()).map(|s| s.to_string());
+            let number = |key: &CFString| desc.extension(key).and_then(|v| v.downcast::<CFNumber>().ok()).and_then(|n| n.as_i64());
+            p.primaries = text(kCMFormatDescriptionExtension_ColorPrimaries);
+            p.transfer = text(kCMFormatDescriptionExtension_TransferFunction);
+            p.matrix = text(kCMFormatDescriptionExtension_YCbCrMatrix);
+            p.full_range = desc
+                .extension(kCMFormatDescriptionExtension_FullRangeVideo)
+                .and_then(|v| v.downcast::<CFBoolean>().ok())
+                .map(|b| b.as_bool());
+            p.bits = number(kCMFormatDescriptionExtension_BitsPerComponent)
+                .or_else(|| number(kCMFormatDescriptionExtension_Depth).map(|d| if d > 24 { d / 3 } else { d }))
+                .map(|b| b as u32);
+            let _: Option<&CFType> = None;
+        }
+        Ok(p)
+    }
+}
+
+fn fourcc(code: u32) -> String {
+    code.to_be_bytes().iter().map(|&b| if b.is_ascii_graphic() || b == b' ' { b as char } else { '?' }).collect()
+}
