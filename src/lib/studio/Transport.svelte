@@ -2,10 +2,11 @@
 	The transport: to the start, play and pause (Space), the clock, full screen, the timeline's zoom — and, with world
 	clips, "Prepare playback" (every world the timeline touches, loaded and kept before it plays).
 -->
-<script lang="ts">
-	import { clockText, type Studio } from './studio.svelte';
+<script>
+	import { clockText } from './studio.svelte.js';
 
-	let { s }: { s: Studio } = $props();
+	/** @type {{ s: import('./studio.svelte.js').Studio }} */
+	let { s } = $props();
 
 	async function playFullscreen() {
 		await s.screen?.requestFullscreen().catch(() => {});

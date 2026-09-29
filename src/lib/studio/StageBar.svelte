@@ -3,18 +3,23 @@
 	originals, once the edit is locked), Render (the deliveries). Beside them, where the timeline stands — edit → locked
 	→ graded → rendered — its version, and the one step to take next.
 -->
-<script lang="ts">
-	import { STAGES, type Studio, type Tab } from './studio.svelte';
+<script>
+	import { STAGES } from './studio.svelte.js';
 
-	let { s }: { s: Studio } = $props();
+	/** @typedef {import('./studio.svelte.js').Tab} Tab */
+	/** @type {{ s: import('./studio.svelte.js').Studio }} */
+	let { s } = $props();
 
-	const TABS: { id: Tab; label: string; key: string }[] = [
+	/** @type {{ id: Tab, label: string, key: string }[]} */
+	const TABS = [
 		{ id: 'edit', label: 'Edit', key: '1' },
 		{ id: 'grade', label: 'Grade', key: '2' },
 		{ id: 'render', label: 'Render', key: '3' }
 	];
-	const reached = (st: string) => STAGES.indexOf(st as never) <= STAGES.indexOf(s.stage);
-	function go(t: Tab) {
+	/** @param {import('$lib/auth/client').TimelineStage} st */
+	const reached = (st) => STAGES.indexOf(st) <= STAGES.indexOf(s.stage);
+	/** @param {Tab} t */
+	function go(t) {
 		if (t === 'grade' && !s.locked) return;
 		if (t !== 'edit') s.stop();
 		s.tab = t;

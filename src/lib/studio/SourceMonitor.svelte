@@ -3,25 +3,30 @@
 	(never both at once), through the same colour path as the program (its proxy in Edit); I and O mark the part to use,
 	and "Add to timeline" — or a drag onto a track — lays just that part down.
 -->
-<script lang="ts">
+<script>
 	import ColorBadge from './ColorBadge.svelte';
-	import { profileFor } from './color';
-	import { clockText, itemName, raw, tint, type Studio } from './studio.svelte';
+	import { profileFor } from './color.js';
+	import { clockText, itemName, raw, tint } from './studio.svelte.js';
 	import Viewer from './Viewer.svelte';
-	import type { ViewPlan } from './view';
-	import { wave } from './wave';
+	import { wave } from './wave.js';
 
-	let { s }: { s: Studio } = $props();
+	/** @type {{ s: import('./studio.svelte.js').Studio }} */
+	let { s } = $props();
 
 	let srcTime = $state(0);
 	let srcDuration = $state(0);
 	let srcAspect = $state(16 / 9);
-	let markIn = $state<number | null>(null);
-	let markOut = $state<number | null>(null);
+	/** @type {number | null} */
+	let markIn = $state(null);
+	/** @type {number | null} */
+	let markOut = $state(null);
 	let paused = $state(true);
-	let img = $state<HTMLImageElement | null>(null);
-	let video = $state<HTMLVideoElement | null>(null);
-	let plan = $state<ViewPlan | null>(null);
+	/** @type {HTMLImageElement | null} */
+	let img = $state(null);
+	/** @type {HTMLVideoElement | null} */
+	let video = $state(null);
+	/** @type {import('./view.js').ViewPlan | null} */
+	let plan = $state(null);
 	let gl = $state(true);
 
 	const m = $derived(s.preview ? s.byCid.get(s.preview) : undefined);
@@ -44,7 +49,8 @@
 		const from = Math.min(markIn ?? 0, len), to = Math.min(markOut ?? len, len);
 		return to - from >= 0.05 ? { in: from, dur: to - from } : undefined;
 	});
-	const pct = (t: number) => `${len ? (Math.min(Math.max(t, 0), len) / len) * 100 : 0}%`;
+	/** @param {number} t */
+	const pct = (t) => `${len ? (Math.min(Math.max(t, 0), len) / len) * 100 : 0}%`;
 
 	// a new file: from its start, unmarked
 	$effect(() => {
@@ -59,7 +65,8 @@
 		if (m?.kind !== 'audio') s.srcEl = m?.kind === 'video' ? video : null;
 	});
 
-	function mark(which: 'in' | 'out') {
+	/** @param {'in' | 'out'} which */
+	function mark(which) {
 		if (!av) return;
 		const t = s.srcEl?.currentTime ?? srcTime;
 		if (which === 'in') {
@@ -71,17 +78,20 @@
 		}
 	}
 	const add = () => m && void s.place(m.cid, s.defaultTrack(m), s.time, range);
-	function drag(e: DragEvent) {
+	/** @param {DragEvent} e */
+	function drag(e) {
 		if (!m || !e.dataTransfer) return;
 		e.dataTransfer.setData('text/x-cid', m.cid);
 		if (range) e.dataTransfer.setData('text/x-range', JSON.stringify(range));
 	}
 	/** Click or drag along the source's waveform (or scrub bar) to move through it. */
-	function scrub(e: PointerEvent) {
-		const bar = e.currentTarget as HTMLElement;
+	/** @param {PointerEvent} e */
+	function scrub(e) {
+		const bar = /** @type {HTMLElement} */ (e.currentTarget);
 		if (!s.srcEl || !len) return;
 		e.preventDefault();
-		const put = (ev: PointerEvent) => {
+		/** @param {PointerEvent} ev */
+		const put = (ev) => {
 			const r = bar.getBoundingClientRect();
 			const t = (Math.min(Math.max(ev.clientX - r.left, 0), r.width) / (r.width || 1)) * len;
 			if (s.srcEl) s.srcEl.currentTime = t;
@@ -100,7 +110,8 @@
 
 	// whatever was last touched decides where I and O go: the source monitor (or the library that fills it), or not
 	$effect(() => {
-		const inHand = (e: Event) => (s.srcFocus = !!(e.target as Element | null)?.closest?.('.source, .items'));
+		/** @param {Event} e */
+		const inHand = (e) => (s.srcFocus = !!(/** @type {Element | null} */ (e.target))?.closest?.('.source, .items'));
 		window.addEventListener('pointerdown', inHand, true);
 		window.addEventListener('focusin', inHand, true);
 		return () => {
@@ -108,8 +119,9 @@
 			window.removeEventListener('focusin', inHand, true);
 		};
 	});
-	function onKey(e: KeyboardEvent) {
-		if ((e.target as HTMLElement | null)?.closest?.('input, textarea, select')) return;
+	/** @param {KeyboardEvent} e */
+	function onKey(e) {
+		if ((/** @type {HTMLElement | null} */ (e.target))?.closest?.('input, textarea, select')) return;
 		if (s.srcFocus && av && !e.metaKey && !e.ctrlKey && !e.altKey && (e.code === 'KeyI' || e.code === 'KeyO')) {
 			e.preventDefault();
 			e.stopImmediatePropagation();
@@ -175,7 +187,7 @@
 							draggable="false"
 							crossorigin="use-credentials"
 							onload={(e) => {
-								const i = e.currentTarget as HTMLImageElement;
+								const i = /** @type {HTMLImageElement} */ (e.currentTarget);
 								if (i.naturalWidth && i.naturalHeight) srcAspect = i.naturalWidth / i.naturalHeight;
 							}}
 						/>

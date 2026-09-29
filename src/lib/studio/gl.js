@@ -3,22 +3,22 @@
 //   transform (ACEScct → Rec.709 display) → the screen,
 // the same order and the same maths as the render worker (C5). The browser is told not to colour-manage the pixels
 // (UNPACK_COLORSPACE_CONVERSION_WEBGL = NONE): a log picture's code values reach the shader as they are.
-import type { Cdl } from '$lib/auth/client';
 import { REC709_TO_AP1 } from '../../../game/film/color.js';
-import type { Lut } from './luts';
 
-/** How a picture comes in: 0 as it is (already ACEScct, or shown untouched), 1 through its IDT LUT, 2 by formula (display-referred Rec.709/sRGB). */
-export type InMode = 0 | 1 | 2;
-/** How it goes out: 0 as it is, 1 through the output LUT, 2 by formula (an approximation, when the LUT is missing). */
-export type OutMode = 0 | 1 | 2;
-export type DrawOpts = {
-	idt: InMode;
-	odt: OutMode;
-	grades: Cdl[];
-	falseColor?: boolean;
-	/** the part of the source to show: u0, v0, width, height (0…1, top-left origin) */
-	crop: [number, number, number, number];
-};
+/** @typedef {import('$lib/auth/client').Cdl} Cdl */
+/** @typedef {import('./luts.js').Lut} Lut */
+/**
+ * How a picture comes in: 0 as it is (already ACEScct, or shown untouched), 1 through its IDT LUT, 2 by formula (display-referred Rec.709/sRGB).
+ * @typedef {0 | 1 | 2} InMode
+ */
+/**
+ * How it goes out: 0 as it is, 1 through the output LUT, 2 by formula (an approximation, when the LUT is missing).
+ * @typedef {0 | 1 | 2} OutMode
+ */
+/**
+ * crop: the part of the source to show — u0, v0, width, height (0…1, top-left origin).
+ * @typedef {{ idt: InMode, odt: OutMode, grades: Cdl[], falseColor?: boolean, crop: [number, number, number, number] }} DrawOpts
+ */
 
 const VERT = `#version 300 es
 in vec2 p;
@@ -99,27 +99,24 @@ void main() {
 	outColor = vec4(clamp(c, 0.0, 1.0), 1.0);
 }`;
 
-/** The inverse of a 3×3 (row-major), for AP1 → Rec.709. */
-function invert(m: number[][]): number[][] {
-	const [a, b, c] = m[0]!, [d, e, f] = m[1]!, [g, h, i] = m[2]!;
+/** The inverse of a 3×3 (row-major), for AP1 → Rec.709. @param {number[][]} m @returns {number[][]} */
+function invert(m) {
+	const [a, b, c] = m[0], [d, e, f] = m[1], [g, h, i] = m[2];
 	const A = e * i - f * h, B = -(d * i - f * g), C = d * h - e * g;
-	const det = a! * A + b! * B + c! * C;
+	const det = a * A + b * B + c * C;
 	return [
-		[A / det, -(b! * i! - c! * h!) / det, (b! * f! - c! * e!) / det],
-		[B / det, (a! * i! - c! * g!) / det, -(a! * f! - c! * d!) / det],
-		[C / det, -(a! * h! - b! * g!) / det, (a! * e! - b! * d!) / det]
+		[A / det, -(b * i - c * h) / det, (b * f - c * e) / det],
+		[B / det, (a * i - c * g) / det, -(a * f - c * d) / det],
+		[C / det, -(a * h - b * g) / det, (a * e - b * d) / det]
 	];
 }
 
 export class ViewerGL {
-	readonly gl: WebGL2RenderingContext;
-	private prog: WebGLProgram;
-	private src: WebGLTexture;
-	private luts: Record<'idt' | 'odt', { tex: WebGLTexture; key: string | null; size: number }>;
-	private u: Record<string, WebGLUniformLocation | null> = {};
+	/** @type {Record<string, WebGLUniformLocation | null>} */
+	u = {};
 
-	/** WebGL2 with float 3D textures: what the viewer needs. */
-	static supported(): boolean {
+	/** WebGL2 with float 3D textures: what the viewer needs. @returns {boolean} */
+	static supported() {
 		try {
 			return !!document.createElement('canvas').getContext('webgl2');
 		} catch {
@@ -127,19 +124,22 @@ export class ViewerGL {
 		}
 	}
 
-	constructor(readonly canvas: HTMLCanvasElement) {
+	/** @param {HTMLCanvasElement} canvas */
+	constructor(canvas) {
+		this.canvas = canvas;
 		// preserveDrawingBuffer: the scopes read the frame back after it is shown
 		const gl = canvas.getContext('webgl2', { premultipliedAlpha: false, alpha: false, preserveDrawingBuffer: true, antialias: false });
 		if (!gl) throw new Error('WebGL2 is not available');
 		this.gl = gl;
-		const sh = (type: number, text: string) => {
-			const s = gl.createShader(type)!;
+		/** @param {number} type @param {string} text */
+		const sh = (type, text) => {
+			const s = /** @type {WebGLShader} */ (gl.createShader(type));
 			gl.shaderSource(s, text);
 			gl.compileShader(s);
 			if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(s) ?? 'shader');
 			return s;
 		};
-		const p = gl.createProgram()!;
+		const p = gl.createProgram();
 		gl.attachShader(p, sh(gl.VERTEX_SHADER, VERT));
 		gl.attachShader(p, sh(gl.FRAGMENT_SHADER, FRAG));
 		gl.linkProgram(p);
@@ -154,20 +154,21 @@ export class ViewerGL {
 		gl.vertexAttribPointer(loc, 2, gl.FLOAT, false, 0, 0);
 		for (const n of ['uSrc', 'uIdt', 'uOdt', 'uIdtSize', 'uOdtSize', 'uIdtMode', 'uOdtMode', 'uGrades', 'uFalse', 'uSlope', 'uOffset', 'uPower', 'uSat', 'uToAp1', 'uFromAp1', 'uCrop'])
 			this.u[n] = gl.getUniformLocation(p, n);
-		gl.uniform1i(this.u.uSrc!, 0);
-		gl.uniform1i(this.u.uIdt!, 1);
-		gl.uniform1i(this.u.uOdt!, 2);
-		gl.uniformMatrix3fv(this.u.uToAp1!, false, colMajor(REC709_TO_AP1));
-		gl.uniformMatrix3fv(this.u.uFromAp1!, false, colMajor(invert(REC709_TO_AP1)));
-		this.src = gl.createTexture()!;
+		gl.uniform1i(this.u.uSrc, 0);
+		gl.uniform1i(this.u.uIdt, 1);
+		gl.uniform1i(this.u.uOdt, 2);
+		gl.uniformMatrix3fv(this.u.uToAp1, false, colMajor(REC709_TO_AP1));
+		gl.uniformMatrix3fv(this.u.uFromAp1, false, colMajor(invert(REC709_TO_AP1)));
+		this.src = gl.createTexture();
 		gl.activeTexture(gl.TEXTURE0);
 		gl.bindTexture(gl.TEXTURE_2D, this.src);
 		gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
 		gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
 		gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
 		gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-		const lutTex = (unit: number) => {
-			const t = gl.createTexture()!;
+		/** @param {number} unit @returns {{ tex: WebGLTexture, key: string | null, size: number }} */
+		const lutTex = (unit) => {
+			const t = gl.createTexture();
 			gl.activeTexture(gl.TEXTURE0 + unit);
 			gl.bindTexture(gl.TEXTURE_3D, t);
 			gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
@@ -183,8 +184,8 @@ export class ViewerGL {
 		gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
 	}
 
-	/** Puts a LUT on the GPU (only when it is another one than already there). */
-	setLut(slot: 'idt' | 'odt', lut: Lut | null) {
+	/** Puts a LUT on the GPU (only when it is another one than already there). @param {'idt' | 'odt'} slot @param {Lut | null} lut */
+	setLut(slot, lut) {
 		const s = this.luts[slot];
 		const key = lut ? `${lut.name}:${lut.size}:${lut.hash ?? ''}` : null;
 		if (!lut || s.key === key) return;
@@ -198,8 +199,8 @@ export class ViewerGL {
 		s.size = lut.size;
 	}
 
-	/** One frame: the source's current picture through the chain, onto the canvas. */
-	draw(source: TexImageSource, o: DrawOpts) {
+	/** One frame: the source's current picture through the chain, onto the canvas. @param {TexImageSource} source @param {DrawOpts} o */
+	draw(source, o) {
 		const gl = this.gl, u = this.u;
 		const w = this.canvas.width, h = this.canvas.height;
 		gl.viewport(0, 0, w, h);
@@ -208,19 +209,21 @@ export class ViewerGL {
 		gl.bindTexture(gl.TEXTURE_2D, this.src);
 		gl.pixelStorei(gl.UNPACK_COLORSPACE_CONVERSION_WEBGL, gl.NONE);
 		gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, source);
-		gl.uniform1i(u.uIdtMode!, o.idt);
-		gl.uniform1i(u.uOdtMode!, o.odt);
-		gl.uniform1i(u.uIdtSize!, this.luts.idt.size);
-		gl.uniform1i(u.uOdtSize!, this.luts.odt.size);
+		gl.uniform1i(u.uIdtMode, o.idt);
+		gl.uniform1i(u.uOdtMode, o.odt);
+		gl.uniform1i(u.uIdtSize, this.luts.idt.size);
+		gl.uniform1i(u.uOdtSize, this.luts.odt.size);
 		const g = o.grades.slice(0, 2);
-		gl.uniform1i(u.uGrades!, g.length);
-		const pad = [...g, ...g, { slope: [1, 1, 1], offset: [0, 0, 0], power: [1, 1, 1], sat: 1 }, { slope: [1, 1, 1], offset: [0, 0, 0], power: [1, 1, 1], sat: 1 }].slice(0, 2) as Cdl[];
-		gl.uniform3fv(u.uSlope!, pad.flatMap((x) => x.slope));
-		gl.uniform3fv(u.uOffset!, pad.flatMap((x) => x.offset));
-		gl.uniform3fv(u.uPower!, pad.flatMap((x) => x.power));
-		gl.uniform1fv(u.uSat!, pad.map((x) => x.sat));
-		gl.uniform1i(u.uFalse!, o.falseColor ? 1 : 0);
-		gl.uniform4fv(u.uCrop!, o.crop);
+		gl.uniform1i(u.uGrades, g.length);
+		/** @type {Cdl} */
+		const none = { slope: [1, 1, 1], offset: [0, 0, 0], power: [1, 1, 1], sat: 1 };
+		const pad = [g[0] ?? none, g[1] ?? none];
+		gl.uniform3fv(u.uSlope, pad.flatMap((x) => x.slope));
+		gl.uniform3fv(u.uOffset, pad.flatMap((x) => x.offset));
+		gl.uniform3fv(u.uPower, pad.flatMap((x) => x.power));
+		gl.uniform1fv(u.uSat, pad.map((x) => x.sat));
+		gl.uniform1i(u.uFalse, o.falseColor ? 1 : 0);
+		gl.uniform4fv(u.uCrop, o.crop);
 		gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
 	}
 
@@ -237,13 +240,18 @@ export class ViewerGL {
 	}
 }
 
-const colMajor = (m: number[][]) => new Float32Array([0, 1, 2].flatMap((c) => [0, 1, 2].map((r) => m[r]![c]!)));
+/** @param {number[][]} m */
+const colMajor = (m) => new Float32Array([0, 1, 2].flatMap((c) => [0, 1, 2].map((r) => m[r][c])));
 
 /**
  * The part of a picture a frame shows: it covers the frame (as the render crops it), then the clip's own framing for
  * that shape moves and zooms it within the room left over (x, y in −1…1; zoom ≥ 1).
  */
-export function cover(srcAspect: number, frameAspect: number, f?: { x?: number; y?: number; zoom?: number }): [number, number, number, number] {
+/**
+ * @param {number} srcAspect @param {number} frameAspect @param {{ x?: number, y?: number, zoom?: number }} [f]
+ * @returns {[number, number, number, number]}
+ */
+export function cover(srcAspect, frameAspect, f) {
 	let w = 1, h = 1;
 	if (srcAspect > frameAspect) w = frameAspect / srcAspect;
 	else h = srcAspect / frameAspect;

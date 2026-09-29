@@ -3,23 +3,27 @@
 	file in the source monitor; a drag lays it on a track; a double-click drops it at the playhead. Each picture shows
 	its colour profile (a menu sets it by hand) and whether its HD proxy is ready — the Edit tab plays only proxies.
 -->
-<script lang="ts">
-	import type { MediaItem, Shot } from '$lib/auth/client';
+<script>
 	import ColorBadge from './ColorBadge.svelte';
-	import { isCache } from './color';
-	import { allShots, newShot, shotsMode } from './shots';
-	import { itemName, thumb, type Studio } from './studio.svelte';
+	import { isCache } from './color.js';
+	import { allShots, newShot, shotsMode } from './shots.js';
+	import { itemName, thumb } from './studio.svelte.js';
 
-	let { s }: { s: Studio } = $props();
+	/** @type {{ s: import('./studio.svelte.js').Studio }} */
+	let { s } = $props();
 
-	let kind = $state<'all' | 'image' | 'video' | 'audio' | 'world'>('all');
-	let tag = $state<string | null>(null);
+	/** @typedef {'all' | 'image' | 'video' | 'audio' | 'world'} Kind */
+	let kind = $state(/** @type {Kind} */ ('all'));
+	/** @type {string | null} */
+	let tag = $state(null);
 	let q = $state('');
-	let shots = $state<Shot[]>([]);
+	/** @type {import('$lib/auth/client').Shot[]} */
+	let shots = $state([]);
 	let shotsNote = $state('');
 
 	const ROLES = ['cover', 'in the post', 'poster', 'film', 'author', 'site'];
-	const rank = (t: string) => (t.startsWith('Day ') ? 0 : ROLES.includes(t) ? 1 : t === 'unused' ? 3 : 2);
+	/** @param {string} t */
+	const rank = (t) => (t.startsWith('Day ') ? 0 : ROLES.includes(t) ? 1 : t === 'unused' ? 3 : 2);
 	const files = $derived(s.library.filter((m) => !isCache(m)));
 	const allTags = $derived(
 		[...new Set(files.flatMap((m) => m.tags))].sort((a, b) => rank(a) - rank(b) || a.localeCompare(b, undefined, { numeric: true }))
@@ -43,7 +47,8 @@
 	const shownTimelines = $derived(s.timelines.filter((t) => !tag || t.tags.includes(tag)));
 	// one heading per project, its variants under it (A, B, …); timelines without a project last
 	const groups = $derived.by(() => {
-		const map = new Map<string, typeof shownTimelines>();
+		/** @type {Map<string, typeof shownTimelines>} */
+		const map = new Map();
 		for (const t of shownTimelines) map.set(t.project ?? '', [...(map.get(t.project ?? '') ?? []), t]);
 		for (const l of map.values()) l.sort((a, b) => (a.variant ?? '').localeCompare(b.variant ?? '', undefined, { numeric: true }));
 		return [...map.entries()].sort(([a], [b]) => (a === '' ? 1 : b === '' ? -1 : a.localeCompare(b, undefined, { numeric: true })));
@@ -54,7 +59,7 @@
 			shots = await allShots();
 			shotsNote = shotsMode() === 'local' ? 'kept in this browser until the API has /api/shots' : '';
 		} catch (e) {
-			shotsNote = (e as Error).message;
+			shotsNote = /** @type {Error} */ (e).message;
 		}
 	}
 	$effect(() => void loadShots());
@@ -66,7 +71,8 @@
 		s.placeShot(made, s.time);
 	}
 
-	const proxyLabel: Record<string, string> = { ready: 'proxy', none: 'no proxy yet', queued: 'proxy queued', rendering: 'proxy…', failed: 'proxy failed' };
+	/** @type {Record<string, string>} */
+	const proxyLabel = { ready: 'proxy', none: 'no proxy yet', queued: 'proxy queued', rendering: 'proxy…', failed: 'proxy failed' };
 </script>
 
 <aside class="bin">
@@ -94,7 +100,7 @@
 	<h3>Library</h3>
 	<div class="kinds">
 		{#each [['all', 'All'], ['image', 'Images'], ['video', 'Video'], ['audio', 'Sound'], ['world', 'World']] as [k, label] (k)}
-			<button class:on={kind === k} onclick={() => (kind = k as typeof kind)}>{label}</button>
+			<button class:on={kind === k} onclick={() => (kind = /** @type {Kind} */ (k))}>{label}</button>
 		{/each}
 	</div>
 	<input type="search" bind:value={q} placeholder="Find by name, words or CID" aria-label="Find" />

@@ -6,24 +6,32 @@
 // grows a `__film`, the viewer is `unavailable` and the program monitor falls back to the shot's HD proxy, else to a
 // drawn placeholder (the shot's name, time, hour and camera) — see `placeholder()`. Nothing to remove when B lands:
 // the same code finds `__film` and uses it; delete `placeholder()` only if the placeholder is no longer wanted.
-import type { Cdl, CameraKey, Shape, ShotSpec } from '$lib/auth/client';
 import { SvelteSet } from 'svelte/reactivity';
-import type { Lut } from './luts';
 
-export type FilmView = { lut: Lut | null; grade: Cdl | null; look?: Cdl | null };
-export type Film = {
-	ready(): Promise<void>;
-	prepare(specs: ShotSpec[]): Promise<void>;
-	show(o: { spec: ShotSpec; t: number; shape: Shape; width: number; height: number; view: FilmView }): void | Promise<void>;
-	capture?(o: { spec: ShotSpec; t: number; shape: Shape; width: number; height: number }): Promise<ArrayBuffer>;
-	meter?(spec: ShotSpec): Promise<number>;
-	record: { start(): void; stop(): CameraKey[] | Promise<CameraKey[]> };
-};
+/** @typedef {import('$lib/auth/client').Cdl} Cdl */
+/** @typedef {import('$lib/auth/client').CameraKey} CameraKey */
+/** @typedef {import('$lib/auth/client').Shape} Shape */
+/** @typedef {import('$lib/auth/client').ShotSpec} ShotSpec */
+/** @typedef {{ lut: import('./luts.js').Lut | null, grade: Cdl | null, look?: Cdl | null }} FilmView */
+/** @typedef {{ spec: ShotSpec, t: number, shape: Shape, width: number, height: number, view: FilmView }} ShowArgs */
+/**
+ * The film-mode API of Sandbox 4 (contract C3).
+ * @typedef {{
+ *   ready(): Promise<void>,
+ *   prepare(specs: ShotSpec[]): Promise<void>,
+ *   show(o: ShowArgs): void | Promise<void>,
+ *   capture?(o: { spec: ShotSpec, t: number, shape: Shape, width: number, height: number }): Promise<ArrayBuffer>,
+ *   meter?(spec: ShotSpec): Promise<number>,
+ *   record: { start(): void, stop(): CameraKey[] | Promise<CameraKey[]> }
+ * }} Film
+ */
+/** @typedef {'off' | 'loading' | 'ready' | 'unavailable'} WorldState */
 
-export type WorldState = 'off' | 'loading' | 'ready' | 'unavailable';
-
-/** Where film mode lives; `?world=<url>` on the studio's address points it elsewhere (a test double). */
-export const worldUrl = (base: string) => {
+/**
+ * Where film mode lives; `?world=<url>` on the studio's address points it elsewhere (a test double).
+ * @param {string} base
+ */
+export const worldUrl = (base) => {
 	try {
 		const o = new URL(location.href).searchParams.get('world');
 		if (o && o.startsWith('/')) return o;
@@ -33,32 +41,45 @@ export const worldUrl = (base: string) => {
 	return `${base}/games/sandbox-4/?film`;
 };
 
-const specKey = (s: ShotSpec) => JSON.stringify(s);
+/** @param {ShotSpec} s */
+const specKey = (s) => JSON.stringify(s);
 
 export class WorldViewer {
-	state = $state<WorldState>('off');
-	/** the shots whose world is loaded and kept (by the spec's JSON) */
-	private readyShots = new SvelteSet<string>();
-	private preparing = new Map<string, Promise<void>>();
+	/** @type {WorldState} */
+	state = $state('off');
+	/**
+	 * the shots whose world is loaded and kept (by the spec's JSON)
+	 * @type {SvelteSet<string>}
+	 */
+	readyShots = new SvelteSet();
+	/** @type {Map<string, Promise<void>>} */
+	preparing = new Map();
 	/** how far the world's resolution is stepped down to keep up (1 = full proxy HD): drop resolution, never frames */
 	scale = $state(1);
-	iframe: HTMLIFrameElement | null = null;
-	private film: Film | null = null;
-	private busy = false;
-	private queued: Parameters<Film['show']>[0] | null = null;
+	/** @type {HTMLIFrameElement | null} */
+	iframe = null;
+	/** @type {Film | null} */
+	film = null;
+	busy = false;
+	/** @type {ShowArgs | null} */
+	queued = null;
 	recording = $state(false);
 
-	/** Starts the world in its iframe and waits (up to `wait` ms) for film mode to answer. */
-	async attach(iframe: HTMLIFrameElement, url: string, wait = 20000) {
+	/**
+	 * Starts the world in its iframe and waits (up to `wait` ms) for film mode to answer.
+	 * @param {HTMLIFrameElement} iframe @param {string} url
+	 */
+	async attach(iframe, url, wait = 20000) {
 		if (this.iframe === iframe && this.state !== 'off') return;
 		this.iframe = iframe;
 		this.state = 'loading';
 		if (iframe.getAttribute('src') !== url) iframe.src = url;
 		const t0 = performance.now();
 		while (performance.now() - t0 < wait) {
-			let film: Film | undefined;
+			/** @type {Film | undefined} */
+			let film;
 			try {
-				film = (iframe.contentWindow as (Window & { __film?: Film }) | null)?.__film;
+				film = /** @type {(Window & { __film?: Film }) | null} */ (iframe.contentWindow)?.__film;
 			} catch {
 				break; // another origin: not film mode
 			}
@@ -85,15 +106,20 @@ export class WorldViewer {
 		this.preparing.clear();
 	}
 
-	isReady = (spec: ShotSpec) => this.state === 'ready' && this.readyShots.has(specKey(spec));
+	/** @param {ShotSpec} spec */
+	isReady = (spec) => this.state === 'ready' && this.readyShots.has(specKey(spec));
 
-	/** Loads and keeps everything these shots need (every dome, set and area); resolves when all are ready. */
-	prepare(specs: ShotSpec[]): Promise<void> {
-		if (!this.film) return Promise.resolve();
+	/**
+	 * Loads and keeps everything these shots need (every dome, set and area); resolves when all are ready.
+	 * @param {ShotSpec[]} specs @returns {Promise<void>}
+	 */
+	prepare(specs) {
+		const film = this.film;
+		if (!film) return Promise.resolve();
 		const todo = specs.filter((s) => !this.readyShots.has(specKey(s)) && !this.preparing.has(specKey(s)));
 		for (const s of todo) {
 			const k = specKey(s);
-			const p = this.film
+			const p = film
 				.prepare([s])
 				.then(() => void this.readyShots.add(k))
 				.catch(() => {})
@@ -107,7 +133,8 @@ export class WorldViewer {
 	 * Draws one frame. A frame asked for while the last is still drawing replaces the waiting one (the newest time
 	 * wins), and a slow frame steps the resolution down — the picture keeps up with the clock.
 	 */
-	show(o: Parameters<Film['show']>[0]) {
+	/** @param {ShowArgs} o */
+	show(o) {
 		if (!this.film) return;
 		if (this.busy) return void (this.queued = o);
 		this.busy = true;
@@ -132,7 +159,8 @@ export class WorldViewer {
 		this.recording = true;
 		return true;
 	}
-	async stopRecording(): Promise<CameraKey[]> {
+	/** @returns {Promise<CameraKey[]>} */
+	async stopRecording() {
 		if (!this.film || !this.recording) return [];
 		this.recording = false;
 		return (await this.film.record.stop()) ?? [];
@@ -143,12 +171,17 @@ export class WorldViewer {
  * The stand-in for a world frame when film mode is not there: a sky by the hour, the horizon by the camera's pitch, and
  * the shot's name and time — enough to cut and time against. Drawn on a 2D canvas the viewer shows in its place.
  */
-export function placeholder(canvas: HTMLCanvasElement, o: { name: string; t: number; seconds: number; hour: number; pose: number[]; fov: number; note: string }) {
+/**
+ * @param {HTMLCanvasElement} canvas
+ * @param {{ name: string, t: number, seconds: number, hour: number, pose: number[], fov: number, note: string }} o
+ */
+export function placeholder(canvas, o) {
 	const g = canvas.getContext('2d');
 	if (!g) return;
 	const w = canvas.width, h = canvas.height;
 	const day = Math.max(0, Math.sin(((o.hour - 6) / 12) * Math.PI));
-	const sky = (a: number) => `rgb(${Math.round(20 + 150 * day * a)} ${Math.round(30 + 170 * day * a)} ${Math.round(60 + 170 * day)})`;
+	/** @param {number} a */
+	const sky = (a) => `rgb(${Math.round(20 + 150 * day * a)} ${Math.round(30 + 170 * day * a)} ${Math.round(60 + 170 * day)})`;
 	const grd = g.createLinearGradient(0, 0, 0, h);
 	grd.addColorStop(0, sky(0.7));
 	grd.addColorStop(1, sky(1));

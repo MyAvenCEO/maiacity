@@ -2,19 +2,19 @@
 	A picture's colour profile, as a small badge: what the ingest detected (meta.color.profile) or what was set by hand
 	(meta.color.override, underlined). A click opens the menu to set it — the proxy is made again from the new one.
 -->
-<script lang="ts">
-	import type { MediaItem } from '$lib/auth/client';
-	import { PROFILE_CHOICES, colorOf, profileFor, profileInfo, short } from './color';
-	import type { Studio } from './studio.svelte';
+<script>
+	import { PROFILE_CHOICES, colorOf, profileFor, profileInfo, short } from './color.js';
 
-	let { s, m, compact = false }: { s: Studio; m: MediaItem; compact?: boolean } = $props();
+	/** @type {{ s: import('./studio.svelte.js').Studio, m: import('$lib/auth/client').MediaItem, compact?: boolean }} */
+	let { s, m, compact = false } = $props();
 	let open = $state(false);
 	const p = $derived(profileFor(m));
 	const c = $derived(colorOf(m));
 	const title = $derived(
 		`${profileInfo(p.profile).label}${p.override ? ' — set by hand' : p.guessed ? ' — assumed (not detected yet)' : c?.detectedFrom ? ` — ${c.detectedFrom}` : ''}. Click to change.`
 	);
-	function choose(profile: string | null) {
+	/** @param {string | null} profile */
+	function choose(profile) {
 		open = false;
 		void s.setOverride(m, profile);
 	}

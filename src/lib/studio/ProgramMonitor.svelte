@@ -5,38 +5,42 @@
 	iframe driven by the timeline's clock); while its world is not ready its HD proxy plays, else a drawn stand-in.
 	Captions are HTML over the picture — graphics, never graded.
 -->
-<script lang="ts">
+<script>
 	import { base } from '$app/paths';
-	import type { Shape } from '$lib/auth/client';
-	import { evaluate } from './shots';
-	import { clockText, isWorld, ratio, raw, type Studio } from './studio.svelte';
+	import { evaluate } from './shots.js';
+	import { clockText, isWorld, ratio, raw } from './studio.svelte.js';
 	import Viewer from './Viewer.svelte';
-	import type { ViewPlan } from './view';
-	import { placeholder, worldUrl } from './world.svelte';
+	import { placeholder, worldUrl } from './world.svelte.js';
 
-	let { s, label = 'Program' }: { s: Studio; label?: string } = $props();
+	/** @typedef {import('$lib/auth/client').Shape} Shape */
+	/** @type {{ s: import('./studio.svelte.js').Studio, label?: string }} */
+	let { s, label = 'Program' } = $props();
 
-	let iframe = $state<HTMLIFrameElement | null>(null);
-	let stand = $state<HTMLCanvasElement | null>(null);
-	let plan = $state<ViewPlan | null>(null);
+	/** @type {HTMLIFrameElement | null} */
+	let iframe = $state(null);
+	/** @type {HTMLCanvasElement | null} */
+	let stand = $state(null);
+	/** @type {import('./view.js').ViewPlan | null} */
+	let plan = $state(null);
 	let gl = $state(true);
 
 	const pic = $derived(s.picture);
 	const spec = $derived(isWorld(pic) ? s.specOf(pic) : null);
 	/** the live world is showing this frame */
 	const live = $derived(!!spec && s.world.state === 'ready' && s.world.isReady(spec));
-	const worldVideo = $derived(isWorld(pic) && !live ? (s.reelVideos[pic!.id] ?? null) : null);
+	const worldVideo = $derived(isWorld(pic) && !live ? (s.reelVideos[pic?.id ?? ''] ?? null) : null);
 	const source = $derived.by(() => {
 		if (!pic) return null;
 		if (isWorld(pic)) return live ? null : (worldVideo ?? stand);
 		if (s.pictureItem?.kind === 'image') return s.stillEl;
 		return s.reelVideos[pic.id] ?? null;
 	});
-	const frameOf = $derived(pic && !isWorld(pic) ? pic.frame?.[s.viewShape as Shape] : undefined);
+	const frameOf = $derived(pic && !isWorld(pic) ? pic.frame?.[/** @type {Shape} */ (s.viewShape)] : undefined);
 
 	// the scopes read the live world's own canvas while it shows the frame (same origin), else the viewer
 	$effect(() => {
-		let c: HTMLCanvasElement | null = null;
+		/** @type {HTMLCanvasElement | null} */
+		let c = null;
 		try {
 			c = live ? (iframe?.contentDocument?.querySelector('canvas') ?? null) : null;
 		} catch {
@@ -62,7 +66,7 @@
 	$effect(() => {
 		if (!stand || !spec || !pic || live || worldVideo) return;
 		const t = s.shotTime(pic);
-		const e = evaluate(spec, t, s.viewShape as Shape);
+		const e = evaluate(spec, t, /** @type {Shape} */ (s.viewShape));
 		const r = ratio(s.viewShape);
 		stand.width = r >= 1 ? 960 : Math.round(960 * r);
 		stand.height = r >= 1 ? Math.round(960 / r) : 960;

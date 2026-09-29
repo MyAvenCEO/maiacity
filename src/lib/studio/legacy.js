@@ -6,26 +6,34 @@
 // API only what it accepts, and puts the two back together when a timeline opens. An API that answers with `stage`
 // knows C1, and then this does nothing.
 //
-// To remove once C1 is live: delete this file and its three calls in studio.svelte.ts (`c1Knows`, `toServer`,
+// To remove once C1 is live: delete this file and its three calls in studio.svelte.js (`c1Knows`, `toServer`,
 // `fromServer`).
-import type { Timeline, TimelineClip } from '$lib/auth/client';
 
-const KEY = (id: string) => `studio:c1:${id}`;
-type Kept = Pick<Timeline, 'stage' | 'version' | 'color' | 'grade'> & {
-	/** per clip id: what the old API drops */
-	clips: Record<string, Pick<TimelineClip, 'grade' | 'frame'>>;
-	/** whole world clips, which the old API refuses */
-	world: TimelineClip[];
-};
+/** @typedef {import('$lib/auth/client').Timeline} Timeline */
+/** @typedef {import('$lib/auth/client').TimelineClip} TimelineClip */
+/**
+ * clips: per clip id, what the old API drops; world: whole world clips, which the old API refuses.
+ * @typedef {Pick<Timeline, 'stage' | 'version' | 'color' | 'grade'> & { clips: Record<string, Pick<TimelineClip, 'grade' | 'frame'>>, world: TimelineClip[] }} Kept
+ */
 
-/** Does this API keep C1's fields? (It answers with `stage` when it does.) */
-export const c1Knows = (t: Partial<Timeline> | null | undefined) => !!t && 'stage' in t && t.stage !== undefined;
+/** @param {string} id */
+const KEY = (id) => `studio:c1:${id}`;
 
-/** What goes to an API without C1 (media clips only), with the rest kept in this browser. */
-export function toServer(id: string, body: Partial<Timeline>, knows: boolean): Partial<Timeline> {
+/**
+ * Does this API keep C1's fields? (It answers with `stage` when it does.)
+ * @param {Partial<Timeline> | null | undefined} t
+ */
+export const c1Knows = (t) => !!t && 'stage' in t && t.stage !== undefined;
+
+/**
+ * What goes to an API without C1 (media clips only), with the rest kept in this browser.
+ * @param {string} id @param {Partial<Timeline>} body @param {boolean} knows @returns {Partial<Timeline>}
+ */
+export function toServer(id, body, knows) {
 	if (knows) return body;
 	const clips = body.clips ?? [];
-	const kept: Kept = {
+	/** @type {Kept} */
+	const kept = {
 		stage: body.stage,
 		version: body.version,
 		color: body.color,
@@ -41,17 +49,22 @@ export function toServer(id: string, body: Partial<Timeline>, knows: boolean): P
 	return { ...body, clips: clips.filter((c) => c.kind !== 'world' && c.cid) };
 }
 
-/** A timeline from an API without C1, with what this browser kept for it put back. */
-export function fromServer(t: Timeline): Timeline {
+/**
+ * A timeline from an API without C1, with what this browser kept for it put back.
+ * @param {Timeline} t @returns {Timeline}
+ */
+export function fromServer(t) {
 	if (c1Knows(t)) return t;
-	let kept: Kept | null = null;
+	/** @type {Kept | null} */
+	let kept = null;
 	try {
 		kept = JSON.parse(localStorage.getItem(KEY(t.id)) ?? 'null');
 	} catch {
 		/* nothing kept */
 	}
 	if (!kept) return t;
-	const clips = t.clips.map((c) => ({ ...c, ...(kept!.clips[c.id] ?? {}) }));
+	const k = kept;
+	const clips = t.clips.map((c) => ({ ...c, ...(k.clips[c.id] ?? {}) }));
 	return {
 		...t,
 		stage: kept.stage,

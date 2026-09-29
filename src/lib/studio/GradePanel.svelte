@@ -4,28 +4,36 @@
 	Presets are today's looks; a world shot suggests the one it was lit for. A media clip's framing per shape is here
 	too. Everything is data on the timeline, saved like every other edit; nothing is baked.
 -->
-<script lang="ts">
-	import type { Cdl, ClipFrame, Shape } from '$lib/auth/client';
-	import { NEUTRAL, PRESETS, isNeutral, neutral, presetOf } from './color';
-	import { SHAPES, isWorld, type Studio } from './studio.svelte';
+<script>
+	import { NEUTRAL, PRESETS, isNeutral, neutral, presetOf } from './color.js';
+	import { SHAPES, isWorld } from './studio.svelte.js';
 
-	let { s }: { s: Studio } = $props();
+	/** @typedef {import('$lib/auth/client').Cdl} Cdl */
+	/** @typedef {import('$lib/auth/client').ClipFrame} ClipFrame */
+	/** @typedef {'slope' | 'offset' | 'power'} Part */
+	/** @type {{ s: import('./studio.svelte.js').Studio }} */
+	let { s } = $props();
 
 	const clip = $derived(s.sel && s.sel.track === 'V1' ? s.sel : null);
 	const film = $derived(s.gradeTarget === 'film' || !clip);
-	const g = $derived<Cdl>((film ? s.current?.grade?.look : clip?.grade) ?? (NEUTRAL as Cdl));
+	/** @type {Cdl} */
+	const g = $derived((film ? s.current?.grade?.look : clip?.grade) ?? NEUTRAL);
 	const suggestion = $derived(clip && isWorld(clip) ? s.specOf(clip)?.look : undefined);
 	const ro = $derived(!s.locked);
 
+	/** @type {{ k: Part, label: string, min: number, max: number, step: number, id: number }[]} */
 	const ROWS = [
 		{ k: 'slope', label: 'Slope · gain', min: 0, max: 2, step: 0.005, id: 1 },
 		{ k: 'offset', label: 'Offset · lift', min: -0.2, max: 0.2, step: 0.001, id: 0 },
 		{ k: 'power', label: 'Power · gamma', min: 0.4, max: 2.5, step: 0.005, id: 1 }
-	] as const;
-	const CH = ['R', 'G', 'B'] as const;
+	];
+	const CH = ['R', 'G', 'B'];
+	/** A copy of the grade on screen, to change. @returns {Cdl} */
+	const copy = () => structuredClone($state.snapshot(g));
 
-	function set(k: 'slope' | 'offset' | 'power', i: number | 'all', v: number) {
-		const next = structuredClone($state.snapshot(g)) as Cdl;
+	/** @param {Part} k @param {number | 'all'} i @param {number} v */
+	function set(k, i, v) {
+		const next = copy();
 		if (i === 'all') {
 			// the master moves the three together, keeping their differences
 			const mean = (next[k][0] + next[k][1] + next[k][2]) / 3;
@@ -33,21 +41,29 @@
 		} else next[k][i] = v;
 		s.setGrade(next);
 	}
-	const setSat = (v: number) => s.setGrade({ ...(structuredClone($state.snapshot(g)) as Cdl), sat: v });
-	const resetRow = (k: 'slope' | 'offset' | 'power') => s.setGrade({ ...(structuredClone($state.snapshot(g)) as Cdl), [k]: [...NEUTRAL[k]] });
-	function preset(name: string) {
+	/** @param {number} v */
+	const setSat = (v) => s.setGrade({ ...copy(), sat: v });
+	/** @param {Part} k */
+	const resetRow = (k) => s.setGrade({ ...copy(), [k]: [...NEUTRAL[k]] });
+	/** @param {string} name */
+	function preset(name) {
 		const p = PRESETS[name];
 		if (!p) return;
-		const cdl = structuredClone(p.cdl) as Cdl;
+		/** @type {Cdl} */
+		const cdl = structuredClone(p.cdl);
 		if (film) s.setMeta({ grade: { look: isNeutral(cdl) ? null : cdl, ...(name === 'neutral' ? {} : { preset: name }) } });
 		else s.setGrade(cdl);
 	}
-	const mean = (v: readonly number[]) => (v[0]! + v[1]! + v[2]!) / 3;
-	const shown = (v: number) => v.toFixed(3);
+	/** @param {readonly number[]} v */
+	const mean = (v) => (v[0] + v[1] + v[2]) / 3;
+	/** @param {number} v */
+	const shown = (v) => v.toFixed(3);
 
 	// framing, per shape (media clips)
-	const frame = $derived<ClipFrame>((clip && !isWorld(clip) ? clip.frame?.[s.shape] : undefined) ?? { x: 0, y: 0, zoom: 1 });
-	const setFrame = (patch: Partial<ClipFrame>) => clip && s.setFrame(clip.id, s.shape, { ...frame, ...patch });
+	/** @type {ClipFrame} */
+	const frame = $derived((clip && !isWorld(clip) ? clip.frame?.[s.shape] : undefined) ?? { x: 0, y: 0, zoom: 1 });
+	/** @param {Partial<ClipFrame>} patch */
+	const setFrame = (patch) => clip && s.setFrame(clip.id, s.shape, { ...frame, ...patch });
 </script>
 
 <aside class="grade">
@@ -58,7 +74,7 @@
 		<button role="tab" aria-selected={film} class:on={film} onclick={() => (s.gradeTarget = 'film')}>Film look</button>
 	</div>
 	<p class="what">
-		{#if film}The whole film's look{#if s.current?.grade?.preset} · <b>{s.current.grade.preset}</b>{/if}{:else}{s.clipName(clip!)}{#if presetOf(clip?.grade) && presetOf(clip?.grade) !== 'neutral'} · <b>{presetOf(clip?.grade)}</b>{/if}{/if}
+		{#if film}The whole film's look{#if s.current?.grade?.preset} · <b>{s.current.grade.preset}</b>{/if}{:else}{clip ? s.clipName(clip) : ''}{#if presetOf(clip?.grade) && presetOf(clip?.grade) !== 'neutral'} · <b>{presetOf(clip?.grade)}</b>{/if}{/if}
 		{#if !isNeutral(g)}<span class="on">graded</span>{/if}
 	</p>
 
@@ -87,7 +103,7 @@
 					<label class="ch {c}">
 						<span>{c}</span>
 						<input type="range" min={r.min} max={r.max} step={r.step} value={g[r.k][i]} oninput={(e) => set(r.k, i, Number(e.currentTarget.value))} ondblclick={() => set(r.k, i, r.id)} />
-						<output>{shown(g[r.k][i]!)}</output>
+						<output>{shown(g[r.k][i])}</output>
 					</label>
 				{/each}
 			</div>
@@ -105,7 +121,7 @@
 	{#if clip && !isWorld(clip)}
 		<h3>Framing · {s.shape}</h3>
 		<div class="shapes">
-			{#each SHAPES as sh (sh)}<button class="chip" class:on={s.shape === sh} class:set={!!clip.frame?.[sh as Shape]} onclick={() => (s.shape = sh)}>{sh}</button>{/each}
+			{#each SHAPES as sh (sh)}<button class="chip" class:on={s.shape === sh} class:set={!!clip.frame?.[sh]} onclick={() => (s.shape = sh)}>{sh}</button>{/each}
 		</div>
 		<label class="m"><span>x</span><input type="range" min="-1" max="1" step="0.01" value={frame.x} oninput={(e) => setFrame({ x: Number(e.currentTarget.value) })} /><output>{frame.x.toFixed(2)}</output></label>
 		<label class="m"><span>y</span><input type="range" min="-1" max="1" step="0.01" value={frame.y} oninput={(e) => setFrame({ y: Number(e.currentTarget.value) })} /><output>{frame.y.toFixed(2)}</output></label>

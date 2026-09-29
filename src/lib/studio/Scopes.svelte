@@ -3,25 +3,30 @@
 	by column), the RGB parade, the vectorscope (Rec.709 chroma), and a false-colour exposure overlay on the picture.
 	They read the viewer back a few times a second.
 -->
-<script lang="ts">
+<script>
 	import { onDestroy, onMount } from 'svelte';
-	import type { Studio } from './studio.svelte';
 
-	let { s }: { s: Studio } = $props();
+	/** @type {{ s: import('./studio.svelte.js').Studio }} */
+	let { s } = $props();
 
-	let mode = $state<'wave' | 'parade'>('wave');
-	let left = $state<HTMLCanvasElement | null>(null);
-	let right = $state<HTMLCanvasElement | null>(null);
+	/** @type {'wave' | 'parade'} */
+	let mode = $state('wave');
+	/** @type {HTMLCanvasElement | null} */
+	let left = $state(null);
+	/** @type {HTMLCanvasElement | null} */
+	let right = $state(null);
 	/** a signature of the last frame read, so a still frame is not measured again and again */
 	let lastSig = '';
-	let timer: ReturnType<typeof setInterval> | null = null;
+	/** @type {ReturnType<typeof setInterval> | null} */
+	let timer = null;
 	const probe = typeof document !== 'undefined' ? document.createElement('canvas') : null;
 	/** exposed for tests and the curious: the mean luma of the last frame read (0…1) */
 	let mean = $state(0);
 
 	const W = 192, H = 108;
 
-	function read(): Uint8ClampedArray | null {
+	/** @returns {Uint8ClampedArray | null} */
+	function read() {
 		const src = s.scopeCanvas ?? s.viewerCanvas;
 		if (!src || !probe || !src.width || !src.height) return null;
 		probe.width = W;
@@ -36,10 +41,11 @@
 		}
 	}
 
-	function plot(canvas: HTMLCanvasElement, w: number, h: number, draw: (img: ImageData) => void) {
+	/** @param {HTMLCanvasElement} canvas @param {number} w @param {number} h @param {(img: ImageData) => void} draw */
+	function plot(canvas, w, h, draw) {
 		canvas.width = w;
 		canvas.height = h;
-		const g = canvas.getContext('2d')!;
+		const g = /** @type {CanvasRenderingContext2D} */ (canvas.getContext('2d'));
 		const img = g.createImageData(w, h);
 		for (let i = 3; i < img.data.length; i += 4) img.data[i] = 255;
 		draw(img);
@@ -55,11 +61,12 @@
 			g.stroke();
 		}
 	}
-	const add = (img: ImageData, x: number, y: number, c: [number, number, number], k = 38) => {
+	/** @param {ImageData} img @param {number} x @param {number} y @param {[number, number, number]} c */
+	const add = (img, x, y, c, k = 38) => {
 		const i = (y * img.width + x) * 4;
-		img.data[i] = Math.min(255, img.data[i]! + c[0] * k);
-		img.data[i + 1] = Math.min(255, img.data[i + 1]! + c[1] * k);
-		img.data[i + 2] = Math.min(255, img.data[i + 2]! + c[2] * k);
+		img.data[i] = Math.min(255, img.data[i] + c[0] * k);
+		img.data[i + 1] = Math.min(255, img.data[i + 1] + c[1] * k);
+		img.data[i + 2] = Math.min(255, img.data[i + 2] + c[2] * k);
 	};
 
 	function update() {
@@ -67,7 +74,7 @@
 		const px = read();
 		if (!px || !left || !right) return;
 		let sig = 0;
-		for (let i = 0; i < px.length; i += 97) sig = (sig * 31 + px[i]!) | 0;
+		for (let i = 0; i < px.length; i += 97) sig = (sig * 31 + px[i]) | 0;
 		const key = `${sig}:${mode}`;
 		if (key === lastSig) return;
 		lastSig = key;
@@ -78,7 +85,7 @@
 				for (let y = 0; y < H; y++)
 					for (let x = 0; x < W; x++) {
 						const i = (y * W + x) * 4;
-						const l = (0.2126 * px[i]! + 0.7152 * px[i + 1]! + 0.0722 * px[i + 2]!) / 255;
+						const l = (0.2126 * px[i] + 0.7152 * px[i + 1] + 0.0722 * px[i + 2]) / 255;
 						sum += l;
 						add(img, x, Math.round((1 - l) * (h - 1)), [0.55, 1, 0.6]);
 					}
@@ -90,10 +97,11 @@
 					for (let x = 0; x < W; x += 1) {
 						const i = (y * W + x) * 4;
 						const xx = Math.floor(x / 3);
-						sum += (0.2126 * px[i]! + 0.7152 * px[i + 1]! + 0.0722 * px[i + 2]!) / 255;
+						sum += (0.2126 * px[i] + 0.7152 * px[i + 1] + 0.0722 * px[i + 2]) / 255;
 						for (let c = 0; c < 3; c++) {
-							const col: [number, number, number] = c === 0 ? [1, 0.25, 0.2] : c === 1 ? [0.3, 1, 0.35] : [0.3, 0.45, 1];
-							add(img, c * cw + xx, Math.round((1 - px[i + c]! / 255) * (h - 1)), col, 60);
+							/** @type {[number, number, number]} */
+							const col = c === 0 ? [1, 0.25, 0.2] : c === 1 ? [0.3, 1, 0.35] : [0.3, 0.45, 1];
+							add(img, c * cw + xx, Math.round((1 - px[i + c] / 255) * (h - 1)), col, 60);
 						}
 					}
 			});
@@ -103,14 +111,14 @@
 		const n = 128;
 		plot(right, n, n, (img) => {
 			for (let i = 0; i < px.length; i += 4) {
-				const r = px[i]! / 255, g = px[i + 1]! / 255, b = px[i + 2]! / 255;
+				const r = px[i] / 255, g = px[i + 1] / 255, b = px[i + 2] / 255;
 				const y = 0.2126 * r + 0.7152 * g + 0.0722 * b;
 				const cb = (b - y) / 1.8556, cr = (r - y) / 1.5748;
 				const x = Math.round(n / 2 + cb * n * 0.9), yy = Math.round(n / 2 - cr * n * 0.9);
 				if (x >= 0 && x < n && yy >= 0 && yy < n) add(img, x, yy, [0.7, 1, 0.75], 30);
 			}
 		});
-		const g = right.getContext('2d')!;
+		const g = /** @type {CanvasRenderingContext2D} */ (right.getContext('2d'));
 		g.strokeStyle = 'rgb(255 255 255 / 0.2)';
 		g.beginPath();
 		g.arc(n / 2, n / 2, n * 0.45, 0, Math.PI * 2);

@@ -15,148 +15,220 @@ import {
 	me,
 	missing,
 	queueRender,
-	saveTimeline,
-	type Cdl,
-	type ClipFrame,
-	type Delivery,
-	type MediaItem,
-	type RenderJob,
-	type Shape,
-	type Shot,
-	type ShotSpec,
-	type Timeline,
-	type TimelineClip,
-	type TimelineStage
+	saveTimeline
 } from '$lib/auth/client';
-import { clean, gradesFor, isCache, presetOf, profileFor, proxyFor, type ProxyState } from './color';
-import { c1Knows, fromServer, toServer } from './legacy';
-import { loadLut, lutIndex, type Lut, type LutSource } from './luts';
-import { cached, evaluate, saveSpec, shotAt } from './shots';
-import { WorldViewer } from './world.svelte';
+import { clean, gradesFor, isCache, presetOf, profileFor, proxyFor } from './color.js';
+import { c1Knows, fromServer, toServer } from './legacy.js';
+import { loadLut, lutIndex } from './luts.js';
+import { cached, evaluate, saveSpec, shotAt } from './shots.js';
+import { WorldViewer } from './world.svelte.js';
 
-export type Track = 'V1' | 'A1' | 'A2' | 'A3';
-export type Clip = TimelineClip;
-export type Source = { url: string; duration: number; peaks: number[]; buffer?: AudioBuffer };
-export type Timed = { word: string; start: number; end: number };
-export type Tab = 'edit' | 'grade' | 'render';
-/** A sound cue of a world shot, where it lands on A3 (derived from the shot record, never saved as a clip). */
-export type CueClip = Clip & { cue: true; from: string };
+/** @typedef {import('$lib/auth/client').Cdl} Cdl */
+/** @typedef {import('$lib/auth/client').ClipFrame} ClipFrame */
+/** @typedef {import('$lib/auth/client').Delivery} Delivery */
+/** @typedef {import('$lib/auth/client').MediaItem} MediaItem */
+/** @typedef {import('$lib/auth/client').RenderJob} RenderJob */
+/** @typedef {import('$lib/auth/client').Shape} Shape */
+/** @typedef {import('$lib/auth/client').Shot} Shot */
+/** @typedef {import('$lib/auth/client').ShotSpec} ShotSpec */
+/** @typedef {import('$lib/auth/client').Timeline} Timeline */
+/** @typedef {import('$lib/auth/client').TimelineStage} TimelineStage */
+/** @typedef {import('./color.js').ProxyState} ProxyState */
+/** @typedef {import('./luts.js').Lut} Lut */
+/** @typedef {import('./luts.js').LutSource} LutSource */
+/** @typedef {'V1' | 'A1' | 'A2' | 'A3'} Track */
+/** @typedef {import('$lib/auth/client').TimelineClip} Clip */
+/** @typedef {{ url: string, duration: number, peaks: number[], buffer?: AudioBuffer }} Source */
+/** @typedef {{ word: string, start: number, end: number }} Timed */
+/** @typedef {'edit' | 'grade' | 'render'} Tab */
+/**
+ * A sound cue of a world shot, where it lands on A3 (derived from the shot record, never saved as a clip).
+ * @typedef {Clip & { cue: true, from: string }} CueClip
+ */
+/** @typedef {Delivery & Record<string, unknown>} DeliveryRecord */
 
-export const TRACKS: { id: Track | 'T1'; label: string; accepts: string[] }[] = [
+/** @type {{ id: Track | 'T1', label: string, accepts: string[] }[]} */
+export const TRACKS = [
 	{ id: 'V1', label: 'Picture', accepts: ['image', 'video', 'world'] },
 	{ id: 'A1', label: 'Voice', accepts: ['audio'] },
 	{ id: 'A2', label: 'Music', accepts: ['audio'] },
 	{ id: 'A3', label: 'Sound', accepts: ['audio'] },
 	{ id: 'T1', label: 'Captions', accepts: [] }
 ];
-export const SHAPES: Shape[] = ['16:9', '9:16', '1:1', '4:5'];
-export const STAGES: TimelineStage[] = ['edit', 'locked', 'graded', 'rendered'];
+/** @type {Shape[]} */
+export const SHAPES = ['16:9', '9:16', '1:1', '4:5'];
+/** @type {TimelineStage[]} */
+export const STAGES = ['edit', 'locked', 'graded', 'rendered'];
 const LAST = 'maia-studio-last-timeline';
 const OPEN = 'studio:open-projects';
 export const IMAGE_LEN = 4;
 /** How far the music steps back under the voice: about −6 dB. */
 const DUCK = 0.5;
 
-export const isWorld = (c: Clip | null | undefined) => c?.kind === 'world';
-export const ratio = (shape: string) => {
+/** @param {Clip | null | undefined} c */
+export const isWorld = (c) => c?.kind === 'world';
+/** @param {string} shape */
+export const ratio = (shape) => {
 	const [w, h] = shape.split(':').map(Number);
 	return (w || 16) / (h || 9);
 };
-/** The world's proxy-level frame for a shape: HD, the long edge 1920. */
-export const hd = (shape: string) => {
+/**
+ * The world's proxy-level frame for a shape: HD, the long edge 1920.
+ * @param {string} shape
+ */
+export const hd = (shape) => {
 	const r = ratio(shape);
 	return r >= 1 ? { width: 1920, height: Math.round(1920 / r) } : { width: Math.round(1920 * r), height: 1920 };
 };
-export const clockText = (t: number) => {
+/** @param {number} t */
+export const clockText = (t) => {
 	const m = Math.floor(t / 60), s = Math.floor(t % 60), cs = Math.floor((t % 1) * 100);
 	return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}.${String(cs).padStart(2, '0')}`;
 };
-export const raw = (cid: string) => `${API}/api/media/${cid}`;
+/** @param {string} cid */
+export const raw = (cid) => `${API}/api/media/${cid}`;
 // thumbnails from the CDN copy when there is one (cached, public), else from the library itself
-export const thumb = (m: MediaItem) => (m.cdn_path ? `https://maia.city/${m.cdn_path}` : raw(m.cid));
-export const itemName = (m: MediaItem | undefined) => m?.title || m?.cid.slice(0, 10) || '';
-export const running = (r: RenderJob) => r.status === 'queued' || r.status === 'rendering';
+/** @param {MediaItem} m */
+export const thumb = (m) => (m.cdn_path ? `https://maia.city/${m.cdn_path}` : raw(m.cid));
+/** @param {MediaItem | undefined} m */
+export const itemName = (m) => m?.title || m?.cid.slice(0, 10) || '';
+/** @param {RenderJob} r */
+export const running = (r) => r.status === 'queued' || r.status === 'rendering';
 
 export class Studio {
-	phase = $state<'loading' | 'signed-out' | 'forbidden' | 'ready'>('loading');
+	/** @type {'loading' | 'signed-out' | 'forbidden' | 'ready'} */
+	phase = $state('loading');
 	error = $state('');
-	failed = $state<string | null>(null);
-	tab = $state<Tab>('edit');
+	/** @type {string | null} */
+	failed = $state(null);
+	/** @type {Tab} */
+	tab = $state('edit');
 
-	library = $state<MediaItem[]>([]);
-	timelines = $state<Timeline[]>([]);
-	current = $state<Timeline | null>(null);
-	saving = $state<'saved' | 'saving' | 'unsaved'>('saved');
+	/** @type {MediaItem[]} */
+	library = $state([]);
+	/** @type {Timeline[]} */
+	timelines = $state([]);
+	/** @type {Timeline | null} */
+	current = $state(null);
+	/** @type {'saved' | 'saving' | 'unsaved'} */
+	saving = $state('saved');
 	/** does the API keep C1's fields (stage, grades, world clips)? Until it does, legacy.ts keeps them here */
 	c1 = $state(true);
 
-	clips = $state<Clip[]>([]);
-	selected = $state<string | null>(null);
-	sources = $state<Record<string, Source>>({});
+	/** @type {Clip[]} */
+	clips = $state([]);
+	/** @type {string | null} */
+	selected = $state(null);
+	/** @type {Record<string, Source>} */
+	sources = $state({});
 	pxPerSec = $state(60);
 	time = $state(0);
 	playing = $state(false);
-	lanes = $state<HTMLDivElement | null>(null);
-	/** The monitor's videos, by clip: the shot on screen and the next ones, loaded and waiting on their first frame. */
-	reelVideos: Record<string, HTMLVideoElement | null> = $state({});
-	/** the program monitor (what goes full screen) */
-	screen = $state<HTMLElement | null>(null);
-	/** the program monitor's still, when the picture is an image */
-	stillEl = $state<HTMLImageElement | null>(null);
+	/** @type {HTMLDivElement | null} */
+	lanes = $state(null);
+	/**
+	 * The monitor's videos, by clip: the shot on screen and the next ones, loaded and waiting on their first frame.
+	 * @type {Record<string, HTMLVideoElement | null>}
+	 */
+	reelVideos = $state({});
+	/**
+	 * the program monitor (what goes full screen)
+	 * @type {HTMLElement | null}
+	 */
+	screen = $state(null);
+	/**
+	 * the program monitor's still, when the picture is an image
+	 * @type {HTMLImageElement | null}
+	 */
+	stillEl = $state(null);
 
-	/** the source monitor's file and its player (the timeline pauses it when it plays) */
-	preview = $state<string | null>(null);
-	srcEl = $state<HTMLMediaElement | null>(null);
+	/**
+	 * the source monitor's file and its player (the timeline pauses it when it plays)
+	 * @type {string | null}
+	 */
+	preview = $state(null);
+	/** @type {HTMLMediaElement | null} */
+	srcEl = $state(null);
 	srcFocus = $state(false);
 
 	// colour
-	lutFrom = $state<LutSource>('none');
-	luts = $state<Record<string, Lut | null>>({});
+	/** @type {LutSource} */
+	lutFrom = $state('none');
+	/** @type {Record<string, Lut | null>} */
+	luts = $state({});
 	/** Edit: preview the grade on the proxies (read-only there) */
 	previewGrade = $state(false);
-	/** Grade: the viewer shows the originals (conformed) or, faster, the proxies */
-	gradeOn = $state<'originals' | 'proxies'>('originals');
-	/** Grade: the shape being checked */
-	shape = $state<Shape>('16:9');
-	/** Grade: what the controls change — the selected clip's grade or the whole film's look */
-	gradeTarget = $state<'clip' | 'film'>('clip');
+	/**
+	 * Grade: the viewer shows the originals (conformed) or, faster, the proxies
+	 * @type {'originals' | 'proxies'}
+	 */
+	gradeOn = $state('originals');
+	/**
+	 * Grade: the shape being checked
+	 * @type {Shape}
+	 */
+	shape = $state('16:9');
+	/**
+	 * Grade: what the controls change — the selected clip's grade or the whole film's look
+	 * @type {'clip' | 'film'}
+	 */
+	gradeTarget = $state('clip');
 	falseColor = $state(false);
-	/** the viewer's canvas, for the scopes */
-	viewerCanvas = $state<HTMLCanvasElement | null>(null);
-	/** what the scopes read when it is not the viewer (the live world's own canvas) */
-	scopeCanvas = $state<HTMLCanvasElement | null>(null);
-	proxyJobs = $state<Map<string, RenderJob>>(new Map());
-	plateJobs = $state<RenderJob[]>([]);
+	/**
+	 * the viewer's canvas, for the scopes
+	 * @type {HTMLCanvasElement | null}
+	 */
+	viewerCanvas = $state(null);
+	/**
+	 * what the scopes read when it is not the viewer (the live world's own canvas)
+	 * @type {HTMLCanvasElement | null}
+	 */
+	scopeCanvas = $state(null);
+	/** @type {Map<string, RenderJob>} */
+	proxyJobs = $state(new Map());
+	/** @type {RenderJob[]} */
+	plateJobs = $state([]);
 	jobsKnown = $state(false);
 
 	// the world
 	world = new WorldViewer();
 	/** bumped when a shot record arrives, so everything that reads `cached()` looks again */
 	shotRev = $state(0);
-	selectedKey = $state<number | null>(null);
+	/** @type {number | null} */
+	selectedKey = $state(null);
 
 	// renders
-	renders = $state<RenderJob[]>([]);
-	queue = $state<RenderJob[]>([]);
-	deliveries = $state<(Delivery & Record<string, unknown>)[]>([]);
+	/** @type {RenderJob[]} */
+	renders = $state([]);
+	/** @type {RenderJob[]} */
+	queue = $state([]);
+	/** @type {(Delivery & Record<string, unknown>)[]} */
+	deliveries = $state([]);
 	queuing = $state(false);
 	now = $state(Date.now());
 	skew = 0;
-	pace = $state<Record<string, { t0: number; p0: number; t: number; p: number }>>({});
-	private renderPoll: ReturnType<typeof setInterval> | null = null;
+	/** @type {Record<string, { t0: number; p0: number; t: number; p: number }>} */
+	pace = $state({});
+	/** @type {ReturnType<typeof setInterval> | null} */
+	renderPoll = null;
 
-	expanded = $state<string[]>([]);
+	/** @type {string[]} */
+	expanded = $state([]);
 
 	// ── derived ──────────────────────────────────────────────────────────────
 	byCid = $derived(new Map(this.library.map((m) => [m.cid, m])));
 	aspect = $derived(this.current?.aspect ?? '1:1');
-	stage = $derived<TimelineStage>(this.current?.stage ?? 'edit');
+	/** @type {TimelineStage} */
+	stage = $derived(this.current?.stage ?? 'edit');
 	version = $derived(this.current?.version ?? 1);
 	locked = $derived(this.stage !== 'edit');
 	/** picture and sound can be changed: the Edit tab, the edit not locked */
 	canEdit = $derived(this.tab === 'edit' && !this.locked);
-	/** the frame the program shows: the timeline's own shape, or in Grade the one being checked */
-	viewShape = $derived<string>(this.tab === 'grade' ? this.shape : this.aspect);
+	/**
+	 * the frame the program shows: the timeline's own shape, or in Grade the one being checked
+	 * @type {string}
+	 */
+	viewShape = $derived(this.tab === 'grade' ? this.shape : this.aspect);
 	end = $derived(this.clips.reduce((n, c) => Math.max(n, c.start + c.dur), 0));
 	span = $derived(Math.max(this.end + 4, 20));
 	sel = $derived(this.clips.find((c) => c.id === this.selected) ?? null);
@@ -164,15 +236,16 @@ export class Studio {
 	pictureItem = $derived(this.picture?.cid ? this.byCid.get(this.picture.cid) : undefined);
 	/** a title card's marker shows as the day's card made for this frame — the one its meta names by CID, as the render uses it */
 	stillItem = $derived.by(() => {
-		const cards = this.pictureItem?.meta?.cards as Record<string, string> | undefined;
+		const cards = /** @type {Record<string, string> | undefined} */ (this.pictureItem?.meta?.cards);
 		const cid = cards?.[this.viewShape.replace(':', 'x')];
 		return (cid && this.byCid.get(cid)) || this.pictureItem;
 	});
 	worldClips = $derived(this.clips.filter((c) => isWorld(c)));
 	/** every sound cue of the world clips, on A3 where it lands */
-	cueClips = $derived.by((): CueClip[] => {
+	cueClips = $derived.by(() => {
 		void this.shotRev;
-		const out: CueClip[] = [];
+		/** @type {CueClip[]} */
+		const out = [];
 		for (const c of this.worldClips) {
 			const spec = cached(c.shot, c.shotVersion)?.spec;
 			for (const [i, q] of (spec?.cues ?? []).entries()) {
@@ -197,20 +270,23 @@ export class Studio {
 	});
 	// captions: every voice clip's words, placed where the clip puts them
 	captionWords = $derived.by(() => {
-		const out: { word: string; t: number; clip: string }[] = [];
+		/** @type {{ word: string, t: number, clip: string }[]} */
+		const out = [];
 		for (const c of this.clips.filter((c) => c.track === 'A1')) {
 			const m = c.cid ? this.byCid.get(c.cid) : undefined;
-			const words = (Array.isArray(m?.meta?.words) ? m!.meta.words : []) as Timed[];
+			const words = /** @type {Timed[]} */ (Array.isArray(m?.meta?.words) ? m.meta.words : []);
 			for (const w of words) if (w.start >= c.in && w.start < c.in + c.dur) out.push({ word: w.word, t: c.start + (w.start - c.in), clip: c.id });
 		}
 		return out;
 	});
 	// words become phrases — a few at a time, broken at the punctuation — the way a film's subtitles run
 	phrases = $derived.by(() => {
-		const out: { words: { word: string; t: number }[]; start: number; end: number; clip: string }[] = [];
+		/** @type {{ words: { word: string, t: number }[], start: number, end: number, clip: string }[]} */
+		const out = [];
 		for (const c of this.clips.filter((c) => c.track === 'A1')) {
-			let cur: { word: string; t: number }[] = [];
-			const flush = () => cur.length && out.push({ words: cur, start: cur[0]!.t, end: cur.at(-1)!.t + 0.5, clip: c.id });
+			/** @type {{ word: string, t: number }[]} */
+			let cur = [];
+			const flush = () => cur.length && out.push({ words: cur, start: cur[0].t, end: /** @type {{ t: number }} */ (cur.at(-1)).t + 0.5, clip: c.id });
 			for (const w of this.captionWords.filter((w) => w.clip === c.id)) {
 				cur.push(w);
 				const text = cur.map((x) => x.word).join(' ');
@@ -219,7 +295,7 @@ export class Studio {
 			flush();
 		}
 		// each phrase stays until the next one begins (or a moment after its last word)
-		return out.map((p, i) => ({ ...p, end: out[i + 1] && out[i + 1]!.clip === p.clip ? Math.min(out[i + 1]!.start, p.end + 1.2) : p.end + 0.6 }));
+		return out.map((p, i) => ({ ...p, end: out[i + 1] && out[i + 1].clip === p.clip ? Math.min(out[i + 1].start, p.end + 1.2) : p.end + 0.6 }));
 	});
 	caption = $derived(this.phrases.find((p) => this.time >= p.start - 0.08 && this.time < p.end)?.words ?? []);
 
@@ -229,10 +305,12 @@ export class Studio {
 	/** the job the panel is about: the one under way, else the last one; the rest are the short history under it */
 	focus = $derived(this.active ?? this.newest[0] ?? null);
 
-	at(track: Track, t: number) {
+	/** @param {Track} track @param {number} t */
+	at(track, t) {
 		return this.clips.filter((c) => c.track === track && t >= c.start && t < c.start + c.dur).at(-1) ?? null;
 	}
-	clipName(c: Clip) {
+	/** @param {Clip} c */
+	clipName(c) {
 		if (isWorld(c)) {
 			void this.shotRev;
 			return cached(c.shot, c.shotVersion)?.name ?? 'World shot';
@@ -240,20 +318,27 @@ export class Studio {
 		const m = c.cid ? this.byCid.get(c.cid) : undefined;
 		return String(m?.meta?.title ?? itemName(m));
 	}
-	shotOf(c: Clip | null | undefined): Shot | null {
+	/** @param {Clip | null | undefined} c @returns {Shot | null} */
+	shotOf(c) {
 		void this.shotRev;
 		return c && isWorld(c) ? cached(c.shot, c.shotVersion) : null;
 	}
 
 	// ── what plays: proxies in Edit, originals in Grade ──────────────────────
-	/** The proxy state of a library file (ready, queued, …, or none yet). */
-	proxy(m: MediaItem | undefined): { cid: string | null; state: ProxyState } {
+	/**
+	 * The proxy state of a library file (ready, queued, …, or none yet).
+	 * @param {MediaItem | undefined} m @returns {{ cid: string | null, state: ProxyState }}
+	 */
+	proxy(m) {
 		return proxyFor(m, this.proxyJobs);
 	}
 	/** Does this clip play from its proxy right now? Edit always; Grade when asked (the originals are heavy). */
 	onProxies = $derived(this.tab !== 'grade' || this.gradeOn === 'proxies');
-	/** The file a clip's picture plays from, or null for a still (or a world clip with no HD proxy). */
-	playUrl(c: Clip): string | null {
+	/**
+	 * The file a clip's picture plays from, or null for a still (or a world clip with no HD proxy).
+	 * @param {Clip} c @returns {string | null}
+	 */
+	playUrl(c) {
 		if (isWorld(c)) {
 			const p = this.worldProxy(c);
 			return p ? raw(p.cid) : null;
@@ -261,22 +346,31 @@ export class Studio {
 		const m = c.cid ? this.byCid.get(c.cid) : undefined;
 		if (m?.kind !== 'video' || !this.sources[m.cid]) return null;
 		const p = this.proxy(m);
-		return this.onProxies && p.cid ? raw(p.cid) : this.sources[m.cid]!.url;
+		return this.onProxies && p.cid ? raw(p.cid) : this.sources[m.cid].url;
 	}
-	/** The library file a clip's picture is taken from now (the proxy or the original), for its colour profile. */
-	playItem(c: Clip | null | undefined): MediaItem | undefined {
+	/**
+	 * The library file a clip's picture is taken from now (the proxy or the original), for its colour profile.
+	 * @param {Clip | null | undefined} c @returns {MediaItem | undefined}
+	 */
+	playItem(c) {
 		if (!c) return undefined;
 		if (isWorld(c)) return this.worldProxy(c) ?? undefined;
 		const m = c.cid ? this.byCid.get(c.cid) : undefined;
 		const p = this.proxy(m);
 		return (this.onProxies && p.cid && this.byCid.get(p.cid)) || m;
 	}
-	/** A world clip's HD proxy (the worker renders one whenever the shot changes): a role:proxy file naming the shot and version. */
-	worldProxy(c: Clip): MediaItem | null {
+	/**
+	 * A world clip's HD proxy (the worker renders one whenever the shot changes): a role:proxy file naming the shot and version.
+	 * @param {Clip} c @returns {MediaItem | null}
+	 */
+	worldProxy(c) {
 		return this.library.find((m) => m.meta?.shot === c.shot && Number(m.meta?.shotVersion) === c.shotVersion && m.kind === 'video') ?? null;
 	}
-	/** The profile the viewer takes a clip's picture in by. */
-	profileOfClip(c: Clip | null | undefined): string {
+	/**
+	 * The profile the viewer takes a clip's picture in by.
+	 * @param {Clip | null | undefined} c @returns {string}
+	 */
+	profileOfClip(c) {
 		if (isWorld(c)) return 'acescct'; // the world renders ACEScct (film mode, C3), and so do its proxies
 		const it = this.playItem(c);
 		const own = profileFor(it);
@@ -284,8 +378,11 @@ export class Studio {
 		if (own.guessed && c?.cid) return profileFor(this.byCid.get(c.cid)).profile;
 		return own.profile;
 	}
-	/** The grades a clip is seen through: in Grade always, in Edit only when previewing. */
-	gradesOf(c: Clip | null | undefined): Cdl[] {
+	/**
+	 * The grades a clip is seen through: in Grade always, in Edit only when previewing.
+	 * @param {Clip | null | undefined} c @returns {Cdl[]}
+	 */
+	gradesOf(c) {
 		if (this.tab === 'edit' && !this.previewGrade) return [];
 		return gradesFor(c, this.current);
 	}
@@ -304,12 +401,13 @@ export class Studio {
 			this.c1 = tls.length ? tls.some((t) => c1Knows(t)) : true;
 			this.timelines = tls.map(fromServer);
 		} catch (e) {
-			this.error = (e as Error).message;
+			this.error = /** @type {Error} */ (e).message;
 		}
 		this.phase = 'ready';
 		void this.loadLuts();
 		void this.refreshJobs();
-		let last: string | null = null;
+		/** @type {string | null} */
+		let last = null;
 		try {
 			last = localStorage.getItem(LAST);
 			const kept = JSON.parse(localStorage.getItem(OPEN) ?? '[]');
@@ -325,7 +423,7 @@ export class Studio {
 	async loadLuts() {
 		const { from, luts } = await lutIndex(this.library);
 		this.lutFrom = from;
-		const got = await Promise.all(Object.entries(luts).map(async ([name, l]) => [name, await loadLut(name, l.cid)] as const));
+		const got = await Promise.all(Object.entries(luts).map(async ([name, l]) => /** @type {const} */ ([name, await loadLut(name, l.cid)])));
 		this.luts = Object.fromEntries(got);
 	}
 
@@ -333,20 +431,23 @@ export class Studio {
 	async refreshJobs() {
 		try {
 			const proxies = await listJobs({ kind: 'proxy' });
-			const map = new Map<string, RenderJob>();
+			/** @type {Map<string, RenderJob>} */
+			const map = new Map();
 			for (const j of [...proxies].sort((a, b) => Date.parse(a.created) - Date.parse(b.created))) if (j.media_cid) map.set(j.media_cid, j);
 			this.proxyJobs = map;
 			this.jobsKnown = true;
 			if (this.current) this.plateJobs = await listJobs({ kind: 'plate', timeline_id: this.current.id });
-			const none = (): RenderJob[] => [];
+			/** @returns {RenderJob[]} */
+			const none = () => [];
 			this.queue = [...(await listJobs({ status: 'rendering' }).catch(none)), ...(await listJobs({ status: 'queued' }).catch(none))];
 		} catch (e) {
-			if (!missing(e)) console.warn('jobs:', (e as Error).message);
+			if (!missing(e)) console.warn('jobs:', /** @type {Error} */ (e).message);
 			this.jobsKnown = false;
 		}
 	}
 
-	expand(p: string, on = !this.expanded.includes(p)) {
+	/** @param {string} p */
+	expand(p, on = !this.expanded.includes(p)) {
 		this.expanded = on ? [...new Set([...this.expanded, p])] : this.expanded.filter((x) => x !== p);
 		try {
 			localStorage.setItem(OPEN, JSON.stringify(this.expanded));
@@ -355,7 +456,8 @@ export class Studio {
 		}
 	}
 
-	async openTimeline(t: Timeline) {
+	/** @param {Timeline} t */
+	async openTimeline(t) {
 		this.stop();
 		await this.flush();
 		this.current = t;
@@ -365,14 +467,14 @@ export class Studio {
 		this.selectedKey = null;
 		this.time = 0;
 		this.saving = 'saved';
-		this.shape = (['16:9', '9:16', '1:1', '4:5'].includes(t.aspect) ? t.aspect : '16:9') as Shape;
+		this.shape = /** @type {Shape} */ (['16:9', '9:16', '1:1', '4:5'].includes(t.aspect) ? t.aspect : '16:9');
 		if (this.tab === 'grade' && !this.locked) this.tab = 'edit';
 		try {
 			localStorage.setItem(LAST, t.id);
 		} catch {
 			/* fine */
 		}
-		for (const c of this.clips) if (c.cid) void this.source(c.cid).catch((e) => (this.error = (e as Error).message));
+		for (const c of this.clips) if (c.cid) void this.source(c.cid).catch((e) => (this.error = /** @type {Error} */ (e).message));
 		void this.loadShots();
 		this.renders = [];
 		this.deliveries = [];
@@ -399,7 +501,8 @@ export class Studio {
 		await this.openTimeline(t);
 	}
 
-	async removeTimeline(t: Timeline) {
+	/** @param {Timeline} t */
+	async removeTimeline(t) {
 		if (!confirm(`Delete the timeline “${t.name}”? The files stay in the library.`)) return;
 		await deleteTimeline(t.id);
 		this.timelines = this.timelines.filter((x) => x.id !== t.id);
@@ -411,7 +514,8 @@ export class Studio {
 	}
 
 	// ── saving: every change, a moment after the last one ──────────────────────
-	private saveTimer: ReturnType<typeof setTimeout> | null = null;
+	/** @type {ReturnType<typeof setTimeout> | null} */
+	saveTimer = null;
 	changed() {
 		this.saving = 'unsaved';
 		if (this.saveTimer) clearTimeout(this.saveTimer);
@@ -423,14 +527,15 @@ export class Studio {
 		if (!cur || this.saving !== 'unsaved') return;
 		this.saving = 'saving';
 		try {
-			const body: Partial<Timeline> = {
+			/** @type {Partial<Timeline>} */
+			const body = {
 				name: cur.name,
 				project: cur.project,
 				variant: cur.variant,
 				description: cur.description,
 				aspect: cur.aspect,
 				tags: cur.tags,
-				clips: $state.snapshot(this.clips) as Clip[],
+				clips: /** @type {Clip[]} */ ($state.snapshot(this.clips)),
 				stage: cur.stage ?? 'edit',
 				version: cur.version ?? 1,
 				color: cur.color ?? { working: 'acescct', output: 'odt-rec709' },
@@ -441,11 +546,12 @@ export class Studio {
 			if (this.current?.id === cur.id) this.current = { ...this.current, updated: t.updated };
 			this.saving = 'saved';
 		} catch (e) {
-			this.error = (e as Error).message;
+			this.error = /** @type {Error} */ (e).message;
 			this.saving = 'unsaved';
 		}
 	}
-	setMeta(patch: Partial<Timeline>) {
+	/** @param {Partial<Timeline>} patch */
+	setMeta(patch) {
 		if (!this.current) return;
 		this.current = { ...this.current, ...patch };
 		this.changed();
@@ -474,22 +580,27 @@ export class Studio {
 		this.setMeta({ stage: on ? 'graded' : 'locked' });
 	}
 
-	/** A first edit to start from: a still, the newest voice take on it, a music bed under it. */
-	async starter(): Promise<Clip[]> {
+	/**
+	 * A first edit to start from: a still, the newest voice take on it, a music bed under it.
+	 * @returns {Promise<Clip[]>}
+	 */
+	async starter() {
 		const lib = this.library.filter((m) => !isCache(m));
 		const voices = lib.filter((m) => m.kind === 'audio' && m.tags.includes('role:voice'));
-		const voice = voices.find((m) => Array.isArray(m.meta?.words) && (m.meta.words as unknown[]).length) ?? voices[0];
+		const voice = voices.find((m) => Array.isArray(m.meta?.words) && /** @type {unknown[]} */ (m.meta.words).length) ?? voices[0];
 		const bed = lib.find((m) => m.kind === 'audio' && (m.tags.includes('role:music') || m.tags.includes('role:score')));
 		const still = lib.find((m) => m.kind === 'image' && m.tags.includes('role:cover')) ?? lib.find((m) => m.kind === 'image');
 		const vlen = voice ? (await this.source(voice.cid)).duration : 6;
-		const next: Clip[] = [];
+		/** @type {Clip[]} */
+		const next = [];
 		if (still) next.push(this.clip(still.cid, 'V1', 0, 0, vlen + 2));
 		if (voice) next.push(this.clip(voice.cid, 'A1', 0.5, 0, vlen));
 		if (bed) next.push({ ...this.clip(bed.cid, 'A2', 0, 0, vlen + 2.5), vol: 0.3 });
 		return next;
 	}
 
-	clip = (cid: string, track: Track, start: number, from: number, dur: number): Clip => ({
+	/** @param {string} cid @param {Track} track @param {number} start @param {number} from @param {number} dur @returns {Clip} */
+	clip = (cid, track, start, from, dur) => ({
 		id: Math.random().toString(36).slice(2, 10),
 		cid,
 		track,
@@ -501,39 +612,51 @@ export class Studio {
 
 	// ── sound: one Web Audio clock; every clip is scheduled on it, sample-exact ──
 	// (Safari lets a page make sound only from a click: the context is woken by the Play button)
-	ctx: AudioContext | null = null;
+	/** @type {AudioContext | null} */
+	ctx = null;
 	audioCtx = () => (this.ctx ??= new AudioContext());
-	private nodes: { src: AudioBufferSourceNode; gain: GainNode }[] = [];
-	private ctxStart = 0;
-	private timeStart = 0;
-	private pending = new Map<string, Promise<Source>>();
+	/** @type {{ src: AudioBufferSourceNode; gain: GainNode }[]} */
+	nodes = [];
+	ctxStart = 0;
+	timeStart = 0;
+	/** @type {Map<string, Promise<Source>>} */
+	pending = new Map();
 	// the true length of each video, found one at a time (and the player let go of after, so it frees its slot)
-	private probing: string[] = [];
-	private prober: Promise<void> | null = null;
-	private probeLength(cid: string) {
+	/** @type {string[]} */
+	probing = [];
+	/** @type {Promise<void> | null} */
+	prober = null;
+	/** @param {string} cid */
+	probeLength(cid) {
 		this.probing.push(cid);
 		this.prober ??= (async () => {
-			for (let next; (next = this.probing.shift()); ) {
-				const duration = await new Promise<number>((ok) => {
+			for (let next; (next = /** @type {string | undefined} */ (this.probing.shift())); ) {
+				/** @type {number} */
+				const duration = await new Promise((ok) => {
 					const v = document.createElement('video');
 					v.preload = 'metadata';
 					v.crossOrigin = 'use-credentials';
-					const done = (d: number) => (clearTimeout(late), v.removeAttribute('src'), v.load(), ok(d));
+					/** @param {number} d */
+					const done = (d) => (clearTimeout(late), v.removeAttribute('src'), v.load(), ok(d));
 					const late = setTimeout(() => done(0), 8000);
 					v.onloadedmetadata = () => done(v.duration || 0);
 					v.onerror = () => done(0);
-					v.src = raw(next!);
+					v.src = raw(/** @type {string} */ (next));
 				});
-				if (duration && this.sources[next]) this.sources[next] = { ...this.sources[next]!, duration };
+				if (duration && this.sources[next]) this.sources[next] = { ...this.sources[next], duration };
 			}
 			this.prober = null;
 		})();
 	}
 
-	/** Fetch a file once: sound is decoded (for playing and for its waveform); a still is only shown. */
-	source(cid: string): Promise<Source> {
-		if (this.sources[cid]) return Promise.resolve(this.sources[cid]!);
-		if (this.pending.has(cid)) return this.pending.get(cid)!;
+	/**
+	 * Fetch a file once: sound is decoded (for playing and for its waveform); a still is only shown.
+	 * @param {string} cid @returns {Promise<Source>}
+	 */
+	source(cid) {
+		if (this.sources[cid]) return Promise.resolve(this.sources[cid]);
+		const waiting = this.pending.get(cid);
+		if (waiting) return waiting;
 		const m0 = this.byCid.get(cid);
 		if (m0?.kind === 'video') {
 			// a video streams straight from the library (it answers byte ranges): no need to download it first. It is
@@ -555,7 +678,11 @@ export class Studio {
 			if (!res.ok) throw new Error(`Could not load ${itemName(m)} (${res.status}).`);
 			const bytes = await res.arrayBuffer();
 			const url = URL.createObjectURL(new Blob([bytes], { type: m?.mime }));
-			let duration = IMAGE_LEN, peaks: number[] = [], buffer: AudioBuffer | undefined;
+			let duration = IMAGE_LEN;
+			/** @type {number[]} */
+			let peaks = [];
+			/** @type {AudioBuffer | undefined} */
+			let buffer;
 			if (m?.kind === 'audio' || !m) {
 				buffer = await this.audioCtx().decodeAudioData(bytes.slice(0));
 				duration = buffer.duration;
@@ -592,7 +719,8 @@ export class Studio {
 		const time = this.time;
 		this.ctxStart = ac.currentTime + 0.05;
 		this.timeStart = time;
-		const all: Clip[] = [...this.clips.filter((c) => !isWorld(c)), ...this.cueClips];
+		/** @type {Clip[]} */
+		const all = [...this.clips.filter((c) => !isWorld(c)), ...this.cueClips];
 		for (const c of all) {
 			const buf = c.cid ? this.sources[c.cid]?.buffer : undefined;
 			if (!buf || c.start + c.dur <= time) continue;
@@ -638,9 +766,12 @@ export class Studio {
 	}
 
 	// ── playback ──────────────────────────────────────────────────────────────
-	private frame = 0;
-	/** the time a world clip plays at, shot-local: t = in + (timeline time − start) */
-	shotTime = (c: Clip, time = this.time) => c.in + (time - c.start);
+	frame = 0;
+	/**
+	 * the time a world clip plays at, shot-local: t = in + (timeline time − start)
+	 * @param {Clip} c
+	 */
+	shotTime = (c, time = this.time) => c.in + (time - c.start);
 	syncVideo(force = false) {
 		for (const c of this.reel) {
 			const v = this.reelVideos[c.id];
@@ -668,16 +799,16 @@ export class Studio {
 		const c = this.picture;
 		if (this.world.state !== 'ready') return;
 		const upcoming = this.worldClips.filter((w) => w.start + w.dur > this.time).sort((a, b) => a.start - b.start).slice(0, 3);
-		const specs = upcoming.map((w) => cached(w.shot, w.shotVersion)?.spec).filter((s): s is ShotSpec => !!s);
+		const specs = upcoming.map((w) => cached(w.shot, w.shotVersion)?.spec).filter(/** @returns {s is ShotSpec} */ (s) => !!s);
 		if (specs.length) void this.world.prepare(specs);
 		if (!c || !isWorld(c)) return;
 		const spec = cached(c.shot, c.shotVersion)?.spec;
 		if (!spec) return;
 		const [grade, look] = this.tab === 'edit' && !this.previewGrade ? [null, null] : [c.grade ?? null, this.current?.grade?.look ?? null];
-		this.world.show({ spec, t: this.shotTime(c), shape: this.viewShape as Shape, ...hd(this.viewShape), view: { lut: this.luts['odt-rec709'] ?? null, grade, look } });
+		this.world.show({ spec, t: this.shotTime(c), shape: /** @type {Shape} */ (this.viewShape), ...hd(this.viewShape), view: { lut: this.luts['odt-rec709'] ?? null, grade, look } });
 	}
 
-	private tick = () => {
+	tick = () => {
 		if (!this.ctx) return;
 		this.time = this.timeStart + Math.max(0, this.ctx.currentTime - this.ctxStart);
 		if (this.time >= this.end) {
@@ -693,7 +824,7 @@ export class Studio {
 	/** Loads every world shot the timeline touches and keeps it loaded (waits a little, then plays regardless: the proxies cover). */
 	async preparePlayback(wait = 4000) {
 		if (this.world.state !== 'ready' || !this.worldClips.length) return;
-		const specs = this.worldClips.map((c) => cached(c.shot, c.shotVersion)?.spec).filter((s): s is ShotSpec => !!s);
+		const specs = this.worldClips.map((c) => cached(c.shot, c.shotVersion)?.spec).filter(/** @returns {s is ShotSpec} */ (s) => !!s);
 		this.preparing = true;
 		await Promise.race([this.world.prepare(specs), new Promise((r) => setTimeout(r, wait))]);
 		this.preparing = false;
@@ -721,17 +852,22 @@ export class Studio {
 
 	toggle = () => (this.playing ? this.stop() : void this.play());
 
-	seek(t: number) {
+	/** @param {number} t */
+	seek(t) {
 		this.time = Math.min(Math.max(0, t), this.span);
 		if (this.playing) this.schedule();
 		this.syncVideo(true);
 	}
 
 	// ── by hand: move, trim, drop ──────────────────────────────────────────────
-	snap = (t: number) => Math.round(t * 20) / 20;
+	/** @param {number} t */
+	snap = (t) => Math.round(t * 20) / 20;
 
-	/** Lays a file on a track at `start`: the whole of it, or only `range` of it (a sound or a film marked in the source monitor). */
-	async place(cid: string, track: Track, start: number, range?: { in: number; dur: number }) {
+	/**
+	 * Lays a file on a track at `start`: the whole of it, or only `range` of it (a sound or a film marked in the source monitor).
+	 * @param {string} cid @param {Track} track @param {number} start @param {{ in: number, dur: number }} [range]
+	 */
+	async place(cid, track, start, range) {
 		if (!this.canEdit) return void (this.error = this.locked ? 'The edit is locked: unlock it to change picture or sound.' : '');
 		const m = this.byCid.get(cid);
 		const accepts = TRACKS.find((t) => t.id === track)?.accepts ?? [];
@@ -750,14 +886,18 @@ export class Studio {
 			this.changed();
 			if (this.playing) this.schedule();
 		} catch (e) {
-			this.error = (e as Error).message;
+			this.error = /** @type {Error} */ (e).message;
 		}
 	}
 
-	/** Lays a world shot on V1 at `start`: the whole shot, at its newest version. */
-	placeShot(shot: Shot, start: number) {
+	/**
+	 * Lays a world shot on V1 at `start`: the whole shot, at its newest version.
+	 * @param {Shot} shot @param {number} start
+	 */
+	placeShot(shot, start) {
 		if (!this.canEdit) return void (this.error = 'The edit is locked: unlock it to change picture or sound.');
-		const c: Clip = { id: Math.random().toString(36).slice(2, 10), kind: 'world', shot: shot.id, shotVersion: shot.version, track: 'V1', start: Math.max(0, this.snap(start)), in: 0, dur: shot.spec.seconds, vol: 1 };
+		/** @type {Clip} */
+		const c = { id: Math.random().toString(36).slice(2, 10), kind: 'world', shot: shot.id, shotVersion: shot.version, track: 'V1', start: Math.max(0, this.snap(start)), in: 0, dur: shot.spec.seconds, vol: 1 };
 		this.clips = [...this.clips, c];
 		this.selected = c.id;
 		this.wantWorld = true;
@@ -765,7 +905,8 @@ export class Studio {
 		this.changed();
 	}
 
-	remove(id: string | null) {
+	/** @param {string | null} id */
+	remove(id) {
 		if (!id || !this.canEdit) return;
 		this.clips = this.clips.filter((c) => c.id !== id);
 		this.selected = null;
@@ -773,26 +914,34 @@ export class Studio {
 		if (this.playing) this.schedule();
 	}
 
-	/** Changes a clip's place, length or sound (Edit only, unlocked). */
-	setClip(patch: Partial<Clip>, id = this.selected) {
+	/**
+	 * Changes a clip's place, length or sound (Edit only, unlocked).
+	 * @param {Partial<Clip>} patch
+	 */
+	setClip(patch, id = this.selected) {
 		if (!this.canEdit) return;
 		this.patchClip(id, patch);
 	}
-	/** Changes what a clip is (its grade, its framing, its shot version) — not its place in the edit. */
-	patchClip(id: string | null, patch: Partial<Clip>) {
+	/**
+	 * Changes what a clip is (its grade, its framing, its shot version) — not its place in the edit.
+	 * @param {string | null} id @param {Partial<Clip>} patch
+	 */
+	patchClip(id, patch) {
 		const i = this.clips.findIndex((c) => c.id === id);
 		if (i < 0) return;
-		this.clips[i] = { ...this.clips[i]!, ...patch };
+		this.clips[i] = { ...this.clips[i], ...patch };
 		this.changed();
 		if (this.playing) this.schedule();
 	}
-	setGrade(g: Cdl | null) {
+	/** @param {Cdl | null} g */
+	setGrade(g) {
 		if (this.gradeTarget === 'film' || !this.sel || this.sel.track !== 'V1') {
 			const preset = presetOf(g);
 			this.setMeta({ grade: { look: clean(g), ...(preset && preset !== 'neutral' ? { preset } : {}) } });
 		} else this.patchClip(this.sel.id, { grade: clean(g) });
 	}
-	setFrame(id: string, shape: Shape, f: ClipFrame | null) {
+	/** @param {string} id @param {Shape} shape @param {ClipFrame | null} f */
+	setFrame(id, shape, f) {
 		const c = this.clips.find((x) => x.id === id);
 		if (!c) return;
 		const frame = { ...(c.frame ?? {}) };
@@ -802,19 +951,25 @@ export class Studio {
 	}
 
 	// ── world shots: a changed spec is a new version, and the clip follows it ──
-	private shotTimers = new Map<string, ReturnType<typeof setTimeout>>();
-	/** pending spec edits, by clip, shown at once and saved a moment after the last change (one version per pause) */
-	drafts = $state<Record<string, ShotSpec>>({});
-	specOf(c: Clip | null | undefined): ShotSpec | null {
+	/** @type {Map<string, ReturnType<typeof setTimeout>>} */
+	shotTimers = new Map();
+	/**
+	 * pending spec edits, by clip, shown at once and saved a moment after the last change (one version per pause)
+	 * @type {Record<string, ShotSpec>}
+	 */
+	drafts = $state({});
+	/** @param {Clip | null | undefined} c @returns {ShotSpec | null} */
+	specOf(c) {
 		if (!c) return null;
 		return this.drafts[c.id] ?? this.shotOf(c)?.spec ?? null;
 	}
-	editSpec(c: Clip, change: (s: ShotSpec) => void) {
+	/** @param {Clip} c @param {(s: ShotSpec) => void} change */
+	editSpec(c, change) {
 		if (!this.canEdit) return;
 		const base = this.specOf(c);
 		const shot = this.shotOf(c);
 		if (!base || !shot) return;
-		const next = structuredClone($state.snapshot(base)) as ShotSpec;
+		const next = /** @type {ShotSpec} */ (structuredClone($state.snapshot(base)));
 		change(next);
 		this.drafts[c.id] = next;
 		this.saving = 'unsaved';
@@ -823,20 +978,23 @@ export class Studio {
 			c.id,
 			setTimeout(async () => {
 				try {
-					const saved = await saveSpec(shot, $state.snapshot(this.drafts[c.id]!) as ShotSpec);
+					const saved = await saveSpec(shot, /** @type {ShotSpec} */ ($state.snapshot(this.drafts[c.id])));
 					delete this.drafts[c.id];
 					this.shotRev++;
 					// the clip follows the new version (and so does every other clip cut from the same shot and version)
 					for (const k of this.clips.filter((k) => k.shot === shot.id && k.shotVersion === shot.version)) this.patchClip(k.id, { shotVersion: saved.version, ...(k.id === c.id && saved.spec.seconds < k.in + k.dur ? { dur: Math.max(0.2, saved.spec.seconds - k.in) } : {}) });
 				} catch (e) {
-					this.error = `Shot: ${(e as Error).message}`;
+					this.error = `Shot: ${/** @type {Error} */ (e).message}`;
 				}
 			}, 800)
 		);
 		if (!this.playing) this.driveWorld();
 	}
-	/** Shot versions: move a clip to another version of its shot (the newest, or back). */
-	async useVersion(c: Clip, version: number) {
+	/**
+	 * Shot versions: move a clip to another version of its shot (the newest, or back).
+	 * @param {Clip} c @param {number} version
+	 */
+	async useVersion(c, version) {
 		if (!c.shot || !this.canEdit) return;
 		const s = await shotAt(c.shot, version);
 		if (!s) return void (this.error = `No version ${version} of this shot.`);
@@ -844,8 +1002,11 @@ export class Studio {
 		this.patchClip(c.id, { shotVersion: s.version });
 	}
 
-	/** Records a camera move over the playing timeline: from the clip's start, flown by hand, until stopped or the clip ends. */
-	async record(c: Clip) {
+	/**
+	 * Records a camera move over the playing timeline: from the clip's start, flown by hand, until stopped or the clip ends.
+	 * @param {Clip} c
+	 */
+	async record(c) {
 		if (!this.canEdit || !isWorld(c)) return;
 		if (this.world.recording) return this.stopRecording(c);
 		if (this.world.state !== 'ready') return void (this.error = 'Recording needs the live world (film mode).');
@@ -859,7 +1020,8 @@ export class Studio {
 		};
 		requestAnimationFrame(until);
 	}
-	async stopRecording(c: Clip) {
+	/** @param {Clip} c */
+	async stopRecording(c) {
 		const keys = await this.world.stopRecording();
 		this.stop();
 		if (!keys.length) return;
@@ -870,8 +1032,10 @@ export class Studio {
 	}
 
 	// ── colour: a file's profile, set by hand when detection got it wrong (re-queues its proxy, on the API side) ──
-	async setOverride(m: MediaItem, profile: string | null) {
-		const color = { ...((m.meta?.color as object) ?? { profile: 'unknown', detectedFrom: 'set in the studio' }) } as Record<string, unknown>;
+	/** @param {MediaItem} m @param {string | null} profile */
+	async setOverride(m, profile) {
+		/** @type {Record<string, unknown>} */
+		const color = { .../** @type {object} */ (m.meta?.color ?? { profile: 'unknown', detectedFrom: 'set in the studio' }) };
 		if (profile) color.override = profile;
 		else delete color.override;
 		const meta = { ...m.meta, color };
@@ -879,7 +1043,7 @@ export class Studio {
 			await describeMedia(m.cid, { meta });
 			this.library = this.library.map((x) => (x.cid === m.cid ? { ...x, meta } : x));
 		} catch (e) {
-			this.error = (e as Error).message;
+			this.error = /** @type {Error} */ (e).message;
 		}
 	}
 
@@ -924,10 +1088,11 @@ export class Studio {
 		if (!id || !done) return void (this.deliveries = []);
 		const items = await listContent().then((r) => r.items).catch(() => []);
 		if (this.current?.id !== id) return;
-		this.deliveries = items.flatMap((i) => i.deliveries ?? []).filter((d) => d.timeline === id) as (Delivery & Record<string, unknown>)[];
+		this.deliveries = /** @type {DeliveryRecord[]} */ (items.flatMap((i) => i.deliveries ?? []).filter((d) => d.timeline === id));
 	}
 
-	poll(on: boolean) {
+	/** @param {boolean} on */
+	poll(on) {
 		if (on && !this.renderPoll) this.renderPoll = setInterval(() => void this.refreshRenders(), 3000);
 		else if (!on && this.renderPoll) clearInterval(this.renderPoll), (this.renderPoll = null);
 	}
@@ -942,23 +1107,31 @@ export class Studio {
 			this.renders = [job, ...this.renders.filter((r) => r.id !== job.id)];
 			this.poll(true);
 		} catch (e) {
-			this.error = `Render: ${(e as Error).message}`;
+			this.error = `Render: ${/** @type {Error} */ (e).message}`;
 		} finally {
 			this.queuing = false;
 		}
 	}
-	elapsed = (r: RenderJob) => (this.now + this.skew - Date.parse(r.created)) / 1000;
-	took = (r: RenderJob) => (Date.parse(r.updated) - Date.parse(r.created)) / 1000;
-	/** Seconds left, from how fast the progress has moved since the film began rendering; null until it has moved. */
-	left(r: RenderJob) {
+	/** @param {RenderJob} r */
+	elapsed = (r) => (this.now + this.skew - Date.parse(r.created)) / 1000;
+	/** @param {RenderJob} r */
+	took = (r) => (Date.parse(r.updated) - Date.parse(r.created)) / 1000;
+	/**
+	 * Seconds left, from how fast the progress has moved since the film began rendering; null until it has moved.
+	 * @param {RenderJob} r
+	 */
+	left(r) {
 		const s = this.pace[r.id];
 		if (!s || s.t <= s.t0 || s.p <= s.p0) return null;
 		const rate = (s.p - s.p0) / (s.t - s.t0);
 		return Math.max(0, (0.95 - s.p) / rate - (this.now - s.t) / 1000 + 2); // + the moment it takes to go into the library
 	}
 
-	/** A file (a render, a delivery) in the source monitor (the library is fetched again if it is not in it yet). */
-	async openFile(cid: string | null) {
+	/**
+	 * A file (a render, a delivery) in the source monitor (the library is fetched again if it is not in it yet).
+	 * @param {string | null} cid
+	 */
+	async openFile(cid) {
 		if (!cid) return;
 		let m = this.byCid.get(cid);
 		if (!m) {
@@ -969,13 +1142,16 @@ export class Studio {
 		else window.open(raw(cid), '_blank', 'noopener');
 	}
 
-	/** A library file into the source monitor. */
-	pick(m: MediaItem) {
+	/**
+	 * A library file into the source monitor.
+	 * @param {MediaItem} m
+	 */
+	pick(m) {
 		this.srcFocus = true;
 		if (this.preview === m.cid) return;
 		this.srcEl?.pause();
 		this.preview = m.cid;
-		if (m.kind === 'audio') void this.source(m.cid).catch((e) => (this.error = (e as Error).message)); // for its waveform
+		if (m.kind === 'audio') void this.source(m.cid).catch((e) => (this.error = /** @type {Error} */ (e).message)); // for its waveform
 	}
 	closeSource() {
 		this.srcEl?.pause();
@@ -983,7 +1159,8 @@ export class Studio {
 		this.srcFocus = false;
 	}
 
-	defaultTrack = (m: MediaItem): Track =>
+	/** @param {MediaItem} m @returns {Track} */
+	defaultTrack = (m) =>
 		m.kind === 'audio'
 			? ['role:music', 'role:score', 'role:cue'].some((t) => m.tags.includes(t))
 				? 'A2'
@@ -993,5 +1170,6 @@ export class Studio {
 			: 'V1';
 }
 
-export const tint = (t: Track) => (t === 'A1' ? '#a8741a' : t === 'A3' ? '#4a5f93' : '#2f7d6a');
+/** @param {Track} t */
+export const tint = (t) => (t === 'A1' ? '#a8741a' : t === 'A3' ? '#4a5f93' : '#2f7d6a');
 export { evaluate };

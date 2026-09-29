@@ -3,48 +3,62 @@
 	channels it is for, and whatever the worker reports with it (QC checks, loudness, …; any field it adds shows). A
 	delivery opens in the viewer.
 -->
-<script lang="ts">
-	import { SHAPES, raw, type Studio } from './studio.svelte';
+<script>
+	import { SHAPES, raw } from './studio.svelte.js';
 
-	let { s }: { s: Studio } = $props();
+	/** @type {{ s: import('./studio.svelte.js').Studio }} */
+	let { s } = $props();
+	/** @typedef {{ ok: boolean | null, items: { name: string, ok: boolean | null, note?: string }[] }} Qc */
 
 	const KNOWN = new Set(['channels', 'cid', 'format', 'aspect', 'width', 'height', 'codec', 'bytes', 'seconds', 'note', 'kind', 'timeline', 'cut', 'qc', 'loudness', 'lufs', 'true_peak', 'truePeak']);
 	const byShape = $derived.by(() => {
-		const map = new Map<string, typeof s.deliveries>();
+		/** @type {Map<string, typeof s.deliveries>} */
+		const map = new Map();
 		for (const d of s.deliveries) map.set(d.aspect ?? '?', [...(map.get(d.aspect ?? '?') ?? []), d]);
-		return [...map.entries()].sort(([a], [b]) => (SHAPES.indexOf(a as never) + 99) % 99 - (SHAPES.indexOf(b as never) + 99) % 99);
+		/** @param {string} a */
+		const at = (a) => (SHAPES.indexOf(/** @type {import('$lib/auth/client').Shape} */ (a)) + 99) % 99;
+		return [...map.entries()].sort(([a], [b]) => at(a) - at(b));
 	});
-	const mb = (b: unknown) => (typeof b === 'number' ? `${(b / 1e6).toFixed(b > 1e8 ? 0 : 1)} MB` : '');
-	const secs = (x: unknown) => (typeof x === 'number' && x > 0 ? `${x.toFixed(1)} s` : '');
+	/** @param {unknown} b */
+	const mb = (b) => (typeof b === 'number' ? `${(b / 1e6).toFixed(b > 1e8 ? 0 : 1)} MB` : '');
+	/** @param {unknown} x */
+	const secs = (x) => (typeof x === 'number' && x > 0 ? `${x.toFixed(1)} s` : '');
 	/** A QC report in whatever shape the worker gives it: { ok, checks: { name: ok | { ok, note } } }, a list, or a plain flag. */
-	function qcOf(q: unknown): { ok: boolean | null; items: { name: string; ok: boolean | null; note?: string }[] } | null {
+	/** @param {any} q @returns {Qc | null} */
+	function qcOf(q) {
 		if (q === undefined || q === null) return null;
 		if (typeof q === 'boolean') return { ok: q, items: [] };
 		if (Array.isArray(q)) {
-			const items = q.map((x, i) => ({ name: String(x?.name ?? x?.check ?? `check ${i + 1}`), ok: typeof x?.ok === 'boolean' ? x.ok : typeof x?.pass === 'boolean' ? x.pass : null, note: x?.note ?? x?.message }));
+			const items = q.map((/** @type {any} */ x, /** @type {number} */ i) => ({ name: String(x?.name ?? x?.check ?? `check ${i + 1}`), ok: typeof x?.ok === 'boolean' ? x.ok : typeof x?.pass === 'boolean' ? x.pass : null, note: x?.note ?? x?.message }));
 			return { ok: items.every((i) => i.ok !== false), items };
 		}
 		if (typeof q === 'object') {
-			const o = q as Record<string, unknown>;
-			const checks = (o.checks && typeof o.checks === 'object' ? o.checks : Object.fromEntries(Object.entries(o).filter(([k]) => k !== 'ok'))) as Record<string, unknown>;
+			/** @type {Record<string, any>} */
+			const o = q;
+			/** @type {Record<string, any>} */
+			const checks = o.checks && typeof o.checks === 'object' ? o.checks : Object.fromEntries(Object.entries(o).filter(([k]) => k !== 'ok'));
 			const items = Object.entries(checks).map(([name, v]) => ({
 				name,
-				ok: typeof v === 'boolean' ? v : typeof (v as { ok?: unknown })?.ok === 'boolean' ? ((v as { ok: boolean }).ok) : null,
-				note: typeof v === 'object' && v ? String((v as { note?: unknown }).note ?? (v as { value?: unknown }).value ?? '') || undefined : typeof v === 'boolean' ? undefined : String(v)
+				ok: typeof v === 'boolean' ? v : typeof v?.ok === 'boolean' ? v.ok : null,
+				note: typeof v === 'object' && v ? String(v.note ?? v.value ?? '') || undefined : typeof v === 'boolean' ? undefined : String(v)
 			}));
 			return { ok: typeof o.ok === 'boolean' ? o.ok : items.every((i) => i.ok !== false), items };
 		}
 		return { ok: null, items: [{ name: String(q), ok: null }] };
 	}
-	function loudOf(d: Record<string, unknown>): string | null {
-		const l = (d.loudness ?? {}) as Record<string, unknown>;
+	/** @param {Record<string, any>} d @returns {string | null} */
+	function loudOf(d) {
+		/** @type {Record<string, any>} */
+		const l = d.loudness ?? {};
 		const lufs = l.lufs ?? l.integrated ?? l.I ?? d.lufs;
 		const tp = l.truePeak ?? l.true_peak ?? l.TP ?? d.truePeak ?? d.true_peak;
 		const parts = [lufs !== undefined ? `${Number(lufs).toFixed(1)} LUFS` : '', tp !== undefined ? `${Number(tp).toFixed(1)} dBTP` : ''].filter(Boolean);
 		return parts.length ? parts.join(' · ') : null;
 	}
-	const extra = (d: Record<string, unknown>) => Object.entries(d).filter(([k, v]) => !KNOWN.has(k) && v !== undefined && v !== null && v !== '');
-	const show = (v: unknown) => (typeof v === 'object' ? JSON.stringify(v) : String(v));
+	/** @param {Record<string, unknown>} d */
+	const extra = (d) => Object.entries(d).filter(([k, v]) => !KNOWN.has(k) && v !== undefined && v !== null && v !== '');
+	/** @param {unknown} v */
+	const show = (v) => (typeof v === 'object' ? JSON.stringify(v) : String(v));
 </script>
 
 <aside class="dl">

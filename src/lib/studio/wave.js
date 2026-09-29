@@ -1,10 +1,15 @@
 /** Draws the part of a sound's waveform that a clip plays (a Svelte action on a canvas). */
-export function wave(canvas: HTMLCanvasElement, args: { peaks: number[]; from: number; to: number; total: number; color: string }) {
-	const draw = ({ peaks, from, to, total, color }: typeof args) => {
+/**
+ * @typedef {{ peaks: number[], from: number, to: number, total: number, color: string }} WaveArgs
+ * @param {HTMLCanvasElement} canvas @param {WaveArgs} args
+ */
+export function wave(canvas, args) {
+	/** @param {WaveArgs} a */
+	const draw = ({ peaks, from, to, total, color }) => {
 		const w = canvas.clientWidth, h = canvas.clientHeight, dpr = devicePixelRatio || 1;
 		canvas.width = Math.max(1, w * dpr);
 		canvas.height = Math.max(1, h * dpr);
-		const g = canvas.getContext('2d')!;
+		const g = /** @type {CanvasRenderingContext2D} */ (canvas.getContext('2d'));
 		g.scale(dpr, dpr);
 		if (!peaks.length || !total) return;
 		let top = 0;

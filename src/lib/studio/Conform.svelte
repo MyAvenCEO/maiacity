@@ -3,19 +3,21 @@
 	transform); every world clip is rendered by the worker as an ACEScct plate per delivery shape. This only shows how
 	far that is — the worker does the work (plate jobs, C6) — and which preview LUTs the viewer has.
 -->
-<script lang="ts">
+<script>
 	import ColorBadge from './ColorBadge.svelte';
-	import { ODT, profileFor, profileInfo } from './color';
-	import { SHAPES, clockText, isWorld, type Studio } from './studio.svelte';
+	import { ODT, profileFor, profileInfo } from './color.js';
+	import { SHAPES, clockText, isWorld } from './studio.svelte.js';
 
-	let { s }: { s: Studio } = $props();
+	/** @type {{ s: import('./studio.svelte.js').Studio }} */
+	let { s } = $props();
 
 	const v1 = $derived(s.clips.filter((c) => c.track === 'V1').sort((a, b) => a.start - b.start));
-	const plate = (clipId: string, shape: string) =>
+	/** @param {string} clipId @param {string} shape */
+	const plate = (clipId, shape) =>
 		[...s.plateJobs].sort((a, b) => Date.parse(b.created) - Date.parse(a.created)).find((j) => j.clip_id === clipId && j.shape === shape);
 	/** the preview LUTs the viewer needs for this timeline's pictures */
 	const needed = $derived.by(() => {
-		const names = new Set<string>([ODT]);
+		const names = new Set([ODT]);
 		for (const c of v1) {
 			const p = s.profileOfClip(c);
 			const idt = profileInfo(p).idt;
@@ -71,7 +73,7 @@
 	</p>
 	<ul class="luts">
 		{#each needed as n (n)}
-			<li><span class:ok={!!s.luts[n]} class="dot"></span>{n} {s.luts[n] ? `· ${s.luts[n]!.size}³` : '· missing'}</li>
+			<li><span class:ok={!!s.luts[n]} class="dot"></span>{n} {s.luts[n] ? `· ${s.luts[n]?.size}³` : '· missing'}</li>
 		{/each}
 	</ul>
 </aside>

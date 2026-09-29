@@ -3,25 +3,29 @@
 	how the job under way goes — its stage, progress, time left — the timeline's earlier renders, and the worker's
 	whole queue when the API lists it.
 -->
-<script lang="ts">
-	import type { RenderJob } from '$lib/auth/client';
-	import { raw, running, type Studio } from './studio.svelte';
+<script>
+	import { raw, running } from './studio.svelte.js';
 
-	let { s }: { s: Studio } = $props();
+	/** @type {{ s: import('./studio.svelte.js').Studio }} */
+	let { s } = $props();
 
 	const earlier = $derived(s.newest.filter((r) => r.id !== s.focus?.id).slice(0, 8));
-	const mmss = (x: number) => {
+	/** @param {number} x */
+	const mmss = (x) => {
 		x = Math.max(0, Math.round(x));
 		const h = Math.floor(x / 3600), m = Math.floor((x % 3600) / 60), r = x % 60;
 		return `${h ? `${h}:${String(m).padStart(2, '0')}` : m}:${String(r).padStart(2, '0')}`;
 	};
-	const when = (iso: string) => new Date(iso).toLocaleString([], { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+	/** @param {string} iso */
+	const when = (iso) => new Date(iso).toLocaleString([], { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
 	/** What the worker is doing, in plain words. */
-	function stage(r: RenderJob) {
+	/** @param {import('$lib/auth/client').RenderJob} r */
+	function stage(r) {
 		if (r.status === 'queued') return 'Waiting for the render worker';
 		if (r.status === 'done') return 'Rendered';
 		if (r.status === 'failed') return 'The render failed';
-		const said: Record<string, string> = {
+		/** @type {Record<string, string>} */
+		const said = {
 			'fetching files': 'Fetching the files',
 			'setting the captions': 'Setting the captions',
 			rendering: 'Rendering the film',
@@ -119,7 +123,7 @@
 					<li>
 						<span class="st {j.status}">{j.kind ?? 'render'}</span>
 						<span class="d">{j.status}{j.status === 'rendering' ? ` ${Math.round(j.progress * 100)}%` : ''}</span>
-						<span class="why">{j.timeline_id === s.current?.id ? 'this timeline' : (j.media_cid?.slice(0, 10) ?? j.timeline_id?.slice(0, 8) ?? '')}{j.shape ? ` · ${j.shape}` : ''}</span>
+						<span class="tgt">{j.timeline_id === s.current?.id ? 'this timeline' : (j.media_cid?.slice(0, 10) ?? j.timeline_id?.slice(0, 8) ?? '')}{j.shape ? ` · ${j.shape}` : ''}</span>
 					</li>
 				{/each}
 			</ul>

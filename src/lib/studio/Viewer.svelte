@@ -4,13 +4,26 @@
 	clip's own framing for the shape moves and zooms it. Without WebGL2 it says so and draws nothing: the monitor then
 	shows the pictures themselves, colour unmanaged.
 -->
-<script lang="ts">
-	import type { Cdl, ClipFrame } from '$lib/auth/client';
+<script>
 	import { onDestroy, onMount } from 'svelte';
-	import { ViewerGL, cover } from './gl';
-	import type { Lut } from './luts';
-	import { viewPlan, type ViewPlan } from './view';
+	import { ViewerGL, cover } from './gl.js';
+	import { viewPlan } from './view.js';
 
+	/**
+	 * source: the picture; aspect: the frame's width / height; canvas, plan, supported: bound back to the monitor.
+	 * @type {{
+	 *   source: HTMLVideoElement | HTMLImageElement | HTMLCanvasElement | null | undefined,
+	 *   profile: string,
+	 *   grades?: import('$lib/auth/client').Cdl[],
+	 *   luts: Record<string, import('./luts.js').Lut | null>,
+	 *   aspect: number,
+	 *   frame?: import('$lib/auth/client').ClipFrame,
+	 *   falseColor?: boolean,
+	 *   canvas?: HTMLCanvasElement | null,
+	 *   plan?: import('./view.js').ViewPlan | null,
+	 *   supported?: boolean
+	 * }}
+	 */
 	let {
 		source,
 		profile,
@@ -22,25 +35,15 @@
 		canvas = $bindable(null),
 		plan = $bindable(null),
 		supported = $bindable(true)
-	}: {
-		source: HTMLVideoElement | HTMLImageElement | HTMLCanvasElement | null | undefined;
-		profile: string;
-		grades?: Cdl[];
-		luts: Record<string, Lut | null>;
-		/** the frame's width / height */
-		aspect: number;
-		frame?: ClipFrame;
-		falseColor?: boolean;
-		canvas?: HTMLCanvasElement | null;
-		plan?: ViewPlan | null;
-		supported?: boolean;
 	} = $props();
 
-	let gl: ViewerGL | null = null;
+	/** @type {ViewerGL | null} */
+	let gl = null;
 	let raf = 0;
 	let last = '';
 
-	const size = (el: HTMLVideoElement | HTMLImageElement | HTMLCanvasElement) =>
+	/** @param {HTMLVideoElement | HTMLImageElement | HTMLCanvasElement} el */
+	const size = (el) =>
 		el instanceof HTMLVideoElement
 			? { w: el.videoWidth, h: el.videoHeight, ok: el.readyState >= 2 }
 			: el instanceof HTMLImageElement
@@ -83,7 +86,7 @@
 		try {
 			gl = new ViewerGL(canvas);
 		} catch (e) {
-			console.warn('viewer:', (e as Error).message);
+			console.warn('viewer:', /** @type {Error} */ (e).message);
 			supported = false;
 			return;
 		}

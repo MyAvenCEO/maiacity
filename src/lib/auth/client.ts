@@ -30,7 +30,9 @@ async function call<T>(path: string, init: RequestInit = {}): Promise<T> {
 	const res = await fetch(`${API}${path}`, {
 		...init,
 		credentials: 'include',
-		headers: { 'content-type': 'application/json', ...(init.headers ?? {}) }
+		// a JSON body says so; a plain GET sends no header of its own, so it needs no CORS preflight (a route an older
+		// API does not have then answers a readable 404, instead of failing its preflight)
+		headers: { ...(init.body ? { 'content-type': 'application/json' } : {}), ...(init.headers ?? {}) }
 	});
 	const body = await res.json().catch(() => null);
 	if (!res.ok) throw new ApiError(body?.error ?? 'Something went wrong. Please try again.', res.status);

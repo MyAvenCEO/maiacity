@@ -3,13 +3,14 @@
 	clip shows its shot record instead: its version, the camera's keys, the hour, the exposure, the lights and the cues,
 	each change saved as a new version of the shot (the clip follows it); and a camera move recorded by flying it.
 -->
-<script lang="ts">
-	import type { ShotSpec } from '$lib/auth/client';
+<script>
 	import ColorBadge from './ColorBadge.svelte';
-	import { hasShotJs, toKeys } from './shots';
-	import { isWorld, itemName, type Studio } from './studio.svelte';
+	import { hasShotJs, toKeys } from './shots.js';
+	import { isWorld, itemName } from './studio.svelte.js';
 
-	let { s }: { s: Studio } = $props();
+	/** @typedef {import('$lib/auth/client').ShotSpec} ShotSpec */
+	/** @type {{ s: import('./studio.svelte.js').Studio }} */
+	let { s } = $props();
 
 	const sel = $derived(s.sel);
 	const m = $derived(sel?.cid ? s.byCid.get(sel.cid) : undefined);
@@ -20,9 +21,16 @@
 	const sounds = $derived(s.library.filter((x) => x.kind === 'audio' && !x.tags.includes('superseded')));
 	let cueSound = $state('');
 
-	const edit = (change: (sp: ShotSpec) => void) => sel && s.editSpec(sel, change);
-	const num = (v: string, d = 0) => (Number.isFinite(Number(v)) ? Number(v) : d);
-	const fmt = (v: number | undefined, d = 2) => (v === undefined ? '' : String(Math.round(v * 10 ** d) / 10 ** d));
+	/**
+	 * A change to the world clip's shot (a new version, saved a moment after the last change). The camera's keys,
+	 * lights and cues it changes exist: the fields that show them are only there when they do.
+	 * @param {(sp: ShotSpec & { camera: { keys: import('$lib/auth/client').CameraKey[] } }) => unknown} change
+	 */
+	const edit = (change) => sel && s.editSpec(sel, (sp) => void change(/** @type {any} */ (sp)));
+	/** @param {string} v */
+	const num = (v, d = 0) => (Number.isFinite(Number(v)) ? Number(v) : d);
+	/** @param {number | undefined} v */
+	const fmt = (v, d = 2) => (v === undefined ? '' : String(Math.round(v * 10 ** d) / 10 ** d));
 </script>
 
 <aside class="inspector">
@@ -67,7 +75,7 @@
 					<button class="ghost small" disabled={!hasShotJs()} title={hasShotJs() ? 'Turn the preset move into keys, one a second' : 'Needs game/film/shot.js (stream B)'} onclick={() => edit((sp) => (sp.camera = { kind: 'keys', curve: sp.camera.curve ?? 'glide', keys: toKeys(sp) ?? [] }))}>Preset → keys</button>
 				{/if}
 			</div>
-			<label>Move <select value={spec.camera.curve ?? 'glide'} onchange={(e) => edit((sp) => (sp.camera.curve = e.currentTarget.value as 'glide'))}>{#each ['glide', 'ease', 'landing', 'drift'] as c (c)}<option>{c}</option>{/each}</select></label>
+			<label>Move <select value={spec.camera.curve ?? 'glide'} onchange={(e) => edit((sp) => (sp.camera.curve = /** @type {'glide'} */ (e.currentTarget.value)))}>{#each ['glide', 'ease', 'landing', 'drift'] as c (c)}<option>{c}</option>{/each}</select></label>
 			<label>Lens <input type="number" step="1" min="5" max="150" value={spec.lens.fov} onchange={(e) => edit((sp) => (sp.lens.fov = num(e.currentTarget.value, 50)))} /> ° → <input type="number" step="1" min="5" max="150" value={spec.lens.fovTo ?? ''} placeholder="–" onchange={(e) => edit((sp) => (e.currentTarget.value ? (sp.lens.fovTo = num(e.currentTarget.value, 50)) : delete sp.lens.fovTo))} /></label>
 			{#if spec.camera.kind === 'keys'}
 				<p class="sub">{spec.camera.keys?.length ?? 0} keys · double-click the Camera lane to add one; drag a key to move it.</p>
@@ -75,15 +83,15 @@
 					{@const i = s.selectedKey}
 					<div class="key">
 						<b>Key {i + 1}</b>
-						<label>At <input type="number" step="0.05" value={fmt(key.t)} onchange={(e) => edit((sp) => (sp.camera.keys![i]!.t = num(e.currentTarget.value)))} /> s</label>
-						<label class="xyz">Position {#each [0, 1, 2] as a (a)}<input type="number" step="0.5" value={fmt(key.position[a], 1)} onchange={(e) => edit((sp) => (sp.camera.keys![i]!.position[a] = num(e.currentTarget.value)))} />{/each}</label>
+						<label>At <input type="number" step="0.05" value={fmt(key.t)} onchange={(e) => edit((sp) => (sp.camera.keys[i].t = num(e.currentTarget.value)))} /> s</label>
+						<label class="xyz">Position {#each [0, 1, 2] as a (a)}<input type="number" step="0.5" value={fmt(key.position[a], 1)} onchange={(e) => edit((sp) => (sp.camera.keys[i].position[a] = num(e.currentTarget.value)))} />{/each}</label>
 						{#if key.aim}
-							<label class="xyz">Aim {#each [0, 1, 2] as a (a)}<input type="number" step="0.5" value={fmt(key.aim[a], 1)} onchange={(e) => edit((sp) => (sp.camera.keys![i]!.aim![a] = num(e.currentTarget.value)))} />{/each}</label>
+							<label class="xyz">Aim {#each [0, 1, 2] as a (a)}<input type="number" step="0.5" value={fmt(key.aim[a], 1)} onchange={(e) => edit((sp) => { const aim = sp.camera.keys[i].aim; if (aim) aim[a] = num(e.currentTarget.value); })} />{/each}</label>
 						{:else}
-							<label>Yaw <input type="number" step="0.01" value={fmt(key.yaw)} onchange={(e) => edit((sp) => (sp.camera.keys![i]!.yaw = num(e.currentTarget.value)))} /> Pitch <input type="number" step="0.01" value={fmt(key.pitch)} onchange={(e) => edit((sp) => (sp.camera.keys![i]!.pitch = num(e.currentTarget.value)))} /></label>
+							<label>Yaw <input type="number" step="0.01" value={fmt(key.yaw)} onchange={(e) => edit((sp) => (sp.camera.keys[i].yaw = num(e.currentTarget.value)))} /> Pitch <input type="number" step="0.01" value={fmt(key.pitch)} onchange={(e) => edit((sp) => (sp.camera.keys[i].pitch = num(e.currentTarget.value)))} /></label>
 						{/if}
-						<label>Lens <input type="number" step="1" value={fmt(key.fov, 0)} onchange={(e) => edit((sp) => (sp.camera.keys![i]!.fov = num(e.currentTarget.value, 50)))} /> °</label>
-						<button class="ghost small danger" onclick={() => (edit((sp) => sp.camera.keys!.splice(i, 1)), (s.selectedKey = null))}>Delete key</button>
+						<label>Lens <input type="number" step="1" value={fmt(key.fov, 0)} onchange={(e) => edit((sp) => (sp.camera.keys[i].fov = num(e.currentTarget.value, 50)))} /> °</label>
+						<button class="ghost small danger" onclick={() => (edit((sp) => sp.camera.keys.splice(i, 1)), (s.selectedKey = null))}>Delete key</button>
 					</div>
 				{/if}
 			{/if}
@@ -92,15 +100,15 @@
 			<label>From <input type="number" step="0.25" min="0" max="24" value={spec.time.hour} onchange={(e) => edit((sp) => (sp.time.hour = num(e.currentTarget.value, 12)))} /> h to <input type="number" step="0.25" min="0" max="24" value={spec.time.hourTo ?? ''} placeholder="–" onchange={(e) => edit((sp) => (e.currentTarget.value ? (sp.time.hourTo = num(e.currentTarget.value, 12)) : delete sp.time.hourTo))} /> h</label>
 
 			<h3>Exposure</h3>
-			<label>Meter <select value={spec.exposure.meter} onchange={(e) => edit((sp) => (sp.exposure.meter = e.currentTarget.value as 'lock'))}><option value="lock">lock (metered once)</option><option value="ramp">ramp (follows the light)</option><option value="fixed">fixed EV</option></select></label>
+			<label>Meter <select value={spec.exposure.meter} onchange={(e) => edit((sp) => (sp.exposure.meter = /** @type {'lock'} */ (e.currentTarget.value)))}><option value="lock">lock (metered once)</option><option value="ramp">ramp (follows the light)</option><option value="fixed">fixed EV</option></select></label>
 			<label>Offset <input type="number" step="0.1" value={spec.exposure.stops} onchange={(e) => edit((sp) => (sp.exposure.stops = num(e.currentTarget.value)))} /> stops</label>
 
 			<h3>Lights</h3>
 			{#each spec.lights as l, i (i)}
 				<label class="light">
-					<input class="lid" value={l.id} onchange={(e) => edit((sp) => (sp.lights[i]!.id = e.currentTarget.value.trim() || l.id))} aria-label="Light id" />
-					{#if Array.isArray(l.intensity)}<span class="sub">curve ({l.intensity.length} points)</span>{:else}<input type="number" step="0.05" min="0" value={l.intensity ?? 1} onchange={(e) => edit((sp) => (sp.lights[i]!.intensity = num(e.currentTarget.value, 1)))} aria-label="Intensity" />{/if}
-					<input type="color" value={l.color ?? '#ffd9a0'} onchange={(e) => edit((sp) => (sp.lights[i]!.color = e.currentTarget.value))} aria-label="Colour" />
+					<input class="lid" value={l.id} onchange={(e) => edit((sp) => (sp.lights[i].id = e.currentTarget.value.trim() || l.id))} aria-label="Light id" />
+					{#if Array.isArray(l.intensity)}<span class="sub">curve ({l.intensity.length} points)</span>{:else}<input type="number" step="0.05" min="0" value={l.intensity ?? 1} onchange={(e) => edit((sp) => (sp.lights[i].intensity = num(e.currentTarget.value, 1)))} aria-label="Intensity" />{/if}
+					<input type="color" value={l.color ?? '#ffd9a0'} onchange={(e) => edit((sp) => (sp.lights[i].color = e.currentTarget.value))} aria-label="Colour" />
 					<button class="x" onclick={() => edit((sp) => sp.lights.splice(i, 1))} aria-label="Remove the light">×</button>
 				</label>
 			{/each}
@@ -109,12 +117,12 @@
 			<h3>Cues</h3>
 			{#each spec.cues as q, i (i)}
 				<label class="light">
-					<input type="number" step="0.05" value={fmt(q.at)} onchange={(e) => edit((sp) => (sp.cues[i]!.at = num(e.currentTarget.value)))} aria-label="At (s)" />
+					<input type="number" step="0.05" value={fmt(q.at)} onchange={(e) => edit((sp) => (sp.cues[i].at = num(e.currentTarget.value)))} aria-label="At (s)" />
 					{#if q.kind === 'sound'}
 						<span class="cue">♪ {s.byCid.get(q.cid)?.title || q.cid.slice(0, 8)}</span>
-						<input type="number" step="0.05" min="0" max="1" value={q.level} onchange={(e) => edit((sp) => ((sp.cues[i] as { level: number }).level = num(e.currentTarget.value, 1)))} aria-label="Level" />
+						<input type="number" step="0.05" min="0" max="1" value={q.level} onchange={(e) => edit((sp) => (/** @type {{ level: number }} */ (sp.cues[i]).level = num(e.currentTarget.value, 1)))} aria-label="Level" />
 					{:else}
-						<input class="lid" value={q.name} onchange={(e) => edit((sp) => ((sp.cues[i] as { name: string }).name = e.currentTarget.value))} aria-label="Event" />
+						<input class="lid" value={q.name} onchange={(e) => edit((sp) => (/** @type {{ name: string }} */ (sp.cues[i]).name = e.currentTarget.value))} aria-label="Event" />
 					{/if}
 					<button class="x" onclick={() => edit((sp) => sp.cues.splice(i, 1))} aria-label="Remove the cue">×</button>
 				</label>

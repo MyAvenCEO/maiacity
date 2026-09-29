@@ -5,16 +5,20 @@
 	keyframe lanes open under the tracks: the camera's keys, the hour, the exposure, the lights and the cues (a sound cue
 	lands on A3, where it plays).
 -->
-<script lang="ts">
-	import type { CameraKey, ShotSpec } from '$lib/auth/client';
+<script>
 	import ColorBadge from './ColorBadge.svelte';
-	import { evaluate, shotAt, toKeys } from './shots';
-	import { TRACKS, isWorld, thumb, tint, type Clip, type Studio, type Track } from './studio.svelte';
-	import { wave } from './wave';
+	import { evaluate, shotAt, toKeys } from './shots.js';
+	import { TRACKS, isWorld, thumb, tint } from './studio.svelte.js';
+	import { wave } from './wave.js';
 
-	let { s }: { s: Studio } = $props();
+	/** @typedef {import('$lib/auth/client').ShotSpec} ShotSpec */
+	/** @typedef {import('./studio.svelte.js').Clip} Clip */
+	/** @typedef {import('./studio.svelte.js').Track} Track */
+	/** @type {{ s: import('./studio.svelte.js').Studio }} */
+	let { s } = $props();
 
-	const x = (t: number) => `${t * s.pxPerSec}px`;
+	/** @param {number} t */
+	const x = (t) => `${t * s.pxPerSec}px`;
 	const ticks = $derived.by(() => {
 		const every = s.pxPerSec >= 40 ? 1 : s.pxPerSec >= 15 ? 5 : 10;
 		return Array.from({ length: Math.floor(s.span / every) + 1 }, (_, i) => i * every);
@@ -25,11 +29,14 @@
 	const LANES = ['Camera', 'Hour', 'Exposure', 'Lights', 'Cues'];
 	const rows = $derived(`1.5rem repeat(5, minmax(1.7rem, 1fr))${spec ? ` repeat(${LANES.length}, 1.45rem)` : ''}`);
 	/** timeline time of a shot-local time in the open world clip */
-	const tl = (t: number) => (wc ? wc.start + (t - wc.in) : 0);
-	const inClip = (t: number) => !!wc && t >= wc.in - 1e-6 && t <= wc.in + wc.dur + 1e-6;
+	/** @param {number} t */
+	const tl = (t) => (wc ? wc.start + (t - wc.in) : 0);
+	/** @param {number} t */
+	const inClip = (t) => !!wc && t >= wc.in - 1e-6 && t <= wc.in + wc.dur + 1e-6;
 
 	// ── by hand: move, trim, seek, drop ──────────────────────────────────────
-	function grab(e: PointerEvent, c: Clip, mode: 'move' | 'left' | 'right') {
+	/** @param {PointerEvent} e @param {Clip} c @param {'move' | 'left' | 'right'} mode */
+	function grab(e, c, mode) {
 		e.stopPropagation();
 		e.preventDefault();
 		s.selected = c.id;
@@ -39,12 +46,13 @@
 		const isImage = !isWorld(c) && s.byCid.get(c.cid ?? '')?.kind === 'image';
 		const max = isImage ? Infinity : isWorld(c) ? (s.specOf(c)?.seconds ?? d0 + i0) : (s.sources[c.cid ?? '']?.duration ?? d0 + i0);
 		let moved = false;
-		const move = (ev: PointerEvent) => {
+		/** @param {PointerEvent} ev */
+		const move = (ev) => {
 			const dt = (ev.clientX - x0) / s.pxPerSec;
 			if (Math.abs(ev.clientX - x0) > 1) moved = true;
 			const i = s.clips.findIndex((k) => k.id === c.id);
 			if (i < 0) return;
-			const k = { ...s.clips[i]! };
+			const k = { ...s.clips[i] };
 			if (mode === 'move') k.start = Math.max(0, s.snap(s0 + dt));
 			if (mode === 'left') {
 				// trimming the head: the clip starts later and plays from further in (a world clip: later in its move — never faster)
@@ -68,18 +76,22 @@
 		window.addEventListener('pointerup', up);
 	}
 
-	function scrub(e: PointerEvent) {
-		if (!s.lanes) return;
+	/** @param {PointerEvent} e */
+	function scrub(e) {
+		const lanes = s.lanes;
+		if (!lanes) return;
 		s.selected = null;
 		s.selectedKey = null;
-		const put = (ev: PointerEvent) => s.seek((ev.clientX - s.lanes!.getBoundingClientRect().left) / s.pxPerSec);
+		/** @param {PointerEvent} ev */
+		const put = (ev) => s.seek((ev.clientX - lanes.getBoundingClientRect().left) / s.pxPerSec);
 		put(e);
 		const up = () => (window.removeEventListener('pointermove', put), window.removeEventListener('pointerup', up));
 		window.addEventListener('pointermove', put);
 		window.addEventListener('pointerup', up);
 	}
 
-	async function drop(e: DragEvent, track: Track) {
+	/** @param {DragEvent} e @param {Track} track */
+	async function drop(e, track) {
 		e.preventDefault();
 		if (!s.lanes) return;
 		const at = (e.clientX - s.lanes.getBoundingClientRect().left) / s.pxPerSec;
@@ -93,7 +105,8 @@
 		const cid = e.dataTransfer?.getData('text/x-cid');
 		if (!cid) return;
 		// from the source monitor a drag carries the marked range too
-		let range: { in: number; dur: number } | undefined;
+		/** @type {{ in: number, dur: number } | undefined} */
+		let range;
 		try {
 			const r = JSON.parse(e.dataTransfer?.getData('text/x-range') || 'null');
 			if (r && typeof r.in === 'number' && typeof r.dur === 'number') range = r;
@@ -105,20 +118,25 @@
 
 	// ── the world clip's lanes ────────────────────────────────────────────────
 	const keys = $derived(spec?.camera.kind === 'keys' ? (spec.camera.keys ?? []) : null);
-	function dragKey(e: PointerEvent, i: number) {
+	/** @param {PointerEvent} e @param {number} i */
+	function dragKey(e, i) {
 		e.stopPropagation();
 		e.preventDefault();
 		s.selectedKey = i;
 		if (!wc || !keys || !s.canEdit) return;
-		const clip = wc, x0 = e.clientX, t0 = keys[i]!.t;
+		const clip = wc, x0 = e.clientX, t0 = keys[i].t;
 		s.seek(tl(t0));
 		let moved = false;
-		const move = (ev: PointerEvent) => {
+		/** @param {PointerEvent} ev */
+		const move = (ev) => {
 			const dt = (ev.clientX - x0) / s.pxPerSec;
 			if (Math.abs(ev.clientX - x0) < 2 && !moved) return;
 			moved = true;
 			const t = Math.min(clip.in + clip.dur, Math.max(clip.in, Math.round((t0 + dt) * 30) / 30));
-			s.editSpec(clip, (sp) => void (sp.camera.keys![i]!.t = t));
+			s.editSpec(clip, (sp) => {
+				const k = sp.camera.keys?.[i];
+				if (k) k.t = t;
+			});
 			s.seek(tl(t));
 		};
 		const up = () => (window.removeEventListener('pointermove', move), window.removeEventListener('pointerup', up));
@@ -126,36 +144,44 @@
 		window.addEventListener('pointerup', up);
 	}
 	/** A key where the camera is at that moment (so adding one changes nothing until it is moved). */
-	function addKey(e: MouseEvent) {
+	/** @param {MouseEvent} e */
+	function addKey(e) {
 		e.stopPropagation();
 		if (!wc || !spec || !s.canEdit || !s.lanes) return;
 		const at = (e.clientX - s.lanes.getBoundingClientRect().left) / s.pxPerSec;
 		const t = Math.min(wc.in + wc.dur, Math.max(wc.in, wc.in + (at - wc.start)));
 		const ev = evaluate(spec, t);
-		const k: CameraKey = { t: Math.round(t * 30) / 30, position: [ev.pose[0], ev.pose[1], ev.pose[2]], yaw: ev.pose[3], pitch: ev.pose[4], fov: ev.fov };
+		/** @type {import('$lib/auth/client').CameraKey} */
+		const k = { t: Math.round(t * 30) / 30, position: [ev.pose[0], ev.pose[1], ev.pose[2]], yaw: ev.pose[3], pitch: ev.pose[4], fov: ev.fov };
 		s.editSpec(wc, (sp) => {
 			const list = sp.camera.kind === 'keys' ? (sp.camera.keys ?? []) : (toKeys(sp) ?? []);
 			sp.camera = { kind: 'keys', curve: sp.camera.curve ?? 'glide', keys: [...list, k].sort((a, b) => a.t - b.t) };
 		});
 		s.seek(tl(k.t));
 	}
-	function dragCue(e: PointerEvent, i: number) {
+	/** @param {PointerEvent} e @param {number} i */
+	function dragCue(e, i) {
 		e.stopPropagation();
 		e.preventDefault();
 		if (!wc || !spec || !s.canEdit) return;
-		const clip = wc, x0 = e.clientX, t0 = spec.cues[i]!.at;
-		const move = (ev: PointerEvent) => {
+		const clip = wc, x0 = e.clientX, t0 = spec.cues[i].at;
+		/** @param {PointerEvent} ev */
+		const move = (ev) => {
 			const t = Math.min(clip.in + clip.dur, Math.max(clip.in, Math.round((t0 + (ev.clientX - x0) / s.pxPerSec) * 30) / 30));
-			s.editSpec(clip, (sp) => void (sp.cues[i]!.at = t));
+			s.editSpec(clip, (sp) => void (sp.cues[i].at = t));
 		};
 		const up = () => (window.removeEventListener('pointermove', move), window.removeEventListener('pointerup', up));
 		window.addEventListener('pointermove', move);
 		window.addEventListener('pointerup', up);
 	}
-	const fmt = (v: number, d = 1) => (Math.round(v * 10 ** d) / 10 ** d).toString();
-	const hourText = (sp: ShotSpec) => `${fmt(sp.time.hour)} h${sp.time.hourTo !== undefined && sp.time.hourTo !== sp.time.hour ? ` → ${fmt(sp.time.hourTo)} h` : ''}`;
-	const expText = (sp: ShotSpec) => `${sp.exposure.meter} · ${sp.exposure.stops >= 0 ? '+' : ''}${fmt(sp.exposure.stops)} stops${sp.exposure.ev !== undefined ? ` · EV ${fmt(sp.exposure.ev)}` : ''}`;
-	const lightText = (sp: ShotSpec) =>
+	/** @param {number} v */
+	const fmt = (v, d = 1) => (Math.round(v * 10 ** d) / 10 ** d).toString();
+	/** @param {ShotSpec} sp */
+	const hourText = (sp) => `${fmt(sp.time.hour)} h${sp.time.hourTo !== undefined && sp.time.hourTo !== sp.time.hour ? ` → ${fmt(sp.time.hourTo)} h` : ''}`;
+	/** @param {ShotSpec} sp */
+	const expText = (sp) => `${sp.exposure.meter} · ${sp.exposure.stops >= 0 ? '+' : ''}${fmt(sp.exposure.stops)} stops${sp.exposure.ev !== undefined ? ` · EV ${fmt(sp.exposure.ev)}` : ''}`;
+	/** @param {ShotSpec} sp */
+	const lightText = (sp) =>
 		sp.lights.length ? sp.lights.map((l) => `${l.id} ${Array.isArray(l.intensity) ? '∿' : fmt(l.intensity ?? 1, 2)}`).join(' · ') : 'no light changes';
 </script>
 
@@ -175,12 +201,12 @@
 			</div>
 			{#each TRACKS as t (t.id)}
 				<!-- svelte-ignore a11y_no_static_element_interactions -->
-				<div class="track" ondragover={(e) => t.id !== 'T1' && s.canEdit && e.preventDefault()} ondrop={(e) => t.id !== 'T1' && drop(e, t.id as Track)}>
+				<div class="track" ondragover={(e) => t.id !== 'T1' && s.canEdit && e.preventDefault()} ondrop={(e) => t.id !== 'T1' && drop(e, /** @type {Track} */ (t.id))}>
 					{#if t.id === 'T1'}
 						{#each s.clips.filter((c) => c.track === 'A1') as c (c.id)}
 							{@const words = s.captionWords.filter((w) => w.clip === c.id)}
 							{#if words.length}
-								<div class="clip caps" style:left={x(words[0]!.t)} style:width={x(Math.max(0.3, c.start + c.dur - words[0]!.t))}>
+								<div class="clip caps" style:left={x(words[0].t)} style:width={x(Math.max(0.3, c.start + c.dur - words[0].t))}>
 									<span>{words.map((w) => w.word).join(' ')}</span>
 								</div>
 							{/if}
@@ -203,7 +229,7 @@
 								{#if m?.kind === 'image'}
 									<img src={thumb(m)} alt="" draggable="false" />
 								{:else if m?.kind === 'audio' && src}
-									<canvas use:wave={{ peaks: src.peaks, from: c.in, to: c.in + c.dur, total: src.duration, color: tint(t.id as Track) }}></canvas>
+									<canvas use:wave={{ peaks: src.peaks, from: c.in, to: c.in + c.dur, total: src.duration, color: tint(/** @type {Track} */ (t.id)) }}></canvas>
 								{/if}
 								<span class="label">{s.clipName(c)}{#if world}<i> v{c.shotVersion}</i>{/if}</span>
 								{#if t.id === 'V1'}
