@@ -6,6 +6,9 @@
 #   BACKUP_BUCKET, BACKUP_ENDPOINT, BACKUP_REGION, AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY
 # The dump is not encrypted (decided 2026-09-29): the bucket is private and its keys are the protection.
 # Restore: docker exec -i maia-city-db pg_restore -U maiacity -d maiacity --clean --if-exists < file.dump
+#
+# The dump goes to a file first and is then uploaded as a file: no stream through stdin, no command that could wait
+# for input, and every step says where it is — a hang shows up in the log at the step that hung.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 [ -f backup.env ] && { set -a; . ./backup.env; set +a; }
@@ -14,19 +17,24 @@ cd "$(dirname "$0")/.."
 POSTGRES_DB=$(grep -m1 '^POSTGRES_DB=' .env 2>/dev/null | cut -d= -f2- || true)
 POSTGRES_USER=$(grep -m1 '^POSTGRES_USER=' .env 2>/dev/null | cut -d= -f2- || true)
 LABEL="${1:-by-hand}"
-FILE="BACKUPS/pg/${POSTGRES_DB:-maiacity}-$(date -u +%Y%m%dT%H%M%SZ)-${LABEL}.dump"
+NAME="${POSTGRES_DB:-maiacity}-$(date -u +%Y%m%dT%H%M%SZ)-${LABEL}.dump"
+KEY="BACKUPS/pg/$NAME"
 if ! docker ps --format '{{.Names}}' | grep -qx maia-city-db; then
   echo "No database container running — nothing to back up (first deploy?)."; exit 0
 fi
+WORK="$(pwd)/backups-tmp"
+mkdir -p "$WORK"
+trap 'rm -f "$WORK/$NAME"' EXIT
+
+echo "backup: dumping ${POSTGRES_DB:-maiacity} …"
+timeout 600 docker exec maia-city-db pg_dump -U "${POSTGRES_USER:-maiacity}" -d "${POSTGRES_DB:-maiacity}" -Fc </dev/null >"$WORK/$NAME"
+SIZE=$(stat -c %s "$WORK/$NAME")
+echo "backup: dump is $SIZE bytes; uploading to s3://$BACKUP_BUCKET/$KEY …"
+
 # Hetzner's S3 does not take the checksums newer AWS CLIs send by default — only when an operation requires one
-aws() {
-  docker run --rm -i -e AWS_ACCESS_KEY_ID -e AWS_SECRET_ACCESS_KEY -e AWS_DEFAULT_REGION="$BACKUP_REGION" \
-    -e AWS_REQUEST_CHECKSUM_CALCULATION=when_required -e AWS_RESPONSE_CHECKSUM_VALIDATION=when_required \
-    amazon/aws-cli --endpoint-url "$BACKUP_ENDPOINT" "$@"
-}
-# pg_dump in the database container (custom format, compressed) → straight into the bucket
-docker exec maia-city-db pg_dump -U "${POSTGRES_USER:-maiacity}" -d "${POSTGRES_DB:-maiacity}" -Fc \
-  | aws s3 cp - "s3://$BACKUP_BUCKET/$FILE" --expected-size 2000000000 >/dev/null
-SIZE=$(aws s3 ls "s3://$BACKUP_BUCKET/$FILE" | awk '{print $3}')
-[ -n "$SIZE" ] && [ "$SIZE" -gt 0 ] || { echo "Upload not found: $FILE"; exit 1; }
-echo "Backup: s3://$BACKUP_BUCKET/$FILE ($SIZE bytes)"
+timeout 600 docker run --rm -v "$WORK:/work:ro" \
+  -e AWS_ACCESS_KEY_ID -e AWS_SECRET_ACCESS_KEY -e AWS_DEFAULT_REGION="$BACKUP_REGION" \
+  -e AWS_REQUEST_CHECKSUM_CALCULATION=when_required -e AWS_RESPONSE_CHECKSUM_VALIDATION=when_required \
+  amazon/aws-cli --endpoint-url "$BACKUP_ENDPOINT" --cli-connect-timeout 20 --cli-read-timeout 120 \
+  s3 cp "/work/$NAME" "s3://$BACKUP_BUCKET/$KEY" --only-show-errors </dev/null
+echo "backup: s3://$BACKUP_BUCKET/$KEY ($SIZE bytes)"

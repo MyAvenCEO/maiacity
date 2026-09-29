@@ -12,6 +12,7 @@
 	import { onMount } from 'svelte';
 	import { me, signIn, signOut, type Founder } from '$lib/auth/client';
 	import { remember } from '$lib/app/session';
+	import { command, native } from '$lib/native';
 	import NavPill from '$lib/app/NavPill.svelte';
 	import { immersive as fullScreen } from '$lib/app/immersive.svelte';
 	import { gameAt, placeOf, released } from '$lib/app/places';
@@ -33,7 +34,31 @@
 		remember(!!founder);
 	});
 
+	// maiaCITY Studio (the Mac app) cannot hold maia.city's passkey: it asks for a key, the browser opens the approval
+	// page, the admin says yes with the passkey there, and the app is in
+	let device = $state<{ user_code: string; url: string } | null>(null);
+	async function enterApp() {
+		busy = true;
+		error = '';
+		try {
+			const { listen } = await import('@tauri-apps/api/event');
+			const stop = await listen<{ signed_in: boolean; reason: string | null }>('auth', async ({ payload }) => {
+				stop();
+				device = null;
+				busy = false;
+				if (!payload.signed_in) return void (error = payload.reason ?? '');
+				founder = await me();
+				phase = 'ready';
+			});
+			device = await command('auth_start');
+		} catch (e) {
+			error = String(e);
+			busy = false;
+		}
+	}
+
 	async function enter() {
+		if (native()) return enterApp();
 		busy = true;
 		error = '';
 		try {
@@ -52,6 +77,8 @@
 		await signOut();
 		remember(false);
 		founder = null;
+		// the Mac app has no public site to go back to: it waits at its own sign-in
+		if (native()) return void (phase = 'signed-out');
 		await goto(`${base}/`);
 	}
 
@@ -76,9 +103,15 @@
 		<a class="logo" href="{base}/">maia<strong>CITY</strong></a>
 		<h1>Welcome back.</h1>
 		<p class="lede">The city's own rooms — the games, and what we build with — open to its founders.</p>
-		<button class="pill-btn" disabled={busy} onclick={enter}>{busy ? 'One moment…' : 'Sign in with your passkey'}</button>
+		{#if device}
+			<p class="lede">Your browser opened maia.city. Approve this Mac there with your passkey — the code is</p>
+			<p class="code">{device.user_code}</p>
+			<p class="fine">Waiting for your approval… <button class="quiet" onclick={() => command('auth_open', { url: device!.url })}>Open the page again</button></p>
+		{:else}
+			<button class="pill-btn" disabled={busy} onclick={enter}>{busy ? 'One moment…' : 'Sign in with your passkey'}</button>
+		{/if}
 		{#if error}<p class="bad">{error}</p>{/if}
-		<p class="fine">Not a founder yet? <a href="{base}/join/">Join the line →</a></p>
+		{#if !native()}<p class="fine">Not a founder yet? <a href="{base}/join/">Join the line →</a></p>{/if}
 	</div>
 {:else}
 	{#if !immersive}
@@ -135,6 +168,17 @@
 
 	.bad {
 		color: var(--terracotta);
+	}
+
+	/* the device code the Mac app shows while the browser asks for the passkey */
+	.code {
+		margin: 0.2rem 0 0.4rem;
+		padding: 0.5rem 1rem;
+		border-radius: 12px;
+		background: var(--cream);
+		font-family: ui-monospace, monospace;
+		font-size: 2rem;
+		letter-spacing: 0.12em;
 	}
 
 	.logo {

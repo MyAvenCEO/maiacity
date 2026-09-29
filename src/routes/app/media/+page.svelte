@@ -15,6 +15,7 @@
 	import { replaceState } from '$app/navigation';
 	import { onMount, tick } from 'svelte';
 	import { listMedia, may, me, type MediaItem } from '$lib/auth/client';
+	import { native } from '$lib/native';
 	import Tile from '$lib/admin/media/Tile.svelte';
 	import Viewer from '$lib/admin/media/Viewer.svelte';
 	import Details from '$lib/admin/media/Details.svelte';
@@ -33,7 +34,7 @@
 	type Kind = 'all' | 'image' | 'video' | 'audio';
 	type Measure = { w?: number; h?: number; d?: number };
 
-	let phase = $state<'loading' | 'signed-out' | 'forbidden' | 'ready'>('loading');
+	let phase = $state<'loading' | 'app-only' | 'signed-out' | 'forbidden' | 'ready'>('loading');
 	let media = $state<MediaItem[]>([]);
 	let error = $state('');
 
@@ -230,6 +231,8 @@
 	});
 
 	onMount(async () => {
+		// the admin's media handling lives in maiaCITY Studio, the Mac app, only
+		if (!native()) return void (phase = 'app-only');
 		try {
 			const founder = await me();
 			if (!may(founder, 'media:admin')) return void (phase = 'forbidden');
@@ -257,6 +260,8 @@
 
 	{#if phase === 'loading'}
 		<p class="lede">One moment…</p>
+	{:else if phase === 'app-only'}
+		<p class="lede">The media library lives in <strong>maiaCITY Studio</strong>, the Mac app. Open it there.</p>
 	{:else if phase === 'signed-out'}
 		<p class="lede">The media library belongs to the admin. <a href="{base}/join/">Sign in</a> first.</p>
 	{:else if phase === 'forbidden'}

@@ -4,7 +4,7 @@
   "version": "0.1.0",
   "identifier": "city.maia.studio",
   "build": {
-    "devUrl": "http://localhost:5173/vault/",
+    "devUrl": "http://localhost:5173/app/studio/",
     "frontendDist": "../../build",
     "beforeDevCommand": { "script": "bun run dev", "cwd": "../.." },
     "beforeBuildCommand": { "script": "bun run build", "cwd": "../.." }
@@ -14,7 +14,7 @@
       {
         "label": "main",
         "title": "maiaCITY Studio",
-        "url": "vault/",
+        "url": "app/studio/",
         "width": 1320,
         "height": 860,
         "minWidth": 960,

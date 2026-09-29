@@ -5,6 +5,7 @@
 // in development always from the local one, whose manifest (manifest.local.json) comes from the local database.
 import { dev } from '$app/environment';
 import published from './manifest.json';
+import { APP_API, native } from '$lib/native';
 
 export type MediaEntry = { url: string | null; mime: string; title: string; description: string; tags: string[]; stream?: string };
 
@@ -29,7 +30,7 @@ export function asset(ref: string | undefined | null) {
 	const cid = CID.exec(ref)?.[1];
 	if (!cid) return ref;
 	const url = known[cid]?.url;
-	return url ? `${CDN}${url}` : `${API}/api/media/${cid}`;
+	return url ? `${CDN}${url}` : `${native() ? APP_API : API}/api/media/${cid}`;
 }
 
 /** What the library says about a public file. */

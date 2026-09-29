@@ -1,11 +1,11 @@
 <!-- Every file a film is delivered as, cut by cut: what it is, how big, and which channels it goes to. -->
 <script lang="ts">
-	import { API, type Delivery, type Platform } from '$lib/auth/client';
+	import { API, mediaUrl, type Delivery, type Platform } from '$lib/auth/client';
 	import { PLATFORM_LABEL } from './board';
 
 	let { deliveries }: { deliveries: Delivery[] } = $props();
 
-	const raw = (cid: string) => `${API}/api/media/${cid}`;
+	const raw = (cid: string) => mediaUrl(cid);
 	const mmss = (s: number) => {
 		const t = Math.round(s);
 		return `${Math.floor(t / 60)}:${String(t % 60).padStart(2, '0')}`;

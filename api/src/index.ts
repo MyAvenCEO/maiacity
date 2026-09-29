@@ -180,12 +180,16 @@ const server = Bun.serve({
     "/api/me": {
       OPTIONS: (req) => new Response(null, { status: 204, headers: cors(req) }),
       GET: async (req) => {
-        const id = founderIdFrom(req);
+        // maiaCITY Studio (the Mac app) signs in with a key the admin approved: it speaks for them, but may only
+        // what the key was given — so its capabilities are the key's scope, never more than the role holds now
+        const key = await keyHolder(req);
+        const id = key?.id ?? founderIdFrom(req);
         if (!id) return json(req, { error: "not signed in" }, { status: 401 });
         const [founder] = await sql`SELECT id, number, name, created, role FROM founders WHERE id = ${id}`;
         if (!founder) return json(req, { error: "not signed in" }, { status: 401 });
         // what they may do comes with who they are, so the site can show them only what they can use
-        return json(req, { ...publicFounder(founder), role: founder.role, caps: [...capabilities(founder.role)] });
+        const caps = [...capabilities(founder.role)].filter((c) => !key || key.scope.includes(c));
+        return json(req, { ...publicFounder(founder), role: founder.role, caps });
       },
       // The only thing a founder can change: the name they are known by.
       PATCH: async (req) => {

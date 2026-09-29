@@ -16,6 +16,7 @@
 	import { onMount, tick } from 'svelte';
 	import {
 		API,
+		mediaUrl,
 		STATUSES,
 		createContent,
 		deleteContent,
@@ -227,7 +228,7 @@
 	{@const next = step(i.status, 1, statuses)}
 	<article class="card" class:lifted={dragging === i.id} draggable="true" ondragstart={(e) => dragStart(e, i)} ondragend={() => ((dragging = null), (over = null))}>
 		<button class="open" onclick={() => open(i.id)}>
-			{#if thumb}<img src="{API}/api/media/{thumb.cid}" alt="" loading="lazy" style:aspect-ratio={thumb.aspect.replace(':', ' / ')} />{/if}
+			{#if thumb}<img src={mediaUrl(thumb.cid)} alt="" loading="lazy" style:aspect-ratio={thumb.aspect.replace(':', ' / ')} />{/if}
 			<span class="t">{i.title}</span>
 			{#if i.project || cuts.length}<span class="m">{[i.project, ...cuts].filter(Boolean).join(' · ')}</span>{/if}
 			{#if i.scheduled_at && (i.status === 'scheduled' || i.status === 'published')}<span class="d">{dateLabel(i.scheduled_at)}</span>{/if}

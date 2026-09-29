@@ -33,6 +33,16 @@ enum Cmd {
     Ls,
     /// This node's EndpointId and catalog id
     Id,
+    /// What a movie file is, read by AVFoundation (the native ffprobe)
+    Probe { file: PathBuf },
+    /// A movie's HD proxy, made natively (HEVC Main10 in hardware)
+    Proxy {
+        file: PathBuf,
+        out: PathBuf,
+        /// the proxy's colour profile, as game/film/color.js names it
+        #[arg(long, default_value = "rec709")]
+        profile: String,
+    },
 }
 
 fn default_dir() -> PathBuf {
@@ -44,9 +54,32 @@ fn default_dir() -> PathBuf {
 async fn main() -> Result<()> {
     tracing_subscriber::fmt().with_env_filter(std::env::var("RUST_LOG").unwrap_or_else(|_| "warn".into())).init();
     let cli = Cli::parse();
+    // the media commands need no vault
+    match &cli.cmd {
+        Cmd::Probe { file } => {
+            println!("{}", serde_json::to_string_pretty(&vault_media::probe(file)?)?);
+            return Ok(());
+        }
+        Cmd::Proxy { file, out, profile } => {
+            let started = std::time::Instant::now();
+            let mut last = -1i64;
+            let made = vault_media::make_proxy(file, out, profile, &mut |p| {
+                let pct = (p * 100.0) as i64;
+                if pct / 10 != last / 10 {
+                    eprint!("{pct}% ");
+                    last = pct;
+                }
+            })?;
+            eprintln!();
+            println!("{} in {:.1} s", serde_json::to_string(&made)?, started.elapsed().as_secs_f64());
+            return Ok(());
+        }
+        _ => {}
+    }
     let vault = Vault::open(cli.dir.unwrap_or_else(default_dir)).await?;
 
     match cli.cmd {
+        Cmd::Probe { .. } | Cmd::Proxy { .. } => unreachable!("handled above"),
         Cmd::Id => {
             println!("endpoint {}", vault.endpoint.id());
             println!("catalog  {}", vault.catalog.doc.id());

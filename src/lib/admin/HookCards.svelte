@@ -4,11 +4,11 @@
 	the repo (scripts/film/thumbnail.mjs) and pushed with the day.
 -->
 <script lang="ts">
-	import { API, type Delivery } from '$lib/auth/client';
+	import { API, mediaUrl, type Delivery } from '$lib/auth/client';
 
 	let { deliveries = [] }: { deliveries?: Delivery[] } = $props();
 
-	const raw = (cid: string) => `${API}/api/media/${cid}`;
+	const raw = (cid: string) => mediaUrl(cid);
 	const RATIOS = ['16:9', '1:1', '9:16', '5:2'];
 	// one card per ratio (a render delivers the same card with each cut): the day's own first
 	const cardOf = (aspect: string) =>
