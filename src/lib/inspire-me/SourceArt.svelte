@@ -16,7 +16,7 @@
 	aria-hidden="true"
 >
 	{#if entry.thumbnail}
-		<!-- brought into the media library by scripts/fetch-thumbnails.mjs; the source names it by CID -->
+		<!-- brought into the media library by scripts/fetch-thumbnails.mjs; the source names it by hash -->
 		<img src={asset(entry.thumbnail)} alt="" loading="lazy" />
 	{:else}
 		<span class="orb one"></span>

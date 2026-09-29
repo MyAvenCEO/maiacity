@@ -31,7 +31,7 @@
 	}
 	async function remake() {
 		open = false;
-		await remakeProxy(m.cid).catch((e) => (s.error = e.message));
+		await remakeProxy(m.hash).catch((e) => (s.error = e.message));
 		void s.refreshJobs();
 	}
 </script>

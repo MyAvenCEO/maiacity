@@ -14,7 +14,7 @@
 	let { s } = $props();
 
 	const sel = $derived(s.sel);
-	const m = $derived(sel?.cid ? s.byCid.get(sel.cid) : undefined);
+	const m = $derived(sel?.hash ? s.byHash.get(sel.hash) : undefined);
 	const shot = $derived(s.shotOf(sel));
 	const spec = $derived(isWorld(sel) ? s.specOf(sel) : null);
 	const key = $derived(spec?.camera.kind === 'keys' && s.selectedKey !== null ? (spec.camera.keys?.[s.selectedKey] ?? null) : null);
@@ -56,7 +56,7 @@
 			{/if}
 			{#if sel.grade}<dt>Grade</dt><dd>graded (Grade tab)</dd>{/if}
 			<dt>Tags</dt><dd>{m?.tags.join(', ') || '—'}</dd>
-			<dt>CID</dt><dd><code>{sel.cid}</code></dd>
+			<dt>hash</dt><dd><code>{sel.hash}</code></dd>
 		</dl>
 		{#if !ro}<button class="ghost danger" onclick={() => s.remove(sel.id)}>Remove clip</button>{/if}
 	{:else if sel && spec}
@@ -128,7 +128,7 @@
 				<label class="light">
 					<input type="number" step="0.05" value={fmt(q.at)} onchange={(e) => edit((sp) => (sp.cues[i].at = num(e.currentTarget.value)))} aria-label="At (s)" />
 					{#if q.kind === 'sound'}
-						<span class="cue">♪ {s.byCid.get(q.cid)?.title || q.cid.slice(0, 8)}</span>
+						<span class="cue">♪ {s.byHash.get(q.hash)?.title || q.hash.slice(0, 8)}</span>
 						<input type="number" step="0.05" min="0" max="1" value={q.level} onchange={(e) => edit((sp) => (/** @type {{ level: number }} */ (sp.cues[i]).level = num(e.currentTarget.value, 1)))} aria-label="Level" />
 					{:else}
 						<input class="lid" value={q.name} pattern="[a-z][a-z0-9-]*" onchange={(e) => edit((sp) => (/** @type {{ name: string }} */ (sp.cues[i]).name = e.currentTarget.value.trim().toLowerCase().replace(/[^a-z0-9-]+/g, '-').replace(/^[^a-z]+/, '') || 'event'))} aria-label="Event" />
@@ -139,9 +139,9 @@
 			<div class="row">
 				<select bind:value={cueSound} aria-label="Sound for a new cue">
 					<option value="">a sound…</option>
-					{#each sounds as a (a.cid)}<option value={a.cid}>{a.title || a.cid.slice(0, 10)}</option>{/each}
+					{#each sounds as a (a.hash)}<option value={a.hash}>{a.title || a.hash.slice(0, 10)}</option>{/each}
 				</select>
-				<button class="ghost small" disabled={!cueSound} onclick={() => edit((sp) => sp.cues.push({ at: Math.max(sel.in, s.shotTime(sel)), kind: 'sound', cid: cueSound, level: 0.8 }))}>+ Sound cue here</button>
+				<button class="ghost small" disabled={!cueSound} onclick={() => edit((sp) => sp.cues.push({ at: Math.max(sel.in, s.shotTime(sel)), kind: 'sound', hash: cueSound, level: 0.8 }))}>+ Sound cue here</button>
 				<button class="ghost small" onclick={() => edit((sp) => sp.cues.push({ at: Math.max(sel.in, s.shotTime(sel)), kind: 'event', name: 'event' }))}>+ Event</button>
 			</div>
 		</fieldset>

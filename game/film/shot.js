@@ -3,7 +3,7 @@
 // renders it on demand — live in the studio, as a proxy, or as a 4K log plate at render time.
 //
 //   spec = {
-//     world:    { sandbox: 'sandbox-4', build: { commit, hash, cid? } | null, seed, stand: [x, z], dome?, props?, clock },
+//     world:    { sandbox: 'sandbox-4', build: { commit, hash, file? } | null, seed, stand: [x, z], dome?, props?, clock },
 //     seconds, fps: 30, aspect: '1:1',          the shot's length, frame rate, and the shape it was composed for
 //     camera:   game/film/camera.js (move · orbit · turn · fly · whip · keys, with a curve),
 //     lens:     { fov, fovTo? },                vertical field of view in degrees (for `aspect`), zooming to fovTo
@@ -11,7 +11,7 @@
 //     exposure: { meter: 'lock' | 'ramp' | 'fixed', stops, ev? },   metered like a camera (middle grey 18%), `stops`
 //               over or under it; `ev` = the metered (or, fixed, the given) gain in stops — once known, it is pinned
 //     lights:   [{ id: 'sun' | 'fill' | 'glow' | 'lamps' | 'sky', intensity?: k | [[t, k], …], color? }],  multipliers
-//     cues:     [{ at, kind: 'sound', cid, level } | { at, kind: 'event', name, args }],  on the shot's clock (seconds)
+//     cues:     [{ at, kind: 'sound', hash, level } | { at, kind: 'event', name, args }],  on the shot's clock (seconds)
 //     shutter:  { angle: 180, samples: 1 },     motion blur: the shutter open for angle/360 of a frame, in samples
 //     framing:  { [shape]: { fov?, yaw?, pitch?, dx?, dy? } },  a native camera per delivery shape (else the rule)
 //     look?:    preset name (game/film/color.js PRESETS) — the grade it was lit for; a suggestion, never applied here
@@ -26,8 +26,8 @@ import { checkCamera, fovOf, pathOf } from './camera.js';
 /** @typedef {import('./camera.js').Camera} Camera @typedef {import('./camera.js').Pose} Pose */
 /** @typedef {'1:1' | '16:9' | '9:16' | '4:5'} Shape */
 /** @typedef {number | [number, number][]} Curve  a constant, or [t, value] keys (linear between them) */
-/** @typedef {{ commit: string, hash: string, cid?: string } | null} Build */
-/** @typedef {{ at: number, kind: 'sound', cid: string, level: number } | { at: number, kind: 'event', name: string, args?: unknown }} Cue */
+/** @typedef {{ commit: string, hash: string, file?: string } | null} Build */
+/** @typedef {{ at: number, kind: 'sound', hash: string, level: number } | { at: number, kind: 'event', name: string, args?: unknown }} Cue */
 /** @typedef {{ fov?: number, yaw?: number, pitch?: number, dx?: number, dy?: number }} Frame */
 /**
  * @typedef {{
@@ -90,9 +90,9 @@ export function normalize(s) {
 	let build = null;
 	if (w.build) {
 		const commit = String(w.build.commit ?? ''), hash = String(w.build.hash ?? '');
-		if (!/^[0-9a-f]{7,64}$/.test(commit) || !/^[0-9a-z]{8,80}$/.test(hash)) bad('world.build names the game build: { commit, hash, cid? }.');
-		if (w.build.cid !== undefined && !/^baf[a-z2-7]{20,}$/.test(String(w.build.cid))) bad('world.build.cid is a library CID.');
-		build = { commit, hash, ...(w.build.cid ? { cid: String(w.build.cid) } : {}) };
+		if (!/^[0-9a-f]{7,64}$/.test(commit) || !/^[0-9a-z]{8,80}$/.test(hash)) bad('world.build names the game build: { commit, hash, file? }.');
+		if (w.build.file !== undefined && !/^[0-9a-f]{64}$/.test(String(w.build.file))) bad('world.build.file is the build in the vault, by its hash.');
+		build = { commit, hash, ...(w.build.file ? { file: String(w.build.file) } : {}) };
 	}
 	if (w.props !== undefined && !SETS.includes(w.props)) bad(`world.props is one of ${SETS.join(', ')}.`);
 	const world = {
@@ -128,8 +128,8 @@ export function normalize(s) {
 	const cues = (s.cues ?? []).map((/** @type {any} */ c, /** @type {number} */ i) => {
 		const at = num(c?.at, `cues[${i}].at`, -1e6, 1e6);
 		if (c.kind === 'sound') {
-			if (!/^baf[a-z2-7]{20,}$/.test(String(c.cid))) bad(`cues[${i}] names a sound by CID.`);
-			return { at, kind: 'sound', cid: String(c.cid), level: num(c.level, `cues[${i}].level`, 0, 4, 1) };
+			if (!/^[0-9a-f]{64}$/.test(String(c.hash))) bad(`cues[${i}] names a sound by its hash.`);
+			return { at, kind: 'sound', hash: String(c.hash), level: num(c.level, `cues[${i}].level`, 0, 4, 1) };
 		}
 		if (c.kind === 'event') {
 			if (!/^[a-z][a-z0-9-]{0,40}$/.test(String(c.name))) bad(`cues[${i}].name is a short event name.`);
@@ -329,7 +329,7 @@ export function legacyLook(/** @type {{ mood?: string, grade?: string, extra?: s
  *   · `exposure` (the lens opened for grade.mjs's 8-bit pre-grade) is not needed in log: the meter exposes, and
  *     grade.mjs's per-hour brightness target becomes a stop offset (legacyStops);
  *   · `mood` / `grade` / `extra` become a `look` preset name (legacyLook) — never baked;
- *   · `sfx` (['<cid>.mp3', level]) become sound cues at the shot's first frame.
+ *   · `sfx` (['<hash>.mp3', level]) become sound cues at the shot's first frame.
  * `opts.seconds` / `opts.clock` give its length and place when the list itself has no timing (no library/).
  * @param {any} shot @param {{ seconds?: number, clock?: number, fps?: number, aspect?: Shape, build?: Build, seed?: number }} [opts]
  * @returns {Spec}
@@ -350,7 +350,7 @@ export function fromLegacy(shot, opts = {}) {
 		// a time-lapse through sunrise follows the light (ramp); everything else is metered once and held
 		exposure: { meter: shot.hourTo !== undefined && Math.abs(shot.hourTo - shot.hour) > 0.05 ? 'ramp' : 'lock', stops: legacyStops(shot) },
 		lights: [],
-		cues: sfx.map(([file, level]) => ({ at: 0, kind: 'sound', cid: String(file).replace(/\.[a-z0-9]+$/, ''), level })),
+		cues: sfx.map(([file, level]) => ({ at: 0, kind: 'sound', hash: String(file).replace(/\.[a-z0-9]+$/, ''), level })),
 		shutter: shot.blur ? { angle: 360, samples: shot.blur } : { angle: 180, samples: 1 },
 		framing: {},
 		look: legacyLook(shot),

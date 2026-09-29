@@ -6,23 +6,23 @@
 //
 //   bun api/scripts/world-timeline.ts [--local] [--from G] [--variant W] [--name World] [--list scripts/film/day-19-d.mjs]
 //
-// Each V1 shot clip is matched to its shot in the list by its library tag `shot:NN name` (NN = the shot's number),
-// or, for a clip without one, by its order on V1. The shot's length and its place on the film's clock come from the
-// clip, so the voice's word timings (library/) are not needed. Run again, it updates: a shot whose spec changed gets
+// Each V1 shot clip is matched to its shot in the list by its file's tag in the vault, `shot:NN name` (NN = the
+// shot's number), or, for a clip without one, by its order on V1. The shot's length and its place on the film's clock
+// come from the clip, so the voice's word timings are not needed. Run again, it updates: a shot whose spec changed gets
 // a new version, and W's clips are replaced.
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { API, call, say } from "./media-client";
 import { fromLegacy } from "../../game/film/shot.js";
+import { list } from "../../scripts/film/vault.mjs";
 
 const arg = (k: string, d: string) => (process.argv.includes(`--${k}`) ? process.argv[process.argv.indexOf(`--${k}`) + 1]! : d);
 const FROM = arg("from", "G"), VARIANT = arg("variant", "W"), NAME = arg("name", "World"), PROJECT = arg("project", "Day 19");
 const LIST = resolve(arg("list", "scripts/film/day-19-d.mjs"));
 const film = (await import(pathToFileURL(LIST).href)).default as { name: string; shots: any[] };
 
-type Clip = { id: string; track: string; start: number; in: number; dur: number; vol: number; kind?: string; cid?: string; shot?: string; shotVersion?: number; [k: string]: unknown };
+type Clip = { id: string; track: string; start: number; in: number; dur: number; vol: number; kind?: string; hash?: string; shot?: string; shotVersion?: number; [k: string]: unknown };
 type Timeline = { id: string; name: string; project: string | null; variant: string | null; aspect: string; tags: string[]; description: string | null; clips: Clip[] };
-type Media = { cid: string; tags: string[]; title: string | null };
 type Shot = { id: string; name: string; project: string | null; version: number; spec: unknown };
 
 const timelines = await call<Timeline[]>("/api/timelines");
@@ -30,29 +30,28 @@ const from = timelines.find((t) => t.project === PROJECT && t.variant === FROM);
 if (!from) throw new Error(`No timeline ${PROJECT} · ${FROM} on ${API}.`);
 say(`${PROJECT} · ${FROM} (${from.name}): ${from.clips.length} clips`);
 
-// which library file is which shot: its `shot:NN name` tag
-const media = (await call<{ media: Media[] }>(`/api/media?q=${encodeURIComponent("shot:")}`)).media;
+// which file is which shot: its `shot:NN name` tag in the vault
 const numberOf = new Map<string, number>();
-for (const m of media)
-  for (const tag of m.tags) {
+for (const m of await list())
+  for (const tag of m.tags ?? []) {
     const n = /^shot:(\d+)\b/.exec(tag);
-    if (n) numberOf.set(m.cid, Number(n[1]));
+    if (n) numberOf.set(m.hash, Number(n[1]));
   }
 
 const v1 = from.clips.filter((c) => c.track === "V1" && (c.kind ?? "media") === "media" && c.id !== "thumbnail").sort((a, b) => a.start - b.start);
 // by tag first; the clips with no tag take the shots left over, in order
 const byShot = new Map<number, Clip>();
 for (const c of v1) {
-  const n = numberOf.get(c.cid ?? "");
+  const n = numberOf.get(c.hash ?? "");
   if (n && n >= 1 && n <= film.shots.length && !byShot.has(n - 1)) byShot.set(n - 1, c);
 }
 const untagged = v1.filter((c) => ![...byShot.values()].includes(c));
 const left = film.shots.map((_, i) => i).filter((i) => !byShot.has(i));
 untagged.slice(0, left.length).forEach((c, k) => byShot.set(left[k]!, c));
 if (!byShot.size) throw new Error(`No shot clips on ${FROM}'s V1.`);
-say(`${byShot.size} of ${film.shots.length} shots found on V1 (${[...byShot.keys()].filter((i) => numberOf.has(byShot.get(i)!.cid ?? "")).length} by their tag)`);
+say(`${byShot.size} of ${film.shots.length} shots found on V1 (${[...byShot.keys()].filter((i) => numberOf.has(byShot.get(i)!.hash ?? "")).length} by their tag)`);
 
-// the shots, as records: one per shot of the list, named as the library names them
+// the shots, as records: one per shot of the list, named as the vault names them
 const existing = await call<Shot[]>(`/api/shots?project=${encodeURIComponent(PROJECT)}`);
 const worldClip = new Map<Clip, Clip>();
 for (const [i, clip] of [...byShot.entries()].sort((a, b) => a[0] - b[0])) {

@@ -4,10 +4,8 @@
 // Every line is its own take (Grandpa Spuds Oxley), placed with the breath before it that the emotion asks for.
 // Every shot starts on a word: `cue: [line, 'words']` cuts just before those words are spoken — so the mango is on
 // screen as "mango" is said. Hard cuts only. The score is composed to the same clock (music.chunks, see score.ts).
-import { existsSync, readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
-import { pathToFileURL } from 'node:url';
 import { fly, landing, move, orbit, turn, whip } from './camera.mjs';
+import { wordsOf } from './vault.mjs';
 
 const R = (deg) => (deg * Math.PI) / 180;
 const ring = (c, r, a, y) => [c[0] + r * Math.sin(a), y, c[1] + r * Math.cos(a)];
@@ -17,41 +15,37 @@ const large1 = [0, 150], large2 = [130, 75], master = [0, 0];
 // ── the voice: take, and the breath before it (the pacing lives here) ──────────────────────────
 const COLD_OPEN = 3.5;
 const lines = [
-	{ take: 'day-19-d-hook', cid: '2240cbbadefb4c89e9c50509df8f5c254f8c4f68a806d7775dfd31c083dc60dd', pause: 0 }, //       0 the hook — quiet
-	{ take: 'day-19-d-01', cid: '8eb8e81ca8f95c15996f61d8ceefe6cf4053a16c63cfd04ca82da6fcd91ae9a7', pause: 2.8 }, //       1 sunrise — the music swells in the pause
-	{ take: 'day-19-spuds-02', cid: '399edf6dcd7558645c12c5c1ba5c5a2b07eda6d7d29ab99cc10bf47bfe457c1f', pause: 2.6 }, //   2 the dip
-	{ take: 'day-19-spuds-03', cid: '6084fb81fb65af1e9803caf651ccf0823fd9468a2f944621d9fcab4802f33b7c', pause: 2.4 }, //   3 "Here…" — after a beat of silence
-	{ take: 'day-19-spuds-04', cid: 'c85216bcfc8815964d96827c1fae7dea0c015f989b3c00a505d599bf74cd7375', pause: 1.6 }, //   4
-	{ take: 'day-19-spuds-05', cid: '27cda35428451706559284c9f1ee7317fed9057316abebe768bb77226e1dd1b3', pause: 2.2 }, //   5 abundance begins
-	{ take: 'day-19-spuds-06', cid: '6bafb035b4b7010deea0aebe9e3d79f17c9bda0835b90b6a868d222c8a22f173', pause: 1.4 }, //   6
-	{ take: 'day-19-spuds-07', cid: '7b112fdbbd08373be4b504ffa6abcd022a8878fe7d087df5683222a404bb9444', pause: 1.8 }, //   7 the montage
-	{ take: 'day-19-d-08', cid: '22710421c8dd79bdc3d7e183db174284eab762a9a5d38db2577a7db485292a99', pause: 1.2 }, //       8 health
-	{ take: 'day-19-d-09', cid: 'a602a1fc67af46b8b77266e25f7a895440d232eb66e2348e995a2850fcc16d7c', pause: 3.8 }, //       9 after a breath of music alone
-	{ take: 'day-19-d-10', cid: 'afe72d1358d21b744a354aa1465ca1513d28ae3af933d84fe93bfc450061fcd1', pause: 1.4 }, //       10 the commons
-	{ take: 'day-19-spuds-11', cid: '49592fba81affabc36dd564dbd095aea640250c23cc3732a7b2f0337e45427f9', pause: 1.8 }, //   11
-	{ take: 'day-19-d-12', cid: '373048a0beecf79a1c1041cd77b43ed8d28651546321d9056ecea0b21030d610', pause: 2.6 }, //       12 evening
-	{ take: 'day-19-spuds-13', cid: 'a014f513f6a5e1369bf4ec733dac564e28f6b7faf343e78368cdfb08ef42ecca', pause: 3.0 } //    13 after two seconds of frogs alone
+	{ take: 'day-19-d-hook', hash: '2240cbbadefb4c89e9c50509df8f5c254f8c4f68a806d7775dfd31c083dc60dd', pause: 0 }, //       0 the hook — quiet
+	{ take: 'day-19-d-01', hash: '8eb8e81ca8f95c15996f61d8ceefe6cf4053a16c63cfd04ca82da6fcd91ae9a7', pause: 2.8 }, //       1 sunrise — the music swells in the pause
+	{ take: 'day-19-spuds-02', hash: '399edf6dcd7558645c12c5c1ba5c5a2b07eda6d7d29ab99cc10bf47bfe457c1f', pause: 2.6 }, //   2 the dip
+	{ take: 'day-19-spuds-03', hash: '6084fb81fb65af1e9803caf651ccf0823fd9468a2f944621d9fcab4802f33b7c', pause: 2.4 }, //   3 "Here…" — after a beat of silence
+	{ take: 'day-19-spuds-04', hash: 'c85216bcfc8815964d96827c1fae7dea0c015f989b3c00a505d599bf74cd7375', pause: 1.6 }, //   4
+	{ take: 'day-19-spuds-05', hash: '27cda35428451706559284c9f1ee7317fed9057316abebe768bb77226e1dd1b3', pause: 2.2 }, //   5 abundance begins
+	{ take: 'day-19-spuds-06', hash: '6bafb035b4b7010deea0aebe9e3d79f17c9bda0835b90b6a868d222c8a22f173', pause: 1.4 }, //   6
+	{ take: 'day-19-spuds-07', hash: '7b112fdbbd08373be4b504ffa6abcd022a8878fe7d087df5683222a404bb9444', pause: 1.8 }, //   7 the montage
+	{ take: 'day-19-d-08', hash: '22710421c8dd79bdc3d7e183db174284eab762a9a5d38db2577a7db485292a99', pause: 1.2 }, //       8 health
+	{ take: 'day-19-d-09', hash: 'a602a1fc67af46b8b77266e25f7a895440d232eb66e2348e995a2850fcc16d7c', pause: 3.8 }, //       9 after a breath of music alone
+	{ take: 'day-19-d-10', hash: 'afe72d1358d21b744a354aa1465ca1513d28ae3af933d84fe93bfc450061fcd1', pause: 1.4 }, //       10 the commons
+	{ take: 'day-19-spuds-11', hash: '49592fba81affabc36dd564dbd095aea640250c23cc3732a7b2f0337e45427f9', pause: 1.8 }, //   11
+	{ take: 'day-19-d-12', hash: '373048a0beecf79a1c1041cd77b43ed8d28651546321d9056ecea0b21030d610', pause: 2.6 }, //       12 evening
+	{ take: 'day-19-spuds-13', hash: 'a014f513f6a5e1369bf4ec733dac564e28f6b7faf343e78368cdfb08ef42ecca', pause: 3.0 } //    13 after two seconds of frogs alone
 ];
 const TAIL = 5;
 
-// the takes' words, as the library describes them (library/<cid>.json, or LIBRARY=<dir>). Without them the shots are
-// still whole as data — camera, light, world — only their places on the film's clock are unknown: `voices`, `cuts`,
-// `music` and `sound` are then null and each shot has no `start`/`seconds` (a timeline gives them instead).
-const LIB = process.env.LIBRARY ? pathToFileURL(`${resolve(process.env.LIBRARY)}/`) : new URL('../../library/', import.meta.url);
-const wordsOf = (cid) => {
-	const f = new URL(`${cid}.json`, LIB);
-	return existsSync(f) ? JSON.parse(readFileSync(f, 'utf8')).meta.words : null;
-};
+// the takes' words, as the vault describes them (meta.words; see vault.mjs wordsOf, or LIBRARY=<dir>). Without them
+// the shots are still whole as data — camera, light, world — only their places on the film's clock are unknown:
+// `voices`, `cuts`, `music` and `sound` are then null and each shot has no `start`/`seconds` (a timeline gives them).
+const words = await wordsOf(lines.map((l) => l.hash));
 let voices = [];
 for (const [i, l] of lines.entries()) {
-	const words = wordsOf(l.cid);
-	if (!words) {
+	const w = words.get(l.hash);
+	if (!w) {
 		voices = null;
 		break;
 	}
 	const speaks = i === 0 ? COLD_OPEN : voices[i - 1].speechEnd + l.pause;
-	const at = speaks - words[0].start;
-	voices.push({ cid: l.cid, take: l.take, at, speechStart: speaks, speechEnd: at + words.at(-1).end, words });
+	const at = speaks - w[0].start;
+	voices.push({ hash: l.hash, take: l.take, at, speechStart: speaks, speechEnd: at + w.at(-1).end, words: w });
 }
 const norm = (w) => w.toLowerCase().replace(/[^a-z0-9']/g, '');
 /** When the words `phrase` begin in line `i`, on the film's clock (a hair before, so the cut lands on the word). */
@@ -98,9 +92,9 @@ const shots = [
 	{ name: 'the-bed', mood: 'bright', extra: BRIGHT, size: 'MS', cue: [3, 'Here'], hour: 7.3, fov: 50, stand: [200, 12], dome: 8, path: move([215.6, 5.6, 1.6], [216.2, 5.6, 1.8], [224, 5.2, 2.6], [224, 5.2, 3.2]) },
 	{ name: 'twenty-paces', mood: 'bright', extra: BRIGHT, size: 'MS', cue: [3, 'twenty paces'], hour: 7.6, fov: 50, stand: [200, 12], dome: 8, path: move([211.8, 6.2, 1.0], [211.6, 6.3, 1.0], [200, 3.2, 0], [201, 0.2, 0]) },
 	{ name: 'terrace-from-the-air', mood: 'bright', extra: BRIGHT, size: 'WS', cue: [4, 'Every home'], hour: 8.0, fov: 40, stand: [20, 196], dome: 1, path: move(ring(large1, 64, R(15), 16), ring(large1, 60, R(28), 13), ring(large1, 38, R(22), 5), ring(large1, 38, R(30), 5)) },
-	{ name: 'through-the-arch', mood: 'bright', extra: BRIGHT, size: 'MS', cue: [4, 'every morning'], hour: 8.1, fov: 46, stand: [150, 105], dome: 2, sfx: [['7605ffd5723a4511ba9320009d5e2beda3f9a734ad244d7765a6120bf4200e82.mp3', 0.05]], path: move(ring(large2, 37.2, R(45), 6.5), ring(large2, 39.4, R(45), 6.7), ring(large2, 110, R(45), 4), ring(large2, 110, R(47), 2.5)) },
+	{ name: 'through-the-arch', mood: 'bright', extra: BRIGHT, size: 'MS', cue: [4, 'every morning'], hour: 8.1, fov: 46, stand: [150, 105], dome: 2, sfx: [['7605ffd5723a4511ba9320009d5e2beda3f9a734ad244d7765a6120bf4200e82', 0.05]], path: move(ring(large2, 37.2, R(45), 6.5), ring(large2, 39.4, R(45), 6.7), ring(large2, 110, R(45), 4), ring(large2, 110, R(47), 2.5)) },
 	// ACT II · abundance and health
-	{ name: 'the-layers', mood: 'bright', extra: BRIGHT, size: 'WS', cue: [5, 'Beneath'], hour: 9.2, fov: 48, stand: [140, 88], dome: 2, sfx: [['7605ffd5723a4511ba9320009d5e2beda3f9a734ad244d7765a6120bf4200e82.mp3', 0.08]], path: move([146, 0.5, 86], [145, 7.5, 85], [138, 0.8, 80], [134, 10, 76]) },
+	{ name: 'the-layers', mood: 'bright', extra: BRIGHT, size: 'WS', cue: [5, 'Beneath'], hour: 9.2, fov: 48, stand: [140, 88], dome: 2, sfx: [['7605ffd5723a4511ba9320009d5e2beda3f9a734ad244d7765a6120bf4200e82', 0.08]], path: move([146, 0.5, 86], [145, 7.5, 85], [138, 0.8, 80], [134, 10, 76]) },
 	{ name: 'mango', mood: 'bright', extra: BRIGHT, size: 'ECU', cue: [5, 'mango'], hour: 9.3, fov: 12, stand: [140, 88], dome: 2, path: move([140, 1.5, 80], [140.1, 1.52, 80.2], [148, 3, 84], [148, 3.05, 84.2]) },
 	{ name: 'fig', mood: 'bright', extra: BRIGHT, size: 'ECU', cue: [5, 'fig'], hour: 9.3, fov: 12, stand: [140, 88], dome: 2, path: move([147, 1.4, 72], [147.2, 1.42, 72], [141, 3.2, 69], [141, 3.3, 69.2]) },
 	{ name: 'coffee-and-cacao', mood: 'bright', extra: BRIGHT, size: 'CU', cue: [5, 'coffee'], hour: 9.4, fov: 28, stand: [140, 88], dome: 2, path: move([143, 1.1, 91], [143, 1.2, 91], [139, 1.3, 93], [139, 3.2, 93]) },
@@ -111,26 +105,26 @@ const shots = [
 	{ name: 'the-food-forest', mood: 'bright', extra: BRIGHT, size: 'WS', cue: [7, 'Between'], hour: 15.0, fov: 44, stand: [70, 120], blur: 6, path: whip(move([36, 18, 152], [74, 11, 116], [90, 2, 100], [104, 1, 88]), { into: 0.9 }) },
 	{ name: 'fruit-and-nut-trees', mood: 'bright', extra: BRIGHT, size: 'MS', cue: [7, 'fruit and nut'], hour: 15.1, fov: 40, stand: [96, 22], path: move([95, 1.6, 20], [92, 1.6, 26], [80, 2.5, 30], [78, 2.5, 36]) },
 	{ name: 'berries-and-vegetables', mood: 'bright', extra: BRIGHT, size: 'CU', cue: [7, 'berries'], hour: 15.2, fov: 30, stand: [0, 40], dome: 0, path: move([2, 1.4, 40], [3, 1.4, 40], [7, 0.6, 37], [8, 0.6, 37]) },
-	{ name: 'hens', mood: 'bright', extra: BRIGHT, size: 'CU', cue: [7, 'hens'], hour: 15.3, fov: 30, stand: [56, 86], sfx: [['4ffa6fe2e7cbc5082a78a3eabed4706afde5d6cb3eaa9af8ba5b05ab1d3d5da7.mp3', 0.45]], path: move([55, 1.0, 84], [54.6, 1.0, 83.4], [49, 0.4, 77], [49, 0.4, 77]) },
-	{ name: 'geese', mood: 'bright', extra: BRIGHT, size: 'MS', cue: [7, 'geese'], hour: 15.4, fov: 32, stand: [100, 300], sfx: [['646b67cf337fdfdb3446e55b1f1edd4bfc3e6469bc12ea3acd07901cc71cda8f.mp3', 0.32], ['42cbca3f5c288272cc9e836a4a1f970c2edd14c4c95b282fc166bc0ff1f978d7.mp3', 0.14]], path: move([101, 1.0, 300], [100.5, 1.0, 300.6], [94, 0.4, 314], [94, 0.4, 314]) },
-	{ name: 'bees', mood: 'bright', extra: BRIGHT, size: 'ECU', cue: [7, 'and bees'], hour: 15.5, fov: 24, stand: [62, 100], sfx: [['7605ffd5723a4511ba9320009d5e2beda3f9a734ad244d7765a6120bf4200e82.mp3', 0.3]], path: move([60, 1.0, 101], [59.8, 1.0, 101.3], [57, 0.8, 104], [57, 0.8, 104]) },
-	{ name: 'goats', mood: 'bright', extra: BRIGHT, size: 'MS', cue: [8, 'Almost'], hour: 15.7, fov: 35, stand: [150, 136], sfx: [['0fa1e0014afb92607afdcb7f92e0f3e0f31e179024d3c2398b6d247b39517867.mp3', 0.45]], path: move([143, 1.2, 129.5], [140.6, 1.2, 125.8], [134, 0.5, 115], [134, 0.5, 115]) },
+	{ name: 'hens', mood: 'bright', extra: BRIGHT, size: 'CU', cue: [7, 'hens'], hour: 15.3, fov: 30, stand: [56, 86], sfx: [['4ffa6fe2e7cbc5082a78a3eabed4706afde5d6cb3eaa9af8ba5b05ab1d3d5da7', 0.45]], path: move([55, 1.0, 84], [54.6, 1.0, 83.4], [49, 0.4, 77], [49, 0.4, 77]) },
+	{ name: 'geese', mood: 'bright', extra: BRIGHT, size: 'MS', cue: [7, 'geese'], hour: 15.4, fov: 32, stand: [100, 300], sfx: [['646b67cf337fdfdb3446e55b1f1edd4bfc3e6469bc12ea3acd07901cc71cda8f', 0.32], ['42cbca3f5c288272cc9e836a4a1f970c2edd14c4c95b282fc166bc0ff1f978d7', 0.14]], path: move([101, 1.0, 300], [100.5, 1.0, 300.6], [94, 0.4, 314], [94, 0.4, 314]) },
+	{ name: 'bees', mood: 'bright', extra: BRIGHT, size: 'ECU', cue: [7, 'and bees'], hour: 15.5, fov: 24, stand: [62, 100], sfx: [['7605ffd5723a4511ba9320009d5e2beda3f9a734ad244d7765a6120bf4200e82', 0.3]], path: move([60, 1.0, 101], [59.8, 1.0, 101.3], [57, 0.8, 104], [57, 0.8, 104]) },
+	{ name: 'goats', mood: 'bright', extra: BRIGHT, size: 'MS', cue: [8, 'Almost'], hour: 15.7, fov: 35, stand: [150, 136], sfx: [['0fa1e0014afb92607afdcb7f92e0f3e0f31e179024d3c2398b6d247b39517867', 0.45]], path: move([143, 1.2, 129.5], [140.6, 1.2, 125.8], [134, 0.5, 115], [134, 0.5, 115]) },
 	{ name: 'picked-ripe', mood: 'bright', extra: BRIGHT, size: 'ECU', cue: [8, 'Picked'], hour: 15.8, fov: 10, stand: [172, 40], path: move([170, 1.6, 40], [170.2, 1.62, 40.1], [163, 3, 37], [163, 3.05, 37.1]) },
-	{ name: 'a-few-minutes-walk', mood: 'bright', extra: BRIGHT, size: 'WS', cue: [8, 'and never'], hour: 16.0, fov: 42, stand: [176, 36], sfx: [['646b67cf337fdfdb3446e55b1f1edd4bfc3e6469bc12ea3acd07901cc71cda8f.mp3', 0.07]], blur: 6, path: whip(move([176, 1.6, 34], [196, 34, 22], [162, 1.0, 24], [120, 4, 80]), { out: 0.9, d: 0.08 }) },
+	{ name: 'a-few-minutes-walk', mood: 'bright', extra: BRIGHT, size: 'WS', cue: [8, 'and never'], hour: 16.0, fov: 42, stand: [176, 36], sfx: [['646b67cf337fdfdb3446e55b1f1edd4bfc3e6469bc12ea3acd07901cc71cda8f', 0.07]], blur: 6, path: whip(move([176, 1.6, 34], [196, 34, 22], [162, 1.0, 24], [120, 4, 80]), { out: 0.9, d: 0.08 }) },
 	// ACT III · together
-	{ name: 'the-ring', mood: 'bright', extra: BRIGHT, size: 'EWS', cue: [9, 'Thirteen'], hour: 17.2, fov: 40, stand: [40, 290], sfx: [['42cbca3f5c288272cc9e836a4a1f970c2edd14c4c95b282fc166bc0ff1f978d7.mp3', 0.1]], blur: 6, path: whip(orbit(master, R(8), R(34), 330, 290, 26, 150, [0, 8, 0]), { into: 0.9, d: 0.08 }) },
-	{ name: 'the-stream', mood: 'bright', extra: BRIGHT, size: 'MS', cue: [9, 'hear the stream'], hour: 17.4, fov: 38, stand: [100, 290], sfx: [['42cbca3f5c288272cc9e836a4a1f970c2edd14c4c95b282fc166bc0ff1f978d7.mp3', 0.32]], path: move([104, 12, 290], [105, 12, 291], [108, 0, 304], [109, 0, 304]) },
+	{ name: 'the-ring', mood: 'bright', extra: BRIGHT, size: 'EWS', cue: [9, 'Thirteen'], hour: 17.2, fov: 40, stand: [40, 290], sfx: [['42cbca3f5c288272cc9e836a4a1f970c2edd14c4c95b282fc166bc0ff1f978d7', 0.1]], blur: 6, path: whip(orbit(master, R(8), R(34), 330, 290, 26, 150, [0, 8, 0]), { into: 0.9, d: 0.08 }) },
+	{ name: 'the-stream', mood: 'bright', extra: BRIGHT, size: 'MS', cue: [9, 'hear the stream'], hour: 17.4, fov: 38, stand: [100, 290], sfx: [['42cbca3f5c288272cc9e836a4a1f970c2edd14c4c95b282fc166bc0ff1f978d7', 0.32]], path: move([104, 12, 290], [105, 12, 291], [108, 0, 304], [109, 0, 304]) },
 	{ name: 'the-commons', mood: 'bright', extra: BRIGHT, size: 'WS', cue: [10, 'At the centre'], hour: 17.6, fov: 44, stand: [0, 96], path: move([0, 2, 102], [0, 3, 96], [0, 26, 0], [0, 30, 0]) },
 	{ name: 'the-workshops', mood: 'bright', extra: BRIGHT, size: 'MS', cue: [10, 'the workshops'], hour: 17.8, fov: 46, stand: [0, 60], dome: 0, path: move(ring(master, 60, R(100), 1.7), ring(master, 60, R(104), 1.7), ring(master, 62, R(118), 1.2), ring(master, 62, R(121), 1.2)) },
 	{ name: 'young-and-old', mood: 'bright', extra: BRIGHT, size: 'CU', cue: [10, 'where young'], hour: 17.9, fov: 30, stand: [0, 60], dome: 0, path: move(ring(master, 61.2, R(108), 1.5), ring(master, 61.2, R(109), 1.5), ring(master, 63, R(111), 0.9), ring(master, 63, R(112), 0.9)) },
 	{ name: 'the-stone-theatre', mood: 'bright', extra: BRIGHT, size: 'WS', cue: [10, 'and a stone'], hour: 18.2, fov: 46, stand: [0, 34], dome: 0, path: move([36, 19, 26], [21, 10, 15], [0, -1.5, 0], [0, -2.2, 0]) },
 	{ name: 'the-node', size: 'ECU', cue: [11, 'Nothing'], hour: 19.0, fov: 20, stand: [0, 160], dome: 1, path: turn([0, 18, 150], R(0), R(14), R(84), R(86)) },
-	{ name: 'raised-by-its-people', size: 'WS', cue: [11, 'Every dome'], hour: 19.3, fov: 40, stand: [0, 200], sfx: [['1934113f408410383c16336a37d2e274579e0cc0802e574dcc232982cca02a84.mp3', 0.06]], path: move([4, 0.6, 208], [3, 1.2, 204], [0, 30, 150], [0, 33, 150]) },
+	{ name: 'raised-by-its-people', size: 'WS', cue: [11, 'Every dome'], hour: 19.3, fov: 40, stand: [0, 200], sfx: [['1934113f408410383c16336a37d2e274579e0cc0802e574dcc232982cca02a84', 0.06]], path: move([4, 0.6, 208], [3, 1.2, 204], [0, 30, 150], [0, 33, 150]) },
 	// ACT IV · evening, and hope
-	{ name: 'lanterns', size: 'MS', cue: [12, 'In the evening'], hour: 19.6, exposure: 1.5, fov: 42, stand: [14, 196], dome: 1, sfx: [['1934113f408410383c16336a37d2e274579e0cc0802e574dcc232982cca02a84.mp3', 0.12]], path: move(ring(large1, 38.6, R(18), 6.5), ring(large1, 38.4, R(28), 6.5), ring(large1, 37.6, R(46), 5.6), ring(large1, 37.6, R(58), 5.6)) },
-	{ name: 'the-forest-grows-quiet', size: 'WS', cue: [12, 'and the forest'], hour: 20.0, exposure: 8, fov: 40, stand: [40, 210], grade: NIGHT, sfx: [['1934113f408410383c16336a37d2e274579e0cc0802e574dcc232982cca02a84.mp3', 0.14]], path: move(ring(large1, 80, R(40), 14), ring(large1, 76, R(46), 13), [0, 16, 150], [0, 18, 150]) },
+	{ name: 'lanterns', size: 'MS', cue: [12, 'In the evening'], hour: 19.6, exposure: 1.5, fov: 42, stand: [14, 196], dome: 1, sfx: [['1934113f408410383c16336a37d2e274579e0cc0802e574dcc232982cca02a84', 0.12]], path: move(ring(large1, 38.6, R(18), 6.5), ring(large1, 38.4, R(28), 6.5), ring(large1, 37.6, R(46), 5.6), ring(large1, 37.6, R(58), 5.6)) },
+	{ name: 'the-forest-grows-quiet', size: 'WS', cue: [12, 'and the forest'], hour: 20.0, exposure: 8, fov: 40, stand: [40, 210], grade: NIGHT, sfx: [['1934113f408410383c16336a37d2e274579e0cc0802e574dcc232982cca02a84', 0.14]], path: move(ring(large1, 80, R(40), 14), ring(large1, 76, R(46), 13), [0, 16, 150], [0, 18, 150]) },
 	{ name: 'path-lights', size: 'MS', cue: [13, 'And as night'], hour: 20.4, exposure: 6, fov: 44, stand: [70, 200], grade: NIGHT, path: move([46, 26, 252], [50, 28, 246], [0, 10, 150], [0, 12, 150]) },
-	{ name: 'a-better-way-to-live', size: 'EWS', cue: [13, 'it becomes'], hour: 20.3, exposure: 7, fov: 44, stand: [70, 200], grade: NIGHT, sfx: [['1934113f408410383c16336a37d2e274579e0cc0802e574dcc232982cca02a84.mp3', 0.08]], path: move([74, 30, 214], [62, 105, 300], [30, 6, 120], [0, 14, 0], landing) } // ends on the master dome, as the sunrise began: the loop
+	{ name: 'a-better-way-to-live', size: 'EWS', cue: [13, 'it becomes'], hour: 20.3, exposure: 7, fov: 44, stand: [70, 200], grade: NIGHT, sfx: [['1934113f408410383c16336a37d2e274579e0cc0802e574dcc232982cca02a84', 0.08]], path: move([74, 30, 214], [62, 105, 300], [30, 6, 120], [0, 14, 0], landing) } // ends on the master dome, as the sunrise began: the loop
 ];
 
 // every shot runs from its word to the next shot's word; the last one to the end of the film
@@ -143,7 +137,7 @@ function timing() {
 	// ── the score: sections that follow the arc, cut on the same clock (score.ts composes it) ─────
 	const t = (i) => voices[i].speechStart;
 	const music = {
-		cid: '58ef55fcb26fb51d526cbc497b5b7fdf8c68f54d86571a8017f26faf45d8baca.mp3',
+		hash: '58ef55fcb26fb51d526cbc497b5b7fdf8c68f54d86571a8017f26faf45d8baca',
 		chunks: [
 			{ until: t(1) - 1.5, styles: ['cinematic ambient intro', 'pre-dawn stillness', 'soft high string pad', 'sparse felt piano single notes', 'mysterious, intimate', '60 bpm'] },
 			{ until: t(2) - 0.4, styles: ['epic cinematic sunrise swell', 'warm brass and soaring strings', 'wordless choir pad', 'gentle timpani rolls', 'awe, radiant, triumphant', 'rising to a peak'] },
@@ -164,23 +158,23 @@ function timing() {
 	const at = (name) => cuts[shots.findIndex((s) => s.name === name)];
 	const sound = {
 		beds: [
-			{ cid: 'f392c807c75f2fa38adabe086bc95701c10cfab88f05074a3b9e751ab8335895.mp3', from: 'the-flight', to: 'the-city-wakes', level: 0.3, loop: true },
-			{ cid: 'b663781598745c432553f4bc544642724600b9677e301f7c0e7a5c8f038edfa9.mp3', from: 'the-edge', to: 'a-tired-land', level: 0.34, loop: true, hardOut: true },
-			{ cid: '1914dca5b50a9f0cc55320ecc6c78c2a0d8c7e3602fc1cd4511b5b96f05cca68.mp3', from: 'the-edge', to: 'a-tired-land', level: 0.34, loop: true, hardOut: true },
-			{ cid: 'b6713600778441dab6c5232fa418af56a85209b17308e16975684fafd6bd3f84.mp3', from: 'the-bed', to: 'the-gallery', level: 0.2, after: 0.35, fadeIn: 0.5 },
-			{ cid: 'f3ebbb41045f0a45d3a27d6782beb71973fa539e9640d1c7d1b9434b02351575.mp3', from: 'the-food-forest', to: 'the-stream', level: 0.17 },
-			{ cid: '4d34f215c6e292bc385692aae02eeb8ed7917f51138b1059c2adf439fa535d97.mp3', from: 'the-commons', to: 'the-stone-theatre', level: 0.3, loop: true },
-			{ cid: 'b6713600778441dab6c5232fa418af56a85209b17308e16975684fafd6bd3f84.mp3', from: 'the-node', to: 'lanterns', level: 0.15, in: 200 },
-			{ cid: '46e638bd4b75170f5450ffe1ec7232d22bfb0da0b5edaf88674e2065066f8d18.mp3', from: 'the-forest-grows-quiet', to: 'a-better-way-to-live', level: 0.26, loop: true }
+			{ hash: 'f392c807c75f2fa38adabe086bc95701c10cfab88f05074a3b9e751ab8335895', from: 'the-flight', to: 'the-city-wakes', level: 0.3, loop: true },
+			{ hash: 'b663781598745c432553f4bc544642724600b9677e301f7c0e7a5c8f038edfa9', from: 'the-edge', to: 'a-tired-land', level: 0.34, loop: true, hardOut: true },
+			{ hash: '1914dca5b50a9f0cc55320ecc6c78c2a0d8c7e3602fc1cd4511b5b96f05cca68', from: 'the-edge', to: 'a-tired-land', level: 0.34, loop: true, hardOut: true },
+			{ hash: 'b6713600778441dab6c5232fa418af56a85209b17308e16975684fafd6bd3f84', from: 'the-bed', to: 'the-gallery', level: 0.2, after: 0.35, fadeIn: 0.5 },
+			{ hash: 'f3ebbb41045f0a45d3a27d6782beb71973fa539e9640d1c7d1b9434b02351575', from: 'the-food-forest', to: 'the-stream', level: 0.17 },
+			{ hash: '4d34f215c6e292bc385692aae02eeb8ed7917f51138b1059c2adf439fa535d97', from: 'the-commons', to: 'the-stone-theatre', level: 0.3, loop: true },
+			{ hash: 'b6713600778441dab6c5232fa418af56a85209b17308e16975684fafd6bd3f84', from: 'the-node', to: 'lanterns', level: 0.15, in: 200 },
+			{ hash: '46e638bd4b75170f5450ffe1ec7232d22bfb0da0b5edaf88674e2065066f8d18', from: 'the-forest-grows-quiet', to: 'a-better-way-to-live', level: 0.26, loop: true }
 		],
 		hits: [
-			{ cid: 'ec63e7d66166fe119d76abb832ee1ff077f46eae2a2ad24ab5cc435feab3f8a7.mp3', peak: at('the-edge').start, level: 0.6 },
-			{ cid: '8bbd14b92078058f71888fc91233a516e32cc5d2785f523d49151d2dac437df6.mp3', peak: at('the-long-road').start + 0.7, level: 0.55 },
-			{ cid: '8bbd14b92078058f71888fc91233a516e32cc5d2785f523d49151d2dac437df6.mp3', peak: at('the-edge').start + 1.2, level: 0.42 },
-			{ cid: 'd4ae234054ed8d36b2c14a104b2c1c38992c38251570d2d056f90f545cd08669.mp3', peak: at('far-away').start + 0.5, level: 0.32 },
-			{ cid: '044e58504895e10963eb13eef303b8c7684826f2e585ce0aeb06596678491328.mp3', peak: at('the-bed').start + 0.7, level: 0.42 },
-			{ cid: 'cda4f556c62f50acc13f221c098c7341d4a498cc0388a017a0554ec5b1a75121.mp3', peak: at('the-ring').start + 1.2, level: 0.28 },
-			{ cid: '2cc8e24903d8c60a09a7d2a022741683831350aaa3e730c2f749e718fe9766c6.mp3', peak: voices.at(-1).speechEnd + 0.6, level: 0.45 }
+			{ hash: 'ec63e7d66166fe119d76abb832ee1ff077f46eae2a2ad24ab5cc435feab3f8a7', peak: at('the-edge').start, level: 0.6 },
+			{ hash: '8bbd14b92078058f71888fc91233a516e32cc5d2785f523d49151d2dac437df6', peak: at('the-long-road').start + 0.7, level: 0.55 },
+			{ hash: '8bbd14b92078058f71888fc91233a516e32cc5d2785f523d49151d2dac437df6', peak: at('the-edge').start + 1.2, level: 0.42 },
+			{ hash: 'd4ae234054ed8d36b2c14a104b2c1c38992c38251570d2d056f90f545cd08669', peak: at('far-away').start + 0.5, level: 0.32 },
+			{ hash: '044e58504895e10963eb13eef303b8c7684826f2e585ce0aeb06596678491328', peak: at('the-bed').start + 0.7, level: 0.42 },
+			{ hash: 'cda4f556c62f50acc13f221c098c7341d4a498cc0388a017a0554ec5b1a75121', peak: at('the-ring').start + 1.2, level: 0.28 },
+			{ hash: '2cc8e24903d8c60a09a7d2a022741683831350aaa3e730c2f749e718fe9766c6', peak: voices.at(-1).speechEnd + 0.6, level: 0.45 }
 		]
 	};
 
@@ -191,7 +185,7 @@ function timing() {
 	const HERE = at('the-bed').start;
 	music.cues = [
 		{
-			name: 'dip', cid: '0351080bc48a35843bea1a1cba0d9d789a5443cd05d28e654af10c77bb1952a3.mp3', from: at('the-edge').start - 0.13, to: HERE, replace: true, level: 0.5, // its impact (0.13 s in) on the cut
+			name: 'dip', hash: '0351080bc48a35843bea1a1cba0d9d789a5443cd05d28e654af10c77bb1952a3', from: at('the-edge').start - 0.13, to: HERE, replace: true, level: 0.5, // its impact (0.13 s in) on the cut
 			chunks: [
 				{ seconds: 3, styles: ['sudden dissonant orchestral impact', 'low brass and timpani cluster', 'dark, ominous', 'then a hollow ring-out'] },
 				{ seconds: HERE - (at('the-edge').start - 0.25) - 3, styles: ['disturbing dark ambient drone', 'dissonant low strings and cello clusters', 'metallic industrial pulse like distant machinery', 'tense, oppressive, uneasy', 'minor key, no melody', 'slowly building dread'] }
@@ -200,7 +194,7 @@ function timing() {
 		{
 			// "Here… breakfast": the turn, in the music — a burst of light, then a bouncy, happy piano that runs on into the
 			// score's marimba section (it takes the score's place until then)
-			name: 'breakfast', cid: 'e26e51c1c6245692031e3790eb057fa88e4fdcc14e584f6fe55ef9a329507f48.mp3', from: HERE + 0.35, to: t(5) - 0.4, replace: true, level: 0.62, fin: 0.02, blend: 2.5, // hands over to the score's marimba in the pause before "Beneath…"
+			name: 'breakfast', hash: 'e26e51c1c6245692031e3790eb057fa88e4fdcc14e584f6fe55ef9a329507f48', from: HERE + 0.35, to: t(5) - 0.4, replace: true, level: 0.62, fin: 0.02, blend: 2.5, // hands over to the score's marimba in the pause before "Beneath…"
 			chunks: [
 				{ seconds: 3, styles: ['bright joyful orchestral bloom', 'sunburst major chord', 'strings, harp and glockenspiel', 'sudden light and warmth, relief'] },
 				{ seconds: t(5) - 0.4 - (HERE + 0.35) - 3, styles: ['upbeat happy piano, rhythmic and bouncy', 'pizzicato strings and light hand percussion', 'playful, joyful, sunny morning', 'major key, lively, 92 bpm', 'building energy'] }

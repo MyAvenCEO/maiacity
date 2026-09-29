@@ -4,6 +4,7 @@
 //! Range, for <img> and <video>.
 
 mod auth;
+mod local;
 mod mcp;
 mod proxies;
 mod sync;
@@ -78,6 +79,15 @@ async fn vault_list(app: State<'_, App>) -> Res<Vec<Meta>> {
     let mut list = app.vault.catalog.list().await.map_err(err)?;
     list.sort_by(|a, b| b.added.cmp(&a.added).then(a.original_name.cmp(&b.original_name)));
     Ok(list)
+}
+
+/// Change what is known about a file (title, description, tags, public; meta merged key by key) — it syncs like the
+/// rest of the catalog.
+#[tauri::command]
+async fn vault_describe(app: State<'_, App>, hash: String, patch: serde_json::Value) -> Res<Meta> {
+    gate()?;
+    let hash: Hash = hash.parse().map_err(err)?;
+    app.vault.catalog.describe(hash, &patch).await.map_err(err)
 }
 
 #[derive(Serialize)]
@@ -374,6 +384,8 @@ fn main() {
             mcp::mcp_info,
             vault_status,
             vault_list,
+            vault_describe,
+            proxies::vault_proxy,
             vault_sources,
             vault_scan,
             vault_ingest

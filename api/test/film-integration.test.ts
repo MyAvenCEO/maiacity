@@ -36,7 +36,7 @@ test("a world shot version is queued for its HD proxy once — a new version get
   expect(a.kind).toBe("proxy");
   expect(a.shot_id).toBe(s.id);
   expect(a.shot_version).toBe(1);
-  expect(a.media_cid).toBeNull();
+  expect(a.media_hash).toBeNull();
   expect((await queueShotProxy(s.id, 1, "admin")).id).toBe(a.id); // one per version
   const v2 = await saveShot(s.id, "admin", { spec: spec({ time: { hour: 6 } }) });
   expect(v2.version).toBe(2);

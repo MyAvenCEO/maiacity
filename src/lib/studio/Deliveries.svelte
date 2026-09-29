@@ -10,7 +10,7 @@
 	let { s } = $props();
 	/** @typedef {{ ok: boolean | null, items: { name: string, ok: boolean | null, note?: string }[] }} Qc */
 
-	const KNOWN = new Set(['channels', 'cid', 'format', 'aspect', 'width', 'height', 'codec', 'bytes', 'seconds', 'note', 'kind', 'timeline', 'cut', 'qc', 'loudness', 'lufs', 'true_peak', 'truePeak']);
+	const KNOWN = new Set(['channels', 'hash', 'format', 'aspect', 'width', 'height', 'codec', 'bytes', 'seconds', 'note', 'kind', 'timeline', 'cut', 'qc', 'loudness', 'lufs', 'true_peak', 'truePeak']);
 	const byShape = $derived.by(() => {
 		/** @type {Map<string, typeof s.deliveries>} */
 		const map = new Map();
@@ -90,7 +90,7 @@
 	{#each byShape as [shape, list] (shape)}
 		<section>
 			<h3><span class="shape">{shape}</span> {list.length} file{list.length === 1 ? '' : 's'}</h3>
-			{#each list as d (d.cid + (d.kind ?? '') + d.codec)}
+			{#each list as d (d.hash + (d.kind ?? '') + d.codec)}
 				{@const qc = qcOf(d.qc)}
 				{@const loud = loudOf(d)}
 				<div class="card" class:thumb={d.kind === 'thumbnail'}>
@@ -111,8 +111,8 @@
 					{#if d.note}<p class="note">{d.note}</p>{/if}
 					{#each extra(d) as [k, v] (k)}<p class="x"><span>{k}</span> {show(v)}</p>{/each}
 					<div class="acts">
-						<button class="ghost small" onclick={() => s.openFile(d.cid)}>▶ View</button>
-						<a class="ghost small" href={raw(d.cid)} target="_blank" rel="noopener">File ↗</a>
+						<button class="ghost small" onclick={() => s.openFile(d.hash)}>▶ View</button>
+						<a class="ghost small" href={raw(d.hash)} target="_blank" rel="noopener">File ↗</a>
 					</div>
 				</div>
 			{/each}

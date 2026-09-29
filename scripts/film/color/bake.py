@@ -110,7 +110,7 @@ def write_mlut(path, rgb, n, head):
     lo, hi = float(rgb.min()), float(rgb.max())
     u = np.round((rgb - lo) / (hi - lo) * 65535).astype('<u2')
     h = json.dumps({**head, 'size': n, 'min': lo, 'max': hi}).encode()
-    # mtime 0: the same numbers always give the same bytes, and so the same CID
+    # mtime 0: the same numbers always give the same bytes, and so the same hash
     with open(path + '.part', 'wb') as f, gzip.GzipFile(fileobj=f, mode='wb', mtime=0, filename='') as z:
         z.write(b'MLUT1' + struct.pack('<I', len(h)) + h + u.tobytes())
     os.replace(path + '.part', path)

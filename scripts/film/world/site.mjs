@@ -4,15 +4,16 @@
 // How the worker gets a build:
 //   1. `node scripts/film/world/build.mjs` builds the site (vite build), hashes it and writes build/film-build.json
 //      ({ commit, hash }) — the page reports it as __film.build — and packs it as studio/builds/site-<hash>.tar;
-//   2. the tar goes into the library (`bun media add studio/builds/site-<hash>.tar`), whose CID is the build's cid
-//      (a spec may name it: world.build.cid);
-//   3. the worker fetches the tar by CID once (buildDir), serves it on a local port (serveSite) and renders with
+//   2. the tar goes into the vault (`bun media add studio/builds/site-<hash>.tar`), whose hash is the build's file
+//      (a spec may name it: world.build.file);
+//   3. the worker fetches the tar from the vault once (buildDir), serves it on a local port (serveSite) and renders with
 //      `site` = that URL. renderPlate refuses a spec whose world.build is not the site's build.
 import { execFileSync } from 'node:child_process';
-import { createReadStream, existsSync, mkdirSync, statSync, writeFileSync } from 'node:fs';
+import { createReadStream, existsSync, mkdirSync, statSync } from 'node:fs';
 import { createServer } from 'node:http';
 import { homedir } from 'node:os';
 import { extname, join, normalize, resolve } from 'node:path';
+import { fileOf, isHash } from '../vault.mjs';
 
 const TYPES = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.css': 'text/css', '.json': 'application/json', '.svg': 'image/svg+xml', '.png': 'image/png', '.jpg': 'image/jpeg', '.webp': 'image/webp', '.woff2': 'font/woff2', '.mp3': 'audio/mpeg', '.wasm': 'application/wasm', '.txt': 'text/plain' };
 
@@ -46,19 +47,15 @@ if (process.argv[1] && resolve(process.argv[1]) === new URL(import.meta.url).pat
 }
 
 /**
- * A stored build, unpacked once into the cache (~/.cache/maiacity/builds/<cid>/): the library's bytes by CID.
- * @param {string} cid @param {{ api: string, key: string }} from  the API and a media:admin key
+ * A stored build, unpacked once into the cache (~/.cache/maiacity/builds/<hash>/): the vault's bytes by hash.
+ * @param {string} hash  the build's tar in the vault (world.build.file)
  */
-export async function buildDir(cid, { api, key }) {
-	if (!/^baf[a-z2-7]{20,}$/.test(cid)) throw new Error('a build is named by its library CID');
-	const dir = join(homedir(), '.cache', 'maiacity', 'builds', cid);
+export async function buildDir(hash) {
+	if (!isHash(hash)) throw new Error('a build is named by its file in the vault: its hash');
+	const dir = join(homedir(), '.cache', 'maiacity', 'builds', hash);
 	if (existsSync(join(dir, 'film-build.json'))) return dir;
 	mkdirSync(dir, { recursive: true });
-	const res = await fetch(`${api}/api/media/${cid}`, { headers: { authorization: `Bearer ${key}` } });
-	if (!res.ok) throw new Error(`build ${cid}: ${res.status}`);
-	const tar = `${dir}.tar`;
-	writeFileSync(tar, Buffer.from(await res.arrayBuffer()));
-	execFileSync('tar', ['-xf', tar, '-C', dir]);
-	if (!existsSync(join(dir, 'film-build.json'))) throw new Error(`build ${cid} has no film-build.json: not a film build`);
+	execFileSync('tar', ['-xf', await fileOf(hash, 'application/x-tar'), '-C', dir]);
+	if (!existsSync(join(dir, 'film-build.json'))) throw new Error(`build ${hash} has no film-build.json: not a film build`);
 	return dir;
 }

@@ -5,32 +5,29 @@
 // The shots dissolve into one another where the shot list cuts them; each voice take comes in where the list places it; the music
 // sits under it at the levels the list gives and fades out at the end. The captions are the voice's own words, in
 // short phrases, timed to the moment each is spoken — set in the site's display face by Chrome, laid over by ffmpeg.
-// Voice and music are taken from library/ by their CIDs.
+// Voice, music and sounds are taken from the vault by their hashes (the Mac app's local server).
 import puppeteer from 'puppeteer-core';
 import { execFileSync } from 'node:child_process';
-import { existsSync, mkdirSync, readFileSync, rmSync } from 'node:fs';
+import { existsSync, mkdirSync, rmSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
+import { bare, fileOf } from './vault.mjs';
 
 const listFile = process.argv[2];
 if (!listFile) throw new Error('usage: node scripts/film/assemble.mjs <shot list>');
 const film = (await import(pathToFileURL(resolve(listFile)).href)).default;
+if (!film.cuts) throw new Error(`${listFile} has no timing: its takes' words are neither in the vault nor in library/`);
 const SIZE = film.size ?? 1080, FPS = film.fps ?? 30, XF = 0.6;
 const DIR = resolve('studio/film', film.name);
-// a file by its CID: library/<cid>.<ext>, and what library/<cid>.json says about it
-const fromLibrary = (ref) => {
-	const cid = ref.replace(/\.[a-z0-9]+$/, '');
-	if (!existsSync(resolve('library', `${cid}.json`))) throw new Error(`library/ does not hold ${cid}`);
-	const doc = JSON.parse(readFileSync(resolve('library', `${cid}.json`), 'utf8'));
-	return { file: resolve('library', doc.file), meta: doc };
-};
+// a file by its hash: the vault's bytes, in the cache
+const fromVault = async (ref) => ({ file: await fileOf(bare(ref)) });
 // every voice take, where the shot list places it on the film
-const voices = film.voices.map((v) => ({ ...v, ...fromLibrary(v.cid) }));
+const voices = await Promise.all(film.voices.map(async (v) => ({ ...v, ...(await fromVault(v.hash)) })));
 // the game's recordings are not equally loud: the same factors as the game's ambience (src/lib/sandbox-2/interior/ambience.ts)
-const NORMALIZE = { 'ef0770d0d1b2927adbb95158dcf2a7c1a3abf74bf35f4aab4da3b2885374f25e.mp3': 22.1, '1934113f408410383c16336a37d2e274579e0cc0802e574dcc232982cca02a84.mp3': 0.35, '7605ffd5723a4511ba9320009d5e2beda3f9a734ad244d7765a6120bf4200e82.mp3': 0.66, '646b67cf337fdfdb3446e55b1f1edd4bfc3e6469bc12ea3acd07901cc71cda8f.mp3': 1.5 };
+const NORMALIZE = { 'ef0770d0d1b2927adbb95158dcf2a7c1a3abf74bf35f4aab4da3b2885374f25e': 22.1, '1934113f408410383c16336a37d2e274579e0cc0802e574dcc232982cca02a84': 0.35, '7605ffd5723a4511ba9320009d5e2beda3f9a734ad244d7765a6120bf4200e82': 0.66, '646b67cf337fdfdb3446e55b1f1edd4bfc3e6469bc12ea3acd07901cc71cda8f': 1.5 };
 let seed = 7;
 const rand = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
-const music = fromLibrary(film.music);
+const music = await fromVault(film.music);
 const total = film.cuts.at(-1).end;
 
 // ── captions: each take's words, in phrases of a few words broken at the punctuation, on the film's clock ──
@@ -78,15 +75,15 @@ inputs.push('-i', music.file);
 phrases.forEach((_, i) => inputs.push('-loop', '1', '-t', String(total), '-framerate', String(FPS), '-i', join(CAPS, `${String(i).padStart(3, '0')}.png`)));
 // the sound of each shot: its recordings, looped, from somewhere in the middle, for the length of the shot and its dissolve
 const sounds = [];
-film.shots.forEach((s, i) => {
+for (const [i, s] of film.shots.entries()) {
 	const start = film.cuts[i].start, dur = s.seconds;
 	for (const [path, level] of s.sfx ?? []) {
-		const src = fromLibrary(path);
+		const src = await fromVault(path);
 		const length = Number(execFileSync('ffprobe', ['-v', 'quiet', '-show_entries', 'format=duration', '-of', 'csv=p=0', src.file]).toString());
 		sounds.push({ start, dur, level: level * (NORMALIZE[path] ?? 1), input: inputs.filter((x) => x === '-i').length });
 		inputs.push('-stream_loop', '-1', '-ss', (rand() * Math.max(0, length - 1)).toFixed(2), '-i', src.file);
 	}
-});
+}
 
 const f = [];
 // every shot on the same clock, then dissolves at the cut points

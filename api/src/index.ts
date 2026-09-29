@@ -16,13 +16,11 @@ import { ledgerView } from "./ledger/view";
 import { assignRole, can, capabilities, createRole, deleteRole, initRoles, listRoles, RoleError, setRoleCaps } from "./acl";
 import { CAPABILITIES } from "./caps";
 import { addIdea, deleteIdea, IdeaError, listIdeas, updateIdea } from "./ideas";
-import { describe, finishUpload, have, listMedia, markDistributed, MediaError, mediaInfo, publicManifest, putPart, readMedia, retag, startUpload, undistributed } from "./media";
 import { approveDevice, deviceInfo, KeyError, keyHolder, redeemDevice, revokeKey, startDevice } from "./keys";
 import { joinInfo, listDevices, listVaultFiles, pairDevice, revokeDevice, VaultError } from "./vault";
-import { canDistribute, distributePending } from "./bunny";
 import { createTimeline, deleteTimeline, getTimeline, listTimelines, saveTimeline, TimelineError } from "./timelines";
 import { createShot, getShot, listShots, saveShot, ShotError, shotVersions } from "./shots";
-import { claimRender, listJobs, previewLuts, queueFrame, queueLuts, queueProxy, queueRender, queueShotProxy, RenderError, rendersOf, reportRender } from "./renders";
+import { claimRender, listJobs, previewLuts, queueFrame, queueLuts, queueRender, queueShotProxy, RenderError, rendersOf, reportRender } from "./renders";
 import { CHANNELS, ContentError, createContent, deleteContent, FORMATS, KINDS, listContent, saveContent, saveDay, savePosts, STATUSES } from "./content";
 import { format, gameClock, calendar, parse } from "../../game/time";
 
@@ -108,7 +106,7 @@ async function allowed(req: Request, cap: string): Promise<{ id: string; role: s
 
 /** Turn a thrown ledger, role or notebook error into a response a person can read. */
 function fail(req: Request, e: unknown) {
-  if (e instanceof LedgerError || e instanceof RoleError || e instanceof IdeaError || e instanceof KeyError || e instanceof MediaError || e instanceof TimelineError || e instanceof ShotError || e instanceof ContentError || e instanceof RenderError || e instanceof VaultError) return json(req, { error: e.message }, { status: e.status });
+  if (e instanceof LedgerError || e instanceof RoleError || e instanceof IdeaError || e instanceof KeyError || e instanceof TimelineError || e instanceof ShotError || e instanceof ContentError || e instanceof RenderError || e instanceof VaultError) return json(req, { error: e.message }, { status: e.status });
   console.error(e);
   return json(req, { error: "Something went wrong on our side." }, { status: 500 });
 }
@@ -130,7 +128,7 @@ await initRoles();
 
 const server = Bun.serve({
   port: PORT,
-  // finishing a large upload (its CID is computed from every byte) takes longer than Bun's default 10 s
+  // slow requests are let finish: Bun's default idle timeout is 10 s
   idleTimeout: 255,
   routes: {
     // Health, for the container and for the deploy job.
@@ -515,19 +513,7 @@ const server = Bun.serve({
       },
     },
 
-    // The media library: every file in Postgres, known by its CID. The public copies are on Bunny;
-    // these are the originals, for the admin's eyes.
-    "/api/media": {
-      OPTIONS: preflight,
-      GET: async (req) => {
-        const me = await allowed(req, "media:admin");
-        if (me instanceof Response) return me;
-        const url = new URL(req.url);
-        const media = await listMedia({ kind: url.searchParams.get("kind") ?? undefined, q: url.searchParams.get("q") ?? undefined });
-        return json(req, { media, total: media.reduce((n, m) => n + m.size, 0) });
-      },
-    },
-    // ── the media library, from a terminal: sign in with the admin's passkey, then upload by CID ──
+    // ── a terminal signs in with the admin's passkey: it asks for a key, the admin approves it in the browser ──
     "/api/device/start": {
       OPTIONS: preflight,
       POST: async (req) => {
@@ -578,133 +564,7 @@ const server = Bun.serve({
         }
       },
     },
-    // Public: the site's build reads it to load each image from its CID on the CDN.
-    "/api/media/manifest": async (req) => json(req, await publicManifest(), { headers: { "Cache-Control": "no-store" } }),
-    "/api/media/have": {
-      OPTIONS: preflight,
-      POST: async (req) => {
-        const me = await allowed(req, "media:admin");
-        if (me instanceof Response) return me;
-        const cids = (await readJson(req))?.cids;
-        return json(req, { have: await have(Array.isArray(cids) ? cids.map(String) : []) });
-      },
-    },
-    // what is known about a file the library holds: title, description, tags, meta, public (the seed step sends it)
-    "/api/media/describe": {
-      OPTIONS: preflight,
-      POST: async (req) => {
-        const me = await allowed(req, "media:admin");
-        if (me instanceof Response) return me;
-        try {
-          const body = await readJson(req);
-          await describe(body?.cid, body);
-          return json(req, { ok: true });
-        } catch (e) {
-          return fail(req, e);
-        }
-      },
-    },
-    "/api/media/tags": {
-      OPTIONS: preflight,
-      PUT: async (req) => {
-        const me = await allowed(req, "media:admin");
-        if (me instanceof Response) return me;
-        const body = (await readJson(req))?.tags;
-        if (!body || typeof body !== "object") return json(req, { error: "Send { tags: { cid: [tag, …] } }." }, { status: 400 });
-        const known = new Set(await have(Object.keys(body)));
-        await retag(new Map(Object.entries(body).filter(([cid]) => known.has(cid)).map(([cid, t]) => [cid, new Set((t as unknown[]).map(String))])));
-        return json(req, { tagged: known.size });
-      },
-    },
-    "/api/media/uploads": {
-      OPTIONS: preflight,
-      POST: async (req) => {
-        const me = await allowed(req, "media:admin");
-        if (me instanceof Response) return me;
-        try {
-          return json(req, await startUpload(me.id, (await readJson(req)) ?? {}));
-        } catch (e) {
-          return fail(req, e);
-        }
-      },
-    },
-    "/api/media/uploads/:id/finish": {
-      OPTIONS: preflight,
-      POST: async (req) => {
-        const me = await allowed(req, "media:admin");
-        if (me instanceof Response) return me;
-        try {
-          const r = await finishUpload(me.id, req.params.id);
-          void distributePending(); // the public copy follows on its own
-          return json(req, r);
-        } catch (e) {
-          return fail(req, e);
-        }
-      },
-    },
-    "/api/media/uploads/:id/:idx": {
-      OPTIONS: preflight,
-      PUT: async (req) => {
-        const me = await allowed(req, "media:admin");
-        if (me instanceof Response) return me;
-        try {
-          await putPart(me.id, req.params.id, Number(req.params.idx), new Uint8Array(await req.arrayBuffer()));
-          return new Response(null, { status: 204, headers: cors(req) });
-        } catch (e) {
-          return fail(req, e);
-        }
-      },
-    },
-    // Start making every missing public copy; the answer says how many are still waiting (the terminal asks again).
-    "/api/media/distribute": {
-      OPTIONS: preflight,
-      POST: async (req) => {
-        const me = await allowed(req, "media:admin");
-        if (me instanceof Response) return me;
-        if (!canDistribute()) return json(req, { error: "This server has no BUNNY_API_KEY." }, { status: 503 });
-        void distributePending();
-        return json(req, { waiting: (await undistributed()).length });
-      },
-    },
-    // A video a post already streams: record its Stream copy, so it is not uploaded to Stream a second time.
-    "/api/media/streamed": {
-      OPTIONS: preflight,
-      POST: async (req) => {
-        const me = await allowed(req, "media:admin");
-        if (me instanceof Response) return me;
-        const body = await readJson(req);
-        const cid = String(body?.cid ?? ""), guid = String(body?.stream_guid ?? "");
-        if (!/^[0-9a-f-]{36}$/.test(guid) || !(await have([cid])).length) return json(req, { error: "Give a CID the library holds and a Stream video guid." }, { status: 400 });
-        await markDistributed(cid, { stream_guid: guid });
-        return json(req, { ok: true });
-      },
-    },
-
-    // a file by its CID, for anyone who has the CID (the list stays the admin's): the site loads a file from here
-    // until its copy on the CDN is made — locally, always
-    "/api/media/:cid": {
-      OPTIONS: preflight,
-      GET: async (req) => {
-        const info = await mediaInfo(req.params.cid);
-        if (!info) return json(req, { error: "No such file." }, { status: 404 });
-        // a CID never changes its bytes: cache it for good, and answer byte ranges so a video can seek
-        // Vary: Origin, always: an <img> (no Origin) and a fetch (with one) must not share a cached answer
-        const head = { ...cors(req), Vary: "Origin", "Content-Type": info.mime, "Accept-Ranges": "bytes", ETag: `"${req.params.cid}"`, "Cache-Control": "public, max-age=31536000, immutable" };
-        const range = /^bytes=(\d*)-(\d*)$/.exec(req.headers.get("range") ?? "");
-        if (range && info.size > 0) {
-          const start = range[1] ? Number(range[1]) : Math.max(0, info.size - Number(range[2]));
-          const end = range[1] && range[2] ? Math.min(Number(range[2]), info.size - 1) : info.size - 1;
-          if (start > end || start >= info.size) return new Response(null, { status: 416, headers: { ...head, "Content-Range": `bytes */${info.size}` } });
-          return new Response(readMedia(req.params.cid, start, end), {
-            status: 206,
-            headers: { ...head, "Content-Range": `bytes ${start}-${end}/${info.size}`, "Content-Length": String(end - start + 1) },
-          });
-        }
-        return new Response(readMedia(req.params.cid, 0, Math.max(0, info.size - 1)), { headers: { ...head, "Content-Length": String(info.size) } });
-      },
-    },
-
-    // The studio's timelines: edits over the library, kept with it.
+    // The studio's timelines: edits over the vault's files, by hash.
     "/api/timelines": {
       OPTIONS: preflight,
       GET: async (req) => {
@@ -853,9 +713,10 @@ const server = Bun.serve({
       },
     },
 
-    // The worker's other jobs (stream A · C6): proxies with colour detection, and the studio's preview LUTs.
-    // GET /api/film/luts → { [transform]: { cid, hash, size } }; POST queues a bake. GET /api/film/jobs?kind=&cid=
-    // → the latest jobs (proxy status per file, the render queue). POST /api/film/proxies/:cid → make its proxy again.
+    // The worker's other jobs: the studio's preview LUTs, world shot proxies, hero frames. A file's own proxy is the
+    // Mac app's work (meta.proxy on the original), not a job here.
+    // GET /api/film/luts → { [transform]: { file, hash, size } } (file: the vault file's hash); POST queues a bake.
+    // GET /api/film/jobs?kind=&hash=&timeline=&shot= → the latest jobs (the render queue).
     "/api/film/luts": {
       OPTIONS: preflight,
       GET: async (req) => {
@@ -876,19 +737,9 @@ const server = Bun.serve({
         if (me instanceof Response) return me;
         const url = new URL(req.url);
         const q = (k: string) => url.searchParams.get(k) ?? undefined;
-        return json(req, await listJobs({ kind: q("kind"), cid: q("cid"), timeline: q("timeline"), shot: q("shot"), limit: Number(q("limit")) || undefined }));
+        return json(req, await listJobs({ kind: q("kind"), hash: q("hash"), timeline: q("timeline"), shot: q("shot"), limit: Number(q("limit")) || undefined }));
       },
     },
-    "/api/film/proxies/:cid": {
-      OPTIONS: preflight,
-      POST: async (req) => {
-        const me = await allowed(req, "media:admin");
-        if (me instanceof Response) return me;
-        if (!(await have([req.params.cid])).length) return json(req, { error: "The library does not hold that CID." }, { status: 404 });
-        return json(req, await queueProxy(req.params.cid, me.id), { status: 201 });
-      },
-    },
-
     // A hero frame: one frame of the timeline at { t, shape }, rendered by the worker at full precision (Grade tab)
     "/api/timelines/:id/frames": {
       OPTIONS: preflight,
@@ -903,7 +754,7 @@ const server = Bun.serve({
       },
     },
 
-    // A film's posts, written where the film is made (the same key as the media and the render worker)
+    // A film's posts, written where the film is made (the same key as the render worker)
     "/api/timelines/:id/posts": {
       OPTIONS: preflight,
       PUT: async (req) => {

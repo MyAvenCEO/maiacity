@@ -8,7 +8,7 @@
 //
 // A shot list written before shots were data (day-19-d.mjs: paths from camera.mjs, hour, blur, mood, grade…) is read
 // as records by fromLegacy: its camera moves exactly as before; its look is no longer baked in (the plate is log, the
-// grade happens in the studio). Its timing comes from the voice's word timings (library/, or LIBRARY=<dir>).
+// grade happens in the studio). Its timing comes from the voice's word timings (the vault, or LIBRARY=<dir>).
 // `--lut <file.cube>`: also a display preview beside each plate (ACEScct → the LUT → Rec.709 H.264) and the stills
 // through it; without one the stills use film mode's stand-in view.
 //
@@ -44,7 +44,7 @@ if (listFile.endsWith('.json')) {
 	};
 } else {
 	const list = (await import(pathToFileURL(resolve(listFile)).href)).default;
-	if (!list.cuts) throw new Error(`${listFile} has no timing without the voice's word timings: set LIBRARY=<dir with <cid>.json>, or use its records (scripts/film/worlds/export.mjs) with --seconds`);
+	if (!list.cuts) throw new Error(`${listFile} has no timing without the voice's word timings: start the Mac app (its vault), set LIBRARY=<dir with <hash>.json>, or use its records (scripts/film/worlds/export.mjs) with --seconds`);
 	film = { name: list.name, shots: list.shots.map((/** @type {any} */ s) => ({ name: s.name, spec: fromLegacy(s, { fps: list.fps ?? 30 }) })) };
 }
 const size = flag('size') ?? '1080';

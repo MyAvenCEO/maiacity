@@ -358,6 +358,7 @@ impl ServerHandler for Studio {
 /// Serve the MCP endpoint on this Mac, behind the token.
 pub async fn serve(vault: Arc<Vault>, auth: Auth, handle: AppHandle) -> anyhow::Result<()> {
     let token = token()?;
+    let files = crate::local::router(vault.clone());
     let service = StreamableHttpService::new(
         move || Ok(Studio::new(vault.clone(), auth.clone(), handle.clone())),
         Arc::new(LocalSessionManager::default()),
@@ -367,7 +368,8 @@ pub async fn serve(vault: Arc<Vault>, auth: Auth, handle: AppHandle) -> anyhow::
         let ok = req.headers().get("authorization").and_then(|v| v.to_str().ok()) == Some(format!("Bearer {token}").as_str());
         async move { if ok { Ok::<Response, StatusCode>(next.run(req).await) } else { Err(StatusCode::UNAUTHORIZED) } }
     };
-    let app = axum::Router::new().nest_service("/mcp", service).layer(axum::middleware::from_fn(guard));
+    // the MCP for agents; the plain vault routes for this Mac's own tools (the render worker) — one token for both
+    let app = axum::Router::new().nest_service("/mcp", service).merge(files).layer(axum::middleware::from_fn(guard));
     let listener = tokio::net::TcpListener::bind(ADDR).await?;
     axum::serve(listener, app).await?;
     Ok(())

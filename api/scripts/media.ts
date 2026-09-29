@@ -1,30 +1,27 @@
-// The media library, from the terminal. library/ is the single source of truth: every file once as <cid>.<ext>,
-// described beside it in <cid>.json (title, description, tags, meta, public) — no paths. The databases are seeded
-// from it; the site and the servers only read the databases (in production, the CDN copies of the public files).
+// The media, from the terminal. Every file lives in the vault — on this Mac in the maiaCITY Studio app, and on the
+// server peer — known by its BLAKE3 hash, described (title, description, tags, meta, public); no paths. The API keeps
+// only a mirror of the catalog (for the site and the board), never the bytes.
 //
 //   bun media login        sign this terminal in: approve it on maia.city with the admin's passkey
-//   bun media status       what library/ holds, and how the database differs from it
-//   bun media seed         make the database match library/: upload the files it lacks, describe every file as
-//                          library/ does, make the public copies (production), write the site's manifest
-//                          (--public: upload only the public files — the site's — and still describe all it holds)
-//   bun media add <file> [--title "…"] [--description "…"] [--tags a,b] [--replaces <cid>] [--public]
-//                          bring a file into library/ (copied, described) and into the database; the file it
-//                          replaces (by CID) is marked superseded
+//   bun media status       what this Mac's vault holds, and what production's mirror of it has
+//   bun media add <file> [--title "…"] [--description "…"] [--tags a,b] [--replaces <hash>] [--public]
+//                          bring a file into the vault (the app's three-hash check), described; the file it replaces
+//                          (by hash) is kept, tagged superseded
 //   bun media add-sequence <dir> [--profile aces2065-1|acescg|linear-rec709] [--fps 24] [--title "…"] [--tags a,b]
 //                          an EXR sequence (a folder of frames, e.g. a Luma / Kling / LTX export) packed into one tar
 //                          and brought in as one clip; its colour profile given, or read from the EXR header
-//   bun media manifest     write the site's manifest from the database (public files by CID, with their tags)
 //   bun media logout       revoke this terminal's key
 //
-//   --local                against the local database (http://localhost:3100) instead of production
+//   --local                sign in to (or out of) the local API (http://localhost:3100) instead of production
+//
+// add and add-sequence need the Mac app running (its local vault server).
 import { $ } from "bun";
-import { readFile, writeFile } from "node:fs/promises";
+import { readFile } from "node:fs/promises";
 import { hostname } from "node:os";
-import { join } from "node:path";
-import { API, call, keyFor, local, mb, ROOT, saveKey, say, SITE, upload } from "./media-client";
-import { all, bring, fileOf, get, packSequence, put, type Doc } from "./library";
-
-const MANIFEST = join(ROOT, "src/lib/media", local ? "manifest.local.json" : "manifest.json");
+import { basename, join } from "node:path";
+import { API, call, keyFor, mb, ROOT, saveKey, say, SITE } from "./media-client";
+import { packSequence } from "./library";
+import { add as addFile, list } from "../../scripts/film/vault.mjs";
 
 // ─────────────────────────────── login / logout ───────────────────────────────
 
@@ -59,77 +56,18 @@ async function logout() {
   say("Signed out; the key is revoked.");
 }
 
-// ─────────────────────────────── status / seed ───────────────────────────────
-
-type Row = { cid: string; mime: string; kind: string; size: number; title: string; description: string; tags: string[]; meta: Record<string, unknown>; public: boolean };
-const database = async () => (await call<{ media: Row[] }>("/api/media")).media;
-
-/** Whether the database describes a file as library/ does. */
-const same = (d: Doc, r: Row) =>
-  d.title === r.title && d.description === r.description && d.public === r.public &&
-  JSON.stringify([...d.tags].sort()) === JSON.stringify([...r.tags].sort()) && JSON.stringify(d.meta) === JSON.stringify(r.meta ?? {});
-
-async function compare() {
-  const docs = await all();
-  const rows = new Map((await database()).map((r) => [r.cid, r]));
-  const missing = docs.filter((d) => !rows.has(d.cid));
-  const differ = docs.filter((d) => rows.has(d.cid) && !same(d, rows.get(d.cid)!));
-  const extra = [...rows.values()].filter((r) => !docs.some((d) => d.cid === r.cid));
-  return { docs, missing, differ, extra };
-}
+// ─────────────────────────────── status ───────────────────────────────
 
 async function status() {
-  const { docs, missing, differ, extra } = await compare();
-  say(`library/: ${docs.length} files, ${mb(docs.reduce((n, d) => n + d.size, 0))} — ${docs.filter((d) => d.public).length} public`);
-  say(`${API}:`);
-  say(`  to upload:     ${missing.length}${missing.length ? ` (${mb(missing.reduce((n, d) => n + d.size, 0))})` : ""}`);
-  say(`  to describe:   ${differ.length}`);
-  if (extra.length) say(`  not in library/: ${extra.length} — the database holds them, library/ does not (${extra.slice(0, 3).map((r) => r.title || r.cid).join(", ")}${extra.length > 3 ? " …" : ""})`);
-}
-
-async function seed() {
-  const all = await compare();
-  const { docs, differ, extra } = all;
-  // --public: only the files the site shows go up (production's volume is not the place for the working files)
-  const missing = process.argv.includes("--public") ? all.missing.filter((d) => d.public) : all.missing;
-  if (missing.length < all.missing.length) say(`${all.missing.length - missing.length} private files stay in library/ (--public)`);
-  say(`${API}: ${missing.length} to upload (${mb(missing.reduce((n, d) => n + d.size, 0))}), ${differ.length} to describe`);
-  for (const [i, d] of missing.entries()) {
-    const r = await upload(new Uint8Array(await readFile(await fileOf(d.cid))), { cid: d.cid, mime: d.mime, title: d.title, description: d.description, tags: d.tags, meta: d.meta, public: d.public, progress: true });
-    say(`${String(i + 1).padStart(4)}/${missing.length} ${r.stored ? "stored" : "known "} ${d.cid}  ${d.title} (${mb(d.size)})`);
-  }
-  for (const d of differ)
-    await call("/api/media/describe", { method: "POST", body: JSON.stringify({ cid: d.cid, title: d.title, description: d.description, tags: d.tags, meta: d.meta, public: d.public }) });
-  if (differ.length) say(`described ${differ.length}`);
-  if (extra.length) say(`  ${extra.length} files the database holds that library/ does not — left as they are`);
-  // the public copies (production has the Bunny key; a local database has none)
-  try {
-    let waiting = Infinity;
-    for (let i = 0; i < 180 && waiting > 0; i++) {
-      waiting = (await call<{ waiting: number }>("/api/media/distribute", { method: "POST" })).waiting;
-      if (waiting) process.stdout.write(`\r  ${waiting} public copies still to make   `), await Bun.sleep(5000);
-    }
-    say(waiting ? "\n  some copies are still being made — seed again later" : "\r  every public file has its copy on the CDN   ");
-  } catch (e) {
-    say(`public copies: not here (${(e as Error).message})`);
-  }
-  await manifest(docs.length);
-}
-
-// ─────────────────────────────── manifest ───────────────────────────────
-
-/**
- * The site's list of public files, by CID, with their titles and tags (the site finds a picture by CID, or a set —
- * the author portraits, the sounds — by tag). From production: where each is on the CDN (src/lib/media/manifest.json,
- * in git). From the local database: the same, loaded from the local API (manifest.local.json, not in git).
- */
-async function manifest(_n?: number) {
-  const out: Record<string, unknown> = {};
-  if (local) {
-    for (const r of await database()) if (r.public) out[r.cid] = { url: null, mime: r.mime, title: r.title, description: r.description, tags: r.tags };
-  } else Object.assign(out, await (await fetch(`${API}/api/media/manifest`)).json());
-  await writeFile(MANIFEST, JSON.stringify(out, null, "\t") + "\n");
-  say(`manifest: ${Object.keys(out).length} public files → ${MANIFEST.slice(ROOT.length + 1)}`);
+  const here = await list();
+  say(`this Mac's vault: ${here.length} files, ${mb(here.reduce((n, m) => n + m.size, 0))} — ${here.filter((m) => m.public).length} public`);
+  const mirror = await call<{ hash: string; size: number; stored: boolean }[]>("/api/vault/files").catch((e: Error) => (say(`${API}: ${e.message}`), null));
+  if (!mirror) return;
+  const known = new Set(mirror.map((f) => f.hash));
+  const stored = mirror.filter((f) => f.stored);
+  say(`${API}: ${mirror.length} files described, ${stored.length} stored (${mb(stored.reduce((n, f) => n + f.size, 0))})`);
+  const behind = here.filter((m) => !known.has(m.hash));
+  if (behind.length) say(`  not there yet: ${behind.length} — ${behind.slice(0, 3).map((m) => m.title || m.hash.slice(0, 12)).join(", ")}${behind.length > 3 ? " …" : ""} (the app syncs them)`);
 }
 
 // ─────────────────────────────── add ───────────────────────────────
@@ -139,15 +77,9 @@ async function add() {
   const opt = (k: string) => (argv.includes(`--${k}`) ? argv[argv.indexOf(`--${k}`) + 1] : undefined);
   const list = (k: string) => opt(k)?.split(",").map((t) => t.trim()).filter(Boolean);
   const [file] = argv.filter((a, i) => !a.startsWith("--") && !argv[i - 1]?.match(/^--(title|description|tags|replaces)$/));
-  if (!file) throw new Error('usage: bun media add <file> [--title "…"] [--description "…"] [--tags a,b] [--replaces <cid>] [--public] [--local]');
-  const d = await put(file, { title: opt("title"), description: opt("description"), tags: list("tags"), replaces: list("replaces"), public: argv.includes("--public") ? true : undefined });
-  const r = await upload(new Uint8Array(await readFile(await fileOf(d.cid))), { cid: d.cid, mime: d.mime, title: d.title, description: d.description, tags: d.tags, meta: d.meta, public: d.public, progress: true });
-  say(`${r.stored ? "stored" : "known "} ${d.cid}  ${d.title} [${d.tags.join(", ")}]`);
-  // the file it replaces is described again (superseded)
-  for (const old of list("replaces") ?? []) {
-    const o = await get(old);
-    if (o) await call("/api/media/describe", { method: "POST", body: JSON.stringify({ cid: o.cid, tags: o.tags }) }).catch(() => {});
-  }
+  if (!file) throw new Error('usage: bun media add <file> [--title "…"] [--description "…"] [--tags a,b] [--replaces <hash>] [--public]');
+  const r = await addFile(file, { title: opt("title"), description: opt("description"), tags: list("tags"), replaces: list("replaces"), public: argv.includes("--public") ? true : undefined });
+  say(`${r.verdict === "duplicate" ? "known" : "added"} ${r.hash}  ${r.meta?.title || basename(file)} [${(r.meta?.tags ?? []).join(", ")}]`);
 }
 
 // ─────────────────────────────── add-sequence ───────────────────────────────
@@ -161,7 +93,7 @@ async function addSequence() {
   const argv = process.argv.slice(3);
   const opt = (k: string) => (argv.includes(`--${k}`) ? argv[argv.indexOf(`--${k}`) + 1] : undefined);
   const [dir] = argv.filter((a, i) => !a.startsWith("--") && !argv[i - 1]?.match(/^--(profile|fps|title|description|tags)$/));
-  if (!dir) throw new Error('usage: bun media add-sequence <dir> [--profile aces2065-1|acescg|linear-rec709] [--fps 24] [--title "…"] [--tags a,b] [--local]');
+  if (!dir) throw new Error('usage: bun media add-sequence <dir> [--profile aces2065-1|acescg|linear-rec709] [--fps 24] [--title "…"] [--tags a,b]');
   // color.js is plain JS shared with the browser: loaded by path, so this TypeScript does not type it
   const colorModule = join(ROOT, "game/film/color.js");
   const color = (await import(colorModule)) as { PROFILES: Record<string, { linear: boolean }>; exrHeader: (b: Uint8Array) => unknown; exrProfile: (h: unknown) => string | null };
@@ -179,8 +111,7 @@ async function addSequence() {
   if (!(fps > 0 && fps <= 120)) throw new Error("--fps is a number of frames per second");
   const [w, h, pix] = (await $`ffprobe -v error -select_streams v:0 -show_entries stream=width,height,pix_fmt -of csv=p=0 ${first}`.quiet().nothrow().text()).trim().split(",");
   const size = [Number(w), Number(h)];
-  const d = await bring(tar, {
-    mime: "application/x-tar",
+  const d = await addFile(tar, {
     title: opt("title") ?? dir.split("/").filter(Boolean).pop(),
     description: opt("description") ?? `EXR sequence · ${frames} frames at ${fps} fps · ${profile}`,
     tags: ["sequence:exr", ...(opt("tags")?.split(",").map((t) => t.trim()).filter(Boolean) ?? [])],
@@ -191,13 +122,13 @@ async function addSequence() {
     },
   });
   await $`rm -f ${tar}`.quiet();
-  say(`${d.cid}  ${d.title} · ${frames} frames · ${profile} (its proxy follows from the render worker)`);
+  say(`${d.hash}  ${d.meta?.title ?? ""} · ${frames} frames · ${profile} (its proxy follows from the Mac app)`);
 }
 
 const cmd = process.argv.slice(2).find((a) => !a.startsWith("--")) ?? "status";
-const run = { login, logout, status, seed, add, "add-sequence": addSequence, manifest: () => manifest() }[cmd as "login"];
+const run = { login, logout, status, add, "add-sequence": addSequence }[cmd as "login"];
 if (!run) {
-  say("usage: bun media login | status | seed | add <file> … | add-sequence <dir> … | manifest | logout  [--local]");
+  say("usage: bun media login | status | add <file> … | add-sequence <dir> … | logout  [--local]");
   process.exit(1);
 }
 try {

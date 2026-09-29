@@ -4,7 +4,7 @@
 	page's; the buttons here do the same.
 -->
 <script lang="ts">
-	import type { MediaItem } from '$lib/auth/client';
+	import type { MediaItem } from './facets';
 	import { label, raw, sub, thumb, type Parsed } from './facets';
 
 	type Measure = { w?: number; h?: number; d?: number };
@@ -28,7 +28,7 @@
 		onprev: () => void;
 		onnext: () => void;
 		onback: () => void;
-		onmeasure: (cid: string, got: Measure) => void;
+		onmeasure: (hash: string, got: Measure) => void;
 	} = $props();
 
 	let time = $state(0);
@@ -51,36 +51,34 @@
 	</header>
 
 	<div class="stage" class:sound={m.kind === 'audio'} class:clear={/png|webp|gif/.test(m.mime)}>
-		{#key m.cid}
+		{#key m.hash}
 			{#if m.kind === 'image'}
 				<img
 					src={thumb(m)}
 					alt={label(m, p)}
 					onload={(e) => {
 						const img = e.currentTarget as HTMLImageElement;
-						onmeasure(m.cid, { w: img.naturalWidth, h: img.naturalHeight });
+						onmeasure(m.hash, { w: img.naturalWidth, h: img.naturalHeight });
 					}}
 				/>
 			{:else if m.kind === 'video'}
 				<!-- svelte-ignore a11y_media_has_caption -->
 				<video
-					src={raw(m.cid)}
-					crossorigin="use-credentials"
+					src={raw(m.hash)}
 					controls
 					autoplay
 					playsinline
 					onloadedmetadata={(e) =>
-						onmeasure(m.cid, { w: e.currentTarget.videoWidth, h: e.currentTarget.videoHeight, d: e.currentTarget.duration })}
+						onmeasure(m.hash, { w: e.currentTarget.videoWidth, h: e.currentTarget.videoHeight, d: e.currentTarget.duration })}
 				></video>
 			{:else if m.kind === 'audio'}
 				<div class="listen">
 					<audio
-						src={raw(m.cid)}
-						crossorigin="use-credentials"
+						src={raw(m.hash)}
 						controls
 						autoplay
 						bind:currentTime={time}
-						onloadedmetadata={(e) => onmeasure(m.cid, { d: e.currentTarget.duration })}
+						onloadedmetadata={(e) => onmeasure(m.hash, { d: e.currentTarget.duration })}
 					></audio>
 					{#if words.length}
 						<p class="words">
@@ -91,7 +89,7 @@
 					{/if}
 				</div>
 			{:else}
-				<a class="quiet" href={raw(m.cid)} target="_blank" rel="noopener">Open the file ↗</a>
+				<a class="quiet" href={raw(m.hash)} target="_blank" rel="noopener">Open the file ↗</a>
 			{/if}
 		{/key}
 	</div>

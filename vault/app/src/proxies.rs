@@ -9,6 +9,14 @@ use serde_json::json;
 use tauri::{AppHandle, Emitter};
 use vault_core::{Vault, ingest::Batch};
 
+/// A film's proxy made again (its colour read again too), from the vault's own copy — the studio's "remake".
+#[tauri::command]
+pub async fn vault_proxy(handle: AppHandle, app: tauri::State<'_, crate::App>, hash: String) -> crate::Res<()> {
+    crate::gate()?;
+    tauri::async_runtime::spawn(auto_proxy(handle, app.vault.clone(), hash, PathBuf::new()));
+    Ok(())
+}
+
 pub async fn auto_proxy(handle: AppHandle, vault: Arc<Vault>, hex: String, source: PathBuf) {
     if let Err(e) = make(&handle, &vault, &hex, source).await {
         tracing::warn!("proxy of {hex}: {e}");

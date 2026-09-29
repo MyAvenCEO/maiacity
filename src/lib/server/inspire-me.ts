@@ -69,7 +69,7 @@ function parseReport(slug: string, raw: string): { meta: InspirationMeta; body: 
 			type: (fm.type ?? 'article') as SourceType,
 			author: optional(fm.author),
 			authorSlug: fm.author ? slugify(String(fm.author)) : undefined,
-			// the author's portrait and the source's own picture, by CID, when there are ones
+			// the author's portrait and the source's own picture, by hash, when there are ones
 			authorImage: asset(optional(fm.authorImage)),
 			thumbnail: optional(fm.thumbnail),
 			authorUrl: optional(fm.authorUrl),

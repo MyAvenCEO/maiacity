@@ -1,9 +1,12 @@
-// The media library's order: one flat pool of files, known by CID, grouped only by their tags.
+// The media library's order: one flat pool of files, known by their BLAKE3 hash, grouped only by their tags.
 //
 // A tag is a plain string. "Day 19" says which day a file belongs to; "key:value" tags are facets (role:shot,
 // scene:the dip, shot:05 the edge, take:b, …); the rest are plain tags ("cover", "site", "sandbox 4", a folder's
 // name). The paths are only names — nothing here reads a folder out of them.
-import { API, mediaUrl, type MediaItem } from '$lib/auth/client';
+import type { MediaItem } from '$lib/auth/client';
+import { vaultUrl } from '$lib/studio/vault';
+
+export type { MediaItem };
 
 /** The film's scenes, in the order the film plays them — not the alphabet's. */
 export const SCENES = ['hook', 'sunrise', 'the dip', 'breakfast', 'under the glass', 'food forest', 'the ring', 'the commons', 'night'];
@@ -172,14 +175,14 @@ export function byScene(items: MediaItem[], parsed: (m: MediaItem) => Parsed): S
 function newestCut(items: MediaItem[], parsed: (m: MediaItem) => Parsed): MediaItem[] {
 	const cut = (m: MediaItem) => first(parsed(m), 'cut') ?? '';
 	const latest = new Map<string, string>();
-	for (const m of items) if (m.created > (latest.get(cut(m)) ?? '')) latest.set(cut(m), m.created);
+	for (const m of items) if (m.added > (latest.get(cut(m)) ?? '')) latest.set(cut(m), m.added);
 	const master = (m: MediaItem) => (parsed(m).facets.get('codec')?.includes('hevc') ? 0 : 1);
 	return [...items].sort(
 		(a, b) =>
 			latest.get(cut(b))!.localeCompare(latest.get(cut(a))!) ||
 			cut(b).localeCompare(cut(a)) ||
 			master(a) - master(b) ||
-			b.created.localeCompare(a.created)
+			b.added.localeCompare(a.added)
 	);
 }
 
@@ -205,12 +208,17 @@ export function byDay(items: MediaItem[], parsed: (m: MediaItem) => Parsed): Sec
 
 // ── names ────────────────────────────────────────────────────────────────
 
-export const raw = (cid: string) => mediaUrl(cid);
-/** Pictures from the CDN copy when there is one (cached, public), else from the library itself. */
-export const thumb = (m: MediaItem) => (m.cdn_path ? `https://maia.city/${m.cdn_path}` : raw(m.cid));
+/** The file itself, from this Mac's vault (with Range). */
+export const raw = (hash: string) => vaultUrl(hash);
+/** A picture, from this Mac's vault. */
+export const thumb = (m: MediaItem) => raw(m.hash);
+/** What a tile plays: the film's light proxy when it has one, else the file. */
+export const preview = (m: MediaItem) => raw(typeof m.meta?.proxy === 'string' ? m.meta.proxy : m.hash);
+/** A proxy stands in for its original: kept out of the grid. */
+export const isProxy = (m: MediaItem) => m.meta?.role === 'proxy';
 
-/** A file's title (it has no name: only its CID). */
-export const fileName = (m: MediaItem) => m.title || m.cid.slice(0, 12);
+/** A file's title (it has no name: only its hash) — the name it came in with, as a last resort. */
+export const fileName = (m: MediaItem) => m.title || m.original_name || m.hash.slice(0, 12);
 
 const text = (v: unknown) => (typeof v === 'string' && v.trim() ? v.trim() : undefined);
 
@@ -251,9 +259,9 @@ export const size = (n: number) =>
 	n >= 1e9 ? `${(n / 1e9).toFixed(2)} GB` : n >= 1e6 ? `${(n / 1e6).toFixed(1)} MB` : `${Math.max(1, Math.round(n / 1e3))} kB`;
 
 /** A made-up waveform, the same for the same file every time: the tile's picture of a sound. */
-export function bars(cid: string, n = 28): number[] {
+export function bars(hash: string, n = 28): number[] {
 	let h = 2166136261;
-	for (const c of cid) h = Math.imul(h ^ c.charCodeAt(0), 16777619);
+	for (const c of hash) h = Math.imul(h ^ c.charCodeAt(0), 16777619);
 	return Array.from({ length: n }, (_, i) => {
 		h = Math.imul(h ^ (h >>> 13), 1274126177) + i;
 		return 0.25 + ((h >>> 0) % 1000) / 1333;

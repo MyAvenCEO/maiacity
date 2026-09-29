@@ -25,7 +25,9 @@ const LOCKED = ["derivatives", "scheduled", "published"];
 
 /** One file a film is delivered as: which channels it is for, and what it is (for the upload step, later). */
 export type Delivery = {
-  channels: string[]; cid: string; format: string; aspect: string; width: number; height: number;
+  channels: string[];
+  /** the file, by its BLAKE3 hash (64 hex) */
+  hash: string; format: string; aspect: string; width: number; height: number;
   codec: string; bytes: number; seconds: number; note?: string;
   /** a video (the default), or the thumbnail / cover it goes out with */
   kind?: "video" | "thumbnail";
@@ -50,7 +52,9 @@ export type Post = {
 
 export type Item = {
   id: string; title: string; kind: string; channels: string[]; status: string; scheduled_at: string | null;
-  body: string; cids: string[]; link: string | null; tags: string[]; deliveries: Delivery[]; posts: Post[]; timeline_id: string | null;
+  body: string;
+  /** the vault files it carries, by hash */
+  hashes: string[]; link: string | null; tags: string[]; deliveries: Delivery[]; posts: Post[]; timeline_id: string | null;
   project: string | null;
   /** the base article's file in the repo (blog/day-NN-…/post.md); its text is `body` */
   source: string | null;
@@ -82,9 +86,9 @@ function clean(b: Record<string, unknown>, partial: boolean) {
     o.status = String(b.status);
   }
   if (b.channels !== undefined) o.channels = list(b.channels, CHANNELS);
-  if (b.cids !== undefined) {
-    o.cids = list(b.cids);
-    if (o.cids.some((c) => !/^baf[a-z2-7]{20,}$/.test(c))) throw new ContentError("Attach library files by their CID.");
+  if (b.hashes !== undefined) {
+    o.hashes = list(b.hashes);
+    if (o.hashes.some((h) => !/^[0-9a-f]{64}$/.test(h))) throw new ContentError("Attach files by their hash.");
   }
   if (b.tags !== undefined) o.tags = list(b.tags);
   if (b.body !== undefined) o.body = String(b.body).slice(0, 40000);
@@ -106,7 +110,7 @@ function clean(b: Record<string, unknown>, partial: boolean) {
   return o;
 }
 
-const COLS = "id, title, kind, channels, status, scheduled_at, body, cids, link, tags, deliveries, posts, timeline_id, project, source, hook, created, updated";
+const COLS = "id, title, kind, channels, status, scheduled_at, body, hashes, link, tags, deliveries, posts, timeline_id, project, source, hook, created, updated";
 // arrays travel as JSON text: Bun's client does not send a JS array as text[]
 const arr = (i: number) => `ARRAY(SELECT jsonb_array_elements_text(($${i}::text)::jsonb))`;
 
@@ -125,9 +129,9 @@ export async function createContent(founderId: string, body: Record<string, unkn
   const o = clean(body, false);
   const status = o.status ?? (o.scheduled_at ? "scheduled" : "idea");
   const { rows } = await db.query<Item>(
-    `INSERT INTO content_items (title, kind, channels, status, scheduled_at, body, cids, link, tags, founder_id)
+    `INSERT INTO content_items (title, kind, channels, status, scheduled_at, body, hashes, link, tags, founder_id)
      VALUES ($1, $2, ${arr(3)}, $4, $5, $6, ${arr(7)}, $8, ${arr(9)}, $10) RETURNING ${COLS}`,
-    [o.title, o.kind, JSON.stringify(o.channels ?? []), status, o.scheduled_at ?? null, o.body ?? "", JSON.stringify(o.cids ?? []), o.link ?? null, JSON.stringify(o.tags ?? []), founderId],
+    [o.title, o.kind, JSON.stringify(o.channels ?? []), status, o.scheduled_at ?? null, o.body ?? "", JSON.stringify(o.hashes ?? []), o.link ?? null, JSON.stringify(o.tags ?? []), founderId],
   );
   return rows[0]!;
 }
@@ -142,14 +146,14 @@ export async function saveContent(id: string, body: Record<string, unknown>): Pr
         status = coalesce($5, status),
         scheduled_at = CASE WHEN $6::boolean THEN $7::timestamptz ELSE scheduled_at END,
         body = coalesce($8, body),
-        cids = CASE WHEN $9::text IS NULL THEN cids ELSE ${arr(9)} END,
+        hashes = CASE WHEN $9::text IS NULL THEN hashes ELSE ${arr(9)} END,
         link = CASE WHEN $10::boolean THEN $11 ELSE link END,
         tags = CASE WHEN $12::text IS NULL THEN tags ELSE ${arr(12)} END,
         posts = CASE WHEN $13::text IS NULL THEN posts ELSE ($13::text)::jsonb END,
         updated = now()
       WHERE id = $1 RETURNING ${COLS}`,
     [id, o.title ?? null, o.kind ?? null, has("channels") ? JSON.stringify(o.channels) : null, o.status ?? null,
-     has("scheduled_at"), o.scheduled_at ?? null, o.body ?? null, has("cids") ? JSON.stringify(o.cids) : null,
+     has("scheduled_at"), o.scheduled_at ?? null, o.body ?? null, has("hashes") ? JSON.stringify(o.hashes) : null,
      has("link"), o.link ?? null, has("tags") ? JSON.stringify(o.tags) : null, has("posts") ? JSON.stringify(o.posts) : null],
   );
   if (!rows[0]) throw new ContentError("No such item.", 404);
@@ -181,11 +185,11 @@ export async function deliverRender(founderId: string | null, timelineId: string
   const { rows } = await db.query<Item>(
     `UPDATE content_items SET
         deliveries = coalesce((SELECT jsonb_agg(d) FROM jsonb_array_elements(deliveries) d WHERE d->>'timeline' IS DISTINCT FROM $2), '[]'::jsonb) || ($3::text)::jsonb,
-        cids = ARRAY(SELECT DISTINCT unnest(cids || ${arr(4)})),
+        hashes = ARRAY(SELECT DISTINCT unnest(hashes || ${arr(4)})),
         channels = ARRAY(SELECT DISTINCT unnest(channels || ${arr(5)})),
         updated = now()
       WHERE id = $1 RETURNING ${COLS}`,
-    [item.id, timelineId, JSON.stringify(mine), JSON.stringify([...new Set(mine.map((d) => d.cid))]),
+    [item.id, timelineId, JSON.stringify(mine), JSON.stringify([...new Set(mine.map((d) => d.hash))]),
      JSON.stringify([...new Set(mine.flatMap((d) => d.channels).filter((c) => CHANNELS.includes(c)))])],
   );
   return rows[0]!;

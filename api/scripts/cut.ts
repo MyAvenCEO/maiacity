@@ -9,7 +9,7 @@
 import { readFileSync } from "node:fs";
 import { call, say } from "./media-client";
 
-type Clip = { id: string; cid: string; track: string; start: number; in: number; dur: number; vol: number; fin?: number; fout?: number };
+type Clip = { id: string; hash?: string; track: string; start: number; in: number; dur: number; vol: number; fin?: number; fout?: number };
 const file = process.argv.slice(2).find((a) => a.endsWith(".json"));
 if (!file) throw new Error("usage: bun api/scripts/cut.ts <cut.json> [--local]");
 const plan = JSON.parse(readFileSync(file, "utf8")) as { project: string; from: string; variant: string; name: string; description: string; aspect?: string; stretches: [number, number][] };

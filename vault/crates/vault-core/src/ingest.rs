@@ -197,6 +197,7 @@ pub fn mime_of(path: &Path) -> &'static str {
         Some("avif") => "image/avif",
         Some("heic") => "image/heic",
         Some("dng") => "image/x-adobe-dng",
+        Some("exr") => "image/x-exr",
         Some("mp4") => "video/mp4",
         Some("mov") => "video/quicktime",
         Some("m4v") => "video/x-m4v",
@@ -210,6 +211,9 @@ pub fn mime_of(path: &Path) -> &'static str {
         Some("m4a") => "audio/mp4",
         Some("pdf") => "application/pdf",
         Some("json") => "application/json",
+        // an EXR frame sequence or a game build, packed into one file
+        Some("tar") => "application/x-tar",
+        Some("cube") => "text/plain",
         _ => "application/octet-stream",
     }
 }

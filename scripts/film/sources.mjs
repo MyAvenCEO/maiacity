@@ -1,22 +1,14 @@
-// What a library file is to the render worker: its bytes on this disk, what ffprobe says about it, how its YUV is
+// What a vault file is to the render worker: its bytes on this disk, what ffprobe says about it, how its YUV is
 // read, and which colour profile it is in — and the ffmpeg input arguments for any stretch of it. An EXR sequence
-// (one tar per clip in the library) is unpacked once into the cache and read as numbered frames.
+// (one tar per clip in the vault) is unpacked once into the cache and read as numbered frames.
 import { execFileSync, spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, openSync, readSync, closeSync, readdirSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { detect, exrHeader, profileOf } from '../../game/film/color.js';
 import { CACHE, codingOf } from './color/ffmpeg.mjs';
 
-/** A file's extension by its type — the worker's cache names files <cid>.<ext>. */
-export const EXT = /** @type {Record<string, string>} */ ({
-	'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp', 'image/gif': 'gif', 'image/avif': 'avif', 'image/x-exr': 'exr',
-	'video/mp4': 'mp4', 'video/quicktime': 'mov', 'video/webm': 'webm', 'video/x-matroska': 'mkv',
-	'audio/mpeg': 'mp3', 'audio/wav': 'wav', 'audio/ogg': 'ogg', 'audio/mp4': 'm4a',
-	'application/x-tar': 'tar', 'application/octet-stream': 'bin'
-});
-
 /**
- * @typedef {{ cid: string, mime: string, kind: string, size: number, title: string, tags: string[], meta: Record<string, any> }} Media
+ * @typedef {{ hash: string, mime: string, kind: string, size: number, title?: string, tags?: string[], meta?: Record<string, any> }} Media
  * @typedef {{ codec_name?: string, codec_type?: string, pix_fmt?: string, width?: number, height?: number, color_primaries?: string,
  *   color_transfer?: string, color_space?: string, color_range?: string, bits_per_raw_sample?: string, r_frame_rate?: string,
  *   avg_frame_rate?: string, nb_frames?: string, nb_read_packets?: string, duration?: string, bit_rate?: string, tags?: Record<string, string> }} Stream
@@ -40,8 +32,8 @@ export function head(/** @type {string} */ file, n = 65536) {
 }
 
 /** An EXR sequence's tar, unpacked once into the cache: the folder of its frames (000000.exr, 000001.exr, …). */
-export function unpack(/** @type {string} */ tar, /** @type {string} */ cid) {
-	const dir = join(CACHE, 'seq', cid);
+export function unpack(/** @type {string} */ tar, /** @type {string} */ hash) {
+	const dir = join(CACHE, 'seq', hash);
 	if (existsSync(join(dir, '.done'))) return dir;
 	rmSync(dir, { recursive: true, force: true });
 	const part = `${dir}.part`;
@@ -64,18 +56,18 @@ export const framesIn = (/** @type {string} */ dir) => readdirSync(dir).filter((
  */
 
 /**
- * What a file is: probed, its colour read (the library's meta.color when it has one — its override first — else
+ * What a file is: probed, its colour read (the vault's meta.color when it has one — its override first — else
  * detected now), its YUV coding.
  * @param {string} file @param {Media | null} media
  * @param {{ profile?: string, fresh?: boolean }} [o] `profile` forces one (world plates); `fresh` detects anew, keeping only a
- *   hand-set override from the library (the proxy job)
+ *   hand-set override from the vault
  * @returns {Source}
  */
 export function sourceOf(file, media, o = {}) {
-	const seq = media?.mime === 'application/x-tar' || /\.tar$/.test(file);
+	const seq = media?.mime === 'application/x-tar' || media?.meta?.sequence === 'exr' || /\.tar$/.test(file);
 	let dir = null, pattern = null, first = file, frames = null, start = 0;
 	if (seq) {
-		dir = unpack(file, media?.cid ?? file.replace(/[^a-z0-9]/gi, '_'));
+		dir = unpack(file, media?.hash ?? file.replace(/[^a-z0-9]/gi, '_'));
 		const list = framesIn(dir);
 		if (!list.length) throw new Error(`${media?.title || file}: the sequence holds no .exr frames`);
 		first = join(dir, list[0]);

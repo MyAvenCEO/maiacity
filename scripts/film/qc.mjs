@@ -1,6 +1,6 @@
-// QC before a delivery goes to the library: what ffprobe says the file is (BT.709 tags, TV range, bit depth), that it
+// QC before a delivery goes to the vault: what ffprobe says the file is (BT.709 tags, TV range, bit depth), that it
 // has every frame of the timeline and runs its length, the platforms' limits — and its loudness (EBU R 128:
-// integrated LUFS and true peak). A file that fails a hard check never reaches the library.
+// integrated LUFS and true peak). A file that fails a hard check never reaches the vault.
 import { spawnSync } from 'node:child_process';
 import { statSync } from 'node:fs';
 import { probe } from './sources.mjs';

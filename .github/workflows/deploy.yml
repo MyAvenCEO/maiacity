@@ -1,9 +1,12 @@
 name: Deploy the site
 
-# maia.city is served by Bunny: the built site goes to the Bunny storage zone behind its CDN.
-# (GitHub Pages used to get a copy too; nothing points at it any more.)
-# The Media workflow dispatches this again after it has moved new files into the media library,
-# so the site picks up their CDN addresses.
+# maia.city is served by our own server: its Caddy serves the built site from /opt/maia-city/site (and the API, and the
+# media vault's gateway). Each build goes up beside the last and a link switches to it, so a page never points at
+# chunks that are gone; the last few builds stay for a quick way back. Media never ships with the site: every file
+# comes from the vault's gateway by its BLAKE3 hash.
+#
+# Moving off Bunny: maia.city and www point at the server by hand (Hetzner DNS). Until they do, the build also goes to
+# Bunny, so the old address never shows a stale site.
 on:
   push:
     branches: [main]
@@ -16,9 +19,14 @@ concurrency:
   group: site
   cancel-in-progress: true
 
+env:
+  APP_DIR: /opt/maia-city
+  SITE: maia.city
+  API_HOST: api.maia.city
+
 jobs:
-  bunny:
-    name: Check, build and upload to Bunny
+  site:
+    name: Check, build and put on the server
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -33,13 +41,61 @@ jobs:
 
       - run: bun run check
 
-      # every journal image from its CID on the CDN; stops if one was never synced to the library
+      # the public files by hash (the vault's mirror); stops if a published post names a file the vault does not serve
       - run: node scripts/media-manifest.mjs
 
       # Served from the domain root, so no base path.
       - run: bun run build
 
-      - name: Upload to Bunny storage and purge
+      - name: Prepare SSH
+        run: |
+          HOST=$(getent hosts "$API_HOST" | awk '{print $1}' | head -1)
+          [ -n "$HOST" ] || { echo "::error::$API_HOST does not resolve"; exit 1; }
+          echo "HOST=$HOST" >> "$GITHUB_ENV"
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          printf '%s\n' "${{ secrets.DEPLOY_SSH_KEY }}" > ~/.ssh/id_ed25519 && chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan -T 10 -H "$HOST" >> ~/.ssh/known_hosts 2>/dev/null
+          printf 'Host prod\n  HostName %s\n  User deploy\n  IdentityFile ~/.ssh/id_ed25519\n  StrictHostKeyChecking yes\n  ServerAliveInterval 20\n' "$HOST" > ~/.ssh/config
+
+      - name: Put the build on the server and switch to it
+        run: |
+          tar -C build -czf site.tgz .
+          ssh prod "mkdir -p $APP_DIR/site/releases/$GITHUB_SHA"
+          ssh prod "tar -xzf - -C $APP_DIR/site/releases/$GITHUB_SHA" < site.tgz
+          ssh prod "bash -s" <<EOS
+          set -e
+          cd $APP_DIR/site
+          # a relative link: it resolves the same inside Caddy's container
+          ln -sfn releases/$GITHUB_SHA current.next && mv -Tf current.next current
+          # the newest five builds stay
+          ls -1dt releases/*/ | tail -n +6 | xargs -r rm -rf
+          echo "live: \$(readlink current) · \$(ls releases | wc -l) builds kept"
+          EOS
+
+      - name: Where does maia.city point?
+        id: dns
+        run: |
+          NOW=$(dig +short A "$SITE" | sort | head -1)
+          echo "$SITE → $NOW (the server: $HOST)"
+          if [ "$NOW" = "$HOST" ]; then
+            echo "ours=1" >> "$GITHUB_OUTPUT"
+          else
+            echo "::notice::$SITE still points at Bunny: set A records for $SITE and www.$SITE to $HOST in Hetzner DNS (www's CNAME goes)."
+          fi
+
+      - name: Through the front door (HTTPS from the server)
+        if: steps.dns.outputs.ours == '1'
+        run: |
+          for i in $(seq 1 24); do
+            CODE=$(curl -s -o /dev/null -w '%{http_code}' "https://$SITE/" || true)
+            [ "$CODE" = "200" ] && { echo "https://$SITE/ answers 200 from the server"; exit 0; }
+            sleep 10
+          done
+          echo "::warning::https://$SITE/ does not answer 200 yet — check the caddy log (the certificate)."
+
+      # until the name has moved, the old address keeps getting the new site too
+      - name: Upload to Bunny too (until maia.city points at the server)
+        if: steps.dns.outputs.ours != '1'
         env:
           BUNNY_API_KEY: ${{ secrets.BUNNY_API_KEY }}
         run: node scripts/bunny-deploy.mjs

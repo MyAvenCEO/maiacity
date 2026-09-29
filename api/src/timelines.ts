@@ -1,9 +1,9 @@
 /**
- * The studio's timelines. A timeline is an edit over the media library: a list of clips, each naming a CID and
- * where it sits on a track, how far into the file it starts, how long it runs and how loud it plays. The bytes
- * stay in the library; a timeline only points at them, so it is small, and the same file can be in many.
+ * The studio's timelines. A timeline is an edit over the media vault: a list of clips, each naming a file by its
+ * BLAKE3 hash and where it sits on a track, how far into the file it starts, how long it runs and how loud it plays.
+ * The bytes stay in the vault; a timeline only points at them, so it is small, and the same file can be in many.
  *
- * A clip is a media clip (a library file, by CID) or a world clip (a shot of Sandbox 4 kept as data, by shot id and
+ * A clip is a media clip (a vault file, by hash) or a world clip (a shot of Sandbox 4 kept as data, by shot id and
  * the version it was cut with — api/src/shots.ts). A clip may carry its own grade (an ASC CDL in ACEScct, the Grade
  * tab) and, for media, how it is reframed per delivery shape. The timeline itself has a working step — edit, locked,
  * graded, rendered — a version (one more at every unlock), its colour pipeline and the whole film's look.
@@ -24,8 +24,8 @@ export type Clip = {
   id: string; track: string; start: number; in: number; dur: number; vol: number; fin?: number; fout?: number;
   /** absent = "media" */
   kind?: "media" | "world";
-  /** media clips: the library file */
-  cid?: string;
+  /** media clips: the vault file, by its BLAKE3 hash (64 hex) */
+  hash?: string;
   /** world clips (V1 only): shots.id and the version cut in */
   shot?: string; shotVersion?: number;
   /** this clip's own grade, in ACEScct (absent = none) */
@@ -46,6 +46,7 @@ const STAGES: Stage[] = ["edit", "locked", "graded", "rendered"];
 const OUTPUTS = ["odt-rec709", "odt-rec2100-pq"];
 const PRESETS = ["neutral", "cold", "dip", "bright", "night", "warm"];
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const HASH = /^[0-9a-f]{64}$/;
 const num = (v: unknown, min = 0) => Math.max(min, Number.isFinite(Number(v)) ? Number(v) : min);
 const clamp = (v: unknown, lo: number, hi: number, d: number) => Math.min(hi, Math.max(lo, Number.isFinite(Number(v)) && v !== null && v !== "" ? Number(v) : d));
 
@@ -56,16 +57,16 @@ function cleanClip(c: any): Clip {
     ...(c.fin !== undefined ? { fin: Math.min(10, num(c.fin)) } : {}), ...(c.fout !== undefined ? { fout: Math.min(10, num(c.fout)) } : {}) };
   let clip: Clip;
   if (kind === "world") {
-    if (c.cid !== undefined && c.cid !== null) throw new TimelineError("A world clip is a shot, not a file: it has no CID.");
+    if (c.hash !== undefined && c.hash !== null) throw new TimelineError("A world clip is a shot, not a file: it has no hash.");
     if (base.track !== "V1") throw new TimelineError("A world clip goes on the picture track (V1).");
     if (!UUID.test(String(c.shot))) throw new TimelineError("A world clip names its shot.");
     const v = Number(c.shotVersion);
     if (!Number.isInteger(v) || v < 1) throw new TimelineError("A world clip names the version of its shot it was cut with.");
     clip = { ...base, kind: "world", shot: String(c.shot).toLowerCase(), shotVersion: v };
   } else {
-    if (!/^baf[a-z2-7]{20,}$/.test(String(c?.cid))) throw new TimelineError("Every clip names a CID.");
+    if (!HASH.test(String(c?.hash))) throw new TimelineError("Every clip names its file by hash.");
     // an existing clip stays exactly as it was: `kind` is written only for world clips
-    clip = { ...base, ...(c.kind === "media" ? { kind: "media" as const } : {}), cid: String(c.cid) };
+    clip = { ...base, ...(c.kind === "media" ? { kind: "media" as const } : {}), hash: String(c.hash) };
   }
   if (c.grade !== undefined && c.grade !== null) {
     const g = cleanCdl(c.grade);

@@ -4,7 +4,7 @@
 //
 //   node scripts/film/worlds/export.mjs scripts/film/day-19-d.mjs [out.json]
 //
-// A shot's length and its place on the film's clock come from the voice's word timings (library/, or LIBRARY=<dir>).
+// A shot's length and its place on the film's clock come from the voice's word timings (the vault, or LIBRARY=<dir>).
 // Without them — or with --untimed — they are left null: the timeline gives them (api/scripts/world-timeline.ts
 // fills them in from each shot's clip), so the file never carries timings from anywhere else.
 import { writeFileSync } from 'node:fs';

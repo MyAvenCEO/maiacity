@@ -44,12 +44,15 @@
 	onMount(() => {
 		inApp = native();
 		if (!inApp) return;
+		// a link into one tab (?tab=library — the media library's address)
+		const tab = new URLSearchParams(location.search).get('tab');
+		if (tab === 'ingest' || tab === 'library' || tab === 'render') s.tab = tab;
 		const report = (e: ErrorEvent | PromiseRejectionEvent) => {
 			s.failed = String('reason' in e ? (e.reason?.stack ?? e.reason) : `${e.message} (${e.filename}:${e.lineno})`);
 		};
 		addEventListener('error', report);
 		addEventListener('unhandledrejection', report);
-		const slow = setTimeout(() => s.phase === 'loading' && !s.failed && (s.failed = 'Still waiting for the API (/api/me, /api/media, /api/timelines) after 10 s.'), 10000);
+		const slow = setTimeout(() => s.phase === 'loading' && !s.failed && (s.failed = 'Still waiting after 10 s (the API: /api/me, /api/timelines; the vault on this Mac).'), 10000);
 		s.load().catch((e) => (s.failed = (e as Error).stack ?? String(e)));
 		// for the tests and the console: the studio's state
 		(window as unknown as { __studio?: Studio }).__studio = s;

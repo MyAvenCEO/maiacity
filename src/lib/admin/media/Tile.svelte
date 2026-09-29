@@ -3,8 +3,8 @@
 	is cut. Never its path — a path is only a name.
 -->
 <script lang="ts">
-	import type { MediaItem } from '$lib/auth/client';
-	import { bars, first, label, raw, sub, thumb, type Parsed } from './facets';
+	import type { MediaItem } from './facets';
+	import { bars, first, label, preview, sub, thumb, type Parsed } from './facets';
 
 	let { m, p, onopen }: { m: MediaItem; p: Parsed; onopen: () => void } = $props();
 
@@ -42,11 +42,11 @@
 		{#if m.kind === 'image'}
 			<img src={thumb(m)} alt="" loading="lazy" draggable="false" />
 		{:else if m.kind === 'video'}
-			<video bind:this={video} {@attach lazy(raw(m.cid))} crossorigin="use-credentials" preload="metadata" muted playsinline loop></video>
+			<video bind:this={video} {@attach lazy(preview(m))} preload="metadata" muted playsinline loop></video>
 			<span class="play" aria-hidden="true">▶</span>
 		{:else if m.kind === 'audio'}
 			<span class="wave" aria-hidden="true">
-				{#each bars(m.cid) as h, i (i)}<i style:height="{h * 100}%"></i>{/each}
+				{#each bars(m.hash) as h, i (i)}<i style:height="{h * 100}%"></i>{/each}
 			</span>
 		{:else}
 			<span class="glyph" aria-hidden="true">▤</span>

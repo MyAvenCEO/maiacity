@@ -1,8 +1,7 @@
 // The preview LUTs the viewer takes pictures through: odt-rec709 (the timeline to the screen) and each profile's IDT
 // (a proxy's own encoding into the timeline). The worker bakes them from the transform configs and keeps them in the
 // library as cache files (C5); `GET /api/film/luts` names them. Nothing here is ever baked or committed.
-import { filmLuts, mediaUrl, missing } from '$lib/auth/client';
-import { native } from '$lib/native';
+import { filmLuts, fileUrl, missing } from '$lib/auth/client';
 
 /**
  * A 3D LUT, ready for the GPU: size³ RGBA floats, red fastest, then green, then blue (as bake.py writes it).
@@ -48,8 +47,8 @@ export async function parseLut(name, raw) {
 }
 
 /**
- * Which preview LUTs exist, by transform name → the file's CID (`GET /api/film/luts`; the worker bakes them).
- * @returns {Promise<{ from: LutSource, luts: Record<string, { cid: string, hash?: string }> }>}
+ * Which preview LUTs exist, by transform name → the vault file (`GET /api/film/luts`; the worker bakes them).
+ * @returns {Promise<{ from: LutSource, luts: Record<string, { file: string, hash?: string }> }>}
  */
 export async function lutIndex() {
 	try {
@@ -83,20 +82,20 @@ export function filmLut(l) {
 /** @type {Map<string, Promise<Lut | null>>} */
 const loaded = new Map();
 /**
- * A LUT's numbers, fetched once per CID (a CID never changes its bytes).
- * @param {string} name @param {string} cid @returns {Promise<Lut | null>}
+ * A LUT's numbers, fetched once per file (a hash never changes its bytes).
+ * @param {string} name @param {string} file the vault file's hash @returns {Promise<Lut | null>}
  */
-export function loadLut(name, cid) {
-	let p = loaded.get(cid);
+export function loadLut(name, file) {
+	let p = loaded.get(file);
 	if (!p) {
-		p = fetch(mediaUrl(cid), { credentials: native() ? 'omit' : 'include' })
+		p = fetch(fileUrl(file))
 			.then((r) => (r.ok ? r.arrayBuffer() : Promise.reject(new Error(`${r.status}`))))
 			.then((b) => parseLut(name, b))
 			.catch((e) => {
-				console.warn(`LUT ${name} (${cid}):`, e.message);
+				console.warn(`LUT ${name} (${file}):`, e.message);
 				return null;
 			});
-		loaded.set(cid, p);
+		loaded.set(file, p);
 	}
 	return p;
 }

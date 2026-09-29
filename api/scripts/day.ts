@@ -16,7 +16,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { call, say } from "./media-client";
-import { get } from "./library";
+import { list } from "../../scripts/film/vault.mjs";
 
 const dir = process.argv.slice(2).find((a) => !a.startsWith("--"));
 if (!dir) throw new Error("usage: bun api/scripts/day.ts blog/day-NN-<slug> [--local]");
@@ -58,14 +58,14 @@ for (const p of day.posts) {
 }
 
 // the hook: thumbnail.json's words, the line every title card carries ("The 1 million lives decision — I almost…")
-type File = { cid: string; channels: string[]; aspect: string; codec: string; kind?: "video" | "thumbnail"; format?: string; note?: string };
+type File = { hash: string; channels: string[]; aspect: string; codec: string; kind?: "video" | "thumbnail"; format?: string; note?: string };
 const cards = existsSync(join(dir, "thumbnail.json"))
   ? (JSON.parse(readFileSync(join(dir, "thumbnail.json"), "utf8")) as { cards?: Record<string, string>; title: Record<string, unknown> })
   : null;
 const hook = cards
   ? ["kicker", "big", "line", "after", "old", "new"].map((k) => { const v = cards.title[k] as unknown; return v && typeof v === "object" ? Object.values(v).join(" ") : (v as string) ?? ""; }).join(" ").replace(/<[^>]+>/g, "").replace(/\s+/g, " ").trim()
   : undefined;
-// its title cards, by CID (thumbnail.json's "cards", written when they are rendered), and where each shape goes
+// its title cards, by hash (thumbnail.json's "cards", written when they are rendered), and where each shape goes
 const SHAPES: Record<string, { aspect: string; channels: string[]; format: string }> = {
   "16x9": { aspect: "16:9", channels: ["journal", "youtube", "linkedin"], format: "title card · 1920×1080" },
   "1x1": { aspect: "1:1", channels: ["youtube", "x", "linkedin", "instagram"], format: "title card · 1080×1080" },
@@ -73,18 +73,20 @@ const SHAPES: Record<string, { aspect: string; channels: string[]; format: strin
   "5x2": { aspect: "5:2", channels: ["x"], format: "X Article cover · 1500×600" },
 };
 const titleCards: File[] = Object.entries(cards?.cards ?? {})
-  .filter(([tag, cid]) => cid && SHAPES[tag])
-  .map(([tag, cid]) => ({ cid, codec: "jpeg", kind: "thumbnail", ...SHAPES[tag]! }));
-// the day's own files (a film the post carries, its copies), by CID: as deliveries
+  .filter(([tag, hash]) => hash && SHAPES[tag])
+  .map(([tag, hash]) => ({ hash, codec: "jpeg", kind: "thumbnail", ...SHAPES[tag]! }));
+// the day's own files (a film the post carries, its copies), by hash: as deliveries
 const listed = (day as { files?: File[] }).files ?? (existsSync(join(dir, "derivatives.json")) ? JSON.parse(readFileSync(join(dir, "derivatives.json"), "utf8")).files : undefined) ?? [];
-const files = [...listed, ...titleCards.filter((c) => !listed.some((f: File) => f.cid === c.cid))] as File[];
+const files = [...listed, ...titleCards.filter((c) => !listed.some((f: File) => f.hash === c.hash))] as File[];
 let deliveries: unknown[] | undefined;
 if (files.length) {
-  deliveries = await Promise.all(files.map(async (f) => {
-    const m = await get(f.cid);
-    if (!m) throw new Error(`library/ does not hold ${f.cid}`);
-    return { channels: f.channels, cid: m.cid, format: f.format ?? `${f.codec} · ${f.aspect}`, aspect: f.aspect, width: 0, height: 0, codec: f.codec, bytes: m.size, seconds: Number(m.meta?.duration_s ?? 0), kind: f.kind ?? "video", ...(f.note ? { note: f.note } : {}) };
-  }));
+  // what the vault knows about each (its size, its length): the Mac app's catalog
+  const vault = new Map((await list()).map((m) => [m.hash, m]));
+  deliveries = files.map((f) => {
+    const m = vault.get(f.hash);
+    if (!m) throw new Error(`the vault does not describe ${f.hash}`);
+    return { channels: f.channels, hash: m.hash, mime: m.mime, format: f.format ?? `${f.codec} · ${f.aspect}`, aspect: f.aspect, width: 0, height: 0, codec: f.codec, bytes: m.size, seconds: Number(m.meta?.duration_s ?? 0), kind: f.kind ?? "video", ...(f.note ? { note: f.note } : {}) };
+  });
 }
 
 const item = await call<{ id: string; posts: unknown[]; status: string }>(`/api/content/days/${encodeURIComponent(day.project)}`, {

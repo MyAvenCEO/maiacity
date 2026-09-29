@@ -48,7 +48,7 @@
 	</div>
 	<ul>
 		{#each v1 as c (c.id)}
-			{@const m = c.cid ? s.byCid.get(c.cid) : undefined}
+			{@const m = c.hash ? s.byHash.get(c.hash) : undefined}
 			<li class:on={s.selected === c.id}>
 				<button class="row" onclick={() => ((s.selected = c.id), s.seek(c.start))}>
 					<span class="t">{clockText(c.start)}</span>
@@ -66,7 +66,7 @@
 					{:else if m}
 						<ColorBadge {s} {m} />
 						<span class="orig" title={swapped(c.id) ? 'The last render swapped the proxy cut in for this original' : ''}>{m.kind === 'image' ? 'still' : 'original'} ✓{swapped(c.id) ? ' (conformed)' : ''}</span>
-						{#if m.kind === 'video'}<span class="px">{s.proxy(m).cid ? 'proxy ✓' : 'no proxy'}</span>{/if}
+						{#if m.kind === 'video'}<span class="px">{s.proxy(m).hash ? 'proxy ✓' : 'no proxy'}</span>{/if}
 						{#if profileFor(m).profile === 'unknown'}<span class="warn">colour unknown</span>{/if}
 					{/if}
 				</div>

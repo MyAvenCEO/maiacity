@@ -6,11 +6,11 @@
 	real logos: neutral glyphs, the platforms' layout conventions.
 -->
 <script lang="ts">
-	import { API, mediaUrl, postFiles, type Delivery, type Post } from '$lib/auth/client';
+	import { API, fileUrl, postFiles, type Delivery, type Post } from '$lib/auth/client';
 	import { formatOf } from './board';
 	import { readingMinutes, renderMarkdown, splitArticle } from './markdown';
 
-	const raw = (cid: string) => mediaUrl(cid);
+	const raw = (hash: string) => fileUrl(hash);
 
 	let {
 		post,
@@ -26,7 +26,7 @@
 		/** when it goes out, for the date the cards show */
 		when?: string | null;
 		/** an image's address */
-		image?: (cid: string) => string;
+		image?: (hash: string) => string;
 	} = $props();
 
 	// the limits the platforms count against, and the account they post from
@@ -48,7 +48,7 @@
 	// a browser that cannot decode the HEVC master (Firefox, some Chrome builds) plays the H.264 cut of the same frame instead
 	let fallback = $state(false);
 	const source = $derived(moving ? (fallback && postFiles({ ...post, codec: 'h264' }, deliveries).video) || files.video : undefined);
-	const poster = $derived(files.thumbnail ? image(files.thumbnail.cid) : undefined);
+	const poster = $derived(files.thumbnail ? image(files.thumbnail.hash) : undefined);
 	// an Instagram post without a placement is a Reel when it is vertical, a feed post otherwise
 	const reel = $derived(post.platform === 'instagram' && (post.placement ?? (post.aspect === '9:16' ? 'reel' : 'feed')) === 'reel');
 	const feed = $derived(post.platform === 'instagram' && !reel);
@@ -208,7 +208,7 @@
 		{#if source}
 			<video
 				bind:this={video}
-				src={poster ? raw(source.cid) : `${raw(source.cid)}#t=0.1`}
+				src={poster ? raw(source.hash) : `${raw(source.hash)}#t=0.1`}
 				onerror={() => (fallback = true)}
 				onplay={solo}
 				{poster}
@@ -237,7 +237,7 @@
 			bind:this={video}
 			bind:paused
 			class:fit
-			src={poster ? raw(source.cid) : `${raw(source.cid)}#t=0.1`}
+			src={poster ? raw(source.hash) : `${raw(source.hash)}#t=0.1`}
 			onerror={() => (fallback = true)}
 			onplay={solo}
 			{poster}
@@ -475,13 +475,13 @@
 			<p>About {journal.minutes} min to read{#if post.title && journal.title !== post.title} · published as “{post.title}”{/if}</p>
 		{:else if files.video && moving}
 			<p>
-				Uploads <a href={raw(files.video.cid)} target="_blank" rel="noopener">{files.video.cut ? `${files.video.cut} · ` : ''}{files.video.format} · {files.video.width}×{files.video.height} · {files.video.codec} · {size(files.video.bytes)} · {mmss(files.video.seconds)} ↗</a>
-				{#if files.thumbnail}with <a href={raw(files.thumbnail.cid)} target="_blank" rel="noopener">thumbnail {files.thumbnail.width}×{files.thumbnail.height} ↗</a>{/if}
+				Uploads <a href={raw(files.video.hash)} target="_blank" rel="noopener">{files.video.cut ? `${files.video.cut} · ` : ''}{files.video.format} · {files.video.width}×{files.video.height} · {files.video.codec} · {size(files.video.bytes)} · {mmss(files.video.seconds)} ↗</a>
+				{#if files.thumbnail}with <a href={raw(files.thumbnail.hash)} target="_blank" rel="noopener">thumbnail {files.thumbnail.width}×{files.thumbnail.height} ↗</a>{/if}
 			</p>
 		{:else if moving}
 			<p class="warn">No {post.aspect ?? ''} {post.codec ?? ''} video has been delivered for this post yet.</p>
 		{:else if files.thumbnail}
-			<p>Goes out with <a href={raw(files.thumbnail.cid)} target="_blank" rel="noopener">picture {files.thumbnail.width}×{files.thumbnail.height} ↗</a></p>
+			<p>Goes out with <a href={raw(files.thumbnail.hash)} target="_blank" rel="noopener">picture {files.thumbnail.width}×{files.thumbnail.height} ↗</a></p>
 		{/if}
 		{#if post.note}<p class="warn">{post.note}</p>{/if}
 		{#if chapterWarning}<p class="warn">{chapterWarning}</p>{/if}

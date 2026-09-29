@@ -90,17 +90,19 @@ export function profileFor(m) {
 // ── proxies (M2 / C6): the Edit tab plays only these ─────────────────────────────────────────────────────────────
 
 /**
- * A file's HD proxy: its CID when the worker has made one (meta.proxy), else what its job says.
+ * A file's HD proxy: its hash when the worker has made one (meta.proxy), else what its job says.
  * @param {MediaItem | undefined} m @param {Map<string, { status: string }>} [jobs]
- * @returns {{ cid: string | null, state: ProxyState }}
+ * @returns {{ hash: string | null, state: ProxyState }}
  */
 export function proxyFor(m, jobs) {
-	if (!m || !isVideo(m)) return { cid: null, state: 'n/a' };
+	if (!m || !isVideo(m)) return { hash: null, state: 'n/a' };
+	// the Mac writes meta.proxy only as the proxy's hash, or "failed: …" when it could not make one
 	const p = m.meta?.proxy;
-	if (typeof p === 'string' && p) return { cid: p, state: 'ready' };
-	const job = jobs?.get(m.cid);
-	if (job?.status === 'queued' || job?.status === 'rendering' || job?.status === 'failed') return { cid: null, state: job.status };
-	return { cid: null, state: 'none' };
+	if (typeof p === 'string' && /^[0-9a-f]{64}$/.test(p)) return { hash: p, state: 'ready' };
+	if (typeof p === 'string' && p.startsWith('failed')) return { hash: null, state: 'failed' };
+	const job = jobs?.get(m.hash);
+	if (job?.status === 'queued' || job?.status === 'rendering' || job?.status === 'failed') return { hash: null, state: job.status };
+	return { hash: null, state: 'none' };
 }
 /**
  * A library file that is only a proxy (or a LUT cache, or a plate) — never shown in the bin; its original is.

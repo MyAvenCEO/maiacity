@@ -29,19 +29,19 @@
 	let plan = $state(null);
 	let gl = $state(true);
 
-	const m = $derived(s.preview ? s.byCid.get(s.preview) : undefined);
+	const m = $derived(s.preview ? s.byHash.get(s.preview) : undefined);
 	const av = $derived(m?.kind === 'audio' || m?.kind === 'video');
 	// a video plays from its proxy in Edit (the proxy's own profile then), the original elsewhere
 	const px = $derived(s.proxy(m));
-	const useProxy = $derived((s.tab === 'edit' || isSequence(m)) && !!px.cid);
-	const playItem = $derived((useProxy && px.cid && s.byCid.get(px.cid)) || m);
-	const url = $derived(m ? (m.kind === 'video' ? raw(useProxy && px.cid ? px.cid : m.cid) : m.kind === 'audio' ? (s.sources[m.cid]?.url ?? raw(m.cid)) : raw(m.cid)) : '');
+	const useProxy = $derived((s.tab === 'edit' || isSequence(m)) && !!px.hash);
+	const playItem = $derived((useProxy && px.hash && s.byHash.get(px.hash)) || m);
+	const url = $derived(m ? (m.kind === 'video' ? raw(useProxy && px.hash ? px.hash : m.hash) : m.kind === 'audio' ? (s.sources[m.hash]?.url ?? raw(m.hash)) : raw(m.hash)) : '');
 	const profile = $derived.by(() => {
 		const own = profileFor(playItem);
 		return own.guessed && m && playItem !== m ? proxyProfileOf(profileFor(m).profile) : own.profile;
 	});
 	const len = $derived(
-		Number.isFinite(srcDuration) && srcDuration > 0 ? srcDuration : m && av ? (s.sources[m.cid]?.duration ?? (Number(m.meta?.duration_s) || 0)) : 0
+		Number.isFinite(srcDuration) && srcDuration > 0 ? srcDuration : m && av ? (s.sources[m.hash]?.duration ?? (Number(m.meta?.duration_s) || 0)) : 0
 	);
 	const marked = $derived(av && (markIn !== null || markOut !== null));
 	const range = $derived.by(() => {
@@ -77,11 +77,11 @@
 			if (markIn !== null && markIn >= t) markIn = null;
 		}
 	}
-	const add = () => m && void s.place(m.cid, s.defaultTrack(m), s.time, range);
+	const add = () => m && void s.place(m.hash, s.defaultTrack(m), s.time, range);
 	/** @param {DragEvent} e */
 	function drag(e) {
 		if (!m || !e.dataTransfer) return;
-		e.dataTransfer.setData('text/x-cid', m.cid);
+		e.dataTransfer.setData('text/x-hash', m.hash);
 		if (range) e.dataTransfer.setData('text/x-range', JSON.stringify(range));
 	}
 	/** Click or drag along the source's waveform (or scrub bar) to move through it. */
@@ -139,7 +139,7 @@
 			<h2 class="mlabel">Source</h2>
 			<span class="sname">{String(m.meta?.title ?? itemName(m))}</span>
 			{#if m.kind !== 'audio'}<ColorBadge {s} {m} />{/if}
-			{#if m.kind === 'video'}<span class="pxb" class:warn={!px.cid}>{useProxy ? 'proxy' : px.cid ? 'original' : 'no proxy yet'}</span>{/if}
+			{#if m.kind === 'video'}<span class="pxb" class:warn={!px.hash}>{useProxy ? 'proxy' : px.hash ? 'original' : 'no proxy yet'}</span>{/if}
 			<button class="x" onclick={() => s.closeSource()} aria-label="Close the source monitor">×</button>
 		</div>
 		<div class="sstage" style:--ar={srcAspect}>
@@ -166,7 +166,7 @@
 						<Viewer source={video} {profile} luts={s.luts} aspect={srcAspect} bind:plan bind:supported={gl} />
 					</div>
 				{:else if m.kind === 'audio'}
-					{@const src = s.sources[m.cid]}
+					{@const src = s.sources[m.hash]}
 					<!-- svelte-ignore a11y_no_static_element_interactions -->
 					<div class="swave" onpointerdown={scrub}>
 						{#if src?.peaks.length}

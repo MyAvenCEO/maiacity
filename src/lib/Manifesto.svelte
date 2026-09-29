@@ -5,7 +5,7 @@
 -->
 <script lang="ts">
 	import { asset } from '$lib/media/url';
-	// the banner (a woman on a mountain top at sunrise) and Samuel's portrait, by CID
+	// the banner (a woman on a mountain top at sunrise) and Samuel's portrait, by hash
 	const BANNER = 'a78e789f5d7c92310ebaac44368dd1c3ab6e65efcdee67f148649b3965a03f69.jpg';
 	const SAMUEL = 'dad53831fb215f1d6c5fc29c111aba8a2d7b472b43ab076da7537787c2895b8a.jpg';
 

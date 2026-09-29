@@ -68,9 +68,9 @@
 	</button>
 	{#if error}<p class="bad">{error}</p>{/if}
 	{#if newest}
-		{#if newest.status === 'done' && newest.output_cid}
-			<a class="shot" href={raw(newest.output_cid)} target="_blank" rel="noopener" title="Full size, 16-bit">
-				<img src={raw(newest.output_cid)} alt="Hero frame at {clockText(newest.params?.t ?? 0)}" />
+		{#if newest.status === 'done' && newest.output_hash}
+			<a class="shot" href={raw(newest.output_hash)} target="_blank" rel="noopener" title="Full size, 16-bit">
+				<img src={raw(newest.output_hash)} alt="Hero frame at {clockText(newest.params?.t ?? 0)}" />
 			</a>
 			<p class="note">{clockText(newest.params?.t ?? 0)} · {newest.params?.shape} · {newest.note ?? ''}</p>
 		{:else if newest.status === 'failed'}
@@ -85,8 +85,8 @@
 		<ul>
 			{#each frames.slice(1) as f (f.id)}
 				<li>
-					{#if f.status === 'done' && f.output_cid}
-						<a href={raw(f.output_cid)} target="_blank" rel="noopener">{clockText(f.params?.t ?? 0)} · {f.params?.shape}</a>
+					{#if f.status === 'done' && f.output_hash}
+						<a href={raw(f.output_hash)} target="_blank" rel="noopener">{clockText(f.params?.t ?? 0)} · {f.params?.shape}</a>
 					{:else}
 						<span>{clockText(f.params?.t ?? 0)} · {f.params?.shape} · {f.status}</span>
 					{/if}

@@ -6,7 +6,7 @@ import { base } from '$app/paths';
 import type { Founder } from '$lib/auth/client';
 
 export type Release = 'draft' | 'published';
-export type Place = { href: string; label: string; icon: IconName; cap?: string; note?: string; /** a picture, by CID */ cover?: string; release?: Release };
+export type Place = { href: string; label: string; icon: IconName; cap?: string; note?: string; /** a picture, by hash */ cover?: string; release?: Release };
 export type IconName = 'home' | 'play' | 'board' | 'calendar' | 'media' | 'studio' | 'journal' | 'spark' | 'user' | 'key' | 'ledger' | 'coops';
 
 // a founder's own apps: their money, and the communities — cities and settlements, founded, joined and backed here,
@@ -31,7 +31,7 @@ export const READ: Place[] = [
 export const ADMIN: Place[] = [
 	{ href: `${base}/app/board/`, label: 'Board', icon: 'board', cap: 'content:admin', note: 'Every day, idea to published' },
 	{ href: `${base}/app/calendar/`, label: 'Calendar', icon: 'calendar', cap: 'content:admin', note: 'What goes out when' },
-	{ href: `${base}/app/media/`, label: 'Media', icon: 'media', cap: 'media:admin', note: 'The library' },
+	{ href: `${base}/app/studio/?tab=library`, label: 'Media', icon: 'media', cap: 'media:admin', note: 'The library' },
 	{ href: `${base}/app/studio/`, label: 'Studio', icon: 'studio', cap: 'media:admin', note: 'Films and sound' },
 	{ href: `${base}/app/device/`, label: 'Terminal', icon: 'key', cap: 'media:admin', note: 'Sign a terminal in' }
 ];

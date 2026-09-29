@@ -3281,6 +3281,7 @@ dependencies = [
  "anyhow",
  "axum",
  "blake3",
+ "futures-lite",
  "iroh",
  "iroh-blobs",
  "iroh-docs",

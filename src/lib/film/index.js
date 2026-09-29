@@ -61,7 +61,7 @@ export function startFilm({ base = '' } = {}) {
 	const metered = new Map();
 	/** what the world is staged for now: where the walker stands, which set is built */
 	let staged = '';
-	/** @type {{ commit: string, hash: string, cid?: string } | null} */
+	/** @type {{ commit: string, hash: string, file?: string } | null} */
 	let build = null;
 	const buildKnown = fetch(`${base}/film-build.json`)
 		.then((r) => (r.ok ? r.json() : null))

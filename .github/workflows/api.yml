@@ -224,7 +224,8 @@ jobs:
           EOS
       - name: Copy the compose files
         run: |
-          ssh prod "mkdir -p $APP_DIR/deploy"
+          # site/ before compose mounts it (Docker would make it root's); the site workflow fills it
+          ssh prod "mkdir -p $APP_DIR/deploy $APP_DIR/site/releases"
           scp docker-compose.yml docker-compose.prod.yml prod:$APP_DIR/
           scp deploy/Caddyfile deploy/backup.sh prod:$APP_DIR/deploy/
       - name: Write .env (the database password is generated once and stays on the server)
@@ -260,7 +261,6 @@ jobs:
           RP_NAME=maiaCITY
           SITE_ORIGIN=https://maia.city,https://www.maia.city
           COOKIE_DOMAIN=.maia.city
-          API_BUNNY_API_KEY=${{ secrets.BUNNY_API_KEY }}
           VAULT_IMAGE=$VAULT_IMAGE
           VAULT_PUBLIC_IP=$HOST
           VAULT_RELAY_URL=https://$API_HOST
