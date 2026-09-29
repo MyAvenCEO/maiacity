@@ -999,7 +999,8 @@ export async function mountVillage(container: HTMLElement, onProgress: (label: s
 		const d = domes[i]!
 		const job = { i, cancelled: false }
 		building = job
-		mountInterior(container, d.kind, () => {}, { host: { scene, camera, renderer, x: d.x, z: d.z }, cancelled: () => job.cancelled, hurry: () => gapTo(i) < 12, background: () => gapTo(i) > 45 })
+		// on film nothing is drawn while the world is readied (__filmDraw): every dome builds in long stretches
+		mountInterior(container, d.kind, () => {}, { host: { scene, camera, renderer, x: d.x, z: d.z }, cancelled: () => job.cancelled, hurry: () => gapTo(i) < 12 || !!dev.__filmDraw, background: () => gapTo(i) > 45 && !dev.__filmDraw })
 			.then((h) => {
 				if (building === job) building = null
 				if (job.cancelled || !h.embedded) return h.dispose()

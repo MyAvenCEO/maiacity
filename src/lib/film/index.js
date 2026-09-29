@@ -42,6 +42,9 @@ export function startFilm({ base = '' } = {}) {
 	const w = /** @type {any} */ (window);
 	if (w.__film) return w.__film;
 	const clock = installClock();
+	// the film draws the canvas itself, only when asked: the world never spends a frame drawing for nobody, and the
+	// domes it builds get the time instead (SwiftShader draws a frame in seconds)
+	w.__filmDraw = true;
 	// the world's ambience would play over the timeline's sound: on film it is silent
 	HTMLMediaElement.prototype.play = function () {
 		return Promise.resolve();
@@ -255,6 +258,68 @@ export function startFilm({ base = '' } = {}) {
 			// in the same task as the draw, before the canvas is presented and cleared
 			const canvas = village().renderer.domElement;
 			return new Promise((resolve, reject) => canvas.toBlob((/** @type {Blob | null} */ b) => (b ? resolve(b) : reject(new Error('no still'))), ask.type ?? 'image/png', 0.92));
+		},
+		/**
+		 * For comparing with the films made before film mode: the same frame as the game draws it (tone-mapped to 8-bit
+		 * sRGB on the canvas, the lens opened by `exposure` as the old shot lists did), as a PNG. Diagnostics only.
+		 * @param {FrameAsk & { exposure?: number }} ask @returns {Promise<Blob>}
+		 */
+		async legacy({ spec: raw, t, shape, width, height, exposure = 1 }) {
+			const spec = normalize(raw), to = shape ?? spec.aspect;
+			const v = await mounted();
+			await stage(spec);
+			clock.enter();
+			w.__filmDraw = true;
+			w.__exposure = exposure;
+			set(v, spec, t, to, width / height);
+			v.renderer.setPixelRatio(1);
+			v.renderer.setSize(width, height, false);
+			v.renderer.setRenderTarget(null);
+			v.renderer.render(v.scene, v.camera);
+			w.__exposure = undefined;
+			const canvas = v.renderer.domElement;
+			return new Promise((resolve, reject) => canvas.toBlob((/** @type {Blob | null} */ b) => (b ? resolve(b) : reject(new Error('no frame'))), 'image/png'));
+		},
+		/**
+		 * The log encode checked against game/film/color.js: known linear values (as the half-float frame holds them)
+		 * through the GPU's matrix, ACEScct curve and x2bgr10le packing, unpacked here and compared code by code.
+		 * @returns {Promise<{ pixels: number, exact: number, maxDiff: number, rows: [number[], number[], number[]][] }>}
+		 */
+		async selfTest() {
+			const v = await mounted(), T = v.THREE;
+			const lin = [-0.01, 0, 1e-4, 0.001, 0.0078125, 0.02, 0.05, 0.18, 0.5, 1, 2, 8, 16, 64, 222, 1000];
+			const W = lin.length, H = 2;
+			const half = new Uint16Array(W * H * 4);
+			for (let y = 0; y < H; y++)
+				for (let x = 0; x < W; x++) {
+					// row 0 grey, row 1 coloured: r, g/3, b·2
+					const rgb = y === 0 ? [lin[x], lin[x], lin[x]] : [lin[x], lin[x] / 3, lin[x] * 2];
+					rgb.forEach((c, i) => (half[(y * W + x) * 4 + i] = T.DataUtils.toHalfFloat(c)));
+					half[(y * W + x) * 4 + 3] = T.DataUtils.toHalfFloat(1);
+				}
+			const tex = new T.DataTexture(half, W, H, T.RGBAFormat, T.HalfFloatType);
+			tex.minFilter = tex.magFilter = T.NearestFilter;
+			tex.needsUpdate = true;
+			const bytes = gpu().encode(tex, W, H, 1, 1);
+			tex.dispose();
+			const { REC709_TO_AP1: M, toCct } = await import('../../../game/film/color.js');
+			let exact = 0, maxDiff = 0;
+			/** @type {[number[], number[], number[]][]} */
+			const rows = [];
+			for (let y = 0; y < H; y++)
+				for (let x = 0; x < W; x++) {
+					// the encoded frame is top row first: image row y is the texture's row H−1−y
+					const src = H - 1 - y, rgb = [0, 1, 2].map((i) => T.DataUtils.fromHalfFloat(half[(src * W + x) * 4 + i]));
+					const ap1 = M.map((r) => r[0] * rgb[0] + r[1] * rgb[1] + r[2] * rgb[2]);
+					const expect = ap1.map((c) => Math.min(1023, Math.max(0, Math.round(toCct(c) * 1023))));
+					const o = (y * W + x) * 4, word = (bytes[o] | (bytes[o + 1] << 8) | (bytes[o + 2] << 16) | (bytes[o + 3] << 24)) >>> 0;
+					const got = [word & 1023, (word >>> 10) & 1023, (word >>> 20) & 1023];
+					const d = Math.max(...got.map((g, i) => Math.abs(g - expect[i])));
+					maxDiff = Math.max(maxDiff, d);
+					if (d === 0) exact++;
+					rows.push([rgb, expect, got]);
+				}
+			return { pixels: W * H, exact, maxDiff, rows };
 		},
 		/** Give the canvas and the clocks back to the world (to walk it, to record a move). */
 		release() {

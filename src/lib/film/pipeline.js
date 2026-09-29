@@ -308,9 +308,11 @@ export function createPipeline(renderer) {
 
 /** A 3D LUT as a texture: half-float RGBA, trilinear. */
 function lutTexture(/** @type {Lut} */ l) {
-	const n = l.size, data = new Uint16Array(n * n * n * 4);
+	// RGB triples (a .cube) or RGBA texels (stream A's MLUT1 preview LUTs, parseLut in game/film/transforms.js)
+	const n = l.size, data = new Uint16Array(n * n * n * 4), stride = l.data.length === n * n * n * 4 ? 4 : 3;
+	if (l.data.length !== n * n * n * stride) throw new Error(`a ${n}³ LUT has ${n * n * n} texels, not ${l.data.length / stride}`);
 	for (let k = 0; k < n * n * n; k++) {
-		for (let c = 0; c < 3; c++) data[k * 4 + c] = THREE.DataUtils.toHalfFloat(Number(l.data[k * 3 + c]));
+		for (let c = 0; c < 3; c++) data[k * 4 + c] = THREE.DataUtils.toHalfFloat(Number(l.data[k * stride + c]));
 		data[k * 4 + 3] = THREE.DataUtils.toHalfFloat(1);
 	}
 	const t = new THREE.Data3DTexture(data, n, n, n);

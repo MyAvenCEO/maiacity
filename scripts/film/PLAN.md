@@ -265,74 +265,107 @@ Three work streams run at once, each in its own worktree and branch, each owning
 owns is read, never edited; a missing piece is asked for in the stream's report, not patched in. The orchestrator
 merges the three branches into `studio-post-pipeline-plan` (PR #9).
 
-### C1 · A timeline clip (api/src/timelines.ts — owned by stream B)
+### C1 · A timeline clip (api/src/timelines.ts — owned by stream B) · built
 
 ```js
 Clip = {
   id, track: 'V1' | 'A1' | 'A2' | 'A3', start, in, dur, vol, fin?, fout?,
-  kind?: 'media' | 'world',      // absent = 'media' (every existing timeline stays valid)
-  cid?: string,                   // media clips: the library file
-  shot?: string, shotVersion?: number,   // world clips: shots.id and the version cut in (V1 only)
-  grade?: Cdl,                    // this clip's own grade (Grade tab), ACEScct — see C5
-  frame?: { [shape]: { x, y, zoom } }    // media clips: reframing per delivery shape (x, y in −1…1 of the free room)
+  kind?: 'media' | 'world',      // absent = 'media'; written back only for world clips (existing timelines unchanged)
+  cid?: string,                   // media clips: the library file (required); world clips: none
+  shot?: string, shotVersion?: number,   // world clips: shots.id and the version cut in (V1 only; must exist)
+  grade?: Cdl,                    // this clip's own grade, ACEScct, cleaned by cleanCdl (a neutral one is dropped)
+  frame?: { [shape]: { x, y, zoom } }    // media clips only: x, y in −1…1 of the free room, zoom 1…8
 }
 Timeline += {
   stage: 'edit' | 'locked' | 'graded' | 'rendered',   // default 'edit'
-  version: number,                                     // +1 on every unlock
-  color: { working: 'acescct', output: 'odt-rec709' },
-  grade: { look: Cdl | null, preset?: string } | null  // the whole film's look
+  version: number,                                     // server-managed: +1 when the stage goes back to 'edit'
+  color: { working: 'acescct', output: 'odt-rec709' | 'odt-rec2100-pq' },
+  grade: { look: Cdl | null, preset?: string } | null  // the whole film's look; preset ∈ color.js PRESETS names
 }
 ```
+Routes: `GET /api/timelines`, `POST /api/timelines`, `GET|PUT|DELETE /api/timelines/:id`. While the stage is past
+`edit`, a PUT that changes the cut (anything in a clip but `grade` and `frame`) is refused with 409 "The edit is locked";
+PUT `{ stage: 'edit' }` unlocks (version + 1). Migration `0026-timeline-stages`.
 A world clip's shot-local time is `t = clip.in + (timelineTime − clip.start)` seconds; the shot's progress is
 `t / spec.seconds`. Trimming never changes a move's speed.
 
-### C2 · A world shot record (game/film/shot.js, the `shots` table, `/api/shots` — owned by stream B)
+### C2 · A world shot record (game/film/shot.js, game/film/camera.js, `shots`, `/api/shots` — stream B) · built
 
-`shots (id uuid, name, project, version int, spec jsonb, founder_id, created, updated)`; every save of a changed spec
-is a new version (old versions kept, so a cut clip keeps rendering the version it was cut with).
+`shots (id uuid, name, project, version int, spec jsonb, founder_id, created, updated)` holds the current version;
+`shot_versions (shot_id, version, spec, founder_id, created)` keeps every version (migration `0025-shots`).
+Routes (media:admin): `GET /api/shots[?project=]`, `POST /api/shots { name, project, spec }` (→ v1),
+`GET /api/shots/:id[?version=n]`, `PUT /api/shots/:id { name?, project?, spec? }` (a changed spec → version + 1, the
+same spec → no new version), `GET /api/shots/:id/versions`.
 ```js
 spec = {
-  world: { sandbox: 'sandbox-4', build: cid | null, seed: number, stand: [x, z], dome?: n, props?: 'tired-land', clock: s },
-  seconds, fps: 30,
-  camera: { kind: 'move' | 'orbit' | 'turn' | 'fly' | 'whip' | 'keys', ...its arguments, curve: 'glide' | 'ease' | 'landing' | 'drift' },
+  world: { sandbox: 'sandbox-4', build: { commit, hash, cid? } | null, seed, stand: [x, z], dome?, props?: 'tired-land', clock },
+  seconds, fps: 30, aspect: '1:1',          // aspect: the shape it was composed for (the framing rule starts there)
+  camera: { kind: 'move' | 'orbit' | 'turn' | 'fly' | 'whip' | 'keys', ...its arguments, curve?: 'glide' | 'ease' | 'landing' | 'drift' },
+          // keys: [{ t (shot seconds), position, aim | yaw+pitch, fov? }] — what __film.record gives back
   lens: { fov, fovTo? },  time: { hour, hourTo? },
-  exposure: { meter: 'lock' | 'ramp' | 'fixed', stops: number, ev?: number },
-  lights: [{ id, intensity?: number | [t, v][], color?: string }],
+  exposure: { meter: 'lock' | 'ramp' | 'fixed', stops: number | [t, v][], ev? },  // ev pins a metered lock / is the fixed gain
+  lights: [{ id: 'sun' | 'fill' | 'glow' | 'lamps' | 'sky', intensity?: number | [t, v][], color?: '#rrggbb' }],  // × the hour's
   cues: [{ at, kind: 'sound', cid, level } | { at, kind: 'event', name, args }],
   shutter: { angle: 180, samples: 1 },
-  framing: { [shape]: { fov?, yaw?, pitch?, dx?, dy? } },
-  look?: presetName            // the grade it was lit for (a suggestion for the Grade tab, never applied by itself)
+  framing: { [shape]: { fov?, yaw?, pitch?, dx?, dy? } },   // absent: wider shapes keep the height, taller keep the width
+  look?: presetName,           // the grade it was lit for (a suggestion for the Grade tab, never applied by itself)
+  meta?: { name, size, scene, legacyExposure … }             // notes, not part of the picture
 }
 ```
-`evaluate(spec, t, shape?) → { pose: [x, y, z, yaw, pitch], fov, hour, stops, lights, cues }`, `fingerprint(spec, …)`
-(a stable hash), `fromLegacy(shot)` (a day-19-d.mjs shot → spec) all live in game/film/shot.js, plain JS, shared by
-the browser, the worker and the scripts.
+game/film/shot.js exports `normalize(spec)` (validate + defaults; throws ShotError), `evaluate(spec, t, shape?) →
+{ pose: [x, y, z, yaw, pitch], fov, hour, stops, lights, cues, clock, progress }`, `shutterTimes`, `fovFor`,
+`fingerprint(spec, extra?)` (SHA-256 of the picture-relevant spec + extra; `look`, `meta` and sound cues left out),
+`sameSpec`, `stable`, `sha256`, `fromLegacy(shot, { seconds?, clock?, fps?, aspect?, build?, seed? })`,
+`legacyStops`, `legacyLook`, `SHAPES`, `LIGHTS`, `SETS`, `LOOKS`. game/film/camera.js: `pathOf(camera, seconds)`,
+`checkCamera`, `fovOf`, `keysFromFlight`, `look`, the curves. scripts/film/camera.mjs builds on it and attaches
+`.spec` to every path. `scripts/film/worlds/day-19-d.json` holds Day 19's 42 shots (untimed: seconds and clock
+come from the timeline).
 
-### C3 · Film mode in Sandbox 4 (src/lib/film/**, the sandbox-4 routes — owned by stream B)
+### C3 · Film mode in Sandbox 4 (src/lib/film/**, the sandbox-4 routes — owned by stream B) · built
 
-`/games/sandbox-4/?film` loads the world under a virtual clock and exposes `window.__film`:
+`/games/sandbox-4/?film` (no sign-in; the old address) mounts the world alone under the film's clocks
+(src/lib/film/FilmWorld.svelte) and exposes `window.__film`; every method takes a spec as stored (it is normalized):
 ```js
 __film = {
-  ready(): Promise<void>,                          // world up, nothing streaming in
-  prepare(specs): Promise<void>,                   // load and keep every area/dome/set these shots need
-  show({ spec, t, shape, width, height, view }),   // draw that exact frame on the page's canvas:
-                                                   //   view = { lut: odt LUT data, grade: Cdl | null } → display (Edit/Grade preview)
-  capture({ spec, t, shape, width, height }): Promise<ArrayBuffer>, // the log frame, 10-bit packed (x2bgr10le), exposure metered
-  meter(spec): Promise<number>,                    // the locked exposure (EV) for a shot
-  record: { start(), stop(): keys }                // fly the camera by hand, get camera keys back
+  ready(spec?): Promise<void>,                     // world up; with a spec: its dome, set and the domes near it built
+  prepare(specs): Promise<void>,                   // stage every shot (pins its domes) and meter it
+  show({ spec, t, shape, width, height, view, quality }): Promise<void>,
+      // draws that frame on the page's canvas (width×height, shown letterboxed): view = { lut, grade } where
+      // lut = .cube text | { size, data (RGB or RGBA per texel, red fastest) } | null (a stand-in filmic view),
+      // input ACEScct code values 0–1, output display 0–1; grade = Cdl | [clipCdl, lookCdl] | null.
+      // quality 'proxy' (default: 1×, no shutter blur) | 'final' (1.5× oversampled, shutter blur)
+  capture({ spec, t, shape, width, height, oversample = 1.5 }): Promise<ArrayBuffer>, // 10-bit ACEScct, x2bgr10le, top row first
+  still(ask): Promise<Blob>,                       // show() then the canvas as PNG (storyboard)
+  meter(spec): Promise<number>,                    // the metered EV (stops of gain; a ramp's mean)
+  exposure(spec): Promise<number | [t, ev][]>,     // what the render uses (a ramp is keyed every 0.5 s)
+  record: { start(), stop(): keys },               // walk/fly by hand; keys for { kind: 'keys', keys }
+  release(),                                       // give the canvas and clocks back to the world
+  build: { commit, hash } | null,                  // this page's build (/film-build.json), null on a dev server
+  legacy(ask): Promise<Blob>,                      // diagnostics: the old tone-mapped 8-bit frame
+  enter(), leave(), step(ms), virtual              // the page clock, as scripts/film had it
 }
 ```
-The studio embeds it in an iframe (same origin) and drives it frame by frame from the timeline clock.
+Exposure: log-average luminance of the lower 60% of the linear frame, rendered at a fixed 160 px wide in the
+composed aspect (so every size and shape gets the same exposure) → `ev = log2(0.18 / L)`; lock = five moments
+averaged, ramp = keyed every 0.5 s, fixed = spec.exposure.ev; gain = 2^(ev + stops). The studio embeds it in an
+iframe (same origin) and drives it frame by frame from the timeline clock.
 
-### C4 · The plate renderer (scripts/film/world/render.mjs — owned by stream B, called by stream A's worker)
+### C4 · The plate renderer (scripts/film/world/render.mjs — owned by stream B, called by stream A's worker) · built
 
 ```js
-renderPlate({ spec, from, to, shape, width, height, fps, out, site }) → { file, frames, ev }
+renderPlate({ spec, from, to, shape, width, height, fps, out, site,
+              world?, oversample = 1.5, gop?, quality = 10, allowBuildMismatch?, progress?, log? })
+  → { file, frames, ev, build, fingerprint, codec }
+openWorld({ site }) → { page, browser, build, close }   // reuse one browser for many plates: renderPlate({ world })
 ```
-One world clip's frames from shot-time `from` to `to`, rendered offline at full quality (oversampled, shutter
-blur in linear light), as **ACEScct, 10-bit HEVC, bt709 matrix, tv range, tagged `comment=maiacity:color=acescct`**.
-Plates are render-step intermediates: cached by `fingerprint`, never library assets. Same function makes the HD world
-proxies (smaller `width`/`height`).
+One world clip's frames from shot-time `from` to `to` (`round((to − from)·fps)` frames at `from + k/fps`),
+rendered offline (oversampled, shutter blur in linear light), as **ACEScct, 10-bit HEVC (yuv420p10le), bt709 matrix,
+tv range, tagged `comment=maiacity:color=acescct`**; libx265 or hevc_videotoolbox (FILM_HEVC), Chrome from CHROME,
+ANGLE from FILM_ANGLE (metal on a Mac, swiftshader elsewhere). A spec naming `world.build` renders only on that
+build (throws otherwise). Builds: `node scripts/film/world/build.mjs` (vite build + film-build.json + tar to store
+with `bun media add`), `site.mjs` `buildDir(cid, { api, key })` + `serveSite(dir)` for the worker. Plates are
+render-step intermediates, cached by `fingerprint`, never library assets. Same function makes the HD world proxies
+(smaller `width`/`height`, `gop: 15`).
 
 ### C5 · Colour (game/film/color.js, game/film/transforms.js, scripts/film/color/** — owned by stream A)
 
