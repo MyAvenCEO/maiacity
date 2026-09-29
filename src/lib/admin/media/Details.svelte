@@ -1,9 +1,12 @@
 <!--
-	Everything the library knows about the open file: its tags as chips (a click filters the grid by one), every name
-	it goes by, its CID, what it is and how big, what made it, and where the raw file and its public copy are.
+	Everything the library knows about the open file: its tags as chips (a click filters the grid by one), its hash,
+	what it is and how big, what made it, and where its copies are — this Mac, the server's Object Storage.
 -->
 <script lang="ts">
-	import type { MediaItem } from '$lib/auth/client';
+	import CopiesBadge from '$lib/studio/CopiesBadge.svelte';
+	import type { Copies } from '$lib/studio/vault';
+	import { GATEWAY } from '$lib/media/url';
+	import type { MediaItem } from './facets';
 	import {
 		clock,
 		dayTag,
@@ -23,11 +26,14 @@
 		m,
 		p,
 		measure,
+		copies,
 		onfilter
 	}: {
 		m: MediaItem;
 		p: Parsed;
 		measure: { w?: number; h?: number; d?: number } | undefined;
+		/** where its copies are, and whether each is verified */
+		copies?: Copies;
 		/** filter the grid by this facet value ('day' takes the day's number) */
 		onfilter: (key: string, value: string) => void;
 	} = $props();
@@ -61,7 +67,7 @@
 		{#if m.kind === 'image'}
 			<img src={thumb(m)} alt="" />
 		{:else if m.kind === 'video'}
-			<video src={raw(m.cid)} crossorigin="use-credentials" preload="metadata" muted playsinline onloadedmetadata={(e) => (e.currentTarget.currentTime = Math.min(5, (e.currentTarget.duration || 0) * 0.1))}></video>
+			<video src={raw(m.hash)} preload="metadata" muted playsinline onloadedmetadata={(e) => (e.currentTarget.currentTime = Math.min(5, (e.currentTarget.duration || 0) * 0.1))}></video>
 		{:else}
 			<span aria-hidden="true">{m.kind === 'audio' ? '♪' : '▤'}</span>
 		{/if}
@@ -86,12 +92,15 @@
 
 	{#if m.description}<h3>Description</h3><p class="desc">{m.description}</p>{/if}
 	<h3>Public</h3>
-	<p class="desc">{m.public ? 'Yes: the site or a platform shows it (copied to the CDN)' : 'No: a working file'}</p>
+	<p class="desc">{m.public ? 'Yes: the site or a platform shows it (the gateway serves it without a login)' : 'No: a working file'}</p>
 
-	<h3>CID</h3>
-	<button class="cid" onclick={() => copy(m.cid)} title="Copy the CID">
-		<code>{m.cid}</code>
-		<span>{copied === m.cid ? 'Copied' : 'Copy'}</span>
+	<h3>Copies</h3>
+	{#if copies}<CopiesBadge c={copies} wide />{:else}<p class="desc dim">Looking…</p>{/if}
+
+	<h3>Hash</h3>
+	<button class="cid" onclick={() => copy(m.hash)} title="Copy the BLAKE3 hash">
+		<code>{m.hash}</code>
+		<span>{copied === m.hash ? 'Copied' : 'Copy'}</span>
 	</button>
 
 	<dl>
@@ -108,24 +117,24 @@
 			<dd>{clock(d)} <span class="dim">({d.toFixed(1)} s)</span></dd>
 		{/if}
 		<dt>Kept</dt>
-		<dd>{new Date(m.created).toLocaleDateString()}</dd>
+		<dd>{new Date(m.added).toLocaleDateString()}</dd>
+		{#if m.original_name}
+			<dt>Came in as</dt>
+			<dd>{m.original_name}</dd>
+		{/if}
 		{#each meta as [k, v] (k)}
 			<dt>{k}</dt>
 			<dd class:said={k === 'text' || k === 'direction'}>{v}</dd>
 		{/each}
 	</dl>
 
-	<h3>Files</h3>
-	<ul class="links">
-		<li><a href={raw(m.cid)} target="_blank" rel="noopener">The raw file ↗</a></li>
-		{#if m.cdn_path}
-			<li><a href="https://maia.city/{m.cdn_path}" target="_blank" rel="noopener">Public copy on Bunny ↗</a></li>
-		{:else if m.stream_guid}
-			<li>Bunny Stream <code>{m.stream_guid}</code></li>
-		{:else}
-			<li class="dim">{m.public ? 'public: its copy on Bunny comes with the next bun media seed (production)' : 'private: a working file, never copied to Bunny'}</li>
-		{/if}
-	</ul>
+	{#if m.public && copies?.server === 'stored'}
+		<h3>On the site</h3>
+		<button class="cid" onclick={() => copy(`${GATEWAY}/${m.hash}`)} title="Copy its public address">
+			<code>{GATEWAY}/{m.hash.slice(0, 16)}…</code>
+			<span>{copied === `${GATEWAY}/${m.hash}` ? 'Copied' : 'Copy'}</span>
+		</button>
+	{/if}
 </div>
 
 <style>

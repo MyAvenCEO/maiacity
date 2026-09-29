@@ -44,6 +44,9 @@
 	onMount(() => {
 		inApp = native();
 		if (!inApp) return;
+		// a link into one tab (?tab=library — the media library's address)
+		const tab = new URLSearchParams(location.search).get('tab');
+		if (tab === 'ingest' || tab === 'library' || tab === 'render') s.tab = tab;
 		const report = (e: ErrorEvent | PromiseRejectionEvent) => {
 			s.failed = String('reason' in e ? (e.reason?.stack ?? e.reason) : `${e.message} (${e.filename}:${e.lineno})`);
 		};

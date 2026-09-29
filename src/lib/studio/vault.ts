@@ -6,7 +6,10 @@ export type VaultFile = {
 	mime: string;
 	kind: string;
 	title?: string;
+	description?: string;
 	tags?: string[];
+	/** anything else known: colour, role, shot, its proxy (as the library kept it) */
+	meta?: Record<string, unknown>;
 	public?: boolean;
 	original_name?: string;
 	source?: string;

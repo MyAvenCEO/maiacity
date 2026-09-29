@@ -31,7 +31,7 @@ export const READ: Place[] = [
 export const ADMIN: Place[] = [
 	{ href: `${base}/app/board/`, label: 'Board', icon: 'board', cap: 'content:admin', note: 'Every day, idea to published' },
 	{ href: `${base}/app/calendar/`, label: 'Calendar', icon: 'calendar', cap: 'content:admin', note: 'What goes out when' },
-	{ href: `${base}/app/media/`, label: 'Media', icon: 'media', cap: 'media:admin', note: 'The library' },
+	{ href: `${base}/app/studio/?tab=library`, label: 'Media', icon: 'media', cap: 'media:admin', note: 'The library' },
 	{ href: `${base}/app/studio/`, label: 'Studio', icon: 'studio', cap: 'media:admin', note: 'Films and sound' },
 	{ href: `${base}/app/device/`, label: 'Terminal', icon: 'key', cap: 'media:admin', note: 'Sign a terminal in' }
 ];
