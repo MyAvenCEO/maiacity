@@ -472,6 +472,11 @@ async function proxy(job: Job) {
       const bytes = new Uint8Array(await Bun.file(join(LIB, d.file)).arrayBuffer());
       await upload(bytes, { cid: d.cid, mime: d.mime, title: d.title, description: d.description, tags: d.tags, meta: d.meta, public: false });
       proxyCid = d.cid;
+      // the proxy it replaces (made in the colour the file had before) stays in the library, marked superseded
+      const old = m.meta?.proxy as string | undefined;
+      const before = old && old !== proxyCid ? await mediaByCid(old) : null;
+      if (before && !before.tags.includes("superseded"))
+        await call("/api/media/describe", { method: "POST", body: JSON.stringify({ cid: before.cid, tags: [...before.tags, "superseded"] }) });
     }
     // the original learns its colour and its proxy: re-read just before, so nothing written meanwhile is lost
     const now = (await mediaByCid(cid)) ?? m;
