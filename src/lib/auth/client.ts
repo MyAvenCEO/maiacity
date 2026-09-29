@@ -30,12 +30,26 @@ async function call<T>(path: string, init: RequestInit = {}): Promise<T> {
 	const res = await fetch(`${API}${path}`, {
 		...init,
 		credentials: 'include',
-		headers: { 'content-type': 'application/json', ...(init.headers ?? {}) }
+		// a JSON body says so; a plain GET sends no header of its own, so it needs no CORS preflight (a route an older
+		// API does not have then answers a readable 404, instead of failing its preflight)
+		headers: { ...(init.body ? { 'content-type': 'application/json' } : {}), ...(init.headers ?? {}) }
 	});
 	const body = await res.json().catch(() => null);
-	if (!res.ok) throw new Error(body?.error ?? 'Something went wrong. Please try again.');
+	if (!res.ok) throw new ApiError(body?.error ?? 'Something went wrong. Please try again.', res.status);
 	return body as T;
 }
+
+/** A refusal with its HTTP status, so a caller can tell "not there (yet)" (404) from a real failure. */
+export class ApiError extends Error {
+	constructor(
+		message: string,
+		public status: number
+	) {
+		super(message);
+	}
+}
+/** The route does not exist on this API (yet): a newer API's feature, answered by a fallback in the studio. */
+export const missing = (e: unknown) => e instanceof ApiError && (e.status === 404 || e.status === 405);
 
 export const founderCount = () => call<{ count: number; step: number }>('/api/founders/count');
 
@@ -98,6 +112,19 @@ export type MediaItem = {
 export const listMedia = (q?: { kind?: string; q?: string }) =>
 	call<{ media: MediaItem[]; total: number }>(`/api/media${q ? `?${new URLSearchParams(q as Record<string, string>)}` : ''}`);
 
+/** Set what is known about a file: each field given replaces the one before (meta as a whole: send all of it). */
+export const describeMedia = (cid: string, about: { title?: string; description?: string; tags?: string[]; meta?: Record<string, unknown>; public?: boolean }) =>
+	call<{ ok: true }>('/api/media/describe', { method: 'POST', body: JSON.stringify({ cid, ...about }) });
+
+// ─────────────────────────────── colour (C5) ───────────────────────────────
+
+/** A picture's colour, as the ingest detected it (media meta.color); `override` is the one set by hand in the studio. */
+export type ColorInfo = { profile: string; primaries?: string; transfer?: string; matrix?: string; range?: string; bitDepth?: number; detectedFrom?: string; override?: string };
+/** A grade: ASC CDL in ACEScct (game/film/color.js). */
+export type Cdl = { slope: [number, number, number]; offset: [number, number, number]; power: [number, number, number]; sat: number };
+/** The preview LUTs the worker bakes for the studio's viewer (odt-rec709 and each profile's IDT), by name. */
+export type FilmLuts = Record<string, { cid: string; hash: string; size: number }>;
+export const filmLuts = () => call<FilmLuts>('/api/film/luts');
 // ─────────────────────────────── signing a terminal in ───────────────────────────────
 
 export type DeviceRequest = { scope: string[]; descriptions: string[]; label: string; approved_at: string | null; expires_at: string };
@@ -109,9 +136,55 @@ export const approveDevice = (code: string) =>
 
 // ─────────────────────────────── the studio's timelines ───────────────────────────────
 
-/** `fin` / `fout`: the clip's own fade in and out, in seconds — a sound bed crossfades, a hit comes in at once. */
-export type TimelineClip = { id: string; cid: string; track: 'V1' | 'A1' | 'A2' | 'A3'; start: number; in: number; dur: number; vol: number; fin?: number; fout?: number };
-export type Timeline = { id: string; name: string; project: string | null; variant: string | null; description: string | null; aspect: string; tags: string[]; clips: TimelineClip[]; created: string; updated: string };
+/** The delivery shapes: every film goes out in each, framed for it. */
+export type Shape = '16:9' | '9:16' | '1:1' | '4:5';
+/** A media clip's framing in one shape: x, y in −1…1 of the room the picture has to move in; zoom ≥ 1. */
+export type ClipFrame = { x: number; y: number; zoom: number };
+
+/**
+ * One clip on the timeline (contract C1). `fin` / `fout`: the clip's own fade in and out, in seconds — a sound bed
+ * crossfades, a hit comes in at once. A media clip (`kind` absent or 'media') names a library file by `cid`; a world
+ * clip (`kind: 'world'`, V1 only) names a world shot record and the version it was cut with. A world clip's shot-local
+ * time is `in + (timelineTime − start)`.
+ */
+export type TimelineClip = {
+	id: string;
+	track: 'V1' | 'A1' | 'A2' | 'A3';
+	start: number;
+	in: number;
+	dur: number;
+	vol: number;
+	fin?: number;
+	fout?: number;
+	kind?: 'media' | 'world';
+	cid?: string;
+	shot?: string;
+	shotVersion?: number;
+	/** this clip's own grade (Grade tab), ACEScct */
+	grade?: Cdl | null;
+	/** media clips: reframing per delivery shape */
+	frame?: Partial<Record<Shape, ClipFrame>>;
+};
+/** Where a timeline stands: cut (edit), picture and sound locked, graded, rendered. */
+export type TimelineStage = 'edit' | 'locked' | 'graded' | 'rendered';
+export type Timeline = {
+	id: string;
+	name: string;
+	project: string | null;
+	variant: string | null;
+	description: string | null;
+	aspect: string;
+	tags: string[];
+	clips: TimelineClip[];
+	created: string;
+	updated: string;
+	/** C1: absent on an API that does not know them yet (read as 'edit', version 1) */
+	stage?: TimelineStage;
+	version?: number;
+	color?: { working: 'acescct'; output: 'odt-rec709' };
+	/** the whole film's look */
+	grade?: { look: Cdl | null; preset?: string } | null;
+};
 
 export const listTimelines = () => call<Timeline[]>('/api/timelines');
 export const createTimeline = (t: Partial<Timeline>) => call<Timeline>('/api/timelines', { method: 'POST', body: JSON.stringify(t) });
@@ -255,7 +328,78 @@ export async function deleteContent(id: string): Promise<void> {
 
 // ─────────────────────────────── exporting a timeline ───────────────────────────────
 
-export type RenderJob = { id: string; timeline_id: string; status: 'queued' | 'rendering' | 'done' | 'failed'; progress: number; note: string | null; output_cid: string | null; created: string; updated: string };
+/**
+ * A job for the render worker (C6): a timeline's render, a file's proxy (with its colour read), or the preview LUTs.
+ * `report` is what the worker says it did: for a render `{ color: { transforms }, conformed, plates, warnings,
+ * deliveries: [{ cid, aspect, codec, qc, loudness }] }`, for a proxy `{ color, proxy, proxyProfile, transforms }`.
+ * Fields past the first line come from newer APIs and may be missing.
+ */
+export type RenderJob = {
+	id: string;
+	timeline_id: string | null;
+	status: 'queued' | 'rendering' | 'done' | 'failed';
+	progress: number;
+	note: string | null;
+	output_cid: string | null;
+	created: string;
+	updated: string;
+	kind?: 'render' | 'proxy' | 'lut';
+	media_cid?: string | null;
+	report?: RenderReport | null;
+};
+/** A render's report (stream A's worker): every transform by its config hash, what was conformed, the plates, QC. */
+export type RenderReport = {
+	color?: { transforms?: Record<string, unknown>; [k: string]: unknown };
+	conformed?: { clip: string; proxy: string; original: string }[];
+	plates?: { clip: string; aspect: string; key?: string; fingerprint?: string; reused?: boolean }[];
+	warnings?: string[];
+	deliveries?: { cid: string; aspect: string; codec: string; qc?: Record<string, unknown>; loudness?: Record<string, unknown> }[];
+	[k: string]: unknown;
+};
 
 export const queueRender = (timelineId: string) => call<RenderJob>(`/api/timelines/${timelineId}/renders`, { method: 'POST' });
 export const listRenders = (timelineId: string) => call<RenderJob[]>(`/api/timelines/${timelineId}/renders`);
+/** The latest jobs, newest first: of a kind, for a file (a file's proxy status; the worker's whole queue). */
+export const listJobs = (q: { kind?: 'render' | 'proxy' | 'lut'; cid?: string; limit?: number } = {}) =>
+	call<RenderJob[]>(`/api/film/jobs?${new URLSearchParams(Object.entries(q).filter(([, v]) => v !== undefined && v !== '').map(([k, v]) => [k, String(v)]))}`);
+/** A file's proxy made again (its colour read again too). */
+export const remakeProxy = (cid: string) => call<RenderJob>(`/api/film/proxies/${cid}`, { method: 'POST' });
+/** The preview LUTs baked (again) by the worker. */
+export const bakeLuts = () => call<RenderJob>('/api/film/luts', { method: 'POST' });
+
+// ─────────────────────────────── world shots (C2) ───────────────────────────────
+
+/** A camera keyframe of a world shot: shot-local seconds, where the camera is and where it looks. */
+export type CameraKey = { t: number; position: [number, number, number]; aim?: [number, number, number]; yaw?: number; pitch?: number; fov?: number };
+/** A value over a shot: a constant, or [t, value] keys (linear between them). */
+export type Curve = number | [number, number][];
+/** The lights a shot can set, over what the hour gives them (game/film/shot.js LIGHTS). */
+export const SHOT_LIGHTS = ['sun', 'fill', 'glow', 'lamps', 'sky'] as const;
+/** A world shot as data (contract C2, game/film/shot.js `Spec`): everything the world needs to draw every frame of it. */
+export type ShotSpec = {
+	world: { sandbox: 'sandbox-4'; build: { commit: string; hash: string; cid?: string } | null; seed: number; stand: [number, number]; dome?: number; props?: string; clock: number };
+	seconds: number;
+	fps: number;
+	/** the shape the shot is composed for; the others follow its framing */
+	aspect: Shape;
+	camera: { kind: 'move' | 'orbit' | 'turn' | 'fly' | 'whip' | 'keys'; curve?: 'glide' | 'ease' | 'landing' | 'drift'; keys?: CameraKey[]; [arg: string]: unknown };
+	lens: { fov: number; fovTo?: number };
+	time: { hour: number; hourTo?: number };
+	exposure: { meter: 'lock' | 'ramp' | 'fixed'; stops: Curve; ev?: number };
+	lights: { id: (typeof SHOT_LIGHTS)[number]; intensity?: Curve; color?: string }[];
+	cues: ({ at: number; kind: 'sound'; cid: string; level: number } | { at: number; kind: 'event'; name: string; args?: unknown })[];
+	shutter: { angle: number; samples: number };
+	framing: Partial<Record<Shape, { fov?: number; yaw?: number; pitch?: number; dx?: number; dy?: number }>>;
+	look?: string;
+	meta?: Record<string, unknown>;
+};
+export type Shot = { id: string; name: string; project: string | null; version: number; spec: ShotSpec; created: string; updated: string };
+
+export const listShots = (project?: string) => call<Shot[]>(`/api/shots${project ? `?${new URLSearchParams({ project })}` : ''}`);
+/** One shot, at a version (else its newest). */
+export const getShot = (id: string, version?: number) => call<Shot>(`/api/shots/${id}${version ? `?version=${version}` : ''}`);
+export const createShot = (s: { name: string; project?: string | null; spec: ShotSpec }) => call<Shot>('/api/shots', { method: 'POST', body: JSON.stringify(s) });
+/** A changed spec is saved as a new version; the old one stays (a clip cut with it keeps rendering it). */
+export const saveShot = (id: string, s: { name?: string; spec?: ShotSpec }) => call<Shot>(`/api/shots/${id}`, { method: 'PUT', body: JSON.stringify(s) });
+/** Every version of a shot, oldest first. */
+export const shotVersions = (id: string) => call<{ version: number; spec: ShotSpec; created: string }[]>(`/api/shots/${id}/versions`);
