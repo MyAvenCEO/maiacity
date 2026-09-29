@@ -9,7 +9,7 @@
 	import { onMount } from 'svelte';
 	import { listMedia, type MediaItem } from '$lib/auth/client';
 	import { command } from '$lib/native';
-	import { BY_HAND, CLASSES, gb, vaultUrl, type Copies, type FileClass, type Moving, type StoryView } from './vault';
+	import { BY_HAND, CLASSES, TIERS, gb, vaultUrl, type Copies, type FileClass, type Moving, type StoryView } from './vault';
 
 	let {
 		story,
@@ -175,8 +175,8 @@
 			<table>
 				<thead>
 					<tr>
-						<th>Synced</th>
 						<th><input type="checkbox" checked={selected.length > 0 && selected.length === rows.length} onchange={(e) => (selected = e.currentTarget.checked ? rows.map((m) => m.hash) : [])} /></th>
+						{#each TIERS as t (t.tier)}<th class="c tier" title="{t.name} · {t.where}">{t.tier}</th>{/each}
 						<th></th>
 						<th>File (BLAKE3)</th>
 						<th>Came in as · title</th>
@@ -187,22 +187,18 @@
 				<tbody>
 					{#each rows as m (m.hash)}
 						<tr class:sel={selected.includes(m.hash)} class:short={!kept(m)} class:open={open === m.hash} onclick={(e) => !(e.target as HTMLElement).closest('input') && onopen(m)}>
-							<td class="sync" class:good={kept(m)}>
-								{#if kept(m)}
-									<span class="all" title="Verified by hash at {destinations.filter((d) => at(m, d) === 'ok').join(' and ')}">✓</span>
-								{/if}
-								<span class="per">
-									{#each destinations.filter((d) => at(m, d) !== '') as d (d)}
-										{@const st = at(m, d)}
-										{@const mv = st === 'ok' ? undefined : movingOf(m, d)}
-										<span class="d {mv ? 'moving' : st.replaceAll(' ', '-')}" title="{d}: {mv ? `${gb(mv.sent)} of ${gb(mv.size)} · ${gb(mv.rate)}/s` : st}">
-											{d}
-											<b>{st === 'ok' ? '✓' : mv ? `${mv.size ? Math.floor((mv.sent / mv.size) * 100) : 0}%` : st === 'on its way' ? '↻' : '✗'}</b>
-										</span>
-									{/each}
-								</span>
-							</td>
 							<td><input type="checkbox" checked={selected.includes(m.hash)} onchange={() => toggle(m.hash)} /></td>
+							{#each TIERS as t (t.tier)}
+								{@const st = t.store ? at(m, t.store) : ''}
+								{@const mv = t.store && st !== 'ok' ? movingOf(m, t.store) : undefined}
+								<td class="c tier">
+									{#if !t.store}<span class="none" title="{t.name}: not set up yet">·</span>
+									{:else if st === 'ok'}<span class="ok" title="{t.name}: verified by hash">✓</span>
+									{:else if mv}<span class="pct" title="{t.name}: {gb(mv.sent)} of {gb(mv.size)} · {gb(mv.rate)}/s">{mv.size ? Math.floor((mv.sent / mv.size) * 100) : 0}%</span>
+									{:else if st === ''}<span class="none" title="{t.name}: not a destination of this class">—</span>
+									{:else}<span class="miss" title="{t.name}: {st}">✗</span>{/if}
+								</td>
+							{/each}
 							<td class="thumb">
 								{#if m.kind === 'image'}<img src={vaultUrl(m.hash)} alt="" loading="lazy" />
 								{:else if m.kind === 'video'}<video src="{vaultUrl(m.meta?.proxy && typeof m.meta.proxy === 'string' && /^[0-9a-f]{64}$/.test(m.meta.proxy) ? m.meta.proxy : m.hash)}#t=1" preload="metadata" muted playsinline></video>
@@ -214,7 +210,7 @@
 							<td class="r">{gb(m.size)}</td>
 						</tr>
 					{:else}
-						<tr><td colspan="7" class="empty">{mine.length ? 'Nothing matches.' : 'No files in this story yet — ingest into it, or move files here.'}</td></tr>
+						<tr><td colspan="9" class="empty">{mine.length ? 'Nothing matches.' : 'No files in this story yet — ingest into it, or move files here.'}</td></tr>
 					{/each}
 				</tbody>
 			</table>
@@ -255,13 +251,12 @@
 	.cls.original { background: #e8eefb; color: #2b4a8a; }
 	.cls.proxy { background: #f1eafb; color: #5a3a8a; }
 	.cls.delivery { background: #fbf3df; color: #7a5a14; }
-	.sync { display: flex; align-items: center; gap: 0.45rem; white-space: nowrap; }
-	.sync .all { display: grid; place-items: center; width: 1.2rem; height: 1.2rem; border-radius: 50%; background: #6f9a57; font-size: 0.7rem; font-weight: 700; color: #fff; }
-	.per { display: flex; flex-direction: column; gap: 0.05rem; font-size: 0.68rem; line-height: 1.25; color: var(--dim); }
-	.per b { font-weight: 700; }
-	.d.ok b { color: #3e5a2f; }
-	.d.moving b, .d.on-its-way b { color: #b8860b; }
-	.d.missing b { color: #9c3b26; }
+	.tier { width: 2.2rem; padding-left: 0.2rem; padding-right: 0.2rem; }
+	.tier .ok { display: inline-grid; place-items: center; width: 1.25rem; height: 1.25rem; border-radius: 50%; background: #6f9a57; font-size: 0.7rem; font-weight: 700; color: #fff; }
+	.tier .pct { font-size: 0.72rem; font-weight: 600; font-variant-numeric: tabular-nums; color: #b8860b; }
+	.tier .miss { font-weight: 700; color: #9c3b26; }
+	.tier .none { color: var(--edge); }
+	th.tier { text-align: center; }
 	.thumb { width: 2.6rem; padding: 0.2rem 0.3rem; }
 	.thumb img, .thumb video, .thumb span { display: grid; place-items: center; width: 2.4rem; height: 1.6rem; border-radius: 4px; background: var(--bg); object-fit: cover; font-size: 0.8rem; color: var(--dim); }
 	.live { font-size: 0.72rem; }

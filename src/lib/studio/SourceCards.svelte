@@ -8,7 +8,7 @@
 <script lang="ts">
 	import { onDestroy, onMount } from 'svelte';
 	import { command } from '$lib/native';
-	import { gb, type Copies, type Moving } from './vault';
+	import { TIERS, gb, type Copies, type Moving } from './vault';
 
 	type SourceFile = { hash: string; name: string; size: number; verdict: string };
 	type Ingested = { session: string; story: string; path: string; name: string; bytes: number; files: SourceFile[] };
@@ -44,6 +44,7 @@
 		return { ok, total: files.length, okBytes, bytes, going, sent, rate, pct: bytes ? ((okBytes + sent) / bytes) * 100 : 100 };
 	}
 	const complete = (s: Ingested) => s.files.every((f) => f.verdict !== 'mismatch') && DESTS.every((d) => dest(s, d).ok === s.files.length);
+	const tierLine = (t: (typeof TIERS)[number]) => `${t.tier} · ${t.name}`;
 	const counts = (s: Ingested) => ({
 		fresh: s.files.filter((f) => f.verdict === 'verified').length,
 		dup: s.files.filter((f) => f.verdict === 'duplicate').length,
@@ -130,16 +131,24 @@
 			</header>
 
 			<div class="dests">
-				{#each DESTS as d (d)}
-					{@const x = dest(s, d)}
+				{#each TIERS as t (t.tier)}
+					{#if !t.store}
+						<div class="dest off">
+							<span class="name" title={t.where}>{tierLine(t)}</span>
+							<div class="bar"></div>
+							<span class="n">not set up yet</span>
+						</div>
+					{:else}
+					{@const x = dest(s, t.store)}
 					<div class="dest">
-						<span class="name">{d}</span>
+						<span class="name" title={t.where}>{tierLine(t)}</span>
 						<div class="bar"><i class:full={x.ok === x.total} style:width="{Math.min(100, x.pct)}%"></i></div>
 						<span class="n">
 							{#if x.ok === x.total}✓ {x.ok}/{x.total} verified
 							{:else}{x.ok}/{x.total} · {gb(x.okBytes + x.sent)} of {gb(x.bytes)}{#if x.going} · ↻ {x.going} on their way · {gb(x.rate)}/s{/if}{/if}
 						</span>
 					</div>
+					{/if}
 				{/each}
 			</div>
 
@@ -163,17 +172,17 @@
 			<h3>Release {releasing.name}?</h3>
 			<p class="path">{releasing.path}</p>
 			{#if checking}
-				<p>Reading every copy back and hashing it — this Mac here, Object Storage on the server… {checked.length} / {releasing.files.length}</p>
+				<p>Reading every copy back and hashing it — B on this Mac, A on the server… {checked.length} / {releasing.files.length}</p>
 				<div class="bar"><i style:width="{(checked.length / releasing.files.length) * 100}%"></i></div>
 			{:else if verdict}
-				<p class="good">✓ All {releasing.files.length} files verified just now at avenSSD and hetzner — each read back and hashed.</p>
+				<p class="good">✓ All {releasing.files.length} files verified just now at A (Hetzner) and B (avenSSD) — each read back and hashed.</p>
 				<p>The source may go. <strong>Delete it yourself</strong> (the app never does):</p>
 				<p class="pathbox"><code>{releasing.path}</code> <button class="link" onclick={() => copyPath(releasing!.path)}>{copiedPath ? 'copied' : 'copy the path'}</button></p>
 			{:else if verdict === false}
 				<p class="bad">Not every copy holds — keep the source.</p>
 				<ul class="problems">
 					{#each checked.filter((c) => c.avenSSD !== 'verified' || c.hetzner !== 'verified') as c (c.hash)}
-						<li><code>{c.hash.slice(0, 12)}…</code> avenSSD {mark(c.avenSSD)} · hetzner {mark(c.hetzner)}</li>
+						<li><code>{c.hash.slice(0, 12)}…</code> A {mark(c.hetzner)} · B {mark(c.avenSSD)}</li>
 					{/each}
 				</ul>
 			{/if}
@@ -192,7 +201,8 @@
 	.meta { margin: 0; font-size: 0.78rem; text-align: right; color: var(--dim); }
 	.meta strong { color: var(--ink); }
 	.dests { display: flex; flex-direction: column; gap: 0.35rem; margin: 0.8rem 0 0.5rem; }
-	.dest { display: grid; grid-template-columns: 5.5rem 1fr 18rem; gap: 0.7rem; align-items: center; font-size: 0.78rem; }
+	.dest.off { opacity: 0.45; }
+	.dest { display: grid; grid-template-columns: 13rem 1fr 18rem; gap: 0.7rem; align-items: center; font-size: 0.78rem; }
 	.dest .name { font-weight: 600; }
 	.dest .n { color: var(--dim); }
 	.bar { overflow: hidden; height: 6px; border-radius: 3px; background: var(--edge); }

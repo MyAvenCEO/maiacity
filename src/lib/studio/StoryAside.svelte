@@ -7,7 +7,7 @@
 	import { onMount } from 'svelte';
 	import { listMedia, listVaultDevices, revokeVaultDevice, type MediaItem, type VaultDevice } from '$lib/auth/client';
 	import { command } from '$lib/native';
-	import { CLASSES, gb, type Copies, type Moving, type Network, type StoryView, type VaultStatus } from './vault';
+	import { CLASSES, TIERS, gb, type Copies, type Moving, type Network, type StoryView, type VaultStatus } from './vault';
 
 	let { story }: { story: StoryView | null } = $props();
 
@@ -99,35 +99,39 @@
 	<p class="n">{x.ok}/{x.total} verified{#if x.going} · ↻ {x.going} on their way · {gb(x.rate)}/s{/if}</p>
 {/snippet}
 
-<h4>Devices</h4>
+<h4>Masters</h4>
 <ul class="devices">
-	<li>
-		<span class="dot" class:on={!!status}></span>
-		<div>
-			<strong>avenSSD</strong> <small>this Mac</small>
-			{@render progress(sync('avenSSD'))}
-			<p class="dim">{keeps('avenSSD').join(' · ') || 'nothing of this story'}{#if status} · {gb(status.disk_free)} free{/if}</p>
-		</div>
-	</li>
-	<li>
-		<span class="dot" class:on={!!net?.joined}></span>
-		<div>
-			<strong>hetzner</strong> <small>Object Storage</small>
-			{@render progress(sync('hetzner'))}
-			<p class="dim">{keeps('hetzner').join(' · ') || 'nothing of this story'} · {net?.joined ? 'joined' : (net?.note ?? 'not joined yet')}</p>
-		</div>
-	</li>
-	{#each others as d (d.endpoint_id)}
-		<li>
-			<span class="dot"></span>
+	{#each TIERS as t (t.tier)}
+		{@const up = t.store === 'avenSSD' ? !!status : t.store === 'hetzner' ? !!net?.joined : false}
+		<li class:off={!t.store}>
+			<span class="tier" class:on={up}>{t.tier}</span>
 			<div>
-				<strong>{d.label || d.endpoint_id.slice(0, 10)}</strong>
-				<p>{keeps(d.label).join(' · ') || 'nothing of this story'}</p>
-				<button class="link" onclick={() => (revoking = d)}>revoke</button>
+				<strong>{t.name}</strong> <small>{t.where}</small>
+				{#if t.store}
+					{@render progress(sync(t.store))}
+					<p class="dim">
+						{keeps(t.store).join(' · ') || 'nothing of this story'}{#if t.store === 'avenSSD' && status} · {gb(status.disk_free)} free{/if}{#if t.store === 'hetzner' && !net?.joined} · {net?.note ?? 'not joined yet'}{/if}
+					</p>
+				{/if}
 			</div>
 		</li>
 	{/each}
 </ul>
+
+{#if others.length}
+	<h4>Other devices</h4>
+	<ul class="devices">
+		{#each others as d (d.endpoint_id)}
+			<li>
+				<span class="dot"></span>
+				<div>
+					<strong>{d.label || d.endpoint_id.slice(0, 10)}</strong>
+					<button class="link" onclick={() => (revoking = d)}>revoke</button>
+				</div>
+			</li>
+		{/each}
+	</ul>
+{/if}
 {#if revoking}
 	<p class="confirm">Revoke {revoking.label || revoking.endpoint_id.slice(0, 10)}? It stops syncing at once. <button onclick={revoke}>Revoke</button> <button class="link" onclick={() => (revoking = null)}>Cancel</button></p>
 {/if}
@@ -144,9 +148,11 @@
 	.count { margin: 0; font-size: 0.76rem; color: var(--dim); }
 	h4 { margin: 1.6rem 0 0.6rem; font-size: 0.68rem; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--dim); }
 	.devices { display: flex; flex-direction: column; gap: 0.8rem; margin: 0; padding: 0; list-style: none; }
-	.devices li { display: grid; grid-template-columns: 0.6rem 1fr; gap: 0.6rem; align-items: start; }
+	.devices li { display: grid; grid-template-columns: 1.3rem 1fr; gap: 0.6rem; align-items: start; }
+	.devices li.off { opacity: 0.45; }
+	.tier { display: grid; place-items: center; width: 1.3rem; height: 1.3rem; margin-top: 0.05rem; border-radius: 50%; background: var(--edge); font-size: 0.68rem; font-weight: 700; color: var(--dim); }
+	.tier.on { background: var(--ink); color: #fff; }
 	.dot { width: 0.5rem; height: 0.5rem; margin-top: 0.35rem; border-radius: 50%; background: var(--edge); }
-	.dot.on { background: #6f9a57; }
 	strong { font-size: 0.86rem; }
 	small { font-size: 0.72rem; color: var(--dim); }
 	.devices p { margin: 0.1rem 0 0; font-size: 0.76rem; }

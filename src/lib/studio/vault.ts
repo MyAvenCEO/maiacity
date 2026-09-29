@@ -51,6 +51,20 @@ export type Device = { endpoint_id: string; label: string; created: string; seen
 /** The classes a story keeps its files in, each with its own destinations. */
 export const CLASSES = ['default', 'original', 'proxy', 'delivery'] as const;
 export type FileClass = (typeof CLASSES)[number];
+/**
+ * The master copies, each device in its one tier: A the master cloud backup, B the local master working copy, C the
+ * cold archive (HDD, LTO — not set up yet). The ingest flow shows these three and nothing else; any other device that
+ * syncs is just a device.
+ */
+export const TIERS = [
+	{ tier: 'A', store: 'hetzner', name: 'Master cloud backup', where: 'Hetzner Object Storage' },
+	{ tier: 'B', store: 'avenSSD', name: 'Local master working copy', where: 'avenSSD · this Mac' },
+	{ tier: 'C', store: null, name: 'Cold archive', where: 'HDD / LTO — not set up yet' }
+] as const;
+export type Tier = (typeof TIERS)[number];
+/** The tier letters of the stores a rule names ("hetzner" → A). */
+export const tiersOf = (stores: string[]) => TIERS.filter((t) => t.store && stores.includes(t.store)).map((t) => t.tier);
+
 /** What a person (or an agent) may set; proxy and delivery are written only by their pipelines. */
 export const BY_HAND = ['default', 'original'] as const;
 /** One file on its way, live from iroh: to this Mac's avenSSD, to the server (hetzner), or to another device. */
