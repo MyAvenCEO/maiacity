@@ -101,6 +101,39 @@ fn udta_comment(text: &str) -> Vec<u8> {
     b
 }
 
+/// The file's own comment (`moov/udta/©cmt`), if it has one — e.g. "maiacity:color=apple-log-2".
+pub fn read_comment(path: &Path) -> Option<String> {
+    let mut f = File::open(path).ok()?;
+    let boxes = top_boxes(&mut f).ok()?;
+    let moov = boxes.iter().find(|b| &b.kind == b"moov")?;
+    if moov.size > 512 * 1024 * 1024 {
+        return None;
+    }
+    let mut buf = vec![0u8; moov.size as usize];
+    f.seek(SeekFrom::Start(moov.start)).ok()?;
+    f.read_exact(&mut buf).ok()?;
+    // children of moov → udta → ©cmt
+    let child = |b: &[u8], want: &[u8; 4]| -> Option<(usize, usize)> {
+        let mut at = 0;
+        while at + 8 <= b.len() {
+            let size = u32::from_be_bytes(b[at..at + 4].try_into().ok()?) as usize;
+            if size < 8 || at + size > b.len() {
+                return None;
+            }
+            if &b[at + 4..at + 8] == want {
+                return Some((at + 8, at + size));
+            }
+            at += size;
+        }
+        None
+    };
+    let (us, ue) = child(&buf[8..], b"udta").map(|(s, e)| (s + 8, e + 8))?;
+    let (cs, ce) = child(&buf[us..ue], &[0xA9, b'c', b'm', b't']).map(|(s, e)| (s + us, e + us))?;
+    let body = &buf[cs..ce];
+    let len = u16::from_be_bytes(body.get(0..2)?.try_into().ok()?) as usize;
+    String::from_utf8(body.get(4..4 + len)?.to_vec()).ok()
+}
+
 /// Rewrite `path` in place: `moov` (with the comment added) in front of the media.
 pub fn finish(path: &Path, comment: &str) -> Result<()> {
     let mut f = File::open(path)?;

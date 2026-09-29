@@ -35,6 +35,8 @@ pub struct Probe {
     pub full_range: Option<bool>,
     pub audio: bool,
     pub bit_rate: f64,
+    /// the container's metadata as text ("identifier=value"): Apple's camera profile, our own comment, …
+    pub tags: Vec<String>,
 }
 
 /// Probe a movie file (MOV, MP4, M4V).
@@ -66,6 +68,17 @@ pub fn probe(path: &Path) -> Result<Probe> {
             bit_rate: track.estimatedDataRate() as f64,
             ..Default::default()
         };
+
+        for item in asset.metadata().iter() {
+            let id = item.identifier().map(|i| i.to_string()).unwrap_or_default();
+            if let Some(v) = item.stringValue() {
+                p.tags.push(format!("{id}={v}"));
+            }
+        }
+        // our own comment (udta ©cmt, written by mp4.rs) — AVFoundation reads it as QuickTime user data
+        if let Some(c) = crate::mp4::read_comment(&path) {
+            p.tags.push(format!("comment={c}"));
+        }
 
         if let Some(desc) = track.formatDescriptions().firstObject() {
             let desc: &CMFormatDescription = &*(Retained::as_ptr(&desc) as *const CMFormatDescription);
