@@ -57,9 +57,9 @@ export type FileClass = (typeof CLASSES)[number];
  * syncs is just a device.
  */
 export const TIERS = [
-	{ tier: 'A', store: 'hetzner', name: 'Master cloud backup', where: 'Hetzner Object Storage' },
-	{ tier: 'B', store: 'avenSSD', name: 'Local master working copy', where: 'avenSSD · this Mac' },
-	{ tier: 'C', store: null, name: 'Cold archive', where: 'HDD / LTO — not set up yet' }
+	{ tier: 'A', store: 'hetzner', name: 'Cloud Master', where: 'avenCEO (Hetzner)' },
+	{ tier: 'B', store: 'avenSSD', name: 'Local Master', where: 'avenSSD (internal SSD)' },
+	{ tier: 'C', store: null, name: 'Archive', where: 'not set up yet' }
 ] as const;
 export type Tier = (typeof TIERS)[number];
 /** The tier letters of the stores a rule names ("hetzner" → A). */

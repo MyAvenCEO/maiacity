@@ -91,29 +91,20 @@
 	</p>
 {/if}
 
-{#snippet progress(x: { ok: number; total: number; pct: number; going: number; rate: number })}
-	<div class="sync" class:done={x.ok === x.total}>
-		<span class="bar"><i style:width="{x.pct}%"></i></span>
-		<span class="pct">{Math.floor(x.pct)}%</span>
-	</div>
-	<p class="n">{x.ok}/{x.total} verified{#if x.going} · ↻ {x.going} on their way · {gb(x.rate)}/s{/if}</p>
-{/snippet}
+
 
 <h4>Masters</h4>
-<ul class="devices">
+<ul class="masters">
 	{#each TIERS as t (t.tier)}
-		{@const up = t.store === 'avenSSD' ? !!status : t.store === 'hetzner' ? !!net?.joined : false}
+		{@const x = t.store ? sync(t.store) : null}
 		<li class:off={!t.store}>
-			<span class="tier" class:on={up}>{t.tier}</span>
-			<div>
-				<strong>{t.name}</strong> <small>{t.where}</small>
-				{#if t.store}
-					{@render progress(sync(t.store))}
-					<p class="dim">
-						{keeps(t.store).join(' · ') || 'nothing of this story'}{#if t.store === 'avenSSD' && status} · {gb(status.disk_free)} free{/if}{#if t.store === 'hetzner' && !net?.joined} · {net?.note ?? 'not joined yet'}{/if}
-					</p>
-				{/if}
-			</div>
+			<span class="tier" class:on={!!x && x.ok === x.total}>{t.tier}</span>
+			<span class="who"><strong>{t.name}</strong> <small>{t.where}</small></span>
+			{#if x}
+				<span class="pct">{Math.floor(x.pct)}%</span>
+				<span class="bar" class:done={x.ok === x.total}><i style:width="{x.pct}%"></i></span>
+				{#if x.ok < x.total}<span class="n">{x.ok}/{x.total}{#if x.going} · ↻ {x.going} · {gb(x.rate)}/s{/if}</span>{/if}
+			{/if}
 		</li>
 	{/each}
 </ul>
@@ -149,20 +140,20 @@
 	h4 { margin: 1.6rem 0 0.6rem; font-size: 0.68rem; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--dim); }
 	.devices { display: flex; flex-direction: column; gap: 0.8rem; margin: 0; padding: 0; list-style: none; }
 	.devices li { display: grid; grid-template-columns: 1.3rem 1fr; gap: 0.6rem; align-items: start; }
-	.devices li.off { opacity: 0.45; }
+	.masters { display: flex; flex-direction: column; gap: 0.7rem; margin: 0; padding: 0; list-style: none; }
+	.masters li { display: grid; grid-template-columns: 1.3rem 1fr auto; gap: 0.15rem 0.6rem; align-items: center; }
+	.masters li.off { opacity: 0.4; }
+	.who { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-size: 0.84rem; }
+	.masters .pct { font-size: 0.74rem; font-variant-numeric: tabular-nums; color: var(--dim); }
+	.masters .bar { grid-column: 2 / -1; overflow: hidden; height: 4px; border-radius: 2px; background: var(--edge); }
+	.masters .bar i { display: block; height: 100%; background: #d9a441; transition: width 1s linear; }
+	.masters .bar.done i { background: #6f9a57; }
+	.masters .n { grid-column: 2 / -1; font-size: 0.72rem; color: var(--dim); }
 	.tier { display: grid; place-items: center; width: 1.3rem; height: 1.3rem; margin-top: 0.05rem; border-radius: 50%; background: var(--edge); font-size: 0.68rem; font-weight: 700; color: var(--dim); }
-	.tier.on { background: var(--ink); color: #fff; }
+	.tier.on { background: #6f9a57; color: #fff; }
 	.dot { width: 0.5rem; height: 0.5rem; margin-top: 0.35rem; border-radius: 50%; background: var(--edge); }
 	strong { font-size: 0.86rem; }
 	small { font-size: 0.72rem; color: var(--dim); }
-	.devices p { margin: 0.1rem 0 0; font-size: 0.76rem; }
-	.dim { color: var(--dim); }
-	.sync { display: grid; grid-template-columns: 1fr 2.6rem; gap: 0.5rem; align-items: center; margin-top: 0.3rem; }
-	.sync .bar { overflow: hidden; height: 5px; border-radius: 3px; background: var(--edge); }
-	.sync .bar i { display: block; height: 100%; background: #d9a441; transition: width 1s linear; }
-	.sync.done .bar i { background: #6f9a57; }
-	.pct { font-size: 0.74rem; font-variant-numeric: tabular-nums; text-align: right; color: var(--dim); }
-	.n { font-size: 0.72rem !important; color: var(--dim); }
 	.link { padding: 0; border: 0; background: none; font: inherit; font-size: 0.74rem; color: var(--dim); text-decoration: underline; cursor: pointer; }
 	.confirm { font-size: 0.78rem; color: #7a5a14; }
 	.confirm button:not(.link) { padding: 0.1rem 0.6rem; border: 0; border-radius: 999px; background: var(--ink); font: inherit; font-size: 0.74rem; color: #fff; cursor: pointer; }

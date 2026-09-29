@@ -94,6 +94,30 @@
 		await load();
 		onchanged();
 	}
+	// a story can hold hundreds of files: rows come in as the table is scrolled, pictures only once they are in view
+	// (a whole inbox of pictures and films loading at once took the window down)
+	let shown = $state(150);
+	$effect(() => {
+		void story;
+		shown = 150;
+	});
+	const more = (node: HTMLElement) => {
+		const io = new IntersectionObserver(([e]) => e?.isIntersecting && (shown += 150), { rootMargin: '400px' });
+		io.observe(node);
+		return () => io.disconnect();
+	};
+	const seen = (src: string) => (node: HTMLImageElement) => {
+		const io = new IntersectionObserver(
+			([e]) => {
+				if (!e?.isIntersecting) return;
+				node.src = src;
+				io.disconnect();
+			},
+			{ rootMargin: '300px' }
+		);
+		io.observe(node);
+		return () => io.disconnect();
+	};
 	const toggle = (h: string) => (selected = selected.includes(h) ? selected.filter((x) => x !== h) : [...selected, h]);
 
 	$effect(() => {
@@ -185,7 +209,7 @@
 					</tr>
 				</thead>
 				<tbody>
-					{#each rows as m (m.hash)}
+					{#each rows.slice(0, shown) as m (m.hash)}
 						<tr class:sel={selected.includes(m.hash)} class:short={!kept(m)} class:open={open === m.hash} onclick={(e) => !(e.target as HTMLElement).closest('input') && onopen(m)}>
 							<td><input type="checkbox" checked={selected.includes(m.hash)} onchange={() => toggle(m.hash)} /></td>
 							{#each TIERS as t (t.tier)}
@@ -200,9 +224,8 @@
 								</td>
 							{/each}
 							<td class="thumb">
-								{#if m.kind === 'image'}<img src={vaultUrl(m.hash)} alt="" loading="lazy" />
-								{:else if m.kind === 'video'}<video src="{vaultUrl(m.meta?.proxy && typeof m.meta.proxy === 'string' && /^[0-9a-f]{64}$/.test(m.meta.proxy) ? m.meta.proxy : m.hash)}#t=1" preload="metadata" muted playsinline></video>
-								{:else}<span>{m.kind === 'audio' ? '♪' : '▤'}</span>{/if}
+								{#if m.kind === 'image' && m.size < 4e6}<img {@attach seen(vaultUrl(m.hash))} alt="" />
+								{:else}<span>{m.kind === 'video' ? '▶' : m.kind === 'audio' ? '♪' : m.kind === 'image' ? '▣' : '▤'}</span>{/if}
 							</td>
 							<td class="h" title={m.hash}>{m.hash.slice(0, 16)}…</td>
 							<td class="n" title="{m.original_name ?? ''}{m.title ? ` · ${m.title}` : ''}">{m.original_name || '—'}{#if m.title && m.title !== m.original_name}<small> · {m.title}</small>{/if}</td>
@@ -212,6 +235,9 @@
 					{:else}
 						<tr><td colspan="9" class="empty">{mine.length ? 'Nothing matches.' : 'No files in this story yet — ingest into it, or move files here.'}</td></tr>
 					{/each}
+					{#if rows.length > shown}
+						<tr><td colspan="9" class="more" {@attach more}>{rows.length - shown} more…</td></tr>
+					{/if}
 				</tbody>
 			</table>
 		</div>
@@ -258,7 +284,8 @@
 	.tier .none { color: var(--edge); }
 	th.tier { text-align: center; }
 	.thumb { width: 2.6rem; padding: 0.2rem 0.3rem; }
-	.thumb img, .thumb video, .thumb span { display: grid; place-items: center; width: 2.4rem; height: 1.6rem; border-radius: 4px; background: var(--bg); object-fit: cover; font-size: 0.8rem; color: var(--dim); }
+	.more { padding: 0.8rem; text-align: center; color: var(--dim); }
+	.thumb img, .thumb span { display: grid; place-items: center; width: 2.4rem; height: 1.6rem; border-radius: 4px; background: var(--bg); object-fit: cover; font-size: 0.8rem; color: var(--dim); }
 	.live { font-size: 0.72rem; }
 	.confirm { display: flex; align-items: center; gap: 0.4rem; padding: 0.2rem 0.3rem 0.2rem 0.7rem; border-radius: 999px; background: #fbf3df; color: #7a5a14; }
 	.confirm button { padding: 0.15rem 0.7rem; border: 0; border-radius: 999px; font: inherit; font-size: 0.74rem; cursor: pointer; }
