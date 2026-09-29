@@ -1,7 +1,7 @@
 # maiaCITY Studio + media vault — the task list
 
 Everything Samuel asked for, in order, with where it stands. Design and reasons: `.claude/skills/iroh/maiacity.md`.
-Status: ✅ done · 🔨 in progress · ⏳ next · 💤 deferred on purpose.  Last update: 2026-09-29, 21:45.
+Status: ✅ done · 🔨 in progress · ⏳ next · 💤 deferred on purpose.  Last update: 2026-09-30, 01:10.
 
 ## Done
 
@@ -77,16 +77,21 @@ Status: ✅ done · 🔨 in progress · ⏳ next · 💤 deferred on purpose.  L
     (`site/releases/<commit>`, `site/current`), deployed over SSH by CI; ⏳ **Samuel: point maia.city and www.maia.city
     at 188.245.31.46 (A records, Hetzner DNS; www's CNAME to Bunny goes)** — until then CI keeps Bunny current too;
     ⏳ then the Bunny account (CDN, storage, Stream) closed by Samuel. No published post streams from Bunny.
-14. b) ⏳ colour transforms and LUTs in Rust (input transforms, ACEScct, the ACES 2.0 output transform), stills proxies
+14. b) 🔨 colour transforms in Rust: ✅ every input journey into ACEScct (`vault-media/src/cst.rs`: Rec.709, sRGB, HLG,
+    PQ, Apple Log, Apple Log 2, ACES2065-1, ACEScg, linear Rec.709 — within 1e-5 of OCIO 2.5.2 and colour-science),
+    ✅ on the GPU as a Core Image Metal kernel (`gpu.rs`, exact maths, no LUT); ⏳ the ACES 2.0 output transform
+    per display / render target; ⏳ Rec.709 sources: camera curve (now) or the inverse ODT (render worker) — Samuel's call
     c) ⏳ render: Metal compositing, audio mix, captions, loudness QC (`ebur128`)
     d) ⏳ world plates and hero frames in the app's own WebView
 15. ⏳ **Render test run**: Day 19 world timeline, an Apple Log 2 clip, Edit → Lock → Grade → Render — natively.
-21. 🔨 **Automatic proxies**: ✅ after every ingest each new movie is probed, its colour told (color.js rules, natively),
-    and its proxy made and filed as `proxy_of` the original — camera log and display video; ⏳ HDR / linear (need the
-    ACEScct transform, 14b) wait and say so; ⏳ stills proxies; HLS later if needed.
+21. 🔨 **Automatic proxies**: ✅ every video original gets one, all in ACEScct: probed, its colour told (the
+    sample description's `logs` atom too — Apple Log 2 from the Blackmagic app), YCbCr → journey → Lanczos on the GPU,
+    HEVC Main10 in hardware, 1.7× real time for 4K on this Mac, mean error 0.0002 ACEScct against the CPU reference;
+    queued one at a time, filed beside the original (same story, class proxy, synced A/B/C); a source without a
+    journey waits and says so; ⏳ stills proxies; HLS later if needed.
 23. 🔨 **MCP control of the whole studio**: ✅ MCP server inside the Mac app (127.0.0.1:4545/mcp, token-gated, acts
     with the app's key) with tools: vault_status, library_list, library_copies, ingest, library_describe
-    (enrichment), media_probe, media_proxy, timelines_list, timeline_save, render_queue, renders_list, content_list,
+    (enrichment), media_probe, media_proxy (queues the same pipeline), timelines_list, timeline_save, render_queue, renders_list, content_list,
     content_create, content_save (draft → publish), api_call; ✅ the connect command in the Devices panel;
     ✅ tested over MCP (401 without the token; 15 tools; vault_status and library_list answer); ⏳ native grade/render
     tools with 14b–c.

@@ -6,13 +6,13 @@ use std::path::Path;
 use anyhow::{Context, Result, bail};
 use objc2::rc::Retained;
 use objc2_av_foundation::{AVAssetTrack, AVMediaTypeAudio, AVMediaTypeVideo, AVURLAsset};
-use objc2_core_foundation::{CFBoolean, CFNumber, CFString, CFType};
+use objc2_core_foundation::{CFBoolean, CFNumber, CFRetained, CFString, CFType};
 use objc2_core_media::{
     CMFormatDescription, kCMFormatDescriptionExtension_BitsPerComponent, kCMFormatDescriptionExtension_ColorPrimaries,
     kCMFormatDescriptionExtension_Depth, kCMFormatDescriptionExtension_FullRangeVideo,
     kCMFormatDescriptionExtension_TransferFunction, kCMFormatDescriptionExtension_YCbCrMatrix,
 };
-use objc2_foundation::{NSString, NSURL};
+use objc2_foundation::{NSData, NSDictionary, NSString, NSURL};
 use serde::Serialize;
 
 #[derive(Debug, Clone, Serialize, Default)]
@@ -96,6 +96,28 @@ pub fn probe(path: &Path) -> Result<Probe> {
                 .or_else(|| number(kCMFormatDescriptionExtension_Depth).map(|d| if d > 24 { d / 3 } else { d }))
                 .map(|b| b as u32);
             let _: Option<&CFType> = None;
+            // the sample description's own atoms: some cameras say their log only there — the Blackmagic app and
+            // the iPhone write `logs` = "com.apple.apple-wide-gamut.apple-log" (Apple Log 2) with an unspecified `colr`
+            if let Some(ext) = desc.extensions() {
+                let ext: &NSDictionary<NSString, objc2::runtime::AnyObject> = &*(CFRetained::as_ptr(&ext).as_ptr() as *const _);
+                if let Some(atoms) = ext.objectForKey(&NSString::from_str("SampleDescriptionExtensionAtoms")) {
+                    if let Some(atoms) = atoms.downcast_ref::<NSDictionary>() {
+                        let atoms: &NSDictionary<NSString, objc2::runtime::AnyObject> = &*(atoms as *const NSDictionary as *const _);
+                        for k in atoms.allKeys().iter() {
+                            let Some(v) = atoms.objectForKey(&k) else { continue };
+                            if let Some(d) = v.downcast_ref::<NSData>() {
+                                let text: String = d.to_vec().iter().filter(|b| b.is_ascii_graphic()).map(|&b| b as char).collect();
+                                if text.len() >= 4 {
+                                    p.tags.push(format!("atom:{k}={text}"));
+                                }
+                            }
+                        }
+                    }
+                }
+                if let Some(v) = ext.objectForKey(&NSString::from_str("LogTransferFunction")).and_then(|v| v.downcast::<NSString>().ok()) {
+                    p.tags.push(format!("LogTransferFunction={v}"));
+                }
+            }
         }
         Ok(p)
     }

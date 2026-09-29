@@ -111,18 +111,6 @@ pub struct HashArg {
 }
 
 #[derive(Deserialize, schemars::JsonSchema)]
-pub struct ProxyArgs {
-    /// the movie's BLAKE3 hash (64 hex)
-    pub hash: String,
-    /// the proxy's colour profile, as game/film/color.js names it (e.g. rec709, apple-log-2, acescct)
-    #[serde(default = "rec709")]
-    pub profile: String,
-}
-fn rec709() -> String {
-    "rec709".into()
-}
-
-#[derive(Deserialize, schemars::JsonSchema)]
 pub struct IdArg {
     pub id: String,
 }
@@ -325,26 +313,13 @@ impl Studio {
         text(r.await)
     }
 
-    #[tool(description = "Make a movie's HD proxy natively (HEVC Main10 in hardware, 1920, GOP 15) and put it into the vault, described as the proxy of the original")]
-    async fn media_proxy(&self, Parameters(a): Parameters<ProxyArgs>) -> String {
+    #[tool(description = "Queue a movie's HD proxy to be made again — its colour read again, taken through its journey into ACEScct, the proxy put beside the original (the same pipeline every ingest runs)")]
+    async fn media_proxy(&self, Parameters(a): Parameters<HashArg>) -> String {
         let r = async {
             self.signed_in()?;
-            let src = self.export(&a.hash).await?;
-            let out = self.vault.ingest_dir().join(format!("{}.proxy.mp4", a.hash));
-            let (o, profile) = (out.clone(), a.profile.clone());
-            tokio::task::spawn_blocking(move || vault_media::make_proxy(&src, &o, &profile, &mut |_| {}))
-                .await
-                .map_err(|e| e.to_string())?
-                .map_err(|e| format!("{e:#}"))?;
-            let batch = vault_core::ingest::Batch {
-                session: format!("proxy of {}", a.hash),
-                tags: vec!["proxy".into()],
-                meta: json!({ "role": "proxy", "proxy_of": a.hash, "color": a.profile }),
-                ..Default::default()
-            };
-            let made = self.vault.ingest_file(&out, &batch).await.map_err(|e| format!("{e:#}"))?;
-            std::fs::remove_file(&out).ok();
-            serde_json::to_value(made).map_err(|e| e.to_string())
+            a.hash.parse::<iroh_blobs::Hash>().map_err(|e| e.to_string())?;
+            tauri::async_runtime::spawn(crate::proxies::auto_proxy(self.handle.clone(), self.vault.clone(), a.hash.clone(), std::path::PathBuf::new()));
+            Ok::<_, String>(json!({ "queued": a.hash }))
         };
         text(r.await)
     }

@@ -19,13 +19,16 @@ use serde_json::json;
 use tauri::{AppHandle, Emitter};
 use vault_core::{Meta, Vault, ingest::Batch};
 
-/// The working space every proxy is in.
-const WORKING: &str = "acescct";
+use vault_media::proxy::WORKING;
 
-/// Is there a colour journey from this source into ACEScct? (A source already in ACEScct needs none.)
+/// Is there a colour journey from this source into ACEScct? (vault_media::cst — verified against OCIO)
 pub fn journey(profile: &str) -> bool {
-    profile == WORKING
+    vault_media::cst::journey(profile).is_some()
 }
+
+/// The colour detection's version: a file told "unknown" by an older one is read again (2: the sample description's
+/// log atom — Apple Log 2 from the Blackmagic app and the iPhone).
+const DETECTOR: u64 = 2;
 
 /// A proxy being made or waiting its turn, as the studio shows it.
 #[derive(Serialize, Clone)]
@@ -83,8 +86,10 @@ pub async fn sweep(handle: AppHandle, vault: Arc<Vault>) {
                     let state = m.meta.get("proxy").and_then(|p| p.as_str()).unwrap_or("");
                     let made = state.len() == 64 && state.bytes().all(|b| b.is_ascii_hexdigit());
                     let profile = m.meta.pointer("/color/profile").and_then(|p| p.as_str()).unwrap_or("");
-                    // never tried, or waiting for a journey that exists now
-                    let due = state.is_empty() || (state.starts_with("waiting") && journey(profile));
+                    let detector = m.meta.pointer("/color/detector").and_then(|d| d.as_u64()).unwrap_or(0);
+                    // never tried, waiting for a journey that exists now, or its colour unknown to an older detector
+                    let due = state.is_empty()
+                        || (state.starts_with("waiting") && (journey(profile) || (profile == "unknown" && detector < DETECTOR)));
                     let queued = NOW.lock().unwrap().as_ref().is_some_and(|n| n.contains_key(&m.hash));
                     if !made && due && !queued {
                         tauri::async_runtime::spawn(auto_proxy(handle.clone(), vault.clone(), m.hash.clone(), PathBuf::new()));
@@ -139,7 +144,7 @@ async fn make(vault: &Vault, hex: &str, name: &str, source: PathBuf) -> Result<(
     let profile = set_by_hand.clone().unwrap_or_else(|| told.profile.clone());
     vault
         .catalog
-        .describe(hash, &json!({ "meta": { "color": { "profile": told.profile, "from": told.from, "override": set_by_hand }, "probe": probe } }))
+        .describe(hash, &json!({ "meta": { "color": { "profile": told.profile, "from": told.from, "override": set_by_hand, "detector": DETECTOR }, "probe": probe } }))
         .await
         .map_err(|e| format!("{e:#}"))?;
     if profile == "unknown" {
@@ -155,8 +160,8 @@ async fn make(vault: &Vault, hex: &str, name: &str, source: PathBuf) -> Result<(
 
     set(hex, name, "making", 0.0);
     let out = vault.ingest_dir().join(format!("{hex}.proxy.mp4"));
-    let (src, o, of, nm) = (path.clone(), out.clone(), hex.to_string(), name.to_string());
-    tokio::task::spawn_blocking(move || vault_media::make_proxy(&src, &o, WORKING, &mut |done| set(&of, &nm, "making", done)))
+    let (src, o, of, nm, pf) = (path.clone(), out.clone(), hex.to_string(), name.to_string(), profile.clone());
+    tokio::task::spawn_blocking(move || vault_media::make_proxy(&src, &o, &pf, &mut |done| set(&of, &nm, "making", done)))
         .await
         .map_err(|e| e.to_string())?
         .map_err(|e| format!("{e:#}"))?;
