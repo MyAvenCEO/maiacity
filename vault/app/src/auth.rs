@@ -192,8 +192,9 @@ pub async fn proxy(http: reqwest::Client, request: tauri::http::Request<Vec<u8>>
     use tauri::http::{Response, StatusCode, header};
     let fail = |status: StatusCode, msg: &str| Response::builder().status(status).body(msg.as_bytes().to_vec()).unwrap_or_default();
     let path = request.uri().path_and_query().map(|p| p.as_str().to_string()).unwrap_or_default();
-    if !path.starts_with("/api/") {
-        return fail(StatusCode::BAD_REQUEST, "only the API");
+    // the API, and the vault's gateway (files by hash)
+    if !path.starts_with("/api/") && !path.starts_with("/vault/files/") {
+        return fail(StatusCode::BAD_REQUEST, "only the API and the vault");
     }
     let Some(key) = load_key() else { return fail(StatusCode::UNAUTHORIZED, "sign in first") };
     let mut req = http.get(format!("{}{path}", api_base())).bearer_auth(key);

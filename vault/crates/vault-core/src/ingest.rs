@@ -46,6 +46,8 @@ pub struct Batch {
     pub session: String,
     pub tags: Vec<String>,
     pub title: Option<String>,
+    pub description: Option<String>,
+    pub meta: serde_json::Value,
     pub public: bool,
 }
 
@@ -144,7 +146,9 @@ impl Vault {
             mime: mime_of(src).to_string(),
             kind: kind_of(mime_of(src)).to_string(),
             title: batch.title.clone().unwrap_or_default(),
+            description: batch.description.clone().unwrap_or_default(),
             tags: batch.tags.clone(),
+            meta: batch.meta.clone(),
             public: batch.public,
             original_name: src.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default(),
             source: src.display().to_string(),

@@ -33,8 +33,13 @@ pub struct Meta {
     pub kind: String,
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub title: String,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub description: String,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub tags: Vec<String>,
+    /// anything else known about the file (colour profile, roles, shot …) — as the library kept it
+    #[serde(default, skip_serializing_if = "serde_json::Value::is_null")]
+    pub meta: serde_json::Value,
     #[serde(default)]
     pub public: bool,
     /// Where it came from — kept as a fact about the file, never used to find it.

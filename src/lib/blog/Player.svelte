@@ -11,7 +11,7 @@
 -->
 <script lang="ts">
 	import { dev } from '$app/environment';
-	import { asset } from '$lib/media/url';
+	import { asset, inVault } from '$lib/media/url';
 	import { tick } from 'svelte';
 	import Banner from './Banner.svelte';
 	import CoverArt from './CoverArt.svelte';
@@ -53,8 +53,9 @@
 		}
 	}
 
-	// the local master, so a post can be test-run before Stream finishes encoding
-	const local = $derived(dev && post.videoLocal ? post.videoLocal : null);
+	// the film's own file: from the vault's gateway when it is in the vault (with Range, so it seeks) — the live site
+	// too; otherwise the local master, so a post can be test-run before Stream finishes encoding
+	const local = $derived(post.videoLocal && (dev || inVault(post.videoLocal)) ? post.videoLocal : null);
 	const embedded = $derived(post.video && post.videoLibrary ? post.video : null);
 	const hasFilm = $derived(Boolean(local || embedded));
 	// the header waits on the post's banner (its title card); a film in the text on its own still

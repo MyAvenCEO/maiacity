@@ -20,13 +20,21 @@ const API = dev ? ((import.meta.env.VITE_API_URL as string | undefined) ?? 'http
 
 /** A CID, alone or with its file's extension ("bafy….jpg"). */
 const CID = /^(baf[a-z2-7]{20,})(\.[a-z0-9]+)?$/;
+/** A file in the vault: its BLAKE3 hash (64 hex), alone or with its extension. */
+const HASH = /^([0-9a-f]{64})(\.[a-z0-9]+)?$/;
+/** Is this file in the vault (named by its hash)? */
+export const inVault = (ref: string | undefined | null) => !!ref && HASH.test(ref);
+/** The vault's gateway (vault-server behind api.maia.city): every file by its hash, with Range. */
+export const GATEWAY = 'https://api.maia.city/vault/files';
 
-/** The address of a file by its CID: its copy on the CDN when it has one, else the API. A full URL is left as it is. */
+/** The address of a file: a vault file (by its hash) from the gateway; a file still named by its CID from its copy on
+ *  the CDN, else the API. A full URL is left as it is. */
 export function asset(ref: string): string;
 export function asset(ref: string | undefined | null): string | undefined;
 export function asset(ref: string | undefined | null) {
 	if (!ref) return undefined;
 	if (/^https?:\/\//.test(ref)) return ref;
+	if (HASH.test(ref)) return native() ? `${APP_API}/vault/files/${ref}` : `${GATEWAY}/${ref}`;
 	const cid = CID.exec(ref)?.[1];
 	if (!cid) return ref;
 	const url = known[cid]?.url;
@@ -34,4 +42,5 @@ export function asset(ref: string | undefined | null) {
 }
 
 /** What the library says about a public file. */
-export const media = (cid: string | undefined | null): MediaEntry | undefined => (cid ? known[CID.exec(cid)?.[1] ?? cid] : undefined);
+export const media = (ref: string | undefined | null): MediaEntry | undefined =>
+	ref ? known[HASH.exec(ref)?.[1] ?? CID.exec(ref)?.[1] ?? ref] : undefined;

@@ -274,9 +274,42 @@ async fn serve(vault: Arc<Vault>, request: Request<Vec<u8>>) -> Response<Vec<u8>
     res.body(body).unwrap_or_default()
 }
 
+/// The app's own settings (not the vault): where the vault lives.
+fn settings_file() -> PathBuf {
+    let home = std::env::var_os("HOME").map(PathBuf::from).unwrap_or_default();
+    home.join("Library/Application Support/city.maia.studio/settings.json")
+}
+
+/// Where this Mac's vault lives: MAIACITY_VAULT, else the drive chosen in the studio, else the internal SSD.
 fn vault_dir() -> PathBuf {
     let home = std::env::var_os("HOME").map(PathBuf::from).unwrap_or_default();
-    std::env::var_os("MAIACITY_VAULT").map(PathBuf::from).unwrap_or_else(|| home.join("Library/Application Support/city.maia.vault"))
+    if let Some(dir) = std::env::var_os("MAIACITY_VAULT") {
+        return PathBuf::from(dir);
+    }
+    std::fs::read(settings_file())
+        .ok()
+        .and_then(|b| serde_json::from_slice::<serde_json::Value>(&b).ok())
+        .and_then(|v| v["vault_dir"].as_str().map(PathBuf::from))
+        .unwrap_or_else(|| home.join("Library/Application Support/city.maia.vault"))
+}
+
+/// Keep the vault somewhere else from the next start (an external SSD). The new place fills itself from the network
+/// — from the other Macs over iroh and from the server's gateway, each file checked against its hash; the old place
+/// stays untouched until you remove it.
+#[tauri::command]
+fn vault_set_location(handle: AppHandle, path: String) -> Res<()> {
+    gate()?;
+    let dir = PathBuf::from(&path).join("maiaCITY Vault");
+    std::fs::create_dir_all(&dir).map_err(err)?;
+    // the same node in the new place: this Mac stays the device the admin paired
+    let key = vault_dir().join("secret.key");
+    if key.exists() && !dir.join("secret.key").exists() {
+        std::fs::copy(&key, dir.join("secret.key")).map_err(err)?;
+    }
+    let file = settings_file();
+    std::fs::create_dir_all(file.parent().unwrap()).map_err(err)?;
+    std::fs::write(&file, serde_json::to_vec_pretty(&serde_json::json!({ "vault_dir": dir })).map_err(err)?).map_err(err)?;
+    handle.restart();
 }
 
 fn main() {
@@ -318,6 +351,7 @@ fn main() {
             auth::api,
             sync::vault_connect,
             sync::vault_copies,
+            vault_set_location,
             vault_status,
             vault_list,
             vault_sources,
