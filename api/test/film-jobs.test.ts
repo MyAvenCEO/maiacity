@@ -38,6 +38,7 @@ test("which files get a proxy: pictures and EXR sequences, never the worker's ow
   expect(wantsProxy("audio/mpeg")).toBe(false);
   expect(wantsProxy("video/mp4", ["role:proxy"])).toBe(false);
   expect(wantsProxy("video/mp4", ["role:render"])).toBe(false);
+  expect(wantsProxy("image/png", ["role:frame"])).toBe(false); // a hero frame is the worker's own
   expect(wantsProxy("video/mp4", [], { proxyOf: "bafy…" })).toBe(false);
 });
 

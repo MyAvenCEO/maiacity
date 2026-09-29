@@ -15,8 +15,10 @@
 // says what it is at /film-build.json — scripts/film/world/build.mjs makes and stores builds) unless
 // `allowBuildMismatch`. A dev server has no build: it renders only specs that name none.
 //
-// Environment: CHROME (the browser), FILM_ANGLE (ANGLE backend: metal on a Mac, swiftshader elsewhere by default),
-// FILM_HEVC (libx265 | hevc_videotoolbox; by default the first this ffmpeg has, VideoToolbox first).
+// The world renders only on a Mac, on its GPU (ANGLE on Metal): there is no software-rendering path. Off a Mac,
+// openWorld refuses, so a world job fails with a clear message instead of rendering slowly and differently.
+//
+// Environment: CHROME (the browser, default Google Chrome in /Applications), FILM_HEVC (libx265 | hevc_videotoolbox; by default the first this ffmpeg has, VideoToolbox first).
 import puppeteer from 'puppeteer-core';
 import { execFileSync, spawn } from 'node:child_process';
 import { createServer } from 'node:http';
@@ -26,14 +28,17 @@ import { fingerprint as fingerprintOf, normalize, SHAPES } from '../../../game/f
 
 const mac = process.platform === 'darwin';
 
-/** Chrome's flags for WebGL: Metal on the Mac, SwiftShader (software) where there is no GPU. */
+/** Chrome's flags for WebGL: ANGLE on Metal, the Mac's own GPU — never a software renderer. */
 export function browserArgs(size = [1280, 720]) {
-	const angle = process.env.FILM_ANGLE ?? (mac ? 'metal' : 'swiftshader');
-	return [`--use-gl=angle`, `--use-angle=${angle}`, ...(angle === 'swiftshader' ? ['--enable-unsafe-swiftshader'] : []), `--window-size=${size[0]},${size[1]}`, '--hide-scrollbars', '--autoplay-policy=no-user-gesture-required', '--no-sandbox'];
+	return ['--use-gl=angle', '--use-angle=metal', `--window-size=${size[0]},${size[1]}`, '--hide-scrollbars', '--autoplay-policy=no-user-gesture-required'];
 }
 
-export const chromePath = () =>
-	process.env.CHROME ?? (mac ? '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome' : '/opt/pw-browsers/chromium-1194/chrome-linux/chrome');
+export const chromePath = () => process.env.CHROME ?? '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
+
+/** World plates render only on a Mac (Metal). */
+export function assertMac() {
+	if (!mac) throw new Error('world plates render only on a Mac, on its GPU (Metal) — run the render worker there');
+}
 
 /** The HEVC encoder to use: VideoToolbox on the Mac, libx265 elsewhere (FILM_HEVC overrides). */
 export function hevcEncoder() {
@@ -49,6 +54,7 @@ export function hevcEncoder() {
  * @param {{ site: string, log?: (s: string) => void }} opts
  */
 export async function openWorld({ site, log = () => {} }) {
+	assertMac();
 	const browser = await puppeteer.launch({ executablePath: chromePath(), headless: true, protocolTimeout: 0, args: browserArgs() });
 	const page = await browser.newPage();
 	page.on('pageerror', (e) => log(`page error: ${e.message}`));

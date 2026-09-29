@@ -7,6 +7,16 @@ pre-graded clips; its shots become data that the timeline plays live and the wor
 
 Written 2026-09-29 from the design conversation. Each milestone lists its tasks and when it is done.
 
+**State (2026-09-29, PR #9):** M0–M9 built and merged into one branch; checks green (api 100 tests, svelte-check,
+film typecheck). End-to-end run on a local stack: an Apple Log 2 HEVC original (detected "unknown", set to
+`apple-log-2` → HD log proxy re-made), a world shot (its HD log proxy auto-queued and rendered), a timeline of both
+plus a voice, locked (a cut change refused, 409), graded (clip CDLs + film look), a 4K 16-bit hero frame of the iPhone
+clip rendered through IDT → grade → look → ODT. World plates render **only on a Mac (Metal)** — decided the same
+day; the full 4-shape delivery of a cut with world clips is therefore run on the Mac worker. Open: M10 docs; the
+Day 19 world timeline (`bun api/scripts/world-timeline.ts --from G --variant W`, on the Mac against production);
+render-time LUT accuracy on fully saturated primaries (≈40/1023 codes median off exact OCIO on a colour-bar test,
+≈2 on realistic colours) — try a larger LUT or a shaper for the chained display LUT.
+
 ---
 
 ## 1. The target workflow in one picture
@@ -361,7 +371,7 @@ openWorld({ site }) → { page, browser, build, close }   // reuse one browser f
 One world clip's frames from shot-time `from` to `to` (`round((to − from)·fps)` frames at `from + k/fps`),
 rendered offline (oversampled, shutter blur in linear light), as **ACEScct, 10-bit HEVC (yuv420p10le), bt709 matrix,
 tv range, tagged `comment=maiacity:color=acescct`**; libx265 or hevc_videotoolbox (FILM_HEVC), Chrome from CHROME,
-ANGLE from FILM_ANGLE (metal on a Mac, swiftshader elsewhere). A spec naming `world.build` renders only on that
+ANGLE on Metal: **world plates render only on a Mac's GPU — no software renderer** (openWorld refuses off a Mac). A spec naming `world.build` renders only on that
 build (throws otherwise). Builds: `node scripts/film/world/build.mjs` (vite build + film-build.json + tar to store
 with `bun media add`), `site.mjs` `buildDir(cid, { api, key })` + `serveSite(dir)` for the worker. Plates are
 render-step intermediates, cached by `fingerprint`, never library assets. Same function makes the HD world proxies
@@ -404,8 +414,8 @@ queue, QC report. Consumes C1–C6; never edits their files.
 | **C · the studio** | M6, M7 and M8 in the studio, M10 docs for the studio | none (asks B) | 5436 · 3103 · 5175 |
 
 Environment for every stream: ffmpeg 6.1 (zscale, lut3d, lut1d, libx265) from apt; OpenColorIO 2.5 + numpy from
-pip; Chromium at `/opt/pw-browsers/chromium-1194/chrome-linux/chrome` (WebGL through SwiftShader:
-`--use-gl=angle --use-angle=swiftshader --enable-unsafe-swiftshader`), `playwright-core` in `/tmp/pgmaia/pw`;
+pip; Chromium at `/opt/pw-browsers/chromium-1194/chrome-linux/chrome` for studio UI tests only, `playwright-core` in `/tmp/pgmaia/pw`;
 Postgres binaries in `/usr/lib/postgresql/*/bin` (run as the `postgres` user, data under `/tmp/<stream>`). On the Mac
-the worker uses VideoToolbox (`hevc_videotoolbox`) and Chrome with Metal; here libx265 and SwiftShader.
+the worker uses VideoToolbox (`hevc_videotoolbox`) and Chrome with Metal. World rendering is Mac-only (decided 2026-09-29):
+no SwiftShader fallback; a Linux box can run media proxies, LUT bakes and tests, never world plates.
 New standalone files are plain JavaScript (JSDoc types); existing TypeScript files stay TypeScript.

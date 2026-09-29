@@ -84,7 +84,7 @@ export async function describe(cid: unknown, about: unknown): Promise<void> {
 // ─────────────────────────────── proxies: every picture gets its colour read and an HD log proxy ───────────────────────────────
 
 /** The worker's own files need no proxy: proxies, preview LUTs, and finished films. */
-const NO_PROXY = ["role:proxy", "role:lut", "role:render"];
+const NO_PROXY = ["role:proxy", "role:lut", "role:render", "role:frame"];
 
 /** Does a file get a proxy job? Videos, images and EXR sequences (a tar with meta.sequence) — never the worker's own. */
 export function wantsProxy(mime: string, tags: string[] = [], meta: Record<string, unknown> = {}): boolean {

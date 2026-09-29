@@ -13,7 +13,7 @@
 // through it; without one the stills use film mode's stand-in view.
 //
 // Needs the site (SITE, default http://localhost:5173: `bun run dev`, or a pinned build — scripts/film/world/site.mjs)
-// and Chrome (CHROME; FILM_ANGLE=metal on the Mac, swiftshader where there is no GPU).
+// and a Mac with Google Chrome (CHROME): the world renders on the Mac's GPU (Metal) only.
 import { execFileSync } from 'node:child_process';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { basename, join, resolve } from 'node:path';
