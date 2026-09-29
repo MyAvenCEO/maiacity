@@ -54,12 +54,17 @@ const sshKey = new hcloud.SshKey(`${NAME}-deploy`, { name: `${NAME}-deploy`, pub
 
 const firewall = new hcloud.Firewall(`${NAME}-fw`, {
   name: NAME,
-  rules: [22, 80, 443].map((port) => ({
-    direction: "in",
-    protocol: "tcp",
-    port: String(port),
-    sourceIps: ["0.0.0.0/0", "::/0"],
-  })),
+  rules: [
+    ...[22, 80, 443].map((port) => ({
+      direction: "in",
+      protocol: "tcp",
+      port: String(port),
+      sourceIps: ["0.0.0.0/0", "::/0"],
+    })),
+    // the media vault's iroh endpoint (vault-server): direct QUIC from the paired Macs — the endpoint itself admits
+    // only paired devices, so the port can be open
+    { direction: "in", protocol: "udp", port: "7400", sourceIps: ["0.0.0.0/0", "::/0"] },
+  ],
 });
 
 // First boot only: a `deploy` user, Docker, and somewhere to put the app.

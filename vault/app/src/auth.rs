@@ -215,6 +215,28 @@ impl Auth {
     pub fn http(&self) -> reqwest::Client {
         self.http.clone()
     }
+
+    /// An API call from the app's own Rust side, with its key: the status and the JSON body.
+    pub async fn call(&self, method: &str, path: &str, body: Option<Value>) -> Result<(u16, Value), String> {
+        let key = load_key().ok_or("Please sign in.")?;
+        let method = reqwest::Method::from_bytes(method.as_bytes()).map_err(|e| e.to_string())?;
+        let mut req = self.http.request(method, format!("{}{path}", api_base())).bearer_auth(key);
+        if let Some(b) = body {
+            req = req.json(&b);
+        }
+        let res = req.send().await.map_err(|e| format!("The API cannot be reached: {e}"))?;
+        let status = res.status().as_u16();
+        Ok((status, res.json().await.unwrap_or(Value::Null)))
+    }
+
+    /// Like `call`, but a refusal is an error with the API's own sentence.
+    pub async fn get_ok(&self, method: &str, path: &str, body: Option<Value>) -> Result<Value, String> {
+        let (status, body) = self.call(method, path, body).await?;
+        if status >= 400 {
+            return Err(body["error"].as_str().map(String::from).unwrap_or_else(|| format!("The API answered {status}.")));
+        }
+        Ok(body)
+    }
 }
 
 /// Only the admin passes: every vault and studio command checks this first.
@@ -222,7 +244,7 @@ pub fn signed_in() -> bool {
     load_key().is_some()
 }
 
-fn host_name() -> String {
+pub fn host_name() -> String {
     std::process::Command::new("/usr/sbin/scutil")
         .args(["--get", "ComputerName"])
         .output()
@@ -240,4 +262,9 @@ pub fn auth_open(url: String) -> Result<(), String> {
         return Err("Only the approval page.".into());
     }
     std::process::Command::new("/usr/bin/open").arg(url).spawn().map(|_| ()).map_err(|e| e.to_string())
+}
+
+/// The key, for the app's own background work (never handed to the page).
+pub fn load_key_pub() -> Option<String> {
+    load_key()
 }

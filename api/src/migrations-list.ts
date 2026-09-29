@@ -543,5 +543,39 @@ export const MIGRATIONS: Migration[] = [
       CREATE INDEX ix_render_jobs_shot ON render_jobs (shot_id, shot_version) WHERE shot_id IS NOT NULL;
     `,
   },
+  {
+    // The media vault (vault/, .claude/skills/iroh): every file known by its BLAKE3 hash, its catalog an iroh-docs
+    // replica on every device. These tables only MIRROR the catalog for the website and the admin (the server peer
+    // writes them), keep the devices the admin paired with the passkey, and hold what a new device needs to join.
+    id: "0028-media-vault",
+    sql: `
+      CREATE TABLE vault_files (
+        hash     TEXT PRIMARY KEY CHECK (hash ~ '^[0-9a-f]{64}$'),
+        size     BIGINT NOT NULL,
+        mime     TEXT NOT NULL,
+        kind     TEXT NOT NULL,
+        title    TEXT NOT NULL DEFAULT '',
+        tags     TEXT[] NOT NULL DEFAULT '{}',
+        public   BOOLEAN NOT NULL DEFAULT false,
+        meta     JSONB NOT NULL DEFAULT '{}',
+        stored   BOOLEAN NOT NULL DEFAULT false,
+        added    TIMESTAMPTZ NOT NULL DEFAULT now(),
+        updated  TIMESTAMPTZ NOT NULL DEFAULT now()
+      );
+      CREATE INDEX ix_vault_files_tags ON vault_files USING GIN (tags);
+      CREATE TABLE vault_devices (
+        endpoint_id TEXT PRIMARY KEY CHECK (endpoint_id ~ '^[0-9a-f]{64}$'),
+        founder_id  TEXT NOT NULL REFERENCES founders(id) ON DELETE CASCADE,
+        label       TEXT NOT NULL DEFAULT '',
+        created     TIMESTAMPTZ NOT NULL DEFAULT now(),
+        seen        TIMESTAMPTZ,
+        revoked_at  TIMESTAMPTZ
+      );
+      CREATE TABLE vault_config (
+        key   TEXT PRIMARY KEY,
+        value TEXT NOT NULL
+      );
+    `,
+  },
 ];
 

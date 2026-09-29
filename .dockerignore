@@ -5,3 +5,7 @@
 !api/bun.lock
 !api/src
 !game
+# the vault's Rust workspace, for vault-server (never its build output)
+!vault
+vault/target
+vault/app/gen

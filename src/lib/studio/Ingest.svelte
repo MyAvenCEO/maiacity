@@ -7,7 +7,8 @@
 <script lang="ts">
 	import { onDestroy, onMount } from 'svelte';
 	import { command } from '$lib/native';
-	import { gb, name, type Outcome, type Progress, type Scan, type Source, type Summary } from './vault';
+	import CopiesBadge from './CopiesBadge.svelte';
+	import { gb, name, verifiedCopies, type Copies, type Outcome, type Progress, type Scan, type Source, type Summary } from './vault';
 
 	let { onDone = () => {} }: { onDone?: () => void } = $props();
 
@@ -21,7 +22,19 @@
 	let summary = $state<Summary | null>(null);
 	let error = $state('');
 	let dragging = $state(false);
+	let copies = $state<Record<string, Copies>>({});
 	const unlisten: Array<() => void> = [];
+
+	// after a batch: follow its files' copies until each has two verified ones (this Mac + the server)
+	async function followCopies() {
+		try {
+			copies = Object.fromEntries((await command<Copies[]>('vault_copies')).map((c) => [c.hash, c]));
+		} catch {
+			/* the API may be away for a moment */
+		}
+	}
+	const batchHashes = $derived(rows.filter((r) => r.outcome && r.outcome.verdict !== 'mismatch').map((r) => r.outcome!.hash));
+	const safe = $derived(batchHashes.length > 0 && batchHashes.every((h) => copies[h] && verifiedCopies(copies[h]) >= 2));
 
 	async function look() {
 		sources = await command<Source[]>('vault_sources');
@@ -56,6 +69,7 @@
 		try {
 			summary = await command<Summary>('vault_ingest', { paths: picked, tags: tags.split(',').map((t) => t.trim()).filter(Boolean) });
 			onDone();
+			await followCopies();
 		} catch (e) {
 			error = String(e);
 		} finally {
@@ -84,6 +98,8 @@
 			})
 		);
 		await look().catch((e) => (error = String(e)));
+		const timer = setInterval(() => summary && !safe && followCopies(), 5000);
+		unlisten.push(() => clearInterval(timer));
 	});
 	onDestroy(() => unlisten.forEach((u) => u()));
 
@@ -135,7 +151,11 @@
 			<div class="summary" class:bad={summary.mismatches > 0}>
 				<strong>{summary.verified} verified · {summary.duplicates} already in the vault · {summary.mismatches} mismatches</strong>
 				<span>{summary.files} files, {gb(summary.bytes)} in {summary.seconds.toFixed(1)} s ({(summary.bytes / 1e6 / Math.max(summary.seconds, 0.001)).toFixed(0)} MB/s)</span>
-				<span class="keep">{summary.mismatches ? 'Mismatches — keep the card and ingest again.' : '1 verified copy (this Mac) — keep the card until the server holds it too.'}</span>
+				<span class="keep">
+					{#if summary.mismatches}Mismatches — keep the card and ingest again.
+					{:else if safe}✅ Every file has two verified copies (this Mac + the server) — safe to format the card.
+					{:else}{batchHashes.filter((h) => copies[h] && verifiedCopies(copies[h]) >= 2).length} of {batchHashes.length} files have two verified copies — keep the card until all do.{/if}
+				</span>
 				<small>Report {summary.report.slice(0, 16)}…</small>
 			</div>
 		{/if}
@@ -152,6 +172,7 @@
 					<span class="n" title={o.source}>{name(o.source)}</span>
 					<span class="h" title={`source ${o.source_hash}\ndisk   ${o.disk_hash}\niroh   ${o.iroh_hash}`}>{o.hash.slice(0, 12)}…</span>
 					<span class="s">{gb(o.size)}</span>
+					{#if copies[o.hash]}<span class="c"><CopiesBadge c={copies[o.hash]} /></span>{/if}
 				</li>
 			{/each}
 		</ol>
@@ -190,5 +211,6 @@
 	.log .n { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 	.log .h { font-family: ui-monospace, monospace; color: var(--dim); }
 	.log .s { text-align: right; color: var(--dim); }
+	.log .c { grid-column: 2 / -1; }
 	.log li.mismatch { color: #9c3b26; }
 </style>

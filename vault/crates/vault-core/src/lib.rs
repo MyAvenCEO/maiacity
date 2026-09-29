@@ -7,8 +7,9 @@
 pub mod catalog;
 pub mod hash;
 pub mod ingest;
+pub mod net;
 pub mod node;
 
 pub use catalog::{Catalog, Meta};
 pub use ingest::{IngestOutcome, Verdict};
-pub use node::Vault;
+pub use node::{Join, Vault};

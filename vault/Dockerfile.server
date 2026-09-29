@@ -1,0 +1,17 @@
+# vault-server — the media vault's peer on the Hetzner server (built by .github/workflows/api.yml).
+# Only this crate is compiled; the Mac-only crates (app, vault-media) are never built here.
+FROM rust:1-bookworm AS build
+WORKDIR /src
+COPY vault/ ./
+RUN --mount=type=cache,target=/usr/local/cargo/registry \
+    --mount=type=cache,target=/src/target \
+    cargo build --release --locked -p vault-server && cp target/release/vault-server /vault-server
+
+FROM debian:bookworm-slim
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates && rm -rf /var/lib/apt/lists/*
+COPY --from=build /vault-server /usr/local/bin/vault-server
+ENV VAULT_DATA=/data
+VOLUME /data
+# 7400/udp: iroh (direct QUIC from the Macs) · 3340: the relay's HTTP · 3341: the gateway — both behind Caddy
+EXPOSE 7400/udp 3340 3341
+ENTRYPOINT ["/usr/local/bin/vault-server"]

@@ -29,6 +29,25 @@ export type Outcome = {
 export type Progress = { index: number; total: number; path: string; size: number; outcome: Outcome | null };
 export type Summary = { session: string; files: number; bytes: number; seconds: number; verified: number; duplicates: number; mismatches: number; report: string };
 
+/** Where a file's copies are: this Mac's store and the server peer (Object Storage). */
+export type Copies = {
+	hash: string;
+	name: string;
+	size: number;
+	kind: string;
+	/** verified: complete, checked on the way in · partial: arriving · missing */
+	here: 'verified' | 'partial' | 'missing';
+	here_bytes: number;
+	/** stored: in the bucket, pulled verified · syncing: known, still arriving · unknown: not seen yet */
+	server: 'stored' | 'syncing' | 'unknown';
+	location: string;
+};
+export type Network = { node: string; server: string | null; catalog: string; devices: number; joined: boolean; note: string | null };
+export type Device = { endpoint_id: string; label: string; created: string; seen: string | null; revoked_at: string | null };
+
+/** Verified copies of a file: this Mac and the server count; two make a card safe to format. */
+export const verifiedCopies = (c: Copies) => (c.here === 'verified' ? 1 : 0) + (c.server === 'stored' ? 1 : 0);
+
 /** A file's bytes from this Mac's store — with Range, for <img>, <video> and <audio>. */
 export const vaultUrl = (hash: string) => `vault://localhost/${hash}`;
 

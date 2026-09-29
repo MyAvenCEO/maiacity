@@ -1,6 +1,20 @@
-# One name, one upstream. Caddy fetches and renews the certificate itself —
+# One name, several upstreams. Caddy fetches and renews the certificate itself —
 # passkeys only work in a secure context, so HTTPS is not optional here.
+#   /relay, /generate_204  the iroh relay inside vault-server (paired devices only)
+#   /vault/*               the media vault's gateway (files by BLAKE3 hash, with Range)
+#   everything else        the API
 {$API_ADDRESS} {
-	encode zstd gzip
-	reverse_proxy api:3000
+	handle /relay* {
+		reverse_proxy vault:3340
+	}
+	handle /generate_204 {
+		reverse_proxy vault:3340
+	}
+	handle /vault/* {
+		reverse_proxy vault:3341
+	}
+	handle {
+		encode zstd gzip
+		reverse_proxy api:3000
+	}
 }

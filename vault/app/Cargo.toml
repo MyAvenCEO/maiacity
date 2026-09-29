@@ -23,6 +23,8 @@ iroh-blobs.workspace = true
 iroh-docs.workspace = true
 tracing.workspace = true
 tracing-subscriber.workspace = true
+blake3.workspace = true
+iroh.workspace = true
 # native-tls = the macOS Security framework, like the Keychain
 reqwest = { version = "0.13", default-features = false, features = ["json", "native-tls", "http2", "charset"] }
 security-framework = "3.7"
