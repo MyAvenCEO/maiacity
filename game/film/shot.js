@@ -71,7 +71,7 @@ export function normalize(s) {
 		throw new ShotError(m);
 	};
 	if (!s || typeof s !== 'object') bad('A shot is an object.');
-	const num = (/** @type {unknown} */ v, /** @type {string} */ name, /** @type {number} */ lo, /** @type {number} */ hi, /** @type {number} [d] */ d) => {
+	const num = (/** @type {unknown} */ v, /** @type {string} */ name, /** @type {number} */ lo, /** @type {number} */ hi, /** @type {number | undefined} */ d = undefined) => {
 		if (v === undefined && d !== undefined) return d;
 		if (!finite(v) || /** @type {number} */ (v) < lo || /** @type {number} */ (v) > hi) bad(`${name} must be a number from ${lo} to ${hi}.`);
 		return /** @type {number} */ (v);
@@ -137,7 +137,7 @@ export function normalize(s) {
 		}
 		return bad(`cues[${i}].kind is sound or event.`);
 	});
-	cues.sort((a, b) => a.at - b.at);
+	cues.sort((/** @type {any} */ a, /** @type {any} */ b) => a.at - b.at);
 	const shutter = { angle: num(s.shutter?.angle, 'shutter.angle', 0, 360, 180), samples: Math.round(num(s.shutter?.samples, 'shutter.samples', 1, 64, 1)) };
 	/** @type {Spec['framing']} */
 	const framing = {};

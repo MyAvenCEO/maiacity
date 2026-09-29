@@ -85,11 +85,15 @@ export async function mountVillage(container: HTMLElement, onProgress: (label: s
 	const built = new Map<number, EmbeddedDome>()
 	const shown = new Set<number>()
 	let building: { i: number; cancelled: boolean } | null = null
+	/** domes the film camera keeps built however far the walker goes: the shots it is preparing need them */
+	const pinned = new Set<number>()
 	const lastNear = new Map<number, number>()
 	let nightNow = 0
 
 	/* ── the sky, and a sun that follows the in-game clock ── */
-	const dev = window as unknown as { __interiorHour?: number; __exposure?: number }
+	// the film camera (src/lib/film): `__worldTime` is the world's clock in seconds while a film sets it — the animals,
+	// the water and every animation follow it instead of the page's clock; `__filmDraw` while the film draws the canvas
+	const dev = window as unknown as { __interiorHour?: number; __exposure?: number; __worldTime?: number; __filmDraw?: boolean }
 	/** the hour the sky shows when it is kept at day: late morning, the shadows still long enough to read */
 	const DAY_HOUR = 11
 	let keepDay = false
@@ -128,7 +132,8 @@ export async function mountVillage(container: HTMLElement, onProgress: (label: s
 	const fill = new THREE.HemisphereLight('#f4f0e6', '#6d5a3c', 0.4)
 	scene.add(fill)
 	scene.fog = new THREE.Fog('#e3e9e6', 180, 1400)
-	const glowMat = new THREE.MeshStandardMaterial({ color: '#fff0d0', emissive: '#ffc070', emissiveIntensity: 0.1 })
+	const GLOW = '#ffc070', LAMP = '#ffc98a'
+	const glowMat = new THREE.MeshStandardMaterial({ color: '#fff0d0', emissive: GLOW, emissiveIntensity: 0.1 })
 	const warm = new THREE.Color('#ffb070'), white = new THREE.Color('#fff1d8'), moon = new THREE.Color('#8ea6dc')
 	let envAt: THREE.Vector3 | null = null
 	/** where the light comes from, sun or moon: the shadows follow you, the direction stays the sky's */
@@ -164,7 +169,9 @@ export async function mountVillage(container: HTMLElement, onProgress: (label: s
 		glowMat.emissiveIntensity = 0.1 + 2.4 * (1 - THREE.MathUtils.smoothstep(e, -0.02, 0.18))
 		nightNow = 1 - THREE.MathUtils.smoothstep(e, -0.02, 0.18)
 		for (const dm of built.values()) dm.setHour(hour)
-		if (!envAt || envAt.angleTo(dir) > 0.04) {
+		// the sky's light is made again when the sun has moved — on film at any move at all, so that no frame depends
+		// on the frame drawn before it
+		if (!envAt || (dev.__worldTime !== undefined ? !envAt.equals(dir) : envAt.angleTo(dir) > 0.04)) {
 			envAt = dir.clone()
 			envSky.material.uniforms['sunPosition']!.value.copy(dir)
 			const old = scene.environment
@@ -941,7 +948,7 @@ export async function mountVillage(container: HTMLElement, onProgress: (label: s
 	   dome's own (interior.ts). Walk far enough away and it is taken down again. ── */
 	/** a few real lights, following you from lamp to lamp inside the dome you are in or at */
 	const pool = Array.from({ length: 8 }, () => {
-		const light = new THREE.PointLight('#ffc98a', 0, 10, 2)
+		const light = new THREE.PointLight(LAMP, 0, 10, 2)
 		scene.add(light)
 		return light
 	})
@@ -1033,7 +1040,7 @@ export async function mountVillage(container: HTMLElement, onProgress: (label: s
 			if (next !== undefined) {
 				// room for it: let go of the dome you were near longest ago
 				if (built.size >= KEEP) {
-					const old = [...built.keys()].filter((i) => !shown.has(i)).sort((a, b) => (lastNear.get(a) ?? 0) - (lastNear.get(b) ?? 0))[0]
+					const old = [...built.keys()].filter((i) => !shown.has(i) && !pinned.has(i)).sort((a, b) => (lastNear.get(a) ?? 0) - (lastNear.get(b) ?? 0))[0]
 					if (old !== undefined && gapTo(old) > gapTo(next)) {
 						built.get(old)!.dispose()
 						built.delete(old)
@@ -1164,7 +1171,7 @@ export async function mountVillage(container: HTMLElement, onProgress: (label: s
 			aimLight(flying[0]!, flying[2]!)
 		} else step(Math.min(0.1, (now - last) / 1000))
 		last = now
-		const t = (now - clock0) / 1000
+		const t = dev.__worldTime ?? (now - clock0) / 1000
 		for (const a of animated) a(t)
 		if (now - sunChecked > 1000) {
 			sunChecked = now
@@ -1180,11 +1187,12 @@ export async function mountVillage(container: HTMLElement, onProgress: (label: s
 			sound.set(levelsAt(pos.x, pos.z, indoors, waterPts, herds), indoors)
 		}
 		for (const i of shown) built.get(i)!.update(t)
-		renderer.render(scene, camera)
+		// the film camera draws the canvas itself while it holds it (src/lib/film)
+		if (!dev.__filmDraw) renderer.render(scene, camera)
 		// keep it smooth: lower the resolution a little when frames get slow, raise it when there is room
 		frames++
 		// while a film is shot (scripts/film) every frame is rendered at the resolution it asks for
-		if ((window as unknown as { __film?: { virtual: boolean } }).__film?.virtual) frames = 0, (fpsSince = now)
+		if ((window as unknown as { __film?: { virtual: boolean } }).__film?.virtual || dev.__filmDraw) frames = 0, (fpsSince = now)
 		if (now - fpsSince > 1500) {
 			const fps = (frames * 1000) / (now - fpsSince)
 			const pr = renderer.getPixelRatio()
@@ -1220,6 +1228,62 @@ export async function mountVillage(container: HTMLElement, onProgress: (label: s
 			pos.set(x, 0, z)
 			yaw = yw
 			pitch = p
+		},
+		/** The film camera's hold on the world (src/lib/film): every frame set from the shot alone, never from the frame
+		 *  before it. Players never reach any of this. */
+		film: {
+			/** Bring the world to world time t (seconds), the camera where `fly` put it: animations, the sun and sky for
+			 *  the hour, the far forest, the lamps, the open domes, and the shadows drawn again. `lights` scales the
+			 *  lights over what the hour gives them (1 = as the hour has them) and may recolour them. */
+			advance: (t: number, lights: { id: string; intensity: number; color?: string }[] = []) => {
+				if (flying) {
+					camera.position.set(flying[0]!, flying[1]!, flying[2]!)
+					camera.rotation.set(flying[4]!, flying[3]!, 0, 'YXZ')
+					aimLight(flying[0]!, flying[2]!)
+				}
+				camera.updateMatrixWorld()
+				for (const a of animated) a(t)
+				setSun(hourNow())
+				levelOfDetail(camera.position.x, camera.position.z)
+				lightNearest()
+				for (const i of shown) built.get(i)!.update(t)
+				// what the hour gives (setSun and lightNearest set the rest), then the shot's own changes on top
+				glowMat.emissive.set(GLOW)
+				for (const p of pool) p.color.set(LAMP)
+				for (const l of lights) {
+					const k = l.intensity
+					if (l.id === 'sun') {
+						sunLight.intensity *= k
+						if (l.color) sunLight.color.set(l.color)
+					} else if (l.id === 'fill') {
+						fill.intensity *= k
+						if (l.color) fill.color.set(l.color)
+					} else if (l.id === 'glow') {
+						glowMat.emissiveIntensity *= k
+						if (l.color) glowMat.emissive.set(l.color)
+					} else if (l.id === 'lamps') {
+						for (const p of pool) {
+							p.intensity *= k
+							if (l.color) p.color.set(l.color)
+						}
+					} else if (l.id === 'sky') scene.environmentIntensity *= k
+				}
+				renderer.shadowMap.needsUpdate = true
+			},
+			/** show or hide each built dome for where the walker stands now (as the world does as you walk) */
+			settle: () => {
+				for (const i of built.keys()) place(i)
+			},
+			/** keep these domes built while the film needs them */
+			pin: (domes: number[]) => {
+				pinned.clear()
+				for (const i of domes) pinned.add(i)
+			},
+			/** the dome being built now, if any */
+			building: () => building?.i ?? null,
+			/** the domes that would be shown in full to a walker standing at x, z once built: all of them must be
+			 *  built before a shot from there is filmed, or a dome could appear between two renders of it */
+			near: (x: number, z: number) => domes.map((d, i) => ({ i, gap: Math.hypot(x - d.x, z - d.z) - d.ext })).filter((d) => d.gap < SHOW_NEAREST).map((d) => d.i)
 		}
 	}
 

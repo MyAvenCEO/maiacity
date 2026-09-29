@@ -101,13 +101,19 @@ type Animal = { x: number; z: number; yaw: number; home: Patch; walking: boolean
  */
 export function herd(kind: Kind, patches: Patch[], seed: number): { object: THREE.Group; update: (t: number) => void; where: () => { x: number; z: number }[] } {
 	const spec = KINDS[kind]
-	const r = seeded(seed)
-	const animals: Animal[] = []
-	for (const home of patches)
-		for (let i = 0; i < home.n; i++) {
-			const a = r() * Math.PI * 2, d = Math.sqrt(r()) * home.r * 0.8
-			animals.push({ x: home.x + Math.cos(a) * d, z: home.z + Math.sin(a) * d, yaw: r() * Math.PI * 2, home, walking: r() < 0.5, until: r() * 3, coat: Math.floor(r() * spec.coats.length), phase: r() * 10 })
-		}
+	let r = seeded(seed)
+	let animals: Animal[] = []
+	/** every animal where it starts, from the seed alone */
+	const born = () => {
+		r = seeded(seed)
+		animals = []
+		for (const home of patches)
+			for (let i = 0; i < home.n; i++) {
+				const a = r() * Math.PI * 2, d = Math.sqrt(r()) * home.r * 0.8
+				animals.push({ x: home.x + Math.cos(a) * d, z: home.z + Math.sin(a) * d, yaw: r() * Math.PI * 2, home, walking: r() < 0.5, until: r() * 3, coat: Math.floor(r() * spec.coats.length), phase: r() * 10 })
+			}
+	}
+	born()
 	const material = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.85 })
 	const object = new THREE.Group()
 	const meshes = spec.coats.map((coat, c) => {
@@ -120,11 +126,24 @@ export function herd(kind: Kind, patches: Patch[], seed: number): { object: THRE
 		return mesh
 	})
 	const m = new THREE.Matrix4(), q = new THREE.Quaternion(), e = new THREE.Euler(0, 0, 0, 'YXZ'), p = new THREE.Vector3(), one = new THREE.Vector3(1, 1, 1)
-	let last = 0
+	/* They wander in fixed steps of 1/60 s counted from the world's time 0, so where each one is at time t depends on
+	   t alone — never on how often frames came — and a film shot renders the same flock every time. Asked for an
+	   earlier time, they start again from the seed and walk up to it. */
+	const STEP = 60
+	let steps = 0
 	const update = (t: number) => {
-		const dt = Math.min(0.1, t - last)
-		last = t
-		const slot = spec.coats.map(() => 0)
+		const want = Math.max(0, Math.floor(t * STEP + 1e-6))
+		if (want < steps) {
+			born()
+			steps = 0
+		}
+		while (steps < want) {
+			steps++
+			walk(steps / STEP, 1 / STEP)
+		}
+		pose(t)
+	}
+	const walk = (t: number, dt: number) => {
 		for (const an of animals) {
 			if (t > an.until) {
 				an.walking = !an.walking
@@ -145,6 +164,11 @@ export function herd(kind: Kind, patches: Patch[], seed: number): { object: THRE
 				an.x += Math.sin(an.yaw) * spec.speed * dt
 				an.z += Math.cos(an.yaw) * spec.speed * dt
 			}
+		}
+	}
+	const pose = (t: number) => {
+		const slot = spec.coats.map(() => 0)
+		for (const an of animals) {
 			// a hen pecks and a goat grazes when it stops; walking, each bobs or waddles
 			const pause = !an.walking
 			const pitch = pause ? (kind === 'hen' ? Math.max(0, Math.sin(t * 5 + an.phase)) * 0.55 : kind === 'goat' ? 0.25 : 0) : 0

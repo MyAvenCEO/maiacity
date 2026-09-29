@@ -1,13 +1,15 @@
+// @ts-nocheck — three.js scene building through window.__village, as the shot lists always did
 // Sets for the film, built into Sandbox 4's scene while it is filmed (never in the game itself). A shot names its set
-// (`props: 'tired-land'`); shoot.mjs builds it once, then moves what moves on the film's own clock, so a truck is
-// exactly where the shot list expects it at every frame.
-//
-// Each builder runs in the page: it may use only window.__village (THREE, scene) — no outside variables.
+// (world.props: 'tired-land'); the film camera (src/lib/film) builds it once, then moves what moves on the world's
+// own clock (`window.__props(clock)`), so a truck is exactly where the shot expects it at every frame.
+// Its randomness is seeded (the shot's world.seed): the same fields every time.
+import { seededRandom } from './clock.js';
 
 /** The world as it was: beyond the city's western edge (x ≈ −390), ploughed fields of one crop to the horizon, a
  *  highway running north–south through them (x = −470), power lines beside it, trucks on it. */
-export function tiredLand() {
+export function tiredLand(seed = 1) {
 	if (window.__props) return;
+	const rand = seededRandom(seed);
 	const v = window.__village, T = v.THREE, scene = v.scene;
 	const set = new T.Group();
 	set.name = 'tired-land';
@@ -29,8 +31,8 @@ export function tiredLand() {
 			g.fillRect(x0, z0, 3, 256);
 		}
 	for (let i = 0; i < 9000; i++) {
-		g.fillStyle = `rgba(${50 + Math.random() * 40},${40 + Math.random() * 30},20,${Math.random() * 0.25})`;
-		g.fillRect(Math.random() * 1024, Math.random() * 1024, 2, 2);
+		g.fillStyle = `rgba(${50 + rand() * 40},${40 + rand() * 30},20,${rand() * 0.25})`;
+		g.fillRect(rand() * 1024, rand() * 1024, 2, 2);
 	}
 	const tex = new T.CanvasTexture(c);
 	tex.wrapS = tex.wrapT = T.RepeatWrapping;
