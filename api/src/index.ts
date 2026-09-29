@@ -19,7 +19,8 @@ import { addIdea, deleteIdea, IdeaError, listIdeas, updateIdea } from "./ideas";
 import { describe, finishUpload, have, listMedia, markDistributed, MediaError, mediaInfo, publicManifest, putPart, readMedia, retag, startUpload, undistributed } from "./media";
 import { approveDevice, deviceInfo, KeyError, keyHolder, redeemDevice, revokeKey, startDevice } from "./keys";
 import { canDistribute, distributePending } from "./bunny";
-import { createTimeline, deleteTimeline, listTimelines, saveTimeline, TimelineError } from "./timelines";
+import { createTimeline, deleteTimeline, getTimeline, listTimelines, saveTimeline, TimelineError } from "./timelines";
+import { createShot, getShot, listShots, saveShot, ShotError, shotVersions } from "./shots";
 import { claimRender, queueRender, RenderError, rendersOf, reportRender } from "./renders";
 import { CHANNELS, ContentError, createContent, deleteContent, FORMATS, KINDS, listContent, saveContent, saveDay, savePosts, STATUSES } from "./content";
 import { format, gameClock, calendar, parse } from "../../game/time";
@@ -106,7 +107,7 @@ async function allowed(req: Request, cap: string): Promise<{ id: string; role: s
 
 /** Turn a thrown ledger, role or notebook error into a response a person can read. */
 function fail(req: Request, e: unknown) {
-  if (e instanceof LedgerError || e instanceof RoleError || e instanceof IdeaError || e instanceof KeyError || e instanceof MediaError || e instanceof TimelineError || e instanceof ContentError || e instanceof RenderError) return json(req, { error: e.message }, { status: e.status });
+  if (e instanceof LedgerError || e instanceof RoleError || e instanceof IdeaError || e instanceof KeyError || e instanceof MediaError || e instanceof TimelineError || e instanceof ShotError || e instanceof ContentError || e instanceof RenderError) return json(req, { error: e.message }, { status: e.status });
   console.error(e);
   return json(req, { error: "Something went wrong on our side." }, { status: 500 });
 }
@@ -671,6 +672,15 @@ const server = Bun.serve({
     },
     "/api/timelines/:id": {
       OPTIONS: preflight,
+      GET: async (req) => {
+        const me = await allowed(req, "media:admin");
+        if (me instanceof Response) return me;
+        try {
+          return json(req, await getTimeline(req.params.id));
+        } catch (e) {
+          return fail(req, e);
+        }
+      },
       PUT: async (req) => {
         const me = await allowed(req, "media:admin");
         if (me instanceof Response) return me;
@@ -686,6 +696,60 @@ const server = Bun.serve({
         try {
           await deleteTimeline(req.params.id);
           return new Response(null, { status: 204, headers: cors(req) });
+        } catch (e) {
+          return fail(req, e);
+        }
+      },
+    },
+
+    // World shots: shots of Sandbox 4 kept as data (game/film/shot.js), versioned — a world clip names one.
+    "/api/shots": {
+      OPTIONS: preflight,
+      GET: async (req) => {
+        const me = await allowed(req, "media:admin");
+        if (me instanceof Response) return me;
+        return json(req, await listShots({ project: new URL(req.url).searchParams.get("project") }));
+      },
+      POST: async (req) => {
+        const me = await allowed(req, "media:admin");
+        if (me instanceof Response) return me;
+        try {
+          return json(req, await createShot(me.id, (await readJson(req)) ?? {}), { status: 201 });
+        } catch (e) {
+          return fail(req, e);
+        }
+      },
+    },
+    "/api/shots/:id": {
+      OPTIONS: preflight,
+      // ?version=n: the shot as it was at that version
+      GET: async (req) => {
+        const me = await allowed(req, "media:admin");
+        if (me instanceof Response) return me;
+        try {
+          const v = new URL(req.url).searchParams.get("version");
+          return json(req, await getShot(req.params.id, v === null ? undefined : Number(v)));
+        } catch (e) {
+          return fail(req, e);
+        }
+      },
+      PUT: async (req) => {
+        const me = await allowed(req, "media:admin");
+        if (me instanceof Response) return me;
+        try {
+          return json(req, await saveShot(req.params.id, me.id, (await readJson(req)) ?? {}));
+        } catch (e) {
+          return fail(req, e);
+        }
+      },
+    },
+    "/api/shots/:id/versions": {
+      OPTIONS: preflight,
+      GET: async (req) => {
+        const me = await allowed(req, "media:admin");
+        if (me instanceof Response) return me;
+        try {
+          return json(req, await shotVersions(req.params.id));
         } catch (e) {
           return fail(req, e);
         }

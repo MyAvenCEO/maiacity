@@ -470,5 +470,44 @@ export const MIGRATIONS: Migration[] = [
       DELETE FROM coops;
     `,
   },
+  {
+    // World shots as data (game/film/shot.js): a shot of Sandbox 4 is a record — world, camera, light, exposure,
+    // cues, shutter, framing — rendered only when it is needed. Every save of a changed spec is a new version and the
+    // old ones are kept, so a clip cut with version 3 renders version 3 however the shot is edited later.
+    id: "0025-shots",
+    sql: `
+      CREATE TABLE shots (
+        id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        name       TEXT NOT NULL,
+        project    TEXT,
+        version    INT NOT NULL DEFAULT 1,
+        spec       JSONB NOT NULL,
+        founder_id TEXT REFERENCES founders(id) ON DELETE SET NULL,
+        created    TIMESTAMPTZ NOT NULL DEFAULT now(),
+        updated    TIMESTAMPTZ NOT NULL DEFAULT now()
+      );
+      CREATE INDEX ix_shots_project ON shots (project, name);
+      CREATE TABLE shot_versions (
+        shot_id    UUID NOT NULL REFERENCES shots(id) ON DELETE CASCADE,
+        version    INT NOT NULL,
+        spec       JSONB NOT NULL,
+        founder_id TEXT REFERENCES founders(id) ON DELETE SET NULL,
+        created    TIMESTAMPTZ NOT NULL DEFAULT now(),
+        PRIMARY KEY (shot_id, version)
+      );
+    `,
+  },
+  {
+    // A timeline's working steps (Edit → locked → Grade → Render), its version (one more at every unlock), its colour
+    // pipeline (the working space and the output transform) and the whole film's grade. Clips gain world clips and
+    // their own grade and framing inside the clips JSON (api/src/timelines.ts); every existing timeline stays valid.
+    id: "0026-timeline-stages",
+    sql: `
+      ALTER TABLE timelines ADD COLUMN stage TEXT NOT NULL DEFAULT 'edit' CHECK (stage IN ('edit', 'locked', 'graded', 'rendered'));
+      ALTER TABLE timelines ADD COLUMN version INT NOT NULL DEFAULT 1;
+      ALTER TABLE timelines ADD COLUMN color JSONB NOT NULL DEFAULT '{"working": "acescct", "output": "odt-rec709"}';
+      ALTER TABLE timelines ADD COLUMN grade JSONB;
+    `,
+  },
 ];
 
