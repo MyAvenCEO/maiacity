@@ -11,5 +11,25 @@ export async function command<T>(name: string, args?: Record<string, unknown>): 
 	return invoke<T>(name, args);
 }
 
+/**
+ * The app's web view has no console anyone can read: its warnings and errors (and those of a same-origin frame, like
+ * the world's) go into the app's own log instead, tagged with where they came from.
+ */
+export function forwardConsole(win: Window, from: string) {
+	if (!native()) return;
+	const w = win as Window & { __forwarded?: boolean; console: Console };
+	if (w.__forwarded) return;
+	w.__forwarded = true;
+	const text = (args: unknown[]) =>
+		args.map((a) => (a instanceof Error ? (a.stack ?? a.message) : typeof a === 'string' ? a : JSON.stringify(a))).join(' ').slice(0, 4000);
+	const send = (level: string, message: string) => void command('log_js', { level, from, message }).catch(() => {});
+	for (const level of ['warn', 'error'] as const) {
+		const was = w.console[level].bind(w.console);
+		w.console[level] = (...args: unknown[]) => (was(...args), send(level, text(args)));
+	}
+	w.addEventListener('error', (e) => send('error', `${e.message} (${e.filename}:${e.lineno})`));
+	w.addEventListener('unhandledrejection', (e) => send('error', `unhandled: ${text([e.reason])}`));
+}
+
 /** Inside the app, library files come through the app (key and Range) instead of straight from the API. */
 export const APP_API = 'maiaapi://localhost';

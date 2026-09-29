@@ -74,6 +74,19 @@ export function startFilm({ base = '' } = {}) {
 		return village();
 	};
 
+	// One thing at a time: every staging moves the walker (the world builds the domes near where it stands), so two
+	// shots staged at once pull it back and forth and neither world ever gets built. Callers queue.
+	/** @type {Promise<unknown>} */
+	let line = Promise.resolve();
+	/** @template T @param {() => Promise<T>} job @returns {Promise<T>} */
+	const one = (job) => {
+		const run = line.then(job, job);
+		line = run.catch(() => {});
+		return run;
+	};
+	/** every dome a prepare asked for since the page came up: kept built, whichever shot asked last */
+	const kept = new Set();
+
 	/** Stand where the shot needs the world loaded, build its set, and wait until its dome is built and shown. */
 	async function stage(/** @type {Spec} */ spec) {
 		const v = await mounted();
@@ -92,6 +105,9 @@ export function startFilm({ base = '' } = {}) {
 			const ok = (dome === undefined || (v.built.has(dome) && v.shown.has(dome))) && need.every((i) => v.built.has(i)) && (building === null || !need.includes(building));
 			if (ok) break;
 			if (waited > 20 * 60000) throw new Error(`the world never got ready for this shot (dome ${dome}, near ${need.join(', ')})`);
+			// a shot that keeps waiting says what for (the studio's log shows it)
+			if (waited && waited % 10000 === 0)
+				console.warn(`film: ${spec.meta?.name ?? 'a shot'} waits ${waited / 1000} s — dome ${dome ?? '-'} built ${dome === undefined || v.built.has(dome)} shown ${dome === undefined || v.shown.has(dome)}; near ${need.join(',')} built ${need.filter((i) => v.built.has(i)).join(',') || 'none'}; building ${building}`);
 			await sleep(100);
 		}
 		v.film.settle();
@@ -193,45 +209,54 @@ export function startFilm({ base = '' } = {}) {
 			return build;
 		},
 		/** @param {any} [spec] */
-		async ready(spec) {
-			await buildKnown;
-			const v = await mounted();
-			if (spec) await stage(normalize(spec));
-			else await settled(v);
+		ready(spec) {
+			return one(async () => {
+				await buildKnown;
+				const v = await mounted();
+				if (spec) await stage(normalize(spec));
+				else await settled(v);
+			});
 		},
 		/** @param {any[]} specs */
-		async prepare(specs) {
-			const all = specs.map(normalize);
-			const v = await mounted();
-			v.film.pin([...new Set(all.map((s) => s.world.dome).filter((d) => d !== undefined))]);
-			for (const s of all) await stage(s);
-			for (const s of all) await exposureOf(s);
+		prepare(specs) {
+			return one(async () => {
+				const all = specs.map(normalize);
+				const v = await mounted();
+				for (const s of all) if (s.world.dome !== undefined) kept.add(s.world.dome);
+				v.film.pin([...kept]);
+				for (const s of all) await stage(s);
+				for (const s of all) await exposureOf(s);
+			});
 		},
 		/** @param {any} spec */
-		async meter(spec) {
-			const ev = await exposureOf(normalize(spec));
-			return typeof ev === 'number' ? ev : ev.reduce((a, k) => a + k[1], 0) / ev.length;
+		meter(spec) {
+			return one(async () => {
+				const ev = await exposureOf(normalize(spec));
+				return typeof ev === 'number' ? ev : ev.reduce((a, k) => a + k[1], 0) / ev.length;
+			});
 		},
 		/** the metered exposure as the render uses it: a number, or [t, ev] keys for a time-lapse @param {any} spec */
-		async exposure(spec) {
-			return exposureOf(normalize(spec));
+		exposure(spec) {
+			return one(() => exposureOf(normalize(spec)));
 		},
 		/**
 		 * The log frame. `oversample` (default 1.5) renders bigger and filters down on the GPU.
 		 * @param {FrameAsk & { oversample?: number }} ask @returns {Promise<ArrayBuffer>}
 		 */
-		async capture({ spec: raw, t, shape, width, height, oversample = 1.5 }) {
-			const spec = normalize(raw), to = shape ?? spec.aspect;
-			const v = await mounted();
-			const ev = await exposureOf(spec);
-			await stage(spec);
-			clock.enter();
-			w.__filmDraw = true;
-			const W = Math.round(width * oversample), H = Math.round(height * oversample);
-			const { frame, at } = linear(v, spec, t, to, W, H);
-			const gain = 2 ** (evAt(ev, t) + at.stops);
-			const taps = oversample > 1 ? 3 : 1;
-			return /** @type {ArrayBuffer} */ (gpu().encode(frame, width, height, gain, taps).buffer);
+		capture({ spec: raw, t, shape, width, height, oversample = 1.5 }) {
+			return one(async () => {
+				const spec = normalize(raw), to = shape ?? spec.aspect;
+				const v = await mounted();
+				const ev = await exposureOf(spec);
+				await stage(spec);
+				clock.enter();
+				w.__filmDraw = true;
+				const W = Math.round(width * oversample), H = Math.round(height * oversample);
+				const { frame, at } = linear(v, spec, t, to, W, H);
+				const gain = 2 ** (evAt(ev, t) + at.stops);
+				const taps = oversample > 1 ? 3 : 1;
+				return /** @type {ArrayBuffer} */ (gpu().encode(frame, width, height, gain, taps).buffer);
+			});
 		},
 		/**
 		 * Draw a frame on the page's canvas through the view transform. quality 'proxy' (default): no oversampling, no

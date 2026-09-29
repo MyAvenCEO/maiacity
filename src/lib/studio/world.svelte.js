@@ -7,6 +7,7 @@
 // drawn placeholder (the shot's name, time, hour and camera) — see `placeholder()`. Nothing to remove when B lands:
 // the same code finds `__film` and uses it; delete `placeholder()` only if the placeholder is no longer wanted.
 import { SvelteSet } from 'svelte/reactivity';
+import { forwardConsole } from '$lib/native';
 
 /** @typedef {import('$lib/auth/client').Cdl} Cdl */
 /** @typedef {import('$lib/auth/client').CameraKey} CameraKey */
@@ -89,6 +90,7 @@ export class WorldViewer {
 				break; // another origin: not film mode
 			}
 			if (film && typeof film.show === 'function') {
+				forwardConsole(/** @type {Window} */ (iframe.contentWindow), 'world');
 				try {
 					await film.ready();
 					this.film = film;
@@ -126,11 +128,16 @@ export class WorldViewer {
 		const todo = specs.filter((s) => !this.readyShots.has(specKey(s)) && !this.preparing.has(specKey(s)));
 		for (const s of todo) {
 			const k = specKey(s);
+			const t0 = performance.now();
+			const slow = setInterval(() => console.warn(`world: still preparing ${s.meta?.name ?? 'a shot'} after ${Math.round((performance.now() - t0) / 1000)} s`), 15000);
 			const p = film
 				.prepare([s])
 				.then(() => void this.readyShots.add(k))
-				.catch((/** @type {Error} */ e) => void (this.error = `prepare: ${e?.message ?? e}`))
-				.finally(() => this.preparing.delete(k));
+				.catch((/** @type {Error} */ e) => {
+					this.error = `prepare: ${e?.message ?? e}`;
+					console.warn(`world: ${this.error}`);
+				})
+				.finally(() => (clearInterval(slow), this.preparing.delete(k)));
 			this.preparing.set(k, p);
 		}
 		return Promise.all(specs.map((s) => this.preparing.get(specKey(s)) ?? Promise.resolve())).then(() => {});

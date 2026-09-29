@@ -81,6 +81,17 @@ async fn vault_list(app: State<'_, App>) -> Res<Vec<Meta>> {
     Ok(list)
 }
 
+/// The web view's warnings and errors (the studio's, the world frame's), into the app's log — its console is not
+/// open to anyone.
+#[tauri::command]
+fn log_js(level: String, from: String, message: String) {
+    if level == "error" {
+        tracing::error!(target: "webview", "{from}: {message}");
+    } else {
+        tracing::warn!(target: "webview", "{from}: {message}");
+    }
+}
+
 /// Change what is known about a file (title, description, tags, public; meta merged key by key) — it syncs like the
 /// rest of the catalog.
 #[tauri::command]
@@ -385,6 +396,7 @@ fn main() {
             vault_status,
             vault_list,
             vault_describe,
+            log_js,
             proxies::vault_proxy,
             vault_sources,
             vault_scan,
