@@ -48,6 +48,19 @@ export type Copies = {
 export type Network = { node: string; server: string | null; catalog: string; devices: number; joined: boolean; note: string | null };
 export type Device = { endpoint_id: string; label: string; created: string; seen: string | null; revoked_at: string | null };
 
+/** The classes a story keeps its files in, each with its own destinations. */
+export const CLASSES = ['default', 'original', 'proxy', 'delivery'] as const;
+export type FileClass = (typeof CLASSES)[number];
+/** What a person (or an agent) may set; proxy and delivery are written only by their pipelines. */
+export const BY_HAND = ['default', 'original'] as const;
+/** One file on its way, live from iroh: to this Mac's avenSSD, to the server (hetzner), or to another device. */
+export type Moving = { hash: string; dest: string; size: number; sent: number; rate: number; done: boolean; aborted: boolean };
+/** Where each class of a story's files is kept: store names ("avenSSD", "hetzner"). */
+export type Rules = Record<FileClass, string[]>;
+/** A story: the bucket everything of one story lives in. Its id is an iroh namespace key; the inbox's is the catalog's. */
+export type Story = { id: string; title: string; description: string; series: string; episode: string; rules: Rules; created: string };
+export type StoryView = Story & { inbox: boolean; files: number; bytes: number; classes: Record<FileClass, [number, number]> };
+
 /** Verified copies of a file: this Mac and the server count; two make a card safe to format. */
 export const verifiedCopies = (c: Copies) => (c.here === 'verified' ? 1 : 0) + (c.server === 'stored' ? 1 : 0);
 

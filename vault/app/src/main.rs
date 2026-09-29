@@ -7,6 +7,7 @@ mod auth;
 mod local;
 mod mcp;
 mod proxies;
+mod stories;
 mod sync;
 mod watch;
 
@@ -176,19 +177,37 @@ struct Summary {
 /// Ingest files and folders with the three-hash check; each file reports as it starts and as it ends
 /// (event `ingest`). The session's report goes into the catalog as `ingest/<session>`.
 #[tauri::command]
-async fn vault_ingest(handle: AppHandle, app: State<'_, App>, paths: Vec<String>, tags: Vec<String>) -> Res<Summary> {
+async fn vault_ingest(
+    handle: AppHandle,
+    app: State<'_, App>,
+    paths: Vec<String>,
+    tags: Vec<String>,
+    story: Option<String>,
+    class: Option<String>,
+) -> Res<Summary> {
     gate()?;
+    if let Some(c) = &class {
+        stories::by_hand(c)?;
+    }
     if app.busy.swap(true, Ordering::SeqCst) {
         return Err("an ingest is already running".into());
     }
-    let result = run_ingest(&handle, &app.vault, paths, tags).await;
+    let result = run_ingest(&handle, &app.vault, paths, tags, story, class).await;
     app.busy.store(false, Ordering::SeqCst);
     result.map_err(err)
 }
 
-async fn run_ingest(handle: &AppHandle, vault: &Arc<Vault>, paths: Vec<String>, tags: Vec<String>) -> anyhow::Result<Summary> {
+/// Ingest into a story (its id; None: the inbox), every file in one class or each told from itself.
+async fn run_ingest(
+    handle: &AppHandle,
+    vault: &Arc<Vault>,
+    paths: Vec<String>,
+    tags: Vec<String>,
+    story: Option<String>,
+    class: Option<String>,
+) -> anyhow::Result<Summary> {
     let session = ingest::now_iso();
-    let batch = ingest::Batch { session: session.clone(), tags, ..Default::default() };
+    let batch = ingest::Batch { session: session.clone(), tags, story, class, ..Default::default() };
     let mut files = Vec::new();
     for p in &paths {
         files.extend(ingest::walk(&PathBuf::from(p))?);
@@ -202,8 +221,8 @@ async fn run_ingest(handle: &AppHandle, vault: &Arc<Vault>, paths: Vec<String>, 
         handle.emit("ingest", Progress { index, total, path: path.clone(), size, outcome: None }).ok();
         let o = vault.ingest_file(f, &batch).await?;
         handle.emit("ingest", Progress { index, total, path, size, outcome: Some(o.clone()) }).ok();
-        // a new movie gets its proxy by itself (in the background: the next file does not wait)
-        if o.verdict == Verdict::Verified && ingest::kind_of(ingest::mime_of(f)) == "video" && !batch.tags.iter().any(|t| t == "proxy") {
+        // a new movie gets its proxy by itself when that is switched on (in the background: the next file does not wait)
+        if stories::auto_proxy() && o.verdict == Verdict::Verified && ingest::kind_of(ingest::mime_of(f)) == "video" && !batch.tags.iter().any(|t| t == "proxy") {
             tauri::async_runtime::spawn(proxies::auto_proxy(handle.clone(), vault.clone(), o.hash.clone(), f.clone()));
         }
         outcomes.push(o);
@@ -397,6 +416,13 @@ fn main() {
             vault_list,
             vault_describe,
             log_js,
+            stories::stories_list,
+            sync::vault_transfers,
+            stories::story_save,
+            stories::files_move,
+            stories::files_class,
+            stories::settings_get,
+            stories::settings_set,
             proxies::vault_proxy,
             vault_sources,
             vault_scan,

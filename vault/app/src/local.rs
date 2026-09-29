@@ -107,6 +107,10 @@ struct About {
     tags: Option<Vec<String>>,
     meta: Option<Value>,
     public: Option<bool>,
+    /// the story it goes into (its id); none: the inbox
+    story: Option<String>,
+    /// default · original · proxy · delivery; none: told from the file
+    class: Option<String>,
 }
 
 async fn add(State(v): State<Arc<Vault>>, Query(q): Query<AddQuery>, body: Body) -> Response {
@@ -141,6 +145,8 @@ async fn add(State(v): State<Arc<Vault>>, Query(q): Query<AddQuery>, body: Body)
         description: about.description.clone(),
         meta: about.meta.clone().unwrap_or(Value::Null),
         public: about.public.unwrap_or(false),
+        story: about.story.clone(),
+        class: about.class.clone(),
     };
     let outcome = v.ingest_file(&path, &batch).await;
     tokio::fs::remove_dir_all(&dir).await.ok();

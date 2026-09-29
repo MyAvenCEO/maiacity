@@ -42,7 +42,7 @@ pub async fn run(handle: AppHandle, vault: Arc<Vault>) {
                             std::fs::create_dir_all(parent).ok();
                         }
                         std::fs::rename(&f, &to).ok();
-                        if o.verdict == Verdict::Verified && ingest::kind_of(ingest::mime_of(&to)) == "video" {
+                        if crate::stories::auto_proxy() && o.verdict == Verdict::Verified && ingest::kind_of(ingest::mime_of(&to)) == "video" {
                             tauri::async_runtime::spawn(crate::proxies::auto_proxy(handle.clone(), vault.clone(), o.hash.clone(), to.clone()));
                         }
                         handle.emit("watch-folder", &o).ok();

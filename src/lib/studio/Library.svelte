@@ -30,9 +30,8 @@
 		type MediaItem,
 		type Parsed
 	} from '$lib/admin/media/facets';
-	import Devices from './Devices.svelte';
 	import { listMedia } from '$lib/auth/client';
-	import { gb, type Copies, type VaultStatus } from './vault';
+	import { gb, type Copies, type StoryView, type VaultStatus } from './vault';
 
 	type Kind = 'all' | 'image' | 'video' | 'audio';
 	type Measure = { w?: number; h?: number; d?: number };
@@ -43,7 +42,9 @@
 	let status = $state<VaultStatus | null>(null);
 	/** where each file's copies are: this Mac, the server's Object Storage */
 	let copies = $state<Record<string, Copies>>({});
-	let showDevices = $state(false);
+	/** the story on screen (its id), or null for every story */
+	let story = $state<string | null>(null);
+	let stories = $state<StoryView[]>([]);
 
 	// the view — every piece of it mirrored in the address
 	let kind = $state<Kind>('all');
@@ -65,7 +66,7 @@
 		['video', 'Video'],
 		['audio', 'Sound']
 	] as const;
-	const RESERVED = ['tab', 'type', 'day', 'q', 'superseded', 'unused', 'open'];
+	const RESERVED = ['tab', 'story', 'type', 'day', 'q', 'superseded', 'unused', 'open'];
 	const LONG = 14;
 
 	// ── the pools ───────────────────────────────────────────────────────────
@@ -85,10 +86,15 @@
 		String(m.meta?.text ?? '').toLowerCase().includes(f);
 
 	// superseded files stay out unless asked for; "unused only" keeps just what nothing names
+	const inboxId = $derived(stories.find((x) => x.inbox)?.id ?? '');
+	/** in the story on screen: a file's one story, or the inbox when it names none */
+	const ofStory = (m: MediaItem, st: string | null = story) => st === null || (st === inboxId ? !m.story : m.story === st);
 	const pool = $derived.by(() => {
 		const f = q.trim().toLowerCase();
-		return media.filter((m) => (showOld || !P(m).superseded) && (!unusedOnly || P(m).unused) && found(m, f));
+		return media.filter((m) => (showOld || !P(m).superseded) && (!unusedOnly || P(m).unused) && found(m, f) && ofStory(m));
 	});
+	/** how many files each story holds, within the search and the type */
+	const storyCount = (st: string) => media.filter((m) => ofStory(m, st) && ofKind(m) && (showOld || !P(m).superseded)).length;
 	const ofKind = (m: MediaItem, k: Kind = kind) => k === 'all' || m.kind === k;
 	const ofDay = (m: MediaItem, d: string | null = day) =>
 		d === null || (d === 'none' ? P(m).days.length === 0 : P(m).days.includes(Number(d)));
@@ -202,6 +208,7 @@
 		if (t === 'image' || t === 'video' || t === 'audio') kind = t;
 		const d = s.get('day');
 		if (d && (d === 'none' || /^\d+$/.test(d))) day = d === 'none' ? d : String(Number(d));
+		story = s.get('story');
 		q = s.get('q') ?? '';
 		showOld = s.get('superseded') === '1';
 		unusedOnly = s.get('unused') === '1';
@@ -215,6 +222,7 @@
 		if (phase !== 'ready') return;
 		const s = new URLSearchParams();
 		s.set('tab', 'library');
+		if (story) s.set('story', story);
 		if (kind !== 'all') s.set('type', kind);
 		if (day) s.set('day', day);
 		for (const k of Object.keys(chosen).sort(facetOrder)) for (const v of chosen[k]!) s.append(k, v);
@@ -239,9 +247,10 @@
 		(async () => {
 			try {
 				// the vault's catalog; proxies stand in for their originals and stay out
-				const [files, st] = await Promise.all([listMedia(), command<VaultStatus>('vault_status')]);
+				const [files, st, all] = await Promise.all([listMedia(), command<VaultStatus>('vault_status'), command<StoryView[]>('stories_list')]);
 				media = files.filter((m) => !isProxy(m));
 				status = st;
+				stories = all;
 			} catch (e) {
 				error = String(e);
 			}
@@ -263,7 +272,6 @@
 		<p class="lede">One moment…</p>
 	{:else}
 		{#if error}<p class="note bad">{error}</p>{/if}
-		{#if showDevices}<div class="panel"><Devices /></div>{/if}
 
 		<div class="cols">
 			<!-- the left: the type, then the days -->
@@ -275,6 +283,22 @@
 						</button>
 					{/each}
 				</div>
+
+				<h3>Stories</h3>
+				<ul class="days">
+					<li>
+						<button class:on={story === null} aria-pressed={story === null} onclick={() => (story = null)}>
+							<span>Every story</span>
+						</button>
+					</li>
+					{#each stories as st (st.id)}
+						<li>
+							<button class:on={story === st.id} aria-pressed={story === st.id} onclick={() => (story = st.id)} title={st.description}>
+								<span>{st.inbox ? 'Inbox' : `${st.episode ? `${st.episode} · ` : ''}${st.title}`}</span> <span class="n">{storyCount(st.id)}</span>
+							</button>
+						</li>
+					{/each}
+				</ul>
 
 				<h3>Days</h3>
 				<ul class="days">
@@ -305,7 +329,6 @@
 					{#if status}
 						<p class="vault">{status.files} files · {gb(status.bytes)} · {gb(status.disk_free)} free on this Mac</p>
 					{/if}
-					<button class="quiet" onclick={() => (showDevices = !showDevices)}>{showDevices ? 'Hide devices' : 'Devices & storage'}</button>
 				</div>
 			</aside>
 
@@ -353,7 +376,18 @@
 			<!-- the right: the facets of what is on screen, or everything about the open file -->
 			<aside class="right" aria-label={opened ? 'Details' : 'Filters'}>
 				{#if opened}
-					<Details m={opened} p={P(opened)} measure={measures[opened.hash]} copies={copies[opened.hash]} onfilter={filterBy} />
+					<Details
+						m={opened}
+						p={P(opened)}
+						measure={measures[opened.hash]}
+						copies={copies[opened.hash]}
+						{stories}
+						onplaced={(n) => {
+							media = media.map((x) => (x.hash === n.hash ? n : x));
+							void command<StoryView[]>('stories_list').then((all) => (stories = all));
+						}}
+						onfilter={filterBy}
+					/>
 				{:else}
 					<div class="filters-head">
 						<h3>Narrow down</h3>

@@ -1,14 +1,18 @@
 <!--
-	Ingest — the studio's first step, and only in maiaCITY Studio (the Mac app). Pick a card, a drive or a folder (or
-	drop files anywhere on the window), tag the batch, and every file is copied into this Mac's vault with three hashes
-	that must agree: the bytes as they came off the source, the copy read back from the disk, and iroh's own. The card
-	is safe to format only once a second verified copy exists.
+	Ingest — the studio's first step, and only in maiaCITY Studio (the Mac app). Choose the story a batch goes into (or
+	the inbox), pick a card, a drive or a folder (or drop files anywhere on the window), and every file is copied into
+	this Mac's vault with three hashes that must agree: the bytes as they came off the source, the copy read back from
+	the disk, and iroh's own. Each file gets its class (told from the file, or set for the batch). The card is safe to
+	format only once a second verified copy exists. Devices & storage live here too.
 -->
 <script lang="ts">
 	import { onDestroy, onMount } from 'svelte';
 	import { command } from '$lib/native';
 	import CopiesBadge from './CopiesBadge.svelte';
-	import { gb, name, verifiedCopies, type Copies, type Outcome, type Progress, type Scan, type Source, type Summary } from './vault';
+	import Devices from './Devices.svelte';
+	import Stories from './Stories.svelte';
+	import StoryTable from './StoryTable.svelte';
+	import { BY_HAND, gb, name, verifiedCopies, type Copies, type Outcome, type Progress, type Scan, type Source, type StoryView, type Summary } from './vault';
 
 	let { onDone = () => {} }: { onDone?: () => void } = $props();
 
@@ -23,7 +27,21 @@
 	let error = $state('');
 	let dragging = $state(false);
 	let copies = $state<Record<string, Copies>>({});
+	/** the story the batch goes into (its id; the inbox's by default) */
+	let story = $state<string | null>(null);
+	/** the class for the whole batch, or '' — told from each file */
+	let klass = $state('');
+	let storiesPanel = $state<{ load: () => Promise<void> } | null>(null);
+	let storyList = $state<StoryView[]>([]);
+	/** bumped after every batch and every move: the table reads the catalog again */
+	let reload = $state(0);
+	let showDevices = $state(false);
+	let autoProxy = $state(false);
 	const unlisten: Array<() => void> = [];
+
+	async function setAutoProxy(on: boolean) {
+		autoProxy = (await command<{ auto_proxy: boolean }>('settings_set', { key: 'auto_proxy', value: on })).auto_proxy;
+	}
 
 	// after a batch: follow its files' copies until each has two verified ones (this Mac + the server)
 	async function followCopies() {
@@ -67,8 +85,15 @@
 		summary = null;
 		error = '';
 		try {
-			summary = await command<Summary>('vault_ingest', { paths: picked, tags: tags.split(',').map((t) => t.trim()).filter(Boolean) });
+			summary = await command<Summary>('vault_ingest', {
+				paths: picked,
+				tags: tags.split(',').map((t) => t.trim()).filter(Boolean),
+				story,
+				class: klass || null
+			});
 			onDone();
+			await storiesPanel?.load();
+			reload++;
 			await followCopies();
 		} catch (e) {
 			error = String(e);
@@ -98,6 +123,7 @@
 			})
 		);
 		await look().catch((e) => (error = String(e)));
+		autoProxy = (await command<{ auto_proxy: boolean }>('settings_get').catch(() => ({ auto_proxy: false }))).auto_proxy;
 		const timer = setInterval(() => summary && !safe && followCopies(), 5000);
 		unlisten.push(() => clearInterval(timer));
 	});
@@ -109,6 +135,7 @@
 
 <section class="ingest" class:dragging aria-label="Ingest">
 	<aside>
+		<Stories bind:this={storiesPanel} bind:chosen={story} bind:list={storyList} />
 		<h2>Sources</h2>
 		{#each sources as s (s.path)}
 			<button class="source" onclick={() => pick([s.path])}>
@@ -120,16 +147,26 @@
 		<button class="source ghostly" onclick={chooseFolder}>+ Choose folder…</button>
 		<div class="drop">⇣ drop files or folders anywhere</div>
 		<button class="link" onclick={look}>Look again</button>
+		<div class="switches">
+			<label class="switch"><input type="checkbox" checked={autoProxy} onchange={(e) => setAutoProxy(e.currentTarget.checked)} /> Proxies by themselves after ingest</label>
+			<button class="link" onclick={() => (showDevices = !showDevices)}>{showDevices ? 'Hide devices & storage' : 'Devices & storage'}</button>
+		</div>
 	</aside>
 
 	<div class="batch">
-		<h2>This batch</h2>
+		<h2>This batch → {storyList.find((s) => s.id === story)?.inbox ? 'Inbox' : (storyList.find((s) => s.id === story)?.title ?? 'Inbox')}</h2>
 		{#if picked.length}
 			<ul class="picked">{#each picked as p (p)}<li title={p}>{name(p)}</li>{/each}</ul>
 			{#if scan}
 				<p class="scan">{scan.files} files · {gb(scan.bytes)} · {Object.entries(scan.kinds).map(([k, n]) => `${n} ${k}`).join(' · ')}</p>
 			{/if}
-			<label>Tags <input bind:value={tags} placeholder="Day 20, A7IV" disabled={running} /></label>
+			<label>Class
+				<select bind:value={klass} disabled={running}>
+					<option value="">told from each file (camera and recorder files: original; the rest: default)</option>
+					{#each BY_HAND as c (c)}<option value={c}>{c}</option>{/each}
+				</select>
+			</label>
+			<label>Tags <input bind:value={tags} placeholder="A7IV, drone" disabled={running} /></label>
 			<div class="actions">
 				<button class="primary" onclick={start} disabled={running || !scan?.files}>
 					{running ? 'Ingesting…' : `Ingest ${scan?.files ?? ''} files`}
@@ -160,6 +197,8 @@
 			</div>
 		{/if}
 		{#if error}<p class="err">{error}</p>{/if}
+		{#if showDevices}<div class="devices"><Devices /></div>{/if}
+		<StoryTable {story} stories={storyList} {reload} onchanged={() => storiesPanel?.load()} />
 	</div>
 
 	<div class="log">
@@ -180,7 +219,13 @@
 </section>
 
 <style>
-	.ingest { grid-area: main; display: grid; grid-template-columns: 17rem 1fr 1.2fr; gap: 1px; background: var(--edge); min-height: 0; }
+	.ingest { grid-area: main; display: grid; grid-template-columns: 19rem minmax(0, 1fr) 22rem; gap: 1px; background: var(--edge); min-height: 0; }
+	.batch { display: flex; flex-direction: column; gap: 0.2rem; min-height: 0; }
+	.batch > :global(.table) { flex: 1; margin-top: 1rem; }
+	.devices { margin-top: 1.5rem; border: 1px solid var(--edge); border-radius: 12px; background: var(--bg); }
+	select { padding: 0.45rem 0.6rem; border: 1px solid var(--edge); border-radius: 8px; background: #fff; font: inherit; color: var(--ink); }
+	.switches { display: flex; flex-direction: column; gap: 0.5rem; margin-top: 1.2rem; padding-top: 0.8rem; border-top: 1px solid var(--edge); }
+	.switch { flex-direction: row; align-items: center; gap: 0.45rem; margin: 0; }
 	.ingest.dragging { outline: 3px dashed var(--accent); outline-offset: -6px; }
 	.ingest > * { padding: 1rem 1.2rem; background: var(--panel); overflow: auto; }
 	h2 { margin: 0 0 0.8rem; font-size: 0.7rem; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--dim); }

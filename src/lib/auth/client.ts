@@ -124,6 +124,10 @@ export type MediaItem = {
 	public: boolean;
 	/** the name it came in with — a fact about it, never how it is found */
 	original_name?: string;
+	/** its one story (a story id); none: the inbox */
+	story?: string;
+	/** default · original · proxy · delivery */
+	class?: string;
 };
 
 // ── the media vault: devices the admin paired (only these sync), and revoking one ──
@@ -147,7 +151,9 @@ export async function listMedia(): Promise<MediaItem[]> {
 		tags: f.tags ?? [],
 		meta: f.meta ?? {},
 		public: f.public ?? false,
-		original_name: f.original_name
+		original_name: f.original_name,
+		story: f.story || undefined,
+		class: f.class || 'default'
 	}));
 }
 

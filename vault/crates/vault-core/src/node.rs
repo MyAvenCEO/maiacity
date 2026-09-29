@@ -4,9 +4,10 @@
 //! server peer exists the node runs without a relay; peers are added by address (see skill `connectivity.md`).
 
 use std::{
+    collections::HashMap,
     path::{Path, PathBuf},
     sync::{
-        Arc,
+        Arc, Mutex,
         atomic::{AtomicU64, Ordering},
     },
     time::{Duration, Instant},
@@ -19,7 +20,8 @@ use iroh::{
 };
 use iroh_blobs::{
     BlobsProtocol,
-    provider::events::{EventMask, EventSender, ProviderMessage, ThrottleMode},
+    Hash,
+    provider::events::{ConnectMode, EventMask, EventSender, ProviderMessage, RequestMode, RequestUpdate, ThrottleMode},
     store::fs::FsStore,
 };
 use iroh_docs::{DocTicket, protocol::Docs};
@@ -38,7 +40,59 @@ pub struct Vault {
     lookup: MemoryLookup,
     /// how fast this node sends files to its peers, in bytes per second (0 = as fast as it can)
     pub upload_limit: Arc<AtomicU64>,
+    /// every file this node is sending or just sent, and to whom — as iroh reports each request
+    pub transfers: Transfers,
     router: Router,
+}
+
+/// One file on its way to a peer (the server pulling it into Object Storage, another device fetching it).
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct Transfer {
+    pub hash: String,
+    /// the peer it goes to (its endpoint id)
+    pub to: String,
+    pub size: u64,
+    pub sent: u64,
+    /// bytes per second since it started
+    pub rate: f64,
+    pub done: bool,
+    pub aborted: bool,
+    #[serde(skip)]
+    pub started: Option<Instant>,
+    #[serde(skip)]
+    pub ended: Option<Instant>,
+}
+
+/// The transfers of the last minute, newest state per file and peer.
+#[derive(Clone, Default)]
+pub struct Transfers(Arc<Mutex<HashMap<(Hash, String), Transfer>>>);
+
+impl Transfers {
+    /// What is moving now, and what ended in the last minute.
+    pub fn now(&self) -> Vec<Transfer> {
+        let mut all = self.0.lock().unwrap();
+        all.retain(|_, t| t.ended.is_none_or(|e| e.elapsed() < Duration::from_secs(60)));
+        all.values().cloned().collect()
+    }
+
+    pub fn update(&self, hash: Hash, to: &str, f: impl FnOnce(&mut Transfer)) {
+        let mut all = self.0.lock().unwrap();
+        let t = all.entry((hash, to.to_string())).or_insert_with(|| Transfer {
+            hash: hash.to_hex(),
+            to: to.to_string(),
+            size: 0,
+            sent: 0,
+            rate: 0.0,
+            done: false,
+            aborted: false,
+            started: Some(Instant::now()),
+            ended: None,
+        });
+        f(t);
+        if let Some(s) = t.started {
+            t.rate = t.sent as f64 / s.elapsed().as_secs_f64().max(0.001);
+        }
+    }
 }
 
 /// What joining needs, from the API once the passkey approved this Mac: the shared catalog (with the server's
@@ -81,11 +135,57 @@ impl Vault {
 
         // the upload limit: iroh-blobs asks before it sends each 16 KiB, and a token bucket lets it wait
         let upload_limit = Arc::new(AtomicU64::new(0));
-        let (events, mut asks) = EventSender::channel(64, EventMask { throttle: ThrottleMode::Intercept, ..EventMask::DEFAULT });
+        // and every request's progress: which file goes to whom, how far it is
+        let mask = EventMask { throttle: ThrottleMode::Intercept, connected: ConnectMode::Notify, get: RequestMode::NotifyLog, ..EventMask::DEFAULT };
+        let (events, mut asks) = EventSender::channel(64, mask);
         let limit = upload_limit.clone();
+        let transfers = Transfers::default();
+        let track = transfers.clone();
         tokio::spawn(async move {
             let (mut budget, mut last) = (0f64, Instant::now());
+            let mut peers: HashMap<u64, String> = HashMap::new();
             while let Some(msg) = asks.recv().await {
+                if let ProviderMessage::ClientConnectedNotify(c) = &msg {
+                    if let Some(id) = c.endpoint_id {
+                        peers.insert(c.connection_id, id.to_string());
+                    }
+                    continue;
+                }
+                if let ProviderMessage::ConnectionClosed(c) = &msg {
+                    peers.remove(&c.inner.connection_id);
+                    continue;
+                }
+                if let ProviderMessage::GetRequestReceivedNotify(r) = msg {
+                    let to = peers.get(&r.connection_id).cloned().unwrap_or_default();
+                    let (track, mut rx) = (track.clone(), r.rx);
+                    tokio::spawn(async move {
+                        let mut hash = None;
+                        while let Ok(Some(update)) = rx.recv().await {
+                            match update {
+                                RequestUpdate::Started(s) => {
+                                    hash = Some(s.hash);
+                                    track.update(s.hash, &to, |t| (t.size, t.sent, t.done, t.aborted, t.started, t.ended) = (s.size, 0, false, false, Some(Instant::now()), None));
+                                }
+                                RequestUpdate::Progress(p) => {
+                                    if let Some(h) = hash {
+                                        track.update(h, &to, |t| t.sent = p.end_offset);
+                                    }
+                                }
+                                RequestUpdate::Completed(_) => {
+                                    if let Some(h) = hash {
+                                        track.update(h, &to, |t| (t.sent, t.done, t.ended) = (t.size, true, Some(Instant::now())));
+                                    }
+                                }
+                                RequestUpdate::Aborted(_) => {
+                                    if let Some(h) = hash {
+                                        track.update(h, &to, |t| (t.aborted, t.ended) = (true, Some(Instant::now())));
+                                    }
+                                }
+                            }
+                        }
+                    });
+                    continue;
+                }
                 if let ProviderMessage::Throttle(t) = msg {
                     let rate = limit.load(Ordering::Relaxed) as f64;
                     if rate > 0.0 {
@@ -109,7 +209,7 @@ impl Vault {
             .spawn();
 
         let catalog = Catalog::open(&dir, &docs, &store).await?;
-        Ok(Self { dir, endpoint, store, docs, catalog, allow, lookup, upload_limit, router })
+        Ok(Self { dir, endpoint, store, docs, catalog, allow, lookup, upload_limit, transfers, router })
     }
 
     /// Join the vault's network: our relay, the server's address, the paired devices, and the shared catalog —

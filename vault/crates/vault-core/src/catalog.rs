@@ -4,6 +4,12 @@
 //!   blobs/<hash>    → the file itself; every full node fetches these (native pinning)
 //!   meta/<hash>     → a small JSON about the file (a blob too, so it syncs exactly like files)
 //!   ingest/<id>     → an ingest session's report
+//!   story/<id>      → a story: its title, description, series, episode, and where each class of its files is kept
+//!
+//! Every file belongs to exactly one story — its `meta` names it (one description per file, so never two) — or to
+//! the inbox (no story named). The inbox's id is the catalog's own. A story's id is an iroh namespace key: the day a
+//! story becomes a replica of its own (a device that syncs only some stories, only some classes), its id stays.
+//! Underneath everything stays flat: files by hash, in every store.
 //!
 //! A new Mac starts with a catalog of its own; when it joins (the server peer's catalog, handed over by the API once
 //! the passkey approved this Mac) everything it already had is written into the shared one.
@@ -51,6 +57,56 @@ pub struct Meta {
     pub ingest: String,
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub added: String,
+    /// the one story it belongs to (a story id); empty: the inbox
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub story: String,
+    /// default · original · proxy · delivery (empty reads as default)
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub class: String,
+}
+
+/// The classes a story keeps its files in, each with its own destinations.
+pub const CLASSES: [&str; 4] = ["default", "original", "proxy", "delivery"];
+
+/// Where each class of a story's files is kept: store names ("avenSSD", "hetzner", a drive's name later).
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct Rules {
+    pub default: Vec<String>,
+    pub original: Vec<String>,
+    pub proxy: Vec<String>,
+    pub delivery: Vec<String>,
+}
+
+impl Default for Rules {
+    /// For now every class: this Mac's avenSSD and the server's Object Storage — two copies, the least there may be.
+    fn default() -> Self {
+        let two = || vec!["avenSSD".to_string(), "hetzner".to_string()];
+        Self { default: two(), original: two(), proxy: two(), delivery: two() }
+    }
+}
+
+/// A story: the bucket everything of one story lives in — originals, proxies, sound, stills, metadata, deliveries.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct Story {
+    /// an iroh namespace id (64 hex): never changes, whatever the title becomes
+    #[serde(default)]
+    pub id: String,
+    /// at most five words
+    pub title: String,
+    /// the full hook
+    #[serde(default)]
+    pub description: String,
+    #[serde(default)]
+    pub series: String,
+    #[serde(default)]
+    pub episode: String,
+    #[serde(default)]
+    pub rules: Rules,
+    #[serde(default)]
+    pub created: String,
+    /// the namespace's secret: kept so the story can become its own replica under the same id
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub key: String,
 }
 
 impl Catalog {
@@ -126,6 +182,14 @@ impl Catalog {
         if let Some(p) = patch.get("public").and_then(|v| v.as_bool()) {
             meta.public = p;
         }
+        // its one story (the inbox's id, or empty, puts it back in the inbox)
+        if let Some(st) = text("story") {
+            meta.story = if st == self.inbox_id() { String::new() } else { st };
+        }
+        if let Some(c) = text("class") {
+            anyhow::ensure!(CLASSES.contains(&c.as_str()), "a file's class is one of {}", CLASSES.join(", "));
+            meta.class = c;
+        }
         if let Some(extra) = patch.get("meta").and_then(|v| v.as_object()) {
             let mut m = meta.meta.as_object().cloned().unwrap_or_default();
             for (k, v) in extra {
@@ -154,6 +218,56 @@ impl Catalog {
         let Some(entry) = self.doc().get_one(query).await? else { return Ok(None) };
         let Ok(bytes) = self.store.blobs().get_bytes(entry.content_hash()).await else { return Ok(None) };
         Ok(Some(serde_json::from_slice(&bytes)?))
+    }
+
+    /// The inbox's id: the catalog's own.
+    pub fn inbox_id(&self) -> String {
+        self.id().to_string()
+    }
+
+    /// Every story, the inbox first (with the default rules until they are set).
+    pub async fn stories(&self) -> Result<Vec<Story>> {
+        let entries: Vec<_> = self.doc().get_many(Query::single_latest_per_key().key_prefix("story/")).await?.collect().await;
+        let mut out = Vec::new();
+        for entry in entries {
+            let entry = entry?;
+            if let Ok(bytes) = self.store.blobs().get_bytes(entry.content_hash()).await {
+                if let Ok(story) = serde_json::from_slice::<Story>(&bytes) {
+                    out.push(story);
+                }
+            }
+        }
+        let inbox = self.inbox_id();
+        if !out.iter().any(|s| s.id == inbox) {
+            out.push(Story { id: inbox.clone(), title: "Inbox".into(), description: "Everything that belongs to no story yet".into(), ..Default::default() });
+        }
+        out.sort_by(|a, b| (a.id != inbox).cmp(&(b.id != inbox)).then(a.series.cmp(&b.series)).then(a.episode.cmp(&b.episode)).then(a.title.cmp(&b.title)));
+        Ok(out)
+    }
+
+    /// Create a story (no id yet: a new namespace key) or change one. Returns it as kept.
+    pub async fn save_story(&self, mut story: Story) -> Result<Story> {
+        story.title = story.title.trim().to_string();
+        anyhow::ensure!(!story.title.is_empty(), "a story has a title");
+        anyhow::ensure!(story.title.split_whitespace().count() <= 5, "a story's title is at most five words");
+        let r = &story.rules;
+        for (class, to) in [("default", &r.default), ("original", &r.original), ("proxy", &r.proxy), ("delivery", &r.delivery)] {
+            anyhow::ensure!(to.len() >= 2, "every class is kept in at least two places ({class}: {})", to.len());
+        }
+        if story.id.is_empty() {
+            let secret = iroh_docs::NamespaceSecret::from_bytes(&iroh::SecretKey::generate().to_bytes());
+            story.id = secret.id().to_string();
+            story.key = secret.to_bytes().iter().map(|b| format!("{b:02x}")).collect();
+            story.created = crate::ingest::now_iso();
+        } else if let Some(old) = self.stories().await?.into_iter().find(|s| s.id == story.id) {
+            // what a save does not carry stays as it was
+            story.key = old.key;
+            if story.created.is_empty() {
+                story.created = old.created;
+            }
+        }
+        self.doc().set_bytes(self.author, format!("story/{}", story.id), serde_json::to_vec_pretty(&story)?).await?;
+        Ok(story)
     }
 
     /// Every file's description whose JSON is here, newest entry per key.
