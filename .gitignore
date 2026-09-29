@@ -7,6 +7,8 @@ node_modules
 .wrangler
 /.svelte-kit
 /build
+/vault/target/
+/vault/app/gen/
 
 # OS
 .DS_Store
@@ -49,7 +51,3 @@ static/**/*.pdf
 
 # the local database's manifest (bun media seed --local): the site loads unsynced files from the local API
 /src/lib/media/manifest.local.json
-
-# The vault (Rust): build output, and the icon generator source
-/vault/target/
-/vault/app/gen/

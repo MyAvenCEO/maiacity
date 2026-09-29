@@ -35,6 +35,8 @@
 	let kind = $state('all');
 	let open = $state<Meta | null>(null);
 	let dragging = $state(false);
+	let auth = $state<{ signed_in: boolean; api: string; reason: string | null } | null>(null);
+	let device = $state<{ user_code: string; url: string } | null>(null);
 
 	let invoke: (cmd: string, args?: Record<string, unknown>) => Promise<any>;
 	const unlisten: Array<() => void> = [];
@@ -44,6 +46,20 @@
 	const name = (p: string) => p.split('/').filter(Boolean).pop() ?? p;
 	const shown = $derived(kind === 'all' ? library : library.filter((m) => m.kind === kind));
 	const done = $derived(rows.filter((r) => r.outcome));
+
+	async function signIn() {
+		error = '';
+		try {
+			device = await invoke('auth_start');
+		} catch (e) {
+			error = String(e);
+		}
+	}
+
+	async function signOut() {
+		auth = await invoke('auth_sign_out');
+		device = null;
+	}
 
 	async function refresh() {
 		status = await invoke('vault_status');
@@ -112,7 +128,16 @@
 				}
 			})
 		);
-		await refresh();
+		unlisten.push(
+			await listen<typeof auth>('auth', async ({ payload }) => {
+				auth = payload;
+				device = null;
+				if (payload?.signed_in) await refresh();
+				else if (payload?.reason) error = payload.reason;
+			})
+		);
+		auth = await invoke('auth_status');
+		if (auth?.signed_in) await refresh();
 	});
 	onDestroy(() => unlisten.forEach((u) => u()));
 </script>
@@ -124,7 +149,22 @@
 		<h1>maiaCITY Studio</h1>
 		<p>The vault, ingest and every studio function live in the Mac app only.</p>
 	</main>
-{:else if native}
+{:else if native && auth && !auth.signed_in}
+	<main class="gate">
+		<strong class="brand">maia<b>CITY</b> Studio</strong>
+		<h1>Sign in with your passkey</h1>
+		{#if device}
+			<p>Your browser opened maia.city. Approve this Mac there with your passkey — the code is</p>
+			<p class="code">{device.user_code}</p>
+			<p class="quiet">Waiting for your approval… <button class="link" onclick={() => invoke('auth_open', { url: device!.url })}>Open the page again</button></p>
+		{:else}
+			<p>The studio is the admin's. This Mac asks maia.city for a key; you approve it once with your passkey in your browser.</p>
+			<button class="primary" onclick={signIn}>Sign in with your passkey</button>
+		{/if}
+		{#if auth.reason || error}<p class="bad">{error || auth.reason}</p>{/if}
+		<p class="quiet small">{auth.api}</p>
+	</main>
+{:else if native && auth}
 	<div class="app" class:dragging>
 		<header>
 			<strong>maia<b>CITY</b> Studio</strong>
@@ -135,6 +175,7 @@
 			{#if status}
 				<span class="meta">{gb(status.bytes)} in the vault · {gb(status.disk_free)} free on this Mac · node {status.endpoint.slice(0, 10)}…</span>
 			{/if}
+			<button class="link out" onclick={signOut}>Sign out</button>
 		</header>
 
 		{#if tab === 'ingest'}
@@ -253,6 +294,12 @@
 <style>
 	.app { min-height: 100vh; background: var(--paper); color: var(--ink); font-family: var(--font-body); display: flex; flex-direction: column; }
 	.app.dragging { outline: 4px dashed var(--mustard); outline-offset: -8px; }
+	.gate { max-width: 30rem; margin: 18vh auto; padding: 0 16px; font-family: var(--font-body); color: var(--ink); display: flex; flex-direction: column; gap: 12px; align-items: flex-start; }
+	.gate h1 { font-family: var(--font-display); font-weight: 500; font-size: 34px; margin: 8px 0 0; }
+	.gate .brand { font-family: var(--font-display); font-weight: 500; }
+	.gate .code { font-family: ui-monospace, monospace; font-size: 34px; letter-spacing: 0.12em; background: var(--cream); padding: 10px 18px; border-radius: 12px; margin: 0; }
+	.small { font-size: 12px; }
+	.out { margin-left: 12px; font-size: 13px; }
 	.away { max-width: 32rem; margin: 20vh auto; padding: 0 16px; font-family: var(--font-body); color: var(--ink); }
 	header { display: flex; align-items: center; gap: 24px; padding: 14px 20px; border-bottom: 1px solid var(--line); background: var(--cream); }
 	header strong { font-family: var(--font-display); font-size: 18px; font-weight: 500; }

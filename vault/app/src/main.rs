@@ -3,6 +3,8 @@
 //! this Mac's SSD), ingest with the three-hash check, and `vault://localhost/<hash>` — the bytes of any file, with
 //! Range, for <img> and <video>.
 
+mod auth;
+
 use std::{
     io::SeekFrom,
     path::PathBuf,
@@ -27,6 +29,11 @@ struct App {
 }
 
 type Res<T> = Result<T, String>;
+
+/// The admin gate: nothing in the vault answers until this Mac is signed in with the admin's passkey.
+fn gate() -> Res<()> {
+    if auth::signed_in() { Ok(()) } else { Err("Sign in with your passkey first.".into()) }
+}
 fn err(e: impl std::fmt::Display) -> String {
     format!("{e:#}")
 }
@@ -44,6 +51,7 @@ struct Status {
 
 #[tauri::command]
 async fn vault_status(app: State<'_, App>) -> Res<Status> {
+    gate()?;
     let v = &app.vault;
     let list = v.catalog.list().await.map_err(err)?;
     let (free, total) = disk_space(&v.dir);
@@ -60,6 +68,7 @@ async fn vault_status(app: State<'_, App>) -> Res<Status> {
 
 #[tauri::command]
 async fn vault_list(app: State<'_, App>) -> Res<Vec<Meta>> {
+    gate()?;
     let mut list = app.vault.catalog.list().await.map_err(err)?;
     list.sort_by(|a, b| b.added.cmp(&a.added).then(a.original_name.cmp(&b.original_name)));
     Ok(list)
@@ -76,6 +85,7 @@ struct Source {
 /// Cards and drives: everything mounted under /Volumes except the system disk.
 #[tauri::command]
 fn vault_sources() -> Res<Vec<Source>> {
+    gate()?;
     let mut out = Vec::new();
     for e in std::fs::read_dir("/Volumes").map_err(err)? {
         let e = e.map_err(err)?;
@@ -99,6 +109,7 @@ struct Scan {
 
 #[tauri::command]
 async fn vault_scan(paths: Vec<String>) -> Res<Scan> {
+    gate()?;
     tauri::async_runtime::spawn_blocking(move || {
         let mut scan = Scan { files: 0, bytes: 0, kinds: Default::default() };
         for p in paths {
@@ -139,6 +150,7 @@ struct Summary {
 /// (event `ingest`). The session's report goes into the catalog as `ingest/<session>`.
 #[tauri::command]
 async fn vault_ingest(handle: AppHandle, app: State<'_, App>, paths: Vec<String>, tags: Vec<String>) -> Res<Summary> {
+    gate()?;
     if app.busy.swap(true, Ordering::SeqCst) {
         return Err("an ingest is already running".into());
     }
@@ -201,6 +213,9 @@ async fn serve(vault: Arc<Vault>, request: Request<Vec<u8>>) -> Response<Vec<u8>
     let reply = |status: StatusCode, body: &str| {
         Response::builder().status(status).body(body.as_bytes().to_vec()).unwrap_or_default()
     };
+    if !auth::signed_in() {
+        return reply(StatusCode::UNAUTHORIZED, "sign in first");
+    }
     let hex = request.uri().path().trim_start_matches('/').split(['.', '/']).next().unwrap_or("");
     let Ok(hash) = hex.parse::<Hash>() else { return reply(StatusCode::BAD_REQUEST, "not a hash") };
     let size = match vault.store.blobs().status(hash).await {
@@ -268,6 +283,7 @@ fn main() {
 
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
+        .manage(auth::Auth::default())
         .setup(|app| {
             let vault = tauri::async_runtime::block_on(Vault::open(vault_dir()))?;
             app.manage(App { vault: Arc::new(vault), busy: AtomicBool::new(false) });
@@ -277,7 +293,18 @@ fn main() {
             let vault = ctx.app_handle().state::<App>().vault.clone();
             tauri::async_runtime::spawn(async move { responder.respond(serve(vault, request).await) });
         })
-        .invoke_handler(tauri::generate_handler![vault_status, vault_list, vault_sources, vault_scan, vault_ingest])
+        .invoke_handler(tauri::generate_handler![
+            auth::auth_status,
+            auth::auth_start,
+            auth::auth_sign_out,
+            auth::auth_open,
+            auth::api,
+            vault_status,
+            vault_list,
+            vault_sources,
+            vault_scan,
+            vault_ingest
+        ])
         .build(tauri::generate_context!())
         .expect("start maiaCITY Studio")
         .run(|handle, event| {
