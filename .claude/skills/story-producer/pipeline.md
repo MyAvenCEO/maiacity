@@ -23,21 +23,30 @@ the terminal is signed in with `bun media login --local`. `FAL_API_KEY` lives in
    A1, the score on A2, sfx on A3.
 7. Play it at `http://localhost:5173/app/studio`, full screen. Run the audit (below). Repeat until approved.
 
-**Step 2: the film (slow, expensive, only after approval)**
-1. Shoot: `node scripts/film/shoot.mjs scripts/film/<film>.mjs` (`--only 3,7` reshoots shots 3 and 7).
-2. Into the library: `bun api/scripts/.full-timeline.ts --local --variant G` brings every shot in and builds the
-   timeline; or `api/scripts/.live-timeline.ts` swaps each shot into the storyboard the moment it is written.
-   (`studio/film/` is only the shooting's scratch folder — the library holds the result.)
-3. In the studio, **+ Variant** branches the edit under the project's next letter.
-4. Export: **⤓ Render** in the studio, with `bun film worker --local` running. The worker renders the timeline exactly
-   as edited into every shape (16:9 4K HEVC master + 1080 H.264, 9:16, 1:1), lays the hook text over the social
-   copies' first seconds, and brings each file into the library and onto the content board.
+**Step 2: the film (slow, expensive, only after approval)** — Edit → Grade → Render, like a real post house
+1. World shots become data, not files: `bun api/scripts/world-timeline.ts --local --from G --variant W` turns each shot
+   of the list into a shot record (`/api/shots`: camera, lens, hour, metered exposure, lights, cues) and builds a
+   variant with a **world clip** in each shot's place. Each shot version gets an HD log proxy automatically.
+   (Old way, still works: `node scripts/film/shoot.mjs <list>` renders log plates you bring in as files.)
+2. iPhone footage (HEVC Apple Log / Apple Log 2), other camera files and AI EXR sequences: `bun media add` / upload
+   in the studio. The colour space is detected (set it in the Bin when a file doesn't say, e.g. an untagged Apple
+   Log 2 clip); an HD proxy in the same log encoding is made. Originals are never re-encoded.
+3. **Edit** tab: cut on proxies and the live world, then **Lock the edit** (the cut is then fixed; unlock = version
+   n+1). **+ Variant** branches the edit under the project's next letter.
+4. **Grade** tab: originals swapped in (conform), clip CDLs + the film's look (presets), scopes; **Hero frame**
+   renders the frame at the playhead at full size, 16-bit, through the whole chain — judge the grade on it.
+5. **Render** tab: **⤓ Render**, with `bun film worker --local` running **on the Mac** (world plates render only on a
+   Mac's GPU, Chrome on Metal — there is no software path; elsewhere world jobs fail with that message). The worker
+   renders world plates at each delivery's size (cached by fingerprint), then the timeline into every shape (16:9 4K
+   HEVC master + 1080 H.264, 9:16, 1:1, 4:5), lays the hook text over the social copies' first seconds, and brings
+   each file into the library and onto the content board; the timeline's stage becomes "rendered".
    Colour-managed (game/film/color.js, transforms.js): each picture clip goes through its input transform into
    ACEScct, its grade and the film's look, the ACES 2.0 output transform to Rec.709, then the captions; an ungraded
    Rec.709/sRGB clip bypasses both and renders as it was. Every delivery is QC'd (BT.709/TV tags, 10-bit master,
    frames, loudness) before the library. The same worker makes each new file's HD log proxy (`meta.color`,
-   `meta.proxy`) and the studio's preview LUTs. It needs ffmpeg with zimg (Homebrew's has it) and
-   `pip install opencolorio numpy`; LUTs are baked from the configs while rendering, cached in ~/.cache/maiacity.
+   `meta.proxy`), each world shot's proxy, hero frames and the studio's preview LUTs. It needs ffmpeg with zimg
+   (Homebrew's has it) and `pip install opencolorio numpy`; LUTs are baked from the configs only while rendering,
+   cached in ~/.cache/maiacity. Nothing is ever baked into a source or committed.
    EXR sequences (Luma, Kling, LTX exports) come in with `bun media add-sequence <dir> --profile aces2065-1 --fps 24`.
 
 **Projects and variants:** timelines are grouped by `project` ("Day 19") with variants A, B, C…; each variant is its own
@@ -54,7 +63,7 @@ timeline.
 | `hour`, `hourTo` | sun position, and a time-lapse to |
 | `fov`, `fovTo` | lens: 10–20 long, 40–55 wide (default 45) |
 | `stand: [x, z]`, `dome: i` | where the walker stands; wait for dome i |
-| `exposure`, `mood`, `grade` | the lens opened for a dark shot; the arc's look; an extra ffmpeg filter |
+| `exposure`, `mood`, `grade` | legacy: read by `fromLegacy` as metered stops and a suggested look — the plate itself stays log, the grade is done in the studio |
 | `sfx: [[cid, level]]` | sounds under the shot, looped for its length (by CID) |
 | `props` | a set built into the scene while filming |
 | `path: (t) => pose` | camera pose over t = 0…1 (`camera.mjs`) |

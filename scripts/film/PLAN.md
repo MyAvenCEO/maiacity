@@ -12,7 +12,7 @@ film typecheck). End-to-end run on a local stack: an Apple Log 2 HEVC original (
 `apple-log-2` → HD log proxy re-made), a world shot (its HD log proxy auto-queued and rendered), a timeline of both
 plus a voice, locked (a cut change refused, 409), graded (clip CDLs + film look), a 4K 16-bit hero frame of the iPhone
 clip rendered through IDT → grade → look → ODT. World plates render **only on a Mac (Metal)** — decided the same
-day; the full 4-shape delivery of a cut with world clips is therefore run on the Mac worker. Open: M10 docs; the
+day; the full 4-shape delivery of a cut with world clips is therefore run on the Mac worker. M10 docs done. Open: the
 Day 19 world timeline (`bun api/scripts/world-timeline.ts --from G --variant W`, on the Mac against production);
 render-time LUT accuracy on fully saturated primaries (≈40/1023 codes median off exact OCIO on a colour-bar test,
 ≈2 on realistic colours) — try a larger LUT or a shaper for the chained display LUT.
@@ -239,11 +239,11 @@ sample exists (after M2); **M10** closes each milestone's docs as it lands.
 - **Done when:** iPhone footage and world shots cut side by side in Edit and match after conform in Grade.
 
 ### M10 — Docs and retiring the old path
-- [ ] `story-producer/pipeline.md` and `filming.md`: the new order (capture log → ingest + proxy → Edit → lock →
+- [x] `story-producer/pipeline.md` and `filming.md`: the new order (capture log → ingest + proxy → Edit → lock →
       Grade on originals → Render), the colour standard, how to record a camera move, the world clip record.
-- [ ] Retire the pre-grade: `grade.mjs` stays only to re-grade legacy shots; its exposure logic lives in the film-mode
+- [x] Retire the pre-grade: `grade.mjs` stays only to re-grade legacy shots; its exposure logic lives in the film-mode
       meter, its looks in the grade presets.
-- [ ] Keep old timelines working: legacy clips carry `legacy-graded` and render as before.
+- [x] Keep old timelines working: legacy clips carry `legacy-graded` and render as before.
 
 ---
 

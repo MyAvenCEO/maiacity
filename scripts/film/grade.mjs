@@ -1,3 +1,5 @@
+// LEGACY: the pre-grade for shots filmed before film mode (finished Rec.709). New shots are log plates graded in
+// the studio (scripts/film/PLAN.md) — never run this on them.
 // The grade, shot by shot. The world renders a sunrise, a blue hour or a night far darker than a film should show it
 // (a night frame averaged 4–15 of 255), and a lifted shot goes flat and milky beside the ones lit by day. So every
 // shot is measured and brought to two targets for its hour, on the finished image (exposure, base grade, its look,

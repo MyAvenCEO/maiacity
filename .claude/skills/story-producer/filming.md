@@ -69,12 +69,14 @@ Every shot is a slice of a move that was already going and goes on after it:
 
 ## The camera (`shoot.mjs`)
 
-- Needs `bun run dev` and Chrome, and loads the sandbox page.
-- Takes over the world's clock (a virtual `performance.now` and `requestAnimationFrame`), so every frame is exactly
-  1/30 s after the last — no stutter, whatever the render cost.
-- Frames are drawn at 1.5× and scaled with lanczos; `FILM_SIZE` sets the size. Base grade: contrast 1.05,
-  saturation 1.06, gamma 0.98, vignette, plus the shot's `grade`.
-- The first frame warms up 45 steps so the sun and shadows settle.
+- Runs **on a Mac only** (Chrome on Metal, the Mac's GPU — no software renderer), against `bun run dev` or a pinned
+  build, in Sandbox 4's **film mode** (`/games/sandbox-4/?film`, `window.__film`).
+- A deterministic clock (seeded, a readiness barrier), so every frame is exactly 1/fps after the last.
+- Film mode captures **log, never graded**: scene-linear half-float, metered like a camera (middle grey 18% on the
+  lower 60% of the frame; `exposure.stops` over or under), shutter blur in linear light, 1.5× oversampled, then
+  ACEScct 10-bit. No tone mapping, no contrast, no vignette — the look is made in the studio's Grade tab.
+- A shot is a record (`game/film/shot.js`): the studio plays it live on the timeline and the worker renders the plate
+  only at the final render.
 
 **Camera helpers** (`scripts/film/camera.mjs`; a pose is `[x, y, z, yaw, pitch]`):
 - `move(from, to, aimFrom, aimTo, curve)`; `orbit(centre, a0, a1, r0, r1, y0, y1, aim)`; `turn(at, yaw0, yaw1,
@@ -99,25 +101,23 @@ Every shot is a slice of a move that was already going and goes on after it:
   black. Keep domes from covering the sun's direction (a dome at 100 m stands about 11° high). `__village.sun(hour)`
   sets the sun at once; `shoot.mjs` calls it every frame of a time-lapse. Film towards +x with the disc clear.
 - Night skies read as a black bar in the square frame: prefer dusk, and fill the square with lit domes.
-- Grades: `COLD = 'eq=saturation=0.45:gamma=0.96:contrast=1.04,colorbalance=bs=0.10:ms=0.04:hs=0.02'` for the low;
-  `NIGHT = 'eq=gamma=1.2:saturation=1.08'` for evening and night.
+- Looks for the low and the night are grade presets in the studio (`cold`, `night`, `dip`, `bright`, `warm` in
+  `game/film/color.js`, ASC CDL in ACEScct) — not filters on the shot.
 
-## Exposure, shot by shot (`scripts/film/grade.mjs`)
+## Exposure and grade
 
-The world renders dawn, blue hour and night far too dark, and a grade alone can't rescue near-black without banding.
-1. **Open the lens at render time:** `exposure: n` multiplies the renderer's exposure. Day 19: pre-dawn flight 9,
-   sunrise 1.3 (more burns the sky), night 6–8.
-2. **Grade to a target brightness, measured finished:** `exposureFor(shot, samples, chain)` measures the lower 60% of
-   the frame through the shot's whole chain and corrects gamma until it hits the hour's target (pre-dawn 100,
-   sunrise 106, day 108, blue hour 88, night 72, or the shot's `bright`).
-- Check the storyboard *graded*: the vignette takes another 20–40 off a raw still.
-- **Brightness alone isn't a grade.** Also match the **black level** (the darkest 10% of the lower frame) to the day
-  shots' ≈ 45 (dawn 38, blue hour 32, night 24) by adding contrast, never taking it away.
-- **Moods carry the arc in the grade:** `'dip'` (brightness 86, blacks 26, `DIP`: desaturated to 0.58, a sick
-  green-grey, grain, heavier vignette) for the world as it was; `'bright'` (118, blacks 34, `BRIGHT`: saturation
-  1.14) for the city by day. Push the contrast until it lands (`retention.md`).
-- **Keep the ungraded master:** `shoot.mjs` writes `NN-name.raw.mp4` (crf 12) and grades from it, so
-  `node scripts/film/grade.mjs <list> [--only …]` re-grades without rendering.
+The world renders dawn, blue hour and night far darker than a film should show them. That is fixed at the source,
+like a camera, not by grading a finished image:
+1. **Meter, don't grade:** a shot's `exposure: { meter: 'lock' | 'ramp' | 'fixed', stops }` meters middle grey on the
+   lower 60% of the frame (the land and the domes; a bright sky does not count) and sets `stops` over or under it:
+   pre-dawn and night about +1…+1.5, blue hour +0.5, a sunrise with the disc in frame −0.3 so the sky holds. The
+   metered value is pinned into the shot, so a re-render is identical.
+2. **Grade in the studio** after the edit is locked: a clip's CDL for its own balance, the film's look for the arc
+   (`dip` for the world as it was, `bright` for the city by day — `retention.md`), judged on hero frames.
+- **Brightness alone isn't a grade.** Match the black level of dark shots to the day shots (lift the offset, add
+  contrast with power), and check the storyboard through the output transform, not the raw log still.
+- `scripts/film/grade.mjs` is the old pre-grade on finished Rec.709 shots. It stays only for re-grading legacy shots
+  shot before film mode; never use it for new shots.
 
 ## Framing Sandbox 4
 
@@ -140,4 +140,4 @@ lines, dead trees, eight trucks. The empty plain beyond the edge showed nothing 
 ## Stills pass
 
 Always check `--mid` or `--stills` frames for: foliage filling the lens, walls or pillars in the way, black frames or
-a black sky bar, a dome not built yet, too dark once graded.
+a black sky bar, a dome not built yet, a metered exposure that reads too dark through the output transform.
