@@ -7,6 +7,7 @@ mod auth;
 mod local;
 mod mcp;
 mod proxies;
+mod sources;
 mod stories;
 mod sync;
 
@@ -234,7 +235,7 @@ async fn run_ingest(
     let seconds = started.elapsed().as_secs_f64();
     let bytes = outcomes.iter().map(|o| o.size).sum();
     let count = |v: Verdict| outcomes.iter().filter(|o| o.verdict == v).count();
-    let report = serde_json::json!({ "session": session, "sources": paths, "files": outcomes, "bytes": bytes, "seconds": seconds });
+    let report = serde_json::json!({ "session": session, "sources": paths, "story": batch.story, "files": outcomes, "bytes": bytes, "seconds": seconds });
     let report_hash = vault.catalog.put_report(&session, &report).await?;
     Ok(Summary {
         session,
@@ -399,6 +400,8 @@ fn main() {
             vault_describe,
             log_js,
             stories::stories_list,
+            sources::ingest_sources,
+            sources::release_check,
             sync::vault_transfers,
             stories::story_save,
             stories::story_delete,

@@ -39,6 +39,7 @@ impl Gateway {
             .route("/vault/health", get(|| async { "ok" }))
             .route("/vault/files/{name}", get(file).head(file))
             .route("/vault/log", get(recent))
+            .route("/vault/verify/{hash}", get(verify))
             .with_state(self)
     }
 
@@ -73,6 +74,44 @@ async fn recent(State(g): State<Gateway>, headers: HeaderMap) -> Response {
         return (StatusCode::UNAUTHORIZED, "the admin's key only").into_response();
     }
     g.log.lines().join("\n").into_response()
+}
+
+/// Is the bucket's copy of this file still exactly its bytes? Read back from Object Storage here on the server and
+/// hashed (BLAKE3) — what the studio asks before the admin may let a source go. The admin's key only.
+async fn verify(State(g): State<Gateway>, Path(hash): Path<String>, headers: HeaderMap) -> Response {
+    if !g.admin(&headers).await {
+        return (StatusCode::UNAUTHORIZED, "the admin's key only").into_response();
+    }
+    let hash = hash.to_ascii_lowercase();
+    if hash.len() != 64 || !hash.bytes().all(|b| b.is_ascii_hexdigit()) {
+        return (StatusCode::BAD_REQUEST, "a file is named by its 64-hex BLAKE3 hash").into_response();
+    }
+    let started = Instant::now();
+    let mut res = match g.s3.get(&s3::blob_key(&hash), None).await {
+        Ok(r) if r.status().is_success() => r,
+        Ok(r) if r.status().as_u16() == 404 => return axum::Json(serde_json::json!({ "hash": hash, "ok": false, "state": "missing" })).into_response(),
+        Ok(r) => return (StatusCode::BAD_GATEWAY, format!("storage: {}", r.status())).into_response(),
+        Err(e) => return (StatusCode::BAD_GATEWAY, format!("storage: {e}")).into_response(),
+    };
+    let mut hasher = blake3::Hasher::new();
+    let mut size = 0u64;
+    loop {
+        match res.chunk().await {
+            Ok(Some(c)) => {
+                size += c.len() as u64;
+                hasher.update(&c);
+            }
+            Ok(None) => break,
+            Err(e) => return (StatusCode::BAD_GATEWAY, format!("storage broke off: {e}")).into_response(),
+        }
+    }
+    let got = hasher.finalize().to_hex().to_string();
+    let ok = got == hash;
+    if !ok {
+        tracing::error!("{hash}: the bucket's copy hashes to {got}");
+    }
+    axum::Json(serde_json::json!({ "hash": hash, "ok": ok, "state": if ok { "verified" } else { "corrupt" }, "size": size, "seconds": started.elapsed().as_secs_f64() }))
+        .into_response()
 }
 
 async fn file(State(g): State<Gateway>, Path(name): Path<String>, headers: HeaderMap) -> Response {

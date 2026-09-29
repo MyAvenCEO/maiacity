@@ -207,6 +207,22 @@ impl Catalog {
         self.doc().set_bytes(self.author, format!("ingest/{id}"), serde_json::to_vec_pretty(report)?).await
     }
 
+    /// Every ingest session's report whose JSON is here, newest first.
+    pub async fn reports(&self) -> Result<Vec<serde_json::Value>> {
+        let entries: Vec<_> = self.doc().get_many(Query::single_latest_per_key().key_prefix("ingest/")).await?.collect().await;
+        let mut out = Vec::new();
+        for entry in entries {
+            let entry = entry?;
+            if let Ok(bytes) = self.store.blobs().get_bytes(entry.content_hash()).await {
+                if let Ok(report) = serde_json::from_slice::<serde_json::Value>(&bytes) {
+                    out.push(report);
+                }
+            }
+        }
+        out.sort_by(|a, b| b["session"].as_str().cmp(&a["session"].as_str()));
+        Ok(out)
+    }
+
     /// Is this file already in the catalog?
     pub async fn has(&self, hash: Hash) -> Result<bool> {
         Ok(self.doc().get_one(Query::key_exact(format!("blobs/{}", hash.to_hex()))).await?.is_some())
