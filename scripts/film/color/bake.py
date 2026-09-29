@@ -14,7 +14,8 @@
 #       how far a LUT of that size is from OCIO itself (10-bit code values)
 #
 # Config kinds: 'ocio-view' (display/view, forward or inverse), 'ocio-convert' (src → dst colour space),
-# 'ocio-group' (builtin curves, matrices and conversions chained). 'identity' and 'math' configs are exact maths the
+# 'ocio-group' (builtin curves, matrices and conversions chained), 'cdl' (the ASC CDL of color.js) and 'chain'
+# (several of these one after the other, baked into one LUT). 'identity' and 'math' configs are exact maths the
 # worker does with ffmpeg filters; they are not baked here.
 #
 # Needs OpenColorIO ≥ 2.5 and numpy (pip install opencolorio numpy).
@@ -23,9 +24,39 @@ import numpy as np
 import PyOpenColorIO as ocio
 
 
+LUMA = np.array([0.2126, 0.7152, 0.0722], dtype=np.float64)
+
+
+class Cdl:
+    # the ASC CDL in ACEScct, exactly as cdl() in game/film/color.js: slope, offset, power per channel (held at 0
+    # before a power), then saturation around Rec.709 luma
+    def __init__(self, g):
+        self.slope, self.offset, self.power = (np.array(g[k], dtype=np.float64) for k in ('slope', 'offset', 'power'))
+        self.sat = float(g['sat'])
+
+    def applyRGB(self, rgb):
+        v = rgb.astype(np.float64) * self.slope + self.offset
+        v = np.where(self.power == 1, v, np.power(np.maximum(v, 0), self.power))
+        l = (v @ LUMA)[:, None]
+        rgb[...] = (l + self.sat * (v - l)).astype(np.float32)
+
+
+class Chain:
+    def __init__(self, steps):
+        self.steps = [processor(s) for s in steps]
+
+    def applyRGB(self, rgb):
+        for p in self.steps:
+            p.applyRGB(rgb)
+
+
 def processor(conf):
-    cfg = ocio.Config.CreateFromBuiltinConfig(conf['config'])
     kind = conf['kind']
+    if kind == 'cdl':
+        return Cdl(conf['cdl'])
+    if kind == 'chain':
+        return Chain(conf['steps'])
+    cfg = ocio.Config.CreateFromBuiltinConfig(conf['config'])
     if kind == 'ocio-view':
         d = ocio.TRANSFORM_DIR_FORWARD if conf['direction'] == 'forward' else ocio.TRANSFORM_DIR_INVERSE
         t = ocio.DisplayViewTransform(src=conf['colorspace'], display=conf['display'], view=conf['view'], direction=d)
@@ -58,7 +89,7 @@ def grid(n):
 def apply(proc, rgb):
     out = np.ascontiguousarray(rgb, dtype=np.float32).copy()
     proc.applyRGB(out)
-    return out
+    return out.reshape(-1, 3)
 
 
 def table(proc, n):

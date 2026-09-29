@@ -14,7 +14,7 @@ import { homedir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { PROFILES, cdl, isNeutral, satMatrix } from '../../../game/film/color.js';
-import { hashOf, hlgToScene, HLG_SCALE, LUT_SIZE, pqToNits, PQ_SCALE, SHAPER, shaperToCct, TRANSFORMS } from '../../../game/film/transforms.js';
+import { displayChain, hashOf, hlgToScene, HLG_SCALE, LUT_SIZE, pqToNits, PQ_SCALE, SHAPER, shaperToCct, TRANSFORMS } from '../../../game/film/transforms.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 export const BAKE = resolve(HERE, 'bake.py');
@@ -25,7 +25,7 @@ const PYTHON = process.env.PYTHON ?? 'python3';
 /** @typedef {import('../../../game/film/color.js').Cdl} Cdl */
 /** @typedef {import('../../../game/film/color.js').Profile} Profile */
 /** @typedef {import('../../../game/film/transforms.js').TransformConfig} TransformConfig */
-/** @typedef {keyof typeof TRANSFORMS} TransformName */
+/** @typedef {import('../../../game/film/transforms.js').TransformName} TransformName */
 
 /** @type {string | null} */
 let ocio = null;
@@ -132,7 +132,7 @@ export function idtFilters(name) {
 			const decode = config.decode === 'hlg' ? (/** @type {number} */ v) => hlgToScene(v) * config.scale : (/** @type {number} */ v) => pqToNits(v) * config.scale;
 			filters.push(`lut1d=file=${q(curveLut({ decode: config.decode, scale: config.scale }, (v) => { const x = decode(v); return [x, x, x]; }).file)}:interp=linear`);
 		}
-		if (config.matrix) filters.push(matrixFilter(/** @type {number[][]} */ (/** @type {unknown} */ (config.matrix))));
+		if (config.matrix) filters.push(matrixFilter(config.matrix));
 		const shaper = linearToCct();
 		filters.push(...shaper.filters);
 		return { filters, hash: hashOf({ config, shaper: shaper.hash }) };
@@ -213,6 +213,17 @@ export function clipColor(o) {
 	const used = {};
 	if (bypasses(o.profile, o.grade, o.look)) return { bypass: true, before: [], after: bypassToYuv(o.coding), used };
 	const profile = o.profile === 'unknown' ? 'rec709' : o.profile;
+	if (PROFILES[profile].display) {
+		// a graded display-referred clip: inverse ODT → its grade → the look → ODT, as one LUT baked now
+		const grade = isNeutral(o.grade) ? null : o.grade, look = isNeutral(o.look) ? null : o.look;
+		const { file, hash } = bakedLut(displayChain(grade, look), { name: 'display-chain' });
+		used['idt-rec709'] = hashOf(TRANSFORMS['idt-rec709']);
+		if (grade) used['grade:clip'] = hashOf(grade);
+		if (look) used['grade:look'] = hashOf(look);
+		used['odt-rec709'] = hashOf(TRANSFORMS['odt-rec709']);
+		used['chain:display'] = hash;
+		return { bypass: false, before: toFloat(o.coding), after: [`lut3d=file=${q(file)}:interp=tetrahedral`, ...floatToYuv()], used };
+	}
 	const idtName = /** @type {TransformName} */ (PROFILES[profile].idt ?? 'idt-acescct');
 	const idt = idtFilters(idtName);
 	used[idtName] = idt.hash;
@@ -238,14 +249,13 @@ export function proxyColor(profile, coding) {
 	/** @type {Record<string, string>} */
 	const used = {};
 	if (profile === 'unknown' || PROFILES[profile].proxy === profile) {
-		if (profile !== 'unknown' && !PROFILES[profile].display && coding.float) {
-			// a float file already in its log (rare): code values as they are
-			return { filters: ['format=gbrpf32le', ...floatToYuv()], used };
-		}
-		return { filters: bypassToYuv(coding), used };
+		// a float file already in its log (rare): code values as they are
+		if (coding.float) return { log: ['format=gbrpf32le'], yuv: floatToYuv(), filters: ['format=gbrpf32le', ...floatToYuv()], used };
+		return { log: [], yuv: bypassToYuv(coding), filters: bypassToYuv(coding), used };
 	}
 	const name = /** @type {TransformName} */ (PROFILES[profile].idt);
 	const idt = idtFilters(name);
 	used[name] = idt.hash;
-	return { filters: [...toFloat(coding), ...idt.filters, ...floatToYuv()], used };
+	const log = [...toFloat(coding), ...idt.filters];
+	return { log, yuv: floatToYuv(), filters: [...log, ...floatToYuv()], used };
 }

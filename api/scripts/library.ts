@@ -6,7 +6,7 @@
 // New files come in with put(): the bytes are copied in (never linked), the description written, and — when the file
 // replaces another (a re-rendered title card) — the one before is marked superseded.
 import { existsSync } from "node:fs";
-import { copyFile, readdir, readFile, writeFile } from "node:fs/promises";
+import { copyFile, mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { cidOf, EXT, kindOf, mimeOf } from "../src/media";
 import { ROOT, upload } from "./media-client";
@@ -74,6 +74,7 @@ export async function put(from: string | Uint8Array, about: About): Promise<Doc>
   const mime = about.mime ?? (typeof from === "string" ? mimeOf(from) : "application/octet-stream");
   const file = `${cid}.${EXT[mime] ?? "bin"}`;
   const target = join(DIR, file);
+  await mkdir(DIR, { recursive: true });
   if (!existsSync(target)) {
     if (typeof from === "string") await copyFile(from, target);
     else await writeFile(target, bytes);

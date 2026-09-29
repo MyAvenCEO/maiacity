@@ -121,7 +121,9 @@ if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href) {
 			continue;
 		}
 		const tmp = join(work, 'out.mp4');
-		execFileSync('ffmpeg', ['-y', '-v', 'error', '-i', src, '-vf', `${chain(fix)},format=yuv420p`, '-c:v', 'libx264', '-preset', 'slow', '-crf', '16', '-pix_fmt', 'yuv420p', tmp]);
+		// graded in YUV (eq) without leaving it; BT.709 matrix and TV range kept and tagged on the way out
+		execFileSync('ffmpeg', ['-y', '-v', 'error', '-i', src, '-vf', `${chain(fix)},scale=in_color_matrix=auto:out_color_matrix=bt709:out_range=tv,format=yuv420p,setparams=color_primaries=bt709:color_trc=bt709:colorspace=bt709:range=tv`,
+			'-c:v', 'libx264', '-preset', 'slow', '-crf', '16', '-pix_fmt', 'yuv420p', '-colorspace', 'bt709', '-color_primaries', 'bt709', '-color_trc', 'bt709', '-color_range', 'tv', tmp]);
 		renameSync(tmp, out);
 		rmSync(work, { recursive: true, force: true });
 		console.log(`${tag}: ${fix || 'graded'}${master ? ' (from the master)' : ''}`);

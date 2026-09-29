@@ -88,11 +88,24 @@ export const PQ_SCALE = 0.18 / 26;
  * @typedef {{ kind: 'math', decode: 'linear' | 'hlg' | 'pq', scale: number, matrix: Matrix3 | null, to: 'acescct' }} MathConfig
  *   Exact maths: the signal decoded to linear light (× scale), a 3×3 into AP1, then the ACEScct curve. No LUT
  *   over the whole cube, so nothing clips: linear sources keep every highlight.
- * @typedef {IdentityConfig | ViewConfig | ConvertConfig | GroupConfig | MathConfig} TransformConfig
+ * @typedef {{ kind: 'cdl', cdl: import('./color.js').Cdl }} CdlConfig
+ *   An ASC CDL in ACEScct: the maths of cdl() in color.js.
+ * @typedef {{ kind: 'chain', steps: (ViewConfig | ConvertConfig | GroupConfig | CdlConfig)[] }} ChainConfig
+ *   Several transforms one after the other, baked into one LUT at render time (a graded display-referred clip:
+ *   inverse output transform → its grade → the film's look → output transform, display in, display out).
+ * @typedef {IdentityConfig | ViewConfig | ConvertConfig | GroupConfig | MathConfig | CdlConfig | ChainConfig} TransformConfig
  */
 
-/** Every transform the pipeline knows, by name. Input transforms (idt-*) end in ACEScct; the output transform starts there. */
-export const TRANSFORMS = /** @type {const} */ ({
+/**
+ * @typedef {'idt-acescct' | 'odt-rec709' | 'idt-rec709' | 'idt-apple-log' | 'idt-apple-log-2' | 'idt-aces2065-1' | 'idt-acescg'
+ *   | 'idt-linear-rec709' | 'idt-hlg' | 'idt-pq'} TransformName
+ */
+
+/**
+ * Every transform the pipeline knows, by name. Input transforms (idt-*) end in ACEScct; the output transform starts there.
+ * @type {Record<TransformName, TransformConfig>}
+ */
+export const TRANSFORMS = {
 	'idt-acescct': { kind: 'identity' },
 	// the output transform: the timeline (ACEScct) to what every delivery shows
 	'odt-rec709': { kind: 'ocio-view', config: OCIO_CONFIG, colorspace: 'ACEScct', display: DISPLAY, view: VIEW, direction: 'forward' },
@@ -114,12 +127,26 @@ export const TRANSFORMS = /** @type {const} */ ({
 	// HDR video (BT.2100: Rec.2020 primaries)
 	'idt-hlg': { kind: 'math', decode: 'hlg', scale: HLG_SCALE, matrix: REC2020_TO_AP1, to: 'acescct' },
 	'idt-pq': { kind: 'math', decode: 'pq', scale: PQ_SCALE, matrix: REC2020_TO_AP1, to: 'acescct' }
-});
-
-/** @typedef {keyof typeof TRANSFORMS} TransformName */
+};
 
 /** The output transform every delivery goes through today. */
 export const ODT_NAME = 'odt-rec709';
+
+/**
+ * A graded display-referred clip as one transform: into ACEScct by the inverse output transform, its own grade, the
+ * film's look, and out again — baked into a single display → display LUT at render time. Two separate 65³ LUTs lose
+ * up to ~25 code values on saturated colours (the ACES 2.0 output transform is steep there); the composite, being
+ * near the identity for a mild grade, stays within a code value or two of OCIO.
+ * @param {import('./color.js').Cdl | null | undefined} grade @param {import('./color.js').Cdl | null | undefined} look
+ * @returns {ChainConfig}
+ */
+export function displayChain(grade, look) {
+	/** @type {ChainConfig['steps']} */
+	const steps = [/** @type {ViewConfig} */ (TRANSFORMS['idt-rec709'])];
+	for (const g of [grade, look]) if (g) steps.push({ kind: 'cdl', cdl: g });
+	steps.push(/** @type {ViewConfig} */ (TRANSFORMS[ODT_NAME]));
+	return { kind: 'chain', steps };
+}
 
 /**
  * The transforms the studio's viewer needs as preview LUTs: the output transform, and the input transform of every
