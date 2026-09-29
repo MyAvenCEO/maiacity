@@ -14,6 +14,8 @@
 	let devices = $state<VaultDevice[]>([]);
 	let error = $state('');
 	let busy = $state(false);
+	let mcp = $state<{ url: string; claude: string } | null>(null);
+	let copied = $state(false);
 
 	async function load() {
 		busy = true;
@@ -24,6 +26,7 @@
 				command<VaultStatus>('vault_status'),
 				listVaultDevices()
 			]);
+			mcp = await command<{ url: string; claude: string }>('mcp_info').catch(() => null);
 		} catch (e) {
 			error = String(e instanceof Error ? e.message : e);
 		} finally {
@@ -82,6 +85,15 @@
 		{/each}
 	</ul>
 	<p class="quiet">A new device is paired by signing it in with the admin's passkey.</p>
+
+	<h3>Agents (MCP) — the whole studio for Claude Code or any agent</h3>
+	{#if mcp}
+		<p class="quiet">On this Mac only, at {mcp.url}. Connect Claude Code with:</p>
+		<pre class="cmd">{mcp.claude}</pre>
+		<button class="link" onclick={() => navigator.clipboard.writeText(mcp!.claude).then(() => (copied = true))}>{copied ? 'Copied' : 'Copy the command'}</button>
+	{:else}
+		<p class="quiet">Starts with the app once it is signed in.</p>
+	{/if}
 </section>
 
 <style>
@@ -100,4 +112,5 @@
 	li.me .label { font-weight: 600; }
 	.link { padding: 0; border: 0; background: none; font: inherit; font-size: 0.75rem; color: var(--dim); text-decoration: underline; cursor: pointer; }
 	.err { color: #9c3b26; }
+	.cmd { overflow-x: auto; margin: 0.3rem 0; padding: 0.5rem 0.6rem; border-radius: 8px; background: #fff; font-size: 0.7rem; white-space: pre-wrap; word-break: break-all; }
 </style>

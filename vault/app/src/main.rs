@@ -4,6 +4,7 @@
 //! Range, for <img> and <video>.
 
 mod auth;
+mod mcp;
 mod sync;
 
 use std::{
@@ -333,6 +334,14 @@ fn main() {
                 }
                 sync::keep_complete(handle, v).await;
             });
+            // the studio for agents: MCP on this Mac only, behind the app's token
+            let (handle, v) = (app.handle().clone(), vault.clone());
+            let auth = app.state::<auth::Auth>().inner().clone();
+            tauri::async_runtime::spawn(async move {
+                if let Err(e) = mcp::serve(v, auth, handle).await {
+                    tracing::warn!("MCP server: {e:#}");
+                }
+            });
             Ok(())
         })
         .register_asynchronous_uri_scheme_protocol("maiaapi", |ctx, request, responder| {
@@ -352,6 +361,7 @@ fn main() {
             sync::vault_connect,
             sync::vault_copies,
             vault_set_location,
+            mcp::mcp_info,
             vault_status,
             vault_list,
             vault_sources,
