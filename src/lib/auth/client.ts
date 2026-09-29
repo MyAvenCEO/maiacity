@@ -124,6 +124,13 @@ export type MediaItem = {
 	distributed_at: string | null;
 };
 
+// ── the media vault: devices the admin paired (only these sync), and revoking one ──
+export type VaultDevice = { endpoint_id: string; label: string; created: string; seen: string | null; revoked_at: string | null };
+export const listVaultDevices = () => call<VaultDevice[]>('/api/vault/devices');
+export async function revokeVaultDevice(endpointId: string): Promise<void> {
+	await call(`/api/vault/devices/${endpointId}`, { method: 'DELETE' });
+}
+
 export const listMedia = (q?: { kind?: string; q?: string }) =>
 	call<{ media: MediaItem[]; total: number }>(`/api/media${q ? `?${new URLSearchParams(q as Record<string, string>)}` : ''}`);
 

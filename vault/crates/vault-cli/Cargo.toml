@@ -13,6 +13,7 @@ path = "src/main.rs"
 [dependencies]
 vault-core = { path = "../vault-core" }
 vault-media = { path = "../vault-media" }
+iroh-docs.workspace = true
 tokio.workspace = true
 anyhow.workspace = true
 clap.workspace = true

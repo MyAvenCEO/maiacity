@@ -33,6 +33,19 @@ enum Cmd {
     Ls,
     /// This node's EndpointId and catalog id
     Id,
+    /// Join the vault's network (the server's catalog ticket) and keep syncing for a while
+    Join {
+        #[arg(long)]
+        ticket: String,
+        #[arg(long)]
+        relay: String,
+        /// other paired devices this node may talk to
+        #[arg(long = "device")]
+        devices: Vec<String>,
+        /// how long to stay up and sync, in seconds
+        #[arg(long, default_value_t = 60)]
+        wait: u64,
+    },
     /// What a movie file is, read by AVFoundation (the native ffprobe)
     Probe { file: PathBuf },
     /// A movie's HD proxy, made natively (HEVC Main10 in hardware)
@@ -80,9 +93,21 @@ async fn main() -> Result<()> {
 
     match cli.cmd {
         Cmd::Probe { .. } | Cmd::Proxy { .. } => unreachable!("handled above"),
+        Cmd::Join { ticket, relay, devices, wait } => {
+            let ticket: iroh_docs::DocTicket = ticket.parse()?;
+            let devices = devices.iter().map(|d| d.parse()).collect::<Result<Vec<_>, _>>()?;
+            println!("node {} joining catalog {}", vault.endpoint.id(), ticket.capability.id());
+            vault.join(vault_core::Join { ticket, relay: relay.parse()?, devices }).await?;
+            let until = std::time::Instant::now() + std::time::Duration::from_secs(wait);
+            while std::time::Instant::now() < until {
+                tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+                let files = vault.catalog.list().await?.len();
+                println!("catalog {} · {files} files described here", vault.catalog.id());
+            }
+        }
         Cmd::Id => {
             println!("endpoint {}", vault.endpoint.id());
-            println!("catalog  {}", vault.catalog.doc.id());
+            println!("catalog  {}", vault.catalog.id());
         }
         Cmd::Ls => {
             for m in vault.catalog.list().await? {

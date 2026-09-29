@@ -18,6 +18,7 @@ import { CAPABILITIES } from "./caps";
 import { addIdea, deleteIdea, IdeaError, listIdeas, updateIdea } from "./ideas";
 import { describe, finishUpload, have, listMedia, markDistributed, MediaError, mediaInfo, publicManifest, putPart, readMedia, retag, startUpload, undistributed } from "./media";
 import { approveDevice, deviceInfo, KeyError, keyHolder, redeemDevice, revokeKey, startDevice } from "./keys";
+import { joinInfo, listDevices, listVaultFiles, pairDevice, revokeDevice, VaultError } from "./vault";
 import { canDistribute, distributePending } from "./bunny";
 import { createTimeline, deleteTimeline, getTimeline, listTimelines, saveTimeline, TimelineError } from "./timelines";
 import { createShot, getShot, listShots, saveShot, ShotError, shotVersions } from "./shots";
@@ -107,7 +108,7 @@ async function allowed(req: Request, cap: string): Promise<{ id: string; role: s
 
 /** Turn a thrown ledger, role or notebook error into a response a person can read. */
 function fail(req: Request, e: unknown) {
-  if (e instanceof LedgerError || e instanceof RoleError || e instanceof IdeaError || e instanceof KeyError || e instanceof MediaError || e instanceof TimelineError || e instanceof ShotError || e instanceof ContentError || e instanceof RenderError) return json(req, { error: e.message }, { status: e.status });
+  if (e instanceof LedgerError || e instanceof RoleError || e instanceof IdeaError || e instanceof KeyError || e instanceof MediaError || e instanceof TimelineError || e instanceof ShotError || e instanceof ContentError || e instanceof RenderError || e instanceof VaultError) return json(req, { error: e.message }, { status: e.status });
   console.error(e);
   return json(req, { error: "Something went wrong on our side." }, { status: 500 });
 }
@@ -464,6 +465,53 @@ const server = Bun.serve({
         } catch (e) {
           return fail(req, e);
         }
+      },
+    },
+
+    // ── the media vault (vault/): pairing a Mac's iroh node, joining the catalog, and the catalog's mirror ──
+    "/api/vault/devices": {
+      OPTIONS: preflight,
+      GET: async (req) => {
+        const me = await allowed(req, "media:admin");
+        if (me instanceof Response) return me;
+        return json(req, await listDevices());
+      },
+      POST: async (req) => {
+        const me = await allowed(req, "media:admin");
+        if (me instanceof Response) return me;
+        try {
+          const body = await readJson(req);
+          return json(req, await pairDevice(me.id, body?.endpoint_id, body?.label));
+        } catch (e) {
+          return fail(req, e);
+        }
+      },
+    },
+    "/api/vault/devices/:id": {
+      OPTIONS: preflight,
+      DELETE: async (req) => {
+        const me = await allowed(req, "media:admin");
+        if (me instanceof Response) return me;
+        return (await revokeDevice(req.params.id))
+          ? new Response(null, { status: 204, headers: cors(req) })
+          : json(req, { error: "No such device." }, { status: 404 });
+      },
+    },
+    "/api/vault/join": {
+      OPTIONS: preflight,
+      GET: async (req) => {
+        const me = await allowed(req, "media:admin");
+        if (me instanceof Response) return me;
+        return json(req, await joinInfo());
+      },
+    },
+    "/api/vault/files": {
+      OPTIONS: preflight,
+      GET: async (req) => {
+        const me = await allowed(req, "media:admin");
+        if (me instanceof Response) return me;
+        const url = new URL(req.url);
+        return json(req, await listVaultFiles({ kind: url.searchParams.get("kind") ?? undefined, tag: url.searchParams.get("tag") ?? undefined }));
       },
     },
 

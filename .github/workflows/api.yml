@@ -17,6 +17,7 @@ on:
       - 'infra/**'
       - 'deploy/**'
       - 'docker-compose*.yml'
+      - 'vault/**'
       - '.github/workflows/api.yml'
   workflow_dispatch:
 
@@ -57,6 +58,33 @@ jobs:
           context: .
           file: api/Dockerfile
           push: true
+          tags: |
+            ${{ steps.meta.outputs.image }}:${{ github.sha }}
+            ${{ steps.meta.outputs.image }}:latest
+
+  vault-image:
+    name: Build and push the vault-server image
+    runs-on: ubuntu-latest
+    outputs:
+      image: ${{ steps.meta.outputs.image }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - id: meta
+        run: echo "image=ghcr.io/${GITHUB_REPOSITORY,,}-vault" >> "$GITHUB_OUTPUT"
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: vault/Dockerfile.server
+          push: true
+          # Rust builds are slow: keep the layers between runs
+          cache-from: type=gha,scope=vault
+          cache-to: type=gha,scope=vault,mode=max
           tags: |
             ${{ steps.meta.outputs.image }}:${{ github.sha }}
             ${{ steps.meta.outputs.image }}:latest
@@ -164,7 +192,7 @@ jobs:
 
   deploy:
     name: Roll out over SSH
-    needs: [image, infra, dns]
+    needs: [image, vault-image, infra, dns]
     runs-on: ubuntu-latest
     env:
       HOST: ${{ needs.infra.outputs.ipv4 }}
@@ -202,7 +230,10 @@ jobs:
       - name: Write .env (the database password is generated once and stays on the server)
         env:
           IMAGE: ${{ needs.image.outputs.image }}:${{ github.sha }}
+          VAULT_IMAGE: ${{ needs.vault-image.outputs.image }}:${{ github.sha }}
           DATA_MOUNT: ${{ needs.infra.outputs.data_mount }}
+          S3_ACCESS_KEY: ${{ secrets.HETZNER_S3_ACCESS_KEY }}
+          S3_SECRET_KEY: ${{ secrets.HETZNER_S3_SECRET_KEY }}
         run: |
           ssh prod "cd $APP_DIR && bash -s" <<EOS
           set -e
@@ -230,6 +261,15 @@ jobs:
           SITE_ORIGIN=https://maia.city,https://www.maia.city
           COOKIE_DOMAIN=.maia.city
           API_BUNNY_API_KEY=${{ secrets.BUNNY_API_KEY }}
+          VAULT_IMAGE=$VAULT_IMAGE
+          VAULT_PUBLIC_IP=$HOST
+          VAULT_RELAY_URL=https://$API_HOST
+          S3_ENDPOINT=$S3_ENDPOINT
+          S3_REGION=$S3_REGION
+          S3_BUCKET=$S3_BUCKET
+          S3_ACCESS_KEY=$S3_ACCESS_KEY
+          S3_SECRET_KEY=$S3_SECRET_KEY
+          COMPOSE_PROFILES=${S3_ACCESS_KEY:+vault}
           EOF2
           chmod 600 .env
           sudo mkdir -p "$DATA_MOUNT/postgres"
@@ -259,7 +299,7 @@ jobs:
           set -e
           chmod +x $APP_DIR/deploy/backup.sh
           # daily, 03:15 UTC
-          echo '15 3 * * * deploy bash $APP_DIR/deploy/backup.sh daily >> /var/log/maia-city-backup.log 2>&1' \
+          echo '15 3 * * * deploy bash $APP_DIR/deploy/backup.sh daily --no-media >> /var/log/maia-city-backup.log 2>&1' \
             | sudo tee /etc/cron.d/maia-city-backup >/dev/null
           sudo touch /var/log/maia-city-backup.log && sudo chown deploy /var/log/maia-city-backup.log
           # keep 30 days of dumps; nothing outside BACKUPS/pg/ ever expires (LIBRARY/ is the vault)
@@ -273,7 +313,7 @@ jobs:
           EOS
           # its own SSH call with no input: nothing in the backup can wait for the rest of a script on stdin.
           # A failed backup is a warning, not a stopped release — the next deploy and the daily run try again.
-          ssh prod "timeout 900 bash $APP_DIR/deploy/backup.sh before-deploy-${GITHUB_SHA::7} </dev/null" \
+          ssh prod "timeout 900 bash $APP_DIR/deploy/backup.sh before-deploy-${GITHUB_SHA::7} --no-media </dev/null" \
             || echo "::warning::The database backup before this deploy failed — see the step's log."
       - name: Update the containers
         env:

@@ -4,6 +4,7 @@
 //! Range, for <img> and <video>.
 
 mod auth;
+mod sync;
 
 use std::{
     io::SeekFrom,
@@ -57,7 +58,7 @@ async fn vault_status(app: State<'_, App>) -> Res<Status> {
     let (free, total) = disk_space(&v.dir);
     Ok(Status {
         endpoint: v.endpoint.id().to_string(),
-        catalog: v.catalog.doc.id().to_string(),
+        catalog: v.catalog.id().to_string(),
         dir: v.dir.display().to_string(),
         files: list.len(),
         bytes: list.iter().map(|m| m.size).sum(),
@@ -285,8 +286,20 @@ fn main() {
         .plugin(tauri_plugin_dialog::init())
         .manage(auth::Auth::default())
         .setup(|app| {
-            let vault = tauri::async_runtime::block_on(Vault::open(vault_dir()))?;
-            app.manage(App { vault: Arc::new(vault), busy: AtomicBool::new(false) });
+            let vault = Arc::new(tauri::async_runtime::block_on(Vault::open(vault_dir()))?);
+            app.manage(App { vault: vault.clone(), busy: AtomicBool::new(false) });
+            // signed in already: join the network now; then keep this Mac complete in the background
+            let handle = app.handle().clone();
+            let v = vault.clone();
+            tauri::async_runtime::spawn(async move {
+                if auth::signed_in() {
+                    let auth = handle.state::<auth::Auth>();
+                    if let Err(e) = sync::connect(&v, &auth).await {
+                        tracing::warn!("joining the vault's network: {e}");
+                    }
+                }
+                sync::keep_complete(handle, v).await;
+            });
             Ok(())
         })
         .register_asynchronous_uri_scheme_protocol("maiaapi", |ctx, request, responder| {
@@ -303,6 +316,8 @@ fn main() {
             auth::auth_sign_out,
             auth::auth_open,
             auth::api,
+            sync::vault_connect,
+            sync::vault_copies,
             vault_status,
             vault_list,
             vault_sources,

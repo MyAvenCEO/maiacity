@@ -18,6 +18,14 @@ services:
     expose:
       - "3000"
 
+  # the vault's peer: its image from GHCR; UDP 7400 open to the Macs, the relay and gateway only through Caddy
+  vault:
+    image: ${VAULT_IMAGE:-ghcr.io/myavenceo/maiacity-vault:latest}
+    build: !reset null
+    expose:
+      - "3340"
+      - "3341"
+
   caddy:
     image: caddy:2-alpine
     container_name: maia-city-caddy

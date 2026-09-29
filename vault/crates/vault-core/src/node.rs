@@ -3,15 +3,21 @@
 //! Private means: built from `presets::Minimal` — no n0 relays, no n0 DNS, nothing published anywhere. Until the
 //! server peer exists the node runs without a relay; peers are added by address (see skill `connectivity.md`).
 
-use std::path::{Path, PathBuf};
+use std::{
+    path::{Path, PathBuf},
+    sync::Arc,
+};
 
 use anyhow::{Context, Result};
-use iroh::{Endpoint, RelayMode, SecretKey, endpoint::presets, protocol::Router};
+use iroh::{
+    Endpoint, EndpointId, RelayConfig, RelayMode, RelayUrl, SecretKey, address_lookup::MemoryLookup, endpoint::presets,
+    protocol::Router,
+};
 use iroh_blobs::{BlobsProtocol, store::fs::FsStore};
-use iroh_docs::protocol::Docs;
+use iroh_docs::{DocTicket, protocol::Docs};
 use iroh_gossip::net::Gossip;
 
-use crate::catalog::Catalog;
+use crate::{catalog::Catalog, net::Allow};
 
 pub struct Vault {
     pub dir: PathBuf,
@@ -19,7 +25,18 @@ pub struct Vault {
     pub store: FsStore,
     pub docs: Docs,
     pub catalog: Catalog,
+    /// who may connect (the server and the other paired devices, once joined)
+    pub allow: Allow,
+    lookup: MemoryLookup,
     router: Router,
+}
+
+/// What joining needs, from the API once the passkey approved this Mac: the shared catalog (with the server's
+/// address in it), our relay, and the other devices the admin paired.
+pub struct Join {
+    pub ticket: DocTicket,
+    pub relay: RelayUrl,
+    pub devices: Vec<EndpointId>,
 }
 
 impl Vault {
@@ -33,9 +50,14 @@ impl Vault {
         let dir = std::fs::canonicalize(&dir)?;
         let secret = load_or_create_key(&dir.join("secret.key"))?;
 
+        // until it joins, the node talks to nobody: no relay, an empty address book, an empty allowlist
+        let allow = Allow::default();
+        let lookup = MemoryLookup::new();
         let endpoint = Endpoint::builder(presets::Minimal)
             .secret_key(secret)
             .relay_mode(RelayMode::Disabled)
+            .address_lookup(lookup.clone())
+            .hooks(allow.clone())
             .bind()
             .await
             .context("bind the iroh endpoint")?;
@@ -54,7 +76,20 @@ impl Vault {
             .spawn();
 
         let catalog = Catalog::open(&dir, &docs, &store).await?;
-        Ok(Self { dir, endpoint, store, docs, catalog, router })
+        Ok(Self { dir, endpoint, store, docs, catalog, allow, lookup, router })
+    }
+
+    /// Join the vault's network: our relay, the server's address, the paired devices, and the shared catalog —
+    /// from then on files flow both ways by themselves.
+    pub async fn join(&self, join: Join) -> Result<()> {
+        let mut ids = join.devices;
+        for addr in &join.ticket.nodes {
+            ids.push(addr.id);
+            self.lookup.add_endpoint_info(addr.clone());
+        }
+        self.allow.set(ids);
+        self.endpoint.insert_relay(join.relay.clone(), Arc::new(RelayConfig::new(join.relay, None))).await;
+        self.catalog.join(join.ticket).await
     }
 
     /// Where ingest lands copies: on the same volume as the store, so importing them is a clone, not a second copy.
