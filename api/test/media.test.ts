@@ -131,7 +131,9 @@ test("a render is queued once per timeline, claimed by one worker, reported done
   const t = await createTimeline("admin", { name: "To export", project: "Day 19", variant: "Z" });
   const a = await queueRender("admin", t.id);
   expect((await queueRender("admin", t.id)).id).toBe(a.id); // pressing twice does not queue twice
-  const job = await claimRender();
+  // the files uploaded above queued their proxies first (migration 0024): the worker takes those too
+  let job = await claimRender();
+  while (job && job.kind !== "render") job = await claimRender();
   expect(job!.id).toBe(a.id);
   expect(await claimRender()).toBeNull();
   await reportRender(a.id, { progress: 0.5, note: "picture" });

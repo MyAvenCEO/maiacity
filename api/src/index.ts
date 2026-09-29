@@ -20,7 +20,7 @@ import { describe, finishUpload, have, listMedia, markDistributed, MediaError, m
 import { approveDevice, deviceInfo, KeyError, keyHolder, redeemDevice, revokeKey, startDevice } from "./keys";
 import { canDistribute, distributePending } from "./bunny";
 import { createTimeline, deleteTimeline, listTimelines, saveTimeline, TimelineError } from "./timelines";
-import { claimRender, queueRender, RenderError, rendersOf, reportRender } from "./renders";
+import { claimRender, listJobs, previewLuts, queueLuts, queueProxy, queueRender, RenderError, rendersOf, reportRender } from "./renders";
 import { CHANNELS, ContentError, createContent, deleteContent, FORMATS, KINDS, listContent, saveContent, saveDay, savePosts, STATUSES } from "./content";
 import { format, gameClock, calendar, parse } from "../../game/time";
 
@@ -729,6 +729,41 @@ const server = Bun.serve({
         } catch (e) {
           return fail(req, e);
         }
+      },
+    },
+
+    // The worker's other jobs (stream A · C6): proxies with colour detection, and the studio's preview LUTs.
+    // GET /api/film/luts → { [transform]: { cid, hash, size } }; POST queues a bake. GET /api/film/jobs?kind=&cid=
+    // → the latest jobs (proxy status per file, the render queue). POST /api/film/proxies/:cid → make its proxy again.
+    "/api/film/luts": {
+      OPTIONS: preflight,
+      GET: async (req) => {
+        const me = await allowed(req, "media:admin");
+        if (me instanceof Response) return me;
+        return json(req, await previewLuts());
+      },
+      POST: async (req) => {
+        const me = await allowed(req, "media:admin");
+        if (me instanceof Response) return me;
+        return json(req, await queueLuts(me.id), { status: 201 });
+      },
+    },
+    "/api/film/jobs": {
+      OPTIONS: preflight,
+      GET: async (req) => {
+        const me = await allowed(req, "media:admin");
+        if (me instanceof Response) return me;
+        const url = new URL(req.url);
+        return json(req, await listJobs({ kind: url.searchParams.get("kind") ?? undefined, cid: url.searchParams.get("cid") ?? undefined, limit: Number(url.searchParams.get("limit")) || undefined }));
+      },
+    },
+    "/api/film/proxies/:cid": {
+      OPTIONS: preflight,
+      POST: async (req) => {
+        const me = await allowed(req, "media:admin");
+        if (me instanceof Response) return me;
+        if (!(await have([req.params.cid])).length) return json(req, { error: "The library does not hold that CID." }, { status: 404 });
+        return json(req, await queueProxy(req.params.cid, me.id), { status: 201 });
       },
     },
 

@@ -7,7 +7,8 @@ import { cidOf } from "../src/media";
 
 export const ROOT = join(import.meta.dir, "../..");
 export const local = process.argv.includes("--local");
-export const API = local ? "http://localhost:3100" : "https://api.maia.city";
+// MAIACITY_API points a terminal (or the render worker) at another API — a test server, a second local one
+export const API = process.env.MAIACITY_API ?? (local ? "http://localhost:3100" : "https://api.maia.city");
 export const SITE = local ? "http://localhost:5173" : "https://maia.city";
 export const CONFIG = join(homedir(), ".config", "maiacity");
 export const KEYS = join(CONFIG, "media-keys.json");
@@ -32,7 +33,8 @@ export async function saveKey(key: string | null) {
 }
 
 export async function keyFor(): Promise<string> {
-  const k = (await readJson<Record<string, string>>(KEYS, {}))[API];
+  // MAIACITY_KEY: a key given outright (a test run, a worker started with its own key)
+  const k = process.env.MAIACITY_KEY ?? (await readJson<Record<string, string>>(KEYS, {}))[API];
   if (!k) throw new Error(`Not signed in to ${API}. Run: bun media login${local ? " --local" : ""}`);
   return k;
 }

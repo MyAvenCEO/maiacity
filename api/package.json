@@ -5,7 +5,8 @@
   "scripts": {
     "dev": "bun --watch src/index.ts",
     "start": "bun src/index.ts",
-    "check": "tsc --noEmit"
+    "check": "tsc --noEmit",
+    "check:film": "tsc -p tsconfig.film-check.json"
   },
   "dependencies": {
     "@simplewebauthn/server": "^14.0.1",

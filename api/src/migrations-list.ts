@@ -470,5 +470,20 @@ export const MIGRATIONS: Migration[] = [
       DELETE FROM coops;
     `,
   },
+  {
+    // The render worker does more than render timelines: it makes each new file's HD log proxy (and reads its colour)
+    // and bakes the studio's preview LUTs. A job says which kind it is and what it is for — a timeline (render) or a
+    // file (proxy) — and keeps its report (QC, loudness, the transforms used, by config hash).
+    id: "0024-film-jobs",
+    sql: `
+      ALTER TABLE render_jobs ADD COLUMN kind TEXT NOT NULL DEFAULT 'render' CHECK (kind IN ('render', 'proxy', 'lut'));
+      ALTER TABLE render_jobs ADD COLUMN media_cid TEXT;
+      ALTER TABLE render_jobs ADD COLUMN report JSONB;
+      ALTER TABLE render_jobs ALTER COLUMN timeline_id DROP NOT NULL;
+      ALTER TABLE render_jobs ADD CONSTRAINT render_jobs_target
+        CHECK ((kind <> 'render' OR timeline_id IS NOT NULL) AND (kind <> 'proxy' OR media_cid IS NOT NULL));
+      CREATE INDEX ix_render_jobs_media ON render_jobs (media_cid, created) WHERE media_cid IS NOT NULL;
+    `,
+  },
 ];
 

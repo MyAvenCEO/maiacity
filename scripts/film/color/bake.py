@@ -1,45 +1,83 @@
-# Bakes the film pipeline's colour transforms into 3D LUTs, from the official ACES 2.0 studio config that OpenColorIO
-# carries built in. Run it only when a transform changes: the LUTs are committed (static/film/luts/<name>.lut — the
-# studio fetches them from the site, the render worker reads them from the repo) and pinned by their CIDs in
-# game/film/transforms.json (bun scripts/film/color/pin.ts), so a render always uses exactly the same numbers.
+# The render-time LUT baker. The pipeline's colour transforms are configs (game/film/transforms.js); the render worker
+# calls this while it renders to turn one config into a LUT file, which it caches on its own disk by a hash of the
+# config, the OCIO version and the size. Nothing baked here is committed or kept in the repo.
 #
-#   python3 scripts/film/color/bake.py [--check]
+#   python3 scripts/film/color/bake.py --version
+#       the OpenColorIO version (part of every cache key)
+#   python3 scripts/film/color/bake.py --config '<json>' --size 65 --format cube --out <file>
+#       a 3D LUT for ffmpeg's lut3d (.cube, red fastest)
+#   python3 scripts/film/color/bake.py --config '<json>' --size 65 --format mlut --out <file> [--name n --hash h]
+#       a preview LUT for the studio's viewer (the MLUT1 format documented in game/film/transforms.js)
+#   python3 scripts/film/color/bake.py --config '<json>' --apply  < rgb.f32 > out.f32
+#       the exact transform (no LUT) on float32 RGB triples: the reference the tests measure ffmpeg against
+#   python3 scripts/film/color/bake.py --config '<json>' --size 65 --check
+#       how far a LUT of that size is from OCIO itself (10-bit code values)
 #
-# Needs OpenColorIO and numpy (pip install opencolorio numpy). --check only reports how far each LUT is from OCIO.
+# Config kinds: 'ocio-view' (display/view, forward or inverse), 'ocio-convert' (src → dst colour space),
+# 'ocio-group' (builtin curves, matrices and conversions chained), 'cdl' (the ASC CDL of color.js) and 'chain'
+# (several of these one after the other, baked into one LUT). 'identity' and 'math' configs are exact maths the
+# worker does with ffmpeg filters; they are not baked here.
 #
-# The .lut format, small enough for git: gzip of  b'MLUT1' · uint32 LE header length · the header (JSON: name, size,
-# min, max, title, config) · size³ × RGB as uint16 LE, red fastest, each value min + (max − min) · u / 65535.
-import sys, os, gzip, json, struct
+# Needs OpenColorIO ≥ 2.5 and numpy (pip install opencolorio numpy).
+import sys, os, gzip, json, struct, argparse
 import numpy as np
 import PyOpenColorIO as ocio
 
-CONFIG = 'studio-config-v4.0.0_aces-v2.0_ocio-v2.5'
-DISPLAY = 'Rec.1886 Rec.709 - Display'
-VIEW = 'ACES 2.0 - SDR 100 nits (Rec.709)'
-HERE = os.path.dirname(os.path.abspath(__file__))
-OUT = os.path.normpath(os.path.join(HERE, '../../../static/film/luts'))
-cfg = ocio.Config.CreateFromBuiltinConfig(CONFIG)
 
-def view(direction, display=DISPLAY, view=VIEW):
-    t = ocio.DisplayViewTransform(src='ACEScct', display=display, view=view, direction=direction)
-    return cfg.getProcessor(t).getDefaultCPUProcessor()
+LUMA = np.array([0.2126, 0.7152, 0.0722], dtype=np.float64)
 
-def convert(src, dst):
-    return cfg.getProcessor(src, dst).getDefaultCPUProcessor()
 
-# name → (processor, size, what it is)
-TRANSFORMS = {
-    # the output transform: the timeline (ACEScct) to what every delivery shows (Rec.709, BT.1886 gamma 2.4, SDR)
-    'odt-rec709': (view(ocio.TRANSFORM_DIR_FORWARD), 65, f'ACEScct → {DISPLAY}, {VIEW}'),
-    # its inverse: a display-referred picture (Rec.709/sRGB video, stills, the old graded shots) into the timeline, so
-    # that it comes out of the output transform exactly as it went in
-    'idt-rec709': (view(ocio.TRANSFORM_DIR_INVERSE), 65, f'{DISPLAY} (via the inverse of {VIEW}) → ACEScct'),
-    # HDR video from a phone or camera: the inverse of the ACES 2.0 HDR output transforms
-    'idt-hlg': (view(ocio.TRANSFORM_DIR_INVERSE, 'Rec.2100-HLG - Display', 'ACES 2.0 - HDR 1000 nits (P3 D65)'), 33, 'Rec.2100 HLG (via the inverse of ACES 2.0 HDR 1000 nits) → ACEScct'),
-    'idt-pq': (view(ocio.TRANSFORM_DIR_INVERSE, 'Rec.2100-PQ - Display', 'ACES 2.0 - HDR 1000 nits (P3 D65)'), 33, 'Rec.2100 PQ (via the inverse of ACES 2.0 HDR 1000 nits) → ACEScct'),
-    # camera log: Apple Log (iPhone 15 Pro and later) — a scene-referred camera space, a plain conversion
-    'idt-apple-log': (convert('Apple Log', 'ACEScct'), 33, 'Apple Log → ACEScct'),
-}
+class Cdl:
+    # the ASC CDL in ACEScct, exactly as cdl() in game/film/color.js: slope, offset, power per channel (held at 0
+    # before a power), then saturation around Rec.709 luma
+    def __init__(self, g):
+        self.slope, self.offset, self.power = (np.array(g[k], dtype=np.float64) for k in ('slope', 'offset', 'power'))
+        self.sat = float(g['sat'])
+
+    def applyRGB(self, rgb):
+        v = rgb.astype(np.float64) * self.slope + self.offset
+        v = np.where(self.power == 1, v, np.power(np.maximum(v, 0), self.power))
+        l = (v @ LUMA)[:, None]
+        rgb[...] = (l + self.sat * (v - l)).astype(np.float32)
+
+
+class Chain:
+    def __init__(self, steps):
+        self.steps = [processor(s) for s in steps]
+
+    def applyRGB(self, rgb):
+        for p in self.steps:
+            p.applyRGB(rgb)
+
+
+def processor(conf):
+    kind = conf['kind']
+    if kind == 'cdl':
+        return Cdl(conf['cdl'])
+    if kind == 'chain':
+        return Chain(conf['steps'])
+    cfg = ocio.Config.CreateFromBuiltinConfig(conf['config'])
+    if kind == 'ocio-view':
+        d = ocio.TRANSFORM_DIR_FORWARD if conf['direction'] == 'forward' else ocio.TRANSFORM_DIR_INVERSE
+        t = ocio.DisplayViewTransform(src=conf['colorspace'], display=conf['display'], view=conf['view'], direction=d)
+        return cfg.getProcessor(t).getDefaultCPUProcessor()
+    if kind == 'ocio-convert':
+        return cfg.getProcessor(conf['src'], conf['dst']).getDefaultCPUProcessor()
+    if kind == 'ocio-group':
+        steps = []
+        for s in conf['steps']:
+            if 'builtin' in s:
+                steps.append(ocio.BuiltinTransform(s['builtin']))
+            elif 'matrix' in s:
+                m = s['matrix']
+                steps.append(ocio.MatrixTransform(matrix=[*m[0], 0, *m[1], 0, *m[2], 0, 0, 0, 0, 1]))
+            elif 'convert' in s:
+                steps.append(ocio.ColorSpaceTransform(src=s['convert'][0], dst=s['convert'][1]))
+            else:
+                raise SystemExit(f'unknown step {s}')
+        return cfg.getProcessor(ocio.GroupTransform(steps)).getDefaultCPUProcessor()
+    raise SystemExit(f"a '{kind}' transform is exact maths: the worker does it with ffmpeg filters, nothing to bake")
+
 
 def grid(n):
     v = np.linspace(0.0, 1.0, n, dtype=np.float32)
@@ -47,23 +85,34 @@ def grid(n):
     b, g, r = np.meshgrid(v, v, v, indexing='ij')
     return np.stack([r.ravel(), g.ravel(), b.ravel()], axis=1).astype(np.float32)
 
-def apply(proc, rgb):
-    out = rgb.copy()
-    proc.applyRGB(out)
-    return out
 
-def write(name, proc, n, title):
+def apply(proc, rgb):
+    out = np.ascontiguousarray(rgb, dtype=np.float32).copy()
+    proc.applyRGB(out)
+    return out.reshape(-1, 3)
+
+
+def table(proc, n):
     rgb = apply(proc, grid(n))
-    rgb = np.nan_to_num(rgb, nan=0.0, posinf=1.0, neginf=0.0)
+    return np.nan_to_num(rgb, nan=0.0, posinf=65504.0, neginf=-65504.0)
+
+
+def write_cube(path, rgb, n, title):
+    with open(path + '.part', 'w') as f:
+        f.write(f'TITLE "{title}"\nLUT_3D_SIZE {n}\nDOMAIN_MIN 0 0 0\nDOMAIN_MAX 1 1 1\n')
+        np.savetxt(f, rgb, fmt='%.8g')
+    os.replace(path + '.part', path)
+
+
+def write_mlut(path, rgb, n, head):
     lo, hi = float(rgb.min()), float(rgb.max())
     u = np.round((rgb - lo) / (hi - lo) * 65535).astype('<u2')
-    head = json.dumps({'name': name, 'size': n, 'min': lo, 'max': hi, 'title': title, 'config': CONFIG, 'ocio': ocio.__version__}).encode()
-    os.makedirs(OUT, exist_ok=True)
-    path = os.path.join(OUT, f'{name}.lut')
+    h = json.dumps({**head, 'size': n, 'min': lo, 'max': hi}).encode()
     # mtime 0: the same numbers always give the same bytes, and so the same CID
-    with open(path, 'wb') as f, gzip.GzipFile(fileobj=f, mode='wb', mtime=0, filename='') as z:
-        z.write(b'MLUT1' + struct.pack('<I', len(head)) + head + u.tobytes())
-    return path, u.astype(np.float64) / 65535 * (hi - lo) + lo
+    with open(path + '.part', 'wb') as f, gzip.GzipFile(fileobj=f, mode='wb', mtime=0, filename='') as z:
+        z.write(b'MLUT1' + struct.pack('<I', len(h)) + h + u.tobytes())
+    os.replace(path + '.part', path)
+
 
 def tetra(lut, n, p):
     # tetrahedral interpolation, as ffmpeg's lut3d (interp=tetrahedral) and the studio's shader do
@@ -71,51 +120,65 @@ def tetra(lut, n, p):
     i = np.minimum(np.floor(x).astype(int), n - 2)
     f = x - i
     L = lut.reshape(n, n, n, 3)  # [b][g][r]
+
     def at(dr, dg, db):
         return L[i[:, 2] + db, i[:, 1] + dg, i[:, 0] + dr]
+
     fr, fg, fb = f[:, 0:1], f[:, 1:2], f[:, 2:3]
     c000, c111 = at(0, 0, 0), at(1, 1, 1)
     out = np.zeros_like(p)
-    conds = [
-        (fr >= fg) & (fg >= fb), (fr >= fb) & (fb > fg), (fb > fr) & (fr >= fg),
-        (fg > fr) & (fr >= fb), (fg >= fb) & (fb > fr), (fb > fg) & (fg > fr),
-    ]
-    # the six tetrahedra: steps through the unit cube in the order of the largest fraction
-    steps = [((1,0,0),(1,1,0)), ((1,0,0),(1,0,1)), ((0,0,1),(1,0,1)), ((0,1,0),(1,1,0)), ((0,1,0),(0,1,1)), ((0,0,1),(0,1,1))]
+    conds = [(fr >= fg) & (fg >= fb), (fr >= fb) & (fb > fg), (fb > fr) & (fr >= fg),
+             (fg > fr) & (fr >= fb), (fg >= fb) & (fb > fr), (fb > fg) & (fg > fr)]
+    steps = [((1, 0, 0), (1, 1, 0)), ((1, 0, 0), (1, 0, 1)), ((0, 0, 1), (1, 0, 1)),
+             ((0, 1, 0), (1, 1, 0)), ((0, 1, 0), (0, 1, 1)), ((0, 0, 1), (0, 1, 1))]
     weights = [(fr, fg, fb), (fr, fb, fg), (fb, fr, fg), (fg, fr, fb), (fg, fb, fr), (fb, fg, fr)]
     for c, (s1, s2), (w1, w2, w3) in zip(conds, steps, weights):
-        c1, c2 = at(*s1), at(*s2)
-        v = (1 - w1) * c000 + (w1 - w2) * c1 + (w2 - w3) * c2 + w3 * c111
+        v = (1 - w1) * c000 + (w1 - w2) * at(*s1) + (w2 - w3) * at(*s2) + w3 * c111
         out = np.where(c, v, out)
     return out
 
-def check(name, proc, n, lut=None):
-    lut = apply(proc, grid(n)) if lut is None else lut
-    rng = np.random.default_rng(1)
-    p = rng.random((200000, 3), dtype=np.float32)
-    exact = apply(proc, p)
-    ok = np.all(np.isfinite(exact), axis=1)
-    err = np.abs(tetra(lut, n, p) - exact)[ok]
-    return err.max() * 1023, np.percentile(err, 99.9) * 1023
 
-def matrix(src, dst):
-    # the 3×3 a colour-space conversion reduces to, where it is linear: measured on the unit vectors
-    proc = convert(src, dst)
-    return apply(proc, np.eye(3, dtype=np.float32)).T
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument('--version', action='store_true')
+    ap.add_argument('--config')
+    ap.add_argument('--size', type=int, default=65)
+    ap.add_argument('--format', choices=['cube', 'mlut'], default='cube')
+    ap.add_argument('--out')
+    ap.add_argument('--name', default='')
+    ap.add_argument('--hash', default='')
+    ap.add_argument('--apply', action='store_true')
+    ap.add_argument('--check', action='store_true')
+    a = ap.parse_args()
+    if a.version:
+        print(ocio.__version__)
+        return
+    if not a.config:
+        raise SystemExit('give --config (a transform config from game/film/transforms.js, as JSON)')
+    conf = json.loads(a.config)
+    proc = processor(conf)
+    if a.apply:
+        rgb = np.frombuffer(sys.stdin.buffer.read(), dtype='<f4').reshape(-1, 3)
+        sys.stdout.buffer.write(apply(proc, rgb).astype('<f4').tobytes())
+        return
+    n = a.size
+    lut = table(proc, n)
+    if a.check:
+        p = np.random.default_rng(1).random((200000, 3), dtype=np.float32)
+        exact = apply(proc, p)
+        ok = np.all(np.isfinite(exact), axis=1)
+        err = np.abs(tetra(lut, n, p) - exact)[ok]
+        print(json.dumps({'size': n, 'max': float(err.max() * 1023), 'p99': float(np.percentile(err, 99) * 1023)}))
+        return
+    if not a.out:
+        raise SystemExit('give --out')
+    os.makedirs(os.path.dirname(os.path.abspath(a.out)), exist_ok=True)
+    title = a.name or conf['kind']
+    if a.format == 'cube':
+        write_cube(a.out, lut, n, title)
+    else:
+        write_mlut(a.out, lut, n, {'name': a.name, 'hash': a.hash, 'config': conf, 'ocio': ocio.__version__})
+
 
 if __name__ == '__main__':
-    only_check = '--check' in sys.argv
-    for name, (proc, n, title) in TRANSFORMS.items():
-        lut = None
-        if not only_check:
-            path, lut = write(name, proc, n, title)
-        worst, p999 = check(name, proc, n, lut)
-        print(f'{name:14s} {n}³  max {worst:6.2f}  99.9% {p999:5.2f}  (10-bit code values from OCIO, whole cube)')
-    # the matrix game/film/color.js uses to take the world's linear light (Rec.709 primaries, D65) into ACES AP1
-    print('Linear Rec.709 → ACEScg (AP1):')
-    print(np.array2string(matrix('Linear Rec.709 (sRGB)', 'ACEScg'), precision=10, separator=', '))
-    if not only_check:
-        # the round trip every display-referred picture takes: in through idt-rec709, out through odt-rec709
-        p = np.random.default_rng(2).random((200000, 3), dtype=np.float32)
-        back = apply(TRANSFORMS['odt-rec709'][0], apply(TRANSFORMS['idt-rec709'][0], p))
-        print(f'round trip rec709 → ACEScct → rec709 (OCIO itself): max {np.abs(back - p).max() * 1023:.3f} code values')
+    main()
