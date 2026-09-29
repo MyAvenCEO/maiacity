@@ -40,15 +40,6 @@
 		await load();
 	}
 
-	// the vault on another drive (the external SSD): it fills itself there from the network, hash-checked
-	async function move() {
-		const { open } = await import('@tauri-apps/plugin-dialog');
-		const where = await open({ directory: true, title: 'Where should this Mac keep its vault?' });
-		if (!where || Array.isArray(where)) return;
-		if (!confirm(`Keep the vault in "${where}/maiaCITY Vault" from now on? The app restarts; the new place fills itself from the network, and the old one stays until you remove it.`)) return;
-		await command('vault_set_location', { path: where });
-	}
-
 	onMount(load);
 	const since = (t: string | null) => (t ? new Date(t).toLocaleString() : '—');
 </script>
@@ -63,8 +54,6 @@
 				<span>{status.dir}</span>
 				<small>{status.files} files · {gb(status.bytes)} · {gb(status.disk_free)} free</small>
 			{/if}
-			<button class="link" onclick={move}>Keep the vault on another drive…</button>
-			{#if status}<small>Watch folder: {status.watch_dir} — whatever lands there is ingested by itself</small>{/if}
 		</div>
 		<div class="place">
 			<strong>Server · Object Storage</strong>

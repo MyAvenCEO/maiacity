@@ -36,6 +36,20 @@
 		created: ''
 	});
 
+	/** removing a story waits for the admin to confirm it; only an empty one, never the inbox */
+	let removing = $state<StoryView | null>(null);
+	async function remove() {
+		if (!removing) return;
+		error = '';
+		try {
+			await command('story_delete', { id: removing.id });
+			removing = null;
+			await load();
+		} catch (e) {
+			error = String(e);
+		}
+	}
+
 	async function save() {
 		if (!editing) return;
 		error = '';
@@ -65,10 +79,21 @@
 					<span class="t">{s.title}</span>
 					<small>{s.files} files · {gb(s.bytes)}</small>
 				</button>
-				{#if !s.inbox}<button class="link edit" onclick={() => (editing = { ...s, rules: { ...s.rules } })}>edit</button>{/if}
+				{#if !s.inbox}
+					<button class="link edit" onclick={() => (editing = { ...s, rules: { ...s.rules } })}>edit</button>
+					{#if s.files === 0}<button class="link edit" onclick={() => (removing = s)}>delete</button>{/if}
+				{/if}
 			</li>
 		{/each}
 	</ul>
+
+	{#if removing}
+		<p class="confirm">
+			Delete the empty story “{removing.title}” ({removing.episode || 'no episode'})?
+			<button class="primary" onclick={remove}>Delete</button>
+			<button class="link" onclick={() => (removing = null)}>Cancel</button>
+		</p>
+	{/if}
 
 	{#if editing}
 		<form class="editor" onsubmit={(e) => (e.preventDefault(), save())}>
@@ -95,16 +120,7 @@
 	{/if}
 	{#if error}<p class="err">{error}</p>{/if}
 
-	{#if chosen}
-		{@const s = stories.find((x) => x.id === chosen)}
-		{#if s}
-			<div class="classes">
-				{#each CLASSES as c (c)}
-					<span><b>{c}</b> {s.classes[c]?.[0] ?? 0} · {gb(s.classes[c]?.[1] ?? 0)} <em>→ {s.rules[c].join(' + ')}</em></span>
-				{/each}
-			</div>
-		{/if}
-	{/if}
+
 </div>
 
 <style>
@@ -126,12 +142,11 @@
 	label span.bad { color: #9c3b26; }
 	input, textarea { padding: 0.4rem 0.55rem; border: 1px solid var(--edge); border-radius: 8px; background: #fff; font: inherit; font-size: 0.84rem; color: var(--ink); resize: vertical; }
 	.two { display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem; }
-	.rules, .classes { display: flex; flex-direction: column; gap: 0.15rem; font-size: 0.72rem; color: var(--dim); }
-	.classes { margin: 0.2rem 0 0.8rem; }
-	.rules b, .classes b { display: inline-block; width: 4.3rem; font-weight: 600; color: var(--ink); }
-	.classes em { font-style: normal; }
+	.rules { display: flex; flex-direction: column; gap: 0.15rem; font-size: 0.72rem; color: var(--dim); }
+	.rules b { display: inline-block; width: 4.3rem; font-weight: 600; color: var(--ink); }
 	.actions { display: flex; align-items: center; gap: 0.8rem; }
 	.primary { padding: 0.4rem 1rem; border: 0; border-radius: 999px; background: var(--ink); font: inherit; font-size: 0.82rem; color: #fff; cursor: pointer; }
 	.primary:disabled { opacity: 0.5; cursor: default; }
 	.err { color: #9c3b26; font-size: 0.8rem; }
+	.confirm { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; margin: 0 0 0.8rem; font-size: 0.8rem; color: #7a5a14; }
 </style>

@@ -84,7 +84,7 @@ pub struct IngestArgs {
     /// tags for the whole batch, e.g. ["Day 20", "A7IV"]
     #[serde(default)]
     pub tags: Vec<String>,
-    /// the story it all goes into (its id, from stories_list); none: the inbox
+    /// the story new files go into (its id, from stories_list); none: the inbox. Files already in the vault stay where they are.
     pub story: Option<String>,
     /// default or original for the whole batch (proxy and delivery are written only by their pipelines); none: told from each file
     pub class: Option<String>,
@@ -136,18 +136,15 @@ pub struct SaveArgs {
 
 #[derive(Deserialize, schemars::JsonSchema)]
 pub struct StoryArgs {
-    /// { id?, title, description, series, episode, rules? } — no id: a new story
-    pub story: Value,
-}
-
-#[derive(Deserialize, schemars::JsonSchema)]
-pub struct PlaceArgs {
-    /// the files, by hash
-    pub hashes: Vec<String>,
-    /// the story to move them into (its id)
-    pub story: Option<String>,
-    /// default or original (proxy and delivery are written only by their pipelines)
-    pub class: Option<String>,
+    /// the story to change; none: a new story
+    pub id: Option<String>,
+    /// at most five words
+    pub title: Option<String>,
+    /// the full hook
+    pub description: Option<String>,
+    pub series: Option<String>,
+    /// e.g. DAY 0002
+    pub episode: Option<String>,
 }
 
 #[derive(Deserialize, schemars::JsonSchema)]
@@ -242,7 +239,9 @@ impl Studio {
             if let Some(c) = &a.class {
                 crate::stories::by_hand(c)?;
             }
-            let s = crate::run_ingest(&self.handle, &self.vault, a.paths, a.tags, a.story, a.class).await.map_err(|e| format!("{e:#}"))?;
+            // an agent ingests into a story (or the inbox) — but a file already in the vault stays where it is: moving
+            // files is the admin's, by hand in the app
+            let s = crate::run_ingest(&self.handle, &self.vault, a.paths, a.tags, a.story, a.class, false).await.map_err(|e| format!("{e:#}"))?;
             serde_json::to_value(s).map_err(|e| e.to_string())
         };
         text(r.await)
@@ -263,7 +262,7 @@ impl Studio {
 
     // ── stories: the buckets every file lives in ──
 
-    #[tool(description = "Every story (the inbox first): id, title, description, series, episode, the destinations of each class (default, original, proxy, delivery), and what it holds")]
+    #[tool(description = "Every story, read only (the admin creates stories and moves files in the app) — the inbox first: id, title, description, series, episode, the destinations of each class (default, original, proxy, delivery), and what it holds")]
     async fn stories_list(&self) -> String {
         let r = async {
             self.signed_in()?;
@@ -283,31 +282,32 @@ impl Studio {
         text(r.await)
     }
 
-    #[tool(description = "Create a story (no id) or change one: title (at most five words), description (the full hook), series, episode; rules keep every class in at least two places")]
+    #[tool(description = "Create a story (no id), or change a story's title (at most five words), description (the full hook), series and episode. Its destinations (rules) stay the admin's: a new story gets the defaults (avenSSD + hetzner for every class)")]
     async fn story_save(&self, Parameters(a): Parameters<StoryArgs>) -> String {
         let r = async {
             self.signed_in()?;
-            let story: vault_core::catalog::Story = serde_json::from_value(a.story).map_err(|e| e.to_string())?;
-            let saved = self.vault.catalog.save_story(story).await.map_err(|e| format!("{e:#}"))?;
+            let cat = &self.vault.catalog;
+            let mut story = match a.id.as_deref().filter(|i| !i.is_empty()) {
+                Some(id) => cat.stories().await.map_err(|e| format!("{e:#}"))?.into_iter().find(|s| s.id == id).ok_or("no such story")?,
+                None => vault_core::catalog::Story::default(),
+            };
+            if story.id == cat.inbox_id() {
+                return Err("the inbox is not a story to change".to_string());
+            }
+            if let Some(t) = a.title {
+                story.title = t;
+            }
+            if let Some(d) = a.description {
+                story.description = d;
+            }
+            if let Some(s) = a.series {
+                story.series = s;
+            }
+            if let Some(e) = a.episode {
+                story.episode = e;
+            }
+            let saved = cat.save_story(story).await.map_err(|e| format!("{e:#}"))?;
             serde_json::to_value(vault_core::catalog::Story { key: String::new(), ..saved }).map_err(|e| e.to_string())
-        };
-        text(r.await)
-    }
-
-    #[tool(description = "Move files into a story (its id; the inbox's id takes them out of every story) and/or set their class (default, original, proxy, delivery)")]
-    async fn files_place(&self, Parameters(a): Parameters<PlaceArgs>) -> String {
-        let r = async {
-            self.signed_in()?;
-            if let Some(c) = &a.class {
-                crate::stories::by_hand(c)?;
-            }
-            let patch = json!({ "story": a.story, "class": a.class });
-            let patch: serde_json::Map<String, Value> = patch.as_object().unwrap().iter().filter(|(_, v)| !v.is_null()).map(|(k, v)| (k.clone(), v.clone())).collect();
-            for h in &a.hashes {
-                let hash: iroh_blobs::Hash = h.parse().map_err(|e| format!("{e}"))?;
-                self.vault.catalog.describe(hash, &Value::Object(patch.clone())).await.map_err(|e| format!("{e:#}"))?;
-            }
-            Ok::<_, String>(json!({ "placed": a.hashes.len() }))
         };
         text(r.await)
     }

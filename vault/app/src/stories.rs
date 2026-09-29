@@ -54,7 +54,15 @@ pub async fn story_save(app: State<'_, App>, story: Story) -> Res<Story> {
     Ok(Story { key: String::new(), ..saved })
 }
 
+/// Remove an empty story (never the inbox). By hand in the app only — never by an agent.
+#[tauri::command]
+pub async fn story_delete(app: State<'_, App>, id: String) -> Res<()> {
+    gate()?;
+    app.vault.catalog.delete_story(&id).await.map_err(err)
+}
+
 /// Files into a story (its id; the inbox's id takes them out of every story). A file has one story, so this moves it.
+/// By hand in the app only (the admin confirms) — never by an agent.
 #[tauri::command]
 pub async fn files_move(app: State<'_, App>, hashes: Vec<String>, story: String) -> Res<usize> {
     gate()?;

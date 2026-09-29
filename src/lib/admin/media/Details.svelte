@@ -47,6 +47,8 @@
 
 	let copied = $state('');
 	let placing = $state('');
+	/** a move or a class change waits for the admin to confirm it */
+	let pending = $state<{ what: 'story' | 'class'; value: string; label: string } | null>(null);
 	const inbox = $derived(stories.find((x) => x.inbox));
 	const home = $derived(stories.find((x) => (m.story ? x.id === m.story : x.inbox)));
 	/** a file has one story: choosing another moves it there (the inbox takes it out of every story) */
@@ -115,16 +117,30 @@
 	{#if m.description}<h3>Description</h3><p class="desc">{m.description}</p>{/if}
 	{#if stories.length}
 		<h3>Story</h3>
-		<select class="place" value={home?.id ?? ''} onchange={(e) => place('story', e.currentTarget.value)}>
+		<select
+			class="place"
+			value={home?.id ?? ''}
+			onchange={(e) => {
+				const to = stories.find((x) => x.id === e.currentTarget.value);
+				if (to) pending = { what: 'story', value: to.id, label: `Move it to ${to.inbox ? 'the Inbox' : to.title}` };
+			}}
+		>
 			{#each stories as st (st.id)}<option value={st.id}>{st.inbox ? 'Inbox' : `${st.episode ? `${st.episode} · ` : ''}${st.title}`}</option>{/each}
 		</select>
 		<h3>Class</h3>
 		{#if m.class === 'proxy' || m.class === 'delivery'}
 			<p class="desc">{m.class}{home ? ` → ${home.rules[m.class].join(' + ')}` : ''} <span class="dim">(set by its pipeline)</span></p>
 		{:else}
-			<select class="place" value={m.class ?? 'default'} onchange={(e) => place('class', e.currentTarget.value)}>
+			<select class="place" value={m.class ?? 'default'} onchange={(e) => (pending = { what: 'class', value: e.currentTarget.value, label: `Make it ${e.currentTarget.value}` })}>
 				{#each BY_HAND as c (c)}<option value={c}>{c}{home ? ` → ${home.rules[c].join(' + ')}` : ''}</option>{/each}
 			</select>
+		{/if}
+		{#if pending}
+			<p class="confirm">
+				{pending.label}?
+				<button onclick={() => (place(pending!.what, pending!.value), (pending = null))}>Confirm</button>
+				<button class="no" onclick={() => (pending = null)}>Cancel</button>
+			</p>
 		{/if}
 		{#if placing}<p class="desc bad">{placing}</p>{/if}
 	{/if}
@@ -301,6 +317,32 @@
 
 	.bad {
 		color: #9c3b26;
+	}
+
+	.confirm {
+		display: flex;
+		align-items: center;
+		gap: 0.4rem;
+		margin: 0.2rem 0;
+		font-size: 0.8rem;
+		color: #7a5a14;
+	}
+
+	.confirm button {
+		padding: 0.15rem 0.7rem;
+		border: 0;
+		border-radius: 999px;
+		background: var(--ink);
+		font: inherit;
+		font-size: 0.76rem;
+		color: #fff;
+		cursor: pointer;
+	}
+
+	.confirm .no {
+		background: none;
+		color: var(--muted);
+		text-decoration: underline;
 	}
 
 	.cid {

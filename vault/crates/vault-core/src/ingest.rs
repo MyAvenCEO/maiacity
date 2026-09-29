@@ -53,6 +53,9 @@ pub struct Batch {
     pub story: Option<String>,
     /// the class, when the batch says it; None: told from the file (and when in doubt, default)
     pub class: Option<String>,
+    /// a file already in the vault moves into the batch's story — only when a person ingests; an agent's batch leaves
+    /// it where it is (moving files is the admin's, by hand)
+    pub moves_existing: bool,
 }
 
 /// A file's class when nobody said it: what a camera or recorder made is an original — anything else, or anything in
@@ -148,7 +151,8 @@ impl Vault {
                 }
                 // a file that never had a class gets one: the batch's, else told from what the vault knows of it
                 let class = batch.class.clone().or_else(|| known.class.is_empty().then(|| class_of(&known.mime, &tags, &known.meta).to_string()));
-                let patch = serde_json::json!({ "story": batch.story, "class": class, "tags": tags });
+                let story = if batch.moves_existing { batch.story.clone() } else { None };
+                let patch = serde_json::json!({ "story": story, "class": class, "tags": tags });
                 let patch: serde_json::Map<_, _> = patch.as_object().into_iter().flatten().filter(|(_, v)| !v.is_null()).map(|(k, v)| (k.clone(), v.clone())).collect();
                 self.catalog.describe(source_hash, &serde_json::Value::Object(patch)).await?;
             }

@@ -147,6 +147,8 @@ async fn add(State(v): State<Arc<Vault>>, Query(q): Query<AddQuery>, body: Body)
         public: about.public.unwrap_or(false),
         story: about.story.clone(),
         class: about.class.clone(),
+        // a pipeline adds what it made; a file that is already somewhere stays there
+        moves_existing: false,
     };
     let outcome = v.ingest_file(&path, &batch).await;
     tokio::fs::remove_dir_all(&dir).await.ok();

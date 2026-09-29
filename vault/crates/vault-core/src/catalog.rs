@@ -270,6 +270,15 @@ impl Catalog {
         Ok(story)
     }
 
+    /// Remove a story — only an empty one, and never the inbox: a file always has a home.
+    pub async fn delete_story(&self, id: &str) -> Result<()> {
+        anyhow::ensure!(id != self.inbox_id(), "the inbox stays");
+        let holds = self.list().await?.iter().filter(|m| m.story == id).count();
+        anyhow::ensure!(holds == 0, "the story still holds {holds} files: move them out first");
+        self.doc().del(self.author, format!("story/{id}")).await?;
+        Ok(())
+    }
+
     /// Every file's description whose JSON is here, newest entry per key.
     pub async fn list(&self) -> Result<Vec<Meta>> {
         let entries: Vec<_> = self.doc().get_many(Query::single_latest_per_key().key_prefix("meta/")).await?.collect().await;

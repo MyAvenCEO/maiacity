@@ -11,7 +11,22 @@
 	import { command } from '$lib/native';
 	import { BY_HAND, CLASSES, gb, type Copies, type FileClass, type Moving, type StoryView } from './vault';
 
-	let { story, stories, reload = 0, onchanged = () => {} }: { story: string | null; stories: StoryView[]; reload?: number; onchanged?: () => void } = $props();
+	let {
+		story,
+		stories,
+		reload = 0,
+		open = null,
+		onchanged = () => {},
+		onopen = () => {}
+	}: {
+		story: string | null;
+		stories: StoryView[];
+		reload?: number;
+		/** the file whose metadata the right column shows */
+		open?: string | null;
+		onchanged?: () => void;
+		onopen?: (m: MediaItem) => void;
+	} = $props();
 
 	let files = $state<MediaItem[]>([]);
 	let copies = $state<Record<string, Copies>>({});
@@ -64,16 +79,17 @@
 		}
 	}
 
-	async function move(to: string) {
-		if (!to || !selected.length) return;
-		await command('files_move', { hashes: selected, story: to }).catch((e) => (error = String(e)));
-		selected = [];
-		await load();
-		onchanged();
-	}
-	async function reclass(to: string) {
-		if (!to || !selected.length) return;
-		await command('files_class', { hashes: selected, class: to }).catch((e) => (error = String(e)));
+	/** a move or a class change waits for the admin to confirm it — nothing moves by a stray click */
+	let pending = $state<{ kind: 'story' | 'class'; to: string; label: string } | null>(null);
+	const storyName = (s: StoryView) => (s.inbox ? 'Inbox' : `${s.episode ? `${s.episode} · ` : ''}${s.title}`);
+
+	async function confirm() {
+		if (!pending || !selected.length) return;
+		const p = pending;
+		pending = null;
+		const hashes = selected;
+		if (p.kind === 'story') await command('files_move', { hashes, story: p.to }).catch((e) => (error = String(e)));
+		else await command('files_class', { hashes, class: p.to }).catch((e) => (error = String(e)));
 		selected = [];
 		await load();
 		onchanged();
@@ -124,14 +140,33 @@
 			{#if selected.length}
 				<span class="bulk">
 					{selected.length} selected ·
-					<select onchange={(e) => move(e.currentTarget.value)}>
+					<select
+						value=""
+						onchange={(e) => {
+							const s = stories.find((x) => x.id === e.currentTarget.value);
+							if (s) pending = { kind: 'story', to: s.id, label: `Move ${selected.length} file${selected.length === 1 ? '' : 's'} to ${storyName(s)}` };
+						}}
+					>
 						<option value="">move to story…</option>
-						{#each stories.filter((s) => s.id !== story) as s (s.id)}<option value={s.id}>{s.inbox ? 'Inbox' : `${s.episode ? `${s.episode} · ` : ''}${s.title}`}</option>{/each}
+						{#each stories.filter((s) => s.id !== story) as s (s.id)}<option value={s.id}>{storyName(s)}</option>{/each}
 					</select>
-					<select onchange={(e) => reclass(e.currentTarget.value)}>
+					<select
+						value=""
+						onchange={(e) => {
+							const c = e.currentTarget.value;
+							if (c) pending = { kind: 'class', to: c, label: `Make ${selected.length} file${selected.length === 1 ? '' : 's'} ${c}` };
+						}}
+					>
 						<option value="">class…</option>
 						{#each BY_HAND as c (c)}<option value={c}>{c}</option>{/each}
 					</select>
+				</span>
+			{/if}
+			{#if pending}
+				<span class="confirm">
+					{pending.label}?
+					<button class="yes" onclick={confirm}>Confirm</button>
+					<button class="no" onclick={() => (pending = null)}>Cancel</button>
 				</span>
 			{/if}
 		</div>
@@ -141,19 +176,20 @@
 				<thead>
 					<tr>
 						<th><input type="checkbox" checked={selected.length > 0 && selected.length === rows.length} onchange={(e) => (selected = e.currentTarget.checked ? rows.map((m) => m.hash) : [])} /></th>
-						<th>File</th>
+						<th>File (BLAKE3)</th>
+						<th>Came in as · title</th>
 						<th>Class</th>
 						<th class="r">Size</th>
 						{#each destinations as d (d)}<th class="c">{d}</th>{/each}
 						<th class="c">Copies</th>
-						<th>Hash</th>
 					</tr>
 				</thead>
 				<tbody>
 					{#each rows as m (m.hash)}
-						<tr class:sel={selected.includes(m.hash)} class:short={!kept(m)}>
+						<tr class:sel={selected.includes(m.hash)} class:short={!kept(m)} class:open={open === m.hash} onclick={(e) => !(e.target as HTMLElement).closest('input') && onopen(m)}>
 							<td><input type="checkbox" checked={selected.includes(m.hash)} onchange={() => toggle(m.hash)} /></td>
-							<td class="n" title={m.original_name}>{name(m)}</td>
+							<td class="h" title={m.hash}>{m.hash.slice(0, 16)}…</td>
+							<td class="n" title="{m.original_name ?? ''}{m.title ? ` · ${m.title}` : ''}">{m.original_name || '—'}{#if m.title && m.title !== m.original_name}<small> · {m.title}</small>{/if}</td>
 							<td><span class="cls {classOf(m)}">{classOf(m)}</span></td>
 							<td class="r">{gb(m.size)}</td>
 							{#each destinations as d (d)}
@@ -168,7 +204,6 @@
 								</td>
 							{/each}
 							<td class="c"><span class="cnt" class:good={kept(m)}>{verified(m)}/{needed(m)}</span></td>
-							<td class="h">{m.hash.slice(0, 10)}…</td>
 						</tr>
 					{:else}
 						<tr><td colspan={6 + destinations.length} class="empty">{mine.length ? 'Nothing matches.' : 'No files in this story yet — ingest into it, or move files here.'}</td></tr>
@@ -200,6 +235,9 @@
 	th { position: sticky; top: 0; z-index: 1; padding: 0.45rem 0.6rem; border-bottom: 1px solid var(--edge); background: var(--bg); font-size: 0.68rem; font-weight: 600; letter-spacing: 0.06em; text-align: left; text-transform: uppercase; color: var(--dim); }
 	td { padding: 0.38rem 0.6rem; border-bottom: 1px solid var(--edge); }
 	tr.sel td { background: #f3f6ee; }
+	tbody tr { cursor: pointer; }
+	tbody tr:hover td { background: var(--bg); }
+	tr.open td { background: #eef2e6; box-shadow: inset 0 1px 0 #9bb58a, inset 0 -1px 0 #9bb58a; }
 	tr.short td.n { color: #8a2a12; }
 	.r { text-align: right; white-space: nowrap; }
 	.c { text-align: center; }
@@ -213,6 +251,11 @@
 	.go { position: relative; display: inline-block; min-width: 3.4rem; padding: 0.05rem 0.3rem; border-radius: 4px; background: #fbf3df; font-size: 0.72rem; color: #7a5a14; overflow: hidden; }
 	.go i { position: absolute; left: 0; bottom: 0; height: 2px; background: #b8860b; transition: width 0.8s linear; }
 	.live { font-size: 0.72rem; }
+	.confirm { display: flex; align-items: center; gap: 0.4rem; padding: 0.2rem 0.3rem 0.2rem 0.7rem; border-radius: 999px; background: #fbf3df; color: #7a5a14; }
+	.confirm button { padding: 0.15rem 0.7rem; border: 0; border-radius: 999px; font: inherit; font-size: 0.74rem; cursor: pointer; }
+	.confirm .yes { background: var(--ink); color: #fff; }
+	.confirm .no { background: transparent; color: var(--dim); text-decoration: underline; }
+	.n small { color: var(--dim); }
 	.st.ok { color: #3e5a2f; }
 	.st.on-its-way { color: #b8860b; }
 	.st.missing { color: #9c3b26; }

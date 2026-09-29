@@ -16,7 +16,7 @@ export type VaultFile = {
 	ingest?: string;
 	added?: string;
 };
-export type VaultStatus = { endpoint: string; catalog: string; dir: string; files: number; bytes: number; disk_free: number; disk_total: number; watch_dir: string };
+export type VaultStatus = { endpoint: string; catalog: string; dir: string; files: number; bytes: number; disk_free: number; disk_total: number };
 export type Source = { name: string; path: string; free: number; total: number };
 export type Scan = { files: number; bytes: number; kinds: Record<string, number> };
 export type Outcome = {

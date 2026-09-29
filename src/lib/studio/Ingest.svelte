@@ -12,7 +12,10 @@
 	import Devices from './Devices.svelte';
 	import Stories from './Stories.svelte';
 	import StoryTable from './StoryTable.svelte';
-	import { BY_HAND, gb, name, verifiedCopies, type Copies, type Outcome, type Progress, type Scan, type Source, type StoryView, type Summary } from './vault';
+	import Details from '$lib/admin/media/Details.svelte';
+	import { parse } from '$lib/admin/media/facets';
+	import type { MediaItem } from '$lib/auth/client';
+	import { BY_HAND, CLASSES, gb, name, verifiedCopies, type Copies, type Outcome, type Progress, type Scan, type Source, type StoryView, type Summary } from './vault';
 
 	let { onDone = () => {} }: { onDone?: () => void } = $props();
 
@@ -36,6 +39,19 @@
 	/** bumped after every batch and every move: the table reads the catalog again */
 	let reload = $state(0);
 	let showDevices = $state(false);
+	/** the file whose metadata the right column shows (a row clicked in the table) */
+	let openFile = $state<MediaItem | null>(null);
+	let openCopies = $state<Copies | undefined>(undefined);
+	async function openRow(m: MediaItem) {
+		openFile = m;
+		openCopies = (await command<Copies[]>('vault_copies').catch(() => [])).find((c) => c.hash === m.hash);
+	}
+	const chosenStory = $derived(storyList.find((s) => s.id === story) ?? null);
+	// another story on the left: its own panel again, not the last file
+	$effect(() => {
+		void story;
+		openFile = null;
+	});
 	let autoProxy = $state(false);
 	const unlisten: Array<() => void> = [];
 
@@ -147,10 +163,6 @@
 		<button class="source ghostly" onclick={chooseFolder}>+ Choose folder…</button>
 		<div class="drop">⇣ drop files or folders anywhere</div>
 		<button class="link" onclick={look}>Look again</button>
-		<div class="switches">
-			<label class="switch"><input type="checkbox" checked={autoProxy} onchange={(e) => setAutoProxy(e.currentTarget.checked)} /> Proxies by themselves after ingest</label>
-			<button class="link" onclick={() => (showDevices = !showDevices)}>{showDevices ? 'Hide devices & storage' : 'Devices & storage'}</button>
-		</div>
 	</aside>
 
 	<div class="batch">
@@ -197,12 +209,50 @@
 			</div>
 		{/if}
 		{#if error}<p class="err">{error}</p>{/if}
-		{#if showDevices}<div class="devices"><Devices /></div>{/if}
-		<StoryTable {story} stories={storyList} {reload} onchanged={() => storiesPanel?.load()} />
+		<StoryTable {story} stories={storyList} {reload} open={openFile?.hash ?? null} onchanged={() => storiesPanel?.load()} onopen={openRow} />
 	</div>
 
 	<div class="log">
-		<h2>Files{#if rows.length} · {done.length}{/if}</h2>
+		{#if openFile}
+			<button class="link back" onclick={() => (openFile = null)}>← {chosenStory?.inbox ? 'Inbox' : (chosenStory?.title ?? 'the story')}</button>
+			<Details
+				m={openFile}
+				p={parse(openFile)}
+				measure={undefined}
+				copies={openCopies}
+				stories={storyList}
+				onplaced={(n) => ((openFile = n), storiesPanel?.load(), reload++)}
+				onfilter={() => {}}
+			/>
+		{:else}
+			{#if chosenStory}
+				<div class="story">
+					<span class="ep">{chosenStory.inbox ? 'INBOX' : [chosenStory.series, chosenStory.episode].filter(Boolean).join(' · ')}</span>
+					<h3>{chosenStory.title}</h3>
+					{#if chosenStory.description && !chosenStory.inbox}<p>{chosenStory.description}</p>{/if}
+					<p class="dim">{chosenStory.files} files · {gb(chosenStory.bytes)}{chosenStory.inbox ? '' : ` · id ${chosenStory.id.slice(0, 12)}…`}</p>
+				</div>
+				<h2>Classes → destinations</h2>
+				<table class="classes">
+					<tbody>
+						{#each CLASSES as c (c)}
+							<tr>
+								<th>{c}</th>
+								<td>{chosenStory.classes[c]?.[0] ?? 0} · {gb(chosenStory.classes[c]?.[1] ?? 0)}</td>
+								<td class="to">{chosenStory.rules[c].join(' + ')}</td>
+							</tr>
+						{/each}
+					</tbody>
+				</table>
+			{/if}
+			<h2>Settings</h2>
+			<div class="switches">
+				<label class="switch"><input type="checkbox" checked={autoProxy} onchange={(e) => setAutoProxy(e.currentTarget.checked)} /> Proxies by themselves after ingest</label>
+				<button class="link" onclick={() => (showDevices = !showDevices)}>{showDevices ? 'Hide devices & storage' : 'Devices & storage'}</button>
+			</div>
+			{#if showDevices}<div class="devices"><Devices /></div>{/if}
+
+		<h2>Activity{#if rows.length} · {done.length} files{/if}</h2>
 		<ol>
 			{#each rows as r (r.index)}
 				{@const o = r.outcome!}
@@ -215,6 +265,7 @@
 				</li>
 			{/each}
 		</ol>
+		{/if}
 	</div>
 </section>
 
@@ -222,7 +273,17 @@
 	.ingest { grid-area: main; display: grid; grid-template-columns: 19rem minmax(0, 1fr) 22rem; gap: 1px; background: var(--edge); min-height: 0; }
 	.batch { display: flex; flex-direction: column; gap: 0.2rem; min-height: 0; }
 	.batch > :global(.table) { flex: 1; margin-top: 1rem; }
-	.devices { margin-top: 1.5rem; border: 1px solid var(--edge); border-radius: 12px; background: var(--bg); }
+	.devices { margin: 0.8rem 0 1.2rem; border: 1px solid var(--edge); border-radius: 12px; background: var(--bg); }
+	.log h2 { margin-top: 1.2rem; }
+	.back { margin-bottom: 0.8rem; font-size: 0.82rem; }
+	.story .ep { font-family: ui-monospace, monospace; font-size: 0.7rem; color: var(--dim); }
+	.story h3 { margin: 0.15rem 0 0.3rem; font-size: 1.1rem; }
+	.story p { margin: 0 0 0.3rem; font-size: 0.82rem; }
+	.dim { color: var(--dim); }
+	.classes { width: 100%; border-collapse: collapse; font-size: 0.78rem; }
+	.classes th { padding: 0.25rem 0; font-weight: 600; text-align: left; }
+	.classes td { padding: 0.25rem 0.4rem; color: var(--dim); }
+	.classes .to { text-align: right; }
 	select { padding: 0.45rem 0.6rem; border: 1px solid var(--edge); border-radius: 8px; background: #fff; font: inherit; color: var(--ink); }
 	.switches { display: flex; flex-direction: column; gap: 0.5rem; margin-top: 1.2rem; padding-top: 0.8rem; border-top: 1px solid var(--edge); }
 	.switch { flex-direction: row; align-items: center; gap: 0.45rem; margin: 0; }
