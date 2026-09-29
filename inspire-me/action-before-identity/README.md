@@ -2,10 +2,10 @@
 title: Action before identity — the stack of proof
 originalTitle: "Stop Trying to Feel Confident and Start Becoming Dangerous! | Chris Williamson"
 source: https://www.youtube.com/watch?v=ks3Rgl4oC3E
-thumbnail: bafkreihkttaqkd3rauglwilyorjllxkgdj67gphbccpftmnmvna6r3kxze.jpg
+thumbnail: 6ef30aebb1d1bd513124f3791f5894ee8ba686a1932bff25e09bf62a9fff13e3.jpg
 type: video
 author: Chris Williamson
-authorImage: bafkreie5e7obpxnssrasmdxn2iyvlxaf2cde2vo37rfl5iag7qxckfzrf4.jpg
+authorImage: fdae8d7e3d5bcfbc9c5034ff59efeab842be7be817b28982846de46a40658fd0.jpg
 via: Mental Quest
 authorUrl: https://www.youtube.com/@ChrisWillx
 added: 2026-09-13

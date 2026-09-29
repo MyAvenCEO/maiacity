@@ -6,8 +6,8 @@
 <script lang="ts">
 	import { asset } from '$lib/media/url';
 	// the banner (a woman on a mountain top at sunrise) and Samuel's portrait, by CID
-	const BANNER = 'bafybeifeluwlsey3m6cto3th3ak22lb2g7cum627fwp6ivvu4mi6nk4voi.jpg';
-	const SAMUEL = 'bafybeigc4o3dpecqu3pvrzldsjie6b2xs7sdjeetuafxbjqckqnabiy5d4.jpg';
+	const BANNER = 'a78e789f5d7c92310ebaac44368dd1c3ab6e65efcdee67f148649b3965a03f69.jpg';
+	const SAMUEL = 'dad53831fb215f1d6c5fc29c111aba8a2d7b472b43ab076da7537787c2895b8a.jpg';
 
 	// the banner is optional: without the illustration the headline simply
 	// stands on the page

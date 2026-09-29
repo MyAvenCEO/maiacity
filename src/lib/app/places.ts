@@ -17,10 +17,10 @@ export const APPS: Place[] = [
 ];
 
 export const PLAY: Place[] = [
-	{ href: `${base}/app/games/sandbox-1/`, label: 'Sandbox 1', icon: 'play', release: 'draft', note: 'A hex island to settle', cover: 'bafkreidb6dx5ija5yeewxvlliz7nvhqurcrxwk4uozka476of6b26zocxa.jpg' },
-	{ href: `${base}/app/games/sandbox-2/`, label: 'Sandbox 2', icon: 'play', release: 'draft', note: 'The planet and its first cities', cover: 'bafkreihvabwjkwgkv3v7lr5726p346iovu4zrekaaf2w7qerxbvicwg5mm.jpg' },
-	{ href: `${base}/app/games/sandbox-3/`, label: 'Sandbox 3', icon: 'play', release: 'draft', note: 'Inside the domes', cover: 'bafybeigx5mtrbdzh3idwbfrkureiwnfyhw3jtyclg55vuyc67sxdo6w5fa.jpg' },
-	{ href: `${base}/app/games/sandbox-4/`, label: 'Sandbox 4', icon: 'play', release: 'draft', note: 'A whole dome cell', cover: 'bafybeiatftbwtb5x7b2bd7zh5dtefhytka27q36djxsn2hmwwtcdd7gxgm.jpg' }
+	{ href: `${base}/app/games/sandbox-1/`, label: 'Sandbox 1', icon: 'play', release: 'draft', note: 'A hex island to settle', cover: '6a08f524a54384aa2c902b0e19f3d01b0264f1c218f62a7c47c2950ed0a0b620.jpg' },
+	{ href: `${base}/app/games/sandbox-2/`, label: 'Sandbox 2', icon: 'play', release: 'draft', note: 'The planet and its first cities', cover: '88528c9521de8682f676c3e2539c3a19ffd2a4731a2343410761025e27fde55e.jpg' },
+	{ href: `${base}/app/games/sandbox-3/`, label: 'Sandbox 3', icon: 'play', release: 'draft', note: 'Inside the domes', cover: 'd17cce66bce1298077dfa2617b08d868a2564503ee8bfabbbf01f40bdc30e2f9.jpg' },
+	{ href: `${base}/app/games/sandbox-4/`, label: 'Sandbox 4', icon: 'play', release: 'draft', note: 'A whole dome cell', cover: '1427db9edf3652e5354bb645e1c8155930dd53bf7cb17e39a4019efe33c6c2d6.jpg' }
 ];
 
 export const READ: Place[] = [

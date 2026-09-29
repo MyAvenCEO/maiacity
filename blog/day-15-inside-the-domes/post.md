@@ -3,10 +3,10 @@ title: From outside it is a glass bubble. We walked inside, and there is a food 
 subtitle: Day 15 — every dome in avenCITY Sandbox 2 can now be walked through, from the sixteen-metre glamping dome to the master dome with a round stage sunk into its floor.
 day: 15
 author: avenSAMUEL
-authorImage: bafybeigc4o3dpecqu3pvrzldsjie6b2xs7sdjeetuafxbjqckqnabiy5d4.jpg
+authorImage: dad53831fb215f1d6c5fc29c111aba8a2d7b472b43ab076da7537787c2895b8a.jpg
 authorRole: Building maiaCITY
 date: 2026-09-23
-cover: bafybeign2isep3a7pidbvpbmnyq6ec37vhu6xua3bewjv2qqpyfsa3soqi.jpg
+cover: a587ea4f24cdcd44df90426893893ccbd5c95319279887eb7315bd68d10bf696.jpg
 coverAlt: "The kitchen garden inside a large dome: tomatoes on their stakes, beds of salad and chard along a stone path, the food forest rising behind."
 excerpt: >-
   On Day 14 the village grew from above. Today we opened the door. A seven-layer forest and a
@@ -31,7 +31,7 @@ There are four sizes, and each one lives differently. But every village starts s
 
 ## Before the first dome, a tent for two
 
-![The bell tent for two, a campfire and two chairs outside the door.](bafybeigrxussxd34hh5e4ua5y2evqu3ehvvutqh3x75mclie7ewsmtmn54.jpg)
+![The bell tent for two, a campfire and two chairs outside the door.](a49e17ca3615f828559d038056f1e6bf646d128277916f294110d4b9a8eacabe.jpg)
 
 The first settlers sleep under canvas. A bell tent, four metres across, on one pole: tall enough in the middle to stand up in, two sleeping bags at the back, a lantern hanging from the pole, a wooden crate for a table.
 
@@ -41,55 +41,55 @@ It is the smallest home in the village, and the one nobody forgets.
 
 ## The glamping dome: sixteen metres, four people
 
-![Inside a glamping dome: a lemon tree in a stone planter under the skylight, the sleeping nooks behind timber screens, the kitchen on the right.](bafybeianomshfgfzo6qtlaa4uvcidnytxgxqtyrr2ed3tv6vq6hcmmegvy.jpg)
+![Inside a glamping dome: a lemon tree in a stone planter under the skylight, the sleeping nooks behind timber screens, the kitchen on the right.](4cbaffdaeef4744aa35dac03bb2f636baaa062af79647a15cf33cb0274e8e979.jpg)
 
 This is where the first settlers live once the tents come down, and it is a real home for four. Sixteen metres across, a timber frame, canvas where the beds are and glass everywhere else.
 
 It is laid out in zones round a garden. In the middle, under the skylight, a lemon tree grows in a stone planter with herbs at its feet. To one side of the door is the living room: a sofa, a rug, a low table and a wood stove with its flue running up through the roof. To the other side, the kitchen runs along the glass, with a table for four. At the back, behind timber screens, are two sleeping nooks, one with a double bed and one with two singles, and a round bathroom.
 
-![Past the lemon tree toward the door: the kitchen, raised beds and potted bananas along the glass.](bafybeib3qa5nmscpb2sxelo4j73fft7jgnnouwogtiao2k7hb6bvlgfwxu.jpg)
+![Past the lemon tree toward the door: the kitchen, raised beds and potted bananas along the glass.](61133bee68dd9eaef2f6bfe04275315ea2632a02372ff44ce3e9973c852b64bc.jpg)
 
 The garden does not stop at the planter. Raised beds and potted bananas and shrubs stand along the glass, where the light is best.
 
-![The glamping dome from outside: its stone foundation ring, the door open onto a timber deck, a path running out into the food forest.](bafybeifmnf2q6cykqdepjwoacclxezxe7ogmkeexxevol6fm3najn7mpbu.jpg)
+![The glamping dome from outside: its stone foundation ring, the door open onto a timber deck, a path running out into the food forest.](437aa18bb32913008f494aca77b26610eb98e346f306ca870a97e326f1166c04.jpg)
 
 And it has a door. You can walk out onto a timber deck with a table on it, and follow a stone path into the forest. The dome sits on a low ring of stone, its foundation.
 
 ## Outside, the forest has seven layers
 
-![Among the guilds outside: grape vines on timber poles, berry bushes, flowering herbs, clover and pumpkins under the trees.](bafybeig4unhqo5l2xnz2icoywy5ajhi7g6qyzg5utphkwp2q6qpef42afq.jpg)
+![Among the guilds outside: grape vines on timber poles, berry bushes, flowering herbs, clover and pumpkins under the trees.](dd103a53bba6aa52e04d96c9d7d8a0c5c62e7eff653827eee8844b47a7ec13e7.jpg)
 
 Every dome now stands in a food forest built the way permaculture builds one, in seven layers: tall chestnut and walnut trees, apple, mango, avocado and citrus below them, then berry bushes, comfrey and flowering herbs, a ground cover of clover, pumpkins and squash sprawling over the ground, and grape vines climbing timber poles.
 
-![Apple trees heavy with fruit, and the layers under them.](bafybeidceyf4n6nldycil7kowhpbad7h3bf6hojsxzjgx752bva4zabh4q.jpg)
+![Apple trees heavy with fruit, and the layers under them.](ae53bbe299f808c4400527ec9b1cf1671b4fa2f60ddd1ccc6e4ef2cc27b20243.jpg)
 
 A turquoise stream winds through the forest round every dome, with stones along its banks and a timber bridge wherever a path crosses it. A stone path rings each dome, and from every door another runs straight out into the trees.
 
-![The stream outside a large dome, winding between the fruit trees.](bafybeidhsjtrkhd3izafq6vwycbvfvweok3lrk4elwnsmchoz5v456jeey.jpg)
+![The stream outside a large dome, winding between the fruit trees.](6780003b5e6db797291c2f9e0bef05be1bddcb8357f5070e0825df154c695078.jpg)
 
 They are planted as guilds. Each tree has its own circle of plants round it that feed, shade and protect each other, the same idea as the forest that closes round a finished village on [Day 14](/blog/day-14-one-tent-to-233/).
 
 The forest has animals in it too, and they move. Small herds of goats wander between the trees, browsing, stopping, walking on. Geese keep to the stream, waddling along its banks. Each one goes its own way, inside its own patch of land.
 
-![Geese on the stream bank and goats by the bridge, outside a large dome.](bafybeifdqzdl6ppstzef7wgjuxt5syp6anrhlwlv5anwt4w2eophkpvjzq.jpg)
+![Geese on the stream bank and goats by the bridge, outside a large dome.](f26646bf8d869fcad47a390ee8b10474bf7397545992ecf2dcd8801c34961087.jpg)
 
-![Goats browsing under the fruit trees.](bafybeiclxy6mmey6l76eeoxwrx2x3bvb52szhrmtbjdhdb32z4cgmd2vua.jpg)
+![Goats browsing under the fruit trees.](136a003a0f7a2a2c3a20386e23d166dcca7d7bc9589951135d2fba72eeeb5b9d.jpg)
 
 ## Every big dome stands on a stone arcade, with a door to each point of the compass
 
-![A large dome from the forest: the path leads to a door under the stone arcade, two terraces above it.](bafybeid4qoaulad5mgr36f264ms7cusktudwgb4fsdg5xn74bf77r43lua.jpg)
+![A large dome from the forest: the path leads to a door under the stone arcade, two terraces above it.](7c3b7e5bc70cee5baac185220ecfec80fec0fdb23ce8643dfe11f27cde2caa55.jpg)
 
 From outside, the three big domes share one shape. The glass sits on a ring of stone arches, the dome's foundation, and the arches carry a terrace that runs all the way round at the height of the first floor. Where a dome has a second floor of rooms, a second arcade stands on the first and carries a second terrace, so every floor has its own way out into the air.
 
 There are four doors, one facing each point of the compass. Each one is a round-headed opening in a limestone wall, framed in dressed stone, its glazed door standing open, at the end of a path that runs straight in from the forest. Nothing crosses the doorway: the frame of the dome steps aside around it.
 
-![Walking under the arcade toward a door.](bafybeietaqxfyxuljr4cpfcfcl62rhbhufrykzey3vatu2zbtgbjjajlri.jpg)
+![Walking under the arcade toward a door.](6efd477f857bda6b47979964448339b3c3b704a3e4295ffd68b57494b9ddf136.jpg)
 
-![Standing inside a door, looking out through its arch at the path and the forest.](bafkreibxxlw5pd2th2mqm5oyyvx5wqsyb56msg727tdoz7q7k3fmsxkuze.jpg)
+![Standing inside a door, looking out through its arch at the path and the forest.](cfc2958649b043480951cf7317106647de9ad7333cf2be863a3f5d137b5c367c.jpg)
 
 ## The medium dome: forty metres, twelve people
 
-![The ground floor of a medium dome: a stone plaza with a long table, sofas, lanterns, and fruit trees all round.](bafybeibvot3un24y66tmpuehokqvskjg6w2rfzal5lcilomnogkmiyoh34.jpg)
+![The ground floor of a medium dome: a stone plaza with a long table, sofas, lanterns, and fruit trees all round.](0fe1140b05c041d5cd1da33ad5c793fa53f1064117510def35699ccd9d3e5c82.jpg)
 
 Step into a medium dome and you are in a garden with a roof. In the middle is a stone plaza with a long table, sofas and paper lanterns hanging from the frame. Round it grows a food forest, and inside the glass it has seven layers too, only warmer:
 
@@ -103,21 +103,21 @@ Step into a medium dome and you are in a garden with a roof. In the middle is a 
 
 The trees are big enough that the forest closes over your head as you walk.
 
-![From the gallery of a medium dome, at the top of the stair: the food forest, the paths and the beds below.](bafybeic6zaq6rv6wqzq3t7yaretzhrqceyr6lke2tuhhp3flk7qryq6ik4.jpg)
+![From the gallery of a medium dome, at the top of the stair: the food forest, the paths and the beds below.](c935e441677083b12f6a009aa98946ee2e9526a57a23cf5df053cd99d027f7cd.jpg)
 
 A stream starts beside the plaza and winds through the trees to a pond. Stone paths ring the forest and cut across it to the stairs. Along them is the kitchen garden, for the food that needs a greenhouse: beds of lettuce, green and red, tomatoes tied to stakes, cucumbers climbing netted A-frames, peppers and aubergines, rainbow chard, beans on teepees of cane, strawberries and herbs.
 
 Four stairs lead up, one on each side between the doors, each with a handrail either side so nobody steps off the edge.
 
-![One of the four stairs up to the gallery, through the forest.](bafybeifwtdibjb6k65cgmylhmh2h63oimqzgwwfzre3jvwxe4xokpcfgei.jpg)
+![One of the four stairs up to the gallery, through the forest.](1211f85c878f94ca3b9fda3179ee830c8917ba45b231972268932f71ed388e19.jpg)
 
 Upstairs, a timber gallery runs all the way round on limestone pillars, with a glass railing. The balconies are Mediterranean. Terracotta pots stand along the rail, lavender and rosemary, a small olive or a lemon tree now and then, and grapevines are trained along the top of the rail with their bunches hanging over. Under the gallery, round the edge of the ground floor, are the shared rooms that need a roof over them: the kitchen with its long counters, and the aquaponics, where fish tanks feed the growing troughs beside them.
 
-![A private room upstairs: the bed faces out through the glass.](bafybeibnqdpgenp32lk44fguax6vqszav2uwggmcnk4ifjdbugkh2rfvea.jpg)
+![A private room upstairs: the bed faces out through the glass.](d79518109a9aa78ceaf95d229f361141e0e2c5a55e734d269cd64c9f768296b3.jpg)
 
 The private rooms are on the gallery, behind timber walls, and every one faces outwards. The bed stands against the glass. You wake up looking at the forest outside, and walk out of your door onto a balcony over the forest inside. Step the other way, through the glass, and you are on the terrace outside.
 
-![The terrace round a dome: a pergola of grapevines over a table, terracotta pots, the stone arcade.](bafkreiastlly3plvcygycgcx5b3u2cwfyj2vuvte4xplw5tzs66m3z7n54.jpg)
+![The terrace round a dome: a pergola of grapevines over a table, terracotta pots, the stone arcade.](f82052f24cd2a9c0dcb778c4b4d02572097fd700a5bf0fde96b605508ac14730.jpg)
 
 The terrace is the outdoor room of every home, and it is Mediterranean too. Every table stands under its own timber pergola with a grapevine grown over the top and its grapes hanging through. Olive and lemon trees and lavender stand in terracotta pots along the balustrade, and the whole forest is spread out below.
 
@@ -125,73 +125,73 @@ Imagine the first morning in one of these. Light through the frame, the sound of
 
 ## The large dome: seventy metres, twenty-four people
 
-![The plaza of a large dome, with the food forest rising round it.](bafybeianxgh5s6aqbrzf7adea76xdwmmurli3qk6rmpoulj62fvdeeajiy.jpg)
+![The plaza of a large dome, with the food forest rising round it.](c2bfcb47ed0fd8a04ab7c471a6decb2ae23d3c3336c4463f97e1fc0a686f1615.jpg)
 
 The large domes of the second ring follow the same plan at nearly twice the size. The plaza is wider, the palms are taller, and the forest is deep enough to get lost in for a minute.
 
 The kitchen garden runs both sides of the ring path here, a bed every few steps: salad, tomatoes, cucumbers, peppers, chard, beans, aubergines, strawberries, herbs, and round again.
 
-![The kitchen garden along the ring path: tomatoes on stakes, beds of salad and chard, the forest behind.](bafybeign2isep3a7pidbvpbmnyq6ec37vhu6xua3bewjv2qqpyfsa3soqi.jpg)
+![The kitchen garden along the ring path: tomatoes on stakes, beds of salad and chard, the forest behind.](a587ea4f24cdcd44df90426893893ccbd5c95319279887eb7315bd68d10bf696.jpg)
 
 And they have two floors of rooms. Beside each of the four stairs, a second flight climbs round the first-floor walkway to a second gallery, with another ring of private rooms above the first, each one facing out through the glass.
 
-![From the second-floor gallery of a large dome, looking down over the forest inside.](bafybeietna3l6kdyvdzrra5txkj37iybxbhwdx2ln4omxpaxpsqaor77ve.jpg)
+![From the second-floor gallery of a large dome, looking down over the forest inside.](d1bc2d2f63c50f6c6758d229657b11fdecd731f7a573a1a52d0ea510b26961e8.jpg)
 
-![In the forest of a large dome: a bed of beans on their canes, fruit trees and palms all round.](bafybeigfvkrseaplpsiyc5vcb42wvtlxdmz67lmlojnecdvacfrnhsd43y.jpg)
+![In the forest of a large dome: a bed of beans on their canes, fruit trees and palms all round.](19088c78851fef2108422e8916d7cd9cf76267916ae22ca26f17c9cdbd7bda98.jpg)
 
-![Along the gallery: terracotta pots and grapevines on the rail.](bafybeigk72v3vjv7cjlp7x6yvcnnm7aze4iz6xypiwkhbasxhqvfmvgtnq.jpg)
+![Along the gallery: terracotta pots and grapevines on the rail.](1892873f2b151c8a42645cfc120c9dd27541a6613762b64a8a29d45e16bb952d.jpg)
 
-![A private room in a large dome, the bed against the glass and the land beyond.](bafybeid6y5oknbazpotdwnrpkovritnlip3ozufrsnc4pzn76htzuu3tqq.jpg)
+![A private room in a large dome, the bed against the glass and the land beyond.](c8abe4d72ef4b676a106d6cfeca404d98effbb1b2a623c60d426fc856333f99d.jpg)
 
-![The two-storey arcade of a large dome: a terrace for each floor of rooms.](bafybeifuphgcpqvqlx7dqybbwbnnschpet23z36jvvoqczdzbxndri6wam.jpg)
+![The two-storey arcade of a large dome: a terrace for each floor of rooms.](694121fdfc58ecafd5e7b4ae64e30bebd14ab7d9d199264906c1641f1891d6a4.jpg)
 
 The second floor has its own terrace too, the same as the first: stone paving, a timber balustrade, grape pergolas over the tables and pots along the rail, one storey higher and with a longer view.
 
-![On the second-floor terrace: grape pergolas, lemon trees in pots, the forest spread out below.](bafybeiacdoje6uikg73k2un75w2l2vtzy45e4quzszfjojkm7w4bis5lxm.jpg)
+![On the second-floor terrace: grape pergolas, lemon trees in pots, the forest spread out below.](f323458881ab78066a560951507d8b11125969b2144226771d048b798d831027.jpg)
 
 ## The master dome: 136 metres, and a stage in the middle
 
-![The master dome's theatre: six tiers of stone round a wide oak stage, sunk into the floor, the forest rising beyond.](bafybeificalvj37mltyqcx22es6te5dsizh7cqbxe7zh4do3urme44m3bi.jpg)
+![The master dome's theatre: six tiers of stone round a wide oak stage, sunk into the floor, the forest rising beyond.](0eb03432164eedc6f5ef7580f119d9197abd10fe2eb62888f348002e8e4382f7.jpg)
 
 The master dome is the one Day 14 saved for last, and the biggest thing a village ever builds. It is where the whole village meets, so at its centre is a theatre. Like the old amphitheatres, it is sunk into the ground, but it is fully round: six tiers of stone step down on every side to a wide oak stage. Wherever you sit, you face the middle. Stairs run down the four paths that come in from the doors.
 
-![From the stage, looking up at the tiers.](bafybeif3brasfau7rreha54bntc2ldzu7oqzhislxr3vwqdybouy3d6ahi.jpg)
+![From the stage, looking up at the tiers.](0fdbea5f820cd132d1961f91248bcde1b2a2912337152b8f9b0641748dd728b7.jpg)
 
 Round the theatre grows a real forest, all seven layers of it. Paths wind between mango, avocado and citrus trees, papayas, bananas and palms, a stream runs through it to a pond, and the kitchen garden lines both sides of the ring path.
 
-![The master dome's forest.](bafybeie26ig57sngmwxxecmt2hmnfnuwem5j2ei3aa4z72rovvk7faeiya.jpg)
+![The master dome's forest.](628564080c9717faef0fde5e8f209b947b2735a6d1c3d2f159cb1c55a43ca46b.jpg)
 
-![The kitchen garden in the master dome: chard, strawberries and tomatoes along the path.](bafybeiczmoikvoublco3tcexkbxpimzeix5ubxeqmlwe5dyqqkeeq4qzoa.jpg)
+![The kitchen garden in the master dome: chard, strawberries and tomatoes along the path.](a5ad02519bea23fad010baee293a19dd90ff7c4970f649d46280679ec07f1d9d.jpg)
 
 ### The ring where the village works
 
 Under the galleries, the ground floor of the master dome is where the village makes things. The ring runs all the way round, and it is split into workshops between the doors.
 
-![The woodshop: workbenches with vices, a saw, a rack of boards along the glass and a pegboard of tools.](bafybeibp7tnnay5r7mfexgdwmi6wbvtb44qkmswjfv5nlcpek6svwjrue4.jpg)
+![The woodshop: workbenches with vices, a saw, a rack of boards along the glass and a pegboard of tools.](836ee94d701d4795af1af7b4372adabafb6c568df1b8d809e3123513c795303c.jpg)
 
 There is a woodshop with benches, a saw and a rack of timber along the glass. There is an art studio, with a row of easels facing the light, and a pottery, with wheels, a brick kiln and shelves of glazed pots. There is a library with sofas round a rug, and a repair bench, where bicycles and radios get opened up instead of thrown away.
 
-![The art studio: easels in a row facing the glass, a table of paints.](bafybeiduupoc2g3kpfkgobkpgrkir4ip3b52bjlle77qcrjni7ihag67iq.jpg)
+![The art studio: easels in a row facing the glass, a table of paints.](809b1947c34ad6eb12a9d415bb68c62be8fc6b95220f7c48f0a6ba4a72c0a764.jpg)
 
-![Co-working: long desks with laptops, a pinboard of plans, lanterns overhead.](bafybeiafwhd2cxclvc4or6dmeqb5hu2mn7ui6fillvcvtz5vh5g6xnfiiu.jpg)
+![Co-working: long desks with laptops, a pinboard of plans, lanterns overhead.](ee577956da90bf93840fdf2570203bf786b0c56fa3a86ab16976679a25e39211.jpg)
 
 There are two co-working spaces with long shared desks, for everyone whose work is on a screen. And there is cooking: next to the big kitchen, a bakery and cooking school with a clay bread oven, two islands to cook at, and a long table where the class eats what it made.
 
-![The bakery and cooking school: the bread oven, two cooking islands, and a long table.](bafybeifa6by2jgibxfl7gotchgqueg4mifntbw6wqgjct5vdbdn3t7sfiq.jpg)
+![The bakery and cooking school: the bread oven, two cooking islands, and a long table.](ada3d2a31e7769bf6fc489867d394d3c52586b02c325c629723de671b806a9be.jpg)
 
 ### Outside, the squares
 
-![A café square outside the master dome: a kiosk under its awning, bistro tables under parasols.](bafybeihbyxhnss5e6h2fc6kr5l3lyyddditq3zdzyxerprf7jd72x4uacq.jpg)
+![A café square outside the master dome: a kiosk under its awning, bistro tables under parasols.](a46aac011eec8881e8eb15ffc2b96d83e67ef16772a814e2723e98f6ce3d8cf1.jpg)
 
 Outside, the ring path round the master dome opens onto twelve small squares, three between each pair of doors. Each one is a place to eat and sit: a café with a kiosk and bistro tables under parasols, a restaurant with long tables under a pergola strung with lights, a fruit bar with crates of mangos and oranges, and a pizza square round a wood-fired oven.
 
-![The restaurant square: long tables under a pergola strung with lights.](bafybeibrqh5fjfffcxb4subshx4qsvbwkihakft3hfbo7fudjz6r4pedra.jpg)
+![The restaurant square: long tables under a pergola strung with lights.](d34ed8a36d87926264f4355d4ddfe9e1aecad9f37dd8cd56dd7f77fafde9b84b.jpg)
 
 Between the squares and the forest are the hens. Eight coops stand among the trees, each a timber henhouse on legs with nesting boxes, a ramp and a fenced run. The hens are never still. They scratch about the run, stop to peck, and wander on, and some are out foraging under the fruit trees, which is what hens in a food forest are for. They eat the pests and the fallen fruit, and they give back eggs and manure.
 
-![A chicken coop among the trees, hens scratching in the run.](bafkreifra357acxyp24qyy64zi6re6zbpwaxm5e4icov4y57gppowbtw7m.jpg)
+![A chicken coop among the trees, hens scratching in the run.](19fe8a39c3a5338c547b2b3d34c1ce19188cb636684e5afdf82031e9528965a4.jpg)
 
-![The master dome from the forest: the two-storey arcade, the terraces, and the squares round it.](bafybeidd2dzoahupdha6c3ikw7g6pu42u7u5plxn5t67iihuuf6oiiputy.jpg)
+![The master dome from the forest: the two-storey arcade, the terraces, and the squares round it.](d2ddea0d548c7362da7a1dbc64ff1e8af7cc414e32059063fb86cafad5244f8d.jpg)
 
 Its two galleries hold twelve rooms each. They house whoever the two rings cannot fit yet, the 17 people of a complete village, so even the last to arrive wakes up above the forest.
 
@@ -199,7 +199,7 @@ From every private room, in every dome, the view through the glass is the seven-
 
 ## The valley waits while it is built
 
-![While a dome is built, the valley of domes from Day 02 fills the screen, with the dome's name, a progress bar and the step being done.](bafkreihthlydt3dwjkhvtqb2vr5yuifxvogv47qy2uh2d42ijyy6huwgk4.jpg)
+![While a dome is built, the valley of domes from Day 02 fills the screen, with the dome's name, a progress bar and the step being done.](1580612e9ab1dc8839f073d1ef21df025d4e93ae7c2adacb3f98031c9d9d5e31.jpg)
 
 A big dome takes a few seconds to grow: the forest outside, the shell, the forest inside, the rooms. While it does, the screen shows the picture from [Day 02](/blog/day-02-the-first-brick/), two people on a ridge above a valley of domes, drawing slowly closer. Below it are the dome's name, a thin bar filling up, and the step being done. When the dome is ready, the valley fades and you are standing inside.
 

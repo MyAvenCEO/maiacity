@@ -2,10 +2,10 @@
 title: Desert rain that stays — water, biology, mulch
 originalTitle: "Turning One Desert Rainstorm Into Months of Water"
 source: https://www.youtube.com/watch?v=jcD-7YvPVQ0
-thumbnail: bafybeibtug4jtm5xx55wknknqlageu37hgnappvfwy3t4u55pbquvqb4zu.jpg
+thumbnail: 8f2ec61392dc77e8135ddfa1705fb8fc26e8aca3c6da1becc7d0e9a09dd53d05.jpg
 type: video
 author: Shaun Overton
-authorImage: bafkreiacr7kfqa3tr5a5fwjx666nsreldllms4mzvefzoelyuuiawtst5e.jpg
+authorImage: 6fead8507df682b94914338725a3dc1855235d82481a0341e282917dd0c68d1d.jpg
 authorUrl: https://www.youtube.com/@dustupstexas
 added: 2026-09-13
 categories: [water, ecology, food]

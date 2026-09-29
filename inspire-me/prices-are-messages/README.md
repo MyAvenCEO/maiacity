@@ -2,7 +2,7 @@
 title: Ask what a rule rewards, not what it intends
 originalTitle: "Once You Learn Economics, You Can't Be MANIPULATED Anymore"
 source: https://www.youtube.com/watch?v=zxVoCw3P1Gc
-thumbnail: bafkreibovhxyelbejzlolomk2pmbujfif4usqxwzmeshlyxjmq7qj6ryge.jpg
+thumbnail: a07074887a3e53fed3b2ca52c21180f29616b88873f003f8e76dd89545b3a341.jpg
 type: video
 author: Little Bit Better
 authorUrl: https://www.youtube.com/@littlebitbetter7

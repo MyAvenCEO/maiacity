@@ -14,6 +14,6 @@ export const load: PageServerLoad = () => {
 		latest: posts.filter((post) => post.slug !== pinned?.slug).slice(0, 3),
 		// checked at build time: a prerendered page can't catch a missing image
 		// before it has already painted the gap
-		banner: Boolean(media('bafybeifeluwlsey3m6cto3th3ak22lb2g7cum627fwp6ivvu4mi6nk4voi.jpg'))
+		banner: Boolean(media('a78e789f5d7c92310ebaac44368dd1c3ab6e65efcdee67f148649b3965a03f69.jpg'))
 	};
 };

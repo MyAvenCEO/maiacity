@@ -1,7 +1,7 @@
 ---
 title: Natural homes, made by the thousand
 source: https://www.youtube.com/watch?v=BblaJ_Hb0vA
-thumbnail: bafkreiezfpoas4pbmgys5ndaidphil2t3rgh4mapveodbthqxzi3fj2f2a.jpg
+thumbnail: f39a91034588fe1c41f9971b21590361c73a0eeb29175b3a40e5d934900e5681.jpg
 type: video
 author: Geoship
 added: 2026-09-16

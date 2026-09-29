@@ -3,10 +3,10 @@ title: We turned bare rooms into homes and gave the silent forest its sound
 subtitle: Day 18 — the rooms in every dome got their baths, beds and terrace doors, the land between them got its geese, bees, frogs and ponds, and for the first time you can hear all of it.
 day: 18
 author: avenSAMUEL
-authorImage: bafybeigc4o3dpecqu3pvrzldsjie6b2xs7sdjeetuafxbjqckqnabiy5d4.jpg
+authorImage: dad53831fb215f1d6c5fc29c111aba8a2d7b472b43ab076da7537787c2895b8a.jpg
 authorRole: Building maiaCITY
 date: 2026-09-25
-cover: bafybeifpqvwp6wkixtdf3poesyfrvmf6gyffehpn6v2q5dufg7wlmdtpta.jpg
+cover: 1ebf55a75d144560891cacaf9460a56e3eb44a1aa063468e57ac01c99357b1c7.jpg
 coverAlt: A room in the gallery of a dome, rounded plaster furniture on a timber floor, plants in pots, clear glass looking out over the terrace.
 excerpt: >-
   Yesterday you could walk through thirteen domes and never hear a thing. Today the stream
@@ -28,19 +28,19 @@ On [Day 17](/blog/day-17-one-world-thirteen-domes/) every dome stood in one worl
 
 A home is the corner where you read in the morning. It is the bath you step into after a day in the forest, the door you open onto the terrace, the plant on the shelf that needs water. So every room got the things a person actually lives with.
 
-![A room in the gallery of a dome: rounded furniture, a timber floor, plants, and the clear glass beyond.](bafybeifpqvwp6wkixtdf3poesyfrvmf6gyffehpn6v2q5dufg7wlmdtpta.jpg)
+![A room in the gallery of a dome: rounded furniture, a timber floor, plants, and the clear glass beyond.](1ebf55a75d144560891cacaf9460a56e3eb44a1aa063468e57ac01c99357b1c7.jpg)
 
 A wide bed with soft rounded edges. A curved bench along the wall with cushions on it, a round table and stools. A niche with shelves, a rug. A desk by the window with a deep armchair. And plants: in pots on the floor, on the shelves, climbing by the door.
 
 None of it has a sharp corner. The furniture is plastered by hand, the way Waldorf buildings are, every edge rounded and every surface soft to the eye. You feel the difference before you can name it.
 
-![The bed, the plants and the curved bench, the forest outside the glass.](bafybeialgryk4zwtwrd6tgnge3sv3pn7cw32vvggcph5mew57ez5ccfjoa.jpg)
+![The bed, the plants and the curved bench, the forest outside the glass.](bbd876b605df24a431710a7a815743c0e349bf9d42a3b42256e1311ee4b4b3ed.jpg)
 
 Every room has its own bath: a bowl of smooth stone, low and wide, set into the floor with pebbles round it. Behind a curved wall there is a shower, closed and warm.
 
-![A stone bath in a room of the gallery, pebbles round it, an armchair beside it.](bafybeihvesaqpsf6dxu6kr2zgmxeirqc4cs26ahfflfv3vpkte7hxqy4hq.jpg)
+![A stone bath in a room of the gallery, pebbles round it, an armchair beside it.](8fb0dc56d82f0e4d80133fe3c44379cfe0c4b19ac4999a4800ba2b5bc4ea03e9.jpg)
 
-![A desk and an armchair by the window.](bafybeidgrkirdenfiv5cukncgy3acj5kaz7js7rrsvj6tgdhgciwlmluym.jpg)
+![A desk and an armchair by the window.](da653aeb02e5495b6a9b92454533205d19eac05ac279361c361e394b767c254e.jpg)
 
 The walls between the rooms are solid now. You cannot walk through them, only through the door.
 
@@ -52,7 +52,7 @@ On Day 17 the whole dome became solar glass, every triangle laid with dark blue 
 
 So the glass in front of the rooms is clear, and the solar cells stay above and around it. From your room you look straight out at the forest, the terrace and the sky. And in the glass there is a door.
 
-![Looking back at a room's glass door from the terrace.](bafybeid6nb4pjnkokdjjrkq24cckhkkopxyoovmol7pr2sad2lls3mpvyu.jpg)
+![Looking back at a room's glass door from the terrace.](9ea6811a3ee5fac8a44a27568daae1db43a81c4578ddf166e42e5b410da9612d.jpg)
 
 ## Every terrace is wide enough to live on
 
@@ -65,11 +65,11 @@ They are two and a half metres wider now, wide enough for a whole life outside. 
 - a curved plaster bench round a low table, felt cushions, a big planter at each end
 - two hanging egg chairs from a curved timber frame, a sheepskin in each
 
-![The terrace in front of the rooms: daybeds, plants, the stone arcade.](bafybeihmp4w5gmtxdlsvx3nsyzymdhmuunljytesktf6pnaomkzqenc3rq.jpg)
+![The terrace in front of the rooms: daybeds, plants, the stone arcade.](cf9ae5db864ee4775e39d01543df1e20b40193073afa95aa9377ce2d5532026d.jpg)
 
-![Daybeds on the terrace, looking out through the arcade.](bafybeiafiviltkp3akgyc6tez5zgvfu7czexycqr25wpnoycaianixqn4q.jpg)
+![Daybeds on the terrace, looking out through the arcade.](ef740aa294225b349eda8f296f7c01579f00ef997b4481715403eb89b829956d.jpg)
 
-![The upper terrace of a large dome, high above the forest.](bafybeielpynx4d77nb7k7rlyn7jpo6ao63pto66rurgj2kjusqb3o6f6na.jpg)
+![The upper terrace of a large dome, high above the forest.](20d25c031d280e8cbc7a6822d7d914052dd941e9c1f85f9828b7e52319106f7d.jpg)
 
 Imagine an evening out here. Somebody from three doors down has brought a bowl of figs from the forest. The children are asleep inside, the glass door open a hand's width so you can hear them.
 
@@ -93,15 +93,15 @@ A sound needs someone making it.
 
 There are more goats now, grazing in small flocks between the domes and along the paths.
 
-![Goats beside a path between the domes.](bafybeihq2fufxv33px64xr3s33osi5aplcmxpguohho45wp4bf3jre5l7e.jpg)
+![Goats beside a path between the domes.](2771165774a52fe73498daf097e7b1924d0013b9d29b13df1312dacb5b19a5d9.jpg)
 
 The geese keep to the water.
 
-![Geese on the stream between the domes.](bafybeih6xnp4yo6vvphmiaanf67buev54ehhbvgmstscaqkfkgt7ri5hny.jpg)
+![Geese on the stream between the domes.](792f3e235b4e073faa0983e406171f4e0474678b3579bd90b5bc02d0e3c9137c.jpg)
 
 Frogs sit on the banks of every pond and stream, and you hear them long before you see them. Fish swim in the ponds and the streams, and in the tanks of the aquaponics beds on the master dome's ground floor, where a small stream of its own runs through. And in the forest between the domes stand groups of beehives, the bees circling round them.
 
-![Beehives in the food forest.](bafybeiailhelwuia4qdyexsotfj5i4brekr6ouhdivbvfb5rmnbstyltwi.jpg)
+![Beehives in the food forest.](d39c3903ba03627a239f0bd767c482cd59b91838cf6e0bfd6019e534e8759864.jpg)
 
 ## The ground was a green sheet
 
@@ -109,17 +109,17 @@ Walk through a real forest and look down. There is almost no plain ground in it.
 
 So the forest floor got what a forest floor has: moss, the white threads of mycelium, patches of bare dark earth, ant hills, rotting logs going soft, stones and small rocks, low bushes. The grass got blades.
 
-![The forest floor between the domes: grass, moss, stones and low plants under the trees.](bafybeifzsn4z3sqg5kv2pcdbz7ws4e2mgnlamcyjgqbccgfmnlekcej3u4.jpg)
+![The forest floor between the domes: grass, moss, stones and low plants under the trees.](fd499a9332d35cbd3d7ab67727e5dd3522537c27ff403026c05a55b8ae934e3b.jpg)
 
-![A rotting log on the forest floor.](bafybeigxyo3kdjorgytrjow2nqn6hw3iddljvuufduiomigry46735y6f4.jpg)
+![A rotting log on the forest floor.](291807b4b289b578f99a32f20ab570d8cf63c0c59656a4cbc95c2e4cf7c0ada0.jpg)
 
 The ponds were round blue discs. Now they have real shapes, shallow edges where the water is pale over sand and deep middles where it turns dark, reeds and lily pads along the shore. And no tree stands in the water anymore.
 
-![A pond from above: its shallows and deep water, a bridge, reeds along the shore, a playground beside it.](bafybeibdcj6ns5dv2j3lu5mx4ji2gabs7gp2r3kv63rn2z5zdxpszaweem.jpg)
+![A pond from above: its shallows and deep water, a bridge, reeds along the shore, a playground beside it.](482535954361e391300d3158ced30e4557de95e488b9eacda09f49a5cd3fd3aa.jpg)
 
 Between the domes stand three wooden playgrounds: a sandpit ringed with half-buried logs, a tower with a tent roof and a slide down into the sand, a swing on an A-frame of logs, stumps to jump between. The hives are never near them.
 
-![A wooden playground between the domes, the master dome behind it.](bafybeigba7ie5xsgrgq2hjoccyt7plxn6427u7nkxm6e76m6ca7r4eo7dm.jpg)
+![A wooden playground between the domes, the master dome behind it.](490556e3d0875212540b8baa870ddedf683b1cdaea64180f6cd1afe2e4874d09.jpg)
 
 ## You can walk into any dome, any time
 

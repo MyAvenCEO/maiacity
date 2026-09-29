@@ -2,10 +2,10 @@
 title: A school class printed money that loses value if you hold it
 originalTitle: "Inside the German town where people print their own money"
 source: https://www.youtube.com/watch?v=WzijH3lgzHI
-thumbnail: bafkreigpsykoxcbszljs27kvrbgm72f7yk4az7p6hepiwpyn23o76edc3u.jpg
+thumbnail: 9339c7fe3e747a6caf2d7bcf765d58430735262e91134202a8f94b3a6df64991.jpg
 type: video
 author: DW Planet A
-authorImage: bafkreifrd6ygmwy7rgji6qmlhbjlqo2y2b6z7pvb6bzjzdaxsiwgb5bxaa.jpg
+authorImage: 03ba00f62c52d01d2756c094cc83774a03218b68b9a4e353ab6fab911ec0fed6.jpg
 authorUrl: https://www.youtube.com/@DWPlanetA
 added: 2026-09-18
 categories: [money, coop, ecology]

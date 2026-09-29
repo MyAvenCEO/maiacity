@@ -2,10 +2,10 @@
 title: Manifestation as coherence — emotion, thought, action
 originalTitle: "Manifest INSTANTLY With This Hidden Formula"
 source: https://www.youtube.com/watch?v=9Ro0gp7xOlg
-thumbnail: bafkreibolieuqw7wmepww3cl7oixascr5mjetwbbdqcrgwduztjar2gs5m.jpg
+thumbnail: 43a7616c30b89f671c0647f6828dd4231b38221dd2decb94fb8cbd551543d81d.jpg
 type: video
 author: Celastrina Calea
-authorImage: bafkreian2n7vmwzqd3pzlry7lqbip72xztx6ykzkj7ervyk7ftvdodhd54.jpg
+authorImage: 59e911522998d49fdfb6ee2f32a1dbd79cc482744ffd363f4361be523b5ec523.jpg
 authorUrl: https://www.youtube.com/@celastrinacalea
 added: 2026-09-12
 categories: [self, health]

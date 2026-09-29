@@ -2,10 +2,10 @@
 title: 20 fermented foods — living food as medicine
 originalTitle: "20 Fermented Superfoods That Will Heal You Instantly"
 source: https://www.youtube.com/watch?v=KYObF1-4SMU
-thumbnail: bafkreihkhdb422ev6bwjsh4zfouhy32xd5z2e6wisydkwul4qldri2lzbq.jpg
+thumbnail: 4b40d87f1582c301e202567bed70b82d80ce727f2b453c9b491aeadb2cd4b226.jpg
 type: video
 author: Homestead Roots
-authorImage: bafkreierqcaksl3imnrhy5zbf5hl4zumoa3hex7d7wx7cyo2oe2xhgpiyq.jpg
+authorImage: 9baf3a621c0fc7827edc9a1ed7a02e8be21330a1b31b223c4da840afa991ccfc.jpg
 authorUrl: https://www.youtube.com/@homesteadrootss
 added: 2026-09-11
 categories: [food, health, coop]

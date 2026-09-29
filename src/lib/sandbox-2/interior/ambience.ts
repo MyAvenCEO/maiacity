@@ -14,17 +14,17 @@ import { asset } from '$lib/media/url'
 export type SoundName = 'forest' | 'inside' | 'water' | 'hens' | 'geese' | 'goats' | 'frogs' | 'bees' | 'factory' | 'machine' | 'lift'
 /** each sound's recording, by CID */
 const FILES: Record<SoundName, string> = {
-	forest: 'bafybeico4zfwof2xi4pbo2ypke6mquppztq6yqvxra4ylt464waiakcgly.mp3', // forest_nature.mp3
-	inside: 'bafybeidcygcrgevwld4brioqtqy723ws637u7jvfvplojp5nghsyboar2a.mp3', // soft-nature.mp3
-	water: 'bafybeicbzq5tkd5426bkg7n2b3pjasv2gn2aquevc2irskh2fsezpoxxwy.mp3', // water_stream.mp3
-	hens: 'bafkreigdnriq3agzxwr54tpbw5y34ul2cirojczyorlya7duuhqo3at4le.mp3', // chickens.mp3
-	geese: 'bafybeid6pjgd4qfleeipy5ojyzfz5nx3vpt6fm3l2wxhur4rysoytxkaze.mp3', // geese.mp3
-	goats: 'bafybeihelcqshzlwyy5s2hofvkf776fk5djwdnqo2abnfuvyvpp3ylew34.mp3', // sheep.mp3
-	frogs: 'bafybeiez76uxmjf3lw7szaguqcwcgoh7lh55zu5eqr32zu526ljxbjjrfy.mp3', // frog.mp3
-	bees: 'bafybeiery7dtnfprkwgtxxpagsm54oxsbsahktiyf3frcjjwd4sq7b6hoi.mp3', // bees.mp3
-	factory: 'bafybeic6fjuvactqgno3kmoehrtfgqqrq3u5fm4445nivd7drofobx6p4a.mp3', // factory-ambience.mp3
-	machine: 'bafybeiefqt2zfmcpr5bovpxbdrgnq5auxwis2eom45rygghtbsew3xiday.mp3', // machine.mp3
-	lift: 'bafkreiaq4k5xgzzdkwjnvbirorxkhmsqfofruxbaojq3opqrqek7jbo4ou.mp3' // lift.mp3
+	forest: 'f3ebbb41045f0a45d3a27d6782beb71973fa539e9640d1c7d1b9434b02351575.mp3', // forest_nature.mp3
+	inside: 'b6713600778441dab6c5232fa418af56a85209b17308e16975684fafd6bd3f84.mp3', // soft-nature.mp3
+	water: '42cbca3f5c288272cc9e836a4a1f970c2edd14c4c95b282fc166bc0ff1f978d7.mp3', // water_stream.mp3
+	hens: '4ffa6fe2e7cbc5082a78a3eabed4706afde5d6cb3eaa9af8ba5b05ab1d3d5da7.mp3', // chickens.mp3
+	geese: '646b67cf337fdfdb3446e55b1f1edd4bfc3e6469bc12ea3acd07901cc71cda8f.mp3', // geese.mp3
+	goats: 'ef0770d0d1b2927adbb95158dcf2a7c1a3abf74bf35f4aab4da3b2885374f25e.mp3', // sheep.mp3
+	frogs: '1934113f408410383c16336a37d2e274579e0cc0802e574dcc232982cca02a84.mp3', // frog.mp3
+	bees: '7605ffd5723a4511ba9320009d5e2beda3f9a734ad244d7765a6120bf4200e82.mp3', // bees.mp3
+	factory: 'e36dbf3ef91c0502ad0ebafa4de32e4f03a4428c5082b1cb806fb4007c34acfa.mp3', // factory-ambience.mp3
+	machine: '685b4be78584d58bce7d5a658046f047eddfef1f358acf7939ccac46c2db567e.mp3', // machine.mp3
+	lift: '76059524fa9f0ac77bf2aab1738a344e3dd8526667502302f30637c007fb6be2.mp3' // lift.mp3
 }
 /** how loud each is at its loudest */
 const LOUDEST: Record<SoundName, number> = { forest: 0.27, inside: 0.45, water: 0.69, hens: 0.5, geese: 0.45, goats: 0.4, frogs: 0.5, bees: 0.45, factory: 0.5, machine: 0.55, lift: 0.6 }

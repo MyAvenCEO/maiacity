@@ -2,10 +2,10 @@
 title: The best thing you can do for nature is stop tidying it
 originalTitle: "6 Principles To Restore Nature, Anywhere"
 source: https://www.youtube.com/watch?v=jZb6_jlUJXs
-thumbnail: bafybeihzfos7lgpzykkn74vhhd2gwp525axxoqkclphvshtxvxffe4dtly.jpg
+thumbnail: 0d3b6e1e52072a82424c43ff12edb6f6cb324e88f1ebb0f4c4880c3ed83f4bc9.jpg
 type: video
 author: Leave Curious
-authorImage: bafkreidvee2cpo6lddm5uzqdcwol2cmlmdus7d4ylgylfntvz5cps3txbq.jpg
+authorImage: 0f591cec9fc7d1bca7107d0188522dabab0e9a24632501337b45e11b134f6360.jpg
 authorUrl: https://www.youtube.com/@LeaveCurious
 added: 2026-09-25
 categories: [ecology, water, food]
