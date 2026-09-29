@@ -24,7 +24,7 @@
 		return Array.from({ length: Math.floor(s.span / every) + 1 }, (_, i) => i * every);
 	});
 	/** the world clip whose lanes are open */
-	const wc = $derived(s.tab === 'edit' && isWorld(s.sel) ? s.sel : null);
+	const wc = $derived((s.tab === 'edit' || s.tab === '3d') && isWorld(s.sel) ? s.sel : null);
 	const spec = $derived(wc ? s.specOf(wc) : null);
 	const LANES = ['Camera', 'Hour', 'Exposure', 'Lights', 'Cues'];
 	const rows = $derived(`1.5rem minmax(2.6rem, 1fr) repeat(4, minmax(1.7rem, 1fr))${spec ? ` repeat(${LANES.length}, 1.45rem)` : ''}`);

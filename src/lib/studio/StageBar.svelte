@@ -14,16 +14,17 @@
 	const TABS = [
 		{ id: 'ingest', label: 'Ingest', key: '1' },
 		{ id: 'library', label: 'Library', key: '2' },
-		{ id: 'edit', label: 'Edit', key: '3' },
-		{ id: 'grade', label: 'Grade', key: '4' },
-		{ id: 'render', label: 'Render', key: '5' }
+		{ id: '3d', label: '3D', key: '3' },
+		{ id: 'edit', label: 'Edit', key: '4' },
+		{ id: 'grade', label: 'Grade', key: '5' },
+		{ id: 'render', label: 'Render', key: '6' }
 	];
 	/** @param {import('$lib/auth/client').TimelineStage} st */
 	const reached = (st) => STAGES.indexOf(st) <= STAGES.indexOf(s.stage);
 	/** @param {Tab} t */
 	function go(t) {
 		if (t === 'grade' && !s.locked) return;
-		if (t !== 'edit') s.stop();
+		if (t !== 'edit' && t !== '3d') s.stop();
 		s.tab = t;
 	}
 </script>

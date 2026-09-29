@@ -40,7 +40,7 @@ import { WorldViewer } from './world.svelte.js';
 /** @typedef {import('$lib/auth/client').TimelineClip} Clip */
 /** @typedef {{ url: string, duration: number, peaks: number[], buffer?: AudioBuffer }} Source */
 /** @typedef {{ word: string, start: number, end: number }} Timed */
-/** @typedef {'ingest' | 'library' | 'edit' | 'grade' | 'render'} Tab */
+/** @typedef {'ingest' | 'library' | '3d' | 'edit' | 'grade' | 'render'} Tab */
 /**
  * A sound cue of a world shot, where it lands on A3 (derived from the shot record, never saved as a clip).
  * @typedef {Clip & { cue: true, from: string }} CueClip
@@ -221,7 +221,7 @@ export class Studio {
 	version = $derived(this.current?.version ?? 1);
 	locked = $derived(this.stage !== 'edit');
 	/** picture and sound can be changed: the Edit tab, the edit not locked */
-	canEdit = $derived(this.tab === 'edit' && !this.locked);
+	canEdit = $derived((this.tab === 'edit' || this.tab === '3d') && !this.locked);
 	/**
 	 * the frame the program shows: the timeline's own shape, or in Grade the one being checked
 	 * @type {string}
@@ -382,7 +382,7 @@ export class Studio {
 	 * @param {Clip | null | undefined} c @returns {Cdl[]}
 	 */
 	gradesOf(c) {
-		if (this.tab === 'edit' && !this.previewGrade) return [];
+		if ((this.tab === 'edit' || this.tab === '3d') && !this.previewGrade) return [];
 		return gradesFor(c, this.current);
 	}
 
@@ -1028,7 +1028,7 @@ export class Studio {
 	async record(c) {
 		if (!this.canEdit || !isWorld(c)) return;
 		if (this.world.recording) return this.stopRecording(c);
-		if (this.world.state !== 'ready') return void (this.error = 'Recording needs the live world (film mode).');
+		if (this.world.state !== 'ready') return void (this.error = 'Recording needs the live world — in the 3D tab.');
 		this.seek(c.start);
 		await this.play();
 		if (!this.world.startRecording()) return;

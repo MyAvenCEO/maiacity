@@ -48,9 +48,14 @@
 		}
 		s.scopeCanvas = c;
 	});
-	// the world: started in its iframe as soon as the timeline has a world clip
+	// the live world: started in its iframe in the 3D tab only, and let go (its WebGL, its domes) when the tab is left —
+	// everywhere else a world shot plays from its HD proxy
+	const inWorld = $derived(s.wantWorld && s.tab === '3d');
 	$effect(() => {
-		if (s.wantWorld && iframe) void s.world.attach(iframe, worldUrl(base));
+		if (inWorld && iframe) void s.world.attach(iframe, worldUrl(base));
+	});
+	$effect(() => {
+		if (!inWorld && s.world.state !== 'off') s.world.detach();
 	});
 	// paused: the world (or its stand-in) shows the frame under the playhead whenever anything about it changes
 	$effect(() => {
@@ -140,7 +145,7 @@
 			bind:plan
 			bind:supported={gl}
 		/>
-		{#if s.wantWorld}
+		{#if inWorld}
 			<iframe class="world" class:on={live} bind:this={iframe} title="The world (film mode)" tabindex="-1"></iframe>
 		{/if}
 		<!-- the captions' backdrop (as the render sets it); not in Grade, where the picture itself is judged -->
