@@ -90,7 +90,8 @@ film.shots.forEach((s, i) => {
 
 const f = [];
 // every shot on the same clock, then dissolves at the cut points
-shots.forEach((_, i) => f.push(`[${i}:v]settb=AVTB,fps=${FPS},format=yuv420p[s${i}]`));
+// read with the shot's own matrix (tagged, or BT.709 for HD), and every step in BT.709 / TV range from here on
+shots.forEach((_, i) => f.push(`[${i}:v]settb=AVTB,fps=${FPS},scale=in_color_matrix=auto:out_color_matrix=bt709:out_range=tv,format=yuv420p[s${i}]`));
 let last = 's0';
 for (let i = 1; i < shots.length; i++) {
 	f.push(`[${last}][s${i}]xfade=transition=fade:duration=${XF}:offset=${film.cuts[i].start.toFixed(3)}[x${i}]`);
@@ -102,11 +103,12 @@ const V = shots.length, A = V, M = V + voices.length, C0 = M + 1;
 last = 'pic';
 phrases.forEach((p, i) => {
 	const a = p.start - 0.08, b = p.end + 0.3;
-	f.push(`[${C0 + i}:v]format=rgba,fade=t=in:st=${a.toFixed(2)}:d=0.25:alpha=1,fade=t=out:st=${(b - 0.25).toFixed(2)}:d=0.25:alpha=1[c${i}]`);
+	// the caption's RGB into YUV with BT.709's matrix (ffmpeg's default would be BT.601: a hue shift on the shadow)
+	f.push(`[${C0 + i}:v]scale=out_color_matrix=bt709:out_range=tv,format=yuva420p,fade=t=in:st=${a.toFixed(2)}:d=0.25:alpha=1,fade=t=out:st=${(b - 0.25).toFixed(2)}:d=0.25:alpha=1[c${i}]`);
 	f.push(`[${last}][c${i}]overlay=0:0:shortest=1[o${i}]`);
 	last = `o${i}`;
 });
-f.push(`[${last}]format=yuv420p[vout]`);
+f.push(`[${last}]format=yuv420p,setparams=color_primaries=bt709:color_trc=bt709:colorspace=bt709:range=tv[vout]`);
 // every take where it lands; the music low under the voice, lifting later, fading out at its end or the film's
 const [low, high, liftAt] = film.musicLevels ?? [0.24, 0.42, 55];
 voices.forEach((v, k) => {
@@ -131,6 +133,7 @@ f.push(`${vox}[mu]${beds}amix=inputs=${voices.length + 1 + sounds.length}:normal
 const out = resolve('studio/film', `${film.name}.mp4`);
 execFileSync('ffmpeg', ['-y', '-loglevel', 'error', ...inputs, '-filter_complex', f.join(';'), '-map', '[vout]', '-map', '[aout]',
 	'-c:v', 'libx264', '-preset', 'slow', '-crf', '18', '-pix_fmt', 'yuv420p', '-r', String(FPS),
+	'-colorspace', 'bt709', '-color_primaries', 'bt709', '-color_trc', 'bt709', '-color_range', 'tv',
 	'-c:a', 'aac', '-b:a', '192k', '-movflags', '+faststart', out], { stdio: 'inherit' });
 rmSync(CAPS, { recursive: true, force: true });
 console.log(`${out} · ${total.toFixed(1)} s · ${SIZE}×${SIZE}`);

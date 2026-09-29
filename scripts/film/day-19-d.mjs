@@ -4,7 +4,9 @@
 // Every line is its own take (Grandpa Spuds Oxley), placed with the breath before it that the emotion asks for.
 // Every shot starts on a word: `cue: [line, 'words']` cuts just before those words are spoken — so the mango is on
 // screen as "mango" is said. Hard cuts only. The score is composed to the same clock (music.chunks, see score.ts).
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { fly, landing, move, orbit, turn, whip } from './camera.mjs';
 
 const R = (deg) => (deg * Math.PI) / 180;
@@ -32,10 +34,21 @@ const lines = [
 ];
 const TAIL = 5;
 
-const voices = [];
+// the takes' words, as the library describes them (library/<cid>.json, or LIBRARY=<dir>). Without them the shots are
+// still whole as data — camera, light, world — only their places on the film's clock are unknown: `voices`, `cuts`,
+// `music` and `sound` are then null and each shot has no `start`/`seconds` (a timeline gives them instead).
+const LIB = process.env.LIBRARY ? pathToFileURL(`${resolve(process.env.LIBRARY)}/`) : new URL('../../library/', import.meta.url);
+const wordsOf = (cid) => {
+	const f = new URL(`${cid}.json`, LIB);
+	return existsSync(f) ? JSON.parse(readFileSync(f, 'utf8')).meta.words : null;
+};
+let voices = [];
 for (const [i, l] of lines.entries()) {
-	// the take's words, as the library describes it (library/<cid>.json)
-	const words = JSON.parse(readFileSync(new URL(`../../library/${l.cid}.json`, import.meta.url), 'utf8')).meta.words;
+	const words = wordsOf(l.cid);
+	if (!words) {
+		voices = null;
+		break;
+	}
 	const speaks = i === 0 ? COLD_OPEN : voices[i - 1].speechEnd + l.pause;
 	const at = speaks - words[0].start;
 	voices.push({ cid: l.cid, take: l.take, at, speechStart: speaks, speechEnd: at + words.at(-1).end, words });
@@ -122,77 +135,81 @@ const shots = [
 
 // every shot runs from its word to the next shot's word; the last one to the end of the film
 // a shot starts on a word (cue), just after a line ends (after: [line, seconds]) — the music plays on it — or at a time
-const starts = shots.map((s) => (s.cue ? cueAt(s.cue[0], s.cue[1]) : s.after ? voices[s.after[0]].speechEnd + s.after[1] : s.at));
-const total = voices.at(-1).speechEnd + TAIL;
-const cuts = starts.map((start, i) => ({ start, end: i + 1 < starts.length ? starts[i + 1] : total, seconds: (i + 1 < starts.length ? starts[i + 1] : total) - start }));
+function timing() {
+	const starts = shots.map((s) => (s.cue ? cueAt(s.cue[0], s.cue[1]) : s.after ? voices[s.after[0]].speechEnd + s.after[1] : s.at));
+	const total = voices.at(-1).speechEnd + TAIL;
+	const cuts = starts.map((start, i) => ({ start, end: i + 1 < starts.length ? starts[i + 1] : total, seconds: (i + 1 < starts.length ? starts[i + 1] : total) - start }));
 
-// ── the score: sections that follow the arc, cut on the same clock (score.ts composes it) ─────
-const t = (i) => voices[i].speechStart;
-const music = {
-	cid: 'bafybeicvba4aokm3megtgq4o3hmnbfwyinrehlezkqmc52s7uodttbfuuu.mp3',
-	chunks: [
-		{ until: t(1) - 1.5, styles: ['cinematic ambient intro', 'pre-dawn stillness', 'soft high string pad', 'sparse felt piano single notes', 'mysterious, intimate', '60 bpm'] },
-		{ until: t(2) - 0.4, styles: ['epic cinematic sunrise swell', 'warm brass and soaring strings', 'wordless choir pad', 'gentle timpani rolls', 'awe, radiant, triumphant', 'rising to a peak'] },
-		{ until: t(3) - 0.6, styles: ['sudden drop to near silence', 'single low cello drone', 'thin, cold, wind-like texture', 'melancholic, minor key', 'sparse'] },
-		{ until: t(5) - 0.4, styles: ['warm felt piano motif returns', 'hopeful, tender', 'major key', 'soft strings underneath', 'gentle'] },
-		{ until: t(7) - 0.4, styles: ['playful marimba and pizzicato pulse enters', 'curious, bright, growing', 'light percussion', '92 bpm'] },
-		{ until: voices[8].speechEnd + 0.8, styles: ['marimba and pizzicato at full energy', 'joyful, abundant, dancing rhythm', 'bright strings join', 'building to a lift', '96 bpm'] },
-		{ until: voices[11].speechEnd + 0.6, styles: ['big epic cinematic swell', 'full orchestra', 'taiko and orchestral drums', 'soaring strings and horns', 'proud, triumphant, awe', 'peak at the start'] },
-		{ until: t(13) - 0.4, styles: ['sudden quiet', 'solo piano and cello', 'tender, intimate, evening', 'slow', 'lots of space'] },
-		{ until: total, styles: ['final emotional swell', 'strings, piano and gentle choir', 'hopeful resolution', 'warm', 'ends softly, fading out'] }
-	]
-};
-
-// ── the sound: a bed for every scene, running on under the cuts; spot sounds on their shots; a few hits on the turns ──
-// A bed runs from its first shot's cut to its last shot's end and crossfades into the next one (`fade`). The picture
-// cuts, the place does not — so its sound does not restart at every cut. The hits are aligned on their loudest
-// moment (`peak`): the boom lands on the cut into the tired land, the lorry passes on "trucks".
-const at = (name) => cuts[shots.findIndex((s) => s.name === name)];
-const sound = {
-	beds: [
-		{ cid: 'bafybeifp42dzbc7v6bcsdxualehtjw4m4v5hv2xxi7dgxafo6nhrqj34py.mp3', from: 'the-flight', to: 'the-city-wakes', level: 0.3, loop: true },
-		{ cid: 'bafybeicchy34ugl5v24iqbqj3kkuqb5b7txruudh5kgrjsbyh2uq43f76q.mp3', from: 'the-edge', to: 'a-tired-land', level: 0.34, loop: true, hardOut: true },
-		{ cid: 'bafybeie3cbl64xwr7t2ombbhboclpckwyh2lsatzsz4axzyargu4osvcje.mp3', from: 'the-edge', to: 'a-tired-land', level: 0.34, loop: true, hardOut: true },
-		{ cid: 'bafybeidcygcrgevwld4brioqtqy723ws637u7jvfvplojp5nghsyboar2a.mp3', from: 'the-bed', to: 'the-gallery', level: 0.2, after: 0.35, fadeIn: 0.5 },
-		{ cid: 'bafybeico4zfwof2xi4pbo2ypke6mquppztq6yqvxra4ylt464waiakcgly.mp3', from: 'the-food-forest', to: 'the-stream', level: 0.17 },
-		{ cid: 'bafybeialgyjehh3r62vvysdnqo5cbsj53n5c3hd6sp4mytruynhyjejq2i.mp3', from: 'the-commons', to: 'the-stone-theatre', level: 0.3, loop: true },
-		{ cid: 'bafybeidcygcrgevwld4brioqtqy723ws637u7jvfvplojp5nghsyboar2a.mp3', from: 'the-node', to: 'lanterns', level: 0.15, in: 200 },
-		{ cid: 'bafybeicyzrlhjnffsh4labekglahhqts4rykoknjb2mr7mwwzi5zsdlwum.mp3', from: 'the-forest-grows-quiet', to: 'a-better-way-to-live', level: 0.26, loop: true }
-	],
-	hits: [
-		{ cid: 'bafkreieevqnshtgaasnhgqzkkq7mwuhpgvacbs4uae4hqe4oezm4srsnqq.mp3', peak: at('the-edge').start, level: 0.6 },
-		{ cid: 'bafkreih5uyxurdzhz34upj3mggx2jfmmsnh5eq23qmgp2yzzaiicfs5koe.mp3', peak: at('the-long-road').start + 0.7, level: 0.55 },
-		{ cid: 'bafkreih5uyxurdzhz34upj3mggx2jfmmsnh5eq23qmgp2yzzaiicfs5koe.mp3', peak: at('the-edge').start + 1.2, level: 0.42 },
-		{ cid: 'bafkreiapnicq6i5t3opuasangdtc67zdjgikaqoaiohoqk6r7lpntimgle.mp3', peak: at('far-away').start + 0.5, level: 0.32 },
-		{ cid: 'bafkreih3pb3hgrdxd5645deeb6qy4662pulbq23h6cda4purk4rk675esy.mp3', peak: at('the-bed').start + 0.7, level: 0.42 },
-		{ cid: 'bafkreidsjljzq3wxybx5nlx5ynn6fk2x2ad36eonqx6ug7gm57tzvm4mtu.mp3', peak: at('the-ring').start + 1.2, level: 0.28 },
-		{ cid: 'bafkreifp7mmcnmib7cflnegwcnoaj2tve72t7tgrzrwjtav345vjebhk5q.mp3', peak: voices.at(-1).speechEnd + 0.6, level: 0.45 }
-	]
-};
-
-// ── the score's own turns: cues that take its place for a stretch (score.ts composes them, sound.ts cuts them in) ──
-// The base score plays everywhere else. Over the dip a cue of dread replaces it — a hit on the cut, then dissonance
-// with no melody — and stops dead on "Here…"; after a beat of silence a burst of light and a bouncy, happy piano
-// take over until the score's marimba section. Replacing cues less than a second apart leave silence between them.
-const HERE = at('the-bed').start;
-music.cues = [
-	{
-		name: 'dip', cid: 'bafybeib4mqdi5hkexdbxbfldzub64cp6h4jiqoxj2m5pa5tvmiclmbvi5m.mp3', from: at('the-edge').start - 0.13, to: HERE, replace: true, level: 0.5, // its impact (0.13 s in) on the cut
+	// ── the score: sections that follow the arc, cut on the same clock (score.ts composes it) ─────
+	const t = (i) => voices[i].speechStart;
+	const music = {
+		cid: 'bafybeicvba4aokm3megtgq4o3hmnbfwyinrehlezkqmc52s7uodttbfuuu.mp3',
 		chunks: [
-			{ seconds: 3, styles: ['sudden dissonant orchestral impact', 'low brass and timpani cluster', 'dark, ominous', 'then a hollow ring-out'] },
-			{ seconds: HERE - (at('the-edge').start - 0.25) - 3, styles: ['disturbing dark ambient drone', 'dissonant low strings and cello clusters', 'metallic industrial pulse like distant machinery', 'tense, oppressive, uneasy', 'minor key, no melody', 'slowly building dread'] }
+			{ until: t(1) - 1.5, styles: ['cinematic ambient intro', 'pre-dawn stillness', 'soft high string pad', 'sparse felt piano single notes', 'mysterious, intimate', '60 bpm'] },
+			{ until: t(2) - 0.4, styles: ['epic cinematic sunrise swell', 'warm brass and soaring strings', 'wordless choir pad', 'gentle timpani rolls', 'awe, radiant, triumphant', 'rising to a peak'] },
+			{ until: t(3) - 0.6, styles: ['sudden drop to near silence', 'single low cello drone', 'thin, cold, wind-like texture', 'melancholic, minor key', 'sparse'] },
+			{ until: t(5) - 0.4, styles: ['warm felt piano motif returns', 'hopeful, tender', 'major key', 'soft strings underneath', 'gentle'] },
+			{ until: t(7) - 0.4, styles: ['playful marimba and pizzicato pulse enters', 'curious, bright, growing', 'light percussion', '92 bpm'] },
+			{ until: voices[8].speechEnd + 0.8, styles: ['marimba and pizzicato at full energy', 'joyful, abundant, dancing rhythm', 'bright strings join', 'building to a lift', '96 bpm'] },
+			{ until: voices[11].speechEnd + 0.6, styles: ['big epic cinematic swell', 'full orchestra', 'taiko and orchestral drums', 'soaring strings and horns', 'proud, triumphant, awe', 'peak at the start'] },
+			{ until: t(13) - 0.4, styles: ['sudden quiet', 'solo piano and cello', 'tender, intimate, evening', 'slow', 'lots of space'] },
+			{ until: total, styles: ['final emotional swell', 'strings, piano and gentle choir', 'hopeful resolution', 'warm', 'ends softly, fading out'] }
 		]
-	},
-	{
-		// "Here… breakfast": the turn, in the music — a burst of light, then a bouncy, happy piano that runs on into the
-		// score's marimba section (it takes the score's place until then)
-		name: 'breakfast', cid: 'bafybeichfzxg35qfzh62hu3kh5hgpitho5mnbf54o3q44drd6pzhswa5ra.mp3', from: HERE + 0.35, to: t(5) - 0.4, replace: true, level: 0.62, fin: 0.02, blend: 2.5, // hands over to the score's marimba in the pause before "Beneath…"
-		chunks: [
-			{ seconds: 3, styles: ['bright joyful orchestral bloom', 'sunburst major chord', 'strings, harp and glockenspiel', 'sudden light and warmth, relief'] },
-			{ seconds: t(5) - 0.4 - (HERE + 0.35) - 3, styles: ['upbeat happy piano, rhythmic and bouncy', 'pizzicato strings and light hand percussion', 'playful, joyful, sunny morning', 'major key, lively, 92 bpm', 'building energy'] }
+	};
+
+	// ── the sound: a bed for every scene, running on under the cuts; spot sounds on their shots; a few hits on the turns ──
+	// A bed runs from its first shot's cut to its last shot's end and crossfades into the next one (`fade`). The picture
+	// cuts, the place does not — so its sound does not restart at every cut. The hits are aligned on their loudest
+	// moment (`peak`): the boom lands on the cut into the tired land, the lorry passes on "trucks".
+	const at = (name) => cuts[shots.findIndex((s) => s.name === name)];
+	const sound = {
+		beds: [
+			{ cid: 'bafybeifp42dzbc7v6bcsdxualehtjw4m4v5hv2xxi7dgxafo6nhrqj34py.mp3', from: 'the-flight', to: 'the-city-wakes', level: 0.3, loop: true },
+			{ cid: 'bafybeicchy34ugl5v24iqbqj3kkuqb5b7txruudh5kgrjsbyh2uq43f76q.mp3', from: 'the-edge', to: 'a-tired-land', level: 0.34, loop: true, hardOut: true },
+			{ cid: 'bafybeie3cbl64xwr7t2ombbhboclpckwyh2lsatzsz4axzyargu4osvcje.mp3', from: 'the-edge', to: 'a-tired-land', level: 0.34, loop: true, hardOut: true },
+			{ cid: 'bafybeidcygcrgevwld4brioqtqy723ws637u7jvfvplojp5nghsyboar2a.mp3', from: 'the-bed', to: 'the-gallery', level: 0.2, after: 0.35, fadeIn: 0.5 },
+			{ cid: 'bafybeico4zfwof2xi4pbo2ypke6mquppztq6yqvxra4ylt464waiakcgly.mp3', from: 'the-food-forest', to: 'the-stream', level: 0.17 },
+			{ cid: 'bafybeialgyjehh3r62vvysdnqo5cbsj53n5c3hd6sp4mytruynhyjejq2i.mp3', from: 'the-commons', to: 'the-stone-theatre', level: 0.3, loop: true },
+			{ cid: 'bafybeidcygcrgevwld4brioqtqy723ws637u7jvfvplojp5nghsyboar2a.mp3', from: 'the-node', to: 'lanterns', level: 0.15, in: 200 },
+			{ cid: 'bafybeicyzrlhjnffsh4labekglahhqts4rykoknjb2mr7mwwzi5zsdlwum.mp3', from: 'the-forest-grows-quiet', to: 'a-better-way-to-live', level: 0.26, loop: true }
+		],
+		hits: [
+			{ cid: 'bafkreieevqnshtgaasnhgqzkkq7mwuhpgvacbs4uae4hqe4oezm4srsnqq.mp3', peak: at('the-edge').start, level: 0.6 },
+			{ cid: 'bafkreih5uyxurdzhz34upj3mggx2jfmmsnh5eq23qmgp2yzzaiicfs5koe.mp3', peak: at('the-long-road').start + 0.7, level: 0.55 },
+			{ cid: 'bafkreih5uyxurdzhz34upj3mggx2jfmmsnh5eq23qmgp2yzzaiicfs5koe.mp3', peak: at('the-edge').start + 1.2, level: 0.42 },
+			{ cid: 'bafkreiapnicq6i5t3opuasangdtc67zdjgikaqoaiohoqk6r7lpntimgle.mp3', peak: at('far-away').start + 0.5, level: 0.32 },
+			{ cid: 'bafkreih3pb3hgrdxd5645deeb6qy4662pulbq23h6cda4purk4rk675esy.mp3', peak: at('the-bed').start + 0.7, level: 0.42 },
+			{ cid: 'bafkreidsjljzq3wxybx5nlx5ynn6fk2x2ad36eonqx6ug7gm57tzvm4mtu.mp3', peak: at('the-ring').start + 1.2, level: 0.28 },
+			{ cid: 'bafkreifp7mmcnmib7cflnegwcnoaj2tve72t7tgrzrwjtav345vjebhk5q.mp3', peak: voices.at(-1).speechEnd + 0.6, level: 0.45 }
 		]
-	}
-];
+	};
+
+	// ── the score's own turns: cues that take its place for a stretch (score.ts composes them, sound.ts cuts them in) ──
+	// The base score plays everywhere else. Over the dip a cue of dread replaces it — a hit on the cut, then dissonance
+	// with no melody — and stops dead on "Here…"; after a beat of silence a burst of light and a bouncy, happy piano
+	// take over until the score's marimba section. Replacing cues less than a second apart leave silence between them.
+	const HERE = at('the-bed').start;
+	music.cues = [
+		{
+			name: 'dip', cid: 'bafybeib4mqdi5hkexdbxbfldzub64cp6h4jiqoxj2m5pa5tvmiclmbvi5m.mp3', from: at('the-edge').start - 0.13, to: HERE, replace: true, level: 0.5, // its impact (0.13 s in) on the cut
+			chunks: [
+				{ seconds: 3, styles: ['sudden dissonant orchestral impact', 'low brass and timpani cluster', 'dark, ominous', 'then a hollow ring-out'] },
+				{ seconds: HERE - (at('the-edge').start - 0.25) - 3, styles: ['disturbing dark ambient drone', 'dissonant low strings and cello clusters', 'metallic industrial pulse like distant machinery', 'tense, oppressive, uneasy', 'minor key, no melody', 'slowly building dread'] }
+			]
+		},
+		{
+			// "Here… breakfast": the turn, in the music — a burst of light, then a bouncy, happy piano that runs on into the
+			// score's marimba section (it takes the score's place until then)
+			name: 'breakfast', cid: 'bafybeichfzxg35qfzh62hu3kh5hgpitho5mnbf54o3q44drd6pzhswa5ra.mp3', from: HERE + 0.35, to: t(5) - 0.4, replace: true, level: 0.62, fin: 0.02, blend: 2.5, // hands over to the score's marimba in the pause before "Beneath…"
+			chunks: [
+				{ seconds: 3, styles: ['bright joyful orchestral bloom', 'sunburst major chord', 'strings, harp and glockenspiel', 'sudden light and warmth, relief'] },
+				{ seconds: t(5) - 0.4 - (HERE + 0.35) - 3, styles: ['upbeat happy piano, rhythmic and bouncy', 'pizzicato strings and light hand percussion', 'playful, joyful, sunny morning', 'major key, lively, 92 bpm', 'building energy'] }
+			]
+		}
+	];
+	return { total, cuts, music, sound };
+}
+const { total = null, cuts = null, music = null, sound = null } = voices ? timing() : {};
 
 // the film's scenes, by voice line: what the library tags each shot, take, cue and sound with (scene: …)
 const SCENES = ['hook', 'sunrise', 'the dip', 'breakfast', 'breakfast', 'under the glass', 'under the glass', 'food forest', 'food forest', 'the ring', 'the commons', 'the commons', 'night', 'night'];
@@ -209,5 +226,5 @@ export default {
 	music,
 	total,
 	cuts,
-	shots: shots.map((s, i) => ({ ...s, scene: SCENES[lineOf(s)], start: cuts[i].start, seconds: cuts[i].seconds }))
+	shots: shots.map((s, i) => ({ ...s, scene: SCENES[lineOf(s)], start: cuts?.[i].start, seconds: cuts?.[i].seconds }))
 };

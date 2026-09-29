@@ -470,5 +470,78 @@ export const MIGRATIONS: Migration[] = [
       DELETE FROM coops;
     `,
   },
+  {
+    // The render worker does more than render timelines: it makes each new file's HD log proxy (and reads its colour)
+    // and bakes the studio's preview LUTs. A job says which kind it is and what it is for — a timeline (render) or a
+    // file (proxy) — and keeps its report (QC, loudness, the transforms used, by config hash).
+    id: "0024-film-jobs",
+    sql: `
+      ALTER TABLE render_jobs ADD COLUMN kind TEXT NOT NULL DEFAULT 'render' CHECK (kind IN ('render', 'proxy', 'lut'));
+      ALTER TABLE render_jobs ADD COLUMN media_cid TEXT;
+      ALTER TABLE render_jobs ADD COLUMN report JSONB;
+      ALTER TABLE render_jobs ALTER COLUMN timeline_id DROP NOT NULL;
+      ALTER TABLE render_jobs ADD CONSTRAINT render_jobs_target
+        CHECK ((kind <> 'render' OR timeline_id IS NOT NULL) AND (kind <> 'proxy' OR media_cid IS NOT NULL));
+      CREATE INDEX ix_render_jobs_media ON render_jobs (media_cid, created) WHERE media_cid IS NOT NULL;
+    `,
+  },
+  {
+    // World shots as data (game/film/shot.js): a shot of Sandbox 4 is a record — world, camera, light, exposure,
+    // cues, shutter, framing — rendered only when it is needed. Every save of a changed spec is a new version and the
+    // old ones are kept, so a clip cut with version 3 renders version 3 however the shot is edited later.
+    id: "0025-shots",
+    sql: `
+      CREATE TABLE shots (
+        id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        name       TEXT NOT NULL,
+        project    TEXT,
+        version    INT NOT NULL DEFAULT 1,
+        spec       JSONB NOT NULL,
+        founder_id TEXT REFERENCES founders(id) ON DELETE SET NULL,
+        created    TIMESTAMPTZ NOT NULL DEFAULT now(),
+        updated    TIMESTAMPTZ NOT NULL DEFAULT now()
+      );
+      CREATE INDEX ix_shots_project ON shots (project, name);
+      CREATE TABLE shot_versions (
+        shot_id    UUID NOT NULL REFERENCES shots(id) ON DELETE CASCADE,
+        version    INT NOT NULL,
+        spec       JSONB NOT NULL,
+        founder_id TEXT REFERENCES founders(id) ON DELETE SET NULL,
+        created    TIMESTAMPTZ NOT NULL DEFAULT now(),
+        PRIMARY KEY (shot_id, version)
+      );
+    `,
+  },
+  {
+    // A timeline's working steps (Edit → locked → Grade → Render), its version (one more at every unlock), its colour
+    // pipeline (the working space and the output transform) and the whole film's grade. Clips gain world clips and
+    // their own grade and framing inside the clips JSON (api/src/timelines.ts); every existing timeline stays valid.
+    id: "0026-timeline-stages",
+    sql: `
+      ALTER TABLE timelines ADD COLUMN stage TEXT NOT NULL DEFAULT 'edit' CHECK (stage IN ('edit', 'locked', 'graded', 'rendered'));
+      ALTER TABLE timelines ADD COLUMN version INT NOT NULL DEFAULT 1;
+      ALTER TABLE timelines ADD COLUMN color JSONB NOT NULL DEFAULT '{"working": "acescct", "output": "odt-rec709"}';
+      ALTER TABLE timelines ADD COLUMN grade JSONB;
+    `,
+  },
+  {
+    // Two more kinds of work for the render worker, now that shots are data: the HD proxy of a world shot (a proxy
+    // job for a shot version instead of a file, so the studio can play a world clip while the live world is still
+    // loading) and a hero frame — one frame of a timeline rendered at full precision through the whole chain, for
+    // grading against. A frame job keeps what it is of (the time, the shape) in `params`.
+    id: "0027-shot-and-frame-jobs",
+    sql: `
+      ALTER TABLE render_jobs DROP CONSTRAINT IF EXISTS render_jobs_target;
+      ALTER TABLE render_jobs DROP CONSTRAINT IF EXISTS render_jobs_kind_check;
+      ALTER TABLE render_jobs ADD CONSTRAINT render_jobs_kind_check CHECK (kind IN ('render', 'proxy', 'lut', 'frame'));
+      ALTER TABLE render_jobs ADD COLUMN shot_id UUID REFERENCES shots(id) ON DELETE CASCADE;
+      ALTER TABLE render_jobs ADD COLUMN shot_version INT;
+      ALTER TABLE render_jobs ADD COLUMN params JSONB;
+      ALTER TABLE render_jobs ADD CONSTRAINT render_jobs_target CHECK (
+        (kind NOT IN ('render', 'frame') OR timeline_id IS NOT NULL) AND
+        (kind <> 'proxy' OR media_cid IS NOT NULL OR (shot_id IS NOT NULL AND shot_version IS NOT NULL)));
+      CREATE INDEX ix_render_jobs_shot ON render_jobs (shot_id, shot_version) WHERE shot_id IS NOT NULL;
+    `,
+  },
 ];
 

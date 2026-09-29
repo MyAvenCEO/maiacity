@@ -23,15 +23,31 @@ the terminal is signed in with `bun media login --local`. `FAL_API_KEY` lives in
    A1, the score on A2, sfx on A3.
 7. Play it at `http://localhost:5173/app/studio`, full screen. Run the audit (below). Repeat until approved.
 
-**Step 2: the film (slow, expensive, only after approval)**
-1. Shoot: `node scripts/film/shoot.mjs scripts/film/<film>.mjs` (`--only 3,7` reshoots shots 3 and 7).
-2. Into the library: `bun api/scripts/.full-timeline.ts --local --variant G` brings every shot in and builds the
-   timeline; or `api/scripts/.live-timeline.ts` swaps each shot into the storyboard the moment it is written.
-   (`studio/film/` is only the shooting's scratch folder — the library holds the result.)
-3. In the studio, **+ Variant** branches the edit under the project's next letter.
-4. Export: **⤓ Render** in the studio, with `bun film worker --local` running. The worker renders the timeline exactly
-   as edited into every shape (16:9 4K HEVC master + 1080 H.264, 9:16, 1:1), lays the hook text over the social
-   copies' first seconds, and brings each file into the library and onto the content board.
+**Step 2: the film (slow, expensive, only after approval)** — Edit → Grade → Render, like a real post house
+1. World shots become data, not files: `bun api/scripts/world-timeline.ts --local --from G --variant W` turns each shot
+   of the list into a shot record (`/api/shots`: camera, lens, hour, metered exposure, lights, cues) and builds a
+   variant with a **world clip** in each shot's place. Each shot version gets an HD log proxy automatically.
+   (Old way, still works: `node scripts/film/shoot.mjs <list>` renders log plates you bring in as files.)
+2. iPhone footage (HEVC Apple Log / Apple Log 2), other camera files and AI EXR sequences: `bun media add` / upload
+   in the studio. The colour space is detected (set it in the Bin when a file doesn't say, e.g. an untagged Apple
+   Log 2 clip); an HD proxy in the same log encoding is made. Originals are never re-encoded.
+3. **Edit** tab: cut on proxies and the live world, then **Lock the edit** (the cut is then fixed; unlock = version
+   n+1). **+ Variant** branches the edit under the project's next letter.
+4. **Grade** tab: originals swapped in (conform), clip CDLs + the film's look (presets), scopes; **Hero frame**
+   renders the frame at the playhead at full size, 16-bit, through the whole chain — judge the grade on it.
+5. **Render** tab: **⤓ Render**, with `bun film worker --local` running **on the Mac** (world plates render only on a
+   Mac's GPU, Chrome on Metal — there is no software path; elsewhere world jobs fail with that message). The worker
+   renders world plates at each delivery's size (cached by fingerprint), then the timeline into every shape (16:9 4K
+   HEVC master + 1080 H.264, 9:16, 1:1, 4:5), lays the hook text over the social copies' first seconds, and brings
+   each file into the library and onto the content board; the timeline's stage becomes "rendered".
+   Colour-managed (game/film/color.js, transforms.js): each picture clip goes through its input transform into
+   ACEScct, its grade and the film's look, the ACES 2.0 output transform to Rec.709, then the captions; an ungraded
+   Rec.709/sRGB clip bypasses both and renders as it was. Every delivery is QC'd (BT.709/TV tags, 10-bit master,
+   frames, loudness) before the library. The same worker makes each new file's HD log proxy (`meta.color`,
+   `meta.proxy`), each world shot's proxy, hero frames and the studio's preview LUTs. It needs ffmpeg with zimg
+   (Homebrew's has it) and `pip install opencolorio numpy`; LUTs are baked from the configs only while rendering,
+   cached in ~/.cache/maiacity. Nothing is ever baked into a source or committed.
+   EXR sequences (Luma, Kling, LTX exports) come in with `bun media add-sequence <dir> --profile aces2065-1 --fps 24`.
 
 **Projects and variants:** timelines are grouped by `project` ("Day 19") with variants A, B, C…; each variant is its own
 timeline.
@@ -47,7 +63,7 @@ timeline.
 | `hour`, `hourTo` | sun position, and a time-lapse to |
 | `fov`, `fovTo` | lens: 10–20 long, 40–55 wide (default 45) |
 | `stand: [x, z]`, `dome: i` | where the walker stands; wait for dome i |
-| `exposure`, `mood`, `grade` | the lens opened for a dark shot; the arc's look; an extra ffmpeg filter |
+| `exposure`, `mood`, `grade` | legacy: read by `fromLegacy` as metered stops and a suggested look — the plate itself stays log, the grade is done in the studio |
 | `sfx: [[cid, level]]` | sounds under the shot, looped for its length (by CID) |
 | `props` | a set built into the scene while filming |
 | `path: (t) => pose` | camera pose over t = 0…1 (`camera.mjs`) |
@@ -57,10 +73,28 @@ start to the next shot's start; the last to `total` = the last line's end + `TAI
 
 ## The studio and the library
 
-**Studio** (`/app/studio`): tracks **V1 Picture**, **A1 Voice**, **A2 Music**, **A3 Sound**, **T1 Captions** (built from
-the A1 takes' word timings, phrase by phrase, two lines at most). Drag files onto tracks, drag clips to move, edges to
-trim; Space plays, ←/→ seek. Frames 1:1, 16:9, 9:16, 4:5. One Web Audio clock, sample-exact. **⛶ Play full screen**
-plays the picture alone. **⤓ Render** queues a job for the worker.
+**Studio** (`/app/studio`, code in `src/lib/studio/`): three working steps like DaVinci Resolve's pages, over one
+timeline, its stage shown at the top (edit → locked → graded → rendered, and its version).
+- **Edit** — tracks **V1 Picture**, **A1 Voice**, **A2 Music**, **A3 Sound**, **T1 Captions** (built from the A1 takes'
+  word timings, phrase by phrase, two lines at most). Drag files onto tracks, drag clips to move, edges to trim; Space
+  plays, ←/→ seek. One Web Audio clock, sample-exact. Pictures play from their **HD log proxies** (a "no proxy yet"
+  badge when there is none), through the viewer's colour path on the GPU: the proxy's input transform → (optionally
+  the grade, "Grade preview") → the output transform to Rec.709, from the worker's preview LUTs (a formula fallback,
+  labelled, while they are missing). Every picture shows its colour profile; click the badge to set it by hand (the
+  proxy is made again). **World clips** (shots as data, `/api/shots`) sit on V1; the live world (Sandbox 4 in film
+  mode, `__film`) draws them on the timeline's clock, their HD proxy plays while it is not ready, a stand-in without
+  either. Selected, a world clip opens its lanes — camera keys (double-click adds, drag moves, Delete removes), hour,
+  exposure, lights, cues (a sound cue lands on A3) — and **● Record a move** flies the camera over the playing
+  timeline. Every change is a new version of the shot; the clip follows it. **◎ Prepare playback** loads every world
+  the timeline touches. **🔒 Lock the edit** ends the step.
+- **Grade** (the locked cut, on originals) — conform status (originals swapped in, plates per shape, from the last
+  render's report), the **film look** and each clip's **grade** as ASC CDL in ACEScct (slope · offset · power per
+  channel, saturation), presets, a world shot's "lit for" look, **scopes** (waveform, RGB parade, vectorscope, false
+  colour), and the **shape switcher** (16:9 · 9:16 · 1:1 · 4:5) with each media clip's framing per shape. Grades are
+  data on the timeline; nothing is baked. **Unlock** makes version n+1 and keeps every clip's grade.
+- **Render** — **⤓ Render every delivery** queues the job for the worker; the job's stage, progress and report
+  (transforms by config hash, conformed clips, plates, warnings); the last render's deliveries per shape with QC and
+  loudness, each viewable; the worker's queue.
 
 **Media library** (`/app/media`, `api/scripts/media.ts`): `library/` is the single source of truth — every file once as
 `<cid>.<ext>` with `<cid>.json` (title, description, tags, meta, public). **Everything references a file by its CID;

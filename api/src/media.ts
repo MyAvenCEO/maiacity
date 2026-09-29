@@ -12,6 +12,7 @@
  */
 import { importByteStream, importBytes } from "ipfs-unixfs-importer";
 import { db, type Queryable } from "./pg";
+import { hasProxyJob, queueProxy } from "./renders";
 
 /** One row of bytes. Small enough to move comfortably, large enough that a video is a few hundred rows. */
 export const CHUNK = 1024 * 1024;
@@ -27,6 +28,7 @@ export async function cidOf(bytes: Uint8Array): Promise<string> {
 const MIME: Record<string, string> = {
   jpg: "image/jpeg", jpeg: "image/jpeg", png: "image/png", webp: "image/webp", gif: "image/gif", svg: "image/svg+xml", avif: "image/avif",
   mp4: "video/mp4", mov: "video/quicktime", webm: "video/webm", mkv: "video/x-matroska",
+  exr: "image/x-exr", tar: "application/x-tar",
   mp3: "audio/mpeg", wav: "audio/wav", ogg: "audio/ogg", m4a: "audio/mp4",
   pdf: "application/pdf",
 };
@@ -73,7 +75,39 @@ async function describeIn(q: Queryable, cid: string, about: Description) {
 export async function describe(cid: unknown, about: unknown): Promise<void> {
   const c = String(cid ?? "");
   if (!(await have([c])).length) throw new MediaError("The library does not hold that CID.", 404);
-  await db.transaction((tx) => describeIn(tx, c, aboutOf(about)));
+  const { rows: before } = await db.query<{ mime: string; meta: Record<string, any> }>("SELECT mime, meta FROM media WHERE cid = $1", [c]);
+  const a = aboutOf(about);
+  await db.transaction((tx) => describeIn(tx, c, a));
+  await proxyOnDescribe(c, before[0]!.mime, before[0]!.meta ?? {}, a);
+}
+
+// ─────────────────────────────── proxies: every picture gets its colour read and an HD log proxy ───────────────────────────────
+
+/** The worker's own files need no proxy: proxies, preview LUTs, and finished films. */
+const NO_PROXY = ["role:proxy", "role:lut", "role:render", "role:frame"];
+
+/** Does a file get a proxy job? Videos, images and EXR sequences (a tar with meta.sequence) — never the worker's own. */
+export function wantsProxy(mime: string, tags: string[] = [], meta: Record<string, unknown> = {}): boolean {
+  if (tags.some((t) => NO_PROXY.includes(t)) || meta.proxyOf) return false;
+  const kind = kindOf(mime);
+  return kind === "video" || kind === "image" || (mime === "application/x-tar" && Boolean(meta.sequence));
+}
+
+async function tagsOf(cid: string): Promise<string[]> {
+  return (await db.query<{ tag: string }>("SELECT tag FROM media_tags WHERE cid = $1", [cid])).rows.map((r) => r.tag);
+}
+
+/**
+ * After a description: a file whose colour is not known yet, and that never had a proxy job, gets one (the library
+ * catching up with files from before proxies); a file whose colour was set by hand (meta.color.override changed)
+ * gets a new one, made in its new colour.
+ */
+async function proxyOnDescribe(cid: string, mime: string, old: Record<string, any>, about: Description) {
+  const meta = (about.meta ?? old) as Record<string, any>;
+  const tags = about.tags ?? (await tagsOf(cid));
+  if (!wantsProxy(mime, tags, meta)) return;
+  const changed = (old.color?.override ?? null) !== (meta.color?.override ?? null);
+  if (changed || (!meta.color && !(await hasProxyJob(cid)))) await queueProxy(cid);
 }
 
 /** A description from a request body: only the fields it has, of the right kinds. */
@@ -282,6 +316,9 @@ export async function finishUpload(founderId: string, id: string): Promise<{ cid
     await tx.query("DELETE FROM uploads WHERE id = $1", [id]);
     return !known.length;
   });
+  // a new picture: the worker reads its colour and makes its HD log proxy
+  const about = aboutOf(up.info);
+  if (stored && wantsProxy(up.mime, about.tags ?? [], about.meta ?? {})) await queueProxy(cid, founderId);
   return { cid, stored };
 }
 
