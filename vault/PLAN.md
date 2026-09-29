@@ -1,7 +1,7 @@
 # maiaCITY Studio + media vault — the task list
 
 Everything Samuel asked for, in order, with where it stands. Design and reasons: `.claude/skills/iroh/maiacity.md`.
-Status: ✅ done · 🔨 in progress · ⏳ next · 💤 deferred on purpose.  Last update: 2026-09-29, 18:15.
+Status: ✅ done · 🔨 in progress · ⏳ next · 💤 deferred on purpose.  Last update: 2026-09-29, 18:56.
 
 ## Done
 
@@ -39,7 +39,11 @@ Status: ✅ done · 🔨 in progress · ⏳ next · 💤 deferred on purpose.  L
     - ✅ this Mac paired itself ("maiaCITY Studio · MacBook Air von Samuel") and reaches the server
     - ✅ release 3d/3e: the server's catalog accepts syncs; it reaches the Macs through the relay — files flow into
       Object Storage (first ones stored, verified, 448 MB in one piece)
-    - 🔨 release 4: descriptions the server missed while the Mac was unreachable are fetched again — the mirror fills
+    - ✅ release 4: descriptions the server missed while the Mac was unreachable are fetched again — mirror 856/856
+    - ✅ release 5: descriptions mirror in their own loop, as soon as they change (and replace the bucket's copy)
+    - ✅ release 6/7: one connection per device, parts in flight, small files in one PUT; speed + path logged
+      (direct, ~50 ms) — ~2 MB/s per stream by day; compare at night without the day limit
+    - 🔨 Object Storage filling: 434/856 files (5.0 of 8.5 GB) at 18:56
 17. 🔨 **Automatic sync**: ✅ the session lives in a user-only file (no more Keychain prompts); ✅ the Mac re-joins every
     30 s; ✅ Mac side of joining (allowlist, relay at runtime, shared catalog, own entries carried
     over); ✅ the app pairs and joins by itself after sign-in; ✅ files only the server holds come down from the

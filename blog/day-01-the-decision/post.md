@@ -3,16 +3,16 @@ title: The 1 million lives decision I almost didn't dare to take
 subtitle: Day 01 — a city of a million co-founders, carried alone for years, and the day the vision stopped being mine alone to carry.
 day: 1
 author: avenSAMUEL
-authorImage: bafybeigc4o3dpecqu3pvrzldsjie6b2xs7sdjeetuafxbjqckqnabiy5d4.jpg
+authorImage: dad53831fb215f1d6c5fc29c111aba8a2d7b472b43ab076da7537787c2895b8a.jpg
 authorRole: Building maiaCITY
 date: 2026-06-21
-cover: bafybeihm6zduqv4ne2giebbtla7gudrnrxivjk4bg6lmeepg6uv2udv5je.jpg
+cover: 016adb5703a15823dcd525accc0064a3b3a311d65b6d1e828b99dfe9564290e5.jpg
 coverPosition: top
-banner: bafybeigfmdeszs4sehqv4ohxptpjk4mymc6qi2alc7ilghz6gzmadrjo7i.jpg
-poster: bafkreihpxfd3piyklvwpxqzkmmfzq3heuloalbatpguf5eyytlx3gh4f7u.jpg
+banner: 52c18cf186e3d7476fe1d306f24964509edf55a8bd4a3351e6dd1bdb0af5e8d8.jpg
+poster: 4ddfadd9279ef1fdedfa0260a31eb53a00a3f0375fcd093057e82e5f85a41f08.jpg
 coverAlt: Samuel on a garden bench — "The 1 million lives decision — I almost didn't dare to take".
 video: e6cac7a1-def6-494f-9c6e-a4c20ace7dd6
-videoLocal: bafybeihknzv6kdnp2iyw72ctzrcnmm5iwgvbfkisr6xn2toixbcl4kocry.mp4
+videoLocal: 1a9eddd942a9e91bc0fae5276b501c3a01357df3ee2ed2c533c3b6da86a5c6bc.mp4
 videoAspect: '1 / 1'
 videoLibrary: 754181
 excerpt: >-

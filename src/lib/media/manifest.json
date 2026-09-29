@@ -3208,5 +3208,134 @@
 			"thumbnails",
 			"youtube:jZb6_jlUJXs"
 		]
+	},
+	"903e00bac852d43eef2f3cab504bec049ccf802cabb80c4e16bb66419f3e8d1c": {
+		"url": null,
+		"mime": "image/png",
+		"title": "banner",
+		"description": "",
+		"tags": [
+			"Day 01"
+		]
+	},
+	"4ed3a1cfe0f16502163576159361dbd3d16b8fa8bb5833419aae6a8d3d28026b": {
+		"url": null,
+		"mime": "image/jpeg",
+		"title": "frame 9x16",
+		"description": "",
+		"tags": [
+			"Day 01"
+		]
+	},
+	"016adb5703a15823dcd525accc0064a3b3a311d65b6d1e828b99dfe9564290e5": {
+		"url": null,
+		"mime": "image/jpeg",
+		"title": "thumbnail 16x9",
+		"description": "Samuel on a garden bench — \"The 1 million lives decision — I almost didn't dare to take\".",
+		"tags": [
+			"Day 01",
+			"cover",
+			"role:cover",
+			"role:thumbnail",
+			"shape:16x9"
+		]
+	},
+	"4ddfadd9279ef1fdedfa0260a31eb53a00a3f0375fcd093057e82e5f85a41f08": {
+		"url": null,
+		"mime": "image/jpeg",
+		"title": "thumbnail 1x1",
+		"description": "",
+		"tags": [
+			"Day 01",
+			"poster",
+			"role:thumbnail",
+			"shape:1x1"
+		]
+	},
+	"c34fc8c06ffe8ed61e02731706ca6e28adfa9cd32b10f8e04ed579c40a932ae1": {
+		"url": null,
+		"mime": "image/jpeg",
+		"title": "thumbnail 9x16",
+		"description": "",
+		"tags": [
+			"Day 01",
+			"role:thumbnail",
+			"shape:9x16"
+		]
+	},
+	"52c18cf186e3d7476fe1d306f24964509edf55a8bd4a3351e6dd1bdb0af5e8d8": {
+		"url": null,
+		"mime": "image/jpeg",
+		"title": "thumbnail 5x2",
+		"description": "",
+		"tags": [
+			"Day 01",
+			"role:thumbnail",
+			"shape:5x2"
+		]
+	},
+	"e81f2d1d286484f9a1bab96b3c417b2cc37487d6258615be4b00568e80f1936a": {
+		"url": null,
+		"mime": "image/png",
+		"title": "hook 16x9",
+		"description": "",
+		"tags": [
+			"Day 01",
+			"role:hook",
+			"shape:16x9"
+		]
+	},
+	"26d9df434610cd8c4d9f920266dfeb88b9bbff5d40ef1dc94ec05105d38ac7b5": {
+		"url": null,
+		"mime": "image/png",
+		"title": "hook 1x1",
+		"description": "",
+		"tags": [
+			"Day 01",
+			"role:hook",
+			"shape:1x1"
+		]
+	},
+	"e2a56f1dd6a2171c5cb4c5733066171772bb3cc6b5c3cb007cde11ecaa60d175": {
+		"url": null,
+		"mime": "image/png",
+		"title": "hook 9x16",
+		"description": "",
+		"tags": [
+			"Day 01",
+			"role:hook",
+			"shape:9x16"
+		]
+	},
+	"dad53831fb215f1d6c5fc29c111aba8a2d7b472b43ab076da7537787c2895b8a": {
+		"url": null,
+		"mime": "image/jpeg",
+		"title": "samuel",
+		"description": "",
+		"tags": [
+			"author",
+			"person:samuel",
+			"role:portrait",
+			"site"
+		]
+	},
+	"1a9eddd942a9e91bc0fae5276b501c3a01357df3ee2ed2c533c3b6da86a5c6bc": {
+		"url": null,
+		"mime": "video/mp4",
+		"title": "DAY0001 TheDecision",
+		"description": "",
+		"tags": [
+			"Day 01",
+			"film"
+		]
+	},
+	"3e534f65034cac1d8420090739d0f221ab48f2c66522535442231f0d406acadf": {
+		"url": null,
+		"mime": "video/mp4",
+		"title": "DAY0001 TheDecision 1080",
+		"description": "",
+		"tags": [
+			"Day 01"
+		]
 	}
 }

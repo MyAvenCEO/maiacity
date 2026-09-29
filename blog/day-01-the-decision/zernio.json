@@ -22,7 +22,7 @@
             "customMedia": [
               {
                 "type": "video",
-                "url": "upload:bafybeigm737jmppnrxssqrfkfdhnn66rfsvcj6ycmvzkus7ywrzmvjveba"
+                "url": "upload:3e534f65034cac1d8420090739d0f221ab48f2c66522535442231f0d406acadf"
               }
             ],
             "platformSpecificData": {
@@ -38,8 +38,8 @@
             "customMedia": [
               {
                 "type": "video",
-                "url": "upload:bafybeigm737jmppnrxssqrfkfdhnn66rfsvcj6ycmvzkus7ywrzmvjveba",
-                "thumbnail": "upload:bafkreihpxfd3piyklvwpxqzkmmfzq3heuloalbatpguf5eyytlx3gh4f7u"
+                "url": "upload:3e534f65034cac1d8420090739d0f221ab48f2c66522535442231f0d406acadf",
+                "thumbnail": "upload:4ddfadd9279ef1fdedfa0260a31eb53a00a3f0375fcd093057e82e5f85a41f08"
               }
             ]
           },
@@ -50,7 +50,7 @@
             "customMedia": [
               {
                 "type": "video",
-                "url": "upload:bafybeigm737jmppnrxssqrfkfdhnn66rfsvcj6ycmvzkus7ywrzmvjveba"
+                "url": "upload:3e534f65034cac1d8420090739d0f221ab48f2c66522535442231f0d406acadf"
               }
             ]
           },
@@ -61,8 +61,8 @@
             "customMedia": [
               {
                 "type": "video",
-                "url": "upload:bafybeigm737jmppnrxssqrfkfdhnn66rfsvcj6ycmvzkus7ywrzmvjveba",
-                "instagramThumbnail": "upload:bafkreihpxfd3piyklvwpxqzkmmfzq3heuloalbatpguf5eyytlx3gh4f7u"
+                "url": "upload:3e534f65034cac1d8420090739d0f221ab48f2c66522535442231f0d406acadf",
+                "instagramThumbnail": "upload:4ddfadd9279ef1fdedfa0260a31eb53a00a3f0375fcd093057e82e5f85a41f08"
               }
             ],
             "platformSpecificData": {
@@ -162,7 +162,7 @@
                 "title": "The 1 million lives decision I almost didn't dare to take",
                 "mode": "publish",
                 "cover": {
-                  "url": "upload:bafybeigfmdeszs4sehqv4ohxptpjk4mymc6qi2alc7ilghz6gzmadrjo7i"
+                  "url": "upload:52c18cf186e3d7476fe1d306f24964509edf55a8bd4a3351e6dd1bdb0af5e8d8"
                 },
                 "content_state": {
                   "blocks": [
