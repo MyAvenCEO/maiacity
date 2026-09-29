@@ -112,12 +112,6 @@
 <section class="ingest" class:dragging aria-label="Ingest">
 	<aside>
 		<Stories bind:this={storiesPanel} bind:chosen={story} bind:list={storyList} />
-		<h2>Sources</h2>
-		{#each sources as s (s.path)}
-			<button class="source" onclick={() => pick([s.path])}><span>{s.name}</span><small>{gb(s.total - s.free)} of {gb(s.total)}</small></button>
-		{/each}
-		<button class="source ghostly" onclick={chooseFolder}>+ Choose a folder…</button>
-		<button class="link" onclick={look}>Look for drives again</button>
 	</aside>
 
 	<div class="main">
@@ -138,7 +132,12 @@
 					<button class="go" onclick={start} disabled={!scan?.files}>Ingest {scan?.files ?? ''} files into {storyName}</button>
 				</div>
 			{:else}
-				<p class="hint">⇣ Drop a card, a drive or a folder anywhere — it goes into <strong>{storyName}</strong>.</p>
+				<div class="line">
+					<span class="hint">⇣ Drop a card, a drive or a folder — it goes into <strong>{storyName}</strong></span>
+					<span class="grow"></span>
+					{#each sources as s (s.path)}<button class="chip drive" onclick={() => pick([s.path])} title="{gb(s.total - s.free)} of {gb(s.total)}">{s.name}</button>{/each}
+					<button class="choose" onclick={chooseFolder}>Choose a folder…</button>
+				</div>
 			{/if}
 		</div>
 		{#if error}<p class="err">{error}</p>{/if}
@@ -179,12 +178,12 @@
 	.ingest { grid-area: main; display: grid; grid-template-columns: 17rem minmax(0, 1fr) 21rem; gap: 1px; background: var(--edge); min-height: 0; }
 	.ingest.dragging { outline: 3px dashed var(--accent); outline-offset: -6px; }
 	.ingest > * { padding: 1rem 1.2rem; background: var(--panel); overflow: auto; }
-	h2 { margin: 1.2rem 0 0.6rem; font-size: 0.7rem; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--dim); }
-	.source { display: flex; justify-content: space-between; align-items: baseline; width: 100%; margin-bottom: 0.35rem; padding: 0.45rem 0.7rem; border: 1px solid var(--edge); border-radius: 10px; background: #fff; font: inherit; font-size: 0.84rem; text-align: left; color: var(--ink); cursor: pointer; }
-	.source small { color: var(--dim); font-size: 0.72rem; }
-	.source.ghostly { background: transparent; }
 	.link { padding: 0; border: 0; background: none; font: inherit; font-size: 0.78rem; color: var(--dim); text-decoration: underline; cursor: pointer; }
 	.main { display: flex; flex-direction: column; gap: 0.9rem; }
+	/* the column scrolls as a whole; nothing in it is squeezed to fit */
+	.main > :global(*) { flex-shrink: 0; }
+	.drive { border: 1px solid var(--edge); background: #fff; font: inherit; font-size: 0.8rem; cursor: pointer; }
+	.choose { padding: 0.35rem 0.9rem; border: 1px solid var(--ink); border-radius: 999px; background: #fff; font: inherit; font-size: 0.8rem; color: var(--ink); cursor: pointer; }
 	.bar { padding: 0.8rem 1rem; border: 1px dashed var(--edge); border-radius: 12px; background: var(--bg); }
 	.bar.ready { border-style: solid; border-color: var(--ink); background: #fff; }
 	.bar.busy { border-style: solid; background: #fff; }
@@ -195,7 +194,7 @@
 	.grow { flex: 1; }
 	.go { padding: 0.45rem 1rem; border: 0; border-radius: 999px; background: var(--ink); font: inherit; font-size: 0.84rem; color: #fff; cursor: pointer; }
 	.go:disabled { opacity: 0.5; }
-	.hint { margin: 0; font-size: 0.86rem; color: var(--dim); }
+	.hint { font-size: 0.86rem; color: var(--dim); }
 	.progress { overflow: hidden; height: 5px; margin-top: 0.5rem; border-radius: 3px; background: var(--edge); }
 	.progress i { display: block; height: 100%; background: var(--accent); transition: width 0.3s; }
 	.err { margin: 0; color: #9c3b26; font-size: 0.84rem; }

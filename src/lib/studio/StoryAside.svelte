@@ -5,9 +5,9 @@
 -->
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { listVaultDevices, revokeVaultDevice, type VaultDevice } from '$lib/auth/client';
+	import { listMedia, listVaultDevices, revokeVaultDevice, type MediaItem, type VaultDevice } from '$lib/auth/client';
 	import { command } from '$lib/native';
-	import { CLASSES, gb, type Network, type StoryView, type VaultStatus } from './vault';
+	import { CLASSES, gb, type Copies, type Moving, type Network, type StoryView, type VaultStatus } from './vault';
 
 	let { story }: { story: StoryView | null } = $props();
 
@@ -18,6 +18,27 @@
 	let autoProxy = $state(false);
 	let copied = $state(false);
 	let revoking = $state<VaultDevice | null>(null);
+	let files = $state<MediaItem[]>([]);
+	let copies = $state<Record<string, Copies>>({});
+	let moving = $state<Moving[]>([]);
+
+	/** the story's files: those whose one story it is (the inbox: those that name none) */
+	const mine = $derived(story ? files.filter((m) => (story.inbox ? !m.story : m.story === story.id)) : []);
+	/** how far the story is at one destination: verified files and bytes, what is on its way, how fast */
+	function sync(dest: 'avenSSD' | 'hetzner') {
+		const wanted = mine.filter((m) => story?.rules[(m.class ?? 'default') as keyof StoryView['rules']]?.includes(dest));
+		let ok = 0, okBytes = 0, sent = 0, rate = 0, going = 0;
+		for (const m of wanted) {
+			const c = copies[m.hash];
+			if (dest === 'avenSSD' ? c?.here === 'verified' : c?.server === 'stored') (ok++, (okBytes += m.size));
+			else {
+				const t = moving.find((x) => x.hash === m.hash && x.dest === dest && !x.done && !x.aborted);
+				if (t) (going++, (sent += t.sent), (rate += t.rate));
+			}
+		}
+		const bytes = wanted.reduce((a, m) => a + m.size, 0);
+		return { ok, total: wanted.length, pct: bytes ? Math.min(100, ((okBytes + sent) / bytes) * 100) : 100, going, rate };
+	}
 
 	/** the classes of this story a store keeps, by its name in the rules */
 	const keeps = (store: string) => (story ? CLASSES.filter((c) => story.rules[c].includes(store)) : []);
@@ -48,7 +69,17 @@
 		copied = true;
 		setTimeout(() => (copied = false), 1400);
 	}
-	onMount(load);
+	onMount(() => {
+		void load();
+		const readFiles = async () => {
+			files = await listMedia().catch(() => files);
+			copies = Object.fromEntries((await command<Copies[]>('vault_copies').catch(() => [])).map((c) => [c.hash, c]));
+		};
+		void readFiles();
+		const slow = setInterval(readFiles, 10000);
+		const live = setInterval(async () => (moving = await command<Moving[]>('vault_transfers').catch(() => [])), 1500);
+		return () => (clearInterval(slow), clearInterval(live));
+	});
 </script>
 
 {#if story}
@@ -60,22 +91,30 @@
 	</p>
 {/if}
 
+{#snippet progress(x: { ok: number; total: number; pct: number; going: number; rate: number })}
+	<div class="sync" class:done={x.ok === x.total}>
+		<span class="bar"><i style:width="{x.pct}%"></i></span>
+		<span class="pct">{Math.floor(x.pct)}%</span>
+	</div>
+	<p class="n">{x.ok}/{x.total} verified{#if x.going} · ↻ {x.going} on their way · {gb(x.rate)}/s{/if}</p>
+{/snippet}
+
 <h4>Devices</h4>
 <ul class="devices">
 	<li>
 		<span class="dot" class:on={!!status}></span>
 		<div>
 			<strong>avenSSD</strong> <small>this Mac</small>
-			<p>{keeps('avenSSD').join(' · ') || 'nothing of this story'}</p>
-			{#if status}<p class="dim">{status.files} files · {gb(status.disk_free)} free</p>{/if}
+			{@render progress(sync('avenSSD'))}
+			<p class="dim">{keeps('avenSSD').join(' · ') || 'nothing of this story'}{#if status} · {gb(status.disk_free)} free{/if}</p>
 		</div>
 	</li>
 	<li>
 		<span class="dot" class:on={!!net?.joined}></span>
 		<div>
 			<strong>hetzner</strong> <small>Object Storage</small>
-			<p>{keeps('hetzner').join(' · ') || 'nothing of this story'}</p>
-			<p class="dim">{net?.joined ? 'joined' : (net?.note ?? 'not joined yet')}</p>
+			{@render progress(sync('hetzner'))}
+			<p class="dim">{keeps('hetzner').join(' · ') || 'nothing of this story'} · {net?.joined ? 'joined' : (net?.note ?? 'not joined yet')}</p>
 		</div>
 	</li>
 	{#each others as d (d.endpoint_id)}
@@ -112,6 +151,12 @@
 	small { font-size: 0.72rem; color: var(--dim); }
 	.devices p { margin: 0.1rem 0 0; font-size: 0.76rem; }
 	.dim { color: var(--dim); }
+	.sync { display: grid; grid-template-columns: 1fr 2.6rem; gap: 0.5rem; align-items: center; margin-top: 0.3rem; }
+	.sync .bar { overflow: hidden; height: 5px; border-radius: 3px; background: var(--edge); }
+	.sync .bar i { display: block; height: 100%; background: #d9a441; transition: width 1s linear; }
+	.sync.done .bar i { background: #6f9a57; }
+	.pct { font-size: 0.74rem; font-variant-numeric: tabular-nums; text-align: right; color: var(--dim); }
+	.n { font-size: 0.72rem !important; color: var(--dim); }
 	.link { padding: 0; border: 0; background: none; font: inherit; font-size: 0.74rem; color: var(--dim); text-decoration: underline; cursor: pointer; }
 	.confirm { font-size: 0.78rem; color: #7a5a14; }
 	.confirm button:not(.link) { padding: 0.1rem 0.6rem; border: 0; border-radius: 999px; background: var(--ink); font: inherit; font-size: 0.74rem; color: #fff; cursor: pointer; }

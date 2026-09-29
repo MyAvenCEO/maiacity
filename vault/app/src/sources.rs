@@ -39,9 +39,19 @@ pub struct IngestedSource {
 pub async fn ingest_sources(app: State<'_, App>, story: Option<String>) -> Res<Vec<IngestedSource>> {
     gate()?;
     let inbox = app.vault.catalog.inbox_id();
+    // where each file lives now: a source belongs to the story its files are in (moved since, or ingested before
+    // reports named their story)
+    let home: std::collections::HashMap<String, String> =
+        app.vault.catalog.list().await.map_err(err)?.into_iter().map(|m| (m.hash, m.story)).collect();
     let mut out = Vec::new();
     for r in app.vault.catalog.reports().await.map_err(err)? {
-        let rs = r["story"].as_str().unwrap_or("").to_string();
+        let mut votes: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
+        for f in r["files"].as_array().into_iter().flatten() {
+            if let Some(s) = f["hash"].as_str().and_then(|h| home.get(h)) {
+                *votes.entry(s.clone()).or_default() += 1;
+            }
+        }
+        let rs = votes.into_iter().max_by_key(|(_, n)| *n).map(|(s, _)| s).unwrap_or_else(|| r["story"].as_str().unwrap_or("").to_string());
         let rs = if rs == inbox { String::new() } else { rs };
         if let Some(want) = &story {
             let want = if *want == inbox { "" } else { want.as_str() };

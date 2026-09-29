@@ -9,8 +9,10 @@
 	import { command } from '$lib/native';
 	import { gb, type Moving } from './vault';
 
+	type Ingested = { session: string; story: string; path: string; name: string; bytes: number; files: { verdict: string }[] };
 	let moving = $state<Moving[]>([]);
 	let names = $state<Record<string, string>>({});
+	let ingests = $state<Ingested[]>([]);
 
 	const going = $derived(moving.filter((t) => !t.done && !t.aborted));
 	const ended = $derived(moving.filter((t) => t.done || t.aborted));
@@ -18,6 +20,7 @@
 	const label = (h: string) => names[h] ?? `${h.slice(0, 12)}…`;
 
 	onMount(() => {
+		void command<Ingested[]>('ingest_sources', { story: null }).then((all) => (ingests = all)).catch(() => {});
 		void listMedia().then((all) => (names = Object.fromEntries(all.map((m) => [m.hash, m.original_name || m.title || `${m.hash.slice(0, 12)}…`]))));
 		const tick = async () => (moving = await command<Moving[]>('vault_transfers').catch(() => []));
 		void tick();
@@ -48,8 +51,24 @@
 	{/each}
 </ul>
 
+<h4>Ingested</h4>
+<ul>
+	{#each ingests as i (i.session + i.path)}
+		<li class="ingest">
+			<span class="n" title={i.path}>{i.name}</span>
+			<span class="d">{new Date(i.session).toLocaleString()}</span>
+			<span class="p">{i.files.length} files · {gb(i.bytes)} · {i.files.filter((f) => f.verdict === 'verified').length} new · {i.files.filter((f) => f.verdict === 'duplicate').length} already{#if i.files.some((f) => f.verdict === 'mismatch')} · <b>mismatches</b>{/if}</span>
+		</li>
+	{:else}
+		<li class="ingest"><span class="d">Nothing ingested yet.</span></li>
+	{/each}
+</ul>
+
 <style>
 	.sum { margin: 0 0 0.8rem; font-size: 0.84rem; color: var(--dim); }
+	h4 { margin: 1.6rem 0 0.4rem; font-size: 0.68rem; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--dim); }
+	li.ingest { grid-template-columns: minmax(0, 1fr) 11rem 20rem; }
+	li.ingest b { color: #9c3b26; }
 	ul { display: flex; flex-direction: column; margin: 0; padding: 0; list-style: none; }
 	li { display: grid; grid-template-columns: minmax(0, 1fr) 6rem 8rem 15rem; gap: 0.8rem; align-items: center; padding: 0.45rem 0; border-bottom: 1px solid var(--edge); font-size: 0.8rem; }
 	li.ended { grid-template-columns: minmax(0, 1fr) 6rem 23.8rem; color: var(--dim); }
