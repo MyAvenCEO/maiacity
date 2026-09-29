@@ -15,7 +15,6 @@
 	let status = $state<VaultStatus | null>(null);
 	let devices = $state<VaultDevice[]>([]);
 	let mcp = $state<{ url: string; claude: string } | null>(null);
-	let autoProxy = $state(false);
 	let copied = $state(false);
 	let revoking = $state<VaultDevice | null>(null);
 	let files = $state<MediaItem[]>([]);
@@ -52,16 +51,12 @@
 			listVaultDevices().catch(() => [])
 		]);
 		mcp = await command<{ url: string; claude: string }>('mcp_info').catch(() => null);
-		autoProxy = (await command<{ auto_proxy: boolean }>('settings_get').catch(() => ({ auto_proxy: false }))).auto_proxy;
 	}
 	async function revoke() {
 		if (!revoking) return;
 		await revokeVaultDevice(revoking.endpoint_id);
 		revoking = null;
 		await load();
-	}
-	async function setAutoProxy(on: boolean) {
-		autoProxy = (await command<{ auto_proxy: boolean }>('settings_set', { key: 'auto_proxy', value: on })).auto_proxy;
 	}
 	async function copy() {
 		if (!mcp) return;
@@ -128,7 +123,6 @@
 {/if}
 
 <div class="foot">
-	<label><input type="checkbox" checked={autoProxy} onchange={(e) => setAutoProxy(e.currentTarget.checked)} /> Proxies by themselves after ingest</label>
 	{#if mcp}<button class="link" onclick={copy} title={mcp.claude}>{copied ? 'copied' : 'Copy the agents’ MCP command'}</button>{/if}
 </div>
 
@@ -158,6 +152,5 @@
 	.confirm { font-size: 0.78rem; color: #7a5a14; }
 	.confirm button:not(.link) { padding: 0.1rem 0.6rem; border: 0; border-radius: 999px; background: var(--ink); font: inherit; font-size: 0.74rem; color: #fff; cursor: pointer; }
 	.foot { display: flex; flex-direction: column; gap: 0.4rem; margin-top: 1.8rem; padding-top: 0.8rem; border-top: 1px solid var(--edge); font-size: 0.76rem; color: var(--dim); }
-	.foot label { display: flex; align-items: center; gap: 0.4rem; }
 	.foot .link { align-self: flex-start; }
 </style>

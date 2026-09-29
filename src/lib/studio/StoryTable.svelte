@@ -9,7 +9,8 @@
 	import { onMount } from 'svelte';
 	import { listMedia, type MediaItem } from '$lib/auth/client';
 	import { command } from '$lib/native';
-	import { BY_HAND, CLASSES, TIERS, gb, vaultUrl, type Copies, type FileClass, type Moving, type StoryView } from './vault';
+	import { profileInfo } from './color.js';
+	import { BY_HAND, CLASSES, TIERS, gb, proxyState, vaultUrl, type Making, type Copies, type FileClass, type Moving, type StoryView } from './vault';
 
 	let {
 		story,
@@ -62,11 +63,40 @@
 	const needed = (m: MediaItem) => (current?.rules[classOf(m)] ?? []).length;
 	const kept = (m: MediaItem) => verified(m) >= needed(m);
 
-	const rows = $derived(
-		mine
-			.filter((m) => (only === 'all' || classOf(m) === only) && (!incomplete || !kept(m)))
-			.sort((a, b) => CLASSES.indexOf(classOf(a)) - CLASSES.indexOf(classOf(b)) || name(a).localeCompare(name(b), undefined, { numeric: true }))
-	);
+	/** a proxy's original, when it has one here */
+	const proxyOf = (m: MediaItem) => (typeof m.meta?.proxy_of === 'string' ? m.meta.proxy_of : null);
+	const rows = $derived.by(() => {
+		const list = mine
+			.filter((m) => (only === 'all' || classOf(m) === only || (only === 'proxy' && m.kind === 'video' && classOf(m) === 'original')) && (!incomplete || !kept(m)))
+			.sort((a, b) => CLASSES.indexOf(classOf(a)) - CLASSES.indexOf(classOf(b)) || name(a).localeCompare(name(b), undefined, { numeric: true }));
+		// every proxy right under its original (a proxy whose original is not in view stays where it sorted)
+		const here = new Set(list.map((m) => m.hash));
+		const under = new Map<string, MediaItem[]>();
+		for (const m of list) {
+			const of = proxyOf(m);
+			if (of && here.has(of)) under.set(of, [...(under.get(of) ?? []), m]);
+		}
+		return list
+			.filter((m) => !(proxyOf(m) && here.has(proxyOf(m)!)))
+			.flatMap((m): Row[] => {
+				const kids: Row[] = under.get(m.hash) ?? [];
+				// a video original's proxy before it exists: its first step, rendering, as its own row
+				const due = m.kind === 'video' && classOf(m) === 'original' && !kids.length && (only === 'all' || only === 'proxy');
+				return [m, ...kids, ...(due ? [{ coming: m }] : [])];
+			})
+			.filter((r) => ('coming' in r ? true : only === 'all' || classOf(r) === only || (only === 'proxy' && !!proxyOf(r))));
+	});
+	/** the rows that are files (a proxy still being made is not one yet) */
+	const files_ = $derived(rows.filter((r): r is MediaItem => !('coming' in r)));
+	/** a row: a file, or the proxy of an original that is still being made */
+	type Row = MediaItem | { coming: MediaItem };
+	const rowKey = (r: Row) => ('coming' in r ? `coming:${r.coming.hash}` : r.hash);
+	/** the proxies being made now (live) */
+	let making = $state<Making[]>([]);
+	const colourOf = (m: MediaItem) => {
+		const c = m.meta?.color as { profile?: string; override?: string } | undefined;
+		return c?.override ?? c?.profile ?? '';
+	};
 	const complete = $derived(mine.filter(kept).length);
 	const name = (m: MediaItem) => m.title || m.original_name || m.hash.slice(0, 12);
 
@@ -130,6 +160,7 @@
 			copies = Object.fromEntries((await command<Copies[]>('vault_copies').catch(() => [])).map((c) => [c.hash, c]));
 		}, 10000);
 		const live = setInterval(async () => {
+			making = await command<Making[]>('proxies_now').catch(() => []);
 			const was = moving.filter((t) => t.done).length;
 			moving = await command<Moving[]>('vault_transfers').catch(() => []);
 			// a transfer just finished: its copy is now verified — look at the copies at once
@@ -199,17 +230,36 @@
 			<table>
 				<thead>
 					<tr>
-						<th><input type="checkbox" checked={selected.length > 0 && selected.length === rows.length} onchange={(e) => (selected = e.currentTarget.checked ? rows.map((m) => m.hash) : [])} /></th>
+						<th><input type="checkbox" checked={selected.length > 0 && selected.length === files_.length} onchange={(e) => (selected = e.currentTarget.checked ? files_.map((m) => m.hash) : [])} /></th>
 						{#each TIERS as t (t.tier)}<th class="c tier" title="{t.name} · {t.where}">{t.tier}</th>{/each}
 						<th></th>
 						<th>File (BLAKE3)</th>
 						<th>Came in as · title</th>
+						<th>Colour · proxy</th>
 						<th>Class</th>
 						<th class="r">Size</th>
 					</tr>
 				</thead>
 				<tbody>
-					{#each rows.slice(0, shown) as m (m.hash)}
+					{#each rows.slice(0, shown) as r (rowKey(r))}
+						{#if 'coming' in r}
+							{@const now = making.find((x) => x.of === r.coming.hash)}
+							{@const ps = proxyState(r.coming.meta)}
+							<tr class="coming">
+								<td></td>
+								{#each TIERS as t (t.tier)}<td class="c tier"><span class="none">·</span></td>{/each}
+								<td class="thumb"><span>▶</span></td>
+								<td class="h">—</td>
+								<td class="n sub">↳ {(r.coming.original_name ?? '').replace(/\.[^.]+$/, '')}.proxy</td>
+								<td class="col" colspan="3">
+									{#if now}<span class="pm">{now.stage === 'making' ? `rendering → ACEScct ${Math.floor(now.done * 100)}%` : now.stage === 'queued' ? 'queued for rendering' : now.stage}</span><span class="rbar"><i style:width="{now.done * 100}%"></i></span>
+									{:else if ps.state === 'pending'}<span class="dim">rendering next</span>
+									{:else if ps.state === 'failed'}<span class="pw" title={ps.note}>✗ rendering failed</span>
+									{:else if ps.state !== 'made'}<span class="pw" title={ps.note}>⚠ {ps.state === 'unknown-colour' ? 'unknown source — its colour cannot be told' : `no colour journey from ${profileInfo(colourOf(r.coming)).label} into ACEScct yet`}</span>{/if}
+								</td>
+							</tr>
+						{:else}
+						{@const m = r}
 						<tr class:sel={selected.includes(m.hash)} class:short={!kept(m)} class:open={open === m.hash} onclick={(e) => !(e.target as HTMLElement).closest('input') && onopen(m)}>
 							<td><input type="checkbox" checked={selected.includes(m.hash)} onchange={() => toggle(m.hash)} /></td>
 							{#each TIERS as t (t.tier)}
@@ -228,15 +278,26 @@
 								{:else}<span>{m.kind === 'video' ? '▶' : m.kind === 'audio' ? '♪' : m.kind === 'image' ? '▣' : '▤'}</span>{/if}
 							</td>
 							<td class="h" title={m.hash}>{m.hash.slice(0, 16)}…</td>
-							<td class="n" title="{m.original_name ?? ''}{m.title ? ` · ${m.title}` : ''}">{m.original_name || '—'}{#if m.title && m.title !== m.original_name}<small> · {m.title}</small>{/if}</td>
+							<td class="n" class:sub={!!proxyOf(m)} title="{m.original_name ?? ''}{m.title ? ` · ${m.title}` : ''}">{#if proxyOf(m)}↳ {/if}{m.original_name || '—'}{#if m.title && m.title !== m.original_name}<small> · {m.title}</small>{/if}</td>
+							<td class="col">
+								{#if proxyOf(m)}<span class="dim">ACEScct</span>
+								{:else if m.kind === 'video' && classOf(m) === 'original'}
+									{@const ps = proxyState(m.meta)}
+									<span class="prof">{colourOf(m) ? profileInfo(colourOf(m)).label : 'colour not read yet'}</span>
+									{#if ps.state === 'unknown-colour'}<span class="pw" title={ps.note}>⚠ unknown source</span>
+									{:else if ps.state === 'waiting'}<span class="pw" title={ps.note}>⚠ no journey yet</span>
+									{:else if colourOf(m)}<span class="pok">→ ACEScct</span>{/if}
+								{:else if colourOf(m)}<span class="dim">{profileInfo(colourOf(m)).label}</span>{/if}
+							</td>
 							<td><span class="cls {classOf(m)}">{classOf(m)}</span></td>
 							<td class="r">{gb(m.size)}</td>
 						</tr>
+						{/if}
 					{:else}
-						<tr><td colspan="9" class="empty">{mine.length ? 'Nothing matches.' : 'No files in this story yet — ingest into it, or move files here.'}</td></tr>
+						<tr><td colspan="10" class="empty">{mine.length ? 'Nothing matches.' : 'No files in this story yet — ingest into it, or move files here.'}</td></tr>
 					{/each}
 					{#if rows.length > shown}
-						<tr><td colspan="9" class="more" {@attach more}>{rows.length - shown} more…</td></tr>
+						<tr><td colspan="10" class="more" {@attach more}>{rows.length - shown} more…</td></tr>
 					{/if}
 				</tbody>
 			</table>
@@ -284,6 +345,16 @@
 	.tier .none { color: var(--edge); }
 	th.tier { text-align: center; }
 	.thumb { width: 2.6rem; padding: 0.2rem 0.3rem; }
+	.n.sub { padding-left: 1.4rem; color: var(--dim); }
+	.col { white-space: nowrap; font-size: 0.74rem; }
+	.col .prof { margin-right: 0.4rem; }
+	.col .pok { color: #3e5a2f; }
+	.col .pm { color: #b8860b; font-weight: 600; }
+	.col .pw { color: #9c3b26; }
+	.col .dim { color: var(--dim); }
+	tr.coming td { background: var(--bg); font-size: 0.76rem; }
+	.rbar { display: inline-block; width: 6rem; height: 3px; margin-left: 0.6rem; vertical-align: middle; border-radius: 2px; background: var(--edge); overflow: hidden; }
+	.rbar i { display: block; height: 100%; background: #b8860b; transition: width 0.8s linear; }
 	.more { padding: 0.8rem; text-align: center; color: var(--dim); }
 	.thumb img, .thumb span { display: grid; place-items: center; width: 2.4rem; height: 1.6rem; border-radius: 4px; background: var(--bg); object-fit: cover; font-size: 0.8rem; color: var(--dim); }
 	.live { font-size: 0.72rem; }

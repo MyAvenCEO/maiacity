@@ -7,12 +7,13 @@
 	import { onMount } from 'svelte';
 	import { listMedia } from '$lib/auth/client';
 	import { command } from '$lib/native';
-	import { gb, type Moving } from './vault';
+	import { gb, type Making, type Moving } from './vault';
 
 	type Ingested = { session: string; story: string; path: string; name: string; bytes: number; files: { verdict: string }[] };
 	let moving = $state<Moving[]>([]);
 	let names = $state<Record<string, string>>({});
 	let ingests = $state<Ingested[]>([]);
+	let making = $state<Making[]>([]);
 
 	const going = $derived(moving.filter((t) => !t.done && !t.aborted));
 	const ended = $derived(moving.filter((t) => t.done || t.aborted));
@@ -22,7 +23,10 @@
 	onMount(() => {
 		void command<Ingested[]>('ingest_sources', { story: null }).then((all) => (ingests = all)).catch(() => {});
 		void listMedia().then((all) => (names = Object.fromEntries(all.map((m) => [m.hash, m.original_name || m.title || `${m.hash.slice(0, 12)}…`]))));
-		const tick = async () => (moving = await command<Moving[]>('vault_transfers').catch(() => []));
+		const tick = async () => {
+			moving = await command<Moving[]>('vault_transfers').catch(() => []);
+			making = await command<Making[]>('proxies_now').catch(() => []);
+		};
 		void tick();
 		const timer = setInterval(tick, 1000);
 		return () => clearInterval(timer);
@@ -50,6 +54,19 @@
 		</li>
 	{/each}
 </ul>
+
+{#if making.length}
+	<h4>Proxies</h4>
+	<ul>
+		{#each making as x (x.of)}
+			<li class="ended">
+				<span class="n">{x.name}</span>
+				<span class="d">→ ACEScct</span>
+				<span class="p">{x.stage === 'making' ? `${Math.floor(x.done * 100)}%` : x.stage}</span>
+			</li>
+		{/each}
+	</ul>
+{/if}
 
 <h4>Ingested</h4>
 <ul>

@@ -227,8 +227,13 @@ async fn run_ingest(
         let o = vault.ingest_file(f, &batch).await?;
         handle.emit("ingest", Progress { index, total, path, size, outcome: Some(o.clone()) }).ok();
         // a new movie gets its proxy by itself when that is switched on (in the background: the next file does not wait)
-        if stories::auto_proxy() && o.verdict == Verdict::Verified && ingest::kind_of(ingest::mime_of(f)) == "video" && !batch.tags.iter().any(|t| t == "proxy") {
-            tauri::async_runtime::spawn(proxies::auto_proxy(handle.clone(), vault.clone(), o.hash.clone(), f.clone()));
+        // every video original gets its proxy — from the source while it is still here (the queue takes one at a time)
+        if o.verdict == Verdict::Verified {
+            if let Ok(Some(m)) = vault.catalog.meta(o.hash.parse()?).await {
+                if proxies::wants_proxy(&m) {
+                    tauri::async_runtime::spawn(proxies::auto_proxy(handle.clone(), vault.clone(), o.hash.clone(), f.clone()));
+                }
+            }
         }
         outcomes.push(o);
     }
@@ -369,6 +374,8 @@ fn main() {
                 sync::keep_complete(handle, v).await;
             });
             // the studio for agents: MCP on this Mac only, behind the app's token
+            // every video original without its proxy: queued, now and every ten minutes
+            tauri::async_runtime::spawn(proxies::sweep(app.handle().clone(), vault.clone()));
             let (handle, v) = (app.handle().clone(), vault.clone());
             let auth = app.state::<auth::Auth>().inner().clone();
             tauri::async_runtime::spawn(async move {
@@ -407,8 +414,7 @@ fn main() {
             stories::story_delete,
             stories::files_move,
             stories::files_class,
-            stories::settings_get,
-            stories::settings_set,
+            proxies::proxies_now,
             proxies::vault_proxy,
             vault_sources,
             vault_scan,

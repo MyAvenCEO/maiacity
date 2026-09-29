@@ -8,7 +8,8 @@
 <script lang="ts">
 	import { onDestroy, onMount } from 'svelte';
 	import { command } from '$lib/native';
-	import { TIERS, gb, type Copies, type Moving } from './vault';
+	import { listMedia, type MediaItem } from '$lib/auth/client';
+	import { TIERS, gb, proxyState, type Copies, type Making, type Moving } from './vault';
 
 	type SourceFile = { hash: string; name: string; size: number; verdict: string };
 	type Ingested = { session: string; story: string; path: string; name: string; bytes: number; files: SourceFile[] };
@@ -19,6 +20,22 @@
 	let sources = $state<Ingested[]>([]);
 	let copies = $state<Record<string, Copies>>({});
 	let moving = $state<Moving[]>([]);
+	let making = $state<Making[]>([]);
+	let meta = $state<Record<string, MediaItem>>({});
+	/** the proxies of a source's video originals: made, being made, waiting (and why) */
+	function proxies(s: Ingested) {
+		const vids = s.files.map((f) => meta[f.hash]).filter((m): m is MediaItem => !!m && m.kind === 'video' && m.class === 'original');
+		const now = making.filter((x) => vids.some((m) => m.hash === x.of));
+		const states = vids.map((m) => proxyState(m.meta).state);
+		return {
+			total: vids.length,
+			made: states.filter((x) => x === 'made').length,
+			waiting: vids.filter((m) => ['waiting', 'unknown-colour'].includes(proxyState(m.meta).state) && !now.some((x) => x.of === m.hash)),
+			failed: states.filter((x) => x === 'failed').length,
+			current: now.find((x) => x.stage !== 'queued'),
+			queued: now.filter((x) => x.stage === 'queued').length
+		};
+	}
 	let error = $state('');
 	const DESTS = ['avenSSD', 'hetzner'] as const;
 
@@ -54,6 +71,7 @@
 	export async function load() {
 		try {
 			sources = await command<Ingested[]>('ingest_sources', { story });
+			meta = Object.fromEntries((await listMedia()).map((m) => [m.hash, m]));
 			copies = Object.fromEntries((await command<Copies[]>('vault_copies')).map((c) => [c.hash, c]));
 		} catch (e) {
 			error = String(e);
@@ -100,6 +118,10 @@
 			});
 		});
 		const live = setInterval(async () => {
+			const wasMaking = making.length;
+			making = await command<Making[]>('proxies_now').catch(() => []);
+			// a proxy just came in: read the descriptions again
+			if (making.length < wasMaking) meta = Object.fromEntries((await listMedia().catch(() => [])).map((m) => [m.hash, m]));
 			const was = moving.filter((t) => t.done).length;
 			moving = await command<Moving[]>('vault_transfers').catch(() => []);
 			if (moving.filter((t) => t.done).length > was) copies = Object.fromEntries((await command<Copies[]>('vault_copies').catch(() => [])).map((c) => [c.hash, c]));
@@ -118,6 +140,7 @@
 	{#each sources as s (keyOf(s))}
 		{@const c = counts(s)}
 		{@const done = complete(s)}
+		{@const px = proxies(s)}
 		<article class="card" class:done>
 			<header>
 				<div>
@@ -151,6 +174,16 @@
 					{/if}
 				{/each}
 			</div>
+
+			{#if px.total}
+				<p class="proxies">
+					<b>Proxies</b> {px.made}/{px.total} in ACEScct
+					{#if px.current} · making {px.current.name} {Math.floor(px.current.done * 100)}%{/if}
+					{#if px.queued} · {px.queued} queued{/if}
+					{#if px.waiting.length}<span class="warn"> · ⚠ {px.waiting.length} waiting — no colour journey for {[...new Set(px.waiting.map((m) => String((m.meta?.color as { profile?: string } | undefined)?.profile ?? 'an unknown source')))].join(', ')} yet</span>{/if}
+					{#if px.failed}<span class="warn"> · {px.failed} failed</span>{/if}
+				</p>
+			{/if}
 
 			<footer>
 				<span></span>
@@ -208,6 +241,9 @@
 	.bar { overflow: hidden; height: 6px; border-radius: 3px; background: var(--edge); }
 	.bar i { display: block; height: 100%; background: #d9a441; transition: width 0.8s linear; }
 	.bar i.full { background: #6f9a57; }
+	.proxies { margin: 0.2rem 0 0; font-size: 0.78rem; color: var(--dim); }
+	.proxies b { margin-right: 0.3rem; font-weight: 600; color: var(--ink); }
+	.warn { color: #9c3b26; }
 	footer { display: flex; align-items: center; justify-content: space-between; margin-top: 0.4rem; }
 	.link { padding: 0; border: 0; background: none; font: inherit; font-size: 0.78rem; color: var(--dim); text-decoration: underline; cursor: pointer; }
 	.release { padding: 0.35rem 0.9rem; border: 0; border-radius: 999px; background: var(--ink); font: inherit; font-size: 0.8rem; color: #fff; cursor: pointer; }
