@@ -1,8 +1,8 @@
-// The render worker: exports the timelines the studio asks for, and makes the library's proxies and preview LUTs.
+// The render worker: exports the timelines the studio asks for, and makes world shots' proxies and preview LUTs.
 //
 //   bun film worker [--local]        (MAIACITY_API=… MAIACITY_KEY=… point it at another API)
 //
-// It waits for a job on the render queue (render_jobs, migration 0024), of three kinds:
+// It waits for a job on the render queue (render_jobs, migration 0024), of these kinds:
 //
 //   render — the timeline exactly as it is edited, every clip where it sits, trimmed and levelled as set: pictures in
 //            their frame (16:9, 9:16, 1:1, 4:5), each shot cut hard into the next, the voice, music and sound clips
@@ -13,46 +13,45 @@
 //            a neutral look bypasses both transforms and renders bit for bit as it was. Conform: originals only — a
 //            proxy on the timeline is swapped for its original. World clips (kind 'world') are rendered as ACEScct
 //            plates, one per delivery shape. Every delivery is QC'd (tags, bit depth, frames, length, limits, loudness)
-//            before it goes into the media library; the report names every transform by the hash of its config.
-//   proxy  — a new file's colour read (ffprobe, EXR header → meta.color) and its HD log proxy made (proxy.mjs).
-//   lut    — the studio viewer's preview LUTs baked from the transform configs into the library (also at start-up).
-//   proxy of a world shot (shot_id + shot_version) — the shot rendered as an HD ACEScct plate into the library
+//            before it goes into the vault; the report names every transform by the hash of its config.
+//   lut    — the studio viewer's preview LUTs baked from the transform configs into the vault (also at start-up).
+//   proxy  — of a world shot (shot_id + shot_version): the shot rendered as an HD ACEScct plate into the vault
 //            (role:proxy, meta.shot/shotVersion), so the studio can play a world clip while the live world loads.
+//            A file's own proxy is not a job: the Mac app makes it natively and names it in the original's meta.proxy.
 //   frame  — a hero frame: one frame of a timeline (params: t, shape) at full precision through the whole chain —
 //            input transform, clip grade, film look, output transform — as a 16-bit PNG, for grading against.
 //
-// Runs wherever ffmpeg (with zimg), OpenColorIO (python3) and Chrome are; the files come from library/ by their CIDs,
-// or from the database into a cache.
+// Runs on the Mac with the app (ffmpeg with zimg, OpenColorIO in python3, Chrome): every file comes from the vault by
+// its hash (the app's local server, into a cache) and every file it makes goes into the vault (vault.mjs).
 import puppeteer from "puppeteer-core";
 import { spawn } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
-import { homedir, tmpdir } from "node:os";
-import { API, call, keyFor, say, SITE, upload } from "../../api/scripts/media-client";
-import { DIR as LIB, get, put, save } from "../../api/scripts/library";
+import { tmpdir } from "node:os";
+import { API, call, keyFor, say, SITE } from "../../api/scripts/media-client";
 import { cleanCdl, PRESETS, type Cdl } from "../../game/film/color.js";
 import { PREVIEW, TRANSFORMS } from "../../game/film/transforms.js";
 import { bakedLut, checkFfmpeg, hevcEncoder, ocioVersion, SETPARAMS, TAGS } from "./color/ffmpeg.mjs";
-import { EXT, inputArgs, sourceOf, type Source } from "./sources.mjs";
+import { inputArgs, sourceOf, type Source } from "./sources.mjs";
 import { blackFilters, pieceFilters } from "./picture.mjs";
 import { platesFor, worldModules } from "./plates.mjs";
 import { loudness, qc, type Qc } from "./qc.mjs";
-import { makeProxy } from "./proxy.mjs";
+import { add, fileOf as vaultFile, list, type Meta } from "./vault.mjs";
 
 /** A clip on the timeline (contract C1). */
 type Clip = {
   id: string; track: string; start: number; in: number; dur: number; vol: number; fin?: number; fout?: number;
-  kind?: "media" | "world"; cid?: string; shot?: string; shotVersion?: number; grade?: unknown;
+  kind?: "media" | "world"; hash?: string; shot?: string; shotVersion?: number; grade?: unknown;
   frame?: Record<string, { x?: number; y?: number; zoom?: number }>;
 };
 type Timeline = {
   id: string; name: string; project: string | null; variant: string | null; aspect: string; clips: Clip[];
   grade?: { look?: unknown; preset?: string } | null;
 };
-type Media = { cid: string; mime: string; kind: string; size: number; created: string; title: string; tags: string[]; meta: Record<string, any> };
+type Media = Meta;
 type Job = {
-  id: string; kind?: "render" | "proxy" | "lut" | "frame"; timeline_id: string | null; media_cid?: string | null;
+  id: string; kind?: "render" | "proxy" | "lut" | "frame"; timeline_id: string | null;
   shot_id?: string | null; shot_version?: number | null; params?: { t?: number; shape?: string } | null;
 };
 type ShotRecord = { id: string; name: string; project: string | null; version: number; spec: any };
@@ -71,30 +70,30 @@ const FRAME: Record<string, [number, number]> = { "1:1": [1080, 1080], "16:9": [
 //   1:1, 4:5 — 1080 H.264, for the Instagram and LinkedIn feeds.
 // Picture is 10-bit from the first filter to the HEVC master; only the H.264 copies are 8-bit, dithered.
 const masterOf = (aspect: string) => (aspect === "16:9" ? 2 : 1);
-const CACHE_MEDIA = join(homedir(), ".cache", "maiacity", "media");
 const report = (id: string, body: object) => call(`/api/renders/${id}`, { method: "PUT", body: JSON.stringify(body) }).catch(() => {});
 
-/** The file for a CID: library/<cid>.<ext> — or, when only the database holds it, a copy fetched into a cache. */
-async function fileOf(m: Media): Promise<string> {
-  const name = `${m.cid}.${EXT[m.mime] ?? "bin"}`;
-  if (existsSync(join(LIB, name))) return join(LIB, name);
-  if (existsSync(join(CACHE_MEDIA, name))) return join(CACHE_MEDIA, name);
-  mkdirSync(CACHE_MEDIA, { recursive: true });
-  const res = await fetch(`${API}/api/media/${m.cid}`, { headers: { authorization: `Bearer ${await keyFor()}` } });
-  if (!res.ok) throw new Error(`could not fetch ${m.title || m.cid}: ${res.status}`);
-  writeFileSync(join(CACHE_MEDIA, `${name}.part`), new Uint8Array(await res.arrayBuffer()));
-  renameSync(join(CACHE_MEDIA, `${name}.part`), join(CACHE_MEDIA, name));
-  say(`  ${m.title || m.cid} is not in library/ — fetched from the database`);
-  return join(CACHE_MEDIA, name);
-}
+/** A file on this disk: the vault's bytes, copied into the cache once (an EXR sequence as a .tar, whatever its type). */
+const fileOf = (m: Media) => vaultFile(m.hash, m.meta?.sequence === "exr" ? "application/x-tar" : m.mime);
 
-const mediaByCid = async (cid: string) => (await call<{ media: Media[] }>(`/api/media?q=${encodeURIComponent(cid)}`)).media.find((m) => m.cid === cid) ?? null;
+/** The vault's catalog, by hash (read again for every job: files come in while the worker waits). */
+const library = async () => new Map((await list({ fresh: true })).map((m) => [m.hash, m]));
+
+/**
+ * Conform: the original a proxy stands for — the Mac app writes it into the proxy's meta.proxy_of, and the proxy's
+ * hash into the original's meta.proxy. A file that is no proxy stands for itself.
+ */
+function originalOf(media: Map<string, Media>, hash: string) {
+  const of = media.get(hash)?.meta?.proxy_of as string | undefined;
+  if (of) return of;
+  for (const m of media.values()) if (m.meta?.proxy === hash && m.meta?.role !== "proxy") return m.hash;
+  return hash;
+}
 
 /** Captions: the voice clips' words, in short phrases broken at the punctuation, on the timeline's clock. */
 function phrasesOf(t: Timeline, media: Map<string, Media>) {
   const out: { text: string; start: number; end: number }[] = [];
-  for (const c of t.clips.filter((c) => c.track === "A1" && c.cid)) {
-    const words = (media.get(c.cid!)?.meta?.words ?? []) as { word: string; start: number; end: number }[];
+  for (const c of t.clips.filter((c) => c.track === "A1" && c.hash)) {
+    const words = (media.get(c.hash!)?.meta?.words ?? []) as { word: string; start: number; end: number }[];
     let cur: typeof words = [];
     const flush = () => cur.length && out.push({ text: cur.map((w) => w.word).join(" "), start: c.start + cur[0]!.start - c.in, end: c.start + cur.at(-1)!.end - c.in });
     for (const w of words.filter((w) => w.start >= c.in && w.start < c.in + c.dur)) {
@@ -171,9 +170,9 @@ function lookOf(t: Timeline): Cdl | null {
 async function render(job: Job) {
   const t = (await call<Timeline[]>("/api/timelines")).find((x) => x.id === job.timeline_id);
   if (!t) throw new Error("the timeline is gone");
-  const media = new Map((await call<{ media: Media[] }>("/api/media")).media.map((m) => [m.cid, m]));
+  const media = await library();
   const isWorld = (c: Clip) => c.kind === "world";
-  const clips = t.clips.filter((c) => (isWorld(c) ? c.track === "V1" : media.has(c.cid ?? ""))).sort((a, b) => a.start - b.start);
+  const clips = t.clips.filter((c) => (isWorld(c) ? c.track === "V1" : media.has(c.hash ?? ""))).sort((a, b) => a.start - b.start);
   const total = clips.reduce((n, c) => Math.max(n, c.start + c.dur), 0);
   if (!total) throw new Error("the timeline is empty");
   const look = lookOf(t);
@@ -182,31 +181,23 @@ async function render(job: Job) {
   await report(job.id, { note: "fetching files", progress: 0.02 });
 
   // conform: originals only — a proxy cut into the timeline is swapped for the file it stands for
-  const originalOf = async (cid: string): Promise<Media> => {
-    const m = media.get(cid)!;
-    const of = m.meta?.proxyOf as string | undefined;
-    if (!of) return m;
-    const o = media.get(of) ?? (await mediaByCid(of));
-    if (!o) throw new Error(`${m.title || cid} is a proxy whose original (${of}) the library does not hold`);
-    media.set(o.cid, o);
-    return o;
-  };
-  const files = new Map<string, string>(); // by the timeline's CID: the original's file
-  const sources = new Map<string, Source>(); // picture sources, by the timeline's CID
+  const files = new Map<string, string>(); // by the timeline's hash: the original's file
+  const sources = new Map<string, Source>(); // picture sources, by the timeline's hash
   for (const c of clips.filter((c) => !isWorld(c))) {
-    const cid = c.cid!;
-    if (files.has(cid)) continue;
-    const m = await originalOf(cid);
-    if (m.cid !== cid) conformed.push({ clip: c.id, proxy: cid, original: m.cid });
-    files.set(cid, await fileOf(m));
+    const hash = c.hash!;
+    if (files.has(hash)) continue;
+    const of = originalOf(media, hash), m = media.get(of);
+    if (!m) throw new Error(`${media.get(hash)!.title || hash} is a proxy whose original (${of}) the vault does not describe`);
+    if (of !== hash) conformed.push({ clip: c.id, proxy: hash, original: of });
+    files.set(hash, await fileOf(m));
   }
   // A title card's marker on the picture track is not a picture: it marks where the hook goes, and names the day's
-  // cards by CID (its meta: cards and hooks, one per shape — written by thumbnail.mjs): the title card delivered with
+  // cards by hash (its meta: cards and hooks, one per shape — written by thumbnail.mjs): the title card delivered with
   // the film, and the hook layer laid over the first seconds of the social copies (the same title, transparent). The
   // film itself runs from its first frame: a still card there would stop it, and the Short's and X's cover is a frame.
   type Marker = { cards?: Record<string, string>; hooks?: Record<string, string> };
-  const card = clips.find((c) => c.track === "V1" && !isWorld(c) && (media.get(c.cid!)?.meta as Marker | undefined)?.cards);
-  const named = card ? (media.get(card.cid!)!.meta as Marker) : {};
+  const card = clips.find((c) => c.track === "V1" && !isWorld(c) && (media.get(c.hash!)?.meta as Marker | undefined)?.cards);
+  const named = card ? (media.get(card.hash!)!.meta as Marker) : {};
   const thumbnails = new Map<string, Media>(); // by shape: the title card delivered with its film
   const hooks = new Map<string, string>(); // by shape: the hook layer's file
   for (const aspect of Object.keys(FRAME)) {
@@ -216,11 +207,11 @@ async function render(job: Job) {
   }
   const pictures = clips.filter((c) => c.track === "V1" && c !== card);
   for (const c of pictures.filter((c) => !isWorld(c))) {
-    if (sources.has(c.cid!)) continue;
-    const m = media.get(conformed.find((x) => x.proxy === c.cid)?.original ?? c.cid!)!;
-    const s = sourceOf(files.get(c.cid!)!, m);
-    if (s.profile === "unknown") warnings.push(`${m.title || m.cid}: colour unknown (${s.color.detectedFrom}) — rendered as Rec.709; set it in the studio`);
-    sources.set(c.cid!, s);
+    if (sources.has(c.hash!)) continue;
+    const m = media.get(originalOf(media, c.hash!))!;
+    const s = sourceOf(files.get(c.hash!)!, m);
+    if (s.profile === "unknown") warnings.push(`${m.title || m.hash}: colour unknown (${s.color.detectedFrom}) — rendered as Rec.709; set it in the studio`);
+    sources.set(c.hash!, s);
   }
 
   const work = resolve("studio/film/.render", job.id);
@@ -295,7 +286,7 @@ async function render(job: Job) {
         src = sourceOf(plates.get(c.id)!.get(aspect)!.file, null, { profile: "acescct" });
         from = p.a / FPS - c.start;
       } else {
-        src = sources.get(c.cid!)!;
+        src = sources.get(c.hash!)!;
         from = c.in + (p.a / FPS - c.start);
       }
       args.push(...inputArgs(src, from, frames / FPS + 0.5, FPS));
@@ -335,8 +326,8 @@ async function render(job: Job) {
     // ends); voice, music and sounds mixed apart, so the music can step back while the voice speaks
     const tracks: Record<"voice" | "music" | "fx", string[]> = { voice: [], music: [], fx: [] };
     let k = 0;
-    for (const c of clips.filter((c) => c.track.startsWith("A") && c.cid)) {
-      args.push("-ss", c.in.toFixed(3), "-t", c.dur.toFixed(3), "-i", files.get(c.cid!)!);
+    for (const c of clips.filter((c) => c.track.startsWith("A") && c.hash)) {
+      args.push("-ss", c.in.toFixed(3), "-t", c.dur.toFixed(3), "-i", files.get(c.hash!)!);
       const ms = Math.round(c.start * 1000), auto = Math.min(c.track === "A1" ? 0.05 : 0.8, c.dur / 3);
       const fin = Math.max(0.005, Math.min(c.fin ?? auto, c.dur / 2)), fout = Math.max(0.005, Math.min(c.fout ?? auto, c.dur / 2));
       f.push(`[${n}:a]aformat=sample_rates=48000:channel_layouts=stereo,volume=${c.vol.toFixed(3)},afade=t=in:d=${fin.toFixed(3)},afade=t=out:st=${(c.dur - fout).toFixed(3)}:d=${fout.toFixed(3)},adelay=${ms}|${ms}[s${k}]`);
@@ -399,7 +390,7 @@ async function render(job: Job) {
       : aspect === "9:16"
         ? [{ file: out, name, channels: total <= 180 ? ["instagram", "youtube"] : ["instagram"], format: `H.264 · ${W1}×${H1} · 30 fps · Reel${total <= 180 ? " and Short" : ""}${hooked}`, aspect, width: W1, height: H1, codec: "h264", ...(long ? { note: long } : {}) }]
         : [{ file: out, name, channels: ["instagram"], format: `H.264 · ${W1}×${H1} · feed${hooked}`, aspect, width: W1, height: H1, codec: "h264" }];
-    // QC: nothing goes into the library that is not what it says it is
+    // QC: nothing goes into the vault that is not what it says it is
     await report(job.id, { note: "checking", progress: pr(0.95) });
     for (const o of made) {
       o.qc = qc(o.file, {
@@ -413,24 +404,23 @@ async function render(job: Job) {
     return made;
   }
 
-  // into the library, and onto the calendar (the job's report carries them): ready for the upload step
-  await report(job.id, { note: "into the library", progress: 0.94 });
+  // into the vault, and onto the calendar (the job's report carries them): ready for the upload step
+  await report(job.id, { note: "into the vault", progress: 0.94 });
   const color = { working: "acescct", output: "odt-rec709", ocio: ocioVersion(), transforms: used, clips: { managed, bypassed }, look };
-  // each file into library/ first (copied, described), then the database — tagged by what it is, never named
+  // each file into the vault, described — tagged by what it is, never named (the name it came in as is only a fact)
   const title = `${t.project ?? ""} ${t.variant ?? ""} · ${t.name}`.trim();
   const deliveries = [];
   for (const o of outputs) {
     const qcMeta = { frames: o.qc!.frames, seconds: Number(o.qc!.seconds.toFixed(3)), bitDepth: o.qc!.bitDepth, tags: o.qc!.tags, bitrate: o.qc!.bitrate, warnings: o.qc!.warnings };
-    const d = await put(o.file, {
+    const { hash } = await add(o.file, {
+      name: o.name,
       title: `${title} · ${o.aspect} ${o.codec}`,
       description: `${o.format} · for ${o.channels.join(", ")}`,
       tags: [t.project ?? "film", "role:render", ...(t.variant ? [`cut:${t.variant}`] : []), `aspect:${o.aspect}`, `codec:${o.codec}`],
       meta: { timeline: t.id, duration_s: Number(total.toFixed(2)), format: o.format, color, qc: qcMeta, loudness: o.loudness },
     });
-    const bytes = new Uint8Array(await Bun.file(o.file).arrayBuffer());
-    await upload(bytes, { cid: d.cid, mime: d.mime, title: d.title, description: d.description, tags: d.tags, meta: d.meta, public: d.public });
     deliveries.push({
-      channels: o.channels, cid: d.cid, format: o.format, aspect: o.aspect, width: o.width, height: o.height, codec: o.codec, bytes: bytes.length,
+      channels: o.channels, hash, mime: "video/mp4", format: o.format, aspect: o.aspect, width: o.width, height: o.height, codec: o.codec, bytes: statSync(o.file).size,
       seconds: Number(total.toFixed(2)), qc: qcMeta, loudness: o.loudness, ...(o.note ? { note: o.note } : {}),
     });
   }
@@ -438,74 +428,19 @@ async function render(job: Job) {
   for (const [aspect, m] of thumbnails) {
     const [w, h] = FRAME[aspect]!;
     for (const d of deliveries.filter((d) => d.aspect === aspect && d.codec === "h264"))
-      deliveries.push({ channels: d.channels, cid: m.cid, format: `thumbnail · ${w}×${h}`, aspect, width: w, height: h, codec: "jpeg", bytes: m.size, seconds: 0, kind: "thumbnail" } as any);
+      deliveries.push({ channels: d.channels, hash: m.hash, mime: m.mime, format: `thumbnail · ${w}×${h}`, aspect, width: w, height: h, codec: "jpeg", bytes: m.size, seconds: 0, kind: "thumbnail" } as any);
   }
   rmSync(work, { recursive: true, force: true });
   // the film the studio plays: the 1080 H.264 cut of the timeline's own frame (browsers play it everywhere)
   const own = deliveries.find((d) => d.aspect === t.aspect && d.codec === "h264") ?? deliveries.find((d) => d.codec === "h264")!;
   const platesUsed = [...plates.entries()].flatMap(([clip, m]) => [...m.entries()].map(([aspect, p]) => ({ clip, aspect, key: p.key, fingerprint: p.fingerprint, reused: p.reused })));
-  const rep = { color, conformed, plates: platesUsed, warnings, deliveries: deliveries.filter((d: any) => d.kind !== "thumbnail").map((d: any) => ({ cid: d.cid, aspect: d.aspect, codec: d.codec, qc: d.qc, loudness: d.loudness })) };
-  return { cid: own.cid, deliveries, report: rep };
+  const rep = { color, conformed, plates: platesUsed, warnings, deliveries: deliveries.filter((d: any) => d.kind !== "thumbnail").map((d: any) => ({ hash: d.hash, aspect: d.aspect, codec: d.codec, qc: d.qc, loudness: d.loudness })) };
+  return { hash: own.hash, deliveries, report: rep };
 }
 
-/** A proxy job: the file's colour read into meta.color, its HD log proxy made and linked both ways. */
-async function proxy(job: Job) {
-  const cid = job.media_cid!;
-  const m = await mediaByCid(cid);
-  if (!m) throw new Error("the library does not hold that file");
-  if (m.meta?.proxyOf) return { note: "a proxy itself: nothing to do", report: {} };
-  await report(job.id, { note: "fetching the file", progress: 0.05 });
-  const file = await fileOf(m);
-  const src = sourceOf(file, m, { fresh: true });
-  await report(job.id, { note: `making the proxy (${src.profile})`, progress: 0.1 });
-  const dir = mkdtempSync(join(tmpdir(), "maiacity-proxy-"));
-  try {
-    let lastReport = 0;
-    const made = await makeProxy(src, dir, (x) => {
-      if (Date.now() - lastReport < 3000) return;
-      lastReport = Date.now();
-      void report(job.id, { progress: 0.1 + 0.8 * x, note: "making the proxy" });
-    });
-    let proxyCid: string | null = null;
-    if (made) {
-      const d = await put(made.file, {
-        title: `${m.title || m.cid.slice(0, 12)} · proxy`,
-        description: `HD proxy (${made.width}×${made.height}) in ${made.profile}, for editing — of ${m.cid}`,
-        tags: ["role:proxy"],
-        meta: {
-          proxyOf: m.cid, width: made.width, height: made.height, ...(made.seconds ? { duration_s: Number(made.seconds.toFixed(3)) } : {}),
-          color: { profile: made.profile, primaries: "bt709", transfer: "bt709", matrix: "bt709", range: "tv", bitDepth: made.mime === "video/mp4" ? 10 : 16, detectedFrom: `proxy of ${m.cid}` },
-          transforms: made.used,
-        },
-      });
-      const bytes = new Uint8Array(await Bun.file(join(LIB, d.file)).arrayBuffer());
-      await upload(bytes, { cid: d.cid, mime: d.mime, title: d.title, description: d.description, tags: d.tags, meta: d.meta, public: false });
-      proxyCid = d.cid;
-      // the proxy it replaces (made in the colour the file had before) stays in the library, marked superseded
-      const old = m.meta?.proxy as string | undefined;
-      const before = old && old !== proxyCid ? await mediaByCid(old) : null;
-      if (before && !before.tags.includes("superseded"))
-        await call("/api/media/describe", { method: "POST", body: JSON.stringify({ cid: before.cid, tags: [...before.tags, "superseded"] }) });
-    }
-    // the original learns its colour and its proxy: re-read just before, so nothing written meanwhile is lost
-    const now = (await mediaByCid(cid)) ?? m;
-    const colorMeta = { ...src.color, ...(now.meta?.color?.override ? { override: now.meta.color.override } : {}) };
-    const meta = { ...now.meta, color: colorMeta, ...(proxyCid ? { proxy: proxyCid } : {}), width: src.width, height: src.height };
-    await call("/api/media/describe", { method: "POST", body: JSON.stringify({ cid, meta }) });
-    const doc = await get(cid);
-    if (doc) await save({ ...doc, meta: { ...doc.meta, ...meta } });
-    return {
-      output_cid: proxyCid,
-      note: proxyCid ? `proxy ready · ${made!.profile} · ${src.color.detectedFrom}` : `colour read: ${src.profile} (${src.color.detectedFrom}) · no proxy needed`,
-      report: { color: colorMeta, proxy: proxyCid, proxyProfile: made?.profile ?? null, transforms: made?.used ?? {} },
-    };
-  } finally {
-    rmSync(dir, { recursive: true, force: true });
-  }
-}
-
-/** A world shot version's HD proxy: its whole length rendered as an ACEScct plate (renderPlate), into the library. */
+/** A world shot version's HD proxy: its whole length rendered as an ACEScct plate (renderPlate), into the vault. */
 async function shotProxy(job: Job) {
+  if (!job.shot_id) throw new Error("a proxy job names a world shot (a file's own proxy is the Mac app's)");
   const rec = await fetchShot(job.shot_id!, job.shot_version ?? undefined);
   const spec = rec.spec, aspect = spec.aspect in FRAME ? spec.aspect : "16:9";
   const [width, height] = FRAME[aspect]!;
@@ -516,20 +451,18 @@ async function shotProxy(job: Job) {
   try {
     const out = join(dir, "proxy.mp4");
     const r = await renderPlate({ spec, from: 0, to: spec.seconds, shape: aspect, width, height, fps, out, site: process.env.MAIACITY_SITE ?? SITE });
-    const d = await put(r.file ?? out, {
-      mime: "video/mp4",
+    const d = await add(r.file ?? out, {
+      name: `shot-${rec.id.slice(0, 8)}-v${rec.version}-proxy.mp4`,
       title: `${rec.name} · v${rec.version} · world proxy`,
       description: `HD proxy (${width}×${height}) of the world shot ${rec.name}, version ${rec.version}, in ACEScct — for editing`,
       tags: ["role:proxy", "world shot", ...(rec.project ? [rec.project] : [])],
       meta: {
-        shot: rec.id, shotVersion: rec.version, width, height, duration_s: Number(Number(spec.seconds).toFixed(3)),
+        role: "proxy", shot: rec.id, shotVersion: rec.version, width, height, duration_s: Number(Number(spec.seconds).toFixed(3)),
         fingerprint: String(fingerprint(spec, { from: 0, to: spec.seconds, shape: aspect, width, height, fps })),
         color: { profile: "acescct", primaries: "bt709", transfer: "bt709", matrix: "bt709", range: "tv", bitDepth: 10, detectedFrom: `world shot ${rec.id} v${rec.version}` },
       },
     });
-    const bytes = new Uint8Array(await Bun.file(join(LIB, d.file)).arrayBuffer());
-    await upload(bytes, { cid: d.cid, mime: d.mime, title: d.title, description: d.description, tags: d.tags, meta: d.meta, public: false });
-    return { output_cid: d.cid, note: `world proxy ready · ${rec.name} v${rec.version}`, report: { shot: rec.id, shotVersion: rec.version, proxy: d.cid, ev: r.ev ?? null } };
+    return { output_hash: d.hash, note: `world proxy ready · ${rec.name} v${rec.version}`, report: { shot: rec.id, shotVersion: rec.version, proxy: d.hash, ev: r.ev ?? null } };
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -538,15 +471,15 @@ async function shotProxy(job: Job) {
 /**
  * A hero frame: the picture of a timeline at one moment, in one shape, at that delivery's full resolution — through
  * exactly the chain the render takes (conformed original or world plate → input transform → clip grade → film look →
- * output transform), without the graphics — as a 16-bit PNG in the library (role:frame).
+ * output transform), without the graphics — as a 16-bit PNG in the vault (role:frame).
  */
 async function heroFrame(job: Job) {
   const at = Number(job.params?.t ?? 0), aspect = String(job.params?.shape ?? "16:9");
   if (!(aspect in FRAME)) throw new Error(`no such shape: ${aspect}`);
   const t = await call<Timeline>(`/api/timelines/${job.timeline_id}`);
-  const media = new Map((await call<{ media: Media[] }>("/api/media")).media.map((m) => [m.cid, m]));
+  const media = await library();
   type Marker = { cards?: Record<string, string> };
-  const pictures = t.clips.filter((c) => c.track === "V1" && (c.kind === "world" || (media.has(c.cid ?? "") && !(media.get(c.cid!)!.meta as Marker)?.cards)));
+  const pictures = t.clips.filter((c) => c.track === "V1" && (c.kind === "world" || (media.has(c.hash ?? "") && !(media.get(c.hash!)!.meta as Marker)?.cards)));
   const clip = pictures.filter((c) => c.start <= at && at < c.start + c.dur).at(-1) ?? null;
   const W = FRAME[aspect]![0] * masterOf(aspect), H = FRAME[aspect]![1] * masterOf(aspect);
   const work = resolve("studio/film/.render", job.id);
@@ -570,56 +503,49 @@ async function heroFrame(job: Job) {
         what = `world shot ${clip.shot} v${clip.shotVersion} at ${shotT.toFixed(3)} s`;
       } else {
         // conform: the original, never the proxy
-        let m = media.get(clip.cid!)!;
-        const of = m.meta?.proxyOf as string | undefined;
-        if (of) m = media.get(of) ?? (await mediaByCid(of)) ?? m;
+        const m = media.get(originalOf(media, clip.hash!)) ?? media.get(clip.hash!)!;
         src = sourceOf(await fileOf(m), m);
         from = clip.in + (at - clip.start);
-        what = `${m.title || m.cid} at ${from.toFixed(3)} s`;
+        what = `${m.title || m.hash} at ${from.toFixed(3)} s`;
       }
       const piece = pieceFilters({ source: src, grade: clip.grade, look: lookOf(t), frame: clip.frame?.[aspect] ?? clip.frame?.[aspect.replace(":", "x")], W, H, frames: 1, fps: FPS });
       await runFfmpeg([...inputArgs(src, from, 1 / FPS + 0.5, FPS), "-filter_complex", `[0:v]${piece.filters.join(",")},${toPng}[o]`, "-map", "[o]", "-frames:v", "1", "-c:v", "png", "-pix_fmt", "rgb48be", png], work);
     }
-    const d = await put(png, {
-      mime: "image/png",
+    const d = await add(png, {
+      name: `frame-${at.toFixed(2)}s-${aspect.replace(":", "x")}.png`,
       title: `${t.name} · hero frame ${at.toFixed(2)} s · ${aspect}`,
       description: `One frame at full precision (${W}×${H}, 16-bit) through the whole chain, without graphics — ${what}`,
       tags: ["role:frame", ...(t.project ? [t.project] : [])],
       meta: { timeline: t.id, version: (t as { version?: number }).version ?? 1, t: at, shape: aspect, width: W, height: H, clip: clip?.id ?? null },
     });
-    const bytes = new Uint8Array(await Bun.file(join(LIB, d.file)).arrayBuffer());
-    await upload(bytes, { cid: d.cid, mime: d.mime, title: d.title, description: d.description, tags: d.tags, meta: d.meta, public: false });
-    return { output_cid: d.cid, note: `hero frame ready · ${at.toFixed(2)} s · ${aspect}`, report: { t: at, shape: aspect, width: W, height: H, clip: clip?.id ?? null, what } };
+    return { output_hash: d.hash, note: `hero frame ready · ${at.toFixed(2)} s · ${aspect}`, report: { t: at, shape: aspect, width: W, height: H, clip: clip?.id ?? null, what } };
   } finally {
     rmSync(work, { recursive: true, force: true });
   }
 }
 
-/** The studio viewer's preview LUTs: baked from the configs, into the library when the library lacks that hash. */
+/** The studio viewer's preview LUTs: baked from the configs, into the vault when it lacks that bake (by its hash). */
 async function luts() {
-  const have = await call<Record<string, { cid: string; hash: string; size: number }>>("/api/film/luts");
+  const have = new Set((await list({ fresh: true })).filter((m) => m.tags?.includes("role:lut")).map((m) => `${m.meta?.transform}@${m.meta?.hash}`));
   const made: Record<string, string> = {};
   for (const name of PREVIEW) {
     const { file, hash } = bakedLut(TRANSFORMS[name], { format: "mlut", name });
-    if (have[name]?.hash === hash) continue;
-    const d = await put(file, {
-      mime: "application/octet-stream",
+    if (have.has(`${name}@${hash}`)) continue;
+    const d = await add(file, {
+      name: `preview-${name}.mlut`,
       title: `preview LUT · ${name}`,
       description: `The studio viewer's ${name}, 65³, baked from its config (hash ${hash}) — a cache, made again from the config at will`,
       tags: ["role:lut", `transform:${name}`],
       meta: { transform: name, hash, size: 65, format: "mlut1", ocio: ocioVersion() },
     });
-    const bytes = new Uint8Array(await Bun.file(join(LIB, d.file)).arrayBuffer());
-    await upload(bytes, { cid: d.cid, mime: d.mime, title: d.title, description: d.description, tags: d.tags, meta: d.meta, public: false });
-    made[name] = d.cid;
+    made[name] = d.hash;
   }
   return made;
 }
 
 if (import.meta.main) {
   checkFfmpeg();
-  say(`render worker on ${API} — OpenColorIO ${ocioVersion()}, ${hevcEncoder().hevc} — waiting for jobs`);
-  mkdirSync(LIB, { recursive: true });
+  say(`render worker on ${API}, files from the vault — OpenColorIO ${ocioVersion()}, ${hevcEncoder().hevc} — waiting for jobs`);
   // the preview LUTs, whenever the configs changed
   await luts().then((m) => Object.keys(m).length && say(`preview LUTs baked: ${Object.keys(m).join(", ")}`)).catch((e) => say(`preview LUTs: ${(e as Error).message}`));
   const once = process.argv.includes("--once");
@@ -642,21 +568,21 @@ if (import.meta.main) {
     }
     const job = (await res.json()) as Job;
     const kind = job.kind ?? "render";
-    say(`job ${job.id}: ${kind} ${job.timeline_id ?? job.media_cid ?? (job.shot_id ? `shot ${job.shot_id} v${job.shot_version}` : "")}`);
+    say(`job ${job.id}: ${kind} ${job.timeline_id ?? (job.shot_id ? `shot ${job.shot_id} v${job.shot_version}` : "")}`);
     try {
       if (kind === "proxy" || kind === "frame") {
-        const r = kind === "frame" ? await heroFrame(job) : job.shot_id ? await shotProxy(job) : await proxy(job);
-        await report(job.id, { status: "done", progress: 1, note: r.note, ...(r.output_cid ? { output_cid: r.output_cid } : {}), report: r.report });
+        const r = kind === "frame" ? await heroFrame(job) : await shotProxy(job);
+        await report(job.id, { status: "done", progress: 1, note: r.note, output_hash: r.output_hash, report: r.report });
         say(`job ${job.id}: ${r.note}`);
       } else if (kind === "lut") {
         const made = await luts();
         await report(job.id, { status: "done", progress: 1, note: Object.keys(made).length ? `baked ${Object.keys(made).join(", ")}` : "every preview LUT is current", report: { luts: made } });
         say(`job ${job.id}: preview LUTs done`);
       } else {
-        const { cid, deliveries, report: rep } = await render(job);
+        const { hash, deliveries, report: rep } = await render(job);
         const hashes = Object.entries(rep.color.transforms).map(([k, v]) => `${k}@${v.slice(0, 8)}`).join(" ");
-        await report(job.id, { status: "done", progress: 1, note: `in the library and on the calendar: ${deliveries.length} files · ${hashes}`.slice(0, 300), output_cid: cid, deliveries, report: rep });
-        say(`job ${job.id}: done → ${cid}`);
+        await report(job.id, { status: "done", progress: 1, note: `in the vault and on the calendar: ${deliveries.length} files · ${hashes}`.slice(0, 300), output_hash: hash, deliveries, report: rep });
+        say(`job ${job.id}: done → ${hash}`);
       }
     } catch (e) {
       await report(job.id, { status: "failed", note: (e as Error).message.slice(0, 280) });

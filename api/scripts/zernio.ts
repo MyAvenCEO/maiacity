@@ -9,8 +9,8 @@
 // publish step, not through Zernio.
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { call, ROOT, say } from "./media-client";
-import { get, type Doc } from "./library";
+import { call, say } from "./media-client";
+import { list, type Meta } from "../../scripts/film/vault.mjs";
 
 const dir = process.argv.slice(2).find((a) => !a.startsWith("--"));
 if (!dir) throw new Error("usage: bun api/scripts/zernio.ts blog/day-NN-<slug> [--local]");
@@ -24,25 +24,26 @@ const PLATFORM: Record<string, string> = { youtube: "youtube", x: "twitter", lin
 // the day's card on the board: its files (deliveries), to find each post's video and thumbnail
 const days = await call<{ items: { project: string }[] }>("/api/content/days");
 if (!days.items.some((i) => i.project === day.project)) throw new Error(`${day.project} is not on the board`);
-// the day's files by CID: its film copies (derivatives.json), and its title cards (thumbnail.json)
-type File = { cid: string; aspect: string; codec: string; kind?: string; format?: string };
+// the day's files by hash: its film copies (derivatives.json), and its title cards (thumbnail.json)
+type File = { hash: string; aspect: string; codec: string; kind?: string; format?: string };
 const SHAPE: Record<string, string> = { "16x9": "16:9", "1x1": "1:1", "9x16": "9:16", "5x2": "5:2" };
 const cards = existsSync(join(dir, "thumbnail.json")) ? (JSON.parse(readFileSync(join(dir, "thumbnail.json"), "utf8")).cards ?? {}) as Record<string, string> : {};
 const files: File[] = [
   ...((JSON.parse(readFileSync(join(dir, "derivatives.json"), "utf8")).files ?? []) as File[]),
-  ...Object.entries(cards).filter(([s, c]) => c && SHAPE[s]).map(([s, cid]) => ({ cid, aspect: SHAPE[s]!, codec: "jpeg", kind: "thumbnail" })),
+  ...Object.entries(cards).filter(([s, c]) => c && SHAPE[s]).map(([s, hash]) => ({ hash, aspect: SHAPE[s]!, codec: "jpeg", kind: "thumbnail" })),
 ];
-const docs = new Map<string, Doc>();
+const vault = new Map((await list()).map((m) => [m.hash, m]));
+const docs = new Map<string, Meta>();
 for (const f of files) {
-  const d = await get(f.cid);
-  if (!d) throw new Error(`library/ does not hold ${f.cid}`);
-  docs.set(f.cid, d);
+  const d = vault.get(f.hash);
+  if (!d) throw new Error(`the vault does not describe ${f.hash}`);
+  docs.set(f.hash, d);
 }
-// a public address for a file: its CDN copy when it has one (the site's manifest); else it is uploaded to Zernio first
-const published = JSON.parse(readFileSync(join(ROOT, "src/lib/media/manifest.json"), "utf8")) as Record<string, { url: string | null }>;
+// a public address for a file: the vault's gateway when the file is public; else it is uploaded to Zernio first
+const GATEWAY = "https://api.maia.city/vault/files";
 const urlOf = (ref: string) => {
-  const cid = ref.replace(/\.[a-z0-9]+$/, "");
-  return published[cid]?.url ? `https://maia.city${published[cid]!.url}` : `upload:${cid}`;
+  const hash = ref.replace(/\.[a-z0-9]+$/, "");
+  return docs.get(hash)?.public ? `${GATEWAY}/${hash}` : `upload:${hash}`;
 };
 const fileFor = (aspect?: string, codec?: string, kind = "video") => files.find((f) => (f.kind ?? "video") === kind && f.aspect === aspect && (kind === "thumbnail" || f.codec === codec));
 
@@ -86,7 +87,7 @@ function articleBlocks(md: string) {
 
 // ── the checks: what Zernio and the platforms refuse, or quietly change ──
 const problems: string[] = [], notes: string[] = [];
-const secondsOf = (cid?: string) => Number(cid ? docs.get(cid)?.meta?.duration_s ?? 0 : 0);
+const secondsOf = (hash?: string) => Number(hash ? docs.get(hash)?.meta?.duration_s ?? 0 : 0);
 
 type Entry = { platform: string; accountId: string; customContent?: string; customMedia?: unknown[]; platformSpecificData?: Record<string, unknown> };
 const moments = new Map<string, { entries: Entry[]; keys: string[] }>();
@@ -102,7 +103,7 @@ for (const p of day.posts) {
   const video = ["video", "short", "reel"].includes(p.format) ? fileFor(p.aspect, p.codec) : undefined;
   const thumb = fileFor(p.aspect, p.codec, "thumbnail");
   if (["video", "short", "reel"].includes(p.format) && !video) problems.push(`${key}: no ${p.aspect} ${p.codec} video in the day's files`);
-  const secs = secondsOf(video?.cid);
+  const secs = secondsOf(video?.hash);
   const entry: Entry = { platform: platform ?? p.platform, accountId: `<${p.platform} account>` };
   const data: Record<string, unknown> = {};
 
@@ -120,7 +121,7 @@ for (const p of day.posts) {
   if (p.platform === "x") {
     if (p.format === "article") {
       const cover = fileFor("5:2", undefined, "thumbnail") ?? fileFor("16:9", undefined, "thumbnail");
-      data.article = { title: p.title, mode: "publish", ...(cover ? { cover: { url: urlOf(cover.cid) } } : {}), content_state: articleBlocks(p.text) };
+      data.article = { title: p.title, mode: "publish", ...(cover ? { cover: { url: urlOf(cover.hash) } } : {}), content_state: articleBlocks(p.text) };
       if (!cover) notes.push(`${key}: no cover image (an X Article shows it as its card; 5:2 is the shape)`);
       notes.push(`${key}: X Articles need X Premium+ and cost about $0.02 each through the API`);
     } else if (p.format === "thread") {
@@ -141,10 +142,10 @@ for (const p of day.posts) {
   }
   if (p.format !== "article" && p.format !== "thread") entry.customContent = p.text;
   if (video) {
-    const media: Record<string, unknown> = { type: "video", url: urlOf(video.cid) };
+    const media: Record<string, unknown> = { type: "video", url: urlOf(video.hash) };
     // the title card as its own image where the platform takes one: a YouTube video (not a Short), LinkedIn, a Reel
-    if (thumb && (p.platform === "linkedin" || (p.platform === "youtube" && p.format === "video"))) media.thumbnail = urlOf(thumb.cid);
-    if (thumb && p.platform === "instagram") media.instagramThumbnail = urlOf(thumb.cid);
+    if (thumb && (p.platform === "linkedin" || (p.platform === "youtube" && p.format === "video"))) media.thumbnail = urlOf(thumb.hash);
+    if (thumb && p.platform === "instagram") media.instagramThumbnail = urlOf(thumb.hash);
     entry.customMedia = [media];
   }
   if (Object.keys(data).length) entry.platformSpecificData = data;

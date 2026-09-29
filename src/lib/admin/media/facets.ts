@@ -3,26 +3,10 @@
 // A tag is a plain string. "Day 19" says which day a file belongs to; "key:value" tags are facets (role:shot,
 // scene:the dip, shot:05 the edge, take:b, …); the rest are plain tags ("cover", "site", "sandbox 4", a folder's
 // name). The paths are only names — nothing here reads a folder out of them.
+import type { MediaItem } from '$lib/auth/client';
 import { vaultUrl } from '$lib/studio/vault';
 
-/** A file in the vault's catalog, as the library shows it: by its hash, with what the catalog says about it. */
-export type MediaItem = {
-	hash: string;
-	mime: string;
-	kind: string;
-	size: number;
-	/** when it came into the vault */
-	added: string;
-	title: string;
-	description: string;
-	/** how it is found and sorted: "Day 18", "role:cover", "shot:05 the edge", "shape:16x9", … */
-	tags: string[];
-	/** what else is known: a voice take's words, voice, model, duration, its colour, its proxy */
-	meta: Record<string, unknown>;
-	/** shown by the site or a platform: served by the gateway without a login */
-	public: boolean;
-	original_name?: string;
-};
+export type { MediaItem };
 
 /** The film's scenes, in the order the film plays them — not the alphabet's. */
 export const SCENES = ['hook', 'sunrise', 'the dip', 'breakfast', 'under the glass', 'food forest', 'the ring', 'the commons', 'night'];

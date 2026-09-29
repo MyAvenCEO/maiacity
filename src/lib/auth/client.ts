@@ -25,8 +25,9 @@ export type Founder = {
 /** May they? The API decides for real; this only keeps the site from offering what it would refuse. */
 export const may = (founder: Founder | null | undefined, cap: string) => !!founder?.caps?.includes(cap);
 
-/** A library file's address: straight from the API on the web, through the app (its key, Range) in maiaCITY Studio. */
-export const mediaUrl = (cid: string) => `${native() ? APP_API : API}/api/media/${cid}`;
+/** A file's address, by its BLAKE3 hash: in maiaCITY Studio from this Mac's vault (with Range); on the web from the
+ *  vault's gateway (a public file; a private one answers only the app). */
+export const fileUrl = (hash: string) => (native() ? `vault://localhost/${hash}` : `https://api.maia.city/vault/files/${hash}`);
 
 /** Every call carries the session cookie, and every failure carries a sentence
  *  a person can read rather than a status code. In the Mac app the call goes out natively, with the app's key. */
@@ -105,23 +106,24 @@ export const passkeysAvailable = () =>
 
 // ─────────────────────────────── the media library ───────────────────────────────
 
+/** A file in the vault's catalog (iroh-docs, on every paired device), by its BLAKE3 hash. */
 export type MediaItem = {
-	cid: string;
+	hash: string;
 	mime: string;
-	kind: 'image' | 'video' | 'audio' | 'document' | 'other';
+	kind: 'image' | 'video' | 'audio' | 'document' | 'other' | string;
 	size: number;
-	created: string;
+	/** when it came into the vault */
+	added: string;
 	title: string;
 	description: string;
 	/** how it is found and sorted: "Day 18", "role:cover", "shot:05 the edge", "shape:16x9", … */
 	tags: string[];
-	/** what else is known: a voice take's words, voice, model, duration */
+	/** what else is known: a voice take's words, voice, model, duration, its colour, its proxy */
 	meta: Record<string, unknown>;
-	/** shown by the site or a platform: it gets a copy on the CDN */
+	/** shown by the site or a platform: served by the gateway without a login */
 	public: boolean;
-	cdn_path: string | null;
-	stream_guid: string | null;
-	distributed_at: string | null;
+	/** the name it came in with — a fact about it, never how it is found */
+	original_name?: string;
 };
 
 // ── the media vault: devices the admin paired (only these sync), and revoking one ──
@@ -131,12 +133,27 @@ export async function revokeVaultDevice(endpointId: string): Promise<void> {
 	await call(`/api/vault/devices/${endpointId}`, { method: 'DELETE' });
 }
 
-export const listMedia = (q?: { kind?: string; q?: string }) =>
-	call<{ media: MediaItem[]; total: number }>(`/api/media${q ? `?${new URLSearchParams(q as Record<string, string>)}` : ''}`);
+/** Every file this Mac's vault knows (the catalog), newest first — maiaCITY Studio only. */
+export async function listMedia(): Promise<MediaItem[]> {
+	const all = await command<(Partial<MediaItem> & { hash: string; mime: string; kind: string; size: number })[]>('vault_list');
+	return all.map((f) => ({
+		hash: f.hash,
+		mime: f.mime,
+		kind: f.kind,
+		size: f.size,
+		added: f.added ?? '',
+		title: f.title ?? '',
+		description: f.description ?? '',
+		tags: f.tags ?? [],
+		meta: f.meta ?? {},
+		public: f.public ?? false,
+		original_name: f.original_name
+	}));
+}
 
-/** Set what is known about a file: each field given replaces the one before (meta as a whole: send all of it). */
-export const describeMedia = (cid: string, about: { title?: string; description?: string; tags?: string[]; meta?: Record<string, unknown>; public?: boolean }) =>
-	call<{ ok: true }>('/api/media/describe', { method: 'POST', body: JSON.stringify({ cid, ...about }) });
+/** Set what is known about a file: each field given replaces the one before; meta is merged key by key. It syncs. */
+export const describeMedia = (hash: string, about: { title?: string; description?: string; tags?: string[]; meta?: Record<string, unknown>; public?: boolean }) =>
+	command<MediaItem>('vault_describe', { hash, patch: about });
 
 // ─────────────────────────────── colour (C5) ───────────────────────────────
 
@@ -144,8 +161,9 @@ export const describeMedia = (cid: string, about: { title?: string; description?
 export type ColorInfo = { profile: string; primaries?: string; transfer?: string; matrix?: string; range?: string; bitDepth?: number; detectedFrom?: string; override?: string };
 /** A grade: ASC CDL in ACEScct (game/film/color.js). */
 export type Cdl = { slope: [number, number, number]; offset: [number, number, number]; power: [number, number, number]; sat: number };
-/** The preview LUTs the worker bakes for the studio's viewer (odt-rec709 and each profile's IDT), by name. */
-export type FilmLuts = Record<string, { cid: string; hash: string; size: number }>;
+/** The preview LUTs the worker bakes for the studio's viewer (odt-rec709 and each profile's IDT), by name: the
+ *  vault file (`file`, its hash) and the LUT's own content hash. */
+export type FilmLuts = Record<string, { file: string; hash: string; size: number }>;
 export const filmLuts = () => call<FilmLuts>('/api/film/luts');
 // ─────────────────────────────── signing a terminal in ───────────────────────────────
 
@@ -165,7 +183,7 @@ export type ClipFrame = { x: number; y: number; zoom: number };
 
 /**
  * One clip on the timeline (contract C1). `fin` / `fout`: the clip's own fade in and out, in seconds — a sound bed
- * crossfades, a hit comes in at once. A media clip (`kind` absent or 'media') names a library file by `cid`; a world
+ * crossfades, a hit comes in at once. A media clip (`kind` absent or 'media') names a vault file by `hash`; a world
  * clip (`kind: 'world'`, V1 only) names a world shot record and the version it was cut with. A world clip's shot-local
  * time is `in + (timelineTime − start)`.
  */
@@ -179,7 +197,7 @@ export type TimelineClip = {
 	fin?: number;
 	fout?: number;
 	kind?: 'media' | 'world';
-	cid?: string;
+	hash?: string;
 	shot?: string;
 	shotVersion?: number;
 	/** this clip's own grade (Grade tab), ACEScct */
@@ -237,7 +255,7 @@ export type ContentItem = {
 	scheduled_at: string | null;
 	/** an idea's words, or the day's base article in Markdown: the one source every post derives from */
 	body: string;
-	cids: string[];
+	hashes: string[];
 	link: string | null;
 	tags: string[];
 	/** every file a film is delivered as, from all of its cuts (made by the render worker, never edited here) */
@@ -259,7 +277,7 @@ export type ContentItem = {
 /** One file a film is delivered as: which channels it is for, and what it is. */
 export type Delivery = {
 	channels: string[];
-	cid: string;
+	hash: string;
 	format: string;
 	aspect: string;
 	width: number;
@@ -355,7 +373,7 @@ export async function deleteContent(id: string): Promise<void> {
 /**
  * A job for the render worker (C6): a timeline's render, a file's proxy (with its colour read), or the preview LUTs.
  * `report` is what the worker says it did: for a render `{ color: { transforms }, conformed, plates, warnings,
- * deliveries: [{ cid, aspect, codec, qc, loudness }] }`, for a proxy `{ color, proxy, proxyProfile, transforms }`.
+ * deliveries: [{ hash, aspect, codec, qc, loudness }] }`, for a world shot's proxy `{ shot, shotVersion, proxy }`.
  * Fields past the first line come from newer APIs and may be missing.
  */
 export type RenderJob = {
@@ -364,11 +382,11 @@ export type RenderJob = {
 	status: 'queued' | 'rendering' | 'done' | 'failed';
 	progress: number;
 	note: string | null;
-	output_cid: string | null;
+	output_hash: string | null;
 	created: string;
 	updated: string;
 	kind?: 'render' | 'proxy' | 'lut' | 'frame';
-	media_cid?: string | null;
+	media_hash?: string | null;
 	/** a world shot's proxy job: the shot and the version it renders */
 	shot_id?: string | null;
 	shot_version?: number | null;
@@ -382,17 +400,17 @@ export type RenderReport = {
 	conformed?: { clip: string; proxy: string; original: string }[];
 	plates?: { clip: string; aspect: string; key?: string; fingerprint?: string; reused?: boolean }[];
 	warnings?: string[];
-	deliveries?: { cid: string; aspect: string; codec: string; qc?: Record<string, unknown>; loudness?: Record<string, unknown> }[];
+	deliveries?: { hash: string; aspect: string; codec: string; qc?: Record<string, unknown>; loudness?: Record<string, unknown> }[];
 	[k: string]: unknown;
 };
 
 export const queueRender = (timelineId: string) => call<RenderJob>(`/api/timelines/${timelineId}/renders`, { method: 'POST' });
 export const listRenders = (timelineId: string) => call<RenderJob[]>(`/api/timelines/${timelineId}/renders`);
 /** The latest jobs, newest first: of a kind, for a file (a file's proxy status; the worker's whole queue). */
-export const listJobs = (q: { kind?: 'render' | 'proxy' | 'lut' | 'frame'; cid?: string; timeline?: string; shot?: string; limit?: number } = {}) =>
+export const listJobs = (q: { kind?: 'render' | 'proxy' | 'lut' | 'frame'; hash?: string; timeline?: string; shot?: string; limit?: number } = {}) =>
 	call<RenderJob[]>(`/api/film/jobs?${new URLSearchParams(Object.entries(q).filter(([, v]) => v !== undefined && v !== '').map(([k, v]) => [k, String(v)]))}`);
-/** A file's proxy made again (its colour read again too). */
-export const remakeProxy = (cid: string) => call<RenderJob>(`/api/film/proxies/${cid}`, { method: 'POST' });
+/** A film's proxy made again, natively on this Mac (its colour read again too). */
+export const remakeProxy = (hash: string) => command<void>('vault_proxy', { hash });
 /** A hero frame: one frame of the timeline at t (seconds) in a delivery shape, rendered by the worker at full precision. */
 export const queueFrame = (timelineId: string, at: { t: number; shape: string }) =>
 	call<RenderJob>(`/api/timelines/${timelineId}/frames`, { method: 'POST', body: JSON.stringify(at) });
@@ -409,7 +427,7 @@ export type Curve = number | [number, number][];
 export const SHOT_LIGHTS = ['sun', 'fill', 'glow', 'lamps', 'sky'] as const;
 /** A world shot as data (contract C2, game/film/shot.js `Spec`): everything the world needs to draw every frame of it. */
 export type ShotSpec = {
-	world: { sandbox: 'sandbox-4'; build: { commit: string; hash: string; cid?: string } | null; seed: number; stand: [number, number]; dome?: number; props?: string; clock: number };
+	world: { sandbox: 'sandbox-4'; build: { commit: string; hash: string; file?: string } | null; seed: number; stand: [number, number]; dome?: number; props?: string; clock: number };
 	seconds: number;
 	fps: number;
 	/** the shape the shot is composed for; the others follow its framing */
@@ -419,7 +437,7 @@ export type ShotSpec = {
 	time: { hour: number; hourTo?: number };
 	exposure: { meter: 'lock' | 'ramp' | 'fixed'; stops: Curve; ev?: number };
 	lights: { id: (typeof SHOT_LIGHTS)[number]; intensity?: Curve; color?: string }[];
-	cues: ({ at: number; kind: 'sound'; cid: string; level: number } | { at: number; kind: 'event'; name: string; args?: unknown })[];
+	cues: ({ at: number; kind: 'sound'; hash: string; level: number } | { at: number; kind: 'event'; name: string; args?: unknown })[];
 	shutter: { angle: number; samples: number };
 	framing: Partial<Record<Shape, { fov?: number; yaw?: number; pitch?: number; dx?: number; dy?: number }>>;
 	look?: string;

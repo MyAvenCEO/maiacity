@@ -1,46 +1,43 @@
 // A film's thumbnail — the hook title over one of its frames — in every shape it is delivered in: 16:9 (YouTube,
 // X, LinkedIn), 9:16 (the Reel cover), 1:1 (the feeds) and 5:2 (an X Article's cover, the blog's wide header).
 //
-//   node scripts/film/thumbnail.mjs blog/day-NN-<slug>/thumbnail.json [--local]
+//   node scripts/film/thumbnail.mjs blog/day-NN-<slug>/thumbnail.json
 //
-// Each card and hook layer goes into the media library (library/<cid>.<ext>, described; then the database): the
-// cards public, tagged "Day NN", "role:thumbnail", "shape:16x9" …; the hook layers "role:hook". A new one takes its
-// place from the one before (which is kept, superseded). Their CIDs are written back into thumbnail.json ("cards",
-// "hooks"), where the article and the day's posts take them from.
+// Each card and hook layer goes into the vault (described; the Mac app must be running): the cards public, tagged
+// "Day NN", "role:thumbnail", "shape:16x9" …; the hook layers "role:hook". A new one takes its place from the one
+// before (which is kept, superseded). Their hashes are written back into thumbnail.json ("cards", "hooks"), where the
+// article and the day's posts take them from.
 //
 // The hook layers are the same title, transparent (its shade, no picture, no day): the render worker lays them over
 // the first 2.5 s of the moving film in the social copies — the Short's and X's cover is a frame of the film, so the
 // title has to be in the film, and a still card at the start would stop it. In 9:16 it sits lower than the card's,
 // clear of the Shorts and Reels header.
 //
-// thumbnail.json: { "frame": "<the background's CID>", "shapes": ["16x9", "1x1"],
+// thumbnail.json: { "frame": "<the background's hash>", "shapes": ["16x9", "1x1"],
 //   "title": { "kicker": "The city of", "big": "tomorrow", "line": "that feeds itself", "after": "— it starts with <b>233</b> settlers" } }
 // Every day's banner and thumbnails carry its hook like this (the blog's cover, the film's poster, YouTube's
 // thumbnail). The hook: the day's title, cut to its promise — subject, action, end state, contrast.
 //
 // The frame should be large (a 2160 still, rendered 3240 wide), so the wide and the tall crops stay sharp; a shape
-// can have its own frame — "frames": { "9x16": "<a taller still's CID>" } — when the main one is too small to crop.
+// can have its own frame — "frames": { "9x16": "<a taller still's hash>" } — when the main one is too small to crop.
 // Set like a YouTube thumbnail: few words, heavy and big enough to read at phone size, the number in gold, a firm
 // shade behind them and nothing else across the picture; the day ("DAY 01", as the journal writes it) in the bottom-right corner. The font
 // (Fraunces) and the frames are embedded (setContent cannot load files).
 import puppeteer from 'puppeteer-core';
-import { execFileSync } from 'node:child_process';
 import { mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { add, bare, describe, fileOf } from './vault.mjs';
 
 const config = process.argv[2];
 if (!config) throw new Error('usage: node scripts/film/thumbnail.mjs blog/day-NN-<slug>/thumbnail.json');
 const settings = JSON.parse(readFileSync(config, 'utf8'));
 const { frame, frames = {}, title: TITLE, shapes: only, place = {}, width = {}, day: dayNo } = settings;
 const dir = mkdtempSync(join(tmpdir(), 'title-cards-'));
-// a frame by its CID: its file in library/
-const LIB = new URL('../../library/', import.meta.url).pathname;
-const fromLibrary = (cid) => {
-	const file = readdirSync(LIB).find((f) => f.startsWith(`${cid.replace(/\.[a-z0-9]+$/, '')}.`) && !f.endsWith('.json'));
-	if (!file) throw new Error(`library/ does not hold ${cid}`);
-	return join(LIB, file);
-};
+// every frame it is set on, by its hash: the vault's bytes, fetched once into the cache
+const refs = [frame, ...Object.values(frames), ...(settings.split ? [settings.split.old, settings.split.new] : [])].filter(Boolean);
+const local = new Map(await Promise.all(refs.map(async (r) => /** @type {[string, string]} */ ([r, await fileOf(bare(r))]))));
+const fromVault = (ref) => /** @type {string} */ (local.get(ref));
 const HOOK_TOP = { '9x16': 280 }; // a hook layer's top where it differs from the card's (the Shorts / Reels header)
 // the day it is ("DAY 1"): given, or read off the day's folder (blog/day-01-…)
 const day = dayNo ?? Number(/day-(\d+)/.exec(config)?.[1] ?? NaN);
@@ -67,7 +64,7 @@ async function draw(s, hook) {
 	const low = place[s.tag] === 'bottom';
 	const top = hook ? (HOOK_TOP[s.tag] ?? s.top) : s.top;
 	const shade = low ? LOW(s.tag === '9x16' ? 50 : 62) : s.shade;
-	const bg = hook ? '' : image(fromLibrary(frames[s.tag] ?? frame));
+	const bg = hook ? '' : image(fromVault(frames[s.tag] ?? frame));
 	await page.setViewport({ width: s.w, height: s.h });
 	await page.setContent(`<!doctype html><html><head><style>
 @font-face { font-family: F; src: url(${font}) format('woff2'); font-weight: 100 900; }
@@ -90,7 +87,7 @@ ${!hook && Number.isFinite(day) ? `<div class="d">DAY ${String(day).padStart(2, 
 	await page.screenshot(hook ? { path: out, type: 'png', omitBackground: true } : { path: out, type: 'jpeg', quality: 92 });
 }
 /**
- * The split card: the old world against the new, the title in two halves — "split": { "old": <cid>, "new": <cid> },
+ * The split card: the old world against the new, the title in two halves — "split": { "old": <hash>, "new": <hash> },
  * "title": { "old": "Every city on earth is built wrong.", "new": "This is what starting over looks like." }. The old
  * half cold and grey, the new warm; side by side in a wide card, stacked in a square or tall one. The last words of
  * each half set big (the old in white, the new in gold); the day's badge on the new half.
@@ -100,7 +97,7 @@ async function drawSplit(s) {
 	const u = (px) => `${Math.round(px * s.unit * (wide ? 0.82 : 0.95))}px`;
 	const half = (side, img, part) => {
 		const { kicker, big, after } = parts(part);
-		return `<div class="half ${side}"><div class="bg" style="background-image:url(${image(fromLibrary(img))})"></div><div class="shade"></div>
+		return `<div class="half ${side}"><div class="bg" style="background-image:url(${image(fromVault(img))})"></div><div class="shade"></div>
 <div class="t">${kicker ? `<div class="k">${kicker}</div>` : ''}<div class="n">${big}</div>${after ? `<div class="x">${after}</div>` : ''}</div></div>`;
 	};
 	await page.setViewport({ width: s.w, height: s.h });
@@ -146,33 +143,25 @@ if (settings.split) {
 }
 await browser.close();
 
-// into the library, each in its place; their CIDs back into thumbnail.json
+// into the vault, each in its place; their hashes back into thumbnail.json
 const DAY = `Day ${String(day).padStart(2, '0')}`;
 const hookLine = ['kicker', 'big', 'line', 'after', 'old', 'new'].map((k) => (TITLE[k] && typeof TITLE[k] === 'object' ? Object.values(TITLE[k]).join(' ') : TITLE[k] ?? '')).join(' ').replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim();
-const add = (file, role, shape, isPublic, replaces) => {
-	const out = execFileSync('bun', ['api/scripts/media.ts', 'add', file, '--title', `${DAY} · ${role === 'hook' ? 'hook layer' : 'title card'} ${shape.replace('x', ':')}`,
-		'--description', hookLine, '--tags', [DAY, `role:${role}`, `shape:${shape}`].join(','), ...(replaces ? ['--replaces', replaces] : []),
-		...(isPublic ? ['--public'] : []), ...(process.argv.includes('--local') ? ['--local'] : [])], { encoding: 'utf8' });
-	return /(?:stored|known) +(baf[a-z2-7]+)/.exec(out)?.[1];
-};
+const put = async (file, role, shape, isPublic, replaces) =>
+	(await add(file, { title: `${DAY} · ${role === 'hook' ? 'hook layer' : 'title card'} ${shape.replace('x', ':')}`, description: hookLine,
+		tags: [DAY, `role:${role}`, `shape:${shape}`], public: isPublic, ...(replaces ? { replaces: [replaces] } : {}) })).hash;
 const before = { ...(settings.cards ?? {}), ...Object.fromEntries(Object.entries(settings.hooks ?? {}).map(([k, v]) => [`hook-${k}`, v])) };
 settings.cards = {};
 settings.hooks = {};
 for (const f of readdirSync(dir)) {
 	const [, kind, shape] = /^(thumbnail|hook)-(\d+x\d+)\./.exec(f) ?? [];
 	if (!kind) continue;
-	const cid = add(join(dir, f), kind === 'hook' ? 'hook' : 'thumbnail', shape, kind !== 'hook', before[kind === 'hook' ? `hook-${shape}` : shape]);
-	(kind === 'hook' ? settings.hooks : settings.cards)[shape] = cid;
-	console.log(`${kind === 'hook' ? 'hook layer' : 'title card'} ${shape} → ${cid}`);
+	const hash = await put(join(dir, f), kind === 'hook' ? 'hook' : 'thumbnail', shape, kind !== 'hook', before[kind === 'hook' ? `hook-${shape}` : shape]);
+	(kind === 'hook' ? settings.hooks : settings.cards)[shape] = hash;
+	console.log(`${kind === 'hook' ? 'hook layer' : 'title card'} ${shape} → ${hash}`);
 }
 writeFileSync(config, JSON.stringify(settings, null, 2) + '\n');
-// the film's title-card marker names them too (its meta), for the render and the studio
-if (settings.marker) {
-	const doc = JSON.parse(readFileSync(join(LIB, `${settings.marker}.json`), 'utf8'));
-	doc.meta = { ...doc.meta, cards: settings.cards, hooks: settings.hooks };
-	writeFileSync(join(LIB, `${settings.marker}.json`), JSON.stringify(doc, null, 1) + '\n');
-	execFileSync('bun', ['api/scripts/media.ts', 'seed', ...(process.argv.includes('--local') ? ['--local'] : [])], { stdio: 'inherit' });
-}
+// the film's title-card marker names them too (its meta, merged), for the render and the studio
+if (settings.marker) await describe(bare(settings.marker), { meta: { cards: settings.cards, hooks: settings.hooks } });
 // the day's article and posts named the cards before: they name the new ones now
 const dayDir = join(config, '..');
 for (const f of ['post.md', 'derivatives.json']) {

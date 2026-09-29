@@ -1,17 +1,14 @@
 // The studio's timelines (every film and every cut of it), from the local database to production: each timeline is
-// matched by project and variant (by name when it has no project), created or brought up to date, and every file its
-// clips point at goes up first (from library/, with its description), so production can play and render it, and
-// with them every rendered cut (role:render).
+// matched by project and variant (by name when it has no project), created or brought up to date. Their files are not
+// sent: they travel in the vault (this Mac's app to the server peer). Every file a clip names is checked against
+// production's vault mirror first, and one production does not hold yet is named — its timeline still goes up.
 //
 //   bun api/scripts/timelines.ts [--dry]
 //
 // Needs both keys: bun media login --local, and bun media login.
-import { readdir, readFile, stat } from "node:fs/promises";
-import { join } from "node:path";
-import { fileOf } from "./library";
-import { API, call, KEYS, mb, readJson, ROOT, say, upload } from "./media-client";
+import { API, call, KEYS, mb, readJson, say } from "./media-client";
 
-type Clip = { cid: string };
+type Clip = { hash?: string; kind?: string };
 type Timeline = { id: string; name: string; project: string | null; variant: string | null; description: string | null; aspect: string; tags: string[]; clips: Clip[] };
 
 if (process.argv.includes("--local")) throw new Error("this copies local → production; run it without --local");
@@ -25,24 +22,13 @@ const mine = (await res.json()) as Timeline[];
 const theirs = await call<Timeline[]>("/api/timelines");
 const key = (t: Timeline) => (t.project ? `${t.project} · ${t.variant ?? ""}` : `name: ${t.name}`);
 
-// the files first: a timeline on production is only as good as the files it can find there — and its rendered cuts
-const renders: string[] = [];
-for (const f of await readdir(join(ROOT, "library")))
-  if (f.endsWith(".json") && (await readJson<{ tags?: string[] }>(join(ROOT, "library", f), {})).tags?.includes("role:render")) renders.push(f.slice(0, -5));
-const cids = [...new Set([...mine.flatMap((t) => t.clips.map((c) => c.cid)), ...renders])];
-const { have } = await call<{ have: string[] }>("/api/media/have", { method: "POST", body: JSON.stringify({ cids }) });
-const missing = cids.filter((c) => !have.includes(c));
-let size = 0;
-for (const c of missing) size += (await stat(await fileOf(c))).size;
-say(`${API}: ${mine.length} timelines here, ${theirs.length} there; their clips use ${cids.length} files, ${missing.length} to upload (${mb(size)})`);
+// the files: a timeline on production is only as good as the files its vault holds
+const mirror = new Map((await call<{ hash: string; size: number; stored: boolean; title: string }[]>("/api/vault/files")).map((f) => [f.hash, f]));
+const hashes = [...new Set(mine.flatMap((t) => t.clips.flatMap((c) => (c.hash ? [c.hash] : []))))];
+const missing = hashes.filter((h) => !mirror.get(h)?.stored);
+say(`${API}: ${mine.length} timelines here, ${theirs.length} there; their clips use ${hashes.length} files, ${missing.length} not in production's vault yet`);
+for (const h of missing) say(`  ${h}  ${mirror.has(h) ? `${mirror.get(h)!.title} (${mb(mirror.get(h)!.size)}) — described, its bytes still on the way` : "unknown there — open the Mac app so it syncs"}`);
 if (dry) process.exit(0);
-
-for (const [i, cid] of missing.entries()) {
-  const file = await fileOf(cid);
-  const about = await readJson<{ mime?: string; title?: string; description?: string; tags?: string[]; meta?: Record<string, unknown>; public?: boolean }>(file.replace(/\.[^.]+$/, ".json"), {});
-  await upload(new Uint8Array(await readFile(file)), { cid, mime: about.mime ?? "application/octet-stream", title: about.title, description: about.description, tags: about.tags, meta: about.meta, public: about.public ?? false, progress: true });
-  say(`${String(i + 1).padStart(4)}/${missing.length} ${cid}  ${about.title ?? ""}`);
-}
 
 let made = 0, updated = 0;
 for (const t of mine) {

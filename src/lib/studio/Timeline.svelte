@@ -43,8 +43,8 @@
 		s.selectedKey = null;
 		if (!s.canEdit) return;
 		const x0 = e.clientX, s0 = c.start, i0 = c.in, d0 = c.dur;
-		const isImage = !isWorld(c) && s.byCid.get(c.cid ?? '')?.kind === 'image';
-		const max = isImage ? Infinity : isWorld(c) ? (s.specOf(c)?.seconds ?? d0 + i0) : (s.sources[c.cid ?? '']?.duration ?? d0 + i0);
+		const isImage = !isWorld(c) && s.byHash.get(c.hash ?? '')?.kind === 'image';
+		const max = isImage ? Infinity : isWorld(c) ? (s.specOf(c)?.seconds ?? d0 + i0) : (s.sources[c.hash ?? '']?.duration ?? d0 + i0);
 		let moved = false;
 		/** @param {PointerEvent} ev */
 		const move = (ev) => {
@@ -103,8 +103,8 @@
 			if (got) s.placeShot(got, at);
 			return;
 		}
-		const cid = e.dataTransfer?.getData('text/x-cid');
-		if (!cid) return;
+		const hash = e.dataTransfer?.getData('text/x-hash');
+		if (!hash) return;
 		// from the source monitor a drag carries the marked range too
 		/** @type {{ in: number, dur: number } | undefined} */
 		let range;
@@ -114,7 +114,7 @@
 		} catch {
 			/* no range: the whole file */
 		}
-		void s.place(cid, track, at, range);
+		void s.place(hash, track, at, range);
 	}
 
 	// ── the world clip's lanes ────────────────────────────────────────────────
@@ -218,8 +218,8 @@
 						{/each}
 					{:else}
 						{#each s.clips.filter((c) => c.track === t.id) as c (c.id)}
-							{@const m = c.cid ? s.byCid.get(c.cid) : undefined}
-							{@const src = c.cid ? s.sources[c.cid] : undefined}
+							{@const m = c.hash ? s.byHash.get(c.hash) : undefined}
+							{@const src = c.hash ? s.sources[c.hash] : undefined}
 							{@const world = isWorld(c)}
 							<!-- svelte-ignore a11y_no_static_element_interactions -->
 							<div
@@ -239,7 +239,7 @@
 								<span class="label">{s.clipName(c)}{#if world}<i>&nbsp;v{c.shotVersion}</i>{/if}</span>
 								{#if t.id === 'V1'}
 									<span class="chips">
-										{#if world}<b class="wtag">world</b>{:else if m}<ColorBadge {s} {m} />{#if m.kind === 'video' && !s.proxy(m).cid}{@const st = s.proxy(m).state}<b class="nopx" title="No proxy yet: the original plays">{st === 'none' ? 'no proxy' : `proxy ${st}`}</b>{/if}{/if}
+										{#if world}<b class="wtag">world</b>{:else if m}<ColorBadge {s} {m} />{#if m.kind === 'video' && !s.proxy(m).hash}{@const st = s.proxy(m).state}<b class="nopx" title="No proxy yet: the original plays">{st === 'none' ? 'no proxy' : `proxy ${st}`}</b>{/if}{/if}
 										{#if c.grade}<b class="gr" title="Graded">◐</b>{/if}
 									</span>
 								{/if}
@@ -251,10 +251,10 @@
 						{/each}
 						{#if t.id === 'A3'}
 							{#each s.cueClips as q (q.id)}
-								{@const src = s.sources[q.cid ?? '']}
+								{@const src = s.sources[q.hash ?? '']}
 								<div class="clip audio A3 cue" style:left={x(q.start)} style:width={x(q.dur)} title="A sound cue of a world shot (edit it in its Cues lane)">
 									{#if src}<canvas use:wave={{ peaks: src.peaks, from: 0, to: q.dur, total: src.duration, color: tint('A3') }}></canvas>{/if}
-									<span class="label">cue · {s.byCid.get(q.cid ?? '')?.title || 'sound'}</span>
+									<span class="label">cue · {s.byHash.get(q.hash ?? '')?.title || 'sound'}</span>
 								</div>
 							{/each}
 						{/if}

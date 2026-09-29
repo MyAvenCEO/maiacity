@@ -61,6 +61,8 @@ export type VaultFile = {
   mime: string;
   kind: string;
   title: string;
+  /** from the catalog's entry (the mirror keeps it in meta) */
+  description: string;
   tags: string[];
   public: boolean;
   meta: Record<string, unknown>;
@@ -71,7 +73,7 @@ export type VaultFile = {
 /** The mirror of the catalog, newest first — for the admin and the site. */
 export async function listVaultFiles(q: { kind?: string; tag?: string } = {}): Promise<VaultFile[]> {
   const { rows } = await db.query<VaultFile & { size: string }>(
-    `SELECT hash, size, mime, kind, title, tags, public, meta, stored, added FROM vault_files
+    `SELECT hash, size, mime, kind, title, coalesce(meta->>'description', '') AS description, tags, public, meta, stored, added FROM vault_files
       WHERE ($1::text IS NULL OR kind = $1) AND ($2::text IS NULL OR $2 = ANY(tags))
       ORDER BY added DESC`,
     [q.kind ?? null, q.tag ?? null],

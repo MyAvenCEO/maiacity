@@ -6,7 +6,7 @@ import { base } from '$app/paths';
 import type { Founder } from '$lib/auth/client';
 
 export type Release = 'draft' | 'published';
-export type Place = { href: string; label: string; icon: IconName; cap?: string; note?: string; /** a picture, by CID */ cover?: string; release?: Release };
+export type Place = { href: string; label: string; icon: IconName; cap?: string; note?: string; /** a picture, by hash */ cover?: string; release?: Release };
 export type IconName = 'home' | 'play' | 'board' | 'calendar' | 'media' | 'studio' | 'journal' | 'spark' | 'user' | 'key' | 'ledger' | 'coops';
 
 // a founder's own apps: their money, and the communities — cities and settlements, founded, joined and backed here,

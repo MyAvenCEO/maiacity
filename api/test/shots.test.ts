@@ -25,8 +25,8 @@ beforeAll(async () => {
   await pg.query("INSERT INTO founders (id, name, role) VALUES ('admin', 'Admin', 'admin')");
 });
 
-const CID = "bafkreigetwdcbas777qekxb5kogpulriyurk4km6xxxwz2fiuxhkbinpea";
-const SFX = "bafybeiery7dtnfprkwgtxxpagsm54oxsbsahktiyf3frcjjwd4sq7b6hoi";
+const FILE = "3d79d411a1fc8041c9bb21ec13a8190990c2921ca1a92dd747b81390f2dcf0cd";
+const SFX = "42fb04168483c9f7a6cfdbc549acdd610492593d28d78d87ea0d30ace559aa2b";
 const spec = (over: Record<string, unknown> = {}) => ({
   world: { stand: [150, 20], clock: 12 },
   seconds: 4,
@@ -111,9 +111,10 @@ describe("the shot record", () => {
     expect(() => normalize(spec({ lens: { fov: 400 } }))).toThrow("lens.fov");
     expect(() => normalize(spec({ exposure: { meter: "fixed" } }))).toThrow("fixed exposure");
     expect(() => normalize(spec({ lights: [{ id: "moon" }] }))).toThrow("lights[0].id");
-    expect(() => normalize(spec({ cues: [{ at: 0, kind: "sound", cid: "x" }] }))).toThrow("CID");
+    expect(() => normalize(spec({ cues: [{ at: 0, kind: "sound", hash: "x" }] }))).toThrow("by its hash");
     expect(() => normalize(spec({ framing: { "3:2": {} } }))).toThrow("framing");
     expect(() => normalize(spec({ world: { stand: [0, 0], build: { commit: "nope", hash: "x" } } }))).toThrow("world.build");
+    expect(() => normalize(spec({ world: { stand: [0, 0], build: { commit: "abcdef1", hash: "abcdefgh", file: "bafkreibuild" } } }))).toThrow("world.build.file");
     expect(() => normalize(spec({ world: { stand: [0, 0], props: "castle" } }))).toThrow("world.props");
     expect(() => normalize(spec({ look: "sepia" }))).toThrow("look");
   });
@@ -122,7 +123,7 @@ describe("the shot record", () => {
     const s = normalize(spec({
       exposure: { meter: "ramp", stops: [[0, -1], [4, 1]] },
       lights: [{ id: "glow", intensity: [[0, 0], [2, 4]], color: "#FFCC88" }],
-      cues: [{ at: 1, kind: "sound", cid: SFX, level: 0.3 }, { at: 3, kind: "event", name: "door-opens" }],
+      cues: [{ at: 1, kind: "sound", hash: SFX, level: 0.3 }, { at: 3, kind: "event", name: "door-opens" }],
       framing: { "9:16": { yaw: 0.1, fov: 70 } },
     }));
     const a = evaluate(s, 2, "1:1");
@@ -159,7 +160,7 @@ describe("the shot record", () => {
     const b = normalize(JSON.parse(stable(a)));
     expect(fingerprint(a)).toBe(fingerprint(b));
     expect(fingerprint(a, { shape: "1:1", width: 320 })).not.toBe(fingerprint(a, { shape: "1:1", width: 640 }));
-    expect(fingerprint(normalize(spec({ look: "night", meta: { note: "x" }, cues: [{ at: 0, kind: "sound", cid: SFX }] })))).toBe(fingerprint(a));
+    expect(fingerprint(normalize(spec({ look: "night", meta: { note: "x" }, cues: [{ at: 0, kind: "sound", hash: SFX }] })))).toBe(fingerprint(a));
     expect(fingerprint(normalize(spec({ lens: { fov: 53 } })))).not.toBe(fingerprint(a));
     expect(sha256("abc")).toBe("ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad");
   });
@@ -175,7 +176,7 @@ describe("the shot record", () => {
     expect(s.shutter).toEqual({ angle: 360, samples: 6 });
     expect(s.exposure).toEqual({ meter: "lock", stops: legacyStops(legacy) });
     expect(s.look).toBe("bright");
-    expect(s.cues).toEqual([{ at: 0, kind: "sound", cid: SFX, level: 0.08 }]);
+    expect(s.cues).toEqual([{ at: 0, kind: "sound", hash: SFX, level: 0.08 }]);
     expect(s.meta).toMatchObject({ name: "the-food-forest", size: "WS", legacyExposure: 1.4 });
     // a time-lapse is metered as it goes; without the list's own timing the caller gives it
     const lapse = fromLegacy({ name: "sun", hour: 5.05, hourTo: 5.4, stand: [0, 0], path: move([0, 1, 0], [1, 1, 0], [0, 1, -1], [1, 1, -1]) }, { seconds: 4, clock: 7 });
@@ -227,10 +228,10 @@ describe("/api/shots", () => {
 });
 
 describe("timelines: world clips, grades, framing and stages", () => {
-  const media = { id: "a", cid: CID, track: "V1", start: 0, in: 0, dur: 2, vol: 0 };
+  const media = { id: "a", hash: FILE, track: "V1", start: 0, in: 0, dur: 2, vol: 0 };
 
   test("an existing timeline stays exactly as it was", async () => {
-    const legacy = [media, { id: "b", cid: CID, track: "A1", start: 0, in: 0.5, dur: 3, vol: 0.8, fin: 0.2 }];
+    const legacy = [media, { id: "b", hash: FILE, track: "A1", start: 0, in: 0.5, dur: 3, vol: 0.8, fin: 0.2 }];
     const t = await createTimeline("admin", { name: "Day 18", aspect: "1:1", clips: legacy });
     expect(t.clips).toEqual(legacy);
     expect(t.stage).toBe("edit");
@@ -239,7 +240,7 @@ describe("timelines: world clips, grades, framing and stages", () => {
     expect(t.grade).toBeNull();
   });
 
-  test("a world clip names a shot version that exists, on V1, with no CID", async () => {
+  test("a world clip names a shot version that exists, on V1, with no file hash", async () => {
     const s = await createShot("admin", { name: "flight", spec: spec() });
     const world = { id: "w", kind: "world", shot: s.id, shotVersion: 1, track: "V1", start: 2, in: 0.5, dur: 3, vol: 0 };
     const t = await createTimeline("admin", { name: "World", clips: [media, world] });
@@ -247,9 +248,9 @@ describe("timelines: world clips, grades, framing and stages", () => {
     expect(t.clips[0]!.kind).toBeUndefined();
     await expect(createTimeline("admin", { name: "x", clips: [{ ...world, shotVersion: 2 }] })).rejects.toThrow("No such shot");
     await expect(createTimeline("admin", { name: "x", clips: [{ ...world, track: "A1" }] })).rejects.toThrow("V1");
-    await expect(createTimeline("admin", { name: "x", clips: [{ ...world, cid: CID }] })).rejects.toThrow("no CID");
+    await expect(createTimeline("admin", { name: "x", clips: [{ ...world, hash: FILE }] })).rejects.toThrow("no hash");
     await expect(createTimeline("admin", { name: "x", clips: [{ ...world, shotVersion: 0 }] })).rejects.toThrow("version");
-    await expect(createTimeline("admin", { name: "x", clips: [{ ...media, cid: undefined }] })).rejects.toThrow("CID");
+    await expect(createTimeline("admin", { name: "x", clips: [{ ...media, hash: undefined }] })).rejects.toThrow("by hash");
     await expect(createTimeline("admin", { name: "x", clips: [{ ...media, kind: "hologram" }] })).rejects.toThrow("media clip or a world clip");
   });
 

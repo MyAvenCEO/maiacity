@@ -1,11 +1,11 @@
 <!-- Every file a film is delivered as, cut by cut: what it is, how big, and which channels it goes to. -->
 <script lang="ts">
-	import { API, mediaUrl, type Delivery, type Platform } from '$lib/auth/client';
+	import { API, fileUrl, type Delivery, type Platform } from '$lib/auth/client';
 	import { PLATFORM_LABEL } from './board';
 
 	let { deliveries }: { deliveries: Delivery[] } = $props();
 
-	const raw = (cid: string) => mediaUrl(cid);
+	const raw = (hash: string) => fileUrl(hash);
 	const mmss = (s: number) => {
 		const t = Math.round(s);
 		return `${Math.floor(t / 60)}:${String(t % 60).padStart(2, '0')}`;
@@ -22,9 +22,9 @@
 </script>
 
 <ul>
-	{#each sorted as d, i (`${d.cid}-${i}`)}
+	{#each sorted as d, i (`${d.hash}-${i}`)}
 		<li>
-			<a href={raw(d.cid)} target="_blank" rel="noopener">
+			<a href={raw(d.hash)} target="_blank" rel="noopener">
 				<i>{d.kind === 'thumbnail' ? '▣' : '▶'}</i>
 				{#if d.cut}<span class="cut">{d.cut}</span>{/if}
 				<b>{d.aspect}</b>

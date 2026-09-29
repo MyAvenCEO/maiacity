@@ -89,10 +89,10 @@
 						{#if rep.warnings?.length}<dt>Warnings</dt><dd class="w">{rep.warnings.join(' · ')}</dd>{/if}
 					</dl>
 				{/if}
-				{#if r.output_cid}
+				{#if r.output_hash}
 					<div class="rp-acts">
-						<button class="ghost" onclick={() => s.openFile(r.output_cid)}>▶ Play in the viewer</button>
-						<a class="ghost" href={raw(r.output_cid)} target="_blank" rel="noopener">File ↗</a>
+						<button class="ghost" onclick={() => s.openFile(r.output_hash)}>▶ Play in the viewer</button>
+						<a class="ghost" href={raw(r.output_hash)} target="_blank" rel="noopener">File ↗</a>
 					</div>
 				{/if}
 			{:else}
@@ -112,9 +112,9 @@
 				<li>
 					<span class="st {r.status}">{r.status}</span>
 					<span class="d">{when(r.created)}</span>
-					{#if r.status === 'done' && r.output_cid}
-						<button class="link" onclick={() => s.openFile(r.output_cid)}>play</button>
-						<a href={raw(r.output_cid)} target="_blank" rel="noopener">file</a>
+					{#if r.status === 'done' && r.output_hash}
+						<button class="link" onclick={() => s.openFile(r.output_hash)}>play</button>
+						<a href={raw(r.output_hash)} target="_blank" rel="noopener">file</a>
 					{:else if r.status === 'failed'}
 						<span class="why" title={r.note ?? ''}>{r.note}</span>
 					{:else}
@@ -133,7 +133,7 @@
 					<li>
 						<span class="st {j.status}">{j.kind ?? 'render'}</span>
 						<span class="d">{j.status}{j.status === 'rendering' ? ` ${Math.round(j.progress * 100)}%` : ''}</span>
-						<span class="tgt">{j.timeline_id === s.current?.id ? 'this timeline' : (j.media_cid?.slice(0, 10) ?? j.timeline_id?.slice(0, 8) ?? '')}{j.kind === 'proxy' && j.media_cid ? ` · ${s.byCid.get(j.media_cid)?.title ?? ''}` : ''}</span>
+						<span class="tgt">{j.timeline_id === s.current?.id ? 'this timeline' : (j.media_hash?.slice(0, 10) ?? j.timeline_id?.slice(0, 8) ?? '')}{j.kind === 'proxy' && j.media_hash ? ` · ${s.byHash.get(j.media_hash)?.title ?? ''}` : ''}</span>
 					</li>
 				{/each}
 			</ul>

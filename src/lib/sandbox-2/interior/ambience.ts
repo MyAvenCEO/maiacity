@@ -12,7 +12,7 @@
 import { asset } from '$lib/media/url'
 
 export type SoundName = 'forest' | 'inside' | 'water' | 'hens' | 'geese' | 'goats' | 'frogs' | 'bees' | 'factory' | 'machine' | 'lift'
-/** each sound's recording, by CID */
+/** each sound's recording, by hash */
 const FILES: Record<SoundName, string> = {
 	forest: 'f3ebbb41045f0a45d3a27d6782beb71973fa539e9640d1c7d1b9434b02351575.mp3', // forest_nature.mp3
 	inside: 'b6713600778441dab6c5232fa418af56a85209b17308e16975684fafd6bd3f84.mp3', // soft-nature.mp3

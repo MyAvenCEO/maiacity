@@ -20,7 +20,7 @@ export const CAPABILITIES: Record<string, string> = {
   // the admin
   "roles:admin": "Manage roles: what each role holds, and who has which role",
   "ideas:admin": "Write down ideas and notes in the admin notebook",
-  "media:admin": "See the media library: every image, sound and video, stored by its CID",
+  "media:admin": "Work with the media vault and the studio: every image, sound and video, known by its hash",
   "content:admin": "Plan what we publish: the content calendar",
 };
 

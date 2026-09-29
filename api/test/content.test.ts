@@ -23,11 +23,11 @@ test("an idea goes to the backlog; given a date it is scheduled; moved, it keeps
   expect(idea.status).toBe("idea");
   expect(idea.scheduled_at).toBeNull();
   const when = "2026-10-01T16:00:00.000Z";
-  const s = await saveContent(idea.id, { scheduled_at: when, status: "scheduled", cids: ["bafybeieyz3wtzq4m35upckldkjtf2clzsxqnix6g63pvtun7nuhhfqr5de"] });
+  const s = await saveContent(idea.id, { scheduled_at: when, status: "scheduled", hashes: ["dad53831fb215f1d6c5fc29c111aba8a2d7b472b43ab076da7537787c2895b8a"] });
   expect(new Date(s.scheduled_at!).toISOString()).toBe(when);
   expect(s.channels).toEqual(["youtube", "instagram"]);
   const moved = await saveContent(idea.id, { scheduled_at: "2026-10-03T16:00:00.000Z" });
-  expect(moved.cids.length).toBe(1);
+  expect(moved.hashes.length).toBe(1);
   expect(moved.tags).toEqual(["Day 19"]);
   const october = await listContent("2026-10-01T00:00:00Z", "2026-11-01T00:00:00Z");
   expect(october.map((i) => i.id)).toContain(idea.id);
@@ -35,6 +35,7 @@ test("an idea goes to the backlog; given a date it is scheduled; moved, it keeps
   const back = await saveContent(idea.id, { scheduled_at: null });
   expect(back.scheduled_at).toBeNull();
   await expect(createContent("admin", { title: "x", kind: "hologram" })).rejects.toThrow(/kind is one of/);
+  await expect(saveContent(idea.id, { hashes: ["bafybeieyz3wtzq4m35upckldkjtf2clzsxqnix6g63pvtun7nuhhfqr5de"] })).rejects.toThrow(/by their hash/);
   await expect(saveContent(idea.id, { channels: ["myspace"] })).rejects.toThrow(/One of/);
   await deleteContent(idea.id);
   expect((await listContent()).length).toBe(0);

@@ -1,17 +1,16 @@
 // Narration for the journal films, through fal: design a voice once, then speak lines with it.
 //
 //   bun voice design "<what the voice sounds like>" --name narrator
-//   bun voice say "<the line>" [--voice narrator] [--name slug] [--speed 0.92] [--pitch -1] [--local]
+//   bun voice say "<the line>" [--voice narrator] [--name slug] [--speed 0.92] [--pitch -1]
 //   bun voice say "<the line>" --eleven George [--stability 0.4]      ElevenLabs v3, with each word's timing
 //
 // A voice is designed with MiniMax Voice Design and kept by name in studio/voices.json. A line is spoken with
-// MiniMax Speech 2.8 HD and put into the media library (library/<cid>.mp3, described with its words, voice and
-// settings; then the database), where /admin/studio plays it back. A shot list names the take by the CID it prints.
-// Needs FAL_API_KEY in .env.
+// MiniMax Speech 2.8 HD and put into the vault (described with its words, voice and settings), where the studio plays
+// it back. A shot list names the take by the hash it prints. Needs FAL_API_KEY in .env, and the Mac app running.
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { readJson, ROOT, say, upload } from "./media-client";
-import { put } from "./library";
+import { readJson, ROOT, say } from "./media-client";
+import { add } from "../../scripts/film/vault.mjs";
 
 const FAL = "https://fal.run";
 const SPEECH = "fal-ai/minimax/speech-2.8-hd";
@@ -55,8 +54,8 @@ async function design() {
   const voices = await readJson<Record<string, Voice>>(VOICES, {});
   voices[name] = { id: r.custom_voice_id, prompt, model: DESIGN, created: new Date().toISOString() };
   await writeFile(VOICES, JSON.stringify(voices, null, 2) + "\n");
-  const d = await put(await download(r.audio.url), { mime: "audio/mpeg", title: `${name} · voice preview`, description: preview, tags: ["role:voice-preview", `voice:${name}`] });
-  say(`voice "${name}" → ${r.custom_voice_id} (studio/voices.json); preview in the library as ${d.cid}.mp3`);
+  const d = await add(await download(r.audio.url), { name: `${name}-preview.mp3`, title: `${name} · voice preview`, description: preview, tags: ["role:voice-preview", `voice:${name}`] });
+  say(`voice "${name}" → ${r.custom_voice_id} (studio/voices.json); preview in the vault as ${d.hash}`);
 }
 
 type Word = { word: string; start: number; end: number };
@@ -123,14 +122,13 @@ async function speak() {
   }
   const slug = flag("name") ?? `${new Date().toISOString().slice(0, 10)}-${slugify(text)}`;
   meta.made = new Date().toISOString();
-  const d = await put(bytes, { mime: "audio/mpeg", title: slug, description: text, tags: ["role:voice", `take:${slug}`, `voice:${String(meta.voice ?? "")}`], meta });
-  await upload(bytes, { cid: d.cid, mime: d.mime, title: d.title, description: d.description, tags: d.tags, meta: d.meta, public: d.public });
-  say(`${(duration_ms / 1000).toFixed(1)} s · ${slug} · in the library as ${d.cid}.mp3`);
+  const d = await add(bytes, { name: `${slug}.mp3`, title: slug, description: text, tags: ["role:voice", `take:${slug}`, `voice:${String(meta.voice ?? "")}`], meta });
+  say(`${(duration_ms / 1000).toFixed(1)} s · ${slug} · in the vault as ${d.hash}`);
 }
 
 const run = { design, say: speak }[positional[0] as "design"];
 if (!run) {
-  say('usage: bun voice design "<description>" --name narrator | bun voice say "<line>" [--voice narrator] [--local]');
+  say('usage: bun voice design "<description>" --name narrator | bun voice say "<line>" [--voice narrator]');
   process.exit(1);
 }
 try {

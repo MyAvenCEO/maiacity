@@ -1,19 +1,19 @@
-// Compose a film's score and make its sound effects, with ElevenLabs through fal, into the media library.
+// Compose a film's score and make its sound effects, with ElevenLabs through fal, into the vault.
 //
-//   bun scripts/film/score.ts scripts/film/day-19-d.mjs [--local] [--only music|cues] [--take b]
-//   bun scripts/film/score.ts scripts/film/day-19-d.mjs --sfx <name> [--local]
+//   bun scripts/film/score.ts scripts/film/day-19-d.mjs [--only music|cues] [--take b]
+//   bun scripts/film/score.ts scripts/film/day-19-d.mjs --sfx <name>
 //
 // The score follows the film's arc: every section of `music.chunks` (see the shot list) ends where the list says,
 // in the style it asks for — so the swell lands on the sunrise and the drop on the tired land. Instrumental, one
 // piece. The sound effects are the film's own (dawn chorus, cold wind, …), each made from its line in SFX below.
-// Everything goes into the media library (library/<cid>.<ext>, described; then the database) and the shot list names
-// it by CID: a new score or cue takes the old one's place there (the old one is kept, superseded); a new sound effect's
-// CID is printed, for the shot list. Needs FAL_API_KEY.
+// Everything goes into the vault (described) and the shot list names it by hash: a new score or cue takes the old
+// one's place there (the old one is kept, superseded); a new sound effect's hash is printed, for the shot list.
+// Needs FAL_API_KEY, and the Mac app running (its vault).
 import { readFileSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
-import { say, upload } from "../../api/scripts/media-client";
-import { put } from "../../api/scripts/library";
+import { say } from "../../api/scripts/media-client";
+import { add, bare } from "./vault.mjs";
 
 const args = process.argv.slice(2);
 const listFile = resolve(args.find((a) => a.endsWith(".mjs"))!);
@@ -23,13 +23,12 @@ const take = args.includes("--take") ? args[args.indexOf("--take") + 1] : "a";
 const sfx = args.includes("--sfx") ? args[args.indexOf("--sfx") + 1] : null;
 const day = `Day ${String(film.day ?? 19).padStart(2, "0")}`;
 
-/** Into the library and the database; when it replaces a file, the shot list names the new one in its place. */
+/** Into the vault; when it replaces a file, the shot list names the new one in its place. */
 async function bring(bytes: Uint8Array, about: { title: string; description?: string; tags: string[]; meta: Record<string, unknown> }, replaces?: string) {
-  const old = replaces?.replace(/\.[a-z0-9]+$/, "");
-  const d = await put(bytes, { ...about, mime: "audio/mpeg", ...(old ? { replaces: [old] } : {}) });
-  await upload(bytes, { cid: d.cid, mime: d.mime, title: d.title, description: d.description, tags: d.tags, meta: d.meta, public: d.public });
-  if (old && old !== d.cid) writeFileSync(listFile, readFileSync(listFile, "utf8").replaceAll(old, d.cid));
-  return d.cid;
+  const old = replaces ? bare(replaces) : undefined;
+  const { hash } = await add(bytes, { ...about, name: `${about.title.replace(/[^\w.-]+/g, "-")}.mp3`, ...(old ? { replaces: [old] } : {}) });
+  if (old && old !== hash) writeFileSync(listFile, readFileSync(listFile, "utf8").replaceAll(old, hash));
+  return hash;
 }
 
 const SFX: Record<string, { text: string; seconds: number; loop?: boolean }> = {
@@ -71,9 +70,9 @@ if (!sfx && (!only || only === "music")) {
   say(`composing ${chunks.length} sections, ${(from).toFixed(1)} s…`);
   const r = await fal<{ audio: { url: string } }>("elevenlabs/music/v2.5", { composition_plan: { chunks }, output_format: "mp3_48000_192" });
   const bytes = await download(r.audio.url);
-  const cid = await bring(bytes, { title: `${film.name} · score ${take.toUpperCase()}`, tags: [day, "role:score"], meta: { model: "elevenlabs/music/v2.5", sections: chunks.map((c: any) => c.positive_styles[0]) } },
-    take === "a" ? film.music.cid : undefined);
-  say(`score ${take} → ${cid}${take === "a" ? " (in the shot list)" : ""}`);
+  const hash = await bring(bytes, { title: `${film.name} · score ${take.toUpperCase()}`, tags: [day, "role:score"], meta: { model: "elevenlabs/music/v2.5", sections: chunks.map((c: any) => c.positive_styles[0]) } },
+    take === "a" ? film.music.hash : undefined);
+  say(`score ${take} → ${hash}${take === "a" ? " (in the shot list)" : ""}`);
 }
 
 // the cues: short pieces that take the score's place for a stretch, or lie on top of it (music.cues)
@@ -86,16 +85,16 @@ if (!sfx && (!only || only === "cues")) {
     say(`composing the ${cue.name} cue, ${(chunks.reduce((n: number, c: any) => n + c.duration_ms, 0) / 1000).toFixed(1)} s…`);
     const r = await fal<{ audio: { url: string } }>("elevenlabs/music/v2.5", { composition_plan: { chunks }, output_format: "mp3_48000_192" });
     const bytes = await download(r.audio.url);
-    const cid = await bring(bytes, { title: `${film.name} · ${cue.name} cue`, tags: [day, "role:cue", `cue:${cue.name}`], meta: { model: "elevenlabs/music/v2.5", sections: chunks.map((c: any) => c.positive_styles[0]) } }, cue.cid);
-    say(`${cue.name} cue → ${cid} (in the shot list)`);
+    const hash = await bring(bytes, { title: `${film.name} · ${cue.name} cue`, tags: [day, "role:cue", `cue:${cue.name}`], meta: { model: "elevenlabs/music/v2.5", sections: chunks.map((c: any) => c.positive_styles[0]) } }, cue.hash);
+    say(`${cue.name} cue → ${hash} (in the shot list)`);
   }
 }
 
-// a sound effect, made from its recipe; its CID goes into the shot list by hand (on a shot, a bed or a hit)
+// a sound effect, made from its recipe; its hash goes into the shot list by hand (on a shot, a bed or a hit)
 if (sfx) {
   const spec = SFX[sfx];
   if (!spec) throw new Error(`no recipe for ${sfx} — add it to SFX`);
   const r = await fal<{ audio: { url: string } }>("fal-ai/elevenlabs/sound-effects/v2", { text: spec.text, duration_seconds: spec.seconds, loop: !!spec.loop, prompt_influence: 0.5 });
-  const cid = await bring(await download(r.audio.url), { title: sfx.replace(/-/g, " "), description: spec.text, tags: [day, "role:sfx", `sound:${sfx}`], meta: { model: "elevenlabs/sound-effects/v2" } });
-  say(`sfx ${sfx} → ${cid}.mp3`);
+  const hash = await bring(await download(r.audio.url), { title: sfx.replace(/-/g, " "), description: spec.text, tags: [day, "role:sfx", `sound:${sfx}`], meta: { model: "elevenlabs/sound-effects/v2" } });
+  say(`sfx ${sfx} → ${hash}`);
 }

@@ -15,7 +15,7 @@ const SERVICE: &str = "city.maia.studio";
 /// What the studio needs: the media library, and the content calendar it publishes to.
 const SCOPE: &str = "media:admin,content:admin";
 /// A key must be able to do this to open the studio — the admin gate.
-const GATE: &str = "/api/media?kind=__gate__";
+const GATE: &str = "/api/vault/join";
 
 pub fn api_base() -> String {
     std::env::var("MAIACITY_API").unwrap_or_else(|_| "https://api.maia.city".into())

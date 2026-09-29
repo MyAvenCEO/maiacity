@@ -93,7 +93,7 @@
 	const fileNote = $derived.by(() => {
 		if (!pic || isWorld(pic) || s.pictureItem?.kind !== 'video') return null;
 		const px = s.proxy(s.pictureItem);
-		if (s.onProxies) return px.cid ? 'proxy' : 'no proxy yet · original';
+		if (s.onProxies) return px.hash ? 'proxy' : 'no proxy yet · original';
 		return 'original';
 	});
 </script>
@@ -125,7 +125,7 @@
 			></video>
 		{/each}
 		{#if s.pictureItem?.kind === 'image'}
-			<img class="still" class:on={!gl} bind:this={s.stillEl} src={raw((s.stillItem ?? s.pictureItem).cid)} alt="" crossorigin="use-credentials" />
+			<img class="still" class:on={!gl} bind:this={s.stillEl} src={raw((s.stillItem ?? s.pictureItem).hash)} alt="" crossorigin="use-credentials" />
 		{/if}
 		<canvas class="stand" class:on={!gl && isWorld(pic) && !live && !worldVideo} bind:this={stand}></canvas>
 		<Viewer

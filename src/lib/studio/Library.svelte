@@ -31,7 +31,8 @@
 		type Parsed
 	} from '$lib/admin/media/facets';
 	import Devices from './Devices.svelte';
-	import { gb, type Copies, type VaultFile, type VaultStatus } from './vault';
+	import { listMedia } from '$lib/auth/client';
+	import { gb, type Copies, type VaultStatus } from './vault';
 
 	type Kind = 'all' | 'image' | 'video' | 'audio';
 	type Measure = { w?: number; h?: number; d?: number };
@@ -226,21 +227,6 @@
 		replaceState(next ? `?${next}` : location.pathname, {});
 	});
 
-	/** the vault's catalog, as the library shows it — proxies stand in for their originals and stay out */
-	const item = (f: VaultFile & { description?: string; meta?: Record<string, unknown> }): MediaItem => ({
-		hash: f.hash,
-		mime: f.mime,
-		kind: f.kind,
-		size: f.size,
-		added: f.added ?? '',
-		title: f.title ?? '',
-		description: f.description ?? '',
-		tags: f.tags ?? [],
-		meta: f.meta ?? {},
-		public: f.public ?? false,
-		original_name: f.original_name
-	});
-
 	async function loadCopies() {
 		try {
 			copies = Object.fromEntries((await command<Copies[]>('vault_copies')).map((c) => [c.hash, c]));
@@ -252,8 +238,9 @@
 	onMount(() => {
 		(async () => {
 			try {
-				const [files, st] = await Promise.all([command<VaultFile[]>('vault_list'), command<VaultStatus>('vault_status')]);
-				media = files.map(item).filter((m) => !isProxy(m));
+				// the vault's catalog; proxies stand in for their originals and stay out
+				const [files, st] = await Promise.all([listMedia(), command<VaultStatus>('vault_status')]);
+				media = files.filter((m) => !isProxy(m));
 				status = st;
 			} catch (e) {
 				error = String(e);

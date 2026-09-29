@@ -25,7 +25,7 @@ export function splitArticle(md: string): Article {
 }
 
 const withBase = (html: string) =>
-	html.replace(/src="(baf[^"]*)"/g, (_, src: string) => `src="${asset(src)}"`).replace(/href="\//g, `href="${base}/`);
+	html.replace(/src="([0-9a-f]{64}[^"]*)"/g, (_, src: string) => `src="${asset(src)}"`).replace(/href="\//g, `href="${base}/`);
 
 const asFigures = (html: string) =>
 	html.replace(

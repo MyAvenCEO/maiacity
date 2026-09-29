@@ -1,6 +1,6 @@
 // Build the site as a pinned film build: vite build, then a hash of every file it wrote, and build/film-build.json
 // ({ commit, hash, built }) so film mode knows which build it is (__film.build) — then a tar of it all to store in
-// the library by CID (see site.mjs for how the worker gets it back).
+// the vault (see site.mjs for how the worker gets it back).
 //
 //   node scripts/film/world/build.mjs [--skip-build] [--out build]
 //
@@ -38,4 +38,4 @@ writeFileSync(join(out, 'film-build.json'), JSON.stringify({ commit, hash, built
 mkdirSync('studio/builds', { recursive: true });
 const tar = resolve('studio/builds', `site-${hash.slice(0, 16)}.tar`);
 execFileSync('tar', ['-cf', tar, '-C', out, '.']);
-console.log(`build ${commit.slice(0, 9)} · ${hash.slice(0, 16)} → ${tar}\nstore it: bun media add ${relative(process.cwd(), tar)}  (its CID is the build's cid)`);
+console.log(`build ${commit.slice(0, 9)} · ${hash.slice(0, 16)} → ${tar}\nstore it: bun media add ${relative(process.cwd(), tar)}  (its hash is the build's file)`);

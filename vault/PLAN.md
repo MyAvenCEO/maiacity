@@ -1,7 +1,7 @@
 # maiaCITY Studio + media vault — the task list
 
 Everything Samuel asked for, in order, with where it stands. Design and reasons: `.claude/skills/iroh/maiacity.md`.
-Status: ✅ done · 🔨 in progress · ⏳ next · 💤 deferred on purpose.  Last update: 2026-09-29, 19:30.
+Status: ✅ done · 🔨 in progress · ⏳ next · 💤 deferred on purpose.  Last update: 2026-09-29, 21:45.
 
 ## Done
 
@@ -49,7 +49,7 @@ Status: ✅ done · 🔨 in progress · ⏳ next · 💤 deferred on purpose.  L
     over); ✅ the app pairs and joins by itself after sign-in; ✅ files only the server holds come down from the
     gateway, hash-checked, into the store; ✅ bandwidth policy (~75 % of the uplink 08–22, all
     of it at night); ✅ "safe to format" at two copies (24); ✅ watch folder `~/Movies/maiaCITY Inbox`
-    (ingest, move to `ingested/`, proxy); ⏳ web upload.
+    (ingest, move to `ingested/`, proxy); 💤 web upload (not needed for now — Samuel).
 
 ## Next
 
@@ -59,19 +59,24 @@ Status: ✅ done · 🔨 in progress · ⏳ next · 💤 deferred on purpose.  L
     server; the vault moves to another drive (the external SSD — same node, fills itself from the network).
     Defaults: the server (Object Storage) + this Mac's SSD.
 26. 🔨 **Media bytes out of Postgres**: ✅ (a) all 541 production files (6.6 GB) exist in `library/` and re-hash to
-    their CID; ✅ backups without media bytes; ⏳ (b) empty `media_chunks` — Samuel decided: **right after the vault
-    serves the files** (after 19b — the studio's database still reads its bytes from there).
+    their CID; ✅ backups without media bytes; ✅ nothing reads them any more (19b); ⏳ (b) the old tables
+    (`media`, `media_chunks`, `media_tags`, `uploads`, `upload_chunks`) dropped once 19b is verified live.
 18. ✅ **Day 01 pilot**: its files by hash; the gateway serves all 11 public ones without a login, each re-hashed to
     its name; the 9×16 frame stays private; the built page loads images and the film from the gateway (release 8).
     Day 01 itself is still a draft — publishing it is Samuel's call.
 19. 🔨 **Migrate the library**: ✅ all 856 files in this Mac's vault (8.52 GB, 36 s, 0 mismatches); ✅ CID → hash map
     and rewrite tool; ✅ the site reads hashes (gateway) and plays vault films from it; ✅ every page, post and film
-    script rewritten (391 references to 279 files; privacy as library/ had it); ⏳ released once the bucket holds all
-    856; ⏳ `ipfs-unixfs-importer` removed.
-    b) ⏳ **the database off CIDs**: `media`, `media_chunks`, `media_paths`, `media_tags`, uploads, content `cids` and
-       deliveries, render jobs, timeline/shot clips — onto `vault_files` by hash; the studio's media calls to the
-       gateway. Until then the studio reads `/api/media/<cid>` (from `media_chunks`).
-20. ⏳ **Delete Bunny** (CDN + Stream) once the site runs from the gateway (Samuel said yes).
+    script rewritten (391 references to 279 files; privacy as library/ had it); ✅ released (all 856 in the bucket);
+    ✅ `ipfs-unixfs-importer` and `multiformats` removed; ✅ the catalog's own meta free of CIDs.
+    b) 🔨 **the database off CIDs** (release 11): migration 0029 rewrites every CID in timelines, shots, content, render
+       jobs to its hash (`cid` → `hash`; rolls back on an unknown one); `/api/media*` and the Bunny uploads are gone; the
+       studio reads the vault (`vault_list`, `vault://`, `vault_describe`, native proxy remake); the render worker reads
+       and adds files through the app's local vault routes (127.0.0.1:4545/vault/*, the MCP token). API 96 tests green.
+       Day 19 **W · World** (G with 42 live world shots, config only) is on production.
+20. 🔨 **Off Bunny**: ✅ media from the vault (no Bunny uploads); ✅ the site served by the server's Caddy
+    (`site/releases/<commit>`, `site/current`), deployed over SSH by CI; ⏳ **Samuel: point maia.city and www.maia.city
+    at 188.245.31.46 (A records, Hetzner DNS; www's CNAME to Bunny goes)** — until then CI keeps Bunny current too;
+    ⏳ then the Bunny account (CDN, storage, Stream) closed by Samuel. No published post streams from Bunny.
 14. b) ⏳ colour transforms and LUTs in Rust (input transforms, ACEScct, the ACES 2.0 output transform), stills proxies
     c) ⏳ render: Metal compositing, audio mix, captions, loudness QC (`ebur128`)
     d) ⏳ world plates and hero frames in the app's own WebView

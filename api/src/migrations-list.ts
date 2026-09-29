@@ -1,6 +1,11 @@
 // The schema's history, as data. Kept apart from the runner so the tests can
 // build the same database in PGlite without a live Postgres.
+import { CID_MAP } from "./cid-map";
+
 export type Migration = { id: string; sql: string };
+
+// the CID → hash map as SQL rows (both sides are checked to be base32 and hex: nothing to quote)
+const CID_ROWS = CID_MAP.filter(([c, h]) => /^baf[a-z2-7]{56}$/.test(c) && /^[0-9a-f]{64}$/.test(h)).map(([c, h]) => `('${c}', '${h}')`).join(",\n        ");
 
 export const MIGRATIONS: Migration[] = [
   {
@@ -575,6 +580,88 @@ export const MIGRATIONS: Migration[] = [
         key   TEXT PRIMARY KEY,
         value TEXT NOT NULL
       );
+    `,
+  },
+  {
+    // Off IPFS CIDs: every file is known by its BLAKE3 hash (64 hex), as the vault knows it. Every CID the timelines,
+    // shots, content board and render jobs name becomes its hash (by the map in cid-map.ts), every "cid" key becomes
+    // "hash" — or "file" where the object already has a "hash" of its own (a shot's world.build, a preview LUT) — and
+    // the columns follow: content_items.cids → hashes, render_jobs.media_cid → media_hash, output_cid → output_hash.
+    // A file's proxy is the Mac app's work now (meta.proxy on the original): media proxy jobs still waiting are closed.
+    // The old library tables (media, media_chunks, media_tags, uploads) are left as they are, to be dropped once the
+    // vault is checked against them. A timeline or shot naming a CID the map does not know stops the migration.
+    id: "0029-hashes-not-cids",
+    sql: `
+      CREATE TEMP TABLE cid_map (cid TEXT PRIMARY KEY, hash TEXT NOT NULL);
+      INSERT INTO cid_map (cid, hash) VALUES
+        ${CID_ROWS};
+
+      -- every CID in a text, replaced by its hash (a CID is always 59 characters: none is the start of another)
+      CREATE FUNCTION pg_temp.hashed(t TEXT) RETURNS TEXT LANGUAGE plpgsql AS $$
+      DECLARE r RECORD;
+      BEGIN
+        IF t IS NULL THEN RETURN NULL; END IF;
+        FOR r IN SELECT DISTINCT m.cid, m.hash FROM regexp_matches(t, 'baf[a-z2-7]{56}', 'g') x JOIN pg_temp.cid_map m ON m.cid = x[1] LOOP
+          t := replace(t, r.cid, r.hash);
+        END LOOP;
+        RETURN t;
+      END $$;
+
+      -- every "cid" key, at any depth, renamed: "hash", or "file" beside a "hash" the object already has
+      CREATE FUNCTION pg_temp.rekeyed(j JSONB) RETURNS JSONB LANGUAGE plpgsql AS $$
+      DECLARE k TEXT; v JSONB; o JSONB := '{}';
+      BEGIN
+        IF jsonb_typeof(j) = 'object' THEN
+          FOR k, v IN SELECT * FROM jsonb_each(j) LOOP
+            o := o || jsonb_build_object(CASE WHEN k <> 'cid' THEN k WHEN j ? 'hash' THEN 'file' ELSE 'hash' END, pg_temp.rekeyed(v));
+          END LOOP;
+          RETURN o;
+        ELSIF jsonb_typeof(j) = 'array' THEN
+          RETURN coalesce((SELECT jsonb_agg(pg_temp.rekeyed(e) ORDER BY i) FROM jsonb_array_elements(j) WITH ORDINALITY a(e, i)), '[]');
+        END IF;
+        RETURN j;
+      END $$;
+
+      CREATE FUNCTION pg_temp.rehashed(j JSONB) RETURNS JSONB LANGUAGE sql AS $$
+        SELECT pg_temp.hashed(pg_temp.rekeyed(j)::text)::jsonb
+      $$;
+
+      UPDATE timelines SET clips = pg_temp.rehashed(clips) WHERE clips::text ~ 'baf|"cid"';
+      UPDATE shots SET spec = pg_temp.rehashed(spec) WHERE spec::text ~ 'baf|"cid"';
+      UPDATE shot_versions SET spec = pg_temp.rehashed(spec) WHERE spec::text ~ 'baf|"cid"';
+
+      ALTER TABLE content_items RENAME COLUMN cids TO hashes;
+      UPDATE content_items SET
+          hashes = ARRAY(SELECT pg_temp.hashed(h) FROM unnest(hashes) WITH ORDINALITY u(h, i) ORDER BY i),
+          body = pg_temp.hashed(body), link = pg_temp.hashed(link),
+          deliveries = pg_temp.rehashed(deliveries), posts = pg_temp.rehashed(posts)
+        WHERE array_to_string(hashes, ' ') ~ 'baf' OR body ~ 'baf' OR link ~ 'baf' OR deliveries::text ~ 'baf|"cid"' OR posts::text ~ 'baf|"cid"';
+
+      -- (the target check and the index follow a renamed column on their own)
+      ALTER TABLE render_jobs RENAME COLUMN media_cid TO media_hash;
+      ALTER TABLE render_jobs RENAME COLUMN output_cid TO output_hash;
+      UPDATE render_jobs SET
+          media_hash = pg_temp.hashed(media_hash), output_hash = pg_temp.hashed(output_hash),
+          report = pg_temp.rehashed(report), params = pg_temp.rehashed(params)
+        WHERE media_hash ~ 'baf' OR output_hash ~ 'baf' OR report::text ~ 'baf|"cid"' OR params::text ~ 'baf|"cid"';
+      UPDATE render_jobs SET status = 'failed', note = 'A file''s proxy is made by the Mac app now.', updated = now()
+        WHERE kind = 'proxy' AND media_hash IS NOT NULL AND status IN ('queued', 'rendering');
+
+      DO $$
+      DECLARE left_over TEXT;
+      BEGIN
+        SELECT string_agg(DISTINCT x[1], ', ') INTO left_over FROM (
+          SELECT clips::text AS t FROM timelines UNION ALL SELECT spec::text FROM shots UNION ALL SELECT spec::text FROM shot_versions
+        ) s, regexp_matches(s.t, '(baf[a-z2-7]{56})', 'g') x;
+        IF left_over IS NOT NULL THEN
+          RAISE EXCEPTION 'These CIDs are in a timeline or a shot but not in the map, so they have no hash: %', left_over;
+        END IF;
+      END $$;
+
+      DROP FUNCTION pg_temp.rehashed(JSONB);
+      DROP FUNCTION pg_temp.rekeyed(JSONB);
+      DROP FUNCTION pg_temp.hashed(TEXT);
+      DROP TABLE pg_temp.cid_map;
     `,
   },
 ];

@@ -7,12 +7,12 @@
 	uploads by shape and codec, preferring the file rendered from its own cut.
 -->
 <script lang="ts">
-	import { API, mediaUrl, type Delivery, type Post } from '$lib/auth/client';
+	import { API, fileUrl, type Delivery, type Post } from '$lib/auth/client';
 	import ChannelGlyph from './ChannelGlyph.svelte';
 	import PostCard from './PostCard.svelte';
 	import { PLATFORMS, postLabel } from './board';
 
-	const raw = (cid: string) => mediaUrl(cid);
+	const raw = (hash: string) => fileUrl(hash);
 
 	let {
 		posts,
@@ -29,7 +29,7 @@
 		/** when the item goes out, for a post without its own time */
 		when?: string | null;
 		/** an image's address */
-		image?: (cid: string) => string;
+		image?: (hash: string) => string;
 		/** one column in the order they go out, or two by two (the Derivatives step) */
 		layout?: 'stream' | 'grid';
 	} = $props();

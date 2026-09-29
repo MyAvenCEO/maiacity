@@ -1,8 +1,33 @@
-# One name, several upstreams. Caddy fetches and renews the certificate itself —
-# passkeys only work in a secure context, so HTTPS is not optional here.
+# Two names, one server. Caddy fetches and renews the certificates itself — passkeys only work in a secure context,
+# so HTTPS is not optional here.
+#
+# The site (maia.city): the built SvelteKit site, static, from /srv/site (the deploy puts each build beside the last
+# and switches a link, so a page never points at chunks that are gone). www goes to the bare name.
+#
+# The API (api.maia.city):
 #   /relay, /generate_204  the iroh relay inside vault-server (paired devices only)
 #   /vault/*               the media vault's gateway (files by BLAKE3 hash, with Range)
 #   everything else        the API
+{$SITE_ADDRESS:maia.city} {
+	root * /srv/site/current
+	encode zstd gzip
+	# hashed chunks never change; pages are looked at again
+	@immutable path /_app/immutable/*
+	header @immutable Cache-Control "public, max-age=31536000, immutable"
+	@pages not path /_app/immutable/*
+	header @pages Cache-Control "public, max-age=0, must-revalidate"
+	try_files {path} {path}/index.html {path}.html
+	file_server
+	handle_errors 404 {
+		rewrite * /404.html
+		file_server
+	}
+}
+
+www.{$SITE_ADDRESS:maia.city} {
+	redir https://{$SITE_ADDRESS:maia.city}{uri} permanent
+}
+
 {$API_ADDRESS} {
 	handle /relay* {
 		reverse_proxy vault:3340

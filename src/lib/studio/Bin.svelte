@@ -37,7 +37,7 @@
 					if (kind !== 'all' && m.kind !== kind) return false;
 					if (tag && !m.tags.includes(tag)) return false;
 					const f = q.trim().toLowerCase();
-					return !f || m.cid.includes(f) || m.title.toLowerCase().includes(f) || m.description.toLowerCase().includes(f) || m.tags.some((t) => t.toLowerCase().includes(f)) || String(m.meta?.text ?? '').toLowerCase().includes(f);
+					return !f || m.hash.includes(f) || m.title.toLowerCase().includes(f) || m.description.toLowerCase().includes(f) || m.tags.some((t) => t.toLowerCase().includes(f)) || String(m.meta?.text ?? '').toLowerCase().includes(f);
 				})
 	);
 	const shownShots = $derived(
@@ -110,7 +110,7 @@
 			<button class:on={kind === k} onclick={() => (kind = /** @type {Kind} */ (k))}>{label}</button>
 		{/each}
 	</div>
-	<input type="search" bind:value={q} placeholder="Find by name, words or CID" aria-label="Find" />
+	<input type="search" bind:value={q} placeholder="Find by name, words or hash" aria-label="Find" />
 	<div class="tagrow">
 		{#each allTags as t (t)}
 			<button class="tag" class:on={tag === t} onclick={() => (tag = tag === t ? null : t)}>{t}</button>
@@ -141,16 +141,16 @@
 			{/each}
 			{#if kind !== 'world'}<li class="sect">Files</li>{/if}
 		{/if}
-		{#each shown as m (m.cid)}
+		{#each shown as m (m.hash)}
 			{@const px = s.proxy(m)}
 			<li>
 				<button
 					class="item"
-					class:on={s.preview === m.cid}
+					class:on={s.preview === m.hash}
 					draggable="true"
-					ondragstart={(e) => e.dataTransfer?.setData('text/x-cid', m.cid)}
+					ondragstart={(e) => e.dataTransfer?.setData('text/x-hash', m.hash)}
 					onclick={() => s.pick(m)}
-					ondblclick={() => s.place(m.cid, s.defaultTrack(m), s.time)}
+					ondblclick={() => s.place(m.hash, s.defaultTrack(m), s.time)}
 					title="Click to see it in the source monitor, drag onto a track, or double-click to drop it at the playhead"
 				>
 					<span class="thumb">

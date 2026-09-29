@@ -6,6 +6,9 @@
 // Video and EXR sequences: HEVC Main10 4:2:0, BT.709 matrix, TV range, a keyframe every 15 frames for scrubbing,
 // tagged `comment=maiacity:color=<the proxy's profile>`. Stills: only a float still (EXR) or one larger than HD gets
 // one — a 16-bit PNG in ACEScct, or the still at HD.
+//
+// The render worker no longer makes these: the Mac app does, natively (vault/crates/vault-media/src/proxy.rs is the
+// twin of this file). Kept as the reference for its rules, and for making one by hand.
 import { spawn } from 'node:child_process';
 import { join } from 'node:path';
 import { proxyProfileOf } from '../../game/film/color.js';
