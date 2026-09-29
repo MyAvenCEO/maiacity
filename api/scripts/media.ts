@@ -10,6 +10,9 @@
 //   bun media add <file> [--title "…"] [--description "…"] [--tags a,b] [--replaces <cid>] [--public]
 //                          bring a file into library/ (copied, described) and into the database; the file it
 //                          replaces (by CID) is marked superseded
+//   bun media add-sequence <dir> [--profile aces2065-1|acescg|linear-rec709] [--fps 24] [--title "…"] [--tags a,b]
+//                          an EXR sequence (a folder of frames, e.g. a Luma / Kling / LTX export) packed into one tar
+//                          and brought in as one clip; its colour profile given, or read from the EXR header
 //   bun media manifest     write the site's manifest from the database (public files by CID, with their tags)
 //   bun media logout       revoke this terminal's key
 //
@@ -19,7 +22,7 @@ import { readFile, writeFile } from "node:fs/promises";
 import { hostname } from "node:os";
 import { join } from "node:path";
 import { API, call, keyFor, local, mb, ROOT, saveKey, say, SITE, upload } from "./media-client";
-import { all, fileOf, get, put, type Doc } from "./library";
+import { all, bring, fileOf, get, packSequence, put, type Doc } from "./library";
 
 const MANIFEST = join(ROOT, "src/lib/media", local ? "manifest.local.json" : "manifest.json");
 
@@ -147,10 +150,54 @@ async function add() {
   }
 }
 
+// ─────────────────────────────── add-sequence ───────────────────────────────
+
+/**
+ * Generated footage comes as EXR frames (Luma Ray 3, Kling, LTX: scene-linear ACES2065-1, or linear EXR): the whole
+ * sequence goes into the library as one tar (application/x-tar) with meta { sequence: 'exr', fps, frames, color }.
+ * The render worker unpacks it to render and to make its ACEScct proxy.
+ */
+async function addSequence() {
+  const argv = process.argv.slice(3);
+  const opt = (k: string) => (argv.includes(`--${k}`) ? argv[argv.indexOf(`--${k}`) + 1] : undefined);
+  const [dir] = argv.filter((a, i) => !a.startsWith("--") && !argv[i - 1]?.match(/^--(profile|fps|title|description|tags)$/));
+  if (!dir) throw new Error('usage: bun media add-sequence <dir> [--profile aces2065-1|acescg|linear-rec709] [--fps 24] [--title "…"] [--tags a,b] [--local]');
+  // color.js is plain JS shared with the browser: loaded by path, so this TypeScript does not type it
+  const colorModule = join(ROOT, "game/film/color.js");
+  const color = (await import(colorModule)) as { PROFILES: Record<string, { linear: boolean }>; exrHeader: (b: Uint8Array) => unknown; exrProfile: (h: unknown) => string | null };
+  const tar = join(ROOT, "studio", `sequence-${Date.now()}.tar`);
+  await $`mkdir -p ${join(ROOT, "studio")}`.quiet();
+  const { frames, first } = await packSequence(dir, tar);
+  const header = color.exrHeader(new Uint8Array(await readFile(first)).subarray(0, 65536));
+  const fromHeader = color.exrProfile(header);
+  const given = opt("profile");
+  if (given && !(given in color.PROFILES)) throw new Error(`--profile is one of ${Object.keys(color.PROFILES).join(", ")}`);
+  const profile = given ?? fromHeader;
+  if (!profile) throw new Error("the EXR header names primaries this pipeline does not know: give --profile");
+  if (given && fromHeader && given !== fromHeader) say(`note: the EXR header says ${fromHeader}; kept ${given} as given`);
+  const fps = Number(opt("fps") ?? 24);
+  if (!(fps > 0 && fps <= 120)) throw new Error("--fps is a number of frames per second");
+  const [w, h, pix] = (await $`ffprobe -v error -select_streams v:0 -show_entries stream=width,height,pix_fmt -of csv=p=0 ${first}`.quiet().nothrow().text()).trim().split(",");
+  const size = [Number(w), Number(h)];
+  const d = await bring(tar, {
+    mime: "application/x-tar",
+    title: opt("title") ?? dir.split("/").filter(Boolean).pop(),
+    description: opt("description") ?? `EXR sequence · ${frames} frames at ${fps} fps · ${profile}`,
+    tags: ["sequence:exr", ...(opt("tags")?.split(",").map((t) => t.trim()).filter(Boolean) ?? [])],
+    meta: {
+      sequence: "exr", fps, frames, duration_s: Number((frames / fps).toFixed(3)),
+      ...(size.length === 2 && size.every((n) => n > 0) ? { width: size[0], height: size[1] } : {}),
+      color: { profile, primaries: profile, transfer: "linear", matrix: "gbr", range: "pc", bitDepth: /f16/.test(pix ?? "") ? 16 : 32, detectedFrom: given ? "given at ingest (--profile)" : "EXR header" },
+    },
+  });
+  await $`rm -f ${tar}`.quiet();
+  say(`${d.cid}  ${d.title} · ${frames} frames · ${profile} (its proxy follows from the render worker)`);
+}
+
 const cmd = process.argv.slice(2).find((a) => !a.startsWith("--")) ?? "status";
-const run = { login, logout, status, seed, add, manifest: () => manifest() }[cmd as "login"];
+const run = { login, logout, status, seed, add, "add-sequence": addSequence, manifest: () => manifest() }[cmd as "login"];
 if (!run) {
-  say("usage: bun media login | status | seed | add <file> … | manifest | logout  [--local]");
+  say("usage: bun media login | status | seed | add <file> … | add-sequence <dir> … | manifest | logout  [--local]");
   process.exit(1);
 }
 try {
