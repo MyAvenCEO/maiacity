@@ -61,6 +61,8 @@ jobs:
           tags: |
             ${{ steps.meta.outputs.image }}:${{ github.sha }}
             ${{ steps.meta.outputs.image }}:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
 
   vault-image:
     name: Build and push the vault-server image
@@ -88,8 +90,6 @@ jobs:
           tags: |
             ${{ steps.meta.outputs.image }}:${{ github.sha }}
             ${{ steps.meta.outputs.image }}:latest
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
 
   infra:
     name: Hetzner (Pulumi)
