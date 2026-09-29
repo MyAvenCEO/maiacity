@@ -307,6 +307,8 @@ type Walker = { level: number; r: number; a: number; speed: number; working: boo
  */
 function crowd(walkers: Walker[]): { object: THREE.Group; update: (t: number, dt: number) => void } {
 	const n = walkers.length
+	// each walks its aisle at its own pace: where it is is a function of the time alone (a film renders it the same)
+	const a0 = walkers.map((w) => w.a)
 	const mat = new THREE.MeshStandardMaterial({ color: '#ffffff', roughness: 0.55 })
 	const parts = {
 		torso: new THREE.BoxGeometry(0.4, 0.58, 0.24),
@@ -346,7 +348,7 @@ function crowd(walkers: Walker[]): { object: THREE.Group; update: (t: number, dt
 	}
 	const update = (t: number, dt: number) => {
 		walkers.forEach((w, i) => {
-			if (!w.working) w.a += (w.speed / w.r) * dt
+			if (!w.working) w.a = a0[i]! + (w.speed / w.r) * t
 			const [x, z] = polar(w.r, w.a)
 			// facing along the aisle, or into the station it works at
 			const yaw = w.working ? w.a : w.a + (w.speed > 0 ? Math.PI / 2 : -Math.PI / 2)

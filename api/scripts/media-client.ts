@@ -7,8 +7,9 @@ import { cidOf } from "../src/media";
 
 export const ROOT = join(import.meta.dir, "../..");
 export const local = process.argv.includes("--local");
-// MAIACITY_API points a terminal (or the render worker) at another API — a test server, a second local one
-export const API = process.env.MAIACITY_API ?? (local ? "http://localhost:3100" : "https://api.maia.city");
+// MAIACITY_API (or MAIA_API) points a terminal, the render worker or a script at another API — a test server, a
+// second local one on its own port for a parallel checkout
+export const API = process.env.MAIACITY_API ?? process.env.MAIA_API ?? (local ? "http://localhost:3100" : "https://api.maia.city");
 export const SITE = local ? "http://localhost:5173" : "https://maia.city";
 export const CONFIG = join(homedir(), ".config", "maiacity");
 export const KEYS = join(CONFIG, "media-keys.json");
