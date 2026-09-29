@@ -11,7 +11,7 @@
  * hearts into the city. Then a home: a settlement — a dome cluster on one cell
  * of the island, itself a coop with its own MINDS (riversideMINDS). A citizen
  * founds one, or joins one through an invite link from one of its settlers:
- * at least 5,000 hearts either way. Both are for good: one city, one
+ * at least 25,000 hearts either way. Both are for good: one city, one
  * settlement per player.
  *
  * Every step of an investment — the personal hearts out, the city's HEARTS in,
@@ -97,7 +97,7 @@ export type CoopDetail = CoopSummary & {
 	myMindsLabel: string
 	createdAt: string
 	treasuryLabel: string
-	/** "Milestone 8 of 49 open · 5 of 13☉ emitted". */
+	/** "Milestone 8 of 30 open · 5 of 13☉ emitted". */
 	milestoneOf: string
 	soldOut: boolean
 	schedule: ScheduleLine[]

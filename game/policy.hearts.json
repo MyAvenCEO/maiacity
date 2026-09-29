@@ -21,8 +21,8 @@
 		"perHour": "1",
 		"perDay": "24",
 		"maxBacklogDays": 14,
-		"$description": "One heart per GAME hour — 24 a game day, which is one every two real minutes, since a game day is 48 real minutes — accruing continuously and minted whenever the citizen likes. Unclaimed hearts stop accruing after 14 game days, as in Circles: money is for the present, not a savings plan you forgot about. A player's very first mint also carries the starting hearts — 30,000, enough to become the citizen of a city (25,000) and still back its coops.",
-		"starting": "30000"
+		"$description": "One heart per GAME hour — 24 a game day, which is one every two real minutes, since a game day is 48 real minutes — accruing continuously and minted whenever the citizen likes. Unclaimed hearts stop accruing after 14 game days, as in Circles: money is for the present, not a savings plan you forgot about. A player's very first mint also carries the starting hearts — 62,500, enough to become the citizen of a city (25,000), settle in one of its settlements (25,000) and still back its coops with the 12,500 left.",
+		"starting": "62500"
 	},
 	"demurrage": {
 		"ratePerGameYear": 0.07,

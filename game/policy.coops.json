@@ -6,10 +6,10 @@
 		"toTreasury": 0.0
 	},
 	"milestones": {
-		"$description": "Milestone n is filled when the total supply reaches fib(n) MINDs; it emits fib(n) − fib(n−1) MINDs at 10 × n hearts each — 10♥ in milestone 1, 20♥ in 2 — and opens once every earlier milestone is filled. The schedule runs until the max supply of 8 billion MINDs: the last milestone emits only what is left under the cap, then the coop is sold out. A coop's total supply is always exactly what its milestones have emitted so far. The table is generated from the rule by scripts/coops-table.ts.",
+		"$description": "Milestone n is filled when the total supply reaches fib(n) MINDs; it emits fib(n) − fib(n−1) MINDs at 10 × n hearts each — 10♥ in milestone 1, 20♥ in 2 — and opens once every earlier milestone is filled. The schedule runs until the max supply of 1.3 million MINDs: the last milestone emits only what is left under the cap, then the coop is sold out. A coop's total supply is always exactly what its milestones have emitted so far. The table is generated from the rule by scripts/coops-table.ts.",
 		"rule": "total(n) = min(fib(n), maxSupply); minds(n) = total(n) - total(n-1); heartsPerMind(n) = n * heartsPerMindStep; cost(n) = minds(n) * heartsPerMind(n)",
 		"heartsPerMindStep": "10",
-		"maxSupplyMinds": "8000000000",
+		"maxSupplyMinds": "1300000",
 		"table": [
 			{
 				"milestone": 1,
@@ -274,183 +274,12 @@
 			},
 			{
 				"milestone": 30,
-				"minds": "514229",
+				"minds": "467960",
 				"heartsPerMind": "300",
-				"costHearts": "154268700",
+				"costHearts": "140388000",
 				"opensAtHearts": "227828930",
-				"cumulativeMinds": "1346269",
-				"cumulativeHearts": "382097630"
-			},
-			{
-				"milestone": 31,
-				"minds": "832040",
-				"heartsPerMind": "310",
-				"costHearts": "257932400",
-				"opensAtHearts": "382097630",
-				"cumulativeMinds": "2178309",
-				"cumulativeHearts": "640030030"
-			},
-			{
-				"milestone": 32,
-				"minds": "1346269",
-				"heartsPerMind": "320",
-				"costHearts": "430806080",
-				"opensAtHearts": "640030030",
-				"cumulativeMinds": "3524578",
-				"cumulativeHearts": "1070836110"
-			},
-			{
-				"milestone": 33,
-				"minds": "2178309",
-				"heartsPerMind": "330",
-				"costHearts": "718841970",
-				"opensAtHearts": "1070836110",
-				"cumulativeMinds": "5702887",
-				"cumulativeHearts": "1789678080"
-			},
-			{
-				"milestone": 34,
-				"minds": "3524578",
-				"heartsPerMind": "340",
-				"costHearts": "1198356520",
-				"opensAtHearts": "1789678080",
-				"cumulativeMinds": "9227465",
-				"cumulativeHearts": "2988034600"
-			},
-			{
-				"milestone": 35,
-				"minds": "5702887",
-				"heartsPerMind": "350",
-				"costHearts": "1996010450",
-				"opensAtHearts": "2988034600",
-				"cumulativeMinds": "14930352",
-				"cumulativeHearts": "4984045050"
-			},
-			{
-				"milestone": 36,
-				"minds": "9227465",
-				"heartsPerMind": "360",
-				"costHearts": "3321887400",
-				"opensAtHearts": "4984045050",
-				"cumulativeMinds": "24157817",
-				"cumulativeHearts": "8305932450"
-			},
-			{
-				"milestone": 37,
-				"minds": "14930352",
-				"heartsPerMind": "370",
-				"costHearts": "5524230240",
-				"opensAtHearts": "8305932450",
-				"cumulativeMinds": "39088169",
-				"cumulativeHearts": "13830162690"
-			},
-			{
-				"milestone": 38,
-				"minds": "24157817",
-				"heartsPerMind": "380",
-				"costHearts": "9179970460",
-				"opensAtHearts": "13830162690",
-				"cumulativeMinds": "63245986",
-				"cumulativeHearts": "23010133150"
-			},
-			{
-				"milestone": 39,
-				"minds": "39088169",
-				"heartsPerMind": "390",
-				"costHearts": "15244385910",
-				"opensAtHearts": "23010133150",
-				"cumulativeMinds": "102334155",
-				"cumulativeHearts": "38254519060"
-			},
-			{
-				"milestone": 40,
-				"minds": "63245986",
-				"heartsPerMind": "400",
-				"costHearts": "25298394400",
-				"opensAtHearts": "38254519060",
-				"cumulativeMinds": "165580141",
-				"cumulativeHearts": "63552913460"
-			},
-			{
-				"milestone": 41,
-				"minds": "102334155",
-				"heartsPerMind": "410",
-				"costHearts": "41957003550",
-				"opensAtHearts": "63552913460",
-				"cumulativeMinds": "267914296",
-				"cumulativeHearts": "105509917010"
-			},
-			{
-				"milestone": 42,
-				"minds": "165580141",
-				"heartsPerMind": "420",
-				"costHearts": "69543659220",
-				"opensAtHearts": "105509917010",
-				"cumulativeMinds": "433494437",
-				"cumulativeHearts": "175053576230"
-			},
-			{
-				"milestone": 43,
-				"minds": "267914296",
-				"heartsPerMind": "430",
-				"costHearts": "115203147280",
-				"opensAtHearts": "175053576230",
-				"cumulativeMinds": "701408733",
-				"cumulativeHearts": "290256723510"
-			},
-			{
-				"milestone": 44,
-				"minds": "433494437",
-				"heartsPerMind": "440",
-				"costHearts": "190737552280",
-				"opensAtHearts": "290256723510",
-				"cumulativeMinds": "1134903170",
-				"cumulativeHearts": "480994275790"
-			},
-			{
-				"milestone": 45,
-				"minds": "701408733",
-				"heartsPerMind": "450",
-				"costHearts": "315633929850",
-				"opensAtHearts": "480994275790",
-				"cumulativeMinds": "1836311903",
-				"cumulativeHearts": "796628205640"
-			},
-			{
-				"milestone": 46,
-				"minds": "1134903170",
-				"heartsPerMind": "460",
-				"costHearts": "522055458200",
-				"opensAtHearts": "796628205640",
-				"cumulativeMinds": "2971215073",
-				"cumulativeHearts": "1318683663840"
-			},
-			{
-				"milestone": 47,
-				"minds": "1836311903",
-				"heartsPerMind": "470",
-				"costHearts": "863066594410",
-				"opensAtHearts": "1318683663840",
-				"cumulativeMinds": "4807526976",
-				"cumulativeHearts": "2181750258250"
-			},
-			{
-				"milestone": 48,
-				"minds": "2971215073",
-				"heartsPerMind": "480",
-				"costHearts": "1426183235040",
-				"opensAtHearts": "2181750258250",
-				"cumulativeMinds": "7778742049",
-				"cumulativeHearts": "3607933493290"
-			},
-			{
-				"milestone": 49,
-				"minds": "221257951",
-				"heartsPerMind": "490",
-				"costHearts": "108416395990",
-				"opensAtHearts": "3607933493290",
-				"cumulativeMinds": "8000000000",
-				"cumulativeHearts": "3716349889280"
+				"cumulativeMinds": "1300000",
+				"cumulativeHearts": "368216930"
 			}
 		]
 	},
@@ -468,32 +297,32 @@
 		]
 	},
 	"phases": {
-		"$description": "A coop's life in five phases, ten milestones each; the last phase runs to the max supply.",
+		"$description": "A coop's life in five phases, six milestones each; the last phase runs to the max supply at milestone 30.",
 		"table": [
 			{
 				"name": "IDEA",
 				"from": 1,
-				"to": 10
+				"to": 6
 			},
 			{
 				"name": "TEST",
-				"from": 11,
-				"to": 20
+				"from": 7,
+				"to": 12
 			},
 			{
 				"name": "BUILD",
-				"from": 21,
-				"to": 30
+				"from": 13,
+				"to": 18
 			},
 			{
 				"name": "SCALE",
-				"from": 31,
-				"to": 40
+				"from": 19,
+				"to": 24
 			},
 			{
 				"name": "HERO",
-				"from": 41,
-				"to": 49
+				"from": 25,
+				"to": 30
 			}
 		]
 	},
@@ -510,8 +339,8 @@
 		"citizenshipMinHearts": "25000"
 	},
 	"settlement": {
-		"$description": "The second step into a city. The city opens as an island of cells; a settlement is a village of domes on one of them, and itself a coop with its own MINDS. A citizen founds one, or joins one with an invite link from one of its settlers — at least 5,000 personal hearts either way, which become the city's HEARTS in the settlement's treasury. One settlement per player, for good. It grows by headcount through twelve levels, one for every Fibonacci number up to 233: a level is reached when the settlers reach its number, and it builds enough beds for everyone until the next. The buildings for each level are in game/island/villages.ts.",
-		"joinMinHearts": "5000",
+		"$description": "The second step into a city. The city opens as an island of cells; a settlement is a village of domes on one of them, and itself a coop with its own MINDS. A citizen founds one, or joins one with an invite link from one of its settlers — at least 25,000 personal hearts either way, which become the city's HEARTS in the settlement's treasury. One settlement per player, for good. It grows by headcount through twelve levels, one for every Fibonacci number up to 233: a level is reached when the settlers reach its number, and it builds enough beds for everyone until the next. The buildings for each level are in game/island/villages.ts.",
+		"joinMinHearts": "25000",
 		"maxSettlers": 233,
 		"levels": [1, 2, 3, 5, 8, 13, 21, 34, 55, 89, 144, 233],
 		"inviteDays": 7
