@@ -31,6 +31,10 @@ permissions:
 env:
   APP_DIR: /opt/maia-city
   API_HOST: api.maia.city
+  # Hetzner Object Storage: LIBRARY/ holds the media vault, BACKUPS/ the database dumps
+  S3_BUCKET: maiacity
+  S3_ENDPOINT: https://hel1.your-objectstorage.com
+  S3_REGION: hel1
 
 jobs:
   image:
@@ -194,7 +198,7 @@ jobs:
         run: |
           ssh prod "mkdir -p $APP_DIR/deploy"
           scp docker-compose.yml docker-compose.prod.yml prod:$APP_DIR/
-          scp deploy/Caddyfile prod:$APP_DIR/deploy/
+          scp deploy/Caddyfile deploy/backup.sh prod:$APP_DIR/deploy/
       - name: Write .env (the database password is generated once and stays on the server)
         env:
           IMAGE: ${{ needs.image.outputs.image }}:${{ github.sha }}
@@ -237,6 +241,34 @@ jobs:
           if [ -n "$AUTHORIZED_KEYS" ]; then
             printf '%s\n' "$AUTHORIZED_KEYS" | ssh prod 'umask 077; cat > ~/.ssh/authorized_keys.new && mv ~/.ssh/authorized_keys.new ~/.ssh/authorized_keys'
           fi
+      # Before anything changes: the database goes to the bucket (BACKUPS/pg/). The same script runs daily at
+      # 03:15 UTC from cron; dumps expire after 30 days. Skipped, with a notice, while the S3 secrets are missing.
+      - name: Back up the database
+        env:
+          S3_ACCESS_KEY: ${{ secrets.HETZNER_S3_ACCESS_KEY }}
+          S3_SECRET_KEY: ${{ secrets.HETZNER_S3_SECRET_KEY }}
+        run: |
+          if [ -z "$S3_ACCESS_KEY" ] || [ -z "$S3_SECRET_KEY" ]; then
+            echo "::notice::No database backup: set HETZNER_S3_ACCESS_KEY and HETZNER_S3_SECRET_KEY."; exit 0
+          fi
+          # the keys travel over stdin into a file only deploy can read — never as arguments
+          printf 'BACKUP_BUCKET=%s\nBACKUP_ENDPOINT=%s\nBACKUP_REGION=%s\nAWS_ACCESS_KEY_ID=%s\nAWS_SECRET_ACCESS_KEY=%s\n' \
+            "$S3_BUCKET" "$S3_ENDPOINT" "$S3_REGION" "$S3_ACCESS_KEY" "$S3_SECRET_KEY" \
+            | ssh prod "umask 077; cat > $APP_DIR/backup.env"
+          ssh prod "bash -s" <<EOS
+          set -e
+          chmod +x $APP_DIR/deploy/backup.sh
+          # daily, 03:15 UTC
+          echo '15 3 * * * deploy bash $APP_DIR/deploy/backup.sh daily >> /var/log/maia-city-backup.log 2>&1' \
+            | sudo tee /etc/cron.d/maia-city-backup >/dev/null
+          sudo touch /var/log/maia-city-backup.log && sudo chown deploy /var/log/maia-city-backup.log
+          # keep 30 days of dumps; nothing outside BACKUPS/pg/ ever expires (LIBRARY/ is the vault)
+          set -a; . $APP_DIR/backup.env; set +a
+          docker run --rm -e AWS_ACCESS_KEY_ID -e AWS_SECRET_ACCESS_KEY -e AWS_DEFAULT_REGION="\$BACKUP_REGION" \
+            amazon/aws-cli --endpoint-url "\$BACKUP_ENDPOINT" s3api put-bucket-lifecycle-configuration --bucket "\$BACKUP_BUCKET" \
+            --lifecycle-configuration '{"Rules":[{"ID":"pg-dumps-30-days","Status":"Enabled","Filter":{"Prefix":"BACKUPS/pg/"},"Expiration":{"Days":30}}]}'
+          bash $APP_DIR/deploy/backup.sh before-deploy-${GITHUB_SHA::7}
+          EOS
       - name: Update the containers
         env:
           GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
