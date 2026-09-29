@@ -426,5 +426,34 @@ export const MIGRATIONS: Migration[] = [
       DROP TABLE media_paths;
     `,
   },
+  {
+    // The communities outlive the sandboxes. A city or a settlement is founded and joined in the apps, with no
+    // place on any map; each world a sandbox draws may then give it one — a card of Sandbox 2's planet for a city,
+    // a cell of its city's island for a settlement. The places they already had become their Sandbox 2 placements.
+    id: "0022-placements",
+    sql: `
+      CREATE TABLE placements (
+        coop_id    UUID NOT NULL REFERENCES coops(id),
+        -- the world that draws it: 'sandbox-2' …
+        world      TEXT NOT NULL,
+        -- where in that world: a card for a city, "q,r" on its city's island for a settlement
+        spot       TEXT NOT NULL,
+        -- the city whose island a settlement stands on; null for a city
+        within     UUID REFERENCES coops(id),
+        created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+        PRIMARY KEY (coop_id, world)
+      );
+      CREATE UNIQUE INDEX ux_placement_spot ON placements (world, COALESCE(within::text, ''), spot);
+
+      INSERT INTO placements (coop_id, world, spot, within)
+        SELECT id, 'sandbox-2', CASE WHEN kind = 'city' THEN tile::text ELSE cell END, city_id FROM coops;
+
+      DROP INDEX IF EXISTS ux_city_tile;
+      DROP INDEX IF EXISTS ux_cell;
+      ALTER TABLE coops DROP COLUMN tile;
+      ALTER TABLE coops DROP COLUMN cell;
+      ALTER TABLE coops ADD CONSTRAINT coops_city_check CHECK ((kind = 'city') = (city_id IS NULL));
+    `,
+  },
 ];
 

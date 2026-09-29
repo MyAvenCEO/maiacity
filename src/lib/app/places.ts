@@ -9,10 +9,11 @@ export type Release = 'draft' | 'published';
 export type Place = { href: string; label: string; icon: IconName; cap?: string; note?: string; /** a picture, by CID */ cover?: string; release?: Release };
 export type IconName = 'home' | 'play' | 'board' | 'calendar' | 'media' | 'studio' | 'journal' | 'spark' | 'user' | 'key' | 'ledger' | 'coops';
 
-// a founder's own apps: their money, and the cities and coops they back — the economy of Sandbox 2, without the globe
+// a founder's own apps: their money, and the communities — cities and settlements, founded, joined and backed here,
+// with no map. Every sandbox draws the same ones.
 export const APPS: Place[] = [
 	{ href: `${base}/app/ledger/`, label: 'Ledger', icon: 'ledger', note: 'Your hearts, what you hold, what happened' },
-	{ href: `${base}/app/coops/`, label: 'Coops', icon: 'coops', note: 'The cities and settlements you back' }
+	{ href: `${base}/app/coops/`, label: 'Coops', icon: 'coops', note: 'Found, join and back cities and settlements' }
 ];
 
 export const PLAY: Place[] = [
