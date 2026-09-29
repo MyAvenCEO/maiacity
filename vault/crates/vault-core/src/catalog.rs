@@ -110,6 +110,34 @@ impl Catalog {
         Ok(())
     }
 
+    /// Change what is known about a file (library enrichment): a new `meta/<hash>` entry; the old JSON stays a blob.
+    pub async fn describe(&self, hash: Hash, patch: &serde_json::Value) -> Result<Meta> {
+        let mut meta = self.meta(hash).await?.context("no such file in the catalog")?;
+        let text = |k: &str| patch.get(k).and_then(|v| v.as_str()).map(String::from);
+        if let Some(t) = text("title") {
+            meta.title = t;
+        }
+        if let Some(d) = text("description") {
+            meta.description = d;
+        }
+        if let Some(tags) = patch.get("tags").and_then(|v| v.as_array()) {
+            meta.tags = tags.iter().filter_map(|t| t.as_str().map(String::from)).collect();
+        }
+        if let Some(p) = patch.get("public").and_then(|v| v.as_bool()) {
+            meta.public = p;
+        }
+        if let Some(extra) = patch.get("meta").and_then(|v| v.as_object()) {
+            let mut m = meta.meta.as_object().cloned().unwrap_or_default();
+            for (k, v) in extra {
+                m.insert(k.clone(), v.clone());
+            }
+            meta.meta = serde_json::Value::Object(m);
+        }
+        let doc = self.doc();
+        doc.set_bytes(self.author, format!("meta/{}", hash.to_hex()), serde_json::to_vec_pretty(&meta)?).await?;
+        Ok(meta)
+    }
+
     /// Record an ingest session's report.
     pub async fn put_report(&self, id: &str, report: &serde_json::Value) -> Result<Hash> {
         self.doc().set_bytes(self.author, format!("ingest/{id}"), serde_json::to_vec_pretty(report)?).await

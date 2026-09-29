@@ -141,6 +141,11 @@ pub async fn keep_complete(handle: AppHandle, vault: Arc<Vault>) {
             continue;
         }
         let auth = handle.state::<Auth>();
+        // stay joined: a sync that failed (the server restarting, the network away) is simply tried again; this also
+        // picks up newly paired devices and revocations
+        if let Err(e) = connect(&vault, &auth).await {
+            tracing::warn!("vault network: {e}");
+        }
         let Ok(files) = auth.get_ok("GET", "/api/vault/files", None).await else { continue };
         for f in files.as_array().cloned().unwrap_or_default() {
             let (Some(hex), true) = (f["hash"].as_str(), f["stored"].as_bool().unwrap_or(false)) else { continue };

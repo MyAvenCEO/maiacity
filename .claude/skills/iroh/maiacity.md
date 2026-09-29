@@ -26,14 +26,33 @@ Decided 2026-09-29. Update this file whenever a decision changes, with the date 
 ## The code
 
 ```
-vault/                         Rust workspace (iroh pinned exactly)
-  crates/vault-core/           the node: private endpoint, FsStore, gossip, iroh-docs catalog, verified ingest
-  crates/vault-cli/            `vault ingest|ls|id` — the same core from a terminal
-  app/                         maiaCITY Studio (Tauri 2): native commands + the vault:// protocol (Range)
-src/routes/vault/              the Studio's vault page (Ingest, Library) — only works inside the app
+vault/                         Rust workspace (iroh pinned exactly) · PLAN.md = the task list
+  crates/vault-core/           the node: private endpoint (allowlist, relay added at join), FsStore, gossip,
+                               iroh-docs catalog (join, describe), three-hash ingest
+  crates/vault-media/          native media: probe (AVFoundation), proxies (VideoToolbox HEVC Main10), mp4.rs
+                               (comment tag + faststart — AVFoundation drops MPEG-4 metadata)
+  crates/vault-server/         the server peer: catalog replica (small entries only), pull from Macs verified chunk by
+                               chunk into Object Storage (s3.rs, multipart), in-process relay, allowlist from Postgres,
+                               gateway /vault/files/<hash> (Range), Postgres mirror
+  crates/vault-cli/            `vault ingest|ls|id|join|probe|proxy|import-library`
+  app/                         maiaCITY Studio (Tauri 2): native commands, vault:// (local, Range), maiaapi:// (API +
+                               gateway with the app's key), passkey device-flow sign-in (Keychain), sync.rs (pair,
+                               join, keep complete from the gateway), mcp.rs (the studio for agents)
+  migration/                   cid-to-blake3.json (old CID → hash, only for rewriting) and rewrite.ts
+src/lib/studio/                the studio's Ingest, Library, CopiesBadge, Devices — inside the app only
+api/src/vault.ts               pairing, joining, the mirror (migration 0028) — routes /api/vault/*
 ```
 
-The app's vault lives in `~/Library/Application Support/city.maia.vault` (`MAIACITY_VAULT` overrides it).
+The app's vault lives in `~/Library/Application Support/city.maia.vault`, or where the studio moved it (settings in
+`~/Library/Application Support/city.maia.studio/settings.json`; `MAIACITY_VAULT` overrides both).
+
+## Agents (MCP)
+
+The Mac app serves the whole studio as MCP on `127.0.0.1:4545/mcp`, behind a token made once
+(`~/Library/Application Support/city.maia.studio/mcp-token`); the Devices & storage panel shows the
+`claude mcp add …` command. Tools: vault_status, library_list, library_copies, ingest, library_describe, media_probe,
+media_proxy, timelines_list, timeline_save, render_queue, renders_list, content_list, content_create, content_save,
+api_call — each the same function the studio's buttons call, acting with the app's key.
 
 ## The catalog (iroh-docs namespace "maiaCITY vault")
 

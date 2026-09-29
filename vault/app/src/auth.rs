@@ -2,7 +2,7 @@
 //!
 //! Passkeys belong to maia.city, so the app cannot use one itself. It asks the API for a device code, opens the
 //! approval page in the Mac's own browser, and waits; the admin approves there with the passkey, and the app
-//! receives a key — kept in the macOS Keychain, never in a file, never shown. Every API call the app makes goes out
+//! receives a key — its session, kept in a file only this user can read, never shown. Every API call the app makes goes out
 //! from here with that key, so the studio's admin functions never run from a web page.
 
 use std::time::Duration;
@@ -30,20 +30,58 @@ fn account() -> String {
     api_base()
 }
 
+/// The session — the key the passkey approved — lives in the app's own folder, readable by this user only, like the
+/// CLI's (~/.config/maiacity/media-keys.json). One key per API. (It was in the Keychain; every unsigned build made
+/// macOS ask again, so it moves out once.)
+fn session_file() -> std::path::PathBuf {
+    let home = std::env::var_os("HOME").map(std::path::PathBuf::from).unwrap_or_default();
+    home.join("Library/Application Support/city.maia.studio/session.json")
+}
+
+fn sessions() -> serde_json::Map<String, Value> {
+    std::fs::read(session_file()).ok().and_then(|b| serde_json::from_slice(&b).ok()).unwrap_or_default()
+}
+
+fn write_sessions(map: &serde_json::Map<String, Value>) -> Result<(), String> {
+    let file = session_file();
+    std::fs::create_dir_all(file.parent().unwrap()).map_err(|e| e.to_string())?;
+    let tmp = file.with_extension("part");
+    std::fs::write(&tmp, serde_json::to_vec_pretty(map).map_err(|e| e.to_string())?).map_err(|e| e.to_string())?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&tmp, std::fs::Permissions::from_mode(0o600)).map_err(|e| e.to_string())?;
+    }
+    std::fs::rename(&tmp, &file).map_err(|e| e.to_string())
+}
+
 fn load_key() -> Option<String> {
+    if let Some(k) = sessions().get(&account()).and_then(|v| v.as_str()) {
+        return Some(k.to_string());
+    }
+    // once: a key still in the Keychain moves into the file, and the Keychain entry goes
     let bytes = security_framework::passwords::get_generic_password(SERVICE, &account()).ok()?;
-    String::from_utf8(bytes).ok()
+    let key = String::from_utf8(bytes).ok()?;
+    if save_key(&key).is_ok() {
+        security_framework::passwords::delete_generic_password(SERVICE, &account()).ok();
+    }
+    Some(key)
 }
 
 fn save_key(key: &str) -> Result<(), String> {
-    security_framework::passwords::set_generic_password(SERVICE, &account(), key.as_bytes()).map_err(|e| e.to_string())
+    let mut map = sessions();
+    map.insert(account(), Value::String(key.to_string()));
+    write_sessions(&map)
 }
 
 fn forget_key() {
+    let mut map = sessions();
+    map.remove(&account());
+    write_sessions(&map).ok();
     security_framework::passwords::delete_generic_password(SERVICE, &account()).ok();
 }
 
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct Auth {
     http: reqwest::Client,
 }

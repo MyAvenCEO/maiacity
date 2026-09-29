@@ -95,6 +95,8 @@ impl Peer {
         };
         let small = |p: &str| FilterKind::Prefix(bytes::Bytes::copy_from_slice(p.as_bytes()));
         doc.set_download_policy(DownloadPolicy::NothingExcept(vec![small("meta/"), small("ingest/"), small("device/")])).await?;
+        // live: iroh-docs only accepts a device's sync for a catalog that is syncing (else it closes the stream)
+        doc.start_sync(vec![]).await?;
         let author = docs.author_default().await?;
 
         Ok(Arc::new(Self {

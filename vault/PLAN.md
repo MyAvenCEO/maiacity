@@ -1,7 +1,7 @@
 # maiaCITY Studio + media vault — the task list
 
 Everything Samuel asked for, in order, with where it stands. Design and reasons: `.claude/skills/iroh/maiacity.md`.
-Status: ✅ done · 🔨 in progress · ⏳ next · 💤 deferred on purpose.  Last update: 2026-09-29, 17:10.
+Status: ✅ done · 🔨 in progress · ⏳ next · 💤 deferred on purpose.  Last update: 2026-09-29, 17:45.
 
 ## Done
 
@@ -34,7 +34,8 @@ Status: ✅ done · 🔨 in progress · ⏳ next · 💤 deferred on purpose.  L
     - ✅ Docker (`vault/Dockerfile.server`), compose service (profile `vault`), Caddy routes, CI image job,
       firewall UDP 7400, deploy env
     - ✅ local end-to-end test of the iroh path (local Postgres, no S3): pairing, relay, joining, catalog sync, mirror
-    - 🔨 release 3b → the bucket path tested live on the server (never a local S3 stand-in)
+    - ✅ live: the vault container runs (release 3b); the pre-deploy backup reaches the bucket (589 KB, no media)
+    - 🔨 release 3c: Caddy reloads its routes (/relay, /vault/*) — then the bucket path tested live
 17. 🔨 **Automatic sync**: ✅ Mac side of joining (allowlist, relay at runtime, shared catalog, own entries carried
     over); ✅ the app pairs and joins by itself after sign-in; ✅ files only the server holds come down from the
     gateway, hash-checked, into the store; ⏳ bandwidth policy (~75 % by day); ⏳ "safe to
@@ -42,28 +43,29 @@ Status: ✅ done · 🔨 in progress · ⏳ next · 💤 deferred on purpose.  L
 
 ## Next
 
-24. ✅ **Copies view per file** (badges in Library and Ingest; "safe to format" at two verified copies) (Ingest and Library): every copy — this Mac's SSD, the server (Object Storage) —
-    checksum-verified or not, and the live sync state (queued, transferring %, done).
-25. 🔨 **Devices & storage**: ✅ panel with paired devices (only these sync; revoke), this Mac's store, the server;
-    ⏳ the Hetzner server (Object Storage) + a local SSD chosen in the app (the internal one
-    now, an external one later); moving the vault to another drive.
-26. ⏳ **Media bytes out of Postgres**: (a) every file in production's media library verified against this Mac's
-    `library/` (missing ones downloaded and checked by CID), (b) then `media_chunks` emptied — **asks Samuel first**
-    (it cannot be undone, and until the vault serves them, originals not on Bunny stop loading from the API);
-    daily backups without media bytes from then on.
+24. ✅ **Copies view per file** in Library and Ingest: this Mac (verified / partial / missing) and the server's Object
+    Storage (stored / syncing), live; "safe to format" once every file of a batch has two verified copies.
+25. ✅ **Devices & storage**: panel with the paired devices (only these sync; revoke any), this Mac's store, the
+    server; the vault moves to another drive (the external SSD — same node, fills itself from the network).
+    Defaults: the server (Object Storage) + this Mac's SSD.
+26. 🔨 **Media bytes out of Postgres**: ✅ (a) all 541 production files (6.6 GB) exist in `library/` and re-hash to
+    their CID; ✅ backups without media bytes; ⏳ (b) empty `media_chunks` — Samuel decided: **right after the vault
+    serves the files** (after 19).
 18. ⏳ **Day 01 pilot, live**: served from the gateway on the real site.
-19. ⏳ **Migrate the other 855 files** to BLAKE3 hashes into the vault; references rewritten; `ipfs-unixfs-importer`
-    removed.
+19. 🔨 **Migrate the library**: ✅ all 856 files in this Mac's vault (8.52 GB, 36 s, 0 mismatches); ✅ CID → hash map
+    and rewrite tool; ✅ the site reads hashes (gateway) and plays vault films from it; ⏳ Day 01 references rewritten
+    (ready, held back until the server holds the files); ⏳ the rest after the pilot; ⏳ `ipfs-unixfs-importer` removed.
 20. ⏳ **Delete Bunny** (CDN + Stream) once the site runs from the gateway (Samuel said yes).
 14. b) ⏳ colour transforms and LUTs in Rust (input transforms, ACEScct, the ACES 2.0 output transform), stills proxies
     c) ⏳ render: Metal compositing, audio mix, captions, loudness QC (`ebur128`)
     d) ⏳ world plates and hero frames in the app's own WebView
 15. ⏳ **Render test run**: Day 19 world timeline, an Apple Log 2 clip, Edit → Lock → Grade → Render — natively.
 21. ⏳ Automatic proxies for RAW (the render worker's proxy jobs, run by the app); HLS later if needed.
-23. ⏳ **MCP control of the whole studio**: an MCP server inside the Mac app (localhost, key-gated) so Claude Code
-    or any agent can drive every step — ingest, library enrichment (titles, tags, relations), edit, audio, grade,
-    render, deliveries (blog, Instagram, X, LinkedIn …) in draft and publish mode. Every tool is the same native
-    function the studio's buttons call.
+23. 🔨 **MCP control of the whole studio**: ✅ MCP server inside the Mac app (127.0.0.1:4545/mcp, token-gated, acts
+    with the app's key) with tools: vault_status, library_list, library_copies, ingest, library_describe
+    (enrichment), media_probe, media_proxy, timelines_list, timeline_save, render_queue, renders_list, content_list,
+    content_create, content_save (draft → publish), api_call; ✅ the connect command in the Devices panel;
+    ⏳ tested from Claude Code once the new app runs; ⏳ native grade/render tools with 14b–c.
 22. ⏳ A `main` release after each step; the last when everything is in.
 
 ## Deferred on purpose

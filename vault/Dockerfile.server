@@ -1,11 +1,19 @@
 # vault-server — the media vault's peer on the Hetzner server (built by .github/workflows/api.yml).
 # Only this crate is compiled; the Mac-only crates (app, vault-media) are never built here.
-FROM rust:1-bookworm AS build
+# cargo-chef keeps the compiled dependencies in their own layer, so a change to our code rebuilds only our crate
+# (the layers are cached between CI runs).
+FROM lukemathwalker/cargo-chef:latest-rust-1-bookworm AS chef
 WORKDIR /src
+
+FROM chef AS planner
 COPY vault/ ./
-RUN --mount=type=cache,target=/usr/local/cargo/registry \
-    --mount=type=cache,target=/src/target \
-    cargo build --release --locked -p vault-server && cp target/release/vault-server /vault-server
+RUN cargo chef prepare --recipe-path recipe.json
+
+FROM chef AS build
+COPY --from=planner /src/recipe.json recipe.json
+RUN cargo chef cook --release --locked --package vault-server --recipe-path recipe.json
+COPY vault/ ./
+RUN cargo build --release --locked -p vault-server && cp target/release/vault-server /vault-server
 
 FROM debian:bookworm-slim
 RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates && rm -rf /var/lib/apt/lists/*
