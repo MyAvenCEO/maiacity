@@ -32,6 +32,13 @@ the terminal is signed in with `bun media login --local`. `FAL_API_KEY` lives in
 4. Export: **⤓ Render** in the studio, with `bun film worker --local` running. The worker renders the timeline exactly
    as edited into every shape (16:9 4K HEVC master + 1080 H.264, 9:16, 1:1), lays the hook text over the social
    copies' first seconds, and brings each file into the library and onto the content board.
+   Colour-managed (game/film/color.js, transforms.js): each picture clip goes through its input transform into
+   ACEScct, its grade and the film's look, the ACES 2.0 output transform to Rec.709, then the captions; an ungraded
+   Rec.709/sRGB clip bypasses both and renders as it was. Every delivery is QC'd (BT.709/TV tags, 10-bit master,
+   frames, loudness) before the library. The same worker makes each new file's HD log proxy (`meta.color`,
+   `meta.proxy`) and the studio's preview LUTs. It needs ffmpeg with zimg (Homebrew's has it) and
+   `pip install opencolorio numpy`; LUTs are baked from the configs while rendering, cached in ~/.cache/maiacity.
+   EXR sequences (Luma, Kling, LTX exports) come in with `bun media add-sequence <dir> --profile aces2065-1 --fps 24`.
 
 **Projects and variants:** timelines are grouped by `project` ("Day 19") with variants A, B, C…; each variant is its own
 timeline.
