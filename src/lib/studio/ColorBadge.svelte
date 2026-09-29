@@ -10,6 +10,15 @@
 	/** @type {{ s: import('./studio.svelte.js').Studio, m: import('$lib/auth/client').MediaItem, compact?: boolean }} */
 	let { s, m, compact = false } = $props();
 	let open = $state(false);
+	/** where the menu opens: fixed on the page, beside the badge, never cut off by the panel it is in */
+	let at = $state({ top: 0, left: 0 });
+	/** @param {MouseEvent} e */
+	function toggle(e) {
+		e.stopPropagation();
+		const r = /** @type {HTMLElement} */ (e.currentTarget).getBoundingClientRect();
+		at = { top: Math.max(8, Math.min(r.bottom + 4, innerHeight - 380)), left: Math.max(8, Math.min(r.left, innerWidth - 256)) };
+		open = !open;
+	}
 	const p = $derived(profileFor(m));
 	const c = $derived(colorOf(m));
 	const title = $derived(
@@ -38,11 +47,11 @@
 		aria-label="Colour: {profileInfo(p.profile).label}"
 		aria-expanded={open}
 		onpointerdown={(e) => e.stopPropagation()}
-		onclick={(e) => (e.stopPropagation(), (open = !open))}>{short(p.profile)}</button
+		onclick={toggle}>{short(p.profile)}</button
 	>
 	{#if open}
 		<!-- svelte-ignore a11y_no_static_element_interactions, a11y_click_events_have_key_events -->
-		<div class="menu" role="menu" tabindex="-1" onpointerdown={(e) => e.stopPropagation()} onclick={(e) => e.stopPropagation()}>
+		<div class="menu" role="menu" tabindex="-1" style:top="{at.top}px" style:left="{at.left}px" onpointerdown={(e) => e.stopPropagation()} onclick={(e) => e.stopPropagation()}>
 			<p>What this picture is</p>
 			{#each PROFILE_CHOICES as k (k)}
 				<button role="menuitemradio" aria-checked={p.profile === k} class:on={p.profile === k} onclick={() => choose(k === c?.profile ? null : k)}>
@@ -96,10 +105,10 @@
 	}
 
 	.menu {
-		position: absolute;
-		top: 1.3rem;
-		left: 0;
-		z-index: 30;
+		position: fixed;
+		z-index: 300;
+		max-height: 370px;
+		overflow: auto;
 		display: flex;
 		flex-direction: column;
 		width: 15rem;

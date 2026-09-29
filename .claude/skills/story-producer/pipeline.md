@@ -57,10 +57,28 @@ start to the next shot's start; the last to `total` = the last line's end + `TAI
 
 ## The studio and the library
 
-**Studio** (`/app/studio`): tracks **V1 Picture**, **A1 Voice**, **A2 Music**, **A3 Sound**, **T1 Captions** (built from
-the A1 takes' word timings, phrase by phrase, two lines at most). Drag files onto tracks, drag clips to move, edges to
-trim; Space plays, ←/→ seek. Frames 1:1, 16:9, 9:16, 4:5. One Web Audio clock, sample-exact. **⛶ Play full screen**
-plays the picture alone. **⤓ Render** queues a job for the worker.
+**Studio** (`/app/studio`, code in `src/lib/studio/`): three working steps like DaVinci Resolve's pages, over one
+timeline, its stage shown at the top (edit → locked → graded → rendered, and its version).
+- **Edit** — tracks **V1 Picture**, **A1 Voice**, **A2 Music**, **A3 Sound**, **T1 Captions** (built from the A1 takes'
+  word timings, phrase by phrase, two lines at most). Drag files onto tracks, drag clips to move, edges to trim; Space
+  plays, ←/→ seek. One Web Audio clock, sample-exact. Pictures play from their **HD log proxies** (a "no proxy yet"
+  badge when there is none), through the viewer's colour path on the GPU: the proxy's input transform → (optionally
+  the grade, "Grade preview") → the output transform to Rec.709, from the worker's preview LUTs (a formula fallback,
+  labelled, while they are missing). Every picture shows its colour profile; click the badge to set it by hand (the
+  proxy is made again). **World clips** (shots as data, `/api/shots`) sit on V1; the live world (Sandbox 4 in film
+  mode, `__film`) draws them on the timeline's clock, their HD proxy plays while it is not ready, a stand-in without
+  either. Selected, a world clip opens its lanes — camera keys (double-click adds, drag moves, Delete removes), hour,
+  exposure, lights, cues (a sound cue lands on A3) — and **● Record a move** flies the camera over the playing
+  timeline. Every change is a new version of the shot; the clip follows it. **◎ Prepare playback** loads every world
+  the timeline touches. **🔒 Lock the edit** ends the step.
+- **Grade** (the locked cut, on originals) — conform status (originals swapped in, plates per shape, from the last
+  render's report), the **film look** and each clip's **grade** as ASC CDL in ACEScct (slope · offset · power per
+  channel, saturation), presets, a world shot's "lit for" look, **scopes** (waveform, RGB parade, vectorscope, false
+  colour), and the **shape switcher** (16:9 · 9:16 · 1:1 · 4:5) with each media clip's framing per shape. Grades are
+  data on the timeline; nothing is baked. **Unlock** makes version n+1 and keeps every clip's grade.
+- **Render** — **⤓ Render every delivery** queues the job for the worker; the job's stage, progress and report
+  (transforms by config hash, conformed clips, plates, warnings); the last render's deliveries per shape with QC and
+  loudness, each viewable; the worker's queue.
 
 **Media library** (`/app/media`, `api/scripts/media.ts`): `library/` is the single source of truth — every file once as
 `<cid>.<ext>` with `<cid>.json` (title, description, tags, meta, public). **Everything references a file by its CID;
