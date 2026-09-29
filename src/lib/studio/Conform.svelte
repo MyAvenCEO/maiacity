@@ -1,9 +1,11 @@
 <!--
 	Conform (Grade tab): what the grade is made on. Every media clip goes back to its original (through its input
-	transform); every world clip is rendered by the worker as an ACEScct plate per delivery shape. This only shows how
-	far that is — the worker does the work (plate jobs, C6) — and which preview LUTs the viewer has.
+	transform); every world clip is rendered by the worker as an ACEScct plate per delivery shape. The worker does it
+	while it renders (C6): this shows what the last render's report says it used — originals swapped in for proxies,
+	plates rendered or reused from the cache — and which preview LUTs the viewer has.
 -->
 <script>
+	import { bakeLuts } from '$lib/auth/client';
 	import ColorBadge from './ColorBadge.svelte';
 	import { ODT, profileFor, profileInfo } from './color.js';
 	import { SHAPES, clockText, isWorld } from './studio.svelte.js';
@@ -12,9 +14,15 @@
 	let { s } = $props();
 
 	const v1 = $derived(s.clips.filter((c) => c.track === 'V1').sort((a, b) => a.start - b.start));
-	/** @param {string} clipId @param {string} shape */
-	const plate = (clipId, shape) =>
-		[...s.plateJobs].sort((a, b) => Date.parse(b.created) - Date.parse(a.created)).find((j) => j.clip_id === clipId && j.shape === shape);
+	/** A world clip's plate in a shape, as the last render made it (or found it in the cache). @param {string} clipId @param {string} shape */
+	const plate = (clipId, shape) => s.lastReport?.plates?.find((p) => p.clip === clipId && p.aspect === shape);
+	/** Did the last render swap this clip's proxy for its original? @param {string} clipId */
+	const swapped = (clipId) => s.lastReport?.conformed?.some((x) => x.clip === clipId);
+	let baking = $state('');
+	async function bake() {
+		baking = 'queued…';
+		baking = await bakeLuts().then(() => 'queued for the worker', (e) => e.message);
+	}
 	/** the preview LUTs the viewer needs for this timeline's pictures */
 	const needed = $derived.by(() => {
 		const names = new Set([ODT]);
@@ -49,14 +57,14 @@
 				<div class="st">
 					{#if isWorld(c)}
 						{#each SHAPES as sh (sh)}
-							{@const j = plate(c.id, sh)}
-							<span class="plate {j?.status ?? 'none'}" title={j ? `${sh} plate: ${j.status}${j.note ? ` — ${j.note}` : ''}` : `${sh} plate: not rendered yet`}>
-								{sh} {j ? (j.status === 'rendering' ? `${Math.round(j.progress * 100)}%` : j.status === 'done' ? '✓' : j.status) : '–'}
+							{@const p = plate(c.id, sh)}
+							<span class="plate" class:done={!!p} title={p ? `${sh} plate ${p.reused ? 'reused from the cache' : 'rendered'} by the last render` : `${sh} plate: not rendered yet`}>
+								{sh} {p ? (p.reused ? '↺' : '✓') : '–'}
 							</span>
 						{/each}
 					{:else if m}
 						<ColorBadge {s} {m} />
-						<span class="orig">{m.kind === 'image' ? 'still' : 'original'} ✓</span>
+						<span class="orig" title={swapped(c.id) ? 'The last render swapped the proxy cut in for this original' : ''}>{m.kind === 'image' ? 'still' : 'original'} ✓{swapped(c.id) ? ' (conformed)' : ''}</span>
 						{#if m.kind === 'video'}<span class="px">{s.proxy(m).cid ? 'proxy ✓' : 'no proxy'}</span>{/if}
 						{#if profileFor(m).profile === 'unknown'}<span class="warn">colour unknown</span>{/if}
 					{/if}
@@ -64,8 +72,11 @@
 			</li>
 		{/each}
 	</ul>
-	{#if worldCount && !s.jobsKnown}
-		<p class="note">The plates' progress shows once the API lists jobs (<code>GET /api/renders?kind=plate</code>).</p>
+	{#if worldCount && !s.lastReport}
+		<p class="note">The plates are rendered with the film (Render tab); their status shows here after the first render.</p>
+	{/if}
+	{#if s.lastReport?.warnings?.length}
+		<ul class="warn">{#each s.lastReport.warnings as w, i (i)}<li>{w}</li>{/each}</ul>
 	{/if}
 	<h3>Preview LUTs</h3>
 	<p class="sum">
@@ -76,6 +87,9 @@
 			<li><span class:ok={!!s.luts[n]} class="dot"></span>{n} {s.luts[n] ? `· ${s.luts[n]?.size}³` : '· missing'}</li>
 		{/each}
 	</ul>
+	{#if needed.some((n) => !s.luts[n])}
+		<button class="ghost small" onclick={bake} disabled={!!baking}>{baking || 'Bake the preview LUTs'}</button>
+	{/if}
 </aside>
 
 <style>
@@ -105,10 +119,6 @@
 		margin: 0;
 		font-size: 0.72rem;
 		color: var(--dim);
-	}
-
-	.note code {
-		font-size: 0.66rem;
 	}
 
 	.seg {
@@ -215,15 +225,13 @@
 		color: #2f7d4f;
 	}
 
-	.plate.rendering,
-	.plate.queued {
-		border-color: #d4a64a;
-		color: #a8741a;
-	}
-
-	.plate.failed {
-		border-color: #d49a8a;
-		color: #9c3b26;
+	ul.warn {
+		padding: 0.4rem 0.5rem 0.4rem 1.2rem;
+		border-radius: 6px;
+		background: #fbf1dc;
+		list-style: disc;
+		font-size: 0.68rem;
+		color: #7a5a17;
 	}
 
 	.luts li {

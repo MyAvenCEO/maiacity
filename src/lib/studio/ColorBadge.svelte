@@ -1,9 +1,11 @@
 <!--
 	A picture's colour profile, as a small badge: what the ingest detected (meta.color.profile) or what was set by hand
-	(meta.color.override, underlined). A click opens the menu to set it — the proxy is made again from the new one.
+	(meta.color.override, underlined). A click opens the menu to set it — the API queues the proxy again from the new
+	one — or to have the worker make the proxy again as it is.
 -->
 <script>
-	import { PROFILE_CHOICES, colorOf, profileFor, profileInfo, short } from './color.js';
+	import { remakeProxy } from '$lib/auth/client';
+	import { PROFILE_CHOICES, colorOf, isVideo, profileFor, profileInfo, short } from './color.js';
 
 	/** @type {{ s: import('./studio.svelte.js').Studio, m: import('$lib/auth/client').MediaItem, compact?: boolean }} */
 	let { s, m, compact = false } = $props();
@@ -16,7 +18,12 @@
 	/** @param {string | null} profile */
 	function choose(profile) {
 		open = false;
-		void s.setOverride(m, profile);
+		void s.setOverride(m, profile).then(() => s.refreshJobs());
+	}
+	async function remake() {
+		open = false;
+		await remakeProxy(m.cid).catch((e) => (s.error = e.message));
+		void s.refreshJobs();
 	}
 </script>
 
@@ -43,6 +50,7 @@
 				</button>
 			{/each}
 			{#if p.override}<button class="reset" onclick={() => choose(null)}>Back to the detected profile</button>{/if}
+			{#if isVideo(m)}<button class="reset" onclick={remake}>Make its proxy again</button>{/if}
 		</div>
 	{/if}
 </span>

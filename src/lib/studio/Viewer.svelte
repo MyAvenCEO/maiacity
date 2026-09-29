@@ -1,6 +1,6 @@
 <!--
 	The viewer: a picture (a video, a still or a canvas) through its input transform, the grades and the output
-	transform, drawn by the GPU (gl.ts) every frame it changes. It covers its frame the way the render crops, and a
+	transform, drawn by the GPU (gl.js) every frame it changes. It covers its frame the way the render crops, and a
 	clip's own framing for the shape moves and zooms it. Without WebGL2 it says so and draws nothing: the monitor then
 	shows the pictures themselves, colour unmanaged.
 -->

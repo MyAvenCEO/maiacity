@@ -62,7 +62,11 @@
 			shotsNote = /** @type {Error} */ (e).message;
 		}
 	}
-	$effect(() => void loadShots());
+	// the shots again whenever one changes (a new version saved from the lanes)
+	$effect(() => {
+		void s.shotRev;
+		void loadShots();
+	});
 	async function addShot() {
 		const name = prompt('Name the new world shot', `Shot ${shots.length + 1}`);
 		if (!name) return;

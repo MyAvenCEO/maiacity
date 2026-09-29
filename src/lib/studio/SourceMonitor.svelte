@@ -5,7 +5,7 @@
 -->
 <script>
 	import ColorBadge from './ColorBadge.svelte';
-	import { profileFor } from './color.js';
+	import { isSequence, profileFor, proxyProfileOf } from './color.js';
 	import { clockText, itemName, raw, tint } from './studio.svelte.js';
 	import Viewer from './Viewer.svelte';
 	import { wave } from './wave.js';
@@ -33,12 +33,12 @@
 	const av = $derived(m?.kind === 'audio' || m?.kind === 'video');
 	// a video plays from its proxy in Edit (the proxy's own profile then), the original elsewhere
 	const px = $derived(s.proxy(m));
-	const useProxy = $derived(s.tab === 'edit' && !!px.cid);
+	const useProxy = $derived((s.tab === 'edit' || isSequence(m)) && !!px.cid);
 	const playItem = $derived((useProxy && px.cid && s.byCid.get(px.cid)) || m);
 	const url = $derived(m ? (m.kind === 'video' ? raw(useProxy && px.cid ? px.cid : m.cid) : m.kind === 'audio' ? (s.sources[m.cid]?.url ?? raw(m.cid)) : raw(m.cid)) : '');
 	const profile = $derived.by(() => {
 		const own = profileFor(playItem);
-		return own.guessed && m ? profileFor(m).profile : own.profile;
+		return own.guessed && m && playItem !== m ? proxyProfileOf(profileFor(m).profile) : own.profile;
 	});
 	const len = $derived(
 		Number.isFinite(srcDuration) && srcDuration > 0 ? srcDuration : m && av ? (s.sources[m.cid]?.duration ?? (Number(m.meta?.duration_s) || 0)) : 0

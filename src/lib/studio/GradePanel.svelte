@@ -74,7 +74,7 @@
 		<button role="tab" aria-selected={film} class:on={film} onclick={() => (s.gradeTarget = 'film')}>Film look</button>
 	</div>
 	<p class="what">
-		{#if film}The whole film's look{#if s.current?.grade?.preset} · <b>{s.current.grade.preset}</b>{/if}{:else}{clip ? s.clipName(clip) : ''}{#if presetOf(clip?.grade) && presetOf(clip?.grade) !== 'neutral'} · <b>{presetOf(clip?.grade)}</b>{/if}{/if}
+		{#if film}The whole film's look{#if s.current?.grade?.preset}&nbsp;· <b>{s.current.grade.preset}</b>{/if}{:else}{clip ? s.clipName(clip) : ''}{#if presetOf(clip?.grade) && presetOf(clip?.grade) !== 'neutral'}&nbsp;· <b>{presetOf(clip?.grade)}</b>{/if}{/if}
 		{#if !isNeutral(g)}<span class="on">graded</span>{/if}
 	</p>
 

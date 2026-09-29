@@ -175,6 +175,7 @@
 
 	h3 {
 		margin: 0.8rem 0 0.2rem;
+		font-family: var(--font-body);
 		padding-top: 0.5rem;
 		border-top: 1px solid var(--edge);
 		font-size: 0.66rem;

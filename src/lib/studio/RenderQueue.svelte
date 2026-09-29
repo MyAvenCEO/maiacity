@@ -79,6 +79,16 @@
 				{/if}
 			{:else if r.status === 'done'}
 				<p class="rp-meta">{when(r.created)} · took {mmss(s.took(r))}</p>
+				{#if r.report}
+					{@const rep = r.report}
+					{@const tr = Object.entries(rep.color?.transforms ?? {})}
+					<dl class="rep">
+						{#if tr.length}<dt>Transforms</dt><dd class="tr">{#each tr as [name, v] (name)}<code title={typeof v === 'string' ? `config hash ${v}` : JSON.stringify(v)}>{name}</code>{/each}</dd>{/if}
+						{#if rep.conformed?.length}<dt>Conformed</dt><dd>{rep.conformed.length} clip{rep.conformed.length === 1 ? '' : 's'}: proxy → original</dd>{/if}
+						{#if rep.plates?.length}<dt>Plates</dt><dd>{rep.plates.length} · {rep.plates.filter((p) => p.reused).length} reused from the cache</dd>{/if}
+						{#if rep.warnings?.length}<dt>Warnings</dt><dd class="w">{rep.warnings.join(' · ')}</dd>{/if}
+					</dl>
+				{/if}
 				{#if r.output_cid}
 					<div class="rp-acts">
 						<button class="ghost" onclick={() => s.openFile(r.output_cid)}>▶ Play in the viewer</button>
@@ -123,7 +133,7 @@
 					<li>
 						<span class="st {j.status}">{j.kind ?? 'render'}</span>
 						<span class="d">{j.status}{j.status === 'rendering' ? ` ${Math.round(j.progress * 100)}%` : ''}</span>
-						<span class="tgt">{j.timeline_id === s.current?.id ? 'this timeline' : (j.media_cid?.slice(0, 10) ?? j.timeline_id?.slice(0, 8) ?? '')}{j.shape ? ` · ${j.shape}` : ''}</span>
+						<span class="tgt">{j.timeline_id === s.current?.id ? 'this timeline' : (j.media_cid?.slice(0, 10) ?? j.timeline_id?.slice(0, 8) ?? '')}{j.kind === 'proxy' && j.media_cid ? ` · ${s.byCid.get(j.media_cid)?.title ?? ''}` : ''}</span>
 					</li>
 				{/each}
 			</ul>
@@ -283,6 +293,37 @@
 		white-space: pre-wrap;
 		overflow-wrap: anywhere;
 		color: #9c3b26;
+	}
+
+	.rep {
+		display: grid;
+		grid-template-columns: auto 1fr;
+		gap: 0.15rem 0.5rem;
+		margin: 0.45rem 0 0;
+		font-size: 0.7rem;
+	}
+
+	.rep dt {
+		color: var(--dim);
+	}
+
+	.rep dd {
+		margin: 0;
+		overflow-wrap: anywhere;
+	}
+
+	.rep code {
+		font-size: 0.64rem;
+	}
+
+	.rep .tr {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.1rem 0.5rem;
+	}
+
+	.rep .w {
+		color: #7a5a17;
 	}
 
 	.rp-acts {

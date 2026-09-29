@@ -129,7 +129,7 @@
 		<canvas class="stand" class:on={!gl && isWorld(pic) && !live && !worldVideo} bind:this={stand}></canvas>
 		<Viewer
 			{source}
-			profile={s.profileOfClip(pic)}
+			profile={source && source === stand ? 'srgb' : s.profileOfClip(pic)}
 			grades={s.gradesOf(pic)}
 			luts={s.luts}
 			aspect={ratio(s.viewShape)}
@@ -142,7 +142,8 @@
 		{#if s.wantWorld}
 			<iframe class="world" class:on={live} bind:this={iframe} title="The world (film mode)" tabindex="-1"></iframe>
 		{/if}
-		<div class="shade"></div>
+		<!-- the captions' backdrop (as the render sets it); not in Grade, where the picture itself is judged -->
+		{#if s.tab !== 'grade'}<div class="shade"></div>{/if}
 		{#if s.caption.length}
 			<p class="caption">
 				{#each s.caption as w, i (i)}<span class:lit={w.t <= s.time}>{w.word}</span>{' '}{/each}

@@ -17,7 +17,7 @@ import {
 	queueRender,
 	saveTimeline
 } from '$lib/auth/client';
-import { clean, gradesFor, isCache, presetOf, profileFor, proxyFor } from './color.js';
+import { asStudio, clean, gradesFor, isCache, isSequence, presetOf, profileFor, proxyFor, proxyProfileOf } from './color.js';
 import { c1Knows, fromServer, toServer } from './legacy.js';
 import { loadLut, lutIndex } from './luts.js';
 import { cached, evaluate, saveSpec, shotAt } from './shots.js';
@@ -112,7 +112,7 @@ export class Studio {
 	current = $state(null);
 	/** @type {'saved' | 'saving' | 'unsaved'} */
 	saving = $state('saved');
-	/** does the API keep C1's fields (stage, grades, world clips)? Until it does, legacy.ts keeps them here */
+	/** does the API keep C1's fields (stage, grades, world clips)? Until it does, legacy.js keeps them here */
 	c1 = $state(true);
 
 	/** @type {Clip[]} */
@@ -186,8 +186,7 @@ export class Studio {
 	scopeCanvas = $state(null);
 	/** @type {Map<string, RenderJob>} */
 	proxyJobs = $state(new Map());
-	/** @type {RenderJob[]} */
-	plateJobs = $state([]);
+
 	jobsKnown = $state(false);
 
 	// the world
@@ -346,7 +345,8 @@ export class Studio {
 		const m = c.cid ? this.byCid.get(c.cid) : undefined;
 		if (m?.kind !== 'video' || !this.sources[m.cid]) return null;
 		const p = this.proxy(m);
-		return this.onProxies && p.cid ? raw(p.cid) : this.sources[m.cid].url;
+		// an EXR sequence plays only through its proxy (the browser cannot play a tar of frames)
+		return (this.onProxies || isSequence(m)) && p.cid ? raw(p.cid) : isSequence(m) ? null : this.sources[m.cid].url;
 	}
 	/**
 	 * The library file a clip's picture is taken from now (the proxy or the original), for its colour profile.
@@ -357,7 +357,7 @@ export class Studio {
 		if (isWorld(c)) return this.worldProxy(c) ?? undefined;
 		const m = c.cid ? this.byCid.get(c.cid) : undefined;
 		const p = this.proxy(m);
-		return (this.onProxies && p.cid && this.byCid.get(p.cid)) || m;
+		return ((this.onProxies || isSequence(m)) && p.cid && this.byCid.get(p.cid)) || m;
 	}
 	/**
 	 * A world clip's HD proxy (the worker renders one whenever the shot changes): a role:proxy file naming the shot and version.
@@ -374,8 +374,8 @@ export class Studio {
 		if (isWorld(c)) return 'acescct'; // the world renders ACEScct (film mode, C3), and so do its proxies
 		const it = this.playItem(c);
 		const own = profileFor(it);
-		// a proxy without its own colour info is taken as its original is
-		if (own.guessed && c?.cid) return profileFor(this.byCid.get(c.cid)).profile;
+		// a proxy without its own colour info is in the encoding its original's profile gives its proxy (rule 2)
+		if (own.guessed && c?.cid && it?.cid !== c.cid) return proxyProfileOf(profileFor(this.byCid.get(c.cid)).profile);
 		return own.profile;
 	}
 	/**
@@ -396,7 +396,7 @@ export class Studio {
 			return void (this.phase = 'signed-out');
 		}
 		try {
-			const [media, tls] = await Promise.all([listMedia().then((r) => r.media), listTimelines()]);
+			const [media, tls] = await Promise.all([listMedia().then((r) => asStudio(r.media)), listTimelines()]);
 			this.library = media;
 			this.c1 = tls.length ? tls.some((t) => c1Knows(t)) : true;
 			this.timelines = tls.map(fromServer);
@@ -427,19 +427,19 @@ export class Studio {
 		this.luts = Object.fromEntries(got);
 	}
 
-	/** Proxy and plate jobs (C6); an API without the job list leaves the proxy state to the files' meta. */
+	/**
+	 * The worker's jobs (C6, `GET /api/film/jobs`): each file's newest proxy job (its proxy state until meta.proxy is
+	 * written), and the whole queue. An API without the list leaves the proxy state to the files' meta.
+	 */
 	async refreshJobs() {
 		try {
-			const proxies = await listJobs({ kind: 'proxy' });
+			const [proxies, all] = await Promise.all([listJobs({ kind: 'proxy', limit: 500 }), listJobs({ limit: 100 })]);
 			/** @type {Map<string, RenderJob>} */
 			const map = new Map();
-			for (const j of [...proxies].sort((a, b) => Date.parse(a.created) - Date.parse(b.created))) if (j.media_cid) map.set(j.media_cid, j);
+			for (const j of proxies) if (j.media_cid && !map.has(j.media_cid)) map.set(j.media_cid, j); // newest first
 			this.proxyJobs = map;
 			this.jobsKnown = true;
-			if (this.current) this.plateJobs = await listJobs({ kind: 'plate', timeline_id: this.current.id });
-			/** @returns {RenderJob[]} */
-			const none = () => [];
-			this.queue = [...(await listJobs({ status: 'rendering' }).catch(none)), ...(await listJobs({ status: 'queued' }).catch(none))];
+			this.queue = all.filter(running).sort((a, b) => (a.status === b.status ? Date.parse(a.created) - Date.parse(b.created) : a.status === 'rendering' ? -1 : 1));
 		} catch (e) {
 			if (!missing(e)) console.warn('jobs:', /** @type {Error} */ (e).message);
 			this.jobsKnown = false;
@@ -1067,7 +1067,7 @@ export class Studio {
 		if (ended.length) {
 			this.showRenders = true;
 			if (ended.some((r) => r.status === 'done')) {
-				this.library = await listMedia().then((r) => r.media).catch(() => this.library);
+				this.library = await listMedia().then((r) => asStudio(r.media)).catch(() => this.library);
 				if (this.stage === 'locked' || this.stage === 'graded') this.setMeta({ stage: 'rendered' });
 			}
 		}
@@ -1076,19 +1076,26 @@ export class Studio {
 	}
 	showRenders = $state(false);
 
+	/** The newest finished render of this timeline, and what its report says (the worker's, C6). */
+	lastRender = $derived(this.newest.find((r) => r.status === 'done') ?? null);
+	/** @type {import('$lib/auth/client').RenderReport | null} */
+	lastReport = $derived(this.lastRender?.report ?? null);
+
 	/**
-	 * The files the last render delivered. A newer worker puts them on the job (with QC and loudness); until then they
-	 * are the film's content item's deliveries from this timeline (ADAPTER: the listContent branch goes once jobs carry
-	 * `deliveries`).
+	 * The files the last render delivered: the film's content item keeps every delivery of this timeline (format,
+	 * channels, and from the colour-managed worker its QC and loudness); the render's own report fills in QC and
+	 * loudness where the item has none.
 	 */
 	async refreshDeliveries() {
 		const id = this.current?.id;
-		const done = this.newest.find((r) => r.status === 'done');
-		if (done?.deliveries?.length) return void (this.deliveries = done.deliveries);
-		if (!id || !done) return void (this.deliveries = []);
+		if (!id || !this.lastRender) return void (this.deliveries = []);
 		const items = await listContent().then((r) => r.items).catch(() => []);
 		if (this.current?.id !== id) return;
-		this.deliveries = /** @type {DeliveryRecord[]} */ (items.flatMap((i) => i.deliveries ?? []).filter((d) => d.timeline === id));
+		const fromReport = this.lastReport?.deliveries ?? [];
+		this.deliveries = /** @type {DeliveryRecord[]} */ (items.flatMap((i) => i.deliveries ?? []).filter((d) => d.timeline === id)).map((d) => {
+			const r = fromReport.find((x) => x.cid === d.cid && x.codec === d.codec);
+			return r ? { ...d, qc: d.qc ?? r.qc, loudness: d.loudness ?? r.loudness } : d;
+		});
 	}
 
 	/** @param {boolean} on */
@@ -1135,7 +1142,7 @@ export class Studio {
 		if (!cid) return;
 		let m = this.byCid.get(cid);
 		if (!m) {
-			this.library = await listMedia().then((x) => x.media).catch(() => this.library);
+			this.library = await listMedia().then((x) => asStudio(x.media)).catch(() => this.library);
 			m = this.library.find((x) => x.cid === cid);
 		}
 		if (m) this.pick(m);

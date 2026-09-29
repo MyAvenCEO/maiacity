@@ -27,7 +27,7 @@
 	const wc = $derived(s.tab === 'edit' && isWorld(s.sel) ? s.sel : null);
 	const spec = $derived(wc ? s.specOf(wc) : null);
 	const LANES = ['Camera', 'Hour', 'Exposure', 'Lights', 'Cues'];
-	const rows = $derived(`1.5rem repeat(5, minmax(1.7rem, 1fr))${spec ? ` repeat(${LANES.length}, 1.45rem)` : ''}`);
+	const rows = $derived(`1.5rem minmax(2.6rem, 1fr) repeat(4, minmax(1.7rem, 1fr))${spec ? ` repeat(${LANES.length}, 1.45rem)` : ''}`);
 	/** timeline time of a shot-local time in the open world clip */
 	/** @param {number} t */
 	const tl = (t) => (wc ? wc.start + (t - wc.in) : 0);
@@ -80,7 +80,8 @@
 	function scrub(e) {
 		const lanes = s.lanes;
 		if (!lanes) return;
-		s.selected = null;
+		// a click in the world clip's lanes moves the playhead and keeps the clip (and its lanes) in hand
+		if (!(/** @type {Element} */ (e.target)).closest?.('.lane')) s.selected = null;
 		s.selectedKey = null;
 		/** @param {PointerEvent} ev */
 		const put = (ev) => s.seek((ev.clientX - lanes.getBoundingClientRect().left) / s.pxPerSec);
@@ -231,10 +232,10 @@
 								{:else if m?.kind === 'audio' && src}
 									<canvas use:wave={{ peaks: src.peaks, from: c.in, to: c.in + c.dur, total: src.duration, color: tint(/** @type {Track} */ (t.id)) }}></canvas>
 								{/if}
-								<span class="label">{s.clipName(c)}{#if world}<i> v{c.shotVersion}</i>{/if}</span>
+								<span class="label">{s.clipName(c)}{#if world}<i>&nbsp;v{c.shotVersion}</i>{/if}</span>
 								{#if t.id === 'V1'}
 									<span class="chips">
-										{#if world}<b class="wtag">world</b>{:else if m}<ColorBadge {s} {m} />{#if m.kind === 'video' && !s.proxy(m).cid}<b class="nopx" title="No proxy yet: the original plays">no proxy</b>{/if}{/if}
+										{#if world}<b class="wtag">world</b>{:else if m}<ColorBadge {s} {m} />{#if m.kind === 'video' && !s.proxy(m).cid}{@const st = s.proxy(m).state}<b class="nopx" title="No proxy yet: the original plays">{st === 'none' ? 'no proxy' : `proxy ${st}`}</b>{/if}{/if}
 										{#if c.grade}<b class="gr" title="Graded">◐</b>{/if}
 									</span>
 								{/if}
@@ -468,15 +469,18 @@
 	}
 
 	.clip.image .label,
-	.clip.video .label {
+	.clip.video .label,
+	.clip.world .label {
 		left: auto;
 		right: 0.5rem;
+		max-width: calc(100% - 4.5rem);
 	}
 
+	/* on the left of the clip's top line (its name is on the right), so a short row still shows both */
 	.chips {
 		position: absolute;
-		right: 0.35rem;
-		bottom: 0.2rem;
+		top: 0.15rem;
+		left: 0.3rem;
 		display: flex;
 		gap: 0.2rem;
 		align-items: center;

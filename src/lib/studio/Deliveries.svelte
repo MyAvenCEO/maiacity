@@ -24,9 +24,27 @@
 	/** @param {unknown} x */
 	const secs = (x) => (typeof x === 'number' && x > 0 ? `${x.toFixed(1)} s` : '');
 	/** A QC report in whatever shape the worker gives it: { ok, checks: { name: ok | { ok, note } } }, a list, or a plain flag. */
-	/** @param {any} q @returns {Qc | null} */
+	/**
+	 * A QC report in whatever shape the worker gives it. Stream A's worker (scripts/film/qc.mjs) keeps, with every
+	 * delivery that passed, `{ frames, seconds, bitDepth, tags, bitrate, warnings }` (a failed QC stops the render);
+	 * other shapes — `{ ok, checks: { name: ok | { ok, note } } }`, a list, a flag — show as they come.
+	 * @param {any} q @returns {Qc | null}
+	 */
 	function qcOf(q) {
 		if (q === undefined || q === null) return null;
+		if (typeof q === 'object' && !Array.isArray(q) && ('frames' in q || 'bitDepth' in q)) {
+			const t = q.tags ?? {};
+			/** @type {Qc['items']} */
+			const items = [
+				...(q.frames !== undefined ? [{ name: `${q.frames} frames`, ok: true, note: q.seconds !== undefined ? `${Number(q.seconds).toFixed(2)} s` : undefined }] : []),
+				...(q.bitDepth ? [{ name: `${q.bitDepth}-bit`, ok: true }] : []),
+				...(q.bitrate ? [{ name: `${(q.bitrate / 1e6).toFixed(1)} Mb/s`, ok: true }] : []),
+				...(Object.keys(t).length ? [{ name: 'tags', ok: true, note: Object.values(t).join(' · ') }] : []),
+				...(Array.isArray(q.warnings) ? q.warnings.map((/** @type {string} */ w) => ({ name: w, ok: null })) : [])
+			];
+			const errors = Array.isArray(q.errors) ? q.errors : [];
+			return { ok: typeof q.ok === 'boolean' ? q.ok : errors.length ? false : true, items: [...errors.map((/** @type {string} */ e) => ({ name: e, ok: false })), ...items] };
+		}
 		if (typeof q === 'boolean') return { ok: q, items: [] };
 		if (Array.isArray(q)) {
 			const items = q.map((/** @type {any} */ x, /** @type {number} */ i) => ({ name: String(x?.name ?? x?.check ?? `check ${i + 1}`), ok: typeof x?.ok === 'boolean' ? x.ok : typeof x?.pass === 'boolean' ? x.pass : null, note: x?.note ?? x?.message }));
@@ -52,7 +70,10 @@
 		const l = d.loudness ?? {};
 		const lufs = l.lufs ?? l.integrated ?? l.I ?? d.lufs;
 		const tp = l.truePeak ?? l.true_peak ?? l.TP ?? d.truePeak ?? d.true_peak;
-		const parts = [lufs !== undefined ? `${Number(lufs).toFixed(1)} LUFS` : '', tp !== undefined ? `${Number(tp).toFixed(1)} dBTP` : ''].filter(Boolean);
+		const lra = l.lra ?? l.LRA;
+		/** @param {unknown} v */
+		const has = (v) => v !== undefined && v !== null;
+		const parts = [has(lufs) ? `${Number(lufs).toFixed(1)} LUFS` : '', has(tp) ? `${Number(tp).toFixed(1)} dBTP` : '', has(lra) ? `LRA ${Number(lra).toFixed(1)} LU` : ''].filter(Boolean);
 		return parts.length ? parts.join(' · ') : null;
 	}
 	/** @param {Record<string, unknown>} d */
@@ -84,7 +105,7 @@
 					{#if loud}<p class="loud">{loud}</p>{/if}
 					{#if qc?.items.length}
 						<ul class="checks">
-							{#each qc.items as it (it.name)}<li class:ok={it.ok === true} class:bad={it.ok === false}>{it.ok === true ? '✓' : it.ok === false ? '✗' : '·'} {it.name}{#if it.note} <i>{it.note}</i>{/if}</li>{/each}
+							{#each qc.items as it (it.name)}<li class:ok={it.ok === true} class:bad={it.ok === false}>{it.ok === true ? '✓' : it.ok === false ? '✗' : '·'} {it.name}{#if it.note}&nbsp;<i>{it.note}</i>{/if}</li>{/each}
 						</ul>
 					{/if}
 					{#if d.note}<p class="note">{d.note}</p>{/if}
@@ -120,6 +141,7 @@
 
 	h3 {
 		display: flex;
+		font-family: var(--font-body);
 		gap: 0.4rem;
 		align-items: baseline;
 		margin: 0.7rem 0 0.35rem;

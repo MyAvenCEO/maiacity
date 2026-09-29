@@ -13,6 +13,14 @@ import { API, filmLuts, missing } from '$lib/auth/client';
  * @typedef {'api' | 'library' | 'none'} LutSource
  */
 
+// game/film/transforms.js (stream A) reads the MLUT1 format itself. ADAPTER: it is not on this branch yet;
+// import.meta.glob finds it once it is (and nothing, with no build error, until then), and this file's own reader —
+// the same format — stands in. Once A has landed, `import { parseLut } from '../../../game/film/transforms.js'` can
+// replace the glob, and the MLUT1 branch below goes.
+/** @typedef {{ parseLut: (bytes: Uint8Array) => { header: { title?: string, hash?: string }, size: number, data: Float32Array } }} TransformsModule */
+const found = /** @type {Record<string, () => Promise<TransformsModule>>} */ (/** @type {unknown} */ (import.meta.glob('../../../game/film/transforms.js')));
+const transformsJs = Object.values(found)[0]?.().catch(() => null) ?? Promise.resolve(null);
+
 /** @param {Uint8Array} bytes */
 const gunzip = async (bytes) => {
 	const out = new Blob([/** @type {BlobPart} */ (bytes)]).stream().pipeThrough(new DecompressionStream('gzip'));
@@ -29,6 +37,11 @@ export async function parseLut(name, raw) {
 	let bytes = new Uint8Array(raw);
 	if (bytes[0] === 0x1f && bytes[1] === 0x8b) bytes = await gunzip(bytes);
 	const magic = new TextDecoder().decode(bytes.subarray(0, 5));
+	const tjs = magic === 'MLUT1' ? await transformsJs : null;
+	if (tjs) {
+		const { header, size, data } = tjs.parseLut(bytes);
+		return { name, size, data, title: header.title, hash: header.hash };
+	}
 	if (magic === 'MLUT1') {
 		const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
 		const hlen = view.getUint32(5, true);

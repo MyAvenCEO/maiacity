@@ -329,8 +329,10 @@ export async function deleteContent(id: string): Promise<void> {
 // ─────────────────────────────── exporting a timeline ───────────────────────────────
 
 /**
- * A job for the render worker (C6): a timeline's render, a file's proxy, a preview LUT or a world plate. Fields past
- * the first line come from newer workers and may be missing.
+ * A job for the render worker (C6): a timeline's render, a file's proxy (with its colour read), or the preview LUTs.
+ * `report` is what the worker says it did: for a render `{ color: { transforms }, conformed, plates, warnings,
+ * deliveries: [{ cid, aspect, codec, qc, loudness }] }`, for a proxy `{ color, proxy, proxyProfile, transforms }`.
+ * Fields past the first line come from newer APIs and may be missing.
  */
 export type RenderJob = {
 	id: string;
@@ -341,20 +343,29 @@ export type RenderJob = {
 	output_cid: string | null;
 	created: string;
 	updated: string;
-	kind?: 'render' | 'proxy' | 'lut' | 'plate';
+	kind?: 'render' | 'proxy' | 'lut';
 	media_cid?: string | null;
-	/** a plate job: the world clip and the delivery shape it is for */
-	clip_id?: string | null;
-	shape?: Shape | null;
-	/** a finished render: every file it delivered (format, channels, QC, loudness …) */
-	deliveries?: (Delivery & Record<string, unknown>)[];
+	report?: RenderReport | null;
+};
+/** A render's report (stream A's worker): every transform by its config hash, what was conformed, the plates, QC. */
+export type RenderReport = {
+	color?: { transforms?: Record<string, unknown>; [k: string]: unknown };
+	conformed?: { clip: string; proxy: string; original: string }[];
+	plates?: { clip: string; aspect: string; key?: string; fingerprint?: string; reused?: boolean }[];
+	warnings?: string[];
+	deliveries?: { cid: string; aspect: string; codec: string; qc?: Record<string, unknown>; loudness?: Record<string, unknown> }[];
+	[k: string]: unknown;
 };
 
 export const queueRender = (timelineId: string) => call<RenderJob>(`/api/timelines/${timelineId}/renders`, { method: 'POST' });
 export const listRenders = (timelineId: string) => call<RenderJob[]>(`/api/timelines/${timelineId}/renders`);
-/** Jobs of every kind, filtered (proxy status of a file, the plates of a timeline, the whole queue). */
-export const listJobs = (q: { kind?: string; media_cid?: string; timeline_id?: string; status?: string } = {}) =>
-	call<RenderJob[]>(`/api/renders?${new URLSearchParams(Object.entries(q).filter(([, v]) => v) as [string, string][])}`);
+/** The latest jobs, newest first: of a kind, for a file (a file's proxy status; the worker's whole queue). */
+export const listJobs = (q: { kind?: 'render' | 'proxy' | 'lut'; cid?: string; limit?: number } = {}) =>
+	call<RenderJob[]>(`/api/film/jobs?${new URLSearchParams(Object.entries(q).filter(([, v]) => v !== undefined && v !== '').map(([k, v]) => [k, String(v)]))}`);
+/** A file's proxy made again (its colour read again too). */
+export const remakeProxy = (cid: string) => call<RenderJob>(`/api/film/proxies/${cid}`, { method: 'POST' });
+/** The preview LUTs baked (again) by the worker. */
+export const bakeLuts = () => call<RenderJob>('/api/film/luts', { method: 'POST' });
 
 // ─────────────────────────────── world shots (C2) ───────────────────────────────
 
