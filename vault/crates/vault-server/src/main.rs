@@ -102,13 +102,14 @@ async fn main() -> Result<()> {
                     let before = allow.all().len();
                     peer.devices(ids);
                     if allow.all().len() != before {
-                        peer.wake.notify_one();
+                        peer.nudge();
                     }
                 }
             }
         });
     }
     tokio::spawn(peer.clone().listen());
+    tokio::spawn(peer.clone().describe(s3.clone(), db.clone()));
     tokio::spawn(peer.clone().reconcile(s3.clone(), db.clone()));
 
     let gateway = gateway::Gateway::new(s3, db, env_or("API_URL", "http://api:3000"), ring).router();

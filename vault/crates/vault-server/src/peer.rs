@@ -49,6 +49,8 @@ pub struct Peer {
     /// who most recently told us about a file — the first place to fetch it from
     seen_from: Mutex<HashMap<Hash, EndpointId>>,
     pub wake: Notify,
+    /// the same, for the uploads
+    pub wake_store: Notify,
 }
 
 pub struct Config<'a> {
@@ -116,6 +118,7 @@ impl Peer {
             router,
             seen_from: Mutex::new(HashMap::new()),
             wake: Notify::new(),
+            wake_store: Notify::new(),
         }))
     }
 
@@ -143,9 +146,9 @@ impl Peer {
                     if entry.key().starts_with(b"blobs/") {
                         self.seen_from.lock().unwrap().insert(entry.content_hash(), from);
                     }
-                    self.wake.notify_one();
+                    self.nudge();
                 }
-                Ok(LiveEvent::InsertLocal { .. } | LiveEvent::ContentReady { .. } | LiveEvent::SyncFinished(_)) => self.wake.notify_one(),
+                Ok(LiveEvent::InsertLocal { .. } | LiveEvent::ContentReady { .. } | LiveEvent::SyncFinished(_)) => self.nudge(),
                 Ok(LiveEvent::NeighborUp(id)) => tracing::info!("neighbour up: {}", id.fmt_short()),
                 Ok(_) => {}
                 Err(e) => tracing::warn!("catalog event: {e:#}"),
@@ -154,29 +157,40 @@ impl Peer {
         Ok(())
     }
 
-    /// Bring the bucket and the mirror in line with the catalog: every `blobs/<hash>` into LIBRARY/, every
-    /// `meta/<hash>` into Postgres and LIBRARY/meta/. Runs on every wake and every minute.
-    pub async fn reconcile(self: Arc<Self>, s3: S3, db: Arc<tokio_postgres::Client>) -> Result<()> {
-        let mut failed: HashSet<Hash> = HashSet::new();
+    /// Something changed: wake both the mirror and the uploads.
+    pub fn nudge(&self) {
+        self.wake.notify_one();
+        self.wake_store.notify_one();
+    }
+
+    /// Keep the mirror in line with the catalog's descriptions: every `meta/<hash>` into Postgres and LIBRARY/meta/,
+    /// as soon as it changes. Its own loop, so a long run of uploads never holds a description back.
+    pub async fn describe(self: Arc<Self>, s3: S3, db: Arc<tokio_postgres::Client>) -> Result<()> {
+        // the content each description was last mirrored at
+        let mut done: HashMap<Hash, Hash> = HashMap::new();
         loop {
+            if let Err(e) = self.describe_once(&s3, &db, &mut done).await {
+                tracing::warn!("describe: {e:#}");
+            }
             tokio::select! {
                 _ = self.wake.notified() => {}
-                _ = tokio::time::sleep(Duration::from_secs(60)) => failed.clear(),
-            }
-            if let Err(e) = self.reconcile_once(&s3, &db, &mut failed).await {
-                tracing::warn!("reconcile: {e:#}");
+                _ = tokio::time::sleep(Duration::from_secs(60)) => {}
             }
         }
     }
 
-    async fn reconcile_once(&self, s3: &S3, db: &tokio_postgres::Client, failed: &mut HashSet<Hash>) -> Result<()> {
-        // descriptions first, so the mirror knows a file before its bytes arrive
+    async fn describe_once(&self, s3: &S3, db: &tokio_postgres::Client, done: &mut HashMap<Hash, Hash>) -> Result<()> {
         let metas: Vec<_> = self.doc.get_many(Query::single_latest_per_key().key_prefix("meta/")).await?.collect().await;
         let metas: Vec<_> = metas.into_iter().collect::<Result<_, _>>()?;
+        let key_of = |e: &iroh_docs::Entry| std::str::from_utf8(&e.key()[5..]).ok().and_then(|h| h.parse::<Hash>().ok());
+        let fresh: Vec<_> = metas.into_iter().filter(|e| key_of(e).is_some_and(|k| done.get(&k) != Some(&e.content_hash()))).collect();
+        if fresh.is_empty() {
+            return Ok(());
+        }
         // iroh-docs fetches an entry's content once, when the entry arrives; a device it could not reach then leaves
         // the description missing for good — so ask the paired devices for whatever is still missing
         let mut missing = Vec::new();
-        for entry in &metas {
+        for entry in &fresh {
             if self.store.blobs().get_bytes(entry.content_hash()).await.is_err() {
                 missing.push(entry.content_hash());
             }
@@ -189,31 +203,45 @@ impl Peer {
                 Err(e) => tracing::warn!("{n} descriptions still missing: {e:#}"),
             }
         }
-        let (mut mirrored, mut absent) = (0, 0);
-        for entry in metas {
-            let Ok(bytes) = self.store.blobs().get_bytes(entry.content_hash()).await else {
-                absent += 1;
-                continue;
-            };
+        let mut mirrored = 0;
+        for entry in fresh {
+            let Some(key) = key_of(&entry) else { continue };
+            let Ok(bytes) = self.store.blobs().get_bytes(entry.content_hash()).await else { continue };
             let Ok(meta) = serde_json::from_slice::<serde_json::Value>(&bytes) else { continue };
-            let Some(hash) = meta.get("hash").and_then(|h| h.as_str()).map(String::from) else { continue };
-            // each file on its own: one that fails never holds up the rest
-            match db::mirror(db, &meta, false).await {
-                Ok(()) => mirrored += 1,
-                Err(e) => tracing::warn!("mirror {hash}: {e:#}"),
+            let hash = key.to_hex();
+            // each file on its own: one that fails never holds up the rest (and is tried again next time)
+            if let Err(e) = db::mirror(db, &meta, false).await {
+                tracing::warn!("mirror {hash}: {e:#}");
+                continue;
             }
-            let copy = async {
-                if s3.head(&s3::meta_key(&hash)).await?.is_none() {
-                    s3.put(&s3::meta_key(&hash), bytes, "application/json").await?;
-                }
-                anyhow::Ok(())
-            };
-            if let Err(e) = copy.await {
+            // a changed description replaces the bucket's copy
+            if let Err(e) = s3.put(&s3::meta_key(&hash), bytes, "application/json").await {
                 tracing::warn!("meta {hash} to the bucket: {e:#}");
+                continue;
+            }
+            done.insert(key, entry.content_hash());
+            mirrored += 1;
+        }
+        tracing::info!("mirrored {mirrored} descriptions");
+        Ok(())
+    }
+
+    /// Bring the bucket in line with the catalog: every `blobs/<hash>` into LIBRARY/, pulled verified from a device
+    /// that has it. Runs on every wake and every minute.
+    pub async fn reconcile(self: Arc<Self>, s3: S3, db: Arc<tokio_postgres::Client>) -> Result<()> {
+        let mut failed: HashSet<Hash> = HashSet::new();
+        loop {
+            if let Err(e) = self.reconcile_once(&s3, &db, &mut failed).await {
+                tracing::warn!("reconcile: {e:#}");
+            }
+            tokio::select! {
+                _ = self.wake_store.notified() => {}
+                _ = tokio::time::sleep(Duration::from_secs(60)) => failed.clear(),
             }
         }
-        tracing::debug!("mirror: {mirrored} described, {absent} descriptions not here yet");
+    }
 
+    async fn reconcile_once(&self, s3: &S3, db: &tokio_postgres::Client, failed: &mut HashSet<Hash>) -> Result<()> {
         let blobs: Vec<_> = self.doc.get_many(Query::single_latest_per_key().key_prefix("blobs/")).await?.collect().await;
         for entry in blobs {
             let entry = entry?;
