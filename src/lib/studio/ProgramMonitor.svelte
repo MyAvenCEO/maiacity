@@ -117,7 +117,7 @@
 				class:on={!gl && pic?.id === c.id && (!isWorld(c) || !live)}
 				bind:this={s.reelVideos[c.id]}
 				src={s.playUrl(c)}
-				crossorigin="use-credentials"
+				crossorigin="anonymous"
 				preload="auto"
 				playsinline
 				muted
@@ -125,7 +125,7 @@
 			></video>
 		{/each}
 		{#if s.pictureItem?.kind === 'image'}
-			<img class="still" class:on={!gl} bind:this={s.stillEl} src={raw((s.stillItem ?? s.pictureItem).hash)} alt="" crossorigin="use-credentials" />
+			<img class="still" class:on={!gl} bind:this={s.stillEl} src={raw((s.stillItem ?? s.pictureItem).hash)} alt="" crossorigin="anonymous" />
 		{/if}
 		<canvas class="stand" class:on={!gl && isWorld(pic) && !live && !worldVideo} bind:this={stand}></canvas>
 		<Viewer

@@ -154,7 +154,7 @@
 							bind:duration={srcDuration}
 							bind:paused
 							src={url}
-							crossorigin="use-credentials"
+							crossorigin="anonymous"
 							preload="auto"
 							playsinline
 							onloadedmetadata={(e) => {
@@ -185,7 +185,7 @@
 							src={url}
 							alt=""
 							draggable="false"
-							crossorigin="use-credentials"
+							crossorigin="anonymous"
 							onload={(e) => {
 								const i = /** @type {HTMLImageElement} */ (e.currentTarget);
 								if (i.naturalWidth && i.naturalHeight) srcAspect = i.naturalWidth / i.naturalHeight;
@@ -204,7 +204,7 @@
 					bind:currentTime={srcTime}
 					bind:duration={srcDuration}
 					src={url}
-					crossorigin="use-credentials"
+					crossorigin="anonymous"
 					preload="metadata"
 					controls
 					onplay={() => s.playing && s.stop()}
