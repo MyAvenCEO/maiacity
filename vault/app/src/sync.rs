@@ -157,6 +157,9 @@ pub async fn keep_complete(handle: AppHandle, vault: Arc<Vault>) {
         }
         // uploads by day leave room for everything else on the line: ~75 % of the 54 Mbit/s measured; at night, all of it
         vault.upload_limit.store(if daytime() { DAY_LIMIT } else { 0 }, std::sync::atomic::Ordering::Relaxed);
+        if let Some(why) = vault.heal().await {
+            tracing::warn!("vault network: relay lost ({why}) — looking at the network again");
+        }
         let auth = handle.state::<Auth>();
         // stay joined: a sync that failed (the server restarting, the network away) is simply tried again; this also
         // picks up newly paired devices and revocations
