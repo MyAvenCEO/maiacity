@@ -45,7 +45,6 @@
 		{/each}
 	</ol>
 	<span class="ver" title="The edit's version: +1 every time it is unlocked">v{s.version}</span>
-	{#if !s.c1}<span class="c1" title="This API does not keep stages, grades or world clips yet (contract C1): they are kept in this browser until it does">kept locally</span>{/if}
 	<span class="grow"></span>
 	{#if !s.locked}
 		<button class="act" onclick={() => s.lock()} disabled={!s.clips.length} title="Lock picture and sound; the Grade tab opens">🔒 Lock the edit</button>
@@ -142,13 +141,6 @@
 		color: #fff;
 	}
 
-	.c1 {
-		padding: 0 0.4rem;
-		border-radius: 4px;
-		background: #fbf1dc;
-		font-size: 0.64rem;
-		color: #7a5a17;
-	}
 
 	.grow {
 		flex: 1;

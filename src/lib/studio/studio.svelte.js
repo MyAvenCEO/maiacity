@@ -18,7 +18,6 @@ import {
 	saveTimeline
 } from '$lib/auth/client';
 import { asStudio, clean, gradesFor, isCache, isSequence, presetOf, profileFor, proxyFor, proxyProfileOf } from './color.js';
-import { c1Knows, fromServer, toServer } from './legacy.js';
 import { filmLut, loadLut, lutIndex } from './luts.js';
 import { cached, evaluate, saveSpec, shotAt } from './shots.js';
 import { WorldViewer } from './world.svelte.js';
@@ -112,8 +111,6 @@ export class Studio {
 	current = $state(null);
 	/** @type {'saved' | 'saving' | 'unsaved'} */
 	saving = $state('saved');
-	/** does the API keep C1's fields (stage, grades, world clips)? Until it does, legacy.js keeps them here */
-	c1 = $state(true);
 
 	/** @type {Clip[]} */
 	clips = $state([]);
@@ -398,8 +395,7 @@ export class Studio {
 		try {
 			const [media, tls] = await Promise.all([listMedia().then((r) => asStudio(r.media)), listTimelines()]);
 			this.library = media;
-			this.c1 = tls.length ? tls.some((t) => c1Knows(t)) : true;
-			this.timelines = tls.map(fromServer);
+			this.timelines = tls;
 		} catch (e) {
 			this.error = /** @type {Error} */ (e).message;
 		}
@@ -421,7 +417,7 @@ export class Studio {
 	}
 
 	async loadLuts() {
-		const { from, luts } = await lutIndex(this.library);
+		const { from, luts } = await lutIndex();
 		this.lutFrom = from;
 		const got = await Promise.all(Object.entries(luts).map(async ([name, l]) => /** @type {const} */ ([name, await loadLut(name, l.cid)])));
 		this.luts = Object.fromEntries(got);
@@ -495,8 +491,7 @@ export class Studio {
 
 	async newTimeline() {
 		const made = await this.starter();
-		const t = fromServer(await createTimeline({ name: `Timeline ${this.timelines.length + 1}`, aspect: '16:9', tags: [], clips: made, stage: 'edit', version: 1, color: { working: 'acescct', output: 'odt-rec709' }, grade: null }));
-		this.c1 = c1Knows(t);
+		const t = (await createTimeline({ name: `Timeline ${this.timelines.length + 1}`, aspect: '16:9', tags: [], clips: made, stage: 'edit', version: 1, color: { working: 'acescct', output: 'odt-rec709' }, grade: null }));
 		this.timelines = [t, ...this.timelines];
 		await this.openTimeline(t);
 	}
@@ -541,10 +536,10 @@ export class Studio {
 				color: cur.color ?? { working: 'acescct', output: 'odt-rec709' },
 				grade: cur.grade ?? null
 			};
-			const t = fromServer(await saveTimeline(cur.id, toServer(cur.id, body, this.c1)));
+			const t = await saveTimeline(cur.id, body);
 			this.timelines = [t, ...this.timelines.filter((x) => x.id !== t.id)];
 			// an API that keeps the stages says which version the timeline is (it counts the unlocks itself)
-			if (this.current?.id === cur.id) this.current = { ...this.current, updated: t.updated, ...(c1Knows(t) ? { version: t.version } : {}) };
+			if (this.current?.id === cur.id) this.current = { ...this.current, updated: t.updated, version: t.version };
 			this.saving = 'saved';
 		} catch (e) {
 			this.error = /** @type {Error} */ (e).message;

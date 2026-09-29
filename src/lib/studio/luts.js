@@ -3,23 +3,16 @@
 // library as cache files (C5); `GET /api/film/luts` names them. Nothing here is ever baked or committed.
 import { API, filmLuts, missing } from '$lib/auth/client';
 
-/** @typedef {import('$lib/auth/client').MediaItem} MediaItem */
 /**
  * A 3D LUT, ready for the GPU: size³ RGBA floats, red fastest, then green, then blue (as bake.py writes it).
  * @typedef {{ name: string, size: number, data: Float32Array, title?: string, hash?: string }} Lut
  */
 /**
- * Where the LUT list came from: the API (stream A's route), the library itself (fallback), or nowhere.
- * @typedef {'api' | 'library' | 'none'} LutSource
+ * Where the LUT list came from: the API, or nowhere (the viewer then shows its formula fallback).
+ * @typedef {'api' | 'none'} LutSource
  */
 
-// game/film/transforms.js (stream A) reads the MLUT1 format itself. ADAPTER: it is not on this branch yet;
-// import.meta.glob finds it once it is (and nothing, with no build error, until then), and this file's own reader —
-// the same format — stands in. Once A has landed, `import { parseLut } from '../../../game/film/transforms.js'` can
-// replace the glob, and the MLUT1 branch below goes.
-/** @typedef {{ parseLut: (bytes: Uint8Array) => { header: { title?: string, hash?: string }, size: number, data: Float32Array } }} TransformsModule */
-const found = /** @type {Record<string, () => Promise<TransformsModule>>} */ (/** @type {unknown} */ (import.meta.glob('../../../game/film/transforms.js')));
-const transformsJs = Object.values(found)[0]?.().catch(() => null) ?? Promise.resolve(null);
+import { parseLut as parseMlut } from '../../../game/film/transforms.js';
 
 /** @param {Uint8Array} bytes */
 const gunzip = async (bytes) => {
@@ -37,23 +30,9 @@ export async function parseLut(name, raw) {
 	let bytes = new Uint8Array(raw);
 	if (bytes[0] === 0x1f && bytes[1] === 0x8b) bytes = await gunzip(bytes);
 	const magic = new TextDecoder().decode(bytes.subarray(0, 5));
-	const tjs = magic === 'MLUT1' ? await transformsJs : null;
-	if (tjs) {
-		const { header, size, data } = tjs.parseLut(bytes);
-		return { name, size, data, title: header.title, hash: header.hash };
-	}
 	if (magic === 'MLUT1') {
-		const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
-		const hlen = view.getUint32(5, true);
-		/** @type {{ size: number, min: number, max: number, title?: string }} */
-		const head = JSON.parse(new TextDecoder().decode(bytes.subarray(9, 9 + hlen)));
-		const n = head.size, count = n * n * n, off = 9 + hlen;
-		const data = new Float32Array(count * 4), k = (head.max - head.min) / 65535;
-		for (let i = 0; i < count; i++) {
-			for (let c = 0; c < 3; c++) data[i * 4 + c] = head.min + k * view.getUint16(off + (i * 3 + c) * 2, true);
-			data[i * 4 + 3] = 1;
-		}
-		return { name, size: n, data, title: head.title };
+		const { header, size, data } = parseMlut(bytes);
+		return { name, size, data, title: /** @type {{ title?: string }} */ (header).title, hash: header.hash };
 	}
 	const text = new TextDecoder().decode(bytes);
 	const size = Number(/LUT_3D_SIZE\s+(\d+)/.exec(text)?.[1]);
@@ -68,25 +47,17 @@ export async function parseLut(name, raw) {
 }
 
 /**
- * Which preview LUTs exist, by transform name → the file's CID.
- * ADAPTER (until stream A's `GET /api/film/luts` lands): when the route is missing, the library is searched for the
- * cache files the worker writes (tag `role:lut`, `meta.transform`). Remove the `library` branch once the route is live.
- * @param {MediaItem[]} library
+ * Which preview LUTs exist, by transform name → the file's CID (`GET /api/film/luts`; the worker bakes them).
  * @returns {Promise<{ from: LutSource, luts: Record<string, { cid: string, hash?: string }> }>}
  */
-export async function lutIndex(library) {
+export async function lutIndex() {
 	try {
 		const luts = await filmLuts();
-		return { from: 'api', luts };
+		return { from: Object.keys(luts).length ? 'api' : 'none', luts };
 	} catch (e) {
 		if (!missing(e)) console.warn('film LUTs:', /** @type {Error} */ (e).message);
+		return { from: 'none', luts: {} };
 	}
-	/** @type {Record<string, { cid: string, hash?: string }>} */
-	const luts = {};
-	for (const m of library)
-		if (m.tags.includes('role:lut') && typeof m.meta?.transform === 'string')
-			luts[m.meta.transform] ??= { cid: m.cid, hash: typeof m.meta.hash === 'string' ? m.meta.hash : undefined };
-	return { from: Object.keys(luts).length ? 'library' : 'none', luts };
 }
 
 /** @type {WeakMap<Lut, { size: number, data: Float32Array }>} */

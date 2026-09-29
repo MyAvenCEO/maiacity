@@ -1,20 +1,15 @@
 // The studio's side of the colour standard (contract C5): what each picture is, how the viewer brings it in, and the
 // grades as data. The maths and the tables live in game/film/color.js (stream A) — imported, never copied.
-import * as film from '../../../game/film/color.js';
-import { PROFILES, profileOf, NEUTRAL, isNeutral, cleanCdl, PRESETS, cdl, ODT } from '../../../game/film/color.js';
+import { PROFILES, profileOf, proxyProfileOf as proxyOf, NEUTRAL, isNeutral, cleanCdl, PRESETS, cdl, ODT } from '../../../game/film/color.js';
 
 export { PROFILES, profileOf, NEUTRAL, isNeutral, cleanCdl, PRESETS, cdl, ODT };
 
 /**
  * The profile a file's HD proxy is encoded in (revised rule 2: log stays its own log, linear and HDR become ACEScct,
- * display stays display). color.js carries `proxyProfileOf` from stream A on; until then the same rule is read here.
+ * display stays display) — color.js's rule; anything it does not know is passed through.
  * @param {string} p @returns {string}
  */
-export const proxyProfileOf = (p) => {
-	const own = /** @type {{ proxyProfileOf?: (p: string) => string }} */ (/** @type {unknown} */ (film)).proxyProfileOf;
-	if (own) return p in PROFILES || p === 'unknown' ? own(p) : p;
-	return ['hlg', 'pq', 'aces2065-1', 'acescg', 'linear-rec709'].includes(p) ? 'acescct' : p;
-};
+export const proxyProfileOf = (p) => (p in PROFILES ? proxyOf(/** @type {import('../../../game/film/color.js').Profile} */ (p)) : p);
 
 /**
  * A moving picture, whatever its container: a video file, or an EXR sequence (a tar of frames, `meta.sequence: 'exr'`,
@@ -41,14 +36,10 @@ export const asStudio = (media) => media.map((m) => (m.kind !== 'video' && isVid
 /** @typedef {'ready' | 'none' | 'queued' | 'rendering' | 'failed' | 'n/a'} ProxyState */
 
 /**
- * Every profile a picture can carry, as the contract lists them. color.js names the ones its first version knows;
- * the rest (generated footage, contract C5 / revised rule 3) are labelled here until color.js carries them.
+ * Every profile a picture can carry: color.js's, and "unknown" (a file the ingest could not tell).
  * @type {Record<string, ProfileInfo>}
  */
 const EXTRA = {
-	'aces2065-1': { label: 'ACES2065-1 (linear AP0)', idt: null, display: false, log: false },
-	acescg: { label: 'ACEScg (linear AP1)', idt: null, display: false, log: false },
-	'linear-rec709': { label: 'Linear Rec.709', idt: null, display: false, log: false },
 	unknown: { label: 'Unknown — say what it is', idt: null, display: false, log: false }
 };
 /** @param {string} p @returns {ProfileInfo} */

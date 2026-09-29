@@ -5,7 +5,7 @@
 -->
 <script>
 	import ColorBadge from './ColorBadge.svelte';
-	import { hasShotJs, toKeys } from './shots.js';
+	import { toKeys } from './shots.js';
 	import { SHOT_LIGHTS } from '$lib/auth/client';
 	import { isWorld, itemName } from './studio.svelte.js';
 
@@ -73,7 +73,7 @@
 					{s.world.recording ? '■ Stop recording' : '● Record a move'}
 				</button>
 				{#if spec.camera.kind !== 'keys'}
-					<button class="ghost small" disabled={!hasShotJs()} title={hasShotJs() ? 'Turn the preset move into keys, one a second' : 'Needs game/film/shot.js (stream B)'} onclick={() => edit((sp) => (sp.camera = { kind: 'keys', curve: sp.camera.curve ?? 'glide', keys: toKeys(sp) ?? [] }))}>Preset → keys</button>
+					<button class="ghost small" title="Turn the preset move into keys, one a second" onclick={() => edit((sp) => (sp.camera = { kind: 'keys', curve: sp.camera.curve ?? 'glide', keys: toKeys(sp) }))}>Preset → keys</button>
 				{/if}
 			</div>
 			<label>Move <select value={spec.camera.curve ?? 'glide'} onchange={(e) => edit((sp) => (sp.camera.curve = /** @type {'glide'} */ (e.currentTarget.value)))}>{#each ['glide', 'ease', 'landing', 'drift'] as c (c)}<option>{c}</option>{/each}</select></label>

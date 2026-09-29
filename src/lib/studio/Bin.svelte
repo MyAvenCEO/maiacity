@@ -6,7 +6,7 @@
 <script>
 	import ColorBadge from './ColorBadge.svelte';
 	import { isCache } from './color.js';
-	import { allShots, blankSpec, newShot, shotsMode } from './shots.js';
+	import { allShots, blankSpec, newShot } from './shots.js';
 	import { itemName, thumb } from './studio.svelte.js';
 
 	/** @type {{ s: import('./studio.svelte.js').Studio }} */
@@ -57,7 +57,7 @@
 	async function loadShots() {
 		try {
 			shots = await allShots();
-			shotsNote = shotsMode() === 'local' ? 'kept in this browser until the API has /api/shots' : '';
+			shotsNote = '';
 		} catch (e) {
 			shotsNote = /** @type {Error} */ (e).message;
 		}

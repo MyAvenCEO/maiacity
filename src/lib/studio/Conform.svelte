@@ -80,7 +80,7 @@
 	{/if}
 	<h3>Preview LUTs</h3>
 	<p class="sum">
-		{s.lutFrom === 'api' ? 'from the worker (GET /api/film/luts)' : s.lutFrom === 'library' ? 'found in the library (role:lut)' : 'none yet — the viewer uses formula transforms'}
+		{s.lutFrom === 'api' ? 'from the worker (GET /api/film/luts)' : 'none yet — the viewer uses formula transforms'}
 	</p>
 	<ul class="luts">
 		{#each needed as n (n)}
