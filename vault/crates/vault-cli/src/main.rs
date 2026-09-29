@@ -46,6 +46,13 @@ enum Cmd {
         #[arg(long, default_value_t = 60)]
         wait: u64,
     },
+    /// Bring a library/ folder (<cid>.<ext> + <cid>.json) into the vault: every file with the three-hash check and
+    /// its whole description; writes the map old CID → new hash (for rewriting references, never an alias)
+    ImportLibrary {
+        library: PathBuf,
+        #[arg(long)]
+        map: PathBuf,
+    },
     /// What a movie file is, read by AVFoundation (the native ffprobe)
     Probe { file: PathBuf },
     /// A movie's HD proxy, made natively (HEVC Main10 in hardware)
@@ -93,6 +100,47 @@ async fn main() -> Result<()> {
 
     match cli.cmd {
         Cmd::Probe { .. } | Cmd::Proxy { .. } => unreachable!("handled above"),
+        Cmd::ImportLibrary { library, map } => {
+            let mut out: serde_json::Map<String, serde_json::Value> =
+                std::fs::read(&map).ok().and_then(|b| serde_json::from_slice(&b).ok()).unwrap_or_default();
+            let mut docs: Vec<PathBuf> = std::fs::read_dir(&library)?
+                .filter_map(|e| e.ok().map(|e| e.path()))
+                .filter(|p| p.extension().is_some_and(|x| x == "json"))
+                .collect();
+            docs.sort();
+            let (started, mut bytes, mut bad) = (std::time::Instant::now(), 0u64, 0usize);
+            for (i, doc) in docs.iter().enumerate() {
+                let d: serde_json::Value = serde_json::from_slice(&std::fs::read(doc)?)?;
+                let (Some(cid), Some(file)) = (d["cid"].as_str(), d["file"].as_str()) else { continue };
+                if out.contains_key(cid) {
+                    continue; // already brought in on an earlier run
+                }
+                let text = |k: &str| d[k].as_str().filter(|s| !s.is_empty()).map(String::from);
+                let batch = ingest::Batch {
+                    session: "library-migration".into(),
+                    tags: d["tags"].as_array().map(|a| a.iter().filter_map(|t| t.as_str().map(String::from)).collect()).unwrap_or_default(),
+                    title: text("title"),
+                    description: text("description"),
+                    meta: d["meta"].clone(),
+                    public: d["public"].as_bool().unwrap_or(false),
+                };
+                let o = vault.ingest_file(&library.join(file), &batch).await?;
+                if o.verdict == Verdict::Mismatch {
+                    bad += 1;
+                    println!("❌ {cid}: the three hashes disagree — not mapped");
+                    continue;
+                }
+                bytes += o.size;
+                let ext = file.rsplit_once('.').map(|(_, e)| e).unwrap_or("bin");
+                out.insert(cid.into(), serde_json::json!({ "hash": o.hash, "ext": ext }));
+                if i % 25 == 0 || i + 1 == docs.len() {
+                    std::fs::write(&map, serde_json::to_vec_pretty(&out)?)?;
+                    println!("{} / {} · {:.2} GB · {:.0} s", i + 1, docs.len(), bytes as f64 / 1e9, started.elapsed().as_secs_f64());
+                }
+            }
+            std::fs::write(&map, serde_json::to_vec_pretty(&out)?)?;
+            println!("mapped {} files ({bad} mismatches) → {}", out.len(), map.display());
+        }
         Cmd::Join { ticket, relay, devices, wait } => {
             let ticket: iroh_docs::DocTicket = ticket.parse()?;
             let devices = devices.iter().map(|d| d.parse()).collect::<Result<Vec<_>, _>>()?;

@@ -324,8 +324,15 @@ jobs:
           ssh prod "cd $APP_DIR
             docker compose -f docker-compose.yml -f docker-compose.prod.yml pull -q
             docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --remove-orphans
+            # a running Caddy keeps its old routes until told: read the Caddyfile again
+            docker compose -f docker-compose.yml -f docker-compose.prod.yml exec -T caddy caddy reload --config /etc/caddy/Caddyfile --adapter caddyfile
             docker logout ghcr.io >/dev/null
             docker image prune -f >/dev/null"
+      - name: The vault server (when it runs)
+        run: |
+          sleep 5
+          ssh prod "cd $APP_DIR && docker compose -f docker-compose.yml -f docker-compose.prod.yml ps vault && docker compose -f docker-compose.yml -f docker-compose.prod.yml logs --tail 20 vault" || true
+          curl -fsS "https://$API_HOST/vault/health" && echo " ← the vault gateway answers" || echo "::warning::the vault gateway does not answer yet"
       # Health is judged on the server, not through DNS: a missing A record must
       # not make a good deploy look broken.
       - name: Health check (on the server)
