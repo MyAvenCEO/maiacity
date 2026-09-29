@@ -66,7 +66,7 @@ export type Tier = (typeof TIERS)[number];
 export const tiersOf = (stores: string[]) => TIERS.filter((t) => t.store && stores.includes(t.store)).map((t) => t.tier);
 
 /** A proxy being made or waiting its turn (the app makes one at a time). */
-export type Making = { of: string; name: string; stage: 'queued' | 'probing' | 'making' | 'adding'; done: number };
+export type Making = { of: string; name: string; stage: 'queued' | 'waiting for memory' | 'probing' | 'making' | 'adding'; done: number };
 
 /**
  * Where an original's proxy stands, from what the vault says about it (meta.proxy): made (its hash), waiting (no colour

@@ -66,7 +66,11 @@ fn main() -> Result<()> {
     println!("journey: {}", journey.label);
 
     let t = Instant::now();
-    let made = make_proxy(src, Path::new(&out), &colour.profile, &mut |_| {})?;
+    // on a thread of its own, as the app renders (a thread without a run loop of its own drains no autorelease pool)
+    let made = {
+        let (src, out, profile) = (src.to_path_buf(), out.clone(), colour.profile.clone());
+        std::thread::spawn(move || make_proxy(&src, Path::new(&out), &profile, &mut |_| {})).join().expect("render thread")?
+    };
     let took = t.elapsed().as_secs_f64();
     println!("proxy {}×{} · {:.1} s of film in {took:.1} s ({:.1}× real time) → {out}", made.width, made.height, made.seconds, made.seconds / took);
 

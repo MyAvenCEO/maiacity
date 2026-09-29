@@ -414,8 +414,21 @@ export class Studio {
 			/* no storage: open the newest */
 		}
 		const open = this.timelines.find((t) => t.id === last) ?? this.timelines[0];
-		if (open) await this.openTimeline(open);
-		else await this.newTimeline();
+		// a timeline loads its sound (decoded) and its world: only when it is looked at — Ingest and the library
+		// never need it, and on an 8 GB Mac it is a gigabyte and more
+		this.later = open ?? 'new';
+		if (this.tab !== 'ingest' && this.tab !== 'library') await this.openLater();
+	}
+
+	/** @type {Timeline | 'new' | null} the timeline to open once Edit, Grade or Render is shown */
+	later = null;
+	/** Open the timeline waiting to be opened (the first time Edit, Grade or Render is shown). */
+	async openLater() {
+		const l = this.later;
+		if (!l) return;
+		this.later = null;
+		if (l === 'new') await this.newTimeline();
+		else await this.openTimeline(l);
 	}
 
 	async loadLuts() {

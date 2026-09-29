@@ -66,6 +66,18 @@ pub fn vault_hold(app: tauri::State<'_, crate::App>) -> crate::Res<Vec<String>> 
     Ok(app.vault.hold.now())
 }
 
+/// How short of memory the Mac is, as macOS itself says (`kern.memorystatus_vm_pressure_level`): 1 normal, 2 warning,
+/// 4 critical. A proxy starts only at 1.
+pub fn pressure() -> u32 {
+    let mut level: u32 = 1;
+    let mut len = std::mem::size_of::<u32>();
+    // SAFETY: sysctlbyname writes at most `len` bytes into `level`; the name is NUL-terminated.
+    let ok = unsafe {
+        libc::sysctlbyname(c"kern.memorystatus_vm_pressure_level".as_ptr(), (&mut level as *mut u32).cast(), &mut len, std::ptr::null_mut(), 0)
+    };
+    if ok == 0 { level } else { 1 }
+}
+
 /// The proxies being made or queued right now.
 #[tauri::command]
 pub fn proxies_now() -> crate::Res<Vec<Making>> {
@@ -135,6 +147,11 @@ pub async fn auto_proxy(handle: AppHandle, vault: Arc<Vault>, hex: String, sourc
     let _turn = TURN.acquire().await;
     // an ingest first: every file in, then the proxies
     vault.hold.free_of("ingest").await;
+    // and only while the Mac has memory to spare — macOS's own word for it, not a number of ours
+    while pressure() > 1 {
+        set(&hex, &name, "waiting for memory", 0.0);
+        tokio::time::sleep(Duration::from_secs(5)).await;
+    }
     let result = {
         let _held = vault.hold.take("proxy");
         make(&vault, &hex, &name, source).await
