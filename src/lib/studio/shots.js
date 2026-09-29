@@ -54,11 +54,13 @@ function fallbackEvaluate(spec, t) {
 	/** @param {number | [number, number][] | undefined} v */
 	const at = (v) =>
 		Array.isArray(v) ? (v.find(([k]) => k >= t)?.[1] ?? v.at(-1)?.[1] ?? 1) : (v ?? 1);
+	/** @param {number | [number, number][] | undefined} v */
+	const at0 = (v) => (Array.isArray(v) ? at(v) : (v ?? 0));
 	return {
 		pose,
 		fov,
 		hour: lerp(spec.time?.hour ?? 12, spec.time?.hourTo ?? spec.time?.hour ?? 12, p),
-		stops: spec.exposure?.stops ?? 0,
+		stops: at0(spec.exposure?.stops),
 		lights: (spec.lights ?? []).map((l) => ({ id: l.id, intensity: at(l.intensity) })),
 		cues: spec.cues ?? []
 	};
@@ -88,12 +90,13 @@ export function toKeys(spec) {
 
 /**
  * An empty shot to start from: noon, a still camera over the city, metered and locked.
- * @returns {ShotSpec}
+ * @param {import('$lib/auth/client').Shape} [aspect] @returns {ShotSpec}
  */
-export const blankSpec = (seconds = 6) => ({
+export const blankSpec = (aspect = '16:9', seconds = 6) => ({
 	world: { sandbox: 'sandbox-4', build: null, seed: 1, stand: [0, 0], clock: 0 },
 	seconds,
 	fps: 30,
+	aspect,
 	camera: { kind: 'keys', curve: 'glide', keys: [{ t: 0, position: [0, 40, 60], aim: [0, 0, 0], fov: 50 }] },
 	lens: { fov: 50 },
 	time: { hour: 12 },
@@ -205,8 +208,8 @@ export async function saveSpec(s, spec) {
 	return keep(next);
 }
 
-/** @param {string} name @param {string | null} project @returns {Promise<Shot>} */
-export async function newShot(name, project, spec = blankSpec()) {
+/** @param {string} name @param {string | null} project @param {ShotSpec} spec @returns {Promise<Shot>} */
+export async function newShot(name, project, spec) {
 	if (mode !== 'local') {
 		try {
 			return keep(await createShot({ name, project, spec }));

@@ -19,7 +19,7 @@ import {
 } from '$lib/auth/client';
 import { asStudio, clean, gradesFor, isCache, isSequence, presetOf, profileFor, proxyFor, proxyProfileOf } from './color.js';
 import { c1Knows, fromServer, toServer } from './legacy.js';
-import { loadLut, lutIndex } from './luts.js';
+import { filmLut, loadLut, lutIndex } from './luts.js';
 import { cached, evaluate, saveSpec, shotAt } from './shots.js';
 import { WorldViewer } from './world.svelte.js';
 
@@ -543,7 +543,8 @@ export class Studio {
 			};
 			const t = fromServer(await saveTimeline(cur.id, toServer(cur.id, body, this.c1)));
 			this.timelines = [t, ...this.timelines.filter((x) => x.id !== t.id)];
-			if (this.current?.id === cur.id) this.current = { ...this.current, updated: t.updated };
+			// an API that keeps the stages says which version the timeline is (it counts the unlocks itself)
+			if (this.current?.id === cur.id) this.current = { ...this.current, updated: t.updated, ...(c1Knows(t) ? { version: t.version } : {}) };
 			this.saving = 'saved';
 		} catch (e) {
 			this.error = /** @type {Error} */ (e).message;
@@ -801,11 +802,14 @@ export class Studio {
 		const upcoming = this.worldClips.filter((w) => w.start + w.dur > this.time).sort((a, b) => a.start - b.start).slice(0, 3);
 		const specs = upcoming.map((w) => cached(w.shot, w.shotVersion)?.spec).filter(/** @returns {s is ShotSpec} */ (s) => !!s);
 		if (specs.length) void this.world.prepare(specs);
+		// while a move is flown by hand the world has its canvas and clock back (film mode's record): no frames asked
+		if (this.world.recording) return;
 		if (!c || !isWorld(c)) return;
 		const spec = cached(c.shot, c.shotVersion)?.spec;
 		if (!spec) return;
-		const [grade, look] = this.tab === 'edit' && !this.previewGrade ? [null, null] : [c.grade ?? null, this.current?.grade?.look ?? null];
-		this.world.show({ spec, t: this.shotTime(c), shape: /** @type {Shape} */ (this.viewShape), ...hd(this.viewShape), view: { lut: this.luts['odt-rec709'] ?? null, grade, look } });
+		// the view film mode draws through: the output transform, and the grades in order (the clip's, then the film's look)
+		const grade = this.gradesOf(c);
+		this.world.show({ spec, t: this.shotTime(c), shape: /** @type {Shape} */ (this.viewShape), ...hd(this.viewShape), view: { lut: filmLut(this.luts['odt-rec709'] ?? null), grade: grade.length ? grade : null } });
 	}
 
 	tick = () => {

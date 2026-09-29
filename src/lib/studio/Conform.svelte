@@ -39,7 +39,7 @@
 <aside class="conform">
 	<h3>Conform</h3>
 	<p class="sum">
-		{v1.length - worldCount} media clip{v1.length - worldCount === 1 ? '' : 's'} on originals{#if worldCount} · {worldCount} world clip{worldCount === 1 ? '' : 's'}: a plate per shape{/if}
+		{v1.length - worldCount} media clip{v1.length - worldCount === 1 ? '' : 's'} on originals{#if worldCount}&nbsp;· {worldCount} world clip{worldCount === 1 ? '' : 's'}: a plate per shape{/if}
 	</p>
 	<div class="seg" role="tablist" aria-label="The viewer plays">
 		<button role="tab" aria-selected={s.gradeOn === 'originals'} class:on={s.gradeOn === 'originals'} onclick={() => (s.gradeOn = 'originals')}>Originals</button>

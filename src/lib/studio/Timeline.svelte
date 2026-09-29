@@ -180,7 +180,11 @@
 	/** @param {ShotSpec} sp */
 	const hourText = (sp) => `${fmt(sp.time.hour)} h${sp.time.hourTo !== undefined && sp.time.hourTo !== sp.time.hour ? ` → ${fmt(sp.time.hourTo)} h` : ''}`;
 	/** @param {ShotSpec} sp */
-	const expText = (sp) => `${sp.exposure.meter} · ${sp.exposure.stops >= 0 ? '+' : ''}${fmt(sp.exposure.stops)} stops${sp.exposure.ev !== undefined ? ` · EV ${fmt(sp.exposure.ev)}` : ''}`;
+	const expText = (sp) => {
+		const st = sp.exposure.stops;
+		const stops = Array.isArray(st) ? `${st.length} keys of stops` : `${st >= 0 ? '+' : ''}${fmt(st)} stops`;
+		return `${sp.exposure.meter} · ${stops}${sp.exposure.ev !== undefined ? ` · EV ${fmt(sp.exposure.ev)}` : ''}`;
+	};
 	/** @param {ShotSpec} sp */
 	const lightText = (sp) =>
 		sp.lights.length ? sp.lights.map((l) => `${l.id} ${Array.isArray(l.intensity) ? '∿' : fmt(l.intensity ?? 1, 2)}`).join(' · ') : 'no light changes';

@@ -12,7 +12,8 @@ import { SvelteSet } from 'svelte/reactivity';
 /** @typedef {import('$lib/auth/client').CameraKey} CameraKey */
 /** @typedef {import('$lib/auth/client').Shape} Shape */
 /** @typedef {import('$lib/auth/client').ShotSpec} ShotSpec */
-/** @typedef {{ lut: import('./luts.js').Lut | null, grade: Cdl | null, look?: Cdl | null }} FilmView */
+/** What film mode draws a frame through: the output LUT (RGB triples, red fastest) and the grades, clip then look. */
+/** @typedef {{ lut: { size: number, data: Float32Array } | null, grade: Cdl | Cdl[] | null }} FilmView */
 /** @typedef {{ spec: ShotSpec, t: number, shape: Shape, width: number, height: number, view: FilmView }} ShowArgs */
 /**
  * The film-mode API of Sandbox 4 (contract C3).

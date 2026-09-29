@@ -89,6 +89,25 @@ export async function lutIndex(library) {
 	return { from: Object.keys(luts).length ? 'library' : 'none', luts };
 }
 
+/** @type {WeakMap<Lut, { size: number, data: Float32Array }>} */
+const rgb = new WeakMap();
+/**
+ * A LUT as Sandbox 4's film mode takes it (`__film.show({ view: { lut } })`, C3): `{ size, data }` with RGB triples,
+ * red fastest (the .cube order). The same object every time for the same LUT, so the world uploads it once.
+ * @param {Lut | null} l
+ */
+export function filmLut(l) {
+	if (!l) return null;
+	let out = rgb.get(l);
+	if (!out) {
+		const n = l.size ** 3, data = new Float32Array(n * 3);
+		for (let i = 0; i < n; i++) (data[i * 3] = l.data[i * 4]), (data[i * 3 + 1] = l.data[i * 4 + 1]), (data[i * 3 + 2] = l.data[i * 4 + 2]);
+		out = { size: l.size, data };
+		rgb.set(l, out);
+	}
+	return out;
+}
+
 /** @type {Map<string, Promise<Lut | null>>} */
 const loaded = new Map();
 /**

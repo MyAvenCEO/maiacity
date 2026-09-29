@@ -371,20 +371,27 @@ export const bakeLuts = () => call<RenderJob>('/api/film/luts', { method: 'POST'
 
 /** A camera keyframe of a world shot: shot-local seconds, where the camera is and where it looks. */
 export type CameraKey = { t: number; position: [number, number, number]; aim?: [number, number, number]; yaw?: number; pitch?: number; fov?: number };
-/** A world shot as data (contract C2): everything the world needs to draw every frame of it. */
+/** A value over a shot: a constant, or [t, value] keys (linear between them). */
+export type Curve = number | [number, number][];
+/** The lights a shot can set, over what the hour gives them (game/film/shot.js LIGHTS). */
+export const SHOT_LIGHTS = ['sun', 'fill', 'glow', 'lamps', 'sky'] as const;
+/** A world shot as data (contract C2, game/film/shot.js `Spec`): everything the world needs to draw every frame of it. */
 export type ShotSpec = {
-	world: { sandbox: string; build: string | null; seed: number; stand: [number, number]; dome?: number; props?: string; clock: number };
+	world: { sandbox: 'sandbox-4'; build: { commit: string; hash: string; cid?: string } | null; seed: number; stand: [number, number]; dome?: number; props?: string; clock: number };
 	seconds: number;
 	fps: number;
+	/** the shape the shot is composed for; the others follow its framing */
+	aspect: Shape;
 	camera: { kind: 'move' | 'orbit' | 'turn' | 'fly' | 'whip' | 'keys'; curve?: 'glide' | 'ease' | 'landing' | 'drift'; keys?: CameraKey[]; [arg: string]: unknown };
 	lens: { fov: number; fovTo?: number };
 	time: { hour: number; hourTo?: number };
-	exposure: { meter: 'lock' | 'ramp' | 'fixed'; stops: number; ev?: number };
-	lights: { id: string; intensity?: number | [number, number][]; color?: string }[];
+	exposure: { meter: 'lock' | 'ramp' | 'fixed'; stops: Curve; ev?: number };
+	lights: { id: (typeof SHOT_LIGHTS)[number]; intensity?: Curve; color?: string }[];
 	cues: ({ at: number; kind: 'sound'; cid: string; level: number } | { at: number; kind: 'event'; name: string; args?: unknown })[];
 	shutter: { angle: number; samples: number };
 	framing: Partial<Record<Shape, { fov?: number; yaw?: number; pitch?: number; dx?: number; dy?: number }>>;
 	look?: string;
+	meta?: Record<string, unknown>;
 };
 export type Shot = { id: string; name: string; project: string | null; version: number; spec: ShotSpec; created: string; updated: string };
 
@@ -394,3 +401,5 @@ export const getShot = (id: string, version?: number) => call<Shot>(`/api/shots/
 export const createShot = (s: { name: string; project?: string | null; spec: ShotSpec }) => call<Shot>('/api/shots', { method: 'POST', body: JSON.stringify(s) });
 /** A changed spec is saved as a new version; the old one stays (a clip cut with it keeps rendering it). */
 export const saveShot = (id: string, s: { name?: string; spec?: ShotSpec }) => call<Shot>(`/api/shots/${id}`, { method: 'PUT', body: JSON.stringify(s) });
+/** Every version of a shot, oldest first. */
+export const shotVersions = (id: string) => call<{ version: number; spec: ShotSpec; created: string }[]>(`/api/shots/${id}/versions`);

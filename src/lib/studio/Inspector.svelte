@@ -6,6 +6,7 @@
 <script>
 	import ColorBadge from './ColorBadge.svelte';
 	import { hasShotJs, toKeys } from './shots.js';
+	import { SHOT_LIGHTS } from '$lib/auth/client';
 	import { isWorld, itemName } from './studio.svelte.js';
 
 	/** @typedef {import('$lib/auth/client').ShotSpec} ShotSpec */
@@ -101,18 +102,26 @@
 
 			<h3>Exposure</h3>
 			<label>Meter <select value={spec.exposure.meter} onchange={(e) => edit((sp) => (sp.exposure.meter = /** @type {'lock'} */ (e.currentTarget.value)))}><option value="lock">lock (metered once)</option><option value="ramp">ramp (follows the light)</option><option value="fixed">fixed EV</option></select></label>
-			<label>Offset <input type="number" step="0.1" value={spec.exposure.stops} onchange={(e) => edit((sp) => (sp.exposure.stops = num(e.currentTarget.value)))} /> stops</label>
+			{#if Array.isArray(spec.exposure.stops)}
+				<p class="sub">Offset: a curve of {spec.exposure.stops.length} keys (set in the shot record)</p>
+			{:else}
+				<label>Offset <input type="number" step="0.1" value={spec.exposure.stops} onchange={(e) => edit((sp) => (sp.exposure.stops = num(e.currentTarget.value)))} /> stops</label>
+			{/if}
 
 			<h3>Lights</h3>
 			{#each spec.lights as l, i (i)}
 				<label class="light">
-					<input class="lid" value={l.id} onchange={(e) => edit((sp) => (sp.lights[i].id = e.currentTarget.value.trim() || l.id))} aria-label="Light id" />
+					<select class="lid" value={l.id} onchange={(e) => edit((sp) => (sp.lights[i].id = /** @type {typeof l.id} */ (e.currentTarget.value)))} aria-label="Light">
+						{#each SHOT_LIGHTS as id (id)}<option value={id}>{id}</option>{/each}
+					</select>
 					{#if Array.isArray(l.intensity)}<span class="sub">curve ({l.intensity.length} points)</span>{:else}<input type="number" step="0.05" min="0" value={l.intensity ?? 1} onchange={(e) => edit((sp) => (sp.lights[i].intensity = num(e.currentTarget.value, 1)))} aria-label="Intensity" />{/if}
 					<input type="color" value={l.color ?? '#ffd9a0'} onchange={(e) => edit((sp) => (sp.lights[i].color = e.currentTarget.value))} aria-label="Colour" />
 					<button class="x" onclick={() => edit((sp) => sp.lights.splice(i, 1))} aria-label="Remove the light">×</button>
 				</label>
 			{/each}
-			<button class="ghost small" onclick={() => edit((sp) => sp.lights.push({ id: `light-${sp.lights.length + 1}`, intensity: 1 }))}>+ Light</button>
+			{#if spec.lights.length < SHOT_LIGHTS.length}
+				<button class="ghost small" onclick={() => edit((sp) => sp.lights.push({ id: SHOT_LIGHTS.find((id) => !sp.lights.some((x) => x.id === id)) ?? 'lamps', intensity: 1 }))}>+ Light</button>
+			{/if}
 
 			<h3>Cues</h3>
 			{#each spec.cues as q, i (i)}
@@ -122,7 +131,7 @@
 						<span class="cue">♪ {s.byCid.get(q.cid)?.title || q.cid.slice(0, 8)}</span>
 						<input type="number" step="0.05" min="0" max="1" value={q.level} onchange={(e) => edit((sp) => (/** @type {{ level: number }} */ (sp.cues[i]).level = num(e.currentTarget.value, 1)))} aria-label="Level" />
 					{:else}
-						<input class="lid" value={q.name} onchange={(e) => edit((sp) => (/** @type {{ name: string }} */ (sp.cues[i]).name = e.currentTarget.value))} aria-label="Event" />
+						<input class="lid" value={q.name} pattern="[a-z][a-z0-9-]*" onchange={(e) => edit((sp) => (/** @type {{ name: string }} */ (sp.cues[i]).name = e.currentTarget.value.trim().toLowerCase().replace(/[^a-z0-9-]+/g, '-').replace(/^[^a-z]+/, '') || 'event'))} aria-label="Event" />
 					{/if}
 					<button class="x" onclick={() => edit((sp) => sp.cues.splice(i, 1))} aria-label="Remove the cue">×</button>
 				</label>
