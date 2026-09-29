@@ -42,6 +42,24 @@ The three tabs are working steps, like DaVinci Resolve's pages: **Edit** (pictur
 | Files | 10-bit HEVC for log masters, plates and proxies (like the iPhone's own Log files); no ProRes (5 GB/min at 4K is too heavy for a library that lives in the database). |
 | Machine | Proxies, plates and final renders on the Mac worker (VideoToolbox; one GPU family, so preview and final agree). |
 
+### Revised rules (Samuel, 2026-09-29) — these win over anything above
+
+1. **Never bake anything in.** Media stays in its original encoding for ever (an iPhone file stays Apple Log, an AI
+   generator's EXR stays linear ACES). Colour transforms and grades are **configs** (which transform, from which OCIO
+   config, which CDL numbers). LUTs are made only **during the render step** (by the worker, from the configs, cached
+   by a hash of the config) and are never committed and never an asset of their own. The only exception is a
+   *preview* LUT the worker bakes for the studio's viewer — a cache, keyed by the same config hash.
+2. **Proxies are HD and in log.** Log sources keep their own log (Apple Log stays Apple Log, world renders stay
+   ACEScct); linear and HDR sources (EXR, HLG, PQ) are encoded into ACEScct for the proxy (pure maths, reversible);
+   display-referred sources (Rec.709, sRGB) stay as they are. No grade and no output transform is ever in a proxy.
+   The viewer applies each proxy's input transform, the grade and the output transform live, from the configs.
+3. **Generated footage is a first-class source.** Luma Ray 3 (HDR · EXR export), Kling 3.0 / O3 (16-bit linear EXR)
+   and LTX HDR (16-bit EXR) deliver **scene-linear ACES2065-1 (AP0)** or linear EXR frames. They come in as EXR
+   sequences (one tar per clip in the library) with the profiles `aces2065-1`, `acescg` or `linear-rec709`, and go
+   into ACEScct by exact maths (a 3×3 matrix and the ACEScct curve) — no LUT, no clipping. Their plain 8-bit MP4
+   downloads are display-referred Rec.709 (`rec709`).
+4. **Background jobs.** The build runs as parallel background agents, one per work stream (section 7).
+
 ## 3. What is wrong today (fix first)
 
 - `scripts/film/worker.ts` takes every picture clip straight to `format=yuv420p` (8-bit) before the cut: the 4K
@@ -238,3 +256,123 @@ sample exists (after M2); **M10** closes each milestone's docs as it lands.
   browsers give us 10-bit video textures.
 - Which other sandboxes get film mode after Sandbox 4.
 - HDR delivery (Rec.2100 PQ) — when YouTube HDR becomes worth it.
+
+---
+
+## 7. Contracts and work streams (for the parallel build)
+
+Three work streams run at once, each in its own worktree and branch, each owning its files. Anything another stream
+owns is read, never edited; a missing piece is asked for in the stream's report, not patched in. The orchestrator
+merges the three branches into `studio-post-pipeline-plan` (PR #9).
+
+### C1 · A timeline clip (api/src/timelines.ts — owned by stream B)
+
+```js
+Clip = {
+  id, track: 'V1' | 'A1' | 'A2' | 'A3', start, in, dur, vol, fin?, fout?,
+  kind?: 'media' | 'world',      // absent = 'media' (every existing timeline stays valid)
+  cid?: string,                   // media clips: the library file
+  shot?: string, shotVersion?: number,   // world clips: shots.id and the version cut in (V1 only)
+  grade?: Cdl,                    // this clip's own grade (Grade tab), ACEScct — see C5
+  frame?: { [shape]: { x, y, zoom } }    // media clips: reframing per delivery shape (x, y in −1…1 of the free room)
+}
+Timeline += {
+  stage: 'edit' | 'locked' | 'graded' | 'rendered',   // default 'edit'
+  version: number,                                     // +1 on every unlock
+  color: { working: 'acescct', output: 'odt-rec709' },
+  grade: { look: Cdl | null, preset?: string } | null  // the whole film's look
+}
+```
+A world clip's shot-local time is `t = clip.in + (timelineTime − clip.start)` seconds; the shot's progress is
+`t / spec.seconds`. Trimming never changes a move's speed.
+
+### C2 · A world shot record (game/film/shot.js, the `shots` table, `/api/shots` — owned by stream B)
+
+`shots (id uuid, name, project, version int, spec jsonb, founder_id, created, updated)`; every save of a changed spec
+is a new version (old versions kept, so a cut clip keeps rendering the version it was cut with).
+```js
+spec = {
+  world: { sandbox: 'sandbox-4', build: cid | null, seed: number, stand: [x, z], dome?: n, props?: 'tired-land', clock: s },
+  seconds, fps: 30,
+  camera: { kind: 'move' | 'orbit' | 'turn' | 'fly' | 'whip' | 'keys', ...its arguments, curve: 'glide' | 'ease' | 'landing' | 'drift' },
+  lens: { fov, fovTo? },  time: { hour, hourTo? },
+  exposure: { meter: 'lock' | 'ramp' | 'fixed', stops: number, ev?: number },
+  lights: [{ id, intensity?: number | [t, v][], color?: string }],
+  cues: [{ at, kind: 'sound', cid, level } | { at, kind: 'event', name, args }],
+  shutter: { angle: 180, samples: 1 },
+  framing: { [shape]: { fov?, yaw?, pitch?, dx?, dy? } },
+  look?: presetName            // the grade it was lit for (a suggestion for the Grade tab, never applied by itself)
+}
+```
+`evaluate(spec, t, shape?) → { pose: [x, y, z, yaw, pitch], fov, hour, stops, lights, cues }`, `fingerprint(spec, …)`
+(a stable hash), `fromLegacy(shot)` (a day-19-d.mjs shot → spec) all live in game/film/shot.js, plain JS, shared by
+the browser, the worker and the scripts.
+
+### C3 · Film mode in Sandbox 4 (src/lib/film/**, the sandbox-4 routes — owned by stream B)
+
+`/games/sandbox-4/?film` loads the world under a virtual clock and exposes `window.__film`:
+```js
+__film = {
+  ready(): Promise<void>,                          // world up, nothing streaming in
+  prepare(specs): Promise<void>,                   // load and keep every area/dome/set these shots need
+  show({ spec, t, shape, width, height, view }),   // draw that exact frame on the page's canvas:
+                                                   //   view = { lut: odt LUT data, grade: Cdl | null } → display (Edit/Grade preview)
+  capture({ spec, t, shape, width, height }): Promise<ArrayBuffer>, // the log frame, 10-bit packed (x2bgr10le), exposure metered
+  meter(spec): Promise<number>,                    // the locked exposure (EV) for a shot
+  record: { start(), stop(): keys }                // fly the camera by hand, get camera keys back
+}
+```
+The studio embeds it in an iframe (same origin) and drives it frame by frame from the timeline clock.
+
+### C4 · The plate renderer (scripts/film/world/render.mjs — owned by stream B, called by stream A's worker)
+
+```js
+renderPlate({ spec, from, to, shape, width, height, fps, out, site }) → { file, frames, ev }
+```
+One world clip's frames from shot-time `from` to `to`, rendered offline at full quality (oversampled, shutter
+blur in linear light), as **ACEScct, 10-bit HEVC, bt709 matrix, tv range, tagged `comment=maiacity:color=acescct`**.
+Plates are render-step intermediates: cached by `fingerprint`, never library assets. Same function makes the HD world
+proxies (smaller `width`/`height`).
+
+### C5 · Colour (game/film/color.js, game/film/transforms.js, scripts/film/color/** — owned by stream A)
+
+- Profiles: `acescct`, `rec709`, `srgb`, `legacy`, `hlg`, `pq`, `apple-log`, `apple-log-2`, `aces2065-1`, `acescg`,
+  `linear-rec709`, `unknown`. `detect(ffprobe stream, format, kind)` → `media.meta.color`
+  `{ profile, primaries, transfer, matrix, range, bitDepth, detectedFrom, override? }`.
+- Transforms are **configs** in game/film/transforms.js: OCIO (config name + colour space or display/view +
+  direction) or exact maths (matrix + curve). The worker bakes LUTs from them only while rendering
+  (`python3 scripts/film/color/bake.py …`), cached by a hash of the config and the OCIO version.
+- Grade: `Cdl = { slope: [r,g,b], offset: [r,g,b], power: [r,g,b], sat }` in ACEScct; order: clip grade → film look →
+  output transform. `cdl()`, `PRESETS` (COLD, DIP, BRIGHT, NIGHT, WARM as CDLs), `cleanCdl()` in color.js; the
+  browser applies them in a shader, the worker as ffmpeg filters — the same maths.
+- Display-referred clips with no grade and a neutral look skip both transforms: they render bit for bit as before.
+- Preview LUTs for the studio: the worker bakes them (odt-rec709 and each profile's IDT) and puts them in the library
+  as cache files (`role:lut`, `meta: { transform, hash }`); `GET /api/film/luts` → `{ [name]: { cid, hash, size } }`.
+
+### C6 · Jobs (api/src/renders.ts, migration — owned by stream A)
+
+`render_jobs` gains `kind: 'render' | 'proxy' | 'lut'` (default 'render'), `media_cid`, and `timeline_id` becomes
+nullable. Every new video/image upload (and EXR tar) is queued for a `proxy` job; the worker detects its colour,
+writes `meta.color`, makes the HD log proxy (C7 of the plan: source encoding kept) and links it (`meta.proxy` on
+the original, `meta.proxyOf` on the proxy, tag `role:proxy`). The claim endpoint returns the job's kind.
+
+### C7 · The studio (src/routes/app/studio/**, src/lib/studio/**, src/lib/auth/client.ts — owned by stream C)
+
+Tabs **Edit · Grade · Render**. Edit: proxies + the world viewer (C3) on one clock, keyframe lanes for world clips,
+edit lock. Grade: conform status, film look + clip grades (C5), presets, scopes, hero frames. Render: deliveries,
+queue, QC report. Consumes C1–C6; never edits their files.
+
+### Migrations and ports (no two streams collide)
+
+| Stream | Scope | Migration ids | Local ports (Postgres · API · Vite) |
+|---|---|---|---|
+| **A · colour and the worker** | M0 (worker, grade.mjs, assemble.mjs), M1, M2, M9, the worker side of M7/M8 | `0024-film-jobs` | 5434 · 3101 · — |
+| **B · the world as data** | M0 (shoot.mjs), M3, M4, M5, C1–C4, the Day 19 world timeline script | `0025-shots`, `0026-timeline-stages` | 5435 · 3102 · 5174 |
+| **C · the studio** | M6, M7 and M8 in the studio, M10 docs for the studio | none (asks B) | 5436 · 3103 · 5175 |
+
+Environment for every stream: ffmpeg 6.1 (zscale, lut3d, lut1d, libx265) from apt; OpenColorIO 2.5 + numpy from
+pip; Chromium at `/opt/pw-browsers/chromium-1194/chrome-linux/chrome` (WebGL through SwiftShader:
+`--use-gl=angle --use-angle=swiftshader --enable-unsafe-swiftshader`), `playwright-core` in `/tmp/pgmaia/pw`;
+Postgres binaries in `/usr/lib/postgresql/*/bin` (run as the `postgres` user, data under `/tmp/<stream>`). On the Mac
+the worker uses VideoToolbox (`hevc_videotoolbox`) and Chrome with Metal; here libx265 and SwiftShader.
+New standalone files are plain JavaScript (JSDoc types); existing TypeScript files stay TypeScript.
