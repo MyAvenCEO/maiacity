@@ -7,6 +7,7 @@ mod auth;
 mod mcp;
 mod proxies;
 mod sync;
+mod watch;
 
 use std::{
     io::SeekFrom,
@@ -50,6 +51,7 @@ struct Status {
     bytes: u64,
     disk_free: u64,
     disk_total: u64,
+    watch_dir: String,
 }
 
 #[tauri::command]
@@ -66,6 +68,7 @@ async fn vault_status(app: State<'_, App>) -> Res<Status> {
         bytes: list.iter().map(|m| m.size).sum(),
         disk_free: free,
         disk_total: total,
+        watch_dir: watch::watch_dir().display().to_string(),
     })
 }
 
@@ -339,6 +342,8 @@ fn main() {
                 }
                 sync::keep_complete(handle, v).await;
             });
+            // the watch folder: whatever lands in ~/Movies/maiaCITY Inbox is ingested by itself
+            tauri::async_runtime::spawn(watch::run(app.handle().clone(), vault.clone()));
             // the studio for agents: MCP on this Mac only, behind the app's token
             let (handle, v) = (app.handle().clone(), vault.clone());
             let auth = app.state::<auth::Auth>().inner().clone();

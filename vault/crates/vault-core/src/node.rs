@@ -5,7 +5,11 @@
 
 use std::{
     path::{Path, PathBuf},
-    sync::Arc,
+    sync::{
+        Arc,
+        atomic::{AtomicU64, Ordering},
+    },
+    time::{Duration, Instant},
 };
 
 use anyhow::{Context, Result};
@@ -13,7 +17,11 @@ use iroh::{
     Endpoint, EndpointId, RelayConfig, RelayMode, RelayUrl, SecretKey, address_lookup::MemoryLookup, endpoint::presets,
     protocol::Router,
 };
-use iroh_blobs::{BlobsProtocol, store::fs::FsStore};
+use iroh_blobs::{
+    BlobsProtocol,
+    provider::events::{EventMask, EventSender, ProviderMessage, ThrottleMode},
+    store::fs::FsStore,
+};
 use iroh_docs::{DocTicket, protocol::Docs};
 use iroh_gossip::net::Gossip;
 
@@ -28,6 +36,8 @@ pub struct Vault {
     /// who may connect (the server and the other paired devices, once joined)
     pub allow: Allow,
     lookup: MemoryLookup,
+    /// how fast this node sends files to its peers, in bytes per second (0 = as fast as it can)
+    pub upload_limit: Arc<AtomicU64>,
     router: Router,
 }
 
@@ -69,14 +79,37 @@ impl Vault {
             .await
             .context("open the catalog store")?;
 
+        // the upload limit: iroh-blobs asks before it sends each 16 KiB, and a token bucket lets it wait
+        let upload_limit = Arc::new(AtomicU64::new(0));
+        let (events, mut asks) = EventSender::channel(64, EventMask { throttle: ThrottleMode::Intercept, ..EventMask::DEFAULT });
+        let limit = upload_limit.clone();
+        tokio::spawn(async move {
+            let (mut budget, mut last) = (0f64, Instant::now());
+            while let Some(msg) = asks.recv().await {
+                if let ProviderMessage::Throttle(t) = msg {
+                    let rate = limit.load(Ordering::Relaxed) as f64;
+                    if rate > 0.0 {
+                        let now = Instant::now();
+                        budget = (budget + now.duration_since(last).as_secs_f64() * rate).min(rate); // at most a second saved up
+                        last = now;
+                        budget -= t.inner.size as f64;
+                        if budget < 0.0 {
+                            tokio::time::sleep(Duration::from_secs_f64(-budget / rate)).await;
+                        }
+                    }
+                    t.tx.send(Ok(())).await.ok();
+                }
+            }
+        });
+
         let router = Router::builder(endpoint.clone())
-            .accept(iroh_blobs::ALPN, BlobsProtocol::new(&store, None))
+            .accept(iroh_blobs::ALPN, BlobsProtocol::new(&store, Some(events)))
             .accept(iroh_gossip::ALPN, gossip)
             .accept(iroh_docs::ALPN, docs.clone())
             .spawn();
 
         let catalog = Catalog::open(&dir, &docs, &store).await?;
-        Ok(Self { dir, endpoint, store, docs, catalog, allow, lookup, router })
+        Ok(Self { dir, endpoint, store, docs, catalog, allow, lookup, upload_limit, router })
     }
 
     /// Join the vault's network: our relay, the server's address, the paired devices, and the shared catalog —

@@ -172,14 +172,35 @@ impl Peer {
     async fn reconcile_once(&self, s3: &S3, db: &tokio_postgres::Client, failed: &mut HashSet<Hash>) -> Result<()> {
         // descriptions first, so the mirror knows a file before its bytes arrive
         let metas: Vec<_> = self.doc.get_many(Query::single_latest_per_key().key_prefix("meta/")).await?.collect().await;
+        let metas: Vec<_> = metas.into_iter().collect::<Result<_, _>>()?;
+        // iroh-docs fetches an entry's content once, when the entry arrives; a device it could not reach then leaves
+        // the description missing for good — so ask the paired devices for whatever is still missing
+        let mut missing = Vec::new();
+        for entry in &metas {
+            if self.store.blobs().get_bytes(entry.content_hash()).await.is_err() {
+                missing.push(entry.content_hash());
+            }
+        }
+        if !missing.is_empty() {
+            let from: Vec<EndpointId> = self.allow.all().into_iter().filter(|id| *id != self.endpoint.id()).collect();
+            let n = missing.len();
+            match self.store.downloader(&self.endpoint).download(missing, from).await {
+                Ok(()) => tracing::info!("fetched {n} descriptions"),
+                Err(e) => tracing::warn!("{n} descriptions still missing: {e:#}"),
+            }
+        }
+        let (mut mirrored, mut absent) = (0, 0);
         for entry in metas {
-            let entry = entry?;
-            let Ok(bytes) = self.store.blobs().get_bytes(entry.content_hash()).await else { continue }; // not arrived yet
+            let Ok(bytes) = self.store.blobs().get_bytes(entry.content_hash()).await else {
+                absent += 1;
+                continue;
+            };
             let Ok(meta) = serde_json::from_slice::<serde_json::Value>(&bytes) else { continue };
             let Some(hash) = meta.get("hash").and_then(|h| h.as_str()).map(String::from) else { continue };
             // each file on its own: one that fails never holds up the rest
-            if let Err(e) = db::mirror(db, &meta, false).await {
-                tracing::warn!("mirror {hash}: {e:#}");
+            match db::mirror(db, &meta, false).await {
+                Ok(()) => mirrored += 1,
+                Err(e) => tracing::warn!("mirror {hash}: {e:#}"),
             }
             let copy = async {
                 if s3.head(&s3::meta_key(&hash)).await?.is_none() {
@@ -191,6 +212,7 @@ impl Peer {
                 tracing::warn!("meta {hash} to the bucket: {e:#}");
             }
         }
+        tracing::debug!("mirror: {mirrored} described, {absent} descriptions not here yet");
 
         let blobs: Vec<_> = self.doc.get_many(Query::single_latest_per_key().key_prefix("blobs/")).await?.collect().await;
         for entry in blobs {
