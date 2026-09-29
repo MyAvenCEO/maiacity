@@ -13,7 +13,7 @@ use std::{
 
 use anyhow::{Context, Result, bail};
 use futures_lite::StreamExt;
-use iroh::{Endpoint, EndpointId, RelayMode, RelayUrl, SecretKey, endpoint::presets, protocol::Router};
+use iroh::{Endpoint, EndpointAddr, EndpointId, RelayMode, RelayUrl, SecretKey, address_lookup::MemoryLookup, endpoint::presets, protocol::Router};
 use iroh_blobs::{
     BlobsProtocol, Hash,
     get::fsm::{self, BlobContentNext, ConnectedNext, EndBlobNext},
@@ -42,6 +42,9 @@ pub struct Peer {
     #[allow(dead_code)]
     pub author: AuthorId,
     pub allow: Allow,
+    /// where each paired device can be reached: through our relay (every Mac keeps its home connection there)
+    lookup: MemoryLookup,
+    relay: RelayUrl,
     router: Router,
     /// who most recently told us about a file — the first place to fetch it from
     seen_from: Mutex<HashMap<Hash, EndpointId>>,
@@ -59,9 +62,11 @@ pub struct Config<'a> {
 impl Peer {
     pub async fn start(cfg: Config<'_>, allow: Allow) -> Result<Arc<Self>> {
         std::fs::create_dir_all(cfg.dir.join("docs"))?;
+        let lookup = MemoryLookup::new();
         let mut builder = Endpoint::builder(presets::Minimal)
             .secret_key(cfg.secret)
             .relay_mode(RelayMode::custom([cfg.relay.clone()]))
+            .address_lookup(lookup.clone())
             .hooks(allow.clone())
             .portmapper_config(iroh::endpoint::PortmapperConfig::Disabled)
             .bind_addr(SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::UNSPECIFIED, cfg.port)))?;
@@ -106,10 +111,22 @@ impl Peer {
             doc,
             author,
             allow,
+            lookup,
+            relay: cfg.relay.clone(),
             router,
             seen_from: Mutex::new(HashMap::new()),
             wake: Notify::new(),
         }))
+    }
+
+    /// The paired devices change: let them in, and know how to reach them (through our relay).
+    pub fn devices(&self, ids: Vec<EndpointId>) {
+        for id in &ids {
+            self.lookup.add_endpoint_info(EndpointAddr::new(*id).with_relay_url(self.relay.clone()));
+        }
+        let mut all = ids;
+        all.push(self.endpoint.id());
+        self.allow.set(all);
     }
 
     /// What a paired device needs: the catalog, writable (the device joins it), with the server's address in it.

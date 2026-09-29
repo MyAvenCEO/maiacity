@@ -12,4 +12,9 @@ say(`paired devices: ${devices.filter((d) => !d.revoked_at).length}`);
 for (const d of devices) say(`  ${d.endpoint_id.slice(0, 16)}…  ${d.label}${d.revoked_at ? "  (revoked)" : ""}`);
 const stored = files.filter((f) => f.stored);
 say(`mirror: ${files.length} files (${mb(files.reduce((n, f) => n + f.size, 0))}) · in Object Storage: ${stored.length} (${mb(stored.reduce((n, f) => n + f.size, 0))})`);
+if (process.argv.includes("--log")) {
+  const { API, keyFor } = await import("./media-client");
+  const res = await fetch(`${API}/vault/log`, { headers: { authorization: `Bearer ${await keyFor()}` } });
+  say(res.ok ? (await res.text()).split("\n").slice(-60).join("\n") : `log: ${res.status}`);
+}
 if (process.argv.includes("--files")) for (const f of files) say(`  ${f.stored ? "✓" : "…"} ${f.hash.slice(0, 12)}  ${mb(f.size).padStart(9)}  ${f.public ? "public " : "private"}  ${f.title}`);

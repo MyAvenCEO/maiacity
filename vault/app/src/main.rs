@@ -5,6 +5,7 @@
 
 mod auth;
 mod mcp;
+mod proxies;
 mod sync;
 
 use std::{
@@ -161,7 +162,7 @@ async fn vault_ingest(handle: AppHandle, app: State<'_, App>, paths: Vec<String>
     result.map_err(err)
 }
 
-async fn run_ingest(handle: &AppHandle, vault: &Vault, paths: Vec<String>, tags: Vec<String>) -> anyhow::Result<Summary> {
+async fn run_ingest(handle: &AppHandle, vault: &Arc<Vault>, paths: Vec<String>, tags: Vec<String>) -> anyhow::Result<Summary> {
     let session = ingest::now_iso();
     let batch = ingest::Batch { session: session.clone(), tags, ..Default::default() };
     let mut files = Vec::new();
@@ -177,6 +178,10 @@ async fn run_ingest(handle: &AppHandle, vault: &Vault, paths: Vec<String>, tags:
         handle.emit("ingest", Progress { index, total, path: path.clone(), size, outcome: None }).ok();
         let o = vault.ingest_file(f, &batch).await?;
         handle.emit("ingest", Progress { index, total, path, size, outcome: Some(o.clone()) }).ok();
+        // a new movie gets its proxy by itself (in the background: the next file does not wait)
+        if o.verdict == Verdict::Verified && ingest::kind_of(ingest::mime_of(f)) == "video" && !batch.tags.iter().any(|t| t == "proxy") {
+            tauri::async_runtime::spawn(proxies::auto_proxy(handle.clone(), vault.clone(), o.hash.clone(), f.clone()));
+        }
         outcomes.push(o);
     }
     let seconds = started.elapsed().as_secs_f64();

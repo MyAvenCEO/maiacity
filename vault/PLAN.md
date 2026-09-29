@@ -1,7 +1,7 @@
 # maiaCITY Studio + media vault — the task list
 
 Everything Samuel asked for, in order, with where it stands. Design and reasons: `.claude/skills/iroh/maiacity.md`.
-Status: ✅ done · 🔨 in progress · ⏳ next · 💤 deferred on purpose.  Last update: 2026-09-29, 17:45.
+Status: ✅ done · 🔨 in progress · ⏳ next · 💤 deferred on purpose.  Last update: 2026-09-29, 18:05.
 
 ## Done
 
@@ -35,8 +35,11 @@ Status: ✅ done · 🔨 in progress · ⏳ next · 💤 deferred on purpose.  L
       firewall UDP 7400, deploy env
     - ✅ local end-to-end test of the iroh path (local Postgres, no S3): pairing, relay, joining, catalog sync, mirror
     - ✅ live: the vault container runs (release 3b); the pre-deploy backup reaches the bucket (589 KB, no media)
-    - 🔨 release 3c: Caddy reloads its routes (/relay, /vault/*) — then the bucket path tested live
-17. 🔨 **Automatic sync**: ✅ Mac side of joining (allowlist, relay at runtime, shared catalog, own entries carried
+    - ✅ release 3c: Caddy reloads its routes — the gateway (`/vault/health` ok) and the relay (`/generate_204`) are live
+    - ✅ this Mac paired itself ("maiaCITY Studio · MacBook Air von Samuel") and reaches the server
+    - 🔨 release 3d: the server's catalog accepts syncs (it closed every sync after a restart) — then the files flow
+17. 🔨 **Automatic sync**: ✅ the session lives in a user-only file (no more Keychain prompts); ✅ the Mac re-joins every
+    30 s; ✅ Mac side of joining (allowlist, relay at runtime, shared catalog, own entries carried
     over); ✅ the app pairs and joins by itself after sign-in; ✅ files only the server holds come down from the
     gateway, hash-checked, into the store; ⏳ bandwidth policy (~75 % by day); ⏳ "safe to
     format" at two copies; ⏳ watch folder; ⏳ web upload.
@@ -60,12 +63,15 @@ Status: ✅ done · 🔨 in progress · ⏳ next · 💤 deferred on purpose.  L
     c) ⏳ render: Metal compositing, audio mix, captions, loudness QC (`ebur128`)
     d) ⏳ world plates and hero frames in the app's own WebView
 15. ⏳ **Render test run**: Day 19 world timeline, an Apple Log 2 clip, Edit → Lock → Grade → Render — natively.
-21. ⏳ Automatic proxies for RAW (the render worker's proxy jobs, run by the app); HLS later if needed.
+21. 🔨 **Automatic proxies**: ✅ after every ingest each new movie is probed, its colour told (color.js rules, natively),
+    and its proxy made and filed as `proxy_of` the original — camera log and display video; ⏳ HDR / linear (need the
+    ACEScct transform, 14b) wait and say so; ⏳ stills proxies; HLS later if needed.
 23. 🔨 **MCP control of the whole studio**: ✅ MCP server inside the Mac app (127.0.0.1:4545/mcp, token-gated, acts
     with the app's key) with tools: vault_status, library_list, library_copies, ingest, library_describe
     (enrichment), media_probe, media_proxy, timelines_list, timeline_save, render_queue, renders_list, content_list,
     content_create, content_save (draft → publish), api_call; ✅ the connect command in the Devices panel;
-    ⏳ tested from Claude Code once the new app runs; ⏳ native grade/render tools with 14b–c.
+    ✅ tested over MCP (401 without the token; 15 tools; vault_status and library_list answer); ⏳ native grade/render
+    tools with 14b–c.
 22. ⏳ A `main` release after each step; the last when everything is in.
 
 ## Deferred on purpose

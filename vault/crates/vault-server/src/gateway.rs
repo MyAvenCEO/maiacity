@@ -26,17 +26,19 @@ pub struct Gateway {
     pub api: String,
     pub http: reqwest::Client,
     keys: Arc<Mutex<HashMap<String, Instant>>>,
+    log: crate::log::Ring,
 }
 
 impl Gateway {
-    pub fn new(s3: S3, db: Arc<tokio_postgres::Client>, api: String) -> Self {
-        Self { s3, db, api, http: reqwest::Client::new(), keys: Default::default() }
+    pub fn new(s3: S3, db: Arc<tokio_postgres::Client>, api: String, log: crate::log::Ring) -> Self {
+        Self { s3, db, api, http: reqwest::Client::new(), keys: Default::default(), log }
     }
 
     pub fn router(self) -> Router {
         Router::new()
             .route("/vault/health", get(|| async { "ok" }))
             .route("/vault/files/{name}", get(file).head(file))
+            .route("/vault/log", get(recent))
             .with_state(self)
     }
 
@@ -63,6 +65,14 @@ impl Gateway {
         }
         ok
     }
+}
+
+/// The server's last 300 log lines — for the admin (the app's key) only.
+async fn recent(State(g): State<Gateway>, headers: HeaderMap) -> Response {
+    if !g.admin(&headers).await {
+        return (StatusCode::UNAUTHORIZED, "the admin's key only").into_response();
+    }
+    g.log.lines().join("\n").into_response()
 }
 
 async fn file(State(g): State<Gateway>, Path(name): Path<String>, headers: HeaderMap) -> Response {

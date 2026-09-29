@@ -17,6 +17,7 @@
 mod allow;
 mod db;
 mod gateway;
+mod log;
 mod peer;
 mod s3;
 
@@ -45,7 +46,12 @@ fn identity(dir: &std::path::Path) -> Result<SecretKey> {
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    tracing_subscriber::fmt().with_env_filter(env_or("RUST_LOG", "info,iroh=warn,iroh_docs=warn,iroh_blobs=warn")).init();
+    let ring = log::Ring::default();
+    tracing_subscriber::fmt()
+        .with_env_filter(env_or("RUST_LOG", "info,iroh=warn,iroh_docs=info,iroh_blobs=warn"))
+        .with_ansi(false)
+        .with_writer(ring.clone())
+        .init();
     rustls::crypto::ring::default_provider().install_default().ok();
 
     let dir = PathBuf::from(env_or("VAULT_DATA", "/data"));
@@ -85,16 +91,16 @@ async fn main() -> Result<()> {
     db::publish(&db, "catalog", &peer.ticket().await?.to_string()).await?;
     tracing::info!("vault-server {} · catalog {}", peer.endpoint.id(), peer.doc.id());
 
-    // the paired devices change: follow them
+    // the paired devices change: follow them (who may connect, and how to reach them)
+    peer.devices(db::devices(&db).await?);
     {
-        let (db, allow, me, peer) = (db.clone(), allow.clone(), peer.endpoint.id(), peer.clone());
+        let (db, allow, peer) = (db.clone(), allow.clone(), peer.clone());
         tokio::spawn(async move {
             loop {
                 tokio::time::sleep(Duration::from_secs(15)).await;
-                if let Ok(mut ids) = db::devices(&db).await {
+                if let Ok(ids) = db::devices(&db).await {
                     let before = allow.all().len();
-                    ids.push(me);
-                    allow.set(ids);
+                    peer.devices(ids);
                     if allow.all().len() != before {
                         peer.wake.notify_one();
                     }
@@ -105,7 +111,7 @@ async fn main() -> Result<()> {
     tokio::spawn(peer.clone().listen());
     tokio::spawn(peer.clone().reconcile(s3.clone(), db.clone()));
 
-    let gateway = gateway::Gateway::new(s3, db, env_or("API_URL", "http://api:3000")).router();
+    let gateway = gateway::Gateway::new(s3, db, env_or("API_URL", "http://api:3000"), ring).router();
     let http: SocketAddr = env_or("VAULT_HTTP", "0.0.0.0:3341").parse().context("VAULT_HTTP")?;
     let listener = tokio::net::TcpListener::bind(http).await?;
     tracing::info!("gateway on {http}");
