@@ -55,6 +55,17 @@ fn clear(of: &str) {
     }
 }
 
+/// How often a proxy is tried before it waits for a person (a decode that failed once — the Mac short of memory, a
+/// card pulled — usually works the next time).
+const TRIES: u64 = 3;
+
+/// What holds this Mac's uploads now: "ingest", "proxy" (empty: nothing — files sync).
+#[tauri::command]
+pub fn vault_hold(app: tauri::State<'_, crate::App>) -> crate::Res<Vec<String>> {
+    crate::gate()?;
+    Ok(app.vault.hold.now())
+}
+
 /// The proxies being made or queued right now.
 #[tauri::command]
 pub fn proxies_now() -> crate::Res<Vec<Making>> {
@@ -78,6 +89,17 @@ pub fn wants_proxy(m: &Meta) -> bool {
 /// Every original still without its proxy, queued — at the start, and every ten minutes: a journey defined since, a
 /// file that came in on another device.
 pub async fn sweep(handle: AppHandle, vault: Arc<Vault>) {
+    // what a run that ended midway left behind (the app quit, the Mac froze): half-made proxies, exported sources,
+    // landing copies — nothing uses them now; the files themselves are taken up again below
+    let started = std::time::SystemTime::now();
+    for e in std::fs::read_dir(vault.ingest_dir()).into_iter().flatten().flatten() {
+        let old = e.metadata().and_then(|m| m.modified()).is_ok_and(|t| t < started);
+        let name = e.file_name().to_string_lossy().into_owned();
+        if old && (name.ends_with(".proxy.mp4") || name.ends_with(".src") || name.ends_with(".part")) {
+            tracing::info!("left from an earlier run, removed: {name}");
+            std::fs::remove_file(e.path()).ok();
+        }
+    }
     loop {
         tokio::time::sleep(Duration::from_secs(20)).await;
         if crate::auth::signed_in() {
@@ -87,9 +109,12 @@ pub async fn sweep(handle: AppHandle, vault: Arc<Vault>) {
                     let made = state.len() == 64 && state.bytes().all(|b| b.is_ascii_hexdigit());
                     let profile = m.meta.pointer("/color/profile").and_then(|p| p.as_str()).unwrap_or("");
                     let detector = m.meta.pointer("/color/detector").and_then(|d| d.as_u64()).unwrap_or(0);
-                    // never tried, waiting for a journey that exists now, or its colour unknown to an older detector
+                    let tries = m.meta.get("proxy_tries").and_then(|t| t.as_u64()).unwrap_or(0);
+                    // never tried, waiting for a journey that exists now, its colour unknown to an older detector, or
+                    // failed fewer than TRIES times (healing by itself)
                     let due = state.is_empty()
-                        || (state.starts_with("waiting") && (journey(profile) || (profile == "unknown" && detector < DETECTOR)));
+                        || (state.starts_with("waiting") && (journey(profile) || (profile == "unknown" && detector < DETECTOR)))
+                        || (state.starts_with("failed") && tries < TRIES);
                     let queued = NOW.lock().unwrap().as_ref().is_some_and(|n| n.contains_key(&m.hash));
                     if !made && due && !queued {
                         tauri::async_runtime::spawn(auto_proxy(handle.clone(), vault.clone(), m.hash.clone(), PathBuf::new()));
@@ -108,13 +133,23 @@ pub async fn auto_proxy(handle: AppHandle, vault: Arc<Vault>, hex: String, sourc
     };
     set(&hex, &name, "queued", 0.0);
     let _turn = TURN.acquire().await;
-    let result = make(&vault, &hex, &name, source).await;
+    // an ingest first: every file in, then the proxies
+    vault.hold.free_of("ingest").await;
+    let result = {
+        let _held = vault.hold.take("proxy");
+        make(&vault, &hex, &name, source).await
+    };
     clear(&hex);
     handle.emit("vault-proxy", json!({ "of": hex })).ok();
     if let Err(e) = result {
         tracing::warn!("proxy of {hex}: {e}");
-        if let Ok(hash) = hex.parse() {
-            vault.catalog.describe(hash, &json!({ "meta": { "proxy": format!("failed: {e}") } })).await.ok();
+        for left in [format!("{hex}.proxy.mp4"), format!("{hex}.src")] {
+            std::fs::remove_file(vault.ingest_dir().join(left)).ok();
+        }
+        if let Ok(hash) = hex.parse::<iroh_blobs::Hash>() {
+            let tries = vault.catalog.meta(hash).await.ok().flatten().and_then(|m| m.meta.get("proxy_tries").and_then(|t| t.as_u64())).unwrap_or(0) + 1;
+            let note = if tries < TRIES { format!("failed: {e} — tried {tries} of {TRIES}, again by itself") } else { format!("failed: {e} — tried {TRIES} times, make it again by hand") };
+            vault.catalog.describe(hash, &json!({ "meta": { "proxy": note, "proxy_tries": tries } })).await.ok();
         }
     }
 }

@@ -36,11 +36,17 @@
 	let selected = $state<string[]>([]);
 	/** what is on its way right now, per file and destination (live, from iroh) */
 	let moving = $state<Moving[]>([]);
+	/** what holds this Mac's uploads now ("ingest", "proxy"): local work first, then sync */
+	let hold = $state<string[]>([]);
+	/** the file coming in right now: its B column fills as it is copied, read back and taken into the store */
+	let landing = $state<{ path: string; story: string; size: number; done: number } | null>(null);
+	const waitingWhy = $derived(hold.includes('ingest') ? 'waits: the ingest runs first' : hold.includes('proxy') ? 'waits: the proxies render first' : 'queued');
 	const movingOf = (m: MediaItem, dest: string) => moving.find((t) => t.hash === m.hash && t.dest === dest && !t.done && !t.aborted);
 	const active = $derived(moving.filter((t) => !t.done && !t.aborted && mine.some((m) => m.hash === t.hash)));
 	let error = $state('');
 
 	const current = $derived(stories.find((s) => s.id === story) ?? null);
+	const landingHere = $derived(landing && (landing.story === story || (!landing.story && current?.inbox)) ? landing : null);
 	const mine = $derived(files.filter((m) => (current?.inbox ? !m.story : m.story === story) && m.meta?.role !== 'proxy-cache'));
 	/** every destination any class of this story names, in the order they are first named */
 	const destinations = $derived.by(() => {
@@ -159,14 +165,29 @@
 		const timer = setInterval(async () => {
 			copies = Object.fromEntries((await command<Copies[]>('vault_copies').catch(() => [])).map((c) => [c.hash, c]));
 		}, 10000);
+		let unlisten: Array<() => void> = [];
+		let loading: ReturnType<typeof setTimeout> | undefined;
+		void import('@tauri-apps/api/event').then(async ({ listen }) => {
+			unlisten.push(await listen<{ path: string; story: string; size: number; done: number }>('ingest-bytes', ({ payload }) => void (landing = payload)));
+			unlisten.push(
+				await listen<{ path: string; outcome: unknown }>('ingest', ({ payload }) => {
+					if (!payload.outcome) return;
+					landing = null;
+					// the file is in: show it (at most every 2 s while a card comes in)
+					clearTimeout(loading);
+					loading = setTimeout(() => void load(), 2000);
+				})
+			);
+		});
 		const live = setInterval(async () => {
 			making = await command<Making[]>('proxies_now').catch(() => []);
+			hold = await command<string[]>('vault_hold').catch(() => []);
 			const was = moving.filter((t) => t.done).length;
 			moving = await command<Moving[]>('vault_transfers').catch(() => []);
 			// a transfer just finished: its copy is now verified — look at the copies at once
 			if (moving.filter((t) => t.done).length > was) copies = Object.fromEntries((await command<Copies[]>('vault_copies').catch(() => [])).map((c) => [c.hash, c]));
 		}, 1000);
-		return () => (clearInterval(timer), clearInterval(live));
+		return () => (clearInterval(timer), clearInterval(live), clearTimeout(loading), unlisten.forEach((u) => u()));
 	});
 </script>
 
@@ -241,13 +262,37 @@
 					</tr>
 				</thead>
 				<tbody>
+					{#if landingHere}
+						<tr class="coming">
+							<td></td>
+							{#each TIERS as t (t.tier)}
+								<td class="c tier">
+									{#if t.store === 'avenSSD'}<span class="pct" title="Local Master: coming in — copied, read back, taken in by iroh, each hashed">{Math.floor(landingHere.done * 100)}%</span>
+									{:else if t.store}<span class="wait" title="{t.name}: after the ingest">0%</span>
+									{:else}<span class="none">·</span>{/if}
+								</td>
+							{/each}
+							<td class="thumb"><span>⇣</span></td>
+							<td class="h">hashing…</td>
+							<td class="n">{landingHere.path.split('/').pop()}</td>
+							<td class="col" colspan="2"><span class="pm">coming in</span><span class="rbar"><i style:width="{landingHere.done * 100}%"></i></span></td>
+							<td class="r">{gb(landingHere.size)}</td>
+						</tr>
+					{/if}
 					{#each rows.slice(0, shown) as r (rowKey(r))}
 						{#if 'coming' in r}
 							{@const now = making.find((x) => x.of === r.coming.hash)}
 							{@const ps = proxyState(r.coming.meta)}
 							<tr class="coming">
 								<td></td>
-								{#each TIERS as t (t.tier)}<td class="c tier"><span class="none">·</span></td>{/each}
+								{#each TIERS as t (t.tier)}
+									<td class="c tier">
+										{#if t.store === 'avenSSD' && now}<span class="pct" title="Local Master: rendering into ACEScct">{now.stage === 'making' ? `${Math.floor(now.done * 100)}%` : '0%'}</span>
+										{:else if t.store && (current?.rules.proxy ?? []).includes(t.store)}<span class="wait" title="{t.name}: once it is rendered">0%</span>
+										{:else if t.store}<span class="none">—</span>
+										{:else}<span class="none">·</span>{/if}
+									</td>
+								{/each}
 								<td class="thumb"><span>▶</span></td>
 								<td class="h">—</td>
 								<td class="n sub">↳ {(r.coming.original_name ?? '').replace(/\.[^.]+$/, '')}.proxy</td>
@@ -270,7 +315,8 @@
 									{:else if st === 'ok'}<span class="ok" title="{t.name}: verified by hash">✓</span>
 									{:else if mv}<span class="pct" title="{t.name}: {gb(mv.sent)} of {gb(mv.size)} · {gb(mv.rate)}/s">{mv.size ? Math.floor((mv.sent / mv.size) * 100) : 0}%</span>
 									{:else if st === ''}<span class="none" title="{t.name}: not a destination of this class">—</span>
-									{:else}<span class="miss" title="{t.name}: {st}">✗</span>{/if}
+									{:else if st === 'on its way'}<span class="pct" title="{t.name}: on its way">…</span>
+									{:else}<span class="wait" title="{t.name}: {waitingWhy}">0%</span>{/if}
 								</td>
 							{/each}
 							<td class="thumb">
@@ -341,7 +387,7 @@
 	.tier { width: 2.2rem; padding-left: 0.2rem; padding-right: 0.2rem; }
 	.tier .ok { display: inline-grid; place-items: center; width: 1.25rem; height: 1.25rem; border-radius: 50%; background: #6f9a57; font-size: 0.7rem; font-weight: 700; color: #fff; }
 	.tier .pct { font-size: 0.72rem; font-weight: 600; font-variant-numeric: tabular-nums; color: #b8860b; }
-	.tier .miss { font-weight: 700; color: #9c3b26; }
+	.tier .wait { font-size: 0.72rem; font-variant-numeric: tabular-nums; color: var(--dim); }
 	.tier .none { color: var(--edge); }
 	th.tier { text-align: center; }
 	.thumb { width: 2.6rem; padding: 0.2rem 0.3rem; }

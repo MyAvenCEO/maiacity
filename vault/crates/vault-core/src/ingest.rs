@@ -6,7 +6,10 @@
 //!
 //! Only when all three are the same is the file verified and recorded in the catalog.
 
-use std::path::{Path, PathBuf};
+use std::{
+    path::{Path, PathBuf},
+    sync::Arc,
+};
 
 use anyhow::{Context, Result};
 use iroh_blobs::{
@@ -97,26 +100,35 @@ pub fn walk(path: &Path) -> Result<Vec<PathBuf>> {
     Ok(out)
 }
 
+/// How far one file's ingest is, 0…1.
+pub type Progress = Arc<dyn Fn(f64) + Send + Sync>;
+
 impl Vault {
     /// Ingest one file with the three-hash check. A mismatch is retried once before it is reported.
     pub async fn ingest_file(&self, src: &Path, batch: &Batch) -> Result<IngestOutcome> {
-        let first = self.ingest_once(src, batch).await?;
+        self.ingest_file_with(src, batch, Arc::new(|_| {})).await
+    }
+
+    /// `ingest_file`, telling `progress` how far it is (0…1): the copy off the source, then the copy read back, then iroh.
+    pub async fn ingest_file_with(&self, src: &Path, batch: &Batch, progress: Progress) -> Result<IngestOutcome> {
+        let first = self.ingest_once(src, batch, progress.clone()).await?;
         if first.verdict != Verdict::Mismatch {
             return Ok(first);
         }
         tracing::warn!("hash mismatch on {} — retrying once", src.display());
-        self.ingest_once(src, batch).await
+        self.ingest_once(src, batch, progress).await
     }
 
-    async fn ingest_once(&self, src: &Path, batch: &Batch) -> Result<IngestOutcome> {
+    async fn ingest_once(&self, src: &Path, batch: &Batch, progress: Progress) -> Result<IngestOutcome> {
         let started = std::time::Instant::now();
         let landing = self.ingest_dir().join(format!("{}.part", unique()));
 
         // 1 + 2: copy while hashing the source; then read the copy back from the disk
-        let (src_path, land) = (src.to_path_buf(), landing.clone());
+        let (src_path, land, told) = (src.to_path_buf(), landing.clone(), progress.clone());
+        let total = std::fs::metadata(src).map(|m| m.len()).unwrap_or(0).max(1) as f64;
         let (source_hash, size, disk_hash) = tokio::task::spawn_blocking(move || -> Result<_> {
-            let (source_hash, size) = hash::copy_hashing(&src_path, &land)?;
-            let disk_hash = hash::hash_from_disk(&land)?;
+            let (source_hash, size) = hash::copy_hashing_with(&src_path, &land, &mut |n| told(0.6 * n as f64 / total))?;
+            let disk_hash = hash::hash_from_disk_with(&land, &mut |n| told(0.6 + 0.35 * n as f64 / total))?;
             Ok((source_hash, size, disk_hash))
         })
         .await??;
@@ -169,6 +181,7 @@ impl Vault {
             .context("import into the store")?;
         std::fs::remove_file(&landing).ok();
         let iroh_hash = tag.hash;
+        progress(1.0);
 
         if iroh_hash != source_hash {
             return Ok(outcome(iroh_hash, Verdict::Mismatch));

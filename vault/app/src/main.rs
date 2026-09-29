@@ -162,6 +162,8 @@ struct Progress {
     total: usize,
     path: String,
     size: u64,
+    /// the story it goes into (empty: the inbox)
+    story: String,
     outcome: Option<IngestOutcome>,
 }
 
@@ -220,22 +222,37 @@ async fn run_ingest(
     let total = files.len();
     let started = std::time::Instant::now();
     let mut outcomes = Vec::new();
+    // local work first: while the files come in, nothing is rendered and nothing is sent — each resumes after
+    let held = vault.hold.take("ingest");
+    let mut proxies_due = Vec::new();
+    let story = batch.story.clone().unwrap_or_default();
     for (index, f) in files.iter().enumerate() {
         let size = std::fs::metadata(f).map(|m| m.len()).unwrap_or(0);
         let path = f.display().to_string();
-        handle.emit("ingest", Progress { index, total, path: path.clone(), size, outcome: None }).ok();
-        let o = vault.ingest_file(f, &batch).await?;
-        handle.emit("ingest", Progress { index, total, path, size, outcome: Some(o.clone()) }).ok();
-        // a new movie gets its proxy by itself when that is switched on (in the background: the next file does not wait)
-        // every video original gets its proxy — from the source while it is still here (the queue takes one at a time)
+        handle.emit("ingest", Progress { index, total, path: path.clone(), size, story: story.clone(), outcome: None }).ok();
+        // how far this file is, for its B column: at most once per percent
+        let (h, p, st, last) = (handle.clone(), path.clone(), story.clone(), Arc::new(std::sync::atomic::AtomicU32::new(u32::MAX)));
+        let told: ingest::Progress = Arc::new(move |done: f64| {
+            let pct = (done * 100.0) as u32;
+            if last.swap(pct, std::sync::atomic::Ordering::Relaxed) != pct {
+                h.emit("ingest-bytes", serde_json::json!({ "path": p, "story": st, "size": size, "done": done })).ok();
+            }
+        });
+        let o = vault.ingest_file_with(f, &batch, told).await?;
+        handle.emit("ingest", Progress { index, total, path, size, story: story.clone(), outcome: Some(o.clone()) }).ok();
+        // every video original gets its proxy — once all files are in, one at a time, from the source while it is here
         if o.verdict == Verdict::Verified {
             if let Ok(Some(m)) = vault.catalog.meta(o.hash.parse()?).await {
                 if proxies::wants_proxy(&m) {
-                    tauri::async_runtime::spawn(proxies::auto_proxy(handle.clone(), vault.clone(), o.hash.clone(), f.clone()));
+                    proxies_due.push((o.hash.clone(), f.clone()));
                 }
             }
         }
         outcomes.push(o);
+    }
+    drop(held);
+    for (hash, source) in proxies_due {
+        tauri::async_runtime::spawn(proxies::auto_proxy(handle.clone(), vault.clone(), hash, source));
     }
     let seconds = started.elapsed().as_secs_f64();
     let bytes = outcomes.iter().map(|o| o.size).sum();
@@ -416,6 +433,7 @@ fn main() {
             stories::files_move,
             stories::files_class,
             proxies::proxies_now,
+            proxies::vault_hold,
             proxies::vault_proxy,
             vault_sources,
             vault_scan,
