@@ -156,24 +156,38 @@ describe.skipIf(!hasFfmpeg || !hasOcio)("the worker's colour path against OCIO",
     }
   }, 60000);
 
-  test("the output transform (65³, tetrahedral) matches OCIO on realistic scene colours", () => {
+  test("the output transform (129³, tetrahedral) matches OCIO on realistic scene colours", () => {
     const px = m.realistic(m.rng(5));
     const d = m.diff(m.throughFfmpeg(px, fx.odtFilters().filters), m.throughOcio(TRANSFORMS["odt-rec709"], px));
-    expect(d.p99).toBeLessThan(3);
-    expect(d.max).toBeLessThan(12);
+    expect(d.p99).toBeLessThan(1.5);
+    expect(d.max).toBeLessThan(8);
     // an ACEScct grey ramp: every step within 2 code values
     const ramp = [...Array(256)].map((_, i) => { const v = 0.1 + (i / 255) * 0.75; return [v, v, v]; });
     expect(m.diff(m.throughFfmpeg(ramp, fx.odtFilters().filters), m.throughOcio(TRANSFORMS["odt-rec709"], ramp)).max).toBeLessThan(2);
   }, 60000);
 
-  test("camera log: Apple Log and Apple Log 2 (65³) within ~2 code values of OCIO", () => {
+  test("camera log: Apple Log (65³) within ~2 code values of OCIO; Apple Log 2 by exact maths, within 0.05", () => {
     const r = m.rng(7);
     const px = [...Array(3000)].map(() => { const base = 0.15 + r() * 0.65; return [0, 0, 0].map(() => base + (r() - 0.5) * 0.12); });
-    for (const name of ["idt-apple-log", "idt-apple-log-2"] as const) {
-      const d = m.diff(m.throughFfmpeg(px, fx.idtFilters(name).filters), m.throughOcio(TRANSFORMS[name], px));
-      expect(d.max).toBeLessThan(2.5);
-    }
+    const v1 = m.diff(m.throughFfmpeg(px, fx.idtFilters("idt-apple-log").filters), m.throughOcio(TRANSFORMS["idt-apple-log"], px));
+    expect(v1.max).toBeLessThan(2.5);
+    // Apple Log 2: curve (1D) → one 3×3 → the PQ-shaped ACEScct encoding, no 3D LUT. Below the shaper's floor
+    // (linear −1/128, under ACEScct 0) it holds — the grade and the output transform start at 0 anyway.
+    const f = fx.idtFilters("idt-apple-log-2").filters;
+    expect(f.some((x) => x.startsWith("lut3d"))).toBe(false);
+    const got = m.throughFfmpeg(px, f), want = m.throughOcio(TRANSFORMS["idt-apple-log-2"], px);
+    const keep = want.map((p) => p.every((v) => v >= toCct(-SHAPER.offset)));
+    expect(m.diff(got.filter((_, i) => keep[i]), want.filter((_, i) => keep[i])).max).toBeLessThan(0.05);
   }, 60000);
+
+  test("saturated colours at the gamut edge: the render's 129³ output transform stays close to OCIO", () => {
+    // pure and near-pure display primaries and secondaries, taken back into ACEScct by OCIO — where ACES 2.0 bends
+    const r = m.rng(11);
+    const edge = [...Array(2000)].map(() => { const c = [0, 1, 2].map(() => (r() < 0.5 ? r() * 0.08 : 0.85 + r() * 0.15)); return c; });
+    const cct = m.throughOcio(TRANSFORMS["idt-rec709"], edge);
+    const d = m.diff(m.throughFfmpeg(cct, fx.odtFilters().filters), m.throughOcio(TRANSFORMS["odt-rec709"], cct));
+    expect(d.p99).toBeLessThan(75); // 65³: ~91
+  }, 120000);
 
   test("HLG and PQ by exact maths match the curves", () => {
     const px = [...Array(400)].map((_, i) => { const v = i / 399; return [v, v * 0.9, v * 0.8]; });

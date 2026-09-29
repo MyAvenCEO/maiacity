@@ -14,8 +14,10 @@ plus a voice, locked (a cut change refused, 409), graded (clip CDLs + film look)
 clip rendered through IDT → grade → look → ODT. World plates render **only on a Mac (Metal)** — decided the same
 day; the full 4-shape delivery of a cut with world clips is therefore run on the Mac worker. M10 docs done. Open: the
 Day 19 world timeline (`bun api/scripts/world-timeline.ts --from G --variant W`, on the Mac against production);
-render-time LUT accuracy on fully saturated primaries (≈40/1023 codes median off exact OCIO on a colour-bar test,
-≈2 on realistic colours) — try a larger LUT or a shaper for the chained display LUT.
+nothing else in the container. Colour accuracy, measured and improved: Apple Log 2 now goes to ACEScct by exact
+maths (1D curve → one 3×3 → the PQ-shaped encoding, within 0.05 code values of OCIO; no 3D LUT), and the render's
+output transform is baked at 129³ (realistic colours p99 2.6 → 0.8 code values; colours at the display gamut's edge,
+where ACES 2.0 bends hard, p99 91 → 63 — the limit of any 3D LUT there; previews stay 65³).
 
 ---
 

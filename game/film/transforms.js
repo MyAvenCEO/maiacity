@@ -156,8 +156,14 @@ export function displayChain(grade, look) {
  */
 export const PREVIEW = ['odt-rec709', 'idt-rec709', 'idt-apple-log', 'idt-apple-log-2'];
 
-/** The size a transform is baked at: 65³ for 3D LUTs (99% of realistic colours within ~2 10-bit code values of OCIO). */
+/** The size a preview LUT is baked at: 65³ (99% of realistic colours within ~2 10-bit code values of OCIO). */
 export const LUT_SIZE = 65;
+/**
+ * The size the final render's 3D LUTs (the output transform, the display chain) are baked at: 129³. ACES 2.0's
+ * output transform bends hard near the edge of the display gamut, so fully saturated colours need the finer grid
+ * (a colour-bar test: median 44 → 26 10-bit code values off OCIO, worst 270 → 93). It costs ~2 s per ffmpeg run.
+ */
+export const RENDER_LUT_SIZE = 129;
 
 // ── hashing: a transform is pinned by the hash of its config ─────────────────────────────────────────────────────
 

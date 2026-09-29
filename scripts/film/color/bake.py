@@ -6,6 +6,8 @@
 #       the OpenColorIO version (part of every cache key)
 #   python3 scripts/film/color/bake.py --config '<json>' --size 65 --format cube --out <file>
 #       a 3D LUT for ffmpeg's lut3d (.cube, red fastest)
+#   python3 scripts/film/color/bake.py --config '<json>' --size 65536 --format cube1d --out <file>
+#       a 1D LUT for ffmpeg's lut1d, over 0…1 (only for a per-channel curve, e.g. one builtin CURVE step)
 #   python3 scripts/film/color/bake.py --config '<json>' --size 65 --format mlut --out <file> [--name n --hash h]
 #       a preview LUT for the studio's viewer (the MLUT1 format documented in game/film/transforms.js)
 #   python3 scripts/film/color/bake.py --config '<json>' --apply  < rgb.f32 > out.f32
@@ -143,7 +145,7 @@ def main():
     ap.add_argument('--version', action='store_true')
     ap.add_argument('--config')
     ap.add_argument('--size', type=int, default=65)
-    ap.add_argument('--format', choices=['cube', 'mlut'], default='cube')
+    ap.add_argument('--format', choices=['cube', 'cube1d', 'mlut'], default='cube')
     ap.add_argument('--out')
     ap.add_argument('--name', default='')
     ap.add_argument('--hash', default='')
@@ -162,6 +164,14 @@ def main():
         sys.stdout.buffer.write(apply(proc, rgb).astype('<f4').tobytes())
         return
     n = a.size
+    if a.format == 'cube1d':
+        v = np.linspace(0.0, 1.0, n, dtype=np.float32)
+        rgb = np.nan_to_num(apply(proc, np.stack([v, v, v], axis=1)), nan=0.0, posinf=65504.0, neginf=-65504.0)
+        with open(a.out + '.part', 'w') as f:
+            f.write(f'LUT_1D_SIZE {n}\nDOMAIN_MIN 0 0 0\nDOMAIN_MAX 1 1 1\n')
+            np.savetxt(f, rgb, fmt='%.9g')
+        os.replace(a.out + '.part', a.out)
+        return
     lut = table(proc, n)
     if a.check:
         p = np.random.default_rng(1).random((200000, 3), dtype=np.float32)

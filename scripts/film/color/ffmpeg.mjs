@@ -3,7 +3,7 @@
 //
 //   decode → zscale into float RGB (gbrpf32le) with the file's own matrix and range → IDT → ACEScct
 //   → scale / crop / fps in float → clip grade → film look (ASC CDL, the maths of cdl() in color.js)
-//   → ODT (ACES 2.0, Rec.709 SDR, a 65³ LUT baked from OCIO now) → Rec.709 display code values
+//   → ODT (ACES 2.0, Rec.709 SDR, a 129³ LUT baked from OCIO now) → Rec.709 display code values
 //   → YUV 4:2:0 10-bit, BT.709 matrix, TV range.
 //
 // A display-referred clip (Rec.709, sRGB, legacy) with no clip grade and a neutral film look takes the bypass: its
@@ -14,7 +14,7 @@ import { homedir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { PROFILES, cdl, isNeutral, satMatrix } from '../../../game/film/color.js';
-import { displayChain, hashOf, hlgToScene, HLG_SCALE, LUT_SIZE, pqToNits, PQ_SCALE, SHAPER, shaperToCct, TRANSFORMS } from '../../../game/film/transforms.js';
+import { AP0_TO_AP1, displayChain, hashOf, hlgToScene, HLG_SCALE, LUT_SIZE, pqToNits, PQ_SCALE, RENDER_LUT_SIZE, SHAPER, shaperToCct, TRANSFORMS } from '../../../game/film/transforms.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 export const BAKE = resolve(HERE, 'bake.py');
@@ -69,13 +69,14 @@ function writeAtomic(/** @type {string} */ file, /** @type {string | Uint8Array}
 }
 
 /**
- * The 3D LUT of an OCIO transform, baked now (or found in the cache): its file and the hash that pins it.
- * @param {TransformConfig} config @param {{ size?: number, format?: 'cube' | 'mlut', name?: string }} [o]
+ * The LUT of an OCIO transform, baked now (or found in the cache): its file and the hash that pins it. 'cube' is a 3D
+ * LUT, 'cube1d' a 1D one (a per-channel curve), 'mlut' a studio preview.
+ * @param {TransformConfig} config @param {{ size?: number, format?: 'cube' | 'cube1d' | 'mlut', name?: string }} [o]
  */
 export function bakedLut(config, o = {}) {
 	const size = o.size ?? LUT_SIZE, format = o.format ?? 'cube';
 	const hash = hashOf({ config, ocio: ocioVersion(), size, format });
-	const file = join(LUTS, `${hash}.${format === 'cube' ? 'cube' : 'mlut'}`);
+	const file = join(LUTS, `${hash}.${{ cube: 'cube', cube1d: '1d.cube', mlut: 'mlut' }[format]}`);
 	if (!existsSync(file)) {
 		mkdirSync(LUTS, { recursive: true });
 		const r = spawnSync(PYTHON, [BAKE, '--config', JSON.stringify(config), '--size', String(size), '--format', format, '--out', file, '--name', o.name ?? '', '--hash', hash], { encoding: 'utf8' });
@@ -137,13 +138,38 @@ export function idtFilters(name) {
 		filters.push(...shaper.filters);
 		return { filters, hash: hashOf({ config, shaper: shaper.hash }) };
 	}
+	const log = logCamera(config);
+	if (log) {
+		// camera log (a per-channel curve, a 3×3 into AP0, then ACEScct) by exact maths, as the linear sources: the
+		// curve as a 1D LUT from OCIO, the two matrices as one, and the PQ-shaped ACEScct encoding — no 3D LUT
+		const curve = bakedLut({ kind: 'ocio-group', config: log.config, steps: [log.curve], source: log.source }, { name: `${name} curve`, size: 65536, format: 'cube1d' });
+		const shaper = linearToCct();
+		return {
+			filters: [`lut1d=file=${q(curve.file)}:interp=linear`, matrixFilter(mul3(AP0_TO_AP1, log.matrix)), ...shaper.filters],
+			hash: hashOf({ config, curve: curve.hash, shaper: shaper.hash })
+		};
+	}
 	const { file, hash } = bakedLut(config, { name });
 	return { filters: [`lut3d=file=${q(file)}:interp=tetrahedral`], hash };
 }
 
-/** The output transform: ACEScct → Rec.709 display code values (float RGB). */
+/**
+ * A camera-log input transform in the separable shape [builtin curve, 3×3 into AP0, ACES2065-1 → ACEScct] (Apple
+ * Log 2), or null.
+ * @param {TransformConfig} c
+ */
+function logCamera(c) {
+	if (c.kind !== 'ocio-group' || c.steps.length !== 3) return null;
+	const [a, b, d] = /** @type {any[]} */ (c.steps);
+	if (!a.builtin?.startsWith('CURVE - ') || !b.matrix || d.convert?.[0] !== 'ACES2065-1' || d.convert?.[1] !== 'ACEScct') return null;
+	return { config: c.config, source: c.source, curve: /** @type {{ builtin: string }} */ (a), matrix: /** @type {number[][]} */ (b.matrix) };
+}
+
+const mul3 = (/** @type {number[][]} */ a, /** @type {number[][]} */ b) => a.map((row) => [0, 1, 2].map((j) => row.reduce((s, v, k) => s + v * b[k][j], 0)));
+
+/** The output transform: ACEScct → Rec.709 display code values (float RGB), at the render's LUT size. */
 export function odtFilters(/** @type {TransformName} */ name = 'odt-rec709') {
-	const { file, hash } = bakedLut(TRANSFORMS[name], { name });
+	const { file, hash } = bakedLut(TRANSFORMS[name], { name, size: RENDER_LUT_SIZE });
 	return { filters: [`lut3d=file=${q(file)}:interp=tetrahedral`], hash };
 }
 
@@ -216,7 +242,7 @@ export function clipColor(o) {
 	if (PROFILES[profile].display) {
 		// a graded display-referred clip: inverse ODT → its grade → the look → ODT, as one LUT baked now
 		const grade = isNeutral(o.grade) ? null : o.grade, look = isNeutral(o.look) ? null : o.look;
-		const { file, hash } = bakedLut(displayChain(grade, look), { name: 'display-chain' });
+		const { file, hash } = bakedLut(displayChain(grade, look), { name: 'display-chain', size: RENDER_LUT_SIZE });
 		used['idt-rec709'] = hashOf(TRANSFORMS['idt-rec709']);
 		if (grade) used['grade:clip'] = hashOf(grade);
 		if (look) used['grade:look'] = hashOf(look);
