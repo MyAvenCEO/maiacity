@@ -343,8 +343,13 @@ export type RenderJob = {
 	output_cid: string | null;
 	created: string;
 	updated: string;
-	kind?: 'render' | 'proxy' | 'lut';
+	kind?: 'render' | 'proxy' | 'lut' | 'frame';
 	media_cid?: string | null;
+	/** a world shot's proxy job: the shot and the version it renders */
+	shot_id?: string | null;
+	shot_version?: number | null;
+	/** a hero frame's job: where it is on the timeline, and in which delivery shape */
+	params?: { t?: number; shape?: string } | null;
 	report?: RenderReport | null;
 };
 /** A render's report (stream A's worker): every transform by its config hash, what was conformed, the plates, QC. */
@@ -360,10 +365,13 @@ export type RenderReport = {
 export const queueRender = (timelineId: string) => call<RenderJob>(`/api/timelines/${timelineId}/renders`, { method: 'POST' });
 export const listRenders = (timelineId: string) => call<RenderJob[]>(`/api/timelines/${timelineId}/renders`);
 /** The latest jobs, newest first: of a kind, for a file (a file's proxy status; the worker's whole queue). */
-export const listJobs = (q: { kind?: 'render' | 'proxy' | 'lut'; cid?: string; limit?: number } = {}) =>
+export const listJobs = (q: { kind?: 'render' | 'proxy' | 'lut' | 'frame'; cid?: string; timeline?: string; shot?: string; limit?: number } = {}) =>
 	call<RenderJob[]>(`/api/film/jobs?${new URLSearchParams(Object.entries(q).filter(([, v]) => v !== undefined && v !== '').map(([k, v]) => [k, String(v)]))}`);
 /** A file's proxy made again (its colour read again too). */
 export const remakeProxy = (cid: string) => call<RenderJob>(`/api/film/proxies/${cid}`, { method: 'POST' });
+/** A hero frame: one frame of the timeline at t (seconds) in a delivery shape, rendered by the worker at full precision. */
+export const queueFrame = (timelineId: string, at: { t: number; shape: string }) =>
+	call<RenderJob>(`/api/timelines/${timelineId}/frames`, { method: 'POST', body: JSON.stringify(at) });
 /** The preview LUTs baked (again) by the worker. */
 export const bakeLuts = () => call<RenderJob>('/api/film/luts', { method: 'POST' });
 

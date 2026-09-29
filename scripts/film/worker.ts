@@ -16,6 +16,10 @@
 //            before it goes into the media library; the report names every transform by the hash of its config.
 //   proxy  — a new file's colour read (ffprobe, EXR header → meta.color) and its HD log proxy made (proxy.mjs).
 //   lut    — the studio viewer's preview LUTs baked from the transform configs into the library (also at start-up).
+//   proxy of a world shot (shot_id + shot_version) — the shot rendered as an HD ACEScct plate into the library
+//            (role:proxy, meta.shot/shotVersion), so the studio can play a world clip while the live world loads.
+//   frame  — a hero frame: one frame of a timeline (params: t, shape) at full precision through the whole chain —
+//            input transform, clip grade, film look, output transform — as a 16-bit PNG, for grading against.
 //
 // Runs wherever ffmpeg (with zimg), OpenColorIO (python3) and Chrome are; the files come from library/ by their CIDs,
 // or from the database into a cache.
@@ -47,7 +51,12 @@ type Timeline = {
   grade?: { look?: unknown; preset?: string } | null;
 };
 type Media = { cid: string; mime: string; kind: string; size: number; created: string; title: string; tags: string[]; meta: Record<string, any> };
-type Job = { id: string; kind?: "render" | "proxy" | "lut"; timeline_id: string | null; media_cid?: string | null };
+type Job = {
+  id: string; kind?: "render" | "proxy" | "lut" | "frame"; timeline_id: string | null; media_cid?: string | null;
+  shot_id?: string | null; shot_version?: number | null; params?: { t?: number; shape?: string } | null;
+};
+type ShotRecord = { id: string; name: string; project: string | null; version: number; spec: any };
+const fetchShot = (id: string, v: number | undefined) => call<ShotRecord>(`/api/shots/${encodeURIComponent(id)}${v ? `?version=${v}` : ""}`);
 
 const FPS = 30;
 // the hook: the title over the first seconds of the moving film, in the social copies (cut away hard)
@@ -235,7 +244,7 @@ async function render(job: Job) {
     for (const c of worldClips)
       plates.set(c.id, await platesFor(c, sizes, {
         fps: FPS, site: process.env.MAIACITY_SITE ?? SITE, renderPlate, fingerprint, say,
-        fetchShot: (id, v) => call(`/api/shots/${encodeURIComponent(id)}${v ? `?version=${v}` : ""}`),
+        fetchShot,
       }));
   }
 
@@ -495,6 +504,97 @@ async function proxy(job: Job) {
   }
 }
 
+/** A world shot version's HD proxy: its whole length rendered as an ACEScct plate (renderPlate), into the library. */
+async function shotProxy(job: Job) {
+  const rec = await fetchShot(job.shot_id!, job.shot_version ?? undefined);
+  const spec = rec.spec, aspect = spec.aspect in FRAME ? spec.aspect : "16:9";
+  const [width, height] = FRAME[aspect]!;
+  const fps = Number(spec.fps) || FPS;
+  await report(job.id, { note: `rendering ${rec.name} v${rec.version} (${aspect} ${width}×${height})`, progress: 0.05 });
+  const { renderPlate, fingerprint } = await worldModules();
+  const dir = mkdtempSync(join(tmpdir(), "maiacity-shot-"));
+  try {
+    const out = join(dir, "proxy.mp4");
+    const r = await renderPlate({ spec, from: 0, to: spec.seconds, shape: aspect, width, height, fps, out, site: process.env.MAIACITY_SITE ?? SITE });
+    const d = await put(r.file ?? out, {
+      mime: "video/mp4",
+      title: `${rec.name} · v${rec.version} · world proxy`,
+      description: `HD proxy (${width}×${height}) of the world shot ${rec.name}, version ${rec.version}, in ACEScct — for editing`,
+      tags: ["role:proxy", "world shot", ...(rec.project ? [rec.project] : [])],
+      meta: {
+        shot: rec.id, shotVersion: rec.version, width, height, duration_s: Number(Number(spec.seconds).toFixed(3)),
+        fingerprint: String(fingerprint(spec, { from: 0, to: spec.seconds, shape: aspect, width, height, fps })),
+        color: { profile: "acescct", primaries: "bt709", transfer: "bt709", matrix: "bt709", range: "tv", bitDepth: 10, detectedFrom: `world shot ${rec.id} v${rec.version}` },
+      },
+    });
+    const bytes = new Uint8Array(await Bun.file(join(LIB, d.file)).arrayBuffer());
+    await upload(bytes, { cid: d.cid, mime: d.mime, title: d.title, description: d.description, tags: d.tags, meta: d.meta, public: false });
+    return { output_cid: d.cid, note: `world proxy ready · ${rec.name} v${rec.version}`, report: { shot: rec.id, shotVersion: rec.version, proxy: d.cid, ev: r.ev ?? null } };
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+/**
+ * A hero frame: the picture of a timeline at one moment, in one shape, at that delivery's full resolution — through
+ * exactly the chain the render takes (conformed original or world plate → input transform → clip grade → film look →
+ * output transform), without the graphics — as a 16-bit PNG in the library (role:frame).
+ */
+async function heroFrame(job: Job) {
+  const at = Number(job.params?.t ?? 0), aspect = String(job.params?.shape ?? "16:9");
+  if (!(aspect in FRAME)) throw new Error(`no such shape: ${aspect}`);
+  const t = await call<Timeline>(`/api/timelines/${job.timeline_id}`);
+  const media = new Map((await call<{ media: Media[] }>("/api/media")).media.map((m) => [m.cid, m]));
+  type Marker = { cards?: Record<string, string> };
+  const pictures = t.clips.filter((c) => c.track === "V1" && (c.kind === "world" || (media.has(c.cid ?? "") && !(media.get(c.cid!)!.meta as Marker)?.cards)));
+  const clip = pictures.filter((c) => c.start <= at && at < c.start + c.dur).at(-1) ?? null;
+  const W = FRAME[aspect]![0] * masterOf(aspect), H = FRAME[aspect]![1] * masterOf(aspect);
+  const work = resolve("studio/film/.render", job.id);
+  rmSync(work, { recursive: true, force: true });
+  mkdirSync(work, { recursive: true });
+  const png = join(work, "frame.png");
+  const toPng = "zscale=matrixin=709:rangein=limited,format=rgb48le";
+  let what = "a gap: black";
+  try {
+    await report(job.id, { note: "rendering the frame", progress: 0.1 });
+    if (!clip) {
+      await runFfmpeg(["-f", "lavfi", "-i", `color=c=black:s=${W}x${H}`, "-frames:v", "1", "-pix_fmt", "rgb48be", png], work);
+    } else {
+      let src: Source, from: number;
+      if (clip.kind === "world") {
+        const shotT = clip.in + (at - clip.start);
+        const { renderPlate, fingerprint } = await worldModules();
+        const plates = await platesFor({ ...clip, in: shotT, dur: 1 / FPS }, [{ aspect, width: W, height: H }], { fps: FPS, site: process.env.MAIACITY_SITE ?? SITE, renderPlate, fingerprint, say, fetchShot });
+        src = sourceOf(plates.get(aspect)!.file, null, { profile: "acescct" });
+        from = 0;
+        what = `world shot ${clip.shot} v${clip.shotVersion} at ${shotT.toFixed(3)} s`;
+      } else {
+        // conform: the original, never the proxy
+        let m = media.get(clip.cid!)!;
+        const of = m.meta?.proxyOf as string | undefined;
+        if (of) m = media.get(of) ?? (await mediaByCid(of)) ?? m;
+        src = sourceOf(await fileOf(m), m);
+        from = clip.in + (at - clip.start);
+        what = `${m.title || m.cid} at ${from.toFixed(3)} s`;
+      }
+      const piece = pieceFilters({ source: src, grade: clip.grade, look: lookOf(t), frame: clip.frame?.[aspect] ?? clip.frame?.[aspect.replace(":", "x")], W, H, frames: 1, fps: FPS });
+      await runFfmpeg([...inputArgs(src, from, 1 / FPS + 0.5, FPS), "-filter_complex", `[0:v]${piece.filters.join(",")},${toPng}[o]`, "-map", "[o]", "-frames:v", "1", "-c:v", "png", "-pix_fmt", "rgb48be", png], work);
+    }
+    const d = await put(png, {
+      mime: "image/png",
+      title: `${t.name} · hero frame ${at.toFixed(2)} s · ${aspect}`,
+      description: `One frame at full precision (${W}×${H}, 16-bit) through the whole chain, without graphics — ${what}`,
+      tags: ["role:frame", ...(t.project ? [t.project] : [])],
+      meta: { timeline: t.id, version: (t as { version?: number }).version ?? 1, t: at, shape: aspect, width: W, height: H, clip: clip?.id ?? null },
+    });
+    const bytes = new Uint8Array(await Bun.file(join(LIB, d.file)).arrayBuffer());
+    await upload(bytes, { cid: d.cid, mime: d.mime, title: d.title, description: d.description, tags: d.tags, meta: d.meta, public: false });
+    return { output_cid: d.cid, note: `hero frame ready · ${at.toFixed(2)} s · ${aspect}`, report: { t: at, shape: aspect, width: W, height: H, clip: clip?.id ?? null, what } };
+  } finally {
+    rmSync(work, { recursive: true, force: true });
+  }
+}
+
 /** The studio viewer's preview LUTs: baked from the configs, into the library when the library lacks that hash. */
 async function luts() {
   const have = await call<Record<string, { cid: string; hash: string; size: number }>>("/api/film/luts");
@@ -542,10 +642,10 @@ if (import.meta.main) {
     }
     const job = (await res.json()) as Job;
     const kind = job.kind ?? "render";
-    say(`job ${job.id}: ${kind} ${job.timeline_id ?? job.media_cid ?? ""}`);
+    say(`job ${job.id}: ${kind} ${job.timeline_id ?? job.media_cid ?? (job.shot_id ? `shot ${job.shot_id} v${job.shot_version}` : "")}`);
     try {
-      if (kind === "proxy") {
-        const r = await proxy(job);
+      if (kind === "proxy" || kind === "frame") {
+        const r = kind === "frame" ? await heroFrame(job) : job.shot_id ? await shotProxy(job) : await proxy(job);
         await report(job.id, { status: "done", progress: 1, note: r.note, ...(r.output_cid ? { output_cid: r.output_cid } : {}), report: r.report });
         say(`job ${job.id}: ${r.note}`);
       } else if (kind === "lut") {

@@ -32,7 +32,8 @@
 		kind === 'world'
 			? []
 			: files.filter((m) => {
-					if (!['image', 'video', 'audio'].includes(m.kind) || m.tags.includes('superseded')) return false;
+					// the pipeline's own working files (proxies, preview LUTs, hero frames) are not footage to cut with
+					if (!['image', 'video', 'audio'].includes(m.kind) || m.tags.some((t) => t === 'superseded' || t === 'role:proxy' || t === 'role:lut' || t === 'role:frame')) return false;
 					if (kind !== 'all' && m.kind !== kind) return false;
 					if (tag && !m.tags.includes(tag)) return false;
 					const f = q.trim().toLowerCase();

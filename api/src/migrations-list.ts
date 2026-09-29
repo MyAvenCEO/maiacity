@@ -524,5 +524,24 @@ export const MIGRATIONS: Migration[] = [
       ALTER TABLE timelines ADD COLUMN grade JSONB;
     `,
   },
+  {
+    // Two more kinds of work for the render worker, now that shots are data: the HD proxy of a world shot (a proxy
+    // job for a shot version instead of a file, so the studio can play a world clip while the live world is still
+    // loading) and a hero frame — one frame of a timeline rendered at full precision through the whole chain, for
+    // grading against. A frame job keeps what it is of (the time, the shape) in `params`.
+    id: "0027-shot-and-frame-jobs",
+    sql: `
+      ALTER TABLE render_jobs DROP CONSTRAINT IF EXISTS render_jobs_target;
+      ALTER TABLE render_jobs DROP CONSTRAINT IF EXISTS render_jobs_kind_check;
+      ALTER TABLE render_jobs ADD CONSTRAINT render_jobs_kind_check CHECK (kind IN ('render', 'proxy', 'lut', 'frame'));
+      ALTER TABLE render_jobs ADD COLUMN shot_id UUID REFERENCES shots(id) ON DELETE CASCADE;
+      ALTER TABLE render_jobs ADD COLUMN shot_version INT;
+      ALTER TABLE render_jobs ADD COLUMN params JSONB;
+      ALTER TABLE render_jobs ADD CONSTRAINT render_jobs_target CHECK (
+        (kind NOT IN ('render', 'frame') OR timeline_id IS NOT NULL) AND
+        (kind <> 'proxy' OR media_cid IS NOT NULL OR (shot_id IS NOT NULL AND shot_version IS NOT NULL)));
+      CREATE INDEX ix_render_jobs_shot ON render_jobs (shot_id, shot_version) WHERE shot_id IS NOT NULL;
+    `,
+  },
 ];
 

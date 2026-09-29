@@ -21,7 +21,7 @@ import { approveDevice, deviceInfo, KeyError, keyHolder, redeemDevice, revokeKey
 import { canDistribute, distributePending } from "./bunny";
 import { createTimeline, deleteTimeline, getTimeline, listTimelines, saveTimeline, TimelineError } from "./timelines";
 import { createShot, getShot, listShots, saveShot, ShotError, shotVersions } from "./shots";
-import { claimRender, listJobs, previewLuts, queueLuts, queueProxy, queueRender, RenderError, rendersOf, reportRender } from "./renders";
+import { claimRender, listJobs, previewLuts, queueFrame, queueLuts, queueProxy, queueRender, queueShotProxy, RenderError, rendersOf, reportRender } from "./renders";
 import { CHANNELS, ContentError, createContent, deleteContent, FORMATS, KINDS, listContent, saveContent, saveDay, savePosts, STATUSES } from "./content";
 import { format, gameClock, calendar, parse } from "../../game/time";
 
@@ -714,7 +714,10 @@ const server = Bun.serve({
         const me = await allowed(req, "media:admin");
         if (me instanceof Response) return me;
         try {
-          return json(req, await createShot(me.id, (await readJson(req)) ?? {}), { status: 201 });
+          // every shot version gets its HD proxy (the worker renders it), for playing while the live world loads
+          const shot = await createShot(me.id, (await readJson(req)) ?? {});
+          await queueShotProxy(shot.id, shot.version, me.id);
+          return json(req, shot, { status: 201 });
         } catch (e) {
           return fail(req, e);
         }
@@ -737,7 +740,9 @@ const server = Bun.serve({
         const me = await allowed(req, "media:admin");
         if (me instanceof Response) return me;
         try {
-          return json(req, await saveShot(req.params.id, me.id, (await readJson(req)) ?? {}));
+          const shot = await saveShot(req.params.id, me.id, (await readJson(req)) ?? {});
+          await queueShotProxy(shot.id, shot.version, me.id);
+          return json(req, shot);
         } catch (e) {
           return fail(req, e);
         }
@@ -818,7 +823,8 @@ const server = Bun.serve({
         const me = await allowed(req, "media:admin");
         if (me instanceof Response) return me;
         const url = new URL(req.url);
-        return json(req, await listJobs({ kind: url.searchParams.get("kind") ?? undefined, cid: url.searchParams.get("cid") ?? undefined, limit: Number(url.searchParams.get("limit")) || undefined }));
+        const q = (k: string) => url.searchParams.get(k) ?? undefined;
+        return json(req, await listJobs({ kind: q("kind"), cid: q("cid"), timeline: q("timeline"), shot: q("shot"), limit: Number(q("limit")) || undefined }));
       },
     },
     "/api/film/proxies/:cid": {
@@ -828,6 +834,20 @@ const server = Bun.serve({
         if (me instanceof Response) return me;
         if (!(await have([req.params.cid])).length) return json(req, { error: "The library does not hold that CID." }, { status: 404 });
         return json(req, await queueProxy(req.params.cid, me.id), { status: 201 });
+      },
+    },
+
+    // A hero frame: one frame of the timeline at { t, shape }, rendered by the worker at full precision (Grade tab)
+    "/api/timelines/:id/frames": {
+      OPTIONS: preflight,
+      POST: async (req) => {
+        const me = await allowed(req, "media:admin");
+        if (me instanceof Response) return me;
+        try {
+          return json(req, await queueFrame(me.id, req.params.id, ((await readJson(req)) ?? {}) as { t?: unknown; shape?: unknown }), { status: 201 });
+        } catch (e) {
+          return fail(req, e);
+        }
       },
     },
 

@@ -4,7 +4,9 @@
  *
  * The same queue carries the worker's other work (migration 0024): `proxy` — read a new file's colour and make its
  * HD log proxy (queued for every new video, image and EXR sequence, and again when its colour is set by hand); and
- * `lut` — bake the studio viewer's preview LUTs into the library.
+ * `lut` — bake the studio viewer's preview LUTs into the library. Migration 0027 adds a proxy for a world shot version
+ * (`shot_id` + `shot_version`, no file) and `frame` — a hero frame: one frame of a timeline (`params`: t, shape) rendered
+ * at full precision through the whole chain, for grading against.
  */
 import { db } from "./pg";
 import { deliverRender, type Delivery } from "./content";
@@ -15,12 +17,14 @@ export class RenderError extends Error {
   }
 }
 
-export type JobKind = "render" | "proxy" | "lut";
+export type JobKind = "render" | "proxy" | "lut" | "frame";
 export type Job = {
-  id: string; kind: JobKind; timeline_id: string | null; media_cid: string | null; status: string; progress: number; note: string | null;
+  id: string; kind: JobKind; timeline_id: string | null; media_cid: string | null; shot_id: string | null; shot_version: number | null;
+  params: Record<string, unknown> | null; status: string; progress: number; note: string | null;
   output_cid: string | null; report: Record<string, unknown> | null; created: string; updated: string;
 };
-const COLS = "id, kind, timeline_id, media_cid, status, progress, note, output_cid, report, created, updated";
+const COLS = "id, kind, timeline_id, media_cid, shot_id, shot_version, params, status, progress, note, output_cid, report, created, updated";
+const SHAPES = ["16:9", "9:16", "1:1", "4:5"];
 
 export async function queueRender(founderId: string, timelineId: string): Promise<Job> {
   const { rows: t } = await db.query("SELECT 1 FROM timelines WHERE id = $1", [timelineId]);
@@ -38,6 +42,26 @@ export async function queueProxy(cid: string, founderId: string | null = null): 
   const { rows: open } = await db.query<Job>(`SELECT ${COLS} FROM render_jobs WHERE kind = 'proxy' AND media_cid = $1 AND status = 'queued'`, [cid]);
   if (open[0]) return open[0];
   return (await db.query<Job>(`INSERT INTO render_jobs (kind, media_cid, founder_id) VALUES ('proxy', $1, $2) RETURNING ${COLS}`, [cid, founderId])).rows[0]!;
+}
+
+/** A world shot version's HD proxy to be made (one waiting or finished job per version is enough). */
+export async function queueShotProxy(shotId: string, version: number, founderId: string | null = null): Promise<Job> {
+  const { rows: open } = await db.query<Job>(
+    `SELECT ${COLS} FROM render_jobs WHERE kind = 'proxy' AND shot_id = $1 AND shot_version = $2 AND status IN ('queued', 'rendering', 'done')
+      ORDER BY created DESC LIMIT 1`, [shotId, version]);
+  if (open[0]) return open[0];
+  return (await db.query<Job>(`INSERT INTO render_jobs (kind, shot_id, shot_version, founder_id) VALUES ('proxy', $1, $2, $3) RETURNING ${COLS}`, [shotId, version, founderId])).rows[0]!;
+}
+
+/** A hero frame: one frame of a timeline at time `t` in one delivery shape, rendered at full precision. */
+export async function queueFrame(founderId: string, timelineId: string, body: { t?: unknown; shape?: unknown }): Promise<Job> {
+  const t = Number(body.t), shape = String(body.shape ?? "16:9");
+  if (!Number.isFinite(t) || t < 0) throw new RenderError("A hero frame is at a time on the timeline (seconds, from 0).");
+  if (!SHAPES.includes(shape)) throw new RenderError(`A hero frame is in one of the shapes ${SHAPES.join(", ")}.`);
+  const { rows: tl } = await db.query("SELECT 1 FROM timelines WHERE id = $1", [timelineId]);
+  if (!tl.length) throw new RenderError("No such timeline.", 404);
+  return (await db.query<Job>(`INSERT INTO render_jobs (kind, timeline_id, params, founder_id) VALUES ('frame', $1, ($2::text)::jsonb, $3) RETURNING ${COLS}`,
+    [timelineId, JSON.stringify({ t: Math.round(t * 1000) / 1000, shape }), founderId])).rows[0]!;
 }
 
 /** The preview LUTs to be baked (again): one waiting job is enough. */
@@ -58,12 +82,14 @@ export async function rendersOf(timelineId: string): Promise<Job[]> {
 }
 
 /** The latest jobs, newest first: of a kind, for a file — the studio's proxy status and render queue. */
-export async function listJobs(filter: { kind?: string; cid?: string; limit?: number } = {}): Promise<Job[]> {
-  const kind = filter.kind && ["render", "proxy", "lut"].includes(filter.kind) ? filter.kind : null;
+export async function listJobs(filter: { kind?: string; cid?: string; timeline?: string; shot?: string; limit?: number } = {}): Promise<Job[]> {
+  const kind = filter.kind && ["render", "proxy", "lut", "frame"].includes(filter.kind) ? filter.kind : null;
+  const uuid = (v: string | undefined) => (v && /^[0-9a-f-]{36}$/i.test(v) ? v : null);
   const { rows } = await db.query<Job>(
     `SELECT ${COLS} FROM render_jobs WHERE ($1::text IS NULL OR kind = $1) AND ($2::text IS NULL OR media_cid = $2)
-      ORDER BY created DESC LIMIT $3`,
-    [kind, filter.cid || null, Math.max(1, Math.min(500, filter.limit ?? 100))],
+        AND ($3::uuid IS NULL OR timeline_id = $3) AND ($4::uuid IS NULL OR shot_id = $4)
+      ORDER BY created DESC LIMIT $5`,
+    [kind, filter.cid || null, uuid(filter.timeline), uuid(filter.shot), Math.max(1, Math.min(500, filter.limit ?? 100))],
   );
   return rows;
 }
@@ -96,6 +122,9 @@ export async function reportRender(id: string, body: { status?: unknown; progres
     const tl = t[0];
     if (tl) await deliverRender(tl.founder_id, rows[0].timeline_id!, tl.name, body.deliveries as Delivery[]);
   }
+  // a finished render of a locked or graded cut: the timeline has reached its last working step
+  if (status === "done" && rows[0].kind === "render" && rows[0].timeline_id)
+    await db.query("UPDATE timelines SET stage = 'rendered' WHERE id = $1 AND stage IN ('locked', 'graded')", [rows[0].timeline_id]);
   return rows[0];
 }
 

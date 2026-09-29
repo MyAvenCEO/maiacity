@@ -7,6 +7,7 @@
 <script>
 	import { bakeLuts } from '$lib/auth/client';
 	import ColorBadge from './ColorBadge.svelte';
+	import HeroFrame from './HeroFrame.svelte';
 	import { ODT, profileFor, profileInfo } from './color.js';
 	import { SHAPES, clockText, isWorld } from './studio.svelte.js';
 
@@ -90,6 +91,7 @@
 	{#if needed.some((n) => !s.luts[n])}
 		<button class="ghost small" onclick={bake} disabled={!!baking}>{baking || 'Bake the preview LUTs'}</button>
 	{/if}
+	<HeroFrame {s} />
 </aside>
 
 <style>
