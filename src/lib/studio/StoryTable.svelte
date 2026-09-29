@@ -9,7 +9,7 @@
 	import { onMount } from 'svelte';
 	import { listMedia, type MediaItem } from '$lib/auth/client';
 	import { command } from '$lib/native';
-	import { BY_HAND, CLASSES, gb, type Copies, type FileClass, type Moving, type StoryView } from './vault';
+	import { BY_HAND, CLASSES, gb, vaultUrl, type Copies, type FileClass, type Moving, type StoryView } from './vault';
 
 	let {
 		story,
@@ -175,38 +175,46 @@
 			<table>
 				<thead>
 					<tr>
+						<th>Synced</th>
 						<th><input type="checkbox" checked={selected.length > 0 && selected.length === rows.length} onchange={(e) => (selected = e.currentTarget.checked ? rows.map((m) => m.hash) : [])} /></th>
+						<th></th>
 						<th>File (BLAKE3)</th>
 						<th>Came in as · title</th>
 						<th>Class</th>
 						<th class="r">Size</th>
-						{#each destinations as d (d)}<th class="c">{d}</th>{/each}
-						<th class="c">Copies</th>
 					</tr>
 				</thead>
 				<tbody>
 					{#each rows as m (m.hash)}
 						<tr class:sel={selected.includes(m.hash)} class:short={!kept(m)} class:open={open === m.hash} onclick={(e) => !(e.target as HTMLElement).closest('input') && onopen(m)}>
+							<td class="sync" class:good={kept(m)}>
+								{#if kept(m)}
+									<span class="all" title="Verified by hash at {destinations.filter((d) => at(m, d) === 'ok').join(' and ')}">✓</span>
+								{/if}
+								<span class="per">
+									{#each destinations.filter((d) => at(m, d) !== '') as d (d)}
+										{@const st = at(m, d)}
+										{@const mv = st === 'ok' ? undefined : movingOf(m, d)}
+										<span class="d {mv ? 'moving' : st.replaceAll(' ', '-')}" title="{d}: {mv ? `${gb(mv.sent)} of ${gb(mv.size)} · ${gb(mv.rate)}/s` : st}">
+											{d}
+											<b>{st === 'ok' ? '✓' : mv ? `${mv.size ? Math.floor((mv.sent / mv.size) * 100) : 0}%` : st === 'on its way' ? '↻' : '✗'}</b>
+										</span>
+									{/each}
+								</span>
+							</td>
 							<td><input type="checkbox" checked={selected.includes(m.hash)} onchange={() => toggle(m.hash)} /></td>
+							<td class="thumb">
+								{#if m.kind === 'image'}<img src={vaultUrl(m.hash)} alt="" loading="lazy" />
+								{:else if m.kind === 'video'}<video src="{vaultUrl(m.meta?.proxy && typeof m.meta.proxy === 'string' && /^[0-9a-f]{64}$/.test(m.meta.proxy) ? m.meta.proxy : m.hash)}#t=1" preload="metadata" muted playsinline></video>
+								{:else}<span>{m.kind === 'audio' ? '♪' : '▤'}</span>{/if}
+							</td>
 							<td class="h" title={m.hash}>{m.hash.slice(0, 16)}…</td>
 							<td class="n" title="{m.original_name ?? ''}{m.title ? ` · ${m.title}` : ''}">{m.original_name || '—'}{#if m.title && m.title !== m.original_name}<small> · {m.title}</small>{/if}</td>
 							<td><span class="cls {classOf(m)}">{classOf(m)}</span></td>
 							<td class="r">{gb(m.size)}</td>
-							{#each destinations as d (d)}
-								{@const st = at(m, d)}
-								{@const mv = st === 'ok' ? undefined : movingOf(m, d)}
-								<td class="c">
-									{#if mv}
-										<span class="go" title="{d}: {gb(mv.sent)} of {gb(mv.size)} · {gb(mv.rate)}/s">↻ {mv.size ? Math.floor((mv.sent / mv.size) * 100) : 0}%<i style:width="{mv.size ? (mv.sent / mv.size) * 100 : 0}%"></i></span>
-									{:else}
-										<span class="st {st.replaceAll(' ', '-')}" title="{d}: {st || 'not a destination of this class'}">{st === 'ok' ? '✓' : st === 'on its way' ? '↻' : st === 'missing' ? '✗' : '—'}</span>
-									{/if}
-								</td>
-							{/each}
-							<td class="c"><span class="cnt" class:good={kept(m)}>{verified(m)}/{needed(m)}</span></td>
 						</tr>
 					{:else}
-						<tr><td colspan={6 + destinations.length} class="empty">{mine.length ? 'Nothing matches.' : 'No files in this story yet — ingest into it, or move files here.'}</td></tr>
+						<tr><td colspan="7" class="empty">{mine.length ? 'Nothing matches.' : 'No files in this story yet — ingest into it, or move files here.'}</td></tr>
 					{/each}
 				</tbody>
 			</table>
@@ -247,20 +255,21 @@
 	.cls.original { background: #e8eefb; color: #2b4a8a; }
 	.cls.proxy { background: #f1eafb; color: #5a3a8a; }
 	.cls.delivery { background: #fbf3df; color: #7a5a14; }
-	.st { display: inline-block; width: 1.4rem; font-weight: 700; }
-	.go { position: relative; display: inline-block; min-width: 3.4rem; padding: 0.05rem 0.3rem; border-radius: 4px; background: #fbf3df; font-size: 0.72rem; color: #7a5a14; overflow: hidden; }
-	.go i { position: absolute; left: 0; bottom: 0; height: 2px; background: #b8860b; transition: width 0.8s linear; }
+	.sync { display: flex; align-items: center; gap: 0.45rem; white-space: nowrap; }
+	.sync .all { display: grid; place-items: center; width: 1.2rem; height: 1.2rem; border-radius: 50%; background: #6f9a57; font-size: 0.7rem; font-weight: 700; color: #fff; }
+	.per { display: flex; flex-direction: column; gap: 0.05rem; font-size: 0.68rem; line-height: 1.25; color: var(--dim); }
+	.per b { font-weight: 700; }
+	.d.ok b { color: #3e5a2f; }
+	.d.moving b, .d.on-its-way b { color: #b8860b; }
+	.d.missing b { color: #9c3b26; }
+	.thumb { width: 2.6rem; padding: 0.2rem 0.3rem; }
+	.thumb img, .thumb video, .thumb span { display: grid; place-items: center; width: 2.4rem; height: 1.6rem; border-radius: 4px; background: var(--bg); object-fit: cover; font-size: 0.8rem; color: var(--dim); }
 	.live { font-size: 0.72rem; }
 	.confirm { display: flex; align-items: center; gap: 0.4rem; padding: 0.2rem 0.3rem 0.2rem 0.7rem; border-radius: 999px; background: #fbf3df; color: #7a5a14; }
 	.confirm button { padding: 0.15rem 0.7rem; border: 0; border-radius: 999px; font: inherit; font-size: 0.74rem; cursor: pointer; }
 	.confirm .yes { background: var(--ink); color: #fff; }
 	.confirm .no { background: transparent; color: var(--dim); text-decoration: underline; }
 	.n small { color: var(--dim); }
-	.st.ok { color: #3e5a2f; }
-	.st.on-its-way { color: #b8860b; }
-	.st.missing { color: #9c3b26; }
-	.cnt { padding: 0.05rem 0.45rem; border-radius: 999px; background: #f6e3da; color: #8a2a12; font-size: 0.72rem; }
-	.cnt.good { background: #eef2e6; color: #3e5a2f; }
 	.empty { padding: 1.2rem; text-align: center; color: var(--dim); }
 	.err { color: #9c3b26; }
 </style>
