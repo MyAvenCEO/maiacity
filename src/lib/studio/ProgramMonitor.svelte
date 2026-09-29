@@ -104,6 +104,7 @@
 		{#if fileNote}<span class="b" class:warn={fileNote.startsWith('no proxy')}>{fileNote}</span>{/if}
 		{#if worldNote}<span class="b world">{worldNote}</span>{/if}
 		{#if s.preparing}<span class="b warn">preparing the world…</span>{/if}
+		{#if isWorld(pic) && s.world.error}<span class="b warn" title={s.world.error}>world: {s.world.error}</span>{/if}
 		{#if gl && plan?.note && pic}<span class="b warn" title={plan.note}>{plan.note}</span>{/if}
 		{#if !gl}<span class="b warn">No WebGL2: colour not managed</span>{/if}
 		{#if s.tab === 'edit' && s.previewGrade}<span class="b">grade preview</span>{/if}

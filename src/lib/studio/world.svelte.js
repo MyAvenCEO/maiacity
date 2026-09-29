@@ -65,18 +65,22 @@ export class WorldViewer {
 	/** @type {ShowArgs | null} */
 	queued = null;
 	recording = $state(false);
+	/** the last thing film mode refused (a shot it could not prepare or draw), said on the monitor */
+	error = $state('');
 
 	/**
-	 * Starts the world in its iframe and waits (up to `wait` ms) for film mode to answer.
+	 * Starts the world in its iframe and waits for film mode to answer. After `wait` ms without it the viewer says it is
+	 * unavailable (the stand-ins and proxies play), but it keeps looking, more slowly, for up to `patience` ms: a big
+	 * world on a slow GPU comes up late, and then the live world simply takes over.
 	 * @param {HTMLIFrameElement} iframe @param {string} url
 	 */
-	async attach(iframe, url, wait = 20000) {
+	async attach(iframe, url, wait = 20000, patience = 300000) {
 		if (this.iframe === iframe && this.state !== 'off') return;
 		this.iframe = iframe;
 		this.state = 'loading';
 		if (iframe.getAttribute('src') !== url) iframe.src = url;
 		const t0 = performance.now();
-		while (performance.now() - t0 < wait) {
+		while (performance.now() - t0 < patience && this.iframe === iframe) {
 			/** @type {Film | undefined} */
 			let film;
 			try {
@@ -94,9 +98,11 @@ export class WorldViewer {
 					break;
 				}
 			}
-			await new Promise((r) => setTimeout(r, 250));
+			const waited = performance.now() - t0;
+			if (waited > wait && this.state === 'loading') this.state = 'unavailable';
+			await new Promise((r) => setTimeout(r, waited > wait ? 2000 : 250));
 		}
-		this.state = 'unavailable';
+		if (this.iframe === iframe) this.state = 'unavailable';
 	}
 
 	detach() {
@@ -123,7 +129,7 @@ export class WorldViewer {
 			const p = film
 				.prepare([s])
 				.then(() => void this.readyShots.add(k))
-				.catch(() => {})
+				.catch((/** @type {Error} */ e) => void (this.error = `prepare: ${e?.message ?? e}`))
 				.finally(() => this.preparing.delete(k));
 			this.preparing.set(k, p);
 		}
@@ -142,7 +148,7 @@ export class WorldViewer {
 		const t0 = performance.now();
 		const w = Math.round(o.width * this.scale), h = Math.round(o.height * this.scale);
 		Promise.resolve(this.film.show({ ...o, width: w, height: h }))
-			.catch(() => {})
+			.catch((/** @type {Error} */ e) => void (this.error = `show: ${e?.message ?? e}`))
 			.finally(() => {
 				const took = performance.now() - t0;
 				if (took > 45 && this.scale > 0.35) this.scale = Math.max(0.35, this.scale * 0.8);
