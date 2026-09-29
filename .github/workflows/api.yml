@@ -176,7 +176,7 @@ jobs:
           printf '%s\n' "${{ secrets.DEPLOY_SSH_KEY }}" > ~/.ssh/id_ed25519 && chmod 600 ~/.ssh/id_ed25519
           # First contact with a freshly created server: take its host key.
           for i in $(seq 1 30); do ssh-keyscan -T 5 -H "$HOST" >> ~/.ssh/known_hosts 2>/dev/null && break; sleep 5; done
-          printf 'Host prod\n  HostName %s\n  User deploy\n  IdentityFile ~/.ssh/id_ed25519\n  StrictHostKeyChecking yes\n' "$HOST" > ~/.ssh/config
+          printf 'Host prod\n  HostName %s\n  User deploy\n  IdentityFile ~/.ssh/id_ed25519\n  StrictHostKeyChecking yes\n  ServerAliveInterval 20\n  ServerAliveCountMax 6\n' "$HOST" > ~/.ssh/config
       - name: Wait for cloud-init (is Docker there yet?)
         run: ssh prod 'sudo cloud-init status --wait >/dev/null || true; docker --version'
       - name: Mount the Hetzner volume (fstab by stable device id; automount is not reliable)
@@ -264,10 +264,12 @@ jobs:
           sudo touch /var/log/maia-city-backup.log && sudo chown deploy /var/log/maia-city-backup.log
           # keep 30 days of dumps; nothing outside BACKUPS/pg/ ever expires (LIBRARY/ is the vault)
           set -a; . $APP_DIR/backup.env; set +a
-          docker run --rm -e AWS_ACCESS_KEY_ID -e AWS_SECRET_ACCESS_KEY -e AWS_DEFAULT_REGION="\$BACKUP_REGION" \
+          timeout 120 docker run --rm -e AWS_ACCESS_KEY_ID -e AWS_SECRET_ACCESS_KEY -e AWS_DEFAULT_REGION="\$BACKUP_REGION" \
+            -e AWS_REQUEST_CHECKSUM_CALCULATION=when_required -e AWS_RESPONSE_CHECKSUM_VALIDATION=when_required \
             amazon/aws-cli --endpoint-url "\$BACKUP_ENDPOINT" s3api put-bucket-lifecycle-configuration --bucket "\$BACKUP_BUCKET" \
-            --lifecycle-configuration '{"Rules":[{"ID":"pg-dumps-30-days","Status":"Enabled","Filter":{"Prefix":"BACKUPS/pg/"},"Expiration":{"Days":30}}]}'
-          bash $APP_DIR/deploy/backup.sh before-deploy-${GITHUB_SHA::7}
+            --lifecycle-configuration '{"Rules":[{"ID":"pg-dumps-30-days","Status":"Enabled","Filter":{"Prefix":"BACKUPS/pg/"},"Expiration":{"Days":30}}]}' \
+            || echo "::warning::The 30-day rule for BACKUPS/pg/ could not be set; dumps are kept until it is."
+          timeout 900 bash $APP_DIR/deploy/backup.sh before-deploy-${GITHUB_SHA::7}
           EOS
       - name: Update the containers
         env:

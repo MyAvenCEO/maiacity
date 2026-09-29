@@ -18,8 +18,10 @@ FILE="BACKUPS/pg/${POSTGRES_DB:-maiacity}-$(date -u +%Y%m%dT%H%M%SZ)-${LABEL}.du
 if ! docker ps --format '{{.Names}}' | grep -qx maia-city-db; then
   echo "No database container running — nothing to back up (first deploy?)."; exit 0
 fi
+# Hetzner's S3 does not take the checksums newer AWS CLIs send by default — only when an operation requires one
 aws() {
   docker run --rm -i -e AWS_ACCESS_KEY_ID -e AWS_SECRET_ACCESS_KEY -e AWS_DEFAULT_REGION="$BACKUP_REGION" \
+    -e AWS_REQUEST_CHECKSUM_CALCULATION=when_required -e AWS_RESPONSE_CHECKSUM_VALIDATION=when_required \
     amazon/aws-cli --endpoint-url "$BACKUP_ENDPOINT" "$@"
 }
 # pg_dump in the database container (custom format, compressed) → straight into the bucket
