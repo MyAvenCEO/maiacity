@@ -68,23 +68,27 @@ impl S3 {
     }
 
     /// Start a multipart upload: write parts into it, then finish (or abort — nothing half-made stays).
-    pub async fn upload(&self, key: &str) -> Result<Upload> {
+    /// A file smaller than one part never becomes a multipart upload: `finish` sends it in one PUT.
+    pub fn upload(&self, key: &str) -> Upload {
+        Upload {
+            s3: self.clone(),
+            key: key.to_string(),
+            id: None,
+            parts: 0,
+            sending: JoinSet::new(),
+            etags: Vec::new(),
+            buf: Vec::with_capacity(PART),
+        }
+    }
+
+    async fn create_upload(&self, key: &str) -> Result<String> {
         let url = self.bucket.create_multipart_upload(Some(&self.creds), key).sign(SIGN);
         let res = self.http.post(url).send().await?;
         if !res.status().is_success() {
             bail!("create upload {key}: {} {}", res.status(), res.text().await.unwrap_or_default());
         }
         let body = res.text().await?;
-        let id = CreateMultipartUpload::parse_response(&body).map_err(|e| anyhow::anyhow!("{e}"))?.upload_id().to_string();
-        Ok(Upload {
-            s3: self.clone(),
-            key: key.to_string(),
-            id,
-            parts: 0,
-            sending: JoinSet::new(),
-            etags: Vec::new(),
-            buf: Vec::with_capacity(PART),
-        })
+        Ok(CreateMultipartUpload::parse_response(&body).map_err(|e| anyhow::anyhow!("{e}"))?.upload_id().to_string())
     }
 }
 
@@ -94,7 +98,8 @@ const IN_FLIGHT: usize = 3;
 pub struct Upload {
     s3: S3,
     key: String,
-    id: String,
+    /// the multipart upload, once there is more than one part's worth
+    id: Option<String>,
     parts: u16,
     sending: JoinSet<Result<(u16, String)>>,
     etags: Vec<(u16, String)>,
@@ -119,7 +124,11 @@ impl Upload {
     async fn flush(&mut self) -> Result<()> {
         self.parts = self.parts.checked_add(1).context("more than 65,535 parts")?;
         let number = self.parts;
-        let url = self.s3.bucket.upload_part(Some(&self.s3.creds), &self.key, number, &self.id).sign(SIGN);
+        if self.id.is_none() {
+            self.id = Some(self.s3.create_upload(&self.key).await?);
+        }
+        let id = self.id.as_deref().unwrap_or_default();
+        let url = self.s3.bucket.upload_part(Some(&self.s3.creds), &self.key, number, id).sign(SIGN);
         let body = Bytes::from(std::mem::replace(&mut self.buf, Vec::with_capacity(PART)));
         let (http, key) = (self.s3.http.clone(), self.key.clone());
         self.sending.spawn(async move {
@@ -154,14 +163,20 @@ impl Upload {
 
     /// The last part, then the whole object appears at once.
     pub async fn finish(mut self) -> Result<()> {
-        if !self.buf.is_empty() || self.parts == 0 {
+        if self.id.is_none() {
+            // less than one part: one PUT
+            let body = Bytes::from(std::mem::take(&mut self.buf));
+            return self.s3.put(&self.key, body, "application/octet-stream").await;
+        }
+        if !self.buf.is_empty() {
             self.flush().await?;
         }
         while !self.sending.is_empty() {
             self.collect_one().await?;
         }
         self.etags.sort_by_key(|(n, _)| *n);
-        let action = self.s3.bucket.complete_multipart_upload(Some(&self.s3.creds), &self.key, &self.id, self.etags.iter().map(|(_, e)| e.as_str()));
+        let id = self.id.as_deref().unwrap_or_default();
+        let action = self.s3.bucket.complete_multipart_upload(Some(&self.s3.creds), &self.key, id, self.etags.iter().map(|(_, e)| e.as_str()));
         let url = action.sign(SIGN);
         let res = self.s3.http.post(url).body(action.body()).send().await?;
         let status = res.status();
@@ -177,7 +192,8 @@ impl Upload {
     pub async fn abort(mut self) {
         self.sending.abort_all();
         while self.sending.join_next().await.is_some() {}
-        let url = self.s3.bucket.abort_multipart_upload(Some(&self.s3.creds), &self.key, &self.id).sign(SIGN);
+        let Some(id) = self.id.as_deref() else { return };
+        let url = self.s3.bucket.abort_multipart_upload(Some(&self.s3.creds), &self.key, id).sign(SIGN);
         self.s3.http.delete(url).send().await.ok();
     }
 }
