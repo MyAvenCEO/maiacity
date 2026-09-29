@@ -20,7 +20,20 @@ Decided 2026-09-29. Update this file whenever a decision changes, with the date 
 | **Bunny may be deleted** once the site runs on the gateway (OK given 2026-09-29). | — |
 | Checksums end to end at every copy; no scrub or self-repair yet. | Samuel: "just e2e checksum security". |
 | No DaVinci; only our studio reads media. The Mac app hosts the studio; ingest is a studio tab. | One studio, native powers on the Mac. |
+| **All admin media handling and studio functions are native functions of the Mac app only**, never in the browser build; Mac is the only platform; native Apple frameworks (AVFoundation, VideoToolbox, Metal, the Tauri WebView) replace ffmpeg, OpenColorIO and headless Chrome — no Homebrew (2026-09-29). | Samuel. |
 | Browsers never sync; they read over HTTP from the gateway. | iroh in a browser is relay-only through our own server anyway, keeps no data, and `<video>`/`<img>` can't read it directly. |
+
+## The code
+
+```
+vault/                         Rust workspace (iroh pinned exactly)
+  crates/vault-core/           the node: private endpoint, FsStore, gossip, iroh-docs catalog, verified ingest
+  crates/vault-cli/            `vault ingest|ls|id` — the same core from a terminal
+  app/                         maiaCITY Studio (Tauri 2): native commands + the vault:// protocol (Range)
+src/routes/vault/              the Studio's vault page (Ingest, Library) — only works inside the app
+```
+
+The app's vault lives in `~/Library/Application Support/city.maia.vault` (`MAIACITY_VAULT` overrides it).
 
 ## The catalog (iroh-docs namespace "maiaCITY vault")
 

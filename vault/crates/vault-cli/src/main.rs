@@ -1,0 +1,96 @@
+//! `vault` — the vault from a terminal: ingest with the three-hash check, list, show the node.
+//!
+//!   vault [--dir DIR] ingest PATH… [--tag TAG]… [--session ID]
+//!   vault [--dir DIR] ls
+//!   vault [--dir DIR] id
+
+use std::path::PathBuf;
+
+use anyhow::Result;
+use clap::{Parser, Subcommand};
+use vault_core::{Vault, Verdict, ingest};
+
+#[derive(Parser)]
+struct Cli {
+    /// The vault's directory (default: ~/Library/Application Support/city.maia.vault)
+    #[arg(long, global = true)]
+    dir: Option<PathBuf>,
+    #[command(subcommand)]
+    cmd: Cmd,
+}
+
+#[derive(Subcommand)]
+enum Cmd {
+    /// Copy files in with the three-hash check (source = disk = iroh)
+    Ingest {
+        paths: Vec<PathBuf>,
+        #[arg(long = "tag")]
+        tags: Vec<String>,
+        #[arg(long)]
+        session: Option<String>,
+    },
+    /// Every file in the catalog
+    Ls,
+    /// This node's EndpointId and catalog id
+    Id,
+}
+
+fn default_dir() -> PathBuf {
+    let home = std::env::var_os("HOME").map(PathBuf::from).unwrap_or_default();
+    home.join("Library/Application Support/city.maia.vault")
+}
+
+#[tokio::main]
+async fn main() -> Result<()> {
+    tracing_subscriber::fmt().with_env_filter(std::env::var("RUST_LOG").unwrap_or_else(|_| "warn".into())).init();
+    let cli = Cli::parse();
+    let vault = Vault::open(cli.dir.unwrap_or_else(default_dir)).await?;
+
+    match cli.cmd {
+        Cmd::Id => {
+            println!("endpoint {}", vault.endpoint.id());
+            println!("catalog  {}", vault.catalog.doc.id());
+        }
+        Cmd::Ls => {
+            for m in vault.catalog.list().await? {
+                println!("{}  {:>12}  {:<6}  {}  [{}]", m.hash, m.size, m.kind, m.original_name, m.tags.join(", "));
+            }
+        }
+        Cmd::Ingest { paths, tags, session } => {
+            let session = session.unwrap_or_else(|| ingest::now_iso());
+            let batch = ingest::Batch { session: session.clone(), tags, ..Default::default() };
+            let mut files = Vec::new();
+            for p in &paths {
+                files.extend(ingest::walk(p)?);
+            }
+            let (mut bytes, started) = (0u64, std::time::Instant::now());
+            let mut outcomes = Vec::new();
+            for f in &files {
+                let o = vault.ingest_file(f, &batch).await?;
+                let mark = match o.verdict {
+                    Verdict::Verified => "✅ verified ",
+                    Verdict::Duplicate => "•  duplicate",
+                    Verdict::Mismatch => "❌ MISMATCH ",
+                };
+                let mbps = o.size as f64 / 1e6 / o.seconds.max(1e-6);
+                println!("{mark}  {}…  {:>10} B  {:>7.0} MB/s  {}", &o.hash[..16], o.size, mbps, f.display());
+                bytes += o.size;
+                outcomes.push(o);
+            }
+            let secs = started.elapsed().as_secs_f64();
+            let bad = outcomes.iter().filter(|o| o.verdict == Verdict::Mismatch).count();
+            let report = serde_json::json!({ "session": session, "files": outcomes, "bytes": bytes, "seconds": secs });
+            let report_hash = vault.catalog.put_report(&session, &report).await?;
+            println!(
+                "\n{} files, {:.2} GB in {:.1} s ({:.0} MB/s) — {} mismatches. Report {}",
+                outcomes.len(),
+                bytes as f64 / 1e9,
+                secs,
+                bytes as f64 / 1e6 / secs.max(1e-6),
+                bad,
+                report_hash.to_hex()
+            );
+        }
+    }
+    vault.close().await
+}
