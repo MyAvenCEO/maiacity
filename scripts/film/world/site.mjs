@@ -39,6 +39,12 @@ export async function serveSite(dir, port = 0) {
 	return { url: `http://127.0.0.1:${p}`, close: () => new Promise((r) => server.close(() => r())) };
 }
 
+// node scripts/film/world/site.mjs <dir> [port]: serve a build by hand (then render with SITE=<the url it prints>)
+if (process.argv[1] && resolve(process.argv[1]) === new URL(import.meta.url).pathname) {
+	const s = await serveSite(process.argv[2] ?? 'build', Number(process.argv[3] ?? 0));
+	console.log(`serving ${resolve(process.argv[2] ?? 'build')} at ${s.url}`);
+}
+
 /**
  * A stored build, unpacked once into the cache (~/.cache/maiacity/builds/<cid>/): the library's bytes by CID.
  * @param {string} cid @param {{ api: string, key: string }} from  the API and a media:admin key

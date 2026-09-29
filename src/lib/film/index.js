@@ -111,7 +111,9 @@ export function startFilm({ base = '' } = {}) {
 		const e = evaluate(spec, t, shape);
 		w.__interiorHour = e.hour;
 		clock.world(e.clock);
-		w.__props?.(e.clock);
+		// a set is in the shots that name it, and nowhere else
+		for (const [name, group] of Object.entries(w.__sets ?? {})) /** @type {any} */ (group).visible = name === spec.world.props;
+		if (spec.world.props) w.__props?.(e.clock);
 		v.camera.fov = e.fov;
 		v.camera.aspect = aspect;
 		v.camera.updateProjectionMatrix();

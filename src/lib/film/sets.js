@@ -144,6 +144,8 @@ export function tiredLand(seed = 1) {
 		}
 	};
 	scene.add(set);
+	// the film shows a set only in the shots that name it (src/lib/film/index.js)
+	(window.__sets ??= {})['tired-land'] = set;
 }
 
 export const sets = { 'tired-land': tiredLand };

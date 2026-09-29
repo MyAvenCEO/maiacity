@@ -5,7 +5,7 @@
 //
 // Prints each frame's SHA-256 and exits 1 on any difference. Runs on SwiftShader here, Metal on the Mac.
 import { createHash } from 'node:crypto';
-import { readFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { normalize } from '../../../game/film/shot.js';
 import { openWorld, receiver } from './render.mjs';
 
@@ -16,6 +16,10 @@ const records = JSON.parse(readFileSync(file, 'utf8')).shots;
 const picks = flag('shots', '4,13').split(',').map(Number);
 const size = Number(flag('size', '128')), frames = Number(flag('frames', '3')), at = Number(flag('at', '0.5'));
 const site = flag('site', process.env.SITE ?? 'http://localhost:5173');
+// --keep <dir>: the raw frames too (x2bgr10le, size×size), to look at a difference
+const keep = args.includes('--keep') ? args[args.indexOf('--keep') + 1] : null;
+if (keep) mkdirSync(keep, { recursive: true });
+let runs = 0;
 const specs = picks.map((n) => {
 	const r = records.find((/** @type {any} */ x) => x.n === n);
 	// untimed records get a length and a clock of their own: the same both times, which is all parity needs
@@ -25,6 +29,7 @@ const specs = picks.map((n) => {
 const log = (/** @type {string} */ s) => console.log(s);
 /** the frames' hashes, rendering the shots in the given order */
 async function run(/** @type {number[]} */ order) {
+	runs++;
 	const world = await openWorld({ site, log });
 	const inbox = await receiver();
 	/** @type {Record<number, string[]>} */
@@ -38,7 +43,9 @@ async function run(/** @type {number[]} */ order) {
 					const b = await window.__film.capture(a);
 					await fetch(url, { method: 'POST', body: b });
 				}, ask, `${inbox.url}/f`);
-				out[i].push(createHash('sha256').update(/** @type {Buffer} */ (inbox.take('f'))).digest('hex'));
+				const frame = /** @type {Buffer} */ (inbox.take('f'));
+				if (keep) writeFileSync(`${keep}/shot${picks[i]}-${k}-${runs}.x2bgr10`, frame);
+				out[i].push(createHash('sha256').update(frame).digest('hex'));
 			}
 		}
 	} finally {
