@@ -84,7 +84,10 @@ pub fn make_proxy(src: &Path, out: &Path, source: &str, progress: &mut dyn FnMut
         // than asking the decoder for RGB, and as exact), and PCM audio ──
         let reader = AVAssetReader::assetReaderWithAsset_error(&asset).map_err(|e| anyhow::anyhow!("{e:?}"))?;
         let x420 = NSNumber::new_u32(u32::from_be_bytes(*b"x420")); // kCVPixelFormatType_420YpCbCr10BiPlanarVideoRange
-        let video_read = dict(&[(&key("PixelFormatType"), &x420)]);
+        // decoded straight to the proxy's size: VideoToolbox scales in hardware while it decodes, so the GPU grades a
+        // quarter of the pixels (scaled in the source's own encoding — for a proxy, the same picture)
+        let (read_w, read_h) = (NSNumber::new_u32(w), NSNumber::new_u32(h));
+        let video_read = dict(&[(&key("PixelFormatType"), &x420), (&key("Width"), &read_w), (&key("Height"), &read_h)]);
         let video_out = AVAssetReaderTrackOutput::assetReaderTrackOutputWithTrack_outputSettings(&video_track, Some(&video_read));
         video_out.setAlwaysCopiesSampleData(false);
         reader.addOutput(&video_out);
@@ -225,7 +228,7 @@ pub fn make_proxy(src: &Path, out: &Path, source: &str, progress: &mut dyn FnMut
                 std::thread::sleep(Duration::from_millis(2));
             }
             if reader.status() == AVAssetReaderStatus::Failed {
-                bail!("reading failed: {:?}", reader.error());
+                bail!("reading failed: {:?} — underlying: {:?}", reader.error(), reader.error().and_then(|e| e.userInfo().objectForKey(&NSString::from_str("NSUnderlyingError")).map(|u| format!("{u:?}"))));
             }
         }
 

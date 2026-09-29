@@ -95,7 +95,7 @@ pub async fn sweep(handle: AppHandle, vault: Arc<Vault>) {
     for e in std::fs::read_dir(vault.ingest_dir()).into_iter().flatten().flatten() {
         let old = e.metadata().and_then(|m| m.modified()).is_ok_and(|t| t < started);
         let name = e.file_name().to_string_lossy().into_owned();
-        if old && (name.ends_with(".proxy.mp4") || name.ends_with(".src") || name.ends_with(".part")) {
+        if old && (name.ends_with(".proxy.mp4") || name.contains(".src") || name.ends_with(".part")) {
             tracing::info!("left from an earlier run, removed: {name}");
             std::fs::remove_file(e.path()).ok();
         }
@@ -143,8 +143,11 @@ pub async fn auto_proxy(handle: AppHandle, vault: Arc<Vault>, hex: String, sourc
     handle.emit("vault-proxy", json!({ "of": hex })).ok();
     if let Err(e) = result {
         tracing::warn!("proxy of {hex}: {e}");
-        for left in [format!("{hex}.proxy.mp4"), format!("{hex}.src")] {
-            std::fs::remove_file(vault.ingest_dir().join(left)).ok();
+        for e in std::fs::read_dir(vault.ingest_dir()).into_iter().flatten().flatten() {
+            let n = e.file_name().to_string_lossy().into_owned();
+            if n.starts_with(&hex) && (n.ends_with(".proxy.mp4") || n.contains(".src")) {
+                std::fs::remove_file(e.path()).ok();
+            }
         }
         if let Ok(hash) = hex.parse::<iroh_blobs::Hash>() {
             let tries = vault.catalog.meta(hash).await.ok().flatten().and_then(|m| m.meta.get("proxy_tries").and_then(|t| t.as_u64())).unwrap_or(0) + 1;
@@ -162,12 +165,14 @@ async fn make(vault: &Vault, hex: &str, name: &str, source: PathBuf) -> Result<(
     let path = if source.exists() {
         source
     } else {
-        let p = vault.ingest_dir().join(format!("{hex}.src"));
+        // the file's own extension: AVFoundation tells a movie by it (a ".src" has "no video track")
+        let ext = std::path::Path::new(&original.original_name).extension().map(|e| e.to_string_lossy().to_lowercase()).unwrap_or_else(|| "mov".into());
+        let p = vault.ingest_dir().join(format!("{hex}.src.{ext}"));
         vault.store.blobs().export(hash, &p).await.map_err(|e| format!("{e:#}"))?;
         p
     };
     let cleanup = |p: &PathBuf| {
-        if p.extension().is_some_and(|e| e == "src") {
+        if p.file_name().is_some_and(|n| n.to_string_lossy().contains(".src.")) {
             std::fs::remove_file(p).ok();
         }
     };

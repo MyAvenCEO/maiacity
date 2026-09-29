@@ -275,7 +275,8 @@
 							<td class="thumb"><span>⇣</span></td>
 							<td class="h">hashing…</td>
 							<td class="n">{landingHere.path.split('/').pop()}</td>
-							<td class="col" colspan="2"><span class="pm">coming in</span><span class="rbar"><i style:width="{landingHere.done * 100}%"></i></span></td>
+							<td class="col"></td>
+							<td></td>
 							<td class="r">{gb(landingHere.size)}</td>
 						</tr>
 					{/if}
@@ -287,7 +288,12 @@
 								<td></td>
 								{#each TIERS as t (t.tier)}
 									<td class="c tier">
-										{#if t.store === 'avenSSD' && now}<span class="pct" title="Local Master: rendering into ACEScct">{now.stage === 'making' ? `${Math.floor(now.done * 100)}%` : '0%'}</span>
+										{#if t.store === 'avenSSD'}
+											{#if now?.stage === 'making'}<span class="pct" title="Local Master: rendering into ACEScct">{Math.floor(now.done * 100)}%</span>
+											{:else if now}<span class="wait" title="Local Master: {now.stage === 'queued' ? 'queued for rendering — one at a time, after any ingest' : now.stage}">0%</span>
+											{:else if ps.state === 'failed'}<span class="miss" title="Rendering: {ps.note}">✗</span>
+											{:else if ps.state === 'unknown-colour' || ps.state === 'waiting'}<span class="warn" title={ps.note}>⚠</span>
+											{:else}<span class="wait" title="Local Master: rendering next">0%</span>{/if}
 										{:else if t.store && (current?.rules.proxy ?? []).includes(t.store)}<span class="wait" title="{t.name}: once it is rendered">0%</span>
 										{:else if t.store}<span class="none">—</span>
 										{:else}<span class="none">·</span>{/if}
@@ -296,12 +302,9 @@
 								<td class="thumb"><span>▶</span></td>
 								<td class="h">—</td>
 								<td class="n sub">↳ {(r.coming.original_name ?? '').replace(/\.[^.]+$/, '')}.proxy</td>
-								<td class="col" colspan="3">
-									{#if now}<span class="pm">{now.stage === 'making' ? `rendering → ACEScct ${Math.floor(now.done * 100)}%` : now.stage === 'queued' ? 'queued for rendering' : now.stage}</span><span class="rbar"><i style:width="{now.done * 100}%"></i></span>
-									{:else if ps.state === 'pending'}<span class="dim">rendering next</span>
-									{:else if ps.state === 'failed'}<span class="pw" title={ps.note}>✗ rendering failed</span>
-									{:else if ps.state !== 'made'}<span class="pw" title={ps.note}>⚠ {ps.state === 'unknown-colour' ? 'unknown source — its colour cannot be told' : `no colour journey from ${profileInfo(colourOf(r.coming)).label} into ACEScct yet`}</span>{/if}
-								</td>
+								<td class="col"><span class="dim">ACEScct</span></td>
+								<td><span class="cls proxy">proxy</span></td>
+								<td class="r"></td>
 							</tr>
 						{:else}
 						{@const m = r}
@@ -315,7 +318,6 @@
 									{:else if st === 'ok'}<span class="ok" title="{t.name}: verified by hash">✓</span>
 									{:else if mv}<span class="pct" title="{t.name}: {gb(mv.sent)} of {gb(mv.size)} · {gb(mv.rate)}/s">{mv.size ? Math.floor((mv.sent / mv.size) * 100) : 0}%</span>
 									{:else if st === ''}<span class="none" title="{t.name}: not a destination of this class">—</span>
-									{:else if st === 'on its way'}<span class="pct" title="{t.name}: on its way">…</span>
 									{:else}<span class="wait" title="{t.name}: {waitingWhy}">0%</span>{/if}
 								</td>
 							{/each}
@@ -328,11 +330,7 @@
 							<td class="col">
 								{#if proxyOf(m)}<span class="dim">ACEScct</span>
 								{:else if m.kind === 'video' && classOf(m) === 'original'}
-									{@const ps = proxyState(m.meta)}
-									<span class="prof">{colourOf(m) ? profileInfo(colourOf(m)).label : 'colour not read yet'}</span>
-									{#if ps.state === 'unknown-colour'}<span class="pw" title={ps.note}>⚠ unknown source</span>
-									{:else if ps.state === 'waiting'}<span class="pw" title={ps.note}>⚠ no journey yet</span>
-									{:else if colourOf(m)}<span class="pok">→ ACEScct</span>{/if}
+									<span class="prof">{colourOf(m) ? profileInfo(colourOf(m)).label : '—'}</span>
 								{:else if colourOf(m)}<span class="dim">{profileInfo(colourOf(m)).label}</span>{/if}
 							</td>
 							<td><span class="cls {classOf(m)}">{classOf(m)}</span></td>
@@ -387,6 +385,8 @@
 	.tier { width: 2.2rem; padding-left: 0.2rem; padding-right: 0.2rem; }
 	.tier .ok { display: inline-grid; place-items: center; width: 1.25rem; height: 1.25rem; border-radius: 50%; background: #6f9a57; font-size: 0.7rem; font-weight: 700; color: #fff; }
 	.tier .pct { font-size: 0.72rem; font-weight: 600; font-variant-numeric: tabular-nums; color: #b8860b; }
+	.tier .miss { font-weight: 700; color: #9c3b26; }
+	.tier .warn { font-weight: 700; color: #b8860b; }
 	.tier .wait { font-size: 0.72rem; font-variant-numeric: tabular-nums; color: var(--dim); }
 	.tier .none { color: var(--edge); }
 	th.tier { text-align: center; }

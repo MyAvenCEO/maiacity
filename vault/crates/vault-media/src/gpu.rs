@@ -71,18 +71,27 @@ impl Grader {
                 .kernel
                 .applyWithExtent_arguments(extent, &NSArray::from_slice(&args))
                 .context("the colour kernel gave no picture")?;
-            // down to the proxy's size (Lanczos: no aliasing on fine detail)
             let k = w as f64 / extent.size.width;
-            let filter = CIFilter::filterWithName(&NSString::from_str("CILanczosScaleTransform")).context("no Lanczos filter")?;
-            filter.setValue_forKey(Some(&graded), kCIInputImageKey);
-            filter.setValue_forKey(Some(&NSNumber::new_f64(k)), &NSString::from_str("inputScale"));
-            let aspect = (h as f64 / extent.size.height) / k;
-            filter.setValue_forKey(Some(&NSNumber::new_f64(aspect)), &NSString::from_str("inputAspectRatio"));
-            let scaled = filter.outputImage().context("the scale gave no picture")?;
+            let scaled = if (k - 1.0).abs() < 1e-6 && (h as f64 - extent.size.height).abs() < 0.5 {
+                graded
+            } else {
+                self.scale(&graded, k, h as f64 / extent.size.height / k)?
+            };
             let bounds = CGRect { origin: CGPoint { x: 0.0, y: 0.0 }, size: CGSize { width: w as f64, height: h as f64 } };
             self.context.render_toCVPixelBuffer_bounds_colorSpace(&scaled, out, bounds, None);
         }
         Ok(())
+    }
+
+    /// Down to the proxy's size when the decoder did not (Lanczos: no aliasing on fine detail).
+    unsafe fn scale(&self, graded: &CIImage, k: f64, aspect: f64) -> Result<Retained<CIImage>> {
+        unsafe {
+            let filter = CIFilter::filterWithName(&NSString::from_str("CILanczosScaleTransform")).context("no Lanczos filter")?;
+            filter.setValue_forKey(Some(graded), kCIInputImageKey);
+            filter.setValue_forKey(Some(&NSNumber::new_f64(k)), &NSString::from_str("inputScale"));
+            filter.setValue_forKey(Some(&NSNumber::new_f64(aspect)), &NSString::from_str("inputAspectRatio"));
+            filter.outputImage().context("the scale gave no picture")
+        }
     }
 }
 

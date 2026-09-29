@@ -62,6 +62,9 @@ pub struct Config<'a> {
     pub public_ip: Option<Ipv4Addr>,
 }
 
+/// Files pulled into Object Storage at once.
+const PULLS: usize = 3;
+
 impl Peer {
     pub async fn start(cfg: Config<'_>, allow: Allow) -> Result<Arc<Self>> {
         std::fs::create_dir_all(cfg.dir.join("docs"))?;
@@ -243,8 +246,29 @@ impl Peer {
         }
     }
 
-    async fn reconcile_once(&self, s3: &S3, db: &tokio_postgres::Client, failed: &mut HashSet<Hash>) -> Result<()> {
+    async fn reconcile_once(self: &Arc<Self>, s3: &S3, db: &tokio_postgres::Client, failed: &mut HashSet<Hash>) -> Result<()> {
         let blobs: Vec<_> = self.doc.get_many(Query::single_latest_per_key().key_prefix("blobs/")).await?.collect().await;
+        // PULLS files at once: one stream alone stays far below the line on a home uplink whose latency swells under
+        // load (43 ms idle, ~850 ms loaded, measured) — three fill it
+        let mut running: tokio::task::JoinSet<(Hash, u64, Result<(EndpointId, String)>)> = tokio::task::JoinSet::new();
+        let settle = |done: Option<Result<(Hash, u64, Result<(EndpointId, String)>), tokio::task::JoinError>>, failed: &mut HashSet<Hash>| {
+            match done {
+                Some(Ok((hash, size, Ok((from, how))))) => {
+                    tracing::info!("stored {} ({size} B) from {}, {how}", hash.fmt_short(), from.fmt_short());
+                    Some(hash)
+                }
+                Some(Ok((hash, _, Err(e)))) => {
+                    tracing::warn!("{}: {e:#}", hash.fmt_short());
+                    failed.insert(hash);
+                    None
+                }
+                Some(Err(e)) => {
+                    tracing::warn!("a pull stopped: {e}");
+                    None
+                }
+                None => None,
+            }
+        };
         for entry in blobs {
             let entry = entry?;
             let (hash, size) = (entry.content_hash(), entry.content_len());
@@ -264,15 +288,17 @@ impl Peer {
                     continue;
                 }
             }
-            match self.pull(hash, size, s3).await {
-                Ok((from, how)) => {
-                    tracing::info!("stored {} ({size} B) from {}, {how}", hash.fmt_short(), from.fmt_short());
-                    db::stored(db, &hash.to_hex()).await.ok();
+            if running.len() >= PULLS {
+                if let Some(stored) = settle(running.join_next().await, failed) {
+                    db::stored(db, &stored.to_hex()).await.ok();
                 }
-                Err(e) => {
-                    tracing::warn!("{}: {e:#}", hash.fmt_short());
-                    failed.insert(hash);
-                }
+            }
+            let (me, s3) = (self.clone(), s3.clone());
+            running.spawn(async move { (hash, size, me.pull(hash, size, &s3).await) });
+        }
+        while let Some(done) = running.join_next().await {
+            if let Some(stored) = settle(Some(done), failed) {
+                db::stored(db, &stored.to_hex()).await.ok();
             }
         }
         Ok(())
