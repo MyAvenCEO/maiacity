@@ -62,8 +62,18 @@ pub struct Config<'a> {
     pub public_ip: Option<Ipv4Addr>,
 }
 
-/// Files pulled into Object Storage at once.
-const PULLS: usize = 3;
+/// The QUIC transport for moving footage over a home uplink. iroh's defaults are tuned for 100 ms: one stream may have
+/// only 1.25 MB in flight, and on this Mac's line the latency swells from 43 ms to ~850 ms under load, capping a file
+/// at ~3 MB/s of 59 Mbit/s. So: windows sized for a full second of a fast line, and BBR, which paces to the measured
+/// bandwidth instead of filling the router's buffer (the swelling itself).
+pub fn transport() -> iroh::endpoint::QuicTransportConfig {
+    const STREAM: u32 = 32 * 1024 * 1024;
+    iroh::endpoint::QuicTransportConfig::builder()
+        .stream_receive_window(STREAM.into())
+        .send_window(4 * STREAM as u64)
+        .congestion_controller_factory(std::sync::Arc::new(noq_proto::congestion::Bbr3Config::default()))
+        .build()
+}
 
 impl Peer {
     pub async fn start(cfg: Config<'_>, allow: Allow) -> Result<Arc<Self>> {
@@ -74,6 +84,7 @@ impl Peer {
             .relay_mode(RelayMode::custom([cfg.relay.clone()]))
             .address_lookup(lookup.clone())
             .hooks(allow.clone())
+            .transport_config(transport())
             .portmapper_config(iroh::endpoint::PortmapperConfig::Disabled)
             .bind_addr(SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::UNSPECIFIED, cfg.port)))?;
         if let Some(ip) = cfg.public_ip {
@@ -246,29 +257,8 @@ impl Peer {
         }
     }
 
-    async fn reconcile_once(self: &Arc<Self>, s3: &S3, db: &tokio_postgres::Client, failed: &mut HashSet<Hash>) -> Result<()> {
+    async fn reconcile_once(&self, s3: &S3, db: &tokio_postgres::Client, failed: &mut HashSet<Hash>) -> Result<()> {
         let blobs: Vec<_> = self.doc.get_many(Query::single_latest_per_key().key_prefix("blobs/")).await?.collect().await;
-        // PULLS files at once: one stream alone stays far below the line on a home uplink whose latency swells under
-        // load (43 ms idle, ~850 ms loaded, measured) — three fill it
-        let mut running: tokio::task::JoinSet<(Hash, u64, Result<(EndpointId, String)>)> = tokio::task::JoinSet::new();
-        let settle = |done: Option<Result<(Hash, u64, Result<(EndpointId, String)>), tokio::task::JoinError>>, failed: &mut HashSet<Hash>| {
-            match done {
-                Some(Ok((hash, size, Ok((from, how))))) => {
-                    tracing::info!("stored {} ({size} B) from {}, {how}", hash.fmt_short(), from.fmt_short());
-                    Some(hash)
-                }
-                Some(Ok((hash, _, Err(e)))) => {
-                    tracing::warn!("{}: {e:#}", hash.fmt_short());
-                    failed.insert(hash);
-                    None
-                }
-                Some(Err(e)) => {
-                    tracing::warn!("a pull stopped: {e}");
-                    None
-                }
-                None => None,
-            }
-        };
         for entry in blobs {
             let entry = entry?;
             let (hash, size) = (entry.content_hash(), entry.content_len());
@@ -288,17 +278,15 @@ impl Peer {
                     continue;
                 }
             }
-            if running.len() >= PULLS {
-                if let Some(stored) = settle(running.join_next().await, failed) {
-                    db::stored(db, &stored.to_hex()).await.ok();
+            match self.pull(hash, size, s3).await {
+                Ok((from, how)) => {
+                    tracing::info!("stored {} ({size} B) from {}, {how}", hash.fmt_short(), from.fmt_short());
+                    db::stored(db, &hash.to_hex()).await.ok();
                 }
-            }
-            let (me, s3) = (self.clone(), s3.clone());
-            running.spawn(async move { (hash, size, me.pull(hash, size, &s3).await) });
-        }
-        while let Some(done) = running.join_next().await {
-            if let Some(stored) = settle(Some(done), failed) {
-                db::stored(db, &stored.to_hex()).await.ok();
+                Err(e) => {
+                    tracing::warn!("{}: {e:#}", hash.fmt_short());
+                    failed.insert(hash);
+                }
             }
         }
         Ok(())

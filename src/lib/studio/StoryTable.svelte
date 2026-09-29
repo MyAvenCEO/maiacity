@@ -169,6 +169,8 @@
 		let loading: ReturnType<typeof setTimeout> | undefined;
 		void import('@tauri-apps/api/event').then(async ({ listen }) => {
 			unlisten.push(await listen<{ path: string; story: string; size: number; done: number }>('ingest-bytes', ({ payload }) => void (landing = payload)));
+			// a proxy is in the store: its row, B ✓ at once
+			unlisten.push(await listen('vault-proxy', () => void load()));
 			unlisten.push(
 				await listen<{ path: string; outcome: unknown }>('ingest', ({ payload }) => {
 					if (!payload.outcome) return;
@@ -291,6 +293,7 @@
 										{#if t.store === 'avenSSD'}
 											{#if now?.stage === 'making'}<span class="pct" title="Local Master: rendering into ACEScct">{Math.floor(now.done * 100)}%</span>
 											{:else if now}<span class="wait" title="Local Master: {now.stage === 'queued' ? 'queued for rendering — one at a time, after any ingest' : now.stage}">0%</span>
+											{:else if ps.state === 'failed' && Number(r.coming.meta?.proxy_tries ?? 0) < 3}<span class="wait" title="Local Master: rendering again by itself — {ps.note}">0%</span>
 											{:else if ps.state === 'failed'}<span class="miss" title="Rendering: {ps.note}">✗</span>
 											{:else if ps.state === 'unknown-colour' || ps.state === 'waiting'}<span class="warn" title={ps.note}>⚠</span>
 											{:else}<span class="wait" title="Local Master: rendering next">0%</span>{/if}

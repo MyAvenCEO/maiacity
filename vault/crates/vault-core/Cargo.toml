@@ -8,6 +8,7 @@ publish.workspace = true
 
 [dependencies]
 iroh.workspace = true
+noq-proto.workspace = true
 iroh-blobs.workspace = true
 iroh-docs.workspace = true
 iroh-gossip.workspace = true

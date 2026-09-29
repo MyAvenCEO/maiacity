@@ -27,6 +27,20 @@ use iroh_blobs::{
 use iroh_docs::{DocTicket, protocol::Docs};
 use iroh_gossip::net::Gossip;
 
+/// The QUIC transport for moving footage over a home uplink. iroh's defaults are tuned for 100 ms: one stream may have
+/// only 1.25 MB in flight, and on this Mac's line the latency swells from 43 ms to ~850 ms under load, capping a file
+/// at ~3 MB/s of 59 Mbit/s. So: windows sized for a full second of a fast line, and BBR, which paces to the measured
+/// bandwidth instead of filling the router's buffer (the swelling itself).
+pub fn transport() -> iroh::endpoint::QuicTransportConfig {
+    const STREAM: u32 = 32 * 1024 * 1024;
+    iroh::endpoint::QuicTransportConfig::builder()
+        .stream_receive_window(STREAM.into())
+        .send_window(4 * STREAM as u64)
+        .congestion_controller_factory(std::sync::Arc::new(noq_proto::congestion::Bbr3Config::default()))
+        .build()
+}
+
+
 use crate::{catalog::Catalog, net::Allow};
 
 pub struct Vault {
@@ -178,6 +192,7 @@ impl Vault {
             .relay_mode(RelayMode::Disabled)
             .address_lookup(lookup.clone())
             .hooks(allow.clone())
+            .transport_config(transport())
             .bind()
             .await
             .context("bind the iroh endpoint")?;
