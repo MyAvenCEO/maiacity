@@ -35,9 +35,11 @@ The money rules did not have to change for that. A city is a coop like any other
 
 What makes it a city is the name. Found Maia, and Maia issues its own two currencies: **maiaHEARTS**, the money every heart invested in Maia turns into, and **maiaMINDS**, the ownership of the city itself.
 
-Becoming a citizen takes at least 25,000 of your own hearts. That is why the first mint changed as well. On [Day 10](/blog/day-10-a-heart-every-two-minutes/) it carried 500 hearts. Now it carries 30,000: enough for citizenship, plus the 5,000 the next step costs.
+Becoming a citizen takes at least 25,000 of your own hearts. That is why the first mint changed as well. On [Day 10](/blog/day-10-a-heart-every-two-minutes/) it carried 500 hearts. Now it carries 62,500: 25,000 for citizenship, 25,000 for the next step, and 12,500 left to back the coops you believe in.
 
 And it is for good. One city per player. No second founding, no switching when a shinier city appears.
+
+None of this needs the map. You found a city, join one or move into a home in the Coops app. The city and its people are the same in every sandbox we build, and in the game at the end of them. A sandbox only gives the city a place: its founder picks the card it stands on.
 
 ![The planet from orbit: every tower is a city, and its height counts its citizens.](bafybeicafiplfeyys2w6qlgp3slpe5p5ch4lzsdrlbrhe2ngfglhhxiafi.jpg)
 
@@ -61,9 +63,9 @@ Citizenship gets you onto the island. It does not give you a place on it.
 
 For that there is a second step: a settlement. A cluster of domes on one cell of the island, the same ones Day 05 grew. It starts as a camp of tents and grows with its people: glamping domes after 12 settlers, real dome homes after 24, and at 216 a full dome cell with its centre dome.
 
-A settlement is a coop like the city above it. The 5,000 hearts it takes become maiaHEARTS in its own treasury, and its settlers receive its minds. For a settlement called Riverside, that is riversideMINDS.
+A settlement is a coop like the city above it. The 25,000 hearts it takes become maiaHEARTS in its own treasury, and its settlers receive its minds. For a settlement called Riverside, that is riversideMINDS.
 
-You can found one on any free cell. You cannot walk into somebody else's.
+You can found your own and pick the free cell it stands on. You cannot walk into somebody else's.
 
 ## The only way in is an invitation
 
@@ -73,7 +75,7 @@ This is the heart of the change. A city can be open to anyone with the hearts to
 
 ![Mara's invitation: citizenship first, then home.](bafybeiharwui6hfbkflvkm5tuwq346wp4o3qak2jr6vddob4zeus7b2cry.jpg)
 
-The invitation walks you through both steps. If you are not yet a citizen of that city, it asks for the 25,000 first. Then the 5,000, and the link is spent.
+The invitation walks you through both steps. If you are not yet a citizen of that city, it asks for the 25,000 first. Then 25,000 more for the home, and the link is spent.
 
 ![Home: Riverside, in Maia. Twenty-seven settlers, grown to Level 3.](bafybeifgqbuftq3ltw6jlwms6huhz7lj2pr5jw22ozm7ut5vdopr5vqqya.jpg)
 
@@ -81,7 +83,7 @@ Imagine a friend sending you that link on a Sunday night. You tap it, you land o
 
 ## A new player gets a guide until they belong somewhere
 
-The first time you open the planet, a small dark note points at the next thing to do. Sign up. Mint your first 30,000 hearts. Find a city. Invest the 25,000.
+The first time you open the planet, a small dark note points at the next thing to do. Sign up. Mint your first 62,500 hearts. Find a city. Invest the 25,000.
 
 ![The first hint for a signed-in player: mint your first hearts.](bafkreigta54qlbxhyt4vghoef7h3ilhlvauyyww6aa3y73543iaznm2emy.jpg)
 
@@ -95,7 +97,7 @@ The moment you become a citizen, it tells you so, names step two, and goes quiet
 
 ## An empty planet
 
-The live planet started over with this change. Every account is still there, and every first mint pays the new 30,000. No city stands on it yet.
+The live planet started over with this change. Every account is still there, and every first mint pays the new starting hearts. No city stands on it yet.
 
 Somebody founds the first one. Somebody else gets the first invitation home.
 

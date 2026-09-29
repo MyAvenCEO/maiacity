@@ -1,5 +1,5 @@
 ---
-title: The first believer pays 10 hearts for a piece of a coop. The last will pay 490.
+title: The first believer pays 10 hearts for a piece of a coop. The last will pay 300.
 subtitle: "Day 12 — how investing works in avenCITY Sandbox 2: your hearts become the coop's maiaHEARTS, the ownership goes to you, and the price climbs one milestone at a time."
 day: 12
 author: avenSAMUEL
@@ -47,7 +47,7 @@ The third was the burn. Investing burned your hearts. They were taken out of the
 
 Here is the rule, as it stands now. Picture a staircase whose steps get taller the higher you climb.
 
-A coop grows through 49 milestones. At each one its total supply of minds reaches the next number in a sequence: 1, 2, 3, 5, 8, 13, 21, 34… Each number is the sum of the two before it. Leonardo of Pisa, called Fibonacci, brought it to Europe in 1202, and it turns up in sunflower heads and pine cones. It grows slowly at first, then very quickly, and never in a jump.
+A coop grows through 30 milestones. At each one its total supply of minds reaches the next number in a sequence: 1, 2, 3, 5, 8, 13, 21, 34… Each number is the sum of the two before it. Leonardo of Pisa, called Fibonacci, brought it to Europe in 1202, and it turns up in sunflower heads and pine cones. It grows slowly at first, then very quickly, and never in a jump.
 
 Every milestone releases the difference to the one before. Milestone 6 releases 5 minds. Milestone 9 releases 21.
 
@@ -55,9 +55,9 @@ The price is even simpler. Ten hearts per mind at milestone 1. Twenty at milesto
 
 ![The emission tab: every milestone, the minds it releases, the price and the total supply.](bafkreibyyxh6savdubcjil7mb7cauye5facacxvxovmkacnte2va6xfknq.jpg)
 
-Everyone inside one milestone pays the same price, like a funding round. The first mind of a coop costs 10 hearts. The last ones, at milestone 49, cost 490. By then there are 8 billion minds, and filling every milestone of a single coop would take 3.7 trillion hearts.
+Everyone inside one milestone pays the same price, like a funding round. The first mind of a coop costs 10 hearts. The last ones, at milestone 30, cost 300. By then there are 1.3 million minds, and filling every milestone of a single coop would take 368 million hearts.
 
-The milestones group into five phases of ten: IDEA, TEST, BUILD, SCALE and HERO. Every coop in the sandbox today is still an idea.
+The milestones group into five phases of six: IDEA, TEST, BUILD, SCALE and HERO. Every coop in the sandbox today is still an idea.
 
 ## Your stake carries you through the first five milestones alone
 
