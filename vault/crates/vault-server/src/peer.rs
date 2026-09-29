@@ -48,6 +48,7 @@ pub struct Peer {
     router: Router,
     /// who most recently told us about a file — the first place to fetch it from
     seen_from: Mutex<HashMap<Hash, EndpointId>>,
+    conns: tokio::sync::Mutex<HashMap<EndpointId, iroh::endpoint::Connection>>,
     pub wake: Notify,
     /// the same, for the uploads
     pub wake_store: Notify,
@@ -117,6 +118,7 @@ impl Peer {
             relay: cfg.relay.clone(),
             router,
             seen_from: Mutex::new(HashMap::new()),
+            conns: tokio::sync::Mutex::new(HashMap::new()),
             wake: Notify::new(),
             wake_store: Notify::new(),
         }))
@@ -263,8 +265,8 @@ impl Peer {
                 }
             }
             match self.pull(hash, size, s3).await {
-                Ok(from) => {
-                    tracing::info!("stored {} ({size} B) from {}", hash.fmt_short(), from.fmt_short());
+                Ok((from, how)) => {
+                    tracing::info!("stored {} ({size} B) from {}, {how}", hash.fmt_short(), from.fmt_short());
                     db::stored(db, &hash.to_hex()).await.ok();
                 }
                 Err(e) => {
@@ -277,7 +279,7 @@ impl Peer {
     }
 
     /// Fetch one file from whichever paired device has it, verified chunk by chunk, into the bucket.
-    async fn pull(&self, hash: Hash, size: u64, s3: &S3) -> Result<EndpointId> {
+    async fn pull(&self, hash: Hash, size: u64, s3: &S3) -> Result<(EndpointId, String)> {
         let mut candidates: Vec<EndpointId> = Vec::new();
         if let Some(id) = self.seen_from.lock().unwrap().get(&hash) {
             candidates.push(*id);
@@ -289,16 +291,43 @@ impl Peer {
         }
         let mut last = anyhow::anyhow!("no paired device to fetch from");
         for id in candidates {
-            match tokio::time::timeout(Duration::from_secs(15), self.endpoint.connect(id, iroh_blobs::ALPN)).await {
-                Ok(Ok(conn)) => match stream_into(conn, hash, size, s3).await {
-                    Ok(()) => return Ok(id),
-                    Err(e) => last = e,
-                },
-                Ok(Err(e)) => last = e.into(),
-                Err(_) => last = anyhow::anyhow!("{} did not answer", id.fmt_short()),
+            let conn = match self.conn(id).await {
+                Ok(c) => c,
+                Err(e) => {
+                    last = e;
+                    continue;
+                }
+            };
+            let started = std::time::Instant::now();
+            match stream_into(conn.clone(), hash, size, s3).await {
+                Ok(()) => {
+                    let rate = size as f64 / started.elapsed().as_secs_f64().max(0.001) / 1e6;
+                    let paths = conn.paths();
+                    let path = paths.iter().find(|p| p.is_selected()).map(|p| {
+                        format!("{} {} ms", if p.is_relay() { "relayed" } else { "direct" }, p.rtt().as_millis())
+                    });
+                    return Ok((id, format!("{rate:.1} MB/s, {}", path.unwrap_or_else(|| "no path".into()))));
+                }
+                Err(e) => {
+                    self.conns.lock().await.remove(&id);
+                    last = e;
+                }
             }
         }
         Err(last)
+    }
+
+    /// One connection per device, kept across files: no handshake per file, and the direct path, once found, stays.
+    async fn conn(&self, id: EndpointId) -> Result<iroh::endpoint::Connection> {
+        let mut conns = self.conns.lock().await;
+        if let Some(c) = conns.get(&id).filter(|c| c.close_reason().is_none()) {
+            return Ok(c.clone());
+        }
+        let c = tokio::time::timeout(Duration::from_secs(15), self.endpoint.connect(id, iroh_blobs::ALPN))
+            .await
+            .map_err(|_| anyhow::anyhow!("{} did not answer", id.fmt_short()))??;
+        conns.insert(id, c.clone());
+        Ok(c)
     }
 
     pub async fn shutdown(&self) {
