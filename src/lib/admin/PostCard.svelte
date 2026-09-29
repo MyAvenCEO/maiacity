@@ -216,7 +216,7 @@
 				preload="metadata"
 				playsinline
 				muted
-				crossorigin="use-credentials"
+				crossorigin="anonymous"
 			></video>
 		{:else if poster}
 			<img src={poster} alt="" />
@@ -245,7 +245,7 @@
 			playsinline
 			muted
 			loop
-			crossorigin="use-credentials"
+			crossorigin="anonymous"
 		></video>
 	{:else if poster}
 		<img src={poster} alt="" />

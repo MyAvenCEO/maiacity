@@ -49,6 +49,24 @@ pub struct Batch {
     pub description: Option<String>,
     pub meta: serde_json::Value,
     pub public: bool,
+    /// the story it all goes into (a story id); None: the inbox — or, for a file already in the vault, where it is
+    pub story: Option<String>,
+    /// the class, when the batch says it; None: told from the file (and when in doubt, default)
+    pub class: Option<String>,
+    /// a file already in the vault moves into the batch's story — only when a person ingests; an agent's batch leaves
+    /// it where it is (moving files is the admin's, by hand)
+    pub moves_existing: bool,
+}
+
+/// A file's class when nobody said it: what a camera or recorder made is an original — anything else, or anything in
+/// doubt, is default. Proxy and delivery are never guessed: only their pipelines (the proxy maker, the render worker)
+/// write them.
+pub fn class_of(mime: &str, _tags: &[String], _meta: &serde_json::Value) -> &'static str {
+    // straight from a camera or a field recorder
+    if matches!(mime, "video/quicktime" | "video/x-braw" | "video/x-r3d" | "image/x-adobe-dng" | "audio/wav") {
+        return "original";
+    }
+    "default"
 }
 
 /// Files the OS leaves on cards and drives — never footage.
@@ -122,6 +140,22 @@ impl Vault {
         }
         if self.store.blobs().has(source_hash).await? && self.catalog.has(source_hash).await? {
             std::fs::remove_file(&landing).ok();
+            // the same bytes brought in for a story: it now lives there (a file has one story), with the batch's tags too
+            if batch.story.is_some() || batch.class.is_some() || !batch.tags.is_empty() {
+                let known = self.catalog.meta(source_hash).await?.unwrap_or_default();
+                let mut tags = known.tags.clone();
+                for t in &batch.tags {
+                    if !tags.contains(t) {
+                        tags.push(t.clone());
+                    }
+                }
+                // a file that never had a class gets one: the batch's, else told from what the vault knows of it
+                let class = batch.class.clone().or_else(|| known.class.is_empty().then(|| class_of(&known.mime, &tags, &known.meta).to_string()));
+                let story = if batch.moves_existing { batch.story.clone() } else { None };
+                let patch = serde_json::json!({ "story": story, "class": class, "tags": tags });
+                let patch: serde_json::Map<_, _> = patch.as_object().into_iter().flatten().filter(|(_, v)| !v.is_null()).map(|(k, v)| (k.clone(), v.clone())).collect();
+                self.catalog.describe(source_hash, &serde_json::Value::Object(patch)).await?;
+            }
             return Ok(outcome(source_hash, Verdict::Duplicate));
         }
 
@@ -154,6 +188,8 @@ impl Vault {
             source: src.display().to_string(),
             ingest: batch.session.clone(),
             added: now_iso(),
+            story: batch.story.clone().filter(|s| *s != self.catalog.inbox_id()).unwrap_or_default(),
+            class: batch.class.clone().unwrap_or_else(|| class_of(mime_of(src), &batch.tags, &batch.meta).to_string()),
         };
         self.catalog.put(iroh_hash, size, &meta).await?;
         Ok(outcome(iroh_hash, Verdict::Verified))

@@ -123,6 +123,7 @@ async fn main() -> Result<()> {
                     description: text("description"),
                     meta: d["meta"].clone(),
                     public: d["public"].as_bool().unwrap_or(false),
+                    ..Default::default()
                 };
                 let o = vault.ingest_file(&library.join(file), &batch).await?;
                 if o.verdict == Verdict::Mismatch {

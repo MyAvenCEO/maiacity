@@ -62,6 +62,9 @@ pub async fn connect(vault: &Vault, auth: &Auth) -> Res<Network> {
         })
         .unwrap_or_default();
     let count = devices.len();
+    if let Some(server) = join["server"].as_str() {
+        *SERVER.lock().unwrap() = server.to_string();
+    }
     vault
         .join(Join { ticket: ticket.parse().map_err(err)?, relay: relay.parse().map_err(err)?, devices })
         .await
@@ -74,6 +77,47 @@ pub async fn connect(vault: &Vault, auth: &Auth) -> Res<Network> {
         joined: true,
         note: None,
     })
+}
+
+/// The server peer's node id, from the last join: its pulls are the uploads to Object Storage.
+static SERVER: std::sync::Mutex<String> = std::sync::Mutex::new(String::new());
+
+/// One file on its way, as the studio shows it: which destination, how far, how fast.
+#[derive(Serialize)]
+pub struct Moving {
+    pub hash: String,
+    /// avenSSD (coming down to this Mac), hetzner (the server pulling it into Object Storage), or a device
+    pub dest: String,
+    pub size: u64,
+    pub sent: u64,
+    pub rate: f64,
+    pub done: bool,
+    pub aborted: bool,
+}
+
+/// Every file on its way to or from this Mac right now, and what ended in the last minute — live, from iroh.
+#[tauri::command]
+pub fn vault_transfers(app: State<'_, App>) -> Res<Vec<Moving>> {
+    gate()?;
+    let server = SERVER.lock().unwrap().clone();
+    let dests = |to: &str| {
+        if to == "avenSSD" {
+            "avenSSD".to_string()
+        } else if !server.is_empty() && to == server {
+            "hetzner".to_string()
+        } else {
+            format!("device {}", &to[..to.len().min(10)])
+        }
+    };
+    let mut out: Vec<Moving> = app
+        .vault
+        .transfers
+        .now()
+        .into_iter()
+        .map(|t| Moving { dest: dests(&t.to), hash: t.hash, size: t.size, sent: t.sent, rate: t.rate, done: t.done, aborted: t.aborted })
+        .collect();
+    out.sort_by(|a, b| a.done.cmp(&b.done).then(b.sent.cmp(&a.sent)));
+    Ok(out)
 }
 
 /// Where a file's copies are.
@@ -193,10 +237,24 @@ async fn fetch_from_gateway(vault: &Vault, auth: &Auth, hash: Hash) -> Result<()
     let landing: PathBuf = vault.ingest_dir().join(format!("{}.down", hash.to_hex()));
     let mut file = tokio::fs::File::create(&landing).await.map_err(err)?;
     let mut hasher = blake3::Hasher::new();
-    while let Some(chunk) = res.chunk().await.map_err(err)? {
+    // coming down to this Mac's store: followed like every other transfer
+    let size = res.content_length().unwrap_or(0);
+    let moving = &vault.transfers;
+    moving.update(hash, "avenSSD", |t| (t.size, t.sent, t.done, t.aborted, t.ended) = (size, 0, false, false, None));
+    let mut got = 0u64;
+    while let Some(chunk) = match res.chunk().await {
+        Ok(c) => c,
+        Err(e) => {
+            moving.update(hash, "avenSSD", |t| (t.aborted, t.ended) = (true, Some(std::time::Instant::now())));
+            return Err(err(e));
+        }
+    } {
         hasher.update(&chunk);
         file.write_all(&chunk).await.map_err(err)?;
+        got += chunk.len() as u64;
+        moving.update(hash, "avenSSD", |t| t.sent = got);
     }
+    moving.update(hash, "avenSSD", |t| (t.done, t.ended) = (true, Some(std::time::Instant::now())));
     file.sync_all().await.map_err(err)?;
     drop(file);
     // the name is the hash: anything else is refused

@@ -23,7 +23,7 @@
 	import Ingest from '$lib/studio/Ingest.svelte';
 	import Inspector from '$lib/studio/Inspector.svelte';
 	import Library from '$lib/studio/Library.svelte';
-	import { native } from '$lib/native';
+	import { forwardConsole, native } from '$lib/native';
 	import ProgramMonitor from '$lib/studio/ProgramMonitor.svelte';
 	import RenderQueue from '$lib/studio/RenderQueue.svelte';
 	import Scopes from '$lib/studio/Scopes.svelte';
@@ -44,6 +44,7 @@
 	onMount(() => {
 		inApp = native();
 		if (!inApp) return;
+		forwardConsole(window, 'studio');
 		// a link into one tab (?tab=library — the media library's address)
 		const tab = new URLSearchParams(location.search).get('tab');
 		if (tab === 'ingest' || tab === 'library' || tab === 'render') s.tab = tab;

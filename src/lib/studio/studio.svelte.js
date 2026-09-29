@@ -638,7 +638,7 @@ export class Studio {
 				const duration = await new Promise((ok) => {
 					const v = document.createElement('video');
 					v.preload = 'metadata';
-					v.crossOrigin = 'use-credentials';
+					v.crossOrigin = 'anonymous';
 					/** @param {number} d */
 					const done = (d) => (clearTimeout(late), v.removeAttribute('src'), v.load(), ok(d));
 					const late = setTimeout(() => done(0), 8000);
@@ -677,7 +677,7 @@ export class Studio {
 		}
 		const p = (async () => {
 			const m = this.byHash.get(hash);
-			const res = await fetch(raw(hash), { credentials: 'include' });
+			const res = await fetch(raw(hash));
 			if (!res.ok) throw new Error(`Could not load ${itemName(m)} (${res.status}).`);
 			const bytes = await res.arrayBuffer();
 			const url = URL.createObjectURL(new Blob([bytes], { type: m?.mime }));

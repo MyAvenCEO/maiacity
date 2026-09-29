@@ -7,8 +7,9 @@ mod auth;
 mod local;
 mod mcp;
 mod proxies;
+mod sources;
+mod stories;
 mod sync;
-mod watch;
 
 use std::{
     io::SeekFrom,
@@ -52,7 +53,6 @@ struct Status {
     bytes: u64,
     disk_free: u64,
     disk_total: u64,
-    watch_dir: String,
 }
 
 #[tauri::command]
@@ -69,7 +69,6 @@ async fn vault_status(app: State<'_, App>) -> Res<Status> {
         bytes: list.iter().map(|m| m.size).sum(),
         disk_free: free,
         disk_total: total,
-        watch_dir: watch::watch_dir().display().to_string(),
     })
 }
 
@@ -79,6 +78,17 @@ async fn vault_list(app: State<'_, App>) -> Res<Vec<Meta>> {
     let mut list = app.vault.catalog.list().await.map_err(err)?;
     list.sort_by(|a, b| b.added.cmp(&a.added).then(a.original_name.cmp(&b.original_name)));
     Ok(list)
+}
+
+/// The web view's warnings and errors (the studio's, the world frame's), into the app's log — its console is not
+/// open to anyone.
+#[tauri::command]
+fn log_js(level: String, from: String, message: String) {
+    if level == "error" {
+        tracing::error!(target: "webview", "{from}: {message}");
+    } else {
+        tracing::warn!(target: "webview", "{from}: {message}");
+    }
 }
 
 /// Change what is known about a file (title, description, tags, public; meta merged key by key) — it syncs like the
@@ -110,8 +120,13 @@ fn vault_sources() -> Res<Vec<Source>> {
         if std::fs::canonicalize(&path).map(|p| p == PathBuf::from("/")).unwrap_or(false) {
             continue;
         }
+        // Time Machine's snapshots and other hidden system volumes are never a source
+        let name = e.file_name().to_string_lossy().into_owned();
+        if name.starts_with('.') || name.starts_with("com.apple.") || name.contains("TimeMachine") || name == "Recovery" {
+            continue;
+        }
         let (free, total) = disk_space(&path);
-        out.push(Source { name: e.file_name().to_string_lossy().into_owned(), path: path.display().to_string(), free, total });
+        out.push(Source { name, path: path.display().to_string(), free, total });
     }
     Ok(out)
 }
@@ -165,19 +180,39 @@ struct Summary {
 /// Ingest files and folders with the three-hash check; each file reports as it starts and as it ends
 /// (event `ingest`). The session's report goes into the catalog as `ingest/<session>`.
 #[tauri::command]
-async fn vault_ingest(handle: AppHandle, app: State<'_, App>, paths: Vec<String>, tags: Vec<String>) -> Res<Summary> {
+async fn vault_ingest(
+    handle: AppHandle,
+    app: State<'_, App>,
+    paths: Vec<String>,
+    tags: Vec<String>,
+    story: Option<String>,
+    class: Option<String>,
+) -> Res<Summary> {
     gate()?;
+    if let Some(c) = &class {
+        stories::by_hand(c)?;
+    }
     if app.busy.swap(true, Ordering::SeqCst) {
         return Err("an ingest is already running".into());
     }
-    let result = run_ingest(&handle, &app.vault, paths, tags).await;
+    // a person ingests: what is already in the vault moves into the chosen story
+    let result = run_ingest(&handle, &app.vault, paths, tags, story, class, true).await;
     app.busy.store(false, Ordering::SeqCst);
     result.map_err(err)
 }
 
-async fn run_ingest(handle: &AppHandle, vault: &Arc<Vault>, paths: Vec<String>, tags: Vec<String>) -> anyhow::Result<Summary> {
+/// Ingest into a story (its id; None: the inbox), every file in one class or each told from itself.
+async fn run_ingest(
+    handle: &AppHandle,
+    vault: &Arc<Vault>,
+    paths: Vec<String>,
+    tags: Vec<String>,
+    story: Option<String>,
+    class: Option<String>,
+    moves_existing: bool,
+) -> anyhow::Result<Summary> {
     let session = ingest::now_iso();
-    let batch = ingest::Batch { session: session.clone(), tags, ..Default::default() };
+    let batch = ingest::Batch { session: session.clone(), tags, story, class, moves_existing, ..Default::default() };
     let mut files = Vec::new();
     for p in &paths {
         files.extend(ingest::walk(&PathBuf::from(p))?);
@@ -191,8 +226,8 @@ async fn run_ingest(handle: &AppHandle, vault: &Arc<Vault>, paths: Vec<String>, 
         handle.emit("ingest", Progress { index, total, path: path.clone(), size, outcome: None }).ok();
         let o = vault.ingest_file(f, &batch).await?;
         handle.emit("ingest", Progress { index, total, path, size, outcome: Some(o.clone()) }).ok();
-        // a new movie gets its proxy by itself (in the background: the next file does not wait)
-        if o.verdict == Verdict::Verified && ingest::kind_of(ingest::mime_of(f)) == "video" && !batch.tags.iter().any(|t| t == "proxy") {
+        // a new movie gets its proxy by itself when that is switched on (in the background: the next file does not wait)
+        if stories::auto_proxy() && o.verdict == Verdict::Verified && ingest::kind_of(ingest::mime_of(f)) == "video" && !batch.tags.iter().any(|t| t == "proxy") {
             tauri::async_runtime::spawn(proxies::auto_proxy(handle.clone(), vault.clone(), o.hash.clone(), f.clone()));
         }
         outcomes.push(o);
@@ -200,7 +235,7 @@ async fn run_ingest(handle: &AppHandle, vault: &Arc<Vault>, paths: Vec<String>, 
     let seconds = started.elapsed().as_secs_f64();
     let bytes = outcomes.iter().map(|o| o.size).sum();
     let count = |v: Verdict| outcomes.iter().filter(|o| o.verdict == v).count();
-    let report = serde_json::json!({ "session": session, "sources": paths, "files": outcomes, "bytes": bytes, "seconds": seconds });
+    let report = serde_json::json!({ "session": session, "sources": paths, "story": batch.story, "files": outcomes, "bytes": bytes, "seconds": seconds });
     let report_hash = vault.catalog.put_report(&session, &report).await?;
     Ok(Summary {
         session,
@@ -312,25 +347,6 @@ fn vault_dir() -> PathBuf {
         .unwrap_or_else(|| home.join("Library/Application Support/city.maia.vault"))
 }
 
-/// Keep the vault somewhere else from the next start (an external SSD). The new place fills itself from the network
-/// — from the other Macs over iroh and from the server's gateway, each file checked against its hash; the old place
-/// stays untouched until you remove it.
-#[tauri::command]
-fn vault_set_location(handle: AppHandle, path: String) -> Res<()> {
-    gate()?;
-    let dir = PathBuf::from(&path).join("maiaCITY Vault");
-    std::fs::create_dir_all(&dir).map_err(err)?;
-    // the same node in the new place: this Mac stays the device the admin paired
-    let key = vault_dir().join("secret.key");
-    if key.exists() && !dir.join("secret.key").exists() {
-        std::fs::copy(&key, dir.join("secret.key")).map_err(err)?;
-    }
-    let file = settings_file();
-    std::fs::create_dir_all(file.parent().unwrap()).map_err(err)?;
-    std::fs::write(&file, serde_json::to_vec_pretty(&serde_json::json!({ "vault_dir": dir })).map_err(err)?).map_err(err)?;
-    handle.restart();
-}
-
 fn main() {
     tracing_subscriber::fmt().with_env_filter(std::env::var("RUST_LOG").unwrap_or_else(|_| "warn".into())).init();
 
@@ -352,8 +368,6 @@ fn main() {
                 }
                 sync::keep_complete(handle, v).await;
             });
-            // the watch folder: whatever lands in ~/Movies/maiaCITY Inbox is ingested by itself
-            tauri::async_runtime::spawn(watch::run(app.handle().clone(), vault.clone()));
             // the studio for agents: MCP on this Mac only, behind the app's token
             let (handle, v) = (app.handle().clone(), vault.clone());
             let auth = app.state::<auth::Auth>().inner().clone();
@@ -380,11 +394,21 @@ fn main() {
             auth::api,
             sync::vault_connect,
             sync::vault_copies,
-            vault_set_location,
             mcp::mcp_info,
             vault_status,
             vault_list,
             vault_describe,
+            log_js,
+            stories::stories_list,
+            sources::ingest_sources,
+            sources::release_check,
+            sync::vault_transfers,
+            stories::story_save,
+            stories::story_delete,
+            stories::files_move,
+            stories::files_class,
+            stories::settings_get,
+            stories::settings_set,
             proxies::vault_proxy,
             vault_sources,
             vault_scan,

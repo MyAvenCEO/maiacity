@@ -4,7 +4,8 @@
 -->
 <script lang="ts">
 	import CopiesBadge from '$lib/studio/CopiesBadge.svelte';
-	import type { Copies } from '$lib/studio/vault';
+	import { command } from '$lib/native';
+	import { BY_HAND, type Copies, type StoryView } from '$lib/studio/vault';
 	import { GATEWAY } from '$lib/media/url';
 	import type { MediaItem } from './facets';
 	import {
@@ -27,6 +28,8 @@
 		p,
 		measure,
 		copies,
+		stories = [],
+		onplaced,
 		onfilter
 	}: {
 		m: MediaItem;
@@ -34,11 +37,32 @@
 		measure: { w?: number; h?: number; d?: number } | undefined;
 		/** where its copies are, and whether each is verified */
 		copies?: Copies;
+		/** every story, to move it into another */
+		stories?: StoryView[];
+		/** it moved to another story or class: the library takes the new description */
+		onplaced?: (m: MediaItem) => void;
 		/** filter the grid by this facet value ('day' takes the day's number) */
 		onfilter: (key: string, value: string) => void;
 	} = $props();
 
 	let copied = $state('');
+	let placing = $state('');
+	/** a move or a class change waits for the admin to confirm it */
+	let pending = $state<{ what: 'story' | 'class'; value: string; label: string } | null>(null);
+	const inbox = $derived(stories.find((x) => x.inbox));
+	const home = $derived(stories.find((x) => (m.story ? x.id === m.story : x.inbox)));
+	/** a file has one story: choosing another moves it there (the inbox takes it out of every story) */
+	async function place(what: 'story' | 'class', value: string) {
+		placing = '';
+		try {
+			const hashes = [m.hash];
+			if (what === 'story') await command('files_move', { hashes, story: value });
+			else await command('files_class', { hashes, class: value });
+			onplaced?.({ ...m, ...(what === 'story' ? { story: value === inbox?.id ? undefined : value } : { class: value }) });
+		} catch (e) {
+			placing = String(e);
+		}
+	}
 	async function copy(text: string) {
 		await navigator.clipboard.writeText(text);
 		copied = text;
@@ -91,6 +115,36 @@
 	{/each}
 
 	{#if m.description}<h3>Description</h3><p class="desc">{m.description}</p>{/if}
+	{#if stories.length}
+		<h3>Story</h3>
+		<select
+			class="place"
+			value={home?.id ?? ''}
+			onchange={(e) => {
+				const to = stories.find((x) => x.id === e.currentTarget.value);
+				if (to) pending = { what: 'story', value: to.id, label: `Move it to ${to.inbox ? 'the Inbox' : to.title}` };
+			}}
+		>
+			{#each stories as st (st.id)}<option value={st.id}>{st.inbox ? 'Inbox' : `${st.episode ? `${st.episode} · ` : ''}${st.title}`}</option>{/each}
+		</select>
+		<h3>Class</h3>
+		{#if m.class === 'proxy' || m.class === 'delivery'}
+			<p class="desc">{m.class}{home ? ` → ${home.rules[m.class].join(' + ')}` : ''} <span class="dim">(set by its pipeline)</span></p>
+		{:else}
+			<select class="place" value={m.class ?? 'default'} onchange={(e) => (pending = { what: 'class', value: e.currentTarget.value, label: `Make it ${e.currentTarget.value}` })}>
+				{#each BY_HAND as c (c)}<option value={c}>{c}{home ? ` → ${home.rules[c].join(' + ')}` : ''}</option>{/each}
+			</select>
+		{/if}
+		{#if pending}
+			<p class="confirm">
+				{pending.label}?
+				<button onclick={() => (place(pending!.what, pending!.value), (pending = null))}>Confirm</button>
+				<button class="no" onclick={() => (pending = null)}>Cancel</button>
+			</p>
+		{/if}
+		{#if placing}<p class="desc bad">{placing}</p>{/if}
+	{/if}
+
 	<h3>Public</h3>
 	<p class="desc">{m.public ? 'Yes: the site or a platform shows it (the gateway serves it without a login)' : 'No: a working file'}</p>
 
@@ -248,6 +302,47 @@
 	code {
 		overflow-wrap: anywhere;
 		font-size: 0.74rem;
+	}
+
+	.place {
+		width: 100%;
+		padding: 0.35rem 0.5rem;
+		border: 1px solid var(--line);
+		border-radius: 8px;
+		background: var(--paper);
+		font: inherit;
+		font-size: 0.82rem;
+		color: var(--ink);
+	}
+
+	.bad {
+		color: #9c3b26;
+	}
+
+	.confirm {
+		display: flex;
+		align-items: center;
+		gap: 0.4rem;
+		margin: 0.2rem 0;
+		font-size: 0.8rem;
+		color: #7a5a14;
+	}
+
+	.confirm button {
+		padding: 0.15rem 0.7rem;
+		border: 0;
+		border-radius: 999px;
+		background: var(--ink);
+		font: inherit;
+		font-size: 0.76rem;
+		color: #fff;
+		cursor: pointer;
+	}
+
+	.confirm .no {
+		background: none;
+		color: var(--muted);
+		text-decoration: underline;
 	}
 
 	.cid {
