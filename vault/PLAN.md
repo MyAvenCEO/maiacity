@@ -1,7 +1,7 @@
 # maiaCITY Studio + media vault — the task list
 
 Everything Samuel asked for, in order, with where it stands. Design and reasons: `.claude/skills/iroh/maiacity.md`.
-Status: ✅ done · 🔨 in progress · ⏳ next · 💤 deferred on purpose.  Last update: 2026-09-29, 18:05.
+Status: ✅ done · 🔨 in progress · ⏳ next · 💤 deferred on purpose.  Last update: 2026-09-29, 18:15.
 
 ## Done
 
@@ -37,12 +37,15 @@ Status: ✅ done · 🔨 in progress · ⏳ next · 💤 deferred on purpose.  L
     - ✅ live: the vault container runs (release 3b); the pre-deploy backup reaches the bucket (589 KB, no media)
     - ✅ release 3c: Caddy reloads its routes — the gateway (`/vault/health` ok) and the relay (`/generate_204`) are live
     - ✅ this Mac paired itself ("maiaCITY Studio · MacBook Air von Samuel") and reaches the server
-    - 🔨 release 3d: the server's catalog accepts syncs (it closed every sync after a restart) — then the files flow
+    - ✅ release 3d/3e: the server's catalog accepts syncs; it reaches the Macs through the relay — files flow into
+      Object Storage (first ones stored, verified, 448 MB in one piece)
+    - 🔨 release 4: descriptions the server missed while the Mac was unreachable are fetched again — the mirror fills
 17. 🔨 **Automatic sync**: ✅ the session lives in a user-only file (no more Keychain prompts); ✅ the Mac re-joins every
     30 s; ✅ Mac side of joining (allowlist, relay at runtime, shared catalog, own entries carried
     over); ✅ the app pairs and joins by itself after sign-in; ✅ files only the server holds come down from the
-    gateway, hash-checked, into the store; ⏳ bandwidth policy (~75 % by day); ⏳ "safe to
-    format" at two copies; ⏳ watch folder; ⏳ web upload.
+    gateway, hash-checked, into the store; ✅ bandwidth policy (~75 % of the uplink 08–22, all
+    of it at night); ✅ "safe to format" at two copies (24); ✅ watch folder `~/Movies/maiaCITY Inbox`
+    (ingest, move to `ingested/`, proxy); ⏳ web upload.
 
 ## Next
 
