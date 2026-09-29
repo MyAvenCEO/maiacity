@@ -120,7 +120,7 @@
 
 	{#if loading}
 		<div class="loading" class:opening={fading} role="status" aria-live="polite">
-			<img src={asset('bafybeiecc63xwsuxnj27a2xgyddi5wxoji6ksjgrtdhboou6agyag2fata.jpg') /* Day 03: a dome from inside */} alt="" />
+			<img src={asset('9e442ce81d3237243f561780fa6d3aeeeb7f1d83ea8e68f3a166650739c398b2.jpg') /* Day 03: a dome from inside */} alt="" />
 			<div class="shade"></div>
 			<div class="label">
 				<p class="eyebrow">avenCITY Sandbox 4</p>

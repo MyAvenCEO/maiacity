@@ -32,3 +32,8 @@ vault-media = { path = "../crates/vault-media" }
 # native-tls = the macOS Security framework, like the Keychain
 reqwest = { version = "0.13", default-features = false, features = ["json", "native-tls", "http2", "charset"] }
 security-framework = "3.7"
+
+[features]
+# The app's own pages, embedded (build/): what `tauri build` turns on. Without it the window loads the dev server
+# (devUrl, localhost:5173) — a white window when none runs. Build with `cargo build --release --features custom-protocol`.
+custom-protocol = ["tauri/custom-protocol"]

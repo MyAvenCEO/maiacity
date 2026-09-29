@@ -2,7 +2,7 @@
 title: They laid solar panels between the rails, and electricity isn't the point
 originalTitle: "The Solar Railway That Could Solve a Much Bigger Problem."
 source: https://www.youtube.com/watch?v=cOEUq0RuyjQ
-thumbnail: bafkreifvtx5a74tlw6ygqon6drohcbhs6m736mqabcrcghvjh3e3qlpeba.jpg
+thumbnail: f43762ae77dd379fb675a1439485e2e29f6039dc5d3a9be6572d91bd6a51e5c6.jpg
 type: video
 author: Just Have a Think
 authorUrl: https://www.youtube.com/@JustHaveaThink

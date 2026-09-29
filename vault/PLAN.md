@@ -1,7 +1,7 @@
 # maiaCITY Studio + media vault — the task list
 
 Everything Samuel asked for, in order, with where it stands. Design and reasons: `.claude/skills/iroh/maiacity.md`.
-Status: ✅ done · 🔨 in progress · ⏳ next · 💤 deferred on purpose.  Last update: 2026-09-29, 18:56.
+Status: ✅ done · 🔨 in progress · ⏳ next · 💤 deferred on purpose.  Last update: 2026-09-29, 19:30.
 
 ## Done
 
@@ -60,11 +60,17 @@ Status: ✅ done · 🔨 in progress · ⏳ next · 💤 deferred on purpose.  L
     Defaults: the server (Object Storage) + this Mac's SSD.
 26. 🔨 **Media bytes out of Postgres**: ✅ (a) all 541 production files (6.6 GB) exist in `library/` and re-hash to
     their CID; ✅ backups without media bytes; ⏳ (b) empty `media_chunks` — Samuel decided: **right after the vault
-    serves the files** (after 19).
-18. ⏳ **Day 01 pilot, live**: served from the gateway on the real site.
+    serves the files** (after 19b — the studio's database still reads its bytes from there).
+18. ✅ **Day 01 pilot**: its files by hash; the gateway serves all 11 public ones without a login, each re-hashed to
+    its name; the 9×16 frame stays private; the built page loads images and the film from the gateway (release 8).
+    Day 01 itself is still a draft — publishing it is Samuel's call.
 19. 🔨 **Migrate the library**: ✅ all 856 files in this Mac's vault (8.52 GB, 36 s, 0 mismatches); ✅ CID → hash map
-    and rewrite tool; ✅ the site reads hashes (gateway) and plays vault films from it; ⏳ Day 01 references rewritten
-    (ready, held back until the server holds the files); ⏳ the rest after the pilot; ⏳ `ipfs-unixfs-importer` removed.
+    and rewrite tool; ✅ the site reads hashes (gateway) and plays vault films from it; ✅ every page, post and film
+    script rewritten (391 references to 279 files; privacy as library/ had it); ⏳ released once the bucket holds all
+    856; ⏳ `ipfs-unixfs-importer` removed.
+    b) ⏳ **the database off CIDs**: `media`, `media_chunks`, `media_paths`, `media_tags`, uploads, content `cids` and
+       deliveries, render jobs, timeline/shot clips — onto `vault_files` by hash; the studio's media calls to the
+       gateway. Until then the studio reads `/api/media/<cid>` (from `media_chunks`).
 20. ⏳ **Delete Bunny** (CDN + Stream) once the site runs from the gateway (Samuel said yes).
 14. b) ⏳ colour transforms and LUTs in Rust (input transforms, ACEScct, the ACES 2.0 output transform), stills proxies
     c) ⏳ render: Metal compositing, audio mix, captions, loudness QC (`ebur128`)

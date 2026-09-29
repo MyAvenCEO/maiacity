@@ -3,14 +3,14 @@ title: We filmed one whole day inside the city we are building
 subtitle: Day 19 — a camera that lives inside the game, 42 shots, a narrator, its own score, and 2 minutes 49 seconds that show what a dome cell feels like from sunrise to night.
 day: 19
 author: avenSAMUEL
-authorImage: bafybeigc4o3dpecqu3pvrzldsjie6b2xs7sdjeetuafxbjqckqnabiy5d4.jpg
+authorImage: dad53831fb215f1d6c5fc29c111aba8a2d7b472b43ab076da7537787c2895b8a.jpg
 authorRole: Building maiaCITY
 date: 2026-09-28
-cover: bafybeie543i2ngeefbqmk6o742fv575x7b5shdp7kgmeoz4q6tqulipppa.jpg
+cover: 09017e300ec95db1d3c01b1b0179041f532343cc0f086e21a7032d94f709bfeb.jpg
 coverPosition: top
-banner: bafybeico5klqqmn6fa44lrbprn2syvyff6udsycodxnp4osmk64mvkp25e.jpg
-videoLocal: bafybeihqystathsyi5vehshnqxbhl7333brv2xwe2dm2ukp7gx5mps4qiu.mp4
-poster: bafybeie543i2ngeefbqmk6o742fv575x7b5shdp7kgmeoz4q6tqulipppa.jpg
+banner: df2a68a3c5e678554dc39c0d8a680f0baf2aa586442dba3cc82db93199bb6b49.jpg
+videoLocal: 610350187aaecb31319fafbd81afb2c62499d378614dd060b9052cadb4e106fc.mp4
+poster: 09017e300ec95db1d3c01b1b0179041f532343cc0f086e21a7032d94f709bfeb.jpg
 videoAspect: '16 / 9'
 coverAlt: The ring of glass domes from above, the forest between them — "The city of tomorrow that feeds itself, it starts with 233 settlers".
 excerpt: >-
@@ -32,7 +32,7 @@ A game draws each frame as fast as it can. Record it while it plays, and every h
 
 So we took the clock away from the game. Our film camera now lives inside Sandbox 4 and tells the world what time it is: every frame exactly one thirtieth of a second after the last, however long it takes to draw. The world waits for the camera, not the other way round.
 
-![The first shot of the film: rising out of the forest floor before dawn, the domes waiting in the dark.](bafybeic2lmez2yck6sc6zoqc55rmgk7nfz5lot6qzy7igdf6jhfixk24ka.jpg)
+![The first shot of the film: rising out of the forest floor before dawn, the domes waiting in the dark.](4ca4e7f9f50fe4b688e5ed1c86f1aa0ee8f5fdcee770bd5fd7d077996c64791b.jpg)
 
 That is how the film opens. One drone flight, twelve seconds without a cut, from the ground between the trees up over the canopy to the whole ring of domes, with the dawn behind it.
 
@@ -58,7 +58,7 @@ Beyond the edge of the game there was nothing. A flat green plain, eleven second
 
 So we built one, just for the camera. Ploughed fields of one crop to the horizon, a highway through them, power lines, a few dead trees — and eight trucks driving it, each exactly where the script needs it at every frame. Then we graded it grey and sick and put a low hum of traffic under it.
 
-![The highway through the ploughed fields beyond the city's edge, a truck driving it, power lines along the road.](bafkreic6kuz245fogqfps6ktsxttbs75hqq3h6hb3st2cdcoaxbdwhsjyu.jpg)
+![The highway through the ploughed fields beyond the city's edge, a truck driving it, power lines along the road.](dfa011f815bb73b6680f57d3a85ca77c0a587de309cd6b695659ed46b9ceb60c.jpg)
 
 It lasts eleven seconds. It is there for what comes after it.
 
@@ -66,7 +66,7 @@ It lasts eleven seconds. It is there for what comes after it.
 
 The traffic stops dead. One beat of silence. Birds, close. And the music turns into something you want to move to.
 
-![The terrace of a dome in the morning light, plants and fruit along the balustrade.](bafybeihmiikprgwb5uhe2xisrk6z7bnz2kpb3nkn5gxflvkvhyi3isjxle.jpg)
+![The terrace of a dome in the morning light, plants and fruit along the balustrade.](316bcfa9d68e893a55969a09bbbdc65373fda155f21ae04a41b0febdae94aea1.jpg)
 
 ## Sound is half the city
 
@@ -74,7 +74,7 @@ A forest you cannot hear is a picture of a forest.
 
 Every scene has its own bed of sound that runs on under the cuts — the dawn chorus, the cold wind, the soft garden under the glass, the forest, the commons, the crickets at night. The hens, the geese and the bees sit on top of it, exactly on their shots. The score was composed for this film, section by section on its own clock: the swell lands on the sunrise, the drop lands on the tired land.
 
-![The food forest between the domes in the afternoon.](bafybeifp5qys6qmk26uzquzlu2rhg5hfqazy6f5pw37pmy3ryhpxhvivha.jpg)
+![The food forest between the domes in the afternoon.](d6bba639487cdf62cb307f6192da54354a1f8d49ac01353b675a82172e1c046a.jpg)
 
 ## What it shows
 
@@ -82,7 +82,7 @@ Two minutes and forty-nine seconds.
 
 A city of glass domes waking inside its own garden. Mango and fig, coffee and cacao climbing toward the light. Glass that is also their power. A food forest with hens under the trees and geese by the water. Thirteen domes close enough to know one another, far enough apart to hear the stream. And in the evening, lanterns along the terraces.
 
-![The ring of thirteen domes seen from above, the stream running past them.](bafybeidvu34zkryhxexpbu2vx6n62hnnaavm2esut3uim4ghfbjlpwwx3m.jpg)
+![The ring of thirteen domes seen from above, the stream running past them.](0eb3327a73f57283565e1df4c067ae4b4f6010a14417beb9957e32deac786094.jpg)
 
 Not a shelter from the world. A better way to live in it.
 

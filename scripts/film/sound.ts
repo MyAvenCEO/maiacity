@@ -45,7 +45,7 @@ export function musicClips(film: any, cid: (path: string) => string, level = 0.6
 export type SoundClip = { id: string; cid: string; track: "A3"; start: number; in: number; dur: number; vol: number; fin: number; fout: number };
 
 /** How loud a library sound is against the others, so a level means the same for each. */
-const NORMALIZE: Record<string, number> = { "bafybeihelcqshzlwyy5s2hofvkf776fk5djwdnqo2abnfuvyvpp3ylew34.mp3": 22.1, "bafybeiez76uxmjf3lw7szaguqcwcgoh7lh55zu5eqr32zu526ljxbjjrfy.mp3": 0.35, "bafybeiery7dtnfprkwgtxxpagsm54oxsbsahktiyf3frcjjwd4sq7b6hoi.mp3": 0.66, "bafybeid6pjgd4qfleeipy5ojyzfz5nx3vpt6fm3l2wxhur4rysoytxkaze.mp3": 1.5 };
+const NORMALIZE: Record<string, number> = { "ef0770d0d1b2927adbb95158dcf2a7c1a3abf74bf35f4aab4da3b2885374f25e.mp3": 22.1, "1934113f408410383c16336a37d2e274579e0cc0802e574dcc232982cca02a84.mp3": 0.35, "7605ffd5723a4511ba9320009d5e2beda3f9a734ad244d7765a6120bf4200e82.mp3": 0.66, "646b67cf337fdfdb3446e55b1f1edd4bfc3e6469bc12ea3acd07901cc71cda8f.mp3": 1.5 };
 /** A bed crossfades into the next over this long; the picture cut sits in the middle of it. */
 const XFADE = 1.2;
 

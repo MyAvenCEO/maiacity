@@ -2,7 +2,7 @@
 title: To own the network, he had to send it in the clear
 originalTitle: "The Open Source Internet Is Here"
 source: https://www.youtube.com/watch?v=5vbl5FL-nsI
-thumbnail: bafkreigsdnlpjgybb3cp7lkhbivex226fn43ztcw2v375orizjfq44xory.jpg
+thumbnail: b1b617e3d90c82ffbc5f1cf70f315cf3ee3aeb51c8e3dbbaef0962df84f07f87.jpg
 type: video
 author: Data Slayer
 authorUrl: https://www.youtube.com/@DataSlayerMedia

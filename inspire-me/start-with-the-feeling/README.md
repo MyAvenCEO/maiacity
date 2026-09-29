@@ -2,7 +2,7 @@
 title: A film feels cinematic when it makes you feel something real
 originalTitle: "SOLO FILMMAKING: How to Turn Any Story Into a Cinematic Film"
 source: https://www.youtube.com/watch?v=y_uQHoVhhcw
-thumbnail: bafkreih2hw36r5m4m432gg63jpzwvuezdkgjnie7rk7p4zvoplhyndeayq.jpg
+thumbnail: 86553f0c78e64c8b2fb6a5491dc13b1fe7fc3e2ffb89cb9d37d7d45e9d5fab45.jpg
 type: video
 author: Sam Newton
 authorUrl: https://www.youtube.com/@SamNewton

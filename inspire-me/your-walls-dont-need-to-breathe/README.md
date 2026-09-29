@@ -2,7 +2,7 @@
 title: Your walls don't need to breathe, they need to dry
 originalTitle: "The Truth About “Breathable” Homes | Building Science 101"
 source: https://www.youtube.com/watch?v=RpkB8x5nqFU
-thumbnail: bafkreiaewc22sy54772wsjmrsexwmxyc5crcn5byasyztnqmisdxtqbg6i.jpg
+thumbnail: 867573ac7cc22071808de9a0a497056ced3d7b1c9f40813d7dacf8bd75c09183.jpg
 type: video
 author: Christina Ransbury
 authorUrl: https://www.youtube.com/@christinaransbury

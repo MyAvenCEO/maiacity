@@ -2,10 +2,10 @@
 title: El Niño — the agency you actually have
 originalTitle: "El Niño Is Intensifying - Do This Now"
 source: https://www.youtube.com/watch?v=z-UsCjTfAD0
-thumbnail: bafkreihte7fncc4uutltkq5kjhqtfzp5ba7kzourhdttnd3xjhtixj7ds4.jpg
+thumbnail: 09fb2d4005330909a93709d9552f03ee6224b2c8548a38fc530e68d930f5c0ca.jpg
 type: video
 author: Leave Curious
-authorImage: bafkreidvee2cpo6lddm5uzqdcwol2cmlmdus7d4ylgylfntvz5cps3txbq.jpg
+authorImage: 0f591cec9fc7d1bca7107d0188522dabab0e9a24632501337b45e11b134f6360.jpg
 authorUrl: https://www.youtube.com/@LeaveCurious
 added: 2026-09-13
 categories: [ecology, water, food]

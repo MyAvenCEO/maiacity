@@ -1,7 +1,7 @@
 ---
 title: Solar panels on the roof don't make a place solarpunk
 source: https://www.youtube.com/watch?v=twGcjDnOb_U
-thumbnail: bafkreih3cfvh7ugodiavvz4rxo5f3v5hxhvgjzv2hywuhp5ate23m5hdba.jpg
+thumbnail: 13cabce6b90ac3d11e04dda7901f13dabfd96fb61d471e39a4b2f5950a850a25.jpg
 type: video
 author: Our Changing Climate
 authorUrl: https://www.youtube.com/@OurChangingClimate

@@ -2,7 +2,7 @@
 title: Start with a question, end on the answer
 originalTitle: "The Secret to Telling a Great Story — in Less Than 60 Seconds"
 source: https://www.youtube.com/watch?v=ZmNpeXTj2c4
-thumbnail: bafkreicl5xldvpm6f4qsgf4wctsnw64ldan3owjyy7na67vonqtrxudi2q.jpg
+thumbnail: 4daca7ad2c03a7c8c131717de9b8408c58dedd833ee7683cb9debfea5bf76f49.jpg
 type: video
 author: Jenny Hoyos
 via: TED

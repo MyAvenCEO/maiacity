@@ -1,7 +1,7 @@
 ---
 title: Money is an agreement
 source: https://www.youtube.com/watch?v=mnuOZcmoGD8
-thumbnail: bafkreiety3brdseims6cg5emyjhjtovpkzlfo67yrowe4pphcczctiw3lq.jpg
+thumbnail: b565d44dc3bc4b8b764e52e26515aa486d3eb466e3ab620a80b392353795e813.jpg
 type: video
 added: 2026-09-16
 categories: [money, civic]

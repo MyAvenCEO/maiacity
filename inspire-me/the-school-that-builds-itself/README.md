@@ -2,7 +2,7 @@
 title: The school that builds itself
 originalTitle: "Free and Real: 15 years building a school of self-sufficiency in Greece"
 source: https://www.youtube.com/watch?v=1bqjt-xrlqk
-thumbnail: bafybeic5nmph5tdoosydmikxtcdb57x4rgfholl6gmvgbwts372iogny6a.jpg
+thumbnail: 3a577d703b26f90334c5f6f9295845c6d87eb0c4728fb12ce0b5fa8c387646c8.jpg
 type: video
 author: Utopia — Discovering Dreams That Are Reality
 added: 2026-09-16

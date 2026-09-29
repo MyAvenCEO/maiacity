@@ -3,10 +3,10 @@ title: The first believer pays 10 hearts for a piece of a coop. The last will pa
 subtitle: "Day 12 — how investing works in avenCITY Sandbox 2: your hearts become the coop's maiaHEARTS, the ownership goes to you, and the price climbs one milestone at a time."
 day: 12
 author: avenSAMUEL
-authorImage: bafybeigc4o3dpecqu3pvrzldsjie6b2xs7sdjeetuafxbjqckqnabiy5d4.jpg
+authorImage: dad53831fb215f1d6c5fc29c111aba8a2d7b472b43ab076da7537787c2895b8a.jpg
 authorRole: Building maiaCITY
 date: 2026-09-20
-cover: bafkreibuzb47ghihq26hwjmmzfvylhpperjgrm5ea4bxabpxbjgpfmo5ay.jpg
+cover: 5403a0422e10e65470cb02b80aa3dee0350dab7722daf96521b77b54dd7b9116.jpg
 coverAlt: Three coop towers on the coast of Portugal in avenCITY Sandbox 2.
 excerpt: >-
   This afternoon I put 100 hearts into a solar coop and got 1.11 pieces of it. The citizen who
@@ -53,7 +53,7 @@ Every milestone releases the difference to the one before. Milestone 6 releases 
 
 The price is even simpler. Ten hearts per mind at milestone 1. Twenty at milestone 2. Ninety at milestone 9. That step of ten went in before lunch on the second day, and it has not changed since.
 
-![The emission tab: every milestone, the minds it releases, the price and the total supply.](bafkreibyyxh6savdubcjil7mb7cauye5facacxvxovmkacnte2va6xfknq.jpg)
+![The emission tab: every milestone, the minds it releases, the price and the total supply.](c9819fe6a55b8585d94f0f09092629ecd2dfe1eb4621062b135bcd1507119cc2.jpg)
 
 Everyone inside one milestone pays the same price, like a funding round. The first mind of a coop costs 10 hearts. The last ones, at milestone 30, cost 300. By then there are 1.3 million minds, and filling every milestone of a single coop would take 368 million hearts.
 
@@ -69,7 +69,7 @@ When I founded the Bakery, my 500 hearts went through the milestones one after a
 
 By the time Lea, Tomas, Ines and Rui had backed Solar, it had raised 2,300 hearts and reached milestone 9. My 100 hearts bought minds at 90 each.
 
-![Before investing: 100 of my hearts would buy 1.11 solar☉ and become 100 maiaHEARTS in Solar's treasury.](bafkreihd7uac6frwkruegzqpvtqm7gj6ez6om3vizy6wfxkf4fpnhqocem.jpg)
+![Before investing: 100 of my hearts would buy 1.11 solar☉ and become 100 maiaHEARTS in Solar's treasury.](1702bb02017cd7d04653714dcd7c25cc2faf0ba7d18c7af3361c9c05e3e68874.jpg)
 
 That is the whole reward for believing early. Not a bonus, not a special deal. The price at the moment you arrived.
 
@@ -85,7 +85,7 @@ Hearts are no longer burned. They are converted, one for one, into maiaHEARTS, t
 
 The minds all go to the people who invested. The treasury does not need them. It already holds the money.
 
-![My ledger: the hearts I minted, the hearts that became maiaHEARTS, and the minds I received back.](bafkreietcm3jzu7sa62lzg6bwxyqdqadi46b66baepc6cyzw76dbw4y4tq.jpg)
+![My ledger: the hearts I minted, the hearts that became maiaHEARTS, and the minds I received back.](635a5c135c774446aa16b6e39759987cd3a7c90c973f57abfb93d07f6b14957a.jpg)
 
 It all happens as one step. Your hearts leave, the maiaHEARTS arrive, your minds appear, and the coop's total moves on. If anything fails halfway, nothing happened at all.
 
@@ -93,7 +93,7 @@ Imagine the morning Solar's first dome factory opens. The machines were paid for
 
 ## Where the hearts are going
 
-![The coops: Solar at milestone 9, Bakery and HempStone at milestone 7.](bafkreiepk5f3vwdfxpmklrkdfykltlg6l5ybkn463o2qdp23ilzswgajca.jpg)
+![The coops: Solar at milestone 9, Bakery and HempStone at milestone 7.](1e2df198fb7acb56c1a732b6376bf957290e864c2bd2ee12a796d4d6620deabd.jpg)
 
 Solar has raised 2,400 hearts from six backers, and its treasury holds 2,400 maiaHEARTS. Bakery holds 950. HempStone holds 750. Every one of those maiaHEARTS started as somebody's own hearts, minted every two minutes, owed to nobody, and sent to something they wanted to exist.
 

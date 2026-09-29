@@ -130,6 +130,19 @@ impl Vault {
         self.dir.join("ingest")
     }
 
+    /// After sleep or a dropped network the endpoint can stay cut off from its relay (seen 2026-09-29: an hour, until
+    /// restart). Once joined, a relay that is not connected makes iroh look at the network again. Returns why.
+    pub async fn heal(&self) -> Option<String> {
+        use iroh::Watcher;
+        let relays = self.endpoint.home_relay_status().get();
+        if relays.is_empty() || relays.iter().any(|r| r.is_connected()) {
+            return None;
+        }
+        let why = relays.iter().filter_map(|r| r.last_error().map(|e| format!("{}: {e}", r.url()))).collect::<Vec<_>>().join("; ");
+        self.endpoint.network_change().await;
+        Some(if why.is_empty() { "the relay is not connected".into() } else { why })
+    }
+
     /// Always close cleanly: the store may lose its last seconds of writes otherwise.
     pub async fn close(self) -> Result<()> {
         self.router.shutdown().await.ok();
