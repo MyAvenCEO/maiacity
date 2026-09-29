@@ -345,7 +345,7 @@ async fn stream_into(conn: iroh::endpoint::Connection, hash: Hash, size: u64, s3
     if got != size {
         bail!("the peer says {got} bytes, the catalog {size}");
     }
-    let mut upload = s3.upload(&key).await?;
+    let mut upload = s3.upload(&key);
     let end = loop {
         match content.next().await {
             BlobContentNext::More((next, item)) => {
