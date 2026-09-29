@@ -64,6 +64,7 @@
 				<small>{status.files} files · {gb(status.bytes)} · {gb(status.disk_free)} free</small>
 			{/if}
 			<button class="link" onclick={move}>Keep the vault on another drive…</button>
+			{#if status}<small>Watch folder: {status.watch_dir} — whatever lands there is ingested by itself</small>{/if}
 		</div>
 		<div class="place">
 			<strong>Server · Object Storage</strong>

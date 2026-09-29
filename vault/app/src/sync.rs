@@ -131,6 +131,21 @@ pub async fn vault_copies(app: State<'_, App>, auth: State<'_, Auth>) -> Res<Vec
     Ok(out)
 }
 
+/// 75 % of the uplink measured on 2026-09-29 (54 Mbit/s ≈ 6.8 MB/s).
+const DAY_LIMIT: u64 = 5_100_000;
+
+/// 08:00–22:00 local time.
+fn daytime() -> bool {
+    // SAFETY: localtime_r fills the struct from a valid time_t.
+    let hour = unsafe {
+        let now = libc::time(std::ptr::null_mut());
+        let mut tm: libc::tm = std::mem::zeroed();
+        libc::localtime_r(&now, &mut tm);
+        tm.tm_hour
+    };
+    (8..22).contains(&hour)
+}
+
 /// Keep this Mac complete: every file the catalog names that is not here and that the server holds comes down from
 /// the gateway, is checked against its hash, and only then goes into the store. Runs in the background.
 pub async fn keep_complete(handle: AppHandle, vault: Arc<Vault>) {
@@ -140,6 +155,8 @@ pub async fn keep_complete(handle: AppHandle, vault: Arc<Vault>) {
         if !auth::signed_in() {
             continue;
         }
+        // uploads by day leave room for everything else on the line: ~75 % of the 54 Mbit/s measured; at night, all of it
+        vault.upload_limit.store(if daytime() { DAY_LIMIT } else { 0 }, std::sync::atomic::Ordering::Relaxed);
         let auth = handle.state::<Auth>();
         // stay joined: a sync that failed (the server restarting, the network away) is simply tried again; this also
         // picks up newly paired devices and revocations
