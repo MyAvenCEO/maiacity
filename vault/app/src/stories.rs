@@ -1,8 +1,7 @@
 //! Stories in the studio: the buckets everything of one story lives in (originals, proxies, sound, stills, metadata,
 //! deliveries), and the inbox for everything that belongs to none yet. A file has one story; its class (default,
 //! original, proxy, delivery) says which of the story's destinations keep it. Only the admin's app writes them.
-//!
-//! And the app's switches that live beside them (settings.json): whether a new movie gets its proxy by itself.
+
 
 use std::collections::BTreeMap;
 
@@ -11,7 +10,7 @@ use serde_json::{Value, json};
 use tauri::State;
 use vault_core::catalog::{CLASSES, Story};
 
-use crate::{App, Res, err, gate, settings_file};
+use crate::{App, Res, err, gate};
 
 /// A story as the studio lists it: the story, and what it holds per class.
 #[derive(Serialize)]
@@ -93,36 +92,4 @@ async fn patch_all(app: &App, hashes: &[String], patch: Value) -> Res<usize> {
         app.vault.catalog.describe(hash, &patch).await.map_err(err)?;
     }
     Ok(hashes.len())
-}
-
-// ── the app's switches ──
-
-fn settings() -> Value {
-    std::fs::read(settings_file()).ok().and_then(|b| serde_json::from_slice(&b).ok()).unwrap_or_else(|| json!({}))
-}
-
-/// Does a new movie get its proxy by itself? Off unless switched on.
-pub fn auto_proxy() -> bool {
-    settings()["auto_proxy"].as_bool().unwrap_or(false)
-}
-
-#[tauri::command]
-pub fn settings_get() -> Res<Value> {
-    gate()?;
-    Ok(json!({ "auto_proxy": auto_proxy() }))
-}
-
-/// Change one switch; everything else in settings.json stays as it is.
-#[tauri::command]
-pub fn settings_set(key: String, value: Value) -> Res<Value> {
-    gate()?;
-    if key != "auto_proxy" {
-        return Err(format!("no such setting: {key}"));
-    }
-    let mut s = settings();
-    s[key] = value;
-    let file = settings_file();
-    std::fs::create_dir_all(file.parent().unwrap()).map_err(err)?;
-    std::fs::write(&file, serde_json::to_vec_pretty(&s).map_err(err)?).map_err(err)?;
-    settings_get()
 }

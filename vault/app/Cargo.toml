@@ -27,6 +27,7 @@ blake3.workspace = true
 iroh.workspace = true
 rmcp = { version = "3.5", features = ["server", "macros", "transport-streamable-http-server"] }
 axum = "0.8"
+trash = "5"
 futures-lite.workspace = true
 schemars = "1"
 vault-media = { path = "../crates/vault-media" }

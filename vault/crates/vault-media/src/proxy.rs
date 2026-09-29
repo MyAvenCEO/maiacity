@@ -1,23 +1,34 @@
 //! A movie's HD proxy, made by the Mac's own media engine — the native twin of scripts/film/proxy.mjs:
 //! long edge 1920 (never larger than the file), HEVC Main10 in hardware (VideoToolbox through AVAssetWriter),
 //! BT.709 matrix and TV range, a keyframe every 15 frames for scrubbing, AAC audio, the moov atom up front, and the
-//! comment `maiacity:color=<profile>` that tells the studio's viewer which input transform the proxy needs.
+//! comment `maiacity:color=acescct`.
 //!
-//! Camera log stays its own log and display-referred pictures stay as they are — both are only scaled and
-//! re-encoded here. Linear and HDR light (EXR, PQ, HLG) is encoded into ACEScct by the colour transforms (next slice).
+//! Every proxy is in ACEScct, the timeline's working space: each frame is decoded to full-range RGB in the source's
+//! own encoding, taken through its colour journey (`cst`) and scaled down on the GPU (`gpu::Grader`), and only then
+//! encoded. How it is shown — a monitor, a render target — is the viewer's output transform, never the proxy's.
 
 use std::{path::Path, time::Duration};
 
 use anyhow::{Context, Result, bail};
 use objc2::{rc::Retained, runtime::AnyObject};
+use objc2_core_foundation::CFRetained;
 use objc2_av_foundation::{
     AVAssetReader, AVAssetReaderOutput, AVAssetReaderStatus, AVAssetReaderTrackOutput, AVAssetTrack, AVAssetWriter,
     AVAssetWriterInput, AVAssetWriterStatus, AVFileTypeMPEG4, AVMediaTypeAudio, AVMediaTypeVideo, AVURLAsset,
 };
+use objc2_av_foundation::AVAssetWriterInputPixelBufferAdaptor;
 use objc2_core_media::{CMSampleBuffer, CMTime};
+use objc2_core_video::{
+    CVAttachmentMode, CVPixelBuffer, CVPixelBufferPool, kCVImageBufferColorPrimariesKey, kCVImageBufferColorPrimaries_ITU_R_709_2,
+    kCVImageBufferTransferFunctionKey, kCVImageBufferTransferFunction_ITU_R_709_2, kCVImageBufferYCbCrMatrixKey,
+    kCVImageBufferYCbCrMatrix_ITU_R_709_2,
+};
 use objc2_foundation::{NSDictionary, NSNumber, NSString, NSURL};
 
-use crate::{mp4, probe::probe};
+use crate::{gpu::Grader, mp4, probe::probe};
+
+/// The working space every proxy is in.
+pub const WORKING: &str = "acescct";
 
 pub const LONG_EDGE: u32 = 1920;
 pub const GOP: i32 = 15;
@@ -48,9 +59,10 @@ fn dict(pairs: &[(&NSString, &AnyObject)]) -> Retained<NSDictionary<NSString, An
     NSDictionary::from_slices(&keys, &values)
 }
 
-/// Make the proxy of the movie at `src` into `out` (an .mp4), in the colour profile `profile`
-/// (the proxy's profile, as game/film/color.js `proxyProfileOf` names it). `progress` gets 0…1.
-pub fn make_proxy(src: &Path, out: &Path, profile: &str, progress: &mut dyn FnMut(f64)) -> Result<Proxy> {
+/// Make the ACEScct proxy of the movie at `src` — whose colour is `source` (a profile `cst::journey` knows) — into
+/// `out` (an .mp4). `progress` gets 0…1.
+pub fn make_proxy(src: &Path, out: &Path, source: &str, progress: &mut dyn FnMut(f64)) -> Result<Proxy> {
+    let grader = Grader::for_profile(source)?.with_context(|| format!("no colour journey from {source} into ACEScct"))?;
     let info = probe(src)?;
     let (w, h) = proxy_size(info.width, info.height);
     let _ = std::fs::remove_file(out);
@@ -68,10 +80,14 @@ pub fn make_proxy(src: &Path, out: &Path, profile: &str, progress: &mut dyn FnMu
         let audio_track: Option<Retained<AVAssetTrack>> =
             asset.tracksWithMediaType(AVMediaTypeAudio.context("audio")?).firstObject().map(|t| Retained::cast_unchecked(t));
 
-        // ── reading: decoded 10-bit 4:2:0 frames, and PCM audio ──
+        // ── reading: decoded 10-bit 4:2:0 frames (Core Image undoes their YCbCr matrix and range on the GPU — 3× faster
+        // than asking the decoder for RGB, and as exact), and PCM audio ──
         let reader = AVAssetReader::assetReaderWithAsset_error(&asset).map_err(|e| anyhow::anyhow!("{e:?}"))?;
         let x420 = NSNumber::new_u32(u32::from_be_bytes(*b"x420")); // kCVPixelFormatType_420YpCbCr10BiPlanarVideoRange
-        let video_read = dict(&[(&key("PixelFormatType"), &x420)]);
+        // decoded straight to the proxy's size: VideoToolbox scales in hardware while it decodes, so the GPU grades a
+        // quarter of the pixels (scaled in the source's own encoding — for a proxy, the same picture)
+        let (read_w, read_h) = (NSNumber::new_u32(w), NSNumber::new_u32(h));
+        let video_read = dict(&[(&key("PixelFormatType"), &x420), (&key("Width"), &read_w), (&key("Height"), &read_h)]);
         let video_out = AVAssetReaderTrackOutput::assetReaderTrackOutputWithTrack_outputSettings(&video_track, Some(&video_read));
         video_out.setAlwaysCopiesSampleData(false);
         reader.addOutput(&video_out);
@@ -86,7 +102,8 @@ pub fn make_proxy(src: &Path, out: &Path, profile: &str, progress: &mut dyn FnMu
             bail!("cannot read {}: {:?}", src.display(), reader.error());
         }
 
-        // ── writing: HEVC Main10 in hardware, scaled by the encoder, tagged BT.709 ──
+        // ── writing: HEVC Main10 in hardware, from the GPU's ACEScct frames — rendered straight into 10-bit 4:2:0 with the
+        // BT.709 matrix, which is only the container's: the frames carry the same tags, so nothing converts them ──
         let writer = AVAssetWriter::assetWriterWithURL_fileType_error(
             &NSURL::fileURLWithPath(&NSString::from_str(&out_abs.to_string_lossy())),
             AVFileTypeMPEG4.context("mp4")?,
@@ -113,12 +130,10 @@ pub fn make_proxy(src: &Path, out: &Path, profile: &str, progress: &mut dyn FnMu
         ]);
         let (width, height) = (NSNumber::new_u32(w), NSNumber::new_u32(h));
         let hevc = key("hvc1");
-        let aspect = key("AVVideoScalingModeResizeAspect");
         let video_write = dict(&[
             (&key("AVVideoCodecKey"), &hevc),
             (&key("AVVideoWidthKey"), &width),
             (&key("AVVideoHeightKey"), &height),
-            (&key("AVVideoScalingModeKey"), &aspect),
             (&key("AVVideoColorPropertiesKey"), &color),
             (&key("AVVideoCompressionPropertiesKey"), &compression),
         ]);
@@ -129,6 +144,17 @@ pub fn make_proxy(src: &Path, out: &Path, profile: &str, progress: &mut dyn FnMu
         video_in.setExpectsMediaDataInRealTime(false);
         video_in.setTransform(video_track.preferredTransform());
         writer.addInput(&video_in);
+        let surface = NSDictionary::<NSString, AnyObject>::new();
+        let frames = dict(&[
+            (&key("PixelFormatType"), &x420),
+            (&key("Width"), &width),
+            (&key("Height"), &height),
+            (&key("IOSurfaceProperties"), &surface),
+        ]);
+        let adaptor = AVAssetWriterInputPixelBufferAdaptor::assetWriterInputPixelBufferAdaptorWithAssetWriterInput_sourcePixelBufferAttributes(
+            &video_in,
+            Some(&frames),
+        );
 
         let aac = NSNumber::new_u32(u32::from_be_bytes(*b"aac "));
         let (two, rate, abr) = (NSNumber::new_i32(2), NSNumber::new_f64(48_000.0), NSNumber::new_i32(160_000));
@@ -149,6 +175,7 @@ pub fn make_proxy(src: &Path, out: &Path, profile: &str, progress: &mut dyn FnMu
             bail!("cannot write {}: {:?}", out.display(), writer.error());
         }
         writer.startSessionAtSourceTime(CMTime { value: 0, timescale: 600, flags: objc2_core_media::CMTimeFlags::Valid, epoch: 0 });
+        let pool = adaptor.pixelBufferPool().context("the writer has no frame pool")?;
 
         // ── interleave: feed whichever input is ready, until both sources run dry ──
         let total = info.seconds.max(0.001);
@@ -168,7 +195,9 @@ pub fn make_proxy(src: &Path, out: &Path, profile: &str, progress: &mut dyn FnMu
                         if t.timescale > 0 {
                             progress((t.value as f64 / t.timescale as f64 / total).min(1.0));
                         }
-                        if !video_in.appendSampleBuffer(&sample) {
+                        let Some(frame) = sample.image_buffer() else { continue };
+                        let graded = graded_frame(&grader, &pool, &frame, w, h)?;
+                        if !adaptor.appendPixelBuffer_withPresentationTime(&graded, t) {
                             bail!("video frame refused: {:?}", writer.error());
                         }
                         moved = true;
@@ -199,7 +228,7 @@ pub fn make_proxy(src: &Path, out: &Path, profile: &str, progress: &mut dyn FnMu
                 std::thread::sleep(Duration::from_millis(2));
             }
             if reader.status() == AVAssetReaderStatus::Failed {
-                bail!("reading failed: {:?}", reader.error());
+                bail!("reading failed: {:?} — underlying: {:?}", reader.error(), reader.error().and_then(|e| e.userInfo().objectForKey(&NSString::from_str("NSUnderlyingError")).map(|u| format!("{u:?}"))));
             }
         }
 
@@ -210,8 +239,28 @@ pub fn make_proxy(src: &Path, out: &Path, profile: &str, progress: &mut dyn FnMu
         }
     }
     // the comment the studio reads the proxy's colour from, and moov in front (+faststart)
-    mp4::finish(&out_abs, &format!("maiacity:color={profile}")).context("finish the mp4")?;
+    mp4::finish(&out_abs, &format!("maiacity:color={WORKING}")).context("finish the mp4")?;
     progress(1.0);
     let made = probe(out).context("probe the proxy")?;
-    Ok(Proxy { width: made.width, height: made.height, seconds: made.seconds, profile: profile.to_string() })
+    Ok(Proxy { width: made.width, height: made.height, seconds: made.seconds, profile: WORKING.to_string() })
+}
+
+/// One decoded frame through its journey into a fresh buffer from the writer's pool, tagged as the container says.
+unsafe fn graded_frame(grader: &Grader, pool: &CVPixelBufferPool, frame: &CVPixelBuffer, w: u32, h: u32) -> Result<CFRetained<CVPixelBuffer>> {
+    let mut out: *mut CVPixelBuffer = std::ptr::null_mut();
+    // SAFETY: the pool is the writer's, `out` is written by the call and owned (+1) by us after it.
+    let status = unsafe { CVPixelBufferPool::create_pixel_buffer(None, pool, std::ptr::NonNull::from(&mut out)) };
+    let out = std::ptr::NonNull::new(out).filter(|_| status == 0).with_context(|| format!("no frame from the pool ({status})"))?;
+    let out = unsafe { CFRetained::from_raw(out) };
+    unsafe {
+        for (k, v) in [
+            (kCVImageBufferColorPrimariesKey, kCVImageBufferColorPrimaries_ITU_R_709_2),
+            (kCVImageBufferTransferFunctionKey, kCVImageBufferTransferFunction_ITU_R_709_2),
+            (kCVImageBufferYCbCrMatrixKey, kCVImageBufferYCbCrMatrix_ITU_R_709_2),
+        ] {
+            out.set_attachment(k, v, CVAttachmentMode::ShouldPropagate);
+        }
+    }
+    grader.frame(frame, &out, w, h)?;
+    Ok(out)
 }

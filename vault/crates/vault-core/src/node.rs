@@ -27,6 +27,20 @@ use iroh_blobs::{
 use iroh_docs::{DocTicket, protocol::Docs};
 use iroh_gossip::net::Gossip;
 
+/// The QUIC transport for moving footage over a home uplink. iroh's defaults are tuned for 100 ms: one stream may have
+/// only 1.25 MB in flight, and on this Mac's line the latency swells from 43 ms to ~850 ms under load, capping a file
+/// at ~3 MB/s of 59 Mbit/s. So: windows sized for a full second of a fast line, and BBR, which paces to the measured
+/// bandwidth instead of filling the router's buffer (the swelling itself).
+pub fn transport() -> iroh::endpoint::QuicTransportConfig {
+    const STREAM: u32 = 32 * 1024 * 1024;
+    iroh::endpoint::QuicTransportConfig::builder()
+        .stream_receive_window(STREAM.into())
+        .send_window(4 * STREAM as u64)
+        .congestion_controller_factory(std::sync::Arc::new(noq_proto::congestion::Bbr3Config::default()))
+        .build()
+}
+
+
 use crate::{catalog::Catalog, net::Allow};
 
 pub struct Vault {
@@ -42,7 +56,63 @@ pub struct Vault {
     pub upload_limit: Arc<AtomicU64>,
     /// every file this node is sending or just sent, and to whom — as iroh reports each request
     pub transfers: Transfers,
+    /// held while this Mac's own work runs (an ingest, a proxy rendering): its uploads wait until it is done
+    pub hold: Hold,
     router: Router,
+}
+
+/// Local work first: ingest, then proxies, then sync. Each piece of work holds this while it runs; iroh asks before
+/// every chunk it sends, and while anything is held the answer waits — the transfer pauses where it is and goes on
+/// by itself once the work is done (nothing is aborted, nothing starts over).
+#[derive(Clone)]
+pub struct Hold(Arc<tokio::sync::watch::Sender<Vec<String>>>);
+
+impl Default for Hold {
+    fn default() -> Self {
+        Self(Arc::new(tokio::sync::watch::channel(Vec::new()).0))
+    }
+}
+
+/// While alive, uploads wait (see `Hold`).
+pub struct Held {
+    hold: Hold,
+    why: String,
+}
+
+impl Drop for Held {
+    fn drop(&mut self) {
+        self.hold.0.send_modify(|w| {
+            if let Some(i) = w.iter().position(|x| *x == self.why) {
+                w.remove(i);
+            }
+        });
+    }
+}
+
+impl Hold {
+    /// Hold uploads for `why` ("ingest", "proxy") until the returned guard is dropped.
+    pub fn take(&self, why: &str) -> Held {
+        self.0.send_modify(|w| w.push(why.to_string()));
+        Held { hold: self.clone(), why: why.to_string() }
+    }
+    /// What holds uploads now (empty: nothing).
+    pub fn now(&self) -> Vec<String> {
+        self.0.borrow().clone()
+    }
+    /// Is `why` holding now?
+    pub fn holds(&self, why: &str) -> bool {
+        self.0.borrow().iter().any(|w| w == why)
+    }
+    /// Wait until nothing holds.
+    pub async fn free(&self) {
+        let mut rx = self.0.subscribe();
+        rx.wait_for(|w| w.is_empty()).await.ok();
+    }
+    /// Wait until `why` no longer holds.
+    pub async fn free_of(&self, why: &str) {
+        let mut rx = self.0.subscribe();
+        rx.wait_for(|w| !w.iter().any(|x| x == why)).await.ok();
+    }
 }
 
 /// One file on its way to a peer (the server pulling it into Object Storage, another device fetching it).
@@ -122,6 +192,7 @@ impl Vault {
             .relay_mode(RelayMode::Disabled)
             .address_lookup(lookup.clone())
             .hooks(allow.clone())
+            .transport_config(transport())
             .bind()
             .await
             .context("bind the iroh endpoint")?;
@@ -139,6 +210,8 @@ impl Vault {
         let mask = EventMask { throttle: ThrottleMode::Intercept, connected: ConnectMode::Notify, get: RequestMode::NotifyLog, ..EventMask::DEFAULT };
         let (events, mut asks) = EventSender::channel(64, mask);
         let limit = upload_limit.clone();
+        let hold = Hold::default();
+        let held = hold.clone();
         let transfers = Transfers::default();
         let track = transfers.clone();
         tokio::spawn(async move {
@@ -187,6 +260,15 @@ impl Vault {
                     continue;
                 }
                 if let ProviderMessage::Throttle(t) = msg {
+                    // local work first: this chunk waits (in its own task — other requests are still told) until it is done
+                    if !held.now().is_empty() {
+                        let held = held.clone();
+                        tokio::spawn(async move {
+                            held.free().await;
+                            t.tx.send(Ok(())).await.ok();
+                        });
+                        continue;
+                    }
                     let rate = limit.load(Ordering::Relaxed) as f64;
                     if rate > 0.0 {
                         let now = Instant::now();
@@ -209,7 +291,7 @@ impl Vault {
             .spawn();
 
         let catalog = Catalog::open(&dir, &docs, &store).await?;
-        Ok(Self { dir, endpoint, store, docs, catalog, allow, lookup, upload_limit, transfers, router })
+        Ok(Self { dir, endpoint, store, docs, catalog, allow, lookup, upload_limit, transfers, hold, router })
     }
 
     /// Join the vault's network: our relay, the server's address, the paired devices, and the shared catalog —

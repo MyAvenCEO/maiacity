@@ -210,8 +210,15 @@ pub async fn keep_complete(handle: AppHandle, vault: Arc<Vault>) {
         if let Err(e) = connect(&vault, &auth).await {
             tracing::warn!("vault network: {e}");
         }
+        // local work first: nothing is fetched while an ingest or a proxy runs
+        if !vault.hold.now().is_empty() {
+            continue;
+        }
         let Ok(files) = auth.get_ok("GET", "/api/vault/files", None).await else { continue };
         for f in files.as_array().cloned().unwrap_or_default() {
+            if !vault.hold.now().is_empty() {
+                break;
+            }
             let (Some(hex), true) = (f["hash"].as_str(), f["stored"].as_bool().unwrap_or(false)) else { continue };
             let Ok(hash) = hex.parse::<Hash>() else { continue };
             if matches!(vault.store.blobs().status(hash).await, Ok(BlobStatus::Complete { .. })) {

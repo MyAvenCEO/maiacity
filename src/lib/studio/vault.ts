@@ -51,6 +51,36 @@ export type Device = { endpoint_id: string; label: string; created: string; seen
 /** The classes a story keeps its files in, each with its own destinations. */
 export const CLASSES = ['default', 'original', 'proxy', 'delivery'] as const;
 export type FileClass = (typeof CLASSES)[number];
+/**
+ * The master copies, each device in its one tier: A the master cloud backup, B the local master working copy, C the
+ * cold archive (HDD, LTO — not set up yet). The ingest flow shows these three and nothing else; any other device that
+ * syncs is just a device.
+ */
+export const TIERS = [
+	{ tier: 'A', store: 'hetzner', name: 'Cloud Master', where: 'avenCEO (Hetzner)' },
+	{ tier: 'B', store: 'avenSSD', name: 'Local Master', where: 'avenSSD (internal SSD)' },
+	{ tier: 'C', store: null, name: 'Archive', where: 'not set up yet' }
+] as const;
+export type Tier = (typeof TIERS)[number];
+/** The tier letters of the stores a rule names ("hetzner" → A). */
+export const tiersOf = (stores: string[]) => TIERS.filter((t) => t.store && stores.includes(t.store)).map((t) => t.tier);
+
+/** A proxy being made or waiting its turn (the app makes one at a time). */
+export type Making = { of: string; name: string; stage: 'queued' | 'waiting for memory' | 'probing' | 'making' | 'adding'; done: number };
+
+/**
+ * Where an original's proxy stands, from what the vault says about it (meta.proxy): made (its hash), waiting (no colour
+ * journey into ACEScct for its source yet, or a colour nobody can tell), failed, or not tried yet.
+ */
+export function proxyState(meta: Record<string, unknown> | undefined): { state: 'made' | 'waiting' | 'unknown-colour' | 'failed' | 'pending'; note: string } {
+	const p = typeof meta?.proxy === 'string' ? meta.proxy : '';
+	if (/^[0-9a-f]{64}$/.test(p)) return { state: 'made', note: 'proxy in ACEScct' };
+	if (p.startsWith('waiting: its colour cannot be told')) return { state: 'unknown-colour', note: p.slice(9) };
+	if (p.startsWith('waiting')) return { state: 'waiting', note: p.slice(9) };
+	if (p.startsWith('failed')) return { state: 'failed', note: p };
+	return { state: 'pending', note: 'its proxy comes next' };
+}
+
 /** What a person (or an agent) may set; proxy and delivery are written only by their pipelines. */
 export const BY_HAND = ['default', 'original'] as const;
 /** One file on its way, live from iroh: to this Mac's avenSSD, to the server (hetzner), or to another device. */

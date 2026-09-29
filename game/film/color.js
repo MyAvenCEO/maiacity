@@ -35,8 +35,9 @@ export const MID_GREY_CCT = toCct(0.18);
  *   `display` — display-referred: its code values are what a Rec.709 screen shows. Such a picture, left ungraded,
  *               goes straight through to the output (no transform either way), so it renders exactly as it always did.
  *   `log` — a log encoding (camera log, ACEScct); `linear` — scene-linear light (EXR, float).
- *   `proxy` — what its HD proxy is encoded in: log stays its own log, linear and HDR become ACEScct (exact maths),
- *             display stays display. A proxy never carries a grade or an output transform.
+ *   `proxy` — what an old render-worker proxy without colour info of its own is encoded in (log stayed its log).
+ *             The studio's native proxies are all ACEScct and say so in their own meta.color. A proxy never carries a
+ *             grade or an output transform.
  * A file whose profile cannot be told is 'unknown' (not a key here): the studio asks; the worker renders it as
  * Rec.709 and says so in the render's report.
  */

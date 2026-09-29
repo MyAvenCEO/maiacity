@@ -1,17 +1,18 @@
 //! What each source brought in, and whether it may go. Every ingest records a report (its session, story, sources and
 //! each file's hash); the studio lists them by source — a card, a drive, a folder — with each file's copies. A source
-//! may be released only when every one of its files is verified at every destination its story names: this Mac's
-//! avenSSD read back and hashed here, the server's Object Storage read back and hashed on the server. Deleting the
-//! source itself is always the person's, by hand — the app never deletes it.
+//! may go only when every one of its files is kept where its story says: at every destination its class names, at
+//! least two. That is iroh's word, not read back again: every copy was verified by hash on its way in (the three-hash
+//! ingest here, every chunk on the way to Object Storage). Its files then go to the Trash — by hand in the app, after
+//! the person confirmed exactly what goes, never by an agent — each read once more to be sure it is the bytes that came
+//! in. Bit rot at rest is a scrub's business, in the background, not this.
 
-use std::{io::SeekFrom, path::Path};
+use std::path::Path;
 
 use serde::Serialize;
 use serde_json::{Value, json};
-use tauri::{AppHandle, Emitter, State};
-use tokio::io::{AsyncReadExt, AsyncSeekExt};
+use tauri::State;
 
-use crate::{App, Res, auth::{self, Auth}, err, gate};
+use crate::{App, Res, auth::Auth, err, gate};
 
 #[derive(Serialize)]
 pub struct SourceFile {
@@ -38,10 +39,24 @@ pub struct IngestedSource {
 #[tauri::command]
 pub async fn ingest_sources(app: State<'_, App>, story: Option<String>) -> Res<Vec<IngestedSource>> {
     gate()?;
+    sources_of(&app, story).await
+}
+
+async fn sources_of(app: &App, story: Option<String>) -> Res<Vec<IngestedSource>> {
     let inbox = app.vault.catalog.inbox_id();
+    // where each file lives now: a source belongs to the story its files are in (moved since, or ingested before
+    // reports named their story)
+    let home: std::collections::HashMap<String, String> =
+        app.vault.catalog.list().await.map_err(err)?.into_iter().map(|m| (m.hash, m.story)).collect();
     let mut out = Vec::new();
     for r in app.vault.catalog.reports().await.map_err(err)? {
-        let rs = r["story"].as_str().unwrap_or("").to_string();
+        let mut votes: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
+        for f in r["files"].as_array().into_iter().flatten() {
+            if let Some(s) = f["hash"].as_str().and_then(|h| home.get(h)) {
+                *votes.entry(s.clone()).or_default() += 1;
+            }
+        }
+        let rs = votes.into_iter().max_by_key(|(_, n)| *n).map(|(s, _)| s).unwrap_or_else(|| r["story"].as_str().unwrap_or("").to_string());
         let rs = if rs == inbox { String::new() } else { rs };
         if let Some(want) = &story {
             let want = if *want == inbox { "" } else { want.as_str() };
@@ -82,58 +97,114 @@ pub async fn ingest_sources(app: State<'_, App>, story: Option<String>) -> Res<V
     Ok(out)
 }
 
+/// One file of a source, before it may go: is it kept where its story says (every destination its class names, at
+/// least two)?
 #[derive(Serialize, Clone)]
-pub struct Checked {
+pub struct Release {
+    pub name: String,
     pub hash: String,
-    /// verified · missing · corrupt · unreachable
-    #[serde(rename = "avenSSD")]
-    pub aven: String,
-    pub hetzner: String,
+    pub size: u64,
+    /// this Mac's store (B): complete, verified by hash on the way in
+    pub local: bool,
+    /// the server's Object Storage (A): stored, every chunk verified on the way
+    pub cloud: bool,
+    /// the story's rule for its class holds (and names at least two places)
+    pub kept: bool,
+    pub why: String,
 }
 
-/// Before a source may go: every file read back and hashed at every destination, now. Reports each file as it goes
-/// (event `release-check`); the answer says whether all of them hold. Nothing is deleted here.
+/// Whether a source may go, file by file — from what iroh already verified (nothing read back): B complete in this
+/// Mac's store, A stored by the server, and every destination its story names for its class there.
 #[tauri::command]
-pub async fn release_check(handle: AppHandle, app: State<'_, App>, auth: State<'_, Auth>, hashes: Vec<String>) -> Res<Value> {
+pub async fn source_ready(app: State<'_, App>, auth: State<'_, Auth>, session: String, path: String) -> Res<Vec<Release>> {
     gate()?;
-    let key = auth::load_key_pub().ok_or("sign in first")?;
-    let total = hashes.len();
-    let mut out = Vec::new();
-    for (i, h) in hashes.iter().enumerate() {
-        let hash: iroh_blobs::Hash = h.parse().map_err(err)?;
-        let aven = local(&app, hash).await;
-        let hetzner = match auth.http().get(format!("{}/vault/verify/{h}", auth::api_base())).bearer_auth(&key).send().await {
-            Ok(r) if r.status().is_success() => r.json::<Value>().await.ok().and_then(|v| v["state"].as_str().map(String::from)).unwrap_or_else(|| "unreachable".into()),
-            _ => "unreachable".into(),
-        };
-        let c = Checked { hash: h.clone(), aven, hetzner };
-        handle.emit("release-check", json!({ "index": i, "total": total, "file": c })).ok();
-        out.push(c);
-    }
-    let all = out.iter().all(|c| c.aven == "verified" && c.hetzner == "verified");
-    Ok(json!({ "ok": all, "files": out }))
+    ready(&app, &auth, &session, &path).await
 }
 
-/// This Mac's copy, read back from the store and hashed.
-async fn local(app: &App, hash: iroh_blobs::Hash) -> String {
+async fn ready(app: &App, auth: &Auth, session: &str, path: &str) -> Res<Vec<Release>> {
     use iroh_blobs::api::proto::BlobStatus;
-    if !matches!(app.vault.store.blobs().status(hash).await, Ok(BlobStatus::Complete { .. })) {
-        return "missing".into();
+    let source = sources_of(app, None).await?.into_iter().find(|s| s.session == session && s.path == path).ok_or("no such source")?;
+    let stored: std::collections::HashMap<String, bool> = auth
+        .get_ok("GET", "/api/vault/files", None)
+        .await
+        .map_err(|e| format!("the server cannot be asked: {e}"))?
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|f| Some((f["hash"].as_str()?.to_string(), f["stored"].as_bool().unwrap_or(false))))
+        .collect();
+    let stories = app.vault.catalog.stories().await.map_err(err)?;
+    let inbox = app.vault.catalog.inbox_id();
+    let mut out = Vec::new();
+    for f in source.files {
+        let hash: iroh_blobs::Hash = f.hash.parse().map_err(err)?;
+        let meta = app.vault.catalog.meta(hash).await.map_err(err)?;
+        let local = matches!(app.vault.store.blobs().status(hash).await, Ok(BlobStatus::Complete { .. }));
+        let cloud = stored.get(&f.hash).copied().unwrap_or(false);
+        let (story_id, class) = meta.as_ref().map(|m| (if m.story.is_empty() { inbox.clone() } else { m.story.clone() }, m.class.clone())).unwrap_or_default();
+        let rules = stories.iter().find(|s| s.id == story_id).map(|s| s.rules.clone()).unwrap_or_default();
+        let wants = match class.as_str() {
+            "original" => rules.original,
+            "proxy" => rules.proxy,
+            "delivery" => rules.delivery,
+            _ => rules.default,
+        };
+        let at = |d: &str| match d {
+            "avenSSD" => local,
+            "hetzner" => cloud,
+            _ => false,
+        };
+        let missing: Vec<&str> = wants.iter().map(|d| d.as_str()).filter(|d| !at(d)).collect();
+        let why = if f.verdict == "mismatch" {
+            "it did not hash the same on the way in".to_string()
+        } else if wants.len() < 2 {
+            format!("its story keeps it in {} place(s) — two at least", wants.len())
+        } else if !missing.is_empty() {
+            format!("not yet at {}", missing.join(", "))
+        } else {
+            String::new()
+        };
+        out.push(Release { kept: why.is_empty(), why, name: f.name, hash: f.hash, size: f.size, local, cloud });
     }
-    let mut reader = app.vault.store.blobs().reader(hash);
-    if reader.seek(SeekFrom::Start(0)).await.is_err() {
-        return "unreachable".into();
+    Ok(out)
+}
+
+/// The source's files to the Trash — by hand in the app only, never by an agent. Only when every file is kept as its
+/// story says; and each is read once more first: a file on the source that is not the very bytes that came in stays
+/// where it is. The Trash keeps them until it is emptied.
+#[tauri::command]
+pub async fn source_delete(app: State<'_, App>, auth: State<'_, Auth>, session: String, path: String) -> Res<Value> {
+    gate()?;
+    let files = ready(&app, &auth, &session, &path).await?;
+    if let Some(f) = files.iter().find(|f| !f.kept) {
+        return Err(format!("{} is not kept as its story says ({}) — nothing was moved", f.name, f.why));
     }
-    let mut hasher = blake3::Hasher::new();
-    let mut buf = vec![0u8; 4 << 20];
-    loop {
-        match reader.read(&mut buf).await {
-            Ok(0) => break,
-            Ok(n) => {
-                hasher.update(&buf[..n]);
+    let root = Path::new(&path);
+    let (mut moved, mut bytes, mut left) = (0usize, 0u64, Vec::new());
+    for f in &files {
+        let file = if root.is_file() { root.to_path_buf() } else { root.join(&f.name) };
+        if !file.exists() {
+            left.push(json!({ "name": f.name, "why": "already gone" }));
+            continue;
+        }
+        let check = file.clone();
+        let same = tokio::task::spawn_blocking(move || vault_core::hash::hash_from_disk(&check).map(|h| h.to_hex().to_string()))
+            .await
+            .map_err(err)?
+            .map(|h| h == f.hash)
+            .unwrap_or(false);
+        if !same {
+            left.push(json!({ "name": f.name, "why": "not the bytes that came in — left where it is" }));
+            continue;
+        }
+        match trash::delete(&file) {
+            Ok(()) => {
+                moved += 1;
+                bytes += f.size;
             }
-            Err(_) => return "unreachable".into(),
+            Err(e) => left.push(json!({ "name": f.name, "why": format!("the Trash refused it: {e}") })),
         }
     }
-    if iroh_blobs::Hash::from(*hasher.finalize().as_bytes()) == hash { "verified".into() } else { "corrupt".into() }
+    tracing::info!("source {path}: {moved} files ({bytes} B) to the Trash, {} left", left.len());
+    Ok(json!({ "moved": moved, "bytes": bytes, "left": left }))
 }

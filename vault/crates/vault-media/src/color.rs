@@ -15,25 +15,6 @@ pub struct ColorInfo {
 pub const PROFILES: [&str; 11] =
     ["acescct", "rec709", "srgb", "legacy", "hlg", "pq", "apple-log", "apple-log-2", "aces2065-1", "acescg", "linear-rec709"];
 
-/// The profile a file's proxy is encoded in (color.js `proxyProfileOf`): camera log stays its log, display video
-/// stays as it is, HDR and linear light go to ACEScct.
-pub fn proxy_profile(p: &str) -> &'static str {
-    match p {
-        "acescct" | "hlg" | "pq" | "aces2065-1" | "acescg" | "linear-rec709" => "acescct",
-        "rec709" => "rec709",
-        "srgb" => "srgb",
-        "legacy" => "legacy",
-        "apple-log" => "apple-log",
-        "apple-log-2" => "apple-log-2",
-        _ => "unknown",
-    }
-}
-
-/// Does making this file's proxy need a colour transform (into ACEScct)? Those wait for the native transforms.
-pub fn proxy_needs_transform(p: &str) -> bool {
-    proxy_profile(p) == "acescct" && p != "acescct"
-}
-
 pub fn detect(p: &Probe) -> ColorInfo {
     let info = |profile: &str, from: &str| ColorInfo { profile: profile.into(), from: from.into() };
     let all = p.tags.join(" ").to_lowercase();
@@ -46,6 +27,13 @@ pub fn detect(p: &Probe) -> ColorInfo {
     let primaries = p.primaries.as_deref().unwrap_or("unknown");
     // Apple's camera log: the iPhone writes it into the QuickTime metadata (or, newer, as the transfer function)
     let apple = format!("{all} {}", transfer.to_lowercase());
+    // the sample description's `logs` atom: Apple Wide Gamut + the Apple Log curve is Apple Log 2
+    if apple.contains("com.apple.apple-wide-gamut.apple-log") {
+        return info("apple-log-2", "log atom (Apple Wide Gamut · Apple Log)");
+    }
+    if apple.contains("logs=com.apple.log") || apple.contains("logtransferfunction=com.apple.log") {
+        return info("apple-log", "log atom (Apple Log)");
+    }
     if apple.contains("applelog2") || apple.contains("apple log 2") || apple.contains("apple_log_2") {
         return info("apple-log-2", "Apple metadata (Apple Log 2)");
     }

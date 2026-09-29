@@ -40,6 +40,11 @@
 	// the studio lives in maiaCITY Studio, the Mac app, only: its media functions never run in a browser
 	let inApp = $state<boolean | null>(null);
 
+	// the timeline opens the first time a tab that shows it is opened
+	$effect(() => {
+		if (s.phase === 'ready' && s.tab !== 'ingest' && s.tab !== 'library') void s.openLater();
+	});
+
 	// if anything goes wrong on the way in, say what — a gate that only ever says "One moment…" hides it
 	onMount(() => {
 		inApp = native();

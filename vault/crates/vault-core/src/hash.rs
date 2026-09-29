@@ -15,6 +15,11 @@ const BUF: usize = 16 * 1024 * 1024;
 /// Copy `src` to `dst` while hashing what was read from `src`: the card is read exactly once, and the hash is of the
 /// bytes as they came off it. `dst` is flushed to the disk before this returns.
 pub fn copy_hashing(src: &Path, dst: &Path) -> Result<(blake3::Hash, u64)> {
+    copy_hashing_with(src, dst, &mut |_| {})
+}
+
+/// `copy_hashing`, telling `read` the bytes read so far after every buffer.
+pub fn copy_hashing_with(src: &Path, dst: &Path, read: &mut dyn FnMut(u64)) -> Result<(blake3::Hash, u64)> {
     let mut from = File::open(src).with_context(|| format!("open {}", src.display()))?;
     let mut to = File::create(dst).with_context(|| format!("create {}", dst.display()))?;
     uncached(&from);
@@ -30,6 +35,7 @@ pub fn copy_hashing(src: &Path, dst: &Path) -> Result<(blake3::Hash, u64)> {
         hasher.update_rayon(&buf[..n]);
         to.write_all(&buf[..n])?;
         size += n as u64;
+        read(size);
     }
     to.sync_all()?;
     Ok((hasher.finalize(), size))
@@ -38,6 +44,12 @@ pub fn copy_hashing(src: &Path, dst: &Path) -> Result<(blake3::Hash, u64)> {
 /// Hash a file as it is on the disk now — read around the page cache, so a check right after a copy reads the disk,
 /// not the memory the copy just went through.
 pub fn hash_from_disk(path: &Path) -> Result<blake3::Hash> {
+    hash_from_disk_with(path, &mut |_| {})
+}
+
+/// `hash_from_disk`, telling `read` the bytes read so far after every buffer.
+pub fn hash_from_disk_with(path: &Path, read: &mut dyn FnMut(u64)) -> Result<blake3::Hash> {
+    let mut done = 0u64;
     let mut file = File::open(path).with_context(|| format!("open {}", path.display()))?;
     uncached(&file);
     let mut hasher = blake3::Hasher::new();
@@ -48,6 +60,8 @@ pub fn hash_from_disk(path: &Path) -> Result<blake3::Hash> {
             break;
         }
         hasher.update_rayon(&buf[..n]);
+        done += n as u64;
+        read(done);
     }
     Ok(hasher.finalize())
 }
