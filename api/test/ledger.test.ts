@@ -47,9 +47,9 @@ beforeAll(async () => {
 });
 
 describe("the income", () => {
-  test("the first mint carries the 30,000-heart starting stake", async () => {
+  test("the first mint carries the 62,500-heart starting stake", async () => {
     const { claimed } = await claim(A);
-    expect(claimed).toBeGreaterThanOrEqual(hearts(30_000));
+    expect(claimed).toBeGreaterThanOrEqual(hearts(62_500));
     const a = await account(A);
     expect(a.startingPending).toBe(false);
     expect(a.token).toBe("Samuel♥");
@@ -118,35 +118,35 @@ describe("the second step: a home in a settlement, founded or joined by invitati
   test("a player without a city cannot found a settlement", async () => {
     await pg.query("INSERT INTO founders (id, name) VALUES ('founder-d', 'Lea')");
     await claim("founder-d");
-    await expect(foundSettlement("founder-d", { name: "Riverside", pitch: "Domes by the river.", cell: cellsOf(landTiles[0])[0], hearts: hearts(5_000) })).rejects.toThrow(/citizen of one first/);
+    await expect(foundSettlement("founder-d", { name: "Riverside", pitch: "Domes by the river.", cell: cellsOf(landTiles[0])[0], hearts: hearts(25_000) })).rejects.toThrow(/citizen of one first/);
   });
 
-  test("a settlement stands on land of the city's island, and takes at least 5,000 hearts", async () => {
+  test("a settlement stands on land of the city's island, and takes at least 25,000 hearts", async () => {
     const water = [...islandCells(islandSeed(landTiles[0])).values()].find((t) => !buildable(t))!;
-    await expect(foundSettlement(A, { name: "Riverside", pitch: "Domes by the river.", cell: cellKey(water), hearts: hearts(5_000) })).rejects.toThrow(/on land/);
-    await expect(foundSettlement(A, { name: "Riverside", pitch: "Domes by the river.", cell: cellsOf(landTiles[0])[0], hearts: hearts(1_000) })).rejects.toThrow(/5,000/);
+    await expect(foundSettlement(A, { name: "Riverside", pitch: "Domes by the river.", cell: cellKey(water), hearts: hearts(25_000) })).rejects.toThrow(/on land/);
+    await expect(foundSettlement(A, { name: "Riverside", pitch: "Domes by the river.", cell: cellsOf(landTiles[0])[0], hearts: hearts(1_000) })).rejects.toThrow(/25,000/);
   });
 
-  test("founding Riverside: 5,000 hearts become maiaHEARTS in its treasury, riversideMINDS to the founder, and a home", async () => {
+  test("founding Riverside: 25,000 hearts become maiaHEARTS in its treasury, riversideMINDS to the founder, and a home", async () => {
     await topUp(A);
-    const s = await foundSettlement(A, { name: "Riverside", pitch: "Domes by the river.", cell: cellsOf(landTiles[0])[0], hearts: hearts(5_000) });
+    const s = await foundSettlement(A, { name: "Riverside", pitch: "Domes by the river.", cell: cellsOf(landTiles[0])[0], hearts: hearts(25_000) });
     expect(s.kind).toBe("settlement");
     expect(s.city).toEqual({ slug: "maia", name: "Maia" });
     expect(s.heartsToken).toBe("maiaHEARTS");
     expect(s.mindToken).toBe("riversideMINDS");
     expect(s.settlers).toBe(1);
     expect(s.level).toBe(1);
-    expect(spendable(await balanceOf(maiaHEARTS, coopIdentity("riverside")))).toBe(hearts(5_000));
+    expect(spendable(await balanceOf(maiaHEARTS, coopIdentity("riverside")))).toBe(hearts(25_000));
     expect((await settlementOf(A))?.slug).toBe("riverside");
-    await expect(foundSettlement(A, { name: "Hilltop", pitch: "Another.", cell: cellsOf(landTiles[0])[1], hearts: hearts(5_000) })).rejects.toThrow(/already live/);
+    await expect(foundSettlement(A, { name: "Hilltop", pitch: "Another.", cell: cellsOf(landTiles[0])[1], hearts: hearts(25_000) })).rejects.toThrow(/already live/);
   });
 
   test("a cell holds one settlement", async () => {
-    await expect(foundSettlement(B, { name: "Hilltop", pitch: "Domes on the hill.", cell: cellsOf(landTiles[0])[0], hearts: hearts(5_000) })).rejects.toThrow(/taken/);
+    await expect(foundSettlement(B, { name: "Hilltop", pitch: "Domes on the hill.", cell: cellsOf(landTiles[0])[0], hearts: hearts(25_000) })).rejects.toThrow(/taken/);
   });
 
   test("joining is by invitation only", async () => {
-    await expect(invest(B, "riverside", hearts(5_000))).rejects.toThrow(/by invitation/);
+    await expect(invest(B, "riverside", hearts(25_000))).rejects.toThrow(/by invitation/);
     await expect(createInvite(B, "riverside")).rejects.toThrow(/Only its settlers/);
   });
 
@@ -154,19 +154,19 @@ describe("the second step: a home in a settlement, founded or joined by invitati
     const invite = await createInvite(A, "riverside");
     expect(invite.usable).toBe(true);
     expect(invite.invitedBy).toBe("avenSAMUEL");
-    await expect(acceptInvite(C, invite.token, hearts(5_000))).rejects.toThrow(/citizen of Porto/);
-    await expect(acceptInvite(B, invite.token, hearts(1_000))).rejects.toThrow(/5,000/);
-    const s = await acceptInvite(B, invite.token, hearts(5_000));
+    await expect(acceptInvite(C, invite.token, hearts(25_000))).rejects.toThrow(/citizen of Porto/);
+    await expect(acceptInvite(B, invite.token, hearts(1_000))).rejects.toThrow(/25,000/);
+    const s = await acceptInvite(B, invite.token, hearts(25_000));
     expect(s.settlers).toBe(2);
-    expect(s.treasuryLabel).toBe("10,000");
+    expect(s.treasuryLabel).toBe("50,000");
     expect((await settlementOf(B))?.slug).toBe("riverside");
-    await expect(acceptInvite("founder-d", invite.token, hearts(5_000))).rejects.toThrow(/already been used/);
+    await expect(acceptInvite("founder-d", invite.token, hearts(25_000))).rejects.toThrow(/already been used/);
     expect((await inviteInfo(invite.token)).usable).toBe(false);
   });
 
   test("an invite for someone without citizenship asks them to join the city first", async () => {
     const invite = await createInvite(A, "riverside");
-    await expect(acceptInvite("founder-d", invite.token, hearts(5_000))).rejects.toThrow(/First become a citizen of Maia/);
+    await expect(acceptInvite("founder-d", invite.token, hearts(25_000))).rejects.toThrow(/First become a citizen of Maia/);
   });
 
   test("an expired invite admits nobody", async () => {
@@ -174,24 +174,24 @@ describe("the second step: a home in a settlement, founded or joined by invitati
     const invite = await createInvite(A, "riverside", old);
     expect((await inviteInfo(invite.token)).usable).toBe(false);
     await invest("founder-d", "maia", hearts(25_000));
-    await expect(acceptInvite("founder-d", invite.token, hearts(5_000))).rejects.toThrow(/expired/);
+    await expect(acceptInvite("founder-d", invite.token, hearts(25_000))).rejects.toThrow(/expired/);
   });
 
   test("settlers may invest more into their own settlement, nobody else", async () => {
     await topUp(B);
-    expect((await invest(B, "riverside", hearts(100))).treasuryLabel).toBe("10,100");
+    expect((await invest(B, "riverside", hearts(100))).treasuryLabel).toBe("50,100");
     await expect(invest("founder-d", "riverside", hearts(100))).rejects.toThrow(/by invitation/);
   });
 
   test("no heart is lost: maiaHEARTS in existence equal everything invested in Maia", async () => {
-    // 25,000 + 25,000 + 100 (city) + 25,000 (Lea) + 5,000 + 5,000 + 100 (Riverside)
-    expect(near(spendable(await totalSupply(maiaHEARTS)), hearts(85_200))).toBe(true);
+    // 25,000 + 25,000 + 100 (city) + 25,000 (Lea) + 25,000 + 25,000 + 100 (Riverside)
+    expect(near(spendable(await totalSupply(maiaHEARTS)), hearts(125_200))).toBe(true);
   });
 
   test("investing more than you hold changes nothing — the transaction rolls back whole", async () => {
     await expect(invest(B, "riverside", hearts(1_000_000))).rejects.toThrow(/Not enough/);
-    expect((await coopDetail("riverside", B)).raisedLabel).toBe("10,100");
-    expect(near(spendable(await totalSupply(maiaHEARTS)), hearts(85_200))).toBe(true);
+    expect((await coopDetail("riverside", B)).raisedLabel).toBe("50,100");
+    expect(near(spendable(await totalSupply(maiaHEARTS)), hearts(125_200))).toBe(true);
   });
 
   test("the planet lists cities with their island and settlements", async () => {

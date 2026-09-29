@@ -7,7 +7,7 @@
  * MIND (10♥ in milestone 1, 20♥ in 2 …), and costs that many hearts to fill. It opens when every earlier
  * one is filled.
  *
- * The schedule runs up to the MAX SUPPLY of 8 billion MINDs per coop: the
+ * The schedule runs up to the MAX SUPPLY of 1.3 million MINDs per coop: the
  * last milestone emits only what is left under the cap, and after it the
  * coop is sold out. A coop's total supply is therefore never more than what
  * its filled milestones, plus the open one so far, have emitted.
@@ -31,7 +31,7 @@ export type CoopPolicy = {
 	signal: { weights: Record<string, number> }
 }
 
-/** One of a coop's five phases — IDEA, TEST, BUILD, SCALE, HERO — ten milestones each. */
+/** One of a coop's five phases — IDEA, TEST, BUILD, SCALE, HERO — six milestones each. */
 export type Phase = { name: string; from: number; to: number }
 export const coopPolicy = coopsJson as unknown as CoopPolicy
 

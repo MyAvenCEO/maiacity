@@ -8,7 +8,7 @@
 
 	Joining a city takes two steps. First citizenship: at least 25,000 of your
 	own hearts into the city. Then a home: found a settlement on a free cell, or
-	move into one with an invite link from a settler — 5,000 hearts either way.
+	move into one with an invite link from a settler — 25,000 hearts either way.
 	Every heart becomes the city's HEARTS; every investor receives MINDS.
 -->
 <script lang="ts">
@@ -583,7 +583,7 @@
 						<label for="spitch">What it is for</label>
 						<textarea id="spitch" bind:value={foundPitch} maxlength="280" rows="2" placeholder="e.g. Domes by the river, a food forest all round."></textarea>
 						<label for="shearts">Your hearts</label>
-						<input id="shearts" bind:value={foundHearts} inputmode="decimal" placeholder="e.g. 5000" />
+						<input id="shearts" bind:value={foundHearts} inputmode="decimal" placeholder="e.g. 25000" />
 						<button class="primary" disabled={busy || foundName.trim().length < 3 || !foundPitch.trim()}>
 							{busy ? 'Founding…' : `Found this settlement — ${foundHearts || 0}♥`}
 						</button>
