@@ -1,6 +1,9 @@
 /**
- * CITIES AND SETTLEMENTS — a card of the planet is unlocked by founding a city
- * on it; the city opens as an island of cells, and settlements stand on them.
+ * CITIES AND SETTLEMENTS — the communities, founded and joined in the apps,
+ * with no place on any map. They outlive every sandbox: a world a sandbox
+ * draws may give one a place — in Sandbox 2 a city stands on a card of the
+ * planet, which opens as an island of cells, and its settlements on those
+ * cells — but the city, its money and its people are the same without it.
  *
  * A city is itself a coop: the same Fibonacci milestones, a treasury, MINDS.
  * What makes it a city is its name on the money. Maia issues maiaHEARTS — the
@@ -26,7 +29,7 @@ import { decodeLand } from '../../../game/map'
 import { coopPolicy, LAST, milestoneFor, mindsFor, phaseOf, room, schedule, soldOut, toNextMilestone, type MilestoneState } from '../../../game/coops'
 import { ONE } from '../../../game/policy'
 import { calendar, format, toDemurraged, toInflationary } from '../../../game/time'
-import { buildable, islandCells, islandSeed, settlementLevel } from '../../../game/island/island'
+import { buildable, cellKey, islandCells, islandSeed, settlementLevel } from '../../../game/island/island'
 import { housing, LEVELS } from '../../../game/island/villages'
 import { balanceOf, burn, identityOf, LedgerError, mint, totalSupply } from './hearts'
 import { cityIdentity, coopIdentity, heartsIssuer, heartsToken, mindsToken } from './schema'
@@ -57,9 +60,8 @@ export type CoopSummary = {
 	kind: Kind
 	name: string
 	founder: string
-	tile: number
-	/** A settlement's cell on its city's island, "q,r"; null for a city. */
-	cell: string | null
+	/** Where it stands, by world: { 'sandbox-2': '812' } for a city's card, "q,r" on its city's island for a settlement. Empty until placed. */
+	places: Record<string, string>
 	/** The city it belongs to — for a city, itself. */
 	city: { slug: string; name: string }
 	milestone: number
@@ -80,7 +82,8 @@ export type CoopSummary = {
 	inMasterDome: number
 }
 
-export type CitySummary = CoopSummary & { island: number; settlements: CoopSummary[] }
+/** A city, with the seed of its Sandbox 2 island — null until it stands on a card there. */
+export type CitySummary = CoopSummary & { island: number | null; settlements: CoopSummary[] }
 
 export type ScheduleLine = { milestone: number; minds: string; price: string; cost: string; cumulativeMinds: string; cumulativeHearts: string; state: MilestoneState; status: string; fill: number; progress: string; phase: string; phaseHeading: string }
 
@@ -103,8 +106,8 @@ export type CoopDetail = CoopSummary & {
 	schedule: ScheduleLine[]
 	/** A city's settlements, largest first. Empty otherwise. */
 	settlements: CoopSummary[]
-	/** The seed of the city's island. */
-	island: number
+	/** The seed of the city's island in Sandbox 2 — null until the city stands on a card there. */
+	island: number | null
 	/** The least a newcomer invests: citizenship for a city, a home for a settlement. */
 	entryLabel: string
 }
@@ -120,8 +123,7 @@ type Row = {
 	name: string
 	founder: string
 	pitch: string
-	tile: number
-	cell: string | null
+	places: Record<string, string> | null
 	raised: string
 	created_at: string
 	backers: number
@@ -131,12 +133,23 @@ type Row = {
 	city_slug: string | null
 	city_name: string | null
 }
-const SELECT = `SELECT c.id, c.slug, c.kind, c.name, f.name AS founder, c.pitch, c.tile, c.cell, c.raised::text AS raised, c.created_at,
+const SELECT = `SELECT c.id, c.slug, c.kind, c.name, f.name AS founder, c.pitch, c.raised::text AS raised, c.created_at,
+	(SELECT json_object_agg(pl.world, pl.spot) FROM placements pl WHERE pl.coop_id = c.id) AS places,
 	c.city_id, p.slug AS city_slug, p.name AS city_name,
 	(SELECT count(DISTINCT founder_id)::int FROM investments i WHERE i.coop_id = c.id) AS backers,
 	(SELECT count(*)::int FROM founders z WHERE z.city_id = c.id) AS citizens,
 	(SELECT count(*)::int FROM founders z WHERE z.settlement_id = c.id) AS settlers
 	FROM coops c JOIN founders f ON f.id = c.founder_id LEFT JOIN coops p ON p.id = c.city_id`
+
+/** Sandbox 2's world: a card of its planet for a city, whose island is seeded by the card. */
+const SANDBOX_2 = 'sandbox-2'
+const islandOf = (places: Record<string, string>) => (places[SANDBOX_2] === undefined ? null : islandSeed(Number(places[SANDBOX_2])))
+
+/** The island a settlement's city opens as in Sandbox 2 — null while the city stands nowhere there. */
+async function cityIsland(cityId: string) {
+	const r = await db.query<{ spot: string }>('SELECT spot FROM placements WHERE coop_id = $1 AND world = $2', [cityId, SANDBOX_2])
+	return r.rows[0] ? islandSeed(Number(r.rows[0].spot)) : null
+}
 
 const treasuryOf = (kind: Kind, slug: string) => (kind === 'city' ? cityIdentity(slug) : coopIdentity(slug))
 
@@ -148,8 +161,7 @@ function summary(r: Row): CoopSummary {
 		kind: r.kind,
 		name: r.name,
 		founder: r.founder,
-		tile: Number(r.tile),
-		cell: r.cell,
+		places: r.places ?? {},
 		city: r.kind === 'city' ? { slug: r.slug, name: r.name } : { slug: r.city_slug!, name: r.city_name! },
 		milestone: m.milestone,
 		phase: phaseOf(m.milestone).name,
@@ -192,7 +204,7 @@ async function detail(r: Row, viewerId: string | null, now: Date): Promise<CoopD
 		milestoneOf: done ? `Sold out: all ${LAST.milestone} milestones achieved.` : `Milestone ${m.milestone} of ${LAST.milestone} open · ${compact(soFar)} of ${minds(m.minds)} emitted`,
 		soldOut: done,
 		settlements,
-		island: islandSeed(Number(r.tile)),
+		island: r.kind === 'city' ? islandOf(s.places) : await cityIsland(r.city_id!),
 		entryLabel: format(r.kind === 'city' ? CITIZENSHIP : SETTLING, 0),
 		schedule: schedule(s.raised).map((row) => ({
 			milestone: row.milestone,
@@ -218,7 +230,7 @@ export async function listCities(now = new Date()): Promise<CitySummary[]> {
 	const all = await Promise.all(r.rows.map(async (x) => ({ row: x, s: { ...summary(x), supplyLabel: compact(toDemurraged(await totalSupply(treasuryOf(x.kind, x.slug)), day)) } })))
 	return all
 		.filter((x) => x.row.kind === 'city')
-		.map((x) => ({ ...x.s, island: islandSeed(x.s.tile), settlements: all.filter((y) => y.row.city_id === x.row.id).map((y) => y.s) }))
+		.map((x) => ({ ...x.s, island: islandOf(x.s.places), settlements: all.filter((y) => y.row.city_id === x.row.id).map((y) => y.s) }))
 }
 
 export async function coopDetail(slug: string, viewerId: string | null, now = new Date()): Promise<CoopDetail> {
@@ -227,17 +239,18 @@ export async function coopDetail(slug: string, viewerId: string | null, now = ne
 	return detail(r.rows[0], viewerId, now)
 }
 
-type Place = { id: string; slug: string; name: string }
+/** A player's city or settlement; `founded` when they founded it, and so choose where it stands. */
+type Place = { id: string; slug: string; name: string; founded: boolean }
 
 /** The city a player is a citizen of, if any. */
 export async function cityOf(founderId: string, tx: Queryable = db): Promise<Place | null> {
-	const r = await tx.query<Place>('SELECT c.id, c.slug, c.name FROM founders f JOIN coops c ON c.id = f.city_id WHERE f.id = $1', [founderId])
+	const r = await tx.query<Place>('SELECT c.id, c.slug, c.name, c.founder_id = f.id AS founded FROM founders f JOIN coops c ON c.id = f.city_id WHERE f.id = $1', [founderId])
 	return r.rows[0] ?? null
 }
 
 /** The settlement a player lives in, if any. */
 export async function settlementOf(founderId: string, tx: Queryable = db): Promise<Place | null> {
-	const r = await tx.query<Place>('SELECT c.id, c.slug, c.name FROM founders f JOIN coops c ON c.id = f.settlement_id WHERE f.id = $1', [founderId])
+	const r = await tx.query<Place>('SELECT c.id, c.slug, c.name, c.founder_id = f.id AS founded FROM founders f JOIN coops c ON c.id = f.settlement_id WHERE f.id = $1', [founderId])
 	return r.rows[0] ?? null
 }
 
@@ -303,22 +316,18 @@ async function lockPlayer(tx: Queryable, founderId: string): Promise<{ city: str
 }
 
 /**
- * Found a city on an empty card of land. The founder's investment — at least
- * the citizenship — is the city's first, and makes them its first citizen.
+ * Found a city — no map needed. The founder's investment — at least the
+ * citizenship — is the city's first, and makes them its first citizen.
  */
-export async function foundCity(founderId: string, input: { name?: unknown; pitch?: unknown; tile?: unknown; hearts: bigint }, now = new Date()): Promise<CoopDetail> {
+export async function foundCity(founderId: string, input: { name?: unknown; pitch?: unknown; hearts: bigint }, now = new Date()): Promise<CoopDetail> {
 	const { name, pitch, slug } = checkNameAndPitch(input, 'city')
-	const tile = Number(input.tile)
-	const t = tiles()[tile]
-	if (!t || WATER.has(t.biome)) throw new LedgerError(400, 'A city stands on land.')
 	if (input.hearts < CITIZENSHIP) throw new LedgerError(400, `${citizenshipText} — founding a city is the first of them.`)
 
 	await db.transaction(async (tx) => {
 		if ((await lockPlayer(tx, founderId)).city) throw new LedgerError(409, 'You are already a citizen of a city, and that is for good.')
-		if ((await tx.query("SELECT 1 FROM coops WHERE kind = 'city' AND tile = $1", [tile])).rows.length) throw new LedgerError(409, 'That card already holds a city.')
 		await nameFree(tx, slug)
 		if ((await ownBalance(tx, founderId, now)) < input.hearts) throw new LedgerError(400, `Not enough hearts of your own — founding takes ${format(input.hearts, 0)}♥. Mint first.`)
-		const r = await tx.query<{ id: string }>("INSERT INTO coops (slug, kind, name, founder_id, pitch, tile) VALUES ($1, 'city', $2, $3, $4, $5) RETURNING id", [slug, name, founderId, pitch, tile])
+		const r = await tx.query<{ id: string }>("INSERT INTO coops (slug, kind, name, founder_id, pitch) VALUES ($1, 'city', $2, $3, $4) RETURNING id", [slug, name, founderId, pitch])
 		const id = r.rows[0]!.id
 		await convert(tx, founderId, { id, slug, kind: 'city', citySlug: slug, raised: 0n }, input.hearts, now)
 		await tx.query('UPDATE founders SET city_id = $2 WHERE id = $1', [founderId, id])
@@ -375,28 +384,82 @@ async function settlers(tx: Queryable, settlementId: string) {
 }
 
 /**
- * Found a settlement on a free cell of your city's island — the second step
- * into a city. The founder's investment is its first, and makes it their home.
+ * Found a settlement in your city — the second step into a city, no map
+ * needed. The founder's investment is its first, and makes it their home.
  */
-export async function foundSettlement(founderId: string, input: { name?: unknown; pitch?: unknown; cell?: unknown; hearts: bigint }, now = new Date()): Promise<CoopDetail> {
+export async function foundSettlement(founderId: string, input: { name?: unknown; pitch?: unknown; hearts: bigint }, now = new Date()): Promise<CoopDetail> {
 	const { name, pitch, slug } = checkNameAndPitch(input, 'settlement')
-	const cell = String(input.cell ?? '')
 	if (input.hearts < SETTLING) throw new LedgerError(400, `${settlingText} — founding one is the first of them.`)
 
 	await db.transaction(async (tx) => {
 		const me = await lockPlayer(tx, founderId)
 		if (!me.city) throw new LedgerError(403, 'Settlements stand inside a city. Become a citizen of one first.')
 		if (me.settlement) throw new LedgerError(409, 'You already live in a settlement, and that is for good.')
-		const city = (await tx.query<{ id: string; slug: string; tile: number }>('SELECT id, slug, tile FROM coops WHERE id = $1 FOR UPDATE', [me.city])).rows[0]!
-		const at = islandCells(islandSeed(Number(city.tile))).get(cell)
-		if (!at || !buildable(at)) throw new LedgerError(400, 'A settlement stands on land, not on water.')
-		if ((await tx.query('SELECT 1 FROM coops WHERE city_id = $1 AND cell = $2', [city.id, cell])).rows.length) throw new LedgerError(409, 'That cell is taken.')
+		const city = (await tx.query<{ id: string; slug: string }>('SELECT id, slug FROM coops WHERE id = $1 FOR UPDATE', [me.city])).rows[0]!
 		await nameFree(tx, slug)
 		if ((await ownBalance(tx, founderId, now)) < input.hearts) throw new LedgerError(400, `Not enough hearts of your own — founding takes ${format(input.hearts, 0)}♥. Mint first.`)
-		const r = await tx.query<{ id: string }>("INSERT INTO coops (slug, kind, city_id, name, founder_id, pitch, tile, cell) VALUES ($1, 'settlement', $2, $3, $4, $5, $6, $7) RETURNING id", [slug, city.id, name, founderId, pitch, city.tile, cell])
+		const r = await tx.query<{ id: string }>("INSERT INTO coops (slug, kind, city_id, name, founder_id, pitch) VALUES ($1, 'settlement', $2, $3, $4, $5) RETURNING id", [slug, city.id, name, founderId, pitch])
 		const id = r.rows[0]!.id
 		await convert(tx, founderId, { id, slug, kind: 'settlement', citySlug: city.slug, raised: 0n }, input.hearts, now)
 		await tx.query('UPDATE founders SET settlement_id = $2 WHERE id = $1', [founderId, id])
+	})
+	return coopDetail(slug, founderId, now)
+}
+
+/**
+ * The worlds a community can stand in, and what a spot in each is. A spot is
+ * checked here and returned in its one written form, so two ways of writing
+ * the same card cannot both be taken.
+ */
+const WORLDS: Record<string, { city: (spot: string) => string; settlement: (spot: string, cityAt: string) => string }> = {
+	[SANDBOX_2]: {
+		city(spot) {
+			const tile = Number(spot)
+			const t = Number.isInteger(tile) ? tiles()[tile] : undefined
+			if (!t || WATER.has(t.biome)) throw new LedgerError(400, 'A city stands on a card of land.')
+			return String(tile)
+		},
+		settlement(spot, cityAt) {
+			const at = islandCells(islandSeed(Number(cityAt))).get(spot)
+			if (!at || !buildable(at)) throw new LedgerError(400, 'A settlement stands on land of its city\'s island, not on water.')
+			return cellKey(at)
+		}
+	}
+}
+
+/**
+ * Give a city or a settlement its place in one world: a card of Sandbox 2's
+ * planet for a city, a free cell of its city's island for a settlement. Its
+ * founder chooses, once per world; a settlement follows its city, so the city
+ * stands there first. Nothing else about it changes — the money, the people,
+ * the milestones are the same in every world, or in none.
+ */
+export async function place(founderId: string, slug: string, input: { world?: unknown; spot?: unknown }, now = new Date()): Promise<CoopDetail> {
+	const world = String(input.world ?? '')
+	const rules = WORLDS[world]
+	if (!rules) throw new LedgerError(400, `No world called "${world}". Places are in: ${Object.keys(WORLDS).join(', ')}.`)
+	await db.transaction(async (tx) => {
+		const c = (await tx.query<{ id: string; kind: Kind; name: string; founder_id: string; city_id: string | null }>('SELECT id, kind, name, founder_id, city_id FROM coops WHERE slug = $1 FOR UPDATE', [slug.toLowerCase()])).rows[0]
+		if (!c) throw new LedgerError(404, 'No such city or settlement.')
+		if (c.founder_id !== founderId) throw new LedgerError(403, `Only ${c.name}'s founder chooses where it stands.`)
+		const here = (await tx.query<{ spot: string }>('SELECT spot FROM placements WHERE coop_id = $1 AND world = $2', [c.id, world])).rows[0]
+		if (here) throw new LedgerError(409, `${c.name} already stands in ${world}, and that is for good.`)
+		let spot: string
+		if (c.kind === 'city') spot = rules.city(String(input.spot ?? ''))
+		else {
+			const city = (await tx.query<{ spot: string; name: string }>('SELECT p.spot, k.name FROM coops k LEFT JOIN placements p ON p.coop_id = k.id AND p.world = $2 WHERE k.id = $1 FOR UPDATE OF k', [c.city_id, world])).rows[0]!
+			if (!city.spot) throw new LedgerError(409, `${city.name} does not stand in ${world} yet. Its founder places the city first.`)
+			spot = rules.settlement(String(input.spot ?? ''), city.spot)
+		}
+		const taken = await tx.query('SELECT 1 FROM placements WHERE world = $1 AND COALESCE(within::text, \'\') = COALESCE($2::text, \'\') AND spot = $3', [world, c.city_id, spot])
+		if (taken.rows.length) throw new LedgerError(409, c.kind === 'city' ? 'That card already holds a city.' : 'That cell is taken.')
+		await tx
+			.query('INSERT INTO placements (coop_id, world, spot, within, created_at) VALUES ($1, $2, $3, $4, $5)', [c.id, world, spot, c.city_id, now])
+			.catch((e) => {
+				// someone took the same spot a moment ago: the unique index is the last word
+				const code = (e as { errno?: string; code?: string }).errno ?? (e as { code?: string }).code
+				throw code === '23505' ? new LedgerError(409, c.kind === 'city' ? 'That card already holds a city.' : 'That cell is taken.') : e
+			})
 	})
 	return coopDetail(slug, founderId, now)
 }

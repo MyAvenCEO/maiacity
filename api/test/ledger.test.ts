@@ -7,7 +7,7 @@ import { useDb, type Db } from "../src/pg";
 import { MIGRATIONS } from "../src/migrations-list";
 import { migrateLedger } from "../src/ledger/store";
 import { account, balanceOf, claim, identityOf, totalSupply } from "../src/ledger/hearts";
-import { acceptInvite, cityIdentity, cityOf, coopDetail, coopIdentity, createInvite, foundCity, foundSettlement, invest, inviteInfo, listCities, settlementOf } from "../src/ledger/coopstore";
+import { acceptInvite, cityIdentity, cityOf, coopDetail, coopIdentity, createInvite, foundCity, foundSettlement, invest, inviteInfo, listCities, place, settlementOf } from "../src/ledger/coopstore";
 import { buildable, cellKey, islandCells, islandSeed, settlementLevel } from "../../game/island/island";
 import { housing, planFor } from "../../game/island/villages";
 import { ledgerView } from "../src/ledger/view";
@@ -30,6 +30,7 @@ const topUp = async (id: string) => {
 };
 
 const landTiles: number[] = [];
+let waterTile = -1;
 /** Free land cells on Maia's island, from the same generator the API uses. */
 const cellsOf = (tile: number) => [...islandCells(islandSeed(tile)).values()].filter(buildable).map(cellKey);
 
@@ -44,6 +45,7 @@ beforeAll(async () => {
   await pg.query("INSERT INTO founders (id, name) VALUES ($1, 'Samuel'), ($2, 'Maia'), ($3, 'Rui')", [A, B, C]);
   const tiles = buildGlobe({ frequency: FREQUENCY, land: LAND, isLand: decodeLand(land as never) });
   tiles.forEach((t, i) => !WATER.has(t.biome) && landTiles.length < 3 && landTiles.push(i));
+  waterTile = tiles.findIndex((t) => WATER.has(t.biome));
 });
 
 describe("the income", () => {
@@ -66,14 +68,14 @@ describe("the income", () => {
 
 describe("a city unlocks a card, and citizenship is for good", () => {
   test("founding takes at least the 25,000-heart citizenship", async () => {
-    await expect(foundCity(A, { name: "Maia", pitch: "A city of a million co-founders.", tile: landTiles[0], hearts: hearts(10_000) })).rejects.toThrow(/25,000/);
+    await expect(foundCity(A, { name: "Maia", pitch: "A city of a million co-founders.", hearts: hearts(10_000) })).rejects.toThrow(/25,000/);
     expect(await cityOf(A)).toBeNull();
   });
 
   test("founding Maia: 25,000 personal hearts become 25,000 maiaHEARTS, and the founder receives maiaMINDS", async () => {
     const own = identityOf(A);
     const before = await balanceOf(own, own);
-    const city = await foundCity(A, { name: "Maia", pitch: "A city of a million co-founders.", tile: landTiles[0], hearts: hearts(25_000) });
+    const city = await foundCity(A, { name: "Maia", pitch: "A city of a million co-founders.", hearts: hearts(25_000) });
     const after = await balanceOf(own, own);
     const treasury = await balanceOf(maiaHEARTS, cityIdentity("maia"));
 
@@ -89,7 +91,7 @@ describe("a city unlocks a card, and citizenship is for good", () => {
   });
 
   test("a citizen cannot found a second city", async () => {
-    await expect(foundCity(A, { name: "Porto", pitch: "Another one.", tile: landTiles[1], hearts: hearts(25_000) })).rejects.toThrow(/already a citizen/);
+    await expect(foundCity(A, { name: "Porto", pitch: "Another one.", hearts: hearts(25_000) })).rejects.toThrow(/already a citizen/);
   });
 
   test("joining takes the citizenship too, and then you live there", async () => {
@@ -103,7 +105,7 @@ describe("a city unlocks a card, and citizenship is for good", () => {
 
   test("once a citizen, never another city's", async () => {
     await claim(C);
-    await foundCity(C, { name: "Porto", pitch: "A harbour city.", tile: landTiles[1], hearts: hearts(25_000) });
+    await foundCity(C, { name: "Porto", pitch: "A harbour city.", hearts: hearts(25_000) });
     await expect(invest(B, "porto", hearts(25_000))).rejects.toThrow(/citizen of Maia/);
     await expect(invest(C, "maia", hearts(25_000))).rejects.toThrow(/citizen of Porto/);
   });
@@ -118,18 +120,16 @@ describe("the second step: a home in a settlement, founded or joined by invitati
   test("a player without a city cannot found a settlement", async () => {
     await pg.query("INSERT INTO founders (id, name) VALUES ('founder-d', 'Lea')");
     await claim("founder-d");
-    await expect(foundSettlement("founder-d", { name: "Riverside", pitch: "Domes by the river.", cell: cellsOf(landTiles[0])[0], hearts: hearts(25_000) })).rejects.toThrow(/citizen of one first/);
+    await expect(foundSettlement("founder-d", { name: "Riverside", pitch: "Domes by the river.", hearts: hearts(25_000) })).rejects.toThrow(/citizen of one first/);
   });
 
-  test("a settlement stands on land of the city's island, and takes at least 25,000 hearts", async () => {
-    const water = [...islandCells(islandSeed(landTiles[0])).values()].find((t) => !buildable(t))!;
-    await expect(foundSettlement(A, { name: "Riverside", pitch: "Domes by the river.", cell: cellKey(water), hearts: hearts(25_000) })).rejects.toThrow(/on land/);
-    await expect(foundSettlement(A, { name: "Riverside", pitch: "Domes by the river.", cell: cellsOf(landTiles[0])[0], hearts: hearts(1_000) })).rejects.toThrow(/25,000/);
+  test("a settlement takes at least 25,000 hearts", async () => {
+    await expect(foundSettlement(A, { name: "Riverside", pitch: "Domes by the river.", hearts: hearts(1_000) })).rejects.toThrow(/25,000/);
   });
 
   test("founding Riverside: 25,000 hearts become maiaHEARTS in its treasury, riversideMINDS to the founder, and a home", async () => {
     await topUp(A);
-    const s = await foundSettlement(A, { name: "Riverside", pitch: "Domes by the river.", cell: cellsOf(landTiles[0])[0], hearts: hearts(25_000) });
+    const s = await foundSettlement(A, { name: "Riverside", pitch: "Domes by the river.", hearts: hearts(25_000) });
     expect(s.kind).toBe("settlement");
     expect(s.city).toEqual({ slug: "maia", name: "Maia" });
     expect(s.heartsToken).toBe("maiaHEARTS");
@@ -138,11 +138,11 @@ describe("the second step: a home in a settlement, founded or joined by invitati
     expect(s.level).toBe(1);
     expect(spendable(await balanceOf(maiaHEARTS, coopIdentity("riverside")))).toBe(hearts(25_000));
     expect((await settlementOf(A))?.slug).toBe("riverside");
-    await expect(foundSettlement(A, { name: "Hilltop", pitch: "Another.", cell: cellsOf(landTiles[0])[1], hearts: hearts(25_000) })).rejects.toThrow(/already live/);
+    await expect(foundSettlement(A, { name: "Hilltop", pitch: "Another.", hearts: hearts(25_000) })).rejects.toThrow(/already live/);
   });
 
-  test("a cell holds one settlement", async () => {
-    await expect(foundSettlement(B, { name: "Hilltop", pitch: "Domes on the hill.", cell: cellsOf(landTiles[0])[0], hearts: hearts(25_000) })).rejects.toThrow(/taken/);
+  test("a name holds one settlement", async () => {
+    await expect(foundSettlement(C, { name: "Riverside", pitch: "Domes by the sea.", hearts: hearts(25_000) })).rejects.toThrow(/taken/);
   });
 
   test("joining is by invitation only", async () => {
@@ -194,12 +194,13 @@ describe("the second step: a home in a settlement, founded or joined by invitati
     expect(near(spendable(await totalSupply(maiaHEARTS)), hearts(125_200))).toBe(true);
   });
 
-  test("the planet lists cities with their island and settlements", async () => {
+  test("cities and settlements need no map: founded and joined, they stand in no world yet", async () => {
     const cities = await listCities();
     const maia = cities.find((c) => c.slug === "maia")!;
     expect(maia.citizens).toBe(3);
-    expect(maia.island).toBe(islandSeed(landTiles[0]));
-    expect(maia.settlements.map((c) => [c.slug, c.settlers, c.cell])).toEqual([["riverside", 2, cellsOf(landTiles[0])[0]]]);
+    expect(maia.places).toEqual({});
+    expect(maia.island).toBeNull();
+    expect(maia.settlements.map((c) => [c.slug, c.settlers, c.places])).toEqual([["riverside", 2, {}]]);
   });
 
   test("a settlement levels up on the Fibonacci numbers, up to 233", () => {
@@ -223,5 +224,55 @@ describe("the second step: a home in a settlement, founded or joined by invitati
     expect(titles).toContain("Invested in Riverside — became maiaHEARTS");
     expect(titles).toContain("Received maiaMINDS for your investment");
     expect(view.holdings.map((h) => h.token)).toEqual(expect.arrayContaining(["maiaMINDS", "riversideMINDS"]));
+  });
+});
+
+describe("a place in a world: Sandbox 2 draws the communities, it does not own them", () => {
+  const world = "sandbox-2";
+
+  test("a settlement follows its city: it cannot stand anywhere before the city does", async () => {
+    await expect(place(A, "riverside", { world, spot: cellsOf(landTiles[0])[0] })).rejects.toThrow(/places the city first/);
+  });
+
+  test("only the founder places a city, in a world there is, on a card of land", async () => {
+    await expect(place(B, "maia", { world, spot: landTiles[0] })).rejects.toThrow(/Only Maia's founder/);
+    await expect(place(A, "maia", { world: "sandbox-9", spot: landTiles[0] })).rejects.toThrow(/No world/);
+    await expect(place(A, "maia", { world, spot: waterTile })).rejects.toThrow(/card of land/);
+    await expect(place(A, "maia", { world, spot: "not a card" })).rejects.toThrow(/card of land/);
+  });
+
+  test("placing Maia on a card opens its island there — once, for good", async () => {
+    const maia = await place(A, "maia", { world, spot: landTiles[0] });
+    expect(maia.places).toEqual({ [world]: String(landTiles[0]) });
+    expect(maia.island).toBe(islandSeed(landTiles[0]));
+    expect(maia.citizens).toBe(3);
+    await expect(place(A, "maia", { world, spot: landTiles[2] })).rejects.toThrow(/for good/);
+  });
+
+  test("a card holds one city", async () => {
+    await expect(place(C, "porto", { world, spot: landTiles[0] })).rejects.toThrow(/already holds a city/);
+    expect((await place(C, "porto", { world, spot: landTiles[1] })).places).toEqual({ [world]: String(landTiles[1]) });
+  });
+
+  test("a settlement stands on land of its city's island, placed by its founder", async () => {
+    const water = [...islandCells(islandSeed(landTiles[0])).values()].find((t) => !buildable(t))!;
+    await expect(place(A, "riverside", { world, spot: cellKey(water) })).rejects.toThrow(/not on water/);
+    await expect(place(B, "riverside", { world, spot: cellsOf(landTiles[0])[0] })).rejects.toThrow(/Only Riverside's founder/);
+    const s = await place(A, "riverside", { world, spot: cellsOf(landTiles[0])[0] });
+    expect(s.places).toEqual({ [world]: cellsOf(landTiles[0])[0] });
+    expect(s.island).toBe(islandSeed(landTiles[0]));
+    expect(s.settlers).toBe(2);
+  });
+
+  test("a cell holds one settlement", async () => {
+    await foundSettlement("founder-d", { name: "Hilltop", pitch: "Domes on the hill.", hearts: hearts(25_000) });
+    await expect(place("founder-d", "hilltop", { world, spot: cellsOf(landTiles[0])[0] })).rejects.toThrow(/taken/);
+    expect((await place("founder-d", "hilltop", { world, spot: cellsOf(landTiles[0])[1] })).places).toEqual({ [world]: cellsOf(landTiles[0])[1] });
+  });
+
+  test("the planet lists placed cities with their island and settlements", async () => {
+    const maia = (await listCities()).find((c) => c.slug === "maia")!;
+    expect(maia.island).toBe(islandSeed(landTiles[0]));
+    expect(maia.settlements.map((c) => [c.slug, c.places[world]]).sort()).toEqual([["hilltop", cellsOf(landTiles[0])[1]], ["riverside", cellsOf(landTiles[0])[0]]]);
   });
 });

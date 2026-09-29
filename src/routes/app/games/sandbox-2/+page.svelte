@@ -6,10 +6,11 @@
 	of cells (Sandbox 1's world, copied in), where settlements — dome clusters —
 	stand, each at the level its headcount has reached.
 
-	Joining a city takes two steps. First citizenship: at least 25,000 of your
-	own hearts into the city. Then a home: found a settlement on a free cell, or
-	move into one with an invite link from a settler — 25,000 hearts either way.
-	Every heart becomes the city's HEARTS; every investor receives MINDS.
+	The communities are not this sandbox's: cities and settlements are founded
+	and joined in the Coops app, with no map, and outlive every sandbox. Here a
+	founder gives theirs a place — their city a free card of land, their
+	settlement a free cell of the city's island — and until then it stands
+	nowhere on this planet. Citizens may still back their city from its card.
 -->
 <script lang="ts">
 	import { base } from '$app/paths';
@@ -30,8 +31,6 @@
 	import type { WorldHandle } from '$lib/sandbox-2/world/world';
 
 	const CITIZENSHIP = BigInt(coopPolicy.city.citizenshipMinHearts) * ONE;
-	const SETTLING = BigInt(coopPolicy.settlement.joinMinHearts) * ONE;
-	const INVITE_KEY = 'sandbox2.invite';
 	const TOUR_KEY = 'sandbox2.tour';
 
 	let stage: HTMLDivElement;
@@ -51,7 +50,6 @@
 		| { kind: 'place'; detail: api.CoopDetail }
 		| { kind: 'land'; tile: number }
 		| { kind: 'cell'; cell: string }
-		| { kind: 'invite'; invite: api.Invite }
 		| null;
 	let selected = $state<Selection>(null);
 	let sheet = $state<'cities' | 'ledger' | null>(null);
@@ -59,9 +57,6 @@
 	let toast = $state('');
 
 	let heartsText = $state('');
-	let foundName = $state('');
-	let foundPitch = $state('');
-	let foundHearts = $state('');
 	let busy = $state(false);
 	let error = $state('');
 	let inviteLink = $state('');
@@ -98,7 +93,20 @@
 	/* The income ticks on the client with the same function the server mints with. */
 	const claimable = $derived(me ? accrued(new Date(me.lastClaimAt), now) + (me.startingPending ? STARTING : 0n) : 0n);
 	const clock = $derived(gameClock(now).label);
-	const inside = $derived(cityData?.cities.find((c) => c.slug === insideSlug) ?? null);
+	/** The cities that stand on this planet; the others are in the Coops app, placed nowhere yet. */
+	const placed = $derived((cityData?.cities ?? []).filter((c) => api.tileOf(c) !== null));
+	const inside = $derived(placed.find((c) => c.slug === insideSlug) ?? null);
+	/** The settlements standing on the open island. */
+	const standing = $derived((inside?.settlements ?? []).filter((s) => api.cellOf(s) !== null));
+	/** What the player founded and has yet to place here: their city first, then their settlement on its island. */
+	const myCity = $derived(cityData?.cities.find((c) => c.slug === me?.city?.slug) ?? null);
+	const cityToPlace = $derived(me?.city?.founded && myCity && api.tileOf(myCity) === null ? myCity : null);
+	const settlementToPlace = $derived(
+		me?.settlement?.founded && myCity && api.tileOf(myCity) !== null && !myCity.settlements.some((s) => s.slug === me?.settlement?.slug && api.cellOf(s) !== null)
+			? me.settlement
+			: null
+	);
+	const COOPS = `${base}/app/coops/`;
 	const place = $derived(selected?.kind === 'place' ? selected.detail : null);
 	const homeCity = $derived(me?.city?.slug ?? null);
 	const homeSettlement = $derived(me?.settlement?.slug ?? null);
@@ -131,34 +139,36 @@
 			return {
 				target: 'home',
 				title: 'You are a citizen',
-				text: `Welcome to ${welcomed}. Step two is a home: choose free land on the island to found a settlement, or open an invite link from a settler.`,
+				text: `Welcome to ${welcomed}. Step two is a home: found a settlement in the Coops app, or open an invite link from a settler.`,
 				final: true
 			};
+		if (cityToPlace)
+			return { target: 'cities', title: `Place ${cityToPlace.name}`, text: `${cityToPlace.name} stands nowhere on this planet yet. Click any free card of land to give it its place — once, for good.` };
 		if (me?.city) return null;
 		if (!me)
 			return { target: 'join', title: 'Welcome to the planet', text: 'Every tower is a city. Look around as long as you like — to live in one, sign up with a passkey.' };
 		if (me.startingPending)
 			return { target: 'mint', title: 'Your first hearts', text: `${format(STARTING, 0)} hearts are waiting for you, owed to nobody. Press Mint to make them yours.` };
 		if (selected?.kind === 'land')
-			return { target: 'found-city', title: 'Found a city', text: `Name it, say what it is for, and put in at least ${format(CITIZENSHIP, 0)} of your hearts. You become its first citizen — for good.` };
+			return { target: 'found-city', title: 'Found a city', text: `Cities are founded in the Coops app: a name, one line on what it is for, and at least ${format(CITIZENSHIP, 0)} of your hearts. Then come back and place it on a card.` };
 		if (place?.kind === 'city' && joining)
 			return { target: 'join-form', title: 'Step one: citizenship', text: `Invest at least ${format(CITIZENSHIP, 0)} of your hearts. They become ${place.heartsToken}, you receive ${place.mindToken}, and ${place.name} is your city — for good.` };
 		if (sheet === 'cities' && cityData?.cities.length)
 			return { target: 'cities-list', title: 'Choose your city', text: 'Pick one to dive into its island. You can only ever be a citizen of one, so look around first.' };
 		if (cityData?.cities.length)
-			return { target: 'cities', title: 'Find a city', text: 'Open the list of cities, or click a tower on the planet. Or found your own on any empty card of land.' };
-		return { target: 'cities', title: 'The planet is empty', text: 'No city stands yet. Click any card of land to found the first one.' };
+			return { target: 'cities', title: 'Find a city', text: 'Open the list of cities, or click a tower on the planet. Or found your own in the Coops app, and place it here.' };
+		return { target: 'cities', title: 'The planet is empty', text: 'No city stands here yet. Found one in the Coops app, then place it on any card of land.' };
 	});
 
-	const settlementCount = $derived((cityData?.cities ?? []).reduce((n, c) => n + c.settlements.length, 0));
+	const settlementCount = $derived(placed.reduce((n, c) => n + c.settlements.filter((k) => api.cellOf(k) !== null).length, 0));
 
 	function markers() {
-		return (cityData?.cities ?? []).map((c) => ({
+		return (cityData?.cities ?? []).filter((c) => api.tileOf(c) !== null).map((c) => ({
 			slug: c.slug,
-			tile: c.tile,
+			tile: api.tileOf(c)!,
 			citizens: c.citizens,
 			milestone: c.milestone,
-			coops: c.settlements.slice(0, 18).map((k, i) => ({ slug: k.slug, slot: i, milestone: k.milestone }))
+			coops: c.settlements.filter((k) => api.cellOf(k) !== null).slice(0, 18).map((k, i) => ({ slug: k.slug, slot: i, milestone: k.milestone }))
 		}));
 	}
 
@@ -199,11 +209,11 @@
 
 	/** Dive from the planet into a city's card: it opens as the city's island. */
 	async function enter(citySlug: string, then?: string) {
-		const city = cityData?.cities.find((c) => c.slug === citySlug);
-		if (!city) return;
+		const city = placed.find((c) => c.slug === citySlug);
+		if (!city) return void (await show(then ?? citySlug).catch((e) => flash((e as Error).message)));
 		sheet = null;
 		if (insideSlug !== citySlug) {
-			world?.focus(city.tile, { x: 0, y: 0 }, 0.4);
+			world?.focus(api.tileOf(city)!, { x: 0, y: 0 }, 0.4);
 			diving = true;
 			await new Promise((r) => setTimeout(r, 1100));
 			insideSlug = citySlug;
@@ -219,10 +229,10 @@
 		insideSlug = null;
 		selected = null;
 		world?.setPaused(false);
-		if (city) world?.focus(city.tile, visibleMiddle(), 0.62);
+		if (city) world?.focus(api.tileOf(city)!, visibleMiddle(), 0.62);
 	}
 
-	/** On the planet: a city is entered, an empty card offers a founding, the sea is the sea. */
+	/** On the planet: a city is entered, an empty card is where a founder places their city, the sea is the sea. */
 	async function onTile(pick: { tile: number; biome: 'land' | 'water'; coop: string | null }) {
 		reset();
 		if (pick.coop) {
@@ -230,32 +240,30 @@
 			if (city) await enter(city.slug, pick.coop === city.slug ? undefined : pick.coop);
 		} else if (pick.biome === 'land') {
 			selected = { kind: 'land', tile: pick.tile };
-			foundHearts = coopPolicy.city.citizenshipMinHearts;
 		} else {
 			selected = null;
 			flash('Open sea. Cities stand on land.');
 		}
 	}
 
-	/** On an island: a settlement opens, free land offers a home, water is water. */
+	/** On an island: a settlement opens, free land is where a founder places their settlement, water is water. */
 	async function onCell(tile: HexTile | null) {
 		reset();
 		if (!tile || !inside) return void (selected = null);
 		const cell = cellKey(tile);
-		const there = inside.settlements.find((s) => s.cell === cell);
+		const there = standing.find((s) => api.cellOf(s) === cell);
 		if (there) return show(there.slug).catch((e) => flash((e as Error).message));
 		if (!buildable(tile)) {
 			selected = null;
 			return flash('Water. Settlements stand on land.');
 		}
 		selected = { kind: 'cell', cell };
-		foundHearts = coopPolicy.settlement.joinMinHearts;
 	}
 
 	/** Chosen from a list: on the island, bring its cell into view. */
 	async function openSettlement(slug: string) {
-		const s = inside?.settlements.find((k) => k.slug === slug);
-		if (s?.cell) islandView?.frame(s.cell);
+		const cell = api.cellOf(inside?.settlements.find((k) => k.slug === slug) ?? { places: {} });
+		if (cell) islandView?.frame(cell);
 		await show(slug);
 	}
 
@@ -292,7 +300,7 @@
 			if (becoming && !tourOff) welcomed = detail.name;
 			flash(
 				becoming
-					? `You are a citizen of ${detail.name}. Step two: a home — found a settlement on free land, or use an invite link.`
+					? `You are a citizen of ${detail.name}. Step two: a home — found a settlement in the Coops app, or use an invite link.`
 					: `${heartsText.trim()} hearts became ${detail.heartsToken} in ${detail.name}'s treasury.`
 			);
 			heartsText = '';
@@ -300,27 +308,22 @@
 			selected = { kind: 'place', detail };
 		});
 
-	const doFoundCity = () =>
+	/** Give the player's own city its card on this planet — once, for good. */
+	const doPlaceCity = () =>
 		act(async () => {
-			if (selected?.kind !== 'land') return;
-			await mintPending();
-			const detail = await api.foundCity({ name: foundName.trim(), pitch: foundPitch.trim(), tile: selected.tile, hearts: foundHearts.trim() });
-			flash(`${detail.name} is founded, and you are its first citizen. Step two: found your settlement on its island.`);
-			if (!tourOff) welcomed = detail.name;
-			foundName = '';
-			foundPitch = '';
+			if (selected?.kind !== 'land' || !cityToPlace) return;
+			const detail = await api.place(cityToPlace.slug, api.SANDBOX_2, selected.tile);
+			flash(`${detail.name} stands here now. Its card opens as its island.`);
 			await refresh();
 			await enter(detail.slug);
 		});
 
-	const doFoundSettlement = () =>
+	/** Give the player's own settlement its cell on their city's island — once, for good. */
+	const doPlaceSettlement = () =>
 		act(async () => {
-			if (selected?.kind !== 'cell') return;
-			await mintPending();
-			const detail = await api.foundSettlement({ name: foundName.trim(), pitch: foundPitch.trim(), cell: selected.cell, hearts: foundHearts.trim() });
-			flash(`${detail.name} is founded — your home, for good. Invite people with a link.`);
-			foundName = '';
-			foundPitch = '';
+			if (selected?.kind !== 'cell' || !settlementToPlace) return;
+			const detail = await api.place(settlementToPlace.slug, api.SANDBOX_2, selected.cell);
+			flash(`${detail.name} stands here now.`);
 			await refresh();
 			selected = { kind: 'place', detail };
 		});
@@ -329,39 +332,14 @@
 		act(async () => {
 			if (!place) return;
 			const inv = await api.createInvite(place.slug);
-			inviteLink = `${location.origin}${base}/app/games/sandbox-2/?invite=${inv.token}`;
+			// an invite is accepted in the Coops app, where joining happens — no map needed
+			inviteLink = `${location.origin}${COOPS}?invite=${inv.token}`;
 		});
 
 	const copyInvite = async () => {
 		await navigator.clipboard?.writeText(inviteLink).catch(() => {});
 		flash('Invite link copied. It admits one person, for a week.');
 	};
-
-	/** Step one of an invite, for someone who is not yet a citizen: the city. */
-	const doInviteCity = () =>
-		act(async () => {
-			if (selected?.kind !== 'invite') return;
-			await mintPending();
-			await api.invest(selected.invite.city.slug, coopPolicy.city.citizenshipMinHearts);
-			if (!tourOff) welcomed = selected.invite.city.name;
-			await refresh();
-		});
-
-	/** Step two: move into the settlement; the link is spent. */
-	const doInviteSettle = () =>
-		act(async () => {
-			if (selected?.kind !== 'invite') return;
-			const inv = selected.invite;
-			await mintPending();
-			await api.acceptInvite(inv.token, coopPolicy.settlement.joinMinHearts);
-			try {
-				sessionStorage.removeItem(INVITE_KEY);
-			} catch {}
-			history.replaceState(null, '', location.pathname);
-			flash(`Welcome home to ${inv.settlement.name}.`);
-			await refresh();
-			await enter(inv.city.slug, inv.settlement.slug);
-		});
 
 	/** One panel on the right at a time: a list, or the chosen card. */
 	function openSheet(which: 'cities' | 'ledger') {
@@ -378,7 +356,7 @@
 	// On the planet the chosen card wears a ring for as long as its sheet is open.
 	$effect(() => {
 		if (insideSlug) return;
-		world?.setChosen(selected?.kind === 'land' ? selected.tile : place ? place.tile : -1);
+		world?.setChosen(selected?.kind === 'land' ? selected.tile : place ? (api.tileOf(place) ?? -1) : -1);
 	});
 
 	let tick: ReturnType<typeof setInterval>;
@@ -393,12 +371,9 @@
 		}
 		poll = setInterval(() => void api.city().then((c) => ((cityData = c), world?.setCities(markers()))).catch(() => {}), 30_000);
 
-		// An invite link: keep it through a sign-up, and open it once the planet is up.
-		let token = new URLSearchParams(location.search).get('invite');
-		try {
-			if (token) sessionStorage.setItem(INVITE_KEY, token);
-			else token = sessionStorage.getItem(INVITE_KEY);
-		} catch {}
+		// Invite links from before joining moved to the Coops app are accepted there.
+		const token = new URLSearchParams(location.search).get('invite');
+		if (token) return void location.replace(`${COOPS}?invite=${encodeURIComponent(token)}`);
 
 		const url = (f: string) => `${base}/sandbox-2/map/${f}`;
 		const quiet = <T,>(p: Promise<T>) => p.catch(() => undefined);
@@ -413,14 +388,6 @@
 			]);
 			world = mountWorld(stage, { cities: markers(), onTile: (p) => void onTile(p), isLand, kindOf, isMountain, depthOf });
 			loading = false;
-			if (token) {
-				const inv = await api.invite(token).catch((e) => (flash((e as Error).message), null));
-				if (inv) {
-					const city = cityData?.cities.find((c) => c.slug === inv.city.slug);
-					if (city) world.focus(city.tile, visibleMiddle(), 0.62);
-					selected = { kind: 'invite', invite: inv };
-				}
-			}
 		})();
 	});
 
@@ -433,7 +400,7 @@
 
 <svelte:head>
 	<title>avenCITY Sandbox 2 · maiaCITY</title>
-	<meta name="description" content="The planet and its cities: found or join a city, make your home in one of its settlements, and watch your hearts become the city's own currency." />
+	<meta name="description" content="The planet and its cities: give the city you founded its card of land, your settlement its cell on the island, and walk through the domes." />
 </svelte:head>
 
 <div class="game">
@@ -442,9 +409,9 @@
 	{#if inside}
 		<Island
 			bind:this={islandView}
-			seed={inside.island}
-			settlements={inside.settlements.map((s) => ({ cell: s.cell ?? '', level: s.level }))}
-			focus={inside.settlements.find((s) => s.slug === homeSettlement)?.cell ?? inside.settlements[0]?.cell ?? undefined}
+			seed={inside.island!}
+			settlements={standing.map((s) => ({ cell: api.cellOf(s)!, level: s.level }))}
+			focus={api.cellOf(standing.find((s) => s.slug === homeSettlement) ?? standing[0] ?? { places: {} }) ?? undefined}
 			onpick={(t) => void onCell(t)}
 		/>
 	{/if}
@@ -464,7 +431,7 @@
 			<button class="pill back" onclick={leave} aria-label="Back to the planet">←</button>
 			<button class="pill brand" onclick={() => show(inside!.slug)}>
 				<strong>{inside.name}</strong>
-				<span class="dim">{inside.citizens} {inside.citizens === 1 ? 'citizen' : 'citizens'} · {inside.settlements.length} {inside.settlements.length === 1 ? 'settlement' : 'settlements'} · {clock}</span>
+				<span class="dim">{inside.citizens} {inside.citizens === 1 ? 'citizen' : 'citizens'} · {standing.length} {standing.length === 1 ? 'settlement' : 'settlements'} · {clock}</span>
 			</button>
 		{:else}
 			<a class="pill back" href="{base}/app/" aria-label="Back to the dashboard">←</a>
@@ -479,7 +446,7 @@
 	<div class="corner tr">
 		{#if !inside}
 			<button class="pill" data-tour="cities" onclick={() => openSheet('cities')}>
-				Cities · {cityData?.cities.length ?? 0}
+				Cities · {placed.length}
 			</button>
 			{#if cityData}
 				<span class="pill dim">{settlementCount} {settlementCount === 1 ? 'settlement' : 'settlements'} · {cityData.players} {cityData.players === 1 ? 'player' : 'players'} · {cityData.buildable.toLocaleString('en-US')} land cards</span>
@@ -529,33 +496,25 @@
 				<h2>No city stands here yet.</h2>
 				{#if !me}
 					<p class="lede">Anyone can look around. To found a city or join one, <a href="{base}/join/">sign up</a> — your first mint carries {format(STARTING, 0)} hearts.</p>
+				{:else if cityToPlace}
+					<p class="lede">
+						{cityToPlace.name} stands nowhere on this planet yet. Place it here and this card opens as its island, where its
+						settlements find their cells. A city stands on one card, for good — its money and its people are the same wherever it stands.
+					</p>
+					<button class="primary" data-tour="found-city" onclick={doPlaceCity} disabled={busy}>{busy ? 'Placing…' : `Place ${cityToPlace.name} here`}</button>
 				{:else if me.city}
 					<p class="lede">You are a citizen of {me.city.name}, and that is for good: every player founds or joins one city.</p>
-					<button class="secondary" onclick={() => enter(me!.city!.slug)}>Go to {me.city.name}</button>
-				{:else if can('city:create')}
+					{#if myCity && api.tileOf(myCity) !== null}
+						<button class="secondary" onclick={() => enter(me!.city!.slug)}>Go to {me.city.name}</button>
+					{:else}
+						<p class="hint">{me.city.name} stands nowhere on this planet yet — its founder chooses its card.</p>
+					{/if}
+				{:else}
 					<p class="lede">
-						Found a city here: a name, one line on what it is for, and at least {format(CITIZENSHIP, 0)} of your own hearts.
-						They become its first HEARTS, named after it, and you become its first citizen — for good. The card opens as the city's island.
+						Cities are founded in the Coops app, with no map: a name, one line on what it is for, and at least {format(CITIZENSHIP, 0)} of your own hearts.
+						Then come back and give it a card — this one, if it is still free.
 					</p>
-					<form data-tour="found-city" onsubmit={(e) => { e.preventDefault(); doFoundCity(); }}>
-						<label for="fname">City name</label>
-						<input id="fname" bind:value={foundName} maxlength="24" placeholder="e.g. Maia" />
-						{#if foundName.trim().length >= 3}
-							<p class="hint">Its money: <strong>{foundName.trim().toLowerCase()}HEARTS</strong> and <strong>{foundName.trim().toLowerCase()}MINDS</strong>.</p>
-						{/if}
-						<label for="fpitch">What it is for</label>
-						<textarea id="fpitch" bind:value={foundPitch} maxlength="280" rows="3" placeholder="e.g. A city of a million co-founders."></textarea>
-						<label for="fhearts">Your hearts</label>
-						<input id="fhearts" bind:value={foundHearts} inputmode="decimal" placeholder="e.g. 25000" />
-						<button class="primary" disabled={busy || foundName.trim().length < 3 || !foundPitch.trim()}>
-							{busy ? 'Founding…' : `Found this city — ${foundHearts || 0}♥`}
-						</button>
-						{#if foundName.trim().length < 3}
-							<p class="hint">Give it a name of at least three letters.</p>
-						{:else if !foundPitch.trim()}
-							<p class="hint">Add one line on what it is for.</p>
-						{/if}
-					</form>
+					<a class="primary" data-tour="found-city" href="{COOPS}?found=city">Found a city</a>
 				{/if}
 			{:else if selected.kind === 'cell' && inside}
 				<!-- a free cell of a city's island -->
@@ -565,66 +524,25 @@
 					<p class="lede">To make a home here, <a href="{base}/join/">sign up</a> first.</p>
 				{:else if homeCity !== inside.slug}
 					{#if homeCity}
-						<p class="lede">You are a citizen of {me.city?.name}, for good. Your home is on its island.</p>
+						<p class="lede">You are a citizen of {me.city?.name}, for good. Your home is in that city.</p>
 					{:else}
-						<p class="lede">A home in {inside.name} starts with citizenship: at least {format(CITIZENSHIP, 0)} of your own hearts into the city. Then this land can be yours.</p>
+						<p class="lede">A home in {inside.name} starts with citizenship: at least {format(CITIZENSHIP, 0)} of your own hearts into the city.</p>
 						<button class="secondary" onclick={() => show(inside!.slug)}>Become a citizen of {inside.name}</button>
 					{/if}
+				{:else if settlementToPlace}
+					<p class="lede">
+						{settlementToPlace.name} stands nowhere on {inside.name}'s island yet. Place it here — a camp of tents that grows into domes
+						with every settler. Once, for good.
+					</p>
+					<button class="primary" onclick={doPlaceSettlement} disabled={busy}>{busy ? 'Placing…' : `Place ${settlementToPlace.name} here`}</button>
 				{:else if homeSettlement}
 					<p class="lede">You live in {me.settlement?.name}, and that is for good.</p>
 				{:else}
 					<p class="lede">
-						Step two: found your settlement here — a dome cluster that starts as a camp of tents and grows with every settler.
-						At least {format(SETTLING, 0)} of your hearts become its first {inside.slug}HEARTS. Others join only with an invite link from a settler.
+						Step two is a home. Settlements are founded in the Coops app — or joined there with an invite link from a settler.
+						Found one, and come back to place it on free land like this.
 					</p>
-					<form onsubmit={(e) => { e.preventDefault(); doFoundSettlement(); }}>
-						<label for="sname">Settlement name</label>
-						<input id="sname" bind:value={foundName} maxlength="24" placeholder="e.g. Riverside" />
-						<label for="spitch">What it is for</label>
-						<textarea id="spitch" bind:value={foundPitch} maxlength="280" rows="2" placeholder="e.g. Domes by the river, a food forest all round."></textarea>
-						<label for="shearts">Your hearts</label>
-						<input id="shearts" bind:value={foundHearts} inputmode="decimal" placeholder="e.g. 25000" />
-						<button class="primary" disabled={busy || foundName.trim().length < 3 || !foundPitch.trim()}>
-							{busy ? 'Founding…' : `Found this settlement — ${foundHearts || 0}♥`}
-						</button>
-						{#if foundName.trim().length < 3}
-							<p class="hint">Give it a name of at least three letters.</p>
-						{:else if !foundPitch.trim()}
-							<p class="hint">Add one line on what it is for.</p>
-						{/if}
-					</form>
-				{/if}
-			{:else if selected.kind === 'invite'}
-				{@const inv = selected.invite}
-				<p class="eyebrow">An invitation · {inv.city.name}</p>
-				<h2>{inv.invitedBy} invites you to {inv.settlement.name}.</h2>
-				{#if !inv.usable}
-					<p class="lede">{inv.reason}</p>
-				{:else if !me}
-					<p class="lede">
-						{inv.settlement.name} is a settlement in {inv.city.name}. To move in, <a href="{base}/join/">sign up</a> — your first mint carries
-						{format(STARTING, 0)} hearts — then come back to this page.
-					</p>
-				{:else if homeCity && homeCity !== inv.city.slug}
-					<p class="lede">You are a citizen of {me.city?.name}, for good. {inv.settlement.name} is in {inv.city.name}.</p>
-				{:else if homeSettlement}
-					<p class="lede">You already live in {me.settlement?.name}, and that is for good.</p>
-				{:else}
-					<p class="lede">Moving in takes two steps, and both are for good.</p>
-					<ol class="steps">
-						<li class:done={homeCity === inv.city.slug}>
-							<strong>Citizen of {inv.city.name}</strong> — {format(CITIZENSHIP, 0)} of your hearts become {inv.city.slug}HEARTS.
-							{#if homeCity !== inv.city.slug}
-								<button class="primary" onclick={doInviteCity} disabled={busy}>{busy ? 'Joining…' : `Become a citizen — ${format(CITIZENSHIP, 0)}♥`}</button>
-							{/if}
-						</li>
-						<li>
-							<strong>Home in {inv.settlement.name}</strong> — {format(SETTLING, 0)} more of your hearts, and the link is spent.
-							{#if homeCity === inv.city.slug}
-								<button class="primary" onclick={doInviteSettle} disabled={busy}>{busy ? 'Moving in…' : `Move in — ${format(SETTLING, 0)}♥`}</button>
-							{/if}
-						</li>
-					</ol>
+					<a class="primary" href="{COOPS}?found=settlement">Found a settlement</a>
 				{/if}
 			{:else if place}
 				{@const c = place}
@@ -678,7 +596,13 @@
 					{/if}
 
 					{#if c.kind === 'city' && !insideSlug}
-						<button class="secondary" onclick={() => enter(c.slug)}>Enter {c.name}'s island</button>
+						{#if api.tileOf(c) !== null}
+							<button class="secondary" onclick={() => enter(c.slug)}>Enter {c.name}'s island</button>
+						{:else}
+							<p class="hint">{c.name} stands nowhere on this planet yet{#if cityToPlace?.slug === c.slug} — click a free card of land to place it{/if}.</p>
+						{/if}
+					{:else if c.kind === 'settlement' && api.cellOf(c) === null}
+						<p class="hint">{c.name} stands nowhere on {c.city.name}'s island yet{#if settlementToPlace?.slug === c.slug} — click a free cell there to place it{/if}.</p>
 					{/if}
 
 					{#if c.soldOut}
@@ -706,7 +630,7 @@
 							{/if}
 						</form>
 						{#if c.kind === 'city' && homeCity === c.slug && !homeSettlement}
-							<p class="hint">Step two: a home. Choose free land on the island to found a settlement, or open an invite link from a settler.</p>
+							<p class="hint">Step two: a home. <a href="{COOPS}?found=settlement">Found a settlement</a> in the Coops app, or open an invite link from a settler.</p>
 						{/if}
 						{#if c.kind === 'settlement'}
 							<h3>Invite someone</h3>
@@ -725,7 +649,7 @@
 					{:else if homeSettlement}
 						<p class="lede small">You live in {me.settlement?.name}. You back your own settlement.</p>
 					{:else}
-						<p class="lede small">{c.name} grows by invitation. Ask one of its settlers for an invite link — or found your own settlement on free land.</p>
+						<p class="lede small">{c.name} grows by invitation. Ask one of its settlers for an invite link — or <a href="{COOPS}?found=settlement">found your own settlement</a>.</p>
 					{/if}
 				{:else if tab === 'settlements'}
 					{#if c.settlements.length}
@@ -740,7 +664,7 @@
 							{/each}
 						</ul>
 					{:else}
-						<p class="lede small">No settlements in {c.name} yet. The first citizen to choose free land on the island founds one.</p>
+						<p class="lede small">No settlements in {c.name} yet. Its citizens found them in the Coops app.</p>
 					{/if}
 				{:else}
 					<div class="schedule">
@@ -781,12 +705,12 @@
 
 			{#if sheet === 'cities'}
 				<p class="eyebrow">The cities</p>
-				<h2>{cityData?.cities.length ? 'Where people live' : 'No cities yet'}</h2>
-				{#if !cityData?.cities.length}
-					<p class="lede">The planet is empty. Whoever founds the first city can choose from all {cityData?.buildable.toLocaleString('en-US')} cards of land.</p>
+				<h2>{placed.length ? 'Where people live' : 'No cities here yet'}</h2>
+				{#if !placed.length}
+					<p class="lede">No city stands on this planet yet. Founders place theirs on any of its {cityData?.buildable.toLocaleString('en-US')} cards of land.</p>
 				{/if}
 				<ul class="list" data-tour="cities-list">
-					{#each cityData?.cities ?? [] as c (c.slug)}
+					{#each placed as c (c.slug)}
 						<li>
 							<button onclick={() => enter(c.slug)}>
 								<span><strong>{c.name}</strong> <span class="dim">{c.citizens} {c.citizens === 1 ? 'citizen' : 'citizens'} · {c.settlements.length} {c.settlements.length === 1 ? 'settlement' : 'settlements'}</span></span>
@@ -795,6 +719,12 @@
 						</li>
 					{/each}
 				</ul>
+				{#if (cityData?.cities.length ?? 0) > placed.length}
+					<p class="dim small">
+						{(cityData?.cities.length ?? 0) - placed.length} more {(cityData?.cities.length ?? 0) - placed.length === 1 ? 'city stands' : 'cities stand'} nowhere on this planet yet —
+						<a href={COOPS}>see every city in Coops</a>.
+					</p>
+				{/if}
 			{:else if sheet === 'ledger'}
 				<p class="eyebrow">Your ledger</p>
 				<h2>What you hold</h2>
@@ -916,11 +846,6 @@
 	.stage.hidden { visibility: hidden; }
 	.dive { position: absolute; inset: 0; background: #f2efe7; animation: dive 1.1s ease-in forwards; pointer-events: none; }
 	@keyframes dive { 0% { opacity: 0; } 70% { opacity: 0.2; } 100% { opacity: 1; } }
-	.steps { margin: 0.8rem 0 0; padding-left: 1.2rem; display: grid; gap: 0.9rem; }
-	.steps li { line-height: 1.5; }
-	.steps li.done { color: #7b857a; }
-	.steps li.done strong::after { content: ' ✓'; color: #4f7a52; }
-	.steps .primary { display: block; margin-top: 0.5rem; }
 	.pill.brand { cursor: pointer; font: inherit; font-size: 0.85rem; }
 	.link { padding: 0; border: 0; background: none; font: inherit; color: #c8744f; text-decoration: underline; cursor: pointer; }
 	.secondary { margin-top: 0.8rem; padding: 0.6rem 1.1rem; border: 1px solid rgb(31 42 35 / 0.15); border-radius: 999px; background: transparent; font: inherit; cursor: pointer; }
@@ -1066,7 +991,7 @@
 
 	form { display: flex; flex-direction: column; gap: 0.45rem; margin-top: 1.1rem; }
 	label { font-size: 0.78rem; color: #4d5d51; }
-	input, textarea {
+	input {
 		padding: 0.65rem 0.8rem;
 		border: 1px solid #dcd5c4;
 		border-radius: 12px;
@@ -1074,8 +999,7 @@
 		font: inherit;
 		color: inherit;
 	}
-	textarea { resize: vertical; }
-	input::placeholder, textarea::placeholder { color: #a9b0a6; font-style: italic; opacity: 1; }
+	input::placeholder { color: #a9b0a6; font-style: italic; opacity: 1; }
 	.row { display: flex; gap: 0.5rem; }
 	.row input { flex: 1; min-width: 0; }
 
@@ -1091,6 +1015,7 @@
 		cursor: pointer;
 	}
 	.primary:disabled { opacity: 0.45; cursor: default; }
+	a.primary { display: inline-block; text-decoration: none; }
 
 	.preview { margin: 0.2rem 0 0; font-size: 0.85rem; line-height: 1.5; color: #4d5d51; }
 

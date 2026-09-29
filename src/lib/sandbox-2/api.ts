@@ -1,7 +1,7 @@
-// The browser half of avenCITY Sandbox 2's economy. Looking needs no account —
-// the planet, its cities, their coops and cap tables are public. Minting,
-// founding a city, joining one, launching and backing coops are signed with the
-// same passkey session as /join.
+// The browser half of the city economy — the communities every sandbox draws.
+// Looking needs no account: the cities, their settlements and cap tables are
+// public. Minting, founding a city, joining one, backing coops and placing them
+// in a world are signed with the same passkey session as /join.
 import { API } from '$lib/auth/client';
 
 export type CoopSummary = {
@@ -9,8 +9,8 @@ export type CoopSummary = {
 	kind: 'city' | 'settlement' | 'coop';
 	name: string;
 	founder: string;
-	tile: number;
-	cell: string | null;
+	/** Where it stands, by world: { 'sandbox-2': '812' } for a city's card, "q,r" on its island for a settlement. */
+	places: Record<string, string>;
 	city: { slug: string; name: string };
 	citizens: number;
 	settlers: number;
@@ -40,14 +40,15 @@ export type ScheduleLine = {
 	phaseHeading: string;
 };
 
-export type CitySummary = CoopSummary & { island: number; settlements: CoopSummary[] };
+/** A city, with the seed of its Sandbox 2 island — null until it stands on a card there. */
+export type CitySummary = CoopSummary & { island: number | null; settlements: CoopSummary[] };
 
 export type CoopDetail = CoopSummary & {
 	pitch: string;
 	mindToken: string;
 	heartsToken: string;
 	settlements: CoopSummary[];
-	island: number;
+	island: number | null;
 	entryLabel: string;
 	priceLabel: string;
 	nextLabel: string;
@@ -82,10 +83,10 @@ export type Account = {
 	startingPending: boolean;
 	holdings: Holding[];
 	calendarLabel: string;
-	/** The city the player is a citizen of, for good — null until they found or join one. */
-	city: { slug: string; name: string } | null;
+	/** The city the player is a citizen of, for good — null until they found or join one. `founded`: theirs to place. */
+	city: { slug: string; name: string; founded: boolean } | null;
 	/** Their home in that city, for good — null until they found one or accept an invite. */
-	settlement: { slug: string; name: string } | null;
+	settlement: { slug: string; name: string; founded: boolean } | null;
 };
 
 export type LedgerView = {
@@ -119,11 +120,22 @@ export const mint = () => call<{ claimedLabel: string }>('/api/hearts/claim', { 
 export const invest = (slug: string, hearts: string) =>
 	call<CoopDetail>(`/api/coops/${slug}/invest`, { method: 'POST', body: JSON.stringify({ hearts }) });
 
-export const foundCity = (input: { name: string; pitch: string; tile: number; hearts: string }) =>
+export const foundCity = (input: { name: string; pitch: string; hearts: string }) =>
 	call<CoopDetail>('/api/cities', { method: 'POST', body: JSON.stringify(input) });
 
-export const foundSettlement = (input: { name: string; pitch: string; cell: string; hearts: string }) =>
+export const foundSettlement = (input: { name: string; pitch: string; hearts: string }) =>
 	call<CoopDetail>('/api/settlements', { method: 'POST', body: JSON.stringify(input) });
+
+/** Sandbox 2's world: a city stands on a card of the planet, a settlement on a cell of its city's island. */
+export const SANDBOX_2 = 'sandbox-2';
+/** The card a city stands on in Sandbox 2 — null while it stands nowhere there. */
+export const tileOf = (c: Pick<CoopSummary, 'places'>) => (c.places[SANDBOX_2] === undefined ? null : Number(c.places[SANDBOX_2]));
+/** The cell a settlement stands on, on its city's Sandbox 2 island — null while it stands nowhere there. */
+export const cellOf = (c: Pick<CoopSummary, 'places'>) => c.places[SANDBOX_2] ?? null;
+
+/** Its founder gives a city or a settlement its place in a world, once. */
+export const place = (slug: string, world: string, spot: string | number) =>
+	call<CoopDetail>(`/api/coops/${slug}/place`, { method: 'POST', body: JSON.stringify({ world, spot }) });
 
 export type Invite = { token: string; expiresAt: string; settlement: { slug: string; name: string }; city: { slug: string; name: string }; invitedBy: string; usable: boolean; reason: string };
 

@@ -11,7 +11,7 @@ import { loginFinish, loginOptions, registerFinish, registerOptions } from "./pa
 import { fromBunSql, useDb } from "./pg";
 import { migrateLedger } from "./ledger/store";
 import { account, claim, LedgerError } from "./ledger/hearts";
-import { acceptInvite, buildableCards, cityOf, coopDetail, createInvite, foundCity, foundSettlement, invest, inviteInfo, listCities, plain, settlementOf } from "./ledger/coopstore";
+import { acceptInvite, buildableCards, cityOf, coopDetail, createInvite, foundCity, foundSettlement, invest, inviteInfo, listCities, place, plain, settlementOf } from "./ledger/coopstore";
 import { ledgerView } from "./ledger/view";
 import { assignRole, can, capabilities, createRole, deleteRole, initRoles, listRoles, RoleError, setRoleCaps } from "./acl";
 import { CAPABILITIES } from "./caps";
@@ -231,8 +231,8 @@ const server = Bun.serve({
         const me = await viewer(req);
         if (!me) return json(req, { error: "not signed in" }, { status: 401 });
         const [a, city, home] = await Promise.all([account(me.id), cityOf(me.id), settlementOf(me.id)]);
-        const place = (p: { slug: string; name: string } | null) => (p ? { slug: p.slug, name: p.name } : null);
-        return big(req, { ...a, city: place(city), settlement: place(home), caps: [...capabilities(me.role)] });
+        const brief = (p: { slug: string; name: string; founded: boolean } | null) => (p ? { slug: p.slug, name: p.name, founded: p.founded } : null);
+        return big(req, { ...a, city: brief(city), settlement: brief(home), caps: [...capabilities(me.role)] });
       },
     },
     "/api/hearts/claim": {
@@ -248,7 +248,7 @@ const server = Bun.serve({
         }
       },
     },
-    // A card of land is unlocked by founding a city on it; the founder is its first citizen.
+    // Founding a city needs no map; the founder is its first citizen. Where it stands is chosen per world, later.
     "/api/cities": {
       OPTIONS: preflight,
       POST: async (req) => {
@@ -257,14 +257,14 @@ const server = Bun.serve({
         try {
           const body = await readJson(req);
           const hearts = parse(String(body?.hearts ?? ""));
-          return big(req, plain(await foundCity(me!.id, { name: body?.name, pitch: body?.pitch, tile: body?.tile, hearts })));
+          return big(req, plain(await foundCity(me!.id, { name: body?.name, pitch: body?.pitch, hearts })));
         } catch (e) {
           if (e instanceof Error && !(e instanceof LedgerError)) return json(req, { error: e.message }, { status: 400 });
           return fail(req, e);
         }
       },
     },
-    // The second step into a city: a home on a cell of its island.
+    // The second step into a city: a home, founded in your city — no map needed either.
     "/api/settlements": {
       OPTIONS: preflight,
       POST: async (req) => {
@@ -273,9 +273,23 @@ const server = Bun.serve({
         try {
           const body = await readJson(req);
           const hearts = parse(String(body?.hearts ?? ""));
-          return big(req, plain(await foundSettlement(me!.id, { name: body?.name, pitch: body?.pitch, cell: body?.cell, hearts })));
+          return big(req, plain(await foundSettlement(me!.id, { name: body?.name, pitch: body?.pitch, hearts })));
         } catch (e) {
           if (e instanceof Error && !(e instanceof LedgerError)) return json(req, { error: e.message }, { status: 400 });
+          return fail(req, e);
+        }
+      },
+    },
+    // Its founder gives a city or a settlement a place in one world: { world: 'sandbox-2', spot: '812' | 'q,r' }.
+    "/api/coops/:slug/place": {
+      OPTIONS: preflight,
+      POST: async (req) => {
+        const me = await viewer(req);
+        if (!me) return json(req, { error: "Sign in to place what you founded." }, { status: 401 });
+        try {
+          const body = await readJson(req);
+          return big(req, plain(await place(me.id, req.params.slug, { world: body?.world, spot: body?.spot })));
+        } catch (e) {
           return fail(req, e);
         }
       },

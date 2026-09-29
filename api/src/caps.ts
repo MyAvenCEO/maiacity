@@ -10,8 +10,8 @@ export const CAPABILITIES: Record<string, string> = {
   // every citizen: the game
   "hearts:mint": "Mint your own hearts, the daily income",
   "hearts:send": "Send hearts to another citizen",
-  "city:create": "Found a city on a card of the planet",
-  "coop:create": "Found a settlement or a coop on a cell of your city",
+  "city:create": "Found a city",
+  "coop:create": "Found a settlement or a coop in your city",
   "coop:invest": "Invest in a coop, and accept an invite into a settlement",
   "ledger:read": "See your own ledger",
   // founders: the makers
