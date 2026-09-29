@@ -455,5 +455,20 @@ export const MIGRATIONS: Migration[] = [
       ALTER TABLE coops ADD CONSTRAINT coops_city_check CHECK ((kind = 'city') = (city_id IS NULL));
     `,
   },
+  {
+    // The economy changed underneath the game — 62,500 starting hearts, 25,000 for a home, 1.3 million MINDs a coop —
+    // so the game starts over, as it did with 0003. Every note, mint, investment, city, settlement, invite and
+    // placement goes; every account stays, and everyone's first mint pays the new starting hearts. The ledger
+    // recreates its own tables at boot.
+    id: "0023-economy-reset",
+    sql: `
+      DROP TABLE IF EXISTS ledger_tx_states, ledger_transactions, ledger_blocks, ledger_states, ledger_keys CASCADE;
+      UPDATE founders SET city_id = NULL, settlement_id = NULL, last_claim_at = now(), stake_at = NULL;
+      DELETE FROM invites;
+      DELETE FROM placements;
+      DELETE FROM investments;
+      DELETE FROM coops;
+    `,
+  },
 ];
 
