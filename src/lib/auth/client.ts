@@ -3,6 +3,7 @@
 // actually signs up.
 import { dev } from '$app/environment';
 import { startAuthentication, startRegistration } from '@simplewebauthn/browser';
+import { APP_API, command, native } from '$lib/native';
 
 /** api.maia.city in production, the local container in development. */
 // 3100 locally, so it can run beside other projects' stacks on 3000.
@@ -24,9 +25,21 @@ export type Founder = {
 /** May they? The API decides for real; this only keeps the site from offering what it would refuse. */
 export const may = (founder: Founder | null | undefined, cap: string) => !!founder?.caps?.includes(cap);
 
+/** A library file's address: straight from the API on the web, through the app (its key, Range) in maiaCITY Studio. */
+export const mediaUrl = (cid: string) => `${native() ? APP_API : API}/api/media/${cid}`;
+
 /** Every call carries the session cookie, and every failure carries a sentence
- *  a person can read rather than a status code. */
+ *  a person can read rather than a status code. In the Mac app the call goes out natively, with the app's key. */
 async function call<T>(path: string, init: RequestInit = {}): Promise<T> {
+	if (native()) {
+		const r = await command<{ status: number; body: any }>('api', {
+			method: init.method ?? 'GET',
+			path,
+			body: typeof init.body === 'string' ? JSON.parse(init.body) : null
+		});
+		if (r.status >= 400) throw new ApiError(r.body?.error ?? 'Something went wrong. Please try again.', r.status);
+		return r.body as T;
+	}
 	const res = await fetch(`${API}${path}`, {
 		...init,
 		credentials: 'include',
@@ -59,7 +72,9 @@ export const rename = (name: string) =>
 	call<Founder>('/api/me', { method: 'PATCH', body: JSON.stringify({ name }) });
 
 export const signOut = () =>
-	fetch(`${API}/api/session`, { method: 'DELETE', credentials: 'include' });
+	native()
+		? command('auth_sign_out')
+		: fetch(`${API}/api/session`, { method: 'DELETE', credentials: 'include' });
 
 /** Sign up: create a passkey, and the passkey is the whole account. */
 export async function signUp(name: string): Promise<Founder> {
@@ -191,6 +206,7 @@ export const createTimeline = (t: Partial<Timeline>) => call<Timeline>('/api/tim
 export const saveTimeline = (id: string, t: Partial<Timeline>) =>
 	call<Timeline>(`/api/timelines/${id}`, { method: 'PUT', body: JSON.stringify(t) });
 export async function deleteTimeline(id: string): Promise<void> {
+	if (native()) return void (await call(`/api/timelines/${id}`, { method: 'DELETE' }));
 	const res = await fetch(`${API}/api/timelines/${id}`, { method: 'DELETE', credentials: 'include' });
 	if (!res.ok) throw new Error('Could not delete the timeline.');
 }
@@ -322,6 +338,7 @@ export const createContent = (item: Partial<ContentItem>) => call<ContentItem>('
 export const saveContent = (id: string, item: Partial<ContentItem>) =>
 	call<ContentItem>(`/api/content/${id}`, { method: 'PUT', body: JSON.stringify(item) });
 export async function deleteContent(id: string): Promise<void> {
+	if (native()) return void (await call(`/api/content/${id}`, { method: 'DELETE' }));
 	const res = await fetch(`${API}/api/content/${id}`, { method: 'DELETE', credentials: 'include' });
 	if (!res.ok) throw new Error('Could not delete it.');
 }

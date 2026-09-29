@@ -289,6 +289,10 @@ fn main() {
             app.manage(App { vault: Arc::new(vault), busy: AtomicBool::new(false) });
             Ok(())
         })
+        .register_asynchronous_uri_scheme_protocol("maiaapi", |ctx, request, responder| {
+            let http = ctx.app_handle().state::<auth::Auth>().http();
+            tauri::async_runtime::spawn(async move { responder.respond(auth::proxy(http, request).await) });
+        })
         .register_asynchronous_uri_scheme_protocol("vault", |ctx, request, responder| {
             let vault = ctx.app_handle().state::<App>().vault.clone();
             tauri::async_runtime::spawn(async move { responder.respond(serve(vault, request).await) });

@@ -6,11 +6,11 @@
 	real logos: neutral glyphs, the platforms' layout conventions.
 -->
 <script lang="ts">
-	import { API, postFiles, type Delivery, type Post } from '$lib/auth/client';
+	import { API, mediaUrl, postFiles, type Delivery, type Post } from '$lib/auth/client';
 	import { formatOf } from './board';
 	import { readingMinutes, renderMarkdown, splitArticle } from './markdown';
 
-	const raw = (cid: string) => `${API}/api/media/${cid}`;
+	const raw = (cid: string) => mediaUrl(cid);
 
 	let {
 		post,

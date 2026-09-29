@@ -20,7 +20,10 @@
 	import Conform from '$lib/studio/Conform.svelte';
 	import Deliveries from '$lib/studio/Deliveries.svelte';
 	import GradePanel from '$lib/studio/GradePanel.svelte';
+	import Ingest from '$lib/studio/Ingest.svelte';
 	import Inspector from '$lib/studio/Inspector.svelte';
+	import Library from '$lib/studio/Library.svelte';
+	import { native } from '$lib/native';
 	import ProgramMonitor from '$lib/studio/ProgramMonitor.svelte';
 	import RenderQueue from '$lib/studio/RenderQueue.svelte';
 	import Scopes from '$lib/studio/Scopes.svelte';
@@ -34,8 +37,13 @@
 	const s = new Studio();
 	let studio = $state<HTMLElement | null>(null);
 
+	// the studio lives in maiaCITY Studio, the Mac app, only: its media functions never run in a browser
+	let inApp = $state<boolean | null>(null);
+
 	// if anything goes wrong on the way in, say what — a gate that only ever says "One moment…" hides it
 	onMount(() => {
+		inApp = native();
+		if (!inApp) return;
 		const report = (e: ErrorEvent | PromiseRejectionEvent) => {
 			s.failed = String('reason' in e ? (e.reason?.stack ?? e.reason) : `${e.message} (${e.filename}:${e.lineno})`);
 		};
@@ -55,9 +63,9 @@
 	function onKey(e: KeyboardEvent) {
 		const target = e.target as HTMLElement | null;
 		if (target?.closest?.('input, textarea, select')) return;
-		if (e.altKey && ['Digit1', 'Digit2', 'Digit3'].includes(e.code)) {
+		if (e.altKey && ['Digit1', 'Digit2', 'Digit3', 'Digit4', 'Digit5'].includes(e.code)) {
 			e.preventDefault();
-			const t = (['edit', 'grade', 'render'] as const)[Number(e.code.slice(-1)) - 1]!;
+			const t = (['ingest', 'library', 'edit', 'grade', 'render'] as const)[Number(e.code.slice(-1)) - 1]!;
 			if (t !== 'grade' || s.locked) s.tab = t;
 			return;
 		}
@@ -92,7 +100,12 @@
 	<meta name="robots" content="noindex" />
 </svelte:head>
 
-{#if s.phase !== 'ready'}
+{#if inApp === false}
+	<main class="wrap gate">
+		<h1>Studio</h1>
+		<p>The studio — ingest, the library, edit, grade and render — lives in <strong>maiaCITY Studio</strong>, the Mac app. Open it there.</p>
+	</main>
+{:else if s.phase !== 'ready'}
 	<main class="wrap gate">
 		<h1>Studio</h1>
 		{#if s.phase === 'loading'}
@@ -136,7 +149,11 @@
 			<StageBar {s} />
 		</header>
 
-		{#if s.tab === 'edit'}
+		{#if s.tab === 'ingest'}
+			<Ingest />
+		{:else if s.tab === 'library'}
+			<Library />
+		{:else if s.tab === 'edit'}
 			<Bin {s} />
 			<div class="monitors" class:split={!!s.preview}>
 				<SourceMonitor {s} />
@@ -158,8 +175,10 @@
 			</div>
 			<Deliveries {s} />
 		{/if}
-		<Transport {s} />
-		<Timeline {s} />
+		{#if s.tab !== 'ingest' && s.tab !== 'library'}
+			<Transport {s} />
+			<Timeline {s} />
+		{/if}
 	</section>
 {/if}
 
@@ -214,6 +233,16 @@
 
 	.studio.tab-render {
 		grid-template-columns: 19rem 1fr 19rem;
+	}
+
+	/* Ingest and Library: one panel under the bar, no transport or timeline */
+	.studio.tab-ingest,
+	.studio.tab-library {
+		grid-template-columns: 1fr;
+		grid-template-rows: auto minmax(0, 1fr);
+		grid-template-areas:
+			'bar'
+			'main';
 	}
 
 	.bar {

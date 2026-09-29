@@ -3,7 +3,7 @@
 // A tag is a plain string. "Day 19" says which day a file belongs to; "key:value" tags are facets (role:shot,
 // scene:the dip, shot:05 the edge, take:b, …); the rest are plain tags ("cover", "site", "sandbox 4", a folder's
 // name). The paths are only names — nothing here reads a folder out of them.
-import { API, type MediaItem } from '$lib/auth/client';
+import { API, mediaUrl, type MediaItem } from '$lib/auth/client';
 
 /** The film's scenes, in the order the film plays them — not the alphabet's. */
 export const SCENES = ['hook', 'sunrise', 'the dip', 'breakfast', 'under the glass', 'food forest', 'the ring', 'the commons', 'night'];
@@ -205,7 +205,7 @@ export function byDay(items: MediaItem[], parsed: (m: MediaItem) => Parsed): Sec
 
 // ── names ────────────────────────────────────────────────────────────────
 
-export const raw = (cid: string) => `${API}/api/media/${cid}`;
+export const raw = (cid: string) => mediaUrl(cid);
 /** Pictures from the CDN copy when there is one (cached, public), else from the library itself. */
 export const thumb = (m: MediaItem) => (m.cdn_path ? `https://maia.city/${m.cdn_path}` : raw(m.cid));
 

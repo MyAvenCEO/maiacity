@@ -20,12 +20,12 @@ Status: ✅ done · 🔨 in progress · ⏳ next · 💤 deferred on purpose.
 
 ## Next
 
-11. 🔨 Work continues from a fresh worktree on the latest `main` (branch `aven/studio-native`).
-12. ⏳ **One studio app**: Ingest and Library become tabs beside Edit · Grade · Render; the Mac app *is* the studio;
+11. ✅ Work continues from a fresh worktree on the latest `main` (branch `aven/studio-native`).
+12. ✅ **One studio app**: Ingest and Library become tabs beside Edit · Grade · Render; the Mac app *is* the studio;
     the studio's API calls go through the app (native, with its key).
-13. ⏳ **Admin and studio functions native only**: studio/admin media pages leave the browser build.
+13. ✅ **Admin and studio functions native only**: studio/admin media pages leave the browser build.
 14. 🔨 **Native render engine, Mac-only, no Homebrew** (replacing ffmpeg + zimg, OpenColorIO/Python, headless Chrome):
-    - a) 🔨 probe (AVFoundation — done, compiles) and proxies (AVAssetReader → Core Image → VideoToolbox HEVC Main10,
+    - a) ✅ probe (AVFoundation) and movie proxies — byte-for-byte to spec, comment tag + faststart via our own MP4 step; stills proxies follow with b) (AVAssetReader → Core Image → VideoToolbox HEVC Main10,
       long edge 1920, GOP 15, BT.709 tags) — `vault/crates/vault-media`
     - b) ⏳ colour transforms and LUTs in Rust (input transforms, ACEScct, the ACES 2.0 output transform)
     - c) ⏳ render: Metal compositing, audio mix, captions, loudness QC (`ebur128`)

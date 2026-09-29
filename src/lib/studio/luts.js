@@ -1,7 +1,8 @@
 // The preview LUTs the viewer takes pictures through: odt-rec709 (the timeline to the screen) and each profile's IDT
 // (a proxy's own encoding into the timeline). The worker bakes them from the transform configs and keeps them in the
 // library as cache files (C5); `GET /api/film/luts` names them. Nothing here is ever baked or committed.
-import { API, filmLuts, missing } from '$lib/auth/client';
+import { filmLuts, mediaUrl, missing } from '$lib/auth/client';
+import { native } from '$lib/native';
 
 /**
  * A 3D LUT, ready for the GPU: size³ RGBA floats, red fastest, then green, then blue (as bake.py writes it).
@@ -88,7 +89,7 @@ const loaded = new Map();
 export function loadLut(name, cid) {
 	let p = loaded.get(cid);
 	if (!p) {
-		p = fetch(`${API}/api/media/${cid}`, { credentials: 'include' })
+		p = fetch(mediaUrl(cid), { credentials: native() ? 'omit' : 'include' })
 			.then((r) => (r.ok ? r.arrayBuffer() : Promise.reject(new Error(`${r.status}`))))
 			.then((b) => parseLut(name, b))
 			.catch((e) => {

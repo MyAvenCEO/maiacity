@@ -3,6 +3,7 @@
 // panel in them. The panels only show it and call its methods; nothing here draws.
 import {
 	API,
+	mediaUrl,
 	createTimeline,
 	deleteTimeline,
 	describeMedia,
@@ -39,7 +40,7 @@ import { WorldViewer } from './world.svelte.js';
 /** @typedef {import('$lib/auth/client').TimelineClip} Clip */
 /** @typedef {{ url: string, duration: number, peaks: number[], buffer?: AudioBuffer }} Source */
 /** @typedef {{ word: string, start: number, end: number }} Timed */
-/** @typedef {'edit' | 'grade' | 'render'} Tab */
+/** @typedef {'ingest' | 'library' | 'edit' | 'grade' | 'render'} Tab */
 /**
  * A sound cue of a world shot, where it lands on A3 (derived from the shot record, never saved as a clip).
  * @typedef {Clip & { cue: true, from: string }} CueClip
@@ -85,7 +86,7 @@ export const clockText = (t) => {
 	return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}.${String(cs).padStart(2, '0')}`;
 };
 /** @param {string} cid */
-export const raw = (cid) => `${API}/api/media/${cid}`;
+export const raw = (cid) => mediaUrl(cid);
 // thumbnails from the CDN copy when there is one (cached, public), else from the library itself
 /** @param {MediaItem} m */
 export const thumb = (m) => (m.cdn_path ? `https://maia.city/${m.cdn_path}` : raw(m.cid));

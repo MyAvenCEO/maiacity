@@ -12,9 +12,11 @@
 
 	/** @type {{ id: Tab, label: string, key: string }[]} */
 	const TABS = [
-		{ id: 'edit', label: 'Edit', key: '1' },
-		{ id: 'grade', label: 'Grade', key: '2' },
-		{ id: 'render', label: 'Render', key: '3' }
+		{ id: 'ingest', label: 'Ingest', key: '1' },
+		{ id: 'library', label: 'Library', key: '2' },
+		{ id: 'edit', label: 'Edit', key: '3' },
+		{ id: 'grade', label: 'Grade', key: '4' },
+		{ id: 'render', label: 'Render', key: '5' }
 	];
 	/** @param {import('$lib/auth/client').TimelineStage} st */
 	const reached = (st) => STAGES.indexOf(st) <= STAGES.indexOf(s.stage);

@@ -12,6 +12,7 @@ path = "src/main.rs"
 
 [dependencies]
 vault-core = { path = "../vault-core" }
+vault-media = { path = "../vault-media" }
 tokio.workspace = true
 anyhow.workspace = true
 clap.workspace = true

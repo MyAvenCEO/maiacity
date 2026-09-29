@@ -159,25 +159,62 @@ pub async fn auth_sign_out(auth: State<'_, Auth>) -> Result<AuthState, String> {
     Ok(auth.state().await)
 }
 
+/// What the API answered: its status and its JSON body — the page turns a refusal into the same error it always shows.
+#[derive(Serialize)]
+pub struct Answer {
+    pub status: u16,
+    pub body: Value,
+}
+
 /// The studio's calls to the API, made natively with the app's key (no browser cookie, no CORS).
 #[tauri::command]
-pub async fn api(auth: State<'_, Auth>, method: String, path: String, body: Option<Value>) -> Result<Value, String> {
+pub async fn api(auth: State<'_, Auth>, method: String, path: String, body: Option<Value>) -> Result<Answer, String> {
     if !path.starts_with("/api/") {
         return Err("Only the maiaCITY API.".into());
     }
-    let key = load_key().ok_or("Please sign in.")?;
     let method = reqwest::Method::from_bytes(method.to_uppercase().as_bytes()).map_err(|e| e.to_string())?;
-    let mut req = auth.http.request(method, format!("{}{path}", api_base())).bearer_auth(key);
+    let mut req = auth.http.request(method, format!("{}{path}", api_base()));
+    if let Some(key) = load_key() {
+        req = req.bearer_auth(key);
+    }
     if let Some(body) = body {
         req = req.json(&body);
     }
     let res = req.send().await.map_err(|e| format!("The API cannot be reached: {e}"))?;
-    let status = res.status();
-    let value: Value = res.json().await.unwrap_or(Value::Null);
-    if !status.is_success() {
-        return Err(value["error"].as_str().map(String::from).unwrap_or_else(|| format!("The API answered {status}.")));
+    let status = res.status().as_u16();
+    let body = res.json::<Value>().await.unwrap_or(Value::Null);
+    Ok(Answer { status, body })
+}
+
+/// `maiaapi://localhost/api/…` — a library file (or any GET) from the API with the app's key, Range passed through,
+/// so <img>, <video> and fetch in the studio read the originals and proxies without a browser session.
+pub async fn proxy(http: reqwest::Client, request: tauri::http::Request<Vec<u8>>) -> tauri::http::Response<Vec<u8>> {
+    use tauri::http::{Response, StatusCode, header};
+    let fail = |status: StatusCode, msg: &str| Response::builder().status(status).body(msg.as_bytes().to_vec()).unwrap_or_default();
+    let path = request.uri().path_and_query().map(|p| p.as_str().to_string()).unwrap_or_default();
+    if !path.starts_with("/api/") {
+        return fail(StatusCode::BAD_REQUEST, "only the API");
     }
-    Ok(value)
+    let Some(key) = load_key() else { return fail(StatusCode::UNAUTHORIZED, "sign in first") };
+    let mut req = http.get(format!("{}{path}", api_base())).bearer_auth(key);
+    if let Some(range) = request.headers().get(header::RANGE) {
+        req = req.header(header::RANGE, range.clone());
+    }
+    let Ok(res) = req.send().await else { return fail(StatusCode::BAD_GATEWAY, "the API cannot be reached") };
+    let mut out = Response::builder().status(res.status().as_u16()).header(header::ACCESS_CONTROL_ALLOW_ORIGIN, "*");
+    for name in [header::CONTENT_TYPE, header::CONTENT_LENGTH, header::CONTENT_RANGE, header::ACCEPT_RANGES, header::CACHE_CONTROL, header::ETAG] {
+        if let Some(v) = res.headers().get(&name) {
+            out = out.header(name, v.clone());
+        }
+    }
+    let body = res.bytes().await.map(|b| b.to_vec()).unwrap_or_default();
+    out.body(body).unwrap_or_default()
+}
+
+impl Auth {
+    pub fn http(&self) -> reqwest::Client {
+        self.http.clone()
+    }
 }
 
 /// Only the admin passes: every vault and studio command checks this first.
