@@ -1,7 +1,7 @@
 # maiaCITY Studio + media vault — the task list
 
 Everything Samuel asked for, in order, with where it stands. Design and reasons: `.claude/skills/iroh/maiacity.md`.
-Status: ✅ done · 🔨 in progress · ⏳ next · 💤 deferred on purpose.  Last update: 2026-09-29.
+Status: ✅ done · 🔨 in progress · ⏳ next · 💤 deferred on purpose.  Last update: 2026-09-29, 17:10.
 
 ## Done
 
@@ -16,7 +16,8 @@ Status: ✅ done · 🔨 in progress · ⏳ next · 💤 deferred on purpose.  L
 8. ✅ Admin gate + passkey sign-in through the device flow; key in the macOS Keychain.
 9. ✅ Database backups to `s3://maiacity/BACKUPS/pg/`: before every deploy (without media bytes) and daily,
    30 days, unencrypted; a failed backup warns instead of stopping a release.
-10. ✅ Release 1 (PR #10), deploy fix (PR #11), release 2 (PR #12) — all live.
+10. ✅ Release 1 (PR #10), deploy fix (PR #11), release 2 (PR #12) — all live. Release 3 (PR #13) merged; its API
+    run was refused by GitHub (a duplicated key in the workflow) — fixed in release 3b, linted with actionlint.
 11. ✅ Work from a fresh worktree on the latest `main` (`aven/studio-native`).
 12. ✅ One studio app: Ingest · Library · Edit · Grade · Render tabs; the Mac app opens on the studio.
 13. ✅ Studio and media library only in the Mac app; native API calls with the app's key; /api/me answers keys.
@@ -33,7 +34,7 @@ Status: ✅ done · 🔨 in progress · ⏳ next · 💤 deferred on purpose.  L
     - ✅ Docker (`vault/Dockerfile.server`), compose service (profile `vault`), Caddy routes, CI image job,
       firewall UDP 7400, deploy env
     - ✅ local end-to-end test of the iroh path (local Postgres, no S3): pairing, relay, joining, catalog sync, mirror
-    - 🔨 release 3 → the bucket path tested live on the server (never a local S3 stand-in)
+    - 🔨 release 3b → the bucket path tested live on the server (never a local S3 stand-in)
 17. 🔨 **Automatic sync**: ✅ Mac side of joining (allowlist, relay at runtime, shared catalog, own entries carried
     over); ✅ the app pairs and joins by itself after sign-in; ✅ files only the server holds come down from the
     gateway, hash-checked, into the store; ⏳ bandwidth policy (~75 % by day); ⏳ "safe to
