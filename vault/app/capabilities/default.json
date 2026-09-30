@@ -3,5 +3,5 @@
   "identifier": "default",
   "description": "The studio window: the app's own commands, events, and the folder picker",
   "windows": ["main"],
-  "permissions": ["core:default", "dialog:allow-open"]
+  "permissions": ["core:default", "core:window:allow-start-dragging", "dialog:allow-open"]
 }

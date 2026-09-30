@@ -11,6 +11,7 @@
 	import { evaluate, shotAt, toKeys } from './shots.js';
 	import { FPS, TRACKS, isWorld, onSoundTrack, thumb, tint } from './studio.svelte.js';
 	import { wordsOf } from './transcript.js';
+	import { BALANCE_NODES, NEUTRAL, NEUTRAL_BALANCE, PRESETS, cleanBalance, isNeutral, presetOf } from './color.js';
 	import { wave } from './wave.js';
 
 	/** @typedef {import('$lib/auth/client').ShotSpec} ShotSpec */
@@ -31,8 +32,27 @@
 	const LANES = ['Camera', 'Hour', 'Exposure', 'Lights', 'Cues'];
 	// the Audio tab: the sound tracks only, taller, each clip with its level on it
 	const audio = $derived(s.tab === 'audio');
-	const shown = $derived(audio ? TRACKS.filter((t) => t.id.startsWith('A')) : TRACKS);
+	// the Script tab: the story's structure (its sections and their tension) over the captions
+	const story = $derived(s.tab === 'script');
+	const STORY = { id: 'S1', label: 'Story', accepts: [] };
+	// the Grade tab: the grade's layers over the picture track, the last applied on top — each collapsed to its
+	// values, open for its controls on every shot
+	const grading = $derived(s.tab === 'grade');
+	const GRADE_LAYERS = [
+		{ id: 'L:look', label: 'Film look' },
+		{ id: 'L:grade', label: 'Grade' },
+		{ id: 'L:frame', label: 'Framing' },
+		...[...BALANCE_NODES].reverse().map((n) => ({ id: `L:${n.id}`, label: n.label }))
+	].map((l) => ({ ...l, accepts: [] }));
+	let openLayers = $state(/** @type {string[]} */ ([]));
+	/** @param {string} id */
+	const toggleLayer = (id) => (openLayers = openLayers.includes(id) ? openLayers.filter((x) => x !== id) : [...openLayers, id]);
+	const shown = $derived(
+		audio ? TRACKS.filter((t) => t.id.startsWith('A')) : story ? [STORY, ...TRACKS.filter((t) => t.id === 'T1')] : grading ? [...GRADE_LAYERS, ...TRACKS.filter((t) => t.id === 'V1')] : TRACKS
+	);
 	const rows = $derived(
+		grading ? `1.5rem ${GRADE_LAYERS.map((l) => (openLayers.includes(l.id) ? (l.id === 'L:grade' || l.id === 'L:look' ? '7.2rem' : l.id === 'L:wb' || l.id === 'L:frame' ? '4.4rem' : '2.8rem') : '1.5rem')).join(' ')} minmax(2.6rem, 1fr)` :
+		story ? '1.5rem minmax(5rem, 3fr) minmax(2.6rem, 1fr)' :
 		audio ? `1.5rem repeat(${shown.length}, minmax(3.4rem, 1fr))` : `1.5rem minmax(2.6rem, 1fr) repeat(4, minmax(1.7rem, 1fr))${spec ? ` repeat(${LANES.length}, 1.45rem)` : ''}`
 	);
 
@@ -85,6 +105,63 @@
 		addEventListener('pointermove', move);
 		addEventListener('pointerup', up);
 	}
+
+	// ── J and L cuts: clips of one track that overlap sit in two lanes, the overlap marked by what it does at the
+	// picture cut in it — J: the next sound comes in before the cut; L: the last one runs on past it; × no cut ─
+	const cuts = $derived(s.clips.filter((c) => c.track === 'V1' && c.start > 0.05).map((c) => c.start));
+	/** per track: each clip's lane (0, or 1 when it overlaps the one before), and the overlaps */
+	const layout = $derived.by(() => {
+		/** @type {Record<string, { lane: Record<string, number>, overlaps: { from: number, to: number, kind: 'J' | 'L' | '×' }[] }>} */
+		const out = {};
+		for (const t of TRACKS) {
+			const list = s.clips.filter((c) => c.track === t.id).sort((a, b) => a.start - b.start);
+			/** @type {Record<string, number>} */
+			const lane = {};
+			/** @type {{ from: number, to: number, kind: 'J' | 'L' | '×' }[]} */
+			const overlaps = [];
+			let prev = /** @type {Clip | null} */ (null);
+			for (const c of list) {
+				const end = prev ? prev.start + prev.dur : -1;
+				if (prev && c.start < end - 0.02) {
+					lane[c.id] = 1 - (lane[prev.id] ?? 0);
+					const from = c.start, to = Math.min(end, c.start + c.dur);
+					const cut = cuts.find((k) => k >= from - 0.05 && k <= to + 0.05);
+					overlaps.push({ from, to, kind: t.id === 'V1' || cut === undefined ? '×' : Math.abs(cut - to) < Math.abs(cut - from) ? 'J' : 'L' });
+				} else lane[c.id] = 0;
+				if (!prev || c.start + c.dur > end) prev = c;
+			}
+			out[t.id] = { lane, overlaps };
+		}
+		return out;
+	});
+	/** a linked sound against its own picture: J when it leads it, L when it trails it @param {Clip} c */
+	function leadTrail(c) {
+		if (!onSoundTrack(c) || !c.link) return '';
+		const p = s.partnerOf(c);
+		if (!p) return '';
+		return [c.start < p.start - 0.05 ? 'J' : '', c.start + c.dur > p.start + p.dur + 0.05 ? 'L' : ''].join('');
+	}
+
+	const SECTION = /** @type {Record<string, string>} */ ({ thumbnail: 'Thumbnail', hook: 'Hook', act1: 'Act 1', act2: 'Act 2', act3: 'Act 3', cliffhanger: 'Cliffhanger' });
+	/** the tension across the story: every section's points on the film's clock, one line (0 at the bottom, 1 at the top) @param {Clip[]} secs */
+	function tensionPath(secs) {
+		const pts = secs
+			.filter((c) => c.section !== 'thumbnail')
+			.flatMap((c) => (c.tension ?? []).map((p) => [c.start + p.t * c.dur, 1 - p.v]))
+			.sort((a, b) => a[0] - b[0]);
+		return pts.map(([t, y], i) => `${i ? 'L' : 'M'}${t.toFixed(2)},${(0.1 + y * 0.8).toFixed(3)}`).join('');
+	}
+
+	// during playback the view follows the playhead: a page on when it nears the right edge, back when it is off
+	// to the left (a seek), never while paused — then the view is the editor's
+	/** @type {HTMLDivElement | null} */
+	let scroller = $state(null);
+	$effect(() => {
+		const t = s.time;
+		if (!s.playing || !scroller) return;
+		const px = t * s.pxPerSec, w = scroller.clientWidth, at = scroller.scrollLeft;
+		if (px > at + w * 0.85 || px < at) scroller.scrollLeft = Math.max(0, px - w * 0.15);
+	});
 
 	// measured by itself in Audio: when the tab opens, and a moment after the sound clips change
 	const soundKey = $derived(audio ? JSON.stringify(s.clips.filter((c) => c.track !== 'V1').map((c) => [c.id, c.hash, c.start, c.in, c.dur])) : '');
@@ -294,15 +371,36 @@
 		sp.lights.length ? sp.lights.map((l) => `${l.id} ${Array.isArray(l.intensity) ? '∿' : fmt(l.intensity ?? 1, 2)}`).join(' · ') : 'no light changes';
 </script>
 
+{#snippet cdlCell(/** @type {import('$lib/auth/client').Cdl | null} */ g, /** @type {string | null} */ preset, /** @type {boolean} */ open, /** @type {(g: import('$lib/auth/client').Cdl | null, preset?: string | null) => void} */ set)}
+	{@const cur = g ?? NEUTRAL}
+	{#if open}
+		<div class="chips">
+			{#each Object.keys(PRESETS) as p (p)}<button class:on={(preset ?? presetOf(g)) === p} onclick={() => set(isNeutral(PRESETS[p].cdl) ? null : structuredClone(PRESETS[p].cdl), p === 'neutral' ? null : p)}>{p}</button>{/each}
+		</div>
+		{#each [['slope', 'gain', 0, 2], ['offset', 'lift', -0.2, 0.2], ['power', 'gamma', 0.4, 2.5]] as [k, label, lo, hi] (k)}
+			{@const key = /** @type {'slope' | 'offset' | 'power'} */ (k)}
+			{@const mean = (cur[key][0] + cur[key][1] + cur[key][2]) / 3}
+			<label class="sl"><span>{label}</span><input type="range" min={lo} max={hi} step="0.005" value={mean} oninput={(e) => { const v = Number(e.currentTarget.value); const next = structuredClone($state.snapshot(cur)); for (let i = 0; i < 3; i++) next[key][i] = +(next[key][i] + v - mean).toFixed(4); set(isNeutral(next) ? null : next); }} /><output>{mean.toFixed(3)}</output></label>
+		{/each}
+		<label class="sl"><span>sat</span><input type="range" min="0" max="2" step="0.01" value={cur.sat} oninput={(e) => { const next = { ...structuredClone($state.snapshot(cur)), sat: Number(e.currentTarget.value) }; set(isNeutral(next) ? null : next); }} /><output>{cur.sat.toFixed(2)}</output></label>
+	{:else}
+		<span class="val" class:on={!!g || !!preset}>{preset ?? (g ? presetOf(g) ?? 'own' : '—')}</span>
+	{/if}
+{/snippet}
+
 <div class="timeline" style:--rows={rows}>
 	<div class="heads">
 		<div class="head"></div>
-		{#each shown as t (t.id)}<div class="head"><b>{t.id}</b> {t.label}</div>{/each}
+		{#each shown as t (t.id)}
+			{#if t.id.startsWith('L:')}
+				<button class="head layer" class:open={openLayers.includes(t.id)} onclick={() => toggleLayer(t.id)} title="Open or close this layer's controls"><span class="caret">{openLayers.includes(t.id) ? '▾' : '▸'}</span> {t.label}</button>
+			{:else}<div class="head"><b>{t.id}</b> {t.label}</div>{/if}
+		{/each}
 		{#if spec}
 			{#each LANES as l (l)}<div class="head lane-head">{l}</div>{/each}
 		{/if}
 	</div>
-	<div class="scroll">
+	<div class="scroll" bind:this={scroller}>
 		<!-- svelte-ignore a11y_no_static_element_interactions -->
 		<div class="lanes" class:locked={!s.canEdit} bind:this={s.lanes} style:width={x(s.span)} onpointerdown={scrub}>
 			<div class="ruler">
@@ -311,7 +409,56 @@
 			{#each shown as t (t.id)}
 				<!-- svelte-ignore a11y_no_static_element_interactions -->
 				<div class="track" ondragover={(e) => t.id !== 'T1' && s.canEdit && e.preventDefault()} ondrop={(e) => t.id !== 'T1' && drop(e, /** @type {Track} */ (t.id))}>
-					{#if t.id === 'T1'}
+					{#if t.id.startsWith('L:')}
+						{@const open = openLayers.includes(t.id)}
+						{#if t.id === 'L:look'}
+							<!-- svelte-ignore a11y_no_static_element_interactions -->
+							<div class="cell film" style:left="0" style:width={x(s.end)} onpointerdown={(e) => e.stopPropagation()}>
+								{@render cdlCell(s.current?.grade?.look ?? null, s.current?.grade?.preset ?? null, open, (g, preset) => s.setMeta({ grade: g || preset ? { look: g, ...(preset ? { preset } : {}) } : null }))}
+							</div>
+						{:else}
+							{#each s.clips.filter((c) => c.track === 'V1') as c (c.id)}
+								<!-- svelte-ignore a11y_no_static_element_interactions -->
+								<div class="cell" class:sel={s.selected === c.id} style:left={x(c.start)} style:width={x(c.dur)} onpointerdown={(e) => (e.stopPropagation(), (s.selected = c.id))}>
+									{#if t.id === 'L:grade'}
+										{@render cdlCell(c.grade ?? null, null, open, (g) => s.patchClip(c.id, { grade: g ?? undefined }))}
+									{:else if t.id === 'L:frame'}
+										{@const f = c.frame?.[s.shape] ?? { x: 0, y: 0, zoom: 1 }}
+										{#if open && !isWorld(c)}
+											{#each [['x', -1, 1], ['y', -1, 1], ['zoom', 1, 3]] as [k, lo, hi] (k)}
+												<label class="sl"><span>{k}</span><input type="range" min={lo} max={hi} step="0.01" value={f[/** @type {'x' | 'y' | 'zoom'} */ (k)]} oninput={(e) => s.setFrame(c.id, s.shape, { ...f, [k]: Number(e.currentTarget.value) })} /></label>
+											{/each}
+										{:else}<span class="val" class:on={!!c.frame?.[s.shape]}>{c.frame?.[s.shape] ? `${s.shape} · ${f.zoom.toFixed(2)}×` : '—'}</span>{/if}
+									{:else}
+										{@const n = BALANCE_NODES.find((b) => `L:${b.id}` === t.id)}
+										{@const bal = c.balance ?? NEUTRAL_BALANCE}
+										{#if n}
+											{#if open}
+												{#each n.fields as f (f.key)}
+													<label class="sl" title="{f.label} {bal[f.key].toFixed(2)} (double-click: 0)"><span>{n.fields.length > 1 ? f.label.slice(0, 4) : ''}</span><input type="range" min={f.min} max={f.max} step={f.step} value={bal[f.key]} oninput={(e) => s.patchClip(c.id, { balance: cleanBalance({ ...bal, [f.key]: Number(e.currentTarget.value) }) ?? undefined })} ondblclick={() => s.patchClip(c.id, { balance: cleanBalance({ ...bal, [f.key]: 0 }) ?? undefined })} /><output>{bal[f.key].toFixed(2)}</output></label>
+												{/each}
+											{:else}
+												{@const vals = n.fields.map((f) => bal[f.key])}
+												<span class="val" class:on={vals.some((v) => v !== 0)}>{vals.every((v) => v === 0) ? '—' : n.fields.map((f) => `${bal[f.key] > 0 ? '+' : ''}${bal[f.key].toFixed(2)}`).join(' / ')}</span>
+											{/if}
+										{/if}
+									{/if}
+								</div>
+							{/each}
+						{/if}
+					{:else if t.id === 'S1'}
+						{@const secs = s.clips.filter((c) => c.kind === 'section').sort((a, b) => a.start - b.start)}
+						{#each secs as c (c.id)}
+							<!-- svelte-ignore a11y_no_static_element_interactions -->
+							<div class="sec {c.section}" class:mark={c.section === 'thumbnail'} style:left={x(c.start)} style:width={x(Math.max(c.section === 'thumbnail' ? 0 : 0.2, c.dur))} onpointerdown={(e) => (e.stopPropagation(), s.seek(c.start))} title={c.text}>
+								<span>{SECTION[c.section ?? ''] ?? c.section}</span>
+								{#if c.section !== 'thumbnail' && c.text}<small>{c.text}</small>{/if}
+							</div>
+						{/each}
+						<svg class="tension" viewBox="0 0 {Math.max(1, s.span)} 1" preserveAspectRatio="none" style:width={x(s.span)} aria-hidden="true">
+							<path d={tensionPath(secs)} />
+						</svg>
+					{:else if t.id === 'T1'}
 						{#each s.phrases as p (`${p.clip}:${p.words[0].i}`)}
 							<!-- svelte-ignore a11y_no_static_element_interactions -->
 							<div
@@ -336,6 +483,9 @@
 							<div
 								class="clip {world ? 'world' : c.kind === 'slate' ? 'slate' : c.kind === 'line' ? 'audio line' : onSoundTrack(c) ? 'audio' : m?.kind} {t.id}"
 								class:linked={!!c.link}
+								class:missing={!!c.hash && !m}
+								class:split={layout[t.id]?.overlaps.length > 0}
+								class:lane1={layout[t.id]?.lane[c.id] === 1}
 								class:sel={s.selected === c.id}
 								class:graded={!!c.grade}
 								style:left={x(c.start)}
@@ -349,6 +499,8 @@
 									<canvas use:wave={{ peaks: src.peaks, from: c.in, to: c.in + c.dur, total: src.buffer?.duration ?? src.duration, color: tint(/** @type {Track} */ (t.id)) }}></canvas>
 								{/if}
 								{#each clipWords(c, m) as w, i (i)}<span class="wd" style:left="{w.x}px">{w.w}</span>{/each}
+								{#if leadTrail(c)}<b class="jl" title="{leadTrail(c) === 'J' ? 'J-cut: its sound comes in before its picture' : leadTrail(c) === 'L' ? 'L-cut: its sound runs on past its picture' : 'Its sound leads and trails its picture'}">{leadTrail(c)}</b>{/if}
+								{#if c.hash && !m}<b class="gone" title="This clip's file is not on this Mac yet — it comes with the next sync">not on this Mac yet</b>{/if}
 								<span class="label">{#if onSoundTrack(c) && m?.kind === 'video'}<i class="snd">♪&nbsp;</i>{/if}{s.clipName(c)}{#if world}<i>&nbsp;v{c.shotVersion}</i>{/if}</span>
 								{#if snd !== 'ready' || drift}
 									<span class="chips snd-chips">
@@ -386,6 +538,9 @@
 									<i class="edge r" onpointerdown={(e) => grab(e, c, 'right')}></i>
 								{/if}
 							</div>
+						{/each}
+						{#each layout[t.id]?.overlaps ?? [] as o, i (i)}
+							<span class="overlap {o.kind === '×' ? 'x' : o.kind}" style:left={x(o.from)} style:width={x(Math.max(0.05, o.to - o.from))} title={o.kind === 'J' ? 'J-cut: the next sound comes in before the picture cuts' : o.kind === 'L' ? 'L-cut: the last sound runs on past the picture cut' : 'Two clips overlap'}><b>{o.kind}</b></span>
 						{/each}
 						{#if t.id === 'A3'}
 							{#each s.cueClips as q (q.id)}
@@ -611,6 +766,256 @@
 		display: flex;
 		border-color: #7fa98f;
 		background: #dcebe1;
+	}
+
+	/* the grade's layers (Grade), one row each over V1: a cell per shot, its values, or its controls when open */
+	.head.layer {
+		display: flex;
+		gap: 0.3rem;
+		align-items: center;
+		width: 100%;
+		border: 0;
+		background: none;
+		font: inherit;
+		font-size: 0.7rem;
+		text-align: left;
+		color: var(--dim);
+		cursor: pointer;
+	}
+
+	.head.layer.open {
+		color: var(--ink);
+	}
+
+	.head.layer .caret {
+		font-size: 0.6rem;
+	}
+
+	.cell {
+		position: absolute;
+		top: 1px;
+		bottom: 1px;
+		display: flex;
+		flex-direction: column;
+		justify-content: center;
+		gap: 0.1rem;
+		overflow: hidden;
+		padding: 0 0.35rem;
+		border-left: 1px solid var(--edge);
+		background: rgba(255, 255, 255, 0.5);
+	}
+
+	.cell.sel {
+		background: #fbf3df;
+	}
+
+	.cell.film {
+		background: rgba(20, 23, 26, 0.03);
+	}
+
+	.cell .val {
+		overflow: hidden;
+		font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+		font-size: 0.62rem;
+		white-space: nowrap;
+		text-overflow: ellipsis;
+		color: #b3b8ae;
+	}
+
+	.cell .val.on {
+		color: #a8741a;
+	}
+
+	.cell .sl {
+		display: grid;
+		grid-template-columns: 2.2rem minmax(2rem, 1fr) 2.2rem;
+		gap: 0.25rem;
+		align-items: center;
+		font-size: 0.6rem;
+		color: var(--dim);
+	}
+
+	.cell .sl input {
+		width: 100%;
+		accent-color: var(--ink);
+	}
+
+	.cell .sl output {
+		font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+		font-size: 0.58rem;
+		text-align: right;
+	}
+
+	.cell .chips {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.15rem;
+	}
+
+	.cell .chips button {
+		padding: 0 0.35rem;
+		border: 1px solid var(--edge);
+		border-radius: 999px;
+		background: #fff;
+		font: inherit;
+		font-size: 0.58rem;
+		cursor: pointer;
+	}
+
+	.cell .chips button.on {
+		border-color: var(--accent);
+		background: var(--accent);
+		color: #fff;
+	}
+
+	/* the story (Script): its sections as bands, the tension as one line over them */
+	.sec {
+		position: absolute;
+		top: 0.3rem;
+		bottom: 0.3rem;
+		overflow: hidden;
+		padding: 0.2rem 0.4rem;
+		border-left: 2px solid rgba(20, 23, 26, 0.5);
+		background: rgba(20, 23, 26, 0.05);
+		font-size: 0.7rem;
+		cursor: pointer;
+	}
+
+	.sec span {
+		font-weight: 700;
+		letter-spacing: 0.06em;
+		text-transform: uppercase;
+	}
+
+	.sec small {
+		display: block;
+		overflow: hidden;
+		font-size: 0.64rem;
+		white-space: nowrap;
+		text-overflow: ellipsis;
+		color: var(--dim);
+	}
+
+	.sec.hook {
+		background: #f7e8c5;
+	}
+
+	.sec.act1 {
+		background: #e6ecf5;
+	}
+
+	.sec.act2 {
+		background: #eef2e6;
+	}
+
+	.sec.act3 {
+		background: #f1eafb;
+	}
+
+	.sec.cliffhanger {
+		background: #f6e3da;
+	}
+
+	.sec.mark {
+		z-index: 2;
+		overflow: visible;
+		padding: 0;
+		border-left: 2px solid #b8860b;
+		background: none;
+	}
+
+	.sec.mark span {
+		position: absolute;
+		bottom: 0.1rem;
+		left: 0.2rem;
+		padding: 0 0.25rem;
+		border-radius: 3px;
+		background: #b8860b;
+		font-size: 0.58rem;
+		color: #fff;
+		white-space: nowrap;
+	}
+
+	.tension {
+		position: absolute;
+		top: 0;
+		left: 0;
+		height: 100%;
+		pointer-events: none;
+	}
+
+	.tension path {
+		fill: none;
+		stroke: #9c3b26;
+		stroke-width: 2;
+		vector-effect: non-scaling-stroke;
+	}
+
+	/* J and L cuts: overlapping clips of a track in two lanes, the overlap marked */
+	.clip.split {
+		bottom: 50%;
+	}
+
+	.clip.split.lane1 {
+		top: 50%;
+		bottom: 0.3rem;
+	}
+
+	.overlap {
+		position: absolute;
+		top: 0.3rem;
+		bottom: 0.3rem;
+		z-index: 3;
+		display: grid;
+		place-items: center;
+		border-radius: 4px;
+		background: repeating-linear-gradient(135deg, rgba(20, 23, 26, 0.16) 0 4px, transparent 4px 8px);
+		pointer-events: none;
+	}
+
+	.overlap b {
+		padding: 0 0.3rem;
+		border-radius: 3px;
+		background: #14171a;
+		font-size: 0.62rem;
+		color: #fff;
+	}
+
+	.overlap.J b {
+		background: #4a5f93;
+	}
+
+	.overlap.L b {
+		background: #b8860b;
+	}
+
+	.jl {
+		position: absolute;
+		right: 0.3rem;
+		top: 0.15rem;
+		padding: 0 0.3rem;
+		border-radius: 3px;
+		background: #4a5f93;
+		font-size: 0.6rem;
+		color: #fff;
+	}
+
+	/* a clip whose file this Mac does not have yet: kept, marked */
+	.clip.missing {
+		border-style: dashed;
+		opacity: 0.7;
+	}
+
+	.gone {
+		position: absolute;
+		left: 0.3rem;
+		bottom: 0.2rem;
+		padding: 0 0.3rem;
+		border-radius: 3px;
+		background: #f6e3da;
+		font-size: 0.6rem;
+		font-weight: 600;
+		color: #9c3b26;
 	}
 
 	/* the script's stand-ins: a shot not filmed yet, a line not recorded yet */

@@ -258,6 +258,36 @@ pub struct MatchArgs {
     pub apply: Option<bool>,
 }
 
+#[derive(Deserialize, Serialize, schemars::JsonSchema)]
+pub struct TensionPoint {
+    /// where in the section, 0 (its start) … 1 (its end)
+    pub t: f64,
+    /// the tension there, 0 (released) … 1 (at its height)
+    pub v: f64,
+}
+
+#[derive(Deserialize, schemars::JsonSchema)]
+pub struct StorySection {
+    /// thumbnail (one frame: the picture the film is shown by), hook, act1, act2, act3, cliffhanger
+    pub section: String,
+    /// where it starts on the timeline, seconds
+    pub start: f64,
+    /// how long it runs, seconds (a thumbnail: 0.05)
+    pub dur: f64,
+    /// what it does for the story (its promise, its turn, its open loop)
+    pub text: Option<String>,
+    /// the tension across it: rises and releases inside every section, a higher peak in each act, an open loop at the end
+    pub tension: Option<Vec<TensionPoint>>,
+}
+
+#[derive(Deserialize, schemars::JsonSchema)]
+pub struct ArcArgs {
+    /// the timeline's id
+    pub timeline: String,
+    /// the story's parts in order; they replace the ones it has
+    pub sections: Vec<StorySection>,
+}
+
 #[derive(Deserialize, schemars::JsonSchema)]
 pub struct MixClip {
     /// the clip's id (an A1, A2 or A3 clip)
@@ -640,7 +670,7 @@ impl Studio {
     }
 
     #[tool(
-        description = "Save changes to a timeline: clips (edit, audio), meta, the film's grade (send the whole clips array). A clip is a media clip ({ hash }), a world clip, a slate (kind 'slate', V1, no hash: a shot of the script not filmed yet) or a line (kind 'line', A1, no hash, { text }: a line not recorded yet, in the captions already). A V1 clip may carry script: { scene, label, description, notes, size (EWS WS FS MS MCU CU ECU insert) } — the Script tab is these same clips; a slate swapped for a file keeps its script."
+        description = "Save changes to a timeline: clips (edit, audio), meta, the film's grade (send the whole clips array). A clip is a media clip ({ hash }), a world clip, a slate (kind 'slate', V1, no hash: a shot of the script not filmed yet) or a line (kind 'line', A1, no hash, { text }: a line not recorded yet, in the captions already) or a section (kind 'section', S1: the story's structure — set it with story_arc). A V1 clip may carry script: { scene, label, description, notes, size (EWS WS FS MS MCU CU ECU insert) } — the Script tab is these same clips; a slate swapped for a file keeps its script."
     )]
     async fn timeline_save(&self, Parameters(a): Parameters<SaveArgs>) -> String {
         text(self.api("PUT", &format!("/api/timelines/{}", a.id), Some(a.patch)).await)
@@ -724,6 +754,24 @@ impl Studio {
         let r = async {
             let t = self.api("GET", &format!("/api/timelines/{}", a.id), None).await?;
             crate::render::measure_sound(&self.vault, &t).await
+        };
+        text(r.await)
+    }
+
+    #[tool(
+        description = "Set a timeline's story structure — the Script tab's Story track: the thumbnail (one frame), the hook, act 1, act 2, act 3, the cliffhanger, each with what it does and its tension curve (rises and releases inside each part, the highest peak late, an open loop at the end). Replaces the sections it has; the picture, the sound and the captions stay."
+    )]
+    async fn story_arc(&self, Parameters(a): Parameters<ArcArgs>) -> String {
+        let r = async {
+            let t = self.api("GET", &format!("/api/timelines/{}", a.timeline), None).await?;
+            let mut clips: Vec<Value> = t["clips"].as_array().cloned().unwrap_or_default().into_iter().filter(|c| c["kind"] != "section").collect();
+            for (i, s) in a.sections.iter().enumerate() {
+                clips.push(json!({ "id": format!("story-{}-{i}", s.section), "kind": "section", "track": "S1", "start": s.start, "in": 0, "dur": s.dur, "vol": 0,
+                    "section": s.section, "text": s.text.clone().unwrap_or_default(), "tension": s.tension.as_ref().map(|p| json!(p)).unwrap_or(json!([])) }));
+            }
+            let saved = self.api("PUT", &format!("/api/timelines/{}", a.timeline), Some(json!({ "clips": clips }))).await?;
+            let n = saved["clips"].as_array().map(|c| c.iter().filter(|c| c["kind"] == "section").count()).unwrap_or(0);
+            Ok::<_, String>(json!({ "sections": n }))
         };
         text(r.await)
     }

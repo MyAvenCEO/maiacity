@@ -53,7 +53,9 @@ import { command, native } from '$lib/native';
  * none in the file (silent), or failed (and why).
  * @typedef {'ready' | 'loading' | 'waiting' | 'silent' | `failed: ${string}`} SoundState
  */
-/** @typedef {'ingest' | 'library' | 'script' | '3d' | 'edit' | 'audio' | 'grade' | 'render'} Tab */
+/** A shot of the script: its clip, how far it is (words, a storyboard still, the footage, a world shot), what is said under it. @typedef {{ clip: Clip, stage: 'text' | 'storyboard' | 'footage' | 'world', lines: Clip[] }} ScriptShot */
+/** @typedef {{ scene: string, shots: ScriptShot[] }} ScriptScene */
+/** @typedef {'ingest' | 'library' | 'script' | '3d' | 'edit' | 'audio' | 'grade' | 'render' | 'deliverables'} Tab */
 /**
  * A sound cue of a world shot, where it lands on A3 (derived from the shot record, never saved as a clip).
  * @typedef {Clip & { cue: true, from: string }} CueClip
@@ -517,11 +519,9 @@ export class Studio {
 		await this.flush();
 		this.current = t;
 		this.expand(t.project ?? '', true);
-		this.clips = t.clips.filter((c) => isWorld(c) || c.kind === 'slate' || c.kind === 'line' || (c.hash && this.byHash.has(c.hash)));
-		// a clip whose file this Mac does not know is left out of the view — and then the timeline is never saved from
-		// here, or those clips would be gone for good
-		this.dropped = t.clips.length - this.clips.length;
-		if (this.dropped) this.error = `${this.dropped} clip${this.dropped === 1 ? '' : 's'} of this timeline name files this Mac does not have yet — shown without them, and not saved.`;
+		// every clip stays, a file this Mac does not have yet included: the timeline marks it on the clip itself
+		this.clips = t.clips;
+		this.dropped = 0;
 		this.selected = null;
 		this.selectedKey = null;
 		this.time = 0;
@@ -636,8 +636,8 @@ export class Studio {
 		if (this.current?.id !== cur.id || (!force && (this.saving !== 'saved' || t.updated === cur.updated))) return;
 		this.current = t;
 		this.timelines = [t, ...this.timelines.filter((x) => x.id !== t.id)];
-		this.clips = t.clips.filter((c) => isWorld(c) || c.kind === 'slate' || c.kind === 'line' || (c.hash && this.byHash.has(c.hash)));
-		this.dropped = t.clips.length - this.clips.length;
+		this.clips = t.clips;
+		this.dropped = 0;
 		this.saving = 'saved';
 		if (this.playing) this.schedule();
 	}
@@ -668,8 +668,6 @@ export class Studio {
 	}
 
 	// ── the script: the timeline's own clips read as scenes of shots, each with the lines said under it ──────────
-	/** @typedef {{ clip: Clip, stage: 'text' | 'storyboard' | 'footage' | 'world', lines: Clip[] }} ScriptShot */
-	/** @typedef {{ scene: string, shots: ScriptShot[] }} ScriptScene */
 	script = $derived.by(() => {
 		/** @type {ScriptScene[]} */
 		const out = [];

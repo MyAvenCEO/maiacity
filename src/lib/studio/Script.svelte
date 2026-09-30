@@ -1,9 +1,9 @@
 <!--
-	The script (Script tab): the timeline itself, read as scenes of shots, each shot with what is said under it. A shot
-	not filmed yet is a slate — its words on the picture track — and a line not recorded yet is a line on the voice
-	track, in the captions already; drop a storyboard still or the footage on a slate, the recorded voice on a line, and
-	it takes its place with its script kept. Edit here or on the timeline: it is the same clips, one truth. A recorded
-	voice's words are its captions: rewording them here rewords them everywhere.
+	The script (Script tab), read-only, set as a screenplay: the timeline itself read as the story's parts (the hook,
+	three acts, the cliffhanger), their scenes, each shot as its action and what is said under it — the speaker, on
+	camera or V.O., and the line. It is the same clips as the timeline, one truth; an agent writes it through MCP
+	(timeline_save: sections, slates, lines, each shot's script), nobody types into it here. A picker at the top opens
+	another timeline.
 -->
 <script>
 	import { clockText } from './studio.svelte.js';
@@ -11,283 +11,210 @@
 	/** @type {{ s: import('./studio.svelte.js').Studio }} */
 	let { s } = $props();
 
-	const SIZES = ['', 'EWS', 'WS', 'FS', 'MS', 'MCU', 'CU', 'ECU', 'insert'];
-	const STAGE = { text: 'text', storyboard: 'storyboard', footage: 'footage', world: '3D' };
-	let newScene = $state('');
-
-	/** @param {string} from @param {string} to */
-	function renameScene(from, to) {
-		const name = to.trim();
-		if (!name || name === from) return;
-		for (const sh of s.script.find((x) => x.scene === from)?.shots ?? []) s.setScript(sh.clip.id, { scene: name });
+	const PART = /** @type {Record<string, string>} */ ({ hook: 'Hook', act1: 'Act One', act2: 'Act Two', act3: 'Act Three', cliffhanger: 'Cliffhanger' });
+	const sections = $derived(s.clips.filter((c) => c.kind === 'section' && c.section !== 'thumbnail').sort((a, b) => a.start - b.start));
+	const thumbnail = $derived(s.clips.find((c) => c.kind === 'section' && c.section === 'thumbnail'));
+	/** the part of the story a moment is in @param {number} t */
+	const partAt = (t) => sections.findLast((c) => t >= c.start - 0.05) ?? null;
+	/** the script's pages: each shot with its part, its scene, and whether a new part or scene starts with it */
+	const pages = $derived.by(() => {
+		/** @type {{ shot: import('./studio.svelte.js').ScriptShot, scene: string, part: import('./studio.svelte.js').Clip | null, newPart: boolean, newScene: boolean }[]} */
+		const out = [];
+		let lastPart = /** @type {string | null} */ (null), lastScene = '';
+		for (const sc of s.script)
+			for (const sh of sc.shots) {
+				const part = partAt(sh.clip.start);
+				out.push({ shot: sh, scene: sc.scene, part, newPart: (part?.id ?? null) !== lastPart, newScene: sc.scene !== lastScene });
+				lastPart = part?.id ?? null;
+				lastScene = sc.scene;
+			}
+		return out;
+	});
+	/** who speaks a voice clip, and whether we see them say it @param {import('./studio.svelte.js').Clip} l */
+	function speaker(l) {
+		const m = l.hash ? s.byHash.get(l.hash) : undefined;
+		const name = String(m?.meta?.speaker ?? 'Samuel').toUpperCase();
+		const seen = !!l.hash && s.clips.some((c) => c.track === 'V1' && c.hash === l.hash && l.start < c.start + c.dur && c.start < l.start + l.dur);
+		return seen ? name : `${name} (V.O.)`;
 	}
-	/** @param {string} id */
-	const phrasesOf = (id) => s.phrases.filter((p) => p.clip === id);
-	/** @param {import('./studio.svelte.js').Clip} c */
-	const pick = (c) => ((s.selected = c.id), s.seek(c.start));
+	/** what a voice clip says: a line's words, or the recorded voice's captions @param {import('./studio.svelte.js').Clip} l */
+	const said = (l) => (l.kind === 'line' ? (l.text ?? '') : s.phrases.filter((p) => p.clip === l.id).map((p) => p.words.map((w) => w.word).join(' ')).join(' '));
+	/** @param {string} scene */
+	const heading = (scene) => scene.toUpperCase();
 </script>
 
 <aside class="script">
-	<h2>Script</h2>
-	{#each s.script as sc (sc.scene)}
-		<section class="scene">
-			<input class="scn" value={sc.scene} onchange={(e) => renameScene(sc.scene, e.currentTarget.value)} aria-label="Scene" />
-			{#each sc.shots as sh (sh.clip.id)}
-				{@const c = sh.clip}
-				<article class="shot" class:sel={s.selected === c.id} class:now={s.time >= c.start && s.time < c.start + c.dur}>
-					<header>
-						<button class="tc" onclick={() => pick(c)} title="Go there">{clockText(c.start)}</button>
-						<input class="lbl" value={c.script?.label ?? ''} placeholder="shot" onchange={(e) => s.setScript(c.id, { label: e.currentTarget.value })} aria-label="Shot" />
-						<select value={c.script?.size ?? ''} onchange={(e) => s.setScript(c.id, { size: e.currentTarget.value })} aria-label="Shot size">
-							{#each SIZES as z (z)}<option value={z}>{z || 'size'}</option>{/each}
-						</select>
-						<span class="stage {sh.stage}" title={sh.stage === 'text' ? 'Not filmed yet: drop a storyboard still or the footage on it (timeline, V1)' : ''}>{STAGE[sh.stage]}</span>
-						<span class="len">{c.dur.toFixed(1)} s</span>
-					</header>
-					{#if sh.stage !== 'text'}<p class="file">{s.clipName(c)}</p>{/if}
-					<textarea rows="2" placeholder="What we see" value={c.script?.description ?? ''} onchange={(e) => s.setScript(c.id, { description: e.currentTarget.value })} aria-label="Description"></textarea>
-					<textarea class="notes" rows="1" placeholder="Notes" value={c.script?.notes ?? ''} onchange={(e) => s.setScript(c.id, { notes: e.currentTarget.value })} aria-label="Notes"></textarea>
-					<div class="lines">
-						{#each sh.lines as l (l.id)}
-							{#if l.kind === 'line'}
-								<label class="line todo" title="Not recorded yet: drop the recorded voice on it (timeline, A1)">
-									<span>▢</span>
-									<textarea rows="1" placeholder="What is said" value={l.text ?? ''} onchange={(e) => s.setLine(l.id, e.currentTarget.value)}></textarea>
-								</label>
-							{:else}
-								<div class="line said">
-									<span title={s.clipName(l)}>♪</span>
-									<div class="ph">
-										{#each phrasesOf(l.id) as p (`${p.words[0].i}`)}
-											<input value={p.words.map((w) => w.word).join(' ')} onchange={(e) => s.rewordPhrase(p, e.currentTarget.value)} aria-label="Words at {p.start.toFixed(1)} s" />
-										{:else}
-											<em>{s.clipName(l)} — no words yet</em>
-										{/each}
-									</div>
-								</div>
-							{/if}
-						{/each}
-						<button class="add" onclick={() => s.addLine(c.id)}>+ line</button>
-					</div>
-				</article>
-			{/each}
-			<button class="add" onclick={() => s.addShot(sc.scene)}>+ shot in {sc.scene}</button>
-		</section>
-	{/each}
-	<form class="new" onsubmit={(e) => (e.preventDefault(), newScene.trim() && (s.addShot(newScene.trim()), (newScene = '')))}>
-		<input bind:value={newScene} placeholder="A new scene…" aria-label="New scene" />
-		<button class="add" disabled={!newScene.trim()}>+ scene</button>
-	</form>
+	<header>
+		<span class="by">Written by the agent through MCP · the timeline switcher is top right</span>
+	</header>
+
+	<article class="page">
+		<h1>{s.current?.name ?? ''}</h1>
+		{#if s.current?.description}<p class="logline">{s.current.description}</p>{/if}
+		{#if thumbnail}<p class="thumb">THUMBNAIL — {thumbnail.text || clockText(thumbnail.start)}</p>{/if}
+
+		{#each pages as p (p.shot.clip.id)}
+			{#if p.newPart && p.part}
+				<h2>{PART[p.part.section ?? ''] ?? p.part.section}</h2>
+				{#if p.part.text}<p class="intent">{p.part.text}</p>{/if}
+			{/if}
+			{#if p.newScene}<h3>{heading(p.scene)}</h3>{/if}
+			<!-- svelte-ignore a11y_click_events_have_key_events -->
+			<!-- svelte-ignore a11y_no_static_element_interactions -->
+			<div class="shot" class:now={s.time >= p.shot.clip.start && s.time < p.shot.clip.start + p.shot.clip.dur} onclick={() => ((s.selected = p.shot.clip.id), s.seek(p.shot.clip.start))}>
+				<p class="action">
+					<span class="tc">{clockText(p.shot.clip.start)}</span>
+					{#if p.shot.clip.script?.size}<b>{p.shot.clip.script.size}.</b>{/if}
+					{p.shot.clip.script?.description || s.clipName(p.shot.clip)}
+					{#if p.shot.stage === 'text'}<em>(to film)</em>{:else if p.shot.stage === 'storyboard'}<em>(storyboard)</em>{/if}
+				</p>
+				{#each p.shot.lines as l (l.id)}
+					<p class="who">{speaker(l)}</p>
+					<p class="line" class:todo={l.kind === 'line'}>{said(l) || '…'}</p>
+				{/each}
+			</div>
+		{:else}
+			<p class="empty">No shots yet.</p>
+		{/each}
+	</article>
 </aside>
 
 <style>
 	.script {
-		grid-area: inspector;
+		grid-area: bin;
+		display: flex;
+		flex-direction: column;
 		min-height: 0;
-		padding: 0.9rem;
-		overflow: auto;
 		background: var(--panel);
-	}
-
-	h2 {
-		margin: 0 0 0.6rem;
-		font-size: 0.7rem;
-		font-weight: 600;
-		letter-spacing: 0.12em;
-		text-transform: uppercase;
-		color: var(--dim);
-	}
-
-	.scene {
-		margin-bottom: 1.1rem;
-	}
-
-	.scn {
-		width: 100%;
-		margin-bottom: 0.35rem;
-		padding: 0.1rem 0;
-		border: 0;
-		border-bottom: 1px solid var(--edge);
-		background: none;
-		font-family: var(--font-display);
-		font-size: 1.05rem;
-		color: var(--ink);
-	}
-
-	.shot {
-		margin-bottom: 0.45rem;
-		padding: 0.45rem 0.55rem;
-		border: 1px solid var(--edge);
-		border-radius: 8px;
-		background: #fff;
-	}
-
-	.shot.now {
-		border-color: var(--accent);
-	}
-
-	.shot.sel {
-		border-color: var(--ink);
 	}
 
 	header {
 		display: flex;
-		gap: 0.35rem;
+		gap: 0.6rem;
 		align-items: center;
-	}
-
-	.tc {
-		padding: 0;
-		border: 0;
-		background: none;
-		font-family: ui-monospace, 'SF Mono', Menlo, monospace;
-		font-size: 0.68rem;
-		color: var(--dim);
-		cursor: pointer;
-	}
-
-	.lbl {
-		width: 3rem;
-		padding: 0.05rem 0.25rem;
-		border: 1px solid transparent;
-		border-radius: 4px;
-		font: inherit;
-		font-size: 0.76rem;
-		font-weight: 600;
-	}
-
-	.lbl:hover,
-	.lbl:focus {
-		border-color: var(--edge);
+		padding: 0.6rem 1rem;
+		border-bottom: 1px solid var(--edge);
 	}
 
 	select {
-		padding: 0 0.2rem;
+		max-width: 24rem;
+		padding: 0.2rem 0.4rem;
 		border: 1px solid var(--edge);
-		border-radius: 4px;
+		border-radius: 6px;
 		background: #fff;
 		font: inherit;
-		font-size: 0.68rem;
+		font-size: 0.78rem;
 	}
 
-	.stage {
-		padding: 0 0.4rem;
-		border-radius: 999px;
-		font-size: 0.62rem;
-		font-weight: 600;
-	}
-
-	.stage.text {
-		background: #f3e3c1;
-		color: #a8741a;
-	}
-
-	.stage.storyboard {
-		background: #e6ecf5;
-		color: #4a5f93;
-	}
-
-	.stage.footage {
-		background: #eef2e6;
-		color: #3e5a2f;
-	}
-
-	.stage.world {
-		background: #f1eafb;
-		color: #5a3a8a;
-	}
-
-	.len {
+	.by {
 		margin-left: auto;
-		font-size: 0.66rem;
+		font-size: 0.68rem;
 		color: var(--dim);
 	}
 
-	.file {
-		margin: 0.2rem 0 0;
-		overflow: hidden;
-		font-size: 0.66rem;
-		white-space: nowrap;
-		text-overflow: ellipsis;
-		color: var(--dim);
+	/* a screenplay page: Courier, 12 pt, the classic margins */
+	.page {
+		flex: 1;
+		min-height: 0;
+		overflow: auto;
+		padding: 1.6rem 2.4rem 3rem;
+		background: #fffefa;
+		font-family: 'Courier Prime', 'Courier New', Courier, monospace;
+		font-size: 0.86rem;
+		line-height: 1.45;
+		color: #1a1a1a;
 	}
 
-	textarea,
-	.ph input,
-	.new input {
-		width: 100%;
-		margin-top: 0.25rem;
-		padding: 0.2rem 0.35rem;
-		border: 1px solid transparent;
-		border-radius: 4px;
-		background: var(--bg);
-		font: inherit;
-		font-size: 0.76rem;
-		resize: vertical;
-		color: var(--ink);
+	h1 {
+		margin: 0 0 0.3rem;
+		font-family: inherit;
+		font-size: 1rem;
+		font-weight: 700;
+		text-align: center;
+		text-transform: uppercase;
 	}
 
-	textarea:focus,
-	.ph input:focus,
-	.new input:focus {
-		border-color: var(--edge);
-		background: #fff;
-		outline: none;
-	}
-
-	.notes {
-		font-size: 0.7rem;
-		color: var(--dim);
-	}
-
-	.lines {
-		margin-top: 0.2rem;
-	}
-
-	.line {
-		display: grid;
-		grid-template-columns: 1rem 1fr;
-		gap: 0.2rem;
-		align-items: start;
-	}
-
-	.line > span {
-		padding-top: 0.45rem;
-		font-size: 0.7rem;
-		color: var(--dim);
-	}
-
-	.line.todo textarea {
+	.logline {
+		margin: 0 auto 1rem;
+		max-width: 34em;
+		text-align: center;
 		font-style: italic;
+		color: #555;
 	}
 
-	.ph em {
-		display: block;
-		padding-top: 0.35rem;
-		font-size: 0.7rem;
-		color: var(--dim);
+	.thumb {
+		margin: 0 0 1.2rem;
+		text-align: center;
+		color: #8a6a1a;
 	}
 
-	.add {
-		margin-top: 0.25rem;
-		padding: 0.1rem 0.5rem;
-		border: 1px dashed var(--edge);
-		border-radius: 999px;
-		background: none;
-		font: inherit;
-		font-size: 0.7rem;
-		color: var(--dim);
+	h2 {
+		margin: 1.6rem 0 0.2rem;
+		font-family: inherit;
+		font-size: 0.86rem;
+		font-weight: 700;
+		text-align: center;
+		text-decoration: underline;
+		text-transform: uppercase;
+	}
+
+	.intent {
+		margin: 0 auto 0.6rem;
+		max-width: 34em;
+		text-align: center;
+		font-style: italic;
+		color: #666;
+	}
+
+	h3 {
+		margin: 1rem 0 0.4rem;
+		font-family: inherit;
+		font-size: 0.86rem;
+		font-weight: 700;
+	}
+
+	.shot {
+		margin: 0 -0.6rem;
+		padding: 0.1rem 0.6rem 0.3rem;
+		border-left: 2px solid transparent;
 		cursor: pointer;
 	}
 
-	.add:disabled {
-		opacity: 0.5;
-		cursor: default;
+	.shot.now {
+		border-left-color: var(--accent);
+		background: #fbf3df;
 	}
 
-	.new {
-		display: flex;
-		gap: 0.4rem;
-		align-items: center;
+	.action {
+		margin: 0.4rem 0;
+	}
+
+	.tc {
+		margin-right: 0.6rem;
+		font-size: 0.7rem;
+		color: #999;
+	}
+
+	.action em {
+		color: #a8741a;
+	}
+
+	.who {
+		margin: 0.5rem 0 0;
+		padding-left: 37%;
+		text-transform: uppercase;
+	}
+
+	.line {
+		margin: 0 16% 0.4rem 22%;
+	}
+
+	.line.todo {
+		font-style: italic;
+		color: #a8741a;
+	}
+
+	.empty {
+		color: #999;
 	}
 </style>

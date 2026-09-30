@@ -168,7 +168,8 @@ pub async fn sweep(handle: AppHandle, vault: Arc<Vault>) {
                         tauri::async_runtime::spawn(auto_proxy(handle.clone(), vault.clone(), m.hash.clone(), PathBuf::new()));
                     }
                     // a video with its proxy but no grading still yet (made before there were any): its still
-                    let still = m.meta.get("grade_still").and_then(|p| p.as_str()).is_some_and(|s| s.len() == 64);
+                    // (and its preview, made with it)
+                    let still = m.meta.get("grade_still").and_then(|p| p.as_str()).is_some_and(|s| s.len() == 64) && m.meta.get("preview").and_then(|p| p.as_str()).is_some_and(|s| s.len() == 64);
                     let still_tries = m.meta.get("grade_still_tries").and_then(|t| t.as_u64()).unwrap_or(0);
                     let still_queued = NOW.lock().unwrap().as_ref().is_some_and(|n| n.contains_key(&format!("still:{}", m.hash)));
                     if made && m.kind == "video" && !sequence(m) && !still && still_tries < TRIES && !still_queued && journey(profile) {
@@ -367,8 +368,9 @@ async fn grading_still(vault: &Vault, hex: &str, name: &str, path: &std::path::P
     let at = (seconds / 2.0).max(0.0);
     let stem = std::path::Path::new(name).file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_else(|| hex[..12].to_string());
     let out = vault.ingest_dir().join(format!("{stem}.grade.png"));
-    let (src, o, pf) = (path.to_path_buf(), out.clone(), profile.to_string());
-    let (w, h) = tokio::task::spawn_blocking(move || vault_render::grading_still(&src, &pf, at, STILL_WIDTH, &o))
+    let small = vault.ingest_dir().join(format!("{stem}.preview.jpg"));
+    let (src, o, pf, sm) = (path.to_path_buf(), out.clone(), profile.to_string(), small.clone());
+    let (w, h) = tokio::task::spawn_blocking(move || vault_render::grading_still_and_preview(&src, &pf, at, STILL_WIDTH, &o, Some((&sm, PREVIEW_WIDTH, crate::render::odt() as &dyn vault_render::Output))))
         .await
         .map_err(|e| e.to_string())?
         .map_err(|e| format!("{e:#}"))?;
@@ -385,9 +387,25 @@ async fn grading_still(vault: &Vault, hex: &str, name: &str, path: &std::path::P
     let made = vault.ingest_file(&out, &batch).await.map_err(|e| format!("{e:#}"));
     std::fs::remove_file(&out).ok();
     let made = made?;
-    vault.catalog.describe(hash, &json!({ "meta": { "grade_still": made.hash } })).await.map_err(|e| format!("{e:#}"))?;
+    // the preview for the lists: the same frame as it will look (ACES 2.0 → Rec.709), small
+    let pbatch = Batch {
+        session: format!("preview of {hex}"),
+        tags: vec!["preview".into()],
+        title: Some(format!("{stem} · preview")),
+        meta: json!({ "role": "preview", "preview_of": hex, "t": (at * 1000.0).round() / 1000.0, "width": PREVIEW_WIDTH }),
+        story: Some(original.story.clone()).filter(|s| !s.is_empty()),
+        class: Some("proxy".into()),
+        ..Default::default()
+    };
+    let preview = vault.ingest_file(&small, &pbatch).await.map_err(|e| format!("{e:#}"));
+    std::fs::remove_file(&small).ok();
+    let preview = preview?;
+    vault.catalog.describe(hash, &json!({ "meta": { "grade_still": made.hash, "preview": preview.hash } })).await.map_err(|e| format!("{e:#}"))?;
     Ok(())
 }
+
+/// How wide a list's preview is.
+const PREVIEW_WIDTH: u32 = 480;
 
 /// An original with a proxy of ours but no grading still yet (made before there were any): its still, from the
 /// vault's copy of the original, one at a time after any proxy.

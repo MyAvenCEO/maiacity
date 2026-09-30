@@ -5,10 +5,9 @@
 	its colour profile (a menu sets it by hand) and whether its HD proxy is ready — the Edit tab plays only proxies.
 -->
 <script>
-	import ColorBadge from './ColorBadge.svelte';
 	import { isCache } from './color.js';
 	import { allShots, blankSpec, newShot } from './shots.js';
-	import { itemName, thumb } from './studio.svelte.js';
+	import { itemName, raw, thumb } from './studio.svelte.js';
 	import { command } from '$lib/native';
 	import { transcriptState } from './transcript.js';
 
@@ -142,27 +141,6 @@
 </script>
 
 <aside class="bin">
-	<div class="tl-head"><h3>Timelines</h3></div>
-	<div class="tls">
-		{#each groups as [project, list] (project)}
-			<button class="proj" class:here={(s.current?.project ?? '') === project} aria-expanded={s.expanded.includes(project)} onclick={() => s.expand(project)}>
-				<span class="caret">{s.expanded.includes(project) ? '▾' : '▸'}</span>{project || 'Other'} <span>{list.length}</span>
-			</button>
-			{#if s.expanded.includes(project)}
-				<ul>
-					{#each list as t (t.id)}
-						<li class:on={s.current?.id === t.id}>
-							<button class="tl" onclick={() => s.openTimeline(t)}>
-								<span class="nm">{#if t.variant}<b class="var">{t.variant}</b>{/if}{t.name}{#if t.stage && t.stage !== 'edit'}<i class="stg {t.stage}">{t.stage}</i>{/if}</span>
-								<span class="tg">{t.description ?? `${t.aspect} · ${t.clips.length} clips`}</span>
-							</button>
-							<button class="x" onclick={() => s.removeTimeline(t)} aria-label="Delete timeline">×</button>
-						</li>
-					{/each}
-				</ul>
-			{/if}
-		{/each}
-	</div>
 	<div class="lib-head">
 		<h3>Library</h3>
 		<select class="story" value={story} onchange={(e) => choose(e.currentTarget.value)} onfocus={loadStories} aria-label="Story" title="The files of one story (or of none: the inbox)">
@@ -215,7 +193,9 @@
 					title="Click to see it in the source monitor, drag onto a track, or double-click to drop it at the playhead"
 				>
 					<span class="thumb">
-						{#if m.kind === 'image'}<img src={thumb(m)} alt="" loading="lazy" draggable="false" />{:else}<i>{m.kind === 'audio' ? '♪' : '▶'}</i>{/if}
+						{#if m.kind === 'image'}<img src={thumb(m)} alt="" loading="lazy" draggable="false" />
+						{:else if typeof m.meta?.preview === 'string'}<img src={raw(m.meta.preview)} alt="" loading="lazy" draggable="false" />
+						{:else}<i>{m.kind === 'audio' ? '♪' : '▶'}</i>{/if}
 					</span>
 						<span class="meta">
 						<span class="nm">{String(m.meta?.title ?? itemName(m))}</span>
@@ -226,7 +206,6 @@
 						</span>
 					</span>
 				</button>
-				{#if m.kind !== 'audio'}<span class="badge"><ColorBadge {s} {m} /></span>{/if}
 			</li>
 		{/each}
 	</ul>

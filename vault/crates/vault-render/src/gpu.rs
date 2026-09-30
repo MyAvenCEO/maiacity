@@ -426,6 +426,19 @@ impl Gpu {
         }
     }
 
+    /// A picture's display code values as a JPEG, tagged Rec.709 (a preview thumbnail).
+    pub fn jpeg(&self, img: &CIImage, w: u32, h: u32, out: &std::path::Path) -> Result<()> {
+        // SAFETY: plain Core Image and Core Graphics calls
+        unsafe {
+            let img = img.imageByCroppingToRect(rect(0.0, 0.0, w as f64, h as f64));
+            let space = objc2_core_graphics::CGColorSpace::with_name(Some(objc2_core_graphics::kCGColorSpaceITUR_709)).context("no Rec.709 colour space")?;
+            let url = NSURL::fileURLWithPath(&NSString::from_str(&std::path::absolute(out)?.to_string_lossy()));
+            self.context
+                .writeJPEGRepresentationOfImage_toURL_colorSpace_options_error(&img, &url, &space, &NSDictionary::new())
+                .map_err(|e| anyhow!("cannot write {}: {e:?}", out.display()))
+        }
+    }
+
     /// Read a picture back as RGBA f32 (tests, the hero frame).
     pub fn read(&self, img: &CIImage, w: u32, h: u32) -> Vec<f32> {
         let mut px = vec![0f32; (w * h * 4) as usize];
