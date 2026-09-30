@@ -68,7 +68,7 @@
 		padding: 0.2rem 0.7rem;
 		border: 1px solid var(--edge);
 		border-radius: 999px;
-		background: #fff;
+		background: var(--raised);
 		font: inherit;
 		font-size: 0.76rem;
 		font-weight: 600;
@@ -93,8 +93,8 @@
 		padding: 0.4rem;
 		border: 1px solid var(--edge);
 		border-radius: 10px;
-		background: #fff;
-		box-shadow: 0 12px 40px rgba(0, 0, 0, 0.18);
+		background: var(--raised);
+		box-shadow: 0 12px 40px rgb(0 0 0 / 0.55);
 	}
 
 	.proj {
@@ -114,7 +114,7 @@
 
 	.row.on,
 	.row:hover {
-		background: var(--bg);
+		background: var(--hover);
 	}
 
 	.row > button:first-child {
@@ -138,7 +138,7 @@
 		border-radius: 4px;
 		background: var(--ink);
 		font-size: 0.68rem;
-		color: #fff;
+		color: var(--on-ink);
 	}
 
 	.nm {

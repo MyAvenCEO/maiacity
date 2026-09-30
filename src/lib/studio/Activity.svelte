@@ -85,14 +85,14 @@
 	.sum { margin: 0 0 0.8rem; font-size: 0.84rem; color: var(--dim); }
 	h4 { margin: 1.6rem 0 0.4rem; font-size: 0.68rem; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--dim); }
 	li.ingest { grid-template-columns: minmax(0, 1fr) 11rem 20rem; }
-	li.ingest b { color: #9c3b26; }
+	li.ingest b { color: var(--bad); }
 	ul { display: flex; flex-direction: column; margin: 0; padding: 0; list-style: none; }
 	li { display: grid; grid-template-columns: minmax(0, 1fr) 6rem 8rem 15rem; gap: 0.8rem; align-items: center; padding: 0.45rem 0; border-bottom: 1px solid var(--edge); font-size: 0.8rem; }
 	li.ended { grid-template-columns: minmax(0, 1fr) 6rem 23.8rem; color: var(--dim); }
-	li.aborted .p { color: #9c3b26; }
+	li.aborted .p { color: var(--bad); }
 	.n { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 	.d { color: var(--dim); }
 	.bar { overflow: hidden; height: 5px; border-radius: 3px; background: var(--edge); }
-	.bar i { display: block; height: 100%; background: #d9a441; transition: width 0.8s linear; }
+	.bar i { display: block; height: 100%; background: var(--accent); transition: width 0.8s linear; }
 	.p { font-variant-numeric: tabular-nums; color: var(--dim); }
 </style>

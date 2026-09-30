@@ -70,7 +70,7 @@
 	}
 
 	.ic:hover {
-		background: var(--bg);
+		background: var(--hover);
 	}
 
 	.ic:disabled {
@@ -83,7 +83,7 @@
 		height: 2rem;
 		background: var(--accent);
 		font-size: 0.72rem;
-		color: #fff;
+		color: var(--on-accent);
 	}
 
 	.time {
@@ -113,9 +113,9 @@
 	}
 
 	.pill.on {
-		border-color: var(--ink);
-		background: var(--ink);
-		color: #fff;
+		border-color: var(--edge-strong);
+		background: var(--sel);
+		color: var(--ink);
 	}
 
 	.pill:disabled {

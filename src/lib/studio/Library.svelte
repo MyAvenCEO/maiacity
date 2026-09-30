@@ -429,7 +429,7 @@
 		min-height: 0;
 		overflow: hidden;
 		padding: 1rem 1.2rem 0;
-		background: var(--paper);
+		background: var(--panel);
 	}
 
 	.panel {
@@ -523,9 +523,9 @@
 	}
 
 	.kinds button.on {
-		border-color: var(--ink);
-		background: var(--ink);
-		color: var(--paper);
+		border-color: var(--edge-strong);
+		background: var(--sel);
+		color: var(--ink);
 	}
 
 	.kinds button.on .n {
@@ -548,11 +548,11 @@
 	}
 
 	.days button:hover {
-		background: var(--cream);
+		background: var(--hover);
 	}
 
 	.days button.on {
-		background: var(--mustard);
+		background: var(--chosen);
 		color: var(--ink);
 	}
 
@@ -700,8 +700,8 @@
 	}
 
 	.tag.on {
-		border-color: var(--mustard);
-		background: var(--mustard);
+		border-color: var(--accent);
+		background: var(--chosen);
 		color: var(--ink);
 	}
 
@@ -739,7 +739,7 @@
 	}
 
 	.note.bad {
-		color: #9c3b26;
+		color: var(--bad);
 	}
 
 	@media (max-width: 1100px) {

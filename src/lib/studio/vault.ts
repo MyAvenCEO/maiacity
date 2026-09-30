@@ -52,6 +52,21 @@ export type Device = { endpoint_id: string; label: string; created: string; seen
 export const CLASSES = ['default', 'original', 'proxy', 'delivery'] as const;
 export type FileClass = (typeof CLASSES)[number];
 /**
+ * Each class's one name, wherever a class is shown — badge, filter, rules, modal. A file flagged neither original,
+ * proxy nor delivery is a working file (its class key stays `default`).
+ */
+export const CLASS_NAMES: Record<FileClass, { one: string; many: string }> = {
+	default: { one: 'working', many: 'working files' },
+	original: { one: 'original', many: 'originals' },
+	proxy: { one: 'proxy', many: 'proxies' },
+	delivery: { one: 'delivery', many: 'deliveries' },
+};
+/** A class's name (`n` ≠ 1: its plural). */
+export const className = (c: FileClass | string, n = 1) => {
+	const k = (CLASS_NAMES as Record<string, { one: string; many: string }>)[c] ?? CLASS_NAMES.default;
+	return n === 1 ? k.one : k.many;
+};
+/**
  * The master copies, each device in its one tier: A the master cloud backup, B the local master working copy, C the
  * cold archive (HDD, LTO — not set up yet). The ingest flow shows these three and nothing else; any other device that
  * syncs is just a device.

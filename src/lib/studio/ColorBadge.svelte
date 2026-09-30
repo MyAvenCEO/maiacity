@@ -81,25 +81,25 @@
 
 	.badge {
 		padding: 0 0.3rem;
-		border: 1px solid #b9c7bd;
+		border: 1px solid var(--ok-line);
 		border-radius: 4px;
-		background: #eef4ef;
+		background: var(--ok-bg);
 		font: 600 0.58rem/1.35 ui-monospace, 'SF Mono', Menlo, monospace;
 		letter-spacing: 0.02em;
-		color: #3c5a45;
+		color: var(--ok);
 		cursor: pointer;
 	}
 
 	.badge.log {
-		border-color: #c9b58c;
-		background: #f7efdc;
-		color: #7a5a17;
+		border-color: var(--warn-line);
+		background: var(--warn-bg);
+		color: var(--warn);
 	}
 
 	.badge.unknown {
-		border-color: #d49a8a;
-		background: #fbe9e4;
-		color: #9c3b26;
+		border-color: var(--bad-line);
+		background: var(--bad-bg);
+		color: var(--bad);
 	}
 
 	.badge.guessed {
@@ -121,8 +121,8 @@
 		padding: 0.4rem;
 		border: 1px solid var(--edge, #e2dccd);
 		border-radius: 8px;
-		background: #fff;
-		box-shadow: 0 10px 30px rgb(38 56 44 / 0.18);
+		background: var(--raised);
+		box-shadow: 0 10px 30px rgb(0 0 0 / 0.55);
 		font-size: 0.72rem;
 	}
 
@@ -148,7 +148,7 @@
 
 	.menu button:hover,
 	.menu button.on {
-		background: #f3e3c1;
+		background: var(--chosen);
 	}
 
 	.menu b {
@@ -166,6 +166,6 @@
 		margin-top: 0.25rem;
 		border-top: 1px solid var(--edge, #e2dccd);
 		border-radius: 0;
-		color: #9c3b26;
+		color: var(--bad);
 	}
 </style>

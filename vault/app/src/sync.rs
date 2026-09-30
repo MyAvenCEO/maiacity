@@ -35,8 +35,12 @@ pub async fn vault_connect(app: State<'_, App>, auth: State<'_, Auth>) -> Res<Ne
 }
 
 pub async fn connect(vault: &Vault, auth: &Auth) -> Res<Network> {
+    connect_as(vault, auth, &format!("maiaCITY Studio · {}", auth::host_name())).await
+}
+
+/// Pair a node (this Mac's, or a drive's) under a label and join the vault's network with it.
+pub async fn connect_as(vault: &Vault, auth: &Auth, label: &str) -> Res<Network> {
     let me = vault.endpoint.id().to_string();
-    let label = format!("maiaCITY Studio · {}", auth::host_name());
     auth.get_ok("POST", "/api/vault/devices", Some(json!({ "endpoint_id": me, "label": label }))).await?;
     let join = auth.get_ok("GET", "/api/vault/join", None).await?;
     let (Some(ticket), Some(relay)) = (join["catalog"].as_str(), join["relay"].as_str()) else {
@@ -109,6 +113,8 @@ pub fn vault_transfers(app: State<'_, App>) -> Res<Vec<Moving>> {
             "avenSSD".to_string()
         } else if !server.is_empty() && to == server {
             "hetzner".to_string()
+        } else if let Some(name) = crate::drives::name_of(to) {
+            name
         } else {
             format!("device {}", &to[..to.len().min(10)])
         }

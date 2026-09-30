@@ -23,6 +23,10 @@ impl Allow {
     pub fn set(&self, ids: impl IntoIterator<Item = EndpointId>) {
         *self.ids.write().unwrap() = Some(ids.into_iter().collect());
     }
+    /// Let one more in (a drive's node beside this Mac's), keeping the rest.
+    pub fn add(&self, id: EndpointId) {
+        self.ids.write().unwrap().get_or_insert_with(HashSet::new).insert(id);
+    }
     pub fn has(&self, id: &EndpointId) -> bool {
         self.ids.read().unwrap().as_ref().is_some_and(|s| s.contains(id))
     }

@@ -344,6 +344,11 @@ impl Vault {
         self.catalog.join(join.ticket).await
     }
 
+    /// Tell this node where another one is (a drive's node and this Mac's, side by side in one app: direct).
+    pub fn know(&self, addr: iroh::EndpointAddr) {
+        self.lookup.add_endpoint_info(addr);
+    }
+
     /// Where ingest lands copies: on the same volume as the store, so importing them is a clone, not a second copy.
     pub fn ingest_dir(&self) -> PathBuf {
         self.dir.join("ingest")

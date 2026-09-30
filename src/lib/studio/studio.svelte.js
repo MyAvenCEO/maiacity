@@ -1722,5 +1722,5 @@ export class Studio {
 }
 
 /** @param {Track} t */
-export const tint = (t) => (t === 'A1' ? '#a8741a' : t === 'A3' ? '#4a5f93' : '#2f7d6a');
+export const tint = (t) => (t === 'A1' ? '#c8923a' : t === 'A3' ? '#6f8fd6' : '#3fae96');
 export { evaluate };

@@ -5,7 +5,7 @@
 <script lang="ts">
 	import CopiesBadge from '$lib/studio/CopiesBadge.svelte';
 	import { command } from '$lib/native';
-	import { BY_HAND, tiersOf, type Copies, type StoryView } from '$lib/studio/vault';
+	import { BY_HAND, className, tiersOf, type Copies, type StoryView } from '$lib/studio/vault';
 	import { GATEWAY } from '$lib/media/url';
 	import type { MediaItem } from './facets';
 	import {
@@ -129,10 +129,10 @@
 		</select>
 		<h3>Class</h3>
 		{#if m.class === 'proxy' || m.class === 'delivery'}
-			<p class="desc">{m.class}{home ? ` → ${tiersOf(home.rules[m.class]).join(' + ')}` : ''} <span class="dim">(set by its pipeline)</span></p>
+			<p class="desc">{className(m.class)}{home ? ` → ${tiersOf(home.rules[m.class]).join(' + ')}` : ''} <span class="dim">(set by its pipeline)</span></p>
 		{:else}
-			<select class="place" value={m.class ?? 'default'} onchange={(e) => (pending = { what: 'class', value: e.currentTarget.value, label: `Make it ${e.currentTarget.value}` })}>
-				{#each BY_HAND as c (c)}<option value={c}>{c}{home ? ` → ${tiersOf(home.rules[c]).join(' + ')}` : ''}</option>{/each}
+			<select class="place" value={m.class ?? 'default'} onchange={(e) => (pending = { what: 'class', value: e.currentTarget.value, label: `Make it ${className(e.currentTarget.value)}` })}>
+				{#each BY_HAND as c (c)}<option value={c}>{className(c)}{home ? ` → ${tiersOf(home.rules[c]).join(' + ')}` : ''}</option>{/each}
 			</select>
 		{/if}
 		{#if pending}

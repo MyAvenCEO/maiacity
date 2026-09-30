@@ -198,7 +198,7 @@
 		min-width: 0;
 		min-height: 0;
 		padding: 1.4rem 1rem 1rem;
-		background: var(--bg);
+		background: var(--abyss);
 		/* the frame measures itself against the room it has, so it keeps its aspect however narrow */
 		container-type: size;
 	}
@@ -233,22 +233,22 @@
 		max-width: 22rem;
 		padding: 0.05rem 0.45rem;
 		border-radius: 999px;
-		background: #e8efe9;
+		background: var(--ok-bg);
 		font-size: 0.64rem;
 		white-space: nowrap;
 		text-overflow: ellipsis;
-		color: #2f5a3f;
+		color: var(--ok);
 		pointer-events: auto;
 	}
 
 	.b.warn {
-		background: #fbf1dc;
-		color: #7a5a17;
+		background: var(--warn-bg);
+		color: var(--warn);
 	}
 
 	.b.world {
-		background: #e6ecf5;
-		color: #4a5f93;
+		background: var(--info-bg);
+		color: var(--info);
 	}
 
 	.monitor:fullscreen .mlabel,
@@ -323,8 +323,8 @@
 		container-type: size;
 		overflow: hidden;
 		border-radius: 6px;
-		background: #111;
-		box-shadow: 0 10px 30px rgb(38 56 44 / 0.15);
+		background: #000;
+		box-shadow: 0 10px 30px rgb(0 0 0 / 0.55);
 	}
 
 	.frame img,
@@ -353,7 +353,7 @@
 		padding: 1px;
 		border: 1px solid var(--edge);
 		border-radius: 999px;
-		background: #fff;
+		background: var(--raised);
 	}
 
 	.src button {
@@ -368,8 +368,8 @@
 	}
 
 	.src button.on {
-		background: var(--ink);
-		color: #fff;
+		background: var(--sel);
+		color: var(--ink);
 	}
 
 	.slate {

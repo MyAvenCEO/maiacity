@@ -229,14 +229,52 @@
 		color: #8a2a12;
 	}
 
-	/* the editing room: light, and the whole window */
+	/* the editing room: dark marine, and the whole window */
 	.studio {
-		--bg: #f6f3ec;
-		--panel: #fbfaf6;
-		--edge: #e2dccd;
-		--ink: #26382c;
-		--dim: #7b857a;
-		--accent: #d99a2b;
+		color-scheme: dark;
+		/* marine blues, from the deep to the surface */
+		--abyss: #03080f; /* around the picture */
+		--bg: #07121f; /* the deepest ground: the timeline's lanes, wells */
+		--lane: #09172a; /* a lane under a track */
+		--panel: #0b1a2c; /* the panels: bin, inspector, track heads */
+		--chrome: #0d2035; /* the bars: top bar, tab bar, ruler */
+		--raised: #10243b; /* buttons, inputs, cards */
+		--hover: #16304d; /* hover, open, elevated */
+		--sel: #24507c; /* a chosen tab or toggle */
+		--chosen: rgb(232 168 58 / 0.2); /* a chosen row or item: the accent, faint */
+		--edge: #1f3d5f; /* lines */
+		--edge-strong: #2e5a86;
+		/* text */
+		--ink: #e6eef7;
+		--ink-soft: #b4c4d6;
+		--dim: #8ba1b9;
+		--on-ink: #07121f; /* text on a light (ink) fill */
+		/* accents */
+		--accent: #e8a83a; /* amber: selection, the grade */
+		--on-accent: #1c1305;
+		--rec: #ff5a4c; /* the playhead, record */
+		--cyan: #4cc9d9; /* secondary highlights */
+		--ok: #6fd3a0;
+		--ok-bg: rgb(80 200 140 / 0.15);
+		--ok-line: #3f8f68;
+		--warn: #f0bd62;
+		--warn-bg: rgb(232 168 58 / 0.16);
+		--warn-line: #8a6a2e;
+		--bad: #f78f76;
+		--bad-bg: rgb(240 110 80 / 0.17);
+		--bad-line: #8a4a3c;
+		--info: #93b3ef;
+		--info-bg: rgb(110 150 230 / 0.18);
+		--violet: #bda8f0;
+		--violet-bg: rgb(160 130 230 / 0.2);
+		/* the site's own tokens, re-tuned for the dark room (the shared media pieces inside read them) */
+		--cream: var(--panel);
+		--paper: var(--raised);
+		--line: var(--edge);
+		--muted: var(--dim);
+		--terracotta: #ec8a62;
+		--mustard: #efb54d;
+		--sage: #9fc28f;
 		position: fixed;
 		inset: 0;
 		z-index: 200;
@@ -310,7 +348,7 @@
 	.tabs {
 		grid-area: tabs;
 		padding: 0.35rem 1rem 0.45rem;
-		background: var(--panel);
+		background: var(--chrome);
 	}
 
 	.bar {
@@ -320,7 +358,7 @@
 		gap: 0.3rem;
 		/* the window's title bar is ours (overlay): the traffic lights sit at its top left */
 		padding: 0.45rem 1rem 0.4rem 5.4rem;
-		background: var(--panel);
+		background: var(--chrome);
 	}
 
 	.row {
@@ -389,7 +427,7 @@
 	}
 
 	.err.note {
-		color: #3e5a2f;
+		color: var(--ok);
 	}
 
 	.err {
@@ -402,7 +440,7 @@
 		font-size: 0.78rem;
 		white-space: nowrap;
 		text-overflow: ellipsis;
-		color: #9c3b26;
+		color: var(--bad);
 		cursor: pointer;
 	}
 
@@ -414,24 +452,32 @@
 		padding: 0.3rem 0.8rem;
 		border: 0;
 		border-radius: 999px;
-		background: linear-gradient(90deg, var(--accent) var(--p), #c4a672 var(--p));
+		background: linear-gradient(90deg, var(--accent) var(--p), #9c7c46 var(--p));
 		font: inherit;
 		font-size: 0.76rem;
 		font-weight: 600;
-		color: #fff;
+		color: var(--on-accent);
 		cursor: pointer;
 	}
 
-	/* shared by every panel */
+	/* shared by every panel: controls take the room's ink, not the system's */
+	.studio :global(:where(button, input, select, textarea)) {
+		color: inherit;
+	}
+
 	.studio :global(.ghost) {
 		padding: 0.35rem 0.8rem;
 		border: 1px solid var(--edge);
 		border-radius: 999px;
-		background: #fff;
+		background: var(--raised);
 		font: inherit;
 		font-size: 0.78rem;
 		color: var(--ink);
 		cursor: pointer;
+	}
+
+	.studio :global(.ghost:hover:not(:disabled)) {
+		background: var(--hover);
 	}
 
 	.studio :global(.ghost:disabled) {
@@ -446,7 +492,45 @@
 
 	.studio :global(.ghost.danger) {
 		margin-top: 0.8rem;
-		color: #9c3b26;
+		color: var(--bad);
+	}
+
+	/* the shared media pieces (Tile, Viewer, Details from admin/media) inside the dark room: what the tokens don't reach */
+	.studio :global(.tile:hover),
+	.studio :global(.tile:focus-visible) {
+		box-shadow: 0 8px 24px rgb(0 0 0 / 0.45);
+	}
+
+	.studio :global(.tile .play) {
+		background: rgb(0 0 0 / 0.6);
+		color: var(--ink);
+	}
+
+	.studio :global(.tile .role) {
+		background: rgb(7 18 31 / 0.85);
+	}
+
+	.studio :global(.tile .role.old),
+	.studio :global(.details .bad) {
+		color: var(--bad);
+	}
+
+	.studio :global(.details button.chip:hover) {
+		border-color: var(--accent);
+		background: var(--chosen);
+		color: var(--ink);
+	}
+
+	.studio :global(.details .confirm) {
+		color: var(--warn);
+	}
+
+	.studio :global(.details .confirm button:not(.no)) {
+		color: var(--on-ink);
+	}
+
+	.studio :global(.viewer .stage) {
+		background: var(--abyss);
 	}
 
 	/* the monitors: the program alone, or the source beside it; in Grade the program over the scopes */
@@ -472,7 +556,7 @@
 		padding: 0.25rem 0.4rem;
 		border: 1px solid var(--edge);
 		border-radius: 6px;
-		background: #fff;
+		background: var(--raised);
 		font: inherit;
 		font-size: 0.78rem;
 		color: var(--ink);

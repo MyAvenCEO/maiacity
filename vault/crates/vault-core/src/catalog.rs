@@ -545,6 +545,15 @@ impl Catalog {
         Ok(())
     }
 
+    /// This device holds a file now (its bytes complete and verified here): pinned by the tag `vault/<hash>` (so iroh's
+    /// garbage collection keeps it) and said in its own `blobs/<hash>` entry (so every replica knows where it is).
+    pub async fn hold(&self, hash: Hash, size: u64) -> Result<()> {
+        let hex = hash.to_hex();
+        self.store.tags().set(format!("vault/{hex}"), hash).await?;
+        self.doc().set_hash(self.author, format!("blobs/{hex}"), hash, size).await?;
+        Ok(())
+    }
+
     /// Does this device still hold a file (its pin, or its own `blobs/<hash>` entry)?
     pub async fn holds(&self, hash: Hash) -> Result<bool> {
         if self.store.tags().get(format!("vault/{}", hash.to_hex())).await?.is_some() {
