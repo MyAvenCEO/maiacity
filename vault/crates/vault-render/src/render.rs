@@ -1,0 +1,780 @@
+//! A timeline rendered into its deliveries — worker.ts `render()`, natively. For every delivery shape the picture
+//! track is cut into pieces on the film's clock (`timeline::pieces`); each frame of a piece is its source's frame
+//! (the conformed original, a world clip's plate, a still held) through the picture path on the GPU (`gpu`), faded,
+//! the captions and the hook on top, rendered into the encoder's buffer; the 16:9 master is 4K HEVC Main10 and its
+//! 1080 H.264 copy is made from each master frame as it is rendered (one pass). The sound is mixed once
+//! (`sound::mix`) and muxed into every file. Then QC, loudness, and the report the API keeps.
+
+use std::{
+    collections::{BTreeMap, HashMap},
+    path::{Path, PathBuf},
+};
+
+use anyhow::{Context, Result, bail};
+use objc2::rc::autoreleasepool;
+use serde::Serialize;
+use serde_json::{Value, json};
+
+use crate::{
+    av::{Codec, VideoReader, VideoSettings, Writer},
+    captions::Captions,
+    gpu::{Gpu, Image},
+    grade::{Cdl, hash_of},
+    loudness::Loudness,
+    output::Output,
+    qc::{Qc, Want, loudness, qc},
+    sound::{AudioClip, Sound, Target, mix},
+    timeline::{Clip, FPS, HOOK, Phrase, Shape, Timeline, Word, base_name, phrases, pieces, shapes_of},
+};
+
+/// A file in the vault's catalog, as far as the render reads it.
+#[derive(Debug, Clone, Default, Serialize, serde::Deserialize)]
+pub struct Media {
+    pub hash: String,
+    #[serde(default)]
+    pub mime: String,
+    #[serde(default)]
+    pub kind: String,
+    #[serde(default)]
+    pub size: u64,
+    #[serde(default)]
+    pub title: String,
+    #[serde(default)]
+    pub meta: Value,
+}
+
+/// Where the render finds files: the vault's catalog and the bytes on this disk.
+pub trait Library {
+    /// what the catalog knows of a file
+    fn media(&self, hash: &str) -> Option<Media>;
+    /// the file's bytes on this disk
+    fn file(&self, hash: &str) -> Result<PathBuf>;
+    /// Conform: the original a proxy stands for (its meta.proxy_of; an app with the whole catalog also looks for the
+    /// original whose meta.proxy names it, as worker.ts `originalOf`). A file that is no proxy stands for itself.
+    fn original_of(&self, hash: &str) -> String {
+        self.media(hash).and_then(|m| m.meta.get("proxy_of").and_then(Value::as_str).map(String::from)).unwrap_or_else(|| hash.to_string())
+    }
+}
+
+/// A world clip's plate for one shape: an ACEScct movie of the clip's stretch of its shot (clip.in … clip.in + dur),
+/// at the shape's render size and 30 fps — rendered by the app's own world.
+#[derive(Debug, Clone, Default)]
+pub struct Plate {
+    pub file: PathBuf,
+    pub key: Option<String>,
+    pub fingerprint: Option<String>,
+    pub reused: Option<bool>,
+}
+
+pub struct Options {
+    /// where the deliveries and the work files go
+    pub work: PathBuf,
+    /// the loudness the sound is levelled to (None: as the worker, measured only)
+    pub target: Option<Target>,
+    /// the captions' face (None: Fraunces)
+    pub font: Option<Vec<u8>>,
+    /// the time the files are named by (Unix seconds)
+    pub now: u64,
+    /// only these shapes ("9:16", …); None: every shape of the timeline, as the worker
+    pub shapes: Option<Vec<String>>,
+}
+
+impl Options {
+    pub fn new(work: impl Into<PathBuf>) -> Self {
+        let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
+        Self { work: work.into(), target: Some(crate::sound::PLATFORMS), font: None, now, shapes: None }
+    }
+}
+
+/// One file a film is delivered as.
+#[derive(Debug, Clone, Serialize)]
+pub struct Delivery {
+    #[serde(skip)]
+    pub file: PathBuf,
+    pub name: String,
+    pub channels: Vec<String>,
+    pub format: String,
+    pub aspect: String,
+    pub width: u32,
+    pub height: u32,
+    /// "hevc" or "h264"
+    pub codec: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub note: Option<String>,
+    pub qc: Qc,
+    pub loudness: Loudness,
+    /// the vault's hash, once the app has added the file
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub hash: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct Conformed {
+    pub clip: String,
+    pub proxy: String,
+    pub original: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct PlateUse {
+    pub clip: String,
+    pub aspect: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub key: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub fingerprint: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reused: Option<bool>,
+}
+
+/// The colour of the render, as the report names it.
+#[derive(Debug, Clone, Serialize)]
+pub struct ColorReport {
+    pub working: String,
+    pub output: String,
+    pub engine: String,
+    /// every transform used, by name → the hash of its config
+    pub transforms: BTreeMap<String, String>,
+    pub look: Option<Cdl>,
+}
+
+/// What a render made.
+#[derive(Debug, Clone, Serialize)]
+pub struct Render {
+    pub timeline: String,
+    pub seconds: f64,
+    pub deliveries: Vec<Delivery>,
+    pub color: ColorReport,
+    pub conformed: Vec<Conformed>,
+    pub plates: Vec<PlateUse>,
+    pub warnings: Vec<String>,
+    pub sound: Sound,
+    /// the title cards delivered with the film, by shape (the card marker's meta.cards)
+    #[serde(skip)]
+    pub thumbnails: Vec<(String, Media)>,
+    /// seconds each shape took to render
+    pub timings: BTreeMap<String, f64>,
+}
+
+/// A picture source, read once per render.
+#[derive(Debug, Clone)]
+enum Kind {
+    Video,
+    Still,
+}
+
+#[derive(Debug, Clone)]
+struct Source {
+    file: PathBuf,
+    kind: Kind,
+    profile: String,
+}
+
+/// The profile a file is treated as (color.js `profileOf`: the hand-set override, else the detected one — each only
+/// when known), else detected now from the file itself.
+fn profile_of(m: &Media, file: &Path, still: bool) -> (String, String) {
+    let known = |p: &str| vault_media::color::PROFILES.contains(&p) && p != "legacy" && vault_media::cst::journey(p).is_some();
+    let c = m.meta.get("color");
+    for k in ["override", "profile"] {
+        if let Some(p) = c.and_then(|c| c.get(k)).and_then(Value::as_str).filter(|p| known(p)) {
+            return (p.to_string(), format!("the vault ({k})"));
+        }
+    }
+    if still {
+        let ext = file.extension().and_then(|e| e.to_str()).unwrap_or("").to_lowercase();
+        return if ext == "exr" { ("linear-rec709".into(), "an EXR without a profile: linear Rec.709".into()) } else { ("srgb".into(), "a still image".into()) };
+    }
+    match vault_media::probe(file) {
+        Ok(p) => {
+            let d = vault_media::detect(&p);
+            (d.profile, d.from)
+        }
+        Err(e) => ("unknown".into(), format!("unreadable: {e}")),
+    }
+}
+
+fn is_still(m: &Media, file: &Path) -> bool {
+    m.kind == "image" || m.mime.starts_with("image/") || matches!(file.extension().and_then(|e| e.to_str()).map(|e| e.to_lowercase()).as_deref(), Some("png" | "jpg" | "jpeg" | "webp" | "heic" | "tif" | "tiff" | "exr"))
+}
+
+/// Everything a render needs, read before the first frame.
+struct Plan {
+    total: f64,
+    pictures: Vec<Clip>,
+    look: Option<Cdl>,
+    sources: HashMap<String, Source>,
+    card: Option<Clip>,
+    hooks: HashMap<String, PathBuf>,
+    thumbnails: Vec<(String, Media)>,
+    phrases: Vec<Phrase>,
+    audio: Vec<AudioClip>,
+    conformed: Vec<Conformed>,
+    warnings: Vec<String>,
+}
+
+fn plan(t: &Timeline, lib: &dyn Library) -> Result<Plan> {
+    let mut clips: Vec<Clip> = t.clips.iter().filter(|c| if c.is_world() { c.track == "V1" } else { c.hash.as_deref().is_some_and(|h| lib.media(h).is_some()) }).cloned().collect();
+    clips.sort_by(|a, b| a.start.partial_cmp(&b.start).unwrap_or(std::cmp::Ordering::Equal));
+    let total = clips.iter().map(Clip::end).fold(0.0, f64::max);
+    if total <= 0.0 {
+        bail!("the timeline is empty");
+    }
+    let mut warnings = Vec::new();
+    let mut conformed = Vec::new();
+    // conform: originals only — a proxy cut into the timeline is swapped for the file it stands for
+    let mut files: HashMap<String, (PathBuf, Media)> = HashMap::new();
+    for c in clips.iter().filter(|c| !c.is_world()) {
+        let hash = c.hash.clone().unwrap();
+        if files.contains_key(&hash) {
+            continue;
+        }
+        let of = lib.original_of(&hash);
+        let m = lib.media(&of).with_context(|| {
+            let title = lib.media(&hash).map(|m| m.title).filter(|t| !t.is_empty()).unwrap_or_else(|| hash.clone());
+            format!("{title} is a proxy whose original ({of}) the vault does not describe")
+        })?;
+        if of != hash {
+            conformed.push(Conformed { clip: c.id.clone(), proxy: hash.clone(), original: of.clone() });
+        }
+        files.insert(hash, (lib.file(&of)?, m));
+    }
+    // the title card's marker on the picture track: where the hook goes, and the day's cards by shape
+    let has_cards = |c: &Clip| lib.media(c.hash.as_deref().unwrap_or("")).is_some_and(|m| m.meta.get("cards").is_some_and(|v| v.is_object()));
+    let card = clips.iter().find(|c| c.track == "V1" && !c.is_world() && has_cards(c)).cloned();
+    let named = card.as_ref().and_then(|c| lib.media(c.hash.as_deref().unwrap())).map(|m| m.meta).unwrap_or(Value::Null);
+    let mut hooks = HashMap::new();
+    let mut thumbnails = Vec::new();
+    for aspect in ["1:1", "16:9", "9:16", "4:5"] {
+        let tag = aspect.replace(':', "x");
+        if let Some(m) = named.get("cards").and_then(|c| c.get(&tag)).and_then(Value::as_str).and_then(|h| lib.media(h)) {
+            thumbnails.push((aspect.to_string(), m));
+        }
+        if let Some(h) = named.get("hooks").and_then(|c| c.get(&tag)).and_then(Value::as_str).filter(|h| lib.media(h).is_some()) {
+            hooks.insert(aspect.to_string(), lib.file(h)?);
+        }
+    }
+    let pictures: Vec<Clip> = clips.iter().filter(|c| c.track == "V1" && Some(c.id.as_str()) != card.as_ref().map(|k| k.id.as_str())).cloned().collect();
+    let mut sources = HashMap::new();
+    for c in pictures.iter().filter(|c| !c.is_world()) {
+        let hash = c.hash.clone().unwrap();
+        if sources.contains_key(&hash) {
+            continue;
+        }
+        let (file, m) = files.get(&hash).unwrap().clone();
+        if m.mime == "application/x-tar" || m.meta.get("sequence").and_then(Value::as_str) == Some("exr") {
+            bail!("{}: an EXR sequence — not rendered natively yet", if m.title.is_empty() { &m.hash } else { &m.title });
+        }
+        let still = is_still(&m, &file);
+        let (mut profile, from) = profile_of(&m, &file, still);
+        if vault_media::cst::journey(&profile).is_none() {
+            warnings.push(format!("{}: colour unknown ({from}) — taken as Rec.709 video (idt-rec709); set it in the studio", if m.title.is_empty() { &m.hash } else { &m.title }));
+            profile = "rec709".into();
+        }
+        sources.insert(hash, Source { file, kind: if still { Kind::Still } else { Kind::Video }, profile });
+    }
+    let words_of = |c: &Clip| -> Vec<Word> {
+        let m = lib.media(c.hash.as_deref().unwrap_or("")).or_else(|| lib.media(&lib.original_of(c.hash.as_deref().unwrap_or(""))));
+        m.and_then(|m| m.meta.get("words").cloned()).and_then(|w| serde_json::from_value(w).ok()).unwrap_or_default()
+    };
+    let phrases = phrases(t, &words_of);
+    let audio = clips
+        .iter()
+        .filter(|c| c.track.starts_with('A') && c.hash.is_some())
+        .map(|c| AudioClip { clip: c.clone(), file: files.get(c.hash.as_ref().unwrap()).unwrap().0.clone() })
+        .collect();
+    Ok(Plan { total, pictures, look: t.look(), sources, card, hooks, thumbnails, phrases, audio, conformed, warnings })
+}
+
+/// The journey's config, hashed as the report names it.
+fn journey_hash(profile: &str) -> String {
+    let j = vault_media::cst::journey(profile).unwrap();
+    let (curve, scale, m) = j.kernel_args();
+    hash_of(&json!({ "kind": "native-journey", "profile": profile, "label": j.label, "curve": curve, "scale": scale, "matrix": m, "to": "acescct" }))
+}
+
+fn idt_name(profile: &str) -> String {
+    format!("idt-{profile}")
+}
+
+/// What each shape is delivered as (worker.ts): the settings of its files, its channels and description.
+struct Files {
+    master: Option<VideoSettings>,
+    copy: VideoSettings,
+}
+
+fn files_for(s: &Shape) -> Files {
+    let (w, h) = (s.width, s.height);
+    let copy = |cap: u32| VideoSettings { codec: Codec::H264, width: w, height: h, fps: FPS, bitrate: cap / 4 * 3, keyframes: 250, audio_bitrate: 192_000 };
+    if s.master > 1 {
+        // YouTube's 4K upload rate (35–68 Mbps recommended): 50 Mbps on average; ffmpeg's VideoToolbox took a keyframe
+        // every 12 frames. The 1080 copy for X and LinkedIn ≤ 20 Mbps.
+        let (mw, mh) = s.render_size();
+        Files {
+            master: Some(VideoSettings { codec: Codec::Hevc, width: mw, height: mh, fps: FPS, bitrate: 50_000_000, keyframes: 12, audio_bitrate: 384_000 }),
+            copy: copy(20_000_000),
+        }
+    } else {
+        // 9:16 ≤ 12 Mbps (a 3-minute film under Instagram's 300 MB), the feeds ≤ 20 Mbps
+        Files { master: None, copy: copy(if s.portrait() { 12_000_000 } else { 20_000_000 }) }
+    }
+}
+
+/// Render the timeline. `plates` gives each world clip's plate for a shape; `output` is the output transform.
+/// `progress` gets 0…1 and what is happening.
+pub fn render(
+    t: &Timeline,
+    lib: &dyn Library,
+    plates: &dyn Fn(&Clip, &Shape) -> Result<Option<Plate>>,
+    output: &dyn Output,
+    opts: &Options,
+    progress: &mut dyn FnMut(f64, &str),
+) -> Result<Render> {
+    let plan = plan(t, lib)?;
+    std::fs::create_dir_all(&opts.work)?;
+    let shapes: Vec<Shape> = shapes_of(t).into_iter().filter(|s| opts.shapes.as_ref().is_none_or(|only| only.iter().any(|a| a == s.aspect))).collect();
+    if shapes.is_empty() {
+        bail!("no such shape to render");
+    }
+    // the world clips' plates, one per shape
+    let mut plate_files: HashMap<(String, String), PathBuf> = HashMap::new();
+    let mut plates_used = Vec::new();
+    for c in plan.pictures.iter().filter(|c| c.is_world()) {
+        for s in &shapes {
+            let p = plates(c, s)?.with_context(|| format!("world clip {} (shot {} v{}): no plate for {}", c.id, c.shot.as_deref().unwrap_or("?"), c.shot_version.unwrap_or(0), s.aspect))?;
+            plate_files.insert((c.id.clone(), s.aspect.to_string()), p.file.clone());
+            plates_used.push(PlateUse { clip: c.id.clone(), aspect: s.aspect.into(), key: p.key, fingerprint: p.fingerprint, reused: p.reused });
+        }
+    }
+
+    progress(0.01, "mixing the sound");
+    let sound = mix(&plan.audio, plan.total, opts.target, &opts.work, &mut |p| progress(0.01 + 0.03 * p, "mixing the sound"))?;
+
+    let mut gpu = Gpu::new()?;
+    let lut = output.lut();
+    gpu.set_output(&lut);
+    let captions = Captions::new(opts.font.as_deref())?;
+    let mut used: BTreeMap<String, String> = BTreeMap::new();
+    used.insert(output.name().to_string(), output.hash());
+    let base = base_name(t, opts.now);
+    let mut deliveries = Vec::new();
+    let mut timings = BTreeMap::new();
+    for (k, s) in shapes.iter().enumerate() {
+        let span = 0.9 / shapes.len() as f64;
+        let from = 0.05 + k as f64 * span;
+        let started = std::time::Instant::now();
+        let made = render_shape(&plan, s, &gpu, &captions, &plate_files, &sound, &base, &opts.work, &mut used, &mut |p| {
+            progress(from + span * p, &format!("rendering {}", s.aspect))
+        })?;
+        timings.insert(s.aspect.to_string(), started.elapsed().as_secs_f64());
+        deliveries.extend(made);
+    }
+    progress(0.96, "checking");
+    let long = plan.total > 90.0;
+    for d in deliveries.iter_mut() {
+        let (w, h) = (d.width, d.height);
+        let want = Want {
+            seconds: plan.total,
+            fps: FPS as f64,
+            bit_depth: if d.codec == "hevc" { 10 } else { 8 },
+            width: w,
+            height: h,
+            codec: if d.codec == "hevc" { "hevc" } else { "h264" },
+            max_bitrate: Some(if d.codec == "hevc" { 68e6 } else if h > w { 12e6 } else { 25e6 }),
+            max_bytes: (d.aspect == "9:16").then_some(300_000_000),
+            max_seconds: (d.aspect == "9:16").then_some(180.0),
+        };
+        d.qc = qc(&d.file, &want)?;
+        if !d.qc.ok {
+            bail!("QC: {} — {}", d.name, d.qc.errors.join("; "));
+        }
+        d.loudness = loudness(&d.file)?;
+        if d.aspect == "9:16" && long {
+            d.note = Some("Instagram Reels take at most 90 s (via Zernio): post it as a feed video, or cut it down".into());
+        }
+    }
+    let _ = std::fs::remove_file(&sound.wav);
+    progress(1.0, "done");
+    Ok(Render {
+        timeline: t.id.clone(),
+        seconds: plan.total,
+        deliveries,
+        color: ColorReport {
+            working: "acescct".into(),
+            output: output.name().into(),
+            engine: format!("vault-render {} (Core Image on Metal, VideoToolbox)", env!("CARGO_PKG_VERSION")),
+            transforms: used,
+            look: plan.look,
+        },
+        conformed: plan.conformed,
+        plates: plates_used,
+        warnings: plan.warnings,
+        sound,
+        thumbnails: plan.thumbnails,
+        timings,
+    })
+}
+
+/// What the picture of one piece is read from.
+enum Reading {
+    Gap,
+    Video { reader: VideoReader, offset: f64, args: (f32, f32, [[f32; 3]; 3]) },
+    Still { image: Image },
+}
+
+#[allow(clippy::too_many_arguments)]
+fn render_shape(
+    plan: &Plan,
+    s: &Shape,
+    gpu: &Gpu,
+    captions: &Captions,
+    plate_files: &HashMap<(String, String), PathBuf>,
+    sound: &Sound,
+    base: &str,
+    work: &Path,
+    used: &mut BTreeMap<String, String>,
+    progress: &mut dyn FnMut(f64),
+) -> Result<Vec<Delivery>> {
+    let (w, h) = s.render_size();
+    let (w1, h1) = (s.width, s.height);
+    let fps = FPS as f64;
+    let total = plan.total;
+    let frames = (total * fps).round() as u64;
+    let tag = format!("{base}-{}", s.tag());
+    let files = files_for(s);
+    let (master_name, name) = (format!("{tag}-4k-hevc.mp4"), format!("{tag}.mp4"));
+    let mut master = match &files.master {
+        Some(v) => Some(Writer::create(&work.join(&master_name), v, Some(&sound.wav))?),
+        None => None,
+    };
+    let mut copy = Writer::create(&work.join(&name), &files.copy, Some(&sound.wav))?;
+
+    // the hook over the first seconds — in the 1080 copies only (the 4K master stays clean)
+    let hook = match (plan.hooks.get(s.aspect), &plan.card) {
+        (Some(file), Some(card)) => Some((gpu.resize(&*gpu.still(file)?, w1, h1)?, card.start)),
+        _ => None,
+    };
+    let fade_in = hook.is_none();
+    let fade_out_from = (total - 2.5).max(0.0);
+
+    let pictures: Vec<&Clip> = plan.pictures.iter().collect();
+    let cut = pieces(&pictures, total);
+    // captions drawn when first needed, dropped when past
+    let mut bands: HashMap<usize, Image> = HashMap::new();
+    let comment = "maiacity:render";
+
+    for piece in &cut {
+        let clip = piece.clip.map(|i| pictures[i]);
+        let mut reading = match clip {
+            None => Reading::Gap,
+            Some(c) if c.is_world() => {
+                let file = plate_files.get(&(c.id.clone(), s.aspect.to_string())).context("a world clip without its plate")?;
+                let args = vault_media::cst::journey("acescct").unwrap().kernel_args();
+                used.insert(idt_name("acescct"), journey_hash("acescct"));
+                // the plate starts at the clip's in point
+                let from = piece.a as f64 / fps - c.start;
+                let until = piece.b as f64 / fps - c.start;
+                Reading::Video { reader: VideoReader::open(file, from, until + 1.0 / fps)?, offset: -c.start, args }
+            }
+            Some(c) => {
+                let src = plan.sources.get(c.hash.as_deref().unwrap()).context("a picture without its source")?;
+                let j = vault_media::cst::journey(&src.profile).unwrap();
+                used.insert(idt_name(&src.profile), journey_hash(&src.profile));
+                match src.kind {
+                    Kind::Still => Reading::Still { image: gpu.journey(&*gpu.still(&src.file)?, j.kernel_args())? },
+                    Kind::Video => {
+                        let from = c.in_ + (piece.a as f64 / fps - c.start);
+                        let until = c.in_ + (piece.b as f64 / fps - c.start);
+                        Reading::Video { reader: VideoReader::open(&src.file, from, until + 1.0 / fps)?, offset: c.in_ - c.start, args: j.kernel_args() }
+                    }
+                }
+            }
+        };
+        let grade = clip.and_then(|c| c.cdl());
+        if let Some(g) = &grade {
+            used.insert("grade:clip".into(), hash_of(&json!({ "cdl": g.to_json() })));
+        }
+        if let (Some(g), Some(_)) = (&plan.look, clip) {
+            used.insert("grade:look".into(), hash_of(&json!({ "cdl": g.to_json() })));
+        }
+        for n in piece.a..piece.b {
+            let t = n as f64 / fps;
+            autoreleasepool(|_| -> Result<()> {
+                // ── the picture, scene-referred to display-referred ──
+                let pic: Image = match &mut reading {
+                    Reading::Gap => gpu.black(w, h),
+                    Reading::Still { image } => picture(gpu, image, s, clip.unwrap(), grade.as_ref(), plan.look.as_ref())?,
+                    Reading::Video { reader, offset, args } => {
+                        // the frame on screen half a frame on (ffmpeg's fps filter rounds to the nearest)
+                        let at = t + *offset + 0.5 / fps - 1e-4;
+                        let turn = reader.info.transform;
+                        let pb = reader.at(at)?.context("no frame")?;
+                        let img = gpu.journey(&gpu.orient(&gpu.frame(pb), turn), *args)?;
+                        picture(gpu, &img, s, clip.unwrap(), grade.as_ref(), plan.look.as_ref())?
+                    }
+                };
+                // ── fades in display space: up from black (a film without a hook), down to black at the end ──
+                let mut k = 1.0f64;
+                if fade_in {
+                    k *= (t / 1.2).clamp(0.0, 1.0);
+                }
+                k *= (1.0 - (t - fade_out_from) / 2.5).clamp(0.0, 1.0);
+                let mut pic = gpu.gain(&pic, k)?;
+                // ── graphics on top, never graded: the captions, each fading in and out on its phrase ──
+                for (i, p) in plan.phrases.iter().enumerate() {
+                    let a = (p.start - 0.08).max(0.0);
+                    let b = (p.end + 0.3).min(total);
+                    let d = (b - a).max(0.3);
+                    if t < a || t > b {
+                        if t > b {
+                            bands.remove(&i);
+                        }
+                        continue;
+                    }
+                    let alpha = ((t - a) / 0.25).clamp(0.0, 1.0) * (1.0 - (t - (a + d - 0.25)) / 0.25).clamp(0.0, 1.0);
+                    if let std::collections::hash_map::Entry::Vacant(e) = bands.entry(i) {
+                        e.insert(gpu.cg_image(&captions.draw(&p.text, w, h)?.image));
+                    }
+                    let band = gpu.opacity(&bands[&i], alpha)?;
+                    pic = gpu.over(&band, &pic);
+                }
+                let hooked = |pic: &Image| -> Result<Image> {
+                    Ok(match &hook {
+                        Some((layer, at)) if t >= *at && t <= at + HOOK => gpu.over(layer, pic),
+                        _ => pic.clone(),
+                    })
+                };
+                let seed = (n % 9973) as f64;
+                match &mut master {
+                    Some(m) => {
+                        // the 4K master, 10-bit; the 1080 copy from each master frame: scaled, the hook on top, dithered to 8 bits
+                        let buf = m.buffer()?;
+                        gpu.render(&pic, &buf, w, h);
+                        let small = gpu.resize(&gpu.frame(&buf), w1, h1)?;
+                        let small = gpu.dither(&*hooked(&small)?, 1.0 / 219.0, seed)?;
+                        let cbuf = copy.buffer()?;
+                        gpu.render(&small, &cbuf, w1, h1);
+                        m.push(&buf)?;
+                        copy.push(&cbuf)?;
+                    }
+                    None => {
+                        let out = gpu.dither(&*hooked(&pic)?, 1.0 / 219.0, seed)?;
+                        let buf = copy.buffer()?;
+                        gpu.render(&out, &buf, w, h);
+                        copy.push(&buf)?;
+                    }
+                }
+                Ok(())
+            })?;
+            if n % 15 == 0 {
+                progress(n as f64 / frames as f64 * 0.95);
+            }
+        }
+    }
+    let mut out = Vec::new();
+    let hooked = if hook.is_some() { format!(" · the hook over its first {HOOK} s") } else { String::new() };
+    if let Some(m) = master {
+        let file = m.finish(comment)?;
+        out.push(delivery(file, master_name, &["youtube"], format!("4K master · HEVC 10-bit · {w}×{h}"), s, w, h, "hevc"));
+    }
+    let file = copy.finish(comment)?;
+    let (channels, format): (Vec<&str>, String) = match s.aspect {
+        "16:9" => (vec!["x", "linkedin"], format!("H.264 · {w1}×{h1}{hooked}")),
+        "9:16" => (
+            if total <= 180.0 { vec!["instagram", "youtube"] } else { vec!["instagram"] },
+            format!("H.264 · {w1}×{h1} · 30 fps · Reel{}{hooked}", if total <= 180.0 { " and Short" } else { "" }),
+        ),
+        _ => (vec!["instagram"], format!("H.264 · {w1}×{h1} · feed{hooked}")),
+    };
+    out.push(delivery(file, name, &channels, format, s, w1, h1, "h264"));
+    progress(1.0);
+    Ok(out)
+}
+
+#[allow(clippy::too_many_arguments)]
+fn delivery(file: PathBuf, name: String, channels: &[&str], format: String, s: &Shape, width: u32, height: u32, codec: &str) -> Delivery {
+    Delivery {
+        file,
+        name,
+        channels: channels.iter().map(|c| c.to_string()).collect(),
+        format,
+        aspect: s.aspect.into(),
+        width,
+        height,
+        codec: codec.into(),
+        note: None,
+        qc: Qc {
+            ok: false,
+            errors: vec![],
+            warnings: vec![],
+            frames: 0,
+            expected_frames: 0,
+            seconds: 0.0,
+            pix_fmt: String::new(),
+            bit_depth: 0,
+            tags: Default::default(),
+            bitrate: 0,
+            bytes: 0,
+        },
+        loudness: Loudness::default(),
+        hash: None,
+    }
+}
+
+/// A clip's picture after its journey: framed for the shape, its grade, the film's look, the output transform.
+fn picture(gpu: &Gpu, acescct: &Image, s: &Shape, c: &Clip, grade: Option<&Cdl>, look: Option<&Cdl>) -> Result<Image> {
+    let (w, h) = s.render_size();
+    let framed = gpu.frame_to(acescct, w, h, c.frame_for(s.aspect))?;
+    let graded = gpu.cdl(&*gpu.cdl(&framed, grade)?, look)?;
+    gpu.output(&graded)
+}
+
+/// A hero frame (worker.ts `heroFrame`, the `frame` job): the picture of the timeline at `at` seconds in one shape, at
+/// that delivery's full resolution, through exactly the chain the render takes — conformed original or world plate →
+/// its journey → framing → clip grade → film look → output transform — without the fades and graphics, as a 16-bit
+/// PNG. Returns the job's report (`{ t, shape, width, height, clip, what }`).
+pub fn hero_frame(
+    t: &Timeline,
+    lib: &dyn Library,
+    plates: &dyn Fn(&Clip, &Shape) -> Result<Option<Plate>>,
+    output: &dyn Output,
+    at: f64,
+    aspect: &str,
+    png: &Path,
+) -> Result<Value> {
+    let s = Shape::of(aspect).with_context(|| format!("no such shape: {aspect}"))?;
+    let (w, h) = s.render_size();
+    let has_cards = |c: &Clip| lib.media(c.hash.as_deref().unwrap_or("")).is_some_and(|m| m.meta.get("cards").is_some_and(|v| v.is_object()));
+    let clip = t
+        .clips
+        .iter()
+        .filter(|c| c.track == "V1" && (c.is_world() || (c.hash.as_deref().is_some_and(|h| lib.media(h).is_some()) && !has_cards(c))))
+        .rfind(|c| c.start <= at && at < c.end());
+    let mut gpu = Gpu::new()?;
+    gpu.set_output(&output.lut());
+    let (img, what) = match clip {
+        None => (gpu.black(w, h), "a gap: black".to_string()),
+        Some(c) => {
+            let (file, profile, from, what) = if c.is_world() {
+                let p = plates(c, &s)?.with_context(|| format!("world clip {}: no plate for {aspect}", c.id))?;
+                (p.file, "acescct".to_string(), at - c.start, format!("world shot {} v{} at {:.3} s", c.shot.as_deref().unwrap_or("?"), c.shot_version.unwrap_or(0), c.in_ + at - c.start))
+            } else {
+                let hash = c.hash.as_deref().unwrap();
+                let of = lib.original_of(hash);
+                let m = lib.media(&of).or_else(|| lib.media(hash)).context("the clip's file is not in the vault")?;
+                let file = lib.file(&m.hash)?;
+                let (profile, _) = profile_of(&m, &file, is_still(&m, &file));
+                let profile = if vault_media::cst::journey(&profile).is_some() { profile } else { "rec709".into() };
+                let from = c.in_ + (at - c.start);
+                let title = if m.title.is_empty() { m.hash.clone() } else { m.title.clone() };
+                (file, profile, from, format!("{title} at {from:.3} s"))
+            };
+            let args = vault_media::cst::journey(&profile).unwrap().kernel_args();
+            let m = lib.media(c.hash.as_deref().unwrap_or("")).unwrap_or_default();
+            let src = if !c.is_world() && is_still(&m, &file) {
+                gpu.journey(&*gpu.still(&file)?, args)?
+            } else {
+                let mut r = VideoReader::open(&file, from, from + 1.0 / FPS as f64)?;
+                let turn = r.info.transform;
+                let pb = r.at(from + 0.5 / FPS as f64 - 1e-4)?.context("no frame there")?;
+                gpu.journey(&gpu.orient(&gpu.frame(pb), turn), args)?
+            };
+            (picture(&gpu, &src, &s, c, c.cdl().as_ref(), t.look().as_ref())?, what)
+        }
+    };
+    gpu.png(&img, w, h, png)?;
+    Ok(json!({ "t": at, "shape": aspect, "width": w, "height": h, "clip": clip.map(|c| c.id.clone()), "what": what }))
+}
+
+// ── the job's result, as the worker hands it to the API ──────────────────────────────────────────────────────────
+
+/// What the app writes into the vault for a delivery (worker.ts's `add(o.file, { … })`).
+#[derive(Debug, Clone, Serialize)]
+pub struct About {
+    pub name: String,
+    pub title: String,
+    pub description: String,
+    pub tags: Vec<String>,
+    pub meta: Value,
+}
+
+impl Render {
+    fn qc_meta(d: &Delivery) -> Value {
+        json!({
+            "frames": d.qc.frames, "seconds": (d.qc.seconds * 1000.0).round() / 1000.0, "bitDepth": d.qc.bit_depth,
+            "tags": d.qc.tags, "bitrate": d.qc.bitrate, "warnings": d.qc.warnings,
+        })
+    }
+
+    /// How each delivery goes into the vault: its name, title, description, tags and meta, as the worker wrote them.
+    pub fn about(&self, t: &Timeline, d: &Delivery) -> About {
+        let title = format!("{} {} · {}", t.project.as_deref().unwrap_or(""), t.variant.as_deref().unwrap_or(""), t.name).trim().to_string();
+        let mut tags = vec![t.project.clone().unwrap_or_else(|| "film".into()), "role:render".into()];
+        if let Some(v) = &t.variant {
+            tags.push(format!("cut:{v}"));
+        }
+        tags.push(format!("aspect:{}", d.aspect));
+        tags.push(format!("codec:{}", d.codec));
+        About {
+            name: d.name.clone(),
+            title: format!("{title} · {} {}", d.aspect, d.codec),
+            description: format!("{} · for {}", d.format, d.channels.join(", ")),
+            tags,
+            meta: json!({
+                "timeline": t.id, "duration_s": (self.seconds * 100.0).round() / 100.0, "format": d.format,
+                "color": self.color_json(), "qc": Self::qc_meta(d), "loudness": d.loudness,
+            }),
+        }
+    }
+
+    fn color_json(&self) -> Value {
+        json!({ "working": self.color.working, "output": self.color.output, "engine": self.color.engine, "transforms": self.color.transforms, "look": self.color.look })
+    }
+
+    /// The job's result for `PUT /api/renders/:id` once every delivery has its vault hash: `{ output_hash, deliveries,
+    /// report }` — the film the studio plays (the 1080 H.264 cut of the timeline's own frame), every delivery with its
+    /// thumbnails, and the report (colour, conform, plates, warnings, per delivery QC and loudness, the sound).
+    pub fn job_result(&self, t: &Timeline) -> Result<Value> {
+        let mut deliveries: Vec<Value> = Vec::new();
+        for d in &self.deliveries {
+            let hash = d.hash.clone().with_context(|| format!("{} is not in the vault yet", d.name))?;
+            let mut v = json!({
+                "channels": d.channels, "hash": hash, "mime": "video/mp4", "format": d.format, "aspect": d.aspect,
+                "width": d.width, "height": d.height, "codec": d.codec, "bytes": d.qc.bytes,
+                "seconds": (self.seconds * 100.0).round() / 100.0, "qc": Self::qc_meta(d), "loudness": d.loudness,
+            });
+            if let Some(n) = &d.note {
+                v["note"] = json!(n);
+            }
+            deliveries.push(v);
+        }
+        for (aspect, m) in &self.thumbnails {
+            let (w, h) = Shape::of(aspect).map(|s| (s.width, s.height)).unwrap_or((0, 0));
+            let films: Vec<Vec<String>> = self.deliveries.iter().filter(|d| &d.aspect == aspect && d.codec == "h264").map(|d| d.channels.clone()).collect();
+            for channels in films {
+                deliveries.push(json!({
+                    "channels": channels, "hash": m.hash, "mime": m.mime, "format": format!("thumbnail · {w}×{h}"), "aspect": aspect,
+                    "width": w, "height": h, "codec": "jpeg", "bytes": m.size, "seconds": 0, "kind": "thumbnail",
+                }));
+            }
+        }
+        let own = self
+            .deliveries
+            .iter()
+            .find(|d| d.aspect == t.aspect && d.codec == "h264")
+            .or_else(|| self.deliveries.iter().find(|d| d.codec == "h264"))
+            .and_then(|d| d.hash.clone())
+            .context("no H.264 delivery")?;
+        let report = json!({
+            "color": self.color_json(),
+            "conformed": self.conformed,
+            "plates": self.plates,
+            "warnings": self.warnings,
+            "deliveries": self.deliveries.iter().map(|d| json!({ "hash": d.hash, "aspect": d.aspect, "codec": d.codec, "qc": Self::qc_meta(d), "loudness": d.loudness })).collect::<Vec<_>>(),
+            "sound": self.sound,
+            "timings": self.timings,
+        });
+        let hashes = self.color.transforms.iter().map(|(k, v)| format!("{k}@{}", &v[..8.min(v.len())])).collect::<Vec<_>>().join(" ");
+        let note: String = format!("in the vault and on the calendar: {} files · {hashes}", deliveries.len()).chars().take(300).collect();
+        Ok(json!({ "status": "done", "progress": 1, "note": note, "output_hash": own, "deliveries": deliveries, "report": report }))
+    }
+}

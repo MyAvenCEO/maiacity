@@ -2,7 +2,7 @@
 # See .claude/skills/iroh/ — maiacity.md for the design, gotchas.md for why the iroh versions are pinned exactly.
 [workspace]
 resolver = "3"
-members = ["crates/vault-core", "crates/vault-media", "crates/vault-server", "crates/vault-cli", "app"]
+members = ["crates/vault-core", "crates/vault-media", "crates/vault-render", "crates/vault-server", "crates/vault-cli", "app"]
 
 [workspace.package]
 edition = "2024"

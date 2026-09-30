@@ -1,7 +1,7 @@
 # maiaCITY Studio + media vault — the task list
 
 Everything Samuel asked for, in order, with where it stands. Design and reasons: `.claude/skills/iroh/maiacity.md`.
-Status: ✅ done · 🔨 in progress · ⏳ next · 💤 deferred on purpose.  Last update: 2026-09-30, 02:25.
+Status: ✅ done · 🔨 in progress · ⏳ next · 💤 deferred on purpose.  Last update: 2026-09-30, 03:05.
 
 ## Done
 
@@ -77,20 +77,24 @@ Status: ✅ done · 🔨 in progress · ⏳ next · 💤 deferred on purpose.  L
     (`site/releases/<commit>`, `site/current`), deployed over SSH by CI; ⏳ **Samuel: point maia.city and www.maia.city
     at 188.245.31.46 (A records, Hetzner DNS; www's CNAME to Bunny goes)** — until then CI keeps Bunny current too;
     ⏳ then the Bunny account (CDN, storage, Stream) closed by Samuel. No published post streams from Bunny.
-14. b) 🔨 colour transforms in Rust, one model: ✅ every source through its journey into ACEScct (`cst.rs`, within 1e-5
+14. b) ✅ colour transforms in Rust, one model: ✅ every source through its journey into ACEScct (`cst.rs`, within 1e-5
     of OCIO; Rec.709 and sRGB as camera curves — Samuel's call: the new workflow wins); ✅ on the GPU in the proxies;
     ✅ the viewer's input LUTs baked by the Mac from `cst`; ✅ legacy deleted (inverse ODT, display bypass, `legacy`
-    profile, worker file proxies); 🔨 the ACES 2.0 output transform native (`aces2.rs`), verified against the worker's
-    baked LUT — then the worker bakes nothing
-    c) ⏳ render: Metal compositing, audio mix, captions, loudness QC (`ebur128`)
-    d) 🔨 world plates and world-shot proxies in the app's own WebView (WebGL on Metal), encoded natively; the worker's
-    world-proxy path goes; later: the world on three's WebGPURenderer (4 custom GLSL shaders to port)
+    profile, worker file proxies, the worker's preview LUTs and /api/film/luts, the viewer's formula fallback); ✅ the
+    ACES 2.0 output transform native (`aces2.rs`): within 0.07 of a 10-bit code of OCIO 2.5.2 (3158 points), the
+    worker's baked LUT to median 0.006 — the Mac bakes every viewer LUT (`color_lut`)
+    c) 🔨 render natively (`vault-render`): Metal compositing, grades, output transform, world plates, audio mix,
+    EBU R128 loudness, captions, the render report — then the bun/ffmpeg worker goes
+    d) ✅ world-shot proxies in the app's own WebView (WebGL on Metal): film-mode frames, 10-bit ACEScct, over IPC into
+    a native HEVC writer; tested (shot 0ad195cd v1); the worker's shot-proxy path and the API's queueing are gone;
+    later: the world on three's WebGPURenderer (4 custom GLSL shaders to port)
 15. ⏳ **Render test run**: Day 19 world timeline, an Apple Log 2 clip, Edit → Lock → Grade → Render — natively.
-21. 🔨 **Automatic proxies**: ✅ every video original gets one, all in ACEScct: probed, its colour told (the
+21. ✅ **Automatic proxies**: ✅ every video original gets one, all in ACEScct: probed, its colour told (the
     sample description's `logs` atom too — Apple Log 2 from the Blackmagic app), YCbCr → journey → Lanczos on the GPU,
     HEVC Main10 in hardware, 1.7× real time for 4K on this Mac, mean error 0.0002 ACEScct against the CPU reference;
     queued one at a time, filed beside the original (same story, class proxy, synced A/B/C); a source without a
-    journey waits and says so; ⏳ stills proxies; HLS later if needed.
+    journey waits and says so; ✅ stills (a float still or one larger than HD → 16-bit ACEScct PNG) and EXR sequences
+    (tar → HEVC) natively; failed ones tried 3×; paced by macOS memory pressure; HLS later if needed.
 23. 🔨 **MCP control of the whole studio**: ✅ MCP server inside the Mac app (127.0.0.1:4545/mcp, token-gated, acts
     with the app's key) with tools: vault_status, library_list, library_copies, ingest, library_describe
     (enrichment), media_probe, media_proxy (queues the same pipeline), timelines_list, timeline_save, render_queue, renders_list, content_list,
