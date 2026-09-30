@@ -19,7 +19,7 @@ import {
 	queueRender,
 	saveTimeline
 } from '$lib/auth/client';
-import { ODT, PROFILES, WORKING, asStudio, clean, cleanBalance, gradesFor, isCache, isSequence, presetOf, profileFor, proxyFor } from './color.js';
+import { ODT, PROFILES, WORKING, asStudio, clean, cleanBalance, gradesFor, isCache, isSequence, looksFor, presetOf, profileFor, proxyFor } from './color.js';
 import { filmLut, gradeLut, nativeLut, nativePresets } from './luts.js';
 import { cached, evaluate, saveSpec, shotAt } from './shots.js';
 import { WorldViewer } from './world.svelte.js';
@@ -434,23 +434,31 @@ export class Studio {
 		return profileFor(it).profile;
 	}
 	/**
-	 * The grades a clip is seen through, on every tab: its own, then the film's look.
+	 * A clip's own grade, on every tab.
 	 * @param {Clip | null | undefined} c @returns {Cdl[]}
 	 */
 	gradesOf(c) {
 		return gradesFor(c, this.current);
 	}
 	/**
+	 * The looks a clip goes through after its own grade: its scene's, then the film's.
+	 * @param {Clip | null | undefined} c @returns {import('$lib/auth/client').Look[]}
+	 */
+	looksOf(c) {
+		return looksFor(c, this.current);
+	}
+	/**
 	 * A grade's cube as the Mac baked it (`gradeLut`), at once when it is here; else null, and the world is drawn again
 	 * when it comes.
-	 * @param {import('$lib/auth/client').Balance | null} balance @param {Cdl[]} grades @returns {import('./luts.js').Lut | null}
+	 * @param {import('$lib/auth/client').Balance | null} balance @param {Cdl[]} grades
+	 * @param {import('$lib/auth/client').Look[]} [looks] @returns {import('./luts.js').Lut | null}
 	 */
-	cubeFor(balance, grades) {
-		const key = JSON.stringify([balance, grades]);
+	cubeFor(balance, grades, looks = []) {
+		const key = JSON.stringify([balance, grades, looks]);
 		if (this.#cubes.has(key)) return this.#cubes.get(key) ?? null;
 		this.#cubes.set(key, null);
 		if (this.#cubes.size > 24) this.#cubes.delete(/** @type {string} */ (this.#cubes.keys().next().value));
-		gradeLut(balance, grades)
+		gradeLut(balance, grades, looks)
 			.then((l) => (this.#cubes.set(key, l), this.driveWorld()))
 			.catch(() => this.#cubes.delete(key));
 		return null;
@@ -1106,8 +1114,8 @@ export class Studio {
 		const spec = cached(c.shot, c.shotVersion)?.spec;
 		if (!spec) return;
 		// the view film mode draws through: the clip's grade (balance, its CDL, the film's look: the Mac's cube) and the output
-		const grades = this.gradesOf(c), balance = this.balanceOf(c);
-		const grade = grades.length || balance ? this.cubeFor(balance, grades) : null;
+		const grades = this.gradesOf(c), balance = this.balanceOf(c), looks = this.looksOf(c);
+		const grade = grades.length || balance || looks.length ? this.cubeFor(balance, grades, looks) : null;
 		this.world.show({ spec, t: this.shotTime(c), shape: /** @type {Shape} */ (this.viewShape), ...hd(this.viewShape), view: { lut: filmLut(this.luts['odt-rec709'] ?? null), grade: filmLut(grade) } });
 	}
 

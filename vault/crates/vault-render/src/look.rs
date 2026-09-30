@@ -301,9 +301,10 @@ fn shrink(px: &[[f32; 3]], w: u32, h: u32) -> (Vec<[f32; 3]>, (u32, u32)) {
     (out, (sw, sh))
 }
 
-/// Read one shot: its elements as shot and after its balance, in the timeline's shape at its full render size (4K
-/// for 16:9), from the real thing. `balance` overrides the clip's own (a proposal checked before it is written).
-pub fn look(t: &Timeline, lib: &dyn Library, c: &Clip, output: &dyn Output, regions: &Regions, balance: Option<&Balance>) -> Result<Look> {
+/// Read one shot: its elements as shot and after its balance (with `looks`, after its grade and looks as well: the
+/// whole chain, as the film will show it), in the timeline's shape at its full render size (4K for 16:9), from the
+/// real thing. `balance` overrides the clip's own (a proposal checked before it is written).
+pub fn look(t: &Timeline, lib: &dyn Library, c: &Clip, output: &dyn Output, regions: &Regions, balance: Option<&Balance>, looks: bool) -> Result<Look> {
     if c.is_world() {
         bail!("a world clip is a plate rendered at the end: it is graded by its shot's light, not measured here");
     }
@@ -337,7 +338,11 @@ pub fn look(t: &Timeline, lib: &dyn Library, c: &Clip, output: &dyn Output, regi
     }
     drop(cct);
     let bal = balance.copied().or_else(|| c.balance()).unwrap_or_default();
-    let after = gpu.output(&*gpu.balance(&framed, Some(&bal))?)?;
+    let mut chain = gpu.balance(&framed, Some(&bal))?;
+    if looks && let Some((lut, _)) = crate::render::clip_cube(t, lib, c, output)? {
+        chain = gpu.apply_cube(&chain, &gpu.cube(&lut))?;
+    }
+    let after = gpu.output(&chain)?;
     let disp = rgb(&gpu, &after, w, h);
     let balanced = elements(&disp, &flags);
     let (picture, picture_size) = shrink(&disp, w, h);
@@ -358,6 +363,7 @@ pub fn look(t: &Timeline, lib: &dyn Library, c: &Clip, output: &dyn Output, regi
         "skin_box": skin.as_ref().map(r3),
         "as_shot": as_shot,
         "balanced": balanced,
+        "through": if looks { "balance, grade and looks" } else { "balance" },
         "balance": bal,
     });
     if let Some(o) = from.as_object() {

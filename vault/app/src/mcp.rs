@@ -265,6 +265,9 @@ pub struct LookArgs {
     pub clips: Option<Vec<String>>,
     /// per clip id, parts of its frame named by hand
     pub regions: Option<std::collections::HashMap<String, RegionsArg>>,
+    /// true: through each shot's grade and looks as well (the whole chain, as the film shows it); default: after its
+    /// balance only (the base correction)
+    pub looks: Option<bool>,
 }
 
 #[derive(Deserialize, schemars::JsonSchema)]
@@ -275,6 +278,21 @@ pub struct ScopesArgs {
     pub clips: Vec<String>,
     /// per clip id, parts of its frame named by hand (drawn as boxes, and the skin box used)
     pub regions: Option<std::collections::HashMap<String, RegionsArg>>,
+    /// true: through each shot's grade and looks as well (the whole chain); default: after its balance only
+    pub looks: Option<bool>,
+}
+
+#[derive(Deserialize, schemars::JsonSchema)]
+pub struct LookSetArgs {
+    /// the timeline's id
+    pub timeline: String,
+    /// the scene whose look this is (as its clips name it in script.scene); none: the film's look
+    pub scene: Option<String>,
+    /// the look: { cdl?, preset?, contrast (−1…1), pivot (ACEScct, mid grey 0.414), split?: { shadows: { hue°, amount
+    /// 0…1 }, highlights: { hue°, amount }, balance −1…1 }, hue?: [[hue°, shift°]…], hue_sat?: [[hue°, factor]…], sat,
+    /// lut? (a .cube's hash, ACEScct in and out), strength 0…1 } — hues on the vectorscope (the skin line 123°);
+    /// none: take it off
+    pub look: Option<Value>,
 }
 
 #[derive(Deserialize, schemars::JsonSchema)]
@@ -783,7 +801,7 @@ impl Studio {
     async fn grade_look(&self, Parameters(a): Parameters<LookArgs>) -> String {
         let r = async {
             let t = self.api("GET", &format!("/api/timelines/{}", a.timeline), None).await?;
-            let looks = crate::render::look_clips(&self.vault, &t, a.clips, regions_of(a.regions), Default::default()).await?;
+            let looks = crate::render::look_clips(&self.vault, &t, a.clips, regions_of(a.regions), Default::default(), a.looks == Some(true)).await?;
             let shots: Vec<Value> = looks.into_iter().map(|l| l.map(|l| l.json).unwrap_or_else(|e| e)).collect();
             Ok::<_, String>(json!({ "timeline": a.timeline, "shots": shots }))
         };
@@ -796,7 +814,7 @@ impl Studio {
     async fn grade_scopes(&self, Parameters(a): Parameters<ScopesArgs>) -> rmcp::model::CallToolResult {
         let r = async {
             let t = self.api("GET", &format!("/api/timelines/{}", a.timeline), None).await?;
-            crate::render::scope_sheet(&self.vault, &t, a.clips, regions_of(a.regions)).await
+            crate::render::scope_sheet(&self.vault, &t, a.clips, regions_of(a.regions), a.looks == Some(true)).await
         };
         match r.await {
             Ok((rows, png)) => rmcp::model::CallToolResult::success(vec![
@@ -973,6 +991,60 @@ impl Studio {
                 self.api("PUT", &format!("/api/timelines/{}", a.timeline), Some(json!({ "clips": clips }))).await?;
             }
             Ok::<_, String>(json!({ "applied": apply, "changes": changes, "voice_over_music_before": measured["voice_over_music"] }))
+        };
+        text(r.await)
+    }
+
+    #[tool(
+        description = "A timeline's looks after its shots' own grades: the film's (`film`) and each scene's (`scenes`, keyed by the scene its clips name in script.scene), with the scenes on the timeline and their clips in order — every clip goes through its balance, its own grade, its scene's look, then the film's (story-producer look.md)."
+    )]
+    async fn looks(&self, Parameters(a): Parameters<IdArg>) -> String {
+        let r = async {
+            let t = self.api("GET", &format!("/api/timelines/{}", a.id), None).await?;
+            let mut scenes: Vec<(String, Vec<Value>)> = Vec::new();
+            let mut v1: Vec<&Value> = t["clips"].as_array().into_iter().flatten().filter(|c| c["track"] == "V1").collect();
+            v1.sort_by(|a, b| a["start"].as_f64().unwrap_or(0.0).total_cmp(&b["start"].as_f64().unwrap_or(0.0)));
+            for c in v1 {
+                let scene = c["script"]["scene"].as_str().unwrap_or("").to_string();
+                let entry = json!({ "clip": c["id"], "start": c["start"], "description": c["script"]["description"] });
+                match scenes.iter_mut().find(|(s, _)| *s == scene) {
+                    Some((_, clips)) => clips.push(entry),
+                    None => scenes.push((scene, vec![entry])),
+                }
+            }
+            let g = &t["grade"];
+            Ok::<_, String>(json!({
+                "film": g.get("film").cloned().unwrap_or(Value::Null),
+                "film_cdl": { "look": g.get("look").cloned().unwrap_or(Value::Null), "preset": g.get("preset").cloned().unwrap_or(Value::Null) },
+                "scenes": g.get("scenes").cloned().unwrap_or(json!({})),
+                "scenes_on_timeline": scenes.into_iter().map(|(s, c)| json!({ "scene": if s.is_empty() { Value::Null } else { json!(s) }, "clips": c })).collect::<Vec<_>>(),
+            }))
+        };
+        text(r.await)
+    }
+
+    #[tool(
+        description = "Set the film's look (no scene) or a scene's look — after every shot's own balance and grade: base correction first, then the look. Colour only (the maths in Rust, baked into one cube per clip: the studio plays it live and the render uses the same). Returns the grade as saved. Check it with grade_scopes { looks: true } and grade_look { looks: true }."
+    )]
+    async fn look_set(&self, Parameters(a): Parameters<LookSetArgs>) -> String {
+        let r = async {
+            let t = self.api("GET", &format!("/api/timelines/{}", a.timeline), None).await?;
+            let mut g = t["grade"].clone();
+            if !g.is_object() {
+                g = json!({ "look": null });
+            }
+            let look = a.look.unwrap_or(Value::Null);
+            match &a.scene {
+                None => g["film"] = look,
+                Some(scene) => {
+                    if !g["scenes"].is_object() {
+                        g["scenes"] = json!({});
+                    }
+                    g["scenes"][scene.as_str()] = look;
+                }
+            }
+            let saved = self.api("PUT", &format!("/api/timelines/{}", a.timeline), Some(json!({ "grade": g }))).await?;
+            Ok::<_, String>(json!({ "grade": saved["grade"] }))
         };
         text(r.await)
     }

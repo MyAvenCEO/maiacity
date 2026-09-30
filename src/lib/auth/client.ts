@@ -165,6 +165,8 @@ export const describeMedia = (hash: string, about: { title?: string; description
 
 /** A picture's colour, as the ingest detected it (media meta.color); `override` is the one set by hand in the studio. */
 export type ColorInfo = { profile: string; primaries?: string; transfer?: string; matrix?: string; range?: string; bitDepth?: number; detectedFrom?: string; override?: string };
+/** A look: the film's or a scene's (game/film/color.js `cleanLook`, vault-render `creative::Look`). */
+export type Look = import('../../../game/film/color.js').Look;
 /** A grade: ASC CDL in ACEScct (game/film/color.js). */
 export type Cdl = { slope: [number, number, number]; offset: [number, number, number]; power: [number, number, number]; sat: number };
 // ─────────────────────────────── signing a terminal in ───────────────────────────────
@@ -243,7 +245,8 @@ export type Timeline = {
 	version?: number;
 	color?: { working: 'acescct'; output: 'odt-rec709' };
 	/** the whole film's look */
-	grade?: { look: Cdl | null; preset?: string } | null;
+	/** the film's grade above its shots': its plain CDL or preset from before, its look (`film`) and each scene's (`scenes`, by the scene its clips name) */
+	grade?: { look: Cdl | null; preset?: string; film?: Look | null; scenes?: Record<string, Look> } | null;
 };
 
 export const listTimelines = () => call<Timeline[]>('/api/timelines');

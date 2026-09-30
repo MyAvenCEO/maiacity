@@ -256,3 +256,43 @@ export function cleanCdl(/** @type {any} */ g) {
 	const out = { slope: trio(g.slope, 1, 0, 4), offset: trio(g.offset, 0, -1, 1), power: trio(g.power, 1, 0.1, 4), sat: Math.min(4, Math.max(0, Number.isFinite(Number(g.sat)) ? Number(g.sat) : 1)) };
 	return isNeutral(out) ? null : out;
 }
+
+// ── a look: the film's or a scene's, after every shot's own grade (vault-render `creative::Look`) ───────────────────
+
+/**
+ * @typedef {{ hue: number, amount: number }} Tone
+ * @typedef {{ cdl?: Cdl | null, preset?: string | null, contrast: number, pivot: number, split?: { shadows: Tone, highlights: Tone, balance: number } | null, hue?: [number, number][], hue_sat?: [number, number][], sat: number, lut?: string | null, strength: number }} Look
+ */
+
+/** A look as data, checked as Rust checks it (`clean_look`): numbers in their ranges; null when it changes nothing. */
+export function cleanLook(/** @type {any} */ v) {
+	if (!v || typeof v !== 'object' || Array.isArray(v)) return null;
+	const n = (/** @type {any} */ x, /** @type {number} */ lo, /** @type {number} */ hi, /** @type {number} */ d) => {
+		const k = Number(x);
+		return Number.isFinite(k) ? Math.min(hi, Math.max(lo, k)) : d;
+	};
+	const deg = (/** @type {any} */ x) => ((n(x, -720, 720, 0) % 360) + 360) % 360;
+	/** @type {Look} */
+	const out = { contrast: n(v.contrast, -1, 1, 0), pivot: n(v.pivot, 0, 1, 0.4135884), sat: n(v.sat ?? 1, 0, 3, 1), strength: n(v.strength ?? 1, 0, 1, 1) };
+	const cdl = v.cdl ? cleanCdl(v.cdl) : null;
+	if (cdl) out.cdl = cdl;
+	if (typeof v.preset === 'string' && v.preset && v.preset !== 'neutral') out.preset = v.preset.slice(0, 20);
+	if (v.split && typeof v.split === 'object') {
+		const tone = (/** @type {any} */ t) => ({ hue: deg(t?.hue), amount: n(t?.amount, 0, 1, 0) });
+		const split = { shadows: tone(v.split.shadows), highlights: tone(v.split.highlights), balance: n(v.split.balance, -1, 1, 0) };
+		if (split.shadows.amount || split.highlights.amount) out.split = split;
+	}
+	const points = (/** @type {any} */ ps, /** @type {number} */ lo, /** @type {number} */ hi, /** @type {number} */ d) =>
+		(Array.isArray(ps) ? ps : [])
+			.slice(0, 16)
+			.map((p) => /** @type {[number, number]} */ ([deg(p?.[0]), n(p?.[1], lo, hi, d)]))
+			.sort((a, b) => a[0] - b[0]);
+	const hue = points(v.hue, -90, 90, 0), hueSat = points(v.hue_sat, 0, 3, 1);
+	if (hue.length) out.hue = hue;
+	if (hueSat.length) out.hue_sat = hueSat;
+	if (typeof v.lut === 'string' && /^[0-9a-f]{64}$/.test(v.lut)) out.lut = v.lut;
+	const neutral =
+		out.strength === 0 ||
+		(!out.cdl && !out.preset && out.contrast === 0 && !out.split && hue.every((p) => p[1] === 0) && hueSat.every((p) => p[1] === 1) && out.sat === 1 && !out.lut);
+	return neutral ? null : out;
+}

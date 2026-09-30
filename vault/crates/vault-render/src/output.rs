@@ -77,6 +77,11 @@ impl Lut3d {
     /// A Resolve/IRIDAS `.cube` (LUT_3D_SIZE, optional DOMAIN_MIN/MAX of 0…1, red fastest).
     pub fn from_cube_file(name: &str, path: &Path) -> Result<Self> {
         let text = std::fs::read_to_string(path).with_context(|| format!("{}", path.display()))?;
+        Self::from_cube_str(name, &text).with_context(|| format!("{}", path.display()))
+    }
+
+    /// A `.cube` from its text (a creative LUT from the vault, by its hash).
+    pub fn from_cube_str(name: &str, text: &str) -> Result<Self> {
         let mut size = 0usize;
         let mut data = Vec::new();
         for line in text.lines() {
@@ -92,18 +97,18 @@ impl Lut3d {
                 let want = if l.starts_with("DOMAIN_MIN") { 0.0 } else { 1.0 };
                 let v: Vec<f64> = l.split_whitespace().skip(1).map(|x| x.parse().unwrap_or(f64::NAN)).collect();
                 if v.iter().any(|x| (x - want).abs() > 1e-9) {
-                    bail!("{}: a domain other than 0…1 is not handled", path.display());
+                    bail!("{name}: a domain other than 0…1 is not handled");
                 }
                 continue;
             }
             if l.starts_with("LUT_1D_SIZE") {
-                bail!("{} is a 1D LUT", path.display());
+                bail!("{name} is a 1D LUT");
             }
             if l.chars().next().is_some_and(|c| c.is_ascii_alphabetic()) {
                 continue;
             }
             for x in l.split_whitespace() {
-                data.push(x.parse::<f32>().with_context(|| format!("{}: {l}", path.display()))?);
+                data.push(x.parse::<f32>().with_context(|| format!("{name}: {l}"))?);
             }
         }
         Self::from_rgb(name, size, data)
