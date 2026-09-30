@@ -53,11 +53,6 @@ impl S3 {
         }
     }
 
-    /// A signed GET address, good for `valid`: what ffmpeg reads a recording from (with Range, as it seeks).
-    pub fn presign_get(&self, key: &str, valid: Duration) -> String {
-        self.bucket.get_object(Some(&self.creds), key).sign(valid).to_string()
-    }
-
     /// A GET, whole or a byte range (`bytes=a-b`), as the response — the gateway streams its body on.
     pub async fn get(&self, key: &str, range: Option<&str>) -> Result<reqwest::Response> {
         let url = self.bucket.get_object(Some(&self.creds), key).sign(SIGN);
