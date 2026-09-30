@@ -10,6 +10,7 @@
 	import { itemName, raw, thumb } from './studio.svelte.js';
 	import { command } from '$lib/native';
 	import { transcriptState } from './transcript.js';
+	import { analysisOf, cuesOf, tagsOf } from './analysis.js';
 
 	/** @type {{ s: import('./studio.svelte.js').Studio }} */
 	let { s } = $props();
@@ -182,6 +183,7 @@
 		{#each shown as m (m.hash)}
 			{@const px = s.proxy(m)}
 			{@const ts = m.kind === 'video' || m.kind === 'audio' ? transcriptState(m) : null}
+			{@const an = analysisOf(m)}
 			<li>
 				<button
 					class="item"
@@ -190,7 +192,7 @@
 					ondragstart={(e) => e.dataTransfer?.setData('text/x-hash', m.hash)}
 					onclick={() => s.pick(m)}
 					ondblclick={() => s.place(m.hash, s.defaultTrack(m), s.time)}
-					title="Click to see it in the source monitor, drag onto a track, or double-click to drop it at the playhead"
+					title="{an?.summary?.line ? `${an.summary.line}\n` : ''}{tagsOf(m).length ? `${tagsOf(m).join(' · ')}\n` : ''}Click to see it in the source monitor, drag onto a track, or double-click to drop it at the playhead"
 				>
 					<span class="thumb">
 						{#if m.kind === 'image'}<img src={thumb(m)} alt="" loading="lazy" draggable="false" />
@@ -201,6 +203,7 @@
 						<span class="nm">{String(m.meta?.title ?? itemName(m))}</span>
 						<span class="tg">
 							{#if px.state !== 'n/a'}<b class="px {px.state}">{proxyLabel[px.state]}</b>{/if}
+							{#if cuesOf(m).length}<b class="cn" title="{cuesOf(m).length} cues from the shot analysis (see them in the source monitor)">{cuesOf(m).length} cues</b>{/if}
 							{#if ts && ts.state !== 'unknown' && ts.state !== 'none'}<b class="tr {ts.state}" title={ts.note}>{ts.state === 'ready' ? 'T' : ts.state === 'stuck' ? 'T ✗' : ts.state === 'running' ? `T ${Math.floor(ts.progress * 100)}%` : 'T …'}</b>{/if}
 							{m.tags.filter((t) => rank(t) < 3).slice(0, 2).join(' · ') || m.kind}
 						</span>
@@ -262,6 +265,12 @@
 		font-size: 0.72rem;
 		color: var(--ink);
 		text-overflow: ellipsis;
+	}
+
+	.cn {
+		margin-right: 0.3rem;
+		font-weight: 600;
+		color: var(--cyan);
 	}
 
 	.tr {
