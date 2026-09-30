@@ -289,6 +289,14 @@ pub struct ArcArgs {
 }
 
 #[derive(Deserialize, schemars::JsonSchema)]
+pub struct DeleteArgs {
+    /// the files' BLAKE3 hashes
+    pub hashes: Vec<String>,
+    /// why (kept with the file)
+    pub why: String,
+}
+
+#[derive(Deserialize, schemars::JsonSchema)]
 pub struct MixClip {
     /// the clip's id (an A1, A2 or A3 clip)
     pub clip: String,
@@ -697,8 +705,6 @@ impl Studio {
     async fn grade_measure(&self, Parameters(a): Parameters<MeasureArgs>) -> String {
         let r = async {
             let t = self.api("GET", &format!("/api/timelines/{}", a.timeline), None).await?;
-            // every shot its own grading still first (a frame of the original inside it): what is measured is what is judged
-            crate::proxies::shot_stills(&self.vault, &t).await?;
             let shots = crate::render::measure_clips(&self.vault, &t, a.clips, a.frames.unwrap_or(5).clamp(1, 24)).await?;
             Ok::<_, String>(json!({ "timeline": a.timeline, "shots": shots }))
         };
@@ -730,7 +736,6 @@ impl Studio {
     async fn grade_match(&self, Parameters(a): Parameters<MatchArgs>) -> String {
         let r = async {
             let t = self.api("GET", &format!("/api/timelines/{}", a.timeline), None).await?;
-            crate::proxies::shot_stills(&self.vault, &t).await?;
             let mut out = crate::render::propose_balances(&self.vault, &t, a.clips.clone(), a.reference.clone(), a.neutral == Some(true)).await?;
             let apply = a.apply != Some(false);
             if apply {
@@ -775,6 +780,22 @@ impl Studio {
             let saved = self.api("PUT", &format!("/api/timelines/{}", a.timeline), Some(json!({ "clips": clips }))).await?;
             let n = saved["clips"].as_array().map(|c| c.iter().filter(|c| c["kind"] == "section").count()).unwrap_or(0);
             Ok::<_, String>(json!({ "sections": n }))
+        };
+        text(r.await)
+    }
+
+    #[tool(
+        description = "Delete files from the library, on the person's word only: each file's description says it is deleted (when, why), and no device lists it any more; its bytes stay where they are kept until storage is cleaned, so it can be undone."
+    )]
+    async fn library_delete(&self, Parameters(a): Parameters<DeleteArgs>) -> String {
+        let r = async {
+            let mut done = Vec::new();
+            for h in &a.hashes {
+                let hash: iroh_blobs::Hash = h.parse().map_err(|e| format!("{h}: {e}"))?;
+                self.vault.catalog.delete_file(hash, &a.why).await.map_err(|e| format!("{e:#}"))?;
+                done.push(h.clone());
+            }
+            Ok::<_, String>(json!({ "deleted": done }))
         };
         text(r.await)
     }

@@ -23,7 +23,7 @@ import { ODT, PROFILES, WORKING, asStudio, clean, cleanBalance, gradesFor, isCac
 import { filmLut, nativeLut } from './luts.js';
 import { cached, evaluate, saveSpec, shotAt } from './shots.js';
 import { WorldViewer } from './world.svelte.js';
-import { audioProxyOf, captionWordsOf, hasSound, lineWords, phraseBreak, rewordPhrase, stepOpen, transcriptOf, transcriptState } from './transcript.js';
+import { captionWordsOf, hasSound, lineWords, phraseBreak, rewordPhrase, stepOpen, transcriptOf, transcriptState } from './transcript.js';
 import { command, native } from '$lib/native';
 
 /** @typedef {import('$lib/auth/client').Cdl} Cdl */
@@ -378,23 +378,12 @@ export class Studio {
 	stillOf(c) {
 		if (!c?.hash) return null;
 		const orig = String(this.byHash.get(c.hash)?.meta?.proxy_of ?? c.hash);
-		const mid = c.in + c.dur / 2;
-		// its stills (the file's own and the ones made for shots of it): the one inside this shot nearest its middle
-		const all = this.library.filter((m) => m.meta?.grade_still_of === orig).map((m) => ({ hash: m.hash, t: Number(m.meta?.t ?? 0) }));
-		if (!all.length) return null;
-		const inside = all.filter((x) => x.t >= c.in && x.t <= c.in + c.dur).sort((a, b) => Math.abs(a.t - mid) - Math.abs(b.t - mid));
-		const best = inside[0] ?? all.sort((a, b) => Math.abs(a.t - mid) - Math.abs(b.t - mid))[0];
-		return { ...best, inside: !!inside[0] };
-	}
-	/** Grade opens: every shot its own grading still, made on this Mac in the background; the library read again after. */
-	async makeStills() {
-		if (!this.current) return;
-		try {
-			const r = /** @type {{ made: unknown[] }} */ (await command('grade_stills', { timeline: { ...$state.snapshot(this.current), clips: $state.snapshot(this.clips) } }));
-			if (r.made.length) await this.reloadLibrary();
-		} catch (e) {
-			console.warn('grading stills:', e);
-		}
+		// the file's one grading still (its best frame, as the analysis marks it)
+		const h = this.byHash.get(orig)?.meta?.grade_still;
+		const st = typeof h === 'string' ? this.byHash.get(h) : undefined;
+		if (!st) return null;
+		const t = Number(st.meta?.t ?? 0);
+		return { hash: st.hash, t, inside: t >= c.in && t <= c.in + c.dur };
 	}
 	/** Grade, paused, on stills: the shot under the playhead shows its grading still */
 	showStill = $derived(this.tab === 'grade' && this.gradeOn === 'stills' && !this.playing && !!this.stillOf(this.picture));
@@ -950,16 +939,15 @@ export class Studio {
 		if (m?.kind !== 'video') return void (await this.source(hash));
 		await this.source(hash);
 		if (this.sources[hash]?.buffer) return void (this.soundState[hash] = 'ready');
-		const a = audioProxyOf(m);
-		if (!a) return void (this.soundState[hash] = hasSound(m) ? 'waiting' : 'silent');
+		if (!hasSound(m)) return void (this.soundState[hash] = 'silent');
 		const waiting = this.pendingSound.get(hash);
 		if (waiting) return waiting;
 		const p = (async () => {
 			this.soundState[hash] = 'loading';
 			try {
-				const res = await fetch(raw(a));
-				if (!res.ok) throw new Error(`its audio proxy is not on this Mac yet (${res.status})`);
-				const buffer = await this.audioCtx().decodeAudioData(await res.arrayBuffer());
+				// from the original itself, read on this Mac (the file the render mixes from) — sound has no proxy
+				const bytes = /** @type {ArrayBuffer} */ (await command('vault_sound', { hash }));
+				const buffer = await this.audioCtx().decodeAudioData(bytes);
 				this.sources[hash] = { ...this.sources[hash], buffer, peaks: peaksOf(buffer) };
 				this.soundState[hash] = 'ready';
 			} catch (e) {
@@ -1021,7 +1009,7 @@ export class Studio {
 			gain.gain.linearRampToValueAtTime(c.vol, when + fadeIn);
 			// the music steps back while the voice speaks, and comes up again in the pauses (the render does the same)
 			if (c.track === 'A2')
-				for (const v of this.clips.filter((v) => v.track === 'A1' && v.start + v.dur > from && v.start < c.start + c.dur)) {
+				for (const v of this.clips.filter((v) => v.track === 'A1' && v.start + v.dur > from && v.start < c.start + c.dur).sort((x, y) => x.start - y.start)) {
 					const a = this.ctxStart + (Math.max(from, v.start) - time), b = this.ctxStart + (v.start + v.dur - time);
 					if (a < when + fadeIn) continue;
 					gain.gain.setValueAtTime(c.vol, a - 0.15);

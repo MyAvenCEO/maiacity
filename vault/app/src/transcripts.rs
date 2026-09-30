@@ -3,8 +3,8 @@
 //! after any ingest and only while macOS says there is memory to spare; the uploads go on meanwhile (it is the CPU's
 //! work, not the line's). It does not wait for the proxies either: they are the GPU's and the video encoder's.
 //!
-//! The sound: the recording's audio proxy when this Mac has it (the server makes it: small, quick to read), else the
-//! original itself — decoded by AVFoundation straight to 16 kHz mono (vault-media `audio`).
+//! The sound: the original itself (sound has no proxy), decoded by AVFoundation straight to 16 kHz mono
+//! (vault-media `audio`).
 //!
 //! What the catalog gets — `transcript/<hash>` (the original's hash), written by this Mac's author: while it runs
 //! `{ state: "transcribing", stage, progress, device, updated }` (the Ingest table shows how far), then the transcript
@@ -203,15 +203,12 @@ async fn transcribe(handle: &AppHandle, vault: &Arc<Vault>, hash: Hash, name: &s
     let mut models_told = tell.clone();
     let models = crate::models::ready(handle, vault, &mut move |stage, done| models_told(stage, done)).await.map_err(Wait)?;
 
-    // the sound: the audio proxy when it is here, else the original
+    // the sound: the original itself (sound has no proxy)
     let view = vault.catalog.meta_view(hash).await.map_err(|e| format!("{e:#}"))?.ok_or("no such file")?;
-    let audio = view.meta.get("audio").and_then(|a| a.as_str()).and_then(|a| a.parse::<Hash>().ok());
-    let here = |h: Hash| async move { matches!(vault.store.blobs().status(h).await, Ok(BlobStatus::Complete { .. })) };
-    let (source, ext) = match audio {
-        Some(a) if here(a).await => (a, "m4a".to_string()),
-        _ if here(hash).await => (hash, std::path::Path::new(&view.original_name).extension().map(|e| e.to_string_lossy().to_lowercase()).unwrap_or_else(|| "mov".into())),
-        _ => return Err(Wait("neither the recording nor its audio proxy is on this Mac yet".into())),
-    };
+    if !matches!(vault.store.blobs().status(hash).await, Ok(BlobStatus::Complete { .. })) {
+        return Err(Wait("the recording is not on this Mac yet".into()));
+    }
+    let (source, ext) = (hash, std::path::Path::new(&view.original_name).extension().map(|e| e.to_string_lossy().to_lowercase()).unwrap_or_else(|| "mov".into()));
     let path: PathBuf = vault.ingest_dir().join(format!("{hex}.asr.{ext}"));
     vault.store.blobs().export(source, &path).await.map_err(|e| format!("{e:#}"))?;
     let (p, t2) = (path.clone(), tell.clone());
