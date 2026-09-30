@@ -10,7 +10,7 @@
 //!            LUT, `output::Output`), fades — and rendered into VideoToolbox's buffer: 4K HEVC Main10 master + its
 //!            1080 H.264 copy in one pass for 16:9, 1080 H.264 for 9:16, 1:1, 4:5.
 //!   captions Core Text (Fraunces 460, the worker's CSS) drawn over the display-referred picture; the hook the same.
-//!   sound    the worker's mix ported (fades, voice ducking the music, the sum) in 100 ms blocks to disk, measured
+//!   sound    the worker's mix ported (fades, each clip's EQ, voice ducking the music, the sum) in 100 ms blocks to disk, measured
 //!            (BS.1770 / EBU R 128 in Rust, `loudness`) and levelled to a target, AAC in every file.
 //!   report   QC (qc.mjs natively), loudness of each delivered file, every transform by hash — the worker's JSON.
 //!
@@ -20,6 +20,7 @@
 pub mod av;
 pub mod captions;
 pub mod creative;
+pub mod eq;
 pub mod gpu;
 pub mod grade;
 pub mod look;

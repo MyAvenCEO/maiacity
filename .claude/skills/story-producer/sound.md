@@ -63,9 +63,39 @@ every clip to its track's aim before the render levels the whole mix to −14 LU
 - music (A2) −26 LUFS, and the render ducks it 6 dB more under the voice; keep voice over music 12–18 LU
 - sounds and beds (A3) −30 LUFS
 
-Adjust single clips with `audio_mix` (gain in dB, up to +12). Clips carry their own fades (`fin`, `fout`): a voice at
+Adjust single clips with `audio_mix` (gain in dB, up to +12), their tone with `audio_eq` / `audio_match` (below). Clips carry their own fades (`fin`, `fout`): a voice at
 least 0.05 s so it never clicks, the music 1 s in and 2.5 s out at the film's ends. The Audio tab shows it all on the
 clips themselves.
+
+## Tone: EQ, measured and matched
+
+Every sound clip can carry an EQ: bands in order, each a biquad from the Audio EQ Cookbook (`highpass`, `lowshelf`,
+`peaking`, `notch`, `highshelf`, `lowpass`; `f` Hz, `gain` dB, `q`). The render's mix (Rust) and the studio's playback
+(Web Audio) make the same filters from the same data, so what you hear in the studio is what renders. It is driven
+through the MCP; the Audio tab only shows it on the clip (`EQ HP 90, +3 dB 4k`).
+
+- **`audio_measure`** gives each clip's `spectrum`: octave bands 63 Hz–16 kHz, each one's share of the energy where it
+  speaks (dB), through its EQ. Compare two voices band by band, the way `grade_scopes` compares two shots.
+- **`audio_eq { clips | track, eq }`** sets an EQ by hand (replaces; `[]` takes it off).
+- **`audio_match { clips, reference }`** is the sound's `grade_match`: it builds the EQ that gives the clips the
+  reference's tone (`amount` 0.8, `limit` ±6 dB by default) and, with `level`, the gain that makes them play as loud.
+
+Rules for a voice:
+- **High-pass** under the voice: 70–100 Hz for a low voice, 100–120 Hz for a higher one. Wind, rumble and handling
+  live there.
+- **Cut narrow, boost wide.** Mud sits at 200–400 Hz (cut 2–4 dB, q 1–1.4); presence at 2.5–5 kHz (boost 2–4 dB,
+  q 0.7–1); air above 8–10 kHz (a high shelf, 1–3 dB). Never more than about 6 dB on any band.
+- **One reference voice per film:** the cleanest recording (the lav, the voice-over). Match every other voice to it,
+  so a cut from voice-over to a talking head doesn't change the room the voice is in.
+- **A camera's voice is further away:** more room, less presence, duller. `audio_match` against the lav or voice-over
+  brings its tone back; it cannot take the room's echo out. Only a closer mic can do that, so record a lav on every
+  talking head.
+- **Make a pocket for the voice in the music** instead of pushing the music down further: a wide cut of 2–3 dB at
+  2–4 kHz on the music clip under a dense voice.
+
+The pass: `audio_measure` → choose the reference voice → `audio_match` the other voices (level on) → check each voice
+clip's `voice_over_music_lu` (12–18) → listen through the cuts in the studio. Nothing may jump in tone or loudness from
+one voice clip to the next.
 
 ## Cutting sound across scenes: J and L cuts
 

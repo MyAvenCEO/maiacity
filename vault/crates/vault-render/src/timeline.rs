@@ -70,6 +70,9 @@ pub struct Clip {
     /// a V1 clip's secondaries (creative::Secondary): parts of it given their own balance
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub secondaries: Option<Value>,
+    /// a sound clip's EQ (eq::Band, in order)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub eq: Option<Value>,
 }
 
 fn one() -> f64 {
@@ -99,6 +102,10 @@ impl Clip {
     /// Its secondaries, checked.
     pub fn secondaries(&self) -> Vec<crate::creative::Secondary> {
         self.secondaries.as_ref().map(crate::creative::clean_secondaries).unwrap_or_default()
+    }
+    /// Its EQ, checked (empty: none).
+    pub fn eq(&self) -> Vec<crate::eq::Band> {
+        self.eq.as_ref().map(crate::eq::clean_eq).unwrap_or_default()
     }
     /// The scene it belongs to (its script's), the key of its scene's look.
     pub fn scene(&self) -> Option<&str> {

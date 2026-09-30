@@ -1,5 +1,5 @@
-//! The film's sound, as worker.ts mixes it — every audio clip from where it is trimmed, at its volume, with its own
-//! fades (or a short one at both ends), placed on the film's clock to the millisecond; voice (A1), music (A2) and
+//! The film's sound, as worker.ts mixes it — every audio clip from where it is trimmed, through its EQ (`eq`), at its
+//! volume, with its own fades (or a short one at both ends), placed on the film's clock to the millisecond; voice (A1), music (A2) and
 //! sounds (A3, any other) summed apart; the voice keying the music down about 6 dB while it speaks (ffmpeg's
 //! `sidechaincompress=threshold=0.02:ratio=4:knee=4:attack=120:release=900`, ported); the three summed — and then,
 //! where the worker only measured, levelled to a loudness target (integrated LUFS, true-peak ceiling) by one gain
@@ -77,6 +77,7 @@ struct Voice {
     /// how long it plays, in samples
     len: u64,
     gain: f64,
+    eq: crate::eq::Eq,
     fin: u64,
     fout: u64,
     reader: Option<AudioReader>,
@@ -102,6 +103,7 @@ impl Voice {
             at: (ms / 1000.0 * rate).round() as u64,
             len: (c.dur * rate).round().max(0.0) as u64,
             gain: c.vol,
+            eq: crate::eq::Eq::new(&c.eq(), rate),
             fin: (fin * rate).round().max(1.0) as u64,
             fout: (fout * rate).round().max(1.0) as u64,
             reader: None,
@@ -154,7 +156,7 @@ impl Voice {
             if self.queue.len() < 2 && !self.fill()? {
                 break;
             }
-            let (l, r) = (self.queue.pop_front().unwrap(), self.queue.pop_front().unwrap());
+            let (l, r) = self.eq.frame(self.queue.pop_front().unwrap(), self.queue.pop_front().unwrap());
             let g = self.envelope(i) as f32;
             let k = ((self.at + i - from) * 2) as usize;
             bus[k] += l * g;

@@ -1,5 +1,5 @@
 //! The render end to end on synthetic media made here (AVAssetWriter: a few seconds of flat colours and a tone): the
-//! cut (which clip is on top, in points, gaps), the fades, the grade, captions, the mix (fades, ducking, levelling),
+//! cut (which clip is on top, in points, gaps), the fades, the grade, captions, the mix (fades, EQ, ducking, levelling),
 //! QC and loudness of the delivered files. The output transform is the identity placeholder (the ACES 2.0 one is
 //! being ported beside this), so a delivered pixel is the source's ACEScct, graded and faded.
 
@@ -297,6 +297,12 @@ fn the_mix_ducks_fades_and_levels() {
     let lv = mix(&[m], 6.0, Some(Target { lufs: -23.0, true_peak: -1.0 }), &dir.join("level"), &mut |_| {}).unwrap();
     assert!((lv.levelled.lufs.unwrap() + 23.0).abs() < 0.1, "{:?}", lv.levelled);
     assert!((lv.gain_db - (-23.0 - lv.mixed.lufs.unwrap())).abs() < 1e-9);
+    // a clip's EQ is in the mix: a +6 dB peak on the voice's 1 kHz, the voice 6 dB louder
+    let mut bright = clip("v", "A1", 2.0, 2.0, 1.0, Some(0.0));
+    bright.eq = Some(json!([{ "type": "peaking", "f": 1000, "gain": 6, "q": 1 }]));
+    let eq = mix(&[AudioClip { clip: bright, file: voice.clone().into() }], 6.0, None, &dir.join("eq"), &mut |_| {}).unwrap();
+    let lift = 20.0 * (rms(&read(&eq.wav), 2.5, 3.9) / rms(&a, 2.5, 3.9)).log10();
+    assert!((lift - 6.0).abs() < 0.1, "the EQ lifts the voice by {lift:.2} dB");
     std::fs::remove_dir_all(dir).ok();
 }
 
