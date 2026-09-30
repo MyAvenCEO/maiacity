@@ -180,3 +180,18 @@ fn captions_render() {
     assert_eq!(Captions::size(1080, 1920), 36.0);
     assert_eq!(Captions::size(3840, 2160), 90.0);
 }
+
+#[test]
+fn a_still_for_the_screen_is_tagged_as_video_is() {
+    // macOS shows the ITU-R 709 image space darker and harder than Rec.709 video with the same code values: a Grade
+    // still carries the video's own colour space (CoreMedia's), so it looks as the frame does playing
+    let gpu = vault_render::gpu::Gpu::new().unwrap();
+    let px: Vec<f32> = (0..16).flat_map(|_| [0.45, 0.45, 0.45, 1.0]).collect();
+    let img = gpu.from_rgba(&px, 4, 4);
+    let bytes = gpu.jpeg_bytes(&img, 4, 4).unwrap();
+    let icc = objc2_core_graphics::CGColorSpace::icc_data(Some(&vault_render::gpu::Gpu::video_space().unwrap())).unwrap().to_vec();
+    // the JPEG's embedded profile (APP2 "ICC_PROFILE", one chunk)
+    let at = bytes.windows(12).position(|w| w == b"ICC_PROFILE\0").expect("an embedded profile");
+    let len = u16::from_be_bytes([bytes[at - 2], bytes[at - 1]]) as usize - 2 - 14;
+    assert_eq!(&bytes[at + 14..at + 14 + len], &icc[..]);
+}

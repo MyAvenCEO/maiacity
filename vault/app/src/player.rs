@@ -16,6 +16,7 @@ use crate::{Res, err};
 
 struct Native {
     player: Retained<AVPlayer>,
+    layer: Retained<AVPlayerLayer>,
     view: Retained<AnyObject>,
     webview: *mut AnyObject,
 }
@@ -71,6 +72,8 @@ pub async fn player_load(
                     let player = AVPlayer::playerWithPlayerItem(Some(&item), mtm);
                     player.setMuted(true);
                     let layer = AVPlayerLayer::playerLayerWithPlayer(Some(&player));
+                    // a layer a view hosts is sized by nobody but us: it follows the view's bounds (see player_view)
+                    let _: () = msg_send![&*layer, setAutoresizingMask: 2u32 | 16u32];
                     let cls = objc2::runtime::AnyClass::get(c"NSView").ok_or_else(|| anyhow::anyhow!("no NSView"))?;
                     let view: *mut AnyObject = msg_send![cls, alloc];
                     let view: *mut AnyObject = msg_send![view, initWithFrame: CGRect::new(CGPoint::new(0.0, 0.0), CGSize::new(1.0, 1.0))];
@@ -85,7 +88,7 @@ pub async fn player_load(
                     let class = |o: *mut AnyObject| if o.is_null() { "none".to_string() } else { (*o).class().name().to_string_lossy().into_owned() };
                     let flipped: bool = msg_send![webview, isFlipped];
                     tracing::info!("playback: the picture's view inside {} (flipped: {flipped}, in {})", class(webview), class(parent));
-                    *n = Some(Native { player, view, webview });
+                    *n = Some(Native { player, layer, view, webview });
                     Ok(())
                 })?;
             }
@@ -260,8 +263,28 @@ pub fn player_view(handle: AppHandle, rect: Option<[f64; 4]>) -> Res<()> {
                         let oy = if flipped { y } else { web.size.height - y - h };
                         let frame = CGRect::new(CGPoint::new(x, oy), CGSize::new(w, h));
                         let _: () = msg_send![&*native.view, setFrame: frame];
+                        // the player's layer the size of its view, at once (no implicit animation)
+                        let bounds: CGRect = msg_send![&*native.view, bounds];
+                        let ca = objc2::runtime::AnyClass::get(c"CATransaction");
+                        if let Some(ca) = ca {
+                            let _: () = msg_send![ca, begin];
+                            let _: () = msg_send![ca, setDisableActions: true];
+                        }
+                        let _: () = msg_send![&*native.layer, setFrame: bounds];
+                        if let Some(ca) = ca {
+                            let _: () = msg_send![ca, commit];
+                        }
                         let _: () = msg_send![&*native.view, setHidden: false];
-                        tracing::debug!("playback: the picture at {x:.0},{oy:.0} {w:.0}×{h:.0} in {:.0}×{:.0}", web.size.width, web.size.height);
+                        let ready: bool = msg_send![&*native.layer, isReadyForDisplay];
+                        let lf: CGRect = msg_send![&*native.layer, frame];
+                        let status = native.player.currentItem().map(|i| i.status().0).unwrap_or(-1);
+                        tracing::info!(
+                            "playback: the picture at {x:.0},{oy:.0} {w:.0}×{h:.0} in the webview's {:.0}×{:.0}; its layer {:.0}×{:.0}, ready {ready}, item status {status}",
+                            web.size.width,
+                            web.size.height,
+                            lf.size.width,
+                            lf.size.height
+                        );
                     }
                 }
             }

@@ -565,12 +565,34 @@ impl Gpu {
         unsafe { self.context.render_toCVPixelBuffer_bounds_colorSpace(img, out, rect(0.0, 0.0, w as f64, h as f64), None) }
     }
 
-    /// A picture's display code values as a 16-bit PNG, tagged Rec.709 (the hero frame).
+    /// The colour space the Mac shows Rec.709 video in (CoreMedia's, from a buffer tagged BT.709 primaries, transfer
+    /// and matrix). Pictures made for the screen are tagged with it, so a still of a frame looks exactly as the frame
+    /// does playing — the ITU-R 709 image space is shown darker and harder than video with the same code values.
+    pub fn video_space() -> Result<objc2_core_foundation::CFRetained<objc2_core_graphics::CGColorSpace>> {
+        use objc2_core_foundation::{CFDictionary, CFType};
+        // SAFETY: CoreVideo's own keys and values, a dictionary we made
+        unsafe {
+            let keys: [&CFType; 3] = [
+                objc2_core_video::kCVImageBufferColorPrimariesKey.as_ref(),
+                objc2_core_video::kCVImageBufferTransferFunctionKey.as_ref(),
+                objc2_core_video::kCVImageBufferYCbCrMatrixKey.as_ref(),
+            ];
+            let vals: [&CFType; 3] = [
+                objc2_core_video::kCVImageBufferColorPrimaries_ITU_R_709_2.as_ref(),
+                objc2_core_video::kCVImageBufferTransferFunction_ITU_R_709_2.as_ref(),
+                objc2_core_video::kCVImageBufferYCbCrMatrix_ITU_R_709_2.as_ref(),
+            ];
+            let dict = CFDictionary::<CFType, CFType>::from_slices(&keys, &vals);
+            objc2_core_video::CVImageBufferCreateColorSpaceFromAttachments(dict.as_opaque()).context("no colour space for Rec.709 video")
+        }
+    }
+
+    /// A picture's display code values as a 16-bit PNG, tagged as Rec.709 video (the hero frame).
     pub fn png(&self, img: &CIImage, w: u32, h: u32, out: &std::path::Path) -> Result<()> {
         // SAFETY: plain Core Image and Core Graphics calls
         unsafe {
             let img = img.imageByCroppingToRect(rect(0.0, 0.0, w as f64, h as f64));
-            let space = objc2_core_graphics::CGColorSpace::with_name(Some(objc2_core_graphics::kCGColorSpaceITUR_709)).context("no Rec.709 colour space")?;
+            let space = Self::video_space()?;
             let url = NSURL::fileURLWithPath(&NSString::from_str(&std::path::absolute(out)?.to_string_lossy()));
             self.context
                 .writePNGRepresentationOfImage_toURL_format_colorSpace_options_error(&img, &url, objc2_core_image::kCIFormatRGBA16, &space, &NSDictionary::new())
@@ -578,12 +600,12 @@ impl Gpu {
         }
     }
 
-    /// A picture's display code values as a JPEG, tagged Rec.709 (a preview thumbnail).
+    /// A picture's display code values as a JPEG, tagged as Rec.709 video (a preview, a Grade still).
     pub fn jpeg(&self, img: &CIImage, w: u32, h: u32, out: &std::path::Path) -> Result<()> {
         // SAFETY: plain Core Image and Core Graphics calls
         unsafe {
             let img = img.imageByCroppingToRect(rect(0.0, 0.0, w as f64, h as f64));
-            let space = objc2_core_graphics::CGColorSpace::with_name(Some(objc2_core_graphics::kCGColorSpaceITUR_709)).context("no Rec.709 colour space")?;
+            let space = Self::video_space()?;
             let url = NSURL::fileURLWithPath(&NSString::from_str(&std::path::absolute(out)?.to_string_lossy()));
             self.context
                 .writeJPEGRepresentationOfImage_toURL_colorSpace_options_error(&img, &url, &space, &NSDictionary::new())
@@ -591,12 +613,12 @@ impl Gpu {
         }
     }
 
-    /// A picture's display code values as a JPEG in memory, tagged Rec.709 (the frames the shot analysis sends).
+    /// A picture's display code values as a JPEG in memory, tagged as Rec.709 video (the frames the shot analysis sends).
     pub fn jpeg_bytes(&self, img: &CIImage, w: u32, h: u32) -> Result<Vec<u8>> {
         // SAFETY: plain Core Image and Core Graphics calls
         unsafe {
             let img = img.imageByCroppingToRect(rect(0.0, 0.0, w as f64, h as f64));
-            let space = objc2_core_graphics::CGColorSpace::with_name(Some(objc2_core_graphics::kCGColorSpaceITUR_709)).context("no Rec.709 colour space")?;
+            let space = Self::video_space()?;
             let data = self.context.JPEGRepresentationOfImage_colorSpace_options(&img, &space, &NSDictionary::new()).context("Core Image made no JPEG")?;
             Ok(data.to_vec())
         }

@@ -195,7 +195,7 @@ export class Studio {
 	 * ACEScct: the base corrections are judged on it), its proxy, or the original itself
 	 * @type {'stills' | 'proxies' | 'originals'}
 	 */
-	gradeOn = $state('stills');
+	gradeOn = $state('proxies');
 	/**
 	 * Grade: the shape being checked
 	 * @type {Shape}
