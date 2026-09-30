@@ -108,7 +108,8 @@
 		s.selectedKey = null;
 		if (!s.canEdit) return;
 		const x0 = e.clientX, s0 = c.start, i0 = c.in, d0 = c.dur;
-		const isImage = !isWorld(c) && s.byHash.get(c.hash ?? '')?.kind === 'image';
+		// a still, a slate or a line has no length of its own: any
+		const isImage = c.kind === 'slate' || c.kind === 'line' || (!isWorld(c) && s.byHash.get(c.hash ?? '')?.kind === 'image');
 		const max = isImage ? Infinity : isWorld(c) ? (s.specOf(c)?.seconds ?? d0 + i0) : (s.sources[c.hash ?? '']?.duration ?? d0 + i0);
 		// its linked partner (a video's picture, its sound) moves and trims with it — unless Alt is held: this one alone
 		const p0 = e.altKey ? null : s.partnerOf(c);
@@ -333,7 +334,7 @@
 							{@const drift = c.link ? s.drift(c) : 0}
 							{@const snd = onSoundTrack(c) && m?.kind === 'video' && c.hash ? (s.soundState[c.hash] ?? 'loading') : 'ready'}
 							<div
-								class="clip {world ? 'world' : onSoundTrack(c) ? 'audio' : m?.kind} {t.id}"
+								class="clip {world ? 'world' : c.kind === 'slate' ? 'slate' : c.kind === 'line' ? 'audio line' : onSoundTrack(c) ? 'audio' : m?.kind} {t.id}"
 								class:linked={!!c.link}
 								class:sel={s.selected === c.id}
 								class:graded={!!c.grade}
@@ -610,6 +611,19 @@
 		display: flex;
 		border-color: #7fa98f;
 		background: #dcebe1;
+	}
+
+	/* the script's stand-ins: a shot not filmed yet, a line not recorded yet */
+	.clip.slate {
+		display: flex;
+		border-style: dashed;
+		border-color: #b9a36a;
+		background: repeating-linear-gradient(135deg, #f6efdc 0 6px, #f1e7cc 6px 12px);
+	}
+
+	.clip.audio.line {
+		border-style: dashed;
+		font-style: italic;
 	}
 
 	.clip.world {

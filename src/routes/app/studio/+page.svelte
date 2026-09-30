@@ -23,6 +23,7 @@
 	import Ingest from '$lib/studio/Ingest.svelte';
 	import Inspector from '$lib/studio/Inspector.svelte';
 	import Library from '$lib/studio/Library.svelte';
+	import Script from '$lib/studio/Script.svelte';
 	import { forwardConsole, native } from '$lib/native';
 	import ProgramMonitor from '$lib/studio/ProgramMonitor.svelte';
 	import RenderQueue from '$lib/studio/RenderQueue.svelte';
@@ -72,9 +73,9 @@
 	function onKey(e: KeyboardEvent) {
 		const target = e.target as HTMLElement | null;
 		if (target?.closest?.('input, textarea, select')) return;
-		if (e.altKey && ['Digit1', 'Digit2', 'Digit3', 'Digit4', 'Digit5', 'Digit6', 'Digit7'].includes(e.code)) {
+		if (e.altKey && ['Digit1', 'Digit2', 'Digit3', 'Digit4', 'Digit5', 'Digit6', 'Digit7', 'Digit8'].includes(e.code)) {
 			e.preventDefault();
-			const t = (['ingest', 'library', '3d', 'edit', 'audio', 'grade', 'render'] as const)[Number(e.code.slice(-1)) - 1]!;
+			const t = (['ingest', 'library', 'script', '3d', 'edit', 'audio', 'grade', 'render'] as const)[Number(e.code.slice(-1)) - 1]!;
 			s.tab = t;
 			return;
 		}
@@ -175,6 +176,14 @@
 				<ProgramMonitor {s} />
 			</div>
 			<Inspector {s} />
+		{:else if s.tab === 'script'}
+			<!-- the script: the same clips as the timeline, read as scenes, shots and lines; the library to drop stills,
+			     footage and takes on its slates and lines -->
+			<Bin {s} />
+			<div class="monitors">
+				<ProgramMonitor {s} label="Program · script" />
+			</div>
+			<Script {s} />
 		{:else if s.tab === 'audio'}
 			<!-- the sound on the timeline itself: each clip's level, fades and loudness on it -->
 			<div class="monitors">
@@ -253,6 +262,11 @@
 
 	.studio.tab-render {
 		grid-template-columns: 19rem 1fr 19rem;
+	}
+
+	/* Script: the library, the program, the script (wide) — the timeline under them */
+	.studio.tab-script {
+		grid-template-columns: 17rem 1fr minmax(22rem, 30rem);
 	}
 
 	/* Audio: the program over the sound tracks, which carry the levels themselves */

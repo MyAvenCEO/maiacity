@@ -639,7 +639,9 @@ impl Studio {
         text(self.api("GET", "/api/timelines", None).await)
     }
 
-    #[tool(description = "Save changes to a timeline: clips (edit, audio), meta, the film's grade, the stage")]
+    #[tool(
+        description = "Save changes to a timeline: clips (edit, audio), meta, the film's grade (send the whole clips array). A clip is a media clip ({ hash }), a world clip, a slate (kind 'slate', V1, no hash: a shot of the script not filmed yet) or a line (kind 'line', A1, no hash, { text }: a line not recorded yet, in the captions already). A V1 clip may carry script: { scene, label, description, notes, size (EWS WS FS MS MCU CU ECU insert) } — the Script tab is these same clips; a slate swapped for a file keeps its script."
+    )]
     async fn timeline_save(&self, Parameters(a): Parameters<SaveArgs>) -> String {
         text(self.api("PUT", &format!("/api/timelines/{}", a.id), Some(a.patch)).await)
     }
