@@ -409,12 +409,6 @@ impl Peer {
         self.wake_analyse.notify_one();
     }
 
-    /// The files the bucket holds: this server's own `blobs/<hash>` entries (hex).
-    pub(crate) async fn held(&self) -> Result<HashSet<String>> {
-        let mine: Vec<_> = self.doc.get_many(Query::author(self.author).key_prefix("blobs/")).await?.collect().await;
-        Ok(mine.into_iter().flatten().map(|e| String::from_utf8_lossy(e.key()).trim_start_matches("blobs/").to_string()).collect())
-    }
-
     /// Every file's description whose JSON is here (the newest entry per key, whoever wrote it).
     pub(crate) async fn metas(&self) -> Result<Vec<(Hash, serde_json::Value)>> {
         self.records("meta/").await
@@ -433,34 +427,6 @@ impl Peer {
             }
         }
         Ok(out)
-    }
-
-    /// One file's derived record (`transcript/`, `analysis/`) as it is now.
-    pub(crate) async fn record(&self, prefix: &str, hash: Hash) -> Result<Option<serde_json::Value>> {
-        let query = Query::single_latest_per_key().key_exact(format!("{prefix}{}", hash.to_hex()));
-        let Some(entry) = self.doc.get_one(query).await? else { return Ok(None) };
-        let bytes = self.store.blobs().get_bytes(entry.content_hash()).await?;
-        Ok(Some(serde_json::from_slice(&bytes)?))
-    }
-
-    /// Write a file's derived record as the server — the only author of `transcript/` and `analysis/`.
-    pub(crate) async fn write_record(&self, prefix: &str, hash: Hash, record: &serde_json::Value) -> Result<()> {
-        self.doc.set_bytes(self.author, format!("{prefix}{}", hash.to_hex()), serde_json::to_vec(record)?).await?;
-        Ok(())
-    }
-
-    /// One file's description as it is now (the newest entry, whoever wrote it).
-    pub(crate) async fn meta_of(&self, hash: Hash) -> Result<Option<serde_json::Value>> {
-        let query = Query::single_latest_per_key().key_exact(format!("meta/{}", hash.to_hex()));
-        let Some(entry) = self.doc.get_one(query).await? else { return Ok(None) };
-        let bytes = self.store.blobs().get_bytes(entry.content_hash()).await?;
-        Ok(Some(serde_json::from_slice(&bytes)?))
-    }
-
-    /// Write a file's description as the server (a new `meta/<hash>` entry, signed by the server's author).
-    pub(crate) async fn write_meta(&self, hash: Hash, meta: &serde_json::Value) -> Result<()> {
-        self.doc.set_bytes(self.author, format!("meta/{}", hash.to_hex()), serde_json::to_vec(meta)?).await?;
-        Ok(())
     }
 
     /// What this server made (a thumbnail, a still: `source: vault-server`) is served over iroh like any file: kept in

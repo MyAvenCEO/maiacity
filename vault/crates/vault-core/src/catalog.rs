@@ -10,9 +10,11 @@
 //!   transcript/<hash> → derived: the file's words with their times and the transcript's state and progress — made
 //!                     on a Mac, on-device (vault/app transcripts.rs), written by that Mac's author
 //!   sound/<hash>    → derived: the file's start timecode (no audio proxy: sound is always read from the original)
-//!                     — written only by the vault server's author (vault-server sound.rs)
+//!                     — read on a Mac at ingest, written by that Mac's author (vault/app sound.rs)
 //!   analysis/<hash> → derived: the file's shot tags, cues, summary and thumbnail, the analysis's state and progress —
-//!                     written only by the vault server's author (vault-server analyse.rs)
+//!                     made on a Mac (frames sampled natively, Prem's Qwen), written by that Mac's author (vault/app
+//!                     analyse/)
+//!   store/<name>    → a store's record (its node, its catalog author): `store/hetzner`, the server's
 //!
 //! `meta/` is editorial (people and agents); what a machine derives from a file lives under its own key per concern,
 //! keyed by the same hash, a small JSON blob synced exactly like `meta/`. Nobody writes derived data into `meta/`:
@@ -121,10 +123,10 @@ pub struct Derived<'a> {
 ///                        utterances, at }`
 ///     → `meta.transcript` (the words and what goes with them, once there are words), `meta.transcript_state`,
 ///       `meta.transcript_stage` + `meta.transcript_progress` (while it runs)
-///   sound/<hash> (the server) `{ state, audio?, timecode?, timecode_fps?, seconds?, at }`
+///   sound/<hash> (a Mac) `{ state, audio?, timecode?, timecode_fps?, seconds?, at }`
 ///     → `meta.audio` (the audio proxy's hash), `meta.sound_state`, `meta.probe.timecode` + `timecode_fps` when the
 ///       probe has none
-///   analysis/<hash> (the server) `{ state, progress, thumbnail?, summary, tags, free, labels, segments, cues, … }`
+///   analysis/<hash> (a Mac) `{ state, progress, thumbnail?, summary, tags, free, labels, segments, cues, … }`
 ///     → `meta.analysis` (what it found, once it found anything), `meta.analysis_state`, `meta.analysis_progress`,
 ///       `meta.thumbnail` (the hash of a small display-referred JPEG of the file's best frame)
 pub fn with_derived(meta: &mut Meta, d: Derived<'_>) {

@@ -61,7 +61,7 @@
 		{#each making as x (x.of)}
 			<li class="ended">
 				<span class="n">{x.name}</span>
-				<span class="d">{x.of.startsWith('render:') ? '→ deliveries' : '→ ACEScct'}</span>
+				<span class="d">{x.of.startsWith('render:') ? '→ deliveries' : x.of.startsWith('analysis:') ? '→ tags' : x.of.startsWith('transcript:') ? '→ words' : '→ ACEScct'}</span>
 				<span class="p">{x.stage === 'making' ? `${Math.floor(x.done * 100)}%` : x.stage}</span>
 			</li>
 		{/each}

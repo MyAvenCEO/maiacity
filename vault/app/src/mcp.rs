@@ -141,6 +141,16 @@ pub struct AnalysisArgs {
 }
 
 #[derive(Deserialize, schemars::JsonSchema)]
+pub struct AnalysisSetupArgs {
+    /// Prem's API key, set once on this Mac (kept beside the app's session, readable by this user only; empty: taken
+    /// out). Leave it out to keep what is set.
+    pub prem_key: Option<String>,
+    /// the stories whose files are analysed (story ids); ["*"] every story; [] back to the default (Day 01). Leave it
+    /// out to keep what is set.
+    pub stories: Option<Vec<String>>,
+}
+
+#[derive(Deserialize, schemars::JsonSchema)]
 pub struct FindShotsArgs {
     /// words to find — in a cue's label, note or why, in what is said in its range, in the file's summary and tags,
     /// e.g. "window light", "laughs", "opening line"
@@ -547,10 +557,31 @@ impl Studio {
         text(r.await)
     }
 
-    // ── the shot analysis: every picture tagged for the edit (the vault server writes it: analysis/<hash>) ──
+    // ── the shot analysis: every picture tagged for the edit (this Mac writes it: analysis/<hash>, analyse/) ──
 
     #[tool(
-        description = "A file's shot analysis (Prem's confidential Qwen, run by the vault server once its proxy is in the bucket, in game/film/vocabulary.json's terms): its summary (one line + where it serves an edit best), base tags (shot size, angle, camera movement, lens, depth of field, light, time of day, location, people, who, scene kind, quality flags), free tags, its stretches with their own tags, and its cues — takes (repeated attempts of an action, numbered and ranked, the best marked with why), actions, emotions, cut points, transition opportunities, highlights, problems — each with its start and end in seconds of the file and its timecodes (tc_in, tc_out). from/to narrow it to a clip. Also its state/progress and its thumbnail's hash."
+        description = "Set up the shot analysis on this Mac: Prem's API key (once — it is kept beside the app's session, readable by this user only, and never shown again; the analysis calls Prem's confidential Qwen straight from this Mac through Prem's own confidential proxy on 127.0.0.1:8787), and the stories whose files are analysed (story ids; [\"*\"] every story; [] back to the default, the Day 01 story). Answers what is set — whether a key is there, never the key."
+    )]
+    async fn analysis_setup(&self, Parameters(a): Parameters<AnalysisSetupArgs>) -> String {
+        let r = async {
+            self.signed_in()?;
+            crate::analyse::setup(a.prem_key, a.stories)
+        };
+        text(r.await)
+    }
+
+    #[tool(description = "Analyse a file again (its shot tags, cues and thumbnail): its analysis record goes back to queued, its tries forgotten, and this Mac's analysis takes it up in its next round.")]
+    async fn analyse_again(&self, Parameters(a): Parameters<HashArg>) -> String {
+        let r = async {
+            self.signed_in()?;
+            crate::analyse::again(&self.vault, &a.hash).await?;
+            Ok::<_, String>(json!({ "queued": a.hash }))
+        };
+        text(r.await)
+    }
+
+    #[tool(
+        description = "A file's shot analysis (Prem's confidential Qwen, asked from this Mac once the file's proxy is here, in game/film/vocabulary.json's terms): its summary (one line + where it serves an edit best), base tags (shot size, angle, camera movement, lens, depth of field, light, time of day, location, people, who, scene kind, quality flags), free tags, its stretches with their own tags, and its cues — takes (repeated attempts of an action, numbered and ranked, the best marked with why), actions, emotions, cut points, transition opportunities, highlights, problems — each with its start and end in seconds of the file and its timecodes (tc_in, tc_out). from/to narrow it to a clip. Also its state/progress and its thumbnail's hash."
     )]
     async fn analysis(&self, Parameters(a): Parameters<AnalysisArgs>) -> String {
         let r = async {

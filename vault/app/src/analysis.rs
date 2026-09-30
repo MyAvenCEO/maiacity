@@ -1,4 +1,4 @@
-//! The shot analysis, for agents: what the vault server's analysis (vault-server analyse.rs → Prem's confidential Qwen,
+//! The shot analysis, for agents: what this Mac's analysis (analyse/ → Prem's confidential Qwen,
 //! in game/film/vocabulary.json's terms) found in every picture — base tags, free tags, time-ranged cues (takes,
 //! actions, emotions, cut points, transitions, highlights, problems), a summary — read from the file's view
 //! (`meta.analysis`, merged in from `analysis/<hash>` by vault-core), and searched: `find_shots` ranks the ranges of every
