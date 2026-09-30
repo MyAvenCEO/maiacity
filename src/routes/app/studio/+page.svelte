@@ -83,6 +83,8 @@
 		else if (e.code === 'Home') s.seek(0);
 		else if (e.code === 'ArrowLeft') s.seek(s.time - (e.shiftKey ? 1 : 0.1));
 		else if (e.code === 'ArrowRight') s.seek(s.time + (e.shiftKey ? 1 : 0.1));
+		// revert and reapply: ⌘Z, ⇧⌘Z
+		else if (e.code === 'KeyZ' && (e.metaKey || e.ctrlKey)) (e.preventDefault(), e.shiftKey ? s.redo() : s.undo());
 		// the blade: B, or ⌘K as in the other editors — the selected clip (and its sound) cut at the playhead (Alt: alone)
 		else if ((e.code === 'KeyB' && !e.metaKey && !e.ctrlKey) || (e.code === 'KeyK' && (e.metaKey || e.ctrlKey))) (e.preventDefault(), s.splitAtPlayhead(e.altKey));
 		else if ((e.code === 'Delete' || e.code === 'Backspace') && s.canEdit) {
