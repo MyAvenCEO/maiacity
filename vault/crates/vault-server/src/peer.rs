@@ -101,10 +101,16 @@ impl Peer {
         ids.push(endpoint.id());
         allow.set(ids);
 
-        // a small store: only the catalog's own entries (descriptions, reports, devices) — never the files
-        let store = FsStore::load(cfg.dir.join("blobs")).await?;
+        // a small store: the catalog's own entries (descriptions, reports, devices) and the files this server made — the
+        // rest of the files live in Object Storage
+        // iroh's pruning here too: kept is what a tag pins (the files this server made) and what a catalog entry
+        // references (iroh-docs' protection) — a deleted file's bytes and old records go
+        let (protect, docs_protect) = iroh_docs::engine::ProtectCallbackHandler::new();
+        let mut opts = iroh_blobs::store::fs::options::Options::new(&cfg.dir.join("blobs"));
+        opts.gc = Some(iroh_blobs::store::GcConfig { interval: Duration::from_secs(10 * 60), add_protected: Some(docs_protect) });
+        let store = FsStore::load_with_opts(cfg.dir.join("blobs").join("blobs.db"), opts).await?;
         let gossip = Gossip::builder().spawn(endpoint.clone());
-        let docs = Docs::persistent(cfg.dir.join("docs")).spawn(endpoint.clone(), (*store).clone(), gossip.clone()).await?;
+        let docs = Docs::persistent(cfg.dir.join("docs")).protect_handler(protect).spawn(endpoint.clone(), (*store).clone(), gossip.clone()).await?;
         let router = Router::builder(endpoint.clone())
             .accept(iroh_blobs::ALPN, BlobsProtocol::new(&store, None))
             .accept(iroh_gossip::ALPN, gossip)
@@ -338,6 +344,7 @@ impl Peer {
                 Err(e) => tracing::warn!("delete {hex}: {e:#}"),
             }
         }
+        self.serve_made(s3).await;
         for entry in blobs {
             let (hash, size) = (entry.content_hash(), entry.content_len());
             let hex = hash.to_hex().to_string();
@@ -437,6 +444,32 @@ impl Peer {
         Ok(())
     }
 
+    /// What this server made (a thumbnail, a still: `source: vault-server`) is served over iroh like any file: kept in
+    /// its own store, pinned — one made before that lives only in Object Storage is read back into it once (verified).
+    async fn serve_made(&self, s3: &S3) {
+        let Ok(metas) = self.metas().await else { return };
+        for (hash, m) in metas {
+            if m["source"].as_str() != Some("vault-server") || m.pointer("/meta/deleted").is_some_and(|d| !d.is_null()) {
+                continue;
+            }
+            if matches!(self.store.blobs().status(hash).await, Ok(iroh_blobs::api::blobs::BlobStatus::Complete { .. })) {
+                continue;
+            }
+            let got = async {
+                let res = s3.get(&s3::blob_key(&hash.to_hex()), None).await?;
+                anyhow::ensure!(res.status().is_success(), "the bucket said {}", res.status());
+                let bytes = res.bytes().await?;
+                let added = self.store.blobs().add_bytes(bytes).with_named_tag(format!("vault/{}", hash.to_hex())).await?;
+                anyhow::ensure!(added.hash == hash, "the bucket's bytes hash to {}, not {}", added.hash, hash);
+                Ok::<_, anyhow::Error>(())
+            };
+            match got.await {
+                Ok(()) => tracing::info!("serving {} over iroh", hash.fmt_short()),
+                Err(e) => tracing::warn!("{}: not served over iroh yet: {e:#}", hash.fmt_short()),
+            }
+        }
+    }
+
     /// The files whose description says they are deleted (hex).
     async fn deleted(&self) -> HashSet<String> {
         let Ok(metas) = self.metas().await else { return HashSet::new() };
@@ -447,6 +480,8 @@ impl Peer {
     /// records out of the catalog (so no replica references it: iroh's garbage collection prunes it on every Mac).
     async fn purge(&self, hex: &str, s3: &S3) -> Result<()> {
         s3.delete(&s3::blob_key(hex)).await?;
+        // its pin in this server's own store (a file it made): iroh's garbage collection prunes the bytes
+        self.store.tags().delete(format!("vault/{hex}")).await?;
         for prefix in ["transcript/", "sound/", "analysis/"] {
             s3.delete(&s3::derived_key(&format!("{prefix}{hex}"))).await?;
         }
