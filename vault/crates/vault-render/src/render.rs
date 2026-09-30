@@ -948,15 +948,11 @@ pub fn grading_still(file: impl Into<vault_media::Source>, profile: &str, at: f6
 /// The grading still, and from the same frame a small preview for the lists: `preview` (its JPEG, its width, the
 /// output transform) — the frame through ACES 2.0 into Rec.709, as it will look.
 pub fn grading_still_and_preview(file: impl Into<vault_media::Source>, profile: &str, at: f64, width: u32, png: &Path, preview: Option<(&Path, u32, &dyn Output)>) -> Result<(u32, u32)> {
-    let journey = vault_media::cst::journey(profile).with_context(|| format!("no colour journey from {profile} into ACEScct"))?;
     let mut gpu = Gpu::new()?;
     if let Some((_, _, out)) = preview {
         gpu.set_output(&out.lut());
     }
-    let mut r = VideoReader::open(file, at, at + 1.0 / FPS as f64)?;
-    let turn = r.info.transform;
-    let pb = r.at(at + 0.5 / FPS as f64 - 1e-4)?.context("no frame there")?;
-    let img = gpu.journey(&gpu.orient(&gpu.frame(pb), turn), journey.kernel_args())?;
+    let img = frame_in_cct(&gpu, file, profile, at)?;
     let e = crate::gpu::Extent::ext(&*img);
     let (sw, sh) = (e.size.width.max(1.0), e.size.height.max(1.0));
     let w = width.min(sw.round() as u32).max(2);
@@ -969,6 +965,16 @@ pub fn grading_still_and_preview(file: impl Into<vault_media::Source>, profile: 
         gpu.jpeg(&*gpu.output(&small)?, pw, ph, jpg)?;
     }
     Ok((w, h))
+}
+
+/// One frame of a file at `at` seconds (its own clock), into ACEScct through its journey from `profile`: a grading
+/// still's frame, and what the Grade tab shows of a proxy or an original before the clip's chain.
+pub fn frame_in_cct(gpu: &Gpu, file: impl Into<vault_media::Source>, profile: &str, at: f64) -> Result<Image> {
+    let journey = vault_media::cst::journey(profile).with_context(|| format!("no colour journey from {profile} into ACEScct"))?;
+    let mut r = VideoReader::open(file, at, at + 1.0 / FPS as f64)?;
+    let turn = r.info.transform;
+    let pb = r.at(at + 0.5 / FPS as f64 - 1e-4)?.context("no frame there")?;
+    gpu.journey(&gpu.orient(&gpu.frame(pb), turn), journey.kernel_args())
 }
 
 /// One frame of a media clip, into ACEScct (the hero frame's reading, without the world) — from the full original,

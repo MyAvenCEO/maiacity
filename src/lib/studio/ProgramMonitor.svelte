@@ -81,17 +81,28 @@
 		window.addEventListener('resize', place);
 		return () => (clearInterval(id), ro.disconnect(), window.removeEventListener('resize', place));
 	});
-	// Grade on a still: the picture the Mac makes of it through the whole grade — secondaries, looks, finishing, what the
-	// render makes — over the live preview, a moment after anything about it changes
+	// Grade, paused: the picture the Mac makes through the whole grade — secondaries, looks, finishing, what the render
+	// makes — over the live preview, a moment after anything about it changes. Still, proxy or original: the same chain,
+	// only the frame it starts from differs (the still; the proxy's or the original's frame under the playhead)
 	let nativeUrl = $state(/** @type {string | null} */ (null));
-	const nativeKey = $derived(still && pic && !s.falseColor ? JSON.stringify([still.hash, s.frameTimeline(pic), s.viewShape]) : '');
+	const nativeSrc = $derived.by(() => {
+		if (!pic || s.falseColor || s.tab !== 'grade' || s.playing || isWorld(pic)) return null;
+		if (still) return still.hash;
+		if (s.pictureItem?.kind !== 'video') return null;
+		const it = s.playItem(pic);
+		if (!it?.hash) return null;
+		// on the frame (30 fps): scrubbing asks for each frame once
+		const at = Math.round((pic.in + (s.time - pic.start)) * 30) / 30;
+		return { file: it.hash, profile: s.profileOfClip(pic), at };
+	});
+	const nativeKey = $derived(nativeSrc && pic ? JSON.stringify([nativeSrc, s.frameTimeline(pic), s.viewShape]) : '');
 	$effect(() => {
 		const k = nativeKey;
 		if (!k) return void (nativeUrl = null);
 		let live = true;
 		const t = setTimeout(() => {
-			const [h, tl, shape] = JSON.parse(k);
-			nativeFrame(tl, tl.clips[0].id, h, 1600, shape)
+			const [src, tl, shape] = JSON.parse(k);
+			nativeFrame(tl, tl.clips[0].id, src, 1600, shape)
 				.then((u) => live && (nativeUrl = u))
 				.catch((e) => console.warn('viewer: the native frame', e));
 		}, 120);

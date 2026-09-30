@@ -151,8 +151,9 @@ pub(crate) async fn chain_cube(vault: &Vault, balance: Option<serde_json::Value>
     .map_err(|e| format!("{e}"))
 }
 
-/// A shot as the film will show it, natively, for the studio: its grading still (4K ACEScct, from the original),
-/// framed for `shape` (none: the whole still), through its whole grade — balance, secondaries (a face-tracked window on
+/// A shot as the film will show it, natively, for the studio: its grading still (4K ACEScct, from the original) — or
+/// one frame of its proxy or original at `at` seconds of that file, through the file's journey (`profile`) — framed for
+/// `shape` (none: the whole still), through its whole grade — balance, secondaries (a face-tracked window on
 /// the face Vision finds), its grade and looks (the timeline's: its scene's, the film's), the film's finishing — and
 /// the output transform, as a JPEG `width` wide. The Grade viewer and every thumbnail show these: what the render makes.
 #[tauri::command]
@@ -160,7 +161,10 @@ pub async fn color_frame(
     app: tauri::State<'_, crate::App>,
     timeline: serde_json::Value,
     clip: String,
-    still: String,
+    still: Option<String>,
+    file: Option<String>,
+    profile: Option<String>,
+    at: Option<f64>,
     width: Option<u32>,
     shape: Option<String>,
 ) -> crate::Res<tauri::ipc::Response> {
@@ -168,8 +172,14 @@ pub async fn color_frame(
     let vault = app.vault.clone();
     let t: vault_render::Timeline = serde_json::from_value(timeline).map_err(|e| format!("{e}"))?;
     let c = t.clips.iter().find(|c| c.id == clip).cloned().ok_or("no such clip on this timeline")?;
-    let hash: iroh_blobs::Hash = still.parse().map_err(|e| format!("{e}"))?;
-    let src = crate::blob::source(&vault, hash, "still.png").await.map_err(|e| format!("{e:#}"))?;
+    // the picture: a grading still (ACEScct already), or one frame of a proxy or an original through its journey
+    let (hash, frame) = match (still, file) {
+        (Some(h), _) => (h, None),
+        (None, Some(f)) => (f, Some((profile.unwrap_or_else(|| "rec709".into()), at.unwrap_or(0.0)))),
+        (None, None) => return Err("a still or a file to show".into()),
+    };
+    let hash: iroh_blobs::Hash = hash.parse().map_err(|e| format!("{e}"))?;
+    let src = crate::blob::source(&vault, hash, if frame.is_some() { "frame.mov" } else { "still.png" }).await.map_err(|e| format!("{e:#}"))?;
     // the clip's own grade and its looks, baked with the look's LUTs read from the vault (the balance is its own node)
     let looks: Vec<serde_json::Value> = t.looks_for(&c).iter().filter_map(|l| serde_json::to_value(l).ok()).collect();
     let grades: Vec<serde_json::Value> = c.grade.iter().cloned().collect();
@@ -183,7 +193,10 @@ pub async fn color_frame(
             use vault_render::gpu::Extent;
             let mut gpu = vault_render::gpu::Gpu::new()?;
             gpu.set_output(crate::render::odt());
-            let img = gpu.still(src)?;
+            let img = match &frame {
+                None => gpu.still(src)?,
+                Some((profile, at)) => vault_render::render::frame_in_cct(&gpu, src, profile, *at)?,
+            };
             let e = img.ext();
             let (aw, ah) = match shape.as_deref().and_then(vault_render::Shape::of) {
                 Some(s) => (s.render_size().0 as f64, s.render_size().1 as f64),
