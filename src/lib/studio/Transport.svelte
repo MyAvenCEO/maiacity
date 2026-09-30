@@ -32,9 +32,6 @@
 	{#if s.canEdit}
 		<button class="ic" onclick={() => s.splitAtPlayhead()} aria-label="Cut at the playhead" title="Cut the selected clip at the playhead (B or ⌘K; Alt: without its linked sound)">✂</button>
 	{/if}
-	{#if s.tab === 'edit'}
-		<button class="pill" class:on={s.previewGrade} onclick={() => (s.previewGrade = !s.previewGrade)} title="Show every shot's balance and grade on the proxies">Grade</button>
-	{/if}
 	<button class="ic" onclick={playFullscreen} aria-label="Play full screen" title="Play full screen">⛶</button>
 	<label class="zoom" title="Zoom the timeline">
 		<span aria-hidden="true">−</span>
@@ -110,12 +107,6 @@
 		font-size: 0.72rem;
 		color: var(--dim);
 		cursor: pointer;
-	}
-
-	.pill.on {
-		border-color: var(--edge-strong);
-		background: var(--sel);
-		color: var(--ink);
 	}
 
 	.pill:disabled {

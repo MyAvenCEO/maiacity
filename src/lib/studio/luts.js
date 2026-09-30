@@ -81,3 +81,31 @@ export async function nativePresets() {
 	const { command } = await import('$lib/native');
 	return command('color_presets');
 }
+
+/** @type {Map<string, Promise<string>>} */
+const thumbs = new Map();
+/**
+ * A shot's thumbnail as it will look (`color_thumb`: its grading still through its balance and grades, natively), as
+ * an object URL. The last few are kept, by what they are.
+ * @param {string} still @param {import('../../../game/film/color.js').Balance | null} balance
+ * @param {import('$lib/auth/client').Cdl[]} grades @returns {Promise<string>}
+ */
+export function gradedThumb(still, balance, grades) {
+	const key = JSON.stringify([still, balance, grades]);
+	let url = thumbs.get(key);
+	if (!url) {
+		url = import('$lib/native').then(async ({ command }) => {
+			const raw = await command('color_thumb', { still, balance, grades, width: 320 });
+			const bytes = raw instanceof ArrayBuffer ? raw : new Uint8Array(/** @type {number[]} */ (raw)).buffer;
+			return URL.createObjectURL(new Blob([bytes], { type: 'image/jpeg' }));
+		});
+		url.catch(() => thumbs.delete(key));
+		thumbs.set(key, url);
+		if (thumbs.size > 96) {
+			const [k, old] = /** @type {[string, Promise<string>]} */ (thumbs.entries().next().value);
+			thumbs.delete(k);
+			void old.then((u) => URL.revokeObjectURL(u)).catch(() => {});
+		}
+	}
+	return url;
+}
