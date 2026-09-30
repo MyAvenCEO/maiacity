@@ -289,6 +289,14 @@ pub struct ArcArgs {
 }
 
 #[derive(Deserialize, schemars::JsonSchema)]
+pub struct DeleteArgs {
+    /// the files' BLAKE3 hashes
+    pub hashes: Vec<String>,
+    /// why (kept with the file)
+    pub why: String,
+}
+
+#[derive(Deserialize, schemars::JsonSchema)]
 pub struct MixClip {
     /// the clip's id (an A1, A2 or A3 clip)
     pub clip: String,
@@ -775,6 +783,22 @@ impl Studio {
             let saved = self.api("PUT", &format!("/api/timelines/{}", a.timeline), Some(json!({ "clips": clips }))).await?;
             let n = saved["clips"].as_array().map(|c| c.iter().filter(|c| c["kind"] == "section").count()).unwrap_or(0);
             Ok::<_, String>(json!({ "sections": n }))
+        };
+        text(r.await)
+    }
+
+    #[tool(
+        description = "Delete files from the library, on the person's word only: each file's description says it is deleted (when, why), and no device lists it any more; its bytes stay where they are kept until storage is cleaned, so it can be undone."
+    )]
+    async fn library_delete(&self, Parameters(a): Parameters<DeleteArgs>) -> String {
+        let r = async {
+            let mut done = Vec::new();
+            for h in &a.hashes {
+                let hash: iroh_blobs::Hash = h.parse().map_err(|e| format!("{h}: {e}"))?;
+                self.vault.catalog.delete_file(hash, &a.why).await.map_err(|e| format!("{e:#}"))?;
+                done.push(h.clone());
+            }
+            Ok::<_, String>(json!({ "deleted": done }))
         };
         text(r.await)
     }

@@ -95,6 +95,8 @@ export function resetPrem() {
 export type PremModel = { id: string; type?: string; input_modalities?: string[]; name?: string; slug?: string; model?: string; alias?: string; display_name?: string; [k: string]: unknown };
 /** Every name a listed model goes by (Prem lists some by a number, their name beside it). */
 export const namesOf = (m: PremModel) => [m.id, m.name, m.slug, m.model, m.alias, m.display_name].filter((x): x is string => typeof x === "string" && !!x);
+/** The name Prem takes a model by in a request: its `model` (a number is only its listing's id). */
+const slug = (m: PremModel) => (typeof m.model === "string" && m.model ? m.model : m.id);
 let listed: Promise<PremModel[] | null> | null = null;
 let testModels: PremModel[] | null | undefined;
 
@@ -133,11 +135,11 @@ export async function pick(want: string, type: "AUDIO_TRANSCRIPTION" | "CHAT", f
   if (!list) return want;
   // the model by any of its names (a number with its name beside it: the id is what Prem takes)
   const named = list.find((m) => namesOf(m).some((n) => n.toLowerCase() === want.toLowerCase()));
-  if (named) return named.id;
+  if (named) return slug(named);
   const other = list.find((m) => (!m.type || m.type.toUpperCase() === type) && namesOf(m).some((n) => family.test(n)));
   if (!other) return want;
-  if (!warned.has(want)) console.warn(`prem: this key lists no ${want} — using ${other.id}`), warned.add(want);
-  return other.id;
+  if (!warned.has(want)) console.warn(`prem: this key lists no ${want} — using ${slug(other)}`), warned.add(want);
+  return slug(other);
 }
 const warned = new Set<string>();
 

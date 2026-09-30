@@ -130,7 +130,7 @@ pub fn in_scope(meta: &Value, only: Option<&HashSet<String>>) -> bool {
 pub fn wants(meta: &Value) -> bool {
     let role = meta.pointer("/meta/role").and_then(|r| r.as_str()).unwrap_or("");
     let working = matches!(role, "frame" | "lut" | "proxy" | "proxy-cache" | "audio" | "thumbnail" | "plate");
-    let superseded = meta["tags"].as_array().is_some_and(|t| t.iter().any(|t| t.as_str() == Some("superseded")));
+    let superseded = meta["tags"].as_array().is_some_and(|t| t.iter().any(|t| t.as_str() == Some("superseded"))) || meta.pointer("/meta/deleted").is_some_and(|d| !d.is_null());
     let sequence = meta.pointer("/meta/sequence").and_then(|x| x.as_str()) == Some("exr");
     matches!(s(meta, "class"), "" | "default" | "original") && !working && !superseded && (matches!(s(meta, "kind"), "video" | "image") || sequence)
 }
