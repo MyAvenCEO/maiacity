@@ -378,23 +378,12 @@ export class Studio {
 	stillOf(c) {
 		if (!c?.hash) return null;
 		const orig = String(this.byHash.get(c.hash)?.meta?.proxy_of ?? c.hash);
-		const mid = c.in + c.dur / 2;
-		// its stills (the file's own and the ones made for shots of it): the one inside this shot nearest its middle
-		const all = this.library.filter((m) => m.meta?.grade_still_of === orig).map((m) => ({ hash: m.hash, t: Number(m.meta?.t ?? 0) }));
-		if (!all.length) return null;
-		const inside = all.filter((x) => x.t >= c.in && x.t <= c.in + c.dur).sort((a, b) => Math.abs(a.t - mid) - Math.abs(b.t - mid));
-		const best = inside[0] ?? all.sort((a, b) => Math.abs(a.t - mid) - Math.abs(b.t - mid))[0];
-		return { ...best, inside: !!inside[0] };
-	}
-	/** Grade opens: every shot its own grading still, made on this Mac in the background; the library read again after. */
-	async makeStills() {
-		if (!this.current) return;
-		try {
-			const r = /** @type {{ made: unknown[] }} */ (await command('grade_stills', { timeline: { ...$state.snapshot(this.current), clips: $state.snapshot(this.clips) } }));
-			if (r.made.length) await this.reloadLibrary();
-		} catch (e) {
-			console.warn('grading stills:', e);
-		}
+		// the file's one grading still (its best frame, as the analysis marks it)
+		const h = this.byHash.get(orig)?.meta?.grade_still;
+		const st = typeof h === 'string' ? this.byHash.get(h) : undefined;
+		if (!st) return null;
+		const t = Number(st.meta?.t ?? 0);
+		return { hash: st.hash, t, inside: t >= c.in && t <= c.in + c.dur };
 	}
 	/** Grade, paused, on stills: the shot under the playhead shows its grading still */
 	showStill = $derived(this.tab === 'grade' && this.gradeOn === 'stills' && !this.playing && !!this.stillOf(this.picture));
