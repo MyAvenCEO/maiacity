@@ -528,11 +528,12 @@ impl Catalog {
         self.purge(hash).await
     }
 
-    /// This device lets go of a file: its own `blobs/<hash>` holding and the derived records it wrote, in every
-    /// catalog replica it can write (an older one it joined from too) — once no entry references the file, iroh's
-    /// garbage collection prunes the bytes here.
+    /// This device lets go of a file: its pin (the tag `vault/<hash>` its ingest or fetch set), its own `blobs/<hash>`
+    /// holding and the derived records it wrote, in every catalog replica it can write (an older one it joined from
+    /// too) — once no tag and no entry references the file, iroh's garbage collection prunes the bytes here.
     pub async fn purge(&self, hash: Hash) -> Result<()> {
         let hex = hash.to_hex();
+        self.store.tags().delete(format!("vault/{hex}")).await?;
         let mut replicas: Vec<_> = self.docs.list().await?.collect().await;
         replicas.retain(|r| r.as_ref().is_ok_and(|(_, cap)| matches!(cap, iroh_docs::CapabilityKind::Write)));
         for (id, _) in replicas.into_iter().flatten() {
@@ -544,8 +545,11 @@ impl Catalog {
         Ok(())
     }
 
-    /// Does this device still hold a file (its own `blobs/<hash>` entry)?
+    /// Does this device still hold a file (its pin, or its own `blobs/<hash>` entry)?
     pub async fn holds(&self, hash: Hash) -> Result<bool> {
+        if self.store.tags().get(format!("vault/{}", hash.to_hex())).await?.is_some() {
+            return Ok(true);
+        }
         Ok(self.doc().get_one(Query::author(self.author).key_exact(format!("blobs/{}", hash.to_hex()))).await?.is_some())
     }
 }
