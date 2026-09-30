@@ -8,7 +8,6 @@
 	(T1) are the voice's phrases as the render burns them in.
 -->
 <script>
-	import ColorBadge from './ColorBadge.svelte';
 	import { evaluate, shotAt, toKeys } from './shots.js';
 	import { FPS, TRACKS, isWorld, onSoundTrack, thumb, tint } from './studio.svelte.js';
 	import { wordsOf } from './transcript.js';
@@ -295,7 +294,7 @@
 								{/if}
 								{#if t.id === 'V1'}
 									<span class="chips">
-										{#if world}<b class="wtag">world</b>{:else if m}<ColorBadge {s} {m} />{#if m.kind === 'video' && !s.proxy(m).hash}{@const st = s.proxy(m).state}<b class="nopx" title="No proxy yet: the original plays">{st === 'none' ? 'no proxy' : `proxy ${st}`}</b>{/if}{/if}
+										{#if world}<b class="wtag">world</b>{:else if m}{#if m.kind === 'video' && !s.proxy(m).hash}{@const st = s.proxy(m).state}<b class="nopx" title="No proxy yet: the original plays">{st === 'none' ? 'no proxy' : `proxy ${st}`}</b>{/if}{/if}
 										{#if c.grade}<b class="gr" title="Graded">◐</b>{/if}
 									</span>
 								{/if}
