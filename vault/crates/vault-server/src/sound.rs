@@ -293,6 +293,15 @@ pub(crate) async fn store(peer: &Peer, s3: &S3, db: &tokio_postgres::Client, pat
         }
         upload.finish().await?;
     }
+    // and in this server's own iroh store, pinned: what the server makes, iroh serves — every device fetches it over
+    // the blobs protocol (BLAKE3-verified), as it fetches any file from whoever holds it
+    let added = peer
+        .store
+        .blobs()
+        .add_path_with_opts(iroh_blobs::api::blobs::AddPathOptions { path: path.to_path_buf(), format: iroh_blobs::BlobFormat::Raw, mode: iroh_blobs::api::proto::ImportMode::Copy })
+        .with_named_tag(format!("vault/{}", hash.to_hex()))
+        .await?;
+    anyhow::ensure!(added.hash == hash, "{} imported as {}, not {}", path.display(), added.hash, hash);
     peer.write_meta(hash, meta).await?;
     db::mirror(db, meta, true).await?;
     peer.hold(hash, size, db).await;
