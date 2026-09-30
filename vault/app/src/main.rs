@@ -460,6 +460,8 @@ fn main() {
             proxies::proxies_now,
             proxies::vault_hold,
             proxies::color_lut,
+            proxies::color_grade,
+            proxies::color_presets,
             proxies::vault_proxy,
             transcripts::vault_transcribe,
             render::sound_measure,

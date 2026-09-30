@@ -3,6 +3,8 @@
 ✅ done · 🔄 in progress · ⬜ to do. Updated as the work goes.
 
 ## Open
+- 🔄 Base correction of Day 01 · Opening (the tools below): bedroom a touch warm (+0.25), garden clearly warm (+0.5),
+  shots 7 and 8 with the garden; masters: the bed from the side, the walk through the garden
 - ⬜ Listen to the Opening in the studio:
   - the bench voice plays now (its audio proxy is linked)
   - the new cut: walk → coffee (the mug lands on "…is this") → frontal bench
@@ -11,6 +13,16 @@
 - ⬜ Shot analysis (tags, cues) waits for Prem to enable `qwen38-27b` (yours, at Prem)
 
 ## Done today
+- **Base correction tools** (story-producer `grading.md`), natively in the Mac app over MCP, from the 4K grading
+  stills only:
+  - `grade_look`: blacks, whites, mids and the skin Apple Vision finds, in IRE and against the skin line
+  - `grade_scopes`: a sheet per scene with the picture, waveform, parade and vectorscope, the master first
+  - `grade_match`: a master to neutral plus the warmth asked for; every other shot matched to its master by those
+    elements, proposed first
+  - saturation in the balance
+- **Grading SSOT:** the grade's maths only in Rust/Metal. The studio's viewer and the live world sample a cube the Mac
+  bakes (`color_grade`), and the presets come from Rust (`color_presets`). No JS or GLSL copy is left.
+- **Legacy `library/`:** all 856 files checked by BLAKE3 against the vault and moved to the Trash.
 - **Day 01 · Opening:**
   - two outside shots inserted: walking to the bench (C123), coffee from the bench's right (C130)
   - "Today I am alone…" starts outside; the mug lands on "…is this"; then the frontal bench

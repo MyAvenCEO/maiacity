@@ -31,7 +31,7 @@ use crate::{
 pub const KERNELS: &str = r#"#include <CoreImage/CoreImage.h>
 using namespace metal;
 
-// the ASC CDL in ACEScct, as color.js cdl(): slope, offset, power (negatives held at 0 before a power), saturation
+// the ASC CDL in ACEScct, as grade.rs `Cdl::apply`: slope, offset, power (negatives held at 0 before a power), saturation
 extern "C" float4 cdl(coreimage::sample_t s, float3 slope, float3 offset, float3 power, float sat) [[stitchable]] {
     float3 y = s.rgb * slope + offset;
     float3 v = float3(power.x == 1.0f ? y.x : precise::pow(max(y.x, 0.0f), power.x),
@@ -41,15 +41,16 @@ extern "C" float4 cdl(coreimage::sample_t s, float3 slope, float3 offset, float3
     return float4(l + sat * (v - l), s.a);
 }
 
-// the balance in ACEScct, as color.js balance(): white balance (stops per channel), exposure, contrast around mid grey,
-// then highlights and lows by luma — `wb` is (temp, tint, exposure), `tone` (contrast, highlights, shadows)
-extern "C" float4 balance(coreimage::sample_t s, float3 wb, float3 tone) [[stitchable]] {
+// the balance in ACEScct, as grade.rs `Balance::apply`: white balance (stops per channel), exposure, contrast around mid grey,
+// then highlights and lows by luma, then saturation around luma — `wb` is (temp, tint, exposure), `tone` (contrast,
+// highlights, shadows), `sat` the saturation minus 1
+extern "C" float4 balance(coreimage::sample_t s, float3 wb, float3 tone, float sat) [[stitchable]] {
     const float STOP = 1.0f / 17.52f, PIVOT = 0.4135884f, REACH = 0.35f;
     float3 c = s.rgb + float3(wb.x * 0.5f, -wb.y, -wb.x * 0.5f) * STOP;
     c = PIVOT + (c + wb.z * STOP - PIVOT) * (1.0f + tone.x);
     float l = dot(c, float3(0.2126f, 0.7152f, 0.0722f));
     float lift = (tone.y * smoothstep(PIVOT, PIVOT + REACH, l) + tone.z * (1.0f - smoothstep(PIVOT - REACH, PIVOT, l))) * STOP;
-    return float4(c + lift, s.a);
+    return float4(l + lift + (1.0f + sat) * (c - l), s.a);
 }
 
 // a fade in display space: the picture towards black
@@ -299,8 +300,8 @@ impl Gpu {
     /// The balance (none: the picture as shot).
     pub fn balance(&self, img: &CIImage, b: Option<&Balance>) -> Result<Image> {
         let Some(b) = b.filter(|b| !b.is_neutral()) else { return Ok(img.retain()) };
-        let (wb, tone) = (vec3([b.temp, b.tint, b.exposure]), vec3([b.contrast, b.highlights, b.shadows]));
-        let args: [&AnyObject; 3] = [img, &wb, &tone];
+        let (wb, tone, sat) = (vec3([b.temp, b.tint, b.exposure]), vec3([b.contrast, b.highlights, b.shadows]), num(b.sat));
+        let args: [&AnyObject; 4] = [img, &wb, &tone, &sat];
         // SAFETY: the kernel's arguments as its signature takes them
         unsafe { self.balance.applyWithExtent_arguments(img.ext(), &NSArray::from_slice(&args)) }.context("the balance gave no picture")
     }

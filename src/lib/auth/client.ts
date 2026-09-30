@@ -189,7 +189,7 @@ export type ClipFrame = { x: number; y: number; zoom: number };
  * clip (`kind: 'world'`, V1 only) names a world shot record and the version it was cut with. A world clip's shot-local
  * time is `in + (timelineTime − start)`.
  */
-export type Balance = { temp: number; tint: number; exposure: number; contrast: number; highlights: number; shadows: number };
+export type Balance = { temp: number; tint: number; exposure: number; contrast: number; highlights: number; shadows: number; sat: number };
 export type ClipScript = { scene?: string; label?: string; description?: string; notes?: string; size?: string };
 export type TimelineClip = {
 	id: string;
@@ -209,7 +209,7 @@ export type TimelineClip = {
 	hash?: string;
 	shot?: string;
 	shotVersion?: number;
-	/** the fixed first grade layers (white balance, exposure, contrast, highlights, lows), ACEScct, before `grade` */
+	/** the fixed first grade layers (white balance, exposure, contrast, highlights, lows, saturation), ACEScct, before `grade` */
 	balance?: Balance | null;
 	/** this clip's own grade (Grade tab), ACEScct */
 	grade?: Cdl | null;

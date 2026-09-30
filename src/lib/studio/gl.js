@@ -1,10 +1,10 @@
 // The viewer's picture path, on the GPU (WebGL2): every frame of a video, still or canvas goes
-//   its input transform (the proxy's own encoding → ACEScct) → the grades (ASC CDL, clip then film look) → the output
-//   transform (ACEScct → Rec.709 display) → the screen,
-// the same order and the same maths as the render worker (C5). The browser is told not to colour-manage the pixels
-// (UNPACK_COLORSPACE_CONVERSION_WEBGL = NONE): a log picture's code values reach the shader as they are.
+//   its input transform (the proxy's own encoding → ACEScct) → its grade (balance, its CDL, the film's look) → the
+//   output transform (ACEScct → Rec.709 display) → the screen,
+// the render's order. All three are cubes the Mac bakes (`color_lut`, `color_grade`): the grade's maths lives only in
+// Rust (vault-render `grade`), never here — this shader only samples. The browser is told not to colour-manage the
+// pixels (UNPACK_COLORSPACE_CONVERSION_WEBGL = NONE): a log picture's code values reach the shader as they are.
 
-/** @typedef {import('$lib/auth/client').Cdl} Cdl */
 /** @typedef {import('./luts.js').Lut} Lut */
 /**
  * How a picture comes in: 0 as it is (already ACEScct), 1 through its input LUT (baked by the Mac).
@@ -16,8 +16,8 @@
  */
 /**
  * crop: the part of the source to show — u0, v0, width, height (0…1, top-left origin).
- * balance: the clip's balance (color.js `balance`), before its grades.
- * @typedef {{ idt: InMode, odt: OutMode, grades: Cdl[], balance?: import('../../../game/film/color.js').Balance | null, falseColor?: boolean, crop: [number, number, number, number] }} DrawOpts
+ * grade: 1 through the grade's cube (`setLut('grade', …)`), 0 as it is.
+ * @typedef {{ idt: InMode, odt: OutMode, grade: 0 | 1, falseColor?: boolean, crop: [number, number, number, number] }} DrawOpts
  */
 
 const VERT = `#version 300 es
@@ -34,10 +34,8 @@ out vec4 outColor;
 uniform sampler2D uSrc;
 uniform sampler3D uIdt;
 uniform sampler3D uOdt;
-uniform int uIdtSize, uOdtSize, uIdtMode, uOdtMode, uGrades, uFalse, uBal;
-uniform vec3 uBalWb, uBalTone;
-uniform vec3 uSlope[2], uOffset[2], uPower[2];
-uniform float uSat[2];
+uniform sampler3D uGrade;
+uniform int uIdtSize, uOdtSize, uGradeSize, uIdtMode, uOdtMode, uGradeMode, uFalse;
 uniform vec4 uCrop;
 
 // tetrahedral interpolation, as ffmpeg's lut3d (interp=tetrahedral) and bake.py's check do
@@ -61,26 +59,6 @@ vec3 lut3d(sampler3D t, int n, vec3 p) {
 float toCct(float l) { return l <= 0.0078125 ? 10.5402377416545 * l + 0.0729055341958355 : (log2(l) + 9.72) / 17.52; }
 float fromCct(float c) { return c <= 0.155251141552511 ? (c - 0.0729055341958355) / 10.5402377416545 : exp2(c * 17.52 - 9.72); }
 
-// the ASC CDL, as cdl() in color.js: slope, offset, power (negatives held at 0 before a power), then saturation
-vec3 grade(vec3 x, int k) {
-	vec3 y = x * uSlope[k] + uOffset[k];
-	vec3 p = uPower[k];
-	y = vec3(p.r == 1.0 ? y.r : pow(max(0.0, y.r), p.r), p.g == 1.0 ? y.g : pow(max(0.0, y.g), p.g), p.b == 1.0 ? y.b : pow(max(0.0, y.b), p.b));
-	float l = dot(y, vec3(0.2126, 0.7152, 0.0722));
-	return l + uSat[k] * (y - l);
-}
-
-// the balance, as balance() in color.js: white balance (stops per channel), exposure, contrast around mid grey, then
-// highlights and lows by luma — uBalWb (temp, tint, exposure), uBalTone (contrast, highlights, shadows)
-vec3 balance(vec3 c) {
-	const float STOP = 1.0 / 17.52, PIVOT = 0.4135884, REACH = 0.35;
-	c += vec3(uBalWb.x * 0.5, -uBalWb.y, -uBalWb.x * 0.5) * STOP;
-	c = PIVOT + (c + uBalWb.z * STOP - PIVOT) * (1.0 + uBalTone.x);
-	float l = dot(c, vec3(0.2126, 0.7152, 0.0722));
-	float lift = (uBalTone.y * smoothstep(PIVOT, PIVOT + REACH, l) + uBalTone.z * (1.0 - smoothstep(PIVOT - REACH, PIVOT, l))) * STOP;
-	return c + lift;
-}
-
 // a camera's false colour: where each part of the frame sits on the exposure scale
 vec3 falseColor(vec3 c) {
 	float y = dot(clamp(c, 0.0, 1.0), vec3(0.2126, 0.7152, 0.0722));
@@ -99,9 +77,7 @@ void main() {
 	vec2 st = uCrop.xy + vec2(uv.x, 1.0 - uv.y) * uCrop.zw;
 	vec3 c = texture(uSrc, vec2(st.x, 1.0 - st.y)).rgb;
 	if (uIdtMode == 1) c = lut3d(uIdt, uIdtSize, c);
-	if (uBal == 1) c = balance(c);
-	if (uGrades > 0) c = grade(c, 0);
-	if (uGrades > 1) c = grade(c, 1);
+	if (uGradeMode == 1) c = lut3d(uGrade, uGradeSize, c);
 	if (uOdtMode == 1) c = lut3d(uOdt, uOdtSize, c);
 	if (uFalse == 1) c = falseColor(c);
 	outColor = vec4(clamp(c, 0.0, 1.0), 1.0);
@@ -148,11 +124,12 @@ export class ViewerGL {
 		const loc = gl.getAttribLocation(p, 'p');
 		gl.enableVertexAttribArray(loc);
 		gl.vertexAttribPointer(loc, 2, gl.FLOAT, false, 0, 0);
-		for (const n of ['uSrc', 'uIdt', 'uOdt', 'uIdtSize', 'uOdtSize', 'uIdtMode', 'uOdtMode', 'uGrades', 'uFalse', 'uBal', 'uBalWb', 'uBalTone', 'uSlope', 'uOffset', 'uPower', 'uSat', 'uCrop'])
+		for (const n of ['uSrc', 'uIdt', 'uOdt', 'uGrade', 'uIdtSize', 'uOdtSize', 'uGradeSize', 'uIdtMode', 'uOdtMode', 'uGradeMode', 'uFalse', 'uCrop'])
 			this.u[n] = gl.getUniformLocation(p, n);
 		gl.uniform1i(this.u.uSrc, 0);
 		gl.uniform1i(this.u.uIdt, 1);
 		gl.uniform1i(this.u.uOdt, 2);
+		gl.uniform1i(this.u.uGrade, 3);
 		this.src = gl.createTexture();
 		gl.activeTexture(gl.TEXTURE0);
 		gl.bindTexture(gl.TEXTURE_2D, this.src);
@@ -171,20 +148,20 @@ export class ViewerGL {
 			gl.texImage3D(gl.TEXTURE_3D, 0, gl.RGBA32F, 2, 2, 2, 0, gl.RGBA, gl.FLOAT, new Float32Array(32));
 			return { tex: t, key: null, size: 2 };
 		};
-		this.luts = { idt: lutTex(1), odt: lutTex(2) };
+		this.luts = { idt: lutTex(1), odt: lutTex(2), grade: lutTex(3) };
 		// the pixels as they are in the file: no colour management by the browser, no premultiplication
 		gl.pixelStorei(gl.UNPACK_COLORSPACE_CONVERSION_WEBGL, gl.NONE);
 		gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
 		gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
 	}
 
-	/** Puts a LUT on the GPU (only when it is another one than already there). @param {'idt' | 'odt'} slot @param {Lut | null} lut */
+	/** Puts a LUT on the GPU (only when it is another one than already there). @param {'idt' | 'odt' | 'grade'} slot @param {Lut | null} lut */
 	setLut(slot, lut) {
 		const s = this.luts[slot];
 		const key = lut ? `${lut.name}:${lut.size}:${lut.hash ?? ''}` : null;
 		if (!lut || s.key === key) return;
 		const gl = this.gl;
-		gl.activeTexture(gl.TEXTURE0 + (slot === 'idt' ? 1 : 2));
+		gl.activeTexture(gl.TEXTURE0 + { idt: 1, odt: 2, grade: 3 }[slot]);
 		gl.bindTexture(gl.TEXTURE_3D, s.tex);
 		gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
 		gl.texImage3D(gl.TEXTURE_3D, 0, gl.RGBA32F, lut.size, lut.size, lut.size, 0, gl.RGBA, gl.FLOAT, lut.data);
@@ -207,19 +184,8 @@ export class ViewerGL {
 		gl.uniform1i(u.uOdtMode, o.odt);
 		gl.uniform1i(u.uIdtSize, this.luts.idt.size);
 		gl.uniform1i(u.uOdtSize, this.luts.odt.size);
-		const g = o.grades.slice(0, 2);
-		gl.uniform1i(u.uGrades, g.length);
-		/** @type {Cdl} */
-		const none = { slope: [1, 1, 1], offset: [0, 0, 0], power: [1, 1, 1], sat: 1 };
-		const pad = [g[0] ?? none, g[1] ?? none];
-		gl.uniform3fv(u.uSlope, pad.flatMap((x) => x.slope));
-		gl.uniform3fv(u.uOffset, pad.flatMap((x) => x.offset));
-		gl.uniform3fv(u.uPower, pad.flatMap((x) => x.power));
-		gl.uniform1fv(u.uSat, pad.map((x) => x.sat));
-		const b = o.balance;
-		gl.uniform1i(u.uBal, b ? 1 : 0);
-		gl.uniform3fv(u.uBalWb, b ? [b.temp, b.tint, b.exposure] : [0, 0, 0]);
-		gl.uniform3fv(u.uBalTone, b ? [b.contrast, b.highlights, b.shadows] : [0, 0, 0]);
+		gl.uniform1i(u.uGradeMode, o.grade);
+		gl.uniform1i(u.uGradeSize, this.luts.grade.size);
 		gl.uniform1i(u.uFalse, o.falseColor ? 1 : 0);
 		gl.uniform4fv(u.uCrop, o.crop);
 		gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);

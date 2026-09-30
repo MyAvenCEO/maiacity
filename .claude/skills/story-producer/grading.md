@@ -72,23 +72,38 @@ check the blacks again.
 
 ## The tools
 
-- **The eye first:** the 4K still through the ACES 2.0 output, the master beside the shot. Name what you see: where
-  the whites are, what is black, where the skin is, what the light is.
-- **Scopes** from the 4K still: waveform, RGB parade, and a vectorscope with the skin line. Isolate the face as well
-  (a box on the cheeks and forehead, not the beard or a cap's shadow).
-- **The elements in numbers**, before and after the balance:
-  - blacks p1 and whites p99 in IRE
-  - the middle (p50)
-  - the casts of the blacks, the neutral middle tones and the unclipped neutral whites
-  - skin: level, hue against the skin line, saturation
-  - how much of the frame is clipped
-- **`grade_measure`:** every shot in ACEScct from its grading still (luma percentiles, `mid_rgb`, `to_grey`), as shot
-  and balanced. The numbers are whole-frame, so read them next to the picture (rule 6).
-- **`grade_match`** with `reference: <master>` and `clips: <the scene's shots>`. Run it with **`apply: false`
-  first**: it gives a proposal to start from, never the answer. It fits whole-frame percentiles and the middle
-  tones' cast, and like Resolve's Shot Match it doesn't know what a face is.
-- **`grade_balance`** sets one shot's balance by hand, after reading the scopes and the picture.
-- **`render_frame`** makes a hero frame through the whole chain, for checking either side of a cut.
+All of them run natively in the Mac app (maiaCITY Studio, over MCP). The grade's maths lives only in Rust
+(vault-render `grade`, the same maths in Metal for the render). The studio's viewer samples a cube that Rust bakes,
+so it never computes the grade itself.
+
+- **`grade_scopes`** `{ timeline, clips: [master, …], regions? }`: the scope sheet, one row per shot with the master
+  first. Each row has the picture after its balance (the skin box drawn in magenta), its waveform (5/10/50/90/100
+  IRE), RGB parade, and vectorscope with the skin line. It is a PNG on this Mac, drawn from the 4K grading stills.
+  **Look at it** (the Read tool) before every decision and after every write.
+- **`grade_look`** `{ timeline, clips?, regions? }`: the elements in numbers, as shot and balanced:
+  - the levels p1 … p99 in IRE, contrast, clipped %, saturation
+  - the **blacks**, the **whites** (unclipped, not strongly coloured) and the **mids**: each one's level and cast
+    (warm = R − B, green = G − (R + B) / 2, in IRE)
+  - the **skin** of the face Apple Vision finds (cheeks and forehead): its level, hue, `off_skin_line` in degrees,
+    and chroma
+  - any **regions** named by hand
+- **`regions`** `{ <clip>: { white, grey, black, skin } }`, each a box [x0, y0, x1, y1] from the frame's top left
+  (0…1). Use them when the eye knows better than the finder: a white wall known to be neutral, a real black, the key
+  side of a face Vision misses.
+- **`grade_match`**:
+  - **The master:** `{ clips: [master], neutral: true, warmth }`. Its neutrals go to grey (the white or grey named,
+    else its whites and mids), then it gets `warmth` stops warmer. Its exposure and the rest stay as they are, and
+    are set by hand.
+  - **The others:** `{ reference: master, clips: [the scene's shots], skip?, regions? }`. Each shot is fitted to the
+    master by the blacks, whites, mids and skin that both have. Blacks count only when the shot has real ones
+    (under 15 IRE), and whites only above 50 IRE. `skip: { <clip>: ["blacks"] }` leaves out what a shot has only
+    by content.
+  - Run **`apply: false`** first. The answer gives each shot's balance, `matched_by`, and `predicted`: its elements
+    after that balance.
+- **`grade_balance`**: one shot's balance by hand (temp, tint, exposure, contrast, highlights, shadows, **sat**; all
+  0 = as shot).
+- **`render_frame`**: a hero frame through the whole chain, for checking either side of a cut.
+- **`grade_measure`**: the old whole-frame luma percentiles. Use `grade_look` instead.
 
 ## The pass, scene by scene
 
@@ -96,15 +111,17 @@ check the blacks again.
    scenes and pick each scene's master (rule 4). Note the motivated light, the clipped skies and the faces.
 2. **Ask** Samuel per scene: warmer, neutral or cooler, and how much (rule 5). Nothing is written before the answer.
 3. **The master:**
-   - Set exposure on the key side of the face (or on the middle when there is no face).
+   - Set exposure on the key side of the face (or on the middle when there is no face), with `grade_balance`.
    - Put the blacks and whites where they belong.
-   - Set the white balance so the neutrals are neutral, then add the agreed warmth on top.
+   - Run `grade_match` with `neutral: true, warmth` so the neutrals are neutral and the agreed warmth sits on top.
    - Use contrast only if the shot is flat or harsh.
+   - Check it on `grade_scopes`.
 4. **The other shots of the scene:**
-   - Run `grade_match` against the master with `apply: false`.
-   - Look at both 4K stills and their scopes.
-   - Correct by the table above: blacks, whites, contrast, colour, saturation, then skin.
-   - Set the result with `grade_balance`.
+   - Run `grade_match` with `reference: <master>` and `apply: false`.
+   - Read `predicted` against the master, then look at `grade_scopes` with the master's row first.
+   - Correct by the table above (blacks, whites, contrast, colour, saturation, then skin): name regions, skip what
+     is content, or set a shot by hand with `grade_balance`.
+   - Write the result, then look at the scope sheet again.
 5. **Across every cut:** make hero frames either side and flick between them, then play the scene. Nothing may jump.
 6. **Scene to scene:** compare the masters with each other. Allow a change only where the light really changes
    (inside to outside, morning to noon), never a jump without a reason.

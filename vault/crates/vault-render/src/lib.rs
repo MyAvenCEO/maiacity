@@ -21,6 +21,7 @@ pub mod av;
 pub mod captions;
 pub mod gpu;
 pub mod grade;
+pub mod look;
 pub mod loudness;
 pub mod output;
 pub mod qc;

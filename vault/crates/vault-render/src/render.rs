@@ -911,17 +911,33 @@ fn source(gpu: &Gpu, lib: &dyn Library, c: &Clip, at: f64) -> Result<Image> {
             return gpu.still(&file);
         }
     }
+    frame_of(gpu, lib, c, at, true)
+}
+
+/// A clip's grading still, when its frame is in the clip (`look`: what the base correction reads first).
+pub(crate) fn grade_still_of_clip(lib: &dyn Library, c: &Clip) -> Option<Media> {
+    grade_still_of(lib, c)
+}
+
+/// One frame of a media clip at `at` on the timeline, into ACEScct, from its original only: an error, never its
+/// proxy, when the original isn't on this Mac.
+pub(crate) fn original_frame(gpu: &Gpu, lib: &dyn Library, c: &Clip, at: f64) -> Result<Image> {
+    frame_of(gpu, lib, c, at, false)
+}
+
+fn frame_of(gpu: &Gpu, lib: &dyn Library, c: &Clip, at: f64, proxy_ok: bool) -> Result<Image> {
     let hash = c.hash.as_deref().context("only a clip with a file can be measured")?;
     let of = lib.original_of(hash);
     let original = lib.media(&of).or_else(|| lib.media(hash)).context("the clip's file is not in the vault")?;
     let proxy = original.meta.get("proxy").and_then(Value::as_str).and_then(|p| lib.media(p));
     let (m, file) = match lib.file(&original.hash) {
         Ok(f) => (original, f),
-        Err(e) => {
+        Err(e) if proxy_ok => {
             let p = proxy.ok_or(e)?;
             let f = lib.file(&p.hash)?;
             (p, f)
         }
+        Err(e) => return Err(e.context("the shot's original isn't on this Mac (a proxy is never measured)")),
     };
     let from = c.in_ + (at - c.start);
     if is_sequence(&m) {
