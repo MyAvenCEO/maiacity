@@ -27,6 +27,10 @@ impl Allow {
     pub fn add(&self, id: EndpointId) {
         self.ids.write().unwrap().get_or_insert_with(HashSet::new).insert(id);
     }
+    /// Everyone let in (the server and the paired devices): who a file can be fetched from.
+    pub fn ids(&self) -> Vec<EndpointId> {
+        self.ids.read().unwrap().as_ref().map(|s| s.iter().copied().collect()).unwrap_or_default()
+    }
     pub fn has(&self, id: &EndpointId) -> bool {
         self.ids.read().unwrap().as_ref().is_some_and(|s| s.contains(id))
     }
