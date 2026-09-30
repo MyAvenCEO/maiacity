@@ -450,7 +450,8 @@ export async function statusRoute(req: Request): Promise<Response> {
   // the model this key really runs (ours, or its own of the family), and every model the key lists — ids and inputs only
   const ready = analysisReady();
   const using = ready ? await model().catch(() => MODEL) : MODEL;
-  const listed = ready ? (await models().catch(() => null))?.map((m) => ({ id: m.id, type: m.type, input: m.input_modalities })) : undefined;
+  // every model the key lists, as Prem describes it (its id, names, kind and inputs — no key, no secret)
+  const listed = ready ? await models().catch(() => null) : undefined;
   const p = paused(using) ?? paused(MODEL);
   return Response.json({ ready, model: MODEL, ...(ready ? { using, listed } : {}), vocabulary: VOCABULARY, ...(p ? { paused_until: new Date(p.until).toISOString(), reason: p.reason } : {}) });
 }

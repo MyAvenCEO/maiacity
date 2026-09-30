@@ -148,7 +148,7 @@ pub async fn sweep(handle: AppHandle, vault: Arc<Vault>) {
     loop {
         tokio::time::sleep(Duration::from_secs(20)).await;
         if crate::auth::signed_in() {
-            if let Ok(all) = vault.catalog.list().await {
+            if let Ok(all) = vault.catalog.list_view().await {
                 let by_hash: HashMap<String, &Meta> = all.iter().map(|m| (m.hash.clone(), m)).collect();
                 for m in all.iter().filter(|m| wants_proxy(m)) {
                     let state = m.meta.get("proxy").and_then(|p| p.as_str()).unwrap_or("");
@@ -174,6 +174,11 @@ pub async fn sweep(handle: AppHandle, vault: Arc<Vault>) {
                     let still_queued = NOW.lock().unwrap().as_ref().is_some_and(|n| n.contains_key(&format!("still:{}", m.hash)));
                     if made && m.kind == "video" && !sequence(m) && !still && still_tries < TRIES && !still_queued && journey(profile) {
                         tauri::async_runtime::spawn(backfill_still(vault.clone(), m.hash.clone()));
+                    } else if made && m.kind == "video" && !sequence(m) && still_tries < TRIES && !still_queued && journey(profile) {
+                        // the analysis marked its best frame: the grading still and the preview made of that one
+                        if let Some(t) = marked_at(m, &by_hash) {
+                            tauri::async_runtime::spawn(backfill_still_at(vault.clone(), m.hash.clone(), Some(t)));
+                        }
                     }
                 }
             }
@@ -362,10 +367,16 @@ const STILL_WIDTH: u32 = 3840;
 /// of ACEScct code values (vault_render `grading_still`) — beside its proxy (class proxy, the same story), named on
 /// the original as `meta.grade_still`. The balance is measured and judged on it at full quality.
 async fn grading_still(vault: &Vault, hex: &str, name: &str, path: &std::path::Path, profile: &str) -> Result<(), String> {
+    grading_still_at(vault, hex, name, path, profile, None).await
+}
+
+/// The file's grading still and preview at `at` (the frame the analysis marked as its best), else its middle frame.
+async fn grading_still_at(vault: &Vault, hex: &str, name: &str, path: &std::path::Path, profile: &str, at: Option<f64>) -> Result<(), String> {
     let hash: iroh_blobs::Hash = hex.parse().map_err(|e| format!("{e}"))?;
     let original = vault.catalog.meta(hash).await.map_err(|e| format!("{e:#}"))?.ok_or("no such file")?;
     let seconds = ["/probe/duration", "/duration"].iter().find_map(|p| original.meta.pointer(p).and_then(|d| d.as_f64())).unwrap_or(1.0);
-    let at = (seconds / 2.0).max(0.0);
+    let marked = at.is_some();
+    let at = at.unwrap_or(seconds / 2.0).max(0.0);
     let stem = std::path::Path::new(name).file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_else(|| hex[..12].to_string());
     let out = vault.ingest_dir().join(format!("{stem}.grade.png"));
     let small = vault.ingest_dir().join(format!("{stem}.preview.jpg"));
@@ -378,7 +389,7 @@ async fn grading_still(vault: &Vault, hex: &str, name: &str, path: &std::path::P
         session: format!("grading still of {hex}"),
         tags: vec!["grade-still".into()],
         title: Some(format!("{stem} · grading still")),
-        meta: json!({ "role": "grade-still", "grade_still_of": hex, "t": (at * 1000.0).round() / 1000.0, "width": w, "height": h,
+        meta: json!({ "role": "grade-still", "grade_still_of": hex, "t": (at * 1000.0).round() / 1000.0, "width": w, "height": h, "marked": marked,
             "color": { "profile": WORKING, "from": "our own tag", "journey_from": profile }, "encoding": "16-bit PNG, ACEScct code values" }),
         story: Some(original.story.clone()).filter(|s| !s.is_empty()),
         class: Some("proxy".into()),
@@ -489,6 +500,18 @@ pub async fn grade_stills(app: tauri::State<'_, crate::App>, timeline: serde_jso
 /// An original with a proxy of ours but no grading still yet (made before there were any): its still, from the
 /// vault's copy of the original, one at a time after any proxy.
 async fn backfill_still(vault: Arc<Vault>, hex: String) {
+    backfill_still_at(vault, hex, None).await
+}
+
+/// The frame the analysis marked as a file's best (its thumbnail's `t`), when its grading still is not of it yet.
+fn marked_at(m: &Meta, all: &HashMap<String, &Meta>) -> Option<f64> {
+    let thumb = all.get(m.meta.get("thumbnail")?.as_str()?)?;
+    let t = thumb.meta.get("t")?.as_f64()?;
+    let still_t = m.meta.get("grade_still").and_then(|h| h.as_str()).and_then(|h| all.get(h)).and_then(|s| s.meta.get("t")?.as_f64());
+    still_t.is_none_or(|s| (s - t).abs() > 0.05).then_some(t)
+}
+
+async fn backfill_still_at(vault: Arc<Vault>, hex: String, at: Option<f64>) {
     let k = format!("still:{hex}");
     let Ok(hash) = hex.parse::<iroh_blobs::Hash>() else { return };
     let Some(original) = vault.catalog.meta(hash).await.ok().flatten() else { return };
@@ -506,7 +529,7 @@ async fn backfill_still(vault: Arc<Vault>, hex: String) {
     let ext = std::path::Path::new(&name).extension().map(|e| e.to_string_lossy().to_lowercase()).unwrap_or_else(|| "mov".into());
     let src = vault.ingest_dir().join(format!("{hex}.src.{ext}"));
     let r = match vault.store.blobs().export(hash, &src).await {
-        Ok(_) => grading_still(&vault, &hex, &name, &src, &profile).await,
+        Ok(_) => grading_still_at(&vault, &hex, &name, &src, &profile, at).await,
         Err(e) => Err(format!("the original is not on this Mac: {e:#}")),
     };
     std::fs::remove_file(&src).ok();

@@ -83,6 +83,8 @@ services:
       S3_BUCKET: ${S3_BUCKET:-maiacity}
       S3_ACCESS_KEY: ${S3_ACCESS_KEY:-}
       S3_SECRET_KEY: ${S3_SECRET_KEY:-}
+      # the stories whose files the shot analysis (Prem's Qwen) runs for — Day 01 first; empty: every story
+      ANALYSE_STORIES: ${ANALYSE_STORIES:-9e89f786b06a26d5d33fa8ed2d77cc828afacc016e1113bb779ab4076243fa26}
     volumes:
       - vaultdata:/data
     ports:
