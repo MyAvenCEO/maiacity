@@ -452,6 +452,7 @@ fn main() {
             sources::source_ready,
             sources::source_delete,
             sync::vault_transfers,
+            render::vault_sound,
             stories::story_save,
             stories::story_delete,
             stories::files_move,

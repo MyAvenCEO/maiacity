@@ -109,31 +109,45 @@
 	// ── J and L cuts: clips of one track that overlap sit in two lanes, the overlap marked by what it does at the
 	// picture cut in it — J: the next sound comes in before the cut; L: the last one runs on past it; × no cut ─
 	const cuts = $derived(s.clips.filter((c) => c.track === 'V1' && c.start > 0.05).map((c) => c.start));
-	/** per track: each clip's lane (0, or 1 when it overlaps the one before), and the overlaps */
+	/** per track: each clip's shape (where the one before still sounds over its head, where the next already sounds
+	 * over its tail: fractions of its length), and the overlaps */
 	const layout = $derived.by(() => {
-		/** @type {Record<string, { lane: Record<string, number>, overlaps: { from: number, to: number, kind: 'J' | 'L' | '×' }[] }>} */
+		/** @type {Record<string, { shape: Record<string, { head: number, tail: number }>, overlaps: { from: number, to: number, kind: 'J' | 'L' | '×' }[] }>} */
 		const out = {};
 		for (const t of TRACKS) {
 			const list = s.clips.filter((c) => c.track === t.id).sort((a, b) => a.start - b.start);
-			/** @type {Record<string, number>} */
-			const lane = {};
+			/** @type {Record<string, { head: number, tail: number }>} */
+			const shape = {};
+			for (const c of list) shape[c.id] = { head: 0, tail: 1 };
 			/** @type {{ from: number, to: number, kind: 'J' | 'L' | '×' }[]} */
 			const overlaps = [];
 			let prev = /** @type {Clip | null} */ (null);
 			for (const c of list) {
 				const end = prev ? prev.start + prev.dur : -1;
 				if (prev && c.start < end - 0.02) {
-					lane[c.id] = 1 - (lane[prev.id] ?? 0);
+					shape[prev.id].tail = Math.min(shape[prev.id].tail, (c.start - prev.start) / prev.dur);
+					shape[c.id].head = Math.max(shape[c.id].head, (Math.min(end, c.start + c.dur) - c.start) / c.dur);
 					const from = c.start, to = Math.min(end, c.start + c.dur);
 					const cut = cuts.find((k) => k >= from - 0.05 && k <= to + 0.05);
 					overlaps.push({ from, to, kind: t.id === 'V1' || cut === undefined ? '×' : Math.abs(cut - to) < Math.abs(cut - from) ? 'J' : 'L' });
-				} else lane[c.id] = 0;
+				}
 				if (!prev || c.start + c.dur > end) prev = c;
 			}
-			out[t.id] = { lane, overlaps };
+			out[t.id] = { shape, overlaps };
 		}
 		return out;
 	});
+	/**
+	 * A clip's outline with its overlaps: full height, but over the head the one before still sounds (it keeps the
+	 * bottom half there) and over the tail the next already sounds (it keeps the top half) — so a J or an L reads as one.
+	 * @param {string} track @param {Clip} c
+	 */
+	function outline(track, c) {
+		const sh = layout[track]?.shape[c.id];
+		if (!sh || (sh.head <= 0 && sh.tail >= 1)) return undefined;
+		const g = `${(sh.head * 100).toFixed(2)}%`, f = `${(sh.tail * 100).toFixed(2)}%`;
+		return `polygon(${g} 0, 100% 0, 100% ${sh.tail < 1 ? '50%' : '100%'}, ${f} ${sh.tail < 1 ? '50%' : '100%'}, ${f} 100%, 0 100%, 0 ${sh.head > 0 ? '50%' : '0'}, ${g} ${sh.head > 0 ? '50%' : '0'})`;
+	}
 	/** a linked sound against its own picture: J when it leads it, L when it trails it @param {Clip} c */
 	function leadTrail(c) {
 		if (!onSoundTrack(c) || !c.link) return '';
@@ -484,12 +498,11 @@
 								class="clip {world ? 'world' : c.kind === 'slate' ? 'slate' : c.kind === 'line' ? 'audio line' : onSoundTrack(c) ? 'audio' : m?.kind} {t.id}"
 								class:linked={!!c.link && c.link !== UNLINKED}
 								class:missing={!!c.hash && !m}
-								class:split={layout[t.id]?.overlaps.length > 0}
-								class:lane1={layout[t.id]?.lane[c.id] === 1}
 								class:sel={s.selected === c.id}
 								class:graded={!!c.grade}
 								style:left={x(c.start)}
 								style:width={x(c.dur)}
+								style:clip-path={outline(t.id, c)}
 								onpointerdown={(e) => grab(e, c, 'move')}
 								title={world ? `${s.clipName(c)} · world shot v${c.shotVersion}` : `${s.clipName(c)}${c.link ? ' · picture and sound linked (Alt-drag: one alone)' : ''}`}
 							>
@@ -953,16 +966,7 @@
 		vector-effect: non-scaling-stroke;
 	}
 
-	/* J and L cuts: overlapping clips of a track in two lanes, the overlap marked */
-	.clip.split {
-		bottom: 50%;
-	}
-
-	.clip.split.lane1 {
-		top: 50%;
-		bottom: 0.3rem;
-	}
-
+	/* J and L cuts: the clips keep their full height; across the overlap each keeps its half (outline()); the letter */
 	.overlap {
 		position: absolute;
 		top: 0.3rem;
@@ -970,8 +974,8 @@
 		z-index: 3;
 		display: grid;
 		place-items: center;
-		border-radius: 4px;
-		background: repeating-linear-gradient(135deg, rgba(20, 23, 26, 0.16) 0 4px, transparent 4px 8px);
+		border-left: 1px dashed rgba(20, 23, 26, 0.35);
+		border-right: 1px dashed rgba(20, 23, 26, 0.35);
 		pointer-events: none;
 	}
 
