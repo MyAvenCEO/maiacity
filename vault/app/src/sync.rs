@@ -6,7 +6,7 @@
 //! Storage. What only the server holds (a web upload, a file from another Mac that went offline) comes down from its
 //! gateway and is checked against its hash before the store takes it.
 
-use std::{collections::HashMap, path::PathBuf, sync::Arc, time::Duration};
+use std::{path::PathBuf, sync::Arc, time::Duration};
 
 use iroh_blobs::{BlobFormat, Hash, api::{blobs::AddPathOptions, proto::{BlobStatus, ImportMode}}};
 use serde::Serialize;
@@ -62,6 +62,10 @@ pub async fn connect(vault: &Vault, auth: &Auth) -> Res<Network> {
         })
         .unwrap_or_default();
     let count = devices.len();
+    if let Some(author) = join["author"].as_str() {
+        // kept beside the vault: which author's entries are Object Storage's, known offline too
+        std::fs::write(vault.dir.join("server.author"), author).ok();
+    }
     if let Some(server) = join["server"].as_str() {
         *SERVER.lock().unwrap() = server.to_string();
     }
@@ -136,18 +140,20 @@ pub struct Copies {
     pub location: String,
 }
 
+/// The files Object Storage holds: the server author's `blobs/<hash>` entries in this Mac's replica of the catalog.
+/// None until this Mac has joined once (it learns which author is the server's then).
+pub async fn held_by_server(v: &Vault) -> Option<std::collections::HashSet<String>> {
+    let author: iroh_docs::AuthorId = std::fs::read_to_string(v.dir.join("server.author")).ok()?.trim().parse().ok()?;
+    v.catalog.held_by(author).await.ok()
+}
+
 #[tauri::command]
 pub async fn vault_copies(app: State<'_, App>, auth: State<'_, Auth>) -> Res<Vec<Copies>> {
     gate()?;
     let v = &app.vault;
-    // what the server holds, from its mirror (unreachable API: we only know this Mac)
-    let server: HashMap<String, bool> = auth
-        .get_ok("GET", "/api/vault/files", None)
-        .await
-        .ok()
-        .and_then(|v| v.as_array().cloned())
-        .map(|a| a.iter().filter_map(|f| Some((f["hash"].as_str()?.to_string(), f["stored"].as_bool().unwrap_or(false)))).collect())
-        .unwrap_or_default();
+    // what Object Storage holds: the server's own entries in this Mac's replica of the catalog (offline too)
+    let _ = &auth;
+    let held = held_by_server(v).await;
     let mut out = Vec::new();
     for m in v.catalog.list().await.map_err(err)? {
         let hash: Hash = m.hash.parse().map_err(err)?;
@@ -156,9 +162,9 @@ pub async fn vault_copies(app: State<'_, App>, auth: State<'_, Auth>) -> Res<Vec
             Ok(BlobStatus::Partial { size }) => ("partial", size.unwrap_or(0)),
             _ => ("missing", 0),
         };
-        let server_state = match server.get(&m.hash) {
-            Some(true) => "stored",
-            Some(false) => "syncing",
+        let server_state = match &held {
+            Some(h) if h.contains(&m.hash) => "stored",
+            Some(_) => "syncing",
             None => "unknown",
         };
         out.push(Copies {

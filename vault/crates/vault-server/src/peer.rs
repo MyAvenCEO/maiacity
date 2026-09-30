@@ -274,18 +274,21 @@ impl Peer {
             };
             (rank, e.content_len())
         });
-        // what is stored already is not asked about again: one question to Postgres, not one to the bucket per file —
-        // each pass used to spend a minute asking before it pulled the next file
-        let stored = db::stored_all(db).await.unwrap_or_default();
+        // what this server holds is in the catalog itself: its own signed `blobs/<hash>` entries (iroh-docs, one per
+        // author per key) — never asked about again; Postgres only follows them
+        let held: HashSet<String> = {
+            let mine: Vec<_> = self.doc.get_many(Query::author(self.author).key_prefix("blobs/")).await?.collect().await;
+            mine.into_iter().flatten().map(|e| String::from_utf8_lossy(e.key()).trim_start_matches("blobs/").to_string()).collect()
+        };
         for entry in blobs {
             let (hash, size) = (entry.content_hash(), entry.content_len());
-            if failed.contains(&hash) || stored.contains(&hash.to_hex().to_string()) {
+            if failed.contains(&hash) || held.contains(&hash.to_hex().to_string()) {
                 continue;
             }
             let key = s3::blob_key(&hash.to_hex());
             match s3.head(&key).await {
                 Ok(Some(have)) if have == size => {
-                    db::stored(db, &hash.to_hex()).await.ok();
+                    self.hold(hash, size, db).await;
                     continue;
                 }
                 Ok(_) => {}
@@ -298,7 +301,7 @@ impl Peer {
             match self.pull(hash, size, s3).await {
                 Ok((from, how)) => {
                     tracing::info!("stored {} ({size} B) from {}, {how}", hash.fmt_short(), from.fmt_short());
-                    db::stored(db, &hash.to_hex()).await.ok();
+                    self.hold(hash, size, db).await;
                 }
                 Err(e) => {
                     tracing::warn!("{}: {e:#}", hash.fmt_short());
@@ -307,6 +310,16 @@ impl Peer {
             }
         }
         Ok(())
+    }
+
+    /// The bucket holds this file, verified: say so in the catalog (this server's own `blobs/<hash>` entry — every
+    /// replica learns it by iroh-docs), and let the Postgres projection follow.
+    async fn hold(&self, hash: Hash, size: u64, db: &tokio_postgres::Client) {
+        if let Err(e) = self.doc.set_hash(self.author, format!("blobs/{}", hash.to_hex()), hash, size).await {
+            tracing::warn!("{}: the catalog did not take the holding: {e:#}", hash.fmt_short());
+            return;
+        }
+        db::stored(db, &hash.to_hex()).await.ok();
     }
 
     /// Each file's class (hash → "proxy", "original" …), from the descriptions iroh-docs keeps on this server.

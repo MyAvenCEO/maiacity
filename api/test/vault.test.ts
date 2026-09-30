@@ -40,9 +40,11 @@ describe("pairing a Mac's node", () => {
 
 describe("joining", () => {
   test("says what the server peer published, and nothing before it did", async () => {
-    expect(await joinInfo()).toEqual({ server: null, catalog: null, relay: null });
-    await pg.query("INSERT INTO vault_config (key, value) VALUES ('server', 's'), ('catalog', 'docticket'), ('relay', 'https://api.maia.city')");
-    expect(await joinInfo()).toEqual({ server: "s", catalog: "docticket", relay: "https://api.maia.city" });
+    expect(await joinInfo()).toEqual({ server: null, catalog: null, relay: null, author: null });
+    await pg.query(
+      "INSERT INTO vault_config (key, value) VALUES ('server', 's'), ('catalog', 'docticket'), ('relay', 'https://api.maia.city'), ('author', 'a')",
+    );
+    expect(await joinInfo()).toEqual({ server: "s", catalog: "docticket", relay: "https://api.maia.city", author: "a" });
   });
 
   test("the mirror lists files newest first, by kind and tag", async () => {

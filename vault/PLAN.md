@@ -1,7 +1,7 @@
 # maiaCITY Studio + media vault — the task list
 
 Everything Samuel asked for, in order, with where it stands. Design and reasons: `.claude/skills/iroh/maiacity.md`.
-Status: ✅ done · 🔨 in progress · ⏳ next · 💤 deferred on purpose.  Last update: 2026-09-30, 01:10.
+Status: ✅ done · 🔨 in progress · ⏳ next · 💤 deferred on purpose.  Last update: 2026-09-30, 02:25.
 
 ## Done
 
@@ -77,12 +77,14 @@ Status: ✅ done · 🔨 in progress · ⏳ next · 💤 deferred on purpose.  L
     (`site/releases/<commit>`, `site/current`), deployed over SSH by CI; ⏳ **Samuel: point maia.city and www.maia.city
     at 188.245.31.46 (A records, Hetzner DNS; www's CNAME to Bunny goes)** — until then CI keeps Bunny current too;
     ⏳ then the Bunny account (CDN, storage, Stream) closed by Samuel. No published post streams from Bunny.
-14. b) 🔨 colour transforms in Rust: ✅ every input journey into ACEScct (`vault-media/src/cst.rs`: Rec.709, sRGB, HLG,
-    PQ, Apple Log, Apple Log 2, ACES2065-1, ACEScg, linear Rec.709 — within 1e-5 of OCIO 2.5.2 and colour-science),
-    ✅ on the GPU as a Core Image Metal kernel (`gpu.rs`, exact maths, no LUT); ⏳ the ACES 2.0 output transform
-    per display / render target; ⏳ Rec.709 sources: camera curve (now) or the inverse ODT (render worker) — Samuel's call
+14. b) 🔨 colour transforms in Rust, one model: ✅ every source through its journey into ACEScct (`cst.rs`, within 1e-5
+    of OCIO; Rec.709 and sRGB as camera curves — Samuel's call: the new workflow wins); ✅ on the GPU in the proxies;
+    ✅ the viewer's input LUTs baked by the Mac from `cst`; ✅ legacy deleted (inverse ODT, display bypass, `legacy`
+    profile, worker file proxies); 🔨 the ACES 2.0 output transform native (`aces2.rs`), verified against the worker's
+    baked LUT — then the worker bakes nothing
     c) ⏳ render: Metal compositing, audio mix, captions, loudness QC (`ebur128`)
-    d) ⏳ world plates and hero frames in the app's own WebView
+    d) 🔨 world plates and world-shot proxies in the app's own WebView (WebGL on Metal), encoded natively; the worker's
+    world-proxy path goes; later: the world on three's WebGPURenderer (4 custom GLSL shaders to port)
 15. ⏳ **Render test run**: Day 19 world timeline, an Apple Log 2 clip, Edit → Lock → Grade → Render — natively.
 21. 🔨 **Automatic proxies**: ✅ every video original gets one, all in ACEScct: probed, its colour told (the
     sample description's `logs` atom too — Apple Log 2 from the Blackmagic app), YCbCr → journey → Lanczos on the GPU,
