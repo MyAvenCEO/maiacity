@@ -10,6 +10,7 @@
 	import { evaluate } from './shots.js';
 	import { clockText, isWorld, ratio, raw } from './studio.svelte.js';
 	import Viewer from './Viewer.svelte';
+	import { nativeFrame } from './luts.js';
 	import { placeholder, worldUrl } from './world.svelte.js';
 
 	/** @typedef {import('$lib/auth/client').Shape} Shape */
@@ -33,6 +34,22 @@
 	const still = $derived(s.showStill ? s.stillOf(pic) : null);
 	/** @type {HTMLImageElement | null} */
 	let stillImg = $state(null);
+	// Grade on a still: the picture the Mac makes of it through the whole grade — secondaries, looks, finishing, what the
+	// render makes — over the live preview, a moment after anything about it changes
+	let nativeUrl = $state(/** @type {string | null} */ (null));
+	const nativeKey = $derived(still && pic && !s.falseColor ? JSON.stringify([still.hash, s.frameTimeline(pic), s.viewShape]) : '');
+	$effect(() => {
+		const k = nativeKey;
+		if (!k) return void (nativeUrl = null);
+		let live = true;
+		const t = setTimeout(() => {
+			const [h, tl, shape] = JSON.parse(k);
+			nativeFrame(tl, tl.clips[0].id, h, 1600, shape)
+				.then((u) => live && (nativeUrl = u))
+				.catch((e) => console.warn('viewer: the native frame', e));
+		}, 120);
+		return () => ((live = false), clearTimeout(t));
+	});
 	const source = $derived.by(() => {
 		if (!pic) return null;
 		if (still) return stillImg;
@@ -161,6 +178,9 @@
 			bind:plan
 			bind:supported={gl}
 		/>
+		{#if nativeUrl && nativeKey}
+			<img class="native" src={nativeUrl} alt="" />
+		{/if}
 		{#if pic?.kind === 'slate'}
 			<!-- a shot not filmed yet: its script, where the picture will be -->
 			<div class="slate">
@@ -346,6 +366,14 @@
 	.frame img,
 	.frame canvas.stand {
 		opacity: 0;
+	}
+
+	/* the Mac's own picture of the still, through the whole grade */
+	.frame img.native {
+		z-index: 1;
+		opacity: 1;
+		object-fit: fill;
+		pointer-events: none;
 	}
 
 	/* the badge row lets clicks through to the picture; the switch takes its own */

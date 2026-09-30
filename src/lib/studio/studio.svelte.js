@@ -465,6 +465,14 @@ export class Studio {
 	}
 	/** @type {Map<string, import('./luts.js').Lut | null>} */
 	#cubes = new Map();
+	/**
+	 * The timeline as far as one shot's picture needs it (the Mac's `color_frame`): the shot, and the film's grade.
+	 * @param {Clip} c
+	 */
+	frameTimeline(c) {
+		const t = this.current;
+		return { id: t?.id ?? 'studio', aspect: t?.aspect ?? '16:9', clips: [$state.snapshot(c)], grade: $state.snapshot(t?.grade ?? null) };
+	}
 	/** A clip's balance as the viewer shows it, on every tab. @param {Clip | null | undefined} c */
 	balanceOf(c) {
 		return c?.balance ?? null;

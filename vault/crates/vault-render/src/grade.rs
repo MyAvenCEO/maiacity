@@ -87,6 +87,7 @@ pub const REACH: f64 = 0.35;
 /// White balance → exposure → contrast → highlights / lows → saturation, every amount in stops (contrast: the slope
 /// around mid grey; saturation: the factor around luma, both minus 1, 0 = as shot). All 0: the picture as shot.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
 pub struct Balance {
     pub temp: f64,
     pub tint: f64,

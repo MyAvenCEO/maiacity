@@ -338,10 +338,15 @@ pub fn look(t: &Timeline, lib: &dyn Library, c: &Clip, output: &dyn Output, regi
     }
     drop(cct);
     let bal = balance.copied().or_else(|| c.balance()).unwrap_or_default();
-    let mut chain = gpu.balance(&framed, Some(&bal))?;
-    if looks && let Some((lut, _)) = crate::render::clip_cube(t, lib, c, output)? {
-        chain = gpu.apply_cube(&chain, &gpu.cube(&lut))?;
-    }
+    let chain = if looks {
+        // the whole chain, as the film shows it: the balance given (a proposal) in place of the clip's own
+        let mut c2 = c.clone();
+        c2.balance = Some(serde_json::to_value(bal)?);
+        let cube = crate::render::clip_cube(t, lib, c, output)?.map(|(lut, _)| gpu.cube(&lut));
+        crate::render::chain(&gpu, &framed, w, h, &c2, cube.as_ref(), t.finish().as_ref(), 0)?
+    } else {
+        gpu.balance(&framed, Some(&bal))?
+    };
     let after = gpu.output(&chain)?;
     let disp = rgb(&gpu, &after, w, h);
     let balanced = elements(&disp, &flags);
@@ -363,7 +368,7 @@ pub fn look(t: &Timeline, lib: &dyn Library, c: &Clip, output: &dyn Output, regi
         "skin_box": skin.as_ref().map(r3),
         "as_shot": as_shot,
         "balanced": balanced,
-        "through": if looks { "balance, grade and looks" } else { "balance" },
+        "through": if looks { "balance, secondaries, grade, looks and finishing" } else { "balance" },
         "balance": bal,
     });
     if let Some(o) = from.as_object() {
