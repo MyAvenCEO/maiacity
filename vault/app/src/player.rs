@@ -6,7 +6,6 @@
 //! studio's (Web Audio, the clock), the player follows it.
 
 use std::{
-    cell::RefCell,
     collections::HashMap,
     sync::{
         Arc,
@@ -24,62 +23,107 @@ use tauri::{
 
 use crate::{Res, err};
 
+/// The studio's player. Made and driven off the main thread: made on the main thread, an AVPlayer with no layer of its
+/// own renders no video at all (its composition is never asked for a frame, its output hands out nothing); off it,
+/// every frame comes (player_stream_check measured both).
 struct Native {
     player: Retained<AVPlayer>,
     /// the pump of the item playing now: stopped when another is loaded
     pump: Arc<AtomicBool>,
 }
 
-thread_local! {
-    /// The player: made, played and let go on the main thread only.
-    static NATIVE: RefCell<Option<Native>> = const { RefCell::new(None) };
+// SAFETY: AVPlayer is thread-safe for what is done with it here (items, seeks, rate), always under the mutex
+unsafe impl Send for Native {}
+
+static NATIVE: std::sync::Mutex<Option<Native>> = std::sync::Mutex::new(None);
+
+/// Where the studio last put the player (seconds, as f64 bits) and whether it plays: set again once an item is ready.
+static WANT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+static WANT_PLAYING: AtomicBool = AtomicBool::new(false);
+
+fn want(t: f64, playing: bool) {
+    WANT.store(t.to_bits(), Ordering::Relaxed);
+    WANT_PLAYING.store(playing, Ordering::Relaxed);
 }
 
-fn on_main(handle: &AppHandle, f: impl FnOnce() + Send + 'static) -> Res<()> {
-    handle.run_on_main_thread(f).map_err(err)
+/// The player where the studio wants it (its last play, stop or sync).
+fn apply_want() {
+    if let Some(native) = NATIVE.lock().unwrap().as_ref() {
+        seek(&native.player, f64::from_bits(WANT.load(Ordering::Relaxed)));
+        // SAFETY: a plain AVPlayer call
+        unsafe { native.player.setRate(if WANT_PLAYING.load(Ordering::Relaxed) { 1.0 } else { 0.0 }) };
+    }
 }
 
-#[link(name = "QuartzCore", kind = "framework")]
-unsafe extern "C" {
-    fn CACurrentMediaTime() -> f64;
-}
-
-/// The item's video output, handed to the pump's thread (AVFoundation makes it for a display link's thread).
-struct Output(Retained<AVPlayerItemVideoOutput>);
-// SAFETY: AVPlayerItemVideoOutput's frame methods are made to be called from another thread than the player's
+/// The item and its video output, handed to the pump's thread (AVFoundation makes the output for a display link's
+/// thread; the item's clock is read there too).
+struct Output(Retained<AVPlayerItemVideoOutput>, Retained<AVPlayerItem>);
+// SAFETY: AVPlayerItemVideoOutput's frame methods are made to be called from another thread than the player's, and
+// an item's clock can be read from any
 unsafe impl Send for Output {}
 
+impl Output {
+    /// Taken apart on the pump's thread (a method, so the closure moves the whole, Send, pair).
+    fn parts(self) -> (Retained<AVPlayerItemVideoOutput>, Retained<AVPlayerItem>) {
+        (self.0, self.1)
+    }
+}
+
+/// Where the pump's pictures go: false when nobody takes them any more.
+type Sink = Box<dyn FnMut(Vec<u8>, u32, u32) -> bool + Send>;
+
 /// Every frame the item's output has, as it has it (playing: each one; stopped: the one sought to), made into the
-/// still's kind of picture and sent to the viewer — until `stop`.
-fn pump(out: Output, frames: Channel<InvokeResponseBody>, stop: Arc<AtomicBool>) {
+/// still's kind of picture and handed to `sink` — until `stop`.
+fn pump(out: Output, mut sink: Sink, stop: Arc<AtomicBool>, on_ready: Box<dyn FnOnce() + Send>) {
     let spawned = std::thread::Builder::new().name("playback-frames".into()).spawn(move || {
-        let out = out.0;
+        let (out, item) = out.parts();
         let gpu = match vault_render::gpu::Gpu::new() {
             Ok(g) => g,
             Err(e) => return tracing::warn!("playback: no GPU for the frames: {e:#}"),
         };
-        let mut sent = 0u64;
+        let (started, mut any, mut told) = (std::time::Instant::now(), false, false);
+        let mut on_ready = Some(on_ready);
         while !stop.load(Ordering::Relaxed) {
+            // ready to play: sought again to where the studio wants it (a seek before that is lost, and the output
+            // then never hands a frame out)
+            // SAFETY: an item's status can be read from any thread
+            if on_ready.is_some() && unsafe { item.status() } == objc2_av_foundation::AVPlayerItemStatus::ReadyToPlay {
+                (on_ready.take().unwrap())();
+            }
             objc2::rc::autoreleasepool(|_| {
-                // SAFETY: the output's own frame calls, from the thread they are made for
+                // SAFETY: the output's and the item's own calls, from the thread the output's are made for
                 unsafe {
-                    let t = out.itemTimeForHostTime(CACurrentMediaTime());
+                    // the item's own clock: where it is, playing or stopped
+                    let t = item.currentTime();
                     if !out.hasNewPixelBufferForItemTime(t) {
+                        if !any && !told && started.elapsed().as_secs() >= 3 {
+                            told = true;
+                            let size = item.presentationSize();
+                            let tracks = item.tracks().count();
+                            let outputs = item.outputs().count();
+                            tracing::warn!(
+                                "playback: no frame in 3 s (item status {}, at {:.2} s, {:.0}×{:.0}, {tracks} tracks, {outputs} outputs, composition {})",
+                                item.status().0,
+                                t.seconds(),
+                                size.width,
+                                size.height,
+                                item.videoComposition().is_some()
+                            );
+                        }
                         return;
                     }
-                    let Some(pb) = out.copyPixelBufferForItemTime_itemTimeForDisplay(t, std::ptr::null_mut()) else { return };
+                    any = true;
+                    let mut shown = t;
+                    let Some(pb) = out.copyPixelBufferForItemTime_itemTimeForDisplay(t, &mut shown) else { return };
+                    // stopped, only the frame the studio stopped on: not the item's first one before its seek
+                    if !WANT_PLAYING.load(Ordering::Relaxed) && (shown.seconds() - f64::from_bits(WANT.load(Ordering::Relaxed))).abs() > 1.5 / 30.0 {
+                        return;
+                    }
                     let (w, h) = (objc2_core_video::CVPixelBufferGetWidth(&pb) as u32, objc2_core_video::CVPixelBufferGetHeight(&pb) as u32);
                     match gpu.jpeg_bytes(&gpu.frame(&pb), w, h) {
                         Ok(bytes) => {
-                            let size = bytes.len();
-                            if frames.send(InvokeResponseBody::Raw(bytes)).is_err() {
-                                // the viewer is gone
+                            if !sink(bytes, w, h) {
                                 stop.store(true, Ordering::Relaxed);
-                            } else {
-                                sent += 1;
-                                if sent == 1 {
-                                    tracing::info!("playback: frames to the viewer, {w}×{h}, {size} bytes the first");
-                                }
                             }
                         }
                         Err(e) => tracing::warn!("playback: a frame: {e:#}"),
@@ -91,6 +135,38 @@ fn pump(out: Output, frames: Channel<InvokeResponseBody>, stop: Arc<AtomicBool>)
     });
     if let Err(e) = spawned {
         tracing::warn!("playback: the frames' thread: {e}");
+    }
+}
+
+/// The frames to the viewer, over its channel (the first one logged).
+fn to_viewer(frames: Channel<InvokeResponseBody>) -> Sink {
+    let mut sent = 0u64;
+    Box::new(move |bytes, w, h| {
+        let size = bytes.len();
+        if frames.send(InvokeResponseBody::Raw(bytes)).is_err() {
+            return false;
+        }
+        sent += 1;
+        if sent == 1 {
+            tracing::info!("playback: frames to the viewer, {w}×{h}, {size} bytes the first");
+        }
+        true
+    })
+}
+
+/// A player item of `program`'s composition with a video output for the pump.
+///
+/// # Safety
+/// On the main thread.
+unsafe fn item_of(program: Arc<vault_render::player::Program>, mtm: MainThreadMarker) -> anyhow::Result<(Retained<AVPlayerItem>, Retained<AVPlayerItemVideoOutput>)> {
+    let (comp, video) = vault_render::player::composition(program)?;
+    // SAFETY: AVFoundation objects made on the main thread
+    unsafe {
+        let item = AVPlayerItem::playerItemWithAsset(&comp, mtm);
+        item.setVideoComposition(Some(&video));
+        let out = AVPlayerItemVideoOutput::initWithPixelBufferAttributes(AVPlayerItemVideoOutput::alloc(), None);
+        item.addOutput(&out);
+        Ok((item, out))
     }
 }
 
@@ -111,40 +187,36 @@ pub async fn player_load(
     crate::gate()?;
     let t: vault_render::Timeline = serde_json::from_value(timeline).map_err(err)?;
     let program = program(&app.vault, &t, &shape, &files, &profiles, width).await?;
-    on_main(&handle, move || {
-        let made = (|| -> anyhow::Result<()> {
-            let (comp, video) = vault_render::player::composition(program)?;
-            let mtm = MainThreadMarker::new().ok_or_else(|| anyhow::anyhow!("not on the main thread"))?;
-            // SAFETY: AVFoundation objects made and kept on the main thread (the output's frames read on the pump's)
-            unsafe {
-                let item = AVPlayerItem::playerItemWithAsset(&comp, mtm);
-                item.setVideoComposition(Some(&video));
-                let out = AVPlayerItemVideoOutput::initWithPixelBufferAttributes(AVPlayerItemVideoOutput::alloc(), None);
-                item.addOutput(&out);
-                let stop = Arc::new(AtomicBool::new(false));
-                NATIVE.with(|n| {
-                    let mut n = n.borrow_mut();
-                    match n.as_mut() {
-                        Some(native) => {
-                            native.pump.store(true, Ordering::Relaxed);
-                            native.player.replaceCurrentItemWithPlayerItem(Some(&item));
-                            native.pump = stop.clone();
-                        }
-                        None => {
-                            let player = AVPlayer::playerWithPlayerItem(Some(&item), mtm);
-                            player.setMuted(true);
-                            *n = Some(Native { player, pump: stop.clone() });
-                        }
+    let _ = handle;
+    tauri::async_runtime::spawn_blocking(move || -> anyhow::Result<()> {
+        // SAFETY: AVFoundation's player works off the main thread (see Native); objc2 asks for the marker only to be
+        // careful. The output's frames are read on the pump's thread.
+        unsafe {
+            let mtm = MainThreadMarker::new_unchecked();
+            let (item, out) = item_of(program, mtm)?;
+            let stop = Arc::new(AtomicBool::new(false));
+            {
+                let mut n = NATIVE.lock().unwrap();
+                match n.as_mut() {
+                    Some(native) => {
+                        native.pump.store(true, Ordering::Relaxed);
+                        native.player.replaceCurrentItemWithPlayerItem(Some(&item));
+                        native.pump = stop.clone();
                     }
-                });
-                pump(Output(out), frames, stop);
+                    None => {
+                        let player = AVPlayer::playerWithPlayerItem(Some(&item), mtm);
+                        player.setMuted(true);
+                        *n = Some(Native { player, pump: stop.clone() });
+                    }
+                }
             }
-            Ok(())
-        })();
-        if let Err(e) = made {
-            tracing::warn!("playback: {e:#}");
+            pump(Output(out, item.clone()), to_viewer(frames), stop, Box::new(apply_want));
         }
+        Ok(())
     })
+    .await
+    .map_err(err)?
+    .map_err(|e| format!("playback: {e:#}"))
 }
 
 /// The film as it plays: every picture clip on V1 with its file (`files`: its proxy, else its original) and that
@@ -181,13 +253,9 @@ pub(crate) async fn program(
     Ok(Arc::new(vault_render::player::Program { clips, finish: t.finish(), aspect: s.aspect.to_string(), width: w, height: h, output: crate::render::odt().clone() }))
 }
 
-/// What the Grade tab's playback shows, checked without a screen: the timeline's composition as the player plays it
-/// (each picture clip from its proxy, else its original — as the studio chooses), `n` frames from `t` read through it
-/// one after another as AVFoundation hands them to the player, each timed; then the composition played by an AVPlayer
-/// for two seconds and the frames it hands out counted (30 a second is real time). The first frame as a JPEG (tagged
-/// Rec.709, as the Grade viewer's stills are).
-pub(crate) async fn playback_frames(vault: &std::sync::Arc<vault_core::Vault>, timeline: Value, t: f64, n: usize, shape: Option<String>, originals: bool) -> Res<(Value, Vec<u8>)> {
-    let tl: vault_render::Timeline = serde_json::from_value(timeline).map_err(err)?;
+/// Per picture clip, the file the Grade tab plays (its proxy, as Picture: Proxy does; else, or with `originals`, the
+/// original) and that file's profile.
+async fn files_for(vault: &std::sync::Arc<vault_core::Vault>, tl: &vault_render::Timeline, originals: bool) -> Res<(HashMap<String, String>, HashMap<String, String>)> {
     let all = vault.catalog.list().await.map_err(|e| format!("{e:#}"))?;
     let (mut files, mut profiles) = (HashMap::new(), HashMap::new());
     for c in tl.clips.iter().filter(|c| c.track == "V1" && !c.is_world()) {
@@ -205,6 +273,81 @@ pub(crate) async fn playback_frames(vault: &std::sync::Arc<vault_core::Vault>, t
             }
         }
     }
+    Ok((files, profiles))
+}
+
+
+/// The Grade tab's playback, run as the studio runs it but headless, its pictures counted: the same item, output and
+/// pump (`item_of`, `pump`), made on the main thread; stopped on `t` at once as the studio does (the frames the pump
+/// hands on while stopped), then played two seconds (how many a second). The frozen picture as it would reach the
+/// viewer.
+pub(crate) async fn stream_check(handle: &AppHandle, vault: &std::sync::Arc<vault_core::Vault>, timeline: Value, t: f64, originals: bool) -> Res<(Value, Option<Vec<u8>>)> {
+    let tl: vault_render::Timeline = serde_json::from_value(timeline).map_err(err)?;
+    let (files, profiles) = files_for(vault, &tl, originals).await?;
+    let program = program(vault, &tl, "16:9", &files, &profiles, Some(1600)).await?;
+    let count = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let first: Arc<std::sync::Mutex<Option<Vec<u8>>>> = Arc::default();
+    let (c, f) = (count.clone(), first.clone());
+    let stopped_at = Arc::new(std::sync::Mutex::new(0usize));
+    let stopped_at2 = stopped_at.clone();
+    let (last, frozen) = (first.clone(), Arc::new(std::sync::Mutex::new(None::<Vec<u8>>)));
+    let frozen2 = frozen.clone();
+    let counted = count.clone();
+    let sink: Sink = Box::new(move |bytes, _, _| {
+        c.fetch_add(1, Ordering::Relaxed);
+        *f.lock().unwrap() = Some(bytes);
+        true
+    });
+    // made and driven off the main thread, as `playback_frames` does (which gets its frames)
+    let _ = handle;
+    let r = tauri::async_runtime::spawn_blocking(move || -> anyhow::Result<()> {
+        // SAFETY: AVFoundation's player works off the main thread; objc2 asks for the marker only to be careful
+        unsafe {
+            let mtm = MainThreadMarker::new_unchecked();
+            let (item, out) = item_of(program, mtm)?;
+            let player = AVPlayer::playerWithPlayerItem(Some(&item), mtm);
+            player.setMuted(true);
+            let stop = Arc::new(AtomicBool::new(false));
+            pump(Output(out, item.clone()), sink, stop.clone(), Box::new(|| {}));
+            let ready = std::time::Instant::now();
+            while item.status() != objc2_av_foundation::AVPlayerItemStatus::ReadyToPlay && ready.elapsed().as_secs_f64() < 5.0 {
+                std::thread::sleep(std::time::Duration::from_millis(10));
+            }
+            want(t, false);
+            player.setRate(0.0);
+            seek(&player, t);
+            std::thread::sleep(std::time::Duration::from_secs(2));
+            let stopped = counted.load(Ordering::Relaxed);
+            // the picture stopped on t: the one the viewer shows frozen
+            *frozen.lock().unwrap() = last.lock().unwrap().clone();
+            want(t, true);
+            player.setRate(1.0);
+            std::thread::sleep(std::time::Duration::from_secs(2));
+            want(t, false);
+            player.setRate(0.0);
+            stop.store(true, Ordering::Relaxed);
+            *stopped_at.lock().unwrap() = stopped;
+        }
+        Ok(())
+    })
+    .await
+    .map_err(err)?;
+    let stopped = *stopped_at2.lock().unwrap();
+    let played = count.load(Ordering::Relaxed) - stopped;
+    let made = std::sync::Mutex::new(r.err().map(|e| format!("{e:#}")));
+    let error = made.lock().unwrap().clone();
+    let pic = frozen2.lock().unwrap().take();
+    Ok((serde_json::json!({ "t": t, "error": error, "frames_while_stopped": stopped, "played_fps": played as f64 / 2.0 }), pic))
+}
+
+/// What the Grade tab's playback shows, checked without a screen: the timeline's composition as the player plays it
+/// (each picture clip from its proxy, else its original — as the studio chooses), `n` frames from `t` read through it
+/// one after another as AVFoundation hands them to the player, each timed; then the composition played by an AVPlayer
+/// for two seconds and the frames it hands out counted (30 a second is real time). The first frame as a JPEG (tagged
+/// Rec.709, as the Grade viewer's stills are).
+pub(crate) async fn playback_frames(vault: &std::sync::Arc<vault_core::Vault>, timeline: Value, t: f64, n: usize, shape: Option<String>, originals: bool) -> Res<(Value, Vec<u8>)> {
+    let tl: vault_render::Timeline = serde_json::from_value(timeline).map_err(err)?;
+    let (files, profiles) = files_for(vault, &tl, originals).await?;
     let shape = shape.unwrap_or_else(|| "16:9".into());
     let program = program(vault, &tl, &shape, &files, &profiles, Some(1600)).await?;
     let used: Value = serde_json::json!(files);
@@ -309,47 +452,33 @@ fn seek(player: &AVPlayer, t: f64) {
 
 /// Play from `time` (the studio's clock).
 #[tauri::command]
-pub fn player_play(handle: AppHandle, time: f64) -> Res<()> {
+pub fn player_play(time: f64) -> Res<()> {
     crate::gate()?;
-    on_main(&handle, move || {
-        NATIVE.with(|n| {
-            if let Some(native) = n.borrow().as_ref() {
-                seek(&native.player, time);
-                // SAFETY: a plain AVPlayer call on the main thread
-                unsafe { native.player.setRate(1.0) };
-            }
-        })
-    })
+    want(time, true);
+    apply_want();
+    Ok(())
 }
 
 /// Stop at `time`.
 #[tauri::command]
-pub fn player_pause(handle: AppHandle, time: f64) -> Res<()> {
+pub fn player_pause(time: f64) -> Res<()> {
     crate::gate()?;
-    on_main(&handle, move || {
-        NATIVE.with(|n| {
-            if let Some(native) = n.borrow().as_ref() {
-                // SAFETY: plain AVPlayer calls on the main thread
-                unsafe { native.player.setRate(0.0) };
-                seek(&native.player, time);
-            }
-        })
-    })
+    want(time, false);
+    apply_want();
+    Ok(())
 }
 
 /// Keep up with the studio's clock: put the picture back on `time` when it has drifted more than two frames from it.
 #[tauri::command]
-pub fn player_sync(handle: AppHandle, time: f64) -> Res<()> {
+pub fn player_sync(time: f64) -> Res<()> {
     crate::gate()?;
-    on_main(&handle, move || {
-        NATIVE.with(|n| {
-            if let Some(native) = n.borrow().as_ref() {
-                // SAFETY: plain AVPlayer calls on the main thread
-                let now = unsafe { native.player.currentTime().seconds() };
-                if (now - time).abs() > 2.0 / 30.0 {
-                    seek(&native.player, time);
-                }
-            }
-        })
-    })
+    WANT.store(time.to_bits(), Ordering::Relaxed);
+    if let Some(native) = NATIVE.lock().unwrap().as_ref() {
+        // SAFETY: plain AVPlayer calls (see Native)
+        let now = unsafe { native.player.currentTime().seconds() };
+        if (now - time).abs() > 2.0 / 30.0 {
+            seek(&native.player, time);
+        }
+    }
+    Ok(())
 }
