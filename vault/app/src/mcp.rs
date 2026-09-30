@@ -327,7 +327,7 @@ pub struct LookSetArgs {
     /// the scene whose look this is (as its clips name it in script.scene); none: the film's look
     pub scene: Option<String>,
     /// the look: { cdl?, preset?, contrast (−1…1), pivot (ACEScct, mid grey 0.414), split?: { shadows: { hue°, amount
-    /// 0…1 }, highlights: { hue°, amount }, balance −1…1 }, hue?: [[hue°, shift°]…], hue_sat?: [[hue°, factor]…], sat,
+    /// 0…1 }, highlights: { hue°, amount }, balance −1…1 }, hue?: [[hue°, shift°]…], hue_sat?: [[hue°, factor]…], hue_lum?: [[hue°, stops −2…2]…], sat,
     /// lut? (a .cube's hash, ACEScct in and out), strength 0…1 } — hues on the vectorscope (the skin line 123°);
     /// none: take it off
     pub look: Option<Value>,
