@@ -72,9 +72,9 @@
 	function onKey(e: KeyboardEvent) {
 		const target = e.target as HTMLElement | null;
 		if (target?.closest?.('input, textarea, select')) return;
-		if (e.altKey && ['Digit1', 'Digit2', 'Digit3', 'Digit4', 'Digit5'].includes(e.code)) {
+		if (e.altKey && ['Digit1', 'Digit2', 'Digit3', 'Digit4', 'Digit5', 'Digit6'].includes(e.code)) {
 			e.preventDefault();
-			const t = (['ingest', 'library', 'edit', 'grade', 'render'] as const)[Number(e.code.slice(-1)) - 1]!;
+			const t = (['ingest', 'library', '3d', 'edit', 'grade', 'render'] as const)[Number(e.code.slice(-1)) - 1]!;
 			if (t !== 'grade' || s.locked) s.tab = t;
 			return;
 		}
@@ -162,6 +162,13 @@
 			<Ingest />
 		{:else if s.tab === 'library'}
 			<Library />
+		{:else if s.tab === '3d'}
+			<!-- the live world: only here — Edit, Grade and Render show each world shot's HD proxy -->
+			<Bin {s} />
+			<div class="monitors">
+				<ProgramMonitor {s} label="3D · the live world" />
+			</div>
+			<Inspector {s} />
 		{:else if s.tab === 'edit'}
 			<Bin {s} />
 			<div class="monitors" class:split={!!s.preview}>

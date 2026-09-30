@@ -133,7 +133,7 @@
 					<li>
 						<span class="st {j.status}">{j.kind ?? 'render'}</span>
 						<span class="d">{j.status}{j.status === 'rendering' ? ` ${Math.round(j.progress * 100)}%` : ''}</span>
-						<span class="tgt">{j.timeline_id === s.current?.id ? 'this timeline' : (j.media_hash?.slice(0, 10) ?? j.timeline_id?.slice(0, 8) ?? '')}{j.kind === 'proxy' && j.media_hash ? ` · ${s.byHash.get(j.media_hash)?.title ?? ''}` : ''}</span>
+						<span class="tgt">{j.timeline_id === s.current?.id ? 'this timeline' : (j.timeline_id?.slice(0, 8) ?? '')}</span>
 					</li>
 				{/each}
 			</ul>

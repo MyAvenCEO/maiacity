@@ -62,7 +62,6 @@ const hasOcio = spawnSync("python3", ["-c", "import PyOpenColorIO, numpy"]).stat
 test.skipIf(!hasOcio)("a plate enters the timeline as ACEScct: identity input transform, then grade and the output transform", () => {
   const source = { profile: "acescct", coding: codingOf({ pix_fmt: "yuv420p10le", color_space: "bt709", height: 2160 }), width: 3840, height: 2160 } as any;
   const p = pieceFilters({ source, W: 3840, H: 2160, frames: 60, fps: 30, look: null });
-  expect(p.bypass).toBe(false);
   expect(Object.keys(p.used).sort()).toEqual(["idt-acescct", "odt-rec709"]);
   expect(p.filters.some((x) => x.startsWith("zscale=w="))).toBe(false); // native resolution: no scaling
   expect(p.filters.at(-2)).toBe("format=yuv420p10le");

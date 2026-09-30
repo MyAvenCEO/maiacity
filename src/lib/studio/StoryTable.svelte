@@ -82,16 +82,26 @@
 			const of = proxyOf(m);
 			if (of && here.has(of)) under.set(of, [...(under.get(of) ?? []), m]);
 		}
-		return list
+		const groups = list
 			.filter((m) => !(proxyOf(m) && here.has(proxyOf(m)!)))
-			.flatMap((m): Row[] => {
+			.map((m): Row[] => {
 				const kids: Row[] = under.get(m.hash) ?? [];
 				// a video original's proxy before it exists: its first step, rendering, as its own row
 				const due = m.kind === 'video' && classOf(m) === 'original' && !kids.length && (only === 'all' || only === 'proxy');
 				return [m, ...kids, ...(due ? [{ coming: m }] : [])];
-			})
+			});
+		// what is moving or rendering now on top, then what is not kept yet, then the rest — an original and its proxy
+		// always together
+		const rank = (g: Row[]) => (g.some(busy) ? 0 : g.some((r) => 'coming' in r || !kept(r)) ? 1 : 2);
+		return groups
+			.map((g, i) => ({ g, i, r: rank(g) }))
+			.sort((a, b) => a.r - b.r || a.i - b.i)
+			.flatMap(({ g }) => g)
 			.filter((r) => ('coming' in r ? true : only === 'all' || classOf(r) === only || (only === 'proxy' && !!proxyOf(r))));
 	});
+	/** a row that is moving (to any destination) or rendering right now */
+	const busy = (r: Row) =>
+		'coming' in r ? making.some((x) => x.of === r.coming.hash && x.stage === 'making') : moving.some((t) => t.hash === r.hash && !t.done && !t.aborted);
 	/** the rows that are files (a proxy still being made is not one yet) */
 	const files_ = $derived(rows.filter((r): r is MediaItem => !('coming' in r)));
 	/** a row: a file, or the proxy of an original that is still being made */

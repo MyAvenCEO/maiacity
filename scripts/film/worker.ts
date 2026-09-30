@@ -1,4 +1,4 @@
-// The render worker: exports the timelines the studio asks for, and makes world shots' proxies and preview LUTs.
+// The render worker: exports the timelines the studio asks for, and makes world shots' proxies and the preview ODT LUT.
 //
 //   bun film worker [--local]        (MAIACITY_API=… MAIACITY_KEY=… point it at another API)
 //
@@ -7,14 +7,15 @@
 //   render — the timeline exactly as it is edited, every clip where it sits, trimmed and levelled as set: pictures in
 //            their frame (16:9, 9:16, 1:1, 4:5), each shot cut hard into the next, the voice, music and sound clips
 //            mixed at their volumes, captions from the voice clips' own word timings. Colour-managed: every picture
-//            clip is read in float with its own matrix and range, taken into ACEScct by its input transform, cut in
-//            float, graded (its own CDL, then the film's look), taken out by the ACES 2.0 output transform to Rec.709,
-//            and only then do the graphics (captions, the hook) go on top. A display-referred clip with no grade under
-//            a neutral look bypasses both transforms and renders bit for bit as it was. Conform: originals only — a
-//            proxy on the timeline is swapped for its original. World clips (kind 'world') are rendered as ACEScct
-//            plates, one per delivery shape. Every delivery is QC'd (tags, bit depth, frames, length, limits, loudness)
-//            before it goes into the vault; the report names every transform by the hash of its config.
-//   lut    — the studio viewer's preview LUTs baked from the transform configs into the vault (also at start-up).
+//            clip is read in float with its own matrix and range, taken into ACEScct by its input transform (Rec.709
+//            video and sRGB stills too, by their camera curve; a clip of unknown colour as Rec.709, said in the
+//            report), cut in float, graded (its own CDL, then the film's look), taken out by the ACES 2.0 output
+//            transform to Rec.709, and only then do the graphics (captions, the hook) go on top. Conform: originals
+//            only — a proxy on the timeline is swapped for its original. World clips (kind 'world') are rendered as
+//            ACEScct plates, one per delivery shape. Every delivery is QC'd (tags, bit depth, frames, length, limits,
+//            loudness) before it goes into the vault; the report names every transform by the hash of its config.
+//   lut    — the studio viewer's preview output transform baked from its config into the vault (also at start-up);
+//            the input transforms' LUTs are the Mac app's (cst.rs).
 //   proxy  — of a world shot (shot_id + shot_version): the shot rendered as an HD ACEScct plate into the vault
 //            (role:proxy, meta.shot/shotVersion), so the studio can play a world clip while the live world loads.
 //            A file's own proxy is not a job: the Mac app makes it natively and names it in the original's meta.proxy.
@@ -210,7 +211,7 @@ async function render(job: Job) {
     if (sources.has(c.hash!)) continue;
     const m = media.get(originalOf(media, c.hash!))!;
     const s = sourceOf(files.get(c.hash!)!, m);
-    if (s.profile === "unknown") warnings.push(`${m.title || m.hash}: colour unknown (${s.color.detectedFrom}) — rendered as Rec.709; set it in the studio`);
+    if (s.profile === "unknown") warnings.push(`${m.title || m.hash}: colour unknown (${s.color.detectedFrom}) — taken as Rec.709 video (idt-rec709); set it in the studio`);
     sources.set(c.hash!, s);
   }
 
@@ -240,7 +241,6 @@ async function render(job: Job) {
   }
 
   const used: Record<string, string> = {};
-  let bypassed = 0, managed = 0;
   const outputs: Output[] = [];
   for (const [k, aspect] of shapes.entries()) {
     const span = 0.84 / shapes.length, from = 0.04 + k * span;
@@ -292,7 +292,6 @@ async function render(job: Job) {
       args.push(...inputArgs(src, from, frames / FPS + 0.5, FPS));
       const piece = pieceFilters({ source: src, grade: c.grade, look, frame: c.frame?.[aspect] ?? c.frame?.[aspect.replace(":", "x")], W, H, frames, fps: FPS });
       Object.assign(used, piece.used);
-      if (aspect === shapes[0]) piece.bypass ? bypassed++ : managed++;
       f.push(`[${n}:v]${piece.filters.join(",")}[q${i}]`);
       joins.push(`[q${i}]`);
       n++;
@@ -406,7 +405,7 @@ async function render(job: Job) {
 
   // into the vault, and onto the calendar (the job's report carries them): ready for the upload step
   await report(job.id, { note: "into the vault", progress: 0.94 });
-  const color = { working: "acescct", output: "odt-rec709", ocio: ocioVersion(), transforms: used, clips: { managed, bypassed }, look };
+  const color = { working: "acescct", output: "odt-rec709", ocio: ocioVersion(), transforms: used, look };
   // each file into the vault, described — tagged by what it is, never named (the name it came in as is only a fact)
   const title = `${t.project ?? ""} ${t.variant ?? ""} · ${t.name}`.trim();
   const deliveries = [];

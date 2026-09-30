@@ -6,15 +6,15 @@
 //   → ODT (ACES 2.0, Rec.709 SDR, a 129³ LUT baked from OCIO now) → Rec.709 display code values
 //   → YUV 4:2:0 10-bit, BT.709 matrix, TV range.
 //
-// A display-referred clip (Rec.709, sRGB, legacy) with no clip grade and a neutral film look takes the bypass: its
-// code values go straight to the output in YUV, never through RGB, so it renders exactly as it was.
+// Every clip takes that one path, whatever it is: Rec.709 video and sRGB stills too, by their camera-curve journey
+// into ACEScct (cst.rs). A clip whose colour is unknown is taken as Rec.709.
 import { execFileSync, spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, renameSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { PROFILES, cdl, isNeutral, satMatrix } from '../../../game/film/color.js';
-import { AP0_TO_AP1, displayChain, hashOf, hlgToScene, HLG_SCALE, LUT_SIZE, pqToNits, PQ_SCALE, RENDER_LUT_SIZE, SHAPER, shaperToCct, TRANSFORMS } from '../../../game/film/transforms.js';
+import { AP0_TO_AP1, DECODE, hashOf, LUT_SIZE, RENDER_LUT_SIZE, SHAPER, shaperToCct, TRANSFORMS } from '../../../game/film/transforms.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 export const BAKE = resolve(HERE, 'bake.py');
@@ -129,9 +129,12 @@ export function idtFilters(name) {
 	if (config.kind === 'math') {
 		/** @type {string[]} */
 		const filters = [];
+		const decode = DECODE[config.decode];
+		if (!decode) throw new Error(`${name}: no curve '${config.decode}' to decode`);
+		// the curve (× scale) as a 1D LUT over the code values 0…1; linear light needs none
 		if (config.decode !== 'linear') {
-			const decode = config.decode === 'hlg' ? (/** @type {number} */ v) => hlgToScene(v) * config.scale : (/** @type {number} */ v) => pqToNits(v) * config.scale;
-			filters.push(`lut1d=file=${q(curveLut({ decode: config.decode, scale: config.scale }, (v) => { const x = decode(v); return [x, x, x]; }).file)}:interp=linear`);
+			const lut = curveLut({ decode: config.decode, scale: config.scale }, (v) => { const x = decode(v) * config.scale; return [x, x, x]; });
+			filters.push(`lut1d=file=${q(lut.file)}:interp=linear`);
 		}
 		if (config.matrix) filters.push(matrixFilter(config.matrix));
 		const shaper = linearToCct();
@@ -217,39 +220,15 @@ export function toFloat(/** @type {ReturnType<typeof codingOf>} */ c) {
 /** Display RGB (float, 0…1) → the timeline's YUV: 4:2:0 10-bit, BT.709 matrix, TV range. */
 export const floatToYuv = () => ['zscale=m=709:r=limited:d=ordered', 'format=yuv420p10le', SETPARAMS];
 
-/** A display-referred picture straight into the timeline's YUV (the bypass): matrix and range made BT.709 / TV. */
-export function bypassToYuv(/** @type {ReturnType<typeof codingOf>} */ c) {
-	if (c.rgb) return [`zscale=rin=full:m=709:r=limited:d=ordered`, 'format=yuv420p10le', SETPARAMS];
-	return [`zscale=min=${c.matrix}:rin=${c.range}:m=709:r=limited`, 'format=yuv420p10le', SETPARAMS];
-}
-
-/** Whether a clip takes the bypass: display-referred (or unknown), no grade of its own, no film look. */
-export function bypasses(/** @type {Profile | 'unknown'} */ profile, /** @type {Cdl | null | undefined} */ grade, /** @type {Cdl | null | undefined} */ look) {
-	const display = profile === 'unknown' || PROFILES[profile].display;
-	return display && isNeutral(grade) && isNeutral(look);
-}
-
 /**
- * Everything that happens to one clip's picture in the colour-managed path, as filter parts around the geometry:
- * `before` (to ACEScct, float), `after` (grades, ODT, to YUV) — or the bypass. The transforms used, by name → hash.
+ * Everything that happens to one clip's picture, as filter parts around the geometry: `before` (to ACEScct, float),
+ * `after` (grades, ODT, to YUV); the transforms used, by name → hash. An unknown profile is taken as Rec.709.
  * @param {{ profile: Profile | 'unknown', coding: ReturnType<typeof codingOf>, grade?: Cdl | null, look?: Cdl | null }} o
  */
 export function clipColor(o) {
 	/** @type {Record<string, string>} */
 	const used = {};
-	if (bypasses(o.profile, o.grade, o.look)) return { bypass: true, before: [], after: bypassToYuv(o.coding), used };
-	const profile = o.profile === 'unknown' ? 'rec709' : o.profile;
-	if (PROFILES[profile].display) {
-		// a graded display-referred clip: inverse ODT → its grade → the look → ODT, as one LUT baked now
-		const grade = isNeutral(o.grade) ? null : o.grade, look = isNeutral(o.look) ? null : o.look;
-		const { file, hash } = bakedLut(displayChain(grade, look), { name: 'display-chain', size: RENDER_LUT_SIZE });
-		used['idt-rec709'] = hashOf(TRANSFORMS['idt-rec709']);
-		if (grade) used['grade:clip'] = hashOf(grade);
-		if (look) used['grade:look'] = hashOf(look);
-		used['odt-rec709'] = hashOf(TRANSFORMS['odt-rec709']);
-		used['chain:display'] = hash;
-		return { bypass: false, before: toFloat(o.coding), after: [`lut3d=file=${q(file)}:interp=tetrahedral`, ...floatToYuv()], used };
-	}
+	const profile = o.profile in PROFILES ? /** @type {Profile} */ (o.profile) : 'rec709';
 	const idtName = /** @type {TransformName} */ (PROFILES[profile].idt ?? 'idt-acescct');
 	const idt = idtFilters(idtName);
 	used[idtName] = idt.hash;
@@ -258,30 +237,8 @@ export function clipColor(o) {
 	if (look.hash) used['grade:look'] = look.hash;
 	used['odt-rec709'] = odt.hash;
 	return {
-		bypass: false,
 		before: [...toFloat(o.coding), ...idt.filters],
 		after: [...clip.filters, ...look.filters, ...odt.filters, ...floatToYuv()],
 		used
 	};
-}
-
-/**
- * The picture of a proxy: scene-referred sources into their proxy profile (revised rule 2) as float RGB code values,
- * then 10-bit YUV (BT.709 matrix, TV range). Log stays its own log, linear and HDR go to ACEScct by exact maths,
- * display stays display.
- * @param {Profile | 'unknown'} profile @param {ReturnType<typeof codingOf>} coding
- */
-export function proxyColor(profile, coding) {
-	/** @type {Record<string, string>} */
-	const used = {};
-	if (profile === 'unknown' || PROFILES[profile].proxy === profile) {
-		// a float file already in its log (rare): code values as they are
-		if (coding.float) return { log: ['format=gbrpf32le'], yuv: floatToYuv(), filters: ['format=gbrpf32le', ...floatToYuv()], used };
-		return { log: [], yuv: bypassToYuv(coding), filters: bypassToYuv(coding), used };
-	}
-	const name = /** @type {TransformName} */ (PROFILES[profile].idt);
-	const idt = idtFilters(name);
-	used[name] = idt.hash;
-	const log = [...toFloat(coding), ...idt.filters];
-	return { log, yuv: floatToYuv(), filters: [...log, ...floatToYuv()], used };
 }

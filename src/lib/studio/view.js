@@ -11,23 +11,16 @@ import { ODT, profileInfo } from './color.js';
  */
 
 /**
- * The plan for one picture.
- *  - Display-referred (Rec.709, sRGB, legacy) and ungraded: straight through, as the render leaves it (C5).
- *  - Display-referred and graded: in through idt-rec709, graded, out through odt-rec709; both by formula when either
- *    LUT is missing (the formula pair is its own exact inverse, so an ungraded part still looks right).
- *  - ACEScct (world renders, log proxies): no input transform; out through odt-rec709, or by formula without it.
- *  - Camera log and HDR (Apple Log, HLG, PQ …): in through their IDT LUT; without it the log signal itself shows.
+ * The plan for one picture — one path for all: in through its journey into ACEScct (the input LUT the Mac bakes from
+ * the same maths it makes the proxies with), graded, out through odt-rec709.
+ *  - ACEScct (every proxy, world renders): no input transform; out through odt-rec709, or by formula without it.
+ *  - Everything else (Rec.709, sRGB, camera log, HDR …): in through its input LUT; without it the signal itself shows,
+ *    and the viewer says so.
  */
 /** @param {string} profile @param {Cdl[]} grades @param {Record<string, Lut | null>} luts @returns {ViewPlan} */
 export function viewPlan(profile, grades, luts) {
 	const info = profileInfo(profile);
 	const odtLut = luts[ODT] ?? null;
-	if (info.display) {
-		if (!grades.length) return { idt: 0, odt: 0, idtLut: null, odtLut: null, note: null, exact: true };
-		const idtLut = info.idt ? (luts[info.idt] ?? null) : null;
-		if (idtLut && odtLut) return { idt: 1, odt: 1, idtLut, odtLut, note: null, exact: true };
-		return { idt: 2, odt: 2, idtLut: null, odtLut: null, note: 'Approximate view: no preview LUTs yet (formula transforms)', exact: false };
-	}
 	if (profile === 'acescct') {
 		return odtLut
 			? { idt: 0, odt: 1, idtLut: null, odtLut, note: null, exact: true }

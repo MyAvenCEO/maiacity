@@ -4,9 +4,11 @@
 // which exact maths (a 3×3 matrix and a curve). Nothing is baked in advance and nothing baked is ever committed or
 // kept as a library asset of its own: the render worker makes a LUT from a config only while it renders
 // (`python3 scripts/film/color/bake.py --config '<json>' …`), cached on its own disk by `hashOf(config)` together
-// with the OCIO version and the LUT size. The one exception is the studio viewer's *preview* LUTs: the worker bakes
-// them from the same configs and puts them in the library as cache files (tag `role:lut`, meta
-// `{ transform, hash, size, format }`), found through `GET /api/film/luts`.
+// with the OCIO version and the LUT size. The one exception is the studio viewer's *preview* output transform: the
+// worker bakes it from the same config and puts it in the library as a cache file (tag `role:lut`, meta
+// `{ transform, hash, size, format }`), found through `GET /api/film/luts`. The input transforms (every source's
+// colour journey into ACEScct) have their native twin in vault/crates/vault-media/src/cst.rs, which the Mac app bakes
+// the viewer's input LUTs and makes every proxy from: the maths here and there is the same, formula for formula.
 //
 // Shared by the render worker (Bun), the film scripts, and the studio (browser): plain JS, no imports but color.js.
 
@@ -51,13 +53,34 @@ export const AWG_TO_AP0 = [
 	[-0.021989789359883, -0.028989104971474, 1.050978894331358]
 ];
 
-// ── HDR signals as scene light ───────────────────────────────────────────────────────────────────────────────────
+// ── video curves as scene light ─────────────────────────────────────────────────────────────────────────────────
+// Every video signal is taken as what a camera saw, never as what a screen shows: its curve undone to scene-linear
+// light, then its primaries into AP1, then the ACEScct curve (cst.rs `journey`). Pure maths, no tone mapping.
+
+/**
+ * A power curve with an offset and a linear toe that meets it smoothly (OCIO's ExponentWithLinearTransform, the
+ * "moncurve" of the ACES CTL), code value → linear light. Below 0 the toe carries on straight. cst.rs `mon_curve`.
+ * @param {number} v @param {number} gamma @param {number} offset
+ */
+export function monCurve(v, gamma, offset) {
+	const brk = offset / (gamma - 1);
+	if (v >= brk) return Math.pow((v + offset) / (1 + offset), gamma);
+	return v * ((gamma - 1) / offset) * Math.pow((offset * gamma) / ((gamma - 1) * (1 + offset)), gamma);
+}
+/**
+ * Rec.709 video → scene light: the BT.709 camera curve undone (1/0.45 power, 0.099 offset, the toe joined
+ * continuously — slope ≈ 4.514, not BT.709's rounded 4.5 / 0.018). The ACES studio config's "Camera Rec.709".
+ */
+export const rec709ToScene = (/** @type {number} */ v) => monCurve(v, 1 / 0.45, 0.099);
+/** sRGB → linear light: IEC 61966-2-1 decoded the same way (2.4 power, 0.055 offset, continuous toe). */
+export const srgbToScene = (/** @type {number} */ v) => monCurve(v, 2.4, 0.055);
+
 // HLG and PQ are brought in as scene-linear light with 18% grey where ITU-R BT.2408 puts it (HLG 38% signal; PQ
-// 26 cd/m²), so an HDR clip meters like a camera clip on the timeline. Pure maths, reversible, no tone mapping.
+// 26 cd/m²), so an HDR clip meters like a camera clip on the timeline. Reversible, no tone mapping.
 
 const HLG_A = 0.17883277, HLG_B = 1 - 4 * 0.17883277, HLG_C = 0.5 - 0.17883277 * Math.log(4 * 0.17883277);
-/** HLG signal (0…1) → scene light E (0…1), ITU-R BT.2100 inverse OETF. */
-export const hlgToScene = (/** @type {number} */ v) => (v <= 0.5 ? (v * v) / 3 : (Math.exp((v - HLG_C) / HLG_A) + HLG_B) / 12);
+/** HLG signal (0…1) → scene light E (0…1), ITU-R BT.2100 inverse OETF; below 0 held at 0. */
+export const hlgToScene = (/** @type {number} */ v) => (v <= 0 ? 0 : v <= 0.5 ? (v * v) / 3 : (Math.exp((v - HLG_C) / HLG_A) + HLG_B) / 12);
 /** HLG scene light → linear with 18% grey at BT.2408's 38% signal. */
 export const HLG_SCALE = 0.18 / hlgToScene(0.38);
 
@@ -75,30 +98,31 @@ export const nitsToPq = (/** @type {number} */ n) => {
 /** PQ cd/m² → linear with 18% grey at BT.2408's 26 cd/m². */
 export const PQ_SCALE = 0.18 / 26;
 
+/**
+ * The curves of the `math` input transforms, by name: code value → linear light (before the config's scale).
+ * @type {Record<'linear' | 'rec709' | 'srgb' | 'hlg' | 'pq', (v: number) => number>}
+ */
+export const DECODE = { linear: (v) => v, rec709: rec709ToScene, srgb: srgbToScene, hlg: hlgToScene, pq: pqToNits };
+
 // ── the configs ──────────────────────────────────────────────────────────────────────────────────────────────────
 
 /**
  * @typedef {number[][]} Matrix3
  * @typedef {{ kind: 'identity' }} IdentityConfig
- * @typedef {{ kind: 'ocio-view', config: string, colorspace: string, display: string, view: string, direction: 'forward' | 'inverse' }} ViewConfig
- *   OCIO display/view: forward takes `colorspace` to the display; inverse takes display code values back into it.
+ * @typedef {{ kind: 'ocio-view', config: string, colorspace: string, display: string, view: string, direction: 'forward' }} ViewConfig
+ *   OCIO display/view: takes `colorspace` to the display.
  * @typedef {{ kind: 'ocio-convert', config: string, src: string, dst: string }} ConvertConfig
  * @typedef {{ kind: 'ocio-group', config: string, steps: ({ builtin: string } | { matrix: Matrix3 } | { convert: [string, string] })[], source: string }} GroupConfig
  *   A chain of OCIO pieces (a builtin curve, a matrix, a colour-space conversion), for a transform the config lacks.
- * @typedef {{ kind: 'math', decode: 'linear' | 'hlg' | 'pq', scale: number, matrix: Matrix3 | null, to: 'acescct' }} MathConfig
- *   Exact maths: the signal decoded to linear light (× scale), a 3×3 into AP1, then the ACEScct curve. No LUT
- *   over the whole cube, so nothing clips: linear sources keep every highlight.
- * @typedef {{ kind: 'cdl', cdl: import('./color.js').Cdl }} CdlConfig
- *   An ASC CDL in ACEScct: the maths of cdl() in color.js.
- * @typedef {{ kind: 'chain', steps: (ViewConfig | ConvertConfig | GroupConfig | CdlConfig)[] }} ChainConfig
- *   Several transforms one after the other, baked into one LUT at render time (a graded display-referred clip:
- *   inverse output transform → its grade → the film's look → output transform, display in, display out).
- * @typedef {IdentityConfig | ViewConfig | ConvertConfig | GroupConfig | MathConfig | CdlConfig | ChainConfig} TransformConfig
+ * @typedef {{ kind: 'math', decode: keyof typeof DECODE, scale: number, matrix: Matrix3 | null, to: 'acescct' }} MathConfig
+ *   Exact maths: the signal decoded to linear light by its curve in DECODE (× scale), a 3×3 into AP1, then the
+ *   ACEScct curve. No LUT over the whole cube, so nothing clips: linear sources keep every highlight.
+ * @typedef {IdentityConfig | ViewConfig | ConvertConfig | GroupConfig | MathConfig} TransformConfig
  */
 
 /**
- * @typedef {'idt-acescct' | 'odt-rec709' | 'idt-rec709' | 'idt-apple-log' | 'idt-apple-log-2' | 'idt-aces2065-1' | 'idt-acescg'
- *   | 'idt-linear-rec709' | 'idt-hlg' | 'idt-pq'} TransformName
+ * @typedef {'idt-acescct' | 'odt-rec709' | 'idt-rec709' | 'idt-srgb' | 'idt-apple-log' | 'idt-apple-log-2' | 'idt-aces2065-1'
+ *   | 'idt-acescg' | 'idt-linear-rec709' | 'idt-hlg' | 'idt-pq'} TransformName
  */
 
 /**
@@ -109,10 +133,9 @@ export const TRANSFORMS = {
 	'idt-acescct': { kind: 'identity' },
 	// the output transform: the timeline (ACEScct) to what every delivery shows
 	'odt-rec709': { kind: 'ocio-view', config: OCIO_CONFIG, colorspace: 'ACEScct', display: DISPLAY, view: VIEW, direction: 'forward' },
-	// its inverse: a display-referred picture (Rec.709 video, sRGB stills, the old graded shots) into the timeline, so
-	// that it comes out of the output transform as it went in (used only when such a clip is graded — ungraded, it
-	// bypasses both transforms and renders bit for bit as before)
-	'idt-rec709': { kind: 'ocio-view', config: OCIO_CONFIG, colorspace: 'ACEScct', display: DISPLAY, view: VIEW, direction: 'inverse' },
+	// Rec.709 video and sRGB pictures: their camera curve undone, Rec.709 primaries → AP1 (Bradford), ACEScct
+	'idt-rec709': { kind: 'math', decode: 'rec709', scale: 1, matrix: REC709_TO_AP1, to: 'acescct' },
+	'idt-srgb': { kind: 'math', decode: 'srgb', scale: 1, matrix: REC709_TO_AP1, to: 'acescct' },
 	'idt-apple-log': { kind: 'ocio-convert', config: OCIO_CONFIG, src: 'Apple Log', dst: 'ACEScct' },
 	'idt-apple-log-2': {
 		kind: 'ocio-group',
@@ -129,39 +152,19 @@ export const TRANSFORMS = {
 	'idt-pq': { kind: 'math', decode: 'pq', scale: PQ_SCALE, matrix: REC2020_TO_AP1, to: 'acescct' }
 };
 
-/** The output transform every delivery goes through today. */
-export const ODT_NAME = 'odt-rec709';
-
 /**
- * A graded display-referred clip as one transform: into ACEScct by the inverse output transform, its own grade, the
- * film's look, and out again — baked into a single display → display LUT at render time. Two separate 65³ LUTs lose
- * up to ~25 code values on saturated colours (the ACES 2.0 output transform is steep there); the composite, being
- * near the identity for a mild grade, stays within a code value or two of OCIO.
- * @param {import('./color.js').Cdl | null | undefined} grade @param {import('./color.js').Cdl | null | undefined} look
- * @returns {ChainConfig}
- */
-export function displayChain(grade, look) {
-	/** @type {ChainConfig['steps']} */
-	const steps = [/** @type {ViewConfig} */ (TRANSFORMS['idt-rec709'])];
-	for (const g of [grade, look]) if (g) steps.push({ kind: 'cdl', cdl: g });
-	steps.push(/** @type {ViewConfig} */ (TRANSFORMS[ODT_NAME]));
-	return { kind: 'chain', steps };
-}
-
-/**
- * The transforms the studio's viewer needs as preview LUTs: the output transform, and the input transform of every
- * profile a *proxy* can be in that is not ACEScct already (display-referred proxies when graded, camera log).
- * Linear and HDR sources never need one: their proxies are ACEScct (maths at proxy time).
+ * The transforms the render worker bakes as the studio viewer's preview LUTs: the output transform only (the ACES 2.0
+ * output transform is OCIO's, not native yet). Every input transform's LUT the Mac app bakes itself, from cst.rs.
  * @type {TransformName[]}
  */
-export const PREVIEW = ['odt-rec709', 'idt-rec709', 'idt-apple-log', 'idt-apple-log-2'];
+export const PREVIEW = ['odt-rec709'];
 
 /** The size a preview LUT is baked at: 65³ (99% of realistic colours within ~2 10-bit code values of OCIO). */
 export const LUT_SIZE = 65;
 /**
- * The size the final render's 3D LUTs (the output transform, the display chain) are baked at: 129³. ACES 2.0's
- * output transform bends hard near the edge of the display gamut, so fully saturated colours need the finer grid
- * (a colour-bar test: median 44 → 26 10-bit code values off OCIO, worst 270 → 93). It costs ~2 s per ffmpeg run.
+ * The size the final render's output transform LUT is baked at: 129³. ACES 2.0's output transform bends hard near the
+ * edge of the display gamut, so fully saturated colours need the finer grid (a colour-bar test: median 44 → 26 10-bit
+ * code values off OCIO, worst 270 → 93). It costs ~2 s per ffmpeg run.
  */
 export const RENDER_LUT_SIZE = 129;
 

@@ -33,6 +33,8 @@ pub async fn publish(db: &Client, key: &str, value: &str) -> Result<()> {
 
 /// One catalog entry's description, mirrored.
 pub async fn mirror(db: &Client, meta: &serde_json::Value, stored: bool) -> Result<()> {
+    // Postgres keeps no NUL in text or jsonb (some cameras write them into their metadata): dropped here
+    let meta = &without_nul(meta.clone());
     let s = |k: &str| meta.get(k).and_then(|v| v.as_str()).unwrap_or("").to_string();
     let hash = s("hash");
     let size = meta.get("size").and_then(|v| v.as_i64()).unwrap_or(0);
@@ -60,4 +62,15 @@ pub async fn stored(db: &Client, hash: &str) -> Result<()> {
 pub async fn public(db: &Client, hash: &str) -> Result<Option<(bool, String)>> {
     let row = db.query_opt("SELECT public, mime FROM vault_files WHERE hash = $1", &[&hash]).await?;
     Ok(row.map(|r| (r.get(0), r.get(1))))
+}
+
+/// A JSON value with every NUL taken out of its strings (and keys).
+fn without_nul(v: serde_json::Value) -> serde_json::Value {
+    use serde_json::Value;
+    match v {
+        Value::String(s) => Value::String(s.replace('\0', "")),
+        Value::Array(a) => Value::Array(a.into_iter().map(without_nul).collect()),
+        Value::Object(o) => Value::Object(o.into_iter().map(|(k, v)| (k.replace('\0', ""), without_nul(v))).collect()),
+        other => other,
+    }
 }

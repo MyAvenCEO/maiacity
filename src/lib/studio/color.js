@@ -1,15 +1,11 @@
 // The studio's side of the colour standard (contract C5): what each picture is, how the viewer brings it in, and the
 // grades as data. The maths and the tables live in game/film/color.js (stream A) — imported, never copied.
-import { PROFILES, profileOf, proxyProfileOf as proxyOf, NEUTRAL, isNeutral, cleanCdl, PRESETS, cdl, ODT } from '../../../game/film/color.js';
+import { PROFILES, profileOf, NEUTRAL, isNeutral, cleanCdl, PRESETS, cdl, ODT } from '../../../game/film/color.js';
 
 export { PROFILES, profileOf, NEUTRAL, isNeutral, cleanCdl, PRESETS, cdl, ODT };
 
-/**
- * The profile a file's HD proxy is encoded in (revised rule 2: log stays its own log, linear and HDR become ACEScct,
- * display stays display) — color.js's rule; anything it does not know is passed through.
- * @param {string} p @returns {string}
- */
-export const proxyProfileOf = (p) => (p in PROFILES ? proxyOf(/** @type {import('../../../game/film/color.js').Profile} */ (p)) : p);
+/** The working space — and so every proxy's colour: the Mac takes each source through its journey into it. */
+export const WORKING = 'acescct';
 
 /**
  * A moving picture, whatever its container: a video file, or an EXR sequence (a tar of frames, `meta.sequence: 'exr'`,
@@ -32,7 +28,7 @@ export const asStudio = (media) => media.map((m) => (m.kind !== 'video' && isVid
 /** @typedef {import('$lib/auth/client').Timeline} Timeline */
 /** @typedef {import('$lib/auth/client').TimelineClip} TimelineClip */
 /** @typedef {import('$lib/auth/client').RenderJob} RenderJob */
-/** @typedef {{ label: string, idt: string | null, display: boolean, log: boolean }} ProfileInfo */
+/** @typedef {{ label: string, idt: string | null, log: boolean }} ProfileInfo */
 /** @typedef {'ready' | 'none' | 'queued' | 'rendering' | 'failed' | 'n/a'} ProxyState */
 
 /**
@@ -40,11 +36,11 @@ export const asStudio = (media) => media.map((m) => (m.kind !== 'video' && isVid
  * @type {Record<string, ProfileInfo>}
  */
 const EXTRA = {
-	unknown: { label: 'Unknown — say what it is', idt: null, display: false, log: false }
+	unknown: { label: 'Unknown — say what it is', idt: null, log: false }
 };
 /** @param {string} p @returns {ProfileInfo} */
 export const profileInfo = (p) =>
-	/** @type {Record<string, ProfileInfo>} */ (PROFILES)[p] ?? EXTRA[p] ?? { label: p, idt: null, display: false, log: false };
+	/** @type {Record<string, ProfileInfo>} */ (PROFILES)[p] ?? EXTRA[p] ?? { label: p, idt: null, log: false };
 /** The choices of the override menu, in the order a colourist thinks of them. */
 export const PROFILE_CHOICES = [...new Set([...Object.keys(PROFILES), ...Object.keys(EXTRA)])];
 
@@ -53,7 +49,6 @@ const SHORT = {
 	acescct: 'CCT',
 	rec709: '709',
 	srgb: 'sRGB',
-	legacy: 'Legacy',
 	hlg: 'HLG',
 	pq: 'PQ',
 	'apple-log': 'A-Log',
@@ -82,26 +77,23 @@ export const colorOf = (m) => {
 export function profileFor(m) {
 	const c = colorOf(m);
 	if (c) return { profile: /** @type {string} */ (profileOf(/** @type {any} */ (c))), guessed: false, override: !!c.override };
-	// no meta.color yet (made before ingest detected colour): stills are sRGB, video is display-referred Rec.709 —
-	// what every file in the library was until the log pipeline (the worker's detection replaces this)
+	// no meta.color yet (the Mac reads it when it makes the proxy): stills are sRGB, video Rec.709 until then
 	return { profile: m?.kind === 'image' ? 'srgb' : m?.kind === 'video' ? 'rec709' : 'unknown', guessed: true, override: false };
 }
 
 // ── proxies (M2 / C6): the Edit tab plays only these ─────────────────────────────────────────────────────────────
 
 /**
- * A file's HD proxy: its hash when the worker has made one (meta.proxy), else what its job says.
- * @param {MediaItem | undefined} m @param {Map<string, { status: string }>} [jobs]
+ * A file's HD proxy: its hash when the Mac has made one (meta.proxy — an ACEScct file of ours; a proxy of the old
+ * render worker, in its source's own encoding, counts as none: the Mac makes a new one).
+ * @param {MediaItem | undefined} m @param {(hash: string) => MediaItem | undefined} find
  * @returns {{ hash: string | null, state: ProxyState }}
  */
-export function proxyFor(m, jobs) {
+export function proxyFor(m, find) {
 	if (!m || !isVideo(m)) return { hash: null, state: 'n/a' };
-	// the Mac writes meta.proxy only as the proxy's hash, or "failed: …" when it could not make one
 	const p = m.meta?.proxy;
-	if (typeof p === 'string' && /^[0-9a-f]{64}$/.test(p)) return { hash: p, state: 'ready' };
+	if (typeof p === 'string' && /^[0-9a-f]{64}$/.test(p)) return colorOf(find(p))?.profile === WORKING ? { hash: p, state: 'ready' } : { hash: null, state: 'none' };
 	if (typeof p === 'string' && p.startsWith('failed')) return { hash: null, state: 'failed' };
-	const job = jobs?.get(m.hash);
-	if (job?.status === 'queued' || job?.status === 'rendering' || job?.status === 'failed') return { hash: null, state: job.status };
 	return { hash: null, state: 'none' };
 }
 /**

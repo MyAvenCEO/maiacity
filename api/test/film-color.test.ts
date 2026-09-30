@@ -5,8 +5,11 @@ import { spawnSync } from "node:child_process";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { cdl, cleanCdl, detect, exrHeader, exrProfile, fromCct, isNeutral, MID_GREY_CCT, PRESETS, PROFILES, profileOf, proxyProfileOf, toCct } from "../../game/film/color.js";
-import { canonical, displayChain, hashOf, HLG_SCALE, hlgToScene, nitsToPq, OCIO_CONFIG, parseLut, pqToNits, PREVIEW, sha256, SHAPER, shaperToCct, TRANSFORMS } from "../../game/film/transforms.js";
+import { cdl, cleanCdl, detect, exrHeader, exrProfile, fromCct, isNeutral, MID_GREY_CCT, PRESETS, PROFILES, profileOf, REC709_TO_AP1, toCct } from "../../game/film/color.js";
+import {
+  canonical, DECODE, hashOf, HLG_SCALE, hlgToScene, monCurve, nitsToPq, OCIO_CONFIG, parseLut, pqToNits, PREVIEW, rec709ToScene, sha256, SHAPER, shaperToCct,
+  srgbToScene, TRANSFORMS,
+} from "../../game/film/transforms.js";
 
 process.env.MAIACITY_CACHE ??= mkdtempSync(join(tmpdir(), "maiacity-color-test-"));
 const hasFfmpeg = spawnSync("ffmpeg", ["-hide_banner", "-filters"], { encoding: "utf8" }).stdout?.includes("zscale") ?? false;
@@ -42,20 +45,21 @@ test("detect: our own tag, Apple's metadata, HDR, EXR headers, stills, untagged 
   expect(detect({ pix_fmt: "yuv420p10le" }).profile).toBe("unknown");
 });
 
-test("profiles: the override wins; every profile's input transform exists; proxies stay in log or display", () => {
+test("profiles: the override wins; every profile has its input transform into ACEScct", () => {
   expect(profileOf({ profile: "rec709", override: "apple-log" })).toBe("apple-log");
   expect(profileOf(undefined)).toBe("unknown");
+  // a profile no longer in the table counts as none: the override falls back to the detected one, else unknown
+  expect(profileOf({ profile: "rec709", override: "legacy" })).toBe("rec709");
+  expect(profileOf({ profile: "legacy" })).toBe("unknown");
+  expect(Object.keys(PROFILES)).not.toContain("legacy");
   for (const [name, p] of Object.entries(PROFILES)) {
-    if (p.idt) expect(TRANSFORMS).toHaveProperty(p.idt);
-    expect(p.proxy in PROFILES).toBe(true);
-    expect(PROFILES[p.proxy as keyof typeof PROFILES].proxy).toBe(p.proxy); // a proxy's profile is its own proxy profile
-    if (p.linear) expect(p.proxy).toBe("acescct");
-    if (p.log) expect(p.proxy).toBe(name);
-    if (p.display) expect(p.proxy).toBe(name);
+    expect(Object.keys(p).sort()).toEqual(["idt", "label", "linear", "log"]);
+    if (name === "acescct") expect(p.idt).toBeNull();
+    else expect(TRANSFORMS[p.idt as keyof typeof TRANSFORMS]).toBeDefined();
   }
-  expect(proxyProfileOf("hlg")).toBe("acescct");
-  expect(proxyProfileOf("apple-log")).toBe("apple-log");
-  expect(proxyProfileOf("unknown")).toBe("unknown");
+  expect(PROFILES.rec709.idt).toBe("idt-rec709");
+  expect(PROFILES.srgb.idt).toBe("idt-srgb");
+  expect(detect({ tags: { comment: "maiacity:color=legacy" }, pix_fmt: "yuv420p", color_primaries: "bt709" }).profile).toBe("rec709");
 });
 
 test("an EXR header is read for its chromaticities and channels", () => {
@@ -103,8 +107,57 @@ test("hashes: SHA-256 as the standard says, and the same config gives the same h
   expect(hashOf(TRANSFORMS["odt-rec709"])).toMatch(/^[0-9a-f]{16}$/);
 });
 
+/** One pixel through a `math` input transform, as cst.rs `Journey::apply` does it: curve × scale, 3×3, ACEScct. */
+const journey = (name: keyof typeof TRANSFORMS, rgb: number[]) => {
+  const c = TRANSFORMS[name] as { kind: "math"; decode: keyof typeof DECODE; scale: number; matrix: number[][] | null };
+  const lin = rgb.map((v) => DECODE[c.decode](v) * c.scale);
+  return (c.matrix ? c.matrix.map((row) => row[0]! * lin[0]! + row[1]! * lin[1]! + row[2]! * lin[2]!) : lin).map(toCct);
+};
+
+test("Rec.709 and sRGB are camera-curve journeys into ACEScct, formula for formula as cst.rs", () => {
+  for (const [name, decode] of [["idt-rec709", "rec709"], ["idt-srgb", "srgb"]] as const)
+    expect(TRANSFORMS[name]).toEqual({ kind: "math", decode, scale: 1, matrix: REC709_TO_AP1, to: "acescct" });
+  // the curves: OCIO's ExponentWithLinear (moncurve) — 1/0.45 and 0.099; 2.4 and 0.055; the toe joined continuously
+  expect(rec709ToScene(0)).toBe(0);
+  expect(rec709ToScene(1)).toBeCloseTo(1, 14);
+  expect(rec709ToScene(0.5)).toBeCloseTo(0.25958940050628576, 14);
+  expect(rec709ToScene(0.04)).toBeCloseTo(0.04 * 0.22154349835491097, 14); // the toe: slope 1/4.514, not BT.709's 1/4.5
+  expect(srgbToScene(0.5)).toBeCloseTo(0.21404114048223255, 14); // IEC 61966-2-1
+  expect(srgbToScene(0.02)).toBeCloseTo(0.02 * 0.07738015446708736, 14); // slope 1/12.923, not IEC's 1/12.92
+  expect(srgbToScene(-0.01)).toBeCloseTo(-0.01 * 0.07738015446708736, 14); // below 0 the toe carries on
+  for (const [g, o] of [[1 / 0.45, 0.099], [2.4, 0.055]] as const) {
+    const brk = o / (g - 1);
+    expect(monCurve(brk - 1e-12, g, o)).toBeCloseTo(monCurve(brk, g, o), 10); // continuous at the break
+  }
+  expect(DECODE.rec709).toBe(rec709ToScene);
+  expect(DECODE.srgb).toBe(srgbToScene);
+  // mid grey: the Rec.709 code value of 18% (1.099 · 0.18^0.45 − 0.099) lands on ACEScct 0.4135884
+  const grey = 1.099 * 0.18 ** 0.45 - 0.099;
+  expect(rec709ToScene(grey)).toBeCloseTo(0.18, 12);
+  for (const v of journey("idt-rec709", [grey, grey, grey])) expect(v).toBeCloseTo(0.4135884, 6);
+  // cst.rs's reference (vault-media/tests/cst_reference.txt, colour-science 0.4.7 in float64): within 1e-5 ACEScct
+  const reference: [keyof typeof TRANSFORMS, number[], number[]][] = [
+    ["idt-rec709", [0, 0, 0], [0.0729055341958, 0.0729055341958, 0.0729055341958]],
+    ["idt-rec709", [0.05, 0.05, 0.05], [0.18400307071, 0.18400307071, 0.18400307071]],
+    ["idt-rec709", [0.18, 0.18, 0.18], [0.30392511934, 0.30392511934, 0.30392511934]],
+    ["idt-rec709", [0.5, 0.5, 0.5], [0.443738777504, 0.443738777504, 0.443738777504]],
+    ["idt-rec709", [1, 1, 1], [0.554794520548, 0.554794520548, 0.554794520548]],
+    ["idt-rec709", [1, 0, 0], [0.51450845875, 0.336043711423, 0.235152954475]],
+    ["idt-rec709", [0.05, 0.4, 1], [0.375180096048, 0.410200511868, 0.545105604054]],
+    ["idt-rec709", [0.4, 0.05, 0.05], [0.373290696102, 0.242143089416, 0.205691380663]],
+    ["idt-srgb", [0.01, 0.01, 0.01], [0.0810615864415, 0.0810615864415, 0.0810615864415]],
+    ["idt-srgb", [0.18, 0.18, 0.18], [0.258012282599, 0.258012282599, 0.258012282599]],
+    ["idt-srgb", [0.5, 0.5, 0.5], [0.427851599677, 0.427851599677, 0.427851599677]],
+    ["idt-srgb", [0, 1, 0], [0.465843712057, 0.547601412865, 0.372712429302]],
+    ["idt-srgb", [0.05, 0.4, 1], [0.360880099152, 0.390193183775, 0.54468374569]],
+    ["idt-srgb", [0.4, 0.05, 0.05], [0.349827502563, 0.197095964253, 0.142407408653]],
+  ];
+  for (const [name, rgb, want] of reference) journey(name, rgb).forEach((v, i) => expect(Math.abs(v - want[i]!)).toBeLessThan(1e-5));
+});
+
 test("HDR signals as scene light: BT.2408's grey lands on 18%; PQ both ways", () => {
   expect(hlgToScene(0.38) * HLG_SCALE).toBeCloseTo(0.18, 10);
+  expect(hlgToScene(-0.1)).toBe(0); // below 0 held at 0, as cst.rs
   expect(hlgToScene(0.75) * HLG_SCALE).toBeCloseTo(0.99, 2); // HLG reference white ≈ scene 1.0
   expect(hlgToScene(1)).toBeCloseTo(1, 6);
   expect(pqToNits(1)).toBeCloseTo(10000, 3);
@@ -125,7 +178,29 @@ test("a preview LUT file parses into RGBA texels", () => {
   const lut = parseLut(body);
   expect(lut.size).toBe(2);
   expect(Array.from(lut.data.slice(0, 4))).toEqual([-1, 1, -1, 1]);
-  expect(PREVIEW.every((n) => n in TRANSFORMS)).toBe(true);
+  expect(PREVIEW).toEqual(["odt-rec709"]); // the input transforms' LUTs are the Mac app's (cst.rs)
+});
+
+// ── the ffmpeg colour path ────────────────────────────────────────────────────────────────────────────────────────
+
+describe.skipIf(!hasOcio)("every clip takes the one path", () => {
+  test("input transform → grades → output transform; unknown colour and profiles from an older table as Rec.709", async () => {
+    const { clipColor, codingOf } = await import("../../scripts/film/color/ffmpeg.mjs");
+    const coding = codingOf({ pix_fmt: "yuv420p", color_space: "bt709", height: 1080 });
+    for (const [profile, idt] of [["rec709", "idt-rec709"], ["srgb", "idt-srgb"], ["unknown", "idt-rec709"], ["legacy", "idt-rec709"], ["acescct", "idt-acescct"]] as const) {
+      const c = clipColor({ profile: profile as any, coding, grade: null, look: null });
+      expect(Object.keys(c.used).sort()).toEqual([idt, "odt-rec709"]);
+      expect(c.before[0]).toBe("zscale=min=709:rin=limited:r=full");
+      expect(c.after.at(-2)).toBe("format=yuv420p10le");
+      expect(c).not.toHaveProperty("bypass");
+    }
+    // Rec.709 and sRGB by exact maths: their curve as a 1D LUT, the 3×3 into AP1, the ACEScct shaper — no 3D LUT
+    const rec = clipColor({ profile: "rec709", coding, grade: PRESETS.warm.cdl, look: PRESETS.cold.cdl });
+    expect(rec.before.filter((f) => f.startsWith("lut3d"))).toEqual([]);
+    expect(rec.before.filter((f) => f.startsWith("colorchannelmixer")).length).toBe(1);
+    expect(Object.keys(rec.used).sort()).toEqual(["grade:clip", "grade:look", "idt-rec709", "odt-rec709"]);
+    expect(clipColor({ profile: "srgb", coding }).used["idt-srgb"]).not.toBe(rec.used["idt-rec709"]);
+  }, 60000);
 });
 
 // ── the ffmpeg colour path, measured ──────────────────────────────────────────────────────────────────────────────
@@ -181,23 +256,20 @@ describe.skipIf(!hasFfmpeg || !hasOcio)("the worker's colour path against OCIO",
   }, 60000);
 
   test("saturated colours at the gamut edge: the render's 129³ output transform stays close to OCIO", () => {
-    // pure and near-pure display primaries and secondaries, taken back into ACEScct by OCIO — where ACES 2.0 bends
+    // pure and near-pure Rec.709 primaries and secondaries, taken into ACEScct by their journey — where ACES 2.0 bends
     const r = m.rng(11);
     const edge = [...Array(2000)].map(() => { const c = [0, 1, 2].map(() => (r() < 0.5 ? r() * 0.08 : 0.85 + r() * 0.15)); return c; });
-    const cct = m.throughOcio(TRANSFORMS["idt-rec709"], edge);
+    const cct = edge.map((p) => journey("idt-rec709", p));
     const d = m.diff(m.throughFfmpeg(cct, fx.odtFilters().filters), m.throughOcio(TRANSFORMS["odt-rec709"], cct));
-    expect(d.p99).toBeLessThan(75); // 65³: ~91
+    expect(d.p99).toBeLessThan(20); // measured with bake.py's tetrahedral: 129³ ~12, 65³ ~27
   }, 120000);
 
-  test("HLG and PQ by exact maths match the curves", () => {
+  test("Rec.709, sRGB, HLG and PQ by exact maths in ffmpeg match their journeys", () => {
     const px = [...Array(400)].map((_, i) => { const v = i / 399; return [v, v * 0.9, v * 0.8]; });
-    for (const name of ["idt-hlg", "idt-pq"] as const) {
-      const cfg = TRANSFORMS[name] as { decode: "hlg" | "pq"; scale: number; matrix: number[][] };
-      const want = px.map((p) => {
-        const l = p.map((v) => (cfg.decode === "hlg" ? hlgToScene(v) : pqToNits(v)) * cfg.scale);
-        return cfg.matrix.map((row) => toCct(row[0]! * l[0]! + row[1]! * l[1]! + row[2]! * l[2]!));
-      });
-      expect(m.diff(m.throughFfmpeg(px, fx.idtFilters(name).filters), want).max).toBeLessThan(0.1);
+    for (const name of ["idt-rec709", "idt-srgb", "idt-hlg", "idt-pq"] as const) {
+      const f = fx.idtFilters(name).filters;
+      expect(f.some((x) => x.startsWith("lut3d"))).toBe(false);
+      expect(m.diff(m.throughFfmpeg(px, f), px.map((p) => journey(name, p))).max).toBeLessThan(0.1);
     }
   }, 60000);
 
@@ -210,50 +282,20 @@ describe.skipIf(!hasFfmpeg || !hasOcio)("the worker's colour path against OCIO",
     }
   }, 60000);
 
-  test("an sRGB chart through the input transform and back out comes back as it went in; graded, it is OCIO's", () => {
-    // display code values (a chart of patches) → idt-rec709 → (grade) → odt-rec709, baked as one LUT at render time
-    const r = m.rng(13);
-    const chart = [...Array(1500)].map(() => [r(), r(), r()]);
-    const bake = (grade: any, look: any) => {
-      const { file } = fx.bakedLut(displayChain(grade, look), { name: "test-chain" });
-      return [`lut3d=file='${file}':interp=tetrahedral`];
-    };
-    const neutral = m.diff(m.throughFfmpeg(chart, bake(null, null)), chart);
-    expect(neutral.p99).toBeLessThan(1.5);
-    expect(neutral.max).toBeLessThan(4); // OCIO's own inverse output transform round-trips to ~3 code values
-    // graded: patches away from the display's edges (5%…90%), against OCIO's exact chain. The ACES 2.0 output
-    // transform is steep where a grade pushes colours out of gamut, so the LUT is looser there (measured over the
-    // whole cube: 99% within ~6 code values) — and two separate LUTs would be 2–5× looser still
-    const r2 = m.rng(17);
-    const patches = [...Array(1500)].map(() => [0, 0, 0].map(() => 0.05 + r2() * 0.85));
-    for (const [g, l] of [[PRESETS.warm.cdl, PRESETS.cold.cdl], [null, PRESETS.night.cdl]] as const) {
-      const want = m.throughOcio(displayChain(g, l), patches);
-      const d = m.diff(m.throughFfmpeg(patches, bake(g, l)), want);
-      expect(d.p99).toBeLessThan(2.5);
-      const two = m.throughFfmpeg(patches, [...fx.idtFilters("idt-rec709").filters, ...fx.cdlFilters(g).filters, ...fx.cdlFilters(l).filters, ...fx.odtFilters().filters]);
-      expect(m.diff(two, want).p99).toBeGreaterThan(d.p99);
-    }
-  }, 60000);
-
-  test("a legacy Rec.709 clip through the bypass is bit for bit what it was (8 → 10 bits, ×4 exactly)", async () => {
+  test("a Rec.709 clip goes the one path: idt-rec709 → (grade) → odt-rec709, 10-bit YUV out", async () => {
     const { pieceFilters } = await import("../../scripts/film/picture.mjs");
     const { sourceOf } = await import("../../scripts/film/sources.mjs");
-    const dir = mkdtempSync(join(tmpdir(), "maiacity-bypass-"));
+    const dir = mkdtempSync(join(tmpdir(), "maiacity-rec709-"));
     const file = join(dir, "rec709.mp4");
     spawnSync("ffmpeg", ["-v", "error", "-y", "-f", "lavfi", "-i", "testsrc2=s=1920x1080:r=30:d=1", "-c:v", "libx264", "-crf", "12", "-pix_fmt", "yuv420p", "-colorspace", "bt709", "-color_primaries", "bt709", "-color_trc", "bt709", file]);
     const src = sourceOf(file, null);
     expect(src.profile).toBe("rec709");
-    const piece = pieceFilters({ source: src, W: 1920, H: 1080, frames: 10, fps: 30, look: null });
-    expect(piece.bypass).toBe(true);
-    const raw = (args: string[]) => spawnSync("ffmpeg", ["-v", "error", "-i", file, ...args, "-f", "rawvideo", "-"], { maxBuffer: 1 << 30 }).stdout as Buffer;
-    const before = raw(["-frames:v", "10", "-pix_fmt", "yuv420p"]);
-    const after = raw(["-filter_complex", `[0:v]${piece.filters.join(",")}[v]`, "-map", "[v]", "-frames:v", "10", "-pix_fmt", "yuv420p10le"]);
-    const a16 = new Uint16Array(after.buffer, after.byteOffset, after.length / 2);
-    expect(a16.length).toBe(before.length);
-    let differ = 0;
-    for (let i = 0; i < before.length; i++) if (a16[i] !== before[i]! * 4) differ++;
-    expect(differ).toBe(0);
-    // graded, the same clip goes the managed way
-    expect(pieceFilters({ source: src, W: 1920, H: 1080, frames: 10, fps: 30, look: PRESETS.cold.cdl }).bypass).toBe(false);
+    for (const look of [null, PRESETS.cold.cdl]) {
+      const piece = pieceFilters({ source: src, W: 1920, H: 1080, frames: 10, fps: 30, look });
+      expect(Object.keys(piece.used).sort()).toEqual(look ? ["grade:look", "idt-rec709", "odt-rec709"] : ["idt-rec709", "odt-rec709"]);
+      const out = spawnSync("ffmpeg", ["-v", "error", "-i", file, "-filter_complex", `[0:v]${piece.filters.join(",")}[v]`, "-map", "[v]", "-frames:v", "10", "-pix_fmt", "yuv420p10le", "-f", "rawvideo", "-"], { maxBuffer: 1 << 30 });
+      expect(out.status).toBe(0);
+      expect(out.stdout.length).toBe(1920 * 1080 * 1.5 * 2 * 10);
+    }
   }, 60000);
 });

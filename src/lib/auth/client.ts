@@ -412,8 +412,8 @@ export type RenderReport = {
 
 export const queueRender = (timelineId: string) => call<RenderJob>(`/api/timelines/${timelineId}/renders`, { method: 'POST' });
 export const listRenders = (timelineId: string) => call<RenderJob[]>(`/api/timelines/${timelineId}/renders`);
-/** The latest jobs, newest first: of a kind, for a file (a file's proxy status; the worker's whole queue). */
-export const listJobs = (q: { kind?: 'render' | 'proxy' | 'lut' | 'frame'; hash?: string; timeline?: string; shot?: string; limit?: number } = {}) =>
+/** The worker's latest jobs, newest first: of a kind, of a timeline or a world shot (its HD proxy). */
+export const listJobs = (q: { kind?: 'render' | 'proxy' | 'lut' | 'frame'; timeline?: string; shot?: string; limit?: number } = {}) =>
 	call<RenderJob[]>(`/api/film/jobs?${new URLSearchParams(Object.entries(q).filter(([, v]) => v !== undefined && v !== '').map(([k, v]) => [k, String(v)]))}`);
 /** A film's proxy made again, natively on this Mac (its colour read again too). */
 export const remakeProxy = (hash: string) => command<void>('vault_proxy', { hash });

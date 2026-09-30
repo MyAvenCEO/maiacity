@@ -78,6 +78,22 @@ pub fn pressure() -> u32 {
     if ok == 0 { level } else { 1 }
 }
 
+/// A profile's input LUT for the studio's viewer, baked here from the same journey the proxies take (`cst`): a
+/// little-endian u32 size, then size³ RGB f32 in ACEScct, red fastest. The studio shows an original through it.
+#[tauri::command]
+pub fn color_lut(profile: String) -> crate::Res<tauri::ipc::Response> {
+    crate::gate()?;
+    let journey = vault_media::cst::journey(&profile).ok_or_else(|| format!("no colour journey from {profile} into ACEScct"))?;
+    let size = vault_media::cst::CUBE_SIZE;
+    let cube = journey.cube(size);
+    let mut out = Vec::with_capacity(4 + cube.len() * 4);
+    out.extend_from_slice(&(size as u32).to_le_bytes());
+    for v in cube {
+        out.extend_from_slice(&v.to_le_bytes());
+    }
+    Ok(tauri::ipc::Response::new(out))
+}
+
 /// The proxies being made or queued right now.
 #[tauri::command]
 pub fn proxies_now() -> crate::Res<Vec<Making>> {
@@ -100,6 +116,12 @@ pub fn wants_proxy(m: &Meta) -> bool {
 
 /// Every original still without its proxy, queued — at the start, and every ten minutes: a journey defined since, a
 /// file that came in on another device.
+/// Is this the hash of a proxy of ours — ACEScct, made here? (The old render worker's proxies, in their source's own
+/// encoding, are not: their originals get a new one.)
+fn ours(all: &HashMap<String, &Meta>, hash: &str) -> bool {
+    all.get(hash).is_some_and(|p| p.meta.pointer("/color/profile").and_then(|v| v.as_str()) == Some(WORKING))
+}
+
 pub async fn sweep(handle: AppHandle, vault: Arc<Vault>) {
     // what a run that ended midway left behind (the app quit, the Mac froze): half-made proxies, exported sources,
     // landing copies — nothing uses them now; the files themselves are taken up again below
@@ -116,15 +138,18 @@ pub async fn sweep(handle: AppHandle, vault: Arc<Vault>) {
         tokio::time::sleep(Duration::from_secs(20)).await;
         if crate::auth::signed_in() {
             if let Ok(all) = vault.catalog.list().await {
+                let by_hash: HashMap<String, &Meta> = all.iter().map(|m| (m.hash.clone(), m)).collect();
                 for m in all.iter().filter(|m| wants_proxy(m)) {
                     let state = m.meta.get("proxy").and_then(|p| p.as_str()).unwrap_or("");
-                    let made = state.len() == 64 && state.bytes().all(|b| b.is_ascii_hexdigit());
+                    let made = state.len() == 64 && state.bytes().all(|b| b.is_ascii_hexdigit()) && ours(&by_hash, state);
                     let profile = m.meta.pointer("/color/profile").and_then(|p| p.as_str()).unwrap_or("");
                     let detector = m.meta.pointer("/color/detector").and_then(|d| d.as_u64()).unwrap_or(0);
                     let tries = m.meta.get("proxy_tries").and_then(|t| t.as_u64()).unwrap_or(0);
                     // never tried, waiting for a journey that exists now, its colour unknown to an older detector, or
                     // failed fewer than TRIES times (healing by itself)
+                    let legacy = state.len() == 64 && !made;
                     let due = state.is_empty()
+                        || legacy
                         || (state.starts_with("waiting") && (journey(profile) || (profile == "unknown" && detector < DETECTOR)))
                         || (state.starts_with("failed") && tries < TRIES);
                     let queued = NOW.lock().unwrap().as_ref().is_some_and(|n| n.contains_key(&m.hash));
