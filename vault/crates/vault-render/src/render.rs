@@ -780,6 +780,80 @@ pub fn stats(px: &[[f64; 3]]) -> Value {
     })
 }
 
+/// How each sound clip of a timeline sounds (BS.1770, as the render's own levelling measures): its loudness (LUFS)
+/// and true peak as recorded, over the part the clip plays, and at its volume; a loudness curve (every 0.5 s, the
+/// clip's own clock) to draw; and, per voice clip, how far the music under it sits below it (the render keys the
+/// music down about 6 dB while the voice speaks). Read from each file's audio proxy when there is one.
+pub fn measure_sound(t: &Timeline, lib: &dyn Library) -> Result<Value> {
+    use crate::loudness::measure as loud;
+    const STEP: f64 = 0.5;
+    const DUCK_DB: f64 = 6.0;
+    let db = |v: f64| if v > 0.0 { 20.0 * v.log10() } else { f64::NEG_INFINITY };
+    let r2 = |x: f64| (x * 100.0).round() / 100.0;
+    let mut out = Vec::new();
+    for c in t.clips.iter().filter(|c| c.track.starts_with('A') && c.hash.is_some()) {
+        let hash = c.hash.as_deref().unwrap();
+        let m = lib.media(hash);
+        let name = m.as_ref().map(|m| if m.title.is_empty() { m.hash[..10].to_string() } else { m.title.clone() }).unwrap_or_default();
+        // the audio proxy (the original's clock) when there is one: a fraction of the bytes
+        let audio = m.as_ref().and_then(|m| m.meta.get("audio").and_then(Value::as_str)).and_then(|a| lib.media(a)).map(|a| a.hash);
+        let file = match audio.as_deref().map(|a| lib.file(a)).filter(|f| f.is_ok()) {
+            Some(f) => f?,
+            None => match lib.file(hash) {
+                Ok(f) => f,
+                Err(e) => {
+                    out.push(json!({ "clip": c.id, "track": c.track, "name": name, "error": format!("{e:#}") }));
+                    continue;
+                }
+            },
+        };
+        let mut frames: Vec<f32> = Vec::new();
+        if let Some(mut r) = crate::av::AudioReader::open(&file, c.in_, c.in_ + c.dur)? {
+            while let Some((_, chunk)) = r.next_chunk()? {
+                frames.extend(chunk);
+            }
+        }
+        let want = (c.dur * crate::av::RATE as f64).round() as usize * 2;
+        frames.truncate(want);
+        let whole = loud(&frames, crate::av::RATE, 2);
+        let block = (STEP * crate::av::RATE as f64) as usize * 2;
+        let curve: Vec<Value> = frames.chunks(block).map(|b| loud(b, crate::av::RATE, 2).lufs.map(r2).map(Value::from).unwrap_or(Value::Null)).collect();
+        let g = db(c.vol);
+        out.push(json!({
+            "clip": c.id, "track": c.track, "name": name, "start": c.start, "dur": c.dur, "vol": c.vol, "gain_db": r2(g),
+            "fin": c.fin, "fout": c.fout,
+            "lufs": whole.lufs.map(r2), "true_peak": whole.true_peak.map(r2),
+            "lufs_at_vol": whole.lufs.map(|l| r2(l + g)), "true_peak_at_vol": whole.true_peak.map(|p| r2(p + g)),
+            "curve_step": STEP, "curve": curve,
+        }));
+    }
+    // the music under each voice clip, at their volumes, the music keyed down while the voice speaks
+    let at_vol = |v: &Value, from: f64, to: f64| -> Option<f64> {
+        let (start, step, g) = (v["start"].as_f64()?, v["curve_step"].as_f64()?, v["gain_db"].as_f64()?);
+        let vals: Vec<f64> = v["curve"].as_array()?.iter().enumerate().filter(|(i, _)| {
+            let t = start + *i as f64 * step;
+            t >= from && t < to
+        }).filter_map(|(_, x)| x.as_f64()).collect();
+        if vals.is_empty() {
+            return None;
+        }
+        // loudness of the stretch: the energy mean of its blocks
+        let e = vals.iter().map(|l| 10f64.powf(l / 10.0)).sum::<f64>() / vals.len() as f64;
+        Some(10.0 * e.log10() + g)
+    };
+    let mut under = Vec::new();
+    for v in out.iter().filter(|v| v["track"] == "A1" && v.get("error").is_none()) {
+        let (from, to) = (v["start"].as_f64().unwrap_or(0.0), v["start"].as_f64().unwrap_or(0.0) + v["dur"].as_f64().unwrap_or(0.0));
+        let voice = at_vol(v, from, to);
+        for m in out.iter().filter(|m| m["track"] == "A2" && m.get("error").is_none()) {
+            if let (Some(vo), Some(mu)) = (voice, at_vol(m, from, to)) {
+                under.push(json!({ "voice": v["clip"], "music": m["clip"], "voice_lufs": r2(vo), "music_lufs": r2(mu - DUCK_DB), "voice_over_music_lu": r2(vo - (mu - DUCK_DB)) }));
+            }
+        }
+    }
+    Ok(json!({ "clips": out, "voice_over_music": under, "duck_db": DUCK_DB, "master": "the render levels the whole mix to −14 LUFS, −1 dBTP" }))
+}
+
 /// A clip's original's grading still (its `meta.grade_still`), when the vault has it.
 fn grade_still_of(lib: &dyn Library, c: &Clip) -> Option<Media> {
     let hash = c.hash.as_deref()?;

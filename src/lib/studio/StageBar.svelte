@@ -14,12 +14,13 @@
 		{ id: 'library', label: 'Library', key: '2' },
 		{ id: '3d', label: '3D', key: '3' },
 		{ id: 'edit', label: 'Edit', key: '4' },
-		{ id: 'grade', label: 'Grade', key: '5' },
-		{ id: 'render', label: 'Render', key: '6' }
+		{ id: 'audio', label: 'Audio', key: '5' },
+		{ id: 'grade', label: 'Grade', key: '6' },
+		{ id: 'render', label: 'Render', key: '7' }
 	];
 	/** @param {Tab} t */
 	function go(t) {
-		if (t !== 'edit' && t !== '3d') s.stop();
+		if (t !== 'edit' && t !== '3d' && t !== 'audio') s.stop();
 		s.tab = t;
 	}
 </script>

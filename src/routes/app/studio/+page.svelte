@@ -23,6 +23,8 @@
 	import Ingest from '$lib/studio/Ingest.svelte';
 	import Inspector from '$lib/studio/Inspector.svelte';
 	import Library from '$lib/studio/Library.svelte';
+	import Loudness from '$lib/studio/Loudness.svelte';
+	import Mixer from '$lib/studio/Mixer.svelte';
 	import { forwardConsole, native } from '$lib/native';
 	import ProgramMonitor from '$lib/studio/ProgramMonitor.svelte';
 	import RenderQueue from '$lib/studio/RenderQueue.svelte';
@@ -72,9 +74,9 @@
 	function onKey(e: KeyboardEvent) {
 		const target = e.target as HTMLElement | null;
 		if (target?.closest?.('input, textarea, select')) return;
-		if (e.altKey && ['Digit1', 'Digit2', 'Digit3', 'Digit4', 'Digit5', 'Digit6'].includes(e.code)) {
+		if (e.altKey && ['Digit1', 'Digit2', 'Digit3', 'Digit4', 'Digit5', 'Digit6', 'Digit7'].includes(e.code)) {
 			e.preventDefault();
-			const t = (['ingest', 'library', '3d', 'edit', 'grade', 'render'] as const)[Number(e.code.slice(-1)) - 1]!;
+			const t = (['ingest', 'library', '3d', 'edit', 'audio', 'grade', 'render'] as const)[Number(e.code.slice(-1)) - 1]!;
 			s.tab = t;
 			return;
 		}
@@ -176,6 +178,12 @@
 				<ProgramMonitor {s} />
 			</div>
 			<Inspector {s} />
+		{:else if s.tab === 'audio'}
+			<Mixer {s} />
+			<div class="monitors column">
+				<ProgramMonitor {s} label="Program · sound" />
+				<Loudness {s} />
+			</div>
 		{:else if s.tab === 'grade'}
 			<Conform {s} />
 			<div class="monitors column">
@@ -249,6 +257,16 @@
 
 	.studio.tab-render {
 		grid-template-columns: 19rem 1fr 19rem;
+	}
+
+	/* Audio: the mixer, the program over the loudness, no inspector */
+	.studio.tab-audio {
+		grid-template-columns: 21rem 1fr;
+		grid-template-areas:
+			'bar bar'
+			'bin monitor'
+			'bin transport'
+			'bin timeline';
 	}
 
 	/* Ingest and Library: one panel under the bar, no transport or timeline */

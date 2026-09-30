@@ -79,7 +79,7 @@ function cleanScript(v: any): Script | null {
 function cleanClip(c: any): Clip {
   const kind = c?.kind ?? "media";
   if (!["media", "world", "slate", "line"].includes(kind)) throw new TimelineError("A clip is a media clip, a world clip, a slate or a line.");
-  const base = { id: String(c.id ?? "").slice(0, 40), track: String(c.track ?? "V1").slice(0, 8), start: num(c.start), in: num(c.in), dur: num(c.dur, 0.05), vol: Math.min(1, num(c.vol)),
+  const base = { id: String(c.id ?? "").slice(0, 40), track: String(c.track ?? "V1").slice(0, 8), start: num(c.start), in: num(c.in), dur: num(c.dur, 0.05), vol: Math.min(4, num(c.vol)),
     ...(c.fin !== undefined ? { fin: Math.min(10, num(c.fin)) } : {}), ...(c.fout !== undefined ? { fout: Math.min(10, num(c.fout)) } : {}) };
   let clip: Clip;
   if (kind === "world") {

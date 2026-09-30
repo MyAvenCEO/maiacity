@@ -461,6 +461,7 @@ fn main() {
             proxies::color_lut,
             proxies::vault_proxy,
             transcripts::vault_transcribe,
+            render::sound_measure,
             world::world_proxy_next,
             world::world_proxy_frame,
             world::world_proxy_end,

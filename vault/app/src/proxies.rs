@@ -404,7 +404,8 @@ async fn backfill_still(vault: Arc<Vault>, hex: String) {
         tokio::time::sleep(Duration::from_secs(5)).await;
     }
     set(&k, &name, "grading still", 0.0);
-    let profile = original.meta.pointer("/color/override").or_else(|| original.meta.pointer("/color/profile")).and_then(|v| v.as_str()).unwrap_or("").to_string();
+    let told = |p: &str| original.meta.pointer(p).and_then(|v| v.as_str()).filter(|s| !s.is_empty());
+    let profile = told("/color/override").or_else(|| told("/color/profile")).unwrap_or("").to_string();
     let ext = std::path::Path::new(&name).extension().map(|e| e.to_string_lossy().to_lowercase()).unwrap_or_else(|| "mov".into());
     let src = vault.ingest_dir().join(format!("{hex}.src.{ext}"));
     let r = match vault.store.blobs().export(hash, &src).await {

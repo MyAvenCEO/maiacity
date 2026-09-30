@@ -259,6 +259,36 @@ pub struct MatchArgs {
 }
 
 #[derive(Deserialize, schemars::JsonSchema)]
+pub struct MixClip {
+    /// the clip's id (an A1, A2 or A3 clip)
+    pub clip: String,
+    /// its gain in dB (0 = as recorded; −60…+12)
+    pub gain_db: Option<f64>,
+    /// fade in, seconds
+    pub fin: Option<f64>,
+    /// fade out, seconds
+    pub fout: Option<f64>,
+}
+
+#[derive(Deserialize, schemars::JsonSchema)]
+pub struct MixArgs {
+    /// the timeline's id
+    pub timeline: String,
+    /// the clips to change
+    pub clips: Vec<MixClip>,
+}
+
+#[derive(Deserialize, schemars::JsonSchema)]
+pub struct LevelArgs {
+    /// the timeline's id
+    pub timeline: String,
+    /// LUFS per track instead of the defaults (A1 voice −18, A2 music −26, A3 sounds −30), e.g. { "A2": -24 }
+    pub targets: Option<std::collections::HashMap<String, f64>>,
+    /// false: only propose, write nothing (default true)
+    pub apply: Option<bool>,
+}
+
+#[derive(Deserialize, schemars::JsonSchema)]
 pub struct FrameArgs {
     /// the timeline's id
     pub timeline: String,
@@ -681,6 +711,71 @@ impl Studio {
             }
             out["applied"] = json!(apply);
             Ok::<_, String>(out)
+        };
+        text(r.await)
+    }
+
+    #[tool(
+        description = "Listen to a timeline's sound, measured natively (BS.1770, as the render levels it): every sound clip's loudness (LUFS) and true peak as recorded and at its volume (gain_db), its fades, a loudness curve every 0.5 s, and per voice clip how far the music under it sits below it (voice_over_music_lu; the render keys the music down 6 dB while the voice speaks — 12 to 18 LU keeps a voice clear). The render levels the whole mix to −14 LUFS / −1 dBTP at the end."
+    )]
+    async fn audio_measure(&self, Parameters(a): Parameters<IdArg>) -> String {
+        let r = async {
+            let t = self.api("GET", &format!("/api/timelines/{}", a.id), None).await?;
+            crate::render::measure_sound(&self.vault, &t).await
+        };
+        text(r.await)
+    }
+
+    #[tool(description = "Set sound clips' gain (dB, 0 = as recorded, −60…+12) and fades (seconds) — the sound design's hand on the mix.")]
+    async fn audio_mix(&self, Parameters(a): Parameters<MixArgs>) -> String {
+        let r = async {
+            let t = self.api("GET", &format!("/api/timelines/{}", a.timeline), None).await?;
+            let mut clips = t["clips"].as_array().cloned().ok_or("the timeline has no clips")?;
+            for m in &a.clips {
+                let c = clips.iter_mut().find(|c| c["id"].as_str() == Some(m.clip.as_str())).ok_or_else(|| format!("no clip {}", m.clip))?;
+                if let Some(g) = m.gain_db {
+                    c["vol"] = json!(((10f64.powf(g.clamp(-60.0, 12.0) / 20.0)) * 1000.0).round() / 1000.0);
+                }
+                if let Some(f) = m.fin {
+                    c["fin"] = json!(f.max(0.0));
+                }
+                if let Some(f) = m.fout {
+                    c["fout"] = json!(f.max(0.0));
+                }
+            }
+            self.api("PUT", &format!("/api/timelines/{}", a.timeline), Some(json!({ "clips": clips }))).await?;
+            Ok::<_, String>(json!({ "changed": a.clips.len() }))
+        };
+        text(r.await)
+    }
+
+    #[tool(
+        description = "Level a timeline's sound automatically: measures it (audio_measure), then brings every clip to its track's loudness — voice (A1) −18 LUFS, music (A2) −26, sounds (A3) −30, or targets of your own — within +12 dB, with fades so nothing clicks (voice ≥ 0.05 s, music 1 s in / 2.5 s out at the film's ends, sounds 0.3 s). Writes it (apply: false only proposes). Check with audio_measure; adjust single clips with audio_mix."
+    )]
+    async fn audio_level(&self, Parameters(a): Parameters<LevelArgs>) -> String {
+        let r = async {
+            let t = self.api("GET", &format!("/api/timelines/{}", a.timeline), None).await?;
+            let measured = crate::render::measure_sound(&self.vault, &t).await?;
+            let clips = t["clips"].as_array().cloned().ok_or("the timeline has no clips")?;
+            let end = clips.iter().map(|c| c["start"].as_f64().unwrap_or(0.0) + c["dur"].as_f64().unwrap_or(0.0)).fold(0.0, f64::max);
+            let targets: Vec<(String, f64)> = a.targets.clone().unwrap_or_default().into_iter().collect();
+            let changes = crate::render::level_sound(&measured, &clips, &targets, end);
+            let apply = a.apply != Some(false);
+            if apply {
+                let t = self.api("GET", &format!("/api/timelines/{}", a.timeline), None).await?;
+                let mut clips = t["clips"].as_array().cloned().ok_or("the timeline has no clips")?;
+                for ch in &changes {
+                    if let Some(c) = clips.iter_mut().find(|c| c["id"] == ch["clip"]) {
+                        for k in ["vol", "fin", "fout"] {
+                            if !ch[k].is_null() {
+                                c[k] = ch[k].clone();
+                            }
+                        }
+                    }
+                }
+                self.api("PUT", &format!("/api/timelines/{}", a.timeline), Some(json!({ "clips": clips }))).await?;
+            }
+            Ok::<_, String>(json!({ "applied": apply, "changes": changes, "voice_over_music_before": measured["voice_over_music"] }))
         };
         text(r.await)
     }

@@ -29,6 +29,6 @@ pub mod sound;
 pub mod timeline;
 
 pub use output::{Lut3d, Output};
-pub use render::{Delivery, Library, Media, Options, Plate, Render, api_accepts, grading_still, hero_frame, measure, render, stats};
+pub use render::{Delivery, Library, Media, Options, Plate, Render, api_accepts, grading_still, hero_frame, measure, measure_sound, render, stats};
 pub use sound::{PLATFORMS, Target};
 pub use timeline::{Clip, Shape, Timeline};

@@ -23,7 +23,7 @@ import { filmLut, nativeLut } from './luts.js';
 import { cached, evaluate, saveSpec, shotAt } from './shots.js';
 import { WorldViewer } from './world.svelte.js';
 import { audioProxyOf, captionWordsOf, hasSound, phraseBreak, rewordPhrase, stepOpen, transcriptState } from './transcript.js';
-import { native } from '$lib/native';
+import { command, native } from '$lib/native';
 
 /** @typedef {import('$lib/auth/client').Cdl} Cdl */
 /** @typedef {import('$lib/auth/client').ClipFrame} ClipFrame */
@@ -52,7 +52,7 @@ import { native } from '$lib/native';
  * none in the file (silent), or failed (and why).
  * @typedef {'ready' | 'loading' | 'waiting' | 'silent' | `failed: ${string}`} SoundState
  */
-/** @typedef {'ingest' | 'library' | '3d' | 'edit' | 'grade' | 'render'} Tab */
+/** @typedef {'ingest' | 'library' | '3d' | 'edit' | 'audio' | 'grade' | 'render'} Tab */
 /**
  * A sound cue of a world shot, where it lands on A3 (derived from the shot record, never saved as a clip).
  * @typedef {Clip & { cue: true, from: string }} CueClip
@@ -180,6 +180,10 @@ export class Studio {
 	luts = $state({});
 	/** Edit: preview the grade on the proxies (read-only there) */
 	previewGrade = $state(false);
+	/** the Audio tab: how the timeline sounds, clip by clip (render.rs `measure_sound`), and whether it is being measured */
+	/** @type {any} */
+	loud = $state(null);
+	loudMeasuring = $state(false);
 	/**
 	 * Grade: the viewer shows the originals (conformed) or, faster, the proxies
 	 * @type {'originals' | 'proxies'}
@@ -867,7 +871,7 @@ export class Studio {
 			// a picture whose sound is its own clip is silent — but while that sound's audio proxy is not here yet, the
 			// picture's player lends it its sound (in sync only), so nothing plays mute
 			const p = this.partnerOf(c);
-			v.volume = p && onSoundTrack(p) && c.hash && this.soundState[c.hash] !== 'ready' && !this.drift(c) ? p.vol : c.vol;
+			v.volume = Math.min(1, p && onSoundTrack(p) && c.hash && this.soundState[c.hash] !== 'ready' && !this.drift(c) ? p.vol : c.vol);
 			if (force || Math.abs(v.currentTime - local) > 0.25) v.currentTime = local;
 			if (this.playing && v.paused) void v.play().catch(() => {});
 			if (!this.playing && !v.paused) v.pause();
@@ -1112,6 +1116,25 @@ export class Studio {
 		this.clips[i] = { ...this.clips[i], ...patch };
 		this.changed();
 		if (this.playing) this.schedule();
+	}
+	/**
+	 * A sound clip's gain and fades (the Audio tab): its level, never its place.
+	 * @param {string} id @param {{ vol?: number, fin?: number, fout?: number }} patch
+	 */
+	setSound(id, patch) {
+		this.patchClip(id, patch);
+	}
+	/** How the timeline sounds now, measured on this Mac (the Audio tab draws it). */
+	async measureSound() {
+		if (!this.current || this.loudMeasuring) return;
+		this.loudMeasuring = true;
+		try {
+			this.loud = await command('sound_measure', { timeline: { ...$state.snapshot(this.current), clips: $state.snapshot(this.clips) } });
+		} catch (e) {
+			this.error = `Sound: ${e}`;
+		} finally {
+			this.loudMeasuring = false;
+		}
 	}
 	/**
 	 * The selected picture clip's balance layers (null: as shot).
