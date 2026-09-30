@@ -946,6 +946,8 @@ export class Studio {
 			this.sources[hash] = s;
 			return s;
 		})();
+		// a load that failed is forgotten: the next play asks again (a failure kept would leave it silent for good)
+		p.catch(() => this.pending.get(hash) === p && this.pending.delete(hash));
 		this.pending.set(hash, p);
 		return p;
 	}
@@ -1162,6 +1164,14 @@ export class Studio {
 		await this.preparePlayback();
 		this.playing = true;
 		this.schedule();
+		// sound on the tracks but none laid on the clock: say why (the app's log carries it)
+		const sounding = this.clips.filter((c) => onSoundTrack(c) && c.hash && c.start + c.dur > this.time);
+		if (sounding.length && !this.nodes.length)
+			console.warn(
+				`play: ${sounding.length} sound clip(s) ahead, none scheduled —`,
+				sounding.slice(0, 8).map((c) => `${this.clipName(c)} [${c.track}] ${this.sources[c.hash ?? '']?.buffer ? 'decoded' : this.soundState[c.hash ?? ''] ?? 'not loaded'}`).join(', '),
+				`· audio ${this.audioCtx().state}`
+			);
 		this.syncVideo(true);
 		this.frame = requestAnimationFrame(this.tick);
 	}
