@@ -48,7 +48,7 @@
 - **Shipping:** PR #42, #43, #44 and #45 merged by me and deployed through CI.
 
 ## Done before
-- Every recording transcribed on-device (Nemotron), 309/309, self-healing in the Ingest flow.
+- Every recording transcribed on-device (Phonon-2, English), self-healing in the Ingest flow.
 - Captions come by themselves from the voice's transcript.
 - The grade's balance layers, the same maths in JS, Rust and Metal; MCP grade_measure / grade_balance / grade_match.
 - 4K 16-bit ACEScct grading stills at ingest.

@@ -1,7 +1,7 @@
 [package]
 name = "vault-asr"
 version = "0.1.0"
-description = "Speech to text on the Mac, on-device: NVIDIA Nemotron 3.5 ASR streaming (0.6B, ONNX) through parakeet-rs, Silero VAD — the words of every recording, with their times, never leaving our devices"
+description = "Speech to text on the Mac, on-device: Phonon-2 (Parakeet TDT 0.6B v3 re-trained on English by Fermion Research, ONNX), Silero VAD — the words of every recording, with their times, never leaving our devices"
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
@@ -14,4 +14,3 @@ serde_json.workspace = true
 ndarray = "0.17"
 # as avenOS's macOS build: ort's own downloaded ONNX Runtime (linked at build time, nothing installed on the Mac), CPU
 ort = "=2.0.0-rc.13"
-parakeet-rs = "=0.3.7"

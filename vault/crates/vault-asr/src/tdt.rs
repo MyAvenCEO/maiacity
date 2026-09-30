@@ -3,8 +3,8 @@
 //! the prediction network and joint, `vocab.txt`). Phonon-2 is this graph with Fermion's English weights
 //! (vault/tools/phonon2_onnx.py).
 //!
-//! Not parakeet-rs's `ParakeetTDT`: it gives no token's probability (a word's `c`, and how sure a pass is), and it
-//! times a token's end by the next one. Here: NeMo's own preprocessor, the encoder, then greedy TDT — at each encoder
+//! Not parakeet-rs's `ParakeetTDT`: it gives no token's probability (a word's `c`), and it times a token's end by the
+//! next one. Here: NeMo's own preprocessor, the encoder, then greedy TDT — at each encoder
 //! frame the joint says a token (or blank) and how many frames to go on (0–4); a token's log-probability is its
 //! log-softmax over the vocabulary.
 

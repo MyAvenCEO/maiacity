@@ -2,7 +2,7 @@
 //! it is probed here (ffmpeg, reading the bucket's copy) — whether it has sound, its length, the camera's start
 //! timecode (its tmcd track, or a BWF time reference). Sound never gets a proxy: the studio plays it, the render mixes
 //! it and a Mac transcribes it from the original itself. (Audio proxies were made here once; none are made any more.) The words themselves are
-//! made on a Mac, on-device (Nemotron, vault/app/src/transcripts.rs): nothing of a recording's speech leaves our
+//! made on a Mac, on-device (Phonon-2, vault/app/src/transcripts.rs): nothing of a recording's speech leaves our
 //! devices for it.
 //!
 //! What the catalog gets (iroh-docs is the truth; Postgres only mirrors it) — written as the server's author:
