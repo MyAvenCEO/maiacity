@@ -274,9 +274,12 @@ impl Peer {
             };
             (rank, e.content_len())
         });
+        // what is stored already is not asked about again: one question to Postgres, not one to the bucket per file —
+        // each pass used to spend a minute asking before it pulled the next file
+        let stored = db::stored_all(db).await.unwrap_or_default();
         for entry in blobs {
             let (hash, size) = (entry.content_hash(), entry.content_len());
-            if failed.contains(&hash) {
+            if failed.contains(&hash) || stored.contains(&hash.to_hex().to_string()) {
                 continue;
             }
             let key = s3::blob_key(&hash.to_hex());
