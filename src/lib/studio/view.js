@@ -13,7 +13,7 @@ import { ODT, profileInfo } from './color.js';
 /**
  * The plan for one picture — one path for all: in through its journey into ACEScct (the input LUT the Mac bakes from
  * the same maths it makes the proxies with), graded, out through odt-rec709.
- *  - ACEScct (every proxy, world renders): no input transform; out through odt-rec709, or by formula without it.
+ *  - ACEScct (every proxy, world renders): no input transform; out through odt-rec709.
  *  - Everything else (Rec.709, sRGB, camera log, HDR …): in through its input LUT; without it the signal itself shows,
  *    and the viewer says so.
  */
@@ -21,15 +21,12 @@ import { ODT, profileInfo } from './color.js';
 export function viewPlan(profile, grades, luts) {
 	const info = profileInfo(profile);
 	const odtLut = luts[ODT] ?? null;
-	if (profile === 'acescct') {
-		return odtLut
-			? { idt: 0, odt: 1, idtLut: null, odtLut, note: null, exact: true }
-			: { idt: 0, odt: 2, idtLut: null, odtLut: null, note: 'Approximate view: no output LUT yet (formula transform)', exact: false };
-	}
+	// no output LUT (the Mac has not baked it yet): the signal as it is, and the viewer says so — never an approximation
+	if (!odtLut) return { idt: 0, odt: 0, idtLut: null, odtLut: null, note: 'The output LUT is not baked yet: showing the signal as it is', exact: false };
+	if (profile === 'acescct') return { idt: 0, odt: 1, idtLut: null, odtLut, note: null, exact: true };
 	if (info.idt) {
 		const idtLut = luts[info.idt] ?? null;
-		if (idtLut && odtLut) return { idt: 1, odt: 1, idtLut, odtLut, note: null, exact: true };
-		if (idtLut) return { idt: 1, odt: 2, idtLut, odtLut: null, note: 'Approximate view: no output LUT yet (formula transform)', exact: false };
+		if (idtLut) return { idt: 1, odt: 1, idtLut, odtLut, note: null, exact: true };
 		return { idt: 0, odt: 0, idtLut: null, odtLut: null, note: `No ${info.idt} LUT yet: showing the ${info.label} signal as it is`, exact: false };
 	}
 	return { idt: 0, odt: 0, idtLut: null, odtLut: null, note: profile === 'unknown' ? 'Colour unknown: set its profile' : `No preview transform for ${info.label}`, exact: false };

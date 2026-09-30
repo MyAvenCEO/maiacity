@@ -4,11 +4,10 @@
 // which exact maths (a 3×3 matrix and a curve). Nothing is baked in advance and nothing baked is ever committed or
 // kept as a library asset of its own: the render worker makes a LUT from a config only while it renders
 // (`python3 scripts/film/color/bake.py --config '<json>' …`), cached on its own disk by `hashOf(config)` together
-// with the OCIO version and the LUT size. The one exception is the studio viewer's *preview* output transform: the
-// worker bakes it from the same config and puts it in the library as a cache file (tag `role:lut`, meta
-// `{ transform, hash, size, format }`), found through `GET /api/film/luts`. The input transforms (every source's
-// colour journey into ACEScct) have their native twin in vault/crates/vault-media/src/cst.rs, which the Mac app bakes
-// the viewer's input LUTs and makes every proxy from: the maths here and there is the same, formula for formula.
+// with the OCIO version and the LUT size. The studio viewer's LUTs are the Mac app's, baked natively: the input
+// transforms (every source's colour journey into ACEScct) from vault/crates/vault-media/src/cst.rs — which every proxy
+// is made from too; the maths here and there is the same, formula for formula — and the ACES 2.0 output transform
+// from vault/crates/vault-media/src/aces2.rs.
 //
 // Shared by the render worker (Bun), the film scripts, and the studio (browser): plain JS, no imports but color.js.
 
@@ -152,14 +151,7 @@ export const TRANSFORMS = {
 	'idt-pq': { kind: 'math', decode: 'pq', scale: PQ_SCALE, matrix: REC2020_TO_AP1, to: 'acescct' }
 };
 
-/**
- * The transforms the render worker bakes as the studio viewer's preview LUTs: the output transform only (the ACES 2.0
- * output transform is OCIO's, not native yet). Every input transform's LUT the Mac app bakes itself, from cst.rs.
- * @type {TransformName[]}
- */
-export const PREVIEW = ['odt-rec709'];
-
-/** The size a preview LUT is baked at: 65³ (99% of realistic colours within ~2 10-bit code values of OCIO). */
+/** The size a render's input transform LUT is baked at: 65³ (99% of realistic colours within ~2 10-bit code values of OCIO). */
 export const LUT_SIZE = 65;
 /**
  * The size the final render's output transform LUT is baked at: 129³. ACES 2.0's output transform bends hard near the
@@ -232,34 +224,4 @@ export function shaperToCct(/** @type {number} */ u) {
 	// zscale: linear 1.0 = npl cd/m²; the offset step (ffmpeg `exposure` with black = −offset) wrote (x + o) / (1 + o)
 	const s = pqToNits(u) / SHAPER.npl;
 	return toCct(s * (1 + SHAPER.offset) - SHAPER.offset);
-}
-
-// ── preview LUTs for the studio: the file format ─────────────────────────────────────────────────────────────────
-/*
- * A preview LUT in the library (tag role:lut, meta { transform, hash, size, format: 'mlut1' }) is
- *   gzip( 'MLUT1' · uint32 LE header length · header (UTF-8 JSON: { name, hash, size, min, max, config, ocio }) ·
- *         size³ × RGB as uint16 LE, red changing fastest, then green, then blue )
- * each value being min + (max − min) · u / 65535. The studio gunzips it (DecompressionStream('gzip')), passes the
- * bytes to parseLut(), and loads `data` (RGBA float, size³ texels) into a THREE.Data3DTexture (RGBAFormat,
- * FloatType, linear filtering); its shader samples it at (x·(size−1) + 0.5) / size per channel.
- */
-
-/**
- * @param {Uint8Array} bytes the gunzipped file
- * @returns {{ header: { name: string, hash: string, size: number, min: number, max: number }, size: number, data: Float32Array }}
- */
-export function parseLut(bytes) {
-	const magic = new TextDecoder().decode(bytes.subarray(0, 5));
-	if (magic !== 'MLUT1') throw new Error('not a preview LUT (MLUT1)');
-	const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
-	const n = view.getUint32(5, true);
-	const header = JSON.parse(new TextDecoder().decode(bytes.subarray(9, 9 + n)));
-	const size = Number(header.size), count = size * size * size, at = 9 + n;
-	const data = new Float32Array(count * 4);
-	const k = (header.max - header.min) / 65535;
-	for (let i = 0; i < count; i++) {
-		for (let c = 0; c < 3; c++) data[i * 4 + c] = header.min + k * view.getUint16(at + (i * 3 + c) * 2, true);
-		data[i * 4 + 3] = 1;
-	}
-	return { header, size, data };
 }

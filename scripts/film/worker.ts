@@ -1,4 +1,4 @@
-// The render worker: exports the timelines the studio asks for, and makes hero frames and the preview ODT LUT.
+// The render worker: exports the timelines the studio asks for, and makes hero frames.
 //
 //   bun film worker [--local]        (MAIACITY_API=… MAIACITY_KEY=… point it at another API)
 //
@@ -14,11 +14,11 @@
 //            only — a proxy on the timeline is swapped for its original. World clips (kind 'world') are rendered as
 //            ACEScct plates, one per delivery shape. Every delivery is QC'd (tags, bit depth, frames, length, limits,
 //            loudness) before it goes into the vault; the report names every transform by the hash of its config.
-//   lut    — the studio viewer's preview output transform baked from its config into the vault (also at start-up);
-//            the input transforms' LUTs are the Mac app's (cst.rs).
 //   proxy  — history only: proxies are the Mac app's, natively — a file's when it comes in (meta.proxy on the
 //            original), a world shot version's when a timeline plays it, rendered in the app's own world
 //            (vault/app/src/world.rs). A proxy job still waiting from before is closed as failed, saying so.
+//   lut    — history only: the viewer's LUTs are the Mac app's, baked natively (vault-media's cst and aces2). A lut
+//            job still waiting from before is closed as failed, saying so.
 //   frame  — a hero frame: one frame of a timeline (params: t, shape) at full precision through the whole chain —
 //            input transform, clip grade, film look, output transform — as a 16-bit PNG, for grading against.
 //
@@ -31,8 +31,7 @@ import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { API, call, keyFor, say, SITE } from "../../api/scripts/media-client";
 import { cleanCdl, PRESETS, type Cdl } from "../../game/film/color.js";
-import { PREVIEW, TRANSFORMS } from "../../game/film/transforms.js";
-import { bakedLut, checkFfmpeg, hevcEncoder, ocioVersion, SETPARAMS, TAGS } from "./color/ffmpeg.mjs";
+import { checkFfmpeg, hevcEncoder, ocioVersion, SETPARAMS, TAGS } from "./color/ffmpeg.mjs";
 import { inputArgs, sourceOf, type Source } from "./sources.mjs";
 import { blackFilters, pieceFilters } from "./picture.mjs";
 import { platesFor, worldModules } from "./plates.mjs";
@@ -492,30 +491,9 @@ async function heroFrame(job: Job) {
   }
 }
 
-/** The studio viewer's preview LUTs: baked from the configs, into the vault when it lacks that bake (by its hash). */
-async function luts() {
-  const have = new Set((await list({ fresh: true })).filter((m) => m.tags?.includes("role:lut")).map((m) => `${m.meta?.transform}@${m.meta?.hash}`));
-  const made: Record<string, string> = {};
-  for (const name of PREVIEW) {
-    const { file, hash } = bakedLut(TRANSFORMS[name], { format: "mlut", name });
-    if (have.has(`${name}@${hash}`)) continue;
-    const d = await add(file, {
-      name: `preview-${name}.mlut`,
-      title: `preview LUT · ${name}`,
-      description: `The studio viewer's ${name}, 65³, baked from its config (hash ${hash}) — a cache, made again from the config at will`,
-      tags: ["role:lut", `transform:${name}`],
-      meta: { transform: name, hash, size: 65, format: "mlut1", ocio: ocioVersion() },
-    });
-    made[name] = d.hash;
-  }
-  return made;
-}
-
 if (import.meta.main) {
   checkFfmpeg();
   say(`render worker on ${API}, files from the vault — OpenColorIO ${ocioVersion()}, ${hevcEncoder().hevc} — waiting for jobs`);
-  // the preview LUTs, whenever the configs changed
-  await luts().then((m) => Object.keys(m).length && say(`preview LUTs baked: ${Object.keys(m).join(", ")}`)).catch((e) => say(`preview LUTs: ${(e as Error).message}`));
   const once = process.argv.includes("--once");
   for (;;) {
     // the API away for a moment (restarted, rebuilt) is waited out, not a crash
@@ -542,14 +520,14 @@ if (import.meta.main) {
         // from before: every proxy is the Mac app's now
         await report(job.id, { status: "failed", note: "Proxies are made by the Mac app now — a world shot's too, when a timeline plays it." });
         say(`job ${job.id}: a proxy — the Mac app's work now, closed`);
+      } else if (kind === "lut") {
+        // from before: the viewer's LUTs are the Mac app's now
+        await report(job.id, { status: "failed", note: "The viewer's LUTs are baked by the Mac app now." });
+        say(`job ${job.id}: a LUT bake — the Mac app's work now, closed`);
       } else if (kind === "frame") {
         const r = await heroFrame(job);
         await report(job.id, { status: "done", progress: 1, note: r.note, output_hash: r.output_hash, report: r.report });
         say(`job ${job.id}: ${r.note}`);
-      } else if (kind === "lut") {
-        const made = await luts();
-        await report(job.id, { status: "done", progress: 1, note: Object.keys(made).length ? `baked ${Object.keys(made).join(", ")}` : "every preview LUT is current", report: { luts: made } });
-        say(`job ${job.id}: preview LUTs done`);
       } else {
         const { hash, deliveries, report: rep } = await render(job);
         const hashes = Object.entries(rep.color.transforms).map(([k, v]) => `${k}@${v.slice(0, 8)}`).join(" ");

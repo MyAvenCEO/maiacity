@@ -18,8 +18,8 @@ import {
 	queueRender,
 	saveTimeline
 } from '$lib/auth/client';
-import { PROFILES, WORKING, asStudio, clean, gradesFor, isCache, isSequence, presetOf, profileFor, proxyFor } from './color.js';
-import { filmLut, loadLut, lutIndex, nativeLut } from './luts.js';
+import { ODT, PROFILES, WORKING, asStudio, clean, gradesFor, isCache, isSequence, presetOf, profileFor, proxyFor } from './color.js';
+import { filmLut, nativeLut } from './luts.js';
 import { cached, evaluate, saveSpec, shotAt } from './shots.js';
 import { WorldViewer } from './world.svelte.js';
 import { native } from '$lib/native';
@@ -435,17 +435,17 @@ export class Studio {
 		else await this.openTimeline(l);
 	}
 
+	/** Every LUT the viewer uses, baked by the Mac: each profile's journey in (as its proxy took it), and the output. */
 	async loadLuts() {
-		const { from, luts } = await lutIndex();
-		this.lutFrom = from;
-		const got = await Promise.all(Object.entries(luts).map(async ([name, l]) => /** @type {const} */ ([name, await loadLut(name, l.file)])));
-		// each profile's input LUT, from the Mac: the journey the proxies take, so an original looks as its proxy does
-		const own = await Promise.all(
-			Object.entries(PROFILES)
+		const wanted = [
+			/** @type {const} */ ([ODT, ODT]),
+			...Object.entries(PROFILES)
 				.filter(([, p]) => p.idt)
-				.map(async ([profile, p]) => /** @type {const} */ ([/** @type {string} */ (p.idt), await nativeLut(profile).catch(() => null)]))
-		);
-		this.luts = { ...Object.fromEntries(got), ...Object.fromEntries(own.filter(([, l]) => l)) };
+				.map(([profile, p]) => /** @type {const} */ ([/** @type {string} */ (p.idt), profile]))
+		];
+		const got = await Promise.all(wanted.map(async ([name, profile]) => /** @type {const} */ ([name, await nativeLut(profile).catch(() => null)])));
+		this.luts = Object.fromEntries(got.filter(([, l]) => l));
+		this.lutFrom = this.luts[ODT] ? 'mac' : 'none';
 	}
 
 	/** The render worker's queue (C6, `GET /api/film/jobs`) — renders only: the Mac makes the proxies. */

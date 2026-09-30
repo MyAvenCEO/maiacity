@@ -44,8 +44,8 @@ the terminal is signed in with `bun media login --local`. `FAL_API_KEY` lives in
    Colour-managed (game/film/color.js, transforms.js): each picture clip goes through its input transform into
    ACEScct, its grade and the film's look, the ACES 2.0 output transform to Rec.709, then the captions; an ungraded
    Rec.709/sRGB clip bypasses both and renders as it was. Every delivery is QC'd (BT.709/TV tags, 10-bit master,
-   frames, loudness) before the library. The same worker makes hero frames and the studio's preview LUTs;
-   every proxy — a file's (`meta.color`, `meta.proxy`) and a world shot's — is the Mac app's. It needs ffmpeg with zimg
+   frames, loudness) before the library. The same worker makes hero frames; every proxy — a file's (`meta.color`,
+   `meta.proxy`) and a world shot's — and every LUT the studio's viewer uses are the Mac app's. It needs ffmpeg with zimg
    (Homebrew's has it) and `pip install opencolorio numpy`; LUTs are baked from the configs only while rendering,
    cached in ~/.cache/maiacity. Nothing is ever baked into a source or committed.
    EXR sequences (Luma, Kling, LTX exports) come in with `bun media add-sequence <dir> --profile aces2065-1 --fps 24`.
@@ -80,8 +80,8 @@ timeline, its stage shown at the top (edit → locked → graded → rendered, a
   word timings, phrase by phrase, two lines at most). Drag files onto tracks, drag clips to move, edges to trim; Space
   plays, ←/→ seek. One Web Audio clock, sample-exact. Pictures play from their **HD log proxies** (a "no proxy yet"
   badge when there is none), through the viewer's colour path on the GPU: the proxy's input transform → (optionally
-  the grade, "Grade preview") → the output transform to Rec.709, from the worker's preview LUTs (a formula fallback,
-  labelled, while they are missing). Every picture shows its colour profile; click the badge to set it by hand (the
+  the grade, "Grade preview") → the output transform to Rec.709, through LUTs the Mac app bakes natively (each
+  profile's journey in, the ACES 2.0 output transform; a formula fallback, labelled, while they are missing). Every picture shows its colour profile; click the badge to set it by hand (the
   proxy is made again). **World clips** (shots as data, `/api/shots`) sit on V1; the live world (Sandbox 4 in film
   mode, `__film`) draws them on the timeline's clock, their HD proxy plays while it is not ready, a stand-in without
   either. Selected, a world clip opens its lanes — camera keys (double-click adds, drag moves, Delete removes), hour,

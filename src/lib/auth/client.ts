@@ -167,10 +167,6 @@ export const describeMedia = (hash: string, about: { title?: string; description
 export type ColorInfo = { profile: string; primaries?: string; transfer?: string; matrix?: string; range?: string; bitDepth?: number; detectedFrom?: string; override?: string };
 /** A grade: ASC CDL in ACEScct (game/film/color.js). */
 export type Cdl = { slope: [number, number, number]; offset: [number, number, number]; power: [number, number, number]; sat: number };
-/** The preview LUTs the worker bakes for the studio's viewer (odt-rec709 and each profile's IDT), by name: the
- *  vault file (`file`, its hash) and the LUT's own content hash. */
-export type FilmLuts = Record<string, { file: string; hash: string; size: number }>;
-export const filmLuts = () => call<FilmLuts>('/api/film/luts');
 // ─────────────────────────────── signing a terminal in ───────────────────────────────
 
 export type DeviceRequest = { scope: string[]; descriptions: string[]; label: string; approved_at: string | null; expires_at: string };
@@ -377,7 +373,7 @@ export async function deleteContent(id: string): Promise<void> {
 // ─────────────────────────────── exporting a timeline ───────────────────────────────
 
 /**
- * A job for the render worker (C6): a timeline's render, a file's proxy (with its colour read), or the preview LUTs.
+ * A job for the render worker (C6): a timeline's render or a hero frame (`proxy` and `lut` jobs are history).
  * `report` is what the worker says it did: for a render `{ color: { transforms }, conformed, plates, warnings,
  * deliveries: [{ hash, aspect, codec, qc, loudness }] }`, for a world shot's proxy `{ shot, shotVersion, proxy }`.
  * Fields past the first line come from newer APIs and may be missing.
@@ -420,8 +416,6 @@ export const remakeProxy = (hash: string) => command<void>('vault_proxy', { hash
 /** A hero frame: one frame of the timeline at t (seconds) in a delivery shape, rendered by the worker at full precision. */
 export const queueFrame = (timelineId: string, at: { t: number; shape: string }) =>
 	call<RenderJob>(`/api/timelines/${timelineId}/frames`, { method: 'POST', body: JSON.stringify(at) });
-/** The preview LUTs baked (again) by the worker. */
-export const bakeLuts = () => call<RenderJob>('/api/film/luts', { method: 'POST' });
 
 // ─────────────────────────────── world shots (C2) ───────────────────────────────
 

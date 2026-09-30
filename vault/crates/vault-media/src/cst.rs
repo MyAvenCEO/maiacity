@@ -26,19 +26,19 @@
 //!            transforms.js (so 100 cd/m² = 0.692; OCIO's own PQ curve is 100 cd/m² = 1.0).
 //!   apple-log / apple-log-2 — the same curve (Apple Log Profile white paper), clamped below code 0 at R₀ as OCIO does.
 
-type M3 = [[f64; 3]; 3];
+pub(crate) type M3 = [[f64; 3]; 3];
 /// Chromaticities x, y of red, green, blue and white.
-type Primaries = [[f64; 2]; 4];
+pub(crate) type Primaries = [[f64; 2]; 4];
 
 const D65: [f64; 2] = [0.3127, 0.3290];
 const ACES_WHITE: [f64; 2] = [0.32168, 0.33767];
-const REC709: Primaries = [[0.64, 0.33], [0.30, 0.60], [0.15, 0.06], D65];
+pub(crate) const REC709: Primaries = [[0.64, 0.33], [0.30, 0.60], [0.15, 0.06], D65];
 const REC2020: Primaries = [[0.708, 0.292], [0.170, 0.797], [0.131, 0.046], D65];
 /// Apple Wide Gamut, from the Apple Log 2 white paper as OpenColorIO transcribes it (AppleCameras.cpp, PR #2343).
 const APPLE_WIDE_GAMUT: Primaries = [[0.725, 0.301], [0.221, 0.814], [0.068, -0.076], D65];
 /// ACES AP0 (ACES2065-1) and AP1 (ACEScg, ACEScct): SMPTE ST 2065-1, Academy S-2014-004.
-const AP0: Primaries = [[0.7347, 0.2653], [0.0, 1.0], [0.0001, -0.077], ACES_WHITE];
-const AP1: Primaries = [[0.713, 0.293], [0.165, 0.830], [0.128, 0.044], ACES_WHITE];
+pub(crate) const AP0: Primaries = [[0.7347, 0.2653], [0.0, 1.0], [0.0001, -0.077], ACES_WHITE];
+pub(crate) const AP1: Primaries = [[0.713, 0.293], [0.165, 0.830], [0.128, 0.044], ACES_WHITE];
 
 /// The cube size the proxy bakes at: 65³, as the studio's preview LUTs (transforms.js `LUT_SIZE`).
 pub const CUBE_SIZE: usize = 65;
@@ -334,7 +334,7 @@ fn xyz(xy: [f64; 2]) -> [f64; 3] {
 }
 
 /// The normalised primary matrix: linear RGB → XYZ, white at Y = 1.
-fn rgb_to_xyz(p: &Primaries) -> M3 {
+pub(crate) fn rgb_to_xyz(p: &Primaries) -> M3 {
     let cols = [xyz(p[0]), xyz(p[1]), xyz(p[2])];
     let m = [0, 1, 2].map(|r| [cols[0][r], cols[1][r], cols[2][r]]);
     let s = mul(&inv(&m), xyz(p[3]));
@@ -349,15 +349,15 @@ fn bradford(from: [f64; 2], to: [f64; 2]) -> M3 {
     mul3(&inv(&B), &mul3(&k, &B))
 }
 
-fn mul(m: &M3, v: [f64; 3]) -> [f64; 3] {
+pub(crate) fn mul(m: &M3, v: [f64; 3]) -> [f64; 3] {
     m.map(|r| r[0] * v[0] + r[1] * v[1] + r[2] * v[2])
 }
 
-fn mul3(a: &M3, b: &M3) -> M3 {
+pub(crate) fn mul3(a: &M3, b: &M3) -> M3 {
     [0, 1, 2].map(|r| [0, 1, 2].map(|c| (0..3).map(|k| a[r][k] * b[k][c]).sum()))
 }
 
-fn inv(m: &M3) -> M3 {
+pub(crate) fn inv(m: &M3) -> M3 {
     let c = |r: usize, k: usize| m[(r + 1) % 3][(k + 1) % 3] * m[(r + 2) % 3][(k + 2) % 3] - m[(r + 1) % 3][(k + 2) % 3] * m[(r + 2) % 3][(k + 1) % 3];
     let det = m[0][0] * c(0, 0) + m[0][1] * c(0, 1) + m[0][2] * c(0, 2);
     [0, 1, 2].map(|r| [0, 1, 2].map(|k| c(k, r) / det))

@@ -2,12 +2,12 @@
  * Render jobs. Playing a timeline is live, in the studio; exporting it is a job: the studio queues it, a render
  * worker (bun film worker) claims it, reports its progress, and hands back the film's hash when it is in the vault.
  *
- * The same queue carries the worker's other work: `lut` — bake the studio viewer's preview output transform into the
- * vault; and `frame` — a hero frame: one frame of a timeline (`params`: t, shape) rendered at full precision through
- * the whole chain, for grading against. Proxies are no jobs here: the Mac app makes a file's when it comes in
- * (meta.proxy on the original) and a world shot version's when a timeline plays it (vault/app/src/world.rs, in its own
- * world). `proxy` rows — of files (media_hash) or of shot versions (shot_id + shot_version) — are history, nothing more;
- * one still waiting is closed by the worker when it claims it.
+ * The same queue carries the worker's other work: `frame` — a hero frame: one frame of a timeline (`params`: t, shape)
+ * rendered at full precision through the whole chain, for grading against. Proxies and the viewer's LUTs are no jobs
+ * here: the Mac app makes a file's proxy when it comes in (meta.proxy on the original), a world shot version's when a
+ * timeline plays it (vault/app/src/world.rs, in its own world), and bakes every LUT the viewer uses (`color_lut`).
+ * `proxy` rows — of files (media_hash) or of shot versions (shot_id + shot_version) — and `lut` rows (the preview LUTs
+ * the worker once baked) are history, nothing more; one still waiting is closed by the worker when it claims it.
  */
 import { db } from "./pg";
 import { deliverRender, type Delivery } from "./content";
@@ -45,13 +45,6 @@ export async function queueFrame(founderId: string, timelineId: string, body: { 
   if (!tl.length) throw new RenderError("No such timeline.", 404);
   return (await db.query<Job>(`INSERT INTO render_jobs (kind, timeline_id, params, founder_id) VALUES ('frame', $1, ($2::text)::jsonb, $3) RETURNING ${COLS}`,
     [timelineId, JSON.stringify({ t: Math.round(t * 1000) / 1000, shape }), founderId])).rows[0]!;
-}
-
-/** The preview LUTs to be baked (again): one waiting job is enough. */
-export async function queueLuts(founderId: string | null = null): Promise<Job> {
-  const { rows: open } = await db.query<Job>(`SELECT ${COLS} FROM render_jobs WHERE kind = 'lut' AND status = 'queued'`);
-  if (open[0]) return open[0];
-  return (await db.query<Job>(`INSERT INTO render_jobs (kind, founder_id) VALUES ('lut', $1) RETURNING ${COLS}`, [founderId])).rows[0]!;
 }
 
 export async function rendersOf(timelineId: string): Promise<Job[]> {
@@ -105,20 +98,4 @@ export async function reportRender(id: string, body: { status?: unknown; progres
   if (status === "done" && rows[0].kind === "render" && rows[0].timeline_id)
     await db.query("UPDATE timelines SET stage = 'rendered' WHERE id = $1 AND stage IN ('locked', 'graded')", [rows[0].timeline_id]);
   return rows[0];
-}
-
-/**
- * The studio's preview LUTs: the newest vault file of each transform (tag role:lut), by transform name — `file` is
- * the vault file's hash, `hash` the LUT's own (of its transform config, meta.hash), `size` its grid (meta.size).
- */
-export async function previewLuts(): Promise<Record<string, { file: string; hash: string; size: number }>> {
-  const { rows } = await db.query<{ hash: string; meta: Record<string, unknown> }>(
-    "SELECT hash, meta FROM vault_files WHERE 'role:lut' = ANY(tags) ORDER BY added DESC, hash",
-  );
-  const out: Record<string, { file: string; hash: string; size: number }> = {};
-  for (const r of rows) {
-    const name = typeof r.meta?.transform === "string" ? r.meta.transform : null;
-    if (name && !out[name]) out[name] = { file: r.hash, hash: String(r.meta.hash ?? ""), size: Number(r.meta.size ?? 0) };
-  }
-  return out;
 }
