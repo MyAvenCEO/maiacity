@@ -2,6 +2,7 @@
 //! AVFoundation reads and writes MOV/MP4, VideoToolbox encodes and decodes in hardware (H.264, HEVC, ProRes —
 //! the iPhone's Apple Log 2 included), Core Image and Metal scale and transform colour. Nothing to install.
 
+pub mod aces2;
 pub mod color;
 pub mod cst;
 pub mod frames;

@@ -79,14 +79,18 @@ pub fn pressure() -> u32 {
     if ok == 0 { level } else { 1 }
 }
 
-/// A profile's input LUT for the studio's viewer, baked here from the same journey the proxies take (`cst`): a
-/// little-endian u32 size, then size³ RGB f32 in ACEScct, red fastest. The studio shows an original through it.
+/// A LUT for the studio's viewer, baked here from the same maths the proxies and the render use: a profile's journey
+/// into ACEScct (`cst`), or `odt-rec709` — the ACES 2.0 output transform, ACEScct to Rec.709 display code values
+/// (`aces2`, within 0.07 of a 10-bit code of OCIO). A little-endian u32 size, then size³ RGB f32, red fastest.
 #[tauri::command]
 pub fn color_lut(profile: String) -> crate::Res<tauri::ipc::Response> {
     crate::gate()?;
-    let journey = vault_media::cst::journey(&profile).ok_or_else(|| format!("no colour journey from {profile} into ACEScct"))?;
-    let size = vault_media::cst::CUBE_SIZE;
-    let cube = journey.cube(size);
+    let (size, cube) = if profile == "odt-rec709" {
+        (vault_media::aces2::CUBE_SIZE, vault_media::aces2::bake_cube(vault_media::aces2::CUBE_SIZE))
+    } else {
+        let journey = vault_media::cst::journey(&profile).ok_or_else(|| format!("no colour journey from {profile} into ACEScct"))?;
+        (vault_media::cst::CUBE_SIZE, journey.cube(vault_media::cst::CUBE_SIZE))
+    };
     let mut out = Vec::with_capacity(4 + cube.len() * 4);
     out.extend_from_slice(&(size as u32).to_le_bytes());
     for v in cube {
