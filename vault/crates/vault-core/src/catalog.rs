@@ -500,20 +500,37 @@ impl Catalog {
     }
 
     /// Every file's description whose JSON is here, newest entry per key — only what `meta/` says (the derived
-    /// records are merged in by `list_view`).
+    /// records are merged in by `list_view`). A deleted file (`meta.deleted`) is not listed.
     pub async fn list(&self) -> Result<Vec<Meta>> {
         let entries: Vec<_> = self.doc().get_many(Query::single_latest_per_key().key_prefix("meta/")).await?.collect().await;
         let mut out = Vec::new();
         for entry in entries {
             let entry = entry?;
             if let Ok(bytes) = self.store.blobs().get_bytes(entry.content_hash()).await {
-                if let Ok(meta) = serde_json::from_slice(&bytes) {
-                    out.push(meta);
+                if let Ok(meta) = serde_json::from_slice::<Meta>(&bytes) {
+                    if !is_deleted(&meta) {
+                        out.push(meta);
+                    }
                 }
             }
         }
         Ok(out)
     }
+
+    /// A file deleted from the library: its description says so (`meta.deleted`: when, and why), so every device
+    /// stops listing it; its bytes stay where they are kept until storage is cleaned — a delete by hand can be undone.
+    pub async fn delete_file(&self, hash: Hash, why: &str) -> Result<()> {
+        self.describe(hash, &serde_json::json!({ "meta": { "deleted": { "at": crate::ingest::now_iso(), "why": why } } })).await?;
+        Ok(())
+    }
+}
+
+/// Is this file deleted from the library (its description says so)?
+pub fn is_deleted(m: &Meta) -> bool {
+    m.meta.get("deleted").is_some_and(|d| !d.is_null())
+}
+
+impl Catalog {
 }
 
 #[cfg(test)]
