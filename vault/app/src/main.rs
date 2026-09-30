@@ -407,8 +407,7 @@ fn main() {
             // the studio for agents: MCP on this Mac only, behind the app's token
             // every video original without its proxy: queued, now and every ten minutes
             tauri::async_runtime::spawn(proxies::sweep(app.handle().clone(), vault.clone()));
-            // and every recording without its words: its language told and tagged (en/de), transcribed here, on-device
-            // (Phonon-2 in English, Nemotron in German), now and every ten minutes
+            // and every recording without its words: transcribed here, on-device (Phonon-2), now and every ten minutes
             tauri::async_runtime::spawn(transcripts::sweep(app.handle().clone(), vault.clone()));
             // and every world shot a timeline plays, rendered here in the studio's own world (world.rs)
             tauri::async_runtime::spawn(world::sweep(app.handle().clone(), vault.clone()));

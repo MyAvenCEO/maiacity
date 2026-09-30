@@ -495,7 +495,7 @@ impl Studio {
     }
 
     #[tool(
-        description = "Make a recording's words again, here on this Mac, on-device, its language told again unless the file is tagged en or de (then that), Phonon-2 in English or Nemotron 3.5 in German; what it had is set aside — queued behind any ingest, one recording at a time; follow it in library_list (meta.transcript_state, meta.transcript_progress)"
+        description = "Make a recording's words again, here on this Mac (Phonon-2, on-device, English; what it had is set aside) — queued behind any ingest, one recording at a time; follow it in library_list (meta.transcript_state, meta.transcript_progress)"
     )]
     async fn transcribe(&self, Parameters(a): Parameters<HashArg>) -> String {
         let r = async {
@@ -510,7 +510,7 @@ impl Studio {
     }
 
     #[tool(
-        description = "Once, by hand, on one Mac: download the on-device models (Phonon-2 and Nemotron 3.5 speech, Silero VAD) from where they were published — Phonon-2's ONNX made here by vault/tools/phonon2_onnx.py --int8 and put in <vault>/ingest/models-made/phonon-2/ first — ingest them into the Models story (the three-hash check) and compare each with the BLAKE3 hash pinned in the app (models.rs). After that every device gets them from our own vault, never from the internet. Answers each file's hash and whether it matches its pin."
+        description = "Once, by hand, on one Mac: download the on-device models (Phonon-2 speech, Silero VAD) from where they were published — Phonon-2's ONNX made here by vault/tools/phonon2_onnx.py --int8 and put in <vault>/ingest/models-made/phonon-2/ first — ingest them into the Models story (the three-hash check) and compare each with the BLAKE3 hash pinned in the app (models.rs). After that every device gets them from our own vault, never from the internet. Answers each file's hash and whether it matches its pin."
     )]
     async fn models_import(&self) -> String {
         let r = async {

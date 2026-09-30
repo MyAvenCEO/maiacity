@@ -1,4 +1,4 @@
-"""Phonon-2 (FermionResearch/Phonon-2) as ONNX, in the layout parakeet-rs's ParakeetTDT reads — once, by hand, on
+"""Phonon-2 (FermionResearch/Phonon-2) as ONNX, in the layout vault-asr's tdt.rs reads — once, by hand, on
 one Mac; the files it writes go into the Models story (vault/app models.rs pins them by BLAKE3).
 
 Phonon-2 is Parakeet TDT 0.6B v3 with its encoder re-trained on English and stored at five values per weight

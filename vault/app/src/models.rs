@@ -34,20 +34,6 @@ pub struct Model {
     pub files: &'static [ModelFile],
 }
 
-/// NVIDIA Nemotron 3.5 ASR streaming, 0.6B, multilingual, as parakeet-rs 0.3.7 reads it (ONNX export by altunenes;
-/// the sizes and SHA-256 match Hugging Face's LFS records of 2026-09-30).
-pub const NEMOTRON: Model = Model {
-    id: "nemotron-3.5-asr-streaming-0.6b",
-    version: "altunenes/parakeet-rs@main 2026-09-30",
-    files: &[
-        ModelFile { name: "config.json", source: "https://huggingface.co/altunenes/parakeet-rs/resolve/main/nemotron-3.5-asr-streaming-0.6b-onnx/config.json", size: 2_979, blake3: "01f1935a37268549ebda20b4fb05dc0798302d86a115301322c3aa4a14b01119" },
-        ModelFile { name: "tokenizer.model", source: "https://huggingface.co/altunenes/parakeet-rs/resolve/main/nemotron-3.5-asr-streaming-0.6b-onnx/tokenizer.model", size: 406_554, blake3: "9655b6ccd0ddeb098d493d62e8c9c79c6491d0af4119b6c709479a691e541010" },
-        ModelFile { name: "encoder.onnx", source: "https://huggingface.co/altunenes/parakeet-rs/resolve/main/nemotron-3.5-asr-streaming-0.6b-onnx/encoder.onnx", size: 42_164_972, blake3: "f53de9242341f68ac53c2441c7403ca7670f06603124e6364b67ecbf256edb0a" },
-        ModelFile { name: "decoder_joint.onnx", source: "https://huggingface.co/altunenes/parakeet-rs/resolve/main/nemotron-3.5-asr-streaming-0.6b-onnx/decoder_joint.onnx", size: 97_590_054, blake3: "c788e6afeaea4261b4c16884d57342de4789477486f622fbf5de51d573e18d69" },
-        ModelFile { name: "encoder.onnx.data", source: "https://huggingface.co/altunenes/parakeet-rs/resolve/main/nemotron-3.5-asr-streaming-0.6b-onnx/encoder.onnx.data", size: 2_454_405_120, blake3: "e51db1a31bd36111a2271e731a6258366d8d50de4f7d26c6f78db3e74a3be839" },
-    ],
-};
-
 /// Phonon-2 (FermionResearch/Phonon-2, English): Parakeet TDT 0.6B v3's graph as istupakov exported it, with Phonon's
 /// weights — made once by vault/tools/phonon2_onnx.py --int8 from phonon-2.bps.tar.zst (sha256 98125795…) and
 /// istupakov/parakeet-tdt-0.6b-v3-onnx; the preprocessor and the vocabulary are the export's own.
@@ -74,18 +60,10 @@ pub const SILERO: Model = Model {
     }],
 };
 
-/// A speech engine's model.
-pub fn model(engine: vault_asr::Engine) -> &'static Model {
-    match engine {
-        vault_asr::Engine::Phonon => &PHONON,
-        vault_asr::Engine::Nemotron => &NEMOTRON,
-    }
-}
-
 /// The speech models' folders on this Mac.
-pub fn speech_models(vault: &Vault, engine: vault_asr::Engine) -> vault_asr::Models {
+pub fn speech_models(vault: &Vault) -> vault_asr::Models {
     let root = vault.dir.join("models");
-    vault_asr::Models { engine, speech: root.join(model(engine).id), vad: root.join(SILERO.id).join(SILERO.files[0].name) }
+    vault_asr::Models { speech: root.join(PHONON.id), vad: root.join(SILERO.id).join(SILERO.files[0].name) }
 }
 
 /// The files of these models not complete in this Mac's store yet.
@@ -100,12 +78,12 @@ async fn missing(vault: &Vault, models: &[&Model]) -> Vec<(Hash, u64)> {
     out
 }
 
-/// Make an engine's speech models ready on this Mac: every pinned file in the store (the missing ones come down from
+/// Make the speech models ready on this Mac: every pinned file in the store (the missing ones come down from
 /// the server, checked against their hashes), then exported by hash into its folder. `progress` says how far
 /// ("the speech model arrives", 0…1 by bytes; "the speech model is unpacked").
-pub async fn ready(handle: &tauri::AppHandle, vault: &Arc<Vault>, engine: vault_asr::Engine, progress: &mut (dyn FnMut(&str, f64) + Send)) -> Result<vault_asr::Models, String> {
+pub async fn ready(handle: &tauri::AppHandle, vault: &Arc<Vault>, progress: &mut (dyn FnMut(&str, f64) + Send)) -> Result<vault_asr::Models, String> {
     use tauri::Manager;
-    let models = [model(engine), &SILERO];
+    let models = [&PHONON, &SILERO];
     let need = missing(vault, &models).await;
     if !need.is_empty() {
         let total: u64 = need.iter().map(|(_, s)| s).sum::<u64>().max(1);
@@ -137,7 +115,7 @@ pub async fn ready(handle: &tauri::AppHandle, vault: &Arc<Vault>, engine: vault_
             std::fs::write(&pin, f.blake3).map_err(|e| e.to_string())?;
         }
     }
-    Ok(speech_models(vault, engine))
+    Ok(speech_models(vault))
 }
 
 /// Once, by hand: every model file downloaded from where it was published (or taken from where it was made:
@@ -148,7 +126,7 @@ pub async fn import(vault: &Arc<Vault>, http: &reqwest::Client) -> Result<Value,
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
     let made = vault.ingest_dir().join("models-made");
     let mut out = Vec::new();
-    for m in [&PHONON, &NEMOTRON, &SILERO] {
+    for m in [&PHONON, &SILERO] {
         for f in m.files {
             let pinned: Hash = f.blake3.parse().map_err(|e| format!("{e}"))?;
             if matches!(vault.store.blobs().status(pinned).await, Ok(BlobStatus::Complete { .. })) && vault.catalog.has(pinned).await.unwrap_or(false) {
@@ -208,7 +186,7 @@ mod tests {
 
     #[test]
     fn every_pin_is_a_hash_and_every_source_names_its_file() {
-        for m in [&PHONON, &NEMOTRON, &SILERO] {
+        for m in [&PHONON, &SILERO] {
             for f in m.files {
                 assert!(f.blake3.parse::<Hash>().is_ok(), "{}", f.name);
                 assert!(f.source.ends_with(f.name), "{} ← {}", f.name, f.source);
@@ -216,8 +194,5 @@ mod tests {
             }
         }
         assert!(MODELS_STORY.len() == 64);
-        for e in vault_asr::Engine::ALL {
-            assert_eq!(model(e).id, e.id(), "the folder an engine reads is its model's");
-        }
     }
 }

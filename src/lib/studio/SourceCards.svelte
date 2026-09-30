@@ -216,7 +216,7 @@
 						</p>
 					{/if}
 					{#if st.rec}
-						<p title="Transcribed on this Mac, on-device (Nemotron) — by itself after the ingest; a failure tries again by itself, three times">
+						<p title="Transcribed on this Mac, on-device (Phonon-2) — by itself after the ingest; a failure tries again by itself, three times">
 							<b>Words</b> {st.words}/{st.rec}
 							{#if st.live} · {st.live.name} — {st.live.stage} {Math.floor(st.live.done * 100)}%{/if}
 							{#if st.retrying}<span class="soft"> · {st.retrying} trying again</span>{/if}
