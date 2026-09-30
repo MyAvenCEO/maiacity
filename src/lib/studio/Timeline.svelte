@@ -9,7 +9,7 @@
 -->
 <script>
 	import { evaluate, shotAt, toKeys } from './shots.js';
-	import { FPS, TRACKS, UNLINKED, isWorld, onSoundTrack, thumb, tint } from './studio.svelte.js';
+	import { FPS, TRACKS, UNLINKED, clockText, isWorld, onSoundTrack, raw, thumb, tint } from './studio.svelte.js';
 	import { wordsOf } from './transcript.js';
 	import { BALANCE_NODES, NEUTRAL, NEUTRAL_BALANCE, cleanBalance, isNeutral, presetOf } from './color.js';
 	import { wave } from './wave.js';
@@ -44,6 +44,35 @@
 		{ id: 'L:frame', label: 'Framing' },
 		...[...BALANCE_NODES].reverse().map((n) => ({ id: `L:${n.id}`, label: n.label }))
 	].map((l) => ({ ...l, accepts: [] }));
+	// in Grade the shots stand side by side, one column each whatever their length, each with its picture: the grade is
+	// judged shot against shot, not along the clock
+	const COL = 168;
+	const pics = $derived(grading ? s.clips.filter((c) => c.track === 'V1').sort((a, b) => a.start - b.start) : []);
+	const colOf = $derived(new Map(pics.map((c, i) => [c.id, i])));
+	/** where a picture clip sits: its column in Grade, its time elsewhere @param {Clip} c */
+	const left = (c) => (grading ? `${(colOf.get(c.id) ?? 0) * COL}px` : x(c.start));
+	/** @param {Clip} c */
+	const width = (c) => (grading ? `${COL}px` : x(c.dur));
+	/** the shot under the playhead */
+	const nowId = $derived(grading ? pics.find((c) => s.time >= c.start && s.time < c.start + c.dur)?.id ?? null : null);
+	/**
+	 * A shot's picture for the strip: its original's preview (the grading still's frame through the output transform),
+	 * else its thumbnail.
+	 * @param {Clip} c
+	 */
+	const previewOf = (c) => {
+		if (!c.hash) return null;
+		const orig = String(s.byHash.get(c.hash)?.meta?.proxy_of ?? c.hash);
+		const meta = s.byHash.get(orig)?.meta;
+		const h = [meta?.preview, meta?.thumbnail].find((v) => typeof v === 'string' && /^[0-9a-f]{64}$/.test(v));
+		return h ? raw(/** @type {string} */ (h)) : null;
+	};
+	/** a shot picked in the strip: selected, and the playhead on its grading still (else its first frame) @param {Clip} c */
+	const pick = (c) => {
+		s.selected = c.id;
+		const st = s.stillOf(c);
+		s.seek(st?.inside ? c.start + (st.t - c.in) : c.start + 1e-3);
+	};
 	let openLayers = $state(/** @type {string[]} */ ([]));
 	/** @param {string} id */
 	const toggleLayer = (id) => (openLayers = openLayers.includes(id) ? openLayers.filter((x) => x !== id) : [...openLayers, id]);
@@ -51,7 +80,7 @@
 		audio ? TRACKS.filter((t) => t.id.startsWith('A')) : story ? [STORY, ...TRACKS.filter((t) => t.id === 'T1')] : grading ? [...GRADE_LAYERS, ...TRACKS.filter((t) => t.id === 'V1')] : TRACKS
 	);
 	const rows = $derived(
-		grading ? `1.5rem ${GRADE_LAYERS.map((l) => (openLayers.includes(l.id) ? (l.id === 'L:grade' || l.id === 'L:look' ? '7.2rem' : l.id === 'L:wb' || l.id === 'L:frame' ? '4.4rem' : '2.8rem') : '1.5rem')).join(' ')} 2.2rem` :
+		grading ? `1.5rem ${GRADE_LAYERS.map((l) => (openLayers.includes(l.id) ? (l.id === 'L:grade' || l.id === 'L:look' ? '7.2rem' : l.id === 'L:wb' || l.id === 'L:frame' ? '4.4rem' : '2.8rem') : '1.5rem')).join(' ')} 7.2rem` :
 		story ? '1.5rem minmax(5rem, 3fr) minmax(2.6rem, 1fr)' :
 		audio ? `1.5rem repeat(${shown.length}, minmax(3.4rem, 1fr))` : `1.5rem minmax(2.6rem, 1fr) repeat(4, minmax(1.7rem, 1fr))${spec ? ` repeat(${LANES.length}, 1.45rem)` : ''}`
 	);
@@ -173,7 +202,7 @@
 	$effect(() => {
 		const t = s.time;
 		if (!s.playing || !scroller) return;
-		const px = t * s.pxPerSec, w = scroller.clientWidth, at = scroller.scrollLeft;
+		const px = grading ? (colOf.get(nowId ?? '') ?? 0) * COL : t * s.pxPerSec, w = scroller.clientWidth, at = scroller.scrollLeft;
 		if (px > at + w * 0.85 || px < at) scroller.scrollLeft = Math.max(0, px - w * 0.15);
 	});
 
@@ -274,7 +303,8 @@
 	/** @param {PointerEvent} e */
 	function scrub(e) {
 		const lanes = s.lanes;
-		if (!lanes) return;
+		// in Grade the shots are columns, not time: a shot is picked by its own column
+		if (!lanes || grading) return;
 		// a click in the world clip's lanes moves the playhead and keeps the clip (and its lanes) in hand
 		if (!(/** @type {Element} */ (e.target)).closest?.('.lane')) s.selected = null;
 		s.selectedKey = null;
@@ -416,9 +446,13 @@
 	</div>
 	<div class="scroll" bind:this={scroller}>
 		<!-- svelte-ignore a11y_no_static_element_interactions -->
-		<div class="lanes" class:locked={!s.canEdit} bind:this={s.lanes} style:width={x(s.span)} onpointerdown={scrub}>
+		<div class="lanes" class:locked={!s.canEdit} class:grading bind:this={s.lanes} style:width={grading ? `${pics.length * COL}px` : x(s.span)} onpointerdown={scrub}>
 			<div class="ruler">
-				{#each ticks as t (t)}<span class="tick" style:left={x(t)}>{t}s</span>{/each}
+				{#if grading}
+					{#each pics as c, i (c.id)}<span class="tick shot" class:now={nowId === c.id} style:left={left(c)} style:width={width(c)}><b>{i + 1}</b> {clockText(c.start)}</span>{/each}
+				{:else}
+					{#each ticks as t (t)}<span class="tick" style:left={x(t)}>{t}s</span>{/each}
+				{/if}
 			</div>
 			{#each shown as t (t.id)}
 				<!-- svelte-ignore a11y_no_static_element_interactions -->
@@ -427,13 +461,13 @@
 						{@const open = openLayers.includes(t.id)}
 						{#if t.id === 'L:look'}
 							<!-- svelte-ignore a11y_no_static_element_interactions -->
-							<div class="cell film" style:left="0" style:width={x(s.end)} onpointerdown={(e) => e.stopPropagation()}>
+							<div class="cell film" style:left="0" style:width={grading ? `${pics.length * COL}px` : x(s.end)} onpointerdown={(e) => e.stopPropagation()}>
 								{@render cdlCell(s.current?.grade?.look ?? null, s.current?.grade?.preset ?? null, open, (g, preset) => s.setMeta({ grade: g || preset ? { look: g, ...(preset ? { preset } : {}) } : null }))}
 							</div>
 						{:else}
 							{#each s.clips.filter((c) => c.track === 'V1') as c (c.id)}
 								<!-- svelte-ignore a11y_no_static_element_interactions -->
-								<div class="cell" class:sel={s.selected === c.id} style:left={x(c.start)} style:width={x(c.dur)} onpointerdown={(e) => (e.stopPropagation(), (s.selected = c.id))}>
+								<div class="cell" class:sel={s.selected === c.id} style:left={left(c)} style:width={width(c)} onpointerdown={(e) => (e.stopPropagation(), (s.selected = c.id))}>
 									{#if t.id === 'L:grade'}
 										{@render cdlCell(c.grade ?? null, null, open, (g) => s.patchClip(c.id, { grade: g ?? undefined }))}
 									{:else if t.id === 'L:frame'}
@@ -484,6 +518,15 @@
 								title="{p.words.map((w) => w.word).join(' ')} — edit it in the inspector (its voice clip)"
 							>
 								<span>{p.words.map((w) => w.word).join(' ')}</span>
+							</div>
+						{/each}
+					{:else if grading && t.id === 'V1'}
+						{#each pics as c, i (c.id)}
+							{@const pic = previewOf(c)}
+							<!-- svelte-ignore a11y_no_static_element_interactions -->
+							<div class="shot" class:sel={s.selected === c.id} class:now={nowId === c.id} class:balanced={!!c.balance} style:left={left(c)} style:width={width(c)} onpointerdown={(e) => (e.stopPropagation(), pick(c))} title="{s.clipName(c)}{c.script?.description ? ` — ${c.script.description}` : ''}">
+								{#if pic}<img src={pic} alt="" draggable="false" />{:else}<span class="none">{isWorld(c) ? 'world shot' : c.kind === 'slate' ? 'not filmed yet' : 'no picture yet'}</span>{/if}
+								<span class="cap"><b>{i + 1}</b> {c.script?.size ?? ''} {c.script?.description ?? s.clipName(c)}</span>
 							</div>
 						{/each}
 					{:else}
@@ -605,7 +648,7 @@
 					{/each}
 				</div>
 			{/if}
-			<div class="playhead" style:left={x(s.time)}><i></i></div>
+			{#if !grading}<div class="playhead" style:left={x(s.time)}><i></i></div>{/if}
 		</div>
 	</div>
 </div>
@@ -1272,6 +1315,84 @@
 	.key.cue.event {
 		border-color: var(--violet);
 		background: #4a3a80;
+	}
+
+	/* Grade: the shots side by side, one column each, with their pictures */
+	.lanes.grading {
+		cursor: default;
+	}
+
+	.tick.shot {
+		overflow: hidden;
+		padding-left: 0.4rem;
+		white-space: nowrap;
+	}
+
+	.tick.shot b {
+		color: var(--ink);
+	}
+
+	.tick.shot.now,
+	.tick.shot.now b {
+		color: var(--accent);
+	}
+
+	.shot {
+		position: absolute;
+		top: 0.25rem;
+		bottom: 0.25rem;
+		overflow: hidden;
+		margin: 0 3px;
+		border: 2px solid transparent;
+		border-radius: 4px;
+		background: var(--chrome);
+		cursor: pointer;
+	}
+
+	.shot img {
+		display: block;
+		width: 100%;
+		height: 100%;
+		object-fit: cover;
+	}
+
+	.shot.now {
+		border-color: var(--rec);
+	}
+
+	.shot.sel {
+		border-color: var(--accent);
+	}
+
+	.shot .none {
+		display: grid;
+		place-items: center;
+		height: 100%;
+		font-size: 0.66rem;
+		color: var(--dim);
+	}
+
+	.shot .cap {
+		position: absolute;
+		right: 0;
+		bottom: 0;
+		left: 0;
+		overflow: hidden;
+		padding: 0.15rem 0.35rem;
+		background: linear-gradient(transparent, rgb(0 0 0 / 0.75));
+		font-size: 0.62rem;
+		white-space: nowrap;
+		text-overflow: ellipsis;
+		color: #f0f3f7;
+	}
+
+	.shot .cap b {
+		color: var(--accent);
+	}
+
+	.shot.balanced .cap::after {
+		content: ' ◐';
+		color: var(--accent);
 	}
 
 	.playhead {
