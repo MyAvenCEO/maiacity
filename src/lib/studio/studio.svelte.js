@@ -49,7 +49,7 @@ import { command, native } from '$lib/native';
  */
 /** @typedef {{ words: CaptionWord[], start: number, end: number, clip: string }} Phrase */
 /**
- * Where a video's sound stands in the studio: its audio proxy decoded (ready), on its way, not made yet (waiting),
+ * Where a video's sound stands in the studio: decoded (ready), on its way (loading),
  * none in the file (silent), or failed (and why).
  * @typedef {'ready' | 'loading' | 'waiting' | 'silent' | `failed: ${string}`} SoundState
  */
@@ -249,7 +249,7 @@ export class Studio {
 	expanded = $state([]);
 
 	/**
-	 * a video's sound, by its hash: its audio proxy decoded for the sound tracks (see `sound()`)
+	 * a video's sound, by its hash: the movie's own sound decoded for the sound tracks (see `sound()`)
 	 * @type {Record<string, SoundState>}
 	 */
 	soundState = $state({});
@@ -950,8 +950,8 @@ export class Studio {
 	pendingSound = new Map();
 	/**
 	 * A clip's sound, ready to play: a sound file decoded (source()); a video's sound — a clip of it on a sound track —
-	 * from its audio proxy (meta.audio: a small audio-only file on the original's clock), decoded onto the video's own
-	 * source. A movie is never fetched whole for its sound. Until the audio proxy exists the clip says so (soundState).
+	 * decoded from the movie itself: its proxy (which carries the sound) or, without one, its original, read by hash
+	 * from the vault. There are no audio proxies. soundState says where each one is.
 	 * @param {string} hash
 	 */
 	async sound(hash) {
@@ -965,9 +965,12 @@ export class Studio {
 		const p = (async () => {
 			this.soundState[hash] = 'loading';
 			try {
-				// from the original itself, read on this Mac (the file the render mixes from) — sound has no proxy
-				const bytes = /** @type {ArrayBuffer} */ (await command('vault_sound', { hash }));
-				const buffer = await this.audioCtx().decodeAudioData(bytes);
+				// the sound the movie carries: its proxy's (the proxy keeps it, on the original's clock), else the original's —
+				// read by hash straight from the vault, never copied out of it
+				const from = this.proxy(m).hash ?? hash;
+				const res = await fetch(raw(from));
+				if (!res.ok) throw new Error(`the vault did not give ${from.slice(0, 12)} (${res.status})`);
+				const buffer = await this.audioCtx().decodeAudioData(await res.arrayBuffer());
 				this.sources[hash] = { ...this.sources[hash], buffer, peaks: peaksOf(buffer) };
 				this.soundState[hash] = 'ready';
 			} catch (e) {
@@ -980,11 +983,11 @@ export class Studio {
 		this.pendingSound.set(hash, p);
 		return p;
 	}
-	/** Every video sound on the sound tracks not decoded yet, tried again (its audio proxy may have come in). */
+	/** Every video sound on the sound tracks not decoded yet, tried again (its proxy may have come in). */
 	retrySounds() {
 		for (const c of this.clips) if (onSoundTrack(c) && c.hash && this.soundState[c.hash] && this.soundState[c.hash] !== 'ready') void this.sound(c.hash);
 	}
-	/** The library read again (a proxy, an audio proxy or a transcript came in), and the sounds waiting on it tried. */
+	/** The library read again (a proxy or a transcript came in), and the sounds waiting on it tried. */
 	async reloadLibrary() {
 		this.library = await listMedia().then(asStudio).catch(() => this.library);
 		this.retrySounds();
@@ -1080,7 +1083,7 @@ export class Studio {
 				continue;
 			}
 			const local = this.shotTime(c);
-			// a picture whose sound is its own clip is silent — but while that sound's audio proxy is not here yet, the
+			// a picture whose sound is its own clip is silent — but while that sound is not decoded yet, the
 			// picture's player lends it its sound (in sync only), so nothing plays mute
 			const p = this.partnerOf(c);
 			v.volume = Math.min(1, p && onSoundTrack(p) && c.hash && this.soundState[c.hash] !== 'ready' && !this.drift(c) ? p.vol : c.vol);
@@ -1151,7 +1154,7 @@ export class Studio {
 			)
 		);
 		const mute = this.clips.filter((c) => onSoundTrack(c) && c.hash && this.byHash.get(c.hash)?.kind === 'video' && this.soundState[c.hash] !== 'ready');
-		if (mute.length) console.warn(`${mute.length} video sound clip(s) play silent until their audio proxy is here:`, mute.map((c) => `${this.clipName(c)} (${this.soundState[c.hash ?? '']})`).join(', '));
+		if (mute.length) console.warn(`${mute.length} video sound clip(s) play silent until their sound is decoded:`, mute.map((c) => `${this.clipName(c)} (${this.soundState[c.hash ?? '']})`).join(', '));
 		await this.preparePlayback();
 		this.playing = true;
 		this.schedule();
@@ -1328,7 +1331,7 @@ export class Studio {
 	}
 	/**
 	 * A video clip's sound, pulled out onto A3 as a clip of its own (the same file, the same place and length), linked to
-	 * it; the picture's player goes silent. The sound plays from its audio proxy, the render from the original.
+	 * it; the picture's player goes silent. The sound plays from the movie itself, the render from the original.
 	 * @param {Clip} c
 	 */
 	detachSound(c) {
@@ -1558,7 +1561,7 @@ export class Studio {
 	// ── what the vault brings later: audio proxies and transcripts (made on the server, synced into the catalog) ──
 	/** @type {ReturnType<typeof setInterval> | null} */
 	vaultWatch = null;
-	/** Is anything on screen waiting for the vault — a sound's audio proxy, a transcript on its way? */
+	/** Is anything on screen waiting for the vault — a sound still loading, a transcript on its way? */
 	waitingOnVault() {
 		if (Object.values(this.soundState).some((v) => v !== 'ready' && v !== 'silent' && v !== 'loading')) return true;
 		const hashes = new Set([...this.clips.map((c) => c.hash), this.preview]);

@@ -14,6 +14,7 @@
 	import { remember } from '$lib/app/session';
 	import { command, native } from '$lib/native';
 	import NavPill from '$lib/app/NavPill.svelte';
+	import AskModal from '$lib/app/AskModal.svelte';
 	import { immersive as fullScreen } from '$lib/app/immersive.svelte';
 	import { gameAt, placeOf, released } from '$lib/app/places';
 
@@ -136,6 +137,7 @@
 		{#if !immersive}<NavPill {founder} onsignout={leave} />{/if}
 	{/if}
 {/if}
+{#if native() && phase === 'ready'}<AskModal />{/if}
 
 <style>
 	.gate {

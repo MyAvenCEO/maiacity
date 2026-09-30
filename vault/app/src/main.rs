@@ -4,11 +4,13 @@
 //! Range, for <img> and <video>.
 
 mod analysis;
+mod asks;
 mod auth;
 mod local;
 mod mcp;
 mod models;
 mod proxies;
+mod prune;
 mod render;
 mod sources;
 mod stories;
@@ -409,6 +411,8 @@ fn main() {
             tauri::async_runtime::spawn(transcripts::sweep(app.handle().clone(), vault.clone()));
             // and every world shot a timeline plays, rendered here in the studio's own world (world.rs)
             tauri::async_runtime::spawn(world::sweep(app.handle().clone(), vault.clone()));
+            // and deleted files let go of here, their bytes pruned by iroh's garbage collection (prune.rs)
+            tauri::async_runtime::spawn(prune::sweep(vault.clone()));
             // and the render queue: this Mac is the render worker — films and hero frames, natively (render.rs)
             tauri::async_runtime::spawn(render::sweep(app.handle().clone(), vault.clone()));
             let (handle, v) = (app.handle().clone(), vault.clone());
@@ -443,6 +447,8 @@ fn main() {
             sync::vault_connect,
             sync::vault_copies,
             mcp::mcp_info,
+            asks::asks_open,
+            asks::ask_answer,
             vault_status,
             vault_list,
             vault_describe,
@@ -452,7 +458,6 @@ fn main() {
             sources::source_ready,
             sources::source_delete,
             sync::vault_transfers,
-            render::vault_sound,
             stories::story_save,
             stories::story_delete,
             stories::files_move,

@@ -77,6 +77,16 @@ impl S3 {
         Ok(())
     }
 
+    /// Remove an object (gone already: fine).
+    pub async fn delete(&self, key: &str) -> Result<()> {
+        let url = self.bucket.delete_object(Some(&self.creds), key).sign(SIGN);
+        let res = self.http.delete(url).send().await?;
+        if !res.status().is_success() && res.status().as_u16() != 404 {
+            bail!("DELETE {key}: {} {}", res.status(), res.text().await.unwrap_or_default());
+        }
+        Ok(())
+    }
+
     /// Start a multipart upload: write parts into it, then finish (or abort — nothing half-made stays).
     /// A file smaller than one part never becomes a multipart upload: `finish` sends it in one PUT.
     pub fn upload(&self, key: &str) -> Upload {

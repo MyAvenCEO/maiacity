@@ -23,7 +23,7 @@ use rmcp::{
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use tauri::AppHandle;
-use vault_core::Vault;
+use vault_core::{Meta, Vault};
 
 use crate::auth::{self, Auth};
 
@@ -872,17 +872,53 @@ impl Studio {
     }
 
     #[tool(
-        description = "Delete files from the library, on the person's word only: each file's description says it is deleted (when, why), and no device lists it any more; its bytes stay where they are kept until storage is cleaned, so it can be undone."
+        description = "Delete files from the vault for good — never by yourself: the person is asked first. The studio shows them a modal with every file that would go (with it: the files made of it — proxies, grading stills, previews, thumbnails) and your why; the call waits for their answer (up to 15 minutes). On yes, each file's description says it is deleted (when, why), no device lists it, every Mac lets go of it and iroh's garbage collection prunes its bytes, and the server empties Object Storage of it — it cannot be undone. On no (or no answer), nothing happens."
     )]
     async fn library_delete(&self, Parameters(a): Parameters<DeleteArgs>) -> String {
         let r = async {
-            let mut done = Vec::new();
+            let all = self.vault.catalog.list().await.map_err(|e| format!("{e:#}"))?;
+            let mut asked: Vec<String> = Vec::new();
             for h in &a.hashes {
-                let hash: iroh_blobs::Hash = h.parse().map_err(|e| format!("{h}: {e}"))?;
-                self.vault.catalog.delete_file(hash, &a.why).await.map_err(|e| format!("{e:#}"))?;
-                done.push(h.clone());
+                h.parse::<iroh_blobs::Hash>().map_err(|e| format!("{h}: {e}"))?;
+                if !all.iter().any(|m| &m.hash == h) {
+                    return Err(format!("no file {h} in the library"));
+                }
+                if !asked.contains(h) {
+                    asked.push(h.clone());
+                }
             }
-            Ok::<_, String>(json!({ "deleted": done }))
+            // and every file made of one of them (its proxy, grading still, preview, thumbnail: a `<role>_of` it names)
+            let made_of = |m: &Meta, of: &str| m.meta.as_object().is_some_and(|o| o.iter().any(|(k, v)| k.ends_with("_of") && v.as_str() == Some(of)));
+            let mut with: Vec<String> = Vec::new();
+            for h in &asked {
+                for m in all.iter().filter(|m| made_of(m, h) && !asked.contains(&m.hash)) {
+                    if !with.contains(&m.hash) {
+                        with.push(m.hash.clone());
+                    }
+                }
+            }
+            let file = |h: &String, part: &str| {
+                let m = all.iter().find(|m| &m.hash == h).expect("listed");
+                let preview = ["preview", "thumbnail"].iter().find_map(|k| m.meta.get(*k).and_then(|v| v.as_str()).map(String::from));
+                let preview = preview.or_else(|| m.mime.starts_with("image/").then(|| m.hash.clone()));
+                json!({ "hash": h, "name": m.original_name, "title": m.title, "kind": m.kind, "class": m.class, "role": m.meta.get("role"),
+                    "story": m.story, "size": m.size, "preview": preview, "part": part })
+            };
+            let files: Vec<Value> = asked.iter().map(|h| file(h, "asked")).chain(with.iter().map(|h| file(h, "with"))).collect();
+            let question = json!({ "kind": "delete", "why": a.why, "files": files, "bytes": files.iter().filter_map(|f| f["size"].as_u64()).sum::<u64>() });
+            match crate::asks::ask(&self.handle, question).await {
+                Some(true) => {
+                    let mut done = Vec::new();
+                    for h in asked.iter().chain(with.iter()) {
+                        let hash: iroh_blobs::Hash = h.parse().map_err(|e| format!("{h}: {e}"))?;
+                        self.vault.catalog.delete_file(hash, &a.why).await.map_err(|e| format!("{e:#}"))?;
+                        done.push(h.clone());
+                    }
+                    Ok::<_, String>(json!({ "approved": true, "deleted": done }))
+                }
+                Some(false) => Ok(json!({ "approved": false, "deleted": [], "note": "the person said no: nothing was deleted" })),
+                None => Ok(json!({ "approved": false, "deleted": [], "note": "nobody answered in 15 minutes: nothing was deleted" })),
+            }
         };
         text(r.await)
     }

@@ -593,51 +593,6 @@ pub fn level_sound(measured: &Value, clips: &[Value], targets: &[(String, f64)],
     out
 }
 
-/// A video's sound, for the studio to play: read from the original itself (AVFoundation, 48 kHz stereo — the file the
-/// render mixes from) and handed over as a 16-bit WAV. Sound never plays from a proxy.
-#[tauri::command]
-pub async fn vault_sound(app: tauri::State<'_, crate::App>, hash: String) -> Res<tauri::ipc::Response> {
-    crate::gate()?;
-    let h: iroh_blobs::Hash = hash.parse().map_err(err)?;
-    let m = app.vault.catalog.meta(h).await.map_err(err)?.ok_or("no such file")?;
-    let ext = std::path::Path::new(&m.original_name).extension().map(|e| e.to_string_lossy().to_lowercase()).unwrap_or_else(|| "mov".into());
-    let path = app.vault.ingest_dir().join(format!("{hash}.sound.{ext}"));
-    app.vault.store.blobs().export(h, &path).await.map_err(|e| format!("the original is not on this Mac: {e:#}"))?;
-    let p = path.clone();
-    let wav = tauri::async_runtime::spawn_blocking(move || -> anyhow::Result<Vec<u8>> {
-        let mut frames: Vec<f32> = Vec::new();
-        if let Some(mut r) = vault_render::av::AudioReader::open(&p, 0.0, 36_000.0)? {
-            while let Some((_, chunk)) = r.next_chunk()? {
-                frames.extend(chunk);
-            }
-        }
-        let rate = vault_render::av::RATE;
-        let data = frames.len() * 2;
-        let mut out = Vec::with_capacity(44 + data);
-        out.extend_from_slice(b"RIFF");
-        out.extend_from_slice(&((36 + data) as u32).to_le_bytes());
-        out.extend_from_slice(b"WAVEfmt ");
-        out.extend_from_slice(&16u32.to_le_bytes());
-        out.extend_from_slice(&1u16.to_le_bytes()); // PCM
-        out.extend_from_slice(&2u16.to_le_bytes()); // stereo
-        out.extend_from_slice(&rate.to_le_bytes());
-        out.extend_from_slice(&(rate * 4).to_le_bytes());
-        out.extend_from_slice(&4u16.to_le_bytes());
-        out.extend_from_slice(&16u16.to_le_bytes());
-        out.extend_from_slice(b"data");
-        out.extend_from_slice(&(data as u32).to_le_bytes());
-        for s in frames {
-            out.extend_from_slice(&((s.clamp(-1.0, 1.0) * 32767.0).round() as i16).to_le_bytes());
-        }
-        Ok(out)
-    })
-    .await
-    .map_err(err)?
-    .map_err(err);
-    std::fs::remove_file(&path).ok();
-    Ok(tauri::ipc::Response::new(wav?))
-}
-
 /// The Audio tab: how the timeline on screen sounds, clip by clip (to draw; it changes nothing).
 #[tauri::command]
 pub async fn sound_measure(app: tauri::State<'_, crate::App>, timeline: Value) -> Res<Value> {

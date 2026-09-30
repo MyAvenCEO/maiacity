@@ -329,9 +329,18 @@ impl Peer {
             let mine: Vec<_> = self.doc.get_many(Query::author(self.author).key_prefix("blobs/")).await?.collect().await;
             mine.into_iter().flatten().map(|e| String::from_utf8_lossy(e.key()).trim_start_matches("blobs/").to_string()).collect()
         };
+        // a deleted file: out of the bucket, and this server lets go of it (its holding and its records) — never pulled
+        let deleted = self.deleted().await;
+        for hex in deleted.iter().filter(|h| held.contains(*h)) {
+            match self.purge(hex, s3).await {
+                Ok(()) => tracing::info!("deleted {hex} from the bucket"),
+                Err(e) => tracing::warn!("delete {hex}: {e:#}"),
+            }
+        }
         for entry in blobs {
             let (hash, size) = (entry.content_hash(), entry.content_len());
-            if failed.contains(&hash) || held.contains(&hash.to_hex().to_string()) {
+            let hex = hash.to_hex().to_string();
+            if failed.contains(&hash) || held.contains(&hex) || deleted.contains(&hex) {
                 continue;
             }
             let key = s3::blob_key(&hash.to_hex());
@@ -424,6 +433,25 @@ impl Peer {
     /// Write a file's description as the server (a new `meta/<hash>` entry, signed by the server's author).
     pub(crate) async fn write_meta(&self, hash: Hash, meta: &serde_json::Value) -> Result<()> {
         self.doc.set_bytes(self.author, format!("meta/{}", hash.to_hex()), serde_json::to_vec(meta)?).await?;
+        Ok(())
+    }
+
+    /// The files whose description says they are deleted (hex).
+    async fn deleted(&self) -> HashSet<String> {
+        let Ok(metas) = self.metas().await else { return HashSet::new() };
+        metas.into_iter().filter(|(_, m)| m.pointer("/meta/deleted").is_some_and(|d| !d.is_null())).map(|(h, _)| h.to_hex().to_string()).collect()
+    }
+
+    /// A deleted file leaves the server: its bytes and derived records out of the bucket, then its holding and its
+    /// records out of the catalog (so no replica references it: iroh's garbage collection prunes it on every Mac).
+    async fn purge(&self, hex: &str, s3: &S3) -> Result<()> {
+        s3.delete(&s3::blob_key(hex)).await?;
+        for prefix in ["transcript/", "sound/", "analysis/"] {
+            s3.delete(&s3::derived_key(&format!("{prefix}{hex}"))).await?;
+        }
+        for prefix in ["blobs/", "transcript/", "sound/", "analysis/"] {
+            self.doc.del(self.author, format!("{prefix}{hex}")).await?;
+        }
         Ok(())
     }
 
