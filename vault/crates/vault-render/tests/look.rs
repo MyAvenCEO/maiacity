@@ -66,6 +66,9 @@ fn what_a_shot_has_only_by_content_is_not_matched() {
     assert!(!used.contains(&"blacks".to_string()), "{used:?}");
     let (_, used) = fit(&m, &want, &out, &["skin".to_string()]);
     assert!(!used.contains(&"skin".to_string()));
+    // one side of an element: feet on a bright rug match the face's colour, not its level
+    let (_, used) = fit(&m, &want, &out, &["skin.level".to_string(), "whites.colour".to_string()]);
+    assert!(used.contains(&"skin.colour".to_string()) && used.contains(&"whites.level".to_string()), "{used:?}");
 }
 
 #[test]

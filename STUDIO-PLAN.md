@@ -10,9 +10,20 @@
   - ⬜ The HTTPS gateway fetch (sync.rs keep_complete) removed: files come over iroh from whoever holds them
   - ⬜ Every device rules-driven like the drive: download policy = records only, wanted files fetched + pinned (tags), GC protection = tags + records only (then `Keep` and the blanket docs protection go) — de-sync per device works
 - 🔄 **SDD_A** (external SSD as its own vault device): Day 01 fetching over iroh, verified
-- ⬜ Base correction on the marked stills, once the Day 01 analysis has marked every shot
+- ⬜ Watch the Day 01 base correction in the Grade tab and say yes or adjust (garden skin paler than bedroom skin by
+  intent: more saturation there if wanted); once the analysis has marked every shot's still, `grade_look` it again
 
 ## Done today
+- **Day 01 · Opening base-corrected** (every V1 shot, balance only, no look):
+  - bedroom master (the bed from the side): a touch warm (+0.25); garden master (the walk): clearly warm (+0.5)
+  - all faces 47.5–49 IRE on the skin line; blacks 5–10, mid-tones 40–50 IRE
+  - measured on the 4K stills with `grade_look`, checked on `grade_scopes`
+- **Grade tab:** the shots side by side in the timeline, one column each with its picture, the grade's layers aligned
+- **Builds:**
+  - one build folder for every checkout and worktree (`maiaCITY/.cargo/target`; each `vault/target` links to it),
+    which freed about 25 GB
+  - no LTO, so a change rebuilds in a fraction of the time
+  - debug builds slimmer, with their dependencies optimised
 - **Server serves its own made files over iroh** (pinned in its store; old ones read back from S3 once); native GC on the server
 - **Drives:** an external disk is its own iroh vault device; each story's rules (per class) decide who keeps what; changes asked in the modal
 - **Studio in dark marine**; one name per file class everywhere (working, original, proxy, delivery)

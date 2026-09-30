@@ -302,8 +302,9 @@ pub struct MatchArgs {
     pub warmth: Option<f64>,
     /// per clip id, parts of its frame named by hand (a known white, grey, black, the skin)
     pub regions: Option<std::collections::HashMap<String, RegionsArg>>,
-    /// per clip id, elements not to match (blacks, whites, mids, skin, white, grey, black): what that shot has only
-    /// by content (a frame without real blacks)
+    /// per clip id, elements not to match (blacks, whites, mids, skin, white, grey, black) — what that shot has only
+    /// by content (a frame without real blacks) — or only one side of one: `skin.level` (feet on a bright rug need
+    /// not be as bright as a face), `whites.colour` (a cream rug is not a white wall)
     pub skip: Option<std::collections::HashMap<String, Vec<String>>>,
     /// false: only propose the balances, write nothing (default true: write them)
     pub apply: Option<bool>,
