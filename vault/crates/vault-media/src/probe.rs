@@ -124,6 +124,40 @@ pub fn probe(src: impl Into<Source>) -> Result<Probe> {
     }
 }
 
+/// What a recording's sound record needs (`sound/<hash>`): whether it has sound, how long it runs, and the camera's
+/// start timecode with its rate — AVFoundation for the tracks, the file's own boxes for the timecode (`timecode`).
+/// A movie or a sound file alike.
+#[derive(Debug, Clone, Default, PartialEq, Serialize)]
+pub struct Sound {
+    pub audio: bool,
+    pub seconds: f64,
+    /// the picture's rate (none for a sound file)
+    pub fps: Option<f64>,
+    /// "HH:MM:SS:FF" and its rate
+    pub timecode: Option<(String, f64)>,
+}
+
+pub fn sound(src: impl Into<Source>) -> Result<Sound> {
+    let src: Source = src.into();
+    let asset = src.asset()?;
+    // SAFETY: plain AVFoundation calls on objects we own; the synchronous accessors block until loaded.
+    let (audio, seconds, fps) = unsafe {
+        let duration = asset.duration();
+        let seconds = if duration.timescale > 0 { duration.value as f64 / duration.timescale as f64 } else { 0.0 };
+        #[allow(deprecated)]
+        let videos = asset.tracksWithMediaType(AVMediaTypeVideo.context("AVMediaTypeVideo")?);
+        #[allow(deprecated)]
+        let audios = asset.tracksWithMediaType(AVMediaTypeAudio.context("AVMediaTypeAudio")?);
+        let fps = videos.firstObject().map(|t| {
+            let t: Retained<AVAssetTrack> = Retained::cast_unchecked(t);
+            t.nominalFrameRate() as f64
+        });
+        (audios.count() > 0, seconds, fps.filter(|f| *f > 0.0))
+    };
+    let timecode = crate::timecode::start_timecode(&src, fps).unwrap_or(None);
+    Ok(Sound { audio, seconds, fps, timecode })
+}
+
 fn fourcc(code: u32) -> String {
     code.to_be_bytes().iter().map(|&b| if b.is_ascii_graphic() || b == b' ' { b as char } else { '?' }).collect()
 }

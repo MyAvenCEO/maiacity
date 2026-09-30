@@ -3,6 +3,7 @@
 //! this Mac's SSD), ingest with the three-hash check, and `vault://localhost/<hash>` — the bytes of any file, with
 //! Range, for <img> and <video>.
 
+mod analyse;
 mod analysis;
 mod asks;
 mod auth;
@@ -12,8 +13,9 @@ mod local;
 mod mcp;
 mod models;
 mod proxies;
-mod prune;
+mod keep;
 mod render;
+mod sound;
 mod sources;
 mod stories;
 mod sync;
@@ -269,6 +271,9 @@ async fn run_ingest(
     {
         let (h, v) = (handle.clone(), vault.clone());
         tauri::async_runtime::spawn(async move { transcripts::queue_due(&h, &v).await });
+        // its sound record (the start timecode) and its shot analysis, here too (sound.rs, analyse/)
+        sound::wake();
+        analyse::wake();
     }
     let seconds = started.elapsed().as_secs_f64();
     let bytes = outcomes.iter().map(|o| o.size).sum();
@@ -411,6 +416,10 @@ fn main() {
             tauri::async_runtime::spawn(proxies::sweep(app.handle().clone(), vault.clone()));
             // and every recording without its words: transcribed here, on-device (Phonon-2), now and every ten minutes
             tauri::async_runtime::spawn(transcripts::sweep(app.handle().clone(), vault.clone()));
+            // and every recording's sound record (its start timecode), read here from the file itself
+            tauri::async_runtime::spawn(sound::sweep(vault.clone()));
+            // and every picture's tags, cues and thumbnail: its proxy's frames, sampled here, to Prem's Qwen from this Mac
+            tauri::async_runtime::spawn(analyse::sweep(app.handle().clone(), vault.clone()));
             // and every world shot a timeline plays, rendered here in the studio's own world (world.rs)
             tauri::async_runtime::spawn(world::sweep(app.handle().clone(), vault.clone()));
             // nothing of the vault beside its store: old plates become vault files; the models' unpacked copies and the
@@ -426,8 +435,8 @@ fn main() {
             }
             // and every external drive that is a vault device of its own, kept complete for its stories (drives.rs)
             tauri::async_runtime::spawn(drives::start(app.handle().clone(), vault.clone()));
-            // and deleted files let go of here, their bytes pruned by iroh's garbage collection (prune.rs)
-            tauri::async_runtime::spawn(prune::sweep(vault.clone()));
+            // and what this Mac keeps (avenSSD): its stories' files fetched, pinned and announced, the rest let go of (keep.rs)
+            tauri::async_runtime::spawn(keep::sweep(vault.clone()));
             // and the render queue: this Mac is the render worker — films and hero frames, natively (render.rs)
             tauri::async_runtime::spawn(render::sweep(app.handle().clone(), vault.clone()));
             let (handle, v) = (app.handle().clone(), vault.clone());
@@ -463,7 +472,7 @@ fn main() {
             sync::vault_copies,
             mcp::mcp_info,
             asks::asks_open,
-            drives::drives_status,
+            keep::stores_status,
             asks::ask_answer,
             vault_status,
             vault_list,
@@ -486,6 +495,8 @@ fn main() {
             proxies::color_thumb,
             proxies::vault_proxy,
             transcripts::vault_transcribe,
+            analyse::analysis_setup,
+            analyse::vault_analyse,
             render::sound_measure,
             world::world_proxy_next,
             world::world_proxy_frame,

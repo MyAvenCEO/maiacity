@@ -55,6 +55,11 @@
 - **Temp tags vanish on exit.** Anything that must stay needs a named tag.
 - **GC off by default; when on, feed it from Postgres and abort on error.**
 - **Deletion is only via GC** — there is no "delete this blob now" call.
+- **iroh-docs' GC protection pins every hash the catalog names** — the files too (`blobs/<hash>`). A store that keeps
+  only a bounded cache of files (the server, `vault-server/src/cold.rs`) must take them out of the docs' set.
+- **iroh-blobs 0.103 applies `EventMask.get` to every request kind** (get, get_many, push, observe) — so push is *not*
+  disabled with the default sender, and with `get: Intercept` the handler must answer push and observe too (the
+  server refuses push, allows observe).
 - **Unclean shutdown can lose the last seconds of writes** — always `router.shutdown().await`.
 - **Re-importing existing blobs can leak memory** (iroh-blobs #266) — check `has(hash)` first on bulk ingest.
 - **Don't hold `Endpoint` in a hook; don't clone `Connection` out of a hook** — use `weak_handle()`.

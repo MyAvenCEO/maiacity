@@ -1,6 +1,6 @@
 //! The studio's colour maths, pure Rust and platform-free: every source's journey into ACEScct (`cst`) and the ACES 2.0
-//! output transform, ACEScct to Rec.709 display (`aces2`). The Mac's native media (vault-media: Core Image, Metal)
-//! and the vault server (analyse.rs: the picture a model sees, through ffmpeg's `lut3d`) use the same numbers.
+//! output transform, ACEScct to Rec.709 display (`aces2`). The Mac's native media (vault-media, vault-render: Core
+//! Image, Metal) use these numbers for the proxies, the render, the previews and the frames the shot analysis sends.
 
 pub mod aces2;
 pub mod cst;

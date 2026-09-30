@@ -12,6 +12,7 @@ pub mod probe;
 pub mod proxy;
 pub mod source;
 pub mod still;
+pub mod timecode;
 
 /// The colour maths live in their own platform-free crate (the vault server needs them too); here under their old names.
 pub use vault_color::{aces2, cst};

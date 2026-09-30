@@ -573,6 +573,37 @@ impl Catalog {
         Ok(out)
     }
 
+    /// Every record's content (every entry but the files' holdings): what garbage collection keeps besides the tags.
+    pub async fn record_hashes(&self) -> Result<std::collections::HashSet<Hash>> {
+        let entries: Vec<_> = self.doc().get_many(Query::all()).await?.collect().await;
+        Ok(entries.into_iter().flatten().filter(|e| !e.key().starts_with(b"blobs/") && e.content_len() > 0).map(|e| e.content_hash()).collect())
+    }
+
+    /// A store's record (`store/<name>`: its node, its catalog author) — what every replica knows of a store.
+    pub async fn store_record(&self, name: &str) -> Result<Option<serde_json::Value>> {
+        let Some(e) = self.doc().get_one(Query::single_latest_per_key().key_exact(format!("store/{name}"))).await? else { return Ok(None) };
+        let Ok(bytes) = self.store.blobs().get_bytes(e.content_hash()).await else { return Ok(None) };
+        Ok(serde_json::from_slice(&bytes).ok())
+    }
+
+    /// Say what a store is (only when it changed: no entry for nothing).
+    pub async fn put_store_record(&self, name: &str, record: &serde_json::Value) -> Result<()> {
+        if self.store_record(name).await?.as_ref() != Some(record) {
+            self.doc().set_bytes(self.author, format!("store/{name}"), serde_json::to_vec(record)?).await?;
+        }
+        Ok(())
+    }
+
+    /// Is this file pinned here (the tag `vault/<hash>`)?
+    pub async fn pinned(&self, hash: Hash) -> Result<bool> {
+        Ok(self.store.tags().get(format!("vault/{}", hash.to_hex())).await?.is_some())
+    }
+
+    /// Has this device said it holds this file (its own `blobs/<hash>` entry)?
+    pub async fn announced(&self, hash: Hash) -> Result<bool> {
+        Ok(self.doc().get_one(Query::author(self.author).key_exact(format!("blobs/{}", hash.to_hex()))).await?.is_some())
+    }
+
     /// Does this device still hold a file (its pin, or its own `blobs/<hash>` entry)?
     pub async fn holds(&self, hash: Hash) -> Result<bool> {
         if self.store.tags().get(format!("vault/{}", hash.to_hex())).await?.is_some() {

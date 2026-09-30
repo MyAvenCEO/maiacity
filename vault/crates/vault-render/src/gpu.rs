@@ -455,6 +455,17 @@ impl Gpu {
         }
     }
 
+    /// A picture's display code values as a JPEG in memory, tagged Rec.709 (the frames the shot analysis sends).
+    pub fn jpeg_bytes(&self, img: &CIImage, w: u32, h: u32) -> Result<Vec<u8>> {
+        // SAFETY: plain Core Image and Core Graphics calls
+        unsafe {
+            let img = img.imageByCroppingToRect(rect(0.0, 0.0, w as f64, h as f64));
+            let space = objc2_core_graphics::CGColorSpace::with_name(Some(objc2_core_graphics::kCGColorSpaceITUR_709)).context("no Rec.709 colour space")?;
+            let data = self.context.JPEGRepresentationOfImage_colorSpace_options(&img, &space, &NSDictionary::new()).context("Core Image made no JPEG")?;
+            Ok(data.to_vec())
+        }
+    }
+
     /// Read a picture back as RGBA f32 (tests, the hero frame).
     pub fn read(&self, img: &CIImage, w: u32, h: u32) -> Vec<f32> {
         let mut px = vec![0f32; (w * h * 4) as usize];

@@ -58,7 +58,7 @@ pub fn wants(m: &Meta) -> bool {
         && m.meta.get("shot").is_none()
 }
 
-fn age_hours(at: &str, now: &str) -> Option<i64> {
+pub(crate) fn age_hours(at: &str, now: &str) -> Option<i64> {
     // ISO seconds since the epoch, compared as the ingest writes them ("2026-09-30T09:15:00Z")
     let secs = |s: &str| -> Option<i64> {
         let (d, t) = s.trim_end_matches('Z').split_once('T')?;
@@ -171,6 +171,8 @@ async fn one(handle: AppHandle, vault: Arc<Vault>, hex: String) {
         vault.catalog.write_record(TRANSCRIPT, hash, &r).await.ok();
     }
     handle.emit("vault-transcript", json!({ "of": hex })).ok();
+    // a recording's analysis waits for its words
+    crate::analyse::wake();
 }
 
 /// Why a transcript did not come: it waits (for what comes by itself — no try used up), or it failed.
