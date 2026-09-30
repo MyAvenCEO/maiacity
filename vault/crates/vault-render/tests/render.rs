@@ -199,6 +199,15 @@ fn the_cut_the_fades_the_captions_and_qc() {
     assert!(foot(f, 1.7) < 0.8, "a caption at 1.7 s: {}", foot(f, 1.7));
     assert!(foot(f, 2.5) > 0.95, "no caption at 2.5 s");
 
+    // a video's own sound on the picture track at a volume is in the mix, as the studio plays it; at 0 it is not
+    let measured = vault_render::measure_sound(&t, &lib).unwrap();
+    let ids: Vec<&str> = measured["clips"].as_array().unwrap().iter().filter_map(|c| c["clip"].as_str()).collect();
+    assert!(ids.contains(&"c1") && ids.contains(&"c2") && ids.contains(&"c3"), "{ids:?}");
+    let mut quiet = t.clone();
+    quiet.clips.iter_mut().filter(|c| c.track == "V1").for_each(|c| c.vol = 0.0);
+    let measured = vault_render::measure_sound(&quiet, &lib).unwrap();
+    assert!(!measured["clips"].as_array().unwrap().iter().any(|c| c["track"] == "V1"));
+
     // the job's result, once the app has put the file in the vault
     let mut out = out;
     out.deliveries[0].hash = Some("h1".into());

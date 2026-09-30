@@ -364,9 +364,12 @@ fn plan(t: &Timeline, lib: &dyn Library) -> Result<Plan> {
         m.map(|m| caption_words(&m.meta)).unwrap_or_default()
     };
     let phrases = phrases(t, &words_of);
+    // the sound tracks, and a picture's own sound where it plays (a video on V1 at a volume above 0: the studio plays it
+    // through its player, so the film has it too — with the other sounds)
+    let own_sound = |c: &Clip| c.track == "V1" && c.vol > 0.0 && c.hash.as_ref().is_some_and(|h| sources.get(h).is_some_and(|s: &Source| matches!(s.kind, Kind::Video)));
     let audio = clips
         .iter()
-        .filter(|c| c.track.starts_with('A') && c.hash.is_some())
+        .filter(|c| (c.track.starts_with('A') || own_sound(c)) && c.hash.is_some())
         .map(|c| AudioClip { clip: c.clone(), file: files.get(c.hash.as_ref().unwrap()).unwrap().0.clone() })
         .collect();
     Ok(Plan { total, pictures, look: t.look(), finish: t.finish(), sources, card, hooks, thumbnails, phrases, audio, conformed, warnings })
@@ -853,7 +856,9 @@ pub fn measure_sound(t: &Timeline, lib: &dyn Library) -> Result<Value> {
     let db = |v: f64| if v > 0.0 { 20.0 * v.log10() } else { f64::NEG_INFINITY };
     let r2 = |x: f64| (x * 100.0).round() / 100.0;
     let mut out = Vec::new();
-    for c in t.clips.iter().filter(|c| c.track.starts_with('A') && c.hash.is_some()) {
+    // the sound tracks, and a video's own sound on the picture track where it plays (as the render mixes it)
+    let own_sound = |c: &Clip| c.track == "V1" && c.vol > 0.0 && !c.is_world() && c.hash.as_deref().and_then(|h| lib.media(h)).is_some_and(|m| m.kind == "video");
+    for c in t.clips.iter().filter(|c| (c.track.starts_with('A') || own_sound(c)) && c.hash.is_some()) {
         let hash = c.hash.as_deref().unwrap();
         let m = lib.media(hash);
         let name = m.as_ref().map(|m| if m.title.is_empty() { m.hash[..10].to_string() } else { m.title.clone() }).unwrap_or_default();
