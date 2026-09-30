@@ -331,6 +331,12 @@ impl Gpu {
         })
     }
 
+    /// Its Core Image context (unmanaged: no working or output colour space) — for AVFoundation to render our pictures
+    /// with.
+    pub fn context(&self) -> Retained<CIContext> {
+        self.context.clone()
+    }
+
     /// The output transform's cube, loaded once per render.
     pub fn set_output(&mut self, lut: &Lut3d) {
         self.lut = Some(self.cube(lut));

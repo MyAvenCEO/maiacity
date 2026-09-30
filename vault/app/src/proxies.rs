@@ -139,7 +139,7 @@ async fn looks_of(vault: &Vault, looks: &[serde_json::Value]) -> crate::Res<Vec<
 }
 
 /// A clip's whole colour chain (its balance, its grades, its looks) as one cube over ACEScct, `size`³ RGB.
-async fn chain_cube(vault: &Vault, balance: Option<serde_json::Value>, grades: Vec<serde_json::Value>, looks: Vec<serde_json::Value>, size: usize) -> crate::Res<Vec<f32>> {
+pub(crate) async fn chain_cube(vault: &Vault, balance: Option<serde_json::Value>, grades: Vec<serde_json::Value>, looks: Vec<serde_json::Value>, size: usize) -> crate::Res<Vec<f32>> {
     let b = balance.as_ref().and_then(vault_render::grade::clean_balance);
     let g: Vec<vault_render::grade::Cdl> = grades.iter().filter_map(vault_render::grade::clean_cdl).collect();
     let looks = looks_of(vault, &looks).await?;
