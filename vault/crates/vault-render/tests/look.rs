@@ -7,7 +7,7 @@ use serde_json::json;
 use vault_render::{
     Lut3d,
     grade::Balance,
-    look::{Disp, Look, SKIN_LINE, fit, neutral, predict, skin_patch, target},
+    look::{Disp, Look, SKIN_LINE, fit, neutral, predict, scopes, skin_patch, target},
 };
 
 fn odt() -> Lut3d {
@@ -66,6 +66,9 @@ fn what_a_shot_has_only_by_content_is_not_matched() {
     assert!(!used.contains(&"blacks".to_string()), "{used:?}");
     let (_, used) = fit(&m, &want, &out, &["skin".to_string()]);
     assert!(!used.contains(&"skin".to_string()));
+    // one side of an element: feet on a bright rug match the face's colour, not its level
+    let (_, used) = fit(&m, &want, &out, &["skin.level".to_string(), "whites.colour".to_string()]);
+    assert!(used.contains(&"skin.colour".to_string()) && used.contains(&"whites.level".to_string()), "{used:?}");
 }
 
 #[test]
@@ -99,4 +102,15 @@ fn skin_sits_on_its_line_and_inside_the_face() {
     // a warm skin tone sits near the line on the vectorscope
     let d = Disp::of([0.62, 0.48, 0.4]);
     assert!((d.hue() - SKIN_LINE).abs() < 12.0, "{}", d.hue());
+}
+
+#[test]
+fn the_scope_sheet_has_a_row_per_shot() {
+    let (a, b) = (master(), master());
+    let (px, w, h) = scopes(&[(&a, "REFERENCE · the master".into()), (&b, "the other".into())]).unwrap();
+    assert_eq!(px.len(), (w * h * 3) as usize);
+    assert_eq!(w, 640 + 8 + 480 + 8 + 480 + 8 + 360);
+    assert_eq!(h, 2 * (26 + 360 + 8));
+    // the label is drawn: light pixels in the first band
+    assert!(px[..(w * 26 * 3) as usize].iter().any(|v| *v > 200));
 }

@@ -76,6 +76,10 @@ All of them run natively in the Mac app (maiaCITY Studio, over MCP). The grade's
 (vault-render `grade`, the same maths in Metal for the render). The studio's viewer samples a cube that Rust bakes,
 so it never computes the grade itself.
 
+- **`grade_scopes`** `{ timeline, clips: [master, …], regions? }`: the scope sheet, one row per shot with the master
+  first. Each row has the picture after its balance (the skin box drawn in magenta), its waveform (5/10/50/90/100
+  IRE), RGB parade, and vectorscope with the skin line, drawn from the 4K grading stills. It comes back as the picture
+  itself, shown inline (never a file). **Look at it** before every decision and after every write.
 - **`grade_look`** `{ timeline, clips?, regions? }`: the elements in numbers, as shot and balanced:
   - the levels p1 … p99 in IRE, contrast, clipped %, saturation
   - the **blacks**, the **whites** (unclipped, not strongly coloured) and the **mids**: each one's level and cast
@@ -110,10 +114,10 @@ so it never computes the grade itself.
    - Put the blacks and whites where they belong.
    - Run `grade_match` with `neutral: true, warmth` so the neutrals are neutral and the agreed warmth sits on top.
    - Use contrast only if the shot is flat or harsh.
-   - Check it on `grade_look`: the master's levels, colour and skin after the balance.
+   - Check it on `grade_scopes`.
 4. **The other shots of the scene:**
    - Run `grade_match` with `reference: <master>` and `apply: false`.
-   - Read `predicted` against the master (blacks, middle, whites, colour, skin).
+   - Read `predicted` against the master, then look at `grade_scopes` with the master's row first.
    - Correct by the table above (blacks, whites, contrast, colour, saturation, then skin): name regions, skip what
      is content, or set a shot by hand with `grade_balance`.
    - Write the result, then look at the scope sheet again.
@@ -122,6 +126,34 @@ so it never computes the grade itself.
    (inside to outside, morning to noon), never a jump without a reason.
 7. **Report:** give each shot's balance with its numbers before and after. List anything balance alone could not
    match, such as mixed light with a different cast in the whites and in the blacks. Those go to the grade, later.
+
+## Learned on Day 01
+
+- **Name the neutrals by hand.** The mid-tones found by themselves hold content: skin and yellow pillows in a
+  bedroom, leaves in a garden. Neutralised on them, the master went cool and its skin 11° toward pink. A white shelf,
+  a grey pillow, an overcast sky, a concrete table or a white house wall named as `regions` are what to neutralise
+  on.
+- **Leave tint at 0 unless a neutral really is green or magenta.** A tint of 0.06 against a +0.8 IRE green moved skin
+  4° toward pink.
+- **Moving the exposure lifts the blacks too.** In ACEScct, exposure is an offset: +0.6 took the bedroom's blacks from
+  7 to 9 IRE, and lows barely bring them back. Where a shot is flat, like the overcast garden, contrast around mid
+  grey (0.15) does it.
+- **Skin moves with tint, far.** On the garden faces, tint −0.1 → −6.6°, −0.15 → −1.5°, −0.2 → +4.2°. Set it in steps
+  of 0.05 and read the skin after each.
+- **Same light, same balance.** The feet on the rug took the bedroom master's balance unchanged: the rug's whites
+  landed on the master's. The bench wide took the garden master's. Start every shot of a scene from the master's
+  balance, then move only what its own light needs.
+- **Face and feet aren't the same level.** Feet on a bright rug read 68 IRE against the face's 49. Match the feet's
+  colour, not their level (`skip: { <clip>: ["skin.level"] }`).
+- **The quickest loop:** `grade_balance`, then `grade_look` with the same regions, 15–20 s per step, reading the
+  skin, the named neutrals and the blacks against the reference. `grade_match` gives the starting point and
+  `grade_scopes` the check.
+- **Where Day 01 landed:**
+  - All faces 47.5–49 IRE, within 5° of the skin line.
+  - Blacks 5–10 IRE, mid-tones 40–50 IRE.
+  - Bedroom neutrals +2 to +4 warm (+0.25). Garden masters temp +0.53, faces +0.53 to +0.85 with tint −0.15 to −0.2
+    (+0.5).
+  - Garden skin is paler than bedroom skin (saturation 5.5 against 8.5): overcast light, and left so.
 
 ## Don't
 

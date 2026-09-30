@@ -29,5 +29,17 @@ clap = { version = "4.6", features = ["derive"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
+# No LTO: the heavy work runs in Apple's frameworks (Metal, Core Image, VideoToolbox) and iroh, not in our own code,
+# and cross-crate optimisation at link time cost minutes on every build of the app for little.
 [profile.release]
-lto = "thin"
+lto = false
+
+# Debug builds: line tables for our code (backtraces keep their lines), none for the dependencies — much smaller
+# objects, faster links; the dependencies optimised, so a debug app against the dev server (Svelte changes live, no
+# release build) still measures 4K pictures and runs iroh at a usable speed.
+[profile.dev]
+debug = "line-tables-only"
+
+[profile.dev.package."*"]
+debug = false
+opt-level = 2

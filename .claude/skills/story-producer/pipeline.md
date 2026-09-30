@@ -108,6 +108,22 @@ timeline, its stage shown at the top (edit → locked → graded → rendered, a
 tags only sort.** `bun media status | seed | add <file> [--title] [--tags] [--replaces <cid>] [--public]`. Only public
 files get CDN copies. Scripts use `api/scripts/library.ts` (`put`, `bring`, `get`, `fileOf`).
 
+## Building the Mac app
+
+- **One build folder for every checkout and worktree:** `maiaCITY/.cargo/target`, set by `maiaCITY/.cargo/config.toml`
+  (this Mac only, not in git). Each worktree's `vault/target` links to it. The app is always
+  `maiaCITY/.cargo/target/release/maiacity-studio`: whichever branch built it last.
+- **Build:** `bun run build`, then `cargo build --release --features custom-protocol -p maiacity-studio` in `vault/`.
+  There's no LTO, release is incremental, and sccache (`~/.cargo/config.toml`) serves the dependencies. A change in
+  the app or vault-render rebuilds in about 15 s; a change of profile or toolchain costs one full build of ~12 min.
+- **Start it:** `RUST_LOG=info,iroh=warn,iroh_docs=warn,iroh_gossip=warn maiaCITY/.cargo/target/release/maiacity-studio`.
+  Its MCP answers on 127.0.0.1:4545 once it's up.
+- **Studio UI work needs no Rust build:**
+  - Run `bun run dev` and `cargo run -p maiacity-studio` in `vault/` (debug, without `custom-protocol`: the window
+    loads the dev server on localhost:5173).
+  - Svelte changes then show at once.
+  - Debug builds keep line tables only and optimise their dependencies, so measuring and iroh stay usable.
+
 ## Title card and first frame
 
 Every day's title cards and hook layers come from `scripts/film/thumbnail.mjs` (`content-derivatives` skill): four

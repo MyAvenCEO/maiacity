@@ -990,7 +990,7 @@ pub fn hero_frame(
             let mut sequence: Option<f64> = None;
             let (file, profile, from, what) = if c.is_world() {
                 let p = plates(c, &s)?.with_context(|| format!("world clip {}: no plate for {aspect}", c.id))?;
-                (p.file, "acescct".to_string(), at - c.start - p.offset, format!("world shot {} v{} at {:.3} s", c.shot.as_deref().unwrap_or("?"), c.shot_version.unwrap_or(0), c.in_ + at - c.start))
+                (vault_media::Source::from(p.file), "acescct".to_string(), at - c.start - p.offset, format!("world shot {} v{} at {:.3} s", c.shot.as_deref().unwrap_or("?"), c.shot_version.unwrap_or(0), c.in_ + at - c.start))
             } else {
                 let hash = c.hash.as_deref().unwrap();
                 let of = lib.original_of(hash);

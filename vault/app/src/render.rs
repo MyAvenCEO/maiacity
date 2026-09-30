@@ -341,6 +341,63 @@ impl Library for Vaulted {
     }
 }
 
+/// What a V1 clip is called on the sheet: its script's label or description, else its file's title.
+fn clip_label(timeline: &Value, id: &str) -> String {
+    let c = timeline["clips"].as_array().and_then(|cs| cs.iter().find(|c| c["id"].as_str() == Some(id)));
+    let s = |k: &str| c.and_then(|c| c["script"][k].as_str()).filter(|s| !s.is_empty()).map(String::from);
+    let what = s("label").or_else(|| s("description")).unwrap_or_default();
+    let scene = s("scene").unwrap_or_default();
+    [scene, what].into_iter().filter(|s| !s.is_empty()).collect::<Vec<_>>().join(" · ")
+}
+
+/// The scope sheet of the clips named (the first is the reference), after their balances: each shot's picture with its
+/// skin box, its waveform, RGB parade and vectorscope with the skin line — the PNG's bytes (shown, never kept beside the
+/// vault) and what each row is.
+pub async fn scope_sheet(vault: &Arc<Vault>, timeline: &Value, ids: Vec<String>, regions: HashMap<String, vault_render::look::Regions>) -> Res<(Value, Vec<u8>)> {
+    let looks = look_clips(vault, timeline, Some(ids), regions, HashMap::new()).await?;
+    let mut rows = Vec::new();
+    let mut ok = Vec::new();
+    for (i, l) in looks.into_iter().enumerate() {
+        match l {
+            Ok(l) => {
+                let b = &l.json["balanced"];
+                let n = |p: &str| b.pointer(p).and_then(Value::as_f64).map(|v| format!("{v}")).unwrap_or_else(|| "–".into());
+                let skin = if b["skin"].is_null() { "no face".to_string() } else { format!("skin {} IRE {}° ({:+}°) sat {}", n("/skin/ire"), n("/skin/hue"), b["skin"]["off_skin_line"].as_f64().unwrap_or(0.0), n("/skin/chroma")) };
+                let text = format!(
+                    "{}{} · {} — blacks {} · mid {} · whites {} IRE · {} · clipped {}%",
+                    if i == 0 { "REFERENCE · " } else { "" },
+                    clip_label(timeline, &l.clip),
+                    &l.clip[..l.clip.len().min(8)],
+                    n("/levels/p1"),
+                    n("/levels/p50"),
+                    n("/levels/p99"),
+                    skin,
+                    n("/clipped_pct"),
+                );
+                rows.push(json!({ "clip": l.clip, "label": text, "balance": l.json["balance"], "from": l.json["from"] }));
+                ok.push((l, text));
+            }
+            Err(e) => rows.push(e),
+        }
+    }
+    if ok.is_empty() {
+        return Err(format!("no shot could be read: {}", json!(rows)));
+    }
+    let png = tauri::async_runtime::spawn_blocking(move || {
+        let refs: Vec<(&vault_render::look::Look, String)> = ok.iter().map(|(l, t)| (l, t.clone())).collect();
+        let (px, w, h) = vault_render::look::scopes(&refs).map_err(err)?;
+        let mut out = Vec::new();
+        let mut enc = png::Encoder::new(&mut out, w, h);
+        enc.set_color(png::ColorType::Rgb);
+        enc.set_depth(png::BitDepth::Eight);
+        enc.write_header().and_then(|mut wr| wr.write_image_data(&px)).map_err(err)?;
+        Ok::<_, String>(out)
+    })
+    .await
+    .map_err(err)??;
+    Ok((json!({ "rows": rows }), png))
+}
+
 /// The V1 picture clips named (in that order), else every one with a file, as the render reads them.
 fn picture_clips(t: &Timeline, ids: &Option<Vec<String>>) -> Res<Vec<Clip>> {
     let v1: Vec<&Clip> = t.clips.iter().filter(|c| c.track == "V1" && c.hash.is_some() && !c.is_world()).collect();
