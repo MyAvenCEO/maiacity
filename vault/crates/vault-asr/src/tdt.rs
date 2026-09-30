@@ -33,6 +33,23 @@ pub struct Tdt {
     blank: usize,
 }
 
+fn builder(threads: usize) -> Result<ort::session::builder::SessionBuilder> {
+    let err = |e: ort::Error<_>| anyhow::anyhow!(e.to_string());
+    Ok(Session::builder()?
+        .with_intra_threads(threads)
+        .map_err(err)?
+        .with_inter_threads(1)
+        .map_err(err)?
+        .with_intra_op_spinning(false)
+        .map_err(err)?
+        .with_inter_op_spinning(false)
+        .map_err(err)?)
+}
+
+fn session_bytes(bytes: &[u8], threads: usize, what: &str) -> Result<Session> {
+    builder(threads)?.commit_from_memory(bytes).with_context(|| format!("the speech model cannot be loaded: {what}"))
+}
+
 fn session(path: &Path, threads: usize) -> Result<Session> {
     let err = |e: ort::Error<_>| anyhow::anyhow!(e.to_string());
     Session::builder()?
@@ -58,7 +75,33 @@ pub fn complete(dir: &Path) -> bool {
     encoder(dir).is_some() && ["nemo128.onnx", "decoder_joint-model.onnx", "vocab.txt"].iter().all(|f| dir.join(f).is_file())
 }
 
+fn vocab_of(text: &str) -> Result<(Vec<String>, usize)> {
+    let mut vocab = Vec::new();
+    for line in text.lines() {
+        let Some((token, id)) = line.rsplit_once(' ') else { continue };
+        let id: usize = id.parse().with_context(|| format!("vocab.txt: {line}"))?;
+        if vocab.len() <= id {
+            vocab.resize(id + 1, String::new());
+        }
+        vocab[id] = token.replace('▁', " ");
+    }
+    let blank = vocab.iter().position(|t| t == "<blk>").context("vocab.txt has no <blk>")?;
+    Ok((vocab, blank))
+}
+
 impl Tdt {
+    /// From the models' bytes (the vault's store): nothing on disk.
+    pub fn from_bytes(features: &[u8], encoder: &[u8], joint: &[u8], vocab: &str) -> Result<Self> {
+        let (vocab, blank) = vocab_of(vocab)?;
+        Ok(Self {
+            features: session_bytes(features, 1, "nemo128.onnx")?,
+            encoder: session_bytes(encoder, 4, "encoder-model.int8.onnx")?,
+            joint: session_bytes(joint, 1, "decoder_joint-model.onnx")?,
+            vocab,
+            blank,
+        })
+    }
+
     pub fn open(dir: &Path) -> Result<Self> {
         let text = std::fs::read_to_string(dir.join("vocab.txt")).context("vocab.txt")?;
         let mut vocab = Vec::new();

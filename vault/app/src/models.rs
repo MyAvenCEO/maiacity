@@ -1,8 +1,7 @@
 //! The on-device models, delivered by our own vault — never fetched from the internet by a device. Every model file
 //! is a vault file in the **Models** story (class default, meta `{ role: "model", model, file, source, version }`),
-//! pinned here by its BLAKE3 hash: the app finds it in its own store (iroh-verified), or has it come down like any
-//! file (the gateway, checked against its hash — `sync::fetch_from_gateway`), and exports it by hash into
-//! `<vault>/models/<model>/<file>` (ONNX Runtime reads real files, the encoder's weights beside it by name).
+//! pinned here by its BLAKE3 hash: it comes to this Mac over iroh like any file of the vault, and ONNX Runtime loads
+//! it straight from the store's bytes (`vault_asr::ModelBytes`) — nothing is unpacked into a folder.
 //!
 //! Once, by hand (the MCP tool `models_import`, run on one Mac): each file is downloaded from where it was published
 //! (or, made here — Phonon-2's ONNX, by vault/tools/phonon2_onnx.py — taken from `<vault>/ingest/models-made/<model>/`),
@@ -28,7 +27,7 @@ pub struct ModelFile {
 }
 
 pub struct Model {
-    /// the model's folder under `<vault>/models/`, and its name in the files' meta
+    /// its name in the files' meta
     pub id: &'static str,
     pub version: &'static str,
     pub files: &'static [ModelFile],
@@ -60,12 +59,6 @@ pub const SILERO: Model = Model {
     }],
 };
 
-/// The speech models' folders on this Mac.
-pub fn speech_models(vault: &Vault) -> vault_asr::Models {
-    let root = vault.dir.join("models");
-    vault_asr::Models { speech: root.join(PHONON.id), vad: root.join(SILERO.id).join(SILERO.files[0].name) }
-}
-
 /// The files of these models not complete in this Mac's store yet.
 async fn missing(vault: &Vault, models: &[&Model]) -> Vec<(Hash, u64)> {
     let mut out = Vec::new();
@@ -78,44 +71,30 @@ async fn missing(vault: &Vault, models: &[&Model]) -> Vec<(Hash, u64)> {
     out
 }
 
-/// Make the speech models ready on this Mac: every pinned file in the store (the missing ones come down from
-/// the server, checked against their hashes), then exported by hash into its folder. `progress` says how far
-/// ("the speech model arrives", 0…1 by bytes; "the speech model is unpacked").
-pub async fn ready(handle: &tauri::AppHandle, vault: &Arc<Vault>, progress: &mut (dyn FnMut(&str, f64) + Send)) -> Result<vault_asr::Models, String> {
-    use tauri::Manager;
+/// The speech models, ready on this Mac: every pinned file complete in the store (they come over iroh with the vault's
+/// sync, verified by hash), read straight from it by hash. `progress` says how far ("the speech model is read").
+pub async fn ready(vault: &Arc<Vault>, progress: &mut (dyn FnMut(&str, f64) + Send)) -> Result<vault_asr::ModelBytes, String> {
     let models = [&PHONON, &SILERO];
     let need = missing(vault, &models).await;
     if !need.is_empty() {
-        let total: u64 = need.iter().map(|(_, s)| s).sum::<u64>().max(1);
-        let mut done = 0u64;
-        let auth = handle.state::<crate::auth::Auth>();
-        for (h, size) in need {
-            progress("the speech model arrives", done as f64 / total as f64);
-            crate::sync::fetch_from_gateway(vault, &auth, h)
-                .await
-                .map_err(|e| format!("the speech model is not in our vault yet ({e}) — import it once with the MCP tool models_import"))?;
-            done += size;
-        }
-        progress("the speech model arrives", 1.0);
+        let mb = need.iter().map(|(_, s)| s).sum::<u64>() as f64 / 1e6;
+        return Err(format!("the speech model is not on this Mac yet ({} files, {mb:.0} MB still to come over iroh; once imported by hand with models_import)", need.len()));
     }
-    for m in models {
-        let dir = vault.dir.join("models").join(m.id);
-        std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
-        for f in m.files {
-            let path = dir.join(f.name);
-            let pin = dir.join(format!(".{}.blake3", f.name));
-            // exported before, from exactly this hash: kept
-            if std::fs::read_to_string(&pin).is_ok_and(|p| p.trim() == f.blake3) && std::fs::metadata(&path).is_ok_and(|md| md.len() == f.size) {
-                continue;
-            }
-            progress("the speech model is unpacked", 0.0);
-            let h: Hash = f.blake3.parse().map_err(|e| format!("{e}"))?;
-            std::fs::remove_file(&path).ok();
-            vault.store.blobs().export(h, &path).await.map_err(|e| format!("{e:#}"))?;
-            std::fs::write(&pin, f.blake3).map_err(|e| e.to_string())?;
-        }
-    }
-    Ok(speech_models(vault))
+    let read = |f: &'static ModelFile| async move {
+        let h: Hash = f.blake3.parse().map_err(|e| format!("{e}"))?;
+        vault.store.blobs().get_bytes(h).await.map(|b| b.to_vec()).map_err(|e| format!("{}: {e:#}", f.name))
+    };
+    let file = |m: &'static Model, name: &str| m.files.iter().find(|f| f.name == name).ok_or_else(|| format!("{} has no {name}", m.id));
+    progress("the speech model is read", 0.0);
+    let bytes = vault_asr::ModelBytes {
+        features: read(file(&PHONON, "nemo128.onnx")?).await?,
+        encoder: read(file(&PHONON, "encoder-model.int8.onnx")?).await?,
+        joint: read(file(&PHONON, "decoder_joint-model.onnx")?).await?,
+        vocab: String::from_utf8(read(file(&PHONON, "vocab.txt")?).await?).map_err(|e| format!("vocab.txt: {e}"))?,
+        vad: read(file(&SILERO, "silero_vad.onnx")?).await?,
+    };
+    progress("the speech model is read", 1.0);
+    Ok(bytes)
 }
 
 /// Once, by hand: every model file downloaded from where it was published (or taken from where it was made:

@@ -65,7 +65,8 @@ pub trait Library {
 /// (`offset`): a hero frame's plate is the one frame it shows.
 #[derive(Debug, Clone, Default)]
 pub struct Plate {
-    pub file: PathBuf,
+    /// the plate: a vault file, read in place by hash
+    pub file: vault_media::Source,
     /// where the plate starts, in seconds from the clip's in point (0: at the in point)
     pub offset: f64,
     pub key: Option<String>,
@@ -420,7 +421,7 @@ pub fn render(
         bail!("no such shape to render");
     }
     // the world clips' plates, one per shape
-    let mut plate_files: HashMap<(String, String), (PathBuf, f64)> = HashMap::new();
+    let mut plate_files: HashMap<(String, String), (vault_media::Source, f64)> = HashMap::new();
     let mut plates_used = Vec::new();
     for c in plan.pictures.iter().filter(|c| c.is_world()) {
         for s in &shapes {
@@ -513,7 +514,7 @@ fn render_shape(
     s: &Shape,
     gpu: &Gpu,
     captions: &Captions,
-    plate_files: &HashMap<(String, String), (PathBuf, f64)>,
+    plate_files: &HashMap<(String, String), (vault_media::Source, f64)>,
     sound: &Sound,
     base: &str,
     work: &Path,
@@ -989,7 +990,7 @@ pub fn hero_frame(
             let mut sequence: Option<f64> = None;
             let (file, profile, from, what) = if c.is_world() {
                 let p = plates(c, &s)?.with_context(|| format!("world clip {}: no plate for {aspect}", c.id))?;
-                (vault_media::Source::from(p.file), "acescct".to_string(), at - c.start - p.offset, format!("world shot {} v{} at {:.3} s", c.shot.as_deref().unwrap_or("?"), c.shot_version.unwrap_or(0), c.in_ + at - c.start))
+                (p.file, "acescct".to_string(), at - c.start - p.offset, format!("world shot {} v{} at {:.3} s", c.shot.as_deref().unwrap_or("?"), c.shot_version.unwrap_or(0), c.in_ + at - c.start))
             } else {
                 let hash = c.hash.as_deref().unwrap();
                 let of = lib.original_of(hash);

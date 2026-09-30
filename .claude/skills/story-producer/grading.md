@@ -76,10 +76,6 @@ All of them run natively in the Mac app (maiaCITY Studio, over MCP). The grade's
 (vault-render `grade`, the same maths in Metal for the render). The studio's viewer samples a cube that Rust bakes,
 so it never computes the grade itself.
 
-- **`grade_scopes`** `{ timeline, clips: [master, …], regions? }`: the scope sheet, one row per shot with the master
-  first. Each row has the picture after its balance (the skin box drawn in magenta), its waveform (5/10/50/90/100
-  IRE), RGB parade, and vectorscope with the skin line. It is a PNG on this Mac, drawn from the 4K grading stills.
-  **Look at it** (the Read tool) before every decision and after every write.
 - **`grade_look`** `{ timeline, clips?, regions? }`: the elements in numbers, as shot and balanced:
   - the levels p1 … p99 in IRE, contrast, clipped %, saturation
   - the **blacks**, the **whites** (unclipped, not strongly coloured) and the **mids**: each one's level and cast
@@ -103,7 +99,6 @@ so it never computes the grade itself.
 - **`grade_balance`**: one shot's balance by hand (temp, tint, exposure, contrast, highlights, shadows, **sat**; all
   0 = as shot).
 - **`render_frame`**: a hero frame through the whole chain, for checking either side of a cut.
-- **`grade_measure`**: the old whole-frame luma percentiles. Use `grade_look` instead.
 
 ## The pass, scene by scene
 
@@ -115,10 +110,10 @@ so it never computes the grade itself.
    - Put the blacks and whites where they belong.
    - Run `grade_match` with `neutral: true, warmth` so the neutrals are neutral and the agreed warmth sits on top.
    - Use contrast only if the shot is flat or harsh.
-   - Check it on `grade_scopes`.
+   - Check it on `grade_look`: the master's levels, colour and skin after the balance.
 4. **The other shots of the scene:**
    - Run `grade_match` with `reference: <master>` and `apply: false`.
-   - Read `predicted` against the master, then look at `grade_scopes` with the master's row first.
+   - Read `predicted` against the master (blacks, middle, whites, colour, skin).
    - Correct by the table above (blacks, whites, contrast, colour, saturation, then skin): name regions, skip what
      is content, or set a shot by hand with `grade_balance`.
    - Write the result, then look at the scope sheet again.

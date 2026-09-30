@@ -338,7 +338,7 @@ fn world_plates_the_hook_and_a_hero_frame() {
     let asked = std::cell::RefCell::new(Vec::new());
     let plates = |c: &Clip, s: &Shape| -> Result<Option<Plate>> {
         asked.borrow_mut().push((c.id.clone(), s.aspect.to_string()));
-        Ok((c.shot.as_deref() == Some("s1") && s.aspect == "1:1").then(|| Plate { file: plate.clone(), key: Some("k1".into()), fingerprint: Some("f1".into()), reused: Some(false), ..Default::default() }))
+        Ok((c.shot.as_deref() == Some("s1") && s.aspect == "1:1").then(|| Plate { file: plate.clone().into(), key: Some("k1".into()), fingerprint: Some("f1".into()), reused: Some(false), ..Default::default() }))
     };
     let mut opts = Options::new(dir.join("out"));
     opts.shapes = Some(vec!["1:1".into()]);

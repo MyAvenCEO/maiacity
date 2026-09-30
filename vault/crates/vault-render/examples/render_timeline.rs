@@ -199,7 +199,7 @@ fn main() -> Result<()> {
     let no_plates = |c: &Clip, s: &Shape| -> Result<Option<Plate>> {
         // world clips' plates: "<shot>-<shape>.mp4" beside the timeline, when there
         let f = base.join(format!("{}-{}.mp4", c.shot.as_deref().unwrap_or(&c.id), s.tag()));
-        Ok(f.is_file().then(|| Plate { file: f, ..Default::default() }))
+        Ok(f.is_file().then(|| Plate { file: f.into(), ..Default::default() }))
     };
     let started = Instant::now();
     let mut last = -1.0;

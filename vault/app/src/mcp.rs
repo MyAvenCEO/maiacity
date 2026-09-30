@@ -237,16 +237,6 @@ pub struct BalanceArgs {
     pub balance: Option<BalanceArg>,
 }
 
-#[derive(Deserialize, schemars::JsonSchema)]
-pub struct MeasureArgs {
-    /// the timeline's id
-    pub timeline: String,
-    /// the clips to measure (ids); none: every picture clip with a file
-    pub clips: Option<Vec<String>>,
-    /// frames per clip, spread over it (default 5)
-    pub frames: Option<usize>,
-}
-
 /// Parts of one shot's frame named by hand, each a box [x0, y0, x1, y1] from the frame's top left, 0…1.
 #[derive(Deserialize, Serialize, Default, Clone, schemars::JsonSchema)]
 pub struct RegionsArg {
@@ -274,16 +264,6 @@ pub struct LookArgs {
     /// the clips to read (ids, in order); none: every picture clip with a file
     pub clips: Option<Vec<String>>,
     /// per clip id, parts of its frame named by hand
-    pub regions: Option<std::collections::HashMap<String, RegionsArg>>,
-}
-
-#[derive(Deserialize, schemars::JsonSchema)]
-pub struct ScopesArgs {
-    /// the timeline's id
-    pub timeline: String,
-    /// the clips, one row each, in order — the first is the reference (the scene's master)
-    pub clips: Vec<String>,
-    /// per clip id, parts of its frame named by hand (drawn as boxes, and the skin box used)
     pub regions: Option<std::collections::HashMap<String, RegionsArg>>,
 }
 
@@ -768,18 +748,6 @@ impl Studio {
     }
 
     #[tool(
-        description = "Measure a timeline's shots as a colourist reads them, natively on this Mac from the full originals (else their ACEScct proxies), in ACEScct: luma percentiles (p1…p99; 18 % grey is 0.414, one stop is 0.057), mid_stops (how far the middle is from 18 % grey), the middle tones' colour (mid_rgb) and to_grey (the temp/tint that would make them grey) — as shot and after each clip's balance. The base for levelling the shots of a scene to each other before any creative grade."
-    )]
-    async fn grade_measure(&self, Parameters(a): Parameters<MeasureArgs>) -> String {
-        let r = async {
-            let t = self.api("GET", &format!("/api/timelines/{}", a.timeline), None).await?;
-            let shots = crate::render::measure_clips(&self.vault, &t, a.clips, a.frames.unwrap_or(5).clamp(1, 24)).await?;
-            Ok::<_, String>(json!({ "timeline": a.timeline, "shots": shots }))
-        };
-        text(r.await)
-    }
-
-    #[tool(
         description = "Set one shot's balance — the fixed first nodes, applied in ACEScct before its creative grade, in the preview and the render alike: white balance (temp, tint), exposure, contrast, highlights, lows (shadows), saturation (sat); every amount in stops (contrast and sat: the factor minus 1), 0 = as shot; none: back to as shot. The cut stays as it is; a locked timeline may be balanced."
     )]
     async fn grade_balance(&self, Parameters(a): Parameters<BalanceArgs>) -> String {
@@ -812,20 +780,7 @@ impl Studio {
     }
 
     #[tool(
-        description = "A scope sheet to look at, drawn natively from the shots' 4K grading stills after their balances: one row per clip (the first is the reference, the scene's master) — the picture with the skin box and any boxes named, its waveform (5/10/50/90/100 IRE), RGB parade and vectorscope (the skin line, rings at chroma 0.1 and 0.2) — as a PNG on this Mac. Returns its path and each row's numbers. Look at it before and after every balance."
-    )]
-    async fn grade_scopes(&self, Parameters(a): Parameters<ScopesArgs>) -> String {
-        let r = async {
-            let t = self.api("GET", &format!("/api/timelines/{}", a.timeline), None).await?;
-            let first = a.clips.first().cloned().unwrap_or_default();
-            let png = self.vault.dir.join("scopes").join(format!("{}-{}.png", &a.timeline[..a.timeline.len().min(8)], &first[..first.len().min(8)]));
-            crate::render::scope_sheet(&self.vault, &t, a.clips, regions_of(a.regions), png).await
-        };
-        text(r.await)
-    }
-
-    #[tool(
-        description = "The base correction's balances (story-producer grading.md), fitted natively from the shots' 4K grading stills by the elements a colourist matches — blacks, whites, the middle and the skin (Apple Vision's face, or the boxes named), through the ACES 2.0 output — with the balance nodes only (white balance, exposure, contrast, highlights, lows, saturation; no look). neutral: a scene master's own neutrals to grey, then `warmth` stops warmer. Else: every clip matched to `reference`, the scene's master as it is balanced now (a reference is required: never an average). Returns each shot's balance, the elements it was matched by and what they will read after it (predicted); writes them unless apply: false — propose first, look at grade_scopes, then write."
+        description = "The base correction's balances (story-producer grading.md), fitted natively from the shots' 4K grading stills by the elements a colourist matches — blacks, whites, the middle and the skin (Apple Vision's face, or the boxes named), through the ACES 2.0 output — with the balance nodes only (white balance, exposure, contrast, highlights, lows, saturation; no look). neutral: a scene master's own neutrals to grey, then `warmth` stops warmer. Else: every clip matched to `reference`, the scene's master as it is balanced now (a reference is required: never an average). Returns each shot's balance, the elements it was matched by and what they will read after it (predicted); writes them unless apply: false — propose first, read `predicted` against the master, then write."
     )]
     async fn grade_match(&self, Parameters(a): Parameters<MatchArgs>) -> String {
         let r = async {

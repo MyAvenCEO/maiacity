@@ -18,9 +18,9 @@
 //! when nothing is left to render (and nobody keeps it open: `keep`).
 //!
 //! Plates, for the final render (render.rs): the same frames of a stretch of a shot (`Frames`: from, frames, fps),
-//! framed for a delivery shape at its render size (4K for 16:9), at a finer bit rate — cached beside the vault
-//! (`plates_dir`, by the hash of everything a plate is made of), never in it. `shoot` renders any `Frames`; the
-//! caller holds the turn.
+//! framed for a delivery shape at its render size (4K for 16:9), at a finer bit rate — a vault file like any other
+//! (meta `{ role: "plate", plate_key }`, the hash of everything it is made of; class proxy), synced by iroh to every
+//! store its story's rules name and read in place by hash. `shoot` renders any `Frames`; the caller holds the turn.
 
 use std::{
     collections::{BTreeMap, HashMap, HashSet},
@@ -391,33 +391,55 @@ pub async fn shoot(handle: &AppHandle, label: &str, ask: &Frames, out: &Path, pr
 
 /// What a plate's cache key covers besides its request: bump it when the world renders plates differently.
 const PLATE_FORMAT: u32 = 1;
-/// A plate nobody rendered from for this long is cleared from the cache.
-const PLATE_KEPT: Duration = Duration::from_secs(30 * 24 * 3600);
-
-/// A plate for the render: the file, its cache key, the shot's fingerprint, whether it came from the cache.
+/// A plate for the render: the file (a vault file, read in place), its key, the shot's fingerprint, whether the vault
+/// had it already.
 pub struct Plate {
-    pub file: std::path::PathBuf,
+    pub file: vault_media::Source,
     pub key: String,
     pub fingerprint: String,
     pub reused: bool,
 }
 
-/// Where plates are cached: beside the vault's store, never in it. A plate is a render-step intermediate — made again
-/// from the shot's data whenever it is gone, a gigabyte at 4K — so it is no library file (it would sync to the server
-/// and every device for nothing); its name is the hash of everything it is rendered from.
-pub fn plates_dir(vault: &Vault) -> std::path::PathBuf {
-    vault.dir.join("plates")
+/// The plate with this key in the vault (a live file, `meta.role: plate`).
+async fn plate_in_vault(vault: &Vault, key: &str) -> Res<Option<vault_core::Meta>> {
+    let all = vault.catalog.list().await.map_err(err)?;
+    Ok(all.into_iter().find(|m| m.meta.get("role").and_then(Value::as_str) == Some("plate") && m.meta.get("plate_key").and_then(Value::as_str) == Some(key)))
 }
 
-/// Clear half-made plates and those unused for a month.
-pub fn prune_plates(vault: &Vault) {
-    let now = std::time::SystemTime::now();
-    for e in std::fs::read_dir(plates_dir(vault)).into_iter().flatten().flatten() {
+/// Plates from before they were vault files (`<vault>/plates/<key>.mp4`): each ingested as the vault file it is, then
+/// the folder is gone — nothing of the vault lives beside its store.
+pub async fn import_old_plates(vault: &Vault) {
+    let dir = vault.dir.join("plates");
+    let Ok(entries) = std::fs::read_dir(&dir) else { return };
+    for e in entries.flatten() {
+        let path = e.path();
         let name = e.file_name().to_string_lossy().into_owned();
-        let old = e.metadata().and_then(|m| m.modified()).is_ok_and(|t| now.duration_since(t).unwrap_or_default() > PLATE_KEPT);
-        if name.contains(".part") || old {
-            std::fs::remove_file(e.path()).ok();
+        let Some(key) = name.strip_suffix(".mp4").filter(|k| !k.contains(".part")).map(String::from) else {
+            std::fs::remove_file(&path).ok();
+            continue;
+        };
+        let known = plate_in_vault(vault, &key).await.ok().flatten().is_some();
+        if !known {
+            let batch = Batch {
+                session: format!("plate {key}"),
+                tags: vec!["plate".into()],
+                title: Some(format!("plate {}", &key[..key.len().min(12)])),
+                meta: json!({ "role": "plate", "plate_key": key }),
+                class: Some("proxy".into()),
+                ..Default::default()
+            };
+            match vault.ingest_file(&path, &batch).await {
+                Ok(o) => tracing::info!("plate {key} is a vault file now ({})", &o.hash[..12]),
+                Err(e) => {
+                    tracing::warn!("plate {key}: {e:#}");
+                    continue;
+                }
+            }
         }
+        std::fs::remove_file(&path).ok();
+    }
+    if std::fs::remove_dir(&dir).is_ok() {
+        tracing::info!("the old plates folder is gone: every plate is a vault file");
     }
 }
 
@@ -442,23 +464,34 @@ pub fn plate_bitrate(width: u32, height: u32, fps: f64) -> u32 {
     ((width as f64 * height as f64 * fps * 0.4) as u32).clamp(20_000_000, 150_000_000)
 }
 
-/// A plate from the cache, or rendered now in the unseen world (the caller holds `proxies::TURN`).
+/// A plate: the vault's (read in place, from whoever holds it), or rendered now in the unseen world and ingested — it
+/// syncs like every file (the caller holds `proxies::TURN`).
 pub async fn plate(handle: &AppHandle, vault: &Vault, label: &str, ask: &Frames, progress: impl FnMut(f64) + Send + 'static) -> Res<Plate> {
     let (key, fingerprint) = plate_key(&ask.spec, ask);
-    let dir = plates_dir(vault);
-    std::fs::create_dir_all(&dir).map_err(err)?;
-    let file = dir.join(format!("{key}.mp4"));
-    if file.is_file() {
-        // used again: it stays in the cache a while longer
-        std::fs::File::options().append(true).open(&file).and_then(|f| f.set_modified(std::time::SystemTime::now())).ok();
+    if let Some(m) = plate_in_vault(vault, &key).await? {
+        let hash: iroh_blobs::Hash = m.hash.parse().map_err(err)?;
+        let file = crate::blob::source(vault, hash, &m.original_name).await.map_err(|e| format!("plate {key}: {e:#} — it comes over iroh"))?;
         return Ok(Plate { file, key, fingerprint, reused: true });
     }
-    let part = dir.join(format!("{key}.part.mp4"));
-    if let Err(e) = shoot(handle, label, ask, &part, progress).await {
-        std::fs::remove_file(&part).ok();
+    std::fs::create_dir_all(vault.ingest_dir()).map_err(err)?;
+    // the encoder writes a file (AVAssetWriter); it goes into the vault, then the work file is gone
+    let work = vault.ingest_dir().join(format!("{key}.plate.mp4"));
+    if let Err(e) = shoot(handle, label, ask, &work, progress).await {
+        std::fs::remove_file(&work).ok();
         return Err(e);
     }
-    std::fs::rename(&part, &file).map_err(err)?;
+    let batch = Batch {
+        session: format!("plate {key}"),
+        tags: vec!["plate".into()],
+        title: Some(format!("{label} · plate")),
+        meta: json!({ "role": "plate", "plate_key": key, "fingerprint": fingerprint, "shape": ask.shape, "width": ask.width, "height": ask.height, "fps": ask.fps, "from": ask.from, "frames": ask.frames }),
+        class: Some("proxy".into()),
+        ..Default::default()
+    };
+    let made = vault.ingest_file(&work, &batch).await.map_err(err);
+    std::fs::remove_file(&work).ok();
+    let hash: iroh_blobs::Hash = made?.hash.parse().map_err(err)?;
+    let file = crate::blob::source(vault, hash, &format!("{key}.mp4")).await.map_err(err)?;
     Ok(Plate { file, key, fingerprint, reused: false })
 }
 
