@@ -26,7 +26,7 @@ Status: ✅ done · 🔨 in progress · ⏳ next · 💤 deferred on purpose.  L
 
 ## In progress
 
-16. 🔨 **Server peer** `vault-server` (written, compiles, Linux image builds):
+16. ✅ **Server peer** `vault-server` (live on the Hetzner server):
     - ✅ S3 content store (multipart, ranges), pull from Macs verified chunk by chunk straight into `LIBRARY/`
     - ✅ in-process iroh relay (Caddy `/relay`), allowlist from Postgres (paired devices only)
     - ✅ HTTP gateway `/vault/files/<hash>` (Range; public without login, private with the app's key)
@@ -43,8 +43,11 @@ Status: ✅ done · 🔨 in progress · ⏳ next · 💤 deferred on purpose.  L
     - ✅ release 5: descriptions mirror in their own loop, as soon as they change (and replace the bucket's copy)
     - ✅ release 6/7: one connection per device, parts in flight, small files in one PUT; speed + path logged
       (direct, ~50 ms) — ~2 MB/s per stream by day; compare at night without the day limit
-    - 🔨 Object Storage filling: 434/856 files (5.0 of 8.5 GB) at 18:56
-17. 🔨 **Automatic sync**: ✅ the session lives in a user-only file (no more Keychain prompts); ✅ the Mac re-joins every
+    - ✅ Object Storage: 996 of 1009 files held (2026-09-30, the rest just made); what it holds is its own signed
+      `blobs/<hash>` entries in the catalog — iroh-docs the truth, Postgres only a projection; pulls in the shoot's
+      order (small working files, proxies, originals); stored files never asked about again; iroh's QUIC tuned (BBR,
+      32 MB windows); on this Mac's Wi-Fi ~1 % packet loss caps a stream at ~3–5 MB/s of the line's ~7
+17. ✅ **Automatic sync**: ✅ the session lives in a user-only file (no more Keychain prompts); ✅ the Mac re-joins every
     30 s; ✅ Mac side of joining (allowlist, relay at runtime, shared catalog, own entries carried
     over); ✅ the app pairs and joins by itself after sign-in; ✅ files only the server holds come down from the
     gateway, hash-checked, into the store; ✅ bandwidth policy (~75 % of the uplink 08–22, all
@@ -64,11 +67,11 @@ Status: ✅ done · 🔨 in progress · ⏳ next · 💤 deferred on purpose.  L
 18. ✅ **Day 01 pilot**: its files by hash; the gateway serves all 11 public ones without a login, each re-hashed to
     its name; the 9×16 frame stays private; the built page loads images and the film from the gateway (release 8).
     Day 01 itself is still a draft — publishing it is Samuel's call.
-19. 🔨 **Migrate the library**: ✅ all 856 files in this Mac's vault (8.52 GB, 36 s, 0 mismatches); ✅ CID → hash map
+19. ✅ **Migrate the library**: ✅ all 856 files in this Mac's vault (8.52 GB, 36 s, 0 mismatches); ✅ CID → hash map
     and rewrite tool; ✅ the site reads hashes (gateway) and plays vault films from it; ✅ every page, post and film
     script rewritten (391 references to 279 files; privacy as library/ had it); ✅ released (all 856 in the bucket);
     ✅ `ipfs-unixfs-importer` and `multiformats` removed; ✅ the catalog's own meta free of CIDs.
-    b) 🔨 **the database off CIDs** (release 11): migration 0029 rewrites every CID in timelines, shots, content, render
+    b) ✅ **the database off CIDs** (release 11, live): migration 0029 rewrites every CID in timelines, shots, content, render
        jobs to its hash (`cid` → `hash`; rolls back on an unknown one); `/api/media*` and the Bunny uploads are gone; the
        studio reads the vault (`vault_list`, `vault://`, `vault_describe`, native proxy remake); the render worker reads
        and adds files through the app's local vault routes (127.0.0.1:4545/vault/*, the MCP token). API 96 tests green.
@@ -113,7 +116,7 @@ Status: ✅ done · 🔨 in progress · ⏳ next · 💤 deferred on purpose.  L
     ✅ tested over MCP (401 without the token; 15 tools; vault_status and library_list answer); ✅ grade_clip,
     grade_film; ✅ render_queue / renders_list rendered natively by the app itself, render_frame (a hero frame at t
     and shape); ✅ tested over MCP end to end with 15 (20 tools).
-22. ⏳ A `main` release after each step; the last when everything is in.
+22. ✅ A `main` release after each step (PRs #26–#35 on 2026-09-30, each deployed by CI).
 
 ## Deferred on purpose
 
