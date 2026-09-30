@@ -115,9 +115,9 @@
 		const c = m.meta?.color as { profile?: string; override?: string } | undefined;
 		return c?.override ?? c?.profile ?? '';
 	};
-	// ── the automatic steps after the ingest: the words (on this Mac, Phonon-2) and the tags (the server, Qwen) ──
+	// ── the automatic steps after the ingest, both on this Mac: the words (Phonon-2) and the tags (Prem's Qwen) ──
 	const wantsWords = (m: MediaItem) => !proxyOf(m) && m.meta?.role !== 'audio' && hasSound(m);
-	// as the server picks them (analyse.rs `wants`): pictures and films that are not working files
+	// as the Mac picks them (vault/app analyse/plan.rs `wants`): pictures and films that are not working files
 	const wantsTags = (m: MediaItem) =>
 		!proxyOf(m) &&
 		(m.kind === 'video' || m.kind === 'image' || m.meta?.sequence === 'exr') &&
@@ -134,7 +134,16 @@
 		if (live.stage === 'waiting for memory') return { ...st, state: 'queued', note: 'waits: the Mac needs its memory back first' };
 		return { state: 'running', note: live.stage, stage: live.stage, progress: live.done };
 	}
-	const tags = (m: MediaItem): Step | null => (wantsTags(m) ? analysisState(m) : null);
+	/** a picture's tags: live from this Mac's analysis while it works on it, else what the catalog says */
+	function tags(m: MediaItem): Step | null {
+		if (!wantsTags(m)) return null;
+		const live = making.find((x) => x.of === `analysis:${m.hash}`);
+		const st = analysisState(m);
+		if (!live || st.state === 'ready') return st;
+		if (live.stage === 'queued') return { ...st, state: 'queued', note: st.state === 'queued' && st.note !== 'queued' ? st.note : 'queued on this Mac — one file at a time' };
+		if (live.stage === 'waiting for memory') return { ...st, state: 'queued', note: 'waits: the Mac needs its memory back first' };
+		return { state: 'running', note: live.stage, stage: live.stage, progress: live.done };
+	}
 	const stepsOpen = (m: MediaItem) => [words(m), tags(m)].some((s) => !!s && stepOpen(s));
 	const stepsRunning = (m: MediaItem) => [words(m), tags(m)].some((s) => s?.state === 'running');
 	/** the words still to come in this story */
@@ -319,7 +328,7 @@
 						<th>Came in as · title</th>
 						<th>Colour · proxy</th>
 						<th class="c step" title="The words: transcribed on this Mac, on-device (Phonon-2) — by itself after the ingest">Words</th>
-						<th class="c step" title="The tags, cues and thumbnail: the shot analysis on the server (Qwen, confidential)">Tags</th>
+						<th class="c step" title="The tags, cues and thumbnail: the shot analysis on this Mac (Prem's confidential Qwen, asked from here) — by itself once the proxy is made">Tags</th>
 						<th>Class</th>
 						<th class="r">Size</th>
 					</tr>

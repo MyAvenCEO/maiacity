@@ -279,6 +279,10 @@ pub async fn auto_proxy(handle: AppHandle, vault: Arc<Vault>, hex: String, sourc
     };
     clear(&hex);
     handle.emit("vault-proxy", json!({ "of": hex })).ok();
+    if result.is_ok() {
+        // its proxy is here: its first thumbnail and its analysis (analyse/)
+        crate::analyse::wake();
+    }
     if let Err(e) = result {
         tracing::warn!("proxy of {hex}: {e}");
         for e in std::fs::read_dir(vault.ingest_dir()).into_iter().flatten().flatten() {
@@ -330,7 +334,8 @@ async fn make(vault: &Vault, hex: &str, name: &str, source: PathBuf) -> Result<(
         let probe_path = path.clone();
         let probe = tokio::task::spawn_blocking(move || vault_media::probe(probe_path)).await.map_err(|e| e.to_string())?.map_err(|e| format!("{e:#}"))?;
         let told = vault_media::detect(&probe);
-        // the start timecode is the vault server's to read (transcribe.rs, from the tmcd track): kept through a new probe
+        // the start timecode comes from the sound record (sound.rs, this Mac: the tmcd track); one an older probe
+        // carries is kept through a new probe
         let mut probe = serde_json::to_value(&probe).map_err(|e| e.to_string())?;
         for k in ["timecode", "timecode_fps"] {
             if let Some(v) = original.meta.pointer(&format!("/probe/{k}")) {

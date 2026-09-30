@@ -46,7 +46,8 @@ services:
       SITE_ORIGIN: ${SITE_ORIGIN:-http://localhost:5173}
       COOKIE_DOMAIN: ${COOKIE_DOMAIN:-}
       # speech to text and the shot analysis (api/src/stt.ts, analysis.ts, prem.ts): Prem's key, from the GitHub secret
-      # PREMAI_API_KEY; without it /api/transcripts and /api/analysis answer 503 and the vault server waits. The client
+      # PREMAI_API_KEY; without it /api/transcripts and /api/analysis answer 503. (The shot analysis itself runs on the
+      # Mac now and calls Prem from there — vault/app analyse/; /api/analysis stays until it is retired.) The client
       # KEK is made once and kept in the database. Confidential only, attested per model; a model Prem fails on is
       # paused (1 → 30 min) and asked nothing meanwhile. PREMAI_PAUSED=1: the kill switch — nothing calls Prem.
       PREMAI_API_KEY: ${PREMAI_API_KEY:-}
@@ -83,8 +84,6 @@ services:
       S3_BUCKET: ${S3_BUCKET:-maiacity}
       S3_ACCESS_KEY: ${S3_ACCESS_KEY:-}
       S3_SECRET_KEY: ${S3_SECRET_KEY:-}
-      # the stories whose files the shot analysis (Prem's Qwen) runs for — Day 01 first; empty: every story
-      ANALYSE_STORIES: ${ANALYSE_STORIES:-9e89f786b06a26d5d33fa8ed2d77cc828afacc016e1113bb779ab4076243fa26}
     volumes:
       - vaultdata:/data
     ports:

@@ -2,7 +2,9 @@
 //!
 //! In the existing Docker app, beside the API: an iroh endpoint that lets in only the devices the admin paired, the
 //! iroh relay (behind Caddy at api.maia.city/relay), a catalog replica, every file of the catalog in Object Storage,
-//! the mirror in Postgres, and the HTTP gateway for the website and the studio.
+//! the mirror in Postgres, and the HTTP gateway for the website and the studio. It does no media work: a file's sound
+//! record (its start timecode) and its shot analysis (tags, cues, thumbnail) are made on a Mac (vault/app sound.rs,
+//! analyse/), and reach the server like every other record.
 //!
 //! Configuration (environment):
 //!   VAULT_DATA         the peer's small state (catalog replica, identity)          default /data
@@ -12,18 +14,14 @@
 //!   VAULT_HTTP         the gateway (Caddy: /vault/*)                               default 0.0.0.0:3341
 //!   VAULT_RELAY_HTTP   the relay's plain-HTTP port (Caddy: /relay, /generate_204)  default 0.0.0.0:3340
 //!   DATABASE_URL, API_URL (http://api:3000)
-//!   FFMPEG, FFPROBE    the transcripts' and the analysis' tools                    default ffmpeg, ffprobe
 //!   S3_ENDPOINT, S3_REGION, S3_BUCKET, S3_ACCESS_KEY, S3_SECRET_KEY
 
 mod allow;
-mod analyse;
-mod api;
 mod db;
 mod gateway;
 mod log;
 mod peer;
 mod s3;
-mod sound;
 
 use std::{net::SocketAddr, path::PathBuf, sync::Arc, time::Duration};
 
@@ -95,9 +93,6 @@ async fn main() -> Result<()> {
     db::publish(&db, "catalog", &peer.ticket().await?.to_string()).await?;
     // its author: the catalog entries it signs say what Object Storage holds
     db::publish(&db, "author", &peer.author.to_string()).await?;
-    // its token for the API (the shot analysis): new at every start, only its hash in Postgres
-    let token = format!("vst_{}", hex::encode(SecretKey::generate().to_bytes()));
-    db::publish(&db, "api_token", &hex::encode(<sha2::Sha256 as sha2::Digest>::digest(token.as_bytes()))).await?;
     tracing::info!("vault-server {} · catalog {}", peer.endpoint.id(), peer.doc.id());
 
     // the paired devices change: follow them (who may connect, and how to reach them)
@@ -120,14 +115,7 @@ async fn main() -> Result<()> {
     tokio::spawn(peer.clone().listen());
     tokio::spawn(peer.clone().describe(s3.clone(), db.clone()));
     tokio::spawn(peer.clone().reconcile(s3.clone(), db.clone()));
-    // every recording's sound: its audio proxy and its start timecode (the words are made on a Mac, on-device)
     let api = env_or("API_URL", "http://api:3000");
-    tokio::spawn(sound::Sounds { peer: peer.clone(), s3: s3.clone(), dir: dir.clone() }.run());
-    // every picture's tags, cues and thumbnail: its proxy's frames through the output transform, to Prem's Qwen
-    tokio::spawn(
-        analyse::Analyser { peer: peer.clone(), s3: s3.clone(), db: db.clone(), api: api.clone(), token, dir: dir.clone(), http: reqwest::Client::new() }
-            .run(),
-    );
 
     let gateway = gateway::Gateway::new(s3, db, api, ring).router();
     let http: SocketAddr = env_or("VAULT_HTTP", "0.0.0.0:3341").parse().context("VAULT_HTTP")?;

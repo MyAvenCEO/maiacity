@@ -2,6 +2,10 @@
  * The shot analysis: what every ingested picture shows, tagged for the edit — Prem's confidential Qwen (vision), in the
  * vocabulary of game/film/vocabulary.json (base tags with fixed values, free tags, time-ranged cues).
  *
+ * RETIRED CALLER: the analysis now runs on the Mac (vault/app/src/analyse/: frames sampled natively, Prem asked from
+ * the Mac through Prem's confidential proxy, the same prompt, schema and validation ported to Rust). The vault server's
+ * analyse.rs is gone, so nothing calls this route any more; it stays until it is removed on purpose.
+ *
  * The vault server (vault/crates/vault-server/src/analyse.rs) samples a proxy's frames, takes them through the ACES 2.0
  * output transform (the model sees what a screen shows) and sends them here a stretch at a time, with the words said
  * in it; then once more, text only, every stretch's answer — to group the repeated attempts of an action into takes,
