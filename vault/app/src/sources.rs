@@ -124,15 +124,9 @@ pub async fn source_ready(app: State<'_, App>, auth: State<'_, Auth>, session: S
 async fn ready(app: &App, auth: &Auth, session: &str, path: &str) -> Res<Vec<Release>> {
     use iroh_blobs::api::proto::BlobStatus;
     let source = sources_of(app, None).await?.into_iter().find(|s| s.session == session && s.path == path).ok_or("no such source")?;
-    let stored: std::collections::HashMap<String, bool> = auth
-        .get_ok("GET", "/api/vault/files", None)
-        .await
-        .map_err(|e| format!("the server cannot be asked: {e}"))?
-        .as_array()
-        .into_iter()
-        .flatten()
-        .filter_map(|f| Some((f["hash"].as_str()?.to_string(), f["stored"].as_bool().unwrap_or(false))))
-        .collect();
+    // A: the server's own entries in the catalog — iroh's word, from this Mac's replica
+    let _ = auth;
+    let stored = crate::sync::held_by_server(&app.vault).await.ok_or("this Mac has not joined the vault yet — it cannot tell what Object Storage holds")?;
     let stories = app.vault.catalog.stories().await.map_err(err)?;
     let inbox = app.vault.catalog.inbox_id();
     let mut out = Vec::new();
@@ -140,7 +134,7 @@ async fn ready(app: &App, auth: &Auth, session: &str, path: &str) -> Res<Vec<Rel
         let hash: iroh_blobs::Hash = f.hash.parse().map_err(err)?;
         let meta = app.vault.catalog.meta(hash).await.map_err(err)?;
         let local = matches!(app.vault.store.blobs().status(hash).await, Ok(BlobStatus::Complete { .. }));
-        let cloud = stored.get(&f.hash).copied().unwrap_or(false);
+        let cloud = stored.contains(&f.hash);
         let (story_id, class) = meta.as_ref().map(|m| (if m.story.is_empty() { inbox.clone() } else { m.story.clone() }, m.class.clone())).unwrap_or_default();
         let rules = stories.iter().find(|s| s.id == story_id).map(|s| s.rules.clone()).unwrap_or_default();
         let wants = match class.as_str() {

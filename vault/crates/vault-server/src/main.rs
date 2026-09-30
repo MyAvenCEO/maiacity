@@ -89,6 +89,8 @@ async fn main() -> Result<()> {
     db::publish(&db, "server", &peer.endpoint.id().to_string()).await?;
     db::publish(&db, "relay", relay_url.as_str()).await?;
     db::publish(&db, "catalog", &peer.ticket().await?.to_string()).await?;
+    // its author: the catalog entries it signs say what Object Storage holds
+    db::publish(&db, "author", &peer.author.to_string()).await?;
     tracing::info!("vault-server {} · catalog {}", peer.endpoint.id(), peer.doc.id());
 
     // the paired devices change: follow them (who may connect, and how to reach them)

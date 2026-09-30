@@ -53,11 +53,6 @@ pub async fn mirror(db: &Client, meta: &serde_json::Value, stored: bool) -> Resu
     Ok(())
 }
 
-/// Every file Object Storage is known to hold (its hash).
-pub async fn stored_all(db: &Client) -> Result<std::collections::HashSet<String>> {
-    Ok(db.query("SELECT hash FROM vault_files WHERE stored", &[]).await?.iter().map(|r| r.get::<_, String>(0)).collect())
-}
-
 pub async fn stored(db: &Client, hash: &str) -> Result<()> {
     db.execute("UPDATE vault_files SET stored = true, updated = now() WHERE hash = $1", &[&hash]).await?;
     Ok(())

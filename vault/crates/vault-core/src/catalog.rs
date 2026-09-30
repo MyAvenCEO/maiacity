@@ -1,7 +1,9 @@
 //! The catalog: an iroh-docs replica every node keeps in full. It is the truth about what the vault holds.
 //!
 //! Keys (skill `maiacity.md`):
-//!   blobs/<hash>    → the file itself; every full node fetches these (native pinning)
+//!   blobs/<hash>    → the file itself; every full node fetches these (native pinning). One entry per author: each
+//!                     node writes its own once it holds the verified bytes — so where every file is lives in the
+//!                     catalog itself, on every replica, offline too (the server's entry: in Object Storage)
 //!   meta/<hash>     → a small JSON about the file (a blob too, so it syncs exactly like files)
 //!   ingest/<id>     → an ingest session's report
 //!   story/<id>      → a story: its title, description, series, episode, and where each class of its files is kept
@@ -221,6 +223,12 @@ impl Catalog {
         }
         out.sort_by(|a, b| b["session"].as_str().cmp(&a["session"].as_str()));
         Ok(out)
+    }
+
+    /// The files an author holds a verified copy of: its own `blobs/<hash>` entries (hex hashes).
+    pub async fn held_by(&self, author: AuthorId) -> Result<std::collections::HashSet<String>> {
+        let entries: Vec<_> = self.doc().get_many(Query::author(author).key_prefix("blobs/")).await?.collect().await;
+        Ok(entries.into_iter().flatten().map(|e| String::from_utf8_lossy(e.key()).trim_start_matches("blobs/").to_string()).collect())
     }
 
     /// Is this file already in the catalog?

@@ -46,13 +46,16 @@ export async function revokeDevice(endpointId: string): Promise<boolean> {
   return r.affectedRows > 0;
 }
 
-/** What a paired device needs to join: the server peer's node and the catalog's write ticket. */
-export async function joinInfo(): Promise<{ server: string | null; catalog: string | null; relay: string | null }> {
+/**
+ * What a paired device needs to join: the server peer's node, the catalog's write ticket, and the server's catalog author
+ * (its signed `blobs/<hash>` entries are what Object Storage holds).
+ */
+export async function joinInfo(): Promise<{ server: string | null; catalog: string | null; relay: string | null; author: string | null }> {
   const { rows } = await db.query<{ key: string; value: string }>(
-    "SELECT key, value FROM vault_config WHERE key IN ('server', 'catalog', 'relay')",
+    "SELECT key, value FROM vault_config WHERE key IN ('server', 'catalog', 'relay', 'author')",
   );
   const get = (k: string) => rows.find((r) => r.key === k)?.value ?? null;
-  return { server: get("server"), catalog: get("catalog"), relay: get("relay") };
+  return { server: get("server"), catalog: get("catalog"), relay: get("relay"), author: get("author") };
 }
 
 export type VaultFile = {
