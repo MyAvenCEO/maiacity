@@ -7391,6 +7391,7 @@ dependencies = [
  "iroh-docs",
  "iroh-gossip",
  "iroh-relay",
+ "irpc",
  "noq-proto",
  "quick-xml 0.38.4",
  "reqwest",

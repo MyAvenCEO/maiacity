@@ -8,7 +8,7 @@ use std::{
     collections::{HashMap, HashSet},
     net::{Ipv4Addr, SocketAddr, SocketAddrV4},
     path::Path,
-    sync::{Arc, Mutex},
+    sync::{Arc, Mutex, RwLock},
     time::Duration,
 };
 
@@ -31,7 +31,7 @@ use iroh_docs::{
 use iroh_gossip::net::Gossip;
 use tokio::sync::Notify;
 
-use crate::{allow::Allow, db, s3::{self, S3}};
+use crate::{allow::Allow, cold::{self, Cache, Cold}, db, s3::{self, S3}};
 
 pub struct Peer {
     pub endpoint: Endpoint,
@@ -57,6 +57,8 @@ pub struct Peer {
     pub wake_transcribe: Notify,
     /// a file reached the bucket or a transcript settled: the analysis looks (analyse.rs)
     pub wake_analyse: Notify,
+    /// the files brought up from the bucket so iroh can serve them (cold.rs)
+    pub cache: Arc<Cache>,
 }
 
 pub struct Config<'a> {
@@ -65,6 +67,10 @@ pub struct Config<'a> {
     pub port: u16,
     pub relay: RelayUrl,
     pub public_ip: Option<Ipv4Addr>,
+    /// the bucket, cold storage behind the iroh store: every file this server holds is served from it over iroh
+    pub s3: S3,
+    /// how much of the bucket the iroh store keeps at most, in bytes (VAULT_IROH_CACHE_GB)
+    pub cache_bytes: u64,
 }
 
 /// The QUIC transport for moving footage over a home uplink. iroh's defaults are tuned for 100 ms: one stream may have
@@ -101,18 +107,27 @@ impl Peer {
         ids.push(endpoint.id());
         allow.set(ids);
 
-        // a small store: the catalog's own entries (descriptions, reports, devices) and the files this server made — the
-        // rest of the files live in Object Storage
-        // iroh's pruning here too: kept is what a tag pins (the files this server made) and what a catalog entry
-        // references (iroh-docs' protection) — a deleted file's bytes and old records go
+        // a small store: the catalog's own entries (descriptions, reports, devices), the files this server made, and a
+        // bounded cache of the files brought up from Object Storage for a device that asked (cold.rs) — the files
+        // themselves live in the bucket
+        // iroh's pruning here too: kept is what a tag pins (the files this server made, the cached ones) and the records
+        // a catalog entry references (iroh-docs' protection, the files taken out of it) — a deleted file's bytes, a
+        // file the cache let go, and old records go
         let (protect, docs_protect) = iroh_docs::engine::ProtectCallbackHandler::new();
+        let files = Arc::new(RwLock::new(Default::default()));
         let mut opts = iroh_blobs::store::fs::options::Options::new(&cfg.dir.join("blobs"));
-        opts.gc = Some(iroh_blobs::store::GcConfig { interval: Duration::from_secs(10 * 60), add_protected: Some(docs_protect) });
+        opts.gc = Some(iroh_blobs::store::GcConfig {
+            interval: Duration::from_secs(10 * 60),
+            add_protected: Some(cold::unprotect_files(docs_protect, files.clone())),
+        });
         let store = FsStore::load_with_opts(cfg.dir.join("blobs").join("blobs.db"), opts).await?;
+        let cache = Cache::open((*store).clone(), cfg.cache_bytes, files).await?;
+        // every get a device sends is held until the file is here (cold.rs answers the events)
+        let (events, requests) = cold::events();
         let gossip = Gossip::builder().spawn(endpoint.clone());
         let docs = Docs::persistent(cfg.dir.join("docs")).protect_handler(protect).spawn(endpoint.clone(), (*store).clone(), gossip.clone()).await?;
         let router = Router::builder(endpoint.clone())
-            .accept(iroh_blobs::ALPN, BlobsProtocol::new(&store, None))
+            .accept(iroh_blobs::ALPN, BlobsProtocol::new(&store, Some(events)))
             .accept(iroh_gossip::ALPN, gossip)
             .accept(iroh_docs::ALPN, docs.clone())
             .spawn();
@@ -141,6 +156,7 @@ impl Peer {
         // live: iroh-docs only accepts a device's sync for a catalog that is syncing (else it closes the stream)
         doc.start_sync(vec![]).await?;
         let author = docs.author_default().await?;
+        tokio::spawn(cache.clone().serve(Arc::new(Bucket { doc: doc.clone(), author, s3: cfg.s3.clone() }), requests));
 
         Ok(Arc::new(Self {
             endpoint,
@@ -158,6 +174,7 @@ impl Peer {
             wake_store: Notify::new(),
             wake_transcribe: Notify::new(),
             wake_analyse: Notify::new(),
+            cache,
         }))
     }
 
@@ -316,6 +333,8 @@ impl Peer {
     async fn reconcile_once(&self, s3: &S3, db: &tokio_postgres::Client, failed: &mut HashSet<Hash>) -> Result<()> {
         let blobs: Vec<_> = self.doc.get_many(Query::single_latest_per_key().key_prefix("blobs/")).await?.collect().await;
         let mut blobs: Vec<_> = blobs.into_iter().collect::<Result<_, _>>()?;
+        // the files the catalog names: in this store only while a tag pins them (cold.rs)
+        self.cache.files(blobs.iter().filter_map(|e| std::str::from_utf8(&e.key()[6..]).ok()?.parse::<Hash>().ok()));
         // the order of a shoot: the small working files first, then the proxies (the edit can start from them anywhere),
         // then the originals, then the rest — each class as the file's description says (iroh-docs keeps every `meta/`
         // here), smaller files first within each
@@ -482,6 +501,10 @@ impl Peer {
         s3.delete(&s3::blob_key(hex)).await?;
         // its pin in this server's own store (a file it made): iroh's garbage collection prunes the bytes
         self.store.tags().delete(format!("vault/{hex}")).await?;
+        // and its copy brought up from the bucket, if iroh served it lately
+        if let Ok(hash) = hex.parse::<Hash>() {
+            self.cache.let_go(hash).await?;
+        }
         for prefix in ["transcript/", "sound/", "analysis/"] {
             s3.delete(&s3::derived_key(&format!("{prefix}{hex}"))).await?;
         }
@@ -561,6 +584,41 @@ impl Peer {
     pub async fn shutdown(&self) {
         self.router.shutdown().await.ok();
         self.store.shutdown().await.ok();
+    }
+}
+
+/// The files this server holds, as the cache sees them: the catalog says which (its own signed `blobs/<hash>` entry),
+/// the bucket has the bytes.
+struct Bucket {
+    doc: Doc,
+    author: AuthorId,
+    s3: S3,
+}
+
+impl Cold for Bucket {
+    async fn holds(&self, hash: Hash) -> Result<Option<u64>> {
+        let entry = self.doc.get_exact(self.author, format!("blobs/{}", hash.to_hex()), false).await?;
+        Ok(entry.filter(|e| e.content_hash() == hash).map(|e| e.content_len()))
+    }
+
+    async fn read(&self, hash: Hash) -> Result<tokio::sync::mpsc::Receiver<std::io::Result<bytes::Bytes>>> {
+        let mut res = self.s3.get(&s3::blob_key(&hash.to_hex()), None).await?;
+        anyhow::ensure!(res.status().is_success(), "the bucket said {}", res.status());
+        let (tx, rx) = tokio::sync::mpsc::channel(16);
+        tokio::spawn(async move {
+            loop {
+                let item = match res.chunk().await {
+                    Ok(Some(chunk)) => Ok(chunk),
+                    Ok(None) => break,
+                    Err(e) => Err(std::io::Error::other(e)),
+                };
+                let failed = item.is_err();
+                if tx.send(item).await.is_err() || failed {
+                    break;
+                }
+            }
+        });
+        Ok(rx)
     }
 }
 

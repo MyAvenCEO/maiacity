@@ -206,7 +206,9 @@
 		const sh = layout[track]?.shape[c.id];
 		if (!sh || (sh.head <= 0 && sh.tail >= 1)) return undefined;
 		const g = `${(sh.head * 100).toFixed(2)}%`, f = `${(sh.tail * 100).toFixed(2)}%`;
-		return `polygon(${g} 0, 100% 0, 100% ${sh.tail < 1 ? '50%' : '100%'}, ${f} ${sh.tail < 1 ? '50%' : '100%'}, ${f} 100%, 0 100%, 0 ${sh.head > 0 ? '50%' : '0'}, ${g} ${sh.head > 0 ? '50%' : '0'})`;
+		// the two halves of an overlap part by a hairline (1.5 px), so the J or L reads as two clips, not one
+		const top = 'calc(50% - 0.75px)', bottom = 'calc(50% + 0.75px)';
+		return `polygon(${g} 0, 100% 0, 100% ${sh.tail < 1 ? top : '100%'}, ${f} ${sh.tail < 1 ? top : '100%'}, ${f} 100%, 0 100%, 0 ${sh.head > 0 ? bottom : '0'}, ${g} ${sh.head > 0 ? bottom : '0'})`;
 	}
 	/** a linked sound against its own picture: J when it leads it, L when it trails it @param {Clip} c */
 	function leadTrail(c) {
