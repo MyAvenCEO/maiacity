@@ -20,7 +20,7 @@ use rmcp::{
     schemars, tool, tool_handler, tool_router,
     transport::streamable_http_server::{StreamableHttpServerConfig, StreamableHttpService, session::local::LocalSessionManager},
 };
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use tauri::AppHandle;
 use vault_core::Vault;
@@ -120,6 +120,36 @@ pub struct SaveArgs {
     pub id: String,
     /// the fields to change, as the API takes them
     pub patch: Value,
+}
+
+/// An ASC CDL grade, applied in ACEScct (the studio's and the render's own formula): out = (in·slope + offset)^power,
+/// then saturation around Rec.709 luma.
+#[derive(Deserialize, Serialize, schemars::JsonSchema)]
+pub struct Cdl {
+    pub slope: [f64; 3],
+    pub offset: [f64; 3],
+    pub power: [f64; 3],
+    pub sat: f64,
+}
+
+#[derive(Deserialize, schemars::JsonSchema)]
+pub struct GradeClipArgs {
+    /// the timeline's id
+    pub timeline: String,
+    /// the clip's id (a V1 clip)
+    pub clip: String,
+    /// its grade; none: take it off
+    pub grade: Option<Cdl>,
+}
+
+#[derive(Deserialize, schemars::JsonSchema)]
+pub struct GradeFilmArgs {
+    /// the timeline's id
+    pub timeline: String,
+    /// a named look the render knows: neutral, cold, dip, bright, night, warm (game/film/color.js PRESETS)
+    pub preset: Option<String>,
+    /// or a look of its own (wins over the preset)
+    pub look: Option<Cdl>,
 }
 
 #[derive(Deserialize, schemars::JsonSchema)]
@@ -334,6 +364,40 @@ impl Studio {
     #[tool(description = "Save changes to a timeline: clips (edit, audio), meta, the film's grade, the stage")]
     async fn timeline_save(&self, Parameters(a): Parameters<SaveArgs>) -> String {
         text(self.api("PUT", &format!("/api/timelines/{}", a.id), Some(a.patch)).await)
+    }
+
+    #[tool(description = "Grade one clip of a timeline: its ASC CDL in ACEScct (slope, offset, power per channel, and saturation), or none to take it off. The cut stays as it is; a locked timeline may be graded.")]
+    async fn grade_clip(&self, Parameters(a): Parameters<GradeClipArgs>) -> String {
+        let r = async {
+            let t = self.api("GET", &format!("/api/timelines/{}", a.timeline), None).await?;
+            let mut clips = t["clips"].as_array().cloned().ok_or("the timeline has no clips")?;
+            let clip = clips.iter_mut().find(|c| c["id"].as_str() == Some(a.clip.as_str())).ok_or("no such clip on this timeline")?;
+            clip["grade"] = match &a.grade {
+                Some(g) => serde_json::to_value(g).map_err(|e| e.to_string())?,
+                None => Value::Null,
+            };
+            self.api("PUT", &format!("/api/timelines/{}", a.timeline), Some(json!({ "clips": clips }))).await
+        };
+        text(r.await)
+    }
+
+    #[tool(description = "Grade the whole film: its look — a named preset (neutral, cold, dip, bright, night, warm) or an ASC CDL of its own in ACEScct — applied after every clip's own grade.")]
+    async fn grade_film(&self, Parameters(a): Parameters<GradeFilmArgs>) -> String {
+        let r = async {
+            const PRESETS: [&str; 6] = ["neutral", "cold", "dip", "bright", "night", "warm"];
+            if let Some(p) = &a.preset {
+                if !PRESETS.contains(&p.as_str()) {
+                    return Err(format!("no preset {p} — one of {}", PRESETS.join(", ")));
+                }
+            }
+            let grade = match (&a.look, &a.preset) {
+                (Some(look), _) => json!({ "look": look }),
+                (None, Some(p)) if p != "neutral" => json!({ "look": null, "preset": p }),
+                _ => Value::Null,
+            };
+            self.api("PUT", &format!("/api/timelines/{}", a.timeline), Some(json!({ "grade": grade }))).await
+        };
+        text(r.await)
     }
 
     #[tool(description = "Queue a timeline's render (every delivery shape, colour-managed, QC'd)")]
