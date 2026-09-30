@@ -3,10 +3,11 @@
  * worker (bun film worker) claims it, reports its progress, and hands back the film's hash when it is in the vault.
  *
  * The same queue carries the worker's other work: `lut` — bake the studio viewer's preview output transform into the
- * vault; `proxy` — the HD proxy of a world shot version (`shot_id` + `shot_version`, no file); and `frame` — a hero
- * frame: one frame of a timeline (`params`: t, shape) rendered at full precision through the whole chain, for grading
- * against. A file's own proxy is no job here: the Mac app makes it when the file comes in (meta.proxy on the
- * original). Rows from when files' proxies were jobs (media_hash set) stay in the table as history, nothing more.
+ * vault; and `frame` — a hero frame: one frame of a timeline (`params`: t, shape) rendered at full precision through
+ * the whole chain, for grading against. Proxies are no jobs here: the Mac app makes a file's when it comes in
+ * (meta.proxy on the original) and a world shot version's when a timeline plays it (vault/app/src/world.rs, in its own
+ * world). `proxy` rows — of files (media_hash) or of shot versions (shot_id + shot_version) — are history, nothing more;
+ * one still waiting is closed by the worker when it claims it.
  */
 import { db } from "./pg";
 import { deliverRender, type Delivery } from "./content";
@@ -33,15 +34,6 @@ export async function queueRender(founderId: string, timelineId: string): Promis
   const { rows: open } = await db.query<Job>(`SELECT ${COLS} FROM render_jobs WHERE timeline_id = $1 AND kind = 'render' AND status IN ('queued', 'rendering')`, [timelineId]);
   if (open[0]) return open[0]; // one at a time per timeline
   return (await db.query<Job>(`INSERT INTO render_jobs (timeline_id, founder_id) VALUES ($1, $2) RETURNING ${COLS}`, [timelineId, founderId])).rows[0]!;
-}
-
-/** A world shot version's HD proxy to be made (one waiting or finished job per version is enough). */
-export async function queueShotProxy(shotId: string, version: number, founderId: string | null = null): Promise<Job> {
-  const { rows: open } = await db.query<Job>(
-    `SELECT ${COLS} FROM render_jobs WHERE kind = 'proxy' AND shot_id = $1 AND shot_version = $2 AND status IN ('queued', 'rendering', 'done')
-      ORDER BY created DESC LIMIT 1`, [shotId, version]);
-  if (open[0]) return open[0];
-  return (await db.query<Job>(`INSERT INTO render_jobs (kind, shot_id, shot_version, founder_id) VALUES ('proxy', $1, $2, $3) RETURNING ${COLS}`, [shotId, version, founderId])).rows[0]!;
 }
 
 /** A hero frame: one frame of a timeline at time `t` in one delivery shape, rendered at full precision. */

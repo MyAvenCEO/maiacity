@@ -1,12 +1,13 @@
-// Where the three parts of the film pipeline meet (migration 0027): every world shot version is queued for its HD
-// proxy, a hero frame is a job of its own, and a finished render of a locked cut moves the timeline to "rendered".
+// Where the three parts of the film pipeline meet (migration 0027): a world shot's versions are data only — their HD
+// proxies are the Mac app's (vault/app/src/world.rs), never a job — a hero frame is a job of its own, and a finished
+// render of a locked cut moves the timeline to "rendered".
 import { beforeAll, expect, test } from "bun:test";
 import { PGlite } from "@electric-sql/pglite";
 import { useDb, type Db } from "../src/pg";
 import { MIGRATIONS } from "../src/migrations-list";
 import { createShot, saveShot } from "../src/shots";
 import { createTimeline, getTimeline, saveTimeline } from "../src/timelines";
-import { claimRender, listJobs, queueFrame, queueRender, queueShotProxy, reportRender } from "../src/renders";
+import { claimRender, listJobs, queueFrame, queueRender, reportRender } from "../src/renders";
 
 const pg = new PGlite();
 beforeAll(async () => {
@@ -30,27 +31,20 @@ const spec = (over: Record<string, unknown> = {}) => ({
   ...over,
 });
 
-test("a world shot version is queued for its HD proxy once — a new version gets its own", async () => {
+test("a world shot and its new versions queue no job: their proxies are the Mac app's", async () => {
   const s = await createShot("admin", { name: "the sun rises", project: "Day 19", spec: spec() });
-  const a = await queueShotProxy(s.id, s.version, "admin");
-  expect(a.kind).toBe("proxy");
-  expect(a.shot_id).toBe(s.id);
-  expect(a.shot_version).toBe(1);
-  expect(a.media_hash).toBeNull();
-  expect((await queueShotProxy(s.id, 1, "admin")).id).toBe(a.id); // one per version
   const v2 = await saveShot(s.id, "admin", { spec: spec({ time: { hour: 6 } }) });
   expect(v2.version).toBe(2);
-  const b = await queueShotProxy(s.id, v2.version, "admin");
-  expect(b.id).not.toBe(a.id);
-  expect((await listJobs({ kind: "proxy", shot: s.id })).map((j) => j.shot_version).sort()).toEqual([1, 2]);
+  expect(await listJobs({ shot: s.id })).toEqual([]);
+  expect(await listJobs({ kind: "proxy" })).toEqual([]);
 });
 
-test("the worker claims a shot's proxy job with the shot and its version", async () => {
+test("a shot proxy job left from before (history) is still claimed with its shot and version — the worker closes it", async () => {
   await pg.query("UPDATE render_jobs SET status = 'done'");
   const s = await createShot("admin", { name: "glass", spec: spec() });
-  const q = await queueShotProxy(s.id, 1);
+  await pg.query("INSERT INTO render_jobs (kind, shot_id, shot_version) VALUES ('proxy', $1, 1)", [s.id]);
   const job = await claimRender();
-  expect(job!.id).toBe(q.id);
+  expect(job!.kind).toBe("proxy");
   expect(job!.shot_id).toBe(s.id);
   expect(job!.shot_version).toBe(1);
 });

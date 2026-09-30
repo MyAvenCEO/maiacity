@@ -10,6 +10,7 @@ mod proxies;
 mod sources;
 mod stories;
 mod sync;
+mod world;
 
 use std::{
     io::SeekFrom,
@@ -393,6 +394,8 @@ fn main() {
             // the studio for agents: MCP on this Mac only, behind the app's token
             // every video original without its proxy: queued, now and every ten minutes
             tauri::async_runtime::spawn(proxies::sweep(app.handle().clone(), vault.clone()));
+            // and every world shot a timeline plays, rendered here in the studio's own world (world.rs)
+            tauri::async_runtime::spawn(world::sweep(app.handle().clone(), vault.clone()));
             let (handle, v) = (app.handle().clone(), vault.clone());
             let auth = app.state::<auth::Auth>().inner().clone();
             tauri::async_runtime::spawn(async move {
@@ -401,6 +404,12 @@ fn main() {
                 }
             });
             Ok(())
+        })
+        // the studio's window closed: the unseen world window goes with it, so the app quits as it always did
+        .on_window_event(|window, event| {
+            if window.label() == "main" && matches!(event, tauri::WindowEvent::Destroyed) {
+                world::close_window(window.app_handle());
+            }
         })
         .register_asynchronous_uri_scheme_protocol("maiaapi", |ctx, request, responder| {
             let http = ctx.app_handle().state::<auth::Auth>().http();
@@ -436,6 +445,9 @@ fn main() {
             proxies::vault_hold,
             proxies::color_lut,
             proxies::vault_proxy,
+            world::world_proxy_next,
+            world::world_proxy_frame,
+            world::world_proxy_end,
             vault_sources,
             vault_scan,
             vault_ingest

@@ -4,11 +4,13 @@
 
 pub mod color;
 pub mod cst;
+pub mod frames;
 pub mod gpu;
 pub mod mp4;
 pub mod probe;
 pub mod proxy;
 
 pub use color::{ColorInfo, detect};
+pub use frames::FrameWriter;
 pub use probe::{Probe, probe};
 pub use proxy::{Proxy, make_proxy, proxy_size};
