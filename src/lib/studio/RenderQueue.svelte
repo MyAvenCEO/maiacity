@@ -189,11 +189,11 @@
 		padding: 0.55rem 0.9rem;
 		border: 0;
 		border-radius: 999px;
-		background: var(--ink);
+		background: var(--accent);
 		font: inherit;
 		font-size: 0.82rem;
 		font-weight: 600;
-		color: var(--on-ink);
+		color: var(--on-accent);
 		cursor: pointer;
 	}
 

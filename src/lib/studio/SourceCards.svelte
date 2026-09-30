@@ -338,7 +338,7 @@
 	.list li.no span { color: var(--bad); }
 	.sure { display: flex; gap: 0.5rem; align-items: flex-start; font-size: 0.82rem; }
 	.primary, .danger { padding: 0.4rem 1rem; border: 0; border-radius: 999px; font: inherit; font-size: 0.82rem; color: #fff; cursor: pointer; }
-	.primary { background: var(--ink); color: var(--on-ink); }
+	.primary { background: var(--accent); color: var(--on-accent); }
 	.danger { background: #c9432f; }
 	.danger:disabled { opacity: 0.4; cursor: default; }
 	.actions { gap: 1rem; align-items: center; }

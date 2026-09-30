@@ -150,7 +150,7 @@
 	small { font-size: 0.72rem; color: var(--dim); }
 	.link { padding: 0; border: 0; background: none; font: inherit; font-size: 0.74rem; color: var(--dim); text-decoration: underline; cursor: pointer; }
 	.confirm { font-size: 0.78rem; color: var(--warn); }
-	.confirm button:not(.link) { padding: 0.1rem 0.6rem; border: 0; border-radius: 999px; background: var(--ink); font: inherit; font-size: 0.74rem; color: var(--on-ink); cursor: pointer; }
+	.confirm button:not(.link) { padding: 0.1rem 0.6rem; border: 0; border-radius: 999px; background: var(--accent); font: inherit; font-size: 0.74rem; color: var(--on-accent); cursor: pointer; }
 	.foot { display: flex; flex-direction: column; gap: 0.4rem; margin-top: 1.8rem; padding-top: 0.8rem; border-top: 1px solid var(--edge); font-size: 0.76rem; color: var(--dim); }
 	.foot .link { align-self: flex-start; }
 </style>

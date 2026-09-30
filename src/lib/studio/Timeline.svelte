@@ -117,6 +117,21 @@
 		}, 200);
 		return () => ((live = false), clearTimeout(t));
 	});
+	/** the moment a point across Grade's columns stands for: its shot, and as far into it as across its column @param {number} px */
+	const gradeTime = (px) => {
+		if (!pics.length) return null;
+		const i = Math.max(0, Math.min(pics.length - 1, Math.floor(px / COL)));
+		const c = pics[i];
+		const f = Math.min(0.999, Math.max(0, (px - i * COL) / COL));
+		return { id: c.id, t: c.start + f * c.dur };
+	};
+	/** where the playhead is across Grade's columns */
+	const gradeX = $derived.by(() => {
+		const i = pics.findIndex((c) => c.id === nowId);
+		if (i < 0) return null;
+		const c = pics[i];
+		return i * COL + Math.min(1, Math.max(0, (s.time - c.start) / Math.max(1e-6, c.dur))) * COL;
+	});
 	/** a shot picked in the strip: selected, and the playhead on its grading still (else its first frame) @param {Clip} c */
 	const pick = (c) => {
 		s.selected = c.id;
@@ -477,8 +492,20 @@
 	/** @param {PointerEvent} e */
 	function scrub(e) {
 		const lanes = s.lanes;
-		// in Grade the shots are columns, not time: a shot is picked by its own column
-		if (!lanes || grading) return;
+		if (!lanes) return;
+		if (grading) {
+			// in Grade the shots are columns: the playhead runs through each shot across its own column
+			/** @param {PointerEvent} ev */
+			const put = (ev) => {
+				const at = gradeTime(ev.clientX - lanes.getBoundingClientRect().left);
+				if (at) (s.selected = at.id), s.seek(at.t);
+			};
+			put(e);
+			const up = () => (window.removeEventListener('pointermove', put), window.removeEventListener('pointerup', up));
+			window.addEventListener('pointermove', put);
+			window.addEventListener('pointerup', up);
+			return;
+		}
 		// a click in the world clip's lanes moves the playhead and keeps the clip (and its lanes) in hand
 		if (!(/** @type {Element} */ (e.target)).closest?.('.lane')) s.selected = null;
 		s.selectedKey = null;
@@ -760,7 +787,7 @@
 						{#each pics as c, i (c.id)}
 							{@const pic = thumbs[c.id] ?? previewOf(c)}
 							<!-- svelte-ignore a11y_no_static_element_interactions -->
-							<div class="shot" class:sel={s.selected === c.id} class:now={nowId === c.id} class:balanced={!!c.balance} style:left={left(c)} style:width={width(c)} onpointerdown={(e) => (e.stopPropagation(), pick(c))} title="{s.clipName(c)}{c.script?.description ? ` — ${c.script.description}` : ''}">
+							<div class="shot" class:sel={s.selected === c.id} class:now={nowId === c.id} class:balanced={!!c.balance} style:left={left(c)} style:width={width(c)} ondblclick={() => pick(c)} title="{s.clipName(c)}{c.script?.description ? ` — ${c.script.description}` : ''} (double-click: its grading still)">
 								{#if pic}<img src={pic} alt="" draggable="false" />{:else}<span class="none">{isWorld(c) ? 'world shot' : c.kind === 'slate' ? 'not filmed yet' : 'no picture yet'}</span>{/if}
 								<span class="cap"><b>{i + 1}</b> {c.script?.size ?? ''} {c.script?.description ?? s.clipName(c)}</span>
 							</div>
@@ -890,7 +917,7 @@
 					{/each}
 				</div>
 			{/if}
-			{#if !grading}<div class="playhead" style:left={x(s.time)}><i></i></div>{/if}
+			{#if !grading}<div class="playhead" style:left={x(s.time)}><i></i></div>{:else if gradeX !== null}<div class="playhead" style:left="{gradeX}px"><i></i></div>{/if}
 		</div>
 	</div>
 </div>
@@ -1188,7 +1215,7 @@
 
 	.cell .sl input {
 		width: 100%;
-		accent-color: var(--ink);
+		accent-color: var(--accent);
 	}
 
 	.cell .sl output {
@@ -1319,9 +1346,9 @@
 	.overlap b {
 		padding: 0 0.3rem;
 		border-radius: 3px;
-		background: var(--ink);
+		background: var(--accent);
 		font-size: 0.62rem;
-		color: var(--on-ink);
+		color: var(--on-accent);
 	}
 
 	.overlap.J b {
@@ -1646,7 +1673,7 @@
 
 	/* Grade: the shots side by side, one column each, with their pictures */
 	.lanes.grading {
-		cursor: default;
+		cursor: text;
 	}
 
 	.tick.shot {

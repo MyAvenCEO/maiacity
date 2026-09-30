@@ -466,6 +466,37 @@
 		color: inherit;
 	}
 
+	/* every slider in the room: a thin marine track, an amber thumb — never the system's white */
+	.studio :global(input[type='range']) {
+		appearance: none;
+		height: 14px;
+		background: transparent;
+		accent-color: var(--accent);
+		cursor: ew-resize;
+	}
+
+	.studio :global(input[type='range']::-webkit-slider-runnable-track) {
+		height: 4px;
+		border-radius: 2px;
+		background: var(--edge);
+	}
+
+	.studio :global(input[type='range']::-webkit-slider-thumb) {
+		appearance: none;
+		width: 12px;
+		height: 12px;
+		margin-top: -4px;
+		border: 2px solid var(--bg);
+		border-radius: 50%;
+		background: var(--accent);
+		box-shadow: 0 0 0 1px var(--edge-strong);
+	}
+
+	.studio :global(input[type='range']:hover::-webkit-slider-thumb),
+	.studio :global(input[type='range']:focus-visible::-webkit-slider-thumb) {
+		box-shadow: 0 0 0 3px rgb(232 168 58 / 0.3);
+	}
+
 	.studio :global(.ghost) {
 		padding: 0.35rem 0.8rem;
 		border: 1px solid var(--edge);
