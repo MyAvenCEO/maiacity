@@ -412,90 +412,21 @@ async fn grading_still_at(vault: &Vault, hex: &str, name: &str, path: &std::path
     std::fs::remove_file(&small).ok();
     let preview = preview?;
     vault.catalog.describe(hash, &json!({ "meta": { "grade_still": made.hash, "preview": preview.hash } })).await.map_err(|e| format!("{e:#}"))?;
+    // one still and one preview per file: any other of this file's goes
+    for m in vault.catalog.list().await.map_err(|e| format!("{e:#}"))? {
+        let of = |k: &str| m.meta.get(k).and_then(|v| v.as_str()) == Some(hex);
+        if (of("grade_still_of") || of("preview_of")) && m.hash != made.hash && m.hash != preview.hash {
+            if let Ok(h) = m.hash.parse::<iroh_blobs::Hash>() {
+                vault.catalog.delete_file(h, "replaced by the file's new grading still and preview").await.ok();
+            }
+        }
+    }
     Ok(())
 }
 
 /// How wide a list's preview is.
 const PREVIEW_WIDTH: u32 = 480;
 
-/// Every picture shot of a timeline its own grading still: a frame of the original at the middle of the part the shot
-/// plays, 4K, through its CST into ACEScct — for the ones whose stills all lie outside it. One at a time, after any
-/// proxy. Returns what it made and what it could not.
-pub async fn shot_stills(vault: &Arc<Vault>, timeline: &serde_json::Value) -> Result<serde_json::Value, String> {
-    let list = vault.catalog.list_view().await.map_err(|e| format!("{e:#}"))?;
-    let by: HashMap<&str, &Meta> = list.iter().map(|m| (m.hash.as_str(), m)).collect();
-    let mut made = Vec::new();
-    let mut skipped = Vec::new();
-    for c in timeline["clips"].as_array().into_iter().flatten().filter(|c| c["track"] == "V1" && c["hash"].is_string()) {
-        let hash = c["hash"].as_str().unwrap();
-        let orig = by.get(hash).and_then(|m| m.meta.get("proxy_of").and_then(|p| p.as_str())).unwrap_or(hash);
-        let Some(m) = by.get(orig) else { continue };
-        if m.kind != "video" || sequence(m) {
-            continue;
-        }
-        let (from, dur) = (c["in"].as_f64().unwrap_or(0.0), c["dur"].as_f64().unwrap_or(0.0));
-        let inside = list.iter().any(|s| {
-            s.meta.get("grade_still_of").and_then(|o| o.as_str()) == Some(orig) && s.meta.get("t").and_then(|t| t.as_f64()).is_some_and(|t| t >= from && t <= from + dur)
-        });
-        if inside {
-            continue;
-        }
-        let told = |p: &str| m.meta.pointer(p).and_then(|v| v.as_str()).filter(|s| !s.is_empty());
-        let profile = told("/color/override").or_else(|| told("/color/profile")).unwrap_or("").to_string();
-        if !journey(&profile) {
-            skipped.push(json!({ "clip": c["id"], "why": format!("no colour journey from {profile:?}") }));
-            continue;
-        }
-        let Ok(h) = orig.parse::<iroh_blobs::Hash>() else { continue };
-        let k = format!("still:{orig}");
-        set(&k, &m.original_name, "grading still", 0.0);
-        let _turn = TURN.acquire().await;
-        let ext = std::path::Path::new(&m.original_name).extension().map(|e| e.to_string_lossy().to_lowercase()).unwrap_or_else(|| "mov".into());
-        let src = vault.ingest_dir().join(format!("{orig}.src.{ext}"));
-        let r = match vault.store.blobs().export(h, &src).await {
-            Ok(_) => still_at(vault, orig, &m.original_name, &m.story, &src, &profile, from + dur / 2.0).await,
-            Err(e) => Err(format!("the original is not on this Mac: {e:#}")),
-        };
-        std::fs::remove_file(&src).ok();
-        clear(&k);
-        match r {
-            Ok(still) => made.push(json!({ "clip": c["id"], "still": still, "t": from + dur / 2.0 })),
-            Err(e) => skipped.push(json!({ "clip": c["id"], "why": e })),
-        }
-    }
-    Ok(json!({ "made": made, "skipped": skipped }))
-}
-
-/// One grading still of an original at `at` seconds, into the vault beside it (class proxy, its story).
-async fn still_at(vault: &Vault, hex: &str, name: &str, story: &str, path: &std::path::Path, profile: &str, at: f64) -> Result<String, String> {
-    let stem = std::path::Path::new(name).file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_else(|| hex[..12].to_string());
-    let out = vault.ingest_dir().join(format!("{stem}.grade-{at:.2}.png"));
-    let (src, o, pf) = (path.to_path_buf(), out.clone(), profile.to_string());
-    let (w, h) = tokio::task::spawn_blocking(move || vault_render::grading_still(&src, &pf, at, STILL_WIDTH, &o))
-        .await
-        .map_err(|e| e.to_string())?
-        .map_err(|e| format!("{e:#}"))?;
-    let batch = Batch {
-        session: format!("grading still of {hex} at {at:.2}"),
-        tags: vec!["grade-still".into()],
-        title: Some(format!("{stem} · grading still at {at:.2} s")),
-        meta: json!({ "role": "grade-still", "grade_still_of": hex, "t": (at * 1000.0).round() / 1000.0, "width": w, "height": h,
-            "color": { "profile": WORKING, "from": "our own tag", "journey_from": profile }, "encoding": "16-bit PNG, ACEScct code values" }),
-        story: Some(story.to_string()).filter(|s| !s.is_empty()),
-        class: Some("proxy".into()),
-        ..Default::default()
-    };
-    let made = vault.ingest_file(&out, &batch).await.map_err(|e| format!("{e:#}"));
-    std::fs::remove_file(&out).ok();
-    Ok(made?.hash)
-}
-
-/// The Grade tab opens: every shot on screen its own grading still (made in the background; the viewer picks it up).
-#[tauri::command]
-pub async fn grade_stills(app: tauri::State<'_, crate::App>, timeline: serde_json::Value) -> crate::Res<serde_json::Value> {
-    crate::gate()?;
-    shot_stills(&app.vault, &timeline).await
-}
 
 /// An original with a proxy of ours but no grading still yet (made before there were any): its still, from the
 /// vault's copy of the original, one at a time after any proxy.
