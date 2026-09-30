@@ -94,7 +94,13 @@ type Client = { audio: { transcriptions: { create(body: { file: File; model: `de
 let testClient: Client | null = null;
 
 /** Is speech to text set up here (Prem's key in the environment)? */
-export const sttReady = () => !!testClient || !!process.env.PREMAI_API_KEY;
+/**
+ * Paused (2026-09-30): Prem answers "model not found" for deepgram/general-nova-3, and our server's retries hit its
+ * gateway far too often. Until the circuit breaker ships, no Prem call is made: the vault server sees "not ready" and
+ * waits. The tests' stand-in still works.
+ */
+const PAUSED = true;
+export const sttReady = () => !!testClient || (!PAUSED && !!process.env.PREMAI_API_KEY);
 
 /** For the tests: a stand-in for Prem (null: Prem again). */
 export function useSttClient(c: Client | null) {
