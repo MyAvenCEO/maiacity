@@ -34,6 +34,7 @@ conviction** (a vision being built, not hoped for), **contrast on every axis** (
 | `writing.md` | **Writing style** | the journal voice, the world's facts and words, rhythm, "Imagine…" scenes, images, the post template, the checklist |
 | `filming.md` | **Filming and shots** | shot grammar, cutting on the word, transitions, camera moves, light and exposure, sets, framing in Sandbox 4 |
 | `grading.md` | **Grading: the base correction** | levelling the shots to each other before any look: scene masters, the warmth per scene (asked), blacks, whites, contrast, skin, scopes on the 4K stills |
+| `look.md` | **The look: the creative grade** | after the base correction: film and scene looks (teal and orange without ruining skin), secondaries, finishing, the moodboard's references, the layer order |
 | `sound.md` | **Sound** | voice takes, the composed score and its cues, beds, spot sounds and hits, levels (measured, MCP), J and L cuts across scenes |
 | `pipeline.md` | **Production pipeline** | local-first steps, the shot list, storyboard → film, the studio, the render worker, the media library, thumbnails, checklists, lessons learned |
 

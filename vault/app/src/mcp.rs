@@ -304,6 +304,12 @@ pub struct SecondaryArgs {
 }
 
 #[derive(Deserialize, schemars::JsonSchema)]
+pub struct ReferenceArgs {
+    /// the reference stills (a moodboard): the files' hashes in the vault
+    pub hashes: Vec<String>,
+}
+
+#[derive(Deserialize, schemars::JsonSchema)]
 pub struct FinishArgs {
     /// the timeline's id
     pub timeline: String,
@@ -1114,6 +1120,31 @@ impl Studio {
             let saved = self.api("PUT", &format!("/api/timelines/{}", a.timeline), Some(json!({ "clips": clips }))).await?;
             let now = saved["clips"].as_array().and_then(|cs| cs.iter().find(|c| c["id"].as_str() == Some(a.clip.as_str()))).map(|c| c["secondaries"].clone());
             Ok::<_, String>(json!({ "clip": a.clip, "secondaries": now }))
+        };
+        text(r.await)
+    }
+
+    #[tool(
+        description = "Read reference stills — a moodboard of the look to get close to (pictures as they are shown, display-referred) — as grade_look reads a shot through its whole chain: levels (p1…p99 IRE, contrast), zones (shadows, middle, highlights: level, cast, hue and chroma on the vectorscope), where the colour lies (warm, green, teal/blue shares), saturation, and the skin of the face Vision finds. Compare them with grade_look { looks: true } on the timeline's shots."
+    )]
+    async fn look_reference(&self, Parameters(a): Parameters<ReferenceArgs>) -> String {
+        let r = async {
+            let mut out = Vec::new();
+            for h in a.hashes {
+                let hash: iroh_blobs::Hash = h.parse().map_err(|e| format!("{h}: {e}"))?;
+                let src = crate::blob::source(&self.vault, hash, "reference.png").await.map_err(|e| format!("{e:#}"))?;
+                let read = tauri::async_runtime::spawn_blocking(move || objc2::rc::autoreleasepool(|_| vault_render::look::reference(src)))
+                    .await
+                    .map_err(|e| format!("{e}"))?;
+                out.push(match read {
+                    Ok(mut v) => {
+                        v["hash"] = json!(h);
+                        v
+                    }
+                    Err(e) => json!({ "hash": h, "error": format!("{e:#}") }),
+                });
+            }
+            Ok::<_, String>(json!({ "references": out }))
         };
         text(r.await)
     }

@@ -3,6 +3,16 @@
 ✅ done · 🔄 in progress · ⬜ to do. Updated as the work goes.
 
 ## Open
+- 🔄 **Creative grade, step 1 done (the tools):**
+  - looks per scene and film (live), secondaries, finishing, native stills and native playback in Grade
+  - moodboard references (`look_reference`), the `look.md` skill
+  - next, before step 2:
+    - the UI: no white buttons or slider thumbs; one clear Still / Proxy / Original control; the timeline playhead
+      moves across the shots in Grade
+    - sound: the bench talk after the voice-over louder and clearer (measured against the voice-over)
+    - the cut after the bench: stand up from the bench first; the music handover to the lighter track
+- ⬜ **Creative grade, step 2:** our brand teal/orange look, built against the banner and more references, applied
+  to Day 01
 - ✅ **Everything iroh-native, end to end** (the Mac does all media work; the server only stores and relays):
   - ✅ Shot analysis cues on the Edit timeline (coloured by kind, click to go there) and in the inspector
   - ✅ AVFoundation reads the vault in place (resource loader over iroh's BlobReader) — no export anywhere: transcription, proxies, stills, renders, probe

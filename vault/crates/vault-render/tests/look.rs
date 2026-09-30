@@ -114,3 +114,15 @@ fn the_scope_sheet_has_a_row_per_shot() {
     // the label is drawn: light pixels in the first band
     assert!(px[..(w * 26 * 3) as usize].iter().any(|v| *v > 200));
 }
+
+#[test]
+fn zones_tell_teal_shadows_from_warm_highlights() {
+    use vault_render::look::zones;
+    // a picture whose dark half is teal and bright half warm (display code values)
+    let px: Vec<[f32; 3]> = (0..1000).map(|i| if i < 500 { [0.05, 0.12, 0.14] } else { [0.85, 0.72, 0.55] }).collect();
+    let z = zones(&px);
+    assert!(z["shadows"]["warm"].as_f64().unwrap() < 0.0, "{z}");
+    assert!(z["highlights"]["warm"].as_f64().unwrap() > 20.0, "{z}");
+    let (warm, teal) = (z["colour"]["warm_pct"].as_f64().unwrap(), z["colour"]["teal_blue_pct"].as_f64().unwrap() + z["colour"]["green_pct"].as_f64().unwrap());
+    assert!((warm - 50.0).abs() < 1.0 && (teal - 50.0).abs() < 1.0, "{z}");
+}
