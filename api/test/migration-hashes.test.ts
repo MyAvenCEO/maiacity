@@ -119,9 +119,11 @@ describe("0029: every CID becomes its hash", () => {
     expect(rows[0]!.def).toContain("media_hash");
   });
 
-  test("the old library is left as it was", async () => {
-    expect((await pg.query("SELECT cid FROM media")).rows).toEqual([{ cid: C1 }]);
-    expect((await pg.query("SELECT cid, tag FROM media_tags")).rows).toEqual([{ cid: C1, tag: "Day 01" }]);
+  test("the old library is gone after 0030 (media bytes out of Postgres, 26b)", async () => {
+    const { rows } = await pg.query<{ relname: string }>(
+      "SELECT relname FROM pg_class WHERE relname IN ('media', 'media_chunks', 'media_tags', 'media_paths', 'uploads', 'upload_chunks')",
+    );
+    expect(rows).toEqual([]);
   });
 
   test("nothing of the migration's own is left behind", async () => {

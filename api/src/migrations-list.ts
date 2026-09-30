@@ -664,5 +664,19 @@ export const MIGRATIONS: Migration[] = [
       DROP TABLE pg_temp.cid_map;
     `,
   },
+  {
+    // Media bytes out of Postgres, the last step (26b): the old library — files as rows of chunks, named by IPFS CID —
+    // is gone. Every file is in the vault (the iroh-docs catalog, this Mac's store, Object Storage), each re-hashed to
+    // its BLAKE3 name; nothing has read these tables since release 11 (0029). Backups before every deploy keep them.
+    id: "0030-old-media-tables-dropped",
+    sql: `
+      DROP TABLE IF EXISTS upload_chunks;
+      DROP TABLE IF EXISTS uploads;
+      DROP TABLE IF EXISTS media_tags;
+      DROP TABLE IF EXISTS media_paths;
+      DROP TABLE IF EXISTS media_chunks;
+      DROP TABLE IF EXISTS media;
+    `,
+  },
 ];
 

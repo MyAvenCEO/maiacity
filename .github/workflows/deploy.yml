@@ -3,10 +3,7 @@ name: Deploy the site
 # maia.city is served by our own server: its Caddy serves the built site from /opt/maia-city/site (and the API, and the
 # media vault's gateway). Each build goes up beside the last and a link switches to it, so a page never points at
 # chunks that are gone; the last few builds stay for a quick way back. Media never ships with the site: every file
-# comes from the vault's gateway by its BLAKE3 hash.
-#
-# Moving off Bunny: maia.city and www point at the server by hand (Hetzner DNS). Until they do, the build also goes to
-# Bunny, so the old address never shows a stale site.
+# comes from the vault's gateway by its BLAKE3 hash. maia.city and www point at the server (A records, Hetzner DNS).
 on:
   push:
     branches: [main]
@@ -72,19 +69,7 @@ jobs:
           echo "live: \$(readlink current) · \$(ls releases | wc -l) builds kept"
           EOS
 
-      - name: Where does maia.city point?
-        id: dns
-        run: |
-          NOW=$(dig +short A "$SITE" | sort | head -1)
-          echo "$SITE → $NOW (the server: $HOST)"
-          if [ "$NOW" = "$HOST" ]; then
-            echo "ours=1" >> "$GITHUB_OUTPUT"
-          else
-            echo "::notice::$SITE still points at Bunny: set A records for $SITE and www.$SITE to $HOST in Hetzner DNS (www's CNAME goes)."
-          fi
-
       - name: Through the front door (HTTPS from the server)
-        if: steps.dns.outputs.ours == '1'
         run: |
           for i in $(seq 1 24); do
             CODE=$(curl -s -o /dev/null -w '%{http_code}' "https://$SITE/" || true)
@@ -92,10 +77,3 @@ jobs:
             sleep 10
           done
           echo "::warning::https://$SITE/ does not answer 200 yet — check the caddy log (the certificate)."
-
-      # until the name has moved, the old address keeps getting the new site too
-      - name: Upload to Bunny too (until maia.city points at the server)
-        if: steps.dns.outputs.ours != '1'
-        env:
-          BUNNY_API_KEY: ${{ secrets.BUNNY_API_KEY }}
-        run: node scripts/bunny-deploy.mjs
