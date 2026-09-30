@@ -3,17 +3,16 @@
 //   transform (ACEScct → Rec.709 display) → the screen,
 // the same order and the same maths as the render worker (C5). The browser is told not to colour-manage the pixels
 // (UNPACK_COLORSPACE_CONVERSION_WEBGL = NONE): a log picture's code values reach the shader as they are.
-import { REC709_TO_AP1 } from '../../../game/film/color.js';
 
 /** @typedef {import('$lib/auth/client').Cdl} Cdl */
 /** @typedef {import('./luts.js').Lut} Lut */
 /**
- * How a picture comes in: 0 as it is (already ACEScct, or shown untouched), 1 through its IDT LUT, 2 by formula (display-referred Rec.709/sRGB).
- * @typedef {0 | 1 | 2} InMode
+ * How a picture comes in: 0 as it is (already ACEScct), 1 through its input LUT (baked by the Mac).
+ * @typedef {0 | 1} InMode
  */
 /**
- * How it goes out: 0 as it is, 1 through the output LUT, 2 by formula (an approximation, when the LUT is missing).
- * @typedef {0 | 1 | 2} OutMode
+ * How it goes out: 0 as it is, 1 through the output LUT (ACES 2.0, baked by the Mac).
+ * @typedef {0 | 1} OutMode
  */
 /**
  * crop: the part of the source to show — u0, v0, width, height (0…1, top-left origin).
@@ -37,7 +36,6 @@ uniform sampler3D uOdt;
 uniform int uIdtSize, uOdtSize, uIdtMode, uOdtMode, uGrades, uFalse;
 uniform vec3 uSlope[2], uOffset[2], uPower[2];
 uniform float uSat[2];
-uniform mat3 uToAp1, uFromAp1;
 uniform vec4 uCrop;
 
 // tetrahedral interpolation, as ffmpeg's lut3d (interp=tetrahedral) and bake.py's check do
@@ -60,8 +58,6 @@ vec3 lut3d(sampler3D t, int n, vec3 p) {
 // the ACEScct curve (S-2016-001), as game/film/color.js has it
 float toCct(float l) { return l <= 0.0078125 ? 10.5402377416545 * l + 0.0729055341958355 : (log2(l) + 9.72) / 17.52; }
 float fromCct(float c) { return c <= 0.155251141552511 ? (c - 0.0729055341958355) / 10.5402377416545 : exp2(c * 17.52 - 9.72); }
-vec3 toCct3(vec3 v) { return vec3(toCct(v.r), toCct(v.g), toCct(v.b)); }
-vec3 fromCct3(vec3 v) { return vec3(fromCct(v.r), fromCct(v.g), fromCct(v.b)); }
 
 // the ASC CDL, as cdl() in color.js: slope, offset, power (negatives held at 0 before a power), then saturation
 vec3 grade(vec3 x, int k) {
@@ -90,26 +86,12 @@ void main() {
 	vec2 st = uCrop.xy + vec2(uv.x, 1.0 - uv.y) * uCrop.zw;
 	vec3 c = texture(uSrc, vec2(st.x, 1.0 - st.y)).rgb;
 	if (uIdtMode == 1) c = lut3d(uIdt, uIdtSize, c);
-	else if (uIdtMode == 2) c = toCct3(max(uToAp1 * pow(max(c, 0.0), vec3(2.4)), 0.0));
 	if (uGrades > 0) c = grade(c, 0);
 	if (uGrades > 1) c = grade(c, 1);
 	if (uOdtMode == 1) c = lut3d(uOdt, uOdtSize, c);
-	else if (uOdtMode == 2) c = pow(clamp(uFromAp1 * fromCct3(c), 0.0, 1.0), vec3(1.0 / 2.4));
 	if (uFalse == 1) c = falseColor(c);
 	outColor = vec4(clamp(c, 0.0, 1.0), 1.0);
 }`;
-
-/** The inverse of a 3×3 (row-major), for AP1 → Rec.709. @param {number[][]} m @returns {number[][]} */
-function invert(m) {
-	const [a, b, c] = m[0], [d, e, f] = m[1], [g, h, i] = m[2];
-	const A = e * i - f * h, B = -(d * i - f * g), C = d * h - e * g;
-	const det = a * A + b * B + c * C;
-	return [
-		[A / det, -(b * i - c * h) / det, (b * f - c * e) / det],
-		[B / det, (a * i - c * g) / det, -(a * f - c * d) / det],
-		[C / det, -(a * h - b * g) / det, (a * e - b * d) / det]
-	];
-}
 
 export class ViewerGL {
 	/** @type {Record<string, WebGLUniformLocation | null>} */
@@ -152,13 +134,11 @@ export class ViewerGL {
 		const loc = gl.getAttribLocation(p, 'p');
 		gl.enableVertexAttribArray(loc);
 		gl.vertexAttribPointer(loc, 2, gl.FLOAT, false, 0, 0);
-		for (const n of ['uSrc', 'uIdt', 'uOdt', 'uIdtSize', 'uOdtSize', 'uIdtMode', 'uOdtMode', 'uGrades', 'uFalse', 'uSlope', 'uOffset', 'uPower', 'uSat', 'uToAp1', 'uFromAp1', 'uCrop'])
+		for (const n of ['uSrc', 'uIdt', 'uOdt', 'uIdtSize', 'uOdtSize', 'uIdtMode', 'uOdtMode', 'uGrades', 'uFalse', 'uSlope', 'uOffset', 'uPower', 'uSat', 'uCrop'])
 			this.u[n] = gl.getUniformLocation(p, n);
 		gl.uniform1i(this.u.uSrc, 0);
 		gl.uniform1i(this.u.uIdt, 1);
 		gl.uniform1i(this.u.uOdt, 2);
-		gl.uniformMatrix3fv(this.u.uToAp1, false, colMajor(REC709_TO_AP1));
-		gl.uniformMatrix3fv(this.u.uFromAp1, false, colMajor(invert(REC709_TO_AP1)));
 		this.src = gl.createTexture();
 		gl.activeTexture(gl.TEXTURE0);
 		gl.bindTexture(gl.TEXTURE_2D, this.src);
@@ -240,8 +220,6 @@ export class ViewerGL {
 	}
 }
 
-/** @param {number[][]} m */
-const colMajor = (m) => new Float32Array([0, 1, 2].flatMap((c) => [0, 1, 2].map((r) => m[r][c])));
 
 /**
  * The part of a picture a frame shows: it covers the frame (as the render crops it), then the clip's own framing for

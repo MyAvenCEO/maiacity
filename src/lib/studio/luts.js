@@ -7,7 +7,7 @@
  * @typedef {{ name: string, size: number, data: Float32Array, title?: string, hash?: string }} Lut
  */
 /**
- * Where the LUTs came from: this Mac, or nowhere (the viewer then shows its formula fallback).
+ * Where the LUTs came from: this Mac, or nowhere yet (the viewer then shows the signal as it is, and says so).
  * @typedef {'mac' | 'none'} LutSource
  */
 

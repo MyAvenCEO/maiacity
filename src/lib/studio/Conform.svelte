@@ -75,7 +75,7 @@
 	{/if}
 	<h3>Viewer LUTs</h3>
 	<p class="sum">
-		{s.lutFrom === 'mac' ? 'baked by this Mac (the proxies’ journeys in, ACES 2.0 out)' : 'none yet — the viewer uses formula transforms'}
+		{s.lutFrom === 'mac' ? 'baked by this Mac (the proxies’ journeys in, ACES 2.0 out)' : 'not baked yet — the viewer shows the signal as it is'}
 	</p>
 	<ul class="luts">
 		{#each needed as n (n)}
