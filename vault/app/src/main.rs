@@ -504,6 +504,7 @@ fn main() {
             analyse::analysis_setup,
             analyse::vault_analyse,
             render::sound_measure,
+            render::eq_response,
             world::world_proxy_next,
             world::world_proxy_frame,
             world::world_proxy_end,

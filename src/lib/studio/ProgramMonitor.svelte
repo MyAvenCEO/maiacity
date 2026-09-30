@@ -55,11 +55,28 @@
 		const r = frameEl?.getBoundingClientRect();
 		if (r) void mac('player_view', { rect: [r.left, r.top, r.width, r.height] });
 	};
+	// the handovers, so the picture never drops to the webview's own preview in between: playing, the Mac's layer
+	// shows once it plays (until then the last still stays); stopped, the layer stays (the player paused on the same
+	// frame, through the same chain) until the Mac's still of that frame is on screen
+	let layerUp = $state(false);
+	let handover = false;
+	const layerDown = () => {
+		handover = false;
+		layerUp = false;
+		void mac('player_view', { rect: null });
+	};
+	const shown = () => {
+		if (handover) layerDown();
+	};
 	$effect(() => {
 		if (!nativePlay) {
 			const at = untrack(() => s.time);
-			void mac('player_pause', { time: at }).then(() => mac('player_view', { rect: null }));
-			return;
+			void mac('player_pause', { time: at });
+			if (!untrack(() => layerUp) || !untrack(() => nativeKey)) return void layerDown();
+			handover = true;
+			// never longer than this, whatever becomes of the still
+			const t = setTimeout(shown, 1500);
+			return () => clearTimeout(t);
 		}
 		const key = untrack(() => playKey);
 		// read without tracking: an edit while it plays doesn't restart the player (the next play picks it up)
@@ -71,8 +88,15 @@
 				await mac('player_load', { timeline: $state.snapshot(s.current), shape: s.viewShape, files, profiles, width: 1280 });
 				loaded = key;
 			}
-			place();
 			await mac('player_play', { time: untrack(() => s.time) });
+			// its first frames made before its layer shows (no black between the still and the playing picture)
+			await new Promise((r) => setTimeout(r, 120));
+			if (!untrack(() => nativePlay)) return;
+			handover = false;
+			place();
+			layerUp = true;
+			// the still it covers is let go: stopping shows the new frame's, never this one again
+			nativeUrl = null;
 		})());
 		// kept on the studio's clock, and on the picture when the window moves or resizes
 		const id = setInterval(() => void mac('player_sync', { time: untrack(() => s.time) }), 1000);
@@ -98,12 +122,18 @@
 	const nativeKey = $derived(nativeSrc && pic ? JSON.stringify([nativeSrc, s.frameTimeline(pic), s.viewShape]) : '');
 	$effect(() => {
 		const k = nativeKey;
-		if (!k) return void (nativeUrl = null);
+		// while it plays the last still stays (under the Mac's layer, and over the preview until the layer is up)
+		if (!k) return void (untrack(() => s.playing) || (nativeUrl = null));
 		let live = true;
 		const t = setTimeout(() => {
 			const [src, tl, shape] = JSON.parse(k);
 			nativeFrame(tl, tl.clips[0].id, src, 1600, shape)
-				.then((u) => live && (nativeUrl = u))
+				.then((u) => {
+					if (!live) return;
+					// the same picture as on screen already: it is shown
+					if (u === nativeUrl) shown();
+					nativeUrl = u;
+				})
 				.catch((e) => console.warn('viewer: the native frame', e));
 		}, 120);
 		return () => ((live = false), clearTimeout(t));
@@ -240,8 +270,8 @@
 			bind:plan
 			bind:supported={gl}
 		/>
-		{#if nativeUrl && nativeKey}
-			<img class="native" src={nativeUrl} alt="" />
+		{#if nativeUrl && (nativeKey || (nativePlay && !layerUp))}
+			<img class="native" src={nativeUrl} alt="" onload={shown} />
 		{/if}
 		{#if pic?.kind === 'slate'}
 			<!-- a shot not filmed yet: its script, where the picture will be -->

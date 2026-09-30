@@ -184,10 +184,12 @@
 				<ProgramMonitor {s} label="Program · script" />
 			</div>
 		{:else if s.tab === 'audio'}
-			<!-- the sound on the timeline itself: each clip's level, fades and loudness on it -->
+			<!-- the sound on the timeline itself: each clip's level, fades and loudness on it; the selected clip's EQ in the
+			     inspector -->
 			<div class="monitors">
 				<ProgramMonitor {s} label="Program · sound" />
 			</div>
+			<Inspector {s} />
 		{:else if s.tab === 'grade'}
 			<!-- the picture; the grade's layers are on the timeline, over each shot (an agent reads the numbers itself) -->
 			<div class="monitors">
@@ -320,16 +322,16 @@
 			'tabs tabs';
 	}
 
-	/* Audio: the program over the sound tracks, which carry the levels themselves */
+	/* Audio: the program and, beside it, the selected clip (its EQ) over the sound tracks, which carry the levels */
 	.studio.tab-audio {
-		grid-template-columns: 1fr;
+		grid-template-columns: 1fr 19rem;
 		grid-template-rows: auto minmax(0, 1fr) auto minmax(14rem, auto) auto;
 		grid-template-areas:
-			'bar'
-			'monitor'
-			'transport'
-			'timeline'
-			'tabs';
+			'bar bar'
+			'monitor inspector'
+			'transport transport'
+			'timeline timeline'
+			'tabs tabs';
 	}
 
 	/* Ingest and Library: one panel under the bar, no transport or timeline */

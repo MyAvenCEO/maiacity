@@ -43,9 +43,24 @@ pub struct Program {
     pub output: Lut3d,
 }
 
+/// Where a clip's face was last found: the frame it was looked for on, and the face (a box from the top left).
+#[derive(Clone, Copy)]
+struct Track {
+    at: u64,
+    face: Option<crate::look::Rect>,
+}
+
+/// Look for the face again every this many frames (5 a second), on a copy this wide: Vision on every full frame
+/// costs playing in real time; a face moves little in a fifth of a second.
+const TRACK_EVERY: u64 = 6;
+const TRACK_WIDTH: f64 = 480.0;
+
+type Handler = (Gpu, std::collections::HashMap<String, Cube>, std::collections::HashMap<String, Track>);
+
 thread_local! {
-    /// The GPU of the thread AVFoundation calls the handler on (its kernels compiled once), with each clip's cube.
-    static GPU: std::cell::RefCell<Option<(Gpu, std::collections::HashMap<String, Cube>)>> = const { std::cell::RefCell::new(None) };
+    /// The GPU of the thread AVFoundation calls the handler on (its kernels compiled once), with each clip's cube and
+    /// where its face is.
+    static GPU: std::cell::RefCell<Option<Handler>> = const { std::cell::RefCell::new(None) };
 }
 
 impl Program {
@@ -61,9 +76,9 @@ impl Program {
             if cell.is_none() {
                 let mut g = Gpu::new()?;
                 g.set_output(&self.output);
-                *cell = Some((g, std::collections::HashMap::new()));
+                *cell = Some((g, std::collections::HashMap::new(), std::collections::HashMap::new()));
             }
-            let (gpu, cubes) = cell.as_mut().unwrap();
+            let (gpu, cubes, tracks) = cell.as_mut().unwrap();
             let (w, h) = (self.width, self.height);
             let Some(p) = self.at(t) else {
                 return Ok((gpu.black(w, h), gpu.context()));
@@ -75,7 +90,27 @@ impl Program {
             {
                 cubes.insert(p.clip.id.clone(), gpu.cube(lut));
             }
-            let pic = crate::render::chain(gpu, &framed, w, h, &p.clip, cubes.get(&p.clip.id), self.finish.as_ref(), (t * FPS as f64).round() as u64)?;
+            let n = (t * FPS as f64).round() as u64;
+            let id = p.clip.id.clone();
+            let mut face_of = |gpu: &Gpu, pic: &crate::gpu::Image| -> Result<Option<crate::look::Rect>> {
+                let last = tracks.get(&id).copied();
+                if let Some(l) = last
+                    && n.abs_diff(l.at) < TRACK_EVERY
+                {
+                    return Ok(l.face);
+                }
+                let small = gpu.resize(&*gpu.output(pic)?, TRACK_WIDTH as u32, ((TRACK_WIDTH * h as f64 / w as f64).round() as u32).max(2))?;
+                let found = crate::look::faces(&small).first().copied();
+                // eased towards where it is now, so the window glides; a face lost for a moment keeps its place
+                let face = match (last.and_then(|l| l.face), found) {
+                    (Some(a), Some(b)) => Some(std::array::from_fn(|i| a[i] * 0.4 + b[i] * 0.6)),
+                    (a, None) => a,
+                    (None, b) => b,
+                };
+                tracks.insert(id.clone(), Track { at: n, face });
+                Ok(face)
+            };
+            let pic = crate::render::chain_with(gpu, &framed, w, h, &p.clip, cubes.get(&p.clip.id), self.finish.as_ref(), n, &mut face_of)?;
             Ok((gpu.output(&pic)?, gpu.context()))
         })
     }
