@@ -65,7 +65,7 @@
 		const clips = s.clips.filter((c) => c.track === 'V1' && c.hash);
 		const files = Object.fromEntries(clips.map((c) => [c.id, s.playItem(c)?.hash ?? c.hash]));
 		const profiles = Object.fromEntries(clips.map((c) => [c.id, s.profileOfClip(c)]));
-		await mac('player_load', { timeline: $state.snapshot(s.current), shape: s.viewShape, files, profiles, width: 1280 });
+		await mac('player_load', { timeline: s.liveTimeline(), shape: s.viewShape, files, profiles, width: 1600 });
 		loaded = key;
 	};
 	// going to the grading still (paused on Still), the layer stays until the still is on screen; anywhere else it goes

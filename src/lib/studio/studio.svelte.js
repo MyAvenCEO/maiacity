@@ -474,6 +474,13 @@ export class Studio {
 		const t = this.current;
 		return { id: t?.id ?? 'studio', aspect: t?.aspect ?? '16:9', clips: [$state.snapshot(c)], grade: $state.snapshot(t?.grade ?? null) };
 	}
+	/**
+	 * The timeline as it is now, for the Mac: its clips as edited (`clips` — `current.clips` is only the timeline as it
+	 * was opened) and its grade. The still, the thumbnails and the player are all made from this, so they grade alike.
+	 */
+	liveTimeline() {
+		return { ...$state.snapshot(this.current), clips: $state.snapshot(this.clips) };
+	}
 	/** A clip's balance as the viewer shows it, on every tab. @param {Clip | null | undefined} c */
 	balanceOf(c) {
 		return c?.balance ?? null;
@@ -1448,7 +1455,7 @@ export class Studio {
 		if (!this.current || this.loudMeasuring) return;
 		this.loudMeasuring = true;
 		try {
-			this.loud = await command('sound_measure', { timeline: { ...$state.snapshot(this.current), clips: $state.snapshot(this.clips) } });
+			this.loud = await command('sound_measure', { timeline: this.liveTimeline() });
 		} catch (e) {
 			this.error = `Sound: ${e}`;
 		} finally {
