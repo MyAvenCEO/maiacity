@@ -12,6 +12,7 @@
 //!   VAULT_HTTP         the gateway (Caddy: /vault/*)                               default 0.0.0.0:3341
 //!   VAULT_RELAY_HTTP   the relay's plain-HTTP port (Caddy: /relay, /generate_204)  default 0.0.0.0:3340
 //!   DATABASE_URL, API_URL (http://api:3000)
+//!   FFMPEG, FFPROBE    the transcripts' tools (transcribe.rs)                      default ffmpeg, ffprobe
 //!   S3_ENDPOINT, S3_REGION, S3_BUCKET, S3_ACCESS_KEY, S3_SECRET_KEY
 
 mod allow;
@@ -20,6 +21,7 @@ mod gateway;
 mod log;
 mod peer;
 mod s3;
+mod transcribe;
 
 use std::{net::SocketAddr, path::PathBuf, sync::Arc, time::Duration};
 
@@ -91,6 +93,9 @@ async fn main() -> Result<()> {
     db::publish(&db, "catalog", &peer.ticket().await?.to_string()).await?;
     // its author: the catalog entries it signs say what Object Storage holds
     db::publish(&db, "author", &peer.author.to_string()).await?;
+    // its token for the API (speech to text): new at every start, only its hash in Postgres
+    let token = format!("vst_{}", hex::encode(SecretKey::generate().to_bytes()));
+    db::publish(&db, "api_token", &hex::encode(<sha2::Sha256 as sha2::Digest>::digest(token.as_bytes()))).await?;
     tracing::info!("vault-server {} · catalog {}", peer.endpoint.id(), peer.doc.id());
 
     // the paired devices change: follow them (who may connect, and how to reach them)
@@ -113,8 +118,13 @@ async fn main() -> Result<()> {
     tokio::spawn(peer.clone().listen());
     tokio::spawn(peer.clone().describe(s3.clone(), db.clone()));
     tokio::spawn(peer.clone().reconcile(s3.clone(), db.clone()));
+    // every recording's words: its speech track into the vault, transcribed through the API (Prem)
+    let api = env_or("API_URL", "http://api:3000");
+    tokio::spawn(
+        transcribe::Transcriber { peer: peer.clone(), s3: s3.clone(), db: db.clone(), api: api.clone(), token, dir: dir.clone(), http: reqwest::Client::new() }.run(),
+    );
 
-    let gateway = gateway::Gateway::new(s3, db, env_or("API_URL", "http://api:3000"), ring).router();
+    let gateway = gateway::Gateway::new(s3, db, api, ring).router();
     let http: SocketAddr = env_or("VAULT_HTTP", "0.0.0.0:3341").parse().context("VAULT_HTTP")?;
     let listener = tokio::net::TcpListener::bind(http).await?;
     tracing::info!("gateway on {http}");

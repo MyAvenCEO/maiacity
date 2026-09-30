@@ -52,6 +52,8 @@ pub struct Peer {
     pub wake: Notify,
     /// the same, for the uploads
     pub wake_store: Notify,
+    /// a file reached the bucket: the transcripts look (transcribe.rs)
+    pub wake_transcribe: Notify,
 }
 
 pub struct Config<'a> {
@@ -135,6 +137,7 @@ impl Peer {
             conns: tokio::sync::Mutex::new(HashMap::new()),
             wake: Notify::new(),
             wake_store: Notify::new(),
+            wake_transcribe: Notify::new(),
         }))
     }
 
@@ -314,12 +317,47 @@ impl Peer {
 
     /// The bucket holds this file, verified: say so in the catalog (this server's own `blobs/<hash>` entry — every
     /// replica learns it by iroh-docs), and let the Postgres projection follow.
-    async fn hold(&self, hash: Hash, size: u64, db: &tokio_postgres::Client) {
+    pub(crate) async fn hold(&self, hash: Hash, size: u64, db: &tokio_postgres::Client) {
         if let Err(e) = self.doc.set_hash(self.author, format!("blobs/{}", hash.to_hex()), hash, size).await {
             tracing::warn!("{}: the catalog did not take the holding: {e:#}", hash.fmt_short());
             return;
         }
         db::stored(db, &hash.to_hex()).await.ok();
+        self.wake_transcribe.notify_one();
+    }
+
+    /// The files the bucket holds: this server's own `blobs/<hash>` entries (hex).
+    pub(crate) async fn held(&self) -> Result<HashSet<String>> {
+        let mine: Vec<_> = self.doc.get_many(Query::author(self.author).key_prefix("blobs/")).await?.collect().await;
+        Ok(mine.into_iter().flatten().map(|e| String::from_utf8_lossy(e.key()).trim_start_matches("blobs/").to_string()).collect())
+    }
+
+    /// Every file's description whose JSON is here (the newest entry per key, whoever wrote it).
+    pub(crate) async fn metas(&self) -> Result<Vec<(Hash, serde_json::Value)>> {
+        let entries: Vec<_> = self.doc.get_many(Query::single_latest_per_key().key_prefix("meta/")).await?.collect().await;
+        let mut out = Vec::new();
+        for entry in entries.into_iter().flatten() {
+            let Some(hash) = std::str::from_utf8(&entry.key()[5..]).ok().and_then(|h| h.parse::<Hash>().ok()) else { continue };
+            let Ok(bytes) = self.store.blobs().get_bytes(entry.content_hash()).await else { continue };
+            if let Ok(meta) = serde_json::from_slice(&bytes) {
+                out.push((hash, meta));
+            }
+        }
+        Ok(out)
+    }
+
+    /// One file's description as it is now (the newest entry, whoever wrote it).
+    pub(crate) async fn meta_of(&self, hash: Hash) -> Result<Option<serde_json::Value>> {
+        let query = Query::single_latest_per_key().key_exact(format!("meta/{}", hash.to_hex()));
+        let Some(entry) = self.doc.get_one(query).await? else { return Ok(None) };
+        let bytes = self.store.blobs().get_bytes(entry.content_hash()).await?;
+        Ok(Some(serde_json::from_slice(&bytes)?))
+    }
+
+    /// Write a file's description as the server (a new `meta/<hash>` entry, signed by the server's author).
+    pub(crate) async fn write_meta(&self, hash: Hash, meta: &serde_json::Value) -> Result<()> {
+        self.doc.set_bytes(self.author, format!("meta/{}", hash.to_hex()), serde_json::to_vec(meta)?).await?;
+        Ok(())
     }
 
     /// Each file's class (hash → "proxy", "original" …), from the descriptions iroh-docs keeps on this server.

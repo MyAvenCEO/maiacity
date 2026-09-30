@@ -235,7 +235,10 @@ jobs:
           DATA_MOUNT: ${{ needs.infra.outputs.data_mount }}
           S3_ACCESS_KEY: ${{ secrets.HETZNER_S3_ACCESS_KEY }}
           S3_SECRET_KEY: ${{ secrets.HETZNER_S3_SECRET_KEY }}
+          # speech to text (Prem, Deepgram Nova 3): only the API container gets it — never a Mac
+          PREMAI_API_KEY: ${{ secrets.PREMAI_API_KEY }}
         run: |
+          [ -n "$PREMAI_API_KEY" ] || echo "::notice::No PREMAI_API_KEY — recordings get no transcripts until it is set."
           ssh prod "cd $APP_DIR && bash -s" <<EOS
           set -e
           # Postgres keeps this password inside its own data directory, so it is
@@ -269,6 +272,7 @@ jobs:
           S3_BUCKET=$S3_BUCKET
           S3_ACCESS_KEY=$S3_ACCESS_KEY
           S3_SECRET_KEY=$S3_SECRET_KEY
+          PREMAI_API_KEY=$PREMAI_API_KEY
           COMPOSE_PROFILES=${S3_ACCESS_KEY:+vault}
           EOF2
           chmod 600 .env

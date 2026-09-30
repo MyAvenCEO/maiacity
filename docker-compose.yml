@@ -45,6 +45,9 @@ services:
       RP_NAME: ${RP_NAME:-maiaCITY}
       SITE_ORIGIN: ${SITE_ORIGIN:-http://localhost:5173}
       COOKIE_DOMAIN: ${COOKIE_DOMAIN:-}
+      # speech to text (api/src/stt.ts): Prem's key, from the GitHub secret PREMAI_API_KEY; without it /api/transcripts
+      # answers 503 and the vault server waits. The client KEK is made once and kept in the database.
+      PREMAI_API_KEY: ${PREMAI_API_KEY:-}
     ports:
       - "${API_PORT:-3100}:3000"
     healthcheck:

@@ -73,10 +73,15 @@ export type VaultFile = {
   added: string;
 };
 
-/** The mirror of the catalog, newest first — for the admin and the site. */
+/**
+ * The mirror of the catalog, newest first — for the admin and the site. A transcript's words and sentences stay out
+ * (an hour of speech is half a megabyte, and every Mac asks for this list twice a minute): its text, model and
+ * language are here; the words are in the catalog on every Mac, and in LIBRARY/meta/<hash>.json.
+ */
 export async function listVaultFiles(q: { kind?: string; tag?: string } = {}): Promise<VaultFile[]> {
   const { rows } = await db.query<VaultFile & { size: string }>(
-    `SELECT hash, size, mime, kind, title, coalesce(meta->>'description', '') AS description, tags, public, meta, stored, added FROM vault_files
+    `SELECT hash, size, mime, kind, title, coalesce(meta->>'description', '') AS description, tags, public,
+            meta #- '{meta,transcript,words}' #- '{meta,transcript,utterances}' AS meta, stored, added FROM vault_files
       WHERE ($1::text IS NULL OR kind = $1) AND ($2::text IS NULL OR $2 = ANY(tags))
       ORDER BY added DESC`,
     [q.kind ?? null, q.tag ?? null],

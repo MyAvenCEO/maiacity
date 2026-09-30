@@ -18,6 +18,7 @@ import { CAPABILITIES } from "./caps";
 import { addIdea, deleteIdea, IdeaError, listIdeas, updateIdea } from "./ideas";
 import { approveDevice, deviceInfo, KeyError, keyHolder, redeemDevice, revokeKey, startDevice } from "./keys";
 import { joinInfo, listDevices, listVaultFiles, pairDevice, revokeDevice, VaultError } from "./vault";
+import { statusRoute as transcriptsStatus, transcribeRoute } from "./stt";
 import { createTimeline, deleteTimeline, getTimeline, listTimelines, saveTimeline, TimelineError } from "./timelines";
 import { createShot, getShot, listShots, saveShot, ShotError, shotVersions } from "./shots";
 import { claimRender, listJobs, queueFrame, queueRender, RenderError, rendersOf, reportRender } from "./renders";
@@ -510,6 +511,16 @@ const server = Bun.serve({
         if (me instanceof Response) return me;
         const url = new URL(req.url);
         return json(req, await listVaultFiles({ kind: url.searchParams.get("kind") ?? undefined, tag: url.searchParams.get("tag") ?? undefined }));
+      },
+    },
+
+    // speech to text (stt.ts): the vault server sends a recording's speech track, the words come back with their times
+    "/api/transcripts": {
+      GET: transcriptsStatus,
+      POST: (req, server) => {
+        // Prem may take minutes for an hour of speech; nothing moves on the socket meanwhile
+        server.timeout(req, 0);
+        return transcribeRoute(req);
       },
     },
 
