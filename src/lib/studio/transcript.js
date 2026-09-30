@@ -187,6 +187,23 @@ export function phraseBreak(words) {
 	return out;
 }
 
+/**
+ * A line of the script not recorded yet (an A1 `line` clip): its words spread over its length, each by its letters and
+ * one more, on its own clock from its `in` (vault-render timeline.rs `line_words`).
+ * @param {{ text?: string, in: number, dur: number }} c @returns {CaptionWord[]}
+ */
+export function lineWords(c) {
+	const words = String(c.text ?? '').split(/\s+/).filter(Boolean);
+	const total = words.reduce((n, w) => n + [...w].length + 1, 0);
+	let at = c.in;
+	return words.map((word) => {
+		const len = (c.dur * ([...word].length + 1)) / total;
+		const w = { word, start: Math.round(at * 1000) / 1000, end: Math.round((at + len) * 1000) / 1000 };
+		at += len;
+		return w;
+	});
+}
+
 /** A transcript's words as caption words (meta.words). @param {Word[]} words @returns {CaptionWord[]} */
 export const asCaptions = (words) => words.map((w) => ({ word: w.w, start: Math.round(w.s * 1000) / 1000, end: Math.round(w.e * 1000) / 1000 }));
 

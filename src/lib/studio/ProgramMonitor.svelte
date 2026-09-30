@@ -146,6 +146,14 @@
 			bind:plan
 			bind:supported={gl}
 		/>
+		{#if pic?.kind === 'slate'}
+			<!-- a shot not filmed yet: its script, where the picture will be -->
+			<div class="slate">
+				<span>{[pic.script?.scene, pic.script?.label, pic.script?.size].filter(Boolean).join(' · ')}</span>
+				<p>{pic.script?.description || 'A shot to film'}</p>
+				{#if pic.script?.notes}<small>{pic.script.notes}</small>{/if}
+			</div>
+		{/if}
 		{#if inWorld}
 			<iframe class="world" class:on={live} bind:this={iframe} title="The world (film mode)" tabindex="-1"></iframe>
 		{/if}
@@ -322,6 +330,39 @@
 	.frame img,
 	.frame canvas.stand {
 		opacity: 0;
+	}
+
+	.slate {
+		position: absolute;
+		inset: 0;
+		z-index: 1;
+		display: flex;
+		flex-direction: column;
+		justify-content: center;
+		gap: 0.6rem;
+		padding: 8% 12%;
+		background: #1b1f22;
+		color: #e9e6dd;
+		text-align: center;
+	}
+
+	.slate span {
+		font-size: 0.72rem;
+		letter-spacing: 0.12em;
+		text-transform: uppercase;
+		color: #a8afa6;
+	}
+
+	.slate p {
+		margin: 0;
+		font-family: var(--font-display);
+		font-size: clamp(1rem, 2.4vw, 1.8rem);
+		line-height: 1.3;
+	}
+
+	.slate small {
+		font-size: 0.76rem;
+		color: #a8afa6;
 	}
 
 	.frame .on {

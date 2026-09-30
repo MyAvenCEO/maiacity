@@ -23,7 +23,7 @@ import { ODT, PROFILES, WORKING, asStudio, clean, cleanBalance, gradesFor, isCac
 import { filmLut, nativeLut } from './luts.js';
 import { cached, evaluate, saveSpec, shotAt } from './shots.js';
 import { WorldViewer } from './world.svelte.js';
-import { audioProxyOf, captionWordsOf, hasSound, phraseBreak, rewordPhrase, stepOpen, transcriptState } from './transcript.js';
+import { audioProxyOf, captionWordsOf, hasSound, lineWords, phraseBreak, rewordPhrase, stepOpen, transcriptState } from './transcript.js';
 import { command, native } from '$lib/native';
 
 /** @typedef {import('$lib/auth/client').Cdl} Cdl */
@@ -53,7 +53,7 @@ import { command, native } from '$lib/native';
  * none in the file (silent), or failed (and why).
  * @typedef {'ready' | 'loading' | 'waiting' | 'silent' | `failed: ${string}`} SoundState
  */
-/** @typedef {'ingest' | 'library' | '3d' | 'edit' | 'audio' | 'grade' | 'render'} Tab */
+/** @typedef {'ingest' | 'library' | 'script' | '3d' | 'edit' | 'audio' | 'grade' | 'render'} Tab */
 /**
  * A sound cue of a world shot, where it lands on A3 (derived from the shot record, never saved as a clip).
  * @typedef {Clip & { cue: true, from: string }} CueClip
@@ -258,7 +258,7 @@ export class Studio {
 	/** no lock for now: the cut stays open in every tab (a timeline locked before is opened again when it opens) */
 	locked = false;
 	/** picture and sound can be changed: the Edit and 3D tabs */
-	canEdit = $derived(this.tab === 'edit' || this.tab === '3d');
+	canEdit = $derived(this.tab === 'edit' || this.tab === '3d' || this.tab === 'script');
 	/**
 	 * the frame the program shows: the timeline's own shape, or in Grade the one being checked
 	 * @type {string}
@@ -307,9 +307,10 @@ export class Studio {
 	captionWords = $derived.by(() => {
 		/** @type {CaptionWord[]} */
 		const out = [];
-		for (const c of this.clips.filter((c) => c.track === 'A1' && c.hash)) {
-			const hash = /** @type {string} */ (c.hash);
-			const words = captionWordsOf(this.byHash.get(hash));
+		for (const c of this.clips.filter((c) => c.track === 'A1' && (c.hash || c.kind === 'line'))) {
+			const hash = c.hash ?? '';
+			// a line of the script not recorded yet: its words spread over it, as the render spreads them
+			const words = c.kind === 'line' ? lineWords(c) : captionWordsOf(this.byHash.get(hash));
 			for (const [i, w] of words.entries())
 				if (w.start >= c.in && w.start < c.in + c.dur) out.push({ word: w.word, t: c.start + (w.start - c.in), e: c.start + (w.end - c.in), clip: c.id, hash, i });
 		}
@@ -339,6 +340,8 @@ export class Studio {
 	}
 	/** @param {Clip} c */
 	clipName(c) {
+		if (c.kind === 'slate') return [c.script?.label, c.script?.description].filter(Boolean).join(' · ') || 'A shot to film';
+		if (c.kind === 'line') return c.text ? `“${c.text}”` : 'A line to record';
 		if (isWorld(c)) {
 			void this.shotRev;
 			return cached(c.shot, c.shotVersion)?.name ?? 'World shot';
@@ -662,6 +665,85 @@ export class Studio {
 		if (voice) next.push(this.clip(voice.hash, 'A1', 0.5, 0, vlen));
 		if (bed) next.push({ ...this.clip(bed.hash, 'A2', 0, 0, vlen + 2.5), vol: 0.3 });
 		return next;
+	}
+
+	// ── the script: the timeline's own clips read as scenes of shots, each with the lines said under it ──────────
+	/** @typedef {{ clip: Clip, stage: 'text' | 'storyboard' | 'footage' | 'world', lines: Clip[] }} ScriptShot */
+	/** @typedef {{ scene: string, shots: ScriptShot[] }} ScriptScene */
+	script = $derived.by(() => {
+		/** @type {ScriptScene[]} */
+		const out = [];
+		const lines = this.clips.filter((c) => c.track === 'A1').sort((a, b) => a.start - b.start);
+		for (const c of this.clips.filter((c) => c.track === 'V1').sort((a, b) => a.start - b.start)) {
+			const scene = c.script?.scene ?? out.at(-1)?.scene ?? 'Scene 1';
+			if (out.at(-1)?.scene !== scene) out.push({ scene, shots: [] });
+			const kind = c.kind === 'slate' ? 'text' : isWorld(c) ? 'world' : this.byHash.get(c.hash ?? '')?.kind === 'image' ? 'storyboard' : 'footage';
+			const mine = lines.filter((l) => l.start >= c.start - 0.05 && l.start < c.start + c.dur);
+			/** @type {ScriptScene} */ (out.at(-1)).shots.push({ clip: c, stage: kind, lines: mine });
+		}
+		return out;
+	});
+	/**
+	 * A shot's place in the script: its scene, label, description, notes, size (any tab; the cut stays).
+	 * @param {string} id @param {import('$lib/auth/client').ClipScript} patch
+	 */
+	setScript(id, patch) {
+		const c = this.clips.find((k) => k.id === id);
+		if (c) this.patchClip(id, { script: { ...(c.script ?? {}), ...patch } });
+	}
+	/** A line's words (a line not recorded yet). @param {string} id @param {string} text */
+	setLine(id, text) {
+		this.patchClip(id, { text });
+	}
+	/**
+	 * Everything from `at` on, on every track, later by `by` seconds: room for a new shot.
+	 * @param {number} at @param {number} by
+	 */
+	ripple(at, by) {
+		this.clips = this.clips.map((c) => (c.start >= at - 1e-6 ? { ...c, start: this.snap(c.start + by) } : c));
+	}
+	/**
+	 * A new shot of the script, as a slate: at the end of its scene (or of the film), everything after it later.
+	 * @param {string} scene @param {number} [seconds]
+	 */
+	addShot(scene, seconds = 4) {
+		const inScene = this.script.find((x) => x.scene === scene)?.shots ?? [];
+		const at = inScene.length ? Math.max(...inScene.map((x) => x.clip.start + x.clip.dur)) : this.end;
+		this.ripple(at, seconds);
+		const n = this.clips.filter((c) => c.track === 'V1').length + 1;
+		/** @type {Clip} */
+		const c = { id: Math.random().toString(36).slice(2, 10), kind: 'slate', track: 'V1', start: this.snap(at), in: 0, dur: seconds, vol: 0, script: { scene, label: String(n) } };
+		this.clips = [...this.clips, c];
+		this.selected = c.id;
+		this.changed();
+	}
+	/** A new line under a shot: after its last line, else at its start. @param {string} shotId */
+	addLine(shotId) {
+		const s = this.script.flatMap((x) => x.shots).find((x) => x.clip.id === shotId);
+		if (!s) return;
+		const after = s.lines.at(-1);
+		const start = after ? after.start + after.dur + 0.3 : s.clip.start + 0.3;
+		/** @type {Clip} */
+		const c = { id: Math.random().toString(36).slice(2, 10), kind: 'line', track: 'A1', start: this.snap(start), in: 0, dur: 3, vol: 1, text: '' };
+		this.clips = [...this.clips, c];
+		this.selected = c.id;
+		this.changed();
+	}
+	/**
+	 * A slate or a line swapped for a file (a storyboard still, the footage, the recorded voice): the same place and
+	 * length, its script kept.
+	 * @param {string} id @param {string} hash
+	 */
+	async swap(id, hash) {
+		const c = this.clips.find((k) => k.id === id);
+		const m = this.byHash.get(hash);
+		if (!c || !m) return;
+		const dur = m.kind === 'image' ? c.dur : Math.min(c.dur, (await this.source(hash).catch(() => null))?.duration ?? c.dur);
+		const { kind: _k, text: _t, ...rest } = c;
+		this.clips = this.clips.map((k) => (k.id === id ? { ...rest, hash, in: 0, dur, vol: c.track === 'V1' ? (m.kind === 'video' ? 0.2 : 0) : 1 } : k));
+		this.selected = id;
+		this.changed();
+		if (c.track !== 'V1') void this.sound(hash);
 	}
 
 	/** @param {string} hash @param {Track} track @param {number} start @param {number} from @param {number} dur @returns {Clip} */
@@ -1001,8 +1083,12 @@ export class Studio {
 	 * @param {string} hash @param {Track} track @param {number} start @param {{ in: number, dur: number }} [range]
 	 */
 	async place(hash, track, start, range) {
-		if (!this.canEdit) return void (this.error = this.locked ? 'The edit is locked: unlock it to change picture or sound.' : '');
+		if (!this.canEdit && this.tab !== 'script') return void (this.error = '');
 		const m = this.byHash.get(hash);
+		// dropped onto a slate (a shot of the script not filmed yet) or a line not recorded yet: it takes its place,
+		// keeping its time and its script
+		const stand = this.clips.find((c) => c.track === track && (c.kind === 'slate' || c.kind === 'line') && start >= c.start - 0.05 && start < c.start + c.dur);
+		if (stand && m) return this.swap(stand.id, hash);
 		const accepts = TRACKS.find((t) => t.id === track)?.accepts ?? [];
 		// a video on a sound track: its sound alone (a camera's voice on A1, its room on A3)
 		const soundOnly = track !== 'V1' && m?.kind === 'video' && hasSound(m);

@@ -12,15 +12,16 @@
 	const TABS = [
 		{ id: 'ingest', label: 'Ingest', key: '1' },
 		{ id: 'library', label: 'Library', key: '2' },
-		{ id: '3d', label: '3D', key: '3' },
-		{ id: 'edit', label: 'Edit', key: '4' },
-		{ id: 'audio', label: 'Audio', key: '5' },
-		{ id: 'grade', label: 'Grade', key: '6' },
-		{ id: 'render', label: 'Render', key: '7' }
+		{ id: 'script', label: 'Script', key: '3' },
+		{ id: '3d', label: '3D', key: '4' },
+		{ id: 'edit', label: 'Edit', key: '5' },
+		{ id: 'audio', label: 'Audio', key: '6' },
+		{ id: 'grade', label: 'Grade', key: '7' },
+		{ id: 'render', label: 'Render', key: '8' }
 	];
 	/** @param {Tab} t */
 	function go(t) {
-		if (t !== 'edit' && t !== '3d' && t !== 'audio') s.stop();
+		if (t !== 'edit' && t !== '3d' && t !== 'audio' && t !== 'script') s.stop();
 		s.tab = t;
 	}
 </script>
