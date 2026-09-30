@@ -41,15 +41,29 @@
 	// the Grade tab: the grade's layers over the picture track, the last applied on top — each collapsed to its
 	// values, open for its controls on every shot
 	const grading = $derived(s.tab === 'grade');
-	const GRADE_LAYERS = [
+	// top to bottom, the last applied on top: the creative grade, then the base correction (one group, closed unless
+	// opened: its layers under it), then the framing just above the picture
+	const CREATIVE_LAYERS = [
 		{ id: 'L:finish', label: 'Finishing' },
 		{ id: 'L:film', label: 'Film look' },
 		{ id: 'L:scene', label: 'Scene look' },
 		{ id: 'L:grade', label: 'Grade' },
-		{ id: 'L:sec', label: 'Secondaries' },
-		{ id: 'L:frame', label: 'Framing' },
-		...[...BALANCE_NODES].reverse().map((n) => ({ id: `L:${n.id}`, label: n.label }))
-	].map((l) => ({ ...l, accepts: [] }));
+		{ id: 'L:sec', label: 'Secondaries' }
+	];
+	const BASE_LAYERS = [...BALANCE_NODES].reverse().map((n) => ({ id: `L:${n.id}`, label: n.label, sub: true }));
+	let baseOpen = $state(false);
+	const GRADE_LAYERS = $derived(
+		[...CREATIVE_LAYERS, { id: 'G:base', label: 'Base correction' }, ...(baseOpen ? BASE_LAYERS : []), { id: 'L:frame', label: 'Framing' }].map((l) => ({ ...l, accepts: [] }))
+	);
+	/** a shot's base correction in one line @param {Clip} c */
+	const baseText = (c) => {
+		const b = c.balance;
+		if (!b) return '—';
+		const f = (/** @type {number} */ v) => `${v > 0 ? '+' : ''}${v.toFixed(2)}`;
+		return [b.exposure && `exp ${f(b.exposure)}`, (b.temp || b.tint) && `wb ${f(b.temp)}/${f(b.tint)}`, b.contrast && `con ${f(b.contrast)}`, b.highlights && `hi ${f(b.highlights)}`, b.shadows && `lo ${f(b.shadows)}`, b.sat && `sat ${f(b.sat)}`]
+			.filter(Boolean)
+			.join(' · ') || '—';
+	};
 	// in Grade the shots stand side by side, one column each whatever their length, each with its picture: the grade is
 	// judged shot against shot, not along the clock
 	const COL = 168;
@@ -634,7 +648,9 @@
 		<div class="head"></div>
 		{#each shown as t (t.id)}
 			{#if t.id.startsWith('L:')}
-				<button class="head layer" class:open={openLayers.includes(t.id)} onclick={() => toggleLayer(t.id)} title="Open or close this layer's controls"><span class="caret">{openLayers.includes(t.id) ? '▾' : '▸'}</span> {t.label}</button>
+				<button class="head layer" class:sub={'sub' in t} class:open={openLayers.includes(t.id)} onclick={() => toggleLayer(t.id)} title="Open or close this layer's controls"><span class="caret">{openLayers.includes(t.id) ? '▾' : '▸'}</span> {t.label}</button>
+			{:else if t.id === 'G:base'}
+				<button class="head layer group" class:open={baseOpen} onclick={() => (baseOpen = !baseOpen)} title="Open or close the base correction's layers"><span class="caret">{baseOpen ? '▾' : '▸'}</span> {t.label}</button>
 			{:else}<div class="head"><b>{t.id}</b> {t.label}</div>{/if}
 		{/each}
 		{#if spec}
@@ -654,7 +670,14 @@
 			{#each shown as t (t.id)}
 				<!-- svelte-ignore a11y_no_static_element_interactions -->
 				<div class="track" ondragover={(e) => t.id !== 'T1' && s.canEdit && e.preventDefault()} ondrop={(e) => t.id !== 'T1' && drop(e, /** @type {Track} */ (t.id))}>
-					{#if t.id.startsWith('L:')}
+					{#if t.id === 'G:base'}
+						{#each s.clips.filter((c) => c.track === 'V1') as c (c.id)}
+							<!-- svelte-ignore a11y_no_static_element_interactions -->
+							<div class="cell" class:sel={s.selected === c.id} style:left={left(c)} style:width={width(c)} onpointerdown={(e) => (e.stopPropagation(), (s.selected = c.id))}>
+								<span class="val" class:on={!!c.balance}>{baseText(c)}</span>
+							</div>
+						{/each}
+					{:else if t.id.startsWith('L:')}
 						{@const open = openLayers.includes(t.id)}
 						{#if t.id === 'L:film'}
 							<!-- svelte-ignore a11y_no_static_element_interactions -->
@@ -1062,6 +1085,16 @@
 
 	.head.layer.open {
 		color: var(--ink);
+	}
+
+	/* the base correction: one group; its layers under it, indented */
+	.head.layer.group {
+		color: var(--ink-soft);
+		font-weight: 600;
+	}
+
+	.head.layer.sub {
+		padding-left: 1.4rem;
 	}
 
 	.head.layer .caret {
