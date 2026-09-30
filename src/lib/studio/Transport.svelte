@@ -27,6 +27,8 @@
 			{s.preparing ? 'Preparing…' : s.world.state === 'ready' ? '◎ Prepare' : s.world.state === 'loading' ? 'World…' : 'Stand-ins'}
 		</button>
 	{/if}
+	<button class="ic" onclick={() => s.undo()} disabled={!s.past.length} aria-label="Revert" title="Revert the last change (⌘Z)">↶</button>
+	<button class="ic" onclick={() => s.redo()} disabled={!s.future.length} aria-label="Reapply" title="Reapply (⇧⌘Z)">↷</button>
 	{#if s.canEdit}
 		<button class="ic" onclick={() => s.splitAtPlayhead()} aria-label="Cut at the playhead" title="Cut the selected clip at the playhead (B or ⌘K; Alt: without its linked sound)">✂</button>
 	{/if}
@@ -69,6 +71,11 @@
 
 	.ic:hover {
 		background: var(--bg);
+	}
+
+	.ic:disabled {
+		opacity: 0.3;
+		cursor: default;
 	}
 
 	.ic.play {

@@ -102,6 +102,8 @@ export const clockText = (t) => {
 };
 /** The film's frame rate (the render's): edits snap to its frames. */
 export const FPS = 30;
+/** A clip's link when its picture and sound were set apart on purpose (never linked again by itself). */
+export const UNLINKED = '-';
 /** A file's bytes, from this Mac's vault (with Range). @param {string} hash */
 export const raw = (hash) => fileUrl(hash);
 /** @param {MediaItem} m */
@@ -548,9 +550,15 @@ export class Studio {
 		await this.flush();
 		this.current = t;
 		this.expand(t.project ?? '', true);
-		// every clip stays, a file this Mac does not have yet included: the timeline marks it on the clip itself
-		this.clips = t.clips;
+		// every clip stays, a file this Mac does not have yet included: the timeline marks it on the clip itself;
+		// a picture and its own sound in sync, linked
+		const [clips, linked] = this.autoLink(t.clips);
+		this.clips = clips;
 		this.dropped = 0;
+		this.past = [];
+		this.future = [];
+		this.baseline = this.snapshotNow();
+		if (linked) queueMicrotask(() => this.changed());
 		this.selected = null;
 		this.selectedKey = null;
 		this.time = 0;
@@ -605,7 +613,58 @@ export class Studio {
 	// ── saving: every change, a moment after the last one ──────────────────────
 	/** @type {ReturnType<typeof setTimeout> | null} */
 	saveTimer = null;
+	/** @type {ReturnType<typeof setTimeout> | undefined} */
+	settle = undefined;
+	// ── revert and reapply: the timeline as it was a step ago (a burst of changes — a slider's drag — is one step) ──
+	/** @typedef {{ clips: Clip[], grade: Timeline['grade'] }} Step */
+	/** @type {Step[]} */
+	past = $state([]);
+	/** @type {Step[]} */
+	future = $state([]);
+	/** @type {Step | null} the timeline as it stood when the last burst of changes began */
+	baseline = null;
+	lastChange = 0;
+	restoring = false;
+	/** @returns {Step} */
+	snapshotNow() {
+		return { clips: $state.snapshot(this.clips), grade: $state.snapshot(this.current?.grade ?? null) };
+	}
+	/** @param {Step} st */
+	apply(st) {
+		this.restoring = true;
+		this.clips = structuredClone(st.clips);
+		if (this.current) this.current = { ...this.current, grade: structuredClone(st.grade) };
+		this.baseline = st;
+		this.changed();
+		this.restoring = false;
+		if (this.playing) this.schedule();
+	}
+	undo() {
+		const st = this.past.at(-1);
+		if (!st) return;
+		this.past = this.past.slice(0, -1);
+		this.future = [...this.future, this.snapshotNow()];
+		this.apply(st);
+	}
+	redo() {
+		const st = this.future.at(-1);
+		if (!st) return;
+		this.future = this.future.slice(0, -1);
+		this.past = [...this.past, this.snapshotNow()];
+		this.apply(st);
+	}
 	changed() {
+		if (!this.restoring) {
+			const now = Date.now();
+			// the first change of a burst: the state before it becomes one step back
+			if (this.baseline && now - this.lastChange > 800) {
+				this.past = [...this.past.slice(-49), this.baseline];
+				this.future = [];
+			}
+			this.lastChange = now;
+			clearTimeout(this.settle);
+			this.settle = setTimeout(() => (this.baseline = this.snapshotNow()), 800);
+		}
 		this.saving = 'unsaved';
 		if (this.saveTimer) clearTimeout(this.saveTimer);
 		this.saveTimer = setTimeout(() => void this.flush(), 700);
@@ -663,11 +722,17 @@ export class Studio {
 			return;
 		}
 		if (this.current?.id !== cur.id || (!force && (this.saving !== 'saved' || t.updated === cur.updated))) return;
+		// an edit from elsewhere (an agent): one step back reverts it
+		if (this.baseline) this.past = [...this.past.slice(-49), this.baseline];
+		this.future = [];
 		this.current = t;
 		this.timelines = [t, ...this.timelines.filter((x) => x.id !== t.id)];
-		this.clips = t.clips;
+		const [clips, linked] = this.autoLink(t.clips);
+		this.clips = clips;
 		this.dropped = 0;
 		this.saving = 'saved';
+		this.baseline = this.snapshotNow();
+		if (linked) this.changed();
 		if (this.playing) this.schedule();
 	}
 	/** @param {Partial<Timeline>} patch */
@@ -1239,7 +1304,7 @@ export class Studio {
 	 * @param {Clip | null | undefined} c @returns {Clip | null}
 	 */
 	partnerOf(c) {
-		if (!c?.link) return null;
+		if (!c?.link || c.link === UNLINKED) return null;
 		return this.clips.find((k) => k.id !== c.id && k.link === c.link) ?? null;
 	}
 	/**
@@ -1275,8 +1340,33 @@ export class Studio {
 	unlink(c) {
 		if (!this.canEdit || !c.link) return;
 		const link = c.link;
-		this.clips = this.clips.map((k) => (k.link === link ? { ...k, link: undefined } : k));
+		// apart on purpose: never linked again by itself
+		this.clips = this.clips.map((k) => (k.link === link ? { ...k, link: UNLINKED } : k));
 		this.changed();
+	}
+	/**
+	 * A video's picture (V1) and its own sound (an A track, the same file) that play in sync are linked by default:
+	 * moved, trimmed and cut together. Those unlinked on purpose stay apart. Returns the clips, and whether any changed.
+	 * @param {Clip[]} clips @returns {[Clip[], boolean]}
+	 */
+	autoLink(clips) {
+		const free = (/** @type {Clip} */ k) => !k.link;
+		const out = clips.map((k) => ({ ...k }));
+		let changed = false;
+		for (const p of out.filter((k) => k.track === 'V1' && k.hash && free(k))) {
+			const a = out.find(
+				(k) =>
+					k.track !== 'V1' && k.hash === p.hash && free(k) &&
+					Math.abs(k.start - k.in - (p.start - p.in)) <= 1.5 / FPS &&
+					Math.min(k.start + k.dur, p.start + p.dur) - Math.max(k.start, p.start) >= 0.5 * Math.min(k.dur, p.dur)
+			);
+			if (!a) continue;
+			const link = Math.random().toString(36).slice(2, 10);
+			p.link = link;
+			a.link = link;
+			changed = true;
+		}
+		return [out, changed];
 	}
 	/**
 	 * A clip cut down to a run of its file's words (from, to: seconds of the file) — where they sit on the timeline stays.

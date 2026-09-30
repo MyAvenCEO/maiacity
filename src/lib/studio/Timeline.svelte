@@ -9,7 +9,7 @@
 -->
 <script>
 	import { evaluate, shotAt, toKeys } from './shots.js';
-	import { FPS, TRACKS, isWorld, onSoundTrack, thumb, tint } from './studio.svelte.js';
+	import { FPS, TRACKS, UNLINKED, isWorld, onSoundTrack, thumb, tint } from './studio.svelte.js';
 	import { wordsOf } from './transcript.js';
 	import { BALANCE_NODES, NEUTRAL, NEUTRAL_BALANCE, PRESETS, cleanBalance, isNeutral, presetOf } from './color.js';
 	import { wave } from './wave.js';
@@ -490,7 +490,7 @@
 							{@const snd = onSoundTrack(c) && m?.kind === 'video' && c.hash ? (s.soundState[c.hash] ?? 'loading') : 'ready'}
 							<div
 								class="clip {world ? 'world' : c.kind === 'slate' ? 'slate' : c.kind === 'line' ? 'audio line' : onSoundTrack(c) ? 'audio' : m?.kind} {t.id}"
-								class:linked={!!c.link}
+								class:linked={!!c.link && c.link !== UNLINKED}
 								class:missing={!!c.hash && !m}
 								class:split={layout[t.id]?.overlaps.length > 0}
 								class:lane1={layout[t.id]?.lane[c.id] === 1}
