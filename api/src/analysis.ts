@@ -23,7 +23,7 @@
  */
 import VOCAB from "../../game/film/vocabulary.json";
 import { authorize } from "./stt";
-import { call, failure, paused, pick, prem, PremError } from "./prem";
+import { call, failure, models, paused, pick, prem, PremError } from "./prem";
 
 /** Prem's confidential vision model: Qwen 3.8 27B (text, image, video) — docs.prem.io/models-and-pricing. */
 export const MODEL = "qwen38-27b";
@@ -447,8 +447,12 @@ export async function analyseFile(body: Parameters<typeof reduceMessages>[0]): P
 export async function statusRoute(req: Request): Promise<Response> {
   const ok = await authorize(req);
   if (ok !== true) return ok;
-  const p = paused(MODEL);
-  return Response.json({ ready: analysisReady(), model: MODEL, vocabulary: VOCABULARY, ...(p ? { paused_until: new Date(p.until).toISOString(), reason: p.reason } : {}) });
+  // the model this key really runs (ours, or its own of the family), and every model the key lists — ids and inputs only
+  const ready = analysisReady();
+  const using = ready ? await model().catch(() => MODEL) : MODEL;
+  const listed = ready ? (await models().catch(() => null))?.map((m) => ({ id: m.id, type: m.type, input: m.input_modalities })) : undefined;
+  const p = paused(using) ?? paused(MODEL);
+  return Response.json({ ready, model: MODEL, ...(ready ? { using, listed } : {}), vocabulary: VOCABULARY, ...(p ? { paused_until: new Date(p.until).toISOString(), reason: p.reason } : {}) });
 }
 
 /** POST /api/analysis — a stretch's frames, or the whole file's stretches. */
