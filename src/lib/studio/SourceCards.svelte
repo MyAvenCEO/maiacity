@@ -318,8 +318,9 @@
 	.warn { color: var(--bad); }
 	footer { display: flex; align-items: center; justify-content: space-between; gap: 0.8rem; margin-top: 0.15rem; }
 	.link { padding: 0; border: 0; background: none; font: inherit; font-size: 0.78rem; color: var(--dim); text-decoration: underline; cursor: pointer; }
-	.release { flex-shrink: 0; padding: 0.25rem 0.75rem; border: 0; border-radius: 999px; background: var(--ink); font: inherit; font-size: 0.72rem; color: var(--on-ink); cursor: pointer; }
-	.release:disabled { background: var(--edge); color: var(--dim); cursor: default; }
+	.release { flex-shrink: 0; padding: 0.25rem 0.75rem; border: 1px solid var(--edge-strong); border-radius: 999px; background: var(--hover); font: inherit; font-size: 0.72rem; color: var(--ink); cursor: pointer; }
+	.release:hover:not(:disabled) { background: var(--sel); }
+	.release:disabled { border-color: var(--edge); background: none; color: var(--dim); cursor: default; }
 	.bad { color: var(--bad); }
 	.quiet { color: var(--dim); }
 	.veil { position: fixed; inset: 0; z-index: 400; display: grid; place-items: center; background: rgb(2 6 12 / 0.65); }

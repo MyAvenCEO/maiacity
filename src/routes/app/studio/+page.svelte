@@ -460,8 +460,9 @@
 		cursor: pointer;
 	}
 
-	/* shared by every panel: controls take the room's ink, not the system's */
-	.studio :global(:where(button, input, select, textarea)) {
+	/* shared by every panel: controls take the room's ink, not the system's — a default only (no weight of its own:
+	   a control's own colour, a light pill's dark text, always wins) */
+	:global(:where(.studio) :where(button, input, select, textarea)) {
 		color: inherit;
 	}
 
