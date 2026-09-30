@@ -129,16 +129,17 @@
 	<section class="studio tab-{s.tab}" bind:this={studio} aria-label="Studio">
 		<header class="bar" data-tauri-drag-region>
 			<div class="row" data-tauri-drag-region>
-				<a class="back" href="{base}/app/">← Dashboard</a>
-				<strong>Studio</strong>
-				<span class="grow"></span>
-				{#if s.current && s.tab !== 'ingest' && s.tab !== 'library'}
-					<div class="title">
+				<div class="side" data-tauri-drag-region>
+					<a class="back" href="{base}/app/">← Dashboard</a>
+					<strong>Studio</strong>
+				</div>
+				<div class="title" data-tauri-drag-region>
+					{#if s.current && s.tab !== 'ingest' && s.tab !== 'library'}
 						<h2>{s.current.name}</h2>
 						{#if s.current.description}<p title={s.current.description}>{s.current.description}</p>{/if}
-					</div>
-				{/if}
-				<span class="grow"></span>
+					{/if}
+				</div>
+				<div class="side end" data-tauri-drag-region>
 				{#if s.error}<button class="err" onclick={() => (s.error = '')} title="Dismiss">{s.error}</button>{/if}
 				{#if s.notice}<button class="err note" onclick={() => (s.notice = '')} title="{s.notice} (click to dismiss)">{s.notice}</button>{/if}
 				{#if s.tab !== 'ingest' && s.tab !== 'library'}<TimelinePicker {s} />{/if}
@@ -148,6 +149,7 @@
 					</button>
 				{/if}
 				<button class="ghost small" onclick={fullscreen} title="Full screen">⛶</button>
+				</div>
 			</div>
 			<StageBar {s} />
 		</header>
@@ -323,18 +325,26 @@
 	}
 
 	/* the open timeline: its name and what it is, once — in the middle of the window, whatever sits beside it */
+	/* three columns of equal sides: the title always in the window's middle */
 	.row {
-		position: relative;
+		display: grid;
+		grid-template-columns: minmax(0, 1fr) minmax(0, 44rem) minmax(0, 1fr);
+	}
+
+	.side {
+		display: flex;
+		gap: 0.8rem;
+		align-items: center;
+		min-width: 0;
+	}
+
+	.side.end {
+		justify-content: flex-end;
 	}
 
 	.title {
-		position: absolute;
-		left: 50%;
-		top: 50%;
-		transform: translate(-50%, -50%);
-		width: min(44rem, 46%);
+		min-width: 0;
 		text-align: center;
-		pointer-events: none;
 	}
 
 	.title h2 {
