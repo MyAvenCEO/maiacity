@@ -1379,6 +1379,26 @@ impl Studio {
     }
 
     #[tool(
+        description = "The Grade tab's playback run as the studio runs it, headless: the same player, video output and frame pump the viewer gets its pictures from, stopped on t at once (as the studio does) and then played two seconds. Returns how many pictures came while stopped (1 or more: the frozen frame reaches the viewer), how many a second while playing (30: real time) and the frozen picture on t as the viewer would draw it."
+    )]
+    async fn player_stream_check(&self, Parameters(a): Parameters<PlaybackArgs>) -> rmcp::model::CallToolResult {
+        let r = async {
+            let t = self.api("GET", &format!("/api/timelines/{}", a.timeline), None).await?;
+            crate::player::stream_check(&self.handle, &self.vault, t, a.t, a.originals == Some(true)).await
+        };
+        match r.await {
+            Ok((info, pic)) => {
+                let mut out = vec![rmcp::model::ContentBlock::text(serde_json::to_string_pretty(&info).unwrap_or_default())];
+                if let Some(p) = pic {
+                    out.push(rmcp::model::ContentBlock::image(base64(&p), "image/jpeg"));
+                }
+                rmcp::model::CallToolResult::success(out)
+            }
+            Err(e) => rmcp::model::CallToolResult::error(vec![rmcp::model::ContentBlock::text(e)]),
+        }
+    }
+
+    #[tool(
         description = "Queue a hero frame, rendered natively on this Mac: one frame of a timeline at t seconds in one delivery shape, at that delivery's full resolution through the whole chain (conformed original or world plate → its journey into ACEScct → framing → clip grade → film look → ACES 2.0 output), without captions, as a 16-bit PNG in the vault (role:frame) — for grading against. Follow it with renders_list: the job's output_hash is the PNG."
     )]
     async fn render_frame(&self, Parameters(a): Parameters<FrameArgs>) -> String {
