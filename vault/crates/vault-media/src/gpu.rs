@@ -8,10 +8,11 @@ use objc2::{rc::Retained, runtime::AnyObject};
 use objc2_core_foundation::{CGPoint, CGRect, CGSize};
 use objc2_core_image::{
     CIColorKernel, CIContext, CIFilter, CIImage, CIKernel, CIVector, kCIContextCacheIntermediates, kCIContextOutputColorSpace,
-    kCIContextWorkingColorSpace, kCIContextWorkingFormat, kCIFormatRGBAf, kCIImageColorSpace, kCIInputImageKey,
+    kCIContextWorkingColorSpace, kCIContextWorkingFormat, kCIFormatRGBAf, kCIImageApplyOrientationProperty, kCIImageColorSpace,
+    kCIInputImageKey,
 };
 use objc2_core_video::CVPixelBuffer;
-use objc2_foundation::{NSArray, NSDictionary, NSNull, NSNumber, NSObjectNSKeyValueCoding, NSString};
+use objc2_foundation::{NSArray, NSData, NSDictionary, NSNull, NSNumber, NSObjectNSKeyValueCoding, NSString};
 
 use crate::cst;
 
@@ -83,6 +84,32 @@ impl Grader {
         Ok(())
     }
 
+    /// A still (or one frame of a sequence) through the journey, scaled to `w`×`h`, read back as RGBA f32 — ACEScct
+    /// codes, top row first.
+    pub fn still(&self, image: &CIImage, w: u32, h: u32) -> Result<Vec<f32>> {
+        // SAFETY: as above; `out` is sized for the bounds rendered into it.
+        unsafe {
+            let extent = image.extent();
+            let (curve, scale, m) = self.args;
+            let row = |r: [f32; 3]| CIVector::vectorWithX_Y_Z(r[0] as f64, r[1] as f64, r[2] as f64);
+            let (c, s) = (NSNumber::new_f32(curve), NSNumber::new_f32(scale));
+            let (r0, r1, r2) = (row(m[0]), row(m[1]), row(m[2]));
+            let args: [&AnyObject; 6] = [image, &c, &s, &r0, &r1, &r2];
+            let graded = self.kernel.applyWithExtent_arguments(extent, &NSArray::from_slice(&args)).context("the colour kernel gave no picture")?;
+            let k = w as f64 / extent.size.width;
+            let scaled = if (k - 1.0).abs() < 1e-6 && (h as f64 - extent.size.height).abs() < 0.5 {
+                graded
+            } else {
+                self.scale(&graded, k, h as f64 / extent.size.height / k)?
+            };
+            let mut out = vec![0f32; (w * h * 4) as usize];
+            let bounds = CGRect { origin: scaled.extent().origin, size: CGSize { width: w as f64, height: h as f64 } };
+            let data = std::ptr::NonNull::new(out.as_mut_ptr().cast()).context("no buffer")?;
+            self.context.render_toBitmap_rowBytes_bounds_format_colorSpace(&scaled, data, (w * 16) as isize, bounds, kCIFormatRGBAf, None);
+            Ok(out)
+        }
+    }
+
     /// Down to the proxy's size when the decoder did not (Lanczos: no aliasing on fine detail).
     unsafe fn scale(&self, graded: &CIImage, k: f64, aspect: f64) -> Result<Retained<CIImage>> {
         unsafe {
@@ -93,6 +120,27 @@ impl Grader {
             filter.outputImage().context("the scale gave no picture")
         }
     }
+}
+
+/// A picture's bytes (OpenEXR, PNG, JPEG, HEIC, TIFF …) as Core Image reads them: its own code values, unmanaged — no
+/// colour conversion at all — the right way up.
+pub fn load_image(bytes: &[u8]) -> Result<Retained<CIImage>> {
+    // SAFETY: an NSData copy of the bytes, read by Core Image on this thread.
+    unsafe {
+        let null = NSNull::null();
+        let yes = NSNumber::new_bool(true);
+        let keys: [&NSString; 2] = [kCIImageColorSpace, kCIImageApplyOrientationProperty];
+        let values: [&AnyObject; 2] = [&null, &yes];
+        let options = NSDictionary::from_slices(&keys, &values);
+        CIImage::imageWithData_options(&NSData::with_bytes(bytes), Some(&options)).context("Core Image cannot read this picture")
+    }
+}
+
+/// A picture's size in pixels.
+pub fn size_of(image: &CIImage) -> (u32, u32) {
+    // SAFETY: a plain accessor.
+    let e = unsafe { image.extent() };
+    (e.size.width.round() as u32, e.size.height.round() as u32)
 }
 
 /// Is the kernel usable on this Mac at all? (For the tests and the app's start.)

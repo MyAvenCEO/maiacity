@@ -355,7 +355,8 @@ export class Studio {
 		if (isWorld(c)) return this.worldProxy(c) ?? undefined;
 		const m = c.hash ? this.byHash.get(c.hash) : undefined;
 		const p = this.proxy(m);
-		return ((this.onProxies || isSequence(m)) && p.hash && this.byHash.get(p.hash)) || m;
+		// a still shows its proxy whenever it has one (it is what the picture is taken from — see source())
+		return ((this.onProxies || isSequence(m) || m?.kind === 'image') && p.hash && this.byHash.get(p.hash)) || m;
 	}
 	/**
 	 * A world clip's HD proxy (the Mac app renders one for every shot version a timeline plays — vault/app/src/world.rs):
@@ -687,7 +688,9 @@ export class Studio {
 			return Promise.resolve(s);
 		}
 		if (m0?.kind === 'image') {
-			const s = { url: thumb(m0), duration: IMAGE_LEN, peaks: [] };
+			// its ACEScct proxy when it has one (a float still, or one larger than HD), else the still itself
+			const p = this.proxy(m0);
+			const s = { url: p.hash ? raw(p.hash) : thumb(m0), duration: IMAGE_LEN, peaks: [] };
 			this.sources[hash] = s;
 			return Promise.resolve(s);
 		}
