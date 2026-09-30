@@ -22,7 +22,7 @@ import { ODT, PROFILES, WORKING, asStudio, clean, gradesFor, isCache, isSequence
 import { filmLut, nativeLut } from './luts.js';
 import { cached, evaluate, saveSpec, shotAt } from './shots.js';
 import { WorldViewer } from './world.svelte.js';
-import { asCaptions, audioProxyOf, captionWordsOf, hasSound, phraseBreak, rewordPhrase, stepOpen, transcriptOf, transcriptState } from './transcript.js';
+import { audioProxyOf, captionWordsOf, hasSound, phraseBreak, rewordPhrase, stepOpen, transcriptState } from './transcript.js';
 import { native } from '$lib/native';
 
 /** @typedef {import('$lib/auth/client').Cdl} Cdl */
@@ -1228,34 +1228,8 @@ export class Studio {
 	}
 
 	// ── captions: the voice's words on screen ─────────────────────────────────────
-	/**
-	 * Captions from the voice: every voice (A1) clip's file gets its transcript's words as its caption words (meta.words
-	 * — what the program monitor shows and the render burns in, phrased by the render's rule). A file that has caption
-	 * words already (a voice take's own timing, or captions edited by hand) keeps them unless `replace`.
-	 */
-	async captionsFromVoice(replace = false) {
-		const files = [...new Set(this.clips.filter((c) => c.track === 'A1' && c.hash).map((c) => /** @type {string} */ (c.hash)))].map((h) => this.byHash.get(h)).filter((m) => !!m);
-		if (!files.length) return void (this.notice = 'No voice clips on A1: put the voice there first.');
-		const done = [], kept = [], none = [];
-		for (const m of files) {
-			const t = transcriptOf(m);
-			if (!t) {
-				none.push(itemName(m));
-				continue;
-			}
-			if (captionWordsOf(m).length && !replace) {
-				kept.push(itemName(m));
-				continue;
-			}
-			if (!(await this.setCaptionWords(m.hash, asCaptions(t.words)))) return;
-			done.push(itemName(m));
-		}
-		this.notice = [
-			done.length ? `Captions from ${done.length} voice file${done.length === 1 ? '' : 's'}` : '',
-			kept.length ? `${kept.length} kept their own captions` : '',
-			none.length ? `no transcript yet: ${none.join(', ')}` : ''
-		].filter(Boolean).join(' · ') || 'Nothing to caption.';
-	}
+	// Every voice (A1) clip's captions come by themselves: its file's own words, else its transcript's (captionWordsOf,
+	// the render's `caption_words`). Editing a phrase writes the file's own words; from then on those win.
 	/**
 	 * A file's caption words set (meta.words, merged into its meta; it syncs).
 	 * @param {string} hash @param {import('./transcript.js').CaptionWord[]} words

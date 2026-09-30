@@ -252,6 +252,38 @@ struct Plan {
     warnings: Vec<String>,
 }
 
+#[cfg(test)]
+mod caption_tests {
+    use super::caption_words;
+    use serde_json::json;
+
+    #[test]
+    fn a_voice_s_captions_are_its_own_words_else_its_transcript_s() {
+        let transcript = json!({ "transcript": { "words": [{ "w": "The", "s": 1.0, "e": 1.2, "c": 0.9 }, { "w": "moment", "s": 1.2, "e": 1.6 }] } });
+        let w = caption_words(&transcript);
+        assert_eq!(w.iter().map(|w| w.word.as_str()).collect::<Vec<_>>(), ["The", "moment"]);
+        assert_eq!((w[1].start, w[1].end), (1.2, 1.6));
+        let mut edited = transcript.clone();
+        edited["words"] = json!([{ "word": "A", "start": 1.0, "end": 1.6 }]);
+        assert_eq!(caption_words(&edited).len(), 1);
+        assert!(caption_words(&json!({})).is_empty());
+    }
+}
+
+/// A voice file's caption words: its own (`meta.words` — a voice take's timing, or captions edited by hand), else its
+/// transcript's (`meta.transcript.words`, `{ w, s, e }`) — so every voice has its captions without anyone asking.
+pub fn caption_words(meta: &serde_json::Value) -> Vec<Word> {
+    let own: Vec<Word> = meta.get("words").cloned().and_then(|w| serde_json::from_value(w).ok()).unwrap_or_default();
+    if !own.is_empty() {
+        return own;
+    }
+    let Some(words) = meta.pointer("/transcript/words").and_then(|w| w.as_array()) else { return own };
+    words
+        .iter()
+        .filter_map(|w| Some(Word { word: w["w"].as_str()?.to_string(), start: w["s"].as_f64()?, end: w["e"].as_f64()? }))
+        .collect()
+}
+
 fn plan(t: &Timeline, lib: &dyn Library) -> Result<Plan> {
     let mut clips: Vec<Clip> = t.clips.iter().filter(|c| if c.is_world() { c.track == "V1" } else { c.hash.as_deref().is_some_and(|h| lib.media(h).is_some()) }).cloned().collect();
     clips.sort_by(|a, b| a.start.partial_cmp(&b.start).unwrap_or(std::cmp::Ordering::Equal));
@@ -322,7 +354,7 @@ fn plan(t: &Timeline, lib: &dyn Library) -> Result<Plan> {
     }
     let words_of = |c: &Clip| -> Vec<Word> {
         let m = lib.media(c.hash.as_deref().unwrap_or("")).or_else(|| lib.media(&lib.original_of(c.hash.as_deref().unwrap_or(""))));
-        m.and_then(|m| m.meta.get("words").cloned()).and_then(|w| serde_json::from_value(w).ok()).unwrap_or_default()
+        m.map(|m| caption_words(&m.meta)).unwrap_or_default()
     };
     let phrases = phrases(t, &words_of);
     let audio = clips

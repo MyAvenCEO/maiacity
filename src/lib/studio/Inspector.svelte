@@ -118,7 +118,7 @@
 					</label>
 				{/each}
 			{:else}
-				<p class="sub">No captions for this voice yet: “Captions from the voice” (under the monitor) writes them from its transcript.</p>
+				<p class="sub">No captions for this voice yet: they come by themselves once its transcript is made.</p>
 			{/if}
 		{/if}
 		<dl>

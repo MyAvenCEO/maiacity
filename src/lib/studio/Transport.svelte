@@ -1,7 +1,6 @@
 <!--
 	The transport: to the start, play and pause (Space), the clock, full screen, the timeline's zoom — and, with world
-	clips, "Prepare playback" (every world the timeline touches, loaded and kept before it plays); and "Captions from the
-	voice" (the voice clips' transcripts as their captions — what the monitor shows and the render burns in).
+	clips, "Prepare playback" (every world the timeline touches, loaded and kept before it plays).
 -->
 <script>
 	import { clockText } from './studio.svelte.js';
@@ -23,16 +22,6 @@
 	{#if s.worldClips.length}
 		<button class="ghost" onclick={() => s.preparePlayback(20000)} disabled={s.world.state !== 'ready' || s.preparing} title="Load every world shot this timeline touches, and keep it loaded">
 			{s.preparing ? 'Preparing…' : s.world.state === 'ready' ? '◎ Prepare playback' : s.world.state === 'loading' ? 'World starting…' : 'World: stand-ins'}
-		</button>
-	{/if}
-	{#if s.tab === 'edit' && s.canEdit}
-		<button
-			class="ghost"
-			onclick={(e) => s.captionsFromVoice(e.altKey)}
-			disabled={!s.clips.some((c) => c.track === 'A1')}
-			title="The voice clips' (A1) transcripts become their captions — shown in the monitor, burnt into the render; edit them in the inspector. A voice with captions of its own keeps them (Alt: replace them)"
-		>
-			Captions from the voice
 		</button>
 	{/if}
 	{#if s.tab === 'edit'}

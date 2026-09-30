@@ -28,8 +28,20 @@ export function transcriptOf(m) {
 	return words.length ? { ...t, words } : null;
 }
 
-/** A file's caption words (meta.words), as the render reads them. @param {MediaItem | undefined} m @returns {CaptionWord[]} */
-export const captionWordsOf = (m) => (Array.isArray(m?.meta?.words) ? /** @type {unknown[]} */ (m.meta.words).filter(isCaption) : []);
+/** A file's own caption words (meta.words: a voice take's timing, or captions edited by hand). @param {MediaItem | undefined} m @returns {CaptionWord[]} */
+const ownCaptions = (m) => (Array.isArray(m?.meta?.words) ? /** @type {unknown[]} */ (m.meta.words).filter(isCaption) : []);
+
+/**
+ * A voice file's caption words, as the render reads them (vault-render `caption_words`): its own, else its transcript's
+ * — every voice has its captions without anyone asking.
+ * @param {MediaItem | undefined} m @returns {CaptionWord[]}
+ */
+export function captionWordsOf(m) {
+	const own = ownCaptions(m);
+	if (own.length) return own;
+	const t = transcriptOf(m);
+	return t ? asCaptions(t.words) : [];
+}
 
 /**
  * A file's words on its own clock: the transcript's, else the voice take's own timing.
@@ -38,7 +50,7 @@ export const captionWordsOf = (m) => (Array.isArray(m?.meta?.words) ? /** @type 
 export function wordsOf(m) {
 	const t = transcriptOf(m);
 	if (t) return t.words;
-	return captionWordsOf(m).map((x) => ({ w: x.word, s: x.start, e: x.end }));
+	return ownCaptions(m).map((x) => ({ w: x.word, s: x.start, e: x.end }));
 }
 
 /**
