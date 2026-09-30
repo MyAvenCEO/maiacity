@@ -19,7 +19,7 @@ import { addIdea, deleteIdea, IdeaError, listIdeas, updateIdea } from "./ideas";
 import { approveDevice, deviceInfo, KeyError, keyHolder, redeemDevice, revokeKey, startDevice } from "./keys";
 import { joinInfo, listDevices, listVaultFiles, pairDevice, revokeDevice, VaultError } from "./vault";
 import { analyseRoute, MODEL as ANALYSIS_MODEL, statusRoute as analysisStatus } from "./analysis";
-import { checkModels } from "./prem";
+import { checkModels, pick } from "./prem";
 import { createTimeline, deleteTimeline, getTimeline, listTimelines, saveTimeline, TimelineError } from "./timelines";
 import { createShot, getShot, listShots, saveShot, ShotError, shotVersions } from "./shots";
 import { claimRender, listJobs, queueFrame, queueRender, RenderError, rendersOf, reportRender } from "./renders";
@@ -130,7 +130,8 @@ await initRoles();
 // Prem: the models this key lists, said once in the log (ids only), and each model we use checked — one not listed or
 // without an attested deployment pauses for 30 minutes (prem.ts). In the background, never in the way.
 // (Speech to text is no longer Prem's: every recording's words are made on-device, on the Mac — vault/app transcripts.rs.)
-if (process.env.PREMAI_API_KEY) void checkModels([ANALYSIS_MODEL]);
+// (the model checked is the one really used: ours, or the key's own of the Qwen family when it lists ours by another id)
+if (process.env.PREMAI_API_KEY) void pick(ANALYSIS_MODEL, "CHAT", /^qwen/i).then((m) => checkModels([m]));
 
 const server = Bun.serve({
   port: PORT,
