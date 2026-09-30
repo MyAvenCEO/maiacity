@@ -3,7 +3,8 @@
 ✅ done · 🔄 in progress · ⬜ to do. Updated as the work goes.
 
 ## Open
-- 🔄 **Everything iroh-native, end to end** (the Mac does all media work; the server only stores and relays):
+- ✅ **Everything iroh-native, end to end** (the Mac does all media work; the server only stores and relays):
+  - ✅ Shot analysis cues on the Edit timeline (coloured by kind, click to go there) and in the inspector
   - ✅ AVFoundation reads the vault in place (resource loader over iroh's BlobReader) — no export anywhere: transcription, proxies, stills, renders, probe
   - ✅ Plates are vault files (synced, read in place); the speech models load from their blobs; scope sheets and grade_measure retired
   - ✅ Shot analysis moves into the Mac's ingest: frames sampled natively, Prem's Qwen called from the Mac (through Prem's confidential proxy on loopback; its key in a 0600 file beside the session, not the Keychain), thumbnail + `analysis/<hash>` written by the Mac; the server's analyse.rs retired (the API's /api/analysis is left, uncalled)
@@ -11,9 +12,15 @@
   - ✅ The HTTPS gateway fetch removed: files come over iroh from whoever holds them
   - ✅ Every store rules-driven (keep.rs, Mac and drives alike): records-only download policy, wanted files fetched + pinned + announced, GC = tags + records — de-sync per store works; the server's author is a catalog record
   - ✅ The server serves its Object Storage files over iroh (brought up into its store on request, verified, a bounded cache; pushes refused)
-- 🔄 **SDD_A** (external SSD as its own vault device): Day 01 fetching over iroh, verified
-- ⬜ Watch the Day 01 base correction in the Grade tab and say yes or adjust (garden skin paler than bedroom skin by
+  - ✅ Shot analysis in the source monitor (cues on its bar, Mark as In/Out) and the library list — one shared component
+
+## Waiting on you
+- **Test in a build** (you, in another session): SDD_A fetches Day 01 over iroh (the keep pass; its log says how many
+  stories name it); set the Prem key once (MCP `analysis_setup` { prem_key }), then the Day 01 analysis runs on the Mac
+- **Watch the Day 01 base correction** in the Grade tab and say yes or adjust (garden skin paler than bedroom skin by
   intent: more saturation there if wanted); once the analysis has marked every shot's still, `grade_look` it again
+- **Say when:** timelines and world shots out of Postgres into iroh (docs + blobs), then git-like versions for every
+  tool (commits as content-addressed snapshots, refs/branches as catalog entries, signed history, diff/restore/merge)
 
 ## Done today
 - **Day 01 · Opening base-corrected** (every V1 shot, balance only, no look):
