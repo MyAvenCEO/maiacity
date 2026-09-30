@@ -14,15 +14,14 @@
   - ✅ The server serves its Object Storage files over iroh (brought up into its store on request, verified, a bounded cache; pushes refused)
   - ✅ Shot analysis in the source monitor (cues on its bar, Mark as In/Out) and the library list — one shared component
 
-## Waiting on you
-- **Test in a build** (you, in another session): SDD_A fetches Day 01 over iroh (the keep pass; its log says how many
-  stories name it); set the Prem key once (MCP `analysis_setup` { prem_key }), then the Day 01 analysis runs on the Mac
-- **Watch the Day 01 base correction** in the Grade tab and say yes or adjust (garden skin paler than bedroom skin by
-  intent: more saturation there if wanted); once the analysis has marked every shot's still, `grade_look` it again
-- **Say when:** timelines and world shots out of Postgres into iroh (docs + blobs), then git-like versions for every
-  tool (commits as content-addressed snapshots, refs/branches as catalog entries, signed history, diff/restore/merge)
+## Elsewhere, or later (not tasks of this session)
+- The Day 01 base correction is reviewed in its own grading session.
+- The SDD_A drive: set up and rules-driven; its first fetch is tested when it is plugged in again (not now).
+- Later, when said: timelines and world shots out of Postgres into iroh, then git-like versions for every tool.
 
 ## Done today
+- **LLM calls through our server:** the Mac samples the frames, the API asks Prem with the server's key (no key on a Mac)
+- **Playback:** a sound that failed to load once is asked for again on the next play; a silent play says why in the log
 - **Day 01 · Opening base-corrected** (every V1 shot, balance only, no look):
   - bedroom master (the bed from the side): a touch warm (+0.25); garden master (the walk): clearly warm (+0.5)
   - all faces 47.5–49 IRE on the skin line; blacks 5–10, mid-tones 40–50 IRE
