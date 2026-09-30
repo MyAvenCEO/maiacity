@@ -223,6 +223,7 @@
 		flex-wrap: wrap;
 		justify-content: flex-end;
 		gap: 0.3rem;
+		z-index: 3;
 		pointer-events: none;
 	}
 
@@ -346,7 +347,11 @@
 		opacity: 0;
 	}
 
+	/* the badge row lets clicks through to the picture; the switch takes its own */
 	.src {
+		position: relative;
+		z-index: 3;
+		pointer-events: auto;
 		display: inline-flex;
 		padding: 1px;
 		border: 1px solid var(--edge);
