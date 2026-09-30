@@ -16,7 +16,7 @@ pub async fn sweep(vault: Arc<Vault>) {
     }
 }
 
-async fn once(vault: &Vault) -> anyhow::Result<()> {
+pub(crate) async fn once(vault: &Vault) -> anyhow::Result<()> {
     let mut keep = HashSet::new();
     for m in vault.catalog.descriptions().await? {
         let Ok(hash) = m.hash.parse::<iroh_blobs::Hash>() else { continue };

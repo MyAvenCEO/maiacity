@@ -347,6 +347,12 @@ pub struct StoryArgs {
     pub series: Option<String>,
     /// e.g. DAY 0002
     pub episode: Option<String>,
+    /// where each class of its files is kept — store names per class: {"default": [...], "original": [...], "proxy":
+    /// [...], "delivery": [...]} ("avenSSD" this Mac, "hetzner" the server's Object Storage, a drive's name e.g.
+    /// "SDD_A"). Asked of the person first (a store added fetches the files there, one left out lets them go there).
+    pub rules: Option<Value>,
+    /// why the rules change (shown to the person)
+    pub why: Option<String>,
 }
 
 #[derive(Deserialize, schemars::JsonSchema)]
@@ -616,7 +622,7 @@ impl Studio {
         text(r.await)
     }
 
-    #[tool(description = "Create a story (no id), or change a story's title (at most five words), description (the full hook), series and episode. Its destinations (rules) stay the admin's: a new story gets the defaults (avenSSD + hetzner for every class)")]
+    #[tool(description = "Create a story (no id), or change a story's title (at most five words), description (the full hook), series and episode — and where its files are kept (rules: the stores per class — avenSSD this Mac, hetzner the server's Object Storage, a drive by its name). A new story gets avenSSD + hetzner for every class. A change of rules is asked of the person first (a modal shows before and after; the call waits); on yes each store fetches or lets go of the story's files by itself.")]
     async fn story_save(&self, Parameters(a): Parameters<StoryArgs>) -> String {
         let r = async {
             self.signed_in()?;
@@ -639,6 +645,17 @@ impl Studio {
             }
             if let Some(e) = a.episode {
                 story.episode = e;
+            }
+            if let Some(r) = a.rules {
+                let rules: vault_core::catalog::Rules = serde_json::from_value(r).map_err(|e| format!("rules: {e}"))?;
+                if rules != story.rules {
+                    let question = json!({ "kind": "rules", "story": story.title, "why": a.why.clone().unwrap_or_default(), "before": story.rules, "after": rules });
+                    match crate::asks::ask(&self.handle, question).await {
+                        Some(true) => story.rules = rules,
+                        Some(false) => return Err("the person said no: the story's rules stay as they are (nothing saved)".into()),
+                        None => return Err("nobody answered in 15 minutes: the story's rules stay as they are (nothing saved)".into()),
+                    }
+                }
             }
             let saved = cat.save_story(story).await.map_err(|e| format!("{e:#}"))?;
             serde_json::to_value(vault_core::catalog::Story { key: String::new(), ..saved }).map_err(|e| e.to_string())

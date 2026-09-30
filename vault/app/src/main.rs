@@ -6,6 +6,7 @@
 mod analysis;
 mod asks;
 mod auth;
+mod drives;
 mod local;
 mod mcp;
 mod models;
@@ -365,7 +366,7 @@ async fn serve(vault: Arc<Vault>, request: Request<Vec<u8>>) -> Response<Vec<u8>
 }
 
 /// The app's own settings (not the vault): where the vault lives.
-fn settings_file() -> PathBuf {
+pub(crate) fn settings_file() -> PathBuf {
     let home = std::env::var_os("HOME").map(PathBuf::from).unwrap_or_default();
     home.join("Library/Application Support/city.maia.studio/settings.json")
 }
@@ -411,6 +412,8 @@ fn main() {
             tauri::async_runtime::spawn(transcripts::sweep(app.handle().clone(), vault.clone()));
             // and every world shot a timeline plays, rendered here in the studio's own world (world.rs)
             tauri::async_runtime::spawn(world::sweep(app.handle().clone(), vault.clone()));
+            // and every external drive that is a vault device of its own, kept complete for its stories (drives.rs)
+            tauri::async_runtime::spawn(drives::start(app.handle().clone(), vault.clone()));
             // and deleted files let go of here, their bytes pruned by iroh's garbage collection (prune.rs)
             tauri::async_runtime::spawn(prune::sweep(vault.clone()));
             // and the render queue: this Mac is the render worker — films and hero frames, natively (render.rs)
@@ -448,6 +451,7 @@ fn main() {
             sync::vault_copies,
             mcp::mcp_info,
             asks::asks_open,
+            drives::drives_status,
             asks::ask_answer,
             vault_status,
             vault_list,
