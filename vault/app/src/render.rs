@@ -255,7 +255,7 @@ struct Vaulted {
 
 impl Vaulted {
     async fn new(vault: &Arc<Vault>, dir: PathBuf) -> Res<Self> {
-        let list = vault.catalog.list().await.map_err(err)?;
+        let list = vault.catalog.list_view().await.map_err(err)?;
         let mut media = HashMap::new();
         let mut ext = HashMap::new();
         let mut story = HashMap::new();

@@ -187,6 +187,27 @@ pub fn with_derived(meta: &mut Meta, d: Derived<'_>) {
     }
 }
 
+/// Every audio proxy by the original it is the sound of (its own `meta.audio_of`).
+pub fn audio_proxies(list: &[Meta]) -> std::collections::HashMap<String, String> {
+    list.iter()
+        .filter_map(|m| Some((m.meta.get("audio_of")?.as_str()?.to_string(), m.hash.clone())))
+        .collect()
+}
+
+/// An original whose sound record does not name its audio proxy (made before there were records): the audio proxy
+/// that names it, found from its side — as a proxy is found from either side.
+pub fn link_audio(m: &mut Meta, audio: &std::collections::HashMap<String, String>) {
+    if m.meta.get("audio").is_some_and(|a| a.is_string()) || m.meta.get("audio_of").is_some() {
+        return;
+    }
+    if let Some(a) = audio.get(&m.hash) {
+        if !m.meta.is_object() {
+            m.meta = serde_json::json!({});
+        }
+        m.meta["audio"] = serde_json::json!(a);
+    }
+}
+
 /// The classes a story keeps its files in, each with its own destinations.
 pub const CLASSES: [&str; 4] = ["default", "original", "proxy", "delivery"];
 
@@ -459,8 +480,10 @@ impl Catalog {
         let transcripts = self.records(TRANSCRIPT).await?;
         let sounds = self.records(SOUND).await?;
         let analyses = self.records(ANALYSIS).await?;
+        let audio = audio_proxies(&list);
         for m in &mut list {
             with_derived(m, Derived { transcript: transcripts.get(&m.hash), sound: sounds.get(&m.hash), analysis: analyses.get(&m.hash) });
+            link_audio(m, &audio);
         }
         Ok(list)
     }
@@ -470,6 +493,9 @@ impl Catalog {
         let Some(mut m) = self.meta(hash).await? else { return Ok(None) };
         let (t, snd, a) = (self.record(TRANSCRIPT, hash).await?, self.record(SOUND, hash).await?, self.record(ANALYSIS, hash).await?);
         with_derived(&mut m, Derived { transcript: t.as_ref(), sound: snd.as_ref(), analysis: a.as_ref() });
+        if m.meta.get("audio").is_none() && matches!(m.kind.as_str(), "video" | "audio") {
+            link_audio(&mut m, &audio_proxies(&self.list().await?));
+        }
         Ok(Some(m))
     }
 
