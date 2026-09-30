@@ -21,7 +21,7 @@ import { joinInfo, listDevices, listVaultFiles, pairDevice, revokeDevice, VaultE
 import { createTimeline, deleteTimeline, getTimeline, listTimelines, saveTimeline, TimelineError } from "./timelines";
 import { createShot, getShot, listShots, saveShot, ShotError, shotVersions } from "./shots";
 import { claimRender, listJobs, queueFrame, queueRender, RenderError, rendersOf, reportRender } from "./renders";
-import { CHANNELS, ContentError, createContent, deleteContent, FORMATS, KINDS, listContent, saveContent, saveDay, savePosts, STATUSES } from "./content";
+import { CHANNELS, ContentError, createContent, deleteContent, FORMATS, KINDS, listContent, saveContent, saveDay, savePosts, STATUSES, dropDeliveries } from "./content";
 import { format, gameClock, calendar, parse } from "../../game/time";
 
 const PORT = Number(process.env.PORT ?? 3000);
@@ -790,6 +790,19 @@ const server = Bun.serve({
         if (me instanceof Response) return me;
         try {
           return json(req, await createContent(me.id, (await readJson(req)) ?? {}), { status: 201 });
+        } catch (e) {
+          return fail(req, e);
+        }
+      },
+    },
+    // DELETE /api/content/:id/deliveries/:timeline → a render's films off the card (the rest stays)
+    "/api/content/:id/deliveries/:timeline": {
+      OPTIONS: preflight,
+      DELETE: async (req) => {
+        const me = await allowed(req, "content:admin");
+        if (me instanceof Response) return me;
+        try {
+          return json(req, await dropDeliveries(req.params.id, req.params.timeline));
         } catch (e) {
           return fail(req, e);
         }
