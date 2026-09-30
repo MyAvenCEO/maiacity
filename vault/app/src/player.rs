@@ -1,7 +1,8 @@
-//! The studio's playback through the whole grade, natively (vault-render `player`): while the Grade tab plays, an
-//! AVPlayer plays the film's composition — every frame through the render's own chain on Metal, secondaries and
-//! finishing too — in a layer laid over the viewer's picture (the webview says where); paused, the layer goes and the
-//! webview shows the Mac's still. Muted: the sound stays the studio's (Web Audio, the clock), the player follows it.
+//! The studio's playback through the whole grade, natively (vault-render `player`): in the Grade tab an AVPlayer plays
+//! the film's composition — every frame through the render's own chain on Metal, secondaries and finishing too — in a
+//! view inside the webview, over the viewer's picture (the webview says where). Playing or stopped it is the same
+//! player: stopped, it is paused on the frame under the playhead, so the frozen frame is the playing one. Muted: the
+//! sound stays the studio's (Web Audio, the clock), the player follows it.
 
 use std::{cell::RefCell, collections::HashMap, sync::Arc};
 
@@ -77,9 +78,13 @@ pub async fn player_load(
                     let _: () = msg_send![&*view, setLayer: &*layer];
                     let _: () = msg_send![&*view, setWantsLayer: true];
                     let _: () = msg_send![&*view, setHidden: true];
+                    // inside the webview: a view's subviews draw over its own content, so the picture is over the page
+                    // (a sibling beside it may land behind it, depending on what wry made the window's content)
+                    let _: () = msg_send![webview, addSubview: &*view];
                     let parent: *mut AnyObject = msg_send![webview, superview];
-                    // NSWindowAbove: over the webview, only where the picture is
-                    let _: () = msg_send![parent, addSubview: &*view, positioned: 1isize, relativeTo: webview];
+                    let class = |o: *mut AnyObject| if o.is_null() { "none".to_string() } else { (*o).class().name().to_string_lossy().into_owned() };
+                    let flipped: bool = msg_send![webview, isFlipped];
+                    tracing::info!("playback: the picture's view inside {} (flipped: {flipped}, in {})", class(webview), class(parent));
                     *n = Some(Native { player, view, webview });
                     Ok(())
                 })?;
@@ -249,13 +254,14 @@ pub fn player_view(handle: AppHandle, rect: Option<[f64; 4]>) -> Res<()> {
                         let _: () = msg_send![&*native.view, setHidden: true];
                     }
                     Some([x, y, w, h]) => {
-                        let web: CGRect = msg_send![native.webview, frame];
-                        let parent: *mut AnyObject = msg_send![native.webview, superview];
-                        let flipped: bool = msg_send![parent, isFlipped];
-                        let oy = if flipped { web.origin.y + y } else { web.origin.y + web.size.height - y - h };
-                        let frame = CGRect::new(CGPoint::new(web.origin.x + x, oy), CGSize::new(w, h));
+                        // in the webview's own coordinates (its bounds), from its top left when it is flipped
+                        let web: CGRect = msg_send![native.webview, bounds];
+                        let flipped: bool = msg_send![native.webview, isFlipped];
+                        let oy = if flipped { y } else { web.size.height - y - h };
+                        let frame = CGRect::new(CGPoint::new(x, oy), CGSize::new(w, h));
                         let _: () = msg_send![&*native.view, setFrame: frame];
                         let _: () = msg_send![&*native.view, setHidden: false];
+                        tracing::debug!("playback: the picture at {x:.0},{oy:.0} {w:.0}×{h:.0} in {:.0}×{:.0}", web.size.width, web.size.height);
                     }
                 }
             }
