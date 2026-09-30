@@ -1,12 +1,24 @@
 # Versions for everything: iroh, CRDTs, and what history needs
 
-Research only: nothing here is built yet. Checked 2026-09-30, against iroh's own sources (iroh-docs 0.101.0,
-iroh-blobs 0.103.0, iroh-gossip 0.101.0 in `~/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/`) and the
-official docs, repos and crates/npm registries of each library.
+Research only: nothing here is built yet. Checked 2026-09-30 against what ships today and nothing older: the
+current iroh docs (docs.iroh.computer), the latest releases on crates.io — which are exactly the versions we run
+(iroh 1.3.0; iroh-docs 0.101.0, iroh-blobs 0.103.0, iroh-gossip 0.101.0) — their source in
+`~/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/`, and the current docs, repos and registries of each
+library.
 
 The question: every change to our data (timelines, grades, looks, the mix, scripts, story sections, file descriptions,
 analysis corrections, stories, world shots) kept as history, with revert and forward checkout. No forking and no
 merging yet.
+
+### The stack we run = the latest release (crates.io, 2026-09-30)
+
+| Layer | Crates (ours = latest) |
+|---|---|
+| Transport, 1.x | iroh 1.3.0 · iroh-base 1.3.0 · iroh-relay 1.3.0 · iroh-dns 1.3.0 · noq / noq-proto / noq-udp 1.3.0 (QUIC) · iroh-tickets 1.0.0 · netwatch 0.19.3 · portmapper 0.19.3 |
+| Protocols, 0.x (released with iroh 1.0) | iroh-docs 0.101.0 · iroh-blobs 0.103.0 · iroh-gossip 0.101.0 · bao-tree 0.16.1 · irpc 0.17.0 |
+| Support | iroh-metrics 1.0.2 · n0-error 1.0.1 · n0-watcher 1.0.0 · n0-future 0.3.2 · iroh-util 0.6.0 · iroh-io 0.6.2 |
+
+Nothing is behind. Everything below refers to these versions.
 
 ---
 
@@ -54,9 +66,14 @@ the content of every current catalog entry (`vault-core/src/catalog.rs` `record_
 > no longer referenced, and the next GC prunes it. A hash written *inside* a JSON blob is never protected either: GC
 > does not read JSON.
 
-**Status.** iroh 1.0 (June 2026) promises a stable transport and APIs; it does not cover docs, blobs or gossip. iroh's
-own blog called iroh-docs "not yet ready for a 1.0"; it is still 0.101. Willow, meant to follow it (iroh-willow
-0.0.1, February 2025), has gone quiet. Whatever we build on iroh-docs should stay a thin layer of our own.
+**Status, today.** iroh 1.0 shipped on 2026-06-15, and iroh-docs 0.101, iroh-blobs 0.103 and iroh-gossip 0.101 were
+released the same day, updated to it — the latest of each, and what we run. On the way, iroh-docs moved to redb 4
+(0.99.0) and locked its signature wire format (0.99.1: "Wrap EntrySignature in iroh::Signature and lock wire format").
+The current protocol overview (docs.iroh.computer/concepts/protocols) lists blobs ("Content-addressed blob storage and
+transfer"), docs ("Collaborative key-value documents with CRDTs") and gossip as the building blocks, unlabelled; only
+iroh-automerge is marked "(experimental)". The documents page recommends `Docs::persistent` with an `FsStore` for
+production — our setup. What the 0.x version still means: no semver promise, so a minor release may change the API
+(pin versions, upgrade on purpose, keep our use behind a thin layer in vault-core).
 
 ---
 
@@ -108,7 +125,7 @@ instead of sitting on top of them.
 | Signed authorship | **yes** (ed25519, twice) | no | author ids, unsigned | peer ids, unsigned | signed JWTs, server-trusted |
 | Transport | its own (reconciliation + gossip) | any | any (iroh examples) | any (iroh demo) | its own server |
 | Rust / JS | native / through our API | yrs / native | native / wasm | native / wasm | Rust core / JS |
-| Maturity | in production, still 0.x | very high | high | 1.x, younger | alpha |
+| Maturity | shipped with iroh 1.0, documented for production; 0.x (no semver promise) | very high | high | 1.x, younger | alpha |
 | Licence | MIT / Apache-2.0 | MIT | MIT | MIT | MIT |
 
 ---
@@ -175,6 +192,16 @@ Timelines and world shots live in Postgres today (`timelines`, `shots`, `shot_ve
   JSON patches with a full snapshot every so often.
 - **The prefix trap** (section 1) for every new key.
 
+### Whose pattern this is
+
+Neither iroh's docs nor Willow's prescribe a way to keep history or to name keys. Willow's prefix pruning is deliberate
+— a write at a path is "like overwriting a directory with an empty file", and Willow prefers mutable data and traceless
+removal over append-only hash chains, which it calls "quite dangerous when employed carelessly". History is left to the
+application. The log above is our design built only from iroh's documented building blocks (signed entries under keys,
+immutable blobs, HashSeq collections, tags and GC), and it stays deletable the Willow way: one empty write at
+`hist/<object>/` prunes an object's whole history (each author its own entries). For rich history, the ecosystem's
+demonstrated route is a CRDT library over iroh (n0's iroh-automerge, Loro's iroh-loro).
+
 ### If merging comes later
 
 Loro, for timelines: MovableList for the clip order, Tree for story sections, `checkout` and `revert_to`, undo, shallow
@@ -185,9 +212,12 @@ alternative with more iroh examples and a longer record. Both would store their 
 
 ## Sources
 
-- iroh 1.0: https://www.iroh.computer/blog/v1 · iroh-docs: https://docs.iroh.computer/protocols/documents,
-  https://github.com/n0-computer/iroh-docs · "not yet ready for a 1.0":
-  https://www.iroh.computer/blog/iroh-0-35-prepping-for-1-0 · iroh-willow: https://github.com/n0-computer/iroh-willow
+- iroh 1.0: https://www.iroh.computer/blog/v1 · protocols today: https://docs.iroh.computer/concepts/protocols ·
+  documents: https://docs.iroh.computer/protocols/documents · blobs: https://docs.iroh.computer/protocols/blobs ·
+  releases: https://github.com/n0-computer/iroh-docs/releases, https://github.com/n0-computer/iroh-blobs/releases ·
+  crates.io (latest = ours): iroh 1.3.0, iroh-docs 0.101.0, iroh-blobs 0.103.0, iroh-gossip 0.101.0
+- Willow: https://willowprotocol.org/specs/data-model/index.html,
+  https://willowprotocol.org/more/willow_compared/index.html
 - iroh + Automerge: https://github.com/n0-computer/iroh-examples/tree/main/iroh-automerge,
   https://github.com/n0-computer/iroh-examples/tree/main/iroh-automerge-repo · samod: https://github.com/alexjg/samod ·
   Subduction: https://github.com/inkandswitch/subduction
