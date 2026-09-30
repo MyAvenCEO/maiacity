@@ -424,30 +424,45 @@ fn usable(name: &str, d: &Disp) -> bool {
     }
 }
 
-/// The balance that levels a shot to `want` by the elements both have (less `skip`): the balance nodes only, from
-/// as shot. Exposure and white balance do the most; contrast, highlights, lows and saturation cost, so they only
-/// nudge.
+/// The balance that levels a shot to `want` by the elements both have, less `skip` — an element (`skin`), or only
+/// its level (`skin.level`: a face and feet in one light need not be as bright) or only its colour (`whites.colour`:
+/// a cream rug is not a white wall). The balance nodes only, from as shot. White balance and exposure do the
+/// levelling; contrast, highlights, lows and saturation cost, so they move only where those cannot.
 pub fn fit(shot: &Look, want: &BTreeMap<String, Disp>, output: &dyn Output, skip: &[String]) -> (Balance, Vec<String>) {
     let none = Balance::default();
-    let pairs: Vec<(String, [f64; 3], Disp)> = shot
+    let skipped = |k: &str, part: &str| skip.iter().any(|s| s == k || *s == format!("{k}.{part}"));
+    let pairs: Vec<(String, [f64; 3], Disp, f64, f64)> = shot
         .cct
         .iter()
-        .filter(|(k, _)| !skip.contains(k) && weights(k) != (0.0, 0.0))
+        .filter(|(k, _)| weights(k) != (0.0, 0.0))
         .filter_map(|(k, v)| want.get(k).map(|w| (k.clone(), *v, *w)))
         .filter(|(k, v, w)| usable(k, &shown(output, &none, *v)) && usable(k, w))
+        .map(|(k, v, w)| {
+            let (wl, wc) = weights(&k);
+            let (wl, wc) = (if skipped(&k, "level") { 0.0 } else { wl }, if skipped(&k, "colour") { 0.0 } else { wc });
+            (k, v, w, wl, wc)
+        })
+        .filter(|p| p.3 > 0.0 || p.4 > 0.0)
         .collect();
-    let used: Vec<String> = pairs.iter().map(|p| p.0.clone()).collect();
+    let used: Vec<String> = pairs
+        .iter()
+        .map(|p| match (p.3 > 0.0, p.4 > 0.0) {
+            (true, true) => p.0.clone(),
+            (true, false) => format!("{}.level", p.0),
+            _ => format!("{}.colour", p.0),
+        })
+        .collect();
     let cost = |b: &Balance| -> f64 {
         let fit: f64 = pairs
             .iter()
-            .map(|(k, v, w)| {
-                let (wl, wc) = weights(k);
+            .map(|(_, v, w, wl, wc)| {
                 let d = shown(output, b, *v);
                 wl * (d.y - w.y).powi(2) + wc * ((d.cb - w.cb).powi(2) + (d.cr - w.cr).powi(2))
             })
             .sum();
-        // a stop of highlights or lows costs about what 1.6 IRE off does; contrast and saturation a little more
-        fit + 0.00025 * (b.highlights.powi(2) + b.shadows.powi(2)) + 0.004 * b.contrast.powi(2) + 0.002 * b.sat.powi(2)
+        // a base correction is white balance and exposure: a stop of highlights or lows costs about what 5 IRE off in
+        // the skin does, contrast and saturation more — they move only for what the two cannot do
+        fit + 0.003 * (b.highlights.powi(2) + b.shadows.powi(2)) + 0.03 * b.contrast.powi(2) + 0.03 * b.sat.powi(2)
     };
     let mut b = Balance::default();
     if pairs.is_empty() {
