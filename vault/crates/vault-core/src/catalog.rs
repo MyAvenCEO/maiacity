@@ -554,6 +554,25 @@ impl Catalog {
         Ok(())
     }
 
+    /// The records whose content is not here (an entry arrives with its content hash; iroh-docs fetches the content
+    /// only then, from whoever sent the entry — if that peer lacked it, it stays missing): every entry but the files'
+    /// holdings, whose content (a small JSON) this store does not have complete.
+    pub async fn missing_records(&self) -> Result<Vec<Hash>> {
+        let entries: Vec<_> = self.doc().get_many(Query::single_latest_per_key()).await?.collect().await;
+        let mut out = Vec::new();
+        for e in entries.into_iter().flatten() {
+            if e.key().starts_with(b"blobs/") || e.content_len() == 0 {
+                continue;
+            }
+            if !matches!(self.store.blobs().status(e.content_hash()).await?, iroh_blobs::api::blobs::BlobStatus::Complete { .. }) {
+                out.push(e.content_hash());
+            }
+        }
+        out.sort();
+        out.dedup();
+        Ok(out)
+    }
+
     /// Does this device still hold a file (its pin, or its own `blobs/<hash>` entry)?
     pub async fn holds(&self, hash: Hash) -> Result<bool> {
         if self.store.tags().get(format!("vault/{}", hash.to_hex())).await?.is_some() {

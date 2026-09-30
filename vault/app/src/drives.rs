@@ -123,6 +123,18 @@ async fn round(mac: &Vault, drive: &Vault, cfg: &Config) -> anyhow::Result<()> {
     use iroh_docs::store::{DownloadPolicy, FilterKind};
     let key = cfg.dir.display().to_string();
     drive.catalog.doc().set_download_policy(DownloadPolicy::EverythingExcept(vec![FilterKind::Prefix("blobs/".into())])).await?;
+    // records whose content never came (their entry came first, from a peer that lacked it): fetched from this Mac
+    let downloader = drive.store.downloader(&drive.endpoint);
+    let missing = drive.catalog.missing_records().await?;
+    if !missing.is_empty() {
+        update(&key, |s| s.now = format!("fetching {} records", missing.len()));
+        for h in &missing {
+            if let Err(e) = downloader.download(*h, vec![mac.endpoint.id()]).await {
+                tracing::debug!("drive {key}: record {}: {e:#}", h.fmt_short());
+            }
+        }
+        tracing::info!("drive {key}: {} records were missing their content, fetched from this Mac", missing.len());
+    }
     crate::prune::once(drive).await?;
 
     let stories = drive.catalog.stories().await?;
@@ -152,7 +164,6 @@ async fn round(mac: &Vault, drive: &Vault, cfg: &Config) -> anyhow::Result<()> {
     let (wanted_n, wanted_bytes) = (wanted.len(), wanted.iter().map(|m| m.size).sum::<u64>());
     // who serves it: this Mac beside it (the server keeps its copies in Object Storage, not on iroh)
     let providers = vec![mac.endpoint.id()];
-    let downloader = drive.store.downloader(&drive.endpoint);
     let (mut held, mut held_bytes, mut errors) = (0usize, 0u64, Vec::new());
     for m in wanted {
         let hash: iroh_blobs::Hash = m.hash.parse()?;
@@ -177,7 +188,7 @@ async fn round(mac: &Vault, drive: &Vault, cfg: &Config) -> anyhow::Result<()> {
         s.now = if done { "complete: every file of its stories here, verified".into() } else { format!("{} files still to come", wanted_n - held) };
         s.errors = errors.into_iter().take(10).collect();
     });
-    tracing::info!("drive {key}: {held}/{wanted_n} files held ({:.2} GB)", held_bytes as f64 / 1e9);
+    tracing::info!("drive {key}: {held}/{wanted_n} files held ({:.2} GB) · {} stories name it, of {} · {} files described", held_bytes as f64 / 1e9, mine.len(), stories.len(), all.len());
     Ok(())
 }
 
