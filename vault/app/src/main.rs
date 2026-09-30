@@ -13,7 +13,7 @@ mod local;
 mod mcp;
 mod models;
 mod proxies;
-mod prune;
+mod keep;
 mod render;
 mod sound;
 mod sources;
@@ -435,8 +435,8 @@ fn main() {
             }
             // and every external drive that is a vault device of its own, kept complete for its stories (drives.rs)
             tauri::async_runtime::spawn(drives::start(app.handle().clone(), vault.clone()));
-            // and deleted files let go of here, their bytes pruned by iroh's garbage collection (prune.rs)
-            tauri::async_runtime::spawn(prune::sweep(vault.clone()));
+            // and what this Mac keeps (avenSSD): its stories' files fetched, pinned and announced, the rest let go of (keep.rs)
+            tauri::async_runtime::spawn(keep::sweep(vault.clone()));
             // and the render queue: this Mac is the render worker — films and hero frames, natively (render.rs)
             tauri::async_runtime::spawn(render::sweep(app.handle().clone(), vault.clone()));
             let (handle, v) = (app.handle().clone(), vault.clone());
@@ -472,7 +472,7 @@ fn main() {
             sync::vault_copies,
             mcp::mcp_info,
             asks::asks_open,
-            drives::drives_status,
+            keep::stores_status,
             asks::ask_answer,
             vault_status,
             vault_list,

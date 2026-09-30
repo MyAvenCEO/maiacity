@@ -10,6 +10,7 @@
 //!   VAULT_DATA         the peer's small state (catalog replica, identity)          default /data
 //!   VAULT_PORT         the iroh UDP port (open in the firewall)                    default 7400
 //!   VAULT_PUBLIC_IP    the server's public IPv4, so devices dial it directly
+//!   VAULT_IROH_CACHE_GB  how much of the bucket the iroh store keeps to serve over iroh (cold.rs)  default 20
 //!   VAULT_RELAY_URL    the relay as devices reach it                               default https://api.maia.city
 //!   VAULT_HTTP         the gateway (Caddy: /vault/*)                               default 0.0.0.0:3341
 //!   VAULT_RELAY_HTTP   the relay's plain-HTTP port (Caddy: /relay, /generate_204)  default 0.0.0.0:3340
@@ -17,6 +18,7 @@
 //!   S3_ENDPOINT, S3_REGION, S3_BUCKET, S3_ACCESS_KEY, S3_SECRET_KEY
 
 mod allow;
+mod cold;
 mod db;
 mod gateway;
 mod log;
@@ -82,6 +84,8 @@ async fn main() -> Result<()> {
             port: env_or("VAULT_PORT", "7400").parse().context("VAULT_PORT")?,
             relay: relay_url.clone(),
             public_ip: std::env::var("VAULT_PUBLIC_IP").ok().and_then(|ip| ip.parse().ok()),
+            s3: s3.clone(),
+            cache_bytes: (env_or("VAULT_IROH_CACHE_GB", "20").parse::<f64>().context("VAULT_IROH_CACHE_GB")? * 1e9) as u64,
         },
         allow.clone(),
     )

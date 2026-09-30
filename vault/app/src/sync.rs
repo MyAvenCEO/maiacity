@@ -6,13 +6,12 @@
 //! Storage. What only the server holds (a web upload, a file from another Mac that went offline) comes down from its
 //! gateway and is checked against its hash before the store takes it.
 
-use std::{path::PathBuf, sync::Arc, time::Duration};
+use std::{sync::Arc, time::Duration};
 
-use iroh_blobs::{BlobFormat, Hash, api::{blobs::AddPathOptions, proto::{BlobStatus, ImportMode}}};
+use iroh_blobs::{Hash, api::proto::BlobStatus};
 use serde::Serialize;
 use serde_json::json;
-use tauri::{AppHandle, Emitter, State};
-use tokio::io::AsyncWriteExt;
+use tauri::{AppHandle, State};
 use vault_core::{Join, Vault};
 
 use crate::{App, Res, auth::{self, Auth}, err, gate};
@@ -66,10 +65,6 @@ pub async fn connect_as(vault: &Vault, auth: &Auth, label: &str) -> Res<Network>
         })
         .unwrap_or_default();
     let count = devices.len();
-    if let Some(author) = join["author"].as_str() {
-        // kept beside the vault: which author's entries are Object Storage's, known offline too
-        std::fs::write(vault.dir.join("server.author"), author).ok();
-    }
     if let Some(server) = join["server"].as_str() {
         *SERVER.lock().unwrap() = server.to_string();
     }
@@ -77,6 +72,12 @@ pub async fn connect_as(vault: &Vault, auth: &Auth, label: &str) -> Res<Network>
         .join(Join { ticket: ticket.parse().map_err(err)?, relay: relay.parse().map_err(err)?, devices })
         .await
         .map_err(err)?;
+    // which author's entries are Object Storage's: a record of the catalog (`store/hetzner`), known offline too
+    if let (Some(author), Some(server)) = (join["author"].as_str(), join["server"].as_str()) {
+        let record = json!({ "author": author, "node": server });
+        vault.catalog.put_store_record("hetzner", &record).await.map_err(err)?;
+    }
+    std::fs::remove_file(vault.dir.join("server.author")).ok();
     Ok(Network {
         node: me,
         server: join["server"].as_str().map(String::from),
@@ -113,7 +114,7 @@ pub fn vault_transfers(app: State<'_, App>) -> Res<Vec<Moving>> {
             "avenSSD".to_string()
         } else if !server.is_empty() && to == server {
             "hetzner".to_string()
-        } else if let Some(name) = crate::drives::name_of(to) {
+        } else if let Some(name) = crate::keep::name_of(to) {
             name
         } else {
             format!("device {}", &to[..to.len().min(10)])
@@ -149,7 +150,8 @@ pub struct Copies {
 /// The files Object Storage holds: the server author's `blobs/<hash>` entries in this Mac's replica of the catalog.
 /// None until this Mac has joined once (it learns which author is the server's then).
 pub async fn held_by_server(v: &Vault) -> Option<std::collections::HashSet<String>> {
-    let author: iroh_docs::AuthorId = std::fs::read_to_string(v.dir.join("server.author")).ok()?.trim().parse().ok()?;
+    let record = v.catalog.store_record("hetzner").await.ok()??;
+    let author: iroh_docs::AuthorId = record["author"].as_str()?.parse().ok()?;
     v.catalog.held_by(author).await.ok()
 }
 
@@ -202,8 +204,8 @@ fn daytime() -> bool {
     (8..22).contains(&hour)
 }
 
-/// Keep this Mac complete: every file the catalog names that is not here and that the server holds comes down from
-/// the gateway, is checked against its hash, and only then goes into the store. Runs in the background.
+/// Keep this Mac on the vault's network: joined (again after a restart or a lost network), the relay healed, the uploads
+/// paced by the time of day. Its files come over iroh by the keep pass (keep.rs) — never over HTTPS.
 pub async fn keep_complete(handle: AppHandle, vault: Arc<Vault>) {
     use tauri::Manager;
     loop {
@@ -228,75 +230,5 @@ pub async fn keep_complete(handle: AppHandle, vault: Arc<Vault>) {
                 tracing::info!("upload link: {l}");
             }
         }
-        // local work first: nothing is fetched while an ingest or a proxy runs
-        if !vault.hold.now().is_empty() {
-            continue;
-        }
-        let Ok(files) = auth.get_ok("GET", "/api/vault/files", None).await else { continue };
-        for f in files.as_array().cloned().unwrap_or_default() {
-            if !vault.hold.now().is_empty() {
-                break;
-            }
-            let (Some(hex), true) = (f["hash"].as_str(), f["stored"].as_bool().unwrap_or(false)) else { continue };
-            let Ok(hash) = hex.parse::<Hash>() else { continue };
-            if matches!(vault.store.blobs().status(hash).await, Ok(BlobStatus::Complete { .. })) {
-                continue;
-            }
-            match fetch_from_gateway(&vault, &auth, hash).await {
-                Ok(()) => {
-                    handle.emit("vault-sync", json!({ "hash": hex, "here": "verified" })).ok();
-                }
-                Err(e) => tracing::warn!("{hex}: {e}"),
-            }
-        }
     }
-}
-
-pub(crate) async fn fetch_from_gateway(vault: &Vault, auth: &Auth, hash: Hash) -> Result<(), String> {
-    let key = auth::load_key_pub().ok_or("not signed in")?;
-    let url = format!("{}/vault/files/{}", auth::api_base(), hash.to_hex());
-    let mut res = auth.http().get(url).bearer_auth(key).send().await.map_err(err)?;
-    if !res.status().is_success() {
-        return Err(format!("gateway answered {}", res.status()));
-    }
-    let landing: PathBuf = vault.ingest_dir().join(format!("{}.down", hash.to_hex()));
-    let mut file = tokio::fs::File::create(&landing).await.map_err(err)?;
-    let mut hasher = blake3::Hasher::new();
-    // coming down to this Mac's store: followed like every other transfer
-    let size = res.content_length().unwrap_or(0);
-    let moving = &vault.transfers;
-    moving.update(hash, "avenSSD", |t| (t.size, t.sent, t.done, t.aborted, t.ended) = (size, 0, false, false, None));
-    let mut got = 0u64;
-    while let Some(chunk) = match res.chunk().await {
-        Ok(c) => c,
-        Err(e) => {
-            moving.update(hash, "avenSSD", |t| (t.aborted, t.ended) = (true, Some(std::time::Instant::now())));
-            return Err(err(e));
-        }
-    } {
-        hasher.update(&chunk);
-        file.write_all(&chunk).await.map_err(err)?;
-        got += chunk.len() as u64;
-        moving.update(hash, "avenSSD", |t| t.sent = got);
-    }
-    moving.update(hash, "avenSSD", |t| (t.done, t.ended) = (true, Some(std::time::Instant::now())));
-    file.sync_all().await.map_err(err)?;
-    drop(file);
-    // the name is the hash: anything else is refused
-    if Hash::from(*hasher.finalize().as_bytes()) != hash {
-        tokio::fs::remove_file(&landing).await.ok();
-        return Err("the bytes from the gateway do not match their hash".into());
-    }
-    let tag = vault
-        .store
-        .blobs()
-        .add_path_with_opts(AddPathOptions { path: landing.clone(), format: BlobFormat::Raw, mode: ImportMode::Copy })
-        .with_named_tag(format!("vault/{}", hash.to_hex()))
-        .await
-        .map_err(err)?;
-    tokio::fs::remove_file(&landing).await.ok();
-    if tag.hash != hash {
-        return Err("the store disagrees with the hash".into());
-    }
-    Ok(())
 }
