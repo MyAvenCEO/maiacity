@@ -7,7 +7,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { command } from '$lib/native';
-	import { CLASSES, gb, tiersOf, type Story, type StoryView } from './vault';
+	import { CLASSES, className, gb, tiersOf, type Story, type StoryView } from './vault';
 
 	let { chosen = $bindable(null), list = $bindable([]) }: { chosen?: string | null; list?: StoryView[] } = $props();
 
@@ -109,7 +109,7 @@
 			</div>
 			<div class="rules">
 				{#each CLASSES as c (c)}
-					<span><b>{c}</b> {tiersOf(editing.rules[c]).join(' + ')}</span>
+					<span><b>{className(c, 2)}</b> {tiersOf(editing.rules[c]).join(' + ')}</span>
 				{/each}
 			</div>
 			<div class="actions">

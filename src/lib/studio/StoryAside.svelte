@@ -7,7 +7,7 @@
 	import { onMount } from 'svelte';
 	import { listMedia, listVaultDevices, revokeVaultDevice, type MediaItem, type VaultDevice } from '$lib/auth/client';
 	import { command } from '$lib/native';
-	import { CLASSES, TIERS, gb, type Copies, type Moving, type Network, type StoryView, type VaultStatus } from './vault';
+	import { CLASSES, TIERS, className, gb, type Copies, type Moving, type Network, type StoryView, type VaultStatus } from './vault';
 
 	let { story }: { story: StoryView | null } = $props();
 
@@ -82,7 +82,7 @@
 	<h3>{story.title}</h3>
 	{#if story.description && !story.inbox}<p class="hook">{story.description}</p>{/if}
 	<p class="count">
-		{story.files} files · {gb(story.bytes)}{#each held as c (c)}<span> · {story.classes[c][0]} {c}</span>{/each}
+		{story.files} files · {gb(story.bytes)}{#each held as c (c)}<span> · {story.classes[c][0]} {className(c, story.classes[c][0])}</span>{/each}
 	</p>
 {/if}
 

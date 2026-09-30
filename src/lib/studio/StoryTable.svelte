@@ -11,7 +11,7 @@
 	import { command } from '$lib/native';
 	import { profileInfo } from './color.js';
 	import { analysisState, hasSound, stepOpen, transcriptState, type Step } from './transcript.js';
-	import { BY_HAND, CLASSES, TIERS, gb, proxyState, vaultUrl, type Making, type Copies, type FileClass, type Moving, type StoryView } from './vault';
+	import { BY_HAND, CLASSES, TIERS, className, gb, proxyState, vaultUrl, type Making, type Copies, type FileClass, type Moving, type StoryView } from './vault';
 
 	let {
 		story,
@@ -270,7 +270,7 @@
 			<div class="chips">
 				<button class:on={only === 'all'} onclick={() => (only = 'all')}>all {mine.length}</button>
 				{#each CLASSES as c (c)}
-					<button class:on={only === c} onclick={() => (only = c)}>{c} {mine.filter((m) => classOf(m) === c).length}</button>
+					<button class:on={only === c} onclick={() => (only = c)}>{className(c)} {mine.filter((m) => classOf(m) === c).length}</button>
 				{/each}
 			</div>
 			<label><input type="checkbox" bind:checked={incomplete} /> only files still missing a copy</label>
@@ -291,11 +291,11 @@
 						value=""
 						onchange={(e) => {
 							const c = e.currentTarget.value;
-							if (c) pending = { kind: 'class', to: c, label: `Make ${selected.length} file${selected.length === 1 ? '' : 's'} ${c}` };
+							if (c) pending = { kind: 'class', to: c, label: `Make ${selected.length} file${selected.length === 1 ? '' : 's'} ${className(c)}` };
 						}}
 					>
 						<option value="">class…</option>
-						{#each BY_HAND as c (c)}<option value={c}>{c}</option>{/each}
+						{#each BY_HAND as c (c)}<option value={c}>{className(c)}</option>{/each}
 					</select>
 				</span>
 			{/if}
@@ -405,7 +405,7 @@
 							</td>
 							<td class="c step">{@render step(words(m), 'Words', m)}</td>
 							<td class="c step">{@render step(tags(m), 'Tags', null)}</td>
-							<td><span class="cls {classOf(m)}">{classOf(m)}</span></td>
+							<td><span class="cls {classOf(m)}">{className(classOf(m))}</span></td>
 							<td class="r">{gb(m.size)}</td>
 						</tr>
 						{/if}

@@ -8,6 +8,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { command, native } from '$lib/native';
+	import { className } from '$lib/studio/vault';
 
 	type AskFile = {
 		hash: string;
@@ -33,7 +34,7 @@
 
 	const size = (b: number) =>
 		b >= 1e9 ? `${(b / 1e9).toFixed(1)} GB` : b >= 1e6 ? `${(b / 1e6).toFixed(1)} MB` : `${Math.max(1, Math.round(b / 1e3))} KB`;
-	const what = (f: AskFile) => [f.role, f.class, f.kind].filter((x) => x && x !== 'default').join(' · ');
+	const what = (f: AskFile) => [f.role, className(f.class ?? 'default'), f.kind].filter(Boolean).join(' · ');
 
 	onMount(() => {
 		if (!native()) return;
@@ -77,7 +78,7 @@
 						{@const added = ask.after[c].filter((s) => !ask.before[c].includes(s))}
 						{@const gone = ask.before[c].filter((s) => !ask.after[c].includes(s))}
 						<li class="rule">
-							<span class="name">{c === 'default' ? 'working files' : `${c}s`}</span>
+							<span class="name">{className(c, 2)}</span>
 							<span class="stores">
 								{#each ask.after[c] as st (st)}<b class:added={added.includes(st)}>{st}</b>{/each}
 								{#each gone as st (st)}<s>{st}</s>{/each}
