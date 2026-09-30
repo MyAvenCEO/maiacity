@@ -83,12 +83,19 @@ Status: ✅ done · 🔨 in progress · ⏳ next · 💤 deferred on purpose.  L
     profile, worker file proxies, the worker's preview LUTs and /api/film/luts, the viewer's formula fallback); ✅ the
     ACES 2.0 output transform native (`aces2.rs`): within 0.07 of a 10-bit code of OCIO 2.5.2 (3158 points), the
     worker's baked LUT to median 0.006 — the Mac bakes every viewer LUT (`color_lut`)
-    c) 🔨 render natively (`vault-render`): Metal compositing, grades, output transform, world plates, audio mix,
-    EBU R128 loudness, captions, the render report — then the bun/ffmpeg worker goes
+    c) 🔨 render natively (`vault-render`): ✅ Metal compositing, grades, output transform, world plates, audio mix,
+    EBU R128 loudness, captions, the render report; ✅ EXR sequences frame by frame from their tar; ✅ **the Mac app is
+    the render worker** (`app/src/render.rs`): claims `render` and `frame` jobs with its key, shares the proxies' turn
+    (one heavy GPU job, after an ingest, memory normal, uploads held: `hold: render`), world plates at each shape's size
+    in its own unseen world (cached in `<vault>/plates`), deliveries into the vault (class delivery, the timeline's
+    story), the same job report (checked against `reportRender` by `vault_render::api_accepts`), levelled to
+    `LOUDNESS` (−14 LUFS / −1 dBTP); ✅ the bun/ffmpeg worker is gone (worker.ts, picture/plates/qc/sources.mjs,
+    color/ffmpeg.mjs, bake.py, measure.mjs, `bun film`); ⏳ tested end to end on Day 19 (15)
     d) ✅ world-shot proxies in the app's own WebView (WebGL on Metal): film-mode frames, 10-bit ACEScct, over IPC into
     a native HEVC writer; tested (shot 0ad195cd v1); the worker's shot-proxy path and the API's queueing are gone;
     later: the world on three's WebGPURenderer (4 custom GLSL shaders to port)
-15. ⏳ **Render test run**: Day 19 world timeline, an Apple Log 2 clip, Edit → Lock → Grade → Render — natively.
+15. ⏳ **Render test run**: Day 19 world timeline, an Apple Log 2 clip, Edit → Lock → Grade → Render — natively, the
+    Mac app taking the job (Render tab or MCP `render_queue`), plates rendered in its world, deliveries in the vault.
 21. ✅ **Automatic proxies**: ✅ every video original gets one, all in ACEScct: probed, its colour told (the
     sample description's `logs` atom too — Apple Log 2 from the Blackmagic app), YCbCr → journey → Lanczos on the GPU,
     HEVC Main10 in hardware, 1.7× real time for 4K on this Mac, mean error 0.0002 ACEScct against the CPU reference;
@@ -99,8 +106,9 @@ Status: ✅ done · 🔨 in progress · ⏳ next · 💤 deferred on purpose.  L
     with the app's key) with tools: vault_status, library_list, library_copies, ingest, library_describe
     (enrichment), media_probe, media_proxy (queues the same pipeline), timelines_list, timeline_save, render_queue, renders_list, content_list,
     content_create, content_save (draft → publish), api_call; ✅ the connect command in the Devices panel;
-    ✅ tested over MCP (401 without the token; 15 tools; vault_status and library_list answer); ⏳ native grade/render
-    tools with 14b–c.
+    ✅ tested over MCP (401 without the token; 15 tools; vault_status and library_list answer); ✅ grade_clip,
+    grade_film; ✅ render_queue / renders_list rendered natively by the app itself, render_frame (a hero frame at t
+    and shape); ⏳ tested over MCP end to end with 15.
 22. ⏳ A `main` release after each step; the last when everything is in.
 
 ## Deferred on purpose

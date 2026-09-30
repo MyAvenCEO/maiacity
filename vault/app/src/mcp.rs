@@ -153,6 +153,16 @@ pub struct GradeFilmArgs {
 }
 
 #[derive(Deserialize, schemars::JsonSchema)]
+pub struct FrameArgs {
+    /// the timeline's id
+    pub timeline: String,
+    /// the moment on the timeline, in seconds from 0
+    pub t: f64,
+    /// the delivery shape: 16:9 (the default, 3840×2160), 9:16, 1:1 or 4:5
+    pub shape: Option<String>,
+}
+
+#[derive(Deserialize, schemars::JsonSchema)]
 pub struct StoryArgs {
     /// the story to change; none: a new story
     pub id: Option<String>,
@@ -400,14 +410,24 @@ impl Studio {
         text(r.await)
     }
 
-    #[tool(description = "Queue a timeline's render (every delivery shape, colour-managed, QC'd)")]
+    #[tool(
+        description = "Queue a timeline's final render — rendered natively on this Mac by maiaCITY Studio (Core Image on Metal, VideoToolbox; world clips as ACEScct plates in its own world): every delivery shape (16:9 4K HEVC master + 1080 H.264, 9:16, 1:1, 4:5), colour-managed through ACES 2.0, levelled to −14 LUFS, QC'd, into the vault as deliveries and onto the calendar. One render per timeline at a time; follow it with renders_list."
+    )]
     async fn render_queue(&self, Parameters(a): Parameters<IdArg>) -> String {
         text(self.api("POST", &format!("/api/timelines/{}/renders", a.id), None).await)
     }
 
-    #[tool(description = "A timeline's renders and their deliveries")]
+    #[tool(description = "A timeline's renders (and hero frames) as this Mac renders them: status, progress, note, the film's hash, the report (colour transforms, conform, plates, QC and loudness per delivery)")]
     async fn renders_list(&self, Parameters(a): Parameters<IdArg>) -> String {
         text(self.api("GET", &format!("/api/timelines/{}/renders", a.id), None).await)
+    }
+
+    #[tool(
+        description = "Queue a hero frame, rendered natively on this Mac: one frame of a timeline at t seconds in one delivery shape, at that delivery's full resolution through the whole chain (conformed original or world plate → its journey into ACEScct → framing → clip grade → film look → ACES 2.0 output), without captions, as a 16-bit PNG in the vault (role:frame) — for grading against. Follow it with renders_list: the job's output_hash is the PNG."
+    )]
+    async fn render_frame(&self, Parameters(a): Parameters<FrameArgs>) -> String {
+        let shape = a.shape.unwrap_or_else(|| "16:9".into());
+        text(self.api("POST", &format!("/api/timelines/{}/frames", a.timeline), Some(json!({ "t": a.t, "shape": shape }))).await)
     }
 
     // ── the content board: deliveries per platform, draft and publish ──
@@ -462,8 +482,9 @@ impl ServerHandler for Studio {
     fn get_info(&self) -> ServerConfig {
         ServerConfig::new(ServerCapabilities::builder().enable_tools().build()).with_instructions(
             "maiaCITY Studio: the media vault (every file by its BLAKE3 hash) and the whole studio — ingest, library \
-             enrichment, probes and proxies, timelines (edit, audio), grades and renders, and the content board's \
-             deliveries in draft and publish mode. Files are named by hash only.",
+             enrichment, probes and proxies, timelines (edit, audio), grades, renders and hero frames (rendered \
+             natively on this Mac), and the content board's deliveries in draft and publish mode. Files are named by \
+             hash only.",
         )
     }
 }
@@ -481,7 +502,7 @@ pub async fn serve(vault: Arc<Vault>, auth: Auth, handle: AppHandle) -> anyhow::
         let ok = req.headers().get("authorization").and_then(|v| v.to_str().ok()) == Some(format!("Bearer {token}").as_str());
         async move { if ok { Ok::<Response, StatusCode>(next.run(req).await) } else { Err(StatusCode::UNAUTHORIZED) } }
     };
-    // the MCP for agents; the plain vault routes for this Mac's own tools (the render worker) — one token for both
+    // the MCP for agents; the plain vault routes for this Mac's own tools (the film scripts) — one token for both
     let app = axum::Router::new().nest_service("/mcp", service).merge(files).layer(axum::middleware::from_fn(guard));
     let listener = tokio::net::TcpListener::bind(ADDR).await?;
     axum::serve(listener, app).await?;

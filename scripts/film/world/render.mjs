@@ -1,7 +1,8 @@
 // THE PLATE RENDERER — a world clip's frames, rendered offline at full quality in Sandbox 4's film mode, as a log
 // plate: ACEScct, 10-bit HEVC, bt709 matrix, tv range, tagged `comment=maiacity:color=acescct` (contract C4 in
-// scripts/film/PLAN.md). The render worker calls it for final plates and hero frames; a world shot's HD proxy is the Mac
-// app's (vault/app/src/world.rs), made from the same frames — `__film.capture` — in its own world, without Chrome.
+// scripts/film/PLAN.md), from the command line: shoot.mjs (plates and storyboard stills by hand) and the parity test
+// use it. The final render's plates and hero frames, and a world shot's HD proxy, are the Mac app's
+// (vault/app/src/world.rs), made from the same frames — `__film.capture` — in its own world, without Chrome.
 //
 //   import { renderPlate, openWorld } from './scripts/film/world/render.mjs';
 //   const { file, frames, ev, build, fingerprint } = await renderPlate({ spec, from: 0, to: 3.2, shape: '16:9',

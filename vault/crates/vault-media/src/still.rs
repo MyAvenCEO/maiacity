@@ -126,18 +126,54 @@ fn exr_members(tar: &mut std::fs::File) -> Result<Vec<Member>> {
     Ok(out)
 }
 
+/// An EXR frame sequence packed in a tar, read frame by frame straight from the tar (nothing unpacked): its `.exr`
+/// members in their numbered order. Its proxy is made through this, and the final render reads its frames with it.
+pub struct Sequence {
+    tar: std::fs::File,
+    members: Vec<Member>,
+}
+
+impl Sequence {
+    pub fn open(tar_path: &Path) -> Result<Self> {
+        let mut tar = std::fs::File::open(tar_path).with_context(|| format!("open {}", tar_path.display()))?;
+        let members = exr_members(&mut tar)?;
+        ensure!(!members.is_empty(), "the sequence holds no .exr frames");
+        Ok(Self { tar, members })
+    }
+
+    /// How many frames it holds (at least one).
+    pub fn len(&self) -> usize {
+        self.members.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.members.is_empty()
+    }
+
+    /// Frame `i`'s name in the tar.
+    pub fn name(&self, i: usize) -> &str {
+        &self.members[i].name
+    }
+
+    /// Frame `i`'s bytes (an OpenEXR file).
+    pub fn frame(&mut self, i: usize) -> Result<Vec<u8>> {
+        let m = self.members.get(i).with_context(|| format!("no frame {i} in a sequence of {}", self.members.len()))?;
+        self.tar.seek(SeekFrom::Start(m.at))?;
+        let mut bytes = vec![0u8; m.size as usize];
+        self.tar.read_exact(&mut bytes)?;
+        Ok(bytes)
+    }
+
+    /// Which frame is on screen `seconds` into the sequence at `fps` (the last one held after its end).
+    pub fn index_at(&self, seconds: f64, fps: f64) -> usize {
+        ((seconds.max(0.0) * fps + 1e-6).floor() as usize).min(self.members.len() - 1)
+    }
+}
+
 /// An EXR sequence's ACEScct proxy movie at `out` (HEVC Main10), at `fps`. `progress` gets 0…1.
 pub fn make_sequence_proxy(tar_path: &Path, out: &Path, profile: Option<&str>, fps: f64, progress: &mut dyn FnMut(f64)) -> Result<Proxy> {
-    let mut tar = std::fs::File::open(tar_path).with_context(|| format!("open {}", tar_path.display()))?;
-    let members = exr_members(&mut tar)?;
-    ensure!(!members.is_empty(), "the sequence holds no .exr frames");
-    let read = |tar: &mut std::fs::File, m: &Member| -> Result<Vec<u8>> {
-        tar.seek(SeekFrom::Start(m.at))?;
-        let mut bytes = vec![0u8; m.size as usize];
-        tar.read_exact(&mut bytes)?;
-        Ok(bytes)
-    };
-    let first = read(&mut tar, &members[0])?;
+    let mut seq = Sequence::open(tar_path)?;
+    let first = seq.frame(0)?;
     // the sequence's colour: as it was given (meta), else its first frame's header
     let profile = match profile {
         Some(p) => p.to_string(),
@@ -147,14 +183,14 @@ pub fn make_sequence_proxy(tar_path: &Path, out: &Path, profile: Option<&str>, f
     let (sw, sh) = crate::gpu::size_of(&*crate::gpu::load_image(&first)?);
     let (w, h) = proxy_size(sw, sh);
     let mut writer = FrameWriter::create(out, w, h, fps)?;
-    let total = members.len() as f64;
+    let total = seq.len() as f64;
     let mut packed = vec![0u8; (w * h * 4) as usize];
-    for (i, m) in members.iter().enumerate() {
-        let bytes = if i == 0 { first.clone() } else { read(&mut tar, m)? };
-        let image = crate::gpu::load_image(&bytes).with_context(|| format!("frame {}", m.name))?;
+    for i in 0..seq.len() {
+        let bytes = if i == 0 { first.clone() } else { seq.frame(i)? };
+        let image = crate::gpu::load_image(&bytes).with_context(|| format!("frame {}", seq.name(i)))?;
         let (fw, fh) = crate::gpu::size_of(&image);
         if (fw, fh) != (sw, sh) {
-            bail!("frame {} is {fw}×{fh}, the sequence {sw}×{sh}", m.name);
+            bail!("frame {} is {fw}×{fh}, the sequence {sw}×{sh}", seq.name(i));
         }
         let rgba = grader.still(&image, w, h)?;
         // x2bgr10le: red in the low ten bits, then green, then blue — FrameWriter's input
@@ -198,6 +234,37 @@ mod tests {
         assert_eq!(exr_profile(&header(&[("chromaticities", "chromaticities", chroma(EXR_PRIMARIES[1].1))])), Some("acescg"));
         assert_eq!(exr_profile(&header(&[("chromaticities", "chromaticities", chroma([0.68, 0.32, 0.265, 0.69, 0.15, 0.06, 0.3127, 0.329]))])), None);
         assert_eq!(exr_profile(b"not an exr"), None);
+    }
+
+    #[test]
+    fn a_sequence_is_read_frame_by_frame_in_its_numbered_order() {
+        // a ustar tar by hand: frames out of order, macOS's AppleDouble twin, and a file that is no frame
+        let mut tar = Vec::new();
+        for (name, body) in [("shot/0002.exr", &b"two"[..]), ("shot/._0001.exr", b"apple"), ("shot/0001.exr", b"one!"), ("shot/notes.txt", b"n"), ("shot/0003.exr", b"three")] {
+            let mut h = [0u8; 512];
+            h[..name.len()].copy_from_slice(name.as_bytes());
+            let size = format!("{:011o}\0", body.len());
+            h[124..136].copy_from_slice(size.as_bytes());
+            h[156] = b'0';
+            tar.extend_from_slice(&h);
+            tar.extend_from_slice(body);
+            tar.resize(tar.len().div_ceil(512) * 512, 0);
+        }
+        tar.extend_from_slice(&[0u8; 1024]);
+        let file = std::env::temp_dir().join(format!("seq-test-{}.tar", std::process::id()));
+        std::fs::write(&file, &tar).unwrap();
+        let mut seq = Sequence::open(&file).unwrap();
+        assert_eq!(seq.len(), 3);
+        assert_eq!(seq.name(0), "shot/0001.exr");
+        assert_eq!(seq.frame(0).unwrap(), b"one!");
+        assert_eq!(seq.frame(2).unwrap(), b"three");
+        assert!(seq.frame(3).is_err());
+        // at 24 fps: frame 0 until 1/24 s, the last one held after the end
+        assert_eq!(seq.index_at(0.0, 24.0), 0);
+        assert_eq!(seq.index_at(1.0 / 24.0, 24.0), 1);
+        assert_eq!(seq.index_at(0.09, 24.0), 2);
+        assert_eq!(seq.index_at(5.0, 24.0), 2);
+        std::fs::remove_file(&file).ok();
     }
 
     #[test]

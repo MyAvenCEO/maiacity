@@ -56,12 +56,12 @@
 </ul>
 
 {#if making.length}
-	<h4>Proxies</h4>
+	<h4>Proxies and renders</h4>
 	<ul>
 		{#each making as x (x.of)}
 			<li class="ended">
 				<span class="n">{x.name}</span>
-				<span class="d">→ ACEScct</span>
+				<span class="d">{x.of.startsWith('render:') ? '→ deliveries' : '→ ACEScct'}</span>
 				<span class="p">{x.stage === 'making' ? `${Math.floor(x.done * 100)}%` : x.stage}</span>
 			</li>
 		{/each}

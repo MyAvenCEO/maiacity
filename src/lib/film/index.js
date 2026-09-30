@@ -1,7 +1,8 @@
 // FILM MODE — Sandbox 4 as a film camera (/games/sandbox-4/?film). The page installs this before the world mounts;
 // it takes over the clocks (clock.js), then, once the world is up, offers window.__film (contract C3 in
-// scripts/film/PLAN.md) to whoever drives it: the studio (an iframe, frame by frame from the timeline's clock), the
-// plate renderer (scripts/film/world/render.mjs, through puppeteer) or a person at the console.
+// scripts/film/PLAN.md) to whoever drives it: the studio (an iframe, frame by frame from the timeline's clock), the Mac
+// app's unseen world (vault/app/src/world_driver.js: world shots' proxies and the final render's plates), the shoot
+// CLI (scripts/film/world/render.mjs, through puppeteer) or a person at the console.
 //
 //   await __film.ready(spec?)                          the world up, the shot's dome and set built, nothing streaming
 //   await __film.prepare(specs)                        every area, dome and set these shots need, built and kept

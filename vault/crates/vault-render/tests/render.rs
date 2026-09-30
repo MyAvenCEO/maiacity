@@ -228,6 +228,24 @@ fn the_master_and_its_copy() {
         assert!(d.qc.ok, "{}: {:?}", d.name, d.qc);
         assert_eq!(d.qc.frames, 30);
     }
+    // the job's result is one the API takes (reportRender, the calendar's deliveries) — once every file has its hash
+    let mut out = out;
+    assert!(out.job_result(&t).is_err(), "no hashes yet");
+    for (i, d) in out.deliveries.iter_mut().enumerate() {
+        d.hash = Some(format!("{i}").repeat(64));
+    }
+    let job = out.job_result(&t).unwrap();
+    vault_render::api_accepts(&job).unwrap();
+    assert_eq!(job["status"], "done");
+    assert_eq!(job["output_hash"], "1".repeat(64), "the studio plays the 1080 H.264 cut");
+    assert_eq!(job["deliveries"].as_array().unwrap().len(), 2);
+    assert!(job["report"]["color"]["transforms"].is_object() && job["report"]["sound"].is_object());
+    for bad in [json!({ "status": "finished" }), json!({ "output_hash": "film" }), json!({ "progress": 2 }), json!({ "report": [] })] {
+        assert!(vault_render::api_accepts(&bad).is_err(), "{bad}");
+    }
+    let mut odd = job.clone();
+    odd["deliveries"][0]["width"] = json!("wide");
+    assert!(vault_render::api_accepts(&odd).is_err());
     std::fs::remove_dir_all(dir).ok();
 }
 
@@ -316,7 +334,7 @@ fn world_plates_the_hook_and_a_hero_frame() {
     let asked = std::cell::RefCell::new(Vec::new());
     let plates = |c: &Clip, s: &Shape| -> Result<Option<Plate>> {
         asked.borrow_mut().push((c.id.clone(), s.aspect.to_string()));
-        Ok((c.shot.as_deref() == Some("s1") && s.aspect == "1:1").then(|| Plate { file: plate.clone(), key: Some("k1".into()), fingerprint: Some("f1".into()), reused: Some(false) }))
+        Ok((c.shot.as_deref() == Some("s1") && s.aspect == "1:1").then(|| Plate { file: plate.clone(), key: Some("k1".into()), fingerprint: Some("f1".into()), reused: Some(false), ..Default::default() }))
     };
     let mut opts = Options::new(dir.join("out"));
     opts.shapes = Some(vec!["1:1".into()]);
@@ -350,5 +368,114 @@ fn world_plates_the_hook_and_a_hero_frame() {
     let px = gpu.read(&still, 1080, 1080);
     let c = ((540 * 1080 + 540) * 4) as usize;
     assert!(near([px[c] as f64, px[c + 1] as f64, px[c + 2] as f64], code(GREEN), 0.02), "{:?}", &px[c..c + 3]);
+    std::fs::remove_dir_all(dir).ok();
+}
+
+/// A flat linear colour as an OpenEXR file, written by Core Image (unmanaged: the values as they are).
+fn exr_frame(c: [f32; 3]) -> Vec<u8> {
+    // a plain OpenEXR file by hand: scanlines, no compression, 32-bit float B, G, R (channels in name order), no
+    // chromaticities (so Rec.709 primaries, linear — as the OpenEXR specification reads a file without them)
+    let (w, h) = (64i32, 64i32);
+    let mut b = 20000630u32.to_le_bytes().to_vec();
+    b.extend_from_slice(&2u32.to_le_bytes());
+    let mut attr = |name: &str, kind: &str, data: &[u8]| {
+        b.extend_from_slice(name.as_bytes());
+        b.push(0);
+        b.extend_from_slice(kind.as_bytes());
+        b.push(0);
+        b.extend_from_slice(&(data.len() as u32).to_le_bytes());
+        b.extend_from_slice(data);
+    };
+    let mut ch = Vec::new();
+    for n in ["B", "G", "R"] {
+        ch.extend_from_slice(n.as_bytes());
+        ch.push(0);
+        ch.extend_from_slice(&2i32.to_le_bytes()); // FLOAT
+        ch.extend_from_slice(&[0, 0, 0, 0]); // pLinear, reserved
+        ch.extend_from_slice(&1i32.to_le_bytes());
+        ch.extend_from_slice(&1i32.to_le_bytes());
+    }
+    ch.push(0);
+    attr("channels", "chlist", &ch);
+    attr("compression", "compression", &[0]);
+    let window: Vec<u8> = [0, 0, w - 1, h - 1].iter().flat_map(|v: &i32| v.to_le_bytes()).collect();
+    attr("dataWindow", "box2i", &window);
+    attr("displayWindow", "box2i", &window);
+    attr("lineOrder", "lineOrder", &[0]);
+    attr("pixelAspectRatio", "float", &1f32.to_le_bytes());
+    attr("screenWindowCenter", "v2f", &[0u8; 8]);
+    attr("screenWindowWidth", "float", &1f32.to_le_bytes());
+    b.push(0);
+    let line = 3 * w as usize * 4;
+    let table = b.len() + 8 * h as usize;
+    for y in 0..h as usize {
+        b.extend_from_slice(&((table + y * (8 + line)) as u64).to_le_bytes());
+    }
+    for y in 0..h {
+        b.extend_from_slice(&y.to_le_bytes());
+        b.extend_from_slice(&(line as i32).to_le_bytes());
+        for v in [c[2], c[1], c[0]] {
+            for _ in 0..w {
+                b.extend_from_slice(&v.to_le_bytes());
+            }
+        }
+    }
+    b
+}
+
+/// A ustar tar of the given members (the reader needs names, sizes and the type flag).
+fn tar(members: &[(String, Vec<u8>)]) -> Vec<u8> {
+    let mut out = Vec::new();
+    for (name, body) in members {
+        let mut h = [0u8; 512];
+        h[..name.len()].copy_from_slice(name.as_bytes());
+        h[124..136].copy_from_slice(format!("{:011o}\0", body.len()).as_bytes());
+        h[156] = b'0';
+        out.extend_from_slice(&h);
+        out.extend_from_slice(body);
+        out.resize(out.len().div_ceil(512) * 512, 0);
+    }
+    out.extend_from_slice(&[0u8; 1024]);
+    out
+}
+
+#[test]
+fn an_exr_sequence_plays_at_its_own_rate_through_its_journey() {
+    let dir = scratch("sequence");
+    let gpu = Gpu::new().unwrap();
+    // four frames at 4 fps: red for half a second, then blue — in linear light
+    let (red, blue) = ([0.5f32, 0.05, 0.05], [0.05f32, 0.05, 0.5]);
+    let frames: Vec<(String, Vec<u8>)> = [red, red, blue, blue].iter().enumerate().map(|(i, c)| (format!("seq/{i:04}.exr"), exr_frame(*c))).collect();
+    let back = vault_render::gpu::to_origin(&vault_media::gpu::load_image(&frames[0].1).unwrap());
+    let px = gpu.read(&back, 64, 64);
+    assert!(near([px[0] as f64, px[1] as f64, px[2] as f64], red.map(f64::from), 0.01), "the EXR reads back as {:?}", &px[..4]);
+    let file = dir.join("seq.tar");
+    std::fs::write(&file, tar(&frames)).unwrap();
+    let m = Media { hash: "s".into(), mime: "application/x-tar".into(), kind: "other".into(), title: "seq".into(), meta: json!({ "sequence": "exr", "fps": 4 }), ..Default::default() };
+    let lib = Lib(HashMap::from([("s".to_string(), (m, file))]));
+    let t: Timeline = serde_json::from_value(json!({
+        "id": "t5", "name": "Sequence", "aspect": "1:1",
+        "clips": [{ "id": "c1", "track": "V1", "start": 0, "in": 0, "dur": 1, "vol": 1, "hash": "s" }]
+    }))
+    .unwrap();
+    let mut opts = Options::new(dir.join("out"));
+    opts.shapes = Some(vec!["1:1".into()]);
+    let no_plates = |_: &Clip, _: &Shape| -> Result<Option<Plate>> { Ok(None) };
+    let out = render(&t, &lib, &no_plates, &Lut3d::identity(33), &opts, &mut |_, _| {}).unwrap();
+    assert!(out.deliveries[0].qc.ok, "{:?}", out.deliveries[0].qc);
+    assert!(out.color.transforms.contains_key("idt-linear-rec709"), "{:?}", out.color.transforms);
+    let f = &out.deliveries[0].file;
+    let (a, b) = (pixel(f, 0.3), pixel(f, 0.7));
+    assert!(a[0] > a[2] + 0.02 && b[2] > b[0] + 0.02, "{a:?} then {b:?}");
+    // a hero frame: the frame on screen, exactly through the journey (no fades)
+    let j = vault_media::cst::journey("linear-rec709").unwrap();
+    for (at, c) in [(0.1, red), (0.8, blue)] {
+        let png = dir.join("frame.png");
+        hero_frame(&t, &lib, &no_plates, &Lut3d::identity(33), at, "1:1", &png).unwrap();
+        let px = gpu.read(&gpu.still(&png).unwrap(), 1080, 1080);
+        let i = ((540 * 1080 + 540) * 4) as usize;
+        let want = j.apply(c.map(f64::from));
+        assert!(near([px[i] as f64, px[i + 1] as f64, px[i + 2] as f64], want, 0.01), "at {at}: {:?} not {want:?}", &px[i..i + 3]);
+    }
     std::fs::remove_dir_all(dir).ok();
 }

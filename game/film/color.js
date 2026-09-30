@@ -2,10 +2,12 @@
 // out: ACEScct (ACES AP1 primaries, the ACEScct log curve), processed in float. Every source is brought into it by its
 // input transform (IDT), graded in it, and taken out by one output transform (ODT) to what every delivery shows:
 // Rec.709, BT.1886 gamma 2.4, SDR (ACES 2.0 output transform). The transforms are configs (game/film/transforms.js):
-// OpenColorIO's ACES 2.0 studio config, or exact maths. LUTs are made from them only while rendering (the worker,
-// scripts/film/color/bake.py), never committed; media stays in its own encoding for ever.
+// OpenColorIO's ACES 2.0 studio config, or exact maths. LUTs are made from them only while rendering — natively on
+// the Mac (vault-media's cst and aces2, the final render in vault-render) — never committed; media stays in its own
+// encoding for ever.
 //
-// Shared by the render worker (Bun), the film scripts (Node), Sandbox 4's film camera and the studio (browser).
+// Shared by the film scripts (Node), Sandbox 4's film camera and the studio (browser); the Mac's render is its twin in
+// Rust.
 
 /**
  * Linear light with Rec.709 primaries (D65) — what the world renders, and what Rec.709 video and sRGB pictures decode

@@ -63,7 +63,7 @@ Every shot is a slice of a move that was already going and goes on after it:
 
 **Sound matches the picture:** you hear the geese when you see them (`sound.md`).
 
-> The render worker (`scripts/film/worker.ts`) cuts hard (`XF = 0`): shots that meet on V1 never crossfade.
+> The render (the Mac app, `vault/crates/vault-render`) cuts hard: shots that meet on V1 never crossfade.
 > `scripts/film/assemble.mjs` is the older, pre-studio cut and still dissolves — don't use it for new films. Still
 > check every render for black frames.
 
@@ -75,7 +75,7 @@ Every shot is a slice of a move that was already going and goes on after it:
 - Film mode captures **log, never graded**: scene-linear half-float, metered like a camera (middle grey 18% on the
   lower 60% of the frame; `exposure.stops` over or under), shutter blur in linear light, 1.5× oversampled, then
   ACEScct 10-bit. No tone mapping, no contrast, no vignette — the look is made in the studio's Grade tab.
-- A shot is a record (`game/film/shot.js`): the studio plays it live on the timeline and the worker renders the plate
+- A shot is a record (`game/film/shot.js`): the studio plays it live on the timeline and the Mac app renders the plate
   only at the final render.
 
 **Camera helpers** (`scripts/film/camera.mjs`; a pose is `[x, y, z, yaw, pitch]`):

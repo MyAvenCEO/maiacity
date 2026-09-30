@@ -449,7 +449,7 @@ export class Studio {
 		this.lutFrom = this.luts[ODT] ? 'mac' : 'none';
 	}
 
-	/** The render worker's queue (C6, `GET /api/film/jobs`) — renders only: the Mac makes the proxies. */
+	/** The render queue (C6, `GET /api/film/jobs`), rendered by the Mac app — renders and hero frames. */
 	async refreshJobs() {
 		try {
 			const all = await listJobs({ limit: 100 });
@@ -1077,7 +1077,7 @@ export class Studio {
 		}
 	}
 
-	// ── exporting: a job for the render worker (bun film worker); the studio shows how it goes ──
+	// ── exporting: a job the Mac app renders natively (vault/app/src/render.rs); the studio shows how it goes ──
 	async refreshRenders() {
 		if (!this.current) return;
 		const id = this.current.id;

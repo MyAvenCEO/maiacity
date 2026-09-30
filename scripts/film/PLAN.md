@@ -1,11 +1,23 @@
 # The post pipeline: log, proxies, a world that plays on the timeline, and Edit → Grade → Render
 
-The execution plan for turning the studio (`/app/studio`) and the render worker (`bun film worker`) into a real
-post-production pipeline, the way film is finished in the world: one standard colour space, lightweight log proxies
+The execution plan for turning the studio (`/app/studio`) and the render worker (then `bun film worker`, now the Mac
+app) into a real post-production pipeline, the way film is finished in the world: one standard colour space, log proxies
 for editing, originals swapped in for grading, and a final render at the end. Sandbox 4 stops pre-rendering baked,
 pre-graded clips; its shots become data that the timeline plays live and the worker renders only at the end.
 
 Written 2026-09-29 from the design conversation. Each milestone lists its tasks and when it is done.
+
+**Now (2026-09-30): the render is native, and the Mac app is the render worker.** The bun/ffmpeg worker
+(`scripts/film/worker.ts`, `picture.mjs`, `plates.mjs`, `qc.mjs`, `sources.mjs`, `color/ffmpeg.mjs`, `color/bake.py`,
+`color/measure.mjs`, `bun film worker`) is gone. maiaCITY Studio claims the jobs of this plan's queue (C6: `render`,
+`frame`; leftover `proxy`/`lut` rows closed as history) with its own key and renders them with
+`vault/crates/vault-render` — Core Image on Metal, VideoToolbox, AVFoundation, Core Text; the colour from vault-media's
+`cst` (journeys into ACEScct) and `aces2` (the ACES 2.0 output transform, 129³); EBU R 128 loudness levelled to −14
+LUFS / −1 dBTP; the same deliveries, QC and job report (see `vault/app/src/render.rs`). World plates (C4) are rendered
+by the app's own unseen world (`vault/app/src/world.rs`, `world_driver.js`), cached in `<vault>/plates`; hero frames
+likewise. `scripts/film/world/render.mjs` stays for `shoot.mjs` (plates and storyboard stills by hand) and the parity
+test. Wherever this plan says "the worker", "ffmpeg filters" or "bake.py" below, it describes how it was first built;
+the maths is the same in Rust (vault/PLAN.md, 14b–c).
 
 **State (2026-09-29, PR #9):** M0–M9 built and merged into one branch; checks green (api 100 tests, svelte-check,
 film typecheck). End-to-end run on a local stack: an Apple Log 2 HEVC original (detected "unknown", set to

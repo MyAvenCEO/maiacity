@@ -25,7 +25,7 @@
 	const secs = (x) => (typeof x === 'number' && x > 0 ? `${x.toFixed(1)} s` : '');
 	/** A QC report in whatever shape the worker gives it: { ok, checks: { name: ok | { ok, note } } }, a list, or a plain flag. */
 	/**
-	 * A QC report in whatever shape the worker gives it. Stream A's worker (scripts/film/qc.mjs) keeps, with every
+	 * A QC report in whatever shape the render gives it. The Mac's render (vault-render's qc) keeps, with every
 	 * delivery that passed, `{ frames, seconds, bitDepth, tags, bitrate, warnings }` (a failed QC stops the render);
 	 * other shapes — `{ ok, checks: { name: ok | { ok, note } } }`, a list, a flag — show as they come.
 	 * @param {any} q @returns {Qc | null}

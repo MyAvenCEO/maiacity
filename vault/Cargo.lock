@@ -3303,6 +3303,7 @@ dependencies = [
  "trash",
  "vault-core",
  "vault-media",
+ "vault-render",
 ]
 
 [[package]]

@@ -7,6 +7,7 @@ mod auth;
 mod local;
 mod mcp;
 mod proxies;
+mod render;
 mod sources;
 mod stories;
 mod sync;
@@ -396,6 +397,8 @@ fn main() {
             tauri::async_runtime::spawn(proxies::sweep(app.handle().clone(), vault.clone()));
             // and every world shot a timeline plays, rendered here in the studio's own world (world.rs)
             tauri::async_runtime::spawn(world::sweep(app.handle().clone(), vault.clone()));
+            // and the render queue: this Mac is the render worker — films and hero frames, natively (render.rs)
+            tauri::async_runtime::spawn(render::sweep(app.handle().clone(), vault.clone()));
             let (handle, v) = (app.handle().clone(), vault.clone());
             let auth = app.state::<auth::Auth>().inner().clone();
             tauri::async_runtime::spawn(async move {
