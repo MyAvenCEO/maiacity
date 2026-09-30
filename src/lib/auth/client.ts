@@ -244,7 +244,8 @@ export type Timeline = {
 
 export const listTimelines = () => call<Timeline[]>('/api/timelines');
 export const createTimeline = (t: Partial<Timeline>) => call<Timeline>('/api/timelines', { method: 'POST', body: JSON.stringify(t) });
-export const saveTimeline = (id: string, t: Partial<Timeline>) =>
+export const getTimeline = (id: string) => call<Timeline>(`/api/timelines/${id}`);
+export const saveTimeline = (id: string, t: Partial<Timeline> & { if_updated?: string }) =>
 	call<Timeline>(`/api/timelines/${id}`, { method: 'PUT', body: JSON.stringify(t) });
 export async function deleteTimeline(id: string): Promise<void> {
 	if (native()) return void (await call(`/api/timelines/${id}`, { method: 'DELETE' }));

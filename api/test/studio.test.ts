@@ -79,6 +79,16 @@ test("a shot's balance: the fixed first nodes, checked, and free to change after
   await expect(saveTimeline(t.id, { clips: [{ ...clip, dur: 4 }] })).rejects.toThrow(/locked/);
 });
 
+test("a copy read before someone else saved never overwrites them (the studio open while an agent edits)", async () => {
+  const { createTimeline, saveTimeline } = await import("../src/timelines");
+  const t = await createTimeline("admin", { name: "Both at once" });
+  const agent = await saveTimeline(t.id, { name: "The agent's", if_updated: t.updated });
+  await expect(saveTimeline(t.id, { name: "The studio's stale copy", if_updated: t.updated })).rejects.toThrow(/changed elsewhere/);
+  expect((await saveTimeline(t.id, { name: "Read again", if_updated: agent.updated })).name).toBe("Read again");
+  // without it (an agent's own save), as before
+  expect((await saveTimeline(t.id, { name: "Plain" })).name).toBe("Plain");
+});
+
 test("timelines are variants of a project: A, B… listed together", async () => {
   const { createTimeline, listTimelines, saveTimeline } = await import("../src/timelines");
   const b = await createTimeline("admin", { name: "Spuds, 13 shots", project: "Day 19", variant: "B", clips: [{ id: "x", hash: hash("b2"), track: "A1", start: 0, in: 0, dur: 1, vol: 1 }] });

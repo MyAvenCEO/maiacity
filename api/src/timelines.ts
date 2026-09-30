@@ -221,6 +221,11 @@ export async function saveTimeline(id: string, body: Record<string, unknown>): P
   const t = clean(body);
   await checkShots(t.clips);
   const now = await getTimeline(id);
+  // a copy read before someone else saved (the studio open while an agent edits through MCP) never overwrites them
+  const ms = (v: unknown) => (v instanceof Date ? v.getTime() : typeof v === "string" ? Date.parse(v) : NaN);
+  const seen = ms(body.if_updated);
+  if (Number.isFinite(seen) && seen !== ms(now.updated))
+    throw new TimelineError("The timeline changed elsewhere since this copy was read: read it again.", 409);
   const stage = t.stage ?? now.stage;
   if (t.clips && now.stage !== "edit" && stage !== "edit" && cutOf(t.clips) !== cutOf(now.clips.map(cleanClip)))
     throw new TimelineError("The edit is locked: unlock it to change the cut.", 409);

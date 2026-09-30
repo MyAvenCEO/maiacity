@@ -7,6 +7,7 @@ import {
 	createTimeline,
 	deleteTimeline,
 	describeMedia,
+	getTimeline,
 	listContent,
 	listJobs,
 	listMedia,
@@ -598,15 +599,44 @@ export class Studio {
 				color: cur.color ?? { working: 'acescct', output: 'odt-rec709' },
 				grade: cur.grade ?? null
 			};
-			const t = await saveTimeline(cur.id, body);
+			// only over the version this copy was read from: an agent's edit in between is never overwritten
+			const t = await saveTimeline(cur.id, { ...body, ...(cur.updated ? { if_updated: cur.updated } : {}) });
 			this.timelines = [t, ...this.timelines.filter((x) => x.id !== t.id)];
 			// an API that keeps the stages says which version the timeline is (it counts the unlocks itself)
 			if (this.current?.id === cur.id) this.current = { ...this.current, updated: t.updated, version: t.version };
 			this.saving = 'saved';
 		} catch (e) {
-			this.error = /** @type {Error} */ (e).message;
+			const msg = /** @type {Error} */ (e).message;
+			if (/changed elsewhere/.test(msg)) {
+				// someone else's edit is newer: theirs wins, this one is read again
+				await this.refresh(true);
+				this.notice = 'The timeline was changed elsewhere (an agent?): read again — your last change was not saved.';
+				return;
+			}
+			this.error = msg;
 			this.saving = 'unsaved';
 		}
+	}
+	/**
+	 * The open timeline as the API has it now, when it changed elsewhere (an agent through MCP): its clips and meta
+	 * read again, the playhead and tab kept. Never while a change of ours waits to be saved, unless `force`.
+	 */
+	async refresh(force = false) {
+		const cur = this.current;
+		if (!cur || (!force && this.saving !== 'saved')) return;
+		let t;
+		try {
+			t = await getTimeline(cur.id);
+		} catch {
+			return;
+		}
+		if (this.current?.id !== cur.id || (!force && (this.saving !== 'saved' || t.updated === cur.updated))) return;
+		this.current = t;
+		this.timelines = [t, ...this.timelines.filter((x) => x.id !== t.id)];
+		this.clips = t.clips.filter((c) => isWorld(c) || c.kind === 'slate' || c.kind === 'line' || (c.hash && this.byHash.has(c.hash)));
+		this.dropped = t.clips.length - this.clips.length;
+		this.saving = 'saved';
+		if (this.playing) this.schedule();
 	}
 	/** @param {Partial<Timeline>} patch */
 	setMeta(patch) {
@@ -1282,7 +1312,11 @@ export class Studio {
 		const hashes = new Set([...this.clips.map((c) => c.hash), this.preview]);
 		return this.library.some((m) => hashes.has(m.hash) && hasSound(m) && stepOpen(transcriptState(m)));
 	}
+	/** @type {ReturnType<typeof setInterval> | null} */
+	timelineWatch = null;
 	watchVault() {
+		// the open timeline as others change it (an agent through MCP): seen here within seconds
+		this.timelineWatch ??= setInterval(() => void this.refresh(), 4000);
 		this.vaultWatch ??= setInterval(() => void (this.waitingOnVault() && this.reloadLibrary()), 20000);
 	}
 
