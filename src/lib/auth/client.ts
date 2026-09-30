@@ -167,6 +167,10 @@ export const describeMedia = (hash: string, about: { title?: string; description
 export type ColorInfo = { profile: string; primaries?: string; transfer?: string; matrix?: string; range?: string; bitDepth?: number; detectedFrom?: string; override?: string };
 /** A look: the film's or a scene's (game/film/color.js `cleanLook`, vault-render `creative::Look`). */
 export type Look = import('../../../game/film/color.js').Look;
+/** A secondary: its key (hue°, chroma × 100, IRE) inside its window (0…1 from the top left, or on the face), with its own balance. */
+export type Secondary = { name?: string; key?: { hue: [number, number]; sat: [number, number]; luma: [number, number]; soft: number }; window?: { shape: 'ellipse' | 'rect'; x: number; y: number; w: number; h: number; angle: number; feather: number; invert: boolean; track?: 'face' }; adjust: Balance; mix: number };
+/** The film's finishing, after its looks. */
+export type Finish = { pop?: { amount: number; radius: number }; halation?: { amount: number; threshold: number; radius: number }; bloom?: { amount: number; threshold: number; radius: number }; grain?: { amount: number; size: number; chroma: number }; vignette?: { amount: number; size: number; softness: number; roundness: number } };
 /** A grade: ASC CDL in ACEScct (game/film/color.js). */
 export type Cdl = { slope: [number, number, number]; offset: [number, number, number]; power: [number, number, number]; sat: number };
 // ─────────────────────────────── signing a terminal in ───────────────────────────────
@@ -213,6 +217,8 @@ export type TimelineClip = {
 	shotVersion?: number;
 	/** the fixed first grade layers (white balance, exposure, contrast, highlights, lows, saturation), ACEScct, before `grade` */
 	balance?: Balance | null;
+	/** a V1 clip's secondaries (game/film/color.js `cleanSecondaries`): parts of it given their own balance */
+	secondaries?: Secondary[];
 	/** this clip's own grade (Grade tab), ACEScct */
 	grade?: Cdl | null;
 	/** picture clips: where the clip stands in the script */
@@ -246,7 +252,7 @@ export type Timeline = {
 	color?: { working: 'acescct'; output: 'odt-rec709' };
 	/** the whole film's look */
 	/** the film's grade above its shots': its plain CDL or preset from before, its look (`film`) and each scene's (`scenes`, by the scene its clips name) */
-	grade?: { look: Cdl | null; preset?: string; film?: Look | null; scenes?: Record<string, Look> } | null;
+	grade?: { look: Cdl | null; preset?: string; film?: Look | null; scenes?: Record<string, Look>; finish?: Finish | null } | null;
 };
 
 export const listTimelines = () => call<Timeline[]>('/api/timelines');

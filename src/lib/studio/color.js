@@ -1,8 +1,8 @@
 // The studio's side of the colour standard (contract C5): what each picture is, how the viewer brings it in, and the
 // grades as data. The maths and the tables live in game/film/color.js (stream A) — imported, never copied.
-import { PROFILES, profileOf, NEUTRAL, isNeutral, cleanCdl, cleanLook, ODT, BALANCE_NODES, NEUTRAL_BALANCE, cleanBalance, isNeutralBalance } from '../../../game/film/color.js';
+import { PROFILES, profileOf, NEUTRAL, isNeutral, cleanCdl, cleanLook, cleanSecondaries, cleanFinish, ODT, BALANCE_NODES, NEUTRAL_BALANCE, cleanBalance, isNeutralBalance } from '../../../game/film/color.js';
 
-export { PROFILES, profileOf, NEUTRAL, isNeutral, cleanCdl, cleanLook, ODT, BALANCE_NODES, NEUTRAL_BALANCE, cleanBalance, isNeutralBalance };
+export { PROFILES, profileOf, NEUTRAL, isNeutral, cleanCdl, cleanLook, cleanSecondaries, cleanFinish, ODT, BALANCE_NODES, NEUTRAL_BALANCE, cleanBalance, isNeutralBalance };
 
 /** The working space — and so every proxy's colour: the Mac takes each source through its journey into it. */
 export const WORKING = 'acescct';

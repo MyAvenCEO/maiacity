@@ -13,7 +13,7 @@
  * graded, rendered — a version (one more at every unlock), its colour pipeline and the whole film's look.
  */
 import { db } from "./pg";
-import { cleanBalance, cleanCdl, cleanLook } from "../../game/film/color.js";
+import { cleanBalance, cleanCdl, cleanFinish, cleanLook, cleanSecondaries } from "../../game/film/color.js";
 import { missingShots } from "./shots";
 
 export class TimelineError extends Error {
@@ -56,7 +56,7 @@ export type Balance = { temp: number; tint: number; exposure: number; contrast: 
 export type Script = { scene?: string; label?: string; description?: string; notes?: string; size?: string };
 export type Stage = "edit" | "locked" | "graded" | "rendered";
 export type Color = { working: "acescct"; output: string };
-export type Grade = { look: Cdl | null; preset?: string; film?: object; scenes?: Record<string, object> } | null;
+export type Grade = { look: Cdl | null; preset?: string; film?: object; scenes?: Record<string, object>; finish?: object } | null;
 export type Timeline = {
   id: string; name: string; project: string | null; variant: string | null; description: string | null; aspect: string; tags: string[]; clips: Clip[];
   stage: Stage; version: number; color: Color; grade: Grade; created: string; updated: string;
@@ -122,6 +122,10 @@ function cleanClip(c: any): Clip {
     const b = cleanBalance(c.balance);
     if (b) clip.balance = b as Balance;
   }
+  if (c.secondaries !== undefined && c.secondaries !== null && base.track === "V1") {
+    const secs = cleanSecondaries(c.secondaries);
+    if (secs.length) (clip as any).secondaries = secs;
+  }
   if (c.script !== undefined && c.script !== null && base.track === "V1") {
     const sc = cleanScript(c.script);
     if (sc) clip.script = sc;
@@ -165,7 +169,8 @@ function cleanGrade(v: any): Grade {
       if (c && name.trim()) scenes[name.trim().slice(0, 120)] = c;
     }
   }
-  return { look, ...(v.preset ? { preset: String(v.preset) } : {}), ...(film ? { film } : {}), ...(Object.keys(scenes).length ? { scenes } : {}) };
+  const finish = cleanFinish(v.finish);
+  return { look, ...(v.preset ? { preset: String(v.preset) } : {}), ...(film ? { film } : {}), ...(Object.keys(scenes).length ? { scenes } : {}), ...(finish ? { finish } : {}) };
 }
 
 type Body = { name?: unknown; project?: unknown; variant?: unknown; description?: unknown; aspect?: unknown; tags?: unknown; clips?: unknown; stage?: unknown; color?: unknown; grade?: unknown };

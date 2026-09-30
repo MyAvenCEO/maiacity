@@ -172,3 +172,12 @@ test("a look as data: checked as Rust checks it, null when it changes nothing", 
   expect(l.hue).toEqual([[10, -5], [40, 90]]);
   expect(l.split!.shadows).toEqual({ hue: 280, amount: 0.4 });
 });
+
+test("a shot's secondaries and the film's finishing: checked as Rust checks them", async () => {
+  const { cleanSecondaries, cleanFinish } = await import("../../game/film/color.js");
+  expect(cleanSecondaries([{ adjust: {} }])).toEqual([]);
+  const [s] = cleanSecondaries([{ window: { shape: "star", w: 9, track: "hand" }, adjust: { exposure: 0.3 }, mix: 3 }]);
+  expect([s.window.shape, s.window.w, s.window.track, s.mix]).toEqual(["ellipse", 4, undefined, 1]);
+  expect(cleanFinish({ grain: { amount: 0 } })).toBeNull();
+  expect(cleanFinish({ pop: { amount: 5 } })!.pop.amount).toBe(1);
+});

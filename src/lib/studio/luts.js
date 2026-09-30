@@ -84,27 +84,28 @@ export async function nativePresets() {
 }
 
 /** @type {Map<string, Promise<string>>} */
-const thumbs = new Map();
+const frames = new Map();
 /**
- * A shot's thumbnail as it will look (`color_thumb`: its grading still through its balance, grade and looks,
- * natively), as an object URL. The last few are kept, by what they are.
- * @param {string} still @param {import('../../../game/film/color.js').Balance | null} balance
- * @param {import('$lib/auth/client').Cdl[]} grades @param {import('$lib/auth/client').Look[]} [looks] @returns {Promise<string>}
+ * A shot as the film will show it (`color_frame`: its grading still through its whole grade — balance, secondaries,
+ * grade, looks, finishing — natively), framed for `shape` (none: the whole still), `width` wide, as an object URL.
+ * The last few are kept, by what they are.
+ * @param {any} timeline the timeline as far as the shot needs it: { id, aspect, clips: [the clip], grade }
+ * @param {string} clip @param {string} still @param {number} width @param {string | null} [shape] @returns {Promise<string>}
  */
-export function gradedThumb(still, balance, grades, looks = []) {
-	const key = JSON.stringify([still, balance, grades, looks]);
-	let url = thumbs.get(key);
+export function nativeFrame(timeline, clip, still, width, shape = null) {
+	const key = JSON.stringify([timeline, clip, still, width, shape]);
+	let url = frames.get(key);
 	if (!url) {
 		url = import('$lib/native').then(async ({ command }) => {
-			const raw = await command('color_thumb', { still, balance, grades, looks, width: 320 });
+			const raw = await command('color_frame', { timeline, clip, still, width, shape });
 			const bytes = raw instanceof ArrayBuffer ? raw : new Uint8Array(/** @type {number[]} */ (raw)).buffer;
 			return URL.createObjectURL(new Blob([bytes], { type: 'image/jpeg' }));
 		});
-		url.catch(() => thumbs.delete(key));
-		thumbs.set(key, url);
-		if (thumbs.size > 96) {
-			const [k, old] = /** @type {[string, Promise<string>]} */ (thumbs.entries().next().value);
-			thumbs.delete(k);
+		url.catch(() => frames.delete(key));
+		frames.set(key, url);
+		if (frames.size > 64) {
+			const [k, old] = /** @type {[string, Promise<string>]} */ (frames.entries().next().value);
+			frames.delete(k);
 			void old.then((u) => URL.revokeObjectURL(u)).catch(() => {});
 		}
 	}

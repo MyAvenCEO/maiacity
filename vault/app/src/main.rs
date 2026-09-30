@@ -492,7 +492,7 @@ fn main() {
             proxies::color_lut,
             proxies::color_grade,
             proxies::color_presets,
-            proxies::color_thumb,
+            proxies::color_frame,
             proxies::vault_proxy,
             transcripts::vault_transcribe,
             analyse::analysis_setup,

@@ -18,7 +18,7 @@ use serde_json::{Value, json};
 use crate::{
     av::{Codec, VideoReader, VideoSettings, Writer},
     captions::Captions,
-    creative::{Look, Ready},
+    creative::{Finish, Look, Ready, apply_finish, apply_secondaries},
     gpu::{Cube, Gpu, Image},
     grade::{Cdl, hash_of},
     loudness::Loudness,
@@ -248,6 +248,7 @@ struct Plan {
     total: f64,
     pictures: Vec<Clip>,
     look: Option<Cdl>,
+    finish: Option<Finish>,
     sources: HashMap<String, Source>,
     card: Option<Clip>,
     hooks: HashMap<String, vault_media::Source>,
@@ -368,7 +369,7 @@ fn plan(t: &Timeline, lib: &dyn Library) -> Result<Plan> {
         .filter(|c| c.track.starts_with('A') && c.hash.is_some())
         .map(|c| AudioClip { clip: c.clone(), file: files.get(c.hash.as_ref().unwrap()).unwrap().0.clone() })
         .collect();
-    Ok(Plan { total, pictures, look: t.look(), sources, card, hooks, thumbnails, phrases, audio, conformed, warnings })
+    Ok(Plan { total, pictures, look: t.look(), finish: t.finish(), sources, card, hooks, thumbnails, phrases, audio, conformed, warnings })
 }
 
 /// The journey's config, hashed as the report names it.
@@ -603,13 +604,14 @@ fn render_shape(
             used.insert(format!("grade:looks:{}", c.id), key.clone());
         }
         let cube: Option<Cube> = looks.map(|(lut, _)| gpu.cube(lut));
+        let finish = plan.finish.clone();
         for n in piece.a..piece.b {
             let t = n as f64 / fps;
             autoreleasepool(|_| -> Result<()> {
                 // ── the picture, scene-referred to display-referred ──
                 let pic: Image = match &mut reading {
                     Reading::Gap => gpu.black(w, h),
-                    Reading::Still { image } => picture(gpu, image, s, clip.unwrap(), cube.as_ref())?,
+                    Reading::Still { image } => picture(gpu, image, s, clip.unwrap(), cube.as_ref(), finish.as_ref(), n)?,
                     Reading::Sequence { seq, fps: rate, offset, args, shown } => {
                         // the sequence's frame on screen half a film frame on, as for a movie
                         let i = seq.index_at(t + *offset + 0.5 / fps - 1e-4, *rate);
@@ -617,7 +619,7 @@ fn render_shape(
                             let img = gpu.journey(&*sequence_frame(seq, i)?, *args)?;
                             *shown = Some((i, img));
                         }
-                        picture(gpu, &shown.as_ref().unwrap().1, s, clip.unwrap(), cube.as_ref())?
+                        picture(gpu, &shown.as_ref().unwrap().1, s, clip.unwrap(), cube.as_ref(), finish.as_ref(), n)?
                     }
                     Reading::Video { reader, offset, args } => {
                         // the frame on screen half a frame on (ffmpeg's fps filter rounds to the nearest)
@@ -625,7 +627,7 @@ fn render_shape(
                         let turn = reader.info.transform;
                         let pb = reader.at(at)?.context("no frame")?;
                         let img = gpu.journey(&gpu.orient(&gpu.frame(pb), turn), *args)?;
-                        picture(gpu, &img, s, clip.unwrap(), cube.as_ref())?
+                        picture(gpu, &img, s, clip.unwrap(), cube.as_ref(), finish.as_ref(), n)?
                     }
                 };
                 // ── fades in display space: up from black (a film without a hook), down to black at the end ──
@@ -736,17 +738,36 @@ fn delivery(file: PathBuf, name: String, channels: &[&str], format: String, s: &
     }
 }
 
-/// A clip's picture after its journey: framed for the shape, its balance, its grade and looks (one cube: its own CDL,
-/// its scene's look, the film's), the output transform.
-fn picture(gpu: &Gpu, acescct: &Image, s: &Shape, c: &Clip, looks: Option<&Cube>) -> Result<Image> {
+/// A clip's picture after its journey, framed for the shape, through its whole grade (`chain`).
+fn picture(gpu: &Gpu, acescct: &Image, s: &Shape, c: &Clip, looks: Option<&Cube>, finish: Option<&Finish>, frame: u64) -> Result<Image> {
     let (w, h) = s.render_size();
     let framed = gpu.frame_to(acescct, w, h, c.frame_for(s.aspect))?;
-    let balanced = gpu.balance(&framed, c.balance().as_ref())?;
-    let graded = match looks {
-        Some(cube) => gpu.apply_cube(&balanced, cube)?,
-        None => balanced,
-    };
-    gpu.output(&graded)
+    gpu.output(&*chain(gpu, &framed, w, h, c, looks, finish, frame)?)
+}
+
+/// A clip's framed picture (ACEScct, `w`×`h`) through its whole grade, still in ACEScct: its balance, its secondaries
+/// (a face-tracked window on the face Vision finds in this frame), its grade and looks (one cube: its own CDL, its
+/// scene's look, the film's), the film's finishing (frame `frame`: the grain's seed). The output transform is the
+/// caller's.
+#[allow(clippy::too_many_arguments)]
+pub fn chain(gpu: &Gpu, framed: &Image, w: u32, h: u32, c: &Clip, looks: Option<&Cube>, finish: Option<&Finish>, frame: u64) -> Result<Image> {
+    let mut pic = gpu.balance(framed, c.balance().as_ref())?;
+    let secs = c.secondaries();
+    if !secs.is_empty() {
+        let face = if secs.iter().any(|s| s.window.as_ref().is_some_and(|w| w.track.is_some())) {
+            crate::look::faces(&*gpu.output(&pic)?).first().copied()
+        } else {
+            None
+        };
+        pic = apply_secondaries(gpu, &pic, &secs, face, w as f64, h as f64)?;
+    }
+    if let Some(cube) = looks {
+        pic = gpu.apply_cube(&pic, cube)?;
+    }
+    if let Some(f) = finish {
+        pic = apply_finish(gpu, &pic, f, frame, h as f64)?;
+    }
+    Ok(pic)
 }
 
 /// A look's creative LUT, loaded from the vault by its hash.
@@ -1057,7 +1078,7 @@ pub fn hero_frame(
                 gpu.journey(&gpu.orient(&gpu.frame(pb), turn), args)?
             };
             let cube = clip_cube(t, lib, c, output)?.map(|(lut, _)| gpu.cube(&lut));
-            (picture(&gpu, &src, &s, c, cube.as_ref())?, what)
+            (picture(&gpu, &src, &s, c, cube.as_ref(), t.finish().as_ref(), (at * FPS as f64).round() as u64)?, what)
         }
     };
     gpu.png(&img, w, h, png)?;
