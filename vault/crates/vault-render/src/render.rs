@@ -47,8 +47,8 @@ pub struct Media {
 pub trait Library {
     /// what the catalog knows of a file
     fn media(&self, hash: &str) -> Option<Media>;
-    /// the file's bytes on this disk
-    fn file(&self, hash: &str) -> Result<PathBuf>;
+    /// the file's bytes: read in place from the vault (a blob by hash), or a file on this disk
+    fn file(&self, hash: &str) -> Result<vault_media::Source>;
     /// Conform: the original a proxy stands for (its meta.proxy_of; an app with the whole catalog also looks for the
     /// original whose meta.proxy names it, as worker.ts `originalOf`). A file that is no proxy stands for itself.
     fn original_of(&self, hash: &str) -> String {
@@ -184,7 +184,7 @@ fn sequence_fps(m: &Media) -> f64 {
 
 /// A sequence's profile: the vault's (set by hand, or given when packed), else its first frame's header names it
 /// (`vault_media::still::exr_profile`); None when neither knows it.
-fn sequence_profile(m: &Media, file: &Path) -> Result<(Option<String>, String)> {
+fn sequence_profile(m: &Media, file: &vault_media::Source) -> Result<(Option<String>, String)> {
     let known = |p: &str| vault_media::cst::journey(p).is_some();
     let c = m.meta.get("color");
     for k in ["override", "profile"] {
@@ -209,14 +209,14 @@ fn sequence_frame(seq: &mut vault_media::still::Sequence, i: usize) -> Result<Im
 
 #[derive(Debug, Clone)]
 struct Source {
-    file: PathBuf,
+    file: vault_media::Source,
     kind: Kind,
     profile: String,
 }
 
 /// The profile a file is treated as (color.js `profileOf`: the hand-set override, else the detected one — each only
 /// when known), else detected now from the file itself.
-fn profile_of(m: &Media, file: &Path, still: bool) -> (String, String) {
+fn profile_of(m: &Media, file: &vault_media::Source, still: bool) -> (String, String) {
     let known = |p: &str| vault_media::color::PROFILES.contains(&p) && p != "legacy" && vault_media::cst::journey(p).is_some();
     let c = m.meta.get("color");
     for k in ["override", "profile"] {
@@ -225,7 +225,7 @@ fn profile_of(m: &Media, file: &Path, still: bool) -> (String, String) {
         }
     }
     if still {
-        let ext = file.extension().and_then(|e| e.to_str()).unwrap_or("").to_lowercase();
+        let ext = file.ext();
         return if ext == "exr" { ("linear-rec709".into(), "an EXR without a profile: linear Rec.709".into()) } else { ("srgb".into(), "a still image".into()) };
     }
     match vault_media::probe(file) {
@@ -237,8 +237,8 @@ fn profile_of(m: &Media, file: &Path, still: bool) -> (String, String) {
     }
 }
 
-fn is_still(m: &Media, file: &Path) -> bool {
-    m.kind == "image" || m.mime.starts_with("image/") || matches!(file.extension().and_then(|e| e.to_str()).map(|e| e.to_lowercase()).as_deref(), Some("png" | "jpg" | "jpeg" | "webp" | "heic" | "tif" | "tiff" | "exr"))
+fn is_still(m: &Media, file: &vault_media::Source) -> bool {
+    m.kind == "image" || m.mime.starts_with("image/") || matches!(Some(file.ext().as_str()), Some("png" | "jpg" | "jpeg" | "webp" | "heic" | "tif" | "tiff" | "exr"))
 }
 
 /// Everything a render needs, read before the first frame.
@@ -248,7 +248,7 @@ struct Plan {
     look: Option<Cdl>,
     sources: HashMap<String, Source>,
     card: Option<Clip>,
-    hooks: HashMap<String, PathBuf>,
+    hooks: HashMap<String, vault_media::Source>,
     thumbnails: Vec<(String, Media)>,
     phrases: Vec<Phrase>,
     audio: Vec<AudioClip>,
@@ -298,7 +298,7 @@ fn plan(t: &Timeline, lib: &dyn Library) -> Result<Plan> {
     let mut warnings = Vec::new();
     let mut conformed = Vec::new();
     // conform: originals only — a proxy cut into the timeline is swapped for the file it stands for
-    let mut files: HashMap<String, (PathBuf, Media)> = HashMap::new();
+    let mut files: HashMap<String, (vault_media::Source, Media)> = HashMap::new();
     for c in clips.iter().filter(|c| !c.is_world()) {
         let hash = c.hash.clone().unwrap();
         if files.contains_key(&hash) {
@@ -872,13 +872,13 @@ fn grade_still_of(lib: &dyn Library, c: &Clip) -> Option<Media> {
 /// A shot's grading still: one frame of the original at `at` seconds, through its journey (CST) into ACEScct,
 /// scaled (Lanczos) to `width` wide at its own aspect, written as a 16-bit PNG of ACEScct code values — what the
 /// balance is measured and set on, at full quality, without reading the whole original again.
-pub fn grading_still(file: &Path, profile: &str, at: f64, width: u32, png: &Path) -> Result<(u32, u32)> {
+pub fn grading_still(file: impl Into<vault_media::Source>, profile: &str, at: f64, width: u32, png: &Path) -> Result<(u32, u32)> {
     grading_still_and_preview(file, profile, at, width, png, None)
 }
 
 /// The grading still, and from the same frame a small preview for the lists: `preview` (its JPEG, its width, the
 /// output transform) — the frame through ACES 2.0 into Rec.709, as it will look.
-pub fn grading_still_and_preview(file: &Path, profile: &str, at: f64, width: u32, png: &Path, preview: Option<(&Path, u32, &dyn Output)>) -> Result<(u32, u32)> {
+pub fn grading_still_and_preview(file: impl Into<vault_media::Source>, profile: &str, at: f64, width: u32, png: &Path, preview: Option<(&Path, u32, &dyn Output)>) -> Result<(u32, u32)> {
     let journey = vault_media::cst::journey(profile).with_context(|| format!("no colour journey from {profile} into ACEScct"))?;
     let mut gpu = Gpu::new()?;
     if let Some((_, _, out)) = preview {
@@ -989,7 +989,7 @@ pub fn hero_frame(
             let mut sequence: Option<f64> = None;
             let (file, profile, from, what) = if c.is_world() {
                 let p = plates(c, &s)?.with_context(|| format!("world clip {}: no plate for {aspect}", c.id))?;
-                (p.file, "acescct".to_string(), at - c.start - p.offset, format!("world shot {} v{} at {:.3} s", c.shot.as_deref().unwrap_or("?"), c.shot_version.unwrap_or(0), c.in_ + at - c.start))
+                (vault_media::Source::from(p.file), "acescct".to_string(), at - c.start - p.offset, format!("world shot {} v{} at {:.3} s", c.shot.as_deref().unwrap_or("?"), c.shot_version.unwrap_or(0), c.in_ + at - c.start))
             } else {
                 let hash = c.hash.as_deref().unwrap();
                 let of = lib.original_of(hash);

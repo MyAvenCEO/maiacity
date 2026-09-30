@@ -4,6 +4,8 @@
 
 use std::{path::Path, ptr::NonNull, time::Duration};
 
+use vault_media::Source;
+
 use anyhow::{Context, Result, anyhow, bail};
 use objc2::{rc::Retained, runtime::AnyObject};
 use objc2_av_foundation::{
@@ -44,10 +46,9 @@ pub fn seconds(t: CMTime) -> f64 {
     if t.timescale > 0 && t.flags.contains(CMTimeFlags::Valid) { t.value as f64 / t.timescale as f64 } else { f64::NAN }
 }
 
-fn asset(path: &Path) -> Result<Retained<AVURLAsset>> {
-    let path = std::fs::canonicalize(path).with_context(|| format!("{}", path.display()))?;
-    // SAFETY: plain constructor
-    Ok(unsafe { AVURLAsset::URLAssetWithURL_options(&NSURL::fileURLWithPath(&NSString::from_str(&path.to_string_lossy())), None) })
+/// The asset of a file on disk, or of a blob read in place (vault_media's resource loader).
+fn asset(src: &Source) -> Result<Retained<AVURLAsset>> {
+    src.asset()
 }
 
 fn first_track(asset: &AVURLAsset, audio: bool) -> Result<Option<Retained<AVAssetTrack>>> {
@@ -91,9 +92,10 @@ pub struct VideoReader {
 
 impl VideoReader {
     /// Frames from `from` to `until` (seconds of the file).
-    pub fn open(path: &Path, from: f64, until: f64) -> Result<Self> {
-        let asset = asset(path)?;
-        let track = first_track(&asset, false)?.with_context(|| format!("{} has no picture", path.display()))?;
+    pub fn open(src: impl Into<Source>, from: f64, until: f64) -> Result<Self> {
+        let src: Source = src.into();
+        let asset = asset(&src)?;
+        let track = first_track(&asset, false)?.with_context(|| format!("{src} has no picture"))?;
         // SAFETY: AVFoundation objects we create and own, used from this thread only
         unsafe {
             let size = track.naturalSize();
@@ -107,7 +109,7 @@ impl VideoReader {
             let start = (from - 0.1).max(0.0);
             reader.setTimeRange(CMTimeRange { start: cmtime(start), duration: cmtime((until - start).max(0.0) + 0.2) });
             if !reader.startReading() {
-                return Err(reader_error(&reader)).with_context(|| format!("{}", path.display()));
+                return Err(reader_error(&reader)).with_context(|| format!("{src}"));
             }
             Ok(Self { reader, output, cur: None, next: None, done: false, info })
         }
@@ -173,8 +175,9 @@ pub struct AudioReader {
 
 impl AudioReader {
     /// None when the file has no sound.
-    pub fn open(path: &Path, from: f64, until: f64) -> Result<Option<Self>> {
-        let asset = asset(path)?;
+    pub fn open(src: impl Into<Source>, from: f64, until: f64) -> Result<Option<Self>> {
+        let src: Source = src.into();
+        let asset = asset(&src)?;
         let Some(track) = first_track(&asset, true)? else { return Ok(None) };
         // SAFETY: as VideoReader
         unsafe {
@@ -204,7 +207,7 @@ impl AudioReader {
             reader.addOutput(&output);
             reader.setTimeRange(CMTimeRange { start: cmtime(from.max(0.0)), duration: cmtime((until - from.max(0.0)).max(0.0)) });
             if !reader.startReading() {
-                return Err(reader_error(&reader)).with_context(|| format!("{}", path.display()));
+                return Err(reader_error(&reader)).with_context(|| format!("{src}"));
             }
             Ok(Some(Self { reader, output, channels: channels as usize, done: false }))
         }
@@ -295,7 +298,7 @@ struct AudioFeed {
 
 impl AudioFeed {
     fn open(wav: &Path) -> Result<Self> {
-        let asset = asset(wav)?;
+        let asset = asset(&Source::from(wav))?;
         let track = first_track(&asset, true)?.context("the mix has no sound")?;
         // SAFETY: as VideoReader
         unsafe {

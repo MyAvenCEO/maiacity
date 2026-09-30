@@ -249,12 +249,12 @@ struct Vaulted {
     story: HashMap<String, String>,
     /// an original's proxy (its meta.proxy) → the original: conform finds it from either side
     originals: HashMap<String, String>,
-    dir: PathBuf,
-    files: Mutex<HashMap<String, PathBuf>>,
+    /// each file as it is read: in place, from the vault's blob store (never copied out)
+    files: Mutex<HashMap<String, vault_media::Source>>,
 }
 
 impl Vaulted {
-    async fn new(vault: &Arc<Vault>, dir: PathBuf) -> Res<Self> {
+    async fn new(vault: &Arc<Vault>) -> Res<Self> {
         let list = vault.catalog.list_view().await.map_err(err)?;
         let mut media = HashMap::new();
         let mut ext = HashMap::new();
@@ -268,7 +268,7 @@ impl Vaulted {
             story.insert(m.hash.clone(), m.story.clone());
             media.insert(m.hash.clone(), Media { hash: m.hash, mime: m.mime, kind: m.kind, size: m.size, title: m.title, meta: m.meta });
         }
-        Ok(Self { vault: vault.clone(), rt: tokio::runtime::Handle::current(), media, ext, story, originals, dir, files: Mutex::new(HashMap::new()) })
+        Ok(Self { vault: vault.clone(), rt: tokio::runtime::Handle::current(), media, ext, story, originals, files: Mutex::new(HashMap::new()) })
     }
 
     /// The story most of the timeline's files live in; None (the inbox) when most are in the inbox.
@@ -318,20 +318,17 @@ impl Library for Vaulted {
         self.media.get(hash).cloned()
     }
 
-    fn file(&self, hash: &str) -> anyhow::Result<PathBuf> {
-        if let Some(p) = self.files.lock().unwrap().get(hash) {
-            return Ok(p.clone());
+    fn file(&self, hash: &str) -> anyhow::Result<vault_media::Source> {
+        if let Some(s) = self.files.lock().unwrap().get(hash) {
+            return Ok(s.clone());
         }
         let m = self.media.get(hash).with_context(|| format!("{hash} is not in the vault's catalog"))?;
         let name = if m.title.is_empty() { hash.to_string() } else { m.title.clone() };
         let blob: iroh_blobs::Hash = hash.parse()?;
-        std::fs::create_dir_all(&self.dir)?;
-        let path = self.dir.join(format!("{hash}.{}", self.ext.get(hash).map(String::as_str).unwrap_or("bin")));
-        let vault = self.vault.clone();
-        let to = path.clone();
-        self.rt.block_on(async move { vault.store.blobs().export(blob, &to).await }).with_context(|| format!("{name}: its bytes are not on this Mac (yet)"))?;
-        self.files.lock().unwrap().insert(hash.to_string(), path.clone());
-        Ok(path)
+        let ext = self.ext.get(hash).map(String::as_str).unwrap_or("bin");
+        let src = crate::blob::source_blocking(&self.vault, &self.rt, blob, &format!("{name}.{ext}"))?;
+        self.files.lock().unwrap().insert(hash.to_string(), src.clone());
+        Ok(src)
     }
 
     fn original_of(&self, hash: &str) -> String {
@@ -348,8 +345,7 @@ impl Library for Vaulted {
 /// colour in ACEScct, as shot and balanced) — the clips named, else every media clip on V1; `frames` per clip.
 pub async fn measure_clips(vault: &Arc<Vault>, timeline: &Value, ids: Option<Vec<String>>, frames: usize) -> Res<Vec<Value>> {
     let t: Timeline = serde_json::from_value(timeline.clone()).map_err(err)?;
-    let dir = vault.ingest_dir().join(format!("measure-{}", std::process::id()));
-    let lib = Arc::new(Vaulted::new(vault, dir.clone()).await?);
+    let lib = Arc::new(Vaulted::new(vault).await?);
     let clips: Vec<Clip> = t
         .clips
         .iter()
@@ -377,7 +373,6 @@ pub async fn measure_clips(vault: &Arc<Vault>, timeline: &Value, ids: Option<Vec
     })
     .await
     .map_err(err)?;
-    std::fs::remove_dir_all(&dir).ok();
     Ok(out)
 }
 
@@ -407,8 +402,7 @@ pub async fn look_clips(
 ) -> Res<Vec<Result<vault_render::look::Look, Value>>> {
     let t: Timeline = serde_json::from_value(timeline.clone()).map_err(err)?;
     let clips = picture_clips(&t, &ids)?;
-    let dir = vault.ingest_dir().join(format!("look-{}", std::process::id()));
-    let lib = Arc::new(Vaulted::new(vault, dir.clone()).await?);
+    let lib = Arc::new(Vaulted::new(vault).await?);
     let out = tauri::async_runtime::spawn_blocking(move || {
         clips
             .iter()
@@ -421,7 +415,6 @@ pub async fn look_clips(
     })
     .await
     .map_err(err)?;
-    std::fs::remove_dir_all(&dir).ok();
     Ok(out)
 }
 
@@ -544,10 +537,8 @@ pub async fn propose_balances(
 /// music under each voice clip.
 pub async fn measure_sound(vault: &Arc<Vault>, timeline: &Value) -> Res<Value> {
     let t: Timeline = serde_json::from_value(timeline.clone()).map_err(err)?;
-    let dir = vault.ingest_dir().join(format!("sound-{}-{}", std::process::id(), std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis()).unwrap_or(0)));
-    let lib = Arc::new(Vaulted::new(vault, dir.clone()).await?);
+    let lib = Arc::new(Vaulted::new(vault).await?);
     let out = tauri::async_runtime::spawn_blocking(move || vault_render::measure_sound(&t, &*lib)).await.map_err(err)?.map_err(err);
-    std::fs::remove_dir_all(&dir).ok();
     out
 }
 
@@ -663,7 +654,7 @@ async fn render_job(handle: &AppHandle, vault: &Arc<Vault>, auth: &Auth, job: &V
     let t = timeline_of(auth, job).await?;
     progress.named(&format!("Render · {}", t.name));
     progress.set(0.02, "fetching files");
-    let lib = Arc::new(Vaulted::new(vault, work.0.join("files")).await?);
+    let lib = Arc::new(Vaulted::new(vault).await?);
     let story = lib.story_of(&t);
     let shapes = shapes_of(&t);
     let plates = plates_for(handle, vault, auth, &t, &shapes, progress, (0.03, 0.3)).await?;
@@ -718,7 +709,7 @@ async fn frame_job(handle: &AppHandle, vault: &Arc<Vault>, auth: &Auth, job: &Va
     let t = timeline_of(auth, job).await?;
     progress.named(&format!("Hero frame · {} · {at:.2} s", t.name));
     progress.set(0.05, "fetching files");
-    let lib = Arc::new(Vaulted::new(vault, work.0.join("files")).await?);
+    let lib = Arc::new(Vaulted::new(vault).await?);
     let story = lib.story_of(&t);
     // the clip on screen, as hero_frame picks it: a world clip gets a plate of that one frame
     let has_cards = |c: &Clip| lib.media(c.hash.as_deref().unwrap_or("")).is_some_and(|m| m.meta.get("cards").is_some_and(Value::is_object));

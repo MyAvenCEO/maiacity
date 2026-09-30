@@ -42,7 +42,8 @@ pub const PLATFORMS: Target = Target { lufs: -14.0, true_peak: -1.0 };
 #[derive(Debug, Clone)]
 pub struct AudioClip {
     pub clip: Clip,
-    pub file: PathBuf,
+    /// on disk, or a blob read in place
+    pub file: vault_media::Source,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -70,7 +71,7 @@ const BLOCK: usize = 4800;
 /// One clip's sound, read ahead just enough for the block being mixed.
 struct Voice {
     clip: Clip,
-    file: PathBuf,
+    file: vault_media::Source,
     /// where it starts on the film, in samples (adelay: to the millisecond)
     at: u64,
     /// how long it plays, in samples
@@ -133,7 +134,7 @@ impl Voice {
         }
         if self.reader.is_none() && !self.ended {
             let c = &self.clip;
-            self.reader = AudioReader::open(&self.file, c.in_, c.in_ + c.dur).with_context(|| format!("the sound of {}", self.file.display()))?;
+            self.reader = AudioReader::open(&self.file, c.in_, c.in_ + c.dur).with_context(|| format!("the sound of {}", self.file))?;
             if self.reader.is_none() {
                 self.ended = true;
             }

@@ -721,8 +721,8 @@ impl Studio {
     async fn media_probe(&self, Parameters(a): Parameters<HashArg>) -> String {
         let r = async {
             self.signed_in()?;
-            let path = self.export(&a.hash).await?;
-            let p = tokio::task::spawn_blocking(move || vault_media::probe(&path)).await.map_err(|e| e.to_string())?.map_err(|e| format!("{e:#}"))?;
+            let src = self.source(&a.hash).await?;
+            let p = tokio::task::spawn_blocking(move || vault_media::probe(src)).await.map_err(|e| e.to_string())?.map_err(|e| format!("{e:#}"))?;
             serde_json::to_value(p).map_err(|e| e.to_string())
         };
         text(r.await)
@@ -1238,15 +1238,11 @@ impl Studio {
     }
 
     /// A vault file on disk for the native media tools (exported from the store into the ingest area).
-    async fn export(&self, hex: &str) -> Result<PathBuf, String> {
+    /// A file of the vault, read in place from its blob store (never copied out).
+    async fn source(&self, hex: &str) -> Result<vault_media::Source, String> {
         let hash: iroh_blobs::Hash = hex.parse().map_err(|e| format!("{e}"))?;
         let meta = self.vault.catalog.meta(hash).await.map_err(|e| e.to_string())?.ok_or("no such file in the catalog")?;
-        let ext = meta.original_name.rsplit_once('.').map(|(_, e)| e.to_ascii_lowercase()).unwrap_or_else(|| "bin".into());
-        let path = self.vault.ingest_dir().join(format!("{hex}.{ext}"));
-        if !path.exists() {
-            self.vault.store.blobs().export(hash, &path).await.map_err(|e| format!("{e:#}"))?;
-        }
-        Ok(path)
+        crate::blob::source(&self.vault, hash, &meta.original_name).await.map_err(|e| format!("{e:#}"))
     }
 }
 

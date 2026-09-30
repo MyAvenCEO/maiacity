@@ -17,7 +17,6 @@
 //! The model (~1 GB in memory) is loaded for a run of recordings and let go when the queue is empty.
 
 use std::{
-    path::PathBuf,
     sync::{Arc, Mutex},
     time::Duration,
 };
@@ -216,14 +215,12 @@ async fn transcribe(handle: &AppHandle, vault: &Arc<Vault>, hash: Hash, name: &s
     if !matches!(vault.store.blobs().status(hash).await, Ok(BlobStatus::Complete { .. })) {
         return Err(Wait("the recording is not on this Mac yet".into()));
     }
-    let (source, ext) = (hash, std::path::Path::new(&view.original_name).extension().map(|e| e.to_string_lossy().to_lowercase()).unwrap_or_else(|| "mov".into()));
-    let path: PathBuf = vault.ingest_dir().join(format!("{hex}.asr.{ext}"));
-    vault.store.blobs().export(source, &path).await.map_err(|e| format!("{e:#}"))?;
-    let (p, t2) = (path.clone(), tell.clone());
-    let samples = tokio::task::spawn_blocking(move || vault_media::audio::decode_mono(&p, vault_asr::RATE as u32, &mut |d| t2("reading the sound", d)))
+    // read in place from the vault's blob store, never copied out
+    let src = crate::blob::source(vault, hash, &view.original_name).await.map_err(|e| Wait(format!("{e:#}")))?;
+    let t2 = tell.clone();
+    let samples = tokio::task::spawn_blocking(move || vault_media::audio::decode_mono(src, vault_asr::RATE as u32, &mut |d| t2("reading the sound", d)))
         .await
         .map_err(|e| e.to_string())?;
-    std::fs::remove_file(&path).ok();
     let Some(samples) = samples.map_err(|e| format!("{e:#}"))? else {
         let r = json!({ "state": "none: no sound track", "device": me, "at": vault_core::ingest::now_iso() });
         return vault.catalog.write_record(TRANSCRIPT, hash, &r).await.map_err(|e| Fail(format!("{e:#}")));
