@@ -162,3 +162,13 @@ test("HDR signals as scene light: BT.2408's grey lands on 18%; PQ both ways", ()
   // the shaper's LUT entry: PQ of the offset linear value, back to ACEScct
   for (const lin of [0, 0.01, 0.18, 1, 100]) expect(shaperToCct(nitsToPq(((lin + SHAPER.offset) / (1 + SHAPER.offset)) * SHAPER.npl))).toBeCloseTo(toCct(lin), 8);
 });
+
+test("a look as data: checked as Rust checks it, null when it changes nothing", async () => {
+  const { cleanLook } = await import("../../game/film/color.js");
+  expect(cleanLook({})).toBeNull();
+  expect(cleanLook({ sat: 1.3, strength: 0 })).toBeNull();
+  const l = cleanLook({ contrast: 5, sat: 9, hue: [[400, 200], [10, -5]], split: { shadows: { hue: 640, amount: 0.4 } } })!;
+  expect([l.contrast, l.sat]).toEqual([1, 3]);
+  expect(l.hue).toEqual([[10, -5], [40, 90]]);
+  expect(l.split!.shadows).toEqual({ hue: 280, amount: 0.4 });
+});

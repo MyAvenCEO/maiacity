@@ -353,8 +353,8 @@ fn clip_label(timeline: &Value, id: &str) -> String {
 /// The scope sheet of the clips named (the first is the reference), after their balances: each shot's picture with its
 /// skin box, its waveform, RGB parade and vectorscope with the skin line — the PNG's bytes (shown, never kept beside the
 /// vault) and what each row is.
-pub async fn scope_sheet(vault: &Arc<Vault>, timeline: &Value, ids: Vec<String>, regions: HashMap<String, vault_render::look::Regions>) -> Res<(Value, Vec<u8>)> {
-    let looks = look_clips(vault, timeline, Some(ids), regions, HashMap::new()).await?;
+pub async fn scope_sheet(vault: &Arc<Vault>, timeline: &Value, ids: Vec<String>, regions: HashMap<String, vault_render::look::Regions>, with_looks: bool) -> Res<(Value, Vec<u8>)> {
+    let looks = look_clips(vault, timeline, Some(ids), regions, HashMap::new(), with_looks).await?;
     let mut rows = Vec::new();
     let mut ok = Vec::new();
     for (i, l) in looks.into_iter().enumerate() {
@@ -421,6 +421,7 @@ pub async fn look_clips(
     ids: Option<Vec<String>>,
     regions: HashMap<String, vault_render::look::Regions>,
     balances: HashMap<String, vault_render::grade::Balance>,
+    looks: bool,
 ) -> Res<Vec<Result<vault_render::look::Look, Value>>> {
     let t: Timeline = serde_json::from_value(timeline.clone()).map_err(err)?;
     let clips = picture_clips(&t, &ids)?;
@@ -430,7 +431,7 @@ pub async fn look_clips(
             .iter()
             .map(|c| {
                 let r = regions.get(&c.id).cloned().unwrap_or_default();
-                objc2::rc::autoreleasepool(|_| vault_render::look::look(&t, &*lib, c, odt(), &r, balances.get(&c.id)))
+                objc2::rc::autoreleasepool(|_| vault_render::look::look(&t, &*lib, c, odt(), &r, balances.get(&c.id), looks))
                     .map_err(|e| json!({ "clip": c.id, "error": format!("{e:#}") }))
             })
             .collect::<Vec<_>>()
@@ -459,7 +460,7 @@ pub async fn propose_balances(
     let out = odt();
     let r = |b: &vault_render::grade::Balance| serde_json::to_value(b).unwrap_or_default();
     if neutral {
-        let looks = look_clips(vault, timeline, ids, regions, HashMap::new()).await?;
+        let looks = look_clips(vault, timeline, ids, regions, HashMap::new(), false).await?;
         let shots: Vec<Value> = looks
             .into_iter()
             .map(|l| match l {
@@ -479,7 +480,7 @@ pub async fn propose_balances(
     });
     ids.retain(|id| id != &reference);
     ids.insert(0, reference.clone());
-    let mut looks = look_clips(vault, timeline, Some(ids), regions, HashMap::new()).await?.into_iter();
+    let mut looks = look_clips(vault, timeline, Some(ids), regions, HashMap::new(), false).await?.into_iter();
     let master = looks.next().ok_or("the reference wasn't read")?.map_err(|e| format!("the reference can't be read: {e}"))?;
     let master_balance: vault_render::grade::Balance = serde_json::from_value(master.json["balance"].clone()).unwrap_or_default();
     let want = target(&master, out, &master_balance);

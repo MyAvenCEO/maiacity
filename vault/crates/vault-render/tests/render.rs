@@ -179,8 +179,8 @@ fn the_cut_the_fades_the_captions_and_qc() {
     let l = d.loudness;
     assert!((l.lufs.unwrap() + 16.0).abs() < 0.5, "{l:?}");
     assert!(l.true_peak.unwrap() < -0.5, "{l:?}");
-    // the transforms named: the journey, the clip's grade, the output transform
-    assert!(out.color.transforms.contains_key("idt-rec709") && out.color.transforms.contains_key("grade:clip") && out.color.transforms.contains_key("identity"), "{:?}", out.color.transforms);
+    // the transforms named: the journey, the clip's grade and looks (one cube), the output transform
+    assert!(out.color.transforms.contains_key("idt-rec709") && out.color.transforms.contains_key("grade:looks:c2") && out.color.transforms.contains_key("identity"), "{:?}", out.color.transforms);
 
     // the picture: a's in point (green, fading up from black), b on top from 1 s, graded; the fade out; the gap
     let f = &d.file;

@@ -19,6 +19,7 @@
 
 pub mod av;
 pub mod captions;
+pub mod creative;
 pub mod gpu;
 pub mod grade;
 pub mod look;

@@ -95,6 +95,17 @@ test("a shot's balance: the fixed first nodes, checked, and free to change after
   await expect(saveTimeline(t.id, { clips: [{ ...clip, dur: 4 }] })).rejects.toThrow(/locked/);
 });
 
+test("the film's look and each scene's: checked, kept, free to change after the lock", async () => {
+  const { createTimeline, saveTimeline } = await import("../src/timelines");
+  const t = await createTimeline("admin", { name: "Looks" });
+  await saveTimeline(t.id, { stage: "locked" });
+  const looked = await saveTimeline(t.id, {
+    grade: { look: null, film: { contrast: 0.2, split: { shadows: { hue: 280, amount: 0.3 }, highlights: { hue: 125, amount: 0.2 } } }, scenes: { "EXT. GARDEN — MORNING": { sat: 0.9 }, "INT. BEDROOM": { sat: 1 } } },
+  });
+  expect((looked.grade as any).film.split.shadows).toEqual({ hue: 280, amount: 0.3 });
+  expect(Object.keys((looked.grade as any).scenes)).toEqual(["EXT. GARDEN — MORNING"]);
+});
+
 test("a copy read before someone else saved never overwrites them (the studio open while an agent edits)", async () => {
   const { createTimeline, saveTimeline } = await import("../src/timelines");
   const t = await createTimeline("admin", { name: "Both at once" });

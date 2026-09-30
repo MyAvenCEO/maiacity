@@ -151,6 +151,7 @@
 			{source}
 			profile={source && source === stand ? 'srgb' : still ? 'acescct' : s.profileOfClip(pic)}
 			grades={s.gradesOf(pic)}
+			looks={s.looksOf(pic)}
 			balance={s.balanceOf(pic)}
 			luts={s.luts}
 			aspect={ratio(s.viewShape)}
