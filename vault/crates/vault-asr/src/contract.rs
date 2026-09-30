@@ -5,11 +5,11 @@
 
 use serde_json::{Value, json};
 
-/// 16 kHz: what Silero and Nemotron take.
+/// 16 kHz: what Silero and every speech model here take.
 pub const RATE: usize = 16_000;
 /// Silero's window: 512 samples (32 ms).
 pub const WINDOW: usize = 512;
-/// One Nemotron encoder frame: 8 mel hops of 10 ms — a token's time is known to 80 ms.
+/// One encoder frame (Nemotron's and Phonon's alike): 8 mel hops of 10 ms — a token's time is known to 80 ms.
 pub const FRAME_SECONDS: f64 = 0.08;
 
 /// How speech is told from the rest (Silero's own defaults, as its reference wrapper uses them).
@@ -146,6 +146,25 @@ pub fn pick_language<'a>(trials: &'a [(&'a str, Vec<Token>)]) -> &'a str {
     trials.iter().max_by(|a, b| sureness(&a.1).total_cmp(&sureness(&b.1))).map(|(l, _)| *l).unwrap_or("en-US")
 }
 
+/// Does this text read German — more of German's commonest little words than of English's (two at least)? A model
+/// unsure of speech says syllables, not these words; one that hears German says them.
+pub fn looks_german(text: &str) -> bool {
+    const EN: [&str; 16] = ["the", "and", "is", "to", "of", "a", "it", "that", "you", "this", "we", "in", "i", "what", "are", "with"];
+    const DE: [&str; 16] = ["der", "die", "das", "und", "ist", "nicht", "ich", "ein", "eine", "zu", "wir", "es", "mit", "auf", "sie", "auch"];
+    let (mut en, mut de) = (0, 0);
+    for w in text.split_whitespace() {
+        let w = w.trim_matches(|c: char| !c.is_alphanumeric()).to_lowercase();
+        en += EN.contains(&w.as_str()) as usize;
+        de += DE.contains(&w.as_str()) as usize;
+    }
+    de >= 2 && de > en
+}
+
+/// The text of some tokens (a leading space starts a word; language tags left out).
+pub fn text(tokens: &[Token]) -> String {
+    tokens.iter().filter(|t| !is_tag(&t.text)).map(|t| t.text.as_str()).collect::<String>().trim().to_string()
+}
+
 /// The whole transcript: its words, one utterance per speech stretch (its words' text), the plain text. `language`
 /// is kept short ("en", "de"), as the catalog has it.
 pub fn transcript(model: &str, locale: &str, stretches: &[(f64, f64, Vec<Value>)]) -> Value {
@@ -236,6 +255,17 @@ mod tests {
         let de = vec![tok(" die", 1, -1.4), tok(" Stadt", 2, -2.0)];
         assert_eq!(pick_language(&[("en-US", en.clone()), ("de-DE", de.clone())]), "en-US");
         assert_eq!(pick_language(&[("en-US", vec![]), ("de-DE", de)]), "de-DE");
+    }
+
+    #[test]
+    fn german_reads_german() {
+        assert!(looks_german("Heute ist Tag zwanzig. Die Stadt beginnt mit einer einzigen Straße, und wir fragen uns ob sie hält."));
+        assert!(!looks_german("The glass that shelters them is also their power, and every pane quietly turning sunlight"));
+        // what Nemotron said of English it took for German: English as much as German
+        assert!(!looks_german("The glass that shelters them ist also der power."));
+        // syllables of German, heard by an English model
+        assert!(!looks_german("Were born I'm start for line million mention, and when it are all such in Charin Doscling"));
+        assert_eq!(text(&[tok("<de-DE>", 0, 0.0), tok(" Heute", 1, 0.0), tok(" ist", 2, 0.0), tok(".", 3, 0.0)]), "Heute ist.");
     }
 
     #[test]
