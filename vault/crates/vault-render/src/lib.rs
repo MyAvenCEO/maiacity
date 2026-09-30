@@ -25,6 +25,7 @@ pub mod grade;
 pub mod look;
 pub mod loudness;
 pub mod output;
+pub mod player;
 pub mod qc;
 pub mod render;
 pub mod sound;

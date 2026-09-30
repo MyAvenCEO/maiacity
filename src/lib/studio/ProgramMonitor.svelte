@@ -10,6 +10,7 @@
 	import { evaluate } from './shots.js';
 	import { clockText, isWorld, ratio, raw } from './studio.svelte.js';
 	import Viewer from './Viewer.svelte';
+	import { untrack } from 'svelte';
 	import { nativeFrame } from './luts.js';
 	import { placeholder, worldUrl } from './world.svelte.js';
 
@@ -34,6 +35,52 @@
 	const still = $derived(s.showStill ? s.stillOf(pic) : null);
 	/** @type {HTMLImageElement | null} */
 	let stillImg = $state(null);
+	// Grade, playing: the Mac plays the picture through the whole grade (the render's chain on Metal, secondaries and
+	// finishing too), laid over the viewer's picture; the sound stays the studio's, the player follows its clock
+	/** @type {HTMLDivElement | null} */
+	let frameEl = $state(null);
+	const nativePlay = $derived(s.tab === 'grade' && s.playing && !s.falseColor);
+	/** @param {string} name @param {Record<string, unknown>} args */
+	const mac = async (name, args) => {
+		try {
+			const { command } = await import('$lib/native');
+			await command(name, args);
+		} catch (e) {
+			console.warn(`playback: ${name}:`, e);
+		}
+	};
+	const playKey = $derived(s.tab === 'grade' ? JSON.stringify([s.current?.id, s.viewShape, s.current?.grade ?? null, s.clips.filter((c) => c.track === 'V1')]) : '');
+	let loaded = '';
+	const place = () => {
+		const r = frameEl?.getBoundingClientRect();
+		if (r) void mac('player_view', { rect: [r.left, r.top, r.width, r.height] });
+	};
+	$effect(() => {
+		if (!nativePlay) {
+			const at = untrack(() => s.time);
+			void mac('player_pause', { time: at }).then(() => mac('player_view', { rect: null }));
+			return;
+		}
+		const key = untrack(() => playKey);
+		// read without tracking: an edit while it plays doesn't restart the player (the next play picks it up)
+		void untrack(() => (async () => {
+			if (loaded !== key) {
+				const clips = s.clips.filter((c) => c.track === 'V1' && c.hash);
+				const files = Object.fromEntries(clips.map((c) => [c.id, s.playItem(c)?.hash ?? c.hash]));
+				const profiles = Object.fromEntries(clips.map((c) => [c.id, s.profileOfClip(c)]));
+				await mac('player_load', { timeline: $state.snapshot(s.current), shape: s.viewShape, files, profiles, width: 1280 });
+				loaded = key;
+			}
+			place();
+			await mac('player_play', { time: untrack(() => s.time) });
+		})());
+		// kept on the studio's clock, and on the picture when the window moves or resizes
+		const id = setInterval(() => void mac('player_sync', { time: untrack(() => s.time) }), 1000);
+		const ro = new ResizeObserver(place);
+		if (frameEl) ro.observe(frameEl);
+		window.addEventListener('resize', place);
+		return () => (clearInterval(id), ro.disconnect(), window.removeEventListener('resize', place));
+	});
 	// Grade on a still: the picture the Mac makes of it through the whole grade — secondaries, looks, finishing, what the
 	// render makes — over the live preview, a moment after anything about it changes
 	let nativeUrl = $state(/** @type {string | null} */ (null));
@@ -142,7 +189,7 @@
 		{#if gl && plan?.note && pic}<span class="b warn" title={plan.note}>{plan.note}</span>{/if}
 		{#if !gl}<span class="b warn">No WebGL2: colour not managed</span>{/if}
 	</div>
-	<div class="frame" class:tall={s.viewShape === '9:16'} class:gl style:--ar={s.viewShape.replace(':', ' / ')}>
+	<div class="frame" bind:this={frameEl} class:tall={s.viewShape === '9:16'} class:gl style:--ar={s.viewShape.replace(':', ' / ')}>
 		{#each s.reel as c (c.id)}
 			<!-- svelte-ignore a11y_media_has_caption -->
 			<video
