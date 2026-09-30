@@ -163,8 +163,9 @@ pub fn read_wav(path: &Path) -> Result<Vec<f32>> {
     let data = data.context("no data chunk")?;
     let mono = |frames: Vec<f32>| frames.chunks(channels as usize).map(|c| c.iter().sum::<f32>() / c.len() as f32).collect();
     Ok(match (format, bits) {
-        (1, 16) => mono(data.chunks_exact(2).map(|b| i16::from_le_bytes([b[0], b[1]]) as f32 / 32768.0).collect()),
-        (3, 32) => mono(data.chunks_exact(4).map(|b| f32::from_le_bytes([b[0], b[1], b[2], b[3]])).collect()),
+        // 65534: WAVE_FORMAT_EXTENSIBLE (what afconvert writes), PCM or float by its bits
+        (1 | 65534, 16) => mono(data.chunks_exact(2).map(|b| i16::from_le_bytes([b[0], b[1]]) as f32 / 32768.0).collect()),
+        (3 | 65534, 32) => mono(data.chunks_exact(4).map(|b| f32::from_le_bytes([b[0], b[1], b[2], b[3]])).collect()),
         _ => anyhow::bail!("a WAV of format {format}, {bits} bits: only 16-bit PCM or 32-bit float"),
     })
 }
