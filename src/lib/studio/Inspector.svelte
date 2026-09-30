@@ -4,6 +4,8 @@
 	each change saved as a new version of the shot (the clip follows it); and a camera move recorded by flying it. A video
 	clip's sound is a clip of its own, linked (detach it, unlink it, put it back in sync); a clip with words shows them —
 	click one to go there, take a run of them to cut the clip to it; a voice clip's captions are edited here, phrase by phrase.
+	A picture's shot analysis is shown too: what the file shows, where it serves an edit, its tags, and its cues (takes,
+	actions, emotions, cut points, transitions, highlights, problems) — those inside the clip go there on a click.
 -->
 <script>
 	import ColorBadge from './ColorBadge.svelte';
@@ -85,6 +87,29 @@
 		</fieldset>
 		{#if soundState}
 			<p class="sub" class:warn={soundState !== 'ready'}>Sound: {soundText[soundState] ?? soundState}</p>
+		{/if}
+		{@const an = /** @type {{ summary?: { line?: string, best_use?: string }, labels?: string[], free?: string[], cues?: { s: number, e: number, kind: string, label: string, note?: string, why?: string, take?: number, rank?: number, best?: boolean }[] } | undefined} */ (m?.meta?.analysis)}
+		{#if an && typeof an === 'object'}
+			<h3>Analysis</h3>
+			{#if an.summary?.line}<p class="line">{an.summary.line}</p>{/if}
+			{#if an.summary?.best_use}<p class="sub">Best use: {an.summary.best_use}</p>{/if}
+			{#if an.labels?.length || an.free?.length}
+				<p class="tags">{#each [...(an.labels ?? []), ...(an.free ?? [])] as t (t)}<span>{t}</span>{/each}</p>
+			{/if}
+			{#if an.cues?.length}
+				<ul class="cues">
+					{#each an.cues as q, i (i)}
+						{@const inside = q.s <= sel.in + sel.dur && Math.max(q.s, q.e ?? q.s) >= sel.in}
+						<li class:out={!inside}>
+							<button class="ghost" disabled={!inside} onclick={() => s.seek(sel.start + (Math.min(Math.max(q.s, sel.in), sel.in + sel.dur) - sel.in))} title={inside ? 'Go there' : 'Outside the part this clip plays'}>
+								<i class="k {q.kind}" class:best={q.best}></i>
+								<span class="t">{q.s.toFixed(1)}{q.e > q.s + 0.05 ? `–${q.e.toFixed(1)}` : ''} s</span>
+								<span class="l"><b>{q.kind}</b> {q.label}{q.kind === 'take' && q.take ? ` · take ${q.take}${q.rank ? ` (rank ${q.rank}${q.best ? ', best' : ''})` : ''}` : ''}{#if q.note || q.why}<small>{[q.note, q.why].filter(Boolean).join(' — ')}</small>{/if}</span>
+							</button>
+						</li>
+					{/each}
+				</ul>
+			{/if}
 		{/if}
 		{#if hasWords && m}
 			<h3>Words</h3>
@@ -252,6 +277,92 @@
 		letter-spacing: 0.12em;
 		text-transform: uppercase;
 		color: var(--dim);
+	}
+
+	.tags {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.25rem;
+		margin: 0.2rem 0 0.4rem;
+	}
+
+	.tags span {
+		padding: 0.05rem 0.4rem;
+		border-radius: 999px;
+		font-size: 0.68rem;
+		background: var(--raised);
+		color: var(--ink-soft);
+	}
+
+	.cues {
+		list-style: none;
+		margin: 0 0 0.5rem;
+		padding: 0;
+		max-height: 14rem;
+		overflow-y: auto;
+	}
+
+	.cues li.out {
+		opacity: 0.45;
+	}
+
+	.cues button {
+		display: grid;
+		grid-template-columns: 0.5rem 4.2rem 1fr;
+		gap: 0.4rem;
+		align-items: baseline;
+		width: 100%;
+		padding: 0.2rem 0.3rem;
+		text-align: left;
+		font-size: 0.74rem;
+		border: 0;
+	}
+
+	.cues .t {
+		font-variant-numeric: tabular-nums;
+		color: var(--dim);
+	}
+
+	.cues .l b {
+		font-weight: 600;
+		color: var(--ink-soft);
+	}
+
+	.cues small {
+		display: block;
+		color: var(--dim);
+		font-size: 0.68rem;
+	}
+
+	.k {
+		width: 0.45rem;
+		height: 0.45rem;
+		border-radius: 50%;
+		background: var(--dim);
+	}
+	.k.take {
+		background: var(--cyan);
+	}
+	.k.take.best {
+		background: var(--accent);
+	}
+	.k.action {
+		background: #6f8fd6;
+	}
+	.k.emotion {
+		background: #d67fb1;
+	}
+	.k.cut {
+		background: #e8e0c8;
+	}
+	.k.transition {
+		background: #3fae96;
+	}
+	.k.highlight {
+		background: #f2c14e;
+	}
+	.k.problem {
+		background: var(--rec);
 	}
 
 	h3 {

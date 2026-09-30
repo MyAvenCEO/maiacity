@@ -330,6 +330,36 @@
 		}
 		return out;
 	}
+	// ── what the shot analysis found in a picture's file, where it is in the clip ──
+	/** @typedef {{ s: number, e: number, kind: string, label: string, confidence?: number, note?: string, why?: string, take_of?: string, take?: number, rank?: number, best?: boolean }} Cue */
+	/**
+	 * The analysis cues of a picture clip's file within the part it plays: placed in the clip (px), longest first so a
+	 * point sits on top of a stretch.
+	 * @param {Clip} c @param {import('$lib/auth/client').MediaItem | undefined} m
+	 */
+	function clipCues(c, m) {
+		const cues = /** @type {Cue[] | undefined} */ (/** @type {{ cues?: Cue[] } | undefined} */ (m?.meta?.analysis)?.cues);
+		if (c.track !== 'V1' || !Array.isArray(cues) || isWorld(c)) return [];
+		const a = c.in, b = c.in + c.dur;
+		return cues
+			.filter((q) => typeof q.s === 'number' && Math.max(q.s, q.e ?? q.s) >= a && q.s <= b)
+			.map((q) => {
+				const from = Math.max(q.s, a), to = Math.min(Math.max(q.e ?? q.s, q.s), b);
+				return { q, x: (from - a) * s.pxPerSec, w: Math.max(3, (to - from) * s.pxPerSec), at: c.start + (from - a) };
+			})
+			.sort((p, r) => r.w - p.w);
+	}
+	/** A cue in words: its kind and label, the take and its rank, the note and why, how sure. @param {Cue} q */
+	const cueText = (q) =>
+		[
+			`${q.kind}: ${q.label}`,
+			q.kind === 'take' && q.take ? `take ${q.take}${q.rank ? ` (rank ${q.rank}${q.best ? ', best' : ''})` : ''}` : '',
+			q.note ?? '',
+			q.why ?? '',
+			typeof q.confidence === 'number' ? `${Math.round(q.confidence * 100)} % sure` : '',
+		]
+			.filter(Boolean)
+			.join(' — ');
 	/** @type {Record<string, string>} */
 	const soundNote = { loading: 'reading its sound…', waiting: 'no audio proxy yet', silent: 'no sound in this file' };
 
@@ -590,6 +620,10 @@
 									<canvas use:wave={{ peaks: src.peaks, from: c.in, to: c.in + c.dur, total: src.buffer?.duration ?? src.duration, color: tint(/** @type {Track} */ (t.id)) }}></canvas>
 								{/if}
 								{#each clipWords(c, m) as w, i (i)}<span class="wd" style:left="{w.x}px">{w.w}</span>{/each}
+								{#each clipCues(c, m) as k, i (i)}
+									<!-- svelte-ignore a11y_no_static_element_interactions -->
+									<i class="cue {k.q.kind}" class:best={k.q.best} style:left="{k.x}px" style:width="{k.w}px" title={cueText(k.q)} onpointerdown={(e) => (e.stopPropagation(), s.seek(k.at))}></i>
+								{/each}
 								{#if leadTrail(c)}<b class="jl" title="{leadTrail(c) === 'J' ? 'J-cut: its sound comes in before its picture' : leadTrail(c) === 'L' ? 'L-cut: its sound runs on past its picture' : 'Its sound leads and trails its picture'}">{leadTrail(c)}</b>{/if}
 								{#if c.hash && !m}<b class="gone" title="This clip's file is not on this Mac yet — it comes with the next sync">not on this Mac yet</b>{/if}
 								<span class="label">{#if onSoundTrack(c) && m?.kind === 'video'}<i class="snd">♪&nbsp;</i>{/if}{s.clipName(c)}{#if world}<i>&nbsp;v{c.shotVersion}</i>{/if}</span>
@@ -1234,6 +1268,51 @@
 		font-size: 0.7rem;
 		white-space: nowrap;
 		text-overflow: ellipsis;
+	}
+
+	/* the shot analysis' cues along the picture's foot: a stretch or a point, coloured by kind; a click goes there */
+	.cue {
+		position: absolute;
+		bottom: 0;
+		height: 0.28rem;
+		border-radius: 1px;
+		background: var(--dim);
+		opacity: 0.85;
+		cursor: pointer;
+		z-index: 2;
+	}
+
+	.cue:hover {
+		opacity: 1;
+		height: 0.45rem;
+	}
+
+	.cue.take {
+		background: var(--cyan);
+	}
+	.cue.take.best {
+		background: var(--accent);
+	}
+	.cue.action {
+		background: #6f8fd6;
+	}
+	.cue.emotion {
+		background: #d67fb1;
+	}
+	.cue.cut {
+		background: #e8e0c8;
+		width: 2px !important;
+		height: 100%;
+		opacity: 0.55;
+	}
+	.cue.transition {
+		background: #3fae96;
+	}
+	.cue.highlight {
+		background: #f2c14e;
+	}
+	.cue.problem {
+		background: var(--rec);
 	}
 
 	/* the words, faint, where they are spoken */
