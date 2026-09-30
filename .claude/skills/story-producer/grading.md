@@ -4,7 +4,7 @@ How a maiaCITY film's shots are levelled to each other before any look: the **ba
 colourist does it in DaVinci Resolve — scene by scene, against one master shot, by the key elements of the picture
 (blacks, whites, contrast, skin), with the scopes and the eye together. Learned on **Day 01 · Opening**.
 
-The film look (`grade_film`, the presets) and any creative grade come **later, on top**. This pass only removes what
+The film look, the scenes' looks, secondaries and finishing (`look.md`) come **later, on top**. This pass only removes what
 the camera got wrong from shot to shot, so the cut stops jumping.
 
 ## The rules

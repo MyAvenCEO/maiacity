@@ -298,3 +298,274 @@ pub fn bake(balance: Option<&crate::grade::Balance>, grades: &[Cdl], looks: &[Re
     }
     out
 }
+
+// ── secondaries: a part of one shot, given its own balance ───────────────────────────────────────────────────────
+
+/// A key: the colours a secondary takes, as the display shows them (the same units `look.rs` measures).
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct Key {
+    /// [centre°, width°] on the vectorscope (the skin line 123°)
+    pub hue: [f64; 2],
+    /// [low, high] chroma × 100 (as `look.rs` reports it)
+    #[serde(default = "sat_all")]
+    pub sat: [f64; 2],
+    /// [low, high] IRE
+    #[serde(default = "luma_all")]
+    pub luma: [f64; 2],
+    /// 0…1: how soft its edges are
+    #[serde(default = "half_soft")]
+    pub soft: f64,
+}
+fn sat_all() -> [f64; 2] {
+    [1.0, 100.0]
+}
+fn luma_all() -> [f64; 2] {
+    [0.0, 100.0]
+}
+fn half_soft() -> f64 {
+    0.5
+}
+
+/// A window: a shape on the frame (0…1 from the top left), turned and feathered; `track: "face"` follows the face
+/// Vision finds in each frame (its size then a multiple of the face's).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Window {
+    /// "ellipse" or "rect"
+    #[serde(default = "ellipse")]
+    pub shape: String,
+    #[serde(default = "mid")]
+    pub x: f64,
+    #[serde(default = "mid")]
+    pub y: f64,
+    /// width and height, as parts of the frame's (or, tracking a face, of the face's)
+    #[serde(default = "mid")]
+    pub w: f64,
+    #[serde(default = "mid")]
+    pub h: f64,
+    /// degrees
+    #[serde(default)]
+    pub angle: f64,
+    /// 0…1
+    #[serde(default = "mid")]
+    pub feather: f64,
+    #[serde(default)]
+    pub invert: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub track: Option<String>,
+}
+fn ellipse() -> String {
+    "ellipse".into()
+}
+fn mid() -> f64 {
+    0.5
+}
+
+/// A secondary: its key inside its window (either alone), given its own balance (`adjust`: temp, tint, exposure,
+/// contrast, highlights, shadows, sat) by `mix`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Secondary {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub key: Option<Key>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub window: Option<Window>,
+    #[serde(default)]
+    pub adjust: crate::grade::Balance,
+    #[serde(default = "one")]
+    pub mix: f64,
+}
+
+/// A shot's secondaries as data, checked: at most 4, numbers in their ranges; those that change nothing left out.
+pub fn clean_secondaries(v: &serde_json::Value) -> Vec<Secondary> {
+    let Some(list) = v.as_array() else { return vec![] };
+    let c = |x: f64, lo: f64, hi: f64, d: f64| if x.is_finite() { x.clamp(lo, hi) } else { d };
+    list.iter()
+        .take(4)
+        .filter_map(|s| serde_json::from_value::<Secondary>(s.clone()).ok())
+        .filter_map(|mut s| {
+            s.adjust = s.adjust_clean()?;
+            s.mix = c(s.mix, 0.0, 1.0, 1.0);
+            if let Some(k) = &mut s.key {
+                k.hue = [c(k.hue[0], -720.0, 720.0, 0.0).rem_euclid(360.0), c(k.hue[1], 1.0, 360.0, 40.0)];
+                k.sat = [c(k.sat[0], 0.0, 100.0, 1.0), c(k.sat[1], 0.0, 100.0, 100.0)];
+                k.luma = [c(k.luma[0], 0.0, 100.0, 0.0), c(k.luma[1], 0.0, 100.0, 100.0)];
+                k.soft = c(k.soft, 0.0, 1.0, 0.5);
+            }
+            if let Some(w) = &mut s.window {
+                w.shape = if w.shape == "rect" { "rect".into() } else { "ellipse".into() };
+                (w.x, w.y) = (c(w.x, -1.0, 2.0, 0.5), c(w.y, -1.0, 2.0, 0.5));
+                (w.w, w.h) = (c(w.w, 0.01, 4.0, 0.5), c(w.h, 0.01, 4.0, 0.5));
+                w.angle = c(w.angle, -360.0, 360.0, 0.0);
+                w.feather = c(w.feather, 0.0, 1.0, 0.5);
+                w.track = w.track.take().filter(|t| t == "face");
+            }
+            (s.mix > 0.0).then_some(s)
+        })
+        .collect()
+}
+
+impl Secondary {
+    /// Its adjustment, checked; None when it changes nothing.
+    fn adjust_clean(&self) -> Option<crate::grade::Balance> {
+        crate::grade::clean_balance(&serde_json::to_value(self.adjust).ok()?)
+    }
+}
+
+// ── finishing: the film's texture, after its looks ─────────────────────────────────────────────────────────────
+
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct Pop {
+    /// −1…1: local contrast (negative softens)
+    pub amount: f64,
+    /// pixels at 1080 lines
+    #[serde(default = "pop_radius")]
+    pub radius: f64,
+}
+fn pop_radius() -> f64 {
+    18.0
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct Glow {
+    /// 0…1
+    pub amount: f64,
+    /// ACEScct: the light above it glows (0.55 is about 1.3 stops over mid grey)
+    #[serde(default = "glow_threshold")]
+    pub threshold: f64,
+    /// pixels at 1080 lines
+    #[serde(default = "glow_radius")]
+    pub radius: f64,
+}
+fn glow_threshold() -> f64 {
+    0.55
+}
+fn glow_radius() -> f64 {
+    14.0
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct Grain {
+    /// 0…1 (0.25 is felt rather than seen)
+    pub amount: f64,
+    /// its size in pixels at 1080 lines
+    #[serde(default = "one")]
+    pub size: f64,
+    /// 0 luma only … 1 colour grain
+    #[serde(default)]
+    pub chroma: f64,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct Vignette {
+    /// 0…1 (1: 1.5 stops at the corners)
+    pub amount: f64,
+    /// where it begins: 1 the frame's edge
+    #[serde(default = "vig_size")]
+    pub size: f64,
+    #[serde(default = "mid")]
+    pub softness: f64,
+    /// 0 the frame's own shape … 1 a circle
+    #[serde(default)]
+    pub roundness: f64,
+}
+fn vig_size() -> f64 {
+    0.9
+}
+
+/// The film's finishing, after its looks and before the output transform: contrast pop, halation, bloom, grain,
+/// vignette — each subtle ("a kiss", Cullen Kelly).
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct Finish {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pop: Option<Pop>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub halation: Option<Glow>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bloom: Option<Glow>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub grain: Option<Grain>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub vignette: Option<Vignette>,
+}
+
+/// The finishing as data, checked; None when it adds nothing.
+pub fn clean_finish(v: &serde_json::Value) -> Option<Finish> {
+    let mut f: Finish = serde_json::from_value(v.clone()).ok()?;
+    let c = |x: f64, lo: f64, hi: f64, d: f64| if x.is_finite() { x.clamp(lo, hi) } else { d };
+    f.pop = f.pop.map(|p| Pop { amount: c(p.amount, -1.0, 1.0, 0.0), radius: c(p.radius, 2.0, 80.0, 18.0) }).filter(|p| p.amount != 0.0);
+    let glow = |g: Glow| Glow { amount: c(g.amount, 0.0, 1.0, 0.0), threshold: c(g.threshold, 0.3, 1.2, 0.55), radius: c(g.radius, 1.0, 120.0, 14.0) };
+    f.halation = f.halation.map(glow).filter(|g| g.amount > 0.0);
+    f.bloom = f.bloom.map(glow).filter(|g| g.amount > 0.0);
+    f.grain = f.grain.map(|g| Grain { amount: c(g.amount, 0.0, 1.0, 0.0), size: c(g.size, 0.5, 4.0, 1.0), chroma: c(g.chroma, 0.0, 1.0, 0.0) }).filter(|g| g.amount > 0.0);
+    f.vignette = f
+        .vignette
+        .map(|v| Vignette { amount: c(v.amount, 0.0, 1.0, 0.0), size: c(v.size, 0.2, 2.0, 0.9), softness: c(v.softness, 0.0, 1.0, 0.5), roundness: c(v.roundness, 0.0, 1.0, 0.0) })
+        .filter(|v| v.amount > 0.0);
+    (f != Finish::default()).then_some(f)
+}
+
+// ── on the GPU ───────────────────────────────────────────────────────────────────────────────────────────────────
+
+/// A shot's secondaries on its balanced picture (ACEScct, `w`×`h`): each a mask (its key read on the display picture,
+/// its window placed, or on the face given) blending in the picture under its own balance.
+pub fn apply_secondaries(gpu: &crate::gpu::Gpu, img: &crate::gpu::Image, secs: &[Secondary], face: Option<crate::look::Rect>, w: f64, h: f64) -> anyhow::Result<crate::gpu::Image> {
+    if secs.is_empty() {
+        return Ok(img.clone());
+    }
+    let disp = gpu.output(img)?;
+    let mut cur = img.clone();
+    for s in secs {
+        let (win, shape) = match &s.window {
+            None => ([0.0; 4], [0.0; 4]),
+            Some(wd) => {
+                // centre and half size in pixels, Core Image's y from the bottom
+                let (cx, cy, hw, hh) = match (&wd.track, face) {
+                    (Some(_), Some(f)) => {
+                        let (fw, fh) = ((f[2] - f[0]) * w, (f[3] - f[1]) * h);
+                        (((f[0] + f[2]) / 2.0 + (wd.x - 0.5) * (f[2] - f[0])) * w, (1.0 - ((f[1] + f[3]) / 2.0 + (wd.y - 0.5) * (f[3] - f[1]))) * h, fw * wd.w, fh * wd.h)
+                    }
+                    _ => (wd.x * w, (1.0 - wd.y) * h, wd.w * w / 2.0, wd.h * h / 2.0),
+                };
+                ([cx, cy, hw, hh], [wd.angle.to_radians(), wd.feather, if wd.shape == "rect" { 2.0 } else { 1.0 }, if wd.invert { 1.0 } else { 0.0 }])
+            }
+        };
+        let (key, keyb) = match &s.key {
+            None => ([0.0; 4], [0.0; 4]),
+            Some(k) => ([k.hue[0].to_radians(), (k.hue[1] / 2.0).to_radians(), k.sat[0] / 100.0, k.sat[1] / 100.0], [k.luma[0] / 100.0, k.luma[1] / 100.0, k.soft, 1.0]),
+        };
+        let mask = gpu.mask(&disp, win, shape, key, keyb)?;
+        let adjusted = gpu.balance(&cur, Some(&s.adjust))?;
+        cur = gpu.blend(&cur, &adjusted, &mask, s.mix)?;
+    }
+    Ok(cur)
+}
+
+/// The film's finishing on a picture after its looks (ACEScct, `h` lines high), frame `frame` of the film (the
+/// grain's seed): pop, then halation and bloom in linear light, then grain, then the vignette.
+pub fn apply_finish(gpu: &crate::gpu::Gpu, img: &crate::gpu::Image, f: &Finish, frame: u64, h: f64) -> anyhow::Result<crate::gpu::Image> {
+    let k = h / 1080.0;
+    let mut cur = img.clone();
+    if let Some(p) = &f.pop {
+        cur = gpu.pop(&cur, p.radius * k, p.amount * 1.5)?;
+    }
+    if f.halation.is_some() || f.bloom.is_some() {
+        let lin_of = |c: f64| if c <= 0.155251141552511 { (c - 0.0729055341958355) / 10.5402377416545 } else { 2f64.powf(c * 17.52 - 9.72) };
+        let mut lin = gpu.to_linear(&cur)?;
+        if let Some(g) = &f.halation {
+            // red spreads widest, green less, blue hardly: film's halation
+            lin = gpu.glow(&lin, lin_of(g.threshold), g.radius * k, [1.0, 0.28, 0.06], g.amount * 0.6)?;
+        }
+        if let Some(g) = &f.bloom {
+            lin = gpu.glow(&lin, lin_of(g.threshold), g.radius * k, [1.0, 0.97, 0.92], g.amount * 0.4)?;
+        }
+        cur = gpu.to_cct(&lin)?;
+    }
+    if let Some(g) = &f.grain {
+        cur = gpu.grain(&cur, g.amount, g.size * k, (frame % 997) as f64 * 1.618 + 0.5, g.chroma)?;
+    }
+    if let Some(v) = &f.vignette {
+        cur = gpu.vignette(&cur, v.amount, v.size, v.softness, v.roundness)?;
+    }
+    Ok(cur)
+}

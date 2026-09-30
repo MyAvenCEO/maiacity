@@ -124,7 +124,7 @@
 
 	.zoom input {
 		width: 6.5rem;
-		accent-color: var(--ink);
+		accent-color: var(--accent);
 	}
 
 	.keys {

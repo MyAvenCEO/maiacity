@@ -10,6 +10,8 @@
 	import { evaluate } from './shots.js';
 	import { clockText, isWorld, ratio, raw } from './studio.svelte.js';
 	import Viewer from './Viewer.svelte';
+	import { untrack } from 'svelte';
+	import { nativeFrame } from './luts.js';
 	import { placeholder, worldUrl } from './world.svelte.js';
 
 	/** @typedef {import('$lib/auth/client').Shape} Shape */
@@ -33,6 +35,68 @@
 	const still = $derived(s.showStill ? s.stillOf(pic) : null);
 	/** @type {HTMLImageElement | null} */
 	let stillImg = $state(null);
+	// Grade, playing: the Mac plays the picture through the whole grade (the render's chain on Metal, secondaries and
+	// finishing too), laid over the viewer's picture; the sound stays the studio's, the player follows its clock
+	/** @type {HTMLDivElement | null} */
+	let frameEl = $state(null);
+	const nativePlay = $derived(s.tab === 'grade' && s.playing && !s.falseColor);
+	/** @param {string} name @param {Record<string, unknown>} args */
+	const mac = async (name, args) => {
+		try {
+			const { command } = await import('$lib/native');
+			await command(name, args);
+		} catch (e) {
+			console.warn(`playback: ${name}:`, e);
+		}
+	};
+	const playKey = $derived(s.tab === 'grade' ? JSON.stringify([s.current?.id, s.viewShape, s.current?.grade ?? null, s.clips.filter((c) => c.track === 'V1')]) : '');
+	let loaded = '';
+	const place = () => {
+		const r = frameEl?.getBoundingClientRect();
+		if (r) void mac('player_view', { rect: [r.left, r.top, r.width, r.height] });
+	};
+	$effect(() => {
+		if (!nativePlay) {
+			const at = untrack(() => s.time);
+			void mac('player_pause', { time: at }).then(() => mac('player_view', { rect: null }));
+			return;
+		}
+		const key = untrack(() => playKey);
+		// read without tracking: an edit while it plays doesn't restart the player (the next play picks it up)
+		void untrack(() => (async () => {
+			if (loaded !== key) {
+				const clips = s.clips.filter((c) => c.track === 'V1' && c.hash);
+				const files = Object.fromEntries(clips.map((c) => [c.id, s.playItem(c)?.hash ?? c.hash]));
+				const profiles = Object.fromEntries(clips.map((c) => [c.id, s.profileOfClip(c)]));
+				await mac('player_load', { timeline: $state.snapshot(s.current), shape: s.viewShape, files, profiles, width: 1280 });
+				loaded = key;
+			}
+			place();
+			await mac('player_play', { time: untrack(() => s.time) });
+		})());
+		// kept on the studio's clock, and on the picture when the window moves or resizes
+		const id = setInterval(() => void mac('player_sync', { time: untrack(() => s.time) }), 1000);
+		const ro = new ResizeObserver(place);
+		if (frameEl) ro.observe(frameEl);
+		window.addEventListener('resize', place);
+		return () => (clearInterval(id), ro.disconnect(), window.removeEventListener('resize', place));
+	});
+	// Grade on a still: the picture the Mac makes of it through the whole grade — secondaries, looks, finishing, what the
+	// render makes — over the live preview, a moment after anything about it changes
+	let nativeUrl = $state(/** @type {string | null} */ (null));
+	const nativeKey = $derived(still && pic && !s.falseColor ? JSON.stringify([still.hash, s.frameTimeline(pic), s.viewShape]) : '');
+	$effect(() => {
+		const k = nativeKey;
+		if (!k) return void (nativeUrl = null);
+		let live = true;
+		const t = setTimeout(() => {
+			const [h, tl, shape] = JSON.parse(k);
+			nativeFrame(tl, tl.clips[0].id, h, 1600, shape)
+				.then((u) => live && (nativeUrl = u))
+				.catch((e) => console.warn('viewer: the native frame', e));
+		}, 120);
+		return () => ((live = false), clearTimeout(t));
+	});
 	const source = $derived.by(() => {
 		if (!pic) return null;
 		if (still) return stillImg;
@@ -112,20 +176,24 @@
 	<h2 class="mlabel">{label}</h2>
 	<div class="badges">
 		{#if s.tab === 'grade'}
+			<!-- what the picture is judged on: its 4K still (a frame of the original), its proxy, its original — one control,
+			     each choice saying what it shows -->
+			{@const st = s.stillOf(pic)}
 			<span class="src" role="tablist" aria-label="What the grade is judged on">
-				{#each [['stills', 'Still'], ['proxies', 'Proxy'], ['originals', 'Original']] as [k, label] (k)}
-					<button role="tab" aria-selected={s.gradeOn === k} class:on={s.gradeOn === k} onclick={() => (s.gradeOn = /** @type {'stills' | 'proxies' | 'originals'} */ (k))}>{label}</button>
-				{/each}
+				<i>Picture</i>
+				<button role="tab" aria-selected={s.gradeOn === 'stills'} class:on={s.gradeOn === 'stills'} class:warn={!!st && !st.inside} onclick={() => (s.gradeOn = 'stills')} title={st ? `The grading still: a 4K frame of the original at ${st.t.toFixed(1)} s${st.inside ? '' : ' — outside this cut'}` : 'No grading still for this shot yet'}>Still{#if st}<small>{st.t.toFixed(1)} s{st.inside ? '' : ' ⚠'}</small>{/if}</button>
+				<button role="tab" aria-selected={s.gradeOn === 'proxies'} class:on={s.gradeOn === 'proxies'} onclick={() => (s.gradeOn = 'proxies')} title="The HD proxy: plays light">Proxy</button>
+				<button role="tab" aria-selected={s.gradeOn === 'originals'} class:on={s.gradeOn === 'originals'} onclick={() => (s.gradeOn = 'originals')} title="The original file: full quality, heavy">Original</button>
 			</span>
 		{/if}
-		{#if fileNote}<span class="b" class:warn={fileNote.startsWith('no proxy') || fileNote.includes('outside')}>{fileNote}</span>{/if}
+		{#if fileNote && (s.tab !== 'grade' || fileNote.startsWith('no proxy'))}<span class="b" class:warn={fileNote.startsWith('no proxy') || fileNote.includes('outside')}>{fileNote}</span>{/if}
 		{#if worldNote}<span class="b world">{worldNote}</span>{/if}
 		{#if s.preparing}<span class="b warn">preparing the world…</span>{/if}
 		{#if isWorld(pic) && s.world.error}<span class="b warn" title={s.world.error}>world: {s.world.error}</span>{/if}
 		{#if gl && plan?.note && pic}<span class="b warn" title={plan.note}>{plan.note}</span>{/if}
 		{#if !gl}<span class="b warn">No WebGL2: colour not managed</span>{/if}
 	</div>
-	<div class="frame" class:tall={s.viewShape === '9:16'} class:gl style:--ar={s.viewShape.replace(':', ' / ')}>
+	<div class="frame" bind:this={frameEl} class:tall={s.viewShape === '9:16'} class:gl style:--ar={s.viewShape.replace(':', ' / ')}>
 		{#each s.reel as c (c.id)}
 			<!-- svelte-ignore a11y_media_has_caption -->
 			<video
@@ -161,6 +229,9 @@
 			bind:plan
 			bind:supported={gl}
 		/>
+		{#if nativeUrl && nativeKey}
+			<img class="native" src={nativeUrl} alt="" />
+		{/if}
 		{#if pic?.kind === 'slate'}
 			<!-- a shot not filmed yet: its script, where the picture will be -->
 			<div class="slate">
@@ -348,6 +419,14 @@
 		opacity: 0;
 	}
 
+	/* the Mac's own picture of the still, through the whole grade */
+	.frame img.native {
+		z-index: 1;
+		opacity: 1;
+		object-fit: fill;
+		pointer-events: none;
+	}
+
 	/* the badge row lets clicks through to the picture; the switch takes its own */
 	.src {
 		position: relative;
@@ -369,6 +448,30 @@
 		font-size: 0.68rem;
 		color: var(--dim);
 		cursor: pointer;
+	}
+
+	.src i {
+		padding: 0 0.45rem 0 0.55rem;
+		font-style: normal;
+		font-size: 0.62rem;
+		letter-spacing: 0.04em;
+		text-transform: uppercase;
+		color: var(--dim);
+		align-self: center;
+	}
+
+	.src button small {
+		margin-left: 0.3rem;
+		font-size: 0.6rem;
+		color: var(--dim);
+	}
+
+	.src button.on small {
+		color: var(--ink-soft);
+	}
+
+	.src button.warn small {
+		color: var(--warn);
 	}
 
 	.src button.on {

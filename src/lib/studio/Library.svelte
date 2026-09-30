@@ -579,7 +579,7 @@
 	}
 
 	.toggles input {
-		accent-color: var(--ink);
+		accent-color: var(--accent);
 	}
 
 	/* the middle */

@@ -136,9 +136,9 @@
 		align-self: center;
 		padding: 0 0.35rem;
 		border-radius: 4px;
-		background: var(--ink);
+		background: var(--accent);
 		font-size: 0.68rem;
-		color: var(--on-ink);
+		color: var(--on-accent);
 	}
 
 	.nm {

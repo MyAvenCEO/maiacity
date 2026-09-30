@@ -115,6 +115,111 @@ extern "C" float4 lut3d(coreimage::sampler src, coreimage::sampler lut, float si
 }
 "#;
 
+/// The creative grade's kernels (creative.rs): a secondary's mask and blend, the log and linear light, the finishing —
+/// pop, glow (halation, bloom), grain (the vignette is a mask and a blend).
+pub const CREATIVE_KERNELS: &str = r#"#include <CoreImage/CoreImage.h>
+using namespace metal;
+
+constant float3 LUMA = float3(0.2126f, 0.7152f, 0.0722f);
+constant float STOP = 1.0f / 17.52f;
+
+// a secondary's mask from the display picture `d`: its key (hue on the vectorscope, chroma, luma, soft edges) inside
+// its window (an ellipse or a rectangle, turned, feathered, inverted) — 0…1 in every channel.
+//   win    centre x, y and half width, half height, in pixels (Core Image's, from the bottom)
+//   shape  angle (radians), feather (0…1), kind (0 none, 1 ellipse, 2 rectangle), invert (0, 1)
+//   key    hue centre (radians), hue half width (radians), chroma low, chroma high
+//   keyb   luma low, luma high, softness (0…1), on (0, 1)
+extern "C" float4 mask(coreimage::sample_t d, float4 win, float4 shape, float4 key, float4 keyb, coreimage::destination dest) [[stitchable]] {
+    float m = 1.0f;
+    if (shape.z > 0.5f) {
+        float2 p = dest.coord() - win.xy;
+        float c = cos(shape.x), sn = sin(shape.x);
+        p = float2(c * p.x + sn * p.y, -sn * p.x + c * p.y) / max(win.zw, float2(1.0f));
+        float r = shape.z < 1.5f ? length(p) : max(abs(p.x), abs(p.y));
+        float f = max(shape.y, 0.001f) * 0.5f;
+        m = 1.0f - smoothstep(1.0f - f, 1.0f + f, r);
+        if (shape.w > 0.5f) m = 1.0f - m;
+    }
+    if (keyb.w > 0.5f) {
+        float y = dot(d.rgb, LUMA);
+        float cb = (d.b - y) / 1.8556f, cr = (d.r - y) / 1.5748f;
+        float ch = length(float2(cb, cr));
+        float hue = atan2(cr, cb);
+        float dh = abs(fmod(hue - key.x + 3.0f * M_PI_F, 2.0f * M_PI_F) - M_PI_F);
+        float soft = max(keyb.z, 0.001f);
+        float hk = 1.0f - smoothstep(key.y, key.y + soft * 0.6f, dh);
+        float ck = smoothstep(key.z - soft * 0.02f, key.z, ch) * (1.0f - smoothstep(key.w, key.w + soft * 0.03f, ch));
+        float lk = smoothstep(keyb.x - soft * 0.08f, keyb.x, y) * (1.0f - smoothstep(keyb.y, keyb.y + soft * 0.08f, y));
+        m *= hk * ck * lk;
+    }
+    return float4(m, m, m, 1.0f);
+}
+
+// `b` over `a` where the mask `m` says, by `k`
+extern "C" float4 blend(coreimage::sample_t a, coreimage::sample_t b, coreimage::sample_t m, float k) [[stitchable]] {
+    return float4(mix(a.rgb, b.rgb, clamp(m.r * k, 0.0f, 1.0f)), a.a);
+}
+
+float from_cct(float c) { return c <= 0.155251141552511f ? (c - 0.0729055341958355f) / 10.5402377416545f : exp2(c * 17.52f - 9.72f); }
+float to_cct(float l) { return l <= 0.0078125f ? 10.5402377416545f * l + 0.0729055341958355f : (log2(max(l, 1e-10f)) + 9.72f) / 17.52f; }
+
+// ACEScct to linear light (AP1) and back: the glow is made in light
+extern "C" float4 cct_lin(coreimage::sample_t s) [[stitchable]] {
+    return float4(from_cct(s.r), from_cct(s.g), from_cct(s.b), s.a);
+}
+extern "C" float4 lin_cct(coreimage::sample_t s) [[stitchable]] {
+    return float4(to_cct(s.r), to_cct(s.g), to_cct(s.b), s.a);
+}
+
+// what glows: the light above a threshold, with a soft knee
+extern "C" float4 knee(coreimage::sample_t s, float t) [[stitchable]] {
+    float y = dot(s.rgb, LUMA);
+    float k = smoothstep(t * 0.7f, t * 1.4f, y);
+    return float4(s.rgb * k, 1.0f);
+}
+
+// the glow added back, tinted (halation red-orange, bloom its own colour)
+extern "C" float4 glow(coreimage::sample_t base, coreimage::sample_t blur, float3 tint, float amount) [[stitchable]] {
+    return float4(base.rgb + blur.rgb * tint * amount, base.a);
+}
+
+// local contrast: the luma's detail against its blur, added back (held to ±0.1 so edges don't ring)
+extern "C" float4 pop(coreimage::sample_t x, coreimage::sample_t b, float amount) [[stitchable]] {
+    float d = clamp(dot(x.rgb, LUMA) - dot(b.rgb, LUMA), -0.1f, 0.1f);
+    return float4(x.rgb + amount * d, x.a);
+}
+
+float hash3(float2 p, float seed) {
+    float3 q = fract(float3(p.x, p.y, seed) * float3(0.1031f, 0.1030f, 0.0973f));
+    q += dot(q, q.yzx + 33.33f);
+    return fract((q.x + q.y) * q.z);
+}
+
+// smooth noise about 0 (a sum of three hashes, eased between the grain's cells)
+float noise(float2 p, float seed) {
+    float2 i = floor(p), f = p - i;
+    f = f * f * (3.0f - 2.0f * f);
+    float n00 = hash3(i, seed) + hash3(i + 17.1f, seed) + hash3(i + 41.7f, seed) - 1.5f;
+    float n10 = hash3(i + float2(1, 0), seed) + hash3(i + float2(1, 0) + 17.1f, seed) + hash3(i + float2(1, 0) + 41.7f, seed) - 1.5f;
+    float n01 = hash3(i + float2(0, 1), seed) + hash3(i + float2(0, 1) + 17.1f, seed) + hash3(i + float2(0, 1) + 41.7f, seed) - 1.5f;
+    float n11 = hash3(i + float2(1, 1), seed) + hash3(i + float2(1, 1) + 17.1f, seed) + hash3(i + float2(1, 1) + 41.7f, seed) - 1.5f;
+    return mix(mix(n00, n10, f.x), mix(n01, n11, f.x), f.y) * 2.0f;
+}
+
+// film grain in the log: strongest in the middle tones, less in the deep shadows and highlights; `chroma` 0 is luma
+// only; a new pattern every frame (the seed)
+extern "C" float4 grain(coreimage::sample_t s, float amount, float size, float seed, float chroma, coreimage::destination dest) [[stitchable]] {
+    float2 p = dest.coord() / max(size, 0.5f);
+    float y = dot(s.rgb, LUMA);
+    float w = clamp(1.25f - abs(y - 0.45f) * 2.4f, 0.15f, 1.0f);
+    float mono = noise(p, seed);
+    float3 col = float3(noise(p, seed + 1.3f), noise(p, seed + 2.9f), noise(p, seed + 4.7f));
+    float3 n = mix(float3(mono), col, chroma);
+    return float4(s.rgb + n * amount * 0.03f * w, s.a);
+}
+
+"#;
+
 pub type Image = Retained<CIImage>;
 
 /// A 3D LUT on the GPU: its cube as an image the `lut3d` kernel samples.
@@ -136,6 +241,19 @@ pub struct Gpu {
     dither: Retained<CIColorKernel>,
     lut3d: Retained<CIKernel>,
     lut: Option<Cube>,
+    creative: Creative,
+}
+
+/// The creative grade's kernels (`CREATIVE_KERNELS`).
+struct Creative {
+    mask: Retained<CIColorKernel>,
+    blend: Retained<CIColorKernel>,
+    cct_lin: Retained<CIColorKernel>,
+    lin_cct: Retained<CIColorKernel>,
+    knee: Retained<CIColorKernel>,
+    glow: Retained<CIColorKernel>,
+    pop: Retained<CIColorKernel>,
+    grain: Retained<CIColorKernel>,
 }
 
 fn rect(x: f64, y: f64, w: f64, h: f64) -> CGRect {
@@ -188,6 +306,17 @@ impl Gpu {
         };
         let cst = kernels(vault_media::cst::METAL_KERNEL)?;
         let ours = kernels(KERNELS)?;
+        let cr = kernels(CREATIVE_KERNELS)?;
+        let creative = Creative {
+            mask: color(find(&cr, "mask")?),
+            blend: color(find(&cr, "blend")?),
+            cct_lin: color(find(&cr, "cct_lin")?),
+            lin_cct: color(find(&cr, "lin_cct")?),
+            knee: color(find(&cr, "knee")?),
+            glow: color(find(&cr, "glow")?),
+            pop: color(find(&cr, "pop")?),
+            grain: color(find(&cr, "grain")?),
+        };
         Ok(Self {
             context,
             journey: color(find(&cst, "acescct")?),
@@ -198,7 +327,14 @@ impl Gpu {
             dither: color(find(&ours, "dither")?),
             lut3d: find(&ours, "lut3d")?,
             lut: None,
+            creative,
         })
+    }
+
+    /// Its Core Image context (unmanaged: no working or output colour space) — for AVFoundation to render our pictures
+    /// with.
+    pub fn context(&self) -> Retained<CIContext> {
+        self.context.clone()
     }
 
     /// The output transform's cube, loaded once per render.
@@ -464,6 +600,75 @@ impl Gpu {
             let data = self.context.JPEGRepresentationOfImage_colorSpace_options(&img, &space, &NSDictionary::new()).context("Core Image made no JPEG")?;
             Ok(data.to_vec())
         }
+    }
+
+    fn run(&self, k: &CIColorKernel, extent: CGRect, args: &[&AnyObject], what: &str) -> Result<Image> {
+        // SAFETY: the kernel's arguments as its signature takes them
+        unsafe { k.applyWithExtent_arguments(extent, &NSArray::from_slice(args)) }.with_context(|| format!("{what} gave no picture"))
+    }
+
+    /// A secondary's mask (see the `mask` kernel), from the display picture `d`.
+    pub fn mask(&self, d: &CIImage, win: [f64; 4], shape: [f64; 4], key: [f64; 4], keyb: [f64; 4]) -> Result<Image> {
+        let v4 = |v: [f64; 4]| unsafe { CIVector::vectorWithX_Y_Z_W(v[0], v[1], v[2], v[3]) };
+        let (a, b, c, e) = (v4(win), v4(shape), v4(key), v4(keyb));
+        self.run(&self.creative.mask, d.ext(), &[d, &a, &b, &c, &e], "the mask")
+    }
+
+    /// `b` over `a` where the mask says, by `k`.
+    pub fn blend(&self, a: &CIImage, b: &CIImage, m: &CIImage, k: f64) -> Result<Image> {
+        self.run(&self.creative.blend, a.ext(), &[a, b, m, &num(k)], "the blend")
+    }
+
+    pub fn to_linear(&self, img: &CIImage) -> Result<Image> {
+        self.run(&self.creative.cct_lin, img.ext(), &[img], "linear light")
+    }
+
+    pub fn to_cct(&self, img: &CIImage) -> Result<Image> {
+        self.run(&self.creative.lin_cct, img.ext(), &[img], "ACEScct")
+    }
+
+    /// A Gaussian blur of `radius` pixels, its edges held (the picture's own extent kept).
+    pub fn blur(&self, img: &CIImage, radius: f64) -> Result<Image> {
+        let e = img.ext();
+        // SAFETY: plain Core Image calls
+        unsafe {
+            let filter = CIFilter::filterWithName(&NSString::from_str("CIGaussianBlur")).context("no Gaussian blur")?;
+            filter.setValue_forKey(Some(&img.imageByClampingToExtent()), kCIInputImageKey);
+            filter.setValue_forKey(Some(&num(radius.max(0.0))), &NSString::from_str("inputRadius"));
+            let out = filter.outputImage().context("the blur gave no picture")?;
+            Ok(out.imageByCroppingToRect(e))
+        }
+    }
+
+    /// Glow (halation, bloom) in linear light: the light above `threshold` (linear), blurred by `radius`, tinted, added.
+    pub fn glow(&self, lin: &CIImage, threshold: f64, radius: f64, tint: [f64; 3], amount: f64) -> Result<Image> {
+        let hot = self.run(&self.creative.knee, lin.ext(), &[lin, &num(threshold)], "the glow's light")?;
+        let soft = self.blur(&hot, radius)?;
+        self.run(&self.creative.glow, lin.ext(), &[lin, &*soft, &vec3(tint), &num(amount)], "the glow")
+    }
+
+    /// Local contrast: the luma's detail against its blur of `radius`, by `amount`.
+    pub fn pop(&self, img: &CIImage, radius: f64, amount: f64) -> Result<Image> {
+        let b = self.blur(img, radius)?;
+        self.run(&self.creative.pop, img.ext(), &[img, &*b, &num(amount)], "the pop")
+    }
+
+    /// Film grain in the log (see the `grain` kernel).
+    pub fn grain(&self, img: &CIImage, amount: f64, size: f64, seed: f64, chroma: f64) -> Result<Image> {
+        self.run(&self.creative.grain, img.ext(), &[img, &num(amount), &num(size), &num(seed), &num(chroma)], "the grain")
+    }
+
+    /// A vignette in stops: the picture towards `amount` × 1.5 stops darker outside an ellipse (`size` 1: the frame's
+    /// edge; `roundness` 0 the frame's own shape, 1 a circle), feathered by `softness` — the secondary's own mask and
+    /// blend, inverted.
+    pub fn vignette(&self, img: &CIImage, amount: f64, size: f64, softness: f64, roundness: f64) -> Result<Image> {
+        let e = img.ext();
+        let (hw, hh) = (e.size.width / 2.0, e.size.height / 2.0);
+        let r = hw.min(hh);
+        let (kw, kh) = ((hw + (r - hw) * roundness) * size, (hh + (r - hh) * roundness) * size);
+        let m = self.mask(img, [e.origin.x + hw, e.origin.y + hh, kw, kh], [0.0, softness.max(0.05) * 2.0, 1.0, 1.0], [0.0; 4], [0.0; 4])?;
+        let dark = self.balance(img, Some(&Balance { exposure: -1.5 * amount, ..Default::default() }))?;
+        self.blend(img, &dark, &m, 1.0)
     }
 
     /// Read a picture back as RGBA f32 (tests, the hero frame).

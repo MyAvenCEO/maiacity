@@ -290,6 +290,37 @@ pub struct ScopesArgs {
 }
 
 #[derive(Deserialize, schemars::JsonSchema)]
+pub struct SecondaryArgs {
+    /// the timeline's id
+    pub timeline: String,
+    /// the clip's id (a V1 clip)
+    pub clip: String,
+    /// its secondaries (at most 4), each { name?, key?: { hue: [centre°, width°] (the vectorscope's; skin 123°), sat:
+    /// [lo, hi] (chroma × 100), luma: [lo, hi] (IRE), soft 0…1 }, window?: { shape: ellipse | rect, x, y (centre,
+    /// 0…1 from the top left), w, h (parts of the frame, or of the face with track: face), angle°, feather 0…1,
+    /// invert, track?: "face" }, adjust: { temp, tint, exposure, contrast, highlights, shadows, sat } (the balance's
+    /// units), mix 0…1 } — a key alone, a window alone, or a key inside a window; none or []: take them off
+    pub secondaries: Option<Value>,
+}
+
+#[derive(Deserialize, schemars::JsonSchema)]
+pub struct ReferenceArgs {
+    /// the reference stills (a moodboard): the files' hashes in the vault
+    pub hashes: Vec<String>,
+}
+
+#[derive(Deserialize, schemars::JsonSchema)]
+pub struct FinishArgs {
+    /// the timeline's id
+    pub timeline: String,
+    /// the film's finishing, after its looks: { pop?: { amount −1…1, radius px@1080 }, halation?: { amount 0…1,
+    /// threshold (ACEScct, 0.55), radius px@1080 }, bloom?: { same }, grain?: { amount 0…1 (0.25: felt, not seen),
+    /// size px@1080, chroma 0…1 }, vignette?: { amount 0…1 (1: 1.5 stops), size (1: the frame's edge), softness,
+    /// roundness } } — none: take it off
+    pub finish: Option<Value>,
+}
+
+#[derive(Deserialize, schemars::JsonSchema)]
 pub struct LookSetArgs {
     /// the timeline's id
     pub timeline: String,
@@ -1071,6 +1102,64 @@ impl Studio {
                     g["scenes"][scene.as_str()] = look;
                 }
             }
+            let saved = self.api("PUT", &format!("/api/timelines/{}", a.timeline), Some(json!({ "grade": g }))).await?;
+            Ok::<_, String>(json!({ "grade": saved["grade"] }))
+        };
+        text(r.await)
+    }
+
+    #[tool(
+        description = "Set one shot's secondaries — parts of it (a key: a hue range with its chroma and luma; a window: an ellipse or rectangle, turned, feathered, inverted, or on the face Vision finds in every frame) given their own balance, after the shot's balance and before its grade and looks. Spatial: shown natively on the stills in the Grade tab and in the render. Check it with grade_scopes { looks: true }."
+    )]
+    async fn grade_secondary(&self, Parameters(a): Parameters<SecondaryArgs>) -> String {
+        let r = async {
+            let t = self.api("GET", &format!("/api/timelines/{}", a.timeline), None).await?;
+            let mut clips = t["clips"].as_array().cloned().ok_or("the timeline has no clips")?;
+            let clip = clips.iter_mut().find(|c| c["id"].as_str() == Some(a.clip.as_str())).ok_or("no such clip on this timeline")?;
+            clip["secondaries"] = a.secondaries.unwrap_or(Value::Null);
+            let saved = self.api("PUT", &format!("/api/timelines/{}", a.timeline), Some(json!({ "clips": clips }))).await?;
+            let now = saved["clips"].as_array().and_then(|cs| cs.iter().find(|c| c["id"].as_str() == Some(a.clip.as_str()))).map(|c| c["secondaries"].clone());
+            Ok::<_, String>(json!({ "clip": a.clip, "secondaries": now }))
+        };
+        text(r.await)
+    }
+
+    #[tool(
+        description = "Read reference stills — a moodboard of the look to get close to (pictures as they are shown, display-referred) — as grade_look reads a shot through its whole chain: levels (p1…p99 IRE, contrast), zones (shadows, middle, highlights: level, cast, hue and chroma on the vectorscope), where the colour lies (warm, green, teal/blue shares), saturation, and the skin of the face Vision finds. Compare them with grade_look { looks: true } on the timeline's shots."
+    )]
+    async fn look_reference(&self, Parameters(a): Parameters<ReferenceArgs>) -> String {
+        let r = async {
+            let mut out = Vec::new();
+            for h in a.hashes {
+                let hash: iroh_blobs::Hash = h.parse().map_err(|e| format!("{h}: {e}"))?;
+                let src = crate::blob::source(&self.vault, hash, "reference.png").await.map_err(|e| format!("{e:#}"))?;
+                let read = tauri::async_runtime::spawn_blocking(move || objc2::rc::autoreleasepool(|_| vault_render::look::reference(src)))
+                    .await
+                    .map_err(|e| format!("{e}"))?;
+                out.push(match read {
+                    Ok(mut v) => {
+                        v["hash"] = json!(h);
+                        v
+                    }
+                    Err(e) => json!({ "hash": h, "error": format!("{e:#}") }),
+                });
+            }
+            Ok::<_, String>(json!({ "references": out }))
+        };
+        text(r.await)
+    }
+
+    #[tool(
+        description = "Set the film's finishing, after its looks and before the output transform: contrast pop (local contrast), halation (red-orange glow around highlights), bloom, film grain (luma, a new pattern every frame), vignette (in stops) — each subtle. Spatial: shown natively on the stills in the Grade tab and in the render."
+    )]
+    async fn grade_finish(&self, Parameters(a): Parameters<FinishArgs>) -> String {
+        let r = async {
+            let t = self.api("GET", &format!("/api/timelines/{}", a.timeline), None).await?;
+            let mut g = t["grade"].clone();
+            if !g.is_object() {
+                g = json!({ "look": null });
+            }
+            g["finish"] = a.finish.unwrap_or(Value::Null);
             let saved = self.api("PUT", &format!("/api/timelines/{}", a.timeline), Some(json!({ "grade": g }))).await?;
             Ok::<_, String>(json!({ "grade": saved["grade"] }))
         };

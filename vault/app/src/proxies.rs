@@ -139,7 +139,7 @@ async fn looks_of(vault: &Vault, looks: &[serde_json::Value]) -> crate::Res<Vec<
 }
 
 /// A clip's whole colour chain (its balance, its grades, its looks) as one cube over ACEScct, `size`³ RGB.
-async fn chain_cube(vault: &Vault, balance: Option<serde_json::Value>, grades: Vec<serde_json::Value>, looks: Vec<serde_json::Value>, size: usize) -> crate::Res<Vec<f32>> {
+pub(crate) async fn chain_cube(vault: &Vault, balance: Option<serde_json::Value>, grades: Vec<serde_json::Value>, looks: Vec<serde_json::Value>, size: usize) -> crate::Res<Vec<f32>> {
     let b = balance.as_ref().and_then(vault_render::grade::clean_balance);
     let g: Vec<vault_render::grade::Cdl> = grades.iter().filter_map(vault_render::grade::clean_cdl).collect();
     let looks = looks_of(vault, &looks).await?;
@@ -151,27 +151,33 @@ async fn chain_cube(vault: &Vault, balance: Option<serde_json::Value>, grades: V
     .map_err(|e| format!("{e}"))
 }
 
-/// A shot's picture as it will look, for the studio's strips: its grading still (4K ACEScct, from the original)
-/// through its balance, its grades in order (its own CDL, the film's look) and the output transform — natively, with
-/// the grade's only maths — as a JPEG `width` wide (320 by default). Every change to a grade is seen on every shot.
+/// A shot as the film will show it, natively, for the studio: its grading still (4K ACEScct, from the original),
+/// framed for `shape` (none: the whole still), through its whole grade — balance, secondaries (a face-tracked window on
+/// the face Vision finds), its grade and looks (the timeline's: its scene's, the film's), the film's finishing — and
+/// the output transform, as a JPEG `width` wide. The Grade viewer and every thumbnail show these: what the render makes.
 #[tauri::command]
-pub async fn color_thumb(
+pub async fn color_frame(
     app: tauri::State<'_, crate::App>,
+    timeline: serde_json::Value,
+    clip: String,
     still: String,
-    balance: Option<serde_json::Value>,
-    grades: Vec<serde_json::Value>,
-    looks: Option<Vec<serde_json::Value>>,
     width: Option<u32>,
+    shape: Option<String>,
 ) -> crate::Res<tauri::ipc::Response> {
     crate::gate()?;
     let vault = app.vault.clone();
+    let t: vault_render::Timeline = serde_json::from_value(timeline).map_err(|e| format!("{e}"))?;
+    let c = t.clips.iter().find(|c| c.id == clip).cloned().ok_or("no such clip on this timeline")?;
     let hash: iroh_blobs::Hash = still.parse().map_err(|e| format!("{e}"))?;
     let src = crate::blob::source(&vault, hash, "still.png").await.map_err(|e| format!("{e:#}"))?;
-    // the whole colour chain as the viewer sees it: one cube (balance, grades, looks)
-    let cube = chain_cube(&vault, balance, grades, looks.unwrap_or_default(), 33).await?;
-    let w = width.unwrap_or(320).clamp(64, 960);
+    // the clip's own grade and its looks, baked with the look's LUTs read from the vault (the balance is its own node)
+    let looks: Vec<serde_json::Value> = t.looks_for(&c).iter().filter_map(|l| serde_json::to_value(l).ok()).collect();
+    let grades: Vec<serde_json::Value> = c.grade.iter().cloned().collect();
+    let cube = if looks.is_empty() && grades.is_empty() { None } else { Some(chain_cube(&vault, None, grades, looks, 33).await?) };
+    let w = width.unwrap_or(960).clamp(64, 3840);
+    let finish = t.finish();
     static N: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
-    let out = vault.ingest_dir().join(format!("thumb-{}-{}.jpg", std::process::id(), N.fetch_add(1, std::sync::atomic::Ordering::Relaxed)));
+    let out = vault.ingest_dir().join(format!("frame-{}-{}.jpg", std::process::id(), N.fetch_add(1, std::sync::atomic::Ordering::Relaxed)));
     let bytes = tauri::async_runtime::spawn_blocking(move || {
         objc2::rc::autoreleasepool(|_| -> anyhow::Result<Vec<u8>> {
             use vault_render::gpu::Extent;
@@ -179,9 +185,17 @@ pub async fn color_thumb(
             gpu.set_output(crate::render::odt());
             let img = gpu.still(src)?;
             let e = img.ext();
-            let h = ((w as f64 * e.size.height / e.size.width.max(1.0)).round() as u32).max(2);
-            let chain = gpu.cube(&vault_render::Lut3d::from_rgb("chain", 33, cube)?);
-            let pic = gpu.apply_cube(&*gpu.frame_to(&img, w, h, None)?, &chain)?;
+            let (aw, ah) = match shape.as_deref().and_then(vault_render::Shape::of) {
+                Some(s) => (s.render_size().0 as f64, s.render_size().1 as f64),
+                None => (e.size.width, e.size.height),
+            };
+            let h = ((w as f64 * ah / aw.max(1.0)).round() as u32).max(2);
+            let framed = gpu.frame_to(&img, w, h, shape.as_deref().and_then(|s| c.frame_for(s)))?;
+            let cube = match cube {
+                Some(data) => Some(gpu.cube(&vault_render::Lut3d::from_rgb("chain", 33, data)?)),
+                None => None,
+            };
+            let pic = vault_render::render::chain(&gpu, &framed, w, h, &c, cube.as_ref(), finish.as_ref(), 0)?;
             gpu.jpeg(&*gpu.output(&pic)?, w, h, &out)?;
             let bytes = std::fs::read(&out)?;
             std::fs::remove_file(&out).ok();

@@ -12,6 +12,7 @@ mod drives;
 mod local;
 mod mcp;
 mod models;
+mod player;
 mod proxies;
 mod keep;
 mod render;
@@ -492,7 +493,12 @@ fn main() {
             proxies::color_lut,
             proxies::color_grade,
             proxies::color_presets,
-            proxies::color_thumb,
+            proxies::color_frame,
+            player::player_load,
+            player::player_view,
+            player::player_play,
+            player::player_pause,
+            player::player_sync,
             proxies::vault_proxy,
             transcripts::vault_transcribe,
             analyse::analysis_setup,

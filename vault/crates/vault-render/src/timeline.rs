@@ -67,6 +67,9 @@ pub struct Clip {
     /// a V1 clip's script: its scene (`scene`) chooses the scene's look
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub script: Option<Value>,
+    /// a V1 clip's secondaries (creative::Secondary): parts of it given their own balance
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub secondaries: Option<Value>,
 }
 
 fn one() -> f64 {
@@ -93,6 +96,10 @@ impl Clip {
         self.kind.as_deref() == Some("line")
     }
     /// Its framing in a shape ("16:9", also found under "16x9").
+    /// Its secondaries, checked.
+    pub fn secondaries(&self) -> Vec<crate::creative::Secondary> {
+        self.secondaries.as_ref().map(crate::creative::clean_secondaries).unwrap_or_default()
+    }
     /// The scene it belongs to (its script's), the key of its scene's look.
     pub fn scene(&self) -> Option<&str> {
         self.script.as_ref()?.get("scene")?.as_str().filter(|s| !s.is_empty())
@@ -116,6 +123,9 @@ pub struct FilmGrade {
     pub film: Option<Value>,
     #[serde(default)]
     pub scenes: BTreeMap<String, Value>,
+    /// the film's finishing (creative::Finish), after its looks
+    #[serde(default)]
+    pub finish: Option<Value>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -155,6 +165,11 @@ impl Timeline {
             let cdl = g.look.as_ref().and_then(clean_cdl).map(|c| c.to_json());
             clean_look(&serde_json::json!({ "cdl": cdl, "preset": g.preset }))
         })
+    }
+
+    /// The film's finishing, checked.
+    pub fn finish(&self) -> Option<crate::creative::Finish> {
+        self.grade.as_ref()?.finish.as_ref().and_then(crate::creative::clean_finish)
     }
 
     /// A scene's look, by the name its clips carry.

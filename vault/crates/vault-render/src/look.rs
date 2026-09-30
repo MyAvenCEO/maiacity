@@ -219,6 +219,72 @@ fn classify(px: &[[f32; 3]], w: usize, h: usize, skin: Option<&Rect>, regions: &
     flags
 }
 
+/// A picture's tone in three zones (display code values), as a look is compared: the shadows (the lowest 15 % by
+/// luma), the middle (40–60 %), the highlights (85–99 %) — each its level, its cast (warm = R − B, green = G − (R + B)/2
+/// in IRE), its hue and chroma on the vectorscope — and where its colour lies: the share of its coloured pixels (chroma
+/// over 0.04) that are warm (60–180°: red, orange, skin, yellow), green (180–260°) or teal and blue (260–360°, 0–60°).
+pub fn zones(px: &[[f32; 3]]) -> Value {
+    let r1 = |x: f64| (x * 10.0).round() / 10.0;
+    let mut h = Hist::new();
+    for p in px {
+        h.add(Disp::of([p[0] as f64, p[1] as f64, p[2] as f64]).y);
+    }
+    // the bounds are bins' centres: a bin's width either side keeps the pixels on them
+    let bin = Hist::SPAN / Hist::N as f64;
+    let bands = [("shadows", f64::NEG_INFINITY, h.q(0.15) + bin), ("mids", h.q(0.40) - bin, h.q(0.60) + bin), ("highlights", h.q(0.85) - bin, h.q(0.99) + bin)];
+    let mut sums = [([0f64; 3], 0usize); 3];
+    let (mut warm, mut green, mut teal, mut coloured) = (0usize, 0usize, 0usize, 0usize);
+    for p in px {
+        let v = [p[0] as f64, p[1] as f64, p[2] as f64];
+        let d = Disp::of(v);
+        for (i, (_, lo, hi)) in bands.iter().enumerate() {
+            if d.y >= *lo && d.y <= *hi {
+                (0..3).for_each(|k| sums[i].0[k] += v[k]);
+                sums[i].1 += 1;
+            }
+        }
+        if d.chroma() > 0.04 {
+            coloured += 1;
+            match d.hue() {
+                x if (60.0..180.0).contains(&x) => warm += 1,
+                x if (180.0..260.0).contains(&x) => green += 1,
+                _ => teal += 1,
+            }
+        }
+    }
+    let mut out = json!({});
+    for (i, (name, ..)) in bands.iter().enumerate() {
+        let (s, n) = sums[i];
+        if n == 0 {
+            continue;
+        }
+        let m = s.map(|x| x / n as f64);
+        let d = Disp::of(m);
+        out[*name] = json!({ "ire": r1(d.y * 100.0), "warm": r1((m[0] - m[2]) * 100.0), "green": r1((m[1] - (m[0] + m[2]) / 2.0) * 100.0), "hue": r1(d.hue()), "chroma": r1(d.chroma() * 100.0) });
+    }
+    let pct = |k: usize| r1(k as f64 / coloured.max(1) as f64 * 100.0);
+    out["colour"] = json!({ "coloured_pct": r1(coloured as f64 / px.len().max(1) as f64 * 100.0), "warm_pct": pct(warm), "green_pct": pct(green), "teal_blue_pct": pct(teal) });
+    out
+}
+
+/// A reference picture (a still of the look to get close to: display code values, as it is shown) read as a look is:
+/// its levels, its zones and colour, its saturation, and the skin of the face Vision finds.
+pub fn reference(src: vault_media::Source) -> Result<Value> {
+    let gpu = Gpu::new()?;
+    let img = gpu.still(src)?;
+    let e = crate::gpu::Extent::ext(&*img);
+    let w = 1280u32.min(e.size.width as u32).max(2);
+    let h = ((w as f64 * e.size.height / e.size.width.max(1.0)).round() as u32).max(2);
+    let small = gpu.frame_to(&img, w, h, None)?;
+    let found = faces(&small);
+    let skin = found.first().map(skin_patch);
+    let px = rgb(&gpu, &small, w, h);
+    let flags = classify(&px, w as usize, h as usize, skin.as_ref(), &Regions::default());
+    let mut out = elements(&px, &flags);
+    out["faces"] = json!(found.len());
+    Ok(out)
+}
+
 /// The elements of a picture (display code values) over the pixels `flags` names.
 fn elements(px: &[[f32; 3]], flags: &[u8]) -> Value {
     let r1 = |x: f64| (x * 10.0).round() / 10.0;
@@ -249,6 +315,7 @@ fn elements(px: &[[f32; 3]], flags: &[u8]) -> Value {
         "contrast": ire(all.q(0.95) - all.q(0.05)),
         "clipped_pct": r1(clipped as f64 / px.len().max(1) as f64 * 100.0),
         "saturation": r1(chroma.q(0.5) * 100.0),
+        "zones": zones(px),
     });
     for (bit, name) in ELEMENTS {
         let (s, n, hist) = &sum[&bit];
@@ -338,10 +405,15 @@ pub fn look(t: &Timeline, lib: &dyn Library, c: &Clip, output: &dyn Output, regi
     }
     drop(cct);
     let bal = balance.copied().or_else(|| c.balance()).unwrap_or_default();
-    let mut chain = gpu.balance(&framed, Some(&bal))?;
-    if looks && let Some((lut, _)) = crate::render::clip_cube(t, lib, c, output)? {
-        chain = gpu.apply_cube(&chain, &gpu.cube(&lut))?;
-    }
+    let chain = if looks {
+        // the whole chain, as the film shows it: the balance given (a proposal) in place of the clip's own
+        let mut c2 = c.clone();
+        c2.balance = Some(serde_json::to_value(bal)?);
+        let cube = crate::render::clip_cube(t, lib, c, output)?.map(|(lut, _)| gpu.cube(&lut));
+        crate::render::chain(&gpu, &framed, w, h, &c2, cube.as_ref(), t.finish().as_ref(), 0)?
+    } else {
+        gpu.balance(&framed, Some(&bal))?
+    };
     let after = gpu.output(&chain)?;
     let disp = rgb(&gpu, &after, w, h);
     let balanced = elements(&disp, &flags);
@@ -363,7 +435,7 @@ pub fn look(t: &Timeline, lib: &dyn Library, c: &Clip, output: &dyn Output, regi
         "skin_box": skin.as_ref().map(r3),
         "as_shot": as_shot,
         "balanced": balanced,
-        "through": if looks { "balance, grade and looks" } else { "balance" },
+        "through": if looks { "balance, secondaries, grade, looks and finishing" } else { "balance" },
         "balance": bal,
     });
     if let Some(o) = from.as_object() {

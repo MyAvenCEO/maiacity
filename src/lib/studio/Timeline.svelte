@@ -12,10 +12,10 @@
 	import { FPS, TRACKS, UNLINKED, clockText, isWorld, onSoundTrack, raw, thumb, tint } from './studio.svelte.js';
 	import { cueEnd, cueText, cuesOf } from './analysis.js';
 	import { wordsOf } from './transcript.js';
-	import { BALANCE_NODES, NEUTRAL, NEUTRAL_BALANCE, cleanBalance, cleanLook, isNeutral, presetOf } from './color.js';
+	import { BALANCE_NODES, NEUTRAL, NEUTRAL_BALANCE, cleanBalance, cleanFinish, cleanLook, cleanSecondaries, isNeutral, presetOf } from './color.js';
 	import { wave } from './wave.js';
 	import { fine } from './fine.js';
-	import { gradedThumb } from './luts.js';
+	import { nativeFrame } from './luts.js';
 
 	/** @typedef {import('$lib/auth/client').ShotSpec} ShotSpec */
 	/** @typedef {import('./studio.svelte.js').Clip} Clip */
@@ -41,13 +41,29 @@
 	// the Grade tab: the grade's layers over the picture track, the last applied on top — each collapsed to its
 	// values, open for its controls on every shot
 	const grading = $derived(s.tab === 'grade');
-	const GRADE_LAYERS = [
+	// top to bottom, the last applied on top: the creative grade, then the base correction (one group, closed unless
+	// opened: its layers under it), then the framing just above the picture
+	const CREATIVE_LAYERS = [
+		{ id: 'L:finish', label: 'Finishing' },
 		{ id: 'L:film', label: 'Film look' },
 		{ id: 'L:scene', label: 'Scene look' },
 		{ id: 'L:grade', label: 'Grade' },
-		{ id: 'L:frame', label: 'Framing' },
-		...[...BALANCE_NODES].reverse().map((n) => ({ id: `L:${n.id}`, label: n.label }))
-	].map((l) => ({ ...l, accepts: [] }));
+		{ id: 'L:sec', label: 'Secondaries' }
+	];
+	const BASE_LAYERS = [...BALANCE_NODES].reverse().map((n) => ({ id: `L:${n.id}`, label: n.label, sub: true }));
+	let baseOpen = $state(false);
+	const GRADE_LAYERS = $derived(
+		[...CREATIVE_LAYERS, { id: 'G:base', label: 'Base correction' }, ...(baseOpen ? BASE_LAYERS : []), { id: 'L:frame', label: 'Framing' }].map((l) => ({ ...l, accepts: [] }))
+	);
+	/** a shot's base correction in one line @param {Clip} c */
+	const baseText = (c) => {
+		const b = c.balance;
+		if (!b) return '—';
+		const f = (/** @type {number} */ v) => `${v > 0 ? '+' : ''}${v.toFixed(2)}`;
+		return [b.exposure && `exp ${f(b.exposure)}`, (b.temp || b.tint) && `wb ${f(b.temp)}/${f(b.tint)}`, b.contrast && `con ${f(b.contrast)}`, b.highlights && `hi ${f(b.highlights)}`, b.shadows && `lo ${f(b.shadows)}`, b.sat && `sat ${f(b.sat)}`]
+			.filter(Boolean)
+			.join(' · ') || '—';
+	};
 	// in Grade the shots stand side by side, one column each whatever their length, each with its picture: the grade is
 	// judged shot against shot, not along the clock
 	const COL = 168;
@@ -71,8 +87,9 @@
 		const h = [meta?.preview, meta?.thumbnail].find((v) => typeof v === 'string' && /^[0-9a-f]{64}$/.test(v));
 		return h ? raw(/** @type {string} */ (h)) : null;
 	};
-	// every picture clip's thumbnail as it will look: its grading still through its balance and grades, made by the Mac
-	// (the grade's only maths) a moment after they change — the Grade strip and the Edit timeline show these
+	// every picture clip's thumbnail as the film will show it: its grading still through its whole grade (balance,
+	// secondaries, grade, looks, finishing), made by the Mac a moment after any of it changes — the Grade strip and the
+	// Edit timeline show these
 	let thumbs = $state(/** @type {Record<string, string>} */ ({}));
 	/** @type {Record<string, string>} */
 	const thumbOf = {};
@@ -82,7 +99,7 @@
 				.filter((c) => c.track === 'V1' && c.hash)
 				.map((c) => {
 					const st = s.stillOf(c);
-					return [c.id, st ? JSON.stringify([st.hash, s.balanceOf(c), s.gradesOf(c), s.looksOf(c)]) : ''];
+					return [c.id, st ? JSON.stringify([st.hash, s.frameTimeline(c)]) : ''];
 				})
 		)
 	);
@@ -92,13 +109,28 @@
 		const t = setTimeout(() => {
 			for (const [id, k] of Object.entries(keys)) {
 				if (!k || thumbOf[id] === k) continue;
-				const [still, b, g, l] = JSON.parse(k);
-				gradedThumb(still, b, g, l)
+				const [still, tl] = JSON.parse(k);
+				nativeFrame(tl, id, still, 320)
 					.then((u) => live && ((thumbs[id] = u), (thumbOf[id] = k)))
 					.catch((e) => console.warn('thumbnail:', e));
 			}
 		}, 200);
 		return () => ((live = false), clearTimeout(t));
+	});
+	/** the moment a point across Grade's columns stands for: its shot, and as far into it as across its column @param {number} px */
+	const gradeTime = (px) => {
+		if (!pics.length) return null;
+		const i = Math.max(0, Math.min(pics.length - 1, Math.floor(px / COL)));
+		const c = pics[i];
+		const f = Math.min(0.999, Math.max(0, (px - i * COL) / COL));
+		return { id: c.id, t: c.start + f * c.dur };
+	};
+	/** where the playhead is across Grade's columns */
+	const gradeX = $derived.by(() => {
+		const i = pics.findIndex((c) => c.id === nowId);
+		if (i < 0) return null;
+		const c = pics[i];
+		return i * COL + Math.min(1, Math.max(0, (s.time - c.start) / Math.max(1e-6, c.dur))) * COL;
 	});
 	/** a shot picked in the strip: selected, and the playhead on its grading still (else its first frame) @param {Clip} c */
 	const pick = (c) => {
@@ -181,6 +213,36 @@
 		if (['sh', 'sa', 'hh', 'ha'].includes(k)) n.split = split;
 		return n;
 	};
+	// a shot's secondaries: parts of it given their own balance (the face lifted, the sky held); the rest by MCP
+	/** @param {Clip} c @param {any[]} list */
+	const setSecondaries = (c, list) => s.patchClip(c.id, { secondaries: cleanSecondaries(list).length ? cleanSecondaries(list) : undefined });
+	/** @param {any} sec */
+	const secText = (sec) => sec.name ?? (sec.window?.track ? 'face' : sec.key ? `${Math.round(sec.key.hue[0])}° key` : sec.window ? sec.window.shape : 'part');
+	const FACE_LIFT = { name: 'face lift', window: { shape: 'ellipse', x: 0.5, y: 0.5, w: 1.7, h: 2, feather: 0.7, track: 'face' }, adjust: { exposure: 0.2 }, mix: 1 };
+	// the film's finishing, after its looks
+	/** @param {any} f */
+	const setFinish = (f) => {
+		const g = { look: null, ...(s.current?.grade ?? {}) };
+		const clean = cleanFinish(f);
+		if (clean) g.finish = clean;
+		else delete g.finish;
+		s.setMeta({ grade: g });
+	};
+	const FINISH_SLIDERS = /** @type {const} */ ([
+		['pop', 'amount', 'pop', -1, 1],
+		['halation', 'amount', 'halation', 0, 1],
+		['bloom', 'amount', 'bloom', 0, 1],
+		['grain', 'amount', 'grain', 0, 1],
+		['grain', 'size', 'grain size', 0.5, 4],
+		['vignette', 'amount', 'vignette', 0, 1]
+	]);
+	/** @param {any} f */
+	const finishText = (f) =>
+		f
+			? Object.entries(f)
+					.map(([k, v]) => `${k} ${/** @type {any} */ (v).amount.toFixed(2)}`)
+					.join(' · ')
+			: '—';
 	let openLayers = $state(/** @type {string[]} */ ([]));
 	/** @param {string} id */
 	const toggleLayer = (id) => (openLayers = openLayers.includes(id) ? openLayers.filter((x) => x !== id) : [...openLayers, id]);
@@ -188,7 +250,7 @@
 		audio ? TRACKS.filter((t) => t.id.startsWith('A')) : story ? [STORY, ...TRACKS.filter((t) => t.id === 'T1')] : grading ? [...GRADE_LAYERS, ...TRACKS.filter((t) => t.id === 'V1')] : TRACKS
 	);
 	const rows = $derived(
-		grading ? `1.5rem ${GRADE_LAYERS.map((l) => (openLayers.includes(l.id) ? (l.id === 'L:film' || l.id === 'L:scene' ? '11.6rem' : l.id === 'L:grade' ? '7.2rem' : l.id === 'L:wb' || l.id === 'L:frame' ? '4.4rem' : '2.8rem') : '1.5rem')).join(' ')} 7.2rem` :
+		grading ? `1.5rem ${GRADE_LAYERS.map((l) => (openLayers.includes(l.id) ? (l.id === 'L:film' || l.id === 'L:scene' ? '11.6rem' : l.id === 'L:finish' ? '10rem' : l.id === 'L:sec' ? '8.4rem' : l.id === 'L:grade' ? '7.2rem' : l.id === 'L:wb' || l.id === 'L:frame' ? '4.4rem' : '2.8rem') : '1.5rem')).join(' ')} 7.2rem` :
 		story ? '1.5rem minmax(5rem, 3fr) minmax(2.6rem, 1fr)' :
 		audio ? `1.5rem repeat(${shown.length}, minmax(3.4rem, 1fr))` : `1.5rem minmax(2.6rem, 1fr) repeat(4, minmax(1.7rem, 1fr))${spec ? ` repeat(${LANES.length}, 1.45rem)` : ''}`
 	);
@@ -430,8 +492,20 @@
 	/** @param {PointerEvent} e */
 	function scrub(e) {
 		const lanes = s.lanes;
-		// in Grade the shots are columns, not time: a shot is picked by its own column
-		if (!lanes || grading) return;
+		if (!lanes) return;
+		if (grading) {
+			// in Grade the shots are columns: the playhead runs through each shot across its own column
+			/** @param {PointerEvent} ev */
+			const put = (ev) => {
+				const at = gradeTime(ev.clientX - lanes.getBoundingClientRect().left);
+				if (at) (s.selected = at.id), s.seek(at.t);
+			};
+			put(e);
+			const up = () => (window.removeEventListener('pointermove', put), window.removeEventListener('pointerup', up));
+			window.addEventListener('pointermove', put);
+			window.addEventListener('pointerup', up);
+			return;
+		}
 		// a click in the world clip's lanes moves the playhead and keeps the clip (and its lanes) in hand
 		if (!(/** @type {Element} */ (e.target)).closest?.('.lane')) s.selected = null;
 		s.selectedKey = null;
@@ -553,6 +627,32 @@
 	{/if}
 {/snippet}
 
+{#snippet finishCell(/** @type {any} */ f, /** @type {boolean} */ open)}
+	{#if open}
+		<div class="look-head"><b>the whole film</b> <span class="val">{finishText(f)}</span>{#if f}<button class="off" onclick={() => setFinish(null)} title="Take the finishing off">off</button>{/if}</div>
+		{#each FINISH_SLIDERS as [part, k, label, lo, hi] (label)}
+			{@const v = f?.[part]?.[k] ?? (k === 'size' ? 1 : 0)}
+			<label class="sl"><span>{label}</span><input {@attach fine()} type="range" min={lo} max={hi} step="0.01" value={v} oninput={(e) => setFinish({ ...(f ?? {}), [part]: { ...(f?.[part] ?? {}), [k]: Number(e.currentTarget.value), ...(k === 'size' && !f?.[part]?.amount ? { amount: 0.25 } : {}) } })} /><output>{v.toFixed(2)}</output></label>
+		{/each}
+	{:else}
+		<span class="val" class:on={!!f}>{finishText(f)}</span>
+	{/if}
+{/snippet}
+
+{#snippet secCell(/** @type {Clip} */ c, /** @type {boolean} */ open)}
+	{@const list = c.secondaries ?? []}
+	{#if open}
+		{#each list as sec, i (i)}
+			<div class="look-head"><b>{secText(sec)}</b><button class="off" onclick={() => setSecondaries(c, list.filter((_, j) => j !== i))} title="Take this secondary off">off</button></div>
+			<label class="sl"><span>exposure</span><input {@attach fine()} type="range" min="-2" max="2" step="0.01" value={sec.adjust?.exposure ?? 0} oninput={(e) => setSecondaries(c, list.map((x, j) => (j === i ? { ...x, adjust: { ...x.adjust, exposure: Number(e.currentTarget.value) } } : x)))} /><output>{(sec.adjust?.exposure ?? 0).toFixed(2)}</output></label>
+			<label class="sl"><span>mix</span><input {@attach fine()} type="range" min="0" max="1" step="0.01" value={sec.mix ?? 1} oninput={(e) => setSecondaries(c, list.map((x, j) => (j === i ? { ...x, mix: Number(e.currentTarget.value) } : x)))} /><output>{(sec.mix ?? 1).toFixed(2)}</output></label>
+		{/each}
+		{#if list.length < 4}<button class="off add" onclick={() => setSecondaries(c, [...list, FACE_LIFT])} title="Lift the face: a soft ellipse on the face Vision finds in every frame">+ face lift</button>{/if}
+	{:else}
+		<span class="val" class:on={list.length > 0}>{list.length ? list.map(secText).join(' · ') : '—'}</span>
+	{/if}
+{/snippet}
+
 {#snippet cdlCell(/** @type {import('$lib/auth/client').Cdl | null} */ g, /** @type {string | null} */ preset, /** @type {boolean} */ open, /** @type {(g: import('$lib/auth/client').Cdl | null, preset?: string | null) => void} */ set)}
 	{@const cur = g ?? NEUTRAL}
 	{#if open}
@@ -575,7 +675,9 @@
 		<div class="head"></div>
 		{#each shown as t (t.id)}
 			{#if t.id.startsWith('L:')}
-				<button class="head layer" class:open={openLayers.includes(t.id)} onclick={() => toggleLayer(t.id)} title="Open or close this layer's controls"><span class="caret">{openLayers.includes(t.id) ? '▾' : '▸'}</span> {t.label}</button>
+				<button class="head layer" class:sub={'sub' in t} class:open={openLayers.includes(t.id)} onclick={() => toggleLayer(t.id)} title="Open or close this layer's controls"><span class="caret">{openLayers.includes(t.id) ? '▾' : '▸'}</span> {t.label}</button>
+			{:else if t.id === 'G:base'}
+				<button class="head layer group" class:open={baseOpen} onclick={() => (baseOpen = !baseOpen)} title="Open or close the base correction's layers"><span class="caret">{baseOpen ? '▾' : '▸'}</span> {t.label}</button>
 			{:else}<div class="head"><b>{t.id}</b> {t.label}</div>{/if}
 		{/each}
 		{#if spec}
@@ -595,12 +697,24 @@
 			{#each shown as t (t.id)}
 				<!-- svelte-ignore a11y_no_static_element_interactions -->
 				<div class="track" ondragover={(e) => t.id !== 'T1' && s.canEdit && e.preventDefault()} ondrop={(e) => t.id !== 'T1' && drop(e, /** @type {Track} */ (t.id))}>
-					{#if t.id.startsWith('L:')}
+					{#if t.id === 'G:base'}
+						{#each s.clips.filter((c) => c.track === 'V1') as c (c.id)}
+							<!-- svelte-ignore a11y_no_static_element_interactions -->
+							<div class="cell" class:sel={s.selected === c.id} style:left={left(c)} style:width={width(c)} onpointerdown={(e) => (e.stopPropagation(), (s.selected = c.id))}>
+								<span class="val" class:on={!!c.balance}>{baseText(c)}</span>
+							</div>
+						{/each}
+					{:else if t.id.startsWith('L:')}
 						{@const open = openLayers.includes(t.id)}
 						{#if t.id === 'L:film'}
 							<!-- svelte-ignore a11y_no_static_element_interactions -->
 							<div class="cell film" style:left="0" style:width={grading ? `${pics.length * COL}px` : x(s.end)} onpointerdown={(e) => e.stopPropagation()}>
 								{@render lookCell(filmLook, open, 'the whole film', (l) => setLook(null, l))}
+							</div>
+						{:else if t.id === 'L:finish'}
+							<!-- svelte-ignore a11y_no_static_element_interactions -->
+							<div class="cell film" style:left="0" style:width={grading ? `${pics.length * COL}px` : x(s.end)} onpointerdown={(e) => e.stopPropagation()}>
+								{@render finishCell(s.current?.grade?.finish ?? null, open)}
 							</div>
 						{:else if t.id === 'L:scene'}
 							{#each sceneRuns as r (r.key)}
@@ -617,6 +731,8 @@
 								<div class="cell" class:sel={s.selected === c.id} style:left={left(c)} style:width={width(c)} onpointerdown={(e) => (e.stopPropagation(), (s.selected = c.id))}>
 									{#if t.id === 'L:grade'}
 										{@render cdlCell(c.grade ?? null, null, open, (g) => s.patchClip(c.id, { grade: g ?? undefined }))}
+									{:else if t.id === 'L:sec'}
+										{@render secCell(c, open)}
 									{:else if t.id === 'L:frame'}
 										{@const f = c.frame?.[s.shape] ?? { x: 0, y: 0, zoom: 1 }}
 										{#if open && !isWorld(c)}
@@ -671,7 +787,7 @@
 						{#each pics as c, i (c.id)}
 							{@const pic = thumbs[c.id] ?? previewOf(c)}
 							<!-- svelte-ignore a11y_no_static_element_interactions -->
-							<div class="shot" class:sel={s.selected === c.id} class:now={nowId === c.id} class:balanced={!!c.balance} style:left={left(c)} style:width={width(c)} onpointerdown={(e) => (e.stopPropagation(), pick(c))} title="{s.clipName(c)}{c.script?.description ? ` — ${c.script.description}` : ''}">
+							<div class="shot" class:sel={s.selected === c.id} class:now={nowId === c.id} class:balanced={!!c.balance} style:left={left(c)} style:width={width(c)} ondblclick={() => pick(c)} title="{s.clipName(c)}{c.script?.description ? ` — ${c.script.description}` : ''} (double-click: its grading still)">
 								{#if pic}<img src={pic} alt="" draggable="false" />{:else}<span class="none">{isWorld(c) ? 'world shot' : c.kind === 'slate' ? 'not filmed yet' : 'no picture yet'}</span>{/if}
 								<span class="cap"><b>{i + 1}</b> {c.script?.size ?? ''} {c.script?.description ?? s.clipName(c)}</span>
 							</div>
@@ -801,7 +917,7 @@
 					{/each}
 				</div>
 			{/if}
-			{#if !grading}<div class="playhead" style:left={x(s.time)}><i></i></div>{/if}
+			{#if !grading}<div class="playhead" style:left={x(s.time)}><i></i></div>{:else if gradeX !== null}<div class="playhead" style:left="{gradeX}px"><i></i></div>{/if}
 		</div>
 	</div>
 </div>
@@ -998,6 +1114,16 @@
 		color: var(--ink);
 	}
 
+	/* the base correction: one group; its layers under it, indented */
+	.head.layer.group {
+		color: var(--ink-soft);
+		font-weight: 600;
+	}
+
+	.head.layer.sub {
+		padding-left: 1.4rem;
+	}
+
 	.head.layer .caret {
 		font-size: 0.6rem;
 	}
@@ -1042,6 +1168,18 @@
 		font-weight: 600;
 	}
 
+	.off.add {
+		align-self: flex-start;
+		padding: 0 0.5rem;
+		border: 1px solid var(--edge);
+		border-radius: 999px;
+		background: var(--raised);
+		font: inherit;
+		font-size: 0.64rem;
+		color: var(--dim);
+		cursor: pointer;
+	}
+
 	.look-head .off {
 		margin-left: auto;
 		padding: 0 0.5rem;
@@ -1077,7 +1215,7 @@
 
 	.cell .sl input {
 		width: 100%;
-		accent-color: var(--ink);
+		accent-color: var(--accent);
 	}
 
 	.cell .sl output {
@@ -1208,9 +1346,9 @@
 	.overlap b {
 		padding: 0 0.3rem;
 		border-radius: 3px;
-		background: var(--ink);
+		background: var(--accent);
 		font-size: 0.62rem;
-		color: var(--on-ink);
+		color: var(--on-accent);
 	}
 
 	.overlap.J b {
@@ -1535,7 +1673,7 @@
 
 	/* Grade: the shots side by side, one column each, with their pictures */
 	.lanes.grading {
-		cursor: default;
+		cursor: text;
 	}
 
 	.tick.shot {

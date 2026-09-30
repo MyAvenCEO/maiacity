@@ -296,3 +296,70 @@ export function cleanLook(/** @type {any} */ v) {
 		(!out.cdl && !out.preset && out.contrast === 0 && !out.split && hue.every((p) => p[1] === 0) && hueSat.every((p) => p[1] === 1) && out.sat === 1 && !out.lut);
 	return neutral ? null : out;
 }
+
+// ── a shot's secondaries and the film's finishing (vault-render `creative::Secondary`, `creative::Finish`) ─────────
+
+const num = (/** @type {any} */ x, /** @type {number} */ lo, /** @type {number} */ hi, /** @type {number} */ d) => {
+	const k = Number(x);
+	return Number.isFinite(k) ? Math.min(hi, Math.max(lo, k)) : d;
+};
+
+/**
+ * A shot's secondaries as data, checked as Rust checks them (`clean_secondaries`): at most 4; each its key (hue on the
+ * vectorscope, chroma × 100, IRE) inside its window (0…1 from the top left, or on the face), with its own balance.
+ * @returns {any[]}
+ */
+export function cleanSecondaries(/** @type {any} */ v) {
+	if (!Array.isArray(v)) return [];
+	return v
+		.slice(0, 4)
+		.map((s) => {
+			if (!s || typeof s !== 'object') return null;
+			const adjust = cleanBalance(s.adjust);
+			if (!adjust) return null;
+			/** @type {any} */
+			const out = { adjust, mix: num(s.mix ?? 1, 0, 1, 1) };
+			if (typeof s.name === 'string' && s.name) out.name = s.name.slice(0, 60);
+			if (s.key && typeof s.key === 'object' && Array.isArray(s.key.hue)) {
+				const deg = (/** @type {any} */ x) => ((num(x, -720, 720, 0) % 360) + 360) % 360;
+				out.key = {
+					hue: [deg(s.key.hue[0]), num(s.key.hue[1], 1, 360, 40)],
+					sat: [num(s.key.sat?.[0] ?? 1, 0, 100, 1), num(s.key.sat?.[1] ?? 100, 0, 100, 100)],
+					luma: [num(s.key.luma?.[0] ?? 0, 0, 100, 0), num(s.key.luma?.[1] ?? 100, 0, 100, 100)],
+					soft: num(s.key.soft ?? 0.5, 0, 1, 0.5)
+				};
+			}
+			if (s.window && typeof s.window === 'object') {
+				const w = s.window;
+				out.window = {
+					shape: w.shape === 'rect' ? 'rect' : 'ellipse',
+					x: num(w.x ?? 0.5, -1, 2, 0.5),
+					y: num(w.y ?? 0.5, -1, 2, 0.5),
+					w: num(w.w ?? 0.5, 0.01, 4, 0.5),
+					h: num(w.h ?? 0.5, 0.01, 4, 0.5),
+					angle: num(w.angle ?? 0, -360, 360, 0),
+					feather: num(w.feather ?? 0.5, 0, 1, 0.5),
+					invert: !!w.invert,
+					...(w.track === 'face' ? { track: 'face' } : {})
+				};
+			}
+			return out.mix > 0 ? out : null;
+		})
+		.filter(Boolean);
+}
+
+/** The film's finishing as data, checked as Rust checks it (`clean_finish`); null when it adds nothing. */
+export function cleanFinish(/** @type {any} */ v) {
+	if (!v || typeof v !== 'object' || Array.isArray(v)) return null;
+	/** @type {any} */
+	const out = {};
+	if (v.pop && num(v.pop.amount, -1, 1, 0)) out.pop = { amount: num(v.pop.amount, -1, 1, 0), radius: num(v.pop.radius ?? 18, 2, 80, 18) };
+	for (const k of ['halation', 'bloom']) {
+		const g = v[k];
+		if (g && num(g.amount, 0, 1, 0)) out[k] = { amount: num(g.amount, 0, 1, 0), threshold: num(g.threshold ?? 0.55, 0.3, 1.2, 0.55), radius: num(g.radius ?? 14, 1, 120, 14) };
+	}
+	if (v.grain && num(v.grain.amount, 0, 1, 0)) out.grain = { amount: num(v.grain.amount, 0, 1, 0), size: num(v.grain.size ?? 1, 0.5, 4, 1), chroma: num(v.grain.chroma ?? 0, 0, 1, 0) };
+	if (v.vignette && num(v.vignette.amount, 0, 1, 0))
+		out.vignette = { amount: num(v.vignette.amount, 0, 1, 0), size: num(v.vignette.size ?? 0.9, 0.2, 2, 0.9), softness: num(v.vignette.softness ?? 0.5, 0, 1, 0.5), roundness: num(v.vignette.roundness ?? 0, 0, 1, 0) };
+	return Object.keys(out).length ? out : null;
+}

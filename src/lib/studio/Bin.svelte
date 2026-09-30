@@ -531,9 +531,9 @@
 		margin-right: 0.4rem;
 		padding: 0 0.2rem;
 		border-radius: 4px;
-		background: var(--ink);
+		background: var(--accent);
 		font-size: 0.68rem;
-		color: var(--on-ink);
+		color: var(--on-accent);
 	}
 
 	.stg {
