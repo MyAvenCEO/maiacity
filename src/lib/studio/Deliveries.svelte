@@ -153,9 +153,9 @@
 	.shape {
 		padding: 0.05rem 0.4rem;
 		border-radius: 4px;
-		background: var(--ink);
+		background: var(--accent);
 		font-weight: 600;
-		color: var(--on-ink);
+		color: var(--on-accent);
 	}
 
 	.hint {

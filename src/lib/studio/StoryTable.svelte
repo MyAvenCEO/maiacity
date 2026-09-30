@@ -494,7 +494,7 @@
 	.live { font-size: 0.72rem; }
 	.confirm { display: flex; align-items: center; gap: 0.4rem; padding: 0.2rem 0.3rem 0.2rem 0.7rem; border-radius: 999px; background: var(--warn-bg); color: var(--warn); }
 	.confirm button { padding: 0.15rem 0.7rem; border: 0; border-radius: 999px; font: inherit; font-size: 0.74rem; cursor: pointer; }
-	.confirm .yes { background: var(--ink); color: var(--on-ink); }
+	.confirm .yes { background: var(--accent); color: var(--on-accent); }
 	.confirm .no { background: transparent; color: var(--dim); text-decoration: underline; }
 	.n small { color: var(--dim); }
 	.empty { padding: 1.2rem; text-align: center; color: var(--dim); }

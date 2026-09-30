@@ -192,7 +192,7 @@
 	.line strong { overflow: hidden; max-width: 22rem; white-space: nowrap; text-overflow: ellipsis; }
 	.chip { padding: 0.15rem 0.6rem; border-radius: 999px; background: var(--bg); color: var(--ink) !important; }
 	.grow { flex: 1; }
-	.go { padding: 0.45rem 1rem; border: 0; border-radius: 999px; background: var(--ink); font: inherit; font-size: 0.84rem; color: var(--on-ink); cursor: pointer; }
+	.go { padding: 0.45rem 1rem; border: 0; border-radius: 999px; background: var(--accent); font: inherit; font-size: 0.84rem; color: var(--on-accent); cursor: pointer; }
 	.go:disabled { opacity: 0.5; }
 	.hint { font-size: 0.86rem; color: var(--dim); }
 	.progress { overflow: hidden; height: 5px; margin-top: 0.5rem; border-radius: 3px; background: var(--edge); }

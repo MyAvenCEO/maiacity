@@ -145,7 +145,7 @@
 	.rules { display: flex; flex-direction: column; gap: 0.15rem; font-size: 0.72rem; color: var(--dim); }
 	.rules b { display: inline-block; width: 4.3rem; font-weight: 600; color: var(--ink); }
 	.actions { display: flex; align-items: center; gap: 0.8rem; }
-	.primary { padding: 0.4rem 1rem; border: 0; border-radius: 999px; background: var(--ink); font: inherit; font-size: 0.82rem; color: var(--on-ink); cursor: pointer; }
+	.primary { padding: 0.4rem 1rem; border: 0; border-radius: 999px; background: var(--accent); font: inherit; font-size: 0.82rem; color: var(--on-accent); cursor: pointer; }
 	.primary:disabled { opacity: 0.5; cursor: default; }
 	.err { color: var(--bad); font-size: 0.8rem; }
 	.confirm { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; margin: 0 0 0.8rem; font-size: 0.8rem; color: var(--warn); }
