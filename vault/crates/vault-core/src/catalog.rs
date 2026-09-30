@@ -9,8 +9,8 @@
 //!   story/<id>      → a story: its title, description, series, episode, and where each class of its files is kept
 //!   transcript/<hash> → derived: the file's words with their times and the transcript's state and progress — made
 //!                     on a Mac, on-device (vault/app transcripts.rs), written by that Mac's author
-//!   sound/<hash>    → derived: the file's audio proxy and start timecode — written only by the vault server's author
-//!                     (vault-server sound.rs)
+//!   sound/<hash>    → derived: the file's start timecode (no audio proxy: sound is always read from the original)
+//!                     — written only by the vault server's author (vault-server sound.rs)
 //!   analysis/<hash> → derived: the file's shot tags, cues, summary and thumbnail, the analysis's state and progress —
 //!                     written only by the vault server's author (vault-server analyse.rs)
 //!
@@ -502,26 +502,51 @@ impl Catalog {
     /// Every file's description whose JSON is here, newest entry per key — only what `meta/` says (the derived
     /// records are merged in by `list_view`). A deleted file (`meta.deleted`) is not listed.
     pub async fn list(&self) -> Result<Vec<Meta>> {
+        Ok(self.descriptions().await?.into_iter().filter(|m| !is_deleted(m)).collect())
+    }
+
+    /// Every file's description whose JSON is here, the deleted ones too.
+    pub async fn descriptions(&self) -> Result<Vec<Meta>> {
         let entries: Vec<_> = self.doc().get_many(Query::single_latest_per_key().key_prefix("meta/")).await?.collect().await;
         let mut out = Vec::new();
         for entry in entries {
             let entry = entry?;
             if let Ok(bytes) = self.store.blobs().get_bytes(entry.content_hash()).await {
                 if let Ok(meta) = serde_json::from_slice::<Meta>(&bytes) {
-                    if !is_deleted(&meta) {
-                        out.push(meta);
-                    }
+                    out.push(meta);
                 }
             }
         }
         Ok(out)
     }
 
-    /// A file deleted from the library: its description says so (`meta.deleted`: when, and why), so every device
-    /// stops listing it; its bytes stay where they are kept until storage is cleaned — a delete by hand can be undone.
+    /// A file deleted from the vault: its description says so (`meta.deleted`: when, and why) and stays as that
+    /// record; every device stops listing it and lets go of its bytes (`purge`), and iroh's garbage collection prunes
+    /// them wherever nobody holds them any more — on every Mac, and the server empties its Object Storage of them.
     pub async fn delete_file(&self, hash: Hash, why: &str) -> Result<()> {
         self.describe(hash, &serde_json::json!({ "meta": { "deleted": { "at": crate::ingest::now_iso(), "why": why } } })).await?;
+        self.purge(hash).await
+    }
+
+    /// This device lets go of a file: its own `blobs/<hash>` holding and the derived records it wrote, in every
+    /// catalog replica it can write (an older one it joined from too) — once no entry references the file, iroh's
+    /// garbage collection prunes the bytes here.
+    pub async fn purge(&self, hash: Hash) -> Result<()> {
+        let hex = hash.to_hex();
+        let mut replicas: Vec<_> = self.docs.list().await?.collect().await;
+        replicas.retain(|r| r.as_ref().is_ok_and(|(_, cap)| matches!(cap, iroh_docs::CapabilityKind::Write)));
+        for (id, _) in replicas.into_iter().flatten() {
+            let Some(doc) = self.docs.open(id).await? else { continue };
+            for prefix in ["blobs/", TRANSCRIPT, SOUND, ANALYSIS] {
+                doc.del(self.author, format!("{prefix}{hex}")).await?;
+            }
+        }
         Ok(())
+    }
+
+    /// Does this device still hold a file (its own `blobs/<hash>` entry)?
+    pub async fn holds(&self, hash: Hash) -> Result<bool> {
+        Ok(self.doc().get_one(Query::author(self.author).key_exact(format!("blobs/{}", hash.to_hex()))).await?.is_some())
     }
 }
 

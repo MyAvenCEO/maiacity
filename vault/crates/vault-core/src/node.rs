@@ -58,6 +58,8 @@ pub struct Vault {
     pub transfers: Transfers,
     /// held while this Mac's own work runs (an ingest, a proxy rendering): its uploads wait until it is done
     pub hold: Hold,
+    /// what iroh's garbage collection must never prune, besides what the catalog references (see `Keep`)
+    pub keep: Keep,
     router: Router,
 }
 
@@ -112,6 +114,33 @@ impl Hold {
     pub async fn free_of(&self, why: &str) {
         let mut rx = self.0.subscribe();
         rx.wait_for(|w| !w.iter().any(|x| x == why)).await.ok();
+    }
+}
+
+/// How often iroh's garbage collection prunes the blob store.
+pub const GC_EVERY: Duration = Duration::from_secs(10 * 60);
+
+/// The files garbage collection must keep beyond what the catalog references: every file with a live description on
+/// this Mac, set by the prune loop. Until it has been set once, collection does not run at all (it aborts).
+#[derive(Clone, Default)]
+pub struct Keep(Arc<std::sync::RwLock<Option<std::collections::HashSet<Hash>>>>);
+
+impl Keep {
+    pub fn set(&self, hashes: std::collections::HashSet<Hash>) {
+        *self.0.write().unwrap() = Some(hashes);
+    }
+
+    /// The store's protect callback: these files, then iroh-docs' own (every hash a catalog entry references).
+    fn protect(&self, docs: iroh_blobs::store::ProtectCb) -> iroh_blobs::store::ProtectCb {
+        let keep = self.clone();
+        Arc::new(move |live| {
+            let (keep, docs) = (keep.0.read().unwrap().clone(), docs.clone());
+            Box::pin(async move {
+                let Some(keep) = keep else { return iroh_blobs::store::ProtectOutcome::Abort };
+                live.extend(keep);
+                docs(live).await
+            })
+        })
     }
 }
 
@@ -197,9 +226,17 @@ impl Vault {
             .await
             .context("bind the iroh endpoint")?;
 
-        let store = FsStore::load(dir.join("blobs")).await.context("open the blob store")?;
+        // iroh's own pruning: the blob store's garbage collection keeps what a catalog entry references (iroh-docs'
+        // protection: a `blobs/<hash>` entry is a holding) and every file that still has a live description (`Keep`);
+        // the rest — a deleted file once every holder has let go of it, a temporary export — goes
+        let keep = Keep::default();
+        let (protect, docs_protect) = iroh_docs::engine::ProtectCallbackHandler::new();
+        let mut opts = iroh_blobs::store::fs::options::Options::new(&dir.join("blobs"));
+        opts.gc = Some(iroh_blobs::store::GcConfig { interval: GC_EVERY, add_protected: Some(keep.protect(docs_protect)) });
+        let store = FsStore::load_with_opts(dir.join("blobs").join("blobs.db"), opts).await.context("open the blob store")?;
         let gossip = Gossip::builder().spawn(endpoint.clone());
         let docs = Docs::persistent(dir.join("docs"))
+            .protect_handler(protect)
             .spawn(endpoint.clone(), (*store).clone(), gossip.clone())
             .await
             .context("open the catalog store")?;
@@ -291,7 +328,7 @@ impl Vault {
             .spawn();
 
         let catalog = Catalog::open(&dir, &docs, &store).await?;
-        Ok(Self { dir, endpoint, store, docs, catalog, allow, lookup, upload_limit, transfers, hold, router })
+        Ok(Self { dir, endpoint, store, docs, catalog, allow, lookup, upload_limit, transfers, hold, keep, router })
     }
 
     /// Join the vault's network: our relay, the server's address, the paired devices, and the shared catalog —
