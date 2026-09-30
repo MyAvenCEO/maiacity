@@ -23,7 +23,7 @@ import { ODT, PROFILES, WORKING, asStudio, clean, cleanBalance, gradesFor, isCac
 import { filmLut, nativeLut } from './luts.js';
 import { cached, evaluate, saveSpec, shotAt } from './shots.js';
 import { WorldViewer } from './world.svelte.js';
-import { audioProxyOf, captionWordsOf, hasSound, lineWords, phraseBreak, rewordPhrase, stepOpen, transcriptOf, transcriptState } from './transcript.js';
+import { captionWordsOf, hasSound, lineWords, phraseBreak, rewordPhrase, stepOpen, transcriptOf, transcriptState } from './transcript.js';
 import { command, native } from '$lib/native';
 
 /** @typedef {import('$lib/auth/client').Cdl} Cdl */
@@ -939,16 +939,15 @@ export class Studio {
 		if (m?.kind !== 'video') return void (await this.source(hash));
 		await this.source(hash);
 		if (this.sources[hash]?.buffer) return void (this.soundState[hash] = 'ready');
-		const a = audioProxyOf(m);
-		if (!a) return void (this.soundState[hash] = hasSound(m) ? 'waiting' : 'silent');
+		if (!hasSound(m)) return void (this.soundState[hash] = 'silent');
 		const waiting = this.pendingSound.get(hash);
 		if (waiting) return waiting;
 		const p = (async () => {
 			this.soundState[hash] = 'loading';
 			try {
-				const res = await fetch(raw(a));
-				if (!res.ok) throw new Error(`its audio proxy is not on this Mac yet (${res.status})`);
-				const buffer = await this.audioCtx().decodeAudioData(await res.arrayBuffer());
+				// from the original itself, read on this Mac (the file the render mixes from) — sound has no proxy
+				const bytes = /** @type {ArrayBuffer} */ (await command('vault_sound', { hash }));
+				const buffer = await this.audioCtx().decodeAudioData(bytes);
 				this.sources[hash] = { ...this.sources[hash], buffer, peaks: peaksOf(buffer) };
 				this.soundState[hash] = 'ready';
 			} catch (e) {
@@ -1010,7 +1009,7 @@ export class Studio {
 			gain.gain.linearRampToValueAtTime(c.vol, when + fadeIn);
 			// the music steps back while the voice speaks, and comes up again in the pauses (the render does the same)
 			if (c.track === 'A2')
-				for (const v of this.clips.filter((v) => v.track === 'A1' && v.start + v.dur > from && v.start < c.start + c.dur)) {
+				for (const v of this.clips.filter((v) => v.track === 'A1' && v.start + v.dur > from && v.start < c.start + c.dur).sort((x, y) => x.start - y.start)) {
 					const a = this.ctxStart + (Math.max(from, v.start) - time), b = this.ctxStart + (v.start + v.dur - time);
 					if (a < when + fadeIn) continue;
 					gain.gain.setValueAtTime(c.vol, a - 0.15);

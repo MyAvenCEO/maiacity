@@ -799,17 +799,13 @@ pub fn measure_sound(t: &Timeline, lib: &dyn Library) -> Result<Value> {
         let hash = c.hash.as_deref().unwrap();
         let m = lib.media(hash);
         let name = m.as_ref().map(|m| if m.title.is_empty() { m.hash[..10].to_string() } else { m.title.clone() }).unwrap_or_default();
-        // the audio proxy (the original's clock) when there is one: a fraction of the bytes
-        let audio = m.as_ref().and_then(|m| m.meta.get("audio").and_then(Value::as_str)).and_then(|a| lib.media(a)).map(|a| a.hash);
-        let file = match audio.as_deref().map(|a| lib.file(a)).filter(|f| f.is_ok()) {
-            Some(f) => f?,
-            None => match lib.file(hash) {
-                Ok(f) => f,
-                Err(e) => {
-                    out.push(json!({ "clip": c.id, "track": c.track, "name": name, "error": format!("{e:#}") }));
-                    continue;
-                }
-            },
+        // the original itself, as the render mixes it: sound has no proxy
+        let file = match lib.file(hash) {
+            Ok(f) => f,
+            Err(e) => {
+                out.push(json!({ "clip": c.id, "track": c.track, "name": name, "error": format!("{e:#}") }));
+                continue;
+            }
         };
         let mut frames: Vec<f32> = Vec::new();
         if let Some(mut r) = crate::av::AudioReader::open(&file, c.in_, c.in_ + c.dur)? {
