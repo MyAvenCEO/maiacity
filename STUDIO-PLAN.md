@@ -12,9 +12,15 @@
   - ✅ The HTTPS gateway fetch removed: files come over iroh from whoever holds them
   - ✅ Every store rules-driven (keep.rs, Mac and drives alike): records-only download policy, wanted files fetched + pinned + announced, GC = tags + records — de-sync per store works; the server's author is a catalog record
   - ✅ The server serves its Object Storage files over iroh (brought up into its store on request, verified, a bounded cache; pushes refused)
-- ⬜ **Test in a build:** SDD_A fetches Day 01 over iroh (the keep pass); set the Prem key once (MCP `analysis_setup`), then the Day 01 analysis runs on the Mac
-- ⬜ Watch the Day 01 base correction in the Grade tab and say yes or adjust (garden skin paler than bedroom skin by
+  - ✅ Shot analysis in the source monitor (cues on its bar, Mark as In/Out) and the library list — one shared component
+
+## Waiting on you
+- **Test in a build** (you, in another session): SDD_A fetches Day 01 over iroh (the keep pass; its log says how many
+  stories name it); set the Prem key once (MCP `analysis_setup` { prem_key }), then the Day 01 analysis runs on the Mac
+- **Watch the Day 01 base correction** in the Grade tab and say yes or adjust (garden skin paler than bedroom skin by
   intent: more saturation there if wanted); once the analysis has marked every shot's still, `grade_look` it again
+- **Say when:** timelines and world shots out of Postgres into iroh (docs + blobs), then git-like versions for every
+  tool (commits as content-addressed snapshots, refs/branches as catalog entries, signed history, diff/restore/merge)
 
 ## Done today
 - **Day 01 · Opening base-corrected** (every V1 shot, balance only, no look):
