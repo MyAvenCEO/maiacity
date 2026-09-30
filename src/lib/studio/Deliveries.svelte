@@ -155,7 +155,7 @@
 		border-radius: 4px;
 		background: var(--ink);
 		font-weight: 600;
-		color: #fff;
+		color: var(--on-ink);
 	}
 
 	.hint {
@@ -168,12 +168,12 @@
 		padding: 0.5rem 0.6rem;
 		border: 1px solid var(--edge);
 		border-radius: 8px;
-		background: #fff;
+		background: var(--raised);
 		font-size: 0.72rem;
 	}
 
 	.card.thumb {
-		background: #fbfaf6;
+		background: var(--chrome);
 	}
 
 	.top {
@@ -190,19 +190,19 @@
 	.qc {
 		padding: 0 0.35rem;
 		border-radius: 4px;
-		background: #eee;
+		background: var(--hover);
 		font-size: 0.62rem;
 		font-weight: 600;
 	}
 
 	.qc.ok {
-		background: #dcebe1;
-		color: #2f7d4f;
+		background: var(--ok-bg);
+		color: var(--ok);
 	}
 
 	.qc.bad {
-		background: #f8ebe6;
-		color: #9c3b26;
+		background: var(--bad-bg);
+		color: var(--bad);
 	}
 
 	p {
@@ -220,7 +220,7 @@
 	}
 
 	.loud {
-		color: #4a5f93;
+		color: var(--info);
 	}
 
 	.checks {
@@ -231,11 +231,11 @@
 	}
 
 	.checks .ok {
-		color: #2f7d4f;
+		color: var(--ok);
 	}
 
 	.checks .bad {
-		color: #9c3b26;
+		color: var(--bad);
 	}
 
 	.checks i {

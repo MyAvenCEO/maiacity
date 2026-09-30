@@ -285,7 +285,7 @@
 	.ver {
 		font-weight: 400;
 		font-size: 0.72rem;
-		color: #4a5f93;
+		color: var(--info);
 	}
 
 	.sub,
@@ -318,7 +318,7 @@
 		padding: 0.2rem 0.3rem;
 		border: 1px solid var(--edge);
 		border-radius: 5px;
-		background: #fff;
+		background: var(--raised);
 		font: inherit;
 		color: var(--ink);
 	}
@@ -349,15 +349,15 @@
 	}
 
 	.sub.warn {
-		color: #a8741a;
+		color: var(--warn);
 	}
 
 	.drift {
 		padding: 0 0.35rem;
 		border-radius: 4px;
-		background: #f6e3da;
+		background: var(--bad-bg);
 		font-size: 0.7rem;
-		color: #8a2a12;
+		color: var(--bad);
 	}
 
 	.words {
@@ -381,7 +381,7 @@
 		padding: 0.2rem 0.4rem;
 		border: 1px solid var(--edge);
 		border-radius: 5px;
-		background: #fff;
+		background: var(--raised);
 		font: inherit;
 		font-size: 0.76rem;
 		color: var(--ink);
@@ -412,7 +412,7 @@
 		padding: 0.4rem 0.5rem;
 		border: 1px solid var(--edge);
 		border-radius: 8px;
-		background: #fff;
+		background: var(--raised);
 	}
 
 	.key b {
@@ -420,8 +420,8 @@
 	}
 
 	.rec.on {
-		border-color: #e5483d;
-		background: #e5483d;
+		border-color: #d8392d;
+		background: #d8392d;
 		color: #fff;
 	}
 
@@ -431,7 +431,7 @@
 		font-size: 0.7rem;
 		white-space: nowrap;
 		text-overflow: ellipsis;
-		color: #4a5f93;
+		color: var(--info);
 	}
 
 	.x {

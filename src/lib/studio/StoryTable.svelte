@@ -428,66 +428,66 @@
 	.ep { font-family: ui-monospace, monospace; font-size: 0.7rem; color: var(--dim); }
 	h3 { margin: 0.1rem 0 0.2rem; font-size: 1.15rem; }
 	header p { margin: 0; max-width: 42rem; font-size: 0.82rem; color: var(--dim); }
-	.state { flex-shrink: 0; padding: 0.35rem 0.7rem; border-radius: 999px; background: #f6e3da; font-size: 0.78rem; color: #8a2a12; }
-	.state.ok { background: #eef2e6; color: #3e5a2f; }
+	.state { flex-shrink: 0; padding: 0.35rem 0.7rem; border-radius: 999px; background: var(--bad-bg); font-size: 0.78rem; color: var(--bad); }
+	.state.ok { background: var(--ok-bg); color: var(--ok); }
 	.bar { display: flex; flex-wrap: wrap; align-items: center; gap: 0.8rem; font-size: 0.78rem; color: var(--dim); }
 	.chips { display: flex; gap: 0.3rem; }
-	.chips button { padding: 0.2rem 0.65rem; border: 1px solid var(--edge); border-radius: 999px; background: #fff; font: inherit; font-size: 0.76rem; color: var(--dim); cursor: pointer; }
-	.chips button.on { border-color: var(--ink); background: var(--ink); color: #fff; }
+	.chips button { padding: 0.2rem 0.65rem; border: 1px solid var(--edge); border-radius: 999px; background: var(--raised); font: inherit; font-size: 0.76rem; color: var(--dim); cursor: pointer; }
+	.chips button.on { border-color: var(--edge-strong); background: var(--sel); color: var(--ink); }
 	label { display: flex; align-items: center; gap: 0.35rem; }
 	.bulk { display: flex; align-items: center; gap: 0.4rem; color: var(--ink); }
-	select { padding: 0.2rem 0.4rem; border: 1px solid var(--edge); border-radius: 6px; background: #fff; font: inherit; font-size: 0.76rem; }
-	.scroll { overflow: auto; min-height: 0; border: 1px solid var(--edge); border-radius: 10px; background: #fff; }
+	select { padding: 0.2rem 0.4rem; border: 1px solid var(--edge); border-radius: 6px; background: var(--raised); font: inherit; font-size: 0.76rem; }
+	.scroll { overflow: auto; min-height: 0; border: 1px solid var(--edge); border-radius: 10px; background: var(--raised); }
 	table { width: 100%; border-collapse: collapse; font-size: 0.8rem; }
-	th { position: sticky; top: 0; z-index: 1; padding: 0.45rem 0.6rem; border-bottom: 1px solid var(--edge); background: var(--bg); font-size: 0.68rem; font-weight: 600; letter-spacing: 0.06em; text-align: left; text-transform: uppercase; color: var(--dim); }
+	th { position: sticky; top: 0; z-index: 1; padding: 0.45rem 0.6rem; border-bottom: 1px solid var(--edge); background: var(--chrome); font-size: 0.68rem; font-weight: 600; letter-spacing: 0.06em; text-align: left; text-transform: uppercase; color: var(--dim); }
 	td { padding: 0.38rem 0.6rem; border-bottom: 1px solid var(--edge); }
-	tr.sel td { background: #f3f6ee; }
+	tr.sel td { background: var(--ok-bg); }
 	tbody tr { cursor: pointer; }
-	tbody tr:hover td { background: var(--bg); }
-	tr.open td { background: #eef2e6; box-shadow: inset 0 1px 0 #9bb58a, inset 0 -1px 0 #9bb58a; }
-	tr.short td.n { color: #8a2a12; }
+	tbody tr:hover td { background: var(--hover); }
+	tr.open td { background: var(--ok-bg); box-shadow: inset 0 1px 0 #3f8f68, inset 0 -1px 0 #3f8f68; }
+	tr.short td.n { color: var(--bad); }
 	.r { text-align: right; white-space: nowrap; }
 	.c { text-align: center; }
 	.n { max-width: 22rem; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 	.h { font-family: ui-monospace, monospace; font-size: 0.72rem; color: var(--dim); }
 	.cls { padding: 0.05rem 0.45rem; border-radius: 999px; background: var(--bg); font-size: 0.7rem; }
-	.cls.original { background: #e8eefb; color: #2b4a8a; }
-	.cls.proxy { background: #f1eafb; color: #5a3a8a; }
-	.cls.delivery { background: #fbf3df; color: #7a5a14; }
+	.cls.original { background: var(--info-bg); color: var(--info); }
+	.cls.proxy { background: var(--violet-bg); color: var(--violet); }
+	.cls.delivery { background: var(--warn-bg); color: var(--warn); }
 	.tier { width: 2.2rem; padding-left: 0.2rem; padding-right: 0.2rem; }
-	.tier .ok { display: inline-grid; place-items: center; width: 1.25rem; height: 1.25rem; border-radius: 50%; background: #6f9a57; font-size: 0.7rem; font-weight: 700; color: #fff; }
-	.tier .pct { font-size: 0.72rem; font-weight: 600; font-variant-numeric: tabular-nums; color: #b8860b; }
-	.tier .miss { font-weight: 700; color: #9c3b26; }
-	.tier .warn { font-weight: 700; color: #b8860b; }
+	.tier .ok { display: inline-grid; place-items: center; width: 1.25rem; height: 1.25rem; border-radius: 50%; background: var(--ok); font-size: 0.7rem; font-weight: 700; color: var(--on-ink); }
+	.tier .pct { font-size: 0.72rem; font-weight: 600; font-variant-numeric: tabular-nums; color: var(--warn); }
+	.tier .miss { font-weight: 700; color: var(--bad); }
+	.tier .warn { font-weight: 700; color: var(--warn); }
 	.tier .wait { font-size: 0.72rem; font-variant-numeric: tabular-nums; color: var(--dim); }
 	.tier .none, .step .none { color: var(--edge); }
 	.step { width: 3rem; }
-	.step .ok { display: inline-grid; place-items: center; width: 1.25rem; height: 1.25rem; border-radius: 50%; background: #4a5f93; font-size: 0.7rem; font-weight: 700; color: #fff; }
-	.step .pct { font-size: 0.72rem; font-weight: 600; font-variant-numeric: tabular-nums; color: #b8860b; }
+	.step .ok { display: inline-grid; place-items: center; width: 1.25rem; height: 1.25rem; border-radius: 50%; background: var(--info); font-size: 0.7rem; font-weight: 700; color: var(--on-ink); }
+	.step .pct { font-size: 0.72rem; font-weight: 600; font-variant-numeric: tabular-nums; color: var(--warn); }
 	.step .wait { font-size: 0.72rem; font-variant-numeric: tabular-nums; color: var(--dim); }
-	.step .warn { font-weight: 700; color: #b8860b; }
-	.step .miss { font-weight: 700; color: #9c3b26; }
-	.step .again { padding: 0 0.3rem; border: 1px solid #e3b7a8; border-radius: 4px; background: #fff; font: inherit; cursor: pointer; }
+	.step .warn { font-weight: 700; color: var(--warn); }
+	.step .miss { font-weight: 700; color: var(--bad); }
+	.step .again { padding: 0 0.3rem; border: 1px solid #7a4a3c; border-radius: 4px; background: var(--raised); font: inherit; cursor: pointer; }
 	th.tier { text-align: center; }
 	.thumb { width: 2.6rem; padding: 0.2rem 0.3rem; }
 	.n.sub { padding-left: 1.4rem; color: var(--dim); }
 	.col { white-space: nowrap; font-size: 0.74rem; }
 	.col .prof { margin-right: 0.4rem; }
-	.col .pok { color: #3e5a2f; }
-	.col .pm { color: #b8860b; font-weight: 600; }
-	.col .pw { color: #9c3b26; }
+	.col .pok { color: var(--ok); }
+	.col .pm { color: var(--warn); font-weight: 600; }
+	.col .pw { color: var(--bad); }
 	.col .dim { color: var(--dim); }
 	tr.coming td { background: var(--bg); font-size: 0.76rem; }
 	.rbar { display: inline-block; width: 6rem; height: 3px; margin-left: 0.6rem; vertical-align: middle; border-radius: 2px; background: var(--edge); overflow: hidden; }
-	.rbar i { display: block; height: 100%; background: #b8860b; transition: width 0.8s linear; }
+	.rbar i { display: block; height: 100%; background: var(--accent); transition: width 0.8s linear; }
 	.more { padding: 0.8rem; text-align: center; color: var(--dim); }
 	.thumb img, .thumb span { display: grid; place-items: center; width: 2.4rem; height: 1.6rem; border-radius: 4px; background: var(--bg); object-fit: cover; font-size: 0.8rem; color: var(--dim); }
 	.live { font-size: 0.72rem; }
-	.confirm { display: flex; align-items: center; gap: 0.4rem; padding: 0.2rem 0.3rem 0.2rem 0.7rem; border-radius: 999px; background: #fbf3df; color: #7a5a14; }
+	.confirm { display: flex; align-items: center; gap: 0.4rem; padding: 0.2rem 0.3rem 0.2rem 0.7rem; border-radius: 999px; background: var(--warn-bg); color: var(--warn); }
 	.confirm button { padding: 0.15rem 0.7rem; border: 0; border-radius: 999px; font: inherit; font-size: 0.74rem; cursor: pointer; }
-	.confirm .yes { background: var(--ink); color: #fff; }
+	.confirm .yes { background: var(--ink); color: var(--on-ink); }
 	.confirm .no { background: transparent; color: var(--dim); text-decoration: underline; }
 	.n small { color: var(--dim); }
 	.empty { padding: 1.2rem; text-align: center; color: var(--dim); }
-	.err { color: #9c3b26; }
+	.err { color: var(--bad); }
 </style>

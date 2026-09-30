@@ -193,7 +193,7 @@
 		font: inherit;
 		font-size: 0.82rem;
 		font-weight: 600;
-		color: #fff;
+		color: var(--on-ink);
 		cursor: pointer;
 	}
 
@@ -204,7 +204,7 @@
 
 	.render.busy {
 		/* the button fills as the film renders */
-		background: linear-gradient(90deg, var(--accent) var(--p), #c4a672 var(--p));
+		background: linear-gradient(90deg, var(--accent) var(--p), #9c7c46 var(--p));
 		cursor: default;
 	}
 
@@ -212,7 +212,7 @@
 		padding: 0.6rem 0.7rem;
 		border: 1px solid var(--edge);
 		border-radius: 10px;
-		background: #fff;
+		background: var(--raised);
 	}
 
 	.rp-head {
@@ -275,7 +275,7 @@
 		margin: 0.5rem 0 0;
 		padding: 0.45rem 0.55rem;
 		border-radius: 6px;
-		background: #fbf1dc;
+		background: var(--warn-bg);
 		line-height: 1.4;
 	}
 
@@ -290,12 +290,12 @@
 		margin: 0.45rem 0 0;
 		padding: 0.45rem 0.55rem;
 		border-radius: 6px;
-		background: #f8ebe6;
+		background: var(--bad-bg);
 		font-size: 0.72rem;
 		line-height: 1.4;
 		white-space: pre-wrap;
 		overflow-wrap: anywhere;
-		color: #9c3b26;
+		color: var(--bad);
 	}
 
 	.rep {
@@ -326,7 +326,7 @@
 	}
 
 	.rep .w {
-		color: #7a5a17;
+		color: var(--warn);
 	}
 
 	.rp-acts {
@@ -383,11 +383,11 @@
 	}
 
 	.st.done {
-		color: #2f7d4f;
+		color: var(--ok);
 	}
 
 	.st.failed,
 	.rp-list .why {
-		color: #9c3b26;
+		color: var(--bad);
 	}
 </style>

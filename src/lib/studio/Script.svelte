@@ -101,7 +101,7 @@
 		padding: 0.2rem 0.4rem;
 		border: 1px solid var(--edge);
 		border-radius: 6px;
-		background: #fff;
+		background: var(--raised);
 		font: inherit;
 		font-size: 0.78rem;
 	}
@@ -118,11 +118,11 @@
 		min-height: 0;
 		overflow: auto;
 		padding: 1.6rem 2.4rem 3rem;
-		background: #fffefa;
+		background: #0f2136;
 		font-family: 'Courier Prime', 'Courier New', Courier, monospace;
 		font-size: 0.86rem;
 		line-height: 1.45;
-		color: #1a1a1a;
+		color: var(--ink);
 	}
 
 	h1 {
@@ -139,13 +139,13 @@
 		max-width: 34em;
 		text-align: center;
 		font-style: italic;
-		color: #555;
+		color: var(--ink-soft);
 	}
 
 	.thumb {
 		margin: 0 0 1.2rem;
 		text-align: center;
-		color: #8a6a1a;
+		color: var(--warn);
 	}
 
 	h2 {
@@ -163,7 +163,7 @@
 		max-width: 34em;
 		text-align: center;
 		font-style: italic;
-		color: #666;
+		color: var(--ink-soft);
 	}
 
 	h3 {
@@ -182,7 +182,7 @@
 
 	.shot.now {
 		border-left-color: var(--accent);
-		background: #fbf3df;
+		background: var(--warn-bg);
 	}
 
 	.action {
@@ -192,11 +192,11 @@
 	.tc {
 		margin-right: 0.6rem;
 		font-size: 0.7rem;
-		color: #999;
+		color: var(--dim);
 	}
 
 	.action em {
-		color: #a8741a;
+		color: var(--warn);
 	}
 
 	.who {
@@ -211,10 +211,10 @@
 
 	.line.todo {
 		font-style: italic;
-		color: #a8741a;
+		color: var(--warn);
 	}
 
 	.empty {
-		color: #999;
+		color: var(--dim);
 	}
 </style>

@@ -296,8 +296,8 @@
 
 <style>
 	.cards { display: flex; flex-direction: column; gap: 0.5rem; }
-	.card { padding: 0.55rem 0.8rem; border: 1px solid var(--edge); border-radius: 10px; background: #fff; }
-	.card.done { border-color: #9bb58a; }
+	.card { padding: 0.55rem 0.8rem; border: 1px solid var(--edge); border-radius: 10px; background: var(--raised); }
+	.card.done { border-color: var(--ok-line); }
 	header { display: flex; justify-content: space-between; align-items: baseline; gap: 1rem; }
 	h3 { margin: 0; font-size: 0.92rem; }
 	.path { margin: 0; overflow: hidden; max-width: 30rem; font-family: ui-monospace, monospace; font-size: 0.66rem; white-space: nowrap; text-overflow: ellipsis; color: var(--dim); }
@@ -309,21 +309,21 @@
 	.dest .name { font-weight: 600; }
 	.dest .n { color: var(--dim); }
 	.bar { overflow: hidden; height: 4px; border-radius: 2px; background: var(--edge); }
-	.bar i { display: block; height: 100%; background: #d9a441; transition: width 0.8s linear; }
-	.bar i.full { background: #6f9a57; }
+	.bar i { display: block; height: 100%; background: var(--accent); transition: width 0.8s linear; }
+	.bar i.full { background: var(--ok); }
 	.steps { display: flex; flex-wrap: wrap; gap: 0.1rem 1.1rem; min-width: 0; }
 	.steps p { margin: 0; font-size: 0.72rem; color: var(--dim); }
 	.steps b { margin-right: 0.25rem; font-weight: 600; color: var(--ink); }
-	.soft { color: #a8741a; }
-	.warn { color: #9c3b26; }
+	.soft { color: var(--warn); }
+	.warn { color: var(--bad); }
 	footer { display: flex; align-items: center; justify-content: space-between; gap: 0.8rem; margin-top: 0.15rem; }
 	.link { padding: 0; border: 0; background: none; font: inherit; font-size: 0.78rem; color: var(--dim); text-decoration: underline; cursor: pointer; }
-	.release { flex-shrink: 0; padding: 0.25rem 0.75rem; border: 0; border-radius: 999px; background: var(--ink); font: inherit; font-size: 0.72rem; color: #fff; cursor: pointer; }
+	.release { flex-shrink: 0; padding: 0.25rem 0.75rem; border: 0; border-radius: 999px; background: var(--ink); font: inherit; font-size: 0.72rem; color: var(--on-ink); cursor: pointer; }
 	.release:disabled { background: var(--edge); color: var(--dim); cursor: default; }
-	.bad { color: #9c3b26; }
+	.bad { color: var(--bad); }
 	.quiet { color: var(--dim); }
-	.veil { position: fixed; inset: 0; z-index: 400; display: grid; place-items: center; background: rgba(20, 26, 22, 0.45); }
-	.dialog { width: min(34rem, 92vw); padding: 1.2rem 1.4rem; border-radius: 14px; background: var(--panel, #fbfaf6); box-shadow: 0 20px 60px rgba(0, 0, 0, 0.25); }
+	.veil { position: fixed; inset: 0; z-index: 400; display: grid; place-items: center; background: rgb(2 6 12 / 0.65); }
+	.dialog { width: min(34rem, 92vw); padding: 1.2rem 1.4rem; border-radius: 14px; background: var(--panel); box-shadow: 0 20px 60px rgb(0 0 0 / 0.6); }
 	.dialog h3 { font-size: 1.15rem; }
 	.dialog code { padding: 0.2rem 0.4rem; border-radius: 6px; background: var(--bg); font-size: 0.74rem; word-break: break-all; }
 	.dialog p { font-size: 0.84rem; }
@@ -331,17 +331,17 @@
 	.list li { display: grid; grid-template-columns: minmax(0, 1fr) 4.5rem 2.2rem 2.2rem; gap: 0.5rem; align-items: center; padding: 0.3rem 0; border-bottom: 1px solid var(--edge); font-size: 0.76rem; }
 	.list li span { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 	.list li small { text-align: right; color: var(--dim); }
-	.list li b { font-weight: 600; color: #9c3b26; }
-	.list li b.ok { color: #3e5a2f; }
-	.list li em { grid-column: 1 / -1; font-style: normal; color: #9c3b26; }
-	.list li.no span { color: #9c3b26; }
+	.list li b { font-weight: 600; color: var(--bad); }
+	.list li b.ok { color: var(--ok); }
+	.list li em { grid-column: 1 / -1; font-style: normal; color: var(--bad); }
+	.list li.no span { color: var(--bad); }
 	.sure { display: flex; gap: 0.5rem; align-items: flex-start; font-size: 0.82rem; }
 	.primary, .danger { padding: 0.4rem 1rem; border: 0; border-radius: 999px; font: inherit; font-size: 0.82rem; color: #fff; cursor: pointer; }
-	.primary { background: var(--ink); }
-	.danger { background: #9c3b26; }
+	.primary { background: var(--ink); color: var(--on-ink); }
+	.danger { background: #c9432f; }
 	.danger:disabled { opacity: 0.4; cursor: default; }
 	.actions { gap: 1rem; align-items: center; }
-	.gone { font-size: 0.8rem; color: #3e5a2f; }
+	.gone { font-size: 0.8rem; color: var(--ok); }
 	.dim { color: var(--dim); }
 	.actions { display: flex; justify-content: flex-end; margin-top: 0.8rem; }
 </style>

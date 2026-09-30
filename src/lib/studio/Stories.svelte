@@ -127,7 +127,7 @@
 	.head { display: flex; align-items: baseline; justify-content: space-between; }
 	h2 { margin: 0 0 0.6rem; font-size: 0.7rem; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--dim); }
 	ul { display: flex; flex-direction: column; gap: 0.3rem; margin: 0 0 0.6rem; padding: 0; list-style: none; }
-	li { display: flex; align-items: center; gap: 0.4rem; border: 1px solid var(--edge); border-radius: 10px; background: #fff; }
+	li { display: flex; align-items: center; gap: 0.4rem; border: 1px solid var(--edge); border-radius: 10px; background: var(--raised); }
 	li.on { border-color: var(--ink); box-shadow: 0 0 0 1px var(--ink); }
 	li.inbox .ep { color: var(--accent); }
 	.pick { display: grid; grid-template-columns: auto 1fr; gap: 0 0.5rem; flex: 1; padding: 0.5rem 0.7rem; border: 0; background: none; font: inherit; text-align: left; color: var(--ink); cursor: pointer; }
@@ -139,14 +139,14 @@
 	.editor { display: flex; flex-direction: column; gap: 0.5rem; margin-bottom: 0.8rem; padding: 0.7rem; border: 1px solid var(--edge); border-radius: 10px; background: var(--bg); }
 	label { display: flex; flex-direction: column; gap: 0.2rem; font-size: 0.74rem; color: var(--dim); }
 	label span { align-self: flex-end; margin-top: -1rem; font-size: 0.7rem; }
-	label span.bad { color: #9c3b26; }
-	input, textarea { padding: 0.4rem 0.55rem; border: 1px solid var(--edge); border-radius: 8px; background: #fff; font: inherit; font-size: 0.84rem; color: var(--ink); resize: vertical; }
+	label span.bad { color: var(--bad); }
+	input, textarea { padding: 0.4rem 0.55rem; border: 1px solid var(--edge); border-radius: 8px; background: var(--raised); font: inherit; font-size: 0.84rem; color: var(--ink); resize: vertical; }
 	.two { display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem; }
 	.rules { display: flex; flex-direction: column; gap: 0.15rem; font-size: 0.72rem; color: var(--dim); }
 	.rules b { display: inline-block; width: 4.3rem; font-weight: 600; color: var(--ink); }
 	.actions { display: flex; align-items: center; gap: 0.8rem; }
-	.primary { padding: 0.4rem 1rem; border: 0; border-radius: 999px; background: var(--ink); font: inherit; font-size: 0.82rem; color: #fff; cursor: pointer; }
+	.primary { padding: 0.4rem 1rem; border: 0; border-radius: 999px; background: var(--ink); font: inherit; font-size: 0.82rem; color: var(--on-ink); cursor: pointer; }
 	.primary:disabled { opacity: 0.5; cursor: default; }
-	.err { color: #9c3b26; font-size: 0.8rem; }
-	.confirm { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; margin: 0 0 0.8rem; font-size: 0.8rem; color: #7a5a14; }
+	.err { color: var(--bad); font-size: 0.8rem; }
+	.confirm { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; margin: 0 0 0.8rem; font-size: 0.8rem; color: var(--warn); }
 </style>

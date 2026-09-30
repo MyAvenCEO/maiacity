@@ -646,8 +646,8 @@
 	.lane-head {
 		padding-left: 1.2rem;
 		font-size: 0.66rem;
-		background: #f1f4f8;
-		color: #4a5f93;
+		background: var(--chrome);
+		color: var(--cyan);
 	}
 
 	.scroll {
@@ -675,11 +675,11 @@
 	}
 
 	.ruler {
-		background: var(--panel);
+		background: var(--chrome);
 	}
 
 	.lane {
-		background: #f6f8fb;
+		background: var(--lane);
 	}
 
 	.tick {
@@ -718,14 +718,14 @@
 
 	.mix .loud {
 		fill: none;
-		stroke: rgba(20, 23, 26, 0.35);
+		stroke: rgb(230 238 247 / 0.4);
 		stroke-width: 1;
 		vector-effect: non-scaling-stroke;
 	}
 
 	.mix .env {
-		fill: rgba(255, 255, 255, 0.18);
-		stroke: #14171a;
+		fill: rgb(230 238 247 / 0.1);
+		stroke: var(--ink);
 		stroke-width: 1.5;
 		vector-effect: non-scaling-stroke;
 	}
@@ -744,9 +744,9 @@
 		width: 0.55rem;
 		height: 0.55rem;
 		margin: -0.275rem 0 0 -0.275rem;
-		border: 1.5px solid #14171a;
+		border: 1.5px solid var(--ink);
 		border-radius: 50%;
-		background: #fff;
+		background: var(--bg);
 		cursor: ew-resize;
 	}
 
@@ -756,7 +756,7 @@
 		bottom: 0.15rem;
 		font-family: ui-monospace, 'SF Mono', Menlo, monospace;
 		font-size: 0.6rem;
-		color: #14171a;
+		color: var(--ink);
 		pointer-events: none;
 	}
 
@@ -765,7 +765,7 @@
 	}
 
 	.lvl b.low {
-		color: #9c3b26;
+		color: var(--bad);
 	}
 
 	.clip:active {
@@ -779,8 +779,8 @@
 	.clip.image,
 	.clip.video {
 		display: flex;
-		border-color: #7fa98f;
-		background: #dcebe1;
+		border-color: #4fae84;
+		background: #103527;
 	}
 
 	/* the grade's layers (Grade), one row each over V1: a cell per shot, its values, or its controls when open */
@@ -817,15 +817,15 @@
 		overflow: hidden;
 		padding: 0 0.35rem;
 		border-left: 1px solid var(--edge);
-		background: rgba(255, 255, 255, 0.5);
+		background: rgb(230 238 247 / 0.035);
 	}
 
 	.cell.sel {
-		background: #fbf3df;
+		background: var(--warn-bg);
 	}
 
 	.cell.film {
-		background: rgba(20, 23, 26, 0.03);
+		background: rgb(0 0 0 / 0.2);
 	}
 
 	.cell .val {
@@ -834,11 +834,11 @@
 		font-size: 0.62rem;
 		white-space: nowrap;
 		text-overflow: ellipsis;
-		color: #b3b8ae;
+		color: #6c84a0;
 	}
 
 	.cell .val.on {
-		color: #a8741a;
+		color: var(--warn);
 	}
 
 	.cell .sl {
@@ -871,16 +871,17 @@
 		padding: 0 0.35rem;
 		border: 1px solid var(--edge);
 		border-radius: 999px;
-		background: #fff;
+		background: var(--raised);
 		font: inherit;
 		font-size: 0.58rem;
+		color: var(--ink);
 		cursor: pointer;
 	}
 
 	.cell .chips button.on {
 		border-color: var(--accent);
 		background: var(--accent);
-		color: #fff;
+		color: var(--on-accent);
 	}
 
 	/* the story (Script): its sections as bands, the tension as one line over them */
@@ -890,8 +891,8 @@
 		bottom: 0.3rem;
 		overflow: hidden;
 		padding: 0.2rem 0.4rem;
-		border-left: 2px solid rgba(20, 23, 26, 0.5);
-		background: rgba(20, 23, 26, 0.05);
+		border-left: 2px solid rgb(230 238 247 / 0.45);
+		background: rgb(230 238 247 / 0.04);
 		font-size: 0.7rem;
 		cursor: pointer;
 	}
@@ -912,30 +913,30 @@
 	}
 
 	.sec.hook {
-		background: #f7e8c5;
+		background: #3a2c13;
 	}
 
 	.sec.act1 {
-		background: #e6ecf5;
+		background: #162b4a;
 	}
 
 	.sec.act2 {
-		background: #eef2e6;
+		background: #15322a;
 	}
 
 	.sec.act3 {
-		background: #f1eafb;
+		background: #281f48;
 	}
 
 	.sec.cliffhanger {
-		background: #f6e3da;
+		background: #3d1f1c;
 	}
 
 	.sec.mark {
 		z-index: 2;
 		overflow: visible;
 		padding: 0;
-		border-left: 2px solid #b8860b;
+		border-left: 2px solid var(--accent);
 		background: none;
 	}
 
@@ -945,9 +946,9 @@
 		left: 0.2rem;
 		padding: 0 0.25rem;
 		border-radius: 3px;
-		background: #b8860b;
+		background: var(--accent);
 		font-size: 0.58rem;
-		color: #fff;
+		color: var(--on-accent);
 		white-space: nowrap;
 	}
 
@@ -961,7 +962,7 @@
 
 	.tension path {
 		fill: none;
-		stroke: #9c3b26;
+		stroke: var(--terracotta);
 		stroke-width: 2;
 		vector-effect: non-scaling-stroke;
 	}
@@ -974,25 +975,25 @@
 		z-index: 3;
 		display: grid;
 		place-items: center;
-		border-left: 1px dashed rgba(20, 23, 26, 0.35);
-		border-right: 1px dashed rgba(20, 23, 26, 0.35);
+		border-left: 1px dashed rgb(230 238 247 / 0.45);
+		border-right: 1px dashed rgb(230 238 247 / 0.45);
 		pointer-events: none;
 	}
 
 	.overlap b {
 		padding: 0 0.3rem;
 		border-radius: 3px;
-		background: #14171a;
+		background: var(--ink);
 		font-size: 0.62rem;
-		color: #fff;
+		color: var(--on-ink);
 	}
 
 	.overlap.J b {
-		background: #4a5f93;
+		background: var(--cyan);
 	}
 
 	.overlap.L b {
-		background: #b8860b;
+		background: var(--accent);
 	}
 
 	.jl {
@@ -1001,9 +1002,9 @@
 		top: 0.15rem;
 		padding: 0 0.3rem;
 		border-radius: 3px;
-		background: #4a5f93;
+		background: var(--cyan);
 		font-size: 0.6rem;
-		color: #fff;
+		color: var(--on-ink);
 	}
 
 	/* a clip whose file this Mac does not have yet: kept, marked */
@@ -1018,18 +1019,18 @@
 		bottom: 0.2rem;
 		padding: 0 0.3rem;
 		border-radius: 3px;
-		background: #f6e3da;
+		background: var(--bad-bg);
 		font-size: 0.6rem;
 		font-weight: 600;
-		color: #9c3b26;
+		color: var(--bad);
 	}
 
 	/* the script's stand-ins: a shot not filmed yet, a line not recorded yet */
 	.clip.slate {
 		display: flex;
 		border-style: dashed;
-		border-color: #b9a36a;
-		background: repeating-linear-gradient(135deg, #f6efdc 0 6px, #f1e7cc 6px 12px);
+		border-color: #a88f55;
+		background: repeating-linear-gradient(135deg, #2a2415 0 6px, #211c11 6px 12px);
 	}
 
 	.clip.audio.line {
@@ -1038,8 +1039,8 @@
 	}
 
 	.clip.world {
-		border-color: #8fa0c9;
-		background: linear-gradient(180deg, #dfe8f6, #e8eedd);
+		border-color: #6f8fd6;
+		background: linear-gradient(180deg, #172e57, #16342c);
 	}
 
 	.clip.image img {
@@ -1049,17 +1050,17 @@
 
 	.clip.audio.A1 {
 		border-color: #d4a64a;
-		background: #f7e8c5;
+		background: #33280f;
 	}
 
 	.clip.audio.A2 {
-		border-color: #6fb3a1;
-		background: #d6eee8;
+		border-color: #45b6a4;
+		background: #0d3434;
 	}
 
 	.clip.audio.A3 {
-		border-color: #8fa0c9;
-		background: #e1e7f5;
+		border-color: #6f8fd6;
+		background: #16284d;
 	}
 
 	.clip.cue {
@@ -1092,7 +1093,7 @@
 
 	.clip .label i {
 		font-style: normal;
-		color: #4a5f93;
+		color: var(--info);
 	}
 
 	.clip.image .label,
@@ -1122,31 +1123,31 @@
 	}
 
 	.wtag {
-		background: #cbd6ec;
-		color: #3c4f80;
+		background: var(--info-bg);
+		color: var(--info);
 	}
 
 	.nopx {
-		background: #fbf1dc;
-		color: #7a5a17;
+		background: var(--warn-bg);
+		color: var(--warn);
 	}
 
 	.gr {
-		background: #f3e3c1;
-		color: #a8741a;
+		background: rgb(232 168 58 / 0.26);
+		color: #f6cf85;
 	}
 
 	.clip.caps {
 		display: flex;
 		align-items: center;
-		border-color: #a594c6;
-		background: #ebe5f5;
+		border-color: #8d78cc;
+		background: #221b42;
 		cursor: default;
 	}
 
 	.clip.caps.now {
-		border-color: #6a4f93;
-		background: #d8cdef;
+		border-color: var(--violet);
+		background: #372a6a;
 	}
 
 	.clip.caps span {
@@ -1164,13 +1165,13 @@
 		font-size: 0.58rem;
 		line-height: 1;
 		white-space: nowrap;
-		color: rgb(38 44 56 / 0.55);
+		color: rgb(230 238 247 / 0.55);
 		pointer-events: none;
 	}
 
 	.label .snd {
 		font-style: normal;
-		color: #4a5f93;
+		color: var(--info);
 	}
 
 	.clip.linked {
@@ -1185,13 +1186,13 @@
 	}
 
 	.nosnd {
-		background: #fbf1dc;
-		color: #7a5a17;
+		background: var(--warn-bg);
+		color: var(--warn);
 	}
 
 	.drift {
-		background: #f6e3da;
-		color: #8a2a12;
+		background: var(--bad-bg);
+		color: var(--bad);
 	}
 
 	.edge {
@@ -1212,7 +1213,7 @@
 
 	.clip:hover .edge,
 	.clip.sel .edge {
-		background: rgb(38 56 44 / 0.18);
+		background: rgb(230 238 247 / 0.22);
 	}
 
 	.span {
@@ -1220,12 +1221,12 @@
 		top: 0.2rem;
 		bottom: 0.2rem;
 		border-radius: 4px;
-		background: #e3e9f4;
+		background: var(--hover);
 		pointer-events: none;
 	}
 
 	.span.hour {
-		background: linear-gradient(90deg, #d8e2f2, #f5e6c4);
+		background: linear-gradient(90deg, #183257, #3a2c13);
 	}
 
 	.val {
@@ -1235,7 +1236,7 @@
 		font-size: 0.64rem;
 		line-height: 1.45rem;
 		white-space: nowrap;
-		color: #3c4f80;
+		color: var(--cyan);
 		pointer-events: none;
 	}
 
@@ -1246,15 +1247,15 @@
 		height: 0.62rem;
 		margin: -0.31rem 0 0 -0.31rem;
 		padding: 0;
-		border: 1px solid #3c4f80;
-		background: #fff;
+		border: 1px solid var(--cyan);
+		background: var(--bg);
 		transform: rotate(45deg);
 		cursor: ew-resize;
 	}
 
 	.key.on {
 		background: var(--accent);
-		border-color: #a8741a;
+		border-color: #f6cf85;
 	}
 
 	.key.out {
@@ -1262,15 +1263,15 @@
 	}
 
 	.key.cue.sound {
-		border-color: #4a5f93;
-		background: #8fa0c9;
+		border-color: var(--info);
+		background: #3c5fa8;
 		border-radius: 50%;
 		transform: none;
 	}
 
 	.key.cue.event {
-		border-color: #6a4f93;
-		background: #d8cdef;
+		border-color: var(--violet);
+		background: #4a3a80;
 	}
 
 	.playhead {
@@ -1278,7 +1279,7 @@
 		top: 0;
 		bottom: 0;
 		width: 0;
-		border-left: 2px solid #e5483d;
+		border-left: 2px solid var(--rec);
 		pointer-events: none;
 	}
 
@@ -1289,6 +1290,6 @@
 		width: 12px;
 		height: 12px;
 		border-radius: 0 0 50% 50%;
-		background: #e5483d;
+		background: var(--rec);
 	}
 </style>

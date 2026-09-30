@@ -71,7 +71,7 @@
 		padding: 0.2rem 0.4rem;
 		border: 1px solid var(--edge);
 		border-radius: 6px;
-		background: #fff;
+		background: var(--raised);
 		font: inherit;
 	}
 
@@ -92,7 +92,7 @@
 		padding: 0.5rem 0.8rem;
 		border: 1px solid var(--edge);
 		border-radius: 8px;
-		background: #fff;
+		background: var(--raised);
 		font-size: 0.8rem;
 	}
 

@@ -49,7 +49,7 @@
 		padding: 2px;
 		border: 1px solid var(--edge);
 		border-radius: 999px;
-		background: #fff;
+		background: var(--bg);
 	}
 
 	.tabs button {
@@ -66,7 +66,7 @@
 	}
 
 	.tabs button.on {
-		background: var(--ink);
-		color: #fff;
+		background: var(--sel);
+		color: var(--ink);
 	}
 </style>

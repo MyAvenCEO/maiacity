@@ -182,22 +182,22 @@
 	.main { display: flex; flex-direction: column; gap: 0.9rem; }
 	/* the column scrolls as a whole; nothing in it is squeezed to fit */
 	.main > :global(*) { flex-shrink: 0; }
-	.drive { border: 1px solid var(--edge); background: #fff; font: inherit; font-size: 0.8rem; cursor: pointer; }
-	.choose { padding: 0.35rem 0.9rem; border: 1px solid var(--ink); border-radius: 999px; background: #fff; font: inherit; font-size: 0.8rem; color: var(--ink); cursor: pointer; }
+	.drive { border: 1px solid var(--edge); background: var(--raised); font: inherit; font-size: 0.8rem; cursor: pointer; }
+	.choose { padding: 0.35rem 0.9rem; border: 1px solid var(--ink); border-radius: 999px; background: var(--raised); font: inherit; font-size: 0.8rem; color: var(--ink); cursor: pointer; }
 	.bar { padding: 0.8rem 1rem; border: 1px dashed var(--edge); border-radius: 12px; background: var(--bg); }
-	.bar.ready { border-style: solid; border-color: var(--ink); background: #fff; }
-	.bar.busy { border-style: solid; background: #fff; }
+	.bar.ready { border-style: solid; border-color: var(--ink); background: var(--raised); }
+	.bar.busy { border-style: solid; background: var(--raised); }
 	.line { display: flex; flex-wrap: wrap; align-items: center; gap: 0.6rem; font-size: 0.84rem; }
 	.line small, .line span:first-child { color: var(--dim); }
 	.line strong { overflow: hidden; max-width: 22rem; white-space: nowrap; text-overflow: ellipsis; }
 	.chip { padding: 0.15rem 0.6rem; border-radius: 999px; background: var(--bg); color: var(--ink) !important; }
 	.grow { flex: 1; }
-	.go { padding: 0.45rem 1rem; border: 0; border-radius: 999px; background: var(--ink); font: inherit; font-size: 0.84rem; color: #fff; cursor: pointer; }
+	.go { padding: 0.45rem 1rem; border: 0; border-radius: 999px; background: var(--ink); font: inherit; font-size: 0.84rem; color: var(--on-ink); cursor: pointer; }
 	.go:disabled { opacity: 0.5; }
 	.hint { font-size: 0.86rem; color: var(--dim); }
 	.progress { overflow: hidden; height: 5px; margin-top: 0.5rem; border-radius: 3px; background: var(--edge); }
 	.progress i { display: block; height: 100%; background: var(--accent); transition: width 0.3s; }
-	.err { margin: 0; color: #9c3b26; font-size: 0.84rem; }
+	.err { margin: 0; color: var(--bad); font-size: 0.84rem; }
 	.tabs { display: flex; gap: 1.2rem; border-bottom: 1px solid var(--edge); }
 	.tabs button { margin-bottom: -1px; padding: 0.3rem 0 0.5rem; border: 0; border-bottom: 2px solid transparent; background: none; font: inherit; font-size: 0.86rem; color: var(--dim); cursor: pointer; }
 	.tabs button.on { border-bottom-color: var(--ink); color: var(--ink); }

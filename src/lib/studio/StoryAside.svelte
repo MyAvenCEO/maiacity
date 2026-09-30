@@ -140,17 +140,17 @@
 	.who { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-size: 0.84rem; }
 	.masters .pct { font-size: 0.74rem; font-variant-numeric: tabular-nums; color: var(--dim); }
 	.masters .bar { grid-column: 2 / -1; overflow: hidden; height: 4px; border-radius: 2px; background: var(--edge); }
-	.masters .bar i { display: block; height: 100%; background: #d9a441; transition: width 1s linear; }
-	.masters .bar.done i { background: #6f9a57; }
+	.masters .bar i { display: block; height: 100%; background: var(--accent); transition: width 1s linear; }
+	.masters .bar.done i { background: var(--ok); }
 	.masters .n { grid-column: 2 / -1; font-size: 0.72rem; color: var(--dim); }
 	.tier { display: grid; place-items: center; width: 1.3rem; height: 1.3rem; margin-top: 0.05rem; border-radius: 50%; background: var(--edge); font-size: 0.68rem; font-weight: 700; color: var(--dim); }
-	.tier.on { background: #6f9a57; color: #fff; }
+	.tier.on { background: var(--ok); color: var(--on-ink); }
 	.dot { width: 0.5rem; height: 0.5rem; margin-top: 0.35rem; border-radius: 50%; background: var(--edge); }
 	strong { font-size: 0.86rem; }
 	small { font-size: 0.72rem; color: var(--dim); }
 	.link { padding: 0; border: 0; background: none; font: inherit; font-size: 0.74rem; color: var(--dim); text-decoration: underline; cursor: pointer; }
-	.confirm { font-size: 0.78rem; color: #7a5a14; }
-	.confirm button:not(.link) { padding: 0.1rem 0.6rem; border: 0; border-radius: 999px; background: var(--ink); font: inherit; font-size: 0.74rem; color: #fff; cursor: pointer; }
+	.confirm { font-size: 0.78rem; color: var(--warn); }
+	.confirm button:not(.link) { padding: 0.1rem 0.6rem; border: 0; border-radius: 999px; background: var(--ink); font: inherit; font-size: 0.74rem; color: var(--on-ink); cursor: pointer; }
 	.foot { display: flex; flex-direction: column; gap: 0.4rem; margin-top: 1.8rem; padding-top: 0.8rem; border-top: 1px solid var(--edge); font-size: 0.76rem; color: var(--dim); }
 	.foot .link { align-self: flex-start; }
 </style>

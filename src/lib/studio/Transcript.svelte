@@ -224,7 +224,7 @@
 		padding: 0.25rem 0.6rem;
 		border: 1px solid var(--edge);
 		border-radius: 999px;
-		background: #fff;
+		background: var(--raised);
 		font: inherit;
 		font-size: 0.74rem;
 		color: var(--ink);
@@ -276,7 +276,7 @@
 	}
 
 	.tc:hover {
-		background: var(--bg);
+		background: var(--hover);
 		color: var(--ink);
 	}
 
@@ -284,10 +284,10 @@
 		margin-right: 0.3rem;
 		padding: 0 0.3rem;
 		border-radius: 4px;
-		background: #e6ecf5;
+		background: var(--info-bg);
 		font-size: 0.62rem;
 		font-weight: 600;
-		color: #4a5f93;
+		color: var(--info);
 	}
 
 	.w {
@@ -296,27 +296,27 @@
 	}
 
 	.w:hover {
-		background: #0000000d;
+		background: rgb(230 238 247 / 0.08);
 	}
 
 	.w.out {
-		color: #b9b3a6;
+		color: #5f7690;
 	}
 
 	.w.low {
-		text-decoration: underline dotted #c9b27a;
+		text-decoration: underline dotted #b08a3e;
 	}
 
 	.w.hit {
-		background: #fbe7b0;
+		background: rgb(232 168 58 / 0.28);
 	}
 
 	.w.sel {
-		background: rgb(217 154 43 / 0.35);
+		background: rgb(232 168 58 / 0.42);
 	}
 
 	.w:global(.now) {
-		background: #e5483d;
+		background: #d8392d;
 		color: #fff;
 	}
 
@@ -328,12 +328,12 @@
 
 	.state-failed,
 	.state-stuck {
-		color: #9c3b26;
+		color: var(--bad);
 	}
 
 	.state-queued,
 	.state-running {
-		color: #a8741a;
+		color: var(--warn);
 	}
 
 	.again {
@@ -341,7 +341,7 @@
 		padding: 0.1rem 0.6rem;
 		border: 1px solid var(--edge);
 		border-radius: 999px;
-		background: #fff;
+		background: var(--raised);
 		font: inherit;
 		font-size: 0.72rem;
 		color: var(--ink);

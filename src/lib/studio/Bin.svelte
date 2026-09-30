@@ -257,7 +257,7 @@
 		padding: 0.2rem 0.5rem;
 		border: 1px solid var(--edge);
 		border-radius: 999px;
-		background: #fff;
+		background: var(--raised);
 		font: inherit;
 		font-size: 0.72rem;
 		color: var(--ink);
@@ -267,24 +267,24 @@
 	.tr {
 		margin-right: 0.3rem;
 		font-weight: 600;
-		color: #4a5f93;
+		color: var(--info);
 	}
 
 	.tr.queued,
 	.tr.running,
 	.tr.failed {
-		color: #a8741a;
+		color: var(--warn);
 	}
 
 	.tr.stuck {
-		color: #9c3b26;
+		color: var(--bad);
 	}
 
 	.kinds button {
 		padding: 0.25rem 0.6rem;
 		border: 1px solid var(--edge);
 		border-radius: 999px;
-		background: #fff;
+		background: var(--raised);
 		font: inherit;
 		font-size: 0.75rem;
 		color: var(--dim);
@@ -292,16 +292,16 @@
 	}
 
 	.kinds button.on {
-		border-color: var(--ink);
-		background: var(--ink);
-		color: #fff;
+		border-color: var(--edge-strong);
+		background: var(--sel);
+		color: var(--ink);
 	}
 
 	input[type='search'] {
 		padding: 0.45rem 0.75rem;
 		border: 1px solid var(--edge);
 		border-radius: 999px;
-		background: #fff;
+		background: var(--raised);
 		font: inherit;
 		font-size: 0.8rem;
 		color: var(--ink);
@@ -367,11 +367,11 @@
 	}
 
 	.item:hover {
-		background: var(--bg);
+		background: var(--hover);
 	}
 
 	.item.on {
-		background: #f3e3c1;
+		background: var(--chosen);
 	}
 
 	.badge {
@@ -392,7 +392,7 @@
 	}
 
 	.thumb.world {
-		background: linear-gradient(#9fb6cf, #cfd9c4);
+		background: linear-gradient(#2b4a70, #2c4838);
 	}
 
 	.thumb img {
@@ -432,17 +432,17 @@
 	.px {
 		margin-right: 0.3rem;
 		font-weight: 600;
-		color: #2f7d4f;
+		color: var(--ok);
 	}
 
 	.px.none,
 	.px.queued,
 	.px.rendering {
-		color: #a8741a;
+		color: var(--warn);
 	}
 
 	.px.failed {
-		color: #9c3b26;
+		color: var(--bad);
 	}
 
 	.tls {
@@ -476,7 +476,7 @@
 	}
 
 	.proj:hover {
-		background: #0000000a;
+		background: var(--hover);
 	}
 
 	.proj span {
@@ -497,7 +497,7 @@
 	}
 
 	.tls li.on {
-		background: #f3e3c1;
+		background: var(--chosen);
 	}
 
 	.tl {
@@ -524,22 +524,22 @@
 		border-radius: 4px;
 		background: var(--ink);
 		font-size: 0.68rem;
-		color: #fff;
+		color: var(--on-ink);
 	}
 
 	.stg {
 		margin-left: 0.35rem;
 		padding: 0 0.3rem;
 		border-radius: 4px;
-		background: #e6ecf5;
+		background: var(--info-bg);
 		font-size: 0.6rem;
 		font-style: normal;
-		color: #4a5f93;
+		color: var(--info);
 	}
 
 	.stg.rendered {
-		background: #dcebe1;
-		color: #2f7d4f;
+		background: var(--ok-bg);
+		color: var(--ok);
 	}
 
 	.tls .x {
