@@ -1,64 +1,15 @@
-// The preview LUTs the viewer takes pictures through: odt-rec709 (the timeline to the screen) and each profile's IDT
-// (a proxy's own encoding into the timeline). The worker bakes them from the transform configs and keeps them in the
-// library as cache files (C5); `GET /api/film/luts` names them. Nothing here is ever baked or committed.
-import { filmLuts, fileUrl, missing } from '$lib/auth/client';
+// The LUTs the viewer takes pictures through: odt-rec709 (the timeline to the screen, the ACES 2.0 output transform)
+// and each profile's IDT (a proxy's own journey into ACEScct). The Mac app bakes every one of them natively
+// (`color_lut`: vault-media's cst for the journeys in, its aces2 for the output); nothing is fetched or committed.
 
 /**
- * A 3D LUT, ready for the GPU: size³ RGBA floats, red fastest, then green, then blue (as bake.py writes it).
+ * A 3D LUT, ready for the GPU: size³ RGBA floats, red fastest, then green, then blue.
  * @typedef {{ name: string, size: number, data: Float32Array, title?: string, hash?: string }} Lut
  */
 /**
- * Where the LUT list came from: the API, or nowhere (the viewer then shows its formula fallback).
- * @typedef {'api' | 'none'} LutSource
+ * Where the LUTs came from: this Mac, or nowhere (the viewer then shows its formula fallback).
+ * @typedef {'mac' | 'none'} LutSource
  */
-
-import { parseLut as parseMlut } from '../../../game/film/transforms.js';
-
-/** @param {Uint8Array} bytes */
-const gunzip = async (bytes) => {
-	const out = new Blob([/** @type {BlobPart} */ (bytes)]).stream().pipeThrough(new DecompressionStream('gzip'));
-	return new Uint8Array(await new Response(out).arrayBuffer());
-};
-
-/**
- * A LUT file's numbers. Two formats: bake.py's MLUT1 (gzip · 'MLUT1' · uint32 LE header length · JSON header
- * {name, size, min, max} · size³ × RGB uint16 LE, red fastest, value = min + (max − min) · u / 65535), and a plain
- * Resolve/Adobe `.cube` (LUT_3D_SIZE n, then n³ lines "r g b", red fastest; DOMAIN_MIN/MAX taken as 0…1).
- * @param {string} name @param {ArrayBuffer} raw @returns {Promise<Lut>}
- */
-export async function parseLut(name, raw) {
-	let bytes = new Uint8Array(raw);
-	if (bytes[0] === 0x1f && bytes[1] === 0x8b) bytes = await gunzip(bytes);
-	const magic = new TextDecoder().decode(bytes.subarray(0, 5));
-	if (magic === 'MLUT1') {
-		const { header, size, data } = parseMlut(bytes);
-		return { name, size, data, title: /** @type {{ title?: string }} */ (header).title, hash: header.hash };
-	}
-	const text = new TextDecoder().decode(bytes);
-	const size = Number(/LUT_3D_SIZE\s+(\d+)/.exec(text)?.[1]);
-	if (!size) throw new Error(`${name}: not a LUT this viewer reads`);
-	const rows = text.split(/\r?\n/).filter((l) => /^\s*[-+0-9.eE]+\s+[-+0-9.eE]+\s+[-+0-9.eE]+\s*$/.test(l));
-	const data = new Float32Array(size ** 3 * 4);
-	rows.slice(0, size ** 3).forEach((l, i) => {
-		const [r, g, b] = l.trim().split(/\s+/).map(Number);
-		data.set([r, g, b, 1], i * 4);
-	});
-	return { name, size, data };
-}
-
-/**
- * Which preview LUTs exist, by transform name → the vault file (`GET /api/film/luts`; the worker bakes them).
- * @returns {Promise<{ from: LutSource, luts: Record<string, { file: string, hash?: string }> }>}
- */
-export async function lutIndex() {
-	try {
-		const luts = await filmLuts();
-		return { from: Object.keys(luts).length ? 'api' : 'none', luts };
-	} catch (e) {
-		if (!missing(e)) console.warn('film LUTs:', /** @type {Error} */ (e).message);
-		return { from: 'none', luts: {} };
-	}
-}
 
 /** @type {WeakMap<Lut, { size: number, data: Float32Array }>} */
 const rgb = new WeakMap();
@@ -79,30 +30,9 @@ export function filmLut(l) {
 	return out;
 }
 
-/** @type {Map<string, Promise<Lut | null>>} */
-const loaded = new Map();
 /**
- * A LUT's numbers, fetched once per file (a hash never changes its bytes).
- * @param {string} name @param {string} file the vault file's hash @returns {Promise<Lut | null>}
- */
-export function loadLut(name, file) {
-	let p = loaded.get(file);
-	if (!p) {
-		p = fetch(fileUrl(file))
-			.then((r) => (r.ok ? r.arrayBuffer() : Promise.reject(new Error(`${r.status}`))))
-			.then((b) => parseLut(name, b))
-			.catch((e) => {
-				console.warn(`LUT ${name} (${file}):`, e.message);
-				return null;
-			});
-		loaded.set(file, p);
-	}
-	return p;
-}
-
-/**
- * A profile's input LUT, baked by the Mac from the journey its proxies take (vault-media's cst): a u32 size, then
- * size³ RGB f32 in ACEScct, red fastest — as RGBA for the GPU.
+ * A LUT baked by the Mac (`color_lut`): a profile's input journey (vault-media's cst), or `odt-rec709` (its aces2).
+ * A u32 size, then size³ RGB f32, red fastest — as RGBA for the GPU.
  * @param {string} profile @returns {Promise<Lut>}
  */
 export async function nativeLut(profile) {
@@ -118,5 +48,5 @@ export async function nativeLut(profile) {
 		data[j + 2] = rgb[i + 2];
 		data[j + 3] = 1;
 	}
-	return { name: profile, size, data, title: `${profile} → ACEScct (Mac)` };
+	return { name: profile, size, data, title: `${profile} (Mac)` };
 }

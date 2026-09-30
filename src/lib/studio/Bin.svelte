@@ -32,7 +32,7 @@
 		kind === 'world'
 			? []
 			: files.filter((m) => {
-					// the pipeline's own working files (proxies, preview LUTs, hero frames) are not footage to cut with
+					// the pipeline's own working files (proxies, the worker's old LUT caches, hero frames) are not footage to cut with
 					if (!['image', 'video', 'audio'].includes(m.kind) || m.tags.some((t) => t === 'superseded' || t === 'role:proxy' || t === 'role:lut' || t === 'role:frame')) return false;
 					if (kind !== 'all' && m.kind !== kind) return false;
 					if (tag && !m.tags.includes(tag)) return false;

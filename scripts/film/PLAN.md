@@ -391,8 +391,9 @@ render-step intermediates, cached by `fingerprint`, never library assets. Same f
   output transform. `cdl()`, `PRESETS` (COLD, DIP, BRIGHT, NIGHT, WARM as CDLs), `cleanCdl()` in color.js; the
   browser applies them in a shader, the worker as ffmpeg filters — the same maths.
 - Display-referred clips with no grade and a neutral look skip both transforms: they render bit for bit as before.
-- Preview LUTs for the studio: the worker bakes them (odt-rec709 and each profile's IDT) and puts them in the library
-  as cache files (`role:lut`, `meta: { transform, hash }`); `GET /api/film/luts` → `{ [name]: { cid, hash, size } }`.
+- The studio viewer's LUTs (odt-rec709 and each profile's IDT) are baked natively by the Mac app (`color_lut`:
+  vault-media's cst and aces2). The worker's old preview LUTs (`role:lut` files, `lut` jobs, `GET /api/film/luts`)
+  are gone; their files and job rows remain only as history.
 
 ### C6 · Jobs (api/src/renders.ts, migration — owned by stream A)
 

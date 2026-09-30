@@ -20,7 +20,7 @@ import { approveDevice, deviceInfo, KeyError, keyHolder, redeemDevice, revokeKey
 import { joinInfo, listDevices, listVaultFiles, pairDevice, revokeDevice, VaultError } from "./vault";
 import { createTimeline, deleteTimeline, getTimeline, listTimelines, saveTimeline, TimelineError } from "./timelines";
 import { createShot, getShot, listShots, saveShot, ShotError, shotVersions } from "./shots";
-import { claimRender, listJobs, previewLuts, queueFrame, queueLuts, queueRender, RenderError, rendersOf, reportRender } from "./renders";
+import { claimRender, listJobs, queueFrame, queueRender, RenderError, rendersOf, reportRender } from "./renders";
 import { CHANNELS, ContentError, createContent, deleteContent, FORMATS, KINDS, listContent, saveContent, saveDay, savePosts, STATUSES } from "./content";
 import { format, gameClock, calendar, parse } from "../../game/time";
 
@@ -709,23 +709,9 @@ const server = Bun.serve({
       },
     },
 
-    // The worker's other jobs: the studio's preview output transform LUT and hero frames. Proxies — a file's and a world
-    // shot's — are the Mac app's work, not jobs here.
-    // GET /api/film/luts → { [transform]: { file, hash, size } } (file: the vault file's hash); POST queues a bake.
+    // The worker's other jobs: hero frames. Proxies — a file's and a world shot's — and the viewer's LUTs are the Mac
+    // app's work, not jobs here.
     // GET /api/film/jobs?kind=&timeline=&shot= → the latest jobs (the render queue).
-    "/api/film/luts": {
-      OPTIONS: preflight,
-      GET: async (req) => {
-        const me = await allowed(req, "media:admin");
-        if (me instanceof Response) return me;
-        return json(req, await previewLuts());
-      },
-      POST: async (req) => {
-        const me = await allowed(req, "media:admin");
-        if (me instanceof Response) return me;
-        return json(req, await queueLuts(me.id), { status: 201 });
-      },
-    },
     "/api/film/jobs": {
       OPTIONS: preflight,
       GET: async (req) => {

@@ -2,10 +2,9 @@
 	Conform (Grade tab): what the grade is made on. Every media clip goes back to its original (through its input
 	transform); every world clip is rendered by the worker as an ACEScct plate per delivery shape. The worker does it
 	while it renders (C6): this shows what the last render's report says it used — originals swapped in for proxies,
-	plates rendered or reused from the cache — and which preview LUTs the viewer has.
+	plates rendered or reused from the cache — and which LUTs this Mac baked for the viewer.
 -->
 <script>
-	import { bakeLuts } from '$lib/auth/client';
 	import ColorBadge from './ColorBadge.svelte';
 	import HeroFrame from './HeroFrame.svelte';
 	import { ODT, profileFor, profileInfo } from './color.js';
@@ -19,12 +18,7 @@
 	const plate = (clipId, shape) => s.lastReport?.plates?.find((p) => p.clip === clipId && p.aspect === shape);
 	/** Did the last render swap this clip's proxy for its original? @param {string} clipId */
 	const swapped = (clipId) => s.lastReport?.conformed?.some((x) => x.clip === clipId);
-	let baking = $state('');
-	async function bake() {
-		baking = 'queued…';
-		baking = await bakeLuts().then(() => 'queued for the worker', (e) => e.message);
-	}
-	/** the preview LUTs the viewer needs for this timeline's pictures */
+	/** the LUTs the viewer needs for this timeline's pictures */
 	const needed = $derived.by(() => {
 		const names = new Set([ODT]);
 		for (const c of v1) {
@@ -79,7 +73,7 @@
 	{#if s.lastReport?.warnings?.length}
 		<ul class="warn">{#each s.lastReport.warnings as w, i (i)}<li>{w}</li>{/each}</ul>
 	{/if}
-	<h3>Preview LUTs</h3>
+	<h3>Viewer LUTs</h3>
 	<p class="sum">
 		{s.lutFrom === 'mac' ? 'baked by this Mac (the proxies’ journeys in, ACES 2.0 out)' : 'none yet — the viewer uses formula transforms'}
 	</p>
@@ -88,9 +82,6 @@
 			<li><span class:ok={!!s.luts[n]} class="dot"></span>{n} {s.luts[n] ? `· ${s.luts[n]?.size}³` : '· missing'}</li>
 		{/each}
 	</ul>
-	{#if needed.some((n) => !s.luts[n])}
-		<button class="ghost small" onclick={bake} disabled={!!baking}>{baking || 'Bake the preview LUTs'}</button>
-	{/if}
 	<HeroFrame {s} />
 </aside>
 

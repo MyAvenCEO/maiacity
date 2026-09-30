@@ -70,16 +70,16 @@ function writeAtomic(/** @type {string} */ file, /** @type {string | Uint8Array}
 
 /**
  * The LUT of an OCIO transform, baked now (or found in the cache): its file and the hash that pins it. 'cube' is a 3D
- * LUT, 'cube1d' a 1D one (a per-channel curve), 'mlut' a studio preview.
- * @param {TransformConfig} config @param {{ size?: number, format?: 'cube' | 'cube1d' | 'mlut', name?: string }} [o]
+ * LUT, 'cube1d' a 1D one (a per-channel curve).
+ * @param {TransformConfig} config @param {{ size?: number, format?: 'cube' | 'cube1d', name?: string }} [o]
  */
 export function bakedLut(config, o = {}) {
 	const size = o.size ?? LUT_SIZE, format = o.format ?? 'cube';
 	const hash = hashOf({ config, ocio: ocioVersion(), size, format });
-	const file = join(LUTS, `${hash}.${{ cube: 'cube', cube1d: '1d.cube', mlut: 'mlut' }[format]}`);
+	const file = join(LUTS, `${hash}.${{ cube: 'cube', cube1d: '1d.cube' }[format]}`);
 	if (!existsSync(file)) {
 		mkdirSync(LUTS, { recursive: true });
-		const r = spawnSync(PYTHON, [BAKE, '--config', JSON.stringify(config), '--size', String(size), '--format', format, '--out', file, '--name', o.name ?? '', '--hash', hash], { encoding: 'utf8' });
+		const r = spawnSync(PYTHON, [BAKE, '--config', JSON.stringify(config), '--size', String(size), '--format', format, '--out', file, '--name', o.name ?? ''], { encoding: 'utf8' });
 		if (r.status !== 0) throw new Error(`baking ${o.name ?? config.kind} failed: ${(r.stderr || '').trim().slice(-300)}`);
 	}
 	return { file, hash };

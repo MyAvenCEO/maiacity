@@ -8,8 +8,6 @@
 #       a 3D LUT for ffmpeg's lut3d (.cube, red fastest)
 #   python3 scripts/film/color/bake.py --config '<json>' --size 65536 --format cube1d --out <file>
 #       a 1D LUT for ffmpeg's lut1d, over 0…1 (only for a per-channel curve, e.g. one builtin CURVE step)
-#   python3 scripts/film/color/bake.py --config '<json>' --size 65 --format mlut --out <file> [--name n --hash h]
-#       a preview LUT for the studio's viewer (the MLUT1 format documented in game/film/transforms.js)
 #   python3 scripts/film/color/bake.py --config '<json>' --apply  < rgb.f32 > out.f32
 #       the exact transform (no LUT) on float32 RGB triples: the reference the tests measure ffmpeg against
 #   python3 scripts/film/color/bake.py --config '<json>' --size 65 --check
@@ -20,7 +18,7 @@
 # worker does with ffmpeg filters (and the Mac app natively, cst.rs); they are not baked here.
 #
 # Needs OpenColorIO ≥ 2.5 and numpy (pip install opencolorio numpy).
-import sys, os, gzip, json, struct, argparse
+import sys, os, json, argparse
 import numpy as np
 import PyOpenColorIO as ocio
 
@@ -76,16 +74,6 @@ def write_cube(path, rgb, n, title):
     os.replace(path + '.part', path)
 
 
-def write_mlut(path, rgb, n, head):
-    lo, hi = float(rgb.min()), float(rgb.max())
-    u = np.round((rgb - lo) / (hi - lo) * 65535).astype('<u2')
-    h = json.dumps({**head, 'size': n, 'min': lo, 'max': hi}).encode()
-    # mtime 0: the same numbers always give the same bytes, and so the same hash
-    with open(path + '.part', 'wb') as f, gzip.GzipFile(fileobj=f, mode='wb', mtime=0, filename='') as z:
-        z.write(b'MLUT1' + struct.pack('<I', len(h)) + h + u.tobytes())
-    os.replace(path + '.part', path)
-
-
 def tetra(lut, n, p):
     # tetrahedral interpolation, as ffmpeg's lut3d (interp=tetrahedral) and the studio's shader do
     x = np.clip(p, 0, 1) * (n - 1)
@@ -115,10 +103,9 @@ def main():
     ap.add_argument('--version', action='store_true')
     ap.add_argument('--config')
     ap.add_argument('--size', type=int, default=65)
-    ap.add_argument('--format', choices=['cube', 'cube1d', 'mlut'], default='cube')
+    ap.add_argument('--format', choices=['cube', 'cube1d'], default='cube')
     ap.add_argument('--out')
     ap.add_argument('--name', default='')
-    ap.add_argument('--hash', default='')
     ap.add_argument('--apply', action='store_true')
     ap.add_argument('--check', action='store_true')
     a = ap.parse_args()
@@ -153,11 +140,7 @@ def main():
     if not a.out:
         raise SystemExit('give --out')
     os.makedirs(os.path.dirname(os.path.abspath(a.out)), exist_ok=True)
-    title = a.name or conf['kind']
-    if a.format == 'cube':
-        write_cube(a.out, lut, n, title)
-    else:
-        write_mlut(a.out, lut, n, {'name': a.name, 'hash': a.hash, 'config': conf, 'ocio': ocio.__version__})
+    write_cube(a.out, lut, n, a.name or conf['kind'])
 
 
 if __name__ == '__main__':

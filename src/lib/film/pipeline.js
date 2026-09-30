@@ -308,7 +308,7 @@ export function createPipeline(renderer) {
 
 /** A 3D LUT as a texture: half-float RGBA, trilinear. */
 function lutTexture(/** @type {Lut} */ l) {
-	// RGB triples (a .cube) or RGBA texels (stream A's MLUT1 preview LUTs, parseLut in game/film/transforms.js)
+	// RGB triples (a .cube, or filmLut's) or RGBA texels (the Mac's LUTs, nativeLut in src/lib/studio/luts.js)
 	const n = l.size, data = new Uint16Array(n * n * n * 4), stride = l.data.length === n * n * n * 4 ? 4 : 3;
 	if (l.data.length !== n * n * n * stride) throw new Error(`a ${n}³ LUT has ${n * n * n} texels, not ${l.data.length / stride}`);
 	for (let k = 0; k < n * n * n; k++) {

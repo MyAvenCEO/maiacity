@@ -7,7 +7,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { cdl, cleanCdl, detect, exrHeader, exrProfile, fromCct, isNeutral, MID_GREY_CCT, PRESETS, PROFILES, profileOf, REC709_TO_AP1, toCct } from "../../game/film/color.js";
 import {
-  canonical, DECODE, hashOf, HLG_SCALE, hlgToScene, monCurve, nitsToPq, OCIO_CONFIG, parseLut, pqToNits, PREVIEW, rec709ToScene, sha256, SHAPER, shaperToCct,
+  canonical, DECODE, hashOf, HLG_SCALE, hlgToScene, monCurve, nitsToPq, OCIO_CONFIG, pqToNits, rec709ToScene, sha256, SHAPER, shaperToCct,
   srgbToScene, TRANSFORMS,
 } from "../../game/film/transforms.js";
 
@@ -165,20 +165,6 @@ test("HDR signals as scene light: BT.2408's grey lands on 18%; PQ both ways", ()
   expect(nitsToPq(203)).toBeCloseTo(0.5807, 3); // BT.2408's 58% PQ reference white
   // the shaper's LUT entry: PQ of the offset linear value, back to ACEScct
   for (const lin of [0, 0.01, 0.18, 1, 100]) expect(shaperToCct(nitsToPq(((lin + SHAPER.offset) / (1 + SHAPER.offset)) * SHAPER.npl))).toBeCloseTo(toCct(lin), 8);
-});
-
-test("a preview LUT file parses into RGBA texels", () => {
-  const size = 2, head = new TextEncoder().encode(JSON.stringify({ name: "t", hash: "h", size, min: -1, max: 1 }));
-  const body = new Uint8Array(9 + head.length + size ** 3 * 6);
-  body.set(new TextEncoder().encode("MLUT1"));
-  new DataView(body.buffer).setUint32(5, head.length, true);
-  body.set(head, 9);
-  const dv = new DataView(body.buffer, 9 + head.length);
-  for (let i = 0; i < size ** 3 * 3; i++) dv.setUint16(i * 2, i % 2 ? 65535 : 0, true);
-  const lut = parseLut(body);
-  expect(lut.size).toBe(2);
-  expect(Array.from(lut.data.slice(0, 4))).toEqual([-1, 1, -1, 1]);
-  expect(PREVIEW).toEqual(["odt-rec709"]); // the input transforms' LUTs are the Mac app's (cst.rs)
 });
 
 // ── the ffmpeg colour path ────────────────────────────────────────────────────────────────────────────────────────

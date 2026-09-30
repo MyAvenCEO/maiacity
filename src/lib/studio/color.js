@@ -97,7 +97,7 @@ export function proxyFor(m, find) {
 	return { hash: null, state: 'none' };
 }
 /**
- * A library file that is only a proxy (or a LUT cache, or a plate) — never shown in the bin; its original is.
+ * A library file that is only a proxy (or one of the worker's old LUT caches, or a plate) — never shown in the bin; its original is.
  * @param {MediaItem} m
  */
 export const isCache = (m) =>
