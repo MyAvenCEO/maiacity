@@ -121,14 +121,11 @@ itself: three tries, then it waits for a person.
 - **Shot analysis:** tags, cues, takes and the thumbnail (`analyse/` → `analysis/<hash>`, plus a thumbnail file).
   - The proxy's frames are sampled natively, through the ACES output like the previews: one a second, plus every
     picture change.
-  - Frames and words go in stretches to Prem's confidential Qwen (`qwen38-27b`), straight from the Mac.
-  - The Mac runs Prem's own confidential proxy on 127.0.0.1:8787 with Bun, so the frames are end-to-end encrypted to
-    Prem's attested enclave. The app starts it by itself.
-  - It runs only for the stories in scope: the Day 01 story unless set otherwise.
-  - Set it up once with MCP `analysis_setup` (`prem_key`, and `stories` if needed). The key lives in
-    `~/Library/Application Support/city.maia.studio/analysis.json`, readable by this user only.
+  - Frames and words go in stretches to our server (`POST /api/analysis`, the app's own key), which asks Prem's
+    confidential Qwen (`qwen38-27b`) with the server's key. The prompt, the vocabulary, the validation, the model's
+    pick, the rate limit and the pause after a Prem failure live there, once. No LLM key is ever on a Mac.
+  - It runs only for the stories in scope: the Day 01 story unless set otherwise (MCP `analysis_setup` `stories`).
   - `analyse_again` runs a file again.
-  - The API's `/api/analysis` is no longer called by anything.
 
 ## Building the Mac app
 

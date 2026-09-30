@@ -142,9 +142,6 @@ pub struct AnalysisArgs {
 
 #[derive(Deserialize, schemars::JsonSchema)]
 pub struct AnalysisSetupArgs {
-    /// Prem's API key, set once on this Mac (kept beside the app's session, readable by this user only; empty: taken
-    /// out). Leave it out to keep what is set.
-    pub prem_key: Option<String>,
     /// the stories whose files are analysed (story ids); ["*"] every story; [] back to the default (Day 01). Leave it
     /// out to keep what is set.
     pub stories: Option<Vec<String>>,
@@ -578,12 +575,12 @@ impl Studio {
     // ── the shot analysis: every picture tagged for the edit (this Mac writes it: analysis/<hash>, analyse/) ──
 
     #[tool(
-        description = "Set up the shot analysis on this Mac: Prem's API key (once — it is kept beside the app's session, readable by this user only, and never shown again; the analysis calls Prem's confidential Qwen straight from this Mac through Prem's own confidential proxy on 127.0.0.1:8787), and the stories whose files are analysed (story ids; [\"*\"] every story; [] back to the default, the Day 01 story). Answers what is set — whether a key is there, never the key."
+        description = "Set up the shot analysis on this Mac: the stories whose files are analysed (story ids; [\"*\"] every story; [] back to the default, the Day 01 story). The Mac samples the frames; the model is asked through our server (POST /api/analysis), whose key it is. Answers what is set."
     )]
     async fn analysis_setup(&self, Parameters(a): Parameters<AnalysisSetupArgs>) -> String {
         let r = async {
             self.signed_in()?;
-            crate::analyse::setup(a.prem_key, a.stories)
+            crate::analyse::setup(a.stories)
         };
         text(r.await)
     }
