@@ -3,14 +3,17 @@
 ✅ done · 🔄 in progress · ⬜ to do. Updated as the work goes.
 
 ## Open
-- ⬜ Listen to the Opening in the studio:
-  - the bench voice plays now (its audio proxy is linked)
-  - the new cut: walk → coffee (the mug lands on "…is this") → frontal bench
-  - the new shots have no camera sound (steady ambience only); add some if wanted
-- ⬜ An action cut between the walk and the coffee: he sits down between them (C123 would start later, ~17.85 s)
-- ⬜ Shot analysis (tags, cues) waits for Prem to enable `qwen38-27b` (yours, at Prem)
+- ⬜ Approve the audio-proxy deletion in the studio's modal (108 files, 29.5 MB)
+- ⬜ Base correction on the marked stills, once the Day 01 analysis has marked every shot (grades stay reset until then)
+- 🔄 Whole vault on iroh's patterns, end to end: no exports out of the store anywhere (audit running)
+- ⬜ De-sync one file from one device only (drop its holding here, keep it elsewhere): needs a per-device keep rule on top of iroh-docs' protection
 
 ## Done today
+- **Music:** madeira confirmed
+- **Playback:** a video's sound decoded from its proxy (it carries the sound) or its original, read by hash from iroh's store (vault://, BlobReader) — nothing copied out
+- **Deleting:** MCP asks first (modal with every file + the files made of them + the why); yes = gone on every Mac (iroh GC prunes), in Object Storage and Postgres
+- **Sound:** no audio proxies anywhere; played, measured and transcribed from the original
+- **Shot 2 (C167):** grading still and preview picked at 12.5 s (sharp, to camera) — `still_at` wins over the analysis mark
 - **Day 01 · Opening:**
   - two outside shots inserted: walking to the bench (C123), coffee from the bench's right (C130)
   - "Today I am alone…" starts outside; the mug lands on "…is this"; then the frontal bench
