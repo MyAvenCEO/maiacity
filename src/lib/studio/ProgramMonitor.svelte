@@ -67,7 +67,6 @@
 		void s.time;
 		void spec;
 		void s.tab;
-		void s.previewGrade;
 		void s.current?.grade;
 		void pic?.grade;
 		if (!s.playing) s.driveWorld();
@@ -125,7 +124,6 @@
 		{#if isWorld(pic) && s.world.error}<span class="b warn" title={s.world.error}>world: {s.world.error}</span>{/if}
 		{#if gl && plan?.note && pic}<span class="b warn" title={plan.note}>{plan.note}</span>{/if}
 		{#if !gl}<span class="b warn">No WebGL2: colour not managed</span>{/if}
-		{#if s.tab === 'edit' && s.previewGrade}<span class="b">grade preview</span>{/if}
 	</div>
 	<div class="frame" class:tall={s.viewShape === '9:16'} class:gl style:--ar={s.viewShape.replace(':', ' / ')}>
 		{#each s.reel as c (c.id)}

@@ -13,6 +13,8 @@
 	import { wordsOf } from './transcript.js';
 	import { BALANCE_NODES, NEUTRAL, NEUTRAL_BALANCE, cleanBalance, isNeutral, presetOf } from './color.js';
 	import { wave } from './wave.js';
+	import { fine } from './fine.js';
+	import { gradedThumb } from './luts.js';
 
 	/** @typedef {import('$lib/auth/client').ShotSpec} ShotSpec */
 	/** @typedef {import('./studio.svelte.js').Clip} Clip */
@@ -67,6 +69,35 @@
 		const h = [meta?.preview, meta?.thumbnail].find((v) => typeof v === 'string' && /^[0-9a-f]{64}$/.test(v));
 		return h ? raw(/** @type {string} */ (h)) : null;
 	};
+	// every picture clip's thumbnail as it will look: its grading still through its balance and grades, made by the Mac
+	// (the grade's only maths) a moment after they change — the Grade strip and the Edit timeline show these
+	let thumbs = $state(/** @type {Record<string, string>} */ ({}));
+	/** @type {Record<string, string>} */
+	const thumbOf = {};
+	const thumbKeys = $derived(
+		Object.fromEntries(
+			s.clips
+				.filter((c) => c.track === 'V1' && c.hash)
+				.map((c) => {
+					const st = s.stillOf(c);
+					return [c.id, st ? JSON.stringify([st.hash, s.balanceOf(c), s.gradesOf(c)]) : ''];
+				})
+		)
+	);
+	$effect(() => {
+		const keys = thumbKeys;
+		let live = true;
+		const t = setTimeout(() => {
+			for (const [id, k] of Object.entries(keys)) {
+				if (!k || thumbOf[id] === k) continue;
+				const [still, b, g] = JSON.parse(k);
+				gradedThumb(still, b, g)
+					.then((u) => live && ((thumbs[id] = u), (thumbOf[id] = k)))
+					.catch((e) => console.warn('thumbnail:', e));
+			}
+		}, 200);
+		return () => ((live = false), clearTimeout(t));
+	});
 	/** a shot picked in the strip: selected, and the playhead on its grading still (else its first frame) @param {Clip} c */
 	const pick = (c) => {
 		s.selected = c.id;
@@ -424,9 +455,9 @@
 		{#each [['slope', 'gain', 0, 2], ['offset', 'lift', -0.2, 0.2], ['power', 'gamma', 0.4, 2.5]] as [k, label, lo, hi] (k)}
 			{@const key = /** @type {'slope' | 'offset' | 'power'} */ (k)}
 			{@const mean = (cur[key][0] + cur[key][1] + cur[key][2]) / 3}
-			<label class="sl"><span>{label}</span><input type="range" min={lo} max={hi} step="0.005" value={mean} oninput={(e) => { const v = Number(e.currentTarget.value); const next = structuredClone($state.snapshot(cur)); for (let i = 0; i < 3; i++) next[key][i] = +(next[key][i] + v - mean).toFixed(4); set(isNeutral(next) ? null : next); }} /><output>{mean.toFixed(3)}</output></label>
+			<label class="sl"><span>{label}</span><input {@attach fine()} type="range" min={lo} max={hi} step="0.005" value={mean} oninput={(e) => { const v = Number(e.currentTarget.value); const next = structuredClone($state.snapshot(cur)); for (let i = 0; i < 3; i++) next[key][i] = +(next[key][i] + v - mean).toFixed(4); set(isNeutral(next) ? null : next); }} /><output>{mean.toFixed(3)}</output></label>
 		{/each}
-		<label class="sl"><span>sat</span><input type="range" min="0" max="2" step="0.01" value={cur.sat} oninput={(e) => { const next = { ...structuredClone($state.snapshot(cur)), sat: Number(e.currentTarget.value) }; set(isNeutral(next) ? null : next); }} /><output>{cur.sat.toFixed(2)}</output></label>
+		<label class="sl"><span>sat</span><input {@attach fine()} type="range" min="0" max="2" step="0.01" value={cur.sat} oninput={(e) => { const next = { ...structuredClone($state.snapshot(cur)), sat: Number(e.currentTarget.value) }; set(isNeutral(next) ? null : next); }} /><output>{cur.sat.toFixed(2)}</output></label>
 	{:else}
 		<span class="val" class:on={!!g || !!preset}>{preset ?? (g ? presetOf(g, s.presets) ?? 'own' : '—')}</span>
 	{/if}
@@ -474,7 +505,7 @@
 										{@const f = c.frame?.[s.shape] ?? { x: 0, y: 0, zoom: 1 }}
 										{#if open && !isWorld(c)}
 											{#each [['x', -1, 1], ['y', -1, 1], ['zoom', 1, 3]] as [k, lo, hi] (k)}
-												<label class="sl"><span>{k}</span><input type="range" min={lo} max={hi} step="0.01" value={f[/** @type {'x' | 'y' | 'zoom'} */ (k)]} oninput={(e) => s.setFrame(c.id, s.shape, { ...f, [k]: Number(e.currentTarget.value) })} /></label>
+												<label class="sl"><span>{k}</span><input {@attach fine()} type="range" min={lo} max={hi} step="0.01" value={f[/** @type {'x' | 'y' | 'zoom'} */ (k)]} oninput={(e) => s.setFrame(c.id, s.shape, { ...f, [k]: Number(e.currentTarget.value) })} /></label>
 											{/each}
 										{:else}<span class="val" class:on={!!c.frame?.[s.shape]}>{c.frame?.[s.shape] ? `${s.shape} · ${f.zoom.toFixed(2)}×` : '—'}</span>{/if}
 									{:else}
@@ -483,7 +514,7 @@
 										{#if n}
 											{#if open}
 												{#each n.fields as f (f.key)}
-													<label class="sl" title="{f.label} {bal[f.key].toFixed(2)} (double-click: 0)"><span>{n.fields.length > 1 ? f.label.slice(0, 4) : ''}</span><input type="range" min={f.min} max={f.max} step={f.step} value={bal[f.key]} oninput={(e) => s.patchClip(c.id, { balance: cleanBalance({ ...bal, [f.key]: Number(e.currentTarget.value) }) ?? undefined })} ondblclick={() => s.patchClip(c.id, { balance: cleanBalance({ ...bal, [f.key]: 0 }) ?? undefined })} /><output>{bal[f.key].toFixed(2)}</output></label>
+													<label class="sl" title="{f.label} {bal[f.key].toFixed(2)} (double-click: 0)"><span>{n.fields.length > 1 ? f.label.slice(0, 4) : ''}</span><input {@attach fine()} type="range" min={f.min} max={f.max} step={f.step} value={bal[f.key]} oninput={(e) => s.patchClip(c.id, { balance: cleanBalance({ ...bal, [f.key]: Number(e.currentTarget.value) }) ?? undefined })} ondblclick={() => s.patchClip(c.id, { balance: cleanBalance({ ...bal, [f.key]: 0 }) ?? undefined })} /><output>{bal[f.key].toFixed(2)}</output></label>
 												{/each}
 											{:else}
 												{@const vals = n.fields.map((f) => bal[f.key])}
@@ -522,7 +553,7 @@
 						{/each}
 					{:else if grading && t.id === 'V1'}
 						{#each pics as c, i (c.id)}
-							{@const pic = previewOf(c)}
+							{@const pic = thumbs[c.id] ?? previewOf(c)}
 							<!-- svelte-ignore a11y_no_static_element_interactions -->
 							<div class="shot" class:sel={s.selected === c.id} class:now={nowId === c.id} class:balanced={!!c.balance} style:left={left(c)} style:width={width(c)} onpointerdown={(e) => (e.stopPropagation(), pick(c))} title="{s.clipName(c)}{c.script?.description ? ` — ${c.script.description}` : ''}">
 								{#if pic}<img src={pic} alt="" draggable="false" />{:else}<span class="none">{isWorld(c) ? 'world shot' : c.kind === 'slate' ? 'not filmed yet' : 'no picture yet'}</span>{/if}
@@ -551,6 +582,8 @@
 							>
 								{#if m?.kind === 'image'}
 									<img src={thumb(m)} alt="" draggable="false" />
+								{:else if t.id === 'V1' && thumbs[c.id]}
+									<img class="gthumb" src={thumbs[c.id]} alt="" draggable="false" />
 								{:else if onSoundTrack(c) && src?.peaks.length}
 									<canvas use:wave={{ peaks: src.peaks, from: c.in, to: c.in + c.dur, total: src.buffer?.duration ?? src.duration, color: tint(/** @type {Track} */ (t.id)) }}></canvas>
 								{/if}
@@ -1315,6 +1348,18 @@
 	.key.cue.event {
 		border-color: var(--violet);
 		background: #4a3a80;
+	}
+
+	/* Edit: a picture clip opens with its thumbnail as it will look (balance and grades) */
+	.clip .gthumb {
+		position: absolute;
+		top: 0;
+		left: 0;
+		height: 100%;
+		width: auto;
+		max-width: 100%;
+		object-fit: cover;
+		pointer-events: none;
 	}
 
 	/* Grade: the shots side by side, one column each, with their pictures */
