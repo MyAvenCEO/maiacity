@@ -103,6 +103,13 @@ test("a film is one item on the board: every cut delivers onto it, each replacin
   item = (await listContent()).find((i) => i.project === "Day 99")!;
   expect(item.deliveries.map((d) => d.hash)).toEqual([cut, again]);
   expect(item.status).toBe("scheduled");
+  // a cut's films taken off again (a test render): the other cut's stay, and so does the rest of the card
+  const { dropDeliveries } = await import("../src/content");
+  item = await dropDeliveries(item.id, reel.id);
+  expect(item.deliveries.map((d) => d.hash)).toEqual([again]);
+  expect(item.hashes).not.toContain(cut); // its own files leave the card
+  expect(item.hashes).toContain(again);
+  expect(item.status).toBe("scheduled");
   expect(item.posts).toHaveLength(1);
   await expect(savePosts("admin", reel.id, [{ platform: "tiktok", text: "x", aspect: "9:16", codec: "h264" }])).rejects.toThrow();
 });

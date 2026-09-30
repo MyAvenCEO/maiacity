@@ -195,6 +195,25 @@ export async function deliverRender(founderId: string | null, timelineId: string
   return rows[0]!;
 }
 
+/**
+ * A render's deliveries taken off a card again (a test render, a cut that was dropped): its films and their hashes go;
+ * everything else on the card stays. The inverse of deliverRender for that timeline.
+ */
+export async function dropDeliveries(id: string, timelineId: string): Promise<Item> {
+  const { rows } = await db.query<Item>(
+    `UPDATE content_items SET
+        hashes = ARRAY(SELECT h FROM unnest(hashes) h WHERE h NOT IN (
+          SELECT d->>'hash' FROM jsonb_array_elements(deliveries) d WHERE d->>'timeline' = $2)),
+        deliveries = coalesce((SELECT jsonb_agg(d) FROM jsonb_array_elements(deliveries) d WHERE d->>'timeline' IS DISTINCT FROM $2), '[]'::jsonb),
+        timeline_id = CASE WHEN timeline_id::text = $2 THEN NULL ELSE timeline_id END,
+        updated = now()
+      WHERE id = $1 RETURNING ${COLS}`,
+    [id, timelineId],
+  );
+  if (!rows[0]) throw new ContentError("No such item.", 404);
+  return rows[0];
+}
+
 /** A cut's posts, one per platform, onto the film's item, in place of that cut's posts before (the others stay). */
 export async function savePosts(founderId: string | null, timelineId: string, posts: Post[], title?: string): Promise<Item> {
   if (!Array.isArray(posts) || posts.some((p) => !p || typeof p.platform !== "string" || typeof p.text !== "string"))
