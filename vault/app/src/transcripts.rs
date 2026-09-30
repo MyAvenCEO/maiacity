@@ -1,7 +1,13 @@
-//! Every recording's words, made here on the Mac, on-device — Nemotron 3.5 (vault-asr), nothing of the speech leaves
-//! our devices for it. An automatic step after the ingest, like the proxies: its own queue, one recording at a time,
-//! after any ingest and only while macOS says there is memory to spare; the uploads go on meanwhile (it is the CPU's
-//! work, not the line's). It does not wait for the proxies either: they are the GPU's and the video encoder's.
+//! Every recording's words, made here on the Mac, on-device (vault-asr), nothing of the speech leaves our devices for
+//! it. First its language, kept on the file as a tag — `en` or `de` — unless it has one (a tag set by hand is the
+//! file's language): Phonon-2 listens to the first seconds, and when it is unsure Nemotron 3.5 tells English from
+//! German (vault-asr `Recognizer::language`); English unless told. Then the words: English by Phonon-2, German by
+//! Nemotron. A file tagged `de` whose words are not Nemotron's is made again, by Nemotron; a recording with words and
+//! no language tag (transcribed before languages were tagged) is made again too.
+//!
+//! An automatic step after the ingest, like the proxies: its own queue, one recording at a time, after any ingest and
+//! only while macOS says there is memory to spare; the uploads go on meanwhile (it is the CPU's work, not the line's).
+//! It does not wait for the proxies either: they are the GPU's and the video encoder's.
 //!
 //! The sound: the original itself (sound has no proxy), decoded by AVFoundation straight to 16 kHz mono
 //! (vault-media `audio`).
@@ -12,7 +18,8 @@
 //! (times in seconds of the original), `none: no speech` or `failed: …` (three tries, then it waits for a person).
 //! One writer per file: a file another device is transcribing is left to it (unless it went quiet for six hours).
 //!
-//! The model (~2.5 GB in memory) is loaded for a run of recordings and let go when the queue is empty.
+//! The model (Phonon ~1 GB in memory, Nemotron ~2.5 GB; one at a time) is loaded for a run of recordings and let go
+//! when the queue is empty.
 
 use std::{
     path::PathBuf,
@@ -35,6 +42,48 @@ pub const STALE_HOURS: i64 = 6;
 static TURN: tokio::sync::Semaphore = tokio::sync::Semaphore::const_new(1);
 /// the loaded model, kept for a run of recordings
 static RECOGNIZER: Mutex<Option<vault_asr::Recognizer>> = Mutex::new(None);
+
+/// The language tags a file can have.
+pub const LANGUAGE_TAGS: [&str; 2] = ["en", "de"];
+
+/// The language a file is tagged with.
+pub fn tagged(tags: &[String]) -> Option<&'static str> {
+    LANGUAGE_TAGS.into_iter().find(|l| tags.iter().any(|t| t == l))
+}
+
+/// Its tags with this language (another language's tag dropped).
+pub fn with_language(tags: &[String], lang: &str) -> Vec<String> {
+    let mut out: Vec<String> = tags.iter().filter(|t| !LANGUAGE_TAGS.contains(&t.as_str())).cloned().collect();
+    out.push(lang.to_string());
+    out
+}
+
+/// The model that reads a language: German Nemotron's, English (and anything else) Phonon's.
+pub fn engine_for(lang: &str) -> vault_asr::Engine {
+    if lang == "de" { vault_asr::Engine::Nemotron } else { vault_asr::Engine::Phonon }
+}
+
+/// Tagged German, its words made — but not by Nemotron: made again, by Nemotron.
+pub fn german_again(tags: &[String], record: Option<&Value>) -> bool {
+    tagged(tags) == Some("de") && record.is_some_and(|r| r["state"] == "done" && r["model"] != vault_asr::Engine::Nemotron.model())
+}
+
+/// Its words made, but no language on the file (transcribed before languages were tagged): made again.
+pub fn untagged(tags: &[String], record: Option<&Value>) -> bool {
+    tagged(tags).is_none() && record.is_some_and(|r| r["state"] == "done")
+}
+
+/// The recognizer for this engine, in the slot (another engine's let go first: one model in memory at a time).
+fn recognizer<'a>(slot: &'a mut Option<vault_asr::Recognizer>, models: &vault_asr::Models, told: &dyn Fn(&str, f64)) -> Result<&'a mut vault_asr::Recognizer, String> {
+    if slot.as_ref().is_some_and(|r| r.engine() != models.engine) {
+        slot.take();
+    }
+    if slot.is_none() {
+        told("loading the speech model", 0.0);
+        *slot = Some(vault_asr::Recognizer::open(models).map_err(|e| format!("{e:#}"))?);
+    }
+    Ok(slot.as_mut().unwrap())
+}
 
 /// The key of a transcript's line in the studio's list of work in progress (`proxies_now`).
 pub fn key(hash: &str) -> String {
@@ -110,7 +159,8 @@ pub async fn queue_due(handle: &AppHandle, vault: &Arc<Vault>) {
     let me = vault.endpoint.id().to_string();
     let now = vault_core::ingest::now_iso();
     let (Ok(all), Ok(records)) = (vault.catalog.list().await, vault.catalog.records(TRANSCRIPT).await) else { return };
-    let mut todo: Vec<&Meta> = all.iter().filter(|m| wants(m) && due(records.get(&m.hash), &me, &now)).collect();
+    let again = |m: &Meta| german_again(&m.tags, records.get(&m.hash)) || untagged(&m.tags, records.get(&m.hash));
+    let mut todo: Vec<&Meta> = all.iter().filter(|m| wants(m) && (due(records.get(&m.hash), &me, &now) || again(m))).collect();
     // the small ones first
     todo.sort_by_key(|m| m.size);
     for m in todo {
@@ -200,8 +250,11 @@ async fn transcribe(handle: &AppHandle, vault: &Arc<Vault>, hash: Hash, name: &s
         }
     };
     tell("the speech model", 0.0);
-    let mut models_told = tell.clone();
-    let models = crate::models::ready(handle, vault, &mut move |stage, done| models_told(stage, done)).await.map_err(Wait)?;
+    // the file's language when it has one (a tag); else Phonon listens first
+    let tags = vault.catalog.meta(hash).await.map_err(|e| format!("{e:#}"))?.map(|m| m.tags).unwrap_or_default();
+    let told = tagged(&tags);
+    let first = engine_for(told.unwrap_or("en"));
+    let models = ready(handle, vault, first, &tell).await?;
 
     // the sound: the original itself (sound has no proxy)
     let view = vault.catalog.meta_view(hash).await.map_err(|e| format!("{e:#}"))?.ok_or("no such file")?;
@@ -222,23 +275,64 @@ async fn transcribe(handle: &AppHandle, vault: &Arc<Vault>, hash: Hash, name: &s
     };
     let seconds = samples.len() as f64 / vault_asr::RATE as f64;
 
-    // the model, loaded once for a run of recordings
-    let t3 = tell.clone();
-    let transcript = tokio::task::spawn_blocking(move || -> Result<Value, String> {
+    // the speech, and — the language not told — what Phonon hears it as (None: unsure)
+    let samples = Arc::new(samples);
+    let (t3, s3, m3) = (tell.clone(), samples.clone(), models.clone());
+    let (stretches, heard) = tokio::task::spawn_blocking(move || -> Result<_, String> {
         let mut slot = RECOGNIZER.lock().unwrap();
-        if slot.is_none() {
-            t3("loading the speech model", 0.0);
-            *slot = Some(vault_asr::Recognizer::open(&models).map_err(|e| format!("{e:#}"))?);
-        }
-        slot.as_mut().unwrap().transcribe(&samples, &mut |stage, d| t3(stage, d)).map_err(|e| format!("{e:#}"))
+        let r = recognizer(&mut slot, &m3, &t3)?;
+        let stretches = r.speech(&s3, vault_asr::VadParams::default(), &mut |p| t3("finding speech", p)).map_err(|e| format!("{e:#}"))?;
+        let heard = match told {
+            None if !stretches.is_empty() => {
+                t3("telling the language", 0.0);
+                r.language(&s3, &stretches).map_err(|e| format!("{e:#}"))?
+            }
+            _ => None,
+        };
+        Ok((stretches, heard))
     })
     .await
     .map_err(|e| e.to_string())??;
+    // Phonon unsure: Nemotron tells English from German
+    let heard = heard.map(|l| if l.starts_with("de") { "de" } else { "en" });
+    let tell_by_nemotron = told.is_none() && !stretches.is_empty() && heard.is_none();
+    let nemotron = if tell_by_nemotron || told == Some("de") || heard == Some("de") { Some(ready(handle, vault, vault_asr::Engine::Nemotron, &tell).await?) } else { None };
+    let phonon = if first == vault_asr::Engine::Phonon { Some(models) } else { None };
+    let t4 = tell.clone();
+    let (transcript, lang) = tokio::task::spawn_blocking(move || -> Result<(Value, Option<&'static str>), String> {
+        let mut slot = RECOGNIZER.lock().unwrap();
+        let lang = match (told, heard, &nemotron) {
+            (Some(l), _, _) => Some(l),
+            (None, Some(l), _) => Some(l),
+            (None, None, Some(n)) if tell_by_nemotron => {
+                t4("telling the language", 0.0);
+                let locale = recognizer(&mut slot, n, &t4)?.language(&samples, &stretches).map_err(|e| format!("{e:#}"))?;
+                Some(if locale.is_some_and(|l| l.starts_with("de")) { "de" } else { "en" })
+            }
+            _ => None,
+        };
+        let models = match engine_for(lang.unwrap_or("en")) {
+            vault_asr::Engine::Nemotron => nemotron.as_ref(),
+            vault_asr::Engine::Phonon => phonon.as_ref(),
+        };
+        // German told by hand, the Phonon models not needed; English told by Nemotron, Phonon's were readied first
+        let models = models.ok_or("the speech model for this language is not ready")?;
+        let r = recognizer(&mut slot, models, &t4)?;
+        let t = r.read(&samples, &stretches, lang.and_then(vault_asr::locale), &mut |stage, d| t4(stage, d)).map_err(|e| format!("{e:#}"))?;
+        Ok((t, lang))
+    })
+    .await
+    .map_err(|e| e.to_string())??;
+    let engine = engine_for(lang.unwrap_or("en"));
+    // the language, on the file (told by hand: kept as it is)
+    if let (None, Some(l)) = (told, lang) {
+        vault.catalog.describe(hash, &json!({ "tags": with_language(&tags, l) })).await.map_err(|e| format!("{e:#}"))?;
+    }
 
     let words = transcript["words"].as_array().map(Vec::len).unwrap_or(0);
     let mut record = transcript;
     if words == 0 {
-        record = json!({ "state": "none: no speech", "model": vault_asr::MODEL });
+        record = json!({ "state": "none: no speech", "model": engine.model() });
     } else {
         record["state"] = json!("done");
     }
@@ -249,6 +343,12 @@ async fn transcribe(handle: &AppHandle, vault: &Arc<Vault>, hash: Hash, name: &s
     let took = started.elapsed().as_secs_f64();
     tracing::info!("transcribed {hex} ({seconds:.0} s of sound, {words} words, {}) in {took:.0} s — {:.2}× real time", record["language"], took / seconds.max(0.1));
     Ok(())
+}
+
+/// An engine's models ready on this Mac (or waiting for them: no try used up).
+async fn ready(handle: &AppHandle, vault: &Arc<Vault>, engine: vault_asr::Engine, tell: &(impl Fn(&str, f64) + Clone + Send + 'static)) -> Result<vault_asr::Models, Why> {
+    let told = tell.clone();
+    crate::models::ready(handle, vault, engine, &mut move |stage, done| told(stage, done)).await.map_err(Wait)
 }
 
 /// A recording's words made again (by hand, or by an agent).
@@ -280,6 +380,27 @@ mod tests {
         assert!(!wants(&file("other", "default", json!({ "role": "model" }))));
         assert!(!wants(&file("video", "default", json!({ "shot": "s1" }))));
         assert!(!wants(&file("image", "original", json!({}))));
+    }
+
+    #[test]
+    fn a_files_language_is_its_tag() {
+        let tags = |t: &[&str]| t.iter().map(|s| s.to_string()).collect::<Vec<_>>();
+        assert_eq!(tagged(&tags(&["Day 20", "de"])), Some("de"));
+        assert_eq!(tagged(&tags(&["Day 20"])), None);
+        assert_eq!(with_language(&tags(&["Day 20", "en"]), "de"), tags(&["Day 20", "de"]));
+        assert_eq!(engine_for("de"), vault_asr::Engine::Nemotron);
+        assert_eq!(engine_for("en"), vault_asr::Engine::Phonon);
+        // tagged German by hand, its words Phonon's: made again; once Nemotron's, not
+        let phonon = json!({ "state": "done", "model": "fermionresearch/phonon-2", "language": "en" });
+        let nemotron = json!({ "state": "done", "model": "nvidia/nemotron-3.5-asr-streaming-0.6b", "language": "de" });
+        assert!(german_again(&tags(&["de"]), Some(&phonon)));
+        assert!(!german_again(&tags(&["de"]), Some(&nemotron)));
+        assert!(!german_again(&tags(&["en"]), Some(&phonon)));
+        assert!(!german_again(&tags(&["de"]), None));
+        // words made before languages were tagged: made again; no speech, or a tag: not
+        assert!(untagged(&tags(&[]), Some(&nemotron)));
+        assert!(!untagged(&tags(&["en"]), Some(&nemotron)));
+        assert!(!untagged(&tags(&[]), Some(&json!({ "state": "none: no speech" }))));
     }
 
     #[test]
