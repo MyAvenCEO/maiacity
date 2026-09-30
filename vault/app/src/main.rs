@@ -495,7 +495,6 @@ fn main() {
             proxies::color_presets,
             proxies::color_frame,
             player::player_load,
-            player::player_view,
             player::player_play,
             player::player_pause,
             player::player_sync,

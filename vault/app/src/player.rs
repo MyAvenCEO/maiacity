@@ -1,41 +1,103 @@
 //! The studio's playback through the whole grade, natively (vault-render `player`): in the Grade tab an AVPlayer plays
-//! the film's composition — every frame through the render's own chain on Metal, secondaries and finishing too — in a
-//! view inside the webview, over the viewer's picture (the webview says where). Playing or stopped it is the same
-//! player: stopped, it is paused on the frame under the playhead, so the frozen frame is the playing one. Muted: the
-//! sound stays the studio's (Web Audio, the clock), the player follows it.
+//! the film's composition — every frame through the render's own chain on Metal: balance, secondaries, grade and
+//! looks, finishing, the output — and each frame it makes, playing or stopped, goes to the viewer as a picture made
+//! exactly as the Grade still is (a JPEG tagged as Rec.709 video, `Gpu::jpeg_bytes`), over a channel. So the still,
+//! the frozen frame and the playing one are the same kind of picture, drawn the same way. Muted: the sound stays the
+//! studio's (Web Audio, the clock), the player follows it.
 
-use std::{cell::RefCell, collections::HashMap, sync::Arc};
+use std::{
+    cell::RefCell,
+    collections::HashMap,
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    },
+};
 
-use objc2::{MainThreadMarker, msg_send, rc::Retained, runtime::AnyObject};
-use objc2_av_foundation::{AVPlayer, AVPlayerItem, AVPlayerLayer};
-use objc2_core_foundation::{CGPoint, CGRect, CGSize};
+use objc2::{AnyThread, MainThreadMarker, rc::Retained};
+use objc2_av_foundation::{AVPlayer, AVPlayerItem, AVPlayerItemVideoOutput};
 use serde_json::Value;
-use tauri::{AppHandle, Manager};
+use tauri::{
+    AppHandle,
+    ipc::{Channel, InvokeResponseBody},
+};
 
 use crate::{Res, err};
 
 struct Native {
     player: Retained<AVPlayer>,
-    layer: Retained<AVPlayerLayer>,
-    view: Retained<AnyObject>,
-    webview: *mut AnyObject,
+    /// the pump of the item playing now: stopped when another is loaded
+    pump: Arc<AtomicBool>,
 }
 
 thread_local! {
-    /// The player and its view: made, moved and let go on the main thread only.
+    /// The player: made, played and let go on the main thread only.
     static NATIVE: RefCell<Option<Native>> = const { RefCell::new(None) };
 }
-
-/// The studio's WKWebView (its address): the picture is laid over it.
-static WEBVIEW: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
 
 fn on_main(handle: &AppHandle, f: impl FnOnce() + Send + 'static) -> Res<()> {
     handle.run_on_main_thread(f).map_err(err)
 }
 
-/// What plays: the timeline (the studio's), the shape it is seen in, and per clip the file to play (its proxy, else its
-/// original) and that file's colour profile (its journey into ACEScct).
+#[link(name = "QuartzCore", kind = "framework")]
+unsafe extern "C" {
+    fn CACurrentMediaTime() -> f64;
+}
+
+/// The item's video output, handed to the pump's thread (AVFoundation makes it for a display link's thread).
+struct Output(Retained<AVPlayerItemVideoOutput>);
+// SAFETY: AVPlayerItemVideoOutput's frame methods are made to be called from another thread than the player's
+unsafe impl Send for Output {}
+
+/// Every frame the item's output has, as it has it (playing: each one; stopped: the one sought to), made into the
+/// still's kind of picture and sent to the viewer — until `stop`.
+fn pump(out: Output, frames: Channel<InvokeResponseBody>, stop: Arc<AtomicBool>) {
+    let spawned = std::thread::Builder::new().name("playback-frames".into()).spawn(move || {
+        let out = out.0;
+        let gpu = match vault_render::gpu::Gpu::new() {
+            Ok(g) => g,
+            Err(e) => return tracing::warn!("playback: no GPU for the frames: {e:#}"),
+        };
+        let mut sent = 0u64;
+        while !stop.load(Ordering::Relaxed) {
+            objc2::rc::autoreleasepool(|_| {
+                // SAFETY: the output's own frame calls, from the thread they are made for
+                unsafe {
+                    let t = out.itemTimeForHostTime(CACurrentMediaTime());
+                    if !out.hasNewPixelBufferForItemTime(t) {
+                        return;
+                    }
+                    let Some(pb) = out.copyPixelBufferForItemTime_itemTimeForDisplay(t, std::ptr::null_mut()) else { return };
+                    let (w, h) = (objc2_core_video::CVPixelBufferGetWidth(&pb) as u32, objc2_core_video::CVPixelBufferGetHeight(&pb) as u32);
+                    match gpu.jpeg_bytes(&gpu.frame(&pb), w, h) {
+                        Ok(bytes) => {
+                            let size = bytes.len();
+                            if frames.send(InvokeResponseBody::Raw(bytes)).is_err() {
+                                // the viewer is gone
+                                stop.store(true, Ordering::Relaxed);
+                            } else {
+                                sent += 1;
+                                if sent == 1 {
+                                    tracing::info!("playback: frames to the viewer, {w}×{h}, {size} bytes the first");
+                                }
+                            }
+                        }
+                        Err(e) => tracing::warn!("playback: a frame: {e:#}"),
+                    }
+                }
+            });
+            std::thread::sleep(std::time::Duration::from_millis(4));
+        }
+    });
+    if let Err(e) = spawned {
+        tracing::warn!("playback: the frames' thread: {e}");
+    }
+}
+
+/// What plays: the timeline (the studio's), the shape it is seen in, per clip the file to play (its proxy, else its
+/// original) and that file's colour profile (its journey into ACEScct); `frames`, where its pictures go.
 #[tauri::command]
+#[allow(clippy::too_many_arguments)]
 pub async fn player_load(
     handle: AppHandle,
     app: tauri::State<'_, crate::App>,
@@ -44,53 +106,38 @@ pub async fn player_load(
     files: HashMap<String, String>,
     profiles: HashMap<String, String>,
     width: Option<u32>,
+    frames: Channel<InvokeResponseBody>,
 ) -> Res<()> {
     crate::gate()?;
     let t: vault_render::Timeline = serde_json::from_value(timeline).map_err(err)?;
     let program = program(&app.vault, &t, &shape, &files, &profiles, width).await?;
-    // the webview's address first (wry hands it over on the main thread, before what is queued after it)
-    let window = handle.get_webview_window("main").ok_or("no main window")?;
-    window.with_webview(|w| WEBVIEW.store(w.inner() as usize, std::sync::atomic::Ordering::SeqCst)).map_err(err)?;
     on_main(&handle, move || {
         let made = (|| -> anyhow::Result<()> {
             let (comp, video) = vault_render::player::composition(program)?;
             let mtm = MainThreadMarker::new().ok_or_else(|| anyhow::anyhow!("not on the main thread"))?;
-            // SAFETY: AVFoundation objects made and kept on the main thread
+            // SAFETY: AVFoundation objects made and kept on the main thread (the output's frames read on the pump's)
             unsafe {
                 let item = AVPlayerItem::playerItemWithAsset(&comp, mtm);
                 item.setVideoComposition(Some(&video));
-                NATIVE.with(|n| -> anyhow::Result<()> {
+                let out = AVPlayerItemVideoOutput::initWithPixelBufferAttributes(AVPlayerItemVideoOutput::alloc(), None);
+                item.addOutput(&out);
+                let stop = Arc::new(AtomicBool::new(false));
+                NATIVE.with(|n| {
                     let mut n = n.borrow_mut();
-                    if let Some(native) = n.as_ref() {
-                        native.player.replaceCurrentItemWithPlayerItem(Some(&item));
-                        return Ok(());
+                    match n.as_mut() {
+                        Some(native) => {
+                            native.pump.store(true, Ordering::Relaxed);
+                            native.player.replaceCurrentItemWithPlayerItem(Some(&item));
+                            native.pump = stop.clone();
+                        }
+                        None => {
+                            let player = AVPlayer::playerWithPlayerItem(Some(&item), mtm);
+                            player.setMuted(true);
+                            *n = Some(Native { player, pump: stop.clone() });
+                        }
                     }
-                    let webview = WEBVIEW.load(std::sync::atomic::Ordering::SeqCst) as *mut AnyObject;
-                    if webview.is_null() {
-                        anyhow::bail!("no webview to lay the picture over");
-                    }
-                    let player = AVPlayer::playerWithPlayerItem(Some(&item), mtm);
-                    player.setMuted(true);
-                    let layer = AVPlayerLayer::playerLayerWithPlayer(Some(&player));
-                    // a layer a view hosts is sized by nobody but us: it follows the view's bounds (see player_view)
-                    let _: () = msg_send![&*layer, setAutoresizingMask: 2u32 | 16u32];
-                    let cls = objc2::runtime::AnyClass::get(c"NSView").ok_or_else(|| anyhow::anyhow!("no NSView"))?;
-                    let view: *mut AnyObject = msg_send![cls, alloc];
-                    let view: *mut AnyObject = msg_send![view, initWithFrame: CGRect::new(CGPoint::new(0.0, 0.0), CGSize::new(1.0, 1.0))];
-                    let view = Retained::from_raw(view).ok_or_else(|| anyhow::anyhow!("no view"))?;
-                    let _: () = msg_send![&*view, setLayer: &*layer];
-                    let _: () = msg_send![&*view, setWantsLayer: true];
-                    let _: () = msg_send![&*view, setHidden: true];
-                    // inside the webview: a view's subviews draw over its own content, so the picture is over the page
-                    // (a sibling beside it may land behind it, depending on what wry made the window's content)
-                    let _: () = msg_send![webview, addSubview: &*view];
-                    let parent: *mut AnyObject = msg_send![webview, superview];
-                    let class = |o: *mut AnyObject| if o.is_null() { "none".to_string() } else { (*o).class().name().to_string_lossy().into_owned() };
-                    let flipped: bool = msg_send![webview, isFlipped];
-                    tracing::info!("playback: the picture's view inside {} (flipped: {flipped}, in {})", class(webview), class(parent));
-                    *n = Some(Native { player, layer, view, webview });
-                    Ok(())
-                })?;
+                });
+                pump(Output(out), frames, stop);
             }
             Ok(())
         })();
@@ -219,7 +266,7 @@ pub(crate) async fn playback_frames(vault: &std::sync::Arc<vault_core::Vault>, t
                     if tags.is_none()
                         && let Some(pb) = pb
                     {
-                        let d = objc2_core_video::CVBufferCopyAttachments(&pb, objc2_core_video::CVAttachmentMode::ShouldPropagate);
+                        let d = objc2_core_video::CVBuffer::attachments(&pb, objc2_core_video::CVAttachmentMode::ShouldPropagate);
                         let space = d.as_ref().and_then(|d| objc2_core_video::CVImageBufferCreateColorSpaceFromAttachments(d));
                         let name = space.as_ref().and_then(|s| objc2_core_graphics::CGColorSpace::name(Some(s))).map(|n| n.to_string());
                         let fmt = objc2_core_video::CVPixelBufferGetPixelFormatType(&pb);
@@ -252,56 +299,6 @@ pub(crate) async fn playback_frames(vault: &std::sync::Arc<vault_core::Vault>, t
     .await
     .map_err(err)?
     .map_err(|e| format!("{e:#}"))
-}
-
-/// Where the picture is, in the webview's own pixels from its top left ([x, y, w, h]); none: hide it.
-#[tauri::command]
-pub fn player_view(handle: AppHandle, rect: Option<[f64; 4]>) -> Res<()> {
-    crate::gate()?;
-    on_main(&handle, move || {
-        NATIVE.with(|n| {
-            let n = n.borrow();
-            let Some(native) = n.as_ref() else { return };
-            // SAFETY: AppKit calls on the main thread, on views that live as long as the window
-            unsafe {
-                match rect {
-                    None => {
-                        let _: () = msg_send![&*native.view, setHidden: true];
-                    }
-                    Some([x, y, w, h]) => {
-                        // in the webview's own coordinates (its bounds), from its top left when it is flipped
-                        let web: CGRect = msg_send![native.webview, bounds];
-                        let flipped: bool = msg_send![native.webview, isFlipped];
-                        let oy = if flipped { y } else { web.size.height - y - h };
-                        let frame = CGRect::new(CGPoint::new(x, oy), CGSize::new(w, h));
-                        let _: () = msg_send![&*native.view, setFrame: frame];
-                        // the player's layer the size of its view, at once (no implicit animation)
-                        let bounds: CGRect = msg_send![&*native.view, bounds];
-                        let ca = objc2::runtime::AnyClass::get(c"CATransaction");
-                        if let Some(ca) = ca {
-                            let _: () = msg_send![ca, begin];
-                            let _: () = msg_send![ca, setDisableActions: true];
-                        }
-                        let _: () = msg_send![&*native.layer, setFrame: bounds];
-                        if let Some(ca) = ca {
-                            let _: () = msg_send![ca, commit];
-                        }
-                        let _: () = msg_send![&*native.view, setHidden: false];
-                        let ready: bool = msg_send![&*native.layer, isReadyForDisplay];
-                        let lf: CGRect = msg_send![&*native.layer, frame];
-                        let status = native.player.currentItem().map(|i| i.status().0).unwrap_or(-1);
-                        tracing::info!(
-                            "playback: the picture at {x:.0},{oy:.0} {w:.0}×{h:.0} in the webview's {:.0}×{:.0}; its layer {:.0}×{:.0}, ready {ready}, item status {status}",
-                            web.size.width,
-                            web.size.height,
-                            lf.size.width,
-                            lf.size.height
-                        );
-                    }
-                }
-            }
-        })
-    })
 }
 
 fn seek(player: &AVPlayer, t: f64) {
