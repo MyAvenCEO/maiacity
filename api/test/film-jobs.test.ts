@@ -49,15 +49,14 @@ test("render jobs, the LUT job, and the preview LUTs from the vault's mirror", a
   expect(luts["idt-rec709"]).toEqual({ file: hash("b1"), hash: "bbbb", size: 33 });
 });
 
-test("a job's output is named by its hash; the queue is filtered by it", async () => {
+test("a job's output is named by its hash; the queue is filtered by kind", async () => {
   await queueLuts("admin");
   const job = (await claimRender())!;
   await expect(reportRender(job.id, { status: "done", output_hash: "bafkreiproxy" })).rejects.toThrow(/hash/);
   const done = await reportRender(job.id, { status: "done", progress: 1, output_hash: hash("d1") });
   expect(done.output_hash).toBe(hash("d1"));
-  await pg.query("INSERT INTO render_jobs (kind, media_hash, status) VALUES ('proxy', $1, 'done')", [hash("e1")]); // one from before
-  expect((await listJobs({ kind: "proxy", hash: hash("e1") })).map((j) => j.media_hash)).toEqual([hash("e1")]);
-  expect(await listJobs({ hash: hash("99") })).toEqual([]);
+  expect((await listJobs({ kind: "lut" })).map((j) => j.id)).toContain(job.id);
+  expect(await listJobs({ kind: "frame" })).toEqual([]);
 });
 
 test("every job is for something: a proxy for a shot version, a render or a frame for a timeline", async () => {

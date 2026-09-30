@@ -713,10 +713,10 @@ const server = Bun.serve({
       },
     },
 
-    // The worker's other jobs: the studio's preview LUTs, world shot proxies, hero frames. A file's own proxy is the
-    // Mac app's work (meta.proxy on the original), not a job here.
+    // The worker's other jobs: the studio's preview output transform LUT, world shot proxies, hero frames. A file's own
+    // proxy is the Mac app's work (meta.proxy on the original), not a job here.
     // GET /api/film/luts → { [transform]: { file, hash, size } } (file: the vault file's hash); POST queues a bake.
-    // GET /api/film/jobs?kind=&hash=&timeline=&shot= → the latest jobs (the render queue).
+    // GET /api/film/jobs?kind=&timeline=&shot= → the latest jobs (the render queue).
     "/api/film/luts": {
       OPTIONS: preflight,
       GET: async (req) => {
@@ -737,7 +737,7 @@ const server = Bun.serve({
         if (me instanceof Response) return me;
         const url = new URL(req.url);
         const q = (k: string) => url.searchParams.get(k) ?? undefined;
-        return json(req, await listJobs({ kind: q("kind"), hash: q("hash"), timeline: q("timeline"), shot: q("shot"), limit: Number(q("limit")) || undefined }));
+        return json(req, await listJobs({ kind: q("kind"), timeline: q("timeline"), shot: q("shot"), limit: Number(q("limit")) || undefined }));
       },
     },
     // A hero frame: one frame of the timeline at { t, shape }, rendered by the worker at full precision (Grade tab)

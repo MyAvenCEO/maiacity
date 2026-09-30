@@ -18,8 +18,8 @@ import {
 	queueRender,
 	saveTimeline
 } from '$lib/auth/client';
-import { asStudio, clean, gradesFor, isCache, isSequence, presetOf, profileFor, proxyFor, proxyProfileOf } from './color.js';
-import { filmLut, loadLut, lutIndex } from './luts.js';
+import { PROFILES, WORKING, asStudio, clean, gradesFor, isCache, isSequence, presetOf, profileFor, proxyFor } from './color.js';
+import { filmLut, loadLut, lutIndex, nativeLut } from './luts.js';
 import { cached, evaluate, saveSpec, shotAt } from './shots.js';
 import { WorldViewer } from './world.svelte.js';
 
@@ -181,8 +181,6 @@ export class Studio {
 	 * @type {HTMLCanvasElement | null}
 	 */
 	scopeCanvas = $state(null);
-	/** @type {Map<string, RenderJob>} */
-	proxyJobs = $state(new Map());
 	/** clips of the open timeline left out because this Mac lacks their files: while any are, nothing is saved */
 	dropped = $state(0);
 
@@ -328,7 +326,7 @@ export class Studio {
 	 * @param {MediaItem | undefined} m @returns {{ hash: string | null, state: ProxyState }}
 	 */
 	proxy(m) {
-		return proxyFor(m, this.proxyJobs);
+		return proxyFor(m, (h) => this.byHash.get(h));
 	}
 	/** Does this clip play from its proxy right now? Edit always; Grade when asked (the originals are heavy). */
 	onProxies = $derived(this.tab !== 'grade' || this.gradeOn === 'proxies');
@@ -372,10 +370,9 @@ export class Studio {
 	profileOfClip(c) {
 		if (isWorld(c)) return 'acescct'; // the world renders ACEScct (film mode, C3), and so do its proxies
 		const it = this.playItem(c);
-		const own = profileFor(it);
-		// a proxy without its own colour info is in the encoding its original's profile gives its proxy (rule 2)
-		if (own.guessed && c?.hash && it?.hash !== c.hash) return proxyProfileOf(profileFor(this.byHash.get(c.hash)).profile);
-		return own.profile;
+		// a proxy is ACEScct, always (proxyFor takes only the Mac's own)
+		if (c?.hash && it?.hash !== c.hash) return WORKING;
+		return profileFor(it).profile;
 	}
 	/**
 	 * The grades a clip is seen through: in Grade always, in Edit only when previewing.
@@ -435,20 +432,19 @@ export class Studio {
 		const { from, luts } = await lutIndex();
 		this.lutFrom = from;
 		const got = await Promise.all(Object.entries(luts).map(async ([name, l]) => /** @type {const} */ ([name, await loadLut(name, l.file)])));
-		this.luts = Object.fromEntries(got);
+		// each profile's input LUT, from the Mac: the journey the proxies take, so an original looks as its proxy does
+		const own = await Promise.all(
+			Object.entries(PROFILES)
+				.filter(([, p]) => p.idt)
+				.map(async ([profile, p]) => /** @type {const} */ ([/** @type {string} */ (p.idt), await nativeLut(profile).catch(() => null)]))
+		);
+		this.luts = { ...Object.fromEntries(got), ...Object.fromEntries(own.filter(([, l]) => l)) };
 	}
 
-	/**
-	 * The worker's jobs (C6, `GET /api/film/jobs`): each file's newest proxy job (its proxy state until meta.proxy is
-	 * written), and the whole queue. An API without the list leaves the proxy state to the files' meta.
-	 */
+	/** The render worker's queue (C6, `GET /api/film/jobs`) — renders only: the Mac makes the proxies. */
 	async refreshJobs() {
 		try {
-			const [proxies, all] = await Promise.all([listJobs({ kind: 'proxy', limit: 500 }), listJobs({ limit: 100 })]);
-			/** @type {Map<string, RenderJob>} */
-			const map = new Map();
-			for (const j of proxies) if (j.media_hash && !map.has(j.media_hash)) map.set(j.media_hash, j); // newest first
-			this.proxyJobs = map;
+			const all = await listJobs({ limit: 100 });
 			this.jobsKnown = true;
 			this.queue = all.filter(running).sort((a, b) => (a.status === b.status ? Date.parse(a.created) - Date.parse(b.created) : a.status === 'rendering' ? -1 : 1));
 		} catch (e) {

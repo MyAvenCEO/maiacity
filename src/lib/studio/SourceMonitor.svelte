@@ -5,7 +5,7 @@
 -->
 <script>
 	import ColorBadge from './ColorBadge.svelte';
-	import { isSequence, profileFor, proxyProfileOf } from './color.js';
+	import { WORKING, isSequence, profileFor } from './color.js';
 	import { clockText, itemName, raw, tint } from './studio.svelte.js';
 	import Viewer from './Viewer.svelte';
 	import { wave } from './wave.js';
@@ -36,10 +36,8 @@
 	const useProxy = $derived((s.tab === 'edit' || isSequence(m)) && !!px.hash);
 	const playItem = $derived((useProxy && px.hash && s.byHash.get(px.hash)) || m);
 	const url = $derived(m ? (m.kind === 'video' ? raw(useProxy && px.hash ? px.hash : m.hash) : m.kind === 'audio' ? (s.sources[m.hash]?.url ?? raw(m.hash)) : raw(m.hash)) : '');
-	const profile = $derived.by(() => {
-		const own = profileFor(playItem);
-		return own.guessed && m && playItem !== m ? proxyProfileOf(profileFor(m).profile) : own.profile;
-	});
+	// a proxy is ACEScct, always
+	const profile = $derived(playItem !== m ? WORKING : profileFor(m).profile);
 	const len = $derived(
 		Number.isFinite(srcDuration) && srcDuration > 0 ? srcDuration : m && av ? (s.sources[m.hash]?.duration ?? (Number(m.meta?.duration_s) || 0)) : 0
 	);

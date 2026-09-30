@@ -1,6 +1,7 @@
 // One piece of the picture track as an ffmpeg filter chain: a clip's stretch of its source, brought to the film's
-// clock and frame, through the colour-managed path (or the bypass) into the timeline's YUV — 4:2:0 10-bit, BT.709
-// matrix, TV range — exactly `frames` long. Every piece ends in the same format, so the pieces join end to end.
+// clock and frame, through the colour-managed path (input transform, grades, output transform) into the timeline's
+// YUV — 4:2:0 10-bit, BT.709 matrix, TV range — exactly `frames` long. Every piece ends in the same format, so the
+// pieces join end to end.
 import { cleanCdl } from '../../game/film/color.js';
 import { clipColor, SETPARAMS } from './color/ffmpeg.mjs';
 
@@ -29,16 +30,13 @@ export function geometry(src, W, H, frame) {
 /**
  * The filters of one piece (after its input `[n:v]`).
  * @param {{ source: Source, grade?: unknown, look?: Cdl | null, frame?: { x?: number, y?: number, zoom?: number }, W: number, H: number, frames: number, fps: number }} o
- * @returns {{ filters: string[], used: Record<string, string>, bypass: boolean }}
+ * @returns {{ filters: string[], used: Record<string, string> }}
  */
 export function pieceFilters(o) {
 	const color = clipColor({ profile: o.source.profile, coding: o.source.coding, grade: cleanCdl(o.grade), look: o.look ?? null });
 	const geo = geometry(o.source, o.W, o.H, o.frame);
 	const timing = ['tpad=stop_mode=clone:stop_duration=1', `trim=end_frame=${o.frames}`, `setpts=N/${o.fps}/TB`];
-	const filters = color.bypass
-		? [`fps=${o.fps}`, ...color.after, ...geo, ...timing, SETPARAMS]
-		: [`fps=${o.fps}`, ...color.before, ...geo, ...timing, ...color.after];
-	return { filters, used: color.used, bypass: color.bypass };
+	return { filters: [`fps=${o.fps}`, ...color.before, ...geo, ...timing, ...color.after], used: color.used };
 }
 
 /** A gap in the picture: black (TV-range black in 10-bit YUV), exactly `frames` long. */

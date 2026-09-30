@@ -99,3 +99,24 @@ export function loadLut(name, file) {
 	}
 	return p;
 }
+
+/**
+ * A profile's input LUT, baked by the Mac from the journey its proxies take (vault-media's cst): a u32 size, then
+ * size³ RGB f32 in ACEScct, red fastest — as RGBA for the GPU.
+ * @param {string} profile @returns {Promise<Lut>}
+ */
+export async function nativeLut(profile) {
+	const { command } = await import('$lib/native');
+	const raw = await command('color_lut', { profile });
+	const bytes = raw instanceof ArrayBuffer ? raw : new Uint8Array(/** @type {number[]} */ (raw)).buffer;
+	const size = new DataView(bytes).getUint32(0, true);
+	const rgb = new Float32Array(bytes, 4, size * size * size * 3);
+	const data = new Float32Array(size * size * size * 4);
+	for (let i = 0, j = 0; i < rgb.length; i += 3, j += 4) {
+		data[j] = rgb[i];
+		data[j + 1] = rgb[i + 1];
+		data[j + 2] = rgb[i + 2];
+		data[j + 3] = 1;
+	}
+	return { name: profile, size, data, title: `${profile} → ACEScct (Mac)` };
+}

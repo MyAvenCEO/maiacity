@@ -434,6 +434,7 @@ fn main() {
             stories::files_class,
             proxies::proxies_now,
             proxies::vault_hold,
+            proxies::color_lut,
             proxies::vault_proxy,
             vault_sources,
             vault_scan,

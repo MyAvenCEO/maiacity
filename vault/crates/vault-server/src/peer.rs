@@ -259,8 +259,22 @@ impl Peer {
 
     async fn reconcile_once(&self, s3: &S3, db: &tokio_postgres::Client, failed: &mut HashSet<Hash>) -> Result<()> {
         let blobs: Vec<_> = self.doc.get_many(Query::single_latest_per_key().key_prefix("blobs/")).await?.collect().await;
+        let mut blobs: Vec<_> = blobs.into_iter().collect::<Result<_, _>>()?;
+        // the order of a shoot: the small working files first, then the proxies (the edit can start from them anywhere),
+        // then the originals, then the rest — each class as the file's description says (iroh-docs keeps every `meta/`
+        // here), smaller files first within each
+        let classes = self.classes().await;
+        blobs.sort_by_key(|e| {
+            let hex = String::from_utf8_lossy(e.key()).trim_start_matches("blobs/").to_string();
+            let rank = match classes.get(&hex).map(String::as_str) {
+                Some("default") | None => 0,
+                Some("proxy") => 1,
+                Some("original") => 2,
+                _ => 3,
+            };
+            (rank, e.content_len())
+        });
         for entry in blobs {
-            let entry = entry?;
             let (hash, size) = (entry.content_hash(), entry.content_len());
             if failed.contains(&hash) {
                 continue;
@@ -290,6 +304,21 @@ impl Peer {
             }
         }
         Ok(())
+    }
+
+    /// Each file's class (hash → "proxy", "original" …), from the descriptions iroh-docs keeps on this server.
+    async fn classes(&self) -> HashMap<String, String> {
+        let mut out = HashMap::new();
+        let Ok(metas) = self.doc.get_many(Query::single_latest_per_key().key_prefix("meta/")).await else { return out };
+        let metas: Vec<_> = metas.collect().await;
+        for entry in metas.into_iter().flatten() {
+            let Ok(bytes) = self.store.blobs().get_bytes(entry.content_hash()).await else { continue };
+            let Ok(meta) = serde_json::from_slice::<serde_json::Value>(&bytes) else { continue };
+            if let Some(class) = meta["class"].as_str() {
+                out.insert(String::from_utf8_lossy(entry.key()).trim_start_matches("meta/").to_string(), class.to_string());
+            }
+        }
+        out
     }
 
     /// Fetch one file from whichever paired device has it, verified chunk by chunk, into the bucket.

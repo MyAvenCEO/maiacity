@@ -4,6 +4,6 @@
   "compilerOptions": { "allowJs": true, "checkJs": true, "noEmit": true },
   "include": [
     "../scripts/film/worker.ts", "../scripts/film/sources.mjs", "../scripts/film/picture.mjs", "../scripts/film/plates.mjs",
-    "../scripts/film/qc.mjs", "../scripts/film/proxy.mjs", "../scripts/film/color/*.mjs", "../game/film/color.js", "../game/film/transforms.js"
+    "../scripts/film/qc.mjs", "../scripts/film/color/*.mjs", "../game/film/color.js", "../game/film/transforms.js"
   ]
 }

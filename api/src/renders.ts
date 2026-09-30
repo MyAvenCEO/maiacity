@@ -2,11 +2,11 @@
  * Render jobs. Playing a timeline is live, in the studio; exporting it is a job: the studio queues it, a render
  * worker (bun film worker) claims it, reports its progress, and hands back the film's hash when it is in the vault.
  *
- * The same queue carries the worker's other work: `lut` — bake the studio viewer's preview LUTs into the vault;
- * `proxy` — the HD proxy of a world shot version (`shot_id` + `shot_version`, no file); and `frame` — a hero frame: one
- * frame of a timeline (`params`: t, shape) rendered at full precision through the whole chain, for grading against.
- * A file's own proxy is no job here: the Mac app makes it when the file comes in (meta.proxy on the original); the
- * media proxy jobs from before (media_hash set) are kept only as history.
+ * The same queue carries the worker's other work: `lut` — bake the studio viewer's preview output transform into the
+ * vault; `proxy` — the HD proxy of a world shot version (`shot_id` + `shot_version`, no file); and `frame` — a hero
+ * frame: one frame of a timeline (`params`: t, shape) rendered at full precision through the whole chain, for grading
+ * against. A file's own proxy is no job here: the Mac app makes it when the file comes in (meta.proxy on the
+ * original). Rows from when files' proxies were jobs (media_hash set) stay in the table as history, nothing more.
  */
 import { db } from "./pg";
 import { deliverRender, type Delivery } from "./content";
@@ -66,15 +66,15 @@ export async function rendersOf(timelineId: string): Promise<Job[]> {
   return (await db.query<Job>(`SELECT ${COLS} FROM render_jobs WHERE timeline_id = $1 ORDER BY created DESC LIMIT 10`, [timelineId])).rows;
 }
 
-/** The latest jobs, newest first: of a kind, for a file (by hash), a timeline or a shot — the studio's render queue. */
-export async function listJobs(filter: { kind?: string; hash?: string; timeline?: string; shot?: string; limit?: number } = {}): Promise<Job[]> {
+/** The latest jobs, newest first: of a kind, for a timeline or a shot — the studio's render queue. */
+export async function listJobs(filter: { kind?: string; timeline?: string; shot?: string; limit?: number } = {}): Promise<Job[]> {
   const kind = filter.kind && ["render", "proxy", "lut", "frame"].includes(filter.kind) ? filter.kind : null;
   const uuid = (v: string | undefined) => (v && /^[0-9a-f-]{36}$/i.test(v) ? v : null);
   const { rows } = await db.query<Job>(
-    `SELECT ${COLS} FROM render_jobs WHERE ($1::text IS NULL OR kind = $1) AND ($2::text IS NULL OR media_hash = $2)
-        AND ($3::uuid IS NULL OR timeline_id = $3) AND ($4::uuid IS NULL OR shot_id = $4)
-      ORDER BY created DESC LIMIT $5`,
-    [kind, filter.hash || null, uuid(filter.timeline), uuid(filter.shot), Math.max(1, Math.min(500, filter.limit ?? 100))],
+    `SELECT ${COLS} FROM render_jobs WHERE ($1::text IS NULL OR kind = $1)
+        AND ($2::uuid IS NULL OR timeline_id = $2) AND ($3::uuid IS NULL OR shot_id = $3)
+      ORDER BY created DESC LIMIT $4`,
+    [kind, uuid(filter.timeline), uuid(filter.shot), Math.max(1, Math.min(500, filter.limit ?? 100))],
   );
   return rows;
 }

@@ -15,10 +15,9 @@
 #   python3 scripts/film/color/bake.py --config '<json>' --size 65 --check
 #       how far a LUT of that size is from OCIO itself (10-bit code values)
 #
-# Config kinds: 'ocio-view' (display/view, forward or inverse), 'ocio-convert' (src → dst colour space),
-# 'ocio-group' (builtin curves, matrices and conversions chained), 'cdl' (the ASC CDL of color.js) and 'chain'
-# (several of these one after the other, baked into one LUT). 'identity' and 'math' configs are exact maths the
-# worker does with ffmpeg filters; they are not baked here.
+# Config kinds: 'ocio-view' (a colour space to a display/view), 'ocio-convert' (src → dst colour space) and
+# 'ocio-group' (builtin curves, matrices and conversions chained). 'identity' and 'math' configs are exact maths the
+# worker does with ffmpeg filters (and the Mac app natively, cst.rs); they are not baked here.
 #
 # Needs OpenColorIO ≥ 2.5 and numpy (pip install opencolorio numpy).
 import sys, os, gzip, json, struct, argparse
@@ -26,59 +25,30 @@ import numpy as np
 import PyOpenColorIO as ocio
 
 
-LUMA = np.array([0.2126, 0.7152, 0.0722], dtype=np.float64)
-
-
-class Cdl:
-    # the ASC CDL in ACEScct, exactly as cdl() in game/film/color.js: slope, offset, power per channel (held at 0
-    # before a power), then saturation around Rec.709 luma
-    def __init__(self, g):
-        self.slope, self.offset, self.power = (np.array(g[k], dtype=np.float64) for k in ('slope', 'offset', 'power'))
-        self.sat = float(g['sat'])
-
-    def applyRGB(self, rgb):
-        v = rgb.astype(np.float64) * self.slope + self.offset
-        v = np.where(self.power == 1, v, np.power(np.maximum(v, 0), self.power))
-        l = (v @ LUMA)[:, None]
-        rgb[...] = (l + self.sat * (v - l)).astype(np.float32)
-
-
-class Chain:
-    def __init__(self, steps):
-        self.steps = [processor(s) for s in steps]
-
-    def applyRGB(self, rgb):
-        for p in self.steps:
-            p.applyRGB(rgb)
-
-
 def processor(conf):
     kind = conf['kind']
-    if kind == 'cdl':
-        return Cdl(conf['cdl'])
-    if kind == 'chain':
-        return Chain(conf['steps'])
+    if kind not in ('ocio-view', 'ocio-convert', 'ocio-group'):
+        raise SystemExit(f"a '{kind}' transform is exact maths: the worker does it with ffmpeg filters, nothing to bake")
     cfg = ocio.Config.CreateFromBuiltinConfig(conf['config'])
     if kind == 'ocio-view':
-        d = ocio.TRANSFORM_DIR_FORWARD if conf['direction'] == 'forward' else ocio.TRANSFORM_DIR_INVERSE
-        t = ocio.DisplayViewTransform(src=conf['colorspace'], display=conf['display'], view=conf['view'], direction=d)
+        if conf.get('direction', 'forward') != 'forward':
+            raise SystemExit('a view transform goes forward: a colour space to the display')
+        t = ocio.DisplayViewTransform(src=conf['colorspace'], display=conf['display'], view=conf['view'], direction=ocio.TRANSFORM_DIR_FORWARD)
         return cfg.getProcessor(t).getDefaultCPUProcessor()
     if kind == 'ocio-convert':
         return cfg.getProcessor(conf['src'], conf['dst']).getDefaultCPUProcessor()
-    if kind == 'ocio-group':
-        steps = []
-        for s in conf['steps']:
-            if 'builtin' in s:
-                steps.append(ocio.BuiltinTransform(s['builtin']))
-            elif 'matrix' in s:
-                m = s['matrix']
-                steps.append(ocio.MatrixTransform(matrix=[*m[0], 0, *m[1], 0, *m[2], 0, 0, 0, 0, 1]))
-            elif 'convert' in s:
-                steps.append(ocio.ColorSpaceTransform(src=s['convert'][0], dst=s['convert'][1]))
-            else:
-                raise SystemExit(f'unknown step {s}')
-        return cfg.getProcessor(ocio.GroupTransform(steps)).getDefaultCPUProcessor()
-    raise SystemExit(f"a '{kind}' transform is exact maths: the worker does it with ffmpeg filters, nothing to bake")
+    steps = []
+    for s in conf['steps']:
+        if 'builtin' in s:
+            steps.append(ocio.BuiltinTransform(s['builtin']))
+        elif 'matrix' in s:
+            m = s['matrix']
+            steps.append(ocio.MatrixTransform(matrix=[*m[0], 0, *m[1], 0, *m[2], 0, 0, 0, 0, 1]))
+        elif 'convert' in s:
+            steps.append(ocio.ColorSpaceTransform(src=s['convert'][0], dst=s['convert'][1]))
+        else:
+            raise SystemExit(f'unknown step {s}')
+    return cfg.getProcessor(ocio.GroupTransform(steps)).getDefaultCPUProcessor()
 
 
 def grid(n):

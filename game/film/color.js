@@ -7,7 +7,10 @@
 //
 // Shared by the render worker (Bun), the film scripts (Node), Sandbox 4's film camera and the studio (browser).
 
-/** Linear light with Rec.709 primaries (D65) — what the world renders — to ACES AP1 (D60), from OCIO's own conversion. */
+/**
+ * Linear light with Rec.709 primaries (D65) — what the world renders, and what Rec.709 video and sRGB pictures decode
+ * to — to ACES AP1 (D60), Bradford, from OCIO's own conversion (cst.rs derives the same from the chromaticities).
+ */
 export const REC709_TO_AP1 = [
 	[0.6130974, 0.33952314, 0.047379453],
 	[0.07019372, 0.9163539, 0.013452399],
@@ -32,27 +35,24 @@ export const MID_GREY_CCT = toCct(0.18);
 /**
  * The colour profiles a picture can carry (media meta.color.profile), and how each comes into the timeline:
  *   `idt` — the input transform that takes it into ACEScct (a name in transforms.js); null: it already is ACEScct.
- *   `display` — display-referred: its code values are what a Rec.709 screen shows. Such a picture, left ungraded,
- *               goes straight through to the output (no transform either way), so it renders exactly as it always did.
+ *           Every picture goes the same way: input transform → its grade → the film's look → the output transform.
+ *           Rec.709 video and sRGB are taken as what a camera saw (their curve undone), never as what a screen shows.
  *   `log` — a log encoding (camera log, ACEScct); `linear` — scene-linear light (EXR, float).
- *   `proxy` — what an old render-worker proxy without colour info of its own is encoded in (log stayed its log).
- *             The studio's native proxies are all ACEScct and say so in their own meta.color. A proxy never carries a
- *             grade or an output transform.
- * A file whose profile cannot be told is 'unknown' (not a key here): the studio asks; the worker renders it as
- * Rec.709 and says so in the render's report.
+ * Every proxy is ACEScct (the Mac app makes it, and says so in its own meta.color). A file whose profile cannot be
+ * told is 'unknown' (not a key here): the studio asks; the worker renders it as Rec.709 and says so in the render's
+ * report.
  */
 export const PROFILES = {
-	acescct: { label: 'ACEScct (log)', idt: null, display: false, log: true, linear: false, proxy: 'acescct' },
-	rec709: { label: 'Rec.709 video', idt: 'idt-rec709', display: true, log: false, linear: false, proxy: 'rec709' },
-	srgb: { label: 'sRGB (stills, web)', idt: 'idt-rec709', display: true, log: false, linear: false, proxy: 'srgb' },
-	legacy: { label: 'Graded before (display)', idt: 'idt-rec709', display: true, log: false, linear: false, proxy: 'legacy' },
-	hlg: { label: 'HDR · HLG', idt: 'idt-hlg', display: false, log: false, linear: false, proxy: 'acescct' },
-	pq: { label: 'HDR · PQ', idt: 'idt-pq', display: false, log: false, linear: false, proxy: 'acescct' },
-	'apple-log': { label: 'Apple Log', idt: 'idt-apple-log', display: false, log: true, linear: false, proxy: 'apple-log' },
-	'apple-log-2': { label: 'Apple Log 2', idt: 'idt-apple-log-2', display: false, log: true, linear: false, proxy: 'apple-log-2' },
-	'aces2065-1': { label: 'ACES2065-1 (linear AP0)', idt: 'idt-aces2065-1', display: false, log: false, linear: true, proxy: 'acescct' },
-	acescg: { label: 'ACEScg (linear AP1)', idt: 'idt-acescg', display: false, log: false, linear: true, proxy: 'acescct' },
-	'linear-rec709': { label: 'Linear Rec.709', idt: 'idt-linear-rec709', display: false, log: false, linear: true, proxy: 'acescct' }
+	acescct: { label: 'ACEScct (log)', idt: null, log: true, linear: false },
+	rec709: { label: 'Rec.709 video', idt: 'idt-rec709', log: false, linear: false },
+	srgb: { label: 'sRGB (stills, web)', idt: 'idt-srgb', log: false, linear: false },
+	hlg: { label: 'HDR · HLG', idt: 'idt-hlg', log: false, linear: false },
+	pq: { label: 'HDR · PQ', idt: 'idt-pq', log: false, linear: false },
+	'apple-log': { label: 'Apple Log', idt: 'idt-apple-log', log: true, linear: false },
+	'apple-log-2': { label: 'Apple Log 2', idt: 'idt-apple-log-2', log: true, linear: false },
+	'aces2065-1': { label: 'ACES2065-1 (linear AP0)', idt: 'idt-aces2065-1', log: false, linear: true },
+	acescg: { label: 'ACEScg (linear AP1)', idt: 'idt-acescg', log: false, linear: true },
+	'linear-rec709': { label: 'Linear Rec.709', idt: 'idt-linear-rec709', log: false, linear: true }
 };
 
 /** @typedef {keyof typeof PROFILES} Profile */
@@ -180,11 +180,15 @@ export function detect(stream, format = {}, kind = 'video', extra = {}) {
 	return info('unknown', 'nothing to tell it by');
 }
 
-/** The profile a file's proxy is encoded in (revised rule 2); an unknown file's proxy stays as the file is. */
-export const proxyProfileOf = (/** @type {Profile | 'unknown'} */ p) => (p === 'unknown' ? 'unknown' : PROFILES[p].proxy);
-
-/** The profile a file is treated as: the one set by hand in the studio, else the detected one. */
-export const profileOf = (/** @type {Partial<ColorInfo> | undefined} */ c) => /** @type {Profile | 'unknown'} */ (c?.override ?? c?.profile ?? 'unknown');
+/**
+ * The profile a file is treated as: the one set by hand in the studio, else the detected one — each only when
+ * PROFILES defines it (a profile recorded under an older table counts as none), else 'unknown'.
+ * @param {{ override?: string, profile?: string } | undefined} c @returns {Profile | 'unknown'}
+ */
+export function profileOf(c) {
+	const p = [c?.override, c?.profile].find((x) => typeof x === 'string' && x in PROFILES);
+	return /** @type {Profile | undefined} */ (p) ?? 'unknown';
+}
 
 // ── the grade: ASC CDL in ACEScct ──────────────────────────────────────────────────────────────────────────────────
 

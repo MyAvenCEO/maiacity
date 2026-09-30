@@ -72,6 +72,8 @@ pub fn probe(path: &Path) -> Result<Probe> {
         for item in asset.metadata().iter() {
             let id = item.identifier().map(|i| i.to_string()).unwrap_or_default();
             if let Some(v) = item.stringValue() {
+                // camera metadata can carry NULs and other control characters: text only (Postgres refuses \u0000)
+                let v: String = v.to_string().chars().filter(|c| !c.is_control()).collect();
                 p.tags.push(format!("{id}={v}"));
             }
         }

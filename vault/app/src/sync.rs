@@ -210,6 +210,12 @@ pub async fn keep_complete(handle: AppHandle, vault: Arc<Vault>) {
         if let Err(e) = connect(&vault, &auth).await {
             tracing::warn!("vault network: {e}");
         }
+        // how the uploads move, in iroh's own numbers — every 30 s while anything is being sent
+        if vault.transfers.now().iter().any(|t| !t.done && !t.aborted) {
+            for l in vault.allow.links() {
+                tracing::info!("upload link: {l}");
+            }
+        }
         // local work first: nothing is fetched while an ingest or a proxy runs
         if !vault.hold.now().is_empty() {
             continue;
