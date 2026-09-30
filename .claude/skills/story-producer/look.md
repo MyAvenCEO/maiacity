@@ -17,8 +17,9 @@ top, never the other way round.**
 | Finishing | film | pop, halation, bloom, grain, vignette | `grade.finish` |
 | Output | — | ACES 2.0 to Rec.709 | fixed |
 
-- **No exposure or contrast in the look.** Those belong to each shot's balance. A look sets which colours are
-  possible, not how bright a shot is (Kelly: exposure and contrast are "not allowed in look development").
+- **No exposure or contrast in the look.** Those belong to each shot: its balance (the base) and its trim (the
+  Grade layer, where a low-key mood goes). A look sets which colours are possible, not how bright a shot is (Kelly:
+  exposure and contrast are "not allowed in look development").
 - **A scene's look goes under the film's.** Use it where the light really differs: inside against outside, day
   against night. The film look is what every shot shares.
 - **Secondaries are the last resort,** after the balance and the look. If skin needs a key, the balance or the look is
@@ -93,6 +94,33 @@ Kelly uses film effects at a fraction of their full strength: grain about 35 %, 
 6. **Finishing last,** a kiss of each.
 7. **Play it** in the Grade tab (native playback: exactly what the render makes). Nothing may jump; skin reads the
    same across the cuts.
+
+## Learned on Day 01: the teal/orange reference
+
+A look alone gave a flat, tinted picture: the colours moved but the image stayed bright and airy. The banner is
+**low-key and dense**. Its middle sits at about 17 IRE, blacks at 1, whites at 85, and the face is lifted against a
+dark surround. Getting there takes the whole stack, each layer doing its own job:
+
+1. **Film look: colour only.**
+   - `split`: shadows 285° at 0.65, highlights 126° at 0.5, balance 0.1.
+   - `hue`:
+     - Deep greens (215–240°) towards teal (+26…+32°).
+     - Yellow-greens (165°) towards gold (−12°).
+     - Blues and purples (320–345°, hoodies, jeans) towards teal (−10…−18°).
+   - `hue_sat`: skin 1.15; blues and purples 0.6.
+   - `hue_lum`: greens −0.8…−0.95 stops (dense foliage), yellow-greens −0.3.
+2. **Per-shot trim (`grade_clip`, the Grade layer): the low key.** About a stop down and a slope of 1.2 around mid
+   grey, as one CDL: slope k, offset 0.414·(1 − k) + stops / 17.52. The balance stays the base correction; the mood
+   lives here, per shot, so every shot can land on the same key.
+3. **Secondaries:**
+   - The face lifted +0.3–0.4 (a face-tracked ellipse, 1.8 × 2 of the face).
+   - A warm window where the light comes from (temp +1, exposure +0.4, tint 0: magenta turns the sky pink).
+   - The sky held: a luma key over 72 IRE in a band at the top, exposure −0.35, highlights −0.6, cooler.
+4. **Finishing:** vignette 0.7 (size 0.8), grain 0.25. Halation and bloom stay off for now: on the bench they put an
+   orange haze on the hands. Look at every glow on a full hero frame before keeping it.
+
+Judge it the way the person will see it: `render_frame` hero frames at 4K next to the reference, and zoomed crops of
+the face and hands. The scope sheet's 640 px picture hides halos, blotches and banding.
 
 ## Don't
 

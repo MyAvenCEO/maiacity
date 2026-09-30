@@ -240,7 +240,7 @@ pub fn spectrum(frames: &[f32], rate: u32) -> Option<Vec<f64>> {
 }
 
 /// The EQ that makes a sound of spectrum `from` sound like one of spectrum `to` (both `spectrum`'s): a peaking band on
-/// every octave from `lo` to `hi` Hz whose difference is worth it (≥ 0.5 dB), each within ±`limit` dB, solved so what
+/// every octave from `lo` to `hi` Hz whose difference, smoothed over its neighbours, is worth it (≥ 1 dB), each within ±`limit` dB, solved so what
 /// the whole EQ does to each octave (`Eq::octave_gain`: the bands overlap) lands on the differences; a high-pass under `lo` when the reference has
 /// clearly less there. The differences are taken against their mean over `lo…hi`: tone only, the level stays the
 /// clip's gain's.
@@ -249,11 +249,20 @@ pub fn matching(from: &[f64], to: &[f64], lo: f64, hi: f64, limit: f64, rate: f6
     if inside.is_empty() || from.len() != OCTAVES.len() || to.len() != OCTAVES.len() {
         return Vec::new();
     }
-    let diff: Vec<f64> = inside.iter().map(|&i| to[i] - from[i]).collect();
+    let raw: Vec<f64> = inside.iter().map(|&i| to[i] - from[i]).collect();
+    // broad strokes, as a dialogue editor EQs: the differences smoothed over their neighbours (a word more or less of
+    // one vowel moves an octave by a dB or two; a mic's colour moves several together)
+    let diff: Vec<f64> = (0..raw.len())
+        .map(|k| {
+            let (a, b) = (raw[k.saturating_sub(1)], raw[(k + 1).min(raw.len() - 1)]);
+            0.25 * a + 0.5 * raw[k] + 0.25 * b
+        })
+        .collect();
     let mean = diff.iter().sum::<f64>() / diff.len() as f64;
     let want: Vec<f64> = diff.iter().map(|d| (d - mean).clamp(-limit, limit)).collect();
-    // peaking bands an octave wide, their gains solved by a few rounds of correcting what the whole EQ gives
-    let q = 1.41;
+    // wide peaking bands (q 1: about an octave and a half), their gains solved by a few rounds of correcting what the
+    // whole EQ gives
+    let q = 1.0;
     let mut gains = want.clone();
     for _ in 0..12 {
         let bands: Vec<Band> = inside.iter().zip(&gains).map(|(&i, &g)| Band { kind: Kind::Peaking, f: OCTAVES[i], gain: g, q }).collect();
@@ -271,7 +280,7 @@ pub fn matching(from: &[f64], to: &[f64], lo: f64, hi: f64, limit: f64, rate: f6
     {
         out.push(Band { kind: Kind::Highpass, f: (OCTAVES[first - 1] * 1.2).round(), gain: 0.0, q: default_q() });
     }
-    out.extend(inside.iter().zip(&gains).filter(|(_, g)| g.abs() >= 0.5).map(|(&i, &g)| Band { kind: Kind::Peaking, f: OCTAVES[i], gain: (g * 10.0).round() / 10.0, q }));
+    out.extend(inside.iter().zip(&gains).filter(|(_, g)| g.abs() >= 1.0).map(|(&i, &g)| Band { kind: Kind::Peaking, f: OCTAVES[i], gain: (g * 10.0).round() / 10.0, q }));
     out.truncate(MAX_BANDS);
     out
 }

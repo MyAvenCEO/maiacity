@@ -96,12 +96,13 @@ fn a_matching_eq_gives_one_sound_the_others_tone() {
     let mut matched = plain.clone();
     Eq::new(&bands, RATE).process(&mut matched);
     let got = spectrum(&matched, RATE as u32).unwrap();
-    // tone, not level: each octave from 125 Hz to 8 kHz within a dB of the reference's, after their mean
+    // tone, not level, in broad strokes (smoothed over neighbours): each octave from 125 Hz to 8 kHz within 1.5 dB of
+    // the reference's, after their mean
     let inside: Vec<usize> = (1..8).collect();
     let d: Vec<f64> = inside.iter().map(|&i| got[i] - to[i]).collect();
     let mean = d.iter().sum::<f64>() / d.len() as f64;
     for (k, &i) in inside.iter().enumerate() {
-        assert!((d[k] - mean).abs() < 1.0, "{} Hz off by {:.2} dB: {bands:?}", OCTAVES[i], d[k] - mean);
+        assert!((d[k] - mean).abs() < 1.5, "{} Hz off by {:.2} dB: {bands:?}", OCTAVES[i], d[k] - mean);
     }
 }
 

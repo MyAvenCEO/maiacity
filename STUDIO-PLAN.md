@@ -6,13 +6,15 @@
 - 🔄 **Creative grade, step 1 done (the tools):**
   - looks per scene and film (live), secondaries, finishing, native stills and native playback in Grade
   - moodboard references (`look_reference`), the `look.md` skill
-  - next, before step 2:
-    - the UI: no white buttons or slider thumbs; one clear Still / Proxy / Original control; the timeline playhead
-      moves across the shots in Grade
-    - sound: the bench talk after the voice-over louder and clearer (measured against the voice-over)
-    - the cut after the bench: stand up from the bench first; the music handover to the lighter track
-- ⬜ **Creative grade, step 2:** our brand teal/orange look, built against the banner and more references, applied
-  to Day 01
+  - ✅ before step 2: the UI fixes; sound EQ (`audio_eq`, `audio_match`, spectra); the bench louder and clearer; the
+    cut after the bench (the closing line, the stand-up, an empty-bench beat, its steps as an L-cut); the lighter
+    score's downbeat on the cut
+- 🔄 **Creative grade, step 2:** the teal/orange reference grade on the bench master and the bedroom MS (film look,
+  per-shot trim, face and sun and sky secondaries, vignette, grain) — waiting for the person's eye; then every shot
+  of Day 01 trimmed to the same key
+- ⬜ **Sound, next:** the garden B-roll's own sound as the scene's background (unbroken into the bench); a voice
+  compressor and de-esser; a room match (reverb) for lav against camera; music level automation over a clip
+- ⬜ **Finishing:** halation/bloom put an orange haze on the bench shot's hands — find the value feeding the glow
 - ✅ **Everything iroh-native, end to end** (the Mac does all media work; the server only stores and relays):
   - ✅ Shot analysis cues on the Edit timeline (coloured by kind, click to go there) and in the inspector
   - ✅ AVFoundation reads the vault in place (resource loader over iroh's BlobReader) — no export anywhere: transcription, proxies, stills, renders, probe
