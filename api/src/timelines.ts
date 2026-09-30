@@ -3,13 +3,17 @@
  * BLAKE3 hash and where it sits on a track, how far into the file it starts, how long it runs and how loud it plays.
  * The bytes stay in the vault; a timeline only points at them, so it is small, and the same file can be in many.
  *
- * A clip is a media clip (a vault file, by hash) or a world clip (a shot of Sandbox 4 kept as data, by shot id and
- * the version it was cut with — api/src/shots.ts). A clip may carry its own grade (an ASC CDL in ACEScct, the Grade
- * tab) and, for media, how it is reframed per delivery shape. The timeline itself has a working step — edit, locked,
+ * A clip is a media clip (a vault file, by hash), a world clip (a shot of Sandbox 4 kept as data, by shot id and
+ * the version it was cut with — api/src/shots.ts), a slate (a shot of the script not filmed yet: its words stand in
+ * on the picture track, V1) or a line (a line of the script not recorded yet: its words on the voice track, A1, and in
+ * the captions). A picture clip may carry its place in the script (scene, label, description, notes): the Script tab
+ * and the timeline are the same clips, so a slate swapped for a still or the footage keeps its script. A clip may
+ * carry its balance (the fixed first nodes: white balance, exposure, contrast, highlights, lows), its own grade (an ASC
+ * CDL in ACEScct, the Grade tab) and, for media, how it is reframed per delivery shape. The timeline itself has a working step — edit, locked,
  * graded, rendered — a version (one more at every unlock), its colour pipeline and the whole film's look.
  */
 import { db } from "./pg";
-import { cleanCdl } from "../../game/film/color.js";
+import { cleanBalance, cleanCdl } from "../../game/film/color.js";
 import { missingShots } from "./shots";
 
 export class TimelineError extends Error {
@@ -23,18 +27,26 @@ export type Shape = "1:1" | "16:9" | "9:16" | "4:5";
 export type Clip = {
   id: string; track: string; start: number; in: number; dur: number; vol: number; fin?: number; fout?: number;
   /** absent = "media" */
-  kind?: "media" | "world";
+  kind?: "media" | "world" | "slate" | "line";
   /** media clips: the vault file, by its BLAKE3 hash (64 hex) */
   hash?: string;
   /** world clips (V1 only): shots.id and the version cut in */
   shot?: string; shotVersion?: number;
+  /** this clip's balance, in ACEScct, before its grade (absent = as shot) */
+  balance?: Balance;
   /** this clip's own grade, in ACEScct (absent = none) */
   grade?: Cdl;
+  /** picture clips: where the clip stands in the script */
+  script?: Script;
+  /** lines: the words to be said */
+  text?: string;
   /** media clips: reframing per delivery shape; x, y in −1…1 of the free room, zoom ≥ 1 */
   frame?: Partial<Record<Shape, { x: number; y: number; zoom: number }>>;
   /** media clips: a video's picture and its sound (V1 + A track) moved and trimmed together share one link */
   link?: string;
 };
+export type Balance = { temp: number; tint: number; exposure: number; contrast: number; highlights: number; shadows: number };
+export type Script = { scene?: string; label?: string; description?: string; notes?: string; size?: string };
 export type Stage = "edit" | "locked" | "graded" | "rendered";
 export type Color = { working: "acescct"; output: string };
 export type Grade = { look: Cdl | null; preset?: string } | null;
@@ -52,9 +64,21 @@ const HASH = /^[0-9a-f]{64}$/;
 const num = (v: unknown, min = 0) => Math.max(min, Number.isFinite(Number(v)) ? Number(v) : min);
 const clamp = (v: unknown, lo: number, hi: number, d: number) => Math.min(hi, Math.max(lo, Number.isFinite(Number(v)) && v !== null && v !== "" ? Number(v) : d));
 
+const text = (v: unknown, max: number) => (typeof v === "string" ? v.replace(/\u0000/g, "").slice(0, max) : "");
+
+function cleanScript(v: any): Script | null {
+  if (!v || typeof v !== "object" || Array.isArray(v)) return null;
+  const out: Script = {};
+  for (const [k, max] of [["scene", 80], ["label", 24], ["description", 2000], ["notes", 2000], ["size", 12]] as const) {
+    const t = text(v[k], max).trim();
+    if (t) out[k] = t;
+  }
+  return Object.keys(out).length ? out : null;
+}
+
 function cleanClip(c: any): Clip {
   const kind = c?.kind ?? "media";
-  if (kind !== "media" && kind !== "world") throw new TimelineError("A clip is a media clip or a world clip.");
+  if (!["media", "world", "slate", "line"].includes(kind)) throw new TimelineError("A clip is a media clip, a world clip, a slate or a line.");
   const base = { id: String(c.id ?? "").slice(0, 40), track: String(c.track ?? "V1").slice(0, 8), start: num(c.start), in: num(c.in), dur: num(c.dur, 0.05), vol: Math.min(1, num(c.vol)),
     ...(c.fin !== undefined ? { fin: Math.min(10, num(c.fin)) } : {}), ...(c.fout !== undefined ? { fout: Math.min(10, num(c.fout)) } : {}) };
   let clip: Clip;
@@ -65,10 +89,26 @@ function cleanClip(c: any): Clip {
     const v = Number(c.shotVersion);
     if (!Number.isInteger(v) || v < 1) throw new TimelineError("A world clip names the version of its shot it was cut with.");
     clip = { ...base, kind: "world", shot: String(c.shot).toLowerCase(), shotVersion: v };
+  } else if (kind === "slate") {
+    if (c.hash !== undefined && c.hash !== null) throw new TimelineError("A slate is a shot not filmed yet: it has no file.");
+    if (base.track !== "V1") throw new TimelineError("A slate goes on the picture track (V1).");
+    clip = { ...base, kind: "slate", vol: 0 };
+  } else if (kind === "line") {
+    if (c.hash !== undefined && c.hash !== null) throw new TimelineError("A line is a line not recorded yet: it has no file.");
+    if (base.track !== "A1") throw new TimelineError("A line goes on the voice track (A1).");
+    clip = { ...base, kind: "line", text: text(c.text, 2000) };
   } else {
     if (!HASH.test(String(c?.hash))) throw new TimelineError("Every clip names its file by hash.");
     // an existing clip stays exactly as it was: `kind` is written only for world clips
     clip = { ...base, ...(c.kind === "media" ? { kind: "media" as const } : {}), hash: String(c.hash), ...(typeof c.link === "string" && c.link ? { link: c.link.slice(0, 40) } : {}) };
+  }
+  if (c.balance !== undefined && c.balance !== null && kind !== "line") {
+    const b = cleanBalance(c.balance);
+    if (b) clip.balance = b as Balance;
+  }
+  if (c.script !== undefined && c.script !== null && base.track === "V1") {
+    const sc = cleanScript(c.script);
+    if (sc) clip.script = sc;
   }
   if (c.grade !== undefined && c.grade !== null) {
     const g = cleanCdl(c.grade);
@@ -142,8 +182,9 @@ async function checkShots(clips: Clip[] | undefined) {
   if (missing.length) throw new TimelineError(`No such shot: ${missing.slice(0, 3).join(", ")}${missing.length > 3 ? "…" : ""}.`);
 }
 
-/** The cut itself — what is where, how long and how loud — without the grade, which may change after the lock. */
-const cutOf = (clips: Clip[]) => JSON.stringify(clips.map(({ grade: _g, frame: _f, ...rest }) => Object.fromEntries(Object.entries(rest).sort(([a], [b]) => a.localeCompare(b)))));
+/** The cut itself — what is where, how long and how loud — without the balance, the grade and the script's notes,
+ * which may change after the lock. */
+const cutOf = (clips: Clip[]) => JSON.stringify(clips.map(({ grade: _g, balance: _b, frame: _f, script: _s, ...rest }) => Object.fromEntries(Object.entries(rest).sort(([a], [b]) => a.localeCompare(b)))));
 
 const COLS = "id, name, project, variant, description, aspect, tags, clips, stage, version, color, grade, created, updated";
 

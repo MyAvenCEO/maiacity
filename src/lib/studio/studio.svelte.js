@@ -18,7 +18,7 @@ import {
 	queueRender,
 	saveTimeline
 } from '$lib/auth/client';
-import { ODT, PROFILES, WORKING, asStudio, clean, gradesFor, isCache, isSequence, presetOf, profileFor, proxyFor } from './color.js';
+import { ODT, PROFILES, WORKING, asStudio, clean, cleanBalance, gradesFor, isCache, isSequence, presetOf, profileFor, proxyFor } from './color.js';
 import { filmLut, nativeLut } from './luts.js';
 import { cached, evaluate, saveSpec, shotAt } from './shots.js';
 import { WorldViewer } from './world.svelte.js';
@@ -250,9 +250,10 @@ export class Studio {
 	/** @type {TimelineStage} */
 	stage = $derived(this.current?.stage ?? 'edit');
 	version = $derived(this.current?.version ?? 1);
-	locked = $derived(this.stage !== 'edit');
-	/** picture and sound can be changed: the Edit tab, the edit not locked */
-	canEdit = $derived((this.tab === 'edit' || this.tab === '3d') && !this.locked);
+	/** no lock for now: the cut stays open in every tab (a timeline locked before is opened again when it opens) */
+	locked = false;
+	/** picture and sound can be changed: the Edit and 3D tabs */
+	canEdit = $derived(this.tab === 'edit' || this.tab === '3d');
 	/**
 	 * the frame the program shows: the timeline's own shape, or in Grade the one being checked
 	 * @type {string}
@@ -410,6 +411,11 @@ export class Studio {
 		if ((this.tab === 'edit' || this.tab === '3d') && !this.previewGrade) return [];
 		return gradesFor(c, this.current);
 	}
+	/** A clip's balance as the viewer shows it (Grade, Render; Edit with the grade preview on). @param {Clip | null | undefined} c */
+	balanceOf(c) {
+		if ((this.tab === 'edit' || this.tab === '3d') && !this.previewGrade) return null;
+		return c?.balance ?? null;
+	}
 
 	// ── loading ──────────────────────────────────────────────────────────────
 	async load() {
@@ -503,7 +509,7 @@ export class Studio {
 		await this.flush();
 		this.current = t;
 		this.expand(t.project ?? '', true);
-		this.clips = t.clips.filter((c) => isWorld(c) || (c.hash && this.byHash.has(c.hash)));
+		this.clips = t.clips.filter((c) => isWorld(c) || c.kind === 'slate' || c.kind === 'line' || (c.hash && this.byHash.has(c.hash)));
 		// a clip whose file this Mac does not know is left out of the view — and then the timeline is never saved from
 		// here, or those clips would be gone for good
 		this.dropped = t.clips.length - this.clips.length;
@@ -513,7 +519,8 @@ export class Studio {
 		this.time = 0;
 		this.saving = 'saved';
 		this.shape = /** @type {Shape} */ (['16:9', '9:16', '1:1', '4:5'].includes(t.aspect) ? t.aspect : '16:9');
-		if (this.tab === 'grade' && !this.locked) this.tab = 'edit';
+		// a timeline locked before the lock went: open again (the API fixes the cut of a locked one)
+		if (t.stage && t.stage !== 'edit') this.setMeta({ stage: 'edit' });
 		try {
 			localStorage.setItem(LAST, t.id);
 		} catch {
@@ -602,29 +609,6 @@ export class Studio {
 		if (!this.current) return;
 		this.current = { ...this.current, ...patch };
 		this.changed();
-	}
-
-	// ── the stages: edit → locked → graded → rendered ─────────────────────────
-	/** Locks picture and sound: nothing moves on the timeline any more, and the Grade tab opens. */
-	lock() {
-		if (!this.current || this.locked) return;
-		this.stop();
-		this.setMeta({ stage: 'locked' });
-		this.selected = null;
-		this.tab = 'grade';
-		void this.flush();
-	}
-	/** Opens the edit again, as a new version; every clip keeps its grade (it is on the clip, by its id). */
-	unlock() {
-		if (!this.current || !this.locked) return;
-		if (!confirm(`Unlock the edit? It becomes version ${this.version + 1}; every clip keeps its grade.`)) return;
-		this.setMeta({ stage: 'edit', version: this.version + 1 });
-		this.tab = 'edit';
-		void this.flush();
-	}
-	markGraded(on = true) {
-		if (!this.current || !this.locked) return;
-		this.setMeta({ stage: on ? 'graded' : 'locked' });
 	}
 
 	/**
@@ -1128,6 +1112,14 @@ export class Studio {
 		this.clips[i] = { ...this.clips[i], ...patch };
 		this.changed();
 		if (this.playing) this.schedule();
+	}
+	/**
+	 * The selected picture clip's balance layers (null: as shot).
+	 * @param {import('$lib/auth/client').Balance | null} b
+	 */
+	setBalance(b) {
+		if (!this.sel) return;
+		this.patchClip(this.sel.id, { balance: cleanBalance(b) ?? undefined });
 	}
 	/** @param {Cdl | null} g */
 	setGrade(g) {

@@ -5,7 +5,7 @@
 use serde_json::json;
 use vault_render::{
     gpu::geometry,
-    grade::{NEUTRAL, clean_cdl, preset, sat_matrix},
+    grade::{Balance, NEUTRAL, clean_balance, clean_cdl, preset, sat_matrix},
     loudness::{Meter, measure},
     output::{Lut3d, Output},
     timeline::{Clip, ClipFrame, Piece, Timeline, Word, base_name, phrases, pieces, shapes_of},
@@ -13,6 +13,57 @@ use vault_render::{
 
 fn close(a: f64, b: f64, eps: f64) -> bool {
     (a - b).abs() <= eps
+}
+
+#[test]
+fn balance_as_color_js() {
+    // the vectors of color.js `balance` (api/test/film-color.test.ts "the balance")
+    let b = clean_balance(&json!({ "temp": -0.4, "tint": 0.2, "exposure": 0.7, "contrast": -0.2, "highlights": 0.5, "shadows": -0.6 })).unwrap();
+    for (px, want) in [
+        ([0.2, 0.3, 0.4], [0.261209014, 0.341209014, 0.439473854]),
+        ([0.41, 0.41, 0.41], [0.433852368, 0.433852368, 0.452117209]),
+        ([0.7, 0.6, 0.5], [0.68098028, 0.60098028, 0.539245121]),
+    ] {
+        let got = b.apply(px);
+        assert!((0..3).all(|i| close(got[i], want[i], 1e-8)), "{px:?}: {got:?}");
+    }
+    assert!(clean_balance(&json!({})).is_none());
+    assert_eq!(clean_balance(&json!({ "exposure": 9, "temp": "x" })).unwrap().exposure, 4.0);
+    assert_eq!(Balance::default().apply([0.2, 0.3, 0.4]), [0.2, 0.3, 0.4]);
+}
+
+#[test]
+fn a_shot_is_balanced_to_another() {
+    use vault_render::grade::fit;
+    // a scene's picture: pixels spread over the tones, a little warm
+    let mut s = 7u64;
+    let mut rnd = || {
+        s = s.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+        (s >> 33) as f64 / (1u64 << 31) as f64
+    };
+    let target: Vec<[f64; 3]> = (0..4000)
+        .map(|_| {
+            let l = 0.15 + 0.5 * rnd();
+            [l + 0.01, l, l - 0.012]
+        })
+        .collect();
+    // the other shot: a stop and a half under, cooler, flatter
+    let off = Balance { exposure: -1.5, temp: -0.5, contrast: -0.2, ..Default::default() };
+    let shot: Vec<[f64; 3]> = target.iter().map(|p| off.apply(*p)).collect();
+    let b = fit(&vault_render::stats(&shot), &vault_render::stats(&target));
+    let back: Vec<[f64; 3]> = shot.iter().map(|p| b.apply(*p)).collect();
+    let (got, want) = (vault_render::stats(&back), vault_render::stats(&target));
+    for p in ["p5", "p50", "p95"] {
+        let (g, w) = (got["luma"][p].as_f64().unwrap(), want["luma"][p].as_f64().unwrap());
+        assert!((g - w).abs() < 0.004, "{p}: {g} vs {w} with {b:?}");
+    }
+    for k in ["temp", "tint"] {
+        let (g, w) = (got["to_grey"][k].as_f64().unwrap(), want["to_grey"][k].as_f64().unwrap());
+        assert!((g - w).abs() < 0.05, "{k}: {g} vs {w} with {b:?}");
+    }
+    // the shot as the target: nothing to do
+    let same = fit(&vault_render::stats(&target), &vault_render::stats(&target));
+    assert!(same.exposure.abs() < 0.02 && same.temp.abs() < 0.01 && same.contrast.abs() < 0.02, "{same:?}");
 }
 
 #[test]

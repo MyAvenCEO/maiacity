@@ -582,6 +582,9 @@ fn render_shape(
         if let Some(g) = &grade {
             used.insert("grade:clip".into(), hash_of(&json!({ "cdl": g.to_json() })));
         }
+        if let Some(b) = clip.and_then(|c| c.balance()) {
+            used.insert("grade:balance".into(), hash_of(&json!({ "balance": b })));
+        }
         if let (Some(g), Some(_)) = (&plan.look, clip) {
             used.insert("grade:look".into(), hash_of(&json!({ "cdl": g.to_json() })));
         }
@@ -718,12 +721,96 @@ fn delivery(file: PathBuf, name: String, channels: &[&str], format: String, s: &
     }
 }
 
-/// A clip's picture after its journey: framed for the shape, its grade, the film's look, the output transform.
+/// A clip's picture after its journey: framed for the shape, its balance, its grade, the film's look, the output
+/// transform.
 fn picture(gpu: &Gpu, acescct: &Image, s: &Shape, c: &Clip, grade: Option<&Cdl>, look: Option<&Cdl>) -> Result<Image> {
     let (w, h) = s.render_size();
     let framed = gpu.frame_to(acescct, w, h, c.frame_for(s.aspect))?;
-    let graded = gpu.cdl(&*gpu.cdl(&framed, grade)?, look)?;
+    let balanced = gpu.balance(&framed, c.balance().as_ref())?;
+    let graded = gpu.cdl(&*gpu.cdl(&balanced, grade)?, look)?;
     gpu.output(&graded)
+}
+
+/// What a shot's picture is like, in ACEScct, as a colourist reads it: its luma (Rec.709 weights, as the balance
+/// reads it) at the percentiles, and the colour of its middle tones (the pixels between the 25th and the 75th
+/// percentile of luma), measured on `n` frames spread over the clip — before its balance (`as_shot`) and after it.
+pub fn measure(t: &Timeline, lib: &dyn Library, c: &Clip, n: usize) -> Result<Value> {
+    let s = Shape::of(&t.aspect).or_else(|| Shape::of("16:9")).context("no shape")?;
+    let (w, h) = (192u32, (192.0 * s.render_size().1 as f64 / s.render_size().0 as f64).round() as u32);
+    let gpu = Gpu::new()?;
+    let mut px: Vec<[f64; 3]> = Vec::new();
+    let mut at_s = Vec::new();
+    for i in 0..n.max(1) {
+        // frames at the middle of n equal parts of the clip
+        let at = c.start + c.dur * (i as f64 + 0.5) / n.max(1) as f64;
+        let src = source(&gpu, lib, c, at)?;
+        let framed = gpu.frame_to(&src, w, h, c.frame_for(s.aspect))?;
+        let f = gpu.read(&framed, w, h);
+        px.extend(f.chunks_exact(4).map(|p| [p[0] as f64, p[1] as f64, p[2] as f64]));
+        at_s.push((at * 1000.0).round() / 1000.0);
+    }
+    let bal = c.balance().unwrap_or_default();
+    let after: Vec<[f64; 3]> = px.iter().map(|p| bal.apply(*p)).collect();
+    Ok(json!({ "clip": c.id, "frames_at": at_s, "as_shot": stats(&px), "balanced": stats(&after), "balance": bal }))
+}
+
+/// Luma percentiles and the middle tones' colour of ACEScct pixels (see `measure`); the colour also as the white
+/// balance that would make the middle tones grey (in the balance's stops).
+pub fn stats(px: &[[f64; 3]]) -> Value {
+    use crate::grade::{LUMA, STOP};
+    let luma = |p: &[f64; 3]| p[0] * LUMA[0] + p[1] * LUMA[1] + p[2] * LUMA[2];
+    let mut l: Vec<f64> = px.iter().map(luma).collect();
+    l.sort_by(|a, b| a.total_cmp(b));
+    let q = |p: f64| if l.is_empty() { 0.0 } else { l[((l.len() - 1) as f64 * p).round() as usize] };
+    let (lo, hi) = (q(0.25), q(0.75));
+    let mids: Vec<&[f64; 3]> = px.iter().filter(|p| (lo..=hi).contains(&luma(p))).collect();
+    let mean: [f64; 3] = std::array::from_fn(|i| mids.iter().map(|p| p[i]).sum::<f64>() / mids.len().max(1) as f64);
+    let r3 = |x: f64| (x * 1000.0).round() / 1000.0;
+    let pct: serde_json::Map<String, Value> = [1, 5, 25, 50, 75, 95, 99].iter().map(|p| (format!("p{p}"), json!(r3(q(*p as f64 / 100.0))))).collect();
+    json!({
+        "luma": pct,
+        "mid_rgb": mean.map(r3),
+        // the white balance that would bring the middle tones to grey: warmer when red is below blue, …
+        "to_grey": { "temp": r3((mean[2] - mean[0]) / STOP), "tint": r3((mean[1] - (mean[0] + mean[2]) / 2.0) / STOP) },
+        // how far the middle grey of the picture is from 18 % grey, in stops
+        "mid_stops": r3((q(0.5) - crate::grade::PIVOT) / STOP),
+    })
+}
+
+/// One frame of a media clip, into ACEScct (the hero frame's reading, without the world) — from the full original,
+/// else (its bytes not on this Mac) from its ACEScct proxy.
+fn source(gpu: &Gpu, lib: &dyn Library, c: &Clip, at: f64) -> Result<Image> {
+    let hash = c.hash.as_deref().context("only a clip with a file can be measured")?;
+    let of = lib.original_of(hash);
+    let original = lib.media(&of).or_else(|| lib.media(hash)).context("the clip's file is not in the vault")?;
+    let proxy = original.meta.get("proxy").and_then(Value::as_str).and_then(|p| lib.media(p));
+    let (m, file) = match lib.file(&original.hash) {
+        Ok(f) => (original, f),
+        Err(e) => {
+            let p = proxy.ok_or(e)?;
+            let f = lib.file(&p.hash)?;
+            (p, f)
+        }
+    };
+    let from = c.in_ + (at - c.start);
+    if is_sequence(&m) {
+        let profile = sequence_profile(&m, &file)?.0.unwrap_or_else(|| "linear-rec709".into());
+        let args = vault_media::cst::journey(&profile).or_else(|| vault_media::cst::journey("rec709")).unwrap().kernel_args();
+        let mut seq = vault_media::still::Sequence::open(&file)?;
+        let i = seq.index_at(from + 0.5 / FPS as f64 - 1e-4, sequence_fps(&m));
+        return gpu.journey(&*sequence_frame(&mut seq, i)?, args);
+    }
+    let still = is_still(&m, &file);
+    let profile = profile_of(&m, &file, still).0;
+    let profile = if vault_media::cst::journey(&profile).is_some() { profile } else { "rec709".into() };
+    let args = vault_media::cst::journey(&profile).unwrap().kernel_args();
+    if still {
+        return gpu.journey(&*gpu.still(&file)?, args);
+    }
+    let mut r = VideoReader::open(&file, from, from + 1.0 / FPS as f64)?;
+    let turn = r.info.transform;
+    let pb = r.at(from + 0.5 / FPS as f64 - 1e-4)?.context("no frame there")?;
+    gpu.journey(&gpu.orient(&gpu.frame(pb), turn), args)
 }
 
 /// A hero frame (worker.ts `heroFrame`, the `frame` job): the picture of the timeline at `at` seconds in one shape, at

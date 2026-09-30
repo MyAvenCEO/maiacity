@@ -340,6 +340,89 @@ impl Library for Vaulted {
     }
 }
 
+/// What each picture clip of a timeline is like (vault_render `measure`: luma percentiles and the middle tones'
+/// colour in ACEScct, as shot and balanced) — the clips named, else every media clip on V1; `frames` per clip.
+pub async fn measure_clips(vault: &Arc<Vault>, timeline: &Value, ids: Option<Vec<String>>, frames: usize) -> Res<Vec<Value>> {
+    let t: Timeline = serde_json::from_value(timeline.clone()).map_err(err)?;
+    let dir = vault.ingest_dir().join(format!("measure-{}", std::process::id()));
+    let lib = Arc::new(Vaulted::new(vault, dir.clone()).await?);
+    let clips: Vec<Clip> = t
+        .clips
+        .iter()
+        .filter(|c| c.track == "V1" && c.hash.is_some() && !c.is_world())
+        .filter(|c| ids.as_ref().is_none_or(|ids| ids.contains(&c.id)))
+        .cloned()
+        .collect();
+    if clips.is_empty() {
+        return Err("no picture clip with a file to measure".into());
+    }
+    let out = tauri::async_runtime::spawn_blocking(move || {
+        clips
+            .iter()
+            .map(|c| {
+                let name = lib.media(c.hash.as_deref().unwrap_or("")).map(|m| m.title).unwrap_or_default();
+                match vault_render::measure(&t, &*lib, c, frames) {
+                    Ok(mut v) => {
+                        v["name"] = json!(name);
+                        v
+                    }
+                    Err(e) => json!({ "clip": c.id, "name": name, "error": format!("{e:#}") }),
+                }
+            })
+            .collect::<Vec<Value>>()
+    })
+    .await
+    .map_err(err)?;
+    std::fs::remove_dir_all(&dir).ok();
+    Ok(out)
+}
+
+/// Every shot's balance to level them to each other (vault_render `grade::fit`): to the reference clip as it is
+/// balanced now, to neutral (grey middle tones, the middle at 18 %), else to the shots' average. Returns the target
+/// and each shot's proposed balance; writes nothing.
+pub async fn propose_balances(vault: &Arc<Vault>, timeline: &Value, ids: Option<Vec<String>>, reference: Option<String>, neutral: bool) -> Res<Value> {
+    use vault_render::grade::{MATCH_AT, PIVOT, fit};
+    let shots = measure_clips(vault, timeline, ids, 5).await?;
+    let ok: Vec<&Value> = shots.iter().filter(|s| s.get("error").is_none()).collect();
+    if ok.is_empty() {
+        return Err(format!("nothing could be measured: {}", json!(shots)));
+    }
+    let at = |s: &Value, p: &str| s.pointer(p).and_then(Value::as_f64).unwrap_or(0.0);
+    let avg = |p: &str| ok.iter().map(|s| at(s, p)).sum::<f64>() / ok.len() as f64;
+    let (target, against) = match &reference {
+        Some(id) => {
+            let r = ok.iter().find(|s| s["clip"].as_str() == Some(id)).ok_or("the reference clip was not measured")?;
+            (r["balanced"].clone(), format!("clip {id}"))
+        }
+        None => {
+            let luma: serde_json::Map<String, Value> = MATCH_AT.iter().map(|p| (p.to_string(), json!(avg(&format!("/balanced/luma/{p}"))))).collect();
+            let mut target = json!({ "luma": luma, "to_grey": { "temp": avg("/balanced/to_grey/temp"), "tint": avg("/balanced/to_grey/tint") } });
+            if neutral {
+                let shift = PIVOT - target["luma"]["p50"].as_f64().unwrap_or(PIVOT);
+                for p in MATCH_AT {
+                    target["luma"][p] = json!(target["luma"][p].as_f64().unwrap_or(0.0) + shift);
+                }
+                target["to_grey"] = json!({ "temp": 0.0, "tint": 0.0 });
+                (target, "neutral".to_string())
+            } else {
+                (target, "the shots' average".to_string())
+            }
+        }
+    };
+    let proposed: Vec<Value> = ok
+        .iter()
+        .map(|s| {
+            let id = s["clip"].as_str().unwrap_or_default();
+            if reference.as_deref() == Some(id) {
+                return json!({ "clip": id, "name": s["name"], "balance": s["balance"], "note": "the reference: kept as it is" });
+            }
+            json!({ "clip": id, "name": s["name"], "balance": fit(&s["as_shot"], &target), "as_shot": { "luma": s["as_shot"]["luma"], "to_grey": s["as_shot"]["to_grey"] } })
+        })
+        .collect();
+    let errors: Vec<&Value> = shots.iter().filter(|s| s.get("error").is_some()).collect();
+    Ok(json!({ "target": against, "target_stats": target, "shots": proposed, "errors": errors }))
+}
+
 // ── world plates ────────────────────────────────────────────────────────────────────────────────────────────────
 
 /// A world clip's shot record's spec (the version the clip names).

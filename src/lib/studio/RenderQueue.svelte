@@ -48,7 +48,7 @@
 <aside class="rq">
 	<h3>Render</h3>
 	<p class="sub">
-		{#if s.stage === 'edit'}The edit is not locked: this renders the cut as it stands.{:else if s.stage === 'locked'}Locked, not marked graded yet.{:else}Stage: {s.stage} · v{s.version}{/if}
+		This renders the cut as it stands, with every shot's balance and grade.
 	</p>
 	<button
 		class="render"

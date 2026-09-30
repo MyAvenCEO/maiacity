@@ -29,7 +29,7 @@
 	{/if}
 	<label class="zoom">Zoom <input type="range" min="8" max="200" step="1" bind:value={s.pxPerSec} /></label>
 	<span class="hint">
-		{#if s.tab === 'edit' && !s.locked}Space play · I / O mark the source · Delete removes · ← → nudge{:else if s.locked && s.tab === 'edit'}Locked: picture and sound do not move{:else}Space play · click a clip to select it{/if}
+		{#if s.tab === 'edit'}Space play · I / O mark the source · Delete removes · ← → nudge{:else}Space play · click a clip to select it{/if}
 	</span>
 </div>
 

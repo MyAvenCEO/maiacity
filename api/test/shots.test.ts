@@ -251,7 +251,7 @@ describe("timelines: world clips, grades, framing and stages", () => {
     await expect(createTimeline("admin", { name: "x", clips: [{ ...world, hash: FILE }] })).rejects.toThrow("no hash");
     await expect(createTimeline("admin", { name: "x", clips: [{ ...world, shotVersion: 0 }] })).rejects.toThrow("version");
     await expect(createTimeline("admin", { name: "x", clips: [{ ...media, hash: undefined }] })).rejects.toThrow("by hash");
-    await expect(createTimeline("admin", { name: "x", clips: [{ ...media, kind: "hologram" }] })).rejects.toThrow("media clip or a world clip");
+    await expect(createTimeline("admin", { name: "x", clips: [{ ...media, kind: "hologram" }] })).rejects.toThrow("a world clip, a slate or a line");
   });
 
   test("a clip's grade is a clean CDL; a neutral one is dropped; framing is per shape", async () => {

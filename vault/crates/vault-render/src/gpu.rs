@@ -21,7 +21,11 @@ use objc2_core_image::{
 use objc2_core_video::CVPixelBuffer;
 use objc2_foundation::{NSArray, NSData, NSDictionary, NSNull, NSNumber, NSObjectNSKeyValueCoding, NSString, NSURL};
 
-use crate::{grade::Cdl, output::Lut3d, timeline::ClipFrame};
+use crate::{
+    grade::{Balance, Cdl},
+    output::Lut3d,
+    timeline::ClipFrame,
+};
 
 /// The render's own kernels, beside the journeys' (`cst::METAL_KERNEL`).
 pub const KERNELS: &str = r#"#include <CoreImage/CoreImage.h>
@@ -35,6 +39,17 @@ extern "C" float4 cdl(coreimage::sample_t s, float3 slope, float3 offset, float3
                       power.z == 1.0f ? y.z : precise::pow(max(y.z, 0.0f), power.z));
     float l = dot(v, float3(0.2126f, 0.7152f, 0.0722f));
     return float4(l + sat * (v - l), s.a);
+}
+
+// the balance in ACEScct, as color.js balance(): white balance (stops per channel), exposure, contrast around mid grey,
+// then highlights and lows by luma — `wb` is (temp, tint, exposure), `tone` (contrast, highlights, shadows)
+extern "C" float4 balance(coreimage::sample_t s, float3 wb, float3 tone) [[stitchable]] {
+    const float STOP = 1.0f / 17.52f, PIVOT = 0.4135884f, REACH = 0.35f;
+    float3 c = s.rgb + float3(wb.x * 0.5f, -wb.y, -wb.x * 0.5f) * STOP;
+    c = PIVOT + (c + wb.z * STOP - PIVOT) * (1.0f + tone.x);
+    float l = dot(c, float3(0.2126f, 0.7152f, 0.0722f));
+    float lift = (tone.y * smoothstep(PIVOT, PIVOT + REACH, l) + tone.z * (1.0f - smoothstep(PIVOT - REACH, PIVOT, l))) * STOP;
+    return float4(c + lift, s.a);
 }
 
 // a fade in display space: the picture towards black
@@ -114,6 +129,7 @@ pub struct Gpu {
     context: Retained<CIContext>,
     journey: Retained<CIColorKernel>,
     cdl: Retained<CIColorKernel>,
+    balance: Retained<CIColorKernel>,
     gain: Retained<CIColorKernel>,
     opacity: Retained<CIColorKernel>,
     dither: Retained<CIColorKernel>,
@@ -175,6 +191,7 @@ impl Gpu {
             context,
             journey: color(find(&cst, "acescct")?),
             cdl: color(find(&ours, "cdl")?),
+            balance: color(find(&ours, "balance")?),
             gain: color(find(&ours, "gain")?),
             opacity: color(find(&ours, "opacity")?),
             dither: color(find(&ours, "dither")?),
@@ -277,6 +294,15 @@ impl Gpu {
         let args: [&AnyObject; 5] = [img, &sl, &of, &pw, &sat];
         // SAFETY: as above
         unsafe { self.cdl.applyWithExtent_arguments(img.ext(), &NSArray::from_slice(&args)) }.context("the grade gave no picture")
+    }
+
+    /// The balance (none: the picture as shot).
+    pub fn balance(&self, img: &CIImage, b: Option<&Balance>) -> Result<Image> {
+        let Some(b) = b.filter(|b| !b.is_neutral()) else { return Ok(img.retain()) };
+        let (wb, tone) = (vec3([b.temp, b.tint, b.exposure]), vec3([b.contrast, b.highlights, b.shadows]));
+        let args: [&AnyObject; 3] = [img, &wb, &tone];
+        // SAFETY: the kernel's arguments as its signature takes them
+        unsafe { self.balance.applyWithExtent_arguments(img.ext(), &NSArray::from_slice(&args)) }.context("the balance gave no picture")
     }
 
     /// The output transform.

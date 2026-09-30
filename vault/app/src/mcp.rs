@@ -201,6 +201,63 @@ pub struct GradeFilmArgs {
     pub look: Option<Cdl>,
 }
 
+/// A shot's balance — the fixed first nodes, in ACEScct, before its grade. Every amount in stops; 0 = as shot.
+#[derive(Deserialize, Serialize, schemars::JsonSchema, Default)]
+pub struct BalanceArg {
+    /// white balance: + warmer (red up, blue down, half each), −2…2
+    #[serde(default)]
+    pub temp: f64,
+    /// white balance: + more magenta (green down), −2…2
+    #[serde(default)]
+    pub tint: f64,
+    /// −4…4 stops
+    #[serde(default)]
+    pub exposure: f64,
+    /// the slope around mid grey minus 1: 0.2 = 20 % more contrast, −0.8…1.5
+    #[serde(default)]
+    pub contrast: f64,
+    /// stops added to the tones above mid grey (fully in at about 2.5 stops above it), −3…3
+    #[serde(default)]
+    pub highlights: f64,
+    /// stops added to the tones below mid grey ("lows"), −3…3
+    #[serde(default)]
+    pub shadows: f64,
+}
+
+#[derive(Deserialize, schemars::JsonSchema)]
+pub struct BalanceArgs {
+    /// the timeline's id
+    pub timeline: String,
+    /// the clip's id (a V1 clip)
+    pub clip: String,
+    /// its balance; none: as shot
+    pub balance: Option<BalanceArg>,
+}
+
+#[derive(Deserialize, schemars::JsonSchema)]
+pub struct MeasureArgs {
+    /// the timeline's id
+    pub timeline: String,
+    /// the clips to measure (ids); none: every picture clip with a file
+    pub clips: Option<Vec<String>>,
+    /// frames per clip, spread over it (default 5)
+    pub frames: Option<usize>,
+}
+
+#[derive(Deserialize, schemars::JsonSchema)]
+pub struct MatchArgs {
+    /// the timeline's id
+    pub timeline: String,
+    /// the clips to level (ids); none: every picture clip with a file
+    pub clips: Option<Vec<String>>,
+    /// the clip the others are matched to (as it is balanced now); none: the clips' average
+    pub reference: Option<String>,
+    /// true: the middle tones to neutral grey and the middle grey to 18 % — rather than to the reference or average
+    pub neutral: Option<bool>,
+    /// false: only propose the balances, write nothing (default true: write them)
+    pub apply: Option<bool>,
+}
+
 #[derive(Deserialize, schemars::JsonSchema)]
 pub struct FrameArgs {
     /// the timeline's id
@@ -568,6 +625,62 @@ impl Studio {
                 None => Value::Null,
             };
             self.api("PUT", &format!("/api/timelines/{}", a.timeline), Some(json!({ "clips": clips }))).await
+        };
+        text(r.await)
+    }
+
+    #[tool(
+        description = "Measure a timeline's shots as a colourist reads them, natively on this Mac from the full originals (else their ACEScct proxies), in ACEScct: luma percentiles (p1…p99; 18 % grey is 0.414, one stop is 0.057), mid_stops (how far the middle is from 18 % grey), the middle tones' colour (mid_rgb) and to_grey (the temp/tint that would make them grey) — as shot and after each clip's balance. The base for levelling the shots of a scene to each other before any creative grade."
+    )]
+    async fn grade_measure(&self, Parameters(a): Parameters<MeasureArgs>) -> String {
+        let r = async {
+            let t = self.api("GET", &format!("/api/timelines/{}", a.timeline), None).await?;
+            let shots = crate::render::measure_clips(&self.vault, &t, a.clips, a.frames.unwrap_or(5).clamp(1, 24)).await?;
+            Ok::<_, String>(json!({ "timeline": a.timeline, "shots": shots }))
+        };
+        text(r.await)
+    }
+
+    #[tool(
+        description = "Set one shot's balance — the fixed first nodes, applied in ACEScct before its creative grade, in the preview and the render alike: white balance (temp, tint), exposure, contrast, highlights, lows (shadows); every amount in stops, 0 = as shot; none: back to as shot. The cut stays as it is; a locked timeline may be balanced."
+    )]
+    async fn grade_balance(&self, Parameters(a): Parameters<BalanceArgs>) -> String {
+        let r = async {
+            let t = self.api("GET", &format!("/api/timelines/{}", a.timeline), None).await?;
+            let mut clips = t["clips"].as_array().cloned().ok_or("the timeline has no clips")?;
+            let clip = clips.iter_mut().find(|c| c["id"].as_str() == Some(a.clip.as_str())).ok_or("no such clip on this timeline")?;
+            clip["balance"] = match &a.balance {
+                Some(b) => serde_json::to_value(b).map_err(|e| e.to_string())?,
+                None => Value::Null,
+            };
+            let saved = self.api("PUT", &format!("/api/timelines/{}", a.timeline), Some(json!({ "clips": clips }))).await?;
+            let now = saved["clips"].as_array().and_then(|cs| cs.iter().find(|c| c["id"].as_str() == Some(a.clip.as_str()))).map(|c| c["balance"].clone());
+            Ok::<_, String>(json!({ "clip": a.clip, "balance": now }))
+        };
+        text(r.await)
+    }
+
+    #[tool(
+        description = "Level a scene's shots to each other automatically: measures every shot (grade_measure), then fits each one's balance (white balance to the target's cast, exposure and contrast — highlights and lows only for what those cannot do — to the target's luma percentiles). The target: the reference clip as it is balanced now, or neutral (grey middle tones, the middle at 18 % grey), else the shots' average. Writes the balances (apply: false only proposes them). Check the result with grade_measure and render_frame; adjust single shots with grade_balance."
+    )]
+    async fn grade_match(&self, Parameters(a): Parameters<MatchArgs>) -> String {
+        let r = async {
+            let t = self.api("GET", &format!("/api/timelines/{}", a.timeline), None).await?;
+            let mut out = crate::render::propose_balances(&self.vault, &t, a.clips.clone(), a.reference.clone(), a.neutral == Some(true)).await?;
+            let apply = a.apply != Some(false);
+            if apply {
+                // fetched again: what changed on the timeline while the shots were measured stays
+                let t = self.api("GET", &format!("/api/timelines/{}", a.timeline), None).await?;
+                let mut clips = t["clips"].as_array().cloned().ok_or("the timeline has no clips")?;
+                for p in out["shots"].as_array().into_iter().flatten() {
+                    if let Some(c) = clips.iter_mut().find(|c| c["id"] == p["clip"]) {
+                        c["balance"] = p["balance"].clone();
+                    }
+                }
+                self.api("PUT", &format!("/api/timelines/{}", a.timeline), Some(json!({ "clips": clips }))).await?;
+            }
+            out["applied"] = json!(apply);
+            Ok::<_, String>(out)
         };
         text(r.await)
     }

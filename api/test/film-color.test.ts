@@ -2,7 +2,7 @@
 // colour path is the Mac's, natively, and tested there (vault/crates/vault-media tests/cst.rs and aces2.rs,
 // vault/crates/vault-render tests).
 import { expect, test } from "bun:test";
-import { cdl, cleanCdl, detect, exrHeader, exrProfile, fromCct, isNeutral, MID_GREY_CCT, PRESETS, PROFILES, profileOf, REC709_TO_AP1, toCct } from "../../game/film/color.js";
+import { balance, cdl, cleanBalance, cleanCdl, detect, PIVOT, STOP, exrHeader, exrProfile, fromCct, isNeutral, MID_GREY_CCT, PRESETS, PROFILES, profileOf, REC709_TO_AP1, toCct } from "../../game/film/color.js";
 import {
   canonical, DECODE, hashOf, HLG_SCALE, hlgToScene, monCurve, nitsToPq, pqToNits, rec709ToScene, sha256, SHAPER, shaperToCct,
   srgbToScene, TRANSFORMS,
@@ -74,6 +74,21 @@ test("an EXR header is read for its chromaticities and channels", () => {
   expect(h?.channels).toEqual(["B", "G", "R"]);
   expect(exrProfile(h)).toBe("aces2065-1");
   expect(exrHeader(new Uint8Array([1, 2, 3, 4, 5, 6, 7, 8]))).toBeNull();
+});
+
+test("the balance: white balance, exposure, contrast, highlights and lows in ACEScct — the render's vectors", () => {
+  const b = cleanBalance({ temp: -0.4, tint: 0.2, exposure: 0.7, contrast: -0.2, highlights: 0.5, shadows: -0.6 })!;
+  const want: [number[], number[]][] = [
+    [[0.2, 0.3, 0.4], [0.261209014, 0.341209014, 0.439473854]],
+    [[0.41, 0.41, 0.41], [0.433852368, 0.433852368, 0.452117209]],
+    [[0.7, 0.6, 0.5], [0.68098028, 0.60098028, 0.539245121]],
+  ];
+  for (const [px, out] of want) balance(b, px as [number, number, number]).forEach((x, i) => expect(x).toBeCloseTo(out[i]!, 8));
+  expect(cleanBalance({})).toBeNull();
+  expect(cleanBalance({ exposure: 9, temp: "x" })!.exposure).toBe(4);
+  // one stop of exposure is one stop in ACEScct's log; mid grey stays put under contrast
+  expect(balance({ ...b, temp: 0, tint: 0, contrast: 0, highlights: 0, shadows: 0, exposure: 1 }, [0.3, 0.3, 0.3])[0]).toBeCloseTo(0.3 + STOP, 12);
+  expect(balance({ temp: 0, tint: 0, exposure: 0, contrast: 0.5, highlights: 0, shadows: 0 }, [PIVOT, PIVOT, PIVOT])[0]).toBeCloseTo(PIVOT, 12);
 });
 
 test("the grade: CDL maths, presets, cleaning", () => {

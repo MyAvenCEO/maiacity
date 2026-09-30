@@ -1,25 +1,40 @@
 <!--
-	The grade (Grade tab): the whole film's look, or the selected clip's own grade — each an ASC CDL in ACEScct (slope,
-	offset, power per channel, and saturation), applied clip grade → film look → output transform, as the render does.
-	Presets are today's looks; a world shot suggests the one it was lit for. A media clip's framing per shape is here
-	too. Everything is data on the timeline, saved like every other edit; nothing is baked.
+	The grade (Grade tab) as a stack of layers, read from the bottom up: the bottom is applied first, the top last.
+	At the bottom, the shot's input transform into ACEScct (its CST); over it the balance layers that level the shots
+	of a scene to each other (white balance, exposure, contrast, highlights, lows); over those the creative grade (an
+	ASC CDL, for the look); then the whole film's look; at the top the output transform (ACES 2.0 → Rec.709). The
+	balance is set by hand here or by an agent through MCP (grade_measure, grade_match, grade_balance) — the same
+	data on the clip. Everything is data on the timeline, saved like every other edit; nothing is baked. A media clip's
+	framing per shape is here too.
 -->
 <script>
-	import { NEUTRAL, PRESETS, isNeutral, neutral, presetOf } from './color.js';
+	import { BALANCE_NODES, NEUTRAL, NEUTRAL_BALANCE, PRESETS, isNeutral, isNeutralBalance, neutral, presetOf, profileInfo } from './color.js';
 	import { SHAPES, isWorld } from './studio.svelte.js';
 
 	/** @typedef {import('$lib/auth/client').Cdl} Cdl */
+	/** @typedef {import('$lib/auth/client').Balance} Balance */
 	/** @typedef {import('$lib/auth/client').ClipFrame} ClipFrame */
 	/** @typedef {'slope' | 'offset' | 'power'} Part */
 	/** @type {{ s: import('./studio.svelte.js').Studio }} */
 	let { s } = $props();
 
 	const clip = $derived(s.sel && s.sel.track === 'V1' ? s.sel : null);
-	const film = $derived(s.gradeTarget === 'film' || !clip);
+	/** the layer open for its controls: a balance layer's id, 'creative' or 'look' */
+	let open = $state(/** @type {string | null} */ ('exposure'));
+	$effect(() => {
+		if (!clip && open !== 'look') open = 'look';
+	});
+	const film = $derived(open === 'look' || !clip);
+	// the studio's setGrade writes the film's look or the clip's grade by this
+	$effect(() => {
+		s.gradeTarget = film ? 'film' : 'clip';
+	});
 	/** @type {Cdl} */
 	const g = $derived((film ? s.current?.grade?.look : clip?.grade) ?? NEUTRAL);
+	/** @type {Balance} */
+	const bal = $derived(clip?.balance ?? NEUTRAL_BALANCE);
 	const suggestion = $derived(clip && isWorld(clip) ? s.specOf(clip)?.look : undefined);
-	const ro = $derived(!s.locked);
+	const profile = $derived(clip ? s.profileOfClip(clip) : '');
 
 	/** @type {{ k: Part, label: string, min: number, max: number, step: number, id: number }[]} */
 	const ROWS = [
@@ -39,12 +54,14 @@
 			const mean = (next[k][0] + next[k][1] + next[k][2]) / 3;
 			for (let c = 0; c < 3; c++) next[k][c] = +(next[k][c] + (v - mean)).toFixed(4);
 		} else next[k][i] = v;
-		s.setGrade(next);
+		setCdl(next);
 	}
+	/** @param {Cdl} next */
+	const setCdl = (next) => (film ? s.setMeta({ grade: { look: isNeutral(next) ? null : next } }) : s.setGrade(next));
 	/** @param {number} v */
-	const setSat = (v) => s.setGrade({ ...copy(), sat: v });
+	const setSat = (v) => setCdl({ ...copy(), sat: v });
 	/** @param {Part} k */
-	const resetRow = (k) => s.setGrade({ ...copy(), [k]: [...NEUTRAL[k]] });
+	const resetRow = (k) => setCdl({ ...copy(), [k]: [...NEUTRAL[k]] });
 	/** @param {string} name */
 	function preset(name) {
 		const p = PRESETS[name];
@@ -59,6 +76,17 @@
 	/** @param {number} v */
 	const shown = (v) => v.toFixed(3);
 
+	/** @param {string} key @param {number} v */
+	const setBal = (key, v) => s.setBalance({ ...$state.snapshot(bal), [key]: v });
+	/** @param {(typeof BALANCE_NODES)[number]} n */
+	const resetLayer = (n) => s.setBalance({ ...$state.snapshot(bal), ...Object.fromEntries(n.fields.map((f) => [f.key, 0])) });
+	/** @param {(typeof BALANCE_NODES)[number]} n */
+	const layerOn = (n) => n.fields.some((f) => bal[f.key] !== 0);
+	/** @param {number} v @param {string} unit */
+	const amount = (v, unit) => (v === 0 ? '—' : `${v > 0 ? '+' : ''}${v.toFixed(2)}${unit.startsWith('stops') ? ' st' : ''}`);
+	/** the balance layers from the top down (the last applied first on screen) */
+	const balanceTopDown = [...BALANCE_NODES].reverse();
+
 	// framing, per shape (media clips)
 	/** @type {ClipFrame} */
 	const frame = $derived((clip && !isWorld(clip) ? clip.frame?.[s.shape] : undefined) ?? { x: 0, y: 0, zoom: 1 });
@@ -66,57 +94,96 @@
 	const setFrame = (patch) => clip && s.setFrame(clip.id, s.shape, { ...frame, ...patch });
 </script>
 
-<aside class="grade">
-	<h2>Grade</h2>
-	{#if ro}<p class="hint">Lock the edit to grade. (The grade shows here as a preview in Edit.)</p>{/if}
-	<div class="target" role="tablist">
-		<button role="tab" aria-selected={!film} class:on={!film} disabled={!clip} onclick={() => (s.gradeTarget = 'clip')} title={clip ? '' : 'Select a picture clip on V1'}>This clip</button>
-		<button role="tab" aria-selected={film} class:on={film} onclick={() => (s.gradeTarget = 'film')}>Film look</button>
+{#snippet cdlControls()}
+	<div class="presets">
+		{#each Object.entries(PRESETS) as [name, p] (name)}
+			<button class="chip" class:on={presetOf(g) === name} title={p.label} onclick={() => preset(name)}>{name}</button>
+		{/each}
 	</div>
-	<p class="what">
-		{#if film}The whole film's look{#if s.current?.grade?.preset}&nbsp;· <b>{s.current.grade.preset}</b>{/if}{:else}{clip ? s.clipName(clip) : ''}{#if presetOf(clip?.grade) && presetOf(clip?.grade) !== 'neutral'}&nbsp;· <b>{presetOf(clip?.grade)}</b>{/if}{/if}
-		{#if !isNeutral(g)}<span class="on">graded</span>{/if}
-	</p>
-
-	<fieldset disabled={ro}>
-		<div class="presets">
-			{#each Object.entries(PRESETS) as [name, p] (name)}
-				<button class="chip" class:on={presetOf(g) === name} title={p.label} onclick={() => preset(name)}>{name}</button>
+	{#if !film && suggestion && PRESETS[suggestion]}
+		<p class="sugg">Lit for <b>{suggestion}</b> <button class="link" onclick={() => preset(suggestion)}>apply to this clip</button></p>
+	{/if}
+	{#each ROWS as r (r.k)}
+		<div class="grp">
+			<div class="gh">
+				<span>{r.label}</span>
+				<button class="link" onclick={() => resetRow(r.k)}>reset</button>
+			</div>
+			<label class="m">
+				<span>all</span>
+				<input type="range" min={r.min} max={r.max} step={r.step} value={mean(g[r.k])} oninput={(e) => set(r.k, 'all', Number(e.currentTarget.value))} ondblclick={() => resetRow(r.k)} />
+				<output>{shown(mean(g[r.k]))}</output>
+			</label>
+			{#each CH as c, i (c)}
+				<label class="ch {c}">
+					<span>{c}</span>
+					<input type="range" min={r.min} max={r.max} step={r.step} value={g[r.k][i]} oninput={(e) => set(r.k, i, Number(e.currentTarget.value))} ondblclick={() => set(r.k, i, r.id)} />
+					<output>{shown(g[r.k][i])}</output>
+				</label>
 			{/each}
 		</div>
-		{#if suggestion && PRESETS[suggestion]}
-			<p class="sugg">Lit for <b>{suggestion}</b> <button class="link" onclick={() => preset(suggestion)}>apply to this clip</button></p>
-		{/if}
+	{/each}
+	<div class="grp">
+		<label class="m">
+			<span>Sat</span>
+			<input type="range" min="0" max="2" step="0.01" value={g.sat} oninput={(e) => setSat(Number(e.currentTarget.value))} ondblclick={() => setSat(1)} />
+			<output>{g.sat.toFixed(2)}</output>
+		</label>
+	</div>
+	<button class="ghost small" onclick={() => (film ? s.setMeta({ grade: null }) : s.setGrade(neutral()))} disabled={isNeutral(g)}>Reset the {film ? 'look' : 'grade'}</button>
+{/snippet}
 
-		{#each ROWS as r (r.k)}
-			<div class="grp">
-				<div class="gh">
-					<span>{r.label}</span>
-					<button class="link" onclick={() => resetRow(r.k)}>reset</button>
-				</div>
-				<label class="m">
-					<span>all</span>
-					<input type="range" min={r.min} max={r.max} step={r.step} value={mean(g[r.k])} oninput={(e) => set(r.k, 'all', Number(e.currentTarget.value))} ondblclick={() => resetRow(r.k)} />
-					<output>{shown(mean(g[r.k]))}</output>
-				</label>
-				{#each CH as c, i (c)}
-					<label class="ch {c}">
-						<span>{c}</span>
-						<input type="range" min={r.min} max={r.max} step={r.step} value={g[r.k][i]} oninput={(e) => set(r.k, i, Number(e.currentTarget.value))} ondblclick={() => set(r.k, i, r.id)} />
-						<output>{shown(g[r.k][i])}</output>
-					</label>
-				{/each}
-			</div>
-		{/each}
-		<div class="grp">
-			<label class="m">
-				<span>Sat</span>
-				<input type="range" min="0" max="2" step="0.01" value={g.sat} oninput={(e) => setSat(Number(e.currentTarget.value))} ondblclick={() => setSat(1)} />
-				<output>{g.sat.toFixed(2)}</output>
-			</label>
-		</div>
-		<button class="ghost small" onclick={() => (film ? s.setMeta({ grade: null }) : s.setGrade(neutral()))} disabled={isNeutral(g)}>Reset the {film ? 'look' : 'clip'}</button>
-	</fieldset>
+<aside class="grade">
+	<h2>Grade · layers</h2>
+	<p class="hint">{clip ? s.clipName(clip) : 'Select a picture clip for its layers; the film look applies to every shot.'}</p>
+
+	<ol class="stack" aria-label="Layers, the top applied last">
+		<li class="layer fixed" title="The output transform, applied last">
+			<span class="dot"></span><span class="nm">Output</span><span class="val">ACES 2.0 → Rec.709</span>
+		</li>
+
+		<li class="layer" class:open={open === 'look'} class:on={!!s.current?.grade?.look || !!s.current?.grade?.preset}>
+			<button class="head" onclick={() => (open = open === 'look' ? null : 'look')}>
+				<span class="dot"></span><span class="nm">Film look</span><span class="val">{s.current?.grade?.preset ?? (s.current?.grade?.look ? 'own' : '—')}</span>
+			</button>
+			{#if open === 'look'}<div class="body">{@render cdlControls()}</div>{/if}
+		</li>
+
+		{#if clip}
+			<li class="sect">Creative</li>
+			<li class="layer" class:open={open === 'creative'} class:on={!!clip.grade && !isNeutral(clip.grade)}>
+				<button class="head" onclick={() => (open = open === 'creative' ? null : 'creative')}>
+					<span class="dot"></span><span class="nm">Grade</span><span class="val">{presetOf(clip.grade) && presetOf(clip.grade) !== 'neutral' ? presetOf(clip.grade) : clip.grade ? 'CDL' : '—'}</span>
+				</button>
+				{#if open === 'creative'}<div class="body">{@render cdlControls()}</div>{/if}
+			</li>
+
+			<li class="sect">Balance · the shots to each other <button class="link" onclick={() => s.setBalance(null)} disabled={isNeutralBalance(bal)}>reset all</button></li>
+			{#each balanceTopDown as n (n.id)}
+				<li class="layer" class:open={open === n.id} class:on={layerOn(n)}>
+					<button class="head" onclick={() => (open = open === n.id ? null : n.id)}>
+						<span class="dot"></span><span class="nm">{n.label}</span><span class="val">{n.fields.map((f) => amount(bal[f.key], f.unit)).join(' · ')}</span>
+					</button>
+					{#if open === n.id}
+						<div class="body">
+							{#each n.fields as f (f.key)}
+								<label class="b">
+									<span>{f.label}</span>
+									<input type="range" min={f.min} max={f.max} step={f.step} value={bal[f.key]} oninput={(e) => setBal(f.key, Number(e.currentTarget.value))} ondblclick={() => setBal(f.key, 0)} />
+									<output>{bal[f.key].toFixed(2)}</output>
+								</label>
+							{/each}
+							<button class="link" onclick={() => resetLayer(n)} disabled={!layerOn(n)}>reset</button>
+						</div>
+					{/if}
+				</li>
+			{/each}
+
+			<li class="layer fixed" title="The input transform (CST) into ACEScct, applied first">
+				<span class="dot"></span><span class="nm">Input</span><span class="val">{profile ? profileInfo(profile).label : '—'} → ACEScct</span>
+			</li>
+		{/if}
+	</ol>
 
 	{#if clip && !isWorld(clip)}
 		<h3>Framing · {s.shape}</h3>
@@ -133,6 +200,96 @@
 </aside>
 
 <style>
+	.stack {
+		display: flex;
+		flex-direction: column;
+		gap: 3px;
+		margin: 0.4rem 0 0;
+		padding: 0;
+		list-style: none;
+	}
+
+	.sect {
+		display: flex;
+		justify-content: space-between;
+		margin: 0.5rem 0 0.1rem;
+		font-size: 0.62rem;
+		font-weight: 600;
+		letter-spacing: 0.1em;
+		text-transform: uppercase;
+		color: var(--dim);
+	}
+
+	.layer {
+		border: 1px solid var(--edge);
+		border-radius: 8px;
+		background: #fff;
+	}
+
+	.layer.fixed {
+		display: flex;
+		align-items: center;
+		gap: 0.45rem;
+		padding: 0.35rem 0.55rem;
+		background: var(--bg);
+		font-size: 0.74rem;
+		color: var(--dim);
+	}
+
+	.layer.open {
+		border-color: var(--ink);
+	}
+
+	.head {
+		display: flex;
+		align-items: center;
+		gap: 0.45rem;
+		width: 100%;
+		padding: 0.35rem 0.55rem;
+		border: 0;
+		background: none;
+		font: inherit;
+		font-size: 0.76rem;
+		text-align: left;
+		color: var(--ink);
+		cursor: pointer;
+	}
+
+	.dot {
+		flex-shrink: 0;
+		width: 0.5rem;
+		height: 0.5rem;
+		border-radius: 50%;
+		background: var(--edge);
+	}
+
+	.layer.on .dot {
+		background: var(--accent);
+	}
+
+	.nm {
+		font-weight: 600;
+	}
+
+	.val {
+		margin-left: auto;
+		overflow: hidden;
+		font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+		font-size: 0.66rem;
+		white-space: nowrap;
+		text-overflow: ellipsis;
+		color: var(--dim);
+	}
+
+	.body {
+		padding: 0.2rem 0.55rem 0.5rem;
+	}
+
+	label.b {
+		grid-template-columns: 5.2rem 1fr 3rem;
+	}
+
+
 	.grade {
 		grid-area: inspector;
 		min-height: 0;
@@ -158,15 +315,7 @@
 		border-top: 1px solid var(--edge);
 	}
 
-	fieldset {
-		margin: 0;
-		padding: 0;
-		border: 0;
-	}
 
-	fieldset:disabled {
-		opacity: 0.55;
-	}
 
 	.hint {
 		margin: 0 0 0.5rem;
@@ -174,53 +323,11 @@
 		color: var(--dim);
 	}
 
-	.target {
-		display: flex;
-		padding: 2px;
-		border: 1px solid var(--edge);
-		border-radius: 999px;
-		background: #fff;
-	}
 
-	.target button {
-		flex: 1;
-		padding: 0.25rem 0.5rem;
-		border: 0;
-		border-radius: 999px;
-		background: none;
-		font: inherit;
-		font-size: 0.74rem;
-		color: var(--dim);
-		cursor: pointer;
-	}
 
-	.target button.on {
-		background: var(--ink);
-		color: #fff;
-	}
 
-	.what {
-		display: flex;
-		gap: 0.4rem;
-		align-items: baseline;
-		margin: 0.5rem 0;
-		font-size: 0.78rem;
-		font-weight: 600;
-	}
 
-	.what b {
-		font-weight: 600;
-		color: var(--accent);
-	}
 
-	.what .on {
-		margin-left: auto;
-		padding: 0 0.35rem;
-		border-radius: 4px;
-		background: #f3e3c1;
-		font-size: 0.62rem;
-		color: #a8741a;
-	}
 
 	.presets,
 	.shapes {

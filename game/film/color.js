@@ -244,6 +244,76 @@ export const PRESETS = {
 	warm: { label: 'Warm (golden hour)', cdl: { slope: [1.05, 1.0, 0.93], offset: [0.006, 0.002, -0.004], power: [1, 1, 1], sat: 1.06 } }
 };
 
+// ── the balance: the fixed first nodes of every shot, before any creative grade ─────────────────────────────────────
+//
+// White balance → exposure → contrast → highlights / lows, in ACEScct, per shot: the shots of a scene levelled to each
+// other before the look is set. Every amount is in stops (contrast: the slope around mid grey, 0 = as shot), so an agent
+// can reason about it in the units a colourist thinks in; 0 everywhere is the picture as shot.
+
+/** @typedef {{ temp: number, tint: number, exposure: number, contrast: number, highlights: number, shadows: number }} Balance */
+
+/** @typedef {{ key: keyof Balance, label: string, min: number, max: number, step: number, unit: string }} BalanceField */
+/**
+ * The balance layers, in the order they apply, with their ranges (the studio's sliders, the API's clamp).
+ * @type {{ id: string, label: string, fields: BalanceField[] }[]}
+ */
+export const BALANCE_NODES = ([
+	{ id: 'wb', label: 'White balance', fields: [{ key: 'temp', label: 'Temperature', min: -2, max: 2, step: 0.01, unit: 'stops warm' }, { key: 'tint', label: 'Tint', min: -2, max: 2, step: 0.01, unit: 'stops magenta' }] },
+	{ id: 'exposure', label: 'Exposure', fields: [{ key: 'exposure', label: 'Exposure', min: -4, max: 4, step: 0.01, unit: 'stops' }] },
+	{ id: 'contrast', label: 'Contrast', fields: [{ key: 'contrast', label: 'Contrast', min: -0.8, max: 1.5, step: 0.01, unit: '' }] },
+	{ id: 'highlights', label: 'Highlights', fields: [{ key: 'highlights', label: 'Highlights', min: -3, max: 3, step: 0.01, unit: 'stops' }] },
+	{ id: 'shadows', label: 'Lows', fields: [{ key: 'shadows', label: 'Lows', min: -3, max: 3, step: 0.01, unit: 'stops' }] }
+]);
+
+/** @type {Balance} */
+export const NEUTRAL_BALANCE = { temp: 0, tint: 0, exposure: 0, contrast: 0, highlights: 0, shadows: 0 };
+/** One stop in ACEScct's log segment: (log2(x) + 9.72) / 17.52, so a doubling is 1/17.52. */
+export const STOP = 1 / 17.52;
+/** Mid grey (18 %) in ACEScct: the pivot of contrast, the line between lows and highlights. */
+export const PIVOT = 0.4135884;
+/** How far from mid grey the highlights and lows reach before they are fully in. */
+export const REACH = 0.35;
+
+const smooth = (/** @type {number} */ a, /** @type {number} */ b, /** @type {number} */ x) => {
+	const t = Math.min(1, Math.max(0, (x - a) / (b - a)));
+	return t * t * (3 - 2 * t);
+};
+
+/**
+ * The balance on one ACEScct pixel (the shader's, the render's kernel's): white balance as per-channel stops (red up and
+ * blue down by half the temperature each, green down by the tint), exposure, contrast around mid grey, then highlights
+ * and lows by the pixel's luma — the same for all three channels, so they change no hue.
+ * @param {Balance} b @param {[number, number, number]} rgb @returns {[number, number, number]}
+ */
+export function balance(b, rgb) {
+	let [r, g, bl] = rgb;
+	r += (b.temp / 2) * STOP;
+	bl -= (b.temp / 2) * STOP;
+	g -= b.tint * STOP;
+	const k = 1 + b.contrast;
+	const tone = (/** @type {number} */ x) => PIVOT + (x + b.exposure * STOP - PIVOT) * k;
+	[r, g, bl] = [tone(r), tone(g), tone(bl)];
+	const l = r * LUMA[0] + g * LUMA[1] + bl * LUMA[2];
+	const lift = (b.highlights * smooth(PIVOT, PIVOT + REACH, l) + b.shadows * (1 - smooth(PIVOT - REACH, PIVOT, l))) * STOP;
+	return [r + lift, g + lift, bl + lift];
+}
+
+/** A balance that changes nothing. */
+export const isNeutralBalance = (/** @type {Balance | null | undefined} */ b) => !b || Object.values(b).every((v) => v === 0);
+
+/** A balance as data, checked: anything missing is 0, every number finite and in its node's range; null when neutral. */
+export function cleanBalance(/** @type {any} */ b) {
+	if (!b || typeof b !== 'object') return null;
+	/** @type {Record<string, number>} */
+	const out = {};
+	for (const f of BALANCE_NODES.flatMap((n) => n.fields)) {
+		const v = Number(b[f.key]);
+		out[f.key] = Math.round(Math.min(f.max, Math.max(f.min, Number.isFinite(v) ? v : 0)) * 1000) / 1000;
+	}
+	const bal = /** @type {Balance} */ (/** @type {unknown} */ (out));
+	return isNeutralBalance(bal) ? null : bal;
+}
+
 /** A grade as data, checked: anything missing is neutral, every number finite and in a sane range. */
 export function cleanCdl(/** @type {any} */ g) {
 	if (!g || typeof g !== 'object') return null;

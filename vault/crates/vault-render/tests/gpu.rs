@@ -4,7 +4,7 @@
 use vault_render::{
     captions::Captions,
     gpu::{Extent, Gpu},
-    grade::preset,
+    grade::{Balance, preset},
     output::Lut3d,
     timeline::ClipFrame,
 };
@@ -71,6 +71,24 @@ fn cdl_on_the_gpu_is_color_js() {
         let want: Vec<[f64; 3]> = px.iter().map(|p| g.apply(*p)).collect();
         let d = max_diff(&got, &want);
         assert!(d < 2e-5, "{name}: off by {d}");
+    }
+}
+
+#[test]
+fn balance_on_the_gpu_is_color_js() {
+    let gpu = Gpu::new().unwrap();
+    let px = colours();
+    let cases = [
+        Balance { temp: 0.6, tint: -0.3, ..Default::default() },
+        Balance { exposure: -1.2, contrast: 0.25, ..Default::default() },
+        Balance { highlights: -1.5, shadows: 0.8, ..Default::default() },
+        Balance { temp: -0.4, tint: 0.2, exposure: 0.7, contrast: -0.2, highlights: 0.5, shadows: -0.6 },
+    ];
+    for b in cases {
+        let got = through(&gpu, &px, |gp, i| gp.balance(i, Some(&b)).unwrap());
+        let want: Vec<[f64; 3]> = px.iter().map(|p| b.apply(*p)).collect();
+        let d = max_diff(&got, &want);
+        assert!(d < 2e-5, "{b:?}: off by {d}");
     }
 }
 
