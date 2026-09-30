@@ -29,8 +29,13 @@
 	/** the live world is showing this frame */
 	const live = $derived(!!spec && s.world.state === 'ready' && s.world.isReady(spec));
 	const worldVideo = $derived(isWorld(pic) && !live ? (s.reelVideos[pic?.id ?? ''] ?? null) : null);
+	/** the grading still on screen (Grade, paused, on stills) */
+	const still = $derived(s.showStill ? s.stillOf(pic) : null);
+	/** @type {HTMLImageElement | null} */
+	let stillImg = $state(null);
 	const source = $derived.by(() => {
 		if (!pic) return null;
+		if (still) return stillImg;
 		if (isWorld(pic)) return live ? null : (worldVideo ?? stand);
 		if (s.pictureItem?.kind === 'image') return s.stillEl;
 		return s.reelVideos[pic.id] ?? null;
@@ -97,6 +102,7 @@
 	);
 	const fileNote = $derived.by(() => {
 		if (!pic || isWorld(pic) || s.pictureItem?.kind !== 'video') return null;
+		if (still) return `grading still · original at ${still.t.toFixed(1)} s${still.inside ? '' : ' (outside this cut)'}`;
 		const px = s.proxy(s.pictureItem);
 		if (s.onProxies) return px.hash ? 'proxy' : 'no proxy yet · original';
 		return 'original';
@@ -106,7 +112,14 @@
 <div class="monitor" bind:this={s.screen}>
 	<h2 class="mlabel">{label}</h2>
 	<div class="badges">
-		{#if fileNote}<span class="b" class:warn={fileNote.startsWith('no proxy')}>{fileNote}</span>{/if}
+		{#if s.tab === 'grade'}
+			<span class="src" role="tablist" aria-label="What the grade is judged on">
+				{#each [['stills', 'Still'], ['proxies', 'Proxy'], ['originals', 'Original']] as [k, label] (k)}
+					<button role="tab" aria-selected={s.gradeOn === k} class:on={s.gradeOn === k} onclick={() => (s.gradeOn = /** @type {'stills' | 'proxies' | 'originals'} */ (k))}>{label}</button>
+				{/each}
+			</span>
+		{/if}
+		{#if fileNote}<span class="b" class:warn={fileNote.startsWith('no proxy') || fileNote.includes('outside')}>{fileNote}</span>{/if}
 		{#if worldNote}<span class="b world">{worldNote}</span>{/if}
 		{#if s.preparing}<span class="b warn">preparing the world…</span>{/if}
 		{#if isWorld(pic) && s.world.error}<span class="b warn" title={s.world.error}>world: {s.world.error}</span>{/if}
@@ -132,10 +145,13 @@
 		{#if s.pictureItem?.kind === 'image'}
 			<img class="still" class:on={!gl} bind:this={s.stillEl} src={raw((s.stillItem ?? s.pictureItem).hash)} alt="" crossorigin="anonymous" />
 		{/if}
+		{#if still}
+			<img class="still" bind:this={stillImg} src={raw(still.hash)} alt="" crossorigin="anonymous" />
+		{/if}
 		<canvas class="stand" class:on={!gl && isWorld(pic) && !live && !worldVideo} bind:this={stand}></canvas>
 		<Viewer
 			{source}
-			profile={source && source === stand ? 'srgb' : s.profileOfClip(pic)}
+			profile={source && source === stand ? 'srgb' : still ? 'acescct' : s.profileOfClip(pic)}
 			grades={s.gradesOf(pic)}
 			balance={s.balanceOf(pic)}
 			luts={s.luts}
@@ -330,6 +346,30 @@
 	.frame img,
 	.frame canvas.stand {
 		opacity: 0;
+	}
+
+	.src {
+		display: inline-flex;
+		padding: 1px;
+		border: 1px solid var(--edge);
+		border-radius: 999px;
+		background: #fff;
+	}
+
+	.src button {
+		padding: 0.05rem 0.55rem;
+		border: 0;
+		border-radius: 999px;
+		background: none;
+		font: inherit;
+		font-size: 0.68rem;
+		color: var(--dim);
+		cursor: pointer;
+	}
+
+	.src button.on {
+		background: var(--ink);
+		color: #fff;
 	}
 
 	.slate {

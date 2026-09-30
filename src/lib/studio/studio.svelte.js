@@ -188,10 +188,11 @@ export class Studio {
 	loud = $state(null);
 	loudMeasuring = $state(false);
 	/**
-	 * Grade: the viewer shows the originals (conformed) or, faster, the proxies
-	 * @type {'originals' | 'proxies'}
+	 * Grade: what the viewer shows of each shot — its grading still (a frame of the original, 4K, through its CST into
+	 * ACEScct: the base corrections are judged on it), its proxy, or the original itself
+	 * @type {'stills' | 'proxies' | 'originals'}
 	 */
-	gradeOn = $state('originals');
+	gradeOn = $state('stills');
 	/**
 	 * Grade: the shape being checked
 	 * @type {Shape}
@@ -366,7 +367,35 @@ export class Studio {
 		return proxyFor(m, (h) => this.byHash.get(h));
 	}
 	/** Does this clip play from its proxy right now? Edit always; Grade when asked (the originals are heavy). */
-	onProxies = $derived(this.tab !== 'grade' || this.gradeOn === 'proxies');
+	onProxies = $derived(this.tab !== 'grade' || this.gradeOn !== 'originals');
+	/**
+	 * A shot's grading still (its original's meta.grade_still), when the vault has it: the file and the moment of the
+	 * original it shows.
+	 * @param {Clip | null | undefined} c @returns {{ hash: string, t: number, inside: boolean } | null}
+	 */
+	stillOf(c) {
+		if (!c?.hash) return null;
+		const orig = String(this.byHash.get(c.hash)?.meta?.proxy_of ?? c.hash);
+		const mid = c.in + c.dur / 2;
+		// its stills (the file's own and the ones made for shots of it): the one inside this shot nearest its middle
+		const all = this.library.filter((m) => m.meta?.grade_still_of === orig).map((m) => ({ hash: m.hash, t: Number(m.meta?.t ?? 0) }));
+		if (!all.length) return null;
+		const inside = all.filter((x) => x.t >= c.in && x.t <= c.in + c.dur).sort((a, b) => Math.abs(a.t - mid) - Math.abs(b.t - mid));
+		const best = inside[0] ?? all.sort((a, b) => Math.abs(a.t - mid) - Math.abs(b.t - mid))[0];
+		return { ...best, inside: !!inside[0] };
+	}
+	/** Grade opens: every shot its own grading still, made on this Mac in the background; the library read again after. */
+	async makeStills() {
+		if (!this.current) return;
+		try {
+			const r = /** @type {{ made: unknown[] }} */ (await command('grade_stills', { timeline: { ...$state.snapshot(this.current), clips: $state.snapshot(this.clips) } }));
+			if (r.made.length) await this.reloadLibrary();
+		} catch (e) {
+			console.warn('grading stills:', e);
+		}
+	}
+	/** Grade, paused, on stills: the shot under the playhead shows its grading still */
+	showStill = $derived(this.tab === 'grade' && this.gradeOn === 'stills' && !this.playing && !!this.stillOf(this.picture));
 	/**
 	 * The file a clip's picture plays from, or null for a still (or a world clip with no HD proxy).
 	 * @param {Clip} c @returns {string | null}
@@ -1135,6 +1164,44 @@ export class Studio {
 		this.changed();
 	}
 
+	/**
+	 * A cut by hand: the clip at `t` in two — the part before stays, the part after is a new clip that goes on from
+	 * there in its file (its fade in and out kept at the outer ends). Its linked partner is cut with it, the two new
+	 * halves linked again. Nothing happens within a frame of either end.
+	 * @param {string} id @param {number} t @param {boolean} [alone]
+	 */
+	split(id, t, alone = false) {
+		const c = this.clips.find((k) => k.id === id);
+		if (!c) return;
+		const at = this.snap(t);
+		if (at <= c.start + 1 / FPS || at >= c.start + c.dur - 1 / FPS) return;
+		const partner = alone ? null : this.partnerOf(c);
+		const link = Math.random().toString(36).slice(2, 10);
+		/** @param {Clip} k @returns {[Clip, Clip]} */
+		const cut = (k) => {
+			const d = at - k.start;
+			const { fout: _o, ...left } = k;
+			const { fin: _i, ...right } = k;
+			return [
+				{ ...left, dur: d },
+				{ ...right, id: Math.random().toString(36).slice(2, 10), start: at, in: k.in + d, dur: k.dur - d, ...(k.link && partner ? { link } : {}) }
+			];
+		};
+		const halves = [c, ...(partner && at > partner.start && at < partner.start + partner.dur ? [partner] : [])].map(cut);
+		const ids = new Set(halves.map(([l]) => l.id));
+		this.clips = [...this.clips.filter((k) => !ids.has(k.id)), ...halves.flat()];
+		this.selected = halves[0][1].id;
+		this.changed();
+		if (this.playing) this.schedule();
+	}
+	/** The blade at the playhead: the selected clip, else every clip under the playhead on V1. @param {boolean} [alone] */
+	splitAtPlayhead(alone = false) {
+		if (!this.canEdit) return;
+		const sel = this.sel;
+		const under = (/** @type {Clip} */ k) => this.time > k.start && this.time < k.start + k.dur;
+		const targets = sel && under(sel) ? [sel] : this.clips.filter((k) => k.track === 'V1' && under(k));
+		for (const k of targets) this.split(k.id, this.time, alone);
+	}
 	/**
 	 * Takes a clip off the timeline — and its linked partner (a video's picture and its sound go together), unless `alone`.
 	 * @param {string | null} id

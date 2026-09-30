@@ -83,6 +83,8 @@
 		else if (e.code === 'Home') s.seek(0);
 		else if (e.code === 'ArrowLeft') s.seek(s.time - (e.shiftKey ? 1 : 0.1));
 		else if (e.code === 'ArrowRight') s.seek(s.time + (e.shiftKey ? 1 : 0.1));
+		// the blade: B, or ⌘K as in the other editors — the selected clip (and its sound) cut at the playhead (Alt: alone)
+		else if ((e.code === 'KeyB' && !e.metaKey && !e.ctrlKey) || (e.code === 'KeyK' && (e.metaKey || e.ctrlKey))) (e.preventDefault(), s.splitAtPlayhead(e.altKey));
 		else if ((e.code === 'Delete' || e.code === 'Backspace') && s.canEdit) {
 			// a selected camera key goes first, then the clip
 			const c = s.sel;
@@ -151,7 +153,6 @@
 				<button class="ghost small" onclick={fullscreen} title="Full screen">⛶</button>
 				</div>
 			</div>
-			<StageBar {s} />
 		</header>
 
 		{#if s.tab === 'deliverables'}
@@ -202,6 +203,8 @@
 			<Transport {s} />
 			<Timeline {s} />
 		{/if}
+		<!-- the working steps, along the window's bottom edge -->
+		<footer class="tabs"><StageBar {s} /></footer>
 	</section>
 {/if}
 
@@ -237,12 +240,13 @@
 		z-index: 200;
 		display: grid;
 		grid-template-columns: 19rem 1fr 17rem;
-		grid-template-rows: auto minmax(0, 1fr) auto minmax(11rem, auto);
+		grid-template-rows: auto minmax(0, 1fr) auto minmax(11rem, auto) auto;
 		grid-template-areas:
 			'bar bar bar'
 			'bin monitor inspector'
 			'bin transport transport'
-			'bin timeline timeline';
+			'bin timeline timeline'
+			'tabs tabs tabs';
 		gap: 1px;
 		background: var(--edge);
 		color: var(--ink);
@@ -252,12 +256,13 @@
 	/* Grade: the program; the layers over V1 on the timeline, full width */
 	.studio.tab-grade {
 		grid-template-columns: 1fr;
-		grid-template-rows: auto minmax(0, 1fr) auto auto;
+		grid-template-rows: auto minmax(0, 1fr) auto auto auto;
 		grid-template-areas:
 			'bar'
 			'monitor'
 			'transport'
-			'timeline';
+			'timeline'
+			'tabs';
 	}
 
 	.studio.tab-render {
@@ -271,18 +276,20 @@
 			'bar bar'
 			'bin monitor'
 			'transport transport'
-			'timeline timeline';
+			'timeline timeline'
+			'tabs tabs';
 	}
 
 	/* Audio: the program over the sound tracks, which carry the levels themselves */
 	.studio.tab-audio {
 		grid-template-columns: 1fr;
-		grid-template-rows: auto minmax(0, 1fr) auto minmax(14rem, auto);
+		grid-template-rows: auto minmax(0, 1fr) auto minmax(14rem, auto) auto;
 		grid-template-areas:
 			'bar'
 			'monitor'
 			'transport'
-			'timeline';
+			'timeline'
+			'tabs';
 	}
 
 	/* Ingest and Library: one panel under the bar, no transport or timeline */
@@ -290,10 +297,18 @@
 	.studio.tab-library,
 	.studio.tab-deliverables {
 		grid-template-columns: 1fr;
-		grid-template-rows: auto minmax(0, 1fr);
+		grid-template-rows: auto minmax(0, 1fr) auto;
 		grid-template-areas:
 			'bar'
-			'main';
+			'main'
+			'tabs';
+	}
+
+	/* the working steps, centred along the bottom edge */
+	.tabs {
+		grid-area: tabs;
+		padding: 0.35rem 1rem 0.45rem;
+		background: var(--panel);
 	}
 
 	.bar {
@@ -466,13 +481,13 @@
 		.studio.tab-grade,
 		.studio.tab-render {
 			grid-template-columns: 1fr;
-			grid-template-rows: auto 30vh auto minmax(10rem, 1fr) 30vh;
-			grid-template-areas: 'bar' 'monitor' 'transport' 'timeline' 'bin';
+			grid-template-rows: auto 30vh auto minmax(10rem, 1fr) 30vh auto;
+			grid-template-areas: 'bar' 'monitor' 'transport' 'timeline' 'bin' 'tabs';
 		}
 
 		/* source above program */
 		.studio:has(.monitors.split) {
-			grid-template-rows: auto 64vh auto minmax(10rem, 1fr) 30vh;
+			grid-template-rows: auto 64vh auto minmax(10rem, 1fr) 30vh auto;
 		}
 
 		.monitors.split {

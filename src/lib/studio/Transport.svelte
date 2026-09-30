@@ -12,7 +12,7 @@
 		await s.screen?.requestFullscreen().catch(() => {});
 		if (!s.playing) await s.play();
 	}
-	const keys = $derived(s.tab === 'edit' ? 'Space play · I / O mark the source · Delete removes · ← → nudge' : 'Space play · click a clip to select it');
+	const keys = $derived(s.tab === 'edit' ? 'Space play · B or ⌘K cuts at the playhead · I / O mark the source · Delete removes · ← → nudge' : 'Space play · click a clip to select it');
 </script>
 
 <div class="transport">
@@ -26,6 +26,9 @@
 		<button class="pill" onclick={() => s.preparePlayback(20000)} disabled={s.world.state !== 'ready' || s.preparing} title="Load every world shot this timeline touches, and keep it loaded">
 			{s.preparing ? 'Preparing…' : s.world.state === 'ready' ? '◎ Prepare' : s.world.state === 'loading' ? 'World…' : 'Stand-ins'}
 		</button>
+	{/if}
+	{#if s.canEdit}
+		<button class="ic" onclick={() => s.splitAtPlayhead()} aria-label="Cut at the playhead" title="Cut the selected clip at the playhead (B or ⌘K; Alt: without its linked sound)">✂</button>
 	{/if}
 	{#if s.tab === 'edit'}
 		<button class="pill" class:on={s.previewGrade} onclick={() => (s.previewGrade = !s.previewGrade)} title="Show every shot's balance and grade on the proxies">Grade</button>

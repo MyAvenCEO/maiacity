@@ -54,6 +54,10 @@ pub trait Library {
     fn original_of(&self, hash: &str) -> String {
         self.media(hash).and_then(|m| m.meta.get("proxy_of").and_then(Value::as_str).map(String::from)).unwrap_or_else(|| hash.to_string())
     }
+    /// An original's grading stills (files whose meta.grade_still_of names it), each a frame of it at its meta.t.
+    fn stills_of(&self, _original: &str) -> Vec<Media> {
+        Vec::new()
+    }
 }
 
 /// A world clip's plate for one shape: an ACEScct movie of the clip's stretch of its shot (clip.in … clip.in + dur),
@@ -859,9 +863,14 @@ pub fn measure_sound(t: &Timeline, lib: &dyn Library) -> Result<Value> {
 fn grade_still_of(lib: &dyn Library, c: &Clip) -> Option<Media> {
     let hash = c.hash.as_deref()?;
     let original = lib.media(&lib.original_of(hash)).or_else(|| lib.media(hash))?;
-    let still = lib.media(original.meta.get("grade_still")?.as_str()?)?;
-    let t = still.meta.get("t").and_then(Value::as_f64)?;
-    (t >= c.in_ && t <= c.in_ + c.dur).then_some(still)
+    let mut stills = lib.stills_of(&original.hash);
+    if let Some(s) = original.meta.get("grade_still").and_then(Value::as_str).and_then(|h| lib.media(h)) {
+        stills.push(s);
+    }
+    // the one inside the shot nearest its middle (a shot's own still, made for it)
+    let mid = c.in_ + c.dur / 2.0;
+    let t = |m: &Media| m.meta.get("t").and_then(Value::as_f64);
+    stills.into_iter().filter(|m| t(m).is_some_and(|t| t >= c.in_ && t <= c.in_ + c.dur)).min_by(|a, b| (t(a).unwrap() - mid).abs().total_cmp(&(t(b).unwrap() - mid).abs()))
 }
 
 /// A shot's grading still: one frame of the original at `at` seconds, through its journey (CST) into ACEScct,
