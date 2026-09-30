@@ -469,6 +469,8 @@ pub struct PlaybackArgs {
     pub frames: Option<usize>,
     /// the shape (default 16:9)
     pub shape: Option<String>,
+    /// true: play the originals (as Picture: Original does), else each shot's proxy
+    pub originals: Option<bool>,
 }
 
 #[derive(Deserialize, schemars::JsonSchema)]
@@ -1365,7 +1367,7 @@ impl Studio {
     async fn player_frame(&self, Parameters(a): Parameters<PlaybackArgs>) -> rmcp::model::CallToolResult {
         let r = async {
             let t = self.api("GET", &format!("/api/timelines/{}", a.timeline), None).await?;
-            crate::player::playback_frames(&self.vault, t, a.t, a.frames.unwrap_or(15), a.shape).await
+            crate::player::playback_frames(&self.vault, t, a.t, a.frames.unwrap_or(15), a.shape, a.originals == Some(true)).await
         };
         match r.await {
             Ok((info, jpg)) => rmcp::model::CallToolResult::success(vec![

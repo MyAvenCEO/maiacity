@@ -139,13 +139,13 @@ pub(crate) async fn program(
 /// one after another as AVFoundation hands them to the player, each timed; then the composition played by an AVPlayer
 /// for two seconds and the frames it hands out counted (30 a second is real time). The first frame as a JPEG (tagged
 /// Rec.709, as the Grade viewer's stills are).
-pub(crate) async fn playback_frames(vault: &std::sync::Arc<vault_core::Vault>, timeline: Value, t: f64, n: usize, shape: Option<String>) -> Res<(Value, Vec<u8>)> {
+pub(crate) async fn playback_frames(vault: &std::sync::Arc<vault_core::Vault>, timeline: Value, t: f64, n: usize, shape: Option<String>, originals: bool) -> Res<(Value, Vec<u8>)> {
     let tl: vault_render::Timeline = serde_json::from_value(timeline).map_err(err)?;
     let all = vault.catalog.list().await.map_err(|e| format!("{e:#}"))?;
     let (mut files, mut profiles) = (HashMap::new(), HashMap::new());
     for c in tl.clips.iter().filter(|c| c.track == "V1" && !c.is_world()) {
         let Some(h) = &c.hash else { continue };
-        let proxy = all.iter().find(|m| m.kind == "video" && m.meta.get("role").and_then(Value::as_str) == Some("proxy") && m.meta.get("proxy_of").and_then(Value::as_str) == Some(h.as_str()));
+        let proxy = (!originals).then(|| all.iter().find(|m| m.kind == "video" && m.meta.get("role").and_then(Value::as_str) == Some("proxy") && m.meta.get("proxy_of").and_then(Value::as_str) == Some(h.as_str()))).flatten();
         match proxy {
             Some(p) => {
                 files.insert(c.id.clone(), p.hash.clone());
@@ -159,7 +159,7 @@ pub(crate) async fn playback_frames(vault: &std::sync::Arc<vault_core::Vault>, t
         }
     }
     let shape = shape.unwrap_or_else(|| "16:9".into());
-    let program = program(vault, &tl, &shape, &files, &profiles, Some(1280)).await?;
+    let program = program(vault, &tl, &shape, &files, &profiles, Some(1600)).await?;
     let used: Value = serde_json::json!(files);
     let n = n.clamp(1, 60);
     tauri::async_runtime::spawn_blocking(move || -> anyhow::Result<(Value, Vec<u8>)> {
@@ -188,6 +188,7 @@ pub(crate) async fn playback_frames(vault: &std::sync::Arc<vault_core::Vault>, t
         // seconds, and the frames it hands out are counted — what it cannot make in time, it drops
         // SAFETY: AVPlayer and its item made and played on this thread (AVFoundation allows it off the main thread;
         // objc2 asks for the marker only to be careful), let go before it returns
+        let mut tags: Option<Value> = None;
         let played = unsafe {
             let mtm = MainThreadMarker::new_unchecked();
             let item = AVPlayerItem::playerItemWithAsset(&comp, mtm);
@@ -210,17 +211,28 @@ pub(crate) async fn playback_frames(vault: &std::sync::Arc<vault_core::Vault>, t
             while start.elapsed().as_secs_f64() < settle + window {
                 let now = item.currentTime();
                 if out.hasNewPixelBufferForItemTime(now) {
-                    let _ = out.copyPixelBufferForItemTime_itemTimeForDisplay(now, std::ptr::null_mut());
+                    let pb = out.copyPixelBufferForItemTime_itemTimeForDisplay(now, std::ptr::null_mut());
                     if start.elapsed().as_secs_f64() >= settle {
                         delivered += 1;
+                    }
+                    // what the player's layer is handed: the frame's colour tags, the colour space they name
+                    if tags.is_none()
+                        && let Some(pb) = pb
+                    {
+                        let d = objc2_core_video::CVBufferCopyAttachments(&pb, objc2_core_video::CVAttachmentMode::ShouldPropagate);
+                        let space = d.as_ref().and_then(|d| objc2_core_video::CVImageBufferCreateColorSpaceFromAttachments(d));
+                        let name = space.as_ref().and_then(|s| objc2_core_graphics::CGColorSpace::name(Some(s))).map(|n| n.to_string());
+                        let fmt = objc2_core_video::CVPixelBufferGetPixelFormatType(&pb);
+                        tags = Some(serde_json::json!({ "attachments": d.map(|d| format!("{d:?}")), "space": name, "pixel_format": String::from_utf8_lossy(&fmt.to_be_bytes()).to_string() }));
                     }
                 }
                 std::thread::sleep(std::time::Duration::from_millis(3));
             }
             player.setRate(0.0);
             player.replaceCurrentItemWithPlayerItem(None);
-            delivered as f64 / window
+            (delivered as f64 / window, tags)
         };
+        let (played, tags) = played;
         let cg = first.ok_or_else(|| anyhow::anyhow!("no frame"))?;
         let img = gpu.cg_image(&cg);
         let e = vault_render::gpu::Extent::ext(&*img);
@@ -233,7 +245,7 @@ pub(crate) async fn playback_frames(vault: &std::sync::Arc<vault_core::Vault>, t
         Ok((
             serde_json::json!({ "t": t, "played_fps": (played * 10.0).round() / 10.0, "real_time": played >= fps * 0.95,
                 "grabbed": { "frames": n, "first_ms": (times[0] * 10.0).round() / 10.0, "ms_per_frame": (mean * 10.0).round() / 10.0, "worst_ms": (worst * 10.0).round() / 10.0, "note": "each frame sought and decoded on its own: slower than playing" },
-                "files": used }),
+                "frame_tags": tags, "files": used }),
             jpg,
         ))
     })
