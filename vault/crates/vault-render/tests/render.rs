@@ -66,8 +66,12 @@ impl Library for Lib {
     fn media(&self, hash: &str) -> Option<Media> {
         self.0.get(hash).map(|x| x.0.clone())
     }
-    fn file(&self, hash: &str) -> Result<PathBuf> {
-        self.0.get(hash).map(|x| x.1.clone()).ok_or_else(|| anyhow::anyhow!("no {hash}"))
+    /// As the app serves them: the bytes read in place (here from memory, through AVFoundation's resource loader),
+    /// never the file's path.
+    fn file(&self, hash: &str) -> Result<vault_media::Source> {
+        let path = self.0.get(hash).map(|x| x.1.clone()).ok_or_else(|| anyhow::anyhow!("no {hash}"))?;
+        let ext = path.extension().map(|e| e.to_string_lossy().into_owned()).unwrap_or_default();
+        Ok(vault_media::Source::blob(std::sync::Arc::new(std::fs::read(&path)?), format!("{hash}.{ext}")))
     }
 }
 
@@ -258,8 +262,8 @@ fn the_mix_ducks_fades_and_levels() {
     let clip = |id: &str, track: &str, start: f64, dur: f64, vol: f64, fin: Option<f64>| -> Clip {
         serde_json::from_value(json!({ "id": id, "track": track, "start": start, "in": 0, "dur": dur, "vol": vol, "fin": fin, "fout": fin })).unwrap()
     };
-    let m = AudioClip { clip: clip("m", "A2", 0.0, 6.0, 1.0, Some(0.0)), file: music.clone() };
-    let v = AudioClip { clip: clip("v", "A1", 2.0, 2.0, 1.0, Some(0.0)), file: voice.clone() };
+    let m = AudioClip { clip: clip("m", "A2", 0.0, 6.0, 1.0, Some(0.0)), file: music.clone().into() };
+    let v = AudioClip { clip: clip("v", "A1", 2.0, 2.0, 1.0, Some(0.0)), file: voice.clone().into() };
     let read = |w: &Path| -> Vec<f32> {
         let b = std::fs::read(w).unwrap();
         b[58..].chunks(4).map(|c| f32::from_le_bytes(c.try_into().unwrap())).collect()
@@ -286,7 +290,7 @@ fn the_mix_ducks_fades_and_levels() {
     // the voice starts at 2 s to the sample, nothing before it
     assert!(rms(&a, 0.0, 1.99) < 1e-6 && rms(&a, 2.01, 3.9) > 0.1);
     // fades: the default on a music clip is 0.8 s up
-    let faded = mix(&[AudioClip { clip: clip("m", "A2", 0.0, 6.0, 1.0, None), file: music.clone() }], 6.0, None, &dir.join("fade"), &mut |_| {}).unwrap();
+    let faded = mix(&[AudioClip { clip: clip("m", "A2", 0.0, 6.0, 1.0, None), file: music.clone().into() }], 6.0, None, &dir.join("fade"), &mut |_| {}).unwrap();
     let f = read(&faded.wav);
     assert!(rms(&f, 0.0, 0.2) < 0.5 * rms(&f, 1.0, 1.2));
     // levelled to −23 LUFS, whatever it came in at

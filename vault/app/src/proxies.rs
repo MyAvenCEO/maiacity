@@ -255,32 +255,18 @@ async fn make(vault: &Vault, hex: &str, name: &str, source: PathBuf) -> Result<(
     let hash: iroh_blobs::Hash = hex.parse().map_err(|e| format!("{e}"))?;
     let original = vault.catalog.meta(hash).await.map_err(|e| format!("{e:#}"))?.ok_or("no such file")?;
     set(hex, name, "probing", 0.0);
-    // the source while the card is still there; else the vault's own copy
-    let path = if source.exists() {
-        source
+    // the source while the card is still there; else the vault's own bytes, read in place (never copied out)
+    let path: vault_media::Source = if source.exists() {
+        source.into()
     } else {
-        // the file's own extension: AVFoundation tells a movie by it (a ".src" has "no video track")
-        let ext = std::path::Path::new(&original.original_name).extension().map(|e| e.to_string_lossy().to_lowercase()).unwrap_or_else(|| "mov".into());
-        let p = vault.ingest_dir().join(format!("{hex}.src.{ext}"));
-        vault.store.blobs().export(hash, &p).await.map_err(|e| format!("{e:#}"))?;
-        p
-    };
-    let cleanup = |p: &PathBuf| {
-        if p.file_name().is_some_and(|n| n.to_string_lossy().contains(".src.")) {
-            std::fs::remove_file(p).ok();
-        }
+        crate::blob::source(vault, hash, &original.original_name).await.map_err(|e| format!("{e:#}"))?
     };
     let set_by_hand = original.meta.pointer("/color/override").and_then(|v| v.as_str()).map(String::from);
     // what it is: a movie (probed), a still, or an EXR sequence — and its colour, told from the file
     let still = original.kind == "image";
     let seq = sequence(&original);
     let profile = if still || seq {
-        let head = std::fs::File::open(&path).and_then(|f| {
-            use std::io::Read;
-            let mut b = Vec::new();
-            f.take(1 << 16).read_to_end(&mut b)?;
-            Ok(b)
-        });
+        let head = path.head(1 << 16);
         // a sequence was given its colour when it was packed; a still's EXR header names its linear space; else sRGB
         let (told, from) = match (seq, original.meta.pointer("/color/profile").and_then(|v| v.as_str())) {
             (true, Some(p)) => (p.to_string(), "given when packed"),
@@ -298,7 +284,7 @@ async fn make(vault: &Vault, hex: &str, name: &str, source: PathBuf) -> Result<(
         set_by_hand.clone().unwrap_or(told)
     } else {
         let probe_path = path.clone();
-        let probe = tokio::task::spawn_blocking(move || vault_media::probe(&probe_path)).await.map_err(|e| e.to_string())?.map_err(|e| format!("{e:#}"))?;
+        let probe = tokio::task::spawn_blocking(move || vault_media::probe(probe_path)).await.map_err(|e| e.to_string())?.map_err(|e| format!("{e:#}"))?;
         let told = vault_media::detect(&probe);
         // the start timecode is the vault server's to read (transcribe.rs, from the tmcd track): kept through a new probe
         let mut probe = serde_json::to_value(&probe).map_err(|e| e.to_string())?;
@@ -315,12 +301,10 @@ async fn make(vault: &Vault, hex: &str, name: &str, source: PathBuf) -> Result<(
         set_by_hand.clone().unwrap_or_else(|| told.profile.clone())
     };
     if profile == "unknown" {
-        cleanup(&path);
         vault.catalog.describe(hash, &json!({ "meta": { "proxy": "waiting: its colour cannot be told — set it by hand, or add a colour journey for this kind of source" } })).await.ok();
         return Ok(());
     }
     if !journey(&profile) && profile != "from its frames" {
-        cleanup(&path);
         vault.catalog.describe(hash, &json!({ "meta": { "proxy": format!("waiting: no colour journey from {profile} into ACEScct yet") } })).await.ok();
         return Ok(());
     }
@@ -329,15 +313,14 @@ async fn make(vault: &Vault, hex: &str, name: &str, source: PathBuf) -> Result<(
     if still {
         let p = path.clone();
         let (w, h) = tokio::task::spawn_blocking(move || -> anyhow::Result<(u32, u32)> {
-            Ok(vault_media::gpu::size_of(&*vault_media::gpu::load_image(&std::fs::read(&p)?)?))
+            Ok(vault_media::gpu::size_of(&*vault_media::gpu::load_image(&p.read_all()?)?))
         })
         .await
         .map_err(|e| e.to_string())?
         .map_err(|e| format!("{e:#}"))?;
         let exr = profile != "srgb";
         if !vault_media::still::still_needs_proxy(exr, w, h) {
-            cleanup(&path);
-            vault.catalog.describe(hash, &json!({ "meta": { "proxy": format!("none: a {w}×{h} display still needs none") } })).await.ok();
+                vault.catalog.describe(hash, &json!({ "meta": { "proxy": format!("none: a {w}×{h} display still needs none") } })).await.ok();
             return Ok(());
         }
     }
@@ -350,11 +333,11 @@ async fn make(vault: &Vault, hex: &str, name: &str, source: PathBuf) -> Result<(
     tokio::task::spawn_blocking(move || -> anyhow::Result<()> {
         let mut told = |done: f64| set(&of, &nm, "making", done);
         if still {
-            vault_media::still::make_still_proxy(&src, &o, &pf)?;
+            vault_media::still::make_still_proxy(src, &o, &pf)?;
         } else if seq {
-            vault_media::still::make_sequence_proxy(&src, &o, (pf != "from its frames").then_some(pf.as_str()), fps, &mut told)?;
+            vault_media::still::make_sequence_proxy(src, &o, (pf != "from its frames").then_some(pf.as_str()), fps, &mut told)?;
         } else {
-            vault_media::make_proxy(&src, &o, &pf, &mut told)?;
+            vault_media::make_proxy(src, &o, &pf, &mut told)?;
         }
         Ok(())
     })
@@ -384,7 +367,6 @@ async fn make(vault: &Vault, hex: &str, name: &str, source: PathBuf) -> Result<(
             tracing::warn!("grading still of {hex}: {e}");
         }
     }
-    cleanup(&path);
     Ok(())
 }
 
@@ -394,12 +376,12 @@ const STILL_WIDTH: u32 = 3840;
 /// A video original's grading still: its middle frame, through its journey (CST) into ACEScct, 3840 wide, a 16-bit PNG
 /// of ACEScct code values (vault_render `grading_still`) — beside its proxy (class proxy, the same story), named on
 /// the original as `meta.grade_still`. The balance is measured and judged on it at full quality.
-async fn grading_still(vault: &Vault, hex: &str, name: &str, path: &std::path::Path, profile: &str) -> Result<(), String> {
+async fn grading_still(vault: &Vault, hex: &str, name: &str, path: &vault_media::Source, profile: &str) -> Result<(), String> {
     grading_still_at(vault, hex, name, path, profile, None).await
 }
 
 /// The file's grading still and preview at `at` (the frame the analysis marked as its best), else its middle frame.
-async fn grading_still_at(vault: &Vault, hex: &str, name: &str, path: &std::path::Path, profile: &str, at: Option<f64>) -> Result<(), String> {
+async fn grading_still_at(vault: &Vault, hex: &str, name: &str, path: &vault_media::Source, profile: &str, at: Option<f64>) -> Result<(), String> {
     let hash: iroh_blobs::Hash = hex.parse().map_err(|e| format!("{e}"))?;
     let original = vault.catalog.meta(hash).await.map_err(|e| format!("{e:#}"))?.ok_or("no such file")?;
     let seconds = ["/probe/duration", "/duration"].iter().find_map(|p| original.meta.pointer(p).and_then(|d| d.as_f64())).unwrap_or(1.0);
@@ -408,8 +390,8 @@ async fn grading_still_at(vault: &Vault, hex: &str, name: &str, path: &std::path
     let stem = std::path::Path::new(name).file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_else(|| hex[..12].to_string());
     let out = vault.ingest_dir().join(format!("{stem}.grade.png"));
     let small = vault.ingest_dir().join(format!("{stem}.preview.jpg"));
-    let (src, o, pf, sm) = (path.to_path_buf(), out.clone(), profile.to_string(), small.clone());
-    let (w, h) = tokio::task::spawn_blocking(move || vault_render::grading_still_and_preview(&src, &pf, at, STILL_WIDTH, &o, Some((&sm, PREVIEW_WIDTH, crate::render::odt() as &dyn vault_render::Output))))
+    let (src, o, pf, sm) = (path.clone(), out.clone(), profile.to_string(), small.clone());
+    let (w, h) = tokio::task::spawn_blocking(move || vault_render::grading_still_and_preview(src, &pf, at, STILL_WIDTH, &o, Some((&sm, PREVIEW_WIDTH, crate::render::odt() as &dyn vault_render::Output))))
         .await
         .map_err(|e| e.to_string())?
         .map_err(|e| format!("{e:#}"))?;
@@ -490,13 +472,11 @@ async fn backfill_still_at(vault: Arc<Vault>, hex: String, at: Option<f64>) {
     set(&k, &name, "grading still", 0.0);
     let told = |p: &str| original.meta.pointer(p).and_then(|v| v.as_str()).filter(|s| !s.is_empty());
     let profile = told("/color/override").or_else(|| told("/color/profile")).unwrap_or("").to_string();
-    let ext = std::path::Path::new(&name).extension().map(|e| e.to_string_lossy().to_lowercase()).unwrap_or_else(|| "mov".into());
-    let src = vault.ingest_dir().join(format!("{hex}.src.{ext}"));
-    let r = match vault.store.blobs().export(hash, &src).await {
-        Ok(_) => grading_still_at(&vault, &hex, &name, &src, &profile, at).await,
-        Err(e) => Err(format!("the original is not on this Mac: {e:#}")),
+    // the original read in place from the vault's blob store, never copied out
+    let r = match crate::blob::source(&vault, hash, &name).await {
+        Ok(src) => grading_still_at(&vault, &hex, &name, &src, &profile, at).await,
+        Err(e) => Err(format!("{e:#}")),
     };
-    std::fs::remove_file(&src).ok();
     clear(&k);
     if let Err(e) = r {
         tracing::warn!("grading still of {hex}: {e}");

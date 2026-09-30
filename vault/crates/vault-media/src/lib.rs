@@ -3,12 +3,14 @@
 //! the iPhone's Apple Log 2 included), Core Image and Metal scale and transform colour. Nothing to install.
 
 pub mod audio;
+pub mod blob_asset;
 pub mod color;
 pub mod frames;
 pub mod gpu;
 pub mod mp4;
 pub mod probe;
 pub mod proxy;
+pub mod source;
 pub mod still;
 
 /// The colour maths live in their own platform-free crate (the vault server needs them too); here under their old names.
@@ -18,3 +20,4 @@ pub use color::{ColorInfo, detect};
 pub use frames::FrameWriter;
 pub use probe::{Probe, probe};
 pub use proxy::{Proxy, make_proxy, proxy_size};
+pub use source::{ByteSource, FileSource, Source};

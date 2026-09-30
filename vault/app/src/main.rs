@@ -6,6 +6,7 @@
 mod analysis;
 mod asks;
 mod auth;
+mod blob;
 mod drives;
 mod local;
 mod mcp;

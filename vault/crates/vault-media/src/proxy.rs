@@ -14,7 +14,7 @@ use objc2::{rc::Retained, runtime::AnyObject};
 use objc2_core_foundation::CFRetained;
 use objc2_av_foundation::{
     AVAssetReader, AVAssetReaderOutput, AVAssetReaderStatus, AVAssetReaderTrackOutput, AVAssetTrack, AVAssetWriter,
-    AVAssetWriterInput, AVAssetWriterStatus, AVFileTypeMPEG4, AVMediaTypeAudio, AVMediaTypeVideo, AVURLAsset,
+    AVAssetWriterInput, AVAssetWriterStatus, AVFileTypeMPEG4, AVMediaTypeAudio, AVMediaTypeVideo,
 };
 use objc2_av_foundation::AVAssetWriterInputPixelBufferAdaptor;
 use objc2_core_media::{CMSampleBuffer, CMTime};
@@ -25,7 +25,7 @@ use objc2_core_video::{
 };
 use objc2_foundation::{NSDictionary, NSNumber, NSString, NSURL};
 
-use crate::{gpu::Grader, mp4, probe::probe};
+use crate::{Source, gpu::Grader, mp4, probe::probe};
 
 /// The working space every proxy is in.
 pub const WORKING: &str = "acescct";
@@ -61,17 +61,18 @@ fn dict(pairs: &[(&NSString, &AnyObject)]) -> Retained<NSDictionary<NSString, An
 
 /// Make the ACEScct proxy of the movie at `src` — whose colour is `source` (a profile `cst::journey` knows) — into
 /// `out` (an .mp4). `progress` gets 0…1.
-pub fn make_proxy(src: &Path, out: &Path, source: &str, progress: &mut dyn FnMut(f64)) -> Result<Proxy> {
+/// `src`: a path, or a `Source` read in place (the vault's blob, by hash).
+pub fn make_proxy(src: impl Into<Source>, out: &Path, source: &str, progress: &mut dyn FnMut(f64)) -> Result<Proxy> {
+    let src: Source = src.into();
     let grader = Grader::for_profile(source)?.with_context(|| format!("no colour journey from {source} into ACEScct"))?;
-    let info = probe(src)?;
+    let info = probe(&src)?;
     let (w, h) = proxy_size(info.width, info.height);
     let _ = std::fs::remove_file(out);
-    let src = std::fs::canonicalize(src)?;
     let out_abs = std::path::absolute(out)?;
 
     // SAFETY: AVFoundation objects we create and own; the loop below only calls them from this thread.
     unsafe {
-        let asset = AVURLAsset::URLAssetWithURL_options(&NSURL::fileURLWithPath(&NSString::from_str(&src.to_string_lossy())), None);
+        let asset = src.asset()?;
         #[allow(deprecated)]
         let video_track: Retained<AVAssetTrack> = Retained::cast_unchecked(
             asset.tracksWithMediaType(AVMediaTypeVideo.context("video")?).firstObject().context("no video track")?,
@@ -99,7 +100,7 @@ pub fn make_proxy(src: &Path, out: &Path, source: &str, progress: &mut dyn FnMut
             o
         });
         if !reader.startReading() {
-            bail!("cannot read {}: {:?}", src.display(), reader.error());
+            bail!("cannot read {src}: {:?}", reader.error());
         }
 
         // ── writing: HEVC Main10 in hardware, from the GPU's ACEScct frames — rendered straight into 10-bit 4:2:0 with the
