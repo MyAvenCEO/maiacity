@@ -13,7 +13,7 @@
  * graded, rendered — a version (one more at every unlock), its colour pipeline and the whole film's look.
  */
 import { db } from "./pg";
-import { cleanBalance, cleanCdl } from "../../game/film/color.js";
+import { cleanBalance, cleanCdl, cleanLook } from "../../game/film/color.js";
 import { missingShots } from "./shots";
 
 export class TimelineError extends Error {
@@ -56,7 +56,7 @@ export type Balance = { temp: number; tint: number; exposure: number; contrast: 
 export type Script = { scene?: string; label?: string; description?: string; notes?: string; size?: string };
 export type Stage = "edit" | "locked" | "graded" | "rendered";
 export type Color = { working: "acescct"; output: string };
-export type Grade = { look: Cdl | null; preset?: string } | null;
+export type Grade = { look: Cdl | null; preset?: string; film?: object; scenes?: Record<string, object> } | null;
 export type Timeline = {
   id: string; name: string; project: string | null; variant: string | null; description: string | null; aspect: string; tags: string[]; clips: Clip[];
   stage: Stage; version: number; color: Color; grade: Grade; created: string; updated: string;
@@ -153,10 +153,19 @@ function cleanColor(v: any): Color {
 
 function cleanGrade(v: any): Grade {
   if (v === null) return null;
-  if (typeof v !== "object" || Array.isArray(v)) throw new TimelineError("The film's grade is { look, preset? }.");
+  if (typeof v !== "object" || Array.isArray(v)) throw new TimelineError("The film's grade is { look, preset?, film?, scenes? }.");
   if (v.preset !== undefined && v.preset !== null && !PRESETS.includes(String(v.preset))) throw new TimelineError(`A preset is one of ${PRESETS.join(", ")}.`);
   const look = v.look === undefined || v.look === null ? null : (cleanCdl(v.look) as Cdl | null);
-  return { look, ...(v.preset ? { preset: String(v.preset) } : {}) };
+  // the film's look and each scene's (by the scene its clips name), after every shot's own grade
+  const film = cleanLook(v.film);
+  const scenes: Record<string, object> = {};
+  if (v.scenes && typeof v.scenes === "object" && !Array.isArray(v.scenes)) {
+    for (const [name, l] of Object.entries(v.scenes).slice(0, 64)) {
+      const c = cleanLook(l);
+      if (c && name.trim()) scenes[name.trim().slice(0, 120)] = c;
+    }
+  }
+  return { look, ...(v.preset ? { preset: String(v.preset) } : {}), ...(film ? { film } : {}), ...(Object.keys(scenes).length ? { scenes } : {}) };
 }
 
 type Body = { name?: unknown; project?: unknown; variant?: unknown; description?: unknown; aspect?: unknown; tags?: unknown; clips?: unknown; stage?: unknown; color?: unknown; grade?: unknown };

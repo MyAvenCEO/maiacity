@@ -7,7 +7,10 @@ use std::collections::BTreeMap;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use crate::grade::{Balance, Cdl, clean_balance, clean_cdl, preset};
+use crate::{
+    creative::{Look, clean_look},
+    grade::{Balance, Cdl, clean_balance, clean_cdl, preset},
+};
 
 /// The film's clock: every delivery runs at 30 frames a second (worker.ts `FPS`).
 pub const FPS: u32 = 30;
@@ -61,6 +64,9 @@ pub struct Clip {
     /// reframing per delivery shape, keyed "16:9" (or "16x9")
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub frame: Option<BTreeMap<String, ClipFrame>>,
+    /// a V1 clip's script: its scene (`scene`) chooses the scene's look
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub script: Option<Value>,
 }
 
 fn one() -> f64 {
@@ -87,19 +93,29 @@ impl Clip {
         self.kind.as_deref() == Some("line")
     }
     /// Its framing in a shape ("16:9", also found under "16x9").
+    /// The scene it belongs to (its script's), the key of its scene's look.
+    pub fn scene(&self) -> Option<&str> {
+        self.script.as_ref()?.get("scene")?.as_str().filter(|s| !s.is_empty())
+    }
     pub fn frame_for(&self, aspect: &str) -> Option<&ClipFrame> {
         let f = self.frame.as_ref()?;
         f.get(aspect).or_else(|| f.get(&aspect.replace(':', "x")))
     }
 }
 
-/// The whole film's grade: its look (a CDL) or a preset's.
+/// The film's grade above its shots' own: the film's look and each scene's (`creative::Look`), keyed by the scene
+/// its clips name — and the film's plain CDL or preset (`look`, `preset`) from before looks had more, read as a
+/// look of just that.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct FilmGrade {
     #[serde(default)]
     pub look: Option<Value>,
     #[serde(default)]
     pub preset: Option<String>,
+    #[serde(default)]
+    pub film: Option<Value>,
+    #[serde(default)]
+    pub scenes: BTreeMap<String, Value>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -126,10 +142,29 @@ fn sixteen_nine() -> String {
 }
 
 impl Timeline {
-    /// The film's look: its CDL, else its preset's, else none (worker.ts `lookOf`).
+    /// The film's plain look from before: its CDL, else its preset's, else none (worker.ts `lookOf`).
     pub fn look(&self) -> Option<Cdl> {
         let g = self.grade.as_ref()?;
         g.look.as_ref().and_then(clean_cdl).or_else(|| g.preset.as_deref().and_then(preset).and_then(|c| clean_cdl(&c.to_json())))
+    }
+
+    /// The film's look: `film`, else its plain CDL or preset as a look.
+    pub fn film_look(&self) -> Option<Look> {
+        let g = self.grade.as_ref()?;
+        g.film.as_ref().and_then(clean_look).or_else(|| {
+            let cdl = g.look.as_ref().and_then(clean_cdl).map(|c| c.to_json());
+            clean_look(&serde_json::json!({ "cdl": cdl, "preset": g.preset }))
+        })
+    }
+
+    /// A scene's look, by the name its clips carry.
+    pub fn scene_look(&self, scene: &str) -> Option<Look> {
+        self.grade.as_ref()?.scenes.get(scene).and_then(clean_look)
+    }
+
+    /// The looks a clip goes through after its own grade, in order: its scene's, then the film's.
+    pub fn looks_for(&self, c: &Clip) -> Vec<Look> {
+        c.scene().and_then(|s| self.scene_look(s)).into_iter().chain(self.film_look()).collect()
     }
 }
 

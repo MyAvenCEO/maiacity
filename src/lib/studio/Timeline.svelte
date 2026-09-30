@@ -12,7 +12,7 @@
 	import { FPS, TRACKS, UNLINKED, clockText, isWorld, onSoundTrack, raw, thumb, tint } from './studio.svelte.js';
 	import { cueEnd, cueText, cuesOf } from './analysis.js';
 	import { wordsOf } from './transcript.js';
-	import { BALANCE_NODES, NEUTRAL, NEUTRAL_BALANCE, cleanBalance, isNeutral, presetOf } from './color.js';
+	import { BALANCE_NODES, NEUTRAL, NEUTRAL_BALANCE, cleanBalance, cleanLook, isNeutral, presetOf } from './color.js';
 	import { wave } from './wave.js';
 	import { fine } from './fine.js';
 	import { gradedThumb } from './luts.js';
@@ -42,7 +42,8 @@
 	// values, open for its controls on every shot
 	const grading = $derived(s.tab === 'grade');
 	const GRADE_LAYERS = [
-		{ id: 'L:look', label: 'Film look' },
+		{ id: 'L:film', label: 'Film look' },
+		{ id: 'L:scene', label: 'Scene look' },
 		{ id: 'L:grade', label: 'Grade' },
 		{ id: 'L:frame', label: 'Framing' },
 		...[...BALANCE_NODES].reverse().map((n) => ({ id: `L:${n.id}`, label: n.label }))
@@ -81,7 +82,7 @@
 				.filter((c) => c.track === 'V1' && c.hash)
 				.map((c) => {
 					const st = s.stillOf(c);
-					return [c.id, st ? JSON.stringify([st.hash, s.balanceOf(c), s.gradesOf(c)]) : ''];
+					return [c.id, st ? JSON.stringify([st.hash, s.balanceOf(c), s.gradesOf(c), s.looksOf(c)]) : ''];
 				})
 		)
 	);
@@ -91,8 +92,8 @@
 		const t = setTimeout(() => {
 			for (const [id, k] of Object.entries(keys)) {
 				if (!k || thumbOf[id] === k) continue;
-				const [still, b, g] = JSON.parse(k);
-				gradedThumb(still, b, g)
+				const [still, b, g, l] = JSON.parse(k);
+				gradedThumb(still, b, g, l)
 					.then((u) => live && ((thumbs[id] = u), (thumbOf[id] = k)))
 					.catch((e) => console.warn('thumbnail:', e));
 			}
@@ -105,6 +106,81 @@
 		const st = s.stillOf(c);
 		s.seek(st?.inside ? c.start + (st.t - c.in) : c.start + 1e-3);
 	};
+	// the looks above the shots' own grades: the film's (its plain CDL or preset from before read as one), and each
+	// scene's, over the run of shots that scene covers
+	/** @typedef {import('$lib/auth/client').Look} Look */
+	const filmLook = $derived.by(() => {
+		const g = s.current?.grade;
+		return g?.film ?? (g?.look || g?.preset ? /** @type {Look} */ ({ cdl: g.look ?? null, preset: g.preset ?? null, contrast: 0, pivot: 0.4135884, sat: 1, strength: 1 }) : null);
+	});
+	const sceneRuns = $derived.by(() => {
+		/** @type {{ key: string, scene: string | null, from: number, count: number }[]} */
+		const runs = [];
+		pics.forEach((c, i) => {
+			const scene = c.script?.scene || null;
+			const last = runs[runs.length - 1];
+			if (last && last.scene === scene) last.count++;
+			else runs.push({ key: `${i}:${scene}`, scene, from: i, count: 1 });
+		});
+		return runs;
+	});
+	/** @param {string | null} scene the scene's look, or the film's (null) @param {Look | null} look */
+	const setLook = (scene, look) => {
+		const g = { look: null, ...(s.current?.grade ?? {}) };
+		const clean = cleanLook(look);
+		if (scene === null) {
+			if (clean) g.film = clean;
+			else delete g.film;
+			delete g.preset;
+			g.look = null;
+		} else {
+			const scenes = { ...(g.scenes ?? {}) };
+			if (clean) scenes[scene] = clean;
+			else delete scenes[scene];
+			g.scenes = scenes;
+		}
+		s.setMeta({ grade: g });
+	};
+	/** a look in one line @param {Look | null} l */
+	const lookText = (l) => {
+		if (!l) return '—';
+		const parts = [];
+		if (l.preset) parts.push(l.preset);
+		else if (l.cdl) parts.push('own CDL');
+		if (l.split) parts.push(`split ${Math.round(l.split.shadows.hue)}° ${l.split.shadows.amount.toFixed(2)} / ${Math.round(l.split.highlights.hue)}° ${l.split.highlights.amount.toFixed(2)}`);
+		if (l.contrast) parts.push(`contrast ${l.contrast > 0 ? '+' : ''}${l.contrast.toFixed(2)}`);
+		if (l.hue?.length) parts.push(`hue ${l.hue.length} pts`);
+		if (l.hue_sat?.length) parts.push(`hue·sat ${l.hue_sat.length} pts`);
+		if (l.sat !== 1) parts.push(`sat ${l.sat.toFixed(2)}`);
+		if (l.lut) parts.push('LUT');
+		if (l.strength !== 1) parts.push(`${Math.round(l.strength * 100)} %`);
+		return parts.join(' · ') || '—';
+	};
+	const LOOK_SLIDERS = /** @type {const} */ ([
+		['sh', 'shadows °', 0, 360, 1],
+		['sa', 'shadows', 0, 1, 0.01],
+		['hh', 'highlights °', 0, 360, 1],
+		['ha', 'highlights', 0, 1, 0.01],
+		['contrast', 'contrast', -1, 1, 0.01],
+		['sat', 'saturation', 0, 2, 0.01],
+		['strength', 'strength', 0, 1, 0.01]
+	]);
+	/** @param {Look | null} l @param {string} k */
+	const lookValue = (l, k) =>
+		k === 'sh' ? (l?.split?.shadows.hue ?? 280) : k === 'sa' ? (l?.split?.shadows.amount ?? 0) : k === 'hh' ? (l?.split?.highlights.hue ?? 125) : k === 'ha' ? (l?.split?.highlights.amount ?? 0) : k === 'contrast' ? (l?.contrast ?? 0) : k === 'sat' ? (l?.sat ?? 1) : (l?.strength ?? 1);
+	/** a look with one of its sliders moved @param {Look | null} l @param {string} k @param {number} v @returns {Look} */
+	const withValue = (l, k, v) => {
+		/** @type {Look} */
+		const n = structuredClone($state.snapshot(l)) ?? { contrast: 0, pivot: 0.4135884, sat: 1, strength: 1 };
+		const split = n.split ?? { shadows: { hue: 280, amount: 0 }, highlights: { hue: 125, amount: 0 }, balance: 0 };
+		if (k === 'sh') split.shadows.hue = v;
+		else if (k === 'sa') split.shadows.amount = v;
+		else if (k === 'hh') split.highlights.hue = v;
+		else if (k === 'ha') split.highlights.amount = v;
+		else /** @type {any} */ (n)[k] = v;
+		if (['sh', 'sa', 'hh', 'ha'].includes(k)) n.split = split;
+		return n;
+	};
 	let openLayers = $state(/** @type {string[]} */ ([]));
 	/** @param {string} id */
 	const toggleLayer = (id) => (openLayers = openLayers.includes(id) ? openLayers.filter((x) => x !== id) : [...openLayers, id]);
@@ -112,7 +188,7 @@
 		audio ? TRACKS.filter((t) => t.id.startsWith('A')) : story ? [STORY, ...TRACKS.filter((t) => t.id === 'T1')] : grading ? [...GRADE_LAYERS, ...TRACKS.filter((t) => t.id === 'V1')] : TRACKS
 	);
 	const rows = $derived(
-		grading ? `1.5rem ${GRADE_LAYERS.map((l) => (openLayers.includes(l.id) ? (l.id === 'L:grade' || l.id === 'L:look' ? '7.2rem' : l.id === 'L:wb' || l.id === 'L:frame' ? '4.4rem' : '2.8rem') : '1.5rem')).join(' ')} 7.2rem` :
+		grading ? `1.5rem ${GRADE_LAYERS.map((l) => (openLayers.includes(l.id) ? (l.id === 'L:film' || l.id === 'L:scene' ? '11.6rem' : l.id === 'L:grade' ? '7.2rem' : l.id === 'L:wb' || l.id === 'L:frame' ? '4.4rem' : '2.8rem') : '1.5rem')).join(' ')} 7.2rem` :
 		story ? '1.5rem minmax(5rem, 3fr) minmax(2.6rem, 1fr)' :
 		audio ? `1.5rem repeat(${shown.length}, minmax(3.4rem, 1fr))` : `1.5rem minmax(2.6rem, 1fr) repeat(4, minmax(1.7rem, 1fr))${spec ? ` repeat(${LANES.length}, 1.45rem)` : ''}`
 	);
@@ -466,6 +542,17 @@
 		sp.lights.length ? sp.lights.map((l) => `${l.id} ${Array.isArray(l.intensity) ? '∿' : fmt(l.intensity ?? 1, 2)}`).join(' · ') : 'no light changes';
 </script>
 
+{#snippet lookCell(/** @type {import('$lib/auth/client').Look | null} */ l, /** @type {boolean} */ open, /** @type {string} */ what, /** @type {(l: import('$lib/auth/client').Look | null) => void} */ set)}
+	{#if open}
+		<div class="look-head"><b>{what}</b> <span class="val">{lookText(l)}</span>{#if l}<button class="off" onclick={() => set(null)} title="Take this look off">off</button>{/if}</div>
+		{#each LOOK_SLIDERS as [k, label, lo, hi, step] (k)}
+			<label class="sl"><span>{label}</span><input {@attach fine()} type="range" min={lo} max={hi} {step} value={lookValue(l, k)} oninput={(e) => set(withValue(l, k, Number(e.currentTarget.value)))} /><output>{lookValue(l, k).toFixed(step < 1 ? 2 : 0)}</output></label>
+		{/each}
+	{:else}
+		<span class="val" class:on={!!l}>{lookText(l)}</span>
+	{/if}
+{/snippet}
+
 {#snippet cdlCell(/** @type {import('$lib/auth/client').Cdl | null} */ g, /** @type {string | null} */ preset, /** @type {boolean} */ open, /** @type {(g: import('$lib/auth/client').Cdl | null, preset?: string | null) => void} */ set)}
 	{@const cur = g ?? NEUTRAL}
 	{#if open}
@@ -510,11 +597,20 @@
 				<div class="track" ondragover={(e) => t.id !== 'T1' && s.canEdit && e.preventDefault()} ondrop={(e) => t.id !== 'T1' && drop(e, /** @type {Track} */ (t.id))}>
 					{#if t.id.startsWith('L:')}
 						{@const open = openLayers.includes(t.id)}
-						{#if t.id === 'L:look'}
+						{#if t.id === 'L:film'}
 							<!-- svelte-ignore a11y_no_static_element_interactions -->
 							<div class="cell film" style:left="0" style:width={grading ? `${pics.length * COL}px` : x(s.end)} onpointerdown={(e) => e.stopPropagation()}>
-								{@render cdlCell(s.current?.grade?.look ?? null, s.current?.grade?.preset ?? null, open, (g, preset) => s.setMeta({ grade: g || preset ? { look: g, ...(preset ? { preset } : {}) } : null }))}
+								{@render lookCell(filmLook, open, 'the whole film', (l) => setLook(null, l))}
 							</div>
+						{:else if t.id === 'L:scene'}
+							{#each sceneRuns as r (r.key)}
+								<!-- svelte-ignore a11y_no_static_element_interactions -->
+								<div class="cell film scene" style:left="{r.from * COL}px" style:width="{r.count * COL}px" onpointerdown={(e) => e.stopPropagation()}>
+									{#if r.scene}
+										{@render lookCell(s.current?.grade?.scenes?.[r.scene] ?? null, open, r.scene, (l) => setLook(r.scene, l))}
+									{:else}<span class="val">no scene in the script</span>{/if}
+								</div>
+							{/each}
 						{:else}
 							{#each s.clips.filter((c) => c.track === 'V1') as c (c.id)}
 								<!-- svelte-ignore a11y_no_static_element_interactions -->
@@ -926,6 +1022,35 @@
 
 	.cell.film {
 		background: rgb(0 0 0 / 0.2);
+	}
+
+	/* a scene's look over the run of shots it covers */
+	.cell.scene {
+		border-left: 2px solid var(--accent);
+	}
+
+	.look-head {
+		display: flex;
+		gap: 0.5rem;
+		align-items: center;
+		font-size: 0.66rem;
+		color: var(--ink-soft);
+	}
+
+	.look-head b {
+		color: var(--ink);
+		font-weight: 600;
+	}
+
+	.look-head .off {
+		margin-left: auto;
+		padding: 0 0.5rem;
+		border: 1px solid var(--edge);
+		border-radius: 999px;
+		background: var(--raised);
+		font: inherit;
+		color: var(--dim);
+		cursor: pointer;
 	}
 
 	.cell .val {

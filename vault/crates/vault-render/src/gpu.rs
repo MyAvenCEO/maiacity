@@ -117,8 +117,8 @@ extern "C" float4 lut3d(coreimage::sampler src, coreimage::sampler lut, float si
 
 pub type Image = Retained<CIImage>;
 
-/// The cube as an image the `lut3d` kernel samples.
-struct LutImage {
+/// A 3D LUT on the GPU: its cube as an image the `lut3d` kernel samples.
+pub struct Cube {
     image: Image,
     size: f32,
     tiles: f32,
@@ -135,7 +135,7 @@ pub struct Gpu {
     opacity: Retained<CIColorKernel>,
     dither: Retained<CIColorKernel>,
     lut3d: Retained<CIKernel>,
-    lut: Option<LutImage>,
+    lut: Option<Cube>,
 }
 
 fn rect(x: f64, y: f64, w: f64, h: f64) -> CGRect {
@@ -203,6 +203,11 @@ impl Gpu {
 
     /// The output transform's cube, loaded once per render.
     pub fn set_output(&mut self, lut: &Lut3d) {
+        self.lut = Some(self.cube(lut));
+    }
+
+    /// A LUT made ready for the GPU (a clip's looks, the output transform).
+    pub fn cube(&self, lut: &Lut3d) -> Cube {
         let n = lut.size;
         let tiles = (n as f64).sqrt().ceil() as usize;
         let rows = n.div_ceil(tiles);
@@ -232,7 +237,7 @@ impl Gpu {
             )
         };
         let extent = rect(0.0, 0.0, w as f64, h as f64);
-        self.lut = Some(LutImage { image, size: n as f32, tiles: tiles as f32, height: h as f32, extent });
+        Cube { image, size: n as f32, tiles: tiles as f32, height: h as f32, extent }
     }
 
     /// A decoded frame as Core Image sees it: RGB by its own YCbCr matrix and range, no colour management.
@@ -314,7 +319,11 @@ impl Gpu {
 
     /// The output transform.
     pub fn output(&self, img: &CIImage) -> Result<Image> {
-        let lut = self.lut.as_ref().context("no output transform set")?;
+        self.apply_cube(img, self.lut.as_ref().context("no output transform set")?)
+    }
+
+    /// A picture through a cube (tetrahedral, the input held to 0…1).
+    pub fn apply_cube(&self, img: &CIImage, lut: &Cube) -> Result<Image> {
         let extent = img.ext();
         let lut_extent = lut.extent;
         let roi = RcBlock::new(move |i: c_int, r: CGRect| if i == 1 { lut_extent } else { r });
@@ -324,7 +333,7 @@ impl Gpu {
         unsafe {
             self.lut3d.applyWithExtent_roiCallback_arguments(extent, &*roi as *const _ as *mut _, &NSArray::from_slice(&args))
         }
-        .context("the output transform gave no picture")
+        .context("a cube gave no picture")
     }
 
     /// The picture towards black (a fade), `k` 1 = as it is.
