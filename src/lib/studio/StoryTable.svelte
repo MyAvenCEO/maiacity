@@ -71,7 +71,7 @@
 	const kept = (m: MediaItem) => verified(m) >= needed(m);
 
 	/** a proxy's original, when it has one here */
-	const proxyOf = (m: MediaItem) => (typeof m.meta?.proxy_of === 'string' ? m.meta.proxy_of : null);
+	const proxyOf = (m: MediaItem) => (typeof m.meta?.proxy_of === 'string' ? m.meta.proxy_of : typeof m.meta?.grade_still_of === 'string' ? m.meta.grade_still_of : null);
 	const rows = $derived.by(() => {
 		const list = mine
 			.filter((m) => (only === 'all' || classOf(m) === only || (only === 'proxy' && m.kind === 'video' && classOf(m) === 'original')) && (!incomplete || !kept(m)))
@@ -88,7 +88,7 @@
 			.map((m): Row[] => {
 				const kids: Row[] = under.get(m.hash) ?? [];
 				// a video original's proxy before it exists: its first step, rendering, as its own row
-				const due = m.kind === 'video' && classOf(m) === 'original' && !kids.length && (only === 'all' || only === 'proxy');
+				const due = m.kind === 'video' && classOf(m) === 'original' && !kids.some((k) => 'hash' in k && k.meta?.role !== 'grade-still') && (only === 'all' || only === 'proxy');
 				return [m, ...kids, ...(due ? [{ coming: m }] : [])];
 			});
 		// what is moving or rendering now on top, then what is not kept yet, then the rest — an original and its proxy
@@ -397,7 +397,8 @@
 							<td class="h" title={m.hash}>{m.hash.slice(0, 16)}…</td>
 							<td class="n" class:sub={!!proxyOf(m)} title="{m.original_name ?? ''}{m.title ? ` · ${m.title}` : ''}">{#if proxyOf(m)}↳ {/if}{m.original_name || '—'}{#if m.title && m.title !== m.original_name}<small> · {m.title}</small>{/if}</td>
 							<td class="col">
-								{#if proxyOf(m)}<span class="dim">ACEScct</span>
+								{#if m.meta?.role === 'grade-still'}<span class="dim">grading still · ACEScct</span>
+								{:else if proxyOf(m)}<span class="dim">ACEScct</span>
 								{:else if m.kind === 'video' && classOf(m) === 'original'}
 									<span class="prof">{colourOf(m) ? profileInfo(colourOf(m)).label : '—'}</span>
 								{:else if colourOf(m)}<span class="dim">{profileInfo(colourOf(m)).label}</span>{/if}

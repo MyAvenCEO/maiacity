@@ -740,6 +740,9 @@ pub fn measure(t: &Timeline, lib: &dyn Library, c: &Clip, n: usize) -> Result<Va
     let gpu = Gpu::new()?;
     let mut px: Vec<[f64; 3]> = Vec::new();
     let mut at_s = Vec::new();
+    // a shot with its grading still (4K ACEScct from the original): measured on that one frame
+    let from_still = grade_still_of(lib, c).is_some();
+    let n = if from_still { 1 } else { n };
     for i in 0..n.max(1) {
         // frames at the middle of n equal parts of the clip
         let at = c.start + c.dur * (i as f64 + 0.5) / n.max(1) as f64;
@@ -751,7 +754,7 @@ pub fn measure(t: &Timeline, lib: &dyn Library, c: &Clip, n: usize) -> Result<Va
     }
     let bal = c.balance().unwrap_or_default();
     let after: Vec<[f64; 3]> = px.iter().map(|p| bal.apply(*p)).collect();
-    Ok(json!({ "clip": c.id, "frames_at": at_s, "as_shot": stats(&px), "balanced": stats(&after), "balance": bal }))
+    Ok(json!({ "clip": c.id, "from": if from_still { "its grading still" } else { "its original (or proxy)" }, "frames_at": at_s, "as_shot": stats(&px), "balanced": stats(&after), "balance": bal }))
 }
 
 /// Luma percentiles and the middle tones' colour of ACEScct pixels (see `measure`); the colour also as the white
@@ -777,9 +780,41 @@ pub fn stats(px: &[[f64; 3]]) -> Value {
     })
 }
 
+/// A clip's original's grading still (its `meta.grade_still`), when the vault has it.
+fn grade_still_of(lib: &dyn Library, c: &Clip) -> Option<Media> {
+    let hash = c.hash.as_deref()?;
+    let original = lib.media(&lib.original_of(hash)).or_else(|| lib.media(hash))?;
+    lib.media(original.meta.get("grade_still")?.as_str()?)
+}
+
+/// A shot's grading still: one frame of the original at `at` seconds, through its journey (CST) into ACEScct,
+/// scaled (Lanczos) to `width` wide at its own aspect, written as a 16-bit PNG of ACEScct code values — what the
+/// balance is measured and set on, at full quality, without reading the whole original again.
+pub fn grading_still(file: &Path, profile: &str, at: f64, width: u32, png: &Path) -> Result<(u32, u32)> {
+    let journey = vault_media::cst::journey(profile).with_context(|| format!("no colour journey from {profile} into ACEScct"))?;
+    let gpu = Gpu::new()?;
+    let mut r = VideoReader::open(file, at, at + 1.0 / FPS as f64)?;
+    let turn = r.info.transform;
+    let pb = r.at(at + 0.5 / FPS as f64 - 1e-4)?.context("no frame there")?;
+    let img = gpu.journey(&gpu.orient(&gpu.frame(pb), turn), journey.kernel_args())?;
+    let e = crate::gpu::Extent::ext(&*img);
+    let (sw, sh) = (e.size.width.max(1.0), e.size.height.max(1.0));
+    let w = width.min(sw.round() as u32).max(2);
+    let h = ((w as f64 * sh / sw).round() as u32).max(2);
+    let scaled = gpu.frame_to(&img, w, h, None)?;
+    gpu.png(&scaled, w, h, png)?;
+    Ok((w, h))
+}
+
 /// One frame of a media clip, into ACEScct (the hero frame's reading, without the world) — from the full original,
 /// else (its bytes not on this Mac) from its ACEScct proxy.
 fn source(gpu: &Gpu, lib: &dyn Library, c: &Clip, at: f64) -> Result<Image> {
+    if let Some(still) = grade_still_of(lib, c) {
+        if let Ok(file) = lib.file(&still.hash) {
+            // ACEScct code values already: no journey
+            return gpu.still(&file);
+        }
+    }
     let hash = c.hash.as_deref().context("only a clip with a file can be measured")?;
     let of = lib.original_of(hash);
     let original = lib.media(&of).or_else(|| lib.media(hash)).context("the clip's file is not in the vault")?;
