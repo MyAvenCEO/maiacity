@@ -1,8 +1,8 @@
 // The studio's side of the colour standard (contract C5): what each picture is, how the viewer brings it in, and the
 // grades as data. The maths and the tables live in game/film/color.js (stream A) — imported, never copied.
-import { PROFILES, profileOf, NEUTRAL, isNeutral, cleanCdl, PRESETS, cdl, ODT, BALANCE_NODES, NEUTRAL_BALANCE, cleanBalance, isNeutralBalance } from '../../../game/film/color.js';
+import { PROFILES, profileOf, NEUTRAL, isNeutral, cleanCdl, ODT, BALANCE_NODES, NEUTRAL_BALANCE, cleanBalance, isNeutralBalance } from '../../../game/film/color.js';
 
-export { PROFILES, profileOf, NEUTRAL, isNeutral, cleanCdl, PRESETS, cdl, ODT, BALANCE_NODES, NEUTRAL_BALANCE, cleanBalance, isNeutralBalance };
+export { PROFILES, profileOf, NEUTRAL, isNeutral, cleanCdl, ODT, BALANCE_NODES, NEUTRAL_BALANCE, cleanBalance, isNeutralBalance };
 
 /** The working space — and so every proxy's colour: the Mac takes each source through its journey into it. */
 export const WORKING = 'acescct';
@@ -128,13 +128,13 @@ export function gradesFor(c, t) {
 	return /** @type {Cdl[]} */ ([c?.grade, t?.grade?.look].filter((g) => !!g && !isNeutral(g)));
 }
 /**
- * Which preset a grade is, if it is one.
- * @param {Cdl | null | undefined} g @returns {string | null}
+ * Which preset a grade is, if it is one (the presets as Rust holds them: `nativePresets`).
+ * @param {Cdl | null | undefined} g @param {{ name: string, cdl: Cdl }[]} presets @returns {string | null}
  */
-export function presetOf(g) {
+export function presetOf(g, presets) {
 	/** @param {Cdl} a @param {Cdl} b */
 	const same = (a, b) =>
 		a.sat === b.sat && [0, 1, 2].every((i) => a.slope[i] === b.slope[i] && a.offset[i] === b.offset[i] && a.power[i] === b.power[i]);
 	const g2 = g ?? NEUTRAL;
-	return Object.entries(PRESETS).find(([, p]) => same(p.cdl, g2))?.[0] ?? null;
+	return presets.find((p) => same(p.cdl, g2))?.name ?? null;
 }

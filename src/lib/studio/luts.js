@@ -37,7 +37,11 @@ export function filmLut(l) {
  */
 export async function nativeLut(profile) {
 	const { command } = await import('$lib/native');
-	const raw = await command('color_lut', { profile });
+	return { ...cubeOf(await command('color_lut', { profile })), name: profile, title: `${profile} (Mac)` };
+}
+
+/** A cube the Mac sends: a u32 size, then size³ RGB f32, red fastest — as RGBA for the GPU. @param {unknown} raw */
+function cubeOf(raw) {
 	const bytes = raw instanceof ArrayBuffer ? raw : new Uint8Array(/** @type {number[]} */ (raw)).buffer;
 	const size = new DataView(bytes).getUint32(0, true);
 	const rgb = new Float32Array(bytes, 4, size * size * size * 3);
@@ -48,5 +52,32 @@ export async function nativeLut(profile) {
 		data[j + 2] = rgb[i + 2];
 		data[j + 3] = 1;
 	}
-	return { name: profile, size, data, title: `${profile} (Mac)` };
+	return { size, data };
+}
+
+/** @type {Map<string, Promise<Lut>>} */
+const graded = new Map();
+/**
+ * A clip's grade as the Mac bakes it (`color_grade`, from vault-render `grade`, the grade's only maths): its balance,
+ * then its grades in order, as a cube over ACEScct the viewer samples. The last few are kept, by what they are.
+ * @param {import('../../../game/film/color.js').Balance | null} balance @param {import('$lib/auth/client').Cdl[]} grades
+ * @returns {Promise<Lut>}
+ */
+export function gradeLut(balance, grades) {
+	const key = JSON.stringify([balance, grades]);
+	let lut = graded.get(key);
+	if (!lut) {
+		lut = import('$lib/native').then(async ({ command }) => ({ ...cubeOf(await command('color_grade', { balance, grades })), name: 'grade', hash: key }));
+		lut.catch(() => graded.delete(key));
+		graded.set(key, lut);
+		if (graded.size > 48) graded.delete(/** @type {string} */ (graded.keys().next().value));
+	}
+	return lut;
+}
+
+/** A grade preset: its name, what the studio calls it, its CDL. @typedef {{ name: string, label: string, cdl: import('$lib/auth/client').Cdl }} Preset */
+/** The grade presets as Rust holds them (vault-render `grade::PRESETS`). @returns {Promise<Preset[]>} */
+export async function nativePresets() {
+	const { command } = await import('$lib/native');
+	return command('color_presets');
 }

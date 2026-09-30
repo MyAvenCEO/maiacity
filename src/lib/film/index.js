@@ -21,7 +21,7 @@ import { createPipeline } from './pipeline.js';
 import { sets } from './sets.js';
 
 /** @typedef {import('../../../game/film/shot.js').Spec} Spec @typedef {import('../../../game/film/shot.js').Shape} Shape */
-/** @typedef {import('./pipeline.js').Cdl} Cdl @typedef {import('./pipeline.js').Lut} Lut */
+/** @typedef {import('./pipeline.js').Lut} Lut */
 /** @typedef {{ spec: any, t: number, shape?: Shape, width: number, height: number }} FrameAsk */
 
 /** The version of the film camera's maths: part of every fingerprint a render reports. */
@@ -262,7 +262,7 @@ export function startFilm({ base = '' } = {}) {
 		/**
 		 * Draw a frame on the page's canvas through the view transform. quality 'proxy' (default): no oversampling, no
 		 * shutter blur — the live world viewer; 'final': as the plate.
-		 * @param {FrameAsk & { view?: { lut?: Lut | string | null, grade?: Cdl | Cdl[] | null }, quality?: 'proxy' | 'final' }} ask
+		 * @param {FrameAsk & { view?: { lut?: Lut | string | null, grade?: Lut | null }, quality?: 'proxy' | 'final' }} ask
 		 */
 		async show({ spec: raw, t, shape, width, height, view = {}, quality = 'proxy' }) {
 			const spec = normalize(raw), to = shape ?? spec.aspect;
@@ -278,7 +278,7 @@ export function startFilm({ base = '' } = {}) {
 		},
 		/**
 		 * A still through the view (the storyboard): show() it, then the canvas as an image.
-		 * @param {FrameAsk & { view?: { lut?: Lut | string | null, grade?: Cdl | Cdl[] | null }, quality?: 'proxy' | 'final', type?: string }} ask
+		 * @param {FrameAsk & { view?: { lut?: Lut | string | null, grade?: Lut | null }, quality?: 'proxy' | 'final', type?: string }} ask
 		 * @returns {Promise<Blob>}
 		 */
 		async still(ask) {

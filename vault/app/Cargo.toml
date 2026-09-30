@@ -35,6 +35,7 @@ vault-media = { path = "../crates/vault-media" }
 vault-asr = { path = "../crates/vault-asr" }
 # the final film render, natively (render.rs: the app is the render worker)
 vault-render = { path = "../crates/vault-render" }
+png = "0.18"
 # the world window's WKWebView and NSWindow, and App Nap (world.rs)
 objc2 = "0.6"
 objc2-foundation = "0.3"

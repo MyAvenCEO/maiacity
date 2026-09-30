@@ -1,8 +1,8 @@
-// The film's colour: color.js and transforms.js as units — the studio's and the viewer's maths. The render's own
-// colour path is the Mac's, natively, and tested there (vault/crates/vault-media tests/cst.rs and aces2.rs,
-// vault/crates/vault-render tests).
+// The film's colour: color.js and transforms.js as units — the colour standard and a grade as data. The grade's maths
+// (the CDL, the balance, the presets) is Rust's alone and tested there (vault/crates/vault-render tests/maths.rs,
+// tests/gpu.rs), as is the render's colour path (vault/crates/vault-media tests/cst.rs and aces2.rs).
 import { expect, test } from "bun:test";
-import { balance, cdl, cleanBalance, cleanCdl, detect, PIVOT, STOP, exrHeader, exrProfile, fromCct, isNeutral, MID_GREY_CCT, PRESETS, PROFILES, profileOf, REC709_TO_AP1, toCct } from "../../game/film/color.js";
+import { BALANCE_NODES, cleanBalance, cleanCdl, detect, exrHeader, exrProfile, fromCct, isNeutral, MID_GREY_CCT, PROFILES, profileOf, REC709_TO_AP1, toCct } from "../../game/film/color.js";
 import {
   canonical, DECODE, hashOf, HLG_SCALE, hlgToScene, monCurve, nitsToPq, pqToNits, rec709ToScene, sha256, SHAPER, shaperToCct,
   srgbToScene, TRANSFORMS,
@@ -76,31 +76,19 @@ test("an EXR header is read for its chromaticities and channels", () => {
   expect(exrHeader(new Uint8Array([1, 2, 3, 4, 5, 6, 7, 8]))).toBeNull();
 });
 
-test("the balance: white balance, exposure, contrast, highlights and lows in ACEScct — the render's vectors", () => {
-  const b = cleanBalance({ temp: -0.4, tint: 0.2, exposure: 0.7, contrast: -0.2, highlights: 0.5, shadows: -0.6 })!;
-  const want: [number[], number[]][] = [
-    [[0.2, 0.3, 0.4], [0.261209014, 0.341209014, 0.439473854]],
-    [[0.41, 0.41, 0.41], [0.433852368, 0.433852368, 0.452117209]],
-    [[0.7, 0.6, 0.5], [0.68098028, 0.60098028, 0.539245121]],
-  ];
-  for (const [px, out] of want) balance(b, px as [number, number, number]).forEach((x, i) => expect(x).toBeCloseTo(out[i]!, 8));
+test("a grade as data: the balance's layers and ranges, and a saved grade checked", () => {
+  // the balance's layers in the order they apply (vault-render grade::BALANCE_FIELDS holds the same ranges)
+  expect(BALANCE_NODES.flatMap((n) => n.fields.map((f) => [f.key, f.min, f.max]))).toEqual([
+    ["temp", -2, 2], ["tint", -2, 2], ["exposure", -4, 4], ["contrast", -0.8, 1.5], ["highlights", -3, 3], ["shadows", -3, 3], ["sat", -1, 1],
+  ]);
+  const b = cleanBalance({ temp: -0.4, tint: 0.2, exposure: 0.7, contrast: -0.2, highlights: 0.5, shadows: -0.6, sat: 0.3 })!;
+  expect(b).toEqual({ temp: -0.4, tint: 0.2, exposure: 0.7, contrast: -0.2, highlights: 0.5, shadows: -0.6, sat: 0.3 });
   expect(cleanBalance({})).toBeNull();
   expect(cleanBalance({ exposure: 9, temp: "x" })!.exposure).toBe(4);
-  // one stop of exposure is one stop in ACEScct's log; mid grey stays put under contrast
-  expect(balance({ ...b, temp: 0, tint: 0, contrast: 0, highlights: 0, shadows: 0, exposure: 1 }, [0.3, 0.3, 0.3])[0]).toBeCloseTo(0.3 + STOP, 12);
-  expect(balance({ temp: 0, tint: 0, exposure: 0, contrast: 0.5, highlights: 0, shadows: 0 }, [PIVOT, PIVOT, PIVOT])[0]).toBeCloseTo(PIVOT, 12);
-});
-
-test("the grade: CDL maths, presets, cleaning", () => {
-  expect(cdl(PRESETS.neutral.cdl, [0.2, 0.4, 0.6])).toEqual([0.2, 0.4, 0.6]);
-  const g = { slope: [2, 1, 1], offset: [0.1, 0, 0], power: [1, 2, 1], sat: 1 } as const;
-  const [r, gg] = cdl(g as any, [0.2, 0.5, 0.5]);
-  expect(r).toBeCloseTo(0.5, 12);
-  expect(gg).toBeCloseTo(0.25, 12);
-  expect(cdl({ slope: [1, 1, 1], offset: [-0.5, 0, 0], power: [2, 1, 1], sat: 1 }, [0.2, 0, 0])[0]).toBe(0); // negatives held at 0 before a power
+  expect(cleanBalance({ sat: 3 })!.sat).toBe(1);
   expect(isNeutral(cleanCdl({}))).toBe(true);
   expect(cleanCdl({ slope: [9, 1, 1] })!.slope[0]).toBe(4);
-  for (const p of Object.values(PRESETS)) expect(cleanCdl(p.cdl) === null).toBe(isNeutral(p.cdl));
+  expect(cleanCdl({ power: [0, 1, 1] })!.power[0]).toBe(0.1);
 });
 
 // ── transforms.js ─────────────────────────────────────────────────────────────────────────────────────────────────

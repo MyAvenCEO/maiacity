@@ -1,6 +1,7 @@
 <!--
-	The viewer: a picture (a video, a still or a canvas) through its input transform, the grades and the output
-	transform, drawn by the GPU (gl.js) every frame it changes. It covers its frame the way the render crops, and a
+	The viewer: a picture (a video, a still or a canvas) through its input transform, its grade (a cube the Mac bakes
+	from the grade's only maths, vault-render `grade`) and the output transform, drawn by the GPU (gl.js) every frame it
+	changes. It covers its frame the way the render crops, and a
 	clip's own framing for the shape moves and zooms it. Without WebGL2 it says so and draws nothing: the monitor then
 	shows the pictures themselves, colour unmanaged.
 -->
@@ -8,6 +9,7 @@
 	import { onDestroy, onMount } from 'svelte';
 	import { ViewerGL, cover } from './gl.js';
 	import { viewPlan } from './view.js';
+	import { gradeLut } from './luts.js';
 
 	/**
 	 * source: the picture; aspect: the frame's width / height; canvas, plan, supported: bound back to the monitor.
@@ -43,6 +45,18 @@
 	let gl = null;
 	let raf = 0;
 	let last = '';
+	/** the clip's grade as the Mac baked it; null: as it is @type {import('./luts.js').Lut | null} */
+	let cube = $state(null);
+	const gradeKey = $derived(JSON.stringify([profile === 'srgb' ? null : (balance ?? null), grades]));
+	$effect(() => {
+		const [b, g] = JSON.parse(gradeKey);
+		if (!b && !g.length) return void (cube = null);
+		let live = true;
+		gradeLut(b, g)
+			.then((l) => live && (cube = l))
+			.catch((e) => console.warn('viewer: no grade cube:', e));
+		return () => void (live = false);
+	});
 
 	/** @param {HTMLVideoElement | HTMLImageElement | HTMLCanvasElement} el */
 	const size = (el) =>
@@ -71,13 +85,14 @@
 		if (plan?.note !== p.note || plan?.idt !== p.idt || plan?.odt !== p.odt) plan = p;
 		// only when something changed: a video that moves, a still or a grade that is new
 		const moving = el instanceof HTMLVideoElement ? `${el.currentTime}:${el.paused}` : el instanceof HTMLCanvasElement ? String(performance.now()) : el.src;
-		const key = `${moving}|${W}x${H}|${profile}|${JSON.stringify(grades)}|${JSON.stringify(balance)}|${aspect}|${JSON.stringify(frame ?? null)}|${falseColor}|${p.idt}${p.odt}|${p.idtLut?.name}|${p.odtLut?.name}`;
+		const key = `${moving}|${W}x${H}|${profile}|${cube?.hash ?? ''}|${aspect}|${JSON.stringify(frame ?? null)}|${falseColor}|${p.idt}${p.odt}|${p.idtLut?.name}|${p.odtLut?.name}`;
 		if (key === last && !(el instanceof HTMLVideoElement && !el.paused)) return;
 		last = key;
 		gl.setLut('idt', p.idtLut);
 		gl.setLut('odt', p.odtLut);
+		gl.setLut('grade', cube);
 		try {
-			gl.draw(el, { idt: p.idt, odt: p.odt, grades, balance: profile === 'srgb' ? null : balance, falseColor, crop: cover(w / h, aspect, frame) });
+			gl.draw(el, { idt: p.idt, odt: p.odt, grade: cube ? 1 : 0, falseColor, crop: cover(w / h, aspect, frame) });
 		} catch {
 			/* a frame not decodable yet (or a tainted one): the next will do */
 		}

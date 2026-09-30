@@ -99,6 +99,34 @@ pub fn color_lut(profile: String) -> crate::Res<tauri::ipc::Response> {
     Ok(tauri::ipc::Response::new(out))
 }
 
+/// A clip's grade for the studio's viewer, baked here from the grade's only maths (vault-render `grade`): its balance,
+/// then its grades in order (its own CDL, the film's look), as a cube over ACEScct — the viewer samples it between the
+/// input and the output transforms. A little-endian u32 size, then size³ RGB f32, red fastest.
+#[tauri::command]
+pub fn color_grade(balance: Option<serde_json::Value>, grades: Vec<serde_json::Value>) -> crate::Res<tauri::ipc::Response> {
+    crate::gate()?;
+    const SIZE: usize = 33;
+    let b = balance.as_ref().and_then(vault_render::grade::clean_balance);
+    let g: Vec<vault_render::grade::Cdl> = grades.iter().filter_map(vault_render::grade::clean_cdl).collect();
+    let cube = vault_render::grade::cube(b.as_ref(), &g, SIZE);
+    let mut out = Vec::with_capacity(4 + cube.len() * 4);
+    out.extend_from_slice(&(SIZE as u32).to_le_bytes());
+    for v in cube {
+        out.extend_from_slice(&v.to_le_bytes());
+    }
+    Ok(tauri::ipc::Response::new(out))
+}
+
+/// The grade presets (vault-render `grade::PRESETS`): name, what the studio calls it, its CDL.
+#[tauri::command]
+pub fn color_presets() -> crate::Res<Vec<serde_json::Value>> {
+    crate::gate()?;
+    Ok(vault_render::grade::PRESETS
+        .iter()
+        .filter_map(|(name, label)| vault_render::grade::preset(name).map(|c| serde_json::json!({ "name": name, "label": label, "cdl": c.to_json() })))
+        .collect())
+}
+
 /// The proxies being made or queued right now.
 #[tauri::command]
 pub fn proxies_now() -> crate::Res<Vec<Making>> {

@@ -1,4 +1,4 @@
-//! The render's maths without a GPU: the grade against color.js (the vectors of api/test/film-color.test.ts), the
+//! The render's maths without a GPU: the grade (the one place its maths lives: fixed vectors, the viewer's cube), the
 //! cut against worker.ts, the frame geometry against picture.mjs, captions' phrases, the loudness meter against the
 //! EBU's own test signals (Tech 3341), the 3D LUT.
 
@@ -16,8 +16,7 @@ fn close(a: f64, b: f64, eps: f64) -> bool {
 }
 
 #[test]
-fn balance_as_color_js() {
-    // the vectors of color.js `balance` (api/test/film-color.test.ts "the balance")
+fn balance_maths() {
     let b = clean_balance(&json!({ "temp": -0.4, "tint": 0.2, "exposure": 0.7, "contrast": -0.2, "highlights": 0.5, "shadows": -0.6 })).unwrap();
     for (px, want) in [
         ([0.2, 0.3, 0.4], [0.261209014, 0.341209014, 0.439473854]),
@@ -30,45 +29,23 @@ fn balance_as_color_js() {
     assert!(clean_balance(&json!({})).is_none());
     assert_eq!(clean_balance(&json!({ "exposure": 9, "temp": "x" })).unwrap().exposure, 4.0);
     assert_eq!(Balance::default().apply([0.2, 0.3, 0.4]), [0.2, 0.3, 0.4]);
+    // saturation last, around the pixel's luma; a grey stays grey
+    let s = Balance { sat: 0.3, ..b };
+    for (px, want) in [
+        ([0.2, 0.3, 0.4], [0.240182998, 0.344182998, 0.47192729]),
+        ([0.41, 0.41, 0.41], [0.433456752, 0.433456752, 0.457201044]),
+        ([0.7, 0.6, 0.5], [0.701215064, 0.597215064, 0.516959356]),
+    ] {
+        let got = s.apply(px);
+        assert!((0..3).all(|i| close(got[i], want[i], 1e-8)), "{px:?}: {got:?}");
+    }
+    let grey = Balance { sat: 0.8, ..Default::default() }.apply([0.3; 3]);
+    assert!(grey.iter().all(|x| close(*x, 0.3, 1e-12)), "{grey:?}");
+    assert_eq!(clean_balance(&json!({ "sat": 3 })).unwrap().sat, 1.0);
 }
 
 #[test]
-fn a_shot_is_balanced_to_another() {
-    use vault_render::grade::fit;
-    // a scene's picture: pixels spread over the tones, a little warm
-    let mut s = 7u64;
-    let mut rnd = || {
-        s = s.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
-        (s >> 33) as f64 / (1u64 << 31) as f64
-    };
-    let target: Vec<[f64; 3]> = (0..4000)
-        .map(|_| {
-            let l = 0.15 + 0.5 * rnd();
-            [l + 0.01, l, l - 0.012]
-        })
-        .collect();
-    // the other shot: a stop and a half under, cooler, flatter
-    let off = Balance { exposure: -1.5, temp: -0.5, contrast: -0.2, ..Default::default() };
-    let shot: Vec<[f64; 3]> = target.iter().map(|p| off.apply(*p)).collect();
-    let b = fit(&vault_render::stats(&shot), &vault_render::stats(&target));
-    let back: Vec<[f64; 3]> = shot.iter().map(|p| b.apply(*p)).collect();
-    let (got, want) = (vault_render::stats(&back), vault_render::stats(&target));
-    for p in ["p5", "p50", "p95"] {
-        let (g, w) = (got["luma"][p].as_f64().unwrap(), want["luma"][p].as_f64().unwrap());
-        assert!((g - w).abs() < 0.004, "{p}: {g} vs {w} with {b:?}");
-    }
-    for k in ["temp", "tint"] {
-        let (g, w) = (got["to_grey"][k].as_f64().unwrap(), want["to_grey"][k].as_f64().unwrap());
-        assert!((g - w).abs() < 0.05, "{k}: {g} vs {w} with {b:?}");
-    }
-    // the shot as the target: nothing to do
-    let same = fit(&vault_render::stats(&target), &vault_render::stats(&target));
-    assert!(same.exposure.abs() < 0.02 && same.temp.abs() < 0.01 && same.contrast.abs() < 0.02, "{same:?}");
-}
-
-#[test]
-fn cdl_as_color_js() {
-    // film-color.test.ts "the grade: CDL maths, presets, cleaning"
+fn cdl_maths() {
     assert_eq!(preset("neutral").unwrap().apply([0.2, 0.4, 0.6]), [0.2, 0.4, 0.6]);
     let g = clean_cdl(&json!({ "slope": [2, 1, 1], "offset": [0.1, 0, 0], "power": [1, 2, 1], "sat": 1 })).unwrap();
     let [r, gg, _] = g.apply([0.2, 0.5, 0.5]);
@@ -286,4 +263,46 @@ fn lut3d_tetrahedral() {
     assert_eq!(back.data, small.data);
     assert_eq!(back.hash(), small.hash());
     std::fs::remove_dir_all(dir).ok();
+}
+
+#[test]
+fn the_viewer_s_cube_is_the_grade() {
+    use vault_render::grade::{PRESETS, cube};
+    let b = Balance { temp: 0.35, tint: -0.1, exposure: 0.6, contrast: 0.15, highlights: -0.4, shadows: 0.2, sat: 0.25 };
+    let g = [preset("warm").unwrap()];
+    let n = 33;
+    let c = cube(Some(&b), &g, n);
+    assert_eq!(c.len(), n * n * n * 3);
+    // on its nodes, exactly the maths (red fastest)
+    let (r, gg, bl) = (5, 17, 30);
+    let at = |i: usize| i as f64 / (n - 1) as f64;
+    let want = g[0].apply(b.apply([at(r), at(gg), at(bl)]));
+    let i = ((bl * n + gg) * n + r) * 3;
+    assert!((0..3).all(|k| (c[i + k] as f64 - want[k]).abs() < 1e-6));
+    // between them, trilinear, within a thousandth of the maths over the working range
+    let lut = vault_render::Lut3d::from_rgb("grade", n, c).unwrap();
+    let mut worst: f64 = 0.0;
+    for k in 0..2000 {
+        let t = k as f64 / 2000.0;
+        let px = [0.1 + 0.8 * t, 0.1 + 0.8 * ((t * 7.3) % 1.0), 0.1 + 0.8 * ((t * 3.7) % 1.0)];
+        let want = g[0].apply(b.apply(px));
+        let got = lut.sample(px);
+        worst = worst.max((0..3).map(|k| (got[k] - want[k]).abs()).fold(0.0, f64::max));
+    }
+    assert!(worst < 1e-3, "off by {worst}");
+    // no grade: the identity
+    let id = cube(None, &[], 3);
+    assert_eq!(&id[..6], &[0.0, 0.0, 0.0, 0.5, 0.0, 0.0]);
+    assert!(PRESETS.iter().all(|(p, _)| preset(p).is_some()));
+}
+
+#[test]
+fn the_api_clamps_a_balance_as_the_grade_does() {
+    // the API and the studio's sliders keep a balance's ranges in color.js (`BALANCE_NODES`): the same as here
+    let js = std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/../../../game/film/color.js")).unwrap();
+    for (k, lo, hi) in vault_render::grade::BALANCE_FIELDS {
+        let at = js.find(&format!("key: '{k}'")).unwrap_or_else(|| panic!("color.js has no balance field {k}"));
+        let rest = &js[at..at + 120.min(js.len() - at)];
+        assert!(rest.contains(&format!("min: {lo}, max: {hi},")), "{k}: color.js says {rest}");
+    }
 }

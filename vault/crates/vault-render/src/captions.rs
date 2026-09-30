@@ -112,3 +112,45 @@ impl Captions {
         }
     }
 }
+
+/// A label for the scope sheet (look.rs): `text` in white Helvetica, 15 px, drawn into an RGB 8-bit picture `w` wide
+/// over the band of `h` rows starting at row `top`.
+pub fn label(rgb: &mut [u8], w: u32, top: u32, h: u32, text: &str) -> Result<()> {
+    let mut rgba = vec![0u8; (w * h * 4) as usize];
+    // SAFETY: Core Text and Core Graphics calls on objects we own; the context draws into `rgba`, which outlives it
+    unsafe {
+        let face = CTFontDescriptor::with_name_and_size(&CFString::from_str("Helvetica"), 15.0);
+        let font = CTFont::with_font_descriptor(&face, 15.0, std::ptr::null());
+        let white = CGColor::new_srgb(0.92, 0.92, 0.92, 1.0);
+        let keys: [&CFString; 2] = [kCTFontAttributeName, kCTForegroundColorAttributeName];
+        let values: [&CFType; 2] = [font.as_ref(), white.as_ref()];
+        let attrs = CFDictionary::<CFString, CFType>::from_slices(&keys, &values);
+        let string = CFAttributedString::new(None, Some(&CFString::from_str(text)), Some(attrs.as_opaque())).context("the label's text")?;
+        let line = CTLine::with_attributed_string(&string);
+        let space = CGColorSpace::new_device_rgb().context("no RGB colour space")?;
+        let ctx: CFRetained<CGContext> =
+            CGBitmapContextCreate(rgba.as_mut_ptr().cast::<c_void>(), w as usize, h as usize, 8, w as usize * 4, Some(&space), CGImageAlphaInfo::PremultipliedLast.0)
+                .context("no bitmap for the label")?;
+        CGContext::set_text_position(Some(&ctx), 8.0, 8.0);
+        line.draw(&ctx);
+        CGContext::flush(Some(&ctx));
+    }
+    // the bitmap's rows run from the top; laid over the band
+    for y in 0..h {
+        for x in 0..w {
+            let s = ((y * w + x) * 4) as usize;
+            let a = rgba[s + 3] as u32;
+            if a == 0 {
+                continue;
+            }
+            let d = (((top + y) * w + x) * 3) as usize;
+            if d + 2 >= rgb.len() {
+                continue;
+            }
+            for c in 0..3 {
+                rgb[d + c] = (rgba[s + c] as u32 + rgb[d + c] as u32 * (255 - a) / 255).min(255) as u8;
+            }
+        }
+    }
+    Ok(())
+}

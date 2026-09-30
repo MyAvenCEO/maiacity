@@ -7,14 +7,15 @@
 //     └──► encode: filter down (oversampled) × 2^(ev + stops) → AP1 → ACEScct → 10 bits per channel,
 //              packed as x2bgr10le (R bits 0–9, G 10–19, B 20–29) into an RGBA8 target, rows flipped top-first,
 //              so readPixels gives exactly the bytes ffmpeg reads as `-pix_fmt x2bgr10le` — no JPEG, nothing lost
-//     └──► view: the same 10-bit ACEScct frame → grade (ASC CDL, clip then look) → output transform (a 3D LUT given
-//              as data, or a stand-in filmic curve) → the page's canvas: the Edit/Grade preview
+//     └──► view: the same 10-bit ACEScct frame → its grade (a cube the Mac bakes from the grade's only maths, vault-render
+//              `grade`: balance, the clip's CDL, the film's look) → output transform (a 3D LUT given as data, or a
+//              stand-in filmic curve) → the page's canvas: the Edit/Grade preview
 //
-// The colour maths is game/film/color.js's (the matrix, the ACEScct curve, the CDL), written again in GLSL.
+// The colour maths is game/film/color.js's (the matrix, the ACEScct curve), written again in GLSL; the grade is only
+// sampled here, never computed.
 import * as THREE from 'three';
 import { REC709_TO_AP1 } from '../../../game/film/color.js';
 
-/** @typedef {{ slope: number[], offset: number[], power: number[], sat: number }} Cdl */
 /** @typedef {{ size: number, data: Float32Array | number[] }} Lut  RGB triples, red fastest (the .cube order) */
 
 /** A 3×3 matrix as GLSL (whose mat3 is column-major: its arguments go column by column). */
@@ -84,11 +85,9 @@ void main() {
 const VIEW = /* glsl */ `${COMMON}
 precision highp sampler3D;
 out vec4 fragColor;
-uniform int grades;
-uniform vec3 slope[2];
-uniform vec3 offset[2];
-uniform vec3 power[2];
-uniform float sat[2];
+uniform bool hasGrade;
+uniform sampler3D gradeLut;
+uniform float gradeSize;
 uniform bool hasLut;
 uniform sampler3D lut;
 uniform float lutSize;
@@ -107,13 +106,7 @@ vec3 standIn(vec3 c) {
 }
 void main() {
 	vec3 v = vec3(codesAt(gl_FragCoord.xy)) / 1023.0;
-	for (int k = 0; k < 2; k++) {
-		if (k >= grades) break;
-		vec3 y = v * slope[k] + offset[k];
-		v = vec3(power[k].r == 1.0 ? y.r : pow(max(y.r, 0.0), power[k].r), power[k].g == 1.0 ? y.g : pow(max(y.g, 0.0), power[k].g), power[k].b == 1.0 ? y.b : pow(max(y.b, 0.0), power[k].b));
-		float l = dot(v, vec3(0.2126, 0.7152, 0.0722));
-		v = l + sat[k] * (v - l);
-	}
+	if (hasGrade) v = texture(gradeLut, clamp(v, 0.0, 1.0) * ((gradeSize - 1.0) / gradeSize) + 0.5 / gradeSize).rgb;
 	vec3 d = hasLut ? texture(lut, clamp(v, 0.0, 1.0) * ((lutSize - 1.0) / lutSize) + 0.5 / lutSize).rgb : standIn(v);
 	fragColor = vec4(d, 1.0);
 }
@@ -165,11 +158,9 @@ export function createPipeline(renderer) {
 	const encode = material(ENCODE, common());
 	const view = material(VIEW, {
 		...common(),
-		grades: { value: 0 },
-		slope: { value: [new THREE.Vector3(1, 1, 1), new THREE.Vector3(1, 1, 1)] },
-		offset: { value: [new THREE.Vector3(), new THREE.Vector3()] },
-		power: { value: [new THREE.Vector3(1, 1, 1), new THREE.Vector3(1, 1, 1)] },
-		sat: { value: [1, 1] },
+		hasGrade: { value: false },
+		gradeLut: { value: null },
+		gradeSize: { value: 2 },
 		hasLut: { value: false },
 		lut: { value: null },
 		lutSize: { value: 2 }
@@ -206,6 +197,10 @@ export function createPipeline(renderer) {
 	let lutTex = null;
 	/** @type {unknown} */
 	let lutOf = null;
+	/** @type {THREE.Data3DTexture | null} */
+	let gradeTex = null;
+	/** @type {Lut | null} */
+	let gradeOf = null;
 
 	return {
 		samples,
@@ -265,9 +260,9 @@ export function createPipeline(renderer) {
 			return out;
 		},
 		/**
-		 * The same frame through the view: grades (clip, then the film's look) and the output transform, on the canvas.
+		 * The same frame through the view: its grade (the Mac's cube) and the output transform, on the canvas.
 		 * @param {THREE.Texture} frame @param {number} w @param {number} h @param {number} gain @param {number} taps
-		 * @param {{ grade?: Cdl | Cdl[] | null, lut?: Lut | string | null }} [look]
+		 * @param {{ grade?: Lut | null, lut?: Lut | string | null }} [look]
 		 */
 		view(frame, w, h, gain, taps, look = {}) {
 			const u = view.uniforms;
@@ -276,14 +271,14 @@ export function createPipeline(renderer) {
 			u.taps.value = taps;
 			u.flip.value = false;
 			u.gain.value = gain;
-			const grades = (Array.isArray(look.grade) ? look.grade : look.grade ? [look.grade] : []).slice(0, 2);
-			u.grades.value = grades.length;
-			grades.forEach((g, k) => {
-				u.slope.value[k].fromArray(g.slope ?? [1, 1, 1]);
-				u.offset.value[k].fromArray(g.offset ?? [0, 0, 0]);
-				u.power.value[k].fromArray(g.power ?? [1, 1, 1]);
-				u.sat.value[k] = g.sat ?? 1;
-			});
+			if (look.grade && look.grade !== gradeOf) {
+				gradeTex?.dispose();
+				gradeTex = lutTexture(look.grade);
+				gradeOf = look.grade;
+				u.gradeSize.value = look.grade.size;
+			}
+			u.hasGrade.value = !!look.grade && !!gradeTex;
+			u.gradeLut.value = gradeTex;
 			if (look.lut && look.lut !== lutOf) {
 				const l = typeof look.lut === 'string' ? parseCube(look.lut) : look.lut;
 				lutTex?.dispose();

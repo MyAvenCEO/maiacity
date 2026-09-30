@@ -1,13 +1,15 @@
-//! The grade: ASC CDL in ACEScct, exactly as `cdl()` in game/film/color.js — slope, offset and power per channel
-//! (a negative value held at 0 before a power; nothing clipped at 1), then saturation around Rec.709 luma. And
-//! `cleanCdl`, the presets, and the hashes that pin every transform in the report (`hashOf` of transforms.js:
-//! 16 hex digits of SHA-256 over the canonical JSON).
+//! The grade — the one place its maths lives (the studio's viewer samples `cube`, baked from it; the render and hero
+//! frames run the same maths in Metal, gpu.rs). The balance (white balance, exposure, contrast, highlights, lows,
+//! saturation), then the ASC CDL in ACEScct — slope, offset and power per channel (a negative value held at 0 before a
+//! power; nothing clipped at 1), then saturation around Rec.709 luma — and the presets. What a saved grade may hold is
+//! checked here as color.js checks it for the API (`cleanCdl`, `cleanBalance`). And the hashes that pin every transform
+//! in the report (`hashOf` of transforms.js: 16 hex digits of SHA-256 over the canonical JSON).
 
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 
-/// Rec.709 luma weights, as the ASC CDL takes its saturation around (color.js `LUMA`).
+/// Rec.709 luma weights, as the ASC CDL takes its saturation around.
 pub const LUMA: [f64; 3] = [0.2126, 0.7152, 0.0722];
 
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
@@ -25,7 +27,7 @@ impl Cdl {
         self.sat == 1.0 && (0..3).all(|i| self.slope[i] == 1.0 && self.offset[i] == 0.0 && self.power[i] == 1.0)
     }
 
-    /// One ACEScct pixel through the grade (color.js `cdl`).
+    /// One ACEScct pixel through the grade.
     pub fn apply(&self, rgb: [f64; 3]) -> [f64; 3] {
         let v: [f64; 3] = std::array::from_fn(|i| {
             let y = rgb[i] * self.slope[i] + self.offset[i];
@@ -40,7 +42,7 @@ impl Cdl {
     }
 }
 
-/// The 3×3 the CDL's saturation is (color.js `satMatrix`), row by row.
+/// The 3×3 the CDL's saturation is, row by row.
 pub fn sat_matrix(s: f64) -> [[f64; 3]; 3] {
     std::array::from_fn(|r| std::array::from_fn(|c| (if r == c { s } else { 0.0 }) + (1.0 - s) * LUMA[c]))
 }
@@ -73,7 +75,7 @@ pub fn clean_cdl(g: &Value) -> Option<Cdl> {
     (!out.is_neutral()).then_some(out)
 }
 
-// ── the balance: the fixed first nodes of every shot (color.js `balance`) ───────────────────────────────────────────
+// ── the balance: the fixed first nodes of every shot ─────────────────────────────────────────────────────────────
 
 /// One stop in ACEScct's log segment.
 pub const STOP: f64 = 1.0 / 17.52;
@@ -82,8 +84,8 @@ pub const PIVOT: f64 = 0.4135884;
 /// How far from mid grey the highlights and lows reach before they are fully in.
 pub const REACH: f64 = 0.35;
 
-/// White balance → exposure → contrast → highlights / lows, every amount in stops (contrast: the slope around mid grey,
-/// 0 = as shot). All 0: the picture as shot.
+/// White balance → exposure → contrast → highlights / lows → saturation, every amount in stops (contrast: the slope
+/// around mid grey; saturation: the factor around luma, both minus 1, 0 = as shot). All 0: the picture as shot.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Serialize, Deserialize)]
 pub struct Balance {
     pub temp: f64,
@@ -92,11 +94,20 @@ pub struct Balance {
     pub contrast: f64,
     pub highlights: f64,
     pub shadows: f64,
+    #[serde(default)]
+    pub sat: f64,
 }
 
-/// Each balance field with its range (color.js `BALANCE_NODES`).
-pub const BALANCE_FIELDS: [(&str, f64, f64); 6] =
-    [("temp", -2.0, 2.0), ("tint", -2.0, 2.0), ("exposure", -4.0, 4.0), ("contrast", -0.8, 1.5), ("highlights", -3.0, 3.0), ("shadows", -3.0, 3.0)];
+/// Each balance field with its range (the API clamps a saved balance to the same: color.js `BALANCE_NODES`).
+pub const BALANCE_FIELDS: [(&str, f64, f64); 7] = [
+    ("temp", -2.0, 2.0),
+    ("tint", -2.0, 2.0),
+    ("exposure", -4.0, 4.0),
+    ("contrast", -0.8, 1.5),
+    ("highlights", -3.0, 3.0),
+    ("shadows", -3.0, 3.0),
+    ("sat", -1.0, 1.0),
+];
 
 fn smooth(a: f64, b: f64, x: f64) -> f64 {
     let t = ((x - a) / (b - a)).clamp(0.0, 1.0);
@@ -108,7 +119,7 @@ impl Balance {
         *self == Balance::default()
     }
 
-    /// One ACEScct pixel through the balance (color.js `balance`).
+    /// One ACEScct pixel through the balance.
     pub fn apply(&self, rgb: [f64; 3]) -> [f64; 3] {
         let [mut r, mut g, mut b] = rgb;
         r += self.temp / 2.0 * STOP;
@@ -119,7 +130,9 @@ impl Balance {
         let (r, g, b) = (tone(r), tone(g), tone(b));
         let l = r * LUMA[0] + g * LUMA[1] + b * LUMA[2];
         let lift = (self.highlights * smooth(PIVOT, PIVOT + REACH, l) + self.shadows * (1.0 - smooth(PIVOT - REACH, PIVOT, l))) * STOP;
-        [r + lift, g + lift, b + lift]
+        // the lift is the same on every channel: the luma moves with it, the colour around it doesn't
+        let (k, m) = (1.0 + self.sat, l + lift);
+        [m + k * (r + lift - m), m + k * (g + lift - m), m + k * (b + lift - m)]
     }
 
     pub fn get(&self, k: &str) -> f64 {
@@ -130,6 +143,7 @@ impl Balance {
             "contrast" => self.contrast,
             "highlights" => self.highlights,
             "shadows" => self.shadows,
+            "sat" => self.sat,
             _ => 0.0,
         }
     }
@@ -144,6 +158,7 @@ impl Balance {
             "contrast" => self.contrast = v,
             "highlights" => self.highlights = v,
             "shadows" => self.shadows = v,
+            "sat" => self.sat = v,
             _ => {}
         }
     }
@@ -162,74 +177,41 @@ pub fn clean_balance(v: &Value) -> Option<Balance> {
     (!b.is_neutral()).then_some(b)
 }
 
-/// The luma percentiles a match compares (render.rs `stats`).
-pub const MATCH_AT: [&str; 5] = ["p5", "p25", "p50", "p75", "p95"];
+/// The grade presets of the Grade tab, by name, with what the studio calls them.
+pub const PRESETS: [(&str, &str); 6] = [
+    ("neutral", "Neutral"),
+    ("cold", "Cold (the world as it was)"),
+    ("dip", "Dip (sick, heavy)"),
+    ("bright", "Bright (the city by day)"),
+    ("night", "Night (blue, lifted)"),
+    ("warm", "Warm (golden hour)"),
+];
 
-/// The balance that brings a shot (its `stats` as shot) to a target (`stats` of another shot, the scene's average, or
-/// neutral): the white balance that gives its middle tones the target's cast, then exposure, contrast, highlights and
-/// lows fitted so its luma percentiles land on the target's — exposure and contrast first, the highlights and lows
-/// only for what those two cannot do.
-pub fn fit(shot: &Value, target: &Value) -> Balance {
-    let num = |v: &Value, p: &str| v.pointer(p).and_then(Value::as_f64).unwrap_or(0.0);
-    let mut b = Balance::default();
-    // the cast after the balance is (the shot's − the white balance) × the contrast's slope: the white balance is
-    // solved through the contrast fitted with it
-    let white = |b: &mut Balance| {
-        let k = (1.0 + b.contrast).max(0.05);
-        b.set("temp", num(shot, "/to_grey/temp") - num(target, "/to_grey/temp") / k);
-        b.set("tint", num(shot, "/to_grey/tint") - num(target, "/to_grey/tint") / k);
-    };
-    white(&mut b);
-    let have: Vec<f64> = MATCH_AT.iter().map(|p| num(shot, &format!("/luma/{p}"))).collect();
-    let want: Vec<f64> = MATCH_AT.iter().map(|p| num(target, &format!("/luma/{p}"))).collect();
-    // the pixel the percentile stands for: a grey at that luma, carrying the shot's mid cast (so the white balance's
-    // effect on luma is in the fit too)
-    let mid = shot.pointer("/mid_rgb").and_then(Value::as_array).map(|a| a.iter().map(|x| x.as_f64().unwrap_or(0.0)).collect::<Vec<_>>()).unwrap_or_default();
-    let cast: [f64; 3] = if mid.len() == 3 {
-        let l = mid[0] * LUMA[0] + mid[1] * LUMA[1] + mid[2] * LUMA[2];
-        [mid[0] - l, mid[1] - l, mid[2] - l]
-    } else {
-        [0.0; 3]
-    };
-    let luma_of = |b: &Balance, l: f64| {
-        let o = b.apply([l + cast[0], l + cast[1], l + cast[2]]);
-        o[0] * LUMA[0] + o[1] * LUMA[1] + o[2] * LUMA[2]
-    };
-    // two shots of one scene show different things (a face, the floor): their percentiles never match exactly, and
-    // forcing them to bends the picture. The middle weighs most; contrast, highlights and lows cost — a stop of lows
-    // as much as being a sixth of a stop off in the middle — so exposure and white balance do the levelling, and the
-    // tones are only nudged towards each other.
-    const WEIGHT: [f64; 5] = [0.5, 1.0, 3.0, 1.0, 0.5];
-    let cost = |b: &Balance| -> f64 {
-        let fit: f64 = have.iter().zip(&want).zip(WEIGHT).map(|((h, w), k)| k * (luma_of(b, *h) - w).powi(2)).sum();
-        let s2 = STOP * STOP;
-        fit + s2 * (0.08 * (b.highlights.powi(2) + b.shadows.powi(2)) + 1.5 * b.contrast.powi(2))
-    };
-    b.set("exposure", (want[2] - have[2]) / STOP);
-    for _ in 0..3 {
-        let mut step = 0.5;
-        while step > 0.001 {
-            let mut better = false;
-            for k in ["exposure", "contrast", "highlights", "shadows"] {
-                for dir in [1.0, -1.0] {
-                    let mut t = b;
-                    t.set(k, b.get(k) + dir * step);
-                    if cost(&t) < cost(&b) - 1e-12 {
-                        b = t;
-                        better = true;
-                    }
+/// A clip's whole grade as a 3D LUT over ACEScct 0…1 (`size`³ RGB, red fastest, the .cube order): its balance, then its
+/// grades in order (its own CDL, the film's look) — what the studio's viewer samples between the input and the output
+/// transforms, so the maths is only here.
+pub fn cube(balance: Option<&Balance>, grades: &[Cdl], size: usize) -> Vec<f32> {
+    let n = size.max(2);
+    let mut out = Vec::with_capacity(n * n * n * 3);
+    let at = |i: usize| i as f64 / (n - 1) as f64;
+    for b in 0..n {
+        for g in 0..n {
+            for r in 0..n {
+                let mut px = [at(r), at(g), at(b)];
+                if let Some(bal) = balance {
+                    px = bal.apply(px);
                 }
-            }
-            if !better {
-                step /= 2.0;
+                for c in grades {
+                    px = c.apply(px);
+                }
+                out.extend(px.map(|v| v as f32));
             }
         }
-        white(&mut b);
     }
-    b
+    out
 }
 
-/// The grade presets of the Grade tab (color.js `PRESETS`).
+/// A preset's CDL (the grade presets of the Grade tab).
 pub fn preset(name: &str) -> Option<Cdl> {
     let c = |slope: [f64; 3], offset: [f64; 3], power: [f64; 3], sat: f64| Cdl { slope, offset, power, sat };
     Some(match name {

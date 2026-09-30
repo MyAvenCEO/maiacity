@@ -85,7 +85,7 @@ test("a shot's balance: the fixed first nodes, checked, and free to change after
   const { createTimeline, saveTimeline } = await import("../src/timelines");
   const clip = { id: "v", hash: hash("d4"), track: "V1", start: 0, in: 0, dur: 5, vol: 0 };
   const t = await createTimeline("admin", { name: "Balance", clips: [{ ...clip, balance: { exposure: 9, temp: -0.5, bogus: 1 } }] });
-  expect(t.clips[0]!.balance).toEqual({ temp: -0.5, tint: 0, exposure: 4, contrast: 0, highlights: 0, shadows: 0 });
+  expect(t.clips[0]!.balance).toEqual({ temp: -0.5, tint: 0, exposure: 4, contrast: 0, highlights: 0, shadows: 0, sat: 0 });
   // all zero: no balance at all
   expect((await saveTimeline(t.id, { clips: [{ ...clip, balance: { exposure: 0 } }] })).clips[0]!.balance).toBeUndefined();
   await saveTimeline(t.id, { stage: "locked" });

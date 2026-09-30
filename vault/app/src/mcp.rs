@@ -222,6 +222,9 @@ pub struct BalanceArg {
     /// stops added to the tones below mid grey ("lows"), −3…3
     #[serde(default)]
     pub shadows: f64,
+    /// the saturation around luma minus 1: 0.2 = 20 % more colour, −1…1
+    #[serde(default)]
+    pub sat: f64,
 }
 
 #[derive(Deserialize, schemars::JsonSchema)]
@@ -244,16 +247,64 @@ pub struct MeasureArgs {
     pub frames: Option<usize>,
 }
 
+/// Parts of one shot's frame named by hand, each a box [x0, y0, x1, y1] from the frame's top left, 0…1.
+#[derive(Deserialize, Serialize, Default, Clone, schemars::JsonSchema)]
+pub struct RegionsArg {
+    /// a white object known to be neutral (a wall, a T-shirt, the rug)
+    pub white: Option<[f64; 4]>,
+    /// a grey object known to be neutral
+    pub grey: Option<[f64; 4]>,
+    /// a real black
+    pub black: Option<[f64; 4]>,
+    /// the skin: the key side of the face, cheeks and forehead (else the face Vision finds)
+    pub skin: Option<[f64; 4]>,
+}
+
+fn regions_of(r: Option<std::collections::HashMap<String, RegionsArg>>) -> std::collections::HashMap<String, vault_render::look::Regions> {
+    r.unwrap_or_default()
+        .into_iter()
+        .map(|(k, v)| (k, vault_render::look::Regions { white: v.white, grey: v.grey, black: v.black, skin: v.skin }))
+        .collect()
+}
+
+#[derive(Deserialize, schemars::JsonSchema)]
+pub struct LookArgs {
+    /// the timeline's id
+    pub timeline: String,
+    /// the clips to read (ids, in order); none: every picture clip with a file
+    pub clips: Option<Vec<String>>,
+    /// per clip id, parts of its frame named by hand
+    pub regions: Option<std::collections::HashMap<String, RegionsArg>>,
+}
+
+#[derive(Deserialize, schemars::JsonSchema)]
+pub struct ScopesArgs {
+    /// the timeline's id
+    pub timeline: String,
+    /// the clips, one row each, in order — the first is the reference (the scene's master)
+    pub clips: Vec<String>,
+    /// per clip id, parts of its frame named by hand (drawn as boxes, and the skin box used)
+    pub regions: Option<std::collections::HashMap<String, RegionsArg>>,
+}
+
 #[derive(Deserialize, schemars::JsonSchema)]
 pub struct MatchArgs {
     /// the timeline's id
     pub timeline: String,
-    /// the clips to level (ids); none: every picture clip with a file
+    /// the clips to level (ids): a scene's shots; none: every picture clip with a file
     pub clips: Option<Vec<String>>,
-    /// the clip the others are matched to (as it is balanced now); none: the clips' average
+    /// the scene's master, which the others are matched to as it is balanced now (never an average)
     pub reference: Option<String>,
-    /// true: the middle tones to neutral grey and the middle grey to 18 % — rather than to the reference or average
+    /// true: each clip's own neutrals (the white or grey named, else its whites and middle tones) to grey, then
+    /// `warmth` warmer — for a scene's master; its exposure, contrast and the rest stay as they are
     pub neutral: Option<bool>,
+    /// with neutral: how much warmer than neutral, in stops of temp (a touch ≈ 0.25, clearly ≈ 0.5; − cooler)
+    pub warmth: Option<f64>,
+    /// per clip id, parts of its frame named by hand (a known white, grey, black, the skin)
+    pub regions: Option<std::collections::HashMap<String, RegionsArg>>,
+    /// per clip id, elements not to match (blacks, whites, mids, skin, white, grey, black): what that shot has only
+    /// by content (a frame without real blacks)
+    pub skip: Option<std::collections::HashMap<String, Vec<String>>>,
     /// false: only propose the balances, write nothing (default true: write them)
     pub apply: Option<bool>,
 }
@@ -712,7 +763,7 @@ impl Studio {
     }
 
     #[tool(
-        description = "Set one shot's balance — the fixed first nodes, applied in ACEScct before its creative grade, in the preview and the render alike: white balance (temp, tint), exposure, contrast, highlights, lows (shadows); every amount in stops, 0 = as shot; none: back to as shot. The cut stays as it is; a locked timeline may be balanced."
+        description = "Set one shot's balance — the fixed first nodes, applied in ACEScct before its creative grade, in the preview and the render alike: white balance (temp, tint), exposure, contrast, highlights, lows (shadows), saturation (sat); every amount in stops (contrast and sat: the factor minus 1), 0 = as shot; none: back to as shot. The cut stays as it is; a locked timeline may be balanced."
     )]
     async fn grade_balance(&self, Parameters(a): Parameters<BalanceArgs>) -> String {
         let r = async {
@@ -731,18 +782,54 @@ impl Studio {
     }
 
     #[tool(
-        description = "Level a scene's shots to each other automatically: measures every shot (grade_measure), then fits each one's balance (white balance to the target's cast, exposure and contrast — highlights and lows only for what those cannot do — to the target's luma percentiles). The target: the reference clip as it is balanced now, or neutral (grey middle tones, the middle at 18 % grey), else the shots' average. Writes the balances (apply: false only proposes them). Check the result with grade_measure and render_frame; adjust single shots with grade_balance."
+        description = "Read a timeline's shots for the base correction, as a colourist does, natively on this Mac from the real thing — each shot's 4K grading still (else its original's frame; never a proxy) through the ACES 2.0 output, as the Rec.709 display shows it: levels in IRE (p1…p99, contrast, clipped %, saturation), the blacks, the whites and the middle tones (level and cast: warm = R − B, green = G − (R + B)/2, in IRE), the skin of the face Apple Vision finds (or the box named: its level, its hue against the skin line at 123°, its saturation) and any white, grey or black named by hand — as shot and after each clip's balance."
+    )]
+    async fn grade_look(&self, Parameters(a): Parameters<LookArgs>) -> String {
+        let r = async {
+            let t = self.api("GET", &format!("/api/timelines/{}", a.timeline), None).await?;
+            let looks = crate::render::look_clips(&self.vault, &t, a.clips, regions_of(a.regions), Default::default()).await?;
+            let shots: Vec<Value> = looks.into_iter().map(|l| l.map(|l| l.json).unwrap_or_else(|e| e)).collect();
+            Ok::<_, String>(json!({ "timeline": a.timeline, "shots": shots }))
+        };
+        text(r.await)
+    }
+
+    #[tool(
+        description = "A scope sheet to look at, drawn natively from the shots' 4K grading stills after their balances: one row per clip (the first is the reference, the scene's master) — the picture with the skin box and any boxes named, its waveform (5/10/50/90/100 IRE), RGB parade and vectorscope (the skin line, rings at chroma 0.1 and 0.2) — as a PNG on this Mac. Returns its path and each row's numbers. Look at it before and after every balance."
+    )]
+    async fn grade_scopes(&self, Parameters(a): Parameters<ScopesArgs>) -> String {
+        let r = async {
+            let t = self.api("GET", &format!("/api/timelines/{}", a.timeline), None).await?;
+            let first = a.clips.first().cloned().unwrap_or_default();
+            let png = self.vault.dir.join("scopes").join(format!("{}-{}.png", &a.timeline[..a.timeline.len().min(8)], &first[..first.len().min(8)]));
+            crate::render::scope_sheet(&self.vault, &t, a.clips, regions_of(a.regions), png).await
+        };
+        text(r.await)
+    }
+
+    #[tool(
+        description = "The base correction's balances (story-producer grading.md), fitted natively from the shots' 4K grading stills by the elements a colourist matches — blacks, whites, the middle and the skin (Apple Vision's face, or the boxes named), through the ACES 2.0 output — with the balance nodes only (white balance, exposure, contrast, highlights, lows, saturation; no look). neutral: a scene master's own neutrals to grey, then `warmth` stops warmer. Else: every clip matched to `reference`, the scene's master as it is balanced now (a reference is required: never an average). Returns each shot's balance, the elements it was matched by and what they will read after it (predicted); writes them unless apply: false — propose first, look at grade_scopes, then write."
     )]
     async fn grade_match(&self, Parameters(a): Parameters<MatchArgs>) -> String {
         let r = async {
             let t = self.api("GET", &format!("/api/timelines/{}", a.timeline), None).await?;
-            let mut out = crate::render::propose_balances(&self.vault, &t, a.clips.clone(), a.reference.clone(), a.neutral == Some(true)).await?;
+            let mut out = crate::render::propose_balances(
+                &self.vault,
+                &t,
+                a.clips.clone(),
+                a.reference.clone(),
+                a.neutral == Some(true),
+                a.warmth.unwrap_or(0.0),
+                regions_of(a.regions),
+                a.skip.unwrap_or_default(),
+            )
+            .await?;
             let apply = a.apply != Some(false);
             if apply {
-                // fetched again: what changed on the timeline while the shots were measured stays
+                // fetched again: what changed on the timeline while the shots were read stays
                 let t = self.api("GET", &format!("/api/timelines/{}", a.timeline), None).await?;
                 let mut clips = t["clips"].as_array().cloned().ok_or("the timeline has no clips")?;
-                for p in out["shots"].as_array().into_iter().flatten() {
+                for p in out["shots"].as_array().into_iter().flatten().filter(|p| p.get("error").is_none()) {
                     if let Some(c) = clips.iter_mut().find(|c| c["id"] == p["clip"]) {
                         c["balance"] = p["balance"].clone();
                     }
@@ -893,11 +980,11 @@ impl Studio {
     #[tool(description = "Grade the whole film: its look — a named preset (neutral, cold, dip, bright, night, warm) or an ASC CDL of its own in ACEScct — applied after every clip's own grade.")]
     async fn grade_film(&self, Parameters(a): Parameters<GradeFilmArgs>) -> String {
         let r = async {
-            const PRESETS: [&str; 6] = ["neutral", "cold", "dip", "bright", "night", "warm"];
-            if let Some(p) = &a.preset {
-                if !PRESETS.contains(&p.as_str()) {
-                    return Err(format!("no preset {p} — one of {}", PRESETS.join(", ")));
-                }
+            if let Some(p) = &a.preset
+                && vault_render::grade::preset(p).is_none()
+            {
+                let names: Vec<&str> = vault_render::grade::PRESETS.iter().map(|(n, _)| *n).collect();
+                return Err(format!("no preset {p} — one of {}", names.join(", ")));
             }
             let grade = match (&a.look, &a.preset) {
                 (Some(look), _) => json!({ "look": look }),
