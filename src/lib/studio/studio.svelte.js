@@ -23,7 +23,7 @@ import { ODT, PROFILES, WORKING, asStudio, clean, cleanBalance, gradesFor, isCac
 import { filmLut, nativeLut } from './luts.js';
 import { cached, evaluate, saveSpec, shotAt } from './shots.js';
 import { WorldViewer } from './world.svelte.js';
-import { audioProxyOf, captionWordsOf, hasSound, lineWords, phraseBreak, rewordPhrase, stepOpen, transcriptState } from './transcript.js';
+import { audioProxyOf, captionWordsOf, hasSound, lineWords, phraseBreak, rewordPhrase, stepOpen, transcriptOf, transcriptState } from './transcript.js';
 import { command, native } from '$lib/native';
 
 /** @typedef {import('$lib/auth/client').Cdl} Cdl */
@@ -1202,7 +1202,9 @@ export class Studio {
 				const link = Math.random().toString(36).slice(2, 10);
 				c.link = link;
 				c.vol = 0;
-				added.push({ ...this.clip(hash, 'A3', c.start, c.in, c.dur), link });
+				// someone speaking in it: its sound is a voice (A1, in the captions); else the room (A3)
+				const speech = !!transcriptOf(m);
+				added.push({ ...this.clip(hash, speech ? 'A1' : 'A3', c.start, c.in, c.dur), link });
 			}
 			this.clips = [...this.clips, ...added];
 			this.selected = c.id;

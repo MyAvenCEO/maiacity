@@ -110,6 +110,21 @@ impl Source {
     }
 }
 
+/// The stories whose files are analysed (`ANALYSE_STORIES`, story ids, comma separated); unset or empty: every story.
+fn stories() -> &'static Option<HashSet<String>> {
+    static S: std::sync::OnceLock<Option<HashSet<String>>> = std::sync::OnceLock::new();
+    S.get_or_init(|| {
+        let v = std::env::var("ANALYSE_STORIES").unwrap_or_default();
+        let set: HashSet<String> = v.split(',').map(|x| x.trim().to_string()).filter(|x| !x.is_empty()).collect();
+        (!set.is_empty()).then_some(set)
+    })
+}
+
+/// Is this file's story one the analysis runs for?
+pub fn in_scope(meta: &Value, only: Option<&HashSet<String>>) -> bool {
+    only.is_none_or(|set| set.contains(s(meta, "story")))
+}
+
 /// Does this file get analysed? Footage to cut with: a video original, an EXR sequence, a still — never a proxy, a
 /// delivery, or the pipeline's own working files (hero frames, LUTs, thumbnails, audio proxies).
 pub fn wants(meta: &Value) -> bool {
@@ -578,6 +593,7 @@ impl Analyser {
         let todo: Vec<&(String, Source)> = sources
             .iter()
             .filter(|(hex, src)| due(records.get(hex), src))
+            .filter(|(hex, _)| in_scope(&metas[hex], stories().as_ref()))
             .filter(|(hex, _)| !waits_for_words(&metas[hex], transcripts.get(hex), sounds.get(hex), now))
             .collect();
         if todo.is_empty() {

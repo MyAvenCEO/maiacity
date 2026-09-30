@@ -92,7 +92,9 @@ export function resetPrem() {
 }
 
 // ── what Prem's models are for this key ──
-export type PremModel = { id: string; type?: string; input_modalities?: string[] };
+export type PremModel = { id: string; type?: string; input_modalities?: string[]; name?: string; slug?: string; model?: string; alias?: string; display_name?: string; [k: string]: unknown };
+/** Every name a listed model goes by (Prem lists some by a number, their name beside it). */
+export const namesOf = (m: PremModel) => [m.id, m.name, m.slug, m.model, m.alias, m.display_name].filter((x): x is string => typeof x === "string" && !!x);
 let listed: Promise<PremModel[] | null> | null = null;
 let testModels: PremModel[] | null | undefined;
 
@@ -128,8 +130,11 @@ export function models(): Promise<PremModel[] | null> {
  */
 export async function pick(want: string, type: "AUDIO_TRANSCRIPTION" | "CHAT", family: RegExp): Promise<string> {
   const list = await models();
-  if (!list || list.some((m) => m.id === want)) return want;
-  const other = list.find((m) => (!m.type || m.type.toUpperCase() === type) && family.test(m.id));
+  if (!list) return want;
+  // the model by any of its names (a number with its name beside it: the id is what Prem takes)
+  const named = list.find((m) => namesOf(m).some((n) => n.toLowerCase() === want.toLowerCase()));
+  if (named) return named.id;
+  const other = list.find((m) => (!m.type || m.type.toUpperCase() === type) && namesOf(m).some((n) => family.test(n)));
   if (!other) return want;
   if (!warned.has(want)) console.warn(`prem: this key lists no ${want} — using ${other.id}`), warned.add(want);
   return other.id;
@@ -327,7 +332,7 @@ export async function checkModels(wanted: string[]): Promise<void> {
   if (process.env.PREMAI_PAUSED === "1") return console.warn("prem: paused on this server (PREMAI_PAUSED=1) — nothing is asked");
   const list = await models();
   for (const m of wanted) {
-    if (list && !list.some((x) => x.id === m)) {
+    if (list && !list.some((x) => namesOf(x).includes(m))) {
       breakers.set(m, { until: clock() + MAX_PAUSE, reason: `${m} is not listed for our Prem key`, pause: MAX_PAUSE / 2 });
       console.warn(`prem: ${m} is not listed for our Prem key — paused for 30 minutes`);
       continue;
