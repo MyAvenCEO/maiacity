@@ -754,14 +754,27 @@ fn picture(gpu: &Gpu, acescct: &Image, s: &Shape, c: &Clip, looks: Option<&Cube>
 /// caller's.
 #[allow(clippy::too_many_arguments)]
 pub fn chain(gpu: &Gpu, framed: &Image, w: u32, h: u32, c: &Clip, looks: Option<&Cube>, finish: Option<&Finish>, frame: u64) -> Result<Image> {
+    chain_with(gpu, framed, w, h, c, looks, finish, frame, &mut |gpu, pic| Ok(crate::look::faces(&*gpu.output(pic)?).first().copied()))
+}
+
+/// `chain`, with where the face is found by `face_of` (from the balanced picture, ACEScct) — the player tracks it
+/// every few frames on a small copy instead of on every frame.
+#[allow(clippy::too_many_arguments)]
+pub fn chain_with(
+    gpu: &Gpu,
+    framed: &Image,
+    w: u32,
+    h: u32,
+    c: &Clip,
+    looks: Option<&Cube>,
+    finish: Option<&Finish>,
+    frame: u64,
+    face_of: &mut dyn FnMut(&Gpu, &Image) -> Result<Option<crate::look::Rect>>,
+) -> Result<Image> {
     let mut pic = gpu.balance(framed, c.balance().as_ref())?;
     let secs = c.secondaries();
     if !secs.is_empty() {
-        let face = if secs.iter().any(|s| s.window.as_ref().is_some_and(|w| w.track.is_some())) {
-            crate::look::faces(&*gpu.output(&pic)?).first().copied()
-        } else {
-            None
-        };
+        let face = if secs.iter().any(|s| s.window.as_ref().is_some_and(|w| w.track.is_some())) { face_of(gpu, &pic)? } else { None };
         pic = apply_secondaries(gpu, &pic, &secs, face, w as f64, h as f64)?;
     }
     if let Some(cube) = looks {

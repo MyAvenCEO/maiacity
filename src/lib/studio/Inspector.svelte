@@ -1,5 +1,6 @@
 <!--
-	The inspector (Edit): the selected clip — where it sits, how long it runs, how loud it plays, what file it is. A world
+	The inspector (Edit): the selected clip — where it sits, how long it runs, how loud it plays, what file it is; a sound
+	clip's EQ (its curve over its spectrum, its bands by hand). A world
 	clip shows its shot record instead: its version, the camera's keys, the hour, the exposure, the lights and the cues,
 	each change saved as a new version of the shot (the clip follows it); and a camera move recorded by flying it. A video
 	clip's sound is a clip of its own, linked (detach it, unlink it, put it back in sync); a clip with words shows them —
@@ -11,6 +12,7 @@
 	import Analysis from './Analysis.svelte';
 	import { analysisOf } from './analysis.js';
 	import ColorBadge from './ColorBadge.svelte';
+	import Eq from './Eq.svelte';
 	import { toKeys } from './shots.js';
 	import { SHOT_LIGHTS } from '$lib/auth/client';
 	import { isWorld, itemName, onSoundTrack } from './studio.svelte.js';
@@ -89,6 +91,10 @@
 		</fieldset>
 		{#if soundState}
 			<p class="sub" class:warn={soundState !== 'ready'}>Sound: {soundText[soundState] ?? soundState}</p>
+		{/if}
+		{#if sel.track.startsWith('A') && sel.hash}
+			<h3>EQ</h3>
+			<Eq {s} clip={sel} {ro} />
 		{/if}
 		{#if analysisOf(m)}
 			<h3>Analysis</h3>

@@ -547,6 +547,24 @@ pub fn level_sound(measured: &Value, clips: &[Value], targets: &[(String, f64)],
     out
 }
 
+/// A sound clip's EQ as the mix makes it (vault-render `eq`, the same biquads), for the inspector to draw: its gain in
+/// dB at `n` frequencies from 20 Hz to 20 kHz, spaced evenly on the octaves; and the bands as the mix takes them.
+#[tauri::command]
+pub fn eq_response(eq: Value, n: Option<usize>) -> Res<Value> {
+    crate::gate()?;
+    let bands = vault_render::eq::clean_eq(&eq);
+    let rate = vault_render::av::RATE as f64;
+    let e = vault_render::eq::Eq::new(&bands, rate);
+    let n = n.unwrap_or(160).clamp(16, 1024);
+    let curve: Vec<[f64; 2]> = (0..n)
+        .map(|i| {
+            let f = 20.0 * 1000f64.powf(i as f64 / (n - 1) as f64);
+            [(f * 10.0).round() / 10.0, (e.response(f, rate) * 100.0).round() / 100.0]
+        })
+        .collect();
+    Ok(json!({ "bands": bands, "curve": curve }))
+}
+
 /// The Audio tab: how the timeline on screen sounds, clip by clip (to draw; it changes nothing).
 #[tauri::command]
 pub async fn sound_measure(app: tauri::State<'_, crate::App>, timeline: Value) -> Res<Value> {

@@ -98,39 +98,39 @@ Kelly uses film effects at a fraction of their full strength: grain about 35 %, 
 ## Learned on Day 01: the teal/orange reference
 
 A look alone gave a flat, tinted picture: the colours moved but the image stayed bright and airy. The banner is
-**low-key and dense**. Its middle sits at about 17 IRE, blacks at 1, whites at 85, and the face is lifted against a
-dark surround. Getting there takes the whole stack, each layer doing its own job:
+**low-key and dense**: its middle at about 17 IRE, blacks at 1, whites at 85. What got there, and what the person kept:
 
 1. **Film look: colour only.**
-   - `split`: shadows 285° at 0.65, highlights 126° at 0.5, balance 0.1.
+   - `split`: shadows 285° at 0.65, highlights 126° at 0.5, balance −0.25. The meeting point sits low, so skin in the
+     middle tones lands on the warm side, never the teal.
    - `hue`:
      - Deep greens (215–240°) towards teal (+26…+32°).
      - Yellow-greens (165°) towards gold (−12°).
      - Blues and purples (320–345°, hoodies, jeans) towards teal (−10…−18°).
-   - `hue_sat`: skin 1.15; blues and purples 0.6.
-   - `hue_lum`: greens −1…−1.1 stops (dense foliage), yellow-greens −0.5.
-2. **Per-shot trim (`grade_clip`, the Grade layer): the low key.** About a stop down and a slope of 1.2 around mid
+   - `hue_sat`: skin 1.2; blues and purples 0.6.
+   - `hue_lum`: greens −0.7 stops, yellow-greens −0.35. Denser foliage, but not so much that the person pops off it.
+2. **Per-shot trim (`grade_clip`, the Grade layer): the low key.** About a stop down and a slope of 1.3 around mid
    grey, as one CDL: slope k, offset 0.414·(1 − k) + stops / 17.52. The balance stays the base correction; the mood
    lives here, per shot, so every shot can land on the same key.
-3. **Secondaries: the light.** A reference like the banner is *lit*: a warm key from one side, a face brighter than
-   everything around it, the ground and the far side falling into dark. An evenly lit shot with the same median still
-   looks flat. On the bench:
-   - The face up a whole stop and warmer (face-tracked ellipse 1.8 × 2 of the face; exposure +1, temp +0.5).
-   - The warm light only on the lit leaves where it comes from: a luma key over about 30 IRE inside an ellipse in
-     that corner (exposure +0.7, temp +1, tint 0). Warming dark greens turns them olive-brown, never into a glow.
-   - The sky held: a luma key over 72 IRE in a band at the top, exposure −0.35, highlights −0.6, cooler.
-   - The edges falling off: an inverted ellipse around the subject and the light (exposure −0.8).
-   - A sun flare or rays in a reference are relit, not graded. Grading can't invent a light the shot never had.
-4. **Finishing:** vignette 0.85 (size 0.75), grain 0.25. Halation and bloom stay off for now: on the bench they put an
-   orange haze on the hands. Look at every glow on a full hero frame before keeping it.
+3. **Finishing:** vignette 0.65 (size 0.85, soft), grain 0.25.
+4. **Secondaries: only quiet holds.** A sky kept from clipping (a luma key over 72 IRE in a band at the top). Nothing
+   else.
+
+**Less is more: no relighting.** The person turned down every shape that relit the shot:
+- a face-tracked lift (a halo round the head);
+- a warm "sun" window;
+- an inverted ellipse darkening the edges (a spotlight: they sat brighter than their garden).
+
+The subject and their surroundings keep the light the footage has, and the key comes down for the whole frame
+together. A reference with a flare, or a face far brighter than its surround, was relit: say so, don't fake it.
 
 **Measure the reference by zone, on the pixels,** not only by its percentiles. Take the median of the top and bottom
-thirds, the side the light comes from, the far side, the ground and the face (level and RGB), for the reference and
-for a hero frame, and close the biggest gap first. On Day 01 the medians matched at v3 (19 against 17 IRE) while the
-picture was still wrong: the ground was 15 against 9 and the face 27 against 39.
+thirds, the sides, the ground and the face (level and RGB), for the reference and for a hero frame. Then judge the
+difference by eye before chasing it: a gap that comes from light the reference invented stays a gap.
 
 Judge it the way the person will see it: `render_frame` hero frames at 4K next to the reference, and zoomed crops of
-the face and hands. The scope sheet's 640 px picture hides halos, blotches and banding.
+the face and hands. The scope sheet's 640 px picture hides halos, blotches and banding. Playback is checked with
+`player_frame`, which plays the very composition the Grade tab plays; 30 fps is real time.
 
 ## Don't
 

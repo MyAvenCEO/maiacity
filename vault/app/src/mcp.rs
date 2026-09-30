@@ -460,6 +460,18 @@ pub struct LevelArgs {
 }
 
 #[derive(Deserialize, schemars::JsonSchema)]
+pub struct PlaybackArgs {
+    /// the timeline's id
+    pub timeline: String,
+    /// the moment on the timeline, in seconds from 0
+    pub t: f64,
+    /// how many frames to read one after another from there, and time (default 15)
+    pub frames: Option<usize>,
+    /// the shape (default 16:9)
+    pub shape: Option<String>,
+}
+
+#[derive(Deserialize, schemars::JsonSchema)]
 pub struct FrameArgs {
     /// the timeline's id
     pub timeline: String,
@@ -1345,6 +1357,23 @@ impl Studio {
     #[tool(description = "A timeline's renders (and hero frames) as this Mac renders them: status, progress, note, the film's hash, the report (colour transforms, conform, plates, QC and loudness per delivery)")]
     async fn renders_list(&self, Parameters(a): Parameters<IdArg>) -> String {
         text(self.api("GET", &format!("/api/timelines/{}/renders", a.id), None).await)
+    }
+
+    #[tool(
+        description = "What the Grade tab's playback shows at t, checked without a screen: the timeline's composition as the Mac's player plays it (each shot from its proxy, else its original; every frame through the whole chain — balance, secondaries with the face tracked, grade and looks, finishing, output), then played by an AVPlayer for two seconds from t with the frames it hands out counted. Returns the first frame as the picture (compare it with the Grade viewer's still of the same shot) and played_fps (30 is real time; fewer: frames dropped)."
+    )]
+    async fn player_frame(&self, Parameters(a): Parameters<PlaybackArgs>) -> rmcp::model::CallToolResult {
+        let r = async {
+            let t = self.api("GET", &format!("/api/timelines/{}", a.timeline), None).await?;
+            crate::player::playback_frames(&self.vault, t, a.t, a.frames.unwrap_or(15), a.shape).await
+        };
+        match r.await {
+            Ok((info, jpg)) => rmcp::model::CallToolResult::success(vec![
+                rmcp::model::ContentBlock::text(serde_json::to_string_pretty(&info).unwrap_or_default()),
+                rmcp::model::ContentBlock::image(base64(&jpg), "image/jpeg"),
+            ]),
+            Err(e) => rmcp::model::CallToolResult::error(vec![rmcp::model::ContentBlock::text(e)]),
+        }
     }
 
     #[tool(
