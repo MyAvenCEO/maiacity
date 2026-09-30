@@ -102,7 +102,13 @@ export function proxyFor(m, find) {
  * @param {MediaItem} m
  */
 export const isCache = (m) =>
-	m.tags.includes('role:proxy') || m.tags.includes('role:lut') || typeof m.meta?.proxyOf === 'string' || typeof m.meta?.plateOf === 'string';
+	m.class === 'proxy' ||
+	m.tags.includes('role:proxy') ||
+	m.tags.includes('role:lut') ||
+	typeof m.meta?.proxyOf === 'string' ||
+	typeof m.meta?.proxy_of === 'string' ||
+	typeof m.meta?.audio_of === 'string' ||
+	typeof m.meta?.plateOf === 'string';
 
 // ── grades as data ────────────────────────────────────────────────────────────────────────────────────────────────
 

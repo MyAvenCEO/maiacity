@@ -1,12 +1,14 @@
 <!--
 	The source monitor: one file from the library, on its own, beside the program. It plays apart from the timeline
 	(never both at once), through the same colour path as the program (its proxy in Edit); I and O mark the part to use,
-	and "Add to timeline" — or a drag onto a track — lays just that part down.
+	and "Add to timeline" — or a drag onto a track — lays just that part down (a video with sound: its picture on V1, its
+	sound linked on A3). Under it the file's transcript: click a word to go there, drag across words to mark them.
 -->
 <script>
 	import ColorBadge from './ColorBadge.svelte';
 	import { WORKING, isSequence, profileFor } from './color.js';
 	import { clockText, itemName, raw, tint } from './studio.svelte.js';
+	import Transcript from './Transcript.svelte';
 	import Viewer from './Viewer.svelte';
 	import { wave } from './wave.js';
 
@@ -81,6 +83,18 @@
 		if (!m || !e.dataTransfer) return;
 		e.dataTransfer.setData('text/x-hash', m.hash);
 		if (range) e.dataTransfer.setData('text/x-range', JSON.stringify(range));
+	}
+	/** A word of the transcript: the player there. @param {number} t */
+	function seekTo(t) {
+		if (s.srcEl) s.srcEl.currentTime = t;
+		srcTime = t;
+	}
+	/** A run of words: marked in and out (a cut on the words). @param {{ from: number, to: number } | null} r */
+	function markWords(r) {
+		if (!r) return;
+		markIn = r.from;
+		markOut = r.to;
+		seekTo(r.from);
 	}
 	/** Click or drag along the source's waveform (or scrub bar) to move through it. */
 	/** @param {PointerEvent} e */
@@ -233,6 +247,9 @@
 				<button class="add" draggable="true" ondragstart={drag} onclick={add} title="Add at the playhead ({s.defaultTrack(m)}), or drag onto a track">+ Add to timeline</button>
 			{/if}
 		</div>
+		{#if av}
+			<div class="strans"><Transcript {m} time={srcTime} onseek={seekTo} onselect={markWords} /></div>
+		{/if}
 		<div class="sinfo">
 			<p class="skind">{m.kind}{#if av && len} · {clockText(len)}{/if}{#if m.tags.length} · <span>{m.tags.join(', ')}</span>{/if}</p>
 			{#if m.meta?.text}<p class="line">{String(m.meta.text)}</p>{/if}
@@ -454,6 +471,19 @@
 		font-weight: 600;
 		color: #fff;
 		cursor: pointer;
+	}
+
+	.strans {
+		display: flex;
+		flex: 0 1 38%;
+		flex-direction: column;
+		min-height: 3rem;
+		padding-top: 0.35rem;
+		border-top: 1px solid var(--edge);
+	}
+
+	.strans > :global(*) {
+		flex: 1;
 	}
 
 	.sinfo {

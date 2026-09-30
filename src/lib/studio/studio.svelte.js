@@ -22,6 +22,7 @@ import { ODT, PROFILES, WORKING, asStudio, clean, gradesFor, isCache, isSequence
 import { filmLut, nativeLut } from './luts.js';
 import { cached, evaluate, saveSpec, shotAt } from './shots.js';
 import { WorldViewer } from './world.svelte.js';
+import { asCaptions, audioProxyOf, captionWordsOf, hasSound, phraseBreak, rewordPhrase, transcriptOf } from './transcript.js';
 import { native } from '$lib/native';
 
 /** @typedef {import('$lib/auth/client').Cdl} Cdl */
@@ -41,6 +42,16 @@ import { native } from '$lib/native';
 /** @typedef {import('$lib/auth/client').TimelineClip} Clip */
 /** @typedef {{ url: string, duration: number, peaks: number[], buffer?: AudioBuffer }} Source */
 /** @typedef {{ word: string, start: number, end: number }} Timed */
+/**
+ * A caption word on the film's clock: `t`…`e`, from its voice clip's file (`hash`), `i` its place in that file's meta.words.
+ * @typedef {{ word: string, t: number, e: number, clip: string, hash: string, i: number }} CaptionWord
+ */
+/** @typedef {{ words: CaptionWord[], start: number, end: number, clip: string }} Phrase */
+/**
+ * Where a video's sound stands in the studio: its audio proxy decoded (ready), on its way, not made yet (waiting),
+ * none in the file (silent), or failed (and why).
+ * @typedef {'ready' | 'loading' | 'waiting' | 'silent' | `failed: ${string}`} SoundState
+ */
 /** @typedef {'ingest' | 'library' | '3d' | 'edit' | 'grade' | 'render'} Tab */
 /**
  * A sound cue of a world shot, where it lands on A3 (derived from the shot record, never saved as a clip).
@@ -96,6 +107,17 @@ export const thumb = (m) => raw(m.hash);
 export const itemName = (m) => m?.title || m?.original_name || m?.hash.slice(0, 10) || '';
 /** @param {RenderJob} r */
 export const running = (r) => r.status === 'queued' || r.status === 'rendering';
+/** A sound's waveform: the loudest sample of each hundredth of a second (at most 8000 bars). @param {AudioBuffer} buffer */
+const peaksOf = (buffer) => {
+	const data = buffer.getChannelData(0), n = Math.min(8000, Math.ceil(buffer.duration * 100)), step = Math.floor(data.length / n);
+	return Array.from({ length: n }, (_, i) => {
+		let max = 0;
+		for (let j = i * step; j < (i + 1) * step; j++) max = Math.max(max, Math.abs(data[j] ?? 0));
+		return max;
+	});
+};
+/** @param {Clip | null | undefined} c */
+export const onSoundTrack = (c) => !!c && c.track !== 'V1';
 
 export class Studio {
 	/** @type {'loading' | 'signed-out' | 'forbidden' | 'ready'} */
@@ -214,6 +236,14 @@ export class Studio {
 	/** @type {string[]} */
 	expanded = $state([]);
 
+	/**
+	 * a video's sound, by its hash: its audio proxy decoded for the sound tracks (see `sound()`)
+	 * @type {Record<string, SoundState>}
+	 */
+	soundState = $state({});
+	/** a passing word from the studio (what an action did) — shown beside the error, dismissed by a click */
+	notice = $state('');
+
 	// ── derived ──────────────────────────────────────────────────────────────
 	byHash = $derived(new Map(this.library.map((m) => [m.hash, m])));
 	aspect = $derived(this.current?.aspect ?? '1:1');
@@ -267,36 +297,29 @@ export class Studio {
 		const i = v1.findIndex((c) => c.start + c.dur > this.time);
 		return i < 0 ? [] : v1.slice(i, i + 3);
 	});
-	// captions: every voice clip's words, placed where the clip puts them
+	// captions: every voice clip's words (its file's meta.words — the render reads the same), placed where the clip puts them
 	captionWords = $derived.by(() => {
-		/** @type {{ word: string, t: number, clip: string }[]} */
+		/** @type {CaptionWord[]} */
 		const out = [];
-		for (const c of this.clips.filter((c) => c.track === 'A1')) {
-			const m = c.hash ? this.byHash.get(c.hash) : undefined;
-			const words = /** @type {Timed[]} */ (Array.isArray(m?.meta?.words) ? m.meta.words : []);
-			for (const w of words) if (w.start >= c.in && w.start < c.in + c.dur) out.push({ word: w.word, t: c.start + (w.start - c.in), clip: c.id });
+		for (const c of this.clips.filter((c) => c.track === 'A1' && c.hash)) {
+			const hash = /** @type {string} */ (c.hash);
+			const words = captionWordsOf(this.byHash.get(hash));
+			for (const [i, w] of words.entries())
+				if (w.start >= c.in && w.start < c.in + c.dur) out.push({ word: w.word, t: c.start + (w.start - c.in), e: c.start + (w.end - c.in), clip: c.id, hash, i });
 		}
 		return out;
 	});
-	// words become phrases — a few at a time, broken at the punctuation — the way a film's subtitles run
+	// words become phrases — a few at a time, broken at the punctuation — by the render's own rule (timeline.rs `phrases`)
 	phrases = $derived.by(() => {
-		/** @type {{ words: { word: string, t: number }[], start: number, end: number, clip: string }[]} */
+		/** @type {Phrase[]} */
 		const out = [];
-		for (const c of this.clips.filter((c) => c.track === 'A1')) {
-			/** @type {{ word: string, t: number }[]} */
-			let cur = [];
-			const flush = () => cur.length && out.push({ words: cur, start: cur[0].t, end: /** @type {{ t: number }} */ (cur.at(-1)).t + 0.5, clip: c.id });
-			for (const w of this.captionWords.filter((w) => w.clip === c.id)) {
-				cur.push(w);
-				const text = cur.map((x) => x.word).join(' ');
-				if ((/[.,;:!?]$/.test(w.word) && (cur.length >= 3 || /[.;:!?]$/.test(w.word))) || text.length > 38) flush(), (cur = []);
-			}
-			flush();
-		}
-		// each phrase stays until the next one begins (or a moment after its last word)
-		return out.map((p, i) => ({ ...p, end: out[i + 1] && out[i + 1].clip === p.clip ? Math.min(out[i + 1].start, p.end + 1.2) : p.end + 0.6 }));
+		for (const c of this.clips.filter((c) => c.track === 'A1'))
+			for (const words of phraseBreak(this.captionWords.filter((w) => w.clip === c.id)))
+				out.push({ words, start: words[0].t, end: /** @type {CaptionWord} */ (words.at(-1)).e, clip: c.id });
+		return out;
 	});
-	caption = $derived(this.phrases.find((p) => this.time >= p.start - 0.08 && this.time < p.end)?.words ?? []);
+	// on screen as the render burns it in: from a moment before the phrase's first word to a moment after its last
+	caption = $derived(this.phrases.findLast((p) => this.time >= p.start - 0.08 && this.time < p.end + 0.3)?.words ?? []);
 
 	// renders
 	newest = $derived([...this.renders].sort((a, b) => Date.parse(b.created) - Date.parse(a.created)));
@@ -404,12 +427,13 @@ export class Studio {
 			this.error = /** @type {Error} */ (e).message;
 		}
 		this.phase = 'ready';
+		this.watchVault();
 		void this.loadLuts();
 		void this.refreshJobs();
 		// a proxy the Mac just made — a world shot's too — is in the library at once, so its clips play it
 		if (native() && !this.unlisten)
 			this.unlisten = import('@tauri-apps/api/event').then(({ listen }) =>
-				listen('vault-proxy', () => void listMedia().then(asStudio).then((m) => (this.library = m)).catch(() => null))
+				listen('vault-proxy', () => void this.reloadLibrary())
 			);
 		/** @type {string | null} */
 		let last = null;
@@ -496,6 +520,7 @@ export class Studio {
 			/* fine */
 		}
 		for (const c of this.clips) if (c.hash) void this.source(c.hash).catch((e) => (this.error = /** @type {Error} */ (e).message));
+		for (const c of this.clips) if (onSoundTrack(c) && c.hash && this.byHash.get(c.hash)?.kind === 'video') void this.sound(c.hash);
 		void this.loadShots();
 		this.renders = [];
 		this.deliveries = [];
@@ -710,12 +735,7 @@ export class Studio {
 			if (m?.kind === 'audio' || !m) {
 				buffer = await this.audioCtx().decodeAudioData(bytes.slice(0));
 				duration = buffer.duration;
-				const data = buffer.getChannelData(0), n = Math.min(8000, Math.ceil(buffer.duration * 100)), step = Math.floor(data.length / n);
-				peaks = Array.from({ length: n }, (_, i) => {
-					let max = 0;
-					for (let j = i * step; j < (i + 1) * step; j++) max = Math.max(max, Math.abs(data[j] ?? 0));
-					return max;
-				});
+				peaks = peaksOf(buffer);
 			}
 			const s = { url, duration, peaks, buffer };
 			this.sources[hash] = s;
@@ -723,6 +743,51 @@ export class Studio {
 		})();
 		this.pending.set(hash, p);
 		return p;
+	}
+
+	/** @type {Map<string, Promise<void>>} */
+	pendingSound = new Map();
+	/**
+	 * A clip's sound, ready to play: a sound file decoded (source()); a video's sound — a clip of it on a sound track —
+	 * from its audio proxy (meta.audio: a small audio-only file on the original's clock), decoded onto the video's own
+	 * source. A movie is never fetched whole for its sound. Until the audio proxy exists the clip says so (soundState).
+	 * @param {string} hash
+	 */
+	async sound(hash) {
+		const m = this.byHash.get(hash);
+		if (m?.kind !== 'video') return void (await this.source(hash));
+		await this.source(hash);
+		if (this.sources[hash]?.buffer) return void (this.soundState[hash] = 'ready');
+		const a = audioProxyOf(m);
+		if (!a) return void (this.soundState[hash] = hasSound(m) ? 'waiting' : 'silent');
+		const waiting = this.pendingSound.get(hash);
+		if (waiting) return waiting;
+		const p = (async () => {
+			this.soundState[hash] = 'loading';
+			try {
+				const res = await fetch(raw(a));
+				if (!res.ok) throw new Error(`its audio proxy is not on this Mac yet (${res.status})`);
+				const buffer = await this.audioCtx().decodeAudioData(await res.arrayBuffer());
+				this.sources[hash] = { ...this.sources[hash], buffer, peaks: peaksOf(buffer) };
+				this.soundState[hash] = 'ready';
+			} catch (e) {
+				this.soundState[hash] = `failed: ${/** @type {Error} */ (e).message}`;
+				console.warn(`sound of ${itemName(m)}:`, /** @type {Error} */ (e).message);
+			} finally {
+				this.pendingSound.delete(hash);
+			}
+		})();
+		this.pendingSound.set(hash, p);
+		return p;
+	}
+	/** Every video sound on the sound tracks not decoded yet, tried again (its audio proxy may have come in). */
+	retrySounds() {
+		for (const c of this.clips) if (onSoundTrack(c) && c.hash && this.soundState[c.hash] && this.soundState[c.hash] !== 'ready') void this.sound(c.hash);
+	}
+	/** The library read again (a proxy, an audio proxy or a transcript came in), and the sounds waiting on it tried. */
+	async reloadLibrary() {
+		this.library = await listMedia().then(asStudio).catch(() => this.library);
+		this.retrySounds();
 	}
 
 	silence() {
@@ -744,7 +809,9 @@ export class Studio {
 		this.ctxStart = ac.currentTime + 0.05;
 		this.timeStart = time;
 		/** @type {Clip[]} */
-		const all = [...this.clips.filter((c) => !isWorld(c)), ...this.cueClips];
+		// the sound tracks only: a video's picture on V1 plays its own sound through its player (at its volume — 0 once
+		// its sound is a clip of its own), never twice
+		const all = [...this.clips.filter((c) => onSoundTrack(c)), ...this.cueClips];
 		for (const c of all) {
 			const buf = c.hash ? this.sources[c.hash]?.buffer : undefined;
 			if (!buf || c.start + c.dur <= time) continue;
@@ -788,6 +855,7 @@ export class Studio {
 		this.unlisten = null;
 		cancelAnimationFrame(this.frame);
 		this.poll(false);
+		if (this.vaultWatch) clearInterval(this.vaultWatch), (this.vaultWatch = null);
 		this.silence();
 		void this.flush();
 		void this.ctx?.close();
@@ -812,7 +880,10 @@ export class Studio {
 				continue;
 			}
 			const local = this.shotTime(c);
-			v.volume = c.vol;
+			// a picture whose sound is its own clip is silent — but while that sound's audio proxy is not here yet, the
+			// picture's player lends it its sound (in sync only), so nothing plays mute
+			const p = this.partnerOf(c);
+			v.volume = p && onSoundTrack(p) && c.hash && this.soundState[c.hash] !== 'ready' && !this.drift(c) ? p.vol : c.vol;
 			if (force || Math.abs(v.currentTime - local) > 0.25) v.currentTime = local;
 			if (this.playing && v.paused) void v.play().catch(() => {});
 			if (!this.playing && !v.paused) v.pause();
@@ -870,7 +941,7 @@ export class Studio {
 		await Promise.all(
 			[...this.clips, ...this.cueClips].map((c) =>
 				c.hash
-					? this.source(c.hash).catch((e) => {
+					? (onSoundTrack(c) ? this.sound(c.hash) : this.source(c.hash)).catch((e) => {
 							// a sound that cannot load plays as silence — say so, never in silence
 							console.warn(`sound ${c.hash?.slice(0, 12)} (${c.track}):`, /** @type {Error} */ (e).message);
 							return null;
@@ -878,6 +949,8 @@ export class Studio {
 					: null
 			)
 		);
+		const mute = this.clips.filter((c) => onSoundTrack(c) && c.hash && this.byHash.get(c.hash)?.kind === 'video' && this.soundState[c.hash] !== 'ready');
+		if (mute.length) console.warn(`${mute.length} video sound clip(s) play silent until their audio proxy is here:`, mute.map((c) => `${this.clipName(c)} (${this.soundState[c.hash ?? '']})`).join(', '));
 		await this.preparePlayback();
 		this.playing = true;
 		this.schedule();
@@ -913,7 +986,9 @@ export class Studio {
 		if (!this.canEdit) return void (this.error = this.locked ? 'The edit is locked: unlock it to change picture or sound.' : '');
 		const m = this.byHash.get(hash);
 		const accepts = TRACKS.find((t) => t.id === track)?.accepts ?? [];
-		if (!m || !accepts.includes(m.kind)) return void (this.error = `${itemName(m)} does not go on the ${track} track.`);
+		// a video on a sound track: its sound alone (a camera's voice on A1, its room on A3)
+		const soundOnly = track !== 'V1' && m?.kind === 'video' && hasSound(m);
+		if (!m || !(accepts.includes(m.kind) || soundOnly)) return void (this.error = `${itemName(m)} does not go on the ${track} track.`);
 		this.error = '';
 		try {
 			const s = await this.source(hash);
@@ -922,10 +997,21 @@ export class Studio {
 			const dur = m.kind === 'image' || !range ? whole : Math.min(Math.max(0.2, range.dur), whole - from);
 			const c = this.clip(hash, track, Math.max(0, this.snap(start)), from, dur);
 			if (track === 'A2') c.vol = 0.3;
-			if (track === 'A3') c.vol = 0.2;
-			this.clips = [...this.clips, c];
+			if (track === 'A3') c.vol = soundOnly ? 1 : 0.2;
+			/** @type {Clip[]} */
+			const added = [c];
+			// a video with sound on V1: its sound comes along as a clip of its own on A3, linked to the picture (moved and
+			// trimmed with it); the picture's own player is silent then — the sound plays once, from the sound track
+			if (track === 'V1' && m.kind === 'video' && hasSound(m)) {
+				const link = Math.random().toString(36).slice(2, 10);
+				c.link = link;
+				c.vol = 0;
+				added.push({ ...this.clip(hash, 'A3', c.start, c.in, c.dur), link });
+			}
+			this.clips = [...this.clips, ...added];
 			this.selected = c.id;
 			this.changed();
+			for (const k of added) if (onSoundTrack(k) && m.kind === 'video') void this.sound(hash);
 			if (this.playing) this.schedule();
 		} catch (e) {
 			this.error = /** @type {Error} */ (e).message;
@@ -947,10 +1033,15 @@ export class Studio {
 		this.changed();
 	}
 
-	/** @param {string | null} id */
-	remove(id) {
+	/**
+	 * Takes a clip off the timeline — and its linked partner (a video's picture and its sound go together), unless `alone`.
+	 * @param {string | null} id
+	 */
+	remove(id, alone = false) {
 		if (!id || !this.canEdit) return;
-		this.clips = this.clips.filter((c) => c.id !== id);
+		const c = this.clips.find((k) => k.id === id);
+		const partner = alone ? null : this.partnerOf(c);
+		this.clips = this.clips.filter((k) => k.id !== id && k.id !== partner?.id).map((k) => (alone && c?.link && k.link === c.link ? { ...k, link: undefined } : k));
 		this.selected = null;
 		this.changed();
 		if (this.playing) this.schedule();
@@ -962,7 +1053,70 @@ export class Studio {
 	 */
 	setClip(patch, id = this.selected) {
 		if (!this.canEdit) return;
+		const c = this.clips.find((k) => k.id === id);
+		const partner = this.partnerOf(c);
+		if (c && partner && (patch.start !== undefined || patch.in !== undefined || patch.dur !== undefined)) {
+			// the linked partner moves and trims by as much
+			const ds = (patch.start ?? c.start) - c.start, di = (patch.in ?? c.in) - c.in, dd = (patch.dur ?? c.dur) - c.dur;
+			const pin = Math.max(0, partner.in + di);
+			this.patchClip(partner.id, { start: Math.max(0, partner.start + ds), in: pin, dur: Math.max(0.2, partner.dur + dd) });
+		}
 		this.patchClip(id, patch);
+	}
+
+	// ── a video's picture and its sound, linked ─────────────────────────────────
+	/**
+	 * The clip linked to this one: a video's sound for its picture, its picture for its sound.
+	 * @param {Clip | null | undefined} c @returns {Clip | null}
+	 */
+	partnerOf(c) {
+		if (!c?.link) return null;
+		return this.clips.find((k) => k.id !== c.id && k.link === c.link) ?? null;
+	}
+	/**
+	 * How far a linked sound has slid off its picture (seconds; 0 in sync): where the file's first frame lands on each.
+	 * @param {Clip} c
+	 */
+	drift(c) {
+		const p = this.partnerOf(c);
+		return p ? this.snap(p.start - p.in - (c.start - c.in)) : 0;
+	}
+	/**
+	 * A video clip's sound, pulled out onto A3 as a clip of its own (the same file, the same place and length), linked to
+	 * it; the picture's player goes silent. The sound plays from its audio proxy, the render from the original.
+	 * @param {Clip} c
+	 */
+	detachSound(c) {
+		if (!this.canEdit || !c.hash || c.track !== 'V1' || this.partnerOf(c)) return;
+		const link = Math.random().toString(36).slice(2, 10);
+		const sound = { ...this.clip(c.hash, 'A3', c.start, c.in, c.dur), vol: c.vol || 1, link };
+		this.clips = [...this.clips.map((k) => (k.id === c.id ? { ...k, link, vol: 0 } : k)), sound];
+		this.selected = sound.id;
+		this.changed();
+		void this.sound(c.hash);
+		if (this.playing) this.schedule();
+	}
+	/** A linked clip slid off its partner, put back: this clip moves so the file's frames meet again. @param {Clip} c */
+	resync(c) {
+		const p = this.partnerOf(c);
+		if (!p || !this.canEdit) return;
+		this.patchClip(c.id, { start: Math.max(0, this.snap(c.start + this.drift(c))) });
+	}
+	/** Picture and sound apart: each moves on its own from now on. @param {Clip} c */
+	unlink(c) {
+		if (!this.canEdit || !c.link) return;
+		const link = c.link;
+		this.clips = this.clips.map((k) => (k.link === link ? { ...k, link: undefined } : k));
+		this.changed();
+	}
+	/**
+	 * A clip cut down to a run of its file's words (from, to: seconds of the file) — where they sit on the timeline stays.
+	 * @param {Clip} c @param {number} from @param {number} to
+	 */
+	trimTo(c, from, to) {
+		const a = this.snap(Math.max(0, from)), b = this.snap(to);
+		if (b - a < 0.1) return;
+		this.setClip({ start: Math.max(0, this.snap(c.start + (a - c.in))), in: a, dur: b - a }, c.id);
 	}
 	/**
 	 * Changes what a clip is (its grade, its framing, its shot version) — not its place in the edit.
@@ -1071,6 +1225,76 @@ export class Studio {
 		this.editSpec(c, (s) => {
 			s.camera = { kind: 'keys', curve: s.camera.curve ?? 'glide', keys: keys.map((k) => ({ ...k, t: c.in + k.t })) };
 		});
+	}
+
+	// ── captions: the voice's words on screen ─────────────────────────────────────
+	/**
+	 * Captions from the voice: every voice (A1) clip's file gets its transcript's words as its caption words (meta.words
+	 * — what the program monitor shows and the render burns in, phrased by the render's rule). A file that has caption
+	 * words already (a voice take's own timing, or captions edited by hand) keeps them unless `replace`.
+	 */
+	async captionsFromVoice(replace = false) {
+		const files = [...new Set(this.clips.filter((c) => c.track === 'A1' && c.hash).map((c) => /** @type {string} */ (c.hash)))].map((h) => this.byHash.get(h)).filter((m) => !!m);
+		if (!files.length) return void (this.notice = 'No voice clips on A1: put the voice there first.');
+		const done = [], kept = [], none = [];
+		for (const m of files) {
+			const t = transcriptOf(m);
+			if (!t) {
+				none.push(itemName(m));
+				continue;
+			}
+			if (captionWordsOf(m).length && !replace) {
+				kept.push(itemName(m));
+				continue;
+			}
+			if (!(await this.setCaptionWords(m.hash, asCaptions(t.words)))) return;
+			done.push(itemName(m));
+		}
+		this.notice = [
+			done.length ? `Captions from ${done.length} voice file${done.length === 1 ? '' : 's'}` : '',
+			kept.length ? `${kept.length} kept their own captions` : '',
+			none.length ? `no transcript yet: ${none.join(', ')}` : ''
+		].filter(Boolean).join(' · ') || 'Nothing to caption.';
+	}
+	/**
+	 * A file's caption words set (meta.words, merged into its meta; it syncs).
+	 * @param {string} hash @param {import('./transcript.js').CaptionWord[]} words
+	 */
+	async setCaptionWords(hash, words) {
+		try {
+			await describeMedia(hash, { meta: { words } });
+			this.library = this.library.map((x) => (x.hash === hash ? { ...x, meta: { ...x.meta, words } } : x));
+			return true;
+		} catch (e) {
+			this.error = `Captions: ${/** @type {Error} */ (e).message}`;
+			return false;
+		}
+	}
+	/**
+	 * A caption phrase written by hand: its words in the file's meta.words replaced (the same count keep their timing).
+	 * @param {Phrase} p @param {string} text
+	 */
+	async rewordPhrase(p, text) {
+		const hash = p.words[0]?.hash;
+		const m = hash ? this.byHash.get(hash) : undefined;
+		if (!m || !hash) return;
+		const all = captionWordsOf(m);
+		const from = p.words[0].i, to = /** @type {CaptionWord} */ (p.words.at(-1)).i;
+		const next = [...all.slice(0, from), ...rewordPhrase(all.slice(from, to + 1), text), ...all.slice(to + 1)];
+		await this.setCaptionWords(hash, next);
+	}
+
+	// ── what the vault brings later: audio proxies and transcripts (made on the server, synced into the catalog) ──
+	/** @type {ReturnType<typeof setInterval> | null} */
+	vaultWatch = null;
+	/** Is anything on screen waiting for the vault — a sound's audio proxy, a transcript on its way? */
+	waitingOnVault() {
+		if (Object.values(this.soundState).some((v) => v !== 'ready' && v !== 'silent' && v !== 'loading')) return true;
+		const hashes = new Set([...this.clips.map((c) => c.hash), this.preview]);
+		return this.library.some((m) => hashes.has(m.hash) && (m.meta?.transcript_state === 'queued' || m.meta?.transcript_state === 'transcribing'));
+	}
+	watchVault() {
+		this.vaultWatch ??= setInterval(() => void (this.waitingOnVault() && this.reloadLibrary()), 20000);
 	}
 
 	// ── colour: a file's profile, set by hand when detection got it wrong (re-queues its proxy, on the API side) ──

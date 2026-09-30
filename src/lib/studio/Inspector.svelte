@@ -1,13 +1,17 @@
 <!--
 	The inspector (Edit): the selected clip — where it sits, how long it runs, how loud it plays, what file it is. A world
 	clip shows its shot record instead: its version, the camera's keys, the hour, the exposure, the lights and the cues,
-	each change saved as a new version of the shot (the clip follows it); and a camera move recorded by flying it.
+	each change saved as a new version of the shot (the clip follows it); and a camera move recorded by flying it. A video
+	clip's sound is a clip of its own, linked (detach it, unlink it, put it back in sync); a clip with words shows them —
+	click one to go there, take a run of them to cut the clip to it; a voice clip's captions are edited here, phrase by phrase.
 -->
 <script>
 	import ColorBadge from './ColorBadge.svelte';
 	import { toKeys } from './shots.js';
 	import { SHOT_LIGHTS } from '$lib/auth/client';
-	import { isWorld, itemName } from './studio.svelte.js';
+	import { isWorld, itemName, onSoundTrack } from './studio.svelte.js';
+	import { hasSound, wordsOf } from './transcript.js';
+	import Transcript from './Transcript.svelte';
 
 	/** @typedef {import('$lib/auth/client').ShotSpec} ShotSpec */
 	/** @type {{ s: import('./studio.svelte.js').Studio }} */
@@ -21,6 +25,23 @@
 	const ro = $derived(!s.canEdit);
 	const sounds = $derived(s.library.filter((x) => x.kind === 'audio' && !x.tags.includes('superseded')));
 	let cueSound = $state('');
+
+	// a video's picture and its sound
+	const partner = $derived(s.partnerOf(sel));
+	const isVideo = $derived(m?.kind === 'video');
+	const drift = $derived(sel && partner ? s.drift(sel) : 0);
+	const soundState = $derived(sel && onSoundTrack(sel) && isVideo && sel.hash ? (s.soundState[sel.hash] ?? 'loading') : null);
+	/** @type {Record<string, string>} */
+	const soundText = { ready: 'from its audio proxy', loading: 'reading its audio proxy…', waiting: 'its audio proxy is not made yet — until it is, the picture’s player plays it (in sync only; the render takes the original’s sound)', silent: 'this file has no sound' };
+	// the words: the clip's part of its file's transcript; a run of them taken to cut to
+	const hasWords = $derived(!!m && wordsOf(m).length > 0);
+	/** @type {{ from: number, to: number, text: string } | null} */
+	let taken = $state(null);
+	$effect(() => {
+		void sel?.id;
+		taken = null;
+	});
+	const phrases = $derived(sel?.track === 'A1' ? s.phrases.filter((p) => p.clip === sel.id) : []);
 
 	/**
 	 * A change to the world clip's shot (a new version, saved a moment after the last change). The camera's keys,
@@ -44,9 +65,62 @@
 			<label>Length <input type="number" step="0.05" min="0.2" value={sel.dur.toFixed(2)} onchange={(e) => s.setClip({ dur: Math.max(0.2, Number(e.currentTarget.value)) })} /> s</label>
 			{#if m?.kind !== 'image'}
 				<label>From <input type="number" step="0.05" min="0" value={sel.in.toFixed(2)} onchange={(e) => s.setClip({ in: Math.max(0, Number(e.currentTarget.value)) })} /> s in</label>
-				<label class="vol">Volume <input type="range" min="0" max="1" step="0.01" value={sel.vol} oninput={(e) => s.setClip({ vol: Number(e.currentTarget.value) })} /> {Math.round(sel.vol * 100)}%</label>
+				{#if sel.track === 'V1' && partner}
+					<p class="sub">Its sound is its own clip on {partner.track}, linked — moved and trimmed with it (Alt: one alone).</p>
+				{:else}
+					<label class="vol">Volume <input type="range" min="0" max="1" step="0.01" value={sel.vol} oninput={(e) => s.setClip({ vol: Number(e.currentTarget.value) })} /> {Math.round(sel.vol * 100)}%</label>
+				{/if}
+			{/if}
+			{#if onSoundTrack(sel) && isVideo}
+				<label>Track <select value={sel.track} onchange={(e) => s.setClip({ track: /** @type {'A1'} */ (e.currentTarget.value) })}><option value="A1">A1 Voice</option><option value="A2">A2 Music</option><option value="A3">A3 Sound</option></select></label>
+			{/if}
+			{#if isVideo && (partner || (sel.track === 'V1' && hasSound(m)))}
+				<div class="row">
+					{#if partner}
+						<button class="ghost small" onclick={() => s.unlink(sel)} title="Picture and sound move on their own from now on">Unlink picture and sound</button>
+						{#if drift}<b class="drift" title="The sound has slid off its picture">{drift > 0 ? '+' : ''}{drift.toFixed(2)} s</b><button class="ghost small" onclick={() => s.resync(sel)}>Back in sync</button>{/if}
+					{:else}
+						<button class="ghost small" onclick={() => s.detachSound(sel)} title="Its sound as a clip of its own on A3 (linked), adjustable on the timeline">Detach sound</button>
+					{/if}
+				</div>
 			{/if}
 		</fieldset>
+		{#if soundState}
+			<p class="sub" class:warn={soundState !== 'ready'}>Sound: {soundText[soundState] ?? soundState}</p>
+		{/if}
+		{#if hasWords && m}
+			<h3>Words</h3>
+			<div class="words">
+				<Transcript
+					{m}
+					time={s.time >= sel.start && s.time < sel.start + sel.dur ? sel.in + (s.time - sel.start) : null}
+					range={{ from: sel.in, to: sel.in + sel.dur }}
+					onseek={(t) => s.seek(sel.start + (Math.min(Math.max(t, sel.in), sel.in + sel.dur) - sel.in))}
+					onselect={(r) => (taken = r)}
+				/>
+			</div>
+			{#if taken && !ro}
+				{@const t = taken}
+				<button class="ghost small" onclick={() => (s.trimTo(sel, t.from, t.to), (taken = null))} title="The clip plays just these words (its partner too)">Cut the clip to “{t.text.length > 28 ? `${t.text.slice(0, 28)}…` : t.text}”</button>
+			{/if}
+		{:else if m && (m.kind === 'audio' || isVideo)}
+			<h3>Words</h3>
+			<div class="words"><Transcript {m} /></div>
+		{/if}
+		{#if sel.track === 'A1'}
+			<h3>Captions</h3>
+			{#if phrases.length}
+				<p class="sub">On screen as the render burns them in. Edit a phrase (kept with the voice file, so in every cut of it); the same number of words keep their timing.</p>
+				{#each phrases as p (`${p.words[0].i}`)}
+					<label class="cap">
+						<button class="tcb" onclick={() => s.seek(p.start)} title="Go there">{p.start.toFixed(1)}</button>
+						<input value={p.words.map((w) => w.word).join(' ')} disabled={ro} onchange={(e) => s.rewordPhrase(p, e.currentTarget.value)} aria-label="Caption at {p.start.toFixed(1)} s" />
+					</label>
+				{/each}
+			{:else}
+				<p class="sub">No captions for this voice yet: “Captions from the voice” (under the monitor) writes them from its transcript.</p>
+			{/if}
+		{/if}
 		<dl>
 			{#if m?.meta?.voice}<dt>Voice</dt><dd>{String(m.meta.voice)} · {String(m.meta.model ?? '').split('/').pop()}</dd>{/if}
 			{#if m?.meta?.artist}<dt>Artist</dt><dd>{String(m.meta.artist)}</dd>{/if}
@@ -58,7 +132,7 @@
 			<dt>Tags</dt><dd>{m?.tags.join(', ') || '—'}</dd>
 			<dt>hash</dt><dd><code>{sel.hash}</code></dd>
 		</dl>
-		{#if !ro}<button class="ghost danger" onclick={() => s.remove(sel.id)}>Remove clip</button>{/if}
+		{#if !ro}<button class="ghost danger" onclick={(e) => s.remove(sel.id, e.altKey)} title={partner ? 'With its linked partner (Alt: this one alone)' : ''}>Remove clip{partner ? ' (and its partner)' : ''}</button>{/if}
 	{:else if sel && spec}
 		<p class="iname">{shot?.name ?? 'World shot'} <span class="ver">v{sel.shotVersion}{#if s.drafts[sel.id]} · saving…{/if}</span></p>
 		<p class="sub">A world shot: data, drawn live. Every change is a new version; this clip follows it.</p>
@@ -274,6 +348,57 @@
 
 	.vol input {
 		flex: 1;
+	}
+
+	.sub.warn {
+		color: #a8741a;
+	}
+
+	.drift {
+		padding: 0 0.35rem;
+		border-radius: 4px;
+		background: #f6e3da;
+		font-size: 0.7rem;
+		color: #8a2a12;
+	}
+
+	.words {
+		display: flex;
+		flex-direction: column;
+		max-height: 16rem;
+	}
+
+	.words > :global(*) {
+		flex: 1;
+	}
+
+	.cap {
+		flex-wrap: nowrap;
+		margin: 0.2rem 0;
+	}
+
+	.cap input {
+		flex: 1;
+		min-width: 0;
+		padding: 0.2rem 0.4rem;
+		border: 1px solid var(--edge);
+		border-radius: 5px;
+		background: #fff;
+		font: inherit;
+		font-size: 0.76rem;
+		color: var(--ink);
+	}
+
+	.tcb {
+		flex: none;
+		width: 2.4rem;
+		padding: 0;
+		border: 0;
+		background: none;
+		font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+		font-size: 0.64rem;
+		color: var(--dim);
+		cursor: pointer;
 	}
 
 	.row {

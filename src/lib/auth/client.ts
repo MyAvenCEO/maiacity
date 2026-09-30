@@ -206,6 +206,11 @@ export type TimelineClip = {
 	grade?: Cdl | null;
 	/** media clips: reframing per delivery shape */
 	frame?: Partial<Record<Shape, ClipFrame>>;
+	/**
+	 * media clips: a video's picture (V1) and its own sound (an A track, the same hash) share one `link` — moved and
+	 * trimmed together in the studio. The sound plays from the original (the render) or its audio proxy (the studio).
+	 */
+	link?: string;
 };
 /** Where a timeline stands: cut (edit), picture and sound locked, graded, rendered. */
 export type TimelineStage = 'edit' | 'locked' | 'graded' | 'rendered';

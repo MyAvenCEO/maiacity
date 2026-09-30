@@ -1,5 +1,6 @@
 <!--
-	The library bin: the timelines by project, the world shots, and every file, filtered by type and tag. A click shows a
+	The library bin: the timelines by project, the world shots, and every file, filtered by story (the inbox, or one
+	story's files — remembered), by type and by a search (names, words, tags, hash). A click shows a
 	file in the source monitor; a drag lays it on a track; a double-click drops it at the playhead. Each picture shows
 	its colour profile (a menu sets it by hand) and whether its HD proxy is ready — the Edit tab plays only proxies.
 -->
@@ -8,15 +9,64 @@
 	import { isCache } from './color.js';
 	import { allShots, blankSpec, newShot } from './shots.js';
 	import { itemName, thumb } from './studio.svelte.js';
+	import { command } from '$lib/native';
+	import { transcriptState } from './transcript.js';
 
 	/** @type {{ s: import('./studio.svelte.js').Studio }} */
 	let { s } = $props();
 
 	/** @typedef {'all' | 'image' | 'video' | 'audio' | 'world'} Kind */
 	let kind = $state(/** @type {Kind} */ ('all'));
-	/** @type {string | null} */
-	let tag = $state(null);
 	let q = $state('');
+
+	// ── the story the library shows: every file of it (its originals, sound, stills, deliveries) — or all ──
+	/** @typedef {import('./vault').StoryView} StoryView */
+	const STORY = 'studio:bin-story';
+	/** @type {StoryView[]} */
+	let stories = $state([]);
+	/** a story's id, or 'all' */
+	let story = $state(read());
+	function read() {
+		try {
+			return localStorage.getItem(STORY) || 'all';
+		} catch {
+			return 'all';
+		}
+	}
+	/** @param {string} id */
+	function choose(id) {
+		story = id;
+		try {
+			localStorage.setItem(STORY, id);
+		} catch {
+			/* not remembered: fine */
+		}
+	}
+	async function loadStories() {
+		try {
+			const list = await command('stories_list');
+			stories = /** @type {StoryView[]} */ (Array.isArray(list) ? list : []);
+		} catch {
+			stories = [];
+		}
+	}
+	$effect(() => void loadStories());
+	// the inbox first, then by episode (Day 2 before Day 10), then by title
+	const ordered = $derived(
+		[...stories].sort((a, b) => Number(b.inbox) - Number(a.inbox) || (a.episode || '~').localeCompare(b.episode || '~', undefined, { numeric: true }) || a.title.localeCompare(b.title))
+	);
+	const chosen = $derived(story === 'all' ? null : (stories.find((x) => x.id === story) ?? null));
+	/** Is a file of the chosen story? (the inbox: of none) @param {import('$lib/auth/client').MediaItem} m */
+	const inStory = (m) => !chosen || (chosen.inbox ? !m.story || m.story === chosen.id : m.story === chosen.id);
+	/** A world shot of the chosen story: its project names the story (its episode or title); the inbox: no project. @param {string | null | undefined} p */
+	const shotIn = (p) => {
+		if (!chosen) return true;
+		if (chosen.inbox) return !p;
+		const want = [chosen.episode, chosen.title].filter(Boolean).map((x) => x.trim().toLowerCase());
+		return !!p && want.includes(p.trim().toLowerCase());
+	};
+	/** @param {StoryView} x */
+	const storyName = (x) => (x.inbox ? 'Inbox' : `${x.episode ? `${x.episode} · ` : ''}${x.title}`);
 	/** @type {import('$lib/auth/client').Shot[]} */
 	let shots = $state([]);
 	let shotsNote = $state('');
@@ -25,9 +75,18 @@
 	/** @param {string} t */
 	const rank = (t) => (t.startsWith('Day ') ? 0 : ROLES.includes(t) ? 1 : t === 'unused' ? 3 : 2);
 	const files = $derived(s.library.filter((m) => !isCache(m)));
-	const allTags = $derived(
-		[...new Set(files.flatMap((m) => m.tags))].sort((a, b) => rank(a) - rank(b) || a.localeCompare(b, undefined, { numeric: true }))
-	);
+	/** how many files each story holds (in the bin's sense: no proxies) */
+	const counts = $derived.by(() => {
+		/** @type {Map<string, number>} */
+		const n = new Map();
+		const inbox = stories.find((x) => x.inbox)?.id ?? '';
+		for (const m of files) n.set(m.story || inbox, (n.get(m.story || inbox) ?? 0) + 1);
+		return n;
+	});
+	// a remembered story that is gone: all again
+	$effect(() => {
+		if (stories.length && story !== 'all' && !chosen) choose('all');
+	});
 	const shown = $derived(
 		kind === 'world'
 			? []
@@ -35,17 +94,17 @@
 					// the pipeline's own working files (proxies, the worker's old LUT caches, hero frames) are not footage to cut with
 					if (!['image', 'video', 'audio'].includes(m.kind) || m.tags.some((t) => t === 'superseded' || t === 'role:proxy' || t === 'role:lut' || t === 'role:frame')) return false;
 					if (kind !== 'all' && m.kind !== kind) return false;
-					if (tag && !m.tags.includes(tag)) return false;
+					if (!inStory(m)) return false;
 					const f = q.trim().toLowerCase();
-					return !f || m.hash.includes(f) || m.title.toLowerCase().includes(f) || m.description.toLowerCase().includes(f) || m.tags.some((t) => t.toLowerCase().includes(f)) || String(m.meta?.text ?? '').toLowerCase().includes(f);
+					return !f || m.hash.includes(f) || m.title.toLowerCase().includes(f) || m.description.toLowerCase().includes(f) || m.tags.some((t) => t.toLowerCase().includes(f)) || String(m.meta?.text ?? '').toLowerCase().includes(f) || String(/** @type {{ text?: string } | undefined} */ (m.meta?.transcript)?.text ?? '').toLowerCase().includes(f);
 				})
 	);
 	const shownShots = $derived(
 		kind === 'world' || kind === 'all'
-			? shots.filter((x) => (!tag || x.project === tag) && (!q.trim() || x.name.toLowerCase().includes(q.trim().toLowerCase())))
+			? shots.filter((x) => shotIn(x.project) && (!q.trim() || x.name.toLowerCase().includes(q.trim().toLowerCase())))
 			: []
 	);
-	const shownTimelines = $derived(s.timelines.filter((t) => !tag || t.tags.includes(tag)));
+	const shownTimelines = $derived(s.timelines);
 	// one heading per project, its variants under it (A, B, …); timelines without a project last
 	const groups = $derived.by(() => {
 		/** @type {Map<string, typeof shownTimelines>} */
@@ -104,18 +163,19 @@
 			{/if}
 		{/each}
 	</div>
-	<h3>Library</h3>
+	<div class="lib-head">
+		<h3>Library</h3>
+		<select class="story" value={story} onchange={(e) => choose(e.currentTarget.value)} onfocus={loadStories} aria-label="Story" title="The files of one story (or of none: the inbox)">
+			<option value="all">All stories · {files.length}</option>
+			{#each ordered as x (x.id)}<option value={x.id}>{storyName(x)} · {counts.get(x.id) ?? 0}</option>{/each}
+		</select>
+	</div>
 	<div class="kinds">
 		{#each [['all', 'All'], ['image', 'Images'], ['video', 'Video'], ['audio', 'Sound'], ['world', 'World']] as [k, label] (k)}
 			<button class:on={kind === k} onclick={() => (kind = /** @type {Kind} */ (k))}>{label}</button>
 		{/each}
 	</div>
-	<input type="search" bind:value={q} placeholder="Find by name, words or hash" aria-label="Find" />
-	<div class="tagrow">
-		{#each allTags as t (t)}
-			<button class="tag" class:on={tag === t} onclick={() => (tag = tag === t ? null : t)}>{t}</button>
-		{/each}
-	</div>
+	<input type="search" bind:value={q} placeholder="Find by name, what is said, tag or hash" aria-label="Find" />
 	<ul class="items">
 		{#if kind === 'world' || shownShots.length}
 			<li class="sect">
@@ -143,6 +203,7 @@
 		{/if}
 		{#each shown as m (m.hash)}
 			{@const px = s.proxy(m)}
+			{@const ts = m.kind === 'video' || m.kind === 'audio' ? transcriptState(m) : null}
 			<li>
 				<button
 					class="item"
@@ -156,10 +217,11 @@
 					<span class="thumb">
 						{#if m.kind === 'image'}<img src={thumb(m)} alt="" loading="lazy" draggable="false" />{:else}<i>{m.kind === 'audio' ? '♪' : '▶'}</i>{/if}
 					</span>
-					<span class="meta">
+						<span class="meta">
 						<span class="nm">{String(m.meta?.title ?? itemName(m))}</span>
 						<span class="tg">
 							{#if px.state !== 'n/a'}<b class="px {px.state}">{proxyLabel[px.state]}</b>{/if}
+							{#if ts && ts.state !== 'unknown' && ts.state !== 'none'}<b class="tr {ts.state}" title={ts.note}>{ts.state === 'ready' ? 'T' : ts.state === 'failed' ? 'T ✗' : 'T …'}</b>{/if}
 							{m.tags.filter((t) => rank(t) < 3).slice(0, 2).join(' · ') || m.kind}
 						</span>
 					</span>
@@ -203,8 +265,42 @@
 		gap: 0.3rem;
 	}
 
-	.kinds button,
-	.tag {
+	.lib-head {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 0.5rem;
+	}
+
+	.story {
+		min-width: 0;
+		max-width: 12rem;
+		padding: 0.2rem 0.5rem;
+		border: 1px solid var(--edge);
+		border-radius: 999px;
+		background: #fff;
+		font: inherit;
+		font-size: 0.72rem;
+		color: var(--ink);
+		text-overflow: ellipsis;
+	}
+
+	.tr {
+		margin-right: 0.3rem;
+		font-weight: 600;
+		color: #4a5f93;
+	}
+
+	.tr.queued,
+	.tr.transcribing {
+		color: #a8741a;
+	}
+
+	.tr.failed {
+		color: #9c3b26;
+	}
+
+	.kinds button {
 		padding: 0.25rem 0.6rem;
 		border: 1px solid var(--edge);
 		border-radius: 999px;
@@ -221,17 +317,6 @@
 		color: #fff;
 	}
 
-	.tag {
-		padding: 0.12rem 0.5rem;
-		font-size: 0.7rem;
-	}
-
-	.tag.on {
-		border-color: var(--accent);
-		background: var(--accent);
-		color: #fff;
-	}
-
 	input[type='search'] {
 		padding: 0.45rem 0.75rem;
 		border: 1px solid var(--edge);
@@ -240,14 +325,6 @@
 		font: inherit;
 		font-size: 0.8rem;
 		color: var(--ink);
-	}
-
-	.tagrow {
-		display: flex;
-		flex-wrap: wrap;
-		gap: 0.25rem;
-		max-height: 5.2rem;
-		overflow: auto;
 	}
 
 	.items {

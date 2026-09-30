@@ -10,6 +10,7 @@
 	import { listMedia, type MediaItem } from '$lib/auth/client';
 	import { command } from '$lib/native';
 	import { profileInfo } from './color.js';
+	import { transcriptState } from './transcript.js';
 	import { BY_HAND, CLASSES, TIERS, gb, proxyState, vaultUrl, type Making, type Copies, type FileClass, type Moving, type StoryView } from './vault';
 
 	let {
@@ -174,6 +175,8 @@
 		// the copies change while files sync: look again every 10 s; what is moving, every second
 		const timer = setInterval(async () => {
 			copies = Object.fromEntries((await command<Copies[]>('vault_copies').catch(() => [])).map((c) => [c.hash, c]));
+			// a transcript on its way (made on the server, synced in): the rows again, so its mark moves on
+			if (mine.some((m) => m.meta?.transcript_state === 'queued' || m.meta?.transcript_state === 'transcribing')) files = await listMedia().catch(() => files);
 		}, 10000);
 		let unlisten: Array<() => void> = [];
 		let loading: ReturnType<typeof setTimeout> | undefined;
@@ -345,6 +348,12 @@
 								{:else if m.kind === 'video' && classOf(m) === 'original'}
 									<span class="prof">{colourOf(m) ? profileInfo(colourOf(m)).label : '—'}</span>
 								{:else if colourOf(m)}<span class="dim">{profileInfo(colourOf(m)).label}</span>{/if}
+								{#if !proxyOf(m) && (m.kind === 'video' || m.kind === 'audio')}
+									{@const ts = transcriptState(m)}
+									{#if ts.state === 'ready'}<span class="ts ok" title="Transcript: {ts.note}">T</span>
+									{:else if ts.state === 'queued' || ts.state === 'transcribing'}<span class="ts wait" title={ts.note}>T…</span>
+									{:else if ts.state === 'failed'}<span class="ts miss" title={ts.note}>T✗</span>{/if}
+								{/if}
 							</td>
 							<td><span class="cls {classOf(m)}">{classOf(m)}</span></td>
 							<td class="r">{gb(m.size)}</td>
@@ -411,6 +420,10 @@
 	.col .pm { color: #b8860b; font-weight: 600; }
 	.col .pw { color: #9c3b26; }
 	.col .dim { color: var(--dim); }
+	.ts { margin-left: 0.4rem; padding: 0 0.3rem; border-radius: 4px; font-size: 0.66rem; font-weight: 700; }
+	.ts.ok { background: #e6ecf5; color: #4a5f93; }
+	.ts.wait { background: #fbf3df; color: #b8860b; }
+	.ts.miss { background: #f6e3da; color: #9c3b26; }
 	tr.coming td { background: var(--bg); font-size: 0.76rem; }
 	.rbar { display: inline-block; width: 6rem; height: 3px; margin-left: 0.6rem; vertical-align: middle; border-radius: 2px; background: var(--edge); overflow: hidden; }
 	.rbar i { display: block; height: 100%; background: #b8860b; transition: width 0.8s linear; }
