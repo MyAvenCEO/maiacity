@@ -33,7 +33,7 @@
 	import StageBar from '$lib/studio/StageBar.svelte';
 	import Timeline from '$lib/studio/Timeline.svelte';
 	import Transport from '$lib/studio/Transport.svelte';
-	import { Studio, clockText } from '$lib/studio/studio.svelte';
+	import { Studio } from '$lib/studio/studio.svelte';
 
 	const ASPECTS = ['1:1', '16:9', '9:16', '4:5'];
 	const s = new Studio();
@@ -145,7 +145,6 @@
 				{#if s.error}<button class="err" onclick={() => (s.error = '')} title="Dismiss">{s.error}</button>{/if}
 				{#if s.notice}<button class="err note" onclick={() => (s.notice = '')} title="{s.notice} (click to dismiss)">{s.notice}</button>{/if}
 				{#if s.current && s.tab !== 'ingest' && s.tab !== 'library'}
-					<span class="sub">{s.clips.length} clips · {clockText(s.end)} · {s.saving === 'saved' ? 'saved' : s.saving === 'saving' ? 'saving…' : 'unsaved'}</span>
 					<select value={s.current.aspect} onchange={(e) => s.setMeta({ aspect: e.currentTarget.value })} aria-label="Frame">
 						{#each ASPECTS as a (a)}<option value={a}>{a}</option>{/each}
 					</select>
@@ -306,11 +305,19 @@
 		font-weight: 500;
 	}
 
-	/* the open timeline: its name and what it is, once, in the middle */
+	/* the open timeline: its name and what it is, once — in the middle of the window, whatever sits beside it */
+	.row {
+		position: relative;
+	}
+
 	.title {
-		min-width: 0;
-		max-width: 44rem;
+		position: absolute;
+		left: 50%;
+		top: 50%;
+		transform: translate(-50%, -50%);
+		width: min(44rem, 46%);
 		text-align: center;
+		pointer-events: none;
 	}
 
 	.title h2 {
