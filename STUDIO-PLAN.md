@@ -4,12 +4,22 @@
 
 ## Open
 - ⬜ Approve the audio-proxy deletion in the studio's modal (108 files, 29.5 MB)
-- 🔄 Base correction of Day 01 · Opening on the marked stills (the tools below): bedroom a touch warm (+0.25), garden
-  clearly warm (+0.5), shots 7 and 8 with the garden; masters: the bed from the side, the walk through the garden
+- ⬜ Watch the Day 01 base correction in the Grade tab and say yes or adjust (garden skin paler than bedroom skin by
+  intent: more saturation there if wanted)
 - 🔄 Whole vault on iroh's patterns, end to end: no exports out of the store anywhere (audit running)
 - ⬜ De-sync one file from one device only (drop its holding here, keep it elsewhere): needs a per-device keep rule on top of iroh-docs' protection
 
 ## Done today
+- **Day 01 · Opening base-corrected** (every V1 shot, balance only, no look):
+  - bedroom master (the bed from the side): a touch warm (+0.25); garden master (the walk): clearly warm (+0.5)
+  - all faces 47.5–49 IRE on the skin line; blacks 5–10, mid-tones 40–50 IRE
+  - measured on the 4K stills with `grade_look`, checked on `grade_scopes`
+- **Grade tab:** the shots side by side in the timeline, one column each with its picture, the grade's layers aligned
+- **Builds:**
+  - one build folder for every checkout and worktree (`maiaCITY/.cargo/target`; each `vault/target` links to it),
+    which freed about 25 GB
+  - no LTO, so a change rebuilds in a fraction of the time
+  - debug builds slimmer, with their dependencies optimised
 - **Base correction tools** (story-producer `grading.md`), natively in the Mac app over MCP, from the 4K grading
   stills only:
   - `grade_look`: blacks, whites, mids and the skin Apple Vision finds, in IRE and against the skin line
