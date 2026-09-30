@@ -16,9 +16,8 @@ COPY vault/ ./
 RUN cargo build --release --locked -p vault-server && cp target/release/vault-server /vault-server
 
 FROM debian:bookworm-slim
-# ffmpeg: the audio proxies (sound.rs: a recording's speech track, read from the bucket, into a small .m4a) and the
-# analysis (analyse.rs: a proxy's frames through the ACES 2.0 output transform, lut3d)
-RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates ffmpeg && rm -rf /var/lib/apt/lists/*
+# no media tools: the server does no media work (a file's sound record and its shot analysis are made on a Mac)
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates && rm -rf /var/lib/apt/lists/*
 COPY --from=build /vault-server /usr/local/bin/vault-server
 ENV VAULT_DATA=/data
 VOLUME /data

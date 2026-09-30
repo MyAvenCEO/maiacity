@@ -6,8 +6,8 @@
 - 🔄 **Everything iroh-native, end to end** (the Mac does all media work; the server only stores and relays):
   - ✅ AVFoundation reads the vault in place (resource loader over iroh's BlobReader) — no export anywhere: transcription, proxies, stills, renders, probe
   - ✅ Plates are vault files (synced, read in place); the speech models load from their blobs; scope sheets and grade_measure retired
-  - ⬜ Shot analysis moves into the Mac's ingest: frames sampled natively, Prem's Qwen called from the Mac (its key in the Keychain), thumbnail + `analysis/<hash>` written by the Mac; the server's analyse.rs retires
-  - ⬜ Timecode (`sound/<hash>`) read by the Mac at ingest; the server's sound.rs retires
+  - ✅ Shot analysis moves into the Mac's ingest: frames sampled natively, Prem's Qwen called from the Mac (through Prem's confidential proxy on loopback; its key in a 0600 file beside the session, not the Keychain), thumbnail + `analysis/<hash>` written by the Mac; the server's analyse.rs retired (the API's /api/analysis is left, uncalled)
+  - ✅ Timecode (`sound/<hash>`) read by the Mac at ingest (the file's tmcd track / BWF bext); the server's sound.rs retired
   - ✅ The HTTPS gateway fetch removed: files come over iroh from whoever holds them
   - ✅ Every store rules-driven (keep.rs, Mac and drives alike): records-only download policy, wanted files fetched + pinned + announced, GC = tags + records — de-sync per store works; the server's author is a catalog record
   - ✅ The server serves its Object Storage files over iroh (brought up into its store on request, verified, a bounded cache; pushes refused)

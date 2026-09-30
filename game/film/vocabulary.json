@@ -1,5 +1,5 @@
 {
-  "about": "The shot vocabulary: what the vault server's analysis (analyse.rs → POST /api/analysis, Prem's confidential Qwen) says of every ingested picture, so an editor — a person or an LLM — can find and pull the best parts of a shot. Base tags have fixed values (the prompt, the API's validator, the studio and the MCP's find_shots all read them from here); free tags are open. Raise `version` whenever a value is added, renamed or removed.",
+  "about": "The shot vocabulary: what the Mac's analysis (vault/app/src/analyse/, Prem's confidential Qwen asked from the Mac) says of every ingested picture, so an editor — a person or an LLM — can find and pull the best parts of a shot. Base tags have fixed values (the prompt and the validator in analyse/prem.rs, the studio and the MCP's find_shots all read them from here); free tags are open. Raise `version` whenever a value is added, renamed or removed.",
   "version": 1,
   "base": {
     "shot_size": {

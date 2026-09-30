@@ -37,7 +37,7 @@
 			queued: now.filter((x) => x.stage === 'queued').length
 		};
 	}
-	/** the words of a source's recordings (on this Mac, on-device) and the tags of its pictures (the server) */
+	/** the words of a source's recordings (on this Mac, on-device) and the tags of its pictures (this Mac → Prem's Qwen) */
 	function steps(s: Ingested) {
 		const all = s.files.map((f) => meta[f.hash]).filter((m): m is MediaItem => !!m && !isCache(m));
 		const rec = all.filter((m) => hasSound(m));
@@ -224,7 +224,7 @@
 						</p>
 					{/if}
 					{#if st.pics}
-						<p title="The shot analysis on the server (Qwen, confidential): tags, cues, the thumbnail">
+						<p title="The shot analysis on this Mac (frames sampled here, Prem's confidential Qwen asked from here): tags, cues, the thumbnail">
 							<b>Tags</b> {st.tagged}/{st.pics}
 							{#if st.tagging} · {Math.floor(st.tagging.progress * 100)}%{/if}
 							{#if st.waitsWhy && st.tagged < st.pics}<span class="soft"> · waits: {st.waitsWhy}</span>{/if}

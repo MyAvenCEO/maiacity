@@ -135,6 +135,15 @@ impl VideoReader {
         }
     }
 
+    /// Every frame in turn, with its time (seconds of the file): the shot analysis walks a whole proxy this way. Not
+    /// to be mixed with `at`.
+    pub fn next_frame(&mut self) -> Result<Option<(f64, CFRetained<CVPixelBuffer>)>> {
+        if self.done {
+            return Ok(None);
+        }
+        self.pull()
+    }
+
     /// The frame on screen at `t` (seconds of the file): the last one that starts before it, else the first.
     pub fn at(&mut self, t: f64) -> Result<Option<&CVPixelBuffer>> {
         if self.cur.is_none() {

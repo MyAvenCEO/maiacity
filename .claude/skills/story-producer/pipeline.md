@@ -108,6 +108,28 @@ timeline, its stage shown at the top (edit → locked → graded → rendered, a
 tags only sort.** `bun media status | seed | add <file> [--title] [--tags] [--replaces <cid>] [--public]`. Only public
 files get CDN copies. Scripts use `api/scripts/library.ts` (`put`, `bring`, `get`, `fileOf`).
 
+## After the ingest: every step on the Mac
+
+The Mac app does all media work, reading every file in place from its own iroh store. The server only stores and
+relays. After a file comes in, each step runs by itself, one file at a time. Each one shows in Ingest and heals by
+itself: three tries, then it waits for a person.
+
+- **Proxy:** ACEScct HEVC, with a grading still and a preview (`proxies.rs`).
+- **Words:** Phonon-2 on-device (`transcripts.rs` → `transcript/<hash>`).
+- **Sound record:** does the file have sound, how long it runs, and its start timecode. The timecode comes from the
+  file's own `tmcd` track, or a WAV's BWF time reference (`sound.rs` → `sound/<hash>`).
+- **Shot analysis:** tags, cues, takes and the thumbnail (`analyse/` → `analysis/<hash>`, plus a thumbnail file).
+  - The proxy's frames are sampled natively, through the ACES output like the previews: one a second, plus every
+    picture change.
+  - Frames and words go in stretches to Prem's confidential Qwen (`qwen38-27b`), straight from the Mac.
+  - The Mac runs Prem's own confidential proxy on 127.0.0.1:8787 with Bun, so the frames are end-to-end encrypted to
+    Prem's attested enclave. The app starts it by itself.
+  - It runs only for the stories in scope: the Day 01 story unless set otherwise.
+  - Set it up once with MCP `analysis_setup` (`prem_key`, and `stories` if needed). The key lives in
+    `~/Library/Application Support/city.maia.studio/analysis.json`, readable by this user only.
+  - `analyse_again` runs a file again.
+  - The API's `/api/analysis` is no longer called by anything.
+
 ## Building the Mac app
 
 - **One build folder for every checkout and worktree:** `maiaCITY/.cargo/target`, set by `maiaCITY/.cargo/config.toml`
