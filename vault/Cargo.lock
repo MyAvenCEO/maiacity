@@ -3286,6 +3286,8 @@ dependencies = [
  "iroh-blobs",
  "iroh-docs",
  "libc",
+ "objc2",
+ "objc2-foundation",
  "reqwest",
  "rmcp",
  "schemars 1.2.2",

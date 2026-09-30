@@ -5,7 +5,8 @@
 //! screen or the delivery. A source whose colour cannot be told, or whose journey is not defined yet, waits and says
 //! so; the sweep makes its proxy by itself the day its journey exists.
 //!
-//! One proxy at a time (the encoder is the Mac's); each says how far it is.
+//! One proxy at a time (the encoder is the Mac's) — a world shot's (world.rs) takes its turn here too; each says how
+//! far it is.
 
 use std::{
     collections::HashMap,
@@ -42,14 +43,14 @@ pub struct Making {
     pub done: f64,
 }
 
-static NOW: Mutex<Option<HashMap<String, Making>>> = Mutex::new(None);
+pub(crate) static NOW: Mutex<Option<HashMap<String, Making>>> = Mutex::new(None);
 /// one proxy at a time
-static TURN: tokio::sync::Semaphore = tokio::sync::Semaphore::const_new(1);
+pub(crate) static TURN: tokio::sync::Semaphore = tokio::sync::Semaphore::const_new(1);
 
-fn set(of: &str, name: &str, stage: &str, done: f64) {
+pub(crate) fn set(of: &str, name: &str, stage: &str, done: f64) {
     NOW.lock().unwrap().get_or_insert_with(HashMap::new).insert(of.into(), Making { of: of.into(), name: name.into(), stage: stage.into(), done });
 }
-fn clear(of: &str) {
+pub(crate) fn clear(of: &str) {
     if let Some(m) = NOW.lock().unwrap().as_mut() {
         m.remove(of);
     }
@@ -57,7 +58,7 @@ fn clear(of: &str) {
 
 /// How often a proxy is tried before it waits for a person (a decode that failed once — the Mac short of memory, a
 /// card pulled — usually works the next time).
-const TRIES: u64 = 3;
+pub(crate) const TRIES: u64 = 3;
 
 /// What holds this Mac's uploads now: "ingest", "proxy" (empty: nothing — files sync).
 #[tauri::command]

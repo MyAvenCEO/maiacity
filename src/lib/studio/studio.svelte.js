@@ -22,6 +22,7 @@ import { PROFILES, WORKING, asStudio, clean, gradesFor, isCache, isSequence, pre
 import { filmLut, loadLut, lutIndex, nativeLut } from './luts.js';
 import { cached, evaluate, saveSpec, shotAt } from './shots.js';
 import { WorldViewer } from './world.svelte.js';
+import { native } from '$lib/native';
 
 /** @typedef {import('$lib/auth/client').Cdl} Cdl */
 /** @typedef {import('$lib/auth/client').ClipFrame} ClipFrame */
@@ -357,7 +358,8 @@ export class Studio {
 		return ((this.onProxies || isSequence(m)) && p.hash && this.byHash.get(p.hash)) || m;
 	}
 	/**
-	 * A world clip's HD proxy (the worker renders one whenever the shot changes): a role:proxy file naming the shot and version.
+	 * A world clip's HD proxy (the Mac app renders one for every shot version a timeline plays — vault/app/src/world.rs):
+	 * a proxy file naming the shot and version.
 	 * @param {Clip} c @returns {MediaItem | null}
 	 */
 	worldProxy(c) {
@@ -401,6 +403,11 @@ export class Studio {
 		this.phase = 'ready';
 		void this.loadLuts();
 		void this.refreshJobs();
+		// a proxy the Mac just made — a world shot's too — is in the library at once, so its clips play it
+		if (native() && !this.unlisten)
+			this.unlisten = import('@tauri-apps/api/event').then(({ listen }) =>
+				listen('vault-proxy', () => void listMedia().then(asStudio).then((m) => (this.library = m)).catch(() => null))
+			);
 		/** @type {string | null} */
 		let last = null;
 		try {
@@ -768,7 +775,12 @@ export class Studio {
 	/** how many sounds are laid on the clock (for the transport's readout, and the tests) */
 	scheduled = () => this.nodes.length;
 
+	/** @type {Promise<() => void> | null} */
+	unlisten = null;
+
 	destroy() {
+		void this.unlisten?.then((off) => off());
+		this.unlisten = null;
 		cancelAnimationFrame(this.frame);
 		this.poll(false);
 		this.silence();

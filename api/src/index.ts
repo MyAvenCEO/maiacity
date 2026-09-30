@@ -20,7 +20,7 @@ import { approveDevice, deviceInfo, KeyError, keyHolder, redeemDevice, revokeKey
 import { joinInfo, listDevices, listVaultFiles, pairDevice, revokeDevice, VaultError } from "./vault";
 import { createTimeline, deleteTimeline, getTimeline, listTimelines, saveTimeline, TimelineError } from "./timelines";
 import { createShot, getShot, listShots, saveShot, ShotError, shotVersions } from "./shots";
-import { claimRender, listJobs, previewLuts, queueFrame, queueLuts, queueRender, queueShotProxy, RenderError, rendersOf, reportRender } from "./renders";
+import { claimRender, listJobs, previewLuts, queueFrame, queueLuts, queueRender, RenderError, rendersOf, reportRender } from "./renders";
 import { CHANNELS, ContentError, createContent, deleteContent, FORMATS, KINDS, listContent, saveContent, saveDay, savePosts, STATUSES } from "./content";
 import { format, gameClock, calendar, parse } from "../../game/time";
 
@@ -626,10 +626,8 @@ const server = Bun.serve({
         const me = await allowed(req, "media:admin");
         if (me instanceof Response) return me;
         try {
-          // every shot version gets its HD proxy (the worker renders it), for playing while the live world loads
-          const shot = await createShot(me.id, (await readJson(req)) ?? {});
-          await queueShotProxy(shot.id, shot.version, me.id);
-          return json(req, shot, { status: 201 });
+          // a shot version a timeline plays gets its HD proxy from the Mac app (vault/app/src/world.rs), not a job here
+          return json(req, await createShot(me.id, (await readJson(req)) ?? {}), { status: 201 });
         } catch (e) {
           return fail(req, e);
         }
@@ -652,9 +650,7 @@ const server = Bun.serve({
         const me = await allowed(req, "media:admin");
         if (me instanceof Response) return me;
         try {
-          const shot = await saveShot(req.params.id, me.id, (await readJson(req)) ?? {});
-          await queueShotProxy(shot.id, shot.version, me.id);
-          return json(req, shot);
+          return json(req, await saveShot(req.params.id, me.id, (await readJson(req)) ?? {}));
         } catch (e) {
           return fail(req, e);
         }
@@ -713,8 +709,8 @@ const server = Bun.serve({
       },
     },
 
-    // The worker's other jobs: the studio's preview output transform LUT, world shot proxies, hero frames. A file's own
-    // proxy is the Mac app's work (meta.proxy on the original), not a job here.
+    // The worker's other jobs: the studio's preview output transform LUT and hero frames. Proxies — a file's and a world
+    // shot's — are the Mac app's work, not jobs here.
     // GET /api/film/luts → { [transform]: { file, hash, size } } (file: the vault file's hash); POST queues a bake.
     // GET /api/film/jobs?kind=&timeline=&shot= → the latest jobs (the render queue).
     "/api/film/luts": {

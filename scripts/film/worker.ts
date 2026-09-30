@@ -1,4 +1,4 @@
-// The render worker: exports the timelines the studio asks for, and makes world shots' proxies and the preview ODT LUT.
+// The render worker: exports the timelines the studio asks for, and makes hero frames and the preview ODT LUT.
 //
 //   bun film worker [--local]        (MAIACITY_API=… MAIACITY_KEY=… point it at another API)
 //
@@ -16,9 +16,9 @@
 //            loudness) before it goes into the vault; the report names every transform by the hash of its config.
 //   lut    — the studio viewer's preview output transform baked from its config into the vault (also at start-up);
 //            the input transforms' LUTs are the Mac app's (cst.rs).
-//   proxy  — of a world shot (shot_id + shot_version): the shot rendered as an HD ACEScct plate into the vault
-//            (role:proxy, meta.shot/shotVersion), so the studio can play a world clip while the live world loads.
-//            A file's own proxy is not a job: the Mac app makes it natively and names it in the original's meta.proxy.
+//   proxy  — history only: proxies are the Mac app's, natively — a file's when it comes in (meta.proxy on the
+//            original), a world shot version's when a timeline plays it, rendered in the app's own world
+//            (vault/app/src/world.rs). A proxy job still waiting from before is closed as failed, saying so.
 //   frame  — a hero frame: one frame of a timeline (params: t, shape) at full precision through the whole chain —
 //            input transform, clip grade, film look, output transform — as a 16-bit PNG, for grading against.
 //
@@ -26,10 +26,9 @@
 // its hash (the app's local server, into a cache) and every file it makes goes into the vault (vault.mjs).
 import puppeteer from "puppeteer-core";
 import { spawn } from "node:child_process";
-import { mkdirSync, mkdtempSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { mkdirSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
-import { tmpdir } from "node:os";
 import { API, call, keyFor, say, SITE } from "../../api/scripts/media-client";
 import { cleanCdl, PRESETS, type Cdl } from "../../game/film/color.js";
 import { PREVIEW, TRANSFORMS } from "../../game/film/transforms.js";
@@ -437,36 +436,6 @@ async function render(job: Job) {
   return { hash: own.hash, deliveries, report: rep };
 }
 
-/** A world shot version's HD proxy: its whole length rendered as an ACEScct plate (renderPlate), into the vault. */
-async function shotProxy(job: Job) {
-  if (!job.shot_id) throw new Error("a proxy job names a world shot (a file's own proxy is the Mac app's)");
-  const rec = await fetchShot(job.shot_id!, job.shot_version ?? undefined);
-  const spec = rec.spec, aspect = spec.aspect in FRAME ? spec.aspect : "16:9";
-  const [width, height] = FRAME[aspect]!;
-  const fps = Number(spec.fps) || FPS;
-  await report(job.id, { note: `rendering ${rec.name} v${rec.version} (${aspect} ${width}×${height})`, progress: 0.05 });
-  const { renderPlate, fingerprint } = await worldModules();
-  const dir = mkdtempSync(join(tmpdir(), "maiacity-shot-"));
-  try {
-    const out = join(dir, "proxy.mp4");
-    const r = await renderPlate({ spec, from: 0, to: spec.seconds, shape: aspect, width, height, fps, out, site: process.env.MAIACITY_SITE ?? SITE });
-    const d = await add(r.file ?? out, {
-      name: `shot-${rec.id.slice(0, 8)}-v${rec.version}-proxy.mp4`,
-      title: `${rec.name} · v${rec.version} · world proxy`,
-      description: `HD proxy (${width}×${height}) of the world shot ${rec.name}, version ${rec.version}, in ACEScct — for editing`,
-      tags: ["role:proxy", "world shot", ...(rec.project ? [rec.project] : [])],
-      meta: {
-        role: "proxy", shot: rec.id, shotVersion: rec.version, width, height, duration_s: Number(Number(spec.seconds).toFixed(3)),
-        fingerprint: String(fingerprint(spec, { from: 0, to: spec.seconds, shape: aspect, width, height, fps })),
-        color: { profile: "acescct", primaries: "bt709", transfer: "bt709", matrix: "bt709", range: "tv", bitDepth: 10, detectedFrom: `world shot ${rec.id} v${rec.version}` },
-      },
-    });
-    return { output_hash: d.hash, note: `world proxy ready · ${rec.name} v${rec.version}`, report: { shot: rec.id, shotVersion: rec.version, proxy: d.hash, ev: r.ev ?? null } };
-  } finally {
-    rmSync(dir, { recursive: true, force: true });
-  }
-}
-
 /**
  * A hero frame: the picture of a timeline at one moment, in one shape, at that delivery's full resolution — through
  * exactly the chain the render takes (conformed original or world plate → input transform → clip grade → film look →
@@ -569,8 +538,12 @@ if (import.meta.main) {
     const kind = job.kind ?? "render";
     say(`job ${job.id}: ${kind} ${job.timeline_id ?? (job.shot_id ? `shot ${job.shot_id} v${job.shot_version}` : "")}`);
     try {
-      if (kind === "proxy" || kind === "frame") {
-        const r = kind === "frame" ? await heroFrame(job) : await shotProxy(job);
+      if (kind === "proxy") {
+        // from before: every proxy is the Mac app's now
+        await report(job.id, { status: "failed", note: "Proxies are made by the Mac app now — a world shot's too, when a timeline plays it." });
+        say(`job ${job.id}: a proxy — the Mac app's work now, closed`);
+      } else if (kind === "frame") {
+        const r = await heroFrame(job);
         await report(job.id, { status: "done", progress: 1, note: r.note, output_hash: r.output_hash, report: r.report });
         say(`job ${job.id}: ${r.note}`);
       } else if (kind === "lut") {

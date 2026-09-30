@@ -26,7 +26,8 @@ the terminal is signed in with `bun media login --local`. `FAL_API_KEY` lives in
 **Step 2: the film (slow, expensive, only after approval)** — Edit → Grade → Render, like a real post house
 1. World shots become data, not files: `bun api/scripts/world-timeline.ts --local --from G --variant W` turns each shot
    of the list into a shot record (`/api/shots`: camera, lens, hour, metered exposure, lights, cues) and builds a
-   variant with a **world clip** in each shot's place. Each shot version gets an HD log proxy automatically.
+   variant with a **world clip** in each shot's place. Each shot version a timeline plays gets an HD log proxy
+   automatically — rendered by the Mac app in its own (unseen) world, no Chrome (`vault/app/src/world.rs`).
    (Old way, still works: `node scripts/film/shoot.mjs <list>` renders log plates you bring in as files.)
 2. iPhone footage (HEVC Apple Log / Apple Log 2), other camera files and AI EXR sequences: `bun media add` / upload
    in the studio. The colour space is detected (set it in the Bin when a file doesn't say, e.g. an untagged Apple
@@ -43,8 +44,8 @@ the terminal is signed in with `bun media login --local`. `FAL_API_KEY` lives in
    Colour-managed (game/film/color.js, transforms.js): each picture clip goes through its input transform into
    ACEScct, its grade and the film's look, the ACES 2.0 output transform to Rec.709, then the captions; an ungraded
    Rec.709/sRGB clip bypasses both and renders as it was. Every delivery is QC'd (BT.709/TV tags, 10-bit master,
-   frames, loudness) before the library. The same worker makes each new file's HD log proxy (`meta.color`,
-   `meta.proxy`), each world shot's proxy, hero frames and the studio's preview LUTs. It needs ffmpeg with zimg
+   frames, loudness) before the library. The same worker makes hero frames and the studio's preview LUTs;
+   every proxy — a file's (`meta.color`, `meta.proxy`) and a world shot's — is the Mac app's. It needs ffmpeg with zimg
    (Homebrew's has it) and `pip install opencolorio numpy`; LUTs are baked from the configs only while rendering,
    cached in ~/.cache/maiacity. Nothing is ever baked into a source or committed.
    EXR sequences (Luma, Kling, LTX exports) come in with `bun media add-sequence <dir> --profile aces2065-1 --fps 24`.
