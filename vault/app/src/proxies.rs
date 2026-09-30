@@ -5,8 +5,8 @@
 //! screen or the delivery. A source whose colour cannot be told, or whose journey is not defined yet, waits and says
 //! so; the sweep makes its proxy by itself the day its journey exists.
 //!
-//! One proxy at a time (the encoder is the Mac's) — a world shot's (world.rs) takes its turn here too; each says how
-//! far it is.
+//! One proxy at a time (the encoder is the Mac's) — a world shot's (world.rs) and a film's render (render.rs) take their
+//! turn here too; each says how far it is.
 
 use std::{
     collections::HashMap,
@@ -60,7 +60,7 @@ pub(crate) fn clear(of: &str) {
 /// card pulled — usually works the next time).
 pub(crate) const TRIES: u64 = 3;
 
-/// What holds this Mac's uploads now: "ingest", "proxy" (empty: nothing — files sync).
+/// What holds this Mac's uploads now: "ingest", "proxy", "render" (empty: nothing — files sync).
 #[tauri::command]
 pub fn vault_hold(app: tauri::State<'_, crate::App>) -> crate::Res<Vec<String>> {
     crate::gate()?;

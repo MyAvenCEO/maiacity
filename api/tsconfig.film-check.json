@@ -1,9 +1,7 @@
 {
-  // The film worker and the colour modules (plain JS with JSDoc types), checked strictly: bun run check:film
+  // The film's colour modules (plain JS with JSDoc types), checked strictly: bun run check:film. The render itself is
+  // the Mac app's, natively (vault/crates/vault-render, vault/app/src/render.rs).
   "extends": "./tsconfig.json",
   "compilerOptions": { "allowJs": true, "checkJs": true, "noEmit": true },
-  "include": [
-    "../scripts/film/worker.ts", "../scripts/film/sources.mjs", "../scripts/film/picture.mjs", "../scripts/film/plates.mjs",
-    "../scripts/film/qc.mjs", "../scripts/film/color/*.mjs", "../game/film/color.js", "../game/film/transforms.js"
-  ]
+  "include": ["../game/film/color.js", "../game/film/transforms.js"]
 }

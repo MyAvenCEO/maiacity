@@ -76,7 +76,7 @@
 		{:else if newest.status === 'failed'}
 			<p class="bad">{newest.note || 'The frame could not be rendered.'}</p>
 		{:else}
-			<p class="note">{newest.status === 'queued' ? 'Waiting for the render worker…' : `${newest.note ?? 'rendering'} · ${Math.round(newest.progress * 100)}%`}</p>
+			<p class="note">{newest.status === 'queued' ? 'Waiting for the Mac…' : `${newest.note ?? 'rendering'} · ${Math.round(newest.progress * 100)}%`}</p>
 		{/if}
 	{:else}
 		<p class="note">The viewer is a proxy-level preview. A hero frame is the real thing: the original (or the world at full size), graded, at the delivery's resolution.</p>

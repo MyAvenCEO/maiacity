@@ -1,8 +1,9 @@
-// The world proxy renderer's hand in the page: loaded before anything else into the app's own unseen world window
-// (/games/sandbox-4/?film, the studio's own build — see world.rs). It waits for film mode (window.__film), then asks
-// the app for a shot to render, renders it frame by frame through `__film.capture` — ACEScct, 10-bit, x2bgr10le, the
-// plate's own frames — and hands each frame to the app as raw bytes, waiting for the app to take it before rendering
-// the next: one frame in flight, never a pile of them in memory.
+// The world renderer's hand in the page — a shot's HD proxy, or a plate the final render cuts in: loaded before
+// anything else into the app's own unseen world window (/games/sandbox-4/?film, the studio's own build — see
+// world.rs). It waits for film mode (window.__film), then asks the app for a stretch of a shot to render (`from`
+// seconds in, `frames` frames at `fps`, framed for `shape`, at a size), renders it frame by frame through
+// `__film.capture` — ACEScct, 10-bit, x2bgr10le, the plate's own frames — and hands each frame to the app as raw bytes,
+// waiting for the app to take it before rendering the next: one frame in flight, never a pile of them in memory.
 (() => {
 	if (window !== window.top || window.__worldProxy) return;
 	window.__worldProxy = true;
@@ -26,7 +27,7 @@
 		const ev = await film.exposure(job.spec);
 		const bytes = job.width * job.height * 4;
 		for (let k = 0; k < job.frames; k++) {
-			const ask = { spec: job.spec, t: k / job.fps, shape: job.shape, width: job.width, height: job.height, oversample: job.oversample };
+			const ask = { spec: job.spec, t: (job.from ?? 0) + k / job.fps, shape: job.shape, width: job.width, height: job.height, oversample: job.oversample };
 			let frame = await film.capture(ask);
 			if (frame.byteLength !== bytes) frame = frame.slice(0, bytes);
 			await invoke('world_proxy_frame', frame, { headers: { 'x-job': job.id, 'x-frame': String(k) } });

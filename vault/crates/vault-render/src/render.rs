@@ -57,10 +57,13 @@ pub trait Library {
 }
 
 /// A world clip's plate for one shape: an ACEScct movie of the clip's stretch of its shot (clip.in … clip.in + dur),
-/// at the shape's render size and 30 fps — rendered by the app's own world.
+/// at the shape's render size and 30 fps — rendered by the app's own world. A plate may start later in the clip
+/// (`offset`): a hero frame's plate is the one frame it shows.
 #[derive(Debug, Clone, Default)]
 pub struct Plate {
     pub file: PathBuf,
+    /// where the plate starts, in seconds from the clip's in point (0: at the in point)
+    pub offset: f64,
     pub key: Option<String>,
     pub fingerprint: Option<String>,
     pub reused: Option<bool>,
@@ -161,6 +164,43 @@ pub struct Render {
 enum Kind {
     Video,
     Still,
+    /// an EXR frame sequence (a tar), its frames at this rate
+    Sequence { fps: f64 },
+}
+
+/// An EXR frame sequence (packed in one tar)?
+fn is_sequence(m: &Media) -> bool {
+    m.mime == "application/x-tar" || m.meta.get("sequence").and_then(Value::as_str) == Some("exr")
+}
+
+/// A sequence's frame rate (its meta.fps, as its proxy was made; 24 when it names none).
+fn sequence_fps(m: &Media) -> f64 {
+    m.meta.get("fps").and_then(Value::as_f64).filter(|f| *f > 0.0).unwrap_or(24.0)
+}
+
+/// A sequence's profile: the vault's (set by hand, or given when packed), else its first frame's header names it
+/// (`vault_media::still::exr_profile`); None when neither knows it.
+fn sequence_profile(m: &Media, file: &Path) -> Result<(Option<String>, String)> {
+    let known = |p: &str| vault_media::cst::journey(p).is_some();
+    let c = m.meta.get("color");
+    for k in ["override", "profile"] {
+        if let Some(p) = c.and_then(|c| c.get(k)).and_then(Value::as_str).filter(|p| known(p)) {
+            return Ok((Some(p.to_string()), format!("the vault ({k})")));
+        }
+    }
+    let mut seq = vault_media::still::Sequence::open(file)?;
+    let first = seq.frame(0)?;
+    Ok(match vault_media::still::exr_profile(&first).filter(|p| known(p)) {
+        Some(p) => (Some(p.to_string()), "its first frame's EXR header".into()),
+        None => (None, "its first frame's primaries are none the journeys know".into()),
+    })
+}
+
+/// One frame of a sequence, as Core Image reads the EXR (its own code values, the right way up).
+fn sequence_frame(seq: &mut vault_media::still::Sequence, i: usize) -> Result<Image> {
+    let bytes = seq.frame(i)?;
+    let img = vault_media::gpu::load_image(&bytes).with_context(|| format!("frame {}", seq.name(i)))?;
+    Ok(crate::gpu::to_origin(&img))
 }
 
 #[derive(Debug, Clone)]
@@ -261,8 +301,16 @@ fn plan(t: &Timeline, lib: &dyn Library) -> Result<Plan> {
             continue;
         }
         let (file, m) = files.get(&hash).unwrap().clone();
-        if m.mime == "application/x-tar" || m.meta.get("sequence").and_then(Value::as_str) == Some("exr") {
-            bail!("{}: an EXR sequence — not rendered natively yet", if m.title.is_empty() { &m.hash } else { &m.title });
+        let title = if m.title.is_empty() { m.hash.clone() } else { m.title.clone() };
+        if is_sequence(&m) {
+            // an EXR sequence: its frames read from the tar one by one, at its own rate, through its journey
+            let (profile, from) = sequence_profile(&m, &file)?;
+            let profile = profile.unwrap_or_else(|| {
+                warnings.push(format!("{title}: colour unknown ({from}) — taken as linear Rec.709 (idt-linear-rec709); set it in the studio"));
+                "linear-rec709".into()
+            });
+            sources.insert(hash, Source { file, kind: Kind::Sequence { fps: sequence_fps(&m) }, profile });
+            continue;
         }
         let still = is_still(&m, &file);
         let (mut profile, from) = profile_of(&m, &file, still);
@@ -336,12 +384,12 @@ pub fn render(
         bail!("no such shape to render");
     }
     // the world clips' plates, one per shape
-    let mut plate_files: HashMap<(String, String), PathBuf> = HashMap::new();
+    let mut plate_files: HashMap<(String, String), (PathBuf, f64)> = HashMap::new();
     let mut plates_used = Vec::new();
     for c in plan.pictures.iter().filter(|c| c.is_world()) {
         for s in &shapes {
             let p = plates(c, s)?.with_context(|| format!("world clip {} (shot {} v{}): no plate for {}", c.id, c.shot.as_deref().unwrap_or("?"), c.shot_version.unwrap_or(0), s.aspect))?;
-            plate_files.insert((c.id.clone(), s.aspect.to_string()), p.file.clone());
+            plate_files.insert((c.id.clone(), s.aspect.to_string()), (p.file.clone(), p.offset));
             plates_used.push(PlateUse { clip: c.id.clone(), aspect: s.aspect.into(), key: p.key, fingerprint: p.fingerprint, reused: p.reused });
         }
     }
@@ -419,6 +467,8 @@ enum Reading {
     Gap,
     Video { reader: VideoReader, offset: f64, args: (f32, f32, [[f32; 3]; 3]) },
     Still { image: Image },
+    /// an EXR sequence: the frame on screen, kept while it stays (a 24 fps sequence holds for 30 fps frames)
+    Sequence { seq: vault_media::still::Sequence, fps: f64, offset: f64, args: (f32, f32, [[f32; 3]; 3]), shown: Option<(usize, Image)> },
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -427,7 +477,7 @@ fn render_shape(
     s: &Shape,
     gpu: &Gpu,
     captions: &Captions,
-    plate_files: &HashMap<(String, String), PathBuf>,
+    plate_files: &HashMap<(String, String), (PathBuf, f64)>,
     sound: &Sound,
     base: &str,
     work: &Path,
@@ -467,13 +517,13 @@ fn render_shape(
         let mut reading = match clip {
             None => Reading::Gap,
             Some(c) if c.is_world() => {
-                let file = plate_files.get(&(c.id.clone(), s.aspect.to_string())).context("a world clip without its plate")?;
+                let (file, late) = plate_files.get(&(c.id.clone(), s.aspect.to_string())).context("a world clip without its plate")?;
                 let args = vault_media::cst::journey("acescct").unwrap().kernel_args();
                 used.insert(idt_name("acescct"), journey_hash("acescct"));
-                // the plate starts at the clip's in point
-                let from = piece.a as f64 / fps - c.start;
-                let until = piece.b as f64 / fps - c.start;
-                Reading::Video { reader: VideoReader::open(file, from, until + 1.0 / fps)?, offset: -c.start, args }
+                // the plate starts at the clip's in point (or `late` seconds after it)
+                let from = piece.a as f64 / fps - c.start - late;
+                let until = piece.b as f64 / fps - c.start - late;
+                Reading::Video { reader: VideoReader::open(file, from.max(0.0), until + 1.0 / fps)?, offset: -c.start - late, args }
             }
             Some(c) => {
                 let src = plan.sources.get(c.hash.as_deref().unwrap()).context("a picture without its source")?;
@@ -481,6 +531,13 @@ fn render_shape(
                 used.insert(idt_name(&src.profile), journey_hash(&src.profile));
                 match src.kind {
                     Kind::Still => Reading::Still { image: gpu.journey(&*gpu.still(&src.file)?, j.kernel_args())? },
+                    Kind::Sequence { fps: rate } => Reading::Sequence {
+                        seq: vault_media::still::Sequence::open(&src.file)?,
+                        fps: rate,
+                        offset: c.in_ - c.start,
+                        args: j.kernel_args(),
+                        shown: None,
+                    },
                     Kind::Video => {
                         let from = c.in_ + (piece.a as f64 / fps - c.start);
                         let until = c.in_ + (piece.b as f64 / fps - c.start);
@@ -503,6 +560,15 @@ fn render_shape(
                 let pic: Image = match &mut reading {
                     Reading::Gap => gpu.black(w, h),
                     Reading::Still { image } => picture(gpu, image, s, clip.unwrap(), grade.as_ref(), plan.look.as_ref())?,
+                    Reading::Sequence { seq, fps: rate, offset, args, shown } => {
+                        // the sequence's frame on screen half a film frame on, as for a movie
+                        let i = seq.index_at(t + *offset + 0.5 / fps - 1e-4, *rate);
+                        if shown.as_ref().is_none_or(|(k, _)| *k != i) {
+                            let img = gpu.journey(&*sequence_frame(seq, i)?, *args)?;
+                            *shown = Some((i, img));
+                        }
+                        picture(gpu, &shown.as_ref().unwrap().1, s, clip.unwrap(), grade.as_ref(), plan.look.as_ref())?
+                    }
                     Reading::Video { reader, offset, args } => {
                         // the frame on screen half a frame on (ffmpeg's fps filter rounds to the nearest)
                         let at = t + *offset + 0.5 / fps - 1e-4;
@@ -654,15 +720,21 @@ pub fn hero_frame(
     let (img, what) = match clip {
         None => (gpu.black(w, h), "a gap: black".to_string()),
         Some(c) => {
+            let mut sequence: Option<f64> = None;
             let (file, profile, from, what) = if c.is_world() {
                 let p = plates(c, &s)?.with_context(|| format!("world clip {}: no plate for {aspect}", c.id))?;
-                (p.file, "acescct".to_string(), at - c.start, format!("world shot {} v{} at {:.3} s", c.shot.as_deref().unwrap_or("?"), c.shot_version.unwrap_or(0), c.in_ + at - c.start))
+                (p.file, "acescct".to_string(), at - c.start - p.offset, format!("world shot {} v{} at {:.3} s", c.shot.as_deref().unwrap_or("?"), c.shot_version.unwrap_or(0), c.in_ + at - c.start))
             } else {
                 let hash = c.hash.as_deref().unwrap();
                 let of = lib.original_of(hash);
                 let m = lib.media(&of).or_else(|| lib.media(hash)).context("the clip's file is not in the vault")?;
                 let file = lib.file(&m.hash)?;
-                let (profile, _) = profile_of(&m, &file, is_still(&m, &file));
+                let profile = if is_sequence(&m) {
+                    sequence = Some(sequence_fps(&m));
+                    sequence_profile(&m, &file)?.0.unwrap_or_else(|| "linear-rec709".into())
+                } else {
+                    profile_of(&m, &file, is_still(&m, &file)).0
+                };
                 let profile = if vault_media::cst::journey(&profile).is_some() { profile } else { "rec709".into() };
                 let from = c.in_ + (at - c.start);
                 let title = if m.title.is_empty() { m.hash.clone() } else { m.title.clone() };
@@ -670,7 +742,11 @@ pub fn hero_frame(
             };
             let args = vault_media::cst::journey(&profile).unwrap().kernel_args();
             let m = lib.media(c.hash.as_deref().unwrap_or("")).unwrap_or_default();
-            let src = if !c.is_world() && is_still(&m, &file) {
+            let src = if let Some(rate) = sequence {
+                let mut seq = vault_media::still::Sequence::open(&file)?;
+                let i = seq.index_at(from + 0.5 / FPS as f64 - 1e-4, rate);
+                gpu.journey(&*sequence_frame(&mut seq, i)?, args)?
+            } else if !c.is_world() && is_still(&m, &file) {
                 gpu.journey(&*gpu.still(&file)?, args)?
             } else {
                 let mut r = VideoReader::open(&file, from, from + 1.0 / FPS as f64)?;
@@ -686,6 +762,43 @@ pub fn hero_frame(
 }
 
 // ── the job's result, as the worker hands it to the API ──────────────────────────────────────────────────────────
+
+/// Does the API take this report of a job (`PUT /api/renders/:id`)? What `reportRender` (api/src/renders.ts) checks —
+/// a status of rendering, done or failed; progress 0…1; the output named by its hash (64 hex); the report an object —
+/// and what the calendar keeps of each delivery (content.ts `Delivery`: channels, the file by its hash, format,
+/// aspect, width, height, codec, bytes, seconds; a kind of video or thumbnail). The note may be long: the API keeps
+/// its first 300 characters.
+pub fn api_accepts(body: &Value) -> Result<()> {
+    let hex64 = |v: &Value| v.as_str().is_some_and(|s| s.len() == 64 && s.bytes().all(|b| b.is_ascii_hexdigit()));
+    let field = |k: &str| body.get(k).filter(|v| !v.is_null());
+    if let Some(s) = field("status").filter(|s| !matches!(s.as_str(), Some("rendering" | "done" | "failed"))) {
+        bail!("a worker reports rendering, done or failed — not {s}");
+    }
+    if let Some(p) = field("progress").filter(|p| !p.as_f64().is_some_and(|p| (0.0..=1.0).contains(&p))) {
+        bail!("progress is 0…1, not {p}");
+    }
+    if let Some(o) = field("output_hash").filter(|o| !hex64(o)) {
+        bail!("a job's output is named by its hash (64 hex), not {o}");
+    }
+    if field("report").is_some_and(|r| !r.is_object()) {
+        bail!("the report is an object");
+    }
+    if let Some(ds) = body.get("deliveries").filter(|d| !d.is_null()) {
+        let ds = ds.as_array().context("the deliveries are a list")?;
+        for (i, d) in ds.iter().enumerate() {
+            let has = |k: &str, ok: fn(&Value) -> bool| d.get(k).is_some_and(ok);
+            let ok = hex64(&d["hash"])
+                && has("channels", |v| v.as_array().is_some_and(|a| a.iter().all(Value::is_string)))
+                && ["format", "aspect", "codec"].iter().all(|k| has(k, Value::is_string))
+                && ["width", "height", "bytes", "seconds"].iter().all(|k| has(k, Value::is_number))
+                && d.get("kind").is_none_or(|k| matches!(k.as_str(), Some("video" | "thumbnail")));
+            if !ok {
+                bail!("delivery {i} is not one the calendar keeps: {d}");
+            }
+        }
+    }
+    Ok(())
+}
 
 /// What the app writes into the vault for a delivery (worker.ts's `add(o.file, { … })`).
 #[derive(Debug, Clone, Serialize)]

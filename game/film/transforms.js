@@ -2,14 +2,14 @@
 //
 // Every transform the pipeline uses is data: which OpenColorIO config and colour spaces (or display and view), or
 // which exact maths (a 3×3 matrix and a curve). Nothing is baked in advance and nothing baked is ever committed or
-// kept as a library asset of its own: the render worker makes a LUT from a config only while it renders
-// (`python3 scripts/film/color/bake.py --config '<json>' …`), cached on its own disk by `hashOf(config)` together
-// with the OCIO version and the LUT size. The studio viewer's LUTs are the Mac app's, baked natively: the input
+// kept as a library asset of its own. Every LUT is the Mac app's, baked natively while it is needed: the input
 // transforms (every source's colour journey into ACEScct) from vault/crates/vault-media/src/cst.rs — which every proxy
-// is made from too; the maths here and there is the same, formula for formula — and the ACES 2.0 output transform
-// from vault/crates/vault-media/src/aces2.rs.
+// and the final render (vault/crates/vault-render) are made with too; the maths here and there is the same, formula
+// for formula — and the ACES 2.0 output transform from vault/crates/vault-media/src/aces2.rs. (The OCIO configs here
+// are what those were verified against; the old render worker baked its LUTs from them with OCIO.) The ffmpeg-specific
+// pieces below (the PQ shaper, DECODE's 1D LUTs) are what that worker ran; they stay as the reference maths.
 //
-// Shared by the render worker (Bun), the film scripts, and the studio (browser): plain JS, no imports but color.js.
+// Shared by the film scripts and the studio (browser): plain JS, no imports but color.js.
 
 import { REC709_TO_AP1, toCct } from './color.js';
 

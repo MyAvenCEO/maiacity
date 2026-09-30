@@ -1,6 +1,6 @@
 ---
 name: story-producer
-description: The maiaCITY master skill for telling stories — journal posts, films, reels, social posts, titles and title cards. Everything we know about storytelling in one place, split into sub-skills: the hook writer, the arc and transformation, retention (tension and release, contrast), writing style, filming (shots, cuts, transitions, light), sound (voice, score, sound design) and the production pipeline (studio, render, library). Use it whenever a story is being written, rewritten, planned, filmed, scored, cut or titled — a journal day, a hook, a title card, a film or reel from the sandbox worlds, a voice-over take, a shot list, a storyboard, the studio editor (/app/studio) or the render worker (bun film worker).
+description: The maiaCITY master skill for telling stories — journal posts, films, reels, social posts, titles and title cards. Everything we know about storytelling in one place, split into sub-skills: the hook writer, the arc and transformation, retention (tension and release, contrast), writing style, filming (shots, cuts, transitions, light), sound (voice, score, sound design) and the production pipeline (studio, render, library). Use it whenever a story is being written, rewritten, planned, filmed, scored, cut or titled — a journal day, a hook, a title card, a film or reel from the sandbox worlds, a voice-over take, a shot list, a storyboard, the studio editor (/app/studio) or the render (the Mac app renders natively).
 ---
 
 # Story producer

@@ -1,13 +1,14 @@
 /**
- * Render jobs. Playing a timeline is live, in the studio; exporting it is a job: the studio queues it, a render
- * worker (bun film worker) claims it, reports its progress, and hands back the film's hash when it is in the vault.
+ * Render jobs. Playing a timeline is live, in the studio; exporting it is a job: the studio (or an agent) queues it,
+ * the render worker — the Mac app, rendering natively (vault/app/src/render.rs, vault/crates/vault-render) — claims it
+ * with its key, reports its progress, and hands back the film's hash when it is in the vault.
  *
  * The same queue carries the worker's other work: `frame` — a hero frame: one frame of a timeline (`params`: t, shape)
  * rendered at full precision through the whole chain, for grading against. Proxies and the viewer's LUTs are no jobs
  * here: the Mac app makes a file's proxy when it comes in (meta.proxy on the original), a world shot version's when a
  * timeline plays it (vault/app/src/world.rs, in its own world), and bakes every LUT the viewer uses (`color_lut`).
  * `proxy` rows — of files (media_hash) or of shot versions (shot_id + shot_version) — and `lut` rows (the preview LUTs
- * the worker once baked) are history, nothing more; one still waiting is closed by the worker when it claims it.
+ * the old worker once baked) are history, nothing more; one still waiting is closed by the app when it claims it.
  */
 import { db } from "./pg";
 import { deliverRender, type Delivery } from "./content";

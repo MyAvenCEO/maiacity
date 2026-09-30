@@ -1,4 +1,4 @@
-//! The vault for this Mac's own tools (the render worker, the film scripts): plain HTTP beside the MCP server, on
+//! The vault for this Mac's own tools (the film scripts: thumbnails, scores): plain HTTP beside the MCP server, on
 //! 127.0.0.1 only and behind the same token. List the catalog, read a file (with Range, streamed from the store), add
 //! a file (the three-hash check, like every ingest), describe one. Nothing here leaves the Mac.
 //!

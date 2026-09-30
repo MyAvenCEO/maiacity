@@ -63,6 +63,11 @@ const STEP: i64 = 1000;
 impl FrameWriter {
     /// Start a proxy of `width`×`height` (even sides) at `fps` into `out` (an .mp4, replaced if it is there).
     pub fn create(out: &Path, width: u32, height: u32, fps: f64) -> Result<Self> {
+        Self::create_at(out, width, height, fps, 12_000_000)
+    }
+
+    /// `create`, at an average bit rate of its own (bits a second) — a render's plate is kept finer than a proxy.
+    pub fn create_at(out: &Path, width: u32, height: u32, fps: f64, bitrate: u32) -> Result<Self> {
         ensure!(width >= 16 && height >= 16 && width % 2 == 0 && height % 2 == 0, "a proxy's sides are even: {width}×{height}");
         ensure!(fps > 0.0 && fps <= 240.0, "no such frame rate: {fps}");
         let _ = std::fs::remove_file(out);
@@ -78,7 +83,7 @@ impl FrameWriter {
             writer.setShouldOptimizeForNetworkUse(false);
             let bt709 = key("ITU_R_709_2");
             let color = dict(&[(&key("ColorPrimaries"), &bt709), (&key("TransferFunction"), &bt709), (&key("YCbCrMatrix"), &bt709)]);
-            let (bitrate, gop) = (NSNumber::new_i32(12_000_000), NSNumber::new_i32(GOP));
+            let (bitrate, gop) = (NSNumber::new_u32(bitrate), NSNumber::new_i32(GOP));
             let main10 = key("HEVC_Main10_AutoLevel");
             let no_reorder = NSNumber::new_bool(false);
             let compression = dict(&[

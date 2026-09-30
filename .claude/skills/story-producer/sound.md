@@ -37,7 +37,7 @@
   0.35 s later a **breakfast** cue bursting in (a sunburst chord, bouncy piano, pizzicato, 92 bpm).
 - **A turn needs energy, not just warmth:** joy after the low is a lift in loudness, rhythm and brightness at once
   (`retention.md`).
-- **The music steps back under the voice:** the worker ducks A2 with the voice as key (sidechain, about −6 dB, 120 ms
+- **The music steps back under the voice:** the render ducks A2 with the voice as key (sidechain, about −6 dB, 120 ms
   attack, 900 ms release). Score around 0.6.
 
 ## Sound design: three layers (A3, built by `scripts/film/sound.ts`)

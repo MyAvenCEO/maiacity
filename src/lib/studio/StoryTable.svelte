@@ -36,11 +36,11 @@
 	let selected = $state<string[]>([]);
 	/** what is on its way right now, per file and destination (live, from iroh) */
 	let moving = $state<Moving[]>([]);
-	/** what holds this Mac's uploads now ("ingest", "proxy"): local work first, then sync */
+	/** what holds this Mac's uploads now ("ingest", "proxy", "render"): local work first, then sync */
 	let hold = $state<string[]>([]);
 	/** the file coming in right now: its B column fills as it is copied, read back and taken into the store */
 	let landing = $state<{ path: string; story: string; size: number; done: number } | null>(null);
-	const waitingWhy = $derived(hold.includes('ingest') ? 'waits: the ingest runs first' : hold.includes('proxy') ? 'waits: the proxies render first' : 'queued');
+	const waitingWhy = $derived(hold.includes('ingest') ? 'waits: the ingest runs first' : hold.includes('proxy') ? 'waits: the proxies render first' : hold.includes('render') ? 'waits: a film renders first' : 'queued');
 	const movingOf = (m: MediaItem, dest: string) => moving.find((t) => t.hash === m.hash && t.dest === dest && !t.done && !t.aborted);
 	const active = $derived(moving.filter((t) => !t.done && !t.aborted && mine.some((m) => m.hash === t.hash)));
 	let error = $state('');

@@ -1,19 +1,12 @@
-// The film's colour: color.js and transforms.js as units, and the worker's ffmpeg colour path measured against
-// OpenColorIO itself and against the maths (skipped where ffmpeg or OCIO is missing on the machine).
-import { beforeAll, describe, expect, test } from "bun:test";
-import { spawnSync } from "node:child_process";
-import { mkdtempSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
+// The film's colour: color.js and transforms.js as units — the studio's and the viewer's maths. The render's own
+// colour path is the Mac's, natively, and tested there (vault/crates/vault-media tests/cst.rs and aces2.rs,
+// vault/crates/vault-render tests).
+import { expect, test } from "bun:test";
 import { cdl, cleanCdl, detect, exrHeader, exrProfile, fromCct, isNeutral, MID_GREY_CCT, PRESETS, PROFILES, profileOf, REC709_TO_AP1, toCct } from "../../game/film/color.js";
 import {
-  canonical, DECODE, hashOf, HLG_SCALE, hlgToScene, monCurve, nitsToPq, OCIO_CONFIG, pqToNits, rec709ToScene, sha256, SHAPER, shaperToCct,
+  canonical, DECODE, hashOf, HLG_SCALE, hlgToScene, monCurve, nitsToPq, pqToNits, rec709ToScene, sha256, SHAPER, shaperToCct,
   srgbToScene, TRANSFORMS,
 } from "../../game/film/transforms.js";
-
-process.env.MAIACITY_CACHE ??= mkdtempSync(join(tmpdir(), "maiacity-color-test-"));
-const hasFfmpeg = spawnSync("ffmpeg", ["-hide_banner", "-filters"], { encoding: "utf8" }).stdout?.includes("zscale") ?? false;
-const hasOcio = spawnSync("python3", ["-c", "import PyOpenColorIO, numpy"]).status === 0;
 
 // ── color.js ──────────────────────────────────────────────────────────────────────────────────────────────────────
 
@@ -165,123 +158,4 @@ test("HDR signals as scene light: BT.2408's grey lands on 18%; PQ both ways", ()
   expect(nitsToPq(203)).toBeCloseTo(0.5807, 3); // BT.2408's 58% PQ reference white
   // the shaper's LUT entry: PQ of the offset linear value, back to ACEScct
   for (const lin of [0, 0.01, 0.18, 1, 100]) expect(shaperToCct(nitsToPq(((lin + SHAPER.offset) / (1 + SHAPER.offset)) * SHAPER.npl))).toBeCloseTo(toCct(lin), 8);
-});
-
-// ── the ffmpeg colour path ────────────────────────────────────────────────────────────────────────────────────────
-
-describe.skipIf(!hasOcio)("every clip takes the one path", () => {
-  test("input transform → grades → output transform; unknown colour and profiles from an older table as Rec.709", async () => {
-    const { clipColor, codingOf } = await import("../../scripts/film/color/ffmpeg.mjs");
-    const coding = codingOf({ pix_fmt: "yuv420p", color_space: "bt709", height: 1080 });
-    for (const [profile, idt] of [["rec709", "idt-rec709"], ["srgb", "idt-srgb"], ["unknown", "idt-rec709"], ["legacy", "idt-rec709"], ["acescct", "idt-acescct"]] as const) {
-      const c = clipColor({ profile: profile as any, coding, grade: null, look: null });
-      expect(Object.keys(c.used).sort()).toEqual([idt, "odt-rec709"]);
-      expect(c.before[0]).toBe("zscale=min=709:rin=limited:r=full");
-      expect(c.after.at(-2)).toBe("format=yuv420p10le");
-      expect(c).not.toHaveProperty("bypass");
-    }
-    // Rec.709 and sRGB by exact maths: their curve as a 1D LUT, the 3×3 into AP1, the ACEScct shaper — no 3D LUT
-    const rec = clipColor({ profile: "rec709", coding, grade: PRESETS.warm.cdl, look: PRESETS.cold.cdl });
-    expect(rec.before.filter((f) => f.startsWith("lut3d"))).toEqual([]);
-    expect(rec.before.filter((f) => f.startsWith("colorchannelmixer")).length).toBe(1);
-    expect(Object.keys(rec.used).sort()).toEqual(["grade:clip", "grade:look", "idt-rec709", "odt-rec709"]);
-    expect(clipColor({ profile: "srgb", coding }).used["idt-srgb"]).not.toBe(rec.used["idt-rec709"]);
-  }, 60000);
-});
-
-// ── the ffmpeg colour path, measured ──────────────────────────────────────────────────────────────────────────────
-
-describe.skipIf(!hasFfmpeg || !hasOcio)("the worker's colour path against OCIO", () => {
-  let m: typeof import("../../scripts/film/color/measure.mjs");
-  let fx: typeof import("../../scripts/film/color/ffmpeg.mjs");
-  beforeAll(async () => {
-    m = await import("../../scripts/film/color/measure.mjs");
-    fx = await import("../../scripts/film/color/ffmpeg.mjs");
-  });
-  const lin = () => {
-    const r = m.rng(3);
-    return [...Array(3000)].map(() => [0, 0, 0].map(() => (r() < 0.03 ? -r() * 0.005 : 2 ** (r() * 20 - 12))));
-  };
-
-  test("linear light → ACEScct (3×3 + PQ-shaped 1D LUT) is within 0.05 10-bit code values of OCIO", () => {
-    const px = lin();
-    const shaper = m.diff(m.throughFfmpeg(px, fx.linearToCct().filters), px.map((p) => p.map(toCct)));
-    expect(shaper.max).toBeLessThan(0.05);
-    for (const [name, src] of [["idt-aces2065-1", "ACES2065-1"], ["idt-acescg", "ACEScg"], ["idt-linear-rec709", "Linear Rec.709 (sRGB)"]] as const) {
-      const got = m.throughFfmpeg(px, fx.idtFilters(name).filters);
-      const want = m.throughOcio({ kind: "ocio-convert", config: OCIO_CONFIG, src, dst: "ACEScct" }, px);
-      // far outside AP1 (linear below −1/128) the shaper holds; the output transform's domain starts at 0 anyway
-      const keep = want.map((p) => p.every((v) => v >= toCct(-SHAPER.offset)));
-      const d = m.diff(got.filter((_, i) => keep[i]), want.filter((_, i) => keep[i]));
-      expect(d.max).toBeLessThan(0.05);
-    }
-  }, 60000);
-
-  test("the output transform (129³, tetrahedral) matches OCIO on realistic scene colours", () => {
-    const px = m.realistic(m.rng(5));
-    const d = m.diff(m.throughFfmpeg(px, fx.odtFilters().filters), m.throughOcio(TRANSFORMS["odt-rec709"], px));
-    expect(d.p99).toBeLessThan(1.5);
-    expect(d.max).toBeLessThan(8);
-    // an ACEScct grey ramp: every step within 2 code values
-    const ramp = [...Array(256)].map((_, i) => { const v = 0.1 + (i / 255) * 0.75; return [v, v, v]; });
-    expect(m.diff(m.throughFfmpeg(ramp, fx.odtFilters().filters), m.throughOcio(TRANSFORMS["odt-rec709"], ramp)).max).toBeLessThan(2);
-  }, 60000);
-
-  test("camera log: Apple Log (65³) within ~2 code values of OCIO; Apple Log 2 by exact maths, within 0.05", () => {
-    const r = m.rng(7);
-    const px = [...Array(3000)].map(() => { const base = 0.15 + r() * 0.65; return [0, 0, 0].map(() => base + (r() - 0.5) * 0.12); });
-    const v1 = m.diff(m.throughFfmpeg(px, fx.idtFilters("idt-apple-log").filters), m.throughOcio(TRANSFORMS["idt-apple-log"], px));
-    expect(v1.max).toBeLessThan(2.5);
-    // Apple Log 2: curve (1D) → one 3×3 → the PQ-shaped ACEScct encoding, no 3D LUT. Below the shaper's floor
-    // (linear −1/128, under ACEScct 0) it holds — the grade and the output transform start at 0 anyway.
-    const f = fx.idtFilters("idt-apple-log-2").filters;
-    expect(f.some((x) => x.startsWith("lut3d"))).toBe(false);
-    const got = m.throughFfmpeg(px, f), want = m.throughOcio(TRANSFORMS["idt-apple-log-2"], px);
-    const keep = want.map((p) => p.every((v) => v >= toCct(-SHAPER.offset)));
-    expect(m.diff(got.filter((_, i) => keep[i]), want.filter((_, i) => keep[i])).max).toBeLessThan(0.05);
-  }, 60000);
-
-  test("saturated colours at the gamut edge: the render's 129³ output transform stays close to OCIO", () => {
-    // pure and near-pure Rec.709 primaries and secondaries, taken into ACEScct by their journey — where ACES 2.0 bends
-    const r = m.rng(11);
-    const edge = [...Array(2000)].map(() => { const c = [0, 1, 2].map(() => (r() < 0.5 ? r() * 0.08 : 0.85 + r() * 0.15)); return c; });
-    const cct = edge.map((p) => journey("idt-rec709", p));
-    const d = m.diff(m.throughFfmpeg(cct, fx.odtFilters().filters), m.throughOcio(TRANSFORMS["odt-rec709"], cct));
-    expect(d.p99).toBeLessThan(20); // measured with bake.py's tetrahedral: 129³ ~12, 65³ ~27
-  }, 120000);
-
-  test("Rec.709, sRGB, HLG and PQ by exact maths in ffmpeg match their journeys", () => {
-    const px = [...Array(400)].map((_, i) => { const v = i / 399; return [v, v * 0.9, v * 0.8]; });
-    for (const name of ["idt-rec709", "idt-srgb", "idt-hlg", "idt-pq"] as const) {
-      const f = fx.idtFilters(name).filters;
-      expect(f.some((x) => x.startsWith("lut3d"))).toBe(false);
-      expect(m.diff(m.throughFfmpeg(px, f), px.map((p) => journey(name, p))).max).toBeLessThan(0.1);
-    }
-  }, 60000);
-
-  test("the grade in ffmpeg is cdl() of color.js", () => {
-    const r = m.rng(11);
-    const px = [...Array(2000)].map(() => [r() * 1.2, r() * 1.2, r() * 1.2]);
-    for (const p of Object.values(PRESETS)) {
-      const got = m.throughFfmpeg(px, fx.cdlFilters(p.cdl).filters);
-      expect(m.diff(got, px.map((x) => cdl(p.cdl, x as [number, number, number]))).max).toBeLessThan(0.05);
-    }
-  }, 60000);
-
-  test("a Rec.709 clip goes the one path: idt-rec709 → (grade) → odt-rec709, 10-bit YUV out", async () => {
-    const { pieceFilters } = await import("../../scripts/film/picture.mjs");
-    const { sourceOf } = await import("../../scripts/film/sources.mjs");
-    const dir = mkdtempSync(join(tmpdir(), "maiacity-rec709-"));
-    const file = join(dir, "rec709.mp4");
-    spawnSync("ffmpeg", ["-v", "error", "-y", "-f", "lavfi", "-i", "testsrc2=s=1920x1080:r=30:d=1", "-c:v", "libx264", "-crf", "12", "-pix_fmt", "yuv420p", "-colorspace", "bt709", "-color_primaries", "bt709", "-color_trc", "bt709", file]);
-    const src = sourceOf(file, null);
-    expect(src.profile).toBe("rec709");
-    for (const look of [null, PRESETS.cold.cdl]) {
-      const piece = pieceFilters({ source: src, W: 1920, H: 1080, frames: 10, fps: 30, look });
-      expect(Object.keys(piece.used).sort()).toEqual(look ? ["grade:look", "idt-rec709", "odt-rec709"] : ["idt-rec709", "odt-rec709"]);
-      const out = spawnSync("ffmpeg", ["-v", "error", "-i", file, "-filter_complex", `[0:v]${piece.filters.join(",")}[v]`, "-map", "[v]", "-frames:v", "10", "-pix_fmt", "yuv420p10le", "-f", "rawvideo", "-"], { maxBuffer: 1 << 30 });
-      expect(out.status).toBe(0);
-      expect(out.stdout.length).toBe(1920 * 1080 * 1.5 * 2 * 10);
-    }
-  }, 60000);
 });

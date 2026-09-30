@@ -15,7 +15,12 @@
 //! What is made: the version of every world clip on every timeline that has no proxy yet — looked for a minute after
 //! start and every minute after. It takes its turn with the files' proxies (`proxies::TURN`), after an ingest, and
 //! only while macOS says memory is normal; while it renders, the uploads wait (`hold: proxy`). The window is closed
-//! when nothing is left to render.
+//! when nothing is left to render (and nobody keeps it open: `keep`).
+//!
+//! Plates, for the final render (render.rs): the same frames of a stretch of a shot (`Frames`: from, frames, fps),
+//! framed for a delivery shape at its render size (4K for 16:9), at a finer bit rate — cached beside the vault
+//! (`plates_dir`, by the hash of everything a plate is made of), never in it. `shoot` renders any `Frames`; the
+//! caller holds the turn.
 
 use std::{
     collections::{BTreeMap, HashMap, HashSet},
@@ -45,7 +50,7 @@ const NEXT_FRAME: Duration = Duration::from_secs(5 * 60);
 /// Rendered bigger and filtered down, as the plates are.
 const OVERSAMPLE: f64 = 1.5;
 
-/// A shot for the page to render.
+/// A shot for the page to render: `frames` frames from `from` seconds into the shot.
 #[derive(Serialize, Clone)]
 pub struct Job {
     id: String,
@@ -54,6 +59,7 @@ pub struct Job {
     width: u32,
     height: u32,
     fps: f64,
+    from: f64,
     frames: u32,
     oversample: f64,
 }
@@ -221,22 +227,22 @@ pub async fn sweep(handle: AppHandle, vault: std::sync::Arc<Vault>) {
                     *tries += 1;
                     tracing::warn!("world proxy of {} v{} (try {tries} of {}): {e}", w.shot, w.version, proxies::TRIES);
                     // the page may be stuck: the next one starts in a fresh one
-                    close_window(&handle);
+                    close_if_idle(&handle);
                 }
             }
             proxies::clear(&w.of());
         }
-        close_window(&handle);
+        close_if_idle(&handle);
     }
 }
 
 /// Keep the Mac from napping the app while a proxy renders unseen (App Nap slows timers and the GPU's work).
-struct Awake(objc2::rc::Retained<objc2::runtime::AnyObject>);
+pub(crate) struct Awake(objc2::rc::Retained<objc2::runtime::AnyObject>);
 // SAFETY: an NSProcessInfo activity token is an immutable object; ending it from another thread is allowed.
 unsafe impl Send for Awake {}
 
 impl Awake {
-    fn begin(reason: &str) -> Option<Self> {
+    pub(crate) fn begin(reason: &str) -> Option<Self> {
         use objc2::{class, msg_send, rc::Retained, runtime::AnyObject};
         // NSActivityUserInitiatedAllowingIdleSystemSleep
         const OPTIONS: u64 = 0x00FF_FFFF & !(1 << 20);
@@ -290,31 +296,10 @@ async fn render(handle: &AppHandle, vault: &Vault, w: &Want) -> Res<String> {
     let seconds = w.spec["seconds"].as_f64().filter(|s| *s > 0.0).ok_or("the shot has no length")?;
     let frames = ((seconds * fps).round() as u32).max(1);
     let stamp = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis()).unwrap_or(0);
-    let id = format!("{}-v{}-{stamp}", w.shot, w.version);
-    let part = vault.ingest_dir().join(format!("{id}.world.part.mp4"));
-
-    // the encoder first, on its own thread (AVFoundation's objects stay where they are made); then the job
-    let (tx, rx) = std::sync::mpsc::sync_channel::<Msg>(1);
-    *FEED.lock().unwrap() = Some((id.clone(), tx));
-    let (done_tx, done_rx) = tokio::sync::oneshot::channel();
-    let (out, of2, name2) = (part.clone(), of.clone(), name.clone());
-    std::thread::Builder::new()
-        .name("world proxy".into())
-        .spawn(move || {
-            let r = encode(rx, &out, width, height, fps, frames, &mut |done| proxies::set(&of2, &name2, "making", done));
-            done_tx.send(r).ok();
-        })
-        .map_err(err)?;
-    let result = async {
-        open_window(handle).await?;
-        *SLOT.lock().unwrap() = Some(Job { id: id.clone(), spec: w.spec.clone(), shape, width, height, fps, frames, oversample: OVERSAMPLE });
-        POSTED.notify_one();
-        done_rx.await.map_err(|_| "the encoder stopped".to_string())?
-    }
-    .await;
-    SLOT.lock().unwrap().take();
-    *FEED.lock().unwrap() = None;
-    let (proxy, info) = match result {
+    let part = vault.ingest_dir().join(format!("{}-v{}-{stamp}.world.part.mp4", w.shot, w.version));
+    let (of2, name2) = (of.clone(), name.clone());
+    let ask = Frames { spec: w.spec.clone(), shape, width, height, fps, from: 0.0, frames, bitrate: None };
+    let (proxy, info) = match shoot(handle, &format!("{}-v{}", w.shot, w.version), &ask, &part, move |done| proxies::set(&of2, &name2, "making", done)).await {
         Ok(made) => made,
         Err(e) => {
             std::fs::remove_file(&part).ok();
@@ -346,9 +331,145 @@ async fn render(handle: &AppHandle, vault: &Vault, w: &Want) -> Res<String> {
     Ok(made?.hash)
 }
 
-/// The encoder's thread: frames in order into the proxy until the page says the shot is through.
-fn encode(rx: Receiver<Msg>, out: &Path, width: u32, height: u32, fps: f64, frames: u32, progress: &mut dyn FnMut(f64)) -> Res<(Proxy, Value)> {
-    let mut writer = FrameWriter::create(out, width, height, fps).map_err(err)?;
+/// What the world renders: `frames` frames of a shot from `from` seconds into it, framed for `shape`, at a size and a
+/// rate — a shot's whole HD proxy, or a plate the final render cuts in.
+pub struct Frames {
+    pub spec: Value,
+    pub shape: &'static str,
+    pub width: u32,
+    pub height: u32,
+    pub fps: f64,
+    pub from: f64,
+    pub frames: u32,
+    /// the movie's bit rate (None: a proxy's)
+    pub bitrate: Option<u32>,
+}
+
+/// Render frames of a shot in the unseen world into an ACEScct movie at `out` (HEVC Main10, `FrameWriter`): the movie
+/// and what the world says of it (its exposure, its build). Takes no turn of its own — the caller holds
+/// `proxies::TURN` (a proxy, or a render with its plates).
+pub async fn shoot(handle: &AppHandle, label: &str, ask: &Frames, out: &Path, progress: impl FnMut(f64) + Send + 'static) -> Res<(Proxy, Value)> {
+    let stamp = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis()).unwrap_or(0);
+    let id = format!("{label}-{stamp}");
+    // the encoder first, on its own thread (AVFoundation's objects stay where they are made); then the job
+    let (tx, rx) = std::sync::mpsc::sync_channel::<Msg>(1);
+    *FEED.lock().unwrap() = Some((id.clone(), tx));
+    let (done_tx, done_rx) = tokio::sync::oneshot::channel();
+    let (file, (width, height, fps, frames, bitrate)) = (out.to_path_buf(), (ask.width, ask.height, ask.fps, ask.frames, ask.bitrate));
+    let mut progress = progress;
+    let spawned = std::thread::Builder::new().name("world frames".into()).spawn(move || {
+        let r = encode(rx, &file, width, height, fps, frames, bitrate, &mut progress);
+        done_tx.send(r).ok();
+    });
+    if let Err(e) = spawned {
+        *FEED.lock().unwrap() = None;
+        return Err(err(e));
+    }
+    let result = async {
+        open_window(handle).await?;
+        *SLOT.lock().unwrap() = Some(Job {
+            id: id.clone(),
+            spec: ask.spec.clone(),
+            shape: ask.shape,
+            width,
+            height,
+            fps,
+            from: ask.from,
+            frames,
+            oversample: OVERSAMPLE,
+        });
+        POSTED.notify_one();
+        done_rx.await.map_err(|_| "the encoder stopped".to_string())?
+    }
+    .await;
+    SLOT.lock().unwrap().take();
+    *FEED.lock().unwrap() = None;
+    result
+}
+
+// ── plates: a world clip's frames for the final render ─────────────────────────────────────────────────────────────
+
+/// What a plate's cache key covers besides its request: bump it when the world renders plates differently.
+const PLATE_FORMAT: u32 = 1;
+/// A plate nobody rendered from for this long is cleared from the cache.
+const PLATE_KEPT: Duration = Duration::from_secs(30 * 24 * 3600);
+
+/// A plate for the render: the file, its cache key, the shot's fingerprint, whether it came from the cache.
+pub struct Plate {
+    pub file: std::path::PathBuf,
+    pub key: String,
+    pub fingerprint: String,
+    pub reused: bool,
+}
+
+/// Where plates are cached: beside the vault's store, never in it. A plate is a render-step intermediate — made again
+/// from the shot's data whenever it is gone, a gigabyte at 4K — so it is no library file (it would sync to the server
+/// and every device for nothing); its name is the hash of everything it is rendered from.
+pub fn plates_dir(vault: &Vault) -> std::path::PathBuf {
+    vault.dir.join("plates")
+}
+
+/// Clear half-made plates and those unused for a month.
+pub fn prune_plates(vault: &Vault) {
+    let now = std::time::SystemTime::now();
+    for e in std::fs::read_dir(plates_dir(vault)).into_iter().flatten().flatten() {
+        let name = e.file_name().to_string_lossy().into_owned();
+        let old = e.metadata().and_then(|m| m.modified()).is_ok_and(|t| now.duration_since(t).unwrap_or_default() > PLATE_KEPT);
+        if name.contains(".part") || old {
+            std::fs::remove_file(e.path()).ok();
+        }
+    }
+}
+
+fn hex_of(bytes: &[u8]) -> String {
+    blake3::hash(bytes).to_hex().to_string()
+}
+
+/// A plate's key: the shot's data (its spec, so a new version is a new plate), the stretch, the frame, the rate — and
+/// how the world renders it (`PLATE_FORMAT`, the oversampling). The fingerprint is the spec's alone.
+pub fn plate_key(spec: &Value, ask: &Frames) -> (String, String) {
+    let fingerprint = hex_of(serde_json::to_string(spec).unwrap_or_default().as_bytes());
+    let what = json!({
+        "format": PLATE_FORMAT, "fingerprint": fingerprint, "from": (ask.from * 1000.0).round() / 1000.0, "frames": ask.frames,
+        "shape": ask.shape, "width": ask.width, "height": ask.height, "fps": ask.fps, "oversample": OVERSAMPLE,
+    });
+    (hex_of(what.to_string().as_bytes())[..32].to_string(), fingerprint[..16].to_string())
+}
+
+/// A plate's bit rate: finer than a proxy's (it is graded and cut into every delivery) — 0.4 bits a pixel, 4K at 30 fps
+/// about 100 Mbps.
+pub fn plate_bitrate(width: u32, height: u32, fps: f64) -> u32 {
+    ((width as f64 * height as f64 * fps * 0.4) as u32).clamp(20_000_000, 150_000_000)
+}
+
+/// A plate from the cache, or rendered now in the unseen world (the caller holds `proxies::TURN`).
+pub async fn plate(handle: &AppHandle, vault: &Vault, label: &str, ask: &Frames, progress: impl FnMut(f64) + Send + 'static) -> Res<Plate> {
+    let (key, fingerprint) = plate_key(&ask.spec, ask);
+    let dir = plates_dir(vault);
+    std::fs::create_dir_all(&dir).map_err(err)?;
+    let file = dir.join(format!("{key}.mp4"));
+    if file.is_file() {
+        // used again: it stays in the cache a while longer
+        std::fs::File::options().append(true).open(&file).and_then(|f| f.set_modified(std::time::SystemTime::now())).ok();
+        return Ok(Plate { file, key, fingerprint, reused: true });
+    }
+    let part = dir.join(format!("{key}.part.mp4"));
+    if let Err(e) = shoot(handle, label, ask, &part, progress).await {
+        std::fs::remove_file(&part).ok();
+        return Err(e);
+    }
+    std::fs::rename(&part, &file).map_err(err)?;
+    Ok(Plate { file, key, fingerprint, reused: false })
+}
+
+/// The encoder's thread: frames in order into the movie until the page says the shot is through.
+#[allow(clippy::too_many_arguments)]
+fn encode(rx: Receiver<Msg>, out: &Path, width: u32, height: u32, fps: f64, frames: u32, bitrate: Option<u32>, progress: &mut dyn FnMut(f64)) -> Res<(Proxy, Value)> {
+    let mut writer = match bitrate {
+        Some(b) => FrameWriter::create_at(out, width, height, fps, b),
+        None => FrameWriter::create(out, width, height, fps),
+    }
+    .map_err(err)?;
     loop {
         let wait = if writer.frames() == 0 { FIRST_FRAME } else { NEXT_FRAME };
         match rx.recv_timeout(wait) {
@@ -425,5 +546,30 @@ fn unseen(webview: *mut c_void, window: *mut c_void) {
 pub fn close_window(handle: &AppHandle) {
     if let Some(w) = handle.get_webview_window(LABEL) {
         w.destroy().ok();
+    }
+}
+
+/// Who keeps the world's window open between shots (a render with several plates): while one is held, nobody closes it.
+static KEPT: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+
+pub struct Kept;
+
+/// Keep the world open until this is dropped (a built world takes minutes to build again).
+pub fn keep() -> Kept {
+    KEPT.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+    Kept
+}
+
+impl Drop for Kept {
+    fn drop(&mut self) {
+        KEPT.fetch_sub(1, std::sync::atomic::Ordering::SeqCst);
+    }
+}
+
+/// Close the world's window unless it is rendering or kept open (a proxy run ending must not close it under a render).
+pub fn close_if_idle(handle: &AppHandle) {
+    let feed = FEED.lock().unwrap();
+    if feed.is_none() && KEPT.load(std::sync::atomic::Ordering::SeqCst) == 0 {
+        close_window(handle);
     }
 }

@@ -1,8 +1,10 @@
-//! The final film render, native on the Mac — the render worker (scripts/film/worker.ts: bun, ffmpeg, OCIO LUTs,
-//! Chrome for the captions) done with Apple's own frameworks from Rust. Nothing to install.
+//! The final film render, native on the Mac — what the old render worker (scripts/film/worker.ts: bun, ffmpeg, OCIO
+//! LUTs, Chrome for the captions; gone now) did, with Apple's own frameworks from Rust. Nothing to install. The Mac app
+//! is the render worker: vault/app/src/render.rs claims the jobs and runs `render` / `hero_frame`.
 //!
 //!   picture  every delivery shape composited on the film's clock (`timeline::pieces`, as the worker cuts it): each
-//!            frame read by AVAssetReader (originals, never proxies; a world clip's ACEScct plate; a still held),
+//!            frame read by AVAssetReader (originals, never proxies; a world clip's ACEScct plate; a still held; an
+//!            EXR sequence frame by frame straight from its tar, at its own rate — `vault_media::still::Sequence`),
 //!            then on the GPU in one Core Image graph with no colour management — its journey into ACEScct
 //!            (`vault_media::cst::METAL_KERNEL`), framing, the clip's CDL, the film's look, the output transform (a 3D
 //!            LUT, `output::Output`), fades — and rendered into VideoToolbox's buffer: 4K HEVC Main10 master + its
@@ -27,6 +29,6 @@ pub mod sound;
 pub mod timeline;
 
 pub use output::{Lut3d, Output};
-pub use render::{Delivery, Library, Media, Options, Plate, Render, hero_frame, render};
+pub use render::{Delivery, Library, Media, Options, Plate, Render, api_accepts, hero_frame, render};
 pub use sound::{PLATFORMS, Target};
 pub use timeline::{Clip, Shape, Timeline};

@@ -1,7 +1,7 @@
 <!--
-	Render (the left of the Render tab): the button that queues this timeline's render for the worker (bun film worker),
-	how the job under way goes — its stage, progress, time left — the timeline's earlier renders, and the worker's
-	whole queue when the API lists it.
+	Render (the left of the Render tab): the button that queues this timeline's render — rendered natively by the Mac
+	app (vault/app/src/render.rs) — how the job under way goes — its stage, progress, time left — the timeline's earlier
+	renders, and the whole queue when the API lists it.
 -->
 <script>
 	import { raw, running } from './studio.svelte.js';
@@ -21,15 +21,18 @@
 	/** What the worker is doing, in plain words. */
 	/** @param {import('$lib/auth/client').RenderJob} r */
 	function stage(r) {
-		if (r.status === 'queued') return 'Waiting for the render worker';
+		if (r.status === 'queued') return 'Waiting for the Mac';
 		if (r.status === 'done') return 'Rendered';
 		if (r.status === 'failed') return 'The render failed';
 		/** @type {Record<string, string>} */
 		const said = {
+			starting: 'Starting',
 			'fetching files': 'Fetching the files',
-			'setting the captions': 'Setting the captions',
+			'rendering world plates': 'Rendering the world plates',
+			'mixing the sound': 'Mixing the sound',
 			rendering: 'Rendering the film',
-			'into the library': 'Into the library'
+			checking: 'Checking every file (QC, loudness)',
+			'into the vault': 'Into the vault'
 		};
 		return said[r.note ?? ''] ?? r.note ?? 'Starting';
 	}
@@ -75,7 +78,7 @@
 					{#if r.note === 'rendering'}· {eta === null ? 'estimating the time left…' : `about ${mmss(eta)} left`}{/if}
 				</p>
 				{#if r.status === 'queued' && s.elapsed(r) > 10}
-					<p class="rp-hint">No render worker running — start it with <code>bun film worker --local</code></p>
+					<p class="rp-hint">Not taken yet — maiaCITY Studio on the Mac renders it once its proxies are through; is the app open and signed in?</p>
 				{/if}
 			{:else if r.status === 'done'}
 				<p class="rp-meta">{when(r.created)} · took {mmss(s.took(r))}</p>

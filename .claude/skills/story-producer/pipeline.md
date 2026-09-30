@@ -4,8 +4,9 @@ From an approved story to a rendered film in the media library.
 
 ## Local first, in two steps
 
-**Work locally unless the user explicitly says production.** `bun voice`, `bun media` and `bun film worker` talk to
+**Work locally unless the user explicitly says production.** `bun voice` and `bun media` talk to
 `https://api.maia.city` by default; `--local` points them at `http://localhost:3100`. Pass `--local` on every command.
+The render has no command of its own: maiaCITY Studio (the Mac app) renders, against the API it is signed in to.
 
 Local setup: the API and Postgres run from `docker compose up` (API on :3100), the site with `bun run dev` (:5173),
 the terminal is signed in with `bun media login --local`. `FAL_API_KEY` lives in `.env`. Film scripts need Node 22
@@ -36,18 +37,22 @@ the terminal is signed in with `bun media login --local`. `FAL_API_KEY` lives in
    n+1). **+ Variant** branches the edit under the project's next letter.
 4. **Grade** tab: originals swapped in (conform), clip CDLs + the film's look (presets), scopes; **Hero frame**
    renders the frame at the playhead at full size, 16-bit, through the whole chain — judge the grade on it.
-5. **Render** tab: **⤓ Render**, with `bun film worker --local` running **on the Mac** (world plates render only on a
-   Mac's GPU, Chrome on Metal — there is no software path; elsewhere world jobs fail with that message). The worker
-   renders world plates at each delivery's size (cached by fingerprint), then the timeline into every shape (16:9 4K
-   HEVC master + 1080 H.264, 9:16, 1:1, 4:5), lays the hook text over the social copies' first seconds, and brings
-   each file into the library and onto the content board; the timeline's stage becomes "rendered".
-   Colour-managed (game/film/color.js, transforms.js): each picture clip goes through its input transform into
-   ACEScct, its grade and the film's look, the ACES 2.0 output transform to Rec.709, then the captions; an ungraded
-   Rec.709/sRGB clip bypasses both and renders as it was. Every delivery is QC'd (BT.709/TV tags, 10-bit master,
-   frames, loudness) before the library. The same worker makes hero frames; every proxy — a file's (`meta.color`,
-   `meta.proxy`) and a world shot's — and every LUT the studio's viewer uses are the Mac app's. It needs ffmpeg with zimg
-   (Homebrew's has it) and `pip install opencolorio numpy`; LUTs are baked from the configs only while rendering,
-   cached in ~/.cache/maiacity. Nothing is ever baked into a source or committed.
+5. **Render** tab: **⤓ Render** (or the MCP tool `render_queue`). **The Mac app is the render worker**: maiaCITY
+   Studio claims the job with its key and renders it natively (`vault/app/src/render.rs` → `vault/crates/vault-render`:
+   Core Image on Metal, VideoToolbox, AVFoundation, Core Text — no bun, no ffmpeg, no Chrome, nothing to install). It
+   takes its turn with the proxies (one heavy GPU job at a time, after an ingest, only while memory is normal; uploads
+   wait while it renders) and shows its progress on the job and in Ingest → Activity. World clips first become ACEScct
+   plates at each delivery's size, rendered in the app's own unseen world and cached beside the vault (`plates/`, by
+   the hash of what they are made of); then the timeline goes into every shape (16:9 4K HEVC Main10 master + 1080
+   H.264 in one pass, 9:16, 1:1, 4:5), the hook text over the social copies' first seconds, the sound mixed (voice
+   ducks the music) and levelled to −14 LUFS / −1 dBTP (`LOUDNESS` in render.rs), and each file into the vault as a
+   delivery (in the timeline's story) and onto the content board; the timeline's stage becomes "rendered".
+   Colour-managed: each picture clip — the conformed original, never the proxy — goes through its journey into ACEScct
+   (vault-media's cst, the same maths as the proxies), its grade and the film's look, the ACES 2.0 output transform to
+   Rec.709 (vault-media's aces2, a 129³ cube), then the captions. EXR sequences render frame by frame from their tar,
+   at their own rate. Every delivery is QC'd (BT.709/TV tags, 10-bit master, frames, limits, EBU R 128 loudness)
+   before the vault; the report names every transform by its hash. Hero frames (`render_frame` over MCP) are the same
+   chain, one frame, a 16-bit PNG. Nothing is ever baked into a source or committed.
    EXR sequences (Luma, Kling, LTX exports) come in with `bun media add-sequence <dir> --profile aces2065-1 --fps 24`.
 
 **Projects and variants:** timelines are grouped by `project` ("Day 19") with variants A, B, C…; each variant is its own
@@ -93,9 +98,9 @@ timeline, its stage shown at the top (edit → locked → graded → rendered, a
   channel, saturation), presets, a world shot's "lit for" look, **scopes** (waveform, RGB parade, vectorscope, false
   colour), and the **shape switcher** (16:9 · 9:16 · 1:1 · 4:5) with each media clip's framing per shape. Grades are
   data on the timeline; nothing is baked. **Unlock** makes version n+1 and keeps every clip's grade.
-- **Render** — **⤓ Render every delivery** queues the job for the worker; the job's stage, progress and report
+- **Render** — **⤓ Render every delivery** queues the job for the Mac app; the job's stage, progress and report
   (transforms by config hash, conformed clips, plates, warnings); the last render's deliveries per shape with QC and
-  loudness, each viewable; the worker's queue.
+  loudness, each viewable; the render queue.
 
 **Media library** (`/app/media`, `api/scripts/media.ts`): `library/` is the single source of truth — every file once as
 `<cid>.<ext>` with `<cid>.json` (title, description, tags, meta, public). **Everything references a file by its CID;
@@ -131,7 +136,7 @@ shot has its `sfx`, `mood` and `exposure`; the `music.chunks` boundaries sit on 
 made and chosen; the storyboard was played in the studio and approved.
 
 **Before rendering:** the stills pass is clean; the shots are in the library; the variant was branched; the audit
-passes; the worker runs with `--local`, and the render is checked at every cut.
+passes; the Mac app is open and signed in to the local API, and the render is checked at every cut.
 
 **Before publishing:** the title cards and hook layers are made; captions on; the loop ending lands; Samuel explicitly
 asked for production — only then drop `--local`. Never deploy locally; pushing to main deploys.
