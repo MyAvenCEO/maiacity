@@ -152,6 +152,14 @@
 		return pts.map(([t, y], i) => `${i ? 'L' : 'M'}${t.toFixed(2)},${(0.1 + y * 0.8).toFixed(3)}`).join('');
 	}
 
+	// Grade opens (or the cut changes there): every shot its own grading still, in the background
+	const stillKey = $derived(grading && s.gradeOn === 'stills' ? JSON.stringify(s.clips.filter((c) => c.track === 'V1').map((c) => [c.hash, c.in, c.dur])) : '');
+	$effect(() => {
+		if (!stillKey) return;
+		const t = setTimeout(() => void s.makeStills(), 800);
+		return () => clearTimeout(t);
+	});
+
 	// during playback the view follows the playhead: a page on when it nears the right edge, back when it is off
 	// to the left (a seek), never while paused — then the view is the editor's
 	/** @type {HTMLDivElement | null} */

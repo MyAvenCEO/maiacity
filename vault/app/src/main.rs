@@ -462,6 +462,7 @@ fn main() {
             proxies::vault_proxy,
             transcripts::vault_transcribe,
             render::sound_measure,
+            proxies::grade_stills,
             world::world_proxy_next,
             world::world_proxy_frame,
             world::world_proxy_end,

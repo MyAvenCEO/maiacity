@@ -697,6 +697,8 @@ impl Studio {
     async fn grade_measure(&self, Parameters(a): Parameters<MeasureArgs>) -> String {
         let r = async {
             let t = self.api("GET", &format!("/api/timelines/{}", a.timeline), None).await?;
+            // every shot its own grading still first (a frame of the original inside it): what is measured is what is judged
+            crate::proxies::shot_stills(&self.vault, &t).await?;
             let shots = crate::render::measure_clips(&self.vault, &t, a.clips, a.frames.unwrap_or(5).clamp(1, 24)).await?;
             Ok::<_, String>(json!({ "timeline": a.timeline, "shots": shots }))
         };
@@ -728,6 +730,7 @@ impl Studio {
     async fn grade_match(&self, Parameters(a): Parameters<MatchArgs>) -> String {
         let r = async {
             let t = self.api("GET", &format!("/api/timelines/{}", a.timeline), None).await?;
+            crate::proxies::shot_stills(&self.vault, &t).await?;
             let mut out = crate::render::propose_balances(&self.vault, &t, a.clips.clone(), a.reference.clone(), a.neutral == Some(true)).await?;
             let apply = a.apply != Some(false);
             if apply {

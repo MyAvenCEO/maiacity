@@ -338,6 +338,10 @@ impl Library for Vaulted {
         let named = self.media.get(hash).and_then(|m| m.meta.get("proxy_of").and_then(Value::as_str).map(String::from));
         named.or_else(|| self.originals.get(hash).cloned()).unwrap_or_else(|| hash.to_string())
     }
+
+    fn stills_of(&self, original: &str) -> Vec<Media> {
+        self.media.values().filter(|m| m.meta.get("grade_still_of").and_then(Value::as_str) == Some(original)).cloned().collect()
+    }
 }
 
 /// What each picture clip of a timeline is like (vault_render `measure`: luma percentiles and the middle tones'
