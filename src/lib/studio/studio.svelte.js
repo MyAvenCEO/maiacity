@@ -185,8 +185,6 @@ export class Studio {
 	luts = $state({});
 	/** the grade presets, as Rust holds them (`color_presets`) @type {import('./luts.js').Preset[]} */
 	presets = $state([]);
-	/** Edit: preview the grade on the proxies (read-only there) */
-	previewGrade = $state(false);
 	/** the Audio tab: how the timeline sounds, clip by clip (render.rs `measure_sound`), and whether it is being measured */
 	/** @type {any} */
 	loud = $state(null);
@@ -436,11 +434,10 @@ export class Studio {
 		return profileFor(it).profile;
 	}
 	/**
-	 * The grades a clip is seen through: in Grade always, in Edit only when previewing.
+	 * The grades a clip is seen through, on every tab: its own, then the film's look.
 	 * @param {Clip | null | undefined} c @returns {Cdl[]}
 	 */
 	gradesOf(c) {
-		if ((this.tab === 'edit' || this.tab === '3d') && !this.previewGrade) return [];
 		return gradesFor(c, this.current);
 	}
 	/**
@@ -460,9 +457,8 @@ export class Studio {
 	}
 	/** @type {Map<string, import('./luts.js').Lut | null>} */
 	#cubes = new Map();
-	/** A clip's balance as the viewer shows it (Grade, Render; Edit with the grade preview on). @param {Clip | null | undefined} c */
+	/** A clip's balance as the viewer shows it, on every tab. @param {Clip | null | undefined} c */
 	balanceOf(c) {
-		if ((this.tab === 'edit' || this.tab === '3d') && !this.previewGrade) return null;
 		return c?.balance ?? null;
 	}
 

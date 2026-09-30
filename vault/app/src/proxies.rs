@@ -117,6 +117,50 @@ pub fn color_grade(balance: Option<serde_json::Value>, grades: Vec<serde_json::V
     Ok(tauri::ipc::Response::new(out))
 }
 
+/// A shot's picture as it will look, for the studio's strips: its grading still (4K ACEScct, from the original)
+/// through its balance, its grades in order (its own CDL, the film's look) and the output transform — natively, with
+/// the grade's only maths — as a JPEG `width` wide (320 by default). Every change to a grade is seen on every shot.
+#[tauri::command]
+pub async fn color_thumb(
+    app: tauri::State<'_, crate::App>,
+    still: String,
+    balance: Option<serde_json::Value>,
+    grades: Vec<serde_json::Value>,
+    width: Option<u32>,
+) -> crate::Res<tauri::ipc::Response> {
+    crate::gate()?;
+    let vault = app.vault.clone();
+    let hash: iroh_blobs::Hash = still.parse().map_err(|e| format!("{e}"))?;
+    let src = crate::blob::source(&vault, hash, "still.png").await.map_err(|e| format!("{e:#}"))?;
+    let b = balance.as_ref().and_then(vault_render::grade::clean_balance);
+    let g: Vec<vault_render::grade::Cdl> = grades.iter().filter_map(vault_render::grade::clean_cdl).collect();
+    let w = width.unwrap_or(320).clamp(64, 960);
+    static N: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    let out = vault.ingest_dir().join(format!("thumb-{}-{}.jpg", std::process::id(), N.fetch_add(1, std::sync::atomic::Ordering::Relaxed)));
+    let bytes = tauri::async_runtime::spawn_blocking(move || {
+        objc2::rc::autoreleasepool(|_| -> anyhow::Result<Vec<u8>> {
+            use vault_render::gpu::Extent;
+            let mut gpu = vault_render::gpu::Gpu::new()?;
+            gpu.set_output(crate::render::odt());
+            let img = gpu.still(src)?;
+            let e = img.ext();
+            let h = ((w as f64 * e.size.height / e.size.width.max(1.0)).round() as u32).max(2);
+            let mut pic = gpu.balance(&*gpu.frame_to(&img, w, h, None)?, b.as_ref())?;
+            for c in &g {
+                pic = gpu.cdl(&pic, Some(c))?;
+            }
+            gpu.jpeg(&*gpu.output(&pic)?, w, h, &out)?;
+            let bytes = std::fs::read(&out)?;
+            std::fs::remove_file(&out).ok();
+            Ok(bytes)
+        })
+    })
+    .await
+    .map_err(|e| format!("{e}"))?
+    .map_err(|e| format!("{e:#}"))?;
+    Ok(tauri::ipc::Response::new(bytes))
+}
+
 /// The grade presets (vault-render `grade::PRESETS`): name, what the studio calls it, its CDL.
 #[tauri::command]
 pub fn color_presets() -> crate::Res<Vec<serde_json::Value>> {

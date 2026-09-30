@@ -472,6 +472,7 @@ fn main() {
             proxies::color_lut,
             proxies::color_grade,
             proxies::color_presets,
+            proxies::color_thumb,
             proxies::vault_proxy,
             transcripts::vault_transcribe,
             render::sound_measure,
