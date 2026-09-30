@@ -27,7 +27,6 @@
 	import { forwardConsole, native } from '$lib/native';
 	import ProgramMonitor from '$lib/studio/ProgramMonitor.svelte';
 	import RenderQueue from '$lib/studio/RenderQueue.svelte';
-	import Scopes from '$lib/studio/Scopes.svelte';
 	import SourceMonitor from '$lib/studio/SourceMonitor.svelte';
 	import StageBar from '$lib/studio/StageBar.svelte';
 	import Timeline from '$lib/studio/Timeline.svelte';
@@ -185,11 +184,10 @@
 				<ProgramMonitor {s} label="Program · sound" />
 			</div>
 		{:else if s.tab === 'grade'}
-			<!-- the picture, the scopes beside it; the grade's layers are on the timeline, over each shot -->
+			<!-- the picture; the grade's layers are on the timeline, over each shot (an agent reads the numbers itself) -->
 			<div class="monitors">
 				<ProgramMonitor {s} label="Program · {s.shape}" />
 			</div>
-			<Scopes {s} side />
 		{:else}
 			<RenderQueue {s} />
 			<div class="monitors" class:split={!!s.preview}>
@@ -249,15 +247,15 @@
 		font-size: 0.85rem;
 	}
 
-	/* Grade: the program and the scopes; the layers over V1 on the timeline, full width */
+	/* Grade: the program; the layers over V1 on the timeline, full width */
 	.studio.tab-grade {
-		grid-template-columns: 1fr 22rem;
-		grid-template-rows: auto minmax(0, 1fr) auto minmax(12rem, 40vh);
+		grid-template-columns: 1fr;
+		grid-template-rows: auto minmax(0, 1fr) auto auto;
 		grid-template-areas:
-			'bar bar'
-			'monitor inspector'
-			'transport transport'
-			'timeline timeline';
+			'bar'
+			'monitor'
+			'transport'
+			'timeline';
 	}
 
 	.studio.tab-render {
