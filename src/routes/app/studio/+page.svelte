@@ -235,7 +235,7 @@
 		z-index: 200;
 		display: grid;
 		grid-template-columns: 19rem 1fr 17rem;
-		grid-template-rows: auto minmax(0, 1fr) auto minmax(11rem, 34vh);
+		grid-template-rows: auto minmax(0, 1fr) auto minmax(11rem, auto);
 		grid-template-areas:
 			'bar bar bar'
 			'bin monitor inspector'
@@ -275,7 +275,7 @@
 	/* Audio: the program over the sound tracks, which carry the levels themselves */
 	.studio.tab-audio {
 		grid-template-columns: 1fr;
-		grid-template-rows: auto minmax(0, 1fr) auto minmax(14rem, 46vh);
+		grid-template-rows: auto minmax(0, 1fr) auto minmax(14rem, auto);
 		grid-template-areas:
 			'bar'
 			'monitor'
