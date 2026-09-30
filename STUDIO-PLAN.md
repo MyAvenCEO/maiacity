@@ -10,7 +10,7 @@
   - ⬜ Timecode (`sound/<hash>`) read by the Mac at ingest; the server's sound.rs retires
   - ✅ The HTTPS gateway fetch removed: files come over iroh from whoever holds them
   - ✅ Every store rules-driven (keep.rs, Mac and drives alike): records-only download policy, wanted files fetched + pinned + announced, GC = tags + records — de-sync per store works; the server's author is a catalog record
-  - 🔄 The server serves its Object Storage files over iroh (hydrated into its store on request)
+  - ✅ The server serves its Object Storage files over iroh (brought up into its store on request, verified, a bounded cache; pushes refused)
 - 🔄 **SDD_A** (external SSD as its own vault device): Day 01 fetching over iroh, verified
 - ⬜ Watch the Day 01 base correction in the Grade tab and say yes or adjust (garden skin paler than bedroom skin by
   intent: more saturation there if wanted); once the analysis has marked every shot's still, `grade_look` it again
