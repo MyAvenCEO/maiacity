@@ -1,8 +1,8 @@
 //! Every picture tagged for the edit — on this Mac, the step after the proxy (it was the vault server's, retired): once
 //! a video original's ACEScct proxy (or a still) is in this Mac's store, its frames are sampled here natively (read
 //! in place, through the ACES 2.0 output transform, JPEGs in memory: `frames`) and sent in stretches, with the words
-//! said in each, to Prem's confidential Qwen straight from this Mac (`prem`: the prompt, vocabulary and validation the
-//! API had; no round trip through our server). The vocabulary is game/film/vocabulary.json: base tags with fixed
+//! said in each, to our server (`prem`: `POST /api/analysis`), which asks Prem's confidential Qwen with its own key —
+//! the prompt, the vocabulary and the validation are the server's; no LLM key is on a Mac. The vocabulary is game/film/vocabulary.json: base tags with fixed
 //! values, free tags, and time-ranged cues (takes, actions, emotions, cut points, transitions, highlights, problems).
 //!
 //! Map, then reduce: each stretch is described on its own — its tags, its cues, a line of what it shows, its best
@@ -37,7 +37,7 @@ use std::{
 
 use iroh_blobs::{Hash, api::proto::BlobStatus};
 use serde_json::{Map, Value, json};
-use tauri::{AppHandle, Emitter};
+use tauri::{AppHandle, Emitter, Manager};
 use vault_core::{
     Vault,
     catalog::{ANALYSIS, SOUND, TRANSCRIPT},
@@ -68,6 +68,7 @@ fn waiting(e: impl std::fmt::Display) -> Ask {
 }
 
 pub async fn sweep(handle: AppHandle, vault: Arc<Vault>) {
+    prem::forget_old_key();
     tokio::time::sleep(Duration::from_secs(45)).await;
     // a thumbnail that could not be made: not again until the ten-minute round
     let mut no_thumb: HashSet<String> = HashSet::new();
@@ -166,7 +167,8 @@ async fn round(handle: &AppHandle, vault: &Arc<Vault>, no_thumb: &mut HashSet<St
     if todo.is_empty() {
         return Ok(());
     }
-    if let Err(e) = prem().ready().await {
+    let auth = handle.state::<crate::auth::Auth>();
+    if let Err(e) = prem().ready(&auth).await {
         if let Ask::Wait { reason, .. } = &e {
             say_queued(vault, &todo, &records, reason).await;
         }
@@ -242,7 +244,7 @@ async fn one(handle: &AppHandle, vault: &Arc<Vault>, hex: &str, src: &Source, me
         let (k, name) = (k.clone(), name.clone());
         Arc::new(move |stage: &str, done: f64| proxies::set(&k, &name, stage, done))
     };
-    let result = analyse(vault, hex, src, meta, transcript, me, tell).await;
+    let result = analyse(&handle.state::<crate::auth::Auth>(), vault, hex, src, meta, transcript, me, tell).await;
     proxies::clear(&k);
     handle.emit("vault-analysis", json!({ "of": hex })).ok();
     match result {
@@ -273,7 +275,8 @@ async fn one(handle: &AppHandle, vault: &Arc<Vault>, hex: &str, src: &Source, me
 /// How far a file is, for the studio's Ingest (`proxies_now`): its stage and 0…1.
 type Tell = Arc<dyn Fn(&str, f64) + Send + Sync>;
 
-async fn analyse(vault: &Arc<Vault>, hex: &str, src: &Source, meta: &Value, transcript: Option<&Value>, me: &str, tell: Tell) -> Result<(), Ask> {
+#[allow(clippy::too_many_arguments)]
+async fn analyse(auth: &crate::auth::Auth, vault: &Arc<Vault>, hex: &str, src: &Source, meta: &Value, transcript: Option<&Value>, me: &str, tell: Tell) -> Result<(), Ask> {
     let started = Instant::now();
     let of = src.hash().to_hex().to_string();
     let running = |progress: f64| fields(&[("state", json!("analysing")), ("progress", json!(progress)), ("of", json!(of)), ("device", json!(me)), ("updated", json!(vault_core::ingest::now_iso()))]);
@@ -316,7 +319,7 @@ async fn analyse(vault: &Arc<Vault>, hex: &str, src: &Source, meta: &Value, tran
         let words = plan::words_in(transcript, *a, *b);
         let before = answers.last().map(|(_, _, p)| p["summary"].clone()).unwrap_or(Value::Null);
         let st = prem::Stretch { file: &info, s: *a, e: *b, index: n, of: parts.len(), frames: &frames, words: &words, before: &before };
-        let answer = prem().frames(&st).await?;
+        let answer = prem().frames(auth, &st).await?;
         if model.is_null() {
             model = answer["model"].clone();
             vocabulary = answer["vocabulary"].clone();
@@ -339,7 +342,7 @@ async fn analyse(vault: &Arc<Vault>, hex: &str, src: &Source, meta: &Value, tran
         })
         .collect();
     let said: String = transcript.and_then(|t| t["text"].as_str()).unwrap_or("").chars().take(24_000).collect();
-    let reduce = match prem().reduce(&info, &json!(stretches), &said).await {
+    let reduce = match prem().reduce(auth, &info, &json!(stretches), &said).await {
         Ok(r) => Some(r),
         Err(e @ Ask::Wait { .. }) => return Err(e),
         Err(Ask::Fail(e)) => {
@@ -394,14 +397,10 @@ async fn analyse(vault: &Arc<Vault>, hex: &str, src: &Source, meta: &Value, tran
     Ok(())
 }
 
-/// The analysis's setup on this Mac: Prem's key (set once; empty: taken out), the stories it runs for (story ids;
-/// `["*"]` every story; empty: back to Day 01). Answers what is set (never the key).
-pub fn setup(prem_key: Option<String>, stories: Option<Vec<String>>) -> Result<Value, String> {
+/// The analysis's setup on this Mac: the stories it runs for (story ids; `["*"]` every story; empty: back to Day 01).
+/// The model and its key are the server's. Answers what is set.
+pub fn setup(stories: Option<Vec<String>>) -> Result<Value, String> {
     let mut p = Map::new();
-    if let Some(k) = prem_key {
-        let k = k.trim().to_string();
-        p.insert("prem_key".into(), if k.is_empty() { Value::Null } else { json!(k) });
-    }
     if let Some(s) = stories {
         p.insert("stories".into(), if s.is_empty() { Value::Null } else if s.iter().any(|x| x == "*") { json!([]) } else { json!(s) });
     }
@@ -412,11 +411,11 @@ pub fn setup(prem_key: Option<String>, stories: Option<Vec<String>>) -> Result<V
     Ok(prem::status())
 }
 
-/// Set the analysis up on this Mac (Prem's key, the stories): what is set, never the key.
+/// Set the analysis up on this Mac (the stories): what is set.
 #[tauri::command]
-pub fn analysis_setup(prem_key: Option<String>, stories: Option<Vec<String>>) -> crate::Res<Value> {
+pub fn analysis_setup(stories: Option<Vec<String>>) -> crate::Res<Value> {
     crate::gate()?;
-    setup(prem_key, stories)
+    setup(stories)
 }
 
 /// A file analysed again (by hand, or by an agent): its record set back to queued, its tries forgotten.
