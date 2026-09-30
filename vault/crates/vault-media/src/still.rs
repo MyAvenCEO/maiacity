@@ -13,7 +13,7 @@ use std::{
 
 use anyhow::{Context, Result, bail, ensure};
 
-use crate::{frames::FrameWriter, gpu::Grader, proxy::{Proxy, proxy_size}};
+use crate::{Source, frames::FrameWriter, gpu::Grader, proxy::{Proxy, proxy_size}, source::SourceReader};
 
 /// EXR chromaticities (x, y of red, green, blue, white) of the linear spaces generated footage comes in.
 const EXR_PRIMARIES: [(&str, [f32; 8]); 3] = [
@@ -67,9 +67,10 @@ pub fn still_needs_proxy(exr: bool, width: u32, height: u32) -> bool {
 }
 
 /// A still's ACEScct proxy: a 16-bit RGB PNG at `out`, long edge 1920 at most. Returns its size.
-pub fn make_still_proxy(src: &Path, out: &Path, profile: &str) -> Result<(u32, u32)> {
+pub fn make_still_proxy(src: impl Into<Source>, out: &Path, profile: &str) -> Result<(u32, u32)> {
+    let src: Source = src.into();
     let grader = Grader::for_profile(profile)?.with_context(|| format!("no colour journey from {profile} into ACEScct"))?;
-    let bytes = std::fs::read(src).with_context(|| format!("read {}", src.display()))?;
+    let bytes = src.read_all().with_context(|| format!("read {src}"))?;
     let image = crate::gpu::load_image(&bytes)?;
     let (sw, sh) = crate::gpu::size_of(&image);
     let (w, h) = proxy_size(sw, sh);
@@ -100,7 +101,7 @@ struct Member {
 }
 
 /// The `.exr` members of a (ustar) tar, in frame order — its numbered names sorted.
-fn exr_members(tar: &mut std::fs::File) -> Result<Vec<Member>> {
+fn exr_members(tar: &mut SourceReader) -> Result<Vec<Member>> {
     let mut out = Vec::new();
     let mut header = [0u8; 512];
     let mut at = 0u64;
@@ -129,13 +130,15 @@ fn exr_members(tar: &mut std::fs::File) -> Result<Vec<Member>> {
 /// An EXR frame sequence packed in a tar, read frame by frame straight from the tar (nothing unpacked): its `.exr`
 /// members in their numbered order. Its proxy is made through this, and the final render reads its frames with it.
 pub struct Sequence {
-    tar: std::fs::File,
+    tar: SourceReader,
     members: Vec<Member>,
 }
 
 impl Sequence {
-    pub fn open(tar_path: &Path) -> Result<Self> {
-        let mut tar = std::fs::File::open(tar_path).with_context(|| format!("open {}", tar_path.display()))?;
+    /// `tar`: a path, or a `Source` read in place.
+    pub fn open(tar: impl Into<Source>) -> Result<Self> {
+        let tar: Source = tar.into();
+        let mut tar = tar.reader().with_context(|| format!("open {tar}"))?;
         let members = exr_members(&mut tar)?;
         ensure!(!members.is_empty(), "the sequence holds no .exr frames");
         Ok(Self { tar, members })
@@ -171,7 +174,7 @@ impl Sequence {
 }
 
 /// An EXR sequence's ACEScct proxy movie at `out` (HEVC Main10), at `fps`. `progress` gets 0…1.
-pub fn make_sequence_proxy(tar_path: &Path, out: &Path, profile: Option<&str>, fps: f64, progress: &mut dyn FnMut(f64)) -> Result<Proxy> {
+pub fn make_sequence_proxy(tar_path: impl Into<Source>, out: &Path, profile: Option<&str>, fps: f64, progress: &mut dyn FnMut(f64)) -> Result<Proxy> {
     let mut seq = Sequence::open(tar_path)?;
     let first = seq.frame(0)?;
     // the sequence's colour: as it was given (meta), else its first frame's header

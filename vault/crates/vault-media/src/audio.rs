@@ -2,12 +2,12 @@
 //! sound file's — AAC, PCM, whatever it reads) straight to 32-bit float PCM, mono, at the rate asked for (the
 //! recognizer's 16 kHz): AVAssetReader resamples and mixes down itself. Nothing to install, no ffmpeg.
 
-use std::path::Path;
-
 use anyhow::{Context, Result, bail};
 use objc2::{rc::Retained, runtime::AnyObject};
-use objc2_av_foundation::{AVAssetReader, AVAssetReaderTrackOutput, AVAssetTrack, AVMediaTypeAudio, AVURLAsset};
-use objc2_foundation::{NSDictionary, NSNumber, NSString, NSURL};
+use objc2_av_foundation::{AVAssetReader, AVAssetReaderTrackOutput, AVAssetTrack, AVMediaTypeAudio};
+use objc2_foundation::{NSDictionary, NSNumber, NSString};
+
+use crate::Source;
 
 fn key(s: &str) -> Retained<NSString> {
     NSString::from_str(s)
@@ -20,13 +20,13 @@ fn dict(pairs: &[(&NSString, &AnyObject)]) -> Retained<NSDictionary<NSString, An
 }
 
 /// The file's sound, mono, at `rate` Hz, as f32 samples; `progress` gets 0…1 by the time read. None: it has no sound
-/// track.
-pub fn decode_mono(src: &Path, rate: u32, progress: &mut dyn FnMut(f64)) -> Result<Option<Vec<f32>>> {
-    let src = std::fs::canonicalize(src).with_context(|| format!("{} is not there", src.display()))?;
+/// track. `src`: a path, or a `Source` read in place (the vault's blob, by hash).
+pub fn decode_mono(src: impl Into<Source>, rate: u32, progress: &mut dyn FnMut(f64)) -> Result<Option<Vec<f32>>> {
+    let src: Source = src.into();
+    let asset = src.asset()?;
     // SAFETY: AVFoundation objects we create and own, used from this thread only; the block buffer is copied into our
     // own Vec with its length checked.
     unsafe {
-        let asset = AVURLAsset::URLAssetWithURL_options(&NSURL::fileURLWithPath(&NSString::from_str(&src.to_string_lossy())), None);
         #[allow(deprecated)]
         let Some(track) = asset.tracksWithMediaType(AVMediaTypeAudio.context("audio")?).firstObject() else { return Ok(None) };
         let track: Retained<AVAssetTrack> = Retained::cast_unchecked(track);
@@ -51,7 +51,7 @@ pub fn decode_mono(src: &Path, rate: u32, progress: &mut dyn FnMut(f64)) -> Resu
         output.setAlwaysCopiesSampleData(false);
         reader.addOutput(&output);
         if !reader.startReading() {
-            bail!("cannot read the sound of {}: {:?}", src.display(), reader.error());
+            bail!("cannot read the sound of {src}: {:?}", reader.error());
         }
         let expected = (seconds * rate as f64) as usize;
         let mut out: Vec<f32> = Vec::with_capacity(expected + rate as usize);

@@ -19,4 +19,6 @@ objc2-core-media = "0.3"
 objc2-core-video = "0.3"
 objc2-core-image = "0.3"
 png = "0.18"
-objc2-av-foundation = { version = "0.3", features = ["objc2-core-media", "objc2-core-video"] }
+objc2-av-foundation = { version = "0.3", features = ["objc2-core-media", "objc2-core-video", "AVAssetResourceLoader", "dispatch2"] }
+# the blob loader's queues (blob_asset.rs)
+dispatch2 = "0.3"

@@ -1,19 +1,19 @@
 //! What a file is, read by AVFoundation — the fields the render worker took from ffprobe: codec, frame size and rate,
 //! length, bit depth, and the colour tags (primaries, transfer, matrix, range) that decide its input transform.
 
-use std::path::Path;
-
 use anyhow::{Context, Result, bail};
 use objc2::rc::Retained;
-use objc2_av_foundation::{AVAssetTrack, AVMediaTypeAudio, AVMediaTypeVideo, AVURLAsset};
+use objc2_av_foundation::{AVAssetTrack, AVMediaTypeAudio, AVMediaTypeVideo};
 use objc2_core_foundation::{CFBoolean, CFNumber, CFRetained, CFString, CFType};
 use objc2_core_media::{
     CMFormatDescription, kCMFormatDescriptionExtension_BitsPerComponent, kCMFormatDescriptionExtension_ColorPrimaries,
     kCMFormatDescriptionExtension_Depth, kCMFormatDescriptionExtension_FullRangeVideo,
     kCMFormatDescriptionExtension_TransferFunction, kCMFormatDescriptionExtension_YCbCrMatrix,
 };
-use objc2_foundation::{NSData, NSDictionary, NSString, NSURL};
+use objc2_foundation::{NSData, NSDictionary, NSString};
 use serde::Serialize;
+
+use crate::Source;
 
 #[derive(Debug, Clone, Serialize, Default)]
 pub struct Probe {
@@ -39,13 +39,12 @@ pub struct Probe {
     pub tags: Vec<String>,
 }
 
-/// Probe a movie file (MOV, MP4, M4V).
-pub fn probe(path: &Path) -> Result<Probe> {
-    let path = std::fs::canonicalize(path).with_context(|| format!("{}", path.display()))?;
+/// Probe a movie file (MOV, MP4, M4V): a path, or a `Source` read in place.
+pub fn probe(src: impl Into<Source>) -> Result<Probe> {
+    let src: Source = src.into();
+    let asset = src.asset()?;
     // SAFETY: plain AVFoundation calls on objects we own; the synchronous accessors block until loaded.
     unsafe {
-        let url = NSURL::fileURLWithPath(&NSString::from_str(&path.to_string_lossy()));
-        let asset = AVURLAsset::URLAssetWithURL_options(&url, None);
         let duration = asset.duration();
         let seconds = if duration.timescale > 0 { duration.value as f64 / duration.timescale as f64 } else { 0.0 };
 
@@ -53,7 +52,7 @@ pub fn probe(path: &Path) -> Result<Probe> {
         let videos = asset.tracksWithMediaType(AVMediaTypeVideo.context("AVMediaTypeVideo")?);
         #[allow(deprecated)]
         let audios = asset.tracksWithMediaType(AVMediaTypeAudio.context("AVMediaTypeAudio")?);
-        let Some(track) = videos.firstObject() else { bail!("{} has no video track", path.display()) };
+        let Some(track) = videos.firstObject() else { bail!("{src} has no video track") };
         let track: Retained<AVAssetTrack> = Retained::cast_unchecked(track);
 
         let size = track.naturalSize();
@@ -78,7 +77,7 @@ pub fn probe(path: &Path) -> Result<Probe> {
             }
         }
         // our own comment (udta ©cmt, written by mp4.rs) — AVFoundation reads it as QuickTime user data
-        if let Some(c) = crate::mp4::read_comment(&path) {
+        if let Some(c) = crate::mp4::read_comment_of(&src) {
             p.tags.push(format!("comment={c}"));
         }
 

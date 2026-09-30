@@ -50,8 +50,9 @@ impl Library for Local {
         };
         Some(Media { hash: hash.into(), kind: kind.into(), title: file.file_name().unwrap().to_string_lossy().into(), ..Default::default() })
     }
-    fn file(&self, hash: &str) -> Result<PathBuf> {
-        self.files.get(hash).cloned().or_else(|| Path::new(hash).is_file().then(|| PathBuf::from(hash))).with_context(|| format!("no file for {hash}"))
+    fn file(&self, hash: &str) -> Result<vault_media::Source> {
+        let p = self.files.get(hash).cloned().or_else(|| Path::new(hash).is_file().then(|| PathBuf::from(hash))).with_context(|| format!("no file for {hash}"))?;
+        Ok(p.into())
     }
 }
 

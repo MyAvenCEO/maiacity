@@ -7337,6 +7337,7 @@ name = "vault-media"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "dispatch2",
  "objc2",
  "objc2-av-foundation",
  "objc2-core-foundation",

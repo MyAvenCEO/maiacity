@@ -254,7 +254,13 @@ impl Gpu {
     }
 
     /// A still (PNG, JPEG, TIFF, EXR, HEIC) as its code values, upright by its EXIF orientation, with its origin at 0.
-    pub fn still(&self, path: &std::path::Path) -> Result<Image> {
+    pub fn still(&self, src: impl Into<vault_media::Source>) -> Result<Image> {
+        let src: vault_media::Source = src.into();
+        let Some(path) = src.path() else {
+            // a blob read in place: Core Image reads the picture from its bytes (the same options)
+            let bytes = src.read_all().with_context(|| format!("cannot read the picture {src}"))?;
+            return Ok(to_origin(&*vault_media::gpu::load_image(&bytes).with_context(|| format!("cannot read the picture {src}"))?));
+        };
         // SAFETY: plain Core Image calls
         unsafe {
             let null = NSNull::null();

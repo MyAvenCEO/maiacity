@@ -23,8 +23,8 @@ struct TopBox {
     size: u64,
 }
 
-fn top_boxes(f: &mut File) -> Result<Vec<TopBox>> {
-    let len = f.metadata()?.len();
+fn top_boxes<F: Read + Seek>(f: &mut F) -> Result<Vec<TopBox>> {
+    let len = f.seek(SeekFrom::End(0))?;
     let mut out = Vec::new();
     let mut at = 0u64;
     while at + 8 <= len {
@@ -103,7 +103,12 @@ fn udta_comment(text: &str) -> Vec<u8> {
 
 /// The file's own comment (`moov/udta/©cmt`), if it has one — e.g. "maiacity:color=apple-log-2".
 pub fn read_comment(path: &Path) -> Option<String> {
-    let mut f = File::open(path).ok()?;
+    read_comment_of(&crate::Source::from(path))
+}
+
+/// The comment of a file on disk or read in place.
+pub fn read_comment_of(src: &crate::Source) -> Option<String> {
+    let mut f = src.reader().ok()?;
     let boxes = top_boxes(&mut f).ok()?;
     let moov = boxes.iter().find(|b| &b.kind == b"moov")?;
     if moov.size > 512 * 1024 * 1024 {
