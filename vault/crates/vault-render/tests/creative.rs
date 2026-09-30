@@ -70,6 +70,25 @@ fn hue_against_hue_moves_one_hue_and_leaves_the_skin() {
 }
 
 #[test]
+fn luminance_against_hue_darkens_the_greens_and_leaves_the_skin() {
+    let out = odt();
+    let hues = Hues::new(&out);
+    let l = look(json!({ "hue_lum": [[123, 0], [200, -0.5], [300, 0]] }));
+    let r = Ready::new(&l, None);
+    let y = |p: [f64; 3]| p[0] * 0.2126 + p[1] * 0.7152 + p[2] * 0.0722;
+    // a green down (up to half a stop: 1/17.52 in the log a stop, less as its colour is weaker), a skin tone and a grey
+    // as they were
+    let green = [0.36, 0.46, 0.34];
+    let down = y(green) - y(r.apply(green, &hues, &out));
+    assert!(down > 0.15 / 17.52 && down < 0.55 / 17.52, "the green {:.2} stops down", down * 17.52);
+    let skin = [0.47, 0.425, 0.395];
+    assert!((y(r.apply(skin, &hues, &out)) - y(skin)).abs() < 0.05 / 17.52);
+    assert!((y(r.apply([0.4; 3], &hues, &out)) - 0.4).abs() < 1e-9);
+    assert!(clean_look(&json!({ "hue_lum": [[200, 0]] })).is_none());
+    assert_eq!(look(json!({ "hue_lum": [[200, -9]] })).hue_lum, vec![[200.0, -2.0]]);
+}
+
+#[test]
 fn contrast_turns_around_the_pivot_and_strength_mixes() {
     let out = odt();
     let hues = Hues::new(&out);
