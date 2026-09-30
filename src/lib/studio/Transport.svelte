@@ -1,6 +1,6 @@
 <!--
-	The transport: to the start, play and pause (Space), the clock, full screen, the timeline's zoom — and, with world
-	clips, "Prepare playback" (every world the timeline touches, loaded and kept before it plays).
+	The transport, one quiet line: to the start, play and pause (Space), the clock — then full screen, the grade
+	preview (Edit), with world clips "Prepare playback", and the timeline's zoom. The keys are in the ? tooltip.
 -->
 <script>
 	import { clockText } from './studio.svelte.js';
@@ -12,25 +12,31 @@
 		await s.screen?.requestFullscreen().catch(() => {});
 		if (!s.playing) await s.play();
 	}
+	const keys = $derived(s.tab === 'edit' ? 'Space play · I / O mark the source · Delete removes · ← → nudge' : 'Space play · click a clip to select it');
 </script>
 
 <div class="transport">
-	<button class="tbtn" onclick={() => s.seek(0)} aria-label="To the start">⏮</button>
-	<button class="tbtn play" onclick={s.toggle} aria-label={s.playing ? 'Pause' : 'Play'}>{s.playing ? '❚❚' : '▶'}</button>
-	<span class="time">{clockText(s.time)} <span>/ {clockText(s.end)}</span></span>
-	<button class="ghost" onclick={playFullscreen}>⛶ Play full screen</button>
+	<button class="ic" onclick={() => s.seek(0)} aria-label="To the start" title="To the start">⏮</button>
+	<button class="ic play" onclick={s.toggle} aria-label={s.playing ? 'Pause' : 'Play'} title="{s.playing ? 'Pause' : 'Play'} (Space)">{s.playing ? '❚❚' : '▶'}</button>
+	<span class="time">{clockText(s.time)}<span> / {clockText(s.end)}</span></span>
+
+	<span class="grow"></span>
+
 	{#if s.worldClips.length}
-		<button class="ghost" onclick={() => s.preparePlayback(20000)} disabled={s.world.state !== 'ready' || s.preparing} title="Load every world shot this timeline touches, and keep it loaded">
-			{s.preparing ? 'Preparing…' : s.world.state === 'ready' ? '◎ Prepare playback' : s.world.state === 'loading' ? 'World starting…' : 'World: stand-ins'}
+		<button class="pill" onclick={() => s.preparePlayback(20000)} disabled={s.world.state !== 'ready' || s.preparing} title="Load every world shot this timeline touches, and keep it loaded">
+			{s.preparing ? 'Preparing…' : s.world.state === 'ready' ? '◎ Prepare' : s.world.state === 'loading' ? 'World…' : 'Stand-ins'}
 		</button>
 	{/if}
 	{#if s.tab === 'edit'}
-		<label class="opt" title="Show the grade on the proxies (read-only here)"><input type="checkbox" bind:checked={s.previewGrade} /> Grade preview</label>
+		<button class="pill" class:on={s.previewGrade} onclick={() => (s.previewGrade = !s.previewGrade)} title="Show every shot's balance and grade on the proxies">Grade</button>
 	{/if}
-	<label class="zoom">Zoom <input type="range" min="8" max="200" step="1" bind:value={s.pxPerSec} /></label>
-	<span class="hint">
-		{#if s.tab === 'edit'}Space play · I / O mark the source · Delete removes · ← → nudge{:else}Space play · click a clip to select it{/if}
-	</span>
+	<button class="ic" onclick={playFullscreen} aria-label="Play full screen" title="Play full screen">⛶</button>
+	<label class="zoom" title="Zoom the timeline">
+		<span aria-hidden="true">−</span>
+		<input type="range" min="8" max="200" step="1" bind:value={s.pxPerSec} aria-label="Zoom" />
+		<span aria-hidden="true">+</span>
+	</label>
+	<span class="keys" title={keys}>?</span>
 </div>
 
 <style>
@@ -38,63 +44,103 @@
 		grid-area: transport;
 		display: flex;
 		align-items: center;
-		gap: 0.6rem;
-		padding: 0.45rem 0.9rem;
+		gap: 0.5rem;
+		padding: 0.3rem 0.8rem;
+		white-space: nowrap;
 		background: var(--panel);
 	}
 
-	.tbtn {
+	.ic {
 		display: grid;
 		place-items: center;
-		width: 2rem;
-		height: 2rem;
-		border: 1px solid var(--edge);
+		width: 1.8rem;
+		height: 1.8rem;
+		padding: 0;
+		border: 0;
 		border-radius: 50%;
-		background: #fff;
-		font-size: 0.78rem;
+		background: none;
+		font-size: 0.8rem;
 		color: var(--ink);
 		cursor: pointer;
 	}
 
-	.tbtn.play {
-		width: 2.4rem;
-		height: 2.4rem;
-		border-color: var(--accent);
+	.ic:hover {
+		background: var(--bg);
+	}
+
+	.ic.play {
+		width: 2rem;
+		height: 2rem;
 		background: var(--accent);
+		font-size: 0.72rem;
 		color: #fff;
 	}
 
 	.time {
+		margin-left: 0.2rem;
 		font-family: ui-monospace, 'SF Mono', Menlo, monospace;
-		font-size: 0.95rem;
+		font-size: 0.85rem;
+		font-variant-numeric: tabular-nums;
 	}
 
 	.time span {
 		color: var(--dim);
 	}
 
-	.opt,
+	.grow {
+		flex: 1;
+	}
+
+	.pill {
+		padding: 0.18rem 0.65rem;
+		border: 1px solid var(--edge);
+		border-radius: 999px;
+		background: none;
+		font: inherit;
+		font-size: 0.72rem;
+		color: var(--dim);
+		cursor: pointer;
+	}
+
+	.pill.on {
+		border-color: var(--ink);
+		background: var(--ink);
+		color: #fff;
+	}
+
+	.pill:disabled {
+		opacity: 0.5;
+		cursor: default;
+	}
+
 	.zoom {
 		display: flex;
 		align-items: center;
-		gap: 0.4rem;
-		font-size: 0.75rem;
+		gap: 0.3rem;
+		font-size: 0.8rem;
 		color: var(--dim);
 	}
 
-	.zoom {
-		margin-left: 0.6rem;
+	.zoom input {
+		width: 6.5rem;
+		accent-color: var(--ink);
 	}
 
-	.hint {
-		margin-left: auto;
-		font-size: 0.75rem;
+	.keys {
+		display: grid;
+		place-items: center;
+		width: 1.2rem;
+		height: 1.2rem;
+		border: 1px solid var(--edge);
+		border-radius: 50%;
+		font-size: 0.66rem;
 		color: var(--dim);
+		cursor: help;
 	}
 
 	@media (max-width: 900px) {
-		.hint,
-		.zoom {
+		.zoom,
+		.keys {
 			display: none;
 		}
 	}

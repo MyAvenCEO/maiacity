@@ -195,14 +195,16 @@ pub fn fit(shot: &Value, target: &Value) -> Balance {
         let o = b.apply([l + cast[0], l + cast[1], l + cast[2]]);
         o[0] * LUMA[0] + o[1] * LUMA[1] + o[2] * LUMA[2]
     };
+    // two shots of one scene show different things (a face, the floor): their percentiles never match exactly, and
+    // forcing them to bends the picture. The middle weighs most; contrast, highlights and lows cost — a stop of lows
+    // as much as being a sixth of a stop off in the middle — so exposure and white balance do the levelling, and the
+    // tones are only nudged towards each other.
+    const WEIGHT: [f64; 5] = [0.5, 1.0, 3.0, 1.0, 0.5];
     let cost = |b: &Balance| -> f64 {
-        let fit: f64 = have.iter().zip(&want).map(|(h, w)| (luma_of(b, *h) - w).powi(2)).sum();
-        // highlights and lows cost a little: the same result by exposure and contrast is the better balance
-        fit + 2e-6 * (b.highlights.powi(2) + b.shadows.powi(2))
+        let fit: f64 = have.iter().zip(&want).zip(WEIGHT).map(|((h, w), k)| k * (luma_of(b, *h) - w).powi(2)).sum();
+        let s2 = STOP * STOP;
+        fit + s2 * (0.08 * (b.highlights.powi(2) + b.shadows.powi(2)) + 1.5 * b.contrast.powi(2))
     };
-    // a first guess: the middle by exposure, the spread by contrast
-    let spread = (have[4] - have[0]).abs().max(1e-3);
-    b.set("contrast", (want[4] - want[0]) / spread - 1.0);
     b.set("exposure", (want[2] - have[2]) / STOP);
     for _ in 0..3 {
         let mut step = 0.5;
