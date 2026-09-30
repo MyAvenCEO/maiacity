@@ -141,27 +141,6 @@
 </script>
 
 <aside class="bin">
-	<div class="tl-head"><h3>Timelines</h3></div>
-	<div class="tls">
-		{#each groups as [project, list] (project)}
-			<button class="proj" class:here={(s.current?.project ?? '') === project} aria-expanded={s.expanded.includes(project)} onclick={() => s.expand(project)}>
-				<span class="caret">{s.expanded.includes(project) ? '▾' : '▸'}</span>{project || 'Other'} <span>{list.length}</span>
-			</button>
-			{#if s.expanded.includes(project)}
-				<ul>
-					{#each list as t (t.id)}
-						<li class:on={s.current?.id === t.id}>
-							<button class="tl" onclick={() => s.openTimeline(t)}>
-								<span class="nm">{#if t.variant}<b class="var">{t.variant}</b>{/if}{t.name}{#if t.stage && t.stage !== 'edit'}<i class="stg {t.stage}">{t.stage}</i>{/if}</span>
-								<span class="tg">{t.description ?? `${t.aspect} · ${t.clips.length} clips`}</span>
-							</button>
-							<button class="x" onclick={() => s.removeTimeline(t)} aria-label="Delete timeline">×</button>
-						</li>
-					{/each}
-				</ul>
-			{/if}
-		{/each}
-	</div>
 	<div class="lib-head">
 		<h3>Library</h3>
 		<select class="story" value={story} onchange={(e) => choose(e.currentTarget.value)} onfocus={loadStories} aria-label="Story" title="The files of one story (or of none: the inbox)">

@@ -201,7 +201,11 @@ export type TimelineClip = {
 	fin?: number;
 	fout?: number;
 	/** 'slate': a shot of the script not filmed yet (V1); 'line': a line not recorded yet (A1, its `text`) */
-	kind?: 'media' | 'world' | 'slate' | 'line';
+	kind?: 'media' | 'world' | 'slate' | 'line' | 'section';
+	/** sections (S1): which part of the story */
+	section?: 'thumbnail' | 'hook' | 'act1' | 'act2' | 'act3' | 'cliffhanger';
+	/** sections: tension 0…1 at points 0…1 of its length */
+	tension?: { t: number; v: number }[];
 	hash?: string;
 	shot?: string;
 	shotVersion?: number;

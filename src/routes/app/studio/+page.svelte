@@ -17,13 +17,12 @@
 	import { base } from '$app/paths';
 	import { onDestroy, onMount } from 'svelte';
 	import Bin from '$lib/studio/Bin.svelte';
-	import Conform from '$lib/studio/Conform.svelte';
 	import Deliveries from '$lib/studio/Deliveries.svelte';
-	import GradePanel from '$lib/studio/GradePanel.svelte';
 	import Ingest from '$lib/studio/Ingest.svelte';
 	import Inspector from '$lib/studio/Inspector.svelte';
 	import Library from '$lib/studio/Library.svelte';
 	import Script from '$lib/studio/Script.svelte';
+	import TimelinePicker from '$lib/studio/TimelinePicker.svelte';
 	import { forwardConsole, native } from '$lib/native';
 	import ProgramMonitor from '$lib/studio/ProgramMonitor.svelte';
 	import RenderQueue from '$lib/studio/RenderQueue.svelte';
@@ -129,8 +128,8 @@
 	</main>
 {:else}
 	<section class="studio tab-{s.tab}" bind:this={studio} aria-label="Studio">
-		<header class="bar">
-			<div class="row">
+		<header class="bar" data-tauri-drag-region>
+			<div class="row" data-tauri-drag-region>
 				<a class="back" href="{base}/app/">← Dashboard</a>
 				<strong>Studio</strong>
 				<span class="grow"></span>
@@ -143,6 +142,7 @@
 				<span class="grow"></span>
 				{#if s.error}<button class="err" onclick={() => (s.error = '')} title="Dismiss">{s.error}</button>{/if}
 				{#if s.notice}<button class="err note" onclick={() => (s.notice = '')} title="{s.notice} (click to dismiss)">{s.notice}</button>{/if}
+				{#if s.tab !== 'ingest' && s.tab !== 'library'}<TimelinePicker {s} />{/if}
 				{#if s.current && s.tab !== 'ingest' && s.tab !== 'library'}
 					<select value={s.current.aspect} onchange={(e) => s.setMeta({ aspect: e.currentTarget.value })} aria-label="Frame">
 						{#each ASPECTS as a (a)}<option value={a}>{a}</option>{/each}
@@ -177,25 +177,22 @@
 			</div>
 			<Inspector {s} />
 		{:else if s.tab === 'script'}
-			<!-- the script: the same clips as the timeline, read as scenes, shots and lines; the library to drop stills,
-			     footage and takes on its slates and lines -->
-			<Bin {s} />
+			<!-- the script beside the picture, half and half; under both the story's structure and the captions -->
+			<Script {s} />
 			<div class="monitors">
 				<ProgramMonitor {s} label="Program · script" />
 			</div>
-			<Script {s} />
 		{:else if s.tab === 'audio'}
 			<!-- the sound on the timeline itself: each clip's level, fades and loudness on it -->
 			<div class="monitors">
 				<ProgramMonitor {s} label="Program · sound" />
 			</div>
 		{:else if s.tab === 'grade'}
-			<Conform {s} />
-			<div class="monitors column">
+			<!-- the picture, the scopes beside it; the grade's layers are on the timeline, over each shot -->
+			<div class="monitors">
 				<ProgramMonitor {s} label="Program · {s.shape}" />
-				<Scopes {s} />
 			</div>
-			<GradePanel {s} />
+			<Scopes {s} side />
 		{:else}
 			<RenderQueue {s} />
 			<div class="monitors" class:split={!!s.preview}>
@@ -255,18 +252,29 @@
 		font-size: 0.85rem;
 	}
 
+	/* Grade: the program and the scopes; the layers over V1 on the timeline, full width */
 	.studio.tab-grade {
-		grid-template-columns: 17rem 1fr 19rem;
-		grid-template-rows: auto minmax(0, 1fr) auto minmax(9rem, 26vh);
+		grid-template-columns: 1fr 22rem;
+		grid-template-rows: auto minmax(0, 1fr) auto minmax(12rem, 40vh);
+		grid-template-areas:
+			'bar bar'
+			'monitor inspector'
+			'transport transport'
+			'timeline timeline';
 	}
 
 	.studio.tab-render {
 		grid-template-columns: 19rem 1fr 19rem;
 	}
 
-	/* Script: the library, the program, the script (wide) — the timeline under them */
+	/* Script: the script (left half), the program (right half), the timeline full width under them */
 	.studio.tab-script {
-		grid-template-columns: 17rem 1fr minmax(22rem, 30rem);
+		grid-template-columns: 1fr 1fr;
+		grid-template-areas:
+			'bar bar'
+			'bin monitor'
+			'transport transport'
+			'timeline timeline';
 	}
 
 	/* Audio: the program over the sound tracks, which carry the levels themselves */
@@ -295,7 +303,8 @@
 		display: flex;
 		flex-direction: column;
 		gap: 0.3rem;
-		padding: 0.2rem 1rem 0.4rem;
+		/* the window's title bar is ours (overlay): the traffic lights sit at its top left */
+		padding: 0.45rem 1rem 0.4rem 5.4rem;
 		background: var(--panel);
 	}
 

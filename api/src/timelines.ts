@@ -27,7 +27,11 @@ export type Shape = "1:1" | "16:9" | "9:16" | "4:5";
 export type Clip = {
   id: string; track: string; start: number; in: number; dur: number; vol: number; fin?: number; fout?: number;
   /** absent = "media" */
-  kind?: "media" | "world" | "slate" | "line";
+  kind?: "media" | "world" | "slate" | "line" | "section";
+  /** sections (S1): which part of the story it is */
+  section?: Section;
+  /** sections: the tension across it, 0 (released) … 1 (at its height), at points 0…1 of its length */
+  tension?: { t: number; v: number }[];
   /** media clips: the vault file, by its BLAKE3 hash (64 hex) */
   hash?: string;
   /** world clips (V1 only): shots.id and the version cut in */
@@ -45,6 +49,9 @@ export type Clip = {
   /** media clips: a video's picture and its sound (V1 + A track) moved and trimmed together share one link */
   link?: string;
 };
+/** The parts of a story, in order: the thumbnail (one frame), the hook, three acts, the cliffhanger. */
+export const SECTIONS = ["thumbnail", "hook", "act1", "act2", "act3", "cliffhanger"] as const;
+export type Section = (typeof SECTIONS)[number];
 export type Balance = { temp: number; tint: number; exposure: number; contrast: number; highlights: number; shadows: number };
 export type Script = { scene?: string; label?: string; description?: string; notes?: string; size?: string };
 export type Stage = "edit" | "locked" | "graded" | "rendered";
@@ -78,7 +85,7 @@ function cleanScript(v: any): Script | null {
 
 function cleanClip(c: any): Clip {
   const kind = c?.kind ?? "media";
-  if (!["media", "world", "slate", "line"].includes(kind)) throw new TimelineError("A clip is a media clip, a world clip, a slate or a line.");
+  if (!["media", "world", "slate", "line", "section"].includes(kind)) throw new TimelineError("A clip is a media clip, a world clip, a slate, a line or a section.");
   const base = { id: String(c.id ?? "").slice(0, 40), track: String(c.track ?? "V1").slice(0, 8), start: num(c.start), in: num(c.in), dur: num(c.dur, 0.05), vol: Math.min(4, num(c.vol)),
     ...(c.fin !== undefined ? { fin: Math.min(10, num(c.fin)) } : {}), ...(c.fout !== undefined ? { fout: Math.min(10, num(c.fout)) } : {}) };
   let clip: Clip;
@@ -93,6 +100,15 @@ function cleanClip(c: any): Clip {
     if (c.hash !== undefined && c.hash !== null) throw new TimelineError("A slate is a shot not filmed yet: it has no file.");
     if (base.track !== "V1") throw new TimelineError("A slate goes on the picture track (V1).");
     clip = { ...base, kind: "slate", vol: 0 };
+  } else if (kind === "section") {
+    if (c.hash !== undefined && c.hash !== null) throw new TimelineError("A section is a part of the story, not a file.");
+    if (base.track !== "S1") throw new TimelineError("A section goes on the story track (S1).");
+    if (!SECTIONS.includes(c.section)) throw new TimelineError(`A section is one of ${SECTIONS.join(", ")}.`);
+    const tension = (Array.isArray(c.tension) ? c.tension : [])
+      .slice(0, 64)
+      .map((p: any) => ({ t: clamp(p?.t, 0, 1, 0), v: clamp(p?.v, 0, 1, 0) }))
+      .sort((a: { t: number }, b: { t: number }) => a.t - b.t);
+    clip = { ...base, kind: "section", vol: 0, section: c.section, text: text(c.text, 1000), ...(tension.length ? { tension } : {}) };
   } else if (kind === "line") {
     if (c.hash !== undefined && c.hash !== null) throw new TimelineError("A line is a line not recorded yet: it has no file.");
     if (base.track !== "A1") throw new TimelineError("A line goes on the voice track (A1).");

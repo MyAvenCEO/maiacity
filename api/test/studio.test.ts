@@ -65,6 +65,22 @@ test("the script is the timeline: slates and lines stand in for what is not shot
   expect(swapped.clips[0]!.kind).toBeUndefined();
 });
 
+test("the story's structure lies on its own track: thumbnail, hook, three acts, cliffhanger, each with its tension", async () => {
+  const { createTimeline, saveTimeline } = await import("../src/timelines");
+  const t = await createTimeline("admin", {
+    name: "Arc",
+    clips: [
+      { id: "th", kind: "section", track: "S1", start: 30, in: 0, dur: 0.05, vol: 1, section: "thumbnail", text: "him on the bench, the mug" },
+      { id: "h", kind: "section", track: "S1", start: 0, in: 0, dur: 5.9, vol: 1, section: "hook", text: "the decision", tension: [{ t: 1, v: 0.8 }, { t: 0, v: 0.3 }, { t: 2, v: 9 }] },
+    ],
+  });
+  const [th, h] = t.clips;
+  expect(th).toMatchObject({ kind: "section", section: "thumbnail", vol: 0 });
+  expect(h!.tension).toEqual([{ t: 0, v: 0.3 }, { t: 1, v: 0.8 }, { t: 1, v: 1 }]);
+  await expect(saveTimeline(t.id, { clips: [{ id: "x", kind: "section", track: "S1", start: 0, in: 0, dur: 1, vol: 1, section: "act4" }] })).rejects.toThrow(/one of thumbnail/);
+  await expect(saveTimeline(t.id, { clips: [{ id: "x", kind: "section", track: "V1", start: 0, in: 0, dur: 1, vol: 1, section: "act1" }] })).rejects.toThrow(/story track/);
+});
+
 test("a shot's balance: the fixed first nodes, checked, and free to change after the lock like its grade", async () => {
   const { createTimeline, saveTimeline } = await import("../src/timelines");
   const clip = { id: "v", hash: hash("d4"), track: "V1", start: 0, in: 0, dur: 5, vol: 0 };
@@ -82,7 +98,9 @@ test("a shot's balance: the fixed first nodes, checked, and free to change after
 test("a copy read before someone else saved never overwrites them (the studio open while an agent edits)", async () => {
   const { createTimeline, saveTimeline } = await import("../src/timelines");
   const t = await createTimeline("admin", { name: "Both at once" });
+  await Bun.sleep(5); // two saves in one millisecond would carry the same stamp
   const agent = await saveTimeline(t.id, { name: "The agent's", if_updated: t.updated });
+  await Bun.sleep(5);
   await expect(saveTimeline(t.id, { name: "The studio's stale copy", if_updated: t.updated })).rejects.toThrow(/changed elsewhere/);
   expect((await saveTimeline(t.id, { name: "Read again", if_updated: agent.updated })).name).toBe("Read again");
   // without it (an agent's own save), as before

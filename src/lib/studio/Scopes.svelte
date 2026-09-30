@@ -6,8 +6,8 @@
 <script>
 	import { onDestroy, onMount } from 'svelte';
 
-	/** @type {{ s: import('./studio.svelte.js').Studio }} */
-	let { s } = $props();
+	/** side: in the right-hand panel, stacked @type {{ s: import('./studio.svelte.js').Studio, side?: boolean }} */
+	let { s, side = false } = $props();
 
 	/** @type {'wave' | 'parade'} */
 	let mode = $state('wave');
@@ -141,7 +141,7 @@
 	onDestroy(() => timer && clearInterval(timer));
 </script>
 
-<div class="scopes" data-mean={mean.toFixed(4)}>
+<div class="scopes" class:side data-mean={mean.toFixed(4)}>
 	<div class="bar">
 		<div class="modes" role="tablist">
 			<button role="tab" aria-selected={mode === 'wave'} class:on={mode === 'wave'} onclick={() => (mode = 'wave')}>Waveform</button>
@@ -233,6 +233,27 @@
 	.vec {
 		width: auto;
 		aspect-ratio: 1;
+	}
+
+	/* in the right-hand panel: the waveform over the vectorscope */
+	.scopes.side {
+		grid-area: inspector;
+		padding: 0.9rem;
+	}
+
+	.side .bar {
+		flex-wrap: wrap;
+	}
+
+	.side .plots {
+		flex: 0 0 auto;
+		grid-template-columns: 1fr;
+		grid-template-rows: 11rem auto;
+	}
+
+	.side .vec {
+		width: 100%;
+		height: auto;
 	}
 
 	.legend {

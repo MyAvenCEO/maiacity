@@ -57,5 +57,35 @@
 - The game's own ambience recordings are not equally loud: multiply sheep ×22.1, frog ×0.35, bees ×0.66, geese ×1.5
   (`NORMALIZE` in `sound.ts`, `assemble.mjs`, `ambience.ts`).
 
-**Levels:** music about 0.25–0.5 under the voice (studio default for A2 0.3); sfx about 0.1–0.35 (A3 0.2). Clips
-carry their own fades (`fin`, `fout`).
+**Levels:** measure, don't guess. MCP `audio_measure` (BS.1770, the render's own meter) and `audio_level` bring
+every clip to its track's aim before the render levels the whole mix to −14 LUFS / −1 dBTP:
+- voice (A1) −18 LUFS
+- music (A2) −26 LUFS, and the render ducks it 6 dB more under the voice; keep voice over music 12–18 LU
+- sounds and beds (A3) −30 LUFS
+
+Adjust single clips with `audio_mix` (gain in dB, up to +12). Clips carry their own fades (`fin`, `fout`): a voice at
+least 0.05 s so it never clicks, the music 1 s in and 2.5 s out at the film's ends. The Audio tab shows it all on the
+clips themselves.
+
+## Cutting sound across scenes: J and L cuts
+
+A scene change never cuts picture and sound at the same frame. That hard cut is what makes an edit feel like a
+slideshow. The sound crosses the picture cut:
+
+- **J-cut:** the next scene's sound comes in before its picture — a voice, a room tone, a mug on wood heard while we
+  still see the last shot. It pulls the viewer forward, a question the cut answers. Use it into a new scene, into a
+  speaker on camera, and into the payoff of a line.
+- **L-cut:** the last scene's sound runs on past the cut into the next picture — the sentence finishes over the new
+  shot, the bed fades under it. It carries a thought across and lets the picture react. Use it out of a line that
+  lands, and for reaction shots.
+
+How much: a word or two (0.3–1.5 s) for the voice, 1–3 s for beds and ambience. Beds crossfade over the cut (the
+overlap is the J or L); the voice usually leads the picture into a talking head (J), and trails out of one (L).
+
+In the timeline:
+- An overlap of two clips on one track is the J or L itself. The studio draws the two clips in two lanes and marks
+  the overlap **J** or **L** by where the picture cut falls in it (× where there is none).
+- A video's linked sound that starts before its picture is a J; one that ends after it is an L. The badge is on the
+  clip.
+
+Build them on purpose at every scene transition, never by accident inside a scene.
