@@ -108,16 +108,26 @@ dark surround. Getting there takes the whole stack, each layer doing its own job
      - Yellow-greens (165°) towards gold (−12°).
      - Blues and purples (320–345°, hoodies, jeans) towards teal (−10…−18°).
    - `hue_sat`: skin 1.15; blues and purples 0.6.
-   - `hue_lum`: greens −0.8…−0.95 stops (dense foliage), yellow-greens −0.3.
+   - `hue_lum`: greens −1…−1.1 stops (dense foliage), yellow-greens −0.5.
 2. **Per-shot trim (`grade_clip`, the Grade layer): the low key.** About a stop down and a slope of 1.2 around mid
    grey, as one CDL: slope k, offset 0.414·(1 − k) + stops / 17.52. The balance stays the base correction; the mood
    lives here, per shot, so every shot can land on the same key.
-3. **Secondaries:**
-   - The face lifted +0.3–0.4 (a face-tracked ellipse, 1.8 × 2 of the face).
-   - A warm window where the light comes from (temp +1, exposure +0.4, tint 0: magenta turns the sky pink).
+3. **Secondaries: the light.** A reference like the banner is *lit*: a warm key from one side, a face brighter than
+   everything around it, the ground and the far side falling into dark. An evenly lit shot with the same median still
+   looks flat. On the bench:
+   - The face up a whole stop and warmer (face-tracked ellipse 1.8 × 2 of the face; exposure +1, temp +0.5).
+   - The warm light only on the lit leaves where it comes from: a luma key over about 30 IRE inside an ellipse in
+     that corner (exposure +0.7, temp +1, tint 0). Warming dark greens turns them olive-brown, never into a glow.
    - The sky held: a luma key over 72 IRE in a band at the top, exposure −0.35, highlights −0.6, cooler.
-4. **Finishing:** vignette 0.7 (size 0.8), grain 0.25. Halation and bloom stay off for now: on the bench they put an
+   - The edges falling off: an inverted ellipse around the subject and the light (exposure −0.8).
+   - A sun flare or rays in a reference are relit, not graded. Grading can't invent a light the shot never had.
+4. **Finishing:** vignette 0.85 (size 0.75), grain 0.25. Halation and bloom stay off for now: on the bench they put an
    orange haze on the hands. Look at every glow on a full hero frame before keeping it.
+
+**Measure the reference by zone, on the pixels,** not only by its percentiles. Take the median of the top and bottom
+thirds, the side the light comes from, the far side, the ground and the face (level and RGB), for the reference and
+for a hero frame, and close the biggest gap first. On Day 01 the medians matched at v3 (19 against 17 IRE) while the
+picture was still wrong: the ground was 15 against 9 and the face 27 against 39.
 
 Judge it the way the person will see it: `render_frame` hero frames at 4K next to the reference, and zoomed crops of
 the face and hands. The scope sheet's 640 px picture hides halos, blotches and banding.
