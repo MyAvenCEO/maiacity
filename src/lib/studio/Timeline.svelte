@@ -8,7 +8,7 @@
 <script>
 	import ColorBadge from './ColorBadge.svelte';
 	import { evaluate, shotAt, toKeys } from './shots.js';
-	import { TRACKS, isWorld, thumb, tint } from './studio.svelte.js';
+	import { FPS, TRACKS, isWorld, thumb, tint } from './studio.svelte.js';
 	import { wave } from './wave.js';
 
 	/** @typedef {import('$lib/auth/client').ShotSpec} ShotSpec */
@@ -63,6 +63,9 @@
 			}
 			if (mode === 'right') k.dur = Math.min(Math.max(0.2, s.snap(d0 + dt)), max - i0);
 			s.clips[i] = k;
+			// the playhead follows the edge in hand: the monitor shows the very frame the cut lands on — the first frame
+			// of a trimmed head, the last of a trimmed tail
+			if (!s.playing && mode !== 'move') s.time = mode === 'left' ? k.start : Math.max(k.start, k.start + k.dur - 1 / FPS);
 		};
 		const up = () => {
 			window.removeEventListener('pointermove', move);

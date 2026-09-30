@@ -86,6 +86,8 @@ export const clockText = (t) => {
 	const m = Math.floor(t / 60), s = Math.floor(t % 60), cs = Math.floor((t % 1) * 100);
 	return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}.${String(cs).padStart(2, '0')}`;
 };
+/** The film's frame rate (the render's): edits snap to its frames. */
+export const FPS = 30;
 /** A file's bytes, from this Mac's vault (with Range). @param {string} hash */
 export const raw = (hash) => fileUrl(hash);
 /** @param {MediaItem} m */
@@ -865,7 +867,17 @@ export class Studio {
 		if (!this.clips.length) return;
 		if (this.time >= this.end - 0.02) this.time = 0;
 		await this.audioCtx().resume();
-		await Promise.all([...this.clips, ...this.cueClips].map((c) => (c.hash ? this.source(c.hash).catch(() => null) : null)));
+		await Promise.all(
+			[...this.clips, ...this.cueClips].map((c) =>
+				c.hash
+					? this.source(c.hash).catch((e) => {
+							// a sound that cannot load plays as silence — say so, never in silence
+							console.warn(`sound ${c.hash?.slice(0, 12)} (${c.track}):`, /** @type {Error} */ (e).message);
+							return null;
+						})
+					: null
+			)
+		);
 		await this.preparePlayback();
 		this.playing = true;
 		this.schedule();
@@ -890,8 +902,8 @@ export class Studio {
 	}
 
 	// ── by hand: move, trim, drop ──────────────────────────────────────────────
-	/** @param {number} t */
-	snap = (t) => Math.round(t * 20) / 20;
+	/** A time on the film's frame grid (the render's 30 fps): every cut lands on a frame. @param {number} t */
+	snap = (t) => Math.round(t * FPS) / FPS;
 
 	/**
 	 * Lays a file on a track at `start`: the whole of it, or only `range` of it (a sound or a film marked in the source monitor).
