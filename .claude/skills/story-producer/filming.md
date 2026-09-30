@@ -112,8 +112,9 @@ like a camera, not by grading a finished image:
    lower 60% of the frame (the land and the domes; a bright sky does not count) and sets `stops` over or under it:
    pre-dawn and night about +1…+1.5, blue hour +0.5, a sunrise with the disc in frame −0.3 so the sky holds. The
    metered value is pinned into the shot, so a re-render is identical.
-2. **Grade in the studio** after the edit is locked: a clip's CDL for its own balance, the film's look for the arc
-   (`dip` for the world as it was, `bright` for the city by day — `retention.md`), judged on hero frames.
+2. **Grade in the studio** after the edit is locked: first every shot's balance, levelled scene by scene to its
+   master (`grading.md`), then the film's look for the arc (`dip` for the world as it was, `bright` for the city by
+   day — `retention.md`), judged on hero frames.
 - **Brightness alone isn't a grade.** Match the black level of dark shots to the day shots (lift the offset, add
   contrast with power), and check the storyboard through the output transform, not the raw log still.
 - `scripts/film/grade.mjs` is the old pre-grade on finished Rec.709 shots. It stays only for re-grading legacy shots

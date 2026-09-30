@@ -11,7 +11,7 @@
 	import { evaluate, shotAt, toKeys } from './shots.js';
 	import { FPS, TRACKS, UNLINKED, isWorld, onSoundTrack, thumb, tint } from './studio.svelte.js';
 	import { wordsOf } from './transcript.js';
-	import { BALANCE_NODES, NEUTRAL, NEUTRAL_BALANCE, PRESETS, cleanBalance, isNeutral, presetOf } from './color.js';
+	import { BALANCE_NODES, NEUTRAL, NEUTRAL_BALANCE, cleanBalance, isNeutral, presetOf } from './color.js';
 	import { wave } from './wave.js';
 
 	/** @typedef {import('$lib/auth/client').ShotSpec} ShotSpec */
@@ -389,7 +389,7 @@
 	{@const cur = g ?? NEUTRAL}
 	{#if open}
 		<div class="chips">
-			{#each Object.keys(PRESETS) as p (p)}<button class:on={(preset ?? presetOf(g)) === p} onclick={() => set(isNeutral(PRESETS[p].cdl) ? null : structuredClone(PRESETS[p].cdl), p === 'neutral' ? null : p)}>{p}</button>{/each}
+			{#each s.presets as p (p.name)}<button class:on={(preset ?? presetOf(g, s.presets)) === p.name} title={p.label} onclick={() => set(isNeutral(p.cdl) ? null : structuredClone(p.cdl), p.name === 'neutral' ? null : p.name)}>{p.name}</button>{/each}
 		</div>
 		{#each [['slope', 'gain', 0, 2], ['offset', 'lift', -0.2, 0.2], ['power', 'gamma', 0.4, 2.5]] as [k, label, lo, hi] (k)}
 			{@const key = /** @type {'slope' | 'offset' | 'power'} */ (k)}
@@ -398,7 +398,7 @@
 		{/each}
 		<label class="sl"><span>sat</span><input type="range" min="0" max="2" step="0.01" value={cur.sat} oninput={(e) => { const next = { ...structuredClone($state.snapshot(cur)), sat: Number(e.currentTarget.value) }; set(isNeutral(next) ? null : next); }} /><output>{cur.sat.toFixed(2)}</output></label>
 	{:else}
-		<span class="val" class:on={!!g || !!preset}>{preset ?? (g ? presetOf(g) ?? 'own' : '—')}</span>
+		<span class="val" class:on={!!g || !!preset}>{preset ?? (g ? presetOf(g, s.presets) ?? 'own' : '—')}</span>
 	{/if}
 {/snippet}
 

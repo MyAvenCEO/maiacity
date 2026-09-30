@@ -20,7 +20,7 @@ import {
 	saveTimeline
 } from '$lib/auth/client';
 import { ODT, PROFILES, WORKING, asStudio, clean, cleanBalance, gradesFor, isCache, isSequence, presetOf, profileFor, proxyFor } from './color.js';
-import { filmLut, nativeLut } from './luts.js';
+import { filmLut, gradeLut, nativeLut, nativePresets } from './luts.js';
 import { cached, evaluate, saveSpec, shotAt } from './shots.js';
 import { WorldViewer } from './world.svelte.js';
 import { captionWordsOf, hasSound, lineWords, phraseBreak, rewordPhrase, stepOpen, transcriptOf, transcriptState } from './transcript.js';
@@ -183,6 +183,8 @@ export class Studio {
 	lutFrom = $state('none');
 	/** @type {Record<string, Lut | null>} */
 	luts = $state({});
+	/** the grade presets, as Rust holds them (`color_presets`) @type {import('./luts.js').Preset[]} */
+	presets = $state([]);
 	/** Edit: preview the grade on the proxies (read-only there) */
 	previewGrade = $state(false);
 	/** the Audio tab: how the timeline sounds, clip by clip (render.rs `measure_sound`), and whether it is being measured */
@@ -441,6 +443,23 @@ export class Studio {
 		if ((this.tab === 'edit' || this.tab === '3d') && !this.previewGrade) return [];
 		return gradesFor(c, this.current);
 	}
+	/**
+	 * A grade's cube as the Mac baked it (`gradeLut`), at once when it is here; else null, and the world is drawn again
+	 * when it comes.
+	 * @param {import('$lib/auth/client').Balance | null} balance @param {Cdl[]} grades @returns {import('./luts.js').Lut | null}
+	 */
+	cubeFor(balance, grades) {
+		const key = JSON.stringify([balance, grades]);
+		if (this.#cubes.has(key)) return this.#cubes.get(key) ?? null;
+		this.#cubes.set(key, null);
+		if (this.#cubes.size > 24) this.#cubes.delete(/** @type {string} */ (this.#cubes.keys().next().value));
+		gradeLut(balance, grades)
+			.then((l) => (this.#cubes.set(key, l), this.driveWorld()))
+			.catch(() => this.#cubes.delete(key));
+		return null;
+	}
+	/** @type {Map<string, import('./luts.js').Lut | null>} */
+	#cubes = new Map();
 	/** A clip's balance as the viewer shows it (Grade, Render; Edit with the grade preview on). @param {Clip | null | undefined} c */
 	balanceOf(c) {
 		if ((this.tab === 'edit' || this.tab === '3d') && !this.previewGrade) return null;
@@ -509,6 +528,7 @@ export class Studio {
 		const got = await Promise.all(wanted.map(async ([name, profile]) => /** @type {const} */ ([name, await nativeLut(profile).catch(() => null)])));
 		this.luts = Object.fromEntries(got.filter(([, l]) => l));
 		this.lutFrom = this.luts[ODT] ? 'mac' : 'none';
+		if (!this.presets.length) this.presets = await nativePresets().catch(() => []);
 	}
 
 	/** The render queue (C6, `GET /api/film/jobs`), rendered by the Mac app — renders and hero frames. */
@@ -1089,9 +1109,10 @@ export class Studio {
 		if (!c || !isWorld(c)) return;
 		const spec = cached(c.shot, c.shotVersion)?.spec;
 		if (!spec) return;
-		// the view film mode draws through: the output transform, and the grades in order (the clip's, then the film's look)
-		const grade = this.gradesOf(c);
-		this.world.show({ spec, t: this.shotTime(c), shape: /** @type {Shape} */ (this.viewShape), ...hd(this.viewShape), view: { lut: filmLut(this.luts['odt-rec709'] ?? null), grade: grade.length ? grade : null } });
+		// the view film mode draws through: the clip's grade (balance, its CDL, the film's look: the Mac's cube) and the output
+		const grades = this.gradesOf(c), balance = this.balanceOf(c);
+		const grade = grades.length || balance ? this.cubeFor(balance, grades) : null;
+		this.world.show({ spec, t: this.shotTime(c), shape: /** @type {Shape} */ (this.viewShape), ...hd(this.viewShape), view: { lut: filmLut(this.luts['odt-rec709'] ?? null), grade: filmLut(grade) } });
 	}
 
 	tick = () => {
@@ -1411,7 +1432,7 @@ export class Studio {
 	/** @param {Cdl | null} g */
 	setGrade(g) {
 		if (this.gradeTarget === 'film' || !this.sel || this.sel.track !== 'V1') {
-			const preset = presetOf(g);
+			const preset = presetOf(g, this.presets);
 			this.setMeta({ grade: { look: clean(g), ...(preset && preset !== 'neutral' ? { preset } : {}) } });
 		} else this.patchClip(this.sel.id, { grade: clean(g) });
 	}

@@ -31,10 +31,11 @@ trash = "5"
 futures-lite.workspace = true
 schemars = "1"
 vault-media = { path = "../crates/vault-media" }
-# speech to text, on-device: Nemotron 3.5 through parakeet-rs and ONNX Runtime (transcripts.rs)
+# speech to text, on-device: Phonon-2 through ONNX Runtime (transcripts.rs)
 vault-asr = { path = "../crates/vault-asr" }
 # the final film render, natively (render.rs: the app is the render worker)
 vault-render = { path = "../crates/vault-render" }
+png = "0.18"
 # the world window's WKWebView and NSWindow, and App Nap (world.rs)
 objc2 = "0.6"
 objc2-foundation = "0.3"

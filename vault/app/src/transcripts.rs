@@ -1,7 +1,9 @@
-//! Every recording's words, made here on the Mac, on-device — Nemotron 3.5 (vault-asr), nothing of the speech leaves
-//! our devices for it. An automatic step after the ingest, like the proxies: its own queue, one recording at a time,
-//! after any ingest and only while macOS says there is memory to spare; the uploads go on meanwhile (it is the CPU's
-//! work, not the line's). It does not wait for the proxies either: they are the GPU's and the video encoder's.
+//! Every recording's words, made here on the Mac, on-device — Phonon-2 (vault-asr), in English; nothing of the speech
+//! leaves our devices for it. Words another model made (before Phonon) are made again.
+//!
+//! An automatic step after the ingest, like the proxies: its own queue, one recording at a time, after any ingest and
+//! only while macOS says there is memory to spare; the uploads go on meanwhile (it is the CPU's work, not the line's).
+//! It does not wait for the proxies either: they are the GPU's and the video encoder's.
 //!
 //! The sound: the original itself (sound has no proxy), decoded by AVFoundation straight to 16 kHz mono
 //! (vault-media `audio`).
@@ -12,7 +14,7 @@
 //! (times in seconds of the original), `none: no speech` or `failed: …` (three tries, then it waits for a person).
 //! One writer per file: a file another device is transcribing is left to it (unless it went quiet for six hours).
 //!
-//! The model (~2.5 GB in memory) is loaded for a run of recordings and let go when the queue is empty.
+//! The model (~1 GB in memory) is loaded for a run of recordings and let go when the queue is empty.
 
 use std::{
     path::PathBuf,
@@ -35,6 +37,11 @@ pub const STALE_HOURS: i64 = 6;
 static TURN: tokio::sync::Semaphore = tokio::sync::Semaphore::const_new(1);
 /// the loaded model, kept for a run of recordings
 static RECOGNIZER: Mutex<Option<vault_asr::Recognizer>> = Mutex::new(None);
+
+/// Its words made, but by another model than Phonon (Nemotron, Deepgram — before): made again.
+pub fn by_another(record: Option<&Value>) -> bool {
+    record.is_some_and(|r| r["state"] == "done" && r["model"] != vault_asr::MODEL)
+}
 
 /// The key of a transcript's line in the studio's list of work in progress (`proxies_now`).
 pub fn key(hash: &str) -> String {
@@ -110,7 +117,8 @@ pub async fn queue_due(handle: &AppHandle, vault: &Arc<Vault>) {
     let me = vault.endpoint.id().to_string();
     let now = vault_core::ingest::now_iso();
     let (Ok(all), Ok(records)) = (vault.catalog.list().await, vault.catalog.records(TRANSCRIPT).await) else { return };
-    let mut todo: Vec<&Meta> = all.iter().filter(|m| wants(m) && due(records.get(&m.hash), &me, &now)).collect();
+    let mut todo: Vec<&Meta> =
+        all.iter().filter(|m| wants(m) && (due(records.get(&m.hash), &me, &now) || by_another(records.get(&m.hash)))).collect();
     // the small ones first
     todo.sort_by_key(|m| m.size);
     for m in todo {
@@ -280,6 +288,14 @@ mod tests {
         assert!(!wants(&file("other", "default", json!({ "role": "model" }))));
         assert!(!wants(&file("video", "default", json!({ "shot": "s1" }))));
         assert!(!wants(&file("image", "original", json!({}))));
+    }
+
+    #[test]
+    fn words_by_another_model_made_again() {
+        assert!(by_another(Some(&json!({ "state": "done", "model": "nvidia/nemotron-3.5-asr-streaming-0.6b" }))));
+        assert!(!by_another(Some(&json!({ "state": "done", "model": "fermionresearch/phonon-2" }))));
+        assert!(!by_another(Some(&json!({ "state": "none: no speech", "model": "nvidia/nemotron-3.5-asr-streaming-0.6b" }))));
+        assert!(!by_another(None));
     }
 
     #[test]

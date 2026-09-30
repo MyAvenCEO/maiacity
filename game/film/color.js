@@ -6,8 +6,8 @@
 // the Mac (vault-media's cst and aces2, the final render in vault-render) — never committed; media stays in its own
 // encoding for ever.
 //
-// Shared by the film scripts (Node), Sandbox 4's film camera and the studio (browser); the Mac's render is its twin in
-// Rust.
+// Shared by the film scripts (Node), Sandbox 4's film camera, the API and the studio. The grade itself (the CDL, the
+// balance) is Rust's alone: vault-render `grade`.
 
 /**
  * Linear light with Rec.709 primaries (D65) — what the world renders, and what Rec.709 video and sRGB pictures decode
@@ -203,54 +203,17 @@ export const NEUTRAL = { slope: [1, 1, 1], offset: [0, 0, 0], power: [1, 1, 1], 
 export const isNeutral = (/** @type {Cdl | null | undefined} */ g) =>
 	!g || (g.sat === 1 && [0, 1, 2].every((i) => g.slope[i] === 1 && g.offset[i] === 0 && g.power[i] === 1));
 
-/** Rec.709 luma weights, as the ASC CDL takes its saturation around. */
-const LUMA = [0.2126, 0.7152, 0.0722];
-
-/**
- * The ASC CDL on one ACEScct pixel: slope, offset, power per channel (negative values are held at 0 before the
- * power, as ACEScct grading does; nothing is clipped at 1 — the log holds highlights above it), then saturation.
- * @param {Cdl} g @param {[number, number, number]} rgb @returns {[number, number, number]}
- */
-export function cdl(g, rgb) {
-	const v = /** @type {[number, number, number]} */ (rgb.map((x, i) => {
-		const y = x * g.slope[i] + g.offset[i];
-		return g.power[i] === 1 ? y : Math.pow(Math.max(0, y), g.power[i]);
-	}));
-	const l = v[0] * LUMA[0] + v[1] * LUMA[1] + v[2] * LUMA[2];
-	return /** @type {[number, number, number]} */ (v.map((x) => l + g.sat * (x - l)));
-}
-
-/** Two grades one after the other (a clip's own, then the film's look), as one — exact for slope/offset without power. */
-export function chain(/** @type {Cdl[]} */ ...grades) {
-	return grades.filter((g) => !isNeutral(g));
-}
-
-/** The 3×3 the CDL's saturation is, for ffmpeg's colorchannelmixer (rr rg rb gr gg gb br bg bb). */
-export function satMatrix(/** @type {number} */ s) {
-	return [0, 1, 2].map((r) => [0, 1, 2].map((c) => (r === c ? s : 0) + (1 - s) * LUMA[c])).flat();
-}
-
-/**
- * The looks the films were cut with before the pipeline had a grade step — the ffmpeg `eq`/`colorbalance` looks of
- * day-19-d.mjs (COLD, DIP, BRIGHT, NIGHT) — as CDLs in ACEScct, the grade presets of the Grade tab.
- * @type {Record<string, { label: string, cdl: Cdl }>}
- */
-export const PRESETS = {
-	neutral: { label: 'Neutral', cdl: NEUTRAL },
-	cold: { label: 'Cold (the world as it was)', cdl: { slope: [0.97, 0.99, 1.05], offset: [-0.004, 0, 0.012], power: [1, 1, 1], sat: 0.5 } },
-	dip: { label: 'Dip (sick, heavy)', cdl: { slope: [0.94, 1.0, 1.0], offset: [-0.012, 0.004, 0.006], power: [1.06, 1.04, 1.04], sat: 0.55 } },
-	bright: { label: 'Bright (the city by day)', cdl: { slope: [1.02, 1.02, 1.0], offset: [0.004, 0.004, 0], power: [1, 1, 1], sat: 1.14 } },
-	night: { label: 'Night (blue, lifted)', cdl: { slope: [0.98, 1.0, 1.06], offset: [0.01, 0.012, 0.024], power: [0.96, 0.96, 0.94], sat: 1.08 } },
-	warm: { label: 'Warm (golden hour)', cdl: { slope: [1.05, 1.0, 0.93], offset: [0.006, 0.002, -0.004], power: [1, 1, 1], sat: 1.06 } }
-};
+// The grade's maths — the CDL, the balance, the presets' values — live in Rust only (vault-render `grade`), run on the
+// GPU by Metal (the render, hero frames) and baked by the Mac for the studio's viewer (`color_grade`: one cube per clip).
+// Here are only the grade as data: its shape, its ranges, and how a saved grade is checked.
 
 // ── the balance: the fixed first nodes of every shot, before any creative grade ─────────────────────────────────────
 //
-// White balance → exposure → contrast → highlights / lows, in ACEScct, per shot: the shots of a scene levelled to each
-// other before the look is set. Every amount is in stops (contrast: the slope around mid grey, 0 = as shot), so an agent
-// can reason about it in the units a colourist thinks in; 0 everywhere is the picture as shot.
+// White balance → exposure → contrast → highlights / lows → saturation, in ACEScct, per shot: the shots of a scene
+// levelled to each other before the look is set (vault-render `grade::Balance`). Every amount is in stops (contrast and
+// saturation: the factor minus 1), so an agent can reason in a colourist's units; 0 everywhere is the picture as shot.
 
-/** @typedef {{ temp: number, tint: number, exposure: number, contrast: number, highlights: number, shadows: number }} Balance */
+/** @typedef {{ temp: number, tint: number, exposure: number, contrast: number, highlights: number, shadows: number, sat: number }} Balance */
 
 /** @typedef {{ key: keyof Balance, label: string, min: number, max: number, step: number, unit: string }} BalanceField */
 /**
@@ -262,42 +225,12 @@ export const BALANCE_NODES = ([
 	{ id: 'exposure', label: 'Exposure', fields: [{ key: 'exposure', label: 'Exposure', min: -4, max: 4, step: 0.01, unit: 'stops' }] },
 	{ id: 'contrast', label: 'Contrast', fields: [{ key: 'contrast', label: 'Contrast', min: -0.8, max: 1.5, step: 0.01, unit: '' }] },
 	{ id: 'highlights', label: 'Highlights', fields: [{ key: 'highlights', label: 'Highlights', min: -3, max: 3, step: 0.01, unit: 'stops' }] },
-	{ id: 'shadows', label: 'Lows', fields: [{ key: 'shadows', label: 'Lows', min: -3, max: 3, step: 0.01, unit: 'stops' }] }
+	{ id: 'shadows', label: 'Lows', fields: [{ key: 'shadows', label: 'Lows', min: -3, max: 3, step: 0.01, unit: 'stops' }] },
+	{ id: 'sat', label: 'Saturation', fields: [{ key: 'sat', label: 'Saturation', min: -1, max: 1, step: 0.01, unit: '(0 = as shot, 0.2 = 20 % more)' }] }
 ]);
 
 /** @type {Balance} */
-export const NEUTRAL_BALANCE = { temp: 0, tint: 0, exposure: 0, contrast: 0, highlights: 0, shadows: 0 };
-/** One stop in ACEScct's log segment: (log2(x) + 9.72) / 17.52, so a doubling is 1/17.52. */
-export const STOP = 1 / 17.52;
-/** Mid grey (18 %) in ACEScct: the pivot of contrast, the line between lows and highlights. */
-export const PIVOT = 0.4135884;
-/** How far from mid grey the highlights and lows reach before they are fully in. */
-export const REACH = 0.35;
-
-const smooth = (/** @type {number} */ a, /** @type {number} */ b, /** @type {number} */ x) => {
-	const t = Math.min(1, Math.max(0, (x - a) / (b - a)));
-	return t * t * (3 - 2 * t);
-};
-
-/**
- * The balance on one ACEScct pixel (the shader's, the render's kernel's): white balance as per-channel stops (red up and
- * blue down by half the temperature each, green down by the tint), exposure, contrast around mid grey, then highlights
- * and lows by the pixel's luma — the same for all three channels, so they change no hue.
- * @param {Balance} b @param {[number, number, number]} rgb @returns {[number, number, number]}
- */
-export function balance(b, rgb) {
-	let [r, g, bl] = rgb;
-	r += (b.temp / 2) * STOP;
-	bl -= (b.temp / 2) * STOP;
-	g -= b.tint * STOP;
-	const k = 1 + b.contrast;
-	const tone = (/** @type {number} */ x) => PIVOT + (x + b.exposure * STOP - PIVOT) * k;
-	[r, g, bl] = [tone(r), tone(g), tone(bl)];
-	const l = r * LUMA[0] + g * LUMA[1] + bl * LUMA[2];
-	const lift = (b.highlights * smooth(PIVOT, PIVOT + REACH, l) + b.shadows * (1 - smooth(PIVOT - REACH, PIVOT, l))) * STOP;
-	return [r + lift, g + lift, bl + lift];
-}
-
+export const NEUTRAL_BALANCE = { temp: 0, tint: 0, exposure: 0, contrast: 0, highlights: 0, shadows: 0, sat: 0 };
 /** A balance that changes nothing. */
 export const isNeutralBalance = (/** @type {Balance | null | undefined} */ b) => !b || Object.values(b).every((v) => v === 0);
 

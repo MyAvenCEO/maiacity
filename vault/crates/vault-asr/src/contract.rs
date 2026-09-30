@@ -1,15 +1,15 @@
 //! The transcript contract, as the catalog keeps it (`transcript/<hash>`; the studio's transcript.js and the MCP read
 //! it): `{ model, language, text, words: [{ w, s, e, c }], utterances: [{ s, e, text }] }` — times in seconds of the
-//! original file. Pure: the speech stretches from the VAD's probabilities, words from the model's tokens, the language
-//! from two trial passes, the whole from the pieces.
+//! original file. Pure: the speech stretches from the VAD's probabilities, words from the model's tokens, and the
+//! whole from the pieces.
 
 use serde_json::{Value, json};
 
-/// 16 kHz: what Silero and Nemotron take.
+/// 16 kHz: what Silero and every speech model here take.
 pub const RATE: usize = 16_000;
 /// Silero's window: 512 samples (32 ms).
 pub const WINDOW: usize = 512;
-/// One Nemotron encoder frame: 8 mel hops of 10 ms — a token's time is known to 80 ms.
+/// One encoder frame: 8 mel hops of 10 ms — a token's time is known to 80 ms.
 pub const FRAME_SECONDS: f64 = 0.08;
 
 /// How speech is told from the rest (Silero's own defaults, as its reference wrapper uses them).
@@ -135,19 +135,8 @@ pub fn words(tokens: &[Token], offset: f64) -> Vec<Value> {
         .collect()
 }
 
-/// How sure the model is of a trial pass: the mean log-probability of its word tokens (−∞ when it heard none).
-pub fn sureness(tokens: &[Token]) -> f64 {
-    let lp: Vec<f64> = tokens.iter().filter(|t| !is_tag(&t.text) && !t.text.trim().is_empty()).map(|t| t.logprob as f64).collect();
-    if lp.is_empty() { f64::NEG_INFINITY } else { lp.iter().sum::<f64>() / lp.len() as f64 }
-}
-
-/// Of the trial passes (language, tokens), the one the model is surest of — our recordings are English or German.
-pub fn pick_language<'a>(trials: &'a [(&'a str, Vec<Token>)]) -> &'a str {
-    trials.iter().max_by(|a, b| sureness(&a.1).total_cmp(&sureness(&b.1))).map(|(l, _)| *l).unwrap_or("en-US")
-}
-
 /// The whole transcript: its words, one utterance per speech stretch (its words' text), the plain text. `language`
-/// is kept short ("en", "de"), as the catalog has it.
+/// is kept short ("en"), as the catalog has it.
 pub fn transcript(model: &str, locale: &str, stretches: &[(f64, f64, Vec<Value>)]) -> Value {
     let mut all = Vec::new();
     let mut utterances = Vec::new();
@@ -231,18 +220,10 @@ mod tests {
     }
 
     #[test]
-    fn the_language_the_model_is_surest_of() {
-        let en = vec![tok(" the", 1, -0.1), tok(" city", 2, -0.2)];
-        let de = vec![tok(" die", 1, -1.4), tok(" Stadt", 2, -2.0)];
-        assert_eq!(pick_language(&[("en-US", en.clone()), ("de-DE", de.clone())]), "en-US");
-        assert_eq!(pick_language(&[("en-US", vec![]), ("de-DE", de)]), "de-DE");
-    }
-
-    #[test]
     fn the_whole_transcript() {
         let a = words(&[tok(" Day", 3, 0.0), tok(" twenty.", 8, 0.0)], 1.0);
         let b = words(&[tok(" Does", 0, 0.0), tok(" it", 2, 0.0), tok(" hold?", 4, 0.0)], 6.0);
-        let t = transcript("nvidia/nemotron-3.5-asr-streaming-0.6b", "en-US", &[(0.8, 2.0, a), (5.9, 6.6, b), (9.0, 9.5, vec![])]);
+        let t = transcript("fermionresearch/phonon-2", "en-US", &[(0.8, 2.0, a), (5.9, 6.6, b), (9.0, 9.5, vec![])]);
         assert_eq!(t["language"], "en");
         assert_eq!(t["text"], "Day twenty. Does it hold?");
         assert_eq!(t["words"].as_array().unwrap().len(), 5);

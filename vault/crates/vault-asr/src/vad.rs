@@ -1,8 +1,8 @@
 //! Silero VAD v5, driven directly through ONNX Runtime.
 //!
 //! There are two ready-made Rust crates for this, and neither can be used here:
-//! both pin `ort` 2.0.0-rc.10 while `parakeet-rs` requires rc.13, and the API
-//! changed between them. Rather than pin the recognizer backwards, the model is
+//! both pin `ort` 2.0.0-rc.10 while the recognizer (tdt.rs) is on rc.13, and the
+//! API changed between them. Rather than pin the recognizer backwards, the model is
 //! small and its interface is four tensors, so it is driven directly — which
 //! also means one `ort` version across the whole app.
 //!

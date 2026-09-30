@@ -62,7 +62,7 @@ fn output_lut_on_the_gpu_is_the_cpu_lut() {
 }
 
 #[test]
-fn cdl_on_the_gpu_is_color_js() {
+fn cdl_on_the_gpu_is_the_maths() {
     let gpu = Gpu::new().unwrap();
     let px = colours();
     for name in ["cold", "dip", "bright", "night", "warm"] {
@@ -75,14 +75,16 @@ fn cdl_on_the_gpu_is_color_js() {
 }
 
 #[test]
-fn balance_on_the_gpu_is_color_js() {
+fn balance_on_the_gpu_is_the_maths() {
     let gpu = Gpu::new().unwrap();
     let px = colours();
     let cases = [
         Balance { temp: 0.6, tint: -0.3, ..Default::default() },
         Balance { exposure: -1.2, contrast: 0.25, ..Default::default() },
         Balance { highlights: -1.5, shadows: 0.8, ..Default::default() },
-        Balance { temp: -0.4, tint: 0.2, exposure: 0.7, contrast: -0.2, highlights: 0.5, shadows: -0.6 },
+        Balance { temp: -0.4, tint: 0.2, exposure: 0.7, contrast: -0.2, highlights: 0.5, shadows: -0.6, sat: 0.0 },
+        Balance { sat: 0.4, ..Default::default() },
+        Balance { temp: 0.3, exposure: 0.5, highlights: -0.4, sat: -0.35, ..Default::default() },
     ];
     for b in cases {
         let got = through(&gpu, &px, |gp, i| gp.balance(i, Some(&b)).unwrap());

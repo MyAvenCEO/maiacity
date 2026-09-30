@@ -1,51 +1,46 @@
 //! Speech to text on the Mac, on-device — every recording's words with their times, and nothing of them leaves our
-//! devices. NVIDIA Nemotron 3.5 ASR streaming (0.6B parameters, multilingual, ONNX) through parakeet-rs, the model
-//! avenOS uses; Silero VAD finds the speech first, so the model reads only speech, a stretch at a time (at most 30 s:
+//! devices. Silero VAD finds the speech first, so the model reads only speech, a stretch at a time (at most 30 s:
 //! bounded memory, whatever the file's length), and every stretch is one utterance.
 //!
-//! The language: a trial pass over the first 12 s of speech in English and in German, and the one the model is surest
-//! of (its mean token log-probability) reads the whole file. Times: Nemotron emits each token at an encoder frame
-//! (80 ms), so a word's start and end are known to about 80 ms — and, the model being a streaming one, a token may
-//! come a frame or two after its sound: a word's `s` can be late by up to ~0.16 s. The studio cuts on 30 fps frames;
-//! for a cut on a word, that is a frame or so.
+//! The model: **Phonon-2** — Fermion Research's English re-training of NVIDIA's Parakeet TDT 0.6B v3, its encoder at
+//! five values per weight; here as ONNX (vault/tools/phonon2_onnx.py), 654 MB in int8, read natively ([`tdt`]).
+//! English: every recording is read as English.
+//!
+//! Times: the model emits each token at an encoder frame (80 ms), so a word's start and end are known to about 80 ms.
+//! The studio cuts on 30 fps frames; for a cut on a word, that is a frame or so.
 //!
 //! The model files come from our own vault (the Models story, pinned by their BLAKE3 hashes: vault/app models.rs);
 //! this crate only reads them from a folder.
 
 pub mod contract;
+pub mod tdt;
 pub mod vad;
 
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
-use parakeet_rs::{ExecutionConfig, Nemotron, NemotronMode};
 use serde_json::Value;
 
 pub use contract::{RATE, Token, VadParams};
 
 /// What the catalog says made the words.
-pub const MODEL: &str = "nvidia/nemotron-3.5-asr-streaming-0.6b";
-/// Our recordings' languages, as the model names them.
-pub const LANGUAGES: [&str; 2] = ["en-US", "de-DE"];
-/// Seconds of speech the language is told from.
-pub const TRIAL_SECONDS: f64 = 12.0;
+pub const MODEL: &str = "fermionresearch/phonon-2";
+/// The language the words are in.
+pub const LANGUAGE: &str = "en-US";
 /// A stretch is brought up to this peak (at most ×8) before the model reads it — a quiet lavalier is heard too.
 pub const TARGET_PEAK: f32 = 0.7;
 pub const MAX_GAIN: f32 = 8.0;
-/// Silence read before a stretch (one streaming chunk, 0.56 s, a whole number of 80 ms frames) and after it (three).
-pub const LEAD: usize = 8_960;
-pub const TAIL: usize = 3 * 8_960;
 
-/// Where the model files are: the Nemotron folder (config.json, encoder.onnx, encoder.onnx.data, decoder_joint.onnx,
-/// tokenizer.model) and Silero's silero_vad.onnx.
+/// Where the model files are: Phonon's folder (nemo128.onnx, encoder-model[.int8].onnx, decoder_joint-model.onnx,
+/// vocab.txt) and Silero's silero_vad.onnx.
 #[derive(Debug, Clone)]
 pub struct Models {
-    pub nemotron: PathBuf,
+    pub speech: PathBuf,
     pub vad: PathBuf,
 }
 
 pub struct Recognizer {
-    model: Nemotron,
+    model: tdt::Tdt,
     vad: vad::Vad,
 }
 
@@ -57,13 +52,9 @@ pub fn normalized(samples: &[f32]) -> Vec<f32> {
 }
 
 impl Recognizer {
-    /// Load both models (the recognizer takes a few seconds and ~2.5 GB of memory).
+    /// Load both models (a few seconds; ~1 GB of memory).
     pub fn open(models: &Models) -> Result<Self> {
-        let execution = ExecutionConfig::default().with_custom_configure(|b| Ok(b.with_intra_op_spinning(false)?.with_inter_op_spinning(false)?));
-        let model = Nemotron::from_pretrained(&models.nemotron, Some(execution)).map_err(|e| anyhow::anyhow!("the speech model cannot be loaded: {e}"))?;
-        anyhow::ensure!(model.mode() == NemotronMode::Multilingual, "the multilingual Nemotron model is required");
-        let vad = vad::Vad::open(&models.vad)?;
-        Ok(Self { model, vad })
+        Ok(Self { model: tdt::Tdt::open(&models.speech)?, vad: vad::Vad::open(&models.vad)? })
     }
 
     /// Where there is speech: one probability per 32 ms, then the stretches (in samples).
@@ -83,63 +74,22 @@ impl Recognizer {
         Ok(contract::speech(&probs, samples.len(), params))
     }
 
-    /// The model's tokens for a stretch (its frames counted from the stretch's start). A streaming model hears a
-    /// stretch's first sounds only with some sound before them, and says its last words only once more sound follows:
-    /// the stretch is read with silence around it (LEAD before, TAIL after), and its frames counted from its own start.
-    fn tokens(&mut self, samples: &[f32]) -> Result<Vec<Token>> {
-        let mut padded = vec![0.0_f32; LEAD];
-        padded.extend(normalized(samples));
-        padded.extend(std::iter::repeat_n(0.0, TAIL));
-        let out = self.model.transcribe_audio_with_tokens(&padded).map_err(|e| anyhow::anyhow!("speech recognition failed: {e}"))?;
-        let lead = LEAD / (RATE as f64 * contract::FRAME_SECONDS) as usize;
-        Ok(out.into_iter().map(|t| Token { text: t.text, logprob: t.logprob, frame: t.local_frame.saturating_sub(lead) }).collect())
-    }
-
-    /// The language the model is surest of, from the first TRIAL_SECONDS of speech.
-    pub fn language(&mut self, samples: &[f32], stretches: &[(usize, usize)]) -> Result<&'static str> {
-        let mut trial = Vec::new();
-        for (a, b) in stretches {
-            trial.extend_from_slice(&samples[*a..*b]);
-            if trial.len() as f64 >= TRIAL_SECONDS * RATE as f64 {
-                break;
-            }
-        }
-        if trial.is_empty() {
-            return Ok(LANGUAGES[0]);
-        }
-        let mut trials = Vec::new();
-        for lang in LANGUAGES {
-            self.model.set_target_lang(lang).map_err(|e| anyhow::anyhow!("{e}"))?;
-            trials.push((lang, self.tokens(&trial)?));
-        }
-        let pick = contract::pick_language(&trials);
-        Ok(LANGUAGES.into_iter().find(|l| *l == pick).unwrap_or(LANGUAGES[0]))
-    }
-
     /// The whole recording (16 kHz mono): its transcript in the catalog's contract. `progress` gets the stage and 0…1.
     pub fn transcribe(&mut self, samples: &[f32], progress: &mut dyn FnMut(&str, f64)) -> Result<Value> {
         let stretches = self.speech(samples, VadParams::default(), &mut |p| progress("finding speech", p))?;
-        progress("telling the language", 0.0);
-        let lang = self.language(samples, &stretches)?;
-        self.model.set_target_lang(lang).map_err(|e| anyhow::anyhow!("{e}"))?;
         let total: usize = stretches.iter().map(|(a, b)| b - a).sum::<usize>().max(1);
         let mut done = 0;
         let mut out = Vec::with_capacity(stretches.len());
         for (a, b) in &stretches {
             progress("transcribing", done as f64 / total as f64);
-            let tokens = self.tokens(&samples[*a..*b])?;
+            let tokens = self.model.tokens(&normalized(&samples[*a..*b]))?;
             let offset = *a as f64 / RATE as f64;
             out.push((offset, *b as f64 / RATE as f64, contract::words(&tokens, offset)));
             done += b - a;
         }
         progress("transcribing", 1.0);
-        Ok(contract::transcript(MODEL, lang, &out))
+        Ok(contract::transcript(MODEL, LANGUAGE, &out))
     }
-}
-
-/// The model folder holds what the recognizer needs?
-pub fn complete(dir: &Path) -> bool {
-    ["config.json", "encoder.onnx", "encoder.onnx.data", "decoder_joint.onnx", "tokenizer.model"].iter().all(|f| dir.join(f).is_file())
 }
 
 /// A 16 kHz mono 16-bit or float WAV (the tests' sound).
@@ -182,7 +132,7 @@ mod tests {
         assert!((loud[0] - 0.7).abs() < 1e-6);
     }
 
-    /// The real models on a spoken sentence (VAULT_ASR_MODELS: a folder with nemotron/ and silero_vad.onnx;
+    /// The real models on a spoken sentence (VAULT_ASR_MODELS: a folder with phonon-2/ and silero_vad.onnx;
     /// VAULT_ASR_WAV: a 16 kHz WAV; VAULT_ASR_EXPECT: words it must contain) — skipped without them. Prints the
     /// real-time factor.
     #[test]
@@ -192,8 +142,8 @@ mod tests {
             return;
         };
         let dir = PathBuf::from(dir);
-        let models = Models { nemotron: dir.join("nemotron"), vad: dir.join("silero_vad.onnx") };
-        assert!(complete(&models.nemotron));
+        let models = Models { speech: dir.join("phonon-2"), vad: dir.join("silero_vad.onnx") };
+        assert!(tdt::complete(&models.speech));
         let samples = read_wav(Path::new(&wav)).unwrap();
         let started = std::time::Instant::now();
         let mut r = Recognizer::open(&models).unwrap();

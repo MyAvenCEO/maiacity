@@ -35,7 +35,8 @@ the terminal is signed in with `bun media login --local`. `FAL_API_KEY` lives in
    Log 2 clip); an HD proxy in the same log encoding is made. Originals are never re-encoded.
 3. **Edit** tab: cut on proxies and the live world, then **Lock the edit** (the cut is then fixed; unlock = version
    n+1). **+ Variant** branches the edit under the project's next letter.
-4. **Grade** tab: originals swapped in (conform), clip CDLs + the film's look (presets), scopes; **Hero frame**
+4. **Grade** tab: originals swapped in (conform); the base correction first (every shot balanced to its scene's
+   master, `grading.md`), then clip CDLs + the film's look (presets); **Hero frame**
    renders the frame at the playhead at full size, 16-bit, through the whole chain — judge the grade on it.
 5. **Render** tab: **⤓ Render** (or the MCP tool `render_queue`). **The Mac app is the render worker**: maiaCITY
    Studio claims the job with its key and renders it natively (`vault/app/src/render.rs` → `vault/crates/vault-render`:

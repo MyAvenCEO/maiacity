@@ -14,7 +14,7 @@
 //     cues:     [{ at, kind: 'sound', hash, level } | { at, kind: 'event', name, args }],  on the shot's clock (seconds)
 //     shutter:  { angle: 180, samples: 1 },     motion blur: the shutter open for angle/360 of a frame, in samples
 //     framing:  { [shape]: { fov?, yaw?, pitch?, dx?, dy? } },  a native camera per delivery shape (else the rule)
-//     look?:    preset name (game/film/color.js PRESETS) — the grade it was lit for; a suggestion, never applied here
+//     look?:    preset name (vault-render `grade::PRESETS`) — the grade it was lit for; a suggestion, never applied here
 //     meta?:    { … }                           notes (size, scene, where it came from): not part of the picture
 //   }
 //
@@ -53,7 +53,7 @@ export const SHAPES = /** @type {Record<Shape, number>} */ ({ '1:1': 1, '16:9': 
 export const LIGHTS = /** @type {LightId[]} */ (['sun', 'fill', 'glow', 'lamps', 'sky']);
 /** The sets a shot can build into the world (scripts/film/props.mjs). */
 export const SETS = ['tired-land'];
-/** The looks a shot may suggest (game/film/color.js PRESETS). */
+/** The looks a shot may suggest (vault-render `grade::PRESETS`). */
 export const LOOKS = ['neutral', 'cold', 'dip', 'bright', 'night', 'warm'];
 
 export class ShotError extends Error {}

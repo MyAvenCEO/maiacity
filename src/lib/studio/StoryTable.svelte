@@ -115,7 +115,7 @@
 		const c = m.meta?.color as { profile?: string; override?: string } | undefined;
 		return c?.override ?? c?.profile ?? '';
 	};
-	// ── the automatic steps after the ingest: the words (on this Mac, Nemotron) and the tags (the server, Qwen) ──
+	// ── the automatic steps after the ingest: the words (on this Mac, Phonon-2) and the tags (the server, Qwen) ──
 	const wantsWords = (m: MediaItem) => !proxyOf(m) && m.meta?.role !== 'audio' && hasSound(m);
 	// as the server picks them (analyse.rs `wants`): pictures and films that are not working files
 	const wantsTags = (m: MediaItem) =>
@@ -318,7 +318,7 @@
 						<th>File (BLAKE3)</th>
 						<th>Came in as · title</th>
 						<th>Colour · proxy</th>
-						<th class="c step" title="The words: transcribed on this Mac, on-device (Nemotron) — by itself after the ingest">Words</th>
+						<th class="c step" title="The words: transcribed on this Mac, on-device (Phonon-2) — by itself after the ingest">Words</th>
 						<th class="c step" title="The tags, cues and thumbnail: the shot analysis on the server (Qwen, confidential)">Tags</th>
 						<th>Class</th>
 						<th class="r">Size</th>

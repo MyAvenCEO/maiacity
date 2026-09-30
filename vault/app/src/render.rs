@@ -381,50 +381,163 @@ pub async fn measure_clips(vault: &Arc<Vault>, timeline: &Value, ids: Option<Vec
     Ok(out)
 }
 
-/// Every shot's balance to level them to each other (vault_render `grade::fit`): to the reference clip as it is
-/// balanced now, to neutral (grey middle tones, the middle at 18 %), else to the shots' average. Returns the target
-/// and each shot's proposed balance; writes nothing.
-pub async fn propose_balances(vault: &Arc<Vault>, timeline: &Value, ids: Option<Vec<String>>, reference: Option<String>, neutral: bool) -> Res<Value> {
-    use vault_render::grade::{MATCH_AT, PIVOT, fit};
-    let shots = measure_clips(vault, timeline, ids, 5).await?;
-    let ok: Vec<&Value> = shots.iter().filter(|s| s.get("error").is_none()).collect();
-    if ok.is_empty() {
-        return Err(format!("nothing could be measured: {}", json!(shots)));
-    }
-    let at = |s: &Value, p: &str| s.pointer(p).and_then(Value::as_f64).unwrap_or(0.0);
-    let avg = |p: &str| ok.iter().map(|s| at(s, p)).sum::<f64>() / ok.len() as f64;
-    let (target, against) = match &reference {
-        Some(id) => {
-            let r = ok.iter().find(|s| s["clip"].as_str() == Some(id)).ok_or("the reference clip was not measured")?;
-            (r["balanced"].clone(), format!("clip {id}"))
-        }
-        None => {
-            let luma: serde_json::Map<String, Value> = MATCH_AT.iter().map(|p| (p.to_string(), json!(avg(&format!("/balanced/luma/{p}"))))).collect();
-            let mut target = json!({ "luma": luma, "to_grey": { "temp": avg("/balanced/to_grey/temp"), "tint": avg("/balanced/to_grey/tint") } });
-            if neutral {
-                let shift = PIVOT - target["luma"]["p50"].as_f64().unwrap_or(PIVOT);
-                for p in MATCH_AT {
-                    target["luma"][p] = json!(target["luma"][p].as_f64().unwrap_or(0.0) + shift);
-                }
-                target["to_grey"] = json!({ "temp": 0.0, "tint": 0.0 });
-                (target, "neutral".to_string())
-            } else {
-                (target, "the shots' average".to_string())
-            }
-        }
+/// The V1 picture clips named (in that order), else every one with a file, as the render reads them.
+fn picture_clips(t: &Timeline, ids: &Option<Vec<String>>) -> Res<Vec<Clip>> {
+    let v1: Vec<&Clip> = t.clips.iter().filter(|c| c.track == "V1" && c.hash.is_some() && !c.is_world()).collect();
+    let clips: Vec<Clip> = match ids {
+        Some(ids) => ids.iter().map(|id| v1.iter().find(|c| &c.id == id).map(|c| (*c).clone()).ok_or(format!("no picture clip {id} with a file on this timeline"))).collect::<Res<_>>()?,
+        None => v1.into_iter().cloned().collect(),
     };
-    let proposed: Vec<Value> = ok
-        .iter()
-        .map(|s| {
-            let id = s["clip"].as_str().unwrap_or_default();
-            if reference.as_deref() == Some(id) {
-                return json!({ "clip": id, "name": s["name"], "balance": s["balance"], "note": "the reference: kept as it is" });
+    if clips.is_empty() {
+        return Err("no picture clip with a file to read".into());
+    }
+    Ok(clips)
+}
+
+/// Every clip named read for the base correction (vault_render `look`): its elements — blacks, whites, the middle, the
+/// skin Vision finds (or the regions named) — as shot and balanced, from its 4K grading still (else its original's
+/// frame; never a proxy), through the ACES 2.0 output. `balances` stand in for clips' own (a proposal read before it
+/// is written). A clip that can't be read comes back as its error.
+pub async fn look_clips(
+    vault: &Arc<Vault>,
+    timeline: &Value,
+    ids: Option<Vec<String>>,
+    regions: HashMap<String, vault_render::look::Regions>,
+    balances: HashMap<String, vault_render::grade::Balance>,
+) -> Res<Vec<Result<vault_render::look::Look, Value>>> {
+    let t: Timeline = serde_json::from_value(timeline.clone()).map_err(err)?;
+    let clips = picture_clips(&t, &ids)?;
+    let dir = vault.ingest_dir().join(format!("look-{}", std::process::id()));
+    let lib = Arc::new(Vaulted::new(vault, dir.clone()).await?);
+    let out = tauri::async_runtime::spawn_blocking(move || {
+        clips
+            .iter()
+            .map(|c| {
+                let r = regions.get(&c.id).cloned().unwrap_or_default();
+                objc2::rc::autoreleasepool(|_| vault_render::look::look(&t, &*lib, c, odt(), &r, balances.get(&c.id)))
+                    .map_err(|e| json!({ "clip": c.id, "error": format!("{e:#}") }))
+            })
+            .collect::<Vec<_>>()
+    })
+    .await
+    .map_err(err)?;
+    std::fs::remove_dir_all(&dir).ok();
+    Ok(out)
+}
+
+/// What a V1 clip is called on the sheet: its script's label or description, else its file's title.
+fn clip_label(timeline: &Value, id: &str) -> String {
+    let c = timeline["clips"].as_array().and_then(|cs| cs.iter().find(|c| c["id"].as_str() == Some(id)));
+    let s = |k: &str| c.and_then(|c| c["script"][k].as_str()).filter(|s| !s.is_empty()).map(String::from);
+    let what = s("label").or_else(|| s("description")).unwrap_or_default();
+    let scene = s("scene").unwrap_or_default();
+    [scene, what].into_iter().filter(|s| !s.is_empty()).collect::<Vec<_>>().join(" · ")
+}
+
+/// The scope sheet of the clips named (the first is the reference), after their balances: each shot's picture with its
+/// skin box, its waveform, RGB parade and vectorscope with the skin line — a PNG at `png`. Returns what each row is.
+pub async fn scope_sheet(vault: &Arc<Vault>, timeline: &Value, ids: Vec<String>, regions: HashMap<String, vault_render::look::Regions>, png: PathBuf) -> Res<Value> {
+    let looks = look_clips(vault, timeline, Some(ids), regions, HashMap::new()).await?;
+    let mut rows = Vec::new();
+    let mut ok = Vec::new();
+    for (i, l) in looks.into_iter().enumerate() {
+        match l {
+            Ok(l) => {
+                let b = &l.json["balanced"];
+                let n = |p: &str| b.pointer(p).and_then(Value::as_f64).map(|v| format!("{v}")).unwrap_or_else(|| "–".into());
+                let skin = if b["skin"].is_null() { "no face".to_string() } else { format!("skin {} IRE {}° ({:+}°) sat {}", n("/skin/ire"), n("/skin/hue"), b["skin"]["off_skin_line"].as_f64().unwrap_or(0.0), n("/skin/chroma")) };
+                let text = format!(
+                    "{}{} · {} — blacks {} · mid {} · whites {} IRE · {} · clipped {}%",
+                    if i == 0 { "REFERENCE · " } else { "" },
+                    clip_label(timeline, &l.clip),
+                    &l.clip[..l.clip.len().min(8)],
+                    n("/levels/p1"),
+                    n("/levels/p50"),
+                    n("/levels/p99"),
+                    skin,
+                    n("/clipped_pct"),
+                );
+                rows.push(json!({ "clip": l.clip, "label": text, "balance": l.json["balance"], "from": l.json["from"] }));
+                ok.push((l, text));
             }
-            json!({ "clip": id, "name": s["name"], "balance": fit(&s["as_shot"], &target), "as_shot": { "luma": s["as_shot"]["luma"], "to_grey": s["as_shot"]["to_grey"] } })
+            Err(e) => rows.push(e),
+        }
+    }
+    if ok.is_empty() {
+        return Err(format!("no shot could be read: {}", json!(rows)));
+    }
+    let path = png.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let refs: Vec<(&vault_render::look::Look, String)> = ok.iter().map(|(l, t)| (l, t.clone())).collect();
+        let (px, w, h) = vault_render::look::scopes(&refs).map_err(err)?;
+        if let Some(d) = path.parent() {
+            std::fs::create_dir_all(d).map_err(err)?;
+        }
+        let file = std::fs::File::create(&path).map_err(err)?;
+        let mut enc = png::Encoder::new(std::io::BufWriter::new(file), w, h);
+        enc.set_color(png::ColorType::Rgb);
+        enc.set_depth(png::BitDepth::Eight);
+        enc.write_header().and_then(|mut wr| wr.write_image_data(&px)).map_err(err)?;
+        Ok::<_, String>(())
+    })
+    .await
+    .map_err(err)??;
+    Ok(json!({ "png": png, "rows": rows }))
+}
+
+/// The base correction's balances (story-producer `grading.md`), proposed from the shots' elements — written by the
+/// caller only when asked. `neutral`: each clip's own neutrals to grey, then `warmth` stops warmer (a scene master);
+/// else every clip levelled to `reference` as it is balanced now (the scene master), by the blacks, whites, middle and
+/// skin both have (less each clip's `skip`).
+#[allow(clippy::too_many_arguments)]
+pub async fn propose_balances(
+    vault: &Arc<Vault>,
+    timeline: &Value,
+    ids: Option<Vec<String>>,
+    reference: Option<String>,
+    neutral: bool,
+    warmth: f64,
+    regions: HashMap<String, vault_render::look::Regions>,
+    skip: HashMap<String, Vec<String>>,
+) -> Res<Value> {
+    use vault_render::look::{fit, neutral as to_neutral, predict, target};
+    let out = odt();
+    let r = |b: &vault_render::grade::Balance| serde_json::to_value(b).unwrap_or_default();
+    if neutral {
+        let looks = look_clips(vault, timeline, ids, regions, HashMap::new()).await?;
+        let shots: Vec<Value> = looks
+            .into_iter()
+            .map(|l| match l {
+                Ok(l) => {
+                    let now: vault_render::grade::Balance = serde_json::from_value(l.json["balance"].clone()).unwrap_or_default();
+                    let (b, used) = to_neutral(&l, out, &now, warmth);
+                    json!({ "clip": l.clip, "balance": r(&b), "neutral_by": used, "warmth": warmth, "as_shot": l.json["as_shot"], "now": l.json["balanced"], "predicted": predict(&l, out, &b) })
+                }
+                Err(e) => e,
+            })
+            .collect();
+        return Ok(json!({ "target": format!("neutral, then {warmth:+} stops warmer"), "shots": shots }));
+    }
+    let reference = reference.ok_or("name the scene's master as the reference: shots are matched to it, never to an average")?;
+    let mut ids = ids.unwrap_or_else(|| {
+        timeline["clips"].as_array().into_iter().flatten().filter(|c| c["track"] == "V1" && c["hash"].is_string() && c["kind"] != "world").filter_map(|c| c["id"].as_str().map(String::from)).collect()
+    });
+    ids.retain(|id| id != &reference);
+    ids.insert(0, reference.clone());
+    let mut looks = look_clips(vault, timeline, Some(ids), regions, HashMap::new()).await?.into_iter();
+    let master = looks.next().ok_or("the reference wasn't read")?.map_err(|e| format!("the reference can't be read: {e}"))?;
+    let master_balance: vault_render::grade::Balance = serde_json::from_value(master.json["balance"].clone()).unwrap_or_default();
+    let want = target(&master, out, &master_balance);
+    let shots: Vec<Value> = looks
+        .map(|l| match l {
+            Ok(l) => {
+                let (b, used) = fit(&l, &want, out, skip.get(&l.clip).map(Vec::as_slice).unwrap_or(&[]));
+                json!({ "clip": l.clip, "balance": r(&b), "matched_by": used, "as_shot": l.json["as_shot"], "predicted": predict(&l, out, &b) })
+            }
+            Err(e) => e,
         })
         .collect();
-    let errors: Vec<&Value> = shots.iter().filter(|s| s.get("error").is_some()).collect();
-    Ok(json!({ "target": against, "target_stats": target, "shots": proposed, "errors": errors }))
+    Ok(json!({ "target": format!("clip {reference} as it is balanced now"), "reference": { "clip": reference, "balance": r(&master_balance), "elements": predict(&master, out, &master_balance) }, "shots": shots }))
 }
 
 /// How each sound clip of a timeline sounds (vault_render `measure_sound`): loudness, true peak, a curve to draw, the
