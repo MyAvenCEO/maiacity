@@ -33,6 +33,12 @@ pub async fn publish(db: &Client, key: &str, value: &str) -> Result<()> {
 
 /// One catalog entry's description, mirrored.
 pub async fn mirror(db: &Client, meta: &serde_json::Value, stored: bool) -> Result<()> {
+    // a deleted file is no row at all: not listed, not served
+    if meta.pointer("/meta/deleted").is_some_and(|d| !d.is_null()) {
+        let hash = meta.get("hash").and_then(|v| v.as_str()).unwrap_or("");
+        db.execute("DELETE FROM vault_files WHERE hash = $1", &[&hash]).await?;
+        return Ok(());
+    }
     // Postgres keeps no NUL in text or jsonb (some cameras write them into their metadata): dropped here
     let meta = &without_nul(meta.clone());
     let s = |k: &str| meta.get(k).and_then(|v| v.as_str()).unwrap_or("").to_string();

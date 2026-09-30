@@ -63,10 +63,11 @@ fn ms(x: f64) -> f64 {
     (x * 1000.0).round() / 1000.0
 }
 
-/// Does this file get an audio proxy (and words)? A video or a sound that is an original or a working file — never a
-/// proxy (the audio proxies themselves included) or a delivery.
+/// Does this file get its sound record (its start timecode)? A video or a sound that is an original or a working
+/// file — never a proxy or a delivery, nor a deleted file.
 pub fn wants(meta: &Value) -> bool {
-    matches!(s(meta, "class"), "" | "default" | "original")
+    meta.pointer("/meta/deleted").is_none_or(|d| d.is_null())
+        && matches!(s(meta, "class"), "" | "default" | "original")
         && matches!(s(meta, "kind"), "video" | "audio")
         && !matches!(meta.pointer("/meta/role").and_then(|r| r.as_str()), Some("audio" | "model"))
 }
