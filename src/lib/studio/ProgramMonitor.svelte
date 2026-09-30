@@ -35,11 +35,15 @@
 	const still = $derived(s.showStill ? s.stillOf(pic) : null);
 	/** @type {HTMLImageElement | null} */
 	let stillImg = $state(null);
-	// Grade, playing: the Mac plays the picture through the whole grade (the render's chain on Metal, secondaries and
-	// finishing too), laid over the viewer's picture; the sound stays the studio's, the player follows its clock
+	// Grade: the Mac's player IS the picture — playing, and paused on the frame under the playhead. The frozen frame is
+	// the same player, the same composition (the render's chain on Metal, secondaries and finishing too) and the same
+	// display as the playing one: nothing swaps on stop or start. Scrubbing moves it; a change to the grade loads it
+	// again a moment after. Only the grading still (Picture: Still, paused) is a picture of its own; a world shot, a slate
+	// or an image shows the viewer. The sound stays the studio's; the player follows its clock.
 	/** @type {HTMLDivElement | null} */
 	let frameEl = $state(null);
-	const nativePlay = $derived(s.tab === 'grade' && s.playing && !s.falseColor);
+	const onFilm = $derived(!!pic && !isWorld(pic) && pic.kind !== 'slate' && !!pic.hash && s.pictureItem?.kind === 'video');
+	const layerWanted = $derived(s.tab === 'grade' && !s.falseColor && onFilm && (s.playing || s.gradeOn !== 'stills'));
 	/** @param {string} name @param {Record<string, unknown>} args */
 	const mac = async (name, args) => {
 		try {
@@ -49,15 +53,22 @@
 			console.warn(`playback: ${name}:`, e);
 		}
 	};
-	const playKey = $derived(s.tab === 'grade' ? JSON.stringify([s.current?.id, s.viewShape, s.current?.grade ?? null, s.clips.filter((c) => c.track === 'V1')]) : '');
+	const playKey = $derived(s.tab === 'grade' ? JSON.stringify([s.current?.id, s.viewShape, s.gradeOn === 'originals', s.current?.grade ?? null, s.clips.filter((c) => c.track === 'V1')]) : '');
 	let loaded = '';
 	const place = () => {
 		const r = frameEl?.getBoundingClientRect();
 		if (r) void mac('player_view', { rect: [r.left, r.top, r.width, r.height] });
 	};
-	// the handovers, so the picture never drops to the webview's own preview in between: playing, the Mac's layer
-	// shows once it plays (until then the last still stays); stopped, the layer stays (the player paused on the same
-	// frame, through the same chain) until the Mac's still of that frame is on screen
+	/** @param {string} key */
+	const load = async (key) => {
+		if (loaded === key) return;
+		const clips = s.clips.filter((c) => c.track === 'V1' && c.hash);
+		const files = Object.fromEntries(clips.map((c) => [c.id, s.playItem(c)?.hash ?? c.hash]));
+		const profiles = Object.fromEntries(clips.map((c) => [c.id, s.profileOfClip(c)]));
+		await mac('player_load', { timeline: $state.snapshot(s.current), shape: s.viewShape, files, profiles, width: 1280 });
+		loaded = key;
+	};
+	// going to the grading still (paused on Still), the layer stays until the still is on screen; anywhere else it goes
 	let layerUp = $state(false);
 	let handover = false;
 	const layerDown = () => {
@@ -68,49 +79,65 @@
 	const shown = () => {
 		if (handover) layerDown();
 	};
+	// the player loaded (again, a moment after the grade changes) and shown wherever it is the picture
 	$effect(() => {
-		if (!nativePlay) {
-			const at = untrack(() => s.time);
-			void mac('player_pause', { time: at });
-			if (!untrack(() => layerUp) || !untrack(() => nativeKey)) return void layerDown();
+		if (!layerWanted) {
+			void mac('player_pause', { time: untrack(() => s.time) });
+			if (!untrack(() => layerUp)) return;
+			if (!untrack(() => nativeKey)) return void layerDown();
 			handover = true;
 			// never longer than this, whatever becomes of the still
 			const t = setTimeout(shown, 1500);
 			return () => clearTimeout(t);
 		}
-		const key = untrack(() => playKey);
-		// read without tracking: an edit while it plays doesn't restart the player (the next play picks it up)
-		void untrack(() => (async () => {
-			if (loaded !== key) {
-				const clips = s.clips.filter((c) => c.track === 'V1' && c.hash);
-				const files = Object.fromEntries(clips.map((c) => [c.id, s.playItem(c)?.hash ?? c.hash]));
-				const profiles = Object.fromEntries(clips.map((c) => [c.id, s.profileOfClip(c)]));
-				await mac('player_load', { timeline: $state.snapshot(s.current), shape: s.viewShape, files, profiles, width: 1280 });
-				loaded = key;
-			}
-			await mac('player_play', { time: untrack(() => s.time) });
-			// its first frames made before its layer shows (no black between the still and the playing picture)
+		const key = playKey;
+		let live = true;
+		const t = setTimeout(async () => {
+			await load(key);
+			if (!live) return;
+			await mac(untrack(() => s.playing) ? 'player_play' : 'player_pause', { time: untrack(() => s.time) });
+			if (untrack(() => layerUp)) return;
+			// its first frame made before its layer shows (no black between the picture before and this one)
 			await new Promise((r) => setTimeout(r, 120));
-			if (!untrack(() => nativePlay)) return;
+			if (!live) return;
 			handover = false;
 			place();
 			layerUp = true;
-			// the still it covers is let go: stopping shows the new frame's, never this one again
+			// the still it covers is let go: going back to it shows a new one, never this one again
 			nativeUrl = null;
-		})());
-		// kept on the studio's clock, and on the picture when the window moves or resizes
-		const id = setInterval(() => void mac('player_sync', { time: untrack(() => s.time) }), 1000);
-		const ro = new ResizeObserver(place);
+		}, loaded === key ? 0 : 150);
+		return () => ((live = false), clearTimeout(t));
+	});
+	// play and stop with the studio: the same player either way
+	$effect(() => {
+		const playing = s.playing;
+		if (!untrack(() => layerWanted) || !untrack(() => layerUp)) return;
+		void mac(playing ? 'player_play' : 'player_pause', { time: untrack(() => s.time) });
+	});
+	// stopped, it follows the playhead frame by frame (scrubbing)
+	$effect(() => {
+		if (!layerWanted || s.playing) return;
+		const at = Math.round(s.time * 30) / 30;
+		if (!untrack(() => layerUp)) return;
+		const t = setTimeout(() => void mac('player_pause', { time: at }), 16);
+		return () => clearTimeout(t);
+	});
+	// playing, it keeps to the studio's clock; always on the picture when the window moves or resizes
+	$effect(() => {
+		if (!layerWanted) return;
+		const id = setInterval(() => untrack(() => s.playing) && void mac('player_sync', { time: untrack(() => s.time) }), 1000);
+		const ro = new ResizeObserver(() => untrack(() => layerUp) && place());
 		if (frameEl) ro.observe(frameEl);
-		window.addEventListener('resize', place);
-		return () => (clearInterval(id), ro.disconnect(), window.removeEventListener('resize', place));
+		const onResize = () => untrack(() => layerUp) && place();
+		window.addEventListener('resize', onResize);
+		return () => (clearInterval(id), ro.disconnect(), window.removeEventListener('resize', onResize));
 	});
 	// Grade, paused: the picture the Mac makes through the whole grade — secondaries, looks, finishing, what the render
 	// makes — over the live preview, a moment after anything about it changes. Still, proxy or original: the same chain,
 	// only the frame it starts from differs (the still; the proxy's or the original's frame under the playhead)
 	let nativeUrl = $state(/** @type {string | null} */ (null));
 	const nativeSrc = $derived.by(() => {
-		if (!pic || s.falseColor || s.tab !== 'grade' || s.playing || isWorld(pic)) return null;
+		if (!pic || s.falseColor || s.tab !== 'grade' || s.playing || isWorld(pic) || layerWanted) return null;
 		if (still) return still.hash;
 		if (s.pictureItem?.kind !== 'video') return null;
 		const it = s.playItem(pic);
@@ -270,7 +297,7 @@
 			bind:plan
 			bind:supported={gl}
 		/>
-		{#if nativeUrl && (nativeKey || (nativePlay && !layerUp))}
+		{#if nativeUrl && (nativeKey || (layerWanted && !layerUp))}
 			<img class="native" src={nativeUrl} alt="" onload={shown} />
 		{/if}
 		{#if pic?.kind === 'slate'}

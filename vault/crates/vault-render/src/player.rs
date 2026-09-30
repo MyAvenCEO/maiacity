@@ -64,13 +64,9 @@ thread_local! {
 }
 
 impl Program {
-    /// The clip on screen at `t` seconds of the film.
-    fn at(&self, t: f64) -> Option<&PlayClip> {
-        self.clips.iter().find(|p| t >= p.clip.start - 1e-6 && t < p.clip.start + p.clip.dur - 1e-6)
-    }
-
-    /// One frame: the source frame the composition decoded (its file's code values), through the whole chain.
-    fn frame(&self, src: &objc2_core_image::CIImage, t: f64) -> Result<(crate::gpu::Image, Retained<objc2_core_image::CIContext>)> {
+    /// One frame: the source frame the composition decoded (its file's code values), turned upright by its file's own
+    /// transform (`turns`, per clip: the composition hands frames over as they are stored), through the whole chain.
+    fn frame(&self, src: &objc2_core_image::CIImage, t: f64, turns: &[objc2_core_foundation::CGAffineTransform]) -> Result<(crate::gpu::Image, Retained<objc2_core_image::CIContext>)> {
         GPU.with(|cell| {
             let mut cell = cell.borrow_mut();
             if cell.is_none() {
@@ -80,10 +76,14 @@ impl Program {
             }
             let (gpu, cubes, tracks) = cell.as_mut().unwrap();
             let (w, h) = (self.width, self.height);
-            let Some(p) = self.at(t) else {
+            let Some((i, p)) = self.clips.iter().enumerate().find(|(_, p)| t >= p.clip.start - 1e-6 && t < p.clip.start + p.clip.dur - 1e-6) else {
                 return Ok((gpu.black(w, h), gpu.context()));
             };
-            let cct = gpu.journey(src, p.journey)?;
+            let upright = match turns.get(i) {
+                Some(turn) => gpu.orient(src, *turn),
+                None => objc2::Message::retain(src),
+            };
+            let cct = gpu.journey(&upright, p.journey)?;
             let framed = gpu.frame_to(&cct, w, h, p.clip.frame_for(&self.aspect))?;
             if let Some(lut) = &p.looks
                 && !cubes.contains_key(&p.clip.id)
@@ -125,11 +125,17 @@ pub fn composition(program: Arc<Program>) -> Result<(Retained<AVMutableCompositi
         let comp = AVMutableComposition::composition();
         let media = AVMediaTypeVideo.context("no video media type")?;
         let track = comp.addMutableTrackWithMediaType_preferredTrackID(media, 0).context("no video track")?;
+        // each clip's file's own transform (a camera held upside down writes a turn, not turned pixels)
+        let mut turns = Vec::with_capacity(program.clips.len());
         for p in &program.clips {
             let asset = p.source.asset()?;
             #[allow(deprecated)]
             let tracks = asset.tracksWithMediaType(media);
-            let Some(src) = tracks.firstObject() else { continue };
+            let Some(src) = tracks.firstObject() else {
+                turns.push(objc2_core_foundation::CGAffineTransform { a: 1.0, b: 0.0, c: 0.0, d: 1.0, tx: 0.0, ty: 0.0 });
+                continue;
+            };
+            turns.push(src.preferredTransform());
             let range = CMTimeRange { start: cmtime(p.clip.in_), duration: cmtime(p.clip.dur) };
             track.insertTimeRange_ofTrack_atTime_error(range, &src, cmtime(p.clip.start)).map_err(|e| anyhow::anyhow!("clip {}: {e:?}", p.clip.id))?;
         }
@@ -138,7 +144,7 @@ pub fn composition(program: Arc<Program>) -> Result<(Retained<AVMutableCompositi
             let req = req.as_ref();
             let t = req.compositionTime().seconds();
             let src = req.sourceImage();
-            objc2::rc::autoreleasepool(|_| match prog.frame(&src, t) {
+            objc2::rc::autoreleasepool(|_| match prog.frame(&src, t, &turns) {
                 Ok((img, ctx)) => req.finishWithImage_context(&img, Some(&ctx)),
                 Err(e) => {
                     tracing_warn(&format!("playback at {t:.2} s: {e:#}"));
