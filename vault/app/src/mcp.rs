@@ -132,6 +132,34 @@ pub struct SearchArgs {
 }
 
 #[derive(Deserialize, schemars::JsonSchema)]
+pub struct AnalysisArgs {
+    /// the file's BLAKE3 hash (64 hex) — an original; its proxy's, audio proxy's or thumbnail's hash works too
+    pub hash: String,
+    /// only the cues and stretches between these seconds of the file
+    pub from: Option<f64>,
+    pub to: Option<f64>,
+}
+
+#[derive(Deserialize, schemars::JsonSchema)]
+pub struct FindShotsArgs {
+    /// words to find — in a cue's label, note or why, in what is said in its range, in the file's summary and tags,
+    /// e.g. "window light", "laughs", "opening line"
+    pub query: Option<String>,
+    /// base tags (game/film/vocabulary.json), each one value or a list of any: {"shot_size": ["CU", "ECU"],
+    /// "scene": "dialogue", "location": "exterior", "people": 1}. A file matches where its tags do, or only in the
+    /// stretches whose tags do
+    pub tags: Option<serde_json::Map<String, Value>>,
+    /// only these cue kinds: take, action, emotion, cut, transition, highlight, problem (none: all but problems)
+    pub kinds: Option<Vec<String>>,
+    /// only in this story (its id)
+    pub story: Option<String>,
+    /// only cues at least this sure (0…1)
+    pub min_confidence: Option<f64>,
+    /// at most this many ranges (default 20)
+    pub limit: Option<usize>,
+}
+
+#[derive(Deserialize, schemars::JsonSchema)]
 pub struct IdArg {
     pub id: String,
 }
@@ -248,11 +276,13 @@ impl Studio {
         }))
     }
 
-    #[tool(description = "Every file in the vault's catalog with its description (hash, size, mime, kind, title, tags, public, meta)")]
+    #[tool(
+        description = "Every file in the vault's catalog with its description (hash, size, mime, kind, title, tags, public, meta) — its transcript and shot analysis in brief (meta.transcript, meta.analysis: the `transcript` and `analysis` tools give them whole), meta.thumbnail (a small JPEG of its best frame)"
+    )]
     async fn library_list(&self, Parameters(f): Parameters<Filter>) -> String {
         let r = async {
             self.signed_in()?;
-            let list = self.vault.catalog.list().await.map_err(|e| e.to_string())?;
+            let list = self.vault.catalog.list_view().await.map_err(|e| e.to_string())?;
             let list: Vec<_> = list
                 .into_iter()
                 .filter(|m| f.kind.as_ref().is_none_or(|k| &m.kind == k))
@@ -261,6 +291,9 @@ impl Studio {
                     // a transcript is said, not listed: its words come with the `transcript` tool
                     if let Some(t) = m.meta.get_mut("transcript") {
                         *t = transcript_summary(t);
+                    }
+                    if let Some(a) = m.meta.get_mut("analysis") {
+                        *a = crate::analysis::summary(a);
                     }
                     m
                 })
@@ -279,12 +312,34 @@ impl Studio {
         let r = async {
             self.signed_in()?;
             let hash: iroh_blobs::Hash = a.hash.parse().map_err(|e| format!("{e}"))?;
-            let mut meta = self.vault.catalog.meta(hash).await.map_err(|e| format!("{e:#}"))?.ok_or("no such file in the catalog")?;
-            // an audio proxy: its original's
-            if let Some(of) = meta.meta.get("audio_of").and_then(|v| v.as_str()).and_then(|h| h.parse::<iroh_blobs::Hash>().ok()) {
-                meta = self.vault.catalog.meta(of).await.map_err(|e| format!("{e:#}"))?.ok_or("the audio proxy's original is not in the catalog")?;
-            }
+            let meta = self.original(hash).await?;
             Ok::<_, String>(transcript_view(&meta, a.from, a.to))
+        };
+        text(r.await)
+    }
+
+    #[tool(
+        description = "Make a recording's words again, here on this Mac (Nemotron 3.5, on-device; what it had is set aside) — queued behind any ingest, one recording at a time; follow it in library_list (meta.transcript_state, meta.transcript_progress)"
+    )]
+    async fn transcribe(&self, Parameters(a): Parameters<HashArg>) -> String {
+        let r = async {
+            self.signed_in()?;
+            let h: iroh_blobs::Hash = a.hash.parse().map_err(|e| format!("{e}"))?;
+            let rec = json!({ "state": "queued", "device": self.vault.endpoint.id().to_string(), "updated": vault_core::ingest::now_iso() });
+            self.vault.catalog.write_record(vault_core::catalog::TRANSCRIPT, h, &rec).await.map_err(|e| format!("{e:#}"))?;
+            crate::transcripts::queue(self.handle.clone(), self.vault.clone(), a.hash.clone());
+            Ok::<_, String>(json!({ "queued": a.hash }))
+        };
+        text(r.await)
+    }
+
+    #[tool(
+        description = "Once, by hand, on one Mac: download the on-device models (Nemotron 3.5 speech, Silero VAD) from where they were published, ingest them into the Models story (the three-hash check) and compare each with the BLAKE3 hash pinned in the app (models.rs). After that every device gets them from our own vault, never from the internet. Answers each file's hash and whether it matches its pin."
+    )]
+    async fn models_import(&self) -> String {
+        let r = async {
+            self.signed_in()?;
+            crate::models::import(&self.vault, &reqwest::Client::new()).await
         };
         text(r.await)
     }
@@ -301,7 +356,7 @@ impl Studio {
             }
             let limit = a.limit.unwrap_or(50).max(1);
             let mut hits = Vec::new();
-            for m in self.vault.catalog.list().await.map_err(|e| format!("{e:#}"))? {
+            for m in self.vault.catalog.list_view().await.map_err(|e| format!("{e:#}"))? {
                 if a.tag.as_ref().is_some_and(|t| !m.tags.contains(t)) || a.story.as_ref().is_some_and(|st| &m.story != st) {
                     continue;
                 }
@@ -315,6 +370,55 @@ impl Studio {
                 }
             }
             Ok(json!({ "phrase": a.phrase, "hits": hits }))
+        };
+        text(r.await)
+    }
+
+    // ── the shot analysis: every picture tagged for the edit (the vault server writes it: analysis/<hash>) ──
+
+    #[tool(
+        description = "A file's shot analysis (Prem's confidential Qwen, run by the vault server once its proxy is in the bucket, in game/film/vocabulary.json's terms): its summary (one line + where it serves an edit best), base tags (shot size, angle, camera movement, lens, depth of field, light, time of day, location, people, who, scene kind, quality flags), free tags, its stretches with their own tags, and its cues — takes (repeated attempts of an action, numbered and ranked, the best marked with why), actions, emotions, cut points, transition opportunities, highlights, problems — each with its start and end in seconds of the file and its timecodes (tc_in, tc_out). from/to narrow it to a clip. Also its state/progress and its thumbnail's hash."
+    )]
+    async fn analysis(&self, Parameters(a): Parameters<AnalysisArgs>) -> String {
+        let r = async {
+            self.signed_in()?;
+            let hash: iroh_blobs::Hash = a.hash.parse().map_err(|e| format!("{e}"))?;
+            let meta = self.original(hash).await?;
+            Ok::<_, String>(crate::analysis::view(&meta, a.from, a.to))
+        };
+        text(r.await)
+    }
+
+    #[tool(
+        description = "Find the best parts of shots across the vault, to cut with: filters on the base tags (e.g. {\"shot_size\": [\"CU\", \"ECU\"], \"scene\": \"dialogue\"}) and words (in the cues, what is said, the summaries), optionally cue kinds (highlight, take, emotion, cut, transition, action, problem), a story, a minimum confidence. Answers the candidate ranges, best first: each with the file (hash, name, story, its proxy and thumbnail), its in and out in seconds of the file and as timecode, the cue's kind, label, why/note, take and rank, and a score (the words found, the confidence, a highlight or best take up, a problem or quality flag down)."
+    )]
+    async fn find_shots(&self, Parameters(a): Parameters<FindShotsArgs>) -> String {
+        let r = async {
+            self.signed_in()?;
+            let tags = a
+                .tags
+                .unwrap_or_default()
+                .into_iter()
+                .map(|(k, v)| {
+                    let vals = match v {
+                        Value::Array(xs) => xs.iter().map(|x| x.as_str().map(String::from).unwrap_or_else(|| x.to_string())).collect(),
+                        Value::String(s) => vec![s],
+                        other => vec![other.to_string()],
+                    };
+                    (k, vals)
+                })
+                .collect();
+            let q = crate::analysis::Query {
+                text: a.query.unwrap_or_default(),
+                tags,
+                kinds: a.kinds.unwrap_or_default(),
+                story: a.story,
+                min_confidence: a.min_confidence.unwrap_or(0.0),
+                limit: a.limit.unwrap_or(20),
+            };
+            let list = self.vault.catalog.list_view().await.map_err(|e| format!("{e:#}"))?;
+            let analysed = list.iter().filter(|m| m.meta.get("analysis").is_some()).count();
+            Ok::<_, String>(json!({ "analysed_files": analysed, "hits": crate::analysis::find(&list, &q) }))
         };
         text(r.await)
     }
@@ -563,7 +667,7 @@ fn start_timecode(meta: &Value) -> Option<(u64, u64, String)> {
 }
 
 /// A moment of the file (seconds) as timecode: the file's start timecode plus the moment.
-fn word_timecode(meta: &Value, seconds: f64) -> Option<String> {
+pub(crate) fn word_timecode(meta: &Value, seconds: f64) -> Option<String> {
     let (start, fps, sep) = start_timecode(meta)?;
     let frames = start + (seconds.max(0.0) * fps as f64).round() as u64;
     let secs = frames / fps;
@@ -606,7 +710,7 @@ fn transcript_view(meta: &vault_core::Meta, from: Option<f64>, to: Option<f64>) 
 }
 
 /// Words as the search compares them: lower case, letters and digits only.
-fn tokens(text: &str) -> Vec<String> {
+pub(crate) fn tokens(text: &str) -> Vec<String> {
     text.split_whitespace()
         .map(|w| w.chars().filter(|c| c.is_alphanumeric()).flat_map(char::to_lowercase).collect::<String>())
         .filter(|w| !w.is_empty())
@@ -699,6 +803,17 @@ mod tests {
 }
 
 impl Studio {
+    /// A file as the studio sees it (its derived records merged in) — and for a proxy, an audio proxy or a thumbnail,
+    /// its original's.
+    async fn original(&self, hash: iroh_blobs::Hash) -> Result<vault_core::Meta, String> {
+        let meta = self.vault.catalog.meta_view(hash).await.map_err(|e| format!("{e:#}"))?.ok_or("no such file in the catalog")?;
+        let of = ["audio_of", "proxy_of", "thumbnail_of"].iter().find_map(|k| meta.meta.get(*k).and_then(|v| v.as_str()).and_then(|h| h.parse::<iroh_blobs::Hash>().ok()));
+        match of {
+            Some(o) => self.vault.catalog.meta_view(o).await.map_err(|e| format!("{e:#}"))?.ok_or_else(|| "its original is not in the catalog".to_string()),
+            None => Ok(meta),
+        }
+    }
+
     /// A vault file on disk for the native media tools (exported from the store into the ingest area).
     async fn export(&self, hex: &str) -> Result<PathBuf, String> {
         let hash: iroh_blobs::Hash = hex.parse().map_err(|e| format!("{e}"))?;
@@ -718,7 +833,8 @@ impl ServerHandler for Studio {
         ServerConfig::new(ServerCapabilities::builder().enable_tools().build()).with_instructions(
             "maiaCITY Studio: the media vault (every file by its BLAKE3 hash) and the whole studio — ingest, library \
              enrichment, probes and proxies, every recording's transcript (words with their times and timecode — find \
-             a phrase to cut by words), timelines (edit, audio), grades, renders and hero frames (rendered \
+             a phrase to cut by words), every picture's shot analysis (tags, takes, cues, highlights — find_shots pulls \
+             the best parts of shots), timelines (edit, audio), grades, renders and hero frames (rendered \
              natively on this Mac), and the content board's deliveries in draft and publish mode. Files are named by \
              hash only.",
         )

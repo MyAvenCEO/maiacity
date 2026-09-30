@@ -3,7 +3,7 @@
 //! when it is on this machine — against the 129³ LUT the render worker baked with OCIO (`cargo test -p vault-media
 //! --release --test aces2 -- --ignored`). Errors in 10-bit code values.
 
-use vault_media::aces2::{OutputTransform, bake_cube};
+use vault_color::aces2::{OutputTransform, bake_cube};
 
 /// input ACEScct, OCIO's display code values
 type Row = ([f64; 3], [f64; 3]);
@@ -55,7 +55,7 @@ fn greys_stay_grey_and_land_where_aces_puts_them() {
     assert_eq!(t.apply([0.0; 3]), [0.0; 3]);
     assert!(t.apply([1.0; 3]).iter().all(|v| (v - 1.0).abs() < 1e-4));
     // 18 % grey → 10 cd/m² on the screen (the tone scale's 10.013 less its flare), BT.1886 code 0.1^(1/2.4) = 0.3831
-    let grey = t.apply([vault_media::cst::to_cct(0.18); 3]);
+    let grey = t.apply([vault_color::cst::to_cct(0.18); 3]);
     assert!(grey.iter().all(|v| (v.powf(2.4) * 100.0 - 10.0).abs() < 0.01), "{grey:?}");
     for i in 0..=20 {
         let v = t.apply([i as f64 / 20.0; 3]);

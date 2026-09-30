@@ -108,6 +108,8 @@ export const isCache = (m) =>
 	typeof m.meta?.proxyOf === 'string' ||
 	typeof m.meta?.proxy_of === 'string' ||
 	typeof m.meta?.audio_of === 'string' ||
+	typeof m.meta?.thumbnail_of === 'string' ||
+	m.meta?.role === 'model' ||
 	typeof m.meta?.plateOf === 'string';
 
 // ── grades as data ────────────────────────────────────────────────────────────────────────────────────────────────

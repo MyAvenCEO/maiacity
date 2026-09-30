@@ -1,0 +1,16 @@
+{
+  "id": "chatcmpl-fixture-frames",
+  "object": "chat.completion",
+  "model": "qwen38-27b",
+  "choices": [
+    {
+      "index": 0,
+      "finish_reason": "stop",
+      "message": {
+        "role": "assistant",
+        "content": "```json\n{\n  \"tags\": {\n    \"shot_size\": \"medium close-up\",\n    \"angle\": \"eye level\",\n    \"movement\": [\"handheld\", \"slow push\"],\n    \"lens\": \"normal\",\n    \"focal_mm\": 35.4,\n    \"dof\": \"shallow\",\n    \"light_source\": [\"natural\", \"practical\"],\n    \"time_of_day\": \"day\",\n    \"contrast\": \"medium\",\n    \"location\": \"interior\",\n    \"location_note\": \"a desk by a window, two screens\",\n    \"people\": 1,\n    \"who\": [\"Samuel\"],\n    \"scene\": [\"monologue to camera\"],\n    \"quality\": [],\n    \"mood\": \"hopeful\"\n  },\n  \"free\": [\"Laptop\", \"window light\", \"coffee cup\", \"laptop\"],\n  \"cues\": [\n    { \"s\": 0.4, \"e\": 3.8, \"kind\": \"take\", \"label\": \"opening line\", \"take_of\": \"opening line\", \"take\": 1, \"confidence\": 0.8, \"note\": \"stumbles on 'twenty'\" },\n    { \"s\": 4.6, \"e\": 8.1, \"kind\": \"take\", \"label\": \"opening line\", \"take_of\": \"opening line\", \"take\": 2, \"confidence\": 0.85 },\n    { \"s\": 3.8, \"e\": 4.6, \"kind\": \"cut point\", \"label\": \"out: a breath before the retake\", \"confidence\": 0.9 },\n    { \"s\": 6.0, \"e\": 7.2, \"kind\": \"emotion\", \"label\": \"determined\", \"confidence\": 0.7 },\n    { \"s\": 7.0, \"e\": 8.0, \"kind\": \"highlight\", \"label\": \"the smile on 'one street'\", \"why\": \"the most alive moment\", \"confidence\": 0.75 },\n    { \"s\": 2.1, \"e\": 2.6, \"kind\": \"problem\", \"label\": \"false start\", \"confidence\": 0.9 },\n    { \"s\": 40.0, \"e\": 41.0, \"kind\": \"action\", \"label\": \"outside the stretch\", \"confidence\": 0.5 },\n    { \"s\": 5.0, \"e\": 5.5, \"kind\": \"vibe\", \"label\": \"not a kind\", \"confidence\": 0.5 }\n  ],\n  \"summary\": \"Samuel at his desk says the day's opening line twice, the second time cleanly.\",\n  \"thumbnail\": { \"index\": 7, \"why\": \"his face lit by the window, eyes to the lens\" }\n}\n```"
+      }
+    }
+  ],
+  "usage": { "prompt_tokens": 5210, "completion_tokens": 612, "total_tokens": 5822 }
+}

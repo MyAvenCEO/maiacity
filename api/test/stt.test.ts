@@ -6,6 +6,7 @@ import { PGlite } from "@electric-sql/pglite";
 import { useDb, type Db } from "../src/pg";
 import { MIGRATIONS } from "../src/migrations-list";
 import { initRoles } from "../src/acl";
+import { useClock } from "../src/prem";
 import { clientKek, MAX_BYTES, normalize, statusRoute, transcribeRoute, useSttClient, type DeepgramResponse } from "../src/stt";
 import fixture from "./fixtures/deepgram-nova3.json";
 
@@ -35,6 +36,7 @@ beforeAll(async () => {
 const saved = process.env.PREMAI_API_KEY;
 afterEach(() => {
   useSttClient(null);
+  useClock(null);
   if (saved === undefined) delete process.env.PREMAI_API_KEY;
   else process.env.PREMAI_API_KEY = saved;
 });
@@ -125,9 +127,13 @@ describe("POST /api/transcripts", () => {
     expect((await transcribeRoute(post(SERVER_TOKEN, new Uint8Array(MAX_BYTES + 1)))).status).toBe(413);
     expect(calls).toBe(0);
     const res = await transcribeRoute(post(SERVER_TOKEN));
-    expect(res.status).toBe(429);
-    expect((await res.json()).error).toMatch(/rate limiting/);
-    expect(calls).toBe(1); // a 4xx is not tried twice
+    // Prem rate limiting pauses the model: 503 with until when, and why
+    expect(res.status).toBe(503);
+    const body = await res.json();
+    expect(body.error).toMatch(/rate limiting/);
+    expect(body.transient).toBe(true);
+    expect(Date.parse(body.paused_until)).toBeGreaterThan(Date.now());
+    expect(calls).toBe(1); // never tried twice
   });
 });
 

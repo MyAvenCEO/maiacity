@@ -10,6 +10,8 @@
 	import { command } from '$lib/native';
 	import { listMedia, type MediaItem } from '$lib/auth/client';
 	import { TIERS, gb, proxyState, type Copies, type Making, type Moving } from './vault';
+	import { isCache } from './color.js';
+	import { analysisState, hasSound, stepOpen, transcriptState } from './transcript.js';
 
 	type SourceFile = { hash: string; name: string; size: number; verdict: string };
 	type Ingested = { session: string; story: string; path: string; name: string; bytes: number; files: SourceFile[] };
@@ -33,6 +35,26 @@
 			failed: states.filter((x) => x === 'failed').length,
 			current: now.find((x) => x.stage !== 'queued'),
 			queued: now.filter((x) => x.stage === 'queued').length
+		};
+	}
+	/** the words of a source's recordings (on this Mac, on-device) and the tags of its pictures (the server) */
+	function steps(s: Ingested) {
+		const all = s.files.map((f) => meta[f.hash]).filter((m): m is MediaItem => !!m && !isCache(m));
+		const rec = all.filter((m) => hasSound(m));
+		const ws = rec.map((m) => ({ m, st: transcriptState(m) }));
+		const live = making.find((x) => x.of.startsWith('transcript:') && rec.some((m) => x.of === `transcript:${m.hash}`) && x.stage !== 'queued');
+		const pics = all.filter((m) => m.kind === 'video' || m.kind === 'image');
+		const ts = pics.map((m) => analysisState(m));
+		return {
+			rec: rec.length,
+			words: ws.filter((x) => x.st.state === 'ready' || x.st.state === 'none').length,
+			live,
+			stuck: ws.filter((x) => x.st.state === 'stuck').length,
+			retrying: ws.filter((x) => x.st.state === 'failed').length,
+			pics: pics.length,
+			tagged: ts.filter((x) => x.state === 'ready' || x.state === 'none').length,
+			tagging: ts.find((x) => x.state === 'running'),
+			waitsWhy: ts.find((x) => x.state === 'queued' && x.note !== 'queued')?.note ?? ''
 		};
 	}
 	let error = $state('');
@@ -133,6 +155,9 @@
 		}, 1000);
 		const slow = setInterval(async () => {
 			copies = Object.fromEntries((await command<Copies[]>('vault_copies').catch(() => [])).map((c) => [c.hash, c]));
+			// words or tags still coming for a source's files: the descriptions again, so the line moves on
+			const open = sources.some((s) => s.files.some((f) => { const m = meta[f.hash]; return !!m && !isCache(m) && ((hasSound(m) && stepOpen(transcriptState(m))) || ((m.kind === 'video' || m.kind === 'image') && analysisState(m).state === 'running')); }));
+			if (open) meta = Object.fromEntries((await listMedia().catch(() => [])).map((m) => [m.hash, m]));
 		}, 10000);
 		return () => (clearInterval(live), clearInterval(slow));
 	});
@@ -144,6 +169,7 @@
 		{@const c = counts(s)}
 		{@const done = complete(s)}
 		{@const px = proxies(s)}
+		{@const st = steps(s)}
 		<article class="card" class:done>
 			<header>
 				<div>
@@ -178,18 +204,33 @@
 				{/each}
 			</div>
 
-			{#if px.total}
-				<p class="proxies">
-					<b>Proxies</b> {px.made}/{px.total} in ACEScct
-					{#if px.current} · making {px.current.name} {Math.floor(px.current.done * 100)}%{/if}
-					{#if px.queued} · {px.queued} queued{/if}
-					{#if px.waiting.length}<span class="warn"> · ⚠ {px.waiting.length} waiting — no colour journey for {[...new Set(px.waiting.map((m) => String((m.meta?.color as { profile?: string } | undefined)?.profile ?? 'an unknown source')))].join(', ')} yet</span>{/if}
-					{#if px.failed}<span class="warn"> · {px.failed} failed</span>{/if}
-				</p>
-			{/if}
-
 			<footer>
-				<span></span>
+				<div class="steps">
+					{#if px.total}
+						<p>
+							<b>Proxies</b> {px.made}/{px.total}
+							{#if px.current} · {px.current.name} {Math.floor(px.current.done * 100)}%{/if}
+							{#if px.queued} · {px.queued} queued{/if}
+							{#if px.waiting.length}<span class="warn"> · ⚠ {px.waiting.length} waiting — no colour journey for {[...new Set(px.waiting.map((m) => String((m.meta?.color as { profile?: string } | undefined)?.profile ?? 'an unknown source')))].join(', ')} yet</span>{/if}
+							{#if px.failed}<span class="warn"> · {px.failed} failed</span>{/if}
+						</p>
+					{/if}
+					{#if st.rec}
+						<p title="Transcribed on this Mac, on-device (Nemotron) — by itself after the ingest; a failure tries again by itself, three times">
+							<b>Words</b> {st.words}/{st.rec}
+							{#if st.live} · {st.live.name} — {st.live.stage} {Math.floor(st.live.done * 100)}%{/if}
+							{#if st.retrying}<span class="soft"> · {st.retrying} trying again</span>{/if}
+							{#if st.stuck}<span class="warn"> · {st.stuck} failed — open them in the table to start again</span>{/if}
+						</p>
+					{/if}
+					{#if st.pics}
+						<p title="The shot analysis on the server (Qwen, confidential): tags, cues, the thumbnail">
+							<b>Tags</b> {st.tagged}/{st.pics}
+							{#if st.tagging} · {Math.floor(st.tagging.progress * 100)}%{/if}
+							{#if st.waitsWhy && st.tagged < st.pics}<span class="soft"> · waits: {st.waitsWhy}</span>{/if}
+						</p>
+					{/if}
+				</div>
 				{#if gone[keyOf(s)] !== undefined}
 					<span class="gone">✓ {gone[keyOf(s)]} files moved to the Trash</span>
 				{:else}
@@ -254,28 +295,30 @@
 {/if}
 
 <style>
-	.cards { display: flex; flex-direction: column; gap: 0.8rem; }
-	.card { padding: 0.9rem 1rem; border: 1px solid var(--edge); border-radius: 12px; background: #fff; }
+	.cards { display: flex; flex-direction: column; gap: 0.5rem; }
+	.card { padding: 0.55rem 0.8rem; border: 1px solid var(--edge); border-radius: 10px; background: #fff; }
 	.card.done { border-color: #9bb58a; }
-	header { display: flex; justify-content: space-between; gap: 1rem; }
-	h3 { margin: 0; font-size: 1.05rem; }
-	.path { margin: 0.1rem 0 0; overflow: hidden; max-width: 34rem; font-family: ui-monospace, monospace; font-size: 0.7rem; white-space: nowrap; text-overflow: ellipsis; color: var(--dim); }
-	.meta { margin: 0; font-size: 0.78rem; text-align: right; color: var(--dim); }
+	header { display: flex; justify-content: space-between; align-items: baseline; gap: 1rem; }
+	h3 { margin: 0; font-size: 0.92rem; }
+	.path { margin: 0; overflow: hidden; max-width: 30rem; font-family: ui-monospace, monospace; font-size: 0.66rem; white-space: nowrap; text-overflow: ellipsis; color: var(--dim); }
+	.meta { margin: 0; font-size: 0.72rem; text-align: right; color: var(--dim); }
 	.meta strong { color: var(--ink); }
-	.dests { display: flex; flex-direction: column; gap: 0.35rem; margin: 0.8rem 0 0.5rem; }
-	.dest.off { opacity: 0.45; }
-	.dest { display: grid; grid-template-columns: 13rem 1fr 18rem; gap: 0.7rem; align-items: center; font-size: 0.78rem; }
+	.dests { display: flex; flex-direction: column; gap: 0.2rem; margin: 0.45rem 0 0.3rem; }
+	.dest.off { display: none; }
+	.dest { display: grid; grid-template-columns: 11rem 1fr 16rem; gap: 0.6rem; align-items: center; font-size: 0.72rem; }
 	.dest .name { font-weight: 600; }
 	.dest .n { color: var(--dim); }
-	.bar { overflow: hidden; height: 6px; border-radius: 3px; background: var(--edge); }
+	.bar { overflow: hidden; height: 4px; border-radius: 2px; background: var(--edge); }
 	.bar i { display: block; height: 100%; background: #d9a441; transition: width 0.8s linear; }
 	.bar i.full { background: #6f9a57; }
-	.proxies { margin: 0.2rem 0 0; font-size: 0.78rem; color: var(--dim); }
-	.proxies b { margin-right: 0.3rem; font-weight: 600; color: var(--ink); }
+	.steps { display: flex; flex-wrap: wrap; gap: 0.1rem 1.1rem; min-width: 0; }
+	.steps p { margin: 0; font-size: 0.72rem; color: var(--dim); }
+	.steps b { margin-right: 0.25rem; font-weight: 600; color: var(--ink); }
+	.soft { color: #a8741a; }
 	.warn { color: #9c3b26; }
-	footer { display: flex; align-items: center; justify-content: space-between; margin-top: 0.4rem; }
+	footer { display: flex; align-items: center; justify-content: space-between; gap: 0.8rem; margin-top: 0.15rem; }
 	.link { padding: 0; border: 0; background: none; font: inherit; font-size: 0.78rem; color: var(--dim); text-decoration: underline; cursor: pointer; }
-	.release { padding: 0.35rem 0.9rem; border: 0; border-radius: 999px; background: var(--ink); font: inherit; font-size: 0.8rem; color: #fff; cursor: pointer; }
+	.release { flex-shrink: 0; padding: 0.25rem 0.75rem; border: 0; border-radius: 999px; background: var(--ink); font: inherit; font-size: 0.72rem; color: #fff; cursor: pointer; }
 	.release:disabled { background: var(--edge); color: var(--dim); cursor: default; }
 	.bad { color: #9c3b26; }
 	.quiet { color: var(--dim); }

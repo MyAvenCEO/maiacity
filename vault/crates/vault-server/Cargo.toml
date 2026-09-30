@@ -12,6 +12,7 @@ name = "vault-server"
 path = "src/main.rs"
 
 [dependencies]
+vault-color = { path = "../vault-color" }
 iroh.workspace = true
 noq-proto.workspace = true
 iroh-blobs.workspace = true

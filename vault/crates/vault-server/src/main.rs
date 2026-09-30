@@ -12,16 +12,18 @@
 //!   VAULT_HTTP         the gateway (Caddy: /vault/*)                               default 0.0.0.0:3341
 //!   VAULT_RELAY_HTTP   the relay's plain-HTTP port (Caddy: /relay, /generate_204)  default 0.0.0.0:3340
 //!   DATABASE_URL, API_URL (http://api:3000)
-//!   FFMPEG, FFPROBE    the transcripts' tools (transcribe.rs)                      default ffmpeg, ffprobe
+//!   FFMPEG, FFPROBE    the transcripts' and the analysis' tools                    default ffmpeg, ffprobe
 //!   S3_ENDPOINT, S3_REGION, S3_BUCKET, S3_ACCESS_KEY, S3_SECRET_KEY
 
 mod allow;
+mod analyse;
+mod api;
 mod db;
 mod gateway;
 mod log;
 mod peer;
 mod s3;
-mod transcribe;
+mod sound;
 
 use std::{net::SocketAddr, path::PathBuf, sync::Arc, time::Duration};
 
@@ -93,7 +95,7 @@ async fn main() -> Result<()> {
     db::publish(&db, "catalog", &peer.ticket().await?.to_string()).await?;
     // its author: the catalog entries it signs say what Object Storage holds
     db::publish(&db, "author", &peer.author.to_string()).await?;
-    // its token for the API (speech to text): new at every start, only its hash in Postgres
+    // its token for the API (the shot analysis): new at every start, only its hash in Postgres
     let token = format!("vst_{}", hex::encode(SecretKey::generate().to_bytes()));
     db::publish(&db, "api_token", &hex::encode(<sha2::Sha256 as sha2::Digest>::digest(token.as_bytes()))).await?;
     tracing::info!("vault-server {} · catalog {}", peer.endpoint.id(), peer.doc.id());
@@ -118,10 +120,13 @@ async fn main() -> Result<()> {
     tokio::spawn(peer.clone().listen());
     tokio::spawn(peer.clone().describe(s3.clone(), db.clone()));
     tokio::spawn(peer.clone().reconcile(s3.clone(), db.clone()));
-    // every recording's words: its speech track into the vault, transcribed through the API (Prem)
+    // every recording's sound: its audio proxy and its start timecode (the words are made on a Mac, on-device)
     let api = env_or("API_URL", "http://api:3000");
+    tokio::spawn(sound::Sounds { peer: peer.clone(), s3: s3.clone(), db: db.clone(), dir: dir.clone() }.run());
+    // every picture's tags, cues and thumbnail: its proxy's frames through the output transform, to Prem's Qwen
     tokio::spawn(
-        transcribe::Transcriber { peer: peer.clone(), s3: s3.clone(), db: db.clone(), api: api.clone(), token, dir: dir.clone(), http: reqwest::Client::new() }.run(),
+        analyse::Analyser { peer: peer.clone(), s3: s3.clone(), db: db.clone(), api: api.clone(), token, dir: dir.clone(), http: reqwest::Client::new() }
+            .run(),
     );
 
     let gateway = gateway::Gateway::new(s3, db, api, ring).router();

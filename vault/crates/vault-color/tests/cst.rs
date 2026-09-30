@@ -2,7 +2,7 @@
 //! and colour-science in float64 — every profile, a neutral ramp from black through grey to the top, and colours.
 //! Then the baked cube against the exact maths, as CIColorCube would sample it.
 
-use vault_media::cst::{self, CUBE_SIZE, CubeInput, bake_cube, journey, to_acescct};
+use vault_color::cst::{self, CUBE_SIZE, CubeInput, bake_cube, journey, to_acescct};
 
 const PROFILES: [&str; 10] = ["acescct", "rec709", "srgb", "hlg", "pq", "apple-log", "apple-log-2", "aces2065-1", "acescg", "linear-rec709"];
 

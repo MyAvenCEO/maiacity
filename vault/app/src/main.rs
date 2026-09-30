@@ -3,14 +3,17 @@
 //! this Mac's SSD), ingest with the three-hash check, and `vault://localhost/<hash>` — the bytes of any file, with
 //! Range, for <img> and <video>.
 
+mod analysis;
 mod auth;
 mod local;
 mod mcp;
+mod models;
 mod proxies;
 mod render;
 mod sources;
 mod stories;
 mod sync;
+mod transcripts;
 mod world;
 
 use std::{
@@ -77,7 +80,7 @@ async fn vault_status(app: State<'_, App>) -> Res<Status> {
 #[tauri::command]
 async fn vault_list(app: State<'_, App>) -> Res<Vec<Meta>> {
     gate()?;
-    let mut list = app.vault.catalog.list().await.map_err(err)?;
+    let mut list = app.vault.catalog.list_view().await.map_err(err)?;
     list.sort_by(|a, b| b.added.cmp(&a.added).then(a.original_name.cmp(&b.original_name)));
     Ok(list)
 }
@@ -99,7 +102,9 @@ fn log_js(level: String, from: String, message: String) {
 async fn vault_describe(app: State<'_, App>, hash: String, patch: serde_json::Value) -> Res<Meta> {
     gate()?;
     let hash: Hash = hash.parse().map_err(err)?;
-    app.vault.catalog.describe(hash, &patch).await.map_err(err)
+    let meta = app.vault.catalog.describe(hash, &patch).await.map_err(err)?;
+    // what the studio shows: the description with its derived records (transcript, analysis) merged in
+    Ok(app.vault.catalog.meta_view(hash).await.map_err(err)?.unwrap_or(meta))
 }
 
 #[derive(Serialize)]
@@ -256,6 +261,11 @@ async fn run_ingest(
     for (hash, source) in proxies_due {
         tauri::async_runtime::spawn(proxies::auto_proxy(handle.clone(), vault.clone(), hash, source));
     }
+    // and every recording its words, here, on-device — once the ingest is done (transcripts.rs)
+    {
+        let (h, v) = (handle.clone(), vault.clone());
+        tauri::async_runtime::spawn(async move { transcripts::queue_due(&h, &v).await });
+    }
     let seconds = started.elapsed().as_secs_f64();
     let bytes = outcomes.iter().map(|o| o.size).sum();
     let count = |v: Verdict| outcomes.iter().filter(|o| o.verdict == v).count();
@@ -395,6 +405,8 @@ fn main() {
             // the studio for agents: MCP on this Mac only, behind the app's token
             // every video original without its proxy: queued, now and every ten minutes
             tauri::async_runtime::spawn(proxies::sweep(app.handle().clone(), vault.clone()));
+            // and every recording without its words: transcribed here, on-device (Nemotron), now and every ten minutes
+            tauri::async_runtime::spawn(transcripts::sweep(app.handle().clone(), vault.clone()));
             // and every world shot a timeline plays, rendered here in the studio's own world (world.rs)
             tauri::async_runtime::spawn(world::sweep(app.handle().clone(), vault.clone()));
             // and the render queue: this Mac is the render worker — films and hero frames, natively (render.rs)
@@ -448,6 +460,7 @@ fn main() {
             proxies::vault_hold,
             proxies::color_lut,
             proxies::vault_proxy,
+            transcripts::vault_transcribe,
             world::world_proxy_next,
             world::world_proxy_frame,
             world::world_proxy_end,

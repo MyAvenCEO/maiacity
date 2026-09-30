@@ -10,7 +10,7 @@
 	import { listMedia, type MediaItem } from '$lib/auth/client';
 	import { command } from '$lib/native';
 	import { profileInfo } from './color.js';
-	import { transcriptState } from './transcript.js';
+	import { analysisState, hasSound, stepOpen, transcriptState, type Step } from './transcript.js';
 	import { BY_HAND, CLASSES, TIERS, gb, proxyState, vaultUrl, type Making, type Copies, type FileClass, type Moving, type StoryView } from './vault';
 
 	let {
@@ -93,7 +93,8 @@
 			});
 		// what is moving or rendering now on top, then what is not kept yet, then the rest — an original and its proxy
 		// always together
-		const rank = (g: Row[]) => (g.some(busy) ? 0 : g.some((r) => 'coming' in r || !kept(r)) ? 1 : 2);
+		// (and a file whose words or tags are being made now, or are still to come)
+		const rank = (g: Row[]) => (g.some((r) => busy(r) || (!('coming' in r) && stepsRunning(r))) ? 0 : g.some((r) => 'coming' in r || !kept(r) || stepsOpen(r)) ? 1 : 2);
 		return groups
 			.map((g, i) => ({ g, i, r: rank(g) }))
 			.sort((a, b) => a.r - b.r || a.i - b.i)
@@ -114,6 +115,38 @@
 		const c = m.meta?.color as { profile?: string; override?: string } | undefined;
 		return c?.override ?? c?.profile ?? '';
 	};
+	// ── the automatic steps after the ingest: the words (on this Mac, Nemotron) and the tags (the server, Qwen) ──
+	const wantsWords = (m: MediaItem) => !proxyOf(m) && m.meta?.role !== 'audio' && hasSound(m);
+	// as the server picks them (analyse.rs `wants`): pictures and films that are not working files
+	const wantsTags = (m: MediaItem) =>
+		!proxyOf(m) &&
+		(m.kind === 'video' || m.kind === 'image' || m.meta?.sequence === 'exr') &&
+		(classOf(m) === 'original' || classOf(m) === 'default') &&
+		!['frame', 'lut', 'proxy', 'proxy-cache', 'audio', 'thumbnail', 'plate', 'model'].includes(String(m.meta?.role ?? '')) &&
+		!m.tags.includes('superseded');
+	/** a recording's words: live from this Mac's queue while it works on it (every second), else what the catalog says */
+	function words(m: MediaItem): Step | null {
+		if (!wantsWords(m)) return null;
+		const live = making.find((x) => x.of === `transcript:${m.hash}`);
+		const st = transcriptState(m);
+		if (!live || st.state === 'ready') return st;
+		if (live.stage === 'queued') return { ...st, state: 'queued', note: st.state === 'queued' && st.note !== 'queued' ? st.note : 'queued on this Mac — one recording at a time, after any ingest' };
+		if (live.stage === 'waiting for memory') return { ...st, state: 'queued', note: 'waits: the Mac needs its memory back first' };
+		return { state: 'running', note: live.stage, stage: live.stage, progress: live.done };
+	}
+	const tags = (m: MediaItem): Step | null => (wantsTags(m) ? analysisState(m) : null);
+	const stepsOpen = (m: MediaItem) => [words(m), tags(m)].some((s) => !!s && stepOpen(s));
+	const stepsRunning = (m: MediaItem) => [words(m), tags(m)].some((s) => s?.state === 'running');
+	/** the words still to come in this story */
+	const wordsDue = $derived(mine.filter((m) => { const s = words(m); return !!s && stepOpen(s); }).length);
+	/** the transcript made again, here (a failed or empty one) */
+	async function again(m: MediaItem, e: Event) {
+		e.stopPropagation();
+		await command('vault_transcribe', { hash: m.hash }).catch((x) => (error = String(x)));
+		files = await listMedia().catch(() => files);
+	}
+	const thumbOf = (m: MediaItem) => (typeof m.meta?.thumbnail === 'string' && /^[0-9a-f]{64}$/.test(m.meta.thumbnail) ? m.meta.thumbnail : null);
+
 	const complete = $derived(mine.filter(kept).length);
 	const name = (m: MediaItem) => m.title || m.original_name || m.hash.slice(0, 12);
 
@@ -175,8 +208,8 @@
 		// the copies change while files sync: look again every 10 s; what is moving, every second
 		const timer = setInterval(async () => {
 			copies = Object.fromEntries((await command<Copies[]>('vault_copies').catch(() => [])).map((c) => [c.hash, c]));
-			// a transcript on its way (made on the server, synced in): the rows again, so its mark moves on
-			if (mine.some((m) => m.meta?.transcript_state === 'queued' || m.meta?.transcript_state === 'transcribing')) files = await listMedia().catch(() => files);
+			// words or tags on their way (the catalog moves on as this Mac and the server work): the rows again
+			if (mine.some(stepsOpen)) files = await listMedia().catch(() => files);
 		}, 10000);
 		let unlisten: Array<() => void> = [];
 		let loading: ReturnType<typeof setTimeout> | undefined;
@@ -206,6 +239,18 @@
 	});
 </script>
 
+{#snippet step(s: Step | null, what: string, retry: MediaItem | null)}
+	{#if !s}<span class="none">—</span>
+	{:else if s.state === 'ready'}<span class="ok" title="{what}: {s.note}">✓</span>
+	{:else if s.state === 'running'}<span class="pct" title="{what}: {s.stage || s.note}">{Math.floor(s.progress * 100)}%</span>
+	{:else if s.state === 'queued'}<span class="wait" title="{what}: {s.note}">0%</span>
+	{:else if s.state === 'unknown'}<span class="wait" title="{what}: not started yet — it comes by itself">·</span>
+	{:else if s.state === 'none'}<span class="none" title="{what}: {s.note}">∅</span>
+	{:else if s.state === 'failed'}<span class="warn" title="{what}: failed, tries again by itself — {s.note}">↻</span>
+	{:else if retry}<button class="miss again" title="{what}: {s.note} — click to try again" onclick={(e) => again(retry, e)}>✗</button>
+	{:else}<span class="miss" title="{what}: {s.note}">✗</span>{/if}
+{/snippet}
+
 <div class="table">
 	{#if current}
 		<header>
@@ -217,6 +262,7 @@
 			<div class="state" class:ok={complete === mine.length && mine.length > 0}>
 				<strong>{complete} / {mine.length}</strong> files kept as the story asks · {gb(mine.reduce((a, m) => a + m.size, 0))}
 				{#if active.length}<br /><span class="live">↻ {active.length} on their way · {gb(active.reduce((a, t) => a + t.rate, 0))}/s</span>{/if}
+				{#if wordsDue}<br /><span class="live">✎ {wordsDue} recording{wordsDue === 1 ? '' : 's'} still to transcribe, on this Mac</span>{/if}
 			</div>
 		</header>
 
@@ -272,6 +318,8 @@
 						<th>File (BLAKE3)</th>
 						<th>Came in as · title</th>
 						<th>Colour · proxy</th>
+						<th class="c step" title="The words: transcribed on this Mac, on-device (Nemotron) — by itself after the ingest">Words</th>
+						<th class="c step" title="The tags, cues and thumbnail: the shot analysis on the server (Qwen, confidential)">Tags</th>
 						<th>Class</th>
 						<th class="r">Size</th>
 					</tr>
@@ -291,6 +339,8 @@
 							<td class="h">hashing…</td>
 							<td class="n">{landingHere.path.split('/').pop()}</td>
 							<td class="col"></td>
+							<td class="c step"></td>
+							<td class="c step"></td>
 							<td></td>
 							<td class="r">{gb(landingHere.size)}</td>
 						</tr>
@@ -319,6 +369,8 @@
 								<td class="h">—</td>
 								<td class="n sub">↳ {(r.coming.original_name ?? '').replace(/\.[^.]+$/, '')}.proxy</td>
 								<td class="col"><span class="dim">ACEScct</span></td>
+								<td class="c step"></td>
+								<td class="c step"></td>
 								<td><span class="cls proxy">proxy</span></td>
 								<td class="r"></td>
 							</tr>
@@ -338,7 +390,8 @@
 								</td>
 							{/each}
 							<td class="thumb">
-								{#if m.kind === 'image' && m.size < 4e6}<img {@attach seen(vaultUrl(m.hash))} alt="" />
+								{#if thumbOf(m)}<img {@attach seen(vaultUrl(thumbOf(m)!))} alt="" onerror={(e) => ((e.currentTarget as HTMLImageElement).style.visibility = 'hidden')} />
+								{:else if m.kind === 'image' && m.size < 4e6}<img {@attach seen(vaultUrl(m.hash))} alt="" />
 								{:else}<span>{m.kind === 'video' ? '▶' : m.kind === 'audio' ? '♪' : m.kind === 'image' ? '▣' : '▤'}</span>{/if}
 							</td>
 							<td class="h" title={m.hash}>{m.hash.slice(0, 16)}…</td>
@@ -348,22 +401,18 @@
 								{:else if m.kind === 'video' && classOf(m) === 'original'}
 									<span class="prof">{colourOf(m) ? profileInfo(colourOf(m)).label : '—'}</span>
 								{:else if colourOf(m)}<span class="dim">{profileInfo(colourOf(m)).label}</span>{/if}
-								{#if !proxyOf(m) && (m.kind === 'video' || m.kind === 'audio')}
-									{@const ts = transcriptState(m)}
-									{#if ts.state === 'ready'}<span class="ts ok" title="Transcript: {ts.note}">T</span>
-									{:else if ts.state === 'queued' || ts.state === 'transcribing'}<span class="ts wait" title={ts.note}>T…</span>
-									{:else if ts.state === 'failed'}<span class="ts miss" title={ts.note}>T✗</span>{/if}
-								{/if}
 							</td>
+							<td class="c step">{@render step(words(m), 'Words', m)}</td>
+							<td class="c step">{@render step(tags(m), 'Tags', null)}</td>
 							<td><span class="cls {classOf(m)}">{classOf(m)}</span></td>
 							<td class="r">{gb(m.size)}</td>
 						</tr>
 						{/if}
 					{:else}
-						<tr><td colspan="10" class="empty">{mine.length ? 'Nothing matches.' : 'No files in this story yet — ingest into it, or move files here.'}</td></tr>
+						<tr><td colspan="12" class="empty">{mine.length ? 'Nothing matches.' : 'No files in this story yet — ingest into it, or move files here.'}</td></tr>
 					{/each}
 					{#if rows.length > shown}
-						<tr><td colspan="10" class="more" {@attach more}>{rows.length - shown} more…</td></tr>
+						<tr><td colspan="12" class="more" {@attach more}>{rows.length - shown} more…</td></tr>
 					{/if}
 				</tbody>
 			</table>
@@ -410,7 +459,14 @@
 	.tier .miss { font-weight: 700; color: #9c3b26; }
 	.tier .warn { font-weight: 700; color: #b8860b; }
 	.tier .wait { font-size: 0.72rem; font-variant-numeric: tabular-nums; color: var(--dim); }
-	.tier .none { color: var(--edge); }
+	.tier .none, .step .none { color: var(--edge); }
+	.step { width: 3rem; }
+	.step .ok { display: inline-grid; place-items: center; width: 1.25rem; height: 1.25rem; border-radius: 50%; background: #4a5f93; font-size: 0.7rem; font-weight: 700; color: #fff; }
+	.step .pct { font-size: 0.72rem; font-weight: 600; font-variant-numeric: tabular-nums; color: #b8860b; }
+	.step .wait { font-size: 0.72rem; font-variant-numeric: tabular-nums; color: var(--dim); }
+	.step .warn { font-weight: 700; color: #b8860b; }
+	.step .miss { font-weight: 700; color: #9c3b26; }
+	.step .again { padding: 0 0.3rem; border: 1px solid #e3b7a8; border-radius: 4px; background: #fff; font: inherit; cursor: pointer; }
 	th.tier { text-align: center; }
 	.thumb { width: 2.6rem; padding: 0.2rem 0.3rem; }
 	.n.sub { padding-left: 1.4rem; color: var(--dim); }
@@ -420,10 +476,6 @@
 	.col .pm { color: #b8860b; font-weight: 600; }
 	.col .pw { color: #9c3b26; }
 	.col .dim { color: var(--dim); }
-	.ts { margin-left: 0.4rem; padding: 0 0.3rem; border-radius: 4px; font-size: 0.66rem; font-weight: 700; }
-	.ts.ok { background: #e6ecf5; color: #4a5f93; }
-	.ts.wait { background: #fbf3df; color: #b8860b; }
-	.ts.miss { background: #f6e3da; color: #9c3b26; }
 	tr.coming td { background: var(--bg); font-size: 0.76rem; }
 	.rbar { display: inline-block; width: 6rem; height: 3px; margin-left: 0.6rem; vertical-align: middle; border-radius: 2px; background: var(--edge); overflow: hidden; }
 	.rbar i { display: block; height: 100%; background: #b8860b; transition: width 0.8s linear; }

@@ -221,7 +221,7 @@
 						<span class="nm">{String(m.meta?.title ?? itemName(m))}</span>
 						<span class="tg">
 							{#if px.state !== 'n/a'}<b class="px {px.state}">{proxyLabel[px.state]}</b>{/if}
-							{#if ts && ts.state !== 'unknown' && ts.state !== 'none'}<b class="tr {ts.state}" title={ts.note}>{ts.state === 'ready' ? 'T' : ts.state === 'failed' ? 'T ✗' : 'T …'}</b>{/if}
+							{#if ts && ts.state !== 'unknown' && ts.state !== 'none'}<b class="tr {ts.state}" title={ts.note}>{ts.state === 'ready' ? 'T' : ts.state === 'stuck' ? 'T ✗' : ts.state === 'running' ? `T ${Math.floor(ts.progress * 100)}%` : 'T …'}</b>{/if}
 							{m.tags.filter((t) => rank(t) < 3).slice(0, 2).join(' · ') || m.kind}
 						</span>
 					</span>
@@ -292,11 +292,12 @@
 	}
 
 	.tr.queued,
-	.tr.transcribing {
+	.tr.running,
+	.tr.failed {
 		color: #a8741a;
 	}
 
-	.tr.failed {
+	.tr.stuck {
 		color: #9c3b26;
 	}
 

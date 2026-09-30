@@ -2,15 +2,17 @@
 //! AVFoundation reads and writes MOV/MP4, VideoToolbox encodes and decodes in hardware (H.264, HEVC, ProRes —
 //! the iPhone's Apple Log 2 included), Core Image and Metal scale and transform colour. Nothing to install.
 
-pub mod aces2;
+pub mod audio;
 pub mod color;
-pub mod cst;
 pub mod frames;
 pub mod gpu;
 pub mod mp4;
 pub mod probe;
 pub mod proxy;
 pub mod still;
+
+/// The colour maths live in their own platform-free crate (the vault server needs them too); here under their old names.
+pub use vault_color::{aces2, cst};
 
 pub use color::{ColorInfo, detect};
 pub use frames::FrameWriter;

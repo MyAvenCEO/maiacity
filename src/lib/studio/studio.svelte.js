@@ -22,7 +22,7 @@ import { ODT, PROFILES, WORKING, asStudio, clean, gradesFor, isCache, isSequence
 import { filmLut, nativeLut } from './luts.js';
 import { cached, evaluate, saveSpec, shotAt } from './shots.js';
 import { WorldViewer } from './world.svelte.js';
-import { asCaptions, audioProxyOf, captionWordsOf, hasSound, phraseBreak, rewordPhrase, transcriptOf } from './transcript.js';
+import { asCaptions, audioProxyOf, captionWordsOf, hasSound, phraseBreak, rewordPhrase, stepOpen, transcriptOf, transcriptState } from './transcript.js';
 import { native } from '$lib/native';
 
 /** @typedef {import('$lib/auth/client').Cdl} Cdl */
@@ -1291,7 +1291,7 @@ export class Studio {
 	waitingOnVault() {
 		if (Object.values(this.soundState).some((v) => v !== 'ready' && v !== 'silent' && v !== 'loading')) return true;
 		const hashes = new Set([...this.clips.map((c) => c.hash), this.preview]);
-		return this.library.some((m) => hashes.has(m.hash) && (m.meta?.transcript_state === 'queued' || m.meta?.transcript_state === 'transcribing'));
+		return this.library.some((m) => hashes.has(m.hash) && hasSound(m) && stepOpen(transcriptState(m)));
 	}
 	watchVault() {
 		this.vaultWatch ??= setInterval(() => void (this.waitingOnVault() && this.reloadLibrary()), 20000);
