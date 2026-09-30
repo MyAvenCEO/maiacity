@@ -3,13 +3,19 @@
 ✅ done · 🔄 in progress · ⬜ to do. Updated as the work goes.
 
 ## Open
-- ⬜ Approve the audio-proxy deletion in the studio's modal (108 files, 29.5 MB)
-- 🔄 Base correction of Day 01 · Opening on the marked stills (the tools below): bedroom a touch warm (+0.25), garden
-  clearly warm (+0.5), shots 7 and 8 with the garden; masters: the bed from the side, the walk through the garden
-- 🔄 Whole vault on iroh's patterns, end to end: no exports out of the store anywhere (audit running)
-- ⬜ De-sync one file from one device only (drop its holding here, keep it elsewhere): needs a per-device keep rule on top of iroh-docs' protection
+- 🔄 **Everything iroh-native, end to end** (the Mac does all media work; the server only stores and relays):
+  - 🔄 AVFoundation reads the vault in place (resource loader over iroh's BlobReader) — no export anywhere: transcription, proxies, stills, renders, probe
+  - ⬜ Shot analysis moves into the Mac's ingest: frames sampled natively, Prem's Qwen called from the Mac (its key in the Keychain), thumbnail + `analysis/<hash>` written by the Mac; the server's analyse.rs retires
+  - ⬜ Timecode (`sound/<hash>`) read by the Mac at ingest; the server's sound.rs retires
+  - ⬜ The HTTPS gateway fetch (sync.rs keep_complete) removed: files come over iroh from whoever holds them
+  - ⬜ Every device rules-driven like the drive: download policy = records only, wanted files fetched + pinned (tags), GC protection = tags + records only (then `Keep` and the blanket docs protection go) — de-sync per device works
+- 🔄 **SDD_A** (external SSD as its own vault device): Day 01 fetching over iroh, verified
+- ⬜ Base correction on the marked stills, once the Day 01 analysis has marked every shot
 
 ## Done today
+- **Server serves its own made files over iroh** (pinned in its store; old ones read back from S3 once); native GC on the server
+- **Drives:** an external disk is its own iroh vault device; each story's rules (per class) decide who keeps what; changes asked in the modal
+- **Studio in dark marine**; one name per file class everywhere (working, original, proxy, delivery)
 - **Base correction tools** (story-producer `grading.md`), natively in the Mac app over MCP, from the 4K grading
   stills only:
   - `grade_look`: blacks, whites, mids and the skin Apple Vision finds, in IRE and against the skin line
