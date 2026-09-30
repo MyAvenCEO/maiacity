@@ -303,7 +303,3 @@ pub fn auth_open(url: String) -> Result<(), String> {
     std::process::Command::new("/usr/bin/open").arg(url).spawn().map(|_| ()).map_err(|e| e.to_string())
 }
 
-/// The key, for the app's own background work (never handed to the page).
-pub fn load_key_pub() -> Option<String> {
-    load_key()
-}
