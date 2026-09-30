@@ -1,56 +1,52 @@
-# Studio: requests and where they stand
+# Studio plan
 
-Updated as the work goes. ✅ done · 🔄 in progress · ⬜ to do · 👤 yours
+✅ done · 🔄 in progress · ⬜ to do. Updated as the work goes.
 
-## Transcription and captions
-- ✅ Every recording transcribed on this Mac (Nemotron, on-device): 309/309 final. 65 with words, 197 no sound track, 47 no speech (checked).
-- ✅ Self-healing in the Ingest flow: Words/Tags columns, live %, ↻ retries, ✗ to start again, open steps on top, compact source cards.
-- ✅ Captions come by themselves from the voice's transcript (monitor and render); the button is gone.
+## Open
 
-## Day 01 · Opening
-- ✅ Voice-over swapped to "The moment I woke up today…" (DJI_80, three cuts on pauses).
-- ✅ Extended to 57 s:
-  - "Today I am alone, tomorrow we will see, but what I know for sure deep in my heart is this" (DJI_81)
-  - the bench master shot C132, straight to camera: "During the next sixteen years…"
-  - closing on C125 with "Welcome to day one." (DJI_69)
-- ✅ Why two clips kept vanishing: the open studio saved its old copy over the agent's edit. Fixed: the studio now picks up outside edits within seconds, and the API refuses a stale save.
-- ✅ Sound levelled through MCP:
-  - all voice clips at the same loudness
-  - the music bed 11–34 LU under the voice
-  - the render lifts the mix to −14 LUFS
-- 🔄 Shots levelled to each other (balance only, no look): measured; the bedroom scene is matched to "in bed", the bench shots to each other. Re-run once the API deploy (with `balance`) is live.
+### Day 01 · Opening (the cut)
+- 🔄 Two shots between the bedroom and the bench:
+  - him walking towards the bench
+  - from the bench's right side, placing the coffee
+- 🔄 The cut around them:
+  - "Today I am alone…" already outside
+  - "…what I know for sure is this" ends on the coffee mug
+  - then back to the frontal bench shot
+- 🔄 The bench voice ("During the next sixteen years…") played silent in the studio. Fixed: 107 videos had audio proxies that were not linked. It needs checking by ear after the restart.
+- ⬜ Level the shots to each other again (balance only, no look). The API keeps balances now; this waits for the new cut.
+- ⬜ Level the sound again with the new clips. Gain above 0 dB is allowed now: voice −18, music −26, sounds −30 LUFS.
 
-## Grade
-- ✅ Balance maths: white balance, exposure, contrast, highlights, lows, in ACEScct. JS, Rust and Metal agree (tests).
-- ✅ Render applies it: CST → balance → creative grade → film look → output.
-- ✅ MCP for the LLM:
-  - grade_measure: luma percentiles and the middle tones' cast
-  - grade_balance: set one shot
-  - grade_match: reference, average or neutral; levels by exposure and white balance, only nudges the tones
-- ✅ No suggestion buttons: balancing is an LLM job.
-- ✅ Grade tab as a layer stack, bottom applied first: Input (CST) → balance layers → creative grade → film look → Output.
-- ✅ Balance shown in the studio preview (WebGL).
-- ✅ Grading stills at ingest:
-  - 4K (3840×2160), 16-bit PNG of ACEScct code values, CST baked in, the middle frame of each shot
-  - made right after the proxy; all 11 existing video originals backfilled
-  - grade_measure reads them
+### Script tab (story development)
+- ⬜ Layout: script on the left (50%), the preview on the right (50%), the timeline full width below.
+- ⬜ The timeline in Script shows only:
+  - the story structure: thumbnail (1 frame) · hook · Act 1 · Act 2 · Act 3 · cliffhanger
+  - the tension / release curve across all sections
+  - the captions
+- ⬜ The script is read-only and styled as a screenplay: scene headings, action, the speaker and their line (V.O. or on camera). An LLM edits it through MCP.
+- ⬜ Timeline version picker above the script, to switch between timelines.
+- ⬜ Story sections and tension saved on the timeline, set through MCP.
 
-## Studio UI
-- ✅ Edit lock removed; Grade is always open.
-- ✅ Title bar: the timeline's title and description in the window's middle, always; nothing duplicated, no clip count or save state.
-- ✅ Transport as one quiet line.
-- ✅ Audio tab after Edit:
-  - only the sound tracks, with each clip's level on the timeline itself
-  - drag the gain line; drag the fade corners
-  - its loudness curve, LUFS, and how far a voice sits over the music
-  - measured by itself; MCP audio_measure / audio_mix / audio_level for the LLM
-  - volume removed from the Edit inspector; the audio tracks stay in Edit
-- 🔄 Script tab:
-  - scenes → shots → lines
-  - placeholder shots (slates) on the timeline as text, with the lines as captions
-  - storyboard stills per scene
-  - swap slates for footage, and lines for the real voice and its transcript
-  - both directions on the same clips (the API model for slates, lines and script notes is done)
+### Edit and timeline
+- ⬜ J and L cuts: overlapping clips on one track shown side by side (not hidden under each other), each overlap marked J (sound leads the picture) or L (sound trails it).
+- ⬜ The story-producer skill cuts sound at scene transitions with J and L cuts.
+- ⬜ Library list (left): preview thumbnails for every clip; remove the "A-Log2 → CCT" badges.
+- ⬜ Title bar: less space above it, closer to the window's top edge.
+- ⬜ During playback every timeline follows the playhead.
 
-## Shipping
-- ✅ [PR #42](https://github.com/MyAvenCEO/maiacity/pull/42) merged by me with gh; deploy running. From now on I merge and ship myself.
+## Done
+- ✅ Every recording transcribed on-device (Nemotron): 309/309, self-healing in the Ingest flow.
+- ✅ Captions come by themselves from the voice's transcript (monitor and render).
+- ✅ Opening: new voice-over ("The moment I woke up today…"), extended with "Today I am alone…" and the bench monologue, closing on "Welcome to day one."
+- ✅ One truth for a timeline: the studio sees outside edits within seconds, and the API refuses a stale save.
+- ✅ Grade:
+  - balance layers (white balance, exposure, contrast, highlights, lows) in ACEScct; JS, Rust and Metal agree
+  - layer stack UI; balance shown in the preview
+  - MCP grade_measure / grade_balance / grade_match
+  - 4K 16-bit ACEScct grading stills at ingest (11 backfilled)
+- ✅ Audio tab:
+  - the levels on the timeline itself (gain line, fade corners, loudness, voice over music)
+  - MCP audio_measure / audio_mix / audio_level
+  - volume removed from the Edit inspector
+- ✅ Script tab, first version: scenes → shots → lines on the same clips; slates and lines; swapping. It is being redone as above.
+- ✅ Studio UI: no edit lock; a centred read-only title; transport as one quiet line.
+- ✅ Shipping: PR #42 and PR #43 merged by me with gh and deployed (API with balance, script clips and the stale-save guard).

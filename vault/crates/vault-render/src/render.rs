@@ -854,19 +854,31 @@ pub fn measure_sound(t: &Timeline, lib: &dyn Library) -> Result<Value> {
     Ok(json!({ "clips": out, "voice_over_music": under, "duck_db": DUCK_DB, "master": "the render levels the whole mix to −14 LUFS, −1 dBTP" }))
 }
 
-/// A clip's original's grading still (its `meta.grade_still`), when the vault has it.
+/// A clip's original's grading still (its `meta.grade_still`), when the vault has it and its frame is in the part of
+/// the file the clip plays (else the clip's own frames are measured: a still of another moment says little).
 fn grade_still_of(lib: &dyn Library, c: &Clip) -> Option<Media> {
     let hash = c.hash.as_deref()?;
     let original = lib.media(&lib.original_of(hash)).or_else(|| lib.media(hash))?;
-    lib.media(original.meta.get("grade_still")?.as_str()?)
+    let still = lib.media(original.meta.get("grade_still")?.as_str()?)?;
+    let t = still.meta.get("t").and_then(Value::as_f64)?;
+    (t >= c.in_ && t <= c.in_ + c.dur).then_some(still)
 }
 
 /// A shot's grading still: one frame of the original at `at` seconds, through its journey (CST) into ACEScct,
 /// scaled (Lanczos) to `width` wide at its own aspect, written as a 16-bit PNG of ACEScct code values — what the
 /// balance is measured and set on, at full quality, without reading the whole original again.
 pub fn grading_still(file: &Path, profile: &str, at: f64, width: u32, png: &Path) -> Result<(u32, u32)> {
+    grading_still_and_preview(file, profile, at, width, png, None)
+}
+
+/// The grading still, and from the same frame a small preview for the lists: `preview` (its JPEG, its width, the
+/// output transform) — the frame through ACES 2.0 into Rec.709, as it will look.
+pub fn grading_still_and_preview(file: &Path, profile: &str, at: f64, width: u32, png: &Path, preview: Option<(&Path, u32, &dyn Output)>) -> Result<(u32, u32)> {
     let journey = vault_media::cst::journey(profile).with_context(|| format!("no colour journey from {profile} into ACEScct"))?;
-    let gpu = Gpu::new()?;
+    let mut gpu = Gpu::new()?;
+    if let Some((_, _, out)) = preview {
+        gpu.set_output(&out.lut());
+    }
     let mut r = VideoReader::open(file, at, at + 1.0 / FPS as f64)?;
     let turn = r.info.transform;
     let pb = r.at(at + 0.5 / FPS as f64 - 1e-4)?.context("no frame there")?;
@@ -877,6 +889,11 @@ pub fn grading_still(file: &Path, profile: &str, at: f64, width: u32, png: &Path
     let h = ((w as f64 * sh / sw).round() as u32).max(2);
     let scaled = gpu.frame_to(&img, w, h, None)?;
     gpu.png(&scaled, w, h, png)?;
+    if let Some((jpg, pw, _)) = preview {
+        let ph = ((pw as f64 * sh / sw).round() as u32).max(2);
+        let small = gpu.frame_to(&img, pw, ph, None)?;
+        gpu.jpeg(&*gpu.output(&small)?, pw, ph, jpg)?;
+    }
     Ok((w, h))
 }
 

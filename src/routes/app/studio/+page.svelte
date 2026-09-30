@@ -153,7 +153,7 @@
 						{s.active.status === 'queued' ? 'Render waiting…' : `Rendering ${Math.round(s.active.progress * 100)}%`}
 					</button>
 				{/if}
-				<button class="ghost" onclick={fullscreen}>⛶ Full screen</button>
+				<button class="ghost small" onclick={fullscreen} title="Full screen">⛶</button>
 			</div>
 			<StageBar {s} />
 		</header>
@@ -294,8 +294,8 @@
 		grid-area: bar;
 		display: flex;
 		flex-direction: column;
-		gap: 0.4rem;
-		padding: 0.5rem 1rem 0.45rem;
+		gap: 0.3rem;
+		padding: 0.2rem 1rem 0.4rem;
 		background: var(--panel);
 	}
 

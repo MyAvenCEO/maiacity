@@ -110,6 +110,7 @@ export const isCache = (m) =>
 	typeof m.meta?.audio_of === 'string' ||
 	typeof m.meta?.thumbnail_of === 'string' ||
 	typeof m.meta?.grade_still_of === 'string' ||
+	typeof m.meta?.preview_of === 'string' ||
 	m.meta?.role === 'model' ||
 	typeof m.meta?.plateOf === 'string';
 

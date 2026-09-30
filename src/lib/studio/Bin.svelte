@@ -5,10 +5,9 @@
 	its colour profile (a menu sets it by hand) and whether its HD proxy is ready — the Edit tab plays only proxies.
 -->
 <script>
-	import ColorBadge from './ColorBadge.svelte';
 	import { isCache } from './color.js';
 	import { allShots, blankSpec, newShot } from './shots.js';
-	import { itemName, thumb } from './studio.svelte.js';
+	import { itemName, raw, thumb } from './studio.svelte.js';
 	import { command } from '$lib/native';
 	import { transcriptState } from './transcript.js';
 
@@ -215,7 +214,9 @@
 					title="Click to see it in the source monitor, drag onto a track, or double-click to drop it at the playhead"
 				>
 					<span class="thumb">
-						{#if m.kind === 'image'}<img src={thumb(m)} alt="" loading="lazy" draggable="false" />{:else}<i>{m.kind === 'audio' ? '♪' : '▶'}</i>{/if}
+						{#if m.kind === 'image'}<img src={thumb(m)} alt="" loading="lazy" draggable="false" />
+						{:else if typeof m.meta?.preview === 'string'}<img src={raw(m.meta.preview)} alt="" loading="lazy" draggable="false" />
+						{:else}<i>{m.kind === 'audio' ? '♪' : '▶'}</i>{/if}
 					</span>
 						<span class="meta">
 						<span class="nm">{String(m.meta?.title ?? itemName(m))}</span>
@@ -226,7 +227,6 @@
 						</span>
 					</span>
 				</button>
-				{#if m.kind !== 'audio'}<span class="badge"><ColorBadge {s} {m} /></span>{/if}
 			</li>
 		{/each}
 	</ul>

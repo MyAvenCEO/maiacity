@@ -49,7 +49,7 @@ const AWAY: Duration = Duration::from_secs(10);
 /// 129³ (a few seconds, on the first render's thread).
 static ODT: OnceLock<Lut3d> = OnceLock::new();
 
-fn odt() -> &'static Lut3d {
+pub(crate) fn odt() -> &'static Lut3d {
     ODT.get_or_init(|| {
         Lut3d::from_rgb("odt-rec709", RENDER_LUT_SIZE, vault_media::aces2::bake_cube(RENDER_LUT_SIZE)).expect("aces2 bakes a whole cube")
     })

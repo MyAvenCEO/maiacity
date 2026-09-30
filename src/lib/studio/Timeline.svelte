@@ -86,6 +86,17 @@
 		addEventListener('pointerup', up);
 	}
 
+	// during playback the view follows the playhead: a page on when it nears the right edge, back when it is off
+	// to the left (a seek), never while paused — then the view is the editor's
+	/** @type {HTMLDivElement | null} */
+	let scroller = $state(null);
+	$effect(() => {
+		const t = s.time;
+		if (!s.playing || !scroller) return;
+		const px = t * s.pxPerSec, w = scroller.clientWidth, at = scroller.scrollLeft;
+		if (px > at + w * 0.85 || px < at) scroller.scrollLeft = Math.max(0, px - w * 0.15);
+	});
+
 	// measured by itself in Audio: when the tab opens, and a moment after the sound clips change
 	const soundKey = $derived(audio ? JSON.stringify(s.clips.filter((c) => c.track !== 'V1').map((c) => [c.id, c.hash, c.start, c.in, c.dur])) : '');
 	$effect(() => {
@@ -302,7 +313,7 @@
 			{#each LANES as l (l)}<div class="head lane-head">{l}</div>{/each}
 		{/if}
 	</div>
-	<div class="scroll">
+	<div class="scroll" bind:this={scroller}>
 		<!-- svelte-ignore a11y_no_static_element_interactions -->
 		<div class="lanes" class:locked={!s.canEdit} bind:this={s.lanes} style:width={x(s.span)} onpointerdown={scrub}>
 			<div class="ruler">
@@ -336,6 +347,7 @@
 							<div
 								class="clip {world ? 'world' : c.kind === 'slate' ? 'slate' : c.kind === 'line' ? 'audio line' : onSoundTrack(c) ? 'audio' : m?.kind} {t.id}"
 								class:linked={!!c.link}
+								class:missing={!!c.hash && !m}
 								class:sel={s.selected === c.id}
 								class:graded={!!c.grade}
 								style:left={x(c.start)}
@@ -349,6 +361,7 @@
 									<canvas use:wave={{ peaks: src.peaks, from: c.in, to: c.in + c.dur, total: src.buffer?.duration ?? src.duration, color: tint(/** @type {Track} */ (t.id)) }}></canvas>
 								{/if}
 								{#each clipWords(c, m) as w, i (i)}<span class="wd" style:left="{w.x}px">{w.w}</span>{/each}
+								{#if c.hash && !m}<b class="gone" title="This clip's file is not on this Mac yet — it comes with the next sync">not on this Mac yet</b>{/if}
 								<span class="label">{#if onSoundTrack(c) && m?.kind === 'video'}<i class="snd">♪&nbsp;</i>{/if}{s.clipName(c)}{#if world}<i>&nbsp;v{c.shotVersion}</i>{/if}</span>
 								{#if snd !== 'ready' || drift}
 									<span class="chips snd-chips">
@@ -611,6 +624,24 @@
 		display: flex;
 		border-color: #7fa98f;
 		background: #dcebe1;
+	}
+
+	/* a clip whose file this Mac does not have yet: kept, marked */
+	.clip.missing {
+		border-style: dashed;
+		opacity: 0.7;
+	}
+
+	.gone {
+		position: absolute;
+		left: 0.3rem;
+		bottom: 0.2rem;
+		padding: 0 0.3rem;
+		border-radius: 3px;
+		background: #f6e3da;
+		font-size: 0.6rem;
+		font-weight: 600;
+		color: #9c3b26;
 	}
 
 	/* the script's stand-ins: a shot not filmed yet, a line not recorded yet */

@@ -517,11 +517,9 @@ export class Studio {
 		await this.flush();
 		this.current = t;
 		this.expand(t.project ?? '', true);
-		this.clips = t.clips.filter((c) => isWorld(c) || c.kind === 'slate' || c.kind === 'line' || (c.hash && this.byHash.has(c.hash)));
-		// a clip whose file this Mac does not know is left out of the view — and then the timeline is never saved from
-		// here, or those clips would be gone for good
-		this.dropped = t.clips.length - this.clips.length;
-		if (this.dropped) this.error = `${this.dropped} clip${this.dropped === 1 ? '' : 's'} of this timeline name files this Mac does not have yet — shown without them, and not saved.`;
+		// every clip stays, a file this Mac does not have yet included: the timeline marks it on the clip itself
+		this.clips = t.clips;
+		this.dropped = 0;
 		this.selected = null;
 		this.selectedKey = null;
 		this.time = 0;
@@ -636,8 +634,8 @@ export class Studio {
 		if (this.current?.id !== cur.id || (!force && (this.saving !== 'saved' || t.updated === cur.updated))) return;
 		this.current = t;
 		this.timelines = [t, ...this.timelines.filter((x) => x.id !== t.id)];
-		this.clips = t.clips.filter((c) => isWorld(c) || c.kind === 'slate' || c.kind === 'line' || (c.hash && this.byHash.has(c.hash)));
-		this.dropped = t.clips.length - this.clips.length;
+		this.clips = t.clips;
+		this.dropped = 0;
 		this.saving = 'saved';
 		if (this.playing) this.schedule();
 	}
