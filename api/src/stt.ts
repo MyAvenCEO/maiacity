@@ -7,18 +7,18 @@
  * words by the chunk's start). Prem's SDK encrypts in this process (ML-KEM with Prem's attested enclave, XChaCha20):
  * neither Prem's gateway nor anyone on the way reads the audio or the words, and Prem keeps neither.
  *
- *   PREMAI_API_KEY     Prem's API key (a GitHub secret, into this container's env by the deploy) — never on a Mac
- *   PREMAI_CLIENT_KEK  optional: our own 32-byte key encryption key (64 hex). Without it, one is made once and kept
- *                      in the database's `secrets`, like the session key. Prem never sees it; transcription does not
- *                      depend on it (the SDK wraps its file keys with it), the SDK only insists on one.
+ * Prem's client, its key and endpoints, and how its failures read: prem.ts (shared with the shot analysis). A failure
+ * that is Prem's for now (its attestation report for the model unavailable, a 5xx, rate limiting) answers 503 with
+ * `transient: true`: the vault server keeps the recording queued and tries again later, without using up a try.
  *
  * Who may ask: the vault server (its own token, whose hash it publishes in vault_config as `api_token`), or a key the
  * admin approved with `media:admin` (the Mac app's).
  */
-import { createHash, randomBytes } from "node:crypto";
+import { createHash } from "node:crypto";
 import { db } from "./pg";
 import { can } from "./acl";
 import { keyHolder } from "./keys";
+import { call, clientKek, failure, paused, pick, prem, PremError, resetPrem } from "./prem";
 
 export const MODEL = "deepgram/general-nova-3";
 /** Prem's limit for one request. */
@@ -44,7 +44,7 @@ const ms = (x: unknown) => Math.round(Number(x ?? 0) * 1000) / 1000;
 const speaker = (x: unknown) => (typeof x === "number" && Number.isFinite(x) ? { sp: x } : {});
 
 /** Deepgram's answer → the catalog's transcript: every word with its start, end, confidence and speaker; sentences. */
-export function normalize(raw: DeepgramResponse): Transcript {
+export function normalize(raw: DeepgramResponse, model: string = MODEL): Transcript {
   const channel = raw?.results?.channels?.[0];
   const alt = channel?.alternatives?.[0];
   if (!alt) throw new SttError("The transcription came back without a channel.", 502);
@@ -54,7 +54,7 @@ export function normalize(raw: DeepgramResponse): Transcript {
   // the plain transcript: with diarize, Deepgram's paragraphs carry "Speaker 0:" labels
   const text = (alt.transcript ?? words.map((w) => w.w).join(" ")).trim();
   const language = channel?.detected_language ?? alt.languages?.[0] ?? "en";
-  return { model: MODEL, language, text, words, utterances: utterances(raw, alt, words) };
+  return { model, language, text, words, utterances: utterances(raw, alt, words) };
 }
 
 /** Sentences with their times: Deepgram's utterances or paragraphs when it sent them, else cut from the words. */
@@ -89,9 +89,8 @@ export class SttError extends Error {
   }
 }
 
-// ── Prem ──
+// ── Prem (prem.ts: the shared confidential client, attested per model) ──
 type Client = { audio: { transcriptions: { create(body: { file: File; model: `deepgram/${string}`; diarize?: boolean; smart_format?: boolean }): Promise<unknown> } } };
-let client: Promise<Client> | null = null;
 let testClient: Client | null = null;
 
 /** Is speech to text set up here (Prem's key in the environment)? */
@@ -108,55 +107,7 @@ export function useSttClient(c: Client | null) {
   testClient = c;
 }
 
-/**
- * Our key encryption key: PREMAI_CLIENT_KEK when set, else made once and kept in the database's `secrets` (like the
- * session key) — never in the repository, the .env or a log.
- */
-export async function clientKek(): Promise<string> {
-  const env = process.env.PREMAI_CLIENT_KEK?.trim();
-  if (env && /^[0-9a-fA-F]{64}$/.test(env)) return env;
-  const read = async () => (await db.query<{ value: string }>("SELECT value FROM secrets WHERE key = 'premai_client_kek'")).rows[0]?.value;
-  const have = await read();
-  if (have) return have;
-  await db.query("INSERT INTO secrets (key, value) VALUES ('premai_client_kek', $1) ON CONFLICT (key) DO NOTHING", [randomBytes(32).toString("hex")]);
-  return (await read())!; // whoever won the race owns the key
-}
-
-async function premClient(): Promise<Client> {
-  if (testClient) return testClient;
-  if (!client) {
-    client = (async () => {
-      // loaded only when first needed: the SDK is large, and nothing else in the API uses it
-      const { createRvencClient } = await import("@premai/api-sdk");
-      const c = await createRvencClient({
-        apiKey: process.env.PREMAI_API_KEY!,
-        clientKEK: await clientKek(),
-        config: {
-          endpoints: {
-            proxy: process.env.PREMAI_PROXY_URL ?? "https://gateway.prem.io",
-            enclave: process.env.PREMAI_ENCLAVE_URL ?? "https://conf-engine.prem.io",
-          },
-        },
-      });
-      return c as unknown as Client;
-    })();
-    client.catch(() => (client = null));
-  }
-  return client;
-}
-
-/** A thrown SDK error → a sentence and a status (Prem answers `{ status, error }`; the key never appears). */
-function premError(e: unknown): SttError {
-  const o = (e ?? {}) as { status?: number; error?: unknown; message?: unknown; cause?: unknown };
-  const status = typeof o.status === "number" ? o.status : 0;
-  // the attestation's errors say what went wrong in `cause` ("Authentication token is invalid")
-  const cause = Array.isArray(o.cause) ? ` (${o.cause.map(String).join(": ")})` : "";
-  const why = (String(o.error ?? o.message ?? e) + cause).slice(0, 300);
-  if (status === 413) return new SttError(`Prem refused the audio as too large: ${why}`, 413);
-  if (status === 429) return new SttError(`Prem is rate limiting: ${why}`, 429);
-  if (status === 401 || status === 403) return new SttError(`Prem refused our key (${status}): ${why}`, 502);
-  return new SttError(`Prem could not transcribe this: ${why}`, 502);
-}
+export { clientKek, prem, resetPrem };
 
 /** Transcribe one audio file (at most 25 MB) — Deepgram's answer, normalised. */
 export async function transcribe(bytes: Uint8Array, mime = "audio/mp4", name = "speech.m4a"): Promise<Transcript> {
@@ -164,22 +115,12 @@ export async function transcribe(bytes: Uint8Array, mime = "audio/mp4", name = "
   if (!bytes.length) throw new SttError("No audio in the request.");
   if (bytes.length > MAX_BYTES) throw new SttError(`The audio is ${bytes.length} bytes; one request takes at most ${MAX_BYTES} (25 MB) — send it in chunks.`, 413);
   const file = new File([bytes as Uint8Array<ArrayBuffer>], name, { type: mime });
-  const ask = async () => (await premClient()).audio.transcriptions.create({ file, model: MODEL, smart_format: true, diarize: true });
-  let raw: unknown;
-  try {
-    raw = await ask();
-  } catch (first) {
-    const status = (first as { status?: unknown })?.status;
-    if (typeof status === "number" && status >= 400 && status < 500) throw premError(first);
-    // the enclave's key may have turned since the client was made: once more with a fresh client
-    client = null;
-    try {
-      raw = await ask();
-    } catch (e) {
-      throw premError(e);
-    }
-  }
-  return normalize(raw as DeepgramResponse);
+  // the confidential Deepgram this key lists (the one we name, unless Prem renamed it)
+  const model = (testClient ? MODEL : await pick(MODEL, "AUDIO_TRANSCRIPTION", /^deepgram\//)) as `deepgram/${string}`;
+  const ask = async () => (testClient ?? ((await prem()) as Client)).audio.transcriptions.create({ file, model, smart_format: true, diarize: true });
+  // behind the model's breaker and the rate limit (prem.ts): one call, never a retry loop
+  const raw = await call(model, "transcribe this", ask);
+  return normalize(raw as DeepgramResponse, model);
 }
 
 // ── who may ask ──
@@ -199,7 +140,7 @@ export async function authorize(req: Request): Promise<true | Response> {
   if (server === true) return true;
   if (server === false) return Response.json({ error: "This vault server token is not the one the server published." }, { status: 403 });
   const key = await keyHolder(req);
-  if (!key) return Response.json({ error: "Speech to text needs the vault server's token or the app's key." }, { status: 401 });
+  if (!key) return Response.json({ error: "Speech to text and the shot analysis need the vault server's token or the app's key." }, { status: 401 });
   if (!(key.scope.includes("media:admin") && can(key, "media:admin"))) return Response.json({ error: "This key cannot work with the media vault." }, { status: 403 });
   return true;
 }
@@ -208,7 +149,8 @@ export async function authorize(req: Request): Promise<true | Response> {
 export async function statusRoute(req: Request): Promise<Response> {
   const ok = await authorize(req);
   if (ok !== true) return ok;
-  return Response.json({ ready: sttReady(), model: MODEL, max_bytes: MAX_BYTES });
+  const p = paused(MODEL);
+  return Response.json({ ready: sttReady(), model: MODEL, max_bytes: MAX_BYTES, ...(p ? { paused_until: new Date(p.until).toISOString(), reason: p.reason } : {}) });
 }
 
 /**
@@ -238,6 +180,7 @@ export async function transcribeRoute(req: Request): Promise<Response> {
     return Response.json(await transcribe(bytes, mime, name));
   } catch (e) {
     if (e instanceof SttError) return Response.json({ error: e.message }, { status: e.status });
+    if (e instanceof PremError) return failure(e);
     console.error("stt:", e instanceof Error ? e.message : e);
     return Response.json({ error: "Something went wrong on our side." }, { status: 500 });
   }

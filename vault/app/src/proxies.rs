@@ -167,6 +167,13 @@ pub async fn sweep(handle: AppHandle, vault: Arc<Vault>) {
                     if !made && due && !queued {
                         tauri::async_runtime::spawn(auto_proxy(handle.clone(), vault.clone(), m.hash.clone(), PathBuf::new()));
                     }
+                    // a video with its proxy but no grading still yet (made before there were any): its still
+                    let still = m.meta.get("grade_still").and_then(|p| p.as_str()).is_some_and(|s| s.len() == 64);
+                    let still_tries = m.meta.get("grade_still_tries").and_then(|t| t.as_u64()).unwrap_or(0);
+                    let still_queued = NOW.lock().unwrap().as_ref().is_some_and(|n| n.contains_key(&format!("still:{}", m.hash)));
+                    if made && m.kind == "video" && !sequence(m) && !still && still_tries < TRIES && !still_queued && journey(profile) {
+                        tauri::async_runtime::spawn(backfill_still(vault.clone(), m.hash.clone()));
+                    }
                 }
             }
         }
@@ -335,7 +342,81 @@ async fn make(vault: &Vault, hex: &str, name: &str, source: PathBuf) -> Result<(
     };
     let made = vault.ingest_file(&named, &batch).await.map_err(|e| format!("{e:#}"))?;
     std::fs::remove_file(&named).ok();
-    cleanup(&path);
     vault.catalog.describe(hash, &json!({ "meta": { "proxy": made.hash } })).await.map_err(|e| format!("{e:#}"))?;
+    // and while the original is at hand: its grading still
+    if !still && !seq {
+        set(hex, name, "grading still", 1.0);
+        if let Err(e) = grading_still(vault, hex, name, &path, &profile).await {
+            tracing::warn!("grading still of {hex}: {e}");
+        }
+    }
+    cleanup(&path);
     Ok(())
+}
+
+/// How wide a grading still is: 4K UHD.
+const STILL_WIDTH: u32 = 3840;
+
+/// A video original's grading still: its middle frame, through its journey (CST) into ACEScct, 3840 wide, a 16-bit PNG
+/// of ACEScct code values (vault_render `grading_still`) — beside its proxy (class proxy, the same story), named on
+/// the original as `meta.grade_still`. The balance is measured and judged on it at full quality.
+async fn grading_still(vault: &Vault, hex: &str, name: &str, path: &std::path::Path, profile: &str) -> Result<(), String> {
+    let hash: iroh_blobs::Hash = hex.parse().map_err(|e| format!("{e}"))?;
+    let original = vault.catalog.meta(hash).await.map_err(|e| format!("{e:#}"))?.ok_or("no such file")?;
+    let seconds = ["/probe/duration", "/duration"].iter().find_map(|p| original.meta.pointer(p).and_then(|d| d.as_f64())).unwrap_or(1.0);
+    let at = (seconds / 2.0).max(0.0);
+    let stem = std::path::Path::new(name).file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_else(|| hex[..12].to_string());
+    let out = vault.ingest_dir().join(format!("{stem}.grade.png"));
+    let (src, o, pf) = (path.to_path_buf(), out.clone(), profile.to_string());
+    let (w, h) = tokio::task::spawn_blocking(move || vault_render::grading_still(&src, &pf, at, STILL_WIDTH, &o))
+        .await
+        .map_err(|e| e.to_string())?
+        .map_err(|e| format!("{e:#}"))?;
+    let batch = Batch {
+        session: format!("grading still of {hex}"),
+        tags: vec!["grade-still".into()],
+        title: Some(format!("{stem} · grading still")),
+        meta: json!({ "role": "grade-still", "grade_still_of": hex, "t": (at * 1000.0).round() / 1000.0, "width": w, "height": h,
+            "color": { "profile": WORKING, "from": "our own tag", "journey_from": profile }, "encoding": "16-bit PNG, ACEScct code values" }),
+        story: Some(original.story.clone()).filter(|s| !s.is_empty()),
+        class: Some("proxy".into()),
+        ..Default::default()
+    };
+    let made = vault.ingest_file(&out, &batch).await.map_err(|e| format!("{e:#}"));
+    std::fs::remove_file(&out).ok();
+    let made = made?;
+    vault.catalog.describe(hash, &json!({ "meta": { "grade_still": made.hash } })).await.map_err(|e| format!("{e:#}"))?;
+    Ok(())
+}
+
+/// An original with a proxy of ours but no grading still yet (made before there were any): its still, from the
+/// vault's copy of the original, one at a time after any proxy.
+async fn backfill_still(vault: Arc<Vault>, hex: String) {
+    let k = format!("still:{hex}");
+    let Ok(hash) = hex.parse::<iroh_blobs::Hash>() else { return };
+    let Some(original) = vault.catalog.meta(hash).await.ok().flatten() else { return };
+    let name = original.original_name.clone();
+    set(&k, &name, "queued", 0.0);
+    let _turn = TURN.acquire().await;
+    vault.hold.free_of("ingest").await;
+    while pressure() > 1 {
+        set(&k, &name, "waiting for memory", 0.0);
+        tokio::time::sleep(Duration::from_secs(5)).await;
+    }
+    set(&k, &name, "grading still", 0.0);
+    let told = |p: &str| original.meta.pointer(p).and_then(|v| v.as_str()).filter(|s| !s.is_empty());
+    let profile = told("/color/override").or_else(|| told("/color/profile")).unwrap_or("").to_string();
+    let ext = std::path::Path::new(&name).extension().map(|e| e.to_string_lossy().to_lowercase()).unwrap_or_else(|| "mov".into());
+    let src = vault.ingest_dir().join(format!("{hex}.src.{ext}"));
+    let r = match vault.store.blobs().export(hash, &src).await {
+        Ok(_) => grading_still(&vault, &hex, &name, &src, &profile).await,
+        Err(e) => Err(format!("the original is not on this Mac: {e:#}")),
+    };
+    std::fs::remove_file(&src).ok();
+    clear(&k);
+    if let Err(e) = r {
+        tracing::warn!("grading still of {hex}: {e}");
+        let tries = original.meta.get("grade_still_tries").and_then(|t| t.as_u64()).unwrap_or(0) + 1;
+        vault.catalog.describe(hash, &json!({ "meta": { "grade_still_tries": tries } })).await.ok();
+    }
 }

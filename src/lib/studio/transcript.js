@@ -28,8 +28,20 @@ export function transcriptOf(m) {
 	return words.length ? { ...t, words } : null;
 }
 
-/** A file's caption words (meta.words), as the render reads them. @param {MediaItem | undefined} m @returns {CaptionWord[]} */
-export const captionWordsOf = (m) => (Array.isArray(m?.meta?.words) ? /** @type {unknown[]} */ (m.meta.words).filter(isCaption) : []);
+/** A file's own caption words (meta.words: a voice take's timing, or captions edited by hand). @param {MediaItem | undefined} m @returns {CaptionWord[]} */
+const ownCaptions = (m) => (Array.isArray(m?.meta?.words) ? /** @type {unknown[]} */ (m.meta.words).filter(isCaption) : []);
+
+/**
+ * A voice file's caption words, as the render reads them (vault-render `caption_words`): its own, else its transcript's
+ * — every voice has its captions without anyone asking.
+ * @param {MediaItem | undefined} m @returns {CaptionWord[]}
+ */
+export function captionWordsOf(m) {
+	const own = ownCaptions(m);
+	if (own.length) return own;
+	const t = transcriptOf(m);
+	return t ? asCaptions(t.words) : [];
+}
 
 /**
  * A file's words on its own clock: the transcript's, else the voice take's own timing.
@@ -38,24 +50,48 @@ export const captionWordsOf = (m) => (Array.isArray(m?.meta?.words) ? /** @type 
 export function wordsOf(m) {
 	const t = transcriptOf(m);
 	if (t) return t.words;
-	return captionWordsOf(m).map((x) => ({ w: x.word, s: x.start, e: x.end }));
+	return ownCaptions(m).map((x) => ({ w: x.word, s: x.start, e: x.end }));
 }
 
 /**
- * Where a file's transcript stands (meta.transcript_state; the transcript itself wins).
- * @param {MediaItem | undefined} m
- * @returns {{ state: 'ready' | 'queued' | 'transcribing' | 'failed' | 'none' | 'unknown', note: string }}
+ * @typedef {{ state: 'ready' | 'queued' | 'running' | 'failed' | 'stuck' | 'none' | 'unknown', note: string, progress: number, stage: string }} Step
  */
+/**
+ * Where one automatic step of a file stands, from its record's view in meta (`<step>_state`, `_stage`, `_progress`,
+ * `_tries`): queued (with why it waits, when it says), running (how far), failed and trying again by itself, stuck
+ * (failed three times: a person starts it again), none (nothing to find — no speech), or not started.
+ * @param {MediaItem | undefined} m @param {'transcript' | 'analysis'} step @returns {Step}
+ */
+function stepState(m, step) {
+	const meta = m?.meta ?? {};
+	const st = typeof meta[`${step}_state`] === 'string' ? /** @type {string} */ (meta[`${step}_state`]) : '';
+	const progress = Math.max(0, Math.min(1, Number(meta[`${step}_progress`]) || 0));
+	const stage = typeof meta[`${step}_stage`] === 'string' ? /** @type {string} */ (meta[`${step}_stage`]) : '';
+	const tries = Number(meta[`${step}_tries`]) || 0;
+	if (st === 'transcribing' || st === 'analysing') return { state: 'running', note: stage || st, progress, stage };
+	if (st.startsWith('queued')) return { state: 'queued', note: st.replace(/^queued:?\s*/, '') || 'queued', progress: 0, stage };
+	if (st.startsWith('failed')) return { state: /waits for a person/.test(st) || tries >= 3 ? 'stuck' : 'failed', note: st.replace(/^failed:\s*/, ''), progress: 0, stage };
+	if (st.startsWith('none')) return { state: 'none', note: st.replace(/^none:\s*/, ''), progress: 1, stage };
+	if (st === 'done') return { state: 'ready', note: 'done', progress: 1, stage };
+	return { state: 'unknown', note: 'not started yet', progress: 0, stage };
+}
+
+/** Where a file's transcript stands (its words, once there are any, win). @param {MediaItem | undefined} m @returns {Step} */
 export function transcriptState(m) {
 	const t = transcriptOf(m);
-	if (t) return { state: 'ready', note: `${t.words.length} words${t.language ? ` · ${t.language}` : ''}${t.model ? ` · ${t.model}` : ''}` };
-	const st = typeof m?.meta?.transcript_state === 'string' ? m.meta.transcript_state : '';
-	if (st === 'queued') return { state: 'queued', note: 'transcript queued' };
-	if (st === 'transcribing') return { state: 'transcribing', note: 'transcribing…' };
-	if (st.startsWith('failed')) return { state: 'failed', note: st };
-	if (st.startsWith('none')) return { state: 'none', note: st };
-	return { state: 'unknown', note: 'no transcript yet' };
+	if (t) return { state: 'ready', note: `${t.words.length} words${t.language ? ` · ${t.language}` : ''}${t.model ? ` · ${t.model}` : ''}`, progress: 1, stage: '' };
+	return stepState(m, 'transcript');
 }
+
+/** Where a file's shot analysis (tags, cues, thumbnail) stands. @param {MediaItem | undefined} m @returns {Step} */
+export function analysisState(m) {
+	const a = /** @type {{ tags?: unknown[], summary?: { line?: string } } | undefined} */ (m?.meta?.analysis);
+	if (a && typeof a === 'object') return { state: 'ready', note: a.summary?.line || `${Array.isArray(a.tags) ? a.tags.length : 0} tags`, progress: 1, stage: '' };
+	return stepState(m, 'analysis');
+}
+
+/** Is a step still to come or on its way (not ready, nothing to find, or given up)? @param {Step} s */
+export const stepOpen = (s) => s.state === 'queued' || s.state === 'running' || s.state === 'failed' || s.state === 'unknown';
 
 /**
  * Does a video carry sound? Its audio proxy says so, or its probe; an original not probed yet is taken to have it.

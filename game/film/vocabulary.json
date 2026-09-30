@@ -1,0 +1,117 @@
+{
+  "about": "The shot vocabulary: what the vault server's analysis (analyse.rs → POST /api/analysis, Prem's confidential Qwen) says of every ingested picture, so an editor — a person or an LLM — can find and pull the best parts of a shot. Base tags have fixed values (the prompt, the API's validator, the studio and the MCP's find_shots all read them from here); free tags are open. Raise `version` whenever a value is added, renamed or removed.",
+  "version": 1,
+  "base": {
+    "shot_size": {
+      "label": "Shot size",
+      "type": "one",
+      "values": ["EWS", "WS", "FS", "MS", "MCU", "CU", "ECU", "insert"],
+      "about": "EWS extreme wide · WS wide · FS full (head to toe) · MS medium (waist up) · MCU medium close-up (chest up) · CU close-up (face) · ECU extreme close-up (eyes, a detail of a face) · insert (a detail of an object or a hand)"
+    },
+    "angle": {
+      "label": "Angle",
+      "type": "one",
+      "values": ["eye", "high", "low", "overhead", "dutch", "POV", "OTS"],
+      "about": "eye level · high (looking down) · low (looking up) · overhead (straight down) · dutch (tilted horizon) · POV (what a person sees) · OTS (over the shoulder)"
+    },
+    "movement": {
+      "label": "Camera movement",
+      "type": "many",
+      "values": ["static", "pan", "tilt", "dolly", "handheld", "gimbal", "zoom", "crane", "drone"],
+      "about": "how the camera moves over the stretch; several may apply (handheld + pan)"
+    },
+    "lens": {
+      "label": "Lens",
+      "type": "one",
+      "values": ["wide", "normal", "tele", "macro"],
+      "about": "the lens's character, from perspective and background compression"
+    },
+    "focal_mm": {
+      "label": "Focal length (est.)",
+      "type": "number",
+      "about": "an estimated full-frame-equivalent focal length in mm, or leave it out when it cannot be judged"
+    },
+    "dof": {
+      "label": "Depth of field",
+      "type": "one",
+      "values": ["deep", "medium", "shallow"],
+      "about": "deep: everything sharp · shallow: the background clearly soft"
+    },
+    "light_source": {
+      "label": "Light",
+      "type": "many",
+      "values": ["natural", "practical", "artificial"],
+      "about": "natural (sun, sky, window) · practical (lamps, screens seen in the picture) · artificial (film lights, off screen)"
+    },
+    "time_of_day": {
+      "label": "Time of day",
+      "type": "one",
+      "values": ["day", "night", "golden hour", "blue hour"],
+      "about": "as the light reads; an interior with no daylight cue reads from its light"
+    },
+    "contrast": {
+      "label": "Contrast",
+      "type": "one",
+      "values": ["low", "medium", "high"],
+      "about": "the light's contrast: low (flat, soft) · high (hard, deep shadows)"
+    },
+    "location": {
+      "label": "Location",
+      "type": "one",
+      "values": ["interior", "exterior"],
+      "about": "inside or outside"
+    },
+    "location_note": {
+      "label": "Place",
+      "type": "text",
+      "about": "the place in a few words: kitchen, city street at night, desk with two screens"
+    },
+    "people": {
+      "label": "People",
+      "type": "number",
+      "about": "how many people are seen"
+    },
+    "who": {
+      "label": "Who",
+      "type": "names",
+      "about": "people by name — only names that are said in the transcript or written in the picture, never guessed"
+    },
+    "scene": {
+      "label": "Scene",
+      "type": "many",
+      "values": ["dialogue", "monologue to camera", "action", "b-roll", "establishing", "transition", "text/screen"],
+      "about": "what kind of material this is for an edit"
+    },
+    "quality": {
+      "label": "Quality flags",
+      "type": "many",
+      "values": ["focus miss", "overexposed", "underexposed", "shaky", "blocked", "audio clipping"],
+      "about": "problems an editor must know about; empty when there are none (audio clipping only when the words say so, e.g. a distorted shout)"
+    }
+  },
+  "free": {
+    "about": "free-form tags: lowercase, one to three words each — objects, props, clothing, colours, mood, anything worth finding the shot by",
+    "max": 12,
+    "max_length": 32
+  },
+  "cues": {
+    "about": "time-ranged marks in seconds of the file: s (start), e (end), kind, label (a few words), confidence (0…1), note (optional, one sentence)",
+    "kinds": {
+      "take": "one attempt at an action that is repeated (a rolling camera, the actor doing the same again): its in and out. The takes of the same action share take_of (a short name of the action) and are numbered by take (1, 2, …); rank orders them (1 = best) and best marks the best one, with why",
+      "action": "what happens: someone enters, picks something up, turns, sits down",
+      "emotion": "an actor's expression or tone, from the face and the words: the label is the emotion (calm, joy, doubt, anger, tired, focused …)",
+      "cut": "a good in or out point: an action starts or ends, a look, a breath or a pause between sentences — label says which (in / out) and why",
+      "transition": "a transition opportunity: a match-cut candidate, motion toward or away from the lens, a whip, a frame that goes dark or bright enough to fade",
+      "highlight": "one of the best moments of the file, with a one-line why",
+      "problem": "a flub, a false start, a missed line, someone walking in, a bump — what to cut around"
+    },
+    "labels": {
+      "cut": ["in", "out"],
+      "transition": ["match cut", "toward lens", "away from lens", "whip", "fade"],
+      "emotion": ["calm", "joy", "doubt", "anger", "sadness", "surprise", "focused", "tired", "tense", "tender", "determined", "playful"]
+    }
+  },
+  "summary": {
+    "about": "line: one sentence of what the file shows · best_use: one sentence of where it serves an edit best (an opener, b-roll under a voice-over, the emotional turn …)"
+  }
+}

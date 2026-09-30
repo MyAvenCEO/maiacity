@@ -74,9 +74,10 @@ export type VaultFile = {
 };
 
 /**
- * The mirror of the catalog, newest first — for the admin and the site. A transcript's words and sentences stay out
- * (an hour of speech is half a megabyte, and every Mac asks for this list twice a minute): its text, model and
- * language are here; the words are in the catalog on every Mac, and in LIBRARY/meta/<hash>.json.
+ * The mirror of the catalog, newest first — for the admin and the site: the descriptions only. What the vault server
+ * derives from a file (its transcript, its shot analysis) lives under its own catalog keys (`transcript/<hash>`,
+ * `analysis/<hash>`) on every Mac and in the bucket (LIBRARY/transcript/, LIBRARY/analysis/) — not here. (A
+ * description from before the records may still carry a transcript: its words stay out.)
  */
 export async function listVaultFiles(q: { kind?: string; tag?: string } = {}): Promise<VaultFile[]> {
   const { rows } = await db.query<VaultFile & { size: string }>(

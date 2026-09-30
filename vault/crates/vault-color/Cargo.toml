@@ -1,0 +1,10 @@
+[package]
+name = "vault-color"
+version = "0.1.0"
+description = "The studio's colour maths, platform-free: every source's journey into ACEScct (cst) and the ACES 2.0 output transform (aces2) — shared by the Mac's native media and the vault server"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]

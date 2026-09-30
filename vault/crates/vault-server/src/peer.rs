@@ -1,7 +1,8 @@
 //! The server peer's iroh side: a private endpoint (paired devices only), a catalog replica that keeps only the small
-//! entries (meta/, ingest/, device/) on its disk, and the rule "every file the catalog names is in the bucket":
-//! a file a Mac added is pulled from that Mac — every 16 KiB checked against its BLAKE3 tree on arrival — and streamed
-//! straight into Object Storage. Nothing unverified is stored; a bad chunk aborts the upload.
+//! entries (meta/, ingest/, device/, and the derived transcript/, sound/ and analysis/ records) on its disk, and the
+//! rule "every file the catalog names is in the bucket": a file a Mac added is pulled from that Mac — every 16 KiB
+//! checked against its BLAKE3 tree on arrival — and streamed straight into Object Storage. Nothing unverified is
+//! stored; a bad chunk aborts the upload.
 
 use std::{
     collections::{HashMap, HashSet},
@@ -52,8 +53,10 @@ pub struct Peer {
     pub wake: Notify,
     /// the same, for the uploads
     pub wake_store: Notify,
-    /// a file reached the bucket: the transcripts look (transcribe.rs)
+    /// a file reached the bucket: the sound loop looks (sound.rs)
     pub wake_transcribe: Notify,
+    /// a file reached the bucket or a transcript settled: the analysis looks (analyse.rs)
+    pub wake_analyse: Notify,
 }
 
 pub struct Config<'a> {
@@ -118,7 +121,16 @@ impl Peer {
             }
         };
         let small = |p: &str| FilterKind::Prefix(bytes::Bytes::copy_from_slice(p.as_bytes()));
-        doc.set_download_policy(DownloadPolicy::NothingExcept(vec![small("meta/"), small("ingest/"), small("device/")])).await?;
+        // the derived records are small too (a transcript is at most a few hundred KB): kept here like descriptions
+        doc.set_download_policy(DownloadPolicy::NothingExcept(vec![
+            small("meta/"),
+            small("ingest/"),
+            small("device/"),
+            small("transcript/"),
+            small("sound/"),
+            small("analysis/"),
+        ]))
+        .await?;
         // live: iroh-docs only accepts a device's sync for a catalog that is syncing (else it closes the stream)
         doc.start_sync(vec![]).await?;
         let author = docs.author_default().await?;
@@ -138,6 +150,7 @@ impl Peer {
             wake: Notify::new(),
             wake_store: Notify::new(),
             wake_transcribe: Notify::new(),
+            wake_analyse: Notify::new(),
         }))
     }
 
@@ -165,6 +178,10 @@ impl Peer {
                     if entry.key().starts_with(b"blobs/") {
                         self.seen_from.lock().unwrap().insert(entry.content_hash(), from);
                     }
+                    // a Mac's transcript arrived: a recording's analysis may go on with its words
+                    if entry.key().starts_with(b"transcript/") {
+                        self.wake_analyse.notify_one();
+                    }
                     self.nudge();
                 }
                 Ok(LiveEvent::InsertLocal { .. } | LiveEvent::ContentReady { .. } | LiveEvent::SyncFinished(_)) => self.nudge(),
@@ -187,9 +204,13 @@ impl Peer {
     pub async fn describe(self: Arc<Self>, s3: S3, db: Arc<tokio_postgres::Client>) -> Result<()> {
         // the content each description was last mirrored at
         let mut done: HashMap<Hash, Hash> = HashMap::new();
+        let mut kept: HashMap<String, Hash> = HashMap::new();
         loop {
             if let Err(e) = self.describe_once(&s3, &db, &mut done).await {
                 tracing::warn!("describe: {e:#}");
+            }
+            if let Err(e) = self.keep_derived(&s3, &mut kept).await {
+                tracing::warn!("derived records to the bucket: {e:#}");
             }
             tokio::select! {
                 _ = self.wake.notified() => {}
@@ -242,6 +263,31 @@ impl Peer {
             mirrored += 1;
         }
         tracing::info!("mirrored {mirrored} descriptions");
+        Ok(())
+    }
+
+    /// Every settled derived record (a transcript, an analysis — not one halfway) into the bucket beside the
+    /// descriptions (`LIBRARY/transcript/<hash>.json`, `LIBRARY/analysis/<hash>.json`): one more copy, readable
+    /// without iroh. Postgres keeps none of them (the site does not need a file's words or cues).
+    async fn keep_derived(&self, s3: &S3, kept: &mut HashMap<String, Hash>) -> Result<()> {
+        for prefix in ["transcript/", "sound/", "analysis/"] {
+            let entries: Vec<_> = self.doc.get_many(Query::single_latest_per_key().key_prefix(prefix)).await?.collect().await;
+            for entry in entries.into_iter().flatten() {
+                let key = String::from_utf8_lossy(entry.key()).into_owned();
+                if kept.get(&key) == Some(&entry.content_hash()) {
+                    continue;
+                }
+                let Ok(bytes) = self.store.blobs().get_bytes(entry.content_hash()).await else { continue };
+                let settled = serde_json::from_slice::<serde_json::Value>(&bytes)
+                    .ok()
+                    .and_then(|v| v["state"].as_str().map(|s| s == "done" || s.starts_with("none") || s.starts_with("failed")))
+                    .unwrap_or(false);
+                if settled {
+                    s3.put(&s3::derived_key(&key), bytes, "application/json").await?;
+                }
+                kept.insert(key, entry.content_hash());
+            }
+        }
         Ok(())
     }
 
@@ -324,6 +370,7 @@ impl Peer {
         }
         db::stored(db, &hash.to_hex()).await.ok();
         self.wake_transcribe.notify_one();
+        self.wake_analyse.notify_one();
     }
 
     /// The files the bucket holds: this server's own `blobs/<hash>` entries (hex).
@@ -334,16 +381,36 @@ impl Peer {
 
     /// Every file's description whose JSON is here (the newest entry per key, whoever wrote it).
     pub(crate) async fn metas(&self) -> Result<Vec<(Hash, serde_json::Value)>> {
-        let entries: Vec<_> = self.doc.get_many(Query::single_latest_per_key().key_prefix("meta/")).await?.collect().await;
+        self.records("meta/").await
+    }
+
+    /// Every entry under a `<prefix><hash>` key whose JSON is here — descriptions (`meta/`) or derived records
+    /// (`transcript/`, `analysis/`), the newest entry per key.
+    pub(crate) async fn records(&self, prefix: &str) -> Result<Vec<(Hash, serde_json::Value)>> {
+        let entries: Vec<_> = self.doc.get_many(Query::single_latest_per_key().key_prefix(prefix)).await?.collect().await;
         let mut out = Vec::new();
         for entry in entries.into_iter().flatten() {
-            let Some(hash) = std::str::from_utf8(&entry.key()[5..]).ok().and_then(|h| h.parse::<Hash>().ok()) else { continue };
+            let Some(hash) = std::str::from_utf8(&entry.key()[prefix.len()..]).ok().and_then(|h| h.parse::<Hash>().ok()) else { continue };
             let Ok(bytes) = self.store.blobs().get_bytes(entry.content_hash()).await else { continue };
-            if let Ok(meta) = serde_json::from_slice(&bytes) {
-                out.push((hash, meta));
+            if let Ok(v) = serde_json::from_slice(&bytes) {
+                out.push((hash, v));
             }
         }
         Ok(out)
+    }
+
+    /// One file's derived record (`transcript/`, `analysis/`) as it is now.
+    pub(crate) async fn record(&self, prefix: &str, hash: Hash) -> Result<Option<serde_json::Value>> {
+        let query = Query::single_latest_per_key().key_exact(format!("{prefix}{}", hash.to_hex()));
+        let Some(entry) = self.doc.get_one(query).await? else { return Ok(None) };
+        let bytes = self.store.blobs().get_bytes(entry.content_hash()).await?;
+        Ok(Some(serde_json::from_slice(&bytes)?))
+    }
+
+    /// Write a file's derived record as the server — the only author of `transcript/` and `analysis/`.
+    pub(crate) async fn write_record(&self, prefix: &str, hash: Hash, record: &serde_json::Value) -> Result<()> {
+        self.doc.set_bytes(self.author, format!("{prefix}{}", hash.to_hex()), serde_json::to_vec(record)?).await?;
+        Ok(())
     }
 
     /// One file's description as it is now (the newest entry, whoever wrote it).

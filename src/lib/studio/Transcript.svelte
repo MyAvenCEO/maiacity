@@ -5,6 +5,7 @@
 	search finds a phrase (Enter: the next one). While there is none yet, it says where the transcript stands.
 -->
 <script>
+	import { command } from '$lib/native';
 	import { linesOf, timecodeAt, transcriptOf, transcriptState, wordsOf } from './transcript.js';
 
 	/**
@@ -21,6 +22,12 @@
 	const words = $derived(wordsOf(m));
 	const t = $derived(transcriptOf(m));
 	const st = $derived(transcriptState(m));
+	let asked = $state('');
+	/** a transcript that failed (or found nothing): made again, here on this Mac */
+	async function again() {
+		asked = m.hash;
+		await command('vault_transcribe', { hash: m.hash }).catch((e) => (asked = `error: ${e}`));
+	}
 	// a clip shows only the lines it plays (and dims the words of them it leaves out)
 	const lines = $derived(linesOf(words, t?.utterances).filter((l) => !range || (l.e > range.from && l.s < range.to)));
 	/** @param {number} i */
@@ -181,7 +188,17 @@
 		</div>
 	{:else}
 		<p class="empty state-{st.state}" title={st.note}>
-			{#if st.state === 'queued'}Transcript queued…{:else if st.state === 'transcribing'}Transcribing…{:else if st.state === 'failed'}Transcript failed: {st.note.replace(/^failed:?\s*/, '')}{:else if st.state === 'none'}No speech to transcribe{st.note.replace(/^none:?\s*/, ' — ')}{:else}No transcript yet.{/if}
+			{#if asked === m.hash}Transcribing again, here on this Mac…
+			{:else if st.state === 'queued'}Transcript queued{st.note !== 'queued' ? ` — ${st.note}` : '…'}
+			{:else if st.state === 'running'}Transcribing on this Mac — {st.stage || 'working'} · {Math.floor(st.progress * 100)}%
+			{:else if st.state === 'failed'}Transcript failed, tries again by itself: {st.note}
+			{:else if st.state === 'stuck'}Transcript failed: {st.note}
+			{:else if st.state === 'none'}No speech to transcribe — {st.note}
+			{:else}No transcript yet — it comes by itself after the ingest.{/if}
+			{#if (st.state === 'stuck' || st.state === 'failed' || st.state === 'none') && asked !== m.hash}
+				<button class="again" onclick={again}>Transcribe again</button>
+			{/if}
+			{#if asked.startsWith('error')}<small>{asked}</small>{/if}
 		</p>
 	{/if}
 </div>
@@ -309,12 +326,25 @@
 		color: var(--dim);
 	}
 
-	.state-failed {
+	.state-failed,
+	.state-stuck {
 		color: #9c3b26;
 	}
 
 	.state-queued,
-	.state-transcribing {
+	.state-running {
 		color: #a8741a;
+	}
+
+	.again {
+		margin-left: 0.5rem;
+		padding: 0.1rem 0.6rem;
+		border: 1px solid var(--edge);
+		border-radius: 999px;
+		background: #fff;
+		font: inherit;
+		font-size: 0.72rem;
+		color: var(--ink);
+		cursor: pointer;
 	}
 </style>

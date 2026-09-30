@@ -252,6 +252,38 @@ struct Plan {
     warnings: Vec<String>,
 }
 
+#[cfg(test)]
+mod caption_tests {
+    use super::caption_words;
+    use serde_json::json;
+
+    #[test]
+    fn a_voice_s_captions_are_its_own_words_else_its_transcript_s() {
+        let transcript = json!({ "transcript": { "words": [{ "w": "The", "s": 1.0, "e": 1.2, "c": 0.9 }, { "w": "moment", "s": 1.2, "e": 1.6 }] } });
+        let w = caption_words(&transcript);
+        assert_eq!(w.iter().map(|w| w.word.as_str()).collect::<Vec<_>>(), ["The", "moment"]);
+        assert_eq!((w[1].start, w[1].end), (1.2, 1.6));
+        let mut edited = transcript.clone();
+        edited["words"] = json!([{ "word": "A", "start": 1.0, "end": 1.6 }]);
+        assert_eq!(caption_words(&edited).len(), 1);
+        assert!(caption_words(&json!({})).is_empty());
+    }
+}
+
+/// A voice file's caption words: its own (`meta.words` — a voice take's timing, or captions edited by hand), else its
+/// transcript's (`meta.transcript.words`, `{ w, s, e }`) — so every voice has its captions without anyone asking.
+pub fn caption_words(meta: &serde_json::Value) -> Vec<Word> {
+    let own: Vec<Word> = meta.get("words").cloned().and_then(|w| serde_json::from_value(w).ok()).unwrap_or_default();
+    if !own.is_empty() {
+        return own;
+    }
+    let Some(words) = meta.pointer("/transcript/words").and_then(|w| w.as_array()) else { return own };
+    words
+        .iter()
+        .filter_map(|w| Some(Word { word: w["w"].as_str()?.to_string(), start: w["s"].as_f64()?, end: w["e"].as_f64()? }))
+        .collect()
+}
+
 fn plan(t: &Timeline, lib: &dyn Library) -> Result<Plan> {
     let mut clips: Vec<Clip> = t.clips.iter().filter(|c| if c.is_world() { c.track == "V1" } else { c.hash.as_deref().is_some_and(|h| lib.media(h).is_some()) }).cloned().collect();
     clips.sort_by(|a, b| a.start.partial_cmp(&b.start).unwrap_or(std::cmp::Ordering::Equal));
@@ -322,7 +354,7 @@ fn plan(t: &Timeline, lib: &dyn Library) -> Result<Plan> {
     }
     let words_of = |c: &Clip| -> Vec<Word> {
         let m = lib.media(c.hash.as_deref().unwrap_or("")).or_else(|| lib.media(&lib.original_of(c.hash.as_deref().unwrap_or(""))));
-        m.and_then(|m| m.meta.get("words").cloned()).and_then(|w| serde_json::from_value(w).ok()).unwrap_or_default()
+        m.map(|m| caption_words(&m.meta)).unwrap_or_default()
     };
     let phrases = phrases(t, &words_of);
     let audio = clips
@@ -550,6 +582,9 @@ fn render_shape(
         if let Some(g) = &grade {
             used.insert("grade:clip".into(), hash_of(&json!({ "cdl": g.to_json() })));
         }
+        if let Some(b) = clip.and_then(|c| c.balance()) {
+            used.insert("grade:balance".into(), hash_of(&json!({ "balance": b })));
+        }
         if let (Some(g), Some(_)) = (&plan.look, clip) {
             used.insert("grade:look".into(), hash_of(&json!({ "cdl": g.to_json() })));
         }
@@ -686,12 +721,205 @@ fn delivery(file: PathBuf, name: String, channels: &[&str], format: String, s: &
     }
 }
 
-/// A clip's picture after its journey: framed for the shape, its grade, the film's look, the output transform.
+/// A clip's picture after its journey: framed for the shape, its balance, its grade, the film's look, the output
+/// transform.
 fn picture(gpu: &Gpu, acescct: &Image, s: &Shape, c: &Clip, grade: Option<&Cdl>, look: Option<&Cdl>) -> Result<Image> {
     let (w, h) = s.render_size();
     let framed = gpu.frame_to(acescct, w, h, c.frame_for(s.aspect))?;
-    let graded = gpu.cdl(&*gpu.cdl(&framed, grade)?, look)?;
+    let balanced = gpu.balance(&framed, c.balance().as_ref())?;
+    let graded = gpu.cdl(&*gpu.cdl(&balanced, grade)?, look)?;
     gpu.output(&graded)
+}
+
+/// What a shot's picture is like, in ACEScct, as a colourist reads it: its luma (Rec.709 weights, as the balance
+/// reads it) at the percentiles, and the colour of its middle tones (the pixels between the 25th and the 75th
+/// percentile of luma), measured on `n` frames spread over the clip — before its balance (`as_shot`) and after it.
+pub fn measure(t: &Timeline, lib: &dyn Library, c: &Clip, n: usize) -> Result<Value> {
+    let s = Shape::of(&t.aspect).or_else(|| Shape::of("16:9")).context("no shape")?;
+    let (w, h) = (192u32, (192.0 * s.render_size().1 as f64 / s.render_size().0 as f64).round() as u32);
+    let gpu = Gpu::new()?;
+    let mut px: Vec<[f64; 3]> = Vec::new();
+    let mut at_s = Vec::new();
+    // a shot with its grading still (4K ACEScct from the original): measured on that one frame
+    let from_still = grade_still_of(lib, c).is_some();
+    let n = if from_still { 1 } else { n };
+    for i in 0..n.max(1) {
+        // frames at the middle of n equal parts of the clip
+        let at = c.start + c.dur * (i as f64 + 0.5) / n.max(1) as f64;
+        let src = source(&gpu, lib, c, at)?;
+        let framed = gpu.frame_to(&src, w, h, c.frame_for(s.aspect))?;
+        let f = gpu.read(&framed, w, h);
+        px.extend(f.chunks_exact(4).map(|p| [p[0] as f64, p[1] as f64, p[2] as f64]));
+        at_s.push((at * 1000.0).round() / 1000.0);
+    }
+    let bal = c.balance().unwrap_or_default();
+    let after: Vec<[f64; 3]> = px.iter().map(|p| bal.apply(*p)).collect();
+    Ok(json!({ "clip": c.id, "from": if from_still { "its grading still" } else { "its original (or proxy)" }, "frames_at": at_s, "as_shot": stats(&px), "balanced": stats(&after), "balance": bal }))
+}
+
+/// Luma percentiles and the middle tones' colour of ACEScct pixels (see `measure`); the colour also as the white
+/// balance that would make the middle tones grey (in the balance's stops).
+pub fn stats(px: &[[f64; 3]]) -> Value {
+    use crate::grade::{LUMA, STOP};
+    let luma = |p: &[f64; 3]| p[0] * LUMA[0] + p[1] * LUMA[1] + p[2] * LUMA[2];
+    let mut l: Vec<f64> = px.iter().map(luma).collect();
+    l.sort_by(|a, b| a.total_cmp(b));
+    let q = |p: f64| if l.is_empty() { 0.0 } else { l[((l.len() - 1) as f64 * p).round() as usize] };
+    let (lo, hi) = (q(0.25), q(0.75));
+    let mids: Vec<&[f64; 3]> = px.iter().filter(|p| (lo..=hi).contains(&luma(p))).collect();
+    let mean: [f64; 3] = std::array::from_fn(|i| mids.iter().map(|p| p[i]).sum::<f64>() / mids.len().max(1) as f64);
+    let r3 = |x: f64| (x * 1000.0).round() / 1000.0;
+    let pct: serde_json::Map<String, Value> = [1, 5, 25, 50, 75, 95, 99].iter().map(|p| (format!("p{p}"), json!(r3(q(*p as f64 / 100.0))))).collect();
+    json!({
+        "luma": pct,
+        "mid_rgb": mean.map(r3),
+        // the white balance that would bring the middle tones to grey: warmer when red is below blue, …
+        "to_grey": { "temp": r3((mean[2] - mean[0]) / STOP), "tint": r3((mean[1] - (mean[0] + mean[2]) / 2.0) / STOP) },
+        // how far the middle grey of the picture is from 18 % grey, in stops
+        "mid_stops": r3((q(0.5) - crate::grade::PIVOT) / STOP),
+    })
+}
+
+/// How each sound clip of a timeline sounds (BS.1770, as the render's own levelling measures): its loudness (LUFS)
+/// and true peak as recorded, over the part the clip plays, and at its volume; a loudness curve (every 0.5 s, the
+/// clip's own clock) to draw; and, per voice clip, how far the music under it sits below it (the render keys the
+/// music down about 6 dB while the voice speaks). Read from each file's audio proxy when there is one.
+pub fn measure_sound(t: &Timeline, lib: &dyn Library) -> Result<Value> {
+    use crate::loudness::measure as loud;
+    const STEP: f64 = 0.5;
+    const DUCK_DB: f64 = 6.0;
+    let db = |v: f64| if v > 0.0 { 20.0 * v.log10() } else { f64::NEG_INFINITY };
+    let r2 = |x: f64| (x * 100.0).round() / 100.0;
+    let mut out = Vec::new();
+    for c in t.clips.iter().filter(|c| c.track.starts_with('A') && c.hash.is_some()) {
+        let hash = c.hash.as_deref().unwrap();
+        let m = lib.media(hash);
+        let name = m.as_ref().map(|m| if m.title.is_empty() { m.hash[..10].to_string() } else { m.title.clone() }).unwrap_or_default();
+        // the audio proxy (the original's clock) when there is one: a fraction of the bytes
+        let audio = m.as_ref().and_then(|m| m.meta.get("audio").and_then(Value::as_str)).and_then(|a| lib.media(a)).map(|a| a.hash);
+        let file = match audio.as_deref().map(|a| lib.file(a)).filter(|f| f.is_ok()) {
+            Some(f) => f?,
+            None => match lib.file(hash) {
+                Ok(f) => f,
+                Err(e) => {
+                    out.push(json!({ "clip": c.id, "track": c.track, "name": name, "error": format!("{e:#}") }));
+                    continue;
+                }
+            },
+        };
+        let mut frames: Vec<f32> = Vec::new();
+        if let Some(mut r) = crate::av::AudioReader::open(&file, c.in_, c.in_ + c.dur)? {
+            while let Some((_, chunk)) = r.next_chunk()? {
+                frames.extend(chunk);
+            }
+        }
+        let want = (c.dur * crate::av::RATE as f64).round() as usize * 2;
+        frames.truncate(want);
+        let whole = loud(&frames, crate::av::RATE, 2);
+        let block = (STEP * crate::av::RATE as f64) as usize * 2;
+        let curve: Vec<Value> = frames.chunks(block).map(|b| loud(b, crate::av::RATE, 2).lufs.map(r2).map(Value::from).unwrap_or(Value::Null)).collect();
+        let g = db(c.vol);
+        out.push(json!({
+            "clip": c.id, "track": c.track, "name": name, "start": c.start, "dur": c.dur, "vol": c.vol, "gain_db": r2(g),
+            "fin": c.fin, "fout": c.fout,
+            "lufs": whole.lufs.map(r2), "true_peak": whole.true_peak.map(r2),
+            "lufs_at_vol": whole.lufs.map(|l| r2(l + g)), "true_peak_at_vol": whole.true_peak.map(|p| r2(p + g)),
+            "curve_step": STEP, "curve": curve,
+        }));
+    }
+    // the music under each voice clip, at their volumes, the music keyed down while the voice speaks
+    let at_vol = |v: &Value, from: f64, to: f64| -> Option<f64> {
+        let (start, step, g) = (v["start"].as_f64()?, v["curve_step"].as_f64()?, v["gain_db"].as_f64()?);
+        let vals: Vec<f64> = v["curve"].as_array()?.iter().enumerate().filter(|(i, _)| {
+            let t = start + *i as f64 * step;
+            t >= from && t < to
+        }).filter_map(|(_, x)| x.as_f64()).collect();
+        if vals.is_empty() {
+            return None;
+        }
+        // loudness of the stretch: the energy mean of its blocks
+        let e = vals.iter().map(|l| 10f64.powf(l / 10.0)).sum::<f64>() / vals.len() as f64;
+        Some(10.0 * e.log10() + g)
+    };
+    let mut under = Vec::new();
+    for v in out.iter().filter(|v| v["track"] == "A1" && v.get("error").is_none()) {
+        let (from, to) = (v["start"].as_f64().unwrap_or(0.0), v["start"].as_f64().unwrap_or(0.0) + v["dur"].as_f64().unwrap_or(0.0));
+        let voice = at_vol(v, from, to);
+        for m in out.iter().filter(|m| m["track"] == "A2" && m.get("error").is_none()) {
+            if let (Some(vo), Some(mu)) = (voice, at_vol(m, from, to)) {
+                under.push(json!({ "voice": v["clip"], "music": m["clip"], "voice_lufs": r2(vo), "music_lufs": r2(mu - DUCK_DB), "voice_over_music_lu": r2(vo - (mu - DUCK_DB)) }));
+            }
+        }
+    }
+    Ok(json!({ "clips": out, "voice_over_music": under, "duck_db": DUCK_DB, "master": "the render levels the whole mix to −14 LUFS, −1 dBTP" }))
+}
+
+/// A clip's original's grading still (its `meta.grade_still`), when the vault has it.
+fn grade_still_of(lib: &dyn Library, c: &Clip) -> Option<Media> {
+    let hash = c.hash.as_deref()?;
+    let original = lib.media(&lib.original_of(hash)).or_else(|| lib.media(hash))?;
+    lib.media(original.meta.get("grade_still")?.as_str()?)
+}
+
+/// A shot's grading still: one frame of the original at `at` seconds, through its journey (CST) into ACEScct,
+/// scaled (Lanczos) to `width` wide at its own aspect, written as a 16-bit PNG of ACEScct code values — what the
+/// balance is measured and set on, at full quality, without reading the whole original again.
+pub fn grading_still(file: &Path, profile: &str, at: f64, width: u32, png: &Path) -> Result<(u32, u32)> {
+    let journey = vault_media::cst::journey(profile).with_context(|| format!("no colour journey from {profile} into ACEScct"))?;
+    let gpu = Gpu::new()?;
+    let mut r = VideoReader::open(file, at, at + 1.0 / FPS as f64)?;
+    let turn = r.info.transform;
+    let pb = r.at(at + 0.5 / FPS as f64 - 1e-4)?.context("no frame there")?;
+    let img = gpu.journey(&gpu.orient(&gpu.frame(pb), turn), journey.kernel_args())?;
+    let e = crate::gpu::Extent::ext(&*img);
+    let (sw, sh) = (e.size.width.max(1.0), e.size.height.max(1.0));
+    let w = width.min(sw.round() as u32).max(2);
+    let h = ((w as f64 * sh / sw).round() as u32).max(2);
+    let scaled = gpu.frame_to(&img, w, h, None)?;
+    gpu.png(&scaled, w, h, png)?;
+    Ok((w, h))
+}
+
+/// One frame of a media clip, into ACEScct (the hero frame's reading, without the world) — from the full original,
+/// else (its bytes not on this Mac) from its ACEScct proxy.
+fn source(gpu: &Gpu, lib: &dyn Library, c: &Clip, at: f64) -> Result<Image> {
+    if let Some(still) = grade_still_of(lib, c) {
+        if let Ok(file) = lib.file(&still.hash) {
+            // ACEScct code values already: no journey
+            return gpu.still(&file);
+        }
+    }
+    let hash = c.hash.as_deref().context("only a clip with a file can be measured")?;
+    let of = lib.original_of(hash);
+    let original = lib.media(&of).or_else(|| lib.media(hash)).context("the clip's file is not in the vault")?;
+    let proxy = original.meta.get("proxy").and_then(Value::as_str).and_then(|p| lib.media(p));
+    let (m, file) = match lib.file(&original.hash) {
+        Ok(f) => (original, f),
+        Err(e) => {
+            let p = proxy.ok_or(e)?;
+            let f = lib.file(&p.hash)?;
+            (p, f)
+        }
+    };
+    let from = c.in_ + (at - c.start);
+    if is_sequence(&m) {
+        let profile = sequence_profile(&m, &file)?.0.unwrap_or_else(|| "linear-rec709".into());
+        let args = vault_media::cst::journey(&profile).or_else(|| vault_media::cst::journey("rec709")).unwrap().kernel_args();
+        let mut seq = vault_media::still::Sequence::open(&file)?;
+        let i = seq.index_at(from + 0.5 / FPS as f64 - 1e-4, sequence_fps(&m));
+        return gpu.journey(&*sequence_frame(&mut seq, i)?, args);
+    }
+    let still = is_still(&m, &file);
+    let profile = profile_of(&m, &file, still).0;
+    let profile = if vault_media::cst::journey(&profile).is_some() { profile } else { "rec709".into() };
+    let args = vault_media::cst::journey(&profile).unwrap().kernel_args();
+    if still {
+        return gpu.journey(&*gpu.still(&file)?, args);
+    }
+    let mut r = VideoReader::open(&file, from, from + 1.0 / FPS as f64)?;
+    let turn = r.info.transform;
+    let pb = r.at(from + 0.5 / FPS as f64 - 1e-4)?.context("no frame there")?;
+    gpu.journey(&gpu.orient(&gpu.frame(pb), turn), args)
 }
 
 /// A hero frame (worker.ts `heroFrame`, the `frame` job): the picture of the timeline at `at` seconds in one shape, at

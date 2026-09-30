@@ -132,6 +132,34 @@ pub struct SearchArgs {
 }
 
 #[derive(Deserialize, schemars::JsonSchema)]
+pub struct AnalysisArgs {
+    /// the file's BLAKE3 hash (64 hex) — an original; its proxy's, audio proxy's or thumbnail's hash works too
+    pub hash: String,
+    /// only the cues and stretches between these seconds of the file
+    pub from: Option<f64>,
+    pub to: Option<f64>,
+}
+
+#[derive(Deserialize, schemars::JsonSchema)]
+pub struct FindShotsArgs {
+    /// words to find — in a cue's label, note or why, in what is said in its range, in the file's summary and tags,
+    /// e.g. "window light", "laughs", "opening line"
+    pub query: Option<String>,
+    /// base tags (game/film/vocabulary.json), each one value or a list of any: {"shot_size": ["CU", "ECU"],
+    /// "scene": "dialogue", "location": "exterior", "people": 1}. A file matches where its tags do, or only in the
+    /// stretches whose tags do
+    pub tags: Option<serde_json::Map<String, Value>>,
+    /// only these cue kinds: take, action, emotion, cut, transition, highlight, problem (none: all but problems)
+    pub kinds: Option<Vec<String>>,
+    /// only in this story (its id)
+    pub story: Option<String>,
+    /// only cues at least this sure (0…1)
+    pub min_confidence: Option<f64>,
+    /// at most this many ranges (default 20)
+    pub limit: Option<usize>,
+}
+
+#[derive(Deserialize, schemars::JsonSchema)]
 pub struct IdArg {
     pub id: String,
 }
@@ -171,6 +199,93 @@ pub struct GradeFilmArgs {
     pub preset: Option<String>,
     /// or a look of its own (wins over the preset)
     pub look: Option<Cdl>,
+}
+
+/// A shot's balance — the fixed first nodes, in ACEScct, before its grade. Every amount in stops; 0 = as shot.
+#[derive(Deserialize, Serialize, schemars::JsonSchema, Default)]
+pub struct BalanceArg {
+    /// white balance: + warmer (red up, blue down, half each), −2…2
+    #[serde(default)]
+    pub temp: f64,
+    /// white balance: + more magenta (green down), −2…2
+    #[serde(default)]
+    pub tint: f64,
+    /// −4…4 stops
+    #[serde(default)]
+    pub exposure: f64,
+    /// the slope around mid grey minus 1: 0.2 = 20 % more contrast, −0.8…1.5
+    #[serde(default)]
+    pub contrast: f64,
+    /// stops added to the tones above mid grey (fully in at about 2.5 stops above it), −3…3
+    #[serde(default)]
+    pub highlights: f64,
+    /// stops added to the tones below mid grey ("lows"), −3…3
+    #[serde(default)]
+    pub shadows: f64,
+}
+
+#[derive(Deserialize, schemars::JsonSchema)]
+pub struct BalanceArgs {
+    /// the timeline's id
+    pub timeline: String,
+    /// the clip's id (a V1 clip)
+    pub clip: String,
+    /// its balance; none: as shot
+    pub balance: Option<BalanceArg>,
+}
+
+#[derive(Deserialize, schemars::JsonSchema)]
+pub struct MeasureArgs {
+    /// the timeline's id
+    pub timeline: String,
+    /// the clips to measure (ids); none: every picture clip with a file
+    pub clips: Option<Vec<String>>,
+    /// frames per clip, spread over it (default 5)
+    pub frames: Option<usize>,
+}
+
+#[derive(Deserialize, schemars::JsonSchema)]
+pub struct MatchArgs {
+    /// the timeline's id
+    pub timeline: String,
+    /// the clips to level (ids); none: every picture clip with a file
+    pub clips: Option<Vec<String>>,
+    /// the clip the others are matched to (as it is balanced now); none: the clips' average
+    pub reference: Option<String>,
+    /// true: the middle tones to neutral grey and the middle grey to 18 % — rather than to the reference or average
+    pub neutral: Option<bool>,
+    /// false: only propose the balances, write nothing (default true: write them)
+    pub apply: Option<bool>,
+}
+
+#[derive(Deserialize, schemars::JsonSchema)]
+pub struct MixClip {
+    /// the clip's id (an A1, A2 or A3 clip)
+    pub clip: String,
+    /// its gain in dB (0 = as recorded; −60…+12)
+    pub gain_db: Option<f64>,
+    /// fade in, seconds
+    pub fin: Option<f64>,
+    /// fade out, seconds
+    pub fout: Option<f64>,
+}
+
+#[derive(Deserialize, schemars::JsonSchema)]
+pub struct MixArgs {
+    /// the timeline's id
+    pub timeline: String,
+    /// the clips to change
+    pub clips: Vec<MixClip>,
+}
+
+#[derive(Deserialize, schemars::JsonSchema)]
+pub struct LevelArgs {
+    /// the timeline's id
+    pub timeline: String,
+    /// LUFS per track instead of the defaults (A1 voice −18, A2 music −26, A3 sounds −30), e.g. { "A2": -24 }
+    pub targets: Option<std::collections::HashMap<String, f64>>,
+    /// false: only propose, write nothing (default true)
+    pub apply: Option<bool>,
 }
 
 #[derive(Deserialize, schemars::JsonSchema)]
@@ -248,11 +363,13 @@ impl Studio {
         }))
     }
 
-    #[tool(description = "Every file in the vault's catalog with its description (hash, size, mime, kind, title, tags, public, meta)")]
+    #[tool(
+        description = "Every file in the vault's catalog with its description (hash, size, mime, kind, title, tags, public, meta) — its transcript and shot analysis in brief (meta.transcript, meta.analysis: the `transcript` and `analysis` tools give them whole), meta.thumbnail (a small JPEG of its best frame)"
+    )]
     async fn library_list(&self, Parameters(f): Parameters<Filter>) -> String {
         let r = async {
             self.signed_in()?;
-            let list = self.vault.catalog.list().await.map_err(|e| e.to_string())?;
+            let list = self.vault.catalog.list_view().await.map_err(|e| e.to_string())?;
             let list: Vec<_> = list
                 .into_iter()
                 .filter(|m| f.kind.as_ref().is_none_or(|k| &m.kind == k))
@@ -261,6 +378,9 @@ impl Studio {
                     // a transcript is said, not listed: its words come with the `transcript` tool
                     if let Some(t) = m.meta.get_mut("transcript") {
                         *t = transcript_summary(t);
+                    }
+                    if let Some(a) = m.meta.get_mut("analysis") {
+                        *a = crate::analysis::summary(a);
                     }
                     m
                 })
@@ -279,12 +399,34 @@ impl Studio {
         let r = async {
             self.signed_in()?;
             let hash: iroh_blobs::Hash = a.hash.parse().map_err(|e| format!("{e}"))?;
-            let mut meta = self.vault.catalog.meta(hash).await.map_err(|e| format!("{e:#}"))?.ok_or("no such file in the catalog")?;
-            // an audio proxy: its original's
-            if let Some(of) = meta.meta.get("audio_of").and_then(|v| v.as_str()).and_then(|h| h.parse::<iroh_blobs::Hash>().ok()) {
-                meta = self.vault.catalog.meta(of).await.map_err(|e| format!("{e:#}"))?.ok_or("the audio proxy's original is not in the catalog")?;
-            }
+            let meta = self.original(hash).await?;
             Ok::<_, String>(transcript_view(&meta, a.from, a.to))
+        };
+        text(r.await)
+    }
+
+    #[tool(
+        description = "Make a recording's words again, here on this Mac (Nemotron 3.5, on-device; what it had is set aside) — queued behind any ingest, one recording at a time; follow it in library_list (meta.transcript_state, meta.transcript_progress)"
+    )]
+    async fn transcribe(&self, Parameters(a): Parameters<HashArg>) -> String {
+        let r = async {
+            self.signed_in()?;
+            let h: iroh_blobs::Hash = a.hash.parse().map_err(|e| format!("{e}"))?;
+            let rec = json!({ "state": "queued", "device": self.vault.endpoint.id().to_string(), "updated": vault_core::ingest::now_iso() });
+            self.vault.catalog.write_record(vault_core::catalog::TRANSCRIPT, h, &rec).await.map_err(|e| format!("{e:#}"))?;
+            crate::transcripts::queue(self.handle.clone(), self.vault.clone(), a.hash.clone());
+            Ok::<_, String>(json!({ "queued": a.hash }))
+        };
+        text(r.await)
+    }
+
+    #[tool(
+        description = "Once, by hand, on one Mac: download the on-device models (Nemotron 3.5 speech, Silero VAD) from where they were published, ingest them into the Models story (the three-hash check) and compare each with the BLAKE3 hash pinned in the app (models.rs). After that every device gets them from our own vault, never from the internet. Answers each file's hash and whether it matches its pin."
+    )]
+    async fn models_import(&self) -> String {
+        let r = async {
+            self.signed_in()?;
+            crate::models::import(&self.vault, &reqwest::Client::new()).await
         };
         text(r.await)
     }
@@ -301,7 +443,7 @@ impl Studio {
             }
             let limit = a.limit.unwrap_or(50).max(1);
             let mut hits = Vec::new();
-            for m in self.vault.catalog.list().await.map_err(|e| format!("{e:#}"))? {
+            for m in self.vault.catalog.list_view().await.map_err(|e| format!("{e:#}"))? {
                 if a.tag.as_ref().is_some_and(|t| !m.tags.contains(t)) || a.story.as_ref().is_some_and(|st| &m.story != st) {
                     continue;
                 }
@@ -315,6 +457,55 @@ impl Studio {
                 }
             }
             Ok(json!({ "phrase": a.phrase, "hits": hits }))
+        };
+        text(r.await)
+    }
+
+    // ── the shot analysis: every picture tagged for the edit (the vault server writes it: analysis/<hash>) ──
+
+    #[tool(
+        description = "A file's shot analysis (Prem's confidential Qwen, run by the vault server once its proxy is in the bucket, in game/film/vocabulary.json's terms): its summary (one line + where it serves an edit best), base tags (shot size, angle, camera movement, lens, depth of field, light, time of day, location, people, who, scene kind, quality flags), free tags, its stretches with their own tags, and its cues — takes (repeated attempts of an action, numbered and ranked, the best marked with why), actions, emotions, cut points, transition opportunities, highlights, problems — each with its start and end in seconds of the file and its timecodes (tc_in, tc_out). from/to narrow it to a clip. Also its state/progress and its thumbnail's hash."
+    )]
+    async fn analysis(&self, Parameters(a): Parameters<AnalysisArgs>) -> String {
+        let r = async {
+            self.signed_in()?;
+            let hash: iroh_blobs::Hash = a.hash.parse().map_err(|e| format!("{e}"))?;
+            let meta = self.original(hash).await?;
+            Ok::<_, String>(crate::analysis::view(&meta, a.from, a.to))
+        };
+        text(r.await)
+    }
+
+    #[tool(
+        description = "Find the best parts of shots across the vault, to cut with: filters on the base tags (e.g. {\"shot_size\": [\"CU\", \"ECU\"], \"scene\": \"dialogue\"}) and words (in the cues, what is said, the summaries), optionally cue kinds (highlight, take, emotion, cut, transition, action, problem), a story, a minimum confidence. Answers the candidate ranges, best first: each with the file (hash, name, story, its proxy and thumbnail), its in and out in seconds of the file and as timecode, the cue's kind, label, why/note, take and rank, and a score (the words found, the confidence, a highlight or best take up, a problem or quality flag down)."
+    )]
+    async fn find_shots(&self, Parameters(a): Parameters<FindShotsArgs>) -> String {
+        let r = async {
+            self.signed_in()?;
+            let tags = a
+                .tags
+                .unwrap_or_default()
+                .into_iter()
+                .map(|(k, v)| {
+                    let vals = match v {
+                        Value::Array(xs) => xs.iter().map(|x| x.as_str().map(String::from).unwrap_or_else(|| x.to_string())).collect(),
+                        Value::String(s) => vec![s],
+                        other => vec![other.to_string()],
+                    };
+                    (k, vals)
+                })
+                .collect();
+            let q = crate::analysis::Query {
+                text: a.query.unwrap_or_default(),
+                tags,
+                kinds: a.kinds.unwrap_or_default(),
+                story: a.story,
+                min_confidence: a.min_confidence.unwrap_or(0.0),
+                limit: a.limit.unwrap_or(20),
+            };
+            let list = self.vault.catalog.list_view().await.map_err(|e| format!("{e:#}"))?;
+            let analysed = list.iter().filter(|m| m.meta.get("analysis").is_some()).count();
+            Ok::<_, String>(json!({ "analysed_files": analysed, "hits": crate::analysis::find(&list, &q) }))
         };
         text(r.await)
     }
@@ -468,6 +659,127 @@ impl Studio {
         text(r.await)
     }
 
+    #[tool(
+        description = "Measure a timeline's shots as a colourist reads them, natively on this Mac from the full originals (else their ACEScct proxies), in ACEScct: luma percentiles (p1…p99; 18 % grey is 0.414, one stop is 0.057), mid_stops (how far the middle is from 18 % grey), the middle tones' colour (mid_rgb) and to_grey (the temp/tint that would make them grey) — as shot and after each clip's balance. The base for levelling the shots of a scene to each other before any creative grade."
+    )]
+    async fn grade_measure(&self, Parameters(a): Parameters<MeasureArgs>) -> String {
+        let r = async {
+            let t = self.api("GET", &format!("/api/timelines/{}", a.timeline), None).await?;
+            let shots = crate::render::measure_clips(&self.vault, &t, a.clips, a.frames.unwrap_or(5).clamp(1, 24)).await?;
+            Ok::<_, String>(json!({ "timeline": a.timeline, "shots": shots }))
+        };
+        text(r.await)
+    }
+
+    #[tool(
+        description = "Set one shot's balance — the fixed first nodes, applied in ACEScct before its creative grade, in the preview and the render alike: white balance (temp, tint), exposure, contrast, highlights, lows (shadows); every amount in stops, 0 = as shot; none: back to as shot. The cut stays as it is; a locked timeline may be balanced."
+    )]
+    async fn grade_balance(&self, Parameters(a): Parameters<BalanceArgs>) -> String {
+        let r = async {
+            let t = self.api("GET", &format!("/api/timelines/{}", a.timeline), None).await?;
+            let mut clips = t["clips"].as_array().cloned().ok_or("the timeline has no clips")?;
+            let clip = clips.iter_mut().find(|c| c["id"].as_str() == Some(a.clip.as_str())).ok_or("no such clip on this timeline")?;
+            clip["balance"] = match &a.balance {
+                Some(b) => serde_json::to_value(b).map_err(|e| e.to_string())?,
+                None => Value::Null,
+            };
+            let saved = self.api("PUT", &format!("/api/timelines/{}", a.timeline), Some(json!({ "clips": clips }))).await?;
+            let now = saved["clips"].as_array().and_then(|cs| cs.iter().find(|c| c["id"].as_str() == Some(a.clip.as_str()))).map(|c| c["balance"].clone());
+            Ok::<_, String>(json!({ "clip": a.clip, "balance": now }))
+        };
+        text(r.await)
+    }
+
+    #[tool(
+        description = "Level a scene's shots to each other automatically: measures every shot (grade_measure), then fits each one's balance (white balance to the target's cast, exposure and contrast — highlights and lows only for what those cannot do — to the target's luma percentiles). The target: the reference clip as it is balanced now, or neutral (grey middle tones, the middle at 18 % grey), else the shots' average. Writes the balances (apply: false only proposes them). Check the result with grade_measure and render_frame; adjust single shots with grade_balance."
+    )]
+    async fn grade_match(&self, Parameters(a): Parameters<MatchArgs>) -> String {
+        let r = async {
+            let t = self.api("GET", &format!("/api/timelines/{}", a.timeline), None).await?;
+            let mut out = crate::render::propose_balances(&self.vault, &t, a.clips.clone(), a.reference.clone(), a.neutral == Some(true)).await?;
+            let apply = a.apply != Some(false);
+            if apply {
+                // fetched again: what changed on the timeline while the shots were measured stays
+                let t = self.api("GET", &format!("/api/timelines/{}", a.timeline), None).await?;
+                let mut clips = t["clips"].as_array().cloned().ok_or("the timeline has no clips")?;
+                for p in out["shots"].as_array().into_iter().flatten() {
+                    if let Some(c) = clips.iter_mut().find(|c| c["id"] == p["clip"]) {
+                        c["balance"] = p["balance"].clone();
+                    }
+                }
+                self.api("PUT", &format!("/api/timelines/{}", a.timeline), Some(json!({ "clips": clips }))).await?;
+            }
+            out["applied"] = json!(apply);
+            Ok::<_, String>(out)
+        };
+        text(r.await)
+    }
+
+    #[tool(
+        description = "Listen to a timeline's sound, measured natively (BS.1770, as the render levels it): every sound clip's loudness (LUFS) and true peak as recorded and at its volume (gain_db), its fades, a loudness curve every 0.5 s, and per voice clip how far the music under it sits below it (voice_over_music_lu; the render keys the music down 6 dB while the voice speaks — 12 to 18 LU keeps a voice clear). The render levels the whole mix to −14 LUFS / −1 dBTP at the end."
+    )]
+    async fn audio_measure(&self, Parameters(a): Parameters<IdArg>) -> String {
+        let r = async {
+            let t = self.api("GET", &format!("/api/timelines/{}", a.id), None).await?;
+            crate::render::measure_sound(&self.vault, &t).await
+        };
+        text(r.await)
+    }
+
+    #[tool(description = "Set sound clips' gain (dB, 0 = as recorded, −60…+12) and fades (seconds) — the sound design's hand on the mix.")]
+    async fn audio_mix(&self, Parameters(a): Parameters<MixArgs>) -> String {
+        let r = async {
+            let t = self.api("GET", &format!("/api/timelines/{}", a.timeline), None).await?;
+            let mut clips = t["clips"].as_array().cloned().ok_or("the timeline has no clips")?;
+            for m in &a.clips {
+                let c = clips.iter_mut().find(|c| c["id"].as_str() == Some(m.clip.as_str())).ok_or_else(|| format!("no clip {}", m.clip))?;
+                if let Some(g) = m.gain_db {
+                    c["vol"] = json!(((10f64.powf(g.clamp(-60.0, 12.0) / 20.0)) * 1000.0).round() / 1000.0);
+                }
+                if let Some(f) = m.fin {
+                    c["fin"] = json!(f.max(0.0));
+                }
+                if let Some(f) = m.fout {
+                    c["fout"] = json!(f.max(0.0));
+                }
+            }
+            self.api("PUT", &format!("/api/timelines/{}", a.timeline), Some(json!({ "clips": clips }))).await?;
+            Ok::<_, String>(json!({ "changed": a.clips.len() }))
+        };
+        text(r.await)
+    }
+
+    #[tool(
+        description = "Level a timeline's sound automatically: measures it (audio_measure), then brings every clip to its track's loudness — voice (A1) −18 LUFS, music (A2) −26, sounds (A3) −30, or targets of your own — within +12 dB, with fades so nothing clicks (voice ≥ 0.05 s, music 1 s in / 2.5 s out at the film's ends, sounds 0.3 s). Writes it (apply: false only proposes). Check with audio_measure; adjust single clips with audio_mix."
+    )]
+    async fn audio_level(&self, Parameters(a): Parameters<LevelArgs>) -> String {
+        let r = async {
+            let t = self.api("GET", &format!("/api/timelines/{}", a.timeline), None).await?;
+            let measured = crate::render::measure_sound(&self.vault, &t).await?;
+            let clips = t["clips"].as_array().cloned().ok_or("the timeline has no clips")?;
+            let end = clips.iter().map(|c| c["start"].as_f64().unwrap_or(0.0) + c["dur"].as_f64().unwrap_or(0.0)).fold(0.0, f64::max);
+            let targets: Vec<(String, f64)> = a.targets.clone().unwrap_or_default().into_iter().collect();
+            let changes = crate::render::level_sound(&measured, &clips, &targets, end);
+            let apply = a.apply != Some(false);
+            if apply {
+                let t = self.api("GET", &format!("/api/timelines/{}", a.timeline), None).await?;
+                let mut clips = t["clips"].as_array().cloned().ok_or("the timeline has no clips")?;
+                for ch in &changes {
+                    if let Some(c) = clips.iter_mut().find(|c| c["id"] == ch["clip"]) {
+                        for k in ["vol", "fin", "fout"] {
+                            if !ch[k].is_null() {
+                                c[k] = ch[k].clone();
+                            }
+                        }
+                    }
+                }
+                self.api("PUT", &format!("/api/timelines/{}", a.timeline), Some(json!({ "clips": clips }))).await?;
+            }
+            Ok::<_, String>(json!({ "applied": apply, "changes": changes, "voice_over_music_before": measured["voice_over_music"] }))
+        };
+        text(r.await)
+    }
+
     #[tool(description = "Grade the whole film: its look — a named preset (neutral, cold, dip, bright, night, warm) or an ASC CDL of its own in ACEScct — applied after every clip's own grade.")]
     async fn grade_film(&self, Parameters(a): Parameters<GradeFilmArgs>) -> String {
         let r = async {
@@ -563,7 +875,7 @@ fn start_timecode(meta: &Value) -> Option<(u64, u64, String)> {
 }
 
 /// A moment of the file (seconds) as timecode: the file's start timecode plus the moment.
-fn word_timecode(meta: &Value, seconds: f64) -> Option<String> {
+pub(crate) fn word_timecode(meta: &Value, seconds: f64) -> Option<String> {
     let (start, fps, sep) = start_timecode(meta)?;
     let frames = start + (seconds.max(0.0) * fps as f64).round() as u64;
     let secs = frames / fps;
@@ -606,7 +918,7 @@ fn transcript_view(meta: &vault_core::Meta, from: Option<f64>, to: Option<f64>) 
 }
 
 /// Words as the search compares them: lower case, letters and digits only.
-fn tokens(text: &str) -> Vec<String> {
+pub(crate) fn tokens(text: &str) -> Vec<String> {
     text.split_whitespace()
         .map(|w| w.chars().filter(|c| c.is_alphanumeric()).flat_map(char::to_lowercase).collect::<String>())
         .filter(|w| !w.is_empty())
@@ -699,6 +1011,17 @@ mod tests {
 }
 
 impl Studio {
+    /// A file as the studio sees it (its derived records merged in) — and for a proxy, an audio proxy or a thumbnail,
+    /// its original's.
+    async fn original(&self, hash: iroh_blobs::Hash) -> Result<vault_core::Meta, String> {
+        let meta = self.vault.catalog.meta_view(hash).await.map_err(|e| format!("{e:#}"))?.ok_or("no such file in the catalog")?;
+        let of = ["audio_of", "proxy_of", "thumbnail_of"].iter().find_map(|k| meta.meta.get(*k).and_then(|v| v.as_str()).and_then(|h| h.parse::<iroh_blobs::Hash>().ok()));
+        match of {
+            Some(o) => self.vault.catalog.meta_view(o).await.map_err(|e| format!("{e:#}"))?.ok_or_else(|| "its original is not in the catalog".to_string()),
+            None => Ok(meta),
+        }
+    }
+
     /// A vault file on disk for the native media tools (exported from the store into the ingest area).
     async fn export(&self, hex: &str) -> Result<PathBuf, String> {
         let hash: iroh_blobs::Hash = hex.parse().map_err(|e| format!("{e}"))?;
@@ -718,7 +1041,8 @@ impl ServerHandler for Studio {
         ServerConfig::new(ServerCapabilities::builder().enable_tools().build()).with_instructions(
             "maiaCITY Studio: the media vault (every file by its BLAKE3 hash) and the whole studio — ingest, library \
              enrichment, probes and proxies, every recording's transcript (words with their times and timecode — find \
-             a phrase to cut by words), timelines (edit, audio), grades, renders and hero frames (rendered \
+             a phrase to cut by words), every picture's shot analysis (tags, takes, cues, highlights — find_shots pulls \
+             the best parts of shots), timelines (edit, audio), grades, renders and hero frames (rendered \
              natively on this Mac), and the content board's deliveries in draft and publish mode. Files are named by \
              hash only.",
         )

@@ -18,7 +18,8 @@ import { CAPABILITIES } from "./caps";
 import { addIdea, deleteIdea, IdeaError, listIdeas, updateIdea } from "./ideas";
 import { approveDevice, deviceInfo, KeyError, keyHolder, redeemDevice, revokeKey, startDevice } from "./keys";
 import { joinInfo, listDevices, listVaultFiles, pairDevice, revokeDevice, VaultError } from "./vault";
-import { statusRoute as transcriptsStatus, transcribeRoute } from "./stt";
+import { analyseRoute, MODEL as ANALYSIS_MODEL, statusRoute as analysisStatus } from "./analysis";
+import { checkModels } from "./prem";
 import { createTimeline, deleteTimeline, getTimeline, listTimelines, saveTimeline, TimelineError } from "./timelines";
 import { createShot, getShot, listShots, saveShot, ShotError, shotVersions } from "./shots";
 import { claimRender, listJobs, queueFrame, queueRender, RenderError, rendersOf, reportRender } from "./renders";
@@ -126,6 +127,10 @@ useDb(fromBunSql(sql));
 await migrateLedger();
 await initSessions();
 await initRoles();
+// Prem: the models this key lists, said once in the log (ids only), and each model we use checked — one not listed or
+// without an attested deployment pauses for 30 minutes (prem.ts). In the background, never in the way.
+// (Speech to text is no longer Prem's: every recording's words are made on-device, on the Mac — vault/app transcripts.rs.)
+if (process.env.PREMAI_API_KEY) void checkModels([ANALYSIS_MODEL]);
 
 const server = Bun.serve({
   port: PORT,
@@ -514,13 +519,14 @@ const server = Bun.serve({
       },
     },
 
-    // speech to text (stt.ts): the vault server sends a recording's speech track, the words come back with their times
-    "/api/transcripts": {
-      GET: transcriptsStatus,
+    // the shot analysis (analysis.ts): the vault server sends a proxy's frames (display-referred) and the words said,
+    // Prem's confidential Qwen answers tags, cues and a summary in the vocabulary (game/film/vocabulary.json)
+    "/api/analysis": {
+      GET: analysisStatus,
       POST: (req, server) => {
-        // Prem may take minutes for an hour of speech; nothing moves on the socket meanwhile
+        // a dozen frames through a vision model may take a minute or two
         server.timeout(req, 0);
-        return transcribeRoute(req);
+        return analyseRoute(req);
       },
     },
 

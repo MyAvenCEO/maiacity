@@ -7,7 +7,7 @@ use std::collections::BTreeMap;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use crate::grade::{Cdl, clean_cdl, preset};
+use crate::grade::{Balance, Cdl, clean_balance, clean_cdl, preset};
 
 /// The film's clock: every delivery runs at 30 frames a second (worker.ts `FPS`).
 pub const FPS: u32 = 30;
@@ -52,6 +52,12 @@ pub struct Clip {
     /// the clip's own grade, as the studio stored it (cleaned by `clean_cdl` before use, as the worker does)
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub grade: Option<Value>,
+    /// the clip's balance (the fixed first nodes), before its grade
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub balance: Option<Value>,
+    /// a line (a line of the script not recorded yet, on A1): its words
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub text: Option<String>,
     /// reframing per delivery shape, keyed "16:9" (or "16x9")
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub frame: Option<BTreeMap<String, ClipFrame>>,
@@ -71,6 +77,14 @@ impl Clip {
     /// The clip's grade, cleaned (None when it changes nothing).
     pub fn cdl(&self) -> Option<Cdl> {
         self.grade.as_ref().and_then(clean_cdl)
+    }
+    /// The clip's balance, cleaned (None when it changes nothing).
+    pub fn balance(&self) -> Option<Balance> {
+        self.balance.as_ref().and_then(clean_balance)
+    }
+    /// A line of the script not recorded yet (A1, words and no file).
+    pub fn is_line(&self) -> bool {
+        self.kind.as_deref() == Some("line")
     }
     /// Its framing in a shape ("16:9", also found under "16x9").
     pub fn frame_for(&self, aspect: &str) -> Option<&ClipFrame> {
@@ -224,11 +238,12 @@ fn ends_with_any(s: &str, set: &str) -> bool {
 
 /// The voice clips' words, in short phrases broken at the punctuation (worker.ts `phrasesOf`): a phrase ends at a
 /// word ending in punctuation once it has three words (or at once on a full stop, a colon, …), or when it passes 34
-/// characters. `words_of` gives a clip's word timings (its media's meta.words).
+/// characters. `words_of` gives a clip's word timings (its media's meta.words); a line of the script not recorded yet
+/// gets its words spread over its length (`line_words`).
 pub fn phrases(t: &Timeline, words_of: &dyn Fn(&Clip) -> Vec<Word>) -> Vec<Phrase> {
     let mut out = Vec::new();
-    for c in t.clips.iter().filter(|c| c.track == "A1" && c.hash.is_some()) {
-        let words = words_of(c);
+    for c in t.clips.iter().filter(|c| c.track == "A1" && (c.hash.is_some() || c.is_line())) {
+        let words = if c.is_line() { line_words(c) } else { words_of(c) };
         let mut cur: Vec<&Word> = Vec::new();
         let flush = |cur: &Vec<&Word>, out: &mut Vec<Phrase>| {
             if let (Some(first), Some(last)) = (cur.first(), cur.last()) {
@@ -252,6 +267,24 @@ pub fn phrases(t: &Timeline, words_of: &dyn Fn(&Clip) -> Vec<Word>) -> Vec<Phras
         flush(&cur, &mut out);
     }
     out
+}
+
+/// A line's words on its own clock (from its `in`): its length shared by the words, each by its letters and one more
+/// (transcript.js `lineWords`).
+pub fn line_words(c: &Clip) -> Vec<Word> {
+    let words: Vec<&str> = c.text.as_deref().unwrap_or("").split_whitespace().collect();
+    let weight = |w: &str| w.chars().count() as f64 + 1.0;
+    let total: f64 = words.iter().map(|w| weight(w)).sum();
+    let mut at = c.in_;
+    words
+        .iter()
+        .map(|w| {
+            let len = c.dur * weight(w) / total;
+            let word = Word { word: w.to_string(), start: (at * 1000.0).round() / 1000.0, end: ((at + len) * 1000.0).round() / 1000.0 };
+            at += len;
+            word
+        })
+        .collect()
 }
 
 /// The files' common name: `<project>-<variant>-<yyyymmddhhmm>` in UTC (worker.ts `base`).

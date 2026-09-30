@@ -1,0 +1,15 @@
+{
+  "id": "chatcmpl-fixture-reduce",
+  "object": "chat.completion",
+  "model": "qwen38-27b",
+  "choices": [
+    {
+      "index": 0,
+      "finish_reason": "stop",
+      "message": {
+        "role": "assistant",
+        "content": "<think>The two attempts of the opening line are takes; the second is clean.</think>{\"tags\":{\"shot_size\":\"MCU\",\"scene\":[\"monologue to camera\"],\"people\":1},\"free\":[\"laptop\",\"window light\"],\"summary\":{\"line\":\"Samuel opens Day 20 at his desk, in two takes.\",\"best_use\":\"The film's opener: take 2, from the breath.\"},\"takes\":[{\"take_of\":\"opening line\",\"best\":2,\"why\":\"no stumble, a smile at the end\",\"takes\":[{\"s\":0.4,\"e\":3.8,\"take\":1,\"rank\":2,\"note\":\"stumbles\"},{\"s\":4.6,\"e\":8.1,\"take\":2,\"rank\":1}]},{\"take_of\":\"a lone attempt\",\"best\":1,\"takes\":[{\"s\":20,\"e\":22,\"take\":1,\"rank\":1}]}],\"thumbnail\":{\"t\":7.5,\"why\":\"his face lit by the window\"}}"
+      }
+    }
+  ]
+}

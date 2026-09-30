@@ -189,6 +189,8 @@ export type ClipFrame = { x: number; y: number; zoom: number };
  * clip (`kind: 'world'`, V1 only) names a world shot record and the version it was cut with. A world clip's shot-local
  * time is `in + (timelineTime − start)`.
  */
+export type Balance = { temp: number; tint: number; exposure: number; contrast: number; highlights: number; shadows: number };
+export type ClipScript = { scene?: string; label?: string; description?: string; notes?: string; size?: string };
 export type TimelineClip = {
 	id: string;
 	track: 'V1' | 'A1' | 'A2' | 'A3';
@@ -198,12 +200,19 @@ export type TimelineClip = {
 	vol: number;
 	fin?: number;
 	fout?: number;
-	kind?: 'media' | 'world';
+	/** 'slate': a shot of the script not filmed yet (V1); 'line': a line not recorded yet (A1, its `text`) */
+	kind?: 'media' | 'world' | 'slate' | 'line';
 	hash?: string;
 	shot?: string;
 	shotVersion?: number;
+	/** the fixed first grade layers (white balance, exposure, contrast, highlights, lows), ACEScct, before `grade` */
+	balance?: Balance | null;
 	/** this clip's own grade (Grade tab), ACEScct */
 	grade?: Cdl | null;
+	/** picture clips: where the clip stands in the script */
+	script?: ClipScript;
+	/** lines: the words to be said */
+	text?: string;
 	/** media clips: reframing per delivery shape */
 	frame?: Partial<Record<Shape, ClipFrame>>;
 	/**
@@ -235,7 +244,8 @@ export type Timeline = {
 
 export const listTimelines = () => call<Timeline[]>('/api/timelines');
 export const createTimeline = (t: Partial<Timeline>) => call<Timeline>('/api/timelines', { method: 'POST', body: JSON.stringify(t) });
-export const saveTimeline = (id: string, t: Partial<Timeline>) =>
+export const getTimeline = (id: string) => call<Timeline>(`/api/timelines/${id}`);
+export const saveTimeline = (id: string, t: Partial<Timeline> & { if_updated?: string }) =>
 	call<Timeline>(`/api/timelines/${id}`, { method: 'PUT', body: JSON.stringify(t) });
 export async function deleteTimeline(id: string): Promise<void> {
 	if (native()) return void (await call(`/api/timelines/${id}`, { method: 'DELETE' }));

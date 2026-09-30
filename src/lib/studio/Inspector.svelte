@@ -67,8 +67,6 @@
 				<label>From <input type="number" step="0.05" min="0" value={sel.in.toFixed(2)} onchange={(e) => s.setClip({ in: Math.max(0, Number(e.currentTarget.value)) })} /> s in</label>
 				{#if sel.track === 'V1' && partner}
 					<p class="sub">Its sound is its own clip on {partner.track}, linked — moved and trimmed with it (Alt: one alone).</p>
-				{:else}
-					<label class="vol">Volume <input type="range" min="0" max="1" step="0.01" value={sel.vol} oninput={(e) => s.setClip({ vol: Number(e.currentTarget.value) })} /> {Math.round(sel.vol * 100)}%</label>
 				{/if}
 			{/if}
 			{#if onSoundTrack(sel) && isVideo}
@@ -118,7 +116,7 @@
 					</label>
 				{/each}
 			{:else}
-				<p class="sub">No captions for this voice yet: “Captions from the voice” (under the monitor) writes them from its transcript.</p>
+				<p class="sub">No captions for this voice yet: they come by themselves once its transcript is made.</p>
 			{/if}
 		{/if}
 		<dl>

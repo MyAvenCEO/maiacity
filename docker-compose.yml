@@ -45,9 +45,12 @@ services:
       RP_NAME: ${RP_NAME:-maiaCITY}
       SITE_ORIGIN: ${SITE_ORIGIN:-http://localhost:5173}
       COOKIE_DOMAIN: ${COOKIE_DOMAIN:-}
-      # speech to text (api/src/stt.ts): Prem's key, from the GitHub secret PREMAI_API_KEY; without it /api/transcripts
-      # answers 503 and the vault server waits. The client KEK is made once and kept in the database.
+      # speech to text and the shot analysis (api/src/stt.ts, analysis.ts, prem.ts): Prem's key, from the GitHub secret
+      # PREMAI_API_KEY; without it /api/transcripts and /api/analysis answer 503 and the vault server waits. The client
+      # KEK is made once and kept in the database. Confidential only, attested per model; a model Prem fails on is
+      # paused (1 → 30 min) and asked nothing meanwhile. PREMAI_PAUSED=1: the kill switch — nothing calls Prem.
       PREMAI_API_KEY: ${PREMAI_API_KEY:-}
+      PREMAI_PAUSED: ${PREMAI_PAUSED:-}
     ports:
       - "${API_PORT:-3100}:3000"
     healthcheck:

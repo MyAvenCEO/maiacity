@@ -7,6 +7,20 @@
 //!   meta/<hash>     → a small JSON about the file (a blob too, so it syncs exactly like files)
 //!   ingest/<id>     → an ingest session's report
 //!   story/<id>      → a story: its title, description, series, episode, and where each class of its files is kept
+//!   transcript/<hash> → derived: the file's words with their times and the transcript's state and progress — made
+//!                     on a Mac, on-device (vault/app transcripts.rs), written by that Mac's author
+//!   sound/<hash>    → derived: the file's audio proxy and start timecode — written only by the vault server's author
+//!                     (vault-server sound.rs)
+//!   analysis/<hash> → derived: the file's shot tags, cues, summary and thumbnail, the analysis's state and progress —
+//!                     written only by the vault server's author (vault-server analyse.rs)
+//!
+//! `meta/` is editorial (people and agents); what a machine derives from a file lives under its own key per concern,
+//! keyed by the same hash, a small JSON blob synced exactly like `meta/`. Nobody writes derived data into `meta/`:
+//! a Mac rewriting a description can never lose a transcript, and the server never overwrites what a person wrote.
+//! What the app serves (the studio, the MCP, the local routes) is the *view* (`list_view`, `meta_view`): the
+//! description with its derived records merged into `meta` — `meta.transcript`, `meta.transcript_state`,
+//! `meta.transcript_progress`, `meta.audio`, `meta.analysis`, `meta.analysis_state`, `meta.analysis_progress`,
+//! `meta.thumbnail` (`with_derived`).
 //!
 //! Every file belongs to exactly one story — its `meta` names it (one description per file, so never two) — or to
 //! the inbox (no story named). The inbox's id is the catalog's own. A story's id is an iroh namespace key: the day a
@@ -65,6 +79,112 @@ pub struct Meta {
     /// default · original · proxy · delivery (empty reads as default)
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub class: String,
+}
+
+/// The derived records: one catalog key per concern (`<prefix><hash>`), each with one writer.
+pub const TRANSCRIPT: &str = "transcript/";
+pub const SOUND: &str = "sound/";
+pub const ANALYSIS: &str = "analysis/";
+
+/// The keys of a file's `meta` that are views of its derived records: shown, never written into `meta/` (a studio
+/// that sends its whole view back — `{ meta: { ...m.meta, color } }` — writes only what is editorial).
+pub const VIEW_KEYS: [&str; 12] = [
+    "transcript",
+    "transcript_state",
+    "transcript_stage",
+    "transcript_progress",
+    "transcript_tries",
+    "audio",
+    "sound_state",
+    "analysis",
+    "analysis_state",
+    "analysis_progress",
+    "analysis_stage",
+    "thumbnail",
+];
+
+/// The fields of a derived record that say where it stands, not what it found.
+const RECORD_STATE: [&str; 8] = ["state", "stage", "progress", "tries", "audio", "thumbnail", "device", "updated"];
+
+/// One file's derived records, as they are here.
+#[derive(Debug, Default, Clone, Copy)]
+pub struct Derived<'a> {
+    pub transcript: Option<&'a serde_json::Value>,
+    pub sound: Option<&'a serde_json::Value>,
+    pub analysis: Option<&'a serde_json::Value>,
+}
+
+/// A description with its derived records merged into `meta` — what the studio and the agents read. A record is the
+/// truth for its concern: what an older description still carries of it (a transcript merged in before the records
+/// existed) gives way.
+///   transcript/<hash> (a Mac, on-device) `{ state, stage?, progress?, device, model, language, text, words,
+///                        utterances, at }`
+///     → `meta.transcript` (the words and what goes with them, once there are words), `meta.transcript_state`,
+///       `meta.transcript_stage` + `meta.transcript_progress` (while it runs)
+///   sound/<hash> (the server) `{ state, audio?, timecode?, timecode_fps?, seconds?, at }`
+///     → `meta.audio` (the audio proxy's hash), `meta.sound_state`, `meta.probe.timecode` + `timecode_fps` when the
+///       probe has none
+///   analysis/<hash> (the server) `{ state, progress, thumbnail?, summary, tags, free, labels, segments, cues, … }`
+///     → `meta.analysis` (what it found, once it found anything), `meta.analysis_state`, `meta.analysis_progress`,
+///       `meta.thumbnail` (the hash of a small display-referred JPEG of the file's best frame)
+pub fn with_derived(meta: &mut Meta, d: Derived<'_>) {
+    use serde_json::{Value, json};
+    fn obj(v: Option<&Value>) -> Option<&Value> {
+        v.filter(|v| v.is_object())
+    }
+    let (transcript, sound, analysis) = (obj(d.transcript), obj(d.sound), obj(d.analysis));
+    if transcript.is_none() && sound.is_none() && analysis.is_none() {
+        return;
+    }
+    if !meta.meta.is_object() {
+        meta.meta = json!({});
+    }
+    let m = meta.meta.as_object_mut().unwrap();
+    let found = |r: &Value, keys: &[&str]| -> Option<Value> {
+        let o = r.as_object()?;
+        keys.iter().any(|k| o.contains_key(*k)).then(|| Value::Object(o.iter().filter(|(k, _)| !RECORD_STATE.contains(&k.as_str())).map(|(k, v)| (k.clone(), v.clone())).collect()))
+    };
+    let copy = |m: &mut serde_json::Map<String, Value>, r: &Value, from: &str, to: &str| {
+        if let Some(v) = r.get(from).filter(|v| v.is_string() || v.is_number()) {
+            m.insert(to.into(), v.clone());
+        }
+    };
+    if let Some(t) = transcript {
+        for k in ["transcript", "transcript_state", "transcript_stage", "transcript_progress", "transcript_tries"] {
+            m.remove(k);
+        }
+        copy(m, t, "state", "transcript_state");
+        copy(m, t, "stage", "transcript_stage");
+        copy(m, t, "progress", "transcript_progress");
+        copy(m, t, "tries", "transcript_tries");
+        if let Some(words) = found(t, &["words"]) {
+            m.insert("transcript".into(), words);
+        }
+    }
+    if let Some(snd) = sound {
+        m.remove("audio");
+        copy(m, snd, "state", "sound_state");
+        copy(m, snd, "audio", "audio");
+        if let (Some(tc), Some(fps)) = (snd.get("timecode").filter(|v| v.is_string()), snd.get("timecode_fps").filter(|v| v.is_number())) {
+            let probe = m.entry("probe").or_insert_with(|| json!({}));
+            if let Some(p) = probe.as_object_mut().filter(|p| !p.contains_key("timecode")) {
+                p.insert("timecode".into(), tc.clone());
+                p.insert("timecode_fps".into(), fps.clone());
+            }
+        }
+    }
+    if let Some(a) = analysis {
+        for k in ["analysis", "analysis_state", "analysis_progress", "analysis_stage", "thumbnail"] {
+            m.remove(k);
+        }
+        copy(m, a, "thumbnail", "thumbnail");
+        copy(m, a, "state", "analysis_state");
+        copy(m, a, "stage", "analysis_stage");
+        copy(m, a, "progress", "analysis_progress");
+        if let Some(found) = found(a, &["tags", "cues", "summary"]) {
+            m.insert("analysis".into(), found);
+        }
+    }
 }
 
 /// The classes a story keeps its files in, each with its own destinations.
@@ -194,7 +314,8 @@ impl Catalog {
         }
         if let Some(extra) = patch.get("meta").and_then(|v| v.as_object()) {
             let mut m = meta.meta.as_object().cloned().unwrap_or_default();
-            for (k, v) in extra {
+            // the derived records' views are not the description's (the server writes them under their own keys)
+            for (k, v) in extra.iter().filter(|(k, _)| !VIEW_KEYS.contains(&k.as_str())) {
                 m.insert(k.clone(), v.clone());
             }
             meta.meta = serde_json::Value::Object(m);
@@ -303,7 +424,57 @@ impl Catalog {
         Ok(())
     }
 
-    /// Every file's description whose JSON is here, newest entry per key.
+    /// Every derived record of one concern (`transcript/`, `sound/`, `analysis/`) whose JSON is here: hex hash → record.
+    pub async fn records(&self, prefix: &str) -> Result<std::collections::HashMap<String, serde_json::Value>> {
+        let entries: Vec<_> = self.doc().get_many(Query::single_latest_per_key().key_prefix(prefix)).await?.collect().await;
+        let mut out = std::collections::HashMap::new();
+        for entry in entries.into_iter().flatten() {
+            let hex = String::from_utf8_lossy(&entry.key()[prefix.len()..]).into_owned();
+            if let Ok(bytes) = self.store.blobs().get_bytes(entry.content_hash()).await {
+                if let Ok(v) = serde_json::from_slice::<serde_json::Value>(&bytes) {
+                    out.insert(hex, v);
+                }
+            }
+        }
+        Ok(out)
+    }
+
+    /// One derived record (`transcript/`, `sound/`, `analysis/`) of one file.
+    pub async fn record(&self, prefix: &str, hash: Hash) -> Result<Option<serde_json::Value>> {
+        let query = Query::single_latest_per_key().key_exact(format!("{prefix}{}", hash.to_hex()));
+        let Some(entry) = self.doc().get_one(query).await? else { return Ok(None) };
+        let Ok(bytes) = self.store.blobs().get_bytes(entry.content_hash()).await else { return Ok(None) };
+        Ok(serde_json::from_slice(&bytes).ok())
+    }
+
+    /// Write one derived record as this node (a Mac writes only `transcript/<hash>` — the words it made).
+    pub async fn write_record(&self, prefix: &str, hash: Hash, record: &serde_json::Value) -> Result<()> {
+        self.doc().set_bytes(self.author, format!("{prefix}{}", hash.to_hex()), serde_json::to_vec(record)?).await?;
+        Ok(())
+    }
+
+    /// Every file as the studio and the agents see it: its description with its derived records merged in.
+    pub async fn list_view(&self) -> Result<Vec<Meta>> {
+        let mut list = self.list().await?;
+        let transcripts = self.records(TRANSCRIPT).await?;
+        let sounds = self.records(SOUND).await?;
+        let analyses = self.records(ANALYSIS).await?;
+        for m in &mut list {
+            with_derived(m, Derived { transcript: transcripts.get(&m.hash), sound: sounds.get(&m.hash), analysis: analyses.get(&m.hash) });
+        }
+        Ok(list)
+    }
+
+    /// One file as the studio and the agents see it (`list_view`'s merge).
+    pub async fn meta_view(&self, hash: Hash) -> Result<Option<Meta>> {
+        let Some(mut m) = self.meta(hash).await? else { return Ok(None) };
+        let (t, snd, a) = (self.record(TRANSCRIPT, hash).await?, self.record(SOUND, hash).await?, self.record(ANALYSIS, hash).await?);
+        with_derived(&mut m, Derived { transcript: t.as_ref(), sound: snd.as_ref(), analysis: a.as_ref() });
+        Ok(Some(m))
+    }
+
+    /// Every file's description whose JSON is here, newest entry per key — only what `meta/` says (the derived
+    /// records are merged in by `list_view`).
     pub async fn list(&self) -> Result<Vec<Meta>> {
         let entries: Vec<_> = self.doc().get_many(Query::single_latest_per_key().key_prefix("meta/")).await?.collect().await;
         let mut out = Vec::new();
@@ -316,5 +487,59 @@ impl Catalog {
             }
         }
         Ok(out)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    fn file(meta: serde_json::Value) -> Meta {
+        Meta { hash: "h".into(), kind: "video".into(), meta, ..Default::default() }
+    }
+
+    #[test]
+    fn the_view_merges_the_derived_records() {
+        let mut m = file(json!({ "proxy": "p", "probe": { "codec": "hvc1" } }));
+        let t = json!({ "state": "done", "stage": "transcribing", "progress": 0.6, "device": "mac1",
+                        "model": "nvidia/nemotron-3.5-asr-streaming-0.6b", "text": "Day twenty.", "words": [{ "w": "Day", "s": 0.4, "e": 0.8, "c": 1.0 }] });
+        let snd = json!({ "state": "done", "audio": "a1", "timecode": "10:00:00:00", "timecode_fps": 25.0 });
+        let a = json!({ "state": "analysing", "progress": 0.5, "thumbnail": "t1", "tags": { "shot_size": "MS" }, "cues": [] });
+        with_derived(&mut m, Derived { transcript: Some(&t), sound: Some(&snd), analysis: Some(&a) });
+        let v = &m.meta;
+        assert_eq!(v["proxy"], "p");
+        assert_eq!(v["transcript_state"], "done");
+        assert_eq!(v["audio"], "a1");
+        assert_eq!(v["transcript"]["text"], "Day twenty.");
+        assert!(v["transcript"].get("state").is_none() && v["transcript"].get("device").is_none());
+        assert_eq!(v["sound_state"], "done");
+        assert_eq!(v["probe"], json!({ "codec": "hvc1", "timecode": "10:00:00:00", "timecode_fps": 25.0 }));
+        assert_eq!(v["analysis_state"], "analysing");
+        assert_eq!(v["analysis_progress"], 0.5);
+        assert_eq!(v["thumbnail"], "t1");
+        assert_eq!(v["transcript_stage"], "transcribing");
+        assert_eq!(v["transcript_progress"], 0.6);
+        assert_eq!(v["analysis"], json!({ "tags": { "shot_size": "MS" }, "cues": [] }));
+    }
+
+    #[test]
+    fn a_record_is_the_truth_for_its_concern() {
+        // a description still carrying an old merged-in transcript: the record wins; no words yet → no transcript
+        let mut m = file(json!({ "transcript": { "words": [] }, "transcript_state": "done", "probe": { "timecode": "01:00:00:00" } }));
+        with_derived(&mut m, Derived { transcript: Some(&json!({ "state": "transcribing" })), ..Default::default() });
+        assert!(m.meta.get("transcript").is_none());
+        assert_eq!(m.meta["transcript_state"], "transcribing");
+        // the Mac's own probe timecode stays
+        with_derived(&mut m, Derived { sound: Some(&json!({ "state": "none: no sound track", "timecode": "02:00:00:00", "timecode_fps": 25 })), ..Default::default() });
+        assert_eq!(m.meta["probe"]["timecode"], "01:00:00:00");
+        // nothing derived: the description as it is
+        let mut plain = file(serde_json::Value::Null);
+        with_derived(&mut plain, Derived::default());
+        assert!(plain.meta.is_null());
+        // a queued analysis shows its state, not an empty result
+        let mut q = file(json!({}));
+        with_derived(&mut q, Derived { analysis: Some(&json!({ "state": "queued" })), ..Default::default() });
+        assert_eq!(q.meta, json!({ "analysis_state": "queued" }));
     }
 }

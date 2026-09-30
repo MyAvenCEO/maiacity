@@ -16,7 +16,8 @@
  */
 /**
  * crop: the part of the source to show — u0, v0, width, height (0…1, top-left origin).
- * @typedef {{ idt: InMode, odt: OutMode, grades: Cdl[], falseColor?: boolean, crop: [number, number, number, number] }} DrawOpts
+ * balance: the clip's balance (color.js `balance`), before its grades.
+ * @typedef {{ idt: InMode, odt: OutMode, grades: Cdl[], balance?: import('../../../game/film/color.js').Balance | null, falseColor?: boolean, crop: [number, number, number, number] }} DrawOpts
  */
 
 const VERT = `#version 300 es
@@ -33,7 +34,8 @@ out vec4 outColor;
 uniform sampler2D uSrc;
 uniform sampler3D uIdt;
 uniform sampler3D uOdt;
-uniform int uIdtSize, uOdtSize, uIdtMode, uOdtMode, uGrades, uFalse;
+uniform int uIdtSize, uOdtSize, uIdtMode, uOdtMode, uGrades, uFalse, uBal;
+uniform vec3 uBalWb, uBalTone;
 uniform vec3 uSlope[2], uOffset[2], uPower[2];
 uniform float uSat[2];
 uniform vec4 uCrop;
@@ -68,6 +70,17 @@ vec3 grade(vec3 x, int k) {
 	return l + uSat[k] * (y - l);
 }
 
+// the balance, as balance() in color.js: white balance (stops per channel), exposure, contrast around mid grey, then
+// highlights and lows by luma — uBalWb (temp, tint, exposure), uBalTone (contrast, highlights, shadows)
+vec3 balance(vec3 c) {
+	const float STOP = 1.0 / 17.52, PIVOT = 0.4135884, REACH = 0.35;
+	c += vec3(uBalWb.x * 0.5, -uBalWb.y, -uBalWb.x * 0.5) * STOP;
+	c = PIVOT + (c + uBalWb.z * STOP - PIVOT) * (1.0 + uBalTone.x);
+	float l = dot(c, vec3(0.2126, 0.7152, 0.0722));
+	float lift = (uBalTone.y * smoothstep(PIVOT, PIVOT + REACH, l) + uBalTone.z * (1.0 - smoothstep(PIVOT - REACH, PIVOT, l))) * STOP;
+	return c + lift;
+}
+
 // a camera's false colour: where each part of the frame sits on the exposure scale
 vec3 falseColor(vec3 c) {
 	float y = dot(clamp(c, 0.0, 1.0), vec3(0.2126, 0.7152, 0.0722));
@@ -86,6 +99,7 @@ void main() {
 	vec2 st = uCrop.xy + vec2(uv.x, 1.0 - uv.y) * uCrop.zw;
 	vec3 c = texture(uSrc, vec2(st.x, 1.0 - st.y)).rgb;
 	if (uIdtMode == 1) c = lut3d(uIdt, uIdtSize, c);
+	if (uBal == 1) c = balance(c);
 	if (uGrades > 0) c = grade(c, 0);
 	if (uGrades > 1) c = grade(c, 1);
 	if (uOdtMode == 1) c = lut3d(uOdt, uOdtSize, c);
@@ -134,7 +148,7 @@ export class ViewerGL {
 		const loc = gl.getAttribLocation(p, 'p');
 		gl.enableVertexAttribArray(loc);
 		gl.vertexAttribPointer(loc, 2, gl.FLOAT, false, 0, 0);
-		for (const n of ['uSrc', 'uIdt', 'uOdt', 'uIdtSize', 'uOdtSize', 'uIdtMode', 'uOdtMode', 'uGrades', 'uFalse', 'uSlope', 'uOffset', 'uPower', 'uSat', 'uCrop'])
+		for (const n of ['uSrc', 'uIdt', 'uOdt', 'uIdtSize', 'uOdtSize', 'uIdtMode', 'uOdtMode', 'uGrades', 'uFalse', 'uBal', 'uBalWb', 'uBalTone', 'uSlope', 'uOffset', 'uPower', 'uSat', 'uCrop'])
 			this.u[n] = gl.getUniformLocation(p, n);
 		gl.uniform1i(this.u.uSrc, 0);
 		gl.uniform1i(this.u.uIdt, 1);
@@ -202,6 +216,10 @@ export class ViewerGL {
 		gl.uniform3fv(u.uOffset, pad.flatMap((x) => x.offset));
 		gl.uniform3fv(u.uPower, pad.flatMap((x) => x.power));
 		gl.uniform1fv(u.uSat, pad.map((x) => x.sat));
+		const b = o.balance;
+		gl.uniform1i(u.uBal, b ? 1 : 0);
+		gl.uniform3fv(u.uBalWb, b ? [b.temp, b.tint, b.exposure] : [0, 0, 0]);
+		gl.uniform3fv(u.uBalTone, b ? [b.contrast, b.highlights, b.shadows] : [0, 0, 0]);
 		gl.uniform1i(u.uFalse, o.falseColor ? 1 : 0);
 		gl.uniform4fv(u.uCrop, o.crop);
 		gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);

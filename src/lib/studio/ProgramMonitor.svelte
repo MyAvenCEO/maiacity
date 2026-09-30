@@ -137,6 +137,7 @@
 			{source}
 			profile={source && source === stand ? 'srgb' : s.profileOfClip(pic)}
 			grades={s.gradesOf(pic)}
+			balance={s.balanceOf(pic)}
 			luts={s.luts}
 			aspect={ratio(s.viewShape)}
 			frame={frameOf}

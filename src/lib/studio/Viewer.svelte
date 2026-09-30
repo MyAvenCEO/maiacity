@@ -15,6 +15,7 @@
 	 *   source: HTMLVideoElement | HTMLImageElement | HTMLCanvasElement | null | undefined,
 	 *   profile: string,
 	 *   grades?: import('$lib/auth/client').Cdl[],
+	 *   balance?: import('../../../game/film/color.js').Balance | null,
 	 *   luts: Record<string, import('./luts.js').Lut | null>,
 	 *   aspect: number,
 	 *   frame?: import('$lib/auth/client').ClipFrame,
@@ -28,6 +29,7 @@
 		source,
 		profile,
 		grades = [],
+		balance = null,
 		luts,
 		aspect,
 		frame,
@@ -69,13 +71,13 @@
 		if (plan?.note !== p.note || plan?.idt !== p.idt || plan?.odt !== p.odt) plan = p;
 		// only when something changed: a video that moves, a still or a grade that is new
 		const moving = el instanceof HTMLVideoElement ? `${el.currentTime}:${el.paused}` : el instanceof HTMLCanvasElement ? String(performance.now()) : el.src;
-		const key = `${moving}|${W}x${H}|${profile}|${JSON.stringify(grades)}|${aspect}|${JSON.stringify(frame ?? null)}|${falseColor}|${p.idt}${p.odt}|${p.idtLut?.name}|${p.odtLut?.name}`;
+		const key = `${moving}|${W}x${H}|${profile}|${JSON.stringify(grades)}|${JSON.stringify(balance)}|${aspect}|${JSON.stringify(frame ?? null)}|${falseColor}|${p.idt}${p.odt}|${p.idtLut?.name}|${p.odtLut?.name}`;
 		if (key === last && !(el instanceof HTMLVideoElement && !el.paused)) return;
 		last = key;
 		gl.setLut('idt', p.idtLut);
 		gl.setLut('odt', p.odtLut);
 		try {
-			gl.draw(el, { idt: p.idt, odt: p.odt, grades, falseColor, crop: cover(w / h, aspect, frame) });
+			gl.draw(el, { idt: p.idt, odt: p.odt, grades, balance: profile === 'srgb' ? null : balance, falseColor, crop: cover(w / h, aspect, frame) });
 		} catch {
 			/* a frame not decodable yet (or a tainted one): the next will do */
 		}

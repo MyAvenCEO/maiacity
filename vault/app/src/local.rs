@@ -2,7 +2,7 @@
 //! 127.0.0.1 only and behind the same token. List the catalog, read a file (with Range, streamed from the store), add
 //! a file (the three-hash check, like every ingest), describe one. Nothing here leaves the Mac.
 //!
-//!   GET  /vault/files                    the catalog: every file's Meta
+//!   GET  /vault/files                    the catalog: every file's Meta, its transcript and analysis merged in (meta.transcript, meta.analysis …)
 //!   GET  /vault/files/<hash>             its bytes (Range)
 //!   POST /vault/files?about=<json>       the body becomes a file: { name?, title?, description?, tags?, meta?, public? }
 //!   POST /vault/describe                 { hash, title?, description?, tags?, public?, meta? } — meta merged, tags replaced
@@ -39,7 +39,7 @@ fn fail(status: StatusCode, e: impl std::fmt::Display) -> Response {
 }
 
 async fn list(State(v): State<Arc<Vault>>) -> Response {
-    match v.catalog.list().await {
+    match v.catalog.list_view().await {
         Ok(all) => Json(all).into_response(),
         Err(e) => fail(StatusCode::INTERNAL_SERVER_ERROR, format!("{e:#}")),
     }
@@ -187,7 +187,7 @@ async fn describe(State(v): State<Arc<Vault>>, Json(body): Json<Value>) -> Respo
         m.remove("hash");
     }
     match v.catalog.describe(hash, &patch).await {
-        Ok(meta) => Json(meta).into_response(),
+        Ok(meta) => Json(v.catalog.meta_view(hash).await.ok().flatten().unwrap_or(meta)).into_response(),
         Err(e) => fail(StatusCode::NOT_FOUND, format!("{e:#}")),
     }
 }

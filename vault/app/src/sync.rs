@@ -246,7 +246,7 @@ pub async fn keep_complete(handle: AppHandle, vault: Arc<Vault>) {
     }
 }
 
-async fn fetch_from_gateway(vault: &Vault, auth: &Auth, hash: Hash) -> Result<(), String> {
+pub(crate) async fn fetch_from_gateway(vault: &Vault, auth: &Auth, hash: Hash) -> Result<(), String> {
     let key = auth::load_key_pub().ok_or("not signed in")?;
     let url = format!("{}/vault/files/{}", auth::api_base(), hash.to_hex());
     let mut res = auth.http().get(url).bearer_auth(key).send().await.map_err(err)?;

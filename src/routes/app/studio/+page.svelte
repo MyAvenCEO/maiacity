@@ -31,7 +31,7 @@
 	import StageBar from '$lib/studio/StageBar.svelte';
 	import Timeline from '$lib/studio/Timeline.svelte';
 	import Transport from '$lib/studio/Transport.svelte';
-	import { Studio, clockText } from '$lib/studio/studio.svelte';
+	import { Studio } from '$lib/studio/studio.svelte';
 
 	const ASPECTS = ['1:1', '16:9', '9:16', '4:5'];
 	const s = new Studio();
@@ -72,10 +72,10 @@
 	function onKey(e: KeyboardEvent) {
 		const target = e.target as HTMLElement | null;
 		if (target?.closest?.('input, textarea, select')) return;
-		if (e.altKey && ['Digit1', 'Digit2', 'Digit3', 'Digit4', 'Digit5', 'Digit6'].includes(e.code)) {
+		if (e.altKey && ['Digit1', 'Digit2', 'Digit3', 'Digit4', 'Digit5', 'Digit6', 'Digit7'].includes(e.code)) {
 			e.preventDefault();
-			const t = (['ingest', 'library', '3d', 'edit', 'grade', 'render'] as const)[Number(e.code.slice(-1)) - 1]!;
-			if (t !== 'grade' || s.locked) s.tab = t;
+			const t = (['ingest', 'library', '3d', 'edit', 'audio', 'grade', 'render'] as const)[Number(e.code.slice(-1)) - 1]!;
+			s.tab = t;
 			return;
 		}
 		// inside the source player's own controls its keys are its own (Space plays it, arrows step through it)
@@ -132,23 +132,21 @@
 			<div class="row">
 				<a class="back" href="{base}/app/">← Dashboard</a>
 				<strong>Studio</strong>
-				{#if s.current}
-					{@const cur = s.current}
-					<fieldset class="meta" disabled={s.locked}>
-						<input class="tproj" value={cur.project ?? ''} placeholder="project" onchange={(e) => s.setMeta({ project: e.currentTarget.value.trim() || null })} aria-label="Project" />
-						<input class="tvar" value={cur.variant ?? ''} placeholder="–" onchange={(e) => s.setMeta({ variant: e.currentTarget.value.trim() || null })} aria-label="Variant" />
-						<input class="tname" value={cur.name} onchange={(e) => s.setMeta({ name: e.currentTarget.value.trim() || cur.name })} aria-label="Timeline name" />
-						<input class="tdesc" value={cur.description ?? ''} placeholder="what this variant is" onchange={(e) => s.setMeta({ description: e.currentTarget.value.trim() || null })} aria-label="Variant description" />
-						<input class="ttags" value={cur.tags.join(', ')} placeholder="tags" onchange={(e) => s.setMeta({ tags: e.currentTarget.value.split(',').map((t) => t.trim()).filter(Boolean) })} aria-label="Timeline tags" />
-						<select value={cur.aspect} onchange={(e) => s.setMeta({ aspect: e.currentTarget.value })} aria-label="Frame">
-							{#each ASPECTS as a (a)}<option value={a}>{a}</option>{/each}
-						</select>
-					</fieldset>
+				<span class="grow"></span>
+				{#if s.current && s.tab !== 'ingest' && s.tab !== 'library'}
+					<div class="title">
+						<h2>{s.current.name}</h2>
+						{#if s.current.description}<p title={s.current.description}>{s.current.description}</p>{/if}
+					</div>
 				{/if}
-				<span class="sub">{s.clips.length} clips · {clockText(s.end)} · {s.saving === 'saved' ? 'saved' : s.saving === 'saving' ? 'saving…' : 'unsaved'}</span>
+				<span class="grow"></span>
 				{#if s.error}<button class="err" onclick={() => (s.error = '')} title="Dismiss">{s.error}</button>{/if}
 				{#if s.notice}<button class="err note" onclick={() => (s.notice = '')} title="{s.notice} (click to dismiss)">{s.notice}</button>{/if}
-				<span class="grow"></span>
+				{#if s.current && s.tab !== 'ingest' && s.tab !== 'library'}
+					<select value={s.current.aspect} onchange={(e) => s.setMeta({ aspect: e.currentTarget.value })} aria-label="Frame">
+						{#each ASPECTS as a (a)}<option value={a}>{a}</option>{/each}
+					</select>
+				{/if}
 				{#if s.active && s.tab !== 'render'}
 					<button class="rpill" style:--p="{Math.round(s.active.progress * 100)}%" onclick={() => (s.tab = 'render')}>
 						{s.active.status === 'queued' ? 'Render waiting…' : `Rendering ${Math.round(s.active.progress * 100)}%`}
@@ -177,6 +175,11 @@
 				<ProgramMonitor {s} />
 			</div>
 			<Inspector {s} />
+		{:else if s.tab === 'audio'}
+			<!-- the sound on the timeline itself: each clip's level, fades and loudness on it -->
+			<div class="monitors">
+				<ProgramMonitor {s} label="Program · sound" />
+			</div>
 		{:else if s.tab === 'grade'}
 			<Conform {s} />
 			<div class="monitors column">
@@ -252,6 +255,17 @@
 		grid-template-columns: 19rem 1fr 19rem;
 	}
 
+	/* Audio: the program over the sound tracks, which carry the levels themselves */
+	.studio.tab-audio {
+		grid-template-columns: 1fr;
+		grid-template-rows: auto minmax(0, 1fr) auto minmax(14rem, 46vh);
+		grid-template-areas:
+			'bar'
+			'monitor'
+			'transport'
+			'timeline';
+	}
+
 	/* Ingest and Library: one panel under the bar, no transport or timeline */
 	.studio.tab-ingest,
 	.studio.tab-library {
@@ -289,14 +303,37 @@
 		font-weight: 500;
 	}
 
-	.meta {
-		display: flex;
-		align-items: center;
-		gap: 0.5rem;
-		min-width: 0;
+	/* the open timeline: its name and what it is, once — in the middle of the window, whatever sits beside it */
+	.row {
+		position: relative;
+	}
+
+	.title {
+		position: absolute;
+		left: 50%;
+		top: 50%;
+		transform: translate(-50%, -50%);
+		width: min(44rem, 46%);
+		text-align: center;
+		pointer-events: none;
+	}
+
+	.title h2 {
 		margin: 0;
-		padding: 0;
-		border: 0;
+		overflow: hidden;
+		font-size: 1rem;
+		font-weight: 600;
+		white-space: nowrap;
+		text-overflow: ellipsis;
+	}
+
+	.title p {
+		margin: 0.05rem 0 0;
+		overflow: hidden;
+		font-size: 0.76rem;
+		white-space: nowrap;
+		text-overflow: ellipsis;
+		color: var(--dim);
 	}
 
 	.sub {
@@ -385,34 +422,6 @@
 		grid-template-rows: minmax(0, 1fr) minmax(9rem, 30%);
 	}
 
-	.tname {
-		width: 16rem;
-		padding: 0.3rem 0.6rem;
-		border: 1px solid transparent;
-		border-radius: 6px;
-		background: transparent;
-		font: inherit;
-		font-weight: 600;
-		color: var(--ink);
-	}
-
-	.tname:hover,
-	.tname:focus {
-		border-color: var(--edge);
-		background: #fff;
-	}
-
-	.ttags {
-		width: 9rem;
-		padding: 0.3rem 0.6rem;
-		border: 1px solid var(--edge);
-		border-radius: 999px;
-		background: #fff;
-		font: inherit;
-		font-size: 0.75rem;
-		color: var(--ink);
-	}
-
 	.bar select {
 		padding: 0.25rem 0.4rem;
 		border: 1px solid var(--edge);
@@ -421,47 +430,6 @@
 		font: inherit;
 		font-size: 0.78rem;
 		color: var(--ink);
-	}
-
-	.tdesc {
-		width: 14rem;
-		padding: 0.3rem 0.5rem;
-		border: 1px solid transparent;
-		border-radius: 6px;
-		background: none;
-		font: inherit;
-		font-size: 0.8rem;
-		color: var(--dim);
-	}
-
-	.tdesc:hover,
-	.tdesc:focus {
-		border-color: var(--edge);
-		background: #fff;
-	}
-
-	.tproj {
-		width: 6rem;
-		padding: 0.3rem 0.5rem;
-		border: 1px solid var(--edge);
-		border-radius: 6px;
-		background: #fff;
-		font: inherit;
-		font-size: 0.8rem;
-		font-weight: 600;
-		color: var(--ink);
-	}
-
-	.tvar {
-		width: 2.2rem;
-		padding: 0.3rem 0.3rem;
-		border: 1px solid var(--edge);
-		border-radius: 6px;
-		background: var(--ink);
-		font: inherit;
-		font-size: 0.8rem;
-		text-align: center;
-		color: #fff;
 	}
 
 	@media (max-width: 900px) {

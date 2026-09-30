@@ -340,6 +340,149 @@ impl Library for Vaulted {
     }
 }
 
+/// What each picture clip of a timeline is like (vault_render `measure`: luma percentiles and the middle tones'
+/// colour in ACEScct, as shot and balanced) — the clips named, else every media clip on V1; `frames` per clip.
+pub async fn measure_clips(vault: &Arc<Vault>, timeline: &Value, ids: Option<Vec<String>>, frames: usize) -> Res<Vec<Value>> {
+    let t: Timeline = serde_json::from_value(timeline.clone()).map_err(err)?;
+    let dir = vault.ingest_dir().join(format!("measure-{}", std::process::id()));
+    let lib = Arc::new(Vaulted::new(vault, dir.clone()).await?);
+    let clips: Vec<Clip> = t
+        .clips
+        .iter()
+        .filter(|c| c.track == "V1" && c.hash.is_some() && !c.is_world())
+        .filter(|c| ids.as_ref().is_none_or(|ids| ids.contains(&c.id)))
+        .cloned()
+        .collect();
+    if clips.is_empty() {
+        return Err("no picture clip with a file to measure".into());
+    }
+    let out = tauri::async_runtime::spawn_blocking(move || {
+        clips
+            .iter()
+            .map(|c| {
+                let name = lib.media(c.hash.as_deref().unwrap_or("")).map(|m| m.title).unwrap_or_default();
+                match vault_render::measure(&t, &*lib, c, frames) {
+                    Ok(mut v) => {
+                        v["name"] = json!(name);
+                        v
+                    }
+                    Err(e) => json!({ "clip": c.id, "name": name, "error": format!("{e:#}") }),
+                }
+            })
+            .collect::<Vec<Value>>()
+    })
+    .await
+    .map_err(err)?;
+    std::fs::remove_dir_all(&dir).ok();
+    Ok(out)
+}
+
+/// Every shot's balance to level them to each other (vault_render `grade::fit`): to the reference clip as it is
+/// balanced now, to neutral (grey middle tones, the middle at 18 %), else to the shots' average. Returns the target
+/// and each shot's proposed balance; writes nothing.
+pub async fn propose_balances(vault: &Arc<Vault>, timeline: &Value, ids: Option<Vec<String>>, reference: Option<String>, neutral: bool) -> Res<Value> {
+    use vault_render::grade::{MATCH_AT, PIVOT, fit};
+    let shots = measure_clips(vault, timeline, ids, 5).await?;
+    let ok: Vec<&Value> = shots.iter().filter(|s| s.get("error").is_none()).collect();
+    if ok.is_empty() {
+        return Err(format!("nothing could be measured: {}", json!(shots)));
+    }
+    let at = |s: &Value, p: &str| s.pointer(p).and_then(Value::as_f64).unwrap_or(0.0);
+    let avg = |p: &str| ok.iter().map(|s| at(s, p)).sum::<f64>() / ok.len() as f64;
+    let (target, against) = match &reference {
+        Some(id) => {
+            let r = ok.iter().find(|s| s["clip"].as_str() == Some(id)).ok_or("the reference clip was not measured")?;
+            (r["balanced"].clone(), format!("clip {id}"))
+        }
+        None => {
+            let luma: serde_json::Map<String, Value> = MATCH_AT.iter().map(|p| (p.to_string(), json!(avg(&format!("/balanced/luma/{p}"))))).collect();
+            let mut target = json!({ "luma": luma, "to_grey": { "temp": avg("/balanced/to_grey/temp"), "tint": avg("/balanced/to_grey/tint") } });
+            if neutral {
+                let shift = PIVOT - target["luma"]["p50"].as_f64().unwrap_or(PIVOT);
+                for p in MATCH_AT {
+                    target["luma"][p] = json!(target["luma"][p].as_f64().unwrap_or(0.0) + shift);
+                }
+                target["to_grey"] = json!({ "temp": 0.0, "tint": 0.0 });
+                (target, "neutral".to_string())
+            } else {
+                (target, "the shots' average".to_string())
+            }
+        }
+    };
+    let proposed: Vec<Value> = ok
+        .iter()
+        .map(|s| {
+            let id = s["clip"].as_str().unwrap_or_default();
+            if reference.as_deref() == Some(id) {
+                return json!({ "clip": id, "name": s["name"], "balance": s["balance"], "note": "the reference: kept as it is" });
+            }
+            json!({ "clip": id, "name": s["name"], "balance": fit(&s["as_shot"], &target), "as_shot": { "luma": s["as_shot"]["luma"], "to_grey": s["as_shot"]["to_grey"] } })
+        })
+        .collect();
+    let errors: Vec<&Value> = shots.iter().filter(|s| s.get("error").is_some()).collect();
+    Ok(json!({ "target": against, "target_stats": target, "shots": proposed, "errors": errors }))
+}
+
+/// How each sound clip of a timeline sounds (vault_render `measure_sound`): loudness, true peak, a curve to draw, the
+/// music under each voice clip.
+pub async fn measure_sound(vault: &Arc<Vault>, timeline: &Value) -> Res<Value> {
+    let t: Timeline = serde_json::from_value(timeline.clone()).map_err(err)?;
+    let dir = vault.ingest_dir().join(format!("sound-{}-{}", std::process::id(), std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis()).unwrap_or(0)));
+    let lib = Arc::new(Vaulted::new(vault, dir.clone()).await?);
+    let out = tauri::async_runtime::spawn_blocking(move || vault_render::measure_sound(&t, &*lib)).await.map_err(err)?.map_err(err);
+    std::fs::remove_dir_all(&dir).ok();
+    out
+}
+
+/// The loudness each kind of sound is levelled to, before the render levels the whole mix to −14 LUFS: the voice
+/// clear on top, the music a bed under it (the render keys it down 6 dB more while the voice speaks), the sounds
+/// and ambience under both.
+pub const SOUND_TARGETS: [(&str, f64); 3] = [("A1", -18.0), ("A2", -26.0), ("A3", -30.0)];
+
+/// Every sound clip levelled to its track's target (or `targets`), its gain within −∞…+12 dB (vol ≤ 4), and fades so
+/// nothing clicks: a voice 0.05 s at least, the music 1 s in and 2.5 s out where the film starts or ends, a sound
+/// 0.3 s. Returns each clip's change; writes nothing.
+pub fn level_sound(measured: &Value, clips: &[Value], targets: &[(String, f64)], end: f64) -> Vec<Value> {
+    let target = |track: &str| targets.iter().find(|(t, _)| t == track).map(|(_, v)| *v).or_else(|| SOUND_TARGETS.iter().find(|(t, _)| *t == track).map(|(_, v)| *v));
+    let mut out = Vec::new();
+    for m in measured["clips"].as_array().into_iter().flatten().filter(|m| m.get("error").is_none()) {
+        let (Some(id), Some(track)) = (m["clip"].as_str(), m["track"].as_str()) else { continue };
+        let Some(c) = clips.iter().find(|c| c["id"].as_str() == Some(id)) else { continue };
+        let Some(goal) = target(track) else { continue };
+        let mut change = json!({ "clip": id, "track": track, "name": m["name"] });
+        if let Some(l) = m["lufs"].as_f64() {
+            // the gain that brings it to its target, never more than +12 dB (vol 4); the mix is float, and the render's
+            // master limiter holds the peaks
+            let g = goal - l;
+            let vol = (10f64.powf(g.min(12.0) / 20.0) * 1000.0).round() / 1000.0;
+            change["vol"] = json!(vol.clamp(0.0, 4.0));
+            change["lufs_before"] = json!(m["lufs_at_vol"]);
+            change["lufs_after"] = json!(((l + 20.0 * vol.max(1e-6).log10()) * 100.0).round() / 100.0);
+        } else {
+            change["note"] = json!("silent: left as it is");
+        }
+        let start = c["start"].as_f64().unwrap_or(0.0);
+        let dur = c["dur"].as_f64().unwrap_or(0.0);
+        let (fin, fout) = (c["fin"].as_f64().unwrap_or(0.0), c["fout"].as_f64().unwrap_or(0.0));
+        let (want_in, want_out) = match track {
+            "A1" => (0.05, 0.05),
+            "A2" => (if start < 0.5 { 1.0 } else { 0.3 }, if (start + dur - end).abs() < 0.5 { 2.5 } else { 0.5 }),
+            _ => (0.3, 0.3),
+        };
+        change["fin"] = json!(fin.max(want_in).min(dur / 2.0));
+        change["fout"] = json!(fout.max(want_out).min(dur / 2.0));
+        out.push(change);
+    }
+    out
+}
+
+/// The Audio tab: how the timeline on screen sounds, clip by clip (to draw; it changes nothing).
+#[tauri::command]
+pub async fn sound_measure(app: tauri::State<'_, crate::App>, timeline: Value) -> Res<Value> {
+    crate::gate()?;
+    measure_sound(&app.vault, &timeline).await
+}
+
 // ── world plates ────────────────────────────────────────────────────────────────────────────────────────────────
 
 /// A world clip's shot record's spec (the version the clip names).

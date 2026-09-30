@@ -7,6 +7,7 @@ import {
 	createTimeline,
 	deleteTimeline,
 	describeMedia,
+	getTimeline,
 	listContent,
 	listJobs,
 	listMedia,
@@ -18,12 +19,12 @@ import {
 	queueRender,
 	saveTimeline
 } from '$lib/auth/client';
-import { ODT, PROFILES, WORKING, asStudio, clean, gradesFor, isCache, isSequence, presetOf, profileFor, proxyFor } from './color.js';
+import { ODT, PROFILES, WORKING, asStudio, clean, cleanBalance, gradesFor, isCache, isSequence, presetOf, profileFor, proxyFor } from './color.js';
 import { filmLut, nativeLut } from './luts.js';
 import { cached, evaluate, saveSpec, shotAt } from './shots.js';
 import { WorldViewer } from './world.svelte.js';
-import { asCaptions, audioProxyOf, captionWordsOf, hasSound, phraseBreak, rewordPhrase, transcriptOf } from './transcript.js';
-import { native } from '$lib/native';
+import { audioProxyOf, captionWordsOf, hasSound, phraseBreak, rewordPhrase, stepOpen, transcriptState } from './transcript.js';
+import { command, native } from '$lib/native';
 
 /** @typedef {import('$lib/auth/client').Cdl} Cdl */
 /** @typedef {import('$lib/auth/client').ClipFrame} ClipFrame */
@@ -52,7 +53,7 @@ import { native } from '$lib/native';
  * none in the file (silent), or failed (and why).
  * @typedef {'ready' | 'loading' | 'waiting' | 'silent' | `failed: ${string}`} SoundState
  */
-/** @typedef {'ingest' | 'library' | '3d' | 'edit' | 'grade' | 'render'} Tab */
+/** @typedef {'ingest' | 'library' | '3d' | 'edit' | 'audio' | 'grade' | 'render'} Tab */
 /**
  * A sound cue of a world shot, where it lands on A3 (derived from the shot record, never saved as a clip).
  * @typedef {Clip & { cue: true, from: string }} CueClip
@@ -180,6 +181,10 @@ export class Studio {
 	luts = $state({});
 	/** Edit: preview the grade on the proxies (read-only there) */
 	previewGrade = $state(false);
+	/** the Audio tab: how the timeline sounds, clip by clip (render.rs `measure_sound`), and whether it is being measured */
+	/** @type {any} */
+	loud = $state(null);
+	loudMeasuring = $state(false);
 	/**
 	 * Grade: the viewer shows the originals (conformed) or, faster, the proxies
 	 * @type {'originals' | 'proxies'}
@@ -250,9 +255,10 @@ export class Studio {
 	/** @type {TimelineStage} */
 	stage = $derived(this.current?.stage ?? 'edit');
 	version = $derived(this.current?.version ?? 1);
-	locked = $derived(this.stage !== 'edit');
-	/** picture and sound can be changed: the Edit tab, the edit not locked */
-	canEdit = $derived((this.tab === 'edit' || this.tab === '3d') && !this.locked);
+	/** no lock for now: the cut stays open in every tab (a timeline locked before is opened again when it opens) */
+	locked = false;
+	/** picture and sound can be changed: the Edit and 3D tabs */
+	canEdit = $derived(this.tab === 'edit' || this.tab === '3d');
 	/**
 	 * the frame the program shows: the timeline's own shape, or in Grade the one being checked
 	 * @type {string}
@@ -410,6 +416,11 @@ export class Studio {
 		if ((this.tab === 'edit' || this.tab === '3d') && !this.previewGrade) return [];
 		return gradesFor(c, this.current);
 	}
+	/** A clip's balance as the viewer shows it (Grade, Render; Edit with the grade preview on). @param {Clip | null | undefined} c */
+	balanceOf(c) {
+		if ((this.tab === 'edit' || this.tab === '3d') && !this.previewGrade) return null;
+		return c?.balance ?? null;
+	}
 
 	// ── loading ──────────────────────────────────────────────────────────────
 	async load() {
@@ -503,7 +514,7 @@ export class Studio {
 		await this.flush();
 		this.current = t;
 		this.expand(t.project ?? '', true);
-		this.clips = t.clips.filter((c) => isWorld(c) || (c.hash && this.byHash.has(c.hash)));
+		this.clips = t.clips.filter((c) => isWorld(c) || c.kind === 'slate' || c.kind === 'line' || (c.hash && this.byHash.has(c.hash)));
 		// a clip whose file this Mac does not know is left out of the view — and then the timeline is never saved from
 		// here, or those clips would be gone for good
 		this.dropped = t.clips.length - this.clips.length;
@@ -513,7 +524,8 @@ export class Studio {
 		this.time = 0;
 		this.saving = 'saved';
 		this.shape = /** @type {Shape} */ (['16:9', '9:16', '1:1', '4:5'].includes(t.aspect) ? t.aspect : '16:9');
-		if (this.tab === 'grade' && !this.locked) this.tab = 'edit';
+		// a timeline locked before the lock went: open again (the API fixes the cut of a locked one)
+		if (t.stage && t.stage !== 'edit') this.setMeta({ stage: 'edit' });
 		try {
 			localStorage.setItem(LAST, t.id);
 		} catch {
@@ -587,44 +599,50 @@ export class Studio {
 				color: cur.color ?? { working: 'acescct', output: 'odt-rec709' },
 				grade: cur.grade ?? null
 			};
-			const t = await saveTimeline(cur.id, body);
+			// only over the version this copy was read from: an agent's edit in between is never overwritten
+			const t = await saveTimeline(cur.id, { ...body, ...(cur.updated ? { if_updated: cur.updated } : {}) });
 			this.timelines = [t, ...this.timelines.filter((x) => x.id !== t.id)];
 			// an API that keeps the stages says which version the timeline is (it counts the unlocks itself)
 			if (this.current?.id === cur.id) this.current = { ...this.current, updated: t.updated, version: t.version };
 			this.saving = 'saved';
 		} catch (e) {
-			this.error = /** @type {Error} */ (e).message;
+			const msg = /** @type {Error} */ (e).message;
+			if (/changed elsewhere/.test(msg)) {
+				// someone else's edit is newer: theirs wins, this one is read again
+				await this.refresh(true);
+				this.notice = 'The timeline was changed elsewhere (an agent?): read again — your last change was not saved.';
+				return;
+			}
+			this.error = msg;
 			this.saving = 'unsaved';
 		}
+	}
+	/**
+	 * The open timeline as the API has it now, when it changed elsewhere (an agent through MCP): its clips and meta
+	 * read again, the playhead and tab kept. Never while a change of ours waits to be saved, unless `force`.
+	 */
+	async refresh(force = false) {
+		const cur = this.current;
+		if (!cur || (!force && this.saving !== 'saved')) return;
+		let t;
+		try {
+			t = await getTimeline(cur.id);
+		} catch {
+			return;
+		}
+		if (this.current?.id !== cur.id || (!force && (this.saving !== 'saved' || t.updated === cur.updated))) return;
+		this.current = t;
+		this.timelines = [t, ...this.timelines.filter((x) => x.id !== t.id)];
+		this.clips = t.clips.filter((c) => isWorld(c) || c.kind === 'slate' || c.kind === 'line' || (c.hash && this.byHash.has(c.hash)));
+		this.dropped = t.clips.length - this.clips.length;
+		this.saving = 'saved';
+		if (this.playing) this.schedule();
 	}
 	/** @param {Partial<Timeline>} patch */
 	setMeta(patch) {
 		if (!this.current) return;
 		this.current = { ...this.current, ...patch };
 		this.changed();
-	}
-
-	// ── the stages: edit → locked → graded → rendered ─────────────────────────
-	/** Locks picture and sound: nothing moves on the timeline any more, and the Grade tab opens. */
-	lock() {
-		if (!this.current || this.locked) return;
-		this.stop();
-		this.setMeta({ stage: 'locked' });
-		this.selected = null;
-		this.tab = 'grade';
-		void this.flush();
-	}
-	/** Opens the edit again, as a new version; every clip keeps its grade (it is on the clip, by its id). */
-	unlock() {
-		if (!this.current || !this.locked) return;
-		if (!confirm(`Unlock the edit? It becomes version ${this.version + 1}; every clip keeps its grade.`)) return;
-		this.setMeta({ stage: 'edit', version: this.version + 1 });
-		this.tab = 'edit';
-		void this.flush();
-	}
-	markGraded(on = true) {
-		if (!this.current || !this.locked) return;
-		this.setMeta({ stage: on ? 'graded' : 'locked' });
 	}
 
 	/**
@@ -883,7 +901,7 @@ export class Studio {
 			// a picture whose sound is its own clip is silent — but while that sound's audio proxy is not here yet, the
 			// picture's player lends it its sound (in sync only), so nothing plays mute
 			const p = this.partnerOf(c);
-			v.volume = p && onSoundTrack(p) && c.hash && this.soundState[c.hash] !== 'ready' && !this.drift(c) ? p.vol : c.vol;
+			v.volume = Math.min(1, p && onSoundTrack(p) && c.hash && this.soundState[c.hash] !== 'ready' && !this.drift(c) ? p.vol : c.vol);
 			if (force || Math.abs(v.currentTime - local) > 0.25) v.currentTime = local;
 			if (this.playing && v.paused) void v.play().catch(() => {});
 			if (!this.playing && !v.paused) v.pause();
@@ -1129,6 +1147,33 @@ export class Studio {
 		this.changed();
 		if (this.playing) this.schedule();
 	}
+	/**
+	 * A sound clip's gain and fades (the Audio tab): its level, never its place.
+	 * @param {string} id @param {{ vol?: number, fin?: number, fout?: number }} patch
+	 */
+	setSound(id, patch) {
+		this.patchClip(id, patch);
+	}
+	/** How the timeline sounds now, measured on this Mac (the Audio tab draws it). */
+	async measureSound() {
+		if (!this.current || this.loudMeasuring) return;
+		this.loudMeasuring = true;
+		try {
+			this.loud = await command('sound_measure', { timeline: { ...$state.snapshot(this.current), clips: $state.snapshot(this.clips) } });
+		} catch (e) {
+			this.error = `Sound: ${e}`;
+		} finally {
+			this.loudMeasuring = false;
+		}
+	}
+	/**
+	 * The selected picture clip's balance layers (null: as shot).
+	 * @param {import('$lib/auth/client').Balance | null} b
+	 */
+	setBalance(b) {
+		if (!this.sel) return;
+		this.patchClip(this.sel.id, { balance: cleanBalance(b) ?? undefined });
+	}
 	/** @param {Cdl | null} g */
 	setGrade(g) {
 		if (this.gradeTarget === 'film' || !this.sel || this.sel.track !== 'V1') {
@@ -1228,34 +1273,8 @@ export class Studio {
 	}
 
 	// ── captions: the voice's words on screen ─────────────────────────────────────
-	/**
-	 * Captions from the voice: every voice (A1) clip's file gets its transcript's words as its caption words (meta.words
-	 * — what the program monitor shows and the render burns in, phrased by the render's rule). A file that has caption
-	 * words already (a voice take's own timing, or captions edited by hand) keeps them unless `replace`.
-	 */
-	async captionsFromVoice(replace = false) {
-		const files = [...new Set(this.clips.filter((c) => c.track === 'A1' && c.hash).map((c) => /** @type {string} */ (c.hash)))].map((h) => this.byHash.get(h)).filter((m) => !!m);
-		if (!files.length) return void (this.notice = 'No voice clips on A1: put the voice there first.');
-		const done = [], kept = [], none = [];
-		for (const m of files) {
-			const t = transcriptOf(m);
-			if (!t) {
-				none.push(itemName(m));
-				continue;
-			}
-			if (captionWordsOf(m).length && !replace) {
-				kept.push(itemName(m));
-				continue;
-			}
-			if (!(await this.setCaptionWords(m.hash, asCaptions(t.words)))) return;
-			done.push(itemName(m));
-		}
-		this.notice = [
-			done.length ? `Captions from ${done.length} voice file${done.length === 1 ? '' : 's'}` : '',
-			kept.length ? `${kept.length} kept their own captions` : '',
-			none.length ? `no transcript yet: ${none.join(', ')}` : ''
-		].filter(Boolean).join(' · ') || 'Nothing to caption.';
-	}
+	// Every voice (A1) clip's captions come by themselves: its file's own words, else its transcript's (captionWordsOf,
+	// the render's `caption_words`). Editing a phrase writes the file's own words; from then on those win.
 	/**
 	 * A file's caption words set (meta.words, merged into its meta; it syncs).
 	 * @param {string} hash @param {import('./transcript.js').CaptionWord[]} words
@@ -1291,9 +1310,13 @@ export class Studio {
 	waitingOnVault() {
 		if (Object.values(this.soundState).some((v) => v !== 'ready' && v !== 'silent' && v !== 'loading')) return true;
 		const hashes = new Set([...this.clips.map((c) => c.hash), this.preview]);
-		return this.library.some((m) => hashes.has(m.hash) && (m.meta?.transcript_state === 'queued' || m.meta?.transcript_state === 'transcribing'));
+		return this.library.some((m) => hashes.has(m.hash) && hasSound(m) && stepOpen(transcriptState(m)));
 	}
+	/** @type {ReturnType<typeof setInterval> | null} */
+	timelineWatch = null;
 	watchVault() {
+		// the open timeline as others change it (an agent through MCP): seen here within seconds
+		this.timelineWatch ??= setInterval(() => void this.refresh(), 4000);
 		this.vaultWatch ??= setInterval(() => void (this.waitingOnVault() && this.reloadLibrary()), 20000);
 	}
 

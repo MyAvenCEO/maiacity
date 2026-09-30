@@ -2,6 +2,7 @@
 //! ranged GET, single PUT, and multipart uploads for files of any size, streamed part by part — nothing on disk.
 //!
 //! Layout (bucket `maiacity`): `LIBRARY/blobs/<hash>` the bytes, `LIBRARY/meta/<hash>.json` the description,
+//! `LIBRARY/transcript/<hash>.json`, `LIBRARY/sound/<hash>.json`, `LIBRARY/analysis/<hash>.json` the derived records,
 //! `LIBRARY/catalog/<date>.json` the nightly catalog export. `BACKUPS/` belongs to the database dumps.
 
 use std::time::Duration;
@@ -27,6 +28,10 @@ pub fn blob_key(hash: &str) -> String {
 }
 pub fn meta_key(hash: &str) -> String {
     format!("LIBRARY/meta/{hash}.json")
+}
+/// A derived record's copy, by its catalog key (`transcript/<hash>` → `LIBRARY/transcript/<hash>.json`).
+pub fn derived_key(catalog_key: &str) -> String {
+    format!("LIBRARY/{catalog_key}.json")
 }
 
 impl S3 {

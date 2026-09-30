@@ -42,6 +42,53 @@ test("a timeline is an edit over the vault's files: created, saved, listed, dele
   expect((await listTimelines()).map((x) => x.id)).not.toContain(t.id);
 });
 
+test("the script is the timeline: slates and lines stand in for what is not shot or said yet, and a swap keeps the script", async () => {
+  const { createTimeline, saveTimeline } = await import("../src/timelines");
+  const script = { scene: "Waking", label: "1A", description: "In bed from the side, as he speaks", notes: "morning light", size: "MS", extra: "dropped" };
+  const t = await createTimeline("admin", {
+    name: "Day 01 · Script",
+    clips: [
+      { id: "s1", kind: "slate", track: "V1", start: 0, in: 0, dur: 4, vol: 1, script },
+      { id: "l1", kind: "line", track: "A1", start: 0.5, in: 0, dur: 3, vol: 1, text: "The moment I woke up today." },
+    ],
+  });
+  const [slate, line] = t.clips;
+  expect(slate).toMatchObject({ kind: "slate", vol: 0, script: { scene: "Waking", label: "1A", size: "MS" } });
+  expect((slate!.script as any).extra).toBeUndefined();
+  expect(line).toMatchObject({ kind: "line", text: "The moment I woke up today." });
+  await expect(saveTimeline(t.id, { clips: [{ id: "x", kind: "slate", track: "A1", start: 0, in: 0, dur: 1, vol: 1 }] })).rejects.toThrow(/picture track/);
+  await expect(saveTimeline(t.id, { clips: [{ id: "x", kind: "line", track: "V1", start: 0, in: 0, dur: 1, vol: 1 }] })).rejects.toThrow(/voice track/);
+  await expect(saveTimeline(t.id, { clips: [{ id: "x", kind: "slate", hash: hash("c3"), track: "V1", start: 0, in: 0, dur: 1, vol: 1 }] })).rejects.toThrow(/no file/);
+  // the footage comes in: the slate becomes the file, its script stays
+  const swapped = await saveTimeline(t.id, { clips: [{ ...slate, kind: undefined, hash: hash("c3"), in: 2 }, line] });
+  expect(swapped.clips[0]).toMatchObject({ hash: hash("c3"), script: { description: "In bed from the side, as he speaks" } });
+  expect(swapped.clips[0]!.kind).toBeUndefined();
+});
+
+test("a shot's balance: the fixed first nodes, checked, and free to change after the lock like its grade", async () => {
+  const { createTimeline, saveTimeline } = await import("../src/timelines");
+  const clip = { id: "v", hash: hash("d4"), track: "V1", start: 0, in: 0, dur: 5, vol: 0 };
+  const t = await createTimeline("admin", { name: "Balance", clips: [{ ...clip, balance: { exposure: 9, temp: -0.5, bogus: 1 } }] });
+  expect(t.clips[0]!.balance).toEqual({ temp: -0.5, tint: 0, exposure: 4, contrast: 0, highlights: 0, shadows: 0 });
+  // all zero: no balance at all
+  expect((await saveTimeline(t.id, { clips: [{ ...clip, balance: { exposure: 0 } }] })).clips[0]!.balance).toBeUndefined();
+  await saveTimeline(t.id, { stage: "locked" });
+  const later = await saveTimeline(t.id, { clips: [{ ...clip, balance: { shadows: 0.4 }, script: { scene: "Waking" } }] });
+  expect(later.clips[0]!.balance!.shadows).toBe(0.4);
+  expect(later.clips[0]!.script).toEqual({ scene: "Waking" });
+  await expect(saveTimeline(t.id, { clips: [{ ...clip, dur: 4 }] })).rejects.toThrow(/locked/);
+});
+
+test("a copy read before someone else saved never overwrites them (the studio open while an agent edits)", async () => {
+  const { createTimeline, saveTimeline } = await import("../src/timelines");
+  const t = await createTimeline("admin", { name: "Both at once" });
+  const agent = await saveTimeline(t.id, { name: "The agent's", if_updated: t.updated });
+  await expect(saveTimeline(t.id, { name: "The studio's stale copy", if_updated: t.updated })).rejects.toThrow(/changed elsewhere/);
+  expect((await saveTimeline(t.id, { name: "Read again", if_updated: agent.updated })).name).toBe("Read again");
+  // without it (an agent's own save), as before
+  expect((await saveTimeline(t.id, { name: "Plain" })).name).toBe("Plain");
+});
+
 test("timelines are variants of a project: A, B… listed together", async () => {
   const { createTimeline, listTimelines, saveTimeline } = await import("../src/timelines");
   const b = await createTimeline("admin", { name: "Spuds, 13 shots", project: "Day 19", variant: "B", clips: [{ id: "x", hash: hash("b2"), track: "A1", start: 0, in: 0, dur: 1, vol: 1 }] });

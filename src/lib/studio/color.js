@@ -1,8 +1,8 @@
 // The studio's side of the colour standard (contract C5): what each picture is, how the viewer brings it in, and the
 // grades as data. The maths and the tables live in game/film/color.js (stream A) — imported, never copied.
-import { PROFILES, profileOf, NEUTRAL, isNeutral, cleanCdl, PRESETS, cdl, ODT } from '../../../game/film/color.js';
+import { PROFILES, profileOf, NEUTRAL, isNeutral, cleanCdl, PRESETS, cdl, ODT, BALANCE_NODES, NEUTRAL_BALANCE, cleanBalance, isNeutralBalance } from '../../../game/film/color.js';
 
-export { PROFILES, profileOf, NEUTRAL, isNeutral, cleanCdl, PRESETS, cdl, ODT };
+export { PROFILES, profileOf, NEUTRAL, isNeutral, cleanCdl, PRESETS, cdl, ODT, BALANCE_NODES, NEUTRAL_BALANCE, cleanBalance, isNeutralBalance };
 
 /** The working space — and so every proxy's colour: the Mac takes each source through its journey into it. */
 export const WORKING = 'acescct';
@@ -108,6 +108,9 @@ export const isCache = (m) =>
 	typeof m.meta?.proxyOf === 'string' ||
 	typeof m.meta?.proxy_of === 'string' ||
 	typeof m.meta?.audio_of === 'string' ||
+	typeof m.meta?.thumbnail_of === 'string' ||
+	typeof m.meta?.grade_still_of === 'string' ||
+	m.meta?.role === 'model' ||
 	typeof m.meta?.plateOf === 'string';
 
 // ── grades as data ────────────────────────────────────────────────────────────────────────────────────────────────
