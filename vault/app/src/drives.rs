@@ -99,6 +99,10 @@ async fn keep(handle: AppHandle, mac: Arc<Vault>, drive: Arc<Vault>, cfg: Config
             Ok(n) if n.joined => {
                 drive.allow.add(mac.endpoint.id());
                 mac.allow.add(drive.endpoint.id());
+                // and the catalog straight from this Mac beside it (iroh-docs sync, peer to peer), not only via the server
+                if let Err(e) = drive.catalog.doc().start_sync(vec![mac.endpoint.addr()]).await {
+                    tracing::warn!("drive {key}: catalog sync with this Mac: {e:#}");
+                }
                 update(&key, |s| s.joined = true);
                 if let Err(e) = round(&mac, &drive, &cfg).await {
                     update(&key, |s| s.errors = vec![format!("{e:#}")]);

@@ -124,6 +124,7 @@ impl Peer {
         // the derived records are small too (a transcript is at most a few hundred KB): kept here like descriptions
         doc.set_download_policy(DownloadPolicy::NothingExcept(vec![
             small("meta/"),
+            small("story/"),
             small("ingest/"),
             small("device/"),
             small("transcript/"),
