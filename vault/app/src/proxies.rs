@@ -116,7 +116,13 @@ pub async fn vault_proxy(handle: AppHandle, app: tauri::State<'_, crate::App>, h
 
 /// Does this file get a proxy? A video that is an original (not a proxy, not a delivery, not a working file).
 pub fn wants_proxy(m: &Meta) -> bool {
-    m.kind == "video" && m.class == "original"
+    let working = !matches!(m.class.as_str(), "proxy" | "delivery");
+    (m.kind == "video" && m.class == "original") || (working && (m.kind == "image" || sequence(m)))
+}
+
+/// An EXR frame sequence, packed into one tar (its meta says so when it was packed).
+fn sequence(m: &Meta) -> bool {
+    m.meta.get("sequence").and_then(|s| s.as_str()) == Some("exr")
 }
 
 /// Every original still without its proxy, queued — at the start, and every ten minutes: a journey defined since, a
@@ -134,7 +140,7 @@ pub async fn sweep(handle: AppHandle, vault: Arc<Vault>) {
     for e in std::fs::read_dir(vault.ingest_dir()).into_iter().flatten().flatten() {
         let old = e.metadata().and_then(|m| m.modified()).is_ok_and(|t| t < started);
         let name = e.file_name().to_string_lossy().into_owned();
-        if old && (name.ends_with(".proxy.mp4") || name.contains(".src") || name.ends_with(".part")) {
+        if old && (name.contains(".proxy.") || name.contains(".src") || name.contains(".part")) {
             tracing::info!("left from an earlier run, removed: {name}");
             std::fs::remove_file(e.path()).ok();
         }
@@ -192,7 +198,7 @@ pub async fn auto_proxy(handle: AppHandle, vault: Arc<Vault>, hex: String, sourc
         tracing::warn!("proxy of {hex}: {e}");
         for e in std::fs::read_dir(vault.ingest_dir()).into_iter().flatten().flatten() {
             let n = e.file_name().to_string_lossy().into_owned();
-            if n.starts_with(&hex) && (n.ends_with(".proxy.mp4") || n.contains(".src")) {
+            if n.starts_with(&hex) && (n.contains(".proxy.") || n.contains(".src")) {
                 std::fs::remove_file(e.path()).ok();
             }
         }
@@ -223,39 +229,94 @@ async fn make(vault: &Vault, hex: &str, name: &str, source: PathBuf) -> Result<(
             std::fs::remove_file(p).ok();
         }
     };
-    let probe_path = path.clone();
-    let probe = tokio::task::spawn_blocking(move || vault_media::probe(&probe_path)).await.map_err(|e| e.to_string())?.map_err(|e| format!("{e:#}"))?;
-    // a colour set by hand stays; else it is told from the file
-    let told = vault_media::detect(&probe);
     let set_by_hand = original.meta.pointer("/color/override").and_then(|v| v.as_str()).map(String::from);
-    let profile = set_by_hand.clone().unwrap_or_else(|| told.profile.clone());
-    vault
-        .catalog
-        .describe(hash, &json!({ "meta": { "color": { "profile": told.profile, "from": told.from, "override": set_by_hand, "detector": DETECTOR }, "probe": probe } }))
-        .await
-        .map_err(|e| format!("{e:#}"))?;
+    // what it is: a movie (probed), a still, or an EXR sequence — and its colour, told from the file
+    let still = original.kind == "image";
+    let seq = sequence(&original);
+    let profile = if still || seq {
+        let head = std::fs::File::open(&path).and_then(|f| {
+            use std::io::Read;
+            let mut b = Vec::new();
+            f.take(1 << 16).read_to_end(&mut b)?;
+            Ok(b)
+        });
+        // a sequence was given its colour when it was packed; a still's EXR header names its linear space; else sRGB
+        let (told, from) = match (seq, original.meta.pointer("/color/profile").and_then(|v| v.as_str())) {
+            (true, Some(p)) => (p.to_string(), "given when packed"),
+            (true, None) => ("from its frames".to_string(), "its first frame's header"),
+            (false, _) => match head.ok().as_deref().and_then(vault_media::still::exr_profile) {
+                Some(p) => (p.to_string(), "its EXR header"),
+                None => ("srgb".to_string(), "a still (sRGB)"),
+            },
+        };
+        vault
+            .catalog
+            .describe(hash, &json!({ "meta": { "color": { "profile": told, "from": from, "override": set_by_hand, "detector": DETECTOR } } }))
+            .await
+            .map_err(|e| format!("{e:#}"))?;
+        set_by_hand.clone().unwrap_or(told)
+    } else {
+        let probe_path = path.clone();
+        let probe = tokio::task::spawn_blocking(move || vault_media::probe(&probe_path)).await.map_err(|e| e.to_string())?.map_err(|e| format!("{e:#}"))?;
+        let told = vault_media::detect(&probe);
+        vault
+            .catalog
+            .describe(hash, &json!({ "meta": { "color": { "profile": told.profile, "from": told.from, "override": set_by_hand, "detector": DETECTOR }, "probe": probe } }))
+            .await
+            .map_err(|e| format!("{e:#}"))?;
+        set_by_hand.clone().unwrap_or_else(|| told.profile.clone())
+    };
     if profile == "unknown" {
         cleanup(&path);
         vault.catalog.describe(hash, &json!({ "meta": { "proxy": "waiting: its colour cannot be told — set it by hand, or add a colour journey for this kind of source" } })).await.ok();
         return Ok(());
     }
-    if !journey(&profile) {
+    if !journey(&profile) && profile != "from its frames" {
         cleanup(&path);
         vault.catalog.describe(hash, &json!({ "meta": { "proxy": format!("waiting: no colour journey from {profile} into ACEScct yet") } })).await.ok();
         return Ok(());
     }
 
-    set(hex, name, "making", 0.0);
-    let out = vault.ingest_dir().join(format!("{hex}.proxy.mp4"));
-    let (src, o, of, nm, pf) = (path.clone(), out.clone(), hex.to_string(), name.to_string(), profile.clone());
-    tokio::task::spawn_blocking(move || vault_media::make_proxy(&src, &o, &pf, &mut |done| set(&of, &nm, "making", done)))
+    // a display still at HD or smaller needs none: the viewer takes it through its input LUT as it is
+    if still {
+        let p = path.clone();
+        let (w, h) = tokio::task::spawn_blocking(move || -> anyhow::Result<(u32, u32)> {
+            Ok(vault_media::gpu::size_of(&*vault_media::gpu::load_image(&std::fs::read(&p)?)?))
+        })
         .await
         .map_err(|e| e.to_string())?
         .map_err(|e| format!("{e:#}"))?;
+        let exr = profile != "srgb";
+        if !vault_media::still::still_needs_proxy(exr, w, h) {
+            cleanup(&path);
+            vault.catalog.describe(hash, &json!({ "meta": { "proxy": format!("none: a {w}×{h} display still needs none") } })).await.ok();
+            return Ok(());
+        }
+    }
+
+    set(hex, name, "making", 0.0);
+    let ext = if still { "png" } else { "mp4" };
+    let out = vault.ingest_dir().join(format!("{hex}.proxy.{ext}"));
+    let (src, o, of, nm, pf) = (path.clone(), out.clone(), hex.to_string(), name.to_string(), profile.clone());
+    let fps = original.meta.get("fps").and_then(|f| f.as_f64()).unwrap_or(24.0);
+    tokio::task::spawn_blocking(move || -> anyhow::Result<()> {
+        let mut told = |done: f64| set(&of, &nm, "making", done);
+        if still {
+            vault_media::still::make_still_proxy(&src, &o, &pf)?;
+        } else if seq {
+            vault_media::still::make_sequence_proxy(&src, &o, (pf != "from its frames").then_some(pf.as_str()), fps, &mut told)?;
+        } else {
+            vault_media::make_proxy(&src, &o, &pf, &mut told)?;
+        }
+        Ok(())
+    })
+    .await
+    .map_err(|e| e.to_string())?
+    .map_err(|e| format!("{e:#}"))?;
     set(hex, name, "adding", 1.0);
     // the proxy lives beside its original: the same story, class proxy
     let stem = std::path::Path::new(name).file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_else(|| hex[..12].to_string());
-    let named = vault.ingest_dir().join(format!("{stem}.proxy.mp4"));
+    let named = vault.ingest_dir().join(format!("{stem}.proxy.{ext}"));
     std::fs::rename(&out, &named).map_err(|e| e.to_string())?;
     let batch = Batch {
         session: format!("proxy of {hex}"),

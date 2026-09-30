@@ -90,7 +90,8 @@ export function profileFor(m) {
  * @returns {{ hash: string | null, state: ProxyState }}
  */
 export function proxyFor(m, find) {
-	if (!m || !isVideo(m)) return { hash: null, state: 'n/a' };
+	// movies, EXR sequences and stills (a float still, or one larger than HD, gets a 16-bit ACEScct PNG)
+	if (!m || !(isVideo(m) || m.kind === 'image')) return { hash: null, state: 'n/a' };
 	const p = m.meta?.proxy;
 	if (typeof p === 'string' && /^[0-9a-f]{64}$/.test(p)) return colorOf(find(p))?.profile === WORKING ? { hash: p, state: 'ready' } : { hash: null, state: 'none' };
 	if (typeof p === 'string' && p.startsWith('failed')) return { hash: null, state: 'failed' };

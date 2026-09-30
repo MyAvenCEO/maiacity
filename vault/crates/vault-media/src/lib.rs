@@ -10,6 +10,7 @@ pub mod gpu;
 pub mod mp4;
 pub mod probe;
 pub mod proxy;
+pub mod still;
 
 pub use color::{ColorInfo, detect};
 pub use frames::FrameWriter;
