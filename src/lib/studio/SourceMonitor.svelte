@@ -2,9 +2,12 @@
 	The source monitor: one file from the library, on its own, beside the program. It plays apart from the timeline
 	(never both at once), through the same colour path as the program (its proxy in Edit); I and O mark the part to use,
 	and "Add to timeline" — or a drag onto a track — lays just that part down (a video with sound: its picture on V1, its
-	sound linked on A3). Under it the file's transcript: click a word to go there, drag across words to mark them.
+	sound linked on A3). Under it the file's transcript: click a word to go there, drag across words to mark them; and
+	its shot analysis — its cues along the bar, and listed: click one to go there, Mark to take it as In and Out.
 -->
 <script>
+	import Analysis from './Analysis.svelte';
+	import { cueEnd, cueText, cuesOf } from './analysis.js';
 	import ColorBadge from './ColorBadge.svelte';
 	import { WORKING, isSequence, profileFor } from './color.js';
 	import { clockText, itemName, raw, tint } from './studio.svelte.js';
@@ -228,6 +231,10 @@
 				<!-- svelte-ignore a11y_no_static_element_interactions -->
 				<div class="sbar" onpointerdown={scrub}>
 					{#if marked}<i class="band" style:left={pct(markIn ?? 0)} style:right="calc(100% - {pct(markOut ?? len)})"></i>{/if}
+					{#each cuesOf(m) as q, i (i)}
+						<!-- svelte-ignore a11y_no_static_element_interactions -->
+						<i class="scue cue-kind {q.kind}" class:best={q.best} class:pt={cueEnd(q) - q.s < 0.05} style:left={pct(q.s)} style:right="calc(100% - {pct(cueEnd(q))})" title={cueText(q)} onpointerdown={(e) => (e.stopPropagation(), seekTo(q.s))}></i>
+					{/each}
 					<i class="sph" style:left={pct(srcTime)}></i>
 				</div>
 				<span class="range">{clockText(srcTime)}</span>
@@ -250,6 +257,7 @@
 		{#if av}
 			<div class="strans"><Transcript {m} time={srcTime} onseek={seekTo} onselect={markWords} /></div>
 		{/if}
+		<div class="sanalysis"><Analysis {m} onseek={seekTo} onmark={av ? (from, to) => ((markIn = from), (markOut = to), seekTo(from)) : undefined} /></div>
 		<div class="sinfo">
 			<p class="skind">{m.kind}{#if av && len} · {clockText(len)}{/if}{#if m.tags.length} · <span>{m.tags.join(', ')}</span>{/if}</p>
 			{#if m.meta?.text}<p class="line">{String(m.meta.text)}</p>{/if}
@@ -472,6 +480,33 @@
 		font-weight: 600;
 		color: var(--on-accent);
 		cursor: pointer;
+	}
+
+	/* the shot analysis' cues along the bar: a stretch, or a point */
+	.scue {
+		position: absolute;
+		bottom: 0;
+		height: 35%;
+		min-width: 2px;
+		border-radius: 1px;
+		opacity: 0.85;
+		cursor: pointer;
+	}
+
+	.scue.pt {
+		right: auto !important;
+		width: 2px;
+		height: 100%;
+	}
+
+	.scue:hover {
+		opacity: 1;
+		height: 60%;
+	}
+
+	.sanalysis:not(:empty) {
+		padding: 0.4rem 0.6rem;
+		border-top: 1px solid var(--edge);
 	}
 
 	.strans {
