@@ -122,7 +122,7 @@ async fn main() -> Result<()> {
     tokio::spawn(peer.clone().reconcile(s3.clone(), db.clone()));
     // every recording's sound: its audio proxy and its start timecode (the words are made on a Mac, on-device)
     let api = env_or("API_URL", "http://api:3000");
-    tokio::spawn(sound::Sounds { peer: peer.clone(), s3: s3.clone(), db: db.clone(), dir: dir.clone() }.run());
+    tokio::spawn(sound::Sounds { peer: peer.clone(), s3: s3.clone(), dir: dir.clone() }.run());
     // every picture's tags, cues and thumbnail: its proxy's frames through the output transform, to Prem's Qwen
     tokio::spawn(
         analyse::Analyser { peer: peer.clone(), s3: s3.clone(), db: db.clone(), api: api.clone(), token, dir: dir.clone(), http: reqwest::Client::new() }

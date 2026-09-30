@@ -1,7 +1,7 @@
 //! Every recording's sound, on the server, as part of the ingest: once a video or sound original is in Object Storage,
-//! its speech track is extracted here (ffmpeg, reading the bucket's copy) and kept in the vault as the original's
-//! **audio proxy** — the studio plays a video's detached sound from it, and a Mac transcribes from it (small, quick to
-//! read) — and the camera's start timecode is read (its tmcd track, or a BWF time reference). The words themselves are
+//! it is probed here (ffmpeg, reading the bucket's copy) — whether it has sound, its length, the camera's start
+//! timecode (its tmcd track, or a BWF time reference). Sound never gets a proxy: the studio plays it, the render mixes
+//! it and a Mac transcribes it from the original itself. (Audio proxies were made here once; none are made any more.) The words themselves are
 //! made on a Mac, on-device (Nemotron, vault/app/src/transcripts.rs): nothing of a recording's speech leaves our
 //! devices for it.
 //!
@@ -40,8 +40,6 @@ use crate::{db, peer::Peer, s3::{self, S3}};
 
 /// How often a recording is tried before it waits for a person.
 pub const TRIES: u64 = 3;
-pub const RATE: u32 = 24_000;
-pub const BITRATE: &str = "48k";
 /// The fps a sound file's BWF time reference is written in (the studio's cuts land on 30 fps frames).
 pub const AUDIO_TC_FPS: f64 = 30.0;
 /// The derived records' keys: `sound/<hash>` (this loop's), `transcript/<hash>` (a Mac's; moved here only from old
@@ -52,7 +50,6 @@ pub const TRANSCRIPT: &str = "transcript/";
 pub struct Sounds {
     pub peer: Arc<Peer>,
     pub s3: S3,
-    pub db: Arc<tokio_postgres::Client>,
     pub dir: PathBuf,
 }
 
@@ -254,18 +251,6 @@ pub fn scrub(stderr: &str) -> String {
     words.join(" ").chars().take(400).collect()
 }
 
-/// The speech track: the first sound stream, mono, 24 kHz AAC at 48 kbps in an .m4a — starting where the file
-/// starts (silence before a late sound), exact to the sample.
-pub async fn extract(input: &str, out: &Path) -> Result<()> {
-    let mut args: Vec<String> = ["-nostdin", "-hide_banner", "-loglevel", "error", "-y"].map(String::from).to_vec();
-    args.extend(net_input(input).into_iter().map(String::from));
-    args.extend(["-i", input, "-map", "0:a:0", "-vn", "-sn", "-dn", "-ac", "1"].map(String::from));
-    args.extend(["-ar".into(), RATE.to_string(), "-af".into(), "aresample=async=1:first_pts=0".into()]);
-    args.extend(["-c:a", "aac", "-b:a", BITRATE, "-movflags", "+faststart", "-f", "mp4"].map(String::from));
-    args.push(out.display().to_string());
-    run_ffmpeg(args).await
-}
-
 /// A file's BLAKE3 (its name in the vault) and size.
 pub async fn hash_file(path: &Path) -> Result<(Hash, u64)> {
     let mut f = tokio::fs::File::open(path).await?;
@@ -311,20 +296,6 @@ pub(crate) async fn store(peer: &Peer, s3: &S3, db: &tokio_postgres::Client, pat
     db::mirror(db, meta, true).await?;
     peer.hold(hash, size, db).await;
     Ok(())
-}
-
-/// The audio proxy's description: beside its original (the same story), class proxy.
-pub fn audio_meta(original: &Value, hash: Hash, size: u64, seconds: f64) -> Value {
-    let name = s(original, "original_name");
-    let stem = Path::new(name).file_stem().map(|s| s.to_string_lossy().into_owned()).filter(|s| !s.is_empty()).unwrap_or_else(|| s(original, "hash").chars().take(12).collect());
-    json!({
-        "hash": hash.to_hex().to_string(), "size": size, "mime": "audio/mp4", "kind": "audio",
-        "title": format!("{stem} · sound"), "tags": ["proxy", "audio"],
-        "meta": { "role": "audio", "audio_of": s(original, "hash"), "seconds": ms(seconds), "channels": 1, "sample_rate": RATE, "codec": "aac" },
-        "public": false, "original_name": format!("{stem}.audio.m4a"), "source": "vault-server",
-        "ingest": format!("audio of {}", s(original, "hash")), "added": now_iso(),
-        "story": s(original, "story"), "class": "proxy",
-    })
 }
 
 impl Sounds {
@@ -444,19 +415,9 @@ impl Sounds {
             self.peer.wake_analyse.notify_one();
             return Ok(());
         }
-        // the audio proxy: made once (a retry keeps the one in the bucket), then into the vault beside its original
-        let audio_hash = match record["audio"].as_str().filter(|a| held.contains(*a)).and_then(|a| a.parse::<Hash>().ok()) {
-            Some(a) => a,
-            None => {
-                let audio = self.dir.join("tmp").join(format!("{hex}.audio.m4a"));
-                extract(&url, &audio).await?;
-                let (a, size) = hash_file(&audio).await?;
-                let meta = audio_meta(&original, a, size, probe(&audio.display().to_string()).await?.seconds);
-                store(&self.peer, &self.s3, &self.db, &audio, a, size, &meta).await?;
-                a
-            }
-        };
-        patch.insert("audio".into(), json!(audio_hash.to_hex().to_string()));
+        // no audio proxy: sound is always played, measured and transcribed from the original itself
+        let _ = (&record, &original, held);
+        patch.insert("audio".into(), Value::Null);
         patch.insert("state".into(), json!("done"));
         self.patch(hash, patch).await?;
         tracing::info!("the sound of {} ({:.0} s) in {:.0} s", hash.fmt_short(), probed.seconds, started.elapsed().as_secs_f64());
@@ -556,22 +517,10 @@ mod tests {
         assert_eq!(timecode_of(0.0, 25.0), "00:00:00:00");
     }
 
-    #[test]
-    fn the_audio_proxy_lives_beside_its_original() {
-        let orig = json!({ "hash": H, "original_name": "C0042.MP4", "story": "s1", "class": "original" });
-        let h: Hash = "00000000000000000000000000000000000000000000000000000000000000ff".parse().unwrap();
-        let m = audio_meta(&orig, h, 1234, 61.23456);
-        assert_eq!(m["class"], "proxy");
-        assert_eq!(m["story"], "s1");
-        assert_eq!(m["kind"], "audio");
-        assert_eq!(m["original_name"], "C0042.audio.m4a");
-        assert_eq!(m["meta"], json!({ "role": "audio", "audio_of": H, "seconds": 61.235, "channels": 1, "sample_rate": 24000, "codec": "aac" }));
-    }
-
-    /// The real tools, on synthetic media: a movie with a timecode and a sound that starts late → an audio proxy that
-    /// starts where the movie starts, as long as it; and one without sound. Skipped where there is no ffmpeg.
+    /// The real tools, on synthetic media: a movie with a timecode and a sound, and one without sound. Skipped where
+    /// there is no ffmpeg.
     #[tokio::test]
-    async fn extracts_the_speech_track_exactly() {
+    async fn probes_timecode_and_sound() {
         if std::process::Command::new(ffmpeg()).arg("-version").output().is_err() {
             eprintln!("no ffmpeg here: skipped");
             return;
@@ -590,22 +539,6 @@ mod tests {
         let p = probe(&movie.display().to_string()).await.unwrap();
         assert!(p.audio);
         assert_eq!(p.timecode, Some(("10:00:00:00".into(), 25.0)));
-
-        let audio = dir.join("take.audio.m4a");
-        extract(&movie.display().to_string(), &audio).await.unwrap();
-        let a = probe(&audio.display().to_string()).await.unwrap();
-        assert!(a.audio);
-        assert!((a.seconds - 6.0).abs() < 0.1, "the audio proxy is {} s, the movie 6 s", a.seconds);
-        // the sound starts where it starts in the movie: 0.5 s of silence first (to a few ms — AAC's priming is in the
-        // file's edit list)
-        let pcm = std::process::Command::new(ffmpeg()).args(["-nostdin", "-v", "error", "-i"]).arg(&audio).args(["-f", "s16le", "-ac", "1", "-"]).output().unwrap().stdout;
-        let samples: Vec<i16> = pcm.chunks_exact(2).map(|b| i16::from_le_bytes([b[0], b[1]])).collect();
-        let onset = samples.iter().position(|s| s.unsigned_abs() > 2000).unwrap() as f64 / RATE as f64;
-        assert!((onset - 0.5).abs() < 0.01, "the sound starts at {onset} s, in the movie at 0.5 s");
-        let (h1, size) = hash_file(&audio).await.unwrap();
-        assert!(size > 1000 && size < 100_000, "{size} bytes for 6 s");
-        assert_eq!(hash_file(&audio).await.unwrap().0, h1);
-
 
         let mute = dir.join("mute.mov");
         std::process::Command::new(ffmpeg()).args(["-nostdin", "-v", "error", "-y", "-f", "lavfi", "-i", "testsrc=size=160x90:rate=25:duration=1", "-c:v", "mpeg4"]).arg(&mute).status().unwrap();
