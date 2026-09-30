@@ -237,16 +237,6 @@ pub struct BalanceArgs {
     pub balance: Option<BalanceArg>,
 }
 
-#[derive(Deserialize, schemars::JsonSchema)]
-pub struct MeasureArgs {
-    /// the timeline's id
-    pub timeline: String,
-    /// the clips to measure (ids); none: every picture clip with a file
-    pub clips: Option<Vec<String>>,
-    /// frames per clip, spread over it (default 5)
-    pub frames: Option<usize>,
-}
-
 /// Parts of one shot's frame named by hand, each a box [x0, y0, x1, y1] from the frame's top left, 0…1.
 #[derive(Deserialize, Serialize, Default, Clone, schemars::JsonSchema)]
 pub struct RegionsArg {
@@ -769,18 +759,6 @@ impl Studio {
     }
 
     #[tool(
-        description = "Measure a timeline's shots as a colourist reads them, natively on this Mac from the full originals (else their ACEScct proxies), in ACEScct: luma percentiles (p1…p99; 18 % grey is 0.414, one stop is 0.057), mid_stops (how far the middle is from 18 % grey), the middle tones' colour (mid_rgb) and to_grey (the temp/tint that would make them grey) — as shot and after each clip's balance. The base for levelling the shots of a scene to each other before any creative grade."
-    )]
-    async fn grade_measure(&self, Parameters(a): Parameters<MeasureArgs>) -> String {
-        let r = async {
-            let t = self.api("GET", &format!("/api/timelines/{}", a.timeline), None).await?;
-            let shots = crate::render::measure_clips(&self.vault, &t, a.clips, a.frames.unwrap_or(5).clamp(1, 24)).await?;
-            Ok::<_, String>(json!({ "timeline": a.timeline, "shots": shots }))
-        };
-        text(r.await)
-    }
-
-    #[tool(
         description = "Set one shot's balance — the fixed first nodes, applied in ACEScct before its creative grade, in the preview and the render alike: white balance (temp, tint), exposure, contrast, highlights, lows (shadows), saturation (sat); every amount in stops (contrast and sat: the factor minus 1), 0 = as shot; none: back to as shot. The cut stays as it is; a locked timeline may be balanced."
     )]
     async fn grade_balance(&self, Parameters(a): Parameters<BalanceArgs>) -> String {
@@ -813,16 +791,20 @@ impl Studio {
     }
 
     #[tool(
-        description = "A scope sheet to look at, drawn natively from the shots' 4K grading stills after their balances: one row per clip (the first is the reference, the scene's master) — the picture with the skin box and any boxes named, its waveform (5/10/50/90/100 IRE), RGB parade and vectorscope (the skin line, rings at chroma 0.1 and 0.2) — as a PNG on this Mac. Returns its path and each row's numbers. Look at it before and after every balance."
+        description = "A scope sheet to look at, drawn natively from the shots' 4K grading stills after their balances: one row per clip (the first is the reference, the scene's master) — the picture with the skin box and any boxes named, its waveform (5/10/50/90/100 IRE), RGB parade and vectorscope (the skin line, rings at chroma 0.1 and 0.2). Returned as the picture itself (shown inline) and each row's numbers. Look at it before and after every balance."
     )]
-    async fn grade_scopes(&self, Parameters(a): Parameters<ScopesArgs>) -> String {
+    async fn grade_scopes(&self, Parameters(a): Parameters<ScopesArgs>) -> rmcp::model::CallToolResult {
         let r = async {
             let t = self.api("GET", &format!("/api/timelines/{}", a.timeline), None).await?;
-            let first = a.clips.first().cloned().unwrap_or_default();
-            let png = self.vault.dir.join("scopes").join(format!("{}-{}.png", &a.timeline[..a.timeline.len().min(8)], &first[..first.len().min(8)]));
-            crate::render::scope_sheet(&self.vault, &t, a.clips, regions_of(a.regions), png).await
+            crate::render::scope_sheet(&self.vault, &t, a.clips, regions_of(a.regions)).await
         };
-        text(r.await)
+        match r.await {
+            Ok((rows, png)) => rmcp::model::CallToolResult::success(vec![
+                rmcp::model::ContentBlock::text(serde_json::to_string_pretty(&rows).unwrap_or_default()),
+                rmcp::model::ContentBlock::image(base64(&png), "image/png"),
+            ]),
+            Err(e) => rmcp::model::CallToolResult::error(vec![rmcp::model::ContentBlock::text(e)]),
+        }
     }
 
     #[tool(
@@ -1289,4 +1271,18 @@ pub fn mcp_info() -> Result<Value, String> {
         "url": format!("http://{ADDR}/mcp"),
         "claude": format!("claude mcp add --transport http maiacity-studio http://{ADDR}/mcp --header \"Authorization: Bearer {token}\""),
     }))
+}
+
+/// Standard base64 (an image shown inline over MCP).
+fn base64(bytes: &[u8]) -> String {
+    const A: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let mut out = String::with_capacity(bytes.len().div_ceil(3) * 4);
+    for c in bytes.chunks(3) {
+        let n = (c[0] as u32) << 16 | (*c.get(1).unwrap_or(&0) as u32) << 8 | *c.get(2).unwrap_or(&0) as u32;
+        out.push(A[(n >> 18) as usize & 63] as char);
+        out.push(A[(n >> 12) as usize & 63] as char);
+        out.push(if c.len() > 1 { A[(n >> 6) as usize & 63] as char } else { '=' });
+        out.push(if c.len() > 2 { A[n as usize & 63] as char } else { '=' });
+    }
+    out
 }

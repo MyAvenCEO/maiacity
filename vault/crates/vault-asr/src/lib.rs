@@ -39,6 +39,18 @@ pub struct Models {
     pub vad: PathBuf,
 }
 
+/// The models themselves, as bytes — read from the vault's blob store by hash, never unpacked into a folder.
+pub struct ModelBytes {
+    /// Phonon's feature extractor (nemo128.onnx), encoder (encoder-model.int8.onnx), decoder + joint
+    /// (decoder_joint-model.onnx) and vocab.txt
+    pub features: Vec<u8>,
+    pub encoder: Vec<u8>,
+    pub joint: Vec<u8>,
+    pub vocab: String,
+    /// Silero's silero_vad.onnx
+    pub vad: Vec<u8>,
+}
+
 pub struct Recognizer {
     model: tdt::Tdt,
     vad: vad::Vad,
@@ -55,6 +67,11 @@ impl Recognizer {
     /// Load both models (a few seconds; ~1 GB of memory).
     pub fn open(models: &Models) -> Result<Self> {
         Ok(Self { model: tdt::Tdt::open(&models.speech)?, vad: vad::Vad::open(&models.vad)? })
+    }
+
+    /// Load both from their bytes (the app: straight from the vault's store).
+    pub fn open_bytes(m: &ModelBytes) -> Result<Self> {
+        Ok(Self { model: tdt::Tdt::from_bytes(&m.features, &m.encoder, &m.joint, &m.vocab)?, vad: vad::Vad::from_bytes(&m.vad)? })
     }
 
     /// Where there is speech: one probability per 32 ms, then the stretches (in samples).

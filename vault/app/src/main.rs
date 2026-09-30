@@ -413,6 +413,17 @@ fn main() {
             tauri::async_runtime::spawn(transcripts::sweep(app.handle().clone(), vault.clone()));
             // and every world shot a timeline plays, rendered here in the studio's own world (world.rs)
             tauri::async_runtime::spawn(world::sweep(app.handle().clone(), vault.clone()));
+            // nothing of the vault beside its store: old plates become vault files; the models' unpacked copies and the
+            // retired scope sheets go (the models are read from their blobs)
+            {
+                let v = vault.clone();
+                tauri::async_runtime::spawn(async move {
+                    world::import_old_plates(&v).await;
+                    for old in ["models", "scopes"] {
+                        std::fs::remove_dir_all(v.dir.join(old)).ok();
+                    }
+                });
+            }
             // and every external drive that is a vault device of its own, kept complete for its stories (drives.rs)
             tauri::async_runtime::spawn(drives::start(app.handle().clone(), vault.clone()));
             // and deleted files let go of here, their bytes pruned by iroh's garbage collection (prune.rs)

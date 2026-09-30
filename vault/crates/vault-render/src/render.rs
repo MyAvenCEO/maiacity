@@ -65,7 +65,8 @@ pub trait Library {
 /// (`offset`): a hero frame's plate is the one frame it shows.
 #[derive(Debug, Clone, Default)]
 pub struct Plate {
-    pub file: PathBuf,
+    /// the plate: a vault file, read in place by hash
+    pub file: vault_media::Source,
     /// where the plate starts, in seconds from the clip's in point (0: at the in point)
     pub offset: f64,
     pub key: Option<String>,
@@ -420,7 +421,7 @@ pub fn render(
         bail!("no such shape to render");
     }
     // the world clips' plates, one per shape
-    let mut plate_files: HashMap<(String, String), (PathBuf, f64)> = HashMap::new();
+    let mut plate_files: HashMap<(String, String), (vault_media::Source, f64)> = HashMap::new();
     let mut plates_used = Vec::new();
     for c in plan.pictures.iter().filter(|c| c.is_world()) {
         for s in &shapes {
@@ -513,7 +514,7 @@ fn render_shape(
     s: &Shape,
     gpu: &Gpu,
     captions: &Captions,
-    plate_files: &HashMap<(String, String), (PathBuf, f64)>,
+    plate_files: &HashMap<(String, String), (vault_media::Source, f64)>,
     sound: &Sound,
     base: &str,
     work: &Path,

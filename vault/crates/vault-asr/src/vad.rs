@@ -41,6 +41,22 @@ pub struct Vad {
 }
 
 impl Vad {
+    /// From the model's bytes (the vault's store): nothing on disk.
+    pub fn from_bytes(model: &[u8]) -> Result<Self> {
+        let session = Session::builder()?
+            .with_intra_threads(1)
+            .map_err(|error| anyhow::anyhow!(error.to_string()))?
+            .with_inter_threads(1)
+            .map_err(|error| anyhow::anyhow!(error.to_string()))?
+            .with_intra_op_spinning(false)
+            .map_err(|error| anyhow::anyhow!(error.to_string()))?
+            .with_inter_op_spinning(false)
+            .map_err(|error| anyhow::anyhow!(error.to_string()))?
+            .commit_from_memory(model)
+            .context("failed to open the Silero VAD model")?;
+        Ok(Self { session, state: Array3::zeros((2, 1, STATE_DIM)), context: vec![0.0; CONTEXT] })
+    }
+
     pub fn open(model_path: &std::path::Path) -> Result<Self> {
         let session = Session::builder()?
             // A 576-sample VAD frame is too small to benefit from ORT's

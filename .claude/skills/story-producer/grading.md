@@ -78,8 +78,8 @@ so it never computes the grade itself.
 
 - **`grade_scopes`** `{ timeline, clips: [master, …], regions? }`: the scope sheet, one row per shot with the master
   first. Each row has the picture after its balance (the skin box drawn in magenta), its waveform (5/10/50/90/100
-  IRE), RGB parade, and vectorscope with the skin line. It is a PNG on this Mac, drawn from the 4K grading stills.
-  **Look at it** (the Read tool) before every decision and after every write.
+  IRE), RGB parade, and vectorscope with the skin line, drawn from the 4K grading stills. It comes back as the picture
+  itself, shown inline (never a file). **Look at it** before every decision and after every write.
 - **`grade_look`** `{ timeline, clips?, regions? }`: the elements in numbers, as shot and balanced:
   - the levels p1 … p99 in IRE, contrast, clipped %, saturation
   - the **blacks**, the **whites** (unclipped, not strongly coloured) and the **mids**: each one's level and cast
@@ -103,7 +103,6 @@ so it never computes the grade itself.
 - **`grade_balance`**: one shot's balance by hand (temp, tint, exposure, contrast, highlights, shadows, **sat**; all
   0 = as shot).
 - **`render_frame`**: a hero frame through the whole chain, for checking either side of a cut.
-- **`grade_measure`**: the old whole-frame luma percentiles. Use `grade_look` instead.
 
 ## The pass, scene by scene
 

@@ -149,7 +149,7 @@ async fn one(handle: AppHandle, vault: Arc<Vault>, hex: String) {
     let me = vault.endpoint.id().to_string();
     // the tries so far go along in every record of this run (a failure counts on from them)
     let tries = vault.catalog.record(TRANSCRIPT, hash).await.ok().flatten().filter(|r| r["state"].as_str().is_some_and(|s| s.starts_with("failed") || s.starts_with("queued") || s == "transcribing")).and_then(|r| r["tries"].as_u64()).unwrap_or(0);
-    let result = transcribe(&handle, &vault, hash, &name, &me, tries).await;
+    let result = transcribe(&vault, hash, &name, &me, tries).await;
     proxies::clear(&k);
     drop(turn);
     // the queue is empty: the model's memory back to the Mac
@@ -190,7 +190,7 @@ impl From<&str> for Why {
     }
 }
 
-async fn transcribe(handle: &AppHandle, vault: &Arc<Vault>, hash: Hash, name: &str, me: &str, tries: u64) -> Result<(), Why> {
+async fn transcribe(vault: &Arc<Vault>, hash: Hash, name: &str, me: &str, tries: u64) -> Result<(), Why> {
     let hex = hash.to_hex().to_string();
     let k = key(&hex);
     let started = std::time::Instant::now();
@@ -208,7 +208,12 @@ async fn transcribe(handle: &AppHandle, vault: &Arc<Vault>, hash: Hash, name: &s
     };
     tell("the speech model", 0.0);
     let mut models_told = tell.clone();
-    let models = crate::models::ready(handle, vault, &mut move |stage, done| models_told(stage, done)).await.map_err(Wait)?;
+    // the models' bytes, read from the store only when the recognizer is not loaded yet
+    let models = if RECOGNIZER.lock().unwrap().is_none() {
+        Some(crate::models::ready(vault, &mut move |stage, done| models_told(stage, done)).await.map_err(Wait)?)
+    } else {
+        None
+    };
 
     // the sound: the original itself (sound has no proxy)
     let view = vault.catalog.meta_view(hash).await.map_err(|e| format!("{e:#}"))?.ok_or("no such file")?;
@@ -233,7 +238,8 @@ async fn transcribe(handle: &AppHandle, vault: &Arc<Vault>, hash: Hash, name: &s
         let mut slot = RECOGNIZER.lock().unwrap();
         if slot.is_none() {
             t3("loading the speech model", 0.0);
-            *slot = Some(vault_asr::Recognizer::open(&models).map_err(|e| format!("{e:#}"))?);
+            let models = models.as_ref().ok_or("the speech model was let go of while this recording waited: again")?;
+            *slot = Some(vault_asr::Recognizer::open_bytes(models).map_err(|e| format!("{e:#}"))?);
         }
         slot.as_mut().unwrap().transcribe(&samples, &mut |stage, d| t3(stage, d)).map_err(|e| format!("{e:#}"))
     })

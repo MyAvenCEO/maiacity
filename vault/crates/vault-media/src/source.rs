@@ -105,6 +105,13 @@ impl fmt::Display for Source {
     }
 }
 
+/// No file yet (an empty path).
+impl Default for Source {
+    fn default() -> Self {
+        Source::Path(PathBuf::new())
+    }
+}
+
 impl From<&Path> for Source {
     fn from(p: &Path) -> Self {
         Source::Path(p.to_path_buf())
