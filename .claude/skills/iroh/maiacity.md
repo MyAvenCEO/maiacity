@@ -32,7 +32,9 @@ vault/                         Rust workspace (iroh pinned exactly) · PLAN.md =
   crates/vault-media/          native media: probe (AVFoundation), proxies (VideoToolbox HEVC Main10), mp4.rs
                                (comment tag + faststart — AVFoundation drops MPEG-4 metadata)
   crates/vault-server/         the server peer: catalog replica (small entries only), pull from Macs verified chunk by
-                               chunk into Object Storage (s3.rs, multipart), in-process relay, allowlist from Postgres,
+                               chunk into Object Storage (s3.rs, multipart), every file it holds served back over
+                               iroh (cold.rs: a get is held while the file comes up from the bucket into a bounded
+                               cache, VAULT_IROH_CACHE_GB), in-process relay, allowlist from Postgres,
                                gateway /vault/files/<hash> (Range), Postgres mirror
   crates/vault-cli/            `vault ingest|ls|id|join|probe|proxy|import-library`
   app/                         maiaCITY Studio (Tauri 2): native commands, vault:// (local, Range), maiaapi:// (API +
