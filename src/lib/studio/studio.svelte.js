@@ -55,7 +55,7 @@ import { command, native } from '$lib/native';
  */
 /** A shot of the script: its clip, how far it is (words, a storyboard still, the footage, a world shot), what is said under it. @typedef {{ clip: Clip, stage: 'text' | 'storyboard' | 'footage' | 'world', lines: Clip[] }} ScriptShot */
 /** @typedef {{ scene: string, shots: ScriptShot[] }} ScriptScene */
-/** @typedef {'ingest' | 'library' | 'script' | '3d' | 'edit' | 'audio' | 'grade' | 'render'} Tab */
+/** @typedef {'ingest' | 'library' | 'script' | '3d' | 'edit' | 'audio' | 'grade' | 'render' | 'deliverables'} Tab */
 /**
  * A sound cue of a world shot, where it lands on A3 (derived from the shot record, never saved as a clip).
  * @typedef {Clip & { cue: true, from: string }} CueClip

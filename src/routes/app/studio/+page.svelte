@@ -23,6 +23,7 @@
 	import Library from '$lib/studio/Library.svelte';
 	import Script from '$lib/studio/Script.svelte';
 	import TimelinePicker from '$lib/studio/TimelinePicker.svelte';
+	import DeliverablesTab from '$lib/studio/DeliverablesTab.svelte';
 	import { forwardConsole, native } from '$lib/native';
 	import ProgramMonitor from '$lib/studio/ProgramMonitor.svelte';
 	import RenderQueue from '$lib/studio/RenderQueue.svelte';
@@ -33,7 +34,6 @@
 	import Transport from '$lib/studio/Transport.svelte';
 	import { Studio } from '$lib/studio/studio.svelte';
 
-	const ASPECTS = ['1:1', '16:9', '9:16', '4:5'];
 	const s = new Studio();
 	let studio = $state<HTMLElement | null>(null);
 
@@ -72,9 +72,9 @@
 	function onKey(e: KeyboardEvent) {
 		const target = e.target as HTMLElement | null;
 		if (target?.closest?.('input, textarea, select')) return;
-		if (e.altKey && ['Digit1', 'Digit2', 'Digit3', 'Digit4', 'Digit5', 'Digit6', 'Digit7', 'Digit8'].includes(e.code)) {
+		if (e.altKey && ['Digit1', 'Digit2', 'Digit3', 'Digit4', 'Digit5', 'Digit6', 'Digit7', 'Digit8', 'Digit9'].includes(e.code)) {
 			e.preventDefault();
-			const t = (['ingest', 'library', 'script', '3d', 'edit', 'audio', 'grade', 'render'] as const)[Number(e.code.slice(-1)) - 1]!;
+			const t = (['ingest', 'library', 'script', '3d', 'edit', 'audio', 'grade', 'render', 'deliverables'] as const)[Number(e.code.slice(-1)) - 1]!;
 			s.tab = t;
 			return;
 		}
@@ -143,11 +143,6 @@
 				{#if s.error}<button class="err" onclick={() => (s.error = '')} title="Dismiss">{s.error}</button>{/if}
 				{#if s.notice}<button class="err note" onclick={() => (s.notice = '')} title="{s.notice} (click to dismiss)">{s.notice}</button>{/if}
 				{#if s.tab !== 'ingest' && s.tab !== 'library'}<TimelinePicker {s} />{/if}
-				{#if s.current && s.tab !== 'ingest' && s.tab !== 'library'}
-					<select value={s.current.aspect} onchange={(e) => s.setMeta({ aspect: e.currentTarget.value })} aria-label="Frame">
-						{#each ASPECTS as a (a)}<option value={a}>{a}</option>{/each}
-					</select>
-				{/if}
 				{#if s.active && s.tab !== 'render'}
 					<button class="rpill" style:--p="{Math.round(s.active.progress * 100)}%" onclick={() => (s.tab = 'render')}>
 						{s.active.status === 'queued' ? 'Render waiting…' : `Rendering ${Math.round(s.active.progress * 100)}%`}
@@ -158,7 +153,9 @@
 			<StageBar {s} />
 		</header>
 
-		{#if s.tab === 'ingest'}
+		{#if s.tab === 'deliverables'}
+			<DeliverablesTab {s} />
+		{:else if s.tab === 'ingest'}
 			<Ingest />
 		{:else if s.tab === 'library'}
 			<Library />
@@ -201,7 +198,7 @@
 			</div>
 			<Deliveries {s} />
 		{/if}
-		{#if s.tab !== 'ingest' && s.tab !== 'library'}
+		{#if s.tab !== 'ingest' && s.tab !== 'library' && s.tab !== 'deliverables'}
 			<Transport {s} />
 			<Timeline {s} />
 		{/if}
@@ -290,7 +287,8 @@
 
 	/* Ingest and Library: one panel under the bar, no transport or timeline */
 	.studio.tab-ingest,
-	.studio.tab-library {
+	.studio.tab-library,
+	.studio.tab-deliverables {
 		grid-template-columns: 1fr;
 		grid-template-rows: auto minmax(0, 1fr);
 		grid-template-areas:
