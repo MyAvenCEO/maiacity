@@ -23,8 +23,6 @@
 	import Ingest from '$lib/studio/Ingest.svelte';
 	import Inspector from '$lib/studio/Inspector.svelte';
 	import Library from '$lib/studio/Library.svelte';
-	import Loudness from '$lib/studio/Loudness.svelte';
-	import Mixer from '$lib/studio/Mixer.svelte';
 	import { forwardConsole, native } from '$lib/native';
 	import ProgramMonitor from '$lib/studio/ProgramMonitor.svelte';
 	import RenderQueue from '$lib/studio/RenderQueue.svelte';
@@ -178,10 +176,9 @@
 			</div>
 			<Inspector {s} />
 		{:else if s.tab === 'audio'}
-			<Mixer {s} />
-			<div class="monitors column">
+			<!-- the sound on the timeline itself: each clip's level, fades and loudness on it -->
+			<div class="monitors">
 				<ProgramMonitor {s} label="Program · sound" />
-				<Loudness {s} />
 			</div>
 		{:else if s.tab === 'grade'}
 			<Conform {s} />
@@ -258,14 +255,15 @@
 		grid-template-columns: 19rem 1fr 19rem;
 	}
 
-	/* Audio: the mixer, the program over the loudness, no inspector */
+	/* Audio: the program over the sound tracks, which carry the levels themselves */
 	.studio.tab-audio {
-		grid-template-columns: 21rem 1fr;
+		grid-template-columns: 1fr;
+		grid-template-rows: auto minmax(0, 1fr) auto minmax(14rem, 46vh);
 		grid-template-areas:
-			'bar bar'
-			'bin monitor'
-			'bin transport'
-			'bin timeline';
+			'bar'
+			'monitor'
+			'transport'
+			'timeline';
 	}
 
 	/* Ingest and Library: one panel under the bar, no transport or timeline */

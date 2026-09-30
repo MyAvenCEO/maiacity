@@ -29,7 +29,70 @@
 	const wc = $derived((s.tab === 'edit' || s.tab === '3d') && isWorld(s.sel) ? s.sel : null);
 	const spec = $derived(wc ? s.specOf(wc) : null);
 	const LANES = ['Camera', 'Hour', 'Exposure', 'Lights', 'Cues'];
-	const rows = $derived(`1.5rem minmax(2.6rem, 1fr) repeat(4, minmax(1.7rem, 1fr))${spec ? ` repeat(${LANES.length}, 1.45rem)` : ''}`);
+	// the Audio tab: the sound tracks only, taller, each clip with its level on it
+	const audio = $derived(s.tab === 'audio');
+	const shown = $derived(audio ? TRACKS.filter((t) => t.id.startsWith('A')) : TRACKS);
+	const rows = $derived(
+		audio ? `1.5rem repeat(${shown.length}, minmax(3.4rem, 1fr))` : `1.5rem minmax(2.6rem, 1fr) repeat(4, minmax(1.7rem, 1fr))${spec ? ` repeat(${LANES.length}, 1.45rem)` : ''}`
+	);
+
+	// ── the level on the clip (Audio): its gain as a line to drag, its fades as corners to drag, its loudness ──
+	const TOP_DB = 12, BOTTOM_DB = -40;
+	/** @param {number} vol */
+	const dbOf = (vol) => (vol > 0 ? 20 * Math.log10(vol) : BOTTOM_DB);
+	/** @param {number} db */
+	const yOf = (db) => (TOP_DB - Math.max(BOTTOM_DB, Math.min(TOP_DB, db))) / (TOP_DB - BOTTOM_DB);
+	/** @param {string} id */
+	const loudOf = (id) => s.loud?.clips?.find((/** @type {any} */ m) => m.clip === id);
+	/** @param {string} id */
+	const overMusic = (id) => s.loud?.voice_over_music?.find((/** @type {any} */ u) => u.voice === id)?.voice_over_music_lu;
+	/** the clip's loudness curve (LUFS at its gain), on its own clock, as an SVG path in (seconds, 0…1) @param {Clip} c */
+	function curveOf(c) {
+		const m = loudOf(c.id);
+		if (!m?.curve) return '';
+		let d = '', pen = false;
+		m.curve.forEach((/** @type {number | null} */ l, /** @type {number} */ i) => {
+			if (typeof l !== 'number') return void (pen = false);
+			const y = Math.min(1, Math.max(0, -(l + dbOf(c.vol)) / 60));
+			d += `${pen ? 'L' : 'M'}${((i + 0.5) * m.curve_step).toFixed(2)},${y.toFixed(3)}`;
+			pen = true;
+		});
+		return d;
+	}
+	/**
+	 * Drag the level (up and down: the gain, 0.5 dB steps) or a fade (left and right, its corner).
+	 * @param {PointerEvent} e @param {Clip} c @param {'gain' | 'fin' | 'fout'} what
+	 */
+	function level(e, c, what) {
+		e.stopPropagation();
+		e.preventDefault();
+		s.selected = c.id;
+		const box = /** @type {HTMLElement} */ (e.currentTarget).closest('.clip')?.getBoundingClientRect();
+		if (!box) return;
+		const y0 = e.clientY, x0 = e.clientX, db0 = dbOf(c.vol), fin0 = c.fin ?? 0, fout0 = c.fout ?? 0;
+		/** @param {PointerEvent} ev */
+		const move = (ev) => {
+			if (what === 'gain') {
+				const db = Math.round((db0 - ((ev.clientY - y0) / box.height) * (TOP_DB - BOTTOM_DB)) * 2) / 2;
+				s.setSound(c.id, { vol: Math.round(10 ** (Math.min(TOP_DB, Math.max(-60, db)) / 20) * 1000) / 1000 });
+			} else {
+				const dt = (ev.clientX - x0) / s.pxPerSec;
+				const v = Math.round(Math.min(c.dur / 2, Math.max(0, what === 'fin' ? fin0 + dt : fout0 - dt)) * 20) / 20;
+				s.setSound(c.id, { [what]: v });
+			}
+		};
+		const up = () => (removeEventListener('pointermove', move), removeEventListener('pointerup', up));
+		addEventListener('pointermove', move);
+		addEventListener('pointerup', up);
+	}
+
+	// measured by itself in Audio: when the tab opens, and a moment after the sound clips change
+	const soundKey = $derived(audio ? JSON.stringify(s.clips.filter((c) => c.track !== 'V1').map((c) => [c.id, c.hash, c.start, c.in, c.dur])) : '');
+	$effect(() => {
+		if (!soundKey) return;
+		const t = setTimeout(() => void s.measureSound(), s.loud ? 1500 : 0);
+		return () => clearTimeout(t);
+	});
 	/** timeline time of a shot-local time in the open world clip */
 	/** @param {number} t */
 	const tl = (t) => (wc ? wc.start + (t - wc.in) : 0);
@@ -233,7 +296,7 @@
 <div class="timeline" style:--rows={rows}>
 	<div class="heads">
 		<div class="head"></div>
-		{#each TRACKS as t (t.id)}<div class="head"><b>{t.id}</b> {t.label}</div>{/each}
+		{#each shown as t (t.id)}<div class="head"><b>{t.id}</b> {t.label}</div>{/each}
 		{#if spec}
 			{#each LANES as l (l)}<div class="head lane-head">{l}</div>{/each}
 		{/if}
@@ -244,7 +307,7 @@
 			<div class="ruler">
 				{#each ticks as t (t)}<span class="tick" style:left={x(t)}>{t}s</span>{/each}
 			</div>
-			{#each TRACKS as t (t.id)}
+			{#each shown as t (t.id)}
 				<!-- svelte-ignore a11y_no_static_element_interactions -->
 				<div class="track" ondragover={(e) => t.id !== 'T1' && s.canEdit && e.preventDefault()} ondrop={(e) => t.id !== 'T1' && drop(e, /** @type {Track} */ (t.id))}>
 					{#if t.id === 'T1'}
@@ -297,6 +360,25 @@
 										{#if world}<b class="wtag">world</b>{:else if m}{#if m.kind === 'video' && !s.proxy(m).hash}{@const st = s.proxy(m).state}<b class="nopx" title="No proxy yet: the original plays">{st === 'none' ? 'no proxy' : `proxy ${st}`}</b>{/if}{/if}
 										{#if c.grade}<b class="gr" title="Graded">◐</b>{/if}
 									</span>
+								{/if}
+								{#if audio && onSoundTrack(c)}
+									{@const g = dbOf(c.vol)}
+									{@const y = yOf(g)}
+									{@const fi = Math.min(c.fin ?? 0, c.dur / 2)}
+									{@const fo = Math.min(c.fout ?? 0, c.dur / 2)}
+									{@const lm = loudOf(c.id)}
+									{@const om = overMusic(c.id)}
+									<svg class="mix" viewBox="0 0 {c.dur} 1" preserveAspectRatio="none" aria-hidden="true">
+										<path class="loud" d={curveOf(c)} />
+										<polyline class="env" points="0,1 {fi},{y} {c.dur - fo},{y} {c.dur},1" />
+										<!-- svelte-ignore a11y_no_static_element_interactions -->
+										<line class="grab" x1={fi} x2={c.dur - fo} y1={y} y2={y} onpointerdown={(e) => level(e, c, 'gain')} />
+									</svg>
+									<!-- svelte-ignore a11y_no_static_element_interactions -->
+									<i class="fade in" style:left={x(fi)} style:top="{y * 100}%" title="Fade in {fi.toFixed(2)} s — drag" onpointerdown={(e) => level(e, c, 'fin')}></i>
+									<!-- svelte-ignore a11y_no_static_element_interactions -->
+									<i class="fade out" style:left={x(c.dur - fo)} style:top="{y * 100}%" title="Fade out {fo.toFixed(2)} s — drag" onpointerdown={(e) => level(e, c, 'fout')}></i>
+									<span class="lvl">{g > 0 ? '+' : ''}{g.toFixed(1)} dB{#if typeof lm?.lufs_at_vol === 'number'} · {lm.lufs_at_vol.toFixed(1)} LUFS{/if}{#if typeof om === 'number'} · <b class:low={om < 12}>{om.toFixed(0)} LU over music</b>{/if}</span>
 								{/if}
 								{#if s.canEdit}
 									<i class="edge l" onpointerdown={(e) => grab(e, c, 'left')}></i>
@@ -452,6 +534,67 @@
 
 	.locked .clip {
 		cursor: pointer;
+	}
+
+	/* the level on a sound clip (Audio) */
+	.mix {
+		position: absolute;
+		inset: 0;
+		width: 100%;
+		height: 100%;
+		overflow: visible;
+	}
+
+	.mix .loud {
+		fill: none;
+		stroke: rgba(20, 23, 26, 0.35);
+		stroke-width: 1;
+		vector-effect: non-scaling-stroke;
+	}
+
+	.mix .env {
+		fill: rgba(255, 255, 255, 0.18);
+		stroke: #14171a;
+		stroke-width: 1.5;
+		vector-effect: non-scaling-stroke;
+	}
+
+	.mix .grab {
+		stroke: transparent;
+		stroke-width: 12;
+		vector-effect: non-scaling-stroke;
+		cursor: ns-resize;
+		pointer-events: stroke;
+	}
+
+	.fade {
+		position: absolute;
+		z-index: 2;
+		width: 0.55rem;
+		height: 0.55rem;
+		margin: -0.275rem 0 0 -0.275rem;
+		border: 1.5px solid #14171a;
+		border-radius: 50%;
+		background: #fff;
+		cursor: ew-resize;
+	}
+
+	.lvl {
+		position: absolute;
+		right: 0.35rem;
+		bottom: 0.15rem;
+		font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+		font-size: 0.6rem;
+		color: #14171a;
+		pointer-events: none;
+	}
+
+	.lvl b {
+		font-weight: 600;
+	}
+
+	.lvl b.low {
+		color: #9c3b26;
 	}
 
 	.clip:active {
