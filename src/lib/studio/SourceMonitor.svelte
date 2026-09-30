@@ -323,12 +323,13 @@
 		color: var(--ink);
 	}
 
+	/* the picture first: it takes most of the column; the transcript scrolls in what is left */
 	.sstage {
 		position: relative;
 		display: grid;
-		flex: 1;
+		flex: 3 1 14rem;
 		place-items: center;
-		min-height: 4rem;
+		min-height: 14rem;
 		container-type: size;
 	}
 
@@ -475,9 +476,11 @@
 
 	.strans {
 		display: flex;
-		flex: 0 1 38%;
+		flex: 1 1 0;
 		flex-direction: column;
 		min-height: 3rem;
+		max-height: 30%;
+		overflow: auto;
 		padding-top: 0.35rem;
 		border-top: 1px solid var(--edge);
 	}

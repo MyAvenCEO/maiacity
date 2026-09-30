@@ -21,8 +21,10 @@
 	}
 	const p = $derived(profileFor(m));
 	const c = $derived(colorOf(m));
+	/** the picture seen is its ACEScct proxy (the Edit tab plays proxies): the source's colour → the working space */
+	const viaProxy = $derived(isVideo(m) && !!s.proxy(m).hash && p.profile !== 'acescct');
 	const title = $derived(
-		`${profileInfo(p.profile).label}${p.override ? ' — set by hand' : p.guessed ? ' — assumed (not detected yet)' : c?.detectedFrom ? ` — ${c.detectedFrom}` : ''}. Click to change.`
+		`The source: ${profileInfo(p.profile).label}${p.override ? ' — set by hand' : p.guessed ? ' — assumed (not detected yet)' : c?.detectedFrom ? ` — ${c.detectedFrom}` : ''}.${viaProxy ? ' Its proxy is ACEScct (the working space) — that is what plays here.' : ''} Click to change.`
 	);
 	/** @param {string | null} profile */
 	function choose(profile) {
@@ -47,7 +49,7 @@
 		aria-label="Colour: {profileInfo(p.profile).label}"
 		aria-expanded={open}
 		onpointerdown={(e) => e.stopPropagation()}
-		onclick={toggle}>{short(p.profile)}</button
+		onclick={toggle}>{short(p.profile)}{#if viaProxy && !compact}<i class="via"> → CCT</i>{/if}</button
 	>
 	{#if open}
 		<!-- svelte-ignore a11y_no_static_element_interactions, a11y_click_events_have_key_events -->
@@ -67,6 +69,10 @@
 <svelte:window onpointerdown={() => (open = false)} />
 
 <style>
+	.via {
+		font-style: normal;
+		opacity: 0.7;
+	}
 	.cb {
 		position: relative;
 		display: inline-flex;

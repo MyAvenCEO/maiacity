@@ -138,7 +138,7 @@
 	}
 
 	/** @type {Record<string, string>} */
-	const proxyLabel = { ready: 'proxy', none: 'no proxy yet', queued: 'proxy queued', rendering: 'proxy…', failed: 'proxy failed' };
+	const proxyLabel = { ready: 'proxy · ACEScct', none: 'no proxy yet', queued: 'proxy queued', rendering: 'proxy…', failed: 'proxy failed' };
 </script>
 
 <aside class="bin">
