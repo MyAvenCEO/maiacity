@@ -92,7 +92,7 @@
 				const i = s.selectedKey;
 				s.editSpec(c, (sp) => void sp.camera.keys!.splice(i, 1));
 				s.selectedKey = null;
-			} else if (s.selected) (e.preventDefault(), s.remove(s.selected));
+			} else if (s.selected) (e.preventDefault(), s.remove(s.selected, e.altKey)); // a linked partner goes too (Alt: this one alone)
 		}
 	}
 
@@ -147,6 +147,7 @@
 				{/if}
 				<span class="sub">{s.clips.length} clips · {clockText(s.end)} · {s.saving === 'saved' ? 'saved' : s.saving === 'saving' ? 'saving…' : 'unsaved'}</span>
 				{#if s.error}<button class="err" onclick={() => (s.error = '')} title="Dismiss">{s.error}</button>{/if}
+				{#if s.notice}<button class="err note" onclick={() => (s.notice = '')} title="{s.notice} (click to dismiss)">{s.notice}</button>{/if}
 				<span class="grow"></span>
 				{#if s.active && s.tab !== 'render'}
 					<button class="rpill" style:--p="{Math.round(s.active.progress * 100)}%" onclick={() => (s.tab = 'render')}>
@@ -302,6 +303,10 @@
 		font-size: 0.75rem;
 		color: var(--dim);
 		white-space: nowrap;
+	}
+
+	.err.note {
+		color: #3e5a2f;
 	}
 
 	.err {

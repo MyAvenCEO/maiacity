@@ -111,6 +111,27 @@ pub struct HashArg {
 }
 
 #[derive(Deserialize, schemars::JsonSchema)]
+pub struct TranscriptArgs {
+    /// the recording's BLAKE3 hash (64 hex) — an original; its audio proxy's hash works too
+    pub hash: String,
+    /// only the words between these seconds of the file (a clip's in and out)
+    pub from: Option<f64>,
+    pub to: Option<f64>,
+}
+
+#[derive(Deserialize, schemars::JsonSchema)]
+pub struct SearchArgs {
+    /// the words to find, e.g. "one street" — case and punctuation do not matter
+    pub phrase: String,
+    /// only in files with this tag
+    pub tag: Option<String>,
+    /// only in this story (its id)
+    pub story: Option<String>,
+    /// at most this many hits (default 50)
+    pub limit: Option<usize>,
+}
+
+#[derive(Deserialize, schemars::JsonSchema)]
 pub struct IdArg {
     pub id: String,
 }
@@ -236,8 +257,64 @@ impl Studio {
                 .into_iter()
                 .filter(|m| f.kind.as_ref().is_none_or(|k| &m.kind == k))
                 .filter(|m| f.tag.as_ref().is_none_or(|t| m.tags.contains(t)))
+                .map(|mut m| {
+                    // a transcript is said, not listed: its words come with the `transcript` tool
+                    if let Some(t) = m.meta.get_mut("transcript") {
+                        *t = transcript_summary(t);
+                    }
+                    m
+                })
                 .collect();
             serde_json::to_value(list).map_err(|e| e.to_string())
+        };
+        text(r.await)
+    }
+
+    // ── transcripts: every recording's words, with their times (the vault server writes them: meta.transcript) ──
+
+    #[tool(
+        description = "A recording's transcript (Deepgram Nova 3, written by the vault server when the file reached the bucket): its text, sentences and every word with its start and end in seconds of the file (a clip's in/out map straight onto them), confidence, speaker, and — for camera files with a start timecode — each word's timecode (HH:MM:SS:FF). from/to narrow it to a clip. Also the transcript's state (transcribing, failed …) and the audio proxy's hash."
+    )]
+    async fn transcript(&self, Parameters(a): Parameters<TranscriptArgs>) -> String {
+        let r = async {
+            self.signed_in()?;
+            let hash: iroh_blobs::Hash = a.hash.parse().map_err(|e| format!("{e}"))?;
+            let mut meta = self.vault.catalog.meta(hash).await.map_err(|e| format!("{e:#}"))?.ok_or("no such file in the catalog")?;
+            // an audio proxy: its original's
+            if let Some(of) = meta.meta.get("audio_of").and_then(|v| v.as_str()).and_then(|h| h.parse::<iroh_blobs::Hash>().ok()) {
+                meta = self.vault.catalog.meta(of).await.map_err(|e| format!("{e:#}"))?.ok_or("the audio proxy's original is not in the catalog")?;
+            }
+            Ok::<_, String>(transcript_view(&meta, a.from, a.to))
+        };
+        text(r.await)
+    }
+
+    #[tool(
+        description = "Find a phrase across every transcript in the vault — to cut by words: each hit with the file (hash, name, story), where the phrase starts and ends in seconds of the file, its timecode (when the file has one), and the sentence around it."
+    )]
+    async fn transcript_search(&self, Parameters(a): Parameters<SearchArgs>) -> String {
+        let r = async {
+            self.signed_in()?;
+            let want = tokens(&a.phrase);
+            if want.is_empty() {
+                return Err("a phrase to find".to_string());
+            }
+            let limit = a.limit.unwrap_or(50).max(1);
+            let mut hits = Vec::new();
+            for m in self.vault.catalog.list().await.map_err(|e| format!("{e:#}"))? {
+                if a.tag.as_ref().is_some_and(|t| !m.tags.contains(t)) || a.story.as_ref().is_some_and(|st| &m.story != st) {
+                    continue;
+                }
+                let Some(t) = m.meta.get("transcript") else { continue };
+                for (s, e, context) in find_phrase(t, &want) {
+                    hits.push(json!({ "hash": m.hash, "name": m.original_name, "title": m.title, "story": m.story,
+                        "s": s, "e": e, "timecode": word_timecode(&m.meta, s), "context": context }));
+                    if hits.len() >= limit {
+                        return Ok(json!({ "phrase": a.phrase, "hits": hits, "more": true }));
+                    }
+                }
+            }
+            Ok(json!({ "phrase": a.phrase, "hits": hits }))
         };
         text(r.await)
     }
@@ -463,6 +540,164 @@ impl Studio {
     }
 }
 
+/// What library_list says of a transcript: that it is there, and how much — not its words.
+fn transcript_summary(t: &Value) -> Value {
+    let n = t["words"].as_array().map(Vec::len).unwrap_or(0);
+    let text = t["text"].as_str().unwrap_or("");
+    let preview: String = text.chars().take(160).collect();
+    json!({ "words": n, "language": t["language"], "model": t["model"], "at": t["at"], "of": t["of"],
+            "preview": if preview.len() < text.len() { format!("{preview}…") } else { preview } })
+}
+
+/// The file's start timecode in frames, its nominal frame rate and the frames' separator (`;` drop-frame) — from the
+/// probe (the vault server reads the camera's tmcd track), else the transcript's own copy.
+fn start_timecode(meta: &Value) -> Option<(u64, u64, String)> {
+    let tc = meta.pointer("/probe/timecode").or_else(|| meta.pointer("/transcript/timecode"))?.as_str()?;
+    let fps = meta.pointer("/probe/timecode_fps").or_else(|| meta.pointer("/transcript/timecode_fps"))?.as_f64()?;
+    // timecode counts whole frames at the nominal rate (23.976 → 24)
+    let nominal = fps.round().max(1.0) as u64;
+    let parts: Vec<u64> = tc.split([':', ';', '.']).filter_map(|p| p.parse().ok()).collect();
+    let [h, m, s, f] = parts[..] else { return None };
+    let sep = if tc.contains(';') { ";" } else { ":" };
+    Some((((h * 60 + m) * 60 + s) * nominal + f, nominal, sep.to_string()))
+}
+
+/// A moment of the file (seconds) as timecode: the file's start timecode plus the moment.
+fn word_timecode(meta: &Value, seconds: f64) -> Option<String> {
+    let (start, fps, sep) = start_timecode(meta)?;
+    let frames = start + (seconds.max(0.0) * fps as f64).round() as u64;
+    let secs = frames / fps;
+    Some(format!("{:02}:{:02}:{:02}{sep}{:02}", secs / 3600 % 24, secs / 60 % 60, secs % 60, frames % fps))
+}
+
+/// A file's transcript for the `transcript` tool: its words (between from and to), each with its timecode.
+fn transcript_view(meta: &vault_core::Meta, from: Option<f64>, to: Option<f64>) -> Value {
+    let m = &meta.meta;
+    let state = m.get("transcript_state").cloned().unwrap_or(Value::Null);
+    let Some(t) = m.get("transcript").filter(|t| t.is_object()) else {
+        return json!({ "hash": meta.hash, "name": meta.original_name, "transcript": null,
+            "state": if state.is_null() { json!("not yet: the vault server transcribes a recording once it is in the bucket") } else { state } });
+    };
+    let inside = |v: &Value| {
+        let (s, e) = (v["s"].as_f64().unwrap_or(0.0), v["e"].as_f64().unwrap_or(0.0));
+        from.is_none_or(|f| e > f) && to.is_none_or(|t| s < t)
+    };
+    let with_tc = |v: &Value| {
+        let mut v = v.clone();
+        if let Some(tc) = word_timecode(m, v["s"].as_f64().unwrap_or(0.0)) {
+            v["tc"] = json!(tc);
+        }
+        v
+    };
+    let words: Vec<Value> = t["words"].as_array().into_iter().flatten().filter(|w| inside(w)).map(with_tc).collect();
+    let utterances: Vec<Value> = t["utterances"].as_array().into_iter().flatten().filter(|u| inside(u)).map(with_tc).collect();
+    let text = if from.is_some() || to.is_some() {
+        json!(words.iter().filter_map(|w| w["w"].as_str()).collect::<Vec<_>>().join(" "))
+    } else {
+        t["text"].clone()
+    };
+    json!({
+        "hash": meta.hash, "name": meta.original_name, "state": state, "audio": m.get("audio"),
+        "model": t["model"], "language": t["language"], "at": t["at"],
+        "timecode": m.pointer("/probe/timecode").or_else(|| t.get("timecode")),
+        "timecode_fps": m.pointer("/probe/timecode_fps").or_else(|| t.get("timecode_fps")),
+        "text": text, "utterances": utterances, "words": words,
+    })
+}
+
+/// Words as the search compares them: lower case, letters and digits only.
+fn tokens(text: &str) -> Vec<String> {
+    text.split_whitespace()
+        .map(|w| w.chars().filter(|c| c.is_alphanumeric()).flat_map(char::to_lowercase).collect::<String>())
+        .filter(|w| !w.is_empty())
+        .collect()
+}
+
+/// Every place a phrase is said in a transcript: its start and end (seconds of the file) and the sentence around it.
+fn find_phrase(t: &Value, want: &[String]) -> Vec<(f64, f64, String)> {
+    let words = t["words"].as_array().cloned().unwrap_or_default();
+    let said: Vec<String> = words.iter().map(|w| tokens(w["w"].as_str().unwrap_or("")).join("")).collect();
+    let utterances = t["utterances"].as_array().cloned().unwrap_or_default();
+    let mut out = Vec::new();
+    if want.is_empty() || said.len() < want.len() {
+        return out;
+    }
+    for i in 0..=said.len() - want.len() {
+        if said[i..i + want.len()] != *want {
+            continue;
+        }
+        let s = words[i]["s"].as_f64().unwrap_or(0.0);
+        let e = words[i + want.len() - 1]["e"].as_f64().unwrap_or(s);
+        let context = utterances
+            .iter()
+            .find(|u| u["s"].as_f64().unwrap_or(f64::MAX) <= s + 1e-6 && u["e"].as_f64().unwrap_or(0.0) >= s)
+            .and_then(|u| u["text"].as_str().map(String::from))
+            .unwrap_or_else(|| {
+                let (a, b) = (i.saturating_sub(6), (i + want.len() + 6).min(words.len()));
+                words[a..b].iter().filter_map(|w| w["w"].as_str()).collect::<Vec<_>>().join(" ")
+            });
+        out.push((s, e, context));
+    }
+    out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn transcript() -> Value {
+        json!({
+            "model": "deepgram/general-nova-3", "language": "en", "text": "Day twenty. The city starts with one street.",
+            "words": [
+                { "w": "Day", "s": 0.48, "e": 0.8, "c": 1.0, "sp": 0 }, { "w": "twenty.", "s": 0.8, "e": 1.3, "c": 1.0, "sp": 0 },
+                { "w": "The", "s": 1.84, "e": 2.0, "c": 1.0, "sp": 0 }, { "w": "city", "s": 2.0, "e": 2.4, "c": 1.0, "sp": 0 },
+                { "w": "starts", "s": 2.4, "e": 2.8, "c": 1.0, "sp": 0 }, { "w": "with", "s": 2.8, "e": 2.96, "c": 1.0, "sp": 0 },
+                { "w": "one", "s": 2.96, "e": 3.28, "c": 1.0, "sp": 0 }, { "w": "street.", "s": 3.28, "e": 3.78, "c": 1.0, "sp": 0 }
+            ],
+            "utterances": [{ "s": 0.48, "e": 1.3, "text": "Day twenty.", "sp": 0 }, { "s": 1.84, "e": 3.78, "text": "The city starts with one street.", "sp": 0 }]
+        })
+    }
+
+    #[test]
+    fn a_phrase_is_found_by_its_words() {
+        let hits = find_phrase(&transcript(), &tokens("One STREET"));
+        assert_eq!(hits, vec![(2.96, 3.78, "The city starts with one street.".to_string())]);
+        assert_eq!(find_phrase(&transcript(), &tokens("twenty the")).len(), 1); // across a sentence end
+        assert!(find_phrase(&transcript(), &tokens("two streets")).is_empty());
+    }
+
+    #[test]
+    fn a_word_s_timecode_is_the_start_plus_its_time() {
+        let meta = json!({ "probe": { "timecode": "14:03:22:11", "timecode_fps": 23.976 } });
+        assert_eq!(word_timecode(&meta, 0.0).as_deref(), Some("14:03:22:11"));
+        // 2.96 s at 24 frames: 71 frames; 11 + 71 = 82 = 3 s 10 f
+        assert_eq!(word_timecode(&meta, 2.96).as_deref(), Some("14:03:25:10"));
+        let drop = json!({ "probe": { "timecode": "01:00:00;00", "timecode_fps": 29.97 } });
+        assert_eq!(word_timecode(&drop, 1.0).as_deref(), Some("01:00:01;00"));
+        assert_eq!(word_timecode(&json!({}), 1.0), None);
+        // from the transcript's own copy when a probe lost it
+        let kept = json!({ "transcript": { "timecode": "00:59:59:24", "timecode_fps": 25.0 } });
+        assert_eq!(word_timecode(&kept, 0.04).as_deref(), Some("01:00:00:00"));
+    }
+
+    #[test]
+    fn a_clip_s_words() {
+        let meta = vault_core::Meta {
+            hash: "h".into(),
+            meta: json!({ "transcript": transcript(), "probe": { "timecode": "10:00:00:00", "timecode_fps": 25.0 } }),
+            ..Default::default()
+        };
+        let v = transcript_view(&meta, Some(2.0), Some(3.0));
+        assert_eq!(v["text"], "city starts with one");
+        assert_eq!(v["words"][0]["tc"], "10:00:02:00");
+        let listed = transcript_summary(&transcript());
+        assert_eq!(listed["words"], 8);
+        assert!(listed.get("utterances").is_none());
+        let none = transcript_view(&vault_core::Meta::default(), None, None);
+        assert!(none["transcript"].is_null());
+    }
+}
+
 impl Studio {
     /// A vault file on disk for the native media tools (exported from the store into the ingest area).
     async fn export(&self, hex: &str) -> Result<PathBuf, String> {
@@ -482,7 +717,8 @@ impl ServerHandler for Studio {
     fn get_info(&self) -> ServerConfig {
         ServerConfig::new(ServerCapabilities::builder().enable_tools().build()).with_instructions(
             "maiaCITY Studio: the media vault (every file by its BLAKE3 hash) and the whole studio — ingest, library \
-             enrichment, probes and proxies, timelines (edit, audio), grades, renders and hero frames (rendered \
+             enrichment, probes and proxies, every recording's transcript (words with their times and timecode — find \
+             a phrase to cut by words), timelines (edit, audio), grades, renders and hero frames (rendered \
              natively on this Mac), and the content board's deliveries in draft and publish mode. Files are named by \
              hash only.",
         )

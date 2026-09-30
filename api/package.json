@@ -9,6 +9,7 @@
     "check:film": "tsc -p tsconfig.film-check.json"
   },
   "dependencies": {
+    "@premai/api-sdk": "1.0.66",
     "@simplewebauthn/server": "^14.0.1",
     "@zk-kit/baby-jubjub": "^1.0.3",
     "poseidon-lite": "^0.3.0",

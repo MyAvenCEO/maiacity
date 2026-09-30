@@ -259,6 +259,13 @@ async fn make(vault: &Vault, hex: &str, name: &str, source: PathBuf) -> Result<(
         let probe_path = path.clone();
         let probe = tokio::task::spawn_blocking(move || vault_media::probe(&probe_path)).await.map_err(|e| e.to_string())?.map_err(|e| format!("{e:#}"))?;
         let told = vault_media::detect(&probe);
+        // the start timecode is the vault server's to read (transcribe.rs, from the tmcd track): kept through a new probe
+        let mut probe = serde_json::to_value(&probe).map_err(|e| e.to_string())?;
+        for k in ["timecode", "timecode_fps"] {
+            if let Some(v) = original.meta.pointer(&format!("/probe/{k}")) {
+                probe[k] = v.clone();
+            }
+        }
         vault
             .catalog
             .describe(hash, &json!({ "meta": { "color": { "profile": told.profile, "from": told.from, "override": set_by_hand, "detector": DETECTOR }, "probe": probe } }))

@@ -57,4 +57,12 @@ describe("joining", () => {
     expect((await listVaultFiles({ kind: "video" })).map((f) => f.size)).toEqual([10]);
     expect((await listVaultFiles({ tag: "Day 01" })).map((f) => f.hash)).toEqual([node("b")]);
   });
+
+  test("a transcript's words stay out of the list; its text stays in", async () => {
+    const meta = { hash: node("d"), meta: { transcript: { model: "deepgram/general-nova-3", text: "Day twenty.", words: [{ w: "Day", s: 0.48, e: 0.8, c: 1 }], utterances: [] }, audio: node("e") } };
+    await pg.query("INSERT INTO vault_files (hash, size, mime, kind, meta) VALUES ($1, 5, 'video/quicktime', 'video', $2)", [node("d"), meta]);
+    const f = (await listVaultFiles({ kind: "video" })).find((x) => x.hash === node("d"))!;
+    expect((f.meta as any).meta.transcript).toEqual({ model: "deepgram/general-nova-3", text: "Day twenty." });
+    expect((f.meta as any).meta.audio).toBe(node("e"));
+  });
 });

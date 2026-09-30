@@ -32,6 +32,8 @@ export type Clip = {
   grade?: Cdl;
   /** media clips: reframing per delivery shape; x, y in −1…1 of the free room, zoom ≥ 1 */
   frame?: Partial<Record<Shape, { x: number; y: number; zoom: number }>>;
+  /** media clips: a video's picture and its sound (V1 + A track) moved and trimmed together share one link */
+  link?: string;
 };
 export type Stage = "edit" | "locked" | "graded" | "rendered";
 export type Color = { working: "acescct"; output: string };
@@ -66,7 +68,7 @@ function cleanClip(c: any): Clip {
   } else {
     if (!HASH.test(String(c?.hash))) throw new TimelineError("Every clip names its file by hash.");
     // an existing clip stays exactly as it was: `kind` is written only for world clips
-    clip = { ...base, ...(c.kind === "media" ? { kind: "media" as const } : {}), hash: String(c.hash) };
+    clip = { ...base, ...(c.kind === "media" ? { kind: "media" as const } : {}), hash: String(c.hash), ...(typeof c.link === "string" && c.link ? { link: c.link.slice(0, 40) } : {}) };
   }
   if (c.grade !== undefined && c.grade !== null) {
     const g = cleanCdl(c.grade);

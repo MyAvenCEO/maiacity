@@ -3,12 +3,15 @@
 	moves by hand in Edit — drag it to move it, drag its edges to trim it, click it to see and set it in the inspector —
 	and nothing moves once the edit is locked. A world clip (a shot as data) sits on V1 like any other; selected, its
 	keyframe lanes open under the tracks: the camera's keys, the hour, the exposure, the lights and the cues (a sound cue
-	lands on A3, where it plays).
+	lands on A3, where it plays). A video's picture and its sound (its own clip, on a sound track) are linked: one moves and
+	trims the other — Alt moves one alone. Zoomed in, a clip with words shows them where they are spoken; the captions
+	(T1) are the voice's phrases as the render burns them in.
 -->
 <script>
 	import ColorBadge from './ColorBadge.svelte';
 	import { evaluate, shotAt, toKeys } from './shots.js';
-	import { FPS, TRACKS, isWorld, thumb, tint } from './studio.svelte.js';
+	import { FPS, TRACKS, isWorld, onSoundTrack, thumb, tint } from './studio.svelte.js';
+	import { wordsOf } from './transcript.js';
 	import { wave } from './wave.js';
 
 	/** @typedef {import('$lib/auth/client').ShotSpec} ShotSpec */
@@ -45,6 +48,9 @@
 		const x0 = e.clientX, s0 = c.start, i0 = c.in, d0 = c.dur;
 		const isImage = !isWorld(c) && s.byHash.get(c.hash ?? '')?.kind === 'image';
 		const max = isImage ? Infinity : isWorld(c) ? (s.specOf(c)?.seconds ?? d0 + i0) : (s.sources[c.hash ?? '']?.duration ?? d0 + i0);
+		// its linked partner (a video's picture, its sound) moves and trims with it — unless Alt is held: this one alone
+		const p0 = e.altKey ? null : s.partnerOf(c);
+		const pmax = p0 ? (s.sources[p0.hash ?? '']?.duration ?? p0.dur + p0.in) : Infinity;
 		let moved = false;
 		/** @param {PointerEvent} ev */
 		const move = (ev) => {
@@ -56,16 +62,21 @@
 			if (mode === 'move') k.start = Math.max(0, s.snap(s0 + dt));
 			if (mode === 'left') {
 				// trimming the head: the clip starts later and plays from further in (a world clip: later in its move — never faster)
-				const d = Math.min(Math.max(s.snap(dt), -Math.min(s0, isImage ? s0 : i0)), d0 - 0.2);
+				const d = Math.min(Math.max(s.snap(dt), -Math.min(s0, isImage ? s0 : i0, p0 ? Math.min(p0.start, p0.in) : Infinity)), d0 - 0.2, p0 ? p0.dur - 0.2 : Infinity);
 				k.start = s0 + d;
 				k.in = isImage ? 0 : i0 + d;
 				k.dur = d0 - d;
 			}
-			if (mode === 'right') k.dur = Math.min(Math.max(0.2, s.snap(d0 + dt)), max - i0);
+			if (mode === 'right') k.dur = Math.min(Math.max(0.2, s.snap(d0 + dt)), max - i0, p0 ? pmax - p0.in - (p0.dur - d0) : Infinity);
 			s.clips[i] = k;
+			if (p0) {
+				const j = s.clips.findIndex((x) => x.id === p0.id);
+				if (j >= 0) s.clips[j] = { ...s.clips[j], start: Math.max(0, p0.start + (k.start - s0)), in: Math.max(0, p0.in + (k.in - i0)), dur: Math.max(0.2, p0.dur + (k.dur - d0)) };
+			}
 			// the playhead follows the edge in hand: the monitor shows the very frame the cut lands on — the first frame
 			// of a trimmed head, the last of a trimmed tail
-			if (!s.playing && mode !== 'move') s.time = mode === 'left' ? k.start : Math.max(k.start, k.start + k.dur - 1 / FPS);
+			// (seek, not a bare time: the monitor's player is moved to that frame too)
+			if (!s.playing && mode !== 'move') s.seek(mode === 'left' ? k.start : Math.max(k.start, k.start + k.dur - 1 / FPS));
 		};
 		const up = () => {
 			window.removeEventListener('pointermove', move);
@@ -78,6 +89,33 @@
 		window.addEventListener('pointermove', move);
 		window.addEventListener('pointerup', up);
 	}
+
+	// ── words inside the clips, where they are spoken (zoomed in far enough to read) ──
+	const WORD_ZOOM = 25;
+	/**
+	 * The words of a clip's file within the part it plays, placed in the clip (px), those that would overlap the one
+	 * before left out.
+	 * @param {Clip} c @param {import('$lib/auth/client').MediaItem | undefined} m
+	 */
+	function clipWords(c, m) {
+		if (s.pxPerSec < WORD_ZOOM || !m || isWorld(c)) return [];
+		// a picture shows its words only while its sound is its own (not pulled out onto a sound track)
+		if (c.track === 'V1' && (m.kind !== 'video' || s.partnerOf(c) || !c.vol)) return [];
+		/** @type {{ x: number, w: string }[]} */
+		const out = [];
+		let right = -Infinity;
+		for (const w of wordsOf(m)) {
+			if (w.e <= c.in) continue;
+			if (w.s >= c.in + c.dur) break;
+			const x = Math.max(0, (w.s - c.in) * s.pxPerSec);
+			if (x < right) continue;
+			out.push({ x, w: w.w });
+			right = x + w.w.length * 5.4 + 5;
+		}
+		return out;
+	}
+	/** @type {Record<string, string>} */
+	const soundNote = { loading: 'reading its sound…', waiting: 'no audio proxy yet', silent: 'no sound in this file' };
 
 	/** @param {PointerEvent} e */
 	function scrub(e) {
@@ -211,13 +249,18 @@
 				<!-- svelte-ignore a11y_no_static_element_interactions -->
 				<div class="track" ondragover={(e) => t.id !== 'T1' && s.canEdit && e.preventDefault()} ondrop={(e) => t.id !== 'T1' && drop(e, /** @type {Track} */ (t.id))}>
 					{#if t.id === 'T1'}
-						{#each s.clips.filter((c) => c.track === 'A1') as c (c.id)}
-							{@const words = s.captionWords.filter((w) => w.clip === c.id)}
-							{#if words.length}
-								<div class="clip caps" style:left={x(words[0].t)} style:width={x(Math.max(0.3, c.start + c.dur - words[0].t))}>
-									<span>{words.map((w) => w.word).join(' ')}</span>
-								</div>
-							{/if}
+						{#each s.phrases as p (`${p.clip}:${p.words[0].i}`)}
+							<!-- svelte-ignore a11y_no_static_element_interactions -->
+							<div
+								class="clip caps"
+								class:now={s.caption === p.words}
+								style:left={x(p.start)}
+								style:width={x(Math.max(0.2, p.end - p.start))}
+								onpointerdown={(e) => (e.stopPropagation(), (s.selected = p.clip), s.seek(p.start))}
+								title="{p.words.map((w) => w.word).join(' ')} — edit it in the inspector (its voice clip)"
+							>
+								<span>{p.words.map((w) => w.word).join(' ')}</span>
+							</div>
 						{/each}
 					{:else}
 						{#each s.clips.filter((c) => c.track === t.id) as c (c.id)}
@@ -225,21 +268,31 @@
 							{@const src = c.hash ? s.sources[c.hash] : undefined}
 							{@const world = isWorld(c)}
 							<!-- svelte-ignore a11y_no_static_element_interactions -->
+							{@const drift = c.link ? s.drift(c) : 0}
+							{@const snd = onSoundTrack(c) && m?.kind === 'video' && c.hash ? (s.soundState[c.hash] ?? 'loading') : 'ready'}
 							<div
-								class="clip {world ? 'world' : m?.kind} {t.id}"
+								class="clip {world ? 'world' : onSoundTrack(c) ? 'audio' : m?.kind} {t.id}"
+								class:linked={!!c.link}
 								class:sel={s.selected === c.id}
 								class:graded={!!c.grade}
 								style:left={x(c.start)}
 								style:width={x(c.dur)}
 								onpointerdown={(e) => grab(e, c, 'move')}
-								title={world ? `${s.clipName(c)} · world shot v${c.shotVersion}` : s.clipName(c)}
+								title={world ? `${s.clipName(c)} · world shot v${c.shotVersion}` : `${s.clipName(c)}${c.link ? ' · picture and sound linked (Alt-drag: one alone)' : ''}`}
 							>
 								{#if m?.kind === 'image'}
 									<img src={thumb(m)} alt="" draggable="false" />
-								{:else if m?.kind === 'audio' && src}
-									<canvas use:wave={{ peaks: src.peaks, from: c.in, to: c.in + c.dur, total: src.duration, color: tint(/** @type {Track} */ (t.id)) }}></canvas>
+								{:else if onSoundTrack(c) && src?.peaks.length}
+									<canvas use:wave={{ peaks: src.peaks, from: c.in, to: c.in + c.dur, total: src.buffer?.duration ?? src.duration, color: tint(/** @type {Track} */ (t.id)) }}></canvas>
 								{/if}
-								<span class="label">{s.clipName(c)}{#if world}<i>&nbsp;v{c.shotVersion}</i>{/if}</span>
+								{#each clipWords(c, m) as w, i (i)}<span class="wd" style:left="{w.x}px">{w.w}</span>{/each}
+								<span class="label">{#if onSoundTrack(c) && m?.kind === 'video'}<i class="snd">♪&nbsp;</i>{/if}{s.clipName(c)}{#if world}<i>&nbsp;v{c.shotVersion}</i>{/if}</span>
+								{#if snd !== 'ready' || drift}
+									<span class="chips snd-chips">
+										{#if snd !== 'ready'}<b class="nosnd" title={snd}>{soundNote[snd] ?? 'sound failed'}</b>{/if}
+										{#if drift}<b class="drift" title="Out of sync with its linked partner by {drift.toFixed(2)} s (the inspector puts it back)">{drift > 0 ? '+' : ''}{drift.toFixed(2)}s</b>{/if}
+									</span>
+								{/if}
 								{#if t.id === 'V1'}
 									<span class="chips">
 										{#if world}<b class="wtag">world</b>{:else if m}<ColorBadge {s} {m} />{#if m.kind === 'video' && !s.proxy(m).hash}{@const st = s.proxy(m).state}<b class="nopx" title="No proxy yet: the original plays">{st === 'none' ? 'no proxy' : `proxy ${st}`}</b>{/if}{/if}
@@ -524,12 +577,54 @@
 		cursor: default;
 	}
 
+	.clip.caps.now {
+		border-color: #6a4f93;
+		background: #d8cdef;
+	}
+
 	.clip.caps span {
 		overflow: hidden;
 		padding: 0 0.5rem;
 		font-size: 0.7rem;
 		white-space: nowrap;
 		text-overflow: ellipsis;
+	}
+
+	/* the words, faint, where they are spoken */
+	.wd {
+		position: absolute;
+		bottom: 0.05rem;
+		font-size: 0.58rem;
+		line-height: 1;
+		white-space: nowrap;
+		color: rgb(38 44 56 / 0.55);
+		pointer-events: none;
+	}
+
+	.label .snd {
+		font-style: normal;
+		color: #4a5f93;
+	}
+
+	.clip.linked {
+		border-bottom-width: 2px;
+	}
+
+	.snd-chips {
+		top: auto;
+		bottom: 0.15rem;
+		left: auto;
+		right: 0.4rem;
+	}
+
+	.nosnd {
+		background: #fbf1dc;
+		color: #7a5a17;
+	}
+
+	.drift {
+		background: #f6e3da;
+		color: #8a2a12;
 	}
 
 	.edge {
