@@ -16,6 +16,7 @@
 	import { wave } from './wave.js';
 	import { fine } from './fine.js';
 	import { nativeFrame } from './luts.js';
+	import { bandLabel, cleanEq } from '../../../game/film/sound.js';
 
 	/** @typedef {import('$lib/auth/client').ShotSpec} ShotSpec */
 	/** @typedef {import('./studio.svelte.js').Clip} Clip */
@@ -259,6 +260,8 @@
 	const TOP_DB = 12, BOTTOM_DB = -40;
 	/** @param {number} vol */
 	const dbOf = (vol) => (vol > 0 ? 20 * Math.log10(vol) : BOTTOM_DB);
+	/** a sound clip's EQ, checked @param {Clip} c */
+	const eqOf = (c) => cleanEq(c.eq);
 	/** @param {number} db */
 	const yOf = (db) => (TOP_DB - Math.max(BOTTOM_DB, Math.min(TOP_DB, db))) / (TOP_DB - BOTTOM_DB);
 	/** @param {string} id */
@@ -856,7 +859,7 @@
 									<i class="fade in" style:left={x(fi)} style:top="{y * 100}%" title="Fade in {fi.toFixed(2)} s — drag" onpointerdown={(e) => level(e, c, 'fin')}></i>
 									<!-- svelte-ignore a11y_no_static_element_interactions -->
 									<i class="fade out" style:left={x(c.dur - fo)} style:top="{y * 100}%" title="Fade out {fo.toFixed(2)} s — drag" onpointerdown={(e) => level(e, c, 'fout')}></i>
-									<span class="lvl">{g > 0 ? '+' : ''}{g.toFixed(1)} dB{#if typeof lm?.lufs_at_vol === 'number'} · {lm.lufs_at_vol.toFixed(1)} LUFS{/if}{#if typeof om === 'number'} · <b class:low={om < 12}>{om.toFixed(0)} LU over music</b>{/if}</span>
+									<span class="lvl">{g > 0 ? '+' : ''}{g.toFixed(1)} dB{#if typeof lm?.lufs_at_vol === 'number'} · {lm.lufs_at_vol.toFixed(1)} LUFS{/if}{#if typeof om === 'number'} · <b class:low={om < 12}>{om.toFixed(0)} LU over music</b>{/if}{#if eqOf(c).length} · <b class="eq" title="EQ (set through the MCP: audio_eq, audio_match)">EQ {eqOf(c).map(bandLabel).join(', ')}</b>{/if}</span>
 								{/if}
 								{#if s.canEdit}
 									<i class="edge l" onpointerdown={(e) => grab(e, c, 'left')}></i>
@@ -1078,6 +1081,10 @@
 
 	.lvl b.low {
 		color: var(--bad);
+	}
+
+	.lvl b.eq {
+		color: var(--accent);
 	}
 
 	.clip:active {

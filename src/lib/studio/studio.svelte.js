@@ -25,6 +25,7 @@ import { cached, evaluate, saveSpec, shotAt } from './shots.js';
 import { WorldViewer } from './world.svelte.js';
 import { captionWordsOf, hasSound, lineWords, phraseBreak, rewordPhrase, stepOpen, transcriptOf, transcriptState } from './transcript.js';
 import { command, native } from '$lib/native';
+import { cleanEq, webAudioQ } from '../../../game/film/sound.js';
 
 /** @typedef {import('$lib/auth/client').Cdl} Cdl */
 /** @typedef {import('$lib/auth/client').ClipFrame} ClipFrame */
@@ -1056,7 +1057,18 @@ export class Studio {
 				}
 			gain.gain.setValueAtTime(c.vol, when + length - fadeOut);
 			gain.gain.linearRampToValueAtTime(0, when + length);
-			src.connect(gain).connect(ac.destination);
+			// its EQ, the render's own bands (game/film/sound.js)
+			/** @type {AudioNode} */
+			let node = src;
+			for (const b of cleanEq(c.eq)) {
+				const f = ac.createBiquadFilter();
+				f.type = b.type;
+				f.frequency.value = b.f;
+				f.gain.value = b.gain;
+				f.Q.value = webAudioQ(b);
+				node = node.connect(f);
+			}
+			node.connect(gain).connect(ac.destination);
 			src.start(when, offset, length);
 			this.nodes.push({ src, gain });
 		}

@@ -842,7 +842,8 @@ pub fn stats(px: &[[f64; 3]]) -> Value {
 }
 
 /// How each sound clip of a timeline sounds (BS.1770, as the render's own levelling measures): its loudness (LUFS)
-/// and true peak as recorded, over the part the clip plays, and at its volume; a loudness curve (every 0.5 s, the
+/// and true peak as recorded, over the part the clip plays, through its EQ, and at its volume; its spectrum (octave
+/// bands, `eq::spectrum`) to compare its tone with another's; a loudness curve (every 0.5 s, the
 /// clip's own clock) to draw; and, per voice clip, how far the music under it sits below it (the render keys the
 /// music down about 6 dB while the voice speaks). Read from each file's audio proxy when there is one.
 pub fn measure_sound(t: &Timeline, lib: &dyn Library) -> Result<Value> {
@@ -872,7 +873,11 @@ pub fn measure_sound(t: &Timeline, lib: &dyn Library) -> Result<Value> {
         }
         let want = (c.dur * crate::av::RATE as f64).round() as usize * 2;
         frames.truncate(want);
+        // through its EQ, as the render mixes it
+        let eq = c.eq();
+        crate::eq::Eq::new(&eq, crate::av::RATE as f64).process(&mut frames);
         let whole = loud(&frames, crate::av::RATE, 2);
+        let spectrum = crate::eq::spectrum(&frames, crate::av::RATE);
         let block = (STEP * crate::av::RATE as f64) as usize * 2;
         let curve: Vec<Value> = frames.chunks(block).map(|b| loud(b, crate::av::RATE, 2).lufs.map(r2).map(Value::from).unwrap_or(Value::Null)).collect();
         let g = db(c.vol);
@@ -882,6 +887,7 @@ pub fn measure_sound(t: &Timeline, lib: &dyn Library) -> Result<Value> {
             "lufs": whole.lufs.map(r2), "true_peak": whole.true_peak.map(r2),
             "lufs_at_vol": whole.lufs.map(|l| r2(l + g)), "true_peak_at_vol": whole.true_peak.map(|p| r2(p + g)),
             "curve_step": STEP, "curve": curve,
+            "eq": eq, "spectrum": spectrum.map(|s| crate::eq::OCTAVES.iter().zip(s).map(|(f, v)| json!([f, v])).collect::<Vec<_>>()),
         }));
     }
     // the music under each voice clip, at their volumes, the music keyed down while the voice speaks
@@ -908,7 +914,8 @@ pub fn measure_sound(t: &Timeline, lib: &dyn Library) -> Result<Value> {
             }
         }
     }
-    Ok(json!({ "clips": out, "voice_over_music": under, "duck_db": DUCK_DB, "master": "the render levels the whole mix to −14 LUFS, −1 dBTP" }))
+    Ok(json!({ "clips": out, "voice_over_music": under, "duck_db": DUCK_DB, "master": "the render levels the whole mix to −14 LUFS, −1 dBTP",
+        "spectrum": "per clip [Hz, dB]: each octave's share of its energy where it speaks, through its EQ" }))
 }
 
 /// A clip's original's grading still (its `meta.grade_still`), when the vault has it and its frame is in the part of
