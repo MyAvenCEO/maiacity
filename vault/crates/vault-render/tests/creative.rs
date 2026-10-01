@@ -48,6 +48,9 @@ fn the_split_tints_shadows_and_highlights_towards_their_hues() {
     let high = shown(&out, r.apply([0.62; 3], &hues, &out));
     assert!(hue_gap(low.hue(), 280.0) < 15.0 && low.chroma() > 0.01, "shadows {:.1}° {:.3}", low.hue(), low.chroma());
     assert!(hue_gap(high.hue(), 130.0) < 15.0 && high.chroma() > 0.01, "highlights {:.1}° {:.3}", high.hue(), high.chroma());
+    // the blacks stay neutral
+    let black = shown(&out, r.apply([0.07; 3], &hues, &out));
+    assert!(black.chroma() < 0.002, "black {:.4}", black.chroma());
     // the split keeps each pixel's luma in the log
     let y = |p: [f64; 3]| p[0] * 0.2126 + p[1] * 0.7152 + p[2] * 0.0722;
     assert!((y(r.apply([0.25; 3], &hues, &out)) - 0.25).abs() < 1e-9);

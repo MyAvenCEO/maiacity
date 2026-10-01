@@ -48,16 +48,17 @@
 <aside class="rq">
 	<h3>Render</h3>
 	<p class="sub">
-		This renders the cut as it stands, with every shot's balance and grade.
+		This renders the cut as it stands, with every shot's balance and grade, into one file for YouTube: 4K
+		(3840×2160), HEVC 10-bit at 80 Mb/s, 30 fps, the sound at −14 LUFS in AAC 384 kb/s.
 	</p>
 	<button
 		class="render"
 		class:busy={!!s.active || s.queuing}
 		style:--p="{Math.round((s.active?.progress ?? 0) * 100)}%"
-		onclick={() => (s.active || s.queuing ? null : s.exportTimeline())}
+		onclick={() => (s.active || s.queuing ? null : s.exportTimeline('youtube-4k'))}
 		disabled={!s.current}
 	>
-		{s.queuing ? 'Queueing…' : s.active ? (s.active.status === 'queued' ? 'Waiting…' : `Rendering ${Math.round(s.active.progress * 100)}%`) : '⤓ Render every delivery'}
+		{s.queuing ? 'Queueing…' : s.active ? (s.active.status === 'queued' ? 'Waiting…' : `Rendering ${Math.round(s.active.progress * 100)}%`) : '⤓ Render 4K for YouTube'}
 	</button>
 
 	<div class="panel" role="status" aria-live="polite">
