@@ -20,6 +20,7 @@
 	import Deliveries from '$lib/studio/Deliveries.svelte';
 	import Ingest from '$lib/studio/Ingest.svelte';
 	import Inspector from '$lib/studio/Inspector.svelte';
+	import CueCard from '$lib/studio/CueCard.svelte';
 	import Library from '$lib/studio/Library.svelte';
 	import Script from '$lib/studio/Script.svelte';
 	import TimelinePicker from '$lib/studio/TimelinePicker.svelte';
@@ -207,6 +208,7 @@
 			<Transport {s} />
 			<Timeline {s} />
 		{/if}
+		<CueCard {s} />
 		<!-- the working steps, along the window's bottom edge -->
 		<footer class="tabs"><StageBar {s} /></footer>
 	</section>

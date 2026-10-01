@@ -10,7 +10,7 @@
 <script>
 	import { evaluate, shotAt, toKeys } from './shots.js';
 	import { FPS, TRACKS, UNLINKED, clockText, isWorld, onSoundTrack, raw, thumb, tint } from './studio.svelte.js';
-	import { cueEnd, cueText, cuesOf } from './analysis.js';
+	import { cueEnd, cuesOf } from './analysis.js';
 	import { wordsOf } from './transcript.js';
 	import { BALANCE_NODES, NEUTRAL, NEUTRAL_BALANCE, cleanBalance, cleanFinish, cleanLook, cleanSecondaries, isNeutral, presetOf } from './color.js';
 	import { wave } from './wave.js';
@@ -831,7 +831,7 @@
 								{#each clipWords(c, m) as w, i (i)}<span class="wd" style:left="{w.x}px">{w.w}</span>{/each}
 								{#each clipCues(c, m) as k, i (i)}
 									<!-- svelte-ignore a11y_no_static_element_interactions -->
-									<i class="cue cue-kind {k.q.kind}" class:best={k.q.best} style:left="{k.x}px" style:width="{k.w}px" title={cueText(k.q)} onpointerdown={(e) => (e.stopPropagation(), s.seek(k.at))}></i>
+									<i class="cue cue-kind {k.q.kind}" class:best={k.q.best} style:left="{k.x}px" style:width="{k.w}px" onpointerenter={(e) => (s.cueHover = { q: k.q, x: e.clientX, y: e.clientY })} onpointermove={(e) => (s.cueHover = { q: k.q, x: e.clientX, y: e.clientY })} onpointerleave={() => (s.cueHover = null)} onpointerdown={(e) => (e.stopPropagation(), s.seek(k.at))}></i>
 								{/each}
 								{#if leadTrail(c)}<b class="jl" title="{leadTrail(c) === 'J' ? 'J-cut: its sound comes in before its picture' : leadTrail(c) === 'L' ? 'L-cut: its sound runs on past its picture' : 'Its sound leads and trails its picture'}">{leadTrail(c)}</b>{/if}
 								{#if c.hash && !m}<b class="gone" title="This clip's file is not on this Mac yet — it comes with the next sync">not on this Mac yet</b>{/if}

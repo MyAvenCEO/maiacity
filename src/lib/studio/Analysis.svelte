@@ -6,6 +6,7 @@
 -->
 <script>
 	import { analysisOf, cueEnd, cuesOf, tagsOf } from './analysis.js';
+	import CueLegend from './CueLegend.svelte';
 
 	/**
 	 * @type {{
@@ -32,6 +33,7 @@
 			<p class="tags">{#each tags as t (t)}<span>{t}</span>{/each}</p>
 		{/if}
 		{#if cues.length}
+			<CueLegend {cues} />
 			<ul class="cues">
 				{#each cues as q, i (i)}
 					{@const ok = inside(q)}
