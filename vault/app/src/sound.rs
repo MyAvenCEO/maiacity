@@ -98,6 +98,8 @@ async fn round(vault: &Arc<Vault>) {
         if !matches!(vault.store.blobs().status(hash).await, Ok(BlobStatus::Complete { .. })) {
             continue;
         }
+        crate::jobs::queue(crate::jobs::Kind::Sound, &m.hash, &m.original_name);
+        crate::jobs::stage(crate::jobs::Kind::Sound, &m.hash, "reading its sound", 0.0);
         one(vault, hash, &m.original_name, records.get(&m.hash)).await;
         done += 1;
     }
@@ -117,6 +119,7 @@ async fn one(vault: &Arc<Vault>, hash: Hash, name: &str, before: Option<&Value>)
             .map_err(|e| format!("{e:#}"))
     }
     .await;
+    crate::jobs::end(crate::jobs::Kind::Sound, &hash.to_hex().to_string(), result.as_ref().map(|_| ()).map_err(|e| e.clone()));
     let record = match result {
         Ok(p) => {
             tracing::info!("the sound of {} ({:.0} s, timecode {:?})", hash.fmt_short(), p.seconds, p.timecode);

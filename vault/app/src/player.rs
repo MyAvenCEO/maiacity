@@ -123,11 +123,7 @@ impl Driver {
         Arc::new(Self { player, drive: Mutex::new(Drive { latency: 0.15, ..Default::default() }) })
     }
 
-    /// On the player's thread (see `post`): seek, play, stop, keep to the clock, the item ready.
-    fn seek(self: &Arc<Self>, t: f64) {
-        let me = self.clone();
-        post(move || me.seek_here(t));
-    }
+    /// On the player's thread (see `post`): play, stop, keep to the clock, the item ready.
     fn play(self: &Arc<Self>, t: f64) {
         let me = self.clone();
         post(move || me.play_here(t));

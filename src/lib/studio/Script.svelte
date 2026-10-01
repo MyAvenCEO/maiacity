@@ -3,7 +3,8 @@
 	the cliffhanger), their scenes, each shot as its action and what is said under it — the speaker, on camera or V.O.,
 	and the line. It is the same clips as the timeline, one truth; an agent writes it through MCP (timeline_save:
 	sections, slates, lines, each shot's script). What a recording says is its transcript's words, and a word heard
-	wrong is put right here: click it, type, Enter (Tab: on to the next word, Esc: leave it). The transcript itself
+	wrong is put right here: click it, type, Enter (Tab: on to the next word, Esc: leave it); Backspace at a word's
+	start joins it to the word before, Delete at its end to the word after ("To morrow" → "Tomorrow"). The transcript itself
 	changes — the captions read it, in the preview and the render alike. Words the model was unsure of are marked.
 -->
 <script>
@@ -74,9 +75,42 @@
 		const after = s.captionWords.find((x) => x.clip === w.clip && x.hash === w.hash && x.i === w.i + Math.max(typed, text === w.word ? 1 : typed));
 		if (after) edit(after);
 	}
+	/**
+	 * Two words made one: Backspace at the start of a word joins it to the word before, Delete at its end to the word
+	 * after — and the joined word stays open to type.
+	 * @param {CaptionWord} w @param {-1 | 1} side
+	 */
+	async function join(w, side) {
+		const prev = side < 0 ? s.captionWords.find((x) => x.clip === w.clip && x.hash === w.hash && x.i === w.i - 1) : w;
+		const next = side < 0 ? w : s.captionWords.find((x) => x.clip === w.clip && x.hash === w.hash && x.i === w.i + 1);
+		if (!prev || !next) return;
+		const typed = draft.trim();
+		const text = side < 0 ? prev.word + typed : typed + next.word;
+		editing = null;
+		saving = true;
+		await s.joinWords(w.hash, prev.i, text);
+		saving = false;
+		const joined = s.captionWords.find((x) => x.clip === w.clip && x.hash === w.hash && x.i === prev.i);
+		if (joined) {
+			edit(joined);
+			// the cursor where the two met
+			const at = side < 0 ? prev.word.length : typed.length;
+			setTimeout(() => {
+				const el = /** @type {HTMLInputElement | null} */ (document.querySelector('.words .fix'));
+				el?.setSelectionRange(at, at);
+			}, 0);
+		}
+	}
 	/** @param {KeyboardEvent} e @param {CaptionWord} w */
 	function key(e, w) {
-		if (e.key === 'Enter' || e.key === 'Tab') {
+		const el = /** @type {HTMLInputElement} */ (e.currentTarget);
+		if (e.key === 'Backspace' && el.selectionStart === 0 && el.selectionEnd === 0) {
+			e.preventDefault();
+			void join(w, -1);
+		} else if (e.key === 'Delete' && el.selectionStart === el.value.length && el.selectionEnd === el.value.length) {
+			e.preventDefault();
+			void join(w, 1);
+		} else if (e.key === 'Enter' || e.key === 'Tab') {
 			e.preventDefault();
 			void keep(w, e.key === 'Tab');
 		} else if (e.key === 'Escape') editing = null;

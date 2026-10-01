@@ -1,7 +1,8 @@
 <!--
 	Activity — every file on its way right now, live from iroh: to this Mac's avenSSD, to the server's Object Storage
 	(hetzner), or to another device — how far, how fast — and what arrived in the last minute. Nothing here is decided;
-	it only shows the syncing the stories' rules set in motion.
+	it only shows the syncing the stories' rules set in motion. The work done on the files (proxies, transcripts,
+	analyses, renders) is the Processes tab's.
 -->
 <script lang="ts">
 	import { onMount } from 'svelte';
@@ -55,18 +56,8 @@
 	{/each}
 </ul>
 
-{#if making.length}
-	<h4>Proxies and renders</h4>
-	<ul>
-		{#each making as x (x.of)}
-			<li class="ended">
-				<span class="n">{x.name}</span>
-				<span class="d">{x.of.startsWith('render:') ? '→ deliveries' : x.of.startsWith('analysis:') ? '→ tags' : x.of.startsWith('transcript:') ? '→ words' : '→ ACEScct'}</span>
-				<span class="p">{x.stage === 'making' ? `${Math.floor(x.done * 100)}%` : x.stage}</span>
-			</li>
-		{/each}
-	</ul>
-{/if}
+<!-- the work on the files (proxies, words, tags, renders) is the Processes tab's: here only the copies -->
+{#if making.length}<p class="sum">{making.length} {making.length === 1 ? 'process' : 'processes'} on the files running or queued — the Processes tab (Alt+0) shows them.</p>{/if}
 
 <h4>Ingested</h4>
 <ul>

@@ -25,6 +25,7 @@
 	import Script from '$lib/studio/Script.svelte';
 	import TimelinePicker from '$lib/studio/TimelinePicker.svelte';
 	import DeliverablesTab from '$lib/studio/DeliverablesTab.svelte';
+	import Processes from '$lib/studio/Processes.svelte';
 	import { forwardConsole, native } from '$lib/native';
 	import ProgramMonitor from '$lib/studio/ProgramMonitor.svelte';
 	import RenderQueue from '$lib/studio/RenderQueue.svelte';
@@ -52,7 +53,7 @@
 		forwardConsole(window, 'studio');
 		// a link into one tab (?tab=library — the media library's address)
 		const tab = new URLSearchParams(location.search).get('tab');
-		if (tab === 'ingest' || tab === 'library' || tab === 'render') s.tab = tab;
+		if (tab === 'ingest' || tab === 'library' || tab === 'render' || tab === 'processes') s.tab = tab;
 		const report = (e: ErrorEvent | PromiseRejectionEvent) => {
 			s.failed = String('reason' in e ? (e.reason?.stack ?? e.reason) : `${e.message} (${e.filename}:${e.lineno})`);
 		};
@@ -72,9 +73,9 @@
 	function onKey(e: KeyboardEvent) {
 		const target = e.target as HTMLElement | null;
 		if (target?.closest?.('input, textarea, select')) return;
-		if (e.altKey && ['Digit1', 'Digit2', 'Digit3', 'Digit4', 'Digit5', 'Digit6', 'Digit7', 'Digit8', 'Digit9'].includes(e.code)) {
+		if (e.altKey && ['Digit1', 'Digit2', 'Digit3', 'Digit4', 'Digit5', 'Digit6', 'Digit7', 'Digit8', 'Digit9', 'Digit0'].includes(e.code)) {
 			e.preventDefault();
-			const t = (['ingest', 'library', 'script', '3d', 'edit', 'audio', 'grade', 'render', 'deliverables'] as const)[Number(e.code.slice(-1)) - 1]!;
+			const t = (['processes', 'ingest', 'library', 'script', '3d', 'edit', 'audio', 'grade', 'render', 'deliverables'] as const)[Number(e.code.slice(-1))]!;
 			s.tab = t;
 			return;
 		}
@@ -139,7 +140,7 @@
 					<strong>Studio</strong>
 				</div>
 				<div class="title" data-tauri-drag-region>
-					{#if s.current && s.tab !== 'ingest' && s.tab !== 'library'}
+					{#if s.current && s.tab !== 'ingest' && s.tab !== 'library' && s.tab !== 'processes'}
 						<h2>{s.current.name}</h2>
 						{#if s.current.description}<p title={s.current.description}>{s.current.description}</p>{/if}
 					{/if}
@@ -147,7 +148,7 @@
 				<div class="side end" data-tauri-drag-region>
 				{#if s.error}<button class="err" onclick={() => (s.error = '')} title="Dismiss">{s.error}</button>{/if}
 				{#if s.notice}<button class="err note" onclick={() => (s.notice = '')} title="{s.notice} (click to dismiss)">{s.notice}</button>{/if}
-				{#if s.tab !== 'ingest' && s.tab !== 'library'}<TimelinePicker {s} />{/if}
+				{#if s.tab !== 'ingest' && s.tab !== 'library' && s.tab !== 'processes'}<TimelinePicker {s} />{/if}
 				{#if s.active && s.tab !== 'render'}
 					<button class="rpill" style:--p="{Math.round(s.active.progress * 100)}%" onclick={() => (s.tab = 'render')}>
 						{s.active.status === 'queued' ? 'Render waiting…' : `Rendering ${Math.round(s.active.progress * 100)}%`}
@@ -160,6 +161,8 @@
 
 		{#if s.tab === 'deliverables'}
 			<DeliverablesTab {s} />
+		{:else if s.tab === 'processes'}
+			<Processes />
 		{:else if s.tab === 'ingest'}
 			<Ingest />
 		{:else if s.tab === 'library'}
@@ -204,7 +207,7 @@
 			</div>
 			<Deliveries {s} />
 		{/if}
-		{#if s.tab !== 'ingest' && s.tab !== 'library' && s.tab !== 'deliverables'}
+		{#if s.tab !== 'ingest' && s.tab !== 'library' && s.tab !== 'deliverables' && s.tab !== 'processes'}
 			<Transport {s} />
 			<Timeline {s} />
 		{/if}
@@ -339,7 +342,8 @@
 	/* Ingest and Library: one panel under the bar, no transport or timeline */
 	.studio.tab-ingest,
 	.studio.tab-library,
-	.studio.tab-deliverables {
+	.studio.tab-deliverables,
+	.studio.tab-processes {
 		grid-template-columns: 1fr;
 		grid-template-rows: auto minmax(0, 1fr) auto;
 		grid-template-areas:
