@@ -560,13 +560,13 @@ pub(crate) async fn backfill_still(vault: Arc<Vault>, hex: String) {
 }
 
 /// The frame a file's grading still belongs at — picked by a person (`still_at`) or marked by the analysis as its best
-/// (its thumbnail's `t`) — when its grading still is not of it yet.
+/// (its hero frame, `hero.t`) — when its grading still is not of it yet.
 fn marked_at(m: &Meta, all: &HashMap<String, &Meta>) -> Option<f64> {
-    // a person's pick (`still_at`, seconds into the file) before the analysis' (`thumbnail.t`, its record's moment)
+    // a person's pick (`still_at`, seconds into the file) before the analysis' hero frame (`hero.t`)
     let picked = m.meta.get("still_at").and_then(|t| t.as_f64());
     let t = match picked {
         Some(t) => t,
-        None => m.meta.get("thumbnail")?.get("t")?.as_f64()?,
+        None => m.meta.get("hero")?.get("t")?.as_f64()?,
     };
     let still_t = m.meta.get("grade_still").and_then(|h| h.as_str()).and_then(|h| all.get(h)).and_then(|s| s.meta.get("t")?.as_f64());
     still_t.is_none_or(|s| (s - t).abs() > 0.05).then_some(t)
