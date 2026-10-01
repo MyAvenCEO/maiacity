@@ -10,7 +10,7 @@
 
 	/** @type {{ id: Tab, label: string, key: string }[]} */
 	const TABS = [
-		{ id: 'ingest', label: 'Ingest', key: '1' },
+		{ id: 'ingest', label: 'Data', key: '1' },
 		{ id: 'library', label: 'Library', key: '2' },
 		{ id: 'script', label: 'Script', key: '3' },
 		{ id: '3d', label: '3D', key: '4' },

@@ -533,7 +533,7 @@ impl Studio {
     }
 
     #[tool(
-        description = "Every file in the vault's catalog with its description (hash, size, mime, kind, title, tags, public, meta) — its transcript and shot analysis in brief (meta.transcript, meta.analysis: the `transcript` and `analysis` tools give them whole), meta.thumbnail (a small JPEG of its best frame)"
+        description = "Every file in the vault's catalog with its description (hash, size, mime, kind, title, tags, public, meta) — its transcript and shot analysis in brief (meta.transcript, meta.analysis: the `transcript` and `analysis` tools give them whole), meta.preview (its one picture: a JPEG of its grading still's frame, graded once a clip grades it) and meta.hero (its hero frame: the moment the analysis picked, { t, why })"
     )]
     async fn library_list(&self, Parameters(f): Parameters<Filter>) -> String {
         let r = async {
@@ -590,7 +590,7 @@ impl Studio {
     }
 
     #[tool(
-        description = "Once, by hand, on one Mac: download the on-device models (Phonon-2 speech, Silero VAD) from where they were published — Phonon-2's ONNX made here by vault/tools/phonon2_onnx.py --int8 and put in <vault>/ingest/models-made/phonon-2/ first — ingest them into the Models story (the three-hash check) and compare each with the BLAKE3 hash pinned in the app (models.rs). After that every device gets them from our own vault, never from the internet. Answers each file's hash and whether it matches its pin."
+        description = "Once, by hand, on one Mac: download the on-device models (Phonon-2 speech, Silero VAD) from where they were published — Phonon-2's ONNX made here by vault/tools/phonon2_onnx.py --int8 and put in ~/Library/Application Support/city.maia.studio/models-made/phonon-2/ first — ingest them into the Models story (the three-hash check) and compare each with the BLAKE3 hash pinned in the app (models.rs). After that every device gets them from our own vault, never from the internet. Answers each file's hash and whether it matches its pin."
     )]
     async fn models_import(&self) -> String {
         let r = async {
@@ -982,7 +982,7 @@ impl Studio {
             }
             let file = |h: &String, part: &str| {
                 let m = all.iter().find(|m| &m.hash == h).expect("listed");
-                let preview = ["preview", "thumbnail"].iter().find_map(|k| m.meta.get(*k).and_then(|v| v.as_str()).map(String::from));
+                let preview = m.meta.get("preview").and_then(|v| v.as_str()).map(String::from);
                 let preview = preview.or_else(|| m.mime.starts_with("image/").then(|| m.hash.clone()));
                 json!({ "hash": h, "name": m.original_name, "title": m.title, "kind": m.kind, "class": m.class, "role": m.meta.get("role"),
                     "story": m.story, "size": m.size, "preview": preview, "part": part })
@@ -1448,7 +1448,7 @@ impl Studio {
     }
 
     #[tool(
-        description = "Queue a hero frame, rendered natively on this Mac: one frame of a timeline at t seconds in one delivery shape, at that delivery's full resolution through the whole chain (conformed original or world plate → its journey into ACEScct → framing → clip grade → film look → ACES 2.0 output), without captions, as a 16-bit PNG in the vault (role:frame) — for grading against. Follow it with renders_list: the job's output_hash is the PNG."
+        description = "Queue a frame of a timeline at t seconds, rendered natively on this Mac. Of a media clip it is that file's graded still: its grading still (the ACEScct frame it is graded on) through the clip's whole chain (16:9 framing → balance → secondaries → clip grade → scene and film look → ACES 2.0 output), 1920×1080 JPEG, set as the file's preview and replacing the one before (a timeline save that changes a file's look queues this by itself). Of a world clip: a hero frame in the shape asked for, a 16-bit PNG (role:frame), replacing that clip's previous one. Follow it with renders_list: the job's output_hash is the picture."
     )]
     async fn render_frame(&self, Parameters(a): Parameters<FrameArgs>) -> String {
         let shape = a.shape.unwrap_or_else(|| "16:9".into());

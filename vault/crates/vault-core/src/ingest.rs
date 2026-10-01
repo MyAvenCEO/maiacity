@@ -1,10 +1,11 @@
 //! Verified ingest — the way film crews offload cards, with three hashes that must agree:
 //!
-//! 1. **source**: BLAKE3 of the bytes as they are read off the card or SSD (read exactly once, while copying),
-//! 2. **disk**: BLAKE3 of the landed copy, read back around the page cache,
-//! 3. **iroh**: the hash iroh computes when it takes the copy into the store (a clone on APFS — no second copy).
+//! 1. **source**: BLAKE3 of the bytes as they are read off the card or SSD (around the page cache),
+//! 2. **iroh**: the hash iroh computes as it takes the file straight from the source into its store,
+//! 3. **disk**: BLAKE3 of the stored blob, read back from the store.
 //!
-//! Only when all three are the same is the file verified and recorded in the catalog.
+//! Only when all three are the same is the file verified and recorded in the catalog. Nothing lands beside the store:
+//! iroh imports from the source itself (a half-done import is in the store's own temp), so a card is written once.
 
 use std::{
     path::{Path, PathBuf},
@@ -121,21 +122,13 @@ impl Vault {
 
     async fn ingest_once(&self, src: &Path, batch: &Batch, progress: Progress) -> Result<IngestOutcome> {
         let started = std::time::Instant::now();
-        let landing = self.ingest_dir().join(format!("{}.part", unique()));
-
-        // 1 + 2: copy while hashing the source; then read the copy back from the disk
-        let (src_path, land, told) = (src.to_path_buf(), landing.clone(), progress.clone());
-        let total = std::fs::metadata(src).map(|m| m.len()).unwrap_or(0).max(1) as f64;
-        let (source_hash, size, disk_hash) = tokio::task::spawn_blocking(move || -> Result<_> {
-            let (source_hash, size) = hash::copy_hashing_with(&src_path, &land, &mut |n| told(0.6 * n as f64 / total))?;
-            let disk_hash = hash::hash_from_disk_with(&land, &mut |n| told(0.6 + 0.35 * n as f64 / total))?;
-            Ok((source_hash, size, disk_hash))
-        })
-        .await??;
-
+        // 1: the source, read once and hashed
+        let (src_path, told) = (src.to_path_buf(), progress.clone());
+        let size = std::fs::metadata(src).map(|m| m.len()).context("the source is not there")?;
+        let total = size.max(1) as f64;
+        let source_hash = tokio::task::spawn_blocking(move || hash::hash_from_disk_with(&src_path, &mut |n| told(0.35 * n as f64 / total))).await??;
         let source_hash = Hash::from(*source_hash.as_bytes());
-        let disk_hash = Hash::from(*disk_hash.as_bytes());
-        let outcome = |iroh_hash: Hash, verdict| IngestOutcome {
+        let outcome = |iroh_hash: Hash, disk_hash: Hash, verdict| IngestOutcome {
             source: src.display().to_string(),
             size,
             hash: source_hash.to_hex(),
@@ -145,13 +138,7 @@ impl Vault {
             verdict,
             seconds: started.elapsed().as_secs_f64(),
         };
-
-        if source_hash != disk_hash {
-            std::fs::remove_file(&landing).ok();
-            return Ok(outcome(Hash::EMPTY, Verdict::Mismatch));
-        }
         if self.store.blobs().has(source_hash).await? && self.catalog.has(source_hash).await? {
-            std::fs::remove_file(&landing).ok();
             // the same bytes brought in for a story: it now lives there (a file has one story), with the batch's tags too
             if batch.story.is_some() || batch.class.is_some() || !batch.tags.is_empty() {
                 let known = self.catalog.meta(source_hash).await?.unwrap_or_default();
@@ -168,25 +155,27 @@ impl Vault {
                 let patch: serde_json::Map<_, _> = patch.as_object().into_iter().flatten().filter(|(_, v)| !v.is_null()).map(|(k, v)| (k.clone(), v.clone())).collect();
                 self.catalog.describe(source_hash, &serde_json::Value::Object(patch)).await?;
             }
-            return Ok(outcome(source_hash, Verdict::Duplicate));
+            return Ok(outcome(source_hash, source_hash, Verdict::Duplicate));
         }
-
-        // 3: iroh takes the copy in (a clone on the same APFS volume) and hashes it itself; the tag pins it
+        // 2: iroh takes the file straight from the source into its store and hashes it itself; the tag pins it
+        let tag_name = format!("vault/{}", source_hash.to_hex());
         let tag = self
             .store
             .blobs()
-            .add_path_with_opts(AddPathOptions { path: landing.clone(), format: BlobFormat::Raw, mode: ImportMode::Copy })
-            .with_named_tag(format!("vault/{}", source_hash.to_hex()))
+            .add_path_with_opts(AddPathOptions { path: src.to_path_buf(), format: BlobFormat::Raw, mode: ImportMode::Copy })
+            .with_named_tag(tag_name.clone())
             .await
             .context("import into the store")?;
-        std::fs::remove_file(&landing).ok();
         let iroh_hash = tag.hash;
+        progress(0.7);
+        // 3: what the store holds, read back and hashed
+        let disk_hash = self.stored_hash(iroh_hash, size, &|n| progress(0.7 + 0.3 * n as f64 / total)).await?;
         progress(1.0);
-
-        if iroh_hash != source_hash {
-            return Ok(outcome(iroh_hash, Verdict::Mismatch));
+        if iroh_hash != source_hash || disk_hash != source_hash {
+            // not kept: its pin goes, and iroh's garbage collection prunes the bytes
+            self.store.tags().delete(&tag_name).await.ok();
+            return Ok(outcome(iroh_hash, disk_hash, Verdict::Mismatch));
         }
-
         let meta = Meta {
             hash: iroh_hash.to_hex(),
             size,
@@ -205,13 +194,29 @@ impl Vault {
             class: batch.class.clone().unwrap_or_else(|| class_of(mime_of(src), &batch.tags, &batch.meta).to_string()),
         };
         self.catalog.put(iroh_hash, size, &meta).await?;
-        Ok(outcome(iroh_hash, Verdict::Verified))
+        Ok(outcome(iroh_hash, disk_hash, Verdict::Verified))
     }
 }
 
-fn unique() -> String {
-    let t = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default();
-    format!("{}-{}", t.as_nanos(), std::process::id())
+impl Vault {
+    /// BLAKE3 of a blob as the store holds it, read back through iroh.
+    async fn stored_hash(&self, hash: Hash, size: u64, read: &(dyn Fn(u64) + Send + Sync)) -> Result<Hash> {
+        use tokio::io::AsyncReadExt;
+        let mut reader = self.store.blobs().reader(hash);
+        let mut hasher = blake3::Hasher::new();
+        let mut buf = vec![0u8; 4 << 20];
+        let mut done = 0u64;
+        while done < size {
+            let n = reader.read(&mut buf).await?;
+            if n == 0 {
+                break;
+            }
+            hasher.update(&buf[..n]);
+            done += n as u64;
+            read(done);
+        }
+        Ok(Hash::from(*hasher.finalize().as_bytes()))
+    }
 }
 
 pub fn now_iso() -> String {

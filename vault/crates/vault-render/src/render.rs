@@ -578,8 +578,8 @@ fn render_shape(
 
     let pictures: Vec<&Clip> = plan.pictures.iter().collect();
     let cut = pieces(&pictures, total);
-    // captions drawn when first needed, dropped when past
-    let mut bands: HashMap<usize, Image> = HashMap::new();
+    // captions drawn when first needed — each phrase once per word lit — dropped when past
+    let mut bands: HashMap<(usize, usize), Image> = HashMap::new();
     let comment = "maiacity:render";
 
     for piece in &cut {
@@ -667,15 +667,18 @@ fn render_shape(
                     let d = (b - a).max(0.3);
                     if t < a || t > b {
                         if t > b {
-                            bands.remove(&i);
+                            bands.retain(|(k, _), _| *k != i);
                         }
                         continue;
                     }
                     let alpha = ((t - a) / 0.25).clamp(0.0, 1.0) * (1.0 - (t - (a + d - 0.25)) / 0.25).clamp(0.0, 1.0);
-                    if let std::collections::hash_map::Entry::Vacant(e) = bands.entry(i) {
-                        e.insert(gpu.cg_image(&captions.draw(&p.text, w, h)?.image));
+                    // word by word, as the studio plays it: a word lights up when it is said
+                    let lit = p.words.iter().filter(|(_, at)| *at <= t).count();
+                    if let std::collections::hash_map::Entry::Vacant(e) = bands.entry((i, lit)) {
+                        let words: Vec<String> = p.words.iter().map(|(w, _)| w.clone()).collect();
+                        e.insert(gpu.cg_image(&captions.draw_lit(&words, lit, w, h)?.image));
                     }
-                    let band = gpu.opacity(&bands[&i], alpha)?;
+                    let band = gpu.opacity(&bands[&(i, lit)], alpha)?;
                     pic = gpu.over(&band, &pic);
                 }
                 let hooked = |pic: &Image| -> Result<Image> {
@@ -1156,6 +1159,33 @@ pub fn hero_frame(
     };
     gpu.png(&img, w, h, png)?;
     Ok(json!({ "t": at, "shape": aspect, "width": w, "height": h, "clip": clip.map(|c| c.id.clone()), "what": what }))
+}
+
+/// A file's graded still (the `frame` job of a media clip): its grading still — the ACEScct frame it is graded on —
+/// through clip `clip`'s chain as the render takes it (16:9 framing → balance → secondaries → grade and looks →
+/// finishing → output transform), `width` wide, as a JPEG: the file's one preview, its thumbnail everywhere. Without
+/// its grading still on this Mac, the same moment read from the original (or its proxy). Returns `{ of, t, clip,
+/// width, height, what }` — `of` the original, `t` the moment (seconds into it).
+pub fn graded_still(t: &Timeline, lib: &dyn Library, output: &dyn Output, clip: &str, width: u32, jpg: &Path) -> Result<Value> {
+    let c = t.clips.iter().find(|c| c.id == clip).with_context(|| format!("no clip {clip} on the timeline"))?;
+    let hash = c.hash.as_deref().filter(|_| !c.is_world()).context("only a clip with a file has a graded still")?;
+    let original = lib.media(&lib.original_of(hash)).or_else(|| lib.media(hash)).context("the clip's file is not in the vault")?;
+    let s = Shape::of("16:9").context("no shape 16:9")?;
+    let (w, h) = (width, (width as f64 * s.render_size().1 as f64 / s.render_size().0 as f64).round() as u32);
+    let mut gpu = Gpu::new()?;
+    gpu.set_output(&output.lut());
+    let still = original.meta.get("grade_still").and_then(Value::as_str).and_then(|h| lib.media(h));
+    let at = still.as_ref().and_then(|m| m.meta.get("t")?.as_f64()).unwrap_or(c.in_ + c.dur / 2.0);
+    let (src, what) = match still.as_ref().map(|m| lib.file(&m.hash)) {
+        // ACEScct code values already: no journey
+        Some(Ok(file)) => (gpu.still(&file)?, "its grading still"),
+        _ => (frame_of(&gpu, lib, c, c.start + (at - c.in_), true)?, "the original's frame (no grading still here)"),
+    };
+    let cube = clip_cube(t, lib, c, output)?.map(|(lut, _)| gpu.cube(&lut));
+    let framed = gpu.frame_to(&src, w, h, c.frame_for(s.aspect))?;
+    let img = gpu.output(&*chain(&gpu, &framed, w, h, c, cube.as_ref(), t.finish().as_ref(), 0)?)?;
+    gpu.jpeg(&img, w, h, jpg)?;
+    Ok(json!({ "of": original.hash, "t": at, "clip": c.id, "width": w, "height": h, "what": format!("{} at {at:.3} s, from {what}", if original.title.is_empty() { &original.hash } else { &original.title }) }))
 }
 
 // ── the job's result, as the worker hands it to the API ──────────────────────────────────────────────────────────

@@ -22,7 +22,7 @@ import { analyseRoute, MODEL as ANALYSIS_MODEL, statusRoute as analysisStatus } 
 import { checkModels, pick } from "./prem";
 import { createTimeline, deleteTimeline, getTimeline, listTimelines, saveTimeline, TimelineError } from "./timelines";
 import { createShot, getShot, listShots, saveShot, ShotError, shotVersions } from "./shots";
-import { claimRender, listJobs, queueFrame, queueRender, RenderError, rendersOf, reportRender } from "./renders";
+import { claimRender, listJobs, queueFrame, queueRender, queueStillOfFile, queueStillsOf, RenderError, rendersOf, reportRender } from "./renders";
 import { CHANNELS, ContentError, createContent, deleteContent, FORMATS, KINDS, listContent, saveContent, saveDay, savePosts, STATUSES, dropDeliveries } from "./content";
 import { format, gameClock, calendar, parse } from "../../game/time";
 
@@ -114,6 +114,10 @@ function fail(req: Request, e: unknown) {
 }
 
 const preflight = (req: Request) => new Response(null, { status: 204, headers: cors(req) });
+
+/** A timeline saved: the graded stills of the files whose look changed, queued (never failing the save itself). */
+const stills = (founderId: string, before: Parameters<typeof queueStillsOf>[1], after: Parameters<typeof queueStillsOf>[2]) =>
+  queueStillsOf(founderId, before, after).catch((e) => console.error("graded stills of a timeline:", e));
 
 const publicFounder = (f: { id: string; number: number | bigint; name: string; created: Date }) => ({
   id: f.id,
@@ -594,7 +598,9 @@ const server = Bun.serve({
         const me = await allowed(req, "media:admin");
         if (me instanceof Response) return me;
         try {
-          return json(req, await createTimeline(me.id, (await readJson(req)) ?? {}), { status: 201 });
+          const t = await createTimeline(me.id, (await readJson(req)) ?? {});
+          await stills(me.id, null, t);
+          return json(req, t, { status: 201 });
         } catch (e) {
           return fail(req, e);
         }
@@ -615,7 +621,10 @@ const server = Bun.serve({
         const me = await allowed(req, "media:admin");
         if (me instanceof Response) return me;
         try {
-          return json(req, await saveTimeline(req.params.id, (await readJson(req)) ?? {}));
+          const before = await getTimeline(req.params.id);
+          const t = await saveTimeline(req.params.id, (await readJson(req)) ?? {});
+          await stills(me.id, before, t);
+          return json(req, t);
         } catch (e) {
           return fail(req, e);
         }
@@ -738,6 +747,21 @@ const server = Bun.serve({
         const url = new URL(req.url);
         const q = (k: string) => url.searchParams.get(k) ?? undefined;
         return json(req, await listJobs({ kind: q("kind"), timeline: q("timeline"), shot: q("shot"), limit: Number(q("limit")) || undefined }));
+      },
+    },
+    // A file's grading still was made again (the Mac app, at a new moment): its graded still, made again through the
+    // clip that last graded it
+    "/api/media/:hash/still": {
+      OPTIONS: preflight,
+      POST: async (req) => {
+        const me = await allowed(req, "media:admin");
+        if (me instanceof Response) return me;
+        try {
+          const job = await queueStillOfFile(me.id, req.params.hash);
+          return job ? json(req, job, { status: 201 }) : new Response(null, { status: 204, headers: cors(req) });
+        } catch (e) {
+          return fail(req, e);
+        }
       },
     },
     // A hero frame: one frame of the timeline at { t, shape }, rendered by the worker at full precision (Grade tab)

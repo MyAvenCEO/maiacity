@@ -71,7 +71,7 @@
 	const kept = (m: MediaItem) => verified(m) >= needed(m);
 
 	/** a proxy's original, when it has one here */
-	const proxyOf = (m: MediaItem) => (typeof m.meta?.proxy_of === 'string' ? m.meta.proxy_of : typeof m.meta?.grade_still_of === 'string' ? m.meta.grade_still_of : typeof m.meta?.preview_of === 'string' ? m.meta.preview_of : null);
+	const proxyOf = (m: MediaItem) => (typeof m.meta?.proxy_of === 'string' ? m.meta.proxy_of : typeof m.meta?.grade_still_of === 'string' ? m.meta.grade_still_of : typeof m.meta?.preview_of === 'string' ? m.meta.preview_of : typeof m.meta?.thumbnail_of === 'string' ? m.meta.thumbnail_of : null);
 	const rows = $derived.by(() => {
 		const list = mine
 			.filter((m) => (only === 'all' || classOf(m) === only || (only === 'proxy' && m.kind === 'video' && classOf(m) === 'original')) && (!incomplete || !kept(m)))
@@ -154,7 +154,7 @@
 		await command('vault_transcribe', { hash: m.hash }).catch((x) => (error = String(x)));
 		files = await listMedia().catch(() => files);
 	}
-	const thumbOf = (m: MediaItem) => [m.meta?.thumbnail, m.meta?.preview].find((t): t is string => typeof t === 'string' && /^[0-9a-f]{64}$/.test(t)) ?? null;
+	const thumbOf = (m: MediaItem) => (typeof m.meta?.preview === 'string' && /^[0-9a-f]{64}$/.test(m.meta.preview) ? m.meta.preview : null);
 
 	const complete = $derived(mine.filter(kept).length);
 	const name = (m: MediaItem) => m.title || m.original_name || m.hash.slice(0, 12);
@@ -407,6 +407,7 @@
 							<td class="n" class:sub={!!proxyOf(m)} title="{m.original_name ?? ''}{m.title ? ` · ${m.title}` : ''}">{#if proxyOf(m)}↳ {/if}{m.original_name || '—'}{#if m.title && m.title !== m.original_name}<small> · {m.title}</small>{/if}</td>
 							<td class="col">
 								{#if m.meta?.role === 'grade-still'}<span class="dim">grading still · ACEScct</span>
+								{:else if m.meta?.role === 'preview'}<span class="dim">{m.meta?.graded ? 'graded · Rec.709' : 'Rec.709'}</span>
 								{:else if proxyOf(m)}<span class="dim">ACEScct</span>
 								{:else if m.kind === 'video' && classOf(m) === 'original'}
 									<span class="prof">{colourOf(m) ? profileInfo(colourOf(m)).label : '—'}</span>

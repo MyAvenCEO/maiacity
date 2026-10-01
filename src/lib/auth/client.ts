@@ -164,7 +164,7 @@ export const describeMedia = (hash: string, about: { title?: string; description
 // ─────────────────────────────── colour (C5) ───────────────────────────────
 
 /** A picture's colour, as the ingest detected it (media meta.color); `override` is the one set by hand in the studio. */
-export type ColorInfo = { profile: string; primaries?: string; transfer?: string; matrix?: string; range?: string; bitDepth?: number; detectedFrom?: string; override?: string };
+export type ColorInfo = { profile: string; /** a film we rendered: the output transform baked in (e.g. odt-rec709) */ output?: string; primaries?: string; transfer?: string; matrix?: string; range?: string; bitDepth?: number; detectedFrom?: string; override?: string };
 /** A grading tool on a stack (game/film/grade-tools.js: `{ tool, on?, ...its controls, tools? }`, vault-render `tools::Item`). */
 export type GradeTool = { tool: string; on?: boolean; tools?: GradeTool[]; [control: string]: unknown };
 /** A stack of tools: a shot's base correction or clip look, a scene's look, the timeline's look, the finishing. */

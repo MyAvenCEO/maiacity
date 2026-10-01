@@ -4,7 +4,7 @@ import { beforeAll, expect, test } from "bun:test";
 import { PGlite } from "@electric-sql/pglite";
 import { useDb, type Db } from "../src/pg";
 import { MIGRATIONS } from "../src/migrations-list";
-import { claimRender, listJobs, queueFrame, queueRender, reportRender } from "../src/renders";
+import { claimRender, listJobs, queueFrame, queueRender, queueStillOfFile, queueStillsOf, reportRender } from "../src/renders";
 
 const pg = new PGlite();
 beforeAll(async () => {
@@ -61,4 +61,29 @@ test("every job is for something: a proxy for a shot version, a render or a fram
   await expect(pg.query("INSERT INTO render_jobs (kind) VALUES ('proxy')")).rejects.toThrow();
   await expect(pg.query("INSERT INTO render_jobs (kind) VALUES ('render')")).rejects.toThrow();
   await expect(pg.query("INSERT INTO render_jobs (kind) VALUES ('frame')")).rejects.toThrow();
+});
+
+test("a file's graded still: queued when its look changes, one waiting per file, never for a cut alone", async () => {
+  while (await claimRender()); // an empty queue
+  const [a, b] = [hash("a1"), hash("b2")];
+  const clip = (id: string, h: string, more: object = {}) => ({ id, track: "V1", start: 0, in: 0, dur: 2, vol: 1, hash: h, ...more });
+  const before = { clips: [clip("c1", a), clip("c2", b)], grade: null, color: null };
+  const { rows } = await pg.query<{ id: string }>(`INSERT INTO timelines (name, clips) VALUES ('Day 22', $1::jsonb) RETURNING id`, [JSON.stringify(before.clips)]);
+  const id = rows[0]!.id;
+  // a cut moved, nothing graded: no still
+  expect(await queueStillsOf("admin", before, { id, ...before, clips: [clip("c1", a, { start: 1 }), clip("c2", b)] })).toEqual([]);
+  // c1 graded: a's still, of c1
+  const graded = { id, clips: [clip("c1", a, { grade: { sat: 1.2 } }), clip("c2", b)], grade: null, color: null };
+  const [j] = await queueStillsOf("admin", before, graded);
+  expect([j!.kind, j!.media_hash, j!.params]).toEqual(["frame", a, { clip: "c1", still: true }]);
+  // graded again before the Mac took it: the same job, not a second
+  const again = { ...graded, clips: [clip("c1", a, { grade: { sat: 1.4 } }), clip("c2", b)] };
+  expect((await queueStillsOf("admin", graded, again)).map((x) => x.id)).toEqual([j!.id]);
+  // the film's look: every file's still
+  expect((await queueStillsOf("admin", again, { ...again, grade: { look: null, film: { lut: "x" } } })).map((x) => x.media_hash).sort()).toEqual([a, b].sort());
+  // a new grading still of a file: through the clip of the timeline that last graded it
+  await pg.query("UPDATE timelines SET clips = $2::jsonb WHERE id = $1", [id, JSON.stringify(again.clips)]);
+  expect((await queueStillOfFile("admin", a))!.params).toEqual({ clip: "c1", still: true });
+  expect(await queueStillOfFile("admin", hash("ff"))).toBeNull();
+  while (await claimRender());
 });

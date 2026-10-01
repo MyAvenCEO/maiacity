@@ -1,5 +1,6 @@
 <!--
-	Processes: everything this Mac runs, in one place — the Mac's jobs (vault/app jobs.rs), live. Each lane runs one job
+	Processes: what starts the work (the watchers' rules, in the aside: when → then, how each one looks; a rule picked
+	shows only its kind of job) and everything this Mac runs, in one place — the Mac's jobs (vault/app jobs.rs), live. Each lane runs one job
 	at a time (the GPU: proxies, grading stills, world proxies, renders, hero frames; speech: transcripts; the AI:
 	analyses; the disk and the line: sound records, files kept, ingests): what runs now and how far, what waits and why,
 	what comes next (to the front, or off the queue), and the history (a failed one made again).
@@ -8,11 +9,12 @@
 	import { onDestroy, onMount } from 'svelte';
 
 	/** @typedef {{ id: string, kind: string, lane: 'gpu' | 'speech' | 'ai' | 'io', subject: string, name: string, state: 'queued' | 'waiting' | 'running' | 'done' | 'failed' | 'cancelled', stage: string, progress: number, priority: number, queued: string, started: string | null, ended: string | null, error: string | null }} Job */
+	/** @typedef {{ id: string, when: string, then: string, kind: string, watch: string }} Rule */
 
 	const LANES = /** @type {const} */ ([
-		{ id: 'gpu', label: 'GPU', what: 'proxies, grading stills, world proxies, renders, hero frames' },
+		{ id: 'gpu', label: 'GPU', what: 'proxies, grading stills, graded stills, world proxies, renders' },
 		{ id: 'speech', label: 'Speech', what: 'transcripts, on this Mac' },
-		{ id: 'ai', label: 'AI', what: 'shot analyses and thumbnails' },
+		{ id: 'ai', label: 'AI', what: 'shot analyses and hero frames, still previews' },
 		{ id: 'io', label: 'Disk & line', what: 'ingests, sound records, files kept' }
 	]);
 	/** @type {Record<string, string>} */
@@ -21,7 +23,7 @@
 		still: 'Grading still',
 		'world-proxy': 'World proxy',
 		render: 'Render',
-		frame: 'Hero frame',
+		frame: 'Graded still',
 		transcript: 'Transcript',
 		analysis: 'Analysis',
 		sound: 'Sound record',
@@ -36,9 +38,12 @@
 	let history = $state([]);
 	/** @type {string[]} */
 	let holds = $state([]);
+	/** @type {Rule[]} */
+	let rules = $state([]);
+	/** the rule picked in the aside: only its kind of job is shown */
+	let rule = $state(/** @type {Rule | null} */ (null));
 	let now = $state(Date.now());
 	let error = $state('');
-	let kindFilter = $state('all');
 	let stateFilter = $state('all');
 
 	/** @param {string} name @param {Record<string, unknown>} [args] */
@@ -48,10 +53,11 @@
 	};
 	async function load() {
 		try {
-			const j = /** @type {{ active: Job[], history: Job[], holds: string[] }} */ (await mac('jobs_list', { limit: 300 }));
+			const j = /** @type {{ active: Job[], history: Job[], holds: string[], rules?: Rule[] }} */ (await mac('jobs_list', { limit: 300 }));
 			active = j.active;
 			history = j.history;
 			holds = j.holds;
+			rules = j.rules ?? [];
 			error = '';
 		} catch (e) {
 			error = String(e);
@@ -112,15 +118,48 @@
 	/** @param {string} iso */
 	const when = (iso) => new Date(iso).toLocaleString([], { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
 
-	const kinds = $derived([...new Set(history.map((j) => j.kind))]);
+	const kindFilter = $derived(rule?.kind ?? 'all');
 	const shown = $derived(history.filter((j) => (kindFilter === 'all' || j.kind === kindFilter) && (stateFilter === 'all' || j.state === stateFilter)));
-	const failed = $derived(history.filter((j) => j.state === 'failed').length);
+	const failed = $derived(history.filter((j) => j.state === 'failed' && (kindFilter === 'all' || j.kind === kindFilter)).length);
+	/** what a rule's kind of job is doing now: running, queued, failed in the history @param {string} kind */
+	const counts = (kind) => ({
+		run: active.filter((j) => j.kind === kind && (j.state === 'running' || j.state === 'waiting')).length,
+		next: active.filter((j) => j.kind === kind && j.state === 'queued').length,
+		bad: history.filter((j) => j.kind === kind && j.state === 'failed').length
+	});
+	/** @param {Job} j */
+	const off = (j) => kindFilter !== 'all' && j.kind !== kindFilter;
 </script>
 
 <section class="processes">
+	<aside class="rules">
+		<h3>Watching <small>what starts each job by itself</small></h3>
+		<button class="rule all" class:on={!rule} onclick={() => (rule = null)}>Every job</button>
+		<ol>
+			{#each rules as r (r.id)}
+				{@const c = counts(r.kind)}
+				<li>
+					<button class="rule" class:on={rule?.id === r.id} class:live={c.run > 0} onclick={() => (rule = rule?.id === r.id ? null : r)}>
+						<span class="when">{r.when}</span>
+						<span class="then"><span class="kind">{KIND[r.kind] ?? r.kind}</span> {r.then}</span>
+						<span class="foot">
+							<span class="watch">{r.watch}</span>
+							{#if c.run}<b class="n run">{c.run} running</b>{/if}
+							{#if c.next}<b class="n">{c.next} next</b>{/if}
+							{#if c.bad}<b class="n bad">{c.bad} failed</b>{/if}
+						</span>
+					</button>
+				</li>
+			{:else}
+				<li class="dim">The Mac app tells its rules once it is up to date.</li>
+			{/each}
+		</ol>
+	</aside>
+
+	<div class="work">
 	<header>
 		<h2>Processes</h2>
-		<p class="lead">Everything this Mac works on, one job at a time in each lane.</p>
+		<p class="lead">{rule ? `${KIND[rule.kind] ?? rule.kind} jobs — ${rule.then}` : 'Everything this Mac works on, one job at a time in each lane.'}</p>
 		<div class="holds">
 			{#each holds as h (h)}<span class="hold">{h === 'ingest' ? 'Waiting for the ingest to finish' : h === 'memory' ? 'Waiting for memory' : `Uploads paused: ${h}`}</span>{/each}
 		</div>
@@ -135,7 +174,7 @@
 				<h3>{l.label} <small>{l.what}</small></h3>
 				{#each run as j (j.id)}
 					{@const eta = left(j)}
-					<div class="job now" class:wait={j.state === 'waiting'}>
+					<div class="job now" class:wait={j.state === 'waiting'} class:off={off(j)}>
 						<div class="top"><span class="kind">{KIND[j.kind] ?? j.kind}</span><b title={j.name}>{j.name || j.subject.slice(0, 12)}</b><span class="pct">{Math.round(j.progress * 100)}%</span></div>
 						<div class="bar"><i style:width="{j.progress * 100}%"></i></div>
 						<p class="meta">{j.stage} · {clock(since(j.started ?? j.queued))}{eta !== null ? ` · about ${clock(eta)} left` : ''}</p>
@@ -147,7 +186,7 @@
 					<p class="next">Next ({next.length})</p>
 					<ol>
 						{#each next.slice(0, 12) as j, i (j.id)}
-							<li>
+							<li class:off={off(j)}>
 								<span class="kind">{KIND[j.kind] ?? j.kind}</span>
 								<span class="name" title={j.name}>{j.name || j.subject.slice(0, 12)}</span>
 								<span class="dim">{clock(since(j.queued))}</span>
@@ -169,9 +208,7 @@
 				<button class:on={stateFilter === 'all'} onclick={() => (stateFilter = 'all')}>All</button>
 				<button class:on={stateFilter === 'failed'} onclick={() => (stateFilter = 'failed')}>Failed{failed ? ` (${failed})` : ''}</button>
 				<button class:on={stateFilter === 'done'} onclick={() => (stateFilter = 'done')}>Done</button>
-				<span class="sep"></span>
-				<button class:on={kindFilter === 'all'} onclick={() => (kindFilter = 'all')}>Every kind</button>
-				{#each kinds as k (k)}<button class:on={kindFilter === k} onclick={() => (kindFilter = k)}>{KIND[k] ?? k}</button>{/each}
+				{#if rule}<span class="sep"></span><button class="on" onclick={() => (rule = null)}>{KIND[rule.kind] ?? rule.kind} ×</button>{/if}
 			</div>
 		</div>
 		<table>
@@ -192,18 +229,127 @@
 			</tbody>
 		</table>
 	</div>
+	</div>
 </section>
 
 <style>
 	.processes {
 		grid-area: main;
+		display: grid;
+		grid-template-columns: minmax(16rem, 21rem) 1fr;
+		min-height: 0;
+		background: var(--panel);
+	}
+
+	.rules {
+		display: flex;
+		flex-direction: column;
+		gap: 0.5rem;
+		min-height: 0;
+		overflow: auto;
+		padding: 1.2rem 0.8rem 2rem 1.2rem;
+		border-right: 1px solid var(--edge);
+		background: var(--bg);
+	}
+
+	.rules ol {
+		gap: 0.35rem;
+	}
+
+	.rules li {
+		display: block;
+	}
+
+	.rule {
+		display: flex;
+		flex-direction: column;
+		gap: 0.3rem;
+		width: 100%;
+		padding: 0.55rem 0.65rem;
+		border: 1px solid var(--edge);
+		border-radius: 8px;
+		background: var(--raised);
+		font: inherit;
+		text-align: left;
+		color: var(--ink);
+		cursor: pointer;
+	}
+
+	.rule:hover {
+		border-color: var(--edge-strong);
+	}
+
+	.rule.on {
+		border-color: var(--accent);
+		box-shadow: inset 3px 0 0 var(--accent);
+	}
+
+	.rule.live {
+		background: color-mix(in srgb, var(--accent) 8%, var(--raised));
+	}
+
+	.rule.all {
+		padding: 0.35rem 0.65rem;
+		font-size: 0.78rem;
+	}
+
+	.rule .when {
+		font-size: 0.75rem;
+		color: var(--ink-soft);
+	}
+
+	.rule .when::before {
+		content: 'When ';
+		font-weight: 600;
+		color: var(--dim);
+	}
+
+	.rule .then {
+		font-size: 0.8rem;
+		line-height: 1.35;
+	}
+
+	.rule .foot {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
+		gap: 0.35rem;
+		font-size: 0.66rem;
+	}
+
+	.watch {
+		color: var(--dim);
+	}
+
+	.n {
+		padding: 0 0.4rem;
+		border-radius: 999px;
+		background: var(--hover);
+		font-weight: 600;
+		color: var(--ink-soft);
+	}
+
+	.n.run {
+		background: var(--accent);
+		color: var(--on-accent);
+	}
+
+	.n.bad {
+		color: var(--bad);
+	}
+
+	.work {
 		display: flex;
 		flex-direction: column;
 		gap: 1rem;
 		min-height: 0;
+		min-width: 0;
 		overflow: auto;
 		padding: 1.2rem 1.6rem 2rem;
-		background: var(--panel);
+	}
+
+	.off {
+		opacity: 0.35;
 	}
 
 	header {

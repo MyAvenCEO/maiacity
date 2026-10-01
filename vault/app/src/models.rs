@@ -4,7 +4,7 @@
 //! it straight from the store's bytes (`vault_asr::ModelBytes`) — nothing is unpacked into a folder.
 //!
 //! Once, by hand (the MCP tool `models_import`, run on one Mac): each file is downloaded from where it was published
-//! (or, made here — Phonon-2's ONNX, by vault/tools/phonon2_onnx.py — taken from `<vault>/ingest/models-made/<model>/`),
+//! (or, made here — Phonon-2's ONNX, by vault/tools/phonon2_onnx.py — taken from `~/Library/Application Support/city.maia.studio/models-made/<model>/`),
 //! ingested into the Models story with the normal three-hash check, and its hash compared with the pin — after that
 //! nothing fetches from the internet again; new devices get the models peer to peer / from the bucket.
 
@@ -98,12 +98,12 @@ pub async fn ready(vault: &Arc<Vault>, progress: &mut (dyn FnMut(&str, f64) + Se
 }
 
 /// Once, by hand: every model file downloaded from where it was published (or taken from where it was made:
-/// `<vault>/ingest/models-made/<model>/<file>`), ingested into the Models story (the three-hash check), and its hash
+/// `~/Library/Application Support/city.maia.studio/models-made/<model>/<file>`), ingested into the Models story (the three-hash check), and its hash
 /// compared with the pin. Returns what happened to each.
 pub async fn import(vault: &Arc<Vault>, http: &reqwest::Client) -> Result<Value, String> {
     let dir = vault.ingest_dir().join("models-import");
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
-    let made = vault.ingest_dir().join("models-made");
+    let made = crate::settings_file().with_file_name("models-made");
     let mut out = Vec::new();
     for m in [&PHONON, &SILERO] {
         for f in m.files {
