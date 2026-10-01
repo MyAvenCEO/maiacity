@@ -211,6 +211,11 @@ export class Studio {
 	 * @type {'clip' | 'film'}
 	 */
 	gradeTarget = $state('clip');
+	/**
+	 * Grade: the layer whose controls the aside shows (for the selected shot, its scene, or the whole timeline — grade.js)
+	 * @type {import('./grade.js').Layer}
+	 */
+	gradeLayer = $state('base');
 	falseColor = $state(false);
 	/**
 	 * the viewer's canvas, for the scopes
