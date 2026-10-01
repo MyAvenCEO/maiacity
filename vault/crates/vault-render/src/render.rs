@@ -894,6 +894,9 @@ pub fn measure_sound(t: &Timeline, lib: &dyn Library) -> Result<Value> {
         // through its EQ, as the render mixes it
         let eq = c.eq();
         crate::eq::Eq::new(&eq, crate::av::RATE as f64).process(&mut frames);
+        // and along its gain keys
+        let keys = c.keys.as_ref().map(crate::sound::clean_keys).unwrap_or_default();
+        crate::sound::apply_keys(&mut frames, &keys);
         let whole = loud(&frames, crate::av::RATE, 2);
         let spectrum = crate::eq::spectrum(&frames, crate::av::RATE);
         let block = (STEP * crate::av::RATE as f64) as usize * 2;
@@ -905,7 +908,7 @@ pub fn measure_sound(t: &Timeline, lib: &dyn Library) -> Result<Value> {
             "lufs": whole.lufs.map(r2), "true_peak": whole.true_peak.map(r2),
             "lufs_at_vol": whole.lufs.map(|l| r2(l + g)), "true_peak_at_vol": whole.true_peak.map(|p| r2(p + g)),
             "curve_step": STEP, "curve": curve,
-            "eq": eq, "spectrum": spectrum.map(|s| crate::eq::OCTAVES.iter().zip(s).map(|(f, v)| json!([f, v])).collect::<Vec<_>>()),
+            "eq": eq, "keys": keys, "spectrum": spectrum.map(|s| crate::eq::OCTAVES.iter().zip(s).map(|(f, v)| json!([f, v])).collect::<Vec<_>>()),
         }));
     }
     // the music under each voice clip, at their volumes, the music keyed down while the voice speaks

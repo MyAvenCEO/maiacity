@@ -223,6 +223,8 @@ export type TimelineClip = {
 	secondaries?: Secondary[];
 	/** a sound clip's EQ (game/film/sound.js `cleanEq`): bands in order, the render's and the studio's playback's */
 	eq?: EqBand[];
+	/** a sound clip's gain keys ([seconds into the clip, dB], game/film/sound.js `cleanKeys`) */
+	keys?: [number, number][];
 	/** this clip's own grade (Grade tab), ACEScct */
 	grade?: Cdl | null;
 	/** picture clips: where the clip stands in the script */

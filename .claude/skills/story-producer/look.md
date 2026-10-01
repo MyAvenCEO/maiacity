@@ -41,7 +41,8 @@ top, never the other way round.**
   look }`** sets one of them. Without a scene, it sets the film's.
   - A look has: `cdl` or `preset`, `contrast` (around `pivot`), `split: { shadows: { hue, amount }, highlights: {
     hue, amount }, balance }`, `hue: [[hue°, shift°]…]`, `hue_sat: [[hue°, factor]…]`, `hue_lum: [[hue°, stops]…]` (density: darker foliage or
-    sky, −2…2), `sat`, `lut` (a `.cube`'s
+    sky, −2…2), `hi_sat` (the highlights' saturation: below 1, a sky clipped in camera goes back to white instead of
+    taking the white balance's and the split's tint), `sat`, `lut` (a `.cube`'s
     hash, ACEScct in and out) and `strength`.
   - Hues are the vectorscope's, as the display shows them: the skin line at 123°, orange about 110–140°, foliage
     green about 200–240°, teal and cyan about 270–300°.

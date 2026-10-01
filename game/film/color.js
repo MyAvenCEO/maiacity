@@ -261,7 +261,7 @@ export function cleanCdl(/** @type {any} */ g) {
 
 /**
  * @typedef {{ hue: number, amount: number }} Tone
- * @typedef {{ cdl?: Cdl | null, preset?: string | null, contrast: number, pivot: number, split?: { shadows: Tone, highlights: Tone, balance: number } | null, hue?: [number, number][], hue_sat?: [number, number][], hue_lum?: [number, number][], sat: number, lut?: string | null, strength: number }} Look
+ * @typedef {{ cdl?: Cdl | null, preset?: string | null, contrast: number, pivot: number, split?: { shadows: Tone, highlights: Tone, balance: number } | null, hue?: [number, number][], hue_sat?: [number, number][], hue_lum?: [number, number][], hi_sat?: number, sat: number, lut?: string | null, strength: number }} Look
  */
 
 /** A look as data, checked as Rust checks it (`clean_look`): numbers in their ranges; null when it changes nothing. */
@@ -291,10 +291,12 @@ export function cleanLook(/** @type {any} */ v) {
 	if (hue.length) out.hue = hue;
 	if (hueSat.length) out.hue_sat = hueSat;
 	if (hueLum.length) out.hue_lum = hueLum;
+	const hiSat = n(v.hi_sat ?? 1, 0, 2, 1);
+	if (hiSat !== 1) out.hi_sat = hiSat;
 	if (typeof v.lut === 'string' && /^[0-9a-f]{64}$/.test(v.lut)) out.lut = v.lut;
 	const neutral =
 		out.strength === 0 ||
-		(!out.cdl && !out.preset && out.contrast === 0 && !out.split && hue.every((p) => p[1] === 0) && hueSat.every((p) => p[1] === 1) && hueLum.every((p) => p[1] === 0) && out.sat === 1 && !out.lut);
+		(!out.cdl && !out.preset && out.contrast === 0 && !out.split && hue.every((p) => p[1] === 0) && hueSat.every((p) => p[1] === 1) && hueLum.every((p) => p[1] === 0) && hiSat === 1 && out.sat === 1 && !out.lut);
 	return neutral ? null : out;
 }
 

@@ -9,6 +9,8 @@
 //!   hue            hue against hue: where a hue moves to, points around the circle (the skin line kept by leaving it out)
 //!   hue_sat        saturation against hue
 //!   hue_lum        luminance against hue (stops): denser foliage, a deeper sky — colour's density, not exposure
+//!   hi_sat         saturation of the highlights (1: as it is): a sky clipped in camera back to white instead of
+//!                  the white balance's and the split's tint
 //!   sat            saturation, around luma
 //!   lut            a creative .cube from the vault (ACEScct in and out), by its hash
 //!   strength       how much of all that, 0…1
@@ -78,6 +80,9 @@ pub struct Look {
     /// [hue°, stops] points around the circle (0: as it is), −2…2
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub hue_lum: Vec<[f64; 2]>,
+    /// the highlights' saturation, 0…2 (1: as it is), faded in from just above skin to the brightest
+    #[serde(default = "one", skip_serializing_if = "is_one")]
+    pub hi_sat: f64,
     #[serde(default = "one")]
     pub sat: f64,
     /// a creative .cube in the vault (ACEScct in and out), by its hash
@@ -87,9 +92,13 @@ pub struct Look {
     pub strength: f64,
 }
 
+fn is_one(v: &f64) -> bool {
+    *v == 1.0
+}
+
 impl Default for Look {
     fn default() -> Self {
-        Look { cdl: None, preset: None, contrast: 0.0, pivot: PIVOT, split: None, hue: vec![], hue_sat: vec![], hue_lum: vec![], sat: 1.0, lut: None, strength: 1.0 }
+        Look { cdl: None, preset: None, contrast: 0.0, pivot: PIVOT, split: None, hue: vec![], hue_sat: vec![], hue_lum: vec![], hi_sat: 1.0, sat: 1.0, lut: None, strength: 1.0 }
     }
 }
 
@@ -100,6 +109,7 @@ pub fn clean_look(v: &serde_json::Value) -> Option<Look> {
     l.contrast = c(l.contrast, -1.0, 1.0, 0.0);
     l.pivot = c(l.pivot, 0.0, 1.0, PIVOT);
     l.sat = c(l.sat, 0.0, 3.0, 1.0);
+    l.hi_sat = c(l.hi_sat, 0.0, 2.0, 1.0);
     l.strength = c(l.strength, 0.0, 1.0, 1.0);
     l.cdl = l.cdl.as_ref().and_then(clean_cdl).map(|c| c.to_json());
     l.preset = l.preset.filter(|p| p != "neutral" && preset(p).is_some());
@@ -138,6 +148,7 @@ impl Look {
                 && self.hue.iter().all(|p| p[1] == 0.0)
                 && self.hue_sat.iter().all(|p| p[1] == 1.0)
                 && self.hue_lum.iter().all(|p| p[1] == 0.0)
+                && self.hi_sat == 1.0
                 && self.sat == 1.0
                 && self.lut.is_none())
     }
@@ -269,6 +280,13 @@ impl<'a> Ready<'a> {
             // a stop is 1/17.52 in ACEScct
             let y = y + around(&l.hue_lum, d.hue(), 0.0) * w / 17.52;
             p = rgb(y, cb, cr);
+        }
+        if l.hi_sat != 1.0 {
+            // above skin's tones (the pivot and a little) towards the top, the colour scaled to `hi_sat`
+            let (y, cb, cr) = ycc(p);
+            let w = smooth(l.pivot + 0.12, l.pivot + 0.3, y);
+            let k = 1.0 + (l.hi_sat - 1.0) * w;
+            p = rgb(y, cb * k, cr * k);
         }
         if let Some(lut) = &self.lut {
             p = lut.sample(p);

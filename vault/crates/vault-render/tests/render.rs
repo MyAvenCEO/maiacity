@@ -312,6 +312,14 @@ fn the_mix_ducks_fades_and_levels() {
     let eq = mix(&[AudioClip { clip: bright, file: voice.clone().into() }], 6.0, None, &dir.join("eq"), &mut |_| {}).unwrap();
     let lift = 20.0 * (rms(&read(&eq.wav), 2.5, 3.9) / rms(&a, 2.5, 3.9)).log10();
     assert!((lift - 6.0).abs() < 0.1, "the EQ lifts the voice by {lift:.2} dB");
+    // its gain keys too: a dip of 20 dB from 0.6 s to 1.4 s into the clip (2.6–3.4 s of the film), as it was elsewhere
+    let mut dipped = clip("v", "A1", 2.0, 2.0, 1.0, Some(0.0));
+    dipped.keys = Some(json!([[0.5, 0], [0.6, -20], [1.4, -20], [1.5, 0]]));
+    let dk = mix(&[AudioClip { clip: dipped, file: voice.clone().into() }], 6.0, None, &dir.join("keys"), &mut |_| {}).unwrap();
+    let dk = read(&dk.wav);
+    let dip = 20.0 * (rms(&dk, 2.7, 3.3) / rms(&a, 2.7, 3.3)).log10();
+    let outside = 20.0 * (rms(&dk, 3.6, 3.9) / rms(&a, 3.6, 3.9)).log10();
+    assert!((dip + 20.0).abs() < 0.3 && outside.abs() < 0.1, "the dip {dip:.2} dB, after it {outside:.2} dB");
     std::fs::remove_dir_all(dir).ok();
 }
 

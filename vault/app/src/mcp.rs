@@ -327,7 +327,7 @@ pub struct LookSetArgs {
     /// the scene whose look this is (as its clips name it in script.scene); none: the film's look
     pub scene: Option<String>,
     /// the look: { cdl?, preset?, contrast (−1…1), pivot (ACEScct, mid grey 0.414), split?: { shadows: { hue°, amount
-    /// 0…1 }, highlights: { hue°, amount }, balance −1…1 }, hue?: [[hue°, shift°]…], hue_sat?: [[hue°, factor]…], hue_lum?: [[hue°, stops −2…2]…], sat,
+    /// 0…1 }, highlights: { hue°, amount }, balance −1…1 }, hue?: [[hue°, shift°]…], hue_sat?: [[hue°, factor]…], hue_lum?: [[hue°, stops −2…2]…], hi_sat? (the highlights' saturation 0…2: a sky clipped in camera back to white), sat,
     /// lut? (a .cube's hash, ACEScct in and out), strength 0…1 } — hues on the vectorscope (the skin line 123°);
     /// none: take it off
     pub look: Option<Value>,
@@ -404,6 +404,9 @@ pub struct MixClip {
     pub fin: Option<f64>,
     /// fade out, seconds
     pub fout: Option<f64>,
+    /// gain keys along the clip, [seconds into the clip, dB] (straight lines between them, the ends held; on top of
+    /// the gain) — a breath or a sniff dipped: [[1.2, 0], [1.25, -20], [1.7, -20], [1.75, 0]]; [] takes them off
+    pub keys: Option<Vec<[f64; 2]>>,
 }
 
 #[derive(Deserialize, schemars::JsonSchema)]
@@ -1049,7 +1052,7 @@ impl Studio {
         text(r.await)
     }
 
-    #[tool(description = "Set sound clips' gain (dB, 0 = as recorded, −60…+12) and fades (seconds) — the sound design's hand on the mix.")]
+    #[tool(description = "Set sound clips' gain (dB, 0 = as recorded, −60…+12), fades (seconds) and gain keys along a clip (a dip under a breath or a sniff, a swell) — the sound design's hand on the mix, the same in the render and the studio's playback.")]
     async fn audio_mix(&self, Parameters(a): Parameters<MixArgs>) -> String {
         let r = async {
             let t = self.api("GET", &format!("/api/timelines/{}", a.timeline), None).await?;
@@ -1064,6 +1067,14 @@ impl Studio {
                 }
                 if let Some(f) = m.fout {
                     c["fout"] = json!(f.max(0.0));
+                }
+                if let Some(k) = &m.keys {
+                    let keys = vault_render::sound::clean_keys(&json!(k));
+                    if keys.is_empty() {
+                        c.as_object_mut().map(|o| o.remove("keys"));
+                    } else {
+                        c["keys"] = json!(keys);
+                    }
                 }
             }
             self.api("PUT", &format!("/api/timelines/{}", a.timeline), Some(json!({ "clips": clips }))).await?;

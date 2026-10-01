@@ -16,7 +16,7 @@
 	import { wave } from './wave.js';
 	import { fine } from './fine.js';
 	import { nativeFrame } from './luts.js';
-	import { bandLabel, cleanEq } from '../../../game/film/sound.js';
+	import { bandLabel, cleanEq, cleanKeys } from '../../../game/film/sound.js';
 
 	/** @typedef {import('$lib/auth/client').ShotSpec} ShotSpec */
 	/** @typedef {import('./studio.svelte.js').Clip} Clip */
@@ -262,6 +262,12 @@
 	const dbOf = (vol) => (vol > 0 ? 20 * Math.log10(vol) : BOTTOM_DB);
 	/** a sound clip's EQ, checked @param {Clip} c */
 	const eqOf = (c) => cleanEq(c.eq);
+	/** its gain keys on the level line, between its fades @param {Clip} c @param {number} g @param {number} fi @param {number} fo */
+	const keyPoints = (c, g, fi, fo) =>
+		cleanKeys(c.keys)
+			.filter(([t]) => t > fi && t < c.dur - fo)
+			.map(([t, db]) => `${t},${yOf(g + db)}`)
+			.join(' ');
 	/** @param {number} db */
 	const yOf = (db) => (TOP_DB - Math.max(BOTTOM_DB, Math.min(TOP_DB, db))) / (TOP_DB - BOTTOM_DB);
 	/** @param {string} id */
@@ -851,7 +857,7 @@
 									{@const om = overMusic(c.id)}
 									<svg class="mix" viewBox="0 0 {c.dur} 1" preserveAspectRatio="none" aria-hidden="true">
 										<path class="loud" d={curveOf(c)} />
-										<polyline class="env" points="0,1 {fi},{y} {c.dur - fo},{y} {c.dur},1" />
+										<polyline class="env" points="0,1 {fi},{y} {keyPoints(c, g, fi, fo)} {c.dur - fo},{y} {c.dur},1" />
 										<!-- svelte-ignore a11y_no_static_element_interactions -->
 										<line class="grab" x1={fi} x2={c.dur - fo} y1={y} y2={y} onpointerdown={(e) => level(e, c, 'gain')} />
 									</svg>
