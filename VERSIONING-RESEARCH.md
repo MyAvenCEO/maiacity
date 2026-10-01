@@ -7,8 +7,9 @@ current iroh docs (docs.iroh.computer), the latest releases on crates.io — whi
 library.
 
 The question: every change to our data (timelines, grades, looks, the mix, scripts, story sections, file descriptions,
-analysis corrections, stories, world shots) kept as history, with revert and forward checkout. No forking and no
-merging yet.
+analysis corrections, stories, world shots) kept as history, with revert and forward checkout — operation-based like
+Loro, as close to iroh's own architecture as possible, inventing no CRDT. No forking and no merging yet; schema changes
+and branches thought through for later.
 
 ### The stack we run = the latest release (crates.io, 2026-09-30)
 
@@ -130,83 +131,128 @@ instead of sitting on top of them.
 
 ---
 
-## 4. What history, revert and forward checkout need
+## 4. Is there history in iroh-docs itself?
 
-**Recommendation: a hash-linked version log on iroh itself.** Whole-object JSON snapshots as blobs, one record per
-change, never overwritten. It keeps iroh's signed authors, content addressing and sync, and every record stays plain
-JSON that the Mac app, the server and the MCP agents read without a CRDT runtime. A CRDT library earns its place when
-two people edit the same timeline at once and their edits must merge; that is not the goal yet.
+No. iroh-docs is a **state-based** CRDT: it syncs and converges on the current set of entries. A write replaces the
+author's slot for that key (`tables.records.insert`, `store/fs.rs:760-777`), and superseded entries are "simply dropped
+right now. We might want to make this return an iterator, to potentially log or expose the deleted entries"
+(`ranger.rs:558-560`). The signatures and timestamps prove who wrote what is there now — not what was there before.
+Its order is deterministic, (timestamp, hash), by the writer's clock — agreed on every replica, but not causal.
 
-### The layout
+Automerge and Loro are **operation-based**: every change is kept in a log (a DAG of changes, ordered causally), and that
+log is their history. So operation-based history on iroh means carrying such a log — without writing a CRDT ourselves.
 
-All keys fixed-width and prefix-free. An object is `<kind>/<fixed-width id>`, the kinds: `timeline`, `shot` (world
-shots), `story`, `meta`, `analysis`, `transcript`, `sound`.
+---
 
-- **`hist/<object>/<microseconds:020>`**: one version record per change, written per author (so never overwritten),
-  read with a flat prefix query:
+## 5. Recommended: Loro documents carried by the iroh-docs catalog
 
-  ```json
-  { "v": 1, "obj": "timeline/…", "op": "create | edit | revert | delete",
-    "parent": "<version hash | null>", "snapshot": "<blob hash>", "format": "json",
-    "author": "…", "at": "…", "message": "…", "via": "studio | mcp:<agent> | cli",
-    "reverts": "<version hash>" }
+Loro owns the operations, the merge and the history; iroh-docs and iroh-blobs carry them exactly as they carry
+everything else. Neither side's design changes, and no CRDT is invented.
+
+- **Each editable object is a Loro document**: a timeline, a world shot, a story, a file's description.
+- **Each commit's operations are a blob, each blob an entry**, per author, never overwritten, fixed width:
+
+  ```
+  crdt/<kind>/<object id>/<author>/<seq, 20 digits>/   →  content: that commit's Loro update
+  crdt/<kind>/<object id>/snapshot/                     →  content: a Loro snapshot (compaction)
   ```
 
-- **The current key** (`timeline/<id>`, `meta/<hash>`, `story/<id>`, …) keeps holding today's snapshot, so every
-  reader works as now.
-- **`headv/<object>`** names the current version: the parent of the next one.
+- **Opening an object** reads its entries and imports every update into one `LoroDoc`. Loro merges them in causal order
+  (version vectors), so device clocks no longer decide the order.
+- **Compaction**: now and then a snapshot blob, so a device does not replay thousands of updates; Loro's shallow
+  snapshots can trim very old history if it grows too large.
+- **For plain JSON readers** (the website's mirror, quick reads), the object's current key keeps a JSON view, written
+  on each commit.
 
-### How it behaves
+### Who does what
 
-- **Revert** writes a new version whose snapshot is the old one's hash. Identical bytes are stored once; nothing is
-  lost, and the history stays one line.
-- **Forward checkout** is a local view: look at any version, step forward and back, and "restore" writes a revert. Redo
-  after a revert is another revert.
-- **One `commit` function** in vault-core (`commit(obj, snapshot, message, via, expected_parent)`) stores the blob,
-  writes the `hist/` record, moves `headv/` and the current key, and refuses when the object changed underneath
-  (another device or an agent). The studio calls it through Tauri, the agents through MCP (`history`, `show_version`,
-  `restore`).
-- **A gesture is one version**: a slider drag, a trim, an agent's batch. The studio's undo stack stays for the seconds
-  in between.
-- **GC must keep old versions**: the keep pass's protected set gains every `snapshot` a `hist/` record names. Never
-  delete under `hist/`.
+| | |
+|---|---|
+| iroh-docs (as shipped) | signing, ordering, sync (reconciliation + gossip), download policies, GC protection of entry contents, deletion by prefix pruning (`crdt/<kind>/<id>/`, each author its own), live events |
+| iroh-blobs (as shipped) | update and snapshot bytes, verified, deduplicated |
+| Loro (as shipped) | operations, merge, full history, `checkout` (look at any version), `revert_to` (a new commit restoring it), undo, `fork_at` |
+| ours | one generic module in vault-core, and the UI |
 
-### What each kind becomes
+**The single lever is one generic `crdt` module in vault-core:** `open(object)`, `commit(object, change, message)`,
+`history(object)`, `checkout` / `revert(object, version)`. Written once, it gives every tool — editing, grading, looks,
+the mix, scripts, story sections, world shots, descriptions, analysis corrections — history, revert, forward checkout,
+undo, and later merging. Loro's MovableList fits the clip order, its Tree the story sections.
 
-- A **timeline** is one object: clips, cuts, grades, balances, looks, the mix, the script, story sections.
-- A **world shot** is one object; its existing versions become its history.
-- **Per-file records** (`meta`, `transcript`, `analysis` corrections, `sound`) version the keys they have.
-- A **story** is `story/<id>`, its rules included.
-- **Big files** stay blobs, named by hash inside the snapshots.
+**Why Loro over Automerge:** those editor types, `checkout` and `revert_to`, an undo manager in Rust (the app, MCP) and
+in JS (the studio), shallow snapshots. Automerge has more iroh examples and a longer record, but no built-in undo.
 
-### Before it can start
+**What it costs:** Loro in the Mac app (Rust) and in the studio (wasm); timelines and world shots out of Postgres first;
+compaction. The server stays as it is: it stores and relays blobs without knowing what is in them.
 
-Timelines and world shots live in Postgres today (`timelines`, `shots`, `shot_versions`). They move into iroh first
-(docs + blobs), or their history stays outside the log.
+### What the iroh-loro demo teaches (read, not used)
 
-### What to watch
+`loro-dev/iroh-loro` (a two-peer plain-text demo, pinned to an older iroh 0.91 and loro 1.6, last pushed September 2025)
+syncs one Loro document over a protocol of its own (`ALPN iroh/loro/1`, a `ProtocolHandler`):
 
-- **Clocks.** Order history by parent links, never by time. Across devices the current key is still last writer wins.
-- **Two writers at once** give two versions with the same parent: show it, don't merge it (yet).
-- **Size.** Full snapshots add up (1,000 edits × 100 KB ≈ 100 MB). Coalescing gestures keeps it small; later, small
-  JSON patches with a full snapshot every so often.
-- **The prefix trap** (section 1) for every new key.
+- **The hook to keep:** `doc.subscribe_local_update(…)` hands over each local commit's operations as bytes — exactly
+  what our `commit` turns into a blob and a catalog entry.
+- **Edits from a whole new state:** `get_text("text").update(…)` (or `update_by_line` for large text) turns a new full
+  value into minimal operations — useful where a tool hands over a finished state instead of single edits.
+- **What not to copy:** on every connect it sends *all* updates (`ExportMode::all_updates()`), keeps the history only
+  in memory, works for two peers, and caps a message at 10 MB; import errors are only printed. Carrying updates as
+  catalog entries gives us persistence, any number of peers, offline catch-up and partial sync through iroh-docs'
+  reconciliation instead.
 
-### Whose pattern this is
+### A simpler fallback
 
-Neither iroh's docs nor Willow's prescribe a way to keep history or to name keys. Willow's prefix pruning is deliberate
-— a write at a path is "like overwriting a directory with an empty file", and Willow prefers mutable data and traceless
-removal over append-only hash chains, which it calls "quite dangerous when employed carelessly". History is left to the
-application. The log above is our design built only from iroh's documented building blocks (signed entries under keys,
-immutable blobs, HashSeq collections, tags and GC), and it stays deletable the Willow way: one empty write at
-`hist/<object>/` prunes an object's whole history (each author its own entries). For rich history, the ecosystem's
-demonstrated route is a CRDT library over iroh (n0's iroh-automerge, Loro's iroh-loro).
+If Loro's cost is not wanted yet: one entry per version, never overwritten (`hist/<kind>/<id>/<µs, 20 digits>/`), its
+content the full JSON snapshot. The entry itself is the version record (author, time, signature, hash); revert writes
+an old snapshot's hash again; history is ordered by the writers' clocks. It gives history, revert and forward checkout,
+but no merge, no undo, and no causal order. Both routes keep the same keys discipline and the same deletion.
 
-### If merging comes later
+---
 
-Loro, for timelines: MovableList for the clip order, Tree for story sections, `checkout` and `revert_to`, undo, shallow
-snapshots, the same library in Rust and in the browser, and a working iroh example to start from. Automerge is the
-alternative with more iroh examples and a longer record. Both would store their updates as blobs in the same vault.
+## 6. Schema changes
+
+A schema is the shape of an object: a timeline's clips and their fields, a grade's layers. It will change: a field
+added, renamed, split. Neither iroh-docs nor Loro knows schemas (Loro has typed containers, no schema), so this is
+ours — and Jazz 2 has thought it through for local-first apps.
+
+### What Jazz 2 does (its current docs)
+
+- **The schema is code** (`schema.ts`, "the source of truth"), and every version of it has **a hash** to refer to it.
+- **Data keeps the schema it was written under**: "Rows retain the physical schema identity under which they were
+  written." Nothing is rewritten on disk.
+- **Lenses translate on read and on write**: migrations are declarative operations "which carry enough information to
+  run in either direction"; "lenses compose in sequence to bridge multiple schema versions". So old and new apps share
+  the same data — staggered updates, offline clients writing under an old schema.
+- **Each change says how to go both ways**: an added field has a `default`, a dropped one a `backwardsDefault` for older
+  apps; an ambiguous diff (removed + added — a rename?) is a **draft** lens that must be reviewed before it can ship.
+- **Schemas and lenses travel in their own lane** ("a separate catalogue lane, not through the normal user-row
+  history"), so a device discovers a schema when it meets data written under it.
+- History is append-only per row; the visible entry is "the current winner" per branch view.
+
+### What we would take from it
+
+- **Each object records its schema hash** (a field in the Loro document — so a `checkout` of an old version shows which
+  schema it was written under — or in the JSON snapshot).
+- **Schemas in code** (Rust types for the app and MCP, TS for the studio), each version hashed; schemas and lenses also
+  stored in the catalog under their own keys (`schema/<kind>/<hash>/`, `lens/<kind>/<from>/<to>/`) — our "catalogue
+  lane".
+- **Declarative, two-way lenses**: add (with a default), drop (with a backwards default), rename (always explicit, never
+  guessed). Ink & Switch's Cambria is the precedent for lenses over CRDT documents.
+- **Reading an old version** runs its schema's lens chain up to the current one; history stays readable forever.
+- **Writing**: our devices are few and all run our app, so we can be simpler than Jazz — when an app with a newer
+  schema opens an older object, it writes **one migration commit** (the change as Loro operations, in the history like
+  any edit). An app older than an object's schema opens it read-only and says to update. Full Jazz-style coexistence
+  (writing through lenses) only if many app versions must write at once.
+
+---
+
+## 7. Branches
+
+Jazz 2's branches are "parallel views of the same objects" — drafts, scenarios, environments — chosen by a branch column
+(`.branchBy()`); a query asks for `{branch, base}` and gets the draft where it exists, else the base. Merging is "a
+userland operation": the app reads both, computes the writes, commits them. Discarding is just not referencing it.
+
+For us, later (not now): a branch is a Loro `fork_at(version)` — a new object with a pointer to its base and the
+version it left from; the studio shows "draft over main", falling back to main where the draft changed nothing; merging,
+when wanted, is Loro importing one document's operations into the other. The same idea as Jazz, on our own catalog.
 
 ---
 
@@ -226,5 +272,7 @@ alternative with more iroh examples and a longer record. Both would store their 
   https://docs.rs/automerge/latest/automerge/struct.Automerge.html, https://automerge.org/blog/automerge-3/
 - Loro: https://github.com/loro-dev/loro, https://docs.rs/loro/latest/loro/struct.LoroDoc.html,
   https://loro.dev/changelog/v1.3.0 · iroh demo: https://github.com/loro-dev/iroh-loro
-- Jazz: https://jazz.tools/docs/concepts/how-sync-works, https://jazz.tools/docs/reference/internals,
-  https://github.com/garden-co/jazz/issues/2572, https://classic.jazz.tools
+- Jazz 2: https://jazz.tools/docs/schemas/migrations, https://jazz.tools/docs/schemas/defining-tables,
+  https://jazz.tools/docs/concepts/branches, https://jazz.tools/docs/reference/internals,
+  https://jazz.tools/docs/concepts/how-sync-works · classic: https://classic.jazz.tools
+- iroh-loro demo (read, not used): https://github.com/loro-dev/iroh-loro (src/lib.rs)
