@@ -2,12 +2,13 @@
 //! 460, white, centred between 9 % margins, the last line's box `bottom` above the frame's foot (22 % in a portrait
 //! frame, 8.5 % otherwise), font size W/30 (portrait) or min(W, H)/24, line height 1.3, and the two text shadows
 //! `0 2px 18px rgba(0,0,0,.65), 0 0 3px rgba(0,0,0,.45)`. Drawn into a band at the foot of the frame (premultiplied
-//! RGBA, display code values) that Core Image lays over the picture after the output transform.
+//! RGBA, display code values) that Core Image lays over the picture after the output transform. Word by word, as the
+//! studio's player shows them: the words said so far white, the rest at 35 % (`draw_lit`).
 
 use std::ffi::c_void;
 
 use anyhow::{Context, Result};
-use objc2_core_foundation::{CFAttributedString, CFData, CFDictionary, CFNumber, CFRange, CFRetained, CFString, CFType, CGFloat, CGSize};
+use objc2_core_foundation::{CFAttributedString, CFData, CFDictionary, CFMutableAttributedString, CFNumber, CFRange, CFRetained, CFString, CFType, CGFloat, CGSize};
 use objc2_core_graphics::{CGBitmapContextCreate, CGBitmapContextCreateImage, CGColor, CGColorSpace, CGContext, CGImage, CGImageAlphaInfo};
 use objc2_core_text::{
     CTFont, CTFontDescriptor, CTFontManagerCreateFontDescriptorFromData, CTLine, CTTypesetter, kCTFontAttributeName,
@@ -58,8 +59,18 @@ impl Captions {
         h as f64 * if h > w { 0.22 } else { 0.085 }
     }
 
-    /// Draw `text` for a frame of `w`×`h`.
+    /// Draw `text` for a frame of `w`×`h`, all of it lit.
     pub fn draw(&self, text: &str, w: u32, h: u32) -> Result<Band> {
+        let words: Vec<String> = text.split(' ').map(String::from).collect();
+        self.draw_lit(&words, words.len(), w, h)
+    }
+
+    /// Draw a phrase's `words` (joined by spaces) with the first `lit` of them white and the rest at 35 % — the same
+    /// lines and places whatever `lit` is.
+    pub fn draw_lit(&self, words: &[String], lit: usize, w: u32, h: u32) -> Result<Band> {
+        let text = words.join(" ");
+        // where the lit words end, in UTF-16 units (Core Foundation's), with the space after them
+        let lit_len = words.iter().take(lit).map(|w| w.encode_utf16().count() as isize + 1).sum::<isize>().min(text.encode_utf16().count() as isize);
         let size = Self::size(w, h);
         let line_height = 1.3 * size;
         let width = w as f64 * 0.82;
@@ -67,10 +78,15 @@ impl Captions {
         unsafe {
             let font = CTFont::with_font_descriptor(&self.face, size as CGFloat, std::ptr::null());
             let white = CGColor::new_srgb(1.0, 1.0, 1.0, 1.0);
+            let dim = CGColor::new_srgb(1.0, 1.0, 1.0, 0.35);
             let keys: [&CFString; 2] = [kCTFontAttributeName, kCTForegroundColorAttributeName];
-            let values: [&CFType; 2] = [font.as_ref(), white.as_ref()];
+            let values: [&CFType; 2] = [font.as_ref(), dim.as_ref()];
             let attrs = CFDictionary::<CFString, CFType>::from_slices(&keys, &values);
-            let string = CFAttributedString::new(None, Some(&CFString::from_str(text)), Some(attrs.as_opaque())).context("the caption's text")?;
+            let base = CFAttributedString::new(None, Some(&CFString::from_str(&text)), Some(attrs.as_opaque())).context("the caption's text")?;
+            let string = CFMutableAttributedString::new_copy(None, 0, Some(&base)).context("the caption's text")?;
+            if lit_len > 0 {
+                CFMutableAttributedString::set_attribute(Some(&string), CFRange { location: 0, length: lit_len }, Some(kCTForegroundColorAttributeName), Some(white.as_ref()));
+            }
             let setter = CTTypesetter::with_attributed_string(&string);
             // break into lines as a browser wraps a paragraph: at word boundaries within the width
             let len = string.length();
@@ -153,4 +169,29 @@ pub fn label(rgb: &mut [u8], w: u32, top: u32, h: u32, text: &str) -> Result<()>
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use objc2_core_graphics::{CGDataProvider, CGImage};
+
+    /// How much light a band holds: the sum of its colour bytes.
+    fn light(b: &Band) -> u64 {
+        let data = CGDataProvider::data(CGImage::data_provider(Some(&b.image)).as_deref()).expect("its pixels");
+        data.to_vec().chunks_exact(4).map(|p| p[0] as u64 + p[1] as u64 + p[2] as u64).sum()
+    }
+
+    #[test]
+    fn a_phrase_lights_up_word_by_word_in_the_same_place() {
+        let c = Captions::new(None).unwrap();
+        let words: Vec<String> = "Today I am alone and unsure".split(' ').map(String::from).collect();
+        let bands: Vec<Band> = (0..=words.len()).map(|n| c.draw_lit(&words, n, 1920, 1080).unwrap()).collect();
+        // the same band whatever is lit (the lines never move)
+        assert!(bands.iter().all(|b| b.height == bands[0].height));
+        // each word said makes it brighter; all lit is the plain caption
+        let l: Vec<u64> = bands.iter().map(light).collect();
+        assert!(l.windows(2).all(|w| w[1] > w[0]), "{l:?}");
+        assert_eq!(l[words.len()], light(&c.draw(&words.join(" "), 1920, 1080).unwrap()));
+    }
 }

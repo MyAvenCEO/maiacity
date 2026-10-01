@@ -282,6 +282,8 @@ pub struct Phrase {
     pub text: String,
     pub start: f64,
     pub end: f64,
+    /// each word and when it is said, on the timeline: it lights up then (as the studio's player shows it)
+    pub words: Vec<(String, f64)>,
 }
 
 /// A voice take's word timing (media meta.words).
@@ -311,6 +313,7 @@ pub fn phrases(t: &Timeline, words_of: &dyn Fn(&Clip) -> Vec<Word>) -> Vec<Phras
                     text: cur.iter().map(|w| w.word.as_str()).collect::<Vec<_>>().join(" "),
                     start: c.start + first.start - c.in_,
                     end: c.start + last.end - c.in_,
+                    words: cur.iter().map(|w| (w.word.clone(), c.start + w.start - c.in_)).collect(),
                 });
             }
         };
