@@ -407,6 +407,7 @@
 							<td class="n" class:sub={!!proxyOf(m)} title="{m.original_name ?? ''}{m.title ? ` · ${m.title}` : ''}">{#if proxyOf(m)}↳ {/if}{m.original_name || '—'}{#if m.title && m.title !== m.original_name}<small> · {m.title}</small>{/if}</td>
 							<td class="col">
 								{#if m.meta?.role === 'grade-still'}<span class="dim">grading still · ACEScct</span>
+								{:else if m.meta?.role === 'preview'}<span class="dim">{m.meta?.graded ? 'graded · Rec.709' : 'Rec.709'}</span>
 								{:else if proxyOf(m)}<span class="dim">ACEScct</span>
 								{:else if m.kind === 'video' && classOf(m) === 'original'}
 									<span class="prof">{colourOf(m) ? profileInfo(colourOf(m)).label : '—'}</span>

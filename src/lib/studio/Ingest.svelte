@@ -109,7 +109,7 @@
 	onDestroy(() => unlisten.forEach((u) => u()));
 </script>
 
-<section class="ingest" class:dragging aria-label="Ingest">
+<section class="ingest" class:dragging aria-label="Data">
 	<aside>
 		<Stories bind:this={storiesPanel} bind:chosen={story} bind:list={storyList} />
 	</aside>
