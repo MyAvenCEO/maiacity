@@ -699,7 +699,7 @@ const server = Bun.serve({
         const me = await allowed(req, "media:admin");
         if (me instanceof Response) return me;
         try {
-          return json(req, await queueRender(me.id, req.params.id), { status: 201 });
+          return json(req, await queueRender(me.id, req.params.id, ((await readJson(req)) ?? {}) as { delivery?: unknown }), { status: 201 });
         } catch (e) {
           return fail(req, e);
         }

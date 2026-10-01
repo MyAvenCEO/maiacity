@@ -12,7 +12,7 @@
 	import { FPS, TRACKS, UNLINKED, clockText, isWorld, onSoundTrack, raw, thumb, tint } from './studio.svelte.js';
 	import { cueEnd, cuesOf } from './analysis.js';
 	import { wordsOf } from './transcript.js';
-	import { BALANCE_NODES, NEUTRAL, NEUTRAL_BALANCE, cleanBalance, cleanFinish, cleanLook, cleanSecondaries, isNeutral, presetOf } from './color.js';
+	import { BALANCE_NODES, NEUTRAL, NEUTRAL_BALANCE, cleanBalance, cleanFinish, cleanLook, cleanSecondaries, isNeutral } from './color.js';
 	import { wave } from './wave.js';
 	import { fine } from './fine.js';
 	import { nativeFrame } from './luts.js';
@@ -665,9 +665,6 @@
 {#snippet cdlCell(/** @type {import('$lib/auth/client').Cdl | null} */ g, /** @type {string | null} */ preset, /** @type {boolean} */ open, /** @type {(g: import('$lib/auth/client').Cdl | null, preset?: string | null) => void} */ set)}
 	{@const cur = g ?? NEUTRAL}
 	{#if open}
-		<div class="chips">
-			{#each s.presets as p (p.name)}<button class:on={(preset ?? presetOf(g, s.presets)) === p.name} title={p.label} onclick={() => set(isNeutral(p.cdl) ? null : structuredClone(p.cdl), p.name === 'neutral' ? null : p.name)}>{p.name}</button>{/each}
-		</div>
 		{#each [['slope', 'gain', 0, 2], ['offset', 'lift', -0.2, 0.2], ['power', 'gamma', 0.4, 2.5]] as [k, label, lo, hi] (k)}
 			{@const key = /** @type {'slope' | 'offset' | 'power'} */ (k)}
 			{@const mean = (cur[key][0] + cur[key][1] + cur[key][2]) / 3}
@@ -675,7 +672,8 @@
 		{/each}
 		<label class="sl"><span>sat</span><input {@attach fine()} type="range" min="0" max="2" step="0.01" value={cur.sat} oninput={(e) => { const next = { ...structuredClone($state.snapshot(cur)), sat: Number(e.currentTarget.value) }; set(isNeutral(next) ? null : next); }} /><output>{cur.sat.toFixed(2)}</output></label>
 	{:else}
-		<span class="val" class:on={!!g || !!preset}>{preset ?? (g ? presetOf(g, s.presets) ?? 'own' : '—')}</span>
+		{@const avg = (/** @type {number[]} */ v) => ((v[0] + v[1] + v[2]) / 3).toFixed(2)}
+		<span class="val" class:on={!!g}>{g ? `gain ${avg(g.slope)} · lift ${avg(g.offset)}${g.sat !== 1 ? ` · sat ${g.sat.toFixed(2)}` : ''}` : '—'}</span>
 	{/if}
 {/snippet}
 
@@ -1241,23 +1239,6 @@
 		display: flex;
 		flex-wrap: wrap;
 		gap: 0.15rem;
-	}
-
-	.cell .chips button {
-		padding: 0 0.35rem;
-		border: 1px solid var(--edge);
-		border-radius: 999px;
-		background: var(--raised);
-		font: inherit;
-		font-size: 0.58rem;
-		color: var(--ink);
-		cursor: pointer;
-	}
-
-	.cell .chips button.on {
-		border-color: var(--accent);
-		background: var(--accent);
-		color: var(--on-accent);
 	}
 
 	/* the story (Script): its sections as bands, the tension as one line over them */

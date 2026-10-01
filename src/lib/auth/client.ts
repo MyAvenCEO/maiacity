@@ -440,7 +440,9 @@ export type RenderReport = {
 	[k: string]: unknown;
 };
 
-export const queueRender = (timelineId: string) => call<RenderJob>(`/api/timelines/${timelineId}/renders`, { method: 'POST' });
+/** Queue a timeline's render: `delivery` "youtube-4k" — the 16:9 4K master for YouTube alone; none — every delivery. */
+export const queueRender = (timelineId: string, delivery?: 'youtube-4k') =>
+	call<RenderJob>(`/api/timelines/${timelineId}/renders`, { method: 'POST', body: JSON.stringify(delivery ? { delivery } : {}) });
 export const listRenders = (timelineId: string) => call<RenderJob[]>(`/api/timelines/${timelineId}/renders`);
 /** The worker's latest jobs, newest first: of a kind, of a timeline or a world shot (its HD proxy). */
 export const listJobs = (q: { kind?: 'render' | 'proxy' | 'lut' | 'frame'; timeline?: string; shot?: string; limit?: number } = {}) =>

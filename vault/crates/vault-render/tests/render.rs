@@ -263,6 +263,36 @@ fn the_master_and_its_copy() {
 }
 
 #[test]
+fn youtube_4k_alone() {
+    // the studio's one delivery for now: the 16:9 4K master, HEVC 10-bit at YouTube's best, no 1080 copy
+    let dir = scratch("youtube");
+    let a = dir.join("a.mp4");
+    movie(&a, &[RED], 1000.0);
+    let lib = Lib(HashMap::from([("a".to_string(), (media("a", "video", json!({ "color": { "profile": "rec709" } })), a))]));
+    let t: Timeline = serde_json::from_value(json!({
+        "id": "t5", "name": "YouTube", "aspect": "16:9",
+        "clips": [{ "id": "c1", "track": "V1", "start": 0, "in": 0, "dur": 1, "vol": 1, "hash": "a" }]
+    }))
+    .unwrap();
+    let mut opts = Options::new(dir.join("out"));
+    opts.shapes = Some(vec!["16:9".into()]);
+    opts.master_only = true;
+    let no_plates = |_: &Clip, _: &Shape| -> Result<Option<Plate>> { Ok(None) };
+    let mut out = render(&t, &lib, &no_plates, &Lut3d::identity(33), &opts, &mut |_, _| {}).unwrap();
+    assert_eq!(out.deliveries.len(), 1);
+    let d = &out.deliveries[0];
+    assert_eq!((d.codec.as_str(), d.width, d.height, d.qc.bit_depth), ("hevc", 3840, 2160, 10));
+    assert!(d.qc.ok, "{:?}", d.qc);
+    assert!(d.name.ends_with("-4k-youtube.mp4"), "{}", d.name);
+    assert_eq!(d.channels, ["youtube"]);
+    out.deliveries[0].hash = Some("7".repeat(64));
+    let job = out.job_result(&t).unwrap();
+    vault_render::api_accepts(&job).unwrap();
+    assert_eq!(job["output_hash"], "7".repeat(64), "the studio plays the master");
+    std::fs::remove_dir_all(dir).ok();
+}
+
+#[test]
 fn the_mix_ducks_fades_and_levels() {
     let dir = scratch("mix");
     let (music, voice) = (dir.join("music.wav"), dir.join("voice.wav"));
