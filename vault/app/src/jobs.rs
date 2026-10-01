@@ -527,7 +527,7 @@ pub const RULES: &[Rule] = &[
     // analyse/mod.rs still_preview
     Rule { id: "still-preview", when: "A still image's proxy is here and it has no preview", then: "Preview: a 1920 JPEG, its one picture", kind: Kind::Analysis, watch: "with the analysis round" },
     // api/src/renders.ts queueStillsOf → render.rs graded_still_job
-    Rule { id: "graded", when: "A timeline save changes how a file looks (balance, secondaries, grade, 16:9 framing, scene or film look)", then: "Graded still: its grading still through the clip's grade, as its preview — the one before goes", kind: Kind::Frame, watch: "on save · render queue every few s" },
+    Rule { id: "graded", when: "A timeline save changes how a file looks (its stacks of tools, its 16:9 framing, its scene's or the timeline's look)", then: "Graded still: its grading still through the clip's grade, as its preview — the one before goes", kind: Kind::Frame, watch: "on save · render queue every few s" },
     // api/src/renders.ts queueStillOfFile (proxies.rs grading_still_at)
     Rule { id: "graded-again", when: "A file's grading still is made again (a new hero frame)", then: "Graded still again, through the clip that last graded it", kind: Kind::Frame, watch: "with the grading still" },
     // world.rs proxies

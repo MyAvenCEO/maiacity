@@ -73,14 +73,14 @@ test("a file's graded still: queued when its look changes, one waiting per file,
   // a cut moved, nothing graded: no still
   expect(await queueStillsOf("admin", before, { id, ...before, clips: [clip("c1", a, { start: 1 }), clip("c2", b)] })).toEqual([]);
   // c1 graded: a's still, of c1
-  const graded = { id, clips: [clip("c1", a, { grade: { sat: 1.2 } }), clip("c2", b)], grade: null, color: null };
+  const graded = { id, clips: [clip("c1", a, { stacks: { clip: { tools: [{ tool: "cdl", sat: 1.2 }] } } }), clip("c2", b)], grade: null, color: null };
   const [j] = await queueStillsOf("admin", before, graded);
   expect([j!.kind, j!.media_hash, j!.params]).toEqual(["frame", a, { clip: "c1", still: true }]);
   // graded again before the Mac took it: the same job, not a second
-  const again = { ...graded, clips: [clip("c1", a, { grade: { sat: 1.4 } }), clip("c2", b)] };
+  const again = { ...graded, clips: [clip("c1", a, { stacks: { clip: { tools: [{ tool: "cdl", sat: 1.4 }] } } }), clip("c2", b)] };
   expect((await queueStillsOf("admin", graded, again)).map((x) => x.id)).toEqual([j!.id]);
   // the film's look: every file's still
-  expect((await queueStillsOf("admin", again, { ...again, grade: { look: null, film: { lut: "x" } } })).map((x) => x.media_hash).sort()).toEqual([a, b].sort());
+  expect((await queueStillsOf("admin", again, { ...again, grade: { timeline: { tools: [{ tool: "hue", sat: 0.9 }] } } })).map((x) => x.media_hash).sort()).toEqual([a, b].sort());
   // a new grading still of a file: through the clip of the timeline that last graded it
   await pg.query("UPDATE timelines SET clips = $2::jsonb WHERE id = $1", [id, JSON.stringify(again.clips)]);
   expect((await queueStillOfFile("admin", a))!.params).toEqual({ clip: "c1", still: true });

@@ -1162,8 +1162,8 @@ pub fn hero_frame(
 }
 
 /// A file's graded still (the `frame` job of a media clip): its grading still — the ACEScct frame it is graded on —
-/// through clip `clip`'s chain as the render takes it (16:9 framing → balance → secondaries → grade and looks →
-/// finishing → output transform), `width` wide, as a JPEG: the file's one preview, its thumbnail everywhere. Without
+/// through clip `clip`'s chain as the render takes it (16:9 framing → its stacks of tools: base, clip, scene,
+/// timeline, finishing → output transform), `width` wide, as a JPEG: the file's one preview, its thumbnail everywhere. Without
 /// its grading still on this Mac, the same moment read from the original (or its proxy). Returns `{ of, t, clip,
 /// width, height, what }` — `of` the original, `t` the moment (seconds into it).
 pub fn graded_still(t: &Timeline, lib: &dyn Library, output: &dyn Output, clip: &str, width: u32, jpg: &Path) -> Result<Value> {
@@ -1181,9 +1181,9 @@ pub fn graded_still(t: &Timeline, lib: &dyn Library, output: &dyn Output, clip: 
         Some(Ok(file)) => (gpu.still(&file)?, "its grading still"),
         _ => (frame_of(&gpu, lib, c, c.start + (at - c.in_), true)?, "the original's frame (no grading still here)"),
     };
-    let cube = clip_cube(t, lib, c, output)?.map(|(lut, _)| gpu.cube(&lut));
+    let grade = on_gpu(&gpu, clip_steps(t, lib, c, output)?);
     let framed = gpu.frame_to(&src, w, h, c.frame_for(s.aspect))?;
-    let img = gpu.output(&*chain(&gpu, &framed, w, h, c, cube.as_ref(), t.finish().as_ref(), 0)?)?;
+    let img = gpu.output(&*chain(&gpu, &framed, w, h, &grade.0, &grade.1, 0)?)?;
     gpu.jpeg(&img, w, h, jpg)?;
     Ok(json!({ "of": original.hash, "t": at, "clip": c.id, "width": w, "height": h, "what": format!("{} at {at:.3} s, from {what}", if original.title.is_empty() { &original.hash } else { &original.title }) }))
 }

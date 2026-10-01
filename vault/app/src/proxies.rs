@@ -155,8 +155,8 @@ pub(crate) async fn graded(vault: &Vault, t: &vault_render::Timeline, c: &vault_
 
 /// A shot as the film will show it, natively, for the studio: its grading still (4K ACEScct, from the original) — or
 /// one frame of its proxy or original at `at` seconds of that file, through the file's journey (`profile`) — framed for
-/// `shape` (none: the whole still), through its whole grade — balance, secondaries (a face-tracked window on
-/// the face Vision finds), its grade and looks (the timeline's: its scene's, the film's), the film's finishing — and
+/// `shape` (none: the whole still), through its whole grade — its stacks of tools: base, clip, its scene's, the
+/// timeline's, the finishing (a window following the face on the face Vision finds) — and
 /// the output transform, as a JPEG `width` wide. The Grade viewer and every thumbnail show these: what the render makes.
 #[tauri::command]
 pub async fn color_frame(

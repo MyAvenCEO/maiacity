@@ -8,7 +8,7 @@
  * on the picture track, V1) or a line (a line of the script not recorded yet: its words on the voice track, A1, and in
  * the captions). A picture clip may carry its place in the script (scene, label, description, notes): the Script tab
  * and the timeline are the same clips, so a slate swapped for a still or the footage keeps its script. A sound clip may
- * carry its EQ and gain keys (game/film/sound.js). A clip may carry its balance (the fixed first nodes: white balance, exposure, contrast, highlights, lows), its own grade (an ASC
+ * carry its EQ and gain keys (game/film/sound.js). A picture clip may carry its grade as stacks of tools (game/film/grade-tools.js: its base correction, its clip look; an ASC
  * CDL in ACEScct, the Grade tab) and, for media, how it is reframed per delivery shape. The timeline itself has a working step — edit, locked,
  * graded, rendered — a version (one more at every unlock), its colour pipeline and the whole film's look.
  */
