@@ -45,7 +45,7 @@ import { cleanEq, cleanKeys, keyDb, webAudioQ } from '../../../game/film/sound.j
 /** @typedef {{ url: string, duration: number, peaks: number[], buffer?: AudioBuffer }} Source */
 /** @typedef {{ word: string, start: number, end: number }} Timed */
 /**
- * A caption word on the film's clock: `t`…`e`, from its voice clip's file (`hash`), `i` its place in that file's meta.words.
+ * A caption word on the film's clock: `t`…`e`, from its voice clip's file (`hash`), `i` its place in that file's transcript words.
  * @typedef {{ word: string, t: number, e: number, clip: string, hash: string, i: number }} CaptionWord
  */
 /** @typedef {{ words: CaptionWord[], start: number, end: number, clip: string }} Phrase */
@@ -314,7 +314,7 @@ export class Studio {
 		const i = v1.findIndex((c) => c.start + c.dur > this.time);
 		return i < 0 ? [] : v1.slice(i, i + 3);
 	});
-	// captions: every voice clip's words (its file's meta.words — the render reads the same), placed where the clip puts them
+	// captions: every voice clip's words (its file's transcript — the render reads the same), placed where the clip puts them
 	captionWords = $derived.by(() => {
 		/** @type {CaptionWord[]} */
 		const out = [];
@@ -783,7 +783,7 @@ export class Studio {
 	async starter() {
 		const lib = this.library.filter((m) => !isCache(m));
 		const voices = lib.filter((m) => m.kind === 'audio' && m.tags.includes('role:voice'));
-		const voice = voices.find((m) => Array.isArray(m.meta?.words) && /** @type {unknown[]} */ (m.meta.words).length) ?? voices[0];
+		const voice = voices.find((m) => captionWordsOf(m).length) ?? voices[0];
 		const bed = lib.find((m) => m.kind === 'audio' && (m.tags.includes('role:music') || m.tags.includes('role:score')));
 		const still = lib.find((m) => m.kind === 'image' && m.tags.includes('role:cover')) ?? lib.find((m) => m.kind === 'image');
 		const vlen = voice ? (await this.source(voice.hash)).duration : 6;
@@ -1584,24 +1584,50 @@ export class Studio {
 	}
 
 	// ── captions: the voice's words on screen ─────────────────────────────────────
-	// Every voice (A1) clip's captions come by themselves: its file's own words, else its transcript's (captionWordsOf,
-	// the render's `caption_words`). Editing a phrase writes the file's own words; from then on those win.
+	// Every voice (A1) clip's captions come by themselves from its file's transcript (captionWordsOf, the render's
+	// `caption_words`) — the one truth. A word put right, or a phrase reworded, is written into the transcript itself
+	// (the Mac's `transcript_edit`: it syncs, and no sweep hears it again); the captions follow, everywhere.
 	/**
-	 * A file's caption words set (meta.words, merged into its meta; it syncs).
+	 * A file's transcript words set (each `{ word, start, end }` on the file's clock).
 	 * @param {string} hash @param {import('./transcript.js').CaptionWord[]} words
 	 */
 	async setCaptionWords(hash, words) {
 		try {
-			await describeMedia(hash, { meta: { words } });
-			this.library = this.library.map((x) => (x.hash === hash ? { ...x, meta: { ...x.meta, words } } : x));
+			const { command } = await import('$lib/native');
+			const record = /** @type {any} */ (await command('transcript_edit', { hash, words }));
+			this.library = this.library.map((x) => (x.hash === hash ? { ...x, meta: { ...x.meta, transcript: record, words: undefined } } : x));
 			return true;
 		} catch (e) {
-			this.error = `Captions: ${/** @type {Error} */ (e).message}`;
+			this.error = `Transcript: ${/** @type {Error} */ (e).message ?? e}`;
 			return false;
 		}
 	}
 	/**
-	 * A caption phrase written by hand: its words in the file's meta.words replaced (the same count keep their timing).
+	 * One word of a file's transcript put right (a word heard wrong): its text only, its timing kept. An empty text
+	 * takes the word out.
+	 * @param {string} hash @param {number} i its place among the file's caption words @param {string} text
+	 */
+	async fixWord(hash, i, text) {
+		const m = this.byHash.get(hash);
+		if (!m) return false;
+		const all = captionWordsOf(m);
+		if (!all[i]) return false;
+		const next = text.trim().split(/\s+/).filter(Boolean);
+		const w = all[i];
+		// one word stays one; several share its time by their letters; none take it out
+		const len = w.end - w.start, total = next.reduce((n, x) => n + [...x].length + 1, 0);
+		let at = w.start;
+		const made = next.map((word) => {
+			const d = (len * ([...word].length + 1)) / total;
+			const x = { word, start: Math.round(at * 1000) / 1000, end: Math.round((at + d) * 1000) / 1000 };
+			at += d;
+			return x;
+		});
+		if (next.length === 1) made[0] = { ...w, word: next[0] };
+		return this.setCaptionWords(hash, [...all.slice(0, i), ...made, ...all.slice(i + 1)]);
+	}
+	/**
+	 * A caption phrase written by hand: its words in the file's transcript replaced (the same count keep their timing).
 	 * @param {Phrase} p @param {string} text
 	 */
 	async rewordPhrase(p, text) {

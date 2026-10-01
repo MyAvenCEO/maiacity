@@ -6,6 +6,8 @@
 <script lang="ts">
 	import type { MediaItem } from './facets';
 	import { label, raw, sub, thumb, type Parsed } from './facets';
+	import Video709 from './Video709.svelte';
+	import { captionWordsOf } from '$lib/studio/transcript.js';
 
 	type Measure = { w?: number; h?: number; d?: number };
 	type Word = { word: string; start: number; end: number };
@@ -32,7 +34,8 @@
 	} = $props();
 
 	let time = $state(0);
-	const words = $derived(Array.isArray(m.meta?.words) ? (m.meta.words as Word[]).filter((w) => typeof w?.word === 'string') : []);
+	// its words as the captions read them: the transcript (the one truth), else a voice take's own timing
+	const words = $derived(captionWordsOf(m as never) as Word[]);
 	const said = $derived(typeof m.meta?.text === 'string' ? m.meta.text : '');
 </script>
 
@@ -62,15 +65,8 @@
 					}}
 				/>
 			{:else if m.kind === 'video'}
-				<!-- svelte-ignore a11y_media_has_caption -->
-				<video
-					src={raw(m.hash)}
-					controls
-					autoplay
-					playsinline
-					onloadedmetadata={(e) =>
-						onmeasure(m.hash, { w: e.currentTarget.videoWidth, h: e.currentTarget.videoHeight, d: e.currentTarget.duration })}
-				></video>
+				<!-- drawn colour-true, as QuickTime and the studio's frames show it (the webview's own <video> shows BT.709 darker) -->
+				<Video709 src={raw(m.hash)} onmeta={(w, h, d) => onmeasure(m.hash, { w, h, d })} />
 			{:else if m.kind === 'audio'}
 				<div class="listen">
 					<audio
@@ -175,8 +171,7 @@
 
 	/* the picture or film takes the whole room it is given and never more, at its own shape: pinned to the stage,
 	   so a tall or a square file can never stretch it */
-	.stage img,
-	.stage video {
+	.stage img {
 		position: absolute;
 		inset: 0;
 		display: block;

@@ -286,7 +286,7 @@ pub struct Phrase {
     pub words: Vec<(String, f64)>,
 }
 
-/// A voice take's word timing (media meta.words).
+/// A caption word's timing (a voice file's transcript words, `render::caption_words`).
 #[derive(Debug, Clone, Deserialize)]
 pub struct Word {
     pub word: String,
@@ -300,7 +300,7 @@ fn ends_with_any(s: &str, set: &str) -> bool {
 
 /// The voice clips' words, in short phrases broken at the punctuation (worker.ts `phrasesOf`): a phrase ends at a
 /// word ending in punctuation once it has three words (or at once on a full stop, a colon, …), or when it passes 34
-/// characters. `words_of` gives a clip's word timings (its media's meta.words); a line of the script not recorded yet
+/// characters. `words_of` gives a clip's word timings (its file's transcript); a line of the script not recorded yet
 /// gets its words spread over its length (`line_words`).
 pub fn phrases(t: &Timeline, words_of: &dyn Fn(&Clip) -> Vec<Word>) -> Vec<Phrase> {
     let mut out = Vec::new();

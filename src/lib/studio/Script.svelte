@@ -1,12 +1,14 @@
 <!--
-	The script (Script tab), read-only, set as a screenplay: the timeline itself read as the story's parts (the hook,
-	three acts, the cliffhanger), their scenes, each shot as its action and what is said under it — the speaker, on
-	camera or V.O., and the line. It is the same clips as the timeline, one truth; an agent writes it through MCP
-	(timeline_save: sections, slates, lines, each shot's script), nobody types into it here. A picker at the top opens
-	another timeline.
+	The script (Script tab), set as a screenplay: the timeline itself read as the story's parts (the hook, three acts,
+	the cliffhanger), their scenes, each shot as its action and what is said under it — the speaker, on camera or V.O.,
+	and the line. It is the same clips as the timeline, one truth; an agent writes it through MCP (timeline_save:
+	sections, slates, lines, each shot's script). What a recording says is its transcript's words, and a word heard
+	wrong is put right here: click it, type, Enter (Tab: on to the next word, Esc: leave it). The transcript itself
+	changes — the captions read it, in the preview and the render alike. Words the model was unsure of are marked.
 -->
 <script>
 	import { clockText } from './studio.svelte.js';
+	import { transcriptOf } from './transcript.js';
 
 	/** @type {{ s: import('./studio.svelte.js').Studio }} */
 	let { s } = $props();
@@ -41,6 +43,44 @@
 	const said = (l) => (l.kind === 'line' ? (l.text ?? '') : s.phrases.filter((p) => p.clip === l.id).map((p) => p.words.map((w) => w.word).join(' ')).join(' '));
 	/** @param {string} scene */
 	const heading = (scene) => scene.toUpperCase();
+
+	// ── a word put right ──
+	/** @typedef {import('./studio.svelte.js').CaptionWord} CaptionWord */
+	/** a recording's words where its clip plays them @param {import('./studio.svelte.js').Clip} l */
+	const wordsIn = (l) => s.captionWords.filter((w) => w.clip === l.id);
+	/** how sure the model was of a word (1 for words a person or a voice take gave) @param {CaptionWord} w */
+	const sure = (w) => transcriptOf(s.byHash.get(w.hash))?.words[w.i]?.c ?? 1;
+	/** @type {{ clip: string, hash: string, i: number } | null} */
+	let editing = $state(null);
+	let draft = $state('');
+	let saving = $state(false);
+	/** @param {CaptionWord} w */
+	function edit(w) {
+		editing = { clip: w.clip, hash: w.hash, i: w.i };
+		draft = w.word;
+	}
+	/** keep the word as typed; `next`: then the word after it @param {CaptionWord} w @param {boolean} next */
+	async function keep(w, next) {
+		const text = draft.trim(), at = editing;
+		editing = null;
+		if (!at) return;
+		const typed = text.split(/\s+/).filter(Boolean).length;
+		if (text !== w.word) {
+			saving = true;
+			await s.fixWord(w.hash, w.i, text);
+			saving = false;
+		}
+		if (!next) return;
+		const after = s.captionWords.find((x) => x.clip === w.clip && x.hash === w.hash && x.i === w.i + Math.max(typed, text === w.word ? 1 : typed));
+		if (after) edit(after);
+	}
+	/** @param {KeyboardEvent} e @param {CaptionWord} w */
+	function key(e, w) {
+		if (e.key === 'Enter' || e.key === 'Tab') {
+			e.preventDefault();
+			void keep(w, e.key === 'Tab');
+		} else if (e.key === 'Escape') editing = null;
+	}
 </script>
 
 <aside class="script">
@@ -70,7 +110,21 @@
 				</p>
 				{#each p.shot.lines as l (l.id)}
 					<p class="who">{speaker(l)}</p>
-					<p class="line" class:todo={l.kind === 'line'}>{said(l) || '…'}</p>
+					{#if l.kind === 'line' || !l.hash}
+						<p class="line" class:todo={l.kind === 'line'}>{said(l) || '…'}</p>
+					{:else}
+						<!-- svelte-ignore a11y_click_events_have_key_events -->
+						<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
+						<p class="line words" class:saving onclick={(e) => e.stopPropagation()}>
+							{#each wordsIn(l) as w (w.i)}
+								{#if editing?.clip === l.id && editing.i === w.i}
+									<input class="fix" bind:value={draft} size={Math.max(3, draft.length + 1)} {@attach (el) => el.select()} onkeydown={(e) => key(e, w)} onblur={() => void keep(w, false)} aria-label="Put the word right" />
+								{:else}
+									<button class="w" class:unsure={sure(w) < 0.6} title="{clockText(w.t)} · {Math.round(sure(w) * 100)} % sure — click to put it right" onclick={() => edit(w)}>{w.word}</button>
+								{/if}{' '}
+							{:else}…{/each}
+						</p>
+					{/if}
 				{/each}
 			</div>
 		{:else}
@@ -207,6 +261,39 @@
 
 	.line {
 		margin: 0 16% 0.4rem 22%;
+	}
+
+	.words .w {
+		padding: 0;
+		border: 0;
+		border-radius: 3px;
+		background: none;
+		font: inherit;
+		color: inherit;
+		cursor: text;
+	}
+
+	.words .w:hover {
+		background: var(--raised);
+	}
+
+	/* a word the model was unsure of: the one to check */
+	.words .w.unsure {
+		text-decoration: underline dotted var(--warn);
+		text-underline-offset: 3px;
+	}
+
+	.words .fix {
+		padding: 0 0.15rem;
+		border: 1px solid var(--accent);
+		border-radius: 3px;
+		background: var(--raised);
+		font: inherit;
+		color: var(--ink);
+	}
+
+	.words.saving {
+		opacity: 0.7;
 	}
 
 	.line.todo {

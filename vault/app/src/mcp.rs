@@ -489,6 +489,22 @@ pub struct PlaybackArgs {
 }
 
 #[derive(Deserialize, schemars::JsonSchema)]
+pub struct WordFix {
+    /// the word's place in the transcript's words (0 first, as `transcript` lists them)
+    pub i: usize,
+    /// what was said: one word keeps the timing; several share it; empty takes the word out
+    pub w: String,
+}
+
+#[derive(Deserialize, schemars::JsonSchema)]
+pub struct TranscriptEditArgs {
+    /// the recording's BLAKE3 hash
+    pub hash: String,
+    /// the words put right
+    pub fixes: Vec<WordFix>,
+}
+
+#[derive(Deserialize, schemars::JsonSchema)]
 pub struct DownloadArgs {
     /// the file's BLAKE3 hash
     pub hash: String,
@@ -617,7 +633,7 @@ impl Studio {
     // ── transcripts: every recording's words, with their times (the vault server writes them: meta.transcript) ──
 
     #[tool(
-        description = "A recording's transcript (Deepgram Nova 3, written by the vault server when the file reached the bucket): its text, sentences and every word with its start and end in seconds of the file (a clip's in/out map straight onto them), confidence, speaker, and — for camera files with a start timecode — each word's timecode (HH:MM:SS:FF). from/to narrow it to a clip. Also the transcript's state (transcribing, failed …) and the audio proxy's hash."
+        description = "A recording's transcript (made on this Mac by Phonon-2; a voice take's own words; put right by hand in the Script tab or with transcript_edit — the captions' one truth): its text, sentences and every word with its start and end in seconds of the file (a clip's in/out map straight onto them), confidence, speaker, and — for camera files with a start timecode — each word's timecode (HH:MM:SS:FF). from/to narrow it to a clip. Also the transcript's state (transcribing, failed …) and the audio proxy's hash."
     )]
     async fn transcript(&self, Parameters(a): Parameters<TranscriptArgs>) -> String {
         let r = async {
@@ -1418,6 +1434,40 @@ impl Studio {
             ]),
             Err(e) => rmcp::model::CallToolResult::error(vec![rmcp::model::ContentBlock::text(e)]),
         }
+    }
+
+    #[tool(
+        description = "Put words of a recording's transcript right (a word heard wrong): each fix by its place in the transcript's words. The transcript is the captions' one truth — the preview and the render burn in what it says — and a transcript edited by hand is never transcribed again. Returns the transcript's text."
+    )]
+    async fn transcript_edit(&self, Parameters(a): Parameters<TranscriptEditArgs>) -> String {
+        let r = async {
+            let h: iroh_blobs::Hash = a.hash.parse().map_err(|e| format!("{e}"))?;
+            let rec = self.vault.catalog.record(vault_core::catalog::TRANSCRIPT, h).await.map_err(|e| format!("{e:#}"))?.ok_or("no transcript yet")?;
+            let mut words: Vec<Value> = rec["words"].as_array().cloned().ok_or("no words in its transcript")?;
+            // from the last fix back, so each place stays where `transcript` showed it
+            let mut fixes = a.fixes;
+            fixes.sort_by(|x, y| y.i.cmp(&x.i));
+            for f in fixes {
+                let Some(old) = words.get(f.i).cloned() else { return Err(format!("no word {}", f.i)) };
+                let said: Vec<&str> = f.w.split_whitespace().collect();
+                let (s0, e0) = (old["s"].as_f64().unwrap_or(0.0), old["e"].as_f64().unwrap_or(0.0));
+                let total: f64 = said.iter().map(|x| x.chars().count() as f64 + 1.0).sum();
+                let mut at = s0;
+                let made: Vec<Value> = said
+                    .iter()
+                    .map(|x| {
+                        let d = if said.len() == 1 { e0 - s0 } else { (e0 - s0) * (x.chars().count() as f64 + 1.0) / total };
+                        let w = json!({ "w": x, "s": at, "e": at + d });
+                        at += d;
+                        w
+                    })
+                    .collect();
+                words.splice(f.i..=f.i, made);
+            }
+            let r = crate::transcripts::set_words(&self.vault, h, &words, "hand").await?;
+            Ok::<_, String>(r["text"].as_str().unwrap_or_default().to_string())
+        };
+        r.await.unwrap_or_else(|e| e)
     }
 
     #[tool(
