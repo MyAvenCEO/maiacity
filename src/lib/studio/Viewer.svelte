@@ -16,9 +16,7 @@
 	 * @type {{
 	 *   source: HTMLVideoElement | HTMLImageElement | HTMLCanvasElement | null | undefined,
 	 *   profile: string,
-	 *   grades?: import('$lib/auth/client').Cdl[],
-	 *   balance?: import('../../../game/film/color.js').Balance | null,
-	 *   looks?: import('$lib/auth/client').Look[],
+	 *   stacks?: any[],
 	 *   luts: Record<string, import('./luts.js').Lut | null>,
 	 *   aspect: number,
 	 *   frame?: import('$lib/auth/client').ClipFrame,
@@ -31,9 +29,7 @@
 	let {
 		source,
 		profile,
-		grades = [],
-		balance = null,
-		looks = [],
+		stacks = [],
 		luts,
 		aspect,
 		frame,
@@ -49,12 +45,13 @@
 	let last = '';
 	/** the clip's grade as the Mac baked it; null: as it is @type {import('./luts.js').Lut | null} */
 	let cube = $state(null);
-	const gradeKey = $derived(JSON.stringify([profile === 'srgb' ? null : (balance ?? null), grades, looks]));
+	// a picture already display-referred (a drawn stand-in) takes no base correction
+	const gradeKey = $derived(JSON.stringify(profile === 'srgb' ? stacks.slice(1) : stacks));
 	$effect(() => {
-		const [b, g, l] = JSON.parse(gradeKey);
-		if (!b && !g.length && !l.length) return void (cube = null);
+		const st = JSON.parse(gradeKey);
+		if (!st.length) return void (cube = null);
 		let live = true;
-		gradeLut(b, g, l)
+		gradeLut(st)
 			.then((l) => live && (cube = l))
 			.catch((e) => console.warn('viewer: no grade cube:', e));
 		return () => void (live = false);
@@ -83,7 +80,7 @@
 		}
 		const { w, h, ok } = size(el);
 		if (!ok || !w || !h) return;
-		const p = viewPlan(profile, grades, luts);
+		const p = viewPlan(profile, [], luts);
 		if (plan?.note !== p.note || plan?.idt !== p.idt || plan?.odt !== p.odt) plan = p;
 		// only when something changed: a video that moves, a still or a grade that is new
 		const moving = el instanceof HTMLVideoElement ? `${el.currentTime}:${el.paused}` : el instanceof HTMLCanvasElement ? String(performance.now()) : el.src;

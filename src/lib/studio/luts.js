@@ -58,17 +58,16 @@ function cubeOf(raw) {
 /** @type {Map<string, Promise<Lut>>} */
 const graded = new Map();
 /**
- * A clip's colour as the Mac bakes it (`color_grade`, from vault-render's grade and looks, their only maths): its
- * balance, its own grade, its scene's look and the film's, as a cube over ACEScct the viewer samples. The last few are
- * kept, by what they are.
- * @param {import('../../../game/film/color.js').Balance | null} balance @param {import('$lib/auth/client').Cdl[]} grades
- * @param {import('$lib/auth/client').Look[]} [looks] @returns {Promise<Lut>}
+ * A clip's colour as the Mac bakes it (`color_grade`, from vault-render's tools, their only maths): every colour tool
+ * of its stacks in order (masks and textures are the Mac's frames'), as a cube over ACEScct the viewer samples. The last
+ * few are kept, by what they are.
+ * @param {any[]} stacks @returns {Promise<Lut>}
  */
-export function gradeLut(balance, grades, looks = []) {
-	const key = JSON.stringify([balance, grades, looks]);
+export function gradeLut(stacks) {
+	const key = JSON.stringify(stacks);
 	let lut = graded.get(key);
 	if (!lut) {
-		lut = import('$lib/native').then(async ({ command }) => ({ ...cubeOf(await command('color_grade', { balance, grades, looks })), name: 'grade', hash: key }));
+		lut = import('$lib/native').then(async ({ command }) => ({ ...cubeOf(await command('color_grade', { stacks })), name: 'grade', hash: key }));
 		lut.catch(() => graded.delete(key));
 		graded.set(key, lut);
 		if (graded.size > 48) graded.delete(/** @type {string} */ (graded.keys().next().value));
@@ -76,12 +75,6 @@ export function gradeLut(balance, grades, looks = []) {
 	return lut;
 }
 
-/** A grade preset: its name, what the studio calls it, its CDL. @typedef {{ name: string, label: string, cdl: import('$lib/auth/client').Cdl }} Preset */
-/** The grade presets as Rust holds them (vault-render `grade::PRESETS`). @returns {Promise<Preset[]>} */
-export async function nativePresets() {
-	const { command } = await import('$lib/native');
-	return command('color_presets');
-}
 
 /** @type {Map<string, Promise<string>>} */
 const frames = new Map();

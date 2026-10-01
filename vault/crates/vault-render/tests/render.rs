@@ -158,7 +158,7 @@ fn the_cut_the_fades_the_captions_and_qc() {
         "clips": [
             // a from its second second (green), 0–2 s; b over it 1–3 s, graded warm; a gap 3–4 s
             { "id": "c1", "track": "V1", "start": 0, "in": 1, "dur": 2, "vol": 1, "hash": "a" },
-            { "id": "c2", "track": "V1", "start": 1, "in": 0, "dur": 2, "vol": 1, "hash": "b", "grade": warm.to_json() },
+            { "id": "c2", "track": "V1", "start": 1, "in": 0, "dur": 2, "vol": 1, "hash": "b", "stacks": { "clip": { "tools": [vault_render::tools::cdl_tool(&warm)] } } },
             { "id": "c3", "track": "A1", "start": 0, "in": 0, "dur": 4, "vol": 1, "hash": "v" },
             { "id": "c4", "track": "A2", "start": 0, "in": 0, "dur": 3, "vol": 0.5, "hash": "a" }
         ]
@@ -179,8 +179,8 @@ fn the_cut_the_fades_the_captions_and_qc() {
     let l = d.loudness;
     assert!((l.lufs.unwrap() + 16.0).abs() < 0.5, "{l:?}");
     assert!(l.true_peak.unwrap() < -0.5, "{l:?}");
-    // the transforms named: the journey, the clip's grade and looks (one cube), the output transform
-    assert!(out.color.transforms.contains_key("idt-rec709") && out.color.transforms.contains_key("grade:looks:c2") && out.color.transforms.contains_key("identity"), "{:?}", out.color.transforms);
+    // the transforms named: the journey, the clip's grade (its cube), the output transform
+    assert!(out.color.transforms.contains_key("idt-rec709") && out.color.transforms.keys().any(|k| k.starts_with("grade:c2:")) && out.color.transforms.contains_key("identity"), "{:?}", out.color.transforms);
 
     // the picture: a's in point (green, fading up from black), b on top from 1 s, graded; the fade out; the gap
     let f = &d.file;

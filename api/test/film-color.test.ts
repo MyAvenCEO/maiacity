@@ -2,7 +2,8 @@
 // (the CDL, the balance, the presets) is Rust's alone and tested there (vault/crates/vault-render tests/maths.rs,
 // tests/gpu.rs), as is the render's colour path (vault/crates/vault-media tests/cst.rs and aces2.rs).
 import { expect, test } from "bun:test";
-import { BALANCE_NODES, cleanBalance, cleanCdl, detect, exrHeader, exrProfile, fromCct, isNeutral, MID_GREY_CCT, PROFILES, profileOf, REC709_TO_AP1, toCct } from "../../game/film/color.js";
+import { detect, exrHeader, exrProfile, fromCct, MID_GREY_CCT, PROFILES, profileOf, REC709_TO_AP1, toCct } from "../../game/film/color.js";
+import { cleanStack, cleanTool, newTool, TOOL } from "../../game/film/grade-tools.js";
 import {
   canonical, DECODE, hashOf, HLG_SCALE, hlgToScene, monCurve, nitsToPq, pqToNits, rec709ToScene, sha256, SHAPER, shaperToCct,
   srgbToScene, TRANSFORMS,
@@ -76,19 +77,21 @@ test("an EXR header is read for its chromaticities and channels", () => {
   expect(exrHeader(new Uint8Array([1, 2, 3, 4, 5, 6, 7, 8]))).toBeNull();
 });
 
-test("a grade as data: the balance's layers and ranges, and a saved grade checked", () => {
-  // the balance's layers in the order they apply (vault-render grade::BALANCE_FIELDS holds the same ranges)
-  expect(BALANCE_NODES.flatMap((n) => n.fields.map((f) => [f.key, f.min, f.max]))).toEqual([
+test("a grade as data: every tool from the registry, checked, its defaults filled in", () => {
+  // the balance's controls in the order they apply (vault-render tools.rs checks the same ranges: its test reads the registry)
+  expect(TOOL.balance.params.map((p: any) => [p.key, p.min, p.max])).toEqual([
     ["temp", -2, 2], ["tint", -2, 2], ["exposure", -4, 4], ["contrast", -0.8, 1.5], ["highlights", -3, 3], ["shadows", -3, 3], ["sat", -1, 1],
   ]);
-  const b = cleanBalance({ temp: -0.4, tint: 0.2, exposure: 0.7, contrast: -0.2, highlights: 0.5, shadows: -0.6, sat: 0.3 })!;
-  expect(b).toEqual({ temp: -0.4, tint: 0.2, exposure: 0.7, contrast: -0.2, highlights: 0.5, shadows: -0.6, sat: 0.3 });
-  expect(cleanBalance({})).toBeNull();
-  expect(cleanBalance({ exposure: 9, temp: "x" })!.exposure).toBe(4);
-  expect(cleanBalance({ sat: 3 })!.sat).toBe(1);
-  expect(isNeutral(cleanCdl({}))).toBe(true);
-  expect(cleanCdl({ slope: [9, 1, 1] })!.slope[0]).toBe(4);
-  expect(cleanCdl({ power: [0, 1, 1] })!.power[0]).toBe(0.1);
+  expect(cleanTool({ tool: "balance", exposure: 9, temp: "x" })).toMatchObject({ exposure: 4, temp: 0 });
+  expect(cleanTool({ tool: "cdl", slope: [9, 1, 1], power: [0, 1, 1] })).toMatchObject({ slope: [4, 1, 1], power: [0.1, 1, 1], sat: 1 });
+  expect(cleanTool({ tool: "nothing" })).toBeNull();
+  expect(cleanTool({ tool: "lut", hash: "x" })).toBeNull();
+  // a mask holds tools of its own, three deep at most
+  const deep = cleanTool({ tool: "window", tools: [{ tool: "key", tools: [{ tool: "window", tools: [{ tool: "window", tools: [{ tool: "grain" }] }] }] }] });
+  expect(deep.tools[0].tools[0].tools[0].tools).toEqual([]);
+  expect(newTool("vignette")).toEqual({ tool: "vignette", amount: 0.4, size: 0.9, softness: 0.5, roundness: 0 });
+  expect(cleanStack({ tools: [] })).toBeNull();
+  expect(cleanStack({ strength: 7, tools: [{ tool: "grain" }] })).toEqual({ tools: [{ tool: "grain", amount: 0.12, size: 1, chroma: 0 }] });
 });
 
 // ── transforms.js ─────────────────────────────────────────────────────────────────────────────────────────────────
@@ -163,21 +166,12 @@ test("HDR signals as scene light: BT.2408's grey lands on 18%; PQ both ways", ()
   for (const lin of [0, 0.01, 0.18, 1, 100]) expect(shaperToCct(nitsToPq(((lin + SHAPER.offset) / (1 + SHAPER.offset)) * SHAPER.npl))).toBeCloseTo(toCct(lin), 8);
 });
 
-test("a look as data: checked as Rust checks it, null when it changes nothing", async () => {
-  const { cleanLook } = await import("../../game/film/color.js");
-  expect(cleanLook({})).toBeNull();
-  expect(cleanLook({ sat: 1.3, strength: 0 })).toBeNull();
-  const l = cleanLook({ contrast: 5, sat: 9, hue: [[400, 200], [10, -5]], split: { shadows: { hue: 640, amount: 0.4 } } })!;
-  expect([l.contrast, l.sat]).toEqual([1, 3]);
-  expect(l.hue).toEqual([[10, -5], [40, 90]]);
-  expect(l.split!.shadows).toEqual({ hue: 280, amount: 0.4 });
-});
-
-test("a shot's secondaries and the film's finishing: checked as Rust checks them", async () => {
-  const { cleanSecondaries, cleanFinish } = await import("../../game/film/color.js");
-  expect(cleanSecondaries([{ adjust: {} }])).toEqual([]);
-  const [s] = cleanSecondaries([{ window: { shape: "star", w: 9, track: "hand" }, adjust: { exposure: 0.3 }, mix: 3 }]);
-  expect([s.window.shape, s.window.w, s.window.track, s.mix]).toEqual(["ellipse", 4, undefined, 1]);
-  expect(cleanFinish({ grain: { amount: 0 } })).toBeNull();
-  expect(cleanFinish({ pop: { amount: 5 } })!.pop.amount).toBe(1);
+test("the colour tools, masks and textures as data: checked as Rust checks them", () => {
+  const h = cleanTool({ tool: "hue", sat: 9, hue: [[400, 200], [10, -5]] });
+  expect(h.sat).toBe(3);
+  expect(h.hue).toEqual([[10, -5], [40, 90]]);
+  expect(cleanTool({ tool: "split", sh_hue: 640, sh_amount: 0.4 })).toMatchObject({ sh_hue: 280, sh_amount: 0.4 });
+  const w = cleanTool({ tool: "window", shape: "star", w: 9, track: "hand", mix: 3, tools: [{ tool: "balance", exposure: 0.3 }] });
+  expect([w.shape, w.w, w.track, w.mix, w.tools[0].exposure]).toEqual(["ellipse", 4, "", 1, 0.3]);
+  expect(cleanTool({ tool: "pop", amount: 5 }).amount).toBe(1);
 });

@@ -12,7 +12,7 @@
 	import { FPS, TRACKS, UNLINKED, clockText, isWorld, onSoundTrack, raw, thumb, tint } from './studio.svelte.js';
 	import { cueEnd, cuesOf } from './analysis.js';
 	import { wordsOf } from './transcript.js';
-	import { LAYERS, baseText, cdlText, finishText, lookText, sceneLook, sceneRuns, secText, timelineLook } from './grade.js';
+	import { LAYERS, frameLine, sceneRuns, stackLine, stackOf } from './grade.js';
 	import { wave } from './wave.js';
 	import { fine } from './fine.js';
 	import { nativeFrame } from './luts.js';
@@ -531,14 +531,14 @@
 							<!-- svelte-ignore a11y_click_events_have_key_events -->
 							<!-- svelte-ignore a11y_no_static_element_interactions -->
 							<div class="cell film" class:focus={s.gradeLayer === L} style:left="0" style:width="{pics.length * COL}px" onpointerdown={(e) => e.stopPropagation()} onclick={() => focus(L, null)}>
-								<span class="val" class:on={L === 'finish' ? !!s.current?.grade?.finish : !!timelineLook(s)}>{L === 'finish' ? finishText(s.current?.grade?.finish ?? null) : lookText(timelineLook(s))}</span>
+								<span class="val" class:on={!!stackOf(s, L, null)}>{stackLine(stackOf(s, L, null))}</span>
 							</div>
 						{:else if L === 'scene'}
 							{#each runs as r (r.key)}
 								<!-- svelte-ignore a11y_click_events_have_key_events -->
 								<!-- svelte-ignore a11y_no_static_element_interactions -->
 								<div class="cell film scene" class:focus={s.gradeLayer === L && !!s.sel && (s.sel.script?.scene || null) === r.scene} style:left="{r.from * COL}px" style:width="{r.count * COL}px" onpointerdown={(e) => e.stopPropagation()} onclick={() => focus(L, pics[r.from])}>
-									<span class="val" class:on={!!(r.scene && sceneLook(s, r.scene))}>{r.scene ? `${r.scene} · ${lookText(sceneLook(s, r.scene))}` : 'no scene in the script'}</span>
+									<span class="val" class:on={!!stackOf(s, L, pics[r.from])}>{r.scene ? `${r.scene} · ${stackLine(stackOf(s, L, pics[r.from]))}` : 'no scene in the script'}</span>
 								</div>
 							{/each}
 						{:else}
@@ -546,10 +546,8 @@
 								<!-- svelte-ignore a11y_click_events_have_key_events -->
 								<!-- svelte-ignore a11y_no_static_element_interactions -->
 								<div class="cell" class:sel={s.selected === c.id} class:focus={s.gradeLayer === L && s.selected === c.id} style:left={left(c)} style:width={width(c)} onpointerdown={(e) => e.stopPropagation()} onclick={() => focus(L, c)}>
-									{#if L === 'clip'}<span class="val" class:on={!!c.grade}>{cdlText(c.grade)}</span>
-									{:else if L === 'sec'}<span class="val" class:on={!!c.secondaries?.length}>{c.secondaries?.length ? c.secondaries.map(secText).join(' · ') : '—'}</span>
-									{:else if L === 'base'}<span class="val" class:on={!!c.balance}>{baseText(c)}</span>
-									{:else}<span class="val" class:on={!!c.frame?.[s.shape]}>{c.frame?.[s.shape] ? `${s.shape} · ${(c.frame[s.shape]?.zoom ?? 1).toFixed(2)}×` : '—'}</span>{/if}
+									{#if L === 'frame'}<span class="val" class:on={!!c.frame?.[s.shape]}>{frameLine(c, s.shape)}</span>
+									{:else}<span class="val" class:on={!!stackOf(s, L, c)}>{stackLine(stackOf(s, L, c))}</span>{/if}
 								</div>
 							{/each}
 						{/if}
@@ -583,7 +581,7 @@
 						{#each pics as c, i (c.id)}
 							{@const pic = thumbs[c.id] ?? previewOf(c)}
 							<!-- svelte-ignore a11y_no_static_element_interactions -->
-							<div class="shot" class:sel={s.selected === c.id} class:now={nowId === c.id} class:balanced={!!c.balance} style:left={left(c)} style:width={width(c)} ondblclick={() => pick(c)} title="{s.clipName(c)}{c.script?.description ? ` — ${c.script.description}` : ''} (double-click: its grading still)">
+							<div class="shot" class:sel={s.selected === c.id} class:now={nowId === c.id} class:balanced={!!c.stacks?.base} style:left={left(c)} style:width={width(c)} ondblclick={() => pick(c)} title="{s.clipName(c)}{c.script?.description ? ` — ${c.script.description}` : ''} (double-click: its grading still)">
 								{#if pic}<img src={pic} alt="" draggable="false" />{:else}<span class="none">{isWorld(c) ? 'world shot' : c.kind === 'slate' ? 'not filmed yet' : 'no picture yet'}</span>{/if}
 								<span class="cap"><b>{i + 1}</b> {c.script?.size ?? ''} {c.script?.description ?? s.clipName(c)}</span>
 							</div>
@@ -601,7 +599,7 @@
 								class:linked={!!c.link && c.link !== UNLINKED}
 								class:missing={!!c.hash && !m}
 								class:sel={s.selected === c.id}
-								class:graded={!!c.grade}
+								class:graded={!!c.stacks?.clip}
 								style:left={x(c.start)}
 								style:width={x(c.dur)}
 								style:clip-path={outline(t.id, c)}
@@ -632,7 +630,7 @@
 								{#if t.id === 'V1'}
 									<span class="chips">
 										{#if world}<b class="wtag">world</b>{:else if m}{#if m.kind === 'video' && !s.proxy(m).hash}{@const st = s.proxy(m).state}<b class="nopx" title="No proxy yet: the original plays">{st === 'none' ? 'no proxy' : `proxy ${st}`}</b>{/if}{/if}
-										{#if c.grade}<b class="gr" title="Graded">◐</b>{/if}
+										{#if c.stacks?.clip}<b class="gr" title="Graded">◐</b>{/if}
 									</span>
 								{/if}
 								{#if audio && onSoundTrack(c)}

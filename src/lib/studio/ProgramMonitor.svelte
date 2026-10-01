@@ -232,7 +232,7 @@
 		void spec;
 		void s.tab;
 		void s.current?.grade;
-		void pic?.grade;
+		void pic?.stacks;
 		if (!s.playing) s.driveWorld();
 	});
 	// the stand-in, drawn at the shot's time (when neither the live world nor a proxy can show it)
@@ -318,9 +318,7 @@
 		<Viewer
 			{source}
 			profile={source && source === stand ? 'srgb' : still ? 'acescct' : s.profileOfClip(pic)}
-			grades={s.gradesOf(pic)}
-			looks={s.looksOf(pic)}
-			balance={s.balanceOf(pic)}
+			stacks={s.stacksOf(pic)}
 			luts={s.luts}
 			aspect={ratio(s.viewShape)}
 			frame={frameOf}

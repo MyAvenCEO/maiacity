@@ -57,8 +57,8 @@ export async function queueFrame(founderId: string, timelineId: string, body: { 
 }
 
 /**
- * A file's graded still: its grading still's frame through the clip that grades it (balance, secondaries, grade,
- * looks, 16:9 framing, the output), 1920 wide — the file's one preview, its thumbnail everywhere. A `frame` job for
+ * A file's graded still: its grading still's frame through the clip that grades it (its stacks of tools — base,
+ * clip, its scene's, the timeline's, the finishing — its 16:9 framing, the output), 1920 wide — the file's one preview, its thumbnail everywhere. A `frame` job for
  * the file (`media_hash`) with the clip in `params`; one waits per file: a newer ask takes the waiting one's place.
  */
 export async function queueStill(founderId: string | null, hash: string, timelineId: string, clip: string): Promise<Job> {
@@ -73,15 +73,15 @@ export async function queueStill(founderId: string | null, hash: string, timelin
     [timelineId, hash, params, founderId])).rows[0]!;
 }
 
-type Graded = { id: string; track: string; kind?: string; hash?: string; balance?: unknown; secondaries?: unknown; grade?: unknown; frame?: Record<string, unknown>; script?: { scene?: string } };
+type Graded = { id: string; track: string; kind?: string; hash?: string; stacks?: unknown; frame?: Record<string, unknown>; script?: { scene?: string } };
 
 /** Per file, the first picture clip that plays it, and what its graded still is made of (its look on screen). */
 function gradesOf(clips: Graded[], grade: unknown, color: unknown): Map<string, { clip: string; of: string; graded: boolean }> {
   const out = new Map<string, { clip: string; of: string; graded: boolean }>();
   for (const c of clips) {
     if (c.track !== "V1" || (c.kind && c.kind !== "media") || !c.hash || out.has(c.hash)) continue;
-    const own = { balance: c.balance ?? null, secondaries: c.secondaries ?? null, grade: c.grade ?? null, frame: c.frame?.["16:9"] ?? null, scene: c.script?.scene ?? null };
-    out.set(c.hash, { clip: c.id, of: JSON.stringify({ own, grade: grade ?? null, color: color ?? null }), graded: !!(c.balance || c.secondaries || c.grade || c.frame?.["16:9"] || grade) });
+    const own = { stacks: c.stacks ?? null, frame: c.frame?.["16:9"] ?? null, scene: c.script?.scene ?? null };
+    out.set(c.hash, { clip: c.id, of: JSON.stringify({ own, grade: grade ?? null, color: color ?? null }), graded: !!(c.stacks || c.frame?.["16:9"] || grade) });
   }
   return out;
 }

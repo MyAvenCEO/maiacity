@@ -18,14 +18,14 @@ use serde_json::{Value, json};
 use crate::{
     av::{Codec, VideoReader, VideoSettings, Writer},
     captions::Captions,
-    creative::{Finish, Look, Ready, apply_finish, apply_secondaries},
     gpu::{Cube, Gpu, Image},
-    grade::{Cdl, hash_of},
+    grade::hash_of,
     loudness::Loudness,
     output::{Lut3d, Output},
     qc::{Qc, Want, loudness, qc},
     sound::{AudioClip, Sound, Target, mix},
     timeline::{Clip, FPS, HOOK, Phrase, Shape, Timeline, Word, base_name, phrases, pieces, shapes_of},
+    tools::{Stack, Step},
 };
 
 /// A file in the vault's catalog, as far as the render reads it.
@@ -146,7 +146,8 @@ pub struct ColorReport {
     pub engine: String,
     /// every transform used, by name → the hash of its config
     pub transforms: BTreeMap<String, String>,
-    pub look: Option<Cdl>,
+    /// the film's grade (its stacks: scenes, timeline, finishing)
+    pub look: Option<Value>,
 }
 
 /// What a render made.
@@ -249,8 +250,7 @@ fn is_still(m: &Media, file: &vault_media::Source) -> bool {
 struct Plan {
     total: f64,
     pictures: Vec<Clip>,
-    look: Option<Cdl>,
-    finish: Option<Finish>,
+    look: Option<Value>,
     sources: HashMap<String, Source>,
     card: Option<Clip>,
     hooks: HashMap<String, vault_media::Source>,
@@ -377,7 +377,7 @@ fn plan(t: &Timeline, lib: &dyn Library) -> Result<Plan> {
         .filter(|c| (c.track.starts_with('A') || own_sound(c)) && c.hash.is_some())
         .map(|c| AudioClip { clip: c.clone(), file: files.get(c.hash.as_ref().unwrap()).unwrap().0.clone() })
         .collect();
-    Ok(Plan { total, pictures, look: t.look(), finish: t.finish(), sources, card, hooks, thumbnails, phrases, audio, conformed, warnings })
+    Ok(Plan { total, pictures, look: t.grade.as_ref().and_then(|g| serde_json::to_value(g).ok()), sources, card, hooks, thumbnails, phrases, audio, conformed, warnings })
 }
 
 /// The journey's config, hashed as the report names it.
@@ -434,15 +434,16 @@ pub fn render(
 ) -> Result<Render> {
     let plan = plan(t, lib)?;
     std::fs::create_dir_all(&opts.work)?;
-    // every picture clip's grade and looks as one cube, baked once for each different one
+    // every picture clip's grade as steps (its stacks: base, clip, scene, timeline, finishing), the colour runs baked
+    // once for each different one
     let mut baked: HashMap<String, Lut3d> = HashMap::new();
-    let mut cubes: HashMap<String, (Lut3d, String)> = HashMap::new();
+    let mut cubes: HashMap<String, Vec<Step>> = HashMap::new();
     for c in &plan.pictures {
-        if let Some((lut, key)) = clip_cube(t, lib, c, output)? {
-            let lut = baked.entry(key.clone()).or_insert(lut).clone();
-            cubes.insert(c.id.clone(), (lut, key));
-        }
+        let (steps, luts) = clip_steps(t, lib, c, output)?;
+        baked.extend(luts);
+        cubes.insert(c.id.clone(), steps);
     }
+    let cubes = (cubes, baked);
     let shapes: Vec<Shape> = shapes_of(t).into_iter().filter(|s| opts.shapes.as_ref().is_none_or(|only| only.iter().any(|a| a == s.aspect))).collect();
     if shapes.is_empty() {
         bail!("no such shape to render");
@@ -538,7 +539,7 @@ enum Reading {
 #[allow(clippy::too_many_arguments)]
 fn render_shape(
     plan: &Plan,
-    cubes: &HashMap<String, (Lut3d, String)>,
+    cubes: &(HashMap<String, Vec<Step>>, HashMap<String, Lut3d>),
     s: &Shape,
     gpu: &Gpu,
     captions: &Captions,
@@ -615,23 +616,25 @@ fn render_shape(
                 }
             }
         };
-        if let Some(b) = clip.and_then(|c| c.balance()) {
-            used.insert("grade:balance".into(), hash_of(&json!({ "balance": b })));
+        // the clip's grade as steps, its colour runs as the cubes they were baked into (their hashes in the report)
+        let steps: Vec<Step> = clip.and_then(|c| cubes.0.get(&c.id)).cloned().unwrap_or_default();
+        let mut gpu_cubes: HashMap<String, Cube> = HashMap::new();
+        for (key, _) in crate::tools::runs(&steps) {
+            if let Some(lut) = cubes.1.get(&key) {
+                gpu_cubes.entry(key.clone()).or_insert_with(|| gpu.cube(lut));
+                if let Some(c) = clip {
+                    used.insert(format!("grade:{}:{key}", c.id), key.clone());
+                }
+            }
         }
-        // the clip's grade and looks, as the one cube they were baked into (its hash in the report)
-        let looks = clip.and_then(|c| cubes.get(&c.id));
-        if let (Some((_, key)), Some(c)) = (looks, clip) {
-            used.insert(format!("grade:looks:{}", c.id), key.clone());
-        }
-        let cube: Option<Cube> = looks.map(|(lut, _)| gpu.cube(lut));
-        let finish = plan.finish.clone();
+        let cube = (steps, gpu_cubes);
         for n in piece.a..piece.b {
             let t = n as f64 / fps;
             autoreleasepool(|_| -> Result<()> {
                 // ── the picture, scene-referred to display-referred ──
                 let pic: Image = match &mut reading {
                     Reading::Gap => gpu.black(w, h),
-                    Reading::Still { image } => picture(gpu, image, s, clip.unwrap(), cube.as_ref(), finish.as_ref(), n)?,
+                    Reading::Still { image } => picture(gpu, image, s, clip.unwrap(), &cube, n)?,
                     Reading::Sequence { seq, fps: rate, offset, args, shown } => {
                         // the sequence's frame on screen half a film frame on, as for a movie
                         let i = seq.index_at(t + *offset + 0.5 / fps - 1e-4, *rate);
@@ -639,7 +642,7 @@ fn render_shape(
                             let img = gpu.journey(&*sequence_frame(seq, i)?, *args)?;
                             *shown = Some((i, img));
                         }
-                        picture(gpu, &shown.as_ref().unwrap().1, s, clip.unwrap(), cube.as_ref(), finish.as_ref(), n)?
+                        picture(gpu, &shown.as_ref().unwrap().1, s, clip.unwrap(), &cube, n)?
                     }
                     Reading::Video { reader, offset, args } => {
                         // the frame on screen half a frame on (ffmpeg's fps filter rounds to the nearest)
@@ -647,7 +650,7 @@ fn render_shape(
                         let turn = reader.info.transform;
                         let pb = reader.at(at)?.context("no frame")?;
                         let img = gpu.journey(&gpu.orient(&gpu.frame(pb), turn), *args)?;
-                        picture(gpu, &img, s, clip.unwrap(), cube.as_ref(), finish.as_ref(), n)?
+                        picture(gpu, &img, s, clip.unwrap(), &cube, n)?
                     }
                 };
                 // ── fades in display space: up from black (a film without a hook), down to black at the end ──
@@ -773,71 +776,76 @@ fn delivery(file: PathBuf, name: String, channels: &[&str], format: String, s: &
     }
 }
 
+/// A clip's grade as the GPU runs it: its steps, and the cubes of their colour runs.
+pub type Graded = (Vec<Step>, HashMap<String, Cube>);
+
 /// A clip's picture after its journey, framed for the shape, through its whole grade (`chain`).
-fn picture(gpu: &Gpu, acescct: &Image, s: &Shape, c: &Clip, looks: Option<&Cube>, finish: Option<&Finish>, frame: u64) -> Result<Image> {
+fn picture(gpu: &Gpu, acescct: &Image, s: &Shape, c: &Clip, grade: &Graded, frame: u64) -> Result<Image> {
     let (w, h) = s.render_size();
     let framed = gpu.frame_to(acescct, w, h, c.frame_for(s.aspect))?;
-    gpu.output(&*chain(gpu, &framed, w, h, c, looks, finish, frame)?)
+    gpu.output(&*chain(gpu, &framed, w, h, &grade.0, &grade.1, frame)?)
 }
 
-/// A clip's framed picture (ACEScct, `w`×`h`) through its whole grade, still in ACEScct: its balance, its secondaries
-/// (a face-tracked window on the face Vision finds in this frame), its grade and looks (one cube: its own CDL, its
-/// scene's look, the film's), the film's finishing (frame `frame`: the grain's seed). The output transform is the
-/// caller's.
-#[allow(clippy::too_many_arguments)]
-pub fn chain(gpu: &Gpu, framed: &Image, w: u32, h: u32, c: &Clip, looks: Option<&Cube>, finish: Option<&Finish>, frame: u64) -> Result<Image> {
-    chain_with(gpu, framed, w, h, c, looks, finish, frame, &mut |gpu, pic| Ok(crate::look::faces(&*gpu.output(pic)?).first().copied()))
+/// A clip's framed picture (ACEScct, `w`×`h`) through its whole grade, still in ACEScct: its stacks' steps (tools.rs)
+/// — a window that follows the face, on the face Vision finds in this frame; frame `frame` the grain's seed. The
+/// output transform is the caller's.
+pub fn chain(gpu: &Gpu, framed: &Image, w: u32, h: u32, steps: &[Step], cubes: &HashMap<String, Cube>, frame: u64) -> Result<Image> {
+    chain_with(gpu, framed, w, h, steps, cubes, frame, &mut |gpu, pic| Ok(crate::look::faces(&*gpu.output(pic)?).first().copied()))
 }
 
-/// `chain`, with where the face is found by `face_of` (from the balanced picture, ACEScct) — the player tracks it
-/// every few frames on a small copy instead of on every frame.
+/// `chain`, with where the face is found by `face_of` (from the picture at the window, ACEScct) — the player tracks
+/// it every few frames on a small copy instead of on every frame.
 #[allow(clippy::too_many_arguments)]
 pub fn chain_with(
     gpu: &Gpu,
     framed: &Image,
     w: u32,
     h: u32,
-    c: &Clip,
-    looks: Option<&Cube>,
-    finish: Option<&Finish>,
+    steps: &[Step],
+    cubes: &HashMap<String, Cube>,
     frame: u64,
     face_of: &mut dyn FnMut(&Gpu, &Image) -> Result<Option<crate::look::Rect>>,
 ) -> Result<Image> {
-    let mut pic = gpu.balance(framed, c.balance().as_ref())?;
-    let secs = c.secondaries();
-    if !secs.is_empty() {
-        let face = if secs.iter().any(|s| s.window.as_ref().is_some_and(|w| w.track.is_some())) { face_of(gpu, &pic)? } else { None };
-        pic = apply_secondaries(gpu, &pic, &secs, face, w as f64, h as f64)?;
-    }
-    if let Some(cube) = looks {
-        pic = gpu.apply_cube(&pic, cube)?;
-    }
-    if let Some(f) = finish {
-        pic = apply_finish(gpu, &pic, f, frame, h as f64)?;
-    }
-    Ok(pic)
+    crate::tools::apply(gpu, framed, steps, cubes, w as f64, h as f64, frame, face_of)
 }
 
-/// A look's creative LUT, loaded from the vault by its hash.
-fn look_lut(lib: &dyn Library, l: &Look) -> Result<Option<Lut3d>> {
-    let Some(h) = &l.lut else { return Ok(None) };
-    let text = String::from_utf8(lib.file(h)?.read_all()?).context("a creative LUT is text (.cube)")?;
-    Ok(Some(Lut3d::from_cube_str(h, &text)?))
+/// The creative LUTs named, loaded from the vault by their hashes.
+pub fn load_luts(lib: &dyn Library, hashes: &[String]) -> Result<HashMap<String, Lut3d>> {
+    let mut out = HashMap::new();
+    for h in hashes {
+        if out.contains_key(h) {
+            continue;
+        }
+        let text = String::from_utf8(lib.file(h)?.read_all()?).context("a creative LUT is text (.cube)")?;
+        out.insert(h.clone(), Lut3d::from_cube_str(h, &text)?);
+    }
+    Ok(out)
 }
 
-/// A clip's colour after its balance as one cube (65³, ACEScct in and out): its own CDL, then its scene's look, then
-/// the film's — with the hash that names it. None when it has none of them.
-pub fn clip_cube(t: &Timeline, lib: &dyn Library, c: &Clip, output: &dyn Output) -> Result<Option<(Lut3d, String)>> {
-    let grades: Vec<Cdl> = c.cdl().into_iter().collect();
-    let looks = t.looks_for(c);
-    if grades.is_empty() && looks.is_empty() {
-        return Ok(None);
+/// Stacks as steps, their colour runs baked (65³, ACEScct in and out) — by each run's key.
+pub fn stacks_steps(stacks: &[Stack], lib: &dyn Library, output: &dyn Output) -> Result<(Vec<Step>, HashMap<String, Lut3d>)> {
+    let refs: Vec<&Stack> = stacks.iter().collect();
+    let steps = crate::tools::compile(&refs, output);
+    let luts = load_luts(lib, &crate::tools::luts(&steps))?;
+    let mut baked = HashMap::new();
+    for (key, run) in crate::tools::runs(&steps) {
+        if !baked.contains_key(&key) {
+            baked.insert(key.clone(), Lut3d::from_rgb(&format!("tools-{key}"), 65, crate::tools::bake(&run, &luts, output, 65))?);
+        }
     }
-    let key = hash_of(&json!({ "grades": grades.iter().map(Cdl::to_json).collect::<Vec<_>>(), "looks": looks, "output": output.hash() }));
-    let luts = looks.iter().map(|l| look_lut(lib, l)).collect::<Result<Vec<_>>>()?;
-    let ready: Vec<Ready> = looks.iter().zip(luts).map(|(l, lut)| Ready::new(l, lut)).collect();
-    let data = crate::creative::bake(None, &grades, &ready, output, 65);
-    Ok(Some((Lut3d::from_rgb(&format!("look-{key}"), 65, data)?, key)))
+    Ok((steps, baked))
+}
+
+/// A clip's whole grade (its base correction, clip look, scene's look, the timeline's look, the finishing) as steps
+/// with their cubes baked.
+pub fn clip_steps(t: &Timeline, lib: &dyn Library, c: &Clip, output: &dyn Output) -> Result<(Vec<Step>, HashMap<String, Lut3d>)> {
+    stacks_steps(&t.stacks_for(c), lib, output)
+}
+
+/// The steps with their cubes on this GPU.
+pub fn on_gpu(gpu: &Gpu, made: (Vec<Step>, HashMap<String, Lut3d>)) -> Graded {
+    let cubes = made.1.iter().map(|(k, l)| (k.clone(), gpu.cube(l))).collect();
+    (made.0, cubes)
 }
 
 /// What a shot's picture is like, in ACEScct, as a colourist reads it: its luma (Rec.709 weights, as the balance
@@ -861,9 +869,11 @@ pub fn measure(t: &Timeline, lib: &dyn Library, c: &Clip, n: usize) -> Result<Va
         px.extend(f.chunks_exact(4).map(|p| [p[0] as f64, p[1] as f64, p[2] as f64]));
         at_s.push((at * 1000.0).round() / 1000.0);
     }
-    let bal = c.balance().unwrap_or_default();
-    let after: Vec<[f64; 3]> = px.iter().map(|p| bal.apply(*p)).collect();
-    Ok(json!({ "clip": c.id, "from": if from_still { "its grading still" } else { "its original (or proxy)" }, "frames_at": at_s, "as_shot": stats(&px), "balanced": stats(&after), "balance": bal }))
+    // after its base correction's balances (on each pixel, in order)
+    let base = c.stack("base").unwrap_or_default();
+    let bals: Vec<crate::grade::Balance> = base.tools.iter().filter(|i| i.on).filter_map(|i| if let crate::tools::Tool::Balance(b) = &i.tool { Some(*b) } else { None }).collect();
+    let after: Vec<[f64; 3]> = px.iter().map(|p| bals.iter().fold(*p, |q, b| b.apply(q))).collect();
+    Ok(json!({ "clip": c.id, "from": if from_still { "its grading still" } else { "its original (or proxy)" }, "frames_at": at_s, "as_shot": stats(&px), "balanced": stats(&after), "base": base }))
 }
 
 /// Luma percentiles and the middle tones' colour of ACEScct pixels (see `measure`); the colour also as the white
@@ -1143,8 +1153,8 @@ pub fn hero_frame(
                 let pb = r.at(from + 0.5 / FPS as f64 - 1e-4)?.context("no frame there")?;
                 gpu.journey(&gpu.orient(&gpu.frame(pb), turn), args)?
             };
-            let cube = clip_cube(t, lib, c, output)?.map(|(lut, _)| gpu.cube(&lut));
-            (picture(&gpu, &src, &s, c, cube.as_ref(), t.finish().as_ref(), (at * FPS as f64).round() as u64)?, what)
+            let grade = on_gpu(&gpu, clip_steps(t, lib, c, output)?);
+            (picture(&gpu, &src, &s, c, &grade, (at * FPS as f64).round() as u64)?, what)
         }
     };
     gpu.png(&img, w, h, png)?;
@@ -1152,8 +1162,8 @@ pub fn hero_frame(
 }
 
 /// A file's graded still (the `frame` job of a media clip): its grading still — the ACEScct frame it is graded on —
-/// through clip `clip`'s chain as the render takes it (16:9 framing → balance → secondaries → grade and looks →
-/// finishing → output transform), `width` wide, as a JPEG: the file's one preview, its thumbnail everywhere. Without
+/// through clip `clip`'s chain as the render takes it (16:9 framing → its stacks of tools: base, clip, scene,
+/// timeline, finishing → output transform), `width` wide, as a JPEG: the file's one preview, its thumbnail everywhere. Without
 /// its grading still on this Mac, the same moment read from the original (or its proxy). Returns `{ of, t, clip,
 /// width, height, what }` — `of` the original, `t` the moment (seconds into it).
 pub fn graded_still(t: &Timeline, lib: &dyn Library, output: &dyn Output, clip: &str, width: u32, jpg: &Path) -> Result<Value> {
@@ -1171,9 +1181,9 @@ pub fn graded_still(t: &Timeline, lib: &dyn Library, output: &dyn Output, clip: 
         Some(Ok(file)) => (gpu.still(&file)?, "its grading still"),
         _ => (frame_of(&gpu, lib, c, c.start + (at - c.in_), true)?, "the original's frame (no grading still here)"),
     };
-    let cube = clip_cube(t, lib, c, output)?.map(|(lut, _)| gpu.cube(&lut));
+    let grade = on_gpu(&gpu, clip_steps(t, lib, c, output)?);
     let framed = gpu.frame_to(&src, w, h, c.frame_for(s.aspect))?;
-    let img = gpu.output(&*chain(&gpu, &framed, w, h, c, cube.as_ref(), t.finish().as_ref(), 0)?)?;
+    let img = gpu.output(&*chain(&gpu, &framed, w, h, &grade.0, &grade.1, 0)?)?;
     gpu.jpeg(&img, w, h, jpg)?;
     Ok(json!({ "of": original.hash, "t": at, "clip": c.id, "width": w, "height": h, "what": format!("{} at {at:.3} s, from {what}", if original.title.is_empty() { &original.hash } else { &original.title }) }))
 }

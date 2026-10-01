@@ -8,12 +8,12 @@
  * on the picture track, V1) or a line (a line of the script not recorded yet: its words on the voice track, A1, and in
  * the captions). A picture clip may carry its place in the script (scene, label, description, notes): the Script tab
  * and the timeline are the same clips, so a slate swapped for a still or the footage keeps its script. A sound clip may
- * carry its EQ and gain keys (game/film/sound.js). A clip may carry its balance (the fixed first nodes: white balance, exposure, contrast, highlights, lows), its own grade (an ASC
+ * carry its EQ and gain keys (game/film/sound.js). A picture clip may carry its grade as stacks of tools (game/film/grade-tools.js: its base correction, its clip look; an ASC
  * CDL in ACEScct, the Grade tab) and, for media, how it is reframed per delivery shape. The timeline itself has a working step — edit, locked,
  * graded, rendered — a version (one more at every unlock), its colour pipeline and the whole film's look.
  */
 import { db } from "./pg";
-import { cleanBalance, cleanCdl, cleanFinish, cleanLook, cleanSecondaries } from "../../game/film/color.js";
+import { cleanClipStacks, cleanFilmStacks } from "../../game/film/grade-tools.js";
 import { cleanEq, cleanKeys } from "../../game/film/sound.js";
 import { missingShots } from "./shots";
 
@@ -37,10 +37,8 @@ export type Clip = {
   hash?: string;
   /** world clips (V1 only): shots.id and the version cut in */
   shot?: string; shotVersion?: number;
-  /** this clip's balance, in ACEScct, before its grade (absent = as shot) */
-  balance?: Balance;
-  /** this clip's own grade, in ACEScct (absent = none) */
-  grade?: Cdl;
+  /** picture clips: its grade as stacks of tools (game/film/grade-tools.js): `base` (its base correction), `clip` (its own look) */
+  stacks?: { base?: object; clip?: object };
   /** picture clips: where the clip stands in the script */
   script?: Script;
   /** lines: the words to be said */
@@ -57,7 +55,8 @@ export type Balance = { temp: number; tint: number; exposure: number; contrast: 
 export type Script = { scene?: string; label?: string; description?: string; notes?: string; size?: string };
 export type Stage = "edit" | "locked" | "graded" | "rendered";
 export type Color = { working: "acescct"; output: string };
-export type Grade = { look: Cdl | null; preset?: string; film?: object; scenes?: Record<string, object>; finish?: object } | null;
+/** the film's grade as stacks of tools (game/film/grade-tools.js): each scene's look, the timeline's look, the finishing */
+export type Grade = { scenes?: Record<string, object>; timeline?: object; finish?: object } | null;
 export type Timeline = {
   id: string; name: string; project: string | null; variant: string | null; description: string | null; aspect: string; tags: string[]; clips: Clip[];
   stage: Stage; version: number; color: Color; grade: Grade; created: string; updated: string;
@@ -66,7 +65,6 @@ export type Timeline = {
 const ASPECTS = ["1:1", "16:9", "9:16", "4:5"];
 const STAGES: Stage[] = ["edit", "locked", "graded", "rendered"];
 const OUTPUTS = ["odt-rec709", "odt-rec2100-pq"];
-const PRESETS = ["neutral", "cold", "dip", "bright", "night", "warm"];
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const HASH = /^[0-9a-f]{64}$/;
 const num = (v: unknown, min = 0) => Math.max(min, Number.isFinite(Number(v)) ? Number(v) : min);
@@ -119,13 +117,9 @@ function cleanClip(c: any): Clip {
     // an existing clip stays exactly as it was: `kind` is written only for world clips
     clip = { ...base, ...(c.kind === "media" ? { kind: "media" as const } : {}), hash: String(c.hash), ...(typeof c.link === "string" && c.link ? { link: c.link.slice(0, 40) } : {}) };
   }
-  if (c.balance !== undefined && c.balance !== null && kind !== "line") {
-    const b = cleanBalance(c.balance);
-    if (b) clip.balance = b as Balance;
-  }
-  if (c.secondaries !== undefined && c.secondaries !== null && base.track === "V1") {
-    const secs = cleanSecondaries(c.secondaries);
-    if (secs.length) (clip as any).secondaries = secs;
+  if (c.stacks !== undefined && c.stacks !== null && base.track === "V1") {
+    const st = cleanClipStacks(c.stacks);
+    if (st) clip.stacks = st;
   }
   if (c.eq !== undefined && c.eq !== null && base.track.startsWith("A")) {
     const eq = cleanEq(c.eq);
@@ -138,10 +132,6 @@ function cleanClip(c: any): Clip {
   if (c.script !== undefined && c.script !== null && base.track === "V1") {
     const sc = cleanScript(c.script);
     if (sc) clip.script = sc;
-  }
-  if (c.grade !== undefined && c.grade !== null) {
-    const g = cleanCdl(c.grade);
-    if (g) clip.grade = g as Cdl;
   }
   if (c.frame !== undefined && c.frame !== null) {
     if (kind === "world") throw new TimelineError("A world clip is framed by its shot (its framing per shape), not by a crop.");
@@ -166,20 +156,8 @@ function cleanColor(v: any): Color {
 
 function cleanGrade(v: any): Grade {
   if (v === null) return null;
-  if (typeof v !== "object" || Array.isArray(v)) throw new TimelineError("The film's grade is { look, preset?, film?, scenes? }.");
-  if (v.preset !== undefined && v.preset !== null && !PRESETS.includes(String(v.preset))) throw new TimelineError(`A preset is one of ${PRESETS.join(", ")}.`);
-  const look = v.look === undefined || v.look === null ? null : (cleanCdl(v.look) as Cdl | null);
-  // the film's look and each scene's (by the scene its clips name), after every shot's own grade
-  const film = cleanLook(v.film);
-  const scenes: Record<string, object> = {};
-  if (v.scenes && typeof v.scenes === "object" && !Array.isArray(v.scenes)) {
-    for (const [name, l] of Object.entries(v.scenes).slice(0, 64)) {
-      const c = cleanLook(l);
-      if (c && name.trim()) scenes[name.trim().slice(0, 120)] = c;
-    }
-  }
-  const finish = cleanFinish(v.finish);
-  return { look, ...(v.preset ? { preset: String(v.preset) } : {}), ...(film ? { film } : {}), ...(Object.keys(scenes).length ? { scenes } : {}), ...(finish ? { finish } : {}) };
+  if (typeof v !== "object" || Array.isArray(v)) throw new TimelineError("The film's grade is { scenes?, timeline?, finish? }: stacks of tools.");
+  return cleanFilmStacks(v);
 }
 
 type Body = { name?: unknown; project?: unknown; variant?: unknown; description?: unknown; aspect?: unknown; tags?: unknown; clips?: unknown; stage?: unknown; color?: unknown; grade?: unknown };
@@ -223,7 +201,7 @@ async function checkShots(clips: Clip[] | undefined) {
 
 /** The cut itself — what is where, how long and how loud — without the balance, the grade and the script's notes,
  * which may change after the lock. */
-const cutOf = (clips: Clip[]) => JSON.stringify(clips.map(({ grade: _g, balance: _b, frame: _f, script: _s, ...rest }) => Object.fromEntries(Object.entries(rest).sort(([a], [b]) => a.localeCompare(b)))));
+const cutOf = (clips: Clip[]) => JSON.stringify(clips.map(({ stacks: _g, frame: _f, script: _s, ...rest }) => Object.fromEntries(Object.entries(rest).sort(([a], [b]) => a.localeCompare(b)))));
 
 const COLS = "id, name, project, variant, description, aspect, tags, clips, stage, version, color, grade, created, updated";
 

@@ -188,72 +188,6 @@ pub struct SaveArgs {
     pub patch: Value,
 }
 
-/// An ASC CDL grade, applied in ACEScct (the studio's and the render's own formula): out = (in·slope + offset)^power,
-/// then saturation around Rec.709 luma.
-#[derive(Deserialize, Serialize, schemars::JsonSchema)]
-pub struct Cdl {
-    pub slope: [f64; 3],
-    pub offset: [f64; 3],
-    pub power: [f64; 3],
-    pub sat: f64,
-}
-
-#[derive(Deserialize, schemars::JsonSchema)]
-pub struct GradeClipArgs {
-    /// the timeline's id
-    pub timeline: String,
-    /// the clip's id (a V1 clip)
-    pub clip: String,
-    /// its grade; none: take it off
-    pub grade: Option<Cdl>,
-}
-
-#[derive(Deserialize, schemars::JsonSchema)]
-pub struct GradeFilmArgs {
-    /// the timeline's id
-    pub timeline: String,
-    /// a named look the render knows: neutral, cold, dip, bright, night, warm (game/film/color.js PRESETS)
-    pub preset: Option<String>,
-    /// or a look of its own (wins over the preset)
-    pub look: Option<Cdl>,
-}
-
-/// A shot's balance — the fixed first nodes, in ACEScct, before its grade. Every amount in stops; 0 = as shot.
-#[derive(Deserialize, Serialize, schemars::JsonSchema, Default)]
-pub struct BalanceArg {
-    /// white balance: + warmer (red up, blue down, half each), −2…2
-    #[serde(default)]
-    pub temp: f64,
-    /// white balance: + more magenta (green down), −2…2
-    #[serde(default)]
-    pub tint: f64,
-    /// −4…4 stops
-    #[serde(default)]
-    pub exposure: f64,
-    /// the slope around mid grey minus 1: 0.2 = 20 % more contrast, −0.8…1.5
-    #[serde(default)]
-    pub contrast: f64,
-    /// stops added to the tones above mid grey (fully in at about 2.5 stops above it), −3…3
-    #[serde(default)]
-    pub highlights: f64,
-    /// stops added to the tones below mid grey ("lows"), −3…3
-    #[serde(default)]
-    pub shadows: f64,
-    /// the saturation around luma minus 1: 0.2 = 20 % more colour, −1…1
-    #[serde(default)]
-    pub sat: f64,
-}
-
-#[derive(Deserialize, schemars::JsonSchema)]
-pub struct BalanceArgs {
-    /// the timeline's id
-    pub timeline: String,
-    /// the clip's id (a V1 clip)
-    pub clip: String,
-    /// its balance; none: as shot
-    pub balance: Option<BalanceArg>,
-}
-
 /// Parts of one shot's frame named by hand, each a box [x0, y0, x1, y1] from the frame's top left, 0…1.
 #[derive(Deserialize, Serialize, Default, Clone, schemars::JsonSchema)]
 pub struct RegionsArg {
@@ -300,47 +234,9 @@ pub struct ScopesArgs {
 }
 
 #[derive(Deserialize, schemars::JsonSchema)]
-pub struct SecondaryArgs {
-    /// the timeline's id
-    pub timeline: String,
-    /// the clip's id (a V1 clip)
-    pub clip: String,
-    /// its secondaries (at most 4), each { name?, key?: { hue: [centre°, width°] (the vectorscope's; skin 123°), sat:
-    /// [lo, hi] (chroma × 100), luma: [lo, hi] (IRE), soft 0…1 }, window?: { shape: ellipse | rect, x, y (centre,
-    /// 0…1 from the top left), w, h (parts of the frame, or of the face with track: face), angle°, feather 0…1,
-    /// invert, track?: "face" }, adjust: { temp, tint, exposure, contrast, highlights, shadows, sat } (the balance's
-    /// units), mix 0…1 } — a key alone, a window alone, or a key inside a window; none or []: take them off
-    pub secondaries: Option<Value>,
-}
-
-#[derive(Deserialize, schemars::JsonSchema)]
 pub struct ReferenceArgs {
     /// the reference stills (a moodboard): the files' hashes in the vault
     pub hashes: Vec<String>,
-}
-
-#[derive(Deserialize, schemars::JsonSchema)]
-pub struct FinishArgs {
-    /// the timeline's id
-    pub timeline: String,
-    /// the film's finishing, after its looks: { pop?: { amount −1…1, radius px@1080 }, halation?: { amount 0…1,
-    /// threshold (ACEScct, 0.55), radius px@1080 }, bloom?: { same }, grain?: { amount 0…1 (0.25: felt, not seen),
-    /// size px@1080, chroma 0…1 }, vignette?: { amount 0…1 (1: 1.5 stops), size (1: the frame's edge), softness,
-    /// roundness } } — none: take it off
-    pub finish: Option<Value>,
-}
-
-#[derive(Deserialize, schemars::JsonSchema)]
-pub struct LookSetArgs {
-    /// the timeline's id
-    pub timeline: String,
-    /// the scene whose look this is (as its clips name it in script.scene); none: the film's look
-    pub scene: Option<String>,
-    /// the look: { cdl?, preset?, contrast (−1…1), pivot (ACEScct, mid grey 0.414), split?: { shadows: { hue°, amount
-    /// 0…1 }, highlights: { hue°, amount }, balance −1…1 }, hue?: [[hue°, shift°]…], hue_sat?: [[hue°, factor]…], hue_lum?: [[hue°, stops −2…2]…], hi_sat? (the highlights' saturation 0…2: a sky clipped in camera back to white), sat,
-    /// lut? (a .cube's hash, ACEScct in and out), strength 0…1 } — hues on the vectorscope (the skin line 123°);
-    /// none: take it off
-    pub look: Option<Value>,
 }
 
 #[derive(Deserialize, schemars::JsonSchema)]
@@ -486,6 +382,28 @@ pub struct PlaybackArgs {
     pub originals: Option<bool>,
     /// player_stream_check: true plays exactly what the studio loaded last (its timeline, shape, files)
     pub as_studio: Option<bool>,
+}
+
+#[derive(Deserialize, schemars::JsonSchema)]
+pub struct StackArgs {
+    /// the timeline's id
+    pub timeline: String,
+    /// which stack: "base" (a shot's base correction), "clip" (a shot's clip look), "scene" (a scene's look),
+    /// "timeline" (the timeline's look), "finish" (the finishing)
+    pub stack: String,
+    /// the shot (base, clip; for scene: its scene)
+    pub clip: Option<String>,
+    /// the scene by name (scene; else the clip's)
+    pub scene: Option<String>,
+    /// the stack to set — { strength?: 0…1, tools: [{ tool, on?, ...controls, tools? (a window's or a key's own) }] }
+    /// (grade_tools lists every tool and its controls); null takes it off; left out: the stack is read
+    #[serde(default, deserialize_with = "some_or_null")]
+    pub set: Option<Value>,
+}
+
+/// A field given (even as null: Some(Null)) or left out (None).
+fn some_or_null<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Option<Value>, D::Error> {
+    Value::deserialize(d).map(Some)
 }
 
 #[derive(Deserialize, schemars::JsonSchema)]
@@ -929,40 +847,6 @@ impl Studio {
         text(self.api("PUT", &format!("/api/timelines/{}", a.id), Some(a.patch)).await)
     }
 
-    #[tool(description = "Grade one clip of a timeline: its ASC CDL in ACEScct (slope, offset, power per channel, and saturation), or none to take it off. The cut stays as it is; a locked timeline may be graded.")]
-    async fn grade_clip(&self, Parameters(a): Parameters<GradeClipArgs>) -> String {
-        let r = async {
-            let t = self.api("GET", &format!("/api/timelines/{}", a.timeline), None).await?;
-            let mut clips = t["clips"].as_array().cloned().ok_or("the timeline has no clips")?;
-            let clip = clips.iter_mut().find(|c| c["id"].as_str() == Some(a.clip.as_str())).ok_or("no such clip on this timeline")?;
-            clip["grade"] = match &a.grade {
-                Some(g) => serde_json::to_value(g).map_err(|e| e.to_string())?,
-                None => Value::Null,
-            };
-            self.api("PUT", &format!("/api/timelines/{}", a.timeline), Some(json!({ "clips": clips }))).await
-        };
-        text(r.await)
-    }
-
-    #[tool(
-        description = "Set one shot's balance — the fixed first nodes, applied in ACEScct before its creative grade, in the preview and the render alike: white balance (temp, tint), exposure, contrast, highlights, lows (shadows), saturation (sat); every amount in stops (contrast and sat: the factor minus 1), 0 = as shot; none: back to as shot. The cut stays as it is; a locked timeline may be balanced."
-    )]
-    async fn grade_balance(&self, Parameters(a): Parameters<BalanceArgs>) -> String {
-        let r = async {
-            let t = self.api("GET", &format!("/api/timelines/{}", a.timeline), None).await?;
-            let mut clips = t["clips"].as_array().cloned().ok_or("the timeline has no clips")?;
-            let clip = clips.iter_mut().find(|c| c["id"].as_str() == Some(a.clip.as_str())).ok_or("no such clip on this timeline")?;
-            clip["balance"] = match &a.balance {
-                Some(b) => serde_json::to_value(b).map_err(|e| e.to_string())?,
-                None => Value::Null,
-            };
-            let saved = self.api("PUT", &format!("/api/timelines/{}", a.timeline), Some(json!({ "clips": clips }))).await?;
-            let now = saved["clips"].as_array().and_then(|cs| cs.iter().find(|c| c["id"].as_str() == Some(a.clip.as_str()))).map(|c| c["balance"].clone());
-            Ok::<_, String>(json!({ "clip": a.clip, "balance": now }))
-        };
-        text(r.await)
-    }
-
     #[tool(
         description = "Read a timeline's shots for the base correction, as a colourist does, natively on this Mac from the real thing — each shot's 4K grading still (else its original's frame; never a proxy) through the ACES 2.0 output, as the Rec.709 display shows it: levels in IRE (p1…p99, contrast, clipped %, saturation), the blacks, the whites and the middle tones (level and cast: warm = R − B, green = G − (R + B)/2, in IRE), the skin of the face Apple Vision finds (or the box named: its level, its hue against the skin line at 123°, its saturation) and any white, grey or black named by hand — as shot and after each clip's balance."
     )]
@@ -1017,7 +901,20 @@ impl Studio {
                 let mut clips = t["clips"].as_array().cloned().ok_or("the timeline has no clips")?;
                 for p in out["shots"].as_array().into_iter().flatten().filter(|p| p.get("error").is_none()) {
                     if let Some(c) = clips.iter_mut().find(|c| c["id"] == p["clip"]) {
-                        c["balance"] = p["balance"].clone();
+                        // into the shot's base correction: its first balance tool, else one at its start
+                        let mut tool = p["balance"].clone();
+                        tool["tool"] = json!("balance");
+                        if !c["stacks"].is_object() {
+                            c["stacks"] = json!({});
+                        }
+                        if !c["stacks"]["base"]["tools"].is_array() {
+                            c["stacks"]["base"] = json!({ "tools": [] });
+                        }
+                        let tools = c["stacks"]["base"]["tools"].as_array_mut().unwrap();
+                        match tools.iter_mut().find(|x| x["tool"] == "balance") {
+                            Some(x) => *x = tool,
+                            None => tools.insert(0, tool),
+                        }
                     }
                 }
                 self.api("PUT", &format!("/api/timelines/{}", a.timeline), Some(json!({ "clips": clips }))).await?;
@@ -1287,76 +1184,6 @@ impl Studio {
     }
 
     #[tool(
-        description = "A timeline's looks after its shots' own grades: the film's (`film`) and each scene's (`scenes`, keyed by the scene its clips name in script.scene), with the scenes on the timeline and their clips in order — every clip goes through its balance, its own grade, its scene's look, then the film's (story-producer look.md)."
-    )]
-    async fn looks(&self, Parameters(a): Parameters<IdArg>) -> String {
-        let r = async {
-            let t = self.api("GET", &format!("/api/timelines/{}", a.id), None).await?;
-            let mut scenes: Vec<(String, Vec<Value>)> = Vec::new();
-            let mut v1: Vec<&Value> = t["clips"].as_array().into_iter().flatten().filter(|c| c["track"] == "V1").collect();
-            v1.sort_by(|a, b| a["start"].as_f64().unwrap_or(0.0).total_cmp(&b["start"].as_f64().unwrap_or(0.0)));
-            for c in v1 {
-                let scene = c["script"]["scene"].as_str().unwrap_or("").to_string();
-                let entry = json!({ "clip": c["id"], "start": c["start"], "description": c["script"]["description"] });
-                match scenes.iter_mut().find(|(s, _)| *s == scene) {
-                    Some((_, clips)) => clips.push(entry),
-                    None => scenes.push((scene, vec![entry])),
-                }
-            }
-            let g = &t["grade"];
-            Ok::<_, String>(json!({
-                "film": g.get("film").cloned().unwrap_or(Value::Null),
-                "film_cdl": { "look": g.get("look").cloned().unwrap_or(Value::Null), "preset": g.get("preset").cloned().unwrap_or(Value::Null) },
-                "scenes": g.get("scenes").cloned().unwrap_or(json!({})),
-                "scenes_on_timeline": scenes.into_iter().map(|(s, c)| json!({ "scene": if s.is_empty() { Value::Null } else { json!(s) }, "clips": c })).collect::<Vec<_>>(),
-            }))
-        };
-        text(r.await)
-    }
-
-    #[tool(
-        description = "Set the film's look (no scene) or a scene's look — after every shot's own balance and grade: base correction first, then the look. Colour only (the maths in Rust, baked into one cube per clip: the studio plays it live and the render uses the same). Returns the grade as saved. Check it with grade_scopes { looks: true } and grade_look { looks: true }."
-    )]
-    async fn look_set(&self, Parameters(a): Parameters<LookSetArgs>) -> String {
-        let r = async {
-            let t = self.api("GET", &format!("/api/timelines/{}", a.timeline), None).await?;
-            let mut g = t["grade"].clone();
-            if !g.is_object() {
-                g = json!({ "look": null });
-            }
-            let look = a.look.unwrap_or(Value::Null);
-            match &a.scene {
-                None => g["film"] = look,
-                Some(scene) => {
-                    if !g["scenes"].is_object() {
-                        g["scenes"] = json!({});
-                    }
-                    g["scenes"][scene.as_str()] = look;
-                }
-            }
-            let saved = self.api("PUT", &format!("/api/timelines/{}", a.timeline), Some(json!({ "grade": g }))).await?;
-            Ok::<_, String>(json!({ "grade": saved["grade"] }))
-        };
-        text(r.await)
-    }
-
-    #[tool(
-        description = "Set one shot's secondaries — parts of it (a key: a hue range with its chroma and luma; a window: an ellipse or rectangle, turned, feathered, inverted, or on the face Vision finds in every frame) given their own balance, after the shot's balance and before its grade and looks. Spatial: shown natively on the stills in the Grade tab and in the render. Check it with grade_scopes { looks: true }."
-    )]
-    async fn grade_secondary(&self, Parameters(a): Parameters<SecondaryArgs>) -> String {
-        let r = async {
-            let t = self.api("GET", &format!("/api/timelines/{}", a.timeline), None).await?;
-            let mut clips = t["clips"].as_array().cloned().ok_or("the timeline has no clips")?;
-            let clip = clips.iter_mut().find(|c| c["id"].as_str() == Some(a.clip.as_str())).ok_or("no such clip on this timeline")?;
-            clip["secondaries"] = a.secondaries.unwrap_or(Value::Null);
-            let saved = self.api("PUT", &format!("/api/timelines/{}", a.timeline), Some(json!({ "clips": clips }))).await?;
-            let now = saved["clips"].as_array().and_then(|cs| cs.iter().find(|c| c["id"].as_str() == Some(a.clip.as_str()))).map(|c| c["secondaries"].clone());
-            Ok::<_, String>(json!({ "clip": a.clip, "secondaries": now }))
-        };
-        text(r.await)
-    }
-
-    #[tool(
         description = "Read reference stills — a moodboard of the look to get close to (pictures as they are shown, display-referred) — as grade_look reads a shot through its whole chain: levels (p1…p99 IRE, contrast), zones (shadows, middle, highlights: level, cast, hue and chroma on the vectorscope), where the colour lies (warm, green, teal/blue shares), saturation, and the skin of the face Vision finds. Compare them with grade_look { looks: true } on the timeline's shots."
     )]
     async fn look_reference(&self, Parameters(a): Parameters<ReferenceArgs>) -> String {
@@ -1382,42 +1209,6 @@ impl Studio {
     }
 
     #[tool(
-        description = "Set the film's finishing, after its looks and before the output transform: contrast pop (local contrast), halation (red-orange glow around highlights), bloom, film grain (luma, a new pattern every frame), vignette (in stops) — each subtle. Spatial: shown natively on the stills in the Grade tab and in the render."
-    )]
-    async fn grade_finish(&self, Parameters(a): Parameters<FinishArgs>) -> String {
-        let r = async {
-            let t = self.api("GET", &format!("/api/timelines/{}", a.timeline), None).await?;
-            let mut g = t["grade"].clone();
-            if !g.is_object() {
-                g = json!({ "look": null });
-            }
-            g["finish"] = a.finish.unwrap_or(Value::Null);
-            let saved = self.api("PUT", &format!("/api/timelines/{}", a.timeline), Some(json!({ "grade": g }))).await?;
-            Ok::<_, String>(json!({ "grade": saved["grade"] }))
-        };
-        text(r.await)
-    }
-
-    #[tool(description = "Grade the whole film: its look — a named preset (neutral, cold, dip, bright, night, warm) or an ASC CDL of its own in ACEScct — applied after every clip's own grade.")]
-    async fn grade_film(&self, Parameters(a): Parameters<GradeFilmArgs>) -> String {
-        let r = async {
-            if let Some(p) = &a.preset
-                && vault_render::grade::preset(p).is_none()
-            {
-                let names: Vec<&str> = vault_render::grade::PRESETS.iter().map(|(n, _)| *n).collect();
-                return Err(format!("no preset {p} — one of {}", names.join(", ")));
-            }
-            let grade = match (&a.look, &a.preset) {
-                (Some(look), _) => json!({ "look": look }),
-                (None, Some(p)) if p != "neutral" => json!({ "look": null, "preset": p }),
-                _ => Value::Null,
-            };
-            self.api("PUT", &format!("/api/timelines/{}", a.timeline), Some(json!({ "grade": grade }))).await
-        };
-        text(r.await)
-    }
-
-    #[tool(
         description = "Queue a timeline's final render — rendered natively on this Mac by maiaCITY Studio (Core Image on Metal, VideoToolbox; world clips as ACEScct plates in its own world): every delivery shape (16:9 4K HEVC master + 1080 H.264, 9:16, 1:1, 4:5), or with delivery \"youtube-4k\" the 16:9 4K master for YouTube alone (HEVC 10-bit 80 Mb/s), colour-managed through ACES 2.0, levelled to −14 LUFS, QC'd, into the vault as deliveries and onto the calendar. One render per timeline at a time; follow it with renders_list."
     )]
     async fn render_queue(&self, Parameters(a): Parameters<RenderArgs>) -> String {
@@ -1431,7 +1222,7 @@ impl Studio {
     }
 
     #[tool(
-        description = "What the Grade tab's playback shows at t, checked without a screen: the timeline's composition as the Mac's player plays it (each shot from its proxy, else its original; every frame through the whole chain — balance, secondaries with the face tracked, grade and looks, finishing, output), then played by an AVPlayer for two seconds from t with the frames it hands out counted. Returns the first frame as the picture (compare it with the Grade viewer's still of the same shot) and played_fps (30 is real time; fewer: frames dropped)."
+        description = "What the Grade tab's playback shows at t, checked without a screen: the timeline's composition as the Mac's player plays it (each shot from its proxy, else its original; every frame through the whole chain — its stacks of tools (base, clip, scene, timeline, finishing; a window following the face), output), then played by an AVPlayer for two seconds from t with the frames it hands out counted. Returns the first frame as the picture (compare it with the Grade viewer's still of the same shot) and played_fps (30 is real time; fewer: frames dropped)."
     )]
     async fn player_frame(&self, Parameters(a): Parameters<PlaybackArgs>) -> rmcp::model::CallToolResult {
         let r = async {
@@ -1445,6 +1236,104 @@ impl Studio {
             ]),
             Err(e) => rmcp::model::CallToolResult::error(vec![rmcp::model::ContentBlock::text(e)]),
         }
+    }
+
+    #[tool(
+        description = "Every grading tool (game/film/grade-tools.json, the one registry): its id, group, kind (colour: on every pixel; mask: a window or a colour key — a group whose own tools apply only inside it, nestable; texture: the frame's), what it does, and its controls with their ranges and defaults; and the stacks they go on, in the order they apply: a shot's base correction and clip look, the scene's look, the timeline's look, the finishing."
+    )]
+    async fn grade_tools(&self) -> String {
+        vault_render::tools::REGISTRY.to_string()
+    }
+
+    #[tool(
+        description = "A timeline's whole grade as stacks of tools: the finishing, the timeline's look, every scene's look (keyed by the scene its shots name in script.scene), and each shot's base correction and clip look (in the shots' order, with their scene). Set one with grade_stack."
+    )]
+    async fn grade_stacks(&self, Parameters(a): Parameters<IdArg>) -> String {
+        let r = async {
+            let t = self.api("GET", &format!("/api/timelines/{}", a.id), None).await?;
+            let mut v1: Vec<&Value> = t["clips"].as_array().into_iter().flatten().filter(|c| c["track"] == "V1").collect();
+            v1.sort_by(|a, b| a["start"].as_f64().unwrap_or(0.0).total_cmp(&b["start"].as_f64().unwrap_or(0.0)));
+            let shots: Vec<Value> = v1
+                .iter()
+                .enumerate()
+                .map(|(i, c)| json!({ "shot": i + 1, "clip": c["id"], "scene": c["script"]["scene"], "description": c["script"]["description"], "base": c["stacks"]["base"], "clip_look": c["stacks"]["clip"] }))
+                .collect();
+            let g = &t["grade"];
+            Ok::<_, String>(json!({ "finish": g["finish"], "timeline": g["timeline"], "scenes": g["scenes"], "shots": shots }))
+        };
+        text(r.await)
+    }
+
+    #[tool(
+        description = "Read or set one stack of a timeline's grade — a shot's base correction (`base`) or clip look (`clip`), a scene's look (`scene`), the timeline's look (`timeline`), the finishing (`finish`) — as tools in order: { strength?, tools: [{ tool, on?, ...controls }] }. A window or a colour key holds tools of its own (`tools`), applied only inside it, by `mix`; they nest (a key inside a window: where both are). Every tool's controls: grade_tools. The render, the studio's preview and the stills apply the same, natively. Check it with grade_scopes { looks: true }."
+    )]
+    async fn grade_stack(&self, Parameters(a): Parameters<StackArgs>) -> String {
+        let r = async {
+            let t = self.api("GET", &format!("/api/timelines/{}", a.timeline), None).await?;
+            let shot = |clips: &Vec<Value>| -> Result<usize, String> {
+                let id = a.clip.as_deref().ok_or("which shot: clip")?;
+                clips.iter().position(|c| c["id"].as_str() == Some(id)).ok_or_else(|| "no such clip on this timeline".to_string())
+            };
+            let checked = |v: &Value| -> Result<Value, String> {
+                if v.is_null() {
+                    return Ok(Value::Null);
+                }
+                let st = vault_render::tools::clean_stack(v).ok_or("not a stack: { tools: [{ tool, ... }] } (grade_tools lists them)")?;
+                serde_json::to_value(st).map_err(|e| e.to_string())
+            };
+            match a.stack.as_str() {
+                "base" | "clip" => {
+                    let mut clips = t["clips"].as_array().cloned().ok_or("the timeline has no clips")?;
+                    let i = shot(&clips)?;
+                    let Some(set) = &a.set else { return Ok::<_, String>(clips[i]["stacks"][a.stack.as_str()].clone()) };
+                    let st = checked(set)?;
+                    if !clips[i]["stacks"].is_object() {
+                        clips[i]["stacks"] = json!({});
+                    }
+                    clips[i]["stacks"][a.stack.as_str()] = st;
+                    let saved = self.api("PUT", &format!("/api/timelines/{}", a.timeline), Some(json!({ "clips": clips }))).await?;
+                    let now = saved["clips"].as_array().and_then(|cs| cs.iter().find(|c| c["id"] == t["clips"][i]["id"]).map(|c| c["stacks"][a.stack.as_str()].clone()));
+                    Ok(now.unwrap_or(Value::Null))
+                }
+                "scene" | "timeline" | "finish" => {
+                    let mut g = if t["grade"].is_object() { t["grade"].clone() } else { json!({}) };
+                    let scene = match a.stack.as_str() {
+                        "scene" => Some(match (&a.scene, &a.clip) {
+                            (Some(s), _) => s.clone(),
+                            (None, Some(_)) => {
+                                let clips = t["clips"].as_array().cloned().unwrap_or_default();
+                                clips[shot(&clips)?]["script"]["scene"].as_str().filter(|s| !s.is_empty()).ok_or("this shot has no scene in the script")?.to_string()
+                            }
+                            _ => return Err("which scene: scene, or a clip of it".into()),
+                        }),
+                        _ => None,
+                    };
+                    let Some(set) = &a.set else {
+                        return Ok(match &scene {
+                            Some(s) => g["scenes"][s.as_str()].clone(),
+                            None => g[a.stack.as_str()].clone(),
+                        });
+                    };
+                    let st = checked(set)?;
+                    match &scene {
+                        Some(s) => {
+                            if !g["scenes"].is_object() {
+                                g["scenes"] = json!({});
+                            }
+                            g["scenes"][s.as_str()] = st;
+                        }
+                        None => g[a.stack.as_str()] = st,
+                    }
+                    let saved = self.api("PUT", &format!("/api/timelines/{}", a.timeline), Some(json!({ "grade": g }))).await?;
+                    Ok(match &scene {
+                        Some(s) => saved["grade"]["scenes"][s.as_str()].clone(),
+                        None => saved["grade"][a.stack.as_str()].clone(),
+                    })
+                }
+                other => Err(format!("no stack {other}: base, clip, scene, timeline or finish")),
+            }
+        };
+        text(r.await)
     }
 
     #[tool(
@@ -1559,7 +1448,7 @@ impl Studio {
     }
 
     #[tool(
-        description = "Queue a frame of a timeline at t seconds, rendered natively on this Mac. Of a media clip it is that file's graded still: its grading still (the ACEScct frame it is graded on) through the clip's whole chain (16:9 framing → balance → secondaries → clip grade → scene and film look → ACES 2.0 output), 1920×1080 JPEG, set as the file's preview and replacing the one before (a timeline save that changes a file's look queues this by itself). Of a world clip: a hero frame in the shape asked for, a 16-bit PNG (role:frame), replacing that clip's previous one. Follow it with renders_list: the job's output_hash is the picture."
+        description = "Queue a frame of a timeline at t seconds, rendered natively on this Mac. Of a media clip it is that file's graded still: its grading still (the ACEScct frame it is graded on) through the clip's whole chain (16:9 framing → its stacks of tools: base, clip, scene, timeline, finishing → ACES 2.0 output), 1920×1080 JPEG, set as the file's preview and replacing the one before (a timeline save that changes a file's look queues this by itself). Of a world clip: a hero frame in the shape asked for, a 16-bit PNG (role:frame), replacing that clip's previous one. Follow it with renders_list: the job's output_hash is the picture."
     )]
     async fn render_frame(&self, Parameters(a): Parameters<FrameArgs>) -> String {
         let shape = a.shape.unwrap_or_else(|| "16:9".into());

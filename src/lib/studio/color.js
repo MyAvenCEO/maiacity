@@ -1,8 +1,8 @@
 // The studio's side of the colour standard (contract C5): what each picture is, how the viewer brings it in, and the
 // grades as data. The maths and the tables live in game/film/color.js (stream A) — imported, never copied.
-import { PROFILES, profileOf, NEUTRAL, isNeutral, cleanCdl, cleanLook, cleanSecondaries, cleanFinish, ODT, BALANCE_NODES, NEUTRAL_BALANCE, cleanBalance, isNeutralBalance } from '../../../game/film/color.js';
+import { PROFILES, profileOf, ODT } from '../../../game/film/color.js';
 
-export { PROFILES, profileOf, NEUTRAL, isNeutral, cleanCdl, cleanLook, cleanSecondaries, cleanFinish, ODT, BALANCE_NODES, NEUTRAL_BALANCE, cleanBalance, isNeutralBalance };
+export { PROFILES, profileOf, ODT };
 
 /** The working space — and so every proxy's colour: the Mac takes each source through its journey into it. */
 export const WORKING = 'acescct';
@@ -121,37 +121,3 @@ export const isCache = (m) =>
 
 // ── grades as data ────────────────────────────────────────────────────────────────────────────────────────────────
 
-/** @returns {Cdl} */
-export const neutral = () => ({ slope: [1, 1, 1], offset: [0, 0, 0], power: [1, 1, 1], sat: 1 });
-/** A grade, checked (null when it changes nothing), as it is saved. @param {unknown} g @returns {Cdl | null} */
-export const clean = (g) => cleanCdl(g);
-/**
- * A clip's own grade, as a list (none: empty).
- * @param {TimelineClip | null | undefined} c @param {Timeline | null | undefined} _t @returns {Cdl[]}
- */
-export function gradesFor(c, _t) {
-	return /** @type {Cdl[]} */ ([c?.grade].filter((g) => !!g && !isNeutral(g)));
-}
-/**
- * The looks a clip goes through after its own grade, in order: its scene's (by its script's scene), then the film's —
- * the film's plain CDL or preset from before read as a look of just that.
- * @param {TimelineClip | null | undefined} c @param {Timeline | null | undefined} t @returns {import('$lib/auth/client').Look[]}
- */
-export function looksFor(c, t) {
-	const g = t?.grade;
-	if (!g) return [];
-	const scene = c?.script?.scene ? g.scenes?.[c.script.scene] : null;
-	const film = g.film ?? (g.look || g.preset ? { cdl: g.look ?? null, preset: g.preset ?? null } : null);
-	return /** @type {import('$lib/auth/client').Look[]} */ ([scene, film].filter(Boolean));
-}
-/**
- * Which preset a grade is, if it is one (the presets as Rust holds them: `nativePresets`).
- * @param {Cdl | null | undefined} g @param {{ name: string, cdl: Cdl }[]} presets @returns {string | null}
- */
-export function presetOf(g, presets) {
-	/** @param {Cdl} a @param {Cdl} b */
-	const same = (a, b) =>
-		a.sat === b.sat && [0, 1, 2].every((i) => a.slope[i] === b.slope[i] && a.offset[i] === b.offset[i] && a.power[i] === b.power[i]);
-	const g2 = g ?? NEUTRAL;
-	return presets.find((p) => same(p.cdl, g2))?.name ?? null;
-}

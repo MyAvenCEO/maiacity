@@ -585,16 +585,10 @@ pub(crate) async fn program(
         let source = crate::blob::source(vault, hash, &format!("{}.mov", c.id)).await.map_err(|e| format!("{e:#}"))?;
         let profile = profiles.get(&c.id).map(String::as_str).unwrap_or("rec709");
         let journey = vault_media::cst::journey(profile).or_else(|| vault_media::cst::journey("rec709")).ok_or("no journey")?.kernel_args();
-        let looks: Vec<Value> = t.looks_for(c).iter().filter_map(|l| serde_json::to_value(l).ok()).collect();
-        let grades: Vec<Value> = c.grade.iter().cloned().collect();
-        let looks = if looks.is_empty() && grades.is_empty() {
-            None
-        } else {
-            Some(vault_render::Lut3d::from_rgb("looks", 33, crate::proxies::chain_cube(vault, None, grades, looks, 33).await?).map_err(err)?)
-        };
-        clips.push(vault_render::player::PlayClip { clip: c.clone(), source, journey, looks });
+        let (steps, cubes) = crate::proxies::graded(vault, t, c, 33).await?;
+        clips.push(vault_render::player::PlayClip { clip: c.clone(), source, journey, steps, cubes });
     }
-    Ok(Arc::new(vault_render::player::Program { clips, finish: t.finish(), aspect: s.aspect.to_string(), width: w, height: h, output: crate::render::odt().clone() }))
+    Ok(Arc::new(vault_render::player::Program { clips, aspect: s.aspect.to_string(), width: w, height: h, output: crate::render::odt().clone() }))
 }
 
 /// Per picture clip, the file the Grade tab plays (its proxy, as Picture: Proxy does; else, or with `originals`, the

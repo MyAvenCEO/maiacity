@@ -20,6 +20,7 @@ use serde_json::json;
 use tauri::{AppHandle, Emitter};
 
 use crate::jobs::{self, Kind};
+use vault_render::tools::Stack;
 use vault_core::{Meta, Vault, ingest::Batch};
 
 use vault_media::proxy::WORKING;
@@ -93,19 +94,21 @@ pub fn color_lut(profile: String) -> crate::Res<tauri::ipc::Response> {
     Ok(tauri::ipc::Response::new(out))
 }
 
-/// A clip's grade for the studio's viewer, baked here from the grade's only maths (vault-render `grade`): its balance,
-/// then its grades in order (its own CDL, the film's look), as a cube over ACEScct — the viewer samples it between the
-/// input and the output transforms. A little-endian u32 size, then size³ RGB f32, red fastest.
+/// The studio's WebGL preview's cube: every colour tool of the stacks given (in order, a balance among them; masks and
+/// textures left out — they run on the Mac's frames), 33³ over ACEScct.
 #[tauri::command]
-pub async fn color_grade(
-    app: tauri::State<'_, crate::App>,
-    balance: Option<serde_json::Value>,
-    grades: Vec<serde_json::Value>,
-    looks: Option<Vec<serde_json::Value>>,
-) -> crate::Res<tauri::ipc::Response> {
+pub async fn color_grade(app: tauri::State<'_, crate::App>, stacks: Vec<serde_json::Value>) -> crate::Res<tauri::ipc::Response> {
     crate::gate()?;
     const SIZE: usize = 33;
-    let cube = chain_cube(&app.vault, balance, grades, looks.unwrap_or_default(), SIZE).await?;
+    let stacks: Vec<Stack> = stacks.iter().filter_map(vault_render::tools::clean_stack).collect();
+    let refs: Vec<&Stack> = stacks.iter().collect();
+    let luts = luts_of(&app.vault, &vault_render::tools::luts(&vault_render::tools::compile(&refs, crate::render::odt()))).await?;
+    let cube = tauri::async_runtime::spawn_blocking(move || {
+        let refs: Vec<&Stack> = stacks.iter().collect();
+        vault_render::tools::preview(&refs, &luts, crate::render::odt(), SIZE)
+    })
+    .await
+    .map_err(|e| format!("{e}"))?;
     let mut out = Vec::with_capacity(4 + cube.len() * 4);
     out.extend_from_slice(&(SIZE as u32).to_le_bytes());
     for v in cube {
@@ -114,41 +117,46 @@ pub async fn color_grade(
     Ok(tauri::ipc::Response::new(out))
 }
 
-/// The looks named (the scene's, the film's), checked, with their creative LUTs read from the vault.
-async fn looks_of(vault: &Vault, looks: &[serde_json::Value]) -> crate::Res<Vec<(vault_render::creative::Look, Option<vault_render::Lut3d>)>> {
-    let mut out = Vec::new();
-    for l in looks.iter().filter_map(vault_render::creative::clean_look) {
-        let lut = match &l.lut {
-            Some(h) => {
-                let hash: iroh_blobs::Hash = h.parse().map_err(|e| format!("{e}"))?;
-                let src = crate::blob::source(vault, hash, "look.cube").await.map_err(|e| format!("{e:#}"))?;
-                let text = tauri::async_runtime::spawn_blocking(move || src.read_all()).await.map_err(|e| format!("{e}"))?.map_err(|e| format!("{e:#}"))?;
-                Some(vault_render::Lut3d::from_cube_str(h, &String::from_utf8_lossy(&text)).map_err(|e| format!("{e:#}"))?)
-            }
-            None => None,
-        };
-        out.push((l, lut));
+/// The creative LUTs named (by hash), read from the vault.
+async fn luts_of(vault: &Vault, hashes: &[String]) -> crate::Res<HashMap<String, vault_render::Lut3d>> {
+    let mut out = HashMap::new();
+    for h in hashes {
+        if out.contains_key(h) {
+            continue;
+        }
+        let hash: iroh_blobs::Hash = h.parse().map_err(|e| format!("{e}"))?;
+        let src = crate::blob::source(vault, hash, "look.cube").await.map_err(|e| format!("{e:#}"))?;
+        let text = tauri::async_runtime::spawn_blocking(move || src.read_all()).await.map_err(|e| format!("{e}"))?.map_err(|e| format!("{e:#}"))?;
+        out.insert(h.clone(), vault_render::Lut3d::from_cube_str(h, &String::from_utf8_lossy(&text)).map_err(|e| format!("{e:#}"))?);
     }
     Ok(out)
 }
 
-/// A clip's whole colour chain (its balance, its grades, its looks) as one cube over ACEScct, `size`³ RGB.
-pub(crate) async fn chain_cube(vault: &Vault, balance: Option<serde_json::Value>, grades: Vec<serde_json::Value>, looks: Vec<serde_json::Value>, size: usize) -> crate::Res<Vec<f32>> {
-    let b = balance.as_ref().and_then(vault_render::grade::clean_balance);
-    let g: Vec<vault_render::grade::Cdl> = grades.iter().filter_map(vault_render::grade::clean_cdl).collect();
-    let looks = looks_of(vault, &looks).await?;
-    tauri::async_runtime::spawn_blocking(move || {
-        let ready: Vec<vault_render::creative::Ready> = looks.iter().map(|(l, lut)| vault_render::creative::Ready::new(l, lut.clone())).collect();
-        vault_render::creative::bake(b.as_ref(), &g, &ready, crate::render::odt(), size)
+/// A clip's whole grade on this timeline (its stacks: base, clip, its scene's, the timeline's, the finishing) as steps,
+/// their colour runs baked `size`³ — what the player and the studio's frames run.
+pub(crate) async fn graded(vault: &Vault, t: &vault_render::Timeline, c: &vault_render::Clip, size: usize) -> crate::Res<(Vec<vault_render::tools::Step>, HashMap<String, vault_render::Lut3d>)> {
+    let stacks = t.stacks_for(c);
+    let refs: Vec<&Stack> = stacks.iter().collect();
+    let steps = vault_render::tools::compile(&refs, crate::render::odt());
+    let luts = luts_of(vault, &vault_render::tools::luts(&steps)).await?;
+    tauri::async_runtime::spawn_blocking(move || -> crate::Res<_> {
+        let mut baked = HashMap::new();
+        for (key, run) in vault_render::tools::runs(&steps) {
+            if !baked.contains_key(&key) {
+                let data = vault_render::tools::bake(&run, &luts, crate::render::odt(), size);
+                baked.insert(key.clone(), vault_render::Lut3d::from_rgb(&format!("tools-{key}"), size, data).map_err(|e| format!("{e:#}"))?);
+            }
+        }
+        Ok((steps, baked))
     })
     .await
-    .map_err(|e| format!("{e}"))
+    .map_err(|e| format!("{e}"))?
 }
 
 /// A shot as the film will show it, natively, for the studio: its grading still (4K ACEScct, from the original) — or
 /// one frame of its proxy or original at `at` seconds of that file, through the file's journey (`profile`) — framed for
-/// `shape` (none: the whole still), through its whole grade — balance, secondaries (a face-tracked window on
-/// the face Vision finds), its grade and looks (the timeline's: its scene's, the film's), the film's finishing — and
+/// `shape` (none: the whole still), through its whole grade — its stacks of tools: base, clip, its scene's, the
+/// timeline's, the finishing (a window following the face on the face Vision finds) — and
 /// the output transform, as a JPEG `width` wide. The Grade viewer and every thumbnail show these: what the render makes.
 #[tauri::command]
 pub async fn color_frame(
@@ -174,12 +182,9 @@ pub async fn color_frame(
     };
     let hash: iroh_blobs::Hash = hash.parse().map_err(|e| format!("{e}"))?;
     let src = crate::blob::source(&vault, hash, if frame.is_some() { "frame.mov" } else { "still.png" }).await.map_err(|e| format!("{e:#}"))?;
-    // the clip's own grade and its looks, baked with the look's LUTs read from the vault (the balance is its own node)
-    let looks: Vec<serde_json::Value> = t.looks_for(&c).iter().filter_map(|l| serde_json::to_value(l).ok()).collect();
-    let grades: Vec<serde_json::Value> = c.grade.iter().cloned().collect();
-    let cube = if looks.is_empty() && grades.is_empty() { None } else { Some(chain_cube(&vault, None, grades, looks, 33).await?) };
+    // the clip's whole grade: its stacks as steps, their colour runs baked with their LUTs read from the vault
+    let grade = graded(&vault, &t, &c, 33).await?;
     let w = width.unwrap_or(960).clamp(64, 3840);
-    let finish = t.finish();
     static N: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
     let out = vault.ingest_dir().join(format!("frame-{}-{}.jpg", std::process::id(), N.fetch_add(1, std::sync::atomic::Ordering::Relaxed)));
     let bytes = tauri::async_runtime::spawn_blocking(move || {
@@ -198,11 +203,9 @@ pub async fn color_frame(
             };
             let h = ((w as f64 * ah / aw.max(1.0)).round() as u32).max(2);
             let framed = gpu.frame_to(&img, w, h, shape.as_deref().and_then(|s| c.frame_for(s)))?;
-            let cube = match cube {
-                Some(data) => Some(gpu.cube(&vault_render::Lut3d::from_rgb("chain", 33, data)?)),
-                None => None,
-            };
-            let pic = vault_render::render::chain(&gpu, &framed, w, h, &c, cube.as_ref(), finish.as_ref(), 0)?;
+            let (steps, luts) = grade;
+            let cubes = luts.iter().map(|(k, l)| (k.clone(), gpu.cube(l))).collect();
+            let pic = vault_render::render::chain(&gpu, &framed, w, h, &steps, &cubes, 0)?;
             gpu.jpeg(&*gpu.output(&pic)?, w, h, &out)?;
             let bytes = std::fs::read(&out)?;
             std::fs::remove_file(&out).ok();
@@ -213,16 +216,6 @@ pub async fn color_frame(
     .map_err(|e| format!("{e}"))?
     .map_err(|e| format!("{e:#}"))?;
     Ok(tauri::ipc::Response::new(bytes))
-}
-
-/// The grade presets (vault-render `grade::PRESETS`): name, what the studio calls it, its CDL.
-#[tauri::command]
-pub fn color_presets() -> crate::Res<Vec<serde_json::Value>> {
-    crate::gate()?;
-    Ok(vault_render::grade::PRESETS
-        .iter()
-        .filter_map(|(name, label)| vault_render::grade::preset(name).map(|c| serde_json::json!({ "name": name, "label": label, "cdl": c.to_json() })))
-        .collect())
 }
 
 /// The work being done or queued right now, keyed as the file lists read it (the jobs' view: jobs.rs).

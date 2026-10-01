@@ -100,7 +100,7 @@ so it never computes the grade itself.
     by content.
   - Run **`apply: false`** first. The answer gives each shot's balance, `matched_by`, and `predicted`: its elements
     after that balance.
-- **`grade_balance`**: one shot's balance by hand (temp, tint, exposure, contrast, highlights, shadows, **sat**; all
+- **`grade_stack { stack: "base", clip, set: { tools: [{ tool: "balance", ... }] } }`**: one shot's balance by hand (temp, tint, exposure, contrast, highlights, shadows, **sat**; all
   0 = as shot).
 - **`render_frame`**: a hero frame through the whole chain, for checking either side of a cut.
 
@@ -110,7 +110,7 @@ so it never computes the grade itself.
    scenes and pick each scene's master (rule 4). Note the motivated light, the clipped skies and the faces.
 2. **Ask** Samuel per scene: warmer, neutral or cooler, and how much (rule 5). Nothing is written before the answer.
 3. **The master:**
-   - Set exposure on the key side of the face (or on the middle when there is no face), with `grade_balance`.
+   - Set exposure on the key side of the face (or on the middle when there is no face), with a `balance` tool on its base stack (`grade_stack`).
    - Put the blacks and whites where they belong.
    - Run `grade_match` with `neutral: true, warmth` so the neutrals are neutral and the agreed warmth sits on top.
    - Use contrast only if the shot is flat or harsh.
@@ -119,7 +119,7 @@ so it never computes the grade itself.
    - Run `grade_match` with `reference: <master>` and `apply: false`.
    - Read `predicted` against the master, then look at `grade_scopes` with the master's row first.
    - Correct by the table above (blacks, whites, contrast, colour, saturation, then skin): name regions, skip what
-     is content, or set a shot by hand with `grade_balance`.
+     is content, or set a shot by hand (a `balance` tool on its base stack, `grade_stack`).
    - Write the result, then look at the scope sheet again.
 5. **Across every cut:** make hero frames either side and flick between them, then play the scene. Nothing may jump.
 6. **Scene to scene:** compare the masters with each other. Allow a change only where the light really changes
@@ -145,7 +145,7 @@ so it never computes the grade itself.
   balance, then move only what its own light needs.
 - **Face and feet aren't the same level.** Feet on a bright rug read 68 IRE against the face's 49. Match the feet's
   colour, not their level (`skip: { <clip>: ["skin.level"] }`).
-- **The quickest loop:** `grade_balance`, then `grade_look` with the same regions, 15–20 s per step, reading the
+- **The quickest loop:** `grade_stack` (the base's balance), then `grade_look` with the same regions, 15–20 s per step, reading the
   skin, the named neutrals and the blacks against the reference. `grade_match` gives the starting point and
   `grade_scopes` the check.
 - **Where Day 01 landed:**
