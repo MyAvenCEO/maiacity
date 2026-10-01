@@ -63,6 +63,17 @@
 			placing = String(e);
 		}
 	}
+	/** into this Mac's Downloads folder, under the name it came in as (the Mac checks the copy against its hash) */
+	let saving = $state<'' | 'saving' | 'saved' | string>('');
+	async function download() {
+		saving = 'saving';
+		try {
+			const at = await command<string>('file_download', { hash: m.hash, name: m.original_name ?? null });
+			saving = `saved:${at}`;
+		} catch (e) {
+			saving = String(e);
+		}
+	}
 	async function copy(text: string) {
 		await navigator.clipboard.writeText(text);
 		copied = text;
@@ -95,6 +106,14 @@
 		{:else}
 			<span aria-hidden="true">{m.kind === 'audio' ? '♪' : '▤'}</span>
 		{/if}
+	</div>
+
+	<div class="dl">
+		<button class="save" onclick={download} disabled={saving === 'saving'} title="Copy it into this Mac's Downloads folder">
+			{saving === 'saving' ? 'Saving…' : '⤓ Download'}
+		</button>
+		{#if saving.startsWith('saved:')}<span class="dim">In Downloads: {saving.slice(6).split('/').pop()}</span>
+		{:else if saving && saving !== 'saving'}<span class="bad">{saving}</span>{/if}
 	</div>
 
 	<h3>Tags</h3>
@@ -226,6 +245,36 @@
 
 	.mini.clear {
 		background: repeating-conic-gradient(#3b413c 0 25%, #2d322e 0 50%) 0 0 / 12px 12px;
+	}
+
+	.dl {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
+		gap: 0.3rem 0.6rem;
+		margin-top: 0.6rem;
+	}
+
+	.save {
+		padding: 0.35rem 0.85rem;
+		border: 1px solid var(--accent);
+		border-radius: 999px;
+		background: var(--accent);
+		font: inherit;
+		font-weight: 600;
+		color: var(--on-accent);
+		cursor: pointer;
+	}
+
+	.save:disabled {
+		opacity: 0.6;
+		cursor: progress;
+	}
+
+	.dl .dim,
+	.dl .bad {
+		font-size: 0.75rem;
+		overflow-wrap: anywhere;
 	}
 
 	h3 {

@@ -32,6 +32,60 @@ use crate::{Res, err};
 
 const FRAME: f64 = 1.0 / vault_render::timeline::FPS as f64;
 
+// ── the player's own thread ─────────────────────────────────────────────────────────────────────────────────────
+
+/// Work for the player's thread.
+type Job = Box<dyn FnOnce() + Send>;
+
+/// The player's own thread: made once, never ended, and never running a run loop. Every AVPlayer call is made there —
+/// the player and its items made, seeks, rates. Made on a pool thread that was handed back at once, the player made a
+/// second or two of frames and then never another (its clock ran on, nothing asked its composition for a picture);
+/// made on the main thread, or on this one with its run loop turning, none at all; made and driven on one thread that
+/// lives and only waits for work, every frame comes.
+static PLAYER_THREAD: std::sync::OnceLock<std::sync::mpsc::Sender<Job>> = std::sync::OnceLock::new();
+
+thread_local! {
+    static ON_PLAYER: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// Do `job` on the player's thread (at once when already there), not waiting for it.
+fn post(job: impl FnOnce() + Send + 'static) {
+    if ON_PLAYER.with(|c| c.get()) {
+        return job();
+    }
+    let tx = PLAYER_THREAD.get_or_init(|| {
+        let (tx, rx) = std::sync::mpsc::channel::<Job>();
+        std::thread::Builder::new()
+            .name("player".into())
+            .spawn(move || {
+                ON_PLAYER.with(|c| c.set(true));
+                // never a run loop here: with one turning (as on the main thread) the player makes no frame at all
+                while let Ok(job) = rx.recv() {
+                    objc2::rc::autoreleasepool(|_| {
+                        if std::panic::catch_unwind(std::panic::AssertUnwindSafe(job)).is_err() {
+                            tracing::warn!("playback: a job on the player's thread panicked");
+                        }
+                    });
+                }
+            })
+            .expect("the player's thread");
+        tx
+    });
+    let _ = tx.send(Box::new(job));
+}
+
+/// Do `f` on the player's thread and wait for what it gives back.
+fn on_player<R: Send + 'static>(f: impl FnOnce() -> R + Send + 'static) -> Option<R> {
+    if ON_PLAYER.with(|c| c.get()) {
+        return Some(f());
+    }
+    let (tx, rx) = std::sync::mpsc::sync_channel(1);
+    post(move || {
+        let _ = tx.send(f());
+    });
+    rx.recv().ok()
+}
+
 /// How a player is driven: where the studio wants it, and its seeks.
 #[derive(Default)]
 struct Drive {
@@ -69,6 +123,28 @@ impl Driver {
         Arc::new(Self { player, drive: Mutex::new(Drive { latency: 0.15, ..Default::default() }) })
     }
 
+    /// On the player's thread (see `post`): seek, play, stop, keep to the clock, the item ready.
+    fn seek(self: &Arc<Self>, t: f64) {
+        let me = self.clone();
+        post(move || me.seek_here(t));
+    }
+    fn play(self: &Arc<Self>, t: f64) {
+        let me = self.clone();
+        post(move || me.play_here(t));
+    }
+    fn pause(self: &Arc<Self>, t: f64) {
+        let me = self.clone();
+        post(move || me.pause_here(t));
+    }
+    fn sync(self: &Arc<Self>, t: f64) {
+        let me = self.clone();
+        post(move || me.sync_here(t));
+    }
+    fn ready(self: &Arc<Self>) {
+        let me = self.clone();
+        post(move || me.ready_here());
+    }
+
     /// Nothing under way any more (a new item; a play): a seek made before lands unheeded.
     fn forget(&self) {
         let mut d = self.drive.lock().unwrap();
@@ -81,7 +157,7 @@ impl Driver {
 
     /// Seek to `t`, chased: while one is under way only the newest target is kept, sought as soon as that one lands (a
     /// seek with no word for a second is given up).
-    fn seek(self: &Arc<Self>, t: f64) {
+    fn seek_here(self: &Arc<Self>, t: f64) {
         let t = t.max(0.0);
         let serial = {
             let mut d = self.drive.lock().unwrap();
@@ -111,7 +187,8 @@ impl Driver {
                 d.next.take()
             };
             if let Some(n) = next {
-                me.seek(n);
+                let me = me.clone();
+                post(move || me.seek_here(n));
             }
         });
         let zero = cmtime(0.0);
@@ -120,7 +197,7 @@ impl Driver {
     }
 
     /// Play from `t`, the studio's clock: aimed ahead by what a seek takes, so it starts where the clock will be.
-    fn play(self: &Arc<Self>, t: f64) {
+    fn play_here(self: &Arc<Self>, t: f64) {
         let ahead = {
             let mut d = self.drive.lock().unwrap();
             d.want = t;
@@ -128,13 +205,13 @@ impl Driver {
             d.latency
         };
         self.forget();
-        self.seek(t + ahead);
+        self.seek_here(t + ahead);
         // SAFETY: a plain AVPlayer call
         unsafe { self.player.setRate(1.0) };
     }
 
     /// Stop on `t` (and, stopped, every move of the playhead: a scrub).
-    fn pause(self: &Arc<Self>, t: f64) {
+    fn pause_here(self: &Arc<Self>, t: f64) {
         {
             let mut d = self.drive.lock().unwrap();
             d.want = t;
@@ -142,12 +219,12 @@ impl Driver {
         }
         // SAFETY: a plain AVPlayer call
         unsafe { self.player.setRate(0.0) };
-        self.seek(t);
+        self.seek_here(t);
     }
 
     /// Playing, keep to the studio's clock `t`: within half a second by the rate (the gap closed in about a second, at
     /// most 15 % faster or slower), beyond it by a seek aimed ahead.
-    fn sync(self: &Arc<Self>, t: f64) {
+    fn sync_here(self: &Arc<Self>, t: f64) {
         let (playing, ahead, busy) = {
             let mut d = self.drive.lock().unwrap();
             d.want = t;
@@ -160,7 +237,7 @@ impl Driver {
         unsafe {
             let gap = t - self.player.currentTime().seconds();
             if gap.abs() > 0.5 {
-                self.seek(t + ahead);
+                self.seek_here(t + ahead);
                 self.player.setRate(1.0);
             } else {
                 let rate = if gap.abs() < FRAME / 2.0 { 1.0 } else { 1.0 + gap.clamp(-0.15, 0.15) };
@@ -171,13 +248,13 @@ impl Driver {
 
     /// The item is ready: put where the studio wants it (a seek made before that is lost, and the output then never
     /// hands a frame out).
-    fn ready(self: &Arc<Self>) {
+    fn ready_here(self: &Arc<Self>) {
         let (t, playing) = {
             let d = self.drive.lock().unwrap();
             (d.want, d.playing)
         };
         self.forget();
-        if playing { self.play(t) } else { self.pause(t) }
+        if playing { self.play_here(t) } else { self.pause_here(t) }
     }
 
     /// Whether a frame at `t` (the item's time) is one to show: playing, each; stopped, one at a target sought — not
@@ -198,11 +275,26 @@ impl Driver {
     }
 }
 
-/// The studio's player: its driver and the pump of the item playing now (stopped when another is loaded).
+/// The studio's player: its driver, the item playing now and its pump (stopped when another is loaded).
 struct Native {
     driver: Arc<Driver>,
+    item: Retained<AVPlayerItem>,
     pump: Arc<AtomicBool>,
 }
+
+// SAFETY: the item is only read (its status, clock) and replaced under the mutex, as the driver's player is
+unsafe impl Send for Native {}
+
+/// What the studio loaded last (`player_stream_check` can play exactly that).
+static LAST_LOAD: Mutex<Option<Value>> = Mutex::new(None);
+
+/// Pictures sent to the viewer, all told (`player_state` watches it move).
+static SENT: AtomicU64 = AtomicU64::new(0);
+/// The pump's rounds, the frames it copied, and the step it is on (0 waiting, 1 asking the output, 2 copying, 3 making
+/// the picture, 4 handing it on) — what `player_state` shows of it.
+static PUMP_ROUNDS: AtomicU64 = AtomicU64::new(0);
+static PUMP_COPIED: AtomicU64 = AtomicU64::new(0);
+static PUMP_STEP: AtomicU64 = AtomicU64::new(0);
 
 static NATIVE: Mutex<Option<Native>> = Mutex::new(None);
 
@@ -252,12 +344,15 @@ fn pump(out: Output, mut sink: Sink, stop: Arc<AtomicBool>, driver: Arc<Driver>)
                 ready = true;
                 driver.ready();
             }
+            PUMP_ROUNDS.fetch_add(1, Ordering::Relaxed);
             objc2::rc::autoreleasepool(|_| {
                 // SAFETY: the output's and the item's own calls, from the thread the output's are made for
                 unsafe {
                     // the item's own clock: where it is, playing or stopped
                     let t = item.currentTime();
+                    PUMP_STEP.store(1, Ordering::Relaxed);
                     if !out.hasNewPixelBufferForItemTime(t) {
+                        PUMP_STEP.store(0, Ordering::Relaxed);
                         if !any && !told && started.elapsed().as_secs() >= 3 {
                             told = true;
                             let size = item.presentationSize();
@@ -278,20 +373,31 @@ fn pump(out: Output, mut sink: Sink, stop: Arc<AtomicBool>, driver: Arc<Driver>)
                         return;
                     }
                     let mut shown = t;
-                    let Some(pb) = out.copyPixelBufferForItemTime_itemTimeForDisplay(t, &mut shown) else { return };
+                    PUMP_STEP.store(2, Ordering::Relaxed);
+                    let Some(pb) = out.copyPixelBufferForItemTime_itemTimeForDisplay(t, &mut shown) else {
+                        PUMP_STEP.store(0, Ordering::Relaxed);
+                        return;
+                    };
+                    PUMP_COPIED.fetch_add(1, Ordering::Relaxed);
                     (any, stalled, last) = (true, false, Instant::now());
                     if !driver.shows(shown.seconds()) {
+                        PUMP_STEP.store(0, Ordering::Relaxed);
                         return;
                     }
                     let (w, h) = (objc2_core_video::CVPixelBufferGetWidth(&pb) as u32, objc2_core_video::CVPixelBufferGetHeight(&pb) as u32);
-                    match gpu.jpeg_bytes(&gpu.frame(&pb), w, h) {
+                    PUMP_STEP.store(3, Ordering::Relaxed);
+                    let made = gpu.jpeg_bytes(&gpu.frame(&pb), w, h);
+                    PUMP_STEP.store(4, Ordering::Relaxed);
+                    match made {
                         Ok(bytes) => {
                             if !sink(bytes, w, h, shown.seconds()) {
+                                tracing::warn!("playback: the viewer's channel is gone: the pump stops");
                                 stop.store(true, Ordering::Relaxed);
                             }
                         }
                         Err(e) => tracing::warn!("playback: a frame: {e:#}"),
                     }
+                    PUMP_STEP.store(0, Ordering::Relaxed);
                 }
             });
             std::thread::sleep(std::time::Duration::from_millis(4));
@@ -311,6 +417,7 @@ fn to_viewer(frames: Channel<InvokeResponseBody>) -> Sink {
             return false;
         }
         sent += 1;
+        SENT.fetch_add(1, Ordering::Relaxed);
         if sent == 1 && size > 0 {
             tracing::info!("playback: frames to the viewer, {w}×{h}, {size} bytes the first");
         }
@@ -364,11 +471,12 @@ pub async fn player_load(
 ) -> Res<()> {
     crate::gate()?;
     let n = LOADS.fetch_add(1, Ordering::Relaxed) + 1;
+    *LAST_LOAD.lock().unwrap() = Some(serde_json::json!({ "timeline": timeline, "shape": shape, "files": files, "profiles": profiles, "width": width }));
     let t: vault_render::Timeline = serde_json::from_value(timeline).map_err(err)?;
     let program = program(&app.vault, &t, &shape, &files, &profiles, width).await?;
-    tauri::async_runtime::spawn_blocking(move || -> anyhow::Result<()> {
-        // SAFETY: AVFoundation's player works off the main thread (see Driver); objc2 asks for the marker only to be
-        // careful. The output's frames are read on the pump's thread.
+    let made = tauri::async_runtime::spawn_blocking(move || on_player(move || -> anyhow::Result<()> {
+        // SAFETY: AVFoundation's player works off the main thread, on the player's own (see `post`); objc2 asks for
+        // the marker only to be careful. The output's frames are read on the pump's thread.
         unsafe {
             let mtm = MainThreadMarker::new_unchecked();
             let (item, out) = item_of(program, mtm)?;
@@ -384,6 +492,7 @@ pub async fn player_load(
                         nv.driver.forget();
                         nv.driver.player.replaceCurrentItemWithPlayerItem(Some(&item));
                         nv.pump = stop.clone();
+                        nv.item = item.clone();
                         nv.driver.clone()
                     }
                     _ => {
@@ -391,18 +500,71 @@ pub async fn player_load(
                             old.pump.store(true, Ordering::Relaxed);
                         }
                         let driver = player_for(&item, mtm);
-                        *native = Some(Native { driver: driver.clone(), pump: stop.clone() });
+                        *native = Some(Native { driver: driver.clone(), item: item.clone(), pump: stop.clone() });
                         driver
                     }
                 }
             };
+            tracing::info!("playback: load {n} in place");
             pump(Output(out, item), to_viewer(frames), stop, driver);
         }
         Ok(())
-    })
+    }))
     .await
-    .map_err(err)?
-    .map_err(|e| format!("playback: {e:#}"))
+    .map_err(err)?;
+    made.ok_or("playback: the player's thread is gone")?.map_err(|e| format!("playback: {e:#}"))
+}
+
+/// The studio's player as it is now: its item's status (and error), its clock, rate, whether it plays or waits and
+/// why, the driving (where the studio wants it, the seek under way), the loads made and the pictures sent so far.
+pub(crate) fn state() -> Value {
+    let Some((driver, item)) = NATIVE.lock().unwrap().as_ref().map(|n| (n.driver.clone(), n.item.clone())) else {
+        return serde_json::json!({ "player": null, "loads": LOADS.load(Ordering::Relaxed) });
+    };
+    let (want, playing, busy, next, aim, seeks, latency) = {
+        let d = driver.drive.lock().unwrap();
+        (d.want, d.playing, d.busy.map(|b| b.elapsed().as_millis()), d.next, d.aim, d.seeks, d.latency)
+    };
+    // SAFETY: plain getters
+    let (status, error, at, dur, rate, control, why, pstatus) = unsafe {
+        let p = &driver.player;
+        (
+            item.status().0,
+            item.error().map(|e| format!("{e:?}")),
+            item.currentTime().seconds(),
+            item.duration().seconds(),
+            p.rate(),
+            p.timeControlStatus().0,
+            p.reasonForWaitingToPlay().map(|r| r.to_string()),
+            p.status().0,
+        )
+    };
+    serde_json::json!({
+        "item": { "status": status, "error": error, "at": at, "duration": dur },
+        "player": { "status": pstatus, "rate": rate, "control": control, "waiting_for": why },
+        "drive": { "want": want, "playing": playing, "busy_ms": busy, "next": next, "aim": aim, "seeks": seeks, "latency_ms": (latency * 1000.0).round() },
+        "loads": LOADS.load(Ordering::Relaxed),
+        "sent": SENT.load(Ordering::Relaxed),
+        "pump": { "rounds": PUMP_ROUNDS.load(Ordering::Relaxed), "copied": PUMP_COPIED.load(Ordering::Relaxed), "step": PUMP_STEP.load(Ordering::Relaxed) },
+        "handler": {
+            "asked": vault_render::player::ASKED.load(Ordering::Relaxed),
+            "made": vault_render::player::MADE.load(Ordering::Relaxed),
+            "failed": vault_render::player::FAILED.load(Ordering::Relaxed),
+            "last": *vault_render::player::LAST.lock().unwrap(),
+        },
+    })
+}
+
+/// Drive the studio's own player as the viewer does (`play`, `pause`, `sync` at `t`), for checking it.
+pub(crate) fn drive(action: &str, t: f64) -> Res<()> {
+    let Some(d) = driver() else { return Err("no player loaded: open the program with a filmed shot".into()) };
+    match action {
+        "play" => d.play(t),
+        "pause" => d.pause(t),
+        "sync" => d.sync(t),
+        _ => return Err(format!("no action {action}: play, pause or sync")),
+    }
+    Ok(())
 }
 
 /// The film as it plays: every picture clip on V1 with its file (`files`: its proxy, else its original) and that
@@ -469,10 +631,24 @@ async fn files_for(vault: &std::sync::Arc<vault_core::Vault>, tl: &vault_render:
 /// the hand stopped); played three seconds against a clock, kept to it every 250 ms as the studio keeps it (pictures a
 /// second, the seeks it took, how far off it was); and, for comparison, played as it was kept before — a seek whenever
 /// it was two frames off, once a second. The frozen picture as it would reach the viewer.
-pub(crate) async fn stream_check(vault: &std::sync::Arc<vault_core::Vault>, timeline: Value, t: f64, originals: bool) -> Res<(Value, Option<Vec<u8>>)> {
-    let tl: vault_render::Timeline = serde_json::from_value(timeline).map_err(err)?;
-    let (files, profiles) = files_for(vault, &tl, originals).await?;
-    let program = program(vault, &tl, "16:9", &files, &profiles, Some(1600)).await?;
+pub(crate) async fn stream_check(vault: &std::sync::Arc<vault_core::Vault>, timeline: Value, t: f64, originals: bool, as_studio: bool) -> Res<(Value, Option<Vec<u8>>)> {
+    let last = LAST_LOAD.lock().unwrap().clone().filter(|_| as_studio);
+    let program = match last {
+        // exactly what the studio loaded last: its timeline, shape, files, profiles and width
+        Some(l) => {
+            let tl: vault_render::Timeline = serde_json::from_value(l["timeline"].clone()).map_err(err)?;
+            let files: HashMap<String, String> = serde_json::from_value(l["files"].clone()).map_err(err)?;
+            let profiles: HashMap<String, String> = serde_json::from_value(l["profiles"].clone()).map_err(err)?;
+            let shape = l["shape"].as_str().unwrap_or("16:9").to_string();
+            tracing::info!("player_stream_check: as the studio loaded it — {shape}, {} files: {files:?}", files.len());
+            program(vault, &tl, &shape, &files, &profiles, l["width"].as_u64().map(|w| w as u32)).await?
+        }
+        None => {
+            let tl: vault_render::Timeline = serde_json::from_value(timeline).map_err(err)?;
+            let (files, profiles) = files_for(vault, &tl, originals).await?;
+            program(vault, &tl, "16:9", &files, &profiles, Some(1600)).await?
+        }
+    };
     let got: Arc<Mutex<Vec<(Instant, f64)>>> = Arc::default();
     let pic: Arc<Mutex<Option<Vec<u8>>>> = Arc::default();
     let (g, p) = (got.clone(), pic.clone());
@@ -498,12 +674,22 @@ pub(crate) async fn stream_check(vault: &std::sync::Arc<vault_core::Vault>, time
             }
         };
         let ms = |s: f64| (s * 1000.0).round();
+        let fps_of = |from: Instant, to: Instant| (count(from, to) as f64 / to.duration_since(from).as_secs_f64() * 10.0).round() / 10.0;
         let sleep = |s: f64| std::thread::sleep(std::time::Duration::from_secs_f64(s));
-        // SAFETY: AVFoundation's player works off the main thread (see Driver); objc2 asks for the marker only to be careful
+        // made on the player's own thread, as the studio's is (see `post`)
+        let made = on_player(move || -> anyhow::Result<(Output, Arc<Driver>)> {
+            // SAFETY: AVFoundation's player works off the main thread; objc2 asks for the marker only to be careful
+            unsafe {
+                let mtm = MainThreadMarker::new_unchecked();
+                let (item, out) = item_of(program, mtm)?;
+                let driver = player_for(&item, mtm);
+                Ok((Output(out, item), driver))
+            }
+        })
+        .ok_or_else(|| anyhow::anyhow!("the player's thread is gone"))??;
+        let ((out, item), driver) = (made.0.parts(), made.1);
+        // SAFETY: the item's and the player's getters and calls, from this thread as before
         unsafe {
-            let mtm = MainThreadMarker::new_unchecked();
-            let (item, out) = item_of(program, mtm)?;
-            let driver = player_for(&item, mtm);
             let stop = Arc::new(AtomicBool::new(false));
             pump(Output(out, item.clone()), sink, stop.clone(), driver.clone());
             let ready = Instant::now();
@@ -575,6 +761,23 @@ pub(crate) async fn stream_check(vault: &std::sync::Arc<vault_core::Vault>, time
             driver.pause(t);
             sleep(0.4);
 
+            // the rate nudged (1.1, then 1.0) while playing: does the composition keep making frames?
+            let (n0, a0) = (Instant::now(), vault_render::player::ASKED.load(Ordering::Relaxed));
+            driver.play(t);
+            sleep(0.5);
+            player.setRate(1.1);
+            sleep(1.0);
+            let a1 = vault_render::player::ASKED.load(Ordering::Relaxed);
+            let n1 = Instant::now();
+            player.setRate(1.0);
+            sleep(1.0);
+            let n2 = Instant::now();
+            let a2 = vault_render::player::ASKED.load(Ordering::Relaxed);
+            let nudged = serde_json::json!({ "fps_at_1_1": fps_of(n0 + std::time::Duration::from_millis(500), n1), "fps_back_at_1": fps_of(n1, n2), "asked_at_1_1": a1 - a0, "asked_back_at_1": a2 - a1,
+                "can_fast": item.canPlayFastForward(), "can_slow": item.canPlaySlowForward() });
+            driver.pause(t);
+            sleep(0.4);
+
             // played as it was kept before: a seek whenever two frames off, once a second
             driver.forget();
             driver.drive.lock().unwrap().playing = true;
@@ -607,6 +810,7 @@ pub(crate) async fn stream_check(vault: &std::sync::Arc<vault_core::Vault>, time
                     "drag": { "moves": moves, "film_s": 2, "pictures_during": during, "last_ms": last_ms },
                     "drag_as_before": { "pictures_during": old_during, "last_ms": old_last_ms },
                     "played": { "fps": fps(p0, p1), "fps_after_1s": fps(p0 + one, p1), "seeks": kept_seeks, "gap_end_ms": ms(end_gap), "worst_gap_after_1s_ms": ms(worst), "rate_end": rate_end, "seek_latency_ms": ms(latency) },
+                    "nudged": nudged,
                     "played_as_before": { "fps": fps(o0, o1), "fps_after_1s": fps(o0 + one, o1), "seeks": old_seeks, "gaps_ms": old_gaps },
                 }),
                 frozen,

@@ -89,3 +89,31 @@ fn every_frame_plays_through_its_grade_and_a_gap_is_black() {
     std::fs::remove_dir_all(dir).ok();
 }
 
+
+#[test]
+fn a_blob_file_plays_after_the_pool_it_was_made_in_drains() {
+    // the composition made inside an autorelease pool that drains before a frame is asked for (the main thread's run
+    // loop drains one every turn): its clip's asset — carrying the delegate that reads the file's bytes — must live as
+    // long as the composition, or no frame ever comes
+    let dir = scratch("pool");
+    let file = dir.join("a.mp4");
+    movie(&file, [0.45, 0.45, 0.45]);
+    let clip = json!({ "id": "a", "track": "V1", "start": 0, "in": 0, "dur": 2, "hash": "a" });
+    let (tx, rx) = std::sync::mpsc::channel();
+    let f = file.clone();
+    // on a thread of its own: without its asset, the frame waits for bytes for ever
+    std::thread::spawn(move || {
+        let (comp, video) = objc2::rc::autoreleasepool(|_| composition(Arc::new(program(&f, clip))).unwrap());
+        // SAFETY: AVFoundation objects we made
+        let cg = unsafe {
+            let g = objc2_av_foundation::AVAssetImageGenerator::assetImageGeneratorWithAsset(&comp);
+            g.setVideoComposition(Some(&video));
+            #[allow(deprecated)]
+            g.copyCGImageAtTime_actualTime_error(cmtime(1.0), std::ptr::null_mut())
+        };
+        let _ = tx.send(cg.map(|_| ()).map_err(|e| format!("{e:?}")));
+    });
+    let got = rx.recv_timeout(std::time::Duration::from_secs(20));
+    assert!(matches!(got, Ok(Ok(()))), "no frame once the pool drained: {got:?}");
+    std::fs::remove_dir_all(dir).ok();
+}
