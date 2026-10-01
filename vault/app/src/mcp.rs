@@ -1574,7 +1574,7 @@ impl Studio {
     }
 
     #[tool(
-        description = "Clean up stills nothing uses (a file keeps two: its grading still, ACEScct, and its graded still, its preview — never a history): hero frames of media clips, older hero frames of a world clip, proxies of hero frames, proxies of files gone, grading stills and previews their file no longer names. Without `delete`: a dry run listing each file (hash, name, MB, why) and the total — nothing is deleted. Show that list to the person; only once they say yes, call again with `delete` set to exactly the hashes they agreed to. A hash that is not stale (any more) is refused, never deleted. Deleting is for good on this Mac."
+        description = "Clean up stills nothing uses (a file keeps two: its grading still, ACEScct, and its graded still, its preview — never a history): hero frames of media clips, older hero frames of a world clip, proxies and analysis thumbnails of hero frames, proxies and thumbnails of files gone, grading stills and previews their file no longer names. Without `delete`: a dry run listing each file (hash, name, MB, why) and the total — nothing is deleted. Show that list to the person; only once they say yes, call again with `delete` set to exactly the hashes they agreed to. A hash that is not stale (any more) is refused, never deleted. Deleting is for good on this Mac."
     )]
     async fn stills_cleanup(&self, Parameters(a): Parameters<StillsCleanupArgs>) -> String {
         let r = async {
