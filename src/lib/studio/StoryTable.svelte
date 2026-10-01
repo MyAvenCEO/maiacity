@@ -154,7 +154,7 @@
 		await command('vault_transcribe', { hash: m.hash }).catch((x) => (error = String(x)));
 		files = await listMedia().catch(() => files);
 	}
-	const thumbOf = (m: MediaItem) => [m.meta?.thumbnail, m.meta?.preview].find((t): t is string => typeof t === 'string' && /^[0-9a-f]{64}$/.test(t)) ?? null;
+	const thumbOf = (m: MediaItem) => [m.meta?.preview, m.meta?.thumbnail].find((t): t is string => typeof t === 'string' && /^[0-9a-f]{64}$/.test(t)) ?? null;
 
 	const complete = $derived(mine.filter(kept).length);
 	const name = (m: MediaItem) => m.title || m.original_name || m.hash.slice(0, 12);

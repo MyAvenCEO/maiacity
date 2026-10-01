@@ -3,8 +3,10 @@
  * the render worker — the Mac app, rendering natively (vault/app/src/render.rs, vault/crates/vault-render) — claims it
  * with its key, reports its progress, and hands back the film's hash when it is in the vault.
  *
- * The same queue carries the worker's other work: `frame` — a hero frame: one frame of a timeline (`params`: t, shape)
- * rendered at full precision through the whole chain, for grading against. Proxies and the viewer's LUTs are no jobs
+ * The same queue carries the worker's other work: `frame` — a file's graded still (`media_hash`, `params`: clip,
+ * still), queued when a timeline save changes how the file looks; or a frame of a timeline (`params`: t, shape),
+ * asked for by an agent: of a media clip it is that file's graded still too, so a file has two stills, never a
+ * history — its grading still (ACEScct, for grading) and its graded still (its thumbnail). Proxies and the viewer's LUTs are no jobs
  * here: the Mac app makes a file's proxy when it comes in (meta.proxy on the original), a world shot version's when a
  * timeline plays it (vault/app/src/world.rs, in its own world), and bakes every LUT the viewer uses (`color_lut`).
  * `proxy` rows — of files (media_hash) or of shot versions (shot_id + shot_version) — and `lut` rows (the preview LUTs
@@ -52,6 +54,62 @@ export async function queueFrame(founderId: string, timelineId: string, body: { 
   if (!tl.length) throw new RenderError("No such timeline.", 404);
   return (await db.query<Job>(`INSERT INTO render_jobs (kind, timeline_id, params, founder_id) VALUES ('frame', $1, ($2::text)::jsonb, $3) RETURNING ${COLS}`,
     [timelineId, JSON.stringify({ t: Math.round(t * 1000) / 1000, shape }), founderId])).rows[0]!;
+}
+
+/**
+ * A file's graded still: its grading still's frame through the clip that grades it (balance, secondaries, grade,
+ * looks, 16:9 framing, the output), 1920 wide — the file's one preview, its thumbnail everywhere. A `frame` job for
+ * the file (`media_hash`) with the clip in `params`; one waits per file: a newer ask takes the waiting one's place.
+ */
+export async function queueStill(founderId: string | null, hash: string, timelineId: string, clip: string): Promise<Job> {
+  if (!HASH.test(hash)) throw new RenderError("A file is named by its hash (64 hex).");
+  const params = JSON.stringify({ clip, still: true });
+  const { rows: waiting } = await db.query<Job>(
+    `UPDATE render_jobs SET timeline_id = $2, params = ($3::text)::jsonb, updated = now()
+      WHERE id = (SELECT id FROM render_jobs WHERE kind = 'frame' AND media_hash = $1 AND status = 'queued' ORDER BY created LIMIT 1)
+      RETURNING ${COLS}`, [hash, timelineId, params]);
+  if (waiting[0]) return waiting[0];
+  return (await db.query<Job>(`INSERT INTO render_jobs (kind, timeline_id, media_hash, params, founder_id) VALUES ('frame', $1, $2, ($3::text)::jsonb, $4) RETURNING ${COLS}`,
+    [timelineId, hash, params, founderId])).rows[0]!;
+}
+
+type Graded = { id: string; track: string; kind?: string; hash?: string; balance?: unknown; secondaries?: unknown; grade?: unknown; frame?: Record<string, unknown>; script?: { scene?: string } };
+
+/** Per file, the first picture clip that plays it, and what its graded still is made of (its look on screen). */
+function gradesOf(clips: Graded[], grade: unknown, color: unknown): Map<string, { clip: string; of: string; graded: boolean }> {
+  const out = new Map<string, { clip: string; of: string; graded: boolean }>();
+  for (const c of clips) {
+    if (c.track !== "V1" || (c.kind && c.kind !== "media") || !c.hash || out.has(c.hash)) continue;
+    const own = { balance: c.balance ?? null, secondaries: c.secondaries ?? null, grade: c.grade ?? null, frame: c.frame?.["16:9"] ?? null, scene: c.script?.scene ?? null };
+    out.set(c.hash, { clip: c.id, of: JSON.stringify({ own, grade: grade ?? null, color: color ?? null }), graded: !!(c.balance || c.secondaries || c.grade || c.frame?.["16:9"] || grade) });
+  }
+  return out;
+}
+
+/**
+ * A timeline saved: every file whose look on screen changed gets its graded still made again (a file never graded,
+ * and graded now by nothing, keeps the preview it was given when it came in).
+ */
+export async function queueStillsOf(founderId: string | null, before: { clips: unknown; grade: unknown; color: unknown } | null, after: { id: string; clips: unknown; grade: unknown; color: unknown }): Promise<Job[]> {
+  const was = before ? gradesOf((before.clips as Graded[]) ?? [], before.grade, before.color) : new Map();
+  const queued: Job[] = [];
+  for (const [hash, now] of gradesOf((after.clips as Graded[]) ?? [], after.grade, after.color)) {
+    const then = was.get(hash);
+    if (then?.of === now.of || (!now.graded && !then?.graded)) continue;
+    queued.push(await queueStill(founderId, hash, after.id, now.clip));
+  }
+  return queued;
+}
+
+/** A file's grading still was made again (a new moment): its graded still, through the clip that last graded it. */
+export async function queueStillOfFile(founderId: string | null, hash: string): Promise<Job | null> {
+  if (!HASH.test(hash)) throw new RenderError("A file is named by its hash (64 hex).");
+  const { rows } = await db.query<{ id: string; clips: Graded[]; grade: unknown; color: unknown }>(
+    `SELECT id, clips, grade, color FROM timelines WHERE clips @> ($1::text)::jsonb ORDER BY updated DESC LIMIT 1`,
+    [JSON.stringify([{ hash, track: "V1" }])]);
+  const t = rows[0];
+  const g = t && gradesOf(t.clips ?? [], t.grade, t.color).get(hash);
+  return g && g.graded ? queueStill(founderId, hash, t.id, g.clip) : null;
 }
 
 export async function rendersOf(timelineId: string): Promise<Job[]> {

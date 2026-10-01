@@ -10,7 +10,10 @@
 //!           World clips are rendered first as ACEScct plates at each shape's size, in the app's own unseen world
 //!           (world.rs, cached by what they are made of); every delivery goes into the vault as class delivery, in the
 //!           story most of the timeline's files are in (else the inbox), described by `Render::about`.
-//!   frame   a hero frame: one frame at `params.t` in `params.shape`, through the whole chain, as a 16-bit PNG.
+//!   frame   of a media clip (`params.clip`, or the one on screen at `params.t`): its file's graded still — the grading
+//!           still through the clip's whole chain, 1920×1080, a JPEG — as the file's preview, replacing the one before.
+//!           Of a world clip or a gap: a hero frame at `params.t` in `params.shape`, a 16-bit PNG, replacing the one
+//!           before of that clip and shape.
 //!   proxy, lut  history: closed as failed, saying the Mac makes them now (as the old worker did).
 //!
 //! It shares the proxies' rules: one heavy GPU job at a time (`proxies::TURN` — proxies, world proxies and renders all
@@ -167,7 +170,7 @@ async fn run(handle: &AppHandle, vault: &Arc<Vault>, auth: &Auth, job: Value) {
         "proxy" => json!({ "status": "failed", "note": "Proxies are made by the Mac app now — a world shot's too, when a timeline plays it." }),
         "lut" => json!({ "status": "failed", "note": "The viewer's LUTs are baked by the Mac app now." }),
         _ => {
-            let label = if kind == "frame" { "Hero frame" } else { "Render" };
+            let label = if kind == "frame" { "Frame" } else { "Render" };
             let jk = if kind == "frame" { jobs::Kind::Frame } else { jobs::Kind::Render };
             let (progress, told) = Progress::start(auth, &id, jk, label);
             let result = {
@@ -693,23 +696,36 @@ async fn render_job(handle: &AppHandle, vault: &Arc<Vault>, auth: &Auth, job: &V
     made.job_result(&t).map_err(err)
 }
 
-/// A hero frame into the vault: the job's result.
+/// How wide a file's graded still is (16:9, so 1920×1080).
+const GRADED_WIDTH: u32 = 1920;
+
+/// A `frame` job into the vault: the job's result. Of a media clip — named (`params.clip`, queued when a timeline
+/// save changed how its file looks) or on screen at `params.t` (an agent's ask) — it is that file's graded still,
+/// replacing the one before; of a world clip or a gap, a hero frame at `params.t` in `params.shape`, replacing the
+/// one before of the same clip and shape. Never a history of either.
 async fn frame_job(handle: &AppHandle, vault: &Arc<Vault>, auth: &Auth, job: &Value, work: &Work, progress: &Progress) -> Res<Value> {
     let at = job["params"]["t"].as_f64().filter(|t| *t >= 0.0).unwrap_or(0.0);
     let aspect = job["params"]["shape"].as_str().unwrap_or("16:9").to_string();
     let s = Shape::of(&aspect).ok_or_else(|| format!("no such shape: {aspect}"))?;
     let t = timeline_of(auth, job).await?;
-    progress.named(&format!("Hero frame · {} · {at:.2} s", t.name));
+    progress.named(&format!("Frame · {} · {at:.2} s", t.name));
     progress.set(0.05, "fetching files");
     let lib = Arc::new(Vaulted::new(vault).await?);
     let story = lib.story_of(&t);
     // the clip on screen, as hero_frame picks it: a world clip gets a plate of that one frame
     let has_cards = |c: &Clip| lib.media(c.hash.as_deref().unwrap_or("")).is_some_and(|m| m.meta.get("cards").is_some_and(Value::is_object));
-    let clip = t
-        .clips
-        .iter()
-        .filter(|c| c.track == "V1" && (c.is_world() || (c.hash.as_deref().is_some_and(|h| lib.media(h).is_some()) && !has_cards(c))))
-        .rfind(|c| c.start <= at && at < c.end());
+    let named = job["params"]["clip"].as_str().map(|id| t.clips.iter().find(|c| c.id == id).ok_or_else(|| format!("no clip {id} on the timeline any more")));
+    let clip = match named {
+        Some(c) => Some(c?),
+        None => t
+            .clips
+            .iter()
+            .filter(|c| c.track == "V1" && (c.is_world() || (c.hash.as_deref().is_some_and(|h| lib.media(h).is_some()) && !has_cards(c))))
+            .rfind(|c| c.start <= at && at < c.end()),
+    };
+    if let Some(c) = clip.filter(|c| !c.is_world()) {
+        return graded_still_job(vault, &t, lib.clone(), c.id.clone(), work, progress).await;
+    }
     let mut plates = HashMap::new();
     if let Some(c) = clip.filter(|c| c.is_world()) {
         progress.set(0.1, "rendering world plates");
@@ -739,7 +755,7 @@ async fn frame_job(handle: &AppHandle, vault: &Arc<Vault>, auth: &Auth, job: &Va
         tags: std::iter::once("role:frame".to_string()).chain(t.project.clone()).collect(),
         title: Some(format!("{} · hero frame {at:.2} s · {aspect}", t.name)),
         description: Some(format!("One frame at full precision ({w}×{h}, 16-bit) through the whole chain, without graphics — {what}")),
-        meta: json!({ "timeline": t.id, "version": t.version.unwrap_or(1), "t": at, "shape": aspect, "width": w, "height": h, "clip": rep["clip"] }),
+        meta: json!({ "role": "frame", "timeline": t.id, "version": t.version.unwrap_or(1), "t": at, "shape": aspect, "width": w, "height": h, "clip": rep["clip"] }),
         story,
         ..Default::default()
     };
@@ -747,7 +763,99 @@ async fn frame_job(handle: &AppHandle, vault: &Arc<Vault>, auth: &Auth, job: &Va
     if o.verdict == Verdict::Mismatch {
         return Err("the hero frame's copy in the vault is not what was rendered (hash mismatch)".into());
     }
+    // one hero frame per clip and shape: the one it replaces goes
+    let same = |m: &vault_core::Meta| {
+        is_frame(m) && m.meta["timeline"] == json!(t.id) && m.meta["clip"] == rep["clip"] && m.meta["shape"] == json!(aspect)
+    };
+    for m in vault.catalog.list().await.map_err(err)?.iter().filter(|m| same(m) && m.hash != o.hash) {
+        if let Ok(h) = m.hash.parse::<iroh_blobs::Hash>() {
+            vault.catalog.delete_file(h, "replaced by the clip's new hero frame").await.ok();
+        }
+    }
     Ok(json!({ "status": "done", "progress": 1, "note": format!("hero frame ready · {at:.2} s · {aspect}"), "output_hash": o.hash, "report": rep }))
+}
+
+/// A hero frame (`role:frame`): a frame of a timeline the render worker made.
+pub fn is_frame(m: &vault_core::Meta) -> bool {
+    m.meta.get("role").and_then(Value::as_str) == Some("frame") || m.tags.iter().any(|t| t == "role:frame")
+}
+
+/// The stills nothing uses — a file keeps two (its grading still and its graded still), never a history: every hero
+/// frame of a media clip (its file's graded still stands for it now) and all but the newest of a world clip's per
+/// shape, every proxy of a hero frame (a picture already through the output transform has nothing to grade), every
+/// proxy whose file is gone, and every grading still or preview its file no longer names. Each with why, newest first.
+pub fn stale_stills(all: &[vault_core::Meta]) -> Vec<(&vault_core::Meta, &'static str)> {
+    let by: HashMap<&str, &vault_core::Meta> = all.iter().map(|m| (m.hash.as_str(), m)).collect();
+    let s = |m: &vault_core::Meta, k: &str| m.meta.get(k).and_then(Value::as_str).map(String::from);
+    let world = |m: &vault_core::Meta| m.description.contains("world shot");
+    let mut frames: Vec<&vault_core::Meta> = all.iter().filter(|m| is_frame(m)).collect();
+    frames.sort_by(|a, b| b.added.cmp(&a.added));
+    let mut kept = std::collections::HashSet::new();
+    let mut out = Vec::new();
+    for m in &frames {
+        let key = (s(m, "timeline"), m.meta.get("clip").map(Value::to_string), s(m, "shape"));
+        if !world(m) {
+            out.push((*m, "a hero frame of a media clip: its file's graded still stands for it"));
+        } else if !kept.insert(key) {
+            out.push((*m, "an older hero frame of the same world clip and shape"));
+        }
+    }
+    for m in all {
+        let named_by = |of: &str, k: &str| by.get(of).and_then(|o| s(o, k)).as_deref() == Some(m.hash.as_str());
+        if let Some(of) = s(m, "proxy_of") {
+            match by.get(of.as_str()) {
+                Some(o) if is_frame(o) => out.push((m, "a proxy of a hero frame")),
+                None => out.push((m, "a proxy of a file no longer in the vault")),
+                _ => {}
+            }
+        } else if let Some(of) = s(m, "grade_still_of").filter(|of| !named_by(of, "grade_still")) {
+            out.push((m, if by.contains_key(of.as_str()) { "a grading still its file no longer names" } else { "a grading still of a file no longer in the vault" }));
+        } else if let Some(of) = s(m, "preview_of").filter(|of| !named_by(of, "preview")) {
+            out.push((m, if by.contains_key(of.as_str()) { "a preview its file no longer names" } else { "a preview of a file no longer in the vault" }));
+        }
+    }
+    out
+}
+
+/// A file's graded still into the vault, as its preview (`meta.preview`): the one it replaces goes.
+async fn graded_still_job(vault: &Arc<Vault>, t: &Timeline, lib: Arc<Vaulted>, clip: String, work: &Work, progress: &Progress) -> Res<Value> {
+    progress.set(0.3, "rendering the graded still");
+    let jpg = work.0.join(format!("graded-{clip}.jpg"));
+    let (t2, file, c2) = (t.clone(), jpg.clone(), clip.clone());
+    let rep = tauri::async_runtime::spawn_blocking(move || vault_render::graded_still(&t2, &*lib, odt(), &c2, GRADED_WIDTH, &file))
+        .await
+        .map_err(err)?
+        .map_err(err)?;
+    progress.set(0.9, "into the vault");
+    let of = rep["of"].as_str().unwrap_or_default().to_string();
+    let hash: iroh_blobs::Hash = of.parse().map_err(err)?;
+    let original = vault.catalog.meta(hash).await.map_err(err)?.ok_or("the clip's file is not in the vault's catalog")?;
+    let stem = Path::new(&original.original_name).file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_else(|| of[..12].to_string());
+    let batch = Batch {
+        session: format!("graded still of {of}"),
+        tags: vec!["preview".into()],
+        title: Some(format!("{stem} · graded still")),
+        meta: json!({ "role": "preview", "preview_of": of, "t": rep["t"], "width": rep["width"], "height": rep["height"], "shape": "16:9",
+            "graded": { "timeline": t.id, "version": t.version.unwrap_or(1), "clip": clip } }),
+        story: Some(original.story.clone()).filter(|s| !s.is_empty()),
+        class: Some("proxy".into()),
+        ..Default::default()
+    };
+    let o = vault.ingest_file(&jpg, &batch).await.map_err(err)?;
+    if o.verdict == Verdict::Mismatch {
+        return Err("the graded still's copy in the vault is not what was rendered (hash mismatch)".into());
+    }
+    vault.catalog.describe(hash, &json!({ "meta": { "preview": o.hash } })).await.map_err(err)?;
+    // one preview per file: the one it replaces goes
+    for m in vault.catalog.list().await.map_err(err)? {
+        if m.meta.get("preview_of").and_then(Value::as_str) == Some(&of)
+            && m.hash != o.hash
+            && let Ok(h) = m.hash.parse::<iroh_blobs::Hash>()
+        {
+            vault.catalog.delete_file(h, "replaced by the file's new graded still").await.ok();
+        }
+    }
+    Ok(json!({ "status": "done", "progress": 1, "note": format!("graded still ready · {stem}"), "output_hash": o.hash, "report": rep }))
 }
 
 #[cfg(test)]
@@ -757,6 +865,30 @@ mod tests {
     #[test]
     fn the_loudness_is_the_platforms() {
         assert_eq!((LOUDNESS.lufs, LOUDNESS.true_peak), (vault_render::PLATFORMS.lufs, vault_render::PLATFORMS.true_peak));
+    }
+
+    #[test]
+    fn a_file_keeps_two_stills_never_a_history() {
+        let m = |hash: &str, added: &str, description: &str, meta: Value| vault_core::Meta { hash: hash.into(), added: added.into(), description: description.into(), meta, ..Default::default() };
+        let frame = |hash: &str, added: &str, clip: &str, world: bool| {
+            m(hash, added, if world { "… — world shot s1 v2 at 1.000 s" } else { "… — A001 at 3.000 s" }, json!({ "role": "frame", "timeline": "t1", "clip": clip, "shape": "16:9" }))
+        };
+        let all = vec![
+            m("orig", "1", "", json!({ "grade_still": "still", "preview": "graded" })),
+            m("still", "2", "", json!({ "role": "grade-still", "grade_still_of": "orig" })),
+            m("graded", "3", "", json!({ "role": "preview", "preview_of": "orig" })),
+            m("old-still", "1", "", json!({ "role": "grade-still", "grade_still_of": "orig" })),
+            m("old-preview", "1", "", json!({ "role": "preview", "preview_of": "orig" })),
+            m("proxy", "1", "", json!({ "proxy_of": "orig" })),
+            frame("f-media", "4", "c1", false),
+            m("f-media-proxy", "5", "", json!({ "proxy_of": "f-media" })),
+            frame("w-old", "4", "w1", true),
+            frame("w-new", "6", "w1", true),
+            m("lost-proxy", "1", "", json!({ "proxy_of": "gone" })),
+        ];
+        let mut stale: Vec<&str> = stale_stills(&all).iter().map(|(m, _)| m.hash.as_str()).collect();
+        stale.sort();
+        assert_eq!(stale, ["f-media", "f-media-proxy", "lost-proxy", "old-preview", "old-still", "w-old"]);
     }
 
     #[test]
