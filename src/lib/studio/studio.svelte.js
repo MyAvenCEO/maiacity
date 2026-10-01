@@ -56,7 +56,7 @@ import { cleanEq, cleanKeys, keyDb, webAudioQ } from '../../../game/film/sound.j
  */
 /** A shot of the script: its clip, how far it is (words, a storyboard still, the footage, a world shot), what is said under it. @typedef {{ clip: Clip, stage: 'text' | 'storyboard' | 'footage' | 'world', lines: Clip[] }} ScriptShot */
 /** @typedef {{ scene: string, shots: ScriptShot[] }} ScriptScene */
-/** @typedef {'ingest' | 'library' | 'script' | '3d' | 'edit' | 'audio' | 'grade' | 'render' | 'deliverables'} Tab */
+/** @typedef {'ingest' | 'library' | 'script' | '3d' | 'edit' | 'audio' | 'grade' | 'render' | 'deliverables' | 'processes'} Tab */
 /**
  * A sound cue of a world shot, where it lands on A3 (derived from the shot record, never saved as a clip).
  * @typedef {Clip & { cue: true, from: string }} CueClip
@@ -211,6 +211,11 @@ export class Studio {
 	 * @type {'clip' | 'film'}
 	 */
 	gradeTarget = $state('clip');
+	/**
+	 * Grade: the layer whose controls the aside shows (for the selected shot, its scene, or the whole timeline — grade.js)
+	 * @type {import('./grade.js').Layer}
+	 */
+	gradeLayer = $state('base');
 	falseColor = $state(false);
 	/**
 	 * the viewer's canvas, for the scopes
@@ -1601,6 +1606,20 @@ export class Studio {
 			this.error = `Transcript: ${/** @type {Error} */ (e).message ?? e}`;
 			return false;
 		}
+	}
+	/**
+	 * Two words of a file's transcript made one ("To morrow" → "Tomorrow"): word `i` and the one after it, its text
+	 * `text` (else the two run together), its time from the first's start to the second's end.
+	 * @param {string} hash @param {number} i @param {string} [text]
+	 */
+	async joinWords(hash, i, text) {
+		const m = this.byHash.get(hash);
+		if (!m) return false;
+		const all = captionWordsOf(m);
+		const a = all[i], b = all[i + 1];
+		if (!a || !b) return false;
+		const one = { word: (text ?? a.word + b.word).trim() || a.word + b.word, start: a.start, end: b.end };
+		return this.setCaptionWords(hash, [...all.slice(0, i), one, ...all.slice(i + 2)]);
 	}
 	/**
 	 * One word of a file's transcript put right (a word heard wrong): its text only, its timing kept. An empty text

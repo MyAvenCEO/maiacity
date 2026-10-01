@@ -489,6 +489,17 @@ pub struct PlaybackArgs {
 }
 
 #[derive(Deserialize, schemars::JsonSchema)]
+pub struct JobsArgs {
+    /// "list" (the default), "cancel" (a queued job), "bump" (a queued job to the front of its lane) or "retry" (a
+    /// failed or cancelled one)
+    pub action: Option<String>,
+    /// the job's id, for cancel, bump and retry
+    pub id: Option<String>,
+    /// how many finished jobs of the history (default 30)
+    pub history: Option<usize>,
+}
+
+#[derive(Deserialize, schemars::JsonSchema)]
 pub struct WordFix {
     /// the word's place in the transcript's words (0 first, as `transcript` lists them)
     pub i: usize,
@@ -1441,6 +1452,28 @@ impl Studio {
             ]),
             Err(e) => rmcp::model::CallToolResult::error(vec![rmcp::model::ContentBlock::text(e)]),
         }
+    }
+
+    #[tool(
+        description = "Every process this Mac runs, in one place (the studio's Processes tab): proxies, grading stills, world proxies, renders and hero frames, transcripts, analyses, sound records, files kept, ingests — each with its lane (gpu, speech, ai, io: one at a time in each), state (queued, waiting and why, running, done, failed, cancelled), stage, progress and times; the running and queued first, then the history. Also: cancel a queued job, bump one to the front of its lane, retry a failed one."
+    )]
+    async fn jobs(&self, Parameters(a): Parameters<JobsArgs>) -> String {
+        let id = a.id.clone().unwrap_or_default();
+        let done = match a.action.as_deref().unwrap_or("list") {
+            "list" => None,
+            "cancel" => Some(crate::jobs::jobs_cancel(id)),
+            "bump" => Some(crate::jobs::jobs_bump(id)),
+            "retry" => Some(match crate::jobs::list(400).history.into_iter().find(|j| j.id == id) {
+                Some(j) => crate::jobs::retry(&self.handle, &self.vault, &j).await,
+                None => Err("no such job in the history".into()),
+            }),
+            other => Some(Err(format!("no action {other}: list, cancel, bump or retry"))),
+        };
+        if let Some(Err(e)) = done {
+            return e;
+        }
+        let j = crate::jobs::list(a.history.unwrap_or(30));
+        serde_json::to_string_pretty(&json!({ "active": j.active, "history": j.history, "holds": self.vault.hold.now() })).unwrap_or_default()
     }
 
     #[tool(

@@ -150,7 +150,12 @@ pub async fn round(vault: &Vault, name: &str, providers: &[EndpointId]) -> anyho
                 continue;
             }
             update(name, |s| s.now = format!("fetching {} ({:.1} MB)", m.original_name, m.size as f64 / 1e6));
-            if let Err(e) = downloader.download(hash, providers.to_vec()).await {
+            let job = format!("{name}:{}", m.hash);
+            crate::jobs::queue(crate::jobs::Kind::Keep, &job, &format!("{} → {name}", m.original_name));
+            crate::jobs::stage(crate::jobs::Kind::Keep, &job, &format!("fetching {:.1} MB", m.size as f64 / 1e6), 0.0);
+            let got = downloader.download(hash, providers.to_vec()).await;
+            crate::jobs::end(crate::jobs::Kind::Keep, &job, got.as_ref().map(|_| ()).map_err(|e| format!("{e:#}")));
+            if let Err(e) = got {
                 errors.push(format!("{}: {e:#}", m.original_name));
                 continue;
             }

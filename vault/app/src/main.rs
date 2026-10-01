@@ -9,6 +9,7 @@ mod asks;
 mod auth;
 mod blob;
 mod drives;
+mod jobs;
 mod local;
 mod mcp;
 mod models;
@@ -236,6 +237,10 @@ async fn run_ingest(
     let total = files.len();
     let started = std::time::Instant::now();
     let mut outcomes = Vec::new();
+    // a process like every other (jobs.rs): the Processes tab shows it beside the work it starts; ended as failed if
+    // it stops on an error
+    let source = paths.iter().filter_map(|p| std::path::Path::new(p).file_name()).map(|n| n.to_string_lossy()).collect::<Vec<_>>().join(", ");
+    let ingesting = jobs::Ending::begin(jobs::Kind::Ingest, &session, &format!("{total} files from {source}"));
     // local work first: while the files come in, nothing is rendered and nothing is sent — each resumes after
     let held = vault.hold.take("ingest");
     let mut proxies_due = Vec::new();
@@ -253,6 +258,7 @@ async fn run_ingest(
             }
         });
         let o = vault.ingest_file_with(f, &batch, told).await?;
+        jobs::stage(jobs::Kind::Ingest, &session, &format!("{} of {total} in", index + 1), (index + 1) as f64 / total.max(1) as f64);
         handle.emit("ingest", Progress { index, total, path, size, story: story.clone(), outcome: Some(o.clone()) }).ok();
         // every video original gets its proxy — once all files are in, one at a time, from the source while it is here
         if o.verdict == Verdict::Verified {
@@ -265,6 +271,7 @@ async fn run_ingest(
         outcomes.push(o);
     }
     drop(held);
+    ingesting.done();
     for (hash, source) in proxies_due {
         tauri::async_runtime::spawn(proxies::auto_proxy(handle.clone(), vault.clone(), hash, source));
     }
@@ -400,6 +407,8 @@ fn main() {
         .setup(|app| {
             let vault = Arc::new(tauri::async_runtime::block_on(Vault::open(vault_dir()))?);
             app.manage(App { vault: vault.clone(), busy: AtomicBool::new(false) });
+            // every process this Mac runs, in one registry (jobs.rs): the studio's Processes tab is its view
+            jobs::init(app.handle().clone());
             // signed in already: join the network now; then keep this Mac complete in the background
             let handle = app.handle().clone();
             let v = vault.clone();
@@ -488,6 +497,10 @@ fn main() {
             stories::story_delete,
             stories::files_move,
             stories::file_download,
+            jobs::jobs_list,
+            jobs::jobs_cancel,
+            jobs::jobs_bump,
+            jobs::jobs_retry,
             transcripts::transcript_edit,
             stories::files_class,
             proxies::proxies_now,

@@ -13,7 +13,7 @@
 //! proxy: class proxy, in the story most of the timeline's files are in (else the inbox).
 //!
 //! What is made: the version of every world clip on every timeline that has no proxy yet — looked for a minute after
-//! start and every minute after. It takes its turn with the files' proxies (`proxies::TURN`), after an ingest, and
+//! start and every minute after. It takes its turn with the files' proxies (the GPU lane, jobs.rs), after an ingest, and
 //! only while macOS says memory is normal; while it renders, the uploads wait (`hold: proxy`). The window is closed
 //! when nothing is left to render (and nobody keeps it open: `keep`).
 //!
@@ -39,7 +39,13 @@ use tauri::{AppHandle, Emitter, Manager, WebviewUrl, WebviewWindowBuilder};
 use vault_core::{Vault, ingest::Batch};
 use vault_media::{FrameWriter, Proxy, proxy::WORKING};
 
-use crate::{Res, auth::Auth, err, proxies};
+use crate::{
+    Res,
+    auth::Auth,
+    err,
+    jobs::{self, Kind},
+    proxies,
+};
 
 /// The unseen window the world renders in.
 pub const LABEL: &str = "world-proxy";
@@ -135,8 +141,9 @@ struct Want {
 
 impl Want {
     /// its line in the studio's proxy list (`proxies_now`)
+    /// its job's subject (jobs.rs): the shot and its version
     fn of(&self) -> String {
-        format!("shot:{}:v{}", self.shot, self.version)
+        format!("{}:v{}", self.shot, self.version)
     }
     fn label(&self) -> String {
         format!("{} · v{} · world", self.name, self.version)
@@ -196,12 +203,24 @@ async fn wanted(auth: &Auth, vault: &Vault) -> Res<Vec<Want>> {
     Ok(out)
 }
 
+static WAKE: tokio::sync::Notify = tokio::sync::Notify::const_new();
+static RETRY: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// A look now, the failed ones' tries forgotten (one made again by hand).
+pub fn wake() {
+    RETRY.store(true, std::sync::atomic::Ordering::Relaxed);
+    WAKE.notify_one();
+}
+
 /// Look for world shots without their proxy a minute after start, and every minute after; render them one by one.
 pub async fn sweep(handle: AppHandle, vault: std::sync::Arc<Vault>) {
-    // a shot version that failed this often waits for the app's next start
+    // a shot version that failed this often waits for the app's next start (or a retry by hand)
     let mut failed: HashMap<(String, u64), u64> = HashMap::new();
     loop {
-        tokio::time::sleep(Duration::from_secs(60)).await;
+        let _ = tokio::time::timeout(Duration::from_secs(60), WAKE.notified()).await;
+        if RETRY.swap(false, std::sync::atomic::Ordering::Relaxed) {
+            failed.clear();
+        }
         if !crate::auth::signed_in() {
             continue;
         }
@@ -214,10 +233,12 @@ pub async fn sweep(handle: AppHandle, vault: std::sync::Arc<Vault>) {
             }
         };
         for w in &list {
-            proxies::set(&w.of(), &w.label(), "queued", 0.0);
+            jobs::queue(Kind::WorldProxy, &w.of(), &w.label());
         }
         for w in &list {
-            match render(&handle, &vault, w).await {
+            let made = render(&handle, &vault, w).await;
+            jobs::end(Kind::WorldProxy, &w.of(), made.as_ref().map(|_| ()).map_err(|e| e.clone()));
+            match made {
                 Ok(hash) => {
                     tracing::info!("world proxy of {} v{}: {hash}", w.shot, w.version);
                     handle.emit("vault-proxy", json!({ "of": w.of(), "shot": w.shot, "shotVersion": w.version, "proxy": hash })).ok();
@@ -230,7 +251,6 @@ pub async fn sweep(handle: AppHandle, vault: std::sync::Arc<Vault>) {
                     close_if_idle(&handle);
                 }
             }
-            proxies::clear(&w.of());
         }
         close_if_idle(&handle);
     }
@@ -279,17 +299,13 @@ fn frame_of(aspect: &str) -> (&'static str, u32, u32) {
 
 /// One shot version's proxy, into the vault: its hash.
 async fn render(handle: &AppHandle, vault: &Vault, w: &Want) -> Res<String> {
-    let (of, name) = (w.of(), w.label());
-    let _turn = proxies::TURN.acquire().await.map_err(err)?;
+    let of = w.of();
+    let _turn = jobs::turn(Kind::WorldProxy, &of).await.map_err(|e| e.to_string())?;
     // an ingest first, and only while the Mac has memory to spare (as for every proxy)
-    vault.hold.free_of("ingest").await;
-    while proxies::pressure() > 1 {
-        proxies::set(&of, &name, "waiting for memory", 0.0);
-        tokio::time::sleep(Duration::from_secs(5)).await;
-    }
+    jobs::ready_to_run(vault, Kind::WorldProxy, &of).await;
     let _held = vault.hold.take("proxy");
     let _awake = Awake::begin("rendering a world shot's proxy");
-    proxies::set(&of, &name, "opening the world", 0.0);
+    jobs::stage(Kind::WorldProxy, &of, "opening the world", 0.0);
 
     let (shape, width, height) = frame_of(w.spec["aspect"].as_str().unwrap_or("16:9"));
     let fps = w.spec["fps"].as_f64().filter(|f| *f > 0.0).unwrap_or(30.0);
@@ -297,9 +313,9 @@ async fn render(handle: &AppHandle, vault: &Vault, w: &Want) -> Res<String> {
     let frames = ((seconds * fps).round() as u32).max(1);
     let stamp = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis()).unwrap_or(0);
     let part = vault.ingest_dir().join(format!("{}-v{}-{stamp}.world.part.mp4", w.shot, w.version));
-    let (of2, name2) = (of.clone(), name.clone());
+    let of2 = of.clone();
     let ask = Frames { spec: w.spec.clone(), shape, width, height, fps, from: 0.0, frames, bitrate: None };
-    let (proxy, info) = match shoot(handle, &format!("{}-v{}", w.shot, w.version), &ask, &part, move |done| proxies::set(&of2, &name2, "making", done)).await {
+    let (proxy, info) = match shoot(handle, &format!("{}-v{}", w.shot, w.version), &ask, &part, move |done| jobs::stage(Kind::WorldProxy, &of2, "making", done)).await {
         Ok(made) => made,
         Err(e) => {
             std::fs::remove_file(&part).ok();
@@ -307,7 +323,7 @@ async fn render(handle: &AppHandle, vault: &Vault, w: &Want) -> Res<String> {
         }
     };
 
-    proxies::set(&of, &name, "adding", 1.0);
+    jobs::stage(Kind::WorldProxy, &of, "adding", 1.0);
     let named = vault.ingest_dir().join(format!("shot-{}-v{}-proxy.mp4", &w.shot[..8.min(w.shot.len())], w.version));
     std::fs::rename(&part, &named).map_err(err)?;
     let batch = Batch {
@@ -347,7 +363,7 @@ pub struct Frames {
 
 /// Render frames of a shot in the unseen world into an ACEScct movie at `out` (HEVC Main10, `FrameWriter`): the movie
 /// and what the world says of it (its exposure, its build). Takes no turn of its own — the caller holds
-/// `proxies::TURN` (a proxy, or a render with its plates).
+/// the GPU lane (a proxy, or a render with its plates).
 pub async fn shoot(handle: &AppHandle, label: &str, ask: &Frames, out: &Path, progress: impl FnMut(f64) + Send + 'static) -> Res<(Proxy, Value)> {
     let stamp = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis()).unwrap_or(0);
     let id = format!("{label}-{stamp}");
@@ -465,7 +481,7 @@ pub fn plate_bitrate(width: u32, height: u32, fps: f64) -> u32 {
 }
 
 /// A plate: the vault's (read in place, from whoever holds it), or rendered now in the unseen world and ingested — it
-/// syncs like every file (the caller holds `proxies::TURN`).
+/// syncs like every file (the caller holds the GPU lane).
 pub async fn plate(handle: &AppHandle, vault: &Vault, label: &str, ask: &Frames, progress: impl FnMut(f64) + Send + 'static) -> Res<Plate> {
     let (key, fingerprint) = plate_key(&ask.spec, ask);
     if let Some(m) = plate_in_vault(vault, &key).await? {

@@ -43,7 +43,7 @@ use vault_core::{
     catalog::{ANALYSIS, SOUND, TRANSCRIPT},
 };
 
-use crate::proxies::{self, pressure};
+use crate::jobs::{self, Kind};
 use plan::Source;
 use prem::{Ask, prem};
 
@@ -52,11 +52,6 @@ static WAKE: tokio::sync::Notify = tokio::sync::Notify::const_new();
 /// A round now (an ingest, a proxy, a transcript, a sound record: something may be due).
 pub fn wake() {
     WAKE.notify_one();
-}
-
-/// The key of an analysis's line in the studio's list of work in progress (`proxies_now`).
-pub fn key(hash: &str) -> String {
-    format!("analysis:{hash}")
 }
 
 fn fail(e: impl std::fmt::Display) -> Ask {
@@ -175,11 +170,18 @@ async fn round(handle: &AppHandle, vault: &Arc<Vault>, no_thumb: &mut HashSet<St
         return Err(e);
     }
     tracing::info!("analysis: {} files to tag", todo.len());
-    // one at a time, one attempt each; a pause stops the round (the rest say why they wait)
+    // every one of the round queued (the Processes tab shows what comes), then one at a time, one attempt each; a pause
+    // stops the round (the rest say why they wait, and leave the queue: the next round queues them again)
+    for (hex, _) in &todo {
+        jobs::queue(Kind::Analysis, hex, plan::s(&metas[hex], "original_name"));
+    }
     for (i, (hex, src)) in todo.iter().enumerate() {
         if let Err(e) = one(handle, vault, hex, src, &metas[hex], transcripts.get(hex), &me).await {
             if let Ask::Wait { reason, .. } = &e {
                 say_queued(vault, &todo[i + 1..], &records, reason).await;
+            }
+            for (hex, _) in &todo[i + 1..] {
+                jobs::drop_quietly(Kind::Analysis, hex);
             }
             return Err(e);
         }
@@ -231,21 +233,24 @@ async fn thumbnail(vault: &Arc<Vault>, hex: &str, file: vault_media::Source, ace
 
 /// One file; its own failure is written into its record (only a wait stops the round).
 async fn one(handle: &AppHandle, vault: &Arc<Vault>, hex: &str, src: &Source, meta: &Value, transcript: Option<&Value>, me: &str) -> Result<(), Ask> {
-    let k = key(hex);
     let name = plan::s(meta, "original_name").to_string();
-    proxies::set(&k, &name, "queued", 0.0);
+    jobs::queue(Kind::Analysis, hex, &name);
+    let Ok(_turn) = jobs::turn(Kind::Analysis, hex).await else { return Ok(()) };
     // an ingest first; and only while the Mac has memory to spare
-    vault.hold.free_of("ingest").await;
-    while pressure() > 1 {
-        proxies::set(&k, &name, "waiting for memory", 0.0);
-        tokio::time::sleep(Duration::from_secs(5)).await;
-    }
+    jobs::ready_to_run(vault, Kind::Analysis, hex).await;
     let tell: Tell = {
-        let (k, name) = (k.clone(), name.clone());
-        Arc::new(move |stage: &str, done: f64| proxies::set(&k, &name, stage, done))
+        let hex = hex.to_string();
+        Arc::new(move |stage: &str, done: f64| jobs::stage(Kind::Analysis, &hex, stage, done))
     };
     let result = analyse(&handle.state::<crate::auth::Auth>(), vault, hex, src, meta, transcript, me, tell).await;
-    proxies::clear(&k);
+    match &result {
+        Ok(()) => jobs::end(Kind::Analysis, hex, Ok(())),
+        Err(Ask::Wait { reason, .. }) => {
+            jobs::waiting(Kind::Analysis, hex, reason);
+            jobs::drop_quietly(Kind::Analysis, hex);
+        }
+        Err(Ask::Fail(e)) => jobs::end(Kind::Analysis, hex, Err(e.clone())),
+    }
     handle.emit("vault-analysis", json!({ "of": hex })).ok();
     match result {
         Ok(()) => Ok(()),
