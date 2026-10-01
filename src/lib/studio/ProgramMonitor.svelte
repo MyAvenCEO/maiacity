@@ -275,17 +275,6 @@
 <div class="monitor" bind:this={s.screen}>
 	<h2 class="mlabel">{label}</h2>
 	<div class="badges">
-		{#if s.tab === 'grade'}
-			<!-- what the picture is judged on: its 4K still (a frame of the original), its proxy, its original — one control,
-			     each choice saying what it shows -->
-			{@const st = s.stillOf(pic)}
-			<span class="src" role="tablist" aria-label="What the grade is judged on">
-				<i>Picture</i>
-				<button role="tab" aria-selected={s.gradeOn === 'stills'} class:on={s.gradeOn === 'stills'} class:warn={!!st && !st.inside} onclick={() => (s.gradeOn = 'stills')} title={st ? `The grading still: a 4K frame of the original at ${st.t.toFixed(1)} s${st.inside ? '' : ' — outside this cut'}` : 'No grading still for this shot yet'}>Still{#if st}<small>{st.t.toFixed(1)} s{st.inside ? '' : ' ⚠'}</small>{/if}</button>
-				<button role="tab" aria-selected={s.gradeOn === 'proxies'} class:on={s.gradeOn === 'proxies'} onclick={() => (s.gradeOn = 'proxies')} title="The HD proxy: plays light">Proxy</button>
-				<button role="tab" aria-selected={s.gradeOn === 'originals'} class:on={s.gradeOn === 'originals'} onclick={() => (s.gradeOn = 'originals')} title="The original file: full quality, heavy">Original</button>
-			</span>
-		{/if}
 		{#if fileNote && (s.tab !== 'grade' || fileNote.startsWith('no proxy'))}<span class="b" class:warn={fileNote.startsWith('no proxy') || fileNote.includes('outside')}>{fileNote}</span>{/if}
 		{#if worldNote}<span class="b world">{worldNote}</span>{/if}
 		{#if s.preparing}<span class="b warn">preparing the world…</span>{/if}
@@ -541,56 +530,6 @@
 	}
 
 	/* the badge row lets clicks through to the picture; the switch takes its own */
-	.src {
-		position: relative;
-		z-index: 3;
-		pointer-events: auto;
-		display: inline-flex;
-		padding: 1px;
-		border: 1px solid var(--edge);
-		border-radius: 999px;
-		background: var(--raised);
-	}
-
-	.src button {
-		padding: 0.05rem 0.55rem;
-		border: 0;
-		border-radius: 999px;
-		background: none;
-		font: inherit;
-		font-size: 0.68rem;
-		color: var(--dim);
-		cursor: pointer;
-	}
-
-	.src i {
-		padding: 0 0.45rem 0 0.55rem;
-		font-style: normal;
-		font-size: 0.62rem;
-		letter-spacing: 0.04em;
-		text-transform: uppercase;
-		color: var(--dim);
-		align-self: center;
-	}
-
-	.src button small {
-		margin-left: 0.3rem;
-		font-size: 0.6rem;
-		color: var(--dim);
-	}
-
-	.src button.on small {
-		color: var(--ink-soft);
-	}
-
-	.src button.warn small {
-		color: var(--warn);
-	}
-
-	.src button.on {
-		background: var(--sel);
-		color: var(--ink);
-	}
 
 	.slate {
 		position: absolute;

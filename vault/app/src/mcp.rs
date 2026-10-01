@@ -388,8 +388,8 @@ pub struct PlaybackArgs {
 pub struct StackArgs {
     /// the timeline's id
     pub timeline: String,
-    /// which stack: "base" (a shot's base correction), "clip" (a shot's clip look), "scene" (a scene's look),
-    /// "timeline" (the timeline's look), "finish" (the finishing)
+    /// which stack: "base" (a shot's base correct), "clip" (a shot's clip look), "scene" (a scene's look),
+    /// "timeline" (the timeline's look, its finishing textures included)
     pub stack: String,
     /// the shot (base, clip; for scene: its scene)
     pub clip: Option<String>,
@@ -1222,7 +1222,7 @@ impl Studio {
     }
 
     #[tool(
-        description = "What the Grade tab's playback shows at t, checked without a screen: the timeline's composition as the Mac's player plays it (each shot from its proxy, else its original; every frame through the whole chain — its stacks of tools (base, clip, scene, timeline, finishing; a window following the face), output), then played by an AVPlayer for two seconds from t with the frames it hands out counted. Returns the first frame as the picture (compare it with the Grade viewer's still of the same shot) and played_fps (30 is real time; fewer: frames dropped)."
+        description = "What the Grade tab's playback shows at t, checked without a screen: the timeline's composition as the Mac's player plays it (each shot from its proxy, else its original; every frame through the whole chain — its stacks of tools (base, clip, scene, timeline; a window following the face), output), then played by an AVPlayer for two seconds from t with the frames it hands out counted. Returns the first frame as the picture (compare it with the Grade viewer's still of the same shot) and played_fps (30 is real time; fewer: frames dropped)."
     )]
     async fn player_frame(&self, Parameters(a): Parameters<PlaybackArgs>) -> rmcp::model::CallToolResult {
         let r = async {
@@ -1239,14 +1239,14 @@ impl Studio {
     }
 
     #[tool(
-        description = "Every grading tool (game/film/grade-tools.json, the one registry): its id, group, kind (colour: on every pixel; mask: a window or a colour key — a group whose own tools apply only inside it, nestable; texture: the frame's), what it does, and its controls with their ranges and defaults; and the stacks they go on, in the order they apply: a shot's base correction and clip look, the scene's look, the timeline's look, the finishing."
+        description = "Every grading tool (game/film/grade-tools.json, the one registry): its id, group, kind (colour: on every pixel; mask: a window or a colour key — a group whose own tools apply only inside it, nestable; texture: the frame's), what it does, and its controls with their ranges and defaults; and the stacks they go on, in the order they apply: a shot's base correct and clip look, the scene's look, the timeline's look (the film's texture — grain, vignette, halation — as its last tools)."
     )]
     async fn grade_tools(&self) -> String {
         vault_render::tools::REGISTRY.to_string()
     }
 
     #[tool(
-        description = "A timeline's whole grade as stacks of tools: the finishing, the timeline's look, every scene's look (keyed by the scene its shots name in script.scene), and each shot's base correction and clip look (in the shots' order, with their scene). Set one with grade_stack."
+        description = "A timeline's whole grade as stacks of tools: the timeline's look (its finishing textures last), every scene's look (keyed by the scene its shots name in script.scene), and each shot's base correction and clip look (in the shots' order, with their scene). Set one with grade_stack."
     )]
     async fn grade_stacks(&self, Parameters(a): Parameters<IdArg>) -> String {
         let r = async {
@@ -1259,13 +1259,13 @@ impl Studio {
                 .map(|(i, c)| json!({ "shot": i + 1, "clip": c["id"], "scene": c["script"]["scene"], "description": c["script"]["description"], "base": c["stacks"]["base"], "clip_look": c["stacks"]["clip"] }))
                 .collect();
             let g = &t["grade"];
-            Ok::<_, String>(json!({ "finish": g["finish"], "timeline": g["timeline"], "scenes": g["scenes"], "shots": shots }))
+            Ok::<_, String>(json!({ "timeline": g["timeline"], "scenes": g["scenes"], "shots": shots }))
         };
         text(r.await)
     }
 
     #[tool(
-        description = "Read or set one stack of a timeline's grade — a shot's base correction (`base`) or clip look (`clip`), a scene's look (`scene`), the timeline's look (`timeline`), the finishing (`finish`) — as tools in order: { strength?, tools: [{ tool, on?, ...controls }] }. A window or a colour key holds tools of its own (`tools`), applied only inside it, by `mix`; they nest (a key inside a window: where both are). Every tool's controls: grade_tools. The render, the studio's preview and the stills apply the same, natively. Check it with grade_scopes { looks: true }."
+        description = "Read or set one stack of a timeline's grade — a shot's base correct (`base`) or clip look (`clip`), a scene's look (`scene`), the timeline's look (`timeline`: grain, vignette, halation go on it, last) — as tools in order: { strength?, tools: [{ tool, on?, ...controls }] }. A window or a colour key holds tools of its own (`tools`), applied only inside it, by `mix`; they nest (a key inside a window: where both are). Every tool's controls: grade_tools. The render, the studio's preview and the stills apply the same, natively. Check it with grade_scopes { looks: true }."
     )]
     async fn grade_stack(&self, Parameters(a): Parameters<StackArgs>) -> String {
         let r = async {
@@ -1295,7 +1295,7 @@ impl Studio {
                     let now = saved["clips"].as_array().and_then(|cs| cs.iter().find(|c| c["id"] == t["clips"][i]["id"]).map(|c| c["stacks"][a.stack.as_str()].clone()));
                     Ok(now.unwrap_or(Value::Null))
                 }
-                "scene" | "timeline" | "finish" => {
+                "scene" | "timeline" => {
                     let mut g = if t["grade"].is_object() { t["grade"].clone() } else { json!({}) };
                     let scene = match a.stack.as_str() {
                         "scene" => Some(match (&a.scene, &a.clip) {
@@ -1330,7 +1330,7 @@ impl Studio {
                         None => saved["grade"][a.stack.as_str()].clone(),
                     })
                 }
-                other => Err(format!("no stack {other}: base, clip, scene, timeline or finish")),
+                other => Err(format!("no stack {other}: base, clip, scene or timeline")),
             }
         };
         text(r.await)
@@ -1448,7 +1448,7 @@ impl Studio {
     }
 
     #[tool(
-        description = "Queue a frame of a timeline at t seconds, rendered natively on this Mac. Of a media clip it is that file's graded still: its grading still (the ACEScct frame it is graded on) through the clip's whole chain (16:9 framing → its stacks of tools: base, clip, scene, timeline, finishing → ACES 2.0 output), 1920×1080 JPEG, set as the file's preview and replacing the one before (a timeline save that changes a file's look queues this by itself). Of a world clip: a hero frame in the shape asked for, a 16-bit PNG (role:frame), replacing that clip's previous one. Follow it with renders_list: the job's output_hash is the picture."
+        description = "Queue a frame of a timeline at t seconds, rendered natively on this Mac. Of a media clip it is that file's graded still: its grading still (the ACEScct frame it is graded on) through the clip's whole chain (16:9 framing → its stacks of tools: base, clip, scene, timeline → ACES 2.0 output), 1920×1080 JPEG, set as the file's preview and replacing the one before (a timeline save that changes a file's look queues this by itself). Of a world clip: a hero frame in the shape asked for, a 16-bit PNG (role:frame), replacing that clip's previous one. Follow it with renders_list: the job's output_hash is the picture."
     )]
     async fn render_frame(&self, Parameters(a): Parameters<FrameArgs>) -> String {
         let shape = a.shape.unwrap_or_else(|| "16:9".into());

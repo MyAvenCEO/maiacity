@@ -445,7 +445,7 @@ pub fn look(t: &Timeline, lib: &dyn Library, c: &Clip, output: &dyn Output, regi
         "skin_box": skin.as_ref().map(r3),
         "as_shot": as_shot,
         "balanced": balanced,
-        "through": if looks { "balance, secondaries, grade, looks and finishing" } else { "balance" },
+        "through": if looks { "its stacks: base, clip, scene and timeline" } else { "balance" },
         "balance": bal,
         "base": base_json,
     });

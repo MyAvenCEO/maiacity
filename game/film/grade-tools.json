@@ -682,7 +682,7 @@
 	"bundles": [
 		{
 			"id": "base",
-			"label": "Base correction",
+			"label": "Base correct",
 			"of": "shot",
 			"starter": [
 				"balance"
@@ -712,15 +712,6 @@
 			"starter": [
 				"split",
 				"hue"
-			]
-		},
-		{
-			"id": "finish",
-			"label": "Finishing",
-			"of": "timeline",
-			"starter": [
-				"grain",
-				"vignette"
 			]
 		}
 	]

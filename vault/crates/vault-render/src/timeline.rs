@@ -103,15 +103,13 @@ impl Clip {
 }
 
 /// The film's grade above its shots' own, as stacks of tools (tools.rs): each scene's look (keyed by the scene its
-/// clips name), the timeline's look, the finishing.
+/// clips name), the timeline's look (its finishing textures — grain, vignette … — are tools on it, last).
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct FilmGrade {
     #[serde(default)]
     pub scenes: BTreeMap<String, Value>,
     #[serde(default)]
     pub timeline: Option<Value>,
-    #[serde(default)]
-    pub finish: Option<Value>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -139,11 +137,11 @@ fn sixteen_nine() -> String {
 
 impl Timeline {
     /// A clip's stacks in the order they apply: its base correction, its clip look, its scene's look, the timeline's
-    /// look, the finishing.
+    /// look.
     pub fn stacks_for(&self, c: &Clip) -> Vec<Stack> {
         let g = self.grade.as_ref();
         let scene = c.scene().and_then(|s| g?.scenes.get(s)).and_then(clean_stack);
-        [c.stack("base"), c.stack("clip"), scene, g.and_then(|g| g.timeline.as_ref()).and_then(clean_stack), g.and_then(|g| g.finish.as_ref()).and_then(clean_stack)]
+        [c.stack("base"), c.stack("clip"), scene, g.and_then(|g| g.timeline.as_ref()).and_then(clean_stack)]
             .into_iter()
             .flatten()
             .collect()

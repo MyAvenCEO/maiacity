@@ -1,8 +1,8 @@
 //! The grade as stackable tools (game/film/grade-tools.js is the same data, checked the same way): every grading
 //! tool a self-contained item — balance, CDL, contrast, split tone, hue curves, highlight saturation, a LUT; a window
 //! or a colour key (a mask holding tools of its own, applied only inside it, by `mix` — masks nest); pop, halation,
-//! bloom, grain, vignette — on stacks that apply in order: a shot's base correction and clip look, its scene's look,
-//! the timeline's look, the finishing. A stack has a strength (how much of it), a tool can be off.
+//! bloom, grain, vignette — on stacks that apply in order: a shot's base correct and clip look, its scene's look,
+//! the timeline's look (the film's texture last on it). A stack has a strength (how much of it), a tool can be off.
 //!
 //! A clip's stacks become one list of steps (`compile`): the colour tools that follow one another bake into one cube
 //! (`bake`: the viewer and the render sample the same), a balance runs as its own node, a mask and a texture on the
@@ -549,7 +549,16 @@ pub fn compile(stacks: &[&Stack], output: &dyn Output) -> Vec<Step> {
                 out.push(Step::Cube { key: r.key(output), run: r });
             }
         } else if st.strength >= 1.0 {
-            out.extend(steps);
+            // at full strength its colour runs join the cube before them as well (one cube, sampled once)
+            for step in steps {
+                match (step, out.last_mut()) {
+                    (Step::Cube { run: r, .. }, Some(Step::Cube { run, key })) => {
+                        run.parts.extend(r.parts);
+                        *key = run.key(output);
+                    }
+                    (step, _) => out.push(step),
+                }
+            }
         } else if st.strength > 0.0 {
             out.push(Step::Mix { strength: st.strength, inner: steps });
         }

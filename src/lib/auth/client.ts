@@ -167,7 +167,7 @@ export const describeMedia = (hash: string, about: { title?: string; description
 export type ColorInfo = { profile: string; /** a film we rendered: the output transform baked in (e.g. odt-rec709) */ output?: string; primaries?: string; transfer?: string; matrix?: string; range?: string; bitDepth?: number; detectedFrom?: string; override?: string };
 /** A grading tool on a stack (game/film/grade-tools.js: `{ tool, on?, ...its controls, tools? }`, vault-render `tools::Item`). */
 export type GradeTool = { tool: string; on?: boolean; tools?: GradeTool[]; [control: string]: unknown };
-/** A stack of tools: a shot's base correction or clip look, a scene's look, the timeline's look, the finishing. */
+/** A stack of tools: a shot's base correct or clip look, a scene's look, the timeline's look (its texture last). */
 export type GradeStack = { strength?: number; tools: GradeTool[] };
 
 export type EqBand = import('../../../game/film/sound.js').EqBand;
@@ -251,8 +251,8 @@ export type Timeline = {
 	version?: number;
 	color?: { working: 'acescct'; output: 'odt-rec709' };
 	/** the whole film's look */
-	/** the film's grade above its shots', as stacks of tools: each scene's look (by the scene its clips name), the timeline's look, the finishing */
-	grade?: { scenes?: Record<string, GradeStack>; timeline?: GradeStack; finish?: GradeStack } | null;
+	/** the film's grade above its shots', as stacks of tools: each scene's look (by the scene its clips name), the timeline's look */
+	grade?: { scenes?: Record<string, GradeStack>; timeline?: GradeStack } | null;
 };
 
 export const listTimelines = () => call<Timeline[]>('/api/timelines');
