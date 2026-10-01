@@ -93,3 +93,60 @@ async fn patch_all(app: &App, hashes: &[String], patch: Value) -> Res<usize> {
     }
     Ok(hashes.len())
 }
+
+/// A file out of the vault into this Mac's Downloads folder, under the name it came in as (` (2)`, ` (3)`… when one is
+/// there already): copied from the store, its BLAKE3 checked on the way out. Returns where it went; the Finder shows
+/// it.
+#[tauri::command]
+pub async fn file_download(app: State<'_, App>, hash: String, name: Option<String>) -> Res<String> {
+    gate()?;
+    let at = download(&app.vault, &hash, name.as_deref()).await?;
+    let _ = std::process::Command::new("open").arg("-R").arg(&at).spawn();
+    Ok(at)
+}
+
+/// The same, for the app and the MCP alike: where the copy went.
+pub async fn download(vault: &vault_core::Vault, hash: &str, name: Option<&str>) -> Res<String> {
+    let h: iroh_blobs::Hash = hash.parse().map_err(err)?;
+    match vault.store.blobs().status(h).await.map_err(err)? {
+        iroh_blobs::api::blobs::BlobStatus::Complete { .. } => {}
+        _ => return Err("its bytes are not all on this Mac yet".into()),
+    }
+    let home = std::env::var_os("HOME").ok_or("no home folder")?;
+    let dir = std::path::PathBuf::from(home).join("Downloads");
+    std::fs::create_dir_all(&dir).map_err(err)?;
+    // only the name's last part, nothing that climbs out of Downloads
+    let name = name
+        .and_then(|n| std::path::Path::new(n).file_name())
+        .map(|n| n.to_string_lossy().to_string())
+        .filter(|n| !n.is_empty() && !n.starts_with('.'))
+        .unwrap_or_else(|| format!("{}.bin", &hash[..12.min(hash.len())]));
+    let path = std::path::Path::new(&name);
+    let (stem, ext) = (path.file_stem().map(|s| s.to_string_lossy().to_string()).unwrap_or_default(), path.extension().map(|e| format!(".{}", e.to_string_lossy())).unwrap_or_default());
+    let mut target = dir.join(&name);
+    let mut n = 2;
+    while target.exists() {
+        target = dir.join(format!("{stem} ({n}){ext}"));
+        n += 1;
+    }
+    // written next to it first, so Downloads never shows half a file
+    let part = dir.join(format!(".{}.part", target.file_name().map(|f| f.to_string_lossy().to_string()).unwrap_or_default()));
+    vault.store.blobs().export(h, &part).await.map_err(|e| format!("out of the vault: {e}"))?;
+    std::fs::rename(&part, &target).map_err(err)?;
+    // the copy checked against the hash it is known by
+    let check = target.clone();
+    let got = tauri::async_runtime::spawn_blocking(move || -> std::io::Result<String> {
+        let mut hasher = blake3::Hasher::new();
+        hasher.update_reader(std::fs::File::open(&check)?)?;
+        Ok(hasher.finalize().to_hex().to_string())
+    })
+    .await
+    .map_err(err)?
+    .map_err(err)?;
+    if got != h.to_hex().to_string() {
+        std::fs::remove_file(&target).ok();
+        return Err("the copy in Downloads did not match its hash: removed".into());
+    }
+    tracing::info!("downloaded {} → {}", &hash[..12.min(hash.len())], target.display());
+    Ok(target.to_string_lossy().to_string())
+}
