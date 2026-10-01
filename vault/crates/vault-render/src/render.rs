@@ -267,30 +267,33 @@ mod caption_tests {
     use serde_json::json;
 
     #[test]
-    fn a_voice_s_captions_are_its_own_words_else_its_transcript_s() {
+    fn a_voice_s_captions_are_its_transcript_s_else_its_own_words() {
         let transcript = json!({ "transcript": { "words": [{ "w": "The", "s": 1.0, "e": 1.2, "c": 0.9 }, { "w": "moment", "s": 1.2, "e": 1.6 }] } });
         let w = caption_words(&transcript);
         assert_eq!(w.iter().map(|w| w.word.as_str()).collect::<Vec<_>>(), ["The", "moment"]);
         assert_eq!((w[1].start, w[1].end), (1.2, 1.6));
-        let mut edited = transcript.clone();
-        edited["words"] = json!([{ "word": "A", "start": 1.0, "end": 1.6 }]);
-        assert_eq!(caption_words(&edited).len(), 1);
+        // the transcript is the one truth: a stale copy of words beside it is not read
+        let mut both = transcript.clone();
+        both["words"] = json!([{ "word": "A", "start": 1.0, "end": 1.6 }]);
+        assert_eq!(caption_words(&both).len(), 2);
+        // no transcript yet (a voice take before the Mac folds its words in): its own words
+        let own = json!({ "words": [{ "word": "A", "start": 1.0, "end": 1.6 }] });
+        assert_eq!(caption_words(&own).len(), 1);
         assert!(caption_words(&json!({})).is_empty());
     }
 }
 
-/// A voice file's caption words: its own (`meta.words` — a voice take's timing, or captions edited by hand), else its
-/// transcript's (`meta.transcript.words`, `{ w, s, e }`) — so every voice has its captions without anyone asking.
+/// A voice file's caption words: its transcript's (`meta.transcript.words`, `{ w, s, e }` — the one truth: put right by
+/// hand in the Script tab, a voice take's own timing folded in), else, until the Mac has folded them in, a voice take's
+/// own (`meta.words`) — so every voice has its captions without anyone asking.
 pub fn caption_words(meta: &serde_json::Value) -> Vec<Word> {
-    let own: Vec<Word> = meta.get("words").cloned().and_then(|w| serde_json::from_value(w).ok()).unwrap_or_default();
-    if !own.is_empty() {
-        return own;
+    if let Some(words) = meta.pointer("/transcript/words").and_then(|w| w.as_array()).filter(|w| !w.is_empty()) {
+        return words
+            .iter()
+            .filter_map(|w| Some(Word { word: w["w"].as_str()?.to_string(), start: w["s"].as_f64()?, end: w["e"].as_f64()? }))
+            .collect();
     }
-    let Some(words) = meta.pointer("/transcript/words").and_then(|w| w.as_array()) else { return own };
-    words
-        .iter()
-        .filter_map(|w| Some(Word { word: w["w"].as_str()?.to_string(), start: w["s"].as_f64()?, end: w["e"].as_f64()? }))
-        .collect()
+    meta.get("words").cloned().and_then(|w| serde_json::from_value(w).ok()).unwrap_or_default()
 }
 
 fn plan(t: &Timeline, lib: &dyn Library) -> Result<Plan> {

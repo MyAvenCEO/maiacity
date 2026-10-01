@@ -488,6 +488,7 @@ fn main() {
             stories::story_delete,
             stories::files_move,
             stories::file_download,
+            transcripts::transcript_edit,
             stories::files_class,
             proxies::proxies_now,
             proxies::vault_hold,
