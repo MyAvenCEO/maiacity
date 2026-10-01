@@ -16,9 +16,12 @@ import { ODT, profileInfo } from './color.js';
  *  - ACEScct (every proxy, world renders): no input transform; out through odt-rec709.
  *  - Everything else (Rec.709, sRGB, camera log, HDR …): in through its input LUT; without it the signal itself shows,
  *    and the viewer says so.
+ *  - Display-referred (a film we rendered, a delivery): nothing at all — its output transform is baked in.
  */
 /** @param {string} profile @param {Cdl[]} grades @param {Record<string, Lut | null>} luts @returns {ViewPlan} */
 export function viewPlan(profile, grades, luts) {
+	// rendered, display-referred: exactly as it is — its output transform is in it already
+	if (profile === 'display') return { idt: 0, odt: 0, idtLut: null, odtLut: null, note: null, exact: true };
 	const info = profileInfo(profile);
 	const odtLut = luts[ODT] ?? null;
 	// no output LUT (the Mac has not baked it yet): the signal as it is, and the viewer says so — never an approximation

@@ -36,7 +36,8 @@ export const asStudio = (media) => media.map((m) => (m.kind !== 'video' && isVid
  * @type {Record<string, ProfileInfo>}
  */
 const EXTRA = {
-	unknown: { label: 'Unknown — say what it is', idt: null, log: false }
+	unknown: { label: 'Unknown — say what it is', idt: null, log: false },
+	display: { label: 'Display-referred (rendered: shown as it is)', idt: null, log: false }
 };
 /** @param {string} p @returns {ProfileInfo} */
 export const profileInfo = (p) =>
@@ -56,6 +57,7 @@ const SHORT = {
 	'aces2065-1': 'AP0',
 	acescg: 'ACEScg',
 	'linear-rec709': 'Lin709',
+	display: 'OUT',
 	unknown: '?'
 };
 /** @param {string} p */
@@ -76,6 +78,9 @@ export const colorOf = (m) => {
  */
 export function profileFor(m) {
 	const c = colorOf(m);
+	// a film we rendered (a delivery, or anything already through our output transform) is display-referred: shown as
+	// it is, never taken through a transform again
+	if (m?.class === 'delivery' || (typeof c?.output === 'string' && c.output.startsWith('odt-'))) return { profile: 'display', guessed: false, override: false };
 	if (c) return { profile: /** @type {string} */ (profileOf(/** @type {any} */ (c))), guessed: false, override: !!c.override };
 	// no meta.color yet (the Mac reads it when it makes the proxy): stills are sRGB, video Rec.709 until then
 	return { profile: m?.kind === 'image' ? 'srgb' : m?.kind === 'video' ? 'rec709' : 'unknown', guessed: true, override: false };
