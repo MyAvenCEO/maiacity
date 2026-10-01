@@ -132,6 +132,24 @@ Judge it the way the person will see it: `render_frame` hero frames at 4K next t
 the face and hands. The scope sheet's 640 px picture hides halos, blotches and banding. Playback is checked with
 `player_frame`, which plays the very composition the Grade tab plays; 30 fps is real time.
 
+## Rolling the reference out to the whole timeline
+
+1. **Every shot belongs to a scene** (`script.scene`), so it gets its scene's look. A shot without one silently misses
+   it.
+2. **Start every shot from its scene reference's trim.** Shots from one camera setup share one trim: two clips of
+   one take, one grade.
+3. **Measure each shot against its reference through the whole chain** (`grade_look { looks: true }`): blacks (p5),
+   the middle (p50), the whites, the skin, clipping. Then look at the scope sheet. A white rug or a wide without
+   sky moves the numbers without being wrong.
+4. **Move only exposure and contrast per shot** (the trim). Skin within about 4 IRE of the reference's. Close-ups keep
+   the red channel off the ceiling: lower the trim's saturation, not the look's.
+5. **A big sky:** pull the shot's balance `highlights` (a primary curve, no shape) until the clipping is no worse than
+   the reference's. First check the camera file: a sky that is a flat plateau in the grading still (p90 = p99 in
+   ACEScct) was clipped when it was shot. Keep it a soft off-white (85–90 IRE); no grade brings it back.
+
+Day 01's trims (exposure stops, slope): bedroom −0.85…−1.5, 1.35–1.5; garden −0.65…−1.5, 1.12–1.35, saturation
+1.05 (the close-up 1.0); highlights −0.8…−1.0 on the shots with big skies.
+
 ## Don't
 
 - Don't put exposure or contrast in a look, or put a look under the balance.
