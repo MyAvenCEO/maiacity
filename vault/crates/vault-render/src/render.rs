@@ -574,8 +574,8 @@ fn render_shape(
 
     let pictures: Vec<&Clip> = plan.pictures.iter().collect();
     let cut = pieces(&pictures, total);
-    // captions drawn when first needed, dropped when past
-    let mut bands: HashMap<usize, Image> = HashMap::new();
+    // captions drawn when first needed — each phrase once per word lit — dropped when past
+    let mut bands: HashMap<(usize, usize), Image> = HashMap::new();
     let comment = "maiacity:render";
 
     for piece in &cut {
@@ -661,15 +661,18 @@ fn render_shape(
                     let d = (b - a).max(0.3);
                     if t < a || t > b {
                         if t > b {
-                            bands.remove(&i);
+                            bands.retain(|(k, _), _| *k != i);
                         }
                         continue;
                     }
                     let alpha = ((t - a) / 0.25).clamp(0.0, 1.0) * (1.0 - (t - (a + d - 0.25)) / 0.25).clamp(0.0, 1.0);
-                    if let std::collections::hash_map::Entry::Vacant(e) = bands.entry(i) {
-                        e.insert(gpu.cg_image(&captions.draw(&p.text, w, h)?.image));
+                    // word by word, as the studio plays it: a word lights up when it is said
+                    let lit = p.words.iter().filter(|(_, at)| *at <= t).count();
+                    if let std::collections::hash_map::Entry::Vacant(e) = bands.entry((i, lit)) {
+                        let words: Vec<String> = p.words.iter().map(|(w, _)| w.clone()).collect();
+                        e.insert(gpu.cg_image(&captions.draw_lit(&words, lit, w, h)?.image));
                     }
-                    let band = gpu.opacity(&bands[&i], alpha)?;
+                    let band = gpu.opacity(&bands[&(i, lit)], alpha)?;
                     pic = gpu.over(&band, &pic);
                 }
                 let hooked = |pic: &Image| -> Result<Image> {
