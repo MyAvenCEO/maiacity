@@ -11,7 +11,7 @@
 //!                     on a Mac, on-device (vault/app transcripts.rs), written by that Mac's author
 //!   sound/<hash>    → derived: the file's start timecode (no audio proxy: sound is always read from the original)
 //!                     — read on a Mac at ingest, written by that Mac's author (vault/app sound.rs)
-//!   analysis/<hash> → derived: the file's shot tags, cues, summary and thumbnail, the analysis's state and progress —
+//!   analysis/<hash> → derived: the file's shot tags, cues, summary and hero frame, the analysis's state and progress —
 //!                     made on a Mac (frames sampled natively, Prem's Qwen), written by that Mac's author (vault/app
 //!                     analyse/)
 //!   store/<name>    → a store's record (its node, its catalog author): `store/hetzner`, the server's
@@ -22,7 +22,7 @@
 //! What the app serves (the studio, the MCP, the local routes) is the *view* (`list_view`, `meta_view`): the
 //! description with its derived records merged into `meta` — `meta.transcript`, `meta.transcript_state`,
 //! `meta.transcript_progress`, `meta.audio`, `meta.analysis`, `meta.analysis_state`, `meta.analysis_progress`,
-//! `meta.thumbnail` (`with_derived`).
+//! `meta.hero` (`with_derived`).
 //!
 //! Every file belongs to exactly one story — its `meta` names it (one description per file, so never two) — or to
 //! the inbox (no story named). The inbox's id is the catalog's own. A story's id is an iroh namespace key: the day a
@@ -102,11 +102,11 @@ pub const VIEW_KEYS: [&str; 12] = [
     "analysis_state",
     "analysis_progress",
     "analysis_stage",
-    "thumbnail",
+    "hero",
 ];
 
 /// The fields of a derived record that say where it stands, not what it found.
-const RECORD_STATE: [&str; 8] = ["state", "stage", "progress", "tries", "audio", "thumbnail", "device", "updated"];
+const RECORD_STATE: [&str; 9] = ["state", "stage", "progress", "tries", "audio", "hero", "thumbnail", "device", "updated"];
 
 /// One file's derived records, as they are here.
 #[derive(Debug, Default, Clone, Copy)]
@@ -126,9 +126,9 @@ pub struct Derived<'a> {
 ///   sound/<hash> (a Mac) `{ state, audio?, timecode?, timecode_fps?, seconds?, at }`
 ///     → `meta.audio` (the audio proxy's hash), `meta.sound_state`, `meta.probe.timecode` + `timecode_fps` when the
 ///       probe has none
-///   analysis/<hash> (a Mac) `{ state, progress, thumbnail?, summary, tags, free, labels, segments, cues, … }`
+///   analysis/<hash> (a Mac) `{ state, progress, hero?, summary, tags, free, labels, segments, cues, … }`
 ///     → `meta.analysis` (what it found, once it found anything), `meta.analysis_state`, `meta.analysis_progress`,
-///       `meta.thumbnail` (the hash of a small display-referred JPEG of the file's best frame)
+///       `meta.hero` (the file's hero frame: `{ t, why }`, the moment the analysis picked as its best)
 pub fn with_derived(meta: &mut Meta, d: Derived<'_>) {
     use serde_json::{Value, json};
     fn obj(v: Option<&Value>) -> Option<&Value> {
@@ -176,10 +176,13 @@ pub fn with_derived(meta: &mut Meta, d: Derived<'_>) {
         }
     }
     if let Some(a) = analysis {
-        for k in ["analysis", "analysis_state", "analysis_progress", "analysis_stage", "thumbnail"] {
+        for k in ["analysis", "analysis_state", "analysis_progress", "analysis_stage", "hero"] {
             m.remove(k);
         }
-        copy(m, a, "thumbnail", "thumbnail");
+        // the hero frame is an object ({ t, why }): copied whole
+        if let Some(h) = a.get("hero").filter(|h| h.get("t").is_some_and(Value::is_number)) {
+            m.insert("hero".into(), h.clone());
+        }
         copy(m, a, "state", "analysis_state");
         copy(m, a, "stage", "analysis_stage");
         copy(m, a, "progress", "analysis_progress");
@@ -638,7 +641,7 @@ mod tests {
         let t = json!({ "state": "done", "stage": "transcribing", "progress": 0.6, "device": "mac1",
                         "model": "nvidia/nemotron-3.5-asr-streaming-0.6b", "text": "Day twenty.", "words": [{ "w": "Day", "s": 0.4, "e": 0.8, "c": 1.0 }] });
         let snd = json!({ "state": "done", "audio": "a1", "timecode": "10:00:00:00", "timecode_fps": 25.0 });
-        let a = json!({ "state": "analysing", "progress": 0.5, "thumbnail": "t1", "tags": { "shot_size": "MS" }, "cues": [] });
+        let a = json!({ "state": "analysing", "progress": 0.5, "hero": { "t": 1.5, "why": "w" }, "tags": { "shot_size": "MS" }, "cues": [] });
         with_derived(&mut m, Derived { transcript: Some(&t), sound: Some(&snd), analysis: Some(&a) });
         let v = &m.meta;
         assert_eq!(v["proxy"], "p");
@@ -650,7 +653,7 @@ mod tests {
         assert_eq!(v["probe"], json!({ "codec": "hvc1", "timecode": "10:00:00:00", "timecode_fps": 25.0 }));
         assert_eq!(v["analysis_state"], "analysing");
         assert_eq!(v["analysis_progress"], 0.5);
-        assert_eq!(v["thumbnail"], "t1");
+        assert_eq!(v["hero"]["t"], 1.5);
         assert_eq!(v["transcript_stage"], "transcribing");
         assert_eq!(v["transcript_progress"], 0.6);
         assert_eq!(v["analysis"], json!({ "tags": { "shot_size": "MS" }, "cues": [] }));

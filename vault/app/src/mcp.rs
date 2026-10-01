@@ -615,7 +615,7 @@ impl Studio {
     }
 
     #[tool(
-        description = "Every file in the vault's catalog with its description (hash, size, mime, kind, title, tags, public, meta) — its transcript and shot analysis in brief (meta.transcript, meta.analysis: the `transcript` and `analysis` tools give them whole), meta.preview (its one picture: a JPEG of its grading still's frame, graded once a clip grades it) and meta.thumbnail (the moment the analysis picked: { t, why })"
+        description = "Every file in the vault's catalog with its description (hash, size, mime, kind, title, tags, public, meta) — its transcript and shot analysis in brief (meta.transcript, meta.analysis: the `transcript` and `analysis` tools give them whole), meta.preview (its one picture: a JPEG of its grading still's frame, graded once a clip grades it) and meta.hero (its hero frame: the moment the analysis picked, { t, why })"
     )]
     async fn library_list(&self, Parameters(f): Parameters<Filter>) -> String {
         let r = async {
@@ -1085,7 +1085,7 @@ impl Studio {
             }
             let file = |h: &String, part: &str| {
                 let m = all.iter().find(|m| &m.hash == h).expect("listed");
-                let preview = ["preview", "thumbnail"].iter().find_map(|k| m.meta.get(*k).and_then(|v| v.as_str()).map(String::from));
+                let preview = m.meta.get("preview").and_then(|v| v.as_str()).map(String::from);
                 let preview = preview.or_else(|| m.mime.starts_with("image/").then(|| m.hash.clone()));
                 json!({ "hash": h, "name": m.original_name, "title": m.title, "kind": m.kind, "class": m.class, "role": m.meta.get("role"),
                     "story": m.story, "size": m.size, "preview": preview, "part": part })

@@ -1,5 +1,5 @@
 //! Every process this Mac runs, in one place: the proxies, the grading stills, the world shots' proxies, the renders
-//! and hero frames, the transcripts, the analyses, the sound records, the drives' and this Mac's own keeping, the
+//! and graded stills, the transcripts, the analyses, the sound records, the drives' and this Mac's own keeping, the
 //! ingests. Each is a job — what it is, what for, where it stands (queued, waiting and why, running and how far,
 //! done or failed and why) — in one registry, the studio's Processes tab and the MCP's `jobs` its views.
 //!
@@ -32,7 +32,7 @@ pub enum Lane {
     Gpu,
     /// the speech model: transcripts
     Speech,
-    /// the picture model: analyses and thumbnails
+    /// the picture model: analyses (and their hero frames)
     Ai,
     /// the disk and the line: sound records, keeping files, ingests
     Io,
@@ -494,6 +494,50 @@ pub async fn ready_to_run(vault: &vault_core::Vault, kind: Kind, subject: &str) 
     }
 }
 
+// ── what starts them ─────────────────────────────────────────────────────────────────────────────────────────────
+
+/// A watcher's rule: what it sees (`when`), the job it starts (`then`, of `kind`), and how it looks (`watch`: as it
+/// happens, or a round every so often that catches what was missed). The Processes tab lists them beside the lanes.
+#[derive(Serialize)]
+pub struct Rule {
+    pub id: &'static str,
+    pub when: &'static str,
+    pub then: &'static str,
+    pub kind: Kind,
+    pub watch: &'static str,
+}
+
+/// Every rule, in the order the work flows: a file in → its proxy → its stills and words → its analysis and hero frame
+/// → its graded still → the film. Each names the code that keeps it (the comment), so the list and the code agree.
+pub const RULES: &[Rule] = &[
+    // main.rs ingest
+    Rule { id: "ingest", when: "Files are brought in (dropped, or from a card or a drive)", then: "Ingest: hashed, into the vault, described", kind: Kind::Ingest, watch: "when asked" },
+    // proxies.rs sweep, auto_proxy
+    Rule { id: "proxy", when: "A video original, a still or an EXR sequence comes in — or its colour journey becomes known", then: "Proxy: ACEScct, to play and grade on", kind: Kind::Proxy, watch: "at ingest · every 10 min" },
+    // proxies.rs grading_still_at (with the proxy), backfill_still
+    Rule { id: "still", when: "A video's proxy is made (its journey known)", then: "Grading still (4K ACEScct) and preview, at its hero frame — the middle until one is picked", kind: Kind::Still, watch: "with the proxy · every 10 min" },
+    // proxies.rs marked_at
+    Rule { id: "still-hero", when: "A video's hero frame moves (the analysis picks it, or a person sets it)", then: "Grading still and preview again, at the new moment", kind: Kind::Still, watch: "every 10 min" },
+    // transcripts.rs sweep
+    Rule { id: "transcript", when: "A video or sound original is on this Mac without its words (or with an older model's)", then: "Transcript: words with their times, on this Mac", kind: Kind::Transcript, watch: "at ingest · every 10 min" },
+    // sound.rs round
+    Rule { id: "sound", when: "A recording is on this Mac without its sound record", then: "Sound record: its tracks, length and start timecode", kind: Kind::Sound, watch: "at ingest · every 10 min" },
+    // analyse/mod.rs round
+    Rule { id: "analysis", when: "A picture's proxy is here and its words have settled (in the stories in scope)", then: "AI analysis: tags, cues, takes — and its hero frame", kind: Kind::Analysis, watch: "after a proxy or transcript · every 10 min" },
+    // analyse/mod.rs still_preview
+    Rule { id: "still-preview", when: "A still image's proxy is here and it has no preview", then: "Preview: a 1920 JPEG, its one picture", kind: Kind::Analysis, watch: "with the analysis round" },
+    // api/src/renders.ts queueStillsOf → render.rs graded_still_job
+    Rule { id: "graded", when: "A timeline save changes how a file looks (balance, secondaries, grade, 16:9 framing, scene or film look)", then: "Graded still: its grading still through the clip's grade, as its preview — the one before goes", kind: Kind::Frame, watch: "on save · render queue every few s" },
+    // api/src/renders.ts queueStillOfFile (proxies.rs grading_still_at)
+    Rule { id: "graded-again", when: "A file's grading still is made again (a new hero frame)", then: "Graded still again, through the clip that last graded it", kind: Kind::Frame, watch: "with the grading still" },
+    // world.rs proxies
+    Rule { id: "world-proxy", when: "A timeline plays a world shot version without its proxy", then: "World proxy: the shot rendered in the app's own world", kind: Kind::WorldProxy, watch: "every minute" },
+    // api/src/renders.ts queueRender → render.rs render_job
+    Rule { id: "render", when: "A render is asked for (the Render tab, or an agent)", then: "Render: every delivery, levelled, into the vault and the calendar", kind: Kind::Render, watch: "render queue every few s" },
+    // keep.rs round
+    Rule { id: "keep", when: "A file this Mac or a drive keeps (its story's rules) is not here — or no longer kept", then: "Kept: fetched over iroh and pinned — or let go of", kind: Kind::Keep, watch: "every minute" },
+];
+
 // ── the studio's view ─────────────────────────────────────────────────────────────────────────────────────────
 
 /// Every job: the running and queued ones (each lane's in its order), then the history, newest first.
@@ -503,6 +547,8 @@ pub struct Jobs {
     pub history: Vec<Job>,
     /// what holds the lanes now: an ingest, memory
     pub holds: Vec<String>,
+    /// what starts the jobs
+    pub rules: &'static [Rule],
 }
 
 pub fn list(limit: usize) -> Jobs {
@@ -512,7 +558,7 @@ pub fn list(limit: usize) -> Jobs {
             let run = |j: &Job| !matches!(j.state, State::Running | State::Waiting) as u8;
             run(a).cmp(&run(b)).then(a.priority.cmp(&b.priority)).then(a.queued.cmp(&b.queued))
         });
-        Jobs { active, history: r.history.iter().take(limit).cloned().collect(), holds: Vec::new() }
+        Jobs { active, history: r.history.iter().take(limit).cloned().collect(), holds: Vec::new(), rules: RULES }
     })
 }
 

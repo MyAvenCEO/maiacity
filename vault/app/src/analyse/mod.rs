@@ -16,8 +16,8 @@
 //! (with `progress` 0…1) · done · failed: …; `of` = the hash of what was looked at (a new proxy is analysed again).
 //! One Mac at a time: another device's analysis that is under way is left to it (unless it went quiet for six hours).
 //!
-//! The thumbnail: the moment the analysis picks as the file's best (`thumbnail: { t, why }` in the record) — no file of
-//! its own. A video's grading still and preview are made at that moment (proxies.rs `marked_at`); its preview is the
+//! The hero frame: the moment the analysis picks as the file's best (`hero: { t, why }` in the record) — no file of its
+//! own. A video's grading still and preview are made at that moment (proxies.rs `marked_at`); its preview is the
 //! one picture of it everywhere (graded once a clip grades it). A still has no grading still: its preview — a
 //! display-referred JPEG, 1920 on its long edge (class proxy, `role: "preview"`, `preview_of`, named in the original's
 //! `meta.preview`) — is made here as soon as its proxy is. A smaller picture, if ever wanted, is made of the preview.
@@ -358,7 +358,8 @@ async fn analyse(auth: &crate::auth::Auth, vault: &Arc<Vault>, hex: &str, src: &
     };
     let mut record = plan::finish(merged, reduce.as_ref());
 
-    // the moment the analysis picked: the grading still and the preview are made at it (proxies.rs `marked_at`)
+    // the file's hero frame, the moment the analysis picked: its grading still and preview are made at it (proxies.rs
+    // `marked_at`)
     tell("the thumbnail", 1.0);
     let cues = record["cues"].as_array().cloned().unwrap_or_default();
     let t = plan::thumbnail_time(reduce.as_ref(), &picks, &cues, &times, seconds);
@@ -369,12 +370,13 @@ async fn analyse(auth: &crate::auth::Auth, vault: &Arc<Vault>, hex: &str, src: &
         .or_else(|| picks.iter().find(|(p, _)| (p - t).abs() < 1e-6).map(|(_, w)| w.clone()))
         .unwrap_or_default();
     let hash: Hash = hex.parse().map_err(fail)?;
-    // a thumbnail file of before (the record named it by hash): the preview stands for it now
+    // a thumbnail file of before (the record named it by hash): the preview stands for it now, at the hero frame
     let previous = vault.catalog.record(ANALYSIS, hash).await.ok().flatten().and_then(|r| r["thumbnail"].as_str().map(String::from));
     if let Some(o) = previous.and_then(|o| o.parse::<Hash>().ok()) {
         vault.catalog.delete_file(o, "the file's preview stands for its thumbnail").await.ok();
     }
-    record["thumbnail"] = json!({ "t": (t * 1000.0).round() / 1000.0, "why": why });
+    record.as_object_mut().map(|o| o.remove("thumbnail"));
+    record["hero"] = json!({ "t": (t * 1000.0).round() / 1000.0, "why": why });
     let o = record.as_object_mut().unwrap();
     o.insert("state".into(), json!("done"));
     o.insert("progress".into(), json!(1.0));
