@@ -625,7 +625,7 @@ impl Studio {
     }
 
     #[tool(
-        description = "Once, by hand, on one Mac: download the on-device models (Phonon-2 speech, Silero VAD) from where they were published — Phonon-2's ONNX made here by vault/tools/phonon2_onnx.py --int8 and put in <vault>/ingest/models-made/phonon-2/ first — ingest them into the Models story (the three-hash check) and compare each with the BLAKE3 hash pinned in the app (models.rs). After that every device gets them from our own vault, never from the internet. Answers each file's hash and whether it matches its pin."
+        description = "Once, by hand, on one Mac: download the on-device models (Phonon-2 speech, Silero VAD) from where they were published — Phonon-2's ONNX made here by vault/tools/phonon2_onnx.py --int8 and put in ~/Library/Application Support/city.maia.studio/models-made/phonon-2/ first — ingest them into the Models story (the three-hash check) and compare each with the BLAKE3 hash pinned in the app (models.rs). After that every device gets them from our own vault, never from the internet. Answers each file's hash and whether it matches its pin."
     )]
     async fn models_import(&self) -> String {
         let r = async {
