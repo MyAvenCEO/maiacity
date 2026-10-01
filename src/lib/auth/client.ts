@@ -165,14 +165,12 @@ export const describeMedia = (hash: string, about: { title?: string; description
 
 /** A picture's colour, as the ingest detected it (media meta.color); `override` is the one set by hand in the studio. */
 export type ColorInfo = { profile: string; primaries?: string; transfer?: string; matrix?: string; range?: string; bitDepth?: number; detectedFrom?: string; override?: string };
-/** A look: the film's or a scene's (game/film/color.js `cleanLook`, vault-render `creative::Look`). */
-export type Look = import('../../../game/film/color.js').Look;
+/** A grading tool on a stack (game/film/grade-tools.js: `{ tool, on?, ...its controls, tools? }`, vault-render `tools::Item`). */
+export type GradeTool = { tool: string; on?: boolean; tools?: GradeTool[]; [control: string]: unknown };
+/** A stack of tools: a shot's base correction or clip look, a scene's look, the timeline's look, the finishing. */
+export type GradeStack = { strength?: number; tools: GradeTool[] };
 
 export type EqBand = import('../../../game/film/sound.js').EqBand;
-/** A secondary: its key (hue°, chroma × 100, IRE) inside its window (0…1 from the top left, or on the face), with its own balance. */
-export type Secondary = { name?: string; key?: { hue: [number, number]; sat: [number, number]; luma: [number, number]; soft: number }; window?: { shape: 'ellipse' | 'rect'; x: number; y: number; w: number; h: number; angle: number; feather: number; invert: boolean; track?: 'face' }; adjust: Balance; mix: number };
-/** The film's finishing, after its looks. */
-export type Finish = { pop?: { amount: number; radius: number }; halation?: { amount: number; threshold: number; radius: number }; bloom?: { amount: number; threshold: number; radius: number }; grain?: { amount: number; size: number; chroma: number }; vignette?: { amount: number; size: number; softness: number; roundness: number } };
 /** A grade: ASC CDL in ACEScct (game/film/color.js). */
 export type Cdl = { slope: [number, number, number]; offset: [number, number, number]; power: [number, number, number]; sat: number };
 // ─────────────────────────────── signing a terminal in ───────────────────────────────
@@ -217,16 +215,12 @@ export type TimelineClip = {
 	hash?: string;
 	shot?: string;
 	shotVersion?: number;
-	/** the fixed first grade layers (white balance, exposure, contrast, highlights, lows, saturation), ACEScct, before `grade` */
-	balance?: Balance | null;
-	/** a V1 clip's secondaries (game/film/color.js `cleanSecondaries`): parts of it given their own balance */
-	secondaries?: Secondary[];
+	/** a V1 clip's grade as stacks of tools: `base` (its base correction), `clip` (its own look) */
+	stacks?: { base?: GradeStack; clip?: GradeStack };
 	/** a sound clip's EQ (game/film/sound.js `cleanEq`): bands in order, the render's and the studio's playback's */
 	eq?: EqBand[];
 	/** a sound clip's gain keys ([seconds into the clip, dB], game/film/sound.js `cleanKeys`) */
 	keys?: [number, number][];
-	/** this clip's own grade (Grade tab), ACEScct */
-	grade?: Cdl | null;
 	/** picture clips: where the clip stands in the script */
 	script?: ClipScript;
 	/** lines: the words to be said */
@@ -257,8 +251,8 @@ export type Timeline = {
 	version?: number;
 	color?: { working: 'acescct'; output: 'odt-rec709' };
 	/** the whole film's look */
-	/** the film's grade above its shots': its plain CDL or preset from before, its look (`film`) and each scene's (`scenes`, by the scene its clips name) */
-	grade?: { look: Cdl | null; preset?: string; film?: Look | null; scenes?: Record<string, Look>; finish?: Finish | null } | null;
+	/** the film's grade above its shots', as stacks of tools: each scene's look (by the scene its clips name), the timeline's look, the finishing */
+	grade?: { scenes?: Record<string, GradeStack>; timeline?: GradeStack; finish?: GradeStack } | null;
 };
 
 export const listTimelines = () => call<Timeline[]>('/api/timelines');

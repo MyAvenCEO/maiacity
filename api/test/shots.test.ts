@@ -254,14 +254,14 @@ describe("timelines: world clips, grades, framing and stages", () => {
     await expect(createTimeline("admin", { name: "x", clips: [{ ...media, kind: "hologram" }] })).rejects.toThrow("a world clip, a slate, a line or a section");
   });
 
-  test("a clip's grade is a clean CDL; a neutral one is dropped; framing is per shape", async () => {
+  test("a clip's look is a clean CDL tool; a stack with nothing on it is none; framing is per shape", async () => {
     const t = await createTimeline("admin", { name: "Graded", clips: [
-      { ...media, grade: { slope: [1.1, "x", 9], offset: [0, 0, 0], power: [1, 1, 1], sat: 0.8 }, frame: { "9:16": { x: -2, y: 0.3, zoom: 1.5 } } },
-      { ...media, id: "n", grade: { slope: [1, 1, 1], offset: [0, 0, 0], power: [1, 1, 1], sat: 1 } },
+      { ...media, stacks: { clip: { tools: [{ tool: "cdl", slope: [1.1, "x", 9], offset: [0, 0, 0], power: [1, 1, 1], sat: 0.8 }] } }, frame: { "9:16": { x: -2, y: 0.3, zoom: 1.5 } } },
+      { ...media, id: "n", stacks: { clip: { tools: [] } } },
     ] });
-    expect(t.clips[0]!.grade).toEqual({ slope: [1.1, 1, 4], offset: [0, 0, 0], power: [1, 1, 1], sat: 0.8 });
+    expect((t.clips[0] as any).stacks.clip.tools).toEqual([{ tool: "cdl", slope: [1.1, 1, 4], offset: [0, 0, 0], power: [1, 1, 1], sat: 0.8 }]);
     expect(t.clips[0]!.frame).toEqual({ "9:16": { x: -1, y: 0.3, zoom: 1.5 } });
-    expect(t.clips[1]!.grade).toBeUndefined();
+    expect(t.clips[1]!.stacks).toBeUndefined();
     await expect(createTimeline("admin", { name: "x", clips: [{ ...media, frame: { "3:2": {} } }] })).rejects.toThrow("per shape");
   });
 
@@ -271,9 +271,9 @@ describe("timelines: world clips, grades, framing and stages", () => {
     expect(locked.stage).toBe("locked");
     expect(locked.version).toBe(1);
     // the grade may change on a locked edit
-    const graded = await saveTimeline(t.id, { stage: "graded", clips: [{ ...media, grade: { slope: [1.2, 1, 1] } }], grade: { look: { sat: 0.9 }, preset: "warm" } });
-    expect(graded.clips[0]!.grade!.slope).toEqual([1.2, 1, 1]);
-    expect(graded.grade).toEqual({ look: { slope: [1, 1, 1], offset: [0, 0, 0], power: [1, 1, 1], sat: 0.9 }, preset: "warm" });
+    const graded = await saveTimeline(t.id, { stage: "graded", clips: [{ ...media, stacks: { clip: { tools: [{ tool: "cdl", slope: [1.2, 1, 1] }] } } }], grade: { timeline: { tools: [{ tool: "hue", sat: 0.9 }] } } });
+    expect((graded.clips[0] as any).stacks.clip.tools[0].slope).toEqual([1.2, 1, 1]);
+    expect(graded.grade).toEqual({ timeline: { tools: [{ tool: "hue", hue: [], hue_sat: [], hue_lum: [], sat: 0.9 }] } });
     // the cut may not
     await expect(saveTimeline(t.id, { clips: [{ ...media, dur: 5 }] })).rejects.toThrow("locked");
     const open = await saveTimeline(t.id, { stage: "edit" });
@@ -282,7 +282,7 @@ describe("timelines: world clips, grades, framing and stages", () => {
     expect((await getTimeline(t.id)).version).toBe(2);
     await expect(saveTimeline(t.id, { stage: "done" })).rejects.toThrow("stage");
     await expect(saveTimeline(t.id, { color: { working: "rec709" } })).rejects.toThrow("ACEScct");
-    await expect(saveTimeline(t.id, { grade: { preset: "sepia" } })).rejects.toThrow("preset");
+    await expect(saveTimeline(t.id, { grade: [] })).rejects.toThrow("stacks");
     expect((await saveTimeline(t.id, { grade: null })).grade).toBeNull();
   });
 });

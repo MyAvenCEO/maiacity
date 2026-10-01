@@ -140,7 +140,7 @@
 				{@const px = s.proxy(m)}
 				<dt>Proxy</dt><dd>{px.state === 'ready' ? 'ready — Edit plays it' : px.state === 'none' ? 'none yet — the original plays' : px.state}</dd>
 			{/if}
-			{#if sel.grade}<dt>Grade</dt><dd>graded (Grade tab)</dd>{/if}
+			{#if sel.stacks}<dt>Grade</dt><dd>graded (Grade tab)</dd>{/if}
 			<dt>Tags</dt><dd>{m?.tags.join(', ') || '—'}</dd>
 			<dt>hash</dt><dd><code>{sel.hash}</code></dd>
 		</dl>

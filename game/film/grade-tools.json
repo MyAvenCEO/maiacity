@@ -1,0 +1,727 @@
+{
+	"tools": [
+		{
+			"id": "balance",
+			"label": "Balance",
+			"group": "Primary",
+			"kind": "colour",
+			"what": "White balance, exposure, contrast, highlights, lows, saturation — in stops",
+			"params": [
+				{
+					"key": "temp",
+					"label": "temperature",
+					"type": "number",
+					"min": -2,
+					"max": 2,
+					"step": 0.01,
+					"def": 0,
+					"unit": "stops warm"
+				},
+				{
+					"key": "tint",
+					"label": "tint",
+					"type": "number",
+					"min": -2,
+					"max": 2,
+					"step": 0.01,
+					"def": 0,
+					"unit": "stops magenta"
+				},
+				{
+					"key": "exposure",
+					"label": "exposure",
+					"type": "number",
+					"min": -4,
+					"max": 4,
+					"step": 0.01,
+					"def": 0,
+					"unit": "stops"
+				},
+				{
+					"key": "contrast",
+					"label": "contrast",
+					"type": "number",
+					"min": -0.8,
+					"max": 1.5,
+					"step": 0.01,
+					"def": 0
+				},
+				{
+					"key": "highlights",
+					"label": "highlights",
+					"type": "number",
+					"min": -3,
+					"max": 3,
+					"step": 0.01,
+					"def": 0,
+					"unit": "stops"
+				},
+				{
+					"key": "shadows",
+					"label": "lows",
+					"type": "number",
+					"min": -3,
+					"max": 3,
+					"step": 0.01,
+					"def": 0,
+					"unit": "stops"
+				},
+				{
+					"key": "sat",
+					"label": "saturation",
+					"type": "number",
+					"min": -1,
+					"max": 1,
+					"step": 0.01,
+					"def": 0,
+					"unit": "0 = as shot"
+				}
+			]
+		},
+		{
+			"id": "cdl",
+			"label": "CDL",
+			"group": "Primary",
+			"kind": "colour",
+			"what": "ASC CDL: gain (slope), lift (offset), gamma (power), saturation",
+			"params": [
+				{
+					"key": "slope",
+					"label": "gain",
+					"type": "trio",
+					"min": 0,
+					"max": 4,
+					"step": 0.005,
+					"def": [
+						1,
+						1,
+						1
+					]
+				},
+				{
+					"key": "offset",
+					"label": "lift",
+					"type": "trio",
+					"min": -1,
+					"max": 1,
+					"step": 0.005,
+					"def": [
+						0,
+						0,
+						0
+					]
+				},
+				{
+					"key": "power",
+					"label": "gamma",
+					"type": "trio",
+					"min": 0.1,
+					"max": 4,
+					"step": 0.005,
+					"def": [
+						1,
+						1,
+						1
+					]
+				},
+				{
+					"key": "sat",
+					"label": "saturation",
+					"type": "number",
+					"min": 0,
+					"max": 4,
+					"step": 0.01,
+					"def": 1
+				}
+			]
+		},
+		{
+			"id": "contrast",
+			"label": "Contrast",
+			"group": "Primary",
+			"kind": "colour",
+			"what": "Contrast around a pivot, in the log",
+			"params": [
+				{
+					"key": "amount",
+					"label": "contrast",
+					"type": "number",
+					"min": -1,
+					"max": 1,
+					"step": 0.01,
+					"def": 0
+				},
+				{
+					"key": "pivot",
+					"label": "pivot",
+					"type": "number",
+					"min": 0,
+					"max": 1,
+					"step": 0.001,
+					"def": 0.4135884
+				}
+			]
+		},
+		{
+			"id": "split",
+			"label": "Split tone",
+			"group": "Colour",
+			"kind": "colour",
+			"what": "A hue into the shadows, another into the highlights (teal under, warm over); the blacks stay neutral",
+			"params": [
+				{
+					"key": "sh_hue",
+					"label": "shadows hue °",
+					"type": "number",
+					"min": 0,
+					"max": 360,
+					"step": 1,
+					"def": 280,
+					"wrap": true
+				},
+				{
+					"key": "sh_amount",
+					"label": "shadows",
+					"type": "number",
+					"min": 0,
+					"max": 1,
+					"step": 0.01,
+					"def": 0
+				},
+				{
+					"key": "hi_hue",
+					"label": "highlights hue °",
+					"type": "number",
+					"min": 0,
+					"max": 360,
+					"step": 1,
+					"def": 125,
+					"wrap": true
+				},
+				{
+					"key": "hi_amount",
+					"label": "highlights",
+					"type": "number",
+					"min": 0,
+					"max": 1,
+					"step": 0.01,
+					"def": 0
+				},
+				{
+					"key": "balance",
+					"label": "balance",
+					"type": "number",
+					"min": -1,
+					"max": 1,
+					"step": 0.01,
+					"def": 0
+				},
+				{
+					"key": "pivot",
+					"label": "pivot",
+					"type": "number",
+					"min": 0,
+					"max": 1,
+					"step": 0.001,
+					"def": 0.4135884
+				}
+			]
+		},
+		{
+			"id": "hue",
+			"label": "Hue curves",
+			"group": "Colour",
+			"kind": "colour",
+			"what": "Hue against hue, saturation against hue, luminance against hue — and saturation over all",
+			"params": [
+				{
+					"key": "hue",
+					"label": "hue vs hue",
+					"type": "curve",
+					"min": -90,
+					"max": 90,
+					"step": 1,
+					"def": []
+				},
+				{
+					"key": "hue_sat",
+					"label": "hue vs saturation",
+					"type": "curve",
+					"min": 0,
+					"max": 3,
+					"step": 0.01,
+					"def": []
+				},
+				{
+					"key": "hue_lum",
+					"label": "hue vs luminance",
+					"type": "curve",
+					"min": -2,
+					"max": 2,
+					"step": 0.01,
+					"def": []
+				},
+				{
+					"key": "sat",
+					"label": "saturation",
+					"type": "number",
+					"min": 0,
+					"max": 3,
+					"step": 0.01,
+					"def": 1
+				}
+			]
+		},
+		{
+			"id": "hi_sat",
+			"label": "Highlight saturation",
+			"group": "Colour",
+			"kind": "colour",
+			"what": "The highlights’ saturation (a sky clipped in camera back to white)",
+			"params": [
+				{
+					"key": "amount",
+					"label": "saturation",
+					"type": "number",
+					"min": 0,
+					"max": 2,
+					"step": 0.01,
+					"def": 1
+				},
+				{
+					"key": "pivot",
+					"label": "pivot",
+					"type": "number",
+					"min": 0,
+					"max": 1,
+					"step": 0.001,
+					"def": 0.4135884
+				}
+			]
+		},
+		{
+			"id": "lut",
+			"label": "LUT",
+			"group": "Colour",
+			"kind": "colour",
+			"what": "A creative .cube from the vault (ACEScct in and out)",
+			"params": [
+				{
+					"key": "hash",
+					"label": "its file",
+					"type": "hash",
+					"def": ""
+				}
+			]
+		},
+		{
+			"id": "window",
+			"label": "Window",
+			"group": "Masks",
+			"kind": "mask",
+			"what": "A part of the frame — an ellipse or a rectangle — and the tools inside it",
+			"params": [
+				{
+					"key": "shape",
+					"label": "shape",
+					"type": "choice",
+					"choices": [
+						"ellipse",
+						"rect"
+					],
+					"def": "ellipse"
+				},
+				{
+					"key": "x",
+					"label": "x",
+					"type": "number",
+					"min": -1,
+					"max": 2,
+					"step": 0.01,
+					"def": 0.5
+				},
+				{
+					"key": "y",
+					"label": "y",
+					"type": "number",
+					"min": -1,
+					"max": 2,
+					"step": 0.01,
+					"def": 0.5
+				},
+				{
+					"key": "w",
+					"label": "width",
+					"type": "number",
+					"min": 0.01,
+					"max": 4,
+					"step": 0.01,
+					"def": 0.6
+				},
+				{
+					"key": "h",
+					"label": "height",
+					"type": "number",
+					"min": 0.01,
+					"max": 4,
+					"step": 0.01,
+					"def": 0.6
+				},
+				{
+					"key": "angle",
+					"label": "angle",
+					"type": "number",
+					"min": -360,
+					"max": 360,
+					"step": 1,
+					"def": 0
+				},
+				{
+					"key": "feather",
+					"label": "feather",
+					"type": "number",
+					"min": 0,
+					"max": 1,
+					"step": 0.01,
+					"def": 0.5
+				},
+				{
+					"key": "invert",
+					"label": "outside",
+					"type": "flag",
+					"def": false
+				},
+				{
+					"key": "track",
+					"label": "follows",
+					"type": "choice",
+					"choices": [
+						"",
+						"face"
+					],
+					"def": ""
+				},
+				{
+					"key": "mix",
+					"label": "mix",
+					"type": "number",
+					"min": 0,
+					"max": 1,
+					"step": 0.01,
+					"def": 1
+				}
+			]
+		},
+		{
+			"id": "key",
+			"label": "Colour key",
+			"group": "Masks",
+			"kind": "mask",
+			"what": "A range of colours — a hue, how saturated, how bright — and the tools inside it",
+			"params": [
+				{
+					"key": "hue",
+					"label": "hue °",
+					"type": "number",
+					"min": 0,
+					"max": 360,
+					"step": 1,
+					"def": 30,
+					"wrap": true
+				},
+				{
+					"key": "width",
+					"label": "width °",
+					"type": "number",
+					"min": 1,
+					"max": 360,
+					"step": 1,
+					"def": 40
+				},
+				{
+					"key": "sat_lo",
+					"label": "saturation from",
+					"type": "number",
+					"min": 0,
+					"max": 100,
+					"step": 1,
+					"def": 1
+				},
+				{
+					"key": "sat_hi",
+					"label": "saturation to",
+					"type": "number",
+					"min": 0,
+					"max": 100,
+					"step": 1,
+					"def": 100
+				},
+				{
+					"key": "luma_lo",
+					"label": "luma from",
+					"type": "number",
+					"min": 0,
+					"max": 100,
+					"step": 1,
+					"def": 0
+				},
+				{
+					"key": "luma_hi",
+					"label": "luma to",
+					"type": "number",
+					"min": 0,
+					"max": 100,
+					"step": 1,
+					"def": 100
+				},
+				{
+					"key": "soft",
+					"label": "softness",
+					"type": "number",
+					"min": 0,
+					"max": 1,
+					"step": 0.01,
+					"def": 0.5
+				},
+				{
+					"key": "mix",
+					"label": "mix",
+					"type": "number",
+					"min": 0,
+					"max": 1,
+					"step": 0.01,
+					"def": 1
+				}
+			]
+		},
+		{
+			"id": "pop",
+			"label": "Pop",
+			"group": "Texture",
+			"kind": "texture",
+			"what": "Local contrast (negative softens)",
+			"params": [
+				{
+					"key": "amount",
+					"label": "amount",
+					"type": "number",
+					"min": -1,
+					"max": 1,
+					"step": 0.01,
+					"def": 0.2
+				},
+				{
+					"key": "radius",
+					"label": "radius",
+					"type": "number",
+					"min": 2,
+					"max": 80,
+					"step": 1,
+					"def": 18,
+					"unit": "px at 1080"
+				}
+			]
+		},
+		{
+			"id": "halation",
+			"label": "Halation",
+			"group": "Texture",
+			"kind": "texture",
+			"what": "A red glow around bright light, as film has",
+			"params": [
+				{
+					"key": "amount",
+					"label": "amount",
+					"type": "number",
+					"min": 0,
+					"max": 1,
+					"step": 0.01,
+					"def": 0.25
+				},
+				{
+					"key": "threshold",
+					"label": "threshold",
+					"type": "number",
+					"min": 0.3,
+					"max": 1.2,
+					"step": 0.01,
+					"def": 0.55
+				},
+				{
+					"key": "radius",
+					"label": "radius",
+					"type": "number",
+					"min": 1,
+					"max": 120,
+					"step": 1,
+					"def": 14,
+					"unit": "px at 1080"
+				}
+			]
+		},
+		{
+			"id": "bloom",
+			"label": "Bloom",
+			"group": "Texture",
+			"kind": "texture",
+			"what": "A soft white glow around bright light",
+			"params": [
+				{
+					"key": "amount",
+					"label": "amount",
+					"type": "number",
+					"min": 0,
+					"max": 1,
+					"step": 0.01,
+					"def": 0.25
+				},
+				{
+					"key": "threshold",
+					"label": "threshold",
+					"type": "number",
+					"min": 0.3,
+					"max": 1.2,
+					"step": 0.01,
+					"def": 0.55
+				},
+				{
+					"key": "radius",
+					"label": "radius",
+					"type": "number",
+					"min": 1,
+					"max": 120,
+					"step": 1,
+					"def": 14,
+					"unit": "px at 1080"
+				}
+			]
+		},
+		{
+			"id": "grain",
+			"label": "Grain",
+			"group": "Texture",
+			"kind": "texture",
+			"what": "Film grain",
+			"params": [
+				{
+					"key": "amount",
+					"label": "amount",
+					"type": "number",
+					"min": 0,
+					"max": 1,
+					"step": 0.01,
+					"def": 0.12
+				},
+				{
+					"key": "size",
+					"label": "size",
+					"type": "number",
+					"min": 0.5,
+					"max": 4,
+					"step": 0.01,
+					"def": 1,
+					"unit": "px at 1080"
+				},
+				{
+					"key": "chroma",
+					"label": "colour",
+					"type": "number",
+					"min": 0,
+					"max": 1,
+					"step": 0.01,
+					"def": 0
+				}
+			]
+		},
+		{
+			"id": "vignette",
+			"label": "Vignette",
+			"group": "Texture",
+			"kind": "texture",
+			"what": "The corners darker",
+			"params": [
+				{
+					"key": "amount",
+					"label": "amount",
+					"type": "number",
+					"min": 0,
+					"max": 1,
+					"step": 0.01,
+					"def": 0.4
+				},
+				{
+					"key": "size",
+					"label": "size",
+					"type": "number",
+					"min": 0.2,
+					"max": 2,
+					"step": 0.01,
+					"def": 0.9
+				},
+				{
+					"key": "softness",
+					"label": "softness",
+					"type": "number",
+					"min": 0,
+					"max": 1,
+					"step": 0.01,
+					"def": 0.5
+				},
+				{
+					"key": "roundness",
+					"label": "roundness",
+					"type": "number",
+					"min": 0,
+					"max": 1,
+					"step": 0.01,
+					"def": 0
+				}
+			]
+		}
+	],
+	"bundles": [
+		{
+			"id": "base",
+			"label": "Base correction",
+			"of": "shot",
+			"starter": [
+				"balance"
+			]
+		},
+		{
+			"id": "clip",
+			"label": "Clip look",
+			"of": "shot",
+			"starter": [
+				"cdl"
+			]
+		},
+		{
+			"id": "scene",
+			"label": "Scene look",
+			"of": "scene",
+			"starter": [
+				"split",
+				"contrast"
+			]
+		},
+		{
+			"id": "timeline",
+			"label": "Timeline look",
+			"of": "timeline",
+			"starter": [
+				"split",
+				"hue"
+			]
+		},
+		{
+			"id": "finish",
+			"label": "Finishing",
+			"of": "timeline",
+			"starter": [
+				"grain",
+				"vignette"
+			]
+		}
+	]
+}

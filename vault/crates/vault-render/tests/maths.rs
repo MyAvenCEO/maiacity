@@ -86,14 +86,8 @@ fn cdl_maths() {
 }
 
 #[test]
-fn film_look_from_grade_or_preset() {
-    let t: Timeline = serde_json::from_value(json!({ "id": "t", "aspect": "9:16", "clips": [], "grade": { "look": null, "preset": "night" } })).unwrap();
-    assert_eq!(t.look(), preset("night"));
-    let t: Timeline = serde_json::from_value(json!({ "id": "t", "clips": [], "grade": { "look": { "sat": 0.8 }, "preset": "night" } })).unwrap();
-    assert_eq!(t.look().unwrap().sat, 0.8);
-    let t: Timeline = serde_json::from_value(json!({ "id": "t", "clips": [], "grade": { "look": null, "preset": "neutral" } })).unwrap();
-    assert!(t.look().is_none());
-    // the shapes: 16:9, 9:16, 1:1 and the timeline's own
+fn the_shapes_a_timeline_is_delivered_in() {
+    // 16:9, 9:16, 1:1 and the timeline's own
     let t: Timeline = serde_json::from_value(json!({ "id": "t", "aspect": "4:5", "clips": [] })).unwrap();
     assert_eq!(shapes_of(&t).iter().map(|s| s.aspect).collect::<Vec<_>>(), ["16:9", "9:16", "1:1", "4:5"]);
     let t: Timeline = serde_json::from_value(json!({ "id": "t", "aspect": "9:16", "clips": [] })).unwrap();
@@ -296,13 +290,3 @@ fn the_viewer_s_cube_is_the_grade() {
     assert!(PRESETS.iter().all(|(p, _)| preset(p).is_some()));
 }
 
-#[test]
-fn the_api_clamps_a_balance_as_the_grade_does() {
-    // the API and the studio's sliders keep a balance's ranges in color.js (`BALANCE_NODES`): the same as here
-    let js = std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/../../../game/film/color.js")).unwrap();
-    for (k, lo, hi) in vault_render::grade::BALANCE_FIELDS {
-        let at = js.find(&format!("key: '{k}'")).unwrap_or_else(|| panic!("color.js has no balance field {k}"));
-        let rest = &js[at..at + 120.min(js.len() - at)];
-        assert!(rest.contains(&format!("min: {lo}, max: {hi},")), "{k}: color.js says {rest}");
-    }
-}

@@ -1,19 +1,26 @@
-//! Secondaries and finishing on the GPU (creative.rs, the `CREATIVE_KERNELS`): what each does where, and where not.
+//! Masks and textures on the GPU (tools.rs, the `CREATIVE_KERNELS`): a window and a colour key apply the tools inside
+//! them only there, nested they meet; the textures do what they say and only there.
+
+use std::collections::HashMap;
 
 use serde_json::json;
 use vault_render::{
     Lut3d,
-    creative::{Finish, apply_finish, apply_secondaries, clean_finish, clean_secondaries},
     gpu::Gpu,
     grade::STOP,
+    tools::{Stack, apply, clean_stack, compile, gpu_cubes},
 };
 
 const W: u32 = 64;
 const H: u32 = 36;
 
+fn odt() -> Lut3d {
+    Lut3d::from_rgb("odt", 33, vault_media::aces2::bake_cube(33)).unwrap()
+}
+
 fn gpu() -> Gpu {
     let mut g = Gpu::new().unwrap();
-    g.set_output(&Lut3d::from_rgb("odt", 33, vault_media::aces2::bake_cube(33)).unwrap());
+    g.set_output(&odt());
     g
 }
 
@@ -36,50 +43,63 @@ fn at(g: &Gpu, img: &vault_render::gpu::Image, x: u32, y: u32) -> [f32; 3] {
     [px[i], px[i + 1], px[i + 2]]
 }
 
+/// a stack on a picture, as the render runs it
+fn run(g: &Gpu, img: &vault_render::gpu::Image, v: serde_json::Value, frame: u64) -> vault_render::gpu::Image {
+    let st: Stack = clean_stack(&v).unwrap();
+    let out = odt();
+    let steps = compile(&[&st], &out);
+    let mut cubes = HashMap::new();
+    gpu_cubes(g, &steps, &HashMap::new(), &out, &mut cubes).unwrap();
+    apply(g, img, &steps, &cubes, W as f64, H as f64, frame, &mut |_, _| Ok(None)).unwrap()
+}
+
 #[test]
-fn a_window_lifts_only_inside_itself() {
+fn a_window_applies_its_tools_only_inside_itself() {
     let g = gpu();
     let grey = picture(&g, |_, _| [0.4; 3]);
-    let secs = clean_secondaries(&json!([{ "window": { "shape": "ellipse", "x": 0.5, "y": 0.5, "w": 0.4, "h": 0.5, "feather": 0.2 }, "adjust": { "exposure": 1 } }]));
-    assert_eq!(secs.len(), 1);
-    let out = apply_secondaries(&g, &grey, &secs, None, W as f64, H as f64).unwrap();
+    let out = run(&g, &grey, json!([{ "tool": "window", "shape": "ellipse", "x": 0.5, "y": 0.5, "w": 0.4, "h": 0.5, "feather": 0.2, "tools": [{ "tool": "balance", "exposure": 1 }] }]), 0);
     let (mid, corner) = (at(&g, &out, W / 2, H / 2), at(&g, &out, 1, 1));
     assert!((mid[0] - (0.4 + STOP as f32)).abs() < 2e-3, "inside {mid:?}");
     assert!((corner[0] - 0.4).abs() < 1e-4, "outside {corner:?}");
+    // any tool goes in: a contrast inside the window, a colour tool baked into its own cube
+    let out = run(&g, &grey, json!([{ "tool": "window", "x": 0.5, "y": 0.5, "w": 0.4, "h": 0.5, "feather": 0.2, "tools": [{ "tool": "cdl", "offset": [0.05, 0.05, 0.05] }] }]), 0);
+    assert!((at(&g, &out, W / 2, H / 2)[0] - 0.45).abs() < 3e-3 && (at(&g, &out, 1, 1)[0] - 0.4).abs() < 1e-4);
 }
 
 #[test]
-fn a_key_takes_only_its_hue() {
+fn a_key_takes_only_its_hue_and_nested_in_a_window_only_there() {
     let g = gpu();
     // left: foliage green; right: a warm skin tone
     let pic = picture(&g, |x, _| if x < W / 2 { [0.36, 0.46, 0.34] } else { [0.47, 0.425, 0.395] });
-    let secs = clean_secondaries(&json!([{ "key": { "hue": [123, 50], "sat": [1, 100], "luma": [10, 90], "soft": 0.3 }, "adjust": { "sat": 0.5 } }]));
-    let out = apply_secondaries(&g, &pic, &secs, None, W as f64, H as f64).unwrap();
+    let key = json!({ "tool": "key", "hue": 123, "width": 50, "sat_lo": 1, "sat_hi": 100, "luma_lo": 10, "luma_hi": 90, "soft": 0.3, "tools": [{ "tool": "balance", "sat": 0.5 }] });
+    let out = run(&g, &pic, json!([key.clone()]), 0);
     let (green, skin) = (at(&g, &out, 4, H / 2), at(&g, &out, W - 4, H / 2));
     assert!((green[1] - 0.46).abs() < 1e-3, "green untouched {green:?}");
     assert!(skin[0] - skin[2] > 0.075 * 1.3, "skin more saturated {skin:?}");
+    // the same key inside a window over the top half: the skin below it as it was
+    let out = run(&g, &pic, json!([{ "tool": "window", "shape": "rect", "x": 0.5, "y": 0.2, "w": 1.2, "h": 0.4, "feather": 0, "tools": [key] }]), 0);
+    let (top, bottom) = (at(&g, &out, W - 4, 2), at(&g, &out, W - 4, H - 2));
+    assert!(top[0] - top[2] > 0.075 * 1.3, "skin inside the window {top:?}");
+    assert!((bottom[0] - 0.47).abs() < 1e-3, "skin outside it {bottom:?}");
 }
 
 #[test]
-fn the_finishing_does_what_it_says_and_only_there() {
+fn the_textures_do_what_they_say_and_only_there() {
     let g = gpu();
     // grey, with one small bright spot
     let pic = picture(&g, |x, y| if (x as i32 - 32).abs() < 2 && (y as i32 - 18).abs() < 2 { [0.9; 3] } else { [0.4; 3] });
-    let f: Finish = clean_finish(&json!({ "vignette": { "amount": 1, "size": 0.6, "softness": 0.3 } })).unwrap();
-    let out = apply_finish(&g, &pic, &f, 0, H as f64).unwrap();
+    let out = run(&g, &pic, json!([{ "tool": "vignette", "amount": 1, "size": 0.6, "softness": 0.3 }]), 0);
     assert!((at(&g, &out, 26, 18)[0] - 0.4).abs() < 0.02, "the middle keeps its level: {:?}", at(&g, &out, 26, 18));
     assert!(at(&g, &out, 0, 0)[0] < 0.4 - STOP as f32, "a corner a stop darker or more: {:?}", at(&g, &out, 0, 0));
     // halation: red around the spot, more than green
-    let f = clean_finish(&json!({ "halation": { "amount": 1, "threshold": 0.5, "radius": 60 } })).unwrap();
-    let out = apply_finish(&g, &pic, &f, 0, H as f64).unwrap();
+    let out = run(&g, &pic, json!([{ "tool": "halation", "amount": 1, "threshold": 0.5, "radius": 60 }]), 0);
     let near = at(&g, &out, 36, 18);
     // (in the log: red rises most, then green, blue least — red-orange)
     assert!(near[0] > 0.41 && near[0] > near[1] && near[1] > near[2], "halation near the spot {near:?}");
     let far = at(&g, &out, 2, 2);
     assert!((far[0] - 0.4).abs() < 0.01, "and not far from it {far:?}");
     // grain: about zero on average, each pixel moved
-    let f = clean_finish(&json!({ "grain": { "amount": 0.5 } })).unwrap();
-    let out = apply_finish(&g, &picture(&g, |_, _| [0.4; 3]), &f, 7, H as f64).unwrap();
+    let out = run(&g, &picture(&g, |_, _| [0.4; 3]), json!([{ "tool": "grain", "amount": 0.5 }]), 7);
     let px = g.read(&out, W, H);
     let mean = px.chunks(4).map(|p| p[1] as f64).sum::<f64>() / (W * H) as f64;
     let moved = px.chunks(4).filter(|p| (p[1] - 0.4).abs() > 1e-4).count();
@@ -87,11 +107,11 @@ fn the_finishing_does_what_it_says_and_only_there() {
 }
 
 #[test]
-fn secondaries_and_finishing_as_data() {
-    assert!(clean_secondaries(&json!([{ "adjust": {} }])).is_empty());
-    let s = clean_secondaries(&json!([{ "window": { "shape": "star", "w": 9, "track": "hand" }, "adjust": { "exposure": 0.3 }, "mix": 3 }]));
-    let w = s[0].window.as_ref().unwrap();
-    assert_eq!((w.shape.as_str(), w.w, w.track.clone(), s[0].mix), ("ellipse", 4.0, None, 1.0));
-    assert!(clean_finish(&json!({ "grain": { "amount": 0 } })).is_none());
-    assert_eq!(clean_finish(&json!({ "pop": { "amount": 5 } })).unwrap().pop.unwrap().amount, 1.0);
+fn a_stack_with_a_mask_by_half_is_mixed_on_the_gpu() {
+    let g = gpu();
+    let grey = picture(&g, |_, _| [0.4; 3]);
+    let full = run(&g, &grey, json!([{ "tool": "window", "w": 4, "h": 4, "feather": 0, "tools": [{ "tool": "balance", "exposure": 1 }] }]), 0);
+    let half = run(&g, &grey, json!({ "strength": 0.5, "tools": [{ "tool": "window", "w": 4, "h": 4, "feather": 0, "tools": [{ "tool": "balance", "exposure": 1 }] }] }), 0);
+    let (f, h) = (at(&g, &full, W / 2, H / 2)[0], at(&g, &half, W / 2, H / 2)[0]);
+    assert!((h - (0.4 + (f - 0.4) / 2.0)).abs() < 1e-3, "half of {f} is {h}");
 }

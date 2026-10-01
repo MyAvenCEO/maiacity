@@ -81,29 +81,43 @@ test("the story's structure lies on its own track: thumbnail, hook, three acts, 
   await expect(saveTimeline(t.id, { clips: [{ id: "x", kind: "section", track: "V1", start: 0, in: 0, dur: 1, vol: 1, section: "act1" }] })).rejects.toThrow(/story track/);
 });
 
-test("a shot's balance: the fixed first nodes, checked, and free to change after the lock like its grade", async () => {
+test("a shot's grade as stacks of tools: checked, free to change after the lock", async () => {
   const { createTimeline, saveTimeline } = await import("../src/timelines");
   const clip = { id: "v", hash: hash("d4"), track: "V1", start: 0, in: 0, dur: 5, vol: 0 };
-  const t = await createTimeline("admin", { name: "Balance", clips: [{ ...clip, balance: { exposure: 9, temp: -0.5, bogus: 1 } }] });
-  expect(t.clips[0]!.balance).toEqual({ temp: -0.5, tint: 0, exposure: 4, contrast: 0, highlights: 0, shadows: 0, sat: 0 });
-  // all zero: no balance at all
-  expect((await saveTimeline(t.id, { clips: [{ ...clip, balance: { exposure: 0 } }] })).clips[0]!.balance).toBeUndefined();
+  const stacks = { base: { tools: [{ tool: "balance", exposure: 9, temp: -0.5, bogus: 1 }] }, clip: { tools: [{ tool: "window", w: 9, tools: [{ tool: "cdl", slope: [1.2, 1.2, 1.2] }] }, { tool: "nothing" }] } };
+  const t = await createTimeline("admin", { name: "Stacks", clips: [{ ...clip, stacks }] });
+  const s = (t.clips[0] as any).stacks;
+  expect(s.base.tools[0]).toEqual({ tool: "balance", temp: -0.5, tint: 0, exposure: 4, contrast: 0, highlights: 0, shadows: 0, sat: 0 });
+  // a window holds tools of its own; a tool not in the registry is left out
+  expect(s.clip.tools.length).toBe(1);
+  expect(s.clip.tools[0].w).toBe(4);
+  expect(s.clip.tools[0].tools[0].slope).toEqual([1.2, 1.2, 1.2]);
+  // a stack with no tools: no stack
+  expect((await saveTimeline(t.id, { clips: [{ ...clip, stacks: { base: { tools: [] } } }] })).clips[0]!.stacks).toBeUndefined();
+  // the fields of the grade from before are not kept: the grade is stacks only
+  const old = await saveTimeline(t.id, { clips: [{ ...clip, balance: { shadows: 0.4 }, grade: { slope: [1.1, 1.1, 1.1] } } as any] });
+  expect((old.clips[0] as any).balance).toBeUndefined();
+  expect((old.clips[0] as any).grade).toBeUndefined();
   await saveTimeline(t.id, { stage: "locked" });
-  const later = await saveTimeline(t.id, { clips: [{ ...clip, balance: { shadows: 0.4 }, script: { scene: "Waking" } }] });
-  expect(later.clips[0]!.balance!.shadows).toBe(0.4);
+  const later = await saveTimeline(t.id, { clips: [{ ...clip, stacks: { base: { tools: [{ tool: "balance", shadows: 0.6 }] } }, script: { scene: "Waking" } }] });
+  expect((later.clips[0] as any).stacks.base.tools[0].shadows).toBe(0.6);
   expect(later.clips[0]!.script).toEqual({ scene: "Waking" });
   await expect(saveTimeline(t.id, { clips: [{ ...clip, dur: 4 }] })).rejects.toThrow(/locked/);
 });
 
-test("the film's look and each scene's: checked, kept, free to change after the lock", async () => {
+test("the film's stacks — each scene's look, the timeline's look, the finishing: checked, kept, free to change after the lock", async () => {
   const { createTimeline, saveTimeline } = await import("../src/timelines");
   const t = await createTimeline("admin", { name: "Looks" });
   await saveTimeline(t.id, { stage: "locked" });
-  const looked = await saveTimeline(t.id, {
-    grade: { look: null, film: { contrast: 0.2, split: { shadows: { hue: 280, amount: 0.3 }, highlights: { hue: 125, amount: 0.2 } } }, scenes: { "EXT. GARDEN — MORNING": { sat: 0.9 }, "INT. BEDROOM": { sat: 1 } } },
-  });
-  expect((looked.grade as any).film.split.shadows).toEqual({ hue: 280, amount: 0.3 });
-  expect(Object.keys((looked.grade as any).scenes)).toEqual(["EXT. GARDEN — MORNING"]);
+  const g = (await saveTimeline(t.id, {
+    grade: { timeline: { strength: 0.8, tools: [{ tool: "split", sh_amount: 0.3 }] }, scenes: { "EXT. GARDEN — MORNING": { tools: [{ tool: "hue", sat: 0.9 }] }, "INT. BEDROOM": { tools: [] } }, finish: { tools: [{ tool: "grain" }] } },
+  })).grade as any;
+  expect(g.timeline.strength).toBe(0.8);
+  expect(g.timeline.tools[0]).toMatchObject({ tool: "split", sh_hue: 280, sh_amount: 0.3 });
+  expect(Object.keys(g.scenes)).toEqual(["EXT. GARDEN — MORNING"]);
+  expect(g.finish.tools[0]).toMatchObject({ tool: "grain", amount: 0.12 });
+  // a grade from before (a look, a preset, a finishing object) is not a stack: not kept
+  expect((await saveTimeline(t.id, { grade: { look: null, preset: "warm", film: { contrast: 0.2 }, finish: { vignette: { amount: 0.6 } } } })).grade).toEqual({});
 });
 
 test("a copy read before someone else saved never overwrites them (the studio open while an agent edits)", async () => {

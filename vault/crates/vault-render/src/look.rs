@@ -404,16 +404,26 @@ pub fn look(t: &Timeline, lib: &dyn Library, c: &Clip, output: &dyn Output, regi
         }
     }
     drop(cct);
-    let bal = balance.copied().or_else(|| c.balance()).unwrap_or_default();
-    let chain = if looks {
-        // the whole chain, as the film shows it: the balance given (a proposal) in place of the clip's own
-        let mut c2 = c.clone();
-        c2.balance = Some(serde_json::to_value(bal)?);
-        let cube = crate::render::clip_cube(t, lib, c, output)?.map(|(lut, _)| gpu.cube(&lut));
-        crate::render::chain(&gpu, &framed, w, h, &c2, cube.as_ref(), t.finish().as_ref(), 0)?
-    } else {
-        gpu.balance(&framed, Some(&bal))?
+    // its base correction: a balance given (a proposal) in its place, else its own
+    let base = match balance {
+        Some(b) => crate::tools::Stack { strength: 1.0, tools: vec![crate::tools::Item { on: true, tool: crate::tools::Tool::Balance(*b) }] },
+        None => c.stack("base").unwrap_or_default(),
     };
+    let base_json = serde_json::to_value(&base)?;
+    // the base correction's balance (its first balance tool): what grade_match fits and writes
+    let bal = base.tools.iter().find_map(|i| if let crate::tools::Tool::Balance(b) = &i.tool { Some(*b) } else { None }).unwrap_or_default();
+    let stacks: Vec<crate::tools::Stack> = if looks {
+        // the whole chain, as the film shows it, with that base correction
+        let mut all = t.stacks_for(c);
+        if c.stack("base").is_some() && !all.is_empty() {
+            all.remove(0);
+        }
+        std::iter::once(base).chain(all).collect()
+    } else {
+        vec![base]
+    };
+    let grade = crate::render::on_gpu(&gpu, crate::render::stacks_steps(&stacks, lib, output)?);
+    let chain = crate::render::chain(&gpu, &framed, w, h, &grade.0, &grade.1, 0)?;
     let after = gpu.output(&chain)?;
     let disp = rgb(&gpu, &after, w, h);
     let balanced = elements(&disp, &flags);
@@ -437,6 +447,7 @@ pub fn look(t: &Timeline, lib: &dyn Library, c: &Clip, output: &dyn Output, regi
         "balanced": balanced,
         "through": if looks { "balance, secondaries, grade, looks and finishing" } else { "balance" },
         "balance": bal,
+        "base": base_json,
     });
     if let Some(o) = from.as_object() {
         for (k, v) in o {

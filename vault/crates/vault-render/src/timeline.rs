@@ -7,10 +7,7 @@ use std::collections::BTreeMap;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use crate::{
-    creative::{Look, clean_look},
-    grade::{Balance, Cdl, clean_balance, clean_cdl, preset},
-};
+use crate::tools::{Stack, clean_stack};
 
 /// The film's clock: every delivery runs at 30 frames a second (worker.ts `FPS`).
 pub const FPS: u32 = 30;
@@ -52,12 +49,9 @@ pub struct Clip {
     pub shot: Option<String>,
     #[serde(rename = "shotVersion", default, skip_serializing_if = "Option::is_none")]
     pub shot_version: Option<u32>,
-    /// the clip's own grade, as the studio stored it (cleaned by `clean_cdl` before use, as the worker does)
+    /// a V1 clip's grade as stacks of tools (tools.rs): `base` (its base correction), then `clip` (its own look)
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub grade: Option<Value>,
-    /// the clip's balance (the fixed first nodes), before its grade
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub balance: Option<Value>,
+    pub stacks: Option<Value>,
     /// a line (a line of the script not recorded yet, on A1): its words
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub text: Option<String>,
@@ -67,9 +61,6 @@ pub struct Clip {
     /// a V1 clip's script: its scene (`scene`) chooses the scene's look
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub script: Option<Value>,
-    /// a V1 clip's secondaries (creative::Secondary): parts of it given their own balance
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub secondaries: Option<Value>,
     /// a sound clip's EQ (eq::Band, in order)
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub eq: Option<Value>,
@@ -89,22 +80,13 @@ impl Clip {
     pub fn end(&self) -> f64 {
         self.start + self.dur
     }
-    /// The clip's grade, cleaned (None when it changes nothing).
-    pub fn cdl(&self) -> Option<Cdl> {
-        self.grade.as_ref().and_then(clean_cdl)
-    }
-    /// The clip's balance, cleaned (None when it changes nothing).
-    pub fn balance(&self) -> Option<Balance> {
-        self.balance.as_ref().and_then(clean_balance)
+    /// One of its stacks ("base", "clip"), checked.
+    pub fn stack(&self, which: &str) -> Option<Stack> {
+        self.stacks.as_ref()?.get(which).and_then(clean_stack)
     }
     /// A line of the script not recorded yet (A1, words and no file).
     pub fn is_line(&self) -> bool {
         self.kind.as_deref() == Some("line")
-    }
-    /// Its framing in a shape ("16:9", also found under "16x9").
-    /// Its secondaries, checked.
-    pub fn secondaries(&self) -> Vec<crate::creative::Secondary> {
-        self.secondaries.as_ref().map(crate::creative::clean_secondaries).unwrap_or_default()
     }
     /// Its EQ, checked (empty: none).
     pub fn eq(&self) -> Vec<crate::eq::Band> {
@@ -120,20 +102,14 @@ impl Clip {
     }
 }
 
-/// The film's grade above its shots' own: the film's look and each scene's (`creative::Look`), keyed by the scene
-/// its clips name — and the film's plain CDL or preset (`look`, `preset`) from before looks had more, read as a
-/// look of just that.
+/// The film's grade above its shots' own, as stacks of tools (tools.rs): each scene's look (keyed by the scene its
+/// clips name), the timeline's look, the finishing.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct FilmGrade {
     #[serde(default)]
-    pub look: Option<Value>,
-    #[serde(default)]
-    pub preset: Option<String>,
-    #[serde(default)]
-    pub film: Option<Value>,
-    #[serde(default)]
     pub scenes: BTreeMap<String, Value>,
-    /// the film's finishing (creative::Finish), after its looks
+    #[serde(default)]
+    pub timeline: Option<Value>,
     #[serde(default)]
     pub finish: Option<Value>,
 }
@@ -162,34 +138,15 @@ fn sixteen_nine() -> String {
 }
 
 impl Timeline {
-    /// The film's plain look from before: its CDL, else its preset's, else none (worker.ts `lookOf`).
-    pub fn look(&self) -> Option<Cdl> {
-        let g = self.grade.as_ref()?;
-        g.look.as_ref().and_then(clean_cdl).or_else(|| g.preset.as_deref().and_then(preset).and_then(|c| clean_cdl(&c.to_json())))
-    }
-
-    /// The film's look: `film`, else its plain CDL or preset as a look.
-    pub fn film_look(&self) -> Option<Look> {
-        let g = self.grade.as_ref()?;
-        g.film.as_ref().and_then(clean_look).or_else(|| {
-            let cdl = g.look.as_ref().and_then(clean_cdl).map(|c| c.to_json());
-            clean_look(&serde_json::json!({ "cdl": cdl, "preset": g.preset }))
-        })
-    }
-
-    /// The film's finishing, checked.
-    pub fn finish(&self) -> Option<crate::creative::Finish> {
-        self.grade.as_ref()?.finish.as_ref().and_then(crate::creative::clean_finish)
-    }
-
-    /// A scene's look, by the name its clips carry.
-    pub fn scene_look(&self, scene: &str) -> Option<Look> {
-        self.grade.as_ref()?.scenes.get(scene).and_then(clean_look)
-    }
-
-    /// The looks a clip goes through after its own grade, in order: its scene's, then the film's.
-    pub fn looks_for(&self, c: &Clip) -> Vec<Look> {
-        c.scene().and_then(|s| self.scene_look(s)).into_iter().chain(self.film_look()).collect()
+    /// A clip's stacks in the order they apply: its base correction, its clip look, its scene's look, the timeline's
+    /// look, the finishing.
+    pub fn stacks_for(&self, c: &Clip) -> Vec<Stack> {
+        let g = self.grade.as_ref();
+        let scene = c.scene().and_then(|s| g?.scenes.get(s)).and_then(clean_stack);
+        [c.stack("base"), c.stack("clip"), scene, g.and_then(|g| g.timeline.as_ref()).and_then(clean_stack), g.and_then(|g| g.finish.as_ref()).and_then(clean_stack)]
+            .into_iter()
+            .flatten()
+            .collect()
     }
 }
 

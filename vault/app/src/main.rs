@@ -507,7 +507,6 @@ fn main() {
             proxies::vault_hold,
             proxies::color_lut,
             proxies::color_grade,
-            proxies::color_presets,
             proxies::color_frame,
             player::player_load,
             player::player_play,

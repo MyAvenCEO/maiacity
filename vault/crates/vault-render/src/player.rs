@@ -4,7 +4,7 @@
 //! its journey into ACEScct, its framing, balance, secondaries, grade and looks (one cube), the film's finishing, the
 //! output transform. An AVPlayer (the app's) plays it; an AVAssetImageGenerator reads single frames of it (the tests).
 
-use std::{ptr::NonNull, sync::Arc};
+use std::{collections::HashMap, ptr::NonNull, sync::Arc};
 
 use anyhow::{Context, Result};
 use block2::RcBlock;
@@ -19,24 +19,25 @@ use objc2_core_media::CMTimeRange;
 use crate::{
     Lut3d,
     av::cmtime,
-    creative::Finish,
     gpu::{Cube, Gpu},
     timeline::{Clip, FPS},
+    tools::Step,
 };
 
 /// One picture clip as it plays: the clip, its file (read in place), its journey into ACEScct (the kernel's
-/// arguments), and its grade and looks as one cube (none: it has none).
+/// arguments), and its grade: its stacks' steps (tools.rs) and their colour runs' cubes, by key.
 pub struct PlayClip {
     pub clip: Clip,
     pub source: vault_media::Source,
     pub journey: (f32, f32, [[f32; 3]; 3]),
-    pub looks: Option<Lut3d>,
+    pub steps: Vec<Step>,
+    pub cubes: HashMap<String, Lut3d>,
 }
 
-/// What plays: the picture clips, the film's finishing, the shape (for the framing) and the size frames are made at.
+/// What plays: the picture clips (each with its whole grade, the finishing too), the shape (for the framing) and the
+/// size frames are made at.
 pub struct Program {
     pub clips: Vec<PlayClip>,
-    pub finish: Option<Finish>,
     pub aspect: String,
     pub width: u32,
     pub height: u32,
@@ -106,10 +107,11 @@ impl Program {
             };
             let cct = gpu.journey(&upright, p.journey)?;
             let framed = gpu.frame_to(&cct, w, h, p.clip.frame_for(&self.aspect))?;
-            if let Some(lut) = &p.looks
-                && !cubes.contains_key(&p.clip.id)
-            {
-                cubes.insert(p.clip.id.clone(), gpu.cube(lut));
+            // its runs' cubes, once each (by key: two clips of one grade share them)
+            for (key, lut) in &p.cubes {
+                if !cubes.contains_key(key) {
+                    cubes.insert(key.clone(), gpu.cube(lut));
+                }
             }
             let n = (t * FPS as f64).round() as u64;
             let id = p.clip.id.clone();
@@ -131,8 +133,7 @@ impl Program {
                 tracks.insert(id.clone(), Track { at: n, face });
                 Ok(face)
             };
-            let cube = if p.looks.is_some() { cubes.get(&p.clip.id) } else { None };
-            let pic = crate::render::chain_with(gpu, &framed, w, h, &p.clip, cube, self.finish.as_ref(), n, &mut face_of)?;
+            let pic = crate::render::chain_with(gpu, &framed, w, h, &p.steps, cubes, n, &mut face_of)?;
             Ok((gpu.output(&pic)?, gpu.context()))
         })
     }
@@ -212,11 +213,16 @@ fn tracing_warn(msg: &str) {
 mod tests {
     use super::*;
 
-    fn program(looks: Option<Lut3d>) -> Program {
+    fn program(look: Option<Lut3d>) -> Program {
         let clip: Clip = serde_json::from_value(serde_json::json!({ "id": "a", "track": "V1", "start": 0, "in": 0, "dur": 2, "hash": "a" })).unwrap();
         let source = vault_media::Source::blob(Arc::new(Vec::new()), "a.mp4");
         let journey = vault_media::cst::journey("acescct").unwrap().kernel_args();
-        Program { clips: vec![PlayClip { clip, source, journey, looks }], finish: None, aspect: "16:9".into(), width: 64, height: 36, output: Lut3d::identity(17) }
+        // a look as one cube step (its key), else no grade
+        let (steps, cubes) = match look {
+            Some(l) => (vec![Step::Cube { key: "look".into(), run: crate::tools::Run { parts: vec![] } }], HashMap::from([("look".to_string(), l)])),
+            None => (vec![], HashMap::new()),
+        };
+        Program { clips: vec![PlayClip { clip, source, journey, steps, cubes }], aspect: "16:9".into(), width: 64, height: 36, output: Lut3d::identity(17) }
     }
 
     fn centre(img: &crate::gpu::Image) -> [f32; 3] {

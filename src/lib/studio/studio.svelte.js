@@ -19,8 +19,8 @@ import {
 	queueRender,
 	saveTimeline
 } from '$lib/auth/client';
-import { ODT, PROFILES, WORKING, asStudio, clean, cleanBalance, gradesFor, isCache, isSequence, looksFor, presetOf, profileFor, proxyFor } from './color.js';
-import { filmLut, gradeLut, nativeLut, nativePresets } from './luts.js';
+import { ODT, PROFILES, WORKING, asStudio, isCache, isSequence, profileFor, proxyFor } from './color.js';
+import { filmLut, gradeLut, nativeLut } from './luts.js';
 import { cached, evaluate, saveSpec, shotAt } from './shots.js';
 import { WorldViewer } from './world.svelte.js';
 import { captionWordsOf, hasSound, lineWords, phraseBreak, rewordPhrase, stepOpen, transcriptOf, transcriptState } from './transcript.js';
@@ -184,8 +184,6 @@ export class Studio {
 	lutFrom = $state('none');
 	/** @type {Record<string, Lut | null>} */
 	luts = $state({});
-	/** the grade presets, as Rust holds them (`color_presets`) @type {import('./luts.js').Preset[]} */
-	presets = $state([]);
 	/** the Audio tab: how the timeline sounds, clip by clip (render.rs `measure_sound`), and whether it is being measured */
 	/** @type {any} */
 	loud = $state(null);
@@ -445,31 +443,28 @@ export class Studio {
 		return profileFor(it).profile;
 	}
 	/**
-	 * A clip's own grade, on every tab.
-	 * @param {Clip | null | undefined} c @returns {Cdl[]}
+	 * A clip's whole grade as stacks of tools, in the order they apply (game/film/grade-tools.js): its base correction,
+	 * its clip look, its scene's look, the timeline's look, the finishing.
+	 * @param {Clip | null | undefined} c @returns {any[]}
 	 */
-	gradesOf(c) {
-		return gradesFor(c, this.current);
+	stacksOf(c) {
+		const g = /** @type {any} */ (this.current?.grade ?? {});
+		const st = /** @type {any} */ (c)?.stacks ?? {};
+		const scene = c?.script?.scene ? g.scenes?.[c.script.scene] : null;
+		return [st.base, st.clip, scene, g.timeline, g.finish].filter((x) => x?.tools?.length);
 	}
+
 	/**
-	 * The looks a clip goes through after its own grade: its scene's, then the film's.
-	 * @param {Clip | null | undefined} c @returns {import('$lib/auth/client').Look[]}
+	 * A grade's cube as the Mac baked it (`gradeLut`: every colour tool of the stacks), at once when it is here; else
+	 * null, and the world is drawn again when it comes.
+	 * @param {any[]} stacks @returns {import('./luts.js').Lut | null}
 	 */
-	looksOf(c) {
-		return looksFor(c, this.current);
-	}
-	/**
-	 * A grade's cube as the Mac baked it (`gradeLut`), at once when it is here; else null, and the world is drawn again
-	 * when it comes.
-	 * @param {import('$lib/auth/client').Balance | null} balance @param {Cdl[]} grades
-	 * @param {import('$lib/auth/client').Look[]} [looks] @returns {import('./luts.js').Lut | null}
-	 */
-	cubeFor(balance, grades, looks = []) {
-		const key = JSON.stringify([balance, grades, looks]);
+	cubeFor(stacks) {
+		const key = JSON.stringify(stacks);
 		if (this.#cubes.has(key)) return this.#cubes.get(key) ?? null;
 		this.#cubes.set(key, null);
 		if (this.#cubes.size > 24) this.#cubes.delete(/** @type {string} */ (this.#cubes.keys().next().value));
-		gradeLut(balance, grades, looks)
+		gradeLut(stacks)
 			.then((l) => (this.#cubes.set(key, l), this.driveWorld()))
 			.catch(() => this.#cubes.delete(key));
 		return null;
@@ -491,10 +486,7 @@ export class Studio {
 	liveTimeline() {
 		return { ...$state.snapshot(this.current), clips: $state.snapshot(this.clips) };
 	}
-	/** A clip's balance as the viewer shows it, on every tab. @param {Clip | null | undefined} c */
-	balanceOf(c) {
-		return c?.balance ?? null;
-	}
+
 
 	// ── loading ──────────────────────────────────────────────────────────────
 	async load() {
@@ -558,7 +550,6 @@ export class Studio {
 		const got = await Promise.all(wanted.map(async ([name, profile]) => /** @type {const} */ ([name, await nativeLut(profile).catch(() => null)])));
 		this.luts = Object.fromEntries(got.filter(([, l]) => l));
 		this.lutFrom = this.luts[ODT] ? 'mac' : 'none';
-		if (!this.presets.length) this.presets = await nativePresets().catch(() => []);
 	}
 
 	/** The render queue (C6, `GET /api/film/jobs`), rendered by the Mac app — renders and hero frames. */
@@ -1163,8 +1154,8 @@ export class Studio {
 		const spec = cached(c.shot, c.shotVersion)?.spec;
 		if (!spec) return;
 		// the view film mode draws through: the clip's grade (balance, its CDL, the film's look: the Mac's cube) and the output
-		const grades = this.gradesOf(c), balance = this.balanceOf(c), looks = this.looksOf(c);
-		const grade = grades.length || balance || looks.length ? this.cubeFor(balance, grades, looks) : null;
+		const stacks = this.stacksOf(c);
+		const grade = stacks.length ? this.cubeFor(stacks) : null;
 		this.world.show({ spec, t: this.shotTime(c), shape: /** @type {Shape} */ (this.viewShape), ...hd(this.viewShape), view: { lut: filmLut(this.luts['odt-rec709'] ?? null), grade: filmLut(grade) } });
 	}
 
@@ -1481,21 +1472,6 @@ export class Studio {
 		} finally {
 			this.loudMeasuring = false;
 		}
-	}
-	/**
-	 * The selected picture clip's balance layers (null: as shot).
-	 * @param {import('$lib/auth/client').Balance | null} b
-	 */
-	setBalance(b) {
-		if (!this.sel) return;
-		this.patchClip(this.sel.id, { balance: cleanBalance(b) ?? undefined });
-	}
-	/** @param {Cdl | null} g */
-	setGrade(g) {
-		if (this.gradeTarget === 'film' || !this.sel || this.sel.track !== 'V1') {
-			const preset = presetOf(g, this.presets);
-			this.setMeta({ grade: { look: clean(g), ...(preset && preset !== 'neutral' ? { preset } : {}) } });
-		} else this.patchClip(this.sel.id, { grade: clean(g) });
 	}
 	/** @param {string} id @param {Shape} shape @param {ClipFrame | null} f */
 	setFrame(id, shape, f) {

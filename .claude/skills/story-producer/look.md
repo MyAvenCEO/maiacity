@@ -37,19 +37,20 @@ top, never the other way round.**
   - saturation and skin
 - **`grade_look { looks: true }`** and **`grade_scopes { looks: true }`** read the same things on the shots, through
   their whole chain. Compare them zone by zone with the references.
-- **`looks`** shows the film's look, each scene's, and the scenes with their shots in order. **`look_set { scene?,
-  look }`** sets one of them. Without a scene, it sets the film's.
-  - A look has: `cdl` or `preset`, `contrast` (around `pivot`), `split: { shadows: { hue, amount }, highlights: {
-    hue, amount }, balance }`, `hue: [[hue°, shift°]…]`, `hue_sat: [[hue°, factor]…]`, `hue_lum: [[hue°, stops]…]` (density: darker foliage or
-    sky, −2…2), `hi_sat` (the highlights' saturation: below 1, a sky clipped in camera goes back to white instead of
-    taking the white balance's and the split's tint), `sat`, `lut` (a `.cube`'s
-    hash, ACEScct in and out) and `strength`.
+- **The grade is stacks of tools** (game/film/grade-tools.json, one registry; the maths in Rust only). **`grade_tools`**
+  lists every tool, its controls, their ranges and defaults. **`grade_stacks { id }`** shows a timeline's whole grade;
+  **`grade_stack { timeline, stack, clip?, scene?, set? }`** reads or sets one stack:
+  - `base` (a shot's base correction), `clip` (a shot's clip look), `scene` (a scene's look: by `scene`, or a `clip` of
+    it), `timeline` (the timeline's look), `finish` (the finishing). They apply in that order.
+  - A stack: `{ strength?, tools: [{ tool, on?, ...controls }] }`, the tools in the order they apply. Colour tools:
+    `balance`, `cdl`, `contrast`, `split`, `hue` (hue/hue_sat/hue_lum curves and `sat`), `hi_sat`, `lut`. Textures:
+    `pop`, `halation`, `bloom`, `grain`, `vignette`.
+  - **Masks are groups:** a `window` (ellipse or rect, x, y, w, h, angle, feather, invert, `track: "face"`) or a `key`
+    (hue, width, sat_lo/hi, luma_lo/hi, soft) holds its own `tools`, applied only inside it, by `mix`. Any tool goes
+    in; a key inside a window applies where both are. A mask can sit in any stack (a sky held in a scene's look, a
+    face lifted in a shot's).
   - Hues are the vectorscope's, as the display shows them: the skin line at 123°, orange about 110–140°, foliage
     green about 200–240°, teal and cyan about 270–300°.
-- **`grade_secondary { clip, secondaries }`** sets up to 4 per shot. Each has a `key` (hue [centre°, width°], sat
-  [lo, hi] × 100, luma [lo, hi] IRE, soft) and/or a `window` (ellipse or rect, x, y, w, h, angle, feather, invert, or
-  `track: "face"`), plus an `adjust` (the balance's controls) and a `mix`.
-- **`grade_finish { finish }`** sets `pop`, `halation`, `bloom`, `grain` and `vignette`.
 - **`render_frame`** makes a hero frame through everything.
 
 ## Teal and orange, without ruining skin
@@ -110,7 +111,7 @@ A look alone gave a flat, tinted picture: the colours moved but the image stayed
      - Blues and purples (320–345°, hoodies, jeans) towards teal (−10…−18°).
    - `hue_sat`: skin 1.2; blues and purples 0.6.
    - `hue_lum`: greens −0.7 stops, yellow-greens −0.35. Denser foliage, but not so much that the person pops off it.
-2. **Per-shot trim (`grade_clip`, the Grade layer): the low key.** About a stop down and a slope of 1.3 around mid
+2. **Per-shot trim (a `cdl` tool on the shot's clip look, `grade_stack { stack: "clip" }`): the low key.** About a stop down and a slope of 1.3 around mid
    grey, as one CDL: slope k, offset 0.414·(1 − k) + stops / 17.52. The balance stays the base correction; the mood
    lives here, per shot, so every shot can land on the same key.
 3. **Finishing:** vignette 0.65 (size 0.85, soft), grain 0.12 (0.25 read as noise on the 4K master).

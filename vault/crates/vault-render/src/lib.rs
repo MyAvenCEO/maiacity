@@ -31,6 +31,7 @@ pub mod qc;
 pub mod render;
 pub mod sound;
 pub mod timeline;
+pub mod tools;
 
 pub use output::{Lut3d, Output};
 pub use render::{Delivery, Library, Media, Options, Plate, Render, api_accepts, grading_still, grading_still_and_preview, hero_frame, measure, measure_sound, render, stats};

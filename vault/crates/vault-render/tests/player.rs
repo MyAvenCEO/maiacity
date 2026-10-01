@@ -61,14 +61,16 @@ fn program(file: &std::path::Path, clip: serde_json::Value) -> Program {
     let clip: Clip = serde_json::from_value(clip).unwrap();
     let source = vault_media::Source::blob(Arc::new(std::fs::read(file).unwrap()), "a.mp4");
     let journey = vault_media::cst::journey("rec709").unwrap().kernel_args();
-    Program {
-        clips: vec![PlayClip { clip, source, journey, looks: None }],
-        finish: None,
-        aspect: "16:9".into(),
-        width: 320,
-        height: 180,
-        output: Lut3d::from_rgb("odt", 33, vault_media::aces2::bake_cube(33)).unwrap(),
-    }
+    let output = Lut3d::from_rgb("odt", 33, vault_media::aces2::bake_cube(33)).unwrap();
+    // its grade: its own stacks as steps, their colour runs baked
+    let stacks: Vec<vault_render::tools::Stack> = ["base", "clip"].iter().filter_map(|k| clip.stack(k)).collect();
+    let refs: Vec<&vault_render::tools::Stack> = stacks.iter().collect();
+    let steps = vault_render::tools::compile(&refs, &output);
+    let cubes = vault_render::tools::runs(&steps)
+        .into_iter()
+        .map(|(k, r)| (k.clone(), Lut3d::from_rgb(&k, 17, vault_render::tools::bake(&r, &Default::default(), &output, 17)).unwrap()))
+        .collect();
+    Program { clips: vec![PlayClip { clip, source, journey, steps, cubes }], aspect: "16:9".into(), width: 320, height: 180, output }
 }
 
 #[test]
@@ -79,7 +81,7 @@ fn every_frame_plays_through_its_grade_and_a_gap_is_black() {
     let clip = json!({ "id": "a", "track": "V1", "start": 0.5, "in": 0, "dur": 1.5, "hash": "a" });
     let plain = frame_at(Arc::new(program(&file, clip.clone())), 1.0);
     let mut lifted = clip.clone();
-    lifted["balance"] = json!({ "exposure": 1 });
+    lifted["stacks"] = json!({ "base": { "tools": [{ "tool": "balance", "exposure": 1 }] } });
     let brighter = frame_at(Arc::new(program(&file, lifted)), 1.0);
     // the clip's own balance: a stop brighter on the display
     assert!(brighter[1] > plain[1] + 0.05, "plain {plain:?}, a stop up {brighter:?}");
