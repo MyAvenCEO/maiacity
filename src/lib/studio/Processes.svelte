@@ -1,20 +1,19 @@
 <!--
-	Processes: what starts the work (the watchers' rules, in the aside: when → then, how each one looks; a rule picked
-	shows only its kind of job) and everything this Mac runs, in one place — the Mac's jobs (vault/app jobs.rs), live. Each lane runs one job
-	at a time (the GPU: proxies, grading stills, world proxies, renders, hero frames; speech: transcripts; the AI:
-	analyses; the disk and the line: sound records, files kept, ingests): what runs now and how far, what waits and why,
-	what comes next (to the front, or off the queue), and the history (a failed one made again).
+	Jobs: everything this Mac runs, live (vault/app jobs.rs). The aside lists the rules that start jobs by themselves, a
+	line each; the one picked is described at the top (when it fires, what it makes, how it looks, the code that keeps it,
+	how its jobs stand) and filters the rest to its kind. Below: the lanes in one strip (each runs one job at a time),
+	what runs and waits (to the front, or off the queue), and the history (a failed one made again).
 -->
 <script>
 	import { onDestroy, onMount } from 'svelte';
 
 	/** @typedef {{ id: string, kind: string, lane: 'gpu' | 'speech' | 'ai' | 'io', subject: string, name: string, state: 'queued' | 'waiting' | 'running' | 'done' | 'failed' | 'cancelled', stage: string, progress: number, priority: number, queued: string, started: string | null, ended: string | null, error: string | null }} Job */
-	/** @typedef {{ id: string, when: string, then: string, kind: string, watch: string }} Rule */
+	/** @typedef {{ id: string, name: string, when: string, then: string, kind: string, lane: string, watch: string, code: string }} Rule */
 
 	const LANES = /** @type {const} */ ([
 		{ id: 'gpu', label: 'GPU', what: 'proxies, grading stills, graded stills, world proxies, renders' },
 		{ id: 'speech', label: 'Speech', what: 'transcripts, on this Mac' },
-		{ id: 'ai', label: 'AI', what: 'shot analyses and hero frames, still previews' },
+		{ id: 'ai', label: 'AI', what: 'shot analyses and hero frames' },
 		{ id: 'io', label: 'Disk & line', what: 'ingests, sound records, files kept' }
 	]);
 	/** @type {Record<string, string>} */
@@ -129,244 +128,308 @@
 	});
 	/** @param {Job} j */
 	const off = (j) => kindFilter !== 'all' && j.kind !== kindFilter;
+	/** what runs and waits, the running first, each lane's queue in the order it will run */
+	const now_and_next = $derived(
+		[...active].sort((a, b) => {
+			const run = (/** @type {Job} */ j) => (j.state === 'running' || j.state === 'waiting' ? 0 : 1);
+			return run(a) - run(b) || a.priority - b.priority || a.queued.localeCompare(b.queued);
+		})
+	);
+	const shownActive = $derived(now_and_next.filter((j) => !off(j)));
+	/** @param {string} id */
+	const laneLabel = (id) => LANES.find((l) => l.id === id)?.label ?? id;
+	/** the picked rule's jobs today: done, and how long they took on average */
+	const doneOf = $derived.by(() => {
+		if (!rule) return { n: 0, avg: null };
+		const day = new Date().toDateString();
+		const d = history.filter((j) => j.kind === rule?.kind && j.state === 'done' && j.ended && new Date(j.ended).toDateString() === day);
+		const ts = d.map(took).filter((t) => t !== null);
+		return { n: d.length, avg: ts.length ? ts.reduce((a, b) => a + b, 0) / ts.length : null };
+	});
 </script>
 
-<section class="processes">
+<section class="jobs">
 	<aside class="rules">
-		<h3>Watching <small>what starts each job by itself</small></h3>
-		<button class="rule all" class:on={!rule} onclick={() => (rule = null)}>Every job</button>
-		<ol>
-			{#each rules as r (r.id)}
-				{@const c = counts(r.kind)}
-				<li>
-					<button class="rule" class:on={rule?.id === r.id} class:live={c.run > 0} onclick={() => (rule = rule?.id === r.id ? null : r)}>
-						<span class="when">{r.when}</span>
-						<span class="then"><span class="kind">{KIND[r.kind] ?? r.kind}</span> {r.then}</span>
-						<span class="foot">
-							<span class="watch">{r.watch}</span>
-							{#if c.run}<b class="n run">{c.run} running</b>{/if}
-							{#if c.next}<b class="n">{c.next} next</b>{/if}
-							{#if c.bad}<b class="n bad">{c.bad} failed</b>{/if}
-						</span>
-					</button>
-				</li>
-			{:else}
-				<li class="dim">The Mac app tells its rules once it is up to date.</li>
-			{/each}
-		</ol>
+		<p class="cap">Rules <small>start jobs by themselves</small></p>
+		<button class="rule" class:on={!rule} onclick={() => (rule = null)}>
+			<span class="dot all"></span><span class="nm">All jobs</span>
+			<span class="ct">{#if active.length}<b class="run">{active.length}</b>{/if}</span>
+		</button>
+		{#each rules as r (r.id)}
+			{@const c = counts(r.kind)}
+			<button class="rule" class:on={rule?.id === r.id} title="When {r.when} → {r.then}" onclick={() => (rule = rule?.id === r.id ? null : r)}>
+				<span class="dot {r.lane}" class:live={c.run > 0}></span><span class="nm">{r.name}</span>
+				<span class="ct">
+					{#if c.run}<b class="run">{c.run}</b>{/if}
+					{#if c.next}<b>{c.next}</b>{/if}
+					{#if c.bad}<b class="bad">{c.bad}</b>{/if}
+				</span>
+			</button>
+		{:else}
+			<p class="dim small">The Mac app tells its rules once it is up to date.</p>
+		{/each}
 	</aside>
 
-	<div class="work">
-	<header>
-		<h2>Processes</h2>
-		<p class="lead">{rule ? `${KIND[rule.kind] ?? rule.kind} jobs — ${rule.then}` : 'Everything this Mac works on, one job at a time in each lane.'}</p>
-		<div class="holds">
-			{#each holds as h (h)}<span class="hold">{h === 'ingest' ? 'Waiting for the ingest to finish' : h === 'memory' ? 'Waiting for memory' : `Uploads paused: ${h}`}</span>{/each}
-		</div>
-	</header>
-	{#if error}<p class="error">{error}</p>{/if}
-
-	<div class="lanes">
-		{#each LANES as l (l.id)}
-			{@const run = running(l.id)}
-			{@const next = queued(l.id)}
-			<article class="lane" class:busy={run.length > 0}>
-				<h3>{l.label} <small>{l.what}</small></h3>
-				{#each run as j (j.id)}
-					{@const eta = left(j)}
-					<div class="job now" class:wait={j.state === 'waiting'} class:off={off(j)}>
-						<div class="top"><span class="kind">{KIND[j.kind] ?? j.kind}</span><b title={j.name}>{j.name || j.subject.slice(0, 12)}</b><span class="pct">{Math.round(j.progress * 100)}%</span></div>
-						<div class="bar"><i style:width="{j.progress * 100}%"></i></div>
-						<p class="meta">{j.stage} · {clock(since(j.started ?? j.queued))}{eta !== null ? ` · about ${clock(eta)} left` : ''}</p>
-					</div>
-				{:else}
-					<p class="idle">Idle</p>
-				{/each}
-				{#if next.length}
-					<p class="next">Next ({next.length})</p>
-					<ol>
-						{#each next.slice(0, 12) as j, i (j.id)}
-							<li class:off={off(j)}>
-								<span class="kind">{KIND[j.kind] ?? j.kind}</span>
-								<span class="name" title={j.name}>{j.name || j.subject.slice(0, 12)}</span>
-								<span class="dim">{clock(since(j.queued))}</span>
-								{#if i > 0}<button class="ghost small" onclick={() => bump(j.id)} title="Run it next">↑</button>{/if}
-								<button class="ghost small" onclick={() => cancel(j.id)} title="Take it off the queue">×</button>
-							</li>
-						{/each}
-						{#if next.length > 12}<li class="dim">and {next.length - 12} more</li>{/if}
-					</ol>
-				{/if}
-			</article>
-		{/each}
-	</div>
-
-	<div class="history">
-		<div class="hhead">
-			<h3>History</h3>
-			<div class="filters">
-				<button class:on={stateFilter === 'all'} onclick={() => (stateFilter = 'all')}>All</button>
-				<button class:on={stateFilter === 'failed'} onclick={() => (stateFilter = 'failed')}>Failed{failed ? ` (${failed})` : ''}</button>
-				<button class:on={stateFilter === 'done'} onclick={() => (stateFilter = 'done')}>Done</button>
-				{#if rule}<span class="sep"></span><button class="on" onclick={() => (rule = null)}>{KIND[rule.kind] ?? rule.kind} ×</button>{/if}
+	<div class="main">
+		<header>
+			<h2>Jobs</h2>
+			<div class="holds">
+				{#each holds as h (h)}<span class="hold">{h === 'ingest' ? 'Waiting for the ingest to finish' : h === 'memory' ? 'Waiting for memory' : `Uploads paused: ${h}`}</span>{/each}
 			</div>
+		</header>
+		{#if error}<p class="error">{error}</p>{/if}
+
+		<article class="detail">
+			{#if rule}
+				{@const c = counts(rule.kind)}
+				<div class="dhead">
+					<span class="dot {rule.lane}"></span>
+					<h3>{rule.name}</h3>
+					<span class="kind">{KIND[rule.kind] ?? rule.kind}</span>
+					<span class="kind">{laneLabel(rule.lane)} lane</span>
+					<button class="ghost small x" onclick={() => (rule = null)} title="Every job">×</button>
+				</div>
+				<dl>
+					<dt>When</dt><dd>{rule.when}</dd>
+					<dt>Then</dt><dd>{rule.then}</dd>
+					<dt>Looks</dt><dd>{rule.watch}</dd>
+					<dt>Code</dt><dd><code>{rule.code}</code></dd>
+				</dl>
+				<div class="stats">
+					<span><b>{c.run}</b> running</span>
+					<span><b>{c.next}</b> waiting</span>
+					<span><b>{doneOf.n}</b> done today{doneOf.avg !== null ? ` · ${clock(doneOf.avg)} each` : ''}</span>
+					<span class:bad={c.bad > 0}><b>{c.bad}</b> failed</span>
+				</div>
+			{:else}
+				<div class="dhead"><span class="dot all"></span><h3>All jobs</h3></div>
+				<p class="dim small">Everything this Mac works on, one job at a time in each lane. Pick a rule to see what starts it, what it makes and the code that keeps it.</p>
+				<div class="stats">
+					<span><b>{active.filter((j) => j.state === 'running' || j.state === 'waiting').length}</b> running</span>
+					<span><b>{active.filter((j) => j.state === 'queued').length}</b> waiting</span>
+					<span class:bad={failed > 0}><b>{failed}</b> failed</span>
+					<span><b>{rules.length}</b> rules</span>
+				</div>
+			{/if}
+		</article>
+
+		<div class="lanes">
+			{#each LANES as l (l.id)}
+				{@const run = running(l.id)}
+				{@const next = queued(l.id)}
+				{@const j = run[0]}
+				<div class="lane" class:busy={!!j} class:off={!!j && off(j)} title={l.what}>
+					<span class="dot {l.id}" class:live={!!j}></span>
+					<span class="ln">{l.label}</span>
+					{#if j}
+						<span class="jn" class:wait={j.state === 'waiting'} title="{KIND[j.kind] ?? j.kind} · {j.name} · {j.stage}">{j.name || j.subject.slice(0, 12)}</span>
+						<span class="pct">{Math.round(j.progress * 100)}%</span>
+					{:else}<span class="jn dim">idle</span>{/if}
+					{#if next.length}<span class="nx">+{next.length}</span>{/if}
+					{#if j}<i class="bar" style:width="{j.progress * 100}%"></i>{/if}
+				</div>
+			{/each}
 		</div>
-		<table>
-			<tbody>
-				{#each shown as j (j.id + (j.ended ?? ''))}
-					{@const t = took(j)}
-					<tr class={j.state}>
-						<td class="when">{j.ended ? when(j.ended) : ''}</td>
-						<td><span class="kind">{KIND[j.kind] ?? j.kind}</span></td>
-						<td class="name" title={j.name}>{j.name || j.subject.slice(0, 12)}</td>
-						<td class="st">{j.state}</td>
-						<td class="why" title={j.error ?? ''}>{j.state === 'done' ? (t !== null ? `in ${clock(t)}` : '') : (j.error ?? j.stage)}</td>
-						<td>{#if j.state === 'failed' || j.state === 'cancelled'}<button class="ghost small" onclick={() => retry(j.id)}>Again</button>{/if}</td>
-					</tr>
-				{:else}
-					<tr><td class="dim" colspan="6">Nothing yet.</td></tr>
-				{/each}
-			</tbody>
-		</table>
-	</div>
+
+		{#if shownActive.length}
+			<div class="block">
+				<p class="cap">Now and next</p>
+				<table>
+					<tbody>
+						{#each shownActive.slice(0, 40) as j (j.id)}
+							{@const eta = left(j)}
+							<tr class={j.state}>
+								<td class="when">{laneLabel(j.lane)}</td>
+								<td><span class="kind">{KIND[j.kind] ?? j.kind}</span></td>
+								<td class="name" title={j.name}>{j.name || j.subject.slice(0, 12)}</td>
+								<td class="st">{j.state === 'queued' ? `waits ${clock(since(j.queued))}` : `${Math.round(j.progress * 100)}%`}</td>
+								<td class="why">{j.state === 'queued' ? '' : `${j.stage} · ${clock(since(j.started ?? j.queued))}${eta !== null ? ` · ${clock(eta)} left` : ''}`}</td>
+								<td class="acts">
+									{#if j.state === 'queued'}
+										<button class="ghost small" onclick={() => bump(j.id)} title="Run it next">↑</button>
+										<button class="ghost small" onclick={() => cancel(j.id)} title="Take it off the queue">×</button>
+									{/if}
+								</td>
+							</tr>
+						{/each}
+						{#if shownActive.length > 40}<tr><td class="dim" colspan="6">and {shownActive.length - 40} more</td></tr>{/if}
+					</tbody>
+				</table>
+			</div>
+		{/if}
+
+		<div class="block">
+			<div class="hhead">
+				<p class="cap">History</p>
+				<div class="filters">
+					<button class:on={stateFilter === 'all'} onclick={() => (stateFilter = 'all')}>All</button>
+					<button class:on={stateFilter === 'failed'} onclick={() => (stateFilter = 'failed')}>Failed{failed ? ` (${failed})` : ''}</button>
+					<button class:on={stateFilter === 'done'} onclick={() => (stateFilter = 'done')}>Done</button>
+				</div>
+			</div>
+			<table>
+				<tbody>
+					{#each shown as j (j.id + (j.ended ?? ''))}
+						{@const t = took(j)}
+						<tr class={j.state}>
+							<td class="when">{j.ended ? when(j.ended) : ''}</td>
+							<td><span class="kind">{KIND[j.kind] ?? j.kind}</span></td>
+							<td class="name" title={j.name}>{j.name || j.subject.slice(0, 12)}</td>
+							<td class="st">{j.state}</td>
+							<td class="why" title={j.error ?? ''}>{j.state === 'done' ? (t !== null ? `in ${clock(t)}` : '') : (j.error ?? j.stage)}</td>
+							<td class="acts">{#if j.state === 'failed' || j.state === 'cancelled'}<button class="ghost small" onclick={() => retry(j.id)}>Again</button>{/if}</td>
+						</tr>
+					{:else}
+						<tr><td class="dim" colspan="6">Nothing yet.</td></tr>
+					{/each}
+				</tbody>
+			</table>
+		</div>
 	</div>
 </section>
 
 <style>
-	.processes {
+	.jobs {
 		grid-area: main;
 		display: grid;
-		grid-template-columns: minmax(16rem, 21rem) 1fr;
+		grid-template-columns: 14rem 1fr;
 		min-height: 0;
 		background: var(--panel);
+		font-size: 0.8rem;
 	}
 
+	/* ── the rules: a line each ── */
 	.rules {
 		display: flex;
 		flex-direction: column;
-		gap: 0.5rem;
+		gap: 1px;
 		min-height: 0;
 		overflow: auto;
-		padding: 1.2rem 0.8rem 2rem 1.2rem;
+		padding: 0.9rem 0.5rem 1.5rem;
 		border-right: 1px solid var(--edge);
 		background: var(--bg);
 	}
 
-	.rules ol {
-		gap: 0.35rem;
+	.cap {
+		margin: 0 0 0.35rem;
+		font-size: 0.66rem;
+		font-weight: 600;
+		letter-spacing: 0.08em;
+		text-transform: uppercase;
+		color: var(--dim);
 	}
 
-	.rules li {
-		display: block;
+	.cap small {
+		font-weight: 400;
+		letter-spacing: 0;
+		text-transform: none;
+	}
+
+	.rules .cap {
+		padding: 0 0.45rem;
 	}
 
 	.rule {
 		display: flex;
-		flex-direction: column;
-		gap: 0.3rem;
+		align-items: center;
+		gap: 0.45rem;
 		width: 100%;
-		padding: 0.55rem 0.65rem;
-		border: 1px solid var(--edge);
-		border-radius: 8px;
-		background: var(--raised);
+		height: 1.75rem;
+		padding: 0 0.45rem;
+		border: 0;
+		border-radius: 5px;
+		background: transparent;
 		font: inherit;
+		font-size: 0.78rem;
 		text-align: left;
-		color: var(--ink);
+		color: var(--ink-soft);
 		cursor: pointer;
 	}
 
 	.rule:hover {
-		border-color: var(--edge-strong);
+		background: var(--hover);
+		color: var(--ink);
 	}
 
 	.rule.on {
-		border-color: var(--accent);
-		box-shadow: inset 3px 0 0 var(--accent);
+		background: var(--raised);
+		box-shadow: inset 2px 0 0 var(--accent);
+		color: var(--ink);
 	}
 
-	.rule.live {
-		background: color-mix(in srgb, var(--accent) 8%, var(--raised));
+	.nm {
+		flex: 1;
+		min-width: 0;
+		overflow: hidden;
+		white-space: nowrap;
+		text-overflow: ellipsis;
 	}
 
-	.rule.all {
-		padding: 0.35rem 0.65rem;
-		font-size: 0.78rem;
-	}
-
-	.rule .when {
-		font-size: 0.75rem;
-		color: var(--ink-soft);
-	}
-
-	.rule .when::before {
-		content: 'When ';
-		font-weight: 600;
-		color: var(--dim);
-	}
-
-	.rule .then {
-		font-size: 0.8rem;
-		line-height: 1.35;
-	}
-
-	.rule .foot {
+	.ct {
 		display: flex;
-		flex-wrap: wrap;
-		align-items: center;
-		gap: 0.35rem;
-		font-size: 0.66rem;
+		gap: 0.2rem;
 	}
 
-	.watch {
-		color: var(--dim);
-	}
-
-	.n {
-		padding: 0 0.4rem;
+	.ct b {
+		min-width: 1.1rem;
+		padding: 0 0.3rem;
 		border-radius: 999px;
 		background: var(--hover);
-		font-weight: 600;
+		font-size: 0.64rem;
+		text-align: center;
 		color: var(--ink-soft);
 	}
 
-	.n.run {
+	.ct b.run {
 		background: var(--accent);
 		color: var(--on-accent);
 	}
 
-	.n.bad {
+	.ct b.bad {
 		color: var(--bad);
 	}
 
-	.work {
-		display: flex;
-		flex-direction: column;
-		gap: 1rem;
-		min-height: 0;
-		min-width: 0;
-		overflow: auto;
-		padding: 1.2rem 1.6rem 2rem;
+	/* a lane's colour, on its rules and in the strip */
+	.dot {
+		flex: none;
+		width: 0.45rem;
+		height: 0.45rem;
+		border-radius: 50%;
+		background: var(--dim);
+		opacity: 0.55;
 	}
 
-	.off {
-		opacity: 0.35;
+	.dot.gpu { background: #6aa7ff; }
+	.dot.speech { background: #b98cff; }
+	.dot.ai { background: #e8b04a; }
+	.dot.io { background: #5fc4a0; }
+	.dot.all { background: var(--ink-soft); }
+
+	.dot.live {
+		opacity: 1;
+		box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 35%, transparent);
+	}
+
+	/* ── the main area ── */
+	.main {
+		display: flex;
+		flex-direction: column;
+		gap: 0.8rem;
+		min-width: 0;
+		min-height: 0;
+		overflow: auto;
+		padding: 0.9rem 1.2rem 2rem;
 	}
 
 	header {
 		display: flex;
-		flex-wrap: wrap;
-		align-items: baseline;
-		gap: 0.4rem 1rem;
+		align-items: center;
+		gap: 0.8rem;
 	}
 
 	h2 {
 		margin: 0;
-		font-size: 1.2rem;
-	}
-
-	.lead {
-		margin: 0;
-		color: var(--ink-soft);
+		font-size: 1.1rem;
 	}
 
 	.holds {
@@ -376,11 +439,11 @@
 	}
 
 	.hold {
-		padding: 0.15rem 0.6rem;
+		padding: 0.1rem 0.55rem;
 		border: 1px solid var(--warn-line);
 		border-radius: 999px;
 		background: var(--warn-bg);
-		font-size: 0.75rem;
+		font-size: 0.7rem;
 		color: var(--warn);
 	}
 
@@ -389,19 +452,105 @@
 		color: var(--bad);
 	}
 
+	/* the rule picked, described */
+	.detail {
+		display: flex;
+		flex-direction: column;
+		gap: 0.55rem;
+		padding: 0.75rem 0.9rem;
+		border: 1px solid var(--edge);
+		border-radius: 8px;
+		background: var(--bg);
+	}
+
+	.dhead {
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+	}
+
+	.dhead .dot {
+		width: 0.6rem;
+		height: 0.6rem;
+		opacity: 1;
+	}
+
+	h3 {
+		margin: 0 0.3rem 0 0;
+		font-family: inherit;
+		font-size: 0.95rem;
+		font-weight: 600;
+	}
+
+	.dhead .x {
+		margin-left: auto;
+	}
+
+	dl {
+		display: grid;
+		grid-template-columns: 3.6rem 1fr;
+		gap: 0.25rem 0.8rem;
+		margin: 0;
+	}
+
+	dt {
+		font-size: 0.66rem;
+		font-weight: 600;
+		letter-spacing: 0.06em;
+		line-height: 1.6;
+		text-transform: uppercase;
+		color: var(--dim);
+	}
+
+	dd {
+		margin: 0;
+		line-height: 1.4;
+		color: var(--ink);
+	}
+
+	code {
+		font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+		font-size: 0.72rem;
+		color: var(--ink-soft);
+	}
+
+	.stats {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.3rem 1.2rem;
+		padding-top: 0.45rem;
+		border-top: 1px solid var(--edge);
+		color: var(--ink-soft);
+	}
+
+	.stats b {
+		font-variant-numeric: tabular-nums;
+		color: var(--ink);
+	}
+
+	.stats .bad,
+	.stats .bad b {
+		color: var(--bad);
+	}
+
+	/* the lanes, one strip */
 	.lanes {
 		display: grid;
-		grid-template-columns: repeat(auto-fit, minmax(17rem, 1fr));
-		gap: 0.8rem;
+		grid-template-columns: repeat(4, minmax(0, 1fr));
+		gap: 0.4rem;
 	}
 
 	.lane {
+		position: relative;
 		display: flex;
-		flex-direction: column;
-		gap: 0.5rem;
-		padding: 0.8rem;
+		align-items: center;
+		gap: 0.4rem;
+		min-width: 0;
+		height: 2rem;
+		padding: 0 0.6rem;
+		overflow: hidden;
 		border: 1px solid var(--edge);
-		border-radius: 10px;
+		border-radius: 6px;
 		background: var(--bg);
 	}
 
@@ -409,114 +558,127 @@
 		border-color: var(--edge-strong);
 	}
 
-	h3 {
-		margin: 0;
-		font-size: 0.9rem;
+	.lane.off {
+		opacity: 0.45;
 	}
 
-	h3 small {
-		display: block;
-		font-weight: 400;
-		font-size: 0.7rem;
-		color: var(--dim);
+	.ln {
+		flex: none;
+		font-weight: 600;
 	}
 
-	.job {
-		display: flex;
-		flex-direction: column;
-		gap: 0.3rem;
-		padding: 0.55rem 0.6rem;
-		border-radius: 8px;
-		background: var(--raised);
-	}
-
-	.top {
-		display: flex;
-		align-items: baseline;
-		gap: 0.4rem;
-		min-width: 0;
-	}
-
-	.top b {
+	.jn {
 		flex: 1;
 		min-width: 0;
 		overflow: hidden;
-		font-weight: 600;
 		white-space: nowrap;
 		text-overflow: ellipsis;
+		color: var(--ink-soft);
+	}
+
+	.jn.wait {
+		color: var(--warn);
 	}
 
 	.pct {
 		font-family: ui-monospace, 'SF Mono', Menlo, monospace;
-		font-size: 0.75rem;
+		font-size: 0.7rem;
 		color: var(--accent);
 	}
 
-	.bar {
-		height: 6px;
-		overflow: hidden;
-		border-radius: 3px;
-		background: var(--lane);
+	.nx {
+		font-size: 0.68rem;
+		color: var(--dim);
 	}
 
-	.bar i {
-		display: block;
-		height: 100%;
+	.lane .bar {
+		position: absolute;
+		left: 0;
+		bottom: 0;
+		height: 2px;
 		background: var(--accent);
 		transition: width 0.3s ease;
 	}
 
-	.job.wait .bar i {
-		background: var(--warn-line);
-	}
-
-	.meta {
-		margin: 0;
-		font-size: 0.72rem;
-		color: var(--ink-soft);
-	}
-
-	.job.wait .meta {
-		color: var(--warn);
-	}
-
-	.idle {
-		margin: 0;
-		font-size: 0.78rem;
-		color: var(--dim);
-	}
-
-	.next {
-		margin: 0.2rem 0 0;
-		font-size: 0.7rem;
-		text-transform: uppercase;
-		letter-spacing: 0.06em;
-		color: var(--dim);
-	}
-
-	ol {
+	/* the tables */
+	.block {
 		display: flex;
 		flex-direction: column;
-		gap: 0.15rem;
-		margin: 0;
-		padding: 0;
-		list-style: none;
 	}
 
-	li {
+	.hhead {
 		display: flex;
 		align-items: center;
-		gap: 0.4rem;
-		min-width: 0;
-		font-size: 0.75rem;
+		gap: 0.6rem;
 	}
 
-	li .name {
-		flex: 1;
-		min-width: 0;
+	.hhead .cap {
+		margin: 0;
+	}
+
+	.filters {
+		display: flex;
+		gap: 0.25rem;
+	}
+
+	.filters button {
+		padding: 0.05rem 0.5rem;
+		border: 1px solid var(--edge);
+		border-radius: 999px;
+		background: var(--raised);
+		font: inherit;
+		font-size: 0.7rem;
+		color: var(--ink-soft);
+		cursor: pointer;
+	}
+
+	.filters button.on {
+		border-color: var(--accent);
+		color: var(--ink);
+	}
+
+	table {
+		width: 100%;
+		margin-top: 0.3rem;
+		border-collapse: collapse;
+		font-size: 0.76rem;
+	}
+
+	td {
+		padding: 0.22rem 0.45rem;
+		border-bottom: 1px solid var(--edge);
+		vertical-align: middle;
+	}
+
+	td.when {
+		width: 7rem;
+		white-space: nowrap;
+		color: var(--dim);
+	}
+
+	td.name {
+		max-width: 20rem;
 		overflow: hidden;
 		white-space: nowrap;
 		text-overflow: ellipsis;
+	}
+
+	td.st {
+		white-space: nowrap;
+	}
+
+	td.why {
+		max-width: 28rem;
+		overflow: hidden;
+		white-space: nowrap;
+		text-overflow: ellipsis;
+		color: var(--ink-soft);
+	}
+
+	td.acts {
+		width: 4rem;
+		text-align: right;
+		white-space: nowrap;
 	}
 
 	.kind {
@@ -528,84 +690,17 @@
 		color: var(--ink-soft);
 	}
 
-	.dim {
-		color: var(--dim);
-	}
-
-	.history {
-		display: flex;
-		flex-direction: column;
-		gap: 0.5rem;
-	}
-
-	.hhead {
-		display: flex;
-		flex-wrap: wrap;
-		align-items: center;
-		gap: 0.6rem;
-	}
-
-	.filters {
-		display: flex;
-		flex-wrap: wrap;
-		gap: 0.3rem;
-	}
-
-	.filters button {
-		padding: 0.1rem 0.55rem;
-		border: 1px solid var(--edge);
-		border-radius: 999px;
-		background: var(--raised);
-		font: inherit;
-		font-size: 0.72rem;
-		color: var(--ink-soft);
-		cursor: pointer;
-	}
-
-	.filters button.on {
-		border-color: var(--accent);
-		color: var(--ink);
-	}
-
-	.sep {
-		width: 1px;
-		background: var(--edge);
-	}
-
-	table {
-		width: 100%;
-		border-collapse: collapse;
-		font-size: 0.78rem;
-	}
-
-	td {
-		padding: 0.3rem 0.5rem;
-		border-bottom: 1px solid var(--edge);
-		vertical-align: top;
-	}
-
-	td.when {
-		white-space: nowrap;
-		color: var(--dim);
-	}
-
-	td.name {
-		max-width: 22rem;
-		overflow: hidden;
-		white-space: nowrap;
-		text-overflow: ellipsis;
-	}
-
-	td.why {
-		max-width: 30rem;
-		overflow: hidden;
-		white-space: nowrap;
-		text-overflow: ellipsis;
-		color: var(--ink-soft);
-	}
-
 	tr.done .st {
 		color: var(--ok);
+	}
+
+	tr.running .st {
+		color: var(--accent);
+	}
+
+	tr.waiting .st,
+	tr.waiting .why {
+		color: var(--warn);
 	}
 
 	tr.failed .st,
@@ -613,7 +708,17 @@
 		color: var(--bad);
 	}
 
-	tr.cancelled .st {
+	tr.cancelled .st,
+	tr.queued .st {
 		color: var(--dim);
+	}
+
+	.dim {
+		color: var(--dim);
+	}
+
+	.small {
+		margin: 0;
+		font-size: 0.75rem;
 	}
 </style>

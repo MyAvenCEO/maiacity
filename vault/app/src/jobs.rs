@@ -501,39 +501,31 @@ pub async fn ready_to_run(vault: &vault_core::Vault, kind: Kind, subject: &str) 
 #[derive(Serialize)]
 pub struct Rule {
     pub id: &'static str,
+    /// a few words a person knows it by
+    pub name: &'static str,
     pub when: &'static str,
     pub then: &'static str,
     pub kind: Kind,
     pub watch: &'static str,
+    /// the code that keeps it
+    pub code: &'static str,
 }
 
 /// Every rule, in the order the work flows: a file in → its proxy → its stills and words → its analysis and hero frame
-/// → its graded still → the film. Each names the code that keeps it (the comment), so the list and the code agree.
+/// → its graded still → the film. Each names the code that keeps it (`code`), so the list and the code agree.
 pub const RULES: &[Rule] = &[
-    // main.rs ingest
-    Rule { id: "ingest", when: "Files are brought in (dropped, or from a card or a drive)", then: "Ingest: hashed, into the vault, described", kind: Kind::Ingest, watch: "when asked" },
-    // proxies.rs sweep, auto_proxy
-    Rule { id: "proxy", when: "A video original or an EXR sequence comes in (a display still never: it is its own picture) — or its colour journey becomes known", then: "Proxy: ACEScct, to play and grade on", kind: Kind::Proxy, watch: "at ingest · every 10 min" },
-    // proxies.rs grading_still_at (with the proxy), backfill_still
-    Rule { id: "still", when: "A video's proxy is made (its journey known)", then: "Grading still (4K ACEScct) and preview, at its hero frame — the middle until one is picked", kind: Kind::Still, watch: "with the proxy · every 10 min" },
-    // proxies.rs marked_at
-    Rule { id: "still-hero", when: "A video's hero frame moves (the analysis picks it, or a person sets it)", then: "Grading still and preview again, at the new moment", kind: Kind::Still, watch: "every 10 min" },
-    // transcripts.rs sweep
-    Rule { id: "transcript", when: "A video or sound original is on this Mac without its words (or with an older model's)", then: "Transcript: words with their times, on this Mac", kind: Kind::Transcript, watch: "at ingest · every 10 min" },
-    // sound.rs round
-    Rule { id: "sound", when: "A recording is on this Mac without its sound record", then: "Sound record: its tracks, length and start timecode", kind: Kind::Sound, watch: "at ingest · every 10 min" },
-    // analyse/mod.rs round
-    Rule { id: "analysis", when: "A picture's proxy is here and its words have settled (in the stories in scope)", then: "AI analysis: tags, cues, takes — and its hero frame", kind: Kind::Analysis, watch: "after a proxy or transcript · every 10 min" },
-    // api/src/renders.ts queueStillsOf → render.rs graded_still_job
-    Rule { id: "graded", when: "A timeline save changes how a file looks (its stacks of tools, its 16:9 framing, its scene's or the timeline's look)", then: "Graded still: its grading still through the clip's grade, as its preview — the one before goes", kind: Kind::Frame, watch: "on save · render queue every few s" },
-    // api/src/renders.ts queueStillOfFile (proxies.rs grading_still_at)
-    Rule { id: "graded-again", when: "A file's grading still is made again (a new hero frame)", then: "Graded still again, through the clip that last graded it", kind: Kind::Frame, watch: "with the grading still" },
-    // world.rs proxies
-    Rule { id: "world-proxy", when: "A timeline plays a world shot version without its proxy", then: "World proxy: the shot rendered in the app's own world", kind: Kind::WorldProxy, watch: "every minute" },
-    // api/src/renders.ts queueRender → render.rs render_job
-    Rule { id: "render", when: "A render is asked for (the Render tab, or an agent)", then: "Render: every delivery, levelled, into the vault and the calendar", kind: Kind::Render, watch: "render queue every few s" },
-    // keep.rs round
-    Rule { id: "keep", when: "A file this Mac or a drive keeps (its story's rules) is not here — or no longer kept", then: "Kept: fetched over iroh and pinned — or let go of", kind: Kind::Keep, watch: "every minute" },
+    Rule { id: "ingest", name: "Ingest", when: "Files are brought in (dropped, or from a card or a drive)", then: "Ingest: hashed, into the vault, described", kind: Kind::Ingest, watch: "when asked", code: "main.rs ingest" },
+    Rule { id: "proxy", name: "Proxy", when: "A video original or an EXR sequence comes in (a display still never: it is its own picture) — or its colour journey becomes known", then: "Proxy: ACEScct, to play and grade on", kind: Kind::Proxy, watch: "at ingest · every 10 min", code: "proxies.rs sweep, auto_proxy" },
+    Rule { id: "still", name: "Grading still", when: "A video's proxy is made (its journey known)", then: "Grading still (4K ACEScct) and preview, at its hero frame — the middle until one is picked", kind: Kind::Still, watch: "with the proxy · every 10 min", code: "proxies.rs grading_still_at (with the proxy), backfill_still" },
+    Rule { id: "still-hero", name: "Hero frame moved", when: "A video's hero frame moves (the analysis picks it, or a person sets it)", then: "Grading still and preview again, at the new moment", kind: Kind::Still, watch: "every 10 min", code: "proxies.rs marked_at" },
+    Rule { id: "transcript", name: "Transcript", when: "A video or sound original is on this Mac without its words (or with an older model's)", then: "Transcript: words with their times, on this Mac", kind: Kind::Transcript, watch: "at ingest · every 10 min", code: "transcripts.rs sweep" },
+    Rule { id: "sound", name: "Sound record", when: "A recording is on this Mac without its sound record", then: "Sound record: its tracks, length and start timecode", kind: Kind::Sound, watch: "at ingest · every 10 min", code: "sound.rs round" },
+    Rule { id: "analysis", name: "AI analysis", when: "A picture's proxy is here and its words have settled (in the stories in scope)", then: "AI analysis: tags, cues, takes — and its hero frame", kind: Kind::Analysis, watch: "after a proxy or transcript · every 10 min", code: "analyse/mod.rs round" },
+    Rule { id: "graded", name: "Graded still on save", when: "A timeline save changes how a file looks (its stacks of tools, its 16:9 framing, its scene's or the timeline's look)", then: "Graded still: its grading still through the clip's grade, as its preview — the one before goes", kind: Kind::Frame, watch: "on save · render queue every few s", code: "api/src/renders.ts queueStillsOf → render.rs graded_still_job" },
+    Rule { id: "graded-again", name: "Graded still, new hero", when: "A file's grading still is made again (a new hero frame)", then: "Graded still again, through the clip that last graded it", kind: Kind::Frame, watch: "with the grading still", code: "api/src/renders.ts queueStillOfFile (proxies.rs grading_still_at)" },
+    Rule { id: "world-proxy", name: "World proxy", when: "A timeline plays a world shot version without its proxy", then: "World proxy: the shot rendered in the app's own world", kind: Kind::WorldProxy, watch: "every minute", code: "world.rs proxies" },
+    Rule { id: "render", name: "Render", when: "A render is asked for (the Render tab, or an agent)", then: "Render: every delivery, levelled, into the vault and the calendar", kind: Kind::Render, watch: "render queue every few s", code: "api/src/renders.ts queueRender → render.rs render_job" },
+    Rule { id: "keep", name: "Keep on stores", when: "A file this Mac or a drive keeps (its story's rules) is not here — or no longer kept", then: "Kept: fetched over iroh and pinned — or let go of", kind: Kind::Keep, watch: "every minute", code: "keep.rs round" },
 ];
 
 // ── the studio's view ─────────────────────────────────────────────────────────────────────────────────────────
@@ -545,8 +537,8 @@ pub struct Jobs {
     pub history: Vec<Job>,
     /// what holds the lanes now: an ingest, memory
     pub holds: Vec<String>,
-    /// what starts the jobs
-    pub rules: &'static [Rule],
+    /// what starts the jobs, each with the lane its job runs in
+    pub rules: Vec<serde_json::Value>,
 }
 
 pub fn list(limit: usize) -> Jobs {
@@ -556,7 +548,7 @@ pub fn list(limit: usize) -> Jobs {
             let run = |j: &Job| !matches!(j.state, State::Running | State::Waiting) as u8;
             run(a).cmp(&run(b)).then(a.priority.cmp(&b.priority)).then(a.queued.cmp(&b.queued))
         });
-        Jobs { active, history: r.history.iter().take(limit).cloned().collect(), holds: Vec::new(), rules: RULES }
+        Jobs { active, history: r.history.iter().take(limit).cloned().collect(), holds: Vec::new(), rules: RULES.iter().map(|r| json!({ "id": r.id, "name": r.name, "when": r.when, "then": r.then, "kind": r.kind, "lane": r.kind.lane(), "watch": r.watch, "code": r.code })).collect() }
     })
 }
 

@@ -19,7 +19,7 @@
 		{ id: 'grade', label: 'Grade', key: '7' },
 		{ id: 'render', label: 'Render', key: '8' },
 		{ id: 'deliverables', label: 'Deliverables', key: '9' },
-		{ id: 'processes', label: 'Processes', key: '0' }
+		{ id: 'processes', label: 'Jobs', key: '0' }
 	];
 	/** @param {Tab} t */
 	function go(t) {
