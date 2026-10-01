@@ -15,9 +15,10 @@ pub const TRIES: u64 = 3;
 pub const BATCH: usize = 12;
 /// Frames of one file at most (an hour: one every six seconds); picture changes come on top, then all are thinned.
 pub const MAX_FRAMES: f64 = 600.0;
-/// The long edge of a frame the model sees, and of a thumbnail.
+/// The long edge of a frame the model sees.
 pub const EDGE: u32 = 768;
-pub const THUMB_EDGE: u32 = 640;
+/// The long edge of a still's preview (a video's is its grading still's frame, 1920 wide).
+pub const PREVIEW_EDGE: u32 = 1920;
 /// A frame whose picture changed this much from the one before (the mean difference of a small grey copy of both,
 /// 0…1 of display code values) is sampled too — a cut, a light switched on. (ffmpeg's scene score before: 0.35 on
 /// its own scale.)
@@ -151,9 +152,9 @@ pub fn waits_for_words(meta: &Value, transcript: Option<&Value>, sound: Option<&
     !since.is_some_and(|h| h >= WORDS_WAIT_HOURS)
 }
 
-/// Does it still need its first thumbnail? (Its record names none, or one that is not in the vault.)
-pub fn needs_thumbnail(record: Option<&Value>, known: &HashSet<String>) -> bool {
-    !record.and_then(|r| r["thumbnail"].as_str()).is_some_and(|t| known.contains(t))
+/// Does a still need its preview? (Its description names none, or one that is not in the vault.)
+pub fn needs_preview(meta: &Value, known: &HashSet<String>) -> bool {
+    !meta["meta"]["preview"].as_str().is_some_and(|p| known.contains(p))
 }
 
 /// Seconds between the regular frames: one a second, fewer for a long file.
@@ -372,28 +373,23 @@ pub fn thumbnail_time(reduce: Option<&Value>, picks: &[(f64, String)], cues: &[V
     snap(seconds / 2.0)
 }
 
-/// A thumbnail's file name and batch: beside its original (the same story), class proxy, role thumbnail — its
-/// description as the server wrote it before (title, tags, `meta.role`, `thumbnail_of`, `t`, `edge`, `why`).
-pub fn thumbnail_batch(original: &Meta, t: f64, why: &str) -> (String, Batch) {
+/// A still's preview: its file name and batch — beside its original (the same story), class proxy, role preview.
+pub fn preview_batch(original: &Meta) -> (String, Batch) {
     let stem = std::path::Path::new(&original.original_name)
         .file_stem()
         .map(|x| x.to_string_lossy().into_owned())
         .filter(|x| !x.is_empty())
         .unwrap_or_else(|| original.hash.chars().take(12).collect());
-    let mut m = json!({ "role": "thumbnail", "thumbnail_of": original.hash, "t": (t * 1000.0).round() / 1000.0, "edge": THUMB_EDGE });
-    if !why.is_empty() {
-        m["why"] = json!(why);
-    }
     let batch = Batch {
-        session: format!("thumbnail of {}", original.hash),
-        tags: vec!["proxy".into(), "thumbnail".into()],
-        title: Some(format!("{stem} · thumbnail")),
-        meta: m,
+        session: format!("preview of {}", original.hash),
+        tags: vec!["preview".into()],
+        title: Some(format!("{stem} · preview")),
+        meta: json!({ "role": "preview", "preview_of": original.hash, "edge": PREVIEW_EDGE }),
         story: Some(original.story.clone()).filter(|s| !s.is_empty()),
         class: Some("proxy".into()),
         ..Default::default()
     };
-    (format!("{stem}.thumb.jpg"), batch)
+    (format!("{stem}.preview.jpg"), batch)
 }
 
 /// A JPEG as base64 (what a data URL carries).
@@ -488,8 +484,8 @@ mod tests {
         assert!(due(Some(&json!({ "state": "failed: x", "tries": 2, "of": P })), &src));
         assert!(!due(Some(&json!({ "state": "failed: x", "tries": 3, "of": P })), &src));
         assert!(due(Some(&json!({ "state": "analysing", "progress": 0.4, "of": P })), &src));
-        assert!(needs_thumbnail(None, &set(&[])) && needs_thumbnail(Some(&json!({ "thumbnail": "t" })), &set(&[])));
-        assert!(!needs_thumbnail(Some(&json!({ "thumbnail": "t" })), &set(&["t"])));
+        assert!(needs_preview(&json!({}), &set(&[])) && needs_preview(&json!({ "meta": { "preview": "p" } }), &set(&[])));
+        assert!(!needs_preview(&json!({ "meta": { "preview": "p" } }), &set(&["p"])));
         // another Mac at work an hour ago: its own; gone quiet for six hours, or the server's old run: taken over
         let now = "2026-09-30T12:00:00Z";
         assert!(elsewhere(Some(&json!({ "state": "analysing", "device": "mac2", "updated": "2026-09-30T11:00:00Z" })), "me", now));
@@ -596,15 +592,14 @@ mod tests {
     }
 
     #[test]
-    fn a_thumbnail_lives_beside_its_original() {
-        let orig = Meta { hash: O.into(), original_name: "C0042.MP4".into(), story: "s1".into(), class: "original".into(), ..Default::default() };
-        let (name, b) = thumbnail_batch(&orig, 14.0, "his face in the light");
-        assert_eq!(name, "C0042.thumb.jpg");
+    fn a_still_s_preview_lives_beside_its_original() {
+        let orig = Meta { hash: O.into(), original_name: "sky.png".into(), story: "s1".into(), class: "original".into(), ..Default::default() };
+        let (name, b) = preview_batch(&orig);
+        assert_eq!(name, "sky.preview.jpg");
         assert_eq!(b.class.as_deref(), Some("proxy"));
         assert_eq!(b.story.as_deref(), Some("s1"));
-        assert_eq!(b.title.as_deref(), Some("C0042 · thumbnail"));
-        assert_eq!(b.tags, vec!["proxy", "thumbnail"]);
-        assert_eq!(b.meta, json!({ "role": "thumbnail", "thumbnail_of": O, "t": 14.0, "edge": 640, "why": "his face in the light" }));
+        assert_eq!(b.title.as_deref(), Some("sky · preview"));
+        assert_eq!(b.meta, json!({ "role": "preview", "preview_of": O, "edge": 1920 }));
         let as_meta = json!({ "kind": "image", "class": "proxy", "tags": b.tags, "meta": b.meta });
         assert!(!wants(&as_meta));
     }

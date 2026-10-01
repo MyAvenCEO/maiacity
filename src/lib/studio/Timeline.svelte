@@ -55,16 +55,15 @@
 	/** the shot under the playhead */
 	const nowId = $derived(grading ? pics.find((c) => s.time >= c.start && s.time < c.start + c.dur)?.id ?? null : null);
 	/**
-	 * A shot's picture for the strip: its original's preview (the grading still's frame through the output transform),
-	 * else its thumbnail.
+	 * A shot's picture for the strip: its original's preview (its grading still's frame, graded once a clip grades it).
 	 * @param {Clip} c
 	 */
 	const previewOf = (c) => {
 		if (!c.hash) return null;
 		const orig = String(s.byHash.get(c.hash)?.meta?.proxy_of ?? c.hash);
 		const meta = s.byHash.get(orig)?.meta;
-		const h = [meta?.preview, meta?.thumbnail].find((v) => typeof v === 'string' && /^[0-9a-f]{64}$/.test(v));
-		return h ? raw(/** @type {string} */ (h)) : null;
+		const h = meta?.preview;
+		return typeof h === 'string' && /^[0-9a-f]{64}$/.test(h) ? raw(h) : null;
 	};
 	// every picture clip's thumbnail as the film will show it: its grading still through its whole grade (balance,
 	// secondaries, grade, looks, finishing), made by the Mac a moment after any of it changes — the Grade strip and the

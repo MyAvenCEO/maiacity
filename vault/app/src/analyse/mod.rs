@@ -16,9 +16,11 @@
 //! (with `progress` 0…1) · done · failed: …; `of` = the hash of what was looked at (a new proxy is analysed again).
 //! One Mac at a time: another device's analysis that is under way is left to it (unless it went quiet for six hours).
 //!
-//! The thumbnail: a small display-referred JPEG (640 px long edge) of the file's best frame, a vault file of its own
-//! (class proxy, `role: "thumbnail"`, `thumbnail_of`, beside its original), named in the record's `thumbnail`. A first
-//! one (the middle frame) is made as soon as the proxy is here, before any model answers; the analysis replaces it.
+//! The thumbnail: the moment the analysis picks as the file's best (`thumbnail: { t, why }` in the record) — no file of
+//! its own. A video's grading still and preview are made at that moment (proxies.rs `marked_at`); its preview is the
+//! one picture of it everywhere (graded once a clip grades it). A still has no grading still: its preview — a
+//! display-referred JPEG, 1920 on its long edge (class proxy, `role: "preview"`, `preview_of`, named in the original's
+//! `meta.preview`) — is made here as soon as its proxy is. A smaller picture, if ever wanted, is made of the preview.
 //!
 //! One file at a time, after its transcript has settled (a recording's words go with its frames), the smallest first;
 //! for the stories in scope (the Day 01 story unless set otherwise: `prem::stories`). A round after an ingest, a
@@ -140,13 +142,13 @@ async fn round(handle: &AppHandle, vault: &Arc<Vault>, no_thumb: &mut HashSet<St
     let mut sources: Vec<(String, Source)> = wanted.iter().filter_map(|(h, m)| Some(((*h).clone(), plan::source(h, m, &metas, &proxy_of, &held)?))).collect();
     sources.sort_by_key(|(_, src)| src.size());
 
-    // a first thumbnail for everything that has none, as soon as its proxy is here — no model needed
+    // a still's preview, as soon as its proxy is here — no model needed (a video's comes with its grading still)
     let known: HashSet<String> = metas.keys().cloned().collect();
     for (hex, src) in &sources {
-        if plan::needs_thumbnail(records.get(hex), &known) && !no_thumb.contains(hex) && !plan::elsewhere(records.get(hex), &me, &now) {
-            if let Err(e) = first_thumbnail(vault, hex, src).await {
+        if !src.movie() && plan::needs_preview(&metas[hex], &known) && !no_thumb.contains(hex) {
+            if let Err(e) = still_preview(vault, hex, src).await {
                 no_thumb.insert(hex.clone());
-                tracing::warn!("thumbnail of {}: {e}", &hex[..12]);
+                tracing::warn!("preview of {}: {e}", &hex[..12]);
             }
         }
     }
@@ -196,30 +198,17 @@ async fn open(vault: &Vault, src: &Source) -> Result<vault_media::Source, Ask> {
     crate::blob::source(vault, src.hash(), &name).await.map_err(waiting)
 }
 
-/// The source's middle frame as the file's thumbnail, before any model looked at it.
-async fn first_thumbnail(vault: &Arc<Vault>, hex: &str, src: &Source) -> Result<(), String> {
+/// A still's preview into the vault (its own file, beside its original), named in the original's `meta.preview`;
+/// any other preview of it goes.
+async fn still_preview(vault: &Arc<Vault>, hex: &str, src: &Source) -> Result<(), String> {
     let file = open(vault, src).await.map_err(|e| e.to_string())?;
-    let t = if src.movie() {
-        let f = file.clone();
-        let p = tokio::task::spawn_blocking(move || objc2::rc::autoreleasepool(|_| vault_media::probe(f))).await.map_err(|e| e.to_string())?.map_err(|e| format!("{e:#}"))?;
-        Some(p.seconds / 2.0)
-    } else {
-        None
-    };
-    let thumb = thumbnail(vault, hex, file, src.acescct(), t, "").await?;
-    patch(vault, hex, fields(&[("thumbnail", json!(thumb))])).await.map_err(|e| e.to_string())?;
-    tracing::info!("first thumbnail of {}", &hex[..12]);
-    Ok(())
-}
-
-/// A thumbnail into the vault (its own file, beside its original), its hash.
-async fn thumbnail(vault: &Arc<Vault>, hex: &str, file: vault_media::Source, acescct: bool, t: Option<f64>, why: &str) -> Result<String, String> {
     let hash: Hash = hex.parse().map_err(|e| format!("{e}"))?;
     let original = vault.catalog.meta(hash).await.map_err(|e| format!("{e:#}"))?.ok_or("the description is not here")?;
-    let bytes = tokio::task::spawn_blocking(move || frames::one(file, t, plan::THUMB_EDGE, acescct)).await.map_err(|e| e.to_string())?.map_err(|e| format!("{e:#}"))?;
-    let (name, batch) = plan::thumbnail_batch(&original, t.unwrap_or(0.0), why);
-    // its own folder: the file's name is the thumbnail's name in the vault
-    let dir = vault.ingest_dir().join(format!("thumb-{hex}"));
+    let acescct = src.acescct();
+    let bytes = tokio::task::spawn_blocking(move || frames::one(file, None, plan::PREVIEW_EDGE, acescct)).await.map_err(|e| e.to_string())?.map_err(|e| format!("{e:#}"))?;
+    let (name, batch) = plan::preview_batch(&original);
+    // its own folder: the file's name is the preview's name in the vault
+    let dir = vault.ingest_dir().join(format!("preview-{hex}"));
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
     let path = dir.join(&name);
     let made = async {
@@ -228,7 +217,18 @@ async fn thumbnail(vault: &Arc<Vault>, hex: &str, file: vault_media::Source, ace
     }
     .await;
     std::fs::remove_dir_all(&dir).ok();
-    Ok(made?.hash)
+    let made = made?.hash;
+    vault.catalog.describe(hash, &json!({ "meta": { "preview": made } })).await.map_err(|e| format!("{e:#}"))?;
+    for m in vault.catalog.list().await.map_err(|e| format!("{e:#}"))? {
+        if m.meta.get("preview_of").and_then(Value::as_str) == Some(hex)
+            && m.hash != made
+            && let Ok(h) = m.hash.parse::<Hash>()
+        {
+            vault.catalog.delete_file(h, "replaced by the still's new preview").await.ok();
+        }
+    }
+    tracing::info!("preview of {}", &hex[..12]);
+    Ok(())
 }
 
 /// One file; its own failure is written into its record (only a wait stops the round).
@@ -358,7 +358,7 @@ async fn analyse(auth: &crate::auth::Auth, vault: &Arc<Vault>, hex: &str, src: &
     };
     let mut record = plan::finish(merged, reduce.as_ref());
 
-    // the thumbnail the analysis picked
+    // the moment the analysis picked: the grading still and the preview are made at it (proxies.rs `marked_at`)
     tell("the thumbnail", 1.0);
     let cues = record["cues"].as_array().cloned().unwrap_or_default();
     let t = plan::thumbnail_time(reduce.as_ref(), &picks, &cues, &times, seconds);
@@ -369,24 +369,12 @@ async fn analyse(auth: &crate::auth::Auth, vault: &Arc<Vault>, hex: &str, src: &
         .or_else(|| picks.iter().find(|(p, _)| (p - t).abs() < 1e-6).map(|(_, w)| w.clone()))
         .unwrap_or_default();
     let hash: Hash = hex.parse().map_err(fail)?;
+    // a thumbnail file of before (the record named it by hash): the preview stands for it now
     let previous = vault.catalog.record(ANALYSIS, hash).await.ok().flatten().and_then(|r| r["thumbnail"].as_str().map(String::from));
-    match thumbnail(vault, hex, file, acescct, src.movie().then_some(t), &why).await {
-        Ok(h) => {
-            if let Some(old) = previous.filter(|o| *o != h) {
-                // one thumbnail per file: the one it replaces goes
-                if let Ok(o) = old.parse::<Hash>() {
-                    vault.catalog.delete_file(o, "replaced by the file's new thumbnail").await.ok();
-                }
-            }
-            record["thumbnail"] = json!(h);
-        }
-        Err(e) => {
-            tracing::warn!("thumbnail of {}: {e}", &hex[..12]);
-            if let Some(old) = previous {
-                record["thumbnail"] = json!(old);
-            }
-        }
+    if let Some(o) = previous.and_then(|o| o.parse::<Hash>().ok()) {
+        vault.catalog.delete_file(o, "the file's preview stands for its thumbnail").await.ok();
     }
+    record["thumbnail"] = json!({ "t": (t * 1000.0).round() / 1000.0, "why": why });
     let o = record.as_object_mut().unwrap();
     o.insert("state".into(), json!("done"));
     o.insert("progress".into(), json!(1.0));
