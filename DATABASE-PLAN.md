@@ -21,9 +21,9 @@ it is proven.
 - **Schemas are data** (Jazz 2): every schema version is a content-addressed JSON Schema, named by its hash, travelling
   in its own lane of the catalog. Every object records the schema it was written under and keeps it.
 - **Lenses translate between schema versions**, two-way and composable; an ambiguous change (a rename) is never guessed.
-- **One implementation, in Rust** (vault-core), for validation, lenses, merge and history: the studio, the MCP agents
-  and any later surface all go through it. The browser holds a live Loro mirror only where a person types (the text
-  editor), and exchanges update bytes with Rust.
+- **Loro only in Rust** (vault-core), with validation, lenses, merge and history: the studio, the MCP agents and any
+  later surface all go through it. The page holds no Loro at all — it sends edits through Tauri commands and redraws
+  from what Rust answers. One Loro, one encoding, nothing to keep in step between two runtimes.
 - **Prefix-safe keys** through one key builder; never write at a key that is a folder of others (except to delete it).
 - **Mac-native**: the Database tile exists in the Mac app only (the vault and iroh run there).
 
@@ -191,10 +191,12 @@ Each phase ends merged to main, with tests; the UI comes after the engine is pro
 ### P8 · Example 2 — A collaborative text document
 
 - **Schema** (`note`): `{ title: string, body: string ("x-loro": "text", rich), tags: array ("x-loro": "movable") }`.
-- **The editor**: the body in a rich-text editor bound to a live `loro-crdt` document in the page (Loro's ProseMirror or
-  CodeMirror binding — check the current packages), exchanging update bytes with the Rust engine (`db_commit` for local
-  updates; `db-changed` pushes remote ones). Typing commits are grouped (every pause, every N seconds), each a history
-  entry.
+- **The editor**: the body in a rich-text editor (ProseMirror or CodeMirror) with a thin binding of our own to the Rust
+  engine — no Loro in the page. The editor's inserts and deletes (index, length, text) go to Rust in small batches
+  (`db_text_edit`, a few ms apart; a Tauri call is about a millisecond); Rust applies them to the `LoroText` and pushes
+  others' changes back as deltas (`db-changed`). Cursors and selections are Loro's stable cursors, kept in Rust, so they
+  stay put when others type. Plain text first, then marks (bold, italic, headings). Typing commits are grouped (every
+  pause, every N seconds), each a history entry.
 - **Presence**: cursors and selections of others — Loro's ephemeral store, sent over **iroh-gossip** on a topic per
   document (never stored: presence is not history).
 - **History UI**: a timeline rail beside the text — versions grouped by session and author, a scrubber that shows the
@@ -211,7 +213,7 @@ Each phase ends merged to main, with tests; the UI comes after the engine is pro
 - Compaction thresholds and shallow snapshots for very long histories (measured on the text example).
 - Large values stay blobs referenced by hash (never inside a Loro document).
 - Per-collection keep rules (which store keeps which collection), like stories' rules.
-- Version pinning of `loro` / `loro-crdt` (one encoding across Rust and the browser), upgrade notes.
+- Version pinning of `loro` (Rust only), upgrade notes.
 - End-to-end tests with two real nodes (as the server's cold-storage test does), a crash mid-commit, a clock-skewed
   device (order must not depend on it).
 
@@ -225,7 +227,8 @@ schema; the studio's editing, grading and looks get history, branches and merge 
 
 ## 6. Risks and open questions
 
-- **Loro across Rust and wasm**: both must run the same encoding version; pin them together.
+- **The text binding is ours**: positions, batching, marks and cursor mapping between the editor and Rust's
+  `LoroText` — plain text first, measured for typing latency; Loro's own browser bindings stay a fallback if it bites.
 - **Validation of CRDT merges**: two valid concurrent edits can merge into an invalid state (e.g. two `status` writes
   are fine, but a merged list may break a `maxItems`). Policy: validate after import; an invalid merged state is flagged
   in the UI (and to agents), fixed by a normal commit — never silently dropped.
