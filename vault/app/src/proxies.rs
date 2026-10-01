@@ -413,20 +413,11 @@ async fn make(vault: &Vault, hex: &str, name: &str, source: PathBuf) -> Result<(
         return Ok(());
     }
 
-    // a display still at HD or smaller needs none: the viewer takes it through its input LUT as it is
-    if still {
-        let p = path.clone();
-        let (w, h) = tokio::task::spawn_blocking(move || -> anyhow::Result<(u32, u32)> {
-            Ok(vault_media::gpu::size_of(&*vault_media::gpu::load_image(&p.read_all()?)?))
-        })
-        .await
-        .map_err(|e| e.to_string())?
-        .map_err(|e| format!("{e:#}"))?;
-        let exr = profile != "srgb";
-        if !vault_media::still::still_needs_proxy(exr, w, h) {
-                vault.catalog.describe(hash, &json!({ "meta": { "proxy": format!("none: a {w}×{h} display still needs none") } })).await.ok();
-            return Ok(());
-        }
+    // a display still needs none, at any size: it is its own picture (the viewer takes it through its input LUT as it
+    // is); only a float still (EXR) gets one
+    if still && !vault_media::still::still_needs_proxy(profile != "srgb") {
+        vault.catalog.describe(hash, &json!({ "meta": { "proxy": "none: a display still is its own picture" } })).await.ok();
+        return Ok(());
     }
 
     at(hex, "making", 0.0);

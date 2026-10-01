@@ -146,14 +146,6 @@
 	}
 	const stepsOpen = (m: MediaItem) => [words(m), tags(m)].some((s) => !!s && stepOpen(s));
 	const stepsRunning = (m: MediaItem) => [words(m), tags(m)].some((s) => s?.state === 'running');
-	/** the words still to come in this story */
-	const wordsDue = $derived(mine.filter((m) => { const s = words(m); return !!s && stepOpen(s); }).length);
-	/** the transcript made again, here (a failed or empty one) */
-	async function again(m: MediaItem, e: Event) {
-		e.stopPropagation();
-		await command('vault_transcribe', { hash: m.hash }).catch((x) => (error = String(x)));
-		files = await listMedia().catch(() => files);
-	}
 	const thumbOf = (m: MediaItem) => (typeof m.meta?.preview === 'string' && /^[0-9a-f]{64}$/.test(m.meta.preview) ? m.meta.preview : null);
 
 	const complete = $derived(mine.filter(kept).length);
@@ -248,18 +240,6 @@
 	});
 </script>
 
-{#snippet step(s: Step | null, what: string, retry: MediaItem | null)}
-	{#if !s}<span class="none">—</span>
-	{:else if s.state === 'ready'}<span class="ok" title="{what}: {s.note}">✓</span>
-	{:else if s.state === 'running'}<span class="pct" title="{what}: {s.stage || s.note}">{Math.floor(s.progress * 100)}%</span>
-	{:else if s.state === 'queued'}<span class="wait" title="{what}: {s.note}">0%</span>
-	{:else if s.state === 'unknown'}<span class="wait" title="{what}: not started yet — it comes by itself">·</span>
-	{:else if s.state === 'none'}<span class="none" title="{what}: {s.note}">∅</span>
-	{:else if s.state === 'failed'}<span class="warn" title="{what}: failed, tries again by itself — {s.note}">↻</span>
-	{:else if retry}<button class="miss again" title="{what}: {s.note} — click to try again" onclick={(e) => again(retry, e)}>✗</button>
-	{:else}<span class="miss" title="{what}: {s.note}">✗</span>{/if}
-{/snippet}
-
 <div class="table">
 	{#if current}
 		<header>
@@ -271,7 +251,6 @@
 			<div class="state" class:ok={complete === mine.length && mine.length > 0}>
 				<strong>{complete} / {mine.length}</strong> files kept as the story asks · {gb(mine.reduce((a, m) => a + m.size, 0))}
 				{#if active.length}<br /><span class="live">↻ {active.length} on their way · {gb(active.reduce((a, t) => a + t.rate, 0))}/s</span>{/if}
-				{#if wordsDue}<br /><span class="live">✎ {wordsDue} recording{wordsDue === 1 ? '' : 's'} still to transcribe, on this Mac</span>{/if}
 			</div>
 		</header>
 
@@ -327,8 +306,6 @@
 						<th>File (BLAKE3)</th>
 						<th>Came in as · title</th>
 						<th>Colour · proxy</th>
-						<th class="c step" title="The words: transcribed on this Mac, on-device (Phonon-2) — by itself after the ingest">Words</th>
-						<th class="c step" title="The tags, cues and thumbnail: the shot analysis on this Mac (Prem's confidential Qwen, asked from here) — by itself once the proxy is made">Tags</th>
 						<th>Class</th>
 						<th class="r">Size</th>
 					</tr>
@@ -348,8 +325,6 @@
 							<td class="h">hashing…</td>
 							<td class="n">{landingHere.path.split('/').pop()}</td>
 							<td class="col"></td>
-							<td class="c step"></td>
-							<td class="c step"></td>
 							<td></td>
 							<td class="r">{gb(landingHere.size)}</td>
 						</tr>
@@ -378,8 +353,6 @@
 								<td class="h">—</td>
 								<td class="n sub">↳ {(r.coming.original_name ?? '').replace(/\.[^.]+$/, '')}.proxy</td>
 								<td class="col"><span class="dim">ACEScct</span></td>
-								<td class="c step"></td>
-								<td class="c step"></td>
 								<td><span class="cls proxy">proxy</span></td>
 								<td class="r"></td>
 							</tr>
@@ -413,17 +386,15 @@
 									<span class="prof">{colourOf(m) ? profileInfo(colourOf(m)).label : '—'}</span>
 								{:else if colourOf(m)}<span class="dim">{profileInfo(colourOf(m)).label}</span>{/if}
 							</td>
-							<td class="c step">{@render step(words(m), 'Words', m)}</td>
-							<td class="c step">{@render step(tags(m), 'Tags', null)}</td>
 							<td><span class="cls {classOf(m)}">{className(classOf(m))}</span></td>
 							<td class="r">{gb(m.size)}</td>
 						</tr>
 						{/if}
 					{:else}
-						<tr><td colspan="12" class="empty">{mine.length ? 'Nothing matches.' : 'No files in this story yet — ingest into it, or move files here.'}</td></tr>
+						<tr><td colspan="10" class="empty">{mine.length ? 'Nothing matches.' : 'No files in this story yet — ingest into it, or move files here.'}</td></tr>
 					{/each}
 					{#if rows.length > shown}
-						<tr><td colspan="12" class="more" {@attach more}>{rows.length - shown} more…</td></tr>
+						<tr><td colspan="10" class="more" {@attach more}>{rows.length - shown} more…</td></tr>
 					{/if}
 				</tbody>
 			</table>
@@ -470,14 +441,7 @@
 	.tier .miss { font-weight: 700; color: var(--bad); }
 	.tier .warn { font-weight: 700; color: var(--warn); }
 	.tier .wait { font-size: 0.72rem; font-variant-numeric: tabular-nums; color: var(--dim); }
-	.tier .none, .step .none { color: var(--edge); }
-	.step { width: 3rem; }
-	.step .ok { display: inline-grid; place-items: center; width: 1.25rem; height: 1.25rem; border-radius: 50%; background: var(--info); font-size: 0.7rem; font-weight: 700; color: var(--on-ink); }
-	.step .pct { font-size: 0.72rem; font-weight: 600; font-variant-numeric: tabular-nums; color: var(--warn); }
-	.step .wait { font-size: 0.72rem; font-variant-numeric: tabular-nums; color: var(--dim); }
-	.step .warn { font-weight: 700; color: var(--warn); }
-	.step .miss { font-weight: 700; color: var(--bad); }
-	.step .again { padding: 0 0.3rem; border: 1px solid #7a4a3c; border-radius: 4px; background: var(--raised); font: inherit; cursor: pointer; }
+	.tier .none { color: var(--edge); }
 	th.tier { text-align: center; }
 	.thumb { width: 2.6rem; padding: 0.2rem 0.3rem; }
 	.n.sub { padding-left: 1.4rem; color: var(--dim); }

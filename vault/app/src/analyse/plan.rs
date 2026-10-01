@@ -7,7 +7,6 @@ use std::collections::{HashMap, HashSet};
 
 use iroh_blobs::Hash;
 use serde_json::{Map, Value, json};
-use vault_core::{Meta, ingest::Batch};
 
 /// How often a file is tried before it waits for a person.
 pub const TRIES: u64 = 3;
@@ -17,8 +16,6 @@ pub const BATCH: usize = 12;
 pub const MAX_FRAMES: f64 = 600.0;
 /// The long edge of a frame the model sees.
 pub const EDGE: u32 = 768;
-/// The long edge of a still's preview (a video's is its grading still's frame, 1920 wide).
-pub const PREVIEW_EDGE: u32 = 1920;
 /// A frame whose picture changed this much from the one before (the mean difference of a small grey copy of both,
 /// 0…1 of display code values) is sampled too — a cut, a light switched on. (ffmpeg's scene score before: 0.35 on
 /// its own scale.)
@@ -152,10 +149,6 @@ pub fn waits_for_words(meta: &Value, transcript: Option<&Value>, sound: Option<&
     !since.is_some_and(|h| h >= WORDS_WAIT_HOURS)
 }
 
-/// Does a still need its preview? (Its description names none, or one that is not in the vault.)
-pub fn needs_preview(meta: &Value, known: &HashSet<String>) -> bool {
-    !meta["meta"]["preview"].as_str().is_some_and(|p| known.contains(p))
-}
 
 /// Seconds between the regular frames: one a second, fewer for a long file.
 pub fn interval(seconds: f64) -> f64 {
@@ -373,25 +366,6 @@ pub fn thumbnail_time(reduce: Option<&Value>, picks: &[(f64, String)], cues: &[V
     snap(seconds / 2.0)
 }
 
-/// A still's preview: its file name and batch — beside its original (the same story), class proxy, role preview.
-pub fn preview_batch(original: &Meta) -> (String, Batch) {
-    let stem = std::path::Path::new(&original.original_name)
-        .file_stem()
-        .map(|x| x.to_string_lossy().into_owned())
-        .filter(|x| !x.is_empty())
-        .unwrap_or_else(|| original.hash.chars().take(12).collect());
-    let batch = Batch {
-        session: format!("preview of {}", original.hash),
-        tags: vec!["preview".into()],
-        title: Some(format!("{stem} · preview")),
-        meta: json!({ "role": "preview", "preview_of": original.hash, "edge": PREVIEW_EDGE }),
-        story: Some(original.story.clone()).filter(|s| !s.is_empty()),
-        class: Some("proxy".into()),
-        ..Default::default()
-    };
-    (format!("{stem}.preview.jpg"), batch)
-}
-
 /// A JPEG as base64 (what a data URL carries).
 pub fn base64(bytes: &[u8]) -> String {
     const T: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
@@ -484,8 +458,6 @@ mod tests {
         assert!(due(Some(&json!({ "state": "failed: x", "tries": 2, "of": P })), &src));
         assert!(!due(Some(&json!({ "state": "failed: x", "tries": 3, "of": P })), &src));
         assert!(due(Some(&json!({ "state": "analysing", "progress": 0.4, "of": P })), &src));
-        assert!(needs_preview(&json!({}), &set(&[])) && needs_preview(&json!({ "meta": { "preview": "p" } }), &set(&[])));
-        assert!(!needs_preview(&json!({ "meta": { "preview": "p" } }), &set(&["p"])));
         // another Mac at work an hour ago: its own; gone quiet for six hours, or the server's old run: taken over
         let now = "2026-09-30T12:00:00Z";
         assert!(elsewhere(Some(&json!({ "state": "analysing", "device": "mac2", "updated": "2026-09-30T11:00:00Z" })), "me", now));
@@ -589,19 +561,6 @@ mod tests {
         assert_eq!(thumbnail_time(None, &[(2.0, "sharp".into())], &cues, &times, 20.0), 2.0);
         assert_eq!(thumbnail_time(None, &[], &[], &times, 20.0), 14.0);
         assert_eq!(thumbnail_time(None, &[], &[], &[0.0], 0.0), 0.0);
-    }
-
-    #[test]
-    fn a_still_s_preview_lives_beside_its_original() {
-        let orig = Meta { hash: O.into(), original_name: "sky.png".into(), story: "s1".into(), class: "original".into(), ..Default::default() };
-        let (name, b) = preview_batch(&orig);
-        assert_eq!(name, "sky.preview.jpg");
-        assert_eq!(b.class.as_deref(), Some("proxy"));
-        assert_eq!(b.story.as_deref(), Some("s1"));
-        assert_eq!(b.title.as_deref(), Some("sky · preview"));
-        assert_eq!(b.meta, json!({ "role": "preview", "preview_of": O, "edge": 1920 }));
-        let as_meta = json!({ "kind": "image", "class": "proxy", "tags": b.tags, "meta": b.meta });
-        assert!(!wants(&as_meta));
     }
 
     #[test]
