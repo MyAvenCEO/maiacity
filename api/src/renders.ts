@@ -58,7 +58,7 @@ export async function queueFrame(founderId: string, timelineId: string, body: { 
 
 /**
  * A file's graded still: its grading still's frame through the clip that grades it (its stacks of tools — base,
- * clip, its scene's, the timeline's, the finishing — its 16:9 framing, the output), 1920 wide — the file's one preview, its thumbnail everywhere. A `frame` job for
+ * clip, its scene's, the timeline's — its 16:9 framing, the output), 1920 wide — the file's one preview, its thumbnail everywhere. A `frame` job for
  * the file (`media_hash`) with the clip in `params`; one waits per file: a newer ask takes the waiting one's place.
  */
 export async function queueStill(founderId: string | null, hash: string, timelineId: string, clip: string): Promise<Job> {

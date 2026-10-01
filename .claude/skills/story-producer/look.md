@@ -7,18 +7,16 @@ top, never the other way round.**
 
 ## The order: every shot goes through these, in this order
 
-| Layer | Level | What | Where it lives |
+| Stack | Level | What | Where it lives |
 |---|---|---|---|
-| Balance | shot | the base correction (`grading.md`) | `clip.balance` |
-| Secondaries | shot | a part of the shot (a key, a window, the face) given its own balance | `clip.secondaries` |
-| Grade | shot | a trim of that one shot | `clip.grade` (CDL) |
+| Base correct | shot | the balance (`grading.md`) | `clip.stacks.base` |
+| Clip look | shot | a trim of that one shot, its secondaries (masks), its framing beside it | `clip.stacks.clip` (`clip.frame`) |
 | Scene look | scene | inside/outside, day/night: a scene's own look | `grade.scenes[scene]` |
-| Film look | film | the film's look, the same on every shot | `grade.film` |
-| Finishing | film | pop, halation, bloom, grain, vignette | `grade.finish` |
+| Timeline look | film | the film's look, the same on every shot; its texture (pop, halation, bloom, grain, vignette) as its last tools | `grade.timeline` |
 | Output | — | ACES 2.0 to Rec.709 | fixed |
 
-- **No exposure or contrast in the look.** Those belong to each shot: its balance (the base) and its trim (the
-  Grade layer, where a low-key mood goes). A look sets which colours are possible, not how bright a shot is (Kelly:
+- **No exposure or contrast in the look.** Those belong to each shot: its balance (the base correct) and its trim (the
+  clip look, where a low-key mood goes). A look sets which colours are possible, not how bright a shot is (Kelly:
   exposure and contrast are "not allowed in look development").
 - **A scene's look goes under the film's.** Use it where the light really differs: inside against outside, day
   against night. The film look is what every shot shares.
@@ -40,8 +38,8 @@ top, never the other way round.**
 - **The grade is stacks of tools** (game/film/grade-tools.json, one registry; the maths in Rust only). **`grade_tools`**
   lists every tool, its controls, their ranges and defaults. **`grade_stacks { id }`** shows a timeline's whole grade;
   **`grade_stack { timeline, stack, clip?, scene?, set? }`** reads or sets one stack:
-  - `base` (a shot's base correction), `clip` (a shot's clip look), `scene` (a scene's look: by `scene`, or a `clip` of
-    it), `timeline` (the timeline's look), `finish` (the finishing). They apply in that order.
+  - `base` (a shot's base correct), `clip` (a shot's clip look), `scene` (a scene's look: by `scene`, or a `clip` of
+    it), `timeline` (the timeline's look, the finishing textures last on it). They apply in that order.
   - A stack: `{ strength?, tools: [{ tool, on?, ...controls }] }`, the tools in the order they apply. Colour tools:
     `balance`, `cdl`, `contrast`, `split`, `hue` (hue/hue_sat/hue_lum curves and `sat`), `hi_sat`, `lut`. Textures:
     `pop`, `halation`, `bloom`, `grain`, `vignette`.

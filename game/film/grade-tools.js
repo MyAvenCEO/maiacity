@@ -9,11 +9,10 @@
 // a window: where both are).
 //
 // A stack: `{ strength?: 0…1, tools: [...] }`. The grade's stacks, in the order they apply:
-//   a shot's   `stacks.base`  Base correction   (the fixed first nodes: its balance)
-//              `stacks.clip`  Clip look         (its own look)
+//   a shot's   `stacks.base`  Base correct   (the fixed first nodes: its balance)
+//              `stacks.clip`  Clip look      (its own look; its framing beside it, `frame`)
 //   the film's `grade.scenes[scene]`  Scene look (every shot of the scene)
-//              `grade.timeline`       Timeline look
-//              `grade.finish`         Finishing (the frame's texture)
+//              `grade.timeline`       Timeline look (the film's texture — grain, vignette … — its last tools)
 
 // The registry itself is data — grade-tools.json — read by this module and by vault-render (`tools.rs`, its tests
 // check the Rust's checks against it), so a new tool is one entry there and its maths in Rust.
@@ -118,15 +117,13 @@ export function cleanClipStacks(/** @type {any} */ v) {
 	return Object.keys(out).length ? out : null;
 }
 
-/** The film's stacks (timeline, finish, scenes), checked. */
+/** The film's stacks (timeline, scenes), checked. */
 export function cleanFilmStacks(/** @type {any} */ v) {
 	/** @type {any} */
 	const out = {};
 	if (!v || typeof v !== 'object') return out;
-	for (const k of ['timeline', 'finish']) {
-		const s = cleanStack(v[k]);
-		if (s) out[k] = s;
-	}
+	const s = cleanStack(v.timeline);
+	if (s) out.timeline = s;
 	if (v.scenes && typeof v.scenes === 'object' && !Array.isArray(v.scenes)) {
 		/** @type {any} */
 		const scenes = {};

@@ -12,7 +12,7 @@
 	import { FPS, TRACKS, UNLINKED, clockText, isWorld, onSoundTrack, raw, thumb, tint } from './studio.svelte.js';
 	import { cueEnd, cuesOf } from './analysis.js';
 	import { wordsOf } from './transcript.js';
-	import { LAYERS, frameLine, sceneRuns, stackLine, stackOf } from './grade.js';
+	import { LAYERS, sceneRuns, stackOf } from './grade.js';
 	import { wave } from './wave.js';
 	import { fine } from './fine.js';
 	import { nativeFrame } from './luts.js';
@@ -39,10 +39,11 @@
 	// the Script tab: the story's structure (its sections and their tension) over the captions
 	const story = $derived(s.tab === 'script');
 	const STORY = { id: 'S1', label: 'Story', accepts: [] };
-	// the Grade tab: the grade's layers over the picture track, the last applied on top (grade.js) — each a line of its
-	// values; a click on a cell opens its controls in the aside beside the picture
+	// the Grade tab: the grade's stacks over the picture track, the last applied on top (grade.js) — each a bar in its
+	// colour, named by its stack (its values are the aside's); a click on a bar opens its tools in the aside
 	const grading = $derived(s.tab === 'grade');
 	const GRADE_LAYERS = LAYERS.map((l) => ({ id: `L:${l.id}`, layer: l.id, label: l.label, accepts: [] }));
+	const HUE = Object.fromEntries(LAYERS.map((l) => [l.id, l.hue]));
 	// in Grade the shots stand side by side, one column each whatever their length, each with its picture: the grade is
 	// judged shot against shot, not along the clock
 	const COL = 184;
@@ -500,18 +501,17 @@
 		sp.lights.length ? sp.lights.map((l) => `${l.id} ${Array.isArray(l.intensity) ? '∿' : fmt(l.intensity ?? 1, 2)}`).join(' · ') : 'no light changes';
 </script>
 
-<div class="timeline" style:--rows={rows}>
-	<div class="heads">
-		<div class="head"></div>
-		{#each shown as t (t.id)}
-			{#if 'layer' in t}
-				<button class="head layer" class:open={s.gradeLayer === t.layer} onclick={() => focus(/** @type {any} */ (t.layer), null)} title="Its controls in the aside">{t.label}</button>
-			{:else}<div class="head"><b>{t.id}</b> {t.label}</div>{/if}
-		{/each}
-		{#if spec}
-			{#each LANES as l (l)}<div class="head lane-head">{l}</div>{/each}
-		{/if}
-	</div>
+<div class="timeline" class:grading style:--rows={rows}>
+	<!-- in Grade no heads: each bar says what it is -->
+	{#if !grading}
+		<div class="heads">
+			<div class="head"></div>
+			{#each shown as t (t.id)}<div class="head"><b>{t.id}</b> {t.label}</div>{/each}
+			{#if spec}
+				{#each LANES as l (l)}<div class="head lane-head">{l}</div>{/each}
+			{/if}
+		</div>
+	{/if}
 	<div class="scroll" bind:this={scroller}>
 		<!-- svelte-ignore a11y_no_static_element_interactions -->
 		<div class="lanes" class:locked={!s.canEdit} class:grading bind:this={s.lanes} style:--col="{COL}px" style:width={grading ? `${pics.length * COL}px` : x(s.span)} onpointerdown={scrub}>
@@ -527,27 +527,26 @@
 				<div class="track" ondragover={(e) => t.id !== 'T1' && s.canEdit && e.preventDefault()} ondrop={(e) => t.id !== 'T1' && drop(e, /** @type {Track} */ (t.id))}>
 					{#if 'layer' in t}
 						{@const L = /** @type {import('./grade.js').Layer} */ (t.layer)}
-						{#if L === 'timeline' || L === 'finish'}
+						{#if L === 'timeline'}
 							<!-- svelte-ignore a11y_click_events_have_key_events -->
 							<!-- svelte-ignore a11y_no_static_element_interactions -->
-							<div class="cell film" class:focus={s.gradeLayer === L} style:left="0" style:width="{pics.length * COL}px" onpointerdown={(e) => e.stopPropagation()} onclick={() => focus(L, null)}>
-								<span class="val" class:on={!!stackOf(s, L, null)}>{stackLine(stackOf(s, L, null))}</span>
+							<div class="bar" class:on={!!stackOf(s, L, null)} class:focus={s.gradeLayer === L} style:--hue={HUE[L]} style:left="0" style:width="{pics.length * COL}px" onpointerdown={(e) => e.stopPropagation()} onclick={() => focus(L, null)}>
+								<span>{t.label}</span>
 							</div>
 						{:else if L === 'scene'}
 							{#each runs as r (r.key)}
 								<!-- svelte-ignore a11y_click_events_have_key_events -->
 								<!-- svelte-ignore a11y_no_static_element_interactions -->
-								<div class="cell film scene" class:focus={s.gradeLayer === L && !!s.sel && (s.sel.script?.scene || null) === r.scene} style:left="{r.from * COL}px" style:width="{r.count * COL}px" onpointerdown={(e) => e.stopPropagation()} onclick={() => focus(L, pics[r.from])}>
-									<span class="val" class:on={!!stackOf(s, L, pics[r.from])}>{r.scene ? `${r.scene} · ${stackLine(stackOf(s, L, pics[r.from]))}` : 'no scene in the script'}</span>
+								<div class="bar" class:on={!!stackOf(s, L, pics[r.from])} class:none={!r.scene} class:focus={s.gradeLayer === L && !!s.sel && (s.sel.script?.scene || null) === r.scene} style:--hue={HUE[L]} style:left="{r.from * COL}px" style:width="{r.count * COL}px" onpointerdown={(e) => e.stopPropagation()} onclick={() => focus(L, pics[r.from])} title={r.scene ?? 'No scene in the script'}>
+									<span>{t.label}{#if r.scene}<small>{r.scene}</small>{/if}</span>
 								</div>
 							{/each}
 						{:else}
 							{#each pics as c (c.id)}
 								<!-- svelte-ignore a11y_click_events_have_key_events -->
 								<!-- svelte-ignore a11y_no_static_element_interactions -->
-								<div class="cell" class:sel={s.selected === c.id} class:focus={s.gradeLayer === L && s.selected === c.id} style:left={left(c)} style:width={width(c)} onpointerdown={(e) => e.stopPropagation()} onclick={() => focus(L, c)}>
-									{#if L === 'frame'}<span class="val" class:on={!!c.frame?.[s.shape]}>{frameLine(c, s.shape)}</span>
-									{:else}<span class="val" class:on={!!stackOf(s, L, c)}>{stackLine(stackOf(s, L, c))}</span>{/if}
+								<div class="bar" class:on={!!stackOf(s, L, c) || (L === 'clip' && !!c.frame?.[s.shape])} class:focus={s.gradeLayer === L && s.selected === c.id} style:--hue={HUE[L]} style:left={left(c)} style:width={width(c)} onpointerdown={(e) => e.stopPropagation()} onclick={() => focus(L, c)}>
+									<span>{t.label}</span>
 								</div>
 							{/each}
 						{/if}
@@ -893,102 +892,64 @@
 		background: #103527;
 	}
 
-	/* the grade's layers (Grade), one row each over V1: a cell per shot, its values, or its controls when open */
-	.head.layer {
-		display: flex;
-		gap: 0.3rem;
-		align-items: center;
-		width: 100%;
-		border: 0;
-		background: none;
-		font: inherit;
-		font-size: 0.7rem;
-		text-align: left;
-		color: var(--dim);
-		cursor: pointer;
+	/* the grade's stacks (Grade), one row each over V1: a bar per shot, per scene or the whole timeline, in its stack's
+	   colour (grade.js), named by it — full when the stack holds tools, an outline when it is empty */
+	.timeline.grading {
+		grid-template-columns: 1fr;
 	}
 
-	.head.layer.open {
+	.bar {
+		position: absolute;
+		top: 2px;
+		bottom: 2px;
+		display: flex;
+		align-items: center;
+		overflow: hidden;
+		margin-left: 2px;
+		padding: 0 0.45rem;
+		border: 1px dashed color-mix(in srgb, var(--hue) 45%, transparent);
+		border-radius: 4px;
+		background: color-mix(in srgb, var(--hue) 6%, transparent);
+		font-size: 0.66rem;
+		color: color-mix(in srgb, var(--hue) 70%, var(--dim));
+		cursor: pointer;
+		box-sizing: border-box;
+	}
+
+	.bar.on {
+		border: 1px solid color-mix(in srgb, var(--hue) 70%, transparent);
+		background: color-mix(in srgb, var(--hue) 30%, var(--bg));
 		color: var(--ink);
 	}
 
-	/* the base correction: one group; its layers under it, indented */
-	.head.layer.group {
-		color: var(--ink-soft);
-		font-weight: 600;
+	.bar.none {
+		opacity: 0.45;
 	}
 
-	.head.layer.sub {
-		padding-left: 1.4rem;
-	}
-
-	.head.layer .caret {
-		font-size: 0.6rem;
-	}
-
-	.cell {
-		position: absolute;
-		top: 1px;
-		bottom: 1px;
-		display: flex;
-		flex-direction: column;
-		justify-content: center;
-		gap: 0.1rem;
-		overflow: hidden;
-		padding: 0 0.35rem;
-		border-left: 1px solid var(--edge);
-		background: rgb(230 238 247 / 0.035);
-	}
-
-	.cell.sel {
-		background: var(--warn-bg);
-	}
-
-	.cell.film {
-		background: rgb(0 0 0 / 0.2);
-	}
-
-	/* the cell whose controls the aside shows */
-	.lanes.grading .cell {
-		cursor: pointer;
-	}
-
-	.cell.focus {
-		outline: 1px solid var(--accent);
+	/* the bar whose tools the aside shows */
+	.bar.focus {
+		outline: 2px solid var(--hue);
 		outline-offset: -1px;
-		background: var(--chosen);
+		background: color-mix(in srgb, var(--hue) 45%, var(--bg));
+		color: var(--ink);
 	}
 
-	/* a scene's look over the run of shots it covers */
-	.cell.scene {
-		border-left: 2px solid var(--accent);
-	}
-
-	/* a cell's own summary sits in its flow (the lanes' timed labels are placed by time) */
-	.cell .val {
-		position: static;
-		padding-left: 0;
-		line-height: 1.2;
-	}
-
-
-	.cell .val {
+	.bar span {
+		display: flex;
+		gap: 0.45rem;
+		align-items: baseline;
+		min-width: 0;
 		overflow: hidden;
-		font-family: ui-monospace, 'SF Mono', Menlo, monospace;
-		font-size: 0.62rem;
+		font-weight: 600;
 		white-space: nowrap;
 		text-overflow: ellipsis;
-		color: #6c84a0;
 	}
 
-	.cell .val.on {
-		color: var(--warn);
-	}
-
-	.cell .chips {
-		display: flex;
-		flex-wrap: wrap;
-		gap: 0.15rem;
+	.bar small {
+		overflow: hidden;
+		font-weight: 400;
+		text-overflow: ellipsis;
+		opacity: 0.75;
 	}
 
 	/* the story (Script): its sections as bands, the tension as one line over them */

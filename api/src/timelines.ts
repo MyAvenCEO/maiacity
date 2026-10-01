@@ -55,8 +55,8 @@ export type Balance = { temp: number; tint: number; exposure: number; contrast: 
 export type Script = { scene?: string; label?: string; description?: string; notes?: string; size?: string };
 export type Stage = "edit" | "locked" | "graded" | "rendered";
 export type Color = { working: "acescct"; output: string };
-/** the film's grade as stacks of tools (game/film/grade-tools.js): each scene's look, the timeline's look, the finishing */
-export type Grade = { scenes?: Record<string, object>; timeline?: object; finish?: object } | null;
+/** the film's grade as stacks of tools (game/film/grade-tools.js): each scene's look, the timeline's look (its finishing textures last) */
+export type Grade = { scenes?: Record<string, object>; timeline?: object } | null;
 export type Timeline = {
   id: string; name: string; project: string | null; variant: string | null; description: string | null; aspect: string; tags: string[]; clips: Clip[];
   stage: Stage; version: number; color: Color; grade: Grade; created: string; updated: string;
@@ -156,7 +156,7 @@ function cleanColor(v: any): Color {
 
 function cleanGrade(v: any): Grade {
   if (v === null) return null;
-  if (typeof v !== "object" || Array.isArray(v)) throw new TimelineError("The film's grade is { scenes?, timeline?, finish? }: stacks of tools.");
+  if (typeof v !== "object" || Array.isArray(v)) throw new TimelineError("The film's grade is { scenes?, timeline? }: stacks of tools.");
   return cleanFilmStacks(v);
 }
 

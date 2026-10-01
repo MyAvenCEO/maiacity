@@ -61,23 +61,26 @@ function clipFromBefore(/** @type {any} */ c) {
 	return stacks ? { ...rest, stacks } : rest;
 }
 
-/** The film's grade from before (look, preset, film, scenes, finish) as its stacks. @param {any} g @param {(name: string) => any} [preset] */
+/** The film's grade from before (look, preset, film, scenes, finish) as its stacks: the finishing's textures go last on the timeline's look. @param {any} g @param {(name: string) => any} [preset] */
 function gradeFromBefore(g, preset) {
 	if (!g || typeof g !== 'object') return {};
-	if (g.timeline || (g.finish && Array.isArray(g.finish.tools)) || Object.values(g.scenes ?? {}).some((s) => Array.isArray(/** @type {any} */ (s)?.tools))) return cleanFilmStacks(g);
+	if (g.timeline || (g.finish && Array.isArray(g.finish.tools)) || Object.values(g.scenes ?? {}).some((s) => Array.isArray(/** @type {any} */ (s)?.tools))) {
+		// stacks already, maybe with a finishing stack of its own (both at full strength: the same picture)
+		const tl = g.timeline?.tools ?? [], fin = g.finish?.tools ?? [];
+		return cleanFilmStacks({ ...g, timeline: tl.length || fin.length ? { ...(g.timeline ?? {}), tools: [...tl, ...fin] } : undefined });
+	}
 	const film = g.film ?? (g.look || g.preset ? { cdl: g.look ?? null, preset: g.preset ?? null } : null);
 	/** @type {any} */
 	const out = {};
 	const tl = lookTools(film, preset);
-	if (tl) out.timeline = tl;
 	const scenes = Object.fromEntries(Object.entries(g.scenes ?? {}).map(([k, l]) => [k, lookTools(l, preset)]).filter(([, s]) => s));
 	if (Object.keys(scenes).length) out.scenes = scenes;
 	const f = g.finish;
 	if (f) {
 		const tools = ['pop', 'halation', 'bloom', 'grain', 'vignette'].filter((k) => f[k]).map((k) => ({ tool: k, ...f[k] }));
-		const st = cleanStack({ tools });
-		if (st) out.finish = st;
-	}
+		const st = cleanStack({ tools: [...(tl?.tools ?? []), ...tools] });
+		if (st) out.timeline = st;
+	} else if (tl) out.timeline = tl;
 	return out;
 }
 

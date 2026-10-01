@@ -105,17 +105,19 @@ test("a shot's grade as stacks of tools: checked, free to change after the lock"
   await expect(saveTimeline(t.id, { clips: [{ ...clip, dur: 4 }] })).rejects.toThrow(/locked/);
 });
 
-test("the film's stacks — each scene's look, the timeline's look, the finishing: checked, kept, free to change after the lock", async () => {
+test("the film's stacks — each scene's look, the timeline's look (its texture tools last): checked, kept, free to change after the lock", async () => {
   const { createTimeline, saveTimeline } = await import("../src/timelines");
   const t = await createTimeline("admin", { name: "Looks" });
   await saveTimeline(t.id, { stage: "locked" });
   const g = (await saveTimeline(t.id, {
-    grade: { timeline: { strength: 0.8, tools: [{ tool: "split", sh_amount: 0.3 }] }, scenes: { "EXT. GARDEN — MORNING": { tools: [{ tool: "hue", sat: 0.9 }] }, "INT. BEDROOM": { tools: [] } }, finish: { tools: [{ tool: "grain" }] } },
+    grade: { timeline: { strength: 0.8, tools: [{ tool: "split", sh_amount: 0.3 }, { tool: "grain" }] }, scenes: { "EXT. GARDEN — MORNING": { tools: [{ tool: "hue", sat: 0.9 }] }, "INT. BEDROOM": { tools: [] } }, finish: { tools: [{ tool: "grain" }] } },
   })).grade as any;
   expect(g.timeline.strength).toBe(0.8);
   expect(g.timeline.tools[0]).toMatchObject({ tool: "split", sh_hue: 280, sh_amount: 0.3 });
   expect(Object.keys(g.scenes)).toEqual(["EXT. GARDEN — MORNING"]);
-  expect(g.finish.tools[0]).toMatchObject({ tool: "grain", amount: 0.12 });
+  expect(g.timeline.tools[1]).toMatchObject({ tool: "grain", amount: 0.12 });
+  // no finishing stack of its own: the film's texture is tools on the timeline's look
+  expect(g.finish).toBeUndefined();
   // a grade from before (a look, a preset, a finishing object) is not a stack: not kept
   expect((await saveTimeline(t.id, { grade: { look: null, preset: "warm", film: { contrast: 0.2 }, finish: { vignette: { amount: 0.6 } } } })).grade).toEqual({});
 });

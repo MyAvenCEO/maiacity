@@ -443,15 +443,15 @@ export class Studio {
 		return profileFor(it).profile;
 	}
 	/**
-	 * A clip's whole grade as stacks of tools, in the order they apply (game/film/grade-tools.js): its base correction,
-	 * its clip look, its scene's look, the timeline's look, the finishing.
+	 * A clip's whole grade as stacks of tools, in the order they apply (game/film/grade-tools.js): its base correct,
+	 * its clip look, its scene's look, the timeline's look.
 	 * @param {Clip | null | undefined} c @returns {any[]}
 	 */
 	stacksOf(c) {
 		const g = /** @type {any} */ (this.current?.grade ?? {});
 		const st = /** @type {any} */ (c)?.stacks ?? {};
 		const scene = c?.script?.scene ? g.scenes?.[c.script.scene] : null;
-		return [st.base, st.clip, scene, g.timeline, g.finish].filter((x) => x?.tools?.length);
+		return [st.base, st.clip, scene, g.timeline].filter((x) => x?.tools?.length);
 	}
 
 	/**

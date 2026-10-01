@@ -146,7 +146,7 @@ pub struct ColorReport {
     pub engine: String,
     /// every transform used, by name → the hash of its config
     pub transforms: BTreeMap<String, String>,
-    /// the film's grade (its stacks: scenes, timeline, finishing)
+    /// the film's grade (its stacks: scenes, timeline)
     pub look: Option<Value>,
 }
 
@@ -434,7 +434,7 @@ pub fn render(
 ) -> Result<Render> {
     let plan = plan(t, lib)?;
     std::fs::create_dir_all(&opts.work)?;
-    // every picture clip's grade as steps (its stacks: base, clip, scene, timeline, finishing), the colour runs baked
+    // every picture clip's grade as steps (its stacks: base, clip, scene, timeline), the colour runs baked
     // once for each different one
     let mut baked: HashMap<String, Lut3d> = HashMap::new();
     let mut cubes: HashMap<String, Vec<Step>> = HashMap::new();
@@ -836,7 +836,7 @@ pub fn stacks_steps(stacks: &[Stack], lib: &dyn Library, output: &dyn Output) ->
     Ok((steps, baked))
 }
 
-/// A clip's whole grade (its base correction, clip look, scene's look, the timeline's look, the finishing) as steps
+/// A clip's whole grade (its base correction, clip look, scene's look, the timeline's look) as steps
 /// with their cubes baked.
 pub fn clip_steps(t: &Timeline, lib: &dyn Library, c: &Clip, output: &dyn Output) -> Result<(Vec<Step>, HashMap<String, Lut3d>)> {
     stacks_steps(&t.stacks_for(c), lib, output)
@@ -1163,7 +1163,7 @@ pub fn hero_frame(
 
 /// A file's graded still (the `frame` job of a media clip): its grading still — the ACEScct frame it is graded on —
 /// through clip `clip`'s chain as the render takes it (16:9 framing → its stacks of tools: base, clip, scene,
-/// timeline, finishing → output transform), `width` wide, as a JPEG: the file's one preview, its thumbnail everywhere. Without
+/// timeline → output transform), `width` wide, as a JPEG: the file's one preview, its thumbnail everywhere. Without
 /// its grading still on this Mac, the same moment read from the original (or its proxy). Returns `{ of, t, clip,
 /// width, height, what }` — `of` the original, `t` the moment (seconds into it).
 pub fn graded_still(t: &Timeline, lib: &dyn Library, output: &dyn Output, clip: &str, width: u32, jpg: &Path) -> Result<Value> {

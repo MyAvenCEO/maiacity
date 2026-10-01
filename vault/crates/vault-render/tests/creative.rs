@@ -156,16 +156,15 @@ fn a_clip_goes_through_its_stacks_in_order() {
             { "id": "c", "track": "V1", "start": 4, "dur": 2, "hash": "h" }
         ],
         "grade": {
-            "timeline": { "tools": [{ "tool": "contrast", "amount": 0.2 }] },
-            "scenes": { "INT. BEDROOM — MORNING": { "strength": 0.5, "tools": [{ "tool": "hue", "sat": 0.9 }] } },
-            "finish": { "tools": [{ "tool": "grain", "amount": 0.1 }] }
+            "timeline": { "tools": [{ "tool": "contrast", "amount": 0.2 }, { "tool": "grain", "amount": 0.1 }] },
+            "scenes": { "INT. BEDROOM — MORNING": { "strength": 0.5, "tools": [{ "tool": "hue", "sat": 0.9 }] } }
         }
     }))
     .unwrap();
     let of = |id: &str| t.stacks_for(t.clips.iter().find(|c| c.id == id).unwrap());
-    // base, clip, its scene, the timeline, the finishing
-    assert_eq!(of("a").len(), 5);
-    assert_eq!(of("b").len(), 2);
+    // base, clip, its scene, the timeline (its texture last on it)
+    assert_eq!(of("a").len(), 4);
+    assert_eq!(of("b").len(), 1);
     // the colour stacks after the balance are one cube: the clip's CDL, the scene's (half), the timeline's
     let out = odt();
     let st = of("a");
