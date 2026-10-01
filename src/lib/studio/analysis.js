@@ -21,10 +21,13 @@ export function cuesOf(m) {
 	return Array.isArray(c) ? c.filter((q) => typeof q.s === 'number') : [];
 }
 
-/** Its tags: the base labels, then the free ones. @param {import('$lib/auth/client').MediaItem | undefined} m */
+/**
+ * Its tags: the base labels, then the free ones — each once (the analysis often names a label among its free tags
+ * too, and a tag shown twice broke the list drawing them). @param {import('$lib/auth/client').MediaItem | undefined} m
+ */
 export function tagsOf(m) {
 	const a = analysisOf(m);
-	return [...(a?.labels ?? []), ...(a?.free ?? [])];
+	return [...new Set([...(a?.labels ?? []), ...(a?.free ?? [])].map(String))];
 }
 
 /** Where a cue ends (a point: where it starts). @param {Cue} q */
