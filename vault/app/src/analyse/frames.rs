@@ -141,7 +141,7 @@ mod tests {
         assert!(f.times.iter().any(|t| (t - 2.5).abs() < 0.05), "the cut is sampled: {:?}", f.times);
         assert!(last > 0.9);
         assert_eq!(&f.jpegs[0][..2], &[0xff, 0xd8]);
-        let thumb = one(Source::Path(movie.clone()), Some(3.0), plan::THUMB_EDGE, true).unwrap();
+        let thumb = one(Source::Path(movie.clone()), Some(3.0), plan::PREVIEW_EDGE, true).unwrap();
         assert!(thumb.len() > 1000 && thumb[..2] == [0xff, 0xd8]);
         std::fs::remove_dir_all(&dir).ok();
     }

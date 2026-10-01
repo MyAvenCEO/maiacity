@@ -544,13 +544,6 @@ pub struct FrameArgs {
 }
 
 #[derive(Deserialize, schemars::JsonSchema)]
-pub struct StillsCleanupArgs {
-    /// the hashes to delete, exactly as a dry run listed them, once a person has said yes to that list. Without: a dry
-    /// run — nothing is deleted
-    pub delete: Option<Vec<String>>,
-}
-
-#[derive(Deserialize, schemars::JsonSchema)]
 pub struct StoryArgs {
     /// the story to change; none: a new story
     pub id: Option<String>,
@@ -622,7 +615,7 @@ impl Studio {
     }
 
     #[tool(
-        description = "Every file in the vault's catalog with its description (hash, size, mime, kind, title, tags, public, meta) — its transcript and shot analysis in brief (meta.transcript, meta.analysis: the `transcript` and `analysis` tools give them whole), meta.thumbnail (a small JPEG of its best frame)"
+        description = "Every file in the vault's catalog with its description (hash, size, mime, kind, title, tags, public, meta) — its transcript and shot analysis in brief (meta.transcript, meta.analysis: the `transcript` and `analysis` tools give them whole), meta.preview (its one picture: a JPEG of its grading still's frame, graded once a clip grades it) and meta.thumbnail (the moment the analysis picked: { t, why })"
     )]
     async fn library_list(&self, Parameters(f): Parameters<Filter>) -> String {
         let r = async {
@@ -1571,56 +1564,6 @@ impl Studio {
     async fn render_frame(&self, Parameters(a): Parameters<FrameArgs>) -> String {
         let shape = a.shape.unwrap_or_else(|| "16:9".into());
         text(self.api("POST", &format!("/api/timelines/{}/frames", a.timeline), Some(json!({ "t": a.t, "shape": shape }))).await)
-    }
-
-    #[tool(
-        description = "Clean up stills nothing uses (a file keeps two: its grading still, ACEScct, and its graded still, its preview — never a history): hero frames of media clips, older hero frames of a world clip, proxies and analysis thumbnails of hero frames, proxies and thumbnails of files gone, grading stills and previews their file no longer names. Without `delete`: a dry run listing each file (hash, name, MB, why) and the total — nothing is deleted. Show that list to the person; once they agree, call again with `delete` set to exactly those hashes: the studio then asks them in its delete modal and the call waits for their answer (up to 15 minutes). A hash that is not stale (any more) is refused, never deleted. Deleting is for good."
-    )]
-    async fn stills_cleanup(&self, Parameters(a): Parameters<StillsCleanupArgs>) -> String {
-        let r = async {
-            let all = self.vault.catalog.list().await.map_err(|e| format!("{e:#}"))?;
-            let stale = crate::render::stale_stills(&all);
-            let mb = |b: u64| (b as f64 / 1e5).round() / 10.0;
-            let Some(asked) = a.delete else {
-                let bytes: u64 = stale.iter().map(|(m, _)| m.size).sum();
-                let files: Vec<Value> = stale
-                    .iter()
-                    .map(|(m, why)| json!({ "hash": m.hash, "name": if m.original_name.is_empty() { &m.title } else { &m.original_name }, "title": m.title, "mb": mb(m.size), "why": why }))
-                    .collect();
-                return Ok(json!({ "dry_run": true, "count": files.len(), "mb": mb(bytes), "files": files,
-                    "next": "Nothing was deleted. Show this list to the person; on their yes, call stills_cleanup again with delete: [the hashes they agreed to]." }));
-            };
-            let (going, refused): (Vec<String>, Vec<String>) = asked.into_iter().partition(|h| stale.iter().any(|(m, _)| &m.hash == h));
-            let going: Vec<&(&Meta, &str)> = stale.iter().filter(|(m, _)| going.contains(&m.hash)).collect();
-            if going.is_empty() {
-                return Ok(json!({ "deleted": 0, "refused": refused, "note": "nothing stale to delete" }));
-            }
-            // the person says yes in the studio's modal, as for every delete (library_delete)
-            let files: Vec<Value> = going
-                .iter()
-                .map(|(m, why)| {
-                    let preview = m.mime.starts_with("image/").then(|| m.hash.clone());
-                    json!({ "hash": m.hash, "name": m.original_name, "title": m.title, "kind": m.kind, "class": m.class, "role": m.meta.get("role"),
-                        "story": m.story, "size": m.size, "preview": preview, "part": "asked", "why": why })
-                })
-                .collect();
-            let bytes: u64 = going.iter().map(|(m, _)| m.size).sum();
-            let question = json!({ "kind": "delete", "why": "stills cleanup: stills nothing uses", "files": files, "bytes": bytes });
-            match crate::asks::ask(&self.handle, question).await {
-                Some(true) => {
-                    let mut deleted = Vec::new();
-                    for (m, why) in going {
-                        let hash: iroh_blobs::Hash = m.hash.parse().map_err(|e| format!("{e}"))?;
-                        self.vault.catalog.delete_file(hash, &format!("stills cleanup: {why}")).await.map_err(|e| format!("{e:#}"))?;
-                        deleted.push(m.hash.clone());
-                    }
-                    Ok(json!({ "approved": true, "deleted": deleted.len(), "mb": mb(bytes), "refused": refused, "hashes": deleted }))
-                }
-                Some(false) => Ok(json!({ "approved": false, "deleted": 0, "note": "the person said no: nothing was deleted" })),
-                None => Ok(json!({ "approved": false, "deleted": 0, "note": "nobody answered in 15 minutes: nothing was deleted" })),
-            }
-        };
-        text(r.await)
     }
 
     // ── the content board: deliveries per platform, draft and publish ──
