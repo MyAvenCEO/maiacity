@@ -18,9 +18,8 @@
 //!
 //! The hero frame: the moment the analysis picks as the file's best (`hero: { t, why }` in the record) — no file of its
 //! own. A video's grading still and preview are made at that moment (proxies.rs `marked_at`); its preview is the
-//! one picture of it everywhere (graded once a clip grades it). A still has no grading still: its preview — a
-//! display-referred JPEG, 1920 on its long edge (class proxy, `role: "preview"`, `preview_of`, named in the original's
-//! `meta.preview`) — is made here as soon as its proxy is. A smaller picture, if ever wanted, is made of the preview.
+//! one picture of it everywhere (graded once a clip grades it). A display still is its own picture: nothing is made of
+//! it. A smaller picture, if ever wanted, is made of the preview (or of the still).
 //!
 //! One file at a time, after its transcript has settled (a recording's words go with its frames), the smallest first;
 //! for the stories in scope (the Day 01 story unless set otherwise: `prem::stories`). A round after an ingest, a
@@ -67,12 +66,10 @@ fn waiting(e: impl std::fmt::Display) -> Ask {
 pub async fn sweep(handle: AppHandle, vault: Arc<Vault>) {
     prem::forget_old_key();
     tokio::time::sleep(Duration::from_secs(45)).await;
-    // a thumbnail that could not be made: not again until the ten-minute round
-    let mut no_thumb: HashSet<String> = HashSet::new();
     loop {
         let mut rest = Duration::from_secs(600);
         if crate::auth::signed_in() {
-            match round(&handle, &vault, &mut no_thumb).await {
+            match round(&handle, &vault).await {
                 Ok(()) => {}
                 Err(Ask::Wait { reason, until }) => {
                     tracing::info!("analysis waits: {reason}");
@@ -86,7 +83,7 @@ pub async fn sweep(handle: AppHandle, vault: Arc<Vault>) {
         }
         tokio::select! {
             _ = WAKE.notified() => {}
-            _ = tokio::time::sleep(rest) => no_thumb.clear(),
+            _ = tokio::time::sleep(rest) => {}
         }
     }
 }
@@ -114,7 +111,7 @@ async fn say_queued(vault: &Vault, todo: &[&(String, Source)], records: &HashMap
     }
 }
 
-async fn round(handle: &AppHandle, vault: &Arc<Vault>, no_thumb: &mut HashSet<String>) -> Result<(), Ask> {
+async fn round(handle: &AppHandle, vault: &Arc<Vault>) -> Result<(), Ask> {
     let me = vault.endpoint.id().to_string();
     let now = vault_core::ingest::now_iso();
     let list = vault.catalog.list().await.map_err(fail)?;
@@ -142,16 +139,6 @@ async fn round(handle: &AppHandle, vault: &Arc<Vault>, no_thumb: &mut HashSet<St
     let mut sources: Vec<(String, Source)> = wanted.iter().filter_map(|(h, m)| Some(((*h).clone(), plan::source(h, m, &metas, &proxy_of, &held)?))).collect();
     sources.sort_by_key(|(_, src)| src.size());
 
-    // a still's preview, as soon as its proxy is here — no model needed (a video's comes with its grading still)
-    let known: HashSet<String> = metas.keys().cloned().collect();
-    for (hex, src) in &sources {
-        if !src.movie() && plan::needs_preview(&metas[hex], &known) && !no_thumb.contains(hex) {
-            if let Err(e) = still_preview(vault, hex, src).await {
-                no_thumb.insert(hex.clone());
-                tracing::warn!("preview of {}: {e}", &hex[..12]);
-            }
-        }
-    }
 
     // then the analysis: in scope, due here, a recording once its words have settled
     let only = prem::stories();
@@ -196,39 +183,6 @@ async fn open(vault: &Vault, src: &Source) -> Result<vault_media::Source, Ask> {
     let name = vault.catalog.meta(src.hash()).await.ok().flatten().map(|m| m.original_name).filter(|n| !n.is_empty());
     let name = name.unwrap_or_else(|| if src.movie() { "proxy.mp4".into() } else { "still.png".into() });
     crate::blob::source(vault, src.hash(), &name).await.map_err(waiting)
-}
-
-/// A still's preview into the vault (its own file, beside its original), named in the original's `meta.preview`;
-/// any other preview of it goes.
-async fn still_preview(vault: &Arc<Vault>, hex: &str, src: &Source) -> Result<(), String> {
-    let file = open(vault, src).await.map_err(|e| e.to_string())?;
-    let hash: Hash = hex.parse().map_err(|e| format!("{e}"))?;
-    let original = vault.catalog.meta(hash).await.map_err(|e| format!("{e:#}"))?.ok_or("the description is not here")?;
-    let acescct = src.acescct();
-    let bytes = tokio::task::spawn_blocking(move || frames::one(file, None, plan::PREVIEW_EDGE, acescct)).await.map_err(|e| e.to_string())?.map_err(|e| format!("{e:#}"))?;
-    let (name, batch) = plan::preview_batch(&original);
-    // its own folder: the file's name is the preview's name in the vault
-    let dir = vault.ingest_dir().join(format!("preview-{hex}"));
-    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
-    let path = dir.join(&name);
-    let made = async {
-        std::fs::write(&path, &bytes).map_err(|e| e.to_string())?;
-        vault.ingest_file(&path, &batch).await.map_err(|e| format!("{e:#}"))
-    }
-    .await;
-    std::fs::remove_dir_all(&dir).ok();
-    let made = made?.hash;
-    vault.catalog.describe(hash, &json!({ "meta": { "preview": made } })).await.map_err(|e| format!("{e:#}"))?;
-    for m in vault.catalog.list().await.map_err(|e| format!("{e:#}"))? {
-        if m.meta.get("preview_of").and_then(Value::as_str) == Some(hex)
-            && m.hash != made
-            && let Ok(h) = m.hash.parse::<Hash>()
-        {
-            vault.catalog.delete_file(h, "replaced by the still's new preview").await.ok();
-        }
-    }
-    tracing::info!("preview of {}", &hex[..12]);
-    Ok(())
 }
 
 /// One file; its own failure is written into its record (only a wait stops the round).

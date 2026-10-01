@@ -61,9 +61,10 @@ pub fn exr_profile(bytes: &[u8]) -> Option<&'static str> {
     EXR_PRIMARIES.iter().find(|(_, p)| p.iter().zip(c).all(|(a, b)| (a - b).abs() < 0.002)).map(|(n, _)| *n)
 }
 
-/// Does this still get a proxy? A float still (EXR), or one larger than HD.
-pub fn still_needs_proxy(exr: bool, width: u32, height: u32) -> bool {
-    exr || width.max(height) > crate::proxy::LONG_EDGE
+/// Does this still get a proxy? Only a float still (EXR), which nothing shows as it is; a display still, at any size,
+/// is its own picture everywhere.
+pub fn still_needs_proxy(exr: bool) -> bool {
+    exr
 }
 
 /// A still's ACEScct proxy: a 16-bit RGB PNG at `out`, long edge 1920 at most. Returns its size.
@@ -272,8 +273,7 @@ mod tests {
 
     #[test]
     fn only_float_or_large_stills_get_a_proxy() {
-        assert!(still_needs_proxy(true, 800, 600));
-        assert!(still_needs_proxy(false, 4032, 3024));
-        assert!(!still_needs_proxy(false, 1920, 1080));
+        assert!(still_needs_proxy(true));
+        assert!(!still_needs_proxy(false));
     }
 }

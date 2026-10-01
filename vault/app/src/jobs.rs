@@ -513,7 +513,7 @@ pub const RULES: &[Rule] = &[
     // main.rs ingest
     Rule { id: "ingest", when: "Files are brought in (dropped, or from a card or a drive)", then: "Ingest: hashed, into the vault, described", kind: Kind::Ingest, watch: "when asked" },
     // proxies.rs sweep, auto_proxy
-    Rule { id: "proxy", when: "A video original, a still or an EXR sequence comes in — or its colour journey becomes known", then: "Proxy: ACEScct, to play and grade on", kind: Kind::Proxy, watch: "at ingest · every 10 min" },
+    Rule { id: "proxy", when: "A video original or an EXR sequence comes in (a display still never: it is its own picture) — or its colour journey becomes known", then: "Proxy: ACEScct, to play and grade on", kind: Kind::Proxy, watch: "at ingest · every 10 min" },
     // proxies.rs grading_still_at (with the proxy), backfill_still
     Rule { id: "still", when: "A video's proxy is made (its journey known)", then: "Grading still (4K ACEScct) and preview, at its hero frame — the middle until one is picked", kind: Kind::Still, watch: "with the proxy · every 10 min" },
     // proxies.rs marked_at
@@ -524,8 +524,6 @@ pub const RULES: &[Rule] = &[
     Rule { id: "sound", when: "A recording is on this Mac without its sound record", then: "Sound record: its tracks, length and start timecode", kind: Kind::Sound, watch: "at ingest · every 10 min" },
     // analyse/mod.rs round
     Rule { id: "analysis", when: "A picture's proxy is here and its words have settled (in the stories in scope)", then: "AI analysis: tags, cues, takes — and its hero frame", kind: Kind::Analysis, watch: "after a proxy or transcript · every 10 min" },
-    // analyse/mod.rs still_preview
-    Rule { id: "still-preview", when: "A still image's proxy is here and it has no preview", then: "Preview: a 1920 JPEG, its one picture", kind: Kind::Analysis, watch: "with the analysis round" },
     // api/src/renders.ts queueStillsOf → render.rs graded_still_job
     Rule { id: "graded", when: "A timeline save changes how a file looks (its stacks of tools, its 16:9 framing, its scene's or the timeline's look)", then: "Graded still: its grading still through the clip's grade, as its preview — the one before goes", kind: Kind::Frame, watch: "on save · render queue every few s" },
     // api/src/renders.ts queueStillOfFile (proxies.rs grading_still_at)
