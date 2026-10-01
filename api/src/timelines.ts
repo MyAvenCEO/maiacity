@@ -8,13 +8,13 @@
  * on the picture track, V1) or a line (a line of the script not recorded yet: its words on the voice track, A1, and in
  * the captions). A picture clip may carry its place in the script (scene, label, description, notes): the Script tab
  * and the timeline are the same clips, so a slate swapped for a still or the footage keeps its script. A sound clip may
- * carry its EQ (game/film/sound.js). A clip may carry its balance (the fixed first nodes: white balance, exposure, contrast, highlights, lows), its own grade (an ASC
+ * carry its EQ and gain keys (game/film/sound.js). A clip may carry its balance (the fixed first nodes: white balance, exposure, contrast, highlights, lows), its own grade (an ASC
  * CDL in ACEScct, the Grade tab) and, for media, how it is reframed per delivery shape. The timeline itself has a working step — edit, locked,
  * graded, rendered — a version (one more at every unlock), its colour pipeline and the whole film's look.
  */
 import { db } from "./pg";
 import { cleanBalance, cleanCdl, cleanFinish, cleanLook, cleanSecondaries } from "../../game/film/color.js";
-import { cleanEq } from "../../game/film/sound.js";
+import { cleanEq, cleanKeys } from "../../game/film/sound.js";
 import { missingShots } from "./shots";
 
 export class TimelineError extends Error {
@@ -130,6 +130,10 @@ function cleanClip(c: any): Clip {
   if (c.eq !== undefined && c.eq !== null && base.track.startsWith("A")) {
     const eq = cleanEq(c.eq);
     if (eq.length) (clip as any).eq = eq;
+  }
+  if (c.keys !== undefined && c.keys !== null && base.track.startsWith("A")) {
+    const keys = cleanKeys(c.keys);
+    if (keys.length) (clip as any).keys = keys;
   }
   if (c.script !== undefined && c.script !== null && base.track === "V1") {
     const sc = cleanScript(c.script);

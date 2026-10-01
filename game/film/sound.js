@@ -41,3 +41,26 @@ export function bandLabel(b) {
 	const db = `${b.gain > 0 ? '+' : ''}${b.gain} dB`;
 	return { highpass: `HP ${hz}`, lowpass: `LP ${hz}`, notch: `notch ${hz}`, peaking: `${db} ${hz}`, lowshelf: `${db} <${hz}`, highshelf: `${db} >${hz}` }[b.type];
 }
+
+export const MAX_KEYS = 64;
+
+/** A clip's gain keys ([seconds into the clip, dB]), checked as Rust checks them (`clean_keys`). @returns {[number, number][]} */
+export function cleanKeys(/** @type {any} */ v) {
+	if (!Array.isArray(v)) return [];
+	return v
+		.filter((k) => Array.isArray(k) && Number.isFinite(Number(k[0])) && Number.isFinite(Number(k[1])) && k[0] !== null && k[1] !== null)
+		.map((k) => /** @type {[number, number]} */ ([Math.round(Math.max(0, Number(k[0])) * 1000) / 1000, Math.round(Math.min(12, Math.max(-60, Number(k[1]))) * 100) / 100]))
+		.sort((a, b) => a[0] - b[0])
+		.slice(0, MAX_KEYS);
+}
+
+/** The keys' gain at `t` seconds into the clip, dB: straight lines between them, the ends held. @param {[number, number][]} keys @param {number} t */
+export function keyDb(keys, t) {
+	if (!keys.length) return 0;
+	if (t <= keys[0][0]) return keys[0][1];
+	for (let i = 1; i < keys.length; i++) {
+		const [t0, d0] = keys[i - 1], [t1, d1] = keys[i];
+		if (t <= t1) return t1 > t0 ? d0 + ((d1 - d0) * (t - t0)) / (t1 - t0) : d1;
+	}
+	return keys[keys.length - 1][1];
+}

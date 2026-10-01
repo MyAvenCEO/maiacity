@@ -89,6 +89,22 @@ fn luminance_against_hue_darkens_the_greens_and_leaves_the_skin() {
 }
 
 #[test]
+fn highlight_saturation_whitens_a_tinted_sky_and_leaves_skin() {
+    let out = odt();
+    let hues = Hues::new(&out);
+    let l = look(json!({ "hi_sat": 0.2 }));
+    let r = Ready::new(&l, None);
+    // a pinkish clipped sky high up the log, a skin tone in the middle
+    let sky = [0.70, 0.66, 0.65];
+    let (s0, s1) = (shown(&out, sky), shown(&out, r.apply(sky, &hues, &out)));
+    assert!(s1.chroma() < s0.chroma() * 0.4, "the sky's colour {:.4} → {:.4}", s0.chroma(), s1.chroma());
+    let skin = [0.47, 0.425, 0.395];
+    let (k0, k1) = (shown(&out, skin), shown(&out, r.apply(skin, &hues, &out)));
+    assert!((k1.chroma() - k0.chroma()).abs() < 0.002, "skin {:.4} → {:.4}", k0.chroma(), k1.chroma());
+    assert!(clean_look(&json!({ "hi_sat": 1 })).is_none());
+}
+
+#[test]
 fn contrast_turns_around_the_pivot_and_strength_mixes() {
     let out = odt();
     let hues = Hues::new(&out);

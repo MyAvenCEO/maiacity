@@ -25,7 +25,7 @@ import { cached, evaluate, saveSpec, shotAt } from './shots.js';
 import { WorldViewer } from './world.svelte.js';
 import { captionWordsOf, hasSound, lineWords, phraseBreak, rewordPhrase, stepOpen, transcriptOf, transcriptState } from './transcript.js';
 import { command, native } from '$lib/native';
-import { cleanEq, webAudioQ } from '../../../game/film/sound.js';
+import { cleanEq, cleanKeys, keyDb, webAudioQ } from '../../../game/film/sound.js';
 
 /** @typedef {import('$lib/auth/client').Cdl} Cdl */
 /** @typedef {import('$lib/auth/client').ClipFrame} ClipFrame */
@@ -1074,6 +1074,16 @@ export class Studio {
 				f.gain.value = b.gain;
 				f.Q.value = webAudioQ(b);
 				node = node.connect(f);
+			}
+			// its gain keys (a breath, a sniff dipped), on a gain of their own under the fades and the ducking
+			const keys = cleanKeys(c.keys);
+			if (keys.length) {
+				const kg = ac.createGain();
+				const at = from - c.start; // seconds into the clip where it starts sounding
+				const lin = (/** @type {number} */ db) => Math.pow(10, db / 20);
+				kg.gain.setValueAtTime(lin(keyDb(keys, at)), when);
+				for (const [t, db] of keys) if (t > at && t < at + length) kg.gain.linearRampToValueAtTime(lin(db), when + (t - at));
+				node = node.connect(kg);
 			}
 			node.connect(gain).connect(ac.destination);
 			src.start(when, offset, length);

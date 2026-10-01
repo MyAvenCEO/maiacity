@@ -73,6 +73,9 @@ pub struct Clip {
     /// a sound clip's EQ (eq::Band, in order)
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub eq: Option<Value>,
+    /// a sound clip's gain keys ([seconds into the clip, dB], sound::clean_keys)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub keys: Option<Value>,
 }
 
 fn one() -> f64 {

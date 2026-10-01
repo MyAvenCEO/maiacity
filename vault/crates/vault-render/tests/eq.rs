@@ -129,3 +129,20 @@ fn the_studio_checks_an_eq_as_the_render_does() {
     let theirs: Vec<Band> = serde_json::from_slice(&out.stdout).unwrap();
     assert_eq!(clean_eq(&input), theirs);
 }
+
+#[test]
+fn the_studio_checks_gain_keys_as_the_render_does() {
+    // game/film/sound.js `cleanKeys` (the API's, the studio playback's) and `sound::clean_keys` agree key for key
+    let input = json!([[2.5, -80], [-1, 3], [0.6, -20.123], ["x", 1], [1.4, -20], [9, 30]]);
+    let js = concat!(env!("CARGO_MANIFEST_DIR"), "/../../../game/film/sound.js");
+    let script = format!("import {{ cleanKeys, keyDb }} from '{js}'; const k = cleanKeys({input}); console.log(JSON.stringify([k, keyDb(k, 1.0)]))");
+    let Ok(out) = std::process::Command::new("bun").args(["-e", &script]).output() else {
+        eprintln!("no bun here: the studio's side is not compared");
+        return;
+    };
+    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+    let (theirs, at): (Vec<[f64; 2]>, f64) = serde_json::from_slice(&out.stdout).unwrap();
+    let ours = vault_render::sound::clean_keys(&input);
+    assert_eq!(ours, theirs);
+    assert!((vault_render::sound::key_db(&ours, 1.0) - at).abs() < 1e-9);
+}

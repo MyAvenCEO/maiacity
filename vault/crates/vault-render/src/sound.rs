@@ -1,5 +1,5 @@
 //! The film's sound, as worker.ts mixes it — every audio clip from where it is trimmed, through its EQ (`eq`), at its
-//! volume, with its own fades (or a short one at both ends), placed on the film's clock to the millisecond; voice (A1), music (A2) and
+//! volume and along its gain keys (`keys`: a breath, a sniff dipped), with its own fades (or a short one at both ends), placed on the film's clock to the millisecond; voice (A1), music (A2) and
 //! sounds (A3, any other) summed apart; the voice keying the music down about 6 dB while it speaks (ffmpeg's
 //! `sidechaincompress=threshold=0.02:ratio=4:knee=4:attack=120:release=900`, ported); the three summed — and then,
 //! where the worker only measured, levelled to a loudness target (integrated LUFS, true-peak ceiling) by one gain
@@ -68,6 +68,59 @@ pub struct Sound {
 /// 100 ms at 48 kHz.
 const BLOCK: usize = 4800;
 
+/// At most this many gain keys per clip.
+pub const MAX_KEYS: usize = 64;
+
+/// A clip's gain keys as stored ([seconds into the clip, dB] pairs), checked as game/film/sound.js checks them: in
+/// time order, from 0 s, −60…+12 dB, at most `MAX_KEYS`.
+pub fn clean_keys(v: &serde_json::Value) -> Vec<[f64; 2]> {
+    let mut out: Vec<[f64; 2]> = v
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|k| {
+            let k = k.as_array()?;
+            let (t, db) = (k.first()?.as_f64()?, k.get(1)?.as_f64()?);
+            (t.is_finite() && db.is_finite()).then(|| [(t.max(0.0) * 1000.0).round() / 1000.0, (db.clamp(-60.0, 12.0) * 100.0).round() / 100.0])
+        })
+        .collect();
+    out.sort_by(|a, b| a[0].total_cmp(&b[0]));
+    out.truncate(MAX_KEYS);
+    out
+}
+
+/// The keys' gain at `t` seconds into the clip, dB: straight lines between them, the first and last held.
+pub fn key_db(keys: &[[f64; 2]], t: f64) -> f64 {
+    match keys {
+        [] => 0.0,
+        [only] => only[1],
+        _ => {
+            if t <= keys[0][0] {
+                return keys[0][1];
+            }
+            for w in keys.windows(2) {
+                let ([t0, d0], [t1, d1]) = (w[0], w[1]);
+                if t <= t1 {
+                    return if t1 > t0 { d0 + (d1 - d0) * (t - t0) / (t1 - t0) } else { d1 };
+                }
+            }
+            keys[keys.len() - 1][1]
+        }
+    }
+}
+
+/// Interleaved stereo `frames` (from the clip's start) through its gain keys.
+pub fn apply_keys(frames: &mut [f32], keys: &[[f64; 2]]) {
+    if keys.is_empty() {
+        return;
+    }
+    for (i, f) in frames.as_chunks_mut::<2>().0.iter_mut().enumerate() {
+        let g = 10f64.powf(key_db(keys, i as f64 / RATE as f64) / 20.0) as f32;
+        f[0] *= g;
+        f[1] *= g;
+    }
+}
+
 /// One clip's sound, read ahead just enough for the block being mixed.
 struct Voice {
     clip: Clip,
@@ -77,6 +130,8 @@ struct Voice {
     /// how long it plays, in samples
     len: u64,
     gain: f64,
+    /// gain keys along the clip ([seconds, dB])
+    keys: Vec<[f64; 2]>,
     eq: crate::eq::Eq,
     fin: u64,
     fout: u64,
@@ -103,6 +158,7 @@ impl Voice {
             at: (ms / 1000.0 * rate).round() as u64,
             len: (c.dur * rate).round().max(0.0) as u64,
             gain: c.vol,
+            keys: c.keys.as_ref().map(clean_keys).unwrap_or_default(),
             eq: crate::eq::Eq::new(&c.eq(), rate),
             fin: (fin * rate).round().max(1.0) as u64,
             fout: (fout * rate).round().max(1.0) as u64,
@@ -117,6 +173,9 @@ impl Voice {
     /// The fade's gain at sample `i` of the clip (ffmpeg afade's default: a straight line).
     fn envelope(&self, i: u64) -> f64 {
         let mut g = self.gain;
+        if !self.keys.is_empty() {
+            g *= 10f64.powf(key_db(&self.keys, i as f64 / RATE as f64) / 20.0);
+        }
         if i < self.fin {
             g *= i as f64 / self.fin as f64;
         }
