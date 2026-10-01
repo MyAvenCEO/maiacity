@@ -775,15 +775,18 @@ async fn frame_job(handle: &AppHandle, vault: &Arc<Vault>, auth: &Auth, job: &Va
     Ok(json!({ "status": "done", "progress": 1, "note": format!("hero frame ready · {at:.2} s · {aspect}"), "output_hash": o.hash, "report": rep }))
 }
 
-/// A hero frame (`role:frame`): a frame of a timeline the render worker made.
+/// A hero frame: a frame of a timeline the render worker made (`role: frame`, or the tag `role:frame` with the
+/// timeline it is of). The old library's story frames carry the tag too, without a timeline: they are art, not this.
 pub fn is_frame(m: &vault_core::Meta) -> bool {
-    m.meta.get("role").and_then(Value::as_str) == Some("frame") || m.tags.iter().any(|t| t == "role:frame")
+    m.meta.get("role").and_then(Value::as_str) == Some("frame")
+        || (m.tags.iter().any(|t| t == "role:frame") && m.meta.get("timeline").and_then(Value::as_str).is_some())
 }
 
 /// The stills nothing uses — a file keeps two (its grading still and its graded still), never a history: every hero
 /// frame of a media clip (its file's graded still stands for it now) and all but the newest of a world clip's per
-/// shape, every proxy of a hero frame (a picture already through the output transform has nothing to grade), every
-/// proxy whose file is gone, and every grading still or preview its file no longer names. Each with why, newest first.
+/// shape, every proxy or analysis thumbnail of a hero frame (a picture already through the output transform has nothing
+/// to grade), every proxy or thumbnail whose file is gone, and every grading still or preview its file no longer names.
+/// Each with why.
 pub fn stale_stills(all: &[vault_core::Meta]) -> Vec<(&vault_core::Meta, &'static str)> {
     let by: HashMap<&str, &vault_core::Meta> = all.iter().map(|m| (m.hash.as_str(), m)).collect();
     let s = |m: &vault_core::Meta, k: &str| m.meta.get(k).and_then(Value::as_str).map(String::from);
@@ -806,6 +809,12 @@ pub fn stale_stills(all: &[vault_core::Meta]) -> Vec<(&vault_core::Meta, &'stati
             match by.get(of.as_str()) {
                 Some(o) if is_frame(o) => out.push((m, "a proxy of a hero frame")),
                 None => out.push((m, "a proxy of a file no longer in the vault")),
+                _ => {}
+            }
+        } else if let Some(of) = s(m, "thumbnail_of") {
+            match by.get(of.as_str()) {
+                Some(o) if is_frame(o) => out.push((m, "the analysis' thumbnail of a hero frame")),
+                None => out.push((m, "a thumbnail of a file no longer in the vault")),
                 _ => {}
             }
         } else if let Some(of) = s(m, "grade_still_of").filter(|of| !named_by(of, "grade_still")) {
@@ -882,13 +891,18 @@ mod tests {
             m("proxy", "1", "", json!({ "proxy_of": "orig" })),
             frame("f-media", "4", "c1", false),
             m("f-media-proxy", "5", "", json!({ "proxy_of": "f-media" })),
+            m("f-media-thumb", "5", "", json!({ "role": "thumbnail", "thumbnail_of": "f-media" })),
+            m("orig-thumb", "5", "", json!({ "role": "thumbnail", "thumbnail_of": "orig" })),
             frame("w-old", "4", "w1", true),
             frame("w-new", "6", "w1", true),
             m("lost-proxy", "1", "", json!({ "proxy_of": "gone" })),
+            // a story frame of the old library: the tag, no timeline — art, kept with its proxy
+            vault_core::Meta { hash: "art".into(), tags: vec!["role:frame".into()], ..Default::default() },
+            m("art-proxy", "1", "", json!({ "proxy_of": "art" })),
         ];
         let mut stale: Vec<&str> = stale_stills(&all).iter().map(|(m, _)| m.hash.as_str()).collect();
         stale.sort();
-        assert_eq!(stale, ["f-media", "f-media-proxy", "lost-proxy", "old-preview", "old-still", "w-old"]);
+        assert_eq!(stale, ["f-media", "f-media-proxy", "f-media-thumb", "lost-proxy", "old-preview", "old-still", "w-old"]);
     }
 
     #[test]
