@@ -11,13 +11,15 @@
 use std::{
     collections::HashMap,
     path::PathBuf,
-    sync::{Arc, Mutex},
+    sync::Arc,
     time::Duration,
 };
 
 use serde::Serialize;
 use serde_json::json;
 use tauri::{AppHandle, Emitter};
+
+use crate::jobs::{self, Kind};
 use vault_core::{Meta, Vault, ingest::Batch};
 
 use vault_media::proxy::WORKING;
@@ -31,29 +33,21 @@ pub fn journey(profile: &str) -> bool {
 /// log atom — Apple Log 2 from the Blackmagic app and the iPhone).
 const DETECTOR: u64 = 2;
 
-/// A proxy being made or waiting its turn, as the studio shows it.
+/// A piece of work under way or waiting its turn, as the studio's file lists show it (a view of the jobs, jobs.rs):
+/// `of` its key — a file's hash for its proxy, else `still:`, `shot:`, `render:`, `transcript:`, `analysis:` and what for.
 #[derive(Serialize, Clone)]
 pub struct Making {
-    /// the original's hash
     pub of: String,
     pub name: String,
-    /// queued · probing · making · adding
+    /// queued · waiting … · probing · making · adding …
     pub stage: String,
-    /// 0…1 while making
+    /// 0…1
     pub done: f64,
 }
 
-pub(crate) static NOW: Mutex<Option<HashMap<String, Making>>> = Mutex::new(None);
-/// one proxy at a time
-pub(crate) static TURN: tokio::sync::Semaphore = tokio::sync::Semaphore::const_new(1);
-
-pub(crate) fn set(of: &str, name: &str, stage: &str, done: f64) {
-    NOW.lock().unwrap().get_or_insert_with(HashMap::new).insert(of.into(), Making { of: of.into(), name: name.into(), stage: stage.into(), done });
-}
-pub(crate) fn clear(of: &str) {
-    if let Some(m) = NOW.lock().unwrap().as_mut() {
-        m.remove(of);
-    }
+/// A proxy's place in the jobs: its stage and how far.
+fn at(hex: &str, stage: &str, done: f64) {
+    jobs::stage(Kind::Proxy, hex, stage, done);
 }
 
 /// How often a proxy is tried before it waits for a person (a decode that failed once — the Mac short of memory, a
@@ -231,11 +225,20 @@ pub fn color_presets() -> crate::Res<Vec<serde_json::Value>> {
         .collect())
 }
 
-/// The proxies being made or queued right now.
+/// The work being done or queued right now, keyed as the file lists read it (the jobs' view: jobs.rs).
 #[tauri::command]
 pub fn proxies_now() -> crate::Res<Vec<Making>> {
     crate::gate()?;
-    Ok(NOW.lock().unwrap().as_ref().map(|m| m.values().cloned().collect()).unwrap_or_default())
+    let key = |j: &jobs::Job| match j.kind {
+        Kind::Proxy => Some(j.subject.clone()),
+        Kind::Still => Some(format!("still:{}", j.subject)),
+        Kind::WorldProxy => Some(format!("shot:{}", j.subject)),
+        Kind::Render | Kind::Frame => Some(format!("render:{}", j.subject)),
+        Kind::Transcript => Some(format!("transcript:{}", j.subject)),
+        Kind::Analysis => Some(format!("analysis:{}", j.subject)),
+        _ => None,
+    };
+    Ok(jobs::list(0).active.into_iter().filter_map(|j| Some(Making { of: key(&j)?, name: j.name, stage: j.stage, done: j.progress })).collect())
 }
 
 /// A film's proxy made again (its colour read again too), from the vault's own copy.
@@ -295,7 +298,7 @@ pub async fn sweep(handle: AppHandle, vault: Arc<Vault>) {
                         || legacy
                         || (state.starts_with("waiting") && (journey(profile) || (profile == "unknown" && detector < DETECTOR)))
                         || (state.starts_with("failed") && tries < TRIES);
-                    let queued = NOW.lock().unwrap().as_ref().is_some_and(|n| n.contains_key(&m.hash));
+                    let queued = jobs::active(Kind::Proxy, &m.hash);
                     if !made && due && !queued {
                         tauri::async_runtime::spawn(auto_proxy(handle.clone(), vault.clone(), m.hash.clone(), PathBuf::new()));
                     }
@@ -303,7 +306,7 @@ pub async fn sweep(handle: AppHandle, vault: Arc<Vault>) {
                     // (and its preview, made with it)
                     let still = m.meta.get("grade_still").and_then(|p| p.as_str()).is_some_and(|s| s.len() == 64) && m.meta.get("preview").and_then(|p| p.as_str()).is_some_and(|s| s.len() == 64);
                     let still_tries = m.meta.get("grade_still_tries").and_then(|t| t.as_u64()).unwrap_or(0);
-                    let still_queued = NOW.lock().unwrap().as_ref().is_some_and(|n| n.contains_key(&format!("still:{}", m.hash)));
+                    let still_queued = jobs::active(Kind::Still, &m.hash);
                     if made && m.kind == "video" && !sequence(m) && !still && still_tries < TRIES && !still_queued && journey(profile) {
                         tauri::async_runtime::spawn(backfill_still(vault.clone(), m.hash.clone()));
                     } else if made && m.kind == "video" && !sequence(m) && still_tries < TRIES && !still_queued && journey(profile) {
@@ -324,20 +327,18 @@ pub async fn auto_proxy(handle: AppHandle, vault: Arc<Vault>, hex: String, sourc
         Ok(h) => vault.catalog.meta(h).await.ok().flatten().map(|m| m.original_name).unwrap_or_default(),
         Err(_) => return,
     };
-    set(&hex, &name, "queued", 0.0);
-    let _turn = TURN.acquire().await;
-    // an ingest first: every file in, then the proxies
-    vault.hold.free_of("ingest").await;
-    // and only while the Mac has memory to spare — macOS's own word for it, not a number of ours
-    while pressure() > 1 {
-        set(&hex, &name, "waiting for memory", 0.0);
-        tokio::time::sleep(Duration::from_secs(5)).await;
+    if !jobs::queue(Kind::Proxy, &hex, &name) {
+        return;
     }
+    let Ok(_turn) = jobs::turn(Kind::Proxy, &hex).await else { return };
+    // an ingest first: every file in, then the proxies; and only while the Mac has memory to spare — macOS's own word
+    // for it, not a number of ours
+    jobs::ready_to_run(&vault, Kind::Proxy, &hex).await;
     let result = {
         let _held = vault.hold.take("proxy");
         make(&vault, &hex, &name, source).await
     };
-    clear(&hex);
+    jobs::end(Kind::Proxy, &hex, result.clone());
     handle.emit("vault-proxy", json!({ "of": hex })).ok();
     if result.is_ok() {
         // its proxy is here: its first thumbnail and its analysis (analyse/)
@@ -362,7 +363,7 @@ pub async fn auto_proxy(handle: AppHandle, vault: Arc<Vault>, hex: String, sourc
 async fn make(vault: &Vault, hex: &str, name: &str, source: PathBuf) -> Result<(), String> {
     let hash: iroh_blobs::Hash = hex.parse().map_err(|e| format!("{e}"))?;
     let original = vault.catalog.meta(hash).await.map_err(|e| format!("{e:#}"))?.ok_or("no such file")?;
-    set(hex, name, "probing", 0.0);
+    at(hex, "probing", 0.0);
     // the source while the card is still there; else the vault's own bytes, read in place (never copied out)
     let path: vault_media::Source = if source.exists() {
         source.into()
@@ -434,13 +435,13 @@ async fn make(vault: &Vault, hex: &str, name: &str, source: PathBuf) -> Result<(
         }
     }
 
-    set(hex, name, "making", 0.0);
+    at(hex, "making", 0.0);
     let ext = if still { "png" } else { "mp4" };
     let out = vault.ingest_dir().join(format!("{hex}.proxy.{ext}"));
-    let (src, o, of, nm, pf) = (path.clone(), out.clone(), hex.to_string(), name.to_string(), profile.clone());
+    let (src, o, of, pf) = (path.clone(), out.clone(), hex.to_string(), profile.clone());
     let fps = original.meta.get("fps").and_then(|f| f.as_f64()).unwrap_or(24.0);
     tokio::task::spawn_blocking(move || -> anyhow::Result<()> {
-        let mut told = |done: f64| set(&of, &nm, "making", done);
+        let mut told = |done: f64| at(&of, "making", done);
         if still {
             vault_media::still::make_still_proxy(src, &o, &pf)?;
         } else if seq {
@@ -453,7 +454,7 @@ async fn make(vault: &Vault, hex: &str, name: &str, source: PathBuf) -> Result<(
     .await
     .map_err(|e| e.to_string())?
     .map_err(|e| format!("{e:#}"))?;
-    set(hex, name, "adding", 1.0);
+    at(hex, "adding", 1.0);
     // the proxy lives beside its original: the same story, class proxy
     let stem = std::path::Path::new(name).file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_else(|| hex[..12].to_string());
     let named = vault.ingest_dir().join(format!("{stem}.proxy.{ext}"));
@@ -471,7 +472,7 @@ async fn make(vault: &Vault, hex: &str, name: &str, source: PathBuf) -> Result<(
     vault.catalog.describe(hash, &json!({ "meta": { "proxy": made.hash } })).await.map_err(|e| format!("{e:#}"))?;
     // and while the original is at hand: its grading still
     if !still && !seq {
-        set(hex, name, "grading still", 1.0);
+        at(hex, "grading still", 1.0);
         if let Err(e) = grading_still(vault, hex, name, &path, &profile).await {
             tracing::warn!("grading still of {hex}: {e}");
         }
@@ -549,7 +550,7 @@ const PREVIEW_WIDTH: u32 = 480;
 
 /// An original with a proxy of ours but no grading still yet (made before there were any): its still, from the
 /// vault's copy of the original, one at a time after any proxy.
-async fn backfill_still(vault: Arc<Vault>, hex: String) {
+pub(crate) async fn backfill_still(vault: Arc<Vault>, hex: String) {
     backfill_still_at(vault, hex, None).await
 }
 
@@ -567,18 +568,15 @@ fn marked_at(m: &Meta, all: &HashMap<String, &Meta>) -> Option<f64> {
 }
 
 async fn backfill_still_at(vault: Arc<Vault>, hex: String, at: Option<f64>) {
-    let k = format!("still:{hex}");
     let Ok(hash) = hex.parse::<iroh_blobs::Hash>() else { return };
     let Some(original) = vault.catalog.meta(hash).await.ok().flatten() else { return };
     let name = original.original_name.clone();
-    set(&k, &name, "queued", 0.0);
-    let _turn = TURN.acquire().await;
-    vault.hold.free_of("ingest").await;
-    while pressure() > 1 {
-        set(&k, &name, "waiting for memory", 0.0);
-        tokio::time::sleep(Duration::from_secs(5)).await;
+    if !jobs::queue(Kind::Still, &hex, &name) {
+        return;
     }
-    set(&k, &name, "grading still", 0.0);
+    let Ok(_turn) = jobs::turn(Kind::Still, &hex).await else { return };
+    jobs::ready_to_run(&vault, Kind::Still, &hex).await;
+    jobs::stage(Kind::Still, &hex, "grading still", 0.0);
     let told = |p: &str| original.meta.pointer(p).and_then(|v| v.as_str()).filter(|s| !s.is_empty());
     let profile = told("/color/override").or_else(|| told("/color/profile")).unwrap_or("").to_string();
     // the original read in place from the vault's blob store, never copied out
@@ -586,7 +584,7 @@ async fn backfill_still_at(vault: Arc<Vault>, hex: String, at: Option<f64>) {
         Ok(src) => grading_still_at(&vault, &hex, &name, &src, &profile, at).await,
         Err(e) => Err(format!("{e:#}")),
     };
-    clear(&k);
+    jobs::end(Kind::Still, &hex, r.clone().map(|_| ()));
     if let Err(e) = r {
         tracing::warn!("grading still of {hex}: {e}");
         let tries = original.meta.get("grade_still_tries").and_then(|t| t.as_u64()).unwrap_or(0) + 1;

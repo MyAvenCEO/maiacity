@@ -36,7 +36,7 @@ use vault_render::{
     timeline::{Clip, FPS, Shape, Timeline, shapes_of},
 };
 
-use crate::{Res, auth::Auth, err, proxies, world};
+use crate::{Res, auth::Auth, err, jobs, proxies, world};
 
 /// The loudness every film is levelled to: −14 LUFS integrated, the true peak at most −1 dBTP — what YouTube,
 /// Instagram and TikTok play at (and room for their AAC encoders). Change it here.
@@ -78,7 +78,7 @@ pub async fn sweep(handle: AppHandle, vault: Arc<Vault>) {
         let auth = handle.state::<Auth>().inner().clone();
         // this Mac's turn first — after the proxies queued before, after an ingest, with memory to spare — and only
         // then a job: one claimed here never waits behind other work
-        let Ok(turn) = proxies::TURN.acquire().await else { return };
+        let turn = jobs::hidden_turn(jobs::Lane::Gpu, "render-queue").await;
         vault.hold.free_of("ingest").await;
         while proxies::pressure() > 1 {
             tokio::time::sleep(Duration::from_secs(5)).await;
@@ -114,18 +114,18 @@ pub async fn sweep(handle: AppHandle, vault: Arc<Vault>) {
     }
 }
 
-/// A job's progress: on the job (throttled, always the latest) and in the proxies' list.
+/// A job's progress: on the API's job (throttled, always the latest) and in this Mac's jobs (jobs.rs).
 #[derive(Clone)]
 struct Progress {
     tx: Arc<tokio::sync::watch::Sender<(f64, String)>>,
-    of: String,
-    name: Arc<Mutex<String>>,
+    kind: jobs::Kind,
+    id: String,
 }
 
 impl Progress {
     /// Start telling the API. The task ends once every copy of the `Progress` is dropped, after sending the last
     /// value — await it before the job's last word, so no progress lands after it.
-    fn start(auth: &Auth, id: &str, name: &str) -> (Self, tauri::async_runtime::JoinHandle<()>) {
+    fn start(auth: &Auth, id: &str, kind: jobs::Kind, name: &str) -> (Self, tauri::async_runtime::JoinHandle<()>) {
         let (tx, mut rx) = tokio::sync::watch::channel((0.0, "starting".to_string()));
         let (auth, path) = (auth.clone(), format!("/api/renders/{id}"));
         let task = tauri::async_runtime::spawn(async move {
@@ -138,8 +138,10 @@ impl Progress {
                 tokio::time::sleep(Duration::from_secs(2)).await;
             }
         });
-        let p = Self { tx: Arc::new(tx), of: format!("render:{id}"), name: Arc::new(Mutex::new(name.to_string())) };
-        proxies::set(&p.of, name, "starting", 0.0);
+        let p = Self { tx: Arc::new(tx), kind, id: id.to_string() };
+        // the lane is the render queue's already (its poll holds the GPU): the job runs at once
+        jobs::queue(kind, id, name);
+        jobs::stage(kind, id, "starting", 0.0);
         (p, task)
     }
 
@@ -147,12 +149,11 @@ impl Progress {
     fn set(&self, done: f64, what: &str) {
         let note = if what.starts_with("rendering") && what != "rendering world plates" && what != "rendering the frame" { "rendering" } else { what };
         self.tx.send_replace((done.clamp(0.0, 1.0), note.to_string()));
-        let name = self.name.lock().unwrap().clone();
-        proxies::set(&self.of, &format!("{name} · {what}"), "making", done);
+        jobs::stage(self.kind, &self.id, what, done);
     }
 
     fn named(&self, name: &str) {
-        *self.name.lock().unwrap() = name.to_string();
+        jobs::name(self.kind, &self.id, name);
     }
 }
 
@@ -167,7 +168,8 @@ async fn run(handle: &AppHandle, vault: &Arc<Vault>, auth: &Auth, job: Value) {
         "lut" => json!({ "status": "failed", "note": "The viewer's LUTs are baked by the Mac app now." }),
         _ => {
             let label = if kind == "frame" { "Hero frame" } else { "Render" };
-            let (progress, told) = Progress::start(auth, &id, label);
+            let jk = if kind == "frame" { jobs::Kind::Frame } else { jobs::Kind::Render };
+            let (progress, told) = Progress::start(auth, &id, jk, label);
             let result = {
                 let _held = vault.hold.take("render");
                 let _awake = world::Awake::begin("rendering a film");
@@ -185,7 +187,7 @@ async fn run(handle: &AppHandle, vault: &Arc<Vault>, auth: &Auth, job: Value) {
                 }
             };
             world::close_if_idle(handle);
-            proxies::clear(&progress.of);
+            jobs::end(jk, &id, result.as_ref().map(|_| ()).map_err(|e| e.clone()));
             // the last progress report is sent before the result, never after it
             drop(progress);
             told.await.ok();

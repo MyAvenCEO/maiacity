@@ -26,14 +26,12 @@ use serde_json::{Value, json};
 use tauri::{AppHandle, Emitter};
 use vault_core::{Meta, Vault, catalog::TRANSCRIPT};
 
-use crate::proxies::{self, pressure};
+use crate::jobs::{self, Kind};
 
 pub const TRIES: u64 = 3;
 /// Another device's transcript that has said nothing for this long is taken over.
 pub const STALE_HOURS: i64 = 6;
 
-/// one recording at a time
-static TURN: tokio::sync::Semaphore = tokio::sync::Semaphore::const_new(1);
 /// the loaded model, kept for a run of recordings
 static RECOGNIZER: Mutex<Option<vault_asr::Recognizer>> = Mutex::new(None);
 
@@ -140,11 +138,6 @@ pub async fn transcript_edit(app: tauri::State<'_, crate::App>, hash: String, wo
     set_words(&app.vault, h, &words, "hand").await
 }
 
-/// The key of a transcript's line in the studio's list of work in progress (`proxies_now`).
-pub fn key(hash: &str) -> String {
-    format!("transcript:{hash}")
-}
-
 /// Does this file get words? A video or a sound that is an original or a working file — never a proxy (the audio
 /// proxies included), a delivery, an EXR sequence, a model or a world shot.
 pub fn wants(m: &Meta) -> bool {
@@ -227,33 +220,38 @@ pub async fn queue_due(handle: &AppHandle, vault: &Arc<Vault>) {
 
 /// Queue one recording (again): nothing happens when it is queued already.
 pub fn queue(handle: AppHandle, vault: Arc<Vault>, hash: String) {
-    let queued = proxies::NOW.lock().unwrap().as_ref().is_some_and(|n| n.contains_key(&key(&hash)));
-    if !queued {
-        proxies::set(&key(&hash), "", "queued", 0.0);
+    if jobs::queue(Kind::Transcript, &hash, "") {
         tauri::async_runtime::spawn(one(handle, vault, hash));
     }
 }
 
 async fn one(handle: AppHandle, vault: Arc<Vault>, hex: String) {
-    let k = key(&hex);
-    let Ok(hash) = hex.parse::<Hash>() else { return };
-    let name = vault.catalog.meta(hash).await.ok().flatten().map(|m| m.original_name).unwrap_or_default();
-    proxies::set(&k, &name, "queued", 0.0);
-    let turn = TURN.acquire().await;
-    // an ingest first; and only while the Mac has memory to spare
-    vault.hold.free_of("ingest").await;
-    while pressure() > 1 {
-        proxies::set(&k, &name, "waiting for memory", 0.0);
-        tokio::time::sleep(Duration::from_secs(5)).await;
+    let Ok(hash) = hex.parse::<Hash>() else { return jobs::drop_quietly(Kind::Transcript, &hex) };
+    // words a person put right (or a voice take's own) are never heard again over them
+    if vault.catalog.record(TRANSCRIPT, hash).await.ok().flatten().is_some_and(|r| r.get("edited").is_some()) {
+        tracing::info!("transcript of {hex}: put right by hand — kept, not transcribed again");
+        return jobs::drop_quietly(Kind::Transcript, &hex);
     }
+    let name = vault.catalog.meta(hash).await.ok().flatten().map(|m| m.original_name).unwrap_or_default();
+    jobs::name(Kind::Transcript, &hex, &name);
+    // one recording at a time (the speech lane); an ingest first; and only while the Mac has memory to spare
+    let Ok(turn) = jobs::turn(Kind::Transcript, &hex).await else { return };
+    jobs::ready_to_run(&vault, Kind::Transcript, &hex).await;
     let me = vault.endpoint.id().to_string();
     // the tries so far go along in every record of this run (a failure counts on from them)
     let tries = vault.catalog.record(TRANSCRIPT, hash).await.ok().flatten().filter(|r| r["state"].as_str().is_some_and(|s| s.starts_with("failed") || s.starts_with("queued") || s == "transcribing")).and_then(|r| r["tries"].as_u64()).unwrap_or(0);
     let result = transcribe(&vault, hash, &name, &me, tries).await;
-    proxies::clear(&k);
+    match &result {
+        Ok(()) => jobs::end(Kind::Transcript, &hex, Ok(())),
+        Err(Wait(why)) => {
+            jobs::waiting(Kind::Transcript, &hex, why);
+            jobs::drop_quietly(Kind::Transcript, &hex);
+        }
+        Err(Fail(e)) => jobs::end(Kind::Transcript, &hex, Err(e.clone())),
+    }
     drop(turn);
     // the queue is empty: the model's memory back to the Mac
-    let more = proxies::NOW.lock().unwrap().as_ref().is_some_and(|n| n.keys().any(|x| x.starts_with("transcript:")));
+    let more = jobs::list(0).active.iter().any(|j| j.kind == Kind::Transcript);
     if !more {
         RECOGNIZER.lock().unwrap().take();
     }
@@ -294,13 +292,13 @@ impl From<&str> for Why {
 
 async fn transcribe(vault: &Arc<Vault>, hash: Hash, name: &str, me: &str, tries: u64) -> Result<(), Why> {
     let hex = hash.to_hex().to_string();
-    let k = key(&hex);
     let started = std::time::Instant::now();
     // how far, here (every change) and in the catalog (at most every 15 s — it syncs to every device)
     let last_write = Arc::new(Mutex::new(std::time::Instant::now() - Duration::from_secs(60)));
-    let (v, lw, kk, nm, me2) = (vault.clone(), last_write.clone(), k.clone(), name.to_string(), me.to_string());
+    let (v, lw, hx, me2) = (vault.clone(), last_write.clone(), hex.clone(), me.to_string());
+    let _ = name;
     let tell = move |stage: &str, done: f64| {
-        proxies::set(&kk, &nm, stage, done);
+        jobs::stage(Kind::Transcript, &hx, stage, done);
         let mut lw = lw.lock().unwrap();
         if lw.elapsed() >= Duration::from_secs(15) {
             *lw = std::time::Instant::now();
