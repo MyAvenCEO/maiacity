@@ -67,7 +67,7 @@
 	};
 	// in Grade the shots stand side by side, one column each whatever their length, each with its picture: the grade is
 	// judged shot against shot, not along the clock
-	const COL = 168;
+	const COL = 184;
 	const pics = $derived(grading ? s.clips.filter((c) => c.track === 'V1').sort((a, b) => a.start - b.start) : []);
 	const colOf = $derived(new Map(pics.map((c, i) => [c.id, i])));
 	/** where a picture clip sits: its column in Grade, its time elsewhere @param {Clip} c */
@@ -219,7 +219,36 @@
 	const setSecondaries = (c, list) => s.patchClip(c.id, { secondaries: cleanSecondaries(list).length ? cleanSecondaries(list) : undefined });
 	/** @param {any} sec */
 	const secText = (sec) => sec.name ?? (sec.window?.track ? 'face' : sec.key ? `${Math.round(sec.key.hue[0])}° key` : sec.window ? sec.window.shape : 'part');
-	const FACE_LIFT = { name: 'face lift', window: { shape: 'ellipse', x: 0.5, y: 0.5, w: 1.7, h: 2, feather: 0.7, track: 'face' }, adjust: { exposure: 0.2 }, mix: 1 };
+	// a new secondary starts doing a little, so it is kept (a secondary that changes nothing is dropped)
+	const NEW_KEY = { name: 'key', key: { hue: [30, 40], sat: [10, 100], luma: [10, 90], soft: 0.5 }, adjust: { sat: -0.1 }, mix: 1 };
+	const NEW_WINDOW = { name: 'window', window: { shape: 'ellipse', x: 0.5, y: 0.5, w: 0.6, h: 0.6, angle: 0, feather: 0.5, invert: false }, adjust: { exposure: 0.15 }, mix: 1 };
+	/** which secondaries show every control ("<clip>:<i>") @type {string[]} */
+	let secOpen = $state([]);
+	/** @param {string} k */
+	const toggleSec = (k) => (secOpen = secOpen.includes(k) ? secOpen.filter((x) => x !== k) : [...secOpen, k]);
+	/** @typedef {{ id: string, label: string, lo: number, hi: number, step: number, get: (x: any) => number, set: (x: any, v: number) => any }} SecField */
+	const ADJUST = BALANCE_NODES.flatMap((n) => n.fields);
+	/** @param {(typeof ADJUST)[number]} f @returns {SecField} */
+	const adjustField = (f) => ({ id: `a:${f.key}`, label: f.key === 'shadows' ? 'lows' : f.key, lo: f.min, hi: f.max, step: f.step, get: (x) => x.adjust?.[f.key] ?? 0, set: (x, v) => ({ ...x, adjust: { ...x.adjust, [f.key]: v } }) });
+	/** @param {'hue' | 'sat' | 'luma'} part @param {0 | 1} i @param {string} label @param {number} lo @param {number} hi @returns {SecField} */
+	const keyField = (part, i, label, lo, hi) => ({ id: `k:${part}${i}`, label, lo, hi, step: 1, get: (x) => x.key?.[part]?.[i] ?? 0, set: (x, v) => ({ ...x, key: { ...x.key, [part]: i ? [x.key[part][0], v] : [v, x.key[part][1]] } }) });
+	/** @param {string} k @param {string} label @param {number} lo @param {number} hi @param {number} step @returns {SecField} */
+	const windowField = (k, label, lo, hi, step) => ({ id: `w:${k}`, label, lo, hi, step, get: (x) => x.window?.[k] ?? 0, set: (x, v) => ({ ...x, window: { ...x.window, [k]: v } }) });
+	/** @type {SecField} */
+	const MIX = { id: 'mix', label: 'mix', lo: 0, hi: 1, step: 0.01, get: (x) => x.mix ?? 1, set: (x, v) => ({ ...x, mix: v }) };
+	/** a secondary's controls: its exposure and mix; opened, every one — its whole balance, its key, its window @param {any} sec @param {boolean} more @returns {SecField[]} */
+	function secFields(sec, more) {
+		const exposure = adjustField(/** @type {any} */ (ADJUST.find((f) => f.key === 'exposure')));
+		if (!more) return [exposure, MIX];
+		return [
+			...ADJUST.map(adjustField),
+			MIX,
+			...(sec.key ? [keyField('hue', 0, 'hue °', 0, 359), keyField('hue', 1, 'width °', 1, 360), keyField('sat', 0, 'sat ≥', 0, 100), keyField('sat', 1, 'sat ≤', 0, 100), keyField('luma', 0, 'luma ≥', 0, 100), keyField('luma', 1, 'luma ≤', 0, 100), { id: 'k:soft', label: 'soft', lo: 0, hi: 1, step: 0.01, get: (/** @type {any} */ x) => x.key?.soft ?? 0.5, set: (/** @type {any} */ x, /** @type {number} */ v) => ({ ...x, key: { ...x.key, soft: v } }) }] : []),
+			...(sec.window ? [windowField('x', 'x', -1, 2, 0.01), windowField('y', 'y', -1, 2, 0.01), windowField('w', 'width', 0.01, 4, 0.01), windowField('h', 'height', 0.01, 4, 0.01), windowField('angle', 'angle', -180, 180, 1), windowField('feather', 'feather', 0, 1, 0.01)] : [])
+		];
+	}
+	/** how many control rows a shot's secondaries take, open @param {Clip} c */
+	const secRows = (c) => (c.secondaries ?? []).reduce((n, sec, i) => n + 1 + secFields(sec, secOpen.includes(`${c.id}:${i}`)).length + (sec.window && secOpen.includes(`${c.id}:${i}`) ? 1 : 0), 0) + 1;
 	// the film's finishing, after its looks
 	/** @param {any} f */
 	const setFinish = (f) => {
@@ -250,8 +279,18 @@
 	const shown = $derived(
 		audio ? TRACKS.filter((t) => t.id.startsWith('A')) : story ? [STORY, ...TRACKS.filter((t) => t.id === 'T1')] : grading ? [...GRADE_LAYERS, ...TRACKS.filter((t) => t.id === 'V1')] : TRACKS
 	);
+	/** an open layer's height: its rows of controls (a head counts as one), each 1.25rem, and a little room */
+	const ROW = 1.25;
+	/** @param {string} id */
+	const controlRows = (id) =>
+		id === 'L:film' || id === 'L:scene' ? 1 + LOOK_SLIDERS.length :
+		id === 'L:finish' ? 1 + FINISH_SLIDERS.length :
+		id === 'L:grade' ? 4 :
+		id === 'L:frame' ? 3 :
+		id === 'L:sec' ? Math.max(2, ...pics.map(secRows)) :
+		(BALANCE_NODES.find((n) => `L:${n.id}` === id)?.fields.length ?? 1);
 	const rows = $derived(
-		grading ? `1.5rem ${GRADE_LAYERS.map((l) => (openLayers.includes(l.id) ? (l.id === 'L:film' || l.id === 'L:scene' ? '11.6rem' : l.id === 'L:finish' ? '10rem' : l.id === 'L:sec' ? '8.4rem' : l.id === 'L:grade' ? '7.2rem' : l.id === 'L:wb' || l.id === 'L:frame' ? '4.4rem' : '2.8rem') : '1.5rem')).join(' ')} 7.2rem` :
+		grading ? `1.5rem ${GRADE_LAYERS.map((l) => (openLayers.includes(l.id) ? `${(0.6 + controlRows(l.id) * ROW).toFixed(2)}rem` : '1.5rem')).join(' ')} 7.2rem` :
 		story ? '1.5rem minmax(5rem, 3fr) minmax(2.6rem, 1fr)' :
 		audio ? `1.5rem repeat(${shown.length}, minmax(3.4rem, 1fr))` : `1.5rem minmax(2.6rem, 1fr) repeat(4, minmax(1.7rem, 1fr))${spec ? ` repeat(${LANES.length}, 1.45rem)` : ''}`
 	);
@@ -627,7 +666,7 @@
 
 {#snippet lookCell(/** @type {import('$lib/auth/client').Look | null} */ l, /** @type {boolean} */ open, /** @type {string} */ what, /** @type {(l: import('$lib/auth/client').Look | null) => void} */ set)}
 	{#if open}
-		<div class="look-head"><b>{what}</b> <span class="val">{lookText(l)}</span>{#if l}<button class="off" onclick={() => set(null)} title="Take this look off">off</button>{/if}</div>
+		<div class="look-head"><b title={what}>{what}</b>{#if l}<button class="off" onclick={() => set(null)} title="Take this look off">off</button>{/if}</div>
 		{#each LOOK_SLIDERS as [k, label, lo, hi, step] (k)}
 			<label class="sl"><span>{label}</span><input {@attach fine()} type="range" min={lo} max={hi} {step} value={lookValue(l, k)} oninput={(e) => set(withValue(l, k, Number(e.currentTarget.value)))} /><output>{lookValue(l, k).toFixed(step < 1 ? 2 : 0)}</output></label>
 		{/each}
@@ -638,7 +677,7 @@
 
 {#snippet finishCell(/** @type {any} */ f, /** @type {boolean} */ open)}
 	{#if open}
-		<div class="look-head"><b>the whole film</b> <span class="val">{finishText(f)}</span>{#if f}<button class="off" onclick={() => setFinish(null)} title="Take the finishing off">off</button>{/if}</div>
+		<div class="look-head"><b>the whole film</b>{#if f}<button class="off" onclick={() => setFinish(null)} title="Take the finishing off">off</button>{/if}</div>
 		{#each FINISH_SLIDERS as [part, k, label, lo, hi] (label)}
 			{@const v = f?.[part]?.[k] ?? (k === 'size' ? 1 : 0)}
 			<label class="sl"><span>{label}</span><input {@attach fine()} type="range" min={lo} max={hi} step="0.01" value={v} oninput={(e) => setFinish({ ...(f ?? {}), [part]: { ...(f?.[part] ?? {}), [k]: Number(e.currentTarget.value), ...(k === 'size' && !f?.[part]?.amount ? { amount: 0.25 } : {}) } })} /><output>{v.toFixed(2)}</output></label>
@@ -652,11 +691,29 @@
 	{@const list = c.secondaries ?? []}
 	{#if open}
 		{#each list as sec, i (i)}
-			<div class="look-head"><b>{secText(sec)}</b><button class="off" onclick={() => setSecondaries(c, list.filter((_, j) => j !== i))} title="Take this secondary off">off</button></div>
-			<label class="sl"><span>exposure</span><input {@attach fine()} type="range" min="-2" max="2" step="0.01" value={sec.adjust?.exposure ?? 0} oninput={(e) => setSecondaries(c, list.map((x, j) => (j === i ? { ...x, adjust: { ...x.adjust, exposure: Number(e.currentTarget.value) } } : x)))} /><output>{(sec.adjust?.exposure ?? 0).toFixed(2)}</output></label>
-			<label class="sl"><span>mix</span><input {@attach fine()} type="range" min="0" max="1" step="0.01" value={sec.mix ?? 1} oninput={(e) => setSecondaries(c, list.map((x, j) => (j === i ? { ...x, mix: Number(e.currentTarget.value) } : x)))} /><output>{(sec.mix ?? 1).toFixed(2)}</output></label>
+			{@const k = `${c.id}:${i}`}
+			{@const more = secOpen.includes(k)}
+			<div class="look-head">
+				<button class="twist" onclick={() => toggleSec(k)} title={more ? 'Fewer controls' : 'Every control: its balance, its key, its window'}>{more ? '▾' : '▸'}</button>
+				<b title={secText(sec)}>{secText(sec)}</b>
+				<button class="off" onclick={() => setSecondaries(c, list.filter((_, j) => j !== i))} title="Take this secondary off">off</button>
+			</div>
+			{#each secFields(sec, more) as f (f.id)}
+				<label class="sl"><span>{f.label}</span><input {@attach fine()} type="range" min={f.lo} max={f.hi} step={f.step} value={f.get(sec)} oninput={(e) => setSecondaries(c, list.map((x, j) => (j === i ? f.set(x, Number(e.currentTarget.value)) : x)))} /><output>{f.get(sec).toFixed(f.step < 1 ? 2 : 0)}</output></label>
+			{/each}
+			{#if more && sec.window}
+				<div class="sl toggles">
+					<button class="off" class:on={sec.window.shape === 'ellipse'} onclick={() => setSecondaries(c, list.map((x, j) => (j === i ? { ...x, window: { ...x.window, shape: x.window?.shape === 'ellipse' ? 'rect' : 'ellipse' } } : x)))}>{sec.window.shape}</button>
+					<button class="off" class:on={sec.window.invert} onclick={() => setSecondaries(c, list.map((x, j) => (j === i ? { ...x, window: { ...x.window, invert: !x.window?.invert } } : x)))}>{sec.window.invert ? 'outside' : 'inside'}</button>
+				</div>
+			{/if}
 		{/each}
-		{#if list.length < 4}<button class="off add" onclick={() => setSecondaries(c, [...list, FACE_LIFT])} title="Lift the face: a soft ellipse on the face Vision finds in every frame">+ face lift</button>{/if}
+		{#if list.length < 4}
+			<div class="adds">
+				<button class="off add" onclick={() => setSecondaries(c, [...list, NEW_KEY])} title="A colour range of the picture (a hue, how saturated, how bright), with its own balance">+ key</button>
+				<button class="off add" onclick={() => setSecondaries(c, [...list, NEW_WINDOW])} title="A part of the frame (an ellipse or a rectangle), with its own balance">+ window</button>
+			</div>
+		{/if}
 	{:else}
 		<span class="val" class:on={list.length > 0}>{list.length ? list.map(secText).join(' · ') : '—'}</span>
 	{/if}
@@ -693,7 +750,7 @@
 	</div>
 	<div class="scroll" bind:this={scroller}>
 		<!-- svelte-ignore a11y_no_static_element_interactions -->
-		<div class="lanes" class:locked={!s.canEdit} class:grading bind:this={s.lanes} style:width={grading ? `${pics.length * COL}px` : x(s.span)} onpointerdown={scrub}>
+		<div class="lanes" class:locked={!s.canEdit} class:grading bind:this={s.lanes} style:--col="{COL}px" style:width={grading ? `${pics.length * COL}px` : x(s.span)} onpointerdown={scrub}>
 			<div class="ruler">
 				{#if grading}
 					{#each pics as c, i (c.id)}<span class="tick shot" class:now={nowId === c.id} style:left={left(c)} style:width={width(c)}><b>{i + 1}</b> {clockText(c.start)}</span>{/each}
@@ -715,18 +772,18 @@
 						{@const open = openLayers.includes(t.id)}
 						{#if t.id === 'L:film'}
 							<!-- svelte-ignore a11y_no_static_element_interactions -->
-							<div class="cell film" style:left="0" style:width={grading ? `${pics.length * COL}px` : x(s.end)} onpointerdown={(e) => e.stopPropagation()}>
+							<div class="cell film" class:open style:left="0" style:width={grading ? `${pics.length * COL}px` : x(s.end)} onpointerdown={(e) => e.stopPropagation()}>
 								{@render lookCell(filmLook, open, 'the whole film', (l) => setLook(null, l))}
 							</div>
 						{:else if t.id === 'L:finish'}
 							<!-- svelte-ignore a11y_no_static_element_interactions -->
-							<div class="cell film" style:left="0" style:width={grading ? `${pics.length * COL}px` : x(s.end)} onpointerdown={(e) => e.stopPropagation()}>
+							<div class="cell film" class:open style:left="0" style:width={grading ? `${pics.length * COL}px` : x(s.end)} onpointerdown={(e) => e.stopPropagation()}>
 								{@render finishCell(s.current?.grade?.finish ?? null, open)}
 							</div>
 						{:else if t.id === 'L:scene'}
 							{#each sceneRuns as r (r.key)}
 								<!-- svelte-ignore a11y_no_static_element_interactions -->
-								<div class="cell film scene" style:left="{r.from * COL}px" style:width="{r.count * COL}px" onpointerdown={(e) => e.stopPropagation()}>
+								<div class="cell film scene" class:open style:left="{r.from * COL}px" style:width="{r.count * COL}px" onpointerdown={(e) => e.stopPropagation()}>
 									{#if r.scene}
 										{@render lookCell(s.current?.grade?.scenes?.[r.scene] ?? null, open, r.scene, (l) => setLook(r.scene, l))}
 									{:else}<span class="val">no scene in the script</span>{/if}
@@ -735,7 +792,7 @@
 						{:else}
 							{#each s.clips.filter((c) => c.track === 'V1') as c (c.id)}
 								<!-- svelte-ignore a11y_no_static_element_interactions -->
-								<div class="cell" class:sel={s.selected === c.id} style:left={left(c)} style:width={width(c)} onpointerdown={(e) => (e.stopPropagation(), (s.selected = c.id))}>
+								<div class="cell" class:open class:sel={s.selected === c.id} style:left={left(c)} style:width={width(c)} onpointerdown={(e) => (e.stopPropagation(), (s.selected = c.id))}>
 									{#if t.id === 'L:grade'}
 										{@render cdlCell(c.grade ?? null, null, open, (g) => s.patchClip(c.id, { grade: g ?? undefined }))}
 									{:else if t.id === 'L:sec'}
@@ -1166,6 +1223,45 @@
 		border-left: 2px solid var(--accent);
 	}
 
+	/* open: the controls from the top, row under row */
+	.cell.open {
+		justify-content: flex-start;
+		padding-top: 0.3rem;
+	}
+
+	/* a layer over many shots (the film's, a scene's): its bar spans them, its controls stay one shot wide, at its start */
+	.cell.film > * {
+		width: calc(var(--col) - 0.75rem);
+		max-width: 100%;
+	}
+
+	/* a cell's own summary sits in its flow (the lanes' timed labels are placed by time) */
+	.cell .val {
+		position: static;
+		padding-left: 0;
+		line-height: 1.2;
+	}
+
+	.look-head .twist {
+		padding: 0;
+		border: 0;
+		background: none;
+		font: inherit;
+		color: var(--dim);
+		cursor: pointer;
+	}
+
+	.sl.toggles,
+	.adds {
+		display: flex;
+		gap: 0.3rem;
+	}
+
+	.sl.toggles .off.on {
+		border-color: var(--accent);
+		color: var(--ink);
+	}
+
 	.look-head {
 		display: flex;
 		gap: 0.5rem;
@@ -1175,8 +1271,13 @@
 	}
 
 	.look-head b {
+		flex: 1;
+		min-width: 0;
+		overflow: hidden;
 		color: var(--ink);
 		font-weight: 600;
+		white-space: nowrap;
+		text-overflow: ellipsis;
 	}
 
 	.off.add {
@@ -1217,7 +1318,8 @@
 
 	.cell .sl {
 		display: grid;
-		grid-template-columns: 2.2rem minmax(2rem, 1fr) 2.2rem;
+		grid-template-columns: 3.3rem minmax(2rem, 1fr) 2.1rem;
+		min-height: 1.15rem;
 		gap: 0.25rem;
 		align-items: center;
 		font-size: 0.6rem;
