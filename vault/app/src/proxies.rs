@@ -267,7 +267,7 @@ fn ours(all: &HashMap<String, &Meta>, hash: &str) -> bool {
 
 pub async fn sweep(handle: AppHandle, vault: Arc<Vault>) {
     // what a run that ended midway left behind (the app quit, the Mac froze): half-made proxies, exported sources,
-    // landing copies — nothing uses them now; the files themselves are taken up again below
+    // work copies of earlier runs — nothing uses them now; the files themselves are taken up again below
     let started = std::time::SystemTime::now();
     for e in std::fs::read_dir(vault.ingest_dir()).into_iter().flatten().flatten() {
         let old = e.metadata().and_then(|m| m.modified()).is_ok_and(|t| t < started);

@@ -206,10 +206,11 @@ pub struct Join {
 
 impl Vault {
     /// Open (or create) the vault in `dir`: `dir/secret.key` is this device's identity, `dir/blobs` the store,
-    /// `dir/docs` the catalog replica, `dir/ingest` the landing place of copies being verified.
+    /// `dir/docs` the catalog replica — nothing else (the files a node makes are written in the system's temp space).
     pub async fn open(dir: impl AsRef<Path>) -> Result<Self> {
         let dir = dir.as_ref().to_path_buf();
-        std::fs::create_dir_all(dir.join("ingest"))?;
+        // the landing folder of earlier versions, when it is empty: gone (ingest imports straight from the source)
+        std::fs::remove_dir(dir.join("ingest")).ok();
         std::fs::create_dir_all(dir.join("docs"))?;
         // iroh-blobs imports by absolute path only
         let dir = std::fs::canonicalize(&dir)?;
@@ -349,9 +350,13 @@ impl Vault {
         self.lookup.add_endpoint_info(addr);
     }
 
-    /// Where ingest lands copies: on the same volume as the store, so importing them is a clone, not a second copy.
+    /// Where the files this node makes (proxies, stills, plates, renders) are written before they go into the store: the
+    /// system's temp space, one folder per node — nothing of the vault's folder but iroh's own (`blobs/`, `docs/`) and
+    /// the node's identity. Ingest never lands here: it imports straight from the source.
     pub fn ingest_dir(&self) -> PathBuf {
-        self.dir.join("ingest")
+        let d = std::env::temp_dir().join("maiacity-vault").join(self.endpoint.id().fmt_short().to_string());
+        std::fs::create_dir_all(&d).ok();
+        d
     }
 
     /// After sleep or a dropped network the endpoint can stay cut off from its relay (seen 2026-09-29: an hour, until
