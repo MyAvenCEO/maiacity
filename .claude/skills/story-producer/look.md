@@ -113,7 +113,7 @@ A look alone gave a flat, tinted picture: the colours moved but the image stayed
 2. **Per-shot trim (`grade_clip`, the Grade layer): the low key.** About a stop down and a slope of 1.3 around mid
    grey, as one CDL: slope k, offset 0.414·(1 − k) + stops / 17.52. The balance stays the base correction; the mood
    lives here, per shot, so every shot can land on the same key.
-3. **Finishing:** vignette 0.65 (size 0.85, soft), grain 0.25.
+3. **Finishing:** vignette 0.65 (size 0.85, soft), grain 0.12 (0.25 read as noise on the 4K master).
 4. **Secondaries: only quiet holds.** A sky kept from clipping (a luma key over 72 IRE in a band at the top). Nothing
    else.
 
@@ -151,10 +151,42 @@ the face and hands. The scope sheet's 640 px picture hides halos, blotches and b
 Day 01's trims (exposure stops, slope): bedroom −0.85…−1.5, 1.35–1.5; garden −0.65…−1.5, 1.12–1.35, saturation
 1.05 (the close-up 1.0); highlights −0.8…−1.0 on the shots with big skies.
 
+## Interiors: teal and orange that still reads real
+
+Day 01's bedroom went wrong three ways before it went right. The person called the first tries "magenta", then
+"unrealistic":
+
+- **A cooled room white balance.** A warm lamp-lit room pulled blue, so faces went grey-pink and the walls lavender.
+- **Big hue rotations** (25–30°) on skin's neighbours. Wood, hair and lips slid into a single plastic orange.
+- **Teal in the middle tones.** It reached the walls and the half-lit side of the face, which read as bruising.
+
+What the Hollywood colourists do, and what held:
+
+1. **A natural base first.** The balance only neutralises: the room stays as warm as it was, and a green-magenta
+   cast is taken out with `tint` (positive is magenta; Day 01's bedroom wanted −0.04 … −0.2). Never cool the room in
+   the balance to "make room" for teal.
+2. **Teal only in the shadows.** The split's crossover sits at mid grey (balance 0), so skin is never on the teal
+   side. The engine fades the shadow tint out in the blacks (from about 6 to 20 % luminance), so true black stays
+   black. Tinted blacks read as video.
+3. **A skin bumper.** The `hue` points at 105°, 123° and 145° are held at 0, so the skin line cannot move. Only the
+   hues around it move, and gently: reds −10°, yellow-greens −12°, blues and cyans +20…+25°, magentas −15…−20°.
+4. **Walls low chroma.** Pull yellows (about 60°) and oranges outside skin (about 30°) to about 0.6–0.65 saturation.
+   Skin 1.1–1.15, magenta `hue_sat` low and `hue_lum` −0.15. The contrast then lives between the person and the room,
+   not across the whole frame.
+5. **Interiors darker than exteriors:** −1.1 … −1.7 stops in the trim with a slope of 1.35–1.5, and the vignette
+   does the rest. The highlights get a light warm tint (about 0.2 at 128°), not the exterior's 0.5.
+
+Day 01's interior look, on both inside scenes:
+`split` shadows 290° @ 0.55, highlights 128° @ 0.2, balance 0; `sat` 0.95.
+
+Pink blotches on skin or a white rug in the Edit tab's preview were the 8-bit HD proxy's decoder, not the grade.
+Judge on the Mac's frames (native playback, `render_frame`) before chasing them.
+
 ## Don't
 
 - Don't put exposure or contrast in a look, or put a look under the balance.
 - Don't let teal into skin, or push orange until skin reads sunburnt.
+- Don't cool a warm room in the balance, rotate hues more than about 20°, or tint the blacks.
 - Don't crush blacks or clip whites for "contrast".
 - Don't put windows, grain or blur in a LUT: the `lut` of a look is colour only.
 - Don't leave a finishing effect at full strength.

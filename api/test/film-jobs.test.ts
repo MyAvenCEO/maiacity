@@ -27,12 +27,21 @@ test("render jobs: one at a time per timeline, claimed oldest first", async () =
   expect(r.kind).toBe("render");
   expect(r.media_hash).toBeNull();
   expect((await queueRender("admin", rows[0]!.id)).id).toBe(r.id);
+  expect(r.params).toBeNull(); // every delivery
   const f = await queueFrame("admin", rows[0]!.id, { t: 1.5, shape: "9:16" });
   expect(f.kind).toBe("frame");
   expect(f.params).toEqual({ t: 1.5, shape: "9:16" });
   expect((await claimRender())!.id).toBe(r.id);
   expect((await claimRender())!.id).toBe(f.id);
   expect(await claimRender()).toBeNull();
+});
+
+test("a render for one delivery: YouTube's 4K master, named in its params; nothing else", async () => {
+  const { rows } = await pg.query<{ id: string }>("INSERT INTO timelines (name, clips) VALUES ('Day 21', '[]') RETURNING id");
+  await expect(queueRender("admin", rows[0]!.id, { delivery: "vimeo" })).rejects.toThrow("youtube-4k");
+  const r = await queueRender("admin", rows[0]!.id, { delivery: "youtube-4k" });
+  expect(r.params).toEqual({ delivery: "youtube-4k" });
+  expect((await claimRender())!.params).toEqual({ delivery: "youtube-4k" }); // the Mac reads it from the job
 });
 
 test("a job's output is named by its hash; the queue is filtered by kind", async () => {

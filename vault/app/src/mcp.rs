@@ -172,6 +172,16 @@ pub struct IdArg {
 }
 
 #[derive(Deserialize, schemars::JsonSchema)]
+pub struct RenderArgs {
+    /// the timeline
+    pub id: String,
+    /// "youtube-4k": the 16:9 4K master for YouTube alone (HEVC 10-bit, 80 Mb/s, AAC 384 kb/s) — the studio's one
+    /// delivery for now; left out: every delivery shape
+    #[serde(default)]
+    pub delivery: Option<String>,
+}
+
+#[derive(Deserialize, schemars::JsonSchema)]
 pub struct SaveArgs {
     pub id: String,
     /// the fields to change, as the API takes them
@@ -1361,10 +1371,11 @@ impl Studio {
     }
 
     #[tool(
-        description = "Queue a timeline's final render — rendered natively on this Mac by maiaCITY Studio (Core Image on Metal, VideoToolbox; world clips as ACEScct plates in its own world): every delivery shape (16:9 4K HEVC master + 1080 H.264, 9:16, 1:1, 4:5), colour-managed through ACES 2.0, levelled to −14 LUFS, QC'd, into the vault as deliveries and onto the calendar. One render per timeline at a time; follow it with renders_list."
+        description = "Queue a timeline's final render — rendered natively on this Mac by maiaCITY Studio (Core Image on Metal, VideoToolbox; world clips as ACEScct plates in its own world): every delivery shape (16:9 4K HEVC master + 1080 H.264, 9:16, 1:1, 4:5), or with delivery \"youtube-4k\" the 16:9 4K master for YouTube alone (HEVC 10-bit 80 Mb/s), colour-managed through ACES 2.0, levelled to −14 LUFS, QC'd, into the vault as deliveries and onto the calendar. One render per timeline at a time; follow it with renders_list."
     )]
-    async fn render_queue(&self, Parameters(a): Parameters<IdArg>) -> String {
-        text(self.api("POST", &format!("/api/timelines/{}/renders", a.id), None).await)
+    async fn render_queue(&self, Parameters(a): Parameters<RenderArgs>) -> String {
+        let body = a.delivery.map(|d| json!({ "delivery": d })).unwrap_or_else(|| json!({}));
+        text(self.api("POST", &format!("/api/timelines/{}/renders", a.id), Some(body)).await)
     }
 
     #[tool(description = "A timeline's renders (and hero frames) as this Mac renders them: status, progress, note, the film's hash, the report (colour transforms, conform, plates, QC and loudness per delivery)")]
@@ -1390,12 +1401,12 @@ impl Studio {
     }
 
     #[tool(
-        description = "The Grade tab's playback run as the studio runs it, headless: the same player, video output and frame pump the viewer gets its pictures from, stopped on t at once (as the studio does) and then played two seconds. Returns how many pictures came while stopped (1 or more: the frozen frame reaches the viewer), how many a second while playing (30: real time) and the frozen picture on t as the viewer would draw it."
+        description = "The studio's playback run as the studio drives it, headless: the same player, video output, frame pump and driver the viewer gets its pictures from. Stopped on t (how long the frozen frame takes); the playhead dragged over two seconds of film in one second, a move every 16 ms (pictures during the drag, how long the last took); played three seconds against a clock kept every 250 ms as the studio keeps it (pictures a second: 30 is real time; seeks; how far off); and played as it was kept before (a seek whenever two frames off, once a second) for comparison. Returns those numbers and the frozen picture on t as the viewer would draw it."
     )]
     async fn player_stream_check(&self, Parameters(a): Parameters<PlaybackArgs>) -> rmcp::model::CallToolResult {
         let r = async {
             let t = self.api("GET", &format!("/api/timelines/{}", a.timeline), None).await?;
-            crate::player::stream_check(&self.handle, &self.vault, t, a.t, a.originals == Some(true)).await
+            crate::player::stream_check(&self.vault, t, a.t, a.originals == Some(true)).await
         };
         match r.await {
             Ok((info, pic)) => {

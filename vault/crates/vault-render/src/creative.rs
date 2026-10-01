@@ -255,9 +255,11 @@ impl<'a> Ready<'a> {
         }
         if let Some(s) = &l.split {
             let (y, mut cb, mut cr) = ycc(p);
-            // the shadows fade out above the meeting point, the highlights in; 0.05 of chroma is a strong tint
+            // the shadows fade out above the meeting point, the highlights in; 0.05 of chroma is a strong tint. The blacks
+            // stay neutral: the shadows' tint fades out again below about five stops under mid grey (tinted blacks read
+            // washed out and noisy — the colourists' rule)
             let at = l.pivot + s.balance * 0.2;
-            let lo = 1.0 - smooth(at - 0.25, at + 0.05, y);
+            let lo = (1.0 - smooth(at - 0.25, at + 0.05, y)) * smooth(0.06, 0.2, y);
             let hi = smooth(at - 0.05, at + 0.3, y);
             for (t, w) in [(s.shadows, lo), (s.highlights, hi)] {
                 if t.amount > 0.0 && w > 0.0 {

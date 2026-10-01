@@ -29,12 +29,18 @@ const COLS = "id, kind, timeline_id, media_hash, shot_id, shot_version, params, 
 const HASH = /^[0-9a-f]{64}$/;
 const SHAPES = ["16:9", "9:16", "1:1", "4:5"];
 
-export async function queueRender(founderId: string, timelineId: string): Promise<Job> {
+/** The deliveries a render can make: "youtube-4k" — the 16:9 4K master for YouTube alone; none — every delivery. */
+export const DELIVERIES = ["youtube-4k"];
+
+export async function queueRender(founderId: string, timelineId: string, body: { delivery?: unknown } = {}): Promise<Job> {
+  const delivery = body.delivery === undefined || body.delivery === null ? null : String(body.delivery);
+  if (delivery !== null && !DELIVERIES.includes(delivery)) throw new RenderError(`A render makes one of the deliveries ${DELIVERIES.join(", ")} (or every one).`);
   const { rows: t } = await db.query("SELECT 1 FROM timelines WHERE id = $1", [timelineId]);
   if (!t.length) throw new RenderError("No such timeline.", 404);
   const { rows: open } = await db.query<Job>(`SELECT ${COLS} FROM render_jobs WHERE timeline_id = $1 AND kind = 'render' AND status IN ('queued', 'rendering')`, [timelineId]);
   if (open[0]) return open[0]; // one at a time per timeline
-  return (await db.query<Job>(`INSERT INTO render_jobs (timeline_id, founder_id) VALUES ($1, $2) RETURNING ${COLS}`, [timelineId, founderId])).rows[0]!;
+  return (await db.query<Job>(`INSERT INTO render_jobs (timeline_id, params, founder_id) VALUES ($1, ($2::text)::jsonb, $3) RETURNING ${COLS}`,
+    [timelineId, delivery ? JSON.stringify({ delivery }) : null, founderId])).rows[0]!;
 }
 
 /** A hero frame: one frame of a timeline at time `t` in one delivery shape, rendered at full precision. */

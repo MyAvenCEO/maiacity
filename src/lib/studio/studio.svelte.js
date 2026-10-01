@@ -1703,13 +1703,14 @@ export class Studio {
 		if (on && !this.renderPoll) this.renderPoll = setInterval(() => void this.refreshRenders(), 3000);
 		else if (!on && this.renderPoll) clearInterval(this.renderPoll), (this.renderPoll = null);
 	}
-	async exportTimeline() {
+	/** @param {'youtube-4k'} [delivery] one delivery; none: every one */
+	async exportTimeline(delivery) {
 		if (!this.current || this.queuing) return;
 		this.queuing = true;
 		this.showRenders = true;
 		try {
 			await this.flush(); // render what is on screen, saved
-			const job = await queueRender(this.current.id);
+			const job = await queueRender(this.current.id, delivery);
 			this.skew = Date.parse(job.created) - Date.now();
 			this.renders = [job, ...this.renders.filter((r) => r.id !== job.id)];
 			this.poll(true);

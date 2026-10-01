@@ -86,12 +86,14 @@ pub struct Options {
     pub now: u64,
     /// only these shapes ("9:16", …); None: every shape of the timeline, as the worker
     pub shapes: Option<Vec<String>>,
+    /// the 4K master alone, at YouTube's best (`YOUTUBE_4K`): no 1080 copy
+    pub master_only: bool,
 }
 
 impl Options {
     pub fn new(work: impl Into<PathBuf>) -> Self {
         let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
-        Self { work: work.into(), target: Some(crate::sound::PLATFORMS), font: None, now, shapes: None }
+        Self { work: work.into(), target: Some(crate::sound::PLATFORMS), font: None, now, shapes: None, master_only: false }
     }
 }
 
@@ -389,12 +391,20 @@ fn idt_name(profile: &str) -> String {
 /// What each shape is delivered as (worker.ts): the settings of its files, its channels and description.
 struct Files {
     master: Option<VideoSettings>,
-    copy: VideoSettings,
+    copy: Option<VideoSettings>,
 }
 
-fn files_for(s: &Shape) -> Files {
+/// YouTube at its best: the 4K master alone, HEVC Main10 at 80 Mbps (above YouTube's 35–68 recommended, so its own
+/// encode starts from the cleanest picture), a keyframe every second, AAC 384 kb/s.
+pub const YOUTUBE_4K_BITRATE: u32 = 80_000_000;
+
+fn files_for(s: &Shape, master_only: bool) -> Files {
     let (w, h) = (s.width, s.height);
-    let copy = |cap: u32| VideoSettings { codec: Codec::H264, width: w, height: h, fps: FPS, bitrate: cap / 4 * 3, keyframes: 250, audio_bitrate: 192_000 };
+    let copy = |cap: u32| Some(VideoSettings { codec: Codec::H264, width: w, height: h, fps: FPS, bitrate: cap / 4 * 3, keyframes: 250, audio_bitrate: 192_000 });
+    if master_only {
+        let (mw, mh) = s.render_size();
+        return Files { master: Some(VideoSettings { codec: Codec::Hevc, width: mw, height: mh, fps: FPS, bitrate: YOUTUBE_4K_BITRATE, keyframes: FPS, audio_bitrate: 384_000 }), copy: None };
+    }
     if s.master > 1 {
         // YouTube's 4K upload rate (35–68 Mbps recommended): 50 Mbps on average; ffmpeg's VideoToolbox took a keyframe
         // every 12 frames. The 1080 copy for X and LinkedIn ≤ 20 Mbps.
@@ -461,7 +471,7 @@ pub fn render(
         let span = 0.9 / shapes.len() as f64;
         let from = 0.05 + k as f64 * span;
         let started = std::time::Instant::now();
-        let made = render_shape(&plan, &cubes, s, &gpu, &captions, &plate_files, &sound, &base, &opts.work, &mut used, &mut |p| {
+        let made = render_shape(&plan, &cubes, s, &gpu, &captions, &plate_files, &sound, &base, &opts.work, opts.master_only, &mut used, &mut |p| {
             progress(from + span * p, &format!("rendering {}", s.aspect))
         })?;
         timings.insert(s.aspect.to_string(), started.elapsed().as_secs_f64());
@@ -478,7 +488,7 @@ pub fn render(
             width: w,
             height: h,
             codec: if d.codec == "hevc" { "hevc" } else { "h264" },
-            max_bitrate: Some(if d.codec == "hevc" { 68e6 } else if h > w { 12e6 } else { 25e6 }),
+            max_bitrate: Some(if d.codec == "hevc" { (YOUTUBE_4K_BITRATE as f64 * 1.35).max(68e6) } else if h > w { 12e6 } else { 25e6 }),
             max_bytes: (d.aspect == "9:16").then_some(300_000_000),
             max_seconds: (d.aspect == "9:16").then_some(180.0),
         };
@@ -533,6 +543,7 @@ fn render_shape(
     sound: &Sound,
     base: &str,
     work: &Path,
+    master_only: bool,
     used: &mut BTreeMap<String, String>,
     progress: &mut dyn FnMut(f64),
 ) -> Result<Vec<Delivery>> {
@@ -542,13 +553,16 @@ fn render_shape(
     let total = plan.total;
     let frames = (total * fps).round() as u64;
     let tag = format!("{base}-{}", s.tag());
-    let files = files_for(s);
-    let (master_name, name) = (format!("{tag}-4k-hevc.mp4"), format!("{tag}.mp4"));
+    let files = files_for(s, master_only);
+    let (master_name, name) = (if master_only { format!("{tag}-4k-youtube.mp4") } else { format!("{tag}-4k-hevc.mp4") }, format!("{tag}.mp4"));
     let mut master = match &files.master {
         Some(v) => Some(Writer::create(&work.join(&master_name), v, Some(&sound.wav))?),
         None => None,
     };
-    let mut copy = Writer::create(&work.join(&name), &files.copy, Some(&sound.wav))?;
+    let mut copy = match &files.copy {
+        Some(v) => Some(Writer::create(&work.join(&name), v, Some(&sound.wav))?),
+        None => None,
+    };
 
     // the hook over the first seconds — in the 1080 copies only (the 4K master stays clean)
     let hook = match (plan.hooks.get(s.aspect), &plan.card) {
@@ -665,8 +679,8 @@ fn render_shape(
                     })
                 };
                 let seed = (n % 9973) as f64;
-                match &mut master {
-                    Some(m) => {
+                match (&mut master, &mut copy) {
+                    (Some(m), Some(copy)) => {
                         // the 4K master, 10-bit; the 1080 copy from each master frame: scaled, the hook on top, dithered to 8 bits
                         let buf = m.buffer()?;
                         gpu.render(&pic, &buf, w, h);
@@ -677,12 +691,19 @@ fn render_shape(
                         m.push(&buf)?;
                         copy.push(&cbuf)?;
                     }
-                    None => {
+                    (Some(m), None) => {
+                        // the 4K master alone, 10-bit
+                        let buf = m.buffer()?;
+                        gpu.render(&pic, &buf, w, h);
+                        m.push(&buf)?;
+                    }
+                    (None, Some(copy)) => {
                         let out = gpu.dither(&*hooked(&pic)?, 1.0 / 219.0, seed)?;
                         let buf = copy.buffer()?;
                         gpu.render(&out, &buf, w, h);
                         copy.push(&buf)?;
                     }
+                    (None, None) => {}
                 }
                 Ok(())
             })?;
@@ -695,8 +716,13 @@ fn render_shape(
     let hooked = if hook.is_some() { format!(" · the hook over its first {HOOK} s") } else { String::new() };
     if let Some(m) = master {
         let file = m.finish(comment)?;
-        out.push(delivery(file, master_name, &["youtube"], format!("4K master · HEVC 10-bit · {w}×{h}"), s, w, h, "hevc"));
+        let what = if master_only { format!("4K for YouTube · HEVC 10-bit · {w}×{h} · {} Mb/s", YOUTUBE_4K_BITRATE / 1_000_000) } else { format!("4K master · HEVC 10-bit · {w}×{h}") };
+        out.push(delivery(file, master_name, &["youtube"], what, s, w, h, "hevc"));
     }
+    let Some(copy) = copy else {
+        progress(1.0);
+        return Ok(out);
+    };
     let file = copy.finish(comment)?;
     let (channels, format): (Vec<&str>, String) = match s.aspect {
         "16:9" => (vec!["x", "linkedin"], format!("H.264 · {w1}×{h1}{hooked}")),
@@ -1202,7 +1228,8 @@ impl Render {
     }
 
     /// The job's result for `PUT /api/renders/:id` once every delivery has its vault hash: `{ output_hash, deliveries,
-    /// report }` — the film the studio plays (the 1080 H.264 cut of the timeline's own frame), every delivery with its
+    /// report }` — the film the studio plays (the 1080 H.264 cut of the timeline's own frame; a render of the 4K master
+    /// alone, the master), every delivery with its
     /// thumbnails, and the report (colour, conform, plates, warnings, per delivery QC and loudness, the sound).
     pub fn job_result(&self, t: &Timeline) -> Result<Value> {
         let mut deliveries: Vec<Value> = Vec::new();
@@ -1220,7 +1247,10 @@ impl Render {
         }
         for (aspect, m) in &self.thumbnails {
             let (w, h) = Shape::of(aspect).map(|s| (s.width, s.height)).unwrap_or((0, 0));
-            let films: Vec<Vec<String>> = self.deliveries.iter().filter(|d| &d.aspect == aspect && d.codec == "h264").map(|d| d.channels.clone()).collect();
+            // each H.264 film of the shape gets one; a render of the 4K master alone, the master
+            let of: Vec<&Delivery> = self.deliveries.iter().filter(|d| &d.aspect == aspect).collect();
+            let h264 = of.iter().any(|d| d.codec == "h264");
+            let films: Vec<Vec<String>> = of.iter().filter(|d| !h264 || d.codec == "h264").map(|d| d.channels.clone()).collect();
             for channels in films {
                 deliveries.push(json!({
                     "channels": channels, "hash": m.hash, "mime": m.mime, "format": format!("thumbnail · {w}×{h}"), "aspect": aspect,
@@ -1233,8 +1263,9 @@ impl Render {
             .iter()
             .find(|d| d.aspect == t.aspect && d.codec == "h264")
             .or_else(|| self.deliveries.iter().find(|d| d.codec == "h264"))
+            .or_else(|| self.deliveries.first())
             .and_then(|d| d.hash.clone())
-            .context("no H.264 delivery")?;
+            .context("no delivery")?;
         let report = json!({
             "color": self.color_json(),
             "conformed": self.conformed,

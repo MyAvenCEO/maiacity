@@ -93,6 +93,15 @@
 	const shown = () => {
 		if (handover) layerDown();
 	};
+	let failures = 0, failedKey = '';
+	let retry = $state(0);
+	/** @param {string} key */
+	const failed = (key) => {
+		if (failedKey !== key) (failedKey = key), (failures = 0);
+		if (loaded !== key || ++failures > 3) return;
+		loaded = '';
+		retry++;
+	};
 	/** @param {string} key */
 	const load = async (key) => {
 		if (loaded === key) return;
@@ -102,7 +111,8 @@
 		const { Channel } = await import('@tauri-apps/api/core');
 		/** @type {import('@tauri-apps/api/core').Channel<ArrayBuffer>} */
 		const frames = new Channel();
-		frames.onmessage = (m) => void draw(m);
+		// an empty message: the player failed (the Mac logged why) — loaded again, a few times at most
+		frames.onmessage = (m) => (m.byteLength ? void draw(m) : failed(key));
 		await mac('player_load', { timeline: s.liveTimeline(), shape: s.viewShape, files, profiles, width: 1600, frames });
 		loaded = key;
 	};
@@ -119,6 +129,7 @@
 		}
 		handover = false;
 		const key = playKey;
+		void retry;
 		let live = true;
 		const t = setTimeout(async () => {
 			const again = loaded === key && drawn > 0;
@@ -136,18 +147,21 @@
 		if (!untrack(() => layerWanted) || !loaded) return;
 		void mac(playing ? 'player_play' : 'player_pause', { time: untrack(() => s.time) });
 	});
-	// stopped, it follows the playhead frame by frame (scrubbing)
+	// stopped, it follows the playhead frame by frame (scrubbing): every move at once — the Mac chases them, one seek at
+	// a time and the newest kept. (Held back until the playhead rested for 16 ms, a drag — a move every 8 ms on a 120 Hz
+	// screen — never asked for a frame until the hand stopped.)
+	let sentAt = -1;
 	$effect(() => {
-		if (!layerWanted || s.playing) return;
+		if (!layerWanted || s.playing) return void (sentAt = -1);
 		const at = Math.round(s.time * 30) / 30;
-		if (!loaded) return;
-		const t = setTimeout(() => void mac('player_pause', { time: at }), 16);
-		return () => clearTimeout(t);
+		if (!loaded || at === sentAt) return;
+		sentAt = at;
+		void mac('player_pause', { time: at });
 	});
-	// playing, it keeps to the studio's clock
+	// playing, it keeps to the studio's clock: four times a second, by its rate (a seek only when half a second off)
 	$effect(() => {
 		if (!layerWanted) return;
-		const id = setInterval(() => untrack(() => s.playing) && void mac('player_sync', { time: untrack(() => s.time) }), 1000);
+		const id = setInterval(() => untrack(() => s.playing) && void mac('player_sync', { time: untrack(() => s.time) }), 250);
 		return () => clearInterval(id);
 	});
 	// Grade, paused: the picture the Mac makes through the whole grade — secondaries, looks, finishing, what the render

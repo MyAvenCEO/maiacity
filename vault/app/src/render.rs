@@ -5,7 +5,8 @@
 //! (`PUT /api/renders/:id`: progress while it works, then `Render::job_result`), so the studio's Render tab, its
 //! deliveries and the calendar work as they did.
 //!
-//!   render  a timeline into every delivery (16:9 4K master + 1080 copy, 9:16, 1:1, 4:5), levelled to `LOUDNESS`.
+//!   render  a timeline into every delivery (16:9 4K master + 1080 copy, 9:16, 1:1, 4:5), levelled to `LOUDNESS`;
+//!           with `params.delivery` "youtube-4k", the 16:9 4K master for YouTube alone.
 //!           World clips are rendered first as ACEScct plates at each shape's size, in the app's own unseen world
 //!           (world.rs, cached by what they are made of); every delivery goes into the vault as class delivery, in the
 //!           story most of the timeline's files are in (else the inbox), described by `Render::about`.
@@ -40,6 +41,9 @@ use crate::{Res, auth::Auth, err, proxies, world};
 /// The loudness every film is levelled to: −14 LUFS integrated, the true peak at most −1 dBTP — what YouTube,
 /// Instagram and TikTok play at (and room for their AAC encoders). Change it here.
 pub const LOUDNESS: Target = Target { lufs: -14.0, true_peak: -1.0 };
+
+/// The one delivery the studio renders for now: the 16:9 4K master for YouTube (HEVC 10-bit, 80 Mb/s, AAC 384 kb/s).
+pub const YOUTUBE_4K: &str = "youtube-4k";
 
 /// How often the queue is asked while it is empty, and how long an API that cannot be reached is waited out.
 const POLL: Duration = Duration::from_secs(3);
@@ -636,7 +640,9 @@ async fn render_job(handle: &AppHandle, vault: &Arc<Vault>, auth: &Auth, job: &V
     progress.set(0.02, "fetching files");
     let lib = Arc::new(Vaulted::new(vault).await?);
     let story = lib.story_of(&t);
-    let shapes = shapes_of(&t);
+    // `params.delivery` "youtube-4k": the 16:9 4K master alone, at YouTube's best; none: every delivery
+    let youtube = job["params"]["delivery"].as_str() == Some(YOUTUBE_4K);
+    let shapes: Vec<Shape> = shapes_of(&t).into_iter().filter(|s| !youtube || s.aspect == "16:9").collect();
     let plates = plates_for(handle, vault, auth, &t, &shapes, progress, (0.03, 0.3)).await?;
     let (from, span) = if plates.is_empty() { (0.03, 0.9) } else { (0.3, 0.63) };
 
@@ -644,6 +650,10 @@ async fn render_job(handle: &AppHandle, vault: &Arc<Vault>, auth: &Auth, job: &V
     let made = tauri::async_runtime::spawn_blocking(move || -> anyhow::Result<vault_render::Render> {
         let mut opts = Options::new(out);
         opts.target = Some(LOUDNESS);
+        if youtube {
+            opts.shapes = Some(vec!["16:9".into()]);
+            opts.master_only = true;
+        }
         let plate = |c: &Clip, s: &Shape| -> anyhow::Result<Option<Plate>> { Ok(plates.get(&(c.id.clone(), s.aspect.to_string())).cloned()) };
         vault_render::render(&t2, &*lib2, &plate, odt(), &opts, &mut |x, what| p.set(from + span * x, what))
     })

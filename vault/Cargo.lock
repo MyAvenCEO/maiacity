@@ -3293,6 +3293,7 @@ dependencies = [
  "anyhow",
  "axum",
  "blake3",
+ "block2",
  "chrono",
  "futures-lite",
  "iroh",
