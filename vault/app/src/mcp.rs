@@ -484,6 +484,26 @@ pub struct PlaybackArgs {
     pub shape: Option<String>,
     /// true: play the originals (as Picture: Original does), else each shot's proxy
     pub originals: Option<bool>,
+    /// player_stream_check: true plays exactly what the studio loaded last (its timeline, shape, files)
+    pub as_studio: Option<bool>,
+}
+
+#[derive(Deserialize, schemars::JsonSchema)]
+pub struct DownloadArgs {
+    /// the file's BLAKE3 hash
+    pub hash: String,
+    /// the name to give it (default: the name it came in as)
+    pub name: Option<String>,
+}
+
+#[derive(Deserialize, schemars::JsonSchema)]
+pub struct PlayerStateArgs {
+    /// drive the studio's player first, as the viewer does: "play", "pause" or "sync" (at `t`)
+    pub action: Option<String>,
+    /// seconds on the timeline for the action
+    pub t: Option<f64>,
+    /// then watch it this long (ms, at most 10000), sampling its state every 250 ms
+    pub watch_ms: Option<u64>,
 }
 
 #[derive(Deserialize, schemars::JsonSchema)]
@@ -1401,12 +1421,47 @@ impl Studio {
     }
 
     #[tool(
+        description = "A vault file into this Mac's Downloads folder (as the Library's Download button does): copied out of the store under the name it came in as (or `name`), checked against its BLAKE3; ` (2)` added when one is there already. Returns where it went."
+    )]
+    async fn file_download(&self, Parameters(a): Parameters<DownloadArgs>) -> String {
+        let name = match a.name {
+            Some(n) => Some(n),
+            None => self.vault.catalog.list().await.ok().and_then(|all| all.into_iter().find(|m| m.hash == a.hash)).map(|m| m.original_name).filter(|n| !n.is_empty()),
+        };
+        match crate::stories::download(&self.vault, &a.hash, name.as_deref()).await {
+            Ok(at) => at,
+            Err(e) => e,
+        }
+    }
+
+    #[tool(
+        description = "The studio's own player as it is now (the one the program monitor shows): its item's status and error, clock, rate, whether it plays or waits and why, the driving (where the studio wants it, the seek under way), loads made and pictures sent to the viewer. Optionally drive it first as the viewer does (play, pause or sync at t) and watch it for a while, sampled every 250 ms."
+    )]
+    async fn player_state(&self, Parameters(a): Parameters<PlayerStateArgs>) -> String {
+        if let Some(action) = &a.action
+            && let Err(e) = crate::player::drive(action, a.t.unwrap_or(0.0))
+        {
+            return e;
+        }
+        let watch = a.watch_ms.unwrap_or(0).min(10_000);
+        let mut samples = vec![crate::player::state()];
+        let started = std::time::Instant::now();
+        while (started.elapsed().as_millis() as u64) < watch {
+            tokio::time::sleep(std::time::Duration::from_millis(250)).await;
+            let mut s = crate::player::state();
+            s["ms"] = json!(started.elapsed().as_millis());
+            samples.push(s);
+        }
+        serde_json::to_string_pretty(&samples).unwrap_or_default()
+    }
+
+    #[tool(
         description = "The studio's playback run as the studio drives it, headless: the same player, video output, frame pump and driver the viewer gets its pictures from. Stopped on t (how long the frozen frame takes); the playhead dragged over two seconds of film in one second, a move every 16 ms (pictures during the drag, how long the last took); played three seconds against a clock kept every 250 ms as the studio keeps it (pictures a second: 30 is real time; seeks; how far off); and played as it was kept before (a seek whenever two frames off, once a second) for comparison. Returns those numbers and the frozen picture on t as the viewer would draw it."
     )]
     async fn player_stream_check(&self, Parameters(a): Parameters<PlaybackArgs>) -> rmcp::model::CallToolResult {
         let r = async {
             let t = self.api("GET", &format!("/api/timelines/{}", a.timeline), None).await?;
-            crate::player::stream_check(&self.vault, t, a.t, a.originals == Some(true)).await
+            crate::player::stream_check(&self.vault, t, a.t, a.originals == Some(true), a.as_studio == Some(true)).await
         };
         match r.await {
             Ok((info, pic)) => {

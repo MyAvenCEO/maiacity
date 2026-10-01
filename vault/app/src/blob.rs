@@ -1,7 +1,7 @@
 //! A vault file read in place: its bytes by range from iroh's blob store (`BlobReader`), never copied out — the byte
 //! source every reader of vault-media and vault-render takes (`Source::Blob`: AVFoundation through its resource loader,
-//! stills, tars). The readers run on AVFoundation's queues and blocking threads, never on a tokio worker, so each read
-//! waits on the app's runtime (`Handle::block_on`).
+//! stills, tars). Each read waits on the app's runtime (`Handle::block_on`): directly on AVFoundation's queues and
+//! blocking threads, through `block_in_place` on a runtime thread (where a plain wait panicked: the proxy sweep's probe).
 
 use std::{
     io::{self, SeekFrom},
@@ -28,11 +28,18 @@ impl ByteSource for IrohBytes {
         if offset >= self.len || buf.is_empty() {
             return Ok(0);
         }
-        let mut reader = self.reader.lock().unwrap();
-        self.rt.block_on(async {
+        let mut reader = self.reader.lock().unwrap_or_else(|p| p.into_inner());
+        let read = async {
             reader.seek(SeekFrom::Start(offset)).await?;
             reader.read(buf).await
-        })
+        };
+        // on one of the runtime's own threads (an async caller: the proxy sweep's probe), handed over to block; on
+        // AVFoundation's queues and blocking threads, waited on directly
+        if tokio::runtime::Handle::try_current().is_ok() {
+            tokio::task::block_in_place(|| self.rt.block_on(read))
+        } else {
+            self.rt.block_on(read)
+        }
     }
 }
 

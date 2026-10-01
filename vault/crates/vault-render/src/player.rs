@@ -72,6 +72,13 @@ thread_local! {
 /// Each composition's number (what the handler's state belongs to).
 static GENERATION: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
 
+/// Frames the handlers were asked for, made, and failed, all told; and the last one's composition and time (the
+/// studio's `player_state` reads them).
+pub static ASKED: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+pub static MADE: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+pub static FAILED: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+pub static LAST: std::sync::Mutex<(u64, f64)> = std::sync::Mutex::new((0, 0.0));
+
 impl Program {
     /// One frame: the source frame the composition decoded (its file's code values), turned upright by its file's own
     /// transform (`turns`, per clip: the composition hands frames over as they are stored), through the whole chain.
@@ -142,8 +149,13 @@ pub fn composition(program: Arc<Program>) -> Result<(Retained<AVMutableCompositi
         let track = comp.addMutableTrackWithMediaType_preferredTrackID(media, 0).context("no video track")?;
         // each clip's file's own transform (a camera held upside down writes a turn, not turned pixels)
         let mut turns = Vec::with_capacity(program.clips.len());
+        // each clip's asset, kept as long as the composition: the composition does not hold its sources' assets, and
+        // a vault file's asset carries the delegate that reads its bytes (blob_asset) — held only by an autorelease
+        // pool, it went when the pool drained, and the player made no frame again (on the main thread: never one)
+        let mut assets = Vec::with_capacity(program.clips.len());
         for p in &program.clips {
             let asset = p.source.asset()?;
+            assets.push(asset.clone());
             #[allow(deprecated)]
             let tracks = asset.tracksWithMediaType(media);
             let Some(src) = tracks.firstObject() else {
@@ -157,12 +169,25 @@ pub fn composition(program: Arc<Program>) -> Result<(Retained<AVMutableCompositi
         let prog = program.clone();
         let generation = GENERATION.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         let handler = RcBlock::new(move |req: NonNull<AVAsynchronousCIImageFilteringRequest>| {
+            let _sources = &assets;
             let req = req.as_ref();
             let t = req.compositionTime().seconds();
             let src = req.sourceImage();
+            // once: the format AVFoundation decodes the files into for the grade (8 or 10 bits a channel)
+            static TOLD: std::sync::Once = std::sync::Once::new();
+            TOLD.call_once(|| {
+                let fmt = src.pixelBuffer().map(|pb| objc2_core_video::CVPixelBufferGetPixelFormatType(&pb));
+                eprintln!("playback: source frames decoded as {}", fmt.map(|f| String::from_utf8_lossy(&f.to_be_bytes()).to_string()).unwrap_or_else(|| "(no pixel buffer)".into()));
+            });
+            ASKED.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            *LAST.lock().unwrap() = (generation, t);
             objc2::rc::autoreleasepool(|_| match prog.frame(&src, t, &turns, generation) {
-                Ok((img, ctx)) => req.finishWithImage_context(&img, Some(&ctx)),
+                Ok((img, ctx)) => {
+                    MADE.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                    req.finishWithImage_context(&img, Some(&ctx))
+                }
                 Err(e) => {
+                    FAILED.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
                     tracing_warn(&format!("playback at {t:.2} s: {e:#}"));
                     req.finishWithImage_context(&src, None);
                 }
