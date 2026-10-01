@@ -248,7 +248,8 @@ pub async fn vault_proxy(handle: AppHandle, app: tauri::State<'_, crate::App>, h
 
 /// Does this file get a proxy? A video that is an original (not a proxy, not a delivery, not a working file).
 pub fn wants_proxy(m: &Meta) -> bool {
-    let working = !matches!(m.class.as_str(), "proxy" | "delivery");
+    // a hero frame is a picture already through the output transform: nothing to grade, no proxy
+    let working = !matches!(m.class.as_str(), "proxy" | "delivery") && !crate::render::is_frame(m);
     (m.kind == "video" && m.class == "original") || (working && (m.kind == "image" || sequence(m)))
 }
 
@@ -517,7 +518,8 @@ async fn grading_still_at(vault: &Vault, hex: &str, name: &str, path: &vault_med
     let made = vault.ingest_file(&out, &batch).await.map_err(|e| format!("{e:#}"));
     std::fs::remove_file(&out).ok();
     let made = made?;
-    // the preview for the lists: the same frame as it will look (ACES 2.0 → Rec.709), small
+    // the preview for the lists until a grade makes its graded still: the same frame as it will look (ACES 2.0 →
+    // Rec.709), 1920 wide
     let pbatch = Batch {
         session: format!("preview of {hex}"),
         tags: vec!["preview".into()],
@@ -540,11 +542,14 @@ async fn grading_still_at(vault: &Vault, hex: &str, name: &str, path: &vault_med
             }
         }
     }
+    // a new moment: the file's graded still made again of it, through the clip that last graded it (none: this preview
+    // stays its preview)
+    crate::auth::Auth::default().call("POST", &format!("/api/media/{hex}/still"), None).await.ok();
     Ok(())
 }
 
-/// How wide a list's preview is.
-const PREVIEW_WIDTH: u32 = 480;
+/// How wide a file's preview is, before its graded still takes its place (as wide as that).
+const PREVIEW_WIDTH: u32 = 1920;
 
 
 /// An original with a proxy of ours but no grading still yet (made before there were any): its still, from the

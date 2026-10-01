@@ -533,6 +533,13 @@ pub struct FrameArgs {
 }
 
 #[derive(Deserialize, schemars::JsonSchema)]
+pub struct StillsCleanupArgs {
+    /// the hashes to delete, exactly as a dry run listed them, once a person has said yes to that list. Without: a dry
+    /// run — nothing is deleted
+    pub delete: Option<Vec<String>>,
+}
+
+#[derive(Deserialize, schemars::JsonSchema)]
 pub struct StoryArgs {
     /// the story to change; none: a new story
     pub id: Option<String>,
@@ -1526,11 +1533,44 @@ impl Studio {
     }
 
     #[tool(
-        description = "Queue a hero frame, rendered natively on this Mac: one frame of a timeline at t seconds in one delivery shape, at that delivery's full resolution through the whole chain (conformed original or world plate → its journey into ACEScct → framing → clip grade → film look → ACES 2.0 output), without captions, as a 16-bit PNG in the vault (role:frame) — for grading against. Follow it with renders_list: the job's output_hash is the PNG."
+        description = "Queue a frame of a timeline at t seconds, rendered natively on this Mac. Of a media clip it is that file's graded still: its grading still (the ACEScct frame it is graded on) through the clip's whole chain (16:9 framing → balance → secondaries → clip grade → scene and film look → ACES 2.0 output), 1920×1080 JPEG, set as the file's preview and replacing the one before (a timeline save that changes a file's look queues this by itself). Of a world clip: a hero frame in the shape asked for, a 16-bit PNG (role:frame), replacing that clip's previous one. Follow it with renders_list: the job's output_hash is the picture."
     )]
     async fn render_frame(&self, Parameters(a): Parameters<FrameArgs>) -> String {
         let shape = a.shape.unwrap_or_else(|| "16:9".into());
         text(self.api("POST", &format!("/api/timelines/{}/frames", a.timeline), Some(json!({ "t": a.t, "shape": shape }))).await)
+    }
+
+    #[tool(
+        description = "Clean up stills nothing uses (a file keeps two: its grading still, ACEScct, and its graded still, its preview — never a history): hero frames of media clips, older hero frames of a world clip, proxies of hero frames, proxies of files gone, grading stills and previews their file no longer names. Without `delete`: a dry run listing each file (hash, name, MB, why) and the total — nothing is deleted. Show that list to the person; only once they say yes, call again with `delete` set to exactly the hashes they agreed to. A hash that is not stale (any more) is refused, never deleted. Deleting is for good on this Mac."
+    )]
+    async fn stills_cleanup(&self, Parameters(a): Parameters<StillsCleanupArgs>) -> String {
+        let r = async {
+            let all = self.vault.catalog.list().await.map_err(|e| format!("{e:#}"))?;
+            let stale = crate::render::stale_stills(&all);
+            let mb = |b: u64| (b as f64 / 1e5).round() / 10.0;
+            let Some(asked) = a.delete else {
+                let bytes: u64 = stale.iter().map(|(m, _)| m.size).sum();
+                let files: Vec<Value> = stale
+                    .iter()
+                    .map(|(m, why)| json!({ "hash": m.hash, "name": if m.original_name.is_empty() { &m.title } else { &m.original_name }, "title": m.title, "mb": mb(m.size), "why": why }))
+                    .collect();
+                return Ok(json!({ "dry_run": true, "count": files.len(), "mb": mb(bytes), "files": files,
+                    "next": "Nothing was deleted. Show this list to the person; on their yes, call stills_cleanup again with delete: [the hashes they agreed to]." }));
+            };
+            let (mut deleted, mut refused, mut bytes) = (Vec::new(), Vec::new(), 0u64);
+            for h in asked {
+                let Some((m, why)) = stale.iter().find(|(m, _)| m.hash == h) else {
+                    refused.push(h);
+                    continue;
+                };
+                let hash: iroh_blobs::Hash = h.parse().map_err(|e| format!("{e}"))?;
+                self.vault.catalog.delete_file(hash, &format!("stills cleanup: {why}")).await.map_err(|e| format!("{e:#}"))?;
+                bytes += m.size;
+                deleted.push(h);
+            }
+            Ok(json!({ "deleted": deleted.len(), "mb": mb(bytes), "refused": refused, "hashes": deleted }))
+        };
+        text(r.await)
     }
 
     // ── the content board: deliveries per platform, draft and publish ──
