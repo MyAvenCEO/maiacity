@@ -35,7 +35,7 @@
 	const still = $derived(s.showStill ? s.stillOf(pic) : null);
 	/** @type {HTMLImageElement | null} */
 	let stillImg = $state(null);
-	// Grade: the Mac's player makes the picture — playing, and paused on the frame under the playhead. Every frame it
+	// The Mac's player makes the picture (every tab with the program) — playing, and paused on the frame under the playhead. Every frame it
 	// makes goes through the whole grade (the render's chain on Metal: balance, secondaries, grade and looks, vignette,
 	// grain, the output) and comes here as a picture made exactly as the grading still is, drawn on the canvas over the
 	// viewer: the still, the frozen frame and the playing one are the same kind of picture. Scrubbing moves it; a change
@@ -46,7 +46,10 @@
 	/** @type {HTMLCanvasElement | null} */
 	let playCanvas = $state(null);
 	const onFilm = $derived(!!pic && !isWorld(pic) && pic.kind !== 'slate' && !!pic.hash && s.pictureItem?.kind === 'video');
-	const layerWanted = $derived(s.tab === 'grade' && !s.falseColor && onFilm && (s.playing || s.gradeOn !== 'stills'));
+	// every tab with the program (Edit, Audio, Script, Grade): the webview's own preview reads the log proxy through its
+	// 8-bit, colour-managed video decoder, which a strong grade turns into blotches; the Mac's frames are the render's
+	const onProgram = $derived(s.tab === 'grade' || s.tab === 'edit' || s.tab === 'audio' || s.tab === 'script');
+	const layerWanted = $derived(onProgram && !s.falseColor && onFilm && (s.playing || s.tab !== 'grade' || s.gradeOn !== 'stills'));
 	/** @param {string} name @param {Record<string, unknown>} args */
 	const mac = async (name, args) => {
 		try {
@@ -56,7 +59,7 @@
 			console.warn(`playback: ${name}:`, e);
 		}
 	};
-	const playKey = $derived(s.tab === 'grade' ? JSON.stringify([s.current?.id, s.viewShape, s.gradeOn === 'originals', s.current?.grade ?? null, s.clips.filter((c) => c.track === 'V1')]) : '');
+	const playKey = $derived(onProgram ? JSON.stringify([s.current?.id, s.viewShape, s.tab === 'grade' && s.gradeOn === 'originals', s.current?.grade ?? null, s.clips.filter((c) => c.track === 'V1')]) : '');
 	let loaded = '';
 	// the player's frames on the canvas (shown once one has come); going to the grading still, they stay until the still
 	// is on screen
