@@ -12,7 +12,7 @@
 	import { FPS, TRACKS, UNLINKED, clockText, isWorld, onSoundTrack, raw, thumb, tint } from './studio.svelte.js';
 	import { cueEnd, cuesOf } from './analysis.js';
 	import { wordsOf } from './transcript.js';
-	import { BALANCE_NODES, NEUTRAL, NEUTRAL_BALANCE, cleanBalance, cleanFinish, cleanLook, cleanSecondaries, isNeutral } from './color.js';
+	import { LAYERS, baseText, cdlText, finishText, lookText, sceneLook, sceneRuns, secText, timelineLook } from './grade.js';
 	import { wave } from './wave.js';
 	import { fine } from './fine.js';
 	import { nativeFrame } from './luts.js';
@@ -39,32 +39,10 @@
 	// the Script tab: the story's structure (its sections and their tension) over the captions
 	const story = $derived(s.tab === 'script');
 	const STORY = { id: 'S1', label: 'Story', accepts: [] };
-	// the Grade tab: the grade's layers over the picture track, the last applied on top — each collapsed to its
-	// values, open for its controls on every shot
+	// the Grade tab: the grade's layers over the picture track, the last applied on top (grade.js) — each a line of its
+	// values; a click on a cell opens its controls in the aside beside the picture
 	const grading = $derived(s.tab === 'grade');
-	// top to bottom, the last applied on top: the creative grade, then the base correction (one group, closed unless
-	// opened: its layers under it), then the framing just above the picture
-	const CREATIVE_LAYERS = [
-		{ id: 'L:finish', label: 'Finishing' },
-		{ id: 'L:film', label: 'Film look' },
-		{ id: 'L:scene', label: 'Scene look' },
-		{ id: 'L:grade', label: 'Grade' },
-		{ id: 'L:sec', label: 'Secondaries' }
-	];
-	const BASE_LAYERS = [...BALANCE_NODES].reverse().map((n) => ({ id: `L:${n.id}`, label: n.label, sub: true }));
-	let baseOpen = $state(false);
-	const GRADE_LAYERS = $derived(
-		[...CREATIVE_LAYERS, { id: 'G:base', label: 'Base correction' }, ...(baseOpen ? BASE_LAYERS : []), { id: 'L:frame', label: 'Framing' }].map((l) => ({ ...l, accepts: [] }))
-	);
-	/** a shot's base correction in one line @param {Clip} c */
-	const baseText = (c) => {
-		const b = c.balance;
-		if (!b) return '—';
-		const f = (/** @type {number} */ v) => `${v > 0 ? '+' : ''}${v.toFixed(2)}`;
-		return [b.exposure && `exp ${f(b.exposure)}`, (b.temp || b.tint) && `wb ${f(b.temp)}/${f(b.tint)}`, b.contrast && `con ${f(b.contrast)}`, b.highlights && `hi ${f(b.highlights)}`, b.shadows && `lo ${f(b.shadows)}`, b.sat && `sat ${f(b.sat)}`]
-			.filter(Boolean)
-			.join(' · ') || '—';
-	};
+	const GRADE_LAYERS = LAYERS.map((l) => ({ id: `L:${l.id}`, layer: l.id, label: l.label, accepts: [] }));
 	// in Grade the shots stand side by side, one column each whatever their length, each with its picture: the grade is
 	// judged shot against shot, not along the clock
 	const COL = 184;
@@ -139,158 +117,17 @@
 		const st = s.stillOf(c);
 		s.seek(st?.inside ? c.start + (st.t - c.in) : c.start + 1e-3);
 	};
-	// the looks above the shots' own grades: the film's (its plain CDL or preset from before read as one), and each
-	// scene's, over the run of shots that scene covers
-	/** @typedef {import('$lib/auth/client').Look} Look */
-	const filmLook = $derived.by(() => {
-		const g = s.current?.grade;
-		return g?.film ?? (g?.look || g?.preset ? /** @type {Look} */ ({ cdl: g.look ?? null, preset: g.preset ?? null, contrast: 0, pivot: 0.4135884, sat: 1, strength: 1 }) : null);
-	});
-	const sceneRuns = $derived.by(() => {
-		/** @type {{ key: string, scene: string | null, from: number, count: number }[]} */
-		const runs = [];
-		pics.forEach((c, i) => {
-			const scene = c.script?.scene || null;
-			const last = runs[runs.length - 1];
-			if (last && last.scene === scene) last.count++;
-			else runs.push({ key: `${i}:${scene}`, scene, from: i, count: 1 });
-		});
-		return runs;
-	});
-	/** @param {string | null} scene the scene's look, or the film's (null) @param {Look | null} look */
-	const setLook = (scene, look) => {
-		const g = { look: null, ...(s.current?.grade ?? {}) };
-		const clean = cleanLook(look);
-		if (scene === null) {
-			if (clean) g.film = clean;
-			else delete g.film;
-			delete g.preset;
-			g.look = null;
-		} else {
-			const scenes = { ...(g.scenes ?? {}) };
-			if (clean) scenes[scene] = clean;
-			else delete scenes[scene];
-			g.scenes = scenes;
-		}
-		s.setMeta({ grade: g });
+	const runs = $derived(sceneRuns(pics));
+	/** a lane's cell chosen: its layer's controls in the aside, for this shot @param {import('./grade.js').Layer} layer @param {Clip | null} c */
+	const focus = (layer, c) => {
+		s.gradeLayer = layer;
+		if (c) s.selected = c.id;
 	};
-	/** a look in one line @param {Look | null} l */
-	const lookText = (l) => {
-		if (!l) return '—';
-		const parts = [];
-		if (l.preset) parts.push(l.preset);
-		else if (l.cdl) parts.push('own CDL');
-		if (l.split) parts.push(`split ${Math.round(l.split.shadows.hue)}° ${l.split.shadows.amount.toFixed(2)} / ${Math.round(l.split.highlights.hue)}° ${l.split.highlights.amount.toFixed(2)}`);
-		if (l.contrast) parts.push(`contrast ${l.contrast > 0 ? '+' : ''}${l.contrast.toFixed(2)}`);
-		if (l.hue?.length) parts.push(`hue ${l.hue.length} pts`);
-		if (l.hue_sat?.length) parts.push(`hue·sat ${l.hue_sat.length} pts`);
-		if (l.sat !== 1) parts.push(`sat ${l.sat.toFixed(2)}`);
-		if (l.lut) parts.push('LUT');
-		if (l.strength !== 1) parts.push(`${Math.round(l.strength * 100)} %`);
-		return parts.join(' · ') || '—';
-	};
-	const LOOK_SLIDERS = /** @type {const} */ ([
-		['sh', 'shadows °', 0, 360, 1],
-		['sa', 'shadows', 0, 1, 0.01],
-		['hh', 'highlights °', 0, 360, 1],
-		['ha', 'highlights', 0, 1, 0.01],
-		['contrast', 'contrast', -1, 1, 0.01],
-		['sat', 'saturation', 0, 2, 0.01],
-		['strength', 'strength', 0, 1, 0.01]
-	]);
-	/** @param {Look | null} l @param {string} k */
-	const lookValue = (l, k) =>
-		k === 'sh' ? (l?.split?.shadows.hue ?? 280) : k === 'sa' ? (l?.split?.shadows.amount ?? 0) : k === 'hh' ? (l?.split?.highlights.hue ?? 125) : k === 'ha' ? (l?.split?.highlights.amount ?? 0) : k === 'contrast' ? (l?.contrast ?? 0) : k === 'sat' ? (l?.sat ?? 1) : (l?.strength ?? 1);
-	/** a look with one of its sliders moved @param {Look | null} l @param {string} k @param {number} v @returns {Look} */
-	const withValue = (l, k, v) => {
-		/** @type {Look} */
-		const n = structuredClone($state.snapshot(l)) ?? { contrast: 0, pivot: 0.4135884, sat: 1, strength: 1 };
-		const split = n.split ?? { shadows: { hue: 280, amount: 0 }, highlights: { hue: 125, amount: 0 }, balance: 0 };
-		if (k === 'sh') split.shadows.hue = v;
-		else if (k === 'sa') split.shadows.amount = v;
-		else if (k === 'hh') split.highlights.hue = v;
-		else if (k === 'ha') split.highlights.amount = v;
-		else /** @type {any} */ (n)[k] = v;
-		if (['sh', 'sa', 'hh', 'ha'].includes(k)) n.split = split;
-		return n;
-	};
-	// a shot's secondaries: parts of it given their own balance (the face lifted, the sky held); the rest by MCP
-	/** @param {Clip} c @param {any[]} list */
-	const setSecondaries = (c, list) => s.patchClip(c.id, { secondaries: cleanSecondaries(list).length ? cleanSecondaries(list) : undefined });
-	/** @param {any} sec */
-	const secText = (sec) => sec.name ?? (sec.window?.track ? 'face' : sec.key ? `${Math.round(sec.key.hue[0])}° key` : sec.window ? sec.window.shape : 'part');
-	// a new secondary starts doing a little, so it is kept (a secondary that changes nothing is dropped)
-	const NEW_KEY = { name: 'key', key: { hue: [30, 40], sat: [10, 100], luma: [10, 90], soft: 0.5 }, adjust: { sat: -0.1 }, mix: 1 };
-	const NEW_WINDOW = { name: 'window', window: { shape: 'ellipse', x: 0.5, y: 0.5, w: 0.6, h: 0.6, angle: 0, feather: 0.5, invert: false }, adjust: { exposure: 0.15 }, mix: 1 };
-	/** which secondaries show every control ("<clip>:<i>") @type {string[]} */
-	let secOpen = $state([]);
-	/** @param {string} k */
-	const toggleSec = (k) => (secOpen = secOpen.includes(k) ? secOpen.filter((x) => x !== k) : [...secOpen, k]);
-	/** @typedef {{ id: string, label: string, lo: number, hi: number, step: number, get: (x: any) => number, set: (x: any, v: number) => any }} SecField */
-	const ADJUST = BALANCE_NODES.flatMap((n) => n.fields);
-	/** @param {(typeof ADJUST)[number]} f @returns {SecField} */
-	const adjustField = (f) => ({ id: `a:${f.key}`, label: f.key === 'shadows' ? 'lows' : f.key, lo: f.min, hi: f.max, step: f.step, get: (x) => x.adjust?.[f.key] ?? 0, set: (x, v) => ({ ...x, adjust: { ...x.adjust, [f.key]: v } }) });
-	/** @param {'hue' | 'sat' | 'luma'} part @param {0 | 1} i @param {string} label @param {number} lo @param {number} hi @returns {SecField} */
-	const keyField = (part, i, label, lo, hi) => ({ id: `k:${part}${i}`, label, lo, hi, step: 1, get: (x) => x.key?.[part]?.[i] ?? 0, set: (x, v) => ({ ...x, key: { ...x.key, [part]: i ? [x.key[part][0], v] : [v, x.key[part][1]] } }) });
-	/** @param {string} k @param {string} label @param {number} lo @param {number} hi @param {number} step @returns {SecField} */
-	const windowField = (k, label, lo, hi, step) => ({ id: `w:${k}`, label, lo, hi, step, get: (x) => x.window?.[k] ?? 0, set: (x, v) => ({ ...x, window: { ...x.window, [k]: v } }) });
-	/** @type {SecField} */
-	const MIX = { id: 'mix', label: 'mix', lo: 0, hi: 1, step: 0.01, get: (x) => x.mix ?? 1, set: (x, v) => ({ ...x, mix: v }) };
-	/** a secondary's controls: its exposure and mix; opened, every one — its whole balance, its key, its window @param {any} sec @param {boolean} more @returns {SecField[]} */
-	function secFields(sec, more) {
-		const exposure = adjustField(/** @type {any} */ (ADJUST.find((f) => f.key === 'exposure')));
-		if (!more) return [exposure, MIX];
-		return [
-			...ADJUST.map(adjustField),
-			MIX,
-			...(sec.key ? [keyField('hue', 0, 'hue °', 0, 359), keyField('hue', 1, 'width °', 1, 360), keyField('sat', 0, 'sat ≥', 0, 100), keyField('sat', 1, 'sat ≤', 0, 100), keyField('luma', 0, 'luma ≥', 0, 100), keyField('luma', 1, 'luma ≤', 0, 100), { id: 'k:soft', label: 'soft', lo: 0, hi: 1, step: 0.01, get: (/** @type {any} */ x) => x.key?.soft ?? 0.5, set: (/** @type {any} */ x, /** @type {number} */ v) => ({ ...x, key: { ...x.key, soft: v } }) }] : []),
-			...(sec.window ? [windowField('x', 'x', -1, 2, 0.01), windowField('y', 'y', -1, 2, 0.01), windowField('w', 'width', 0.01, 4, 0.01), windowField('h', 'height', 0.01, 4, 0.01), windowField('angle', 'angle', -180, 180, 1), windowField('feather', 'feather', 0, 1, 0.01)] : [])
-		];
-	}
-	/** how many control rows a shot's secondaries take, open @param {Clip} c */
-	const secRows = (c) => (c.secondaries ?? []).reduce((n, sec, i) => n + 1 + secFields(sec, secOpen.includes(`${c.id}:${i}`)).length + (sec.window && secOpen.includes(`${c.id}:${i}`) ? 1 : 0), 0) + 1;
-	// the film's finishing, after its looks
-	/** @param {any} f */
-	const setFinish = (f) => {
-		const g = { look: null, ...(s.current?.grade ?? {}) };
-		const clean = cleanFinish(f);
-		if (clean) g.finish = clean;
-		else delete g.finish;
-		s.setMeta({ grade: g });
-	};
-	const FINISH_SLIDERS = /** @type {const} */ ([
-		['pop', 'amount', 'pop', -1, 1],
-		['halation', 'amount', 'halation', 0, 1],
-		['bloom', 'amount', 'bloom', 0, 1],
-		['grain', 'amount', 'grain', 0, 1],
-		['grain', 'size', 'grain size', 0.5, 4],
-		['vignette', 'amount', 'vignette', 0, 1]
-	]);
-	/** @param {any} f */
-	const finishText = (f) =>
-		f
-			? Object.entries(f)
-					.map(([k, v]) => `${k} ${/** @type {any} */ (v).amount.toFixed(2)}`)
-					.join(' · ')
-			: '—';
-	let openLayers = $state(/** @type {string[]} */ ([]));
-	/** @param {string} id */
-	const toggleLayer = (id) => (openLayers = openLayers.includes(id) ? openLayers.filter((x) => x !== id) : [...openLayers, id]);
 	const shown = $derived(
 		audio ? TRACKS.filter((t) => t.id.startsWith('A')) : story ? [STORY, ...TRACKS.filter((t) => t.id === 'T1')] : grading ? [...GRADE_LAYERS, ...TRACKS.filter((t) => t.id === 'V1')] : TRACKS
 	);
-	/** an open layer's height: its rows of controls (a head counts as one), each 1.25rem, and a little room */
-	const ROW = 1.25;
-	/** @param {string} id */
-	const controlRows = (id) =>
-		id === 'L:film' || id === 'L:scene' ? 1 + LOOK_SLIDERS.length :
-		id === 'L:finish' ? 1 + FINISH_SLIDERS.length :
-		id === 'L:grade' ? 4 :
-		id === 'L:frame' ? 3 :
-		id === 'L:sec' ? Math.max(2, ...pics.map(secRows)) :
-		(BALANCE_NODES.find((n) => `L:${n.id}` === id)?.fields.length ?? 1);
 	const rows = $derived(
-		grading ? `1.5rem ${GRADE_LAYERS.map((l) => (openLayers.includes(l.id) ? `${(0.6 + controlRows(l.id) * ROW).toFixed(2)}rem` : '1.5rem')).join(' ')} 7.2rem` :
+		grading ? `1.5rem repeat(${GRADE_LAYERS.length}, 1.6rem) 7.2rem` :
 		story ? '1.5rem minmax(5rem, 3fr) minmax(2.6rem, 1fr)' :
 		audio ? `1.5rem repeat(${shown.length}, minmax(3.4rem, 1fr))` : `1.5rem minmax(2.6rem, 1fr) repeat(4, minmax(1.7rem, 1fr))${spec ? ` repeat(${LANES.length}, 1.45rem)` : ''}`
 	);
@@ -664,84 +501,12 @@
 		sp.lights.length ? sp.lights.map((l) => `${l.id} ${Array.isArray(l.intensity) ? '∿' : fmt(l.intensity ?? 1, 2)}`).join(' · ') : 'no light changes';
 </script>
 
-{#snippet lookCell(/** @type {import('$lib/auth/client').Look | null} */ l, /** @type {boolean} */ open, /** @type {string} */ what, /** @type {(l: import('$lib/auth/client').Look | null) => void} */ set)}
-	{#if open}
-		<div class="look-head"><b title={what}>{what}</b>{#if l}<button class="off" onclick={() => set(null)} title="Take this look off">off</button>{/if}</div>
-		{#each LOOK_SLIDERS as [k, label, lo, hi, step] (k)}
-			<label class="sl"><span>{label}</span><input {@attach fine()} type="range" min={lo} max={hi} {step} value={lookValue(l, k)} oninput={(e) => set(withValue(l, k, Number(e.currentTarget.value)))} /><output>{lookValue(l, k).toFixed(step < 1 ? 2 : 0)}</output></label>
-		{/each}
-	{:else}
-		<span class="val" class:on={!!l}>{lookText(l)}</span>
-	{/if}
-{/snippet}
-
-{#snippet finishCell(/** @type {any} */ f, /** @type {boolean} */ open)}
-	{#if open}
-		<div class="look-head"><b>the whole film</b>{#if f}<button class="off" onclick={() => setFinish(null)} title="Take the finishing off">off</button>{/if}</div>
-		{#each FINISH_SLIDERS as [part, k, label, lo, hi] (label)}
-			{@const v = f?.[part]?.[k] ?? (k === 'size' ? 1 : 0)}
-			<label class="sl"><span>{label}</span><input {@attach fine()} type="range" min={lo} max={hi} step="0.01" value={v} oninput={(e) => setFinish({ ...(f ?? {}), [part]: { ...(f?.[part] ?? {}), [k]: Number(e.currentTarget.value), ...(k === 'size' && !f?.[part]?.amount ? { amount: 0.25 } : {}) } })} /><output>{v.toFixed(2)}</output></label>
-		{/each}
-	{:else}
-		<span class="val" class:on={!!f}>{finishText(f)}</span>
-	{/if}
-{/snippet}
-
-{#snippet secCell(/** @type {Clip} */ c, /** @type {boolean} */ open)}
-	{@const list = c.secondaries ?? []}
-	{#if open}
-		{#each list as sec, i (i)}
-			{@const k = `${c.id}:${i}`}
-			{@const more = secOpen.includes(k)}
-			<div class="look-head">
-				<button class="twist" onclick={() => toggleSec(k)} title={more ? 'Fewer controls' : 'Every control: its balance, its key, its window'}>{more ? '▾' : '▸'}</button>
-				<b title={secText(sec)}>{secText(sec)}</b>
-				<button class="off" onclick={() => setSecondaries(c, list.filter((_, j) => j !== i))} title="Take this secondary off">off</button>
-			</div>
-			{#each secFields(sec, more) as f (f.id)}
-				<label class="sl"><span>{f.label}</span><input {@attach fine()} type="range" min={f.lo} max={f.hi} step={f.step} value={f.get(sec)} oninput={(e) => setSecondaries(c, list.map((x, j) => (j === i ? f.set(x, Number(e.currentTarget.value)) : x)))} /><output>{f.get(sec).toFixed(f.step < 1 ? 2 : 0)}</output></label>
-			{/each}
-			{#if more && sec.window}
-				<div class="sl toggles">
-					<button class="off" class:on={sec.window.shape === 'ellipse'} onclick={() => setSecondaries(c, list.map((x, j) => (j === i ? { ...x, window: { ...x.window, shape: x.window?.shape === 'ellipse' ? 'rect' : 'ellipse' } } : x)))}>{sec.window.shape}</button>
-					<button class="off" class:on={sec.window.invert} onclick={() => setSecondaries(c, list.map((x, j) => (j === i ? { ...x, window: { ...x.window, invert: !x.window?.invert } } : x)))}>{sec.window.invert ? 'outside' : 'inside'}</button>
-				</div>
-			{/if}
-		{/each}
-		{#if list.length < 4}
-			<div class="adds">
-				<button class="off add" onclick={() => setSecondaries(c, [...list, NEW_KEY])} title="A colour range of the picture (a hue, how saturated, how bright), with its own balance">+ key</button>
-				<button class="off add" onclick={() => setSecondaries(c, [...list, NEW_WINDOW])} title="A part of the frame (an ellipse or a rectangle), with its own balance">+ window</button>
-			</div>
-		{/if}
-	{:else}
-		<span class="val" class:on={list.length > 0}>{list.length ? list.map(secText).join(' · ') : '—'}</span>
-	{/if}
-{/snippet}
-
-{#snippet cdlCell(/** @type {import('$lib/auth/client').Cdl | null} */ g, /** @type {string | null} */ preset, /** @type {boolean} */ open, /** @type {(g: import('$lib/auth/client').Cdl | null, preset?: string | null) => void} */ set)}
-	{@const cur = g ?? NEUTRAL}
-	{#if open}
-		{#each [['slope', 'gain', 0, 2], ['offset', 'lift', -0.2, 0.2], ['power', 'gamma', 0.4, 2.5]] as [k, label, lo, hi] (k)}
-			{@const key = /** @type {'slope' | 'offset' | 'power'} */ (k)}
-			{@const mean = (cur[key][0] + cur[key][1] + cur[key][2]) / 3}
-			<label class="sl"><span>{label}</span><input {@attach fine()} type="range" min={lo} max={hi} step="0.005" value={mean} oninput={(e) => { const v = Number(e.currentTarget.value); const next = structuredClone($state.snapshot(cur)); for (let i = 0; i < 3; i++) next[key][i] = +(next[key][i] + v - mean).toFixed(4); set(isNeutral(next) ? null : next); }} /><output>{mean.toFixed(3)}</output></label>
-		{/each}
-		<label class="sl"><span>sat</span><input {@attach fine()} type="range" min="0" max="2" step="0.01" value={cur.sat} oninput={(e) => { const next = { ...structuredClone($state.snapshot(cur)), sat: Number(e.currentTarget.value) }; set(isNeutral(next) ? null : next); }} /><output>{cur.sat.toFixed(2)}</output></label>
-	{:else}
-		{@const avg = (/** @type {number[]} */ v) => ((v[0] + v[1] + v[2]) / 3).toFixed(2)}
-		<span class="val" class:on={!!g}>{g ? `gain ${avg(g.slope)} · lift ${avg(g.offset)}${g.sat !== 1 ? ` · sat ${g.sat.toFixed(2)}` : ''}` : '—'}</span>
-	{/if}
-{/snippet}
-
 <div class="timeline" style:--rows={rows}>
 	<div class="heads">
 		<div class="head"></div>
 		{#each shown as t (t.id)}
-			{#if t.id.startsWith('L:')}
-				<button class="head layer" class:sub={'sub' in t} class:open={openLayers.includes(t.id)} onclick={() => toggleLayer(t.id)} title="Open or close this layer's controls"><span class="caret">{openLayers.includes(t.id) ? '▾' : '▸'}</span> {t.label}</button>
-			{:else if t.id === 'G:base'}
-				<button class="head layer group" class:open={baseOpen} onclick={() => (baseOpen = !baseOpen)} title="Open or close the base correction's layers"><span class="caret">{baseOpen ? '▾' : '▸'}</span> {t.label}</button>
+			{#if 'layer' in t}
+				<button class="head layer" class:open={s.gradeLayer === t.layer} onclick={() => focus(/** @type {any} */ (t.layer), null)} title="Its controls in the aside">{t.label}</button>
 			{:else}<div class="head"><b>{t.id}</b> {t.label}</div>{/if}
 		{/each}
 		{#if spec}
@@ -761,63 +526,31 @@
 			{#each shown as t (t.id)}
 				<!-- svelte-ignore a11y_no_static_element_interactions -->
 				<div class="track" ondragover={(e) => t.id !== 'T1' && s.canEdit && e.preventDefault()} ondrop={(e) => t.id !== 'T1' && drop(e, /** @type {Track} */ (t.id))}>
-					{#if t.id === 'G:base'}
-						{#each s.clips.filter((c) => c.track === 'V1') as c (c.id)}
+					{#if 'layer' in t}
+						{@const L = /** @type {import('./grade.js').Layer} */ (t.layer)}
+						{#if L === 'timeline' || L === 'finish'}
+							<!-- svelte-ignore a11y_click_events_have_key_events -->
 							<!-- svelte-ignore a11y_no_static_element_interactions -->
-							<div class="cell" class:sel={s.selected === c.id} style:left={left(c)} style:width={width(c)} onpointerdown={(e) => (e.stopPropagation(), (s.selected = c.id))}>
-								<span class="val" class:on={!!c.balance}>{baseText(c)}</span>
+							<div class="cell film" class:focus={s.gradeLayer === L} style:left="0" style:width="{pics.length * COL}px" onpointerdown={(e) => e.stopPropagation()} onclick={() => focus(L, null)}>
+								<span class="val" class:on={L === 'finish' ? !!s.current?.grade?.finish : !!timelineLook(s)}>{L === 'finish' ? finishText(s.current?.grade?.finish ?? null) : lookText(timelineLook(s))}</span>
 							</div>
-						{/each}
-					{:else if t.id.startsWith('L:')}
-						{@const open = openLayers.includes(t.id)}
-						{#if t.id === 'L:film'}
-							<!-- svelte-ignore a11y_no_static_element_interactions -->
-							<div class="cell film" class:open style:left="0" style:width={grading ? `${pics.length * COL}px` : x(s.end)} onpointerdown={(e) => e.stopPropagation()}>
-								{@render lookCell(filmLook, open, 'the whole film', (l) => setLook(null, l))}
-							</div>
-						{:else if t.id === 'L:finish'}
-							<!-- svelte-ignore a11y_no_static_element_interactions -->
-							<div class="cell film" class:open style:left="0" style:width={grading ? `${pics.length * COL}px` : x(s.end)} onpointerdown={(e) => e.stopPropagation()}>
-								{@render finishCell(s.current?.grade?.finish ?? null, open)}
-							</div>
-						{:else if t.id === 'L:scene'}
-							{#each sceneRuns as r (r.key)}
+						{:else if L === 'scene'}
+							{#each runs as r (r.key)}
+								<!-- svelte-ignore a11y_click_events_have_key_events -->
 								<!-- svelte-ignore a11y_no_static_element_interactions -->
-								<div class="cell film scene" class:open style:left="{r.from * COL}px" style:width="{r.count * COL}px" onpointerdown={(e) => e.stopPropagation()}>
-									{#if r.scene}
-										{@render lookCell(s.current?.grade?.scenes?.[r.scene] ?? null, open, r.scene, (l) => setLook(r.scene, l))}
-									{:else}<span class="val">no scene in the script</span>{/if}
+								<div class="cell film scene" class:focus={s.gradeLayer === L && !!s.sel && (s.sel.script?.scene || null) === r.scene} style:left="{r.from * COL}px" style:width="{r.count * COL}px" onpointerdown={(e) => e.stopPropagation()} onclick={() => focus(L, pics[r.from])}>
+									<span class="val" class:on={!!(r.scene && sceneLook(s, r.scene))}>{r.scene ? `${r.scene} · ${lookText(sceneLook(s, r.scene))}` : 'no scene in the script'}</span>
 								</div>
 							{/each}
 						{:else}
-							{#each s.clips.filter((c) => c.track === 'V1') as c (c.id)}
+							{#each pics as c (c.id)}
+								<!-- svelte-ignore a11y_click_events_have_key_events -->
 								<!-- svelte-ignore a11y_no_static_element_interactions -->
-								<div class="cell" class:open class:sel={s.selected === c.id} style:left={left(c)} style:width={width(c)} onpointerdown={(e) => (e.stopPropagation(), (s.selected = c.id))}>
-									{#if t.id === 'L:grade'}
-										{@render cdlCell(c.grade ?? null, null, open, (g) => s.patchClip(c.id, { grade: g ?? undefined }))}
-									{:else if t.id === 'L:sec'}
-										{@render secCell(c, open)}
-									{:else if t.id === 'L:frame'}
-										{@const f = c.frame?.[s.shape] ?? { x: 0, y: 0, zoom: 1 }}
-										{#if open && !isWorld(c)}
-											{#each [['x', -1, 1], ['y', -1, 1], ['zoom', 1, 3]] as [k, lo, hi] (k)}
-												<label class="sl"><span>{k}</span><input {@attach fine()} type="range" min={lo} max={hi} step="0.01" value={f[/** @type {'x' | 'y' | 'zoom'} */ (k)]} oninput={(e) => s.setFrame(c.id, s.shape, { ...f, [k]: Number(e.currentTarget.value) })} /></label>
-											{/each}
-										{:else}<span class="val" class:on={!!c.frame?.[s.shape]}>{c.frame?.[s.shape] ? `${s.shape} · ${f.zoom.toFixed(2)}×` : '—'}</span>{/if}
-									{:else}
-										{@const n = BALANCE_NODES.find((b) => `L:${b.id}` === t.id)}
-										{@const bal = c.balance ?? NEUTRAL_BALANCE}
-										{#if n}
-											{#if open}
-												{#each n.fields as f (f.key)}
-													<label class="sl" title="{f.label} {bal[f.key].toFixed(2)} (double-click: 0)"><span>{n.fields.length > 1 ? f.label.slice(0, 4) : ''}</span><input {@attach fine()} type="range" min={f.min} max={f.max} step={f.step} value={bal[f.key]} oninput={(e) => s.patchClip(c.id, { balance: cleanBalance({ ...bal, [f.key]: Number(e.currentTarget.value) }) ?? undefined })} ondblclick={() => s.patchClip(c.id, { balance: cleanBalance({ ...bal, [f.key]: 0 }) ?? undefined })} /><output>{bal[f.key].toFixed(2)}</output></label>
-												{/each}
-											{:else}
-												{@const vals = n.fields.map((f) => bal[f.key])}
-												<span class="val" class:on={vals.some((v) => v !== 0)}>{vals.every((v) => v === 0) ? '—' : n.fields.map((f) => `${bal[f.key] > 0 ? '+' : ''}${bal[f.key].toFixed(2)}`).join(' / ')}</span>
-											{/if}
-										{/if}
-									{/if}
+								<div class="cell" class:sel={s.selected === c.id} class:focus={s.gradeLayer === L && s.selected === c.id} style:left={left(c)} style:width={width(c)} onpointerdown={(e) => e.stopPropagation()} onclick={() => focus(L, c)}>
+									{#if L === 'clip'}<span class="val" class:on={!!c.grade}>{cdlText(c.grade)}</span>
+									{:else if L === 'sec'}<span class="val" class:on={!!c.secondaries?.length}>{c.secondaries?.length ? c.secondaries.map(secText).join(' · ') : '—'}</span>
+									{:else if L === 'base'}<span class="val" class:on={!!c.balance}>{baseText(c)}</span>
+									{:else}<span class="val" class:on={!!c.frame?.[s.shape]}>{c.frame?.[s.shape] ? `${s.shape} · ${(c.frame[s.shape]?.zoom ?? 1).toFixed(2)}×` : '—'}</span>{/if}
 								</div>
 							{/each}
 						{/if}
@@ -1218,21 +951,20 @@
 		background: rgb(0 0 0 / 0.2);
 	}
 
+	/* the cell whose controls the aside shows */
+	.lanes.grading .cell {
+		cursor: pointer;
+	}
+
+	.cell.focus {
+		outline: 1px solid var(--accent);
+		outline-offset: -1px;
+		background: var(--chosen);
+	}
+
 	/* a scene's look over the run of shots it covers */
 	.cell.scene {
 		border-left: 2px solid var(--accent);
-	}
-
-	/* open: the controls from the top, row under row */
-	.cell.open {
-		justify-content: flex-start;
-		padding-top: 0.3rem;
-	}
-
-	/* a layer over many shots (the film's, a scene's): its bar spans them, its controls stay one shot wide, at its start */
-	.cell.film > * {
-		width: calc(var(--col) - 0.75rem);
-		max-width: 100%;
 	}
 
 	/* a cell's own summary sits in its flow (the lanes' timed labels are placed by time) */
@@ -1242,66 +974,6 @@
 		line-height: 1.2;
 	}
 
-	.look-head .twist {
-		padding: 0;
-		border: 0;
-		background: none;
-		font: inherit;
-		color: var(--dim);
-		cursor: pointer;
-	}
-
-	.sl.toggles,
-	.adds {
-		display: flex;
-		gap: 0.3rem;
-	}
-
-	.sl.toggles .off.on {
-		border-color: var(--accent);
-		color: var(--ink);
-	}
-
-	.look-head {
-		display: flex;
-		gap: 0.5rem;
-		align-items: center;
-		font-size: 0.66rem;
-		color: var(--ink-soft);
-	}
-
-	.look-head b {
-		flex: 1;
-		min-width: 0;
-		overflow: hidden;
-		color: var(--ink);
-		font-weight: 600;
-		white-space: nowrap;
-		text-overflow: ellipsis;
-	}
-
-	.off.add {
-		align-self: flex-start;
-		padding: 0 0.5rem;
-		border: 1px solid var(--edge);
-		border-radius: 999px;
-		background: var(--raised);
-		font: inherit;
-		font-size: 0.64rem;
-		color: var(--dim);
-		cursor: pointer;
-	}
-
-	.look-head .off {
-		margin-left: auto;
-		padding: 0 0.5rem;
-		border: 1px solid var(--edge);
-		border-radius: 999px;
-		background: var(--raised);
-		font: inherit;
-		color: var(--dim);
-		cursor: pointer;
-	}
 
 	.cell .val {
 		overflow: hidden;
@@ -1314,27 +986,6 @@
 
 	.cell .val.on {
 		color: var(--warn);
-	}
-
-	.cell .sl {
-		display: grid;
-		grid-template-columns: 3.3rem minmax(2rem, 1fr) 2.1rem;
-		min-height: 1.15rem;
-		gap: 0.25rem;
-		align-items: center;
-		font-size: 0.6rem;
-		color: var(--dim);
-	}
-
-	.cell .sl input {
-		width: 100%;
-		accent-color: var(--accent);
-	}
-
-	.cell .sl output {
-		font-family: ui-monospace, 'SF Mono', Menlo, monospace;
-		font-size: 0.58rem;
-		text-align: right;
 	}
 
 	.cell .chips {

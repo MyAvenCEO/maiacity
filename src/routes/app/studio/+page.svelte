@@ -26,6 +26,7 @@
 	import TimelinePicker from '$lib/studio/TimelinePicker.svelte';
 	import DeliverablesTab from '$lib/studio/DeliverablesTab.svelte';
 	import Processes from '$lib/studio/Processes.svelte';
+	import GradeAside from '$lib/studio/GradeAside.svelte';
 	import { forwardConsole, native } from '$lib/native';
 	import ProgramMonitor from '$lib/studio/ProgramMonitor.svelte';
 	import RenderQueue from '$lib/studio/RenderQueue.svelte';
@@ -195,10 +196,11 @@
 			</div>
 			<Inspector {s} />
 		{:else if s.tab === 'grade'}
-			<!-- the picture; the grade's layers are on the timeline, over each shot (an agent reads the numbers itself) -->
+			<!-- the picture; the grade's layers on the timeline, a line each over the shots; the chosen one's controls beside -->
 			<div class="monitors">
 				<ProgramMonitor {s} label="Program · {s.shape}" />
 			</div>
+			<GradeAside {s} />
 		{:else}
 			<RenderQueue {s} />
 			<div class="monitors" class:split={!!s.preview}>
@@ -301,15 +303,16 @@
 	}
 
 	/* Grade: the program; the layers over V1 on the timeline, full width */
+	/* Grade: the picture, the transport and the layers' lanes; beside them, the full height, the chosen layer's controls */
 	.studio.tab-grade {
-		grid-template-columns: 1fr;
+		grid-template-columns: minmax(0, 1fr) 22rem;
 		grid-template-rows: auto minmax(0, 1fr) auto auto auto;
 		grid-template-areas:
-			'bar'
-			'monitor'
-			'transport'
-			'timeline'
-			'tabs';
+			'bar bar'
+			'monitor aside'
+			'transport aside'
+			'timeline aside'
+			'tabs tabs';
 	}
 
 	.studio.tab-render {
@@ -604,11 +607,16 @@
 
 	@media (max-width: 900px) {
 		.studio,
-		.studio.tab-grade,
 		.studio.tab-render {
 			grid-template-columns: 1fr;
 			grid-template-rows: auto 30vh auto minmax(10rem, 1fr) 30vh auto;
 			grid-template-areas: 'bar' 'monitor' 'transport' 'timeline' 'bin' 'tabs';
+		}
+
+		.studio.tab-grade {
+			grid-template-columns: 1fr;
+			grid-template-rows: auto 30vh auto minmax(10rem, 1fr) 40vh auto;
+			grid-template-areas: 'bar' 'monitor' 'transport' 'timeline' 'aside' 'tabs';
 		}
 
 		/* source above program */
