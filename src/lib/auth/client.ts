@@ -167,6 +167,8 @@ export const describeMedia = (hash: string, about: { title?: string; description
 export type ColorInfo = { profile: string; primaries?: string; transfer?: string; matrix?: string; range?: string; bitDepth?: number; detectedFrom?: string; override?: string };
 /** A look: the film's or a scene's (game/film/color.js `cleanLook`, vault-render `creative::Look`). */
 export type Look = import('../../../game/film/color.js').Look;
+
+export type EqBand = import('../../../game/film/sound.js').EqBand;
 /** A secondary: its key (hue°, chroma × 100, IRE) inside its window (0…1 from the top left, or on the face), with its own balance. */
 export type Secondary = { name?: string; key?: { hue: [number, number]; sat: [number, number]; luma: [number, number]; soft: number }; window?: { shape: 'ellipse' | 'rect'; x: number; y: number; w: number; h: number; angle: number; feather: number; invert: boolean; track?: 'face' }; adjust: Balance; mix: number };
 /** The film's finishing, after its looks. */
@@ -219,6 +221,10 @@ export type TimelineClip = {
 	balance?: Balance | null;
 	/** a V1 clip's secondaries (game/film/color.js `cleanSecondaries`): parts of it given their own balance */
 	secondaries?: Secondary[];
+	/** a sound clip's EQ (game/film/sound.js `cleanEq`): bands in order, the render's and the studio's playback's */
+	eq?: EqBand[];
+	/** a sound clip's gain keys ([seconds into the clip, dB], game/film/sound.js `cleanKeys`) */
+	keys?: [number, number][];
 	/** this clip's own grade (Grade tab), ACEScct */
 	grade?: Cdl | null;
 	/** picture clips: where the clip stands in the script */

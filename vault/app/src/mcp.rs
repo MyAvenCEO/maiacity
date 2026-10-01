@@ -327,7 +327,7 @@ pub struct LookSetArgs {
     /// the scene whose look this is (as its clips name it in script.scene); none: the film's look
     pub scene: Option<String>,
     /// the look: { cdl?, preset?, contrast (−1…1), pivot (ACEScct, mid grey 0.414), split?: { shadows: { hue°, amount
-    /// 0…1 }, highlights: { hue°, amount }, balance −1…1 }, hue?: [[hue°, shift°]…], hue_sat?: [[hue°, factor]…], sat,
+    /// 0…1 }, highlights: { hue°, amount }, balance −1…1 }, hue?: [[hue°, shift°]…], hue_sat?: [[hue°, factor]…], hue_lum?: [[hue°, stops −2…2]…], hi_sat? (the highlights' saturation 0…2: a sky clipped in camera back to white), sat,
     /// lut? (a .cube's hash, ACEScct in and out), strength 0…1 } — hues on the vectorscope (the skin line 123°);
     /// none: take it off
     pub look: Option<Value>,
@@ -404,6 +404,9 @@ pub struct MixClip {
     pub fin: Option<f64>,
     /// fade out, seconds
     pub fout: Option<f64>,
+    /// gain keys along the clip, [seconds into the clip, dB] (straight lines between them, the ends held; on top of
+    /// the gain) — a breath or a sniff dipped: [[1.2, 0], [1.25, -20], [1.7, -20], [1.75, 0]]; [] takes them off
+    pub keys: Option<Vec<[f64; 2]>>,
 }
 
 #[derive(Deserialize, schemars::JsonSchema)]
@@ -415,6 +418,41 @@ pub struct MixArgs {
 }
 
 #[derive(Deserialize, schemars::JsonSchema)]
+pub struct EqArgs {
+    /// the timeline's id
+    pub timeline: String,
+    /// the sound clips to set it on (ids)
+    pub clips: Option<Vec<String>>,
+    /// or every clip with a file on this track (A1 voice, A2 music, A3 sounds)
+    pub track: Option<String>,
+    /// the EQ, bands in order (replaces the clip's; [] takes it off): { type: highpass | lowshelf | peaking | notch |
+    /// highshelf | lowpass, f: Hz 20–20000, gain: dB ±24 (shelves, peaks), q: 0.1–18 (plain Q; default 0.707, a
+    /// peak's or notch's 1; shelves have a slope of 1) } — at most 8
+    pub eq: Vec<Value>,
+}
+
+#[derive(Deserialize, schemars::JsonSchema)]
+pub struct MatchSoundArgs {
+    /// the timeline's id
+    pub timeline: String,
+    /// the sound clips to match (ids)
+    pub clips: Vec<String>,
+    /// the clip whose tone they should have (through its own EQ), e.g. the voice-over for a camera's voice
+    pub reference: String,
+    /// the octaves matched, Hz (default 100–10000, a voice's range)
+    pub lo: Option<f64>,
+    pub hi: Option<f64>,
+    /// the most any band may lift or cut, dB (default 6)
+    pub limit: Option<f64>,
+    /// how much of the difference to take, 0–1 (default 0.8: close, not a copy)
+    pub amount: Option<f64>,
+    /// also set each clip's gain so it plays as loud as the reference (default true)
+    pub level: Option<bool>,
+    /// false: only propose, write nothing (default true)
+    pub apply: Option<bool>,
+}
+
+#[derive(Deserialize, schemars::JsonSchema)]
 pub struct LevelArgs {
     /// the timeline's id
     pub timeline: String,
@@ -422,6 +460,20 @@ pub struct LevelArgs {
     pub targets: Option<std::collections::HashMap<String, f64>>,
     /// false: only propose, write nothing (default true)
     pub apply: Option<bool>,
+}
+
+#[derive(Deserialize, schemars::JsonSchema)]
+pub struct PlaybackArgs {
+    /// the timeline's id
+    pub timeline: String,
+    /// the moment on the timeline, in seconds from 0
+    pub t: f64,
+    /// how many frames to read one after another from there, and time (default 15)
+    pub frames: Option<usize>,
+    /// the shape (default 16:9)
+    pub shape: Option<String>,
+    /// true: play the originals (as Picture: Original does), else each shot's proxy
+    pub originals: Option<bool>,
 }
 
 #[derive(Deserialize, schemars::JsonSchema)]
@@ -920,7 +972,7 @@ impl Studio {
     }
 
     #[tool(
-        description = "Listen to a timeline's sound, measured natively (BS.1770, as the render levels it): every sound clip's loudness (LUFS) and true peak as recorded and at its volume (gain_db), its fades, a loudness curve every 0.5 s, and per voice clip how far the music under it sits below it (voice_over_music_lu; the render keys the music down 6 dB while the voice speaks — 12 to 18 LU keeps a voice clear). The render levels the whole mix to −14 LUFS / −1 dBTP at the end."
+        description = "Listen to a timeline's sound, measured natively (BS.1770, as the render levels it): every sound clip's loudness (LUFS) and true peak through its EQ, as recorded and at its volume (gain_db), its fades, its EQ and spectrum (octave bands 63 Hz–16 kHz: each one's share of its energy where it speaks, dB — compare a clip's tone with another's), a loudness curve every 0.5 s, and per voice clip how far the music under it sits below it (voice_over_music_lu; the render keys the music down 6 dB while the voice speaks — 12 to 18 LU keeps a voice clear). The render levels the whole mix to −14 LUFS / −1 dBTP at the end."
     )]
     async fn audio_measure(&self, Parameters(a): Parameters<IdArg>) -> String {
         let r = async {
@@ -1000,7 +1052,7 @@ impl Studio {
         text(r.await)
     }
 
-    #[tool(description = "Set sound clips' gain (dB, 0 = as recorded, −60…+12) and fades (seconds) — the sound design's hand on the mix.")]
+    #[tool(description = "Set sound clips' gain (dB, 0 = as recorded, −60…+12), fades (seconds) and gain keys along a clip (a dip under a breath or a sniff, a swell) — the sound design's hand on the mix, the same in the render and the studio's playback.")]
     async fn audio_mix(&self, Parameters(a): Parameters<MixArgs>) -> String {
         let r = async {
             let t = self.api("GET", &format!("/api/timelines/{}", a.timeline), None).await?;
@@ -1015,6 +1067,14 @@ impl Studio {
                 }
                 if let Some(f) = m.fout {
                     c["fout"] = json!(f.max(0.0));
+                }
+                if let Some(k) = &m.keys {
+                    let keys = vault_render::sound::clean_keys(&json!(k));
+                    if keys.is_empty() {
+                        c.as_object_mut().map(|o| o.remove("keys"));
+                    } else {
+                        c["keys"] = json!(keys);
+                    }
                 }
             }
             self.api("PUT", &format!("/api/timelines/{}", a.timeline), Some(json!({ "clips": clips }))).await?;
@@ -1050,6 +1110,121 @@ impl Studio {
                 self.api("PUT", &format!("/api/timelines/{}", a.timeline), Some(json!({ "clips": clips }))).await?;
             }
             Ok::<_, String>(json!({ "applied": apply, "changes": changes, "voice_over_music_before": measured["voice_over_music"] }))
+        };
+        text(r.await)
+    }
+
+    #[tool(
+        description = "Set the EQ of sound clips — named ones, or every clip with a file on a track. Bands in order, each a biquad from the Audio EQ Cookbook, the same in the render's mix and the studio's playback: highpass (rumble, handling, wind: 70–120 Hz on a voice), lowshelf, peaking (a boost or cut around f; q 0.7 wide … 4 narrow), notch (a hum), highshelf (air), lowpass. Replaces the clip's EQ; [] takes it off. Check with audio_measure (each clip's spectrum, through its EQ); audio_match builds one from a reference. Voice rules in story-producer sound.md."
+    )]
+    async fn audio_eq(&self, Parameters(a): Parameters<EqArgs>) -> String {
+        let r = async {
+            let eq = serde_json::to_value(vault_render::eq::clean_eq(&json!(a.eq))).map_err(|e| e.to_string())?;
+            if eq.as_array().map(Vec::len) != Some(a.eq.len()) {
+                return Err(format!("{} of the {} bands are not EQ bands (or change nothing): {eq}", a.eq.len() - eq.as_array().map(Vec::len).unwrap_or(0), a.eq.len()));
+            }
+            let t = self.api("GET", &format!("/api/timelines/{}", a.timeline), None).await?;
+            let mut clips = t["clips"].as_array().cloned().ok_or("the timeline has no clips")?;
+            let mut changed = Vec::new();
+            for c in clips.iter_mut() {
+                let id = c["id"].as_str().unwrap_or_default().to_string();
+                let named = a.clips.as_ref().is_some_and(|ids| ids.contains(&id));
+                let on_track = a.track.as_deref().is_some_and(|tr| c["track"] == tr && c["hash"].is_string());
+                if !(named || on_track) {
+                    continue;
+                }
+                if !c["track"].as_str().is_some_and(|tr| tr.starts_with('A')) {
+                    return Err(format!("clip {id} is not a sound clip"));
+                }
+                if eq.as_array().is_some_and(Vec::is_empty) {
+                    c.as_object_mut().map(|o| o.remove("eq"));
+                } else {
+                    c["eq"] = eq.clone();
+                }
+                changed.push(id);
+            }
+            for id in a.clips.iter().flatten() {
+                if !changed.contains(id) {
+                    return Err(format!("no clip {id}"));
+                }
+            }
+            self.api("PUT", &format!("/api/timelines/{}", a.timeline), Some(json!({ "clips": clips }))).await?;
+            Ok::<_, String>(json!({ "changed": changed, "eq": eq }))
+        };
+        text(r.await)
+    }
+
+    #[tool(
+        description = "Match sound clips' tone to a reference clip's — the sound's grade_match: measures each clip's spectrum without its EQ and the reference's through its own (octave bands where they speak, audio_measure), and builds the EQ that closes the difference (a peaking band per octave from lo to hi, within ±limit dB, solved for how the bands overlap; a high-pass when the reference has far less below). Tone only; with level (the default) each clip's gain then makes it play as loud as the reference. Replaces the clips' EQ. Returns the EQ, the spectra before and after, and the gains. Use it for a camera's voice against the lav's or the voice-over's, a scene's sound against its master."
+    )]
+    async fn audio_match(&self, Parameters(a): Parameters<MatchSoundArgs>) -> String {
+        let r = async {
+            let t = self.api("GET", &format!("/api/timelines/{}", a.timeline), None).await?;
+            let all = t["clips"].as_array().cloned().ok_or("the timeline has no clips")?;
+            let find = |id: &str| all.iter().find(|c| c["id"] == id).cloned().ok_or_else(|| format!("no clip {id}"));
+            let reference = find(&a.reference)?;
+            let (lo, hi) = (a.lo.unwrap_or(100.0).clamp(20.0, 20000.0), a.hi.unwrap_or(10000.0).clamp(20.0, 20000.0));
+            let limit = a.limit.unwrap_or(6.0).clamp(0.5, 24.0);
+            let amount = a.amount.unwrap_or(0.8).clamp(0.0, 1.0);
+            // one clip and the reference measured at a time: nothing else is read
+            let measure = |clips: Vec<Value>| {
+                let mut one = t.clone();
+                one["clips"] = json!(clips);
+                async move { crate::render::measure_sound(&self.vault, &one).await }
+            };
+            let spectrum_of = |m: &Value, id: &str| -> Option<(Vec<f64>, Value)> {
+                let c = m["clips"].as_array()?.iter().find(|c| c["clip"] == id)?;
+                Some((c["spectrum"].as_array()?.iter().filter_map(|p| p[1].as_f64()).collect(), c.clone()))
+            };
+            let mut out = Vec::new();
+            let mut results: Vec<(String, Value, Option<f64>)> = Vec::new();
+            for id in &a.clips {
+                let mut plain = find(id)?;
+                if !plain["track"].as_str().is_some_and(|tr| tr.starts_with('A')) {
+                    return Err(format!("clip {id} is not a sound clip"));
+                }
+                plain.as_object_mut().map(|o| o.remove("eq"));
+                let m = measure(vec![plain.clone(), reference.clone()]).await?;
+                let (from, _) = spectrum_of(&m, id).ok_or_else(|| format!("clip {id}: silent, or its file is not here"))?;
+                let (to, r) = spectrum_of(&m, &a.reference).ok_or("the reference is silent, or its file is not here")?;
+                let to_scaled: Vec<f64> = from.iter().zip(&to).map(|(f, t)| f + amount * (t - f)).collect();
+                let bands = vault_render::eq::matching(&from, &to_scaled, lo, hi, limit, vault_render::av::RATE as f64);
+                let eq = serde_json::to_value(&bands).map_err(|e| e.to_string())?;
+                let mut matched = plain.clone();
+                if !bands.is_empty() {
+                    matched["eq"] = eq.clone();
+                }
+                let after = measure(vec![matched]).await?;
+                let (got, c) = spectrum_of(&after, id).ok_or("measuring it again failed")?;
+                // its gain: as loud as the reference plays
+                let vol = (a.level != Some(false)).then(|| {
+                    let g = r["lufs_at_vol"].as_f64()? - c["lufs"].as_f64()?;
+                    Some((10f64.powf(g.clamp(-60.0, 12.0) / 20.0) * 1000.0).round() / 1000.0)
+                }).flatten();
+                let bands_json = |s: &[f64]| vault_render::eq::OCTAVES.iter().zip(s).map(|(f, v)| json!([f, v])).collect::<Vec<_>>();
+                out.push(json!({ "clip": id, "eq": eq, "vol_before": plain["vol"], "vol": vol, "lufs_after_eq_at_old_vol": c["lufs"].as_f64().zip(plain["vol"].as_f64()).map(|(l, v)| l + 20.0 * v.max(1e-6).log10()),
+                    "reference_lufs_at_vol": r["lufs_at_vol"], "spectrum_before": bands_json(&from), "spectrum_after": bands_json(&got), "reference_spectrum": bands_json(&to) }));
+                results.push((id.clone(), eq, vol));
+            }
+            let apply = a.apply != Some(false);
+            if apply {
+                let t = self.api("GET", &format!("/api/timelines/{}", a.timeline), None).await?;
+                let mut clips = t["clips"].as_array().cloned().ok_or("the timeline has no clips")?;
+                for (id, eq, vol) in &results {
+                    if let Some(c) = clips.iter_mut().find(|c| c["id"] == id.as_str()) {
+                        if eq.as_array().is_some_and(Vec::is_empty) {
+                            c.as_object_mut().map(|o| o.remove("eq"));
+                        } else {
+                            c["eq"] = eq.clone();
+                        }
+                        if let Some(v) = vol {
+                            c["vol"] = json!(v.clamp(0.0, 4.0));
+                        }
+                    }
+                }
+                self.api("PUT", &format!("/api/timelines/{}", a.timeline), Some(json!({ "clips": clips }))).await?;
+            }
+            Ok::<_, String>(json!({ "applied": apply, "clips": out, "reference": a.reference }))
         };
         text(r.await)
     }
@@ -1195,6 +1370,43 @@ impl Studio {
     #[tool(description = "A timeline's renders (and hero frames) as this Mac renders them: status, progress, note, the film's hash, the report (colour transforms, conform, plates, QC and loudness per delivery)")]
     async fn renders_list(&self, Parameters(a): Parameters<IdArg>) -> String {
         text(self.api("GET", &format!("/api/timelines/{}/renders", a.id), None).await)
+    }
+
+    #[tool(
+        description = "What the Grade tab's playback shows at t, checked without a screen: the timeline's composition as the Mac's player plays it (each shot from its proxy, else its original; every frame through the whole chain — balance, secondaries with the face tracked, grade and looks, finishing, output), then played by an AVPlayer for two seconds from t with the frames it hands out counted. Returns the first frame as the picture (compare it with the Grade viewer's still of the same shot) and played_fps (30 is real time; fewer: frames dropped)."
+    )]
+    async fn player_frame(&self, Parameters(a): Parameters<PlaybackArgs>) -> rmcp::model::CallToolResult {
+        let r = async {
+            let t = self.api("GET", &format!("/api/timelines/{}", a.timeline), None).await?;
+            crate::player::playback_frames(&self.vault, t, a.t, a.frames.unwrap_or(15), a.shape, a.originals == Some(true)).await
+        };
+        match r.await {
+            Ok((info, jpg)) => rmcp::model::CallToolResult::success(vec![
+                rmcp::model::ContentBlock::text(serde_json::to_string_pretty(&info).unwrap_or_default()),
+                rmcp::model::ContentBlock::image(base64(&jpg), "image/jpeg"),
+            ]),
+            Err(e) => rmcp::model::CallToolResult::error(vec![rmcp::model::ContentBlock::text(e)]),
+        }
+    }
+
+    #[tool(
+        description = "The Grade tab's playback run as the studio runs it, headless: the same player, video output and frame pump the viewer gets its pictures from, stopped on t at once (as the studio does) and then played two seconds. Returns how many pictures came while stopped (1 or more: the frozen frame reaches the viewer), how many a second while playing (30: real time) and the frozen picture on t as the viewer would draw it."
+    )]
+    async fn player_stream_check(&self, Parameters(a): Parameters<PlaybackArgs>) -> rmcp::model::CallToolResult {
+        let r = async {
+            let t = self.api("GET", &format!("/api/timelines/{}", a.timeline), None).await?;
+            crate::player::stream_check(&self.handle, &self.vault, t, a.t, a.originals == Some(true)).await
+        };
+        match r.await {
+            Ok((info, pic)) => {
+                let mut out = vec![rmcp::model::ContentBlock::text(serde_json::to_string_pretty(&info).unwrap_or_default())];
+                if let Some(p) = pic {
+                    out.push(rmcp::model::ContentBlock::image(base64(&p), "image/jpeg"));
+                }
+                rmcp::model::CallToolResult::success(out)
+            }
+            Err(e) => rmcp::model::CallToolResult::error(vec![rmcp::model::ContentBlock::text(e)]),
+        }
     }
 
     #[tool(

@@ -43,39 +43,89 @@ pub struct Program {
     pub output: Lut3d,
 }
 
-thread_local! {
-    /// The GPU of the thread AVFoundation calls the handler on (its kernels compiled once), with each clip's cube.
-    static GPU: std::cell::RefCell<Option<(Gpu, std::collections::HashMap<String, Cube>)>> = const { std::cell::RefCell::new(None) };
+/// Where a clip's face was last found: the frame it was looked for on, and the face (a box from the top left).
+#[derive(Clone, Copy)]
+struct Track {
+    at: u64,
+    face: Option<crate::look::Rect>,
 }
 
-impl Program {
-    /// The clip on screen at `t` seconds of the film.
-    fn at(&self, t: f64) -> Option<&PlayClip> {
-        self.clips.iter().find(|p| t >= p.clip.start - 1e-6 && t < p.clip.start + p.clip.dur - 1e-6)
-    }
+/// Look for the face again every this many frames (5 a second), on a copy this wide: Vision on every full frame
+/// costs playing in real time; a face moves little in a fifth of a second.
+const TRACK_EVERY: u64 = 6;
+const TRACK_WIDTH: f64 = 480.0;
 
-    /// One frame: the source frame the composition decoded (its file's code values), through the whole chain.
-    fn frame(&self, src: &objc2_core_image::CIImage, t: f64) -> Result<(crate::gpu::Image, Retained<objc2_core_image::CIContext>)> {
+/// The handler's state on the thread AVFoundation calls it on: its GPU (the kernels compiled once) and, for the
+/// composition it was last called for, each clip's cube and where its face is. A new composition (the grade changed:
+/// every load is one) starts them afresh — kept by clip alone, a clip played its first grade for ever.
+struct Handler {
+    gpu: Gpu,
+    generation: u64,
+    cubes: std::collections::HashMap<String, Cube>,
+    tracks: std::collections::HashMap<String, Track>,
+}
+
+thread_local! {
+    static GPU: std::cell::RefCell<Option<Handler>> = const { std::cell::RefCell::new(None) };
+}
+
+/// Each composition's number (what the handler's state belongs to).
+static GENERATION: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
+
+impl Program {
+    /// One frame: the source frame the composition decoded (its file's code values), turned upright by its file's own
+    /// transform (`turns`, per clip: the composition hands frames over as they are stored), through the whole chain.
+    fn frame(&self, src: &objc2_core_image::CIImage, t: f64, turns: &[objc2_core_foundation::CGAffineTransform], generation: u64) -> Result<(crate::gpu::Image, Retained<objc2_core_image::CIContext>)> {
         GPU.with(|cell| {
             let mut cell = cell.borrow_mut();
             if cell.is_none() {
-                let mut g = Gpu::new()?;
-                g.set_output(&self.output);
-                *cell = Some((g, std::collections::HashMap::new()));
+                *cell = Some(Handler { gpu: Gpu::new()?, generation: 0, cubes: Default::default(), tracks: Default::default() });
             }
-            let (gpu, cubes) = cell.as_mut().unwrap();
+            let st = cell.as_mut().unwrap();
+            if st.generation != generation {
+                st.generation = generation;
+                st.cubes.clear();
+                st.tracks.clear();
+                st.gpu.set_output(&self.output);
+            }
+            let Handler { gpu, cubes, tracks, .. } = st;
             let (w, h) = (self.width, self.height);
-            let Some(p) = self.at(t) else {
+            let Some((i, p)) = self.clips.iter().enumerate().find(|(_, p)| t >= p.clip.start - 1e-6 && t < p.clip.start + p.clip.dur - 1e-6) else {
                 return Ok((gpu.black(w, h), gpu.context()));
             };
-            let cct = gpu.journey(src, p.journey)?;
+            let upright = match turns.get(i) {
+                Some(turn) => gpu.orient(src, *turn),
+                None => objc2::Message::retain(src),
+            };
+            let cct = gpu.journey(&upright, p.journey)?;
             let framed = gpu.frame_to(&cct, w, h, p.clip.frame_for(&self.aspect))?;
             if let Some(lut) = &p.looks
                 && !cubes.contains_key(&p.clip.id)
             {
                 cubes.insert(p.clip.id.clone(), gpu.cube(lut));
             }
-            let pic = crate::render::chain(gpu, &framed, w, h, &p.clip, cubes.get(&p.clip.id), self.finish.as_ref(), (t * FPS as f64).round() as u64)?;
+            let n = (t * FPS as f64).round() as u64;
+            let id = p.clip.id.clone();
+            let mut face_of = |gpu: &Gpu, pic: &crate::gpu::Image| -> Result<Option<crate::look::Rect>> {
+                let last = tracks.get(&id).copied();
+                if let Some(l) = last
+                    && n.abs_diff(l.at) < TRACK_EVERY
+                {
+                    return Ok(l.face);
+                }
+                let small = gpu.resize(&*gpu.output(pic)?, TRACK_WIDTH as u32, ((TRACK_WIDTH * h as f64 / w as f64).round() as u32).max(2))?;
+                let found = crate::look::faces(&small).first().copied();
+                // eased towards where it is now, so the window glides; a face lost for a moment keeps its place
+                let face = match (last.and_then(|l| l.face), found) {
+                    (Some(a), Some(b)) => Some(std::array::from_fn(|i| a[i] * 0.4 + b[i] * 0.6)),
+                    (a, None) => a,
+                    (None, b) => b,
+                };
+                tracks.insert(id.clone(), Track { at: n, face });
+                Ok(face)
+            };
+            let cube = if p.looks.is_some() { cubes.get(&p.clip.id) } else { None };
+            let pic = crate::render::chain_with(gpu, &framed, w, h, &p.clip, cube, self.finish.as_ref(), n, &mut face_of)?;
             Ok((gpu.output(&pic)?, gpu.context()))
         })
     }
@@ -90,20 +140,27 @@ pub fn composition(program: Arc<Program>) -> Result<(Retained<AVMutableCompositi
         let comp = AVMutableComposition::composition();
         let media = AVMediaTypeVideo.context("no video media type")?;
         let track = comp.addMutableTrackWithMediaType_preferredTrackID(media, 0).context("no video track")?;
+        // each clip's file's own transform (a camera held upside down writes a turn, not turned pixels)
+        let mut turns = Vec::with_capacity(program.clips.len());
         for p in &program.clips {
             let asset = p.source.asset()?;
             #[allow(deprecated)]
             let tracks = asset.tracksWithMediaType(media);
-            let Some(src) = tracks.firstObject() else { continue };
+            let Some(src) = tracks.firstObject() else {
+                turns.push(objc2_core_foundation::CGAffineTransform { a: 1.0, b: 0.0, c: 0.0, d: 1.0, tx: 0.0, ty: 0.0 });
+                continue;
+            };
+            turns.push(src.preferredTransform());
             let range = CMTimeRange { start: cmtime(p.clip.in_), duration: cmtime(p.clip.dur) };
             track.insertTimeRange_ofTrack_atTime_error(range, &src, cmtime(p.clip.start)).map_err(|e| anyhow::anyhow!("clip {}: {e:?}", p.clip.id))?;
         }
         let prog = program.clone();
+        let generation = GENERATION.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         let handler = RcBlock::new(move |req: NonNull<AVAsynchronousCIImageFilteringRequest>| {
             let req = req.as_ref();
             let t = req.compositionTime().seconds();
             let src = req.sourceImage();
-            objc2::rc::autoreleasepool(|_| match prog.frame(&src, t) {
+            objc2::rc::autoreleasepool(|_| match prog.frame(&src, t, &turns, generation) {
                 Ok((img, ctx)) => req.finishWithImage_context(&img, Some(&ctx)),
                 Err(e) => {
                     tracing_warn(&format!("playback at {t:.2} s: {e:#}"));
@@ -124,4 +181,41 @@ pub fn composition(program: Arc<Program>) -> Result<(Retained<AVMutableCompositi
 
 fn tracing_warn(msg: &str) {
     eprintln!("{msg}");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn program(looks: Option<Lut3d>) -> Program {
+        let clip: Clip = serde_json::from_value(serde_json::json!({ "id": "a", "track": "V1", "start": 0, "in": 0, "dur": 2, "hash": "a" })).unwrap();
+        let source = vault_media::Source::blob(Arc::new(Vec::new()), "a.mp4");
+        let journey = vault_media::cst::journey("acescct").unwrap().kernel_args();
+        Program { clips: vec![PlayClip { clip, source, journey, looks }], finish: None, aspect: "16:9".into(), width: 64, height: 36, output: Lut3d::identity(17) }
+    }
+
+    fn centre(img: &crate::gpu::Image) -> [f32; 3] {
+        let gpu = Gpu::new().unwrap();
+        let px = gpu.read(img, 64, 36);
+        let i = ((18 * 64 + 32) * 4) as usize;
+        [px[i], px[i + 1], px[i + 2]]
+    }
+
+    #[test]
+    fn each_composition_grades_with_its_own_cubes() {
+        // the handler runs on one thread for composition after composition: a clip graded red in one, then with no
+        // look in the next, is red only in the first (kept by clip alone, it played its first grade for ever)
+        let gpu = Gpu::new().unwrap();
+        let px: Vec<f32> = (0..64 * 36).flat_map(|_| [0.4, 0.4, 0.4, 1.0]).collect();
+        let src = gpu.from_rgba(&px, 64, 36);
+        let red: Vec<f32> = (0..8).flat_map(|_| [0.6f32, 0.3, 0.2]).collect();
+        let graded = program(Some(Lut3d::from_rgb("red", 2, red).unwrap()));
+        let (a, _) = graded.frame(&src, 1.0, &[], 101).unwrap();
+        let warm = centre(&a);
+        let plain = program(None);
+        let (b, _) = plain.frame(&src, 1.0, &[], 102).unwrap();
+        let after = centre(&b);
+        assert!(warm[0] > warm[2] + 0.2, "the look plays: {warm:?}");
+        assert!((after[0] - after[2]).abs() < 0.02, "the next composition has no look, and shows none: {after:?}");
+    }
 }

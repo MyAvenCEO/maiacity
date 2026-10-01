@@ -88,3 +88,4 @@ fn every_frame_plays_through_its_grade_and_a_gap_is_black() {
     assert!(gap.iter().all(|v| *v < 0.02), "the gap {gap:?}");
     std::fs::remove_dir_all(dir).ok();
 }
+

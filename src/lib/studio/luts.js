@@ -86,18 +86,21 @@ export async function nativePresets() {
 /** @type {Map<string, Promise<string>>} */
 const frames = new Map();
 /**
- * A shot as the film will show it (`color_frame`: its grading still through its whole grade — balance, secondaries,
- * grade, looks, finishing — natively), framed for `shape` (none: the whole still), `width` wide, as an object URL.
- * The last few are kept, by what they are.
+ * A shot as the film will show it (`color_frame`: its picture through its whole grade — balance, secondaries, grade,
+ * looks, finishing — natively), framed for `shape` (none: the whole picture), `width` wide, as an object URL. The
+ * picture is its grading still (a hash), or one frame of its proxy or original: { file, profile, at } (`at` in seconds
+ * of that file) — the same chain whichever it is. The last few are kept, by what they are.
  * @param {any} timeline the timeline as far as the shot needs it: { id, aspect, clips: [the clip], grade }
- * @param {string} clip @param {string} still @param {number} width @param {string | null} [shape] @returns {Promise<string>}
+ * @param {string} clip @param {string | { file: string, profile: string, at: number }} src @param {number} width
+ * @param {string | null} [shape] @returns {Promise<string>}
  */
-export function nativeFrame(timeline, clip, still, width, shape = null) {
-	const key = JSON.stringify([timeline, clip, still, width, shape]);
+export function nativeFrame(timeline, clip, src, width, shape = null) {
+	const key = JSON.stringify([timeline, clip, src, width, shape]);
 	let url = frames.get(key);
 	if (!url) {
 		url = import('$lib/native').then(async ({ command }) => {
-			const raw = await command('color_frame', { timeline, clip, still, width, shape });
+			const from = typeof src === 'string' ? { still: src } : src;
+			const raw = await command('color_frame', { timeline, clip, ...from, width, shape });
 			const bytes = raw instanceof ArrayBuffer ? raw : new Uint8Array(/** @type {number[]} */ (raw)).buffer;
 			return URL.createObjectURL(new Blob([bytes], { type: 'image/jpeg' }));
 		});

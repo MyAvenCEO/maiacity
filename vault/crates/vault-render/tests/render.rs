@@ -1,5 +1,5 @@
 //! The render end to end on synthetic media made here (AVAssetWriter: a few seconds of flat colours and a tone): the
-//! cut (which clip is on top, in points, gaps), the fades, the grade, captions, the mix (fades, ducking, levelling),
+//! cut (which clip is on top, in points, gaps), the fades, the grade, captions, the mix (fades, EQ, ducking, levelling),
 //! QC and loudness of the delivered files. The output transform is the identity placeholder (the ACES 2.0 one is
 //! being ported beside this), so a delivered pixel is the source's ACEScct, graded and faded.
 
@@ -199,6 +199,15 @@ fn the_cut_the_fades_the_captions_and_qc() {
     assert!(foot(f, 1.7) < 0.8, "a caption at 1.7 s: {}", foot(f, 1.7));
     assert!(foot(f, 2.5) > 0.95, "no caption at 2.5 s");
 
+    // a video's own sound on the picture track at a volume is in the mix, as the studio plays it; at 0 it is not
+    let measured = vault_render::measure_sound(&t, &lib).unwrap();
+    let ids: Vec<&str> = measured["clips"].as_array().unwrap().iter().filter_map(|c| c["clip"].as_str()).collect();
+    assert!(ids.contains(&"c1") && ids.contains(&"c2") && ids.contains(&"c3"), "{ids:?}");
+    let mut quiet = t.clone();
+    quiet.clips.iter_mut().filter(|c| c.track == "V1").for_each(|c| c.vol = 0.0);
+    let measured = vault_render::measure_sound(&quiet, &lib).unwrap();
+    assert!(!measured["clips"].as_array().unwrap().iter().any(|c| c["track"] == "V1"));
+
     // the job's result, once the app has put the file in the vault
     let mut out = out;
     out.deliveries[0].hash = Some("h1".into());
@@ -297,6 +306,20 @@ fn the_mix_ducks_fades_and_levels() {
     let lv = mix(&[m], 6.0, Some(Target { lufs: -23.0, true_peak: -1.0 }), &dir.join("level"), &mut |_| {}).unwrap();
     assert!((lv.levelled.lufs.unwrap() + 23.0).abs() < 0.1, "{:?}", lv.levelled);
     assert!((lv.gain_db - (-23.0 - lv.mixed.lufs.unwrap())).abs() < 1e-9);
+    // a clip's EQ is in the mix: a +6 dB peak on the voice's 1 kHz, the voice 6 dB louder
+    let mut bright = clip("v", "A1", 2.0, 2.0, 1.0, Some(0.0));
+    bright.eq = Some(json!([{ "type": "peaking", "f": 1000, "gain": 6, "q": 1 }]));
+    let eq = mix(&[AudioClip { clip: bright, file: voice.clone().into() }], 6.0, None, &dir.join("eq"), &mut |_| {}).unwrap();
+    let lift = 20.0 * (rms(&read(&eq.wav), 2.5, 3.9) / rms(&a, 2.5, 3.9)).log10();
+    assert!((lift - 6.0).abs() < 0.1, "the EQ lifts the voice by {lift:.2} dB");
+    // its gain keys too: a dip of 20 dB from 0.6 s to 1.4 s into the clip (2.6–3.4 s of the film), as it was elsewhere
+    let mut dipped = clip("v", "A1", 2.0, 2.0, 1.0, Some(0.0));
+    dipped.keys = Some(json!([[0.5, 0], [0.6, -20], [1.4, -20], [1.5, 0]]));
+    let dk = mix(&[AudioClip { clip: dipped, file: voice.clone().into() }], 6.0, None, &dir.join("keys"), &mut |_| {}).unwrap();
+    let dk = read(&dk.wav);
+    let dip = 20.0 * (rms(&dk, 2.7, 3.3) / rms(&a, 2.7, 3.3)).log10();
+    let outside = 20.0 * (rms(&dk, 3.6, 3.9) / rms(&a, 3.6, 3.9)).log10();
+    assert!((dip + 20.0).abs() < 0.3 && outside.abs() < 0.1, "the dip {dip:.2} dB, after it {outside:.2} dB");
     std::fs::remove_dir_all(dir).ok();
 }
 

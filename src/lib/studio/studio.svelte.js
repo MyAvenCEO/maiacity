@@ -25,6 +25,7 @@ import { cached, evaluate, saveSpec, shotAt } from './shots.js';
 import { WorldViewer } from './world.svelte.js';
 import { captionWordsOf, hasSound, lineWords, phraseBreak, rewordPhrase, stepOpen, transcriptOf, transcriptState } from './transcript.js';
 import { command, native } from '$lib/native';
+import { cleanEq, cleanKeys, keyDb, webAudioQ } from '../../../game/film/sound.js';
 
 /** @typedef {import('$lib/auth/client').Cdl} Cdl */
 /** @typedef {import('$lib/auth/client').ClipFrame} ClipFrame */
@@ -194,7 +195,12 @@ export class Studio {
 	 * ACEScct: the base corrections are judged on it), its proxy, or the original itself
 	 * @type {'stills' | 'proxies' | 'originals'}
 	 */
-	gradeOn = $state('stills');
+	gradeOn = $state('proxies');
+	/**
+	 * The cue under the pointer (source monitor, timeline), for its card: the cue and where the pointer is.
+	 * @type {{ q: import('./analysis.js').Cue, x: number, y: number } | null}
+	 */
+	cueHover = $state(null);
 	/**
 	 * Grade: the shape being checked
 	 * @type {Shape}
@@ -472,6 +478,13 @@ export class Studio {
 	frameTimeline(c) {
 		const t = this.current;
 		return { id: t?.id ?? 'studio', aspect: t?.aspect ?? '16:9', clips: [$state.snapshot(c)], grade: $state.snapshot(t?.grade ?? null) };
+	}
+	/**
+	 * The timeline as it is now, for the Mac: its clips as edited (`clips` — `current.clips` is only the timeline as it
+	 * was opened) and its grade. The still, the thumbnails and the player are all made from this, so they grade alike.
+	 */
+	liveTimeline() {
+		return { ...$state.snapshot(this.current), clips: $state.snapshot(this.clips) };
 	}
 	/** A clip's balance as the viewer shows it, on every tab. @param {Clip | null | undefined} c */
 	balanceOf(c) {
@@ -1056,7 +1069,28 @@ export class Studio {
 				}
 			gain.gain.setValueAtTime(c.vol, when + length - fadeOut);
 			gain.gain.linearRampToValueAtTime(0, when + length);
-			src.connect(gain).connect(ac.destination);
+			// its EQ, the render's own bands (game/film/sound.js)
+			/** @type {AudioNode} */
+			let node = src;
+			for (const b of cleanEq(c.eq)) {
+				const f = ac.createBiquadFilter();
+				f.type = b.type;
+				f.frequency.value = b.f;
+				f.gain.value = b.gain;
+				f.Q.value = webAudioQ(b);
+				node = node.connect(f);
+			}
+			// its gain keys (a breath, a sniff dipped), on a gain of their own under the fades and the ducking
+			const keys = cleanKeys(c.keys);
+			if (keys.length) {
+				const kg = ac.createGain();
+				const at = from - c.start; // seconds into the clip where it starts sounding
+				const lin = (/** @type {number} */ db) => Math.pow(10, db / 20);
+				kg.gain.setValueAtTime(lin(keyDb(keys, at)), when);
+				for (const [t, db] of keys) if (t > at && t < at + length) kg.gain.linearRampToValueAtTime(lin(db), when + (t - at));
+				node = node.connect(kg);
+			}
+			node.connect(gain).connect(ac.destination);
 			src.start(when, offset, length);
 			this.nodes.push({ src, gain });
 		}
@@ -1436,7 +1470,7 @@ export class Studio {
 		if (!this.current || this.loudMeasuring) return;
 		this.loudMeasuring = true;
 		try {
-			this.loud = await command('sound_measure', { timeline: { ...$state.snapshot(this.current), clips: $state.snapshot(this.clips) } });
+			this.loud = await command('sound_measure', { timeline: this.liveTimeline() });
 		} catch (e) {
 			this.error = `Sound: ${e}`;
 		} finally {

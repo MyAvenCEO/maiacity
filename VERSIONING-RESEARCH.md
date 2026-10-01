@@ -21,6 +21,16 @@ and branches thought through for later.
 
 Nothing is behind. Everything below refers to these versions.
 
+### The stack we run = the latest release (crates.io, 2026-09-30)
+
+| Layer | Crates (ours = latest) |
+|---|---|
+| Transport, 1.x | iroh 1.3.0 · iroh-base 1.3.0 · iroh-relay 1.3.0 · iroh-dns 1.3.0 · noq / noq-proto / noq-udp 1.3.0 (QUIC) · iroh-tickets 1.0.0 · netwatch 0.19.3 · portmapper 0.19.3 |
+| Protocols, 0.x (released with iroh 1.0) | iroh-docs 0.101.0 · iroh-blobs 0.103.0 · iroh-gossip 0.101.0 · bao-tree 0.16.1 · irpc 0.17.0 |
+| Support | iroh-metrics 1.0.2 · n0-error 1.0.1 · n0-watcher 1.0.0 · n0-future 0.3.2 · iroh-util 0.6.0 · iroh-io 0.6.2 |
+
+Nothing is behind. Everything below refers to these versions.
+
 ---
 
 ## 1. What iroh gives us already
@@ -204,6 +214,16 @@ If Loro's cost is not wanted yet: one entry per version, never overwritten (`his
 content the full JSON snapshot. The entry itself is the version record (author, time, signature, hash); revert writes
 an old snapshot's hash again; history is ordered by the writers' clocks. It gives history, revert and forward checkout,
 but no merge, no undo, and no causal order. Both routes keep the same keys discipline and the same deletion.
+
+### Whose pattern this is
+
+Neither iroh's docs nor Willow's prescribe a way to keep history or to name keys. Willow's prefix pruning is deliberate
+— a write at a path is "like overwriting a directory with an empty file" — and Willow prefers mutable data and
+traceless removal over append-only hash chains, which it calls "quite dangerous when employed carelessly". History is
+left to the application. Carrying a CRDT library's operations over iroh is the ecosystem's demonstrated route (n0's
+iroh-automerge, Loro's iroh-loro); carrying them as catalog entries is our choice, built only from iroh's documented
+building blocks (signed entries under keys, immutable blobs, tags and GC). It stays deletable the Willow way: one empty
+write at `crdt/<kind>/<id>/` prunes an object's whole history, each author its own entries.
 
 ---
 

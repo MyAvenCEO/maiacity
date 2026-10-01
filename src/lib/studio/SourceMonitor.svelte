@@ -6,8 +6,9 @@
 	its shot analysis — its cues along the bar, and listed: click one to go there, Mark to take it as In and Out.
 -->
 <script>
+	import CueLegend from './CueLegend.svelte';
 	import Analysis from './Analysis.svelte';
-	import { cueEnd, cueText, cuesOf } from './analysis.js';
+	import { cueEnd, cuesOf } from './analysis.js';
 	import ColorBadge from './ColorBadge.svelte';
 	import { WORKING, isSequence, profileFor } from './color.js';
 	import { clockText, itemName, raw, tint } from './studio.svelte.js';
@@ -233,12 +234,13 @@
 					{#if marked}<i class="band" style:left={pct(markIn ?? 0)} style:right="calc(100% - {pct(markOut ?? len)})"></i>{/if}
 					{#each cuesOf(m) as q, i (i)}
 						<!-- svelte-ignore a11y_no_static_element_interactions -->
-						<i class="scue cue-kind {q.kind}" class:best={q.best} class:pt={cueEnd(q) - q.s < 0.05} style:left={pct(q.s)} style:right="calc(100% - {pct(cueEnd(q))})" title={cueText(q)} onpointerdown={(e) => (e.stopPropagation(), seekTo(q.s))}></i>
+						<i class="scue cue-kind {q.kind}" class:best={q.best} class:pt={cueEnd(q) - q.s < 0.05} style:left={pct(q.s)} style:right="calc(100% - {pct(cueEnd(q))})" onpointerenter={(e) => (s.cueHover = { q, x: e.clientX, y: e.clientY })} onpointermove={(e) => (s.cueHover = { q, x: e.clientX, y: e.clientY })} onpointerleave={() => (s.cueHover = null)} onpointerdown={(e) => (e.stopPropagation(), seekTo(q.s))}></i>
 					{/each}
 					<i class="sph" style:left={pct(srcTime)}></i>
 				</div>
 				<span class="range">{clockText(srcTime)}</span>
 			</div>
+			<CueLegend cues={cuesOf(m)} />
 		{/if}
 		<div class="sacts">
 			{#if av}
