@@ -197,6 +197,11 @@ export class Studio {
 	 */
 	gradeOn = $state('proxies');
 	/**
+	 * The cue under the pointer (source monitor, timeline), for its card: the cue and where the pointer is.
+	 * @type {{ q: import('./analysis.js').Cue, x: number, y: number } | null}
+	 */
+	cueHover = $state(null);
+	/**
 	 * Grade: the shape being checked
 	 * @type {Shape}
 	 */
