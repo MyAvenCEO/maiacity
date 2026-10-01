@@ -164,7 +164,7 @@ export const describeMedia = (hash: string, about: { title?: string; description
 // ─────────────────────────────── colour (C5) ───────────────────────────────
 
 /** A picture's colour, as the ingest detected it (media meta.color); `override` is the one set by hand in the studio. */
-export type ColorInfo = { profile: string; primaries?: string; transfer?: string; matrix?: string; range?: string; bitDepth?: number; detectedFrom?: string; override?: string };
+export type ColorInfo = { profile: string; /** a film we rendered: the output transform baked in (e.g. odt-rec709) */ output?: string; primaries?: string; transfer?: string; matrix?: string; range?: string; bitDepth?: number; detectedFrom?: string; override?: string };
 /** A look: the film's or a scene's (game/film/color.js `cleanLook`, vault-render `creative::Look`). */
 export type Look = import('../../../game/film/color.js').Look;
 
