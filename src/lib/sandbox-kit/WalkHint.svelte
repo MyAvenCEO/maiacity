@@ -1,7 +1,8 @@
 <!--
 	How to walk a sandbox, at the foot of the screen: the keys where there is a mouse, the
 	joystick's words on a phone (where it moves up out of the joystick's way). Say what else
-	your world can do with `keys` and `touch`.
+	your world can do with `keys` and `touch`. While a phone's browser has its bars out over the
+	world, first how to tuck them away ($lib/touch/browserBars.js).
 -->
 <script>
 	/**
@@ -19,6 +20,7 @@
 <p class="walk-hint">
 	<span class="keys">{keys}</span>
 	<span class="touch">{touch}</span>
+	<span class="bars">Swipe up for full screen</span>
 </p>
 
 <style>
@@ -37,7 +39,8 @@
 		font-size: 0.8rem;
 		white-space: nowrap;
 	}
-	.touch {
+	.touch,
+	.bars {
 		display: none;
 	}
 	@media (hover: none) and (pointer: coarse) {
@@ -45,6 +48,12 @@
 			display: none;
 		}
 		.touch {
+			display: inline;
+		}
+		:global(html[data-bars]) .touch {
+			display: none;
+		}
+		:global(html[data-bars]) .bars {
 			display: inline;
 		}
 		.walk-hint {
