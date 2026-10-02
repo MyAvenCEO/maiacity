@@ -121,6 +121,9 @@ struct Registry {
     busy: HashMap<Lane, String>,
     /// when each job last told the studio of its progress
     told: HashMap<String, Instant>,
+    /// the jobs waiting in `turn` now: a lane is handed only to one of them (a job queued but not yet asking — the
+    /// world proxies queued together, rendered one by one — never holds the lane up for the one that asks)
+    asking: std::collections::HashSet<String>,
     loaded: bool,
 }
 
@@ -390,6 +393,15 @@ impl Drop for Turn {
 pub async fn turn(kind: Kind, subject: &str) -> Result<Turn, Cancelled> {
     let id = id(kind, subject);
     let lane = kind.lane();
+    // asking from here until it has its turn or gives up (also when the waiting future is dropped)
+    struct Asking(String);
+    impl Drop for Asking {
+        fn drop(&mut self) {
+            with(|r| r.asking.remove(&self.0));
+        }
+    }
+    with(|r| r.asking.insert(id.clone()));
+    let _asking = Asking(id.clone());
     loop {
         let notified = TURNS.notified();
         tokio::pin!(notified);
@@ -412,8 +424,8 @@ pub async fn turn(kind: Kind, subject: &str) -> Result<Turn, Cancelled> {
             let next = r
                 .active
                 .values()
-                .filter(|j| j.lane == lane && j.state == State::Queued && !r.busy.values().any(|b| *b == j.id) && !j.hidden)
-                .min_by(|a, b| a.priority.cmp(&b.priority).then(a.queued.cmp(&b.queued)))
+                .filter(|j| j.lane == lane && j.state == State::Queued && !r.busy.values().any(|b| *b == j.id) && !j.hidden && r.asking.contains(&j.id))
+                .min_by(|a, b| a.priority.cmp(&b.priority).then(a.queued.cmp(&b.queued)).then(a.id.cmp(&b.id)))
                 .map(|j| j.id.clone());
             if next.as_deref() == Some(id.as_str()) {
                 r.busy.insert(lane, id.clone());
@@ -616,6 +628,21 @@ pub async fn retry(handle: &AppHandle, vault: &std::sync::Arc<vault_core::Vault>
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn a_lane_is_handed_to_a_job_that_asks_not_to_one_only_queued() {
+        // jobs queued together and run one by one in their own order (the world proxies): the one asking gets the lane,
+        // though another queued earlier has not asked yet — before, the lane waited for that one, and nothing ran
+        assert!(queue(Kind::Sound, "q-first", "first"));
+        assert!(queue(Kind::Sound, "q-second", "second"));
+        let t = tokio::time::timeout(Duration::from_secs(3), turn(Kind::Sound, "q-second")).await;
+        assert!(t.is_ok(), "the job asking for the lane got it");
+        end(Kind::Sound, "q-second", Ok(()));
+        drop(t);
+        let first = tokio::time::timeout(Duration::from_secs(3), turn(Kind::Sound, "q-first")).await;
+        assert!(first.is_ok());
+        end(Kind::Sound, "q-first", Ok(()));
+    }
 
     #[tokio::test]
     async fn a_lane_runs_its_most_urgent_job_first_then_the_oldest_and_one_at_a_time() {
