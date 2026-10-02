@@ -23,6 +23,7 @@ import { flow, pond, shore, stream } from './water'
 import { createStage } from '$lib/sandbox-kit/stage.js'
 import { createSky } from '$lib/sandbox-kit/sky.js'
 import { createWalker } from '$lib/sandbox-kit/walker.js'
+import { createObstacles } from '$lib/sandbox-kit/obstacles.js'
 import { connectFilm, filmDraws, filmHoldsSize, worldTime } from '$lib/sandbox-kit/film.js'
 import { ambience, levelsAt } from './ambience'
 
@@ -818,19 +819,13 @@ export async function mountVillage(container: HTMLElement, onProgress: (label: s
 		z: start.z,
 		yaw: Math.PI,
 		pitch: 0.08,
-		canStand: (x, z, here, ground) => check(x, z, here, ground),
+		canStand: (x, z, here, ground, from) => check(x, z, here, ground, from),
 		floorAt: (x, z, ground) => floorHere(x, z, ground)
 	})
 	const pos = walker.position
 
-	// every tree, pillar and table, filed by 8 m cells for walking
-	const blockers = new Map<string, { x: number; z: number; r: number }[]>()
-	for (const c of colliders) {
-		const key = `${Math.floor(c.x / 8)},${Math.floor(c.z / 8)}`
-		const list = blockers.get(key)
-		if (list) list.push(c)
-		else blockers.set(key, [c])
-	}
+	// every tree, pillar and table, filed by 8 m cells for walking ($lib/sandbox-kit/obstacles)
+	const blockers = createObstacles(colliders)
 	/* ── the full insides: as you walk up to a dome, its whole inside is built into the
 	   village a piece at a time, and the simple one steps aside. You walk in through the
 	   door with nothing to wait for: its floors, stairs, galleries and terraces are the
@@ -951,7 +946,7 @@ export async function mountVillage(container: HTMLElement, onProgress: (label: s
 		}
 		return 0
 	}
-	const check = (x: number, z: number, here: number, ground: number): boolean => {
+	const check = (x: number, z: number, here: number, ground: number, from?: { x: number; z: number }): boolean => {
 		if (!inHex(x, z)) return false
 		for (let i = 0; i < domes.length; i++) {
 			const d = domes[i]!
@@ -962,7 +957,7 @@ export async function mountVillage(container: HTMLElement, onProgress: (label: s
 			const full = shown.has(i) ? built.get(i) : undefined
 			if (full) {
 				const nf = full.floorAt(dx, dz, ground)
-				return full.inside(dx, dz, nf) && !full.blocked(dx, dz, here) && !full.hits(dx, dz, nf)
+				return full.inside(dx, dz, nf) && !full.blocked(dx, dz, here) && !full.hits(dx, dz, nf, from && { x: from.x - d.x, z: from.z - d.z })
 			}
 			// a dome still growing: in through a door and anywhere on its ground floor, while its
 			// full inside arrives round you (the galleries and stairs come with it)
@@ -974,11 +969,7 @@ export async function mountVillage(container: HTMLElement, onProgress: (label: s
 			return DOORS.some((dd) => Math.abs(adiff(a, dd)) < 0.5 && Math.abs(adiff(a, dd)) * rr < DOOR_HALF)
 		}
 		if (here > 0.5) return false
-		const ix = Math.floor(x / 8), iz = Math.floor(z / 8)
-		for (let dx = -1; dx <= 1; dx++)
-			for (let dz = -1; dz <= 1; dz++)
-				for (const c of blockers.get(`${ix + dx},${iz + dz}`) ?? []) if (Math.hypot(c.x - x, c.z - z) < c.r + 0.25) return false
-		return true
+		return !blockers.blocks(x, z, { from })
 	}
 	let frame = 0
 	let running = true
