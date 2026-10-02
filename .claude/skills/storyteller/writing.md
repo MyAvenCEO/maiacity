@@ -68,8 +68,17 @@ Pace it like Dan Koe: short sentences, then a longer paragraph that develops the
 - **Never write evenly.** Equal paragraphs, sentences and section sizes read as machine-written.
 - A one-line paragraph is a legitimate beat.
 - Vary section length hard: a three-line section next to a six-paragraph one.
-- Vary headings: some four words, some a full sentence — always rehooks, never labels (`hooks.md`).
+- Vary headings: some four words, some a full sentence — always rehooks, never labels (`hook-writer`).
 - Most paragraphs 1–3 sentences; break that on purpose.
+
+## Writing for the ear
+
+A film's narration and a talking head are heard once, at the speaker's pace.
+- **Plot, then reflection.** An anecdote alone falls flat; the listener also needs to hear what it meant (Ira Glass).
+- **Write it the way you'd say it to a friend, then read it aloud** (Paul Graham); LifeOfRiza talks to the lens like a
+  friend in the room.
+- One idea per sentence, plain words, nothing the ear must hold; the narrator never repeats what Samuel says on camera
+  (`sound-designer`, `voice.md`).
 
 ## Facts
 

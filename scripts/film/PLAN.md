@@ -221,7 +221,7 @@ sample exists (after M2); **M10** closes each milestone's docs as it lands.
       progress and never grades on proxies.
 - [ ] Grade as data on the timeline: a **whole-film look** plus **per-clip grades**, each an ASC CDL (slope, offset,
       power, saturation) with optional `.cube` LUT, applied in ACEScct, in this order: clip grade → film look → ODT.
-- [ ] Presets from today's looks: `COLD`, `NIGHT`, the moods (`dip`, …) ported from `grade.mjs`/`filming.md` so
+- [ ] Presets from today's looks: `COLD`, `NIGHT`, the moods (`dip`, …) ported from `grade.mjs`/the cinematographer's `exposure.md` so
       existing films keep their look.
 - [ ] Viewer: accurate hero frames (a 16-bit frame rendered by the worker for the current position) plus real-time
       playback of the graded result (GPU preview); switch between delivery shapes to check each plate.
@@ -253,7 +253,7 @@ sample exists (after M2); **M10** closes each milestone's docs as it lands.
 - **Done when:** iPhone footage and world shots cut side by side in Edit and match after conform in Grade.
 
 ### M10 — Docs and retiring the old path
-- [x] `story-producer/pipeline.md` and `filming.md`: the new order (capture log → ingest + proxy → Edit → lock →
+- [x] `story-producer/pipeline.md` and the crew skills (then `filming.md`): the new order (capture log → ingest + proxy → Edit → lock →
       Grade on originals → Render), the colour standard, how to record a camera move, the world clip record.
 - [x] Retire the pre-grade: `grade.mjs` stays only to re-grade legacy shots; its exposure logic lives in the film-mode
       meter, its looks in the grade presets.

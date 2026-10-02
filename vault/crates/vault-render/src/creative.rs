@@ -1,4 +1,4 @@
-//! The creative grade's colour maths (story-producer `look.md`), scene-referred (ACEScct in, ACEScct out): the
+//! The creative grade's colour maths (colorist `look.md`), scene-referred (ACEScct in, ACEScct out): the
 //! vectorscope's axes on the log, a display hue's direction in ACEScct, curves around the circle. The tools that use it
 //! — split tone, hue curves, highlight saturation — are `tools.rs`'s; this is their one place.
 //!

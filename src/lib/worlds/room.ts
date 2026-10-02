@@ -15,7 +15,7 @@
 import * as THREE from 'three';
 import { RectAreaLightUniformsLib } from 'three/addons/lights/RectAreaLightUniformsLib.js';
 import { connectFilm, createSky, createStage, createWalker, filmDraws, filmHoldsSize } from '$lib/sandbox-kit';
-import { CRATE, bed, chair, crateTower, edisonBulb, framedPicture, sheepskin } from '$lib/models/furniture';
+import { CRATE, bed, chair, crateTower, edisonBulb, framedPicture, neewerCb60, sheepskin } from '$lib/models/furniture';
 import { limedOak, plasterBump } from '$lib/models/textures';
 
 /** The room's measure (m). */
@@ -27,6 +27,10 @@ const WIN = { z0: -0.35, z1: 0.95, sill: 0.85, top: 2.35, depth: 0.32 } as const
 /** the door in the left wall, across from the window, near the front corner: along z */
 const DOOR = { z0: 0.88, z1: 1.74, top: 2.0 } as const;
 const BULB = { x: 0, z: 0.3, drop: 0.32 } as const;
+/** the CB60 on its stand: by the door, towards the front corner, turned to look at the bed's foot */
+const CB60_AT = { x: -1.05, z: 2.0, pan: Math.PI - 0.55 } as const;
+/** the CB60 at full, in candela on its axis (three.js physical units) — from its lux at 1 m with the reflector */
+const CB60_CANDELA = 40;
 /** the light through a north window: the open sky's by day, warmer when the sun is low, blue at dusk */
 const NORTH_SKY = new THREE.Color('#e3ebfc'), LOW_SKY = new THREE.Color('#ffe0c2'), DUSK_SKY = new THREE.Color('#7f98d4');
 
@@ -297,6 +301,19 @@ export async function mountRoom(container: HTMLElement, onProgress: (label: stri
 	place(sheepskin(), bedAt.x + 0.1, -L + bedAt.len + 0.55, 0.25);
 	// the picture: on the window wall, between the window and the front corner
 	place(framedPicture(), W, 1.62, -Math.PI / 2, 1.45);
+	// the Neewer CB60 on its stand, by the door, looking into the room towards the bed's foot: off until a shot turns it
+	// on (its `cb60` light)
+	const cb60 = neewerCb60({ height: 1.55, tilt: -0.22 });
+	place(cb60, CB60_AT.x, CB60_AT.z, CB60_AT.pan);
+	const cb60Light = new THREE.SpotLight('#fff1dc', 0, 9, 0.55, 0.45, 2);
+	cb60Light.castShadow = true;
+	cb60Light.shadow.mapSize.set(1024, 1024);
+	cb60Light.shadow.bias = -0.0015;
+	cb60.updateMatrixWorld(true);
+	cb60Light.position.copy(cb60.localToWorld((cb60.userData.beam as THREE.Vector3).clone()));
+	cb60Light.target.position.copy(cb60Light.position).add((cb60.userData.aim as THREE.Vector3).clone().applyAxisAngle(new THREE.Vector3(0, 1, 0), CB60_AT.pan));
+	scene.add(cb60Light, cb60Light.target);
+	const cb60Face = cb60.userData.face as THREE.MeshStandardMaterial;
 
 	/* ── the door: a white flush door in its frame in the left wall, a lever handle, the vent at its foot ── */
 	const dz = (DOOR.z0 + DOOR.z1) / 2;
@@ -357,7 +374,8 @@ export async function mountRoom(container: HTMLElement, onProgress: (label: stri
 		[rightX - CRATE.w / 2, rightX + CRATE.w / 2, -L, -L + CRATE.d + 0.02],
 		[W - 0.62, W, -0.88, -0.36], // the red chair
 		[-W, -W + 0.58, -1.55, -1.05], // the brown chair
-		[W - 0.12, W, WIN.z0, WIN.z1] // the radiator
+		[W - 0.12, W, WIN.z0, WIN.z1], // the radiator
+		[CB60_AT.x - 0.4, CB60_AT.x + 0.4, CB60_AT.z - 0.4, CB60_AT.z + 0.4] // the light's stand
 	];
 	const M = 0.18; // how close to a wall or a thing you may stand
 	const canStand = (x: number, z: number) =>
@@ -390,12 +408,23 @@ export async function mountRoom(container: HTMLElement, onProgress: (label: stri
 		advance: () => {
 			bulbLight.intensity = bulbBase;
 			daylight.intensity = dayBase;
+			cb60Light.intensity = 0;
+			cb60Face.emissiveIntensity = 0;
 		},
 		lights: {
 			lamps: (k: number, color?: string) => {
 				bulbLight.intensity = bulbBase * k;
 				glass.emissiveIntensity *= k;
 				if (color) bulbLight.color.set(color);
+			},
+			// the CB60: k = its dimmer (1 = full), its colour a Kelvin's or a gel's (`neewer-cb60`)
+			cb60: (k: number, color?: string) => {
+				cb60Light.intensity = CB60_CANDELA * k;
+				cb60Face.emissiveIntensity = 2.5 * k;
+				if (color) {
+					cb60Light.color.set(color);
+					cb60Face.emissive.set(color);
+				}
 			}
 		}
 	});

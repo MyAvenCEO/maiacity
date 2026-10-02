@@ -57,3 +57,42 @@ Curiosity keeps them going; a payoff lets them stop. Every piece is a tug-of-war
   before the ending.
 - Captions always on, two lines at most, short phrases.
 - **Loop ending:** the last frame lands where the replay flows on.
+
+## Suspense and curiosity
+
+- **Tell the audience the stakes; hold back only the answer.** If they know about the bomb under the table, they get
+  fifteen minutes of suspense; if they don't, fifteen seconds of surprise (Hitchcock). Reveal the stakes and the clock;
+  keep the outcome — and the mechanism — hidden.
+- **Curiosity is a gap in what we know, and it pulls harder the closer the answer comes** (George Loewenstein): the last
+  obstacle goes late, near the answer.
+- **Drama is anticipation mixed with uncertainty** (Stanton); make a promise in the first moments that the time will pay
+  off, and keep it.
+- The "Zeigarnik effect" (that we remember unfinished tasks better) doesn't replicate reliably — don't lean on it. The
+  urge to finish an interrupted thing (Ovsiankina) holds up better.
+
+## The retention playbook, second by second
+
+- **0–3 s:** the strongest true image — the one the title and the thumbnail promised. Nothing before the promise: no
+  greeting, no logo.
+- **3–30 s:** the spoken hook is the arching question; then the intention, the obstacle and the stakes; then the
+  promise of the payoff; and a small payoff before 30 s (YouTube: move compelling moments earlier).
+- **At every landmark** (about every 12.5 % of the runtime, `structure.md`): a value turn, a rehook line that opens a new
+  question, a small payoff, and a pattern interrupt.
+- **Pattern interrupts:** a change of camera set-up (handheld ↔ tripod, a whip between them); music before the scene; a
+  drop to silence or sound alone; a cut to the 3D vision; a question on screen; a moment of surprise and delight, an
+  Easter egg. A story that goes static dies (Stanton).
+- **Before the end:** the low, then the choice, then the answer — fast. The final image echoes the first. A door to
+  tomorrow, never a recap. On a short, the last frame flows into the first.
+- **Short and long:** a short is one question and one turn — YouTube reports Shorts as "viewed vs swiped away", so the
+  first frame earns the stay. A long film stacks sequences, each closed by a release that opens the next question.
+
+## Mistakes the pros avoid
+
+- Equal intensity everywhere; the peak in the first half (McKee).
+- Keeping the stakes secret where suspense was possible (Hitchcock).
+- A thumbnail promise the first minute doesn't deliver (MrBeast's guide).
+- Long talk over a static picture (LifeOfRiza).
+
+Sources: Hitchcock/Truffaut (nofilmschool.com); Loewenstein, "The Psychology of Curiosity" (1994); Stanton, TED 2012;
+YouTube Help (answer 9314415); MrBeast's guide (simonwillison.net/2024/Sep/15); Wikipedia: Zeigarnik effect.
+

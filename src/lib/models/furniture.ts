@@ -369,3 +369,127 @@ export function truck({ cab = '#c8c4bc', box = '#dcdad4' }: { cab?: string; box?
 		}
 	return g;
 }
+
+/* ── the Neewer CB60 RGB on its light stand ─────────────────────────────── */
+
+/** The CB60's measure (m), estimated from photos until the manual's numbers replace them (the `neewer-cb60` skill). */
+export const CB60 = { body: 0.2, radius: 0.058, reflector: { depth: 0.12, back: 0.05, front: 0.095 } } as const;
+
+const fixture = {
+	body: std('#151515', 0.55),
+	stand: std('#1b1b1b', 0.45, { metalness: 0.35 }),
+	chrome: std('#c9c9c9', 0.25, { metalness: 0.95 }),
+	silver: shared(() => new THREE.MeshStandardMaterial({ color: '#dcdcdc', roughness: 0.3, metalness: 1, side: THREE.BackSide })),
+	panel: std('#0c0c0c', 0.35),
+	red: std('#b0262a', 0.45),
+	rubber: std('#262626', 0.9)
+};
+
+/**
+ * The Neewer CB60 RGB — a black COB light with a carry handle over its back, the controls on its rear panel, a Bowens
+ * ring and the silver standard reflector — on a black three-legged light stand with leg braces (a Manfrotto), the head
+ * on a yoke that tilts. The stand on the floor at its origin, the light pointing towards +z, tilted by `tilt` (radians,
+ * negative = down); `height` is the head's centre above the floor. userData: `face` (the COB's material, to glow),
+ * `beam` (where the light leaves the reflector, in the model's space) and `aim` (its direction).
+ */
+export function neewerCb60({ height = 1.5, tilt = -0.18 }: { height?: number; tilt?: number } = {}): THREE.Group {
+	const g = new THREE.Group();
+	g.name = 'Neewer CB60 RGB on a light stand';
+	const st = fixture.stand();
+	// the stand: three legs from a collar on the column, braces to a lower collar, the column in three sections
+	const spigot = height - 0.11, legTop = 0.62, braceAt = 0.3, spread = 0.46;
+	bar(g, v3(0, 0.02, 0), v3(0, spigot, 0), 0.0105, st, 0.0105);
+	bar(g, v3(0, 0.02, 0), v3(0, 0.95, 0), 0.0165, st);
+	bar(g, v3(0, 0.95, 0), v3(0, Math.min(spigot, 1.32), 0), 0.0135, st);
+	for (const y of [0.95, Math.min(spigot, 1.32)]) {
+		const lock = new THREE.Mesh(new THREE.CylinderGeometry(0.022, 0.022, 0.035, 14), st);
+		lock.position.y = y;
+		g.add(lock);
+		bar(g, v3(0.02, y, 0), v3(0.05, y, 0), 0.005, fixture.red()); // the lock's knob
+	}
+	for (const y of [legTop, braceAt]) {
+		const collar = new THREE.Mesh(new THREE.CylinderGeometry(0.026, 0.026, 0.05, 14), st);
+		collar.position.y = y;
+		g.add(collar);
+	}
+	for (let k = 0; k < 3; k++) {
+		const a = (k / 3) * Math.PI * 2 + Math.PI / 6, cx = Math.sin(a), cz = Math.cos(a);
+		const foot = v3(cx * spread, 0.015, cz * spread);
+		bar(g, v3(cx * 0.03, legTop, cz * 0.03), foot, 0.008, st);
+		bar(g, v3(cx * 0.03, braceAt, cz * 0.03), v3(cx * spread * 0.55, legTop * 0.45, cz * spread * 0.55), 0.005, st);
+		const pad = new THREE.Mesh(new THREE.CylinderGeometry(0.014, 0.016, 0.03, 10), fixture.rubber());
+		pad.position.copy(foot).setY(0.015);
+		g.add(pad);
+	}
+	// the head on its yoke: everything from here tilts round the yoke's axle
+	const head = new THREE.Group();
+	head.position.y = height;
+	head.rotation.x = -tilt;
+	g.add(head);
+	const yoke = fixture.body();
+	bar(g, v3(0, spigot, 0), v3(0, height - 0.075, 0), 0.012, st);
+	part(head, 0.012, 0.075, 0.04, yoke, -CB60.radius - 0.012, -0.03, 0, false);
+	part(head, 0.012, 0.075, 0.04, yoke, CB60.radius + 0.012, -0.03, 0, false);
+	part(head, 2 * CB60.radius + 0.036, 0.012, 0.04, yoke, 0, -0.07, 0, false);
+	bar(head, v3(CB60.radius + 0.02, 0, 0), v3(CB60.radius + 0.07, -0.03, 0.02), 0.006, yoke); // the tilt lever
+	// the body: a black cylinder, rounded at the back, vents along its sides
+	const body = new THREE.Mesh(new THREE.CylinderGeometry(CB60.radius, CB60.radius, CB60.body, 32), fixture.body());
+	body.rotation.x = Math.PI / 2;
+	body.castShadow = true;
+	head.add(body);
+	const back = new THREE.Mesh(new THREE.SphereGeometry(CB60.radius, 32, 12, 0, Math.PI * 2, 0, Math.PI / 2), fixture.body());
+	back.rotation.x = -Math.PI / 2;
+	back.scale.set(1, 0.18, 1);
+	back.position.z = -CB60.body / 2;
+	head.add(back);
+	for (const s of [-1, 1])
+		for (let i = 0; i < 6; i++) part(head, 0.004, 0.006, 0.07, fixture.panel(), s * (CB60.radius + 0.001), 0.018 - i * 0.011, -0.03, false);
+	// the rear panel: a little screen, buttons, the knob
+	part(head, 0.045, 0.026, 0.004, fixture.panel(), 0, 0.02, -CB60.body / 2 - 0.011, false);
+	for (let i = 0; i < 4; i++) part(head, 0.012, 0.008, 0.004, fixture.panel(), -0.03 + i * 0.02, -0.012, -CB60.body / 2 - 0.011, false);
+	const knob = new THREE.Mesh(new THREE.CylinderGeometry(0.011, 0.011, 0.012, 20), fixture.chrome());
+	knob.rotation.x = Math.PI / 2;
+	knob.position.set(0.03, -0.032, -CB60.body / 2 - 0.015);
+	head.add(knob);
+	// the carry handle: a loop over the back of the body
+	const handle = new THREE.Mesh(new THREE.TorusGeometry(0.05, 0.007, 8, 24, Math.PI), fixture.body());
+	handle.rotation.y = Math.PI / 2;
+	handle.position.set(0, CB60.radius - 0.004, -CB60.body / 2 + 0.06);
+	head.add(handle);
+	// the Bowens ring and the reflector: black outside, silver inside, the COB at its foot
+	const ring = new THREE.Mesh(new THREE.CylinderGeometry(CB60.radius + 0.006, CB60.radius + 0.006, 0.02, 32), fixture.body());
+	ring.rotation.x = Math.PI / 2;
+	ring.position.z = CB60.body / 2 + 0.01;
+	head.add(ring);
+	const { depth, back: rb, front: rf } = CB60.reflector;
+	const profile: THREE.Vector2[] = [];
+	for (let i = 0; i <= 16; i++) {
+		const t = i / 16;
+		profile.push(new THREE.Vector2(rb + (rf - rb) * t ** 1.25, depth * t));
+	}
+	const reflectorGeo = new THREE.LatheGeometry(profile, 48);
+	const outside = new THREE.Mesh(reflectorGeo, fixture.body());
+	const inside = new THREE.Mesh(reflectorGeo, fixture.silver());
+	for (const m of [outside, inside]) {
+		m.rotation.x = Math.PI / 2;
+		m.position.z = CB60.body / 2 + 0.02;
+		m.castShadow = m === outside;
+		head.add(m);
+	}
+	const lip = new THREE.Mesh(new THREE.TorusGeometry(rf, 0.004, 6, 48), fixture.chrome());
+	lip.position.z = CB60.body / 2 + 0.02 + depth;
+	head.add(lip);
+	const face = new THREE.MeshStandardMaterial({ color: '#f2efe6', emissive: '#fff2dc', emissiveIntensity: 0, roughness: 0.4 });
+	const cob = new THREE.Mesh(new THREE.CircleGeometry(0.024, 32), face);
+	cob.position.z = CB60.body / 2 + 0.022;
+	head.add(cob);
+	const grille = new THREE.Mesh(new THREE.RingGeometry(0.026, rb - 0.002, 40), fixture.panel());
+	grille.position.z = CB60.body / 2 + 0.021;
+	head.add(grille);
+	// where its light leaves, in the stand's space
+	head.updateMatrix();
+	g.userData.face = face;
+	g.userData.beam = new THREE.Vector3(0, 0, CB60.body / 2 + 0.03).applyMatrix4(head.matrix);
+	g.userData.aim = new THREE.Vector3(0, 0, 1).applyEuler(head.rotation);
+	return g;
+}

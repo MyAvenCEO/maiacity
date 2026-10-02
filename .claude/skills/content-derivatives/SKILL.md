@@ -7,7 +7,7 @@ description: Derive a maiaCITY day's posts from its base article — the single 
 
 ## The model
 
-- **One day = one base article = one card on the board** (`/app/board`). The article is the single source of truth: `blog/day-NN-<slug>/post.md`, written by the story machine in `the story-producer skill` (author avenSAMUEL; `draft: true` until Samuel releases it).
+- **One day = one base article = one card on the board** (`/app/board`). The article is the single source of truth: `blog/day-NN-<slug>/post.md`, written by the story machine of the `story-producer` skill and its crew (the `storyteller` writes it) (author avenSAMUEL; `draft: true` until Samuel releases it).
 - **Derivatives** live next to it in `derivatives.json` and go out around the day, each at its own time. They are written *from the article* — never new facts, never invented biography.
 - **The board** moves a card **idea → hook → draft → derivatives → scheduled → published**. *Hook* comes first: the day's title, written in `thumbnail.json` and rendered into its title cards in every shape (`node scripts/film/thumbnail.mjs …`, then `bun api/scripts/day.ts <dir> --hook --local`); the article is written from it. *Draft* is the base article alone — no derivatives exist yet (every push carries the hook and title cards along). Moving on to *Derivatives* **locks the base**: everything is derived from the locked article, and the API refuses a changed article until the card goes back to Draft. A render never moves a card. The modal's stages are views, clickable once reached: the idea; the hook (only the title cards: the thumbnail in 16:9, 1:1, 9:16 and 5:2); the article; the derivatives as platform previews; the week they go out in. The calendar (week view) lists the derivatives by time.
 - **Push the draft:** `bun api/scripts/day.ts blog/day-NN-<slug> --article [--local]` — the article alone.
@@ -51,7 +51,7 @@ Every day gets title cards in **four ratios — 16:9, 1:1, 9:16, 5:2** — set l
 
 - **Voice:** Samuel's first person (avenSAMUEL) on his accounts — the journal house style (stacked short lines, one long run-on, hyper-specific numbers from the article, the German-English cadence). Posts written *by avenMAIA* only when the article is hers (`writer` skill).
 - **No hashtags** anywhere — no platform's reach favours them; put the keywords in the words (captions are searched): geodesic domes, food forest, self-sufficient city, …
-- **Hook first** (subject + action + end state + contrast, per `the story-producer skill`), not a topic. The title is the promise; the first line is the first step inside it.
+- **Hook first** (subject + action + end state + contrast, per the `hook-writer` skill), not a topic. The title is the promise; the first line is the first step inside it.
 - **Facts only from the article** (and the film's script): 233 settlers, 13 domes, "first in game, then in real". Never claim a real city exists yet.
 - Every derivative must stand alone for someone who never heard of maiaCITY.
 - Banned words and patterns: see `.claude/skills/writer` (delve, leverage, unlock, seamless, emoji walls, "thrilled to announce", …).

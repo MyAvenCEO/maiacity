@@ -11,8 +11,9 @@
 //     time:     { hour, hourTo? },              the hour, and where a time-lapse runs to
 //     exposure: { meter: 'lock' | 'ramp' | 'fixed', stops, ev? },   metered like a camera (middle grey 18%), `stops`
 //               over or under it; `ev` = the metered (or, fixed, the given) gain in stops — once known, it is pinned
-//     lights:   [{ id: 'sun' | 'fill' | 'glow' | 'lamps' | 'sky' | 'glass', intensity?: k | [[t, k], …], color? }],  multipliers
-//               (glass: the low sun's warm sheen on the domes' glass, 0 = none, about 1–4 a glow)
+//     lights:   [{ id: 'sun' | 'fill' | 'glow' | 'lamps' | 'sky' | 'glass' | 'cb60', intensity?: k | [[t, k], …], color? }],  multipliers
+//               (glass: the low sun's warm sheen on the domes' glass, 0 = none, about 1–4 a glow; cb60: the room's Neewer CB60,
+//               off unless a shot names it, 1 = full)
 //     cues:     [{ at, kind: 'sound', hash, level } | { at, kind: 'event', name, args }],  on the shot's clock (seconds)
 //     shutter:  { angle: 180, samples: 1 },     motion blur: the shutter open for angle/360 of a frame, in samples
 //     framing:  { [shape]: { fov?, yaw?, pitch?, dx?, dy? } },  a native camera per delivery shape (else the rule)
@@ -48,13 +49,13 @@ import { DEFAULT_SANDBOX, WORLDS } from './worlds.js';
  *   meta?: Record<string, unknown>
  * }} Spec
  */
-/** @typedef {'sun' | 'fill' | 'glow' | 'lamps' | 'sky' | 'glass'} LightId */
+/** @typedef {'sun' | 'fill' | 'glow' | 'lamps' | 'sky' | 'glass' | 'cb60'} LightId */
 /** @typedef {'sandbox-1' | 'sandbox-2' | 'sandbox-3' | 'sandbox-4' | 'room' | 'tired-land'} Sandbox */
 
 /** The delivery shapes, width over height. */
 export const SHAPES = /** @type {Record<Shape, number>} */ ({ '1:1': 1, '16:9': 16 / 9, '9:16': 9 / 16, '4:5': 4 / 5 });
 /** The lights a shot can set, over what the hour gives them. */
-export const LIGHTS = /** @type {LightId[]} */ (['sun', 'fill', 'glow', 'lamps', 'sky', 'glass']);
+export const LIGHTS = /** @type {LightId[]} */ (['sun', 'fill', 'glow', 'lamps', 'sky', 'glass', 'cb60']);
 /** The sets a shot can build into the world (scripts/film/props.mjs). */
 export const SETS = ['tired-land'];
 /** The looks a shot may suggest (vault-render `grade::PRESETS`). */

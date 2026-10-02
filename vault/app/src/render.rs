@@ -451,7 +451,7 @@ pub async fn look_clips(
     Ok(out)
 }
 
-/// The base correction's balances (story-producer `grading.md`), proposed from the shots' elements — written by the
+/// The base correction's balances (colorist `base-correction.md`), proposed from the shots' elements — written by the
 /// caller only when asked. `neutral`: each clip's own neutrals to grey, then `warmth` stops warmer (a scene master);
 /// else every clip levelled to `reference` as it is balanced now (the scene master), by the blacks, whites, middle and
 /// skin both have (less each clip's `skip`).
