@@ -338,6 +338,12 @@ impl Catalog {
             anyhow::ensure!(CLASSES.contains(&c.as_str()), "a file's class is one of {}", CLASSES.join(", "));
             meta.class = c;
         }
+        // a working file made of an original (class proxy) is named after it: its name follows when it is made again
+        // (the same bytes keep the file, and with it the name it first came in as)
+        if let Some(n) = text("original_name").filter(|n| !n.is_empty()) {
+            anyhow::ensure!(meta.class == "proxy", "only a working file made of an original takes a new name");
+            meta.original_name = n;
+        }
         if let Some(extra) = patch.get("meta").and_then(|v| v.as_object()) {
             let mut m = meta.meta.as_object().cloned().unwrap_or_default();
             // the derived records' views are not the description's (the server writes them under their own keys)
