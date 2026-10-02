@@ -1,6 +1,6 @@
 /*
  * THE KITCHEN'S MODELS — Samuel's galley kitchen without its clutter: the run of cabinets (the washing machine, the
- * oven under a black gas hob, drawers, the black sink), the tall wooden X-shelf, the gas boiler on the wall, the red
+ * oven under a black gas hob, the black sink over drawers), the tall wooden X-shelf, the gas boiler on the wall, the red
  * pedal bin, a rail of pans. Each to its real measure, standing on the floor at its origin (a wall-hung thing: its back
  * at z 0), its back towards −z, its front towards +z.
  */
@@ -26,11 +26,12 @@ const m = {
 export type KitchenModule = 'washer' | 'oven' | 'drawers' | 'sink';
 
 /**
- * A run of kitchen cabinets 60 cm wide each, in the order given from −x to +x: a black front-loading washing machine,
- * a black oven with a four-burner gas hob above it, drawers with wooden fronts, a cabinet with a black sink and a tall
- * faucet. A rustic worktop over them all at 90 cm, 62 cm deep. Its back at z 0.
+ * A run of kitchen modules 60 cm wide each, in the order given from −x to +x: a black front-loading washing machine,
+ * a black oven with a four-burner gas hob above it, three drawers with wooden fronts — and `sink`, the same drawers with
+ * the black sink set into the worktop above them, its tall faucet behind. Samuel's is three: the washing machine, the
+ * oven, the sink right beside the hob. A rustic worktop over them all at 90 cm, 62 cm deep. Its back at z 0.
  */
-export function kitchenRun(modules: KitchenModule[] = ['washer', 'oven', 'drawers', 'sink']): THREE.Group {
+export function kitchenRun(modules: KitchenModule[] = ['washer', 'oven', 'sink']): THREE.Group {
 	const g = new THREE.Group();
 	g.name = 'kitchen run';
 	const W = 0.6, L = modules.length * W, D = 0.6;
@@ -66,22 +67,20 @@ export function kitchenRun(modules: KitchenModule[] = ['washer', 'oven', 'drawer
 			}
 			for (const gz of [-0.12, 0.12]) part(g, W - 0.08, 0.012, 0.012, m.blackMatte(), x, 0.955, D / 2 + 0.01 + gz, false);
 			for (const gx of [-0.13, 0.13]) part(g, 0.012, 0.012, 0.44, m.blackMatte(), x + gx, 0.955, D / 2 + 0.01, false);
-		} else if (kind === 'drawers') {
+		} else {
 			for (let k = 0; k < 3; k++) {
 				const h = 0.24, y = 0.17 + k * 0.26 + h / 2;
 				part(g, W - 0.015, h, 0.02, m.front(), x, y, front - 0.01);
 				bar(g, v3(x - 0.08, y + 0.06, front + 0.015), v3(x + 0.08, y + 0.06, front + 0.015), 0.006, m.black());
 			}
 			part(g, W - 0.01, 0.78, D - 0.04, m.white(), x, 0.49, D / 2 - 0.02, false);
-		} else {
-			part(g, W - 0.015, 0.76, 0.02, m.front(), x, 0.5, front - 0.01);
-			bar(g, v3(x + 0.22, 0.62, front + 0.015), v3(x + 0.22, 0.78, front + 0.015), 0.006, m.black());
-			part(g, W - 0.01, 0.78, D - 0.04, m.white(), x, 0.49, D / 2 - 0.02, false);
-			// the black sink set into the worktop, and a tall faucet behind it
-			part(g, 0.46, 0.012, 0.42, m.blackMatte(), x, 0.921, D / 2 + 0.02, false);
-			part(g, 0.4, 0.004, 0.36, m.glass(), x, 0.928, D / 2 + 0.02, false);
-			bar(g, v3(x, 0.92, 0.1), v3(x, 1.28, 0.1), 0.014, m.black());
-			bar(g, v3(x, 1.28, 0.1), v3(x, 1.24, 0.3), 0.012, m.black());
+			if (kind === 'sink') {
+				// the black sink set into the worktop over the drawers, and a tall faucet behind it
+				part(g, 0.46, 0.012, 0.42, m.blackMatte(), x, 0.921, D / 2 + 0.02, false);
+				part(g, 0.4, 0.004, 0.36, m.glass(), x, 0.928, D / 2 + 0.02, false);
+				bar(g, v3(x, 0.92, 0.1), v3(x, 1.28, 0.1), 0.014, m.black());
+				bar(g, v3(x, 1.28, 0.1), v3(x, 1.24, 0.3), 0.012, m.black());
+			}
 		}
 	});
 	return g;

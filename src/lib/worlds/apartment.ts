@@ -8,9 +8,9 @@
  *                along the other wall the shoe rack, the storeroom's door, the red fridge by the kitchen's doorway.
  *                Then its arm, x −4.60…−3.10, z 2.25…6.40: the bar along one wall under the pendant, the bathroom's
  *                door across from it, the front door at the far end, the coat stand and the print on the end wall;
- *   the kitchen  x −8.10…−4.75, z 0.20…2.25: a galley, the cabinets along the right as you come in, the window at the
+ *   the kitchen  x −7.60…−4.75, z 0.20…2.25: a galley, the cabinets along the right as you come in, the window at the
  *                far end (it looks south: the sun comes in);
- *   the bathroom x −8.10…−4.75, z 2.40…4.40: long and narrow, the basin and the WC on the left, the towel radiator on
+ *   the bathroom x −7.60…−4.75, z 2.40…4.40: long and narrow, the basin and the WC on the left, the towel radiator on
  *                the right, the glass shower at the far end under its tall window.
  */
 import * as THREE from 'three';
@@ -39,8 +39,8 @@ export type Apartment = {
 
 export const HALL = { x0: -4.6, x1: -1.7, z0: 0.2, z1: 2.25 } as const;
 export const ARM = { x0: -4.6, x1: -3.1, z0: 2.25, z1: 6.4 } as const;
-export const KITCHEN = { x0: -8.1, x1: -4.75, z0: 0.2, z1: 2.25 } as const;
-export const BATH = { x0: -8.1, x1: -4.75, z0: 2.4, z1: 4.4 } as const;
+export const KITCHEN = { x0: -7.6, x1: -4.75, z0: 0.2, z1: 2.25 } as const;
+export const BATH = { x0: -7.6, x1: -4.75, z0: 2.4, z1: 4.4 } as const;
 /** the doorways in the hallway's far wall: into the kitchen (no door), into the bathroom */
 const KITCHEN_DOOR = { z0: 1.0, z1: 1.86 } as const;
 const BATH_DOOR = { z0: 2.61, z1: 3.49 } as const;
@@ -84,7 +84,7 @@ export function buildApartment(
 	// a wall: the box from corner (x0, z0) to corner (x1, z1), from y0 up to y1
 	const wall = (x0: number, x1: number, z0: number, z1: number, y0 = 0, y1 = H) =>
 		box(x1 - x0, y1 - y0, z1 - z0, mat.wall, (x0 + x1) / 2, (y0 + y1) / 2, (z0 + z1) / 2);
-	// a window in the far wall (x −8.25…−8.10): the wall under it and over it, a white frame, glass, a sill inside, and
+	// a window in the far wall (x −7.75…−7.60): the wall under it and over it, a white frame, glass, a sill inside, and
 	// the sky's light through it; `transom`: a bar across it, a small pane over the tall one
 	const opening = (w: { z0: number; z1: number; sill: number; top: number }, transom = false) => {
 		const x = KITCHEN.x0, mid = (w.z0 + w.z1) / 2, len = w.z1 - w.z0, h = w.top - w.sill;
@@ -177,21 +177,24 @@ export function buildApartment(
 	const pendant = place(pendantLamp({ drop: 0.55 }), (ARM.x0 + ARM.x1) / 2, 3.5, 0, H);
 	const hallLight = downlight('#ffcf94', 8, 1.2, 0.75, pendant.position.clone().add(pendant.userData.light as THREE.Vector3));
 
-	/* ── the kitchen: along the right as you come in the washing machine, the oven under the gas hob, drawers and the
-	   black sink under the brick wall, the dark crates and the pans above them, the boiler over the sink, the X-shelf by
-	   the door; the dryer under the window; on the grey wall the crate pantry and the bin ── */
-	place(kitchenRun(['washer', 'oven', 'drawers', 'sink']), KITCHEN.x0 + 1.2, KITCHEN.z0);
+	/* ── the kitchen: along the right as you come in, from the window, three modules — the washing machine, the oven
+	   under the gas hob, and right beside it the black sink over drawers — under the brick wall, the dark crates and the
+	   pans above them, the boiler over the sink, then the X-shelf; the dryer under the window; on the grey wall the
+	   crate pantry and the bin ── */
+	// the run's middle, the hob: the washing machine 60 cm towards the window, the sink 60 cm towards the door
+	const run = KITCHEN.x0 + 0.9;
+	place(kitchenRun(['washer', 'oven', 'sink']), run, KITCHEN.z0);
 	place(kitchenRun(['washer']), KITCHEN.x0, (KITCHEN_WIN.z0 + KITCHEN_WIN.z1) / 2, Math.PI / 2); // the dryer
-	plane(2.4, 0.86, laid(brick(), 2.4, 0.86, [0.96, 0.64], { roughness: 0.9 }), KITCHEN.x0 + 1.2, 0.92 + 0.43, KITCHEN.z0 + 0.003, 0);
-	for (const x of [-7.75, -7.2]) place(wineCrate('dark'), x, KITCHEN.z0 + CRATE.d / 2 + 0.005, 0, 1.8);
-	place(panRail({ length: 1.0 }), -7.2, KITCHEN.z0, 0, 1.62);
-	place(gasBoiler(), -6.0, KITCHEN.z0, 0, 1.6);
-	place(xShelf(), -5.2, KITCHEN.z0 + 0.21);
-	place(crateTower(['dark', 'dark', 'dark', 'dark']), -7.75, KITCHEN.z1 - CRATE.d / 2 - 0.01, Math.PI);
-	place(pedalBin(), -7.2, 1.9);
+	plane(1.8, 0.86, laid(brick(), 1.8, 0.86, [0.96, 0.64], { roughness: 0.9 }), run, 0.92 + 0.43, KITCHEN.z0 + 0.003, 0);
+	for (const x of [run - 0.55, run]) place(wineCrate('dark'), x, KITCHEN.z0 + CRATE.d / 2 + 0.005, 0, 1.8);
+	place(panRail({ length: 0.8 }), run - 0.1, KITCHEN.z0, 0, 1.62);
+	place(gasBoiler(), run + 0.6, KITCHEN.z0, 0, 1.6);
+	place(xShelf(), run + 1.15, KITCHEN.z0 + 0.21);
+	place(crateTower(['dark', 'dark', 'dark', 'dark']), KITCHEN.x0 + 0.35, KITCHEN.z1 - CRATE.d / 2 - 0.01, Math.PI);
+	place(pedalBin(), run, 1.9);
 	const grey = new THREE.MeshStandardMaterial({ color: '#a3a39f', roughness: 0.9 });
 	plane(KITCHEN.x1 - KITCHEN.x0, 1.45, grey, (KITCHEN.x0 + KITCHEN.x1) / 2, 0.725, KITCHEN.z1 - 0.002, Math.PI); // grey up to 1.45 m
-	const kitchenBulb = place(edisonBulb({ drop: 0.8 }), -6.6, KITCHEN.z0 + 0.35, 0, H);
+	const kitchenBulb = place(edisonBulb({ drop: 0.8 }), run + 0.3, KITCHEN.z0 + 0.42, 0, H); // between the hob and the sink
 	// a bare bulb: its light all round, but not far — it has no shadows, and the walls would not stop it
 	const kitchenLight = new THREE.PointLight('#ffad55', 0, 3.2, 2);
 	kitchenLight.position.copy(kitchenBulb.position).add(kitchenBulb.userData.light as THREE.Vector3);
@@ -215,17 +218,17 @@ export function buildApartment(
 	tiles(ww, H - BATH_WIN.top, fx, (H + BATH_WIN.top) / 2, wz, Math.PI / 2);
 	place(washbasin({ w: 0.6 }), -5.45, BATH.z1, Math.PI);
 	place(wallToilet(), -6.3, BATH.z1, Math.PI);
-	place(towelRadiator(), -6.7, BATH.z0);
+	place(towelRadiator(), -6.25, BATH.z0);
 	place(glassShower({ w: BATH.z1 - BATH.z0, d: showerX - BATH.x0, ceiling: H }), BATH.x0, (BATH.z0 + BATH.z1) / 2, Math.PI / 2);
 	const spotGlass = new THREE.MeshStandardMaterial({ color: '#ffffff', emissive: '#fff4e2', emissiveIntensity: 0 });
-	for (const x of [-5.6, -7.0]) {
+	for (const x of [BATH.x1 - 0.8, BATH.x0 + 1.25]) {
 		const disc = new THREE.Mesh(new THREE.CircleGeometry(0.04, 20), spotGlass);
 		disc.rotation.x = Math.PI / 2;
 		disc.position.set(x, H - 0.002, (BATH.z0 + BATH.z1) / 2);
 		scene.add(disc);
 	}
 	// the spots' light: down from the ceiling, wide
-	const bathLight = downlight('#fff1dc', 6, 1.25, 0.9, new THREE.Vector3(-6.3, H - 0.03, (BATH.z0 + BATH.z1) / 2));
+	const bathLight = downlight('#fff1dc', 6, 1.25, 0.9, new THREE.Vector3((BATH.x0 + BATH.x1) / 2, H - 0.03, (BATH.z0 + BATH.z1) / 2));
 
 	/* ── outside the kitchen's and the bathroom's windows: the courtyard, a white house across it ── */
 	const facade = new THREE.Mesh(new THREE.BoxGeometry(1, 14, 18), new THREE.MeshStandardMaterial({ color: '#efeee9', roughness: 0.9 }));
@@ -262,14 +265,14 @@ export function buildApartment(
 			[ARM.x1 - 0.82, ARM.x1 - 0.42, 2.6, 4.7], // its stools
 			[ARM.x1 - 0.48, ARM.x1 - 0.12, ARM.z1 - 0.5, ARM.z1 - 0.14], // the coat stand
 			[BATH.x1 - 0.86, BATH.x1, BATH_DOOR.z0 - 0.02, BATH_DOOR.z0 + 0.06], // the bathroom's door, open into it
-			[KITCHEN.x0, KITCHEN.x0 + 2.4, KITCHEN.z0, KITCHEN.z0 + 0.62], // the cabinets
+			[KITCHEN.x0, KITCHEN.x0 + 1.8, KITCHEN.z0, KITCHEN.z0 + 0.62], // the cabinets
 			[KITCHEN.x0, KITCHEN.x0 + 0.62, KITCHEN_WIN.z0 - 0.06, KITCHEN_WIN.z1 + 0.06], // the dryer
-			[-5.43, -4.97, KITCHEN.z0, KITCHEN.z0 + 0.42], // the X-shelf
-			[-8.0, -7.5, KITCHEN.z1 - CRATE.d - 0.02, KITCHEN.z1], // the pantry
-			[-7.36, -7.04, 1.74, 2.06], // the bin
+			[run + 0.92, run + 1.38, KITCHEN.z0, KITCHEN.z0 + 0.42], // the X-shelf
+			[KITCHEN.x0 + 0.1, KITCHEN.x0 + 0.6, KITCHEN.z1 - CRATE.d - 0.02, KITCHEN.z1], // the pantry
+			[run - 0.16, run + 0.16, 1.74, 2.06], // the bin
 			[-5.75, -5.15, BATH.z1 - 0.42, BATH.z1], // the basin
 			[-6.5, -6.1, BATH.z1 - 0.56, BATH.z1], // the WC
-			[-6.95, -6.45, BATH.z0, BATH.z0 + 0.1], // the radiator
+			[-6.5, -6.0, BATH.z0, BATH.z0 + 0.1], // the radiator
 			[BATH.x0, showerX, BATH.z0, BATH.z1] // the shower
 		],
 		lamps: [
