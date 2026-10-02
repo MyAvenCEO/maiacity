@@ -161,8 +161,9 @@ export async function mountIsar(container: HTMLElement, onProgress: (label: stri
 		yaw: Math.atan2(-DOWNSTREAM.x, -DOWNSTREAM.z),
 		pitch: 0.02,
 		eye: EYE,
-		walk: 2.2,
-		hurry: 8,
+		// brisk, for 700 m of river: two and a half times the first pace (2.2 m/s, Shift 8), Shift with it
+		walk: 5.5,
+		hurry: 20,
 		stride: 0.25,
 		canStand,
 		floorAt
