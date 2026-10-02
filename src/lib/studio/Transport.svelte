@@ -10,14 +10,14 @@
 
 	async function playFullscreen() {
 		await s.screen?.requestFullscreen().catch(() => {});
-		if (!s.playing) await s.play();
+		if (!s.playing && !s.starting) await s.play();
 	}
 	const keys = $derived(s.tab === 'edit' ? 'Space play · B or ⌘K cuts at the playhead · I / O mark the source · Delete removes · ← → nudge' : 'Space play · click a clip to select it');
 </script>
 
 <div class="transport">
 	<button class="ic" onclick={() => s.seek(0)} aria-label="To the start" title="To the start">⏮</button>
-	<button class="ic play" onclick={s.toggle} aria-label={s.playing ? 'Pause' : 'Play'} title="{s.playing ? 'Pause' : 'Play'} (Space)">{s.playing ? '❚❚' : '▶'}</button>
+	<button class="ic play" onclick={s.toggle} aria-label={s.playing || s.starting ? 'Pause' : 'Play'} title="{s.playing || s.starting ? 'Pause' : 'Play'} (Space)">{s.playing || s.starting ? '❚❚' : '▶'}</button>
 	<span class="time">{clockText(s.time)}<span> / {clockText(s.end)}</span></span>
 
 	<span class="grow"></span>

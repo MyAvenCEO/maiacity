@@ -70,6 +70,8 @@ export function startFilm({ base = '' } = {}) {
 	const metered = new Map();
 	/** what the world is staged for now: where the walker stands, which set is built */
 	let staged = '';
+	/** the shot the walker is being moved for now (a stage under way), else '' */
+	let staging = '';
 	/** @type {{ commit: string, hash: string, file?: string } | null} */
 	let build = null;
 	const buildKnown = fetch(`${base}/film-build.json`)
@@ -97,15 +99,24 @@ export function startFilm({ base = '' } = {}) {
 	async function stage(/** @type {Spec} */ spec) {
 		if (!shows(spec)) throw new Error(`this shot is in ${spec.world.sandbox}${spec.world.area ? ` (${spec.world.area})` : ''}, and this page is ${here.sandbox}${here.area ? ` (${here.area})` : ''}: open ${filmPath(spec.world)}`);
 		const v = await mounted();
-		const key = JSON.stringify([spec.world.stand, spec.world.dome ?? null, spec.world.props ?? null]);
+		const key = keyOf(spec);
 		if (key === staged && v.film.holds(spec.world)) return;
+		// the walker leaves the shot staged last: no frame of that shot is drawn until it stands there again
+		staged = '';
+		staging = key;
 		clock.leave(); // what a world builds (the domes) it builds on the page's own clock, a little every frame
 		if (spec.world.props && !w.__props) sets[/** @type {keyof typeof sets} */ (spec.world.props)]?.(spec.world.seed);
 		// the world stands where the shot needs it loaded, and resolves once everything the shot can see is built
-		await v.film.stage({ ...spec.world, name: spec.meta?.name });
-		await settled(v);
-		staged = key;
+		try {
+			await v.film.stage({ ...spec.world, name: spec.meta?.name });
+			await settled(v);
+			staged = key;
+		} finally {
+			if (staging === key) staging = '';
+		}
 	}
+	/** what a shot needs the world staged as: where the walker stands, its dome, its set */
+	const keyOf = (/** @type {Spec} */ spec) => JSON.stringify([spec.world.stand, spec.world.dome ?? null, spec.world.props ?? null]);
 
 	/** Nothing still streaming in: no loader busy, every shader compiled. */
 	async function settled(/** @type {any} */ v) {
@@ -264,14 +275,21 @@ export function startFilm({ base = '' } = {}) {
 		async show({ spec: raw, t, shape, width, height, view = {}, quality = 'proxy' }) {
 			const spec = normalize(raw), to = shape ?? spec.aspect;
 			const v = await mounted();
+			// the world is being readied for another shot (a prepare): never draw this one with the walker elsewhere —
+			// the last frame stays up
+			if (staging && staging !== keyOf(spec)) return;
 			const ev = await exposureOf(spec);
-			await stage(spec);
+			// restaged in line with the prepares, never beside one (two at once pull the walker back and forth)
+			if (staged !== keyOf(spec) || !v.film.holds(spec.world)) await one(() => stage(spec));
 			clock.enter();
 			w.__filmDraw = true;
 			const os = quality === 'final' ? 1.5 : 1;
 			const W = Math.round(width * os), H = Math.round(height * os);
 			const { frame, at } = linear(v, spec, t, to, W, H, quality === 'final');
 			gpu().view(frame, width, height, 2 ** (evAt(ev, t) + at.stops), os > 1 ? 3 : 1, view);
+			// the frame is drawn: the page's clock runs again until the next, so the world keeps building what the
+			// shots ahead need while the timeline plays (held, every dome build would wait for a step that never comes)
+			clock.leave();
 		},
 		/**
 		 * A still through the view (the storyboard): show() it, then the canvas as an image.
@@ -351,6 +369,10 @@ export function startFilm({ base = '' } = {}) {
 			w.__filmDraw = false;
 			clock.world(undefined);
 			clock.leave();
+			// walked by hand from here: the next shot stages again (where the walker stands now is no shot's), and the
+			// sky follows the page's own hour
+			staged = '';
+			delete w.__interiorHour;
 			const v = world();
 			if (v) {
 				v.renderer.setPixelRatio(Math.min(1.25, window.devicePixelRatio));

@@ -14,7 +14,7 @@
  * out of a door and you are in the village again, outside it.
  */
 import * as THREE from 'three'
-import { DOMES, DOORS, adiff, bake, box, geodesic, lantern, mats, mountInterior, polar, portal, sofa, table, type DomeKind, type EmbeddedDome } from './interior'
+import { DOMES, DOORS, adiff, bake, box, geodesic, glassSheen, lantern, mats, mountInterior, polar, portal, sofa, table, type DomeKind, type EmbeddedDome } from './interior'
 import { cafes, coops, coopsAround, henPatches, playground, squaresAround, type Kit } from './spaces'
 import { water } from './textures'
 import { appleTree, banana, berryBush, canopyTree, climber, clover, coconutPalm, comfrey, fruitTree, ginger, herb, papaya, passionVine, seeded, smallFruitTree, squash, strawberries, tropicalShrub, forestFloor, FLOOR_KINDS, floorPick, grassTuft, type Plant } from './plants'
@@ -1009,8 +1009,8 @@ export async function mountVillage(container: HTMLElement, onProgress: (label: s
 
 	/* ── the film camera's hold on the cell (src/lib/film, $lib/sandbox-kit/film): every frame set from the shot alone,
 	   never from the frame before it. Players never reach any of this. ── */
-	/** every dome a film has asked for since the page came up: kept built, whichever shot asked last */
-	const kept = new Set<number>()
+	/** the domes of the shots a film asked for, the latest last: the latest are kept built (pinned) */
+	const recent: number[][] = []
 	/** the domes that would be shown in full to a walker standing at x, z once built: all of them must be built before a
 	 *  shot from there is filmed, or a dome could appear between two renders of it */
 	const nearDomes = (x: number, z: number) => domes.map((d, i) => ({ i, gap: Math.hypot(x - d.x, z - d.z) - d.ext })).filter((d) => d.gap < SHOW_NEAREST).map((d) => d.i)
@@ -1036,8 +1036,17 @@ export async function mountVillage(container: HTMLElement, onProgress: (label: s
 			for (const i of shown) built.get(i)!.update(t)
 			glowMat.emissive.set(GLOW)
 			for (const p of pool) p.color.set(LAMP)
+			// the glass's sun sheen: off unless the shot turns it up, always towards where the sun is now
+			glassSheen.uGlassSheen.value = 0
+			glassSheen.uGlassSheenColor.value.set('#ffb070')
+			glassSheen.uGlassSun.value.copy(sky.sun.position).sub(sky.sun.target.position).normalize()
 		},
 		lights: {
+			// the low sun glowing on the domes' glass: k is how strongly (0 none; about 1–4 reads as a warm sheen)
+			glass: (k, color) => {
+				glassSheen.uGlassSheen.value = k
+				if (color) glassSheen.uGlassSheenColor.value.set(color)
+			},
 			glow: (k, color) => {
 				glowMat.emissiveIntensity *= k
 				if (color) glowMat.emissive.set(color)
@@ -1070,11 +1079,15 @@ export async function mountVillage(container: HTMLElement, onProgress: (label: s
 			settle()
 		},
 		holds: (w) => w.dome === undefined || shown.has(w.dome),
-		// keep these shots' domes built while the film needs them
+		// keep the domes of the shots the film asked for last built while it needs them — never all of them: a pin
+		// that only grew would fill every place (KEEP) and no other dome could ever be built
 		keep: (ws) => {
-			for (const w of ws) if (w.dome !== undefined) kept.add(w.dome)
+			const domesOf = ws.map((w) => w.dome).filter((d): d is number => d !== undefined)
+			if (domesOf.length) recent.push(domesOf)
 			pinned.clear()
-			for (const i of kept) pinned.add(i)
+			for (const set of [...recent].reverse())
+				for (const i of set) if (pinned.size < KEEP - 1) pinned.add(i)
+			while (recent.length > KEEP) recent.shift()
 		},
 		extra: { herds, built, shown, domes, water: waterPts, playgrounds: PLAYGROUNDS }
 	})
