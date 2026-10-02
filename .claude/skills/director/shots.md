@@ -11,7 +11,7 @@ How the words become pictures: the facts that may be shown, how many shots a lin
 
 ## Shot grammar
 
-**Every line gets 2–4 shots:** establishing (EWS/WS) → MS → CU/ECU/macro inserts. Vary each:
+**Every line gets 2–4 shots** (the coverage they come from: `cinematographer`, `coverage.md`): establishing (EWS/WS) → MS → CU/ECU/macro inserts. Vary each:
 - **Height:** drone (y 30–150), eye level (1.6), ground macro (0.05–0.3).
 - **Lens:** long (fov 10–20) compresses space and gives close-ups from a distance (mango at 12, "picked ripe" at
   10); wide (45–55) shows space.

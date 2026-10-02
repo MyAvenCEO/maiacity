@@ -39,6 +39,7 @@ cut together as one film.
 
 | File | The skill | Use it for |
 |---|---|---|
+| `coverage.md` | coverage | the standard shot list: sizes (Totale, medium, close-ups), angles, POVs, creative angles a crew of one can shoot, the standard set per scene, multiples |
 | `composition.md` | the frame | the components, contrast and affinity, depth cues, the composition patterns and what each carries, headroom and look room, 16:9 and 9:16 |
 | `lenses.md` | lenses and sizes | fov ↔ mm, the masters' focal lengths, distances per shot size, the iPhone's lenses, the virtual lens set, the room's throws |
 | `movement.md` | camera movement | motivated moves, glide, handing the motion over at the cut, still frames that are alive |

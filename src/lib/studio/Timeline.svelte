@@ -243,14 +243,28 @@
 	}
 
 	const SECTION = /** @type {Record<string, string>} */ ({ thumbnail: 'Thumbnail', hook: 'Hook', act1: 'Act 1', act2: 'Act 2', act3: 'Act 3', cliffhanger: 'Cliffhanger' });
-	/** the tension across the story: every section's points on the film's clock, one line (0 at the bottom, 1 at the top) @param {Clip[]} secs */
-	function tensionPath(secs) {
-		const pts = secs
+	/** the story's arc: every section's points on the film's clock — the tension (0 released … 1 at its height) and the
+	 *  feeling the viewer should have there @param {Clip[]} secs */
+	function arcPoints(secs) {
+		return secs
 			.filter((c) => c.section !== 'thumbnail')
-			.flatMap((c) => (c.tension ?? []).map((p) => [c.start + p.t * c.dur, 1 - p.v]))
-			.sort((a, b) => a[0] - b[0]);
-		return pts.map(([t, y], i) => `${i ? 'L' : 'M'}${t.toFixed(2)},${(0.1 + y * 0.8).toFixed(3)}`).join('');
+			.flatMap((c) => (c.tension ?? []).map((p) => ({ t: c.start + p.t * c.dur, v: p.v, feel: p.feel })))
+			.sort((a, b) => a.t - b.t);
 	}
+	const arcY = (/** @type {number} */ v) => 0.1 + (1 - v) * 0.8;
+	/** the arc as two lines: where the tension rises (tension) and where it falls (release) @param {{ t: number, v: number }[]} pts @param {boolean} rising */
+	function arcPath(pts, rising) {
+		let d = '';
+		for (let i = 1; i < pts.length; i++) {
+			const a = pts[i - 1], b = pts[i];
+			if (b.v >= a.v === rising) d += `M${a.t.toFixed(2)},${arcY(a.v).toFixed(3)}L${b.t.toFixed(2)},${arcY(b.v).toFixed(3)}`;
+		}
+		return d;
+	}
+	/** a feeling's family, for its colour: the warm ones, the cold ones, and the open ones that pull forward */
+	const WARM = /^(awe|wonder|hope|joy|relief|pride|warmth|tenderness|belonging|delight|calm|peace|trust|love|gratitude|excitement|triumph|freedom)/i;
+	const COLD = /^(unease|dread|fear|doubt|loneliness|isolation|confinement|sadness|grief|frustration|anger|shame|disbelief|tension|pressure|loss|longing)/i;
+	const feelKind = (/** @type {string} */ f) => (WARM.test(f) ? 'warm' : COLD.test(f) ? 'cold' : 'open');
 
 	// during playback the view follows the playhead: a page on when it nears the right edge, back when it is off
 	// to the left (a seek), never while paused — then the view is the editor's
@@ -559,9 +573,14 @@
 								{#if c.section !== 'thumbnail' && c.text}<small>{c.text}</small>{/if}
 							</div>
 						{/each}
+						{@const arc = arcPoints(secs)}
 						<svg class="tension" viewBox="0 0 {Math.max(1, s.span)} 1" preserveAspectRatio="none" style:width={x(s.span)} aria-hidden="true">
-							<path d={tensionPath(secs)} />
+							<path class="rise" d={arcPath(arc, true)} />
+							<path class="release" d={arcPath(arc, false)} />
 						</svg>
+						{#each arc.filter((p) => p.feel) as p, i (i)}
+							<span class="feel {feelKind(p.feel ?? '')}" class:low={p.v < 0.5} style:left={x(p.t)} style:top="{arcY(p.v) * 100}%" title="{p.feel} — tension {Math.round(p.v * 100)} %">{p.feel}</span>
+						{/each}
 					{:else if t.id === 'T1'}
 						{#each s.phrases as p (`${p.clip}:${p.words[0].i}`)}
 							<!-- svelte-ignore a11y_no_static_element_interactions -->
@@ -1030,9 +1049,55 @@
 
 	.tension path {
 		fill: none;
-		stroke: var(--terracotta);
 		stroke-width: 2;
 		vector-effect: non-scaling-stroke;
+	}
+
+	/* the tension rising, and its release */
+	.tension .rise {
+		stroke: var(--terracotta);
+	}
+
+	.tension .release {
+		stroke: #8fb59a;
+		stroke-dasharray: 5 3;
+	}
+
+	/* the feeling the viewer should have at a point of the arc: a dot on the line, its name beside it */
+	.feel {
+		position: absolute;
+		z-index: 2;
+		transform: translate(-4px, -50%);
+		padding-left: 11px;
+		font-size: 0.62rem;
+		font-weight: 600;
+		white-space: nowrap;
+		pointer-events: auto;
+	}
+
+	.feel::before {
+		content: '';
+		position: absolute;
+		top: 50%;
+		left: 0;
+		width: 8px;
+		height: 8px;
+		border-radius: 50%;
+		transform: translateY(-50%);
+		background: currentColor;
+		box-shadow: 0 0 0 2px rgb(0 0 0 / 0.45);
+	}
+
+	.feel.warm {
+		color: #e9b45c;
+	}
+
+	.feel.cold {
+		color: #8fb0e6;
+	}
+
+	.feel.open {
+		color: #e6e0d4;
 	}
 
 	/* J and L cuts: the clips keep their full height; across the overlap each keeps its half (outline()); the letter */

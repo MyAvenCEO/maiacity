@@ -19,8 +19,9 @@ viewer stays to the last line. The hook itself is the `hook-writer`'s; the pictu
    resolution (`structure.md`).
 5. **Every scene is a step.** Each one gives the audience something new that moves the story forward, because of the
    scene before it or against it. A scene that only shows is a scene that stops (`scenes.md`).
-6. **Tension, release, a bigger tension.** Close one loop and open the next in the same breath; the peak comes late
-   (`retention.md`).
+6. **Tension, release, a bigger tension — as feelings.** Name what the viewer feels at every beat, each feeling set
+   against the one before; close one loop and open the next in the same breath; the peak comes late (`emotion.md`,
+   `retention.md`).
 7. **Based on a true story.** Re-enact, compress, plan every shot — but invent nothing about Samuel's life, the
    viewers, attempts or results (`writing.md`, `scenes.md`).
 
@@ -31,6 +32,7 @@ viewer stays to the last line. The hook itself is the `hook-writer`'s; the pictu
 | `arc.md` | the transformation and the arc | from → to, the arching question, the pain, hook → story → lessons, the pieces, the obstacles, a film's acts |
 | `structure.md` | three acts, scaled | the masters' structures (Field, Snyder, McKee, Harmon, Pixar) and where their beats fall in a 1-, 3-, 5- and 10-minute film |
 | `scenes.md` | scene by scene | how each scene moves the story: the next-button test, but/therefore, intention and obstacle, value turns, setups and payoffs, introducing people through action, the vlog that is based on a true story |
+| `emotion.md` | the emotional journey | the feelings the viewer goes through beat by beat, tension and release as pairs of feelings, marking them on the arc (`story_arc`'s `feel`), how sound, colour, pace and light follow them |
 | `retention.md` | tension and release | the intensity curve, contrast in every sense, curiosity and payoff, the retention playbook second by second, pace |
 | `writing.md` | the words | who speaks, the world's facts, rhythm, "Imagine…" scenes, the post file, writing for the ear, the checklist |
 
@@ -39,7 +41,7 @@ viewer stays to the last line. The hook itself is the `hook-writer`'s; the pictu
 1. The transformation and the arching question (`arc.md`).
 2. The structure: the acts and their beats in seconds for the film's length (`structure.md`).
 3. The scenes: one line each — what the audience learns in it, what it turns, what it sets up (`scenes.md`).
-4. The intensity curve over those scenes, highs against lows, the peak late (`retention.md`).
+4. The emotional journey and the intensity curve over those scenes: the feeling of every beat, tension against release, highs against lows, the peak late (`emotion.md`, `retention.md`); set on the timeline's Story track with `story_arc`.
 5. Show Samuel the transformation, the question, the hooks (`hook-writer`) and the scene list with its curve. Only
    then draft.
 6. Draft in the voice (`writing.md`); a film's script goes to the `director` for its shots.

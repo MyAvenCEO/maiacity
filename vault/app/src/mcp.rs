@@ -268,6 +268,11 @@ pub struct TensionPoint {
     pub t: f64,
     /// the tension there, 0 (released) … 1 (at its height)
     pub v: f64,
+    /// the feeling the viewer should have there — one word or two: curiosity, unease, confinement, longing, awe, relief,
+    /// pride, tenderness … The arc's feelings in order are the emotional journey: each contrasts with the one before,
+    /// the tension rising into the cold ones and released into the warm ones (the storyteller skill's emotion.md)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub feel: Option<String>,
 }
 
 #[derive(Deserialize, schemars::JsonSchema)]
@@ -937,7 +942,7 @@ impl Studio {
     }
 
     #[tool(
-        description = "Set a timeline's story structure — the Script tab's Story track: the thumbnail (one frame), the hook, act 1, act 2, act 3, the cliffhanger, each with what it does and its tension curve (rises and releases inside each part, the highest peak late, an open loop at the end). Replaces the sections it has; the picture, the sound and the captions stay."
+        description = "Set a timeline's story structure — the Script tab's Story track: the thumbnail (one frame), the hook, act 1, act 2, act 3, the cliffhanger, each with what it does and its tension curve (rises and releases inside each part, the highest peak late, an open loop at the end), and at the curve's points the feeling the viewer should have there (feel: curiosity, unease, awe, relief …) — the emotional journey, drawn on the arc line and listed in the script, that the sound, the grade and the cut follow. Replaces the sections it has; the picture, the sound and the captions stay."
     )]
     async fn story_arc(&self, Parameters(a): Parameters<ArcArgs>) -> String {
         let r = async {

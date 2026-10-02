@@ -210,8 +210,9 @@ export type TimelineClip = {
 	kind?: 'media' | 'world' | 'slate' | 'line' | 'section';
 	/** sections (S1): which part of the story */
 	section?: 'thumbnail' | 'hook' | 'act1' | 'act2' | 'act3' | 'cliffhanger';
-	/** sections: tension 0…1 at points 0…1 of its length */
-	tension?: { t: number; v: number }[];
+	/** sections: tension 0…1 at points 0…1 of its length, and the feeling the viewer should have there (curiosity, unease,
+	 *  awe …) — the emotional journey the story leads them through */
+	tension?: { t: number; v: number; feel?: string }[];
 	hash?: string;
 	shot?: string;
 	shotVersion?: number;

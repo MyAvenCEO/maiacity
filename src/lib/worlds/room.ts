@@ -29,8 +29,12 @@ const DOOR = { z0: 0.88, z1: 1.74, top: 2.0 } as const;
 const BULB = { x: 0, z: 0.3, drop: 0.32 } as const;
 /** the CB60 on its stand: by the door, towards the front corner, turned to look at the bed's foot */
 const CB60_AT = { x: -1.05, z: 2.0, pan: Math.PI - 0.55 } as const;
-/** the CB60 at full, in candela on its axis (three.js physical units) — from its lux at 1 m with the reflector */
-const CB60_CANDELA = 40;
+/**
+ * the CB60 at full, on its axis, in the room's own scale (the window and the bulb are tuned by eye, not in lux): with the
+ * reflector, where its hotspot lands it is several times the north window's noon light — as a real 18,000-lux-at-1-m
+ * head is against a north window (`neewer-cb60`, twin.md)
+ */
+const CB60_CANDELA = 60;
 /** the light through a north window: the open sky's by day, warmer when the sun is low, blue at dusk */
 const NORTH_SKY = new THREE.Color('#e3ebfc'), LOW_SKY = new THREE.Color('#ffe0c2'), DUSK_SKY = new THREE.Color('#7f98d4');
 
@@ -305,14 +309,19 @@ export async function mountRoom(container: HTMLElement, onProgress: (label: stri
 	// on (its `cb60` light)
 	const cb60 = neewerCb60({ height: 1.55, tilt: -0.22 });
 	place(cb60, CB60_AT.x, CB60_AT.z, CB60_AT.pan);
-	const cb60Light = new THREE.SpotLight('#fff1dc', 0, 9, 0.55, 0.45, 2);
+	// its beam as the stock reflector throws it: a 25° hotspot with a soft edge, and a dim spill out to about 88°
+	const cb60Light = new THREE.SpotLight('#ffefe4', 0, 14, 0.28, 0.5, 2);
 	cb60Light.castShadow = true;
 	cb60Light.shadow.mapSize.set(1024, 1024);
 	cb60Light.shadow.bias = -0.0015;
+	const cb60Spill = new THREE.SpotLight('#ffefe4', 0, 10, 0.77, 0.4, 2);
 	cb60.updateMatrixWorld(true);
-	cb60Light.position.copy(cb60.localToWorld((cb60.userData.beam as THREE.Vector3).clone()));
-	cb60Light.target.position.copy(cb60Light.position).add((cb60.userData.aim as THREE.Vector3).clone().applyAxisAngle(new THREE.Vector3(0, 1, 0), CB60_AT.pan));
-	scene.add(cb60Light, cb60Light.target);
+	const cb60Aim = (cb60.userData.aim as THREE.Vector3).clone().applyAxisAngle(new THREE.Vector3(0, 1, 0), CB60_AT.pan);
+	for (const l of [cb60Light, cb60Spill]) {
+		l.position.copy(cb60.localToWorld((cb60.userData.beam as THREE.Vector3).clone()));
+		l.target.position.copy(l.position).add(cb60Aim);
+		scene.add(l, l.target);
+	}
 	const cb60Face = cb60.userData.face as THREE.MeshStandardMaterial;
 
 	/* ── the door: a white flush door in its frame in the left wall, a lever handle, the vent at its foot ── */
@@ -408,7 +417,7 @@ export async function mountRoom(container: HTMLElement, onProgress: (label: stri
 		advance: () => {
 			bulbLight.intensity = bulbBase;
 			daylight.intensity = dayBase;
-			cb60Light.intensity = 0;
+			cb60Light.intensity = cb60Spill.intensity = 0;
 			cb60Face.emissiveIntensity = 0;
 		},
 		lights: {
@@ -419,10 +428,11 @@ export async function mountRoom(container: HTMLElement, onProgress: (label: stri
 			},
 			// the CB60: k = its dimmer (1 = full), its colour a Kelvin's or a gel's (`neewer-cb60`)
 			cb60: (k: number, color?: string) => {
-				cb60Light.intensity = CB60_CANDELA * k;
+				cb60Light.intensity = CB60_CANDELA * 0.93 * k;
+				cb60Spill.intensity = CB60_CANDELA * 0.07 * k;
 				cb60Face.emissiveIntensity = 2.5 * k;
 				if (color) {
-					cb60Light.color.set(color);
+					for (const l of [cb60Light, cb60Spill]) l.color.set(color);
 					cb60Face.emissive.set(color);
 				}
 			}

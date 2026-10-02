@@ -17,6 +17,12 @@
 	const PART = /** @type {Record<string, string>} */ ({ hook: 'Hook', act1: 'Act One', act2: 'Act Two', act3: 'Act Three', cliffhanger: 'Cliffhanger' });
 	const sections = $derived(s.clips.filter((c) => c.kind === 'section' && c.section !== 'thumbnail').sort((a, b) => a.start - b.start));
 	const thumbnail = $derived(s.clips.find((c) => c.kind === 'section' && c.section === 'thumbnail'));
+	/** the feelings the viewer goes through in a part, in order, each with whether the tension rises to it (↑) or is
+	 *  released into it (↓) @param {import('./studio.svelte.js').Clip} part */
+	const journey = (part) => {
+		const pts = [...(part.tension ?? [])].sort((a, b) => a.t - b.t);
+		return pts.flatMap((p, i) => (p.feel ? [{ feel: p.feel, up: i === 0 || p.v >= (pts[i - 1]?.v ?? 0) }] : []));
+	};
 	/** the part of the story a moment is in @param {number} t */
 	const partAt = (t) => sections.findLast((c) => t >= c.start - 0.05) ?? null;
 	/** the script's pages: each shot with its part, its scene, and whether a new part or scene starts with it */
@@ -131,6 +137,8 @@
 			{#if p.newPart && p.part}
 				<h2>{PART[p.part.section ?? ''] ?? p.part.section}</h2>
 				{#if p.part.text}<p class="intent">{p.part.text}</p>{/if}
+				{@const feels = journey(p.part)}
+				{#if feels.length}<p class="journey">The viewer: {#each feels as f, i (i)}{#if i} · {/if}<span>{f.feel} {f.up ? '↑' : '↓'}</span>{/each}</p>{/if}
 			{/if}
 			{#if p.newScene}<h3>{heading(p.scene)}</h3>{/if}
 			<!-- svelte-ignore a11y_click_events_have_key_events -->
@@ -252,6 +260,21 @@
 		text-align: center;
 		font-style: italic;
 		color: var(--ink-soft);
+	}
+
+	/* the emotional journey of a part: the feelings the viewer goes through, the tension rising (↑) or released (↓) */
+	.journey {
+		margin: -0.3rem auto 0.8rem;
+		max-width: 34em;
+		text-align: center;
+		font-size: 0.78em;
+		letter-spacing: 0.02em;
+		color: var(--ink-soft);
+	}
+
+	.journey span {
+		font-weight: 600;
+		color: var(--terracotta, #b86a43);
 	}
 
 	h3 {
