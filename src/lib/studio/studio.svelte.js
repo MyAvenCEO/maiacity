@@ -1054,58 +1054,77 @@ export class Studio {
 		// the sound tracks only: a video's picture on V1 plays its own sound through its player (at its volume — 0 once
 		// its sound is a clip of its own), never twice
 		const all = [...this.clips.filter((c) => onSoundTrack(c)), ...this.cueClips];
+		/** @type {string[]} */
+		const failed = [];
 		for (const c of all) {
-			const buf = c.hash ? this.sources[c.hash]?.buffer : undefined;
-			if (!buf || c.start + c.dur <= time) continue;
-			const from = Math.max(time, c.start); // timeline time the sound begins
-			const offset = c.in + (from - c.start); // how far into the file
-			const length = Math.min(c.start + c.dur - from, buf.duration - offset);
-			if (length <= 0.01 || offset >= buf.duration) continue;
-			const when = this.ctxStart + (from - time);
-			const src = ac.createBufferSource();
-			src.buffer = buf;
-			const gain = ac.createGain();
-			// the clip's own fades (a bed crossfades over a second or so), else a short one, so a cut never clicks
-			const fadeIn = from === c.start ? Math.max(0.01, c.fin ?? 0.06) : 0.02, fadeOut = Math.min(c.fout ?? 0.3, length / 2);
-			gain.gain.setValueAtTime(0, when);
-			gain.gain.linearRampToValueAtTime(c.vol, when + fadeIn);
-			// the music steps back while the voice speaks, and comes up again in the pauses (the render does the same)
-			if (c.track === 'A2')
-				for (const v of this.clips.filter((v) => v.track === 'A1' && v.start + v.dur > from && v.start < c.start + c.dur).sort((x, y) => x.start - y.start)) {
-					const a = this.ctxStart + (Math.max(from, v.start) - time), b = this.ctxStart + (v.start + v.dur - time);
-					if (a < when + fadeIn) continue;
-					gain.gain.setValueAtTime(c.vol, a - 0.15);
-					gain.gain.linearRampToValueAtTime(c.vol * DUCK, a);
-					gain.gain.setValueAtTime(c.vol * DUCK, b);
-					gain.gain.linearRampToValueAtTime(c.vol, b + 0.9);
-				}
-			gain.gain.setValueAtTime(c.vol, when + length - fadeOut);
-			gain.gain.linearRampToValueAtTime(0, when + length);
-			// its EQ, the render's own bands (game/film/sound.js)
-			/** @type {AudioNode} */
-			let node = src;
-			for (const b of cleanEq(c.eq)) {
-				const f = ac.createBiquadFilter();
-				f.type = b.type;
-				f.frequency.value = b.f;
-				f.gain.value = b.gain;
-				f.Q.value = webAudioQ(b);
-				node = node.connect(f);
+			// one clip that cannot be laid on the clock is said and skipped: it never silences the clips after it
+			try {
+				this.scheduleClip(ac, c, time);
+			} catch (e) {
+				failed.push(`${this.clipName(c)} [${c.track}]: ${/** @type {Error} */ (e).message}`);
 			}
-			// its gain keys (a breath, a sniff dipped), on a gain of their own under the fades and the ducking
-			const keys = cleanKeys(c.keys);
-			if (keys.length) {
-				const kg = ac.createGain();
-				const at = from - c.start; // seconds into the clip where it starts sounding
-				const lin = (/** @type {number} */ db) => Math.pow(10, db / 20);
-				kg.gain.setValueAtTime(lin(keyDb(keys, at)), when);
-				for (const [t, db] of keys) if (t > at && t < at + length) kg.gain.linearRampToValueAtTime(lin(db), when + (t - at));
-				node = node.connect(kg);
-			}
-			node.connect(gain).connect(ac.destination);
-			src.start(when, offset, length);
-			this.nodes.push({ src, gain });
 		}
+		if (failed.length) console.warn(`play: ${failed.length} sound clip(s) could not be laid on the clock —`, failed.slice(0, 8).join('; '));
+	}
+
+	/**
+	 * One sound clip on the clock. Every automation time is clamped to now or later: an audio clock just started is at
+	 * 0, and a time before it is refused (WebKit throws), which once stopped the whole playback's sound.
+	 * @param {AudioContext} ac @param {Clip} c @param {number} time
+	 */
+	scheduleClip(ac, c, time) {
+		const at = (/** @type {number} */ x) => Math.max(ac.currentTime, Number.isFinite(x) ? x : 0);
+		const buf = c.hash ? this.sources[c.hash]?.buffer : undefined;
+		if (!buf || c.start + c.dur <= time) return;
+		const from = Math.max(time, c.start); // timeline time the sound begins
+		const offset = Math.max(0, c.in + (from - c.start)); // how far into the file
+		const length = Math.min(c.start + c.dur - from, buf.duration - offset);
+		if (length <= 0.01 || offset >= buf.duration) return;
+		const vol = Number.isFinite(c.vol) ? Math.max(0, c.vol) : 1;
+		const when = this.ctxStart + (from - time);
+		const src = ac.createBufferSource();
+		src.buffer = buf;
+		const gain = ac.createGain();
+		// the clip's own fades (a bed crossfades over a second or so), else a short one, so a cut never clicks
+		const fadeIn = from === c.start ? Math.max(0.01, c.fin ?? 0.06) : 0.02, fadeOut = Math.min(c.fout ?? 0.3, length / 2);
+		gain.gain.setValueAtTime(0, at(when));
+		gain.gain.linearRampToValueAtTime(vol, at(when + fadeIn));
+		// the music steps back while the voice speaks, and comes up again in the pauses (the render does the same)
+		if (c.track === 'A2')
+			for (const v of this.clips.filter((v) => v.track === 'A1' && v.start + v.dur > from && v.start < c.start + c.dur).sort((x, y) => x.start - y.start)) {
+				const a = this.ctxStart + (Math.max(from, v.start) - time), b = this.ctxStart + (v.start + v.dur - time);
+				if (a < when + fadeIn) continue;
+				gain.gain.setValueAtTime(vol, at(Math.max(when + fadeIn, a - 0.15)));
+				gain.gain.linearRampToValueAtTime(vol * DUCK, at(a));
+				gain.gain.setValueAtTime(vol * DUCK, at(b));
+				gain.gain.linearRampToValueAtTime(vol, at(b + 0.9));
+			}
+		gain.gain.setValueAtTime(vol, at(Math.max(when + fadeIn, when + length - fadeOut)));
+		gain.gain.linearRampToValueAtTime(0, at(when + length));
+		// its EQ, the render's own bands (game/film/sound.js)
+		/** @type {AudioNode} */
+		let node = src;
+		for (const b of cleanEq(c.eq)) {
+			const f = ac.createBiquadFilter();
+			f.type = b.type;
+			f.frequency.value = b.f;
+			f.gain.value = b.gain;
+			f.Q.value = webAudioQ(b);
+			node = node.connect(f);
+		}
+		// its gain keys (a breath, a sniff dipped), on a gain of their own under the fades and the ducking
+		const keys = cleanKeys(c.keys);
+		if (keys.length) {
+			const kg = ac.createGain();
+			const into = from - c.start; // seconds into the clip where it starts sounding
+			const lin = (/** @type {number} */ db) => Math.pow(10, db / 20);
+			kg.gain.setValueAtTime(lin(keyDb(keys, into)), at(when));
+			for (const [t, db] of keys) if (t > into && t < into + length) kg.gain.linearRampToValueAtTime(lin(db), at(when + (t - into)));
+			node = node.connect(kg);
+		}
+		node.connect(gain).connect(ac.destination);
+		src.start(at(when), offset, length);
+		this.nodes.push({ src, gain });
 	}
 	/** how many sounds are laid on the clock (for the transport's readout, and the tests) */
 	scheduled = () => this.nodes.length;
@@ -1216,15 +1235,35 @@ export class Studio {
 		this.starting = true;
 		try {
 			await this.start(run);
+		} catch (e) {
+			// said in the app's log, and the transport back to stopped — never a playback half started
+			console.error('play:', e);
+			if (run === this.run) this.stop();
 		} finally {
 			if (run === this.run) this.starting = false;
 		}
 	}
 
 	/** @param {number} run */
+	/**
+	 * The audio clock running: resumed, and — when WebKit leaves it suspended or interrupted (the Mac slept, the output
+	 * changed) — a new one in its place (decoded sounds play on any). Says when it could not.
+	 */
+	async running() {
+		await this.audioCtx().resume().catch(() => {});
+		if (this.audioCtx().state === 'running') return;
+		const was = this.audioCtx().state;
+		this.silence();
+		void this.ctx?.close().catch(() => {});
+		this.ctx = null;
+		await this.audioCtx().resume().catch(() => {});
+		if (this.audioCtx().state !== 'running') console.warn(`play: the audio clock is ${this.audioCtx().state} (was ${was}) — the timeline plays silent`);
+	}
+
+	/** @param {number} run */
 	async start(run) {
 		if (this.time >= this.end - 0.02) this.time = 0;
-		await this.audioCtx().resume();
+		await this.running();
 		await Promise.all(
 			[...this.clips, ...this.cueClips].map((c) =>
 				c.hash
