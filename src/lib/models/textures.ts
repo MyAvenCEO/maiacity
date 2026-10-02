@@ -234,3 +234,92 @@ export function faceArt(): THREE.CanvasTexture {
 		x.fill();
 	});
 }
+
+/** Old red bricks in their mortar, for the kitchen's back wall: 24 × 7 cm bricks, the courses offset by half. The
+ *  canvas is 0.96 m across and 0.64 m high: repeat it at (width / 0.96, height / 0.64). */
+export function brick(): THREE.CanvasTexture {
+	return canvasTexture('brick', 960, 640, (x, r) => {
+		x.fillStyle = '#c9b8a2'; // the mortar
+		x.fillRect(0, 0, 960, 640);
+		const bw = 240, bh = 70, joint = 10;
+		for (let row = 0; row < 640 / (bh + joint); row++) {
+			const off = row % 2 ? bw / 2 : 0;
+			for (let col = -1; col < 960 / bw + 1; col++) {
+				const x0 = col * bw + off, y0 = row * (bh + joint);
+				const t = 0.75 + r() * 0.35;
+				x.fillStyle = `rgb(${Math.round(176 * t)},${Math.round(84 * t)},${Math.round(56 * t)})`;
+				x.fillRect(x0 + joint / 2, y0 + joint / 2, bw - joint, bh);
+				for (let i = 0; i < 60; i++) {
+					x.fillStyle = `rgba(${60 + r() * 60},${30 + r() * 30},${20 + r() * 20},${r() * 0.35})`;
+					x.fillRect(x0 + joint / 2 + r() * (bw - joint), y0 + joint / 2 + r() * bh, 2 + r() * 6, 2 + r() * 4);
+				}
+			}
+		}
+	});
+}
+
+/** Large pale stone tiles (60 × 120 cm) with thin grout, for the bathroom. The canvas is 1.2 m square: repeat it at
+ *  (width / 1.2, height / 1.2). */
+export function stoneTiles(): THREE.CanvasTexture {
+	return canvasTexture('stone-tiles', 600, 600, (x, r) => {
+		x.fillStyle = '#d9cdb9';
+		x.fillRect(0, 0, 600, 600);
+		for (let i = 0; i < 2500; i++) {
+			const v = 200 + r() * 30;
+			x.fillStyle = `rgba(${v},${v - 10},${v - 26},0.25)`;
+			x.fillRect(r() * 600, r() * 600, 1 + r() * 4, 1 + r() * 4);
+		}
+		x.fillStyle = 'rgba(150,138,118,0.7)';
+		for (const p of [0, 300]) x.fillRect(p, 0, 2, 600); // the joints: tiles 60 wide, 120 high
+		x.fillRect(0, 0, 600, 2);
+	});
+}
+
+/** The hallway's chalkboard: the wall by Samuel's door, painted with blackboard paint, the quote he wrote on it in
+ *  chalk. Not a board: the wall itself (src/lib/worlds/apartment.ts). */
+export function chalkboard(): THREE.CanvasTexture {
+	return canvasTexture('chalkboard', 450, 1000, (x, r) => {
+		x.fillStyle = '#1f201e';
+		x.fillRect(0, 0, 450, 1000);
+		for (let i = 0; i < 900; i++) {
+			x.fillStyle = `rgba(255,255,255,${r() * 0.05})`; // old chalk, wiped
+			x.fillRect(r() * 450, r() * 1000, 10 + r() * 60, 2 + r() * 10);
+		}
+		const lines = ['SUCCESS IS NO', 'ACCIDENT. IT IS', 'HARD WORK,', 'PERSEVERANCE,', 'LEARNING,', 'STUDYING AND', 'MOST OF ALL', 'LOVE OF WHAT', 'YOU ARE', 'DOING'];
+		x.fillStyle = 'rgba(236,234,226,0.86)';
+		x.font = '600 38px "Marker Felt", "Comic Sans MS", cursive';
+		lines.forEach((t, i) => {
+			x.save();
+			x.translate(40 + (i % 3) * 14, 120 + i * 62);
+			x.rotate(-0.08 + r() * 0.04);
+			x.fillText(t, 0, 0);
+			x.restore();
+		});
+	});
+}
+
+/** A canvas print for the hallway: a meadow under a big evening sky, soft and painterly — a picture, no one in it. */
+export function canvasMeadow(): THREE.CanvasTexture {
+	return canvasTexture('canvas-meadow', 600, 400, (x, r) => {
+		const sky = x.createLinearGradient(0, 0, 0, 260);
+		sky.addColorStop(0, '#9fb7cf');
+		sky.addColorStop(1, '#e9d9bf');
+		x.fillStyle = sky;
+		x.fillRect(0, 0, 600, 400);
+		for (let i = 0; i < 40; i++) {
+			x.fillStyle = `rgba(255,255,255,${0.15 + r() * 0.25})`;
+			x.beginPath();
+			x.ellipse(r() * 600, 40 + r() * 140, 30 + r() * 70, 8 + r() * 14, 0, 0, Math.PI * 2);
+			x.fill();
+		}
+		const field = x.createLinearGradient(0, 240, 0, 400);
+		field.addColorStop(0, '#8f9a5a');
+		field.addColorStop(1, '#5d6b38');
+		x.fillStyle = field;
+		x.fillRect(0, 240, 600, 160);
+		for (let i = 0; i < 1500; i++) {
+			x.fillStyle = `rgba(${90 + r() * 80},${100 + r() * 60},${40 + r() * 30},0.5)`;
+			x.fillRect(r() * 600, 240 + r() * 160, 1 + r() * 2, 2 + r() * 6);
+		}
+	});
+}

@@ -6,8 +6,10 @@
  * just before the window, a brown school chair by the left wall, the door across from the window in the left wall
  * near the front corner, the picture between the window and the front corner, the sheepskin at the foot of the bed, a
  * yellow Edison bulb on a short cord.
- * Its furniture is the 3D models' (src/lib/models). Walked like every sandbox (the kit's walker, at a room's pace) and
- * shot like every sandbox (connectFilm: `world.sandbox: 'room'`; the bulb is the shot's `lamps` light).
+ * Its furniture is the 3D models' (src/lib/models). It is one room of the Apartment of Samuel: its door opens onto the
+ * hallway, the kitchen and the bathroom beyond (./apartment.ts), one set to walk through. Walked like every sandbox
+ * (the kit's walker, at a room's pace; the door opens as you come to it) and shot like every sandbox (connectFilm:
+ * `world.sandbox: 'room'`; the bulb and the apartment's lamps are the shot's `lamps` light).
  *
  * Its axes: x across the room (−1.55 the left wall with the door, +1.55 the window wall: north), z along it (−2.25 the
  * back wall behind the bed, +2.25 the front wall), y up from the floor. Metres.
@@ -17,6 +19,7 @@ import { RectAreaLightUniformsLib } from 'three/addons/lights/RectAreaLightUnifo
 import { connectFilm, createSky, createStage, createWalker, filmDraws, filmHoldsSize } from '$lib/sandbox-kit';
 import { CRATE, bed, chair, crateTower, edisonBulb, framedPicture, neewerCb60, sheepskin, standIn } from '$lib/models/furniture';
 import { limedOak, plasterBump } from '$lib/models/textures';
+import { buildApartment, type Apartment, type Rect } from './apartment';
 
 /** The room's measure (m). */
 export const ROOM = { width: 3.1, length: 4.5, height: 2.55 } as const;
@@ -37,6 +40,10 @@ const CB60_AT = { x: -1.05, z: 2.0, pan: Math.PI - 0.55 } as const;
 const CB60_CANDELA = 60;
 /** the light through a north window: the open sky's by day, warmer when the sun is low, blue at dusk */
 const NORTH_SKY = new THREE.Color('#e3ebfc'), LOW_SKY = new THREE.Color('#ffe0c2'), DUSK_SKY = new THREE.Color('#7f98d4');
+/** and through the kitchen's and the bathroom's windows, which look south: the sunny side's, warmer */
+const SOUTH_SKY = new THREE.Color('#f6efe4');
+/** the door swung open into the room (radians), short of the light's stand */
+const DOOR_OPEN = 1.25;
 
 export type RoomHandle = { move: (x: number, y: number, hurry: boolean) => void; look: (dx: number, dy: number) => void; dispose: () => void };
 
@@ -58,8 +65,13 @@ export async function mountRoom(container: HTMLElement, onProgress: (label: stri
 	bulbLight.shadow.radius = 4;
 	const daylight = new THREE.RectAreaLight('#e8eefc', 3, WIN.z1 - WIN.z0, WIN.top - WIN.sill);
 	let bulbBase = 1.6, dayBase = 3;
+	// the hour (as the sky last gave it), the rest of the apartment (built below) and how far the door stands open
+	let hour = { day: 1, low: 0, night: 0 };
+	let apt: Apartment | undefined;
+	let doorAngle = 0;
 	const sky = createSky(renderer, scene, {
-		shadowReach: 9,
+		// round the room the shadows reach the whole apartment: past their reach the sun would shine through its walls
+		shadowReach: 9.8,
 		shadowMap: 2048,
 		// a room is small: the sun stands near and its shadows' depth is short, so their bias (a share of that depth)
 		// stays a centimetre — over a sky's 1400 m it is half a metre, and the sun shone in over the walls' tops
@@ -81,6 +93,8 @@ export async function mountRoom(container: HTMLElement, onProgress: (label: stri
 			daylight.color.copy(NORTH_SKY).lerp(LOW_SKY, low * day).lerp(DUSK_SKY, 1 - day);
 			// indoors the open sky's fill reaches only through the window: by night it is the bulb's room
 			fill.intensity *= 0.35 + 0.65 * day;
+			hour = { day, low, night };
+			lightApartment();
 		}
 	});
 	onProgress('Building the room');
@@ -165,16 +179,18 @@ export async function mountRoom(container: HTMLElement, onProgress: (label: stri
 		s.renderOrder = 1;
 		scene.add(s);
 	};
-	// on each wall, at the floor (rising) and at the ceiling (falling)
+	// on each wall, at the floor (rising) and at the ceiling (falling) — at the floor not across the door, which opens
 	for (const [len, at, rotY] of [
 		[ROOM.width, new THREE.Vector3(0, 0, -L + 0.002), 0],
 		[ROOM.length, new THREE.Vector3(-W + 0.002, 0, 0), Math.PI / 2],
 		[ROOM.length, new THREE.Vector3(W - 0.002, 0, 0), -Math.PI / 2],
 		[ROOM.width, new THREE.Vector3(0, 0, L - 0.002), Math.PI]
 	] as const) {
-		strip(len, 0.35, at.clone().setY(0.175), new THREE.Euler(0, rotY, Math.PI));
+		if (rotY !== Math.PI / 2) strip(len, 0.35, at.clone().setY(0.175), new THREE.Euler(0, rotY, Math.PI));
 		strip(len, 0.3, at.clone().setY(H - 0.15), new THREE.Euler(0, rotY, 0));
 	}
+	for (const [z0, z1] of [[-L, DOOR.z0], [DOOR.z1, L]] as const)
+		strip(z1 - z0, 0.35, new THREE.Vector3(-W + 0.002, 0.175, (z0 + z1) / 2), new THREE.Euler(0, Math.PI / 2, Math.PI));
 
 	/* ── the window: a white tilt-and-turn window, its glass, a stone sill, the radiator, the curtain knotted aside ── */
 	const wx = W + RT - 0.07; // the frame sits towards the outside of the reveal
@@ -283,6 +299,9 @@ export async function mountRoom(container: HTMLElement, onProgress: (label: stri
 	outside.add(ground);
 	scene.add(outside);
 
+	/* ── the rest of the apartment: the hallway beyond the door, the kitchen, the bathroom (./apartment.ts) ── */
+	const flat = (apt = buildApartment(scene, outside, box, mat, H, T));
+
 	/* ── the furniture (the 3D models) ── */
 	const place = (o: THREE.Object3D, x: number, z: number, rotY = 0, y = 0) => {
 		o.position.set(x, y, z);
@@ -336,26 +355,60 @@ export async function mountRoom(container: HTMLElement, onProgress: (label: stri
 		sets[name] = o;
 	}
 
-	/* ── the door: a white flush door in its frame in the left wall, a lever handle, the vent at its foot ── */
+	/* ── the door: a white flush door in its frame in the left wall, a lever handle on each face, the vent at its foot;
+	   it swings into the room on its hinges at the front corner's side ── */
 	const dz = (DOOR.z0 + DOOR.z1) / 2;
-	const door = box(0.04, DOOR.top - 0.01, DOOR.z1 - DOOR.z0 - 0.02, mat.white, -W + 0.02, DOOR.top / 2, dz);
-	door.receiveShadow = true;
-	for (const [d, h, z, y] of [
-		[0.06, DOOR.top + 0.06, DOOR.z0 - 0.025, (DOOR.top + 0.06) / 2],
-		[0.06, DOOR.top + 0.06, DOOR.z1 + 0.025, (DOOR.top + 0.06) / 2],
-		[DOOR.z1 - DOOR.z0 + 0.11, 0.06, dz, DOOR.top + 0.03]
-	] as const)
-		box(0.03, h, d, mat.white, -W + 0.015, y, z, false);
-	// the handle on the side away from the hinges (the hinges at the front corner's side): a rose, a lever
+	const hinge = new THREE.Group();
+	hinge.position.set(-W + 0.02, 0, DOOR.z1 - 0.01);
+	scene.add(hinge);
+	const doorLeaf = box(0.04, DOOR.top - 0.01, DOOR.z1 - DOOR.z0 - 0.02, mat.white, -W + 0.02, DOOR.top / 2, dz);
+	doorLeaf.receiveShadow = true;
+	hinge.attach(doorLeaf);
+	// the frame, on the room's face of the wall and on the hallway's
+	for (const fx of [-W + 0.015, -W - T - 0.015])
+		for (const [d, h, z, y] of [
+			[0.06, DOOR.top + 0.06, DOOR.z0 - 0.025, (DOOR.top + 0.06) / 2],
+			[0.06, DOOR.top + 0.06, DOOR.z1 + 0.025, (DOOR.top + 0.06) / 2],
+			[DOOR.z1 - DOOR.z0 + 0.11, 0.06, dz, DOOR.top + 0.03]
+		] as const)
+			box(0.03, h, d, mat.white, fx, y, z, false);
+	// on each face (the room's, then the hallway's), on the side away from the hinges: a rose, a lever, the lock's
+	// plate; and the vent's slats at the foot
 	const hz = DOOR.z0 + 0.1;
-	const rose = new THREE.Mesh(new THREE.CylinderGeometry(0.025, 0.025, 0.01, 20), mat.handle);
-	rose.rotation.z = Math.PI / 2;
-	rose.position.set(-W + 0.045, 1.05, hz);
-	scene.add(rose);
-	box(0.02, 0.018, 0.13, mat.handle, -W + 0.06, 1.05, hz + 0.055, false);
-	box(0.006, 0.06, 0.025, mat.handle, -W + 0.043, 0.98, hz, false);
-	// the vent: slats at the door's foot
-	for (let i = 0; i < 5; i++) box(0.006, 0.008, 0.42, mat.vent, -W + 0.041, 0.05 + i * 0.012, dz, false);
+	for (const [face, s] of [[-W + 0.04, 1], [-W, -1]] as const) {
+		const rose = new THREE.Mesh(new THREE.CylinderGeometry(0.025, 0.025, 0.01, 20), mat.handle);
+		rose.rotation.z = Math.PI / 2;
+		rose.position.set(face + s * 0.005, 1.05, hz);
+		scene.add(rose);
+		hinge.attach(rose);
+		hinge.attach(box(0.02, 0.018, 0.13, mat.handle, face + s * 0.02, 1.05, hz + 0.055, false));
+		hinge.attach(box(0.006, 0.06, 0.025, mat.handle, face + s * 0.003, 0.98, hz, false));
+		for (let i = 0; i < 5; i++) hinge.attach(box(0.006, 0.008, 0.42, mat.vent, face + s * 0.001, 0.05 + i * 0.012, dz, false));
+	}
+	// swing the door to an angle (0 shut): the bulb's shadows have the door in them, so they are drawn again
+	const swing = (to: number) => {
+		if (Math.abs(to - doorAngle) < 1e-4) return;
+		doorAngle = to;
+		hinge.rotation.y = -to;
+		renderer.shadowMap.needsUpdate = true;
+	};
+	// the apartment's lamps and its windows' light, as the hour has them (and a shot's `lamps`, k) — only while one
+	// can see out of the room, its door open or oneself outside it: what is behind a shut door does not light the room
+	function lightApartment(k = 1, color?: string) {
+		if (!apt) return;
+		const seen = doorAngle > 0.01 || camera.position.x < -W;
+		for (const l of apt.lamps) {
+			l.light.intensity = seen ? (1 + 1.2 * hour.night) * l.share * k : 0;
+			l.light.color.copy(l.color);
+			if (color) l.light.color.set(color);
+			if (l.glass) l.glass.emissiveIntensity = l.glow * (0.4 + 0.9 * hour.night) * k;
+		}
+		for (const d of apt.daylights) {
+			d.intensity = seen ? dayBase : 0;
+			d.color.copy(SOUTH_SKY).lerp(LOW_SKY, hour.low * hour.day).lerp(DUSK_SKY, 1 - hour.day);
+		}
+	}
+	lightApartment();
 
 	/* ── in the walls and on the ceiling: the round flush boxes, the smoke detector ── */
 	for (const [x, y, z, ry] of [
@@ -389,7 +442,7 @@ export async function mountRoom(container: HTMLElement, onProgress: (label: stri
 	});
 
 	/* ── walking it: at a room's pace, kept off the walls and out of the furniture ── */
-	const solid: [number, number, number, number][] = [
+	const solid: Rect[] = [
 		[bedAt.x - bedAt.w / 2 - 0.05, bedAt.x + bedAt.w / 2 + 0.05, -L, -L + bedAt.len + 0.06], // the bed
 		[leftX - CRATE.w / 2, leftX + CRATE.w / 2, -L, -L + CRATE.d + 0.02],
 		[rightX - CRATE.w / 2, rightX + CRATE.w / 2, -L, -L + CRATE.d + 0.02],
@@ -399,16 +452,27 @@ export async function mountRoom(container: HTMLElement, onProgress: (label: stri
 		[CB60_AT.x - 0.4, CB60_AT.x + 0.4, CB60_AT.z - 0.4, CB60_AT.z + 0.4] // the light's stand
 	];
 	const M = 0.18; // how close to a wall or a thing you may stand
+	// the floors one may stand on: the room, its doorway, the apartment's rooms and doorways
+	const floors: Rect[] = [[-W + M, W - M, -L + M, L - M], [-W - T - M - 0.1, -W + M + 0.02, DOOR.z0 + M, DOOR.z1 - M], ...flat.walk];
+	const things: Rect[] = [...solid, ...flat.solid];
 	const canStand = (x: number, z: number) =>
-		Math.abs(x) < W - M && z > -L + M && z < L - M && !solid.some(([x0, x1, z0, z1]) => x > x0 - M && x < x1 + M && z > z0 - M && z < z1 + M);
+		floors.some(([x0, x1, z0, z1]) => x > x0 && x < x1 && z > z0 && z < z1) &&
+		!things.some(([x0, x1, z0, z1]) => x > x0 - M && x < x1 + M && z > z0 - M && z < z1 + M);
 	const walker = createWalker(camera, renderer.domElement, { x: -0.3, z: 1.75, yaw: 0.12, pitch: -0.05, eye: 1.62, walk: 1.3, hurry: 2.6, stride: 0.12, canStand });
 	onProgress('ready');
 
+	// the door opens as one comes to it (walking; in a shot it stands as the shot has it) and shuts behind
+	const doorAt = { x: -W - T / 2, z: dz };
 	let frame = 0, last = performance.now();
 	const tick = () => {
-		const now = performance.now();
-		walker.update(Math.min(0.1, (now - last) / 1000));
-		sky.follow(0, 0); // the room stands still: its shadows are always the room's
+		const now = performance.now(), dt = Math.min(0.1, (now - last) / 1000);
+		walker.update(dt);
+		if (!filmDraws()) {
+			const to = Math.hypot(camera.position.x - doorAt.x, camera.position.z - doorAt.z) < 1.4 ? DOOR_OPEN : 0;
+			swing(doorAngle + Math.sign(to - doorAngle) * Math.min(Math.abs(to - doorAngle), dt * 2.2));
+			lightApartment();
+		}
+		sky.follow(0, 0); // the apartment stands still: its shadows are always its own
 		sky.tick(now);
 		if (!filmDraws()) renderer.render(scene, camera);
 		stage.adapt(now, filmHoldsSize());
@@ -431,12 +495,16 @@ export async function mountRoom(container: HTMLElement, onProgress: (label: stri
 			daylight.intensity = dayBase;
 			cb60Light.intensity = cb60Spill.intensity = 0;
 			cb60Face.emissiveIntensity = 0;
+			// a shot from the hallway looks in through the open door; from inside the room the door is shut
+			swing(camera.position.x < -W ? DOOR_OPEN : 0);
+			lightApartment();
 		},
 		lights: {
 			lamps: (k: number, color?: string) => {
 				bulbLight.intensity = bulbBase * k;
 				glass.emissiveIntensity *= k;
 				if (color) bulbLight.color.set(color);
+				lightApartment(k, color);
 			},
 			// the CB60: k = its dimmer (1 = full), its colour a Kelvin's or a gel's (`neewer-cb60`)
 			cb60: (k: number, color?: string) => {

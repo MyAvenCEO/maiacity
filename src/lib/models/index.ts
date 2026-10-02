@@ -1,10 +1,13 @@
 /*
  * THE 3D MODELS — every reusable model, as the 3D models viewer (/app/models/) lists it: its name, what it is, where
- * it is used, and the function that builds it (./furniture.ts). A world places them (src/lib/worlds); a new one is a
- * function there and a line here.
+ * it is used, and the function that builds it (./furniture.ts, ./hallway.ts, ./kitchen.ts, ./bathroom.ts). A world
+ * places them (src/lib/worlds); a new one is a function there and a line here.
  */
 import type * as THREE from 'three';
 import { bed, chair, crateTower, edisonBulb, framedPicture, neewerCb60, sheepskin, standIn, truck, wineCrate } from './furniture';
+import { barCounter, barStool, canvasPrint, coatStand, door, palletShelf, pendantLamp, retroFridge } from './hallway';
+import { gasBoiler, kitchenRun, panRail, pedalBin, xShelf } from './kitchen';
+import { glassShower, towelRadiator, washbasin, wallToilet } from './bathroom';
 
 export type Model = { id: string; label: string; note: string; usedIn: string; make: () => THREE.Object3D };
 
@@ -20,5 +23,24 @@ export const MODELS: Model[] = [
 	{ id: 'framed-picture', label: 'Framed picture', note: 'a painted face in a slim orange frame, 50 × 65 cm', usedIn: 'The room', make: () => framedPicture() },
 	{ id: 'sheepskin', label: 'Sheepskin', note: 'a white sheepskin rug, about 1 × 0.7 m', usedIn: 'The room', make: () => sheepskin() },
 	{ id: 'stand-in', label: 'Stand-in', note: 'a neutral clay figure of 1.80 m — standing, sitting on an edge, or fallen back — to block shots before they are filmed', usedIn: 'The room', make: () => standIn('sit') },
+	{ id: 'retro-fridge', label: 'Retro fridge', note: 'a small red fridge, rounded and glossy, its chrome lever on the left, 56 × 63 × 95 cm', usedIn: 'The hallway', make: () => retroFridge() },
+	{ id: 'bar-counter', label: 'Bar counter', note: 'a thick rustic plank along a wall at 1.05 m, 45 cm deep, on black steel brackets', usedIn: 'The hallway', make: () => barCounter() },
+	{ id: 'bar-stool-red', label: 'Bar stool, red', note: 'a round seat at 75 cm on four splayed tubes, a foot ring', usedIn: 'The hallway', make: () => barStool('red') },
+	{ id: 'bar-stool-white', label: 'Bar stool, white', note: 'the same stool, white', usedIn: 'The hallway', make: () => barStool('white') },
+	{ id: 'pallet-shelf', label: 'Pallet shelf', note: 'old pallet wood on the wall, 2 m long, a low rail at its front', usedIn: 'The hallway', make: () => palletShelf() },
+	{ id: 'enamel-pendant', label: 'Enamel pendant', note: 'a red enamel shade, white inside, on a black cord', usedIn: 'The hallway', make: () => pendantLamp() },
+	{ id: 'coat-stand', label: 'Coat stand', note: 'a black pole on a round foot, hooks at the top, 1.75 m', usedIn: 'The hallway', make: () => coatStand() },
+	{ id: 'canvas-print', label: 'Canvas print', note: 'a meadow under an evening sky, on a stretcher frame, 1.0 × 0.66 m', usedIn: 'The hallway', make: () => canvasPrint() },
+	{ id: 'door', label: 'Door', note: 'an interior door in its frame, 86 × 200 cm, a lever handle each side, the vent at its foot', usedIn: 'The hallway', make: () => door() },
+	{ id: 'door-mirror', label: 'Door with a mirror', note: 'the bathroom door, a mirror on its inside, standing open', usedIn: 'The bathroom', make: () => door({ finish: 'mirror', open: 1.2 }) },
+	{ id: 'kitchen-run', label: 'Kitchen run', note: 'washing machine, oven under a four-burner gas hob, drawers, black sink: 60 cm modules under a rustic worktop at 90 cm', usedIn: 'The kitchen', make: () => kitchenRun() },
+	{ id: 'x-shelf', label: 'X-shelf', note: 'a tall open shelf of light wood, X braces on its sides and back, 45 × 40 × 190 cm', usedIn: 'The kitchen', make: () => xShelf() },
+	{ id: 'gas-boiler', label: 'Gas boiler', note: 'the white box on the wall, its flue up, its pipes below, 44 × 72 × 34 cm', usedIn: 'The kitchen', make: () => gasBoiler() },
+	{ id: 'pan-rail', label: 'Pan rail', note: 'a steel rail on the wall, a wok and a pot hanging from it', usedIn: 'The kitchen', make: () => panRail() },
+	{ id: 'pedal-bin', label: 'Pedal bin', note: 'red, its lid domed, 30 cm across, 65 cm high', usedIn: 'The kitchen', make: () => pedalBin() },
+	{ id: 'wall-toilet', label: 'Wall-hung WC', note: 'the bowl off the floor, its seat at 42 cm, the flush plate on the wall above', usedIn: 'The bathroom', make: () => wallToilet() },
+	{ id: 'washbasin', label: 'Washbasin', note: 'a wall-hung basin, 60 × 42 cm, its spout from the wall', usedIn: 'The bathroom', make: () => washbasin() },
+	{ id: 'glass-shower', label: 'Glass shower', note: 'frameless glass, a rain head under the ceiling, a hand shower on its rail', usedIn: 'The bathroom', make: () => glassShower() },
+	{ id: 'towel-radiator', label: 'Towel radiator', note: 'white, a ladder of round rails, 50 × 140 cm', usedIn: 'The bathroom', make: () => towelRadiator() },
 	{ id: 'truck', label: 'Truck', note: 'a cab and a box trailer, about 16 × 2.55 × 4 m', usedIn: 'The tired land', make: () => truck({ cab: '#a33a2a', box: '#e0ddd6' }) }
 ];
