@@ -32,7 +32,7 @@ for (const d of readdirSync('inspire-me', { withFileTypes: true })) {
 		writeFileSync(file, Buffer.from(await res.arrayBuffer()));
 		const out = execFileSync('bun', ['api/scripts/media.ts', 'add', file, '--title', `${d.name} · video thumbnail`,
 			'--tags', `role:source-thumbnail,youtube:${id}`, '--public', ...(process.argv.includes('--local') ? ['--local'] : [])], { encoding: 'utf8' });
-		const cid = /(?:stored|known) +(baf[a-z2-7]+)/.exec(out)?.[1];
+		const cid = /(?:added|known) +([0-9a-f]{64})/.exec(out)?.[1]; // the library names a file by its BLAKE3 hash
 		if (!cid) throw new Error(`${id}: not added — ${out}`);
 		writeFileSync(readme, text.replace(/^(source:.*)$/m, `$1\nthumbnail: ${cid}.jpg`));
 		console.log(`${d.name}: ${id} (${size}) → ${cid}`);
