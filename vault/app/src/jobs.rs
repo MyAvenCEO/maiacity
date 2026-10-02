@@ -488,7 +488,7 @@ pub async fn ready_to_run(vault: &vault_core::Vault, kind: Kind, subject: &str) 
         waiting(kind, subject, "after the ingest");
         vault.hold.free_of("ingest").await;
     }
-    while crate::proxies::pressure() > 1 {
+    while crate::proxies::short_of_memory() {
         waiting(kind, subject, "waiting for memory");
         tokio::time::sleep(Duration::from_secs(5)).await;
     }
@@ -557,7 +557,7 @@ pub fn jobs_list(app: tauri::State<'_, crate::App>, limit: Option<usize>) -> Res
     crate::gate()?;
     let mut j = list(limit.unwrap_or(200));
     j.holds = app.vault.hold.now();
-    if crate::proxies::pressure() > 1 {
+    if crate::proxies::short_of_memory() {
         j.holds.push("memory".into());
     }
     Ok(j)

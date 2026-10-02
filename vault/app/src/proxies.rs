@@ -63,7 +63,7 @@ pub fn vault_hold(app: tauri::State<'_, crate::App>) -> crate::Res<Vec<String>> 
 }
 
 /// How short of memory the Mac is, as macOS itself says (`kern.memorystatus_vm_pressure_level`): 1 normal, 2 warning,
-/// 4 critical. A proxy starts only at 1.
+/// 4 critical. The heavy work waits while it is short (`short_of_memory`).
 pub fn pressure() -> u32 {
     let mut level: u32 = 1;
     let mut len = std::mem::size_of::<u32>();
@@ -72,6 +72,26 @@ pub fn pressure() -> u32 {
         libc::sysctlbyname(c"kern.memorystatus_vm_pressure_level".as_ptr(), (&mut level as *mut u32).cast(), &mut len, std::ptr::null_mut(), 0)
     };
     if ok == 0 { level } else { 1 }
+}
+
+/// Too short of memory to start heavy work (a proxy, a render, a transcript): macOS says critical — or warning while
+/// less than 15 % of the memory is free. macOS keeps saying "warning" long after memory came back (42 % free and
+/// still level 2); waiting on that alone held every job for good.
+pub fn short_of_memory() -> bool {
+    match pressure() {
+        1 => false,
+        2 => free_share().is_some_and(|f| f < 15),
+        _ => true,
+    }
+}
+
+/// How much of the memory is free now, in percent (`kern.memorystatus_level`), when macOS says.
+fn free_share() -> Option<u32> {
+    let mut level: u32 = 0;
+    let mut len = std::mem::size_of::<u32>();
+    // SAFETY: sysctlbyname writes at most `len` bytes into `level`; the name is NUL-terminated.
+    let ok = unsafe { libc::sysctlbyname(c"kern.memorystatus_level".as_ptr(), (&mut level as *mut u32).cast(), &mut len, std::ptr::null_mut(), 0) };
+    (ok == 0).then_some(level)
 }
 
 /// A LUT for the studio's viewer, baked here from the same maths the proxies and the render use: a profile's journey

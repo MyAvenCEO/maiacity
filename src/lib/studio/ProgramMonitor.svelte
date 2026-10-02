@@ -250,7 +250,7 @@
 			hour: e.hour,
 			pose: e.pose,
 			fov: e.fov,
-			note: s.world.state === 'loading' ? 'Starting the world…' : s.world.state === 'ready' ? 'Preparing this shot…' : 'World viewer unavailable — placeholder (no HD proxy yet)'
+			note: s.world.state === 'loading' ? 'Starting the world…' : s.world.state === 'ready' ? 'Preparing this shot…' : s.world.state === 'off' ? 'No HD proxy of this shot version yet — the Mac renders it (Jobs · World proxy); the 3D tab plays it live' : `World viewer unavailable${s.world.error ? ` — ${s.world.error}` : ''} · stand-in`
 		});
 	});
 

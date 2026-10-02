@@ -115,8 +115,10 @@ export class WorldViewer {
 					this.film = film;
 					this.state = 'ready';
 					return;
-				} catch {
-					break;
+				} catch (e) {
+					// said, and asked again: a world that could not get ready once (a shader, a load) often can the next time
+					this.error = `ready: ${/** @type {Error} */ (e)?.message ?? e}`;
+					console.warn(`world: ${this.error}`);
 				}
 			}
 			const waited = performance.now() - t0;

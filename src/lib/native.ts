@@ -20,8 +20,21 @@ export function forwardConsole(win: Window, from: string) {
 	const w = win as Window & { __forwarded?: boolean; console: Console };
 	if (w.__forwarded) return;
 	w.__forwarded = true;
-	const text = (args: unknown[]) =>
-		args.map((a) => (a instanceof Error ? (a.stack ?? a.message) : typeof a === 'string' ? a : JSON.stringify(a))).join(' ').slice(0, 4000);
+	// an error says its name, message and where (WebKit's stack can be empty; a DOMException stringifies to {})
+	const one = (a: unknown): string => {
+		if (typeof a === 'string') return a;
+		if (a instanceof Error || (a && typeof a === 'object' && 'message' in a)) {
+			const e = a as Error;
+			return [`${e.name ?? 'Error'}: ${e.message ?? ''}`, e.stack].filter(Boolean).join('\n');
+		}
+		if (a === undefined) return 'undefined';
+		try {
+			return JSON.stringify(a) ?? String(a);
+		} catch {
+			return String(a);
+		}
+	};
+	const text = (args: unknown[]) => args.map(one).join(' ').slice(0, 4000);
 	const send = (level: string, message: string) => void command('log_js', { level, from, message }).catch(() => {});
 	for (const level of ['warn', 'error'] as const) {
 		const was = w.console[level].bind(w.console);

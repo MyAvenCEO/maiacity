@@ -81,11 +81,12 @@ pub async fn sweep(handle: AppHandle, vault: Arc<Vault>) {
         let auth = handle.state::<Auth>().inner().clone();
         // this Mac's turn first — after the proxies queued before, after an ingest, with memory to spare — and only
         // then a job: one claimed here never waits behind other work
-        let turn = jobs::hidden_turn(jobs::Lane::Gpu, "render-queue").await;
+        // memory first, then the lane: waiting for memory while holding the GPU lane held every other job too
         vault.hold.free_of("ingest").await;
-        while proxies::pressure() > 1 {
+        while proxies::short_of_memory() {
             tokio::time::sleep(Duration::from_secs(5)).await;
         }
+        let turn = jobs::hidden_turn(jobs::Lane::Gpu, "render-queue").await;
         let job = match auth.call("POST", "/api/renders/claim", None).await {
             Ok((200..=299, job)) if job.is_object() => job,
             Ok((status, _)) if status >= 400 => {
