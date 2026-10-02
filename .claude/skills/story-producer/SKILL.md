@@ -46,8 +46,8 @@ be *based on* a true story, re-enacted, never made up), **full conviction** (a v
 
 Story before production, always.
 
-1. **Story** (`storyteller`): the transformation, the arching question, the arc as beats with their intensity. Show
-   Samuel before drafting.
+1. **Story** (`storyteller`): the transformation, the arching question, the arc as beats with their feeling and their
+   intensity — the emotional journey (`emotion.md`), set on the Story track. Show Samuel before drafting.
 2. **Hooks** (`hook-writer`): at least ten, annotated, one kept for the first line, one for the title, one for the
    title card.
 3. **Draft** (`storyteller`): the post, or the film's script — scene by scene, each scene a step.

@@ -52,7 +52,8 @@ density, and keeps the judgement honest.
 
 ## A colour arc: from the cold old world to the warm new one
 
-Draw a colour script before grading: one small frame per story beat, a few colours each, side by side (Pixar's, begun by
+Start from the story's emotional journey (`storyteller`, `emotion.md`): the colour arc is its warmth. Draw a colour
+script before grading: one small frame per story beat, a few colours each, side by side (Pixar's, begun by
 Ralph Eggleston on *Toy Story*). Grade one hero still per beat and lay those out the same way. Give each beat a gamut
 mask — the hues it may use (James Gurney): small and near the centre feels muted, large feels vivid.
 

@@ -35,6 +35,8 @@ it unscored. *No Country for Old Men* holds about sixteen minutes of music, cred
 
 The spotting pass for a 3–5 minute film from a cold low to a warm high:
 
+0. **Read the emotional journey first** (`storyteller`, `emotion.md`; the Story track's feelings): the score changes
+   where the feeling changes — a cold feeling gets a sparse, low, unresolved bed, a release a resolved swell.
 1. **Watch it without music**, voice and beds only. Mark each beat of the intensity curve, and where the feeling
    already lands: those are silence or bed-only candidates.
 2. **Spot the silences first:** the cold open (bed only), the line before the turn, the breath before the last line.
