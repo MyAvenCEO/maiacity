@@ -100,11 +100,14 @@ The river in Munich from the Wittelsbacherbrücke south to the railway bridge (t
   rise, the pavilions and the pillar's height are estimates from photos.
 - **The railway bridge:** three spans of about 48.5 m on stone piers, the two tracks on plate girders, the catenary,
   and on its downstream side the old lattice truss. Its piers' places are estimated from the ground and its length.
+  By it on the west bank, Hefner-Alteneck-Straße crosses the Westermühlbach's mouth on a sprayed concrete slab.
 - **The skyline:** the houses round it from their footprints and storeys; St. Maximilian's two towers north beyond
   the bridge; the Heizkraftwerk Süd's chimneys (176, 130, 90 m) south beyond the railway bridge.
 - **Walked** along the east bank and into the river: wading over the gravel, swimming where it is deep (the current
-  carries a swimmer downstream), not up the west bank nor over the dike; up the ramps at the bridge's east end and
-  across its deck between the parapets. **Filmed** as `world.sandbox: 'isar'`; its lights are the shot's `lamps`
+  carries a swimmer downstream), not over the dike; up the ramps at the bridge's east end and across its deck between
+  the parapets; and on the west bank along its riverside way — Wittelsbacherstraße's pavement, the path on the bank,
+  Hefner-Alteneck-Straße over the Westermühlbach's mouth (its own concrete bridge) — and down the wooded bank to the
+  water, not into the town behind it. **Filmed** as `world.sandbox: 'isar'`; its lights are the shot's `lamps`
   (the bridge's lanterns). Close to the camera the grass grows in blades and the trees are drawn full: both follow
   the shot's camera, so a shot renders the same every time.
 - **The sky turns as Munich's does** (`createSky({ map: true })`): the sun rises over the east bank, stands in the

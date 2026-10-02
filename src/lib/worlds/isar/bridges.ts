@@ -13,13 +13,16 @@
  * piers, the two tracks on solid steel girders, and on its downstream side the old lattice truss that was kept; the
  * catenary over the tracks. Where its piers stand is estimated from the survey's ground and its length.
  *
+ * And on the west bank by the railway bridge, Hefner-Alteneck-Straße crosses the Westermühlbach's mouth on a plain
+ * concrete bridge, sprayed along its face to the river: the riverside way on the west bank runs over it.
+ *
  * Each is built in its own frame (t along it from its west end, c across it, y up) and handed to the world with what
- * the walker needs: the deck's height where one may walk on it, and where the ground under a bridge is no place to
- * stand (a pier, or too little headroom under an arch).
+ * the walker needs: the decks' height where one may walk on them, and where the ground under a bridge is no place to
+ * stand (a pier, an abutment, or too little headroom under an arch).
  */
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
-import { MAP, points } from './map';
+import { ACROSS, MAP, nOf, points, sOf } from './map';
 import { ashlar, graffiti, gravel, road } from './surfaces';
 import { bridgeLamp, equestrianStatue, limestoneMaterial } from '$lib/models/outdoor';
 import { instances } from './green';
@@ -73,7 +76,8 @@ function prism(outline: P2[], y0: number, y1: number) {
 
 export type Bridges = {
 	group: THREE.Group;
-	/** the height of the Wittelsbacherbrücke's deck where one may walk on it (its road and pavements), else null */
+	/** the height of a deck where one may walk on it (the Wittelsbacherbrücke's road and pavements, the canal mouth's
+	 *  street), else null */
 	deckAt: (x: number, z: number) => number | null;
 	/** whether the ground at x, z is clear to stand on for someone whose feet are at y (no pier, headroom under an arch) */
 	clear: (x: number, z: number, y: number) => boolean;
@@ -505,11 +509,108 @@ export function buildBridges(groundAt: (x: number, z: number) => number): Bridge
 	}
 	mesh(truss, oldSteel);
 
+	/* ══ HEFNER-ALTENECK-STRASSE OVER THE WESTERMÜHLBACH'S MOUTH ═════════════════════════════════════════════════ */
+	// a concrete slab from street to street over the channel's mouth, its kerbed pavements and steel railings, its face
+	// to the river sprayed (the photos, July 2023)
+	const mouthWay = MAP.paths.find((p) => p.b && p.hw === 'residential' && points(p.pts).every(([x, z]) => sOf(x, z) > -300 && sOf(x, z) < -180 && nOf(x, z) < -20));
+	let mouthDeck: (x: number, z: number) => number | null = () => null;
+	let mouthClear: (x: number, z: number, y: number) => boolean = () => true;
+	if (mouthWay) {
+		const mp = points(mouthWay.pts);
+		const ma = mp[0]!, mb = mp[mp.length - 1]!;
+		const ML = Math.hypot(mb[0] - ma[0], mb[1] - ma[1]);
+		const MF = frame(ma, [mb[0] - ma[0], mb[1] - ma[1]]);
+		const MHALF = 4.9;
+		const dir: P2 = [(mb[0] - ma[0]) / ML, (mb[1] - ma[1]) / ML];
+		// the street's height a little beyond either end, the deck straight between them
+		const y0 = groundAt(ma[0] - dir[0] * 6, ma[1] - dir[1] * 6), y1 = groundAt(mb[0] + dir[0] * 6, mb[1] + dir[1] * 6);
+		const streetY = (t: number) => y0 + (y1 - y0) * clamp01((t + 6) / (ML + 12));
+		// which face looks to the river (east, across it)
+		const riverSide = MF.c(ma[0] + ACROSS.x, ma[1] + ACROSS.z) - MF.c(ma[0], ma[1]) > 0 ? 1 : -1;
+		const mb3 = new THREE.Group();
+		mb3.name = 'Hefner-Alteneck-Straße over the Westermühlbach';
+		mb3.matrixAutoUpdate = false;
+		mb3.matrix.copy(MF.matrix);
+		group.add(mb3);
+		const slab: THREE.BufferGeometry[] = [];
+		const slabBox = (t0: number, t1: number, ya: number, yb: number, c0: number, c1: number) => {
+			const g = new THREE.BoxGeometry(t1 - t0, yb - ya, c1 - c0);
+			g.translate((t0 + t1) / 2, (ya + yb) / 2, (c0 + c1) / 2);
+			slab.push(g);
+		};
+		const deckTopAt = streetY(ML / 2);
+		slabBox(-1.5, ML + 1.5, deckTopAt - 0.85, deckTopAt - 0.05, -MHALF, MHALF);
+		// the abutments down into the channel, and the wing walls along the bank
+		for (const [t0, t1] of [[-2.5, 2.5], [ML - 2.5, ML + 2.5]] as const) slabBox(t0, t1, -1.5, deckTopAt - 0.85, -MHALF - 0.4, MHALF + 0.4);
+		const mouthConcrete = keep(new THREE.MeshStandardMaterial({ color: '#a7a49c', roughness: 0.9 }));
+		const slabMesh = new THREE.Mesh(keep(merge(slab)), mouthConcrete);
+		slabMesh.castShadow = slabMesh.receiveShadow = true;
+		mb3.add(slabMesh);
+		// the street and its pavements
+		const street: THREE.BufferGeometry[] = [];
+		const strip = (c0: number, c1: number, lift: number) => {
+			const g = new THREE.BoxGeometry(ML + 3, 0.1, c1 - c0);
+			g.translate(ML / 2, deckTopAt - 0.05 + lift, (c0 + c1) / 2);
+			street.push(g);
+		};
+		strip(-3.5, 3.5, 0);
+		const streetMesh = new THREE.Mesh(keep(merge(street)), keep(new THREE.MeshStandardMaterial({ color: '#4c4c4a', roughness: 0.9 })));
+		streetMesh.receiveShadow = true;
+		mb3.add(streetMesh);
+		const walks: THREE.BufferGeometry[] = [];
+		const strip2 = (c0: number, c1: number) => {
+			const g = new THREE.BoxGeometry(ML + 3, 0.25, c1 - c0);
+			g.translate(ML / 2, deckTopAt + 0.03, (c0 + c1) / 2);
+			walks.push(g);
+		};
+		strip2(3.5, MHALF);
+		strip2(-MHALF, -3.5);
+		const walkMesh = new THREE.Mesh(keep(merge(walks)), keep(new THREE.MeshStandardMaterial({ map: gravel(), color: '#cfcac0', roughness: 0.85 })));
+		walkMesh.receiveShadow = true;
+		mb3.add(walkMesh);
+		// steel railings along both edges: posts every two metres, a handrail and a middle rail
+		const rail: THREE.BufferGeometry[] = [];
+		for (const side of [1, -1]) {
+			const c = side * (MHALF - 0.12);
+			for (let t = -1; t <= ML + 1; t += 2) {
+				const g = new THREE.BoxGeometry(0.06, 1.05, 0.06);
+				g.translate(t, deckTopAt + 0.15 + 0.52, c);
+				rail.push(g);
+			}
+			for (const y of [0.55, 1.1]) {
+				const g = new THREE.BoxGeometry(ML + 2, 0.05, 0.05);
+				g.translate(ML / 2, deckTopAt + 0.15 + y, c);
+				rail.push(g);
+			}
+		}
+		const railMesh = new THREE.Mesh(keep(merge(rail)), steel);
+		railMesh.castShadow = true;
+		mb3.add(railMesh);
+		// the spray paint along its face to the river
+		const face = new THREE.Mesh(keep(new THREE.PlaneGeometry(ML + 2, 0.8)), sprayMat);
+		face.position.set(ML / 2, deckTopAt - 0.45, riverSide * (MHALF + 0.03));
+		face.rotation.y = riverSide > 0 ? 0 : Math.PI;
+		mb3.add(face);
+		// on the slab (beyond it the street itself, at the survey's height)
+		mouthDeck = (x, z) => {
+			const t = MF.t(x, z), c = MF.c(x, z);
+			if (t < -1.5 || t > ML + 1.5 || Math.abs(c) > MHALF - 0.45) return null;
+			return deckTopAt + (Math.abs(c) > 3.5 ? 0.15 : 0);
+		};
+		mouthClear = (x, z, y) => {
+			const t = MF.t(x, z), c = MF.c(x, z);
+			if (Math.abs(c) > MHALF + 0.9 || y > deckTopAt - 1) return true;
+			// in the channel under the slab one may wade, but not into its abutments
+			return !((t > -3 && t < 3) || (t > ML - 3 && t < ML + 3));
+		};
+	}
+
 	/* ══ what the walker needs ═════════════════════════════════════════════════════════════════════════════════ */
 	const deckAt = (x: number, z: number) => {
 		const t = F.t(x, z), c = F.c(x, z);
-		if (t < 0.4 || t > L + 6 || Math.abs(c) > HALF - PW - 0.25) return null;
-		return deckY(t) + (Math.abs(c) > 6.25 ? KERB : 0);
+		// the Wittelsbacherbrücke's deck, and the street at either end of it, level with it
+		if (t >= -6 && t <= L + 6 && Math.abs(c) <= HALF - PW - 0.25) return deckY(t) + (Math.abs(c) > 6.25 ? KERB : 0);
+		return mouthDeck(x, z);
 	};
 	const clear = (x: number, z: number, y: number) => {
 		// under the Wittelsbacherbrücke: never into a pier or its nose, and only where an arch leaves headroom
@@ -529,7 +630,7 @@ export function buildBridges(groundAt: (x: number, z: number) => number): Bridge
 			for (const [p0, p1] of RPIERS) if (rt > p0 - 0.4 && rt < p1 + 0.4 && rc > TRUSS.c0 - 3.8 && rc < MAIN.c1 + 3.8) return false;
 			if ((rt > W_ABUT - 6 && rt < W_ABUT + 0.4) || (rt > E_ABUT - 0.4 && rt < E_ABUT + 7)) return false;
 		}
-		return true;
+		return mouthClear(x, z, y);
 	};
 	const light = (night: number, k = 1, color?: string) => {
 		for (const m of lampMats) {
