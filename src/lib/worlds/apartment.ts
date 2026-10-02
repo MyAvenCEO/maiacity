@@ -10,8 +10,8 @@
  *                door across from it, the front door at the far end, the coat stand and the print on the end wall;
  *   the kitchen  x −7.60…−4.75, z 0.20…2.25: a galley, the cabinets along the right as you come in, the window at the
  *                far end (it looks south: the sun comes in);
- *   the bathroom x −7.60…−4.75, z 2.40…4.40: long and narrow, the basin and the WC on the left, the towel radiator on
- *                the right, the glass shower at the far end under its tall window.
+ *   the bathroom x −7.60…−4.75, z 2.40…3.85: long and narrow, the basin and the WC on the left, the towel radiator on
+ *                the right, the glass shower at the far end under its tall window; its door opens out into the hallway.
  */
 import * as THREE from 'three';
 import { barCounter, barStool, canvasPrint, coatStand, door, palletShelf, pendantLamp, retroFridge } from '$lib/models/hallway';
@@ -24,8 +24,13 @@ import { brick, chalkboard, limedOak, stoneTiles } from '$lib/models/textures';
 type Box = (w: number, h: number, d: number, m: THREE.Material, x: number, y: number, z: number, shadow?: boolean) => THREE.Mesh;
 /** x0, x1, z0, z1 */
 export type Rect = [number, number, number, number];
-/** one of the apartment's lamps: its light, how strong (by day; brighter at night), the glass that glows with it */
-export type Lamp = { light: THREE.PointLight | THREE.SpotLight; share: number; glass?: THREE.MeshStandardMaterial; glow: number; color: THREE.Color };
+/** one of the apartment's lamps: its lights (its own, and what its pool on the floor throws back up), each how strong
+ *  (by day; brighter at night) and its colour; the glass that glows with it */
+export type Lamp = {
+	lights: { light: THREE.PointLight | THREE.SpotLight; share: number; color: THREE.Color }[];
+	glass?: THREE.MeshStandardMaterial;
+	glow: number;
+};
 
 export type Apartment = {
 	/** where one may stand, kept off the walls: the rooms and the doorways between them */
@@ -40,13 +45,13 @@ export type Apartment = {
 export const HALL = { x0: -4.6, x1: -1.7, z0: 0.2, z1: 2.25 } as const;
 export const ARM = { x0: -4.6, x1: -3.1, z0: 2.25, z1: 6.4 } as const;
 export const KITCHEN = { x0: -7.6, x1: -4.75, z0: 0.2, z1: 2.25 } as const;
-export const BATH = { x0: -7.6, x1: -4.75, z0: 2.4, z1: 4.4 } as const;
+export const BATH = { x0: -7.6, x1: -4.75, z0: 2.4, z1: 3.85 } as const;
 /** the doorways in the hallway's far wall: into the kitchen (no door), into the bathroom */
 const KITCHEN_DOOR = { z0: 1.0, z1: 1.86 } as const;
 const BATH_DOOR = { z0: 2.61, z1: 3.49 } as const;
 /** the windows in the far wall: along z, their sill and their top */
 const KITCHEN_WIN = { z0: 0.85, z1: 1.65, sill: 0.95, top: 2.3 } as const;
-const BATH_WIN = { z0: 3.19, z1: 3.61, sill: 1.0, top: 2.35 } as const;
+const BATH_WIN = { z0: 2.915, z1: 3.335, sill: 1.0, top: 2.35 } as const;
 
 export function buildApartment(
 	scene: THREE.Scene,
@@ -103,17 +108,27 @@ export function buildApartment(
 		scene.add(day);
 		return day;
 	};
-	// a lamp's light straight down in a cone, its shadows cast (so the walls keep it in its room): off until lit
-	const downlight = (color: string, reach: number, angle: number, penumbra: number, at: THREE.Vector3) => {
+	// a spot from one point to another, its shadows cast (so the walls keep its light in its room): off until lit
+	const spot = (color: string, reach: number, angle: number, penumbra: number, from: THREE.Vector3, to: THREE.Vector3, map: number) => {
 		const l = new THREE.SpotLight(color, 0, reach, angle, penumbra, 2);
-		l.position.copy(at);
-		l.target.position.copy(at).setY(0);
+		l.position.copy(from);
+		l.target.position.copy(to);
 		l.castShadow = true;
-		l.shadow.mapSize.set(1024, 1024);
+		l.shadow.mapSize.set(map, map);
 		l.shadow.bias = -0.002;
 		l.shadow.camera.near = 0.05;
 		scene.add(l, l.target);
 		return l;
+	};
+	// a lamp's light straight down in a cone — and what its pool of light on the floor throws back up, wide and soft,
+	// so the room round it is lit a little and never quite dark (`share`: how much of the lamp the floor gives back).
+	// The bounce rises from above the stools and the bar, so they cast no shadows of it on the ceiling: the pool on the
+	// floor is too wide a source for that
+	const downlight = (color: string, reach: number, angle: number, penumbra: number, at: THREE.Vector3, share: number, floorTint: string) => {
+		const own = spot(color, reach, angle, penumbra, at, at.clone().setY(0), 1024);
+		const back = spot(floorTint, reach * 0.7, 1.48, 1, at.clone().setY(1.1), at.clone().setY(H), 512);
+		back.shadow.normalBias = 0.03; // it grazes the walls: no acne on them
+		return { own, back, share };
 	};
 	// a doorway's lining: white jambs and a head across the wall's thickness (x0…x1), round the gap z0…z1, 2 m high
 	const lining = (x0: number, x1: number, z0: number, z1: number) => {
@@ -165,17 +180,20 @@ export function buildApartment(
 	plane(1.0, 2.2, new THREE.MeshStandardMaterial({ map: chalkboard(), roughness: 0.95 }), -2.35, 1.1, HALL.z1 - 0.002, Math.PI);
 	place(crateTower(['white', 'white']), -2.05, HALL.z0 + CRATE.d / 2 + 0.01);
 	place(door({ finish: 'white' }), -3.3, HALL.z0 + 0.012); // the storeroom's, shut
-	place(retroFridge(), HALL.x0 + 0.3, HALL.z0 + 0.31);
+	place(retroFridge(), HALL.x0 + 0.3, HALL.z0 + 0.33);
 	place(barCounter({ length: 2.3 }), ARM.x1, 3.65, -Math.PI / 2);
 	place(palletShelf({ length: 2.0 }), ARM.x1, 3.65, -Math.PI / 2, 1.62);
-	(['red', 'white', 'red', 'white'] as const).forEach((color, i) => place(barStool(color), ARM.x1 - 0.62, 2.8 + i * 0.57, i * 0.7));
-	place(door({ finish: 'mirror', open: 1.45 }), ARM.x0 - T / 2, (BATH_DOOR.z0 + BATH_DOOR.z1) / 2, -Math.PI / 2); // open, into the bathroom
+	(['red', 'white', 'red', 'white'] as const).forEach((color, i) => place(barStool(color), ARM.x1 - 0.58, 2.8 + i * 0.57, i * 0.7));
+	// the bathroom's door opens out into the hallway, hinged at the front door's side, folded back along the wall; its
+	// mirror is on its bathroom face
+	const bathDoor = place(door({ finish: 'mirror', open: 3.0 }), ARM.x0 + 0.03, (BATH_DOOR.z0 + BATH_DOOR.z1) / 2, Math.PI / 2);
+	bathDoor.traverse((o) => (o.castShadow = false)); // folded flat to the wall, it shades nothing
 	place(door({ finish: 'white' }), ARM.x0 + 0.012, 5.75, Math.PI / 2); // the front door, shut
 	place(coatStand(), ARM.x1 - 0.3, ARM.z1 - 0.32);
 	place(canvasPrint({ w: 1.2, h: 0.8 }), (ARM.x0 + ARM.x1) / 2, ARM.z1, Math.PI, 1.45);
-	// the pendant's light: down out of its shade, a wide cone (the ceiling above it stays dark)
+	// the pendant's light: down out of its shade, a wide cone (the ceiling above it lit only by the floor's bounce)
 	const pendant = place(pendantLamp({ drop: 0.55 }), (ARM.x0 + ARM.x1) / 2, 3.5, 0, H);
-	const hallLight = downlight('#ffcf94', 8, 1.2, 0.75, pendant.position.clone().add(pendant.userData.light as THREE.Vector3));
+	const hallLight = downlight('#ffcf94', 8, 1.2, 0.75, pendant.position.clone().add(pendant.userData.light as THREE.Vector3), 0.16, '#ffd6a8');
 
 	/* ── the kitchen: along the right as you come in, from the window, three modules — the washing machine, the oven
 	   under the gas hob, and right beside it the black sink over drawers — under the brick wall, the dark crates and the
@@ -184,9 +202,13 @@ export function buildApartment(
 	// the run's middle, the hob: the washing machine 60 cm towards the window, the sink 60 cm towards the door
 	const run = KITCHEN.x0 + 0.9;
 	place(kitchenRun(['washer', 'oven', 'sink']), run, KITCHEN.z0);
-	place(kitchenRun(['washer']), KITCHEN.x0, (KITCHEN_WIN.z0 + KITCHEN_WIN.z1) / 2, Math.PI / 2); // the dryer
 	plane(1.8, 0.86, laid(brick(), 1.8, 0.86, [0.96, 0.64], { roughness: 0.9 }), run, 0.92 + 0.43, KITCHEN.z0 + 0.003, 0);
-	for (const x of [run - 0.55, run]) place(wineCrate('dark'), x, KITCHEN.z0 + CRATE.d / 2 + 0.005, 0, 1.8);
+	// three dark crates on the wall, side by side from the window to the boiler, as shelves
+	const crates = run + 0.6 - 0.22 - KITCHEN.x0, crateW = (crates - 0.02) / 3;
+	for (let i = 0; i < 3; i++) {
+		const c = place(wineCrate('dark'), KITCHEN.x0 + crateW / 2 + i * (crateW + 0.01), KITCHEN.z0 + 0.145, 0, 1.8);
+		c.scale.set(crateW / CRATE.w, 0.8, 0.85);
+	}
 	place(panRail({ length: 0.8 }), run - 0.1, KITCHEN.z0, 0, 1.62);
 	place(gasBoiler(), run + 0.6, KITCHEN.z0, 0, 1.6);
 	place(xShelf(), run + 1.15, KITCHEN.z0 + 0.21);
@@ -227,8 +249,8 @@ export function buildApartment(
 		disc.position.set(x, H - 0.002, (BATH.z0 + BATH.z1) / 2);
 		scene.add(disc);
 	}
-	// the spots' light: down from the ceiling, wide
-	const bathLight = downlight('#fff1dc', 6, 1.25, 0.9, new THREE.Vector3((BATH.x0 + BATH.x1) / 2, H - 0.03, (BATH.z0 + BATH.z1) / 2));
+	// the spots' light: down from the ceiling, wide, and back up off the tiles
+	const bathLight = downlight('#fff1dc', 6, 1.25, 0.9, new THREE.Vector3((BATH.x0 + BATH.x1) / 2, H - 0.03, (BATH.z0 + BATH.z1) / 2), 0.2, '#fbe8cf');
 
 	/* ── outside the kitchen's and the bathroom's windows: the courtyard, a white house across it ── */
 	const facade = new THREE.Mesh(new THREE.BoxGeometry(1, 14, 18), new THREE.MeshStandardMaterial({ color: '#efeee9', roughness: 0.9 }));
@@ -247,6 +269,11 @@ export function buildApartment(
 	yard.position.set(-14.5, -3.21, 2); // the apartment is on an upper floor
 	outside.add(yard);
 
+	// a downlight's two lights: its own at `share`, the floor's bounce at its part of that
+	const lit = (d: ReturnType<typeof downlight>, share: number) => [
+		{ light: d.own, share, color: d.own.color.clone() },
+		{ light: d.back, share: share * d.share, color: d.back.color.clone() }
+	];
 	const M = 0.18; // how close to a wall one may stand, as in the room
 	const through = (z0: number, z1: number): Rect => [ARM.x0 - T - M - 0.02, ARM.x0 + M + 0.02, z0 + M, z1 - M];
 	return {
@@ -260,13 +287,12 @@ export function buildApartment(
 		],
 		solid: [
 			[-2.3, -1.8, HALL.z0, HALL.z0 + CRATE.d + 0.02], // the shoe rack
-			[HALL.x0, HALL.x0 + 0.6, HALL.z0, HALL.z0 + 0.62], // the fridge
+			[HALL.x0, HALL.x0 + 0.6, HALL.z0, HALL.z0 + 0.66], // the fridge
 			[ARM.x1 - 0.45, ARM.x1, 2.5, 4.8], // the bar
-			[ARM.x1 - 0.82, ARM.x1 - 0.42, 2.6, 4.7], // its stools
+			[ARM.x1 - 0.78, ARM.x1 - 0.38, 2.6, 4.7], // its stools
 			[ARM.x1 - 0.48, ARM.x1 - 0.12, ARM.z1 - 0.5, ARM.z1 - 0.14], // the coat stand
-			[BATH.x1 - 0.86, BATH.x1, BATH_DOOR.z0 - 0.02, BATH_DOOR.z0 + 0.06], // the bathroom's door, open into it
+			[ARM.x0, ARM.x0 + 0.16, BATH_DOOR.z1 - 0.02, BATH_DOOR.z1 + 0.86], // the bathroom's door, folded back
 			[KITCHEN.x0, KITCHEN.x0 + 1.8, KITCHEN.z0, KITCHEN.z0 + 0.62], // the cabinets
-			[KITCHEN.x0, KITCHEN.x0 + 0.62, KITCHEN_WIN.z0 - 0.06, KITCHEN_WIN.z1 + 0.06], // the dryer
 			[run + 0.92, run + 1.38, KITCHEN.z0, KITCHEN.z0 + 0.42], // the X-shelf
 			[KITCHEN.x0 + 0.1, KITCHEN.x0 + 0.6, KITCHEN.z1 - CRATE.d - 0.02, KITCHEN.z1], // the pantry
 			[run - 0.16, run + 0.16, 1.74, 2.06], // the bin
@@ -276,9 +302,9 @@ export function buildApartment(
 			[BATH.x0, showerX, BATH.z0, BATH.z1] // the shower
 		],
 		lamps: [
-			{ light: hallLight, share: 2.6, glass: pendant.userData.glass as THREE.MeshStandardMaterial, glow: 1, color: hallLight.color.clone() },
-			{ light: kitchenLight, share: 1.2, glass: kitchenBulb.userData.glass as THREE.MeshStandardMaterial, glow: 0.8, color: kitchenLight.color.clone() },
-			{ light: bathLight, share: 2.4, glass: spotGlass, glow: 1.2, color: bathLight.color.clone() }
+			{ lights: lit(hallLight, 2.6), glass: pendant.userData.glass as THREE.MeshStandardMaterial, glow: 1 },
+			{ lights: [{ light: kitchenLight, share: 1.2, color: kitchenLight.color.clone() }], glass: kitchenBulb.userData.glass as THREE.MeshStandardMaterial, glow: 0.8 },
+			{ lights: lit(bathLight, 2.4), glass: spotGlass, glow: 1.2 }
 		],
 		daylights: [kitchenDay, bathDay]
 	};

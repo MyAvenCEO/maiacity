@@ -398,9 +398,11 @@ export async function mountRoom(container: HTMLElement, onProgress: (label: stri
 		if (!apt) return;
 		const seen = doorAngle > 0.01 || camera.position.x < -W;
 		for (const l of apt.lamps) {
-			l.light.intensity = seen ? (1 + 1.2 * hour.night) * l.share * k : 0;
-			l.light.color.copy(l.color);
-			if (color) l.light.color.set(color);
+			for (const { light, share, color: own } of l.lights) {
+				light.intensity = seen ? (1 + 1.2 * hour.night) * share * k : 0;
+				light.color.copy(own);
+				if (color) light.color.set(color);
+			}
 			if (l.glass) l.glass.emissiveIntensity = l.glow * (0.4 + 0.9 * hour.night) * k;
 		}
 		for (const d of apt.daylights) {

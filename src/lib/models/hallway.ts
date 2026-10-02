@@ -23,19 +23,22 @@ const m = {
 	canvas: shared(() => new THREE.MeshStandardMaterial({ map: canvasMeadow(), roughness: 0.9 }))
 };
 
-/** A red retro fridge (the small Bosch kind), 56 × 63 × 95 cm: rounded, glossy, its chrome lever on the left. */
+/** A red retro fridge (the Bosch kind), 56 × 63 × 127 cm: rounded, glossy, one door, its chrome lever on the left,
+ *  the maker's badge at the top. */
 export function retroFridge(): THREE.Group {
 	const g = new THREE.Group();
 	g.name = 'retro fridge';
-	const body = new THREE.Mesh(new RoundedBoxGeometry(0.56, 0.86, 0.6, 5, 0.07), m.red());
-	body.position.set(0, 0.5, 0);
+	const h = 1.19, d = 0.63, front = d / 2;
+	const body = new THREE.Mesh(new RoundedBoxGeometry(0.56, h, d, 5, 0.07), m.red());
+	body.position.set(0, 0.08 + h / 2, 0);
 	body.castShadow = body.receiveShadow = true;
 	g.add(body);
-	part(g, 0.5, 0.07, 0.55, m.black(), 0, 0.035, -0.01); // the plinth
-	part(g, 0.52, 0.006, 0.01, m.chrome(), 0, 0.88, 0.302, false); // the door's seam
-	bar(g, v3(-0.22, 0.6, 0.31), v3(-0.22, 0.86, 0.31), 0.012, m.chrome());
-	bar(g, v3(-0.22, 0.85, 0.31), v3(-0.22, 0.85, 0.335), 0.01, m.chrome());
-	bar(g, v3(-0.22, 0.61, 0.31), v3(-0.22, 0.61, 0.335), 0.01, m.chrome());
+	part(g, 0.5, 0.08, d - 0.05, m.black(), 0, 0.04, -0.01); // the plinth
+	part(g, 0.52, 0.006, 0.01, m.chrome(), 0, 1.19, front + 0.002, false); // the door's top seam
+	part(g, 0.1, 0.018, 0.004, m.chrome(), 0, 1.1, front + 0.004, false); // the badge
+	bar(g, v3(-0.22, 0.86, front + 0.01), v3(-0.22, 1.12, front + 0.01), 0.012, m.chrome());
+	bar(g, v3(-0.22, 1.11, front), v3(-0.22, 1.11, front + 0.025), 0.01, m.chrome());
+	bar(g, v3(-0.22, 0.87, front), v3(-0.22, 0.87, front + 0.025), 0.01, m.chrome());
 	return g;
 }
 
@@ -95,16 +98,15 @@ export function pendantLamp({ drop = 0.55 }: { drop?: number } = {}): THREE.Grou
 	// the outside, the white the inside
 	const profile = [new THREE.Vector2(0.175, -0.2), new THREE.Vector2(0.15, -0.18), new THREE.Vector2(0.09, -0.12), new THREE.Vector2(0.045, -0.06), new THREE.Vector2(0.035, 0)];
 	const shade = new THREE.LatheGeometry(profile, 36);
+	// the shade casts no shadow: its own light is inside it, and the ceiling above takes the floor's bounce round it
 	for (const mat of [m.enamel(), m.enamelInside()]) {
 		const s = new THREE.Mesh(shade, mat);
 		s.position.y = -drop;
-		s.castShadow = mat === m.enamel();
 		g.add(s);
 	}
 	// its neck closed by the fitting the cord goes into: red above, white below, inside the shade
 	const cap = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.036, 0.04, 24), [m.enamel(), m.enamel(), m.white()]);
 	cap.position.y = -drop + 0.02;
-	cap.castShadow = true;
 	g.add(cap);
 	const glass = new THREE.MeshStandardMaterial({ color: '#fff4e0', emissive: '#ffd9a0', emissiveIntensity: 0.4 });
 	const bulb = new THREE.Mesh(new THREE.SphereGeometry(0.035, 16, 12), glass);
