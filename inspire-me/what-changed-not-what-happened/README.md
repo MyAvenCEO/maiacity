@@ -2,6 +2,7 @@
 title: The story is what changed, not what happened
 originalTitle: "Why Simple Storytelling Makes Better Videos"
 source: https://www.youtube.com/watch?v=UPtkVL0CrLU
+thumbnail: 1954b93158106526c2ed9c083b2af53a3d44268c9eab8f04d8e95e7f83a6a955.jpg
 type: video
 author: Tim Runia
 authorUrl: https://www.youtube.com/@TimRunia
