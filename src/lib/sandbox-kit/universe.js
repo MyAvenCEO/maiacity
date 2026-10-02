@@ -26,9 +26,9 @@ const AIR = { turbidity: 3, rayleigh: 1.2, mieCoefficient: 0.004, mieDirectional
 
 const linear = (/** @type {string} */ hex) => new THREE.Color(hex);
 /** deep space: never black, a bluish black, the dark blue of the universe */
-const SPACE = linear('#0c1838');
+const SPACE = linear('#0a1430');
 /** the night air: a deep blue-black overhead, bluer toward the horizon (airglow, the moon's light in the air) */
-const NIGHT_ZENITH = linear('#0d1a3c'), NIGHT_HORIZON = linear('#1c2d58');
+const NIGHT_ZENITH = linear('#0a1532'), NIGHT_HORIZON = linear('#17264b');
 /** the twilight: the glow over where the sun went down, and the blue hour everywhere else */
 const DUSK_GLOW = linear('#d9773f'), BLUE_HOUR = linear('#36508c');
 
