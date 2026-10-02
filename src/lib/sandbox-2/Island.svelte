@@ -15,8 +15,7 @@
 		seed,
 		settlements,
 		focus = undefined,
-		onpick,
-		day = false
+		onpick
 	}: {
 		/** The island seed, from the city's card on the planet. */
 		seed: number;
@@ -26,14 +25,10 @@
 		focus?: string;
 		/** A cell was chosen — or none, when the choice is cleared. */
 		onpick: (tile: HexTile | null) => void;
-		/** The sky kept at day as the island opens (the page's sky switch; later changes come through `alwaysDay`). */
-		day?: boolean;
 	} = $props();
 
 	let canvas: HTMLCanvasElement | undefined = $state();
 	let api: SceneApi | undefined = $state();
-	/** the sky kept at day while the clock runs on ($lib/sandbox-kit's sky switch, on the page) */
-	let keptAtDay = untrack(() => day);
 	let loading = $state(true);
 
 	const buildings = $derived(
@@ -64,8 +59,6 @@
 			// Growing the island clears its selection; only picks after that are the player's.
 			let ready = false;
 			const scene = createScene(el, { buildings: first, focus, onSelect: (tiles) => ready && onpick(tiles[0] ?? null) });
-			// the sun stands where the in-game clock says, and moves on with it (the one sky, $lib/sandbox-kit)
-			scene.alwaysDay(keptAtDay);
 			// growing the island takes a moment: let the loading word paint first
 			await twoFrames();
 			if (disposed) return scene.dispose();
@@ -86,12 +79,6 @@
 	$effect(() => {
 		api?.setBuildings($state.snapshot(buildings));
 	});
-
-	/** Keep the sky at day whatever the hour, or follow the in-game clock again. */
-	export function alwaysDay(on: boolean) {
-		keptAtDay = on;
-		api?.alwaysDay(on);
-	}
 
 	/** Bring a cell to the middle of the view. */
 	export function frame(cell: string) {

@@ -1,6 +1,6 @@
 <script lang="ts">
 import AvenCitySandbox from './AvenCitySandbox.svelte'
-import { SkyToggle, WorldClock } from '$lib/sandbox-kit'
+import { SkyControl } from '$lib/sandbox-kit'
 import DomeRail from './components/DomeRail.svelte'
 import Icon, { type IconName } from './components/Icon.svelte'
 import ResourceIcon from './components/ResourceIcon.svelte'
@@ -39,8 +39,6 @@ let sandbox = $state(false)
 // $state, not a plain `let`: leaving for the sandbox unmounts the canvas and
 // coming back binds a NEW element, and the scene has to follow it.
 let canvas: HTMLCanvasElement | undefined = $state()
-/** the sky kept at day while the clock runs on ($lib/sandbox-kit) */
-let alwaysDay = $state(false)
 let api: SceneApi | undefined
 // One world, the same one every visit (game/seed.js; the film camera grows the same one)
 const seed = ISLAND_SEED
@@ -181,8 +179,6 @@ $effect(() => {
 				selected = tile
 			}
 		})
-		// the sky follows the in-game clock, as in every world; every visit starts on the real sky
-		api.alwaysDay(alwaysDay)
 		// building the island is synchronous and takes seconds: give the
 		// loading screen a frame to paint first, or it never shows at all
 		await twoFrames()
@@ -339,8 +335,7 @@ $effect(() => {
 				<!-- `shrink-0`: these are the world's controls, so they hold their size and
 				     stay on screen no matter how much is selected on the left. -->
 				<div class="flex shrink-0 items-center gap-1.5">
-					<WorldClock class="pointer-events-auto" />
-					<SkyToggle class="pointer-events-auto" bind:on={alwaysDay} onchange={(on) => api?.alwaysDay(on)} />
+					<SkyControl class="pointer-events-auto" />
 				</div>
 			</div>
 		</div>

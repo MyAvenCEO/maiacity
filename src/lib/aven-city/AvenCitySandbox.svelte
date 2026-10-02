@@ -1,6 +1,6 @@
 <script lang="ts">
 import { onMount } from 'svelte'
-import { SkyToggle, WorldClock } from '$lib/sandbox-kit'
+import { SkyControl } from '$lib/sandbox-kit'
 import DomeRail from './components/DomeRail.svelte'
 import ResourceIcon from './components/ResourceIcon.svelte'
 import { BIOME_IDS, BIOME_RESOURCES, type BiomeId } from './game/hexmap'
@@ -114,16 +114,13 @@ function setLevel(lv: number): void {
 			/>
 		</div>
 
-		<!-- bottom bar: seed reroll + the sky every world shares (the in-game clock, or kept at day) -->
+		<!-- bottom bar: seed reroll + the time of the sky every world shares (Auto, or set by hand) -->
 		<div class="flex items-end justify-between gap-3">
 			<button class="hud-pill hud-btn pointer-events-auto font-semibold" onclick={reroll}>
 				↻ reroll specimen
 				<span class="hud-label">{seed}</span>
 			</button>
-			<div class="pointer-events-auto flex items-center gap-1.5">
-				<WorldClock />
-				<SkyToggle onchange={(on) => api?.alwaysDay(on)} />
-			</div>
+			<SkyControl class="pointer-events-auto" />
 		</div>
 	</div>
 </div>

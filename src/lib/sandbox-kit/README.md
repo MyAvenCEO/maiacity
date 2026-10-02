@@ -1,27 +1,29 @@
 # The sandbox kit
 
-What every avenCITY sandbox world is made with — the same sky, the same day switch, the same cameras, and the same hold for the studio's film camera — so a new sandbox starts with all of it, and the studio can shoot movies in any of them. Taken out of Sandbox 4 and used by every sandbox:
+What every avenCITY sandbox world is made with — the same sky and universe, the same time control, the same cameras, and the same hold for the studio's film camera — so a new sandbox starts with all of it, and the studio can shoot movies in any of them. Taken out of Sandbox 4 and used by every sandbox:
 
 | Sandbox | stage | sky | camera | on film (`/games/<sandbox>/?film`) |
 |---|---|---|---|---|
 | 1 · the island (`src/lib/aven-city`) | its own canvas | `createSky` (island size) | `createOrbitRig` | the island from its seed |
-| 2 · the planet (`src/lib/sandbox-2/world`) | its own | `lightAt` + `createSkyClock` (no sky round a planet; its sun rides with the camera) | its own globe rig + `createCameraHold` | `&area=planet` |
+| 2 · the planet (`src/lib/sandbox-2/world`) | its own | `createSky({ view: 'planet' })` + `createAirShell`: the universe from space, day and night sides | its own globe rig + `createCameraHold` | `&area=planet` |
 | 2 · a city's island (`src/lib/sandbox-2/island`) | its own canvas | `createSky` (island size) | `createOrbitRig` | `&area=island`, grown from `world.seed` |
 | 3 · inside a dome (`src/lib/sandbox-2/interior`) | `createStage` | `createSky` (dome size) | `createWalker` | `&area=home` … `factory` |
 | 4 · a dome cell (`src/lib/sandbox-2/interior/village.ts`) | `createStage` | `createSky` | `createWalker` | the cell, its domes built as the camera comes |
 
-**One sky, one source of truth.** Every world's light is `lightAt(hour)` and every world's hour is `createSkyClock()` (`sky.js`): the in-game clock, day kept by the switch, or the hour a film pins. Every world has the same Day/Real sky switch. A world chooses only its size — how far the shadows and fog reach, how far off the light stands — and its lens (`exposure`: the islands' pale clay takes a little less light than a walk among the domes); never how the sky behaves.
+**One universe, one source of truth.** Every world is a view of the same universe (`universe.js`), zoomed in more or less. From space (Sandbox 2's planet) it is a dark blue universe, its stars and the Milky Way, the sun a star, the planet turning in its light with a day side and a night side; come down and you are deeper in the air — the sky turns blue and light round you — until on the ground (the islands, the domes) it is the full sky: the Preetham scattering by day, sunsets, the blue hour, and the stars coming out as the sun goes deeper below the horizon, turning round the pole through the night. The fog takes the colour of the real horizon, so what is far away melts into the sky that is there.
+
+Every world's hour is `createSkyClock()`: the time control's (`skyTime.svelte.js`) — **Auto**, the in-game clock, or **Manual**, a slider that starts at noon — or the hour a film pins. Every world has the same `<SkyControl>`. A world chooses only its size — how far the shadows and fog reach, how far off the light stands — and its lens (`exposure`: the islands' pale clay takes a little less light than a walk among the domes); never how the sky behaves.
 
 | | |
 |---|---|
 | `createStage(container)` | the canvas, the scene and the camera, kept to their container's size; `adapt(now)` each frame keeps it smooth on a slow phone |
-| `createSky(renderer, scene, { onHour })` | the one sky: a scattering sky dome and the light it casts, a sun that follows the in-game clock (`game/time`) and is the moon at night, shadows, a fog that warms at dusk, the stars and the moon's disc at night; `alwaysDay(on)` keeps it at day |
-| `lightAt(hour)`, `createSkyClock()` | the sky's light and its hour, for a world with no sky round it |
+| `createSky(renderer, scene, { onHour })` | the one sky over a world on the ground: the universe dome and the light it casts, the sun on the hour that is the moon at night, shadows, fog in the horizon's colour; `{ view: 'planet' }` round a planet from space (`sky.view(up, atmosphere)` each frame) |
+| `createUniverse()`, `horizonAt()`, `celestial()`, `createAirShell()` | the universe itself: the dome and the stars, the horizon's colour, where the sun stands over a planet, a planet's air from outside |
+| `lightAt(hour)`, `createSkyClock()` | the light of an hour on the ground, and which hour it is |
 | `createWalker(camera, canvas, { canStand, floorAt })` | the first-person camera: WASD/arrows, Shift to hurry, drag to look; `move`/`look` for a phone |
 | `createOrbitRig(camera, canvas, { … })` | the map camera: WASD travels, drag turns and tilts, the wheel zooms to the cursor, Q/E turn; `freeMove: false` is a turntable |
 | `connectFilm({ sandbox, area, renderer, scene, camera, hold, sky, … })` | hands the world to the studio's film camera (`window.__world`); `createCameraHold(camera)` for a world with its own camera controls |
-| `<SkyToggle>` | the "Real sky / Day" switch |
-| `<WorldClock>` | the in-game time |
+| `<SkyControl>` | the time of the sky: **Auto** (the in-game clock) or **Manual** (a slider, from noon); one state for every sandbox |
 | `<WalkHint>` | how to walk, for keys and for fingers |
 | `$lib/touch/TouchStick` | the phone's joystick (already shared) |
 
@@ -80,7 +82,6 @@ export function mountWorld(container) {
 	return {
 		move: walker.move,
 		look: walker.look,
-		alwaysDay: sky.alwaysDay,
 		dispose() {
 			cancelAnimationFrame(frame);
 			film.disconnect();
@@ -98,7 +99,7 @@ export function mountWorld(container) {
 <script>
 	import { onMount } from 'svelte';
 	import TouchStick from '$lib/touch/TouchStick.svelte';
-	import { SkyToggle, WalkHint, WorldClock } from '$lib/sandbox-kit';
+	import { SkyControl, WalkHint } from '$lib/sandbox-kit';
 
 	/** @type {HTMLDivElement | undefined} */
 	let stage = $state();
@@ -113,8 +114,7 @@ export function mountWorld(container) {
 <div class="world">
 	<div class="stage" bind:this={stage}></div>
 	<div class="bar">
-		<WorldClock />
-		<SkyToggle onchange={(on) => world?.alwaysDay(on)} />
+		<SkyControl />
 	</div>
 	<WalkHint />
 	<TouchStick move={(x, y, hurry) => world?.move(x, y, hurry)} look={(dx, dy) => world?.look(dx, dy)} {stage} taps=".bar a, .bar button" />

@@ -15,7 +15,7 @@
 <script lang="ts">
 	import { base } from '$app/paths';
 	import { onDestroy, onMount } from 'svelte';
-	import { accrued, format, gameClock, parse } from '../../../../../game/time';
+	import { accrued, format, parse } from '../../../../../game/time';
 	import { ONE, STARTING } from '../../../../../game/policy';
 	import { coopPolicy, mindsFor, room } from '../../../../../game/coops';
 	import { buildable, cellKey } from '../../../../../game/island/island';
@@ -26,7 +26,7 @@
 	import Tour, { type TourStep } from '$lib/sandbox-2/Tour.svelte';
 	import DomeInterior from '$lib/sandbox-2/DomeInterior.svelte';
 	import TouchStick from '$lib/touch/TouchStick.svelte';
-	import { SkyToggle } from '$lib/sandbox-kit';
+	import { SkyControl } from '$lib/sandbox-kit';
 	import { planFor } from '../../../../../game/island/villages';
 	import type { DomeKind } from '$lib/sandbox-2/interior/interior';
 	import type { WorldHandle } from '$lib/sandbox-2/world/world';
@@ -37,12 +37,6 @@
 	let stage: HTMLDivElement;
 	let world: WorldHandle | null = null;
 	let islandView: Island | undefined = $state();
-	/** the sky kept at day, on the planet and on its islands alike (one sky, $lib/sandbox-kit); every visit starts on the real sky */
-	let alwaysDay = $state(false);
-	const keepDay = (on: boolean) => {
-		world?.alwaysDay(on);
-		islandView?.alwaysDay(on);
-	};
 	let loading = $state(true);
 
 	let cityData = $state<api.City | null>(null);
@@ -99,7 +93,6 @@
 
 	/* The income ticks on the client with the same function the server mints with. */
 	const claimable = $derived(me ? accrued(new Date(me.lastClaimAt), now) + (me.startingPending ? STARTING : 0n) : 0n);
-	const clock = $derived(gameClock(now).label);
 	/** The cities that stand on this planet; the others are in the Coops app, placed nowhere yet. */
 	const placed = $derived((cityData?.cities ?? []).filter((c) => api.tileOf(c) !== null));
 	const inside = $derived(placed.find((c) => c.slug === insideSlug) ?? null);
@@ -394,7 +387,6 @@
 				quiet(loadDepthMap(url('depth.json')))
 			]);
 			world = mountWorld(stage, { cities: markers(), onTile: (p) => void onTile(p), isLand, kindOf, isMountain, depthOf });
-			world.alwaysDay(alwaysDay);
 			loading = false;
 		})();
 	});
@@ -421,7 +413,6 @@
 			settlements={standing.map((s) => ({ cell: api.cellOf(s)!, level: s.level }))}
 			focus={api.cellOf(standing.find((s) => s.slug === homeSettlement) ?? standing[0] ?? { places: {} }) ?? undefined}
 			onpick={(t) => void onCell(t)}
-			day={alwaysDay}
 		/>
 	{/if}
 
@@ -440,17 +431,17 @@
 			<button class="pill back" onclick={leave} aria-label="Back to the planet">←</button>
 			<button class="pill brand" onclick={() => show(inside!.slug)}>
 				<strong>{inside.name}</strong>
-				<span class="dim">{inside.citizens} {inside.citizens === 1 ? 'citizen' : 'citizens'} · {standing.length} {standing.length === 1 ? 'settlement' : 'settlements'} · {clock}</span>
+				<span class="dim">{inside.citizens} {inside.citizens === 1 ? 'citizen' : 'citizens'} · {standing.length} {standing.length === 1 ? 'settlement' : 'settlements'}</span>
 			</button>
-			<!-- the sky: the real one, or kept at day ($lib/sandbox-kit) -->
-			<SkyToggle bind:on={alwaysDay} onchange={keepDay} />
+			<!-- the time of the sky: Auto, or set by hand ($lib/sandbox-kit) -->
+			<SkyControl />
 		{:else}
 			<a class="pill back" href="{base}/app/" aria-label="Back to the dashboard">←</a>
 			<div class="pill brand">
 				<strong>avenCITY Sandbox 2</strong>
-				{#if cityData}<span class="dim">{cityData.calendarLabel} · {clock}</span>{/if}
+				{#if cityData}<span class="dim">{cityData.calendarLabel}</span>{/if}
 			</div>
-			<SkyToggle bind:on={alwaysDay} onchange={keepDay} />
+			<SkyControl />
 		{/if}
 	</div>
 

@@ -80,8 +80,6 @@ export interface SceneApi {
 	stats(): WorldStats
 	/** Designates hexes for a use, and shows or hides the colour wash that
 	 * makes the designation readable on the island. */
-	/** Keeps the sky at day whatever the hour (the in-game clock runs on), or follows the clock again. */
-	alwaysDay(on: boolean): void
 	/** Travels the map from a touch joystick: x to the right, y ahead, each -1…1. */
 	move(x: number, y: number, hurry: boolean): void
 	/** Replaces everything standing with exactly these, by "q,r" — the server owns them. */
@@ -667,9 +665,6 @@ export function createScene(canvas: HTMLCanvasElement, options: SceneOptions = {
 		},
 		move(x, y, hurry) {
 			rig.move(x, y, hurry)
-		},
-		alwaysDay(on) {
-			sky.alwaysDay(on)
 		},
 		setBuildings(buildings) {
 			if (!world) return

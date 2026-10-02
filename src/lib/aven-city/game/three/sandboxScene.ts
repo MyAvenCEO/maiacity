@@ -11,8 +11,6 @@ import { createSky } from '$lib/sandbox-kit/sky.js'
 
 export interface SandboxApi {
 	show(biome: BiomeId, seed: number, options?: { building?: PlacedKind }): void
-	/** Keeps the sky at day whatever the hour (the in-game clock runs on), or follows the clock again. */
-	alwaysDay(on: boolean): void
 	dispose(): void
 }
 
@@ -99,9 +97,6 @@ export function createSandbox(canvas: HTMLCanvasElement): SandboxApi {
 
 	return {
 		show,
-		alwaysDay(on) {
-			sky.alwaysDay(on)
-		},
 		dispose(): void {
 			cancelAnimationFrame(raf)
 			rig.dispose()
