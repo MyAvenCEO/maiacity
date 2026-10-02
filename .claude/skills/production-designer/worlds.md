@@ -49,10 +49,11 @@ and his photos, furnished with the models and none of the clutter. One set: walk
 - **Its arm** (x −4.60…−3.10, z 2.25…6.40). The bar runs along one wall under the pallet shelf and the red pendant,
   with four stools. The bathroom's door stands across from the bar, and the front door (shut) at the far end. The
   coat stand and the print are on the end wall.
-- **The kitchen** (x −8.10…−4.75, z 0.20…2.25), a galley. On the right as you come in: the washing machine, the oven
-  under the gas hob, drawers and the black sink, under a brick wall, with the boiler over the sink and the X-shelf by
-  the door. The dryer stands under the window at the far end. On the grey wall: the crate pantry and the bin.
-- **The bathroom** (x −8.10…−4.75, z 2.40…4.40), long and narrow. The basin and the WC are on the left, the towel
+- **The kitchen** (x −7.60…−4.75, z 0.20…2.25), a galley. On the right as you come in, three modules from the window:
+  the washing machine, the oven under the gas hob, and right beside it the black sink over drawers — under a brick
+  wall, the boiler over the sink, then the X-shelf. The dryer stands under the window at the far end. On the grey
+  wall: the crate pantry and the bin.
+- **The bathroom** (x −7.60…−4.75, z 2.40…4.40), long and narrow. The basin and the WC are on the left, the towel
   radiator on the right, and the glass shower at the far end under the tall window. Its door stands open into it,
   its mirror a true one: it shows the room, not the sky.
 - **The windows at the far end look south:** the sun comes into the kitchen and the bathroom. The shadows reach the
