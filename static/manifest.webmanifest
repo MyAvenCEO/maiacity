@@ -1,0 +1,11 @@
+{
+	"name": "maiaCITY",
+	"short_name": "maiaCITY",
+	"description": "The city's own rooms: the games, the worlds and what we build with.",
+	"start_url": "./app/",
+	"scope": "./",
+	"display": "standalone",
+	"orientation": "any",
+	"background_color": "#f1ede3",
+	"theme_color": "#f1ede3"
+}

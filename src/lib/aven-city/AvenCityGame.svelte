@@ -224,7 +224,7 @@ $effect(() => {
 		     strip reads as a status bar and belongs against the edge, while the
 		     bottom row stays clear of the screen edge. -->
 		<div
-			class="pointer-events-none absolute inset-0 flex flex-col justify-between px-5 pt-2 pb-5 md:px-7 md:pt-3 md:pb-7"
+			class="hud-frame hud-frame-tight pointer-events-none absolute inset-0 flex flex-col justify-between"
 		>
 			<!-- `shrink-0`: the status strip and the build rail keep their size, so the
 			     bottom row is the one that gives way when the screen runs short. -->

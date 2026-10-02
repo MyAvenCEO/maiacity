@@ -287,6 +287,8 @@
 		position: fixed;
 		inset: 0;
 		z-index: 200;
+		/* on a phone: clear of the notch and the home bar (the page runs edge to edge) */
+		padding: env(safe-area-inset-top, 0px) env(safe-area-inset-right, 0px) env(safe-area-inset-bottom, 0px) env(safe-area-inset-left, 0px);
 		display: grid;
 		grid-template-columns: 19rem 1fr 17rem;
 		grid-template-rows: auto minmax(0, 1fr) auto minmax(11rem, auto) auto;

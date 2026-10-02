@@ -53,6 +53,35 @@
 
 @layer components {
 	/*
+	 * The HUD's frame over the canvas: clear of the screen's edges, and on a
+	 * phone of the notch and the home bar too (the page runs edge to edge,
+	 * viewport-fit=cover). `.hud-frame-tight` holds the top closer, for a
+	 * readout strip that reads as a status bar.
+	 */
+	.hud-frame {
+		--hud-edge: 1.25rem;
+		--hud-top: var(--hud-edge);
+		padding: calc(var(--hud-top) + env(safe-area-inset-top, 0px))
+			calc(var(--hud-edge) + env(safe-area-inset-right, 0px))
+			calc(var(--hud-edge) + env(safe-area-inset-bottom, 0px))
+			calc(var(--hud-edge) + env(safe-area-inset-left, 0px));
+	}
+
+	.hud-frame-tight {
+		--hud-top: 0.5rem;
+	}
+
+	@media (min-width: 48rem) {
+		.hud-frame {
+			--hud-edge: 1.75rem;
+		}
+
+		.hud-frame-tight {
+			--hud-top: 0.75rem;
+		}
+	}
+
+	/*
 	 * One surface, used everywhere.
 	 *
 	 * Flat and see-through: a white wash over a light blur, a single hairline,

@@ -11,7 +11,7 @@
 	import { onDestroy, onMount } from 'svelte';
 	import type { VillageHandle } from '$lib/sandbox-2/interior/village';
 	import TouchStick from '$lib/touch/TouchStick.svelte';
-	import { SkyControl, WalkHint } from '$lib/sandbox-kit';
+	import { WalkHint, WorldBar } from '$lib/sandbox-kit';
 
 	let stage = $state<HTMLDivElement>();
 	let village: VillageHandle | null = null;
@@ -59,11 +59,7 @@
 
 <div class="village">
 	<div class="stage" bind:this={stage}></div>
-	<div class="bar">
-		<a class="out" href="{base}/app/">← Dashboard</a>
-		<div class="title"><strong>avenCITY Sandbox 4</strong><span>A dome cell · thirteen domes</span></div>
-		<SkyControl class="time" />
-	</div>
+	<WorldBar title="avenCITY Sandbox 4" subtitle="A dome cell · thirteen domes" back="Dashboard" href="{base}/app/" />
 	<WalkHint keys="Drag to look · WASD to walk · Shift to hurry · walk through any door to step inside" />
 	<!-- on a phone: the joystick walks, any other finger on the world looks round -->
 	<TouchStick
@@ -116,36 +112,6 @@
 		color: #1f2a23;
 		font-size: 0.8rem;
 		white-space: nowrap;
-	}
-	.bar {
-		position: absolute;
-		top: calc(1rem + env(safe-area-inset-top, 0px));
-		left: 1rem;
-		right: 1rem;
-		display: flex;
-		gap: 0.5rem;
-		align-items: center;
-		z-index: 2;
-	}
-	/* see-through pills: the world shows through, blurred (the clock and the sky switch are $lib/sandbox-kit's) */
-	.out,
-	.title {
-		padding: 0.55rem 0.9rem;
-		border-radius: 999px;
-		background: rgb(250 248 242 / 0.55);
-		border: 1px solid rgb(255 255 255 / 0.35);
-		-webkit-backdrop-filter: blur(12px) saturate(1.2);
-		backdrop-filter: blur(12px) saturate(1.2);
-		font-size: 0.85rem;
-		color: #1f2a23;
-		text-decoration: none;
-	}
-	.bar :global(.time) {
-		margin-left: auto;
-	}
-	.title span {
-		margin-left: 0.4rem;
-		color: #7b857a;
 	}
 	.loading {
 		position: absolute;
@@ -234,30 +200,8 @@
 		}
 	}
 
-	/* ── a narrow screen: a shorter bar that fits ── */
+	/* ── a narrow screen ── */
 	@media (max-width: 640px) {
-		.bar {
-			left: 0.75rem;
-			right: 0.75rem;
-			gap: 0.35rem;
-		}
-		.out,
-		.title {
-			padding: 0.5rem 0.75rem;
-			font-size: 0.8rem;
-			white-space: nowrap;
-		}
-		.title {
-			min-width: 0;
-			overflow: hidden;
-			text-overflow: ellipsis;
-		}
-		.title span {
-			display: none;
-		}
-		.bar :global(.time) {
-			margin-left: auto;
-		}
 		.opening {
 			max-width: calc(100vw - 2rem);
 			white-space: normal;

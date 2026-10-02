@@ -195,4 +195,16 @@
 			will-change: transform;
 		}
 	}
+	/* a phone's screen is the world's: a smaller ring, still a thumb's width to push round */
+	@media (max-width: 640px), (max-height: 500px) {
+		.stick {
+			left: calc(1rem + env(safe-area-inset-left, 0px));
+			width: 6.5rem;
+			height: 6.5rem;
+		}
+		.knob {
+			width: 2.8rem;
+			height: 2.8rem;
+		}
+	}
 </style>

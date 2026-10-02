@@ -37,12 +37,18 @@ export function createStage(container, options = {}) {
 	const scene = new THREE.Scene();
 	const camera = new THREE.PerspectiveCamera(fov, container.clientWidth / container.clientHeight, near, far);
 
+	let size = `${container.clientWidth}x${container.clientHeight}`;
 	const onResize = () => {
+		size = `${container.clientWidth}x${container.clientHeight}`;
 		camera.aspect = container.clientWidth / container.clientHeight;
 		camera.updateProjectionMatrix();
 		renderer.setSize(container.clientWidth, container.clientHeight);
 	};
 	window.addEventListener('resize', onResize);
+	// a phone turned on its side, or its browser's bars coming and going, can settle the container's size only after
+	// the window's resize: follow the container too, so the world always fills the screen
+	const watch = new ResizeObserver(() => size !== `${container.clientWidth}x${container.clientHeight}` && onResize());
+	watch.observe(container);
 
 	let frames = 0, since = performance.now();
 	return {
@@ -63,6 +69,7 @@ export function createStage(container, options = {}) {
 		},
 		dispose() {
 			window.removeEventListener('resize', onResize);
+			watch.disconnect();
 			scene.traverse((o) => /** @type {THREE.Mesh} */ (o).geometry?.dispose());
 			renderer.dispose();
 			renderer.domElement.remove();

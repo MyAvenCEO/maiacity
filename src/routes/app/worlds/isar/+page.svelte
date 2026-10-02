@@ -8,7 +8,7 @@
 	import { onDestroy, onMount } from 'svelte';
 	import type { IsarHandle } from '$lib/worlds/isar';
 	import TouchStick from '$lib/touch/TouchStick.svelte';
-	import { SkyControl, WalkHint } from '$lib/sandbox-kit';
+	import { WalkHint, WorldBar } from '$lib/sandbox-kit';
 
 	const CREDIT = '© OpenStreetMap contributors (ODbL) · DGM1 © Bayerische Vermessungsverwaltung (CC BY 4.0)';
 	let stage = $state<HTMLDivElement>();
@@ -33,11 +33,7 @@
 
 <div class="world">
 	<div class="stage" bind:this={stage}></div>
-	<div class="bar">
-		<a class="out" href="{base}/app/worlds/">← Worlds</a>
-		<div class="title"><strong>The Isar</strong><span>Munich · Wittelsbacherbrücke to the railway bridge</span></div>
-		<SkyControl class="time" />
-	</div>
+	<WorldBar title="The Isar" subtitle="Munich · Wittelsbacherbrücke to the railway bridge" back="Worlds" href="{base}/app/worlds/" />
 	{#if status}<p class="status">{status}</p>{/if}
 	<p class="credit">{CREDIT}</p>
 	<WalkHint />
@@ -57,39 +53,6 @@
 		cursor: grab;
 	}
 
-	.bar {
-		position: absolute;
-		top: calc(1rem + env(safe-area-inset-top, 0px));
-		left: 1rem;
-		right: 1rem;
-		display: flex;
-		gap: 0.5rem;
-		align-items: center;
-		z-index: 2;
-	}
-
-	.out,
-	.title {
-		padding: 0.55rem 0.9rem;
-		border-radius: 999px;
-		background: rgb(250 248 242 / 0.55);
-		border: 1px solid rgb(255 255 255 / 0.35);
-		-webkit-backdrop-filter: blur(12px) saturate(1.2);
-		backdrop-filter: blur(12px) saturate(1.2);
-		font-size: 0.85rem;
-		color: #1f2a23;
-		text-decoration: none;
-	}
-
-	.bar :global(.time) {
-		margin-left: auto;
-	}
-
-	.title span {
-		margin-left: 0.4rem;
-		color: #7b857a;
-	}
-
 	.status {
 		position: absolute;
 		left: 50%;
@@ -106,13 +69,22 @@
 
 	.credit {
 		position: absolute;
-		right: 0.6rem;
+		right: calc(0.6rem + env(safe-area-inset-right, 0px));
 		bottom: calc(0.4rem + env(safe-area-inset-bottom, 0px));
 		margin: 0;
 		font-size: 0.65rem;
 		color: rgb(255 255 255 / 0.8);
 		text-shadow: 0 1px 2px rgb(0 0 0 / 0.5);
+		text-align: right;
 		z-index: 2;
 		pointer-events: none;
+	}
+
+	/* a phone: smaller, and beside the joystick rather than under it */
+	@media (max-width: 640px), (max-height: 500px) {
+		.credit {
+			left: calc(8.5rem + env(safe-area-inset-left, 0px));
+			font-size: 0.6rem;
+		}
 	}
 </style>

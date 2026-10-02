@@ -25,13 +25,39 @@ body {
 	margin: 0;
 }
 
+/* The page runs edge to edge on a phone (viewport-fit=cover, src/app.html): its words keep clear of the notch and the
+   home bar in landscape. A full-screen world (position: fixed) still reaches every edge, and keeps its own controls
+   clear with env(safe-area-inset-*). */
 body {
+	padding-left: env(safe-area-inset-left, 0px);
+	padding-right: env(safe-area-inset-right, 0px);
 	background: var(--cream);
 	color: var(--ink);
 	font-family: var(--font-body);
 	font-size: 17px;
 	line-height: 1.55;
 	-webkit-font-smoothing: antialiased;
+}
+
+/* Pinned to an iPhone's home screen, the status bar is see-through (black-translucent, src/app.html) and its words are
+   white: over a page of cream they need a dark strip behind them. A world in full screen leaves the strip out, and the
+   status bar sits over the world itself. Each layout places it (.status-strip); in a browser tab it is never seen. */
+.status-strip {
+	display: none;
+}
+
+@media (display-mode: standalone) {
+	.status-strip {
+		display: block;
+		position: fixed;
+		top: 0;
+		left: 0;
+		right: 0;
+		z-index: 1000;
+		height: env(safe-area-inset-top, 0px);
+		background: var(--ink);
+		pointer-events: none;
+	}
 }
 
 h1,

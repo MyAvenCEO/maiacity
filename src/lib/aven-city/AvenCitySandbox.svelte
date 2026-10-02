@@ -67,7 +67,7 @@ function setLevel(lv: number): void {
 <div class="avencity fixed inset-0">
 	<canvas bind:this={canvas} class="block h-full w-full"></canvas>
 
-	<div class="pointer-events-none absolute inset-0 flex flex-col justify-between p-5 md:p-7">
+	<div class="hud-frame pointer-events-none absolute inset-0 flex flex-col justify-between">
 		<!-- top bar -->
 		<div class="flex items-start justify-between gap-3">
 			<div class="hud-pill">

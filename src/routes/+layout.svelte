@@ -51,6 +51,7 @@
 </script>
 
 {#if !bare}
+	<div class="status-strip" aria-hidden="true"></div>
 	<header class="wrap">
 		<nav>
 			<a class="logo" href="{base || '/'}">maia<strong>CITY</strong></a>
@@ -101,8 +102,9 @@
 {/if}
 
 <style>
+	/* pinned to the home screen, the status bar is see-through over the page: the header keeps below it */
 	header {
-		padding-top: 1.25rem;
+		padding-top: calc(1.25rem + env(safe-area-inset-top, 0px));
 	}
 
 	/* Desktop: logo · page links · channels, one pill. The order is set in CSS
