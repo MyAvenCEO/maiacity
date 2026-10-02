@@ -25,6 +25,7 @@ Every world's hour is `createSkyClock()`: the time control's (`skyTime.svelte.js
 | `connectFilm({ sandbox, area, renderer, scene, camera, hold, sky, … })` | hands the world to the studio's film camera (`window.__world`); `createCameraHold(camera)` for a world with its own camera controls |
 | `<SkyControl>` | the time of the sky: **Auto** (the in-game clock) or **Manual** (a slider, from noon); one state for every sandbox |
 | `<WalkHint>` | how to walk, for keys and for fingers |
+| `<WorldBar title subtitle back href>` | the bar along the top: the way back (`href`, or `onback`), the world's name and its line, the `<SkyControl>`; slimmer on a phone, clear of the notch |
 | `$lib/touch/TouchStick` | the phone's joystick (already shared) |
 
 ## A new world
@@ -99,7 +100,7 @@ export function mountWorld(container) {
 <script>
 	import { onMount } from 'svelte';
 	import TouchStick from '$lib/touch/TouchStick.svelte';
-	import { SkyControl, WalkHint } from '$lib/sandbox-kit';
+	import { WalkHint, WorldBar } from '$lib/sandbox-kit';
 
 	/** @type {HTMLDivElement | undefined} */
 	let stage = $state();
@@ -113,15 +114,13 @@ export function mountWorld(container) {
 
 <div class="world">
 	<div class="stage" bind:this={stage}></div>
-	<div class="bar">
-		<SkyControl />
-	</div>
+	<WorldBar title="Sandbox 5" subtitle="what it is, in a line" back="Worlds" href="/app/worlds/" />
 	<WalkHint />
 	<TouchStick move={(x, y, hurry) => world?.move(x, y, hurry)} look={(dx, dy) => world?.look(dx, dy)} {stage} taps=".bar a, .bar button" />
 </div>
 ```
 
-Both components take a `class`, for placing them in your bar (`.bar :global(.my-class) { margin-left: auto }`).
+The world fills the screen, edge to edge on a phone (`.world { position: fixed; inset: 0 }`); anything else you lay over it keeps clear of the notch and the home bar with `env(safe-area-inset-*)`. `<SkyControl>` and `<WalkHint>` take a `class`, for placing them in a bar of your own (`.bar :global(.my-class) { margin-left: auto }`).
 
 ## On film: the studio's virtual camera
 

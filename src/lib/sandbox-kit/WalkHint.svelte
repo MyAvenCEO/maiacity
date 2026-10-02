@@ -52,13 +52,24 @@
 			bottom: auto;
 		}
 	}
+	/* a phone: smaller, and just under the slimmer bar (./WorldBar.svelte) */
+	@media (max-width: 640px), (max-height: 500px) {
+		.walk-hint {
+			padding: 0.35rem 0.75rem;
+			font-size: 0.72rem;
+		}
+	}
+	@media (hover: none) and (pointer: coarse) and (max-width: 640px), (hover: none) and (pointer: coarse) and (max-height: 500px) {
+		.walk-hint {
+			top: calc(3rem + env(safe-area-inset-top, 0px));
+		}
+	}
 	@media (max-width: 640px) {
 		.walk-hint {
 			width: max-content;
 			max-width: calc(100vw - 2rem);
 			white-space: normal;
 			text-align: center;
-			font-size: 0.75rem;
 		}
 	}
 </style>

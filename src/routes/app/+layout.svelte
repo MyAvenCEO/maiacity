@@ -98,6 +98,8 @@
 	{#if phase !== 'ready'}<title>Sign in · maiaCITY</title>{:else if closed}<title>Not released yet · maiaCITY</title>{/if}
 </svelte:head>
 
+<!-- pinned to the home screen: a dark strip behind the status bar's white words, except over a world in full screen -->
+{#if !(phase === 'ready' && immersive && !closed)}<div class="status-strip" aria-hidden="true"></div>{/if}
 {#if phase === 'loading'}
 	<div class="gate"><p class="quiet">One moment…</p></div>
 {:else if phase === 'signed-out' || !founder}
@@ -148,7 +150,7 @@
 		justify-content: center;
 		gap: 0.8rem;
 		min-height: 100svh;
-		padding: 2rem 1rem;
+		padding: calc(2rem + env(safe-area-inset-top, 0px)) 1rem calc(2rem + env(safe-area-inset-bottom, 0px));
 		text-align: center;
 	}
 
@@ -198,7 +200,8 @@
 		display: flex;
 		align-items: center;
 		gap: 0.9rem;
-		padding: 0.8rem clamp(1rem, 3vw, 2rem);
+		/* pinned to the home screen, the status bar is see-through: the bar reaches under it, its words below it */
+		padding: calc(0.8rem + env(safe-area-inset-top, 0px)) clamp(1rem, 3vw, 2rem) 0.8rem;
 		border-bottom: 1px solid var(--line);
 		background: rgb(241 237 227 / 0.92);
 		backdrop-filter: blur(10px);

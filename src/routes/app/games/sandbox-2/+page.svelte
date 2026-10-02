@@ -818,9 +818,9 @@
 		max-width: calc(100vw - 2rem);
 	}
 
-	.tl { top: calc(1rem + env(safe-area-inset-top, 0px)); left: 1rem; }
-	.tr { top: calc(1rem + env(safe-area-inset-top, 0px)); right: 1rem; justify-content: flex-end; }
-	.bl { bottom: calc(1rem + env(safe-area-inset-bottom, 0px)); left: 1rem; }
+	.tl { top: calc(1rem + env(safe-area-inset-top, 0px)); left: calc(1rem + env(safe-area-inset-left, 0px)); }
+	.tr { top: calc(1rem + env(safe-area-inset-top, 0px)); right: calc(1rem + env(safe-area-inset-right, 0px)); justify-content: flex-end; }
+	.bl { bottom: calc(1rem + env(safe-area-inset-bottom, 0px)); left: calc(1rem + env(safe-area-inset-left, 0px)); }
 
 	.pill {
 		display: inline-flex;
@@ -905,7 +905,7 @@
 		box-shadow: 0 20px 50px -24px rgb(31 42 35 / 0.5);
 	}
 
-	.sheet.right { right: 1rem; }
+	.sheet.right { right: calc(1rem + env(safe-area-inset-right, 0px)); }
 
 	.close {
 		position: absolute;
@@ -1074,7 +1074,7 @@
 
 	/* on a phone the joystick has the lower left: Mint moves to the lower right */
 	@media (hover: none) and (pointer: coarse) {
-		.corner.bc { left: auto; right: 1rem; transform: none; }
+		.corner.bc { left: auto; right: calc(1rem + env(safe-area-inset-right, 0px)); transform: none; }
 	}
 
 	@media (max-width: 640px) {

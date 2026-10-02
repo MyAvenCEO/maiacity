@@ -14,7 +14,7 @@
 	import { onDestroy, onMount } from 'svelte';
 	import { DOMES, type DomeKind, type InteriorHandle } from './interior/interior';
 	import TouchStick from '$lib/touch/TouchStick.svelte';
-	import { SkyControl, WalkHint } from '$lib/sandbox-kit';
+	import { WalkHint, WorldBar } from '$lib/sandbox-kit';
 
 	let {
 		kind,
@@ -73,14 +73,7 @@
 
 <div class="interior">
 	<div class="stage" bind:this={stage}></div>
-	<div class="bar">
-		<button class="out" onclick={onclose}>← Back outside</button>
-		<div class="title">
-			<strong>{spec.label}</strong>
-			<span>{place} · {spec.diameter} m across · {spec.people}</span>
-		</div>
-		<SkyControl class="time" />
-	</div>
+	<WorldBar title={spec.label} subtitle="{place} · {spec.diameter} m across · {spec.people}" back="Back outside" onback={onclose} />
 	{#if lift}
 		<div class="lift" role="status" aria-live="polite">
 			<p class="where">Floor {lift.floor} · {lift.name}</p>
@@ -122,35 +115,6 @@
 		inset: 0;
 		cursor: grab;
 	}
-	.bar {
-		position: absolute;
-		top: calc(1rem + env(safe-area-inset-top, 0px));
-		left: 1rem;
-		display: flex;
-		gap: 0.5rem;
-		align-items: center;
-		z-index: 2;
-	}
-	/* the clock and the sky switch are $lib/sandbox-kit's */
-	.out,
-	.title {
-		padding: 0.55rem 0.9rem;
-		border: 0;
-		border-radius: 999px;
-		background: rgb(250 248 242 / 0.9);
-		backdrop-filter: blur(10px);
-		font: inherit;
-		font-size: 0.85rem;
-		color: #1f2a23;
-	}
-	.out {
-		cursor: pointer;
-	}
-	.title span {
-		margin-left: 0.4rem;
-		color: #7b857a;
-	}
-
 	/* the lift's panel, bottom centre, above the help line */
 	.lift {
 		position: absolute;
@@ -305,32 +269,6 @@
 		/* the lift's panel above the joystick, not over it */
 		.lift {
 			bottom: calc(11rem + env(safe-area-inset-bottom, 0px));
-		}
-	}
-
-	/* ── a narrow screen: a shorter bar that fits ── */
-	@media (max-width: 640px) {
-		.bar {
-			left: 0.75rem;
-			right: 0.75rem;
-			gap: 0.35rem;
-		}
-		.out,
-		.title {
-			padding: 0.5rem 0.75rem;
-			font-size: 0.8rem;
-			white-space: nowrap;
-		}
-		.title {
-			min-width: 0;
-			overflow: hidden;
-			text-overflow: ellipsis;
-		}
-		.title span {
-			display: none;
-		}
-		.bar :global(.time) {
-			margin-left: auto;
 		}
 	}
 </style>

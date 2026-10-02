@@ -19,6 +19,8 @@
 		const timer = setInterval(() => (clock = gameClock().label), 1000);
 		return () => clearInterval(timer);
 	});
+	/** the in-game day and its hour apart, so an upright phone can show the hour alone */
+	const [day, hour] = $derived(clock.split(' '));
 	const label = $derived(`${String(Math.floor(skyTime.hour) % 24).padStart(2, '0')}:${String(Math.round((skyTime.hour % 1) * 60) % 60).padStart(2, '0')}`);
 	/** the sun by day, the moon by night: what the hand-set hour is */
 	const daylight = $derived(skyTime.hour >= 6 && skyTime.hour < 19.5);
@@ -64,7 +66,7 @@
 		<button bind:this={handButton} class:on={!skyTime.auto} aria-pressed={!skyTime.auto} title="Set the time of day by hand" onclick={() => click(false)}>Manual</button>
 	</div>
 	{#if skyTime.auto}
-		<span class="clock" title="In-game time: a game hour passes every two real minutes">{clock}</span>
+		<span class="clock" title="In-game time: a game hour passes every two real minutes"><span class="day">{day}</span> {hour}</span>
 	{:else}
 		<svg viewBox="0 0 24 24" aria-hidden="true">
 			{#if daylight}
@@ -145,23 +147,31 @@
 		accent-color: #f0a47c;
 		touch-action: none;
 	}
-	@media (max-width: 640px) {
+	/* a phone, upright or on its side: a slimmer pill, as high as ./WorldBar.svelte's */
+	@media (max-width: 640px), (max-height: 500px) {
 		.sky-control {
 			gap: 0.35rem;
-			font-size: 0.8rem;
-			padding-right: 0.55rem;
+			padding: 0.15rem 0.6rem 0.15rem 0.15rem;
+			font-size: 0.75rem;
+			line-height: 1.3;
 		}
 		.modes button {
-			padding: 0.25rem 0.5rem;
+			padding: 0.2rem 0.55rem;
+			font-size: 0.72rem;
+			line-height: 1.3;
 		}
+		input[type='range'] {
+			width: 6.5rem;
+		}
+	}
+	/* upright: the hour without its day, and while the slider is out, the slider alone */
+	@media (max-width: 640px) {
+		.day,
 		.sky-control.manual .clock {
 			display: none;
 		}
 		input[type='range'] {
 			width: 5.5rem;
-		}
-		.sky-control:not(.manual) .clock {
-			font-size: 0.75rem;
 		}
 	}
 </style>

@@ -2,8 +2,17 @@
 <html lang="en">
 	<head>
 		<meta charset="utf-8" />
-		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<!-- viewport-fit=cover: edge to edge on a phone, under the notch and the home bar too (each page keeps its own
+		     words clear of them with env(safe-area-inset-*)); without it iOS letterboxes the page in landscape -->
+		<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
 		<meta name="text-scale" content="scale" />
+		<!-- pinned to the home screen: its own window, full screen, the status bar see-through over the page -->
+		<link rel="manifest" href="%sveltekit.assets%/manifest.webmanifest" />
+		<meta name="mobile-web-app-capable" content="yes" />
+		<meta name="apple-mobile-web-app-capable" content="yes" />
+		<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+		<meta name="apple-mobile-web-app-title" content="maiaCITY" />
+		<meta name="theme-color" content="#f1ede3" />
 		%sveltekit.head%
 	</head>
 	<body data-sveltekit-preload-data="hover">
