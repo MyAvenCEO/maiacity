@@ -202,9 +202,11 @@ export async function mountIsar(container: HTMLElement, onProgress: (label: stri
 		yaw: Math.atan2(-DOWNSTREAM.x, -DOWNSTREAM.z),
 		pitch: 0.02,
 		eye: EYE,
-		// brisk, for 700 m of river: two and a half times the first pace (2.2 m/s, Shift 8), Shift with it
+		// brisk, for 700 m of river: two and a half times the first pace (2.2 m/s, Shift 8), Shift with it — and the
+		// keys walk as fast as the phone's joystick at its rim, where it is mostly pushed, Shift twice that
 		walk: 5.5,
 		hurry: 20,
+		keyboard: { walk: 20, hurry: 40 },
 		stride: 0.25,
 		canStand,
 		floorAt
