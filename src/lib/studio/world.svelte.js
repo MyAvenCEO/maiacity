@@ -1,13 +1,14 @@
-// The world viewer: a live Sandbox 4 in film mode (contract C3), in an iframe of the same origin, slaved to the
+// The world viewer: a live sandbox in film mode (contract C3), in an iframe of the same origin, slaved to the
 // timeline's clock through `window.__film`. It draws the exact frame of a world shot the timeline asks for — at proxy
 // level, through the same view transform as the proxies — and records a camera move flown by hand.
 //
-// ADAPTER: film mode (`/games/sandbox-4/?film`, stream B) does not exist on this branch yet. When the iframe never
-// grows a `__film`, the viewer is `unavailable` and the program monitor falls back to the shot's HD proxy, else to a
-// drawn placeholder (the shot's name, time, hour and camera) — see `placeholder()`. Nothing to remove when B lands:
-// the same code finds `__film` and uses it; delete `placeholder()` only if the placeholder is no longer wanted.
+// Each shot names its world (game/film/worlds.js): the iframe holds one world at a time — the one the clip under the
+// playhead is in — and moves to another world's film page when the timeline cuts to it. While it does, and whenever
+// the iframe never grows a `__film`, the program monitor falls back to the shot's HD proxy, else to a drawn
+// placeholder (the shot's name, time, hour and camera) — see `placeholder()`.
 import { SvelteSet } from 'svelte/reactivity';
 import { forwardConsole } from '$lib/native';
+import { filmPath } from '../../../game/film/worlds.js';
 
 /** @typedef {import('$lib/auth/client').Cdl} Cdl */
 /** @typedef {import('$lib/auth/client').CameraKey} CameraKey */
@@ -17,7 +18,7 @@ import { forwardConsole } from '$lib/native';
 /** @typedef {{ lut: { size: number, data: Float32Array } | null, grade: { size: number, data: Float32Array } | null }} FilmView */
 /** @typedef {{ spec: ShotSpec, t: number, shape: Shape, width: number, height: number, view: FilmView }} ShowArgs */
 /**
- * The film-mode API of Sandbox 4 (contract C3).
+ * The film-mode API of a sandbox (contract C3).
  * @typedef {{
  *   ready(): Promise<void>,
  *   prepare(specs: ShotSpec[]): Promise<void>,
@@ -30,21 +31,24 @@ import { forwardConsole } from '$lib/native';
 /** @typedef {'off' | 'loading' | 'ready' | 'unavailable'} WorldState */
 
 /**
- * Where film mode lives; `?world=<url>` on the studio's address points it elsewhere (a test double).
- * @param {string} base
+ * Where a world's film mode lives (the shot's world; Sandbox 4 when none); `?world=<url>` on the studio's address
+ * points it elsewhere (a test double).
+ * @param {string} base @param {{ sandbox?: string, area?: string }} [world]
  */
-export const worldUrl = (base) => {
+export const worldUrl = (base, world = {}) => {
 	try {
 		const o = new URL(location.href).searchParams.get('world');
 		if (o && o.startsWith('/')) return o;
 	} catch {
 		/* default */
 	}
-	return `${base}/games/sandbox-4/?film`;
+	return `${base}${filmPath(world)}`;
 };
 
 /** @param {ShotSpec} s */
 const specKey = (s) => JSON.stringify(s);
+/** the film page a shot's world is drawn on @param {ShotSpec} s */
+const pathOf = (s) => filmPath(s.world);
 
 export class WorldViewer {
 	/** @type {WorldState} */
@@ -60,6 +64,8 @@ export class WorldViewer {
 	scale = $state(1);
 	/** @type {HTMLIFrameElement | null} */
 	iframe = null;
+	/** the film page in the iframe now: which world it holds */
+	url = $state('');
 	/** @type {Film | null} */
 	film = null;
 	busy = false;
@@ -76,12 +82,21 @@ export class WorldViewer {
 	 * @param {HTMLIFrameElement} iframe @param {string} url
 	 */
 	async attach(iframe, url, wait = 20000, patience = 300000) {
-		if (this.iframe === iframe && this.state !== 'off') return;
+		if (this.iframe === iframe && this.url === url && this.state !== 'off') return;
+		// another world: its own page, and nothing the last one had ready
+		if (this.url !== url) {
+			this.film = null;
+			this.readyShots.clear();
+			this.preparing.clear();
+			this.queued = null;
+			this.busy = false;
+		}
 		this.iframe = iframe;
+		this.url = url;
 		this.state = 'loading';
 		if (iframe.getAttribute('src') !== url) iframe.src = url;
 		const t0 = performance.now();
-		while (performance.now() - t0 < patience && this.iframe === iframe) {
+		while (performance.now() - t0 < patience && this.iframe === iframe && this.url === url) {
 			/** @type {Film | undefined} */
 			let film;
 			try {
@@ -93,6 +108,7 @@ export class WorldViewer {
 				forwardConsole(/** @type {Window} */ (iframe.contentWindow), 'world');
 				try {
 					await film.ready();
+					if (this.url !== url) return;
 					this.film = film;
 					this.state = 'ready';
 					return;
@@ -104,19 +120,23 @@ export class WorldViewer {
 			if (waited > wait && this.state === 'loading') this.state = 'unavailable';
 			await new Promise((r) => setTimeout(r, waited > wait ? 2000 : 250));
 		}
-		if (this.iframe === iframe) this.state = 'unavailable';
+		if (this.iframe === iframe && this.url === url) this.state = 'unavailable';
 	}
 
 	detach() {
 		this.film = null;
 		this.iframe = null;
+		this.url = '';
 		this.state = 'off';
 		this.readyShots.clear();
 		this.preparing.clear();
 	}
 
 	/** @param {ShotSpec} spec */
-	isReady = (spec) => this.state === 'ready' && this.readyShots.has(specKey(spec));
+	isReady = (spec) => this.state === 'ready' && this.holds(spec) && this.readyShots.has(specKey(spec));
+
+	/** whether the world in the iframe is the one this shot is in (only its shots are prepared and drawn there) @param {ShotSpec} spec */
+	holds = (spec) => !!this.url && (this.url.endsWith(pathOf(spec)) || !this.url.includes('/games/'));
 
 	/**
 	 * Loads and keeps everything these shots need (every dome, set and area); resolves when all are ready.
@@ -125,6 +145,7 @@ export class WorldViewer {
 	prepare(specs) {
 		const film = this.film;
 		if (!film) return Promise.resolve();
+		specs = specs.filter((s) => this.holds(s));
 		const todo = specs.filter((s) => !this.readyShots.has(specKey(s)) && !this.preparing.has(specKey(s)));
 		for (const s of todo) {
 			const k = specKey(s);
@@ -149,7 +170,7 @@ export class WorldViewer {
 	 */
 	/** @param {ShowArgs} o */
 	show(o) {
-		if (!this.film) return;
+		if (!this.film || !this.holds(o.spec)) return;
 		if (this.busy) return void (this.queued = o);
 		this.busy = true;
 		const t0 = performance.now();

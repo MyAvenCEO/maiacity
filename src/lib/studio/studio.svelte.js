@@ -290,6 +290,18 @@ export class Studio {
 		return (hash && this.byHash.get(hash)) || this.pictureItem;
 	});
 	worldClips = $derived(this.clips.filter((c) => isWorld(c)));
+	/**
+	 * The world the live viewer holds: the one the picture's world clip is in, else the next world clip's ahead of the
+	 * playhead, else the first's — the iframe moves to another world's film page when the timeline cuts to it.
+	 */
+	filmWorld = $derived.by(() => {
+		void this.shotRev;
+		const c = this.picture;
+		const spec = (/** @type {Clip | null} */ w) => (w ? cached(w.shot, w.shotVersion)?.spec : undefined);
+		const at = c && isWorld(c) ? spec(c) : undefined;
+		const next = this.worldClips.filter((w) => w.start + w.dur > this.time).sort((a, b) => a.start - b.start)[0] ?? this.worldClips[0];
+		return (at ?? spec(next ?? null))?.world ?? {};
+	});
 	/** every sound cue of the world clips, on A3 where it lands */
 	cueClips = $derived.by(() => {
 		void this.shotRev;

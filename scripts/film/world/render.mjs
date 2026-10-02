@@ -1,4 +1,4 @@
-// THE PLATE RENDERER — a world clip's frames, rendered offline at full quality in Sandbox 4's film mode, as a log
+// THE PLATE RENDERER — a world clip's frames, rendered offline at full quality in its sandbox's film mode, as a log
 // plate: ACEScct, 10-bit HEVC, bt709 matrix, tv range, tagged `comment=maiacity:color=acescct` (contract C4 in
 // scripts/film/PLAN.md), from the command line: shoot.mjs (plates and storyboard stills by hand) and the parity test
 // use it. The final render's plates and hero frames, and a world shot's HD proxy, are the Mac app's
@@ -27,6 +27,7 @@ import { createServer } from 'node:http';
 import { mkdirSync, renameSync, rmSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { fingerprint as fingerprintOf, normalize, SHAPES } from '../../../game/film/shot.js';
+import { filmPath } from '../../../game/film/worlds.js';
 
 const mac = process.platform === 'darwin';
 
@@ -52,21 +53,30 @@ export function hevcEncoder() {
 }
 
 /**
- * Open Sandbox 4 in film mode in a headless browser and wait until the world is up.
- * @param {{ site: string, log?: (s: string) => void }} opts
+ * Open a world in film mode in a headless browser and wait until it is up: the shot's world (`world`, as a spec names
+ * it), Sandbox 4 by default. `goTo(world)` moves the page to another world's film page when a shot is in another.
+ * @param {{ site: string, world?: { sandbox?: string, area?: string }, log?: (s: string) => void }} opts
  */
-export async function openWorld({ site, log = () => {} }) {
+export async function openWorld({ site, world = {}, log = () => {} }) {
 	assertMac();
 	const browser = await puppeteer.launch({ executablePath: chromePath(), headless: true, protocolTimeout: 0, args: browserArgs() });
 	const page = await browser.newPage();
 	page.on('pageerror', (e) => log(`page error: ${e.message}`));
 	page.on('console', (m) => (m.type() === 'error' || m.type() === 'warn') && log(`page ${m.type()}: ${m.text()}`));
 	await page.setViewport({ width: 640, height: 640, deviceScaleFactor: 1 });
-	await page.goto(`${site.replace(/\/$/, '')}/games/sandbox-4/?film`, { waitUntil: 'domcontentloaded' });
-	await page.waitForFunction(() => window.__film && window.__village, { timeout: 0, polling: 1000 });
-	await page.evaluate(() => window.__film.ready());
+	let at = '';
+	/** @param {{ sandbox?: string, area?: string }} w */
+	const goTo = async (w) => {
+		const path = filmPath(w);
+		if (path === at) return;
+		await page.goto(`${site.replace(/\/$/, '')}${path}`, { waitUntil: 'domcontentloaded' });
+		await page.waitForFunction(() => window.__film && window.__world, { timeout: 0, polling: 1000 });
+		await page.evaluate(() => window.__film.ready());
+		at = path;
+	};
+	await goTo(world);
 	const build = await page.evaluate(() => window.__film.build);
-	return { browser, page, build, close: () => browser.close() };
+	return { browser, page, build, goTo, close: () => browser.close() };
 }
 
 /** A local HTTP server the page posts frames to; they come out in order, one at a time. */
@@ -178,8 +188,9 @@ export async function renderPlate(o) {
 	if (!(shape in SHAPES)) throw new Error(`shape is one of ${Object.keys(SHAPES).join(', ')}`);
 	if (!(o.width > 0 && o.height > 0) || o.width % 2 || o.height % 2) throw new Error('width and height are even numbers of pixels');
 	const frames = Math.max(1, Math.round((to - from) * fps));
-	const world = o.world ?? (await openWorld({ site: o.site ?? 'http://localhost:5173', log: o.log }));
+	const world = o.world ?? (await openWorld({ site: o.site ?? 'http://localhost:5173', world: spec.world, log: o.log }));
 	try {
+		await world.goTo(spec.world);
 		if (spec.world.build && !sameBuild(world.build, spec.world.build) && !o.allowBuildMismatch)
 			throw new Error(`this shot was made on build ${spec.world.build.commit.slice(0, 9)} (${spec.world.build.hash.slice(0, 12)}); the site is ${world.build ? `${world.build.commit.slice(0, 9)} (${world.build.hash.slice(0, 12)})` : 'a dev build'} — render it on its build, or allow the mismatch`);
 		const { page } = world;

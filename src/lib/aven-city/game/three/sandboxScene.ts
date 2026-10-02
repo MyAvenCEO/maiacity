@@ -6,8 +6,8 @@
 import * as THREE from 'three'
 import type { BiomeId } from '../hexmap'
 import { buildBiomeTile, type PlacedKind } from './buildWorld'
-import { createCameraRig } from './cameraRig'
-import { createDaylight } from './daylight'
+import { createOrbitRig } from '$lib/sandbox-kit/orbit.js'
+import { createSky } from '$lib/sandbox-kit/sky.js'
 
 const SKY = '#cde9ec'
 
@@ -34,7 +34,7 @@ export function createSandbox(canvas: HTMLCanvasElement): SandboxApi {
 
 	// the sandbox is a turntable: the specimen stays centered and you look at
 	// it from any angle — no walking away from the thing you are styling
-	const rig = createCameraRig(camera, canvas, {
+	const rig = createOrbitRig(camera, canvas, {
 		minDistance: 1.2,
 		maxDistance: 9,
 		target: new THREE.Vector3(0, 0.35, 0),
@@ -42,11 +42,9 @@ export function createSandbox(canvas: HTMLCanvasElement): SandboxApi {
 		floorY: -0.05
 	})
 
-	const daylight = createDaylight(scene, {
-		shadowExtent: 3,
-		shadowFar: 20,
-		distance: 8
-	})
+	// the clay sky of the islands, over one tile ($lib/sandbox-kit/sky)
+	let hourNow = 11
+	const sky = createSky(renderer, scene, { style: 'clay', clock: () => hourNow, shadowReach: 3, shadowFar: 20, size: 8 })
 
 	// soft display pedestal catching the tile's shadow
 	const pedestal = new THREE.Mesh(
@@ -97,17 +95,21 @@ export function createSandbox(canvas: HTMLCanvasElement): SandboxApi {
 		raf = requestAnimationFrame(animate)
 		resize()
 		rig.update(clock.getDelta())
+		sky.tick()
 		renderer.render(scene, camera)
 	}
 	animate()
 
 	return {
 		show,
-		setHour: daylight.setHour,
+		setHour(hour) {
+			hourNow = hour
+			sky.set()
+		},
 		dispose(): void {
 			cancelAnimationFrame(raf)
 			rig.dispose()
-			daylight.dispose()
+			sky.dispose()
 			disposeSpecimen()
 			pedestal.geometry.dispose()
 			;(pedestal.material as THREE.Material).dispose()

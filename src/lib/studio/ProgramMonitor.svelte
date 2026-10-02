@@ -221,7 +221,7 @@
 	// everywhere else a world shot plays from its HD proxy
 	const inWorld = $derived(s.wantWorld && s.tab === '3d');
 	$effect(() => {
-		if (inWorld && iframe) void s.world.attach(iframe, worldUrl(base));
+		if (inWorld && iframe) void s.world.attach(iframe, worldUrl(base, s.filmWorld));
 	});
 	$effect(() => {
 		if (!inWorld && s.world.state !== 'off') s.world.detach();

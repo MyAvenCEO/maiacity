@@ -17,8 +17,9 @@ import {
 	type WorldApi,
 	type WorldStats
 } from './buildWorld'
-import { createCameraRig } from './cameraRig'
-import { createDaylight } from './daylight'
+import { createOrbitRig } from '$lib/sandbox-kit/orbit.js'
+import { claySunAt, createSky } from '$lib/sandbox-kit/sky.js'
+import { connectFilm, filmDraws } from '$lib/sandbox-kit/film.js'
 
 const SKY = '#cde9ec'
 const HEX_HEIGHT = 0.5 // keep in sync with buildWorld
@@ -69,6 +70,8 @@ export interface SceneApi {
 	 * makes the designation readable on the island. */
 	/** Moves the sun to the given hour of the day (0..24). */
 	setHour(hour: number): void
+	/** Keeps the sky at day whatever the hour, or follows the hour again. */
+	alwaysDay(on: boolean): void
 	/** Travels the map from a touch joystick: x to the right, y ahead, each -1…1. */
 	move(x: number, y: number, hurry: boolean): void
 	dispose(): void
@@ -77,6 +80,8 @@ export interface SceneApi {
 export interface SceneOptions {
 	/** Fires with everything currently selected — empty when nothing is. */
 	onSelect?(tiles: HexTile[]): void
+	/** On film (src/lib/film): the island as its seed grows it, every time — nothing read from or kept in the browser. */
+	film?: boolean
 }
 
 function disposeObject(root: THREE.Object3D): void {
@@ -161,7 +166,8 @@ export function createScene(canvas: HTMLCanvasElement, options: SceneOptions = {
 	// placeholder until the world exists — frameOpening() sets the real shot
 	camera.position.set(7, 2.8, 15)
 
-	const rig = createCameraRig(camera, canvas, {
+	// the map camera of every sandbox seen from above ($lib/sandbox-kit/orbit)
+	const rig = createOrbitRig(camera, canvas, {
 		// close enough to stand among the domes of a single hex
 		minDistance: 0.35,
 		maxDistance: 200,
@@ -172,13 +178,11 @@ export function createScene(canvas: HTMLCanvasElement, options: SceneOptions = {
 	})
 	const controls = rig.controls
 
-	// the shadow box only has to cover the island; a tight box spends its
-	// texels on the domes instead of the sea, so a smaller map looks the same
-	const daylight = createDaylight(scene, {
-		shadowExtent: 30,
-		shadowFar: 200,
-		shadowMapSize: 1024
-	})
+	/** the hour the page sets (setHour), so the opening shot can face the sun */
+	let hourNow = 12
+	// the clay sky of every sandbox seen from above ($lib/sandbox-kit/sky): the shadow box only has to cover the
+	// island; a tight box spends its texels on the domes instead of the sea, so a smaller map looks the same
+	const sky = createSky(renderer, scene, { style: 'clay', clock: () => hourNow, shadowReach: 30, shadowFar: 200, shadowMap: 1024 })
 
 	// the sea — simple faceted low-poly, static
 	// only as far as the fog lets you see
@@ -250,6 +254,7 @@ export function createScene(canvas: HTMLCanvasElement, options: SceneOptions = {
 	let saveKey = ''
 
 	function persist(): void {
+		if (options.film) return
 		try {
 			localStorage.setItem(saveKey, JSON.stringify(saved))
 		} catch {
@@ -326,9 +331,6 @@ export function createScene(canvas: HTMLCanvasElement, options: SceneOptions = {
 		return out
 	}
 
-	/** the hour last set, so the opening shot can face the sun */
-	let hourNow = 12
-
 	/**
 	 * The opening shot: close on a level 5 dome cell, low, looking straight
 	 * into the low sun — so it sits in the middle of the frame, far away,
@@ -345,8 +347,8 @@ export function createScene(canvas: HTMLCanvasElement, options: SceneOptions = {
 		const gx = world.group.position.x
 		const gz = world.group.position.z
 		const target = new THREE.Vector3(tile ? tile.x + gx : 0, 0.75, tile ? tile.z + gz : 0)
-		// the same azimuth the daylight uses, so "toward the sun" is exact
-		const az = ((hourNow - 5) / 15) * Math.PI * 0.9 + 0.35
+		// the same azimuth the sky uses, so "toward the sun" is exact
+		const az = claySunAt(hourNow).azimuth
 		const toSun = new THREE.Vector3(Math.cos(az), 0, Math.sin(az))
 		controls.target.copy(target)
 		camera.position.copy(target).addScaledVector(toSun, -2.3)
@@ -359,7 +361,7 @@ export function createScene(canvas: HTMLCanvasElement, options: SceneOptions = {
 		saved = { buildings: {} }
 		let fresh = true
 		try {
-			const raw = localStorage.getItem(saveKey)
+			const raw = options.film ? null : localStorage.getItem(saveKey)
 			if (raw) {
 				saved = { buildings: JSON.parse(raw).buildings ?? {} }
 				fresh = false
@@ -566,7 +568,7 @@ export function createScene(canvas: HTMLCanvasElement, options: SceneOptions = {
 		camera,
 		controls,
 		sea,
-		daylight,
+		sky,
 		world: () => world
 	}
 
@@ -574,14 +576,30 @@ export function createScene(canvas: HTMLCanvasElement, options: SceneOptions = {
 	let raf = 0
 	function animate(): void {
 		raf = requestAnimationFrame(animate)
-		resize()
+		// while the film camera holds the island it draws the canvas itself, at the size it asks for
+		if (!filmDraws()) resize()
+		// the map camera, or where the film camera holds it
 		rig.update(clock.getDelta())
 		// detail follows the eye: blocks of the island rise and fall between
 		// full build, distant stand-in and bare ground as you travel
 		world?.updateLod(camera.position)
-		renderer.render(scene, camera)
+		sky.tick()
+		if (!filmDraws()) renderer.render(scene, camera)
 	}
 	animate()
+
+	/* the film camera's hold on the island (src/lib/film, $lib/sandbox-kit/film) */
+	const film = connectFilm({
+		sandbox: 'sandbox-1',
+		area: 'island',
+		renderer,
+		scene,
+		camera,
+		hold: rig,
+		sky,
+		place: () => rig.release(),
+		advance: () => world?.updateLod(camera.position)
+	})
 
 	return {
 		setWorld,
@@ -609,7 +627,10 @@ export function createScene(canvas: HTMLCanvasElement, options: SceneOptions = {
 		},
 		setHour(hour) {
 			hourNow = hour
-			daylight.setHour(hour)
+			sky.set()
+		},
+		alwaysDay(on) {
+			sky.alwaysDay(on)
 		},
 		dispose(): void {
 			cancelAnimationFrame(raf)
@@ -618,8 +639,9 @@ export function createScene(canvas: HTMLCanvasElement, options: SceneOptions = {
 			canvas.removeEventListener('pointerup', onPointerUp)
 			window.removeEventListener('keydown', onKeyDown)
 			marquee.remove()
+			film.disconnect()
 			rig.dispose()
-			daylight.dispose()
+			sky.dispose()
 			if (world) world.dispose()
 			disposeObject(scene)
 			renderer.dispose()

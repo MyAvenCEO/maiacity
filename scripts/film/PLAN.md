@@ -278,7 +278,7 @@ sample exists (after M2); **M10** closes each milestone's docs as it lands.
 - ACES 2.0 vs 1.3 output transform: decided by which bakes cleanly and looks right on the Day 19 test (M1).
 - Grade-tab viewer precision: worker-rendered 16-bit hero frames plus 8-bit GPU playback is the plan; revisit if
   browsers give us 10-bit video textures.
-- Which other sandboxes get film mode after Sandbox 4.
+- ~~Which other sandboxes get film mode after Sandbox 4.~~ All of them (C3), through the sandbox kit.
 - HDR delivery (Rec.2100 PQ) — when YouTube HDR becomes worth it.
 
 ---
@@ -345,8 +345,12 @@ game/film/shot.js exports `normalize(spec)` (validate + defaults; throws ShotErr
 `.spec` to every path. `scripts/film/worlds/day-19-d.json` holds Day 19's 42 shots (untimed: seconds and clock
 come from the timeline).
 
-### C3 · Film mode in Sandbox 4 (src/lib/film/**, the sandbox-4 routes — owned by stream B) · built
+### C3 · Film mode in every sandbox (src/lib/film/**, src/lib/sandbox-kit/film.js, the /games/<sandbox> routes) · built
 
+A shot names its world (`world.sandbox`, `world.area` — game/film/worlds.js: Sandbox 1's island, Sandbox 2's planet
+and city islands, Sandbox 3's domes, Sandbox 4's cell). Each world hands itself to the film as `window.__world`
+(`connectFilm`, the same contract everywhere; `__village` is Sandbox 4's older name), and the studio, the Mac app's
+world window and the CLI open a shot's world at `filmPath(world)`, moving to another world's page for a shot in it.
 `/games/sandbox-4/?film` (no sign-in; the old address) mounts the world alone under the film's clocks
 (src/lib/film/FilmWorld.svelte) and exposes `window.__film`; every method takes a spec as stored (it is normalized):
 ```js

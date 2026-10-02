@@ -14,14 +14,16 @@
  * out of a door and you are in the village again, outside it.
  */
 import * as THREE from 'three'
-import { Sky } from 'three/addons/objects/Sky.js'
 import { DOMES, DOORS, adiff, bake, box, geodesic, lantern, mats, mountInterior, polar, portal, sofa, table, type DomeKind, type EmbeddedDome } from './interior'
 import { cafes, coops, coopsAround, henPatches, playground, squaresAround, type Kit } from './spaces'
 import { water } from './textures'
 import { appleTree, banana, berryBush, canopyTree, climber, clover, coconutPalm, comfrey, fruitTree, ginger, herb, papaya, passionVine, seeded, smallFruitTree, squash, strawberries, tropicalShrub, forestFloor, FLOOR_KINDS, floorPick, grassTuft, type Plant } from './plants'
 import { apiary, fishes, herd } from './animals'
 import { flow, pond, shore, stream } from './water'
-import { gameHour } from '../../../../game/time'
+import { createStage } from '$lib/sandbox-kit/stage.js'
+import { createSky } from '$lib/sandbox-kit/sky.js'
+import { createWalker } from '$lib/sandbox-kit/walker.js'
+import { connectFilm, filmDraws, filmHoldsSize, worldTime } from '$lib/sandbox-kit/film.js'
 import { ambience, levelsAt } from './ambience'
 
 export type VillageDome = { kind: DomeKind; x: number; z: number; R: number; ext: number }
@@ -43,7 +45,6 @@ export type VillageHandle = {
 	dispose: () => void
 }
 
-const EYE = 1.65
 const WORLD = 380
 
 /** The cell: the master dome, six large domes round it, six medium domes further out between them. */
@@ -63,16 +64,9 @@ export async function mountVillage(container: HTMLElement, onProgress: (label: s
 		onProgress(label)
 		await new Promise((r) => requestAnimationFrame(() => setTimeout(r, 0)))
 	}
-	const renderer = new THREE.WebGLRenderer({ antialias: true })
-	renderer.setPixelRatio(Math.min(1.25, window.devicePixelRatio))
-	renderer.setSize(container.clientWidth, container.clientHeight)
-	renderer.toneMapping = THREE.ACESFilmicToneMapping
-	renderer.toneMappingExposure = 0.42
-	renderer.shadowMap.enabled = true
-	renderer.shadowMap.type = THREE.PCFSoftShadowMap
-	container.appendChild(renderer.domElement)
-	const scene = new THREE.Scene()
-	const camera = new THREE.PerspectiveCamera(68, container.clientWidth / container.clientHeight, 0.1, 2400)
+	// the canvas, the camera and the sky are every sandbox's own ($lib/sandbox-kit)
+	const stage = createStage(container)
+	const { renderer, scene, camera } = stage
 	const m = mats()
 	const domes = layout()
 	const animated: ((t: number) => void)[] = []
@@ -90,96 +84,19 @@ export async function mountVillage(container: HTMLElement, onProgress: (label: s
 	const lastNear = new Map<number, number>()
 	let nightNow = 0
 
-	/* ── the sky, and a sun that follows the in-game clock ── */
-	// the film camera (src/lib/film): `__worldTime` is the world's clock in seconds while a film sets it — the animals,
-	// the water and every animation follow it instead of the page's clock; `__filmDraw` while the film draws the canvas
-	const dev = window as unknown as { __interiorHour?: number; __exposure?: number; __worldTime?: number; __filmDraw?: boolean }
-	/** the hour the sky shows when it is kept at day: late morning, the shadows still long enough to read */
-	const DAY_HOUR = 11
-	let keepDay = false
-	const hourNow = () => dev.__interiorHour ?? (keepDay ? DAY_HOUR : gameHour())
-	const sunAt = (hour: number) => {
-		const e = Math.sin(((hour - 5) / 15) * Math.PI)
-		const alt = e * THREE.MathUtils.degToRad(68)
-		const az = THREE.MathUtils.degToRad(90 + ((hour - 5) / 15) * 180)
-		return { dir: new THREE.Vector3().setFromSphericalCoords(1, Math.PI / 2 - alt, az), e }
-	}
-	const sky = new Sky()
-	sky.scale.setScalar(4000)
-	const u = sky.material.uniforms
-	u['turbidity']!.value = 3
-	u['rayleigh']!.value = 1.2
-	u['mieCoefficient']!.value = 0.004
-	u['mieDirectionalG']!.value = 0.8
-	scene.add(sky)
-	const pmrem = new THREE.PMREMGenerator(renderer)
-	const envScene = new THREE.Scene()
-	const envSky = new Sky()
-	envSky.scale.setScalar(1000)
-	Object.assign(envSky.material.uniforms, THREE.UniformsUtils.clone(sky.material.uniforms))
-	envScene.add(envSky)
-	const sunLight = new THREE.DirectionalLight('#fff1d8', 2.4)
-	sunLight.castShadow = true
-	sunLight.shadow.mapSize.set(4096, 4096)
-	const sc = sunLight.shadow.camera
-	sc.left = sc.bottom = -170
-	sc.right = sc.top = 170
-	sc.near = 10
-	sc.far = 1400
-	sunLight.shadow.bias = -0.0005
-	sunLight.shadow.normalBias = 0.05
-	scene.add(sunLight, sunLight.target)
-	const fill = new THREE.HemisphereLight('#f4f0e6', '#6d5a3c', 0.4)
-	scene.add(fill)
-	scene.fog = new THREE.Fog('#e3e9e6', 180, 1400)
+	/* ── the sky, and a sun that follows the in-game clock ($lib/sandbox-kit/sky) ── */
+	// the film camera (src/lib/film, $lib/sandbox-kit/film): while a film holds the cell, every animation runs on the
+	// world's clock it sets (worldTime) instead of the page's, and the film draws the canvas itself (filmDraws)
 	const GLOW = '#ffc070', LAMP = '#ffc98a'
 	const glowMat = new THREE.MeshStandardMaterial({ color: '#fff0d0', emissive: GLOW, emissiveIntensity: 0.1 })
-	const warm = new THREE.Color('#ffb070'), white = new THREE.Color('#fff1d8'), moon = new THREE.Color('#8ea6dc')
-	let envAt: THREE.Vector3 | null = null
-	/** where the light comes from, sun or moon: the shadows follow you, the direction stays the sky's */
-	const lightDir = new THREE.Vector3(0, 1, 0)
-	const lastDir = new THREE.Vector3()
-	renderer.shadowMap.autoUpdate = false
-	const aimLight = (x: number, z: number) => {
-		// snapped to a grid, so the shadows do not shimmer as you walk; and drawn again only
-		// when that changes or the sun has moved, not every frame
-		const gx = Math.round(x / 8) * 8, gz = Math.round(z / 8) * 8
-		if (gx !== sunLight.target.position.x || gz !== sunLight.target.position.z || !lightDir.equals(lastDir)) {
-			renderer.shadowMap.needsUpdate = true
-			lastDir.copy(lightDir)
+	// the lanterns glow and the open domes darken with the night
+	const sky = createSky(renderer, scene, {
+		onHour: ({ hour, night }) => {
+			glowMat.emissiveIntensity = 0.1 + 2.4 * night
+			nightNow = night
+			for (const dm of built.values()) dm.setHour(hour)
 		}
-		sunLight.target.position.set(gx, 0, gz)
-		sunLight.position.copy(lightDir).multiplyScalar(700).add(sunLight.target.position)
-	}
-	const setSun = (hour: number) => {
-		const { dir, e } = sunAt(hour)
-		const day = THREE.MathUtils.smoothstep(e, -0.05, 0.35)
-		const low = 1 - THREE.MathUtils.smoothstep(e, 0, 0.6)
-		u['sunPosition']!.value.copy(dir)
-		lightDir.copy(e > -0.02 ? dir : dir.clone().negate().setY(Math.abs(dir.y) + 0.4).normalize())
-		aimLight(sunLight.target.position.x, sunLight.target.position.z)
-		sunLight.color.copy(e > -0.02 ? white.clone().lerp(warm, low) : moon)
-		sunLight.intensity = e > -0.02 ? 0.5 + 2.5 * day : 1.1
-		fill.intensity = 0.34 + 0.08 * day
-		fill.color.set('#f4f0e6').lerp(moon, 1 - day)
-		;(scene.fog as THREE.Fog).color.set('#e3e9e6').lerp(new THREE.Color('#1c2438'), 1 - day)
-		scene.environmentIntensity = 0.12 + 0.18 * day
-		// the film camera (scripts/film) may open the lens for a dark shot: a multiplier, 1 in the game
-		renderer.toneMappingExposure = (0.42 + 0.5 * (1 - day)) * (dev.__exposure ?? 1)
-		glowMat.emissiveIntensity = 0.1 + 2.4 * (1 - THREE.MathUtils.smoothstep(e, -0.02, 0.18))
-		nightNow = 1 - THREE.MathUtils.smoothstep(e, -0.02, 0.18)
-		for (const dm of built.values()) dm.setHour(hour)
-		// the sky's light is made again when the sun has moved — on film at any move at all, so that no frame depends
-		// on the frame drawn before it
-		if (!envAt || (dev.__worldTime !== undefined ? !envAt.equals(dir) : envAt.angleTo(dir) > 0.04)) {
-			envAt = dir.clone()
-			envSky.material.uniforms['sunPosition']!.value.copy(dir)
-			const old = scene.environment
-			scene.environment = pmrem.fromScene(envScene).texture
-			old?.dispose()
-		}
-	}
-	setSun(hourNow())
+	})
 	await pause('Letting in the light')
 
 	/* ── the ground: the hexagon of the cell, meadow beyond ── */
@@ -897,42 +814,16 @@ export async function mountVillage(container: HTMLElement, onProgress: (label: s
 
 	/* ── walking: WASD or the touch joystick, drag to look; through a door, into the dome ── */
 	const start = doorPoint(master, Math.PI, 10)
-	const pos = new THREE.Vector3(start.x, 0, start.z)
-	// facing the master dome
-	let yaw = Math.PI
-	let pitch = 0.08
-	const keys = new Set<string>()
-	const onKey = (e: KeyboardEvent, down: boolean) => {
-		const k = e.key.toLowerCase()
-		if (['w', 'a', 's', 'd', 'arrowup', 'arrowdown', 'arrowleft', 'arrowright', 'shift'].includes(k)) {
-			if (down) keys.add(k)
-			else keys.delete(k)
-			e.preventDefault()
-		}
-	}
-	const kd = (e: KeyboardEvent) => onKey(e, true)
-	const ku = (e: KeyboardEvent) => onKey(e, false)
-	window.addEventListener('keydown', kd)
-	window.addEventListener('keyup', ku)
-	const dom = renderer.domElement
-	let dragging = false
-	const onDown = () => {
-		dragging = true
-		dom.requestPointerLock?.()
-	}
-	const onMove = (e: MouseEvent) => {
-		if (document.pointerLockElement === dom || dragging) {
-			yaw -= e.movementX * 0.0042
-			pitch = Math.max(-1.4, Math.min(1.4, pitch - e.movementY * 0.0042))
-		}
-	}
-	const onUp = () => (dragging = false)
-	dom.addEventListener('mousedown', onDown)
-	window.addEventListener('mousemove', onMove)
-	window.addEventListener('mouseup', onUp)
-	// on a phone the page's fingers walk (move) and look round (look)
-	dom.style.touchAction = 'none'
-	const stick = { x: 0, y: 0, hurry: false }
+	// facing the master dome; where you may stand and how high (canStand, floorHere) is the cell's, below
+	const walker = createWalker(camera, renderer.domElement, {
+		x: start.x,
+		z: start.z,
+		yaw: Math.PI,
+		pitch: 0.08,
+		canStand: (x, z, here, ground) => check(x, z, here, ground),
+		floorAt: (x, z, ground) => floorHere(x, z, ground)
+	})
+	const pos = walker.position
 
 	// every tree, pillar and table, filed by 8 m cells for walking
 	const blockers = new Map<string, { x: number; z: number; r: number }[]>()
@@ -1000,12 +891,12 @@ export async function mountVillage(container: HTMLElement, onProgress: (label: s
 		const job = { i, cancelled: false }
 		building = job
 		// on film nothing is drawn while the world is readied (__filmDraw): every dome builds in long stretches
-		mountInterior(container, d.kind, () => {}, { host: { scene, camera, renderer, x: d.x, z: d.z }, cancelled: () => job.cancelled, hurry: () => gapTo(i) < 12 || !!dev.__filmDraw, background: () => gapTo(i) > 45 && !dev.__filmDraw })
+		mountInterior(container, d.kind, () => {}, { host: { scene, camera, renderer, x: d.x, z: d.z }, cancelled: () => job.cancelled, hurry: () => gapTo(i) < 12 || filmDraws(), background: () => gapTo(i) > 45 && !filmDraws() })
 			.then((h) => {
 				if (building === job) building = null
 				if (job.cancelled || !h.embedded) return h.dispose()
 				built.set(i, h.embedded)
-				h.embedded.setHour(hourNow())
+				h.embedded.setHour(sky.hour())
 				lastNear.set(i, performance.now())
 				place(i)
 			})
@@ -1055,9 +946,6 @@ export async function mountVillage(container: HTMLElement, onProgress: (label: s
 
 	/** Where you may stand, and how high: the land, or inside the open dome on its own floors. */
 	const DOOR_HALF = 1.1
-	/** the floor you truly stand on, and your feet easing after it (for a smooth eye) */
-	let ground = 0
-	let feet = 0
 	const floorHere = (x: number, z: number, f: number) => {
 		for (const i of shown) {
 			const d = domes[i]!
@@ -1065,7 +953,7 @@ export async function mountVillage(container: HTMLElement, onProgress: (label: s
 		}
 		return 0
 	}
-	const check = (x: number, z: number, here: number): boolean => {
+	const check = (x: number, z: number, here: number, ground: number): boolean => {
 		if (!inHex(x, z)) return false
 		for (let i = 0; i < domes.length; i++) {
 			const d = domes[i]!
@@ -1094,94 +982,25 @@ export async function mountVillage(container: HTMLElement, onProgress: (label: s
 				for (const c of blockers.get(`${ix + dx},${iz + dz}`) ?? []) if (Math.hypot(c.x - x, c.z - z) < c.r + 0.25) return false
 		return true
 	}
-	/* round a tree, a pillar or a wall rather than stopping at it: the stride is turned a little
-	   at a time, either way, until it is free, and slowed the further it must turn. The side
-	   last taken is tried first, so you keep going round the same way and do not waver. */
-	const TURNS = [25, 50, 75, 90].map((d) => (d * Math.PI) / 180)
-	let side = 1
-	const round = (go: (mx: number, mz: number) => boolean, sx: number, sz: number) => {
-		for (const a of TURNS) {
-			const len = Math.max(0.4, Math.cos(a))
-			for (const sg of [side, -side]) {
-				const c = Math.cos(a * sg), sn = Math.sin(a * sg)
-				if (go((sx * c - sz * sn) * len, (sx * sn + sz * c) * len)) {
-					side = sg
-					return true
-				}
-			}
-		}
-		return false
-	}
-	const step = (dt: number) => {
-		const clamp = (v: number) => Math.max(-1, Math.min(1, v))
-		const f = clamp((keys.has('w') || keys.has('arrowup') ? 1 : 0) - (keys.has('s') || keys.has('arrowdown') ? 1 : 0) + stick.y)
-		const s = clamp((keys.has('d') ? 1 : 0) - (keys.has('a') ? 1 : 0) + stick.x)
-		yaw += ((keys.has('arrowleft') ? 1 : 0) - (keys.has('arrowright') ? 1 : 0)) * 1.8 * dt
-		if (f || s) {
-			const speed = (keys.has('shift') || stick.hurry ? 14.6 : 6.45) * dt
-			const dx = (-Math.sin(yaw) * f + Math.cos(yaw) * s) * speed
-			const dz = (-Math.cos(yaw) * f - Math.sin(yaw) * s) * speed
-			// in short strides, each reaching up from the floor you stand on, so a stair climbs
-			// as well at a hurry, and on a slow phone, as at a stroll
-			const n = Math.max(1, Math.ceil(Math.hypot(dx, dz) / 0.25))
-			const sx = dx / n, sz = dz / n
-			for (let k = 0; k < n; k++) {
-				const here = floorHere(pos.x, pos.z, ground)
-				const go = (mx: number, mz: number) => {
-					if (!check(pos.x + mx, pos.z + mz, here)) return false
-					pos.x += mx
-					pos.z += mz
-					return true
-				}
-				if (!go(sx, sz) && !round(go, sx, sz)) {
-					// nothing to step round to: slide along the ground's own axes, as before
-					if (!go(sx, 0)) go(0, sz)
-				}
-				ground = floorHere(pos.x, pos.z, ground)
-			}
-		}
-		ground = floorHere(pos.x, pos.z, ground)
-		feet += (ground - feet) * Math.min(1, dt * 12)
-		camera.position.set(pos.x, feet + EYE, pos.z)
-		camera.rotation.set(pitch, yaw, 0, 'YXZ')
-		// the sun's shadows follow you round the cell
-		aimLight(pos.x, pos.z)
-	}
-
-	const onResize = () => {
-		camera.aspect = container.clientWidth / container.clientHeight
-		camera.updateProjectionMatrix()
-		renderer.setSize(container.clientWidth, container.clientHeight)
-	}
-	window.addEventListener('resize', onResize)
 	let frame = 0
 	let running = true
 	let last = performance.now()
 	const clock0 = performance.now()
-	let sunChecked = 0
 	let lodChecked = 0
-	let frames = 0, fpsSince = performance.now()
-	let flying: number[] | null = null
 	const tick = () => {
 		if (!running) return
 		const now = performance.now()
-		if (flying) {
-			camera.position.set(flying[0]!, flying[1]!, flying[2]!)
-			camera.rotation.set(flying[4]!, flying[3]!, 0, 'YXZ')
-			// the sun's shadows follow the camera while it flies (the film camera, scripts/film)
-			aimLight(flying[0]!, flying[2]!)
-		} else step(Math.min(0.1, (now - last) / 1000))
+		// walk (or, while the film camera holds it, fly); the sun's shadows follow the camera round the cell
+		walker.update(Math.min(0.1, (now - last) / 1000))
+		sky.follow(camera.position.x, camera.position.z)
 		last = now
-		const t = dev.__worldTime ?? (now - clock0) / 1000
+		const t = worldTime() ?? (now - clock0) / 1000
 		for (const a of animated) a(t)
-		if (now - sunChecked > 1000) {
-			sunChecked = now
-			setSun(hourNow())
-		}
+		sky.tick(now)
 		if (now - lodChecked > 400) {
 			lodChecked = now
 			levelOfDetail(camera.position.x, camera.position.z)
-			if (!flying) manageDomes()
+			if (!walker.flying()) manageDomes()
 			lightNearest()
 			// the sounds for where you stand: the forest, the water, the animals; muffled under glass
 			const indoors = domes.some((d) => Math.hypot(pos.x - d.x, pos.z - d.z) < d.R - 0.3)
@@ -1189,104 +1008,89 @@ export async function mountVillage(container: HTMLElement, onProgress: (label: s
 		}
 		for (const i of shown) built.get(i)!.update(t)
 		// the film camera draws the canvas itself while it holds it (src/lib/film)
-		if (!dev.__filmDraw) renderer.render(scene, camera)
-		// keep it smooth: lower the resolution a little when frames get slow, raise it when there is room
-		frames++
-		// while a film is shot (scripts/film) every frame is rendered at the resolution it asks for
-		if ((window as unknown as { __film?: { virtual: boolean } }).__film?.virtual || dev.__filmDraw) frames = 0, (fpsSince = now)
-		if (now - fpsSince > 1500) {
-			const fps = (frames * 1000) / (now - fpsSince)
-			const pr = renderer.getPixelRatio()
-			const top = Math.min(1.25, window.devicePixelRatio)
-			if (fps < 40 && pr > 1) renderer.setPixelRatio(Math.max(1, pr - 0.1))
-			else if (fps > 56 && pr < top) renderer.setPixelRatio(Math.min(top, pr + 0.1))
-			frames = 0
-			fpsSince = now
-		}
+		if (!filmDraws()) renderer.render(scene, camera)
+		// keep it smooth; while a film is shot every frame is rendered at the resolution it asks for
+		stage.adapt(now, filmHoldsSize())
 		frame = requestAnimationFrame(tick)
 	}
-	step(0)
+	walker.update(0)
+	sky.follow(camera.position.x, camera.position.z)
 	onProgress('ready')
 	tick()
 
-	;(window as unknown as { __village: unknown }).__village = {
-		camera,
-		scene,
-		THREE,
-		herds,
-		renderer,
-		built,
-		shown,
-		domes,
-		water: waterPts,
-		playgrounds: PLAYGROUNDS,
-		/** set the sun to an hour now, not at the next once-a-second check (the film's time-lapses) */
-		sun: (hour: number) => setSun(hour),
-		fly: (x: number, y: number, z: number, yw: number, p: number) => (flying = [x, y, z, yw, p]),
-		place: (x: number, z: number, yw: number, p: number, y = 0) => {
-			flying = null
-			ground = feet = y
-			pos.set(x, 0, z)
-			yaw = yw
-			pitch = p
-		},
-		/** The film camera's hold on the world (src/lib/film): every frame set from the shot alone, never from the frame
-		 *  before it. Players never reach any of this. */
-		film: {
-			/** Bring the world to world time t (seconds), the camera where `fly` put it: animations, the sun and sky for
-			 *  the hour, the far forest, the lamps, the open domes, and the shadows drawn again. `lights` scales the
-			 *  lights over what the hour gives them (1 = as the hour has them) and may recolour them. */
-			advance: (t: number, lights: { id: string; intensity: number; color?: string }[] = []) => {
-				if (flying) {
-					camera.position.set(flying[0]!, flying[1]!, flying[2]!)
-					camera.rotation.set(flying[4]!, flying[3]!, 0, 'YXZ')
-					aimLight(flying[0]!, flying[2]!)
-				}
-				camera.updateMatrixWorld()
-				for (const a of animated) a(t)
-				setSun(hourNow())
-				levelOfDetail(camera.position.x, camera.position.z)
-				lightNearest()
-				for (const i of shown) built.get(i)!.update(t)
-				// what the hour gives (setSun and lightNearest set the rest), then the shot's own changes on top
-				glowMat.emissive.set(GLOW)
-				for (const p of pool) p.color.set(LAMP)
-				for (const l of lights) {
-					const k = l.intensity
-					if (l.id === 'sun') {
-						sunLight.intensity *= k
-						if (l.color) sunLight.color.set(l.color)
-					} else if (l.id === 'fill') {
-						fill.intensity *= k
-						if (l.color) fill.color.set(l.color)
-					} else if (l.id === 'glow') {
-						glowMat.emissiveIntensity *= k
-						if (l.color) glowMat.emissive.set(l.color)
-					} else if (l.id === 'lamps') {
-						for (const p of pool) {
-							p.intensity *= k
-							if (l.color) p.color.set(l.color)
-						}
-					} else if (l.id === 'sky') scene.environmentIntensity *= k
-				}
-				renderer.shadowMap.needsUpdate = true
-			},
-			/** show or hide each built dome for where the walker stands now (as the world does as you walk) */
-			settle: () => {
-				for (const i of built.keys()) place(i)
-			},
-			/** keep these domes built while the film needs them */
-			pin: (domes: number[]) => {
-				pinned.clear()
-				for (const i of domes) pinned.add(i)
-			},
-			/** the dome being built now, if any */
-			building: () => building?.i ?? null,
-			/** the domes that would be shown in full to a walker standing at x, z once built: all of them must be
-			 *  built before a shot from there is filmed, or a dome could appear between two renders of it */
-			near: (x: number, z: number) => domes.map((d, i) => ({ i, gap: Math.hypot(x - d.x, z - d.z) - d.ext })).filter((d) => d.gap < SHOW_NEAREST).map((d) => d.i)
-		}
+	/* ── the film camera's hold on the cell (src/lib/film, $lib/sandbox-kit/film): every frame set from the shot alone,
+	   never from the frame before it. Players never reach any of this. ── */
+	/** every dome a film has asked for since the page came up: kept built, whichever shot asked last */
+	const kept = new Set<number>()
+	/** the domes that would be shown in full to a walker standing at x, z once built: all of them must be built before a
+	 *  shot from there is filmed, or a dome could appear between two renders of it */
+	const nearDomes = (x: number, z: number) => domes.map((d, i) => ({ i, gap: Math.hypot(x - d.x, z - d.z) - d.ext })).filter((d) => d.gap < SHOW_NEAREST).map((d) => d.i)
+	/** show or hide each built dome for where the walker stands now (as the world does as you walk) */
+	const settle = () => {
+		for (const i of built.keys()) place(i)
 	}
+	const world = connectFilm({
+		sandbox: 'sandbox-4',
+		renderer,
+		scene,
+		camera,
+		hold: walker,
+		sky,
+		place: (x, z, yw, p, y = 0) => walker.place(x, z, yw, p, y),
+		animate: (t) => {
+			for (const a of animated) a(t)
+		},
+		// the far forest, the lamps, the open domes; then what the hour gives the lights, before the shot's own changes
+		advance: (t) => {
+			levelOfDetail(camera.position.x, camera.position.z)
+			lightNearest()
+			for (const i of shown) built.get(i)!.update(t)
+			glowMat.emissive.set(GLOW)
+			for (const p of pool) p.color.set(LAMP)
+		},
+		lights: {
+			glow: (k, color) => {
+				glowMat.emissiveIntensity *= k
+				if (color) glowMat.emissive.set(color)
+			},
+			lamps: (k, color) => {
+				for (const p of pool) {
+					p.intensity *= k
+					if (color) p.color.set(color)
+				}
+			}
+		},
+		/* stand where the shot needs the cell loaded, and wait until its dome is built and shown, and every dome near
+		   enough to be shown in full from there is built too (one arriving later would change the picture between two
+		   renders of the shot) */
+		stage: async (w) => {
+			walker.place(w.stand[0], w.stand[1], 0, 0, 0)
+			settle()
+			const dome = w.dome
+			const need = nearDomes(w.stand[0], w.stand[1])
+			for (let waited = 0; ; waited += 100) {
+				const now = building?.i ?? null
+				const ok = (dome === undefined || (built.has(dome) && shown.has(dome))) && need.every((i) => built.has(i)) && (now === null || !need.includes(now))
+				if (ok) break
+				if (waited > 20 * 60000) throw new Error(`the world never got ready for this shot (dome ${dome}, near ${need.join(', ')})`)
+				// a shot that keeps waiting says what for (the studio's log shows it)
+				if (waited && waited % 10000 === 0)
+					console.warn(`film: ${(w as { name?: string }).name ?? 'a shot'} waits ${waited / 1000} s — dome ${dome ?? '-'} built ${dome === undefined || built.has(dome)} shown ${dome === undefined || shown.has(dome)}; near ${need.join(',')} built ${need.filter((i) => built.has(i)).join(',') || 'none'}; building ${now}`)
+				await new Promise((r) => setTimeout(r, 100))
+			}
+			settle()
+		},
+		holds: (w) => w.dome === undefined || shown.has(w.dome),
+		// keep these shots' domes built while the film needs them
+		keep: (ws) => {
+			for (const w of ws) if (w.dome !== undefined) kept.add(w.dome)
+			pinned.clear()
+			for (const i of kept) pinned.add(i)
+		},
+		extra: { herds, built, shown, domes, water: waterPts, playgrounds: PLAYGROUNDS }
+	})
+	// Sandbox 4's older name for it (the shot lists and the story producer's notes use it)
+	;(window as unknown as { __village: unknown }).__village = world
 
 	return {
 		domes,
@@ -1300,44 +1104,26 @@ export async function mountVillage(container: HTMLElement, onProgress: (label: s
 			if (running) return
 			running = true
 			last = performance.now()
-			keys.clear()
-			Object.assign(stick, { x: 0, y: 0, hurry: false })
+			walker.stop()
 			tick()
 		},
 		placeAtDoor: (i, door) => {
 			const p = doorPoint(domes[i]!, door, 3)
-			pos.set(p.x, 0, p.z)
-			yaw = door + Math.PI
-			pitch = 0.02
+			walker.place(p.x, p.z, door + Math.PI, 0.02)
 		},
-		move: (x, y, hurry) => Object.assign(stick, { x, y, hurry }),
-		look: (dx, dy) => {
-			yaw -= dx * 0.0065
-			pitch = Math.max(-1.4, Math.min(1.4, pitch - dy * 0.0065))
-		},
-		alwaysDay: (on) => {
-			keepDay = on
-			setSun(hourNow())
-		},
+		move: walker.move,
+		look: walker.look,
+		alwaysDay: sky.alwaysDay,
 		dispose() {
 			running = false
 			cancelAnimationFrame(frame)
 			if (building) building.cancelled = true
 			for (const dm of built.values()) dm.dispose()
 			sound.dispose()
-			window.removeEventListener('keydown', kd)
-			window.removeEventListener('keyup', ku)
-			window.removeEventListener('mousemove', onMove)
-			window.removeEventListener('mouseup', onUp)
-			window.removeEventListener('resize', onResize)
-			if (document.pointerLockElement === dom) document.exitPointerLock()
-			scene.traverse((o) => {
-				const mesh = o as THREE.Mesh
-				mesh.geometry?.dispose()
-			})
-			pmrem.dispose()
-			renderer.dispose()
-			dom.remove()
+			world.disconnect()
+			walker.dispose()
+			sky.dispose()
+			stage.dispose()
 		}
 	}
 }

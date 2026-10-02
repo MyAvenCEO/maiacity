@@ -65,6 +65,7 @@ for (const [i, shot] of film.shots.entries()) {
 	const tag = `${String(n).padStart(2, '0')}-${shot.name}`;
 	const spec = normalize(shot.spec);
 	const t0 = Date.now();
+	await world.goTo(spec.world);
 	if (stills && inbox) {
 		for (const [k, p] of midOnly ? [['b', 0.5]] : [['a', 0], ['b', 0.5], ['c', 1]]) {
 			const ask = { spec, t: Math.min(spec.seconds - 1 / spec.fps, /** @type {number} */ (p) * spec.seconds), shape, width: W, height: H, view: { lut }, quality: 'final' };

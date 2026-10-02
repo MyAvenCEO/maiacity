@@ -1,5 +1,6 @@
-// FILM MODE — Sandbox 4 as a film camera (/games/sandbox-4/?film). The page installs this before the world mounts;
-// it takes over the clocks (clock.js), then, once the world is up, offers window.__film (contract C3 in
+// FILM MODE — a sandbox as a film camera (/games/<sandbox>/?film&area=…, game/film/worlds.js). The page installs this
+// before the world mounts; it takes over the clocks (clock.js), then, once the world is up — handed over by the world
+// as window.__world (src/lib/sandbox-kit/film.js: the same contract in every sandbox) — offers window.__film (contract C3 in
 // scripts/film/PLAN.md) to whoever drives it: the studio (an iframe, frame by frame from the timeline's clock), the Mac
 // app's unseen world (vault/app/src/world_driver.js: world shots' proxies and the final render's plates), the shoot
 // CLI (scripts/film/world/render.mjs, through puppeteer) or a person at the console.
@@ -16,6 +17,7 @@
 // shadows drawn again — never from the frame before — so the same shot renders the same pixels every time.
 import { evaluate, fingerprint, normalize, shutterTimes } from '../../../game/film/shot.js';
 import { keysFromFlight } from '../../../game/film/camera.js';
+import { filmPath, worldOfPath } from '../../../game/film/worlds.js';
 import { installClock } from './clock.js';
 import { createPipeline } from './pipeline.js';
 import { sets } from './sets.js';
@@ -36,8 +38,9 @@ const RAMP_EVERY = 0.5;
 const sleep = (/** @type {number} */ ms) => new Promise((r) => setTimeout(r, ms));
 
 /**
- * Install film mode: the clocks now, the camera once `window.__village` is there. Call before mounting the world.
- * @param {{ base?: string }} [opts]  the site's base path (for /film-build.json)
+ * Install film mode: the clocks now, the camera once the world has handed itself over (`window.__world`). Call before
+ * mounting the world.
+ * @param {{ base?: string }} [opts]  the site's base path (for /film-build.json and the other worlds' film pages)
  */
 export function startFilm({ base = '' } = {}) {
 	const w = /** @type {any} */ (window);
@@ -57,7 +60,12 @@ export function startFilm({ base = '' } = {}) {
 		if (!pipe) throw new Error('the world is not up yet');
 		return pipe;
 	};
-	const village = () => w.__village;
+	// the world this page is (its address says), and the world film mode drives: `__world` (`__village` is Sandbox 4's
+	// older name for it)
+	const here = worldOfPath(location.href) ?? { sandbox: 'sandbox-4' };
+	const world = () => w.__world ?? w.__village;
+	/** whether a shot is in this page's world @param {Spec} spec */
+	const shows = (spec) => spec.world.sandbox === here.sandbox && (spec.world.area ?? null) === (here.area ?? null);
 	/** @type {Map<string, number | [number, number][]>} metered exposures by the shot's picture fingerprint */
 	const metered = new Map();
 	/** what the world is staged for now: where the walker stands, which set is built */
@@ -70,9 +78,9 @@ export function startFilm({ base = '' } = {}) {
 		.catch(() => null);
 
 	const mounted = async () => {
-		while (!village()?.film) await sleep(100);
-		if (!pipe) pipe = createPipeline(village().renderer);
-		return village();
+		while (!world()?.film) await sleep(100);
+		if (!pipe) pipe = createPipeline(world().renderer);
+		return world();
 	};
 
 	// One thing at a time: every staging moves the walker (the world builds the domes near where it stands), so two
@@ -85,33 +93,16 @@ export function startFilm({ base = '' } = {}) {
 		line = run.catch(() => {});
 		return run;
 	};
-	/** every dome a prepare asked for since the page came up: kept built, whichever shot asked last */
-	const kept = new Set();
-
-	/** Stand where the shot needs the world loaded, build its set, and wait until its dome is built and shown. */
+	/** Stand where the shot needs the world loaded, build its set, and wait until the world has built what it needs. */
 	async function stage(/** @type {Spec} */ spec) {
+		if (!shows(spec)) throw new Error(`this shot is in ${spec.world.sandbox}${spec.world.area ? ` (${spec.world.area})` : ''}, and this page is ${here.sandbox}${here.area ? ` (${here.area})` : ''}: open ${filmPath(spec.world)}`);
 		const v = await mounted();
 		const key = JSON.stringify([spec.world.stand, spec.world.dome ?? null, spec.world.props ?? null]);
-		if (key === staged && (spec.world.dome === undefined || v.shown.has(spec.world.dome))) return;
-		clock.leave(); // domes are built on the page's own clock, a little every frame
+		if (key === staged && v.film.holds(spec.world)) return;
+		clock.leave(); // what a world builds (the domes) it builds on the page's own clock, a little every frame
 		if (spec.world.props && !w.__props) sets[/** @type {keyof typeof sets} */ (spec.world.props)]?.(spec.world.seed);
-		v.place(spec.world.stand[0], spec.world.stand[1], 0, 0);
-		v.film.settle();
-		// ready when its own dome is built and shown, and every dome near enough to be shown in full from where the
-		// walker stands is built too (one arriving later would change the picture between two renders of the shot)
-		const dome = spec.world.dome;
-		const need = /** @type {number[]} */ (v.film.near(spec.world.stand[0], spec.world.stand[1]));
-		for (let waited = 0; ; waited += 100) {
-			const building = v.film.building();
-			const ok = (dome === undefined || (v.built.has(dome) && v.shown.has(dome))) && need.every((i) => v.built.has(i)) && (building === null || !need.includes(building));
-			if (ok) break;
-			if (waited > 20 * 60000) throw new Error(`the world never got ready for this shot (dome ${dome}, near ${need.join(', ')})`);
-			// a shot that keeps waiting says what for (the studio's log shows it)
-			if (waited && waited % 10000 === 0)
-				console.warn(`film: ${spec.meta?.name ?? 'a shot'} waits ${waited / 1000} s — dome ${dome ?? '-'} built ${dome === undefined || v.built.has(dome)} shown ${dome === undefined || v.shown.has(dome)}; near ${need.join(',')} built ${need.filter((i) => v.built.has(i)).join(',') || 'none'}; building ${building}`);
-			await sleep(100);
-		}
-		v.film.settle();
+		// the world stands where the shot needs it loaded, and resolves once everything the shot can see is built
+		await v.film.stage({ ...spec.world, name: spec.meta?.name });
 		await settled(v);
 		staged = key;
 	}
@@ -198,6 +189,12 @@ export function startFilm({ base = '' } = {}) {
 
 	const film = {
 		FILM_VERSION,
+		/** the world this page is: { sandbox, area? } */
+		world: here,
+		/** whether a shot is in this page's world (else it is drawn on `pathOf(spec.world)`) */
+		shows: (/** @type {any} */ spec) => shows(normalize(spec)),
+		/** the film page of another world, from this site's root */
+		pathOf: (/** @type {{ sandbox?: string, area?: string }} */ world) => `${base}${filmPath(world)}`,
 		get virtual() {
 			return clock.virtual;
 		},
@@ -221,10 +218,10 @@ export function startFilm({ base = '' } = {}) {
 		/** @param {any[]} specs */
 		prepare(specs) {
 			return one(async () => {
-				const all = specs.map(normalize);
+				const all = specs.map(normalize).filter(shows);
 				const v = await mounted();
-				for (const s of all) if (s.world.dome !== undefined) kept.add(s.world.dome);
-				v.film.pin([...kept]);
+				// everything these shots need, kept built whichever shot asks last
+				v.film.keep(all.map((s) => s.world));
 				for (const s of all) await stage(s);
 				for (const s of all) await exposureOf(s);
 			});
@@ -284,7 +281,7 @@ export function startFilm({ base = '' } = {}) {
 		async still(ask) {
 			await film.show(ask);
 			// in the same task as the draw, before the canvas is presented and cleared
-			const canvas = village().renderer.domElement;
+			const canvas = world().renderer.domElement;
 			return new Promise((resolve, reject) => canvas.toBlob((/** @type {Blob | null} */ b) => (b ? resolve(b) : reject(new Error('no still'))), ask.type ?? 'image/png', 0.92));
 		},
 		/**
@@ -354,7 +351,7 @@ export function startFilm({ base = '' } = {}) {
 			w.__filmDraw = false;
 			clock.world(undefined);
 			clock.leave();
-			const v = village();
+			const v = world();
 			if (v) {
 				v.renderer.setPixelRatio(Math.min(1.25, window.devicePixelRatio));
 				v.renderer.setSize(v.renderer.domElement.parentElement?.clientWidth ?? 640, v.renderer.domElement.parentElement?.clientHeight ?? 480);
@@ -364,14 +361,21 @@ export function startFilm({ base = '' } = {}) {
 			/** Start recording the camera as it is walked or flown by hand (the world runs on its own clock). */
 			start() {
 				film.release();
-				const v = village();
+				const v = world();
 				if (!v) throw new Error('the world is not up yet');
 				const rec = { t0: performance.now(), samples: /** @type {any[]} */ ([]), frame: 0 };
 				recording = rec;
 				const grab = () => {
 					if (recording !== rec) return;
 					const c = v.camera;
-					rec.samples.push({ t: (performance.now() - rec.t0) / 1000, pose: [c.position.x, c.position.y, c.position.z, c.rotation.y, c.rotation.x], fov: c.fov });
+					// yaw and pitch as the film flies them; a map's camera (the orbit rig) turns in another order: from where it looks
+					let yaw = c.rotation.y, pitch = c.rotation.x;
+					if (c.rotation.order !== 'YXZ') {
+						const d = c.getWorldDirection(new v.THREE.Vector3());
+						yaw = Math.atan2(-d.x, -d.z);
+						pitch = Math.asin(Math.max(-1, Math.min(1, d.y)));
+					}
+					rec.samples.push({ t: (performance.now() - rec.t0) / 1000, pose: [c.position.x, c.position.y, c.position.z, yaw, pitch], fov: c.fov });
 					rec.frame = requestAnimationFrame(grab);
 				};
 				grab();
