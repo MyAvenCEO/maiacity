@@ -7,6 +7,10 @@ library, shown on its own in the 3D models viewer and placed in any world.
 
 - `src/lib/models/furniture.ts` — the models: `bed`, `wineCrate`, `crateTower`, `chair`, `edisonBulb`,
   `framedPicture`, `sheepskin`, `truck`, and the fixtures (the CB60 light on its stand, `neewer-cb60`).
+- `src/lib/models/outdoor.ts` — under the open sky: trees (`broadleaf`, `willow`, `poplar`, `shrub`), a park bench,
+  the Wittelsbacherbrücke's lamp, a limestone block, the bronze rider. A world plants many trees, so a tree is two
+  geometries for instancing (`treeParts`: its wood and its leaves, full or light); `tree()` puts them together for
+  the viewer.
 - `src/lib/models/textures.ts` — their surfaces, drawn once on a canvas and shared: limed oak, pine (fresh and aged),
   painted pine, plaster (as a bump map), wool, the face on the wall.
 - `src/lib/models/index.ts` — `MODELS`: each model's id, label, note (its measure and what it is), where it is used,

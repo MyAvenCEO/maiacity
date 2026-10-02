@@ -1,13 +1,14 @@
 /*
  * THE 3D MODELS — every reusable model, as the 3D models viewer (/app/models/) lists it: its name, what it is, where
- * it is used, and the function that builds it (./furniture.ts, ./hallway.ts, ./kitchen.ts, ./bathroom.ts). A world
- * places them (src/lib/worlds); a new one is a function there and a line here.
+ * it is used, and the function that builds it (./furniture.ts, ./hallway.ts, ./kitchen.ts, ./bathroom.ts,
+ * ./outdoor.ts). A world places them (src/lib/worlds); a new one is a function there and a line here.
  */
 import type * as THREE from 'three';
 import { bed, chair, crateTower, edisonBulb, framedPicture, neewerCb60, sheepskin, standIn, truck, wineCrate } from './furniture';
 import { barCounter, barStool, canvasPrint, coatStand, door, palletShelf, pendantLamp, retroFridge } from './hallway';
 import { gasBoiler, kitchenRun, panRail, pedalBin, xShelf } from './kitchen';
 import { glassShower, towelRadiator, washbasin, wallToilet } from './bathroom';
+import { bridgeLamp, equestrianStatue, limestoneBlock, parkBench, tree } from './outdoor';
 
 export type Model = { id: string; label: string; note: string; usedIn: string; make: () => THREE.Object3D };
 
@@ -42,5 +43,13 @@ export const MODELS: Model[] = [
 	{ id: 'washbasin', label: 'Washbasin', note: 'a wall-hung basin, 60 × 42 cm, its spout from the wall', usedIn: 'The bathroom', make: () => washbasin() },
 	{ id: 'glass-shower', label: 'Glass shower', note: 'frameless glass, a rain head under the ceiling, a hand shower on its rail', usedIn: 'The bathroom', make: () => glassShower() },
 	{ id: 'towel-radiator', label: 'Towel radiator', note: 'white, a ladder of round rails, 50 × 140 cm', usedIn: 'The bathroom', make: () => towelRadiator() },
-	{ id: 'truck', label: 'Truck', note: 'a cab and a box trailer, about 16 × 2.55 × 4 m', usedIn: 'The tired land', make: () => truck({ cab: '#a33a2a', box: '#e0ddd6' }) }
+	{ id: 'truck', label: 'Truck', note: 'a cab and a box trailer, about 16 × 2.55 × 4 m', usedIn: 'The tired land', make: () => truck({ cab: '#a33a2a', box: '#e0ddd6' }) },
+	{ id: 'tree-broadleaf', label: 'Tree, broadleaf', note: "an ash or a maple of the Isar's banks, about 19 m high, its crown 12 m across: limbs and branches, leaf cards lit as one soft crown", usedIn: 'The Isar', make: () => tree('broadleaf') },
+	{ id: 'tree-willow', label: 'White willow', note: 'two leaning trunks and a broad silvery crown, about 15 m', usedIn: 'The Isar', make: () => tree('willow') },
+	{ id: 'tree-poplar', label: 'Black poplar', note: 'tall and oval, about 27 m', usedIn: 'The Isar', make: () => tree('poplar') },
+	{ id: 'willow-shrub', label: 'Willow shrub', note: "thin stems in a clump at the water's edge, about 4.5 m", usedIn: 'The Isar', make: () => tree('shrub') },
+	{ id: 'park-bench', label: 'Park bench', note: 'wooden slats on two cast-iron frames, 1.80 m long, the seat at 45 cm, the back up to 85 cm', usedIn: 'The Isar', make: () => parkBench() },
+	{ id: 'bridge-lamp', label: 'Wittelsbacherbrücke lamp', note: 'a dark cast-iron post, 5.4 m, a crossbar and a lantern hanging from each end', usedIn: 'The Isar', make: () => bridgeLamp() },
+	{ id: 'limestone-block', label: 'Limestone block', note: "shell limestone, its edges worn round, 1.6 × 0.9 × 0.8 m, as they lie by the Isar's paths and in its steps", usedIn: 'The Isar', make: () => limestoneBlock() },
+	{ id: 'equestrian-statue', label: 'Otto von Wittelsbach', note: 'the bronze rider on his pillar of the Wittelsbacherbrücke (Georg Wrba, 1905), about 4.4 m, seen from far below', usedIn: 'The Isar', make: () => equestrianStatue() }
 ];

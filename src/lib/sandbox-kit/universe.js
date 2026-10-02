@@ -323,7 +323,9 @@ function universeShader() {
 
 /**
  * The dome and the stars: one universe, seen from wherever the camera is.
- * @param {{ clouds?: number }} [o] clouds: how much of the sky they cover (on the ground)
+ * @param {{ clouds?: number, mirror?: boolean }} [o] clouds: how much of the sky they cover (on the ground); mirror:
+ *   the stars drawn mirrored north for south, for a real place's sky (./sky.js `map`) — the turn handed to `set` is
+ *   then the mirrored sky's
  */
 export function createUniverse(o = {}) {
 	const shader = universeShader();
@@ -349,6 +351,7 @@ export function createUniverse(o = {}) {
 		blending: THREE.AdditiveBlending
 	});
 	const stars = new THREE.Points(geo, starMat);
+	if (o.mirror) stars.scale.z = -1;
 	stars.frustumCulled = false;
 	stars.renderOrder = -1;
 	const turn = new THREE.Quaternion();
@@ -381,7 +384,10 @@ export function createUniverse(o = {}) {
 			u.limb.value = v.limb ?? 0;
 			u.moonDirection.value.copy(v.moon);
 			turn.copy(v.stars);
-			u.galacticPole.value.copy(GALACTIC_POLE).applyQuaternion(turn);
+			// the Milky Way's glow lies along the stars as they are drawn, mirrored with them for a real place
+			u.galacticPole.value.copy(GALACTIC_POLE);
+			if (o.mirror) u.galacticPole.value.z = -u.galacticPole.value.z;
+			u.galacticPole.value.applyQuaternion(turn);
 			const alt = altitude(v.sun, v.up);
 			const night = nightOf(alt);
 			u.twilight.value = twilightOf(alt);

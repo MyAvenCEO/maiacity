@@ -1,7 +1,7 @@
 # The worlds and their sets
 
 Where a world film is shot: the map of Sandbox 4, the Apartment of Samuel (his room and the rest of it), the tired
-land, and the sets built into a scene while it is filmed.
+land, the Isar in Munich, and the sets built into a scene while it is filmed.
 
 ## Framing Sandbox 4
 
@@ -77,11 +77,45 @@ Day 19's world as it was, west of the city's edge:
 
 It is its own world (`/games/tired-land`) and also Sandbox 4's `tired-land` set.
 
+## The Isar (`src/lib/worlds/isar`)
+
+The river in Munich from the Wittelsbacherbrücke south to the railway bridge (the Braunauer Eisenbahnbrücke), about
+700 m of it, flowing north. A real place built from open data, not by hand:
+- **Its data** comes from `scripts/worlds/isar-map.py` (run it again to bring the map up to date): OpenStreetMap for
+  the river's outline, the gravel, the meadows, woods, paths, benches, trees, both bridges and the town; the Bavarian
+  survey's 1 m terrain model (DGM1) for the ground's real heights. It writes `map.json` (every feature in the world's
+  metres) and `ground.bin` (the heights on the world's grid). Both are credited on the world's page: © OpenStreetMap
+  contributors (ODbL), DGM1 © Bayerische Vermessungsverwaltung (CC BY 4.0).
+- **Axes:** x east, z south, y up, in metres from a point on the river midway between the bridges (UTM 32N 690850 E,
+  5332890 N); y 0 is the water's surface there (513.24 m above sea level), and it falls 1.1 m per km downstream.
+  The river's own frame: **s** along it, downstream (north-east), **n** across it, towards the east bank.
+- **Where things are:** the railway bridge at s ≈ −343, the Wittelsbacherbrücke at s ≈ +340. The river 35–60 m
+  wide, deepest (up to 1.8 m) along the steep, tree-lined west bank, shallow over the gravel bars on the east. The
+  east bank: the gravel path by the water (n ≈ 20–58), the meadow some 2 m above the water, the dike with its benches
+  and the cycle path (n ≈ 85–115), the park behind it. The statue's pier stands on the gravel island under the
+  bridge; the path passes under its third arch; stone steps lead down to the water under its south face.
+- **The Wittelsbacherbrücke:** four arches of 44, 28, 27 and 26 m from the west, clad in shell limestone; the bays
+  of its piers, the pavilions on the two eastern ones, Otto von Wittelsbach on his pillar over the island (upstream
+  side), lamps along both parapets. Its plan is OpenStreetMap's outline, its ends' heights the survey's; the arches'
+  rise, the pavilions and the pillar's height are estimates from photos.
+- **The railway bridge:** three spans of about 48.5 m on stone piers, the two tracks on plate girders, the catenary,
+  and on its downstream side the old lattice truss. Its piers' places are estimated from the ground and its length.
+- **The skyline:** the houses round it from their footprints and storeys; St. Maximilian's two towers north beyond
+  the bridge; the Heizkraftwerk Süd's chimneys (176, 130, 90 m) south beyond the railway bridge.
+- **Walked** along the east bank and into the river: wading over the gravel, swimming where it is deep (the current
+  carries a swimmer downstream), not up the west bank nor over the dike; up the ramps at the bridge's east end and
+  across its deck between the parapets. **Filmed** as `world.sandbox: 'isar'`; its lights are the shot's `lamps`
+  (the bridge's lanterns). Close to the camera the grass grows in blades and the trees are drawn full: both follow
+  the shot's camera, so a shot renders the same every time.
+- **The sky turns as Munich's does** (`createSky({ map: true })`): the sun rises over the east bank, stands in the
+  south at noon and sets behind the west bank's trees.
+
 ## Building a new world
 
 1. **Mount it with the sandbox kit** (`src/lib/sandbox-kit`):
    - `createStage` — the renderer and the camera.
-   - `createSky` — the hour and the sun. Give it the place's `north`. A small world needs a short shadow range:
+   - `createSky` — the hour and the sun. Give it the place's `north`; for a real place laid out as a map (x east,
+     z south), `map: true`, or the sun turns the mirror way round. A small world needs a short shadow range:
      `lightDistance`, `shadowNear`, `shadowFar` and a small `shadowBias`. Over a sky's 1400 m, the bias reaches half
      a metre, and the sun leaks in over a room's walls.
    - `createWalker` — walking, with a `canStand` test.
