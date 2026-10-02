@@ -91,7 +91,9 @@ export function pendantLamp({ drop = 0.55 }: { drop?: number } = {}): THREE.Grou
 	const g = new THREE.Group();
 	g.name = 'enamel pendant';
 	bar(g, v3(0, 0, 0), v3(0, -drop, 0), 0.003, m.black());
-	const profile = [new THREE.Vector2(0.035, 0), new THREE.Vector2(0.045, -0.06), new THREE.Vector2(0.09, -0.12), new THREE.Vector2(0.15, -0.18), new THREE.Vector2(0.175, -0.2)];
+	// the shade's profile from its rim up to its neck: turned so, the lathe's faces look outwards — the red enamel is
+	// the outside, the white the inside
+	const profile = [new THREE.Vector2(0.175, -0.2), new THREE.Vector2(0.15, -0.18), new THREE.Vector2(0.09, -0.12), new THREE.Vector2(0.045, -0.06), new THREE.Vector2(0.035, 0)];
 	const shade = new THREE.LatheGeometry(profile, 36);
 	for (const mat of [m.enamel(), m.enamelInside()]) {
 		const s = new THREE.Mesh(shade, mat);
@@ -99,6 +101,11 @@ export function pendantLamp({ drop = 0.55 }: { drop?: number } = {}): THREE.Grou
 		s.castShadow = mat === m.enamel();
 		g.add(s);
 	}
+	// its neck closed by the fitting the cord goes into: red above, white below, inside the shade
+	const cap = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.036, 0.04, 24), [m.enamel(), m.enamel(), m.white()]);
+	cap.position.y = -drop + 0.02;
+	cap.castShadow = true;
+	g.add(cap);
 	const glass = new THREE.MeshStandardMaterial({ color: '#fff4e0', emissive: '#ffd9a0', emissiveIntensity: 0.4 });
 	const bulb = new THREE.Mesh(new THREE.SphereGeometry(0.035, 16, 12), glass);
 	bulb.position.y = -drop - 0.11;
