@@ -22,7 +22,10 @@ export const WORLDS = {
 	// one dome's whole inside, walked at eye height, with its forest round it
 	'sandbox-3': { label: 'Sandbox 3 · inside a dome', areas: ['home', 'tent', 'glamp', 'large', 'master', 'factory'] },
 	// a whole dome cell: thirteen domes, their insides built as the camera comes
-	'sandbox-4': { label: 'Sandbox 4 · a dome cell', areas: null, domes: 13, sets: ['tired-land'] }
+	'sandbox-4': { label: 'Sandbox 4 · a dome cell', areas: null, domes: 13, sets: ['tired-land'] },
+	// a real room, measured from photos: a 14 m² bedroom — the bed, two wine-crate towers, two chairs, the window, the
+	// door, a bulb (src/lib/worlds/room.ts; Day 02)
+	room: { label: 'The room · fourteen square metres', areas: null }
 };
 
 /** Where a shot is when it names no world: the film camera's first world. */
@@ -45,7 +48,7 @@ export function filmPath(world) {
  */
 export function worldOfPath(href) {
 	const u = new URL(href, 'http://x');
-	const m = /\/games\/(sandbox-\d+)\/?$/.exec(u.pathname);
+	const m = /\/games\/([a-z0-9-]+)\/?$/.exec(u.pathname);
 	if (!m || !u.searchParams.has('film') || !WORLDS[m[1]]) return null;
 	const area = u.searchParams.get('area') ?? WORLDS[m[1]].areas?.[0];
 	return { sandbox: m[1], ...(area ? { area } : {}) };
