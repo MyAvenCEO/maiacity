@@ -796,17 +796,20 @@ async fn graded_still_job(vault: &Arc<Vault>, t: &Timeline, lib: Arc<Vaulted>, c
     let hash: iroh_blobs::Hash = of.parse().map_err(err)?;
     let original = vault.catalog.meta(hash).await.map_err(err)?.ok_or("the clip's file is not in the vault's catalog")?;
     let stem = Path::new(&original.original_name).file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_else(|| of[..12].to_string());
+    // named like every file made of an original: `<its name>.preview.jpg` (graded or not, it is the file's preview)
+    let named = work.0.join(format!("{stem}.preview.jpg"));
+    std::fs::rename(&jpg, &named).map_err(err)?;
     let batch = Batch {
         session: format!("graded still of {of}"),
         tags: vec!["preview".into()],
-        title: Some(format!("{stem} · graded still")),
+        title: Some(format!("{stem} · preview")),
         meta: json!({ "role": "preview", "preview_of": of, "t": rep["t"], "width": rep["width"], "height": rep["height"], "shape": "16:9",
             "graded": { "timeline": t.id, "version": t.version.unwrap_or(1), "clip": clip } }),
         story: Some(original.story.clone()).filter(|s| !s.is_empty()),
         class: Some("proxy".into()),
         ..Default::default()
     };
-    let o = vault.ingest_file(&jpg, &batch).await.map_err(err)?;
+    let o = vault.ingest_file(&named, &batch).await.map_err(err)?;
     if o.verdict == Verdict::Mismatch {
         return Err("the graded still's copy in the vault is not what was rendered (hash mismatch)".into());
     }
