@@ -87,6 +87,7 @@ import { skyHour, skyTime } from './skyTime.svelte.js';
  *   fog?: { near: number, far: number } | null,
  *   exposure?: { day: number, night: number },
  *   clouds?: number,
+ *   north?: number,
  *   onHour?: (light: SkyLight, parts: SkyParts) => void
  * }} SkyOptions
  *   view: 'ground' (the default), or 'planet' (the universe round a planet, at the origin); clock: the hour, 0…24
@@ -95,7 +96,9 @@ import { skyHour, skyTime } from './skyTime.svelte.js';
  *   round this point instead of following the camera (a world as small as one dome, or an island seen whole);
  *   shadowNear, shadowFar, shadowBias: the shadow camera; lightDistance: how far off the light stands; fog: how near
  *   it starts and how far it closes, or null for none (its colour is the horizon's); exposure: the world's lens by
- *   day and by night; clouds: how much of the sky they cover; onHour: everything else in the world that changes
+ *   day and by night; clouds: how much of the sky they cover; north: where north lies in this world, as a turn of
+ *   the sky about the up axis in radians — north at (sin north, 0, cos north); 0 keeps the sky's own (north +z, the
+ *   sun rising in +x), π/2 puts north at +x (a room whose window there looks north never sees the sun); onHour: everything else in the world that changes
  *   with the hour (called once already as the sky is made, so it must not need the sky — the sun and the fill are
  *   handed to it)
  */
@@ -175,8 +178,10 @@ export function createSky(renderer, scene, options = {}) {
 		fog = planet ? null : { near: 180, far: 1400 },
 		exposure = planet ? { day: 0.9, night: 0.9 } : { day: 0.42, night: 0.92 },
 		clouds = planet ? 0 : 0.4,
+		north = 0,
 		onHour
 	} = options;
+	const turn = north ? new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), north) : null;
 	const dev = /** @type {{ __exposure?: number, __worldTime?: number, __interiorHour?: number }} */ (/** @type {unknown} */ (window));
 	const clock = createSkyClock(options);
 
@@ -238,7 +243,11 @@ export function createSky(renderer, scene, options = {}) {
 	let light = { hour: 0, e: 0, day: 0, low: 0, night: 0 };
 	const setGround = (/** @type {number} */ hour) => {
 		const l = lightAt(hour);
-		const view = { sun: l.dir, moon: l.moon, up: new THREE.Vector3(0, 1, 0), atmosphere: 1, stars: groundStars(hour) };
+		// the sky turned to where this world's north is: the sun, the moon and the stars with it
+		if (turn) for (const v of [l.dir, l.moon, l.from]) v.applyQuaternion(turn);
+		const stars = groundStars(hour);
+		if (turn) stars.premultiply(turn);
+		const view = { sun: l.dir, moon: l.moon, up: new THREE.Vector3(0, 1, 0), atmosphere: 1, stars };
 		universe.set(view);
 		envUniverse?.set(view);
 		lightDir.copy(l.from);
