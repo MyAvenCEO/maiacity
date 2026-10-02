@@ -48,13 +48,14 @@ const TURNS = [25, 50, 75, 90].map((d) => (d * Math.PI) / 180);
  *   x?: number, z?: number, yaw?: number, pitch?: number,
  *   eye?: number, walk?: number, hurry?: number, turn?: number,
  *   mouse?: number, touch?: number, maxPitch?: number, stride?: number,
- *   canStand?: (x: number, z: number, here: number, ground: number) => boolean,
+ *   canStand?: (x: number, z: number, here: number, ground: number, from: { x: number, z: number }) => boolean,
  *   floorAt?: (x: number, z: number, ground: number) => number,
  *   onKey?: (key: string, down: boolean) => boolean
  * }} [options]
  *   x, z, yaw, pitch: where they start and how they face; eye: eye height over the floor (m); walk, hurry: paces (m/s);
  *   turn: the arrow keys' turn (rad/s); mouse, touch: radians a pixel of drag turns; maxPitch: how far up or down they
- *   may look; stride: the longest stride (m); canStand: may they stand at x, z coming from a floor `here` high (the
+ *   may look; stride: the longest stride (m); canStand: may they stand at x, z coming from `from`, on a floor `here` high
+ *   (what stands in the way: ./obstacles.js, which never traps them in what they already stand in; the
  *   open ground, everywhere, if not given); floorAt: the floor at x, z for someone now on `ground` (0 if not given);
  *   onKey: the world's own keys, asked first (a lift's ↑/↓): true takes the key from the walker
  * @returns {WalkerHandle}
@@ -148,7 +149,7 @@ export function createWalker(camera, dom, options = {}) {
 			for (let k = 0; k < n; k++) {
 				const here = floorAt(pos.x, pos.z, ground);
 				const go = (/** @type {number} */ mx, /** @type {number} */ mz) => {
-					if (!canStand(pos.x + mx, pos.z + mz, here, ground)) return false;
+					if (!canStand(pos.x + mx, pos.z + mz, here, ground, pos)) return false;
 					pos.x += mx;
 					pos.z += mz;
 					return true;

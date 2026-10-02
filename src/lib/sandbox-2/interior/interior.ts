@@ -34,6 +34,7 @@ import { createStage, type StageHandle } from '$lib/sandbox-kit/stage.js'
 import { createSky, type SkyHandle } from '$lib/sandbox-kit/sky.js'
 import { skyHour } from '$lib/sandbox-kit/skyTime.svelte.js'
 import { createWalker } from '$lib/sandbox-kit/walker.js'
+import { createObstacles } from '$lib/sandbox-kit/obstacles.js'
 import { connectFilm, filmDraws, filmHoldsSize, worldTime } from '$lib/sandbox-kit/film.js'
 import { forestFloor, floorPick, grassTuft, appleTree, banana, berryBush, canopyTree, climber, clover, coconutPalm, comfrey, crop, CROPS, fruitTree, ginger, grapePergola, herb, papaya, passionVine, potted, seeded, shrub, smallFruitTree, squash, strawberries, tropicalShrub, vineAlong, type Plant } from './plants'
 
@@ -480,8 +481,8 @@ export type EmbeddedDome = {
 	blocked: (x: number, z: number, here: number) => boolean
 	/** inside the glass, on a terrace, or in a doorway */
 	inside: (x: number, z: number, y: number) => boolean
-	/** something standing there, on that floor */
-	hits: (x: number, z: number, y: number) => boolean
+	/** something standing there, on that floor (a step out of what you already stand in, from `from`, is free) */
+	hits: (x: number, z: number, y: number, from?: { x: number; z: number }) => boolean
 	/** its lamps, for the host's lights to follow */
 	spots: { x: number; y: number; z: number; base: number; reach: number }[]
 	update: (t: number) => void
@@ -1846,7 +1847,7 @@ export async function mountInterior(container: HTMLElement, kind: DomeKind, onPr
 	if (host) {
 		const wallLimit = (y: number) => Math.sqrt(Math.max(0, R * R - (y + 1.8) ** 2)) - (kind === 'glamp' ? 0.4 : 0.8)
 		const doorHalf = kind === 'glamp' ? 0.6 : 1.1
-		const stands = [...colliders, ...outsideColliders] as { x: number; z: number; r: number; y?: number }[]
+		const stands = createObstacles([...colliders, ...outsideColliders] as { x: number; z: number; r: number; y?: number }[])
 		const disposeAll = () => {
 			host.scene.remove(scene)
 			scene.traverse((o) => (o as THREE.Mesh).geometry?.dispose())
@@ -1865,7 +1866,7 @@ export async function mountInterior(container: HTMLElement, kind: DomeKind, onPr
 				// through the doorway and out past the arcade, as wide as the terraces now are
 				return doorsOf(kind).some((d) => Math.abs(adiff(a, d)) < 0.5 && Math.abs(adiff(a, d)) * rr < doorHalf) && rr < Rt + 1.5
 			},
-			hits: (x, z, y) => stands.some((c) => Math.abs(y - (c.y ?? 0)) < 1 && Math.abs(c.x - x) < c.r + 0.3 && Math.abs(c.z - z) < c.r + 0.3 && Math.hypot(c.x - x, c.z - z) < c.r + 0.25),
+			hits: (x, z, y, from) => stands.blocks(x, z, { y, from }),
 			spots,
 			update: (t) => {
 				for (const a of animated) a(t)
@@ -1965,7 +1966,8 @@ export async function mountInterior(container: HTMLElement, kind: DomeKind, onPr
 		return inDoor || (rr > R + 0.4 && rr < outerR)
 	}
 
-	const stands = [...colliders, ...outsideColliders] as { x: number; z: number; r: number; y?: number }[]
+	// what stands in the way, filed in 8 m cells ($lib/sandbox-kit/obstacles)
+	const stands = createObstacles([...colliders, ...outsideColliders] as { x: number; z: number; r: number; y?: number }[])
 	const walker = createWalker(camera, renderer.domElement, {
 		x: start.x,
 		z: start.z,
@@ -1973,9 +1975,9 @@ export async function mountInterior(container: HTMLElement, kind: DomeKind, onPr
 		pitch: -0.05,
 		floorAt,
 		// in the dome or out on its land, clear of its walls, rails, furniture and trees, on the floor you would stand on
-		canStand: (x, z, here, ground) => {
+		canStand: (x, z, here, ground, from) => {
 			const nf = floorAt(x, z, ground)
-			return walkable(x, z, nf) && !blocked(x, z, here) && !stands.some((c) => Math.abs(nf - (c.y ?? 0)) < 1 && Math.hypot(c.x - x, c.z - z) < c.r + 0.25)
+			return walkable(x, z, nf) && !blocked(x, z, here) && !stands.blocks(x, z, { y: nf, from })
 		},
 		// the factory's lift takes ↑ and ↓ while you stand in it
 		onKey: onAction
