@@ -23,7 +23,7 @@
 	<span class="grow"></span>
 
 	{#if s.worldClips.length}
-		<button class="pill" onclick={() => s.preparePlayback(20000)} disabled={s.world.state !== 'ready' || s.preparing} title="Load every world shot this timeline touches, and keep it loaded">
+		<button class="pill" onclick={() => s.preparePlayback(20000, true)} disabled={s.world.state !== 'ready' || s.preparing} title="Load every world shot this timeline touches, and keep it loaded">
 			{s.preparing ? 'Preparing…' : s.world.state === 'ready' ? '◎ Prepare' : s.world.state === 'loading' ? 'World…' : 'Stand-ins'}
 		</button>
 	{/if}

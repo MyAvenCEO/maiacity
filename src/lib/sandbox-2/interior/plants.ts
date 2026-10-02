@@ -368,6 +368,8 @@ const garden = {
 	strawberry: shared(() => new THREE.MeshStandardMaterial({ color: '#d8253a', roughness: 0.45 })),
 	lettuce: shared(() => new THREE.MeshStandardMaterial({ color: '#9ccc5a', roughness: 0.7, side: THREE.DoubleSide })),
 	lettuceRed: shared(() => new THREE.MeshStandardMaterial({ color: '#8a3f4a', roughness: 0.7, side: THREE.DoubleSide })),
+	radish: shared(() => new THREE.MeshStandardMaterial({ color: '#d2385a', roughness: 0.5 })),
+	kale: shared(() => new THREE.MeshStandardMaterial({ color: '#3f6b4a', roughness: 0.8, side: THREE.DoubleSide })),
 	tomato: shared(() => new THREE.MeshStandardMaterial({ color: '#d93a26', roughness: 0.35 })),
 	cucumber: shared(() => new THREE.MeshStandardMaterial({ color: '#3f6b2a', roughness: 0.5 })),
 	pepperRed: shared(() => new THREE.MeshStandardMaterial({ color: '#c8221c', roughness: 0.3 })),
@@ -386,6 +388,8 @@ const garden = {
 }
 /** A low-poly ball for the small fruit, so a garden of them stays light once baked. */
 const small = shared(() => new THREE.IcosahedronGeometry(1, 1))
+/** a small round thing seen only up close (a radish's shoulder): twenty faces */
+const tiny = shared(() => new THREE.IcosahedronGeometry(1, 0))
 const stickGeo = shared(() => new THREE.CylinderGeometry(1, 1, 1, 5).translate(0, 0.5, 0))
 const stick = (mat: THREE.Material, x: number, z: number, h: number, r = 0.02) => {
 	const m = new THREE.Mesh(stickGeo(), mat)
@@ -503,7 +507,7 @@ function lettuceHead(g: THREE.Group, r: Rand, x: number, z: number, red: boolean
  * The crops a greenhouse is for: salads, tomatoes, cucumbers, peppers and
  * aubergines, chard and kale, beans, strawberries, herbs.
  */
-export type Crop = 'lettuce' | 'tomato' | 'cucumber' | 'pepper' | 'aubergine' | 'chard' | 'beans' | 'strawberry' | 'herbs'
+export type Crop = 'lettuce' | 'tomato' | 'cucumber' | 'pepper' | 'aubergine' | 'chard' | 'beans' | 'strawberry' | 'herbs' | 'radish' | 'kale'
 export const CROPS: Crop[] = ['lettuce', 'tomato', 'cucumber', 'pepper', 'chard', 'beans', 'aubergine', 'strawberry', 'herbs']
 export function crop(kind: Crop, seed: number, len: number): THREE.Group {
 	const r = seeded(seed)
@@ -512,6 +516,34 @@ export function crop(kind: Crop, seed: number, len: number): THREE.Group {
 		for (let x = -len / 2 + step / 2; x < len / 2; x += step) rows.forEach((z, i) => f(x + (i % 2 ? step / 2 : 0) * 0.5, z))
 	}
 	if (kind === 'lettuce') along(0.32, (x, z) => lettuceHead(g, r, x, z, r() < 0.35), [-0.3, 0, 0.3])
+	else if (kind === 'radish')
+		// close rows of small rosettes, the red shoulders of the roots showing at the soil
+		along(0.16, (x, z) => {
+			const leaf = new THREE.CircleGeometry(0.045, 5)
+			for (let i = 0; i < 5; i++) {
+				const l = new THREE.Mesh(leaf, garden.lettuce())
+				const a = (i / 5) * Math.PI * 2 + r()
+				l.position.set(x + Math.cos(a) * 0.035, 0.07 + r() * 0.02, z + Math.sin(a) * 0.035)
+				l.rotation.set(-0.9 - r() * 0.4, a, 0, 'YXZ')
+				g.add(l)
+			}
+			const root = new THREE.Mesh(tiny(), garden.radish())
+			root.position.set(x, 0.015, z)
+			root.scale.setScalar(0.022 + r() * 0.01)
+			g.add(root)
+		}, [-0.32, -0.11, 0.11, 0.32])
+	else if (kind === 'kale')
+		along(0.42, (x, z) => {
+			const leaf = new THREE.CircleGeometry(0.11, 7)
+			for (let i = 0; i < 7; i++) {
+				const l = new THREE.Mesh(leaf, i % 3 ? garden.kale() : garden.lettuce())
+				const a = (i / 7) * Math.PI * 2 + r()
+				l.position.set(x + Math.cos(a) * 0.07, 0.12 + i * 0.025, z + Math.sin(a) * 0.07)
+				l.rotation.set(-0.35 - r() * 0.3, a, 0, 'YXZ')
+				l.scale.set(0.8, 1.4, 1)
+				g.add(l)
+			}
+		})
 	else if (kind === 'tomato')
 		along(0.6, (x, z) => {
 			g.add(stick(garden.stake(), x, z, 1.6))

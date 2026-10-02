@@ -1195,10 +1195,15 @@ export class Studio {
 
 	/** prepare playback: what the world is loading before the timeline plays */
 	preparing = $state(false);
-	/** Loads every world shot the timeline touches and keeps it loaded (waits a little, then plays regardless: the proxies cover). */
-	async preparePlayback(wait = 4000) {
+	/**
+	 * Loads the world shots playback starts with — the one at the playhead and the two after it (waits a little, then
+	 * plays regardless: the proxies cover). The rest are readied ahead as it plays (driveWorld): readying all of a
+	 * timeline's shots first put the one on screen behind every other. `all`: every one (the Prepare button).
+	 */
+	async preparePlayback(wait = 4000, all = false) {
 		if (this.world.state !== 'ready' || !this.worldClips.length) return;
-		const specs = this.worldClips.map((c) => cached(c.shot, c.shotVersion)?.spec).filter(/** @returns {s is ShotSpec} */ (s) => !!s);
+		const ahead = all ? this.worldClips : this.worldClips.filter((c) => c.start + c.dur > this.time).sort((a, b) => a.start - b.start).slice(0, 3);
+		const specs = ahead.map((c) => cached(c.shot, c.shotVersion)?.spec).filter(/** @returns {s is ShotSpec} */ (s) => !!s);
 		this.preparing = true;
 		await Promise.race([this.world.prepare(specs), new Promise((r) => setTimeout(r, wait))]);
 		this.preparing = false;
