@@ -103,8 +103,15 @@ export function rig(bones: BoneSpec[], parts: PartSpec[], materials: THREE.Mater
 	};
 
 	const w = new Map<string, number>(), c = new THREE.Color();
+	// seen from afar (coarser shapes), the smallest parts are left off: an eye, a toe, a comb's bead
+	if (DETAIL < 1) {
+		const size = (p: PartSpec) => (p.geo.boundingSphere ?? (p.geo.computeBoundingSphere(), p.geo.boundingSphere!)).radius;
+		const largest = Math.max(...parts.map(size));
+		parts = parts.filter((p) => size(p) >= largest * 0.12);
+	}
 	const geos = parts.map((p) => {
-		const g = (p.geo.index ? p.geo.toNonIndexed() : p.geo.clone()) as THREE.BufferGeometry;
+		const g = p.geo.clone();
+		if (!g.index) g.setIndex(Array.from({ length: g.attributes.position!.count }, (_, i) => i));
 		for (const name of Object.keys(g.attributes)) if (name !== 'position' && name !== 'normal') g.deleteAttribute(name);
 		if (!g.attributes.normal) g.computeVertexNormals();
 		const pos = g.attributes.position!, n = pos.count;
@@ -138,16 +145,24 @@ export function rig(bones: BoneSpec[], parts: PartSpec[], materials: THREE.Mater
 	mesh.castShadow = mesh.receiveShadow = true;
 	mesh.frustumCulled = false; // a pose can carry it far from where it rests
 
+	return { object: mesh, bones: byName, names: list.map((b) => b.name), pose: poser(list) };
+}
+
+/** How to pose these bones (a rig's, or a clone's): from where they rest now, each turned as a pose says. */
+export function poser(list: THREE.Bone[]): (p: Pose) => void {
+	const byName = Object.fromEntries(list.map((b) => [b.name, b]));
 	const rest = list.map((b) => b.position.clone());
-	const pose = (p: Pose) => {
+	const move = new THREE.Vector3();
+	return (p: Pose) => {
 		list.forEach((b, i) => {
 			b.position.copy(rest[i]!);
 			b.rotation.set(0, 0, 0);
 			b.scale.setScalar(1);
 		});
-		for (const [name, t] of Object.entries(p)) {
+		for (const name in p) {
+			const t = p[name];
 			if (!t) continue;
-			if (name === 'root') list[0]!.position.add(new THREE.Vector3(...(t as V3)));
+			if (name === 'root') list[0]!.position.add(move.set(t[0], t[1], t[2]));
 			else {
 				const b = byName[name];
 				if (!b) continue;
@@ -156,7 +171,20 @@ export function rig(bones: BoneSpec[], parts: PartSpec[], materials: THREE.Mater
 			}
 		}
 	};
-	return { object: mesh, bones: byName, names: list.map((b) => b.name), pose };
+}
+
+/** How finely shapes are made: 1 as built; lower for actors seen from afar (`lowDetail`). */
+let DETAIL = 1;
+const fine = (n: number, least: number) => Math.max(least, Math.round(n * DETAIL));
+/** Build with coarser shapes — the same actor, a fraction of its vertices, for drawing far off. */
+export function lowDetail<T>(build: () => T, detail = 0.45): T {
+	const was = DETAIL;
+	DETAIL = detail;
+	try {
+		return build();
+	} finally {
+		DETAIL = was;
+	}
 }
 
 /** Between two poses: each bone's turn and the root's place, t of the way from a to b. */
@@ -181,7 +209,7 @@ export function limb(a: V3, b: V3, r0: number, r1: number, { flat = 1, turn = 0,
 	const len = A.distanceTo(B);
 	// the profile from b's end up to a's, so the lathe's faces look outwards
 	const pts: THREE.Vector2[] = [];
-	const cap = 5, body = Math.max(4, Math.round(len / 0.03));
+	const cap = fine(5, 2), body = fine(Math.max(4, Math.round(len / 0.03)), 2);
 	for (let i = 0; i <= cap; i++) {
 		const t = (i / cap) * (Math.PI / 2);
 		pts.push(new THREE.Vector2(Math.max(1e-4, Math.sin(t) * r1), -Math.cos(t) * r1));
@@ -194,7 +222,7 @@ export function limb(a: V3, b: V3, r0: number, r1: number, { flat = 1, turn = 0,
 		const t = (i / cap) * (Math.PI / 2);
 		pts.push(new THREE.Vector2(Math.max(1e-4, Math.cos(t) * r0), len + Math.sin(t) * r0));
 	}
-	const g = new THREE.LatheGeometry(pts, seg);
+	const g = new THREE.LatheGeometry(pts, fine(seg, 5));
 	g.applyMatrix4(new THREE.Matrix4().makeRotationY(turn));
 	g.applyMatrix4(new THREE.Matrix4().makeScale(flat, 1, 1));
 	g.applyMatrix4(new THREE.Matrix4().makeRotationY(-turn));
@@ -205,14 +233,14 @@ export function limb(a: V3, b: V3, r0: number, r1: number, { flat = 1, turn = 0,
 
 /** An egg: a sphere `r` across, scaled by `s`, turned by `rot`, at `at`. */
 export function egg(at: V3, s: V3, rot: V3 = [0, 0, 0], detail: [number, number] = [20, 14]): THREE.BufferGeometry {
-	const g = new THREE.SphereGeometry(1, detail[0], detail[1]);
+	const g = new THREE.SphereGeometry(1, fine(detail[0], 6), fine(detail[1], 4));
 	g.applyMatrix4(new THREE.Matrix4().compose(new THREE.Vector3(...at), new THREE.Quaternion().setFromEuler(new THREE.Euler(...rot)), new THREE.Vector3(...s)));
 	return g;
 }
 
 /** A cone (a beak, a horn, a fin): `r` at its base, `h` long, pointing along `dir` from its base at `at`. */
 export function spike(at: V3, dir: V3, r: number, h: number, { flat = 1, seg = 10 }: { flat?: number; seg?: number } = {}): THREE.BufferGeometry {
-	const g = new THREE.ConeGeometry(r, h, seg);
+	const g = new THREE.ConeGeometry(r, h, fine(seg, 4));
 	g.applyMatrix4(new THREE.Matrix4().makeTranslation(0, h / 2, 0));
 	g.applyMatrix4(new THREE.Matrix4().makeScale(flat, 1, 1));
 	g.applyMatrix4(new THREE.Matrix4().compose(new THREE.Vector3(...at), new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), new THREE.Vector3(...dir).normalize()), new THREE.Vector3(1, 1, 1)));
@@ -224,6 +252,7 @@ export function spike(at: V3, dir: V3, r: number, h: number, { flat = 1, seg = 1
  * (a chest forward, a back behind) — closed at both ends.
  */
 export function loft(rings: { y: number; w: number; d: number; z?: number }[], seg = 28): THREE.BufferGeometry {
+	seg = fine(seg, 8);
 	const pos: number[] = [];
 	const ring = (r: (typeof rings)[number]) => Array.from({ length: seg }, (_, j) => {
 		const a = (j / seg) * Math.PI * 2;

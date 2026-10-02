@@ -331,8 +331,8 @@ export function bee(): Cast {
 
 /* ── the fish: a carp and a tilapia ──────────────────────────────────────── */
 
-function fish(name: string, len: number, back: string, belly: string, bars: string | null, barbels: boolean): Cast {
-	const L = len, y = 0.15, z = (k: number) => L * k;
+function fish(name: string, len: number, back: string, belly: string, bars: string | null, barbels: boolean, y = 0.15): Cast {
+	const L = len, z = (k: number) => L * k;
 	const bones: BoneSpec[] = [
 		{ name: 'head', at: [0, y, z(0.25)] },
 		{ name: 'body1', parent: 'head', at: [0, y, z(0.08)] },
@@ -369,3 +369,13 @@ function fish(name: string, len: number, back: string, belly: string, bars: stri
 
 export const carp = () => fish('carp', 0.42, '#7a5a2a', '#d0a24e', null, true);
 export const tilapia = () => fish('tilapia', 0.28, '#6c7470', '#c9ccc4', '#545b58', false);
+
+/** The fish of the ponds and the tanks, by the coat they have there (src/lib/sandbox-2/interior/animals.ts): an orange
+ *  carp, a white one, a grey barred tilapia, a gold carp — their middles on y 0, as they swim at a water's level. */
+export const pondFish = (coat: number) =>
+	[
+		() => fish('carp', 0.32, '#d9651e', '#f2a25a', null, true, 0),
+		() => fish('carp', 0.32, '#e9e5dc', '#f7f5ef', null, true, 0),
+		() => fish('tilapia', 0.26, '#6c7470', '#c9ccc4', '#545b58', false, 0),
+		() => fish('carp', 0.32, '#b88a2c', '#e6b65a', null, true, 0)
+	][coat % 4]!();
