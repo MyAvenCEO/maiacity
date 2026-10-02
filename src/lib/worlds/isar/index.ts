@@ -5,16 +5,17 @@
  *
  * Walked on foot along the east bank — the gravel path, the meadow, the bank down to the water — and into the river:
  * wading over the gravel, swimming where it is deep, carried downstream by the current while you swim; up the ramp at
- * the bridge's east end and across the Wittelsbacherbrücke's deck. Not up the steep west bank, nor over the dike into
- * the park behind it. The sky is Munich's as it truly turns: the sun rising over the east bank, setting behind the west
- * bank's trees.
+ * the bridge's east end, across the Wittelsbacherbrücke's deck, and on the west bank along its riverside way, from the
+ * bridge's west end south over the Westermühlbach's mouth to the railway bridge, and down its wooded bank to the water.
+ * Not over the dike into the park behind the east bank, nor into the town behind the west one. The sky is Munich's as
+ * it truly turns: the sun rising over the east bank, setting behind the west bank's trees.
  *
  * Shot like every sandbox (`world.sandbox: 'isar'`): the river flows, the grass and the leaves stir on the shot's
  * clock; the bridge's lamps are the shot's `lamps`.
  */
 import * as THREE from 'three';
 import { connectFilm, createObstacles, createSky, createStage, createWalker, filmDraws, filmHoldsSize, worldTime } from '$lib/sandbox-kit';
-import { DOWNSTREAM, MAP, nOf, sOf, waterAt, xOf, zOf } from './map';
+import { DOWNSTREAM, MAP, nOf, points, sOf, waterAt, xOf, zOf } from './map';
 import { buildGround } from './ground';
 import { buildWater, type Water } from './water';
 import { buildBridges, type Bridges } from './bridges';
@@ -105,7 +106,45 @@ export async function mountIsar(container: HTMLElement, onProgress: (label: stri
 			crest[i] = sum / k;
 		}
 	}
-	const crestAt = (s: number) => {
+	// and on the west side: up the bank to the riverside way along its top — Hefner-Alteneck-Straße in the south, the
+	// path on the bank in the middle, Wittelsbacherstraße's pavement in the north — and a step beyond its far edge
+	const westLimit = new Float64Array(ground.gs.length).fill(NaN);
+	{
+		const ways = MAP.paths
+			.filter((p) => !p.b && ['footway', 'path', 'cycleway', 'residential', 'living_street', 'pedestrian'].includes(p.hw))
+			.map((p) => ({ w: p.w, pts: points(p.pts).map(([x, z]) => [sOf(x, z), nOf(x, z)] as const) }));
+		const { gs } = ground;
+		for (let i = 0; i < gs.length; i++) {
+			const s = gs[i]!;
+			const [west] = ground.banks(s);
+			let near = -Infinity, width = 0;
+			for (const way of ways)
+				for (let k = 0; k + 1 < way.pts.length; k++) {
+					const [s1, n1] = way.pts[k]!, [s2, n2] = way.pts[k + 1]!;
+					if (s < Math.min(s1, s2) || s > Math.max(s1, s2) || s1 === s2) continue;
+					const n = n1 + ((n2 - n1) * (s - s1)) / (s2 - s1);
+					// the first way back from the water: not on the bank's foot, not out beyond the bank's top
+					if (n < west - 3 && n > west - 32 && n > near) (near = n), (width = way.w);
+				}
+			if (near > -Infinity) westLimit[i] = near - width / 2 - 1.2;
+		}
+		// where no way was found (a gap in the map), between the ways either side; then smoothed a little
+		for (let i = 0; i < gs.length; i++) {
+			if (!Number.isNaN(westLimit[i]!)) continue;
+			let a = i - 1, b = i + 1;
+			while (a >= 0 && Number.isNaN(westLimit[a]!)) a--;
+			while (b < gs.length && Number.isNaN(westLimit[b]!)) b++;
+			const va = a >= 0 ? westLimit[a]! : NaN, vb = b < gs.length ? westLimit[b]! : NaN;
+			westLimit[i] = Number.isNaN(va) ? vb : Number.isNaN(vb) ? va : va + ((vb - va) * (i - a)) / (b - a);
+		}
+		const raw = Float64Array.from(westLimit);
+		for (let i = 0; i < gs.length; i++) {
+			let lo = Infinity;
+			for (let d = -3; d <= 3; d++) lo = Math.min(lo, raw[Math.min(gs.length - 1, Math.max(0, i + d))]!);
+			westLimit[i] = lo;
+		}
+	}
+	const column = (s: number) => {
 		const gs = ground.gs;
 		let lo = 0, hi = gs.length - 1;
 		while (hi - lo > 1) {
@@ -113,14 +152,16 @@ export async function mountIsar(container: HTMLElement, onProgress: (label: stri
 			if (gs[mid]! <= s) lo = mid;
 			else hi = mid;
 		}
-		return crest[lo]!;
+		return lo;
 	};
-	/** where one may be on the ground: between the river's west foot and the dike's crest, from bridge to bridge — and
-	 *  up the paths to the Wittelsbacherbrücke's east end */
+	const crestAt = (s: number) => crest[column(s)]!;
+	const westAt = (s: number) => westLimit[column(s)]!;
+	/** where one may be on the ground: from the riverside way on the west bank, across the river, to the dike's crest
+	 *  on the east, from bridge to bridge — and up the paths to the Wittelsbacherbrücke's east end */
 	const zone = (s: number, n: number) => {
 		if (s < WALK.s0 || s > WALK.s1) return false;
 		const [west] = ground.banks(s);
-		if (n < west - 1.2) return false;
+		if (n < Math.min(west - 1.2, westAt(s))) return false;
 		if (n <= crestAt(s) + 3) return true;
 		if (s > 270 && n < 128) {
 			const [gravel, , asphalt] = ground.surface(s, n);

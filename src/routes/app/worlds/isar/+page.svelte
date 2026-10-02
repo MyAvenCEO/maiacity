@@ -1,7 +1,7 @@
 <!--
 	The Isar in Munich: from the Wittelsbacherbrücke south to the railway bridge, flowing north (src/lib/worlds/isar) —
-	walked like every sandbox: drag to look, WASD to walk, Shift to hurry; along the east bank, into the river, up onto
-	the Wittelsbacherbrücke. Its map and its ground are open data, credited at the foot of the page.
+	walked like every sandbox: drag to look, WASD to walk, Shift to hurry; along both banks' riverside ways, into the
+	river, up onto the Wittelsbacherbrücke. Its map and its ground are open data, credited at the foot of the page.
 -->
 <script lang="ts">
 	import { base } from '$app/paths';
