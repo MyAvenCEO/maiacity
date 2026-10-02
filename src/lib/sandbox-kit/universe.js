@@ -25,10 +25,10 @@ export const DECLINATION = 18;
 const AIR = { turbidity: 3, rayleigh: 1.2, mieCoefficient: 0.004, mieDirectionalG: 0.8 };
 
 const linear = (/** @type {string} */ hex) => new THREE.Color(hex);
-/** deep space, the dark blue of the universe */
-const SPACE = linear('#060c22');
-/** the night air: dark blue overhead, a little lighter at the horizon (airglow, the moon's light in the air) */
-const NIGHT_ZENITH = linear('#050a18'), NIGHT_HORIZON = linear('#111d3a');
+/** deep space: never black, a bluish black, the dark blue of the universe */
+const SPACE = linear('#0c1838');
+/** the night air: a deep blue-black overhead, bluer toward the horizon (airglow, the moon's light in the air) */
+const NIGHT_ZENITH = linear('#0d1a3c'), NIGHT_HORIZON = linear('#1c2d58');
 /** the twilight: the glow over where the sun went down, and the blue hour everywhere else */
 const DUSK_GLOW = linear('#d9773f'), BLUE_HOUR = linear('#36508c');
 
@@ -175,7 +175,9 @@ const STARS = {
 		attribute vec3 tint;
 		attribute float bright;
 		uniform float visible;
+		uniform float through;
 		uniform float atmosphere;
+		uniform float limb;
 		uniform float pixel;
 		uniform vec3 up;
 		varying vec3 vColor;
@@ -185,7 +187,11 @@ const STARS = {
 			// through more air near the horizon a star dims and is gone (extinction); from space it never is
 			float el = dot( dir, up );
 			float air = mix( 1.0, smoothstep( -0.02, 0.35, el ), atmosphere );
-			float b = bright * visible * air;
+			// and where the eye looks through lit air (by day, or over a planet's sunlit limb) it does not show at all:
+			// the same air the dome draws there
+			float upness = el + limb;
+			float airy = mix( exp( -max( upness, 0.0 ) * 14.0 ) * smoothstep( 0.0, 0.25, atmosphere ), 1.0, atmosphere * atmosphere );
+			float b = bright * visible * air * mix( 1.0, through, airy );
 			vColor = tint * min( b, 1.6 ) * 0.9;
 			gl_PointSize = pixel * clamp( 1.0 + log2( 1.0 + bright ) * 0.55, 1.0, 3.6 );
 			gl_Position = projectionMatrix * viewMatrix * world;
@@ -336,7 +342,7 @@ export function createUniverse(o = {}) {
 	geo.setAttribute('bright', new THREE.BufferAttribute(cat.bright, 1));
 	const starMat = new THREE.ShaderMaterial({
 		name: 'Stars',
-		uniforms: { visible: { value: 0 }, atmosphere: { value: 1 }, pixel: { value: 1 }, up: { value: new THREE.Vector3(0, 1, 0) } },
+		uniforms: { visible: { value: 0 }, through: { value: 0 }, atmosphere: { value: 1 }, limb: { value: 0 }, pixel: { value: 1 }, up: { value: new THREE.Vector3(0, 1, 0) } },
 		...STARS,
 		transparent: true,
 		depthWrite: false,
@@ -384,8 +390,10 @@ export function createUniverse(o = {}) {
 			// from space the stars always show; in the air only as the sky darkens
 			const through = starsOf(alt);
 			u.starsThrough.value = through;
-			starMat.uniforms.visible.value = through * v.atmosphere + (1 - v.atmosphere);
+			starMat.uniforms.visible.value = 1;
+			starMat.uniforms.through.value = through;
 			starMat.uniforms.atmosphere.value = v.atmosphere;
+			starMat.uniforms.limb.value = v.limb ?? 0;
 			starMat.uniforms.up.value.copy(v.up);
 		},
 		dispose() {
