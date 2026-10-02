@@ -1,14 +1,16 @@
 /*
  * THE ROOM — a real bedroom, built from photos to its measure (Day 02, "thinking outside the box"): about 14 m²,
  * 3.10 m wide and 4.50 m long, 2.55 m high. The bed (140 × 200) against the back wall between two shelves of wine
- * crates, the window in the right wall with its deep reveal, the radiator under it and the curtain knotted to one
- * side, a red café chair by the window, a brown school chair by the left wall, the door in the front wall, the picture
- * between the window and the front corner, the sheepskin at the foot of the bed, a yellow Edison bulb on a short cord.
+ * crates; the window in the right wall, a little right of its middle, with its deep reveal, the radiator under it and
+ * the curtain knotted to one side — it looks north, so the sun never shines in, only the sky's light; a red café chair
+ * just before the window, a brown school chair by the left wall, the door across from the window in the left wall
+ * near the front corner, the picture between the window and the front corner, the sheepskin at the foot of the bed, a
+ * yellow Edison bulb on a short cord.
  * Its furniture is the 3D models' (src/lib/models). Walked like every sandbox (the kit's walker, at a room's pace) and
  * shot like every sandbox (connectFilm: `world.sandbox: 'room'`; the bulb is the shot's `lamps` light).
  *
- * Its axes: x across the room (−1.55 the left wall, +1.55 the window wall), z along it (−2.25 the back wall behind
- * the bed, +2.25 the front wall with the door), y up from the floor. Metres.
+ * Its axes: x across the room (−1.55 the left wall with the door, +1.55 the window wall: north), z along it (−2.25 the
+ * back wall behind the bed, +2.25 the front wall), y up from the floor. Metres.
  */
 import * as THREE from 'three';
 import { RectAreaLightUniformsLib } from 'three/addons/lights/RectAreaLightUniformsLib.js';
@@ -19,11 +21,14 @@ import { limedOak, plasterBump } from '$lib/models/textures';
 /** The room's measure (m). */
 export const ROOM = { width: 3.1, length: 4.5, height: 2.55 } as const;
 const W = ROOM.width / 2, L = ROOM.length / 2, H = ROOM.height;
-/** the window in the right wall: along z, its sill and its top, its reveal's depth */
-const WIN = { z0: -1.2, z1: 0.1, sill: 0.85, top: 2.35, depth: 0.32 } as const;
-/** the door in the front wall: across x */
-const DOOR = { x0: -0.75, x1: 0.1, top: 2.0 } as const;
+/** the window in the right wall (it looks north): along z, a little right of the wall's middle as you face it; its
+ *  sill and its top, its reveal's depth */
+const WIN = { z0: -0.35, z1: 0.95, sill: 0.85, top: 2.35, depth: 0.32 } as const;
+/** the door in the left wall, across from the window, near the front corner: along z */
+const DOOR = { z0: 0.88, z1: 1.74, top: 2.0 } as const;
 const BULB = { x: 0, z: 0.3, drop: 0.32 } as const;
+/** the light through a north window: the open sky's by day, warmer when the sun is low, blue at dusk */
+const NORTH_SKY = new THREE.Color('#e3ebfc'), LOW_SKY = new THREE.Color('#ffe0c2'), DUSK_SKY = new THREE.Color('#7f98d4');
 
 export type RoomHandle = { move: (x: number, y: number, hurry: boolean) => void; look: (dx: number, dy: number) => void; dispose: () => void };
 
@@ -55,12 +60,19 @@ export async function mountRoom(container: HTMLElement, onProgress: (label: stri
 		shadowFar: 80,
 		shadowBias: { bias: -0.0002, normal: 0.01 },
 		fog: { near: 60, far: 900 },
-		onHour: ({ night }) => {
+		// the window looks north: the room never sees the sun itself, it rises behind the bed and sets behind the front wall
+		north: Math.PI / 2,
+		onHour: ({ day, low, night }, { fill }) => {
 			bulbBase = 0.9 + 2.4 * night;
 			bulbLight.intensity = bulbBase;
-			glass.emissiveIntensity = 0.5 + 2.2 * night;
-			dayBase = 4.2 * (1 - night) + 0.15;
+			glass.emissiveIntensity = 0.4 + 0.9 * night; // amber glass round a glowing filament, never a white blob
+			// the sky's light through the window, as the hour has it: brightest and cool at noon, warmer as the sun goes
+			// low, blue and faint at dusk, almost none at night
+			dayBase = 0.05 + 4.4 * day * (1 - 0.4 * low) + 0.6 * (1 - day) * (1 - night);
 			daylight.intensity = dayBase;
+			daylight.color.copy(NORTH_SKY).lerp(LOW_SKY, low * day).lerp(DUSK_SKY, 1 - day);
+			// indoors the open sky's fill reaches only through the window: by night it is the bulb's room
+			fill.intensity *= 0.35 + 0.65 * day;
 		}
 	});
 	onProgress('Building the room');
@@ -104,11 +116,11 @@ export async function mountRoom(container: HTMLElement, onProgress: (label: stri
 	scene.add(floor);
 	box(ROOM.width + 2 * T + 0.7, T, ROOM.length + 2 * T, mat.ceiling, 0.35, H + T / 2, 0);
 	box(ROOM.width + 2 * T + 0.7, H, T, mat.wall, 0.35, H / 2, -L - T / 2); // the back wall, behind the bed
-	box(T, H, ROOM.length, mat.wall, -W - T / 2, H / 2, 0); // the left wall
-	// the front wall, round the door
-	box(DOOR.x0 + W + T, H, T, mat.wall, (-W - T + DOOR.x0) / 2, H / 2, L + T / 2);
-	box(W + 0.7 - DOOR.x1, H, T, mat.wall, (DOOR.x1 + W + 0.7) / 2, H / 2, L + T / 2);
-	box(DOOR.x1 - DOOR.x0, H - DOOR.top, T, mat.wall, (DOOR.x0 + DOOR.x1) / 2, (H + DOOR.top) / 2, L + T / 2);
+	box(ROOM.width + 2 * T + 0.7, H, T, mat.wall, 0.35, H / 2, L + T / 2); // the front wall
+	// the left wall, round the door
+	box(T, H, DOOR.z0 + L, mat.wall, -W - T / 2, H / 2, (-L + DOOR.z0) / 2);
+	box(T, H, L - DOOR.z1, mat.wall, -W - T / 2, H / 2, (DOOR.z1 + L) / 2);
+	box(T, H - DOOR.top, DOOR.z1 - DOOR.z0, mat.wall, -W - T / 2, (H + DOOR.top) / 2, (DOOR.z0 + DOOR.z1) / 2);
 	// the window wall, round its opening, as deep as the window's reveal
 	const RT = WIN.depth;
 	box(RT, H, WIN.z0 + L, mat.wall, W + RT / 2, H / 2, (-L + WIN.z0) / 2);
@@ -118,10 +130,10 @@ export async function mountRoom(container: HTMLElement, onProgress: (label: stri
 	// skirting, low and white, round the floor (not across the door)
 	for (const [w, d, x, z] of [
 		[ROOM.width, 0.014, 0, -L + 0.007],
-		[0.014, ROOM.length, -W + 0.007, 0],
+		[ROOM.width, 0.014, 0, L - 0.007],
 		[0.014, ROOM.length, W - 0.007, 0],
-		[DOOR.x0 + W, 0.014, (-W + DOOR.x0) / 2, L - 0.007],
-		[W - DOOR.x1, 0.014, (DOOR.x1 + W) / 2, L - 0.007]
+		[0.014, DOOR.z0 + L, -W + 0.007, (-L + DOOR.z0) / 2],
+		[0.014, L - DOOR.z1, -W + 0.007, (DOOR.z1 + L) / 2]
 	] as const)
 		box(w, 0.06, d, mat.white, x, 0.03, z, false);
 	// the corners darken a little where the light reaches them less (floor and ceiling edges): soft shade strips
@@ -229,11 +241,23 @@ export async function mountRoom(container: HTMLElement, onProgress: (label: stri
 	/* ── outside the window: trees in autumn and the white house over the road ── */
 	const outside = new THREE.Group();
 	const leaf = (c: string) => new THREE.MeshStandardMaterial({ color: c, roughness: 0.9, flatShading: true });
-	const leaves = [leaf('#7f9a3a'), leaf('#a8a336'), leaf('#c4772f'), leaf('#6c8a34'), leaf('#b8562c')];
-	for (let i = 0; i < 14; i++) {
-		const t = new THREE.Mesh(new THREE.IcosahedronGeometry(0.9 + (i % 3) * 0.5, 1), leaves[i % leaves.length]!);
-		t.position.set(5 + (i % 4) * 1.1, 0.8 + ((i * 7) % 5) * 0.55, -4 + i * 0.62);
-		outside.add(t);
+	const leaves = [leaf('#7f9a3a'), leaf('#a8a336'), leaf('#c4772f'), leaf('#6c8a34'), leaf('#b8562c'), leaf('#8fa03c')];
+	// the crowns: each a cluster of small leafy lumps on a trunk, autumn colours mixed through them (seeded)
+	let seed = 7;
+	const rand = () => ((seed = (seed * 16807) % 2147483647) - 1) / 2147483646;
+	const bark = new THREE.MeshStandardMaterial({ color: '#4a3d30', roughness: 1 });
+	for (let tree = 0; tree < 9; tree++) {
+		const tx = 5.5 + rand() * 4.5, tz = -4.5 + tree * 1.25 + rand() * 0.6, top = 1.6 + rand() * 2.4;
+		const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.16, top + 3.2, 6), bark);
+		trunk.position.set(tx, (top - 3.2) / 2, tz);
+		outside.add(trunk);
+		for (let k = 0; k < 16; k++) {
+			const r = 0.35 + rand() * 0.45;
+			const lump = new THREE.Mesh(new THREE.IcosahedronGeometry(r, 1), leaves[Math.floor(rand() * leaves.length)]!);
+			lump.position.set(tx + (rand() - 0.5) * 2.2, top + (rand() - 0.3) * 1.8, tz + (rand() - 0.5) * 2.2);
+			lump.rotation.set(rand() * 3, rand() * 3, 0);
+			outside.add(lump);
+		}
 	}
 	const house = new THREE.Mesh(new THREE.BoxGeometry(2, 12, 18), new THREE.MeshStandardMaterial({ color: '#ecebe6', roughness: 0.9 }));
 	house.position.set(16, 3.5, -1);
@@ -268,39 +292,39 @@ export async function mountRoom(container: HTMLElement, onProgress: (label: stri
 	for (const x of [leftX, rightX])
 		for (let i = 0; i < 3; i++)
 			for (const lvl of [0.03, CRATE.h / 2 + 0.01]) box(0.36, 0.08 + ((i + lvl * 10) % 3) * 0.02, 0.22, stuff[(i + (lvl > 0.1 ? 1 : 0)) % stuff.length]!, x + (i - 1) * 0.02, i * CRATE.h + lvl + 0.055, -L + 0.19, false);
-	place(chair('red'), W - 0.45, -0.05, -Math.PI / 2 + 0.3);
+	place(chair('red'), W - 0.33, -0.62, -Math.PI / 2 + 0.3); // just before the window, its back to the wall
 	place(chair('leather'), -W + 0.32, -1.3, Math.PI / 2 - 0.25);
 	place(sheepskin(), bedAt.x + 0.1, -L + bedAt.len + 0.55, 0.25);
 	// the picture: on the window wall, between the window and the front corner
-	place(framedPicture(), W, 1.05, -Math.PI / 2, 1.5);
+	place(framedPicture(), W, 1.62, -Math.PI / 2, 1.45);
 
-	/* ── the door: a white flush door in its frame, a lever handle, the vent at its foot ── */
-	const door = box(DOOR.x1 - DOOR.x0 - 0.02, DOOR.top - 0.01, 0.04, mat.white, (DOOR.x0 + DOOR.x1) / 2, DOOR.top / 2, L - 0.02);
+	/* ── the door: a white flush door in its frame in the left wall, a lever handle, the vent at its foot ── */
+	const dz = (DOOR.z0 + DOOR.z1) / 2;
+	const door = box(0.04, DOOR.top - 0.01, DOOR.z1 - DOOR.z0 - 0.02, mat.white, -W + 0.02, DOOR.top / 2, dz);
 	door.receiveShadow = true;
-	for (const [w, h, x, y] of [
-		[0.06, DOOR.top + 0.06, DOOR.x0 - 0.025, (DOOR.top + 0.06) / 2],
-		[0.06, DOOR.top + 0.06, DOOR.x1 + 0.025, (DOOR.top + 0.06) / 2],
-		[DOOR.x1 - DOOR.x0 + 0.11, 0.06, (DOOR.x0 + DOOR.x1) / 2, DOOR.top + 0.03]
+	for (const [d, h, z, y] of [
+		[0.06, DOOR.top + 0.06, DOOR.z0 - 0.025, (DOOR.top + 0.06) / 2],
+		[0.06, DOOR.top + 0.06, DOOR.z1 + 0.025, (DOOR.top + 0.06) / 2],
+		[DOOR.z1 - DOOR.z0 + 0.11, 0.06, dz, DOOR.top + 0.03]
 	] as const)
-		box(w, h, 0.03, mat.white, x, y, L - 0.015, false);
-	// the handle on the side away from the hinges: a rose, a lever
-	const hx = DOOR.x1 - 0.1;
+		box(0.03, h, d, mat.white, -W + 0.015, y, z, false);
+	// the handle on the side away from the hinges (the hinges at the front corner's side): a rose, a lever
+	const hz = DOOR.z0 + 0.1;
 	const rose = new THREE.Mesh(new THREE.CylinderGeometry(0.025, 0.025, 0.01, 20), mat.handle);
-	rose.rotation.x = Math.PI / 2;
-	rose.position.set(hx, 1.05, L - 0.045);
+	rose.rotation.z = Math.PI / 2;
+	rose.position.set(-W + 0.045, 1.05, hz);
 	scene.add(rose);
-	box(0.13, 0.018, 0.02, mat.handle, hx - 0.055, 1.05, L - 0.06, false);
-	box(0.025, 0.06, 0.006, mat.handle, hx, 0.98, L - 0.043, false);
+	box(0.02, 0.018, 0.13, mat.handle, -W + 0.06, 1.05, hz + 0.055, false);
+	box(0.006, 0.06, 0.025, mat.handle, -W + 0.043, 0.98, hz, false);
 	// the vent: slats at the door's foot
-	for (let i = 0; i < 5; i++) box(0.42, 0.008, 0.006, mat.vent, (DOOR.x0 + DOOR.x1) / 2, 0.05 + i * 0.012, L - 0.041, false);
+	for (let i = 0; i < 5; i++) box(0.006, 0.008, 0.42, mat.vent, -W + 0.041, 0.05 + i * 0.012, dz, false);
 
 	/* ── in the walls and on the ceiling: the round flush boxes, the smoke detector ── */
 	for (const [x, y, z, ry] of [
-		[-W + 0.004, 0.3, 1.6, Math.PI / 2],
-		[-W + 0.004, 1.15, 1.9, Math.PI / 2],
-		[W - 0.004, 1.1, 1.75, -Math.PI / 2],
-		[0.55, 0.3, L - 0.004, Math.PI],
-		[0.55, 1.12, L - 0.004, Math.PI]
+		[-W + 0.004, 1.45, DOOR.z0 - 0.45, Math.PI / 2], // beside the door, high and low
+		[-W + 0.004, 0.3, DOOR.z0 - 0.45, Math.PI / 2],
+		[W - 0.004, 1.2, WIN.z1 + 0.16, -Math.PI / 2], // beside the window's reveal
+		...[0, 1, 2, 3].map((i) => [W - 0.004, 0.3, WIN.z1 + 0.32 + i * 0.075, -Math.PI / 2] as const) // four in a row, low
 	] as const) {
 		const ring = new THREE.Mesh(new THREE.RingGeometry(0.018, 0.035, 24), mat.white);
 		const hole = new THREE.Mesh(new THREE.CircleGeometry(0.018, 24), mat.hole);
@@ -311,7 +335,7 @@ export async function mountRoom(container: HTMLElement, onProgress: (label: stri
 		}
 	}
 	const smoke = new THREE.Mesh(new THREE.CylinderGeometry(0.055, 0.06, 0.035, 24), mat.white);
-	smoke.position.set(-0.6, H - 0.0175, 1.1);
+	smoke.position.set(-0.75, H - 0.0175, 1.2);
 	scene.add(smoke);
 
 	/* ── the bulb: hung from the ceiling, its light at its glass ── */
@@ -331,7 +355,7 @@ export async function mountRoom(container: HTMLElement, onProgress: (label: stri
 		[bedAt.x - bedAt.w / 2 - 0.05, bedAt.x + bedAt.w / 2 + 0.05, -L, -L + bedAt.len + 0.06], // the bed
 		[leftX - CRATE.w / 2, leftX + CRATE.w / 2, -L, -L + CRATE.d + 0.02],
 		[rightX - CRATE.w / 2, rightX + CRATE.w / 2, -L, -L + CRATE.d + 0.02],
-		[W - 0.7, W, -0.3, 0.2], // the red chair
+		[W - 0.62, W, -0.88, -0.36], // the red chair
 		[-W, -W + 0.58, -1.55, -1.05], // the brown chair
 		[W - 0.12, W, WIN.z0, WIN.z1] // the radiator
 	];
