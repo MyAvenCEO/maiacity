@@ -45,9 +45,12 @@ under one skinned mesh, built in its rest pose (facing +z, on y 0), its parts ri
   17 bones, a T-shirt, jeans, trainers, a face that shows where it looks.
   Its poses (stand, sit, sit with elbows on knees, fallen back, lie, kneel, look up, wave, think, arms crossed,
   point) and moves (idle, walk, wave, sit down). `standIn(pose)` gives one held in a pose for a world to place.
-- `animals.ts` — Sandbox 4's creatures and the island's sheep, rigged: the hen (pecks, flaps), the goose (waddles,
-  grazes, hisses), the goat and the sheep (walk, graze), the frog (croaks, hops), the bee (hovers, flies), the carp
-  and the tilapia (swim). The worlds' flocks stay instanced (a hundred for a few draw calls); these are for close up.
+- `animals.ts` — Sandbox 4's creatures, rigged: the hen (pecks, flaps), the goose (waddles, grazes, hisses), the
+  goat and the sheep (walk, graze), the frog (croaks, hops), the bee (hovers, flies), the carp and the tilapia (swim).
+- `crowd.ts` — how a world holds many of them (Sandbox 4's flocks, hives and ponds; Sandbox 3's): the nearest to the
+  eye (the walker, or the film camera) as rigged actors moving every bone (at most a dozen or two of a kind), the rest
+  as instances of the same model at rest in coarser shapes, its smallest parts left off — a hundred a draw call.
+  Which is which is asked each frame from the eye alone, so a shot draws the same frame every time.
 - `index.ts` — `ACTORS`, as `/app/actors` (admin) shows them: each on a turntable playing its moves; the stand-in also
   holds its poses, any joint turned by hand, and copies the pose out as data.
 

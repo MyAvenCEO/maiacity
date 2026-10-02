@@ -556,6 +556,8 @@ export async function mountInterior(container: HTMLElement, kind: DomeKind, onPr
 	// it joins the host's world only when it is complete (see the end)
 	if (host) scene.position.set(host.x, 0.03, host.z)
 	const camera = host?.camera ?? stage!.camera
+	// where the eye is, in the dome's own ground (a host's dome stands off its middle): the animals near it move every bone
+	const eye = () => ({ x: camera.position.x - (host?.x ?? 0), z: camera.position.z - (host?.z ?? 0) })
 
 	/* the sun stands where the in-game clock says: it rises in the east, crosses
 	   the south, sets in the west, and the sky, the light and the reflections
@@ -866,10 +868,10 @@ export async function mountInterior(container: HTMLElement, kind: DomeKind, onPr
 		}
 		const at = (i: number) => streamOut[Math.min(i, streamOut.length - 1)]!
 		const flocks = [
-			herd('goat', [0.05, 1.6, 3.2, 4.7].map((a) => goatAt(a + Math.PI / 4)), 71),
-			herd('goose', [40, 110, 180, 240].map(at).map((p) => ({ x: p.x, z: p.z, r: 6, n: 5 })), 72),
-			herd('frog', [20, 75, 150, 215].map(at).map((p) => ({ x: p.x, z: p.z, r: 3.5, n: 4 })), 74),
-			...(kind === 'master' ? [herd('hen', henPatches(squareR), 73)] : [])
+			herd('goat', [0.05, 1.6, 3.2, 4.7].map((a) => goatAt(a + Math.PI / 4)), 71, eye),
+			herd('goose', [40, 110, 180, 240].map(at).map((p) => ({ x: p.x, z: p.z, r: 6, n: 5 })), 72, eye),
+			herd('frog', [20, 75, 150, 215].map(at).map((p) => ({ x: p.x, z: p.z, r: 3.5, n: 4 })), 74, eye),
+			...(kind === 'master' ? [herd('hen', henPatches(squareR), 73, eye)] : [])
 		]
 		for (const f of flocks) {
 			scene.add(f.object)
@@ -883,7 +885,7 @@ export async function mountInterior(container: HTMLElement, kind: DomeKind, onPr
 			const [cx, cz] = polar(ringPath + (outerR - ringPath) * 0.55, aa)
 			return [0, 1, 2].map((j) => ({ x: cx + j * 1.3, z: cz + (j % 2) * 0.6, rot: aa + Math.PI }))
 		})
-		const hives = apiary(hiveSpots, 75)
+		const hives = apiary(hiveSpots, 75, eye)
 		scene.add(hives.object)
 		animated.push(hives.update)
 		herds.bees = hives.where
@@ -1219,7 +1221,7 @@ export async function mountInterior(container: HTMLElement, kind: DomeKind, onPr
 			scene.add(await bakeIn(shore(pd.outline, 0, 19, { x: end.x, z: end.z }), false))
 			waterPts.push(...pd.outline)
 			// fish in the pond, and a few in the stream
-			const fish = fishes([{ x: end.x, z: end.z, r: width * 3.2, y: 0.02, n: kind === 'master' ? 22 : 12 }], [{ line: samples, y: 0.02, n: kind === 'master' ? 10 : 5 }], 61)
+			const fish = fishes([{ x: end.x, z: end.z, r: width * 3.2, y: 0.02, n: kind === 'master' ? 22 : 12 }], [{ line: samples, y: 0.02, n: kind === 'master' ? 10 : 5 }], 61, eye)
 			scene.add(fish.object)
 			animated.push(fish.update)
 		}
@@ -1768,7 +1770,7 @@ export async function mountInterior(container: HTMLElement, kind: DomeKind, onPr
 				tank.position.set(x, 0.55, z)
 				tank.castShadow = true
 				scene.add(tank)
-				const tankFish = fishes([{ x, z, r: 0.55, y: 0.92, n: 5 }], [], 62 + i)
+				const tankFish = fishes([{ x, z, r: 0.55, y: 0.92, n: 5 }], [], 62 + i, eye)
 				scene.add(tankFish.object)
 				animated.push(tankFish.update)
 				const surf = new THREE.Mesh(new THREE.CircleGeometry(0.7, 24), m.water(1))

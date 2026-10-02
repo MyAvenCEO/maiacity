@@ -66,6 +66,8 @@ export async function mountVillage(container: HTMLElement, onProgress: (label: s
 	// the canvas, the camera and the sky are every sandbox's own ($lib/sandbox-kit)
 	const stage = createStage(container)
 	const { renderer, scene, camera } = stage
+	// where the eye is (the walker's, or the film camera's): the animals near it move every bone
+	const eye = () => camera.position
 	const m = mats()
 	const domes = layout()
 	const animated: ((t: number) => void)[] = []
@@ -543,7 +545,7 @@ export async function mountVillage(container: HTMLElement, onProgress: (label: s
 			const c = Math.cos(p.group.rotation.y), sn = Math.sin(p.group.rotation.y)
 			for (const q of p.colliders) colliders.push({ x: pg.x + q.x * c + q.z * sn, z: pg.z - q.x * sn + q.z * c, r: q.r })
 		}
-		const hens = herd('hen', henPatches(SQUARE_R), 73)
+		const hens = herd('hen', henPatches(SQUARE_R), 73, eye)
 		herds.hens = hens.where
 		scene.add(hens.object)
 		animated.push(hens.update)
@@ -759,7 +761,7 @@ export async function mountVillage(container: HTMLElement, onProgress: (label: s
 		})
 		scene.add(posts, tops)
 	}
-	// goats browsing between the domes, geese on the stream
+	// goats and sheep browsing between the domes, geese on the stream
 	{
 		// goats: browsing between every pair of domes, and out in the edge forest
 		const goatPatches = [
@@ -782,7 +784,17 @@ export async function mountVillage(container: HTMLElement, onProgress: (label: s
 			...streams.slice(1).map((ps) => bank(ps, ps.length - 12)),
 			...Array.from({ length: 4 }, (_, k) => bank(streams[0]!, Math.floor((streams[0]!.length * (k + 0.7)) / 4)))
 		].map((p) => ({ x: p.x, z: p.z, r: 1.6, n: 5 }))
-		const goats = herd('goat', goatPatches, 71), geese = herd('goose', goosePatches, 72), frogs = herd('frog', frogPatches, 74)
+		// sheep: a flock beside every other home dome, on the other side of it from the goats (sheep in a food forest:
+		// silvopasture), eight to a flock
+		const sheepPatches = [0, 2, 4].map((k) => {
+			const aim = (k * Math.PI) / 3 + Math.PI / 6 - 0.35
+			let [x, z] = polar(176, aim)
+			// in the open forest: never on a path, by the water, or near enough a dome to wander into it
+			for (let tries = 0; tries < 80 && (nearPath(x, z, 6) || nearWater(x, z, 8) || domes.some((d) => Math.hypot(x - d.x, z - d.z) < d.ext + 16) || AROUND_MASTER.some((c) => Math.hypot(x - c.x, z - c.z) < c.r + 10)); tries++) [x, z] = polar(176 + tries * 1.2, aim - tries * 0.012)
+			return { x, z, r: 10, n: 8 }
+		})
+		const goats = herd('goat', goatPatches, 71, eye), geese = herd('goose', goosePatches, 72, eye), frogs = herd('frog', frogPatches, 74, eye)
+		const sheep = herd('sheep', sheepPatches, 77, eye)
 		herds.frogs = frogs.where
 		// bee hives, three or four together, in clearings of the forest round the cell
 		const hiveSpots: { x: number; z: number; rot: number }[] = []
@@ -794,17 +806,18 @@ export async function mountVillage(container: HTMLElement, onProgress: (label: s
 			for (let j = 0; j < 3 + (k % 2); j++) hiveSpots.push({ x: cx + j * 1.3, z: cz + (j % 2) * 0.6, rot: aim + Math.PI })
 		}
 		// fish in every pond
-		const pondFish = fishes(ponds.map((pd) => ({ x: pd.x, z: pd.z, r: 6, y: 0.04, n: 10 })), [], 76)
+		const pondFish = fishes(ponds.map((pd) => ({ x: pd.x, z: pd.z, r: 6, y: 0.04, n: 10 })), [], 76, eye)
 		scene.add(pondFish.object)
 		animated.push(pondFish.update)
-		const hives = apiary(hiveSpots, 75)
+		const hives = apiary(hiveSpots, 75, eye)
 		herds.bees = hives.where
 		for (const hs of hiveSpots) colliders.push({ x: hs.x, z: hs.z, r: 0.5 })
-		for (const f of [goats, geese, frogs, hives]) {
+		for (const f of [goats, sheep, geese, frogs, hives]) {
 			scene.add(f.object)
 			animated.push(f.update)
 		}
-		herds.goats = goats.where
+		// the goats' bleat is a sheep's: both flocks sound it
+		herds.goats = () => [...goats.where(), ...sheep.where()]
 		herds.geese = geese.where
 		for (const ps of [...streams, ...pondFill]) waterPts.push(...ps.filter((_, i) => i % 3 === 0))
 		animated.push(flow)

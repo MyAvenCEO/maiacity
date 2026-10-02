@@ -1,18 +1,26 @@
 /**
  * The animals of the land outside: hens scratching in their runs and out
- * under the trees, goats browsing the forest, geese along the stream. Each
- * kind is one instanced mesh with its colours baked into the vertices, so a
- * hundred animals cost a handful of draw calls, and every animal wanders on
- * its own: it walks, turns, stops to peck or graze, and walks on, always
- * inside its own patch of ground.
+ * under the trees, goats and sheep browsing the forest, geese along the
+ * stream, frogs by the ponds, bees round their hives, fish in the ponds and
+ * the tanks. Every one is a rigged actor ($lib/actors/animals): near the eye
+ * it moves every bone as its kind does — walks, pecks, grazes, hops, flies,
+ * swims — and further off the same animal stands in for itself, a hundred of
+ * them a draw call ($lib/actors/crowd). Every animal wanders on its own: it
+ * walks, turns, stops to peck or graze, and walks on, always inside its own
+ * patch of ground.
  */
 import * as THREE from 'three'
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js'
+import { bee, frog, goat, goose, hen, pondFish, sheep } from '$lib/actors/animals'
+import { crowd, type Eye } from '$lib/actors/crowd'
+import type { Cast, Clip } from '$lib/actors/rig'
 import { seeded } from './plants'
+
+export type { Eye }
 
 type Part = { geo: THREE.BufferGeometry; color: string; at: [number, number, number]; rot?: [number, number, number]; scale?: [number, number, number] }
 
-/** Merges an animal's parts into one geometry, each part's colour written into its vertices. */
+/** Merges a thing's parts into one geometry, each part's colour written into its vertices. */
 function model(parts: Part[]): THREE.BufferGeometry {
 	const geos = parts.map(({ geo, color, at, rot = [0, 0, 0], scale = [1, 1, 1] }) => {
 		const g = (geo.index ? geo.toNonIndexed() : geo.clone()) as THREE.BufferGeometry
@@ -26,80 +34,42 @@ function model(parts: Part[]): THREE.BufferGeometry {
 	return mergeGeometries(geos)!
 }
 
-const ball = new THREE.SphereGeometry(1, 10, 8)
-const cone = new THREE.ConeGeometry(1, 1, 6)
-const rod = new THREE.CylinderGeometry(1, 1, 1, 5)
 const block = new THREE.BoxGeometry(1, 1, 1)
 
-/** A hen, facing +z, standing on y 0. */
-const hen = (coat: string) =>
-	model([
-		{ geo: ball, color: coat, at: [0, 0.24, 0], scale: [0.14, 0.15, 0.21] },
-		{ geo: cone, color: coat, at: [0, 0.36, -0.2], rot: [-0.7, 0, 0], scale: [0.09, 0.2, 0.09] },
-		{ geo: ball, color: coat, at: [0, 0.42, 0.18], scale: [0.075, 0.075, 0.075] },
-		{ geo: cone, color: '#e2a93b', at: [0, 0.41, 0.27], rot: [Math.PI / 2, 0, 0], scale: [0.025, 0.07, 0.025] },
-		{ geo: block, color: '#c7362c', at: [0, 0.49, 0.19], scale: [0.02, 0.06, 0.08] },
-		{ geo: rod, color: '#e2a93b', at: [-0.05, 0.06, 0], scale: [0.012, 0.12, 0.012] },
-		{ geo: rod, color: '#e2a93b', at: [0.05, 0.06, 0], scale: [0.012, 0.12, 0.012] }
-	])
-
-/** A goat, facing +z: a deep body on thin legs, a beard, and horns swept back. */
-const goat = (coat: string) =>
-	model([
-		{ geo: ball, color: coat, at: [0, 0.72, 0], scale: [0.24, 0.26, 0.5] },
-		...([[-0.13, 0.28], [0.13, 0.28], [-0.13, -0.3], [0.13, -0.3]] as const).map(([x, z]) => ({ geo: rod, color: coat, at: [x, 0.25, z] as [number, number, number], scale: [0.04, 0.5, 0.04] as [number, number, number] })),
-		{ geo: rod, color: coat, at: [0, 0.95, 0.42], rot: [0.6, 0, 0], scale: [0.08, 0.35, 0.08] },
-		{ geo: ball, color: coat, at: [0, 1.1, 0.55], rot: [0.5, 0, 0], scale: [0.1, 0.1, 0.18] },
-		{ geo: cone, color: '#5a4a3a', at: [-0.05, 1.25, 0.48], rot: [-0.9, 0, 0], scale: [0.025, 0.18, 0.025] },
-		{ geo: cone, color: '#5a4a3a', at: [0.05, 1.25, 0.48], rot: [-0.9, 0, 0], scale: [0.025, 0.18, 0.025] },
-		{ geo: ball, color: coat, at: [-0.12, 1.12, 0.5], scale: [0.08, 0.025, 0.04] },
-		{ geo: ball, color: coat, at: [0.12, 1.12, 0.5], scale: [0.08, 0.025, 0.04] },
-		{ geo: cone, color: '#d8d2c4', at: [0, 0.98, 0.64], rot: [Math.PI, 0, 0], scale: [0.03, 0.1, 0.03] },
-		{ geo: cone, color: coat, at: [0, 0.9, -0.5], rot: [-0.9, 0, 0], scale: [0.04, 0.14, 0.04] }
-	])
-
-/** A goose, facing +z: a white body, a long neck held up, an orange bill. */
-const goose = (coat: string) =>
-	model([
-		{ geo: ball, color: coat, at: [0, 0.3, 0], scale: [0.17, 0.16, 0.3] },
-		{ geo: cone, color: coat, at: [0, 0.36, -0.3], rot: [-1.2, 0, 0], scale: [0.1, 0.16, 0.06] },
-		{ geo: rod, color: coat, at: [0, 0.52, 0.22], rot: [0.25, 0, 0], scale: [0.04, 0.36, 0.04] },
-		{ geo: ball, color: coat, at: [0, 0.72, 0.28], scale: [0.06, 0.06, 0.08] },
-		{ geo: cone, color: '#e8862c', at: [0, 0.71, 0.39], rot: [Math.PI / 2, 0, 0], scale: [0.025, 0.1, 0.02] },
-		{ geo: rod, color: '#e8862c', at: [-0.06, 0.08, 0], scale: [0.015, 0.16, 0.015] },
-		{ geo: rod, color: '#e8862c', at: [0.06, 0.08, 0], scale: [0.015, 0.16, 0.015] }
-	])
-
 export type Patch = { x: number; z: number; r: number; n: number }
-/** A frog, facing +z, squatting on its folded back legs, its eyes up. */
-const frog = (coat: string) =>
-	model([
-		{ geo: ball, color: coat, at: [0, 0.05, 0], scale: [0.055, 0.035, 0.07] },
-		{ geo: ball, color: coat, at: [0, 0.075, 0.045], scale: [0.04, 0.025, 0.035] },
-		{ geo: ball, color: '#e8d27a', at: [0, 0.03, 0.01], scale: [0.045, 0.02, 0.06] },
-		...([-1, 1] as const).flatMap((sd) => [
-			{ geo: ball, color: '#1d2a14', at: [sd * 0.022, 0.1, 0.055] as [number, number, number], scale: [0.012, 0.012, 0.012] as [number, number, number] },
-			{ geo: ball, color: coat, at: [sd * 0.05, 0.03, -0.035] as [number, number, number], scale: [0.02, 0.018, 0.045] as [number, number, number] },
-			{ geo: ball, color: coat, at: [sd * 0.035, 0.015, 0.05] as [number, number, number], scale: [0.012, 0.012, 0.02] as [number, number, number] }
-		])
-	])
 
-type Kind = 'hen' | 'goat' | 'goose' | 'frog'
-const KINDS: Record<Kind, { make: (coat: string) => THREE.BufferGeometry; coats: string[]; speed: number; turn: number; stop: [number, number]; walk: [number, number] }> = {
-	hen: { make: hen, coats: ['#f4efe4', '#b8703a', '#3b3430', '#d9a066'], speed: 0.45, turn: 3, stop: [0.6, 3], walk: [0.5, 2] },
-	goat: { make: goat, coats: ['#f1ede4', '#8a5a36', '#3b332e'], speed: 0.6, turn: 1.4, stop: [2, 7], walk: [1, 4] },
-	goose: { make: goose, coats: ['#f7f5ef', '#f7f5ef', '#9aa0a0'], speed: 0.4, turn: 1.2, stop: [1, 4], walk: [1.5, 5] },
+type Kind = 'hen' | 'goat' | 'goose' | 'frog' | 'sheep'
+type Spec = {
+	make: (coat: string) => Cast
+	coats: string[]
+	speed: number
+	turn: number
+	stop: [number, number]
+	walk: [number, number]
+	/** its clip walking, and those it plays standing (one each, by the animal) */
+	moving: string
+	still: string[]
+	/** how near the eye it is rigged, and how many of the kind at most */
+	near: number
+	max: number
+}
+const KINDS: Record<Kind, Spec> = {
+	hen: { make: hen, coats: ['#f4efe4', '#b8703a', '#3b3430', '#d9a066'], speed: 0.45, turn: 3, stop: [0.6, 3], walk: [0.5, 2], moving: 'walk', still: ['peck', 'peck', 'idle'], near: 35, max: 20 },
+	goat: { make: goat, coats: ['#f1ede4', '#8a5a36', '#3b332e'], speed: 0.6, turn: 1.4, stop: [2, 7], walk: [1, 4], moving: 'walk', still: ['graze', 'graze', 'idle'], near: 45, max: 16 },
+	goose: { make: goose, coats: ['#f7f5ef', '#f7f5ef', '#9aa0a0'], speed: 0.4, turn: 1.2, stop: [1, 4], walk: [1.5, 5], moving: 'walk', still: ['graze', 'idle', 'graze'], near: 40, max: 18 },
 	// a frog sits still a long while, then hops once or twice
-	frog: { make: frog, coats: ['#4f7a2e', '#6b8f3a', '#3d5f2a'], speed: 1.3, turn: 4, stop: [3, 10], walk: [0.25, 0.6] }
+	frog: { make: frog, coats: ['#4f7a2e', '#6b8f3a', '#3d5f2a'], speed: 1.3, turn: 4, stop: [3, 10], walk: [0.25, 0.6], moving: 'hop', still: ['idle', 'idle', 'croak'], near: 15, max: 14 },
+	// sheep graze the forest between the domes in flocks, a black one among them
+	sheep: { make: (wool) => sheep(wool), coats: ['#ece6d8', '#e4dccb', '#3a3530'], speed: 0.5, turn: 1.2, stop: [3, 9], walk: [1, 3], moving: 'walk', still: ['graze', 'graze', 'idle'], near: 45, max: 16 }
 }
 
 type Animal = { x: number; z: number; yaw: number; home: Patch; walking: boolean; until: number; coat: number; phase: number }
 
 /**
  * A kind of animal spread over its patches of ground. `update(t)` moves every
- * one of them and writes their places into the instanced meshes.
+ * one of them; those near `eye` move every bone.
  */
-export function herd(kind: Kind, patches: Patch[], seed: number): { object: THREE.Group; update: (t: number) => void; where: () => { x: number; z: number }[] } {
+export function herd(kind: Kind, patches: Patch[], seed: number, eye?: Eye): { object: THREE.Group; update: (t: number) => void; where: () => { x: number; z: number }[] } {
 	const spec = KINDS[kind]
 	let r = seeded(seed)
 	let animals: Animal[] = []
@@ -114,18 +84,16 @@ export function herd(kind: Kind, patches: Patch[], seed: number): { object: THRE
 			}
 	}
 	born()
-	const material = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.85 })
-	const object = new THREE.Group()
-	const meshes = spec.coats.map((coat, c) => {
-		const count = animals.filter((an) => an.coat === c).length
-		const mesh = new THREE.InstancedMesh(spec.make(coat), material, Math.max(1, count))
-		mesh.count = count
-		mesh.castShadow = true
-		mesh.frustumCulled = false
-		object.add(mesh)
-		return mesh
-	})
-	const m = new THREE.Matrix4(), q = new THREE.Quaternion(), e = new THREE.Euler(0, 0, 0, 'YXZ'), p = new THREE.Vector3(), one = new THREE.Vector3(1, 1, 1)
+	let clips: Record<string, Clip> = {}
+	const flock = crowd(
+		(c) => {
+			const cast = spec.make(spec.coats[c]!)
+			clips = cast.clips
+			return cast
+		},
+		spec.coats.map((_, c) => animals.filter((an) => an.coat === c).length),
+		{ near: spec.near, max: spec.max }
+	)
 	/* They wander in fixed steps of 1/60 s counted from the world's time 0, so where each one is at time t depends on
 	   t alone — never on how often frames came — and a film shot renders the same flock every time. Asked for an
 	   earlier time, they start again from the seed and walk up to it. */
@@ -167,29 +135,30 @@ export function herd(kind: Kind, patches: Patch[], seed: number): { object: THRE
 		}
 	}
 	const pose = (t: number) => {
-		const slot = spec.coats.map(() => 0)
+		const at = eye?.()
+		flock.begin()
 		for (const an of animals) {
-			// a hen pecks and a goat grazes when it stops; walking, each bobs or waddles
+			const d2 = at ? (an.x - at.x) ** 2 + (an.z - at.z) ** 2 : Infinity
+			const clip = clips[an.walking ? spec.moving : spec.still[Math.floor(an.phase * 3) % spec.still.length]!]
+			// from afar, a hen pecks and a goat grazes as a whole when it stops; walking, each bobs or waddles
 			const pause = !an.walking
-			const pitch = pause ? (kind === 'hen' ? Math.max(0, Math.sin(t * 5 + an.phase)) * 0.55 : kind === 'goat' ? 0.25 : 0) : 0
+			const pitch = pause ? (kind === 'hen' ? Math.max(0, Math.sin(t * 5 + an.phase)) * 0.55 : kind === 'goat' || kind === 'sheep' ? 0.25 : 0) : 0
 			const roll = an.walking && kind === 'goose' ? Math.sin(t * 7 + an.phase) * 0.08 : 0
-			const bob = !an.walking ? 0 : kind === 'frog' ? Math.abs(Math.sin(t * 9 + an.phase)) * 0.14 : Math.abs(Math.sin(t * (kind === 'hen' ? 12 : 6) + an.phase)) * (kind === 'goat' ? 0.03 : 0.02)
-			q.setFromEuler(e.set(pitch, an.yaw, roll))
-			m.compose(p.set(an.x, bob, an.z), q, one)
-			meshes[an.coat]!.setMatrixAt(slot[an.coat]!++, m)
+			const bob = !an.walking ? 0 : kind === 'frog' ? Math.abs(Math.sin(t * 9 + an.phase)) * 0.14 : Math.abs(Math.sin(t * (kind === 'hen' ? 12 : 6) + an.phase)) * (kind === 'goat' || kind === 'sheep' ? 0.03 : 0.02)
+			flock.put(an.coat, an.x, bob, an.z, an.yaw, d2, () => clip?.(t + an.phase) ?? {}, pitch, roll)
 		}
-		for (const mesh of meshes) mesh.instanceMatrix.needsUpdate = true
+		flock.end()
 	}
 	update(0)
-	return { object, update, where: () => animals }
+	return { object: flock.object, update, where: () => animals }
 }
 
 /**
  * Bee hives: painted wooden boxes stacked on a stand under a tin roof, and
- * their bees, a few dozen tiny specks each, looping round the hive and out to
- * the flowers and back.
+ * their bees, a dozen and a half each, looping round the hive and out to the
+ * flowers and back — rigged near the eye, striped specks further off.
  */
-export function apiary(spots: { x: number; z: number; rot: number }[], seed: number): { object: THREE.Group; update: (t: number) => void; where: () => { x: number; z: number }[] } {
+export function apiary(spots: { x: number; z: number; rot: number }[], seed: number, eye?: Eye): { object: THREE.Group; update: (t: number) => void; where: () => { x: number; z: number }[] } {
 	const r = seeded(seed)
 	const object = new THREE.Group()
 	const paints = ['#f2e6c8', '#e8c46a', '#9fb7a0', '#d9a07a', '#b9c7d9']
@@ -212,20 +181,38 @@ export function apiary(spots: { x: number; z: number; rot: number }[], seed: num
 		m.castShadow = true
 		object.add(m)
 	})
-	const PER = 26
-	const bees = new THREE.InstancedMesh(new THREE.SphereGeometry(0.018, 5, 4), new THREE.MeshBasicMaterial({ color: '#2b2412' }), spots.length * PER)
-	bees.frustumCulled = false
-	object.add(bees)
+	const PER = 18
 	const paths = spots.flatMap((s) => Array.from({ length: PER }, () => ({ s, rad: 0.4 + r() * 2.2, h: 0.4 + r() * 1.4, speed: (0.8 + r() * 1.6) * (r() < 0.5 ? -1 : 1), phase: r() * 10, wob: r() * 3 })))
-	const m4 = new THREE.Matrix4()
+	// a bee from afar: a striped body and its wings, a few dozen vertices
+	const speck = model([
+		{ geo: new THREE.SphereGeometry(1, 6, 4), color: '#e8b23a', at: [0, 0.0112, -0.004], scale: [0.0026, 0.0024, 0.0048] },
+		{ geo: new THREE.SphereGeometry(1, 6, 4), color: '#2a2218', at: [0, 0.012, 0.0015], scale: [0.0024, 0.0024, 0.003] },
+		{ geo: block, color: '#e6ecf2', at: [0, 0.0148, -0.0012], scale: [0.013, 0.0003, 0.0035] }
+	])
+	let clips: Record<string, Clip> = {}
+	const swarm = crowd(
+		() => {
+			const cast = bee()
+			clips = cast.clips
+			return cast
+		},
+		[paths.length],
+		{ near: 6, max: 30, scale: 1.6, lift: 0.012, shadows: false, farShape: () => ({ geometry: speck, material: new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.6 }) }) }
+	)
+	object.add(swarm.object)
 	const update = (t: number) => {
-		paths.forEach((b, i) => {
+		const at = eye?.()
+		swarm.begin()
+		for (const b of paths) {
 			const a = t * b.speed + b.phase
 			const rr = b.rad * (0.6 + 0.4 * Math.sin(t * 0.7 + b.wob))
-			m4.makeTranslation(b.s.x + Math.sin(a) * rr, b.h + Math.sin(t * 3 + b.wob) * 0.15, b.s.z + Math.cos(a) * rr)
-			bees.setMatrixAt(i, m4)
-		})
-		bees.instanceMatrix.needsUpdate = true
+			const x = b.s.x + Math.sin(a) * rr, z = b.s.z + Math.cos(a) * rr
+			// facing the way it flies round
+			const sg = Math.sign(b.speed), yaw = Math.atan2(Math.cos(a) * sg, -Math.sin(a) * sg)
+			const d2 = at ? (x - at.x) ** 2 + (z - at.z) ** 2 : Infinity
+			swarm.put(0, x, b.h + Math.sin(t * 3 + b.wob) * 0.15, z, yaw, d2, () => clips.fly?.(t + b.phase) ?? {})
+		}
+		swarm.end()
 	}
 	update(0)
 	return { object, update, where: () => spots }
@@ -233,38 +220,33 @@ export function apiary(spots: { x: number; z: number; rot: number }[], seed: num
 
 /**
  * Fish: carp and tilapia in the ponds and the aquaponics tanks, circling and
- * turning, and a few working their way up and down a stream. Each a slim body
- * and a tail, just under the surface.
+ * turning, and a few working their way up and down a stream, just under the
+ * surface — rigged near the eye, their bodies waving them on.
  */
-export function fishes(pools: { x: number; z: number; r: number; y: number; n: number }[], streams: { line: { x: number; z: number }[]; y: number; n: number }[], seed: number): { object: THREE.Group; update: (t: number) => void } {
+export function fishes(pools: { x: number; z: number; r: number; y: number; n: number }[], streams: { line: { x: number; z: number }[]; y: number; n: number }[], seed: number, eye?: Eye): { object: THREE.Group; update: (t: number) => void } {
 	const r = seeded(seed)
-	const object = new THREE.Group()
-	const coats = ['#e8742a', '#f2f0ea', '#8a8f86', '#d9a23a']
-	const body = (c: string) =>
-		model([
-			{ geo: ball, color: c, at: [0, 0, 0], scale: [0.045, 0.035, 0.12] },
-			{ geo: cone, color: c, at: [0, 0, -0.14], rot: [-Math.PI / 2, 0, 0], scale: [0.035, 0.08, 0.012] }
-		])
+	const COATS = 4
 	type F = { pool?: (typeof pools)[number]; line?: (typeof streams)[number]; rad: number; speed: number; phase: number; coat: number }
 	const fish: F[] = []
-	for (const pool of pools) for (let i = 0; i < pool.n; i++) fish.push({ pool, rad: pool.r * (0.3 + r() * 0.6), speed: (0.3 + r() * 0.5) * (r() < 0.5 ? -1 : 1), phase: r() * 10, coat: Math.floor(r() * coats.length) })
-	for (const line of streams) for (let i = 0; i < line.n; i++) fish.push({ line, rad: 0, speed: 0.02 + r() * 0.03, phase: r() * 10, coat: Math.floor(r() * coats.length) })
-	const mat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.4 })
-	const meshes = coats.map((c, k) => {
-		const count = fish.filter((f) => f.coat === k).length
-		const m = new THREE.InstancedMesh(body(c), mat, Math.max(1, count))
-		m.count = count
-		m.frustumCulled = false
-		object.add(m)
-		return m
-	})
-	const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), e = new THREE.Euler(), p = new THREE.Vector3(), one = new THREE.Vector3(1, 1, 1)
+	for (const pool of pools) for (let i = 0; i < pool.n; i++) fish.push({ pool, rad: pool.r * (0.3 + r() * 0.6), speed: (0.3 + r() * 0.5) * (r() < 0.5 ? -1 : 1), phase: r() * 10, coat: Math.floor(r() * COATS) })
+	for (const line of streams) for (let i = 0; i < line.n; i++) fish.push({ line, rad: 0, speed: 0.02 + r() * 0.03, phase: r() * 10, coat: Math.floor(r() * COATS) })
+	let clips: Record<string, Clip> = {}
+	const school = crowd(
+		(c) => {
+			const cast = pondFish(c)
+			clips = cast.clips
+			return cast
+		},
+		Array.from({ length: COATS }, (_, c) => fish.filter((f) => f.coat === c).length),
+		{ near: 18, max: 20 }
+	)
 	const update = (t: number) => {
-		const slot = coats.map(() => 0)
+		const at = eye?.()
+		school.begin()
 		for (const f of fish) {
 			let x = 0, z = 0, y = 0, yaw = 0
 			if (f.pool) {
-				// round the pool, wandering in and out, the tail wagging
+				// round the pool, wandering in and out
 				const a = t * f.speed + f.phase
 				const rr = f.rad * (0.8 + 0.2 * Math.sin(t * 0.3 + f.phase))
 				x = f.pool.x + Math.sin(a) * rr
@@ -283,11 +265,12 @@ export function fishes(pools: { x: number; z: number; r: number; y: number; n: n
 				const dir = Math.cos(t * f.speed + f.phase) > 0 ? 1 : -1
 				yaw = Math.atan2((b.x - a.x) * dir, (b.z - a.z) * dir)
 			}
-			q.setFromEuler(e.set(0, yaw + Math.sin(t * 8 + f.phase) * 0.15, 0))
-			meshes[f.coat]!.setMatrixAt(slot[f.coat]!++, m4.compose(p.set(x, y, z), q, one))
+			const d2 = at ? (x - at.x) ** 2 + (z - at.z) ** 2 : Infinity
+			// from afar the whole fish wags; near, its body waves
+			school.put(f.coat, x, y, z, yaw + (d2 < 18 * 18 ? 0 : Math.sin(t * 8 + f.phase) * 0.15), d2, () => clips.swim?.(t + f.phase) ?? {})
 		}
-		for (const m of meshes) m.instanceMatrix.needsUpdate = true
+		school.end()
 	}
 	update(0)
-	return { object, update }
+	return { object: school.object, update }
 }
