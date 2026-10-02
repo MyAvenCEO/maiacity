@@ -1136,7 +1136,9 @@ export class Studio {
 		for (const c of this.reel) {
 			const v = this.reelVideos[c.id];
 			if (!v) continue;
-			if (c.id !== this.picture?.id) {
+			// the live world draws this shot: its proxy (hidden under it) waits, not decoding along
+			const live = c.id === this.picture?.id && isWorld(c) && this.tab === '3d' && this.world.isReady(cached(c.shot, c.shotVersion)?.spec ?? /** @type {any} */ ({}));
+			if (c.id !== this.picture?.id || live) {
 				// waiting in the wings: paused on its first frame
 				if (!v.paused) v.pause();
 				if (Math.abs(v.currentTime - c.in) > 0.04) v.currentTime = c.in;
@@ -1175,8 +1177,13 @@ export class Studio {
 		this.world.show({ spec, t: this.shotTime(c), shape: /** @type {Shape} */ (this.viewShape), ...hd(this.viewShape), view: { lut: filmLut(this.luts['odt-rec709'] ?? null), grade: filmLut(grade) } });
 	}
 
+	/** each play and stop moves this on: a start still awaiting, or a frame of a playback before, does nothing */
+	run = 0;
+	/** a play that is still loading its sound and world (the button stops it too) */
+	starting = $state(false);
+
 	tick = () => {
-		if (!this.ctx) return;
+		if (!this.ctx || !this.playing) return;
 		this.time = this.timeStart + Math.max(0, this.ctx.currentTime - this.ctxStart);
 		if (this.time >= this.end) {
 			this.time = this.end;
@@ -1199,7 +1206,18 @@ export class Studio {
 
 	async play() {
 		this.srcEl?.pause(); // the timeline plays alone: the source monitor waits
-		if (!this.clips.length) return;
+		if (!this.clips.length || this.playing || this.starting) return;
+		const run = ++this.run;
+		this.starting = true;
+		try {
+			await this.start(run);
+		} finally {
+			if (run === this.run) this.starting = false;
+		}
+	}
+
+	/** @param {number} run */
+	async start(run) {
 		if (this.time >= this.end - 0.02) this.time = 0;
 		await this.audioCtx().resume();
 		await Promise.all(
@@ -1216,6 +1234,8 @@ export class Studio {
 		const mute = this.clips.filter((c) => onSoundTrack(c) && c.hash && this.byHash.get(c.hash)?.kind === 'video' && this.soundState[c.hash] !== 'ready');
 		if (mute.length) console.warn(`${mute.length} video sound clip(s) play silent until their sound is decoded:`, mute.map((c) => `${this.clipName(c)} (${this.soundState[c.hash ?? '']})`).join(', '));
 		await this.preparePlayback();
+		// stopped (or started again) while it loaded: this start is over
+		if (run !== this.run) return;
 		this.playing = true;
 		this.schedule();
 		// sound on the tracks but none laid on the clock: say why (the app's log carries it)
@@ -1231,13 +1251,16 @@ export class Studio {
 	}
 
 	stop() {
+		this.run++;
+		this.starting = false;
 		this.playing = false;
 		cancelAnimationFrame(this.frame);
+		this.world.halt();
 		this.silence();
 		this.syncVideo();
 	}
 
-	toggle = () => (this.playing ? this.stop() : void this.play());
+	toggle = () => (this.playing || this.starting ? this.stop() : void this.play());
 
 	/** @param {number} t */
 	seek(t) {

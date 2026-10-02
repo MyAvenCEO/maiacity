@@ -62,6 +62,8 @@ export class WorldViewer {
 	preparing = new Map();
 	/** how far the world's resolution is stepped down to keep up (1 = full proxy HD): drop resolution, never frames */
 	scale = $state(1);
+	/** the last frames' times (ms): the resolution steps on their median, so one slow frame (a cut, a restage) moves nothing */
+	took = /** @type {number[]} */ ([]);
 	/** @type {HTMLIFrameElement | null} */
 	iframe = null;
 	/** the film page in the iframe now: which world it holds */
@@ -106,6 +108,7 @@ export class WorldViewer {
 			}
 			if (film && typeof film.show === 'function') {
 				forwardConsole(/** @type {Window} */ (iframe.contentWindow), 'world');
+				this.forwardKeys(/** @type {Window} */ (iframe.contentWindow));
 				try {
 					await film.ready();
 					if (this.url !== url) return;
@@ -121,6 +124,32 @@ export class WorldViewer {
 			await new Promise((r) => setTimeout(r, waited > wait ? 2000 : 250));
 		}
 		if (this.iframe === iframe && this.url === url) this.state = 'unavailable';
+	}
+
+	/**
+	 * A click on the world gives it the keyboard: Space still plays and stops the timeline (handed to the studio),
+	 * unless a move is being flown by hand.
+	 * @param {Window} win
+	 */
+	forwardKeys(win) {
+		const w = /** @type {Window & { __keysForwarded?: boolean }} */ (win);
+		if (w.__keysForwarded) return;
+		w.__keysForwarded = true;
+		win.addEventListener(
+			'keydown',
+			(e) => {
+				if (e.code !== 'Space' || this.recording) return;
+				e.preventDefault();
+				e.stopImmediatePropagation();
+				window.dispatchEvent(new KeyboardEvent('keydown', { key: e.key, code: e.code, bubbles: true, cancelable: true }));
+			},
+			true
+		);
+	}
+
+	/** playback stopped: the frame waiting to be drawn is dropped */
+	halt() {
+		this.queued = null;
 	}
 
 	detach() {
@@ -178,9 +207,16 @@ export class WorldViewer {
 		Promise.resolve(this.film.show({ ...o, width: w, height: h }))
 			.catch((/** @type {Error} */ e) => void (this.error = `show: ${e?.message ?? e}`))
 			.finally(() => {
-				const took = performance.now() - t0;
-				if (took > 45 && this.scale > 0.35) this.scale = Math.max(0.35, this.scale * 0.8);
-				else if (took < 16 && this.scale < 1) this.scale = Math.min(1, this.scale * 1.1);
+				// the resolution steps (1, ¾, ½, ⅓) on the median of the last frames: each step reallocates the targets,
+				// so it moves rarely — down when frames are slow, up again only when they are well within time
+				this.took.push(performance.now() - t0);
+				if (this.took.length >= 12) {
+					const median = [...this.took].sort((a, b) => a - b)[6];
+					const steps = [1, 0.75, 0.5, 0.35], i = Math.max(0, steps.indexOf(this.scale));
+					if (median > 45 && i < steps.length - 1) this.scale = steps[i + 1];
+					else if (median < 18 && i > 0) this.scale = steps[i - 1];
+					this.took = [];
+				}
 				this.busy = false;
 				const next = this.queued;
 				this.queued = null;

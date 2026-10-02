@@ -68,6 +68,36 @@ function tiled(tex: THREE.Texture, repeatX: number, repeatY = repeatX): THREE.Te
 }
 
 /**
+ * The low sun on the glass: the panels that face it glow warm, most where they are seen at a grazing angle. Off (0)
+ * unless a film shot turns it up (its `glass` light); the world sets where the sun is every frame. Shared by every
+ * dome's glass, near or far.
+ */
+export const glassSheen = {
+	uGlassSheen: { value: 0 },
+	uGlassSheenColor: { value: new THREE.Color('#ffb070') },
+	uGlassSun: { value: new THREE.Vector3(0, 1, 0) }
+}
+function withSheen<M extends THREE.MeshPhysicalMaterial>(m: M): M {
+	m.onBeforeCompile = (sh) => {
+		Object.assign(sh.uniforms, glassSheen)
+		sh.fragmentShader = sh.fragmentShader
+			.replace('#include <common>', '#include <common>\nuniform float uGlassSheen;\nuniform vec3 uGlassSheenColor;\nuniform vec3 uGlassSun;')
+			.replace(
+				'#include <emissivemap_fragment>',
+				`#include <emissivemap_fragment>
+				if ( uGlassSheen > 0.0 ) {
+					vec3 sunV = normalize( ( viewMatrix * vec4( uGlassSun, 0.0 ) ).xyz );
+					float facing = max( dot( normal, sunV ), 0.0 );
+					float grazing = pow( 1.0 - abs( dot( normal, normalize( vViewPosition ) ) ), 2.0 );
+					totalEmissiveRadiance += uGlassSheenColor * uGlassSheen * facing * ( 0.35 + 0.65 * grazing );
+				}`
+			)
+	}
+	m.customProgramCacheKey = () => 'glass-sheen'
+	return m
+}
+
+/**
  * The dome's panels are solar glass: clear glass with rows of cells laid in it,
  * lightly tinted, with gaps between the cells so the light still falls through
  * to the forest inside. One triangle of it, drawn once, on every panel.
@@ -99,7 +129,7 @@ function solarGlass(): THREE.MeshPhysicalMaterial {
 	const tex = new THREE.CanvasTexture(c)
 	tex.colorSpace = THREE.SRGBColorSpace
 	tex.anisotropy = 8
-	solarCache = new THREE.MeshPhysicalMaterial({ map: tex, color: '#ffffff', roughness: 0.06, metalness: 0.1, transparent: true, envMapIntensity: 1.4, side: THREE.DoubleSide, depthWrite: false })
+	solarCache = withSheen(new THREE.MeshPhysicalMaterial({ map: tex, color: '#ffffff', roughness: 0.06, metalness: 0.1, transparent: true, envMapIntensity: 1.4, side: THREE.DoubleSide, depthWrite: false }))
 	return solarCache
 }
 
@@ -149,7 +179,7 @@ export const mats = () => {
 		steel: new THREE.MeshStandardMaterial({ color: '#2e3236', roughness: 0.4, metalness: 0.7 }),
 		timberFrame: new THREE.MeshStandardMaterial({ color: '#9c6b3f', roughness: 0.6 }),
 		solar: solarGlass(),
-		glass: new THREE.MeshPhysicalMaterial({ color: '#eef6f4', roughness: 0.04, metalness: 0, transparent: true, opacity: 0.1, envMapIntensity: 1.5, side: THREE.DoubleSide, depthWrite: false }),
+		glass: withSheen(new THREE.MeshPhysicalMaterial({ color: '#eef6f4', roughness: 0.04, metalness: 0, transparent: true, opacity: 0.1, envMapIntensity: 1.5, side: THREE.DoubleSide, depthWrite: false })),
 		canvas: new THREE.MeshStandardMaterial({ color: '#efe8da', roughness: 0.95, side: THREE.DoubleSide }),
 		linen: new THREE.MeshStandardMaterial({ color: '#f1ece2', roughness: 0.95 }),
 		cushion: new THREE.MeshStandardMaterial({ color: '#c47a4a', roughness: 0.9 }),
