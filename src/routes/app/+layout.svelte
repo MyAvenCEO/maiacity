@@ -86,16 +86,17 @@
 
 	const rel = $derived(page.url.pathname.slice(base.length));
 	// full screen: a sandbox (Sandbox 3 is a page of cards, it keeps the bar), a world (its own bar has the time of
-	// day), and the studio's editor
-	const world = $derived(/^\/app\/(games\/(?!sandbox-3\/?$)[^/]+|worlds\/[^/]+)\/?$/.test(rel) || fullScreen.on);
-	const immersive = $derived(world || rel.startsWith('/app/studio'));
+	// day), the 3D models' and the actors' turntables (their own way back, their controls at the edges), and the
+	// studio's editor; all but the editor are a 3D scene, where a swipe on a phone tucks the browser's bars away
+	const scene = $derived(/^\/app\/(games\/(?!sandbox-3\/?$)[^/]+|worlds\/[^/]+|models|actors)\/?$/.test(rel) || fullScreen.on);
+	const immersive = $derived(scene || rel.startsWith('/app/studio'));
 	const title = $derived(placeOf(page.url.pathname));
 	// a draft game is the admins' only; anyone else with its link is told so
 	const game = $derived(gameAt(page.url.pathname));
 	const closed = $derived(!!game && !released(founder, game));
-	// a world on a phone: a swipe up tucks the browser's bars away, so the world has the whole screen
+	// a 3D scene on a phone: a swipe up tucks the browser's bars away, so the scene has the whole screen
 	$effect(() => {
-		if (phase === 'ready' && world && !closed && matchMedia('(hover: none) and (pointer: coarse)').matches) return watchBars();
+		if (phase === 'ready' && scene && !closed && matchMedia('(hover: none) and (pointer: coarse)').matches) return watchBars();
 	});
 </script>
 

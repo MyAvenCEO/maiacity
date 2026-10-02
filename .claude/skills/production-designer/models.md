@@ -32,6 +32,27 @@ library, shown on its own in the 3D models viewer and placed in any world.
 - **Handles for the world:** whatever a world needs to drive (a bulb's glass, its filament, where its light sits) is
   in `userData`.
 
+## The actors: rigged to move (`src/lib/actors`)
+
+Whatever moves — the stand-in a shot is blocked with, and the animals — is an actor, not a model: a skeleton of bones
+under one skinned mesh, built in its rest pose (facing +z, on y 0), its parts riding a bone each or a chain of bones
+(blended over a few centimetres either side of a joint, so an elbow, a knee or a neck bends smoothly).
+- `rig.ts` — the rig: `rig(bones, parts, materials)` builds it; `pose()` turns the bones (radians from the rest
+  pose, a 4th number a bone's size, `root` moves the first bone); a clip is a function of time that gives a pose;
+  `blend` goes between two poses. The shapes: `limb`, `egg`, `spike`, `loft` (a body through rings).
+- `human.ts` — the stand-in: 1.80 m, 17 bones, a T-shirt, jeans, trainers, hair, a face that shows where it looks.
+  Its poses (stand, sit, sit with elbows on knees, fallen back, lie, kneel, look up, wave, think, arms crossed,
+  point) and moves (idle, walk, wave, sit down). `standIn(pose)` gives one held in a pose for a world to place.
+- `animals.ts` — Sandbox 4's creatures and the island's sheep, rigged: the hen (pecks, flaps), the goose (waddles,
+  grazes, hisses), the goat and the sheep (walk, graze), the frog (croaks, hops), the bee (hovers, flies), the carp
+  and the tilapia (swim). The worlds' flocks stay instanced (a hundred for a few draw calls); these are for close up.
+- `index.ts` — `ACTORS`, as `/app/actors` (admin) shows them: each on a turntable playing its moves; the stand-in also
+  holds its poses, any joint turned by hand, and copies the pose out as data.
+
+Pose a stand-in by turning bones: x forward is negative (a thigh forward, an arm forward), the left arm out is +z,
+the right −z; a forearm's y twists it about itself. Check a new pose in the viewer, or measure it: pose a rig, update
+its matrices, read the bones' world positions (an elbow on a knee, a hand at the chin).
+
 ## Building a model from photos
 
 1. **Measure.** Take the real measure where it is known (a 140 bed, a 50 cm crate, the manufacturer's dimensions of a

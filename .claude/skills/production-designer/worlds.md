@@ -38,6 +38,9 @@ Samuel's real bedroom (Day 02), rebuilt from seven photos: 3.10 × 4.50 m, 2.55 
   - The Edison bulb hangs on a short cord; the CB60 light stands on its stand (`neewer-cb60`).
 - **Walked** at a room's pace, kept off the walls and out of the furniture by solid boxes. **Filmed** as
   `world.sandbox: 'room'` — its lights are the shot's `lamps` (the bulb) and `cb60`.
+- **Stand-ins** (the rigged stand-in, `src/lib/actors/human.ts`), each a set a shot names in `world.props`, hidden
+  otherwise: `stand-in sitting` on the bed's edge, elbows on its knees; `stand-in fallen` back across the bed, arms
+  out, face to the ceiling; `stand-in window` standing at the window, looking out.
 
 ## The Apartment of Samuel (`src/lib/worlds/apartment.ts`)
 
@@ -100,11 +103,14 @@ The river in Munich from the Wittelsbacherbrücke south to the railway bridge (t
   rise, the pavilions and the pillar's height are estimates from photos.
 - **The railway bridge:** three spans of about 48.5 m on stone piers, the two tracks on plate girders, the catenary,
   and on its downstream side the old lattice truss. Its piers' places are estimated from the ground and its length.
+  By it on the west bank, Hefner-Alteneck-Straße crosses the Westermühlbach's mouth on a sprayed concrete slab.
 - **The skyline:** the houses round it from their footprints and storeys; St. Maximilian's two towers north beyond
   the bridge; the Heizkraftwerk Süd's chimneys (176, 130, 90 m) south beyond the railway bridge.
 - **Walked** along the east bank and into the river: wading over the gravel, swimming where it is deep (the current
-  carries a swimmer downstream), not up the west bank nor over the dike; up the ramps at the bridge's east end and
-  across its deck between the parapets. **Filmed** as `world.sandbox: 'isar'`; its lights are the shot's `lamps`
+  carries a swimmer downstream), not over the dike; up the ramps at the bridge's east end and across its deck between
+  the parapets; and on the west bank along its riverside way — Wittelsbacherstraße's pavement, the path on the bank,
+  Hefner-Alteneck-Straße over the Westermühlbach's mouth (its own concrete bridge) — and down the wooded bank to the
+  water, not into the town behind it. **Filmed** as `world.sandbox: 'isar'`; its lights are the shot's `lamps`
   (the bridge's lanterns). Close to the camera the grass grows in blades and the trees are drawn full: both follow
   the shot's camera, so a shot renders the same every time.
 - **The sky turns as Munich's does** (`createSky({ map: true })`): the sun rises over the east bank, stands in the

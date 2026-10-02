@@ -4,7 +4,7 @@
  * ./outdoor.ts). A world places them (src/lib/worlds); a new one is a function there and a line here.
  */
 import type * as THREE from 'three';
-import { bed, chair, crateTower, edisonBulb, framedPicture, neewerCb60, sheepskin, standIn, truck, wineCrate } from './furniture';
+import { bed, chair, crateTower, edisonBulb, framedPicture, neewerCb60, sheepskin, truck, wineCrate } from './furniture';
 import { barCounter, barStool, canvasPrint, coatStand, door, palletShelf, pendantLamp, retroFridge } from './hallway';
 import { gasBoiler, kitchenRun, panRail, pedalBin, xShelf } from './kitchen';
 import { glassShower, towelRadiator, washbasin, wallToilet } from './bathroom';
@@ -23,7 +23,6 @@ export const MODELS: Model[] = [
 	{ id: 'edison-bulb', label: 'Edison bulb', note: 'a yellow retro bulb on a short black cord, its filament glowing', usedIn: 'The room', make: () => edisonBulb() },
 	{ id: 'framed-picture', label: 'Framed picture', note: 'a painted face in a slim orange frame, 50 × 65 cm', usedIn: 'The room', make: () => framedPicture() },
 	{ id: 'sheepskin', label: 'Sheepskin', note: 'a white sheepskin rug, about 1 × 0.7 m', usedIn: 'The room', make: () => sheepskin() },
-	{ id: 'stand-in', label: 'Stand-in', note: 'a neutral clay figure of 1.80 m — standing, sitting on an edge, or fallen back — to block shots before they are filmed', usedIn: 'The room', make: () => standIn('sit') },
 	{ id: 'retro-fridge', label: 'Retro fridge', note: 'a red retro fridge, rounded and glossy, one door, its chrome lever on the left, 56 × 63 × 127 cm', usedIn: 'The hallway', make: () => retroFridge() },
 	{ id: 'bar-counter', label: 'Bar counter', note: 'a thick rustic plank along a wall at 1.05 m, 45 cm deep, on black steel brackets', usedIn: 'The hallway', make: () => barCounter() },
 	{ id: 'bar-stool-red', label: 'Bar stool, red', note: 'a round seat at 75 cm on four splayed tubes, a foot ring', usedIn: 'The hallway', make: () => barStool('red') },
