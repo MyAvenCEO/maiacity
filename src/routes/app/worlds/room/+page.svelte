@@ -25,14 +25,14 @@
 </script>
 
 <svelte:head>
-	<title>The room · Worlds · maiaCITY</title>
+	<title>Apartment of Samuel · Worlds · maiaCITY</title>
 </svelte:head>
 
 <div class="world">
 	<div class="stage" bind:this={stage}></div>
 	<div class="bar">
 		<a class="out" href="{base}/app/worlds/">← Worlds</a>
-		<div class="title"><strong>The room</strong><span>Day 02 · fourteen square metres</span></div>
+		<div class="title"><strong>Apartment of Samuel</strong><span>Day 02 · his room, the hallway, the kitchen, the bathroom</span></div>
 		<SkyControl class="time" />
 	</div>
 	<WalkHint />

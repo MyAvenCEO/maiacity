@@ -25,7 +25,7 @@ export const PLAY: Place[] = [
 
 // the 3D worlds made from real places, to walk and to film (an admin's: drafts, opened from the Worlds tile)
 export const WORLDS: Place[] = [
-	{ href: `${base}/app/worlds/room/`, label: 'The room', icon: 'play', release: 'draft', note: 'Day 02 · a bedroom, fourteen square metres' },
+	{ href: `${base}/app/worlds/room/`, label: 'Apartment of Samuel', icon: 'play', release: 'draft', note: 'Day 02 · his room, the hallway, the kitchen, the bathroom' },
 	{ href: `${base}/app/worlds/tired-land/`, label: 'The tired land', icon: 'play', release: 'draft', note: 'Day 19 · fields of one crop, a highway, trucks' }
 ];
 
