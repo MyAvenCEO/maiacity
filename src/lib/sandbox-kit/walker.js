@@ -46,14 +46,15 @@ const TURNS = [25, 50, 75, 90].map((d) => (d * Math.PI) / 180);
  * @param {HTMLElement} dom the canvas: a drag on it looks round
  * @param {{
  *   x?: number, z?: number, yaw?: number, pitch?: number,
- *   eye?: number, walk?: number, hurry?: number, turn?: number,
+ *   eye?: number, walk?: number, hurry?: number, keyboard?: { walk: number, hurry: number }, turn?: number,
  *   mouse?: number, touch?: number, maxPitch?: number, stride?: number,
  *   canStand?: (x: number, z: number, here: number, ground: number, from: { x: number, z: number }) => boolean,
  *   floorAt?: (x: number, z: number, ground: number) => number,
  *   onKey?: (key: string, down: boolean) => boolean
  * }} [options]
  *   x, z, yaw, pitch: where they start and how they face; eye: eye height over the floor (m); walk, hurry: paces (m/s);
- *   turn: the arrow keys' turn (rad/s); mouse, touch: radians a pixel of drag turns; maxPitch: how far up or down they
+ *   keyboard: the keys' own paces, if not walk and hurry (a phone's joystick hurries at its rim, where it is mostly
+ *   pushed, so a world may walk the keys at that pace and hurry them faster still); turn: the arrow keys' turn (rad/s); mouse, touch: radians a pixel of drag turns; maxPitch: how far up or down they
  *   may look; stride: the longest stride (m); canStand: may they stand at x, z coming from `from`, on a floor `here` high
  *   (what stands in the way: ./obstacles.js, which never traps them in what they already stand in; the
  *   open ground, everywhere, if not given); floorAt: the floor at x, z for someone now on `ground` (0 if not given);
@@ -65,6 +66,7 @@ export function createWalker(camera, dom, options = {}) {
 		eye = 1.65,
 		walk = 6.45,
 		hurry = 14.6,
+		keyboard = { walk, hurry },
 		turn = 1.8,
 		mouse = 0.0042,
 		touch = 0.0065,
@@ -140,7 +142,10 @@ export function createWalker(camera, dom, options = {}) {
 		const s = clamp((keys.has('d') ? 1 : 0) - (keys.has('a') ? 1 : 0) + stick.x);
 		yaw += ((keys.has('arrowleft') ? 1 : 0) - (keys.has('arrowright') ? 1 : 0)) * turn * dt;
 		if (f || s) {
-			const speed = (keys.has('shift') || stick.hurry ? hurry : walk) * dt;
+			// walked by the keys at the keys' pace, by the joystick at its own
+			const byKeys = ['w', 's', 'a', 'd', 'arrowup', 'arrowdown'].some((k) => keys.has(k));
+			const pace = byKeys ? keyboard : { walk, hurry };
+			const speed = (keys.has('shift') || stick.hurry ? pace.hurry : pace.walk) * dt;
 			const dx = (-Math.sin(yaw) * f + Math.cos(yaw) * s) * speed;
 			const dz = (-Math.cos(yaw) * f - Math.sin(yaw) * s) * speed;
 			// in short strides, each reaching up from the floor you stand on

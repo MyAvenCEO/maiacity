@@ -20,7 +20,7 @@ Every world's hour is `createSkyClock()`: the time control's (`skyTime.svelte.js
 | `createSky(renderer, scene, { onHour })` | the one sky over a world on the ground: the universe dome and the light it casts, the sun on the hour that is the moon at night, shadows, fog in the horizon's colour; `{ view: 'planet' }` round a planet from space (`sky.view(up, atmosphere)` each frame); `{ map: true }` over a real place laid out as a map (x east, z south), the sun turning as it truly does there |
 | `createUniverse()`, `horizonAt()`, `celestial()`, `createAirShell()` | the universe itself: the dome and the stars, the horizon's colour, where the sun stands over a planet, a planet's air from outside |
 | `lightAt(hour)`, `createSkyClock()` | the light of an hour on the ground, and which hour it is |
-| `createWalker(camera, canvas, { canStand, floorAt })` | the first-person camera: WASD/arrows, Shift to hurry, drag to look; `move`/`look` for a phone |
+| `createWalker(camera, canvas, { canStand, floorAt })` | the first-person camera: WASD/arrows, Shift to hurry, drag to look; `move`/`look` for a phone; `keyboard: { walk, hurry }` gives the keys their own pace (the phone's joystick hurries at its rim) |
 | `createOrbitRig(camera, canvas, { … })` | the map camera: WASD travels, drag turns and tilts, the wheel zooms to the cursor, Q/E turn; `freeMove: false` is a turntable |
 | `connectFilm({ sandbox, area, renderer, scene, camera, hold, sky, … })` | hands the world to the studio's film camera (`window.__world`); `createCameraHold(camera)` for a world with its own camera controls |
 | `<SkyControl>` | the time of the sky: **Auto** (the in-game clock) or **Manual** (a slider, from noon); one state for every sandbox |
