@@ -12,6 +12,7 @@
  */
 import * as THREE from 'three'
 import { connectFilm, createCameraHold, filmDraws } from '$lib/sandbox-kit/film.js'
+import { createSkyClock, lightAt } from '$lib/sandbox-kit/sky.js'
 import { CameraRig } from './camera'
 import { BIOMES, TREE } from './biomes'
 import { buildGlobe, FREQUENCY, LAND, WATER, type Tile, type Vec3 } from '../../../../game/globe'
@@ -22,7 +23,7 @@ import type { BiomeMap, DepthMap, LandMask } from '../../../../game/map'
 export type CityMarker = { slug: string; tile: number; citizens: number; milestone: number; coops: { slug: string; slot: number; milestone: number }[] }
 export type TilePick = { tile: number; biome: 'land' | 'water'; coop: string | null }
 export type WorldOptions = { cities: CityMarker[]; onTile?: (pick: TilePick) => void; /** The map: where the land is. Without it, the noise invents continents. */ isLand?: LandMask; /** The map: what kind of land is where. */ kindOf?: BiomeMap; /** The map: where the mountain ranges are. */ isMountain?: LandMask; /** The map: how deep the sea is. */ depthOf?: DepthMap }
-export type WorldHandle = { setCities: (cities: CityMarker[]) => void; /** Hold the camera and give the mouse back, while a sheet is open. */ setFrozen: (on: boolean) => void; /** Walk from a touch joystick: x to the right, y ahead, each -1…1. */ move: (x: number, y: number, hurry: boolean) => void; /** Mark a card as chosen (-1 clears it). */ setChosen: (tile: number) => void; /** Fly the camera to a card and mark it; `at` is where on the screen it should land (-1..1, 0 is the middle); `zoom` how close. */ focus: (tile: number, at?: { x: number; y: number }, zoom?: number) => void; /** Stop drawing while another view has the screen. */ setPaused: (on: boolean) => void; dispose: () => void }
+export type WorldHandle = { setCities: (cities: CityMarker[]) => void; /** Hold the camera and give the mouse back, while a sheet is open. */ setFrozen: (on: boolean) => void; /** Keep the light at day whatever the hour (the clock runs on), or follow the clock again. */ alwaysDay: (on: boolean) => void; /** Walk from a touch joystick: x to the right, y ahead, each -1…1. */ move: (x: number, y: number, hurry: boolean) => void; /** Mark a card as chosen (-1 clears it). */ setChosen: (tile: number) => void; /** Fly the camera to a card and mark it; `at` is where on the screen it should land (-1..1, 0 is the middle); `zoom` how close. */ focus: (tile: number, at?: { x: number; y: number }, zoom?: number) => void; /** Stop drawing while another view has the screen. */ setPaused: (on: boolean) => void; dispose: () => void }
 
 /** Resolve a token that may be `var(--x)` to a colour three.js can parse. */
 function colour(name: string, fallback: string): THREE.Color {
@@ -456,7 +457,10 @@ export function mountWorld(container: HTMLElement, options: WorldOptions = { cit
 
 	/* Light: a bright fill from the sky, and a sun that rides with the camera
 	   — above and to the right of wherever you look — so the side of the
-	   globe you are looking at is always the lit one. */
+	   globe you are looking at is always the lit one. Its colour and strength
+	   are the hour's, as in every world ($lib/sandbox-kit/sky: lightAt, the same
+	   clock and Day switch): seen from space there is no sky round it, but dawn,
+	   noon, dusk and night light it as they light the islands and the domes. */
 	const fill = new THREE.HemisphereLight(0xfff8ee, 0x6fb7c0, 1.25)
 	scene.add(fill)
 	const sun = new THREE.DirectionalLight(0xffffff, 1.7)
@@ -467,6 +471,17 @@ export function mountWorld(container: HTMLElement, options: WorldOptions = { cit
 		const right = new THREE.Vector3().crossVectors(sunOffset, camera.up).normalize()
 		sun.position.copy(sunOffset).multiplyScalar(RADIUS * 3).addScaledVector(right, RADIUS * 1.5).addScaledVector(camera.up, RADIUS * 1.5)
 	}
+	const skyClock = createSkyClock()
+	/** the hour's light, at the planet's own strength (its full sun is 1.7, its fill 1.25, at noon) */
+	const setLight = () => {
+		const l = lightAt(skyClock.hour())
+		sun.color.copy(l.sun.color)
+		sun.intensity = (1.7 * l.sun.intensity) / 3
+		fill.color.copy(l.fill.color)
+		fill.intensity = (1.25 * l.fill.intensity) / 0.42
+	}
+	setLight()
+	let lightChecked = 0
 
 	/* The film camera's hold on the planet (src/lib/film, $lib/sandbox-kit/film): it flies the camera free of the rig,
 	   and may scale and colour the sun and the fill. It is also the dev hook: the camera and the globe from the console. */
@@ -478,12 +493,10 @@ export function mountWorld(container: HTMLElement, options: WorldOptions = { cit
 		scene,
 		camera,
 		hold,
+		// the hour's light (the film pins the hour), before the shot's own changes
 		advance: () => {
 			showDetail()
-			sun.intensity = 1.7
-			sun.color.set(0xffffff)
-			fill.intensity = 1.25
-			fill.color.set(0xfff8ee)
+			setLight()
 			placeSun()
 		},
 		lights: {
@@ -514,6 +527,11 @@ export function mountWorld(container: HTMLElement, options: WorldOptions = { cit
 		updateHover()
 		showDetail()
 		placeSun()
+		// the light moves on with the game clock: a look every second is plenty
+		if (now - lightChecked > 1000) {
+			lightChecked = now
+			setLight()
+		}
 		if (!filmDraws()) renderer.render(scene, camera)
 		frame = requestAnimationFrame(tick)
 	}
@@ -535,6 +553,10 @@ export function mountWorld(container: HTMLElement, options: WorldOptions = { cit
 			if (on) setHover(-1)
 		},
 		setChosen,
+		alwaysDay: (on) => {
+			skyClock.alwaysDay(on)
+			setLight()
+		},
 		move: (x, y, hurry) => rig.move(x, y, hurry),
 		focus: (tile, at, zoom = 0.5) => {
 			const t = tiles[tile]

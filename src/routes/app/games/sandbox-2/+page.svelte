@@ -37,8 +37,12 @@
 	let stage: HTMLDivElement;
 	let world: WorldHandle | null = null;
 	let islandView: Island | undefined = $state();
-	/** the island's sky kept at day; every visit starts on the real sky */
-	let islandDay = $state(false);
+	/** the sky kept at day, on the planet and on its islands alike (one sky, $lib/sandbox-kit); every visit starts on the real sky */
+	let alwaysDay = $state(false);
+	const keepDay = (on: boolean) => {
+		world?.alwaysDay(on);
+		islandView?.alwaysDay(on);
+	};
 	let loading = $state(true);
 
 	let cityData = $state<api.City | null>(null);
@@ -231,7 +235,6 @@
 		const city = inside;
 		insideSlug = null;
 		selected = null;
-		islandDay = false;
 		world?.setPaused(false);
 		if (city) world?.focus(api.tileOf(city)!, visibleMiddle(), 0.62);
 	}
@@ -391,6 +394,7 @@
 				quiet(loadDepthMap(url('depth.json')))
 			]);
 			world = mountWorld(stage, { cities: markers(), onTile: (p) => void onTile(p), isLand, kindOf, isMountain, depthOf });
+			world.alwaysDay(alwaysDay);
 			loading = false;
 		})();
 	});
@@ -417,6 +421,7 @@
 			settlements={standing.map((s) => ({ cell: api.cellOf(s)!, level: s.level }))}
 			focus={api.cellOf(standing.find((s) => s.slug === homeSettlement) ?? standing[0] ?? { places: {} }) ?? undefined}
 			onpick={(t) => void onCell(t)}
+			day={alwaysDay}
 		/>
 	{/if}
 
@@ -437,14 +442,15 @@
 				<strong>{inside.name}</strong>
 				<span class="dim">{inside.citizens} {inside.citizens === 1 ? 'citizen' : 'citizens'} · {standing.length} {standing.length === 1 ? 'settlement' : 'settlements'} · {clock}</span>
 			</button>
-			<!-- the island's sky: the real one, or kept at day ($lib/sandbox-kit) -->
-			<SkyToggle bind:on={islandDay} onchange={(on) => islandView?.alwaysDay(on)} />
+			<!-- the sky: the real one, or kept at day ($lib/sandbox-kit) -->
+			<SkyToggle bind:on={alwaysDay} onchange={keepDay} />
 		{:else}
 			<a class="pill back" href="{base}/app/" aria-label="Back to the dashboard">←</a>
 			<div class="pill brand">
 				<strong>avenCITY Sandbox 2</strong>
 				{#if cityData}<span class="dim">{cityData.calendarLabel} · {clock}</span>{/if}
 			</div>
+			<SkyToggle bind:on={alwaysDay} onchange={keepDay} />
 		{/if}
 	</div>
 

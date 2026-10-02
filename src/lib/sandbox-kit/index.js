@@ -3,8 +3,9 @@
  *
  * In the world (three.js):
  *   createStage   the canvas, the scene and the camera, kept to their container's size and smooth on a slow phone
- *   createSky     the sky, a sun and moon that follow the in-game clock, shadows, fog; kept at day if asked;
- *                 'scattering' (walked at eye height) or 'clay' (a board seen from above)
+ *   createSky     the one sky of every world: a sun and moon that follow the in-game clock, shadows, fog, stars;
+ *                 kept at day if asked. lightAt(hour) and createSkyClock() are its light and its hour, for a world
+ *                 with no sky round it (the planet)
  *   createWalker  the first-person camera: WASD and drag to look, a joystick and a finger on a phone
  *   createOrbitRig  the map camera: WASD travels, drag turns and tilts, the wheel zooms to the cursor
  *   connectFilm   hands the world to the film camera (window.__world): the studio can shoot it
@@ -18,7 +19,7 @@
  * How to build a new sandbox with it: ./README.md.
  */
 export { createStage } from './stage.js';
-export { createSky, sunAt, claySunAt } from './sky.js';
+export { createSky, createSkyClock, lightAt, sunAt, DAY_HOUR } from './sky.js';
 export { createWalker } from './walker.js';
 export { createOrbitRig } from './orbit.js';
 export { connectFilm, createCameraHold, filmDraws, filmHoldsSize, worldTime } from './film.js';

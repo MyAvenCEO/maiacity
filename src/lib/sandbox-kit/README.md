@@ -4,16 +4,19 @@ What every avenCITY sandbox world is made with — the same sky, the same day sw
 
 | Sandbox | stage | sky | camera | on film (`/games/<sandbox>/?film`) |
 |---|---|---|---|---|
-| 1 · the island (`src/lib/aven-city`) | its own canvas | `clay` | `createOrbitRig` | the island from its seed |
-| 2 · the planet (`src/lib/sandbox-2/world`) | its own | its own (a sun that rides with the camera) | its own globe rig + `createCameraHold` | `&area=planet` |
-| 2 · a city's island (`src/lib/sandbox-2/island`) | its own canvas | `clay` | `createOrbitRig` | `&area=island`, grown from `world.seed` |
-| 3 · inside a dome (`src/lib/sandbox-2/interior`) | `createStage` | `scattering` | `createWalker` | `&area=home` … `factory` |
-| 4 · a dome cell (`src/lib/sandbox-2/interior/village.ts`) | `createStage` | `scattering` | `createWalker` | the cell, its domes built as the camera comes |
+| 1 · the island (`src/lib/aven-city`) | its own canvas | `createSky` (island size) | `createOrbitRig` | the island from its seed |
+| 2 · the planet (`src/lib/sandbox-2/world`) | its own | `lightAt` + `createSkyClock` (no sky round a planet; its sun rides with the camera) | its own globe rig + `createCameraHold` | `&area=planet` |
+| 2 · a city's island (`src/lib/sandbox-2/island`) | its own canvas | `createSky` (island size) | `createOrbitRig` | `&area=island`, grown from `world.seed` |
+| 3 · inside a dome (`src/lib/sandbox-2/interior`) | `createStage` | `createSky` (dome size) | `createWalker` | `&area=home` … `factory` |
+| 4 · a dome cell (`src/lib/sandbox-2/interior/village.ts`) | `createStage` | `createSky` | `createWalker` | the cell, its domes built as the camera comes |
+
+**One sky, one source of truth.** Every world's light is `lightAt(hour)` and every world's hour is `createSkyClock()` (`sky.js`): the in-game clock, day kept by the switch, or the hour a film pins. Every world has the same Day/Real sky switch. A world chooses only its size — how far the shadows and fog reach, how far off the light stands — and its lens (`exposure`: the islands' pale clay takes a little less light than a walk among the domes); never how the sky behaves.
 
 | | |
 |---|---|
 | `createStage(container)` | the canvas, the scene and the camera, kept to their container's size; `adapt(now)` each frame keeps it smooth on a slow phone |
-| `createSky(renderer, scene, { style, onHour })` | the sky, a sun and moon that follow the in-game clock (`game/time`), shadows, fog; `alwaysDay(on)` keeps it at day. `style: 'scattering'` (walked at eye height) or `'clay'` (a board seen from above) |
+| `createSky(renderer, scene, { onHour })` | the one sky: a scattering sky dome and the light it casts, a sun that follows the in-game clock (`game/time`) and is the moon at night, shadows, a fog that warms at dusk, the stars and the moon's disc at night; `alwaysDay(on)` keeps it at day |
+| `lightAt(hour)`, `createSkyClock()` | the sky's light and its hour, for a world with no sky round it |
 | `createWalker(camera, canvas, { canStand, floorAt })` | the first-person camera: WASD/arrows, Shift to hurry, drag to look; `move`/`look` for a phone |
 | `createOrbitRig(camera, canvas, { … })` | the map camera: WASD travels, drag turns and tilts, the wheel zooms to the cursor, Q/E turn; `freeMove: false` is a turntable |
 | `connectFilm({ sandbox, area, renderer, scene, camera, hold, sky, … })` | hands the world to the studio's film camera (`window.__world`); `createCameraHold(camera)` for a world with its own camera controls |

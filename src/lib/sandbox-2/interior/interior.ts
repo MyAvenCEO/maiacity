@@ -649,7 +649,7 @@ export async function mountInterior(container: HTMLElement, kind: DomeKind, onPr
 			shadowFar: R * 8 + 60,
 			shadowBias: { bias: -0.0004, normal: 0.02 },
 			lightDistance: R * 3 + 20,
-			fog: { day: '#e3e9e6', dusk: '#e9c9a8', night: '#1c2438', near: R * 1.2, far: R * 9 + 60 },
+			fog: { near: R * 1.2, far: R * 9 + 60 },
 			onHour: ({ day, night }, { fill }) => {
 				// the shadows are drawn again only when the light has moved (the factory, busy with machines and a lift,
 				// keeps drawing them every frame)

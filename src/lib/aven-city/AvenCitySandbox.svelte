@@ -1,6 +1,6 @@
 <script lang="ts">
 import { onMount } from 'svelte'
-import DayNightSlider from './components/DayNightSlider.svelte'
+import { SkyToggle, WorldClock } from '$lib/sandbox-kit'
 import DomeRail from './components/DomeRail.svelte'
 import ResourceIcon from './components/ResourceIcon.svelte'
 import { BIOME_IDS, BIOME_RESOURCES, type BiomeId } from './game/hexmap'
@@ -12,7 +12,6 @@ import {
 	type PlacedKind
 } from './game/three/buildWorld'
 import type { SandboxApi } from './game/three/sandboxScene'
-import { timeOfDay } from './game/timeOfDay.svelte'
 
 // The standalone repo linked back to `/` from its own route. As a component
 // inside avenOS there is no route to return to, so the parent says what
@@ -34,7 +33,6 @@ onMount(() => {
 	void import('./game/three/sandboxScene').then(({ createSandbox }) => {
 		if (disposed) return
 		api = createSandbox(canvas)
-		api.setHour(timeOfDay.hour)
 		api.show(biome, seed, { building: building ?? undefined })
 	})
 	return () => {
@@ -116,13 +114,16 @@ function setLevel(lv: number): void {
 			/>
 		</div>
 
-		<!-- bottom bar: seed reroll + the shared day/night dial -->
+		<!-- bottom bar: seed reroll + the sky every world shares (the in-game clock, or kept at day) -->
 		<div class="flex items-end justify-between gap-3">
 			<button class="hud-pill hud-btn pointer-events-auto font-semibold" onclick={reroll}>
 				↻ reroll specimen
 				<span class="hud-label">{seed}</span>
 			</button>
-			<DayNightSlider onchange={(h) => api?.setHour(h)} />
+			<div class="pointer-events-auto flex items-center gap-1.5">
+				<WorldClock />
+				<SkyToggle onchange={(on) => api?.alwaysDay(on)} />
+			</div>
 		</div>
 	</div>
 </div>
