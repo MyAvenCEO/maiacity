@@ -45,25 +45,28 @@ The room is one room of Samuel's apartment, and the rest is built round it in th
 and his photos, furnished with the models and none of the clutter. One set: walk out of his door and through it all.
 - **The hallway** (x −4.60…−1.70, z 0.20…2.25), out of Samuel's door. The wall beside his door is painted with
   blackboard paint, the quote chalked on it (the wall itself, not a board). Along the other wall stand the shoe rack,
-  the storeroom's door (shut) and the red fridge by the kitchen's doorway.
+  the storeroom's door (shut) and the red fridge (127 cm) by the kitchen's doorway.
 - **Its arm** (x −4.60…−3.10, z 2.25…6.40). The bar runs along one wall under the pallet shelf and the red pendant,
   with four stools. The bathroom's door stands across from the bar, and the front door (shut) at the far end. The
   coat stand and the print are on the end wall.
 - **The kitchen** (x −7.60…−4.75, z 0.20…2.25), a galley. On the right as you come in, three modules from the window:
   the washing machine, the oven under the gas hob, and right beside it the black sink over drawers — under a brick
-  wall, the boiler over the sink, then the X-shelf. The dryer stands under the window at the far end. On the grey
-  wall: the crate pantry and the bin.
-- **The bathroom** (x −7.60…−4.75, z 2.40…4.40), long and narrow. The basin and the WC are on the left, the towel
-  radiator on the right, and the glass shower at the far end under the tall window. Its door stands open into it,
-  its mirror a true one: it shows the room, not the sky.
+  wall, three dark crates as shelves from the window to the boiler over the sink, then the X-shelf. One washing
+  machine only, nothing under the window. On the grey wall: the crate pantry and the bin.
+- **The bathroom** (x −7.60…−4.75, z 2.40…3.85), long and narrow (1.45 m). The basin and the WC are on the left, the
+  towel radiator on the right, and the glass shower at the far end under the tall window. Its door opens out into
+  the hallway and stands folded back along the wall; the mirror on its bathroom face is a true one: it shows the
+  room, not the sky.
 - **The windows at the far end look south:** the sun comes into the kitchen and the bathroom. The shadows reach the
   whole apartment (`shadowReach` 9.8 round the room); past their reach the sun would shine through the walls.
 - **The door opens as you come to it.** In a shot it is shut while the camera is inside the room and open when it
   stands outside. The apartment's lamps light only when one can see out — the door open, or oneself outside. What is
   behind a shut door does not light the room, so the room's shots stay as they were.
 - **The pendant and the bathroom's spots are downlights with shadows**, so the walls keep their light in their
-  rooms. The kitchen's bare bulb has no shadows and a short reach (3.2 m) for the same reason. They are all the
-  shot's `lamps`.
+  rooms. Each has a second, soft light rising from above the furniture: the bounce off its pool on the floor, so
+  the room round it is lit a little, never quite dark. The kitchen's bare bulb has no shadows and a short reach
+  (3.2 m). They are all the shot's `lamps`.
+- **A world's page is full screen** like a sandbox's: its own bar holds the time of day (Auto / Manual).
 
 ## The tired land (`src/lib/worlds/tired-land.ts`, `tiredLandSet.js`)
 
