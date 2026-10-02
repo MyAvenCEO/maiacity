@@ -22,7 +22,7 @@
  */
 import * as THREE from 'three'
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js'
-import { flagstone, grass, leaves, limestone, oak, soil, water } from './textures'
+import { flagstone, grass, groundCover, leaves, limestone, oak, soil, water } from './textures'
 import { cafes, coops, coopsAround, henPatches, squaresAround, workshops, type Kit } from './spaces'
 import { apiary, fishes, herd } from './animals'
 import { buildFactory, LEVELS as FACTORY_LEVELS, NAMES as FACTORY_NAMES } from './factory'
@@ -36,7 +36,7 @@ import { skyHour } from '$lib/sandbox-kit/skyTime.svelte.js'
 import { createWalker } from '$lib/sandbox-kit/walker.js'
 import { createObstacles } from '$lib/sandbox-kit/obstacles.js'
 import { connectFilm, filmDraws, filmHoldsSize, worldTime } from '$lib/sandbox-kit/film.js'
-import { forestFloor, floorPick, grassTuft, appleTree, banana, berryBush, canopyTree, climber, clover, coconutPalm, comfrey, crop, CROPS, fruitTree, ginger, grapePergola, herb, papaya, passionVine, potted, seeded, shrub, smallFruitTree, squash, strawberries, tropicalShrub, vineAlong, type Plant } from './plants'
+import { forestFloor, floorPick, grassTuft, appleTree, banana, berryBush, canopyTree, climber, clover, coconutPalm, comfrey, crop, CROPS, type Crop, fruitTree, ginger, grapePergola, herb, papaya, passionVine, potted, seeded, shrub, smallFruitTree, squash, strawberries, tropicalShrub, vineAlong, type Plant } from './plants'
 
 export type DomeKind = 'tent' | 'glamp' | 'home' | 'large' | 'master' | 'factory'
 
@@ -463,20 +463,6 @@ export function lantern(m: Mats, r: number, y: number): THREE.Group {
 	const cable = new THREE.Mesh(new THREE.CylinderGeometry(0.008, 0.008, 3, 4), m.dark)
 	cable.position.y = y + 1.5
 	g.add(cable)
-	return g
-}
-
-function raisedBed(m: Mats, len: number, seed: number): THREE.Group {
-	const g = new THREE.Group()
-	g.add(box(len, 0.55, 1.1, m.oak(len / 2, 0.3)))
-	const top = box(len - 0.1, 0.02, 1, m.soil(len / 2), 0, 0.55)
-	g.add(top)
-	const r = seeded(seed)
-	for (let i = 0; i < len * 3; i++) {
-		const h = herb(seed + i, 0.18 + r() * 0.12)
-		h.position.set(-len / 2 + 0.2 + r() * (len - 0.4), 0.56, -0.35 + r() * 0.7)
-		g.add(h)
-	}
 	return g
 }
 
@@ -1026,8 +1012,10 @@ export async function mountInterior(container: HTMLElement, kind: DomeKind, onPr
 			scene.add(h)
 		}
 		for (const a of [-0.55, 0.55, 1.95]) {
-			const bedG = raisedBed(m, 2.2, 90 + Math.round(a * 10))
-			put(bedG, 7.3, a, a + Math.PI / 2, 0.9)
+			// a patch grown straight in the soil, as the gardens outside
+			const patch = crop(CROPS[Math.round(a * 10 + 20) % CROPS.length]!, 90 + Math.round(a * 10), 2.2)
+			patch.position.y = 0.02
+			put(patch, 7.3, a, a + Math.PI / 2, 0.9)
 		}
 		for (let k = 0; k < 5; k++) {
 			const potA = -1.9 + k * 0.28
@@ -1239,8 +1227,9 @@ export async function mountInterior(container: HTMLElement, kind: DomeKind, onPr
 		const nearStream = (x: number, z: number, d: number) => Math.hypot(pondAt.x - x, pondAt.z - z) < width * 3.6 * 1.35 + d || samples.some((p) => Math.hypot(p.x - x, p.z - z) < d)
 
 		await slice()
-		/* the kitchen garden: beds along both sides of the ring path, for everything that wants a greenhouse —
-		   in the medium dome, where the ground is narrower, eight beds on the diagonals */
+		/* the kitchen garden: patches along both sides of the ring path, for everything that wants a greenhouse —
+		   in the medium dome, where the ground is narrower, eight on the diagonals. Grown straight in the soil (no
+		   boxes): two strips of a crop side by side, the next patch another crop */
 		const bedLen = 3
 		const garden = new THREE.Group()
 		const small = kind === 'home'
@@ -1255,11 +1244,12 @@ export async function mountInterior(container: HTMLElement, kind: DomeKind, onPr
 					const [x, z] = polar(rr, a)
 					if (nearStream(x, z, width + 2)) continue
 					const bed = new THREE.Group()
-					bed.add(box(bedLen, 0.4, 1.15, m.oak(bedLen / 2, 0.3)))
-					bed.add(box(bedLen - 0.1, 0.02, 1.05, m.soil(bedLen / 2), 0, 0.4))
-					const c = crop(CROPS[n++ % CROPS.length]!, 800 + n, bedLen - 0.2)
-					c.position.y = 0.42
-					bed.add(c)
+					const kindA = CROPS[n++ % CROPS.length]!, kindB = CROPS[(n * 5) % CROPS.length]!
+					for (const [k, side] of [[kindA, -0.5], [kindB, 0.5]] as const) {
+						const c = crop(k, 800 + n * 7 + (side > 0 ? 3 : 0), bedLen - 0.2)
+						c.position.set(0, 0.02, side)
+						bed.add(c)
+					}
 					bed.position.set(x, 0, z)
 					bed.rotation.y = a + Math.PI / 2
 					garden.add(bed)
@@ -1339,16 +1329,52 @@ export async function mountInterior(container: HTMLElement, kind: DomeKind, onPr
 			if (r() < 0.3) around(1, 0.9, (sd) => passionVine(sd, 2.6 + r()).object)
 			around(1, 2.6, (sd) => forestFloor(r() < 0.5 ? 'moss' : r() < 0.5 ? 'mycelium' : r() < 0.6 ? 'log' : 'stones', sd))
 		}
-		for (let i = 0; i < Math.min(area * 0.6, kind === 'master' ? 1400 : 1800); i++) {
-			if (i % 50 === 0) await slice()
-			const a = r() * Math.PI * 2
-			const rr = Rc + 1.2 + r() * (rIn - Rc - 1.6)
-			if (onPath(rr, a)) continue
-			const [x, z] = polar(rr, a)
-			if (nearStream(x, z, width * 0.7)) continue
-			const hb = herb(3000 + i, 0.2 + r() * 0.25)
-			hb.position.set(x, 0, z)
-			sectorAt(x, z).cover.add(hb)
+		/* the floor between the trees is a food garden too, with hardly any bare earth: patches of salad, radish,
+		   kale and chard, strawberries, herbs and peppers, moss and clover between them, in sizes that alternate —
+		   and here and there a tomato or a teepee of beans standing over them. Like the rest of the cover it is left
+		   out far away (its sector's detail) */
+		{
+			// the whole food-forest floor is a living ground cover, not bare soil (the paths, the plaza, the water lie
+			// over it): the earth shows only in specks
+			const living = new THREE.Mesh(new THREE.RingGeometry(Rc + 0.2, rIn, 128, 2), new THREE.MeshStandardMaterial({ map: tiled(groundCover(), rIn / 2.2), roughness: 1 }))
+			living.rotation.x = -Math.PI / 2
+			living.position.y = 0.006
+			living.receiveShadow = true
+			scene.add(living)
+			// under every patch a low green layer — clover, sorrel, purslane as one leafy mat — so the earth shows
+			// only in the gaps; a few faces each, merged with the rest of the cover
+			const mats3 = ['#55783a', '#628a41', '#4b6e33', '#6f9147'].map((c) => new THREE.MeshStandardMaterial({ color: c, roughness: 1 }))
+			const mat = new THREE.CircleGeometry(1, 7)
+			const PATCH = 1.2
+			// only the path itself stays clear (the forest keeps a wider band, where the beds stood)
+			const onWalk = (rr: number, a: number) =>
+				rr < Rc + 1.2 || (!lush && Math.abs(rr - Rp) < (small ? 1.1 : 1.7)) || [...DOORS, ...STAIRS].some((d) => Math.abs(adiff(a, d)) < Math.PI / 2 && Math.abs(adiff(a, d)) * rr < 1.6)
+			const LOW: (Crop | 'moss' | 'clover' | 'squash')[] = ['lettuce', 'radish', 'herbs', 'kale', 'strawberry', 'moss', 'lettuce', 'chard', 'clover', 'radish', 'herbs', 'pepper', 'moss', 'squash']
+			let n = 0
+			for (let gx = -rIn; gx < rIn; gx += PATCH)
+				for (let gz = -rIn; gz < rIn; gz += PATCH) {
+					if (++n % 40 === 0) await slice()
+					const x = gx + (r() - 0.5) * 0.5, z = gz + (r() - 0.5) * 0.5
+					const rr = Math.hypot(x, z), a = Math.atan2(x, z)
+					if (rr > rIn - 0.7 || onWalk(rr, a) || nearStream(x, z, width * 0.55)) continue
+					// up to a trunk, never through it (a tree's reach is its canopy, not its trunk)
+					if (colliders.some((c) => Math.hypot(c.x - x, c.z - z) < Math.min(0.6, c.r * 0.5))) continue
+					const green = new THREE.Mesh(mat, mats3[Math.floor(r() * mats3.length)]!)
+					green.rotation.set(-Math.PI / 2, 0, r() * 6.28)
+					green.scale.set(PATCH * (0.62 + r() * 0.14), PATCH * (0.55 + r() * 0.14), 1)
+					green.position.set(x, 0.008 + r() * 0.004, z)
+					green.receiveShadow = true
+					sectorAt(x, z).cover.add(green)
+					const s = 0.7 + r() * 0.6
+					const tall = r() < 0.05
+					const pick = tall ? (r() < 0.6 ? 'tomato' : 'beans') : LOW[Math.floor(r() * LOW.length)]!
+					const sd = 12000 + n
+					const o = pick === 'moss' ? forestFloor('moss', sd) : pick === 'clover' ? clover(sd, 1.2 * s) : pick === 'squash' ? squash(sd) : crop(pick, sd, PATCH * 0.95)
+					o.position.set(x, 0.01, z)
+					o.rotation.y = r() * Math.PI * 2
+					if (pick !== 'moss' && pick !== 'clover' && pick !== 'squash') o.scale.set(s, 0.85 + r() * 0.35, s)
+					sectorAt(x, z)[tall ? 'understorey' : 'cover'].add(o)
+				}
 		}
 		if (lush) {
 			/* the planted band under the gallery, out to the glass: nothing taller than the
@@ -1744,8 +1770,9 @@ export async function mountInterior(container: HTMLElement, kind: DomeKind, onPr
 				scene.add(surf)
 				colliders.push({ x, z, r: 0.95 })
 				const [tx, tz] = polar(kr - 1.3, a)
-				const trough = raisedBed(m, 2.2, 70 + i)
-				trough.position.set(tx, 0.25, tz)
+				// the tank's grow bed, straight in the soil beside it
+				const trough = crop(CROPS[(i * 3) % CROPS.length]!, 70 + i, 2.2)
+				trough.position.set(tx, 0.02, tz)
 				trough.rotation.y = a + Math.PI / 2
 				scene.add(trough)
 				colliders.push({ x: tx, z: tz, r: 1.1 })

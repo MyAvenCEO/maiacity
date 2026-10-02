@@ -261,6 +261,41 @@ export function frond(): THREE.CanvasTexture {
 }
 
 /** Meadow grass seen from above: mottled greens, thousands of short blades, dry tips, clover. */
+/** The food garden's living floor: low leaves in many greens — clover, sorrel, purslane, strawberry runners — packed
+ * close, with only specks of earth between. */
+export function groundCover(): THREE.CanvasTexture {
+	const key = 'ground-cover'
+	const hit = cache.get(key)
+	if (hit) return hit
+	const size = 512
+	const canvas = document.createElement('canvas')
+	canvas.width = canvas.height = size
+	const x = canvas.getContext('2d')!
+	const base = fbm(size, 97, 6, 5)
+	const img = x.createImageData(size, size)
+	for (let i = 0; i < size * size; i++) {
+		const g = base(i % size, (i / size) | 0)
+		// a dark leafy shade underneath, the earth just showing where it is thinnest
+		set(img, i * 4, 52 + g * 30, 78 + g * 34, 36 + g * 14)
+	}
+	x.putImageData(img, 0, 0)
+	const r = rng(99)
+	const greens = ['#4e7a34', '#5f8c3c', '#6f9a45', '#3f6a30', '#7aa64e', '#557f3a', '#86b05a']
+	for (let i = 0; i < 7000; i++) {
+		const cx = r() * size, cy = r() * size, rr = 2 + r() * 5
+		x.fillStyle = r() < 0.04 ? ['#c8283a', '#e9d35a', '#f4f1e8'][Math.floor(r() * 3)]! : greens[Math.floor(r() * greens.length)]!
+		x.beginPath()
+		x.ellipse(cx, cy, rr, rr * (0.5 + r() * 0.4), r() * Math.PI, 0, Math.PI * 2)
+		x.fill()
+	}
+	const t = new THREE.CanvasTexture(canvas)
+	t.colorSpace = THREE.SRGBColorSpace
+	t.wrapS = t.wrapT = THREE.RepeatWrapping
+	t.anisotropy = 8
+	cache.set(key, t)
+	return t
+}
+
 export function grass(): THREE.CanvasTexture {
 	const key = 'grass'
 	const hit = cache.get(key)
