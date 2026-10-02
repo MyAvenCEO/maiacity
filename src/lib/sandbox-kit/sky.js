@@ -88,6 +88,7 @@ import { skyHour, skyTime } from './skyTime.svelte.js';
  *   exposure?: { day: number, night: number },
  *   clouds?: number,
  *   north?: number,
+ *   map?: boolean,
  *   onHour?: (light: SkyLight, parts: SkyParts) => void
  * }} SkyOptions
  *   view: 'ground' (the default), or 'planet' (the universe round a planet, at the origin); clock: the hour, 0…24
@@ -98,8 +99,12 @@ import { skyHour, skyTime } from './skyTime.svelte.js';
  *   it starts and how far it closes, or null for none (its colour is the horizon's); exposure: the world's lens by
  *   day and by night; clouds: how much of the sky they cover; north: where north lies in this world, as a turn of
  *   the sky about the up axis in radians — north at (sin north, 0, cos north); 0 keeps the sky's own (north +z, the
- *   sun rising in +x), π/2 puts north at +x (a room whose window there looks north never sees the sun); onHour: everything else in the world that changes
- *   with the hour (called once already as the sky is made, so it must not need the sky — the sun and the fill are
+ *   sun rising in +x), π/2 puts north at +x (a room whose window there looks north never sees the sun); map: a real
+ *   place laid out as a map is, x east and z south (north at −z), under its sky as it truly turns: the sun rising in
+ *   the east, standing in the south at noon and setting in the west, the stars turning round the pole in the north.
+ *   The sky's own frame is that sky's mirror image, which an invented world never knows and a real one would (the
+ *   sun setting over the wrong bank); with `map`, `north` turns true north from −z towards +x, as a survey's grid
+ *   north is turned from it. onHour: everything else in the world that changes with the hour (called once already as the sky is made, so it must not need the sky — the sun and the fill are
  *   handed to it)
  */
 
@@ -179,17 +184,18 @@ export function createSky(renderer, scene, options = {}) {
 		exposure = planet ? { day: 0.9, night: 0.9 } : { day: 0.42, night: 0.92 },
 		clouds = planet ? 0 : 0.4,
 		north = 0,
+		map = false,
 		onHour
 	} = options;
-	const turn = north ? new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), north) : null;
+	const turn = north ? new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), map ? -north : north) : null;
 	const dev = /** @type {{ __exposure?: number, __worldTime?: number, __interiorHour?: number }} */ (/** @type {unknown} */ (window));
 	const clock = createSkyClock(options);
 
-	const universe = createUniverse({ clouds });
+	const universe = createUniverse({ clouds, mirror: map });
 	scene.add(universe.dome, universe.stars);
 	// the light the sky casts on everything: the same sky, drawn into an environment map (on the ground)
 	const pmrem = planet ? null : new THREE.PMREMGenerator(renderer);
-	const envUniverse = planet ? null : createUniverse({ clouds: 0 });
+	const envUniverse = planet ? null : createUniverse({ clouds: 0, mirror: map });
 	const envScene = new THREE.Scene();
 	if (envUniverse) envScene.add(envUniverse.dome);
 
@@ -243,9 +249,12 @@ export function createSky(renderer, scene, options = {}) {
 	let light = { hour: 0, e: 0, day: 0, low: 0, night: 0 };
 	const setGround = (/** @type {number} */ hour) => {
 		const l = lightAt(hour);
+		// a real place's sky: the sky's own, mirrored north for south, the stars with it (their sphere drawn mirrored)
+		if (map) for (const v of [l.dir, l.moon, l.from]) v.z = -v.z;
 		// the sky turned to where this world's north is: the sun, the moon and the stars with it
 		if (turn) for (const v of [l.dir, l.moon, l.from]) v.applyQuaternion(turn);
 		const stars = groundStars(hour);
+		if (map) stars.set(-stars.x, -stars.y, stars.z, stars.w);
 		if (turn) stars.premultiply(turn);
 		const view = { sun: l.dir, moon: l.moon, up: new THREE.Vector3(0, 1, 0), atmosphere: 1, stars };
 		universe.set(view);

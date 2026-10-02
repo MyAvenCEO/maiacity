@@ -29,7 +29,10 @@ export const WORLDS = {
 	room: { label: 'Apartment of Samuel · his room, the hallway, the kitchen, the bathroom', areas: null, sets: ['stand-in sitting', 'stand-in fallen', 'stand-in window'] },
 	// the tired land on its own: the fields, the highway, the trucks (src/lib/worlds/tired-land.ts; the same set as
 	// Sandbox 4's `tired-land`)
-	'tired-land': { label: 'The tired land · fields, a highway, trucks', areas: null }
+	'tired-land': { label: 'The tired land · fields, a highway, trucks', areas: null },
+	// a real river: the Isar in Munich from the Wittelsbacherbrücke south to the railway bridge, flowing north — its
+	// ground the survey's, its banks, paths and bridges OpenStreetMap's (src/lib/worlds/isar)
+	isar: { label: 'The Isar · Wittelsbacherbrücke to the railway bridge', areas: null }
 };
 
 /** Where a shot is when it names no world: the film camera's first world. */

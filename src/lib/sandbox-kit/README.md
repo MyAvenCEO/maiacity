@@ -17,7 +17,7 @@ Every world's hour is `createSkyClock()`: the time control's (`skyTime.svelte.js
 | | |
 |---|---|
 | `createStage(container)` | the canvas, the scene and the camera, kept to their container's size; `adapt(now)` each frame keeps it smooth on a slow phone |
-| `createSky(renderer, scene, { onHour })` | the one sky over a world on the ground: the universe dome and the light it casts, the sun on the hour that is the moon at night, shadows, fog in the horizon's colour; `{ view: 'planet' }` round a planet from space (`sky.view(up, atmosphere)` each frame) |
+| `createSky(renderer, scene, { onHour })` | the one sky over a world on the ground: the universe dome and the light it casts, the sun on the hour that is the moon at night, shadows, fog in the horizon's colour; `{ view: 'planet' }` round a planet from space (`sky.view(up, atmosphere)` each frame); `{ map: true }` over a real place laid out as a map (x east, z south), the sun turning as it truly does there |
 | `createUniverse()`, `horizonAt()`, `celestial()`, `createAirShell()` | the universe itself: the dome and the stars, the horizon's colour, where the sun stands over a planet, a planet's air from outside |
 | `lightAt(hour)`, `createSkyClock()` | the light of an hour on the ground, and which hour it is |
 | `createWalker(camera, canvas, { canStand, floorAt })` | the first-person camera: WASD/arrows, Shift to hurry, drag to look; `move`/`look` for a phone |
