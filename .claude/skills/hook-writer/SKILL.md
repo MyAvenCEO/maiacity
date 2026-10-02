@@ -1,3 +1,8 @@
+---
+name: hook-writer
+description: Hooks for every maiaCITY story — titles, first lines, a film's first seconds and spoken hook, rehooks (headings, acts), title cards and thumbnails, social first lines. The anatomy of a hook (subject, action, end state, contrast, proof, time, anchor, promise, objection killer), the extreme dial, the question hook, the split title card, the first frame of a film. Use it whenever a title, a hook, a first line, a title card or a thumbnail is written, scored or rewritten.
+---
+
 # Hook writer
 
 The title sells the click, the first line sells the read, the first three seconds sell the film. A hook is not
@@ -84,7 +89,7 @@ me"* — is answered before they act on it: *"Before you think it's a village wi
 line after the hook disqualifies the obvious answer.
 
 **Then the pain.** Straight after the hook, before any promise of the new world, the intro names what is wrong in the
-reader's life today — two to four concrete lines (`arc.md`, "Lead with the pain"). The hook opens the loop; the pain
+reader's life today — two to four concrete lines (the `storyteller` skill, `arc.md`, "Lead with the pain"). The hook opens the loop; the pain
 makes it personal.
 
 ## The six power words
@@ -119,7 +124,7 @@ The strongest opening is often **a strange, sharp question** — asked in the fi
 *"Is fast food really as fast as they say?"* People stay to the end because they want the answer.
 
 - The question must be odd enough that the reader cannot guess the answer, and concrete enough to be answered.
-- It is the arching question of the whole piece (`arc.md`): the answer lands only at the end.
+- It is the arching question of the whole piece (`storyteller`, `arc.md`): the answer lands only at the end.
 - Build it from the same parts: a subject, an action, an end state that sounds impossible, a contrast.
 - A number the reader cannot guess makes a perfect answer ("How many people does it take to …?").
 
@@ -183,3 +188,9 @@ inspire-me cards (`inspire-me/`).
   few minutes' walk · contrast "almost nothing … further" against a world of trucks.
 - Title card, Day 19: *"The city of tomorrow that feeds itself — it starts with 233 settlers."*
 - Title, Day 1: *"The 1 million lives decision — I almost didn't dare to take."*
+
+## The first frame of a film
+
+Every day's title cards and hook layers come from `scripts/film/thumbnail.mjs` (`content-derivatives` skill): four
+ratios, the hook set big like a YouTube thumbnail (above), the day's badge. The social copies carry the hook as
+text over their first 2.5 s of moving picture — never a still card at the start.

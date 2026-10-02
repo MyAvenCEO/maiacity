@@ -48,7 +48,7 @@ children*; *your food grew in fields you will never see*). Two to four lines, th
 
 The shape that keeps working for small channels and big ones alike, in three parts — all three are needed:
 
-1. **The hook** — anchor and promise (`hooks.md`).
+1. **The hook** — anchor and promise (the `hook-writer` skill).
 2. **The story** — a real transformation with a clear before and after, told personally: what Samuel believed, what
    he saw, what changed. Specific, honest details build the trust that makes the rest believable; they are also the
    one thing no one else (and no AI) can copy. Small is fine — a mindset shift, a failure, a first step. Only what

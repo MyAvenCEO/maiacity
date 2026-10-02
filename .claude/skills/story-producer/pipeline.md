@@ -13,16 +13,16 @@ the terminal is signed in with `bun media login --local`. `FAL_API_KEY` lives in
 (`~/.nvm/versions/node/v22.15.0/bin/node`).
 
 **Step 1: the storyboard (cheap, fast, judge the whole film)**
-1. The story: transformation, arching question, hook, arc (`arc.md`, `hooks.md`) — approved by Samuel.
-2. Voice takes, one per line (`sound.md`); each prints its CID.
-3. The shot list, `scripts/film/<film>.mjs` (anatomy below).
-4. The score, cues and sound effects (`sound.md`).
+1. The story: transformation, arching question, hook, arc (`storyteller`, `hook-writer`) — approved by Samuel.
+2. Voice takes, one per line (`sound-designer`); each prints its CID.
+3. The shot list, `scripts/film/<film>.mjs` (its anatomy: `director`, `shot-list.md`).
+4. The score, cues and sound effects (`sound-designer`).
 5. Storyboard stills: `node scripts/film/shoot.mjs scripts/film/<film>.mjs --mid` (one frame from the middle of each
    shot) or `--stills` (first, middle, last).
 6. The storyboard timeline: for Day 19 D, `bun api/scripts/.animatic.ts --local` (hard-wired to `day-19-d`; copy it
    for a new film). It grades each still like its shot, brings it into the library, and lays stills on V1, takes on
    A1, the score on A2, sfx on A3.
-7. Play it at `http://localhost:5173/app/studio`, full screen. Run the audit (below). Repeat until approved.
+7. Play it at `http://localhost:5173/app/studio`, full screen. Run the audit (`editor`, `audit.md`). Repeat until approved.
 
 **Step 2: the film (slow, expensive, only after approval)** — Edit → Grade → Render, like a real post house
 1. World shots become data, not files: `bun api/scripts/world-timeline.ts --local --from G --variant W` turns each shot
@@ -36,7 +36,7 @@ the terminal is signed in with `bun media login --local`. `FAL_API_KEY` lives in
 3. **Edit** tab: cut on proxies and the live world, then **Lock the edit** (the cut is then fixed; unlock = version
    n+1). **+ Variant** branches the edit under the project's next letter.
 4. **Grade** tab: originals swapped in (conform); the base correction first (every shot balanced to its scene's
-   master, `grading.md`), then clip CDLs + the film's look (presets); **Hero frame**
+   master, `colorist` `base-correction.md`), then clip CDLs + the film's look (presets); **Hero frame**
    renders the frame at the playhead at full size, 16-bit, through the whole chain — judge the grade on it.
 5. **Render** tab: **⤓ Render** (or the MCP tool `render_queue`). **The Mac app is the render worker**: maiaCITY
    Studio claims the job with its key and renders it natively (`vault/app/src/render.rs` → `vault/crates/vault-render`:
@@ -58,25 +58,6 @@ the terminal is signed in with `bun media login --local`. `FAL_API_KEY` lives in
 
 **Projects and variants:** timelines are grouped by `project` ("Day 19") with variants A, B, C…; each variant is its own
 timeline.
-
-## Shot list anatomy (`day-19-d.mjs`, `shoot.mjs`)
-
-| Field | Meaning |
-|---|---|
-| `name`, `size` | slug for the file; EWS · WS · MS · CU · ECU · macro |
-| `cue: [line, 'words']` | cut 0.12 s before those words are spoken in that take |
-| `after: [line, s]` | cut s seconds after a line ends |
-| `at: s` | cut at an absolute time (the cold open) |
-| `hour`, `hourTo` | sun position, and a time-lapse to |
-| `fov`, `fovTo` | lens: 10–20 long, 40–55 wide (default 45) |
-| `stand: [x, z]`, `dome: i` | where the walker stands; wait for dome i |
-| `exposure`, `mood`, `grade` | legacy: read by `fromLegacy` as metered stops and a suggested look — the plate itself stays log, the grade is done in the studio |
-| `sfx: [[cid, level]]` | sounds under the shot, looped for its length (by CID) |
-| `props` | a set built into the scene while filming |
-| `path: (t) => pose` | camera pose over t = 0…1 (`camera.mjs`) |
-
-Voice takes and music are named by CID (`{ take, cid, pause }`, `music: { cid, chunks, cues }`). Each shot runs from its
-start to the next shot's start; the last to `total` = the last line's end + `TAIL`.
 
 ## The studio and the library
 
@@ -142,24 +123,6 @@ itself: three tries, then it waits for a person.
     loads the dev server on localhost:5173).
   - Svelte changes then show at once.
   - Debug builds keep line tables only and optimise their dependencies, so measuring and iroh stay usable.
-
-## Title card and first frame
-
-Every day's title cards and hook layers come from `scripts/film/thumbnail.mjs` (`content-derivatives` skill): four
-ratios, the hook set big like a YouTube thumbnail (`hooks.md`), the day's badge. The social copies carry the hook as
-text over their first 2.5 s of moving picture — never a still card at the start.
-
-## The audit — before every render
-
-- [ ] Each shot shows what the words say, at the word
-- [ ] Each line gets 2–4 shots; no two same-size shots in a row; heights, lenses and moves vary
-- [ ] The lens is clear: no leaves filling the frame, no pillar in the way
-- [ ] The sound matches the picture: animals audible when seen, the low sounds cold, frogs at night
-- [ ] No black flashes between cuts, no dissolves; motion never starts or stops on screen
-- [ ] The visual hook within 3 s, the spoken hook within ~10 s
-- [ ] The intensity curve holds: the low is really cold, the peak is late and highest, the end is warm
-- [ ] Captions on, at most two lines, in sync
-- [ ] Every fact true; nothing promised that the world can't show (no people)
 
 ## Checklists
 

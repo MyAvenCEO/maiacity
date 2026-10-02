@@ -454,7 +454,7 @@ export type CameraKey = { t: number; position: [number, number, number]; aim?: [
 /** A value over a shot: a constant, or [t, value] keys (linear between them). */
 export type Curve = number | [number, number][];
 /** The lights a shot can set, over what the hour gives them (game/film/shot.js LIGHTS). */
-export const SHOT_LIGHTS = ['sun', 'fill', 'glow', 'lamps', 'sky'] as const;
+export const SHOT_LIGHTS = ['sun', 'fill', 'glow', 'lamps', 'sky', 'glass', 'cb60'] as const;
 /** A world shot as data (contract C2, game/film/shot.js `Spec`): everything the world needs to draw every frame of it. */
 export type ShotSpec = {
 	/** which sandbox and where in it (game/film/worlds.js); dome and props are Sandbox 4's */

@@ -1,4 +1,4 @@
-//! A shot as a colourist reads it for the base correction (story-producer `grading.md`): the elements that must not
+//! A shot as a colourist reads it for the base correction (colorist `base-correction.md`): the elements that must not
 //! jump across a cut — the blacks, the whites, the middle, the skin — measured on the real thing (the shot's 4K
 //! grading still, else its original's frame; never a proxy) through the output transform, as the Rec.709 display
 //! shows them: levels in IRE, casts in IRE (warm = R − B, green = G − (R + B) / 2), skin as its hue on the

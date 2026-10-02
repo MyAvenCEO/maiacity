@@ -5,7 +5,7 @@
 ## Open
 - 🔄 **Creative grade, step 1 done (the tools):**
   - looks per scene and film (live), secondaries, finishing, native stills and native playback in Grade
-  - moodboard references (`look_reference`), the `look.md` skill
+  - moodboard references (`look_reference`), the colorist's `look.md` skill
   - ✅ before step 2: the UI fixes; sound EQ (`audio_eq`, `audio_match`, spectra); the bench louder and clearer; the
     cut after the bench (the closing line, the stand-up, an empty-bench beat, its steps as an L-cut); the lighter
     score's downbeat on the cut
@@ -47,7 +47,7 @@
 - **Server serves its own made files over iroh** (pinned in its store; old ones read back from S3 once); native GC on the server
 - **Drives:** an external disk is its own iroh vault device; each story's rules (per class) decide who keeps what; changes asked in the modal
 - **Studio in dark marine**; one name per file class everywhere (working, original, proxy, delivery)
-- **Base correction tools** (story-producer `grading.md`), natively in the Mac app over MCP, from the 4K grading
+- **Base correction tools** (colorist `base-correction.md`), natively in the Mac app over MCP, from the 4K grading
   stills only:
   - `grade_look`: blacks, whites, mids and the skin Apple Vision finds, in IRE and against the skin line
   - `grade_scopes`: a sheet per scene with the picture, waveform, parade and vectorscope, the master first
@@ -83,7 +83,7 @@
 - **J and L cuts:**
   - overlaps on a track drawn in two lanes and marked J / L / ×
   - linked sound that leads or trails its picture gets a badge
-  - the story-producer skill (sound.md) cuts scenes with J and L
+  - the sound-designer skill (mix.md) cuts scenes with J and L
 - **Timeline:**
   - follows the playhead while playing; at most half the window, scrolls inside
   - clips whose files aren't here yet stay on the timeline, marked

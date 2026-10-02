@@ -4,7 +4,7 @@
  * function there and a line here.
  */
 import type * as THREE from 'three';
-import { bed, chair, crateTower, edisonBulb, framedPicture, sheepskin, truck, wineCrate } from './furniture';
+import { bed, chair, crateTower, edisonBulb, framedPicture, neewerCb60, sheepskin, truck, wineCrate } from './furniture';
 
 export type Model = { id: string; label: string; note: string; usedIn: string; make: () => THREE.Object3D };
 
@@ -15,6 +15,7 @@ export const MODELS: Model[] = [
 	{ id: 'crate-tower-right', label: 'Crate shelf, right', note: 'white, white, pine: the shelf right of the bed', usedIn: 'The room', make: () => crateTower(['white', 'white', 'pine']) },
 	{ id: 'chair-red', label: 'Chair, red', note: 'a wooden café chair painted red, the seat at 45 cm', usedIn: 'The room', make: () => chair('red') },
 	{ id: 'chair-leather', label: 'Chair, leather', note: 'a steel-tube school chair, moulded brown leather seat and back', usedIn: 'The room', make: () => chair('leather') },
+	{ id: 'neewer-cb60', label: 'Neewer CB60 RGB', note: 'a 70 W RGB COB light with its standard reflector, on a black three-legged light stand, the head at 1.5 m', usedIn: 'The room', make: () => neewerCb60() },
 	{ id: 'edison-bulb', label: 'Edison bulb', note: 'a yellow retro bulb on a short black cord, its filament glowing', usedIn: 'The room', make: () => edisonBulb() },
 	{ id: 'framed-picture', label: 'Framed picture', note: 'a painted face in a slim orange frame, 50 × 65 cm', usedIn: 'The room', make: () => framedPicture() },
 	{ id: 'sheepskin', label: 'Sheepskin', note: 'a white sheepskin rug, about 1 × 0.7 m', usedIn: 'The room', make: () => sheepskin() },

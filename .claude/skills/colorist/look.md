@@ -1,6 +1,6 @@
 # The look: the creative grade
 
-What comes after the base correction (`grading.md`): the look of the film and of its scenes, the secondaries that
+What comes after the base correction (`base-correction.md`): the look of the film and of its scenes, the secondaries that
 protect or lift a part of a shot, and the finishing that gives the film its texture. It is done the way top colourists
 build a look in DaVinci Resolve (Cullen Kelly, Juan Melara, Walter Volpatto): **balance per shot first, the look on
 top, never the other way round.**
@@ -9,7 +9,7 @@ top, never the other way round.**
 
 | Stack | Level | What | Where it lives |
 |---|---|---|---|
-| Base correct | shot | the balance (`grading.md`) | `clip.stacks.base` |
+| Base correct | shot | the balance (`base-correction.md`) | `clip.stacks.base` |
 | Clip look | shot | a trim of that one shot, its secondaries (masks), its framing beside it | `clip.stacks.clip` (`clip.frame`) |
 | Scene look | scene | inside/outside, day/night: a scene's own look | `grade.scenes[scene]` |
 | Timeline look | film | the film's look, the same on every shot; its texture (pop, halation, bloom, grain, vignette) as its last tools | `grade.timeline` |
@@ -84,7 +84,7 @@ Kelly uses film effects at a fraction of their full strength: grain about 35 %, 
 
 ## The pass
 
-1. **Base correction done** (`grading.md`). Never look before balance.
+1. **Base correction done** (`base-correction.md`). Never look before balance.
 2. **References:** read the moodboard with `look_reference`. The scene or film to get close to names its zones:
    where the shadows sit and their hue, the middle, the warm highlights, the warm and teal shares, the skin.
 3. **The film look first,** built against the references and checked on every scene's master with
