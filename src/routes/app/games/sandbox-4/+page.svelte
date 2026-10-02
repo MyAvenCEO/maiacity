@@ -10,8 +10,8 @@
 	import { base } from '$app/paths';
 	import { onDestroy, onMount } from 'svelte';
 	import type { VillageHandle } from '$lib/sandbox-2/interior/village';
-	import { gameClock } from '../../../../../game/time';
 	import TouchStick from '$lib/touch/TouchStick.svelte';
+	import { SkyToggle, WalkHint, WorldClock } from '$lib/sandbox-kit';
 
 	let stage = $state<HTMLDivElement>();
 	let village: VillageHandle | null = null;
@@ -24,30 +24,8 @@
 	/** the dome being opened as you walk up to it */
 	let opening = $state<string | null>(null);
 	const openingTimer = setInterval(() => (opening = village?.opening() ?? null), 300);
-	let clock = $state(gameClock().label);
-	const clockTimer = setInterval(() => (clock = gameClock().label), 1000);
-
-	/* the sky kept at day while the clock runs on; every visit starts on the real sky */
+	/* the sky kept at day while the clock runs on; every visit starts on the real sky ($lib/sandbox-kit) */
 	let alwaysDay = $state(false);
-	/** when a finger last flipped it, so a click the browser makes of the same press is not a second flip */
-	let dayTouched = 0;
-	const toggleDay = () => {
-		alwaysDay = !alwaysDay;
-		village?.alwaysDay(alwaysDay);
-	};
-	const clickDay = () => {
-		if (performance.now() - dayTouched > 800) toggleDay();
-	};
-
-	/* on a phone: the joystick walks, any other finger on the world looks round ($lib/touch/TouchStick) */
-	/** the day switch flips as the finger comes down: no click to wait for, which a browser
-	    will not make while another finger is down, nor if the press is taken from it */
-	const pressDay = (el: HTMLElement) => {
-		if (!el.classList.contains('daylight')) return false;
-		dayTouched = performance.now();
-		toggleDay();
-		return true;
-	};
 
 	onMount(() => {
 		requestAnimationFrame(() =>
@@ -71,7 +49,6 @@
 	});
 	onDestroy(() => {
 		destroyed = true;
-		clearInterval(clockTimer);
 		clearInterval(openingTimer);
 		village?.dispose();
 	});
@@ -87,34 +64,16 @@
 	<div class="bar">
 		<a class="out" href="{base}/app/">← Dashboard</a>
 		<div class="title"><strong>avenCITY Sandbox 4</strong><span>A dome cell · thirteen domes</span></div>
-		<div class="clock" title="In-game time: a game hour passes every two real minutes">{clock}</div>
-		<button
-			class="daylight"
-			class:on={alwaysDay}
-			aria-label="Always day"
-			aria-pressed={alwaysDay}
-			title={alwaysDay ? 'Kept at day — tap for the real sky again' : 'The real sky: sun and moon follow the clock — tap to keep it day'}
-			onclick={clickDay}
-		>
-			{#if alwaysDay}
-				<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4.5" /><path d="M12 2v2.5M12 19.5V22M2 12h2.5M19.5 12H22M4.9 4.9l1.8 1.8M17.3 17.3l1.8 1.8M4.9 19.1l1.8-1.8M17.3 6.7l1.8-1.8" /></svg>
-				<span>Day</span>
-			{:else}
-				<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5z" /></svg>
-				<span>Real sky</span>
-			{/if}
-		</button>
+		<WorldClock class="clock" />
+		<SkyToggle class="daylight" bind:on={alwaysDay} onchange={(on) => village?.alwaysDay(on)} />
 	</div>
-	<p class="help">
-		<span class="keys">Drag to look · WASD to walk · Shift to hurry · walk through any door to step inside</span>
-		<span class="touch">Swipe to look · joystick to walk · push to the rim to hurry</span>
-	</p>
+	<WalkHint keys="Drag to look · WASD to walk · Shift to hurry · walk through any door to step inside" />
+	<!-- on a phone: the joystick walks, any other finger on the world looks round -->
 	<TouchStick
 		move={(x, y, hurry) => village?.move(x, y, hurry)}
 		look={(dx, dy) => village?.look(dx, dy)}
 		{stage}
 		taps=".bar a, .bar button"
-		onpress={pressDay}
 	/>
 	{#if opening}<p class="opening">The {opening.toLowerCase()} ahead is opening its doors…</p>{/if}
 
@@ -171,11 +130,9 @@
 		align-items: center;
 		z-index: 2;
 	}
-	/* see-through pills: the world shows through, blurred */
+	/* see-through pills: the world shows through, blurred (the clock and the sky switch are $lib/sandbox-kit's) */
 	.out,
-	.title,
-	.clock,
-	.daylight {
+	.title {
 		padding: 0.55rem 0.9rem;
 		border-radius: 999px;
 		background: rgb(250 248 242 / 0.55);
@@ -186,53 +143,12 @@
 		color: #1f2a23;
 		text-decoration: none;
 	}
-	.daylight {
+	.bar :global(.daylight) {
 		margin-left: auto;
-		display: inline-flex;
-		align-items: center;
-		gap: 0.4rem;
-		font: inherit;
-		font-size: 0.85rem;
-		cursor: pointer;
-		transition: background 0.2s ease;
-	}
-	/* a finger on the icon or the words is a finger on the switch */
-	.daylight > * {
-		pointer-events: none;
-	}
-	.daylight svg {
-		width: 1.05em;
-		height: 1.05em;
-		fill: none;
-		stroke: currentColor;
-		stroke-width: 2;
-		stroke-linecap: round;
-		stroke-linejoin: round;
-	}
-	.daylight.on {
-		background: rgb(240 196 154 / 0.7);
 	}
 	.title span {
 		margin-left: 0.4rem;
 		color: #7b857a;
-	}
-	.clock {
-		font-variant-numeric: tabular-nums;
-	}
-	.help {
-		position: absolute;
-		bottom: calc(1rem + env(safe-area-inset-bottom, 0px));
-		left: 50%;
-		transform: translateX(-50%);
-		margin: 0;
-		padding: 0.5rem 0.9rem;
-		border-radius: 999px;
-		background: rgb(31 42 35 / 0.45);
-		-webkit-backdrop-filter: blur(10px);
-		backdrop-filter: blur(10px);
-		color: #f2efe7;
-		font-size: 0.8rem;
-		white-space: nowrap;
 	}
 	.loading {
 		position: absolute;
@@ -314,21 +230,8 @@
 		color: #f0c49a;
 	}
 
-	/* ── on a phone: the joystick's words (the joystick itself is $lib/touch/TouchStick) ── */
-	.help .touch {
-		display: none;
-	}
+	/* ── on a phone: above the joystick ($lib/touch/TouchStick) ── */
 	@media (hover: none) and (pointer: coarse) {
-		.help .keys {
-			display: none;
-		}
-		.help .touch {
-			display: inline;
-		}
-		.help {
-			top: calc(4.2rem + env(safe-area-inset-top, 0px));
-			bottom: auto;
-		}
 		.opening {
 			bottom: calc(11rem + env(safe-area-inset-bottom, 0px));
 		}
@@ -342,9 +245,7 @@
 			gap: 0.35rem;
 		}
 		.out,
-		.title,
-		.clock,
-		.daylight {
+		.title {
 			padding: 0.5rem 0.75rem;
 			font-size: 0.8rem;
 			white-space: nowrap;
@@ -357,26 +258,17 @@
 		.title span {
 			display: none;
 		}
-		.clock {
+		.bar :global(.clock) {
 			margin-left: auto;
 		}
-		/* just the sun or moon on a phone */
-		.daylight {
+		.bar :global(.daylight) {
 			margin-left: 0;
-			padding: 0.5rem 0.6rem;
 		}
-		.daylight span {
-			display: none;
-		}
-		.help,
 		.opening {
 			max-width: calc(100vw - 2rem);
 			white-space: normal;
 			text-align: center;
 			font-size: 0.75rem;
-		}
-		.help {
-			width: max-content;
 		}
 	}
 </style>
