@@ -25,7 +25,8 @@ export const PLAY: Place[] = [
 
 // the 3D worlds made from real places, to walk and to film (an admin's: drafts, opened from the Worlds tile)
 export const WORLDS: Place[] = [
-	{ href: `${base}/app/worlds/room/`, label: 'The room', icon: 'play', release: 'draft', note: 'Day 02 · a bedroom, fourteen square metres' }
+	{ href: `${base}/app/worlds/room/`, label: 'The room', icon: 'play', release: 'draft', note: 'Day 02 · a bedroom, fourteen square metres' },
+	{ href: `${base}/app/worlds/tired-land/`, label: 'The tired land', icon: 'play', release: 'draft', note: 'Day 19 · fields of one crop, a highway, trucks' }
 ];
 
 export const READ: Place[] = [
@@ -39,6 +40,7 @@ export const ADMIN: Place[] = [
 	{ href: `${base}/app/studio/?tab=library`, label: 'Media', icon: 'media', cap: 'media:admin', note: 'The library' },
 	{ href: `${base}/app/studio/`, label: 'Studio', icon: 'studio', cap: 'media:admin', note: 'Films and sound' },
 	{ href: `${base}/app/worlds/`, label: 'Worlds', icon: 'play', cap: 'media:admin', note: 'Real places as 3D worlds, to walk and film' },
+	{ href: `${base}/app/models/`, label: '3D models', icon: 'media', cap: 'media:admin', note: 'The things the worlds are built from' },
 	{ href: `${base}/app/device/`, label: 'Terminal', icon: 'key', cap: 'media:admin', note: 'Sign a terminal in' }
 ];
 
@@ -51,9 +53,11 @@ export const isAdmin = (founder: Founder | null) => !!founder?.caps?.some((c) =>
 export const released = (founder: Founder | null, p: Place) => p.release !== 'draft' || isAdmin(founder);
 
 /** The game (or world) a path is in, if any: a draft one is closed to whoever is no admin. */
-export const gameAt = (path: string) => [...PLAY, ...WORLDS].find((p) => path.startsWith(p.href)) ?? (path.startsWith(`${base}/app/worlds/`) ? WORLDS_TILE : undefined);
-/** the Worlds grid itself: only an admin's */
+export const gameAt = (path: string) =>
+	[...PLAY, ...WORLDS].find((p) => path.startsWith(p.href)) ?? (path.startsWith(`${base}/app/worlds/`) ? WORLDS_TILE : path.startsWith(`${base}/app/models/`) ? MODELS_TILE : undefined);
+/** the Worlds grid and the 3D models: only an admin's */
 const WORLDS_TILE: Place = { href: `${base}/app/worlds/`, label: 'Worlds', icon: 'play', release: 'draft' };
+const MODELS_TILE: Place = { href: `${base}/app/models/`, label: '3D models', icon: 'media', release: 'draft' };
 
 /** Where a path is, in words: the top bar's title. */
 export function placeOf(path: string): string {
@@ -61,6 +65,7 @@ export function placeOf(path: string): string {
 	if (rel === '/app/') return 'Dashboard';
 	if (rel.startsWith('/app/games/')) return PLAY.find((p) => path.startsWith(p.href))?.label ?? 'Games';
 	if (rel.startsWith('/app/worlds/')) return WORLDS.find((p) => path.startsWith(p.href))?.label ?? 'Worlds';
+	if (rel.startsWith('/app/models/')) return '3D models';
 	const app = APPS.find((p) => path.startsWith(p.href));
 	if (app) return app.label;
 	return ADMIN.find((p) => path.startsWith(p.href))?.label ?? '';
