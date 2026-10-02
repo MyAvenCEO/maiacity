@@ -813,6 +813,10 @@ async fn graded_still_job(vault: &Arc<Vault>, t: &Timeline, lib: Arc<Vaulted>, c
     if o.verdict == Verdict::Mismatch {
         return Err("the graded still's copy in the vault is not what was rendered (hash mismatch)".into());
     }
+    // the same picture as before is the same file, still under the name it first came in as: named as it is now
+    if let Ok(h) = o.hash.parse::<iroh_blobs::Hash>() {
+        vault.catalog.describe(h, &json!({ "original_name": format!("{stem}.preview.jpg"), "title": format!("{stem} · preview") })).await.map_err(err)?;
+    }
     vault.catalog.describe(hash, &json!({ "meta": { "preview": o.hash } })).await.map_err(err)?;
     // one preview per file: the one it replaces goes
     for m in vault.catalog.list().await.map_err(err)? {
