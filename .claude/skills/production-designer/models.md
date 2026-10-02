@@ -40,7 +40,9 @@ under one skinned mesh, built in its rest pose (facing +z, on y 0), its parts ri
 - `rig.ts` — the rig: `rig(bones, parts, materials)` builds it; `pose()` turns the bones (radians from the rest
   pose, a 4th number a bone's size, `root` moves the first bone); a clip is a function of time that gives a pose;
   `blend` goes between two poses. The shapes: `limb`, `egg`, `spike`, `loft` (a body through rings).
-- `human.ts` — the stand-in: 1.80 m, 17 bones, a T-shirt, jeans, trainers, hair, a face that shows where it looks.
+- `human.ts` — the stand-in: 1.70 m (`HEIGHT`; its measures are taken for 1.80 m and scaled, its sitting and lying
+  poses worked out from its measure, so it sits on a 0.5 m edge with its feet on the floor at any height), bald,
+  17 bones, a T-shirt, jeans, trainers, a face that shows where it looks.
   Its poses (stand, sit, sit with elbows on knees, fallen back, lie, kneel, look up, wave, think, arms crossed,
   point) and moves (idle, walk, wave, sit down). `standIn(pose)` gives one held in a pose for a world to place.
 - `animals.ts` — Sandbox 4's creatures and the island's sheep, rigged: the hen (pecks, flaps), the goose (waddles,
