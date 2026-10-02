@@ -19,10 +19,21 @@ import {
 	type WorldStats
 } from './buildWorld'
 import { createOrbitRig } from '$lib/sandbox-kit/orbit.js'
-import { claySunAt, createSky } from '$lib/sandbox-kit/sky.js'
+import { createSky, sunAt } from '$lib/sandbox-kit/sky.js'
 import { connectFilm, filmDraws } from '$lib/sandbox-kit/film.js'
 
-const SKY = '#cde9ec'
+/** The one sky ($lib/sandbox-kit/sky) at an island's size, and the island's lens. */
+const ISLAND_SKY = {
+	shadowsAt: [0, 0] as [number, number],
+	shadowReach: 30,
+	shadowNear: 1,
+	shadowFar: 200,
+	shadowMap: 1024,
+	shadowBias: { bias: -0.0004, normal: 0 },
+	lightDistance: 120,
+	fog: { near: 130, far: 320 },
+	exposure: { day: 0.36, night: 0.8 }
+}
 const HEX_HEIGHT = 0.5 // keep in sync with buildWorld
 const WATER_LEVEL = 0.3 // sea surface laps against the island walls
 
@@ -69,10 +80,6 @@ export interface SceneApi {
 	stats(): WorldStats
 	/** Designates hexes for a use, and shows or hides the colour wash that
 	 * makes the designation readable on the island. */
-	/** Moves the sun to the given hour of the day (0..24). */
-	setHour(hour: number): void
-	/** Keeps the sky at day whatever the hour, or follows the hour again. */
-	alwaysDay(on: boolean): void
 	/** Travels the map from a touch joystick: x to the right, y ahead, each -1…1. */
 	move(x: number, y: number, hurry: boolean): void
 	/** Replaces everything standing with exactly these, by "q,r" — the server owns them. */
@@ -168,8 +175,6 @@ export function createScene(canvas: HTMLCanvasElement, options: SceneOptions = {
 	renderer.toneMappingExposure = 1.05
 
 	const scene = new THREE.Scene()
-	scene.background = new THREE.Color(SKY)
-	scene.fog = new THREE.Fog(SKY, 130, 320)
 
 	const camera = new THREE.PerspectiveCamera(38, 1, 0.1, 900)
 	// placeholder until the world exists — frameOpening() sets the real shot
@@ -189,11 +194,10 @@ export function createScene(canvas: HTMLCanvasElement, options: SceneOptions = {
 	/* a dev hook, like the planet's __world: inspect the island camera from the console */
 	;(window as unknown as { __island: unknown }).__island = { camera, controls }
 
-	/** the hour the page sets (setHour), so the opening shot can face the sun */
-	let hourNow = 12
-	// the clay sky of every sandbox seen from above ($lib/sandbox-kit/sky): the shadow box only has to cover the
-	// island; a tight box spends its texels on the domes instead of the sea, so a smaller map looks the same
-	const sky = createSky(renderer, scene, { style: 'clay', clock: () => hourNow, shadowReach: 30, shadowFar: 200, shadowMap: 1024 })
+	// the one sky of every world ($lib/sandbox-kit/sky), at the island's size: the shadow box only has to cover the
+	// island (a tight box spends its texels on the domes instead of the sea, so a smaller map looks the same), the fog
+	// closes where the sea ends, and the lens is the island's: its clay is lit brighter than a walk among the domes
+	const sky = createSky(renderer, scene, ISLAND_SKY)
 
 	// the sea — simple faceted low-poly, static
 	// only as far as the fog lets you see
@@ -363,9 +367,9 @@ export function createScene(canvas: HTMLCanvasElement, options: SceneOptions = {
 		const gx = world.group.position.x
 		const gz = world.group.position.z
 		const target = new THREE.Vector3(tile ? tile.x + gx : 0, 0.75, tile ? tile.z + gz : 0)
-		// the same azimuth the sky uses, so "toward the sun" is exact
-		const az = claySunAt(hourNow).azimuth
-		const toSun = new THREE.Vector3(Math.cos(az), 0, Math.sin(az))
+		// toward the sun, exactly where the sky has it
+		const { dir } = sunAt(sky.hour())
+		const toSun = new THREE.Vector3(dir.x, 0, dir.z).normalize()
 		controls.target.copy(target)
 		camera.position.copy(target).addScaledVector(toSun, -2.3)
 		camera.position.y = 1.05
@@ -661,13 +665,6 @@ export function createScene(canvas: HTMLCanvasElement, options: SceneOptions = {
 		},
 		move(x, y, hurry) {
 			rig.move(x, y, hurry)
-		},
-		setHour(hour) {
-			hourNow = hour
-			sky.set()
-		},
-		alwaysDay(on) {
-			sky.alwaysDay(on)
 		},
 		setBuildings(buildings) {
 			if (!world) return

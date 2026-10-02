@@ -11,7 +11,7 @@
 	import { onDestroy, onMount } from 'svelte';
 	import type { VillageHandle } from '$lib/sandbox-2/interior/village';
 	import TouchStick from '$lib/touch/TouchStick.svelte';
-	import { SkyToggle, WalkHint, WorldClock } from '$lib/sandbox-kit';
+	import { SkyControl, WalkHint } from '$lib/sandbox-kit';
 
 	let stage = $state<HTMLDivElement>();
 	let village: VillageHandle | null = null;
@@ -24,8 +24,6 @@
 	/** the dome being opened as you walk up to it */
 	let opening = $state<string | null>(null);
 	const openingTimer = setInterval(() => (opening = village?.opening() ?? null), 300);
-	/* the sky kept at day while the clock runs on; every visit starts on the real sky ($lib/sandbox-kit) */
-	let alwaysDay = $state(false);
 
 	onMount(() => {
 		requestAnimationFrame(() =>
@@ -64,8 +62,7 @@
 	<div class="bar">
 		<a class="out" href="{base}/app/">← Dashboard</a>
 		<div class="title"><strong>avenCITY Sandbox 4</strong><span>A dome cell · thirteen domes</span></div>
-		<WorldClock class="clock" />
-		<SkyToggle class="daylight" bind:on={alwaysDay} onchange={(on) => village?.alwaysDay(on)} />
+		<SkyControl class="time" />
 	</div>
 	<WalkHint keys="Drag to look · WASD to walk · Shift to hurry · walk through any door to step inside" />
 	<!-- on a phone: the joystick walks, any other finger on the world looks round -->
@@ -143,7 +140,7 @@
 		color: #1f2a23;
 		text-decoration: none;
 	}
-	.bar :global(.daylight) {
+	.bar :global(.time) {
 		margin-left: auto;
 	}
 	.title span {
@@ -258,11 +255,8 @@
 		.title span {
 			display: none;
 		}
-		.bar :global(.clock) {
+		.bar :global(.time) {
 			margin-left: auto;
-		}
-		.bar :global(.daylight) {
-			margin-left: 0;
 		}
 		.opening {
 			max-width: calc(100vw - 2rem);

@@ -14,7 +14,7 @@
 	import { onDestroy, onMount } from 'svelte';
 	import { DOMES, type DomeKind, type InteriorHandle } from './interior/interior';
 	import TouchStick from '$lib/touch/TouchStick.svelte';
-	import { SkyToggle, WalkHint, WorldClock } from '$lib/sandbox-kit';
+	import { SkyControl, WalkHint } from '$lib/sandbox-kit';
 
 	let {
 		kind,
@@ -33,8 +33,6 @@
 	let done = $state(0);
 	const STEPS = 5;
 	const spec = $derived(DOMES[kind]);
-	/** the sky kept at day while the clock runs on; every visit starts on the real sky ($lib/sandbox-kit) */
-	let alwaysDay = $state(false);
 	/** standing in the factory's lift: which floor, so the panel can say how to ride it */
 	let lift = $state<{ floor: number; name: string; top: number } | null>(null);
 	const liftTimer = setInterval(() => (lift = handle?.lift() ?? null), 200);
@@ -81,8 +79,7 @@
 			<strong>{spec.label}</strong>
 			<span>{place} · {spec.diameter} m across · {spec.people}</span>
 		</div>
-		<WorldClock class="clock" />
-		<SkyToggle bind:on={alwaysDay} onchange={(on) => handle?.alwaysDay(on)} />
+		<SkyControl class="time" />
 	</div>
 	{#if lift}
 		<div class="lift" role="status" aria-live="polite">
@@ -332,7 +329,7 @@
 		.title span {
 			display: none;
 		}
-		.bar :global(.clock) {
+		.bar :global(.time) {
 			margin-left: auto;
 		}
 	}

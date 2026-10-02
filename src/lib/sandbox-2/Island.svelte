@@ -9,7 +9,6 @@
 	import type { HexTile } from '../../../game/island/hexmap';
 	import { buildingForLevel, type PlacedKind } from './island/buildWorld';
 	import type { SceneApi } from './island/scene';
-	import { gameHour } from '../../../game/time';
 	import TouchStick from '$lib/touch/TouchStick.svelte';
 
 	let {
@@ -30,8 +29,6 @@
 
 	let canvas: HTMLCanvasElement | undefined = $state();
 	let api: SceneApi | undefined = $state();
-	/** the sky kept at day while the clock runs on ($lib/sandbox-kit's sky switch, on the page) */
-	let keptAtDay = false;
 	let loading = $state(true);
 
 	const buildings = $derived(
@@ -54,7 +51,6 @@
 		const island = seedNow; // another city is another island: rebuild
 		if (!el) return;
 		let disposed = false;
-		let sunTimer: ReturnType<typeof setInterval> | undefined;
 		loading = true;
 		// read once, untracked: new settlement data updates the island below, it never rebuilds it
 		const first = untrack(() => $state.snapshot(buildings));
@@ -63,10 +59,6 @@
 			// Growing the island clears its selection; only picks after that are the player's.
 			let ready = false;
 			const scene = createScene(el, { buildings: first, focus, onSelect: (tiles) => ready && onpick(tiles[0] ?? null) });
-			// the sun stands where the in-game clock says, and moves on with it
-			scene.setHour(gameHour());
-			scene.alwaysDay(keptAtDay);
-			sunTimer = setInterval(() => scene.setHour(gameHour()), 2000);
 			// growing the island takes a moment: let the loading word paint first
 			await twoFrames();
 			if (disposed) return scene.dispose();
@@ -78,7 +70,6 @@
 		});
 		return () => {
 			disposed = true;
-			clearInterval(sunTimer);
 			api?.dispose();
 			api = undefined;
 		};
@@ -88,12 +79,6 @@
 	$effect(() => {
 		api?.setBuildings($state.snapshot(buildings));
 	});
-
-	/** Keep the sky at day whatever the hour, or follow the in-game clock again. */
-	export function alwaysDay(on: boolean) {
-		keptAtDay = on;
-		api?.alwaysDay(on);
-	}
 
 	/** Bring a cell to the middle of the view. */
 	export function frame(cell: string) {

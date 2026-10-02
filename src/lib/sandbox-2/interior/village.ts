@@ -40,8 +40,6 @@ export type VillageHandle = {
 	move: (x: number, y: number, hurry: boolean) => void
 	/** turn the view by a finger's drag, in pixels */
 	look: (dx: number, dy: number) => void
-	/** keep the sky at day whatever the hour (the clock runs on), or follow the clock again */
-	alwaysDay: (on: boolean) => void
 	dispose: () => void
 }
 
@@ -1113,7 +1111,6 @@ export async function mountVillage(container: HTMLElement, onProgress: (label: s
 		},
 		move: walker.move,
 		look: walker.look,
-		alwaysDay: sky.alwaysDay,
 		dispose() {
 			running = false
 			cancelAnimationFrame(frame)

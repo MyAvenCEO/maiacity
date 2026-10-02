@@ -12,6 +12,8 @@
  */
 import * as THREE from 'three'
 import { connectFilm, createCameraHold, filmDraws } from '$lib/sandbox-kit/film.js'
+import { createSky } from '$lib/sandbox-kit/sky.js'
+import { createAirShell } from '$lib/sandbox-kit/universe.js'
 import { CameraRig } from './camera'
 import { BIOMES, TREE } from './biomes'
 import { buildGlobe, FREQUENCY, LAND, WATER, type Tile, type Vec3 } from '../../../../game/globe'
@@ -23,16 +25,6 @@ export type CityMarker = { slug: string; tile: number; citizens: number; milesto
 export type TilePick = { tile: number; biome: 'land' | 'water'; coop: string | null }
 export type WorldOptions = { cities: CityMarker[]; onTile?: (pick: TilePick) => void; /** The map: where the land is. Without it, the noise invents continents. */ isLand?: LandMask; /** The map: what kind of land is where. */ kindOf?: BiomeMap; /** The map: where the mountain ranges are. */ isMountain?: LandMask; /** The map: how deep the sea is. */ depthOf?: DepthMap }
 export type WorldHandle = { setCities: (cities: CityMarker[]) => void; /** Hold the camera and give the mouse back, while a sheet is open. */ setFrozen: (on: boolean) => void; /** Walk from a touch joystick: x to the right, y ahead, each -1…1. */ move: (x: number, y: number, hurry: boolean) => void; /** Mark a card as chosen (-1 clears it). */ setChosen: (tile: number) => void; /** Fly the camera to a card and mark it; `at` is where on the screen it should land (-1..1, 0 is the middle); `zoom` how close. */ focus: (tile: number, at?: { x: number; y: number }, zoom?: number) => void; /** Stop drawing while another view has the screen. */ setPaused: (on: boolean) => void; dispose: () => void }
-
-/** Resolve a token that may be `var(--x)` to a colour three.js can parse. */
-function colour(name: string, fallback: string): THREE.Color {
-	const probe = document.createElement('span')
-	probe.style.color = `var(${name}, ${fallback})`
-	document.body.appendChild(probe)
-	const rgb = getComputedStyle(probe).color
-	probe.remove()
-	return new THREE.Color(rgb || fallback)
-}
 
 const RADIUS = 120 // the globe — twice the old one, the cards the same size
 const DEPTH = 1.8 // how far a card's sides drop
@@ -152,16 +144,16 @@ function forests(tiles: Tile[]): THREE.Object3D {
 }
 
 export function mountWorld(container: HTMLElement, options: WorldOptions = { cities: [] }): WorldHandle {
-	const sky = colour('--color-surface-page', '#f2efe7')
 
 	const renderer = new THREE.WebGLRenderer({ antialias: true })
 	renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
 	renderer.setSize(container.clientWidth, container.clientHeight)
 	renderer.outputColorSpace = THREE.SRGBColorSpace
+	// the same lens as every world ($lib/sandbox-kit/sky): the universe's light and the planet's in one picture
+	renderer.toneMapping = THREE.ACESFilmicToneMapping
 	container.appendChild(renderer.domElement)
 
 	const scene = new THREE.Scene()
-	scene.background = sky
 
 	const camera = new THREE.PerspectiveCamera(40, container.clientWidth / container.clientHeight, 0.5, 1000)
 	/* Open on the whole globe, a little above the equator; the walker's ground is the tallest card. */
@@ -454,18 +446,24 @@ export function mountWorld(container: HTMLElement, options: WorldOptions = { cit
 
 	scene.add(forests(tiles))
 
-	/* Light: a bright fill from the sky, and a sun that rides with the camera
-	   — above and to the right of wherever you look — so the side of the
-	   globe you are looking at is always the lit one. */
-	const fill = new THREE.HemisphereLight(0xfff8ee, 0x6fb7c0, 1.25)
-	scene.add(fill)
-	const sun = new THREE.DirectionalLight(0xffffff, 1.7)
-	scene.add(sun)
-	const sunOffset = new THREE.Vector3()
-	const placeSun = () => {
-		sunOffset.copy(camera.position).normalize()
-		const right = new THREE.Vector3().crossVectors(sunOffset, camera.up).normalize()
-		sun.position.copy(sunOffset).multiplyScalar(RADIUS * 3).addScaledVector(right, RADIUS * 1.5).addScaledVector(camera.up, RADIUS * 1.5)
+	/* The planet in the universe ($lib/sandbox-kit/sky, seen from space): a dark blue universe and its stars, the sun
+	   a star, its light from where it really stands at the hour — day on one side of the planet, night on the other,
+	   the hour of every world (the time control, Auto or by hand). The closer you come, the deeper you are in its air:
+	   the sky turns blue and light round you, as it is on the islands and in the domes, the same sky zoomed in. */
+	const sky = createSky(renderer, scene, { view: 'planet' })
+	const air = createAirShell(SURFACE)
+	scene.add(air.mesh)
+	const toUp = new THREE.Vector3()
+	/** how deep in the air the camera is: 0 out in space, 1 walking on the planet */
+	const airAt = (height: number) => 1 - THREE.MathUtils.smoothstep(Math.log(Math.max(0.1, height)), Math.log(1.5), Math.log(70))
+	const placeSky = () => {
+		toUp.copy(camera.position).normalize()
+		const r = camera.position.length()
+		const depth = airAt(r - SURFACE)
+		// from up here the horizon is the planet's limb, below level by as much as you are high
+		sky.view(toUp, depth, Math.sqrt(Math.max(0, 1 - (SURFACE / r) ** 2)))
+		// the rim of air seen from outside; gone as you come down into it (the sky round you takes over)
+		air.set(toUp.copy(sky.sun.position).normalize(), (1 - depth) ** 3)
 	}
 
 	/* The film camera's hold on the planet (src/lib/film, $lib/sandbox-kit/film): it flies the camera free of the rig,
@@ -478,23 +476,11 @@ export function mountWorld(container: HTMLElement, options: WorldOptions = { cit
 		scene,
 		camera,
 		hold,
+		sky,
+		// the universe for where the camera is (the film pins the hour; the sky sets the sun and the fill)
 		advance: () => {
 			showDetail()
-			sun.intensity = 1.7
-			sun.color.set(0xffffff)
-			fill.intensity = 1.25
-			fill.color.set(0xfff8ee)
-			placeSun()
-		},
-		lights: {
-			sun: (k, color) => {
-				sun.intensity *= k
-				if (color) sun.color.set(color)
-			},
-			fill: (k, color) => {
-				fill.intensity *= k
-				if (color) fill.color.set(color)
-			}
+			placeSky()
 		},
 		extra: { rig, globe, tiles, setCities: updateCities, pick, lastPick: () => lastPick }
 	})
@@ -513,7 +499,8 @@ export function mountWorld(container: HTMLElement, options: WorldOptions = { cit
 		last = now
 		updateHover()
 		showDetail()
-		placeSun()
+		sky.tick(now)
+		placeSky()
 		if (!filmDraws()) renderer.render(scene, camera)
 		frame = requestAnimationFrame(tick)
 	}
@@ -550,6 +537,9 @@ export function mountWorld(container: HTMLElement, options: WorldOptions = { cit
 			cancelAnimationFrame(frame)
 			window.removeEventListener('resize', onResize)
 			film.disconnect()
+			sky.dispose()
+			air.dispose()
+			scene.remove(air.mesh)
 			rig.dispose()
 			reticle.remove()
 			geometry.dispose()

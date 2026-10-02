@@ -30,9 +30,9 @@ import { buildTent } from './tent'
 import { furnish, terraceSet } from './rooms'
 import { ambience, levelsAt, nearness } from './ambience'
 import { flow, pond as pondShape, shore, stream as streamShape } from './water'
-import { gameHour } from '../../../../game/time'
 import { createStage, type StageHandle } from '$lib/sandbox-kit/stage.js'
 import { createSky, type SkyHandle } from '$lib/sandbox-kit/sky.js'
+import { skyHour } from '$lib/sandbox-kit/skyTime.svelte.js'
 import { createWalker } from '$lib/sandbox-kit/walker.js'
 import { connectFilm, filmDraws, filmHoldsSize, worldTime } from '$lib/sandbox-kit/film.js'
 import { forestFloor, floorPick, grassTuft, appleTree, banana, berryBush, canopyTree, climber, clover, coconutPalm, comfrey, crop, CROPS, fruitTree, ginger, grapePergola, herb, papaya, passionVine, potted, seeded, shrub, smallFruitTree, squash, strawberries, tropicalShrub, vineAlong, type Plant } from './plants'
@@ -461,8 +461,6 @@ export type InteriorHandle = {
 	move: (x: number, y: number, hurry: boolean) => void
 	/** turn the view by a finger's drag, in pixels */
 	look: (dx: number, dy: number) => void
-	/** keep the sky at day whatever the hour (the clock runs on), or follow the clock again */
-	alwaysDay: (on: boolean) => void
 	/** built into a host world: its floors and lamps */
 	embedded?: EmbeddedDome
 }
@@ -550,7 +548,8 @@ export async function mountInterior(container: HTMLElement, kind: DomeKind, onPr
 	   film camera's) pins any hour. */
 	const dev = window as unknown as { __interiorLight?: string; __interiorHour?: number }
 	const golden = dev.__interiorLight === 'golden'
-	const clockHour = () => (golden ? 17.8 : gameHour())
+	// the hour of every world: the time control's (Auto, the in-game clock, or set by hand), or the journal's golden hour
+	const clockHour = () => (golden ? 17.8 : skyHour())
 	let sky: SkyHandle | null = null
 	const hourNow = () => (sky ? sky.hour() : (dev.__interiorHour ?? clockHour()))
 	const MOON = new THREE.Color('#8ea6dc')
@@ -640,7 +639,6 @@ export async function mountInterior(container: HTMLElement, kind: DomeKind, onPr
 	if (!host)
 		sky = createSky(renderer, scene, {
 			clock: clockHour,
-			size: R * 40 + 2000,
 			// the dome's own shadows, all round it, from a light close by
 			shadowsAt: [0, 0],
 			shadowReach: R * 1.2,
@@ -649,7 +647,7 @@ export async function mountInterior(container: HTMLElement, kind: DomeKind, onPr
 			shadowFar: R * 8 + 60,
 			shadowBias: { bias: -0.0004, normal: 0.02 },
 			lightDistance: R * 3 + 20,
-			fog: { day: '#e3e9e6', dusk: '#e9c9a8', night: '#1c2438', near: R * 1.2, far: R * 9 + 60 },
+			fog: { near: R * 1.2, far: R * 9 + 60 },
 			onHour: ({ day, night }, { fill }) => {
 				// the shadows are drawn again only when the light has moved (the factory, busy with machines and a lift,
 				// keeps drawing them every frame)
@@ -1942,7 +1940,7 @@ export async function mountInterior(container: HTMLElement, kind: DomeKind, onPr
 		;(window as unknown as { __buildLog?: string[] }).__buildLog?.push(`${kind} shown: ${pieces.length} pieces`)
 		lastYield = performance.now()
 		onProgress?.('ready')
-		return { lift: () => null, liftStep: () => {}, move: () => {}, look: () => {}, alwaysDay: () => {}, embedded, dispose: disposeAll }
+		return { lift: () => null, liftStep: () => {}, move: () => {}, look: () => {}, embedded, dispose: disposeAll }
 	}
 
 	/* ── walking ($lib/sandbox-kit/walker) ─────────────────────────────── */
@@ -2093,7 +2091,6 @@ export async function mountInterior(container: HTMLElement, kind: DomeKind, onPr
 		},
 		move: walker.move,
 		look: walker.look,
-		alwaysDay: (on) => sky!.alwaysDay(on),
 		dispose() {
 			cancelAnimationFrame(frame)
 			sound.dispose()

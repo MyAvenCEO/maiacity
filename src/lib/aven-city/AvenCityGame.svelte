@@ -1,6 +1,6 @@
 <script lang="ts">
 import AvenCitySandbox from './AvenCitySandbox.svelte'
-import DayNightSlider from './components/DayNightSlider.svelte'
+import { SkyControl } from '$lib/sandbox-kit'
 import DomeRail from './components/DomeRail.svelte'
 import Icon, { type IconName } from './components/Icon.svelte'
 import ResourceIcon from './components/ResourceIcon.svelte'
@@ -21,7 +21,6 @@ import {
 } from './game/three/buildWorld'
 import type { SceneApi } from './game/three/scene'
 import { ISLAND_SEED } from './game/seed.js'
-import { timeOfDay } from './game/timeOfDay.svelte'
 import './styles/index.css'
 import TouchStick from '../touch/TouchStick.svelte'
 
@@ -180,7 +179,6 @@ $effect(() => {
 				selected = tile
 			}
 		})
-		api.setHour(timeOfDay.hour)
 		// building the island is synchronous and takes seconds: give the
 		// loading screen a frame to paint first, or it never shows at all
 		await twoFrames()
@@ -337,7 +335,7 @@ $effect(() => {
 				<!-- `shrink-0`: these are the world's controls, so they hold their size and
 				     stay on screen no matter how much is selected on the left. -->
 				<div class="flex shrink-0 items-center gap-1.5">
-					<DayNightSlider onchange={(h) => api?.setHour(h)} />
+					<SkyControl class="pointer-events-auto" />
 				</div>
 			</div>
 		</div>

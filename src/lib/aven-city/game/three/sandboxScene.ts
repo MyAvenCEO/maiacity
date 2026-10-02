@@ -9,12 +9,8 @@ import { buildBiomeTile, type PlacedKind } from './buildWorld'
 import { createOrbitRig } from '$lib/sandbox-kit/orbit.js'
 import { createSky } from '$lib/sandbox-kit/sky.js'
 
-const SKY = '#cde9ec'
-
 export interface SandboxApi {
 	show(biome: BiomeId, seed: number, options?: { building?: PlacedKind }): void
-	/** Moves the sun to the given hour of the day (0..24). */
-	setHour(hour: number): void
 	dispose(): void
 }
 
@@ -27,7 +23,6 @@ export function createSandbox(canvas: HTMLCanvasElement): SandboxApi {
 	renderer.toneMappingExposure = 1.05
 
 	const scene = new THREE.Scene()
-	scene.background = new THREE.Color(SKY)
 
 	const camera = new THREE.PerspectiveCamera(35, 1, 0.1, 50)
 	camera.position.set(2.1, 1.9, 2.8)
@@ -42,9 +37,9 @@ export function createSandbox(canvas: HTMLCanvasElement): SandboxApi {
 		floorY: -0.05
 	})
 
-	// the clay sky of the islands, over one tile ($lib/sandbox-kit/sky)
-	let hourNow = 11
-	const sky = createSky(renderer, scene, { style: 'clay', clock: () => hourNow, shadowReach: 3, shadowFar: 20, size: 8 })
+	// the one sky of every world, over one tile ($lib/sandbox-kit/sky): its shadows round the pedestal, no fog,
+	// the islands' lens
+	const sky = createSky(renderer, scene, { shadowsAt: [0, 0], shadowReach: 3, shadowNear: 0.5, shadowFar: 20, shadowMap: 2048, shadowBias: { bias: -0.0004, normal: 0 }, lightDistance: 8, fog: null, exposure: { day: 0.36, night: 0.8 } })
 
 	// soft display pedestal catching the tile's shadow
 	const pedestal = new THREE.Mesh(
@@ -102,10 +97,6 @@ export function createSandbox(canvas: HTMLCanvasElement): SandboxApi {
 
 	return {
 		show,
-		setHour(hour) {
-			hourNow = hour
-			sky.set()
-		},
 		dispose(): void {
 			cancelAnimationFrame(raf)
 			rig.dispose()
