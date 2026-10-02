@@ -1238,11 +1238,12 @@ export async function mountInterior(container: HTMLElement, kind: DomeKind, onPr
 			let n = 0
 			for (const side of small ? [1] : [-1, 1])
 				for (let k = 0; k < perSide; k++) {
-					const rr = Rp + side * (small ? 2.2 : 2.05)
+					// both strips clear of the ring path (1.1 either side of it) with room for their leaves to spread
+					const rr = Rp + side * 2.45
 					const a = small ? Math.PI / 4 + Math.floor(k / 2) * (Math.PI / 2) + (k % 2 ? 0.28 : -0.28) : ((k + (side > 0 ? 0.5 : 0)) / perSide) * Math.PI * 2
 					if ([...DOORS, ...STAIRS].some((d) => Math.abs(adiff(a, d)) * rr < 3.2)) continue
 					const [x, z] = polar(rr, a)
-					if (nearStream(x, z, width + 2)) continue
+					if (nearStream(x, z, width / 2 + 2)) continue
 					const bed = new THREE.Group()
 					const kindA = CROPS[n++ % CROPS.length]!, kindB = CROPS[(n * 5) % CROPS.length]!
 					for (const [k, side] of [[kindA, -0.5], [kindB, 0.5]] as const) {
@@ -1346,9 +1347,12 @@ export async function mountInterior(container: HTMLElement, kind: DomeKind, onPr
 			const mats3 = ['#55783a', '#628a41', '#4b6e33', '#6f9147'].map((c) => new THREE.MeshStandardMaterial({ color: c, roughness: 1 }))
 			const mat = new THREE.CircleGeometry(1, 7)
 			const PATCH = 1.2
-			// only the path itself stays clear (the forest keeps a wider band, where the beds stood)
-			const onWalk = (rr: number, a: number) =>
-				rr < Rc + 1.2 || (!lush && Math.abs(rr - Rp) < (small ? 1.1 : 1.7)) || [...DOORS, ...STAIRS].some((d) => Math.abs(adiff(a, d)) < Math.PI / 2 && Math.abs(adiff(a, d)) * rr < 1.6)
+			// a planting reaches `reach` from its middle: all of it stays off the ring path (1.1 either side), the door
+			// paths and the stairs (1 either side of their line), the plaza — never a leaf over a path
+			const onWalk = (rr: number, a: number, reach: number) =>
+				rr < Rc + reach + 0.3 ||
+				(!lush && Math.abs(rr - Rp) < 1.1 + reach + 0.15) ||
+				[...DOORS, ...STAIRS].some((d) => Math.abs(adiff(a, d)) < Math.PI / 2 && Math.abs(Math.sin(adiff(a, d))) * rr < 1 + reach + 0.15)
 			const LOW: (Crop | 'moss' | 'clover' | 'squash')[] = ['lettuce', 'radish', 'herbs', 'kale', 'strawberry', 'moss', 'lettuce', 'chard', 'clover', 'radish', 'herbs', 'pepper', 'moss', 'squash']
 			let n = 0
 			for (let gx = -rIn; gx < rIn; gx += PATCH)
@@ -1356,7 +1360,12 @@ export async function mountInterior(container: HTMLElement, kind: DomeKind, onPr
 					if (++n % 40 === 0) await slice()
 					const x = gx + (r() - 0.5) * 0.5, z = gz + (r() - 0.5) * 0.5
 					const rr = Math.hypot(x, z), a = Math.atan2(x, z)
-					if (rr > rIn - 0.7 || onWalk(rr, a) || nearStream(x, z, width * 0.55)) continue
+					const tall = r() < 0.05
+					const s = 0.7 + r() * 0.6
+					// how far it spreads: half the patch, scaled, more for a tomato's or a bean teepee's leaves
+					const reach = (PATCH * 0.95 * s) / 2 + (tall ? 0.35 : 0)
+					// and never into the stream or the pond: the water's half width, the reach, a little bank
+					if (rr > rIn - 0.7 || onWalk(rr, a, reach) || nearStream(x, z, width / 2 + reach + 0.25)) continue
 					// up to a trunk, never through it (a tree's reach is its canopy, not its trunk)
 					if (colliders.some((c) => Math.hypot(c.x - x, c.z - z) < Math.min(0.6, c.r * 0.5))) continue
 					const green = new THREE.Mesh(mat, mats3[Math.floor(r() * mats3.length)]!)
@@ -1365,8 +1374,6 @@ export async function mountInterior(container: HTMLElement, kind: DomeKind, onPr
 					green.position.set(x, 0.008 + r() * 0.004, z)
 					green.receiveShadow = true
 					sectorAt(x, z).cover.add(green)
-					const s = 0.7 + r() * 0.6
-					const tall = r() < 0.05
 					const pick = tall ? (r() < 0.6 ? 'tomato' : 'beans') : LOW[Math.floor(r() * LOW.length)]!
 					const sd = 12000 + n
 					const o = pick === 'moss' ? forestFloor('moss', sd) : pick === 'clover' ? clover(sd, 1.2 * s) : pick === 'squash' ? squash(sd) : crop(pick, sd, PATCH * 0.95)
