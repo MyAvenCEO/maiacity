@@ -23,6 +23,7 @@ import { flow, pond, shore, stream } from './water'
 import { createStage } from '$lib/sandbox-kit/stage.js'
 import { createSky } from '$lib/sandbox-kit/sky.js'
 import { createWalker } from '$lib/sandbox-kit/walker.js'
+import { connectFilm, filmDraws, filmHoldsSize, worldTime } from '$lib/sandbox-kit/film.js'
 import { ambience, levelsAt } from './ambience'
 
 export type VillageDome = { kind: DomeKind; x: number; z: number; R: number; ext: number }
@@ -84,9 +85,8 @@ export async function mountVillage(container: HTMLElement, onProgress: (label: s
 	let nightNow = 0
 
 	/* ── the sky, and a sun that follows the in-game clock ($lib/sandbox-kit/sky) ── */
-	// the film camera (src/lib/film): `__worldTime` is the world's clock in seconds while a film sets it — the animals,
-	// the water and every animation follow it instead of the page's clock; `__filmDraw` while the film draws the canvas
-	const dev = window as unknown as { __worldTime?: number; __filmDraw?: boolean }
+	// the film camera (src/lib/film, $lib/sandbox-kit/film): while a film holds the cell, every animation runs on the
+	// world's clock it sets (worldTime) instead of the page's, and the film draws the canvas itself (filmDraws)
 	const GLOW = '#ffc070', LAMP = '#ffc98a'
 	const glowMat = new THREE.MeshStandardMaterial({ color: '#fff0d0', emissive: GLOW, emissiveIntensity: 0.1 })
 	// the lanterns glow and the open domes darken with the night
@@ -891,7 +891,7 @@ export async function mountVillage(container: HTMLElement, onProgress: (label: s
 		const job = { i, cancelled: false }
 		building = job
 		// on film nothing is drawn while the world is readied (__filmDraw): every dome builds in long stretches
-		mountInterior(container, d.kind, () => {}, { host: { scene, camera, renderer, x: d.x, z: d.z }, cancelled: () => job.cancelled, hurry: () => gapTo(i) < 12 || !!dev.__filmDraw, background: () => gapTo(i) > 45 && !dev.__filmDraw })
+		mountInterior(container, d.kind, () => {}, { host: { scene, camera, renderer, x: d.x, z: d.z }, cancelled: () => job.cancelled, hurry: () => gapTo(i) < 12 || filmDraws(), background: () => gapTo(i) > 45 && !filmDraws() })
 			.then((h) => {
 				if (building === job) building = null
 				if (job.cancelled || !h.embedded) return h.dispose()
@@ -994,7 +994,7 @@ export async function mountVillage(container: HTMLElement, onProgress: (label: s
 		walker.update(Math.min(0.1, (now - last) / 1000))
 		sky.follow(camera.position.x, camera.position.z)
 		last = now
-		const t = dev.__worldTime ?? (now - clock0) / 1000
+		const t = worldTime() ?? (now - clock0) / 1000
 		for (const a of animated) a(t)
 		sky.tick(now)
 		if (now - lodChecked > 400) {
@@ -1008,9 +1008,9 @@ export async function mountVillage(container: HTMLElement, onProgress: (label: s
 		}
 		for (const i of shown) built.get(i)!.update(t)
 		// the film camera draws the canvas itself while it holds it (src/lib/film)
-		if (!dev.__filmDraw) renderer.render(scene, camera)
-		// keep it smooth; while a film is shot (scripts/film) every frame is rendered at the resolution it asks for
-		stage.adapt(now, !!(window as unknown as { __film?: { virtual: boolean } }).__film?.virtual || !!dev.__filmDraw)
+		if (!filmDraws()) renderer.render(scene, camera)
+		// keep it smooth; while a film is shot every frame is rendered at the resolution it asks for
+		stage.adapt(now, filmHoldsSize())
 		frame = requestAnimationFrame(tick)
 	}
 	walker.update(0)
@@ -1018,77 +1018,79 @@ export async function mountVillage(container: HTMLElement, onProgress: (label: s
 	onProgress('ready')
 	tick()
 
-	;(window as unknown as { __village: unknown }).__village = {
-		camera,
-		scene,
-		THREE,
-		herds,
-		renderer,
-		built,
-		shown,
-		domes,
-		water: waterPts,
-		playgrounds: PLAYGROUNDS,
-		/** set the sun to an hour now, not at the next once-a-second check (the film's time-lapses) */
-		sun: (hour: number) => sky.set(hour),
-		fly: walker.fly,
-		place: (x: number, z: number, yw: number, p: number, y = 0) => walker.place(x, z, yw, p, y),
-		/** The film camera's hold on the world (src/lib/film): every frame set from the shot alone, never from the frame
-		 *  before it. Players never reach any of this. */
-		film: {
-			/** Bring the world to world time t (seconds), the camera where `fly` put it: animations, the sun and sky for
-			 *  the hour, the far forest, the lamps, the open domes, and the shadows drawn again. `lights` scales the
-			 *  lights over what the hour gives them (1 = as the hour has them) and may recolour them. */
-			advance: (t: number, lights: { id: string; intensity: number; color?: string }[] = []) => {
-				if (walker.flying()) {
-					walker.update(0)
-					sky.follow(camera.position.x, camera.position.z)
-				}
-				camera.updateMatrixWorld()
-				for (const a of animated) a(t)
-				sky.set()
-				levelOfDetail(camera.position.x, camera.position.z)
-				lightNearest()
-				for (const i of shown) built.get(i)!.update(t)
-				// what the hour gives (the sky and lightNearest set the rest), then the shot's own changes on top
-				glowMat.emissive.set(GLOW)
-				for (const p of pool) p.color.set(LAMP)
-				for (const l of lights) {
-					const k = l.intensity
-					if (l.id === 'sun') {
-						sky.sun.intensity *= k
-						if (l.color) sky.sun.color.set(l.color)
-					} else if (l.id === 'fill') {
-						sky.fill.intensity *= k
-						if (l.color) sky.fill.color.set(l.color)
-					} else if (l.id === 'glow') {
-						glowMat.emissiveIntensity *= k
-						if (l.color) glowMat.emissive.set(l.color)
-					} else if (l.id === 'lamps') {
-						for (const p of pool) {
-							p.intensity *= k
-							if (l.color) p.color.set(l.color)
-						}
-					} else if (l.id === 'sky') scene.environmentIntensity *= k
-				}
-				renderer.shadowMap.needsUpdate = true
-			},
-			/** show or hide each built dome for where the walker stands now (as the world does as you walk) */
-			settle: () => {
-				for (const i of built.keys()) place(i)
-			},
-			/** keep these domes built while the film needs them */
-			pin: (domes: number[]) => {
-				pinned.clear()
-				for (const i of domes) pinned.add(i)
-			},
-			/** the dome being built now, if any */
-			building: () => building?.i ?? null,
-			/** the domes that would be shown in full to a walker standing at x, z once built: all of them must be
-			 *  built before a shot from there is filmed, or a dome could appear between two renders of it */
-			near: (x: number, z: number) => domes.map((d, i) => ({ i, gap: Math.hypot(x - d.x, z - d.z) - d.ext })).filter((d) => d.gap < SHOW_NEAREST).map((d) => d.i)
-		}
+	/* ── the film camera's hold on the cell (src/lib/film, $lib/sandbox-kit/film): every frame set from the shot alone,
+	   never from the frame before it. Players never reach any of this. ── */
+	/** every dome a film has asked for since the page came up: kept built, whichever shot asked last */
+	const kept = new Set<number>()
+	/** the domes that would be shown in full to a walker standing at x, z once built: all of them must be built before a
+	 *  shot from there is filmed, or a dome could appear between two renders of it */
+	const nearDomes = (x: number, z: number) => domes.map((d, i) => ({ i, gap: Math.hypot(x - d.x, z - d.z) - d.ext })).filter((d) => d.gap < SHOW_NEAREST).map((d) => d.i)
+	/** show or hide each built dome for where the walker stands now (as the world does as you walk) */
+	const settle = () => {
+		for (const i of built.keys()) place(i)
 	}
+	const world = connectFilm({
+		sandbox: 'sandbox-4',
+		renderer,
+		scene,
+		camera,
+		hold: walker,
+		sky,
+		place: (x, z, yw, p, y = 0) => walker.place(x, z, yw, p, y),
+		animate: (t) => {
+			for (const a of animated) a(t)
+		},
+		// the far forest, the lamps, the open domes; then what the hour gives the lights, before the shot's own changes
+		advance: (t) => {
+			levelOfDetail(camera.position.x, camera.position.z)
+			lightNearest()
+			for (const i of shown) built.get(i)!.update(t)
+			glowMat.emissive.set(GLOW)
+			for (const p of pool) p.color.set(LAMP)
+		},
+		lights: {
+			glow: (k, color) => {
+				glowMat.emissiveIntensity *= k
+				if (color) glowMat.emissive.set(color)
+			},
+			lamps: (k, color) => {
+				for (const p of pool) {
+					p.intensity *= k
+					if (color) p.color.set(color)
+				}
+			}
+		},
+		/* stand where the shot needs the cell loaded, and wait until its dome is built and shown, and every dome near
+		   enough to be shown in full from there is built too (one arriving later would change the picture between two
+		   renders of the shot) */
+		stage: async (w) => {
+			walker.place(w.stand[0], w.stand[1], 0, 0, 0)
+			settle()
+			const dome = w.dome
+			const need = nearDomes(w.stand[0], w.stand[1])
+			for (let waited = 0; ; waited += 100) {
+				const now = building?.i ?? null
+				const ok = (dome === undefined || (built.has(dome) && shown.has(dome))) && need.every((i) => built.has(i)) && (now === null || !need.includes(now))
+				if (ok) break
+				if (waited > 20 * 60000) throw new Error(`the world never got ready for this shot (dome ${dome}, near ${need.join(', ')})`)
+				// a shot that keeps waiting says what for (the studio's log shows it)
+				if (waited && waited % 10000 === 0)
+					console.warn(`film: ${(w as { name?: string }).name ?? 'a shot'} waits ${waited / 1000} s — dome ${dome ?? '-'} built ${dome === undefined || built.has(dome)} shown ${dome === undefined || shown.has(dome)}; near ${need.join(',')} built ${need.filter((i) => built.has(i)).join(',') || 'none'}; building ${now}`)
+				await new Promise((r) => setTimeout(r, 100))
+			}
+			settle()
+		},
+		holds: (w) => w.dome === undefined || shown.has(w.dome),
+		// keep these shots' domes built while the film needs them
+		keep: (ws) => {
+			for (const w of ws) if (w.dome !== undefined) kept.add(w.dome)
+			pinned.clear()
+			for (const i of kept) pinned.add(i)
+		},
+		extra: { herds, built, shown, domes, water: waterPts, playgrounds: PLAYGROUNDS }
+	})
+	// Sandbox 4's older name for it (the shot lists and the story producer's notes use it)
+	;(window as unknown as { __village: unknown }).__village = world
 
 	return {
 		domes,
@@ -1118,6 +1120,7 @@ export async function mountVillage(container: HTMLElement, onProgress: (label: s
 			if (building) building.cancelled = true
 			for (const dm of built.values()) dm.dispose()
 			sound.dispose()
+			world.disconnect()
 			walker.dispose()
 			sky.dispose()
 			stage.dispose()

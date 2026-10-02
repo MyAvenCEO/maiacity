@@ -11,6 +11,7 @@
  * so nothing shows through between them from any angle.
  */
 import * as THREE from 'three'
+import { connectFilm, createCameraHold, filmDraws } from '$lib/sandbox-kit/film.js'
 import { CameraRig } from './camera'
 import { BIOMES, TREE } from './biomes'
 import { buildGlobe, FREQUENCY, LAND, WATER, type Tile, type Vec3 } from '../../../../game/globe'
@@ -456,7 +457,8 @@ export function mountWorld(container: HTMLElement, options: WorldOptions = { cit
 	/* Light: a bright fill from the sky, and a sun that rides with the camera
 	   — above and to the right of wherever you look — so the side of the
 	   globe you are looking at is always the lit one. */
-	scene.add(new THREE.HemisphereLight(0xfff8ee, 0x6fb7c0, 1.25))
+	const fill = new THREE.HemisphereLight(0xfff8ee, 0x6fb7c0, 1.25)
+	scene.add(fill)
 	const sun = new THREE.DirectionalLight(0xffffff, 1.7)
 	scene.add(sun)
 	const sunOffset = new THREE.Vector3()
@@ -466,8 +468,36 @@ export function mountWorld(container: HTMLElement, options: WorldOptions = { cit
 		sun.position.copy(sunOffset).multiplyScalar(RADIUS * 3).addScaledVector(right, RADIUS * 1.5).addScaledVector(camera.up, RADIUS * 1.5)
 	}
 
-	/* A dev hook: inspect the camera and the globe from the console. */
-	;(window as unknown as { __world: unknown }).__world = { camera, rig, globe, tiles, setCities: updateCities, pick, lastPick: () => lastPick }
+	/* The film camera's hold on the planet (src/lib/film, $lib/sandbox-kit/film): it flies the camera free of the rig,
+	   and may scale and colour the sun and the fill. It is also the dev hook: the camera and the globe from the console. */
+	const hold = createCameraHold(camera)
+	const film = connectFilm({
+		sandbox: 'sandbox-2',
+		area: 'planet',
+		renderer,
+		scene,
+		camera,
+		hold,
+		advance: () => {
+			showDetail()
+			sun.intensity = 1.7
+			sun.color.set(0xffffff)
+			fill.intensity = 1.25
+			fill.color.set(0xfff8ee)
+			placeSun()
+		},
+		lights: {
+			sun: (k, color) => {
+				sun.intensity *= k
+				if (color) sun.color.set(color)
+			},
+			fill: (k, color) => {
+				fill.intensity *= k
+				if (color) fill.color.set(color)
+			}
+		},
+		extra: { rig, globe, tiles, setCities: updateCities, pick, lastPick: () => lastPick }
+	})
 
 	let frame = 0
 	let last = performance.now()
@@ -478,12 +508,13 @@ export function mountWorld(container: HTMLElement, options: WorldOptions = { cit
 			return
 		}
 		const now = performance.now()
-		rig.update(Math.min(0.1, (now - last) / 1000))
+		// the rig, or where the film camera holds the camera
+		if (!hold.apply()) rig.update(Math.min(0.1, (now - last) / 1000))
 		last = now
 		updateHover()
 		showDetail()
 		placeSun()
-		renderer.render(scene, camera)
+		if (!filmDraws()) renderer.render(scene, camera)
 		frame = requestAnimationFrame(tick)
 	}
 	tick()
@@ -518,6 +549,7 @@ export function mountWorld(container: HTMLElement, options: WorldOptions = { cit
 		dispose: () => {
 			cancelAnimationFrame(frame)
 			window.removeEventListener('resize', onResize)
+			film.disconnect()
 			rig.dispose()
 			reticle.remove()
 			geometry.dispose()

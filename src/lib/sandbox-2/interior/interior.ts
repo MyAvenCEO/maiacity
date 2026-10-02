@@ -21,7 +21,6 @@
  * painted at runtime (textures.ts), plants from plants.ts.
  */
 import * as THREE from 'three'
-import { Sky } from 'three/addons/objects/Sky.js'
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js'
 import { flagstone, grass, leaves, limestone, oak, soil, water } from './textures'
 import { cafes, coops, coopsAround, henPatches, squaresAround, workshops, type Kit } from './spaces'
@@ -32,6 +31,10 @@ import { furnish, terraceSet } from './rooms'
 import { ambience, levelsAt, nearness } from './ambience'
 import { flow, pond as pondShape, shore, stream as streamShape } from './water'
 import { gameHour } from '../../../../game/time'
+import { createStage, type StageHandle } from '$lib/sandbox-kit/stage.js'
+import { createSky, type SkyHandle } from '$lib/sandbox-kit/sky.js'
+import { createWalker } from '$lib/sandbox-kit/walker.js'
+import { connectFilm, filmDraws, filmHoldsSize, worldTime } from '$lib/sandbox-kit/film.js'
 import { forestFloor, floorPick, grassTuft, appleTree, banana, berryBush, canopyTree, climber, clover, coconutPalm, comfrey, crop, CROPS, fruitTree, ginger, grapePergola, herb, papaya, passionVine, potted, seeded, shrub, smallFruitTree, squash, strawberries, tropicalShrub, vineAlong, type Plant } from './plants'
 
 export type DomeKind = 'tent' | 'glamp' | 'home' | 'large' | 'master' | 'factory'
@@ -46,7 +49,6 @@ export const DOMES: Record<DomeKind, Spec & { label: string; people: string }> =
 	factory: { label: 'Solar factory dome', people: 'the factory coop', diameter: 136, detail: 7, strut: 0.16 }
 }
 
-const EYE = 1.65
 /** The big domes have four doors, one to each point of the compass; the glamping dome has one. */
 export const DOORS = [0, Math.PI / 2, Math.PI, -Math.PI / 2]
 export const doorsOf = (kind: DomeKind) => (kind === 'glamp' || kind === 'tent' ? [0] : DOORS)
@@ -459,6 +461,8 @@ export type InteriorHandle = {
 	move: (x: number, y: number, hurry: boolean) => void
 	/** turn the view by a finger's drag, in pixels */
 	look: (dx: number, dy: number) => void
+	/** keep the sky at day whatever the hour (the clock runs on), or follow the clock again */
+	alwaysDay: (on: boolean) => void
 	/** built into a host world: its floors and lamps */
 	embedded?: EmbeddedDome
 }
@@ -523,84 +527,33 @@ export async function mountInterior(container: HTMLElement, kind: DomeKind, onPr
 	const m = mats()
 	const host = opts.host
 
-	const renderer = host?.renderer ?? new THREE.WebGLRenderer({ antialias: true })
 	const huge = kind === 'master' || kind === 'factory'
 	/** the tent and the glamping dome stand in the forest the same way: small, one door */
 	const lite = kind === 'glamp' || kind === 'tent'
-	if (!host) {
-		renderer.setPixelRatio(Math.min(huge ? 1.25 : 1.5, window.devicePixelRatio))
-		renderer.setSize(container.clientWidth, container.clientHeight)
-		renderer.toneMapping = THREE.ACESFilmicToneMapping
-		renderer.toneMappingExposure = 0.42
-		renderer.shadowMap.enabled = true
-		renderer.shadowMap.type = THREE.PCFSoftShadowMap
-		container.appendChild(renderer.domElement)
-	}
+	// standing alone (Sandbox 3) the dome has the kit's stage, sky and walker ($lib/sandbox-kit); built into a host's
+	// world (Sandbox 4) it draws with the host's
+	const stage: StageHandle | null = host ? null : createStage(container, { maxPixelRatio: huge ? 1.25 : 1.5, near: 0.05, far: R * 30 + 500 })
+	const renderer = host?.renderer ?? stage!.renderer
 
 	// built into a host's world, the dome is a scene of its own standing in it
-	const scene = new THREE.Scene()
+	const scene = stage?.scene ?? new THREE.Scene()
 	// a hair above the host's ground, so its grass never shows through the dome's floor;
 	// it joins the host's world only when it is complete (see the end)
 	if (host) scene.position.set(host.x, 0.03, host.z)
-	const camera = host?.camera ?? new THREE.PerspectiveCamera(68, container.clientWidth / container.clientHeight, 0.05, R * 30 + 500)
+	const camera = host?.camera ?? stage!.camera
 
 	/* the sun stands where the in-game clock says: it rises in the east, crosses
 	   the south, sets in the west, and the sky, the light and the reflections
-	   follow it through the day and into the night. A dev hook
-	   (window.__interiorLight = 'golden') holds it at late afternoon for the
-	   journal's pictures, and window.__interiorHour pins any hour. */
+	   follow it through the day and into the night ($lib/sandbox-kit/sky, made
+	   once the lamps are). A dev hook (window.__interiorLight = 'golden') holds it
+	   at late afternoon for the journal's pictures, and window.__interiorHour (the
+	   film camera's) pins any hour. */
 	const dev = window as unknown as { __interiorLight?: string; __interiorHour?: number }
 	const golden = dev.__interiorLight === 'golden'
-	const hourNow = () => dev.__interiorHour ?? (golden ? 17.8 : gameHour())
-	/** The sun's direction at an hour, and how high it stands (-1..1, 0 at the horizon). */
-	const sunAt = (hour: number) => {
-		const e = Math.sin(((hour - 5) / 15) * Math.PI)
-		const altitude = e * THREE.MathUtils.degToRad(68)
-		const azimuth = THREE.MathUtils.degToRad(90 + ((hour - 5) / 15) * 180)
-		return { dir: new THREE.Vector3().setFromSphericalCoords(1, Math.PI / 2 - altitude, azimuth), e }
-	}
-	const sun = sunAt(hourNow()).dir
-	const sky = new Sky()
-	sky.scale.setScalar(R * 40 + 2000)
-	const u = sky.material.uniforms
-	u['turbidity']!.value = 3
-	u['rayleigh']!.value = 1.2
-	u['mieCoefficient']!.value = 0.004
-	u['mieDirectionalG']!.value = 0.8
-	u['sunPosition']!.value.copy(sun)
-	if (!host) scene.add(sky)
-	const pmrem = new THREE.PMREMGenerator(renderer)
-	const envScene = new THREE.Scene()
-	const envSky = new Sky()
-	envSky.scale.setScalar(1000)
-	Object.assign(envSky.material.uniforms, THREE.UniformsUtils.clone(sky.material.uniforms))
-	envSky.material.uniforms['sunPosition']!.value.copy(sun)
-	envScene.add(envSky)
-	if (!host) scene.environment = pmrem.fromScene(envScene).texture
-	scene.environmentIntensity = 0.3
-
-	const sunLight = new THREE.DirectionalLight('#fff1d8', 2.4)
-	sunLight.position.copy(sun).multiplyScalar(R * 3 + 20)
-	sunLight.castShadow = true
-	sunLight.shadow.mapSize.set(huge ? 2048 : 3072, huge ? 2048 : 3072)
-	const sc = sunLight.shadow.camera
-	sc.left = sc.bottom = -R * 1.2
-	sc.right = sc.top = R * 1.2
-	sc.near = 1
-	sc.far = R * 8 + 60
-	sunLight.shadow.bias = -0.0004
-	sunLight.shadow.normalBias = 0.02
-	const fill = new THREE.HemisphereLight('#f4f0e6', '#6d5a3c', 0.4)
-	scene.fog = new THREE.Fog('#e3e9e6', R * 1.2, R * 9 + 60)
-	// in a host's world, its sun, sky and fog light the dome
-	if (!host) scene.add(sunLight, fill)
-	const fog = scene.fog
-	if (host) scene.fog = null
-	/* one dial, the hour, sets it all: the sun's place and colour, the sky, the
-	   fill, the fog; below the horizon a pale moon keeps the night walkable */
-	const warm = new THREE.Color('#ffb070'), white = new THREE.Color('#fff1d8'), moon = new THREE.Color('#8ea6dc')
-	const fogDay = new THREE.Color('#e3e9e6'), fogDusk = new THREE.Color('#e9c9a8'), fogNight = new THREE.Color('#1c2438')
-	let envAt = sun.clone()
+	const clockHour = () => (golden ? 17.8 : gameHour())
+	let sky: SkyHandle | null = null
+	const hourNow = () => (sky ? sky.hour() : (dev.__interiorHour ?? clockHour()))
+	const MOON = new THREE.Color('#8ea6dc')
 
 	/* the night: warm lamps that come on as the light goes, not bright, just enough
 	   to walk by and sit under. Each is a real light, and the hanging ones let a
@@ -671,49 +624,48 @@ export async function mountInterior(container: HTMLElement, kind: DomeKind, onPr
 		scene.add(posts, tops)
 	}
 
-	const setSun = (hour: number) => {
-		const { dir, e } = sunAt(hour)
-		if (host) {
-			// in a host's world only the lamps are ours to light
-			nightNow = 1 - THREE.MathUtils.smoothstep(e, -0.02, 0.18)
-			beamMat.opacity = 0.15 * nightNow
-			glowMat.emissiveIntensity = 0.1 + 2.4 * nightNow
-			m.paper.emissiveIntensity = 0.6 + 2.2 * nightNow
-			return
-		}
-		const day = THREE.MathUtils.smoothstep(e, -0.05, 0.35)
-		const low = 1 - THREE.MathUtils.smoothstep(e, 0, 0.6)
-		u['sunPosition']!.value.copy(dir)
-		// by night the light comes from the moon, opposite the sun
-		sunLight.position.copy(e > -0.02 ? dir : dir.clone().negate().setY(Math.abs(dir.y) + 0.4).normalize()).multiplyScalar(R * 3 + 20)
-		// the shadows are drawn again only when the light has moved (the factory, busy with
-		// machines and a lift, keeps drawing them every frame)
-		renderer.shadowMap.autoUpdate = kind === 'factory'
-		renderer.shadowMap.needsUpdate = true
-		sunLight.color.copy(e > -0.02 ? white.clone().lerp(warm, low) : moon)
-		sunLight.intensity = e > -0.02 ? 0.5 + 2.5 * day : 1.1
-		// the factory works through the night under its own lights
-		fill.intensity = 0.34 + 0.08 * day + (kind === 'factory' ? 1.1 * (1 - day) : 0)
-		fill.color.set('#f4f0e6').lerp(moon, (1 - day) * (kind === 'factory' ? 0.3 : 1))
-		;(fog as THREE.Fog).color.copy(fogDay).lerp(fogDusk, low * day).lerp(fogNight, 1 - day)
-		scene.environmentIntensity = 0.12 + 0.18 * day
-		renderer.toneMappingExposure = 0.42 + 0.5 * (1 - day)
-		// and as the light goes, the lamps come on
-		const night = 1 - THREE.MathUtils.smoothstep(e, -0.02, 0.18)
+	/** as the light goes the lamps come on: the beams, the glow, the paper; and standing alone, every lamp's light */
+	const lampsFor = (night: number) => {
 		nightNow = night
-		for (const l of lamps) l.light.intensity = l.base * night
-		lightNearest()
+		if (!host) {
+			for (const l of lamps) l.light.intensity = l.base * night
+			lightNearest()
+		}
 		beamMat.opacity = 0.15 * night
 		glowMat.emissiveIntensity = 0.1 + 2.4 * night
 		m.paper.emissiveIntensity = 0.6 + 2.2 * night
-		// the reflections are baked from the sky: bake them again once the sun has moved on
-		if (scene.environment && envAt.angleTo(dir) > 0.04) {
-			envAt = dir.clone()
-			envSky.material.uniforms['sunPosition']!.value.copy(dir)
-			const old = scene.environment
-			scene.environment = pmrem.fromScene(envScene).texture
-			old.dispose()
-		}
+	}
+	/* one dial, the hour, sets it all: the sun's place and colour, the sky, the fill, the fog; below the horizon a pale
+	   moon keeps the night walkable. In a host's world only the lamps are ours to light. */
+	if (!host)
+		sky = createSky(renderer, scene, {
+			clock: clockHour,
+			size: R * 40 + 2000,
+			// the dome's own shadows, all round it, from a light close by
+			shadowsAt: [0, 0],
+			shadowReach: R * 1.2,
+			shadowMap: huge ? 2048 : 3072,
+			shadowNear: 1,
+			shadowFar: R * 8 + 60,
+			shadowBias: { bias: -0.0004, normal: 0.02 },
+			lightDistance: R * 3 + 20,
+			fog: { day: '#e3e9e6', dusk: '#e9c9a8', night: '#1c2438', near: R * 1.2, far: R * 9 + 60 },
+			onHour: ({ day, night }, { fill }) => {
+				// the shadows are drawn again only when the light has moved (the factory, busy with machines and a lift,
+				// keeps drawing them every frame)
+				renderer.shadowMap.autoUpdate = kind === 'factory'
+				renderer.shadowMap.needsUpdate = true
+				// the factory works through the night under its own lights
+				if (kind === 'factory') {
+					fill.intensity += 1.1 * (1 - day)
+					fill.color.set('#f4f0e6').lerp(MOON, (1 - day) * 0.3)
+				}
+				lampsFor(night)
+			}
+		})
+	const setSun = (hour: number) => {
+		if (sky) return sky.set(hour)
+		lampsFor(1 - THREE.MathUtils.smoothstep(Math.sin(((hour - 5) / 15) * Math.PI), -0.02, 0.18))
 	}
 	setSun(hourNow())
 
@@ -1990,58 +1942,16 @@ export async function mountInterior(container: HTMLElement, kind: DomeKind, onPr
 		;(window as unknown as { __buildLog?: string[] }).__buildLog?.push(`${kind} shown: ${pieces.length} pieces`)
 		lastYield = performance.now()
 		onProgress?.('ready')
-		return { lift: () => null, liftStep: () => {}, move: () => {}, look: () => {}, embedded, dispose: disposeAll }
+		return { lift: () => null, liftStep: () => {}, move: () => {}, look: () => {}, alwaysDay: () => {}, embedded, dispose: disposeAll }
 	}
 
-	/* ── walking ─────────────────────────────────────────────────────── */
+	/* ── walking ($lib/sandbox-kit/walker) ─────────────────────────────── */
 	// coming in from the village: just inside the door you walked through, facing in
 	if (opts.entry !== undefined) {
 		const [ex, ez] = polar(R - (kind === 'glamp' ? 2 : 3.5), opts.entry)
 		start = { x: ex, z: ez, look: opts.entry }
 	}
-	const pos = new THREE.Vector3(start.x, 0, start.z)
 	let left = false
-	let yaw = start.look
-	let pitch = -0.05
-	let feet = 0
-	const keys = new Set<string>()
-	const dom = renderer.domElement
-	const onKey = (e: KeyboardEvent, down: boolean) => {
-		const k = e.key.toLowerCase()
-		if (onAction(k, down)) {
-			e.preventDefault()
-			keys.delete(k)
-			return
-		}
-		if (['w', 'a', 's', 'd', 'arrowup', 'arrowdown', 'arrowleft', 'arrowright', 'shift'].includes(k)) {
-			if (down) keys.add(k)
-			else keys.delete(k)
-			e.preventDefault()
-		}
-	}
-	const kd = (e: KeyboardEvent) => onKey(e, true)
-	const ku = (e: KeyboardEvent) => onKey(e, false)
-	window.addEventListener('keydown', kd)
-	window.addEventListener('keyup', ku)
-	let dragging = false
-	const look = (dx: number, dy: number) => {
-		yaw -= dx * 0.0042
-		pitch = Math.max(-1.4, Math.min(1.4, pitch - dy * 0.0042))
-	}
-	const onDown = () => {
-		dragging = true
-		dom.requestPointerLock?.()
-	}
-	const onMove = (e: MouseEvent) => {
-		if (document.pointerLockElement === dom || dragging) look(e.movementX, e.movementY)
-	}
-	const onUp = () => (dragging = false)
-	dom.addEventListener('mousedown', onDown)
-	window.addEventListener('mousemove', onMove)
-	window.addEventListener('mouseup', onUp)
-	// on a phone the page's fingers walk (move) and look round (look)
-	dom.style.touchAction = 'none'
-	const stick = { x: 0, y: 0, hurry: false }
 
 	// in the tent, only where there is headroom under the canvas
 	const wallLimit = (y: number) => (kind === 'tent' ? 1.15 : Math.sqrt(Math.max(0, R * R - (y + 1.8) ** 2)) - (kind === 'glamp' ? 0.4 : 0.8))
@@ -2057,66 +1967,45 @@ export async function mountInterior(container: HTMLElement, kind: DomeKind, onPr
 		return inDoor || (rr > R + 0.4 && rr < outerR)
 	}
 
-	const step = (dt: number) => {
-		const clamp = (v: number) => Math.max(-1, Math.min(1, v))
-		const f = clamp((keys.has('w') || keys.has('arrowup') ? 1 : 0) - (keys.has('s') || keys.has('arrowdown') ? 1 : 0) + stick.y)
-		const s = clamp((keys.has('d') ? 1 : 0) - (keys.has('a') ? 1 : 0) + stick.x)
-		const turn = (keys.has('arrowleft') ? 1 : 0) - (keys.has('arrowright') ? 1 : 0)
-		yaw += turn * 1.8 * dt
-		if (f || s) {
-			const speed = (keys.has('shift') || stick.hurry ? 14.6 : 6.45) * dt
-			const dx = (-Math.sin(yaw) * f + Math.cos(yaw) * s) * speed
-			const dz = (-Math.cos(yaw) * f - Math.sin(yaw) * s) * speed
-			// the floor underfoot now, not the eased camera height, decides what holds you
-			const here = floorAt(pos.x, pos.z, feet)
-			for (const [mx, mz] of [[dx, dz], [dx, 0], [0, dz]] as const) {
-				const nx = pos.x + mx, nz = pos.z + mz
-				const nf = floorAt(nx, nz, feet)
-				if (!walkable(nx, nz, nf)) continue
-				if (blocked(nx, nz, here)) continue
-				if ([...colliders, ...outsideColliders].some((c) => Math.abs(nf - ((c as { y?: number }).y ?? 0)) < 1 && Math.hypot(c.x - nx, c.z - nz) < c.r + 0.25)) continue
-				pos.x = nx
-				pos.z = nz
-				break
-			}
-		}
-		// out through a door and away from the wall: back to the village, outside that door
-		if (opts.onLeave && !left && feet < 0.5 && Math.hypot(pos.x, pos.z) > R + 4) {
+	const stands = [...colliders, ...outsideColliders] as { x: number; z: number; r: number; y?: number }[]
+	const walker = createWalker(camera, renderer.domElement, {
+		x: start.x,
+		z: start.z,
+		yaw: start.look,
+		pitch: -0.05,
+		floorAt,
+		// in the dome or out on its land, clear of its walls, rails, furniture and trees, on the floor you would stand on
+		canStand: (x, z, here, ground) => {
+			const nf = floorAt(x, z, ground)
+			return walkable(x, z, nf) && !blocked(x, z, here) && !stands.some((c) => Math.abs(nf - (c.y ?? 0)) < 1 && Math.hypot(c.x - x, c.z - z) < c.r + 0.25)
+		},
+		// the factory's lift takes ↑ and ↓ while you stand in it
+		onKey: onAction
+	})
+	const pos = walker.position
+	/** after each step: out through a door and away from the wall, back to the village outside that door; and the
+	 *  world follows where you are (the factory's floors) */
+	const walked = () => {
+		if (opts.onLeave && !left && walker.feet() < 0.5 && Math.hypot(pos.x, pos.z) > R + 4) {
 			const a = Math.atan2(pos.x, pos.z)
 			left = true
 			opts.onLeave(doorsOf(kind).reduce((best, d) => (Math.abs(adiff(a, d)) < Math.abs(adiff(a, best)) ? d : best)))
 		}
-		const target = floorAt(pos.x, pos.z, feet)
-		feet += (target - feet) * Math.min(1, dt * 12)
-		onWalk(pos.x, pos.z, feet)
-		camera.position.set(pos.x, feet + EYE, pos.z)
-		camera.rotation.set(pitch, yaw, 0, 'YXZ')
+		onWalk(pos.x, pos.z, walker.feet())
 	}
-
-	const onResize = () => {
-		camera.aspect = container.clientWidth / container.clientHeight
-		camera.updateProjectionMatrix()
-		renderer.setSize(container.clientWidth, container.clientHeight)
-	}
-	window.addEventListener('resize', onResize)
 
 	let frame = 0
 	let last = performance.now()
 	const clock0 = performance.now()
-	let sunChecked = 0
 	let lampsChecked = 0
-	let frames = 0, fpsSince = performance.now()
 	const sound = ambience()
-	/** a free camera for the journal's overview pictures (dev hook), walking paused while it is set */
-	let flying: [number, number, number, number, number] | null = null
 	const tick = () => {
 		const now = performance.now()
-		if (flying) {
-			camera.position.set(flying[0], flying[1], flying[2])
-			camera.rotation.set(flying[4], flying[3], 0, 'YXZ')
-		} else step(Math.min(0.1, (now - last) / 1000))
+		// walk (or, while the film camera or the dev hook holds it, fly)
+		walker.update(Math.min(0.1, (now - last) / 1000))
+		if (!walker.flying()) walked()
 		last = now
-		const t = (now - clock0) / 1000
+		const t = worldTime() ?? (now - clock0) / 1000
 		for (const a of animated) a(t)
 		if (now - lampsChecked > 300) {
 			lampsChecked = now
@@ -2127,7 +2016,7 @@ export async function mountInterior(container: HTMLElement, kind: DomeKind, onPr
 			const heard: Parameters<typeof sound.set>[0] = levelsAt(pos.x, pos.z, indoors, waterPts, herds)
 			// in the factory: the hall's own hum instead of the soft nature, the machines near you, the lift
 			if (factorySounds && indoors) {
-				const f = factorySounds(pos.x, pos.z, feet)
+				const f = factorySounds(pos.x, pos.z, walker.feet())
 				heard.inside = 0
 				heard.forest = 0.08
 				heard.factory = 1
@@ -2137,42 +2026,59 @@ export async function mountInterior(container: HTMLElement, kind: DomeKind, onPr
 			sound.set(heard, indoors)
 		}
 		// the sun moves with the game clock: a game hour is two real minutes, so a look every second is plenty
-		if (now - sunChecked > 1000) {
-			sunChecked = now
-			setSun(hourNow())
-		}
-		renderer.render(scene, camera)
-		// keep it smooth: lower the resolution a little when frames get slow, raise it when there is room
-		frames++
-		if (now - fpsSince > 1500) {
-			const fps = (frames * 1000) / (now - fpsSince)
-			const pr = renderer.getPixelRatio()
-			const top = Math.min(huge ? 1.25 : 1.5, window.devicePixelRatio)
-			if (fps < 40 && pr > 1) renderer.setPixelRatio(Math.max(1, pr - 0.1))
-			else if (fps > 56 && pr < top) renderer.setPixelRatio(Math.min(top, pr + 0.1))
-			frames = 0
-			fpsSince = now
-		}
+		sky!.tick(now)
+		// the film camera draws the canvas itself while it holds it
+		if (!filmDraws()) renderer.render(scene, camera)
+		// keep it smooth; while a film is shot every frame is rendered at the resolution it asks for
+		stage!.adapt(now, filmHoldsSize())
 		frame = requestAnimationFrame(tick)
 	}
-	step(0)
-	renderer.render(scene, camera)
+	walker.update(0)
+	walked()
+	if (!filmDraws()) renderer.render(scene, camera)
 	onProgress?.('ready')
 	tick()
 
-	/* a dev hook, like the planet's __world: move the camera from the console */
+	/* the film camera's hold on the dome (src/lib/film, $lib/sandbox-kit/film): Sandbox 3 on film, one dome a page */
+	const world = connectFilm({
+		sandbox: 'sandbox-3',
+		area: kind,
+		renderer,
+		scene,
+		camera,
+		hold: walker,
+		sky,
+		place: (x, z, yw, p, y) => walker.place(x, z, yw, p, y),
+		animate: (t) => {
+			for (const a of animated) a(t)
+		},
+		advance: () => {
+			lightNearest()
+			keepDetail(camera.position.x, camera.position.z)
+			// what the hour gives the lamps, before the shot's own changes
+			glowMat.emissive.set('#ffc070')
+			for (const p of pool) p.color.set('#ffc98a')
+		},
+		lights: {
+			glow: (k, color) => {
+				glowMat.emissiveIntensity *= k
+				if (color) glowMat.emissive.set(color)
+			},
+			lamps: (k, color) => {
+				for (const p of pool) {
+					p.intensity *= k
+					if (color) p.color.set(color)
+				}
+			}
+		}
+	})
+	/* a dev hook, like the planet's: move the camera from the console */
 	;(window as unknown as { __interior: unknown }).__interior = {
 		camera,
 		scene,
-		fly: (x: number, y: number, z: number, yw: number, p: number) => (flying = [x, y, z, yw, p]),
-		land: () => (flying = null),
-		place: (x: number, z: number, y: number, yw: number, p: number) => {
-			flying = null
-			pos.set(x, 0, z)
-			feet = y
-			yaw = yw
-			pitch = p
-		}
+		fly: walker.fly,
+		land: walker.release,
+		place: (x: number, z: number, y: number, yw: number, p: number) => walker.place(x, z, yw, p, y)
 	}
 
 	return {
@@ -2185,27 +2091,16 @@ export async function mountInterior(container: HTMLElement, kind: DomeKind, onPr
 			onAction(k, true)
 			setTimeout(() => onAction(k, false), 120)
 		},
-		move: (x, y, hurry) => Object.assign(stick, { x, y, hurry }),
-		look: (dx, dy) => {
-			yaw -= dx * 0.0065
-			pitch = Math.max(-1.4, Math.min(1.4, pitch - dy * 0.0065))
-		},
+		move: walker.move,
+		look: walker.look,
+		alwaysDay: (on) => sky!.alwaysDay(on),
 		dispose() {
 			cancelAnimationFrame(frame)
 			sound.dispose()
-			window.removeEventListener('keydown', kd)
-			window.removeEventListener('keyup', ku)
-			window.removeEventListener('mousemove', onMove)
-			window.removeEventListener('mouseup', onUp)
-			window.removeEventListener('resize', onResize)
-			dom.removeEventListener('mousedown', onDown)
-			if (document.pointerLockElement === dom) document.exitPointerLock()
-			scene.traverse((o) => {
-				if (o instanceof THREE.Mesh) o.geometry.dispose()
-			})
-			pmrem.dispose()
-			renderer.dispose()
-			dom.remove()
+			world.disconnect()
+			walker.dispose()
+			sky!.dispose()
+			stage!.dispose()
 		}
 	}
 }

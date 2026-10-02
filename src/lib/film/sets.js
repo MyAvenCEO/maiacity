@@ -1,4 +1,4 @@
-// @ts-nocheck — three.js scene building through window.__village, as the shot lists always did
+// @ts-nocheck — three.js scene building through window.__world (Sandbox 4), as the shot lists always did
 // Sets for the film, built into Sandbox 4's scene while it is filmed (never in the game itself). A shot names its set
 // (world.props: 'tired-land'); the film camera (src/lib/film) builds it once, then moves what moves on the world's
 // own clock (`window.__props(clock)`), so a truck is exactly where the shot expects it at every frame.
@@ -10,7 +10,7 @@ import { seededRandom } from './clock.js';
 export function tiredLand(seed = 1) {
 	if (window.__props) return;
 	const rand = seededRandom(seed);
-	const v = window.__village, T = v.THREE, scene = v.scene;
+	const v = window.__world ?? window.__village, T = v.THREE, scene = v.scene;
 	const set = new T.Group();
 	set.name = 'tired-land';
 

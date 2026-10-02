@@ -11,8 +11,8 @@
  * tree, a pillar or a wall in the way is walked round rather than stopped at; the eye
  * eases after the floor, so a step up is not a jolt.
  *
- * The film camera (src/lib/film) can take the camera from the walker (`fly`) and give it
- * back (`place`).
+ * The film camera (src/lib/film, ./film.js) can take the camera from the walker (`fly`) and
+ * give it back (`place`): the walker is a camera hold.
  */
 
 /** @typedef {[x: number, y: number, z: number, yaw: number, pitch: number]} Pose */
@@ -23,12 +23,15 @@
  * @property {() => number} yaw which way they face, radians (0 looks along -z)
  * @property {() => number} pitch how far up they look, radians
  * @property {() => number} ground the floor they stand on
+ * @property {() => number} feet how high their feet are now: the eye eases after the floor, so this lags `ground` a little
  * @property {(dt: number) => void} update call every frame with the seconds since the last: walk, and put the camera where they are
  * @property {(x: number, y: number, hurry: boolean) => void} move walk from a touch joystick: x to the right, y ahead, each -1…1; hurry when pushed to the edge
  * @property {(dx: number, dy: number) => void} look turn the view by a finger's drag, in pixels
  * @property {(x: number, z: number, yaw: number, pitch: number, y?: number) => void} place stand here, facing so (on a floor `y` high, if given)
  * @property {(x: number, y: number, z: number, yaw: number, pitch: number) => void} fly hold the camera at a pose, free of the ground, until `place`
  * @property {() => Pose | null} flying the pose the camera is held at, if any
+ * @property {() => boolean} apply put the camera at the held pose now (false when not flying)
+ * @property {() => void} release let go of the pose: the walker has the camera again, where they stood
  * @property {() => void} stop let go of every key and the joystick (as the page is paused, so no key is left held)
  * @property {() => void} dispose
  */
@@ -46,12 +49,14 @@ const TURNS = [25, 50, 75, 90].map((d) => (d * Math.PI) / 180);
  *   eye?: number, walk?: number, hurry?: number, turn?: number,
  *   mouse?: number, touch?: number, maxPitch?: number, stride?: number,
  *   canStand?: (x: number, z: number, here: number, ground: number) => boolean,
- *   floorAt?: (x: number, z: number, ground: number) => number
+ *   floorAt?: (x: number, z: number, ground: number) => number,
+ *   onKey?: (key: string, down: boolean) => boolean
  * }} [options]
  *   x, z, yaw, pitch: where they start and how they face; eye: eye height over the floor (m); walk, hurry: paces (m/s);
  *   turn: the arrow keys' turn (rad/s); mouse, touch: radians a pixel of drag turns; maxPitch: how far up or down they
  *   may look; stride: the longest stride (m); canStand: may they stand at x, z coming from a floor `here` high (the
- *   open ground, everywhere, if not given); floorAt: the floor at x, z for someone now on `ground` (0 if not given)
+ *   open ground, everywhere, if not given); floorAt: the floor at x, z for someone now on `ground` (0 if not given);
+ *   onKey: the world's own keys, asked first (a lift's ↑/↓): true takes the key from the walker
  * @returns {WalkerHandle}
  */
 export function createWalker(camera, dom, options = {}) {
@@ -65,7 +70,8 @@ export function createWalker(camera, dom, options = {}) {
 		maxPitch = 1.4,
 		stride = 0.25,
 		canStand = () => true,
-		floorAt = () => 0
+		floorAt = () => 0,
+		onKey: worldKey
 	} = options;
 	const pos = { x: options.x ?? 0, z: options.z ?? 0 };
 	let yaw = options.yaw ?? Math.PI;
@@ -80,6 +86,11 @@ export function createWalker(camera, dom, options = {}) {
 	const keys = new Set();
 	const onKey = (/** @type {KeyboardEvent} */ e, /** @type {boolean} */ down) => {
 		const k = e.key.toLowerCase();
+		if (worldKey?.(k, down)) {
+			e.preventDefault();
+			keys.delete(k);
+			return;
+		}
 		if (!KEYS.includes(k)) return;
 		if (down) keys.add(k);
 		else keys.delete(k);
@@ -160,11 +171,19 @@ export function createWalker(camera, dom, options = {}) {
 		yaw: () => yaw,
 		pitch: () => pitch,
 		ground: () => ground,
+		feet: () => feet,
 		update(dt) {
 			if (!flying) return step(dt);
 			camera.position.set(flying[0], flying[1], flying[2]);
 			camera.rotation.set(flying[4], flying[3], 0, 'YXZ');
 		},
+		apply() {
+			if (!flying) return false;
+			camera.position.set(flying[0], flying[1], flying[2]);
+			camera.rotation.set(flying[4], flying[3], 0, 'YXZ');
+			return true;
+		},
+		release: () => void (flying = null),
 		move: (x, y, h) => Object.assign(stick, { x, y, hurry: h }),
 		look: (dx, dy) => {
 			yaw -= dx * touch;

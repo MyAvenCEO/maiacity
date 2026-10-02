@@ -8,6 +8,7 @@ import { createShot, getShot, listShots, saveShot, shotVersions } from "../src/s
 import { createTimeline, getTimeline, saveTimeline } from "../src/timelines";
 import { checkCamera, keysFromFlight, look, pathOf } from "../../game/film/camera.js";
 import { evaluate, fingerprint, fovFor, fromLegacy, legacyLook, legacyStops, normalize, sha256, shutterTimes, stable } from "../../game/film/shot.js";
+import { filmPath, worldOfPath } from "../../game/film/worlds.js";
 // the shot lists' own camera functions, now built on camera.js
 import { fly, move, orbit, turn, whip, landing, ease } from "../../scripts/film/camera.mjs";
 
@@ -103,6 +104,25 @@ describe("the shot record", () => {
     expect(s.shutter).toEqual({ angle: 180, samples: 1 });
     expect((s as any).junk).toBeUndefined();
     expect(normalize(s)).toEqual(s); // idempotent
+  });
+
+  test("a shot names its world: any sandbox, and where in it", () => {
+    const at = (world: Record<string, unknown>) => normalize(spec({ world: { stand: [0, 0], ...world } })).world;
+    // a sandbox with areas always names one, its first by default; Sandbox 4 is one place, and stays as it was
+    expect(at({ sandbox: "sandbox-3" })).toEqual({ sandbox: "sandbox-3", area: "home", build: null, seed: 1, stand: [0, 0], clock: 0 });
+    expect(at({ sandbox: "sandbox-2", area: "island", seed: 812 })).toEqual({ sandbox: "sandbox-2", area: "island", build: null, seed: 812, stand: [0, 0], clock: 0 });
+    expect(at({ sandbox: "sandbox-1" }).area).toBe("island");
+    expect(at({}).sandbox).toBe("sandbox-4");
+    expect("area" in at({ sandbox: "sandbox-4", dome: 3 })).toBe(false);
+    expect(() => at({ sandbox: "sandbox-9" })).toThrow("world.sandbox");
+    expect(() => at({ sandbox: "sandbox-3", area: "moon" })).toThrow("world.area");
+    expect(() => at({ sandbox: "sandbox-4", area: "home" })).toThrow("no areas");
+    expect(() => at({ sandbox: "sandbox-3", dome: 2 })).toThrow("world.dome");
+    expect(() => at({ sandbox: "sandbox-1", props: "tired-land" })).toThrow("no sets");
+    expect(() => at({ dome: 13 })).toThrow("world.dome");
+    expect(filmPath(at({ sandbox: "sandbox-3", area: "master" }))).toBe("/games/sandbox-3/?film&area=master");
+    expect(filmPath(at({}))).toBe("/games/sandbox-4/?film");
+    expect(worldOfPath("/base/games/sandbox-2/?film&area=island")).toEqual({ sandbox: "sandbox-2", area: "island" });
   });
 
   test("normalize refuses what cannot be rendered", () => {

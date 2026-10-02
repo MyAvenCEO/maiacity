@@ -1,34 +1,48 @@
 <!--
-	Sandbox 4 as a film camera (/games/sandbox-4/?film): the world with nothing round it, its clocks taken over before
-	it mounts, and window.__film to drive it (src/lib/film/index.js). The studio embeds it in an iframe; the plate
-	renderer opens it in a headless browser. Players never see it.
+	A sandbox as a film camera (/games/<sandbox>/?film&area=…, game/film/worlds.js): the world with nothing round it, its
+	clocks taken over before it mounts, and window.__film to drive it (src/lib/film/index.js). The world hands itself to
+	the film as window.__world (src/lib/sandbox-kit/film.js). The studio embeds it in an iframe; the plate renderer and
+	the Mac app open it unseen. Players never see it.
 -->
-<script lang="ts">
+<script>
 	import { base } from '$app/paths';
 	import { onDestroy, onMount } from 'svelte';
-	import type { VillageHandle } from '$lib/sandbox-2/interior/village';
 	import { startFilm } from './index.js';
 
-	let stage = $state<HTMLDivElement>();
-	let village: VillageHandle | null = null;
+	/**
+	 * @type {{
+	 *   title: string,
+	 *   mount: (stage: HTMLElement, onProgress: (label: string) => void) => Promise<{ dispose: () => void }>
+	 * }}
+	 */
+	let { title, mount } = $props();
+
+	/** @type {HTMLDivElement | undefined} */
+	let stage = $state();
+	/** @type {{ dispose: () => void } | null} */
+	let world = null;
 	let destroyed = false;
 	let status = $state('Loading the world…');
 
 	onMount(async () => {
 		startFilm({ base });
-		const { mountVillage } = await import('$lib/sandbox-2/interior/village');
-		const v = await mountVillage(stage!, (label) => (status = label === 'ready' ? '' : `${label}…`));
-		if (destroyed) return v.dispose();
-		village = v;
+		try {
+			const w = await mount(/** @type {HTMLDivElement} */ (stage), (label) => (status = label === 'ready' ? '' : `${label}…`));
+			if (destroyed) return w.dispose();
+			world = w;
+			status = '';
+		} catch (e) {
+			status = `The world did not come up: ${/** @type {Error} */ (e).message}`;
+		}
 	});
 	onDestroy(() => {
 		destroyed = true;
-		village?.dispose();
+		world?.dispose();
 	});
 </script>
 
 <svelte:head>
-	<title>Sandbox 4 · film camera · maiaCITY</title>
+	<title>{title} · film camera · maiaCITY</title>
 	<meta name="robots" content="noindex" />
 </svelte:head>
 

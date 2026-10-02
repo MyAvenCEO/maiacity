@@ -70,7 +70,8 @@ Every shot is a slice of a move that was already going and goes on after it:
 ## The camera (`shoot.mjs`)
 
 - Runs **on a Mac only** (Chrome on Metal, the Mac's GPU — no software renderer), against `bun run dev` or a pinned
-  build, in Sandbox 4's **film mode** (`/games/sandbox-4/?film`, `window.__film`).
+  build, in a sandbox's **film mode** (`/games/<sandbox>/?film&area=…` — Sandbox 4's cell, Sandbox 3's domes, Sandbox 1's
+  island, Sandbox 2's planet and city islands; the shot names its world in `world.sandbox`/`world.area`; `window.__film`).
 - A deterministic clock (seeded, a readiness barrier), so every frame is exactly 1/fps after the last.
 - Film mode captures **log, never graded**: scene-linear half-float, metered like a camera (middle grey 18% on the
   lower 60% of the frame; `exposure.stops` over or under), shutter blur in linear light, 1.5× oversampled, then

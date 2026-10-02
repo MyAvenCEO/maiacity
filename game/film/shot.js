@@ -1,9 +1,10 @@
-// A WORLD SHOT AS DATA — everything the film camera needs to render one shot of Sandbox 4, as a plain record (the
+// A WORLD SHOT AS DATA — everything the film camera needs to render one shot of a sandbox, as a plain record (the
 // `shots` table keeps it, versioned; a world clip on a timeline names it). Nothing in it is a picture: the world
 // renders it on demand — live in the studio, as a proxy, or as a 4K log plate at render time.
 //
 //   spec = {
-//     world:    { sandbox: 'sandbox-4', build: { commit, hash, file? } | null, seed, stand: [x, z], dome?, props?, clock },
+//     world:    { sandbox: 'sandbox-1' … 'sandbox-4', area?, build: { commit, hash, file? } | null, seed, stand: [x, z],
+//                 dome?, props?, clock },   which world (game/film/worlds.js) and where in it; dome and props are Sandbox 4's
 //     seconds, fps: 30, aspect: '1:1',          the shot's length, frame rate, and the shape it was composed for
 //     camera:   game/film/camera.js (move · orbit · turn · fly · whip · keys, with a curve),
 //     lens:     { fov, fovTo? },                vertical field of view in degrees (for `aspect`), zooming to fovTo
@@ -22,6 +23,7 @@
 // water, the trucks of a set) runs at world.clock + t, so the same shot always sees the same world.
 // Plain JavaScript, shared by the browser (film mode), the API, the worker and the scripts.
 import { checkCamera, fovOf, pathOf } from './camera.js';
+import { DEFAULT_SANDBOX, WORLDS } from './worlds.js';
 
 /** @typedef {import('./camera.js').Camera} Camera @typedef {import('./camera.js').Pose} Pose */
 /** @typedef {'1:1' | '16:9' | '9:16' | '4:5'} Shape */
@@ -31,7 +33,7 @@ import { checkCamera, fovOf, pathOf } from './camera.js';
 /** @typedef {{ fov?: number, yaw?: number, pitch?: number, dx?: number, dy?: number }} Frame */
 /**
  * @typedef {{
- *   world: { sandbox: 'sandbox-4', build: Build, seed: number, stand: [number, number], dome?: number, props?: string, clock: number },
+ *   world: { sandbox: Sandbox, area?: string, build: Build, seed: number, stand: [number, number], dome?: number, props?: string, clock: number },
  *   seconds: number, fps: number, aspect: Shape,
  *   camera: Camera,
  *   lens: { fov: number, fovTo?: number },
@@ -46,6 +48,7 @@ import { checkCamera, fovOf, pathOf } from './camera.js';
  * }} Spec
  */
 /** @typedef {'sun' | 'fill' | 'glow' | 'lamps' | 'sky'} LightId */
+/** @typedef {'sandbox-1' | 'sandbox-2' | 'sandbox-3' | 'sandbox-4'} Sandbox */
 
 /** The delivery shapes, width over height. */
 export const SHAPES = /** @type {Record<Shape, number>} */ ({ '1:1': 1, '16:9': 16 / 9, '9:16': 9 / 16, '4:5': 4 / 5 });
@@ -84,7 +87,12 @@ export function normalize(s) {
 		return num(v, name, lo, hi);
 	};
 	const w = s.world ?? {};
-	if (w.sandbox !== undefined && w.sandbox !== 'sandbox-4') bad('Only Sandbox 4 has a film camera.');
+	const sandbox = /** @type {Sandbox} */ (w.sandbox ?? DEFAULT_SANDBOX);
+	const where = WORLDS[sandbox];
+	if (!where) bad(`world.sandbox is one of ${Object.keys(WORLDS).join(', ')}.`);
+	const areas = where.areas;
+	if (w.area !== undefined && w.area !== null && !areas?.includes(w.area)) bad(areas ? `world.area in ${sandbox} is one of ${areas.join(', ')}.` : `${sandbox} has no areas.`);
+	if (w.dome !== undefined && w.dome !== null && !where.domes) bad(`world.dome names a dome of Sandbox 4; ${sandbox} has none.`);
 	if (!Array.isArray(w.stand) || w.stand.length !== 2 || !w.stand.every(finite)) bad('world.stand is where the world is loaded: [x, z].');
 	/** @type {Build} */
 	let build = null;
@@ -94,13 +102,15 @@ export function normalize(s) {
 		if (w.build.file !== undefined && !/^[0-9a-f]{64}$/.test(String(w.build.file))) bad('world.build.file is the build in the vault, by its hash.');
 		build = { commit, hash, ...(w.build.file ? { file: String(w.build.file) } : {}) };
 	}
-	if (w.props !== undefined && !SETS.includes(w.props)) bad(`world.props is one of ${SETS.join(', ')}.`);
+	if (w.props !== undefined && !(where.sets ?? []).includes(w.props)) bad(where.sets ? `world.props is one of ${where.sets.join(', ')}.` : `${sandbox} has no sets.`);
 	const world = {
-		sandbox: /** @type {'sandbox-4'} */ ('sandbox-4'),
+		sandbox,
+		// a sandbox with areas always names one (its first by default); Sandbox 4 is one place, and its shots stay as they were
+		...(areas ? { area: /** @type {string} */ (w.area ?? areas[0]) } : {}),
 		build,
 		seed: Math.round(num(w.seed, 'world.seed', 0, 2 ** 31, 1)),
 		stand: /** @type {[number, number]} */ ([w.stand[0], w.stand[1]]),
-		...(w.dome !== undefined && w.dome !== null ? { dome: Math.round(num(w.dome, 'world.dome', 0, 12)) } : {}),
+		...(w.dome !== undefined && w.dome !== null ? { dome: Math.round(num(w.dome, 'world.dome', 0, /** @type {number} */ (where.domes) - 1)) } : {}),
 		...(w.props ? { props: String(w.props) } : {}),
 		clock: num(w.clock, 'world.clock', -1e6, 1e6, 0)
 	};

@@ -15,6 +15,7 @@
 	import Eq from './Eq.svelte';
 	import { toKeys } from './shots.js';
 	import { SHOT_LIGHTS } from '$lib/auth/client';
+	import { WORLDS } from '../../../game/film/worlds.js';
 	import { isWorld, itemName, onSoundTrack } from './studio.svelte.js';
 	import { hasSound, wordsOf } from './transcript.js';
 	import Transcript from './Transcript.svelte';
@@ -146,12 +147,27 @@
 		</dl>
 		{#if !ro}<button class="ghost danger" onclick={(e) => s.remove(sel.id, e.altKey)} title={partner ? 'With its linked partner (Alt: this one alone)' : ''}>Remove clip{partner ? ' (and its partner)' : ''}</button>{/if}
 	{:else if sel && spec}
+		{@const here = WORLDS[spec.world.sandbox]}
 		<p class="iname">{shot?.name ?? 'World shot'} <span class="ver">v{sel.shotVersion}{#if s.drafts[sel.id]} · saving…{/if}</span></p>
 		<p class="sub">A world shot: data, drawn live. Every change is a new version; this clip follows it.</p>
 		<fieldset disabled={ro}>
 			<label>Start <input type="number" step="0.05" min="0" value={sel.start.toFixed(2)} onchange={(e) => s.setClip({ start: Math.max(0, Number(e.currentTarget.value)) })} /> s</label>
 			<label>Length <input type="number" step="0.05" min="0.2" value={sel.dur.toFixed(2)} onchange={(e) => s.setClip({ dur: Math.max(0.2, Math.min(spec.seconds - sel.in, Number(e.currentTarget.value))) })} /> s</label>
 			<label>From <input type="number" step="0.05" min="0" value={sel.in.toFixed(2)} onchange={(e) => s.setClip({ in: Math.max(0, Math.min(spec.seconds - 0.2, Number(e.currentTarget.value))) })} /> s in</label>
+
+			<h3>World</h3>
+			<label>Sandbox <select value={spec.world.sandbox} onchange={(e) => edit((sp) => {
+				// another world: its own places; Sandbox 4's domes and sets do not go with it
+				sp.world.sandbox = /** @type {ShotSpec['world']['sandbox']} */ (e.currentTarget.value);
+				delete sp.world.area, delete sp.world.dome, delete sp.world.props;
+			})}>{#each Object.entries(WORLDS) as [id, w] (id)}<option value={id}>{w.label}</option>{/each}</select></label>
+			{#if here?.areas}
+				<label>Area <select value={spec.world.area ?? here.areas[0]} onchange={(e) => edit((sp) => (sp.world.area = e.currentTarget.value))}>{#each here.areas as a (a)}<option>{a}</option>{/each}</select></label>
+			{/if}
+			{#if spec.world.sandbox === 'sandbox-2' && spec.world.area === 'island'}
+				<label>Island seed <input type="number" step="1" min="0" value={spec.world.seed} onchange={(e) => edit((sp) => (sp.world.seed = Math.round(num(e.currentTarget.value, 1))))} /></label>
+			{/if}
+			<label class="xyz">Stand {#each [0, 1] as a (a)}<input type="number" step="1" value={fmt(spec.world.stand[a], 1)} onchange={(e) => edit((sp) => (sp.world.stand[a] = num(e.currentTarget.value)))} />{/each}</label>
 
 			<h3>Camera</h3>
 			<div class="row">

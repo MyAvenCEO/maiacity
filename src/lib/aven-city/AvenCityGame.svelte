@@ -20,6 +20,7 @@ import {
 	settlementCapacity
 } from './game/three/buildWorld'
 import type { SceneApi } from './game/three/scene'
+import { ISLAND_SEED } from './game/seed.js'
 import { timeOfDay } from './game/timeOfDay.svelte'
 import './styles/index.css'
 import TouchStick from '../touch/TouchStick.svelte'
@@ -40,9 +41,8 @@ let sandbox = $state(false)
 // coming back binds a NEW element, and the scene has to follow it.
 let canvas: HTMLCanvasElement | undefined = $state()
 let api: SceneApi | undefined
-// One world, the same one every visit: the journal writes about this island,
-// so a reroll button would make every screenshot unreproducible.
-const seed = 5423
+// One world, the same one every visit (game/seed.js; the film camera grows the same one)
+const seed = ISLAND_SEED
 /** every hex currently selected — one from a click, many from a shift-drag */
 let selected: HexTile[] = $state([])
 /** bumped whenever a building lands, so the rail and the count re-read */

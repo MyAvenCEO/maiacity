@@ -37,6 +37,7 @@ async function run(/** @type {number[]} */ order) {
 	try {
 		for (const i of order) {
 			out[i] = [];
+			await world.goTo(specs[i].world);
 			for (let k = 0; k < frames; k++) {
 				const ask = { spec: specs[i], t: at + k / specs[i].fps, width: size, height: size };
 				await world.page.evaluate(async (a, url) => {

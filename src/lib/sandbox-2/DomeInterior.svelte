@@ -13,8 +13,8 @@
 	import { asset } from '$lib/media/url';
 	import { onDestroy, onMount } from 'svelte';
 	import { DOMES, type DomeKind, type InteriorHandle } from './interior/interior';
-	import { gameClock } from '../../../game/time';
 	import TouchStick from '$lib/touch/TouchStick.svelte';
+	import { SkyToggle, WalkHint, WorldClock } from '$lib/sandbox-kit';
 
 	let {
 		kind,
@@ -33,11 +33,10 @@
 	let done = $state(0);
 	const STEPS = 5;
 	const spec = $derived(DOMES[kind]);
-	/** the in-game clock the sun follows, shown in the corner */
-	let clock = $state(gameClock().label);
+	/** the sky kept at day while the clock runs on; every visit starts on the real sky ($lib/sandbox-kit) */
+	let alwaysDay = $state(false);
 	/** standing in the factory's lift: which floor, so the panel can say how to ride it */
 	let lift = $state<{ floor: number; name: string; top: number } | null>(null);
-	const clockTimer = setInterval(() => (clock = gameClock().label), 1000);
 	const liftTimer = setInterval(() => (lift = handle?.lift() ?? null), 200);
 
 	onMount(() => {
@@ -64,7 +63,6 @@
 		);
 	});
 	onDestroy(() => {
-		clearInterval(clockTimer);
 		clearInterval(liftTimer);
 		destroyed = true;
 		handle?.dispose();
@@ -83,7 +81,8 @@
 			<strong>{spec.label}</strong>
 			<span>{place} · {spec.diameter} m across · {spec.people}</span>
 		</div>
-		<div class="clock" title="In-game time: a game hour passes every two real minutes">{clock}</div>
+		<WorldClock class="clock" />
+		<SkyToggle bind:on={alwaysDay} onchange={(on) => handle?.alwaysDay(on)} />
 	</div>
 	{#if lift}
 		<div class="lift" role="status" aria-live="polite">
@@ -96,10 +95,7 @@
 			<p class="how touch-how">Tap ↑ or ↓ to ride one floor; the lift stops at every floor. Walk out through a door when it stops.</p>
 		</div>
 	{/if}
-	<p class="help">
-		<span class="keys-how">Drag to look · WASD to walk · Shift to hurry{kind === 'factory' ? ' · in the great lift, ↑ and ↓ ride between the five floors' : kind === 'tent' ? ' · the door leads out to the campfire' : spec.gallery ? ' · the stairs lead up to the private rooms and the terrace' : ' · the door leads out into the forest'}</span>
-		<span class="touch-how">Swipe to look · joystick to walk · push to the rim to hurry</span>
-	</p>
+	<WalkHint keys="Drag to look · WASD to walk · Shift to hurry{kind === 'factory' ? ' · in the great lift, ↑ and ↓ ride between the five floors' : kind === 'tent' ? ' · the door leads out to the campfire' : spec.gallery ? ' · the stairs lead up to the private rooms and the terrace' : ' · the door leads out into the forest'}" />
 	<TouchStick move={(x, y, hurry) => handle?.move(x, y, hurry)} look={(dx, dy) => handle?.look(dx, dy)} {stage} taps=".bar button, .lift button" />
 
 	{#if doors !== 'open'}
@@ -138,9 +134,9 @@
 		align-items: center;
 		z-index: 2;
 	}
+	/* the clock and the sky switch are $lib/sandbox-kit's */
 	.out,
-	.title,
-	.clock {
+	.title {
 		padding: 0.55rem 0.9rem;
 		border: 0;
 		border-radius: 999px;
@@ -153,25 +149,9 @@
 	.out {
 		cursor: pointer;
 	}
-	.clock {
-		font-variant-numeric: tabular-nums;
-	}
 	.title span {
 		margin-left: 0.4rem;
 		color: #7b857a;
-	}
-	.help {
-		position: absolute;
-		bottom: calc(1rem + env(safe-area-inset-bottom, 0px));
-		left: 50%;
-		transform: translateX(-50%);
-		margin: 0;
-		padding: 0.5rem 0.9rem;
-		border-radius: 999px;
-		background: rgb(31 42 35 / 0.75);
-		color: #f2efe7;
-		font-size: 0.8rem;
-		white-space: nowrap;
 	}
 
 	/* the lift's panel, bottom centre, above the help line */
@@ -311,7 +291,7 @@
 		color: #f0c49a;
 	}
 
-	/* ── on a phone: the joystick's words, and the lift's panel above the joystick ── */
+	/* ── on a phone: the lift's words, and its panel above the joystick ── */
 	.touch-how {
 		display: none;
 	}
@@ -324,10 +304,6 @@
 		}
 		p.touch-how {
 			display: block;
-		}
-		.help {
-			top: calc(4.2rem + env(safe-area-inset-top, 0px));
-			bottom: auto;
 		}
 		/* the lift's panel above the joystick, not over it */
 		.lift {
@@ -343,8 +319,7 @@
 			gap: 0.35rem;
 		}
 		.out,
-		.title,
-		.clock {
+		.title {
 			padding: 0.5rem 0.75rem;
 			font-size: 0.8rem;
 			white-space: nowrap;
@@ -357,15 +332,8 @@
 		.title span {
 			display: none;
 		}
-		.clock {
+		.bar :global(.clock) {
 			margin-left: auto;
-		}
-		.help {
-			max-width: calc(100vw - 2rem);
-			width: max-content;
-			white-space: normal;
-			text-align: center;
-			font-size: 0.75rem;
 		}
 	}
 </style>

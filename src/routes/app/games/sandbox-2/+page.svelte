@@ -26,6 +26,7 @@
 	import Tour, { type TourStep } from '$lib/sandbox-2/Tour.svelte';
 	import DomeInterior from '$lib/sandbox-2/DomeInterior.svelte';
 	import TouchStick from '$lib/touch/TouchStick.svelte';
+	import { SkyToggle } from '$lib/sandbox-kit';
 	import { planFor } from '../../../../../game/island/villages';
 	import type { DomeKind } from '$lib/sandbox-2/interior/interior';
 	import type { WorldHandle } from '$lib/sandbox-2/world/world';
@@ -36,6 +37,8 @@
 	let stage: HTMLDivElement;
 	let world: WorldHandle | null = null;
 	let islandView: Island | undefined = $state();
+	/** the island's sky kept at day; every visit starts on the real sky */
+	let islandDay = $state(false);
 	let loading = $state(true);
 
 	let cityData = $state<api.City | null>(null);
@@ -228,6 +231,7 @@
 		const city = inside;
 		insideSlug = null;
 		selected = null;
+		islandDay = false;
 		world?.setPaused(false);
 		if (city) world?.focus(api.tileOf(city)!, visibleMiddle(), 0.62);
 	}
@@ -433,6 +437,8 @@
 				<strong>{inside.name}</strong>
 				<span class="dim">{inside.citizens} {inside.citizens === 1 ? 'citizen' : 'citizens'} · {standing.length} {standing.length === 1 ? 'settlement' : 'settlements'} · {clock}</span>
 			</button>
+			<!-- the island's sky: the real one, or kept at day ($lib/sandbox-kit) -->
+			<SkyToggle bind:on={islandDay} onchange={(on) => islandView?.alwaysDay(on)} />
 		{:else}
 			<a class="pill back" href="{base}/app/" aria-label="Back to the dashboard">←</a>
 			<div class="pill brand">

@@ -457,7 +457,8 @@ export type Curve = number | [number, number][];
 export const SHOT_LIGHTS = ['sun', 'fill', 'glow', 'lamps', 'sky'] as const;
 /** A world shot as data (contract C2, game/film/shot.js `Spec`): everything the world needs to draw every frame of it. */
 export type ShotSpec = {
-	world: { sandbox: 'sandbox-4'; build: { commit: string; hash: string; file?: string } | null; seed: number; stand: [number, number]; dome?: number; props?: string; clock: number };
+	/** which sandbox and where in it (game/film/worlds.js); dome and props are Sandbox 4's */
+	world: { sandbox: 'sandbox-1' | 'sandbox-2' | 'sandbox-3' | 'sandbox-4'; area?: string; build: { commit: string; hash: string; file?: string } | null; seed: number; stand: [number, number]; dome?: number; props?: string; clock: number };
 	seconds: number;
 	fps: number;
 	/** the shape the shot is composed for; the others follow its framing */
