@@ -582,6 +582,20 @@ export function standIn(pose: StandInPose = 'stand'): THREE.Group {
 	limb(J.hip, chest, 0.15);
 	limb(chest, J.neck, 0.17);
 	ball(J.head, 0.105, 1.15);
+	// which way it looks: a nose, and a darker band where the eyes are
+	const look = (pose === 'fallen' ? v3(0, 1, 0) : pose === 'sit' ? v3(0, -0.25, 1) : v3(0, 0, 1)).normalize();
+	const nose = new THREE.Mesh(new THREE.ConeGeometry(0.022, 0.05, 10), clay);
+	nose.position.copy(J.head).addScaledVector(look, 0.11);
+	nose.quaternion.setFromUnitVectors(v3(0, 1, 0), look);
+	g.add(nose);
+	// two dark eyes either side of the nose, a little above it
+	const side = pose === 'fallen' ? v3(1, 0, 0) : v3(0, 1, 0).cross(look).normalize();
+	const brow = pose === 'fallen' ? v3(0, 0, -1) : v3(0, 1, 0);
+	for (const e of [-1, 1]) {
+		const eye = new THREE.Mesh(new THREE.SphereGeometry(0.016, 10, 8), std('#4a4740', 0.8)());
+		eye.position.copy(J.head).addScaledVector(look, 0.095).addScaledVector(side, e * 0.04).addScaledVector(brow, 0.03);
+		g.add(eye);
+	}
 	for (const s of [-1, 1]) {
 		const at = (p: number[]) => v3(s * p[0]!, p[1]!, p[2]!);
 		const hip = J.hip.clone().add(v3(s * 0.1, -0.03, 0));
