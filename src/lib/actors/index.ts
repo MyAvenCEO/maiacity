@@ -11,7 +11,7 @@ import type { Cast } from './rig';
 export type Actor = { id: string; label: string; note: string; from: string; make: () => Cast };
 
 export const ACTORS: Actor[] = [
-	{ id: 'stand-in', label: 'Stand-in', note: 'a person of 1.80 m, rigged head to toe — 17 bones under one skin, any pose, any move', from: 'the room: Day 01, Day 02', make: () => human() },
+	{ id: 'stand-in', label: 'Stand-in', note: 'a person of 1.70 m, bald, rigged head to toe — 17 bones under one skin, any pose, any move', from: 'the room: Day 01, Day 02', make: () => human() },
 	{ id: 'hen', label: 'Hen', note: 'scratches, walks with her head held still, pecks, flaps', from: 'Sandbox 4: the runs, under the trees', make: () => hen() },
 	{ id: 'hen-brown', label: 'Hen, brown', note: 'the same hen in her brown coat', from: 'Sandbox 4: the runs, under the trees', make: () => hen('#b8703a') },
 	{ id: 'goose', label: 'Goose', note: 'a long neck in three bones: waddles, grazes, hisses with its wings up', from: 'Sandbox 4: along the streams', make: () => goose() },
