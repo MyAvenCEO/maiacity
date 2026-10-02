@@ -15,7 +15,7 @@
 import * as THREE from 'three';
 import { RectAreaLightUniformsLib } from 'three/addons/lights/RectAreaLightUniformsLib.js';
 import { connectFilm, createSky, createStage, createWalker, filmDraws, filmHoldsSize } from '$lib/sandbox-kit';
-import { CRATE, bed, chair, crateTower, edisonBulb, framedPicture, neewerCb60, sheepskin } from '$lib/models/furniture';
+import { CRATE, bed, chair, crateTower, edisonBulb, framedPicture, neewerCb60, sheepskin, standIn } from '$lib/models/furniture';
 import { limedOak, plasterBump } from '$lib/models/textures';
 
 /** The room's measure (m). */
@@ -323,6 +323,18 @@ export async function mountRoom(container: HTMLElement, onProgress: (label: stri
 		scene.add(l, l.target);
 	}
 	const cb60Face = cb60.userData.face as THREE.MeshStandardMaterial;
+	// the stand-ins: a neutral figure where Samuel will be, to block and test a shot before he films it — each one a set
+	// a shot names (`world.props`), hidden otherwise
+	const standIns: Record<string, THREE.Object3D> = {
+		'stand-in sitting': place(standIn('sit'), 0.6, -0.95, Math.PI / 2), // on the bed's edge, facing the window wall
+		'stand-in fallen': place(standIn('fallen'), 0.6, -0.95, Math.PI / 2), // fallen back across the bed, looking up
+		'stand-in window': place(standIn('stand'), 1.08, 0.3, Math.PI / 2) // at the window, looking out
+	};
+	const sets = ((window as unknown as { __sets?: Record<string, THREE.Object3D> }).__sets ??= {});
+	for (const [name, o] of Object.entries(standIns)) {
+		o.visible = false;
+		sets[name] = o;
+	}
 
 	/* ── the door: a white flush door in its frame in the left wall, a lever handle, the vent at its foot ── */
 	const dz = (DOOR.z0 + DOOR.z1) / 2;
@@ -445,6 +457,7 @@ export async function mountRoom(container: HTMLElement, onProgress: (label: stri
 		dispose() {
 			cancelAnimationFrame(frame);
 			film.disconnect();
+			for (const name of Object.keys(standIns)) delete sets[name];
 			walker.dispose();
 			sky.dispose();
 			stage.dispose();

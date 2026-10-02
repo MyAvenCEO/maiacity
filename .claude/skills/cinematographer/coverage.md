@@ -6,32 +6,32 @@ list uses them.
 
 ## Shot sizes
 
-| Size | Deutsch | Frames | Says |
-|---|---|---|---|
-| EWS — extreme wide | Panorama, Weit | the whole landscape, the person a dot | where on earth; scale; isolation |
-| WS — wide | **Totale** | the whole place, the person small in it | where we are; establishes the scene |
-| FS — full shot | Halbtotale | the whole person, head to feet | the body, how he moves through the place |
-| MWS — medium wide ("American") | Amerikanische | from the knees up | action and gesture together |
-| MS — medium | Halbnah | from the waist up | the action, who is doing it |
-| MCU — medium close-up | Nah | chest up | talk; the face with its gesture |
-| CU — close-up | Groß | the face | the feeling |
-| ECU — extreme close-up | Detail, ganz groß | the eyes, a mouth, a hand | the moment of a feeling or a decision |
-| Insert | Detail | a thing: a switch, a seed, a page | what matters is this object, now |
+| Size | Frames | Says |
+|---|---|---|
+| EWS — extreme wide | the whole landscape, the person a dot | where on earth; scale; isolation |
+| WS — wide (the master) | the whole place, the person small in it | where we are; establishes the scene |
+| FS — full shot | the whole person, head to feet | the body, how he moves through the place |
+| MWS — medium wide ("cowboy") | from the knees up | action and gesture together |
+| MS — medium | from the waist up | the action, who is doing it |
+| MCU — medium close-up | chest up | talk; the face with its gesture |
+| CU — close-up | the face | the feeling |
+| ECU — extreme close-up | the eyes, a mouth, a hand | the moment of a feeling or a decision |
+| Insert | a thing: a switch, a seed, a page | what matters is this object, now |
 
 ## Angles
 
-| Angle | Deutsch | Carries |
-|---|---|---|
-| Eye level | Normalsicht | neutral, the default |
-| High | Aufsicht | small, watched, vulnerable |
-| Low | Untersicht | strong, rising |
-| Overhead, top-down | Vogelperspektive | a map, a pattern, a box seen from above |
-| Worm's eye | Froschperspektive | huge, towering |
-| Dutch | gekippt | something is wrong |
-| Over the shoulder (OTS) | über die Schulter | we are with him, looking where he looks |
-| POV | subjektive Kamera | we are him |
-| Profile / three-quarter / frontal | Profil / Dreiviertel / frontal | observed / natural / direct address |
-| Reverse | Gegenschuss | the other side of a look |
+| Angle | Carries |
+|---|---|
+| Eye level | neutral, the default |
+| High | small, watched, vulnerable |
+| Low | strong, rising |
+| Overhead, top-down | a map, a pattern, a box seen from above |
+| Worm's eye | huge, towering |
+| Dutch | something is wrong |
+| Over the shoulder (OTS) | we are with him, looking where he looks |
+| POV | we are him |
+| Profile / three-quarter / frontal | observed / natural / direct address |
+| Reverse | the other side of a look |
 
 ## Creative angles a crew of one can shoot
 
@@ -52,7 +52,7 @@ list uses them.
 
 ## The standard coverage of one scene
 
-1. **The Totale** (WS, or EWS outside): the whole place once — the establishing frame.
+1. **The master** (WS, or EWS outside): the whole place once — the establishing frame.
 2. **The medium** (MS or FS): the action and who does it.
 3. **Two close-ups** (CU, MCU): the face from two sides (front three-quarter, profile).
 4. **Two inserts** (ECU, detail): the hands, the thing.
@@ -65,7 +65,7 @@ action repeated in every set-up so it can be cut on (`director`, `staging.md`); 
 entering and leaving the frame.
 
 **A crew of one covers it from three or four tripod positions:**
-- **A — the corner:** the Totale on the 0.5× or 1×, and the medium on the 2× from the same spot.
+- **A — the corner:** the master on the 0.5× or 1×, and the medium on the 2× from the same spot.
 - **B — front three-quarter:** the MCU and the close-up on the 1× and 2×.
 - **C — low or high:** the inserts and the creative angle.
 - **D — handheld or chest-held:** the POV.
