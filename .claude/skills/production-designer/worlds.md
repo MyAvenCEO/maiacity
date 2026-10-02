@@ -38,6 +38,9 @@ Samuel's real bedroom (Day 02), rebuilt from seven photos: 3.10 × 4.50 m, 2.55 
   - The Edison bulb hangs on a short cord; the CB60 light stands on its stand (`neewer-cb60`).
 - **Walked** at a room's pace, kept off the walls and out of the furniture by solid boxes. **Filmed** as
   `world.sandbox: 'room'` — its lights are the shot's `lamps` (the bulb) and `cb60`.
+- **Stand-ins** (the rigged stand-in, `src/lib/actors/human.ts`), each a set a shot names in `world.props`, hidden
+  otherwise: `stand-in sitting` on the bed's edge, elbows on its knees; `stand-in fallen` back across the bed, arms
+  out, face to the ceiling; `stand-in window` standing at the window, looking out.
 
 ## The Apartment of Samuel (`src/lib/worlds/apartment.ts`)
 
