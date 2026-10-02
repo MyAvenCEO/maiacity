@@ -3,7 +3,7 @@
 // renders it on demand — live in the studio, as a proxy, or as a 4K log plate at render time.
 //
 //   spec = {
-//     world:    { sandbox: 'sandbox-1' … 'sandbox-4', area?, build: { commit, hash, file? } | null, seed, stand: [x, z],
+//     world:    { sandbox: 'sandbox-1' … 'sandbox-4' | 'room', area?, build: { commit, hash, file? } | null, seed, stand: [x, z],
 //                 dome?, props?, clock },   which world (game/film/worlds.js) and where in it; dome and props are Sandbox 4's
 //     seconds, fps: 30, aspect: '1:1',          the shot's length, frame rate, and the shape it was composed for
 //     camera:   game/film/camera.js (move · orbit · turn · fly · whip · keys, with a curve),
@@ -49,7 +49,7 @@ import { DEFAULT_SANDBOX, WORLDS } from './worlds.js';
  * }} Spec
  */
 /** @typedef {'sun' | 'fill' | 'glow' | 'lamps' | 'sky' | 'glass'} LightId */
-/** @typedef {'sandbox-1' | 'sandbox-2' | 'sandbox-3' | 'sandbox-4'} Sandbox */
+/** @typedef {'sandbox-1' | 'sandbox-2' | 'sandbox-3' | 'sandbox-4' | 'room'} Sandbox */
 
 /** The delivery shapes, width over height. */
 export const SHAPES = /** @type {Record<Shape, number>} */ ({ '1:1': 1, '16:9': 16 / 9, '9:16': 9 / 16, '4:5': 4 / 5 });
