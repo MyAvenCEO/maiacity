@@ -796,11 +796,15 @@ export class Studio {
 		/** @type {ScriptScene[]} */
 		const out = [];
 		const lines = this.clips.filter((c) => c.track === 'A1').sort((a, b) => a.start - b.start);
-		for (const c of this.clips.filter((c) => c.track === 'V1').sort((a, b) => a.start - b.start)) {
+		const shots = this.clips.filter((c) => c.track === 'V1').sort((a, b) => a.start - b.start);
+		// each line is said under one shot: the last that has begun where it begins (a cut a hair after the line's
+		// start, or a shot that ends a hair after it, never puts it under two)
+		const under = new Map(lines.map((l) => [l.id, shots.findLast((c) => c.start - 0.05 <= l.start)?.id]));
+		for (const c of shots) {
 			const scene = c.script?.scene ?? out.at(-1)?.scene ?? 'Scene 1';
 			if (out.at(-1)?.scene !== scene) out.push({ scene, shots: [] });
 			const kind = c.kind === 'slate' ? 'text' : isWorld(c) ? 'world' : this.byHash.get(c.hash ?? '')?.kind === 'image' ? 'storyboard' : 'footage';
-			const mine = lines.filter((l) => l.start >= c.start - 0.05 && l.start < c.start + c.dur);
+			const mine = lines.filter((l) => under.get(l.id) === c.id);
 			/** @type {ScriptScene} */ (out.at(-1)).shots.push({ clip: c, stage: kind, lines: mine });
 		}
 		return out;
