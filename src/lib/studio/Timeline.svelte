@@ -262,8 +262,8 @@
 		return d;
 	}
 	/** a feeling's family, for its colour: the warm ones, the cold ones, and the open ones that pull forward */
-	const WARM = /^(awe|wonder|hope|joy|relief|pride|warmth|tenderness|belonging|delight|calm|peace|trust|love|gratitude|excitement|triumph|freedom)/i;
-	const COLD = /^(unease|dread|fear|doubt|loneliness|isolation|confinement|sadness|grief|frustration|anger|shame|disbelief|tension|pressure|loss|longing)/i;
+	const WARM = /^(awe|wonder|hope|joy|relief|pride|warmth|tenderness|belonging|delight|calm|peace|trust|love|gratitude|excitement|triumph|freedom|courage|resolve|conviction|belief|determination)/i;
+	const COLD = /^(unease|dread|fear|doubt|loneliness|isolation|confinement|sadness|grief|frustration|anger|shame|disbelief|tension|pressure|loss|longing|vulnerability|exposure)/i;
 	const feelKind = (/** @type {string} */ f) => (WARM.test(f) ? 'warm' : COLD.test(f) ? 'cold' : 'open');
 
 	// during playback the view follows the playhead: a page on when it nears the right edge, back when it is off

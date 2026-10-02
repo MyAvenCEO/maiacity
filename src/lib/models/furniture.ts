@@ -541,3 +541,60 @@ export function neewerCb60({ height = 1.5, tilt = -0.18 }: { height?: number; ti
 	g.userData.aim = v3(0, 0, 1).applyEuler(head.rotation);
 	return g;
 }
+
+/* ── the stand-in: a neutral figure to block shots with ─────────────────── */
+
+export type StandInPose = 'stand' | 'sit' | 'fallen';
+
+/**
+ * A stand-in: a neutral clay-grey figure of 1.80 m, as a film blocks a shot before its actor is there (Spielberg's
+ * second team) — never a likeness of anyone. `stand` upright, arms down; `sit` on an edge 0.5 m high, elbows on the
+ * knees; `fallen` back from that edge — the legs still over it, the back on the bed, arms out, the face to the ceiling.
+ * Its feet (or its seat) at its origin, facing +z.
+ */
+export function standIn(pose: StandInPose = 'stand'): THREE.Group {
+	const g = new THREE.Group();
+	g.name = `stand-in, ${pose}`;
+	const clay = std('#a8a49b', 0.92)();
+	const limb = (a: THREE.Vector3, b: THREE.Vector3, r: number) => {
+		const len = a.distanceTo(b);
+		const m = new THREE.Mesh(new THREE.CapsuleGeometry(r, Math.max(0.001, len), 6, 12), clay);
+		m.position.copy(a).add(b).multiplyScalar(0.5);
+		m.quaternion.setFromUnitVectors(v3(0, 1, 0), b.clone().sub(a).normalize());
+		m.castShadow = m.receiveShadow = true;
+		g.add(m);
+	};
+	const ball = (at: THREE.Vector3, r: number, sy = 1) => {
+		const m = new THREE.Mesh(new THREE.SphereGeometry(r, 20, 14), clay);
+		m.position.copy(at);
+		m.scale.y = sy;
+		m.castShadow = m.receiveShadow = true;
+		g.add(m);
+	};
+	// the joints of each pose (m): hips, shoulders, head; knees and feet; elbows and hands, left and right (±x)
+	const J = {
+		stand: { hip: v3(0, 0.95, 0), neck: v3(0, 1.48, 0), head: v3(0, 1.67, 0.01), knee: [0.1, 0.5, 0.02], foot: [0.11, 0.06, 0.05], elbow: [0.24, 1.16, -0.02], hand: [0.25, 0.86, 0.03] },
+		sit: { hip: v3(0, 0.52, 0), neck: v3(0, 1.0, 0.1), head: v3(0, 1.2, 0.16), knee: [0.11, 0.52, 0.44], foot: [0.12, 0.05, 0.48], elbow: [0.2, 0.6, 0.36], hand: [0.05, 0.58, 0.46] },
+		fallen: { hip: v3(0, 0.52, 0), neck: v3(0, 0.6, -0.52), head: v3(0, 0.63, -0.72), knee: [0.12, 0.5, 0.42], foot: [0.13, 0.05, 0.46], elbow: [0.46, 0.6, -0.56], hand: [0.66, 0.6, -0.4] }
+	}[pose];
+	// the trunk: the pelvis, the torso up to the neck, the head
+	const chest = J.hip.clone().lerp(J.neck, 0.62);
+	limb(J.hip, chest, 0.15);
+	limb(chest, J.neck, 0.17);
+	ball(J.head, 0.105, 1.15);
+	for (const s of [-1, 1]) {
+		const at = (p: number[]) => v3(s * p[0]!, p[1]!, p[2]!);
+		const hip = J.hip.clone().add(v3(s * 0.1, -0.03, 0));
+		const shoulder = J.neck.clone().add(J.neck.clone().sub(J.hip).normalize().multiplyScalar(-0.05)).add(v3(s * 0.2, 0, 0));
+		limb(hip, at(J.knee), 0.075);
+		limb(at(J.knee), at(J.foot), 0.06);
+		const foot = new THREE.Mesh(new RoundedBoxGeometry(0.1, 0.07, 0.25, 2, 0.03), clay);
+		foot.position.copy(at(J.foot)).add(v3(0, -0.02, 0.07));
+		foot.castShadow = true;
+		g.add(foot);
+		limb(shoulder, at(J.elbow), 0.05);
+		limb(at(J.elbow), at(J.hand), 0.042);
+		ball(at(J.hand), 0.05);
+	}
+	return g;
+}

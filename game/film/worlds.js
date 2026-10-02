@@ -25,7 +25,7 @@ export const WORLDS = {
 	'sandbox-4': { label: 'Sandbox 4 · a dome cell', areas: null, domes: 13, sets: ['tired-land'] },
 	// a real room, measured from photos: a 14 m² bedroom — the bed, two wine-crate towers, two chairs, the window, the
 	// door, a bulb (src/lib/worlds/room.ts; Day 02)
-	room: { label: 'The room · fourteen square metres', areas: null },
+	room: { label: 'The room · fourteen square metres', areas: null, sets: ['stand-in sitting', 'stand-in fallen', 'stand-in window'] },
 	// the tired land on its own: the fields, the highway, the trucks (src/lib/worlds/tired-land.ts; the same set as
 	// Sandbox 4's `tired-land`)
 	'tired-land': { label: 'The tired land · fields, a highway, trucks', areas: null }
