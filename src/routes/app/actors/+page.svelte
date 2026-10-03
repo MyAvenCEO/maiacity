@@ -1,16 +1,19 @@
 <!--
 	Actors: everyone and everything rigged to move (src/lib/actors) — the stand-in a shot is blocked with and the animals
-	of the worlds — one at a time on a turntable, playing its moves. The stand-in also holds its poses, and any joint of
+	of the worlds — kind by kind down the left (the chickens, the rabbits, the goats …), the kind's variants (its breeds,
+	the rooster and the chick) to switch between on the right, one at a time on a turntable, playing its moves. The stand-in also holds its poses, and any joint of
 	it can be turned by hand (the pose copied out as data). Drag to turn round it, scroll to come closer. An admin's.
 -->
 <script lang="ts">
 	import { onDestroy, onMount } from 'svelte';
-	import { ACTORS, type Actor } from '$lib/actors';
+	import { FAMILIES, type Actor, type Family } from '$lib/actors';
 	import PickList from '$lib/app/PickList.svelte';
 	import type { Cast, Pose, V3 } from '$lib/actors/rig';
 
 	let canvasBox = $state<HTMLDivElement>();
-	let chosen = $state<Actor>(ACTORS[0]!);
+	/** the kind chosen on the left, and which of its variants is on the turntable */
+	let chosen = $state<Family>(FAMILIES[0]!);
+	let variant = $state<Actor>(FAMILIES[0]!.variants[0]!);
 	let cast = $state.raw<Cast | null>(null);
 	/** what it does: a move it plays, or a pose it holds */
 	let doing = $state<{ kind: 'clip' | 'pose'; name: string }>({ kind: 'clip', name: '' });
@@ -53,7 +56,7 @@
 		show = async (a: Actor) => {
 			// an animal's skin is meshed off the page first; picked away from meanwhile, it is not shown
 			await a.ready?.();
-			if (chosen.id !== a.id) return;
+			if (variant.id !== a.id) return;
 			if (cast) scene.remove(cast.rig.object);
 			if (grid) scene.remove(grid);
 			const c = a.make();
@@ -97,7 +100,7 @@
 		const ro = new ResizeObserver(resize);
 		ro.observe(box);
 		resize();
-		show(chosen);
+		show(variant);
 		let frame = 0;
 		const start = performance.now();
 		const tick = () => {
@@ -121,8 +124,12 @@
 	});
 	onDestroy(() => dispose?.());
 
-	const pick = (a: Actor) => {
-		chosen = a;
+	const pick = (f: Family) => {
+		chosen = f;
+		vary(f.variants[0]!);
+	};
+	const vary = (a: Actor) => {
+		variant = a;
 		show?.(a);
 	};
 	const play = (name: string) => (doing = { kind: 'clip', name });
@@ -152,9 +159,17 @@
 </svelte:head>
 
 <main class="actors">
-	<PickList title="Actors" lede="Everyone and everything rigged to move: the stand-in a shot is blocked with, and the animals of the worlds." items={ACTORS} {chosen} where={(a) => a.from} onpick={pick} />
+	<PickList title="Actors" lede="Everyone and everything rigged to move: the stand-in a shot is blocked with, and the animals of the worlds, kind by kind." items={FAMILIES} {chosen} where={(f) => `${f.variants.length > 1 ? `${f.variants.length} · ` : ''}${f.from}`} onpick={pick} />
 	<section class="view">
 		<div class="canvas" bind:this={canvasBox}></div>
+		{#if chosen.variants.length > 1}
+			<nav class="variants" aria-label="{chosen.label}: variants">
+				<span class="label">{chosen.label}</span>
+				{#each chosen.variants as v (v.id)}
+					<button class:on={variant.id === v.id} aria-current={variant.id === v.id ? 'true' : undefined} onclick={() => vary(v)}>{v.label}</button>
+				{/each}
+			</nav>
+		{/if}
 		{#if cast}
 			<div class="moves">
 				<span class="label">Moves</span>
@@ -191,7 +206,8 @@
 			{/if}
 		{/if}
 		<div class="readout">
-			<b>{chosen.label}</b>
+			<b>{chosen.variants.length > 1 ? `${chosen.label} · ${variant.label}` : chosen.label}</b>
+			{#if chosen.variants.length > 1}<span class="what">{variant.note}</span>{/if}
 			{#if size && cast}<span>{measure(Math.max(size[0], size[2]))} long · {measure(size[1])} high · {cast.rig.names.length} bones</span>{/if}
 			<small>Drag to turn round it · scroll to come closer{doing.kind === 'pose' ? ' · turn any joint by hand' : ''}</small>
 		</div>
@@ -220,6 +236,7 @@
 	}
 
 	.moves,
+	.variants,
 	.joints,
 	.readout {
 		position: absolute;
@@ -273,6 +290,37 @@
 		color: #fff;
 	}
 
+	/* the kind's variants, down the right: one pressed, the one on the turntable */
+	.variants {
+		top: 5.2rem;
+		right: 1rem;
+		display: flex;
+		flex-direction: column;
+		align-items: stretch;
+		gap: 0.3rem;
+		max-height: calc(100% - 7rem - var(--nav-room));
+		overflow: auto;
+	}
+
+	.variants .label {
+		margin: 0 0 0.15rem;
+	}
+
+	.variants button {
+		padding: 0.3rem 0.75rem;
+		border: 1px solid rgb(0 0 0 / 0.12);
+		border-radius: 999px;
+		background: rgb(255 255 255 / 0.7);
+		text-align: left;
+		white-space: nowrap;
+	}
+
+	.variants button.on {
+		background: #1f2a23;
+		border-color: #1f2a23;
+		color: #fff;
+	}
+
 	.joints {
 		top: 5.2rem;
 		right: 1rem;
@@ -314,8 +362,13 @@
 		gap: 0.15rem;
 	}
 
-	.readout small {
+	.readout small,
+	.readout .what {
 		opacity: 0.6;
+	}
+
+	.readout .what {
+		max-width: 26rem;
 	}
 
 	@media (max-width: 720px) {
@@ -327,6 +380,15 @@
 		.joints {
 			top: auto;
 			bottom: calc(5.5rem + var(--nav-room));
+		}
+
+		/* across the top under the moves on a phone, scrolling sideways */
+		.variants {
+			top: auto;
+			left: 1rem;
+			bottom: calc(6.5rem + var(--nav-room));
+			flex-direction: row;
+			overflow-x: auto;
 		}
 	}
 </style>
