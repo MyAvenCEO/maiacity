@@ -704,14 +704,20 @@ export const MIGRATIONS: Migration[] = [
     // became (Test, The 1 million decision, Thinking outside the box, 233 settlers, how it starts) or the idea it is —
     // in the items', the timelines' and the shots' project alike (src/lib/stories/names.js holds the same list). The
     // days that did not become stories are ideas again, their drafts kept for the Writing step; no title starts with
-    // its day any more.
+    // its day any more. A story's name is one item's (ix_content_project): an old day whose name another item already
+    // has, or that two items shared, keeps no project, as in 0016.
     id: "0032-stories-not-days",
     sql: `
       CREATE TEMP TABLE day_names (day INT PRIMARY KEY, name TEXT NOT NULL, story BOOLEAN NOT NULL DEFAULT false);
       INSERT INTO day_names (day, name) VALUES (0, 'Test'), (1, 'The 1 million decision'), (2, 'Thinking outside the box'), (4, 'Act before you think'), (5, 'The first settlement'), (6, 'The food forest'), (7, 'Weight of unused potential'), (8, 'avenMAIA, the mayor'), (9, 'Hearts and minds'), (10, 'Hearts every two minutes'), (11, 'The Earth in cards'), (12, 'First believer pays least'), (13, 'Invited into a home'), (14, 'One tent to 233'), (15, 'Inside the domes'), (16, 'The solar factory dome'), (17, 'Thirteen domes, one world'), (18, 'Homes and forest sounds'), (19, '233 settlers, how it starts');
       UPDATE day_names SET story = true WHERE day IN (0, 1, 2, 19);
-      UPDATE content_items c SET project = n.name, status = CASE WHEN n.story THEN c.status ELSE 'idea' END
-        FROM day_names n WHERE c.project ~* '^\\s*day[\\s-]*[0-9]+\\s*$' AND substring(c.project from '[0-9]+')::int = n.day;
+      CREATE TEMP TABLE day_items AS SELECT c.id, c.created, n.name, n.story
+        FROM content_items c JOIN day_names n ON c.project ~* '^\\s*day[\\s-]*[0-9]+\\s*$' AND substring(c.project from '[0-9]+')::int = n.day;
+      UPDATE content_items c SET status = CASE WHEN d.story THEN c.status ELSE 'idea' END,
+        project = CASE WHEN NOT EXISTS (SELECT 1 FROM content_items o WHERE o.project = d.name)
+          AND d.id = (SELECT d2.id FROM day_items d2 WHERE d2.name = d.name ORDER BY d2.created, d2.id LIMIT 1) THEN d.name END
+        FROM day_items d WHERE c.id = d.id;
+      DROP TABLE day_items;
       UPDATE timelines t SET project = n.name
         FROM day_names n WHERE t.project ~* '^\\s*day[\\s-]*[0-9]+\\s*$' AND substring(t.project from '[0-9]+')::int = n.day;
       UPDATE shots s SET project = n.name
