@@ -5,8 +5,8 @@
 	bar or a back button of its own, and everything else — the games, the worlds, the admin's tools — is a tile on the
 	dashboard.
 
-	Full-screen pages keep what they show at their foot clear of it with --nav-room (src/app.css). Pinned to an iPhone's
-	home screen it sits lower by the gap iOS leaves at the foot of the screen ($lib/app/screenGap.js).
+	Where it floats and the room it takes are said once, in src/app.css (--nav-foot, --nav-height, --nav-room): full-screen
+	pages keep what they show at their foot above it with --nav-room.
 -->
 <script>
 	import { base } from '$app/paths';
@@ -55,10 +55,10 @@
 </nav>
 
 <style>
-	/* centred, as wide as its items, never wider than the screen (clear of its edges and the notch) */
+	/* centred, as wide as its items, never wider than the screen (clear of its edges and the notch), at --nav-foot */
 	.pill {
 		position: fixed;
-		bottom: calc(14px + env(safe-area-inset-bottom, 0px) - var(--screen-gap, 0px));
+		bottom: var(--nav-foot);
 		left: max(8px, env(safe-area-inset-left, 0px));
 		right: max(8px, env(safe-area-inset-right, 0px));
 		z-index: 50;
@@ -169,9 +169,13 @@
 		color: var(--terracotta) !important;
 	}
 
-	/* a phone, upright or on its side, and a narrow window: icons only, each as wide as a finger (src/app.css keeps
-	   --nav-room to these sizes) */
+	/* a phone, upright or on its side, and a narrow window: icons only, each as wide as a finger, the pill 52px tall
+	   (--nav-height, src/app.css) */
 	@media (max-width: 760px), (max-height: 500px) {
+		.pill {
+			gap: 0;
+			padding: 4px;
+		}
 		.item span:not(.avatar) {
 			display: none;
 		}
@@ -179,14 +183,6 @@
 			width: 2.8rem;
 			min-width: 0;
 			padding: 0.55rem 0;
-		}
-	}
-
-	@media (max-width: 560px) {
-		.pill {
-			bottom: calc(10px + env(safe-area-inset-bottom, 0px) - var(--screen-gap, 0px));
-			gap: 0;
-			padding: 4px;
 		}
 	}
 </style>

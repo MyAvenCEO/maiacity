@@ -60,16 +60,31 @@ body {
 	}
 }
 
-/* The room the app's nav pill takes at the foot of the screen ($lib/app/NavPill.svelte), with the home bar under it: a
-   full-screen page keeps what it shows at its foot above it (the joystick, a hint, a sheet, the studio's timeline).
-   Kept to the pill's sizes: with its words on a desktop, its icons alone on a phone or in a narrow window. */
+/* Pinned to an iPhone's home screen, with the status bar see-through over the page, iOS gives a page that does not
+   scroll a frame cut short at its foot by the status bar's height, and draws nothing below it: a sandbox or a world,
+   all of it fixed to the screen, ended over a strip of bare page, while the dashboard, which scrolls, always had the
+   whole screen. So no page of the pinned app is shorter than the screen and its status bar: every one scrolls, if only
+   by that much, and every one has the whole screen. (Only pinned: a browser tab keeps its pages as they are.) */
+@media (display-mode: standalone) {
+	html {
+		min-height: calc(100% + env(safe-area-inset-top, 0px));
+	}
+}
+
+/* Where the app's nav pill floats ($lib/app/NavPill.svelte), the one place it is said: its foot above the screen's (on
+   an iPhone 18px, into the home bar's strip and just clear of the bar itself, upright or on its side), its height
+   (with its words on a desktop, its icons alone on a phone or in a narrow window), and the room it takes, which a
+   full-screen page keeps what it shows at its foot above (the joystick, a hint, a sheet, the studio's working steps). */
 :root {
-	--nav-room: calc(5.25rem + env(safe-area-inset-bottom, 0px));
+	--nav-foot: max(14px, min(env(safe-area-inset-bottom, 0px), 18px));
+	--nav-height: 64px;
+	--nav-room: calc(var(--nav-foot) + var(--nav-height) + 0.5rem);
 }
 
 @media (max-width: 760px), (max-height: 500px) {
 	:root {
-		--nav-room: calc(4.5rem + env(safe-area-inset-bottom, 0px));
+		--nav-foot: max(8px, min(env(safe-area-inset-bottom, 0px), 18px));
+		--nav-height: 52px;
 	}
 }
 
