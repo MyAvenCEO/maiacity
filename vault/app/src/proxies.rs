@@ -21,7 +21,7 @@ use tauri::{AppHandle, Emitter};
 
 use crate::jobs::{self, Kind};
 use vault_render::tools::Stack;
-use vault_core::{Meta, Vault, ingest::Batch};
+use vault_core::{Meta, Vault, catalog::ANALYSIS, ingest::Batch};
 
 use vault_media::proxy::WORKING;
 
@@ -514,10 +514,11 @@ async fn make(vault: &Vault, hex: &str, name: &str, source: PathBuf) -> Result<(
         }
     }
     // and while the original is at hand: its grading still, at the moment picked for it (a person's, else the
-    // analysis' hero frame), else its middle
+    // analysis' hero frame — its record's: `meta.hero` is only in the view), else its middle
     if !still && !seq {
         at(hex, "grading still", 1.0);
-        let picked = original.meta.get("still_at").and_then(|t| t.as_f64()).or_else(|| original.meta.pointer("/hero/t").and_then(|t| t.as_f64()));
+        let hero = vault.catalog.record(ANALYSIS, hash).await.ok().flatten().and_then(|r| r.pointer("/hero/t")?.as_f64());
+        let picked = original.meta.get("still_at").and_then(|t| t.as_f64()).or(hero);
         if let Err(e) = grading_still_at(vault, hex, name, &path, &profile, picked).await {
             tracing::warn!("grading still of {hex}: {e}");
         }
