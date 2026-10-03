@@ -28,6 +28,10 @@ pub const WORDS_WAIT_HOURS: i64 = 6;
 pub const STALE_HOURS: i64 = 6;
 /// The Day 01 story: what the analysis runs for when nothing else is set.
 pub const DAY_01: &str = "9e89f786b06a26d5d33fa8ed2d77cc828afacc016e1113bb779ab4076243fa26";
+/// The analysis' own version, in every record it writes (`version`): raised when what it makes changes enough to make
+/// every file's again — a record of an older one (none said: 1) is due. A proxy made again is not that: it shows the
+/// same original.
+pub const VERSION: u64 = 1;
 
 pub(crate) fn s<'a>(v: &'a Value, k: &str) -> &'a str {
     v.get(k).and_then(|x| x.as_str()).unwrap_or("")
@@ -113,18 +117,38 @@ pub fn candidates(hex: &str, meta: &Value, proxy_of: &HashMap<String, String>) -
     out
 }
 
-/// Is its analysis due now (its `analysis/<hash>` record)? None yet, or of another source (the proxy was made again),
-/// or not finished and failed fewer than TRIES times.
+/// Is its analysis due now (its `analysis/<hash>` record)? None yet, or made by an older version of the analysis
+/// (`VERSION`), or not finished and failed fewer than TRIES times — or failed for good, of another file than shows it
+/// now (a proxy made again may open where the old one did not). The record is the original's (keyed by its hash: an
+/// original changed is another file, with a record of its own), so a finished one stands whatever shows the file: a
+/// proxy made again (another colour journey) shows the same frames at the same times — nothing is asked again, the
+/// record follows it (`follows`).
 pub fn due(record: Option<&Value>, source: &Source) -> bool {
     let Some(r) = record.filter(|r| r.get("state").is_some()) else { return true };
-    let state = s(r, "state");
-    if s(r, "of") != source.hash().to_hex().as_str() && !s(r, "of").is_empty() {
+    if r["version"].as_u64().unwrap_or(1) < VERSION {
         return true;
     }
-    if state == "done" || state.starts_with("none") {
+    let state = s(r, "state");
+    if finished(state) {
         return false;
     }
-    !(state.starts_with("failed") && r["tries"].as_u64().unwrap_or(0) >= TRIES)
+    !(state.starts_with("failed") && r["tries"].as_u64().unwrap_or(0) >= TRIES) || shown_by_another(r, source)
+}
+
+/// Is what it found final (done, or nothing to find)?
+fn finished(state: &str) -> bool {
+    state == "done" || state.starts_with("none")
+}
+
+/// Was the record made of another file than the one that shows the original now (its proxy made again)?
+fn shown_by_another(r: &Value, source: &Source) -> bool {
+    !s(r, "of").is_empty() && s(r, "of") != source.hash().to_hex().as_str()
+}
+
+/// Does a finished analysis follow its file to a new proxy (made again: `of` another hash)? Its `of` is set to the
+/// new one, quietly — what it found stands.
+pub fn follows(record: Option<&Value>, source: &Source) -> bool {
+    record.is_some_and(|r| finished(s(r, "state")) && !due(Some(r), source) && shown_by_another(r, source))
 }
 
 /// Is another device working on it right now (analysing, and heard from within STALE_HOURS)? Then it is left to it.
@@ -453,8 +477,8 @@ mod tests {
         // only a first thumbnail so far
         assert!(due(Some(&json!({ "thumbnail": "t" })), &src));
         assert!(!due(Some(&json!({ "state": "done", "of": P })), &src));
-        // the proxy was made again: again
-        assert!(due(Some(&json!({ "state": "done", "of": O })), &src));
+        // the proxy was made again: what was found stands (a_proxy_made_again_keeps_the_analysis)
+        assert!(!due(Some(&json!({ "state": "done", "of": O })), &src));
         assert!(due(Some(&json!({ "state": "failed: x", "tries": 2, "of": P })), &src));
         assert!(!due(Some(&json!({ "state": "failed: x", "tries": 3, "of": P })), &src));
         assert!(due(Some(&json!({ "state": "analysing", "progress": 0.4, "of": P })), &src));
@@ -466,6 +490,39 @@ mod tests {
         assert!(!elsewhere(Some(&json!({ "state": "analysing", "device": "me", "updated": "2026-09-30T11:59:00Z" })), "me", now));
         assert_eq!(failed("x", 1), "failed: x — tried 1 of 3, again by itself");
         assert_eq!(failed("x", 3), "failed: x — tried 3 times, waits for a person");
+    }
+
+    #[test]
+    fn a_proxy_made_again_keeps_the_analysis() {
+        // the original analysed through its proxy P; P made again (another colour journey) as Q, named on the original
+        const Q: &str = "0000000000000000000000000000000000000000000000000000000000000003";
+        let orig = json!({ "hash": O, "kind": "video", "class": "original", "size": 900, "meta": { "proxy": Q } });
+        let remade = json!({ "hash": Q, "kind": "video", "class": "proxy", "size": 95, "meta": { "proxy_of": O, "color": { "profile": "acescct" } } });
+        let metas: HashMap<String, Value> = [(O.to_string(), orig.clone()), (Q.to_string(), remade)].into();
+        let src = source(O, &orig, &metas, &HashMap::new(), &set(&[O, Q])).unwrap();
+        assert_eq!(src.hash(), Q.parse::<Hash>().unwrap());
+        let done = json!({ "state": "done", "of": P, "version": VERSION, "hero": { "t": 14.0, "why": "his face in the light" } });
+        // not asked again (its hero frame stays where it is); its `of` follows the new proxy, once
+        assert!(!due(Some(&done), &src));
+        assert!(follows(Some(&done), &src));
+        let followed = patched(Some(&done), &Map::from_iter([("of".into(), json!(Q))]));
+        assert!(!due(Some(&followed), &src) && !follows(Some(&followed), &src));
+        assert_eq!(followed["hero"]["t"], 14.0);
+        // a record of before the version was written down counts as the first
+        assert_eq!(due(Some(&json!({ "state": "done", "of": P })), &src), VERSION > 1);
+        // the analysis' version raised: every older record again (one of a newer app is left alone); nothing follows
+        let older = json!({ "state": "done", "of": P, "version": VERSION - 1 });
+        assert!(due(Some(&older), &src) && !follows(Some(&older), &src));
+        assert!(!due(Some(&json!({ "state": "done", "of": P, "version": VERSION + 1 })), &src));
+        // the original changed: another file, no record of its own yet
+        assert!(due(None, &src));
+        // failed for good through the old proxy: the new one gets a try (it may open where the old did not); not twice
+        let failed_for_good = json!({ "state": "failed: x", "tries": 3, "of": P, "version": VERSION });
+        assert!(due(Some(&failed_for_good), &src) && !follows(Some(&failed_for_good), &src));
+        assert!(!due(Some(&json!({ "state": "failed: x", "tries": 4, "of": Q, "version": VERSION })), &src));
+        // under way, or nothing said of what it looked at: nothing to follow
+        assert!(!follows(Some(&json!({ "state": "analysing", "progress": 0.4, "of": P })), &src));
+        assert!(!follows(Some(&json!({ "state": "done" })), &src) && !follows(None, &src));
     }
 
     #[test]

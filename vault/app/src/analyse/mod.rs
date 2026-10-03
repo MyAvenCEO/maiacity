@@ -11,9 +11,13 @@
 //! the thumbnail (`plan`: merge, finish, thumbnail_time — pure, tested).
 //!
 //! What the catalog gets — `analysis/<hash>` (the original's hash), the shape the server wrote, so the studio and the
-//! MCP read it as before: `{ state, progress, tries?, thumbnail?, of, model, vocabulary, at, seconds, frames, summary:
-//! { line, best_use }, tags, free, labels, segments, cues, device, updated? }` — `state` = queued: why · analysing
-//! (with `progress` 0…1) · done · failed: …; `of` = the hash of what was looked at (a new proxy is analysed again).
+//! MCP read it as before: `{ state, progress, tries?, thumbnail?, of, version, model, vocabulary, at, seconds, frames,
+//! summary: { line, best_use }, tags, free, labels, segments, cues, device, updated? }` — `state` = queued: why ·
+//! analysing (with `progress` 0…1) · done · failed: …; `of` = the hash of what shows the file (its proxy, or a display
+//! still itself); `version` = the analysis' (`plan::VERSION`). What it found is the original's: a proxy made again
+//! (another colour journey) shows the same frames at the same times, so it is not analysed again — the record follows
+//! it (`of`, quietly), and its hero frame stays. Only an older version's record is made again (an original changed is
+//! another file, with a record of its own).
 //! One Mac at a time: another device's analysis that is under way is left to it (unless it went quiet for six hours).
 //!
 //! The hero frame: the moment the analysis picks as the file's best (`hero: { t, why }` in the record) — no file of its
@@ -139,6 +143,15 @@ async fn round(handle: &AppHandle, vault: &Arc<Vault>) -> Result<(), Ask> {
     let mut sources: Vec<(String, Source)> = wanted.iter().filter_map(|(h, m)| Some(((*h).clone(), plan::source(h, m, &metas, &proxy_of, &held)?))).collect();
     sources.sort_by_key(|(_, src)| src.size());
 
+    // a proxy made again shows the same original: what its analysis found stands, the record follows the new proxy
+    for (hex, src) in &sources {
+        if plan::follows(records.get(hex), src) {
+            let of = src.hash().to_hex().to_string();
+            if patch(vault, hex, fields(&[("of", json!(of))])).await.is_ok() {
+                tracing::info!("analysis of {} stands for its new proxy {}", &hex[..12], &of[..12]);
+            }
+        }
+    }
 
     // then the analysis: in scope, due here, a recording once its words have settled
     let only = prem::stories();
@@ -238,7 +251,7 @@ type Tell = Arc<dyn Fn(&str, f64) + Send + Sync>;
 async fn analyse(auth: &crate::auth::Auth, vault: &Arc<Vault>, hex: &str, src: &Source, meta: &Value, transcript: Option<&Value>, me: &str, tell: Tell) -> Result<(), Ask> {
     let started = Instant::now();
     let of = src.hash().to_hex().to_string();
-    let running = |progress: f64| fields(&[("state", json!("analysing")), ("progress", json!(progress)), ("of", json!(of)), ("device", json!(me)), ("updated", json!(vault_core::ingest::now_iso()))]);
+    let running = |progress: f64| fields(&[("state", json!("analysing")), ("progress", json!(progress)), ("of", json!(of)), ("version", json!(plan::VERSION)), ("device", json!(me)), ("updated", json!(vault_core::ingest::now_iso()))]);
     patch(vault, hex, running(0.0)).await?;
     let file = open(vault, src).await?;
     let acescct = src.acescct();
@@ -335,6 +348,7 @@ async fn analyse(auth: &crate::auth::Auth, vault: &Arc<Vault>, hex: &str, src: &
     o.insert("state".into(), json!("done"));
     o.insert("progress".into(), json!(1.0));
     o.insert("of".into(), json!(of));
+    o.insert("version".into(), json!(plan::VERSION));
     o.insert("model".into(), model);
     o.insert("vocabulary".into(), vocabulary);
     o.insert("at".into(), json!(vault_core::ingest::now_iso()));
