@@ -1,56 +1,128 @@
 /*
  * THE ACTORS — everyone and everything rigged to move, as the Actors gallery (/app/actors/) lists it: the stand-in a
- * shot is blocked with, and the animals of the worlds, every breed of them. Each is built by a function that hands
- * back its rig (./rig.ts), its moves (clips) and, for the stand-in, its poses. An animal is its species' (./species/,
- * on its body plan in ./plans/) and a line in ./casts.ts; it shows here with a line below.
+ * shot is blocked with, and the animals of the worlds, kind by kind — the chickens (six breeds of hen, the rooster, the
+ * chick), the rabbits, the geese, the goats, the sheep, the frogs, the bee, the fish — each kind with its variants.
+ * Each is built by a function that hands back its rig (./rig.ts), its moves (clips) and, for the stand-in, its poses.
+ * An animal is its species' (./species/, on its body plan in ./plans/) and a line in ./casts.ts; it shows here with a
+ * line in its kind below.
  */
 import { prepare } from './build';
 import { CASTS } from './casts';
 import { human } from './human';
 import type { Cast } from './rig';
 
-export type Actor = { id: string; label: string; note: string; from: string; make: () => Cast; ready?: () => Promise<void> };
+/** one actor: a breed, a coat, the stand-in */
+export type Actor = { id: string; label: string; note: string; make: () => Cast; ready?: () => Promise<void> };
+/** a kind of actor and its variants (the first shown first) */
+export type Family = { id: string; label: string; note: string; from: string; variants: Actor[] };
 
-const COOPS = 'Sandbox 4: the coops round the squares';
-const animal = (id: string, label: string, note: string, from: string): Actor => ({ id, label, note, from, make: CASTS[id]!, ready: () => prepare(id) });
+const animal = (id: string, label: string, note: string): Actor => ({ id, label, note, make: CASTS[id]!, ready: () => prepare(id) });
 
-export const ACTORS: Actor[] = [
-	{ id: 'stand-in', label: 'Stand-in', note: 'a person of 1.70 m, bald, rigged head to toe — 17 bones under one skin, any pose, any move', from: 'the room: Day 01, Day 02', make: () => human() },
-	animal('chicken-red', 'Hen, red', 'a brown layer, chestnut with gold hackles: walks with her head held still, pecks, scratches, flaps', COOPS),
-	animal('chicken-leghorn', 'Hen, Leghorn', 'white, her big single comb flopped over, white earlobes, yellow legs', COOPS),
-	animal('chicken-australorp', 'Hen, Australorp', 'black with a green sheen, slate legs', COOPS),
-	animal('chicken-barred', 'Hen, barred Rock', 'grey and white in bars across every feather', COOPS),
-	animal('chicken-buff', 'Hen, buff Orpington', 'golden, fluffed up big, pale legs', COOPS),
-	animal('chicken-speckled', 'Hen, speckled Sussex', 'mahogany, every feather tipped white', COOPS),
-	animal('chicken-rooster', 'Rooster', 'red and gold over a black-green breast, a tall comb, sickle feathers arching over his tail: one to each run', COOPS),
-	animal('chicken-chick', 'Chick', 'a yellow ball of down at the hens’ feet', COOPS),
-	animal('rabbit-wild', 'Rabbit, wild agouti', 'grey-brown ticked, white beneath: sits hunched on its long hind feet, hops in a half-bound, nibbles, sits up to look', 'Sandbox 4: the hutches between the coops'),
-	animal('rabbit-dutch', 'Rabbit, Dutch', 'a white blaze, collar and forefeet, the rest black', 'Sandbox 4: the hutches between the coops'),
-	animal('rabbit-lop', 'Rabbit, lop', 'fawn, its ears hanging beside its face', 'Sandbox 4: the hutches between the coops'),
-	animal('rabbit-white', 'Rabbit, white', 'white, pink-eyed', 'Sandbox 4: the hutches between the coops'),
-	animal('rabbit-black', 'Rabbit, black', 'black all over', 'Sandbox 4: the hutches between the coops'),
-	animal('rabbit-fawn', 'Rabbit, fawn', 'sandy, its ears up', 'Sandbox 4: the hutches between the coops'),
-	animal('goose-embden', 'Goose, Embden', 'white, a long neck in three bones held in an S: waddles, grazes, hisses with its wings out', 'Sandbox 4: along the streams'),
-	animal('goose-toulouse', 'Goose, Toulouse', 'grey, barred on the wings, white beneath', 'Sandbox 4: along the streams'),
-	animal('goose-chinese', 'Goose, Chinese', 'fawn and white, a dark stripe down its neck, the knob on its bill', 'Sandbox 4: along the streams'),
-	animal('goat-saanen', 'Goat, Saanen', 'white, hornless, a beard: walks with its hooves set down, grazes, looks round, the tail flicking', 'Sandbox 4: the forest'),
-	animal('goat-alpine', 'Goat, Alpine', 'bay with a black stripe down its back, black legs and face stripes, horns', 'Sandbox 4: the forest'),
-	animal('goat-pied', 'Goat, pied', 'white in patches of brown and black, horns', 'Sandbox 4: the forest'),
-	animal('goat-nubian', 'Goat, Nubian', 'red-tan, a Roman nose, long hanging ears', 'Sandbox 4: the forest'),
-	animal('goat-boer', 'Goat, Boer', 'white with a red-brown head, heavy, horns sweeping back', 'Sandbox 4: the forest'),
-	animal('sheep-whiteface', 'Sheep, whiteface', 'a lumpy fleece in one skin, a white face, pricked ears: walks, grazes, looks up', 'Sandbox 4: grazing between the domes; the island’s meadows'),
-	animal('sheep-suffolk', 'Sheep, Suffolk', 'black face and legs, long black ears', 'Sandbox 4: grazing between the domes; the island’s meadows'),
-	animal('sheep-merino', 'Sheep, merino', 'a heavy crimped fleece down its legs and over its brow', 'Sandbox 4: grazing between the domes; the island’s meadows'),
-	animal('sheep-black', 'Sheep, black', 'one in every flock', 'Sandbox 4: grazing between the domes; the island’s meadows'),
-	animal('sheep-shorn', 'Sheep, shorn', 'a ewe just clipped, her shape showing', 'Sandbox 4: grazing between the domes; the island’s meadows'),
-	animal('frog-bullfrog', 'Frog, bullfrog', 'its legs folded in a Z: sits, its throat pulsing, croaks with a swelling sac, leaps', 'Sandbox 4: the ponds'),
-	animal('frog-green', 'Frog, green', 'a paler green bullfrog', 'Sandbox 4: the ponds'),
-	animal('frog-common', 'Frog, common', 'brown and smaller, the dark mask behind its eye', 'Sandbox 4: the ponds'),
-	animal('bee', 'Bee', '1.5 cm, striped, furred, pollen in its baskets: hovers, flies, its wings beating in a figure of eight', 'Sandbox 4: the hives and the flowers'),
-	animal('fish-koi', 'Koi, orange', 'a wave down its body, a beat of the tail for every length swum: swims, turns, hangs sculling', 'Sandbox 4: the ponds'),
-	animal('fish-kohaku', 'Koi, kohaku', 'white with red', 'Sandbox 4: the ponds'),
-	animal('fish-ogon', 'Koi, ogon', 'metallic gold', 'Sandbox 4: the ponds'),
-	animal('fish-carp', 'Carp', 'bronze, barbels at its mouth', 'Sandbox 4: the ponds'),
-	animal('fish-nile', 'Tilapia, Nile', 'grey-green and barred, its tail edged red', 'Sandbox 4: the aquaponics tanks'),
-	animal('fish-redtilapia', 'Tilapia, red', 'pink-orange', 'Sandbox 4: the aquaponics tanks')
+export const FAMILIES: Family[] = [
+	{
+		id: 'stand-in',
+		label: 'Stand-in',
+		note: 'a person of 1.70 m, bald, rigged head to toe — 17 bones under one skin, any pose, any move',
+		from: 'the room: Day 01, Day 02',
+		variants: [{ id: 'stand-in', label: 'Stand-in', note: 'a person of 1.70 m', make: () => human() }]
+	},
+	{
+		id: 'chicken',
+		label: 'Chicken',
+		note: 'six breeds of hen, the rooster and a chick: walks with the head held still, pecks, scratches, flaps',
+		from: 'Sandbox 4: the coops round the squares',
+		variants: [
+			animal('chicken-red', 'Red hen', 'a brown layer, chestnut with gold hackles, her tail dark'),
+			animal('chicken-leghorn', 'Leghorn', 'white, her big single comb flopped over, white earlobes, yellow legs'),
+			animal('chicken-australorp', 'Australorp', 'black with a green sheen, slate legs'),
+			animal('chicken-barred', 'Barred Rock', 'grey and white in bars across every feather'),
+			animal('chicken-buff', 'Buff Orpington', 'golden, fluffed up big, pale legs'),
+			animal('chicken-speckled', 'Speckled Sussex', 'mahogany, every feather tipped white'),
+			animal('chicken-rooster', 'Rooster', 'red and gold over a black-green breast, a tall comb, sickle feathers arching over his tail: one to each run'),
+			animal('chicken-chick', 'Chick', 'a yellow ball of down at the hens’ feet')
+		]
+	},
+	{
+		id: 'rabbit',
+		label: 'Rabbit',
+		note: 'six coats: sits hunched on its long hind feet, hops in a half-bound, nibbles, sits up to look',
+		from: 'Sandbox 4: the hutches between the coops',
+		variants: [
+			animal('rabbit-wild', 'Wild agouti', 'grey-brown ticked, white beneath, the tail white below'),
+			animal('rabbit-dutch', 'Dutch', 'a white blaze, collar and forefeet, the rest black'),
+			animal('rabbit-lop', 'Lop', 'fawn, its ears hanging beside its face'),
+			animal('rabbit-white', 'White', 'white, pink-eyed'),
+			animal('rabbit-black', 'Black', 'black all over'),
+			animal('rabbit-fawn', 'Fawn', 'sandy, its ears up')
+		]
+	},
+	{
+		id: 'goose',
+		label: 'Goose',
+		note: 'a long neck in three bones held in an S: waddles, grazes, hisses with its wings out',
+		from: 'Sandbox 4: along the streams',
+		variants: [
+			animal('goose-embden', 'Embden', 'white'),
+			animal('goose-toulouse', 'Toulouse', 'grey, barred on the wings, white beneath'),
+			animal('goose-chinese', 'Chinese', 'fawn and white, a dark stripe down its neck, the knob on its bill')
+		]
+	},
+	{
+		id: 'goat',
+		label: 'Goat',
+		note: 'five breeds: walks with its hooves set down, grazes, looks round, the tail flicking',
+		from: 'Sandbox 4: the forest',
+		variants: [
+			animal('goat-saanen', 'Saanen', 'white, hornless, a beard'),
+			animal('goat-alpine', 'Alpine', 'bay with a black stripe down its back, black legs and face stripes, horns'),
+			animal('goat-pied', 'Pied', 'white in patches of brown and black, horns'),
+			animal('goat-nubian', 'Nubian', 'red-tan, a Roman nose, long hanging ears'),
+			animal('goat-boer', 'Boer', 'white with a red-brown head, heavy, horns sweeping back')
+		]
+	},
+	{
+		id: 'sheep',
+		label: 'Sheep',
+		note: 'five breeds, a lumpy fleece in one skin: walks, grazes, looks up',
+		from: 'Sandbox 4: grazing between the domes',
+		variants: [
+			animal('sheep-whiteface', 'Whiteface', 'a white face, pricked ears'),
+			animal('sheep-suffolk', 'Suffolk', 'black face and legs, long black ears'),
+			animal('sheep-merino', 'Merino', 'a heavy crimped fleece down its legs and over its brow'),
+			animal('sheep-black', 'Black', 'one in every flock'),
+			animal('sheep-shorn', 'Shorn', 'a ewe just clipped, her shape showing')
+		]
+	},
+	{
+		id: 'frog',
+		label: 'Frog',
+		note: 'its legs folded in a Z: sits, its throat pulsing, croaks with a swelling sac, leaps',
+		from: 'Sandbox 4: the ponds',
+		variants: [
+			animal('frog-bullfrog', 'Bullfrog', 'olive-brown and mottled, its head green'),
+			animal('frog-green', 'Green', 'a paler green bullfrog'),
+			animal('frog-common', 'Common', 'brown and smaller, the dark mask behind its eye')
+		]
+	},
+	{
+		id: 'bee',
+		label: 'Bee',
+		note: '1.5 cm, striped, furred, pollen in its baskets: hovers, flies, its wings beating in a figure of eight',
+		from: 'Sandbox 4: the hives and the flowers',
+		variants: [animal('bee', 'Honeybee', 'a worker')]
+	},
+	{
+		id: 'fish',
+		label: 'Fish',
+		note: 'a wave down the body, a beat of the tail for every length swum: swims, turns, hangs sculling',
+		from: 'Sandbox 4: the ponds and the aquaponics tanks',
+		variants: [
+			animal('fish-koi', 'Koi, orange', 'in the ponds'),
+			animal('fish-kohaku', 'Koi, kohaku', 'white with red, in the ponds'),
+			animal('fish-ogon', 'Koi, ogon', 'metallic gold, in the ponds'),
+			animal('fish-carp', 'Carp', 'bronze, barbels at its mouth, in the ponds'),
+			animal('fish-nile', 'Nile tilapia', 'grey-green and barred, its tail edged red, in the tanks'),
+			animal('fish-redtilapia', 'Red tilapia', 'pink-orange, in the tanks')
+		]
+	}
 ];
