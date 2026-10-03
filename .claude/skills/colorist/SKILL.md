@@ -25,6 +25,10 @@ post house: balance first, the look on top, never the other way round.
    (`color-story.md`, "Making CG sit with real footage").
 8. **The maths lives in Rust and Metal only.** The studio samples cubes the Mac app bakes; nothing is baked into a
    source.
+9. **The journey before the balance.** Every iPhone 17 Pro shot must read `apple-log-2` from its log atom in the
+   studio: the Apple Log curve, Apple Wide Gamut into AP1 (Bradford), ACEScct. A shot that reads `apple-log` or
+   `unknown` is fixed at its tag (or the phone's setting), never with the balance: Apple Log 2 taken as Apple Log turns
+   skin about 7° towards red and takes up to a quarter of the colour out (`base-correction.md`).
 
 ## The sub-skills
 
@@ -34,10 +38,14 @@ post house: balance first, the look on top, never the other way round.
 | `look.md` | the creative grade | the stack order, teal and orange without ruining skin, interiors that read real, finishing as a kiss, rolling a reference out to the timeline |
 | `color-story.md` | colour across the film | a colour arc for the story, harmony and contrast, film-like density and roll-off, CG beside camera footage, judging on phones |
 
+The research behind law 9 — Apple Log 2's facts, the gurus, an audit of our journey with its fixes, the grading tools
+to add, the capture checklist — is `APPLE-LOG-2-RESEARCH.md` at the repository's root.
+
 ## The order of work
 
 1. The edit is locked (`editor`); the originals are conformed.
-2. Survey every scene's shots on one scope sheet; pick each scene's master; ask Samuel the warmth per scene.
+2. Survey every scene's shots on one scope sheet, **and each shot's journey (its profile and where it was told
+   from)**; pick each scene's master; ask Samuel the warmth per scene.
 3. Base correction, scene by scene, then scene to scene (`base-correction.md`).
 4. The colour arc: which scenes are cold, which warm, where the turns are (`color-story.md`).
 5. The film look against the references, then scene looks, then trims, then secondaries only where still needed,

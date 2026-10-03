@@ -29,6 +29,29 @@ like a camera, not by grading a finished image:
 - **Expose skin the same way every day** and protect windows and sky. Shoot a grey card once from −2 to +2 stops and
   grade the steps to learn where the phone gets noisy and where it clips.
 
+### Apple Log 2 on the iPhone 17 Pro
+
+The same curve as the first Apple Log, in a wider gamut (Apple Wide Gamut); the studio reads it from the file's tag
+(`colorist`, the journey).
+- **Set Log 2:** in the Camera app, Settings → Camera → Formats → ProRes Log Video Encoding → **Log 2** (the 17 Pro can
+  also still record the first Apple Log). Blackmagic Camera (Apple Log 2 since 3.1) or Final Cut Camera 2.0 for manual
+  control.
+- **Codec:** ProRes 422 HQ (10-bit 4:2:2), UHD 3840×2160 — our grading stills are 3840 wide. HEVC log only when storage
+  forces it (4:2:0). **No ProRes RAW yet:** the studio can't read it.
+- **The numbers on a log waveform (video range):** grey card about **49 %** (10-bit 492); light skin +½ to +1 stop,
+  **53–57 %**; 90 % white about 68 % (661); black 15 % (196); each stop about 8.5 %; hold a window or sky to about +5
+  stops (91 %). Know whether the false colour reads the log or the preview LUT — these are the log's.
+- **Under-expose by up to a stop in high contrast** to hold the highlights, then bring it up in the balance (Prolost);
+  never more. Find the real clipping point once with a bright lamp: the code reaches +6 stops, the sensor may clip
+  sooner.
+- **Lock everything** — ISO (the lowest the light allows), shutter at 180° (1/50 at 25 fps, 1/60 at 30), Kelvin set by
+  hand per scene (between the sources in mixed light, 4,000–4,500 K), focus — and don't touch the screen in a take:
+  the iPhone's processing reacts to the scene, and its exposure jumped when the shutter changed (CineD).
+- **A grey card (and a chart if there is one) at the start of every set-up:** they become the `regions` of the base
+  correction.
+- **Check on ingest:** every clip must read `apple-log-2 · log atom` in the studio; `apple-log` means the phone was on
+  "Log", `unknown` that the file lost its tag.
+
 ## Shutter and frame rate
 
 - The shutter angle ÷ 360° is the exposure time ÷ the frame interval; 180° is normal: 1/48 s at 24 fps, 1/50 at 25,

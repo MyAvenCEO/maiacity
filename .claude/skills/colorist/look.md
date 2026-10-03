@@ -49,6 +49,9 @@ top, never the other way round.**
     face lifted in a shot's).
   - Hues are the vectorscope's, as the display shows them: the skin line at 123°, orange about 110–140°, foliage
     green about 200–240°, teal and cyan about 270–300°.
+- **A `lut` is ACEScct in and ACEScct out.** Never an Apple Log or Apple Log 2 → Rec.709 LUT, a LUT made for Apple Log
+  (iPhone 15/16 Pro, Rec.2020) or another camera, or anything that outputs a display picture. On Apple Log 2 the first
+  two are the wrong gamut; the last tone-maps twice.
 - **`render_frame`** makes a hero frame through everything.
 
 ## Teal and orange, without ruining skin
@@ -72,6 +75,12 @@ one cool tint (Melara).
 5. **Check every scene** with `grade_scopes { looks: true }`:
    - Skin within about 5° of 123° and about 45–60 IRE.
    - Shadows cool, highlights warm, the blacks not crushed, the whites not clipped.
+
+## Coloured light: LEDs, neon, the CB60 in HSI
+
+Apple Wide Gamut records blues, violets and cyans beyond the working space, and the journey doesn't compress them yet:
+they arrive clipped, flat and a little off-hue. Don't push saturation or hue curves into those colours; a `hue_sat`
+pull on that hue, or `hi_sat`, hides a flat patch better than a key. Judge them on a 4K still.
 
 ## Finishing: always a kiss
 
@@ -189,3 +198,4 @@ Judge on the Mac's frames (native playback, `render_frame`) before chasing them.
 - Don't crush blacks or clip whites for "contrast".
 - Don't put windows, grain or blur in a LUT: the `lut` of a look is colour only.
 - Don't leave a finishing effect at full strength.
+- Don't grade an Apple Log 2 shot through anything made for Apple Log or another camera.

@@ -35,6 +35,23 @@ the camera got wrong from shot to shot, so the cut stops jumping.
    saturation must match inside a scene even when the rest of the frame can't. A good balance gets skin right
    without a key. Needing a key means the balance is wrong (Volpatto).
 
+## Before the balance: the input
+
+1. **The journey.** An iPhone 17 Pro original must read `apple-log-2 · log atom (Apple Wide Gamut · Apple Log)`.
+   `apple-log` is the first Apple Log (Rec.2020): right for an iPhone 15/16 Pro, wrong for a 17 Pro set to Log 2.
+   `unknown` is never balanced: set it in the Bin first. (Apple's identifiers: `com.apple.apple-wide-gamut.apple-log`
+   is Apple Log 2, `com.apple.rec2020.apple-log` the first Apple Log.)
+2. **A wrong tag looks like a white-balance problem and isn't one.** Apple Log 2 read as Apple Log: skin about 7°
+   towards red, blues and yellows 20–28 % paler, every hue a few degrees off (ΔE 3.5 on a ColorChecker). A LUT or a
+   guide made for the first Apple Log does the same.
+3. **The numbers on a 4K still.** A grey card exposed right reads ACEScct 0.414 and about 38 % on the Rec.709 display
+   (10 nits through ACES 2.0). Apple Log's black (code 0.150) is ACEScct 0.073 and display 0.
+4. **Saturated light** (LEDs, neon, a phone screen, the CB60 in HSI): Apple Wide Gamut records colours the working
+   space can't hold. The journey doesn't compress gamut yet, so they arrive clipped, flat and a little off-hue: never
+   neutralise or match on them.
+5. **Colour edges:** the grading stills are 4:2:0 even from 4:2:2 ProRes (until the decoder changes). Judge a red
+   title or a saturated edge on a zoomed hero frame.
+
 ## What to compare, in this order
 
 Tone first, then colour, then saturation, then the exceptions (Van Hurkman, *Color Correction Handbook*, ch. 9).
@@ -162,3 +179,4 @@ so it never computes the grade itself.
 - Don't neutralise skin or a warm morning to grey.
 - Don't lift a clipped sky or crush a black to make the numbers agree.
 - Don't change the look during the balance, and don't grade before the warmth for each scene is agreed.
+- Don't balance a shot whose journey isn't the camera's (an Apple Log 2 clip told `apple-log`, `rec709` or `unknown`).
