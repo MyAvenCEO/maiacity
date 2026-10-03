@@ -7,10 +7,21 @@ library, shown on its own in the 3D models viewer and placed in any world.
 
 - `src/lib/models/furniture.ts` — the models: `bed`, `wineCrate`, `crateTower`, `chair`, `edisonBulb`,
   `framedPicture`, `sheepskin`, `truck`, and the fixtures (the CB60 light on its stand, `neewer-cb60`).
-- `src/lib/models/outdoor.ts` — under the open sky: trees (`broadleaf`, `willow`, `poplar`, `shrub`), a park bench,
-  the Wittelsbacherbrücke's lamp, a limestone block, the bronze rider. A world plants many trees, so a tree is two
-  geometries for instancing (`treeParts`: its wood and its leaves, full or light); `tree()` puts them together for
-  the viewer.
+- `src/lib/models/outdoor.ts` — under the open sky: trees (`broadleaf`, `willow`, `poplar`, `shrub`; the garden's
+  `lilac`, `corkscrew`, `maple`, `privet`, `sapling`), a park bench, the Wittelsbacherbrücke's lamp, a limestone
+  block, the bronze rider. A world plants many trees, so a tree is two geometries for instancing (`treeParts`: its
+  wood and its leaves, full or light); `tree()` puts them together for the viewer. Small plants: `bush` (leaf cards
+  through a dome — herbs, shrubs, a crown), `stems` (hanging or climbing: ivy, a trailing herb, a creeper),
+  `scatterLeaves` (leaves on a surface of their own: a hedge's, an ivy cone's), each in a leaf and a tint
+  (`plantLeaves`; a gain over 1 lightens it, an olive's silver).
+- `src/lib/models/terrace.ts` — the backyard's terrace: the club sofa, the bamboo table, the bistro table and its
+  moulded chairs, paper lanterns (one paper for all: `userData.glass`), ribbed planters and their herbs, the olive
+  tree, terracotta pots, the bird of paradise, the monstera, the ficus, a geranium, festoon lights, the toy monkey and
+  the toy bee.
+- `src/lib/models/yard.ts` — the backyard's courtyard and garden: the steel window and the casement window, the front
+  door, the workshop door, the door canopy, the barn lamp, the letterbox on its post, window boxes, the city bike, the
+  rain barrel, the insect hotel, the floodlight, the station clock, the teak table and recliners, the folding chair,
+  the stoneware crock, the red tin, the ashtray, the clipped hedge, the ivy cone.
 - `src/lib/models/textures.ts` — their surfaces, drawn once on a canvas and shared: limed oak, pine (fresh and aged),
   painted pine, plaster (as a bump map), wool, the face on the wall.
 - `src/lib/models/index.ts` — `MODELS`: each model's id, label, note (its measure and what it is), where it is used,

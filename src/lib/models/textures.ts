@@ -323,3 +323,293 @@ export function canvasMeadow(): THREE.CanvasTexture {
 		}
 	});
 }
+
+/* ── the backyard's surfaces (./terrace.ts, ./yard.ts) ──────────────────────────────────────────────────────────── */
+
+/** Teak garden furniture: oiled, warm red-brown with a dark grain; or weathered to silver-grey, the grain open and
+ *  checked. The grain runs along u. */
+export function teak(weathered = false): THREE.CanvasTexture {
+	return canvasTexture(weathered ? 'teak-grey' : 'teak', 512, 512, (x, r) => {
+		x.fillStyle = weathered ? '#9e978b' : '#9b5a33';
+		x.fillRect(0, 0, 512, 512);
+		x.save();
+		x.translate(512, 0);
+		x.rotate(Math.PI / 2);
+		grain(x, r, 0, 0, 512, 512, weathered ? '#5f594f' : '#5e3018', 46, false);
+		x.restore();
+		for (let i = 0; i < 700; i++) {
+			x.fillStyle = weathered ? `rgba(230,226,215,${r() * 0.25})` : `rgba(190,120,70,${r() * 0.18})`;
+			x.fillRect(r() * 512, r() * 512, 10 + r() * 50, 1 + r() * 2);
+		}
+		if (weathered)
+			for (let i = 0; i < 60; i++) {
+				x.fillStyle = 'rgba(40,36,30,0.45)'; // the checks the weather opened in it
+				x.fillRect(r() * 512, r() * 512, 15 + r() * 40, 1);
+			}
+	});
+}
+
+/** Cognac leather, years old: worn lighter on the seat and the arms' tops, creased, a fine crackle in the finish. */
+export function leather(): THREE.CanvasTexture {
+	return canvasTexture('leather-cognac', 512, 512, (x, r) => {
+		x.fillStyle = '#a25c2e';
+		x.fillRect(0, 0, 512, 512);
+		for (let i = 0; i < 40; i++) {
+			const gx = r() * 512, gy = r() * 512, gr = 20 + r() * 90;
+			const g = x.createRadialGradient(gx, gy, 0, gx, gy, gr);
+			const light = r() < 0.55;
+			g.addColorStop(0, light ? 'rgba(222,160,105,0.45)' : 'rgba(90,45,20,0.35)');
+			g.addColorStop(1, 'rgba(0,0,0,0)');
+			x.fillStyle = g;
+			x.fillRect(gx - gr, gy - gr, gr * 2, gr * 2);
+		}
+		// the crackle: short broken lines in a net
+		x.lineWidth = 0.8;
+		for (let i = 0; i < 900; i++) {
+			x.strokeStyle = r() < 0.7 ? 'rgba(70,35,15,0.28)' : 'rgba(240,190,140,0.25)';
+			x.beginPath();
+			let px = r() * 512, py = r() * 512;
+			x.moveTo(px, py);
+			for (let k = 0; k < 3; k++) {
+				px += (r() - 0.5) * 24;
+				py += (r() - 0.5) * 24;
+				x.lineTo(px, py);
+			}
+			x.stroke();
+		}
+		// creases, longer and softer
+		for (let i = 0; i < 26; i++) {
+			x.strokeStyle = 'rgba(60,28,10,0.25)';
+			x.lineWidth = 1.5 + r() * 2;
+			x.beginPath();
+			const px = r() * 512, py = r() * 512, a = r() * Math.PI;
+			x.moveTo(px, py);
+			x.quadraticCurveTo(px + Math.cos(a) * 30 + (r() - 0.5) * 20, py + Math.sin(a) * 30, px + Math.cos(a) * 70, py + Math.sin(a) * 70);
+			x.stroke();
+		}
+	});
+}
+
+/** A paper lantern's paper: white, the wire ribs showing as fine lines round it, soft creases between. */
+export function lanternPaper(): THREE.CanvasTexture {
+	return canvasTexture('lantern-paper', 256, 256, (x, r) => {
+		x.fillStyle = '#f8f6f0';
+		x.fillRect(0, 0, 256, 256);
+		for (let i = 0; i < 16; i++) {
+			x.fillStyle = 'rgba(160,150,130,0.35)';
+			x.fillRect(0, i * 16, 256, 2);
+			x.fillStyle = 'rgba(255,255,255,0.6)';
+			x.fillRect(0, i * 16 + 2, 256, 2);
+		}
+		for (let i = 0; i < 120; i++) {
+			x.fillStyle = `rgba(200,192,175,${r() * 0.25})`;
+			x.fillRect(r() * 256, r() * 256, 1, 6 + r() * 14);
+		}
+	});
+}
+
+/** A clipped hedge's face: small dark leaves packed close, lighter new shoots, gaps of shade between. */
+export function hedgeLeaves(): THREE.CanvasTexture {
+	return canvasTexture('hedge-leaves', 512, 512, (x, r) => {
+		x.fillStyle = '#1f3216';
+		x.fillRect(0, 0, 512, 512);
+		const greens = ['#2f4a20', '#3b5a27', '#46672c', '#557a34', '#2a4119', '#64873c', '#729447'];
+		for (let i = 0; i < 9000; i++) {
+			const px = r() * 512, py = r() * 512, a = r() * Math.PI;
+			x.fillStyle = greens[Math.floor(r() * greens.length)]!;
+			x.beginPath();
+			x.ellipse(px, py, 3 + r() * 3.5, 1.6 + r() * 1.6, a, 0, Math.PI * 2);
+			x.fill();
+		}
+		for (let i = 0; i < 400; i++) {
+			x.fillStyle = 'rgba(160,190,90,0.6)'; // the season's shoots
+			x.fillRect(r() * 512, r() * 512, 2, 2);
+		}
+	});
+}
+
+/** Salt-glazed stoneware: grey, orange-peel speckled, a cobalt flower painted on its belly. u round it, v up it. */
+export function stoneware(): THREE.CanvasTexture {
+	return canvasTexture('stoneware', 512, 256, (x, r) => {
+		x.fillStyle = '#a3a6a8';
+		x.fillRect(0, 0, 512, 256);
+		for (let i = 0; i < 6000; i++) {
+			x.fillStyle = r() < 0.5 ? 'rgba(255,255,255,0.18)' : 'rgba(60,62,66,0.18)';
+			x.fillRect(r() * 512, r() * 256, 1.5, 1.5);
+		}
+		x.strokeStyle = '#2a4aa3';
+		x.fillStyle = '#2a4aa3';
+		x.lineCap = 'round';
+		// a stem, leaves, a flower, swirls — painted fast with a brush
+		x.lineWidth = 7;
+		x.beginPath();
+		x.moveTo(130, 220);
+		x.bezierCurveTo(150, 170, 120, 130, 160, 80);
+		x.stroke();
+		for (const [cx, cy, a] of [[140, 170, -0.6], [150, 130, 0.7], [128, 110, -0.9]] as const) {
+			x.save();
+			x.translate(cx, cy);
+			x.rotate(a);
+			x.beginPath();
+			x.ellipse(18, 0, 22, 8, 0, 0, Math.PI * 2);
+			x.fill();
+			x.restore();
+		}
+		for (let k = 0; k < 6; k++) {
+			x.save();
+			x.translate(165, 70);
+			x.rotate((k / 6) * Math.PI * 2);
+			x.beginPath();
+			x.ellipse(16, 0, 15, 7, 0, 0, Math.PI * 2);
+			x.fill();
+			x.restore();
+		}
+		x.lineWidth = 4;
+		for (const sx of [60, 260, 330]) {
+			x.beginPath();
+			x.arc(sx, 120, 18, 0.3, 5.2);
+			x.stroke();
+		}
+		x.fillStyle = 'rgba(42,74,163,0.9)';
+		x.fillRect(0, 18, 512, 5); // a band under the rim
+		x.fillRect(0, 236, 512, 4);
+	});
+}
+
+/** A station clock's face: white, black bars for the hours, finer ones for the minutes, its hands at ten past ten. */
+export function clockFace(): THREE.CanvasTexture {
+	return canvasTexture('clock-face', 256, 256, (x) => {
+		x.fillStyle = '#f7f7f3';
+		x.fillRect(0, 0, 256, 256);
+		x.translate(128, 128);
+		x.fillStyle = '#151515';
+		for (let i = 0; i < 60; i++) {
+			x.save();
+			x.rotate((i / 60) * Math.PI * 2);
+			if (i % 5 === 0) x.fillRect(-4, -118, 8, 30);
+			else x.fillRect(-1.5, -118, 3, 10);
+			x.restore();
+		}
+		const hand = (turn: number, len: number, w: number) => {
+			x.save();
+			x.rotate(turn * Math.PI * 2);
+			x.fillRect(-w / 2, -len, w, len + 18);
+			x.restore();
+		};
+		hand(10 / 12 + 10 / 720, 72, 11);
+		hand(10 / 60, 104, 8);
+		x.fillStyle = '#b3201c';
+		x.save();
+		x.rotate((34 / 60) * Math.PI * 2);
+		x.fillRect(-1.5, -100, 3, 120);
+		x.beginPath();
+		x.arc(0, -78, 9, 0, Math.PI * 2);
+		x.fill();
+		x.restore();
+	});
+}
+
+/** An insect hotel's face: bamboo canes and drilled holes packed in a disc of dark wood. */
+export function insectFace(): THREE.CanvasTexture {
+	return canvasTexture('insect-face', 256, 256, (x, r) => {
+		x.fillStyle = '#4a3220';
+		x.fillRect(0, 0, 256, 256);
+		for (let i = 0; i < 230; i++) {
+			const px = r() * 256, py = r() * 256, rad = 5 + r() * 8;
+			x.fillStyle = r() < 0.6 ? '#c9a46a' : '#8e6a3e';
+			x.beginPath();
+			x.arc(px, py, rad, 0, Math.PI * 2);
+			x.fill();
+			x.fillStyle = '#1b120b';
+			x.beginPath();
+			x.arc(px, py, rad * 0.55, 0, Math.PI * 2);
+			x.fill();
+		}
+	});
+}
+
+/** A toy bee's body: yellow plush in black bands. */
+export function beeStripes(): THREE.CanvasTexture {
+	return canvasTexture('bee-stripes', 64, 256, (x) => {
+		x.fillStyle = '#f4c21a';
+		x.fillRect(0, 0, 64, 256);
+		x.fillStyle = '#1c1a17';
+		for (const y of [60, 120, 180]) x.fillRect(0, y, 64, 30);
+	});
+}
+
+/** A planter's ribbed face, as a bump map: shallow horizontal grooves every 2.5 cm. */
+export function ribs(): THREE.CanvasTexture {
+	return canvasTexture(
+		'ribs',
+		16,
+		64,
+		(x) => {
+			x.fillStyle = '#b0b0b0';
+			x.fillRect(0, 0, 16, 64);
+			for (const y of [0, 16, 32, 48]) {
+				x.fillStyle = '#3a3a3a';
+				x.fillRect(0, y, 16, 4);
+				x.fillStyle = '#d8d8d8';
+				x.fillRect(0, y + 4, 16, 3);
+			}
+		},
+		false
+	);
+}
+
+/** A monstera's leaf, cut out (alpha): a heart of deep glossy green, slit from its edge towards the midrib and holed
+ *  along it, its veins lighter. Its stalk joins at the bottom middle, its tip at the top. */
+export function monsteraLeaf(): THREE.CanvasTexture {
+	const t = canvasTexture('monstera-leaf', 256, 256, (x, r) => {
+		x.clearRect(0, 0, 256, 256);
+		const g = x.createLinearGradient(0, 0, 256, 256);
+		g.addColorStop(0, '#3f7a33');
+		g.addColorStop(1, '#22501f');
+		x.fillStyle = g;
+		x.beginPath();
+		x.moveTo(128, 236);
+		x.bezierCurveTo(30, 250, 0, 120, 40, 60);
+		x.bezierCurveTo(70, 18, 110, 12, 128, 20);
+		x.bezierCurveTo(146, 12, 186, 18, 216, 60);
+		x.bezierCurveTo(256, 120, 226, 250, 128, 236);
+		x.fill();
+		x.strokeStyle = '#7fae5a';
+		x.lineWidth = 3;
+		x.beginPath();
+		x.moveTo(128, 236);
+		x.lineTo(128, 24);
+		x.stroke();
+		x.lineWidth = 1.2;
+		for (let i = 0; i < 7; i++) {
+			const y = 200 - i * 26;
+			for (const s of [-1, 1]) {
+				x.beginPath();
+				x.moveTo(128, y);
+				x.quadraticCurveTo(128 + s * 50, y - 12, 128 + s * 110, y - 30);
+				x.stroke();
+			}
+		}
+		// the slits from the edge in, and the holes by the midrib
+		x.globalCompositeOperation = 'destination-out';
+		x.lineCap = 'round';
+		for (let i = 0; i < 5; i++) {
+			const y = 190 - i * 32 + r() * 6;
+			for (const s of [-1, 1]) {
+				x.lineWidth = 7 + r() * 4;
+				x.beginPath();
+				x.moveTo(128 + s * 140, y - 40);
+				x.lineTo(128 + s * (34 + r() * 16), y - 6);
+				x.stroke();
+				if (i > 0 && i < 4) {
+					x.beginPath();
+					x.ellipse(128 + s * 22, y + 4, 4, 9, s * 0.4, 0, Math.PI * 2);
+					x.fill();
+				}
+			}
+		}
+		x.globalCompositeOperation = 'source-over';
+	});
+	t.wrapS = t.wrapT = THREE.ClampToEdgeWrapping;
+	return t;
+}

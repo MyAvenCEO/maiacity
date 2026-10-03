@@ -32,7 +32,10 @@ export const WORLDS = {
 	'tired-land': { label: 'The tired land · fields, a highway, trucks', areas: null },
 	// a real river: the Isar in Munich from the Wittelsbacherbrücke south to the railway bridge, flowing north — its
 	// ground the survey's, its banks, paths and bridges OpenStreetMap's (src/lib/worlds/isar)
-	isar: { label: 'The Isar · Wittelsbacherbrücke to the railway bridge', areas: null }
+	isar: { label: 'The Isar · Wittelsbacherbrücke to the railway bridge', areas: null },
+	// a real backyard in Munich, built from photos: the courtyard, the pergola terrace in front of the old workshop, the
+	// garden corner, the shed and the driveway (src/lib/worlds/backyard)
+	backyard: { label: 'The backyard · the courtyard, the pergola terrace, the garden', areas: null, sets: ['stand-in sofa', 'stand-in bistro', 'stand-in garden'] }
 };
 
 /** Where a shot is when it names no world: the film camera's first world. */

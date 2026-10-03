@@ -159,13 +159,13 @@ export const limestone = shared(() => {
 
 /* ── trees ────────────────────────────────────────────────────────────────── */
 
-export type TreeKind = 'broadleaf' | 'willow' | 'poplar' | 'shrub';
+export type TreeKind = 'broadleaf' | 'willow' | 'poplar' | 'shrub' | 'lilac' | 'corkscrew' | 'maple' | 'privet' | 'sapling';
 
 /**
  * Each kind's measure (m): its height, the trunk's radius at the foot, how many trunks, how far they lean, where the
  * crown sits and its radii (x, y, z), how many limbs, how many leaf cards and how big, which leaves.
  */
-const KINDS: Record<TreeKind, { trunk: number; stems: number; lean: number; at: number; crown: [number, number, number]; limbs: number; cards: number; card: number; leaf: 'broad' | 'narrow' }> = {
+const KINDS: Record<TreeKind, { trunk: number; stems: number; lean: number; at: number; crown: [number, number, number]; limbs: number; cards: number; card: number; leaf: 'broad' | 'narrow'; twist?: number }> = {
 	// ash, maple, lime: the banks' tall broadleaves, about 19 m
 	broadleaf: { trunk: 0.38, stems: 1, lean: 0.05, at: 12.4, crown: [6.0, 6.2, 6.0], limbs: 6, cards: 300, card: 2.0, leaf: 'broad' },
 	// the white willow: two leaning trunks, a broad silvery crown, about 15 m
@@ -173,7 +173,17 @@ const KINDS: Record<TreeKind, { trunk: number; stems: number; lean: number; at: 
 	// the black poplar: tall and oval, about 27 m
 	poplar: { trunk: 0.46, stems: 1, lean: 0.03, at: 17.8, crown: [4.6, 9.2, 4.6], limbs: 7, cards: 300, card: 2.0, leaf: 'broad' },
 	// the willow shrub at the water's edge: many thin stems, about 4.5 m
-	shrub: { trunk: 0.07, stems: 4, lean: 0.3, at: 2.4, crown: [2.4, 2.1, 2.4], limbs: 2, cards: 190, card: 0.85, leaf: 'narrow' }
+	shrub: { trunk: 0.07, stems: 4, lean: 0.3, at: 2.4, crown: [2.4, 2.1, 2.4], limbs: 2, cards: 190, card: 0.85, leaf: 'narrow' },
+	// a backyard's garden trees: the old lilac, many stems from one root, about 5.5 m
+	lilac: { trunk: 0.1, stems: 4, lean: 0.2, at: 3.7, crown: [2.5, 1.9, 2.5], limbs: 3, cards: 520, card: 0.52, leaf: 'broad' },
+	// the corkscrew willow: two twisted trunks, a drooping crown of narrow leaves, about 5.5 m
+	corkscrew: { trunk: 0.11, stems: 2, lean: 0.24, at: 3.8, crown: [2.4, 1.8, 2.4], limbs: 3, cards: 560, card: 0.48, leaf: 'narrow', twist: 0.16 },
+	// a small field maple by a door, about 4.3 m
+	maple: { trunk: 0.075, stems: 1, lean: 0.05, at: 2.95, crown: [1.4, 1.35, 1.4], limbs: 4, cards: 360, card: 0.42, leaf: 'broad' },
+	// a privet grown to a small tree, several stems, about 4.5 m
+	privet: { trunk: 0.065, stems: 3, lean: 0.22, at: 3.0, crown: [1.8, 1.5, 1.8], limbs: 3, cards: 420, card: 0.42, leaf: 'narrow' },
+	// a young tree in a pot: one thin stem, a few leaves at its top, about 2.2 m
+	sapling: { trunk: 0.02, stems: 1, lean: 0.02, at: 1.75, crown: [0.45, 0.5, 0.45], limbs: 5, cards: 16, card: 0.24, leaf: 'broad' }
 };
 
 export type TreeParts = { wood: THREE.BufferGeometry; leaves: THREE.BufferGeometry; height: number; crown: number };
@@ -221,8 +231,20 @@ export function treeParts(kind: TreeKind, seed = 1, light = false): TreeParts {
 		const top = v3(foot.x + Math.cos(az) * lean * topY, topY, foot.z + Math.sin(az) * lean * topY);
 		const mid = foot.clone().lerp(top, 0.5).add(v3((r() - 0.5) * 0.5, 0, (r() - 0.5) * 0.5));
 		const rt = k.trunk * (k.stems > 1 ? 0.75 : 1);
-		branch(foot.clone().setY(-0.3), mid, rt * 1.15, rt * 0.82, 6);
-		branch(mid, top, rt * 0.82, rt * 0.55, 6);
+		if (k.twist) {
+			// a corkscrew's trunk: up in short pieces, each turned round the line from foot to top
+			const ph = r() * Math.PI * 2;
+			let prev = foot.clone().setY(-0.3);
+			for (let i = 1; i <= 8; i++) {
+				const t = i / 8, a = ph + t * Math.PI * 3.2;
+				const p = foot.clone().lerp(top, t).add(v3(Math.cos(a) * k.twist * Math.sin(Math.PI * t), 0, Math.sin(a) * k.twist * Math.sin(Math.PI * t)));
+				branch(prev, p, rt * (1.15 - 0.6 * (t - 1 / 8)), rt * (1.15 - 0.6 * t), 6);
+				prev = p;
+			}
+		} else {
+			branch(foot.clone().setY(-0.3), mid, rt * 1.15, rt * 0.82, 6);
+			branch(mid, top, rt * 0.82, rt * 0.55, 6);
+		}
 		// the limbs: out and up from the upper trunk towards the crown's surface, each forking into branches
 		for (let l = 0; l < k.limbs; l++) {
 			const from = mid.clone().lerp(top, 0.35 + r() * 0.65);
@@ -506,4 +528,122 @@ export function equestrianStatue(): THREE.Group {
 	cloak.castShadow = true;
 	g.add(cloak);
 	return g;
+}
+
+/* ── small plants: bushes, herbs, hanging and climbing stems ──────────────────────────────────────────────────── */
+
+const tinted = new Map<string, { leaves: THREE.MeshStandardMaterial; depth: THREE.MeshDepthMaterial }>();
+/** The leaves of a small plant, a kind of leaf in a tint (the atlas is drawn green; the tint shades it, `gain` over 1
+ *  lightens it — an olive's silver): shared by every plant of that look. */
+export function plantLeaves(kind: 'broad' | 'narrow', tint = '#ffffff', gain = 1) {
+	const key = `${kind}:${tint}:${gain}`;
+	let hit = tinted.get(key);
+	if (!hit) {
+		const leaves = leafMaterial(kind);
+		leaves.color.set(tint).multiplyScalar(gain);
+		hit = { leaves, depth: leafDepthMaterial(kind) };
+		tinted.set(key, hit);
+	}
+	return hit;
+}
+
+/** cards of leaves round points, each facing anywhere, lit as the soft mass they make (normals out from `centre`) */
+function cards(points: { p: THREE.Vector3; size: number }[], centre: (p: THREE.Vector3) => THREE.Vector3, r: () => number): THREE.BufferGeometry {
+	const pos: number[] = [], nor: number[] = [], uvs: number[] = [], idx: number[] = [];
+	const n = new THREE.Vector3(), t1 = new THREE.Vector3(), t2 = new THREE.Vector3(), up = v3(0, 1, 0);
+	for (const { p, size } of points) {
+		n.set(r() * 2 - 1, r() * 2 - 1, r() * 2 - 1).normalize();
+		t1.crossVectors(n, Math.abs(n.y) < 0.9 ? up : v3(1, 0, 0)).normalize();
+		t2.crossVectors(n, t1).normalize();
+		const out = p.clone().sub(centre(p)).normalize();
+		const cell = Math.floor(r() * 4), u0 = (cell % 2) * 0.5, v0 = Math.floor(cell / 2) * 0.5;
+		const base = pos.length / 3;
+		for (const [a, b] of [[-1, -1], [1, -1], [1, 1], [-1, 1]] as const) {
+			pos.push(p.x + (t1.x * a + t2.x * b) * size * 0.5, p.y + (t1.y * a + t2.y * b) * size * 0.5, p.z + (t1.z * a + t2.z * b) * size * 0.5);
+			nor.push(out.x, out.y, out.z);
+			uvs.push(u0 + (a + 1) * 0.25, 1 - (v0 + (1 - (b + 1) / 2) * 0.5));
+		}
+		idx.push(base, base + 1, base + 2, base, base + 2, base + 3);
+	}
+	const g = new THREE.BufferGeometry();
+	g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+	g.setAttribute('normal', new THREE.Float32BufferAttribute(nor, 3));
+	g.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
+	g.setIndex(idx);
+	g.computeBoundingSphere();
+	return g;
+}
+
+export type BushOptions = { w?: number; h?: number; d?: number; cards?: number; card?: number; leaf?: 'broad' | 'narrow'; tint?: string; gain?: number; seed?: number; base?: number };
+
+/**
+ * A bush, a herb or a clump of leaves: cards of leaves through a dome `w` × `h` × `d` (its foot `base` above the
+ * origin), most of them in its outer shell, lit as one soft mass. Seeded: one seed, one bush.
+ */
+export function bush({ w = 0.5, h = 0.4, d = w, cards: n = 60, card = 0.2, leaf = 'broad', tint = '#ffffff', gain = 1, seed = 1, base = 0 }: BushOptions = {}): THREE.Mesh {
+	const r = seeded(seed * 911 + n);
+	const c = v3(0, base + h * 0.35, 0);
+	const pts: { p: THREE.Vector3; size: number }[] = [];
+	for (let i = 0; i < n; i++) {
+		const dir = v3(r() * 2 - 1, r() * 1.3 - 0.3, r() * 2 - 1);
+		if (dir.lengthSq() < 1e-4) dir.set(0, 1, 0);
+		dir.normalize();
+		const depth = 0.55 + 0.45 * Math.sqrt(r());
+		const p = v3(dir.x * (w / 2) * depth, Math.max(base + card * 0.25, c.y + dir.y * h * 0.65 * depth), dir.z * (d / 2) * depth);
+		pts.push({ p, size: card * (0.7 + r() * 0.6) });
+	}
+	const look = plantLeaves(leaf, tint, gain);
+	const m = new THREE.Mesh(cards(pts, () => c, r), look.leaves);
+	m.customDepthMaterial = look.depth;
+	m.castShadow = m.receiveShadow = true;
+	m.name = 'bush';
+	return m;
+}
+
+/**
+ * Stems hanging down (ivy over a wall's coping, a trailing plant over a pot's rim) or climbing (a creeper up a wire):
+ * each a line of leaf cards from its start along a curve. `from` the points they start at, `to` where each would end
+ * (they sway a little on the way), `per` cards a metre, `face` the way the leaves turn (away from the wall they
+ * hang on).
+ */
+export function stems(
+	lines: [THREE.Vector3, THREE.Vector3][],
+	{ card = 0.12, per = 22, leaf = 'broad', tint = '#ffffff', seed = 1, spread = 0.06, face = v3(0, 0, 1) }: { card?: number; per?: number; leaf?: 'broad' | 'narrow'; tint?: string; seed?: number; spread?: number; face?: THREE.Vector3 } = {}
+): THREE.Mesh {
+	const r = seeded(seed * 577 + lines.length);
+	const pts: { p: THREE.Vector3; size: number }[] = [];
+	const backs: THREE.Vector3[] = [];
+	for (const [a, b] of lines) {
+		const len = a.distanceTo(b), n = Math.max(2, Math.round(len * per));
+		const ph = r() * 6;
+		for (let i = 0; i < n; i++) {
+			const t = i / (n - 1);
+			const p = a.clone().lerp(b, t).add(v3(Math.sin(t * 7 + ph) * spread + (r() - 0.5) * spread, (r() - 0.5) * spread * 0.5, Math.cos(t * 5 + ph) * spread * 0.5 + (r() - 0.5) * spread));
+			pts.push({ p, size: card * (0.75 + r() * 0.5) * (1 - 0.35 * t) });
+			backs.push(a.clone().lerp(b, t));
+		}
+	}
+	let k = 0;
+	const look = plantLeaves(leaf, tint);
+	// lit as if each leaf faced out from the line it hangs on, away from its wall
+	const back = face.clone().normalize().multiplyScalar(-0.2);
+	const m = new THREE.Mesh(cards(pts, () => backs[k++]!.clone().add(back), r), look.leaves);
+	m.customDepthMaterial = look.depth;
+	m.castShadow = true;
+	m.receiveShadow = true;
+	m.name = 'stems';
+	return m;
+}
+
+/**
+ * Leaves at given points, each card `size` across, lit as if they faced out from `centreOf(point)`: for a clipped
+ * hedge's face, an ivy-covered shape, anything whose leaves follow a surface of its own.
+ */
+export function scatterLeaves(points: { p: THREE.Vector3; size: number }[], centreOf: (p: THREE.Vector3) => THREE.Vector3, { leaf = 'broad', tint = '#ffffff', seed = 1 }: { leaf?: 'broad' | 'narrow'; tint?: string; seed?: number } = {}): THREE.Mesh {
+	const look = plantLeaves(leaf, tint);
+	const m = new THREE.Mesh(cards(points, centreOf, seeded(seed * 313 + points.length)), look.leaves);
+	m.customDepthMaterial = look.depth;
+	m.castShadow = m.receiveShadow = true;
+	m.name = 'leaves';
+	return m;
 }

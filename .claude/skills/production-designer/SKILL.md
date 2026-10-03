@@ -1,6 +1,6 @@
 ---
 name: production-designer
-description: The production designer of maiaCITY's films — the worlds, sets, props and 3D models a film is shot in, and their art direction. The worlds (the room, the tired land, the Isar in Munich, Sandbox 1–4) and how a new one is built to be walked and filmed — a real place from open map and terrain data; the 3D models library (src/lib/models, the /app/models viewer) and how a model is built to its real measure from photos; sets built into a scene while it is filmed; palette, texture, a cinematic world and its details. Use it whenever a world, a set, a prop or a model is built, placed, dressed or matched to photos of a real place.
+description: The production designer of maiaCITY's films — the worlds, sets, props and 3D models a film is shot in, and their art direction. The worlds (the room, the tired land, the Isar in Munich, the backyard, Sandbox 1–4) and how a new one is built to be walked and filmed — a real place from open map and terrain data; the 3D models library (src/lib/models, the /app/models viewer) and how a model is built to its real measure from photos; sets built into a scene while it is filmed; palette, texture, a cinematic world and its details. Use it whenever a world, a set, a prop or a model is built, placed, dressed or matched to photos of a real place.
 ---
 
 # Production designer
@@ -29,7 +29,7 @@ maiaCITY film is shot in real rooms and in 3D worlds, and the two must read as o
 
 | File | The skill | Use it for |
 |---|---|---|
-| `worlds.md` | the worlds and their sets | Sandbox 4's map and framing, the room, the tired land, the Isar, building a new world (a real place from OpenStreetMap and the survey's terrain), sets built into a scene for one film |
+| `worlds.md` | the worlds and their sets | Sandbox 4's map and framing, the room, the tired land, the Isar, the backyard, building a new world (a real place from OpenStreetMap and the survey's terrain, or from photos), sets built into a scene for one film |
 | `models.md` | the 3D models | the library and its viewer, the conventions every model keeps, building a model from photos, materials and textures |
 
 ## The order of work
