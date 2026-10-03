@@ -17,13 +17,9 @@
 	button is followed by hand and clicked when it lifts where it came down: the
 	`taps` buttons always (with `look`), any button while the stick is held
 	(without). `onpress(el)` may take a button on the press instead, returning true.
-
-	While the browser's bars are out over the world, a looking finger also
-	scrolls the page, which tucks them away (./browserBars.js).
 -->
 <script>
 	import { onMount } from 'svelte';
-	import { barsOut } from './browserBars.js';
 
 	/**
 	 * @type {{
@@ -90,7 +86,7 @@
 				ours = true;
 			} else if (look && el && (stage ?? root)?.contains(el)) {
 				if (lookFinger === null) lookFinger = { id: t.identifier, x: t.clientX, y: t.clientY };
-				if (!barsOut()) ours = true;
+				ours = true;
 			}
 		}
 		// no scrolling, zooming, long-press menu or second, browser-made click
@@ -107,7 +103,7 @@
 				look?.(t.clientX - lookFinger.x, t.clientY - lookFinger.y);
 				lookFinger.x = t.clientX;
 				lookFinger.y = t.clientY;
-				if (!barsOut()) ours = true;
+				ours = true;
 			}
 		}
 		if (ours) e.preventDefault();

@@ -60,17 +60,6 @@ body {
 	}
 }
 
-/* A world in full screen in a phone's browser ($lib/touch/browserBars.js): the page has a little room to scroll, so a
-   swipe can tuck the browser's bars away (Safari shows them again on a page with nothing to scroll); while they are
-   out, a finger on the world may scroll it */
-html[data-world] body {
-	min-height: calc(100lvh + 4rem);
-}
-
-html[data-bars] canvas {
-	touch-action: pan-y !important;
-}
-
 h1,
 h2,
 h3 {

@@ -17,7 +17,6 @@
 	import AskModal from '$lib/app/AskModal.svelte';
 	import { immersive as fullScreen } from '$lib/app/immersive.svelte';
 	import { gameAt, placeOf, released } from '$lib/app/places';
-	import { watchBars } from '$lib/touch/browserBars';
 
 	let { children } = $props();
 
@@ -87,17 +86,12 @@
 	const rel = $derived(page.url.pathname.slice(base.length));
 	// full screen: a sandbox (Sandbox 3 is a page of cards, it keeps the bar), a world (its own bar has the time of
 	// day), the 3D models' and the actors' turntables (their own way back, their controls at the edges), and the
-	// studio's editor; all but the editor are a 3D scene, where a swipe on a phone tucks the browser's bars away
-	const scene = $derived(/^\/app\/(games\/(?!sandbox-3\/?$)[^/]+|worlds\/[^/]+|models|actors)\/?$/.test(rel) || fullScreen.on);
-	const immersive = $derived(scene || rel.startsWith('/app/studio'));
+	// studio's editor
+	const immersive = $derived(/^\/app\/(games\/(?!sandbox-3\/?$)[^/]+|worlds\/[^/]+|models|actors)\/?$/.test(rel) || rel.startsWith('/app/studio') || fullScreen.on);
 	const title = $derived(placeOf(page.url.pathname));
 	// a draft game is the admins' only; anyone else with its link is told so
 	const game = $derived(gameAt(page.url.pathname));
 	const closed = $derived(!!game && !released(founder, game));
-	// a 3D scene on a phone: a swipe up tucks the browser's bars away, so the scene has the whole screen
-	$effect(() => {
-		if (phase === 'ready' && scene && !closed && matchMedia('(hover: none) and (pointer: coarse)').matches) return watchBars();
-	});
 </script>
 
 <svelte:head>
@@ -247,6 +241,15 @@
 	/* room under the content for the pill */
 	.app:not(.immersive) {
 		padding-bottom: 6.5rem;
+	}
+
+	/* Pinned to an iPhone's home screen, iOS stops the screen's frame short of its foot ($lib/app/screenGap.js): a page in
+	   full screen reaches down over the gap anyway, and holds everything fixed inside it (the world, the joystick, the
+	   sheets) in that taller frame (a transform makes it their frame), so nothing ends above the foot of the screen */
+	:global(html[data-screen-gap]) .app.immersive {
+		position: fixed;
+		inset: 0 0 calc(-1 * var(--screen-gap, 0px)) 0;
+		transform: translateZ(0);
 	}
 
 	@media (max-width: 560px) {
