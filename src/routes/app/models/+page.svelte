@@ -5,6 +5,7 @@
 <script lang="ts">
 	import { onDestroy, onMount } from 'svelte';
 	import { MODELS, type Model } from '$lib/models';
+	import PickList from '$lib/app/PickList.svelte';
 
 	let canvasBox = $state<HTMLDivElement>();
 	let chosen = $state<Model>(MODELS[0]!);
@@ -114,21 +115,7 @@
 </svelte:head>
 
 <main class="models">
-	<aside>
-		<h1>3D models</h1>
-		<p class="lede">The things the worlds are built from, each to its real measure.</p>
-		<ul>
-			{#each MODELS as m (m.id)}
-				<li>
-					<button class:on={chosen.id === m.id} onclick={() => pick(m)}>
-						<b>{m.label}</b>
-						<span>{m.note}</span>
-						<small>in {m.usedIn}</small>
-					</button>
-				</li>
-			{/each}
-		</ul>
-	</aside>
+	<PickList title="3D models" lede="The things the worlds are built from, each to its real measure." items={MODELS} {chosen} where={(m) => m.usedIn} onpick={pick} />
 	<section class="view">
 		<div class="canvas" bind:this={canvasBox}></div>
 		<div class="readout">
@@ -146,70 +133,9 @@
 		/* on a phone: clear of the notch and the home bar (the page runs edge to edge) */
 		padding: env(safe-area-inset-top, 0px) env(safe-area-inset-right, 0px) env(safe-area-inset-bottom, 0px) env(safe-area-inset-left, 0px);
 		display: grid;
-		grid-template-columns: minmax(15rem, 22rem) 1fr;
+		grid-template-columns: auto 1fr;
 		background: #f4f1eb;
 		color: #1f2a23;
-	}
-
-	/* the list scrolls clear of the nav pill at its foot */
-	aside {
-		overflow: auto;
-		padding: 1.4rem 1rem calc(2rem + var(--nav-room));
-		border-right: 1px solid rgb(0 0 0 / 0.08);
-	}
-
-	h1 {
-		margin: 0.6rem 0 0.2rem;
-		font-size: 1.5rem;
-	}
-
-	.lede {
-		margin: 0 0 1rem;
-		opacity: 0.7;
-		font-size: 0.9rem;
-	}
-
-	ul {
-		display: flex;
-		flex-direction: column;
-		gap: 0.3rem;
-		margin: 0;
-		padding: 0;
-		list-style: none;
-	}
-
-	li button {
-		display: flex;
-		flex-direction: column;
-		gap: 0.15rem;
-		width: 100%;
-		padding: 0.6rem 0.75rem;
-		border: 1px solid transparent;
-		border-radius: 10px;
-		background: transparent;
-		font: inherit;
-		text-align: left;
-		color: inherit;
-		cursor: pointer;
-	}
-
-	li button:hover {
-		background: rgb(0 0 0 / 0.04);
-	}
-
-	li button.on {
-		border-color: rgb(0 0 0 / 0.15);
-		background: #fff;
-	}
-
-	li span {
-		font-size: 0.8rem;
-		opacity: 0.75;
-	}
-
-	li small {
-		font-size: 0.72rem;
-		opacity: 0.5;
 	}
 
 	.view {
@@ -247,12 +173,6 @@
 		.models {
 			grid-template-columns: 1fr;
 			grid-template-rows: auto 1fr;
-		}
-
-		aside {
-			max-height: 40vh;
-			border-right: 0;
-			border-bottom: 1px solid rgb(0 0 0 / 0.08);
 		}
 	}
 </style>
