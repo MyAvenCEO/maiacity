@@ -23,8 +23,9 @@
 import * as THREE from 'three'
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js'
 import { flagstone, grass, groundCover, leaves, limestone, oak, soil, water } from './textures'
-import { cafes, coops, coopsAround, henPatches, squaresAround, workshops, type Kit } from './spaces'
-import { apiary, fishes, herd } from './animals'
+import { cafes, coops, coopsAround, henPatches, rabbitPatches, squaresAround, workshops, type Kit } from './spaces'
+import { apiary, fishes, herd, TANK_FISH } from './animals'
+import { settled as actorsSettled } from '$lib/actors/build'
 import { buildFactory, LEVELS as FACTORY_LEVELS, NAMES as FACTORY_NAMES } from './factory'
 import { buildTent } from './tent'
 import { furnish, terraceSet } from './rooms'
@@ -871,7 +872,7 @@ export async function mountInterior(container: HTMLElement, kind: DomeKind, onPr
 			herd('goat', [0.05, 1.6, 3.2, 4.7].map((a) => goatAt(a + Math.PI / 4)), 71, eye),
 			herd('goose', [40, 110, 180, 240].map(at).map((p) => ({ x: p.x, z: p.z, r: 6, n: 5 })), 72, eye),
 			herd('frog', [20, 75, 150, 215].map(at).map((p) => ({ x: p.x, z: p.z, r: 3.5, n: 4 })), 74, eye),
-			...(kind === 'master' ? [herd('hen', henPatches(squareR), 73, eye)] : [])
+			...(kind === 'master' ? [herd('hen', henPatches(squareR), 73, eye), herd('rabbit', rabbitPatches(squareR), 78, eye)] : [])
 		]
 		for (const f of flocks) {
 			scene.add(f.object)
@@ -1770,7 +1771,7 @@ export async function mountInterior(container: HTMLElement, kind: DomeKind, onPr
 				tank.position.set(x, 0.55, z)
 				tank.castShadow = true
 				scene.add(tank)
-				const tankFish = fishes([{ x, z, r: 0.55, y: 0.92, n: 5 }], [], 62 + i, eye)
+				const tankFish = fishes([{ x, z, r: 0.55, y: 0.92, n: 5 }], [], 62 + i, eye, TANK_FISH)
 				scene.add(tankFish.object)
 				animated.push(tankFish.update)
 				const surf = new THREE.Mesh(new THREE.CircleGeometry(0.7, 24), m.water(1))
@@ -2115,6 +2116,11 @@ export async function mountInterior(container: HTMLElement, kind: DomeKind, onPr
 		hold: walker,
 		sky,
 		place: (x, z, yw, p, y) => walker.place(x, z, yw, p, y),
+		// stand where the shot is, and wait for every animal's skin, meshed off the page, to be there
+		stage: async (w) => {
+			walker.place(w.stand[0], w.stand[1], 0, 0)
+			await actorsSettled()
+		},
 		animate: (t) => {
 			for (const a of animated) a(t)
 		},
