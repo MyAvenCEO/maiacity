@@ -88,10 +88,10 @@ Rules of thumb on the Rec.709 display (through the ACES 2.0 output, 0–100 IRE)
 **Exposure and white balance in linear light.** A balance's `linear` switch sets white balance and exposure as gains
 in linear light, the way Cullen Kelly sets them; contrast, highlights, lows and saturation stay in the log. Every new
 balance starts with it on, and `grade_match` proposes it on. Above ACEScct 0.155 (about 4.5 stops under grey) a gain
-and a log offset are the same thing, so the numbers mean what they always meant. Below it, the log offset of a balance
-without `linear` lifts and tints the deep shadows: the milky blacks of Day 01. With `linear` on, an exposure or white
-balance move leaves black black, so lows are never needed to undo one. A balance saved without the switch (Day 01's,
-before 2026-10-03) keeps working the old way until it is switched on.
+and a log offset are the same thing, so the numbers mean what they always meant. On the Rec.709 display that line is
+about 8 IRE: only what lies under it changes. There, the log offset of a balance without `linear` lifts and tints the
+deepest blacks; with `linear` on, black stays black and neutral. A balance saved without the switch keeps working the
+old way until it is switched on (Day 01's were switched on on 2026-10-03).
 
 ## The tools
 
@@ -159,10 +159,13 @@ so it never computes the grade itself.
   on.
 - **Leave tint at 0 unless a neutral really is green or magenta.** A tint of 0.06 against a +0.8 IRE green moved skin
   4° toward pink.
-- **An exposure move in the log lifts the blacks too.** Before `linear`, exposure was an ACEScct offset: +0.6 took
-  the bedroom's blacks from 7 to 9 IRE, and lows (−0.35 to −0.6) were spent pulling them back down, which also
-  darkened the lower mids. That is why the switch exists. Where a shot is flat, like the overcast garden, contrast
-  around mid grey (0.15) does it.
+- **Raising exposure raises the blacks: that is exposure, not the log.** +0.6 took the bedroom's blacks from 7 to
+  9 IRE. Measured again with `linear` on (2026-10-03), the same move gives the same 9 IRE: those blacks sit just above
+  the toe, where a log offset and a linear gain are the same. The lows that held them down while the face came up
+  (−0.35 to −0.8) are a shadow-contrast choice, and they stay. The log offset showed only where a shot has real
+  near-black content: c765990b at +1.3 stops, and the veranda shot, whose black went from 3.5 IRE (a little warm) to
+  2.9 IRE (neutral) once linear. Where a shot is flat, like the overcast garden, contrast around mid grey (0.15) does
+  it.
 - **Skin moves with tint, far.** On the garden faces, tint −0.1 → −6.6°, −0.15 → −1.5°, −0.2 → +4.2°. Set it in steps
   of 0.05 and read the skin after each.
 - **Same light, same balance.** The feet on the rug took the bedroom master's balance unchanged: the rug's whites

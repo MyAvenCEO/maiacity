@@ -45,7 +45,7 @@ a primary source (the ACES CTL, OpenColorIO's code and configs, Apple's SDK head
 3. **Full-resolution frames lose half their chroma.** Grading stills, hero frames and the 4K render are decoded to
    4:2:0 even when the source is 4:2:2 ProRes (F4).
 4. **Exposure and white balance are offsets in ACEScct.** Above about 4.5 stops under grey that equals a linear gain.
-   Below it, it lifts the blacks — the milky blacks Day 01 recorded. Colourists do exposure and balance in linear (F5).
+   Below it, it lifts and tints the deepest blacks (on Day 01: only the near-black shots, by about half an IRE). Colourists do exposure and balance in linear (F5).
 5. **Bradford is a convention.** Apple's white paper names no chromatic adaptation. ACES, OCIO and we all use Bradford.
 6. **Our Apple Log 2 reference values need re-checking.** They came from a hand-built OCIO 2.5.2 chain. Regenerate
    them from OCIO 2.6.0's built-in colour space (F6).
@@ -535,7 +535,10 @@ If Core Image refuses `x422` on any path, use `RGhA` for single frames, where sp
 
 #### F5 — Exposure and white balance work in the log · Medium
 
-**Status: fixed in #168 (2026-10-03): the balance's `linear` switch, on for every new balance.**
+**Status: fixed in #168 (2026-10-03): the balance's `linear` switch, on for every new balance.** Measured on Day 01
+after the fix: the 7 → 9 IRE below was the exposure itself, since those blacks sit above the toe. The log offset
+touched only the two shots with real near-black content (c765990b, the veranda), lifting and warming their deepest
+blacks by about half an IRE.
 
 **Evidence**
 - `grade.rs:124–137` and the Metal twin (`vault-render/src/gpu.rs:47–53`) add temp, tint and exposure as ACEScct

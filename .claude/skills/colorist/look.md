@@ -122,7 +122,9 @@ A look alone gave a flat, tinted picture: the colours moved but the image stayed
    a stop down and a contrast of 0.3 around mid grey: `{ tool: "balance", linear: true, exposure: −1, contrast: 0.3 }`.
    The base balance stays the base correction; the mood lives here, per shot, so every shot can land on the same key.
    Day 01's trims were first one CDL each (slope k, offset 0.414·(1 − k) + stops / 17.52): the same picture above the
-   toe, but its exposure a log offset. Rebuilt on 2026-10-03 as linear balances, with the same numbers.
+   toe, but its exposure a log offset and its numbers unreadable. Rebuilt on 2026-10-03 as linear balances with the
+   same numbers (slope 1.35, offset −0.2134 is exposure −0.89, contrast 0.35). A balance runs on its own exact kernel,
+   so the trim no longer rides inside the look's cube: near-neutral surfaces moved by up to 1 IRE.
 3. **Finishing:** vignette 0.65 (size 0.85, soft), grain 0.12 (0.25 read as noise on the 4K master).
 4. **Secondaries: only quiet holds.** A sky kept from clipping (a luma key over 72 IRE in a band at the top). Nothing
    else.
