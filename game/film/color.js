@@ -161,7 +161,11 @@ export function detect(stream, format = {}, kind = 'video', extra = {}) {
 	if (ours && ours in PROFILES) return info(/** @type {Profile} */ (ours), 'our own tag');
 	const given = extra.sequence?.color?.profile;
 	if (given && given in PROFILES) return info(/** @type {Profile} */ (given), 'given when the sequence was packed');
-	// Apple's camera log: the iPhone writes its log profile into the QuickTime metadata
+	// Apple's camera log, by Apple's own identifiers (CoreVideo's kCVImageBufferLogTransferFunction_…) wherever a tag
+	// carries them: Apple Wide Gamut is Apple Log 2, Rec.2020 the first Apple Log
+	if (all.includes('com.apple.apple-wide-gamut.apple-log')) return info('apple-log-2', 'log atom (Apple Wide Gamut · Apple Log)');
+	if (all.includes('com.apple.rec2020.apple-log')) return info('apple-log', 'log atom (Rec.2020 · Apple Log)');
+	// else as the iPhone writes its log profile into the QuickTime metadata
 	if (/apple\s*log\s*2|applelog2/.test(all)) return info('apple-log-2', 'Apple metadata (Apple Log 2)');
 	if (/apple\s*log|applelog/.test(all)) return info('apple-log', 'Apple metadata (Apple Log)');
 	// scene-linear float: an EXR's header names its primaries

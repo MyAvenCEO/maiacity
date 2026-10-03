@@ -79,8 +79,10 @@ pub struct VideoInfo {
     pub transform: CGAffineTransform,
 }
 
-/// A stretch of a movie's frames, decoded to 10-bit 4:2:0 (Core Image reads their matrix and range from the frames'
-/// own tags). Holds the frame shown and the one after it, never more.
+/// A stretch of a movie's frames, decoded to 10-bit 4:2:2 (Core Image reads their matrix and range from the frames'
+/// own tags): a ProRes 422 original keeps its full colour at full size — its grading stills, hero frames and the render
+/// see every chroma sample the iPhone recorded; a 4:2:0 source is filled out. Holds the frame shown and the one after
+/// it, never more.
 pub struct VideoReader {
     reader: Retained<AVAssetReader>,
     output: Retained<AVAssetReaderTrackOutput>,
@@ -101,8 +103,9 @@ impl VideoReader {
             let size = track.naturalSize();
             let info = VideoInfo { width: size.width, height: size.height, fps: track.nominalFrameRate() as f64, transform: track.preferredTransform() };
             let reader = AVAssetReader::assetReaderWithAsset_error(&asset).map_err(|e| anyhow!("{e:?}"))?;
-            let x420 = fourcc(b"x420");
-            let settings = dict(&[(&key("PixelFormatType"), &x420)]);
+            // kCVPixelFormatType_422YpCbCr10BiPlanarVideoRange
+            let x422 = fourcc(b"x422");
+            let settings = dict(&[(&key("PixelFormatType"), &x422)]);
             let output = AVAssetReaderTrackOutput::assetReaderTrackOutputWithTrack_outputSettings(&track, Some(&settings));
             output.setAlwaysCopiesSampleData(false);
             reader.addOutput(&output);

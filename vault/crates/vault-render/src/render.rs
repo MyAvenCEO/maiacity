@@ -357,10 +357,11 @@ fn plan(t: &Timeline, lib: &dyn Library) -> Result<Plan> {
             continue;
         }
         let still = is_still(&m, &file);
-        let (mut profile, from) = profile_of(&m, &file, still);
+        let (profile, from) = profile_of(&m, &file, still);
+        // a camera's file whose colour can't be told is never guessed as Rec.709: a log clip read so is flat and
+        // wrong-coloured in every frame — the render stops until its profile is set
         if vault_media::cst::journey(&profile).is_none() {
-            warnings.push(format!("{}: colour unknown ({from}) — taken as Rec.709 video (idt-rec709); set it in the studio", if m.title.is_empty() { &m.hash } else { &m.title }));
-            profile = "rec709".into();
+            bail!("{title}: colour unknown ({from}) — set its profile in the studio before rendering");
         }
         sources.insert(hash, Source { file, kind: if still { Kind::Still } else { Kind::Video }, profile });
     }
@@ -1081,9 +1082,11 @@ fn frame_of(gpu: &Gpu, lib: &dyn Library, c: &Clip, at: f64, proxy_ok: bool) -> 
         return gpu.journey(&*sequence_frame(&mut seq, i)?, args);
     }
     let still = is_still(&m, &file);
-    let profile = profile_of(&m, &file, still).0;
-    let profile = if vault_media::cst::journey(&profile).is_some() { profile } else { "rec709".into() };
-    let args = vault_media::cst::journey(&profile).unwrap().kernel_args();
+    let (profile, told) = profile_of(&m, &file, still);
+    let Some(journey) = vault_media::cst::journey(&profile) else {
+        bail!("{}: colour unknown ({told}) — set its profile in the studio before grading it", if m.title.is_empty() { &m.hash } else { &m.title });
+    };
+    let args = journey.kernel_args();
     if still {
         return gpu.journey(&*gpu.still(&file)?, args);
     }
@@ -1132,9 +1135,12 @@ pub fn hero_frame(
                     sequence = Some(sequence_fps(&m));
                     sequence_profile(&m, &file)?.0.unwrap_or_else(|| "linear-rec709".into())
                 } else {
-                    profile_of(&m, &file, is_still(&m, &file)).0
+                    let (profile, told) = profile_of(&m, &file, is_still(&m, &file));
+                    if vault_media::cst::journey(&profile).is_none() {
+                        bail!("{}: colour unknown ({told}) — set its profile in the studio first", if m.title.is_empty() { &m.hash } else { &m.title });
+                    }
+                    profile
                 };
-                let profile = if vault_media::cst::journey(&profile).is_some() { profile } else { "rec709".into() };
                 let from = c.in_ + (at - c.start);
                 let title = if m.title.is_empty() { m.hash.clone() } else { m.title.clone() };
                 (file, profile, from, format!("{title} at {from:.3} s"))

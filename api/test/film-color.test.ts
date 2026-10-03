@@ -20,6 +20,9 @@ test("detect: our own tag, Apple's metadata, HDR, EXR headers, stills, untagged 
   expect(detect({ tags: { comment: "maiacity:color=acescct" } }).profile).toBe("acescct");
   expect(detect({}, { tags: { comment: "maiacity:color=apple-log-2" } }).profile).toBe("apple-log-2");
   expect(detect({ codec_name: "hevc", color_primaries: "bt2020" }, { tags: { "com.apple.quicktime.camera.log": "Apple Log" } }).profile).toBe("apple-log");
+  // Apple's own identifiers (CoreVideo's kCVImageBufferLogTransferFunction_AppleLog2 / _AppleLog)
+  expect(detect({ codec_name: "prores" }, { tags: { logs: "com.apple.apple-wide-gamut.apple-log" } }).profile).toBe("apple-log-2");
+  expect(detect({ codec_name: "prores" }, { tags: { logs: "com.apple.rec2020.apple-log" } }).profile).toBe("apple-log");
   expect(detect({ color_transfer: "arib-std-b67", color_primaries: "bt2020" }).profile).toBe("hlg");
   expect(detect({ color_transfer: "smpte2084" }).profile).toBe("pq");
   const iphone = detect({ codec_name: "hevc", color_primaries: "bt2020", pix_fmt: "yuv420p10le" }, { tags: { "com.apple.quicktime.make": "Apple" } });

@@ -27,9 +27,14 @@ pub fn detect(p: &Probe) -> ColorInfo {
     let primaries = p.primaries.as_deref().unwrap_or("unknown");
     // Apple's camera log: the iPhone writes it into the QuickTime metadata (or, newer, as the transfer function)
     let apple = format!("{all} {}", transfer.to_lowercase());
-    // the sample description's `logs` atom: Apple Wide Gamut + the Apple Log curve is Apple Log 2
+    // the sample description's `logs` atom, Apple's own identifiers (CoreVideo's kCVImageBufferLogTransferFunction_…):
+    // Apple Wide Gamut + the Apple Log curve is Apple Log 2 (iPhone 17 Pro on "Log 2"); Rec.2020 + the Apple Log curve is
+    // the first Apple Log (iPhone 15 Pro and 16 Pro, or a 17 Pro left on "Log")
     if apple.contains("com.apple.apple-wide-gamut.apple-log") {
         return info("apple-log-2", "log atom (Apple Wide Gamut · Apple Log)");
+    }
+    if apple.contains("com.apple.rec2020.apple-log") {
+        return info("apple-log", "log atom (Rec.2020 · Apple Log)");
     }
     if apple.contains("logs=com.apple.log") || apple.contains("logtransferfunction=com.apple.log") {
         return info("apple-log", "log atom (Apple Log)");
@@ -62,4 +67,23 @@ pub fn detect(p: &Probe) -> ColorInfo {
         return info("rec709", "untagged 8-bit video: Rec.709");
     }
     info("unknown", "nothing to tell it by")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn with(tags: &[&str], transfer: Option<&str>, primaries: Option<&str>) -> Probe {
+        Probe { tags: tags.iter().map(|t| t.to_string()).collect(), transfer: transfer.map(String::from), primaries: primaries.map(String::from), bits: Some(10), ..Default::default() }
+    }
+
+    /// Apple's own identifiers, as CoreVideo's kCVImageBufferLogTransferFunction_AppleLog2 / _AppleLog spell them
+    #[test]
+    fn apple_logs_by_their_identifiers() {
+        assert_eq!(detect(&with(&["atom:logs=com.apple.apple-wide-gamut.apple-log"], None, Some("ITU_R_2020"))).profile, "apple-log-2");
+        assert_eq!(detect(&with(&["atom:logs=com.apple.rec2020.apple-log"], None, Some("ITU_R_2020"))).profile, "apple-log");
+        assert_eq!(detect(&with(&[], Some("com.apple.rec2020.apple-log"), Some("ITU_R_2020"))).profile, "apple-log");
+        // an Apple file in BT.2020 with nothing to tell which log: asked, never guessed
+        assert_eq!(detect(&with(&["com.apple.quicktime.make=Apple"], None, Some("ITU_R_2020"))).profile, "unknown");
+    }
 }
