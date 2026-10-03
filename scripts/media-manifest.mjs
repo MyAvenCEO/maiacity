@@ -7,7 +7,7 @@
 //
 // The mirror is the admin's: the key is MAIACITY_KEY, or the one this terminal was given (`bun media login`, kept in
 // ~/.config/maiacity/media-keys.json for that API). MAIACITY_API (or MEDIA_API) points it at another API.
-import { readdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 
@@ -47,7 +47,10 @@ try {
 const missing = [];
 for (const post of readdirSync(join(ROOT, 'blog'), { withFileTypes: true })) {
 	if (!post.isDirectory()) continue;
-	const md = readFileSync(join(ROOT, 'blog', post.name, 'post.md'), 'utf8');
+	// a day's folder before its article is written (its idea, its sources) has nothing in it the journal shows
+	const file = join(ROOT, 'blog', post.name, 'post.md');
+	if (!existsSync(file)) continue;
+	const md = readFileSync(file, 'utf8');
 	if (/^draft:\s*true/m.test(md)) continue; // an unpublished day is not built for the public
 	// a file is named by its hash with its extension (a bare 64-hex string may be anything: a key, a checksum)
 	const refs = [...md.matchAll(/\b([0-9a-f]{64})\.[a-z0-9]+\b/g)].map((m) => m[1]);
