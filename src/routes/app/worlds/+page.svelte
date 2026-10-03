@@ -3,7 +3,6 @@
 	film camera like every sandbox (game/film/worlds.js). An admin's.
 -->
 <script lang="ts">
-	import { base } from '$app/paths';
 	import Icon from '$lib/app/Icon.svelte';
 	import { WORLDS } from '$lib/app/places';
 </script>
@@ -14,7 +13,6 @@
 
 <main class="worlds">
 	<header>
-		<a class="back" href="{base}/app/">← Dashboard</a>
 		<h1>Worlds</h1>
 		<p class="lede">Real places as 3D worlds: measured from photos, to walk through and to film in the studio.</p>
 	</header>
@@ -32,13 +30,6 @@
 		max-width: 60rem;
 		margin: 0 auto;
 		padding: 2rem 1rem 4rem;
-	}
-
-	.back {
-		color: inherit;
-		opacity: 0.7;
-		text-decoration: none;
-		font-size: 0.9rem;
 	}
 
 	h1 {

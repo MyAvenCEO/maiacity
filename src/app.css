@@ -60,6 +60,19 @@ body {
 	}
 }
 
+/* The room the app's nav pill takes at the foot of the screen ($lib/app/NavPill.svelte), with the home bar under it: a
+   full-screen page keeps what it shows at its foot above it (the joystick, a hint, a sheet, the studio's timeline).
+   Kept to the pill's sizes: with its words on a desktop, its icons alone on a phone or in a narrow window. */
+:root {
+	--nav-room: calc(5.25rem + env(safe-area-inset-bottom, 0px));
+}
+
+@media (max-width: 760px), (max-height: 500px) {
+	:root {
+		--nav-room: calc(4.5rem + env(safe-area-inset-bottom, 0px));
+	}
+}
+
 h1,
 h2,
 h3 {

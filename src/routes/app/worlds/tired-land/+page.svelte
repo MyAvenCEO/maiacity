@@ -3,7 +3,6 @@
 	walked like every sandbox: drag to look, WASD to walk, Shift to hurry.
 -->
 <script lang="ts">
-	import { base } from '$app/paths';
 	import { onDestroy, onMount } from 'svelte';
 	import type { TiredLandHandle } from '$lib/worlds/tired-land';
 	import TouchStick from '$lib/touch/TouchStick.svelte';
@@ -30,7 +29,7 @@
 
 <div class="world">
 	<div class="stage" bind:this={stage}></div>
-	<WorldBar title="The tired land" subtitle="Day 19 · a highway through fields of one crop" back="Worlds" href="{base}/app/worlds/" />
+	<WorldBar title="The tired land" subtitle="Day 19 · a highway through fields of one crop" />
 	<WalkHint />
 	<TouchStick move={(x, y, hurry) => land?.move(x, y, hurry)} look={(dx, dy) => land?.look(dx, dy)} {stage} taps=".bar a, .bar button" />
 </div>

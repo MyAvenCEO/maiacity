@@ -1,9 +1,9 @@
 <!--
 	The signed-in app (/app/): its own place, apart from the public site — no public header, no footer. Whoever opens it
 	is asked who they are first (their passkey); then the dashboard, the games and — for whoever holds them — the
-	admin's tools, with a slim top bar and the nav pill at the bottom to move between them and back home.
-	A sandbox runs full screen (it has its own way back), and so does the studio's editor: no bar, no pill there — nor
-	while a game has gone full screen over its own page (Sandbox 3's domes).
+	admin's tools. One nav pill at the foot of every page is the only way round ($lib/app/NavPill.svelte: back, home,
+	you): no top bar, and no page has a back button of its own. A sandbox, a world and the studio's editor run full
+	screen, the pill over them — and so does a game gone full screen over its own page (Sandbox 3's domes).
 -->
 <script lang="ts">
 	import { base } from '$app/paths';
@@ -16,7 +16,7 @@
 	import NavPill from '$lib/app/NavPill.svelte';
 	import AskModal from '$lib/app/AskModal.svelte';
 	import { immersive as fullScreen } from '$lib/app/immersive.svelte';
-	import { gameAt, placeOf, released } from '$lib/app/places';
+	import { gameAt, released } from '$lib/app/places';
 
 	let { children } = $props();
 
@@ -84,11 +84,9 @@
 	}
 
 	const rel = $derived(page.url.pathname.slice(base.length));
-	// full screen: a sandbox (Sandbox 3 is a page of cards, it keeps the bar), a world (its own bar has the time of
-	// day), the 3D models' and the actors' turntables (their own way back, their controls at the edges), and the
-	// studio's editor
+	// full screen: a sandbox (Sandbox 3 is a page of cards), a world, the 3D models' and the actors' turntables, and
+	// the studio's editor
 	const immersive = $derived(/^\/app\/(games\/(?!sandbox-3\/?$)[^/]+|worlds\/[^/]+|models|actors)\/?$/.test(rel) || rel.startsWith('/app/studio') || fullScreen.on);
-	const title = $derived(placeOf(page.url.pathname));
 	// a draft game is the admins' only; anyone else with its link is told so
 	const game = $derived(gameAt(page.url.pathname));
 	const closed = $derived(!!game && !released(founder, game));
@@ -119,27 +117,17 @@
 		{#if !native()}<p class="fine">Not a founder yet? <a href="{base}/join/">Join the line →</a></p>{/if}
 	</div>
 {:else}
-	{#if !immersive}
-		<header class="bar">
-			<a class="logo" href="{base}/app/">maia<strong>CITY</strong></a>
-			{#if title}<span class="where">{title}</span>{/if}
-			<span class="grow"></span>
-			<span class="name">{founder.name}</span>
-			<button class="quiet" onclick={leave}>Sign out</button>
-		</header>
-	{/if}
 	{#if closed}
 		<div class="gate">
 			<h1>Not released yet.</h1>
 			<p class="lede">{game?.label} is still being built. It opens to every founder once it is released.</p>
-			<a class="pill-btn" href="{base}/app/">Back to the dashboard</a>
 		</div>
 	{:else}
 		<div class="app" class:immersive>
 			{@render children()}
 		</div>
-		{#if !immersive}<NavPill {founder} onsignout={leave} />{/if}
 	{/if}
+	<NavPill {founder} onsignout={leave} />
 {/if}
 {#if native() && phase === 'ready'}<AskModal />{/if}
 
@@ -194,53 +182,16 @@
 		text-decoration: none;
 	}
 
-	.bar {
-		position: sticky;
-		top: 0;
-		z-index: 40;
-		display: flex;
-		align-items: center;
-		gap: 0.9rem;
-		/* pinned to the home screen, the status bar is see-through: the bar reaches under it, its words below it */
-		padding: calc(0.8rem + env(safe-area-inset-top, 0px)) clamp(1rem, 3vw, 2rem) 0.8rem;
-		border-bottom: 1px solid var(--line);
-		background: rgb(241 237 227 / 0.92);
-		backdrop-filter: blur(10px);
+	/* Every page of the app sits in it. Its own layers stay inside it (isolation), so the nav pill is always over them;
+	   a page that is not full screen keeps clear of the status bar of the pinned app (see-through over the page) and
+	   has room at its foot for the pill */
+	.app {
+		isolation: isolate;
 	}
 
-	.where {
-		padding-left: 0.9rem;
-		border-left: 1px solid var(--line);
-		font-size: 0.8rem;
-		letter-spacing: 0.14em;
-		text-transform: uppercase;
-		color: var(--ink-soft);
-	}
-
-	.grow {
-		flex: 1;
-	}
-
-	.name {
-		font-size: 0.9rem;
-		color: var(--ink-soft);
-	}
-
-	.bar button {
-		padding: 0;
-		border: 0;
-		background: none;
-		font: inherit;
-		cursor: pointer;
-	}
-
-	.bar button:hover {
-		color: var(--ink);
-	}
-
-	/* room under the content for the pill */
 	.app:not(.immersive) {
-		padding-bottom: 6.5rem;
+		padding-top: env(safe-area-inset-top, 0px);
+		padding-bottom: calc(var(--nav-room) + 1.5rem);
 	}
 
 	/* Pinned to an iPhone's home screen, iOS stops the screen's frame short of its foot ($lib/app/screenGap.js): a page in
@@ -250,11 +201,5 @@
 		position: fixed;
 		inset: 0 0 calc(-1 * var(--screen-gap, 0px)) 0;
 		transform: translateZ(0);
-	}
-
-	@media (max-width: 560px) {
-		.name {
-			display: none;
-		}
 	}
 </style>

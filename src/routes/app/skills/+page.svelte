@@ -4,7 +4,6 @@
 	links between the skills, and a search through all of them. An admin's. ?skill=<id>&file=<file> opens one page.
 -->
 <script lang="ts">
-	import { base } from '$app/paths';
 	import { marked } from 'marked';
 	import { onMount, tick } from 'svelte';
 	import { CREW, SKILLS, skillById, slug, type Doc, type Skill } from '$lib/skills';
@@ -103,7 +102,6 @@
 
 <main class="wiki">
 	<nav class="crew" aria-label="The film crew">
-		<a class="back" href="{base}/app/">← Dashboard</a>
 		<button class="home" class:on={!skillId} onclick={() => open(null)}>
 			<b>Skills</b><span>the film crew · {totals.skills} skills · {totals.subs} sub-skills</span>
 		</button>
@@ -205,15 +203,6 @@
 		overflow: auto;
 		padding: 1.2rem 0.8rem 2rem;
 		border-right: 1px solid rgb(0 0 0 / 0.08);
-	}
-
-	.back {
-		display: block;
-		margin: 0 0.4rem 0.8rem;
-		color: inherit;
-		opacity: 0.65;
-		font-size: 0.85rem;
-		text-decoration: none;
 	}
 
 	button {

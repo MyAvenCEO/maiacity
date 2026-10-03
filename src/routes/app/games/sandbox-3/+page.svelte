@@ -21,7 +21,7 @@
 	const src = (image: string) => asset(image);
 
 	let walking = $state<DomeKind | null>(null);
-	// inside a dome the world has the whole screen: the app's bar and pill step aside
+	// inside a dome the world has the whole screen, the nav pill over it (its way back steps out of the dome)
 	$effect(() => {
 		if (walking) return enter();
 	});
@@ -34,7 +34,6 @@
 
 <div class="page">
 	<header>
-		<a class="back" href="{base}/app/">← Dashboard</a>
 		<p class="eyebrow">avenCITY Sandbox 3</p>
 		<h1>Inside the domes</h1>
 		<p class="lede">A village starts in tents, grows four kinds of dome, and makes their glass itself. Choose one and step inside: drag to look, WASD to walk, Shift to hurry.</p>
@@ -71,11 +70,6 @@
 		max-width: 76rem;
 		margin: 0 auto;
 		padding: 2.5rem 1.5rem 5rem;
-	}
-	.back {
-		font-size: 0.9rem;
-		text-decoration: none;
-		color: var(--ink-soft, #55605a);
 	}
 	.eyebrow {
 		margin: 2rem 0 0;

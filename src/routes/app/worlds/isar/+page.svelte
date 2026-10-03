@@ -4,7 +4,6 @@
 	river, up onto the Wittelsbacherbrücke. Its map and its ground are open data, credited on the Worlds page.
 -->
 <script lang="ts">
-	import { base } from '$app/paths';
 	import { onDestroy, onMount } from 'svelte';
 	import type { IsarHandle } from '$lib/worlds/isar';
 	import TouchStick from '$lib/touch/TouchStick.svelte';
@@ -32,7 +31,7 @@
 
 <div class="world">
 	<div class="stage" bind:this={stage}></div>
-	<WorldBar title="The Isar" subtitle="Munich · Wittelsbacherbrücke to the railway bridge" back="Worlds" href="{base}/app/worlds/" />
+	<WorldBar title="The Isar" subtitle="Munich · Wittelsbacherbrücke to the railway bridge" />
 	{#if status}<p class="status">{status}</p>{/if}
 	<WalkHint />
 	<TouchStick move={(x, y, hurry) => river?.move(x, y, hurry)} look={(dx, dy) => river?.look(dx, dy)} {stage} taps=".bar a, .bar button" />

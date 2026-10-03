@@ -55,15 +55,16 @@
 	/*
 	 * The HUD's frame over the canvas: clear of the screen's edges, and on a
 	 * phone of the notch and the home bar too (the page runs edge to edge,
-	 * viewport-fit=cover). `.hud-frame-tight` holds the top closer, for a
-	 * readout strip that reads as a status bar.
+	 * viewport-fit=cover); at the foot, of the app's nav pill (--nav-room,
+	 * src/app.css). `.hud-frame-tight` holds the top closer, for a readout
+	 * strip that reads as a status bar.
 	 */
 	.hud-frame {
 		--hud-edge: 1.25rem;
 		--hud-top: var(--hud-edge);
 		padding: calc(var(--hud-top) + env(safe-area-inset-top, 0px))
 			calc(var(--hud-edge) + env(safe-area-inset-right, 0px))
-			calc(var(--hud-edge) + env(safe-area-inset-bottom, 0px))
+			calc(var(--hud-edge) + var(--nav-room, env(safe-area-inset-bottom, 0px)))
 			calc(var(--hud-edge) + env(safe-area-inset-left, 0px));
 	}
 

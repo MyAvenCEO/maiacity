@@ -1,5 +1,6 @@
-// A game can go full screen over its own page (Sandbox 3 opens a dome over its cards): while it does, the app's top
-// bar and nav pill step out of the way. A page calls enter() and gets back the function that leaves again.
+// A game can go full screen over its own page (Sandbox 3 opens a dome over its cards): while it does, the app treats
+// the page as full screen (the nav pill over it, the frame to the foot of the screen in the pinned app). A page calls
+// enter() and gets back the function that leaves again.
 import { untrack } from 'svelte';
 
 let depth = $state(0);

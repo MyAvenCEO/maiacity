@@ -27,6 +27,7 @@
 	import DomeInterior from '$lib/sandbox-2/DomeInterior.svelte';
 	import TouchStick from '$lib/touch/TouchStick.svelte';
 	import { SkyControl } from '$lib/sandbox-kit';
+	import { wayBack } from '$lib/app/back.svelte';
 	import { planFor } from '../../../../../game/island/villages';
 	import type { DomeKind } from '$lib/sandbox-2/interior/interior';
 	import type { WorldHandle } from '$lib/sandbox-2/world/world';
@@ -232,6 +233,11 @@
 		if (city) world?.focus(api.tileOf(city)!, visibleMiddle(), 0.62);
 	}
 
+	// inside a city, the nav pill's way back goes up to the planet
+	$effect(() => {
+		if (inside) return wayBack('Back to the planet', leave);
+	});
+
 	/** On the planet: a city is entered, an empty card is where a founder places their city, the sea is the sea. */
 	async function onTile(pick: { tile: number; biome: 'land' | 'water'; coop: string | null }) {
 		reset();
@@ -428,7 +434,6 @@
 	<!-- top left: where you are, and when -->
 	<div class="corner tl">
 		{#if inside}
-			<button class="pill back" onclick={leave} aria-label="Back to the planet">←</button>
 			<button class="pill brand" onclick={() => show(inside!.slug)}>
 				<strong>{inside.name}</strong>
 				<span class="dim">{inside.citizens} {inside.citizens === 1 ? 'citizen' : 'citizens'} · {standing.length} {standing.length === 1 ? 'settlement' : 'settlements'}</span>
@@ -436,7 +441,6 @@
 			<!-- the time of the sky: Auto, or set by hand ($lib/sandbox-kit) -->
 			<SkyControl />
 		{:else}
-			<a class="pill back" href="{base}/app/" aria-label="Back to the dashboard">←</a>
 			<div class="pill brand">
 				<strong>avenCITY Sandbox 2</strong>
 				{#if cityData}<span class="dim">{cityData.calendarLabel}</span>{/if}
@@ -820,7 +824,7 @@
 
 	.tl { top: calc(1rem + env(safe-area-inset-top, 0px)); left: calc(1rem + env(safe-area-inset-left, 0px)); }
 	.tr { top: calc(1rem + env(safe-area-inset-top, 0px)); right: calc(1rem + env(safe-area-inset-right, 0px)); justify-content: flex-end; }
-	.bl { bottom: calc(1rem + env(safe-area-inset-bottom, 0px)); left: calc(1rem + env(safe-area-inset-left, 0px)); }
+	.bl { bottom: calc(1rem + var(--nav-room)); left: calc(1rem + env(safe-area-inset-left, 0px)); }
 
 	.pill {
 		display: inline-flex;
@@ -840,7 +844,6 @@
 	}
 
 	.pill:disabled { opacity: 0.5; cursor: default; }
-	.pill.back { padding-inline: 0.8rem; }
 	.pill.brand strong { font-family: 'Sun', var(--font-display, serif); font-weight: 500; }
 	.pill.cta { background: #1f2a23; color: #f2efe7; }
 	.pill.home strong { font-weight: 600; }
@@ -852,7 +855,8 @@
 	.pill.brand { cursor: pointer; font: inherit; font-size: 0.85rem; }
 	.link { padding: 0; border: 0; background: none; font: inherit; color: #c8744f; text-decoration: underline; cursor: pointer; }
 	.secondary { margin-top: 0.8rem; padding: 0.6rem 1.1rem; border: 1px solid rgb(31 42 35 / 0.15); border-radius: 999px; background: transparent; font: inherit; cursor: pointer; }
-	.bc { bottom: calc(1.25rem + env(safe-area-inset-bottom, 0px)); left: 50%; transform: translateX(-50%); }
+	/* what stands at the foot keeps above the app's nav pill (--nav-room, src/app.css) */
+	.bc { bottom: calc(1.25rem + var(--nav-room)); left: 50%; transform: translateX(-50%); }
 
 	.mint {
 		display: inline-flex;
@@ -880,7 +884,7 @@
 
 	.toast {
 		position: absolute;
-		bottom: calc(5.5rem + env(safe-area-inset-bottom, 0px));
+		bottom: calc(5.5rem + var(--nav-room));
 		left: 50%;
 		transform: translateX(-50%);
 		max-width: min(32rem, calc(100vw - 2rem));
@@ -895,7 +899,7 @@
 	.sheet {
 		position: absolute;
 		top: calc(4.5rem + env(safe-area-inset-top, 0px));
-		bottom: calc(1rem + env(safe-area-inset-bottom, 0px));
+		bottom: calc(1rem + var(--nav-room));
 		width: min(26rem, calc(100vw - 2rem));
 		padding: 1.4rem 1.4rem 1.6rem;
 		overflow-y: auto;
@@ -1078,7 +1082,8 @@
 	}
 
 	@media (max-width: 640px) {
-		.sheet { top: auto; bottom: 0; left: 0; right: 0; width: 100%; max-height: 72vh; border-radius: 22px 22px 0 0; }
-		.corner.bc { bottom: calc(0.9rem + env(safe-area-inset-bottom, 0px)); }
+		/* the sheet rises from the foot, its words scrolling clear of the nav pill over it */
+		.sheet { top: auto; bottom: 0; left: 0; right: 0; width: 100%; max-height: 72vh; padding-bottom: calc(1.6rem + var(--nav-room)); border-radius: 22px 22px 0 0; }
+		.corner.bc { bottom: calc(0.9rem + var(--nav-room)); }
 	}
 </style>

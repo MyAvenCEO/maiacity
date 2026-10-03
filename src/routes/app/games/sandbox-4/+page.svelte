@@ -7,7 +7,6 @@
 -->
 <script lang="ts">
 	import { asset } from '$lib/media/url';
-	import { base } from '$app/paths';
 	import { onDestroy, onMount } from 'svelte';
 	import type { VillageHandle } from '$lib/sandbox-2/interior/village';
 	import TouchStick from '$lib/touch/TouchStick.svelte';
@@ -59,7 +58,7 @@
 
 <div class="village">
 	<div class="stage" bind:this={stage}></div>
-	<WorldBar title="avenCITY Sandbox 4" subtitle="A dome cell · thirteen domes" back="Dashboard" href="{base}/app/" />
+	<WorldBar title="avenCITY Sandbox 4" subtitle="A dome cell · thirteen domes" />
 	<WalkHint keys="Drag to look · WASD to walk · Shift to hurry · walk through any door to step inside" />
 	<!-- on a phone: the joystick walks, any other finger on the world looks round -->
 	<TouchStick
@@ -97,9 +96,10 @@
 		inset: 0;
 		cursor: grab;
 	}
+	/* at the foot, above the walk hint and the app's nav pill (--nav-room, src/app.css) */
 	.opening {
 		position: absolute;
-		bottom: calc(3.8rem + env(safe-area-inset-bottom, 0px));
+		bottom: calc(3.8rem + var(--nav-room));
 		left: 50%;
 		transform: translateX(-50%);
 		margin: 0;
@@ -147,7 +147,7 @@
 	.label {
 		position: absolute;
 		left: 50%;
-		bottom: calc(10vh + env(safe-area-inset-bottom, 0px));
+		bottom: calc(10vh + var(--nav-room));
 		transform: translateX(-50%);
 		width: min(34rem, calc(100vw - 3rem));
 		display: flex;
@@ -196,7 +196,7 @@
 	/* ── on a phone: above the joystick ($lib/touch/TouchStick) ── */
 	@media (hover: none) and (pointer: coarse) {
 		.opening {
-			bottom: calc(11rem + env(safe-area-inset-bottom, 0px));
+			bottom: calc(11rem + var(--nav-room));
 		}
 	}
 
