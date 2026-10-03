@@ -13,7 +13,7 @@ export const CREW: { group: string; note: string; skills: string[] }[] = [
 	{ group: 'Story', note: 'what it is about and why they stay', skills: ['storyteller', 'hook-writer'] },
 	{ group: 'Picture', note: 'what is in front of the camera, and how it is seen', skills: ['director', 'cinematographer', 'gaffer', 'neewer-cb60', 'production-designer'] },
 	{ group: 'Post', note: 'the cut, the grade, the sound', skills: ['editor', 'colorist', 'sound-designer'] },
-	{ group: 'Out', note: 'one day, every platform', skills: ['content-derivatives'] }
+	{ group: 'Out', note: 'one day, every platform', skills: ['content-derivatives', 'delivery'] }
 ];
 
 export type Heading = { level: 2 | 3; text: string; id: string };
