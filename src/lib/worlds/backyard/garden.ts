@@ -2,14 +2,14 @@
  * THE COURTYARD AND THE GARDEN — the ground and everything that grows or stands on it: grey pavers in a herringbone
  * from wall to wall and out along the driveway; the garden corner's pale gravel in its curb of granite setts, the teak
  * table and its five chairs on it; the beds of bark mulch along the walls with their hedges, rhododendrons, honeysuckle
- * and the ivy cone, the privet and the corkscrew willow by the west wall and the climber up it, the little maple by the
+ * and the ivy cone, the privet and the corkscrew willow by the south wall and the climber up it, the little maple by the
  * front door, the old lilac in front of the shed; the bike before the steel window, the letterbox, the window boxes,
  * pots; on the shed the insect hotel, two floodlights, the rain barrel under its pipe, the sapling in its pot; ivy over
  * the driveway's wall. See ./layout.ts for where.
  */
 import * as THREE from 'three';
 import { type Builder, sized } from './kit';
-import { BEDS, COURT, DRIVE, GRAVEL, HOUSE, HOUSE_GROUND, SHED, SOUTH_WALL, TABLE, WEST_WALL, type Rect } from './layout';
+import { BEDS, COURT, DRIVE, GRAVEL, HOUSE, HOUSE_GROUND, SHED, EAST_WALL, TABLE, SOUTH_WALL, type Rect } from './layout';
 import { SIZE, fallenLeaves, gravel, mulch, pavers, setts, treadPlate } from './surfaces';
 import { seeded } from '$lib/models/outdoor';
 import type { Obstacle } from './pergola';
@@ -56,14 +56,14 @@ export function buildGarden(b: Builder): Garden {
 		b.box(len + 0.1, 0.1, 0.1, mat.setts, (a[0] + c[0]) / 2, 0.05, (a[1] + c[1]) / 2, -Math.atan2(c[1] - a[1], c[0] - a[0]));
 	};
 	for (let i = 0; i < outline.length; i++) curb(outline[i]!, outline[(i + 1) % outline.length]!);
-	const { house, south, shed } = BEDS as Record<string, Rect>;
+	const { house, wall, ivy, shed } = BEDS as Record<string, Rect>;
 	curb([house![0], house![3]], [house![1], house![3]]);
 	curb([house![1], house![2]], [house![1], house![3]]);
-	curb([south![1], south![2]], [south![0], south![2]]);
-	curb([south![1], south![2]], [south![1], shed![2]]);
-	curb([south![1], shed![2]], [shed![1], shed![2]]);
+	curb([ivy![1], ivy![2]], [ivy![0], ivy![2]]);
+	curb([ivy![1], ivy![2]], [ivy![1], shed![2]]);
+	curb([ivy![1], shed![2]], [shed![1], shed![2]]);
 	curb([shed![1], shed![2]], [shed![1], shed![3]]);
-	solid.push(house!, BEDS.west!, south!, shed!);
+	solid.push(house!, wall!, ivy!, shed!);
 	// a manhole cover in the courtyard's paving
 	const cover = b.add(new THREE.Mesh(new THREE.CylinderGeometry(0.32, 0.32, 0.012, 32), mat.iron));
 	cover.position.set(-2.4, 0.006, 7.4);
@@ -80,12 +80,13 @@ export function buildGarden(b: Builder): Garden {
 	plant(tree('maple', 5), -11.55, -0.62, 0.15, 1.2);
 	b.place(hedge({ w: 3.1, h: 0.76, d: 0.8, seed: 1 }), -13.4, -0.76);
 	b.place(bush({ w: 0.9, h: 0.6, cards: 110, card: 0.14, leaf: 'broad', tint: '#86a564', seed: 12 }), -10.95, -0.72);
-	// the west bed: rhododendrons under the trees, the climber up the wall between them
+	// the bed under the south wall: rhododendrons under the trees, the climber up the wall between them
 	for (const [z, s] of [[1.9, 1], [4.9, 2], [5.85, 3]] as const) b.place(bush({ w: 1.2, h: 1.15, d: 0.9, cards: 300, card: 0.2, leaf: 'broad', tint: '#557a48', seed: 20 + s }), -14.5, z, s);
 	const climb: [THREE.Vector3, THREE.Vector3][] = [];
-	for (let i = 0; i < 12; i++) climb.push([v3(WEST_WALL.x + 0.05, 0.05, 1.3 + i * 0.2), v3(WEST_WALL.x + 0.06, 2.0 + (i % 4) * 0.3, 0.9 + i * 0.27)]);
+	for (let i = 0; i < 12; i++) climb.push([v3(SOUTH_WALL.x + 0.05, 0.05, 1.3 + i * 0.2), v3(SOUTH_WALL.x + 0.06, 2.0 + (i % 4) * 0.3, 0.9 + i * 0.27)]);
 	b.add(stems(climb, { card: 0.2, per: 10, tint: '#7e9d5c', seed: 61, spread: 0.08, face: v3(1, 0, 0) }));
-	// the south bed: honeysuckle mounds and the ivy cone; the shed's bed: more of them, a young shrub and its label
+	// the bed between the gravel and the shed: honeysuckle mounds and the ivy cone; the shed's bed: more of them, a young
+	// shrub and its label
 	b.place(ivyCone({ h: 1.3, r: 0.55, seed: 2 }), -12.65, 6.95);
 	round.push({ x: -12.65, z: 6.95, r: 0.55 });
 	for (const [x, z, w, h, s] of [[-14.1, 7.3, 1.7, 0.75, 1], [-13.2, 8.7, 1.3, 0.6, 2], [-11.75, 7.25, 1.0, 0.55, 3], [-14.3, 9.6, 1.2, 0.7, 4], [-12.4, 9.95, 1.2, 0.6, 5], [-9.0, 9.95, 1.6, 0.55, 6], [-6.85, 9.95, 1.0, 0.5, 7]] as const)
@@ -148,10 +149,10 @@ export function buildGarden(b: Builder): Garden {
 	b.add(new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.09, 0.16, 20), mat.blue)).position.set(-13.65, 1.19, 10.7);
 	b.box(0.42, 0.16, 0.32, mat.tub, -13.25, 1.19, 10.7);
 
-	/* ── ivy over the driveway's east wall and the courtyard's south wall ──────────────────────────────────── */
+	/* ── ivy over the driveway's north wall and the courtyard's east wall ──────────────────────────────────── */
 	b.place(hedge({ w: DRIVE.z1 - DRIVE.z0, h: 2.55, d: 0.42, seed: 7 }), DRIVE.x1 + 0.08, (DRIVE.z0 + DRIVE.z1) / 2, Math.PI / 2);
-	b.place(hedge({ w: 3.6, h: 2.9, d: 0.4, seed: 8 }), SOUTH_WALL.x0 + 1.8, SOUTH_WALL.z - 0.1);
-	solid.push([DRIVE.x1 - 0.15, DRIVE.x1 + 0.3, DRIVE.z0, DRIVE.z1], [DRIVE.x0 - 0.3, DRIVE.x0, S.z1, DRIVE.z1], [SOUTH_WALL.x0, SOUTH_WALL.x0 + 3.6, SOUTH_WALL.z - 0.35, SOUTH_WALL.z]);
+	b.place(hedge({ w: 3.6, h: 2.9, d: 0.4, seed: 8 }), EAST_WALL.x0 + 1.8, EAST_WALL.z - 0.1);
+	solid.push([DRIVE.x1 - 0.15, DRIVE.x1 + 0.3, DRIVE.z0, DRIVE.z1], [DRIVE.x0 - 0.3, DRIVE.x0, S.z1, DRIVE.z1], [EAST_WALL.x0, EAST_WALL.x0 + 3.6, EAST_WALL.z - 0.35, EAST_WALL.z]);
 
 	/* ── fallen leaves: on the paving under the trees, on the gravel, a few on the terrace's stones ─────────── */
 	const leafMat = new THREE.MeshStandardMaterial({ map: fallenLeaves(), alphaTest: 0.5, roughness: 0.9, side: THREE.DoubleSide });

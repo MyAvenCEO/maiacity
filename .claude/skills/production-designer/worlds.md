@@ -121,37 +121,38 @@ The river in Munich from the Wittelsbacherbrücke south to the railway bridge (t
 A Munich backyard, built from seventeen photos (October 2026): rough, not surveyed, everything in it to its real
 measure. Its plan is one file (`layout.ts`); the houses `buildings.ts`, the pergola and the terrace `pergola.ts`, the
 ground and the garden `garden.ts`, the surfaces `surfaces.ts`, the tools and the welding `kit.ts`.
-- **Axes:** x east, z south, y up, in metres; the origin on the ground at the middle of the old workshop's front. North
-  is −z (`createSky({ map: true })`): the house and the workshop face south, the sun stands over the front house at
-  noon, the sails shade the sofa.
-- **The house** on the north side, its face at z −1.2 from the west wall (x −15) to x −0.6: four storeys of apricot
+- **Axes:** x north, z east, y up, in metres; the origin on the ground at the middle of the old workshop's front.
+  **North is +x — to the right of the sofa as one faces it** (`createSky({ map: true, north: π/2 })`): the house and
+  the workshop face east, the morning sun reaches in under the pergola, at noon it stands over the garden's wall in the
+  south, by the afternoon the house's shadow lies over the terrace.
+- **The house** on the west side, its face at z −1.2 from the south wall (x −15) to x −0.6: four storeys of apricot
   render, grey surrounds, white casements (some curtained, three lit at night), three dormers in the tiled roof. On its
-  ground floor from the west: the small white steel window behind the little maple, the front door of old wood on its
+  ground floor from the south: the small white steel window behind the little maple, the front door of old wood on its
   stone step under the arched glass canopy and the barn lamp, the bell plate, the letterbox on its post; the workshop's
   steel window (window boxes on its sill, the bike before it) and its brown double door on a steel plate.
 - **The workshop** (the annex), x −2.6…3.2, its face at z 0: one storey of saffron render, the cornice with its black
   tube ends, the big steel window (13 × 9 panes, clear) onto the studio behind it — a long table and benches, prints,
   three bulbs, a skylight.
-- **The terrace** under the pergola, x −3.3…5.4, z 0…4.0, and the corner behind the workshop's east end (to z −1.3):
+- **The terrace** under the pergola, x −3.3…5.4, z 0…4.0, and the corner behind the workshop's north end (to z −1.3):
   flagstones, two steel plates over the cellar's light well. The roof: clear corrugated polycarbonate on white rafters,
-  3.77 m at the workshop falling to 3.42 at the gutter; the grey steel (the beam west of the workshop, the corner post,
+  3.77 m at the workshop falling to 3.42 at the gutter; the grey steel (the beam south of the workshop, the corner post,
   the long diagonal strut down to the workshop's corner, the fat column with its collar and two pipe braces, the slim
-  column); the larch frame in front (sills on the paving, three posts — the west ones leaning out — the header with the
+  column); the larch frame in front (sills on the paving, three posts — the south ones leaning out — the header with the
   rolled-up side awning, the brown gutter whose pipe runs back diagonally to the house's corner). Two sand sails sag
   under the roof and glow by day. On it: the cognac club sofa centred under the window, the bamboo table, the bistro set
   in the corner, white ribbed planters (mint, lavender, rosemary, a trailing plant, oregano, rosemary in flower), the
   olive tree in its bowl, the bird of paradise, the monstera on the sill, the passion flower up its wire trellis, nine
   paper lanterns (two big ones under the roof, the rest by the trellis, hung from the strut), the ficus outside.
-- **The neighbour's wall** along the terrace's back and east: saffron to 1.72 m, a painted ledge (the toy monkey and
+- **The neighbour's wall** along the terrace's back and north side: saffron to 1.72 m, a painted ledge (the toy monkey and
   the toy bee on it, the festoon lights above, ivy over it), polycarbonate over it to 4.5 m, vines behind.
-- **The garden** in the north-west corner: pale gravel in a curb of granite setts, the oval teak table (its long axis
-  north–south) with two oiled recliners, a weathered one and two pine folding chairs, a red tin and an ashtray on it,
-  the stoneware crock; the beds of bark mulch with the hedge along the house, rhododendrons under the privet and the
-  corkscrew willow by the west wall, the climber up it, honeysuckle and the ivy cone.
-- **The south side:** the shed (x −13…−6.2), its long wall facing the courtyard with the insect hotel, two floodlights,
-  the rain barrel under its pipe, the old lilac before it, the sapling in its pot; the gate west of it under its glass
-  canopy, the station clock and the plaque; the driveway east of it, ivy over its wall, out through the passage under
-  the front house. The neighbours' houses stand over the walls.
+- **The garden** in the south-west corner: pale gravel in a curb of granite setts, the oval teak table (its long axis
+  east–west, along the wall) with two oiled recliners, a weathered one and two pine folding chairs, a red tin and an
+  ashtray on it, the stoneware crock; the beds of bark mulch with the hedge along the house, rhododendrons under the
+  privet and the corkscrew willow by the south wall, the climber up it, honeysuckle and the ivy cone.
+- **The east side:** the shed (x −13…−6.2), its long wall facing the courtyard with the insect hotel, two floodlights,
+  the rain barrel under its pipe, the old lilac before it, the sapling in its pot; the gate south of it under its glass
+  canopy, the station clock and the plaque; the driveway north of it, ivy over its wall, out east through the passage
+  under the front house on the street. The neighbours' houses stand over the walls.
 - **Walked** at a courtyard's pace (1.4 m/s, Shift 3.2): the paving, the gravel, the terrace and its corner, the
   driveway to the passage; not the beds, the walls or the furniture. **Filmed** as `world.sandbox: 'backyard'`; its
   lights are the shot's `lamps` (the lanterns, the festoon, the front door's lamp, the studio, the lit windows). Its

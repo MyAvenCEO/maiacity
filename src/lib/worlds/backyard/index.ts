@@ -2,15 +2,16 @@
  * THE BACKYARD — a real Munich backyard as a world, built from seventeen photos (October 2026): a courtyard of grey
  * pavers between apricot and saffron houses; in front of the old workshop the pergola and its terrace — a leather sofa
  * under paper lanterns, the bistro set in the corner, herbs in tall white planters, an old olive tree — and in the
- * north-west corner a garden of gravel and beds, a teak table and its chairs under a corkscrew willow; the shed with its
+ * south-west corner a garden of gravel and beds, a teak table and its chairs under a corkscrew willow; the shed with its
  * lilac and rain barrel, the gate under its glass canopy and its station clock, the driveway out under the front house.
  * The plan is ./layout.ts; the houses ./buildings.ts, the pergola and the terrace ./pergola.ts, the ground and the
  * garden ./garden.ts; the models are the 3D models' (src/lib/models: ./terrace.ts and ./yard.ts there).
  *
  * Walked like every sandbox (the kit's walker, at a courtyard's pace) and shot like every sandbox (connectFilm:
  * `world.sandbox: 'backyard'`; the lanterns, the festoon, the front door's lamp, the studio's bulbs and the lit windows
- * are the shot's `lamps`). The sky turns as Munich's does (`map`): the house and the workshop face south, the sun
- * stands over the front house at noon and the sails shade the sofa.
+ * are the shot's `lamps`). The sky turns as Munich's does (`map`, north +x — to the right of the sofa as one faces it):
+ * the house and the workshop face east, the morning sun reaches in under the pergola, at noon it stands over the
+ * garden's wall in the south, and by the afternoon the house's shadow lies over the terrace.
  */
 import * as THREE from 'three';
 import { connectFilm, createObstacles, createSky, createStage, createWalker, filmDraws, filmHoldsSize } from '$lib/sandbox-kit';
@@ -49,6 +50,8 @@ export async function mountBackyard(container: HTMLElement, onProgress: (label: 
 	};
 	const sky = createSky(renderer, scene, {
 		map: true,
+		// north is +x, to the right of the sofa as one faces it: the house and the workshop face east
+		north: Math.PI / 2,
 		// a courtyard: the shadows held round it, its houses and the neighbours' all in them; near, so their bias is a
 		// centimetre or two
 		shadowsAt: [-4.5, 6],
@@ -114,7 +117,7 @@ export async function mountBackyard(container: HTMLElement, onProgress: (label: 
 		floors.some(([x0, x1, z0, z1]) => x > x0 && x < x1 && z > z0 && z < z1) &&
 		!solids.some(([x0, x1, z0, z1]) => x > x0 - M && x < x1 + M && z > z0 - M && z < z1 + M) &&
 		!obstacles.blocks(x, z, { from });
-	// in the courtyard, looking north at the pergola and the workshop as the first photo does
+	// in the courtyard, looking west at the pergola and the workshop as the first photo does
 	const walker = createWalker(camera, renderer.domElement, { x: 0.9, z: 8.6, yaw: 0, pitch: 0.06, eye: EYE, walk: 1.4, hurry: 3.2, keyboard: { walk: 1.7, hurry: 3.8 }, stride: 0.15, canStand });
 	onProgress('ready');
 
