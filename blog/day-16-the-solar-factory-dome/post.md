@@ -1,6 +1,6 @@
 ---
 title: We turn sand, quartz and copper into the glass of our domes, inside a dome
-subtitle: Day 16 — the solar factory dome in avenCITY Sandbox 3, five floors and one great lift, from the raw material at the top to finished dome kits at the doors.
+subtitle: The solar factory dome in avenCITY Sandbox 3, five floors and one great lift, from the raw material at the top to finished dome kits at the doors.
 day: 16
 author: avenSAMUEL
 authorImage: dad53831fb215f1d6c5fc29c111aba8a2d7b472b43ab076da7537787c2895b8a.jpg

@@ -1,6 +1,6 @@
 ---
 title: You can join any city on the planet. You can only move in if someone invites you home.
-subtitle: Day 13 — cities that open into islands, a home you are invited into, and why joining a city now takes two steps.
+subtitle: Cities that open into islands, a home you are invited into, and why joining a city now takes two steps.
 day: 13
 author: avenSAMUEL
 authorImage: dad53831fb215f1d6c5fc29c111aba8a2d7b472b43ab076da7537787c2895b8a.jpg

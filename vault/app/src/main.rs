@@ -449,6 +449,8 @@ fn main() {
             tauri::async_runtime::spawn(keep::sweep(vault.clone()));
             // and the render queue: this Mac is the render worker — films and hero frames, natively (render.rs)
             tauri::async_runtime::spawn(render::sweep(app.handle().clone(), vault.clone()));
+            // and every story on the Stories board past its idea, filed in the vault's bucket of its name (stories.rs)
+            tauri::async_runtime::spawn(stories::file_sweep(app.handle().clone(), vault.clone()));
             let (handle, v) = (app.handle().clone(), vault.clone());
             let auth = app.state::<auth::Auth>().inner().clone();
             tauri::async_runtime::spawn(async move {

@@ -4,13 +4,15 @@
 // upload step (Zernio, later).
 //
 //   bun api/scripts/publish.ts [--local] [--dry]           the days that are due now
-//   bun api/scripts/publish.ts --day 1 [--local] [--dry]   one day, now, whatever its date
+//   bun api/scripts/publish.ts --story "The 1 million decision" [--local] [--dry]   one story, now, whatever its date
+//   (--day 1 still names the story an old day became: src/lib/stories/names.js)
 import { readFileSync, writeFileSync } from "node:fs";
 import { call, say } from "./media-client";
+import { nameOfDay } from "../../src/lib/stories/names.js";
 
 const args = process.argv.slice(2);
 const dry = args.includes("--dry");
-const one = args.includes("--day") ? `Day ${Number(args[args.indexOf("--day") + 1])}` : null;
+const one = args.includes("--story") ? args[args.indexOf("--story") + 1]! : args.includes("--day") ? nameOfDay(Number(args[args.indexOf("--day") + 1])) : null;
 type Item = { project: string | null; status: string; scheduled_at: string | null; source: string | null; title: string };
 const { items } = await call<{ items: Item[] }>("/api/content/days");
 const due = items.filter((i) => i.project && i.source && (one ? i.project === one : i.status === "scheduled" && i.scheduled_at && new Date(i.scheduled_at) <= new Date()));

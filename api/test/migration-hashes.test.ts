@@ -98,7 +98,8 @@ describe("0029: every CID becomes its hash", () => {
   });
 
   test("the board's item: its hashes, its text, its deliveries and posts", async () => {
-    const [item] = (await listContent()).filter((i) => i.project === "Day 19");
+    // (the migrations after 0029 run too: 0032 names the old "Day 19" by the story it became)
+    const [item] = (await listContent()).filter((i) => i.project === "233 settlers, how it starts");
     expect(item!.hashes).toEqual([H1, H2]);
     expect(item!.body).toBe(`![the forest](${H1}.jpg)\n\nand ${H2}, and ${H2} again; not ours: bafkreinotacidatall`);
     expect(item!.link).toBe(`https://maia.city/media/${H3}.jpg`);

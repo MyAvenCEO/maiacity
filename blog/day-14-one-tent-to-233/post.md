@@ -1,6 +1,6 @@
 ---
 title: Here is what happens when we reach one million players. We build the first settlement.
-subtitle: "Day 14 — the village that grows best in avenCITY Sandbox 2 gets built on real land, from one tent to 233 people, by the hands of the people who move in."
+subtitle: "The village that grows best in avenCITY Sandbox 2 gets built on real land, from one tent to 233 people, by the hands of the people who move in."
 day: 14
 author: avenSAMUEL
 authorImage: dad53831fb215f1d6c5fc29c111aba8a2d7b472b43ab076da7537787c2895b8a.jpg

@@ -698,5 +698,27 @@ export const MIGRATIONS: Migration[] = [
       UPDATE content_items SET idea = body, body = '' WHERE status = 'idea' AND source IS NULL AND project IS NULL;
     `,
   },
+  {
+    // Stories, not days. The old world sorted everything by its day ("Day 19"); the new one by stories (the media
+    // vault's buckets, named by their titles) and, before a story, ideas. Every old day is one name now — the story it
+    // became (Test, The 1 million decision, Thinking outside the box, 233 settlers, how it starts) or the idea it is —
+    // in the items', the timelines' and the shots' project alike (src/lib/stories/names.js holds the same list). The
+    // days that did not become stories are ideas again, their drafts kept for the Writing step; no title starts with
+    // its day any more.
+    id: "0032-stories-not-days",
+    sql: `
+      CREATE TEMP TABLE day_names (day INT PRIMARY KEY, name TEXT NOT NULL, story BOOLEAN NOT NULL DEFAULT false);
+      INSERT INTO day_names (day, name) VALUES (0, 'Test'), (1, 'The 1 million decision'), (2, 'Thinking outside the box'), (4, 'Act before you think'), (5, 'The first settlement'), (6, 'The food forest'), (7, 'Weight of unused potential'), (8, 'avenMAIA, the mayor'), (9, 'Hearts and minds'), (10, 'Hearts every two minutes'), (11, 'The Earth in cards'), (12, 'First believer pays least'), (13, 'Invited into a home'), (14, 'One tent to 233'), (15, 'Inside the domes'), (16, 'The solar factory dome'), (17, 'Thirteen domes, one world'), (18, 'Homes and forest sounds'), (19, '233 settlers, how it starts');
+      UPDATE day_names SET story = true WHERE day IN (0, 1, 2, 19);
+      UPDATE content_items c SET project = n.name, status = CASE WHEN n.story THEN c.status ELSE 'idea' END
+        FROM day_names n WHERE c.project ~* '^\\s*day[\\s-]*[0-9]+\\s*$' AND substring(c.project from '[0-9]+')::int = n.day;
+      UPDATE timelines t SET project = n.name
+        FROM day_names n WHERE t.project ~* '^\\s*day[\\s-]*[0-9]+\\s*$' AND substring(t.project from '[0-9]+')::int = n.day;
+      UPDATE shots s SET project = n.name
+        FROM day_names n WHERE s.project ~* '^\\s*day[\\s-]*[0-9]+\\s*$' AND substring(s.project from '[0-9]+')::int = n.day;
+      UPDATE content_items SET title = regexp_replace(title, '^\\s*day\\s*[0-9]+\\s*[·:—–-]\\s*', '', 'i')
+        WHERE title ~* '^\\s*day\\s*[0-9]+\\s*[·:—–-]\\s*\\S';
+      DROP TABLE day_names;
+    `,
+  },
 ];
-

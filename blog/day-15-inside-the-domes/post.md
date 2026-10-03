@@ -1,6 +1,6 @@
 ---
 title: From outside it is a glass bubble. We walked inside, and there is a food forest under it.
-subtitle: Day 15 — every dome in avenCITY Sandbox 2 can now be walked through, from the sixteen-metre glamping dome to the master dome with a round stage sunk into its floor.
+subtitle: Every dome in avenCITY Sandbox 2 can now be walked through, from the sixteen-metre glamping dome to the master dome with a round stage sunk into its floor.
 day: 15
 author: avenSAMUEL
 authorImage: dad53831fb215f1d6c5fc29c111aba8a2d7b472b43ab076da7537787c2895b8a.jpg

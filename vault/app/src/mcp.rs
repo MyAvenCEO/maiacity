@@ -81,7 +81,8 @@ pub struct Filter {
 pub struct IngestArgs {
     /// files or folders on this Mac (a card, a drive, a folder)
     pub paths: Vec<String>,
-    /// tags for the whole batch, e.g. ["Day 20", "A7IV"]
+    /// tags for the whole batch, e.g. ["idea:The food forest", "A7IV"] — the idea a file is gathered for as "idea:<its
+    /// name>", never a day ("Day 20"): files go by their story and their idea
     #[serde(default)]
     pub tags: Vec<String>,
     /// the story new files go into (its id, from stories_list); none: the inbox. Files already in the vault stay where they are.
@@ -475,7 +476,7 @@ pub struct StoryArgs {
     /// the full hook
     pub description: Option<String>,
     pub series: Option<String>,
-    /// e.g. DAY 0002
+    /// leave it empty: a story goes by its title, never by a day or an episode number
     pub episode: Option<String>,
     /// where each class of its files is kept — store names per class: {"default": [...], "original": [...], "proxy":
     /// [...], "delivery": [...]} ("avenSSD" this Mac, "hetzner" the server's Object Storage, a drive's name e.g.
@@ -1460,9 +1461,9 @@ impl Studio {
         text(self.api("POST", &format!("/api/timelines/{}/frames", a.timeline), Some(json!({ "t": a.t, "shape": shape }))).await)
     }
 
-    // ── the content board: deliveries per platform, draft and publish ──
+    // ── the Stories board: every story by its steps, its posts per platform ──
 
-    #[tool(description = "The content board: items per day and platform (blog, Instagram, X, LinkedIn …) with their status idea → hook → draft → derivatives → scheduled → published")]
+    #[tool(description = "The Stories board: every story (and idea) with its posts per platform (blog, Instagram, X, LinkedIn …) and the step it stands on: idea → hook → journey → writing → movie → derivatives → scheduled → published")]
     async fn content_list(&self, Parameters(r): Parameters<Range>) -> String {
         let q = match (r.from, r.to) {
             (Some(f), Some(t)) => format!("?from={f}&to={t}"),
@@ -1472,12 +1473,12 @@ impl Studio {
         text(self.api("GET", &format!("/api/content{q}"), None).await)
     }
 
-    #[tool(description = "Create a content item (a delivery for one platform), usually as a draft")]
+    #[tool(description = "Put a new story on the board, usually as an idea (its title, and its pad: links, concepts, fragments)")]
     async fn content_create(&self, Parameters(a): Parameters<Item>) -> String {
         text(self.api("POST", "/api/content", Some(a.item)).await)
     }
 
-    #[tool(description = "Change a content item — its text, files, schedule, or status (draft → scheduled → published: publish mode)")]
+    #[tool(description = "Change a story on the board — its pad, hook, journey, article, files, schedule, or step (idea → hook → journey → writing → movie → derivatives → scheduled → published: publish mode)")]
     async fn content_save(&self, Parameters(a): Parameters<SaveArgs>) -> String {
         text(self.api("PUT", &format!("/api/content/{}", a.id), Some(a.patch)).await)
     }

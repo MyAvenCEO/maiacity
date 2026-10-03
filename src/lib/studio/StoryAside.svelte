@@ -1,5 +1,5 @@
 <!--
-	The chosen story (or the inbox), essentials only: its series and episode, its title and hook, what it holds, and
+	The chosen story (or the inbox), essentials only: its series, its title and hook, what it holds, and
 	the devices that keep it — each with the classes of this story it keeps (the story's rules) and where it stands.
 	Only paired devices sync; a device is revoked here. How an agent connects stays one line at the foot.
 -->
@@ -78,7 +78,7 @@
 </script>
 
 {#if story}
-	<p class="ep">{story.inbox ? 'Inbox' : [story.series, story.episode].filter(Boolean).join(' · ')}</p>
+	<p class="ep">{story.inbox ? 'Inbox' : story.series}</p>
 	<h3>{story.title}</h3>
 	{#if story.description && !story.inbox}<p class="hook">{story.description}</p>{/if}
 	<p class="count">

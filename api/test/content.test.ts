@@ -99,3 +99,31 @@ test("the stories migration: a draft is being written, an idea's text becomes it
   ]);
   await expect(fresh.query("UPDATE content_items SET status = 'draft'")).rejects.toThrow();
 });
+
+test("stories, not days: every old day takes its name, the days that are no story are ideas again, no title starts with its day", async () => {
+  const fresh = new PGlite();
+  const until = MIGRATIONS.findIndex((m) => m.id === "0032-stories-not-days");
+  for (const m of MIGRATIONS.slice(0, until)) await fresh.exec(m.sql);
+  await fresh.query("INSERT INTO founders (id, name, role) VALUES ('admin', 'Admin', 'admin')");
+  const item = (title: string, status: string, project: string | null) =>
+    fresh.query("INSERT INTO content_items (title, kind, status, body, project, founder_id) VALUES ($1, 'post', $2, '# draft', $3, 'admin')", [title, status, project]);
+  await item("Day 19 · We filmed one whole day inside the city", "derivatives", "Day 19");
+  await item("Day 6 · The last level builds nothing", "writing", "Day 6");
+  await item("Day 1 — The 1 million lives decision", "hook", "day-01");
+  await item("A day like any other", "idea", null);
+  await item("Day 42 · Not on the list", "writing", "Day 42");
+  await fresh.query("INSERT INTO timelines (name, project, founder_id) VALUES ('Full', 'Day 19', 'admin'), ('Loose', NULL, 'admin')");
+  await fresh.exec(MIGRATIONS[until]!.sql);
+  const { rows } = await fresh.query<{ title: string; status: string; project: string | null; body: string }>(
+    "SELECT title, status, project, body FROM content_items ORDER BY title",
+  );
+  expect(rows).toEqual([
+    { title: "A day like any other", status: "idea", project: null, body: "# draft" },
+    { title: "Not on the list", status: "writing", project: "Day 42", body: "# draft" },
+    { title: "The 1 million lives decision", status: "hook", project: "The 1 million decision", body: "# draft" },
+    { title: "The last level builds nothing", status: "idea", project: "The food forest", body: "# draft" },
+    { title: "We filmed one whole day inside the city", status: "derivatives", project: "233 settlers, how it starts", body: "# draft" },
+  ]);
+  const { rows: t } = await fresh.query<{ name: string; project: string | null }>("SELECT name, project FROM timelines ORDER BY name");
+  expect(t).toEqual([{ name: "Full", project: "233 settlers, how it starts" }, { name: "Loose", project: null }]);
+});

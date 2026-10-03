@@ -4,7 +4,7 @@
 //   node scripts/film/thumbnail.mjs blog/day-NN-<slug>/thumbnail.json
 //
 // Each card and hook layer goes into the vault (described; the Mac app must be running): the cards public, tagged
-// "Day NN", "role:thumbnail", "shape:16x9" …; the hook layers "role:hook". A new one takes its place from the one
+// with the story they belong to ("idea:233 settlers, how it starts"), "role:thumbnail", "shape:16x9" …; the hook layers "role:hook". A new one takes its place from the one
 // before (which is kept, superseded). Their hashes are written back into thumbnail.json ("cards", "hooks"), where the
 // article and the day's posts take them from.
 //
@@ -21,13 +21,14 @@
 // The frame should be large (a 2160 still, rendered 3240 wide), so the wide and the tall crops stay sharp; a shape
 // can have its own frame — "frames": { "9x16": "<a taller still's hash>" } — when the main one is too small to crop.
 // Set like a YouTube thumbnail: few words, heavy and big enough to read at phone size, the number in gold, a firm
-// shade behind them and nothing else across the picture; the day ("DAY 01", as the journal writes it) in the bottom-right corner. The font
+// shade behind them and nothing else across the picture — no day stamp: a story goes by its name, never a day. The font
 // (Fraunces) and the frames are embedded (setContent cannot load files).
 import puppeteer from 'puppeteer-core';
 import { mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { add, bare, describe, fileOf } from './vault.mjs';
+import { ideaTag, nameOfDay } from '../../src/lib/stories/names.js';
 
 const config = process.argv[2];
 if (!config) throw new Error('usage: node scripts/film/thumbnail.mjs blog/day-NN-<slug>/thumbnail.json');
@@ -39,7 +40,7 @@ const refs = [frame, ...Object.values(frames), ...(settings.split ? [settings.sp
 const local = new Map(await Promise.all(refs.map(async (r) => /** @type {[string, string]} */ ([r, await fileOf(bare(r))]))));
 const fromVault = (ref) => /** @type {string} */ (local.get(ref));
 const HOOK_TOP = { '9x16': 280 }; // a hook layer's top where it differs from the card's (the Shorts / Reels header)
-// the day it is ("DAY 1"): given, or read off the day's folder (blog/day-01-…)
+// the old day its folder stands for (blog/day-01-…), only to find the story's name (src/lib/stories/names.js)
 const day = dayNo ?? Number(/day-(\d+)/.exec(config)?.[1] ?? NaN);
 // per shape, the title may sit at the bottom (a face at the top of the frame) — "place": { "1x1": "bottom" } — and
 // run narrower — "width": { "16x9": "46%" } — so it never crosses the subject
@@ -77,10 +78,8 @@ html,body{margin:0;width:${s.w}px;height:${s.h}px;overflow:hidden;background:${h
 .h{font-weight:830;font-size:${u(138)};line-height:.92;letter-spacing:-.025em;margin-top:${u(6)}}
 .x{font-weight:560;font-style:italic;font-size:${u(58)};line-height:1.12;margin-top:${u(22)};color:#fff}
 .x b{font-style:normal;font-weight:820;color:#f6c75a}
-.d{position:absolute;right:${s.left}px;bottom:${Math.round(s.top * 0.8)}px;padding:${u(8)} ${u(20)} ${u(10)};border:${u(4)} solid #f6c75a;border-radius:${u(12)};background:rgba(6,10,8,.62);color:#fff;font-family:F,serif;font-weight:820;font-size:${u(46)};line-height:1;letter-spacing:.1em}
 </style></head><body>${hook ? '' : '<div class="bg"></div>'}<div class="shade"></div>
 <div class="t"><div class="k">${TITLE.kicker}</div><div class="n">${TITLE.big}</div><div class="h">${TITLE.line}</div><div class="x">${TITLE.after}</div></div>
-${!hook && Number.isFinite(day) ? `<div class="d">DAY ${String(day).padStart(2, "0")}</div>` : ''}
 </body></html>`, { waitUntil: 'load' });
 	await page.evaluate(() => document.fonts.ready);
 	const out = join(dir, hook ? `hook-${s.tag}.png` : `thumbnail-${s.tag}.jpg`);
@@ -119,9 +118,8 @@ html,body{margin:0;width:${s.w}px;height:${s.h}px;overflow:hidden;background:#11
 .old .n{color:#fff}
 .new .n{color:#f6c75a}
 .seam{position:absolute;${wide ? `top:0;bottom:0;left:calc(50% - ${u(4)});width:${u(8)}` : `left:0;right:0;top:calc(50% - ${u(4)});height:${u(8)}`};background:#f6c75a;box-shadow:0 0 30px rgba(0,0,0,.5)}
-.d{position:absolute;right:${u(56)};bottom:${u(48)};padding:${u(8)} ${u(20)} ${u(10)};border:${u(4)} solid #f6c75a;border-radius:${u(12)};background:rgba(6,10,8,.62);color:#fff;font-weight:820;font-size:${u(46)};line-height:1;letter-spacing:.1em}
 </style></head><body><div class="wrap">${half('old', settings.split.old, TITLE.old)}${half('new', settings.split.new, TITLE.new)}</div>
-<div class="seam"></div>${Number.isFinite(day) ? `<div class="d">DAY ${String(day).padStart(2, '0')}</div>` : ''}
+<div class="seam"></div>
 </body></html>`, { waitUntil: 'load' });
 	await page.evaluate(() => document.fonts.ready);
 	await page.screenshot({ path: join(dir, `thumbnail-${s.tag}.jpg`), type: 'jpeg', quality: 92 });
@@ -144,11 +142,12 @@ if (settings.split) {
 await browser.close();
 
 // into the vault, each in its place; their hashes back into thumbnail.json
-const DAY = `Day ${String(day).padStart(2, '0')}`;
+// the story (or idea) the cards belong to, by name — never by day
+const STORY = nameOfDay(day);
 const hookLine = ['kicker', 'big', 'line', 'after', 'old', 'new'].map((k) => (TITLE[k] && typeof TITLE[k] === 'object' ? Object.values(TITLE[k]).join(' ') : TITLE[k] ?? '')).join(' ').replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim();
 const put = async (file, role, shape, isPublic, replaces) =>
-	(await add(file, { title: `${DAY} · ${role === 'hook' ? 'hook layer' : 'title card'} ${shape.replace('x', ':')}`, description: hookLine,
-		tags: [DAY, `role:${role}`, `shape:${shape}`], public: isPublic, ...(replaces ? { replaces: [replaces] } : {}) })).hash;
+	(await add(file, { title: `${STORY} · ${role === 'hook' ? 'hook layer' : 'title card'} ${shape.replace('x', ':')}`, description: hookLine,
+		tags: [ideaTag(STORY), `role:${role}`, `shape:${shape}`], public: isPublic, ...(replaces ? { replaces: [replaces] } : {}) })).hash;
 const before = { ...(settings.cards ?? {}), ...Object.fromEntries(Object.entries(settings.hooks ?? {}).map(([k, v]) => [`hook-${k}`, v])) };
 settings.cards = {};
 settings.hooks = {};

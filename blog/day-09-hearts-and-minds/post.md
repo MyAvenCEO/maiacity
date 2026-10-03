@@ -1,6 +1,6 @@
 ---
 title: I spent two and a half years building money that starts with people, not debt. It failed.
-subtitle: Day 09 — where money is born, what Circles got right, and the missing half that turns earning into owning.
+subtitle: Where money is born, what Circles got right, and the missing half that turns earning into owning.
 day: 9
 author: avenSAMUEL
 authorImage: dad53831fb215f1d6c5fc29c111aba8a2d7b472b43ab076da7537787c2895b8a.jpg

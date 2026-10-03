@@ -150,3 +150,73 @@ pub async fn download(vault: &vault_core::Vault, hash: &str, name: Option<&str>)
     tracing::info!("downloaded {} → {}", &hash[..12.min(hash.len())], target.display());
     Ok(target.to_string_lossy().to_string())
 }
+
+/// Every old day and what it is called now: the one list the site and the scripts read too.
+const LEGACY: &str = include_str!("../../../src/lib/stories/legacy.json");
+
+// ── the Stories board's stories, each in its bucket ──────────────────────────────────────────────────────────────
+
+/// Every story on the board past its idea that is in no bucket yet (GET /api/content/unfiled) is filed in the vault
+/// story of its name (its project — "233 settlers, how it starts" — else its title): the one there is, or a new one,
+/// its title the name (five words at most) and its description the hook. The board is told
+/// (PUT /api/content/:id/story). Now, and every two minutes while this Mac is signed in.
+pub async fn file_sweep(app: tauri::AppHandle, vault: std::sync::Arc<vault_core::Vault>) {
+    use tauri::Manager;
+    // first, once the catalog has had a moment to sync: the old days' names put away — buckets named by a day merged
+    // into their story's and named by it, no episodes, the files' day tags as their ideas' (vault-core, tidy_legacy)
+    tokio::time::sleep(std::time::Duration::from_secs(20)).await;
+    if crate::auth::signed_in() {
+        match serde_json::from_str::<Vec<vault_core::catalog::Legacy>>(LEGACY) {
+            Ok(legacy) => match vault.catalog.tidy_legacy(&legacy).await {
+                Ok(did) => did.iter().for_each(|d| tracing::info!("the old days put away: {d}")),
+                Err(e) => tracing::warn!("putting the old days away: {e:#}"),
+            },
+            Err(e) => tracing::warn!("the old days' names (legacy.json): {e}"),
+        }
+    }
+    loop {
+        if crate::auth::signed_in() {
+            let auth = app.state::<crate::auth::Auth>();
+            if let Err(e) = file_round(&auth, &vault).await {
+                tracing::warn!("filing the board's stories in the vault: {e}");
+            }
+        }
+        tokio::time::sleep(std::time::Duration::from_secs(120)).await;
+    }
+}
+
+async fn file_round(auth: &crate::auth::Auth, vault: &vault_core::Vault) -> Result<(), String> {
+    let got = auth.get_ok("GET", "/api/content/unfiled", None).await?;
+    let items = got["items"].as_array().cloned().unwrap_or_default();
+    if items.is_empty() {
+        return Ok(());
+    }
+    let inbox = vault.catalog.inbox_id();
+    let mut stories = vault.catalog.stories().await.map_err(err)?;
+    for it in items {
+        let Some(id) = it["id"].as_str() else { continue };
+        let name = it["project"].as_str().filter(|p| !p.trim().is_empty()).or(it["title"].as_str()).unwrap_or_default().trim().to_string();
+        if name.is_empty() {
+            continue;
+        }
+        // the old day it was, from the folder its article came from (blog/day-19-…), to find a bucket still named by it
+        let day = it["source"].as_str().and_then(|p| p.split('/').find_map(|seg| seg.strip_prefix("day-")?.split('-').next()?.parse::<u32>().ok()));
+        let story = match vault_core::catalog::bucket_for(&stories, &inbox, &name, day) {
+            Some(s) => s.clone(),
+            None => {
+                let series = stories.iter().find(|s| !s.series.is_empty()).map(|s| s.series.clone()).unwrap_or_else(|| "The Journey of Maia City".into());
+                let made = vault
+                    .catalog
+                    .save_story(Story { title: vault_core::catalog::title_of(&name), description: it["hook"].as_str().unwrap_or_default().to_string(), series, ..Default::default() })
+                    .await
+                    .map_err(err)?;
+                tracing::info!("a new story in the vault for \"{name}\": {}", made.title);
+                stories.push(made.clone());
+                made
+            }
+        };
+        auth.get_ok("PUT", &format!("/api/content/{id}/story"), Some(json!({ "story": story.id }))).await?;
+        tracing::info!("\"{name}\" filed in the vault's story \"{}\"", story.title);
+    }
+    Ok(())
+}

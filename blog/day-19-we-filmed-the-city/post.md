@@ -1,6 +1,6 @@
 ---
 title: We filmed one whole day inside the city we are building
-subtitle: Day 19 — a camera that lives inside the game, 42 shots, a narrator, its own score, and 2 minutes 49 seconds that show what a dome cell feels like from sunrise to night.
+subtitle: A camera that lives inside the game, 42 shots, a narrator, its own score, and 2 minutes 49 seconds that show what a dome cell feels like from sunrise to night.
 day: 19
 author: avenSAMUEL
 authorImage: dad53831fb215f1d6c5fc29c111aba8a2d7b472b43ab076da7537787c2895b8a.jpg

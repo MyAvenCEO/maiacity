@@ -1,6 +1,6 @@
 ---
 title: The first believer pays 10 hearts for a piece of a coop. The last will pay 300.
-subtitle: "Day 12 — how investing works in avenCITY Sandbox 2: your hearts become the coop's maiaHEARTS, the ownership goes to you, and the price climbs one milestone at a time."
+subtitle: "How investing works in avenCITY Sandbox 2: your hearts become the coop's maiaHEARTS, the ownership goes to you, and the price climbs one milestone at a time."
 day: 12
 author: avenSAMUEL
 authorImage: dad53831fb215f1d6c5fc29c111aba8a2d7b472b43ab076da7537787c2895b8a.jpg

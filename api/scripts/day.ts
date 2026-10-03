@@ -1,4 +1,4 @@
-// A day onto the stories board, from its folder: its brainstorm pad (idea.md), its journey (journey.json), its base
+// A story (or an idea) onto the Stories board, from its folder: its brainstorm pad (idea.md), its journey (journey.json), its base
 // article (the single source of truth: blog/day-NN-…/post.md) and every derivative written from it (derivatives.json)
 // — the article on the journal, the film on YouTube, the posts, the X thread, the Reel — each with its time. Checked
 // against each platform's limits first.
@@ -19,6 +19,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { call, say } from "./media-client";
 import { list } from "../../scripts/film/vault.mjs";
+import { nameOfDay, renamed, withoutDay } from "../../src/lib/stories/names.js";
 
 const dir = process.argv.slice(2).find((a) => !a.startsWith("--"));
 if (!dir) throw new Error("usage: bun api/scripts/day.ts blog/day-NN-<slug> [--idea | --hook | --article] [--local]");
@@ -32,13 +33,18 @@ const journey = there("journey.json") ? JSON.parse(readFileSync(join(dir, "journ
 if (ideaOnly && pad === undefined) throw new Error(`${dir} has no idea.md`);
 const hookOnly = process.argv.includes("--hook");
 const only = ideaOnly || hookOnly || process.argv.includes("--article") || !there("derivatives.json");
-// the title: the article's, else the pad's heading ("Day 0 — the test story"); the day: the article's, else the folder's
-const title = (/^title:\s*(.+)$/m.exec(article)?.[1] ?? /^#\s+(.+)$/m.exec(pad ?? "")?.[1]?.replace(/^Day \d+\s*[—·-]\s*/, "") ?? "").trim();
+// the title: the article's, else the pad's heading, never with its old day in front; what it is called on the board (its
+// project: the story it is, or the idea): a story: line in post.md or idea.md, else what its old day is called now
+// (src/lib/stories/names.js)
+const title = withoutDay((/^title:\s*(.+)$/m.exec(article)?.[1] ?? /^#\s+(.+)$/m.exec(pad ?? "")?.[1] ?? "").trim());
 const dayNo = /^day:\s*(\d+)/m.exec(article)?.[1] ?? /day-(\d+)/.exec(dir)?.[1];
-if (dayNo === undefined) throw new Error(`which day is ${dir}? (a day: line in post.md, or a day-NN- folder)`);
-const day = (only
-  ? { project: `Day ${Number(dayNo)}`, title: `Day ${Number(dayNo)} · ${title}`, posts: [] }
-  : JSON.parse(readFileSync(join(dir, "derivatives.json"), "utf8"))) as {
+const named = (/^story:\s*(.+)$/m.exec(article)?.[1] ?? /^story:\s*(.+)$/m.exec(pad ?? "")?.[1])?.trim();
+const project = named ?? (dayNo === undefined ? undefined : nameOfDay(Number(dayNo)));
+if (project === undefined) throw new Error(`which story is ${dir}? (a story: line in post.md or idea.md)`);
+const told = only
+  ? null
+  : (JSON.parse(readFileSync(join(dir, "derivatives.json"), "utf8")) as { project: string; title: string; scheduled_at?: string; posts: [] });
+const day = (told ? { ...told, project: renamed(told.project), title: withoutDay(told.title) } : { project, title, posts: [] }) as {
   project: string; title: string; scheduled_at?: string;
   posts: { platform: string; format: string; title?: string; text: string; thread?: string[]; variant?: string; timeline?: string }[];
 };

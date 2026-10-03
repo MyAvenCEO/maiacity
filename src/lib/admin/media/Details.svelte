@@ -10,7 +10,7 @@
 	import type { MediaItem } from './facets';
 	import {
 		clock,
-		dayTag,
+		storyName,
 		FACET_LABEL,
 		facetOrder,
 		raw,
@@ -118,8 +118,8 @@
 
 	<h3>Tags</h3>
 	<div class="chips">
-		{#each p.days as n (n)}
-			<button class="chip day" onclick={() => onfilter('day', String(n))}>{dayTag(n)}</button>
+		{#each p.ideas as n (n)}
+			<button class="chip day" title="Its idea" onclick={() => onfilter('idea', n)}>{n}</button>
 		{/each}
 		{#if p.superseded}<span class="chip flag">{SUPERSEDED}</span>{/if}
 		{#if p.unused}<span class="chip flag">{UNUSED}</span>{/if}
@@ -144,7 +144,7 @@
 				if (to) pending = { what: 'story', value: to.id, label: `Move it to ${to.inbox ? 'the Inbox' : to.title}` };
 			}}
 		>
-			{#each stories as st (st.id)}<option value={st.id}>{st.inbox ? 'Inbox' : `${st.episode ? `${st.episode} · ` : ''}${st.title}`}</option>{/each}
+			{#each stories as st (st.id)}<option value={st.id}>{storyName(st)}</option>{/each}
 		</select>
 		<h3>Class</h3>
 		{#if m.class === 'proxy' || m.class === 'delivery'}

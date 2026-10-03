@@ -1,6 +1,6 @@
 ---
 title: I made a year of money pass in twelve days, one heart every two minutes
-subtitle: Day 10 — how a heart is born in avenCITY Sandbox 2, and the clock that lets us watch an economy grow up while we sit in front of it.
+subtitle: How a heart is born in avenCITY Sandbox 2, and the clock that lets us watch an economy grow up while we sit in front of it.
 day: 10
 author: avenSAMUEL
 authorImage: dad53831fb215f1d6c5fc29c111aba8a2d7b472b43ab076da7537787c2895b8a.jpg
