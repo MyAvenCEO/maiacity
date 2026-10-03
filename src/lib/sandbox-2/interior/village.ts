@@ -15,10 +15,11 @@
  */
 import * as THREE from 'three'
 import { DOMES, DOORS, adiff, bake, box, geodesic, glassSheen, lantern, mats, mountInterior, polar, portal, sofa, table, type DomeKind, type EmbeddedDome } from './interior'
-import { cafes, coops, coopsAround, henPatches, playground, squaresAround, type Kit } from './spaces'
+import { cafes, coops, coopsAround, henPatches, playground, rabbitPatches, squaresAround, type Kit } from './spaces'
 import { water } from './textures'
 import { appleTree, banana, berryBush, canopyTree, climber, clover, coconutPalm, comfrey, fruitTree, ginger, herb, papaya, passionVine, seeded, smallFruitTree, squash, strawberries, tropicalShrub, forestFloor, FLOOR_KINDS, floorPick, grassTuft, type Plant } from './plants'
 import { apiary, fishes, herd } from './animals'
+import { settled as actorsSettled } from '$lib/actors/build'
 import { flow, pond, shore, stream } from './water'
 import { createStage } from '$lib/sandbox-kit/stage.js'
 import { createSky } from '$lib/sandbox-kit/sky.js'
@@ -547,8 +548,12 @@ export async function mountVillage(container: HTMLElement, onProgress: (label: s
 		}
 		const hens = herd('hen', henPatches(SQUARE_R), 73, eye)
 		herds.hens = hens.where
-		scene.add(hens.object)
-		animated.push(hens.update)
+		// and in every other coop's place, a hutch of rabbits
+		const rabbits = herd('rabbit', rabbitPatches(SQUARE_R), 78, eye)
+		for (const f of [hens, rabbits]) {
+			scene.add(f.object)
+			animated.push(f.update)
+		}
 	}
 
 	/* ── the food forest: as dense as round a single dome, planted as seven-layer guilds;
@@ -1089,6 +1094,8 @@ export async function mountVillage(container: HTMLElement, onProgress: (label: s
 					console.warn(`film: ${(w as { name?: string }).name ?? 'a shot'} waits ${waited / 1000} s — dome ${dome ?? '-'} built ${dome === undefined || built.has(dome)} shown ${dome === undefined || shown.has(dome)}; near ${need.join(',')} built ${need.filter((i) => built.has(i)).join(',') || 'none'}; building ${now}`)
 				await new Promise((r) => setTimeout(r, 100))
 			}
+			// and every animal's skin, meshed off the page, there before the shot is drawn
+			await actorsSettled()
 			settle()
 		},
 		holds: (w) => w.dome === undefined || shown.has(w.dome),

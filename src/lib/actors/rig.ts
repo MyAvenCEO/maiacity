@@ -10,13 +10,18 @@
  */
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
+import { dualQuaternionSkinning } from './dqs';
+import type { Skin } from './sculpt';
 
 export type V3 = [number, number, number];
 
 /** a bone: its name, its parent's, where its joint is in the rest pose */
 export type BoneSpec = { name: string; parent?: string; at: V3 };
 
-export type PartSpec = {
+export type PartSpec = Piece | { skin: Skin; mat?: number };
+
+/** a plain geometry riding its bone (or chain); a body sculpted as one skin (./sculpt.ts) brings its own weights */
+export type Piece = {
 	geo: THREE.BufferGeometry;
 	/** its colour, or a colour by where each vertex is in the rest pose (a sleeve, a belt, a stripe) */
 	color: string | ((p: THREE.Vector3) => string);
@@ -25,16 +30,22 @@ export type PartSpec = {
 	/** or the bones it lies along, from the first joint outwards, and how far either side of a joint they blend (m);
 	 *  `tip`: where the last bone's stretch ends (else it reaches as far as its parent's did) */
 	chain?: { bones: string[]; soft?: number; tip?: V3 };
-	/** 1: the second material (the glass of a bee's wings) */
-	mat?: 0 | 1;
+	/** which of the actor's materials: 0 its skin, then as it has them (an eye's gloss, the glass of a bee's wings) */
+	mat?: number;
 };
 
 /** a turn of one bone from its rest (radians about x, then y, then z), and its size (1: as built) */
 export type Turn = [number, number, number] | [number, number, number, number];
 /** a pose: per bone its turn; `root` moves the first bone from where it rests (m) */
 export type Pose = { root?: V3 } & { [bone: string]: Turn | V3 | undefined };
-/** a clip: the pose at time t (seconds), looping as it likes */
-export type Clip = (t: number) => Pose;
+/**
+ * How an actor is moving, for the clips that walk it: how far it has come (m) — a stride's phase is the distance, not
+ * the time, so a foot set down stays where it was set down — how fast it goes now (m/s), and how fast it turns (rad/s).
+ */
+export type Motion = { dist: number; speed: number; turn?: number };
+/** a clip: the pose at time t (seconds), looping as it likes; a gait also by how the actor moves (without: at its own
+ *  pace, on the spot) */
+export type Clip = (t: number, m?: Motion) => Pose;
 
 export type Rig = {
 	/** what to put in a world: the skinned mesh, its skeleton inside it */
@@ -46,10 +57,21 @@ export type Rig = {
 	pose: (p: Pose) => void;
 };
 
-/** An actor with its moves: the clips it plays, the poses it holds (named), and which to show first. */
-export type Cast = { rig: Rig; clips: Record<string, Clip>; poses?: Record<string, Pose>; first: string };
+/** An actor with its moves: the clips it plays, the poses it holds (named), and which to show first; for a gait, the
+ *  pace it is made for (m/s) */
+export type Cast = {
+	rig: Rig;
+	clips: Record<string, Clip>;
+	poses?: Record<string, Pose>;
+	first: string;
+	gears?: Record<string, number>;
+	/** the bones whose joints are set down on the ground walking: kept where they are put (./motion.ts), and measured
+	 *  so (scripts/actors.ts) */
+	feet?: string[];
+};
 
 export function rig(bones: BoneSpec[], parts: PartSpec[], materials: THREE.Material[]): Rig {
+	dualQuaternionSkinning();
 	const byName: Record<string, THREE.Bone> = {};
 	const at: Record<string, THREE.Vector3> = {};
 	const parent: Record<string, string | undefined> = {};
@@ -70,7 +92,7 @@ export function rig(bones: BoneSpec[], parts: PartSpec[], materials: THREE.Mater
 
 	// the weights of a vertex: the bone it rides, or its place along a chain (with the joints either side blended)
 	const v = new THREE.Vector3(), d = new THREE.Vector3(), q = new THREE.Vector3();
-	const weigh = (p: PartSpec, out: Map<string, number>) => {
+	const weigh = (p: Piece, out: Map<string, number>) => {
 		out.clear();
 		if (!p.chain) return void out.set(p.bone!, 1);
 		const { bones: names, soft = 0.05, tip } = p.chain;
@@ -104,12 +126,29 @@ export function rig(bones: BoneSpec[], parts: PartSpec[], materials: THREE.Mater
 
 	const w = new Map<string, number>(), c = new THREE.Color();
 	// seen from afar (coarser shapes), the smallest parts are left off: an eye, a toe, a comb's bead
+	const geoOf = (p: PartSpec) => ('skin' in p ? p.skin.geo : p.geo);
 	if (DETAIL < 1) {
-		const size = (p: PartSpec) => (p.geo.boundingSphere ?? (p.geo.computeBoundingSphere(), p.geo.boundingSphere!)).radius;
+		const size = (p: PartSpec) => {
+			const g = geoOf(p);
+			return (g.boundingSphere ?? (g.computeBoundingSphere(), g.boundingSphere!)).radius;
+		};
 		const largest = Math.max(...parts.map(size));
 		parts = parts.filter((p) => size(p) >= largest * 0.12);
 	}
 	const geos = parts.map((p) => {
+		if ('skin' in p) {
+			// a sculpted skin: its colours and its weights its own, its bones' names turned into this skeleton's
+			const g = p.skin.geo.clone(), n = g.attributes.position!.count;
+			const si = new Uint16Array(n * 4);
+			const ids = p.skin.bones.map((name) => {
+				if (!index.has(name)) throw new Error(`skin: no bone ${name}`);
+				return index.get(name)!;
+			});
+			for (let i = 0; i < n * 4; i++) si[i] = ids[p.skin.index[i]!] ?? 0;
+			g.setAttribute('skinIndex', new THREE.Uint16BufferAttribute(si, 4));
+			g.setAttribute('skinWeight', new THREE.Float32BufferAttribute(p.skin.weight.slice(), 4));
+			return g;
+		}
 		const g = p.geo.clone();
 		if (!g.index) g.setIndex(Array.from({ length: g.attributes.position!.count }, (_, i) => i));
 		for (const name of Object.keys(g.attributes)) if (name !== 'position' && name !== 'normal') g.deleteAttribute(name);
@@ -175,6 +214,7 @@ export function poser(list: THREE.Bone[]): (p: Pose) => void {
 
 /** How finely shapes are made: 1 as built; lower for actors seen from afar (`lowDetail`). */
 let DETAIL = 1;
+export const detail = () => DETAIL;
 const fine = (n: number, least: number) => Math.max(least, Math.round(n * DETAIL));
 /** Build with coarser shapes — the same actor, a fraction of its vertices, for drawing far off. */
 export function lowDetail<T>(build: () => T, detail = 0.45): T {

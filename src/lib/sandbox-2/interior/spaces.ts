@@ -644,16 +644,89 @@ function coop(k: Kit, seed: number): Space {
 	return { group: g, colliders: [{ x: 0, z: -1.2, r: 1.3 }, { x: -1.3, z: 0.8, r: 1.3 }, { x: 1.3, z: 0.8, r: 1.3 }] }
 }
 
-/** The coops, in the forest just beyond the squares, between them. */
+/* ── outside: the rabbits ─────────────────────────────────────────────── */
+
+/**
+ * A rabbit hutch, as big as a coop and laid out like one: a two-room timber hutch up on legs at the back — a wire-
+ * fronted room to sit in the light, a closed one to sleep in, a felt roof sloping back — a ramp down, and in front a
+ * run walled and roofed with wire against foxes and hawks: grass, a hay rack, a water bowl, a log tunnel to hide in
+ * (the rabbits are in animals.ts).
+ */
+function hutch(k: Kit, seed: number): Space {
+	const g = new THREE.Group()
+	const r = seeded(seed)
+	const felt = col('#4a4a48', 0.95)
+	// the hutch on its legs
+	for (const sx of [-1, 1]) for (const sz of [-1, 1]) g.add(k.box(0.1, 0.55, 0.1, k.timber, sx * 0.95, 0, -1.2 + sz * 0.45))
+	g.add(k.box(2.1, 0.06, 1.05, k.oak, 0, 0.55, -1.2))
+	g.add(k.box(2.1, 0.75, 0.06, k.oak, 0, 0.61, -1.7))
+	for (const x of [-1.02, 0.3, 1.02]) g.add(k.box(0.06, 0.75, 1.05, k.oak, x, 0.61, -1.2))
+	// the sleeping room's door, the day room's wire front
+	g.add(k.box(0.7, 0.66, 0.05, k.oak, 0.66, 0.65, -0.68))
+	g.add(k.box(0.04, 0.04, 0.04, k.steel, 0.4, 0.98, -0.65))
+	// wire: hardly there, as a fine mesh is from a few steps off
+	const wire = new THREE.MeshStandardMaterial({ color: '#b9bcb4', transparent: true, opacity: 0.12, side: THREE.DoubleSide, depthWrite: false, roughness: 0.6 })
+	const front = new THREE.Mesh(new THREE.PlaneGeometry(1.3, 0.66), wire)
+	front.position.set(-0.36, 0.98, -0.68)
+	g.add(front)
+	g.add(k.box(1.36, 0.05, 0.06, k.timber, -0.36, 1.33, -0.68), k.box(1.36, 0.05, 0.06, k.timber, -0.36, 0.62, -0.68))
+	// the roof, sloping back over the hutch
+	const roof = k.box(2.4, 0.05, 1.35, felt, 0, 0, 0)
+	roof.position.set(0, 1.42, -1.2)
+	roof.rotation.x = 0.16
+	g.add(roof)
+	// the ramp down from the day room
+	const ramp = k.box(0.35, 0.03, 0.9, k.timber, 0, 0, 0)
+	ramp.position.set(-0.55, 0.32, -0.25)
+	ramp.rotation.x = 0.62
+	g.add(ramp)
+	// the run, lower than a hen's and roofed with wire
+	const w = 5, d = 4, h = 0.9
+	for (const [x, z] of [[-w / 2, -d / 2], [w / 2, -d / 2], [-w / 2, d / 2], [w / 2, d / 2], [0, d / 2], [-w / 2, 0], [w / 2, 0]] as const) g.add(k.box(0.08, h, 0.08, k.timber, x, 0, z))
+	for (const [x, z, len, rot] of [[0, d / 2, w, 0], [-w / 2, 0, d, Math.PI / 2], [w / 2, 0, d, Math.PI / 2]] as const) {
+		g.add(k.box(len, 0.06, 0.06, k.timber, x, h, z, rot))
+		const net = new THREE.Mesh(new THREE.PlaneGeometry(len, h), wire)
+		net.position.set(x, h / 2, z)
+		net.rotation.y = rot
+		g.add(net)
+	}
+	const top = new THREE.Mesh(new THREE.PlaneGeometry(w, d), wire)
+	top.rotation.x = -Math.PI / 2
+	top.position.y = h + 0.03
+	g.add(top)
+	for (const z of [-1, 0, 1]) g.add(k.box(w, 0.04, 0.04, k.timber, 0, h + 0.03, z))
+	// grass inside, a hay rack on the hutch's legs, a water bowl, a hollow log to hide in
+	const grass = new THREE.Mesh(new THREE.PlaneGeometry(w - 0.1, d - 0.1), col('#7f9a52', 1))
+	grass.rotation.x = -Math.PI / 2
+	grass.position.y = 0.03
+	g.add(grass)
+	g.add(k.box(0.6, 0.35, 0.18, k.timber, 1.4, 0.2, -1.55))
+	g.add(k.box(0.52, 0.12, 0.14, col('#d8c38a', 1), 1.4, 0.48, -1.55))
+	const bowl = new THREE.Mesh(new THREE.CylinderGeometry(0.13, 0.1, 0.07, 14), k.steel)
+	bowl.position.set(-1.7, 0.035, 1.3)
+	g.add(bowl)
+	const tunnel = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.2, 0.8, 14, 1, true), col('#7a5a3c', 0.95))
+	tunnel.material.side = THREE.DoubleSide
+	tunnel.rotation.z = Math.PI / 2
+	tunnel.rotation.y = 0.5 + r() * 0.4
+	tunnel.position.set(1.2, 0.17, 1.0)
+	g.add(tunnel)
+	return { group: g, colliders: [{ x: 0, z: -1.2, r: 1.3 }, { x: -1.3, z: 0.8, r: 1.3 }, { x: 1.3, z: 0.8, r: 1.3 }] }
+}
+
+/** The coops, in the forest just beyond the squares, between them: hens' and rabbits' in turn. */
 export function coopsAround(squareR: number): { a: number; r: number; radius: number }[] {
 	const out: { a: number; r: number; radius: number }[] = []
 	for (let q = 0; q < 4; q++) for (const off of [-0.21, 0.21]) out.push({ a: Math.PI / 4 + (q * Math.PI) / 2 + off, r: squareR + 5, radius: 4 })
 	return out
 }
 
+/** whether the i-th of the coops round the squares is a rabbits' hutch (every other one), not a henhouse */
+const isHutch = (i: number) => i % 2 === 1
+
 /** Where each coop's hens wander: inside its run, and out under the trees round it. */
 export function henPatches(squareR: number): { x: number; z: number; r: number; n: number }[] {
-	return coopsAround(squareR).flatMap(({ a, r }) => {
+	return coopsAround(squareR).filter((_, i) => !isHutch(i)).flatMap(({ a, r }) => {
 		const [cx, cz] = polar(r, a)
 		const c = Math.cos(a), s = Math.sin(a)
 		// the run's middle, in the coop's own frame (0, 0.8)
@@ -662,8 +735,18 @@ export function henPatches(squareR: number): { x: number; z: number; r: number; 
 	})
 }
 
+/** Where each hutch's rabbits hop: inside its run, its middle in the hutch's own frame (0, 0.8) as a coop's is. */
+export function rabbitPatches(squareR: number): { x: number; z: number; r: number; n: number }[] {
+	return coopsAround(squareR)
+		.filter((_, i) => isHutch(i))
+		.map(({ a, r }) => {
+			const [cx, cz] = polar(r, a)
+			return { x: cx + 0.8 * Math.sin(a), z: cz + 0.8 * Math.cos(a), r: 1.4, n: 6 }
+		})
+}
+
 export function coops(k: Kit, squareR: number): Space[] {
-	return coopsAround(squareR).map(({ a, r }, i) => place(coop(k, 3 + i), r, a))
+	return coopsAround(squareR).map(({ a, r }, i) => place(isHutch(i) ? hutch(k, 3 + i) : coop(k, 3 + i), r, a))
 }
 
 /* ── the playgrounds between the domes: all wood, all rounded ─────────── */

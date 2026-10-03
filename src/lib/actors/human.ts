@@ -10,7 +10,7 @@
  */
 import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
-import { blend, egg, limb, loft, loop, rig, skin, spike, type BoneSpec, type Cast, type Clip, type PartSpec, type Pose, type V3 } from './rig';
+import { blend, egg, limb, loft, loop, rig, skin, spike, type BoneSpec, type Cast, type Clip, type Piece, type Pose, type V3 } from './rig';
 
 /** how tall it is (m) */
 export const HEIGHT = 1.7;
@@ -44,7 +44,7 @@ const BONES: BoneSpec[] = [
 	])
 ];
 
-function parts(k: Look): PartSpec[] {
+function parts(k: Look): Piece[] {
 	const box = (w: number, h: number, d: number, r: number, at: V3) => {
 		const g = new RoundedBoxGeometry(w, h, d, 3, r);
 		g.translate(...at);
@@ -76,7 +76,7 @@ function parts(k: Look): PartSpec[] {
 		// the head, bald: a skull, a jaw, ears; the face — eyes, brows, a nose, a mouth — so it shows where it looks
 		{ geo: egg([0, 1.705, 0.012], [0.093, 0.118, 0.105], [0, 0, 0], [28, 20]), color: k.skin, bone: 'head' },
 		{ geo: egg([0, 1.648, 0.045], [0.07, 0.05, 0.07]), color: k.skin, bone: 'head' },
-		...sides.flatMap(([, x]): PartSpec[] => [
+		...sides.flatMap(([, x]): Piece[] => [
 			{ geo: egg([x * 0.093, 1.695, 0.0], [0.016, 0.03, 0.022]), color: k.skin, bone: 'head' },
 			{ geo: egg([x * 0.034, 1.712, 0.098], [0.012, 0.009, 0.006]), color: '#2b2622', bone: 'head' },
 			{ geo: egg([x * 0.035, 1.736, 0.101], [0.022, 0.005, 0.008], [0, 0, x * -0.12]), color: k.brows, bone: 'head' }
@@ -84,7 +84,7 @@ function parts(k: Look): PartSpec[] {
 		{ geo: spike([0, 1.692, 0.108], [0, -0.35, 1], 0.016, 0.035, { seg: 12 }), color: k.skin, bone: 'head' },
 		{ geo: egg([0, 1.655, 0.1], [0.022, 0.004, 0.006]), color: '#9a6a5a', bone: 'head' },
 		// each arm: the sleeve over the top of it, the bare forearm, a hand with its thumb
-		...sides.flatMap(([s, x]): PartSpec[] => [
+		...sides.flatMap(([s, x]): Piece[] => [
 			{ geo: limb([x * 0.185, 1.43, -0.01], [x * 0.2, 1.17, -0.02], 0.047, 0.04), color: (p) => (p.y > 1.32 ? k.shirt : k.skin), chain: { bones: [`upperArm${s}`, `forearm${s}`], soft: 0.06 } },
 			{ geo: limb([x * 0.2, 1.17, -0.02], [x * 0.205, 0.915, 0], 0.041, 0.031), color: k.skin, chain: { bones: [`forearm${s}`, `hand${s}`], soft: 0.05 } },
 			{ geo: limb([x * 0.205, 0.915, 0], [x * 0.207, 0.74, 0.012], 0.034, 0.028, { flat: 0.48 }), color: k.skin, chain: { bones: [`hand${s}`], soft: 0.03, tip: [x * 0.207, 0.72, 0.012] } },
@@ -99,7 +99,7 @@ function parts(k: Look): PartSpec[] {
 }
 
 /** the bones and the parts, measured for 1.80 m, scaled by s */
-function scaled(s: number, k: Look): { bones: BoneSpec[]; parts: PartSpec[] } {
+function scaled(s: number, k: Look): { bones: BoneSpec[]; parts: Piece[] } {
 	const m = (v: V3): V3 => [v[0] * s, v[1] * s, v[2] * s];
 	return {
 		bones: BONES.map((b) => ({ ...b, at: m(b.at) })),

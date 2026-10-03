@@ -50,7 +50,10 @@
 		scene.add(floor);
 		let grid: InstanceType<typeof THREE.Group> | null = null;
 
-		show = (a: Actor) => {
+		show = async (a: Actor) => {
+			// an animal's skin is meshed off the page first; picked away from meanwhile, it is not shown
+			await a.ready?.();
+			if (chosen.id !== a.id) return;
 			if (cast) scene.remove(cast.rig.object);
 			if (grid) scene.remove(grid);
 			const c = a.make();
