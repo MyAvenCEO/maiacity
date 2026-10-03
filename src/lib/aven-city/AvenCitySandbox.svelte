@@ -12,11 +12,14 @@ import {
 	type PlacedKind
 } from './game/three/buildWorld'
 import type { SandboxApi } from './game/three/sandboxScene'
+import { wayBack } from '$lib/app/back.svelte'
 
 // The standalone repo linked back to `/` from its own route. As a component
 // inside avenOS there is no route to return to, so the parent says what
-// "back" means.
+// "back" means, and the app's nav pill is where it is: while the sandbox is
+// open, its way back returns to the world ($lib/app/back.svelte.js).
 const { onback }: { onback: () => void } = $props()
+$effect(() => wayBack('Back to the world', () => onback()))
 
 let canvas: HTMLCanvasElement
 let api: SandboxApi | undefined
@@ -74,9 +77,6 @@ function setLevel(lv: number): void {
 				<span class="font-semibold">avenCITY</span>
 				<span class="hud-label">biome sandbox</span>
 			</div>
-			<button class="hud-pill hud-btn pointer-events-auto font-semibold" onclick={onback}>
-				← back to the world
-			</button>
 		</div>
 
 		<!-- left rail: biome picker -->

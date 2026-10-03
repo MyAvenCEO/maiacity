@@ -10,7 +10,9 @@
  * and the nav pill sits that much lower ($lib/app/NavPill.svelte).
  *
  * Measured, never assumed: in a browser tab, on a desktop, in the Mac app, in an iPad window beside another and on
- * the day iOS draws the frame to the foot again, the gap is 0 and nothing changes.
+ * the day iOS draws the frame to the foot again, the gap is 0 and nothing changes. Nor is it measured once: iOS
+ * shortens the frame on some pages and not on others (a world, all of it fixed to the screen, yes; a long page like
+ * the dashboard, no), and changes it without a resize, so the probe is watched for every change of its size.
  */
 
 /** the app pinned to the home screen: its own window, no browser around it */
@@ -49,12 +51,16 @@ export function watchScreenGap() {
 	};
 
 	measure();
+	// the frame grows and shrinks from page to page, with no resize to say so: its probe tells
+	const watch = new ResizeObserver(measure);
+	watch.observe(probe);
 	window.addEventListener('resize', settle);
 	window.addEventListener('orientationchange', settle);
 	window.addEventListener('pageshow', settle);
 	window.visualViewport?.addEventListener('resize', settle);
 	return () => {
 		clearTimeout(later);
+		watch.disconnect();
 		window.removeEventListener('resize', settle);
 		window.removeEventListener('orientationchange', settle);
 		window.removeEventListener('pageshow', settle);

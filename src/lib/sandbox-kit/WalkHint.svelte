@@ -24,7 +24,8 @@
 <style>
 	.walk-hint {
 		position: absolute;
-		bottom: calc(1rem + env(safe-area-inset-bottom, 0px));
+		/* above the app's nav pill (--nav-room, src/app.css) */
+		bottom: calc(1rem + var(--nav-room, env(safe-area-inset-bottom, 0px)));
 		left: 50%;
 		transform: translateX(-50%);
 		margin: 0;

@@ -151,7 +151,8 @@
 		display: none;
 		position: absolute;
 		left: calc(1.5rem + env(safe-area-inset-left, 0px));
-		bottom: calc(var(--stick-bottom) + env(safe-area-inset-bottom, 0px));
+		/* above the app's nav pill (--nav-room, src/app.css), the home bar under them both */
+		bottom: calc(var(--stick-bottom) + var(--nav-room, env(safe-area-inset-bottom, 0px)));
 		z-index: 2;
 		width: 8rem;
 		height: 8rem;

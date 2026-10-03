@@ -3,7 +3,6 @@
 	walked like every sandbox: drag to look, WASD to walk, Shift to hurry.
 -->
 <script lang="ts">
-	import { base } from '$app/paths';
 	import { onDestroy, onMount } from 'svelte';
 	import type { RoomHandle } from '$lib/worlds/room';
 	import TouchStick from '$lib/touch/TouchStick.svelte';
@@ -30,7 +29,7 @@
 
 <div class="world">
 	<div class="stage" bind:this={stage}></div>
-	<WorldBar title="Apartment of Samuel" subtitle="Day 02 · his room, the hallway, the kitchen, the bathroom" back="Worlds" href="{base}/app/worlds/" />
+	<WorldBar title="Apartment of Samuel" subtitle="Day 02 · his room, the hallway, the kitchen, the bathroom" />
 	<WalkHint />
 	<TouchStick move={(x, y, hurry) => room?.move(x, y, hurry)} look={(dx, dy) => room?.look(dx, dy)} {stage} taps=".bar a, .bar button" />
 </div>

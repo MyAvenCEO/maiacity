@@ -1,7 +1,7 @@
 <!--
 	Stepping inside a dome: a full-screen, walkable interior (interior/interior.ts)
 	over the island. Drag or click to look, WASD or the arrows to walk, Shift to
-	hurry, Esc and the button to come back out. On a phone, as in every sandbox: a
+	hurry, Esc and the nav pill's back to come back out ($lib/app/back.svelte.js). On a phone, as in every sandbox: a
 	joystick in the lower left walks, any other finger on the world looks round
 	($lib/touch/TouchStick).
 
@@ -15,6 +15,7 @@
 	import { DOMES, type DomeKind, type InteriorHandle } from './interior/interior';
 	import TouchStick from '$lib/touch/TouchStick.svelte';
 	import { WalkHint, WorldBar } from '$lib/sandbox-kit';
+	import { wayBack } from '$lib/app/back.svelte';
 
 	let {
 		kind,
@@ -66,6 +67,9 @@
 		handle?.dispose();
 	});
 
+	// while it is open, the nav pill's way back steps out of it
+	$effect(() => wayBack('Back outside', () => onclose()));
+
 	const onKey = (e: KeyboardEvent) => e.key === 'Escape' && !document.pointerLockElement && onclose();
 </script>
 
@@ -73,7 +77,7 @@
 
 <div class="interior">
 	<div class="stage" bind:this={stage}></div>
-	<WorldBar title={spec.label} subtitle="{place} · {spec.diameter} m across · {spec.people}" back="Back outside" onback={onclose} />
+	<WorldBar title={spec.label} subtitle="{place} · {spec.diameter} m across · {spec.people}" />
 	{#if lift}
 		<div class="lift" role="status" aria-live="polite">
 			<p class="where">Floor {lift.floor} · {lift.name}</p>
@@ -115,11 +119,11 @@
 		inset: 0;
 		cursor: grab;
 	}
-	/* the lift's panel, bottom centre, above the help line */
+	/* the lift's panel, bottom centre, above the help line and the app's nav pill (--nav-room, src/app.css) */
 	.lift {
 		position: absolute;
 		left: 50%;
-		bottom: calc(4.2rem + env(safe-area-inset-bottom, 0px));
+		bottom: calc(4.2rem + var(--nav-room));
 		transform: translateX(-50%);
 		z-index: 2;
 		width: min(24rem, calc(100vw - 2rem));
@@ -205,7 +209,7 @@
 	.label {
 		position: absolute;
 		left: 50%;
-		bottom: calc(10vh + env(safe-area-inset-bottom, 0px));
+		bottom: calc(10vh + var(--nav-room));
 		transform: translateX(-50%);
 		width: min(34rem, calc(100vw - 3rem));
 		display: flex;
@@ -268,7 +272,7 @@
 		}
 		/* the lift's panel above the joystick, not over it */
 		.lift {
-			bottom: calc(11rem + env(safe-area-inset-bottom, 0px));
+			bottom: calc(11rem + var(--nav-room));
 		}
 	}
 </style>

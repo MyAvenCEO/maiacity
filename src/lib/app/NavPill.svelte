@@ -1,20 +1,26 @@
 <!--
-	The app's nav pill, floating at the bottom: home to the dashboard (where the games are), the admin's tools (for whoever holds
-	them), and the account — who is signed in, the public site, signing out.
+	The app's one way round, a pill floating at the foot of every page of the app, the full-screen worlds and sandboxes
+	too, on a phone and a desktop alike: back ($lib/app/back.svelte.js: out of what a page has open over itself, else up
+	a place), home to the dashboard, and you (who is signed in, your name, the public site, signing out). No page has a
+	bar or a back button of its own, and everything else — the games, the worlds, the admin's tools — is a tile on the
+	dashboard.
+
+	Full-screen pages keep what they show at their foot clear of it with --nav-room (src/app.css). Pinned to an iPhone's
+	home screen it sits lower by the gap iOS leaves at the foot of the screen ($lib/app/screenGap.js).
 -->
-<script lang="ts">
+<script>
 	import { base } from '$app/paths';
 	import { page } from '$app/state';
-	import type { Founder } from '$lib/auth/client';
 	import Icon from './Icon.svelte';
-	import { ADMIN, APPS, holds } from './places';
+	import { back, upFrom } from './back.svelte.js';
 
-	let { founder, onsignout }: { founder: Founder; onsignout: () => void } = $props();
+	/** @type {{ founder: import('$lib/auth/client').Founder, onsignout: () => void }} */
+	let { founder, onsignout } = $props();
 
+	const home = `${base}/app/`;
 	let open = $state(false);
 	const path = $derived(page.url.pathname);
-	const here = (href: string) => (href === `${base}/app/` ? path === href : path.startsWith(href));
-	const tools = $derived(ADMIN.filter((p) => holds(founder, p) && p.icon !== 'key'));
+	const up = $derived(upFrom(path.slice(base.length)));
 	const initials = $derived(founder.name.split(/\s+/).map((w) => w[0]).join('').slice(0, 2).toUpperCase());
 	$effect(() => {
 		void path;
@@ -25,20 +31,17 @@
 <svelte:window onkeydown={(e) => e.key === 'Escape' && (open = false)} />
 
 <nav class="pill" aria-label="App">
-	<a class="item home" href="{base}/app/" aria-current={here(`${base}/app/`) ? 'page' : undefined} title="Dashboard">
+	{#if back.open}
+		<button class="item" onclick={() => back.open?.go()} title={back.open.label} aria-label={back.open.label}>
+			<Icon name="back" /><span>Back</span>
+		</button>
+	{:else if up}
+		<a class="item" href={up.href} title={up.label} aria-label={up.label}><Icon name="back" /><span>Back</span></a>
+	{/if}
+	<a class="item" href={home} aria-current={path === home ? 'page' : undefined} title="Dashboard">
 		<Icon name="home" /><span>Home</span>
 	</a>
-	{#each APPS as t (t.href)}
-		<a class="item" href={t.href} aria-current={here(t.href) ? 'page' : undefined} title={t.label}>
-			<Icon name={t.icon} /><span>{t.label}</span>
-		</a>
-	{/each}
-	{#each tools as t (t.href)}
-		<a class="item" href={t.href} aria-current={here(t.href) ? 'page' : undefined} title={t.label}>
-			<Icon name={t.icon} /><span>{t.label}</span>
-		</a>
-	{/each}
-	<button class="item me" class:on={open} onclick={() => (open = !open)} aria-expanded={open} aria-haspopup="true" title={founder.name}>
+	<button class="item" class:on={open} onclick={() => (open = !open)} aria-expanded={open} aria-haspopup="true" title={founder.name}>
 		<span class="avatar">{initials}</span><span>You</span>
 	</button>
 	{#if open}
@@ -52,9 +55,7 @@
 </nav>
 
 <style>
-	/* centred, as wide as its items and never wider than the screen (clear of its edges and the notch): when they are
-	   more than fit, they share the room. Pinned to an iPhone's home screen it sits lower by the gap iOS leaves at the
-	   screen's foot ($lib/app/screenGap.js), the same distance above the home bar as anywhere else */
+	/* centred, as wide as its items, never wider than the screen (clear of its edges and the notch) */
 	.pill {
 		position: fixed;
 		bottom: calc(14px + env(safe-area-inset-bottom, 0px) - var(--screen-gap, 0px));
@@ -102,10 +103,6 @@
 	.item[aria-current='page'],
 	.item.on {
 		color: var(--paper);
-		background: var(--ink);
-	}
-
-	.home[aria-current='page'] {
 		background: var(--ink);
 	}
 
@@ -172,8 +169,8 @@
 		color: var(--terracotta) !important;
 	}
 
-	/* a phone, upright or on its side, and a narrow window: icons only, each as wide as a finger while the pill has the
-	   room, narrower when it has not (eleven of them still fit across the narrowest phone) */
+	/* a phone, upright or on its side, and a narrow window: icons only, each as wide as a finger (src/app.css keeps
+	   --nav-room to these sizes) */
 	@media (max-width: 760px), (max-height: 500px) {
 		.item span:not(.avatar) {
 			display: none;

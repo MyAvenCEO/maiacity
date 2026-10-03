@@ -28,12 +28,8 @@ import TouchStick from '../touch/TouchStick.svelte'
  * The standalone repo reached the biome sandbox through its own `/sandbox`
  * route. Inside avenOS the game is a component in one world rather than an
  * app with routes, so the sandbox became a view this component swaps to.
+ * Leaving the world is the app's nav pill ($lib/app/NavPill.svelte).
  */
-let {
-	/** Where "leave the world" goes — the host app decides. */
-	backHref = null
-}: { backHref?: string | null } = $props()
-
 let sandbox = $state(false)
 
 // $state, not a plain `let`: leaving for the sandbox unmounts the canvas and
@@ -230,9 +226,6 @@ $effect(() => {
 			     bottom row is the one that gives way when the screen runs short. -->
 			<div class="flex shrink-0 items-start justify-between gap-2">
 				<div class="pointer-events-auto flex items-center gap-1.5">
-					{#if backHref}
-						<a class="hud-pill hud-pill-sm hud-btn font-semibold" href={backHref}>←</a>
-					{/if}
 					<div class="hud-pill hud-pill-sm">
 						<span class="font-semibold">avenCITY</span>
 						<span class="hud-label">world {seed}</span>

@@ -14,7 +14,8 @@
  *   SkyControl    the time of the sky: Auto (the in-game clock) or Manual (a slider, from noon), one state for
  *                 every sandbox (./skyTime.svelte.js)
  *   WalkHint      how to walk, for keys and for fingers
- *   WorldBar      the bar along the top: the way back, the world's name, its SkyControl; slimmer on a phone
+ *   WorldBar      the bar along the top: the world's name, its SkyControl; slimmer on a phone (the way back is the
+ *                 app's nav pill)
  *   …and $lib/touch/TouchStick, the phone's joystick, hands `move` and `look` to the walker.
  *
  * How to build a new sandbox with it: ./README.md.

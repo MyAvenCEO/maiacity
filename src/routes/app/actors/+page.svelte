@@ -4,7 +4,6 @@
 	it can be turned by hand (the pose copied out as data). Drag to turn round it, scroll to come closer. An admin's.
 -->
 <script lang="ts">
-	import { base } from '$app/paths';
 	import { onDestroy, onMount } from 'svelte';
 	import { ACTORS, type Actor } from '$lib/actors';
 	import type { Cast, Pose, V3 } from '$lib/actors/rig';
@@ -150,7 +149,6 @@
 
 <main class="actors">
 	<aside>
-		<a class="back" href="{base}/app/">← Dashboard</a>
 		<h1>Actors</h1>
 		<p class="lede">Everyone and everything rigged to move: the stand-in a shot is blocked with, and the animals of the worlds.</p>
 		<ul>
@@ -220,17 +218,11 @@
 		color: #1f2a23;
 	}
 
+	/* the list scrolls clear of the nav pill at its foot */
 	aside {
 		overflow: auto;
-		padding: 1.4rem 1rem 2rem;
+		padding: 1.4rem 1rem calc(2rem + var(--nav-room));
 		border-right: 1px solid rgb(0 0 0 / 0.08);
-	}
-
-	.back {
-		color: inherit;
-		opacity: 0.7;
-		text-decoration: none;
-		font-size: 0.9rem;
 	}
 
 	h1 {
@@ -384,9 +376,10 @@
 		justify-content: flex-end;
 	}
 
+	/* at the foot, above the app's nav pill (--nav-room, src/app.css) */
 	.readout {
 		left: 1rem;
-		bottom: 1rem;
+		bottom: calc(1rem + var(--nav-room));
 		display: flex;
 		flex-direction: column;
 		gap: 0.15rem;
@@ -410,7 +403,7 @@
 
 		.joints {
 			top: auto;
-			bottom: 5.5rem;
+			bottom: calc(5.5rem + var(--nav-room));
 		}
 	}
 </style>

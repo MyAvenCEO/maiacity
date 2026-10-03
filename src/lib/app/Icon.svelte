@@ -6,7 +6,9 @@
 </script>
 
 <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-	{#if name === 'home'}
+	{#if name === 'back'}
+		<path d="M19.5 12h-15" /><path d="m10.5 6-6 6 6 6" />
+	{:else if name === 'home'}
 		<path d="M3.5 11 12 4l8.5 7" /><path d="M5.5 9.5V20h13V9.5" /><path d="M10 20v-5.5h4V20" />
 	{:else if name === 'play'}
 		<path d="M4 18a8 8 0 0 1 16 0" /><path d="M12 10V4" /><path d="M9 5.5c1.8-1.2 4.2-1.2 6 0" /><circle cx="12" cy="18" r="1.4" />

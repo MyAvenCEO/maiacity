@@ -3,7 +3,6 @@
 	turn round it, scroll to come closer — on a grid of 10 cm squares, with its measure. An admin's.
 -->
 <script lang="ts">
-	import { base } from '$app/paths';
 	import { onDestroy, onMount } from 'svelte';
 	import { MODELS, type Model } from '$lib/models';
 
@@ -116,7 +115,6 @@
 
 <main class="models">
 	<aside>
-		<a class="back" href="{base}/app/">← Dashboard</a>
 		<h1>3D models</h1>
 		<p class="lede">The things the worlds are built from, each to its real measure.</p>
 		<ul>
@@ -153,17 +151,11 @@
 		color: #1f2a23;
 	}
 
+	/* the list scrolls clear of the nav pill at its foot */
 	aside {
 		overflow: auto;
-		padding: 1.4rem 1rem 2rem;
+		padding: 1.4rem 1rem calc(2rem + var(--nav-room));
 		border-right: 1px solid rgb(0 0 0 / 0.08);
-	}
-
-	.back {
-		color: inherit;
-		opacity: 0.7;
-		text-decoration: none;
-		font-size: 0.9rem;
 	}
 
 	h1 {
@@ -231,10 +223,11 @@
 		cursor: grab;
 	}
 
+	/* at the foot, above the app's nav pill (--nav-room, src/app.css; the page already keeps clear of the home bar) */
 	.readout {
 		position: absolute;
 		left: 1rem;
-		bottom: 1rem;
+		bottom: calc(1rem + var(--nav-room) - env(safe-area-inset-bottom, 0px));
 		display: flex;
 		flex-direction: column;
 		gap: 0.15rem;
