@@ -41,10 +41,13 @@ density, and keeps the judgement honest.
 11. **Outrun your own adaptation.** After 45–60 s on one shot the eye has adapted. Grade in passes; look at a
     black/grey/white card for 15 s every 20–30 minutes; break every hour or two; leave late-night calls for the morning;
     compare against stored stills (Robbie Carman, Dan Moran, Van Hurkman).
-12. **Check on the phone; never grade on it.** An iPhone shows SDR at up to 1,000 nits; Apple's video colour management
-    has decoded BT.709-tagged (1-1-1) video with a ≈ 1.96 curve, so a 2.4 grade looks lighter there (reported 2018–2022;
-    recheck). Small pictures look less colourful, bright ones more. Pick the tag and target once, then check the uploaded
-    file.
+12. **Check on the phone; never grade on it.** The master is Rec.709 BT.1886 (2.4) tagged 1-1-1. An iPhone shows SDR
+    at up to 1,000 nits and decodes BT.709-tagged video with Apple's video curve (reported at about 1.96; recheck), so a
+    2.4 grade looks lighter there. Our hero frames are tagged as Rec.709 video, so a Mac shows them the same, Apple's
+    way: lighter than a BT.1886 reference monitor. Decide once which one we judge to — today, the Apple view — and check
+    the uploaded file on the phone. Small pictures look less colourful, bright ones more. If a web or phone master is
+    ever wanted, OpenColorIO's ACES 2.0 views on "Gamma 2.2 Rec.709" or "sRGB" are the same rendering on another
+    display.
 13. **Keep the story out of the deepest shadows.** Compression and lit rooms erase near-black detail ("The Long Night"
     of *Game of Thrones*).
 14. **Re-judge every 9:16 crop as a new shot:** a bigger face reads as more colourful (trim saturation on push-ins), a
@@ -77,6 +80,8 @@ this: `dip`/`cold` for the low, `bright`/`warm` for the high (`game/film/color.j
 
 We intercut rather than composite, so match scene to scene, in this order:
 
+0. **One gamut.** The renders are born in linear Rec.709, inside AP1. The iPhone's Apple Wide Gamut reaches outside it
+   in saturated blue and violet; until the journey compresses gamut, keep such colours out of the shots you match.
 1. **The grey anchor.** A metered 18 % grey is 0.18 linear (≈ 0.414 ACEScct) in both; through the ACES 2.0 100-nit
    output it lands at 10 nits. Check both on one waveform first.
 2. **Plausible materials.** Non-metal albedo between about 0.02 (charcoal, fresh asphalt) and 0.81 (fresh snow); real
@@ -141,4 +146,7 @@ blog.frame.io: colour separation, roll-off, Film Look Creator, film grain); Vale
 (yedlin.net/NerdyFilmTechStuff/OnColorScience); Van Hurkman, *Color Correction Handbook*; Pixar colour scripts
 (hyperallergic.com); Gurney (gurneyjourney.blogspot.com, colour wheel masking); Melara (juanmelara.com.au); Kodak 2383
 data sheet; CG integration (therookies.co; admvfx.com; mimicvfx.com; Foundry Nuke docs; Unreal PBR docs); ITU-R BT.2035;
-Apple (support.apple.com 108321, 121031); ACES 2.0 (docs.acescentral.com).
+Apple (support.apple.com 108321, 121031); ACES 2.0 (docs.acescentral.com). Apple Log 2: the ACES CSC
+`CSC.Apple.AppleLog2_to_ACES` (github.com/aces-aswf/aces-input-and-colorspaces); OpenColorIO 2.6 "Apple Log 2"; the
+ACES Reference Gamut Compression (docs.acescentral.com/rgc); Kelly on log vs linear (blog.frame.io, 2024-08-05); Prolost
+on Apple Log (prolost.com/blog/applelog); Mostyn, *How to Grade Apple Log*; CineD's iPhone 17 Pro lab test.
