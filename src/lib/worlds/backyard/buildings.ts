@@ -1,13 +1,13 @@
 /*
- * THE BACKYARD'S BUILDINGS — the house on the courtyard's north side in apricot render, its ground floor an old
+ * THE BACKYARD'S BUILDINGS — the house on the courtyard's west side in apricot render, its ground floor an old
  * workshop's (the front door under its canopy, the steel window, the brown doors); the single-storey workshop built out
- * in front of its east end in saffron, its big steel window onto a studio; the neighbour's saffron wall and its
+ * in front of its north end in saffron, its big steel window onto a studio; the neighbour's saffron wall and its
  * polycarbonate along the terrace; the boundary walls streaked green, the shed, the gate under its glass canopy with
  * the station clock; and the neighbours' houses over the walls. See ./layout.ts for where.
  */
 import * as THREE from 'three';
 import { type Builder, planeGeo, sized } from './kit';
-import { ANNEX, BIG_WINDOW, DRIVE, EAST, GATE, HOUSE, HOUSE_AXES, HOUSE_GROUND, INSET, SHED, SOUTH_WALL, UPPER_WINDOW, WEST_WALL, type Rect } from './layout';
+import { ANNEX, BIG_WINDOW, DRIVE, NEIGHBOUR, GATE, HOUSE, HOUSE_AXES, HOUSE_GROUND, INSET, SHED, EAST_WALL, UPPER_WINDOW, SOUTH_WALL, type Rect } from './layout';
 import { SIZE, curtainedGlass, grime, plaque, roofTiles, roughcast, stainedWall, weathered, windowBays } from './surfaces';
 import { barnLamp, casementWindow, doorCanopy, entranceDoor, stationClock, steelWindow, workshopDoor } from '$lib/models/yard';
 import { bistroChair } from '$lib/models/terrace';
@@ -96,11 +96,11 @@ export function buildBuildings(b: Builder, scene: THREE.Scene): Buildings {
 	];
 	const floorAt = [H.floors[0], H.floors[0] + H.floors[1]];
 	for (const ax of HOUSE_AXES) for (const f of floorAt) holes.push([ax - UPPER_WINDOW.w / 2 + ox, ax + UPPER_WINDOW.w / 2 + ox, f + UPPER_WINDOW.sill, f + UPPER_WINDOW.sill + UPPER_WINDOW.h]);
-	// its face: an L, cut away low at its east end where the workshop is built against it
+	// its face: an L, cut away low at its north end where the workshop is built against it
 	const notch = ANNEX.x0 + ox;
 	const face = b.wall(W, top, 0.45, holes, mat.house, [[0, 0], [notch, 0], [notch, ANNEX.h], [W, ANNEX.h], [W, top], [0, top]]);
 	face.position.set(H.x0, 0, H.z);
-	// its body behind its face: the ground floor's east end is the workshop's
+	// its body behind its face: the ground floor's north end is the workshop's
 	b.span(H.x0, ANNEX.x0, 0, top, H.back, H.z - 0.45, mat.house);
 	b.span(ANNEX.x0, H.x1, ANNEX.h, top, H.back, H.z - 0.45, mat.house);
 	b.span(ANNEX.x0, H.x1, 0, ANNEX.h, H.back, ANNEX.back, mat.house);
@@ -185,7 +185,7 @@ export function buildBuildings(b: Builder, scene: THREE.Scene): Buildings {
 	const front = b.wall(aw, A.h, A.wall, [[B.x0 - A.x0, B.x1 - A.x0, B.sill, B.top]], mat.annex);
 	front.position.set(A.x0, 0, A.z);
 	const inX0 = A.x0 + A.wall, inX1 = A.x1 - A.wall, inZ0 = A.back + A.wall, inZ1 = A.z - A.wall, ceil = A.h - 0.15;
-	b.span(A.x0, inX0, 0, A.h, H.z, inZ1, mat.annex); // its west end, against the house
+	b.span(A.x0, inX0, 0, A.h, H.z, inZ1, mat.annex); // its south end, against the house
 	b.span(A.x0, inX0, 0, ceil, A.back, H.z, mat.white);
 	b.span(inX1, A.x1, 0, A.h, A.back, inZ1, mat.annex);
 	b.span(inX0, inX1, 0, ceil, A.back, inZ0, mat.white);
@@ -240,7 +240,7 @@ export function buildBuildings(b: Builder, scene: THREE.Scene): Buildings {
 	solid.push([A.x0, A.x1, A.back, A.z]);
 
 	/* ── the neighbour's wall along the terrace: saffron, a ledge, polycarbonate over it ─────────────────────── */
-	const E = EAST, I = INSET;
+	const E = NEIGHBOUR, I = INSET;
 	b.span(I.x0, E.x + 0.3, 0, E.low, I.z0 - 0.3, I.z0, mat.annex);
 	b.span(E.x, E.x + 0.3, 0, E.low, I.z0 - 0.3, E.z1, mat.annex);
 	b.span(I.x0, E.x + 0.34, E.low, E.low + 0.06, I.z0 - 0.34, I.z0 + 0.04, mat.coping);
@@ -286,11 +286,11 @@ export function buildBuildings(b: Builder, scene: THREE.Scene): Buildings {
 		b.span(x0, x1, 0, h, z0, z1, mat.boundary);
 		b.span(x0 - 0.04, x1 + 0.04, h, h + 0.06, z0 - 0.04, z1 + 0.04, mat.coping);
 	};
-	wall(WEST_WALL.x - 0.3, WEST_WALL.x, WEST_WALL.z0, WEST_WALL.z1);
-	wall(SOUTH_WALL.x0, SOUTH_WALL.x1 + 0.3, SOUTH_WALL.z, SOUTH_WALL.z + 0.3);
-	wall(E.x, E.x + 0.3, E.z1, SOUTH_WALL.z);
+	wall(SOUTH_WALL.x - 0.3, SOUTH_WALL.x, SOUTH_WALL.z0, SOUTH_WALL.z1);
+	wall(EAST_WALL.x0, EAST_WALL.x1 + 0.3, EAST_WALL.z, EAST_WALL.z + 0.3);
+	wall(E.x, E.x + 0.3, E.z1, EAST_WALL.z);
 	wall(DRIVE.x0 - 0.3, DRIVE.x0, SHED.z1, DRIVE.z1, 2.6);
-	solid.push([WEST_WALL.x - 0.3, WEST_WALL.x, WEST_WALL.z0, WEST_WALL.z1], [SOUTH_WALL.x0, SOUTH_WALL.x1, SOUTH_WALL.z, SOUTH_WALL.z + 0.3], [E.x, E.x + 0.3, I.z0 - 0.3, SOUTH_WALL.z]);
+	solid.push([SOUTH_WALL.x - 0.3, SOUTH_WALL.x, SOUTH_WALL.z0, SOUTH_WALL.z1], [EAST_WALL.x0, EAST_WALL.x1, EAST_WALL.z, EAST_WALL.z + 0.3], [E.x, E.x + 0.3, I.z0 - 0.3, EAST_WALL.z]);
 	// the shed: render over a mono-pitch roof, its gutter along the courtyard, two pipes down
 	const S = SHED;
 	b.span(S.x0, S.x1, 0, S.eaves, S.z0, S.z1, mat.shed);
@@ -328,8 +328,8 @@ export function buildBuildings(b: Builder, scene: THREE.Scene): Buildings {
 
 	/* ── the neighbours' houses over the walls, and the passage out under the front house ──────────────────── */
 	const bays = (color: string) => new THREE.MeshStandardMaterial({ map: sized(windowBays(), 3), color, roughness: 0.92 });
-	const west = bays('#ece3d0'), south = bays('#f2ede3'), east = bays('#e6dfcf');
-	b.span(-36, -24, 0, 17.2, -15, 14, west);
+	const cream = bays('#ece3d0'), white = bays('#f2ede3'), sand = bays('#e6dfcf');
+	b.span(-36, -24, 0, 17.2, -15, 14, cream);
 	// their balconies: a slab, a railing of steel bars
 	for (const y of [3, 6, 9, 12])
 		for (const z of [-7.5, -1.5, 4.5, 10.5]) {
@@ -338,14 +338,14 @@ export function buildBuildings(b: Builder, scene: THREE.Scene): Buildings {
 			for (let i = 0; i <= 15; i++) b.span(-22.75, -22.72, y, y + 0.96, z - 1.5 + i * 0.2 - 0.01, z - 1.5 + i * 0.2 + 0.01, mat.galv);
 			for (const zz of [z - 1.5, z + 1.5]) b.span(-24, -22.7, y + 0.95, y + 0.98, zz - 0.015, zz + 0.015, mat.galv);
 		}
-	b.span(-31, DRIVE.x0, 0, 18, DRIVE.z1, 31, south);
-	b.span(DRIVE.x1, 22, 0, 18, DRIVE.z1, 31, south);
-	b.span(DRIVE.x0, DRIVE.x1, 3.6, 18, DRIVE.z1, 31, south);
+	b.span(-31, DRIVE.x0, 0, 18, DRIVE.z1, 31, white);
+	b.span(DRIVE.x1, 22, 0, 18, DRIVE.z1, 31, white);
+	b.span(DRIVE.x0, DRIVE.x1, 3.6, 18, DRIVE.z1, 31, white);
 	b.span(DRIVE.x0, DRIVE.x0 + 0.05, 0, 3.6, DRIVE.z1, 30.5, mat.dark);
 	b.span(DRIVE.x1 - 0.05, DRIVE.x1, 0, 3.6, DRIVE.z1, 30.5, mat.dark);
 	b.span(DRIVE.x0, DRIVE.x1, 3.55, 3.6, DRIVE.z1, 30.5, mat.dark);
 	b.plane(DRIVE.x1 - DRIVE.x0, 3.6, mat.street, (DRIVE.x0 + DRIVE.x1) / 2, 1.8, 30.45, Math.PI);
-	b.span(15, 28, 0, 10, -15, DRIVE.z1, east);
-	b.span(-0.6, 9.5, 0, 7.5, -17, -9, east);
+	b.span(15, 28, 0, 10, -15, DRIVE.z1, sand);
+	b.span(-0.6, 9.5, 0, 7.5, -17, -9, sand);
 	return { solid, lamps, polycarbonate: poly };
 }

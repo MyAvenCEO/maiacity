@@ -1,8 +1,8 @@
 /*
  * THE PERGOLA AND ITS TERRACE — in front of the old workshop: a roof of clear corrugated polycarbonate on white rafters,
- * held by grey steel (a beam along the workshop's front, a corner post, a long diagonal strut from the roof's west edge
- * down to the workshop's corner, a fat round column with its pipe braces on the east) and by a frame of fresh larch in
- * front (sills on the paving, posts — the west ones leaning out — and a header carrying the rolled-up side awning and
+ * held by grey steel (a beam south of the workshop, a corner post, a long diagonal strut from the roof's south edge
+ * down to the workshop's corner, a fat round column with its pipe braces on the north) and by a frame of fresh larch in
+ * front (sills on the paving, posts — the south ones leaning out — and a header carrying the rolled-up side awning and
  * the brown gutter, whose pipe runs back diagonally to the house's corner). Two sand-coloured sails sag under the roof.
  * Under it the terrace: flagstones, two steel plates over the cellar's light well, the leather sofa, the bamboo table,
  * the bistro set in the corner, the white planters and their herbs, the olive tree, the bird of paradise, the passion
@@ -11,7 +11,7 @@
 import * as THREE from 'three';
 import { type Builder, sized } from './kit';
 import { corrugated, polycarbonate, type Lamp } from './buildings';
-import { ANNEX, BIG_WINDOW, COLUMN, EAST, INSET, POSTS, ROOF, SLIM, STRUT, TERRACE, roofAt, type Rect } from './layout';
+import { ANNEX, BIG_WINDOW, COLUMN, NEIGHBOUR, INSET, POSTS, ROOF, SLIM, STRUT, TERRACE, roofAt, type Rect } from './layout';
 import { SIZE, flagstones, sailcloth, treadPlate } from './surfaces';
 import { bambooTable, bistroChair, bistroTable, clubSofa, festoonLights, ficusTree, geraniumPot, monstera, oliveTree, paperLantern, ribbedPlanter, strelitzia, terracottaPot, toyBee, toyMonkey, type Herb } from '$lib/models/terrace';
 import { ashtray } from '$lib/models/yard';
@@ -85,18 +85,18 @@ export function buildPergola(b: Builder, scene: THREE.Scene): Pergola {
 	sheet(INSET.x0 - 0.05, ROOF.x1 + 0.05, INSET.z0 - 0.1, ROOF.z0 - 0.02);
 
 	/* ── the steel ─────────────────────────────────────────────────────────── */
-	// the rafters' back ends rest on the workshop's cornice; west of it on a beam out from its corner, and over the corner
-	// behind its east end on a beam along the neighbour's wall
+	// the rafters' back ends rest on the workshop's cornice; south of it on a beam out from its corner, and over the
+	// corner behind its north end on a beam along the neighbour's wall
 	const backTop = underRafters(0.14);
 	b.span(ROOF.x0 - 0.05, ANNEX.x0 + 0.05, backTop - 0.16, backTop, 0.1, 0.18, mat.steel);
 	b.span(INSET.x0, ROOF.x1 + 0.05, underRafters(INSET.z0 + 0.05) - 0.16, underRafters(INSET.z0 + 0.05), INSET.z0, INSET.z0 + 0.08, mat.steel);
-	// the edge beams along the roof's west and east sides, under the rafters, falling with them
+	// the edge beams along the roof's south and north sides, under the rafters, falling with them
 	for (const [x, z0] of [[ROOF.x0, 0.1], [ROOF.x1 - 0.04, INSET.z0]] as const) {
 		const zm = (z0 + ROOF.z1) / 2;
 		const e = b.box(0.1, 0.16, ROOF.z1 - z0, mat.steel, x, underRafters(zm) - 0.08, zm);
 		e.rotation.x = SLOPE;
 	}
-	// the corner post against the workshop's corner, and the long strut from the west edge down to its foot
+	// the corner post against the workshop's corner, and the long strut from the south edge down to its foot
 	const foot = v3(...STRUT.foot), top = v3(...STRUT.top);
 	b.span(ANNEX.x0 - 0.16, ANNEX.x0 - 0.04, 0, backTop - 0.16, 0.06, 0.16, mat.steel);
 	beam(foot, top, 0.1, 0.12, mat.steel);
@@ -145,7 +145,7 @@ export function buildPergola(b: Builder, scene: THREE.Scene): Pergola {
 		s.position.set(x, headY - 0.3, T.z1 + 0.2);
 		b.box(0.035, 0.32, 0.01, mat.strap, x, headY - 0.12, T.z1 + 0.105);
 	}
-	// the gutter along the roof's front, its pipe down at the west end and back diagonally to the house's corner
+	// the gutter along the roof's front, its pipe down at the south end and back diagonally to the house's corner
 	const gz = ROOF.z1 + 0.12, gy = roofAt(ROOF.z1) - 0.05;
 	const gutter = b.add(new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.07, ROOF.x1 - ROOF.x0 + 0.1, 14, 1, true, Math.PI, Math.PI).rotateZ(Math.PI / 2), mat.gutter));
 	gutter.position.set((ROOF.x0 + ROOF.x1) / 2, gy, gz);
@@ -237,13 +237,13 @@ export function buildPergola(b: Builder, scene: THREE.Scene): Pergola {
 	b.place(terracottaPot({ d: 0.62, h: 0.24, plant: 'shrub', seed: 9 }), 5.0, 5.45);
 	round.push({ x: -2.4, z: 3.3, r: 0.5 }, { x: -1.12, z: 0.33, r: 0.3 }, { x: -1.72, z: 0.32, r: 0.2 }, { x: 4.95, z: 4.6, r: 0.3 }, { x: 5.0, z: 5.45, r: 0.35 });
 	// on the neighbour's ledge: the toys, the festoon lights along it, ivy hanging over it
-	const ledgeY = EAST.low + 0.12;
+	const ledgeY = NEIGHBOUR.low + 0.12;
 	b.place(toyMonkey(), 4.55, INSET.z0 - 0.06, 0.15, ledgeY);
 	b.place(toyBee(), 4.86, INSET.z0 - 0.05, -0.2, ledgeY);
 	const festoon = b.place(festoonLights({ length: 2.05, sag: 0.1, bulbs: 8 }), INSET.x0 + 0.1, INSET.z0 - 0.1, 0, ledgeY + 0.22);
 	const ivy: [THREE.Vector3, THREE.Vector3][] = [];
 	for (let i = 0; i < 7; i++) ivy.push([v3(3.75 + i * 0.07, ledgeY, INSET.z0 + 0.02), v3(3.7 + i * 0.09, ledgeY - 0.5 - (i % 3) * 0.25, INSET.z0 + 0.06)]);
-	for (let i = 0; i < 8; i++) ivy.push([v3(EAST.x - 0.02, ledgeY, 1.3 + i * 0.13), v3(EAST.x - 0.06, ledgeY - 0.6 - (i % 4) * 0.2, 1.25 + i * 0.15)]);
+	for (let i = 0; i < 8; i++) ivy.push([v3(NEIGHBOUR.x - 0.02, ledgeY, 1.3 + i * 0.13), v3(NEIGHBOUR.x - 0.06, ledgeY - 0.6 - (i % 4) * 0.2, 1.25 + i * 0.15)]);
 	b.add(stems(ivy, { card: 0.1, per: 26, tint: '#7d9a62', seed: 51, spread: 0.04, face: v3(0, 0, 1) }));
 
 	/* ── the paper lanterns: two big ones under the roof, a cluster by the trellis hung from the strut ───────── */
