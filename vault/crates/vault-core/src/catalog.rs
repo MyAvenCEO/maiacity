@@ -257,6 +257,122 @@ pub struct Story {
     pub key: String,
 }
 
+/// The words of a name, as a story's title is compared: "233 Settlers — How It Starts" = "233 settlers, how it starts".
+fn words(s: &str) -> Vec<String> {
+    s.split(|c: char| !c.is_alphanumeric()).filter(|w| !w.is_empty()).map(str::to_lowercase).collect()
+}
+
+/// The old day a title or an episode still names ("Day 19", "DAY 0019", "day-19 · …"), if any.
+pub fn day_in(s: &str) -> Option<u32> {
+    let t = s.trim().to_lowercase();
+    let rest = t.strip_prefix("day")?.trim_start_matches([' ', '-', '_']);
+    let digits: String = rest.chars().take_while(|c| c.is_ascii_digit()).collect();
+    let after = rest[digits.len()..].trim_start();
+    if digits.is_empty() || !(after.is_empty() || after.starts_with(['·', ':', '—', '–', '-', '|'])) {
+        return None;
+    }
+    digits.parse().ok()
+}
+
+/// The story a name belongs in (a story on the Stories board, by its name): the one with the same words, else one
+/// whose every word is in the other ("The 1 million decision" is "The 1 Million Lives Decision"), else — for a story
+/// that was an old day (`day`, from its folder) — the one still named by that day (its title or its episode, until
+/// it is renamed). Never the inbox.
+pub fn bucket_for<'a>(stories: &'a [Story], inbox: &str, name: &str, day: Option<u32>) -> Option<&'a Story> {
+    let want = words(name);
+    let within = |a: &[String], b: &[String]| a.iter().all(|w| b.contains(w));
+    let others = || stories.iter().filter(|s| s.id != inbox);
+    let by_name = || {
+        if want.is_empty() {
+            return None;
+        }
+        others().find(|s| words(&s.title) == want).or_else(|| {
+            others().find(|s| {
+                let have = words(&s.title);
+                !have.is_empty() && day_in(&s.title).is_none() && (within(&have, &want) || within(&want, &have))
+            })
+        })
+    };
+    by_name().or_else(|| day.and_then(|d| others().find(|s| day_in(&s.title) == Some(d) || day_in(&s.episode) == Some(d))))
+}
+
+/// A story's title from a longer name: at most five words.
+pub fn title_of(name: &str) -> String {
+    name.split_whitespace().take(5).collect::<Vec<_>>().join(" ")
+}
+
+/// One old day, and what it is called now: the story it became (`story`), or the idea it is
+/// (src/lib/stories/legacy.json — the one list the site, the scripts and the Mac app read).
+#[derive(Debug, Clone, Deserialize)]
+pub struct Legacy {
+    pub day: u32,
+    pub name: String,
+    #[serde(default)]
+    pub story: bool,
+}
+
+/// One step of putting the old days' names away: a bucket's files into another and the empty one gone, or a bucket
+/// named by its title alone (no day, no episode).
+#[derive(Debug, Clone, PartialEq)]
+pub enum Tidy {
+    Merge { from: String, into: String },
+    Name { id: String, title: String },
+}
+
+/// What putting the old days away takes, for these buckets. A bucket is its namespace id; its title is only its name,
+/// so a rename moves nothing. For every old day: the buckets still named by it (title "Day 19", episode "DAY 0019")
+/// go into the bucket of the story it became ("233 settlers, how it starts" — the one there is, else the first of
+/// them, renamed); every bucket keeps no episode. The inbox is never touched.
+pub fn tidy_plan(stories: &[Story], inbox: &str, legacy: &[Legacy]) -> Vec<Tidy> {
+    let others: Vec<&Story> = stories.iter().filter(|s| s.id != inbox).collect();
+    let mut out = Vec::new();
+    let mut gone: Vec<String> = Vec::new();
+    let mut named: Vec<String> = Vec::new();
+    for l in legacy {
+        let by_day: Vec<&Story> = others.iter().copied().filter(|s| day_in(&s.title) == Some(l.day) || day_in(&s.episode) == Some(l.day)).collect();
+        if by_day.is_empty() {
+            continue;
+        }
+        let into = bucket_for(stories, inbox, &l.name, None).filter(|s| day_in(&s.title).is_none()).unwrap_or(by_day[0]);
+        for s in by_day.iter().filter(|s| s.id != into.id) {
+            out.push(Tidy::Merge { from: s.id.clone(), into: into.id.clone() });
+            gone.push(s.id.clone());
+        }
+        let title = if day_in(&into.title).is_some() { title_of(&l.name) } else { into.title.clone() };
+        if title != into.title || !into.episode.is_empty() {
+            out.push(Tidy::Name { id: into.id.clone(), title });
+        }
+        named.push(into.id.clone());
+    }
+    for s in others {
+        if !s.episode.is_empty() && !gone.contains(&s.id) && !named.contains(&s.id) {
+            out.push(Tidy::Name { id: s.id.clone(), title: s.title.clone() });
+        }
+    }
+    out
+}
+
+/// A file's tags with every old day tag ("Day 06") as its idea's ("idea:The food forest"), each once — None when it
+/// carries none on the list.
+pub fn retag(tags: &[String], legacy: &[Legacy]) -> Option<Vec<String>> {
+    let mut changed = false;
+    let mut out: Vec<String> = Vec::new();
+    for t in tags {
+        let t = match day_in(t).and_then(|d| legacy.iter().find(|l| l.day == d)) {
+            // a tag that is a day and nothing else ("Day 06", "DAY 0006"), never one that only starts with one
+            Some(l) if t.split_whitespace().count() <= 2 => {
+                changed = true;
+                format!("idea:{}", l.name)
+            }
+            _ => t.clone(),
+        };
+        if !out.contains(&t) {
+            out.push(t);
+        }
+    }
+    changed.then_some(out)
+}
+
 impl Catalog {
     /// Open this vault's catalog, creating it the first time. Its id is kept in `dir/catalog.id`.
     pub async fn open(dir: &Path, docs: &Docs, store: &FsStore) -> Result<Self> {
@@ -456,6 +572,46 @@ impl Catalog {
         Ok(())
     }
 
+    /// The old days' names put away (`tidy_plan`, `retag`): the buckets merged and named by their stories, the files'
+    /// day tags as their ideas'. Safe to run again: what is done already is not done twice. Says what it did.
+    pub async fn tidy_legacy(&self, legacy: &[Legacy]) -> Result<Vec<String>> {
+        let inbox = self.inbox_id();
+        let stories = self.stories().await?;
+        let mut did = Vec::new();
+        let title = |id: &str| stories.iter().find(|s| s.id == id).map(|s| s.title.clone()).unwrap_or_default();
+        for step in tidy_plan(&stories, &inbox, legacy) {
+            match step {
+                Tidy::Merge { from, into } => {
+                    let files: Vec<Meta> = self.list().await?.into_iter().filter(|m| m.story == from).collect();
+                    for m in &files {
+                        self.describe(m.hash.parse()?, &serde_json::json!({ "story": into })).await?;
+                    }
+                    self.delete_story(&from).await?;
+                    did.push(format!("\"{}\" ({} files) merged into \"{}\"", title(&from), files.len(), title(&into)));
+                }
+                Tidy::Name { id, title: name } => {
+                    let Some(mut s) = stories.iter().find(|s| s.id == id).cloned() else { continue };
+                    let was = format!("{}{}", if s.episode.is_empty() { String::new() } else { format!("{} · ", s.episode) }, s.title);
+                    s.title = name;
+                    s.episode.clear();
+                    let saved = self.save_story(s).await?;
+                    did.push(format!("\"{was}\" named \"{}\"", saved.title));
+                }
+            }
+        }
+        let mut retagged = 0;
+        for m in self.list().await? {
+            if let Some(tags) = retag(&m.tags, legacy) {
+                self.describe(m.hash.parse()?, &serde_json::json!({ "tags": tags })).await?;
+                retagged += 1;
+            }
+        }
+        if retagged > 0 {
+            did.push(format!("{retagged} files' day tags as their ideas'"));
+        }
+        Ok(did)
+    }
+
     /// Every derived record of one concern (`transcript/`, `sound/`, `analysis/`) whose JSON is here: hex hash → record.
     pub async fn records(&self, prefix: &str) -> Result<std::collections::HashMap<String, serde_json::Value>> {
         let entries: Vec<_> = self.doc().get_many(Query::single_latest_per_key().key_prefix(prefix)).await?.collect().await;
@@ -636,6 +792,67 @@ impl Catalog {
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn the_old_days_are_put_away() {
+        let story = |id: &str, title: &str, episode: &str| Story { id: id.into(), title: title.into(), episode: episode.into(), ..Default::default() };
+        let legacy = [
+            Legacy { day: 1, name: "The 1 million decision".into(), story: true },
+            Legacy { day: 6, name: "The food forest".into(), story: false },
+            Legacy { day: 19, name: "233 settlers, how it starts".into(), story: true },
+        ];
+        let all = [
+            story("inbox", "Inbox", ""),
+            story("a", "Day 19", ""),
+            story("b", "233 Settlers — How It Starts", "DAY 0019"),
+            story("c", "Day 01", "DAY 0001"),
+            story("d", "Thinking outside the box", "DAY 0002"),
+            story("e", "Test", ""),
+        ];
+        assert_eq!(
+            tidy_plan(&all, "inbox", &legacy),
+            vec![
+                Tidy::Name { id: "c".into(), title: "The 1 million decision".into() },
+                Tidy::Merge { from: "a".into(), into: "b".into() },
+                Tidy::Name { id: "b".into(), title: "233 Settlers — How It Starts".into() },
+                Tidy::Name { id: "d".into(), title: "Thinking outside the box".into() },
+            ]
+        );
+        // done once, nothing more to do
+        let after = [story("inbox", "Inbox", ""), story("b", "233 Settlers — How It Starts", ""), story("c", "The 1 million decision", ""), story("e", "Test", "")];
+        assert!(tidy_plan(&after, "inbox", &legacy).is_empty());
+        let tags = |t: &[&str]| t.iter().map(|x| x.to_string()).collect::<Vec<_>>();
+        assert_eq!(retag(&tags(&["Day 06", "role:shot", "Day 6"]), &legacy), Some(tags(&["idea:The food forest", "role:shot"])));
+        assert_eq!(retag(&tags(&["Day 42", "role:shot"]), &legacy), None);
+        assert_eq!(retag(&tags(&["idea:The food forest"]), &legacy), None);
+    }
+
+    #[test]
+    fn a_name_finds_its_story() {
+        let story = |id: &str, title: &str| Story { id: id.into(), title: title.into(), ..Default::default() };
+        let all = [
+            story("inbox", "Inbox"),
+            story("a", "Test"),
+            story("b", "The 1 Million Lives Decision"),
+            story("c", "Thinking Outside The Box"),
+            story("d", "233 Settlers — How It Starts"),
+        ];
+        let at = |name: &str| bucket_for(&all, "inbox", name, None).map(|s| s.id.as_str());
+        assert_eq!(at("233 settlers, how it starts"), Some("d"));
+        assert_eq!(at("The 1 million decision"), Some("b"));
+        assert_eq!(at("thinking outside the box"), Some("c"));
+        assert_eq!(at("Test"), Some("a"));
+        assert_eq!(at("The food forest"), None);
+        assert_eq!(at("Inbox"), None);
+        assert_eq!(at(""), None);
+        assert_eq!(title_of("One two three four five six"), "One two three four five");
+        // a bucket still named by its old day is found by that day, never made twice
+        let old = [story("inbox", "Inbox"), story("e", "Day 19"), Story { episode: "DAY 0002".into(), ..story("f", "First brick") }];
+        assert_eq!(bucket_for(&old, "inbox", "233 settlers, how it starts", Some(19)).map(|s| s.id.as_str()), Some("e"));
+        assert_eq!(bucket_for(&old, "inbox", "Thinking outside the box", Some(2)).map(|s| s.id.as_str()), Some("f"));
+        assert!(bucket_for(&old, "inbox", "The food forest", Some(6)).is_none());
+        assert_eq!((day_in("Day 19"), day_in("DAY 0019"), day_in("day-01 · The decision"), day_in("Daylight"), day_in("Day 19 settlers")), (Some(19), Some(19), Some(1), None, None));
+    }
 
     fn file(meta: serde_json::Value) -> Meta {
         Meta { hash: "h".into(), kind: "video".into(), meta, ..Default::default() }

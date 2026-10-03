@@ -1,6 +1,6 @@
 ---
 title: The most stressed person you know isn't overworked. They've seen who they could be.
-subtitle: Day 07 — why the weight of a life you haven't lived yet is a compass, and why the room you live in decides whether you ever follow it.
+subtitle: Why the weight of a life you haven't lived yet is a compass, and why the room you live in decides whether you ever follow it.
 day: 7
 author: avenSAMUEL
 authorImage: dad53831fb215f1d6c5fc29c111aba8a2d7b472b43ab076da7537787c2895b8a.jpg

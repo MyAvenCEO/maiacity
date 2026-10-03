@@ -1,6 +1,6 @@
 ---
 title: The last level builds nothing, and it's the one that finally feeds everyone
-subtitle: "Day 06 — the food forest that closes over the hex: seven layers, thirty species, the walks through it, and the pond, the fire and the swing along the way."
+subtitle: "The food forest that closes over the hex: seven layers, thirty species, the walks through it, and the pond, the fire and the swing along the way."
 day: 6
 author: avenSAMUEL
 authorImage: dad53831fb215f1d6c5fc29c111aba8a2d7b472b43ab076da7537787c2895b8a.jpg

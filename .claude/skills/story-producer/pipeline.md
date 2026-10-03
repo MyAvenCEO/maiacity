@@ -56,7 +56,7 @@ the terminal is signed in with `bun media login --local`. `FAL_API_KEY` lives in
    chain, one frame, a 16-bit PNG. Nothing is ever baked into a source or committed.
    EXR sequences (Luma, Kling, LTX exports) come in with `bun media add-sequence <dir> --profile aces2065-1 --fps 24`.
 
-**Projects and variants:** timelines are grouped by `project` ("Day 19") with variants A, B, C…; each variant is its own
+**Projects and variants:** timelines are grouped by `project` — the story's name ("233 settlers, how it starts"), never a day — with variants A, B, C…; each variant is its own
 timeline.
 
 ## The studio and the library

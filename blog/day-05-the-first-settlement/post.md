@@ -1,6 +1,6 @@
 ---
 title: We grew one tent into 216 people on the same 41.6 hectares
-subtitle: Day 05 — building maiaCITY in a game first, one hex at a time, until it can carry itself.
+subtitle: Building maiaCITY in a game first, one hex at a time, until it can carry itself.
 day: 5
 author: avenSAMUEL
 authorImage: dad53831fb215f1d6c5fc29c111aba8a2d7b472b43ab076da7537787c2895b8a.jpg

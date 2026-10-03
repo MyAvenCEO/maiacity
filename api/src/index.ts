@@ -23,7 +23,7 @@ import { checkModels, pick } from "./prem";
 import { createTimeline, deleteTimeline, getTimeline, listTimelines, saveTimeline, TimelineError } from "./timelines";
 import { createShot, getShot, listShots, saveShot, ShotError, shotVersions } from "./shots";
 import { claimRender, listJobs, queueFrame, queueRender, queueStillOfFile, queueStillsOf, RenderError, rendersOf, reportRender } from "./renders";
-import { CHANNELS, ContentError, createContent, deleteContent, FORMATS, KINDS, listContent, saveContent, saveDay, savePosts, STATUSES, dropDeliveries } from "./content";
+import { BEATS, CHANNELS, ContentError, createContent, deleteContent, FORMATS, KINDS, listContent, saveContent, saveDay, savePosts, STATUSES, dropDeliveries, fileStory, unfiledStories } from "./content";
 import { format, gameClock, calendar, parse } from "../../game/time";
 
 const PORT = Number(process.env.PORT ?? 3000);
@@ -804,6 +804,29 @@ const server = Bun.serve({
       },
     },
 
+    // The stories the Mac app is to file in the media vault (past the idea, no vault story yet), and filing one
+    "/api/content/unfiled": {
+      OPTIONS: preflight,
+      GET: async (req) => {
+        const me = await allowed(req, "media:admin");
+        if (me instanceof Response) return me;
+        return json(req, { items: await unfiledStories() });
+      },
+    },
+    "/api/content/:id/story": {
+      OPTIONS: preflight,
+      PUT: async (req) => {
+        const me = await allowed(req, "media:admin");
+        if (me instanceof Response) return me;
+        try {
+          const b = ((await readJson(req)) ?? {}) as { story?: string };
+          return json(req, await fileStory(req.params.id, String(b.story ?? "")));
+        } catch (e) {
+          return fail(req, e);
+        }
+      },
+    },
+
     // A day, derived from its base article: written where the article is (the same key as the film pipeline)
     "/api/content/days/:project": {
       OPTIONS: preflight,
@@ -818,14 +841,14 @@ const server = Bun.serve({
       },
     },
 
-    // The publishing calendar.
+    // The stories: the board, and every story's steps.
     "/api/content": {
       OPTIONS: preflight,
       GET: async (req) => {
         const me = await allowed(req, "content:admin");
         if (me instanceof Response) return me;
         const u = new URL(req.url);
-        return json(req, { items: await listContent(u.searchParams.get("from") ?? undefined, u.searchParams.get("to") ?? undefined), kinds: KINDS, channels: CHANNELS, formats: FORMATS, statuses: STATUSES });
+        return json(req, { items: await listContent(u.searchParams.get("from") ?? undefined, u.searchParams.get("to") ?? undefined), kinds: KINDS, channels: CHANNELS, formats: FORMATS, statuses: STATUSES, beats: BEATS });
       },
       POST: async (req) => {
         const me = await allowed(req, "content:admin");

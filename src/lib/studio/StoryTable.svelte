@@ -162,7 +162,7 @@
 
 	/** a move or a class change waits for the admin to confirm it — nothing moves by a stray click */
 	let pending = $state<{ kind: 'story' | 'class'; to: string; label: string } | null>(null);
-	const storyName = (s: StoryView) => (s.inbox ? 'Inbox' : `${s.episode ? `${s.episode} · ` : ''}${s.title}`);
+	const storyName = (s: StoryView) => (s.inbox ? 'Inbox' : s.title);
 
 	async function confirm() {
 		if (!pending || !selected.length) return;
@@ -244,7 +244,7 @@
 	{#if current}
 		<header>
 			<div>
-				<span class="ep">{current.inbox ? 'INBOX' : [current.series, current.episode].filter(Boolean).join(' · ')}</span>
+				<span class="ep">{current.inbox ? 'INBOX' : current.series}</span>
 				<h3>{current.title}</h3>
 				{#if current.description && !current.inbox}<p>{current.description}</p>{/if}
 			</div>

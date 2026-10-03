@@ -14,6 +14,7 @@ import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { say } from "../../api/scripts/media-client";
 import { add, bare } from "./vault.mjs";
+import { ideaTag, nameOfDay } from "../../src/lib/stories/names.js";
 
 const args = process.argv.slice(2);
 const listFile = resolve(args.find((a) => a.endsWith(".mjs"))!);
@@ -21,7 +22,8 @@ const film = (await import(pathToFileURL(listFile).href)).default;
 const only = args.includes("--only") ? args[args.indexOf("--only") + 1] : null;
 const take = args.includes("--take") ? args[args.indexOf("--take") + 1] : "a";
 const sfx = args.includes("--sfx") ? args[args.indexOf("--sfx") + 1] : null;
-const day = `Day ${String(film.day ?? 19).padStart(2, "0")}`;
+// the story the score belongs to, as its files' tag ("idea:233 settlers, how it starts") — never a day
+const day = ideaTag(nameOfDay(film.day ?? 19));
 
 /** Into the vault; when it replaces a file, the shot list names the new one in its place. */
 async function bring(bytes: Uint8Array, about: { title: string; description?: string; tags: string[]; meta: Record<string, unknown> }, replaces?: string) {

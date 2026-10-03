@@ -145,7 +145,7 @@ The hook is also set into the day's title cards (`scripts/film/thumbnail.mjs`; f
 - **The new world is always the day's own footage** — a frame from that day's article or film, never one borrowed
   from another day. The old world may be generated when the day has none: fal, the latest GPT Image
   (`openai/gpt-image-2.5/sunburst/text-to-image`), photoreal, the same high drone vantage as the new-world frame,
-  the subject centred so every crop keeps it; then `bun media add … --tags "Day NN,role:frame"`.
+  the subject centred so every crop keeps it; then `bun media add … --tags "idea:<the story's name>,role:frame"`.
 - Otherwise one hero frame with the title over a firm shade, placed so it never crosses a face.
 
 ## Compact

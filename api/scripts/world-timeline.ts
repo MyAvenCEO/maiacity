@@ -17,7 +17,7 @@ import { fromLegacy } from "../../game/film/shot.js";
 import { list } from "../../scripts/film/vault.mjs";
 
 const arg = (k: string, d: string) => (process.argv.includes(`--${k}`) ? process.argv[process.argv.indexOf(`--${k}`) + 1]! : d);
-const FROM = arg("from", "G"), VARIANT = arg("variant", "W"), NAME = arg("name", "World"), PROJECT = arg("project", "Day 19");
+const FROM = arg("from", "G"), VARIANT = arg("variant", "W"), NAME = arg("name", "World"), PROJECT = arg("project", nameOfDay(19));
 const LIST = resolve(arg("list", "scripts/film/day-19-d.mjs"));
 const film = (await import(pathToFileURL(LIST).href)).default as { name: string; shots: any[] };
 

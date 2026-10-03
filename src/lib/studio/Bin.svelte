@@ -11,6 +11,7 @@
 	import { command } from '$lib/native';
 	import { transcriptState } from './transcript.js';
 	import { analysisOf, cuesOf, tagsOf } from './analysis.js';
+	import { dayIn, renamed, sameName } from '$lib/stories/names.js';
 
 	/** @type {{ s: import('./studio.svelte.js').Studio }} */
 	let { s } = $props();
@@ -51,29 +52,27 @@
 		}
 	}
 	$effect(() => void loadStories());
-	// the inbox first, then by episode (Day 2 before Day 10), then by title
-	const ordered = $derived(
-		[...stories].sort((a, b) => Number(b.inbox) - Number(a.inbox) || (a.episode || '~').localeCompare(b.episode || '~', undefined, { numeric: true }) || a.title.localeCompare(b.title))
-	);
+	// the inbox first, then by title (a story goes by its name, never a day)
+	const ordered = $derived([...stories].sort((a, b) => Number(b.inbox) - Number(a.inbox) || a.title.localeCompare(b.title, undefined, { numeric: true })));
 	const chosen = $derived(story === 'all' ? null : (stories.find((x) => x.id === story) ?? null));
 	/** Is a file of the chosen story? (the inbox: of none) @param {import('$lib/auth/client').MediaItem} m */
 	const inStory = (m) => !chosen || (chosen.inbox ? !m.story || m.story === chosen.id : m.story === chosen.id);
-	/** A world shot of the chosen story: its project names the story (its episode or title); the inbox: no project. @param {string | null | undefined} p */
+	/** A world shot of the chosen story: its project names the story (by its title, whatever the case and punctuation;
+	 *  an old day's project by the story that day became); the inbox: no project. @param {string | null | undefined} p */
 	const shotIn = (p) => {
 		if (!chosen) return true;
 		if (chosen.inbox) return !p;
-		const want = [chosen.episode, chosen.title].filter(Boolean).map((x) => x.trim().toLowerCase());
-		return !!p && want.includes(p.trim().toLowerCase());
+		return !!p && sameName(renamed(p), chosen.title);
 	};
 	/** @param {StoryView} x */
-	const storyName = (x) => (x.inbox ? 'Inbox' : `${x.episode ? `${x.episode} · ` : ''}${x.title}`);
+	const storyName = (x) => (x.inbox ? 'Inbox' : x.title);
 	/** @type {import('$lib/auth/client').Shot[]} */
 	let shots = $state([]);
 	let shotsNote = $state('');
 
 	const ROLES = ['cover', 'in the post', 'poster', 'film', 'author', 'site'];
 	/** @param {string} t */
-	const rank = (t) => (t.startsWith('Day ') ? 0 : ROLES.includes(t) ? 1 : t === 'unused' ? 3 : 2);
+	const rank = (t) => (t.startsWith('idea:') || dayIn(t) != null ? 0 : ROLES.includes(t) ? 1 : t === 'unused' ? 3 : 2);
 	const files = $derived(s.library.filter((m) => !isCache(m)));
 	/** how many files each story holds (in the bin's sense: no proxies) */
 	const counts = $derived.by(() => {
@@ -205,7 +204,7 @@
 							{#if px.state !== 'n/a'}<b class="px {px.state}">{proxyLabel[px.state]}</b>{/if}
 							{#if cuesOf(m).length}<b class="cn" title="{cuesOf(m).length} cues from the shot analysis (see them in the source monitor)">{cuesOf(m).length} cues</b>{/if}
 							{#if ts && ts.state !== 'unknown' && ts.state !== 'none'}<b class="tr {ts.state}" title={ts.note}>{ts.state === 'ready' ? 'T' : ts.state === 'stuck' ? 'T ✗' : ts.state === 'running' ? `T ${Math.floor(ts.progress * 100)}%` : 'T …'}</b>{/if}
-							{m.tags.filter((t) => rank(t) < 3).slice(0, 2).join(' · ') || m.kind}
+							{m.tags.filter((t) => rank(t) < 3).sort((a, b) => rank(a) - rank(b)).slice(0, 2).map((t) => renamed(t).replace(/^idea:/, '')).join(' · ') || m.kind}
 						</span>
 					</span>
 				</button>

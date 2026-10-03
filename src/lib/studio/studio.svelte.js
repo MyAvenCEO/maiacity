@@ -527,7 +527,8 @@ export class Studio {
 		/** @type {string | null} */
 		let last = null;
 		try {
-			last = localStorage.getItem(LAST);
+			// a link into one cut (?timeline=<id>, a story's Movie tab), else the one open last
+			last = new URLSearchParams(location.search).get('timeline') ?? localStorage.getItem(LAST);
 			const kept = JSON.parse(localStorage.getItem(OPEN) ?? '[]');
 			this.expanded = Array.isArray(kept) ? kept.filter((p) => typeof p === 'string') : [];
 		} catch {

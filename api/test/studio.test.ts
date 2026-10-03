@@ -87,7 +87,7 @@ test("a shot's grade as stacks of tools: checked, free to change after the lock"
   const stacks = { base: { tools: [{ tool: "balance", exposure: 9, temp: -0.5, bogus: 1 }] }, clip: { tools: [{ tool: "window", w: 9, tools: [{ tool: "cdl", slope: [1.2, 1.2, 1.2] }] }, { tool: "nothing" }] } };
   const t = await createTimeline("admin", { name: "Stacks", clips: [{ ...clip, stacks }] });
   const s = (t.clips[0] as any).stacks;
-  expect(s.base.tools[0]).toEqual({ tool: "balance", temp: -0.5, tint: 0, exposure: 4, contrast: 0, highlights: 0, shadows: 0, sat: 0 });
+  expect(s.base.tools[0]).toEqual({ tool: "balance", temp: -0.5, tint: 0, exposure: 4, contrast: 0, highlights: 0, shadows: 0, sat: 0, linear: false });
   // a window holds tools of its own; a tool not in the registry is left out
   expect(s.clip.tools.length).toBe(1);
   expect(s.clip.tools[0].w).toBe(4);
@@ -177,14 +177,14 @@ test("a film is one item on the board: every cut delivers onto it, each replacin
   const [master, copy, cut, again] = [hash("4d"), hash("1080"), hash("916"), hash("0a")];
   await savePosts("admin", full.id, [{ platform: "youtube", title: "T", text: "words", aspect: "16:9", codec: "hevc" }], "Day 99 · A film");
   let item = (await listContent()).find((i) => i.project === "Day 99")!;
-  expect(item.status).toBe("draft");
+  expect(item.status).toBe("movie"); // a film before its day had a story: it starts at the movie
   await done(full, [file(["youtube"], master, "16:9"), file(["x", "linkedin"], copy, "16:9")]);
   await done(reel, [file(["instagram"], cut, "9:16")]);
   const items = (await listContent()).filter((i) => i.project === "Day 99");
   expect(items).toHaveLength(1); // one film, one item
   item = items[0]!;
   expect(item.title).toBe("Day 99 · A film");
-  expect(item.status).toBe("draft"); // a render never locks the base article
+  expect(item.status).toBe("movie"); // a render never locks the base article
   expect(item.channels.sort()).toEqual(["instagram", "linkedin", "x", "youtube"]);
   expect(item.deliveries.map((d) => d.hash)).toEqual([master, copy, cut]);
   expect(item.hashes.sort()).toEqual([master, copy, cut].sort()); // the files it carries
@@ -216,15 +216,15 @@ test("a day starts with its hook — the title set into its cards — and the ar
   expect(item.body).toBe("");
   expect(item.deliveries.map((d) => d.hash)).toEqual([hash("c4")]);
   item = await saveDay("admin", "Day 96", { title: "Day 96 · The decision", body: "# The decision" }); // the article written from it
-  expect(item.status).toBe("draft");
+  expect(item.status).toBe("writing");
   expect(item.hook).toBe(hook); // kept
   item = await saveDay("admin", "Day 96", { title: "Day 96 · The decision", hook: "A sharper hook" }); // a hook later never moves it back
-  expect(item.status).toBe("draft");
+  expect(item.status).toBe("writing");
   expect(item.hook).toBe("A sharper hook");
   expect(item.body).toBe("# The decision");
 });
 
-test("a day is its base article first — a draft — and only a locked base gets derivatives, each at its own time", async () => {
+test("a day is its base article first — writing — and only a locked base gets derivatives, each at its own time", async () => {
   const { saveContent, saveDay } = await import("../src/content");
   const article = { title: "Day 98 · We filmed the city", body: "# We filmed the city\n\nThe base article.", source: "blog/day-98-we-filmed-the-city/post.md", scheduled_at: "2026-10-02T07:00:00Z" };
   const posts = [
@@ -232,18 +232,19 @@ test("a day is its base article first — a draft — and only a locked base get
     { platform: "x", format: "thread", text: "1/", thread: ["1/", "2/"], scheduled_at: "2026-10-02T11:00:00Z" },
   ];
   let item = await saveDay("admin", "Day 98", article);
-  expect(item.status).toBe("draft"); // the base article alone
+  expect(item.status).toBe("writing"); // the base article alone
   expect(item.posts).toHaveLength(0);
-  item = await saveDay("admin", "Day 98", { ...article, body: "# Rewritten" }); // a draft can still change
+  item = await saveDay("admin", "Day 98", { ...article, body: "# Rewritten" }); // while it is written it can still change
   expect(item.body).toBe("# Rewritten");
   item = await saveDay("admin", "Day 98", { posts }); // deriving locks the base
   expect(item.status).toBe("derivatives");
   expect(item.posts.map((p) => p.format)).toEqual(["article", "thread"]);
   expect(item.channels.sort()).toEqual(["journal", "x"]);
   await expect(saveDay("admin", "Day 98", { ...article, body: "# Changed after the lock" })).rejects.toThrow(/locked/);
-  await saveContent(item.id, { status: "draft" }); // back to Draft: open again
-  item = await saveDay("admin", "Day 98", { ...article, body: "# Changed in draft" });
-  expect(item.body).toBe("# Changed in draft");
+  await expect(saveContent(item.id, { body: "# Changed on the board" })).rejects.toThrow(/locked/); // the board too
+  await saveContent(item.id, { status: "writing" }); // back to Writing: open again
+  item = await saveDay("admin", "Day 98", { ...article, body: "# Changed while writing" });
+  expect(item.body).toBe("# Changed while writing");
   await expect(saveDay("admin", "Day 97", { posts })).rejects.toThrow(/no base article/);
   await expect(saveDay("admin", "Day 98", { posts: [{ platform: "tiktok", text: "x" } as never] })).rejects.toThrow();
 });

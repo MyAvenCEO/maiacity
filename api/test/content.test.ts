@@ -40,3 +40,90 @@ test("an idea goes to the backlog; given a date it is scheduled; moved, it keeps
   await deleteContent(idea.id);
   expect((await listContent()).length).toBe(0);
 });
+
+test("a story moves through eight steps, and keeps its pad, its hook, its description and its journey", async () => {
+  const { STATUSES, saveContent: save } = await import("../src/content");
+  expect(STATUSES).toEqual(["idea", "hook", "journey", "writing", "movie", "derivatives", "scheduled", "published"]);
+  const s = await createContent("admin", { title: "Day 0 · the test story", idea: "- links\n- a 10 s trailer" });
+  expect(s.status).toBe("idea");
+  expect(s.idea).toContain("10 s trailer");
+  expect(s.body).toBe(""); // the pad is not the article
+  expect(s.story).toBeNull();
+  let x = await save(s.id, { status: "hook", hook: "It starts here", description: "The river first.", project: "Day 0" });
+  expect([x.status, x.hook, x.description, x.project]).toEqual(["hook", "It starts here", "The river first.", "Day 0"]);
+  x = await save(s.id, {
+    status: "journey",
+    journey: {
+      from: "a city is a dream", to: "a city is being built", question: "Will it work?",
+      beats: [
+        { title: "The river at dawn", type: "hook", tension: 0.4, feel: "curiosity" },
+        { title: "The first piece fails", type: "obstacle", link: "but", tension: 1.7, text: "x".repeat(5000) },
+      ],
+    },
+  });
+  expect(x.journey.question).toBe("Will it work?");
+  expect(x.journey.beats!.map((b) => [b.id, b.type, b.link ?? null, b.tension])).toEqual([["b1", "hook", null, 0.4], ["b2", "obstacle", "but", 1]]);
+  expect(x.journey.beats![1]!.text.length).toBe(4000);
+  expect(x.journey.beats![0]!.feel).toBe("curiosity");
+  await expect(save(s.id, { journey: { beats: [{ title: "?", type: "montage" }] } })).rejects.toThrow(/beat is one of/);
+  await expect(save(s.id, { journey: { beats: [{ type: "hook" }] } })).rejects.toThrow(/title/);
+  await expect(save(s.id, { status: "draft" })).rejects.toThrow(/status is one of/);
+  // a day names one story
+  const other = await createContent("admin", { title: "Another" });
+  await expect(save(other.id, { project: "Day 0" })).rejects.toThrow(/already has that day/);
+  // the Mac app files the story in the vault once it is past the idea
+  const { unfiledStories, fileStory } = await import("../src/content");
+  expect((await unfiledStories()).map((u) => u.id)).toEqual([s.id]); // the other is still an idea
+  const vault = "ab".repeat(32);
+  expect((await fileStory(s.id, vault)).story).toBe(vault);
+  expect(await unfiledStories()).toEqual([]);
+  await expect(fileStory(s.id, "not-a-namespace")).rejects.toThrow(/vault id/);
+  await deleteContent(s.id);
+  await deleteContent(other.id);
+});
+
+test("the stories migration: a draft is being written, an idea's text becomes its pad", async () => {
+  const fresh = new PGlite();
+  const until = MIGRATIONS.findIndex((m) => m.id === "0031-stories");
+  for (const m of MIGRATIONS.slice(0, until)) await fresh.exec(m.sql);
+  await fresh.query("INSERT INTO founders (id, name, role) VALUES ('admin', 'Admin', 'admin')");
+  await fresh.query("INSERT INTO content_items (title, kind, status, body, founder_id) VALUES ('An idea', 'post', 'idea', 'the idea itself', 'admin')");
+  await fresh.query("INSERT INTO content_items (title, kind, status, body, source, project, founder_id) VALUES ('Day 7', 'post', 'draft', '# Day 7', 'blog/day-07/post.md', 'Day 7', 'admin')");
+  await fresh.exec(MIGRATIONS[until]!.sql);
+  const { rows } = await fresh.query<{ title: string; status: string; body: string; idea: string; journey: object; story: string | null }>(
+    "SELECT title, status, body, idea, journey, story FROM content_items ORDER BY title",
+  );
+  expect(rows).toEqual([
+    { title: "An idea", status: "idea", body: "", idea: "the idea itself", journey: {}, story: null },
+    { title: "Day 7", status: "writing", body: "# Day 7", idea: "", journey: {}, story: null },
+  ]);
+  await expect(fresh.query("UPDATE content_items SET status = 'draft'")).rejects.toThrow();
+});
+
+test("stories, not days: every old day takes its name, the days that are no story are ideas again, no title starts with its day", async () => {
+  const fresh = new PGlite();
+  const until = MIGRATIONS.findIndex((m) => m.id === "0032-stories-not-days");
+  for (const m of MIGRATIONS.slice(0, until)) await fresh.exec(m.sql);
+  await fresh.query("INSERT INTO founders (id, name, role) VALUES ('admin', 'Admin', 'admin')");
+  const item = (title: string, status: string, project: string | null) =>
+    fresh.query("INSERT INTO content_items (title, kind, status, body, project, founder_id) VALUES ($1, 'post', $2, '# draft', $3, 'admin')", [title, status, project]);
+  await item("Day 19 · We filmed one whole day inside the city", "derivatives", "Day 19");
+  await item("Day 6 · The last level builds nothing", "writing", "Day 6");
+  await item("Day 1 — The 1 million lives decision", "hook", "day-01");
+  await item("A day like any other", "idea", null);
+  await item("Day 42 · Not on the list", "writing", "Day 42");
+  await fresh.query("INSERT INTO timelines (name, project, founder_id) VALUES ('Full', 'Day 19', 'admin'), ('Loose', NULL, 'admin')");
+  await fresh.exec(MIGRATIONS[until]!.sql);
+  const { rows } = await fresh.query<{ title: string; status: string; project: string | null; body: string }>(
+    "SELECT title, status, project, body FROM content_items ORDER BY title",
+  );
+  expect(rows).toEqual([
+    { title: "A day like any other", status: "idea", project: null, body: "# draft" },
+    { title: "Not on the list", status: "writing", project: "Day 42", body: "# draft" },
+    { title: "The 1 million lives decision", status: "hook", project: "The 1 million decision", body: "# draft" },
+    { title: "The last level builds nothing", status: "idea", project: "The food forest", body: "# draft" },
+    { title: "We filmed one whole day inside the city", status: "derivatives", project: "233 settlers, how it starts", body: "# draft" },
+  ]);
+  const { rows: t } = await fresh.query<{ name: string; project: string | null }>("SELECT name, project FROM timelines ORDER BY name");
+  expect(t).toEqual([{ name: "Full", project: "233 settlers, how it starts" }, { name: "Loose", project: null }]);
+});

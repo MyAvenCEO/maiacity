@@ -43,5 +43,6 @@ export function wayBack(label, go) {
 export function upFrom(rel) {
 	if (/^\/app\/?$/.test(rel)) return null;
 	if (/^\/app\/worlds\/[^/]+\/?$/.test(rel)) return { href: `${base}/app/worlds/`, label: 'Back to the worlds' };
+	if (/^\/app\/stories\/story\/?$/.test(rel)) return { href: `${base}/app/stories/`, label: 'Back to the stories' };
 	return { href: `${base}/app/`, label: 'Back to the dashboard' };
 }

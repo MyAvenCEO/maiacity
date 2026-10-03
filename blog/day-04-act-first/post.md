@@ -1,6 +1,6 @@
 ---
 title: You can't think your way into a new life. I tried it for years.
-subtitle: Day 04 — change starts with an ache you learn to trust, grows through small actions, and only lasts in a room built to let it.
+subtitle: Change starts with an ache you learn to trust, grows through small actions, and only lasts in a room built to let it.
 day: 4
 author: avenSAMUEL
 authorImage: dad53831fb215f1d6c5fc29c111aba8a2d7b472b43ab076da7537787c2895b8a.jpg

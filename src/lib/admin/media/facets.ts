@@ -1,10 +1,13 @@
 // The media library's order: one flat pool of files, known by their BLAKE3 hash, grouped only by their tags.
 //
-// A tag is a plain string. "Day 19" says which day a file belongs to; "key:value" tags are facets (role:shot,
-// scene:the dip, shot:05 the edge, take:b, …); the rest are plain tags ("cover", "site", "sandbox 4", a folder's
-// name). The paths are only names — nothing here reads a folder out of them.
+// A file belongs to one story (the vault's bucket: its `story`, else the inbox) — the first way the library sorts.
+// A tag is a plain string. "idea:The food forest" says which idea a file was gathered for (an old "Day 06" tag reads
+// as its idea, by src/lib/stories/names.js, until the Mac app rewrites it); other "key:value" tags are facets
+// (role:shot, scene:the dip, shot:05 the edge, take:b, …); the rest are plain tags ("cover", "site", "sandbox 4", a
+// folder's name). The paths are only names — nothing here reads a folder out of them.
 import type { MediaItem } from '$lib/auth/client';
-import { vaultUrl } from '$lib/studio/vault';
+import { vaultUrl, type StoryView } from '$lib/studio/vault';
+import { IDEA, dayIn, nameOfDay } from '$lib/stories/names.js';
 
 export type { MediaItem };
 
@@ -49,42 +52,42 @@ const ROLE_GROUPS: { title: string; roles: string[]; plain?: string[] }[] = [
 ];
 
 export type Parsed = {
-	/** every day it belongs to, as numbers (Day 05 → 5) */
-	days: number[];
+	/** every idea it was gathered for, by name ("The food forest"; an old "Day 06" tag as its idea) */
+	ideas: string[];
 	/** facet → its values; the plain tags under PLAIN */
 	facets: Map<string, string[]>;
 	superseded: boolean;
 	unused: boolean;
 };
 
-const DAY = /^Day (\d+)$/;
 const FACET = /^([a-z][a-z0-9-]*):\s*(.+)$/;
 
 export function parse(m: MediaItem): Parsed {
-	const days: number[] = [];
+	const ideas = new Set<string>();
 	const facets = new Map<string, string[]>();
 	const add = (k: string, v: string) => facets.set(k, [...(facets.get(k) ?? []), v]);
 	for (const t of m.tags) {
-		const day = DAY.exec(t);
-		if (day) days.push(Number(day[1]));
+		const day = dayIn(t);
+		if (day != null) ideas.add(nameOfDay(day));
 		else if (t === SUPERSEDED || t === UNUSED) continue;
 		else {
 			const f = FACET.exec(t);
-			if (f) add(f[1]!, f[2]!.trim());
+			if (f && f[1] === IDEA) ideas.add(f[2]!.trim());
+			else if (f) add(f[1]!, f[2]!.trim());
 			else add(PLAIN, t);
 		}
 	}
-	return { days: days.sort((a, b) => b - a), facets, superseded: m.tags.includes(SUPERSEDED), unused: m.tags.includes(UNUSED) };
+	return { ideas: [...ideas].sort(natural), facets, superseded: m.tags.includes(SUPERSEDED), unused: m.tags.includes(UNUSED) };
 }
-
-export const dayTag = (n: number) => `Day ${String(n).padStart(2, '0')}`;
 export const facetTag = (k: string, v: string) => (k === PLAIN ? v : `${k}:${v}`);
 
 // ── order ────────────────────────────────────────────────────────────────
 
 const shotNo = (v: string | undefined) => (v ? Number(/^\d+/.exec(v)?.[0] ?? 999) : 1000);
 const at = (list: string[], v: string | undefined) => (v === undefined ? list.length + 1 : list.includes(v) ? list.indexOf(v) : list.length);
-const natural = (a: string, b: string) => a.localeCompare(b, undefined, { numeric: true });
+function natural(a: string, b: string) {
+	return a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' });
+}
 
 /** How the values of one facet line up: scenes as the film plays, shots by number, roles by use, the rest naturally. */
 export function valueOrder(key: string) {
@@ -186,25 +189,41 @@ function newestCut(items: MediaItem[], parsed: (m: MediaItem) => Parsed): MediaI
 	);
 }
 
-/** Every day at once: a section per day, newest first, then the files that belong to none. */
-export function byDay(items: MediaItem[], parsed: (m: MediaItem) => Parsed): Section[] {
-	const days = new Map<number, MediaItem[]>();
+const flat = (key: string, title: string, list: MediaItem[]): Section => ({ key, title, count: list.length, blocks: [{ key: '', label: null, items: list }] });
+
+/** Every idea at once: a section per idea, by name, then the files gathered for none. */
+export function byIdea(items: MediaItem[], parsed: (m: MediaItem) => Parsed): Section[] {
+	const ideas = new Map<string, MediaItem[]>();
 	const none: MediaItem[] = [];
 	for (const m of items) {
-		const d = parsed(m).days;
-		if (d.length) for (const n of d) days.set(n, [...(days.get(n) ?? []), m]);
+		const d = parsed(m).ideas;
+		if (d.length) for (const n of d) ideas.set(n, [...(ideas.get(n) ?? []), m]);
 		else none.push(m);
 	}
 	const sorted = (list: MediaItem[]) => [...list].sort((a, b) => compare(parsed(a), parsed(b), a, b));
-	const out: Section[] = [...days.keys()]
-		.sort((a, b) => b - a)
-		.map((n) => {
-			const list = sorted(days.get(n)!);
-			return { key: `day:${n}`, title: dayTag(n), count: list.length, blocks: [{ key: '', label: null, items: list }] };
-		});
-	if (none.length) out.push({ key: 'none', title: 'No day', count: none.length, blocks: [{ key: '', label: null, items: sorted(none) }] });
+	const out = [...ideas.keys()].sort(natural).map((n) => flat(`idea:${n}`, n, sorted(ideas.get(n)!)));
+	if (none.length) out.push(flat('none', 'No idea', sorted(none)));
 	return out;
 }
+
+/** Every story at once: a section per story, in the order the vault lists them (the inbox last: what belongs to none yet). */
+export function byStory(items: MediaItem[], parsed: (m: MediaItem) => Parsed, stories: StoryView[]): Section[] {
+	const inbox = stories.find((s) => s.inbox)?.id ?? '';
+	const of = new Map<string, MediaItem[]>();
+	for (const m of items) {
+		const id = m.story || inbox;
+		of.set(id, [...(of.get(id) ?? []), m]);
+	}
+	const sorted = (list: MediaItem[]) => [...list].sort((a, b) => compare(parsed(a), parsed(b), a, b));
+	const order = [...stories.filter((s) => !s.inbox), ...stories.filter((s) => s.inbox)];
+	const out = order.filter((s) => of.has(s.id)).map((s) => flat(`story:${s.id}`, storyName(s), sorted(of.get(s.id)!)));
+	// a story this Mac does not know yet (synced before its record)
+	for (const [id, list] of of) if (!order.some((s) => s.id === id)) out.push(flat(`story:${id}`, 'A story not here yet', sorted(list)));
+	return out;
+}
+
+/** A story as it is called: its title (never a day or an episode number); the inbox as Inbox. */
+export const storyName = (s: Pick<StoryView, 'inbox' | 'title'>) => (s.inbox ? 'Inbox' : s.title);
 
 // ── names ────────────────────────────────────────────────────────────────
 

@@ -37,8 +37,7 @@ export const READ: Place[] = [
 ];
 
 export const ADMIN: Place[] = [
-	{ href: `${base}/app/board/`, label: 'Board', icon: 'board', cap: 'content:admin', note: 'Every day, idea to published' },
-	{ href: `${base}/app/calendar/`, label: 'Calendar', icon: 'calendar', cap: 'content:admin', note: 'What goes out when' },
+	{ href: `${base}/app/stories/`, label: 'Stories', icon: 'board', cap: 'content:admin', note: 'Every story, idea to published, and when it goes out' },
 	{ href: `${base}/app/studio/`, label: 'Studio', icon: 'studio', cap: 'media:admin', note: 'Films and sound' },
 	{ href: `${base}/app/worlds/`, label: 'Worlds', icon: 'play', cap: 'media:admin', note: 'Real places as 3D worlds, to walk and film' },
 	{ href: `${base}/app/models/`, label: '3D models', icon: 'media', cap: 'media:admin', note: 'The things the worlds are built from' },

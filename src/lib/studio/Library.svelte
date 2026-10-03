@@ -1,9 +1,12 @@
 <!--
 	Library — every file this Mac's vault holds, by its BLAKE3 hash, the way the media library always showed them.
 
-	One flat pool of files. A path is only a name a file goes by, never a folder; all grouping is by tags, and a file
-	sits in as many pools as it has tags. On the left: the type, and the days, newest first. In the middle: the files
-	— a chosen day colocated by scene in film order, then shot, then take; everything else by what it is for. On the
+	One flat pool of files. A path is only a name a file goes by, never a folder. Each file is in one story (the vault's
+	bucket, else the inbox), and that is how the library sorts first; then by the ideas a file was gathered for (its
+	"idea:" tags — an old "Day 06" tag reads as its idea until it is rewritten, src/lib/stories/names.js), and by its
+	other tags, a file in as many pools as it has tags. On the left: the type, the stories, the ideas. In the middle:
+	the files — every story at once, a section each; a story (or an idea) colocated by scene in film order, then shot,
+	then take, everything else by what it is for (the inbox by idea). On the
 	right: the facets of what is on screen (OR within a facet, AND across them), or, with a file open, all about it —
 	its copies too (this Mac, the server's Object Storage). The whole view lives in the address, so it can be linked.
 
@@ -18,9 +21,10 @@
 	import Viewer from '$lib/admin/media/Viewer.svelte';
 	import Details from '$lib/admin/media/Details.svelte';
 	import {
-		byDay,
+		byIdea,
 		byScene,
-		dayTag,
+		byStory,
+		storyName,
 		isProxy,
 		FACET_LABEL,
 		facetOrder,
@@ -32,6 +36,7 @@
 	} from '$lib/admin/media/facets';
 	import { listMedia } from '$lib/auth/client';
 	import { gb, type Copies, type StoryView, type VaultStatus } from './vault';
+	import { nameOfDay } from '$lib/stories/names.js';
 
 	type Kind = 'all' | 'image' | 'video' | 'audio';
 	type Measure = { w?: number; h?: number; d?: number };
@@ -48,8 +53,8 @@
 
 	// the view — every piece of it mirrored in the address
 	let kind = $state<Kind>('all');
-	/** a day's number ("19"), "none" for the files of no day, or null for every day */
-	let day = $state<string | null>(null);
+	/** an idea's name, "none" for the files gathered for no idea, or null for every idea */
+	let idea = $state<string | null>(null);
 	/** facet → the values chosen in it */
 	let chosen = $state<Record<string, string[]>>({});
 	let showOld = $state(false);
@@ -66,7 +71,7 @@
 		['video', 'Video'],
 		['audio', 'Sound']
 	] as const;
-	const RESERVED = ['tab', 'story', 'type', 'day', 'q', 'superseded', 'unused', 'open'];
+	const RESERVED = ['tab', 'story', 'type', 'idea', 'day', 'q', 'superseded', 'unused', 'open'];
 	const LONG = 14;
 
 	// ── the pools ───────────────────────────────────────────────────────────
@@ -96,28 +101,27 @@
 	/** how many files each story holds, within the search and the type */
 	const storyCount = (st: string) => media.filter((m) => ofStory(m, st) && ofKind(m) && (showOld || !P(m).superseded)).length;
 	const ofKind = (m: MediaItem, k: Kind = kind) => k === 'all' || m.kind === k;
-	const ofDay = (m: MediaItem, d: string | null = day) =>
-		d === null || (d === 'none' ? P(m).days.length === 0 : P(m).days.includes(Number(d)));
+	const ofIdea = (m: MediaItem, d: string | null = idea) => d === null || (d === 'none' ? P(m).ideas.length === 0 : P(m).ideas.includes(d));
 	const holds = (m: MediaItem, k: string, vs: string[]) => !vs.length || (P(m).facets.get(k) ?? []).some((v) => vs.includes(v));
 	/** passes every chosen facet — but one, when counting that one's own chips */
 	const passes = (m: MediaItem, except?: string) => Object.entries(chosen).every(([k, vs]) => k === except || holds(m, k, vs));
 
 	/** the current selection, before the facets narrow it */
-	const selection = $derived(pool.filter((m) => ofKind(m) && ofDay(m)));
+	const selection = $derived(pool.filter((m) => ofKind(m) && ofIdea(m)));
 	const shown = $derived(selection.filter((m) => passes(m)));
 
-	// the left: the types counted within the day, the days within the type
-	const kindCount = (k: Kind) => pool.filter((m) => ofKind(m, k) && ofDay(m)).length;
-	const days = $derived.by(() => {
-		const counts = new Map<number, number>();
+	// the left: the types counted within the idea, the ideas within the story and the type
+	const kindCount = (k: Kind) => pool.filter((m) => ofKind(m, k) && ofIdea(m)).length;
+	const ideas = $derived.by(() => {
+		const counts = new Map<string, number>();
 		let none = 0;
 		for (const m of pool) {
 			if (!ofKind(m)) continue;
-			const d = P(m).days;
+			const d = P(m).ideas;
 			if (!d.length) none++;
 			for (const n of d) counts.set(n, (counts.get(n) ?? 0) + 1);
 		}
-		return { list: [...counts.entries()].sort(([a], [b]) => b - a), none };
+		return { list: [...counts.entries()].sort(([a], [b]) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' })), none };
 	});
 
 	// the right: every facet the selection holds, each chip counted as if the others still applied
@@ -146,8 +150,11 @@
 	}
 
 	// ── the grid ────────────────────────────────────────────────────────────
-	// a day colocates by scene; every day at once groups by day
-	const sections = $derived(day !== null ? byScene(shown, P) : byDay(shown, P));
+	// every story at once: a section per story; one story (or one idea) colocated by scene — the inbox, which holds
+	// what belongs to no story yet, by idea
+	const sections = $derived(
+		idea !== null ? byScene(shown, P) : story === null ? byStory(shown, P, stories) : story === inboxId ? byIdea(shown, P) : byScene(shown, P)
+	);
 	/** the files in the order they stand on screen, each once: what ← and → step through */
 	const order = $derived.by(() => {
 		const seen = new Set<string>();
@@ -164,7 +171,10 @@
 	const opened = $derived(openHash ? (media.find((m) => m.hash === openHash) ?? null) : null);
 	const at = $derived(opened ? order.findIndex((m) => m.hash === opened.hash) : -1);
 
-	const heading = $derived(day === null ? 'Every day' : day === 'none' ? 'No day' : dayTag(Number(day)));
+	const chosenStory = $derived(stories.find((x) => x.id === story) ?? null);
+	const heading = $derived(
+		[chosenStory ? storyName(chosenStory) : 'Every story', idea === null ? null : idea === 'none' ? 'No idea' : idea].filter(Boolean).join(' · ')
+	);
 
 	function open(m: MediaItem) {
 		openHash = m.hash;
@@ -182,7 +192,7 @@
 	}
 	/** a chip in the details: the grid, narrowed to that one value */
 	function filterBy(k: string, v: string) {
-		if (k === 'day') day = v;
+		if (k === 'idea') idea = v;
 		else chosen = { ...chosen, [k]: [v] };
 		back();
 	}
@@ -206,8 +216,9 @@
 		const s = new URLSearchParams(location.search);
 		const t = s.get('type');
 		if (t === 'image' || t === 'video' || t === 'audio') kind = t;
-		const d = s.get('day');
-		if (d && (d === 'none' || /^\d+$/.test(d))) day = d === 'none' ? d : String(Number(d));
+		// an idea by name; an old link's day (?day=19) as the idea it is now
+		const d = s.get('idea') ?? s.get('day');
+		if (d) idea = d === 'none' ? d : /^\d+$/.test(d) ? nameOfDay(Number(d)) : d;
 		story = s.get('story');
 		q = s.get('q') ?? '';
 		showOld = s.get('superseded') === '1';
@@ -224,7 +235,7 @@
 		s.set('tab', 'library');
 		if (story) s.set('story', story);
 		if (kind !== 'all') s.set('type', kind);
-		if (day) s.set('day', day);
+		if (idea) s.set('idea', idea);
 		for (const k of Object.keys(chosen).sort(facetOrder)) for (const v of chosen[k]!) s.append(k, v);
 		if (q.trim()) s.set('q', q.trim());
 		if (showOld) s.set('superseded', '1');
@@ -274,8 +285,8 @@
 		{#if error}<p class="note bad">{error}</p>{/if}
 
 		<div class="cols">
-			<!-- the left: the type, then the days -->
-			<aside class="left" aria-label="Type and day">
+			<!-- the left: the type, the stories, then the ideas -->
+			<aside class="left" aria-label="Type, story and idea">
 				<div class="kinds" role="tablist" aria-label="Type">
 					{#each KINDS as [k, label] (k)}
 						<button role="tab" aria-selected={kind === k} class:on={kind === k} onclick={() => (kind = k)}>
@@ -294,35 +305,34 @@
 					{#each stories as st (st.id)}
 						<li>
 							<button class:on={story === st.id} aria-pressed={story === st.id} onclick={() => (story = st.id)} title={st.description}>
-								<span>{st.inbox ? 'Inbox' : `${st.episode ? `${st.episode} · ` : ''}${st.title}`}</span> <span class="n">{storyCount(st.id)}</span>
+								<span>{storyName(st)}</span> <span class="n">{storyCount(st.id)}</span>
 							</button>
 						</li>
 					{/each}
 				</ul>
 
-				<h3>Days</h3>
+				<h3>Ideas</h3>
 				<ul class="days">
 					<li>
-						<button class:on={day === null} aria-pressed={day === null} onclick={() => (day = null)}>
-							<span>Every day</span>
+						<button class:on={idea === null} aria-pressed={idea === null} onclick={() => (idea = null)}>
+							<span>Every idea</span>
 						</button>
 					</li>
-					{#each days.list as [n, count] (n)}
+					{#each ideas.list as [n, count] (n)}
 						<li>
-							<button class:on={day === String(n)} aria-pressed={day === String(n)} onclick={() => (day = String(n))}>
-								<span>{dayTag(n)}</span> <span class="n">{count}</span>
+							<button class:on={idea === n} aria-pressed={idea === n} onclick={() => (idea = n)}>
+								<span>{n}</span> <span class="n">{count}</span>
 							</button>
 						</li>
 					{/each}
-					{#if days.none}
+					{#if ideas.none}
 						<li>
-							<button class:on={day === 'none'} aria-pressed={day === 'none'} onclick={() => (day = 'none')}>
-								<span>No day</span> <span class="n">{days.none}</span>
+							<button class:on={idea === 'none'} aria-pressed={idea === 'none'} onclick={() => (idea = 'none')}>
+								<span>No idea</span> <span class="n">{ideas.none}</span>
 							</button>
 						</li>
 					{/if}
 				</ul>
-
 				<div class="toggles">
 					<label><input type="checkbox" bind:checked={showOld} /> Show superseded</label>
 					<label><input type="checkbox" bind:checked={unusedOnly} /> Unused only</label>

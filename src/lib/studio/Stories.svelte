@@ -1,7 +1,8 @@
 <!--
 	Stories — the buckets everything of one story lives in (originals, proxies, sound, stills, metadata, deliveries), and
 	the inbox for what belongs to none yet. Pick the one a batch goes into; make a new one, or change one: a title of at
-	most five words, the full hook as its description, its series and episode. Each class of its files is kept in its
+	most five words (a story goes by its name, never by a day or an episode number), the full hook as its description,
+	its series. Each class of its files is kept in its
 	destinations (for now every class: this Mac's avenSSD and the server's Object Storage). Only the admin's app writes.
 -->
 <script lang="ts">
@@ -75,8 +76,7 @@
 		{#each stories as s (s.id)}
 			<li class:on={chosen === s.id} class:inbox={s.inbox}>
 				<button class="pick" onclick={() => (chosen = s.id)}>
-					<span class="ep">{s.inbox ? 'INBOX' : s.episode || '—'}</span>
-					<span class="t">{s.title}</span>
+					<span class="t">{s.inbox ? 'Inbox' : s.title}</span>
 					<small>{s.files} files · {gb(s.bytes)}</small>
 				</button>
 				{#if !s.inbox}
@@ -89,7 +89,7 @@
 
 	{#if removing}
 		<p class="confirm">
-			Delete the empty story “{removing.title}” ({removing.episode || 'no episode'})?
+			Delete the empty story “{removing.title}”?
 			<button class="primary" onclick={remove}>Delete</button>
 			<button class="link" onclick={() => (removing = null)}>Cancel</button>
 		</p>
@@ -98,15 +98,12 @@
 	{#if editing}
 		<form class="editor" onsubmit={(e) => (e.preventDefault(), save())}>
 			<label>Title <span class:bad={words(editing.title) > 5}>{words(editing.title)}/5 words</span>
-				<input bind:value={editing.title} placeholder="The 1 Million Lives Decision" />
+				<input bind:value={editing.title} placeholder="The 1 million decision" />
 			</label>
 			<label>Description · the full hook
 				<textarea bind:value={editing.description} rows="3"></textarea>
 			</label>
-			<div class="two">
-				<label>Series <input bind:value={editing.series} /></label>
-				<label>Episode <input bind:value={editing.episode} placeholder="DAY 0001" /></label>
-			</div>
+			<label>Series <input bind:value={editing.series} /></label>
 			<div class="rules">
 				{#each CLASSES as c (c)}
 					<span><b>{className(c, 2)}</b> {tiersOf(editing.rules[c]).join(' + ')}</span>
@@ -129,11 +126,10 @@
 	ul { display: flex; flex-direction: column; gap: 0.3rem; margin: 0 0 0.6rem; padding: 0; list-style: none; }
 	li { display: flex; align-items: center; gap: 0.4rem; border: 1px solid var(--edge); border-radius: 10px; background: var(--raised); }
 	li.on { border-color: var(--ink); box-shadow: 0 0 0 1px var(--ink); }
-	li.inbox .ep { color: var(--accent); }
-	.pick { display: grid; grid-template-columns: auto 1fr; gap: 0 0.5rem; flex: 1; padding: 0.5rem 0.7rem; border: 0; background: none; font: inherit; text-align: left; color: var(--ink); cursor: pointer; }
-	.ep { font-family: ui-monospace, monospace; font-size: 0.7rem; color: var(--dim); align-self: center; }
+	li.inbox .t { color: var(--accent); }
+	.pick { display: flex; flex-direction: column; gap: 0.1rem; flex: 1; min-width: 0; padding: 0.5rem 0.7rem; border: 0; background: none; font: inherit; text-align: left; color: var(--ink); cursor: pointer; }
 	.t { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-size: 0.86rem; }
-	.pick small { grid-column: 2; font-size: 0.72rem; color: var(--dim); }
+	.pick small { font-size: 0.72rem; color: var(--dim); }
 	.edit { margin-right: 0.6rem; font-size: 0.74rem; }
 	.link { padding: 0; border: 0; background: none; font: inherit; font-size: 0.78rem; color: var(--dim); text-decoration: underline; cursor: pointer; }
 	.editor { display: flex; flex-direction: column; gap: 0.5rem; margin-bottom: 0.8rem; padding: 0.7rem; border: 1px solid var(--edge); border-radius: 10px; background: var(--bg); }
@@ -141,7 +137,6 @@
 	label span { align-self: flex-end; margin-top: -1rem; font-size: 0.7rem; }
 	label span.bad { color: var(--bad); }
 	input, textarea { padding: 0.4rem 0.55rem; border: 1px solid var(--edge); border-radius: 8px; background: var(--raised); font: inherit; font-size: 0.84rem; color: var(--ink); resize: vertical; }
-	.two { display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem; }
 	.rules { display: flex; flex-direction: column; gap: 0.15rem; font-size: 0.72rem; color: var(--dim); }
 	.rules b { display: inline-block; width: 4.3rem; font-weight: 600; color: var(--ink); }
 	.actions { display: flex; align-items: center; gap: 0.8rem; }

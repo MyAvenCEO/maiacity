@@ -1,4 +1,4 @@
-# Day 0 — the test story
+# The test story
 
 **Step: Idea.** The brainstorm pad: links, concepts, fragments. Nothing here is decided; what survives goes into the
 Hook, the Journey and the Writing.

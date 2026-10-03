@@ -1,6 +1,6 @@
 ---
 title: We rebuilt the Earth as 51,842 cards so a coop can stand on one of them
-subtitle: Day 11 — the planet in avenCITY Sandbox 2, the morning it stopped being invented, and what it takes to found a coop on a card of it.
+subtitle: The planet in avenCITY Sandbox 2, the morning it stopped being invented, and what it takes to found a coop on a card of it.
 day: 11
 author: avenSAMUEL
 authorImage: dad53831fb215f1d6c5fc29c111aba8a2d7b472b43ab076da7537787c2895b8a.jpg

@@ -1,6 +1,6 @@
 ---
 title: We put thirteen domes in one world, and you can walk into every one without waiting
-subtitle: Day 17 — avenCITY Sandbox 4 is a whole dome cell to walk, from the café squares round the master dome to the food forest at its edges, and what it took to make a browser carry it.
+subtitle: avenCITY Sandbox 4 is a whole dome cell to walk, from the café squares round the master dome to the food forest at its edges, and what it took to make a browser carry it.
 day: 17
 author: avenSAMUEL
 authorImage: dad53831fb215f1d6c5fc29c111aba8a2d7b472b43ab076da7537787c2895b8a.jpg

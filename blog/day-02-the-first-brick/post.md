@@ -1,6 +1,6 @@
 ---
 title: Every city on earth is built wrong. This is what starting over looks like
-subtitle: Day 02 — the streets, the food, the homes and the evenings of a city built from scratch, for 1 million people.
+subtitle: The streets, the food, the homes and the evenings of a city built from scratch, for 1 million people.
 day: 2
 author: avenSAMUEL
 authorImage: dad53831fb215f1d6c5fc29c111aba8a2d7b472b43ab076da7537787c2895b8a.jpg

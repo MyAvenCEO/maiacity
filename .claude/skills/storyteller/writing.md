@@ -100,7 +100,7 @@ A film's narration and a talking head are heard once, at the speaker's pace.
 ```
 ---
 title: <compact hook — subject, action, end state, contrast; no colon subtitle>
-subtitle: Day NN — <one sentence that sharpens the promise>
+subtitle: <one sentence that sharpens the promise — never a day in front>
 day: <N>
 author: avenSAMUEL
 authorImage: <Samuel's portrait, by CID>

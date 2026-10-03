@@ -1,6 +1,6 @@
 ---
 title: We turned bare rooms into homes and gave the silent forest its sound
-subtitle: Day 18 — the rooms in every dome got their baths, beds and terrace doors, the land between them got its geese, bees, frogs and ponds, and for the first time you can hear all of it.
+subtitle: The rooms in every dome got their baths, beds and terrace doors, the land between them got its geese, bees, frogs and ponds, and for the first time you can hear all of it.
 day: 18
 author: avenSAMUEL
 authorImage: dad53831fb215f1d6c5fc29c111aba8a2d7b472b43ab076da7537787c2895b8a.jpg

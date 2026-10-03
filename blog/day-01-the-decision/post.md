@@ -1,6 +1,6 @@
 ---
 title: The 1 million lives decision I almost didn't dare to take
-subtitle: Day 01 — a city of a million co-founders, carried alone for years, and the day the vision stopped being mine alone to carry.
+subtitle: A city of a million co-founders, carried alone for years, and the day the vision stopped being mine alone to carry.
 day: 1
 author: avenSAMUEL
 authorImage: dad53831fb215f1d6c5fc29c111aba8a2d7b472b43ab076da7537787c2895b8a.jpg
