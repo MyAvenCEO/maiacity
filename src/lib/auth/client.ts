@@ -267,15 +267,28 @@ export async function deleteTimeline(id: string): Promise<void> {
 	if (!res.ok) throw new Error('Could not delete the timeline.');
 }
 
-// ─────────────────────────────── the content board ───────────────────────────────
+// ─────────────────────────────── the stories ───────────────────────────────
 
 /**
- * Where a snippet stands, in the order it moves: the swipe file; its hook (the title, set into every title card); the
- * base article written from it; the article locked and the posts derived from it; dated; out. The API sends its own list with every GET /api/content — this is the
+ * Where a story stands, in the order it moves: its brainstorm pad; its hook (title, description, the 16:9 title card);
+ * its journey (the arc, beat by beat); the long-form master article (writing); the film (movie); the article locked
+ * and the posts derived from it; dated; out. The API sends its own list with every GET /api/content — this is the
  * fallback until it has answered.
  */
-export const STATUSES = ['idea', 'hook', 'draft', 'derivatives', 'scheduled', 'published'] as const;
+export const STATUSES = ['idea', 'hook', 'journey', 'writing', 'movie', 'derivatives', 'scheduled', 'published'] as const;
 export type Status = (typeof STATUSES)[number];
+
+/** What a beat of the journey is, as the arc moves (storyteller, arc.md) — each its own colour on the board. */
+export const BEATS = ['hook', 'context', 'problem', 'intention', 'obstacle', 'low', 'turn', 'solution', 'vision'] as const;
+export type BeatType = (typeof BEATS)[number];
+
+/**
+ * One beat of a story's journey: what happens, what kind of step it is, how it follows the beat before (but: it
+ * turns; therefore: it follows), and what the viewer should feel there, with the tension it holds (0 calm … 1 most).
+ */
+export type Beat = { id: string; title: string; type: BeatType; text: string; link?: 'but' | 'therefore'; feel?: string; tension?: number };
+/** The journey: the transformation (from → to), the one arching question, and the beats in order. */
+export type Journey = { from?: string; to?: string; question?: string; beats?: Beat[] };
 
 export type ContentItem = {
 	id: string;
@@ -284,8 +297,15 @@ export type ContentItem = {
 	channels: string[];
 	status: Status;
 	scheduled_at: string | null;
-	/** an idea's words, or the day's base article in Markdown: the one source every post derives from */
+	/** the day's base article in Markdown: the long-form master every post derives from */
 	body: string;
+	/** the brainstorm pad: links, concepts, fragments (Markdown) */
+	idea: string;
+	/** the description under the hook (YouTube's, the journal's lede) */
+	description: string;
+	journey: Journey;
+	/** the media vault's story it is filed in, once the Mac app has made it (an iroh namespace id) */
+	story: string | null;
 	hashes: string[];
 	link: string | null;
 	tags: string[];
@@ -352,6 +372,8 @@ export type Post = {
 	note?: string;
 	/** the timeline (cut) it posts */
 	timeline?: string;
+	/** once it is out: where it is (the platform's own link) */
+	url?: string;
 };
 
 /** The first delivery that fits, preferring one rendered from the post's own cut. */

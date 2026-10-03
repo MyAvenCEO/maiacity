@@ -1,9 +1,12 @@
 /**
- * The content board. An item is one snippet we put out — from the first idea in the swipe file to what went live —
- * moving idea → draft → derivatives → scheduled → published: a draft is the base article alone; moving it on to
- * "derivatives" locks it, and everything that goes out is derived from it then. A film is one item, whatever its cuts: every render of the
- * project's timelines files its deliveries on it (the 4K master, the 1080 copy, the 9:16 Reel, the 1:1 feed video,
- * their thumbnails), and its posts, one per platform, are written for them — prepared, never typed in a form.
+ * The stories board. An item is one story — from the first idea on its brainstorm pad to what went live — moving
+ * idea → hook → journey → writing → movie → derivatives → scheduled → published: the hook (its title, description and
+ * thumbnail), its journey (the arc beat by beat, the feeling of each), the long-form master article (writing), the
+ * film (movie, made in the studio); moving it on to "derivatives" locks the article, and everything that goes out is
+ * derived from it then. A film is one item, whatever its cuts: every render of the project's timelines files its
+ * deliveries on it (the 4K master, the 1080 copy, the 9:16 Reel, their thumbnails), and its posts, one per platform,
+ * are written for them — prepared, never typed in a form. Once a story has a hook, the Mac app files it in a story
+ * of its own in the media vault (an iroh-docs bucket), and its id is kept here.
  */
 import { db } from "./pg";
 
@@ -19,9 +22,19 @@ export const CHANNELS = ["journal", "youtube", "linkedin", "instagram", "x"];
 /** what a derivative is, across platforms: an article (the blog post; on X, an X Article — long form), a film, a
  *  YouTube Short (≤ 3 min, square or vertical), a Reel, a post, a thread */
 export const FORMATS = ["article", "video", "short", "reel", "post", "thread"];
-export const STATUSES = ["idea", "hook", "draft", "derivatives", "scheduled", "published"];
-/** past the draft, the base article is locked: the derivatives were written from it */
+export const STATUSES = ["idea", "hook", "journey", "writing", "movie", "derivatives", "scheduled", "published"];
+/** from the derivatives on, the base article is locked: they were written from it */
 const LOCKED = ["derivatives", "scheduled", "published"];
+/** what a beat of the journey is (arc.md's hidden machine, with the low, the turn and the vision a movement ends on) */
+export const BEATS = ["hook", "context", "problem", "intention", "obstacle", "low", "turn", "solution", "vision"];
+
+/**
+ * One beat of a story's journey: what happens, what kind of step it is, how it follows the beat before (*but* — it
+ * turns; *therefore* — it follows), and what the viewer should feel there, with the tension it holds (0 calm … 1 most).
+ */
+export type Beat = { id: string; title: string; type: string; text: string; link?: "but" | "therefore"; feel?: string; tension?: number };
+/** The journey: the transformation (from → to), the one arching question, and the beats in order. */
+export type Journey = { from?: string; to?: string; question?: string; beats?: Beat[] };
 
 /** One file a film is delivered as: which channels it is for, and what it is (for the upload step, later). */
 export type Delivery = {
@@ -48,6 +61,8 @@ export type Post = {
   aspect: string; codec: string; note?: string;
   /** the timeline (cut) it posts */
   timeline?: string;
+  /** once it is out: where it is (the platform's own link, Zernio's platformPostUrl) */
+  url?: string;
 };
 
 export type Item = {
@@ -60,6 +75,13 @@ export type Item = {
   source: string | null;
   /** the hook: the title set into the day's title cards ("The 1 million lives decision — I almost didn't dare to take") */
   hook: string | null;
+  /** the brainstorm pad: links, concepts, fragments (Markdown) */
+  idea: string;
+  /** the description that goes under the hook (YouTube's, the journal's lede) */
+  description: string;
+  journey: Journey;
+  /** the media vault's story it is filed in (an iroh namespace id), once the Mac app has made it */
+  story: string | null;
   created: string; updated: string;
 };
 
@@ -68,6 +90,40 @@ const list = (v: unknown, allowed?: string[]) => {
   if (allowed && out.some((x) => !allowed.includes(x))) throw new ContentError(`One of: ${allowed.join(", ")}.`);
   return [...new Set(out)];
 };
+
+const text = (v: unknown, max: number) => String(v ?? "").slice(0, max);
+
+/**
+ * The article itself, for the lock: not whether the post is out yet (its `draft:` line — publishing flips it), nor the
+ * pictures and film it is shown with (its cover, banner, poster, the files its images point at).
+ */
+const articleOf = (b: string) =>
+  b.replace(/^(draft|cover|coverPosition|coverAlt|banner|poster|videoLocal|authorImage):.*\n/gm, "").replace(/(!\[[^\]]*\])\([^)]*\)/g, "$1()");
+
+/** A journey as sent: kept to its fields and their lengths; a beat of an unknown kind, or without a title, refused. */
+function journeyOf(v: unknown): Journey {
+  if (!v || typeof v !== "object" || Array.isArray(v)) throw new ContentError("Send the journey as an object.");
+  const j = v as Record<string, unknown>;
+  const beats = j.beats === undefined ? [] : j.beats;
+  if (!Array.isArray(beats) || beats.length > 80) throw new ContentError("The journey's beats are a list (80 at most).");
+  return {
+    from: text(j.from, 500), to: text(j.to, 500), question: text(j.question, 500),
+    beats: beats.map((x, i): Beat => {
+      const b = (x ?? {}) as Record<string, unknown>;
+      const title = text(b.title, 160).trim();
+      if (!title) throw new ContentError("Every beat needs its title.");
+      if (!BEATS.includes(String(b.type))) throw new ContentError(`A beat is one of: ${BEATS.join(", ")}.`);
+      const link = b.link === "but" || b.link === "therefore" ? b.link : undefined;
+      const tension = Number(b.tension);
+      return {
+        id: text(b.id, 40) || `b${i + 1}`, title, type: String(b.type), text: text(b.text, 4000),
+        ...(link ? { link } : {}),
+        ...(b.feel ? { feel: text(b.feel, 80) } : {}),
+        ...(Number.isFinite(tension) ? { tension: Math.min(1, Math.max(0, tension)) } : {}),
+      };
+    }),
+  };
+}
 
 function clean(b: Record<string, unknown>, partial: boolean) {
   const o: Partial<Item> = {};
@@ -91,7 +147,16 @@ function clean(b: Record<string, unknown>, partial: boolean) {
     if (o.hashes.some((h) => !/^[0-9a-f]{64}$/.test(h))) throw new ContentError("Attach files by their hash.");
   }
   if (b.tags !== undefined) o.tags = list(b.tags);
-  if (b.body !== undefined) o.body = String(b.body).slice(0, 40000);
+  if (b.body !== undefined) o.body = String(b.body).slice(0, 200000);
+  if (b.hook !== undefined) o.hook = b.hook ? text(b.hook, 300).trim() : null;
+  if (b.idea !== undefined) o.idea = text(b.idea, 100000);
+  if (b.description !== undefined) o.description = text(b.description, 5000);
+  if (b.journey !== undefined) o.journey = journeyOf(b.journey);
+  if (b.project !== undefined) o.project = b.project ? text(b.project, 40).trim() || null : null;
+  if (b.story !== undefined) {
+    if (b.story !== null && !/^[0-9a-f]{64}$/.test(String(b.story))) throw new ContentError("A story is filed by its vault id.");
+    o.story = (b.story as string | null) ?? null;
+  }
   if (b.link !== undefined) o.link = b.link ? String(b.link).slice(0, 500) : null;
   // the derivatives, sent back whole (the calendar moves one to another day): each still a known platform and format
   if (b.posts !== undefined) {
@@ -110,7 +175,7 @@ function clean(b: Record<string, unknown>, partial: boolean) {
   return o;
 }
 
-const COLS = "id, title, kind, channels, status, scheduled_at, body, hashes, link, tags, deliveries, posts, timeline_id, project, source, hook, created, updated";
+const COLS = "id, title, kind, channels, status, scheduled_at, body, hashes, link, tags, deliveries, posts, timeline_id, project, source, hook, idea, description, journey, story, created, updated";
 // arrays travel as JSON text: Bun's client does not send a JS array as text[]
 const arr = (i: number) => `ARRAY(SELECT jsonb_array_elements_text(($${i}::text)::jsonb))`;
 
@@ -125,21 +190,37 @@ export async function listContent(from?: string, to?: string): Promise<Item[]> {
   return rows;
 }
 
+/** A day ("Day 19") names one story only: a second one with the same day is refused, not merged. */
+async function once<T>(q: Promise<T>): Promise<T> {
+  try {
+    return await q;
+  } catch (e) {
+    if (/ix_content_project|duplicate key/i.test(String((e as Error).message))) throw new ContentError("Another story already has that day.", 409);
+    throw e;
+  }
+}
+
 export async function createContent(founderId: string, body: Record<string, unknown>): Promise<Item> {
   const o = clean(body, false);
   const status = o.status ?? (o.scheduled_at ? "scheduled" : "idea");
-  const { rows } = await db.query<Item>(
-    `INSERT INTO content_items (title, kind, channels, status, scheduled_at, body, hashes, link, tags, founder_id)
-     VALUES ($1, $2, ${arr(3)}, $4, $5, $6, ${arr(7)}, $8, ${arr(9)}, $10) RETURNING ${COLS}`,
-    [o.title, o.kind, JSON.stringify(o.channels ?? []), status, o.scheduled_at ?? null, o.body ?? "", JSON.stringify(o.hashes ?? []), o.link ?? null, JSON.stringify(o.tags ?? []), founderId],
-  );
+  const { rows } = await once(db.query<Item>(
+    `INSERT INTO content_items (title, kind, channels, status, scheduled_at, body, hashes, link, tags, founder_id, idea, description, hook, project, journey)
+     VALUES ($1, $2, ${arr(3)}, $4, $5, $6, ${arr(7)}, $8, ${arr(9)}, $10, $11, $12, $13, $14, ($15::text)::jsonb) RETURNING ${COLS}`,
+    [o.title, o.kind, JSON.stringify(o.channels ?? []), status, o.scheduled_at ?? null, o.body ?? "", JSON.stringify(o.hashes ?? []), o.link ?? null, JSON.stringify(o.tags ?? []), founderId,
+     o.idea ?? "", o.description ?? "", o.hook ?? null, o.project ?? null, JSON.stringify(o.journey ?? {})],
+  ));
   return rows[0]!;
 }
 
 export async function saveContent(id: string, body: Record<string, unknown>): Promise<Item> {
   const o = clean(body, true);
   const has = (k: keyof Item) => k in o;
-  const { rows } = await db.query<Item>(
+  if (has("body")) {
+    const { rows: had } = await db.query<Item>(`SELECT ${COLS} FROM content_items WHERE id = $1`, [id]);
+    if (had[0] && LOCKED.includes(o.status ?? had[0].status) && articleOf(had[0].body) !== articleOf(o.body ?? ""))
+      throw new ContentError("The base article is locked — its derivatives were written from it. Move the story back to Writing to change it.", 409);
+  }
+  const { rows } = await once(db.query<Item>(
     `UPDATE content_items SET
         title = coalesce($2, title), kind = coalesce($3, kind),
         channels = CASE WHEN $4::text IS NULL THEN channels ELSE ${arr(4)} END,
@@ -150,12 +231,19 @@ export async function saveContent(id: string, body: Record<string, unknown>): Pr
         link = CASE WHEN $10::boolean THEN $11 ELSE link END,
         tags = CASE WHEN $12::text IS NULL THEN tags ELSE ${arr(12)} END,
         posts = CASE WHEN $13::text IS NULL THEN posts ELSE ($13::text)::jsonb END,
+        hook = CASE WHEN $14::boolean THEN $15 ELSE hook END,
+        idea = coalesce($16, idea), description = coalesce($17, description),
+        journey = CASE WHEN $18::text IS NULL THEN journey ELSE ($18::text)::jsonb END,
+        project = CASE WHEN $19::boolean THEN $20 ELSE project END,
+        story = CASE WHEN $21::boolean THEN $22 ELSE story END,
         updated = now()
       WHERE id = $1 RETURNING ${COLS}`,
     [id, o.title ?? null, o.kind ?? null, has("channels") ? JSON.stringify(o.channels) : null, o.status ?? null,
      has("scheduled_at"), o.scheduled_at ?? null, o.body ?? null, has("hashes") ? JSON.stringify(o.hashes) : null,
-     has("link"), o.link ?? null, has("tags") ? JSON.stringify(o.tags) : null, has("posts") ? JSON.stringify(o.posts) : null],
-  );
+     has("link"), o.link ?? null, has("tags") ? JSON.stringify(o.tags) : null, has("posts") ? JSON.stringify(o.posts) : null,
+     has("hook"), o.hook ?? null, o.idea ?? null, o.description ?? null, has("journey") ? JSON.stringify(o.journey) : null,
+     has("project"), o.project ?? null, has("story"), o.story ?? null],
+  ));
   if (!rows[0]) throw new ContentError("No such item.", 404);
   return rows[0];
 }
@@ -166,7 +254,7 @@ async function filmItem(founderId: string | null, timelineId: string, title?: st
   if (!t[0]) throw new ContentError("No such timeline.", 404);
   const project = t[0].project ?? `timeline ${timelineId}`;
   const { rows } = await db.query<{ id: string }>(
-    `INSERT INTO content_items (title, kind, status, project, timeline_id, founder_id) VALUES ($1, 'film', 'draft', $2, $3, $4)
+    `INSERT INTO content_items (title, kind, status, project, timeline_id, founder_id) VALUES ($1, 'film', 'movie', $2, $3, $4)
      ON CONFLICT (project) WHERE project IS NOT NULL DO UPDATE SET title = CASE WHEN $5::boolean THEN excluded.title ELSE content_items.title END
      RETURNING id`,
     [title ?? `${t[0].project ?? "Film"} — ${t[0].name}`, project, timelineId, founderId, !!title],
@@ -177,7 +265,7 @@ async function filmItem(founderId: string | null, timelineId: string, title?: st
 /**
  * A render is done: its files go onto the film's item, in place of whatever that same cut delivered before (the
  * other cuts' files stay). Its stage stays as it is: only moving the card on locks the base article — a render
- * never does (a day is audited as a draft first).
+ * never does (a day's article is audited while it is written).
  */
 export async function deliverRender(founderId: string | null, timelineId: string, cut: string, deliveries: Delivery[]): Promise<Item> {
   const item = await filmItem(founderId, timelineId);
@@ -233,18 +321,22 @@ export async function savePosts(founderId: string | null, timelineId: string, po
 }
 
 /**
- * A day onto the board, from where its base article is written (bun api/scripts/day.ts): the article — while the
- * card is an idea or a draft; past that it is locked and only moving the card back to Draft opens it again — and,
- * once the base is locked, its derivatives, each with its time: the whole set at once. Sending derivatives for a
- * draft locks it (the card moves on to "derivatives"); a card that is only an idea has no base to derive from.
- * The item is the project's ("Day 19"), made if it is new. The films' files come separately, from their renders.
+ * A day onto the board, from the folder its story is written in (bun api/scripts/day.ts): its brainstorm pad
+ * (idea.md), its hook and description, its journey, the article — until the derivatives lock it; only moving the
+ * story back to Writing opens it again — and, once the base is locked, its derivatives, each with its time: the whole
+ * set at once. Sending derivatives locks the article (the story moves on to "derivatives"); a story that is only an
+ * idea has no base to derive from. The item is the project's ("Day 19"), made if it is new. The films' files come
+ * separately, from their renders.
  */
 export async function saveDay(
   founderId: string | null, project: string,
-  day: { title?: string; body?: string; source?: string; scheduled_at?: string; posts?: Post[]; deliveries?: Delivery[]; status?: string; hook?: string },
+  day: {
+    title?: string; body?: string; source?: string; scheduled_at?: string; posts?: Post[]; deliveries?: Delivery[]; status?: string; hook?: string;
+    idea?: string; description?: string; journey?: Journey;
+  },
 ): Promise<Item> {
   // only its stage (the publish step moves a scheduled day on to "published")
-  if (day.status !== undefined && day.body === undefined && day.posts === undefined) {
+  if (day.status !== undefined && [day.body, day.posts, day.idea, day.description, day.journey, day.hook].every((v) => v === undefined)) {
     if (!STATUSES.includes(day.status)) throw new ContentError(`The status is one of: ${STATUSES.join(", ")}.`);
     const { rows } = await db.query<Item>(`UPDATE content_items SET status = $2, updated = now() WHERE project = $1 RETURNING ${COLS}`, [project, day.status]);
     if (!rows[0]) throw new ContentError("No such day.", 404);
@@ -260,27 +352,28 @@ export async function saveDay(
   }
   if (day.body !== undefined) {
     if (typeof day.body !== "string" || !day.title?.trim()) throw new ContentError("A base article needs its title and its text.");
-    // (whether the post is out yet — its `draft:` line — is not the article: publishing flips it; nor are the
-    // pictures and film it is shown with — its cover, banner, poster, the files its images point at)
-    const text = (b: string) =>
-      b.replace(/^(draft|cover|coverPosition|coverAlt|banner|poster|videoLocal|authorImage):.*\n/gm, "").replace(/(!\[[^\]]*\])\([^)]*\)/g, "$1()");
-    if (now && LOCKED.includes(now.status) && text(now.body) !== text(day.body))
-      throw new ContentError("The base article is locked — its derivatives were written from it. Move the card back to Draft to change it.", 409);
+    if (now && LOCKED.includes(now.status) && articleOf(now.body) !== articleOf(day.body))
+      throw new ContentError("The base article is locked — its derivatives were written from it. Move the story back to Writing to change it.", 409);
   }
   const base = day.body ?? now?.body ?? "";
   if (posts?.length && !base.trim()) throw new ContentError("There is no base article to derive from yet.");
   const when = day.scheduled_at ? new Date(day.scheduled_at) : null;
   if (when && Number.isNaN(when.getTime())) throw new ContentError("That is not a date.");
-  // the stage it has reached: the hook (the title, its cards) first, then the article written from it, then its posts
+  const journey = day.journey !== undefined ? journeyOf(day.journey) : undefined;
+  // the stage it has reached: the hook (the title, its cards) first, then its journey, then the article written from
+  // them, then its posts — never back
   const order = (s: string | undefined) => STATUSES.indexOf(s ?? "idea");
   const status = (s: string | undefined) => {
-    const reached = posts?.length ? "derivatives" : day.body !== undefined ? "draft" : day.hook !== undefined ? "hook" : "idea";
+    const reached = posts?.length ? "derivatives" : day.body !== undefined ? "writing" : journey?.beats?.length ? "journey"
+      : day.hook !== undefined ? "hook" : "idea";
     return order(s) >= order(reached) ? s! : reached;
   };
   const { rows } = await db.query<Item>(
-    `INSERT INTO content_items (title, kind, status, project, body, source, posts, channels, scheduled_at, founder_id, deliveries, hook)
-     VALUES ($1, 'post', $2, $3, $4, $5, ($6::text)::jsonb, ${arr(7)}, $8, $9, ($12::text)::jsonb, $13)
+    `INSERT INTO content_items (title, kind, status, project, body, source, posts, channels, scheduled_at, founder_id, deliveries, hook, idea, description, journey)
+     VALUES ($1, 'post', $2, $3, $4, $5, ($6::text)::jsonb, ${arr(7)}, $8, $9, ($12::text)::jsonb, $13, coalesce($14, ''), coalesce($15, ''), coalesce(($16::text)::jsonb, '{}'::jsonb))
      ON CONFLICT (project) WHERE project IS NOT NULL DO UPDATE SET
+        idea = coalesce($14, content_items.idea), description = coalesce($15, content_items.description),
+        journey = coalesce(($16::text)::jsonb, content_items.journey),
         title = excluded.title, body = excluded.body, source = coalesce(excluded.source, content_items.source),
         posts = CASE WHEN $10::boolean THEN excluded.posts ELSE content_items.posts END,
         -- the day's own files (a film already in the post, its copies): in place of the day's before, renders kept
@@ -293,9 +386,30 @@ export async function saveDay(
     [(day.title ?? now?.title ?? project).trim().slice(0, 200), status(now?.status), project, base.slice(0, 200000), day.source ?? null,
      JSON.stringify(posts ?? now?.posts ?? []), JSON.stringify([...new Set((posts ?? []).map((p) => p.platform))]),
      when?.toISOString() ?? null, founderId, posts !== undefined, day.deliveries !== undefined,
-     JSON.stringify((day.deliveries ?? []).map((d) => ({ ...d, timeline: "day", cut: d.cut ?? "the day's film" }))), day.hook ?? null],
+     JSON.stringify((day.deliveries ?? []).map((d) => ({ ...d, timeline: "day", cut: d.cut ?? "the day's film" }))), day.hook ?? null,
+     day.idea !== undefined ? text(day.idea, 100000) : null, day.description !== undefined ? text(day.description, 5000) : null,
+     journey ? JSON.stringify(journey) : null],
   );
   return rows[0]!;
+}
+
+/**
+ * The stories the Mac app is to file in the media vault: past the idea and not filed yet. It makes each one's vault
+ * story (an iroh-docs bucket) and says so with fileStory.
+ */
+export async function unfiledStories(): Promise<Pick<Item, "id" | "title" | "hook" | "description" | "project" | "status">[]> {
+  const { rows } = await db.query<Item>(
+    `SELECT id, title, hook, description, project, status FROM content_items WHERE story IS NULL AND status <> 'idea' ORDER BY created`,
+  );
+  return rows;
+}
+
+/** A story is filed in the vault: its bucket's id (an iroh namespace id). */
+export async function fileStory(id: string, story: string): Promise<Item> {
+  if (!/^[0-9a-f]{64}$/.test(story)) throw new ContentError("A story is filed by its vault id.");
+  const { rows } = await db.query<Item>(`UPDATE content_items SET story = $2, updated = now() WHERE id = $1 RETURNING ${COLS}`, [id, story]);
+  if (!rows[0]) throw new ContentError("No such item.", 404);
+  return rows[0];
 }
 
 export async function deleteContent(id: string): Promise<void> {

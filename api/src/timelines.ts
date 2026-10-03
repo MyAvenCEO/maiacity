@@ -31,8 +31,9 @@ export type Clip = {
   kind?: "media" | "world" | "slate" | "line" | "section";
   /** sections (S1): which part of the story it is */
   section?: Section;
-  /** sections: the tension across it, 0 (released) … 1 (at its height), at points 0…1 of its length */
-  tension?: { t: number; v: number }[];
+  /** sections: the tension across it, 0 (released) … 1 (at its height), at points 0…1 of its length, each with the
+   *  feeling the viewer has there (emotion.md: "curiosity", "relief" …) */
+  tension?: { t: number; v: number; feel?: string }[];
   /** media clips: the vault file, by its BLAKE3 hash (64 hex) */
   hash?: string;
   /** world clips (V1 only): shots.id and the version cut in */
@@ -105,7 +106,7 @@ function cleanClip(c: any): Clip {
     if (!SECTIONS.includes(c.section)) throw new TimelineError(`A section is one of ${SECTIONS.join(", ")}.`);
     const tension = (Array.isArray(c.tension) ? c.tension : [])
       .slice(0, 64)
-      .map((p: any) => ({ t: clamp(p?.t, 0, 1, 0), v: clamp(p?.v, 0, 1, 0) }))
+      .map((p: any) => ({ t: clamp(p?.t, 0, 1, 0), v: clamp(p?.v, 0, 1, 0), ...(p?.feel ? { feel: text(p.feel, 80) } : {}) }))
       .sort((a: { t: number }, b: { t: number }) => a.t - b.t);
     clip = { ...base, kind: "section", vol: 0, section: c.section, text: text(c.text, 1000), ...(tension.length ? { tension } : {}) };
   } else if (kind === "line") {

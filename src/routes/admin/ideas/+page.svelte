@@ -2,4 +2,4 @@
 	import Moved from '$lib/app/Moved.svelte';
 </script>
 
-<Moved to="/app/board/" />
+<Moved to="/app/stories/" />

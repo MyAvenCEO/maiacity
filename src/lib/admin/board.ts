@@ -1,12 +1,14 @@
-// What the board and the calendar both know about a snippet: the names of its steps, how a move changes it, which
-// channels its posts reach, what kind of thing each post is and when it goes out, the cuts it was delivered in, and
-// the small picture a card shows.
+// What the Stories board, the calendar and a story's page all know about a story: the names of its steps, how a move
+// changes it, which channels its posts reach, what kind of thing each post is and when it goes out, the cuts it was
+// delivered in, and the small picture a card shows.
 import { STATUSES, type ContentItem, type Delivery, type Format, type Platform, type Post, type Status } from '$lib/auth/client';
 
 export const STATUS_LABEL: Record<Status, string> = {
 	idea: 'Idea',
 	hook: 'Hook',
-	draft: 'Draft',
+	journey: 'Journey',
+	writing: 'Writing',
+	movie: 'Movie',
 	derivatives: 'Derivatives',
 	scheduled: 'Scheduled',
 	published: 'Published'
@@ -142,11 +144,14 @@ export const channelsOf = (i: ContentItem) => PLATFORMS.filter((p) => (i.posts ?
 /** The names of the cuts it was delivered in: "Full shots 2", "Reel 90s". */
 export const cutsOf = (i: ContentItem) => [...new Set((i.deliveries ?? []).map((d) => d.cut).filter((c): c is string => !!c))];
 
-/** The small picture a card shows: the 16:9 thumbnail, else the 1:1 one. */
+/** The small picture a card shows: the 16:9 title card (the story's own before a render's), else the 1:1 one. */
 export const thumbOf = (i: ContentItem): Delivery | undefined => {
-	const thumbs = (i.deliveries ?? []).filter((d) => d.kind === 'thumbnail');
+	const thumbs = (i.deliveries ?? []).filter((d) => d.kind === 'thumbnail').sort((a, b) => Number(b.timeline === 'day') - Number(a.timeline === 'day'));
 	return thumbs.find((d) => d.aspect === '16:9') ?? thumbs.find((d) => d.aspect === '1:1');
 };
+
+/** Whether a story is going out yet: from Derivatives on, its posts are what the calendar shows. */
+export const goingOut = (s: Status, order: readonly Status[] = STATUSES) => order.indexOf(s) >= order.indexOf('derivatives');
 
 export const timeLabel = (iso: string) => new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 

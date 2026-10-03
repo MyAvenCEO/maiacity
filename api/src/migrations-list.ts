@@ -678,5 +678,25 @@ export const MIGRATIONS: Migration[] = [
       DROP TABLE IF EXISTS media;
     `,
   },
+  {
+    // The stories board: a story moves idea → hook → journey → writing → movie → derivatives → scheduled → published.
+    // "draft" is now "writing" (the long-form master article everything derives from); the journey (the arc beat by
+    // beat, each with the feeling it leaves) and the movie (the film, made in the studio) are new steps. A story keeps
+    // its brainstorm pad (an idea's text, which used to be its body), the description that goes under its hook, its
+    // journey, and the vault story its files are filed in — the Mac app makes that bucket once the story has a hook.
+    id: "0031-stories",
+    sql: `
+      ALTER TABLE content_items DROP CONSTRAINT IF EXISTS content_items_status_check;
+      UPDATE content_items SET status = 'writing' WHERE status = 'draft';
+      ALTER TABLE content_items ADD CONSTRAINT content_items_status_check
+        CHECK (status IN ('idea', 'hook', 'journey', 'writing', 'movie', 'derivatives', 'scheduled', 'published'));
+      ALTER TABLE content_items ADD COLUMN idea TEXT NOT NULL DEFAULT '';
+      ALTER TABLE content_items ADD COLUMN description TEXT NOT NULL DEFAULT '';
+      ALTER TABLE content_items ADD COLUMN journey JSONB NOT NULL DEFAULT '{}'::jsonb;
+      ALTER TABLE content_items ADD COLUMN story TEXT;
+      -- an idea's text (the old ideas notebook's) is its pad; a day's item that only sits at "idea" keeps its body
+      UPDATE content_items SET idea = body, body = '' WHERE status = 'idea' AND source IS NULL AND project IS NULL;
+    `,
+  },
 ];
 

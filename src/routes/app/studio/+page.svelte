@@ -52,9 +52,9 @@
 		inApp = native();
 		if (!inApp) return;
 		forwardConsole(window, 'studio');
-		// a link into one tab (?tab=library — the media library's address)
+		// a link into one tab (?tab=library — the media library's address; ?tab=script&timeline=<id> — a story's film)
 		const tab = new URLSearchParams(location.search).get('tab');
-		if (tab === 'ingest' || tab === 'library' || tab === 'render' || tab === 'processes') s.tab = tab;
+		if (tab === 'ingest' || tab === 'library' || tab === 'render' || tab === 'processes' || tab === 'script' || tab === 'edit') s.tab = tab;
 		const report = (e: ErrorEvent | PromiseRejectionEvent) => {
 			s.failed = String('reason' in e ? (e.reason?.stack ?? e.reason) : `${e.message} (${e.filename}:${e.lineno})`);
 		};

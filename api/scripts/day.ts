@@ -1,15 +1,17 @@
-// A day onto the board: its base article (the single source of truth: blog/day-NN-…/post.md) and every derivative
-// written from it (derivatives.json, next to the article) — the article on the journal, the film on YouTube, the
-// posts, the X thread, the Reel — each with its time. Checked against each platform's limits first.
+// A day onto the stories board, from its folder: its brainstorm pad (idea.md), its journey (journey.json), its base
+// article (the single source of truth: blog/day-NN-…/post.md) and every derivative written from it (derivatives.json)
+// — the article on the journal, the film on YouTube, the posts, the X thread, the Reel — each with its time. Checked
+// against each platform's limits first.
 //
+//   bun api/scripts/day.ts blog/day-00-test-story --idea [--local]            the brainstorm pad alone: an idea
 //   bun api/scripts/day.ts blog/day-19-we-filmed-the-city [--local]            the article and its derivatives
-//   bun api/scripts/day.ts blog/day-19-we-filmed-the-city --article [--local]  the article alone: the draft
+//   bun api/scripts/day.ts blog/day-19-we-filmed-the-city --article [--local]  the article alone: writing
 //   bun api/scripts/day.ts blog/day-19-we-filmed-the-city --hook [--local]     the hook alone: its title cards
 //
-// The board's stages: first the hook — the title (thumbnail.json's words), set into the title cards in every shape —
-// then the draft, the base article written from it; derivatives are only written from a locked base, and sending
-// them locks it (the card moves on to "derivatives"). A locked article is refused until the card is back in Draft.
-// Every push carries the hook and its title cards along.
+// A story's steps: the idea (its pad), the hook — the title (thumbnail.json's words), set into the title cards in
+// every shape — its journey, then the writing, the base article written from them; the movie; derivatives are only
+// written from a locked base, and sending them locks it (the story moves on to "derivatives"). A locked article is
+// refused until the story is back in Writing. Every push carries the pad, the journey, the hook and its title cards.
 //
 // derivatives.json: { project, title, scheduled_at?, posts: [{ platform, format, title?, text, thread?, placement?,
 //   aspect?, codec?, variant? (the film's timeline variant it posts: G, H…), scheduled_at?, note? }] }
@@ -19,12 +21,21 @@ import { call, say } from "./media-client";
 import { list } from "../../scripts/film/vault.mjs";
 
 const dir = process.argv.slice(2).find((a) => !a.startsWith("--"));
-if (!dir) throw new Error("usage: bun api/scripts/day.ts blog/day-NN-<slug> [--local]");
-const article = readFileSync(join(dir, "post.md"), "utf8");
+if (!dir) throw new Error("usage: bun api/scripts/day.ts blog/day-NN-<slug> [--idea | --hook | --article] [--local]");
+const ideaOnly = process.argv.includes("--idea");
+const there = (f: string) => existsSync(join(dir, f));
+const article = there("post.md") ? readFileSync(join(dir, "post.md"), "utf8") : "";
+if (!article && !ideaOnly) throw new Error(`${dir} has no post.md yet: put its idea on the board with --idea`);
+// the brainstorm pad and the journey travel with every push
+const pad = there("idea.md") ? readFileSync(join(dir, "idea.md"), "utf8") : undefined;
+const journey = there("journey.json") ? JSON.parse(readFileSync(join(dir, "journey.json"), "utf8")) : undefined;
+if (ideaOnly && pad === undefined) throw new Error(`${dir} has no idea.md`);
 const hookOnly = process.argv.includes("--hook");
-const only = hookOnly || process.argv.includes("--article") || !existsSync(join(dir, "derivatives.json"));
-const title = (/^title:\s*(.+)$/m.exec(article)?.[1] ?? "").trim();
-const dayNo = /^day:\s*(\d+)/m.exec(article)?.[1];
+const only = ideaOnly || hookOnly || process.argv.includes("--article") || !there("derivatives.json");
+// the title: the article's, else the pad's heading ("Day 0 — the test story"); the day: the article's, else the folder's
+const title = (/^title:\s*(.+)$/m.exec(article)?.[1] ?? /^#\s+(.+)$/m.exec(pad ?? "")?.[1]?.replace(/^Day \d+\s*[—·-]\s*/, "") ?? "").trim();
+const dayNo = /^day:\s*(\d+)/m.exec(article)?.[1] ?? /day-(\d+)/.exec(dir)?.[1];
+if (dayNo === undefined) throw new Error(`which day is ${dir}? (a day: line in post.md, or a day-NN- folder)`);
 const day = (only
   ? { project: `Day ${Number(dayNo)}`, title: `Day ${Number(dayNo)} · ${title}`, posts: [] }
   : JSON.parse(readFileSync(join(dir, "derivatives.json"), "utf8"))) as {
@@ -48,7 +59,7 @@ for (const p of day.posts) {
 if (wrong.length) throw new Error(`over the limit:\n  ${wrong.join("\n  ")}`);
 
 // a derivative that posts a film names its cut by variant: the timeline it came from
-const timelines = await call<{ id: string; project: string | null; variant: string | null }[]>("/api/timelines");
+const timelines = day.posts.some((p) => p.variant) ? await call<{ id: string; project: string | null; variant: string | null }[]>("/api/timelines") : [];
 for (const p of day.posts) {
   if (!p.variant) continue;
   const t = timelines.find((x) => x.project === day.project && x.variant === p.variant);
@@ -79,7 +90,7 @@ const titleCards: File[] = Object.entries(cards?.cards ?? {})
 const listed = (day as { files?: File[] }).files ?? (existsSync(join(dir, "derivatives.json")) ? JSON.parse(readFileSync(join(dir, "derivatives.json"), "utf8")).files : undefined) ?? [];
 const files = [...listed, ...titleCards.filter((c) => !listed.some((f: File) => f.hash === c.hash))] as File[];
 let deliveries: unknown[] | undefined;
-if (files.length) {
+if (files.length && !ideaOnly) {
   // what the vault knows about each (its size, its length): the Mac app's catalog
   const vault = new Map((await list()).map((m) => [m.hash, m]));
   deliveries = files.map((f) => {
@@ -91,13 +102,18 @@ if (files.length) {
 
 const item = await call<{ id: string; posts: unknown[]; status: string }>(`/api/content/days/${encodeURIComponent(day.project)}`, {
   method: "PUT",
-  body: JSON.stringify({
-    title: day.title, source: join(dir, "post.md"), ...(hook ? { hook } : {}), ...(deliveries ? { deliveries } : {}),
-    ...(hookOnly ? {} : { body: article, scheduled_at: day.scheduled_at }), ...(only ? {} : { posts: day.posts }),
-  }),
+  body: JSON.stringify(ideaOnly
+    ? { title: day.title, idea: pad, ...(journey ? { journey } : {}) }
+    : {
+        title: day.title, source: join(dir, "post.md"), ...(hook ? { hook } : {}), ...(deliveries ? { deliveries } : {}),
+        ...(pad !== undefined ? { idea: pad } : {}), ...(journey ? { journey } : {}),
+        ...(hookOnly ? {} : { body: article, scheduled_at: day.scheduled_at }), ...(only ? {} : { posts: day.posts }),
+      }),
 });
 if (hookOnly && !hook) throw new Error(`no hook yet: write ${join(dir, "thumbnail.json")} first`);
-say(hookOnly
+say(ideaOnly
+  ? `${day.project}: the idea on the board (${item.status}) — its pad, ${pad!.split("\n").length} lines`
+  : hookOnly
   ? `${day.project}: the hook on the board (${item.status}) — "${hook}", ${titleCards.length} title cards`
   : only
   ? `${day.project}: the base article on the board (${item.status})${hook ? ` — hook "${hook}"` : ""}`
