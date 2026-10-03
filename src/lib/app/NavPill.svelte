@@ -52,16 +52,22 @@
 </nav>
 
 <style>
+	/* centred, as wide as its items and never wider than the screen (clear of its edges and the notch): when they are
+	   more than fit, they share the room. Pinned to an iPhone's home screen it sits lower by the gap iOS leaves at the
+	   screen's foot ($lib/app/screenGap.js), the same distance above the home bar as anywhere else */
 	.pill {
 		position: fixed;
-		bottom: calc(14px + env(safe-area-inset-bottom));
-		left: 50%;
+		bottom: calc(14px + env(safe-area-inset-bottom, 0px) - var(--screen-gap, 0px));
+		left: max(8px, env(safe-area-inset-left, 0px));
+		right: max(8px, env(safe-area-inset-right, 0px));
 		z-index: 50;
 		display: flex;
 		align-items: center;
 		gap: 2px;
+		width: max-content;
+		max-width: calc(100% - max(8px, env(safe-area-inset-left, 0px)) - max(8px, env(safe-area-inset-right, 0px)));
+		margin: 0 auto;
 		padding: 5px;
-		transform: translateX(-50%);
 		border: 1px solid var(--line);
 		border-radius: 999px;
 		background: rgb(250 248 242 / 0.94);
@@ -71,6 +77,7 @@
 
 	.item {
 		display: flex;
+		flex: 0 1 auto;
 		flex-direction: column;
 		align-items: center;
 		gap: 1px;
@@ -165,14 +172,24 @@
 		color: var(--terracotta) !important;
 	}
 
-	/* a phone: icons only */
-	@media (max-width: 560px) {
+	/* a phone, upright or on its side, and a narrow window: icons only, each as wide as a finger while the pill has the
+	   room, narrower when it has not (eleven of them still fit across the narrowest phone) */
+	@media (max-width: 760px), (max-height: 500px) {
 		.item span:not(.avatar) {
 			display: none;
 		}
 		.item {
-			min-width: 2.8rem;
-			padding: 0.55rem;
+			width: 2.8rem;
+			min-width: 0;
+			padding: 0.55rem 0;
+		}
+	}
+
+	@media (max-width: 560px) {
+		.pill {
+			bottom: calc(10px + env(safe-area-inset-bottom, 0px) - var(--screen-gap, 0px));
+			gap: 0;
+			padding: 4px;
 		}
 	}
 </style>

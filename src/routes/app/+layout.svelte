@@ -243,6 +243,15 @@
 		padding-bottom: 6.5rem;
 	}
 
+	/* Pinned to an iPhone's home screen, iOS stops the screen's frame short of its foot ($lib/app/screenGap.js): a page in
+	   full screen reaches down over the gap anyway, and holds everything fixed inside it (the world, the joystick, the
+	   sheets) in that taller frame (a transform makes it their frame), so nothing ends above the foot of the screen */
+	:global(html[data-screen-gap]) .app.immersive {
+		position: fixed;
+		inset: 0 0 calc(-1 * var(--screen-gap, 0px)) 0;
+		transform: translateZ(0);
+	}
+
 	@media (max-width: 560px) {
 		.name {
 			display: none;
