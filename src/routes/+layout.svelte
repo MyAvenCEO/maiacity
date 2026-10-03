@@ -11,7 +11,6 @@
 	import SocialIcon from '$lib/SocialIcon.svelte';
 	import { me } from '$lib/auth/client';
 	import { remember, signedInHere } from '$lib/app/session';
-	import { watchScreenGap } from '$lib/app/screenGap';
 
 	let { children } = $props();
 
@@ -46,9 +45,6 @@
 				remember(yes);
 			});
 	});
-
-	// pinned to an iPhone's home screen, iOS stops the page short of the screen's foot: every page is told by how much
-	$effect(() => watchScreenGap());
 
 	const isActive = (href: string) =>
 		href === (base || '/') ? page.url.pathname === (base || '/') : page.url.pathname.startsWith(href);
