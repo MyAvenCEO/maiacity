@@ -23,6 +23,8 @@
 			<a class="world" href={w.href}><Icon name={w.icon} size={34} /><b>{w.label}</b><span>{w.note}</span></a>
 		{/each}
 	</div>
+	<!-- the open data a world is built from, credited here rather than over the world (both licences ask for it) -->
+	<p class="credits">The Isar: map © OpenStreetMap contributors (ODbL) · terrain DGM1 © Bayerische Vermessungsverwaltung (CC BY 4.0)</p>
 </main>
 
 <style>
@@ -73,5 +75,11 @@
 	.world span {
 		font-size: 0.85rem;
 		opacity: 0.7;
+	}
+
+	.credits {
+		margin: 1.5rem 0 0;
+		font-size: 0.72rem;
+		opacity: 0.55;
 	}
 </style>
