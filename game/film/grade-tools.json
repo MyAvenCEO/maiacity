@@ -5,8 +5,16 @@
 			"label": "Balance",
 			"group": "Primary",
 			"kind": "colour",
-			"what": "White balance, exposure, contrast, highlights, lows, saturation — in stops",
+			"what": "White balance, exposure, contrast, highlights, lows, saturation — in stops; linear: white balance and exposure as gains in light, so the blacks stay black",
 			"params": [
+				{
+					"key": "linear",
+					"label": "linear",
+					"type": "flag",
+					"def": false,
+					"new": true,
+					"unit": "white balance and exposure as gains in light"
+				},
 				{
 					"key": "temp",
 					"label": "temperature",

@@ -35,6 +35,10 @@ pub fn journey(profile: &str) -> bool {
 /// `com.apple.rec2020.apple-log`).
 const DETECTOR: u64 = 3;
 
+/// The grading still's version: one made by an older one is made again, at the same moment (2: the frame decoded 4:2:2,
+/// its colour at full height, as the iPhone records ProRes).
+const STILL: u64 = 2;
+
 /// A piece of work under way or waiting its turn, as the studio's file lists show it (a view of the jobs, jobs.rs):
 /// `of` its key — a file's hash for its proxy, else `still:`, `shot:`, `render:`, `transcript:`, `analysis:` and what for.
 #[derive(Serialize, Clone)]
@@ -328,6 +332,9 @@ pub async fn sweep(handle: AppHandle, vault: Arc<Vault>) {
                         // the analysis marked its best frame: the grading still and the preview made of that one
                         if let Some(t) = marked_at(m, &by_hash) {
                             tauri::async_runtime::spawn(backfill_still_at(vault.clone(), m.hash.clone(), Some(t)));
+                        } else if let Some(at) = older_still(m, &by_hash) {
+                            // made by an older still maker: again, of the same moment
+                            tauri::async_runtime::spawn(backfill_still_at(vault.clone(), m.hash.clone(), at));
                         }
                     }
                 }
@@ -515,7 +522,7 @@ async fn grading_still_at(vault: &Vault, hex: &str, name: &str, path: &vault_med
         session: format!("grading still of {hex}"),
         tags: vec!["grade-still".into()],
         title: Some(format!("{stem} · grading still")),
-        meta: json!({ "role": "grade-still", "grade_still_of": hex, "t": (at * 1000.0).round() / 1000.0, "width": w, "height": h, "marked": marked,
+        meta: json!({ "role": "grade-still", "grade_still_of": hex, "t": (at * 1000.0).round() / 1000.0, "width": w, "height": h, "marked": marked, "still": STILL,
             "color": { "profile": WORKING, "from": "our own tag", "journey_from": profile }, "encoding": "16-bit PNG, ACEScct code values" }),
         story: Some(original.story.clone()).filter(|s| !s.is_empty()),
         class: Some("proxy".into()),
@@ -575,6 +582,15 @@ fn marked_at(m: &Meta, all: &HashMap<String, &Meta>) -> Option<f64> {
     };
     let still_t = m.meta.get("grade_still").and_then(|h| h.as_str()).and_then(|h| all.get(h)).and_then(|s| s.meta.get("t")?.as_f64());
     still_t.is_none_or(|s| (s - t).abs() > 0.05).then_some(t)
+}
+
+/// A file's grading still made by an older still maker (`STILL`): the moment to make it again at (None: the middle, as
+/// it was).
+fn older_still(m: &Meta, all: &HashMap<String, &Meta>) -> Option<Option<f64>> {
+    let still = all.get(m.meta.get("grade_still")?.as_str()?)?;
+    let v = still.meta.get("still").and_then(|v| v.as_u64()).unwrap_or(1);
+    let marked = still.meta.get("marked").and_then(|v| v.as_bool()).unwrap_or(false);
+    (v < STILL).then(|| if marked { still.meta.get("t").and_then(|t| t.as_f64()) } else { None })
 }
 
 async fn backfill_still_at(vault: Arc<Vault>, hex: String, at: Option<f64>) {

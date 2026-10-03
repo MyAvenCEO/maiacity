@@ -20,7 +20,9 @@ import registry from './grade-tools.json' with { type: 'json' };
 
 
 /** @typedef {'number' | 'choice' | 'flag' | 'trio' | 'curve' | 'hash'} ParamType */
-/** @typedef {{ key: string, label: string, type?: ParamType, min?: number, max?: number, step?: number, def: any, unit?: string, choices?: string[], wrap?: boolean }} Param */
+/** A control: `def` is what it is when a saved tool doesn't say; `new`, what a tool newly put on a stack starts with
+ *  when that is not its default (a balance starts linear; one saved before linear was there stays as it was).
+ *  @typedef {{ key: string, label: string, type?: ParamType, min?: number, max?: number, step?: number, def: any, new?: any, unit?: string, choices?: string[], wrap?: boolean }} Param */
 /** @typedef {'colour' | 'mask' | 'texture'} ToolKind */
 /** @typedef {{ id: string, label: string, group: string, kind: ToolKind, what: string, params: Param[] }} ToolDef */
 
@@ -49,7 +51,7 @@ export function newTool(id) {
 	if (!def) throw new Error(`no grading tool "${id}"`);
 	/** @type {any} */
 	const t = { tool: id };
-	for (const p of def.params) t[p.key] = structuredClone(p.def);
+	for (const p of def.params) t[p.key] = structuredClone(p.new ?? p.def);
 	if (def.kind === 'mask') t.tools = [];
 	return t;
 }
@@ -143,6 +145,8 @@ export function toolText(t) {
 	const changed = def.params.filter((p) => p.type === 'number' && t[p.key] !== p.def && p.key !== 'pivot' && p.key !== 'mix');
 	const f = (/** @type {number} */ v) => (Math.abs(v) >= 10 ? Math.round(v) : v.toFixed(2));
 	const parts = changed.slice(0, 3).map((p) => `${p.label.replace(' °', '')} ${f(t[p.key])}`);
+	// a flag set the other way than its default (a linear balance, a window's outside)
+	parts.unshift(...def.params.filter((p) => p.type === 'flag' && t[p.key] !== undefined && t[p.key] !== p.def).map((p) => (t[p.key] ? p.label : `not ${p.label}`)));
 	const inner = def.kind === 'mask' && t.tools?.length ? ` [${t.tools.map((/** @type {any} */ x) => TOOL[x.tool]?.label ?? x.tool).join(', ')}]` : '';
 	return `${def.label}${parts.length ? ` ${parts.join(' ')}` : ''}${inner}${t.on === false ? ' (off)' : ''}`;
 }

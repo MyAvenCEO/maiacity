@@ -35,19 +35,20 @@ density, and keeps the judgement honest.
 9. **Treat every render as a photographed plate:** luminance first, then colour, then texture ("realism fails through
    accumulation"). Doyle treated every shot of *Dark City* as a visual effect; Siggy Ferstl adds diffusion, halation and
    softening in the grade.
-10. **Judge only on a reference display in a reference room** (ITU-R BT.2035): BT.1886, white at 100 cd/m², D65, the
-    wall behind the screen at about 10 % of white, the room at about 10 lux. On an Apple XDR display, the HDTV Video
-    (BT.709-BT.1886) reference mode.
+10. **Judge in a controlled room, on a calibrated display, always the same way.** The broadcast reference is ITU-R
+    BT.2035: BT.1886, white at 100 cd/m², D65, the wall behind the screen at about 10 % of white, the room at about
+    10 lux. Ours is the Apple view (12): the same room and habits, on Apple's own screens.
 11. **Outrun your own adaptation.** After 45–60 s on one shot the eye has adapted. Grade in passes; look at a
     black/grey/white card for 15 s every 20–30 minutes; break every hour or two; leave late-night calls for the morning;
     compare against stored stills (Robbie Carman, Dan Moran, Van Hurkman).
-12. **Check on the phone; never grade on it.** The master is Rec.709 BT.1886 (2.4) tagged 1-1-1. An iPhone shows SDR
-    at up to 1,000 nits and decodes BT.709-tagged video with Apple's video curve (reported at about 1.96; recheck), so a
-    2.4 grade looks lighter there. Our hero frames are tagged as Rec.709 video, so a Mac shows them the same, Apple's
-    way: lighter than a BT.1886 reference monitor. Decide once which one we judge to — today, the Apple view — and check
-    the uploaded file on the phone. Small pictures look less colourful, bright ones more. If a web or phone master is
-    ever wanted, OpenColorIO's ACES 2.0 views on "Gamma 2.2 Rec.709" or "sRGB" are the same rendering on another
-    display.
+12. **We judge to the Apple view** (decided 2026-10-03). Apple's screens are the best consumer and semi-professional
+    displays we have, and most of our delivery paths are watched on them. The master stays Rec.709 BT.1886 (2.4) tagged
+    1-1-1. A Mac and an iPhone decode BT.709-tagged video with Apple's video curve (reported at about 1.96; recheck), so
+    they show it lighter than a BT.1886 reference monitor would: that lighter picture is the one we judge. Judge the
+    hero frames on the Mac (XDR in its default mode, not the BT.1886 reference mode), then check the uploaded file on
+    the iPhone; never grade on the phone. Small pictures look less colourful, bright ones more. If a web or phone
+    master is ever wanted, OpenColorIO's ACES 2.0 views on "Gamma 2.2 Rec.709" or "sRGB" are the same rendering on
+    another display.
 13. **Keep the story out of the deepest shadows.** Compression and lit rooms erase near-black detail ("The Long Night"
     of *Game of Thrones*).
 14. **Re-judge every 9:16 crop as a new shot:** a bigger face reads as more colourful (trim saturation on push-ins), a

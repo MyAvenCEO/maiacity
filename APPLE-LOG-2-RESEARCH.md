@@ -402,9 +402,11 @@ Apple Log piece.
 
 ### 5.3 Findings and fixes
 
-These are recommendations only. Nothing below has been applied.
+Recommendations. The status under a finding says what has been applied since.
 
 #### F1 — Apple Log (v1) is never detected · High
+
+**Status: fixed in #167 (2026-10-03).**
 
 **Evidence**
 - `color.rs:34` looks for `logs=com.apple.log` and `logtransferfunction=com.apple.log`. Apple writes
@@ -436,6 +438,8 @@ if (all.includes('com.apple.rec2020.apple-log')) return info('apple-log', 'log a
 - Check one real v1 clip. Files recorded before iOS 17.2 probably carry no identifier and rightly stay `unknown`.
 
 #### F2 — Unknown colour is rendered as Rec.709 without stopping · High
+
+**Status: fixed in #167 (2026-10-03).**
 
 **Evidence**
 - The render: `vault-render/src/render.rs:360–364` adds a warning and switches to `rec709`.
@@ -511,6 +515,8 @@ pub fn gamut_compress(c: [f64; 3]) -> [f64; 3] {
 
 #### F4 — 4:2:2 ProRes is decoded to 4:2:0 for full-resolution frames · Medium
 
+**Status: fixed in #167 (2026-10-03); grading stills made before are remade by the app (#168).**
+
 **Evidence**
 - `av.rs:104–105` always asks for `x420`. That reader feeds the grading stills, hero frames, measurements and the render.
 - For proxies it does no harm (`proxy.rs:87–91`): they are decoded straight to 1920 wide, where 4K 4:2:0 chroma is
@@ -528,6 +534,8 @@ let fmt: &[u8; 4] = match codec.as_str() {
 If Core Image refuses `x422` on any path, use `RGhA` for single frames, where speed does not matter.
 
 #### F5 — Exposure and white balance work in the log · Medium
+
+**Status: fixed in #168 (2026-10-03): the balance's `linear` switch, on for every new balance.**
 
 **Evidence**
 - `grade.rs:124–137` and the Metal twin (`vault-render/src/gpu.rs:47–53`) add temp, tint and exposure as ACEScct
@@ -597,6 +605,8 @@ below black and only matters for colours outside AP1.
 [whoismatt](https://whoismatt.com/iphone-17-pro-a-filmmakers-review/)).
 
 #### F10 — Delivery gamma against Apple screens · A decision, not a bug
+
+**Status: decided 2026-10-03: we judge to the Apple view (colorist `color-story.md`, principle 12).**
 
 **The facts**
 - The master is BT.1886 2.4, tagged 1-1-1. That is correct.

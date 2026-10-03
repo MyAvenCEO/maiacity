@@ -8,6 +8,7 @@
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
+use vault_media::cst::{from_cct, to_cct};
 
 /// Rec.709 luma weights, as the ASC CDL takes its saturation around.
 pub const LUMA: [f64; 3] = [0.2126, 0.7152, 0.0722];
@@ -86,6 +87,11 @@ pub const REACH: f64 = 0.35;
 
 /// White balance → exposure → contrast → highlights / lows → saturation, every amount in stops (contrast: the slope
 /// around mid grey; saturation: the factor around luma, both minus 1, 0 = as shot). All 0: the picture as shot.
+///
+/// `linear`: white balance and exposure as gains in linear light (AP1), as a colourist sets them — the blacks scale with
+/// the picture instead of being lifted or tinted. Above the toe (ACEScct 0.155, about 4.5 stops under grey) a gain is
+/// the log offset exactly, so the numbers mean the same; only the deepest shadows differ. Off: offsets in ACEScct, as
+/// every balance before it was (a saved grade stays as it was).
 #[derive(Debug, Clone, Copy, Default, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Balance {
@@ -97,6 +103,8 @@ pub struct Balance {
     pub shadows: f64,
     #[serde(default)]
     pub sat: f64,
+    #[serde(default)]
+    pub linear: bool,
 }
 
 /// Each balance field with its range (the API clamps a saved balance to the same: color.js `BALANCE_NODES`).
@@ -116,19 +124,28 @@ fn smooth(a: f64, b: f64, x: f64) -> f64 {
 }
 
 impl Balance {
+    /// Whether it changes nothing (either way of setting white balance and exposure, when there are none).
     pub fn is_neutral(&self) -> bool {
-        *self == Balance::default()
+        *self == Balance { linear: self.linear, ..Balance::default() }
     }
 
     /// One ACEScct pixel through the balance.
     pub fn apply(&self, rgb: [f64; 3]) -> [f64; 3] {
-        let [mut r, mut g, mut b] = rgb;
-        r += self.temp / 2.0 * STOP;
-        b -= self.temp / 2.0 * STOP;
-        g -= self.tint * STOP;
         let k = 1.0 + self.contrast;
-        let tone = |x: f64| PIVOT + (x + self.exposure * STOP - PIVOT) * k;
-        let (r, g, b) = (tone(r), tone(g), tone(b));
+        let (r, g, b) = if self.linear {
+            // white balance and exposure in light: a gain a channel, in stops
+            let stops = [self.exposure + self.temp / 2.0, self.exposure - self.tint, self.exposure - self.temp / 2.0];
+            let c: [f64; 3] = std::array::from_fn(|i| to_cct(from_cct(rgb[i]) * stops[i].exp2()));
+            let tone = |x: f64| PIVOT + (x - PIVOT) * k;
+            (tone(c[0]), tone(c[1]), tone(c[2]))
+        } else {
+            let [mut r, mut g, mut b] = rgb;
+            r += self.temp / 2.0 * STOP;
+            b -= self.temp / 2.0 * STOP;
+            g -= self.tint * STOP;
+            let tone = |x: f64| PIVOT + (x + self.exposure * STOP - PIVOT) * k;
+            (tone(r), tone(g), tone(b))
+        };
         let l = r * LUMA[0] + g * LUMA[1] + b * LUMA[2];
         let lift = (self.highlights * smooth(PIVOT, PIVOT + REACH, l) + self.shadows * (1.0 - smooth(PIVOT - REACH, PIVOT, l))) * STOP;
         // the lift is the same on every channel: the luma moves with it, the colour around it doesn't
@@ -165,11 +182,11 @@ impl Balance {
     }
 }
 
-/// A balance as data, checked (color.js `cleanBalance`): anything missing is 0, every number in its range; None when
-/// it changes nothing.
+/// A balance as data, checked (grade-tools.js `cleanTool`): anything missing is 0 (and not linear), every number in its
+/// range; None when it changes nothing.
 pub fn clean_balance(v: &Value) -> Option<Balance> {
     let o = v.as_object()?;
-    let mut b = Balance::default();
+    let mut b = Balance { linear: o.get("linear").and_then(Value::as_bool).unwrap_or(false), ..Balance::default() };
     for (k, ..) in BALANCE_FIELDS {
         if let Some(x) = o.get(k).and_then(|x| x.as_f64()).filter(|x| x.is_finite()) {
             b.set(k, x);

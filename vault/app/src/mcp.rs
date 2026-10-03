@@ -883,7 +883,7 @@ impl Studio {
     }
 
     #[tool(
-        description = "The base correction's balances (colorist base-correction.md), fitted natively from the shots' 4K grading stills by the elements a colourist matches — blacks, whites, the middle and the skin (Apple Vision's face, or the boxes named), through the ACES 2.0 output — with the balance nodes only (white balance, exposure, contrast, highlights, lows, saturation; no look). neutral: a scene master's own neutrals to grey, then `warmth` stops warmer. Else: every clip matched to `reference`, the scene's master as it is balanced now (a reference is required: never an average). Returns each shot's balance, the elements it was matched by and what they will read after it (predicted); writes them unless apply: false — propose first, look at grade_scopes, then write."
+        description = "The base correction's balances (colorist base-correction.md), fitted natively from the shots' 4K grading stills by the elements a colourist matches — blacks, whites, the middle and the skin (Apple Vision's face, or the boxes named), through the ACES 2.0 output — with the balance nodes only (white balance and exposure as gains in linear light — `linear: true` — then contrast, highlights, lows, saturation; no look). neutral: a scene master's own neutrals to grey, then `warmth` stops warmer. Else: every clip matched to `reference`, the scene's master as it is balanced now (a reference is required: never an average). Returns each shot's balance, the elements it was matched by and what they will read after it (predicted); writes them unless apply: false — propose first, look at grade_scopes, then write."
     )]
     async fn grade_match(&self, Parameters(a): Parameters<MatchArgs>) -> String {
         let r = async {
