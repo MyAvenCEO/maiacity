@@ -123,7 +123,7 @@ export function buildTrees(plants: Plant[]): Trees {
 	const bark = barkMaterial();
 	const r = seeded(77);
 	const owned: { dispose: () => void }[] = [mats.broad, mats.narrow, depth.broad, depth.narrow];
-	const tint: Record<TreeKind, string> = { broadleaf: '#ffffff', willow: '#f4f6ee', poplar: '#f1f6e6', shrub: '#f7f8ee' };
+	const tint: Partial<Record<TreeKind, string>> = { broadleaf: '#ffffff', willow: '#f4f6ee', poplar: '#f1f6e6', shrub: '#f7f8ee' };
 	const trunks: { x: number; z: number; r: number }[] = [];
 	const q = new THREE.Quaternion(), sc = new THREE.Vector3(), at = new THREE.Vector3(), col = new THREE.Color();
 	const kinds = [...new Set(plants.map((p) => p.kind))];
@@ -136,7 +136,7 @@ export function buildTrees(plants: Plant[]): Trees {
 			if (kind !== 'shrub') trunks.push({ x: pl.x, z: pl.z, r: 0.45 * pl.scale });
 			return new THREE.Matrix4().compose(at, q, sc);
 		});
-		const colors = list.map(() => col.set(tint[kind]).offsetHSL((r() - 0.5) * 0.05, (r() - 0.5) * 0.15, (r() - 0.5) * 0.12).clone());
+		const colors = list.map(() => col.set(tint[kind] ?? '#ffffff').offsetHSL((r() - 0.5) * 0.05, (r() - 0.5) * 0.15, (r() - 0.5) * 0.12).clone());
 		const pair = (light: boolean) => {
 			const p = treeParts(kind, 1, light);
 			const wood = new THREE.InstancedMesh(p.wood, bark, list.length);

@@ -1,7 +1,7 @@
 # The worlds and their sets
 
 Where a world film is shot: the map of Sandbox 4, the Apartment of Samuel (his room and the rest of it), the tired
-land, the Isar in Munich, and the sets built into a scene while it is filmed.
+land, the Isar in Munich, the backyard, and the sets built into a scene while it is filmed.
 
 ## Framing Sandbox 4
 
@@ -116,6 +116,49 @@ The river in Munich from the Wittelsbacherbrücke south to the railway bridge (t
 - **The sky turns as Munich's does** (`createSky({ map: true })`): the sun rises over the east bank, stands in the
   south at noon and sets behind the west bank's trees.
 
+## The backyard (`src/lib/worlds/backyard`)
+
+A Munich backyard, built from seventeen photos (October 2026): rough, not surveyed, everything in it to its real
+measure. Its plan is one file (`layout.ts`); the houses `buildings.ts`, the pergola and the terrace `pergola.ts`, the
+ground and the garden `garden.ts`, the surfaces `surfaces.ts`, the tools and the welding `kit.ts`.
+- **Axes:** x east, z south, y up, in metres; the origin on the ground at the middle of the old workshop's front. North
+  is −z (`createSky({ map: true })`): the house and the workshop face south, the sun stands over the front house at
+  noon, the sails shade the sofa.
+- **The house** on the north side, its face at z −1.2 from the west wall (x −15) to x −0.6: four storeys of apricot
+  render, grey surrounds, white casements (some curtained, three lit at night), three dormers in the tiled roof. On its
+  ground floor from the west: the small white steel window behind the little maple, the front door of old wood on its
+  stone step under the arched glass canopy and the barn lamp, the bell plate, the letterbox on its post; the workshop's
+  steel window (window boxes on its sill, the bike before it) and its brown double door on a steel plate.
+- **The workshop** (the annex), x −2.6…3.2, its face at z 0: one storey of saffron render, the cornice with its black
+  tube ends, the big steel window (13 × 9 panes, clear) onto the studio behind it — a long table and benches, prints,
+  three bulbs, a skylight.
+- **The terrace** under the pergola, x −3.3…5.4, z 0…4.0, and the corner behind the workshop's east end (to z −1.3):
+  flagstones, two steel plates over the cellar's light well. The roof: clear corrugated polycarbonate on white rafters,
+  3.77 m at the workshop falling to 3.42 at the gutter; the grey steel (the beam west of the workshop, the corner post,
+  the long diagonal strut down to the workshop's corner, the fat column with its collar and two pipe braces, the slim
+  column); the larch frame in front (sills on the paving, three posts — the west ones leaning out — the header with the
+  rolled-up side awning, the brown gutter whose pipe runs back diagonally to the house's corner). Two sand sails sag
+  under the roof and glow by day. On it: the cognac club sofa centred under the window, the bamboo table, the bistro set
+  in the corner, white ribbed planters (mint, lavender, rosemary, a trailing plant, oregano, rosemary in flower), the
+  olive tree in its bowl, the bird of paradise, the monstera on the sill, the passion flower up its wire trellis, nine
+  paper lanterns (two big ones under the roof, the rest by the trellis, hung from the strut), the ficus outside.
+- **The neighbour's wall** along the terrace's back and east: saffron to 1.72 m, a painted ledge (the toy monkey and
+  the toy bee on it, the festoon lights above, ivy over it), polycarbonate over it to 4.5 m, vines behind.
+- **The garden** in the north-west corner: pale gravel in a curb of granite setts, the oval teak table (its long axis
+  north–south) with two oiled recliners, a weathered one and two pine folding chairs, a red tin and an ashtray on it,
+  the stoneware crock; the beds of bark mulch with the hedge along the house, rhododendrons under the privet and the
+  corkscrew willow by the west wall, the climber up it, honeysuckle and the ivy cone.
+- **The south side:** the shed (x −13…−6.2), its long wall facing the courtyard with the insect hotel, two floodlights,
+  the rain barrel under its pipe, the old lilac before it, the sapling in its pot; the gate west of it under its glass
+  canopy, the station clock and the plaque; the driveway east of it, ivy over its wall, out through the passage under
+  the front house. The neighbours' houses stand over the walls.
+- **Walked** at a courtyard's pace (1.4 m/s, Shift 3.2): the paving, the gravel, the terrace and its corner, the
+  driveway to the passage; not the beds, the walls or the furniture. **Filmed** as `world.sandbox: 'backyard'`; its
+  lights are the shot's `lamps` (the lanterns, the festoon, the front door's lamp, the studio, the lit windows). Its
+  sets: `stand-in sofa`, `stand-in bistro`, `stand-in garden` (sitting).
+- **Everything that never moves is welded** (`kit.ts`, `freeze`): one mesh per material, a hundred-odd draw calls for
+  some thousand parts. A material a world drives (the lanterns' paper) is still one material for all of them.
+
 ## Building a new world
 
 1. **Mount it with the sandbox kit** (`src/lib/sandbox-kit`):
@@ -132,6 +175,8 @@ The river in Munich from the Wittelsbacherbrücke south to the railway bridge (t
    - an admin page `/app/worlds/<world>/` with the time control (`SkyControl`, Auto/Manual);
    - a line in `WORLDS` (`src/lib/app/places.ts`).
 3. **Furnish it from the 3D models** (`models.md`). The world's own code keeps only its shell — walls, windows, doors,
-   what is outside — and its lights.
-4. **Check it in the film camera** at the hours its shots use, from every camera position in the shot list. Then
+   what is outside — and its lights. A world of many parts welds what never moves (the backyard's `freeze`).
+4. **From photos:** one plan file of measures (the backyard's `layout.ts`) that every part is built from, so a wall
+   moved is moved everywhere; textures at their real size (every UV in metres).
+5. **Check it in the film camera** at the hours its shots use, from every camera position in the shot list. Then
    check it in its admin page with the time control on Manual.

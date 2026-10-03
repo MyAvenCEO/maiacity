@@ -27,7 +27,8 @@ export const PLAY: Place[] = [
 export const WORLDS: Place[] = [
 	{ href: `${base}/app/worlds/room/`, label: 'Apartment of Samuel', icon: 'play', release: 'draft', note: 'Day 02 · his room, the hallway, the kitchen, the bathroom' },
 	{ href: `${base}/app/worlds/tired-land/`, label: 'The tired land', icon: 'play', release: 'draft', note: 'Day 19 · fields of one crop, a highway, trucks' },
-	{ href: `${base}/app/worlds/isar/`, label: 'The Isar', icon: 'play', release: 'draft', note: 'Munich · from the Wittelsbacherbrücke south to the railway bridge' }
+	{ href: `${base}/app/worlds/isar/`, label: 'The Isar', icon: 'play', release: 'draft', note: 'Munich · from the Wittelsbacherbrücke south to the railway bridge' },
+	{ href: `${base}/app/worlds/backyard/`, label: 'The backyard', icon: 'play', release: 'draft', note: 'Munich · the courtyard, the pergola terrace, the garden corner' }
 ];
 
 export const READ: Place[] = [
