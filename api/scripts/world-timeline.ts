@@ -15,6 +15,7 @@ import { pathToFileURL } from "node:url";
 import { API, call, say } from "./media-client";
 import { fromLegacy } from "../../game/film/shot.js";
 import { list } from "../../scripts/film/vault.mjs";
+import { nameOfDay } from "../../src/lib/stories/names.js";
 
 const arg = (k: string, d: string) => (process.argv.includes(`--${k}`) ? process.argv[process.argv.indexOf(`--${k}`) + 1]! : d);
 const FROM = arg("from", "G"), VARIANT = arg("variant", "W"), NAME = arg("name", "World"), PROJECT = arg("project", nameOfDay(19));

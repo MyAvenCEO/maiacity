@@ -127,3 +127,24 @@ test("stories, not days: every old day takes its name, the days that are no stor
   const { rows: t } = await fresh.query<{ name: string; project: string | null }>("SELECT name, project FROM timelines ORDER BY name");
   expect(t).toEqual([{ name: "Full", project: "233 settlers, how it starts" }, { name: "Loose", project: null }]);
 });
+
+test("stories, not days: a name another item already has is not taken twice", async () => {
+  const fresh = new PGlite();
+  const until = MIGRATIONS.findIndex((m) => m.id === "0032-stories-not-days");
+  for (const m of MIGRATIONS.slice(0, until)) await fresh.exec(m.sql);
+  await fresh.query("INSERT INTO founders (id, name, role) VALUES ('admin', 'Admin', 'admin')");
+  const item = (title: string, project: string | null) =>
+    fresh.query("INSERT INTO content_items (title, kind, status, body, project, founder_id) VALUES ($1, 'post', 'writing', '', $2, 'admin')", [title, project]);
+  await item("The 1 million decision", "The 1 million decision");
+  await item("Day 1 · The old card", "Day 1");
+  await item("Day 2 · First", "Day 2");
+  await item("Day 2 · Second", "day-02");
+  await fresh.exec(MIGRATIONS[until]!.sql);
+  const { rows } = await fresh.query<{ title: string; project: string | null }>("SELECT title, project FROM content_items ORDER BY title");
+  expect(rows).toEqual([
+    { title: "First", project: "Thinking outside the box" },
+    { title: "Second", project: null },
+    { title: "The 1 million decision", project: "The 1 million decision" },
+    { title: "The old card", project: null },
+  ]);
+});
