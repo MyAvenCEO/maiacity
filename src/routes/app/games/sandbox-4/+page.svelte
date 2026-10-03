@@ -193,10 +193,10 @@
 		color: #f0c49a;
 	}
 
-	/* ── on a phone: above the joystick ($lib/touch/TouchStick) ── */
+	/* ── on a phone: above the joystick ($lib/touch/TouchStick; --stick-room, src/app.css) ── */
 	@media (hover: none) and (pointer: coarse) {
 		.opening {
-			bottom: calc(11rem + var(--nav-room));
+			bottom: calc(var(--stick-room) + 3rem);
 		}
 	}
 

@@ -270,9 +270,9 @@
 		p.touch-how {
 			display: block;
 		}
-		/* the lift's panel above the joystick, not over it */
+		/* the lift's panel above the joystick, not over it (--stick-room, src/app.css) */
 		.lift {
-			bottom: calc(11rem + var(--nav-room));
+			bottom: calc(var(--stick-room) + 3rem);
 		}
 	}
 </style>

@@ -28,10 +28,9 @@
 	 *   stage?: HTMLElement | null,
 	 *   taps?: string,
 	 *   onpress?: ((el: HTMLElement) => boolean) | null,
-	 *   bottom?: string
 	 * }}
 	 */
-	let { move, look = null, stage = null, taps = '', onpress = null, bottom = '1.5rem' } = $props();
+	let { move, look = null, stage = null, taps = '', onpress = null } = $props();
 
 	/** @type {HTMLDivElement} */
 	let stickEl;
@@ -142,7 +141,7 @@
 	});
 </script>
 
-<div class="stick" class:hurrying style:--stick-bottom={bottom} bind:this={stickEl}>
+<div class="stick" class:hurrying bind:this={stickEl}>
 	<span class="knob" bind:this={knobEl}></span>
 </div>
 
@@ -150,12 +149,12 @@
 	.stick {
 		display: none;
 		position: absolute;
-		left: calc(1.5rem + env(safe-area-inset-left, 0px));
-		/* above the app's nav pill (--nav-room, src/app.css), the home bar under them both */
-		bottom: calc(var(--stick-bottom) + var(--nav-room, env(safe-area-inset-bottom, 0px)));
+		/* in the lower left corner, as far from the left edge as from the foot, beside the app's nav pill (src/app.css) */
+		left: calc(var(--stick-edge, 1.5rem) + env(safe-area-inset-left, 0px));
+		bottom: var(--stick-edge, 1.5rem);
 		z-index: 2;
-		width: 8rem;
-		height: 8rem;
+		width: var(--stick-size, 8rem);
+		height: var(--stick-size, 8rem);
 		border-radius: 50%;
 		background: rgb(250 248 242 / 0.18);
 		border: 1.5px solid rgb(250 248 242 / 0.55);
@@ -196,13 +195,8 @@
 			will-change: transform;
 		}
 	}
-	/* a phone's screen is the world's: a smaller ring, still a thumb's width to push round */
+	/* a phone's screen is the world's: a smaller ring (--stick-size), still a thumb's width to push round */
 	@media (max-width: 640px), (max-height: 500px) {
-		.stick {
-			left: calc(1rem + env(safe-area-inset-left, 0px));
-			width: 6.5rem;
-			height: 6.5rem;
-		}
 		.knob {
 			width: 2.8rem;
 			height: 2.8rem;

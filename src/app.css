@@ -88,6 +88,23 @@ body {
 	}
 }
 
+/* Where the joystick sits ($lib/touch/TouchStick.svelte), the one place it is said: in the lower left corner, beside the
+   nav pill, as far from the screen's left edge (and the notch, on its side) as from its foot; its size; and the room it
+   takes, which a full-screen page keeps a panel of its own above (Sandbox 4's opening doors, a dome's lift). On a phone
+   a smaller ring nearer the corner. */
+:root {
+	--stick-edge: 1.5rem;
+	--stick-size: 8rem;
+	--stick-room: calc(var(--stick-edge) + var(--stick-size));
+}
+
+@media (max-width: 640px), (max-height: 500px) {
+	:root {
+		--stick-edge: 1rem;
+		--stick-size: 6.5rem;
+	}
+}
+
 h1,
 h2,
 h3 {
