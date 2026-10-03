@@ -31,8 +31,9 @@ pub fn journey(profile: &str) -> bool {
 }
 
 /// The colour detection's version: a file told "unknown" by an older one is read again (2: the sample description's
-/// log atom — Apple Log 2 from the Blackmagic app and the iPhone).
-const DETECTOR: u64 = 2;
+/// log atom — Apple Log 2 from the Blackmagic app and the iPhone; 3: the first Apple Log by Apple's own identifier,
+/// `com.apple.rec2020.apple-log`).
+const DETECTOR: u64 = 3;
 
 /// A piece of work under way or waiting its turn, as the studio's file lists show it (a view of the jobs, jobs.rs):
 /// `of` its key — a file's hash for its proxy, else `still:`, `shot:`, `render:`, `transcript:`, `analysis:` and what for.
