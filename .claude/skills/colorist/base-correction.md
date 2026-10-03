@@ -49,8 +49,11 @@ the camera got wrong from shot to shot, so the cut stops jumping.
 4. **Saturated light** (LEDs, neon, a phone screen, the CB60 in HSI): Apple Wide Gamut records colours the working
    space can't hold. The journey doesn't compress gamut yet, so they arrive clipped, flat and a little off-hue: never
    neutralise or match on them.
-5. **Colour edges:** the grading stills are 4:2:0 even from 4:2:2 ProRes (until the decoder changes). Judge a red
-   title or a saturated edge on a zoomed hero frame.
+5. **Colour edges:** frames are decoded 4:2:2, as the iPhone records ProRes: the colour at full height in the grading
+   stills, the hero frames and the render. (Until 2026-10-03 they were 4:2:0; the app remade every older grading still
+   by itself.)
+6. **An unknown colour stops the render.** A source whose profile is `unknown` is never taken as Rec.709: the render,
+   the frame and the hero still stop and name it. Set its profile in the Bin.
 
 ## What to compare, in this order
 
@@ -82,10 +85,13 @@ Rules of thumb on the Rec.709 display (through the ACES 2.0 output, 0–100 IRE)
 - **Our tolerance inside a scene** (a house rule, not an industry number): blacks and skin level within about
   3 IRE of the master, skin hue within about 5°.
 
-**Watch the toe.** The balance's exposure and white balance are offsets in ACEScct: in log, a constant equals a
-change in linear light, which is why colourists balance with offset or printer lights. Below about 0.155 ACEScct
-the curve is linear, so a big offset there turns the deep shadows milky (Cullen Kelly). After a big exposure move,
-check the blacks again.
+**Exposure and white balance in linear light.** A balance's `linear` switch sets white balance and exposure as gains
+in linear light, the way Cullen Kelly sets them; contrast, highlights, lows and saturation stay in the log. Every new
+balance starts with it on, and `grade_match` proposes it on. Above ACEScct 0.155 (about 4.5 stops under grey) a gain
+and a log offset are the same thing, so the numbers mean what they always meant. Below it, the log offset of a balance
+without `linear` lifts and tints the deep shadows: the milky blacks of Day 01. With `linear` on, an exposure or white
+balance move leaves black black, so lows are never needed to undo one. A balance saved without the switch (Day 01's,
+before 2026-10-03) keeps working the old way until it is switched on.
 
 ## The tools
 
@@ -117,8 +123,9 @@ so it never computes the grade itself.
     by content.
   - Run **`apply: false`** first. The answer gives each shot's balance, `matched_by`, and `predicted`: its elements
     after that balance.
-- **`grade_stack { stack: "base", clip, set: { tools: [{ tool: "balance", ... }] } }`**: one shot's balance by hand (temp, tint, exposure, contrast, highlights, shadows, **sat**; all
-  0 = as shot).
+- **`grade_stack { stack: "base", clip, set: { tools: [{ tool: "balance", linear: true, ... }] } }`**: one shot's
+  balance by hand (**linear**, temp, tint, exposure, contrast, highlights, shadows, **sat**; all 0 = as shot).
+  Always with `linear: true`.
 - **`render_frame`**: a hero frame through the whole chain, for checking either side of a cut.
 
 ## The pass, scene by scene
@@ -152,9 +159,10 @@ so it never computes the grade itself.
   on.
 - **Leave tint at 0 unless a neutral really is green or magenta.** A tint of 0.06 against a +0.8 IRE green moved skin
   4° toward pink.
-- **Moving the exposure lifts the blacks too.** In ACEScct, exposure is an offset: +0.6 took the bedroom's blacks from
-  7 to 9 IRE, and lows barely bring them back. Where a shot is flat, like the overcast garden, contrast around mid
-  grey (0.15) does it.
+- **An exposure move in the log lifts the blacks too.** Before `linear`, exposure was an ACEScct offset: +0.6 took
+  the bedroom's blacks from 7 to 9 IRE, and lows (−0.35 to −0.6) were spent pulling them back down, which also
+  darkened the lower mids. That is why the switch exists. Where a shot is flat, like the overcast garden, contrast
+  around mid grey (0.15) does it.
 - **Skin moves with tint, far.** On the garden faces, tint −0.1 → −6.6°, −0.15 → −1.5°, −0.2 → +4.2°. Set it in steps
   of 0.05 and read the skin after each.
 - **Same light, same balance.** The feet on the rug took the bedroom master's balance unchanged: the rug's whites

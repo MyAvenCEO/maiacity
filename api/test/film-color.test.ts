@@ -81,9 +81,10 @@ test("an EXR header is read for its chromaticities and channels", () => {
 });
 
 test("a grade as data: every tool from the registry, checked, its defaults filled in", () => {
-  // the balance's controls in the order they apply (vault-render tools.rs checks the same ranges: its test reads the registry)
+  // the balance's controls in the order they apply, how it sets white balance and exposure first (vault-render tools.rs
+  // checks the same ranges: its test reads the registry)
   expect(TOOL.balance.params.map((p: any) => [p.key, p.min, p.max])).toEqual([
-    ["temp", -2, 2], ["tint", -2, 2], ["exposure", -4, 4], ["contrast", -0.8, 1.5], ["highlights", -3, 3], ["shadows", -3, 3], ["sat", -1, 1],
+    ["linear", undefined, undefined], ["temp", -2, 2], ["tint", -2, 2], ["exposure", -4, 4], ["contrast", -0.8, 1.5], ["highlights", -3, 3], ["shadows", -3, 3], ["sat", -1, 1],
   ]);
   expect(cleanTool({ tool: "balance", exposure: 9, temp: "x" })).toMatchObject({ exposure: 4, temp: 0 });
   expect(cleanTool({ tool: "cdl", slope: [9, 1, 1], power: [0, 1, 1] })).toMatchObject({ slope: [4, 1, 1], power: [0.1, 1, 1], sat: 1 });
@@ -93,6 +94,10 @@ test("a grade as data: every tool from the registry, checked, its defaults fille
   const deep = cleanTool({ tool: "window", tools: [{ tool: "key", tools: [{ tool: "window", tools: [{ tool: "window", tools: [{ tool: "grain" }] }] }] }] });
   expect(deep.tools[0].tools[0].tools[0].tools).toEqual([]);
   expect(newTool("vignette")).toEqual({ tool: "vignette", amount: 0.4, size: 0.9, softness: 0.5, roundness: 0 });
+  // a balance put on a stack now starts linear; one saved before linear was there reads as it was (not linear)
+  expect(newTool("balance").linear).toBe(true);
+  expect(cleanTool({ tool: "balance", exposure: 0.3 }).linear).toBe(false);
+  expect(cleanTool({ tool: "balance", exposure: 0.3, linear: true }).linear).toBe(true);
   expect(cleanStack({ tools: [] })).toBeNull();
   expect(cleanStack({ strength: 7, tools: [{ tool: "grain" }] })).toEqual({ tools: [{ tool: "grain", amount: 0.12, size: 1, chroma: 0 }] });
 });

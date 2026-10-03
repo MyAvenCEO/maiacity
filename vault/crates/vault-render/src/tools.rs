@@ -297,7 +297,7 @@ fn clean_items(items: Vec<Item>, depth: usize) -> Vec<Item> {
 
 fn clean_item(mut it: Item, depth: usize) -> Option<Item> {
     it.tool = match it.tool {
-        Tool::Balance(b) => Tool::Balance(clean_balance(&serde_json::to_value(b).ok()?).unwrap_or_default()),
+        Tool::Balance(b) => Tool::Balance(clean_balance(&serde_json::to_value(b).ok()?).unwrap_or(Balance { linear: b.linear, ..Balance::default() })),
         Tool::Cdl(t) => {
             let cdl = clean_cdl(&serde_json::to_value(t).ok()?).unwrap_or(Cdl { slope: [1.0; 3], offset: [0.0; 3], power: [1.0; 3], sat: 1.0 });
             Tool::Cdl(CdlTool { slope: cdl.slope, offset: cdl.offset, power: cdl.power, sat: cdl.sat })

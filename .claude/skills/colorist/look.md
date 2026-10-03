@@ -118,9 +118,11 @@ A look alone gave a flat, tinted picture: the colours moved but the image stayed
      - Blues and purples (320–345°, hoodies, jeans) towards teal (−10…−18°).
    - `hue_sat`: skin 1.2; blues and purples 0.6.
    - `hue_lum`: greens −0.7 stops, yellow-greens −0.35. Denser foliage, but not so much that the person pops off it.
-2. **Per-shot trim (a `cdl` tool on the shot's clip look, `grade_stack { stack: "clip" }`): the low key.** About a stop down and a slope of 1.3 around mid
-   grey, as one CDL: slope k, offset 0.414·(1 − k) + stops / 17.52. The balance stays the base correction; the mood
-   lives here, per shot, so every shot can land on the same key.
+2. **Per-shot trim (a linear `balance` on the shot's clip look, `grade_stack { stack: "clip" }`): the low key.** About
+   a stop down and a contrast of 0.3 around mid grey: `{ tool: "balance", linear: true, exposure: −1, contrast: 0.3 }`.
+   The base balance stays the base correction; the mood lives here, per shot, so every shot can land on the same key.
+   Day 01's trims were first one CDL each (slope k, offset 0.414·(1 − k) + stops / 17.52): the same picture above the
+   toe, but its exposure a log offset. Rebuilt on 2026-10-03 as linear balances, with the same numbers.
 3. **Finishing:** vignette 0.65 (size 0.85, soft), grain 0.12 (0.25 read as noise on the 4K master).
 4. **Secondaries: only quiet holds.** A sky kept from clipping (a luma key over 72 IRE in a band at the top). Nothing
    else.

@@ -82,9 +82,13 @@ fn balance_on_the_gpu_is_the_maths() {
         Balance { temp: 0.6, tint: -0.3, ..Default::default() },
         Balance { exposure: -1.2, contrast: 0.25, ..Default::default() },
         Balance { highlights: -1.5, shadows: 0.8, ..Default::default() },
-        Balance { temp: -0.4, tint: 0.2, exposure: 0.7, contrast: -0.2, highlights: 0.5, shadows: -0.6, sat: 0.0 },
+        Balance { temp: -0.4, tint: 0.2, exposure: 0.7, contrast: -0.2, highlights: 0.5, shadows: -0.6, sat: 0.0, linear: false },
         Balance { sat: 0.4, ..Default::default() },
         Balance { temp: 0.3, exposure: 0.5, highlights: -0.4, sat: -0.35, ..Default::default() },
+        // white balance and exposure in light
+        Balance { temp: 0.6, tint: -0.3, linear: true, ..Default::default() },
+        Balance { exposure: -1.2, contrast: 0.25, linear: true, ..Default::default() },
+        Balance { temp: -0.4, tint: 0.2, exposure: 1.3, contrast: 0.15, highlights: -1.0, shadows: -0.6, sat: 0.1, linear: true },
     ];
     for b in cases {
         let got = through(&gpu, &px, |gp, i| gp.balance(i, Some(&b)).unwrap());

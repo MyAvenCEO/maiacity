@@ -41,13 +41,28 @@ extern "C" float4 cdl(coreimage::sample_t s, float3 slope, float3 offset, float3
     return float4(l + sat * (v - l), s.a);
 }
 
+// the ACEScct curve both ways (vault-color `cst::to_cct` / `from_cct`)
+static float bal_lin(float c) {
+    return c <= 0.155251141552511f ? (c - 0.0729055341958355f) / 10.5402377416545f : min(precise::exp2(c * 17.52f - 9.72f), 65504.0f);
+}
+static float bal_cct(float l) {
+    return l <= 0.0078125f ? 10.5402377416545f * l + 0.0729055341958355f : (precise::log2(l) + 9.72f) / 17.52f;
+}
+
 // the balance in ACEScct, as grade.rs `Balance::apply`: white balance (stops per channel), exposure, contrast around mid grey,
 // then highlights and lows by luma, then saturation around luma — `wb` is (temp, tint, exposure), `tone` (contrast,
-// highlights, shadows), `sat` the saturation minus 1
-extern "C" float4 balance(coreimage::sample_t s, float3 wb, float3 tone, float sat) [[stitchable]] {
+// highlights, shadows), `sat` the saturation minus 1; `lin` 1: white balance and exposure as gains in linear light
+extern "C" float4 balance(coreimage::sample_t s, float3 wb, float3 tone, float sat, float lin) [[stitchable]] {
     const float STOP = 1.0f / 17.52f, PIVOT = 0.4135884f, REACH = 0.35f;
-    float3 c = s.rgb + float3(wb.x * 0.5f, -wb.y, -wb.x * 0.5f) * STOP;
-    c = PIVOT + (c + wb.z * STOP - PIVOT) * (1.0f + tone.x);
+    float3 c;
+    if (lin > 0.5f) {
+        float3 g = precise::exp2(float3(wb.z + wb.x * 0.5f, wb.z - wb.y, wb.z - wb.x * 0.5f));
+        c = float3(bal_cct(bal_lin(s.r) * g.x), bal_cct(bal_lin(s.g) * g.y), bal_cct(bal_lin(s.b) * g.z));
+        c = PIVOT + (c - PIVOT) * (1.0f + tone.x);
+    } else {
+        c = s.rgb + float3(wb.x * 0.5f, -wb.y, -wb.x * 0.5f) * STOP;
+        c = PIVOT + (c + wb.z * STOP - PIVOT) * (1.0f + tone.x);
+    }
     float l = dot(c, float3(0.2126f, 0.7152f, 0.0722f));
     float lift = (tone.y * smoothstep(PIVOT, PIVOT + REACH, l) + tone.z * (1.0f - smoothstep(PIVOT - REACH, PIVOT, l))) * STOP;
     return float4(l + lift + (1.0f + sat) * (c - l), s.a);
@@ -448,7 +463,8 @@ impl Gpu {
     pub fn balance(&self, img: &CIImage, b: Option<&Balance>) -> Result<Image> {
         let Some(b) = b.filter(|b| !b.is_neutral()) else { return Ok(img.retain()) };
         let (wb, tone, sat) = (vec3([b.temp, b.tint, b.exposure]), vec3([b.contrast, b.highlights, b.shadows]), num(b.sat));
-        let args: [&AnyObject; 4] = [img, &wb, &tone, &sat];
+        let lin = num(if b.linear { 1.0 } else { 0.0 });
+        let args: [&AnyObject; 5] = [img, &wb, &tone, &sat, &lin];
         // SAFETY: the kernel's arguments as its signature takes them
         unsafe { self.balance.applyWithExtent_arguments(img.ext(), &NSArray::from_slice(&args)) }.context("the balance gave no picture")
     }

@@ -515,8 +515,9 @@ fn usable(name: &str, d: &Disp) -> bool {
 
 /// The balance that levels a shot to `want` by the elements both have, less `skip` — an element (`skin`), or only
 /// its level (`skin.level`: a face and feet in one light need not be as bright) or only its colour (`whites.colour`:
-/// a cream rug is not a white wall). The balance nodes only, from as shot. White balance and exposure do the
-/// levelling; contrast, highlights, lows and saturation cost, so they move only where those cannot.
+/// a cream rug is not a white wall). The balance nodes only, from as shot, white balance and exposure in linear light.
+/// White balance and exposure do the levelling; contrast, highlights, lows and saturation cost, so they move only where
+/// those cannot.
 pub fn fit(shot: &Look, want: &BTreeMap<String, Disp>, output: &dyn Output, skip: &[String]) -> (Balance, Vec<String>) {
     let none = Balance::default();
     let skipped = |k: &str, part: &str| skip.iter().any(|s| s == k || *s == format!("{k}.{part}"));
@@ -553,7 +554,7 @@ pub fn fit(shot: &Look, want: &BTreeMap<String, Disp>, output: &dyn Output, skip
         // the skin does, contrast and saturation more — they move only for what the two cannot do
         fit + 0.003 * (b.highlights.powi(2) + b.shadows.powi(2)) + 0.03 * b.contrast.powi(2) + 0.03 * b.sat.powi(2)
     };
-    let mut b = Balance::default();
+    let mut b = Balance { linear: true, ..Balance::default() };
     if pairs.is_empty() {
         return (b, used);
     }

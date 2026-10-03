@@ -45,6 +45,35 @@ fn balance_maths() {
 }
 
 #[test]
+fn linear_balance_is_a_gain_in_light() {
+    use vault_media::cst::{from_cct, to_cct};
+    let log = Balance { temp: 0.53, tint: -0.15, exposure: 0.6, contrast: 0.15, highlights: -0.4, shadows: -0.3, sat: 0.1, linear: false };
+    let lin = Balance { linear: true, ..log };
+    // above the toe (ACEScct 0.155) a gain is the log offset exactly: the same numbers, the same picture
+    for px in [[0.2, 0.3, 0.4], [0.41, 0.41, 0.41], [0.7, 0.6, 0.5], [0.9, 0.95, 1.0]] {
+        let (a, b) = (log.apply(px), lin.apply(px));
+        assert!((0..3).all(|i| close(a[i], b[i], 1e-9)), "{px:?}: {a:?} vs {b:?}");
+    }
+    // in the toe it scales: black stays black, a shadow is lifted by its gain, not by a fixed amount
+    let up = Balance { exposure: 0.6, linear: true, ..Default::default() };
+    let black = to_cct(0.0);
+    assert!(up.apply([black; 3]).iter().all(|x| close(*x, black, 1e-12)));
+    let deep = to_cct(0.002);
+    let got = from_cct(up.apply([deep; 3])[0]);
+    assert!(close(got, 0.002 * 0.6f64.exp2(), 1e-12), "{got}");
+    assert!(Balance { exposure: 0.6, ..Default::default() }.apply([black; 3])[0] > black + 0.03, "the log offset lifts the black");
+    // white balance as gains: a neutral black stays neutral
+    let warm = Balance { temp: 0.8, tint: -0.3, linear: true, ..Default::default() }.apply([black; 3]);
+    assert!(warm.iter().all(|x| close(*x, black, 1e-12)), "{warm:?}");
+    // linear and nothing else changes nothing; the flag survives the checks
+    assert!(Balance { linear: true, ..Default::default() }.is_neutral());
+    assert!(clean_balance(&json!({ "linear": true })).is_none());
+    assert!(clean_balance(&json!({ "linear": true, "exposure": 0.3 })).unwrap().linear);
+    assert!(!clean_balance(&json!({ "exposure": 0.3 })).unwrap().linear);
+    assert_eq!(serde_json::from_value::<Balance>(json!({ "exposure": 0.3 })).unwrap().linear, false);
+}
+
+#[test]
 fn cdl_maths() {
     assert_eq!(preset("neutral").unwrap().apply([0.2, 0.4, 0.6]), [0.2, 0.4, 0.6]);
     let g = clean_cdl(&json!({ "slope": [2, 1, 1], "offset": [0.1, 0, 0], "power": [1, 2, 1], "sat": 1 })).unwrap();
@@ -262,7 +291,7 @@ fn lut3d_tetrahedral() {
 #[test]
 fn the_viewer_s_cube_is_the_grade() {
     use vault_render::grade::{PRESETS, cube};
-    let b = Balance { temp: 0.35, tint: -0.1, exposure: 0.6, contrast: 0.15, highlights: -0.4, shadows: 0.2, sat: 0.25 };
+    let b = Balance { temp: 0.35, tint: -0.1, exposure: 0.6, contrast: 0.15, highlights: -0.4, shadows: 0.2, sat: 0.25, linear: false };
     let g = [preset("warm").unwrap()];
     let n = 33;
     let c = cube(Some(&b), &g, n);

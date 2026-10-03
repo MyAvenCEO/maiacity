@@ -29,6 +29,11 @@ post house: balance first, the look on top, never the other way round.
    studio: the Apple Log curve, Apple Wide Gamut into AP1 (Bradford), ACEScct. A shot that reads `apple-log` or
    `unknown` is fixed at its tag (or the phone's setting), never with the balance: Apple Log 2 taken as Apple Log turns
    skin about 7° towards red and takes up to a quarter of the colour out (`base-correction.md`).
+10. **Exposure and white balance in linear light; contrast and the look in log.** Every `balance` that moves exposure
+    or white balance has `linear: true`, in the base correction and in a trim: a log offset lifts and tints the blacks
+    (`base-correction.md`).
+11. **We judge to the Apple view:** hero frames on the Mac, then the uploaded file on the iPhone (`color-story.md`,
+    principle 12).
 
 ## The sub-skills
 
