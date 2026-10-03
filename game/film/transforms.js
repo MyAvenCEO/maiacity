@@ -113,9 +113,11 @@ export const DECODE = { linear: (v) => v, rec709: rec709ToScene, srgb: srgbToSce
  * @typedef {{ kind: 'ocio-convert', config: string, src: string, dst: string }} ConvertConfig
  * @typedef {{ kind: 'ocio-group', config: string, steps: ({ builtin: string } | { matrix: Matrix3 } | { convert: [string, string] })[], source: string }} GroupConfig
  *   A chain of OCIO pieces (a builtin curve, a matrix, a colour-space conversion), for a transform the config lacks.
- * @typedef {{ kind: 'math', decode: keyof typeof DECODE, scale: number, matrix: Matrix3 | null, to: 'acescct' }} MathConfig
+ * @typedef {{ kind: 'math', decode: keyof typeof DECODE, scale: number, matrix: Matrix3 | null, compress?: 'aces-rgc-1.3', to: 'acescct' }} MathConfig
  *   Exact maths: the signal decoded to linear light by its curve in DECODE (× scale), a 3×3 into AP1, then the
- *   ACEScct curve. No LUT over the whole cube, so nothing clips: linear sources keep every highlight.
+ *   ACEScct curve. No LUT over the whole cube, so nothing clips: linear sources keep every highlight. `compress`: from
+ *   a gamut wider than AP1, the ACES Reference Gamut Compression in linear AP1 before the curve (cst.rs
+ *   `gamut_compress`).
  * @typedef {IdentityConfig | ViewConfig | ConvertConfig | GroupConfig | MathConfig} TransformConfig
  */
 
@@ -139,11 +141,17 @@ export const TRANSFORMS = {
 	'idt-apple-log-2': {
 		kind: 'ocio-group',
 		config: OCIO_CONFIG,
-		steps: [{ builtin: 'CURVE - APPLE_LOG_to_LINEAR' }, { matrix: AWG_TO_AP0 }, { convert: ['ACES2065-1', 'ACEScct'] }],
-		source: 'OpenColorIO AppleCameras.cpp (APPLE_LOG-APPLEWG_to_ACES2065-1, PR #2343), from the Apple Log 2 white paper'
+		// Apple Wide Gamut reaches beyond AP1: its colours taken inside by the ACES Reference Gamut Compression
+		steps: [
+			{ builtin: 'CURVE - APPLE_LOG_to_LINEAR' },
+			{ matrix: AWG_TO_AP0 },
+			{ builtin: 'ACES-LMT - ACES 1.3 Reference Gamut Compression' },
+			{ convert: ['ACES2065-1', 'ACEScct'] }
+		],
+		source: 'OpenColorIO AppleCameras.cpp (APPLE_LOG-APPLEWG_to_ACES2065-1, PR #2343), from the Apple Log 2 white paper; ACES 1.3 RGC'
 	},
-	// generated and rendered footage: scene-linear EXR, by exact maths
-	'idt-aces2065-1': { kind: 'math', decode: 'linear', scale: 1, matrix: AP0_TO_AP1, to: 'acescct' },
+	// generated and rendered footage: scene-linear EXR, by exact maths (AP0 reaches beyond AP1: compressed into it)
+	'idt-aces2065-1': { kind: 'math', decode: 'linear', scale: 1, matrix: AP0_TO_AP1, compress: 'aces-rgc-1.3', to: 'acescct' },
 	'idt-acescg': { kind: 'math', decode: 'linear', scale: 1, matrix: null, to: 'acescct' },
 	'idt-linear-rec709': { kind: 'math', decode: 'linear', scale: 1, matrix: REC709_TO_AP1, to: 'acescct' },
 	// HDR video (BT.2100: Rec.2020 primaries)

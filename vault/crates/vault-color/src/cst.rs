@@ -12,7 +12,8 @@
 //! On the GPU: `METAL_KERNEL` does the exact maths in Core Image (within 1.2e-5 ACEScct of `Journey::apply` on an
 //! M1, measured), for every journey. A baked cube under CIColorCube is the fallback and holds only where
 //! `Journey::cube_fits`: CIColorCube itself is off by up to 2.1e-3 even with an identity cube, and the journeys
-//! through a gamut wider than AP1 (Apple Wide Gamut, AP0) are off by 0.1–0.4 ACEScct in bright saturated colours.
+//! through a gamut wider than AP1 (Apple Wide Gamut, AP0) bend hard in bright saturated colours — 0.1–0.4 ACEScct off
+//! without the gamut compression, still about 8e-3 with it.
 //!
 //! Choices, each as the ACES studio config makes it unless said:
 //!   rec709 — "Camera Rec.709": the BT.709 camera curve undone (1/0.45 power, 0.099 offset, the linear toe joined
@@ -25,6 +26,11 @@
 //!   pq     — ST 2084 EOTF to absolute cd/m², scaled so BT.2408's 26 cd/m² grey is 0.18 — `PQ_SCALE` in
 //!            transforms.js (so 100 cd/m² = 0.692; OCIO's own PQ curve is 100 cd/m² = 1.0).
 //!   apple-log / apple-log-2 — the same curve (Apple Log Profile white paper), clamped below code 0 at R₀ as OCIO does.
+//!   apple-log-2, aces2065-1 — gamuts wider than AP1: after the matrix, the ACES Reference Gamut Compression
+//!            (`gamut_compress`, OCIO's "ACES-LMT - ACES 1.3 Reference Gamut Compression") takes their colours inside
+//!            AP1 before the ACEScct curve, as ACES applies it right after the input transform. Without it, what lies
+//!            beyond AP1 (LEDs, neon, a phone screen, an HSI light) arrives as negative light: every grade cube clamps
+//!            it, the grading stills clip it, and it reaches the screen flat and off-hue.
 
 pub(crate) type M3 = [[f64; 3]; 3];
 /// Chromaticities x, y of red, green, blue and white.
@@ -80,6 +86,9 @@ pub struct Journey {
     /// linear source RGB → linear AP1; None when it is AP1 already
     pub matrix: Option<M3>,
     pub cube_input: CubeInput,
+    /// Its colours taken inside AP1 by the ACES Reference Gamut Compression before the ACEScct curve
+    /// (`gamut_compress`): the journeys from a gamut wider than AP1 (Apple Wide Gamut, AP0).
+    pub compress: bool,
     /// Can a 65³ cube under CIColorCube carry this journey (within 2.5e-3 ACEScct, about 2½ 10-bit code values, above
     /// the source's black — measured on an M1)? Only when the cube takes code values and the matrix into AP1 has no
     /// negative term. Where it has (Apple Wide Gamut, AP0 — gamuts wider than AP1), bright saturated colours come out
@@ -97,14 +106,16 @@ pub fn journey(profile: &str) -> Option<Journey> {
         "hlg" => ("hlg", "HLG inverse OETF → scene linear (grey at 38%) · Rec.2020 → AP1 (Bradford) · ACEScct", Curve::Hlg, hlg_scale(), to_ap1(&REC2020), CubeInput::Code),
         "pq" => ("pq", "PQ → cd/m² (26 cd/m² = grey) · Rec.2020 → AP1 (Bradford) · ACEScct", Curve::Pq, 0.18 / 26.0, to_ap1(&REC2020), CubeInput::Code),
         "apple-log" => ("apple-log", "Apple Log curve → linear · Rec.2020 → AP1 (Bradford) · ACEScct", Curve::AppleLog, 1.0, to_ap1(&REC2020), CubeInput::Code),
-        "apple-log-2" => ("apple-log-2", "Apple Log 2 curve → linear · Apple Wide Gamut → AP1 (Bradford) · ACEScct", Curve::AppleLog, 1.0, to_ap1(&APPLE_WIDE_GAMUT), CubeInput::Code),
-        "aces2065-1" => ("aces2065-1", "linear AP0 → AP1 · ACEScct", Curve::Linear, 1.0, to_ap1(&AP0), CubeInput::Acescct),
+        "apple-log-2" => ("apple-log-2", "Apple Log 2 curve → linear · Apple Wide Gamut → AP1 (Bradford) · ACES gamut compression · ACEScct", Curve::AppleLog, 1.0, to_ap1(&APPLE_WIDE_GAMUT), CubeInput::Code),
+        "aces2065-1" => ("aces2065-1", "linear AP0 → AP1 · ACES gamut compression · ACEScct", Curve::Linear, 1.0, to_ap1(&AP0), CubeInput::Acescct),
         "acescg" => ("acescg", "linear AP1 · ACEScct", Curve::Linear, 1.0, None, CubeInput::Acescct),
         "linear-rec709" => ("linear-rec709", "linear Rec.709 → AP1 (Bradford) · ACEScct", Curve::Linear, 1.0, to_ap1(&REC709), CubeInput::Acescct),
         _ => return None,
     };
-    let cube_fits = cube_input == CubeInput::Code && matrix.is_none_or(|m: M3| m.iter().flatten().all(|x| *x >= 0.0));
-    Some(Journey { profile, label, curve, scale, matrix, cube_input, cube_fits })
+    // a gamut wider than AP1 has negative terms in its matrix into it
+    let wide = matrix.is_some_and(|m: M3| m.iter().flatten().any(|x| *x < 0.0));
+    let cube_fits = cube_input == CubeInput::Code && !wide;
+    Some(Journey { profile, label, curve, scale, matrix, cube_input, compress: wide, cube_fits })
 }
 
 impl Journey {
@@ -118,14 +129,15 @@ impl Journey {
             Some(m) => mul(m, lin),
             None => lin,
         };
+        let ap1 = if self.compress { gamut_compress(ap1) } else { ap1 };
         ap1.map(to_cct)
     }
 
-    /// The arguments of `METAL_KERNEL` for this journey, after the image: the curve's number, the scale, and the matrix
-    /// into AP1 row by row (three CIVectors; the identity when the source is AP1 already).
-    pub fn kernel_args(&self) -> (f32, f32, [[f32; 3]; 3]) {
+    /// The arguments of `METAL_KERNEL` for this journey, after the image: the curve's number, the scale, the matrix
+    /// into AP1 row by row (three CIVectors; the identity when the source is AP1 already), and 1 when it compresses.
+    pub fn kernel_args(&self) -> KernelArgs {
         let m = self.matrix.unwrap_or([[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]]);
-        (self.curve as u8 as f32, self.scale as f32, m.map(|r| r.map(|x| x as f32)))
+        (self.curve as u8 as f32, self.scale as f32, m.map(|r| r.map(|x| x as f32)), if self.compress { 1.0 } else { 0.0 })
     }
 
     /// The cube (RGB triples, red fastest, as a .cube file lists them) of this journey, `size` points a side.
@@ -149,6 +161,42 @@ impl Journey {
     }
 }
 
+/// `METAL_KERNEL`'s arguments after the image: the curve's number, the scale, the matrix rows, the compression (0 or 1).
+pub type KernelArgs = (f32, f32, [[f32; 3]; 3], f32);
+
+// ── the gamut compression ─────────────────────────────────────────────────────────────────────────────────────────
+
+/// How far beyond AP1 each distance may reach and still land inside it (cyan, magenta, yellow: the red, green and blue
+/// channels' distance from the achromatic axis), where the compression starts (the ColorChecker's colours lie inside),
+/// and how hard it bends: ACES 1.3's Reference Gamut Compression, kept in ACES 2.0's look set.
+const RGC_LIMIT: [f64; 3] = [1.147, 1.264, 1.312];
+const RGC_THRESHOLD: [f64; 3] = [0.815, 0.803, 0.880];
+const RGC_POWER: f64 = 1.2;
+
+/// The ACES Reference Gamut Compression (ACES 1.3 `LMT.Academy.ReferenceGamutCompress`, OpenColorIO's "ACES-LMT -
+/// ACES 1.3 Reference Gamut Compression"), on linear AP1: each channel's distance from the largest one, relative to
+/// it, rolled off past its threshold so that its limit lands on the AP1 boundary. A colour inside every threshold —
+/// skin, sky, foliage, the whole ColorChecker — is untouched; a pixel whose largest channel is 0 becomes black, as in
+/// the CTL.
+pub fn gamut_compress(c: [f64; 3]) -> [f64; 3] {
+    let ach = c[0].max(c[1]).max(c[2]);
+    if ach == 0.0 {
+        return [0.0; 3];
+    }
+    let a = ach.abs();
+    std::array::from_fn(|i| {
+        let d = (ach - c[i]) / a;
+        let (lim, thr) = (RGC_LIMIT[i], RGC_THRESHOLD[i]);
+        if d < thr {
+            // inside the threshold: the channel as it is (the CTL recomposes it, the same number but for rounding)
+            return c[i];
+        }
+        let scl = (lim - thr) / (((1.0 - thr) / (lim - thr)).powf(-RGC_POWER) - 1.0).powf(1.0 / RGC_POWER);
+        let nd = (d - thr) / scl;
+        ach - (thr + scl * nd / (1.0 + nd.powf(RGC_POWER)).powf(1.0 / RGC_POWER)) * a
+    })
+}
+
 /// One pixel to ACEScct; None when the profile has no journey.
 pub fn to_acescct(profile: &str, rgb: [f32; 3]) -> Option<[f32; 3]> {
     Some(journey(profile)?.apply(rgb.map(f64::from)).map(|x| x as f32))
@@ -165,7 +213,7 @@ pub fn bake_cube(profile: &str, size: usize) -> Option<Vec<f32>> {
 /// The whole journey as one Core Image colour kernel in Metal, exact where a cube is not: compile it once with
 /// `CIKernel.kernels(withMetalString:)` (macOS 12+, a Metal-backed CIContext), take the kernel named "acescct" (a
 /// CIColorKernel), and apply it with the image and `Journey::kernel_args()` — the curve and the scale as NSNumbers,
-/// the matrix rows as three CIVector(x:y:z:). Same maths as `Journey::apply`, in f32 on the GPU. Like the cube, it
+/// the matrix rows as three CIVector(x:y:z:), the compression as an NSNumber. Same maths as `Journey::apply`, in f32 on the GPU. Like the cube, it
 /// wants the code values as they are: a CIContext with no working colour space (NSNull) and a float working format.
 pub const METAL_KERNEL: &str = r#"#include <CoreImage/CoreImage.h>
 using namespace metal;
@@ -213,11 +261,30 @@ static float to_cct(float x) {
     return x <= 0.0078125f ? 10.5402377416545f * x + 0.0729055341958355f : (precise::log2(x) + 9.72f) / 17.52f;
 }
 
-extern "C" float4 acescct(coreimage::sample_t s, float curve, float scale, float3 m0, float3 m1, float3 m2) [[stitchable]] {
+// the ACES Reference Gamut Compression, as cst.rs `gamut_compress`
+static float rgc(float d, float lim, float thr) {
+    const float pwr = 1.2f;
+    if (d < thr) return d;
+    float scl = (lim - thr) / precise::pow(precise::pow((1.0f - thr) / (lim - thr), -pwr) - 1.0f, 1.0f / pwr);
+    float nd = (d - thr) / scl;
+    return thr + scl * nd / precise::pow(1.0f + precise::pow(nd, pwr), 1.0f / pwr);
+}
+
+static float3 gamut_compress(float3 c) {
+    float ach = max(c.r, max(c.g, c.b));
+    if (ach == 0.0f) return float3(0.0f);
+    float a = fabs(ach);
+    float3 d = (ach - c) / a;
+    float3 k = float3(rgc(d.x, 1.147f, 0.815f), rgc(d.y, 1.264f, 0.803f), rgc(d.z, 1.312f, 0.880f));
+    return select(ach - k * a, c, d < float3(0.815f, 0.803f, 0.880f));
+}
+
+extern "C" float4 acescct(coreimage::sample_t s, float curve, float scale, float3 m0, float3 m1, float3 m2, float compress) [[stitchable]] {
     int k = int(curve + 0.5f);
     if (k == 0) return s;
     float3 lin = float3(decode(k, s.r), decode(k, s.g), decode(k, s.b)) * scale;
     float3 ap1 = float3(dot(m0, lin), dot(m1, lin), dot(m2, lin));
+    if (compress > 0.5f) ap1 = gamut_compress(ap1);
     return float4(to_cct(ap1.r), to_cct(ap1.g), to_cct(ap1.b), s.a);
 }
 "#;

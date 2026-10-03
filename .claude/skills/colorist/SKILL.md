@@ -26,7 +26,7 @@ post house: balance first, the look on top, never the other way round.
 8. **The maths lives in Rust and Metal only.** The studio samples cubes the Mac app bakes; nothing is baked into a
    source.
 9. **The journey before the balance.** Every iPhone 17 Pro shot must read `apple-log-2` from its log atom in the
-   studio: the Apple Log curve, Apple Wide Gamut into AP1 (Bradford), ACEScct. A shot that reads `apple-log` or
+   studio: the Apple Log curve, Apple Wide Gamut into AP1 (Bradford), the ACES gamut compression, ACEScct. A shot that reads `apple-log` or
    `unknown` is fixed at its tag (or the phone's setting), never with the balance: Apple Log 2 taken as Apple Log turns
    skin about 7° towards red and takes up to a quarter of the colour out (`base-correction.md`).
 10. **Exposure and white balance in linear light; contrast and the look in log.** Every `balance` that moves exposure

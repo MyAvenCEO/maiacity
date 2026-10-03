@@ -34,6 +34,6 @@ pub mod timeline;
 pub mod tools;
 
 pub use output::{Lut3d, Output};
-pub use render::{Delivery, Library, Media, Options, Plate, Render, api_accepts, graded_still, grading_still, grading_still_and_preview, hero_frame, measure, measure_sound, render, stats};
+pub use render::{Delivery, Library, Media, Options, Plate, Render, api_accepts, graded_still, grading_still, grading_still_and_preview, hero_frame, journey_hash, measure, measure_sound, render, stats};
 pub use sound::{PLATFORMS, Target};
 pub use timeline::{Clip, Shape, Timeline};

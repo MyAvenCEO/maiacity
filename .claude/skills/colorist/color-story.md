@@ -82,7 +82,8 @@ this: `dip`/`cold` for the low, `bright`/`warm` for the high (`game/film/color.j
 We intercut rather than composite, so match scene to scene, in this order:
 
 0. **One gamut.** The renders are born in linear Rec.709, inside AP1. The iPhone's Apple Wide Gamut reaches outside it
-   in saturated blue and violet; until the journey compresses gamut, keep such colours out of the shots you match.
+   in saturated blue and violet; the journey's gamut compression brings those colours inside AP1, so both sources meet
+   in one gamut. Still keep such colours out of the shots you match.
 1. **The grey anchor.** A metered 18 % grey is 0.18 linear (≈ 0.414 ACEScct) in both; through the ACES 2.0 100-nit
    output it lands at 10 nits. Check both on one waveform first.
 2. **Plausible materials.** Non-metal albedo between about 0.02 (charcoal, fresh asphalt) and 0.81 (fresh snow); real

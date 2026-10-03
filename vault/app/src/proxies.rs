@@ -16,7 +16,7 @@ use std::{
 };
 
 use serde::Serialize;
-use serde_json::json;
+use serde_json::{Value, json};
 use tauri::{AppHandle, Emitter};
 
 use crate::jobs::{self, Kind};
@@ -28,6 +28,22 @@ use vault_media::proxy::WORKING;
 /// Is there a colour journey from this source into ACEScct? (vault_media::cst — verified against OCIO)
 pub fn journey(profile: &str) -> bool {
     vault_media::cst::journey(profile).is_some()
+}
+
+/// The journey a file made through it records (a proxy, a grading still): its hash, as the render report names it.
+fn journey_record(profile: &str) -> Value {
+    if journey(profile) { json!(vault_render::journey_hash(profile)) } else { Value::Null }
+}
+
+/// Whether a file made through its original's journey (a proxy, a grading still) was made through the one its profile
+/// takes now: by the journey it records, else (made before files recorded it) whether that journey has changed since
+/// — only the gamut compression has (Apple Wide Gamut, AP0; 2026-10-03).
+fn through_today(made: &Meta, profile: &str) -> bool {
+    let Some(j) = vault_media::cst::journey(profile) else { return true };
+    match made.meta.get("journey").and_then(|v| v.as_str()) {
+        Some(h) => h == vault_render::journey_hash(profile),
+        None => !j.compress,
+    }
 }
 
 /// The colour detection's version: a file told "unknown" by an older one is read again (2: the sample description's
@@ -308,6 +324,8 @@ pub async fn sweep(handle: AppHandle, vault: Arc<Vault>) {
                     let state = m.meta.get("proxy").and_then(|p| p.as_str()).unwrap_or("");
                     let made = state.len() == 64 && state.bytes().all(|b| b.is_ascii_hexdigit()) && ours(&by_hash, state);
                     let profile = m.meta.pointer("/color/profile").and_then(|p| p.as_str()).unwrap_or("");
+                    // the journey it takes: the profile set by hand, else the one told
+                    let taken = m.meta.pointer("/color/override").and_then(|p| p.as_str()).filter(|p| !p.is_empty()).unwrap_or(profile);
                     let detector = m.meta.pointer("/color/detector").and_then(|d| d.as_u64()).unwrap_or(0);
                     let tries = m.meta.get("proxy_tries").and_then(|t| t.as_u64()).unwrap_or(0);
                     // never tried, waiting for a journey that exists now, its colour unknown to an older detector, or
@@ -318,9 +336,13 @@ pub async fn sweep(handle: AppHandle, vault: Arc<Vault>) {
                         || (state.starts_with("waiting") && (journey(profile) || (profile == "unknown" && detector < DETECTOR)))
                         || (state.starts_with("failed") && tries < TRIES);
                     let queued = jobs::active(Kind::Proxy, &m.hash);
-                    if !made && due && !queued {
+                    // made through a journey that has changed since (the gamut compression): made again, its grading
+                    // still with it
+                    let outdated = made && by_hash.get(state).is_some_and(|p| !through_today(p, taken));
+                    if ((!made && due) || outdated) && !queued {
                         tauri::async_runtime::spawn(auto_proxy(handle.clone(), vault.clone(), m.hash.clone(), PathBuf::new()));
                     }
+                    let made = made && !outdated;
                     // a video with its proxy but no grading still yet (made before there were any): its still
                     // (and its preview, made with it)
                     let still = m.meta.get("grade_still").and_then(|p| p.as_str()).is_some_and(|s| s.len() == 64) && m.meta.get("preview").and_then(|p| p.as_str()).is_some_and(|s| s.len() == 64);
@@ -332,8 +354,8 @@ pub async fn sweep(handle: AppHandle, vault: Arc<Vault>) {
                         // the analysis marked its best frame: the grading still and the preview made of that one
                         if let Some(t) = marked_at(m, &by_hash) {
                             tauri::async_runtime::spawn(backfill_still_at(vault.clone(), m.hash.clone(), Some(t)));
-                        } else if let Some(at) = older_still(m, &by_hash) {
-                            // made by an older still maker: again, of the same moment
+                        } else if let Some(at) = older_still(m, &by_hash, taken) {
+                            // made by an older still maker, or through an older journey: again, of the same moment
                             tauri::async_runtime::spawn(backfill_still_at(vault.clone(), m.hash.clone(), at));
                         }
                     }
@@ -475,7 +497,7 @@ async fn make(vault: &Vault, hex: &str, name: &str, source: PathBuf) -> Result<(
     let batch = Batch {
         session: format!("proxy of {hex}"),
         tags: vec!["proxy".into()],
-        meta: json!({ "role": "proxy", "proxy_of": hex, "color": { "profile": WORKING, "from": "our own tag", "journey_from": profile } }),
+        meta: json!({ "role": "proxy", "proxy_of": hex, "color": { "profile": WORKING, "from": "our own tag", "journey_from": profile }, "journey": journey_record(&profile) }),
         story: Some(original.story.clone()).filter(|s| !s.is_empty()),
         class: Some("proxy".into()),
         ..Default::default()
@@ -483,10 +505,20 @@ async fn make(vault: &Vault, hex: &str, name: &str, source: PathBuf) -> Result<(
     let made = vault.ingest_file(&named, &batch).await.map_err(|e| format!("{e:#}"))?;
     std::fs::remove_file(&named).ok();
     vault.catalog.describe(hash, &json!({ "meta": { "proxy": made.hash } })).await.map_err(|e| format!("{e:#}"))?;
-    // and while the original is at hand: its grading still
+    // one proxy per file: one made before it (through an older journey) goes, as an older grading still does
+    for m in vault.catalog.list().await.map_err(|e| format!("{e:#}"))? {
+        if m.meta.get("proxy_of").and_then(|v| v.as_str()) == Some(hex) && m.hash != made.hash {
+            if let Ok(h) = m.hash.parse::<iroh_blobs::Hash>() {
+                vault.catalog.delete_file(h, "replaced by the file's new proxy").await.ok();
+            }
+        }
+    }
+    // and while the original is at hand: its grading still, at the moment picked for it (a person's, else the
+    // analysis' hero frame), else its middle
     if !still && !seq {
         at(hex, "grading still", 1.0);
-        if let Err(e) = grading_still(vault, hex, name, &path, &profile).await {
+        let picked = original.meta.get("still_at").and_then(|t| t.as_f64()).or_else(|| original.meta.pointer("/hero/t").and_then(|t| t.as_f64()));
+        if let Err(e) = grading_still_at(vault, hex, name, &path, &profile, picked).await {
             tracing::warn!("grading still of {hex}: {e}");
         }
     }
@@ -496,14 +528,10 @@ async fn make(vault: &Vault, hex: &str, name: &str, source: PathBuf) -> Result<(
 /// How wide a grading still is: 4K UHD.
 const STILL_WIDTH: u32 = 3840;
 
-/// A video original's grading still: its middle frame, through its journey (CST) into ACEScct, 3840 wide, a 16-bit PNG
-/// of ACEScct code values (vault_render `grading_still`) — beside its proxy (class proxy, the same story), named on
-/// the original as `meta.grade_still`. The balance is measured and judged on it at full quality.
-async fn grading_still(vault: &Vault, hex: &str, name: &str, path: &vault_media::Source, profile: &str) -> Result<(), String> {
-    grading_still_at(vault, hex, name, path, profile, None).await
-}
-
-/// The file's grading still and preview at `at` (the frame the analysis marked as its best), else its middle frame.
+/// A video original's grading still and preview, at `at` (the frame picked for it), else its middle: through its
+/// journey (CST) into ACEScct, 3840 wide, a 16-bit PNG of ACEScct code values (vault_render `grading_still`) — beside
+/// its proxy (class proxy, the same story), named on the original as `meta.grade_still`. The balance is measured and
+/// judged on it at full quality.
 async fn grading_still_at(vault: &Vault, hex: &str, name: &str, path: &vault_media::Source, profile: &str, at: Option<f64>) -> Result<(), String> {
     let hash: iroh_blobs::Hash = hex.parse().map_err(|e| format!("{e}"))?;
     let original = vault.catalog.meta(hash).await.map_err(|e| format!("{e:#}"))?.ok_or("no such file")?;
@@ -522,7 +550,7 @@ async fn grading_still_at(vault: &Vault, hex: &str, name: &str, path: &vault_med
         session: format!("grading still of {hex}"),
         tags: vec!["grade-still".into()],
         title: Some(format!("{stem} · grading still")),
-        meta: json!({ "role": "grade-still", "grade_still_of": hex, "t": (at * 1000.0).round() / 1000.0, "width": w, "height": h, "marked": marked, "still": STILL,
+        meta: json!({ "role": "grade-still", "grade_still_of": hex, "t": (at * 1000.0).round() / 1000.0, "width": w, "height": h, "marked": marked, "still": STILL, "journey": journey_record(profile),
             "color": { "profile": WORKING, "from": "our own tag", "journey_from": profile }, "encoding": "16-bit PNG, ACEScct code values" }),
         story: Some(original.story.clone()).filter(|s| !s.is_empty()),
         class: Some("proxy".into()),
@@ -584,13 +612,13 @@ fn marked_at(m: &Meta, all: &HashMap<String, &Meta>) -> Option<f64> {
     still_t.is_none_or(|s| (s - t).abs() > 0.05).then_some(t)
 }
 
-/// A file's grading still made by an older still maker (`STILL`): the moment to make it again at (None: the middle, as
-/// it was).
-fn older_still(m: &Meta, all: &HashMap<String, &Meta>) -> Option<Option<f64>> {
+/// A file's grading still made by an older still maker (`STILL`) or through an older journey (`through_today`): the
+/// moment to make it again at (None: the middle, as it was).
+fn older_still(m: &Meta, all: &HashMap<String, &Meta>, profile: &str) -> Option<Option<f64>> {
     let still = all.get(m.meta.get("grade_still")?.as_str()?)?;
     let v = still.meta.get("still").and_then(|v| v.as_u64()).unwrap_or(1);
     let marked = still.meta.get("marked").and_then(|v| v.as_bool()).unwrap_or(false);
-    (v < STILL).then(|| if marked { still.meta.get("t").and_then(|t| t.as_f64()) } else { None })
+    (v < STILL || !through_today(still, profile)).then(|| if marked { still.meta.get("t").and_then(|t| t.as_f64()) } else { None })
 }
 
 async fn backfill_still_at(vault: Arc<Vault>, hex: String, at: Option<f64>) {

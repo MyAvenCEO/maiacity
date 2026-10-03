@@ -437,15 +437,15 @@ impl Gpu {
     }
 
     /// Into ACEScct by a journey (`cst::Journey::kernel_args`).
-    pub fn journey(&self, img: &CIImage, args: (f32, f32, [[f32; 3]; 3])) -> Result<Image> {
-        let (curve, scale, m) = args;
+    pub fn journey(&self, img: &CIImage, args: vault_media::cst::KernelArgs) -> Result<Image> {
+        let (curve, scale, m, compress) = args;
         if curve == 0.0 {
             return Ok(img.retain());
         }
         let row = |r: [f32; 3]| vec3(r.map(f64::from));
-        let (c, s) = (NSNumber::new_f32(curve), NSNumber::new_f32(scale));
+        let (c, s, g) = (NSNumber::new_f32(curve), NSNumber::new_f32(scale), NSNumber::new_f32(compress));
         let (r0, r1, r2) = (row(m[0]), row(m[1]), row(m[2]));
-        let args: [&AnyObject; 6] = [img, &c, &s, &r0, &r1, &r2];
+        let args: [&AnyObject; 7] = [img, &c, &s, &r0, &r1, &r2, &g];
         // SAFETY: the kernel's arguments as its signature takes them
         unsafe { self.journey.applyWithExtent_arguments(img.ext(), &NSArray::from_slice(&args)) }.context("the journey gave no picture")
     }

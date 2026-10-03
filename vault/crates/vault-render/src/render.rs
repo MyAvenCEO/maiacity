@@ -381,11 +381,16 @@ fn plan(t: &Timeline, lib: &dyn Library) -> Result<Plan> {
     Ok(Plan { total, pictures, look: t.grade.as_ref().and_then(|g| serde_json::to_value(g).ok()), sources, card, hooks, thumbnails, phrases, audio, conformed, warnings })
 }
 
-/// The journey's config, hashed as the report names it.
-fn journey_hash(profile: &str) -> String {
+/// The journey's config, hashed as the report names it (and as the proxies and grading stills made through it record
+/// it): a journey that compresses its gamut says so, the others hash as they always did.
+pub fn journey_hash(profile: &str) -> String {
     let j = vault_media::cst::journey(profile).unwrap();
-    let (curve, scale, m) = j.kernel_args();
-    hash_of(&json!({ "kind": "native-journey", "profile": profile, "label": j.label, "curve": curve, "scale": scale, "matrix": m, "to": "acescct" }))
+    let (curve, scale, m, compress) = j.kernel_args();
+    let mut config = json!({ "kind": "native-journey", "profile": profile, "label": j.label, "curve": curve, "scale": scale, "matrix": m, "to": "acescct" });
+    if compress > 0.0 {
+        config["gamut"] = json!("ACES 1.3 Reference Gamut Compression");
+    }
+    hash_of(&config)
 }
 
 fn idt_name(profile: &str) -> String {
@@ -531,10 +536,10 @@ pub fn render(
 /// What the picture of one piece is read from.
 enum Reading {
     Gap,
-    Video { reader: VideoReader, offset: f64, args: (f32, f32, [[f32; 3]; 3]) },
+    Video { reader: VideoReader, offset: f64, args: vault_media::cst::KernelArgs },
     Still { image: Image },
     /// an EXR sequence: the frame on screen, kept while it stays (a 24 fps sequence holds for 30 fps frames)
-    Sequence { seq: vault_media::still::Sequence, fps: f64, offset: f64, args: (f32, f32, [[f32; 3]; 3]), shown: Option<(usize, Image)> },
+    Sequence { seq: vault_media::still::Sequence, fps: f64, offset: f64, args: vault_media::cst::KernelArgs, shown: Option<(usize, Image)> },
 }
 
 #[allow(clippy::too_many_arguments)]
