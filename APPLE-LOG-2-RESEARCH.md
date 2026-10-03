@@ -458,6 +458,11 @@ queue a render while any V1 clip is unknown.
 
 #### F3 — No gamut compression for Apple Wide Gamut · High under coloured light, nothing otherwise
 
+**Status: fixed in #175 (2026-10-03).** `cst::gamut_compress`, within 3.2e-7 of OCIO's builtin, in the journeys of
+`apple-log-2` and `aces2065-1`. No per-file switch: our 16-bit stills and grade cubes cannot hold negative light, so for
+us it is not optional. The ach = 0 case below is wrong: OCIO and the CTL return black there. On Day 01's 13 stills it
+moves at most 0.008 % of pixels by more than a 10-bit code value (a deep yellow flower).
+
 **Evidence**
 - AWG→AP1 has negative terms (`cst.rs:106`).
 - A blue LED recorded as AWG (0.02, 0.05, 0.9) arrives as AP1 (−0.083, −0.095, 0.943), which is ACEScct
@@ -591,6 +596,8 @@ proxies in the browser is already noted in `look.md:181–182`.
 
 #### F8 — Grading stills clip below ACEScct 0 · Low; disappears with F3
 
+**Status: gone with F3 (#175) for Apple Wide Gamut and AP0 sources.**
+
 **Evidence:** `render.rs:1008–1026` writes an unsigned 16-bit PNG, so negative values clip. That is harmless for noise
 below black and only matters for colours outside AP1.
 
@@ -635,10 +642,10 @@ below black and only matters for colours outside AP1.
 | 3 | **Decode** Y′CbCr 10-bit with the file's BT.2020 matrix and video range into normalised code values (64 → 0, 940 → 1). Keep 4:2:2 for full-resolution frames. | **change** (F4) |
 | 4 | **Linearise** with the Apple Log inverse. | keep |
 | 5 | **Gamut:** AWG → AP1, Bradford from D65 to the ACES white. | keep |
-| 6 | **Gamut compress:** the ACES RGC in linear AP1, on by default for `apple-log-2`. | **add** (F3) |
+| 6 | **Gamut compress:** the ACES RGC in linear AP1, always on for `apple-log-2` (and `aces2065-1`). | **done** (F3, #175) |
 | 7 | **ACEScct.** Proxies, grading stills, the player and the render all start here. | keep |
 | 8 | **Noise reduction at the source,** before any grade, only on shots that need it (§7.5). | add later |
-| 9 | **Base correction:** exposure and white balance as linear gains, then contrast, highlights, lows and saturation in log. | **change** (F5) |
+| 9 | **Base correction:** exposure and white balance as linear gains, then contrast, highlights, lows and saturation in log. | **done** (F5, #168) |
 | 10 | **Clip trim → scene look → film look → finishing** (halation and bloom in linear, then grain and vignette). New tools in §7. | keep / extend |
 | 11 | **Output:** ACES 2.0 SDR 100 nits Rec.709, BT.1886 2.4, a 129³ tetrahedral cube; tag 1-1-1. Optional later: an HDR master through ACES 2.0 HDR 1000 nits (P3-D65 in Rec.2100 PQ). Apple Log 2 holds about 6 stops above grey, and iPhones play HDR. | keep |
 | 12 | **Verify:** OCIO 2.6.0 reference rows and the Y′CbCr matrix check (F6). | **add** |
