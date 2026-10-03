@@ -6,6 +6,7 @@
 <script lang="ts">
 	import { onDestroy, onMount } from 'svelte';
 	import { ACTORS, type Actor } from '$lib/actors';
+	import PickList from '$lib/app/PickList.svelte';
 	import type { Cast, Pose, V3 } from '$lib/actors/rig';
 
 	let canvasBox = $state<HTMLDivElement>();
@@ -148,21 +149,7 @@
 </svelte:head>
 
 <main class="actors">
-	<aside>
-		<h1>Actors</h1>
-		<p class="lede">Everyone and everything rigged to move: the stand-in a shot is blocked with, and the animals of the worlds.</p>
-		<ul>
-			{#each ACTORS as a (a.id)}
-				<li>
-					<button class:on={chosen.id === a.id} onclick={() => pick(a)}>
-						<b>{a.label}</b>
-						<span>{a.note}</span>
-						<small>in {a.from}</small>
-					</button>
-				</li>
-			{/each}
-		</ul>
-	</aside>
+	<PickList title="Actors" lede="Everyone and everything rigged to move: the stand-in a shot is blocked with, and the animals of the worlds." items={ACTORS} {chosen} where={(a) => a.from} onpick={pick} />
 	<section class="view">
 		<div class="canvas" bind:this={canvasBox}></div>
 		{#if cast}
@@ -213,70 +200,9 @@
 		position: fixed;
 		inset: 0;
 		display: grid;
-		grid-template-columns: minmax(15rem, 22rem) 1fr;
+		grid-template-columns: auto 1fr;
 		background: #f4f1eb;
 		color: #1f2a23;
-	}
-
-	/* the list scrolls clear of the nav pill at its foot */
-	aside {
-		overflow: auto;
-		padding: 1.4rem 1rem calc(2rem + var(--nav-room));
-		border-right: 1px solid rgb(0 0 0 / 0.08);
-	}
-
-	h1 {
-		margin: 0.6rem 0 0.2rem;
-		font-size: 1.5rem;
-	}
-
-	.lede {
-		margin: 0 0 1rem;
-		opacity: 0.7;
-		font-size: 0.9rem;
-	}
-
-	ul {
-		display: flex;
-		flex-direction: column;
-		gap: 0.3rem;
-		margin: 0;
-		padding: 0;
-		list-style: none;
-	}
-
-	li button {
-		display: flex;
-		flex-direction: column;
-		gap: 0.15rem;
-		width: 100%;
-		padding: 0.6rem 0.75rem;
-		border: 1px solid transparent;
-		border-radius: 10px;
-		background: transparent;
-		font: inherit;
-		text-align: left;
-		color: inherit;
-		cursor: pointer;
-	}
-
-	li button:hover {
-		background: rgb(0 0 0 / 0.04);
-	}
-
-	li button.on {
-		border-color: rgb(0 0 0 / 0.15);
-		background: #fff;
-	}
-
-	li span {
-		font-size: 0.8rem;
-		opacity: 0.75;
-	}
-
-	li small {
-		font-size: 0.72rem;
-		opacity: 0.5;
 	}
 
 	.view {
@@ -393,12 +319,6 @@
 		.actors {
 			grid-template-columns: 1fr;
 			grid-template-rows: auto 1fr;
-		}
-
-		aside {
-			max-height: 34vh;
-			border-right: 0;
-			border-bottom: 1px solid rgb(0 0 0 / 0.08);
 		}
 
 		.joints {
