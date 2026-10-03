@@ -1,6 +1,6 @@
 ---
 name: story-producer
-description: The maiaCITY producer — the meta skill over the film crew, for every story maiaCITY tells (journal posts, films, reels, social posts, title cards). It holds the four laws, the order of work and which crew skill to load — storyteller (structure, scenes, retention, the journal voice), hook-writer (hooks, titles, title cards), director (shots, staging, the shot list, directing yourself), cinematographer (composition, lenses, movement, exposure, the virtual camera, filming alone), gaffer (light, real and virtual), neewer-cb60 (the CB60 RGB light), production-designer (worlds, sets, 3D models, art direction), editor (cuts, transitions, pacing, the audit), colorist (base correction, looks) and sound-designer (voice, score, sound design, mix) — and the production pipeline (local first, the studio, the Mac app render, the media library, checklists). Use it whenever a story or a film is planned, made or finished end to end, or when it is unclear which crew skill a task needs.
+description: The maiaCITY producer — the meta skill over the film crew, for every story maiaCITY tells (journal posts, films, reels, social posts, title cards). It holds the four laws, the order of work and which crew skill to load — storyteller (structure, scenes, retention, the journal voice), hook-writer (hooks, titles, title cards), director (shots, staging, the shot list, directing yourself), cinematographer (composition, lenses, movement, exposure, the virtual camera, filming alone), gaffer (light, real and virtual), neewer-cb60 (the CB60 RGB light), production-designer (worlds, sets, 3D models, art direction), editor (cuts, transitions, pacing, the audit), colorist (base correction, looks), sound-designer (voice, score, sound design, mix) and delivery (every platform's rules, the render targets, Zernio) — and the production pipeline (local first, the studio, the Mac app render, the media library, checklists). Use it whenever a story or a film is planned, made or finished end to end, or when it is unclear which crew skill a task needs.
 ---
 
 # Story producer
@@ -41,6 +41,7 @@ be *based on* a true story, re-enacted, never made up), **full conviction** (a v
 | `colorist` | the grade | the base correction, then the look; colour across the arc; rendered shots beside camera footage |
 | `sound-designer` | the sound | voice takes, the score, beds and hits, silence, the mix |
 | `content-derivatives` | distribution | a finished day's posts per platform, from its base article |
+| `delivery` | the delivery | every platform's hard limits and best file per post type, our render targets, the Zernio request that publishes it |
 
 ## The order of work
 
@@ -59,8 +60,9 @@ Story before production, always.
    himself), the world shots as shot records.
 6. **Post** — like a real post house: `editor` cuts and locks the edit, `colorist` balances and then builds the look,
    `sound-designer` scores, designs and mixes.
-7. **Audit and render**: the editor's audit (`editor`, `audit.md`), then the Mac app renders (`pipeline.md`).
-8. **Derivatives** (`content-derivatives`).
+7. **Audit and render**: the editor's audit (`editor`, `audit.md`), then the Mac app renders (`pipeline.md`) — each
+   delivery to its platform's rules (`delivery`).
+8. **Derivatives** (`content-derivatives`), published through Zernio (`delivery`, `zernio.md`).
 
 ## The pipeline
 

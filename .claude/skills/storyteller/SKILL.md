@@ -1,6 +1,6 @@
 ---
 name: storyteller
-description: The writer of maiaCITY's films, journal posts and social posts — story structure and retention. The transformation (from → to) and the arching question; three acts and the masters' beat structures scaled to a 1–10 minute film; scene by scene, how a story moves forward (LifeOfRiza's rules, but/therefore, intention and obstacle, value turns, setups and payoffs, people introduced through action); tension and release cycles, curiosity and payoff, the retention playbook second by second; the journal voice and writing for the ear. Use it whenever a story is planned, written, restructured, scripted or checked for why viewers leave.
+description: The writer of maiaCITY's films, journal posts and social posts — story structure and retention. The episode format (half devlog, half a life based on a true story); the transformation (from → to) and the arching question; three acts and the masters' beat structures scaled to a 1–10 minute film; scene by scene, how a story moves forward (LifeOfRiza's rules, but/therefore, intention and obstacle, value turns, setups and payoffs, people introduced through action); tension and release cycles, curiosity and payoff, the retention playbook second by second; the journal voice and writing for the ear. Use it whenever a story is planned, written, restructured, scripted or checked for why viewers leave.
 ---
 
 # Storyteller
@@ -29,6 +29,7 @@ viewer stays to the last line. The hook itself is the `hook-writer`'s; the pictu
 
 | File | The skill | Use it for |
 |---|---|---|
+| `format.md` | the episode format | what every maiaCITY film is: half devlog (the city being built, seen working), half a life based on a true story (cinematic, voice-over and to camera); the episode's shape; the character — a leader setting out |
 | `arc.md` | the transformation and the arc | from → to, the arching question, the pain, hook → story → lessons, the pieces, the obstacles, a film's acts |
 | `structure.md` | three acts, scaled | the masters' structures (Field, Snyder, McKee, Harmon, Pixar) and where their beats fall in a 1-, 3-, 5- and 10-minute film |
 | `scenes.md` | scene by scene | how each scene moves the story: the next-button test, but/therefore, intention and obstacle, value turns, setups and payoffs, introducing people through action, the vlog that is based on a true story |
@@ -38,7 +39,8 @@ viewer stays to the last line. The hook itself is the `hook-writer`'s; the pictu
 
 ## The order of work
 
-1. The transformation and the arching question (`arc.md`).
+1. The format (`format.md`): which work this episode shows working, and which part of his life carries it. Then the
+   transformation and the arching question (`arc.md`).
 2. The structure: the acts and their beats in seconds for the film's length (`structure.md`).
 3. The scenes: one line each — what the audience learns in it, what it turns, what it sets up (`scenes.md`).
 4. The emotional journey and the intensity curve over those scenes: the feeling of every beat, tension against release, highs against lows, the peak late (`emotion.md`, `retention.md`); set on the timeline's Story track with `story_arc`.
