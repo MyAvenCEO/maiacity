@@ -6,8 +6,11 @@
 		     words clear of them with env(safe-area-inset-*)); without it iOS letterboxes the page in landscape -->
 		<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
 		<meta name="text-scale" content="scale" />
-		<!-- pinned to the home screen: its own window, full screen, the status bar see-through over the page -->
-		<link rel="manifest" href="%sveltekit.assets%/manifest.webmanifest" />
+		<!-- pinned to the home screen: its own window, full screen on every page (the manifest's scope is the whole site),
+		     the status bar see-through over the page. The link is from the root, never relative: the app moves from page
+		     to page in place, and a relative link would then point beside the page, where there is no manifest; iOS,
+		     pinning it from there, would fence the app into that one folder and open every other page with Safari's bars -->
+		<link rel="manifest" href="/manifest.webmanifest" />
 		<meta name="mobile-web-app-capable" content="yes" />
 		<meta name="apple-mobile-web-app-capable" content="yes" />
 		<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
