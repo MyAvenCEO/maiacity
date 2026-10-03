@@ -598,16 +598,21 @@ async fn files_for(vault: &std::sync::Arc<vault_core::Vault>, tl: &vault_render:
     let (mut files, mut profiles) = (HashMap::new(), HashMap::new());
     for c in tl.clips.iter().filter(|c| c.track == "V1" && !c.is_world()) {
         let Some(h) = &c.hash else { continue };
-        let proxy = (!originals).then(|| all.iter().find(|m| m.kind == "video" && m.meta.get("role").and_then(Value::as_str) == Some("proxy") && m.meta.get("proxy_of").and_then(Value::as_str) == Some(h.as_str()))).flatten();
+        let original = all.iter().find(|m| &m.hash == h);
+        let is_proxy = |m: &&vault_core::Meta| m.kind == "video" && m.meta.get("role").and_then(Value::as_str) == Some("proxy") && m.meta.get("proxy_of").and_then(Value::as_str) == Some(h.as_str());
+        // the proxy the original names (its current one: a proxy made again replaces it), else any proxy of it
+        let named = original.and_then(|o| o.meta.get("proxy")).and_then(Value::as_str).and_then(|p| all.iter().find(|m| m.hash == p)).filter(is_proxy);
+        let proxy = (!originals).then(|| named.or_else(|| all.iter().find(is_proxy))).flatten();
         match proxy {
             Some(p) => {
                 files.insert(c.id.clone(), p.hash.clone());
                 profiles.insert(c.id.clone(), "acescct".to_string());
             }
             None => {
-                let m = all.iter().find(|m| &m.hash == h);
+                // the profile set by hand, else the one told
+                let told = |k: &str| original.and_then(|m| m.meta.pointer(k)).and_then(Value::as_str).filter(|p| !p.is_empty());
                 files.insert(c.id.clone(), h.clone());
-                profiles.insert(c.id.clone(), m.and_then(|m| m.meta.pointer("/color/profile")).and_then(Value::as_str).unwrap_or("rec709").to_string());
+                profiles.insert(c.id.clone(), told("/color/override").or_else(|| told("/color/profile")).unwrap_or("rec709").to_string());
             }
         }
     }

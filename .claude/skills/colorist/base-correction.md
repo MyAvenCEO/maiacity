@@ -46,9 +46,10 @@ the camera got wrong from shot to shot, so the cut stops jumping.
    guide made for the first Apple Log does the same.
 3. **The numbers on a 4K still.** A grey card exposed right reads ACEScct 0.414 and about 38 % on the Rec.709 display
    (10 nits through ACES 2.0). Apple Log's black (code 0.150) is ACEScct 0.073 and display 0.
-4. **Saturated light** (LEDs, neon, a phone screen, the CB60 in HSI): Apple Wide Gamut records colours the working
-   space can't hold. The journey doesn't compress gamut yet, so they arrive clipped, flat and a little off-hue: never
-   neutralise or match on them.
+4. **Saturated light** (LEDs, neon, a phone screen, the CB60 in HSI): Apple Wide Gamut records colours beyond AP1.
+   The journey takes them inside with the ACES Reference Gamut Compression (since 2026-10-03): rolled off smoothly
+   instead of clipped, a little less saturated than the light was, their hue kept. Skin, sky, foliage and the whole
+   ColorChecker sit inside its thresholds and are untouched. Still never neutralise or match on them.
 5. **Colour edges:** frames are decoded 4:2:2, as the iPhone records ProRes: the colour at full height in the grading
    stills, the hero frames and the render. (Until 2026-10-03 they were 4:2:0; the app remade every older grading still
    by itself.)

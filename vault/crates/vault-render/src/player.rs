@@ -29,7 +29,7 @@ use crate::{
 pub struct PlayClip {
     pub clip: Clip,
     pub source: vault_media::Source,
-    pub journey: (f32, f32, [[f32; 3]; 3]),
+    pub journey: vault_media::cst::KernelArgs,
     pub steps: Vec<Step>,
     pub cubes: HashMap<String, Lut3d>,
 }

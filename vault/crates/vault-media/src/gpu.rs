@@ -19,7 +19,7 @@ use crate::cst;
 pub struct Grader {
     context: Retained<CIContext>,
     kernel: Retained<CIColorKernel>,
-    args: (f32, f32, [[f32; 3]; 3]),
+    args: cst::KernelArgs,
     label: &'static str,
 }
 
@@ -51,6 +51,19 @@ impl Grader {
         self.label
     }
 
+    /// An image (the source's code values) through the journey's kernel into ACEScct.
+    fn through(&self, image: &CIImage) -> Result<Retained<CIImage>> {
+        let (curve, scale, m, compress) = self.args;
+        // SAFETY: Core Image objects we own; the kernel's arguments as its signature takes them
+        unsafe {
+            let row = |r: [f32; 3]| CIVector::vectorWithX_Y_Z(r[0] as f64, r[1] as f64, r[2] as f64);
+            let (c, s, g) = (NSNumber::new_f32(curve), NSNumber::new_f32(scale), NSNumber::new_f32(compress));
+            let (r0, r1, r2) = (row(m[0]), row(m[1]), row(m[2]));
+            let args: [&AnyObject; 7] = [image, &c, &s, &r0, &r1, &r2, &g];
+            self.kernel.applyWithExtent_arguments(image.extent(), &NSArray::from_slice(&args)).context("the colour kernel gave no picture")
+        }
+    }
+
     /// One frame: the decoded source into ACEScct, scaled to `w`×`h`, rendered into `out`. Core Image reads the source's
     /// YCbCr as full-range RGB by its matrix and range tags — still the source's own curve and gamut, as the kernel wants
     /// — and writes `out` by its tags.
@@ -63,15 +76,7 @@ impl Grader {
             let unmanaged = NSDictionary::from_slices(&keys, &values);
             let image = CIImage::imageWithCVPixelBuffer_options(src, Some(&unmanaged));
             let extent = image.extent();
-            let (curve, scale, m) = self.args;
-            let row = |r: [f32; 3]| CIVector::vectorWithX_Y_Z(r[0] as f64, r[1] as f64, r[2] as f64);
-            let (c, s) = (NSNumber::new_f32(curve), NSNumber::new_f32(scale));
-            let (r0, r1, r2) = (row(m[0]), row(m[1]), row(m[2]));
-            let args: [&AnyObject; 6] = [&image, &c, &s, &r0, &r1, &r2];
-            let graded = self
-                .kernel
-                .applyWithExtent_arguments(extent, &NSArray::from_slice(&args))
-                .context("the colour kernel gave no picture")?;
+            let graded = self.through(&image)?;
             let k = w as f64 / extent.size.width;
             let scaled = if (k - 1.0).abs() < 1e-6 && (h as f64 - extent.size.height).abs() < 0.5 {
                 graded
@@ -90,12 +95,7 @@ impl Grader {
         // SAFETY: as above; `out` is sized for the bounds rendered into it.
         unsafe {
             let extent = image.extent();
-            let (curve, scale, m) = self.args;
-            let row = |r: [f32; 3]| CIVector::vectorWithX_Y_Z(r[0] as f64, r[1] as f64, r[2] as f64);
-            let (c, s) = (NSNumber::new_f32(curve), NSNumber::new_f32(scale));
-            let (r0, r1, r2) = (row(m[0]), row(m[1]), row(m[2]));
-            let args: [&AnyObject; 6] = [image, &c, &s, &r0, &r1, &r2];
-            let graded = self.kernel.applyWithExtent_arguments(extent, &NSArray::from_slice(&args)).context("the colour kernel gave no picture")?;
+            let graded = self.through(image)?;
             let k = w as f64 / extent.size.width;
             let scaled = if (k - 1.0).abs() < 1e-6 && (h as f64 - extent.size.height).abs() < 0.5 {
                 graded

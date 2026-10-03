@@ -78,9 +78,11 @@ one cool tint (Melara).
 
 ## Coloured light: LEDs, neon, the CB60 in HSI
 
-Apple Wide Gamut records blues, violets and cyans beyond the working space, and the journey doesn't compress them yet:
-they arrive clipped, flat and a little off-hue. Don't push saturation or hue curves into those colours; a `hue_sat`
-pull on that hue, or `hi_sat`, hides a flat patch better than a key. Judge them on a 4K still.
+Apple Wide Gamut records blues, violets and cyans beyond the working space. The journey's gamut compression (the ACES
+RGC) takes them inside AP1 with a soft roll-off, so they arrive with their hue and their gradation instead of a flat,
+clipped patch, and every tool can work on them. They are still the most saturated colours in the frame: push
+saturation or hue curves into them gently, pull `hue_sat` on that hue (or `hi_sat`) before reaching for a key, and
+judge them on a 4K still.
 
 ## Finishing: always a kiss
 

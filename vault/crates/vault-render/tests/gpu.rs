@@ -112,6 +112,33 @@ fn journey_on_the_gpu_is_cst() {
 }
 
 #[test]
+fn gamut_compression_on_the_gpu_is_cst() {
+    let gpu = Gpu::new().unwrap();
+    let j = vault_media::cst::journey("apple-log-2").unwrap();
+    let plain = vault_media::cst::Journey { compress: false, ..j.clone() };
+    // Apple Log codes of strong colours: one channel high, the others low — LEDs, neon, a screen
+    let mut px = Vec::new();
+    for hi in [0.55, 0.7, 0.85, 1.0] {
+        for lo in [0.0, 0.15, 0.3, 0.45] {
+            for k in 0..6 {
+                let mut p = [lo; 3];
+                p[k % 3] = hi;
+                if k >= 3 {
+                    p[(k + 1) % 3] = hi;
+                }
+                px.push(p);
+            }
+        }
+    }
+    let moved = px.iter().filter(|p| plain.apply(**p) != j.apply(**p)).count();
+    assert!(moved * 2 > px.len(), "only {moved} of {} reach past the thresholds", px.len());
+    let got = through(&gpu, &px, |g, i| g.journey(i, j.kernel_args()).unwrap());
+    let want: Vec<[f64; 3]> = px.iter().map(|p| j.apply(*p)).collect();
+    let d = max_diff(&got, &want);
+    assert!(d < 5e-5, "off by {d}");
+}
+
+#[test]
 fn frame_geometry_crops_where_the_reframing_says() {
     let gpu = Gpu::new().unwrap();
     // a 64×32 picture: left half red, right half blue; the top row green

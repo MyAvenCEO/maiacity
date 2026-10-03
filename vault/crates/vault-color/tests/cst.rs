@@ -26,18 +26,26 @@ fn diff(a: [f64; 3], b: [f64; 3]) -> f64 {
     (0..3).map(|i| (a[i] - b[i]).abs()).fold(0.0, f64::max)
 }
 
+/// The journey without its gamut compression: what OCIO's input transforms and colour-science compute.
+fn plain(p: &str) -> cst::Journey {
+    cst::Journey { compress: false, ..journey(p).unwrap() }
+}
+
 #[test]
 fn matches_ocio_and_colour_science() {
     let rows = reference();
     for p in PROFILES {
-        let j = journey(p).unwrap();
+        let j = plain(p);
         let (mut n, mut ocio, mut cs, mut single) = (0, 0f64, 0f64, 0f64);
         for (_, rgb, o, c) in rows.iter().filter(|r| r.0 == p) {
             let out = j.apply(*rgb);
             ocio = ocio.max(diff(out, *o));
             cs = cs.max(diff(out, *c));
-            let f = to_acescct(p, rgb.map(|x| x as f32)).unwrap().map(f64::from);
-            single = single.max(diff(f, *c));
+            // the f32 API takes the whole journey: where the compression has nothing to do, the same numbers
+            if !journey(p).unwrap().compress || cst::gamut_compress(rgb_to_ap1(&j, *rgb)) == rgb_to_ap1(&j, *rgb) {
+                let f = to_acescct(p, rgb.map(|x| x as f32)).unwrap().map(f64::from);
+                single = single.max(diff(f, *c));
+            }
             n += 1;
         }
         println!("{p:14} {n:4} points · max |Δ| ACEScct: OCIO {ocio:.1e} · colour-science {cs:.1e} · f32 API {single:.1e}");
@@ -53,7 +61,56 @@ fn no_journey_is_guessed() {
     for p in ["legacy", "unknown", "", "slog3"] {
         assert!(journey(p).is_none() && to_acescct(p, [0.5; 3]).is_none() && bake_cube(p, 5).is_none());
     }
-    assert_eq!(journey("apple-log-2").unwrap().label, "Apple Log 2 curve → linear · Apple Wide Gamut → AP1 (Bradford) · ACEScct");
+    assert_eq!(journey("apple-log-2").unwrap().label, "Apple Log 2 curve → linear · Apple Wide Gamut → AP1 (Bradford) · ACES gamut compression · ACEScct");
+    // the gamut compression where the source's gamut reaches beyond AP1, nowhere else
+    let compressed: Vec<&str> = PROFILES.into_iter().filter(|p| journey(p).unwrap().compress).collect();
+    assert_eq!(compressed, ["apple-log-2", "aces2065-1"]);
+}
+
+/// A pixel's linear AP1 on the way, before the gamut compression and the curve.
+fn rgb_to_ap1(j: &cst::Journey, rgb: [f64; 3]) -> [f64; 3] {
+    let lin = rgb.map(|v| cst::decode(j.curve, v) * j.scale);
+    match &j.matrix {
+        Some(m) => [0, 1, 2].map(|r| (0..3).map(|k| m[r][k] * lin[k]).sum()),
+        None => lin,
+    }
+}
+
+/// `gamut_compress` against OpenColorIO's own (tests/rgc_reference.txt: "ACES-LMT - ACES 1.3 Reference Gamut
+/// Compression", applied in ACES2065-1 between AP1 → AP0 and back, float32).
+#[test]
+fn gamut_compression_matches_ocio() {
+    let rows: Vec<([f64; 3], [f64; 3])> = include_str!("rgc_reference.txt")
+        .lines()
+        .filter(|l| !l.starts_with('#') && !l.trim().is_empty())
+        .map(|l| {
+            let v: Vec<f64> = l.split_whitespace().map(|x| x.parse().unwrap()).collect();
+            ([v[0], v[1], v[2]], [v[3], v[4], v[5]])
+        })
+        .collect();
+    let mut worst = 0f64;
+    for (input, want) in &rows {
+        let got = cst::gamut_compress(*input);
+        // relative to the pixel's own level, as float32 rounds
+        let scale = input.iter().fold(1f64, |m, x| m.max(x.abs()));
+        let d = diff(got, *want) / scale;
+        worst = worst.max(d);
+        assert!(d < 2e-6, "{input:?}: {got:?} vs OCIO {want:?}");
+    }
+    println!("{} points · max |Δ| / level vs OCIO {worst:.1e}", rows.len());
+    assert!(rows.len() > 300);
+    // what lies inside every threshold is untouched: grey, skin
+    for c in [[0.18, 0.18, 0.18], [0.45, 0.3, 0.22], [2.0, 1.5, 1.1]] {
+        assert_eq!(cst::gamut_compress(c), c);
+    }
+    // a blue LED as the iPhone records it (Apple Wide Gamut) comes out inside AP1
+    let led = rgb_to_ap1(&plain("apple-log-2"), [0.02, 0.05, 0.9].map(|lin: f64| {
+        // its code values: Apple Log of each linear channel
+        (0..=20000).map(|k| k as f64 / 20000.0).min_by(|a, b| (cst::decode(cst::Curve::AppleLog, *a) - lin).abs().total_cmp(&(cst::decode(cst::Curve::AppleLog, *b) - lin).abs())).unwrap()
+    }));
+    assert!(led[0] < 0.0 && led[1] < 0.0, "outside AP1 as it comes: {led:?}");
+    let inside = cst::gamut_compress(led);
+    assert!(inside.iter().all(|x| *x > 0.0) && (inside[2] - led[2]).abs() < 1e-12, "{inside:?}");
 }
 
 /// The matrices the JS pipeline already uses (color.js REC709_TO_AP1, transforms.js REC2020_TO_AP1, AP0_TO_AP1,
@@ -177,12 +234,15 @@ fn the_cube_stays_close_to_the_maths() {
         }
         println!("{p:14} all {:.1e} / {:.1e} · picture {:.1e} / {:.1e} ({count} points)", all[0], all[1], pic[0], pic[1]);
         // where a cube is said to fit, its own interpolation stays within about a 10-bit code value (CIColorCube adds
-        // its ~2e-3 on top); through a gamut wider than AP1 it is far off
+        // its ~2e-3 on top); through a gamut wider than AP1 it is off by more, even with the gamut compression
+        // smoothing the corners (without it: more than 0.05)
         let wide = j.matrix.is_some_and(|m| m.iter().flatten().any(|x| *x < 0.0));
         if j.cube_fits {
             assert!(pic[0] < 1.5e-3, "{p}: the cube is {} off in the picture", pic[0]);
         }
-        assert_eq!(wide, pic[0] > 0.05, "{p}: {} off", pic[0]);
+        if wide {
+            assert!(pic[0] > 1.5e-3, "{p}: {} off — would a cube fit now?", pic[0]);
+        }
         // the lattice points are the maths exactly
         let v = [16.0 / 64.0, 0.5, 0.75];
         let exact = match j.cube_input {
