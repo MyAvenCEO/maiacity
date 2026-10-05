@@ -30,6 +30,8 @@
 		<path d="M4.5 7.5h15v12h-15z" /><path d="M4.5 7.5 7 4.5h10l2.5 3" /><path d="M15.5 13.5h4" /><circle cx="15.5" cy="13.5" r="0.6" fill="currentColor" />
 	{:else if name === 'coops'}
 		<circle cx="12" cy="7" r="2.6" /><circle cx="6" cy="16" r="2.6" /><circle cx="18" cy="16" r="2.6" /><path d="M10.4 9 7.4 13.8M13.6 9l3 4.8M8.6 16h6.8" />
+	{:else if name === 'leaf'}
+		<path d="M5 19c0-8 5-13.5 14-14 .5 9-5 14-14 14Z" /><path d="M5 19 14 10" /><path d="M9.5 14.5h3.5M9.5 14.5V11" />
 	{:else if name === 'key'}
 		<circle cx="8" cy="14" r="4" /><path d="m11 11 8.5-8.5M16 6l2.5 2.5M13.5 8.5 16 11" />
 	{/if}

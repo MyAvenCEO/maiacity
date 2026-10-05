@@ -1,0 +1,533 @@
+<!--
+	Plants: every plant grown from code (src/lib/plants), from its seed to the plant in fruit, in seven stages to tab
+	through across the top (or ← → and 1 – 7 on the keyboard; Grow plays it on from where it is). The soil is cut away
+	so the roots grow as plainly as the shoot — or laid bare, or shut. Each plant grows from a seed id: the same id the
+	same plant every time, another id a sister plant. Drag to turn round it, scroll to come closer. An admin's.
+-->
+<script>
+	import { onDestroy, onMount } from 'svelte';
+	import { page } from '$app/state';
+	import { replaceState } from '$app/navigation';
+	import { PLANTS, SEEDS, freshSeed } from '$lib/plants';
+	import PickList from '$lib/app/PickList.svelte';
+
+	/** @typedef {import('$lib/plants').Plant} Plant */
+	/** @typedef {'cutaway' | 'bare' | 'solid'} Soil */
+
+	const asked = page.url.searchParams;
+	/** @type {HTMLDivElement | undefined} */
+	let canvasBox = $state();
+	/** @type {Plant} */
+	let chosen = $state(PLANTS.find((p) => p.id === asked.get('plant')) ?? PLANTS[0]);
+	/** where it has grown to: 0 … 6, the stages its whole numbers */
+	let g = $state(Math.min(6, Math.max(0, Number(asked.get('stage') ?? 1) - 1 || 0)));
+	let seed = $state(asked.get('seed') || SEEDS[0]);
+	/** @type {Soil} */
+	let soil = $state('cutaway');
+	let playing = $state(false);
+	/** @type {{ above: number, below: number, across: number } | null} */
+	let size = $state(null);
+
+	const stage = $derived(Math.round(g));
+	const day = $derived.by(() => {
+		const s = chosen.stages, k = Math.min(5, Math.floor(g));
+		return Math.round(s[k].day + (s[k + 1].day - s[k].day) * (g - k));
+	});
+
+	/** @type {((plant: Plant, g: number, seed: string) => void) | null} */
+	let show = null;
+	/** @type {((soil: Soil) => void) | null} */
+	let showSoil = null;
+	/** @type {(() => void) | null} */
+	let dispose = null;
+
+	onMount(async () => {
+		const THREE = await import('three');
+		const { OrbitControls } = await import('three/addons/controls/OrbitControls.js');
+		const box = /** @type {HTMLDivElement} */ (canvasBox);
+		const renderer = new THREE.WebGLRenderer({ antialias: true });
+		renderer.setPixelRatio(Math.min(2, window.devicePixelRatio));
+		renderer.shadowMap.enabled = true;
+		renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+		renderer.toneMapping = THREE.ACESFilmicToneMapping;
+		box.appendChild(renderer.domElement);
+		const scene = new THREE.Scene();
+		scene.background = new THREE.Color('#e9e6e0');
+		const camera = new THREE.PerspectiveCamera(38, 1, 0.001, 100);
+		camera.position.set(0.3, 0.2, 0.4);
+		const controls = new OrbitControls(camera, renderer.domElement);
+		controls.enableDamping = true;
+		scene.add(new THREE.HemisphereLight('#ffffff', '#b9b2a6', 1.25));
+		const key = new THREE.DirectionalLight('#fff4e6', 2.3);
+		key.castShadow = true;
+		key.shadow.mapSize.set(2048, 2048);
+		key.shadow.bias = -0.0004;
+		scene.add(key, key.target);
+
+		// the soil: a block of earth, its near faces cut away (we look in through them) and its far walls and floor
+		// solid, so the roots show against the earth behind them from whichever side we look
+		const grain = soilTexture(THREE);
+		const walls = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshStandardMaterial({ color: '#c09a74', map: grain, roughness: 1, side: THREE.BackSide }));
+		walls.receiveShadow = true;
+		const front = new THREE.Mesh(
+			new THREE.BoxGeometry(1, 1, 1),
+			new THREE.MeshStandardMaterial({ color: '#a07a56', map: grain, roughness: 1, transparent: true, opacity: 0.1, depthWrite: false })
+		);
+		front.receiveShadow = true;
+		const edges = new THREE.LineSegments(new THREE.EdgesGeometry(new THREE.BoxGeometry(1, 1, 1)), new THREE.LineBasicMaterial({ color: '#4a3424', transparent: true, opacity: 0.45 }));
+		const earth = new THREE.Group();
+		earth.add(walls, front, edges);
+		scene.add(earth);
+		showSoil = (/** @type {Soil} */ mode) => {
+			walls.visible = mode === 'cutaway';
+			front.visible = mode !== 'bare';
+			const m = /** @type {import('three').MeshStandardMaterial} */ (front.material);
+			m.opacity = mode === 'solid' ? 1 : 0.1;
+			m.transparent = mode !== 'solid';
+			m.depthWrite = mode === 'solid';
+			m.needsUpdate = true;
+		};
+		showSoil(soil);
+
+		/** @type {import('three').Group | null} */
+		let current = null;
+		/** where the camera is easing to: the plant's middle and how far back to stand */
+		const goal = { mid: new THREE.Vector3(), reach: 0.1 };
+		let easing = 0;
+		let first = true;
+
+		show = (plant, at, id) => {
+			if (current) {
+				scene.remove(current);
+				current.traverse((o) => /** @type {import('three').Mesh} */ (o).geometry?.dispose());
+			}
+			current = plant.grow(at, id || ' ');
+			scene.add(current);
+			// its bounds, the stake left out
+			const b = new THREE.Box3();
+			current.traverse((o) => {
+				if (/** @type {import('three').Mesh} */ (o).isMesh && !o.userData.prop) b.expandByObject(o);
+			});
+			const above = Math.max(0, b.max.y), below = Math.max(0, -b.min.y);
+			const half = Math.max(Math.abs(b.min.x), Math.abs(b.max.x), Math.abs(b.min.z), Math.abs(b.max.z));
+			size = { above, below, across: Math.max(b.max.x - b.min.x, b.max.z - b.min.z) };
+			// the soil block round the roots, with room
+			const big = Math.max(above, below, half);
+			const w = half * 1.12 + big * 0.12 + 0.002;
+			const d = Math.max(below * 1.1 + big * 0.08, w * 0.6) + 0.001;
+			earth.scale.set(w * 2, d, w * 2);
+			earth.position.y = -d / 2;
+			grain.repeat.set(Math.max(1, (w * 2) / 0.06), Math.max(1, d / 0.06));
+			// frame plant and soil together
+			const all = b.clone().union(new THREE.Box3(new THREE.Vector3(-w, -d, -w), new THREE.Vector3(w, 0, w)));
+			goal.mid.copy(all.getCenter(new THREE.Vector3()));
+			const s = all.getSize(new THREE.Vector3());
+			goal.reach = Math.max(s.x, s.y, s.z);
+			easing = 1;
+			if (first) {
+				first = false;
+				controls.target.copy(goal.mid);
+				camera.position.copy(goal.mid).add(new THREE.Vector3(0.9, 0.45, 1.25).normalize().multiplyScalar(goal.reach * 2.1));
+			}
+			key.position.copy(goal.mid).add(new THREE.Vector3(1.2, 2.2, 0.9).multiplyScalar(goal.reach));
+			key.target.position.copy(goal.mid);
+			const sh = key.shadow.camera;
+			sh.left = sh.bottom = -goal.reach;
+			sh.right = sh.top = goal.reach;
+			sh.near = goal.reach * 0.1;
+			sh.far = goal.reach * 6;
+			sh.updateProjectionMatrix();
+		};
+
+		const resize = () => {
+			const w = box.clientWidth, h = box.clientHeight;
+			renderer.setSize(w, h);
+			camera.aspect = w / Math.max(1, h);
+			camera.updateProjectionMatrix();
+		};
+		const ro = new ResizeObserver(resize);
+		ro.observe(box);
+		resize();
+		show(chosen, g, seed);
+
+		let frame = 0;
+		let last = performance.now();
+		let built = 0;
+		const tick = () => {
+			const now = performance.now();
+			const dt = Math.min(0.1, (now - last) / 1000);
+			last = now;
+			// growing on: a little further each frame, the plant regrown a dozen times a second
+			if (playing) {
+				g = Math.min(6, g + dt * 0.4);
+				if (now - built > 80 || g >= 6) {
+					built = now;
+					show?.(chosen, g, seed);
+				}
+				if (g >= 6) playing = false;
+			}
+			// the camera eases to the new framing, keeping the way it looks from
+			if (easing > 0.001) {
+				const k = 1 - Math.exp(-dt * 5);
+				const look = camera.position.clone().sub(controls.target);
+				const dist = look.length();
+				controls.target.lerp(goal.mid, k);
+				const want = goal.reach * 2.1;
+				look.setLength(dist + (want - dist) * k);
+				camera.position.copy(controls.target).add(look);
+				easing = Math.abs(want - dist) / want + controls.target.distanceTo(goal.mid) / want;
+			}
+			camera.near = Math.max(0.0005, goal.reach / 200);
+			camera.far = goal.reach * 80;
+			camera.updateProjectionMatrix();
+			controls.update();
+			renderer.render(scene, camera);
+			frame = requestAnimationFrame(tick);
+		};
+		tick();
+		dispose = () => {
+			cancelAnimationFrame(frame);
+			ro.disconnect();
+			controls.dispose();
+			if (current) current.traverse((o) => /** @type {import('three').Mesh} */ (o).geometry?.dispose());
+			renderer.dispose();
+			renderer.domElement.remove();
+		};
+	});
+	onDestroy(() => dispose?.());
+
+	/**
+	 * Earth: dark crumbs and pale grit on brown, drawn once.
+	 * @param {typeof import('three')} THREE
+	 */
+	function soilTexture(THREE) {
+		const c = document.createElement('canvas');
+		c.width = c.height = 256;
+		const x = /** @type {CanvasRenderingContext2D} */ (c.getContext('2d'));
+		x.fillStyle = '#9c7a58';
+		x.fillRect(0, 0, 256, 256);
+		let s = 7;
+		const rnd = () => ((s = (s * 16807) % 2147483647) / 2147483647);
+		for (let i = 0; i < 2600; i++) {
+			const r = rnd() * 2.6 + 0.4;
+			const tone = rnd();
+			x.fillStyle = tone < 0.55 ? `rgba(40,26,16,${0.25 + rnd() * 0.4})` : tone < 0.9 ? `rgba(120,92,62,${0.3 + rnd() * 0.4})` : `rgba(214,200,170,${0.35 + rnd() * 0.4})`;
+			x.beginPath();
+			x.arc(rnd() * 256, rnd() * 256, r, 0, Math.PI * 2);
+			x.fill();
+		}
+		const t = new THREE.CanvasTexture(c);
+		t.wrapS = t.wrapT = THREE.RepeatWrapping;
+		t.colorSpace = THREE.SRGBColorSpace;
+		return t;
+	}
+
+	/** keep where we are in the address, to share or come back to */
+	const remember = () => {
+		const url = new URL(page.url);
+		url.searchParams.set('plant', chosen.id);
+		url.searchParams.set('stage', String(stage + 1));
+		url.searchParams.set('seed', seed);
+		try {
+			replaceState(url, {});
+		} catch {
+			// before the router is up: nothing to keep yet
+		}
+	};
+	const regrow = () => {
+		show?.(chosen, g, seed);
+		remember();
+	};
+
+	const pick = (/** @type {Plant} */ p) => {
+		chosen = p;
+		playing = false;
+		regrow();
+	};
+	const goTo = (/** @type {number} */ k) => {
+		playing = false;
+		g = Math.min(6, Math.max(0, k));
+		regrow();
+	};
+	const grow = () => {
+		if (playing) {
+			playing = false;
+			g = Math.round(g);
+			return regrow();
+		}
+		if (g >= 6) g = 0;
+		playing = true;
+	};
+	const reseed = (/** @type {string} */ id) => {
+		seed = id;
+		regrow();
+	};
+	const toSoil = (/** @type {Soil} */ mode) => {
+		soil = mode;
+		showSoil?.(mode);
+	};
+
+	/** ← → step a stage, 1 – 7 jump to one, space grows — unless typing a seed id */
+	const onKey = (/** @type {KeyboardEvent} */ e) => {
+		const t = /** @type {HTMLElement | null} */ (e.target);
+		if (t?.tagName === 'INPUT' || e.metaKey || e.ctrlKey || e.altKey) return;
+		if (e.key === 'ArrowRight') goTo(Math.floor(g) + 1);
+		else if (e.key === 'ArrowLeft') goTo(Math.ceil(g) - 1);
+		else if (/^[1-7]$/.test(e.key)) goTo(Number(e.key) - 1);
+		else if (e.key === ' ' && t?.tagName !== 'BUTTON') grow();
+		else return;
+		e.preventDefault();
+	};
+
+	const measure = (/** @type {number} */ v) => (v < 0.01 ? `${(v * 1000).toFixed(1)} mm` : v < 1 ? `${(v * 100).toFixed(v < 0.1 ? 1 : 0)} cm` : `${v.toFixed(2)} m`);
+	const SOILS = /** @type {const} */ ([
+		['cutaway', 'Cut away'],
+		['bare', 'Roots bare'],
+		['solid', 'Soil shut']
+	]);
+</script>
+
+<svelte:head>
+	<title>Plants · maiaCITY</title>
+</svelte:head>
+
+<svelte:window onkeydown={onKey} />
+
+<main class="plants">
+	<PickList title="Plants" lede="Grown from code, seed to fruit, the roots and the shoot: tab through the seven stages, change the seed id for a sister plant." items={PLANTS} {chosen} where={(p) => p.from} onpick={pick} />
+	<section class="view">
+		<div class="canvas" bind:this={canvasBox}></div>
+
+		<div class="stages" role="tablist" aria-label="{chosen.label}: stages">
+			{#each chosen.stages as s, k (s.name)}
+				<button role="tab" class:on={!playing && stage === k} class:past={k < g} aria-selected={stage === k} onclick={() => goTo(k)}>
+					<small>{k + 1}</small>{s.name}
+				</button>
+			{/each}
+			<button class="grow" class:on={playing} onclick={grow} title="Grow on from here (space)">{playing ? 'Pause' : 'Grow ▸'}</button>
+		</div>
+
+		<div class="panel">
+			<label class="seed">
+				<span class="label">Seed id</span>
+				<input value={seed} spellcheck="false" autocomplete="off" onchange={(e) => reseed(e.currentTarget.value.trim() || SEEDS[0])} onkeydown={(e) => e.key === 'Enter' && e.currentTarget.blur()} />
+			</label>
+			<button class="dice" onclick={() => reseed(freshSeed())}>New seed</button>
+			<div class="chips">
+				{#each SEEDS as id (id)}
+					<button class:on={seed === id} onclick={() => reseed(id)}>{id}</button>
+				{/each}
+			</div>
+			<span class="label">Soil</span>
+			<div class="chips">
+				{#each SOILS as [mode, label] (mode)}
+					<button class:on={soil === mode} onclick={() => toSoil(mode)}>{label}</button>
+				{/each}
+			</div>
+		</div>
+
+		<div class="readout">
+			<b>{chosen.label} · {chosen.stages[stage].name} <em>{chosen.latin}</em></b>
+			<span class="what">{chosen.stages[stage].note}</span>
+			<span>
+				Day {day}
+				{#if size} · {measure(size.above)} above the soil · {measure(size.below)} below · {measure(size.across)} across{/if}
+			</span>
+			<small>← → or 1 – 7 for the stages · space grows · drag to turn round it · scroll to come closer</small>
+		</div>
+	</section>
+</main>
+
+<style>
+	.plants {
+		position: fixed;
+		inset: 0;
+		padding: env(safe-area-inset-top, 0px) env(safe-area-inset-right, 0px) env(safe-area-inset-bottom, 0px) env(safe-area-inset-left, 0px);
+		display: grid;
+		grid-template-columns: auto 1fr;
+		background: #f4f1eb;
+		color: #1f2a23;
+	}
+
+	.view {
+		position: relative;
+		min-width: 0;
+	}
+
+	.canvas {
+		position: absolute;
+		inset: 0;
+		cursor: grab;
+	}
+
+	.stages,
+	.panel,
+	.readout {
+		position: absolute;
+		padding: 0.6rem 0.8rem;
+		border-radius: 12px;
+		background: rgb(255 255 255 / 0.78);
+		-webkit-backdrop-filter: blur(10px);
+		backdrop-filter: blur(10px);
+		font-size: 0.85rem;
+	}
+
+	button {
+		font: inherit;
+		color: inherit;
+		cursor: pointer;
+	}
+
+	/* the seven stages, in a row across the top */
+	.stages {
+		top: 1rem;
+		left: 1rem;
+		right: 1rem;
+		display: flex;
+		align-items: center;
+		gap: 0.3rem;
+		overflow-x: auto;
+	}
+
+	.stages button {
+		display: flex;
+		align-items: baseline;
+		gap: 0.35rem;
+		padding: 0.35rem 0.75rem;
+		border: 1px solid rgb(0 0 0 / 0.12);
+		border-radius: 999px;
+		background: rgb(255 255 255 / 0.7);
+		white-space: nowrap;
+	}
+
+	.stages button small {
+		font-size: 0.7rem;
+		opacity: 0.5;
+	}
+
+	.stages button.past:not(.on) {
+		background: #e3ead9;
+	}
+
+	.stages button.on {
+		background: #1f2a23;
+		border-color: #1f2a23;
+		color: #fff;
+	}
+
+	.stages .grow {
+		margin-left: auto;
+		background: #3d6b2e;
+		border-color: #3d6b2e;
+		color: #fff;
+	}
+
+	.stages .grow.on {
+		background: #8a5a2b;
+		border-color: #8a5a2b;
+	}
+
+	.panel {
+		top: 4.6rem;
+		right: 1rem;
+		display: flex;
+		flex-direction: column;
+		gap: 0.45rem;
+		width: 14rem;
+	}
+
+	.label {
+		font-size: 0.72rem;
+		letter-spacing: 0.08em;
+		text-transform: uppercase;
+		opacity: 0.55;
+	}
+
+	.seed {
+		display: flex;
+		flex-direction: column;
+		gap: 0.25rem;
+	}
+
+	.seed input {
+		padding: 0.4rem 0.6rem;
+		border: 1px solid rgb(0 0 0 / 0.15);
+		border-radius: 8px;
+		background: #fff;
+		font: inherit;
+		font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+		color: inherit;
+	}
+
+	.dice {
+		padding: 0.35rem 0.6rem;
+		border: 1px solid #3d6b2e;
+		border-radius: 8px;
+		background: #3d6b2e;
+		color: #fff;
+	}
+
+	.chips {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.25rem;
+	}
+
+	.chips button {
+		padding: 0.2rem 0.55rem;
+		border: 1px solid rgb(0 0 0 / 0.12);
+		border-radius: 999px;
+		background: rgb(255 255 255 / 0.7);
+		font-size: 0.78rem;
+	}
+
+	.chips button.on {
+		background: #1f2a23;
+		border-color: #1f2a23;
+		color: #fff;
+	}
+
+	/* at the foot, above the app's nav pill (--nav-room, src/app.css) */
+	.readout {
+		left: 1rem;
+		bottom: calc(1rem + var(--nav-room) - env(safe-area-inset-bottom, 0px));
+		display: flex;
+		flex-direction: column;
+		gap: 0.15rem;
+		max-width: 30rem;
+	}
+
+	.readout em {
+		margin-left: 0.3rem;
+		font-weight: 400;
+		opacity: 0.55;
+	}
+
+	.readout small,
+	.readout .what {
+		opacity: 0.65;
+	}
+
+	@media (max-width: 720px) {
+		.plants {
+			grid-template-columns: 1fr;
+			grid-template-rows: auto 1fr;
+		}
+
+		.panel {
+			top: auto;
+			right: 1rem;
+			left: 1rem;
+			width: auto;
+			bottom: calc(8.5rem + var(--nav-room));
+		}
+
+		.panel .chips:first-of-type {
+			display: none;
+		}
+
+		.readout small {
+			display: none;
+		}
+	}
+</style>
