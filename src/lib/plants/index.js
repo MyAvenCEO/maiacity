@@ -2,7 +2,7 @@
  * THE PLANTS — every plant grown from code, as the plants viewer (/app/plants/) lists it: its name, what it is, its
  * ten stages from seed to ripe fruit (the last four the fruit's own: set, green, turning, ripe), and the function that
  * grows it at a stage from a seed id (./strawberry.js, ./cucumber.js, ./raspberry.js, ./tomato.js with its oxheart,
- * ./eggplant.js, ./coconut.js, ./grape.js, ./tropics.js (banana, pineapple), ./garden.js (pepper, pumpkin, blueberry), ./vegetables.js (radish, carrot, lettuce, garlic) and ./trees.js (mango,
+ * ./eggplant.js, ./coconut.js, ./grape.js, ./tropics.js (banana, red banana, pineapple, papaya, passion fruit), ./ground.js (haircap moss, wine cap, shiitake, oyster), ./fruittrees.js (cherry, pear, peach, apricot, plum, safou, soursop, sapodilla, avocado), ./garden.js (pepper, pumpkin, blueberry), ./vegetables.js (radish, carrot, lettuce, garlic) and ./trees.js (mango,
  * apple, orange, lemon, durian, jackfruit, through ./orchard.js and ./crown.js) — all of it made of ./grow.js,
  * ./sprout.js, ./leaves.js, ./bloom.js and ./tree.js). The same seed id grows the same plant every time; another id, a
  * sister plant — leaner or bushier, its leaves turned otherwise, its roots another way through the soil. A new plant is
@@ -17,7 +17,9 @@ import { STAGES as COCONUT, coconut } from './coconut.js';
 import { APPLE_STAGES, DURIAN_STAGES, JACKFRUIT_STAGES, LEMON_STAGES, MANGO_STAGES, ORANGE_STAGES, apple, durian, jackfruit, lemon, mango, orange } from './trees.js';
 import { CARROT_STAGES, GARLIC_STAGES, LETTUCE_STAGES, RADISH_STAGES, carrot, garlic, lettuce, radish } from './vegetables.js';
 import { STAGES as GRAPE, grape } from './grape.js';
-import { BANANA_STAGES, PINEAPPLE_STAGES, banana, pineapple } from './tropics.js';
+import { BANANA_STAGES, RED_BANANA_STAGES, PAPAYA_STAGES, PASSION_STAGES, PINEAPPLE_STAGES, banana, papaya, passionFruit, pineapple, redBanana } from './tropics.js';
+import { MOSS_STAGES, OYSTER_STAGES, SHIITAKE_STAGES, WINECAP_STAGES, moss, oyster, shiitake, wineCap } from './ground.js';
+import { APRICOT_STAGES, AVOCADO_STAGES, CHERRY_STAGES, PEACH_STAGES, PEAR_STAGES, PLUM_STAGES, SAFOU_STAGES, SAPODILLA_STAGES, SOURSOP_STAGES, apricot, avocado, cherry, peach, pear, plum, safou, sapodilla, soursop } from './fruittrees.js';
 import { BLUEBERRY_STAGES, PEPPER_STAGES, PUMPKIN_STAGES, blueberry, pepper, pumpkin } from './garden.js';
 
 /** @typedef {{ name: string, day: number, note: string }} Stage */
@@ -236,6 +238,150 @@ export const PLANTS = [
 		from: 'Shrub · 4 years',
 		stages: BLUEBERRY_STAGES,
 		grow: blueberry
+	},
+	{
+		id: 'red-banana',
+		label: 'Red banana',
+		latin: "Musa acuminata 'Red Dacca' · Rote Banane",
+		note: 'The banana’s red sister: its pseudostem, leaf stalks and midribs flushed red-purple, short thick fingers ripening maroon to a dusky purple-red.',
+		from: 'Herb · 14 months',
+		stages: RED_BANANA_STAGES,
+		grow: redBanana
+	},
+	{
+		id: 'papaya',
+		label: 'Papaya',
+		latin: "Carica papaya",
+		note: 'One unbranched scarred stem, a crown of huge palmate leaves on long hollow stalks; cream flowers and then a ring of papayas hugging the stem in the leaf axils, ripening from below.',
+		from: 'Herb-tree · 11 months',
+		stages: PAPAYA_STAGES,
+		grow: papaya
+	},
+	{
+		id: 'passion-fruit',
+		label: 'Passion fruit',
+		latin: "Passiflora edulis · Maracuja",
+		note: 'A vine up its stake and along a wire, shoots hanging like a curtain; three-lobed leaves, astonishing flowers with a crown of purple-and-white filaments, round fruit turning purple and wrinkling.',
+		from: 'Vine · 9 months',
+		stages: PASSION_STAGES,
+		grow: passionFruit
+	},
+	{
+		id: 'safou',
+		label: 'Safou',
+		latin: "Dacryodes edulis · Safou",
+		note: 'A dense evergreen dome; panicles of small flowers at the tips, then clusters of oblong fruit turning from pink to deep blue-violet.',
+		from: 'Tree · 6 years',
+		stages: SAFOU_STAGES,
+		grow: safou
+	},
+	{
+		id: 'soursop',
+		label: 'Soursop',
+		latin: "Annona muricata · Corossol",
+		note: 'A small glossy-leaved tree; thick yellow-green flowers straight out of its limbs, then big heart-shaped fruit covered in soft curved spines.',
+		from: 'Tree · 4 years',
+		stages: SOURSOP_STAGES,
+		grow: soursop
+	},
+	{
+		id: 'sapodilla',
+		label: 'Sapodilla',
+		latin: "Manilkara zapota · Sapotille",
+		note: 'A dense evergreen pyramid, glossy leaves crowded in whorls at the shoot tips; small whitish bells, then round-oval fruit with a sandy brown scurfy skin.',
+		from: 'Tree · 7 years',
+		stages: SAPODILLA_STAGES,
+		grow: sapodilla
+	},
+	{
+		id: 'cherry',
+		label: 'Cherry',
+		latin: "Prunus avium · Kirsche",
+		note: 'A tall steep crown; white blossom in clusters on the spurs, glossy cherries in pairs on long stalks, yellow to red to dark red.',
+		from: 'Tree · 5 years',
+		stages: CHERRY_STAGES,
+		grow: cherry
+	},
+	{
+		id: 'pear',
+		label: 'Pear',
+		latin: "Pyrus communis · Birne",
+		note: 'An upright narrow crown; white blossom with dark red anthers, pears narrow at the stalk and round below, yellowing with a russet cheek.',
+		from: 'Tree · 6 years',
+		stages: PEAR_STAGES,
+		grow: pear
+	},
+	{
+		id: 'peach',
+		label: 'Peach',
+		latin: "Prunus persica · Pfirsich",
+		note: 'An open vase on three or four limbs, long narrow leaves, pink blossom; fuzzy peaches with a suture, yellow blushing red.',
+		from: 'Tree · 4 years',
+		stages: PEACH_STAGES,
+		grow: peach
+	},
+	{
+		id: 'apricot',
+		label: 'Apricot',
+		latin: "Prunus armeniaca · Aprikose",
+		note: 'An open spreading crown, round pointed leaves; white blossom blushed pink, velvety orange apricots freckled red.',
+		from: 'Tree · 4 years',
+		stages: APRICOT_STAGES,
+		grow: apricot
+	},
+	{
+		id: 'plum',
+		label: 'Plum',
+		latin: "Prunus domestica · Zwetschge",
+		note: 'A rounded crown, knobbly with spurs; white blossom in pairs, oval plums with a suture turning blue-black under a pale bloom.',
+		from: 'Tree · 5 years',
+		stages: PLUM_STAGES,
+		grow: plum
+	},
+	{
+		id: 'avocado',
+		label: 'Avocado',
+		latin: "Persea americana 'Hass' · Avocado",
+		note: 'From a big stone that splits open: bronze-red flushes greening to big leathery leaves, a broad dome, panicles of tiny flowers, pear-shaped pebbly fruit on long stalks darkening to purple-black.',
+		from: 'Tree · 7 years',
+		stages: AVOCADO_STAGES,
+		grow: avocado
+	},
+	{
+		id: 'moss',
+		label: 'Haircap moss',
+		latin: "Polytrichum commune · Widertonmoos",
+		note: 'From a spore: a green thread over the soil, buds, star-like leafy shoots crowding into a cushion and a carpet; red-brown stalks with hairy-capped capsules that ripen and shed their spores.',
+		from: 'Ground · 2 years',
+		stages: MOSS_STAGES,
+		grow: moss
+	},
+	{
+		id: 'wine-cap',
+		label: 'Wine cap',
+		latin: "Stropharia rugosoannulata · Riesenträuschling",
+		note: 'The food forest’s mushroom: spawn in a bed of wood chips, white rhizomorphs binding the chips and running into the soil, then a troop of wine-red caps on white stems.',
+		from: 'Fungus · 4 months',
+		stages: WINECAP_STAGES,
+		grow: wineCap
+	},
+	{
+		id: 'shiitake',
+		label: 'Shiitake',
+		latin: "Lentinula edodes · Shiitake",
+		note: 'An oak log plugged with spawn and sealed with wax; months of colonising, a cold soak, then brown flecked caps breaking from the bark, again for years.',
+		from: 'Fungus · 1 year',
+		stages: SHIITAKE_STAGES,
+		grow: shiitake
+	},
+	{
+		id: 'oyster',
+		label: 'Oyster mushroom',
+		latin: "Pleurotus ostreatus · Austernpilz",
+		note: 'A standing beech log; after the first cold rains, clusters of grey-blue fans that spread into overlapping shelves, their white gills running down the stem.',
+		from: 'Fungus · 5 months',
+		stages: OYSTER_STAGES,
+		grow: oyster
 	}
 ];
 

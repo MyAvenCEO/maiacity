@@ -22,7 +22,7 @@ import { flushCrown, leaderCrown } from './crown.js';
  *   flush?: import('./crown.js').Flush, leader?: import('./crown.js').Leader,
  *   roots: { tap: number, spread: number, count: number, radius: number },
  *   leaf: { length: number, width: number, shape: (u: number) => number, colour: string, young: string, style: 'whorl' | 'along', per: number, droop: number, from?: number, gloss?: boolean },
- *   flower: { kind?: import('./bloom.js').Kind, panicle?: boolean, catkin?: boolean, size: number, opens: number, sites: 'tips' | 'limbs' | 'trunk', chance: number, per: [number, number] },
+ *   flower: { kind?: import('./bloom.js').Kind, panicle?: boolean, catkin?: boolean, size: number, opens: number, sites: 'tips' | 'spurs' | 'limbs' | 'trunk', chance: number, per: [number, number] },
  *   fruit: {
  *     length: number, width: number, shape: (u: number, v: number) => number, colour: (ripe: number, u: number, v: number) => THREE.Color,
  *     skin?: { colour: (ripe: number) => string, count: number, size: number, length: number }, stalk: number, keep: [number, number],
@@ -76,8 +76,8 @@ export function orchard(spec) {
 		const tipSite = (/** @type {(string | number)[]} */ key, /** @type {number} */ gen, /** @type {number} */ born) => {
 			if (f.sites !== 'tips' || gen < 2) return false;
 			const fr = chance(seed, 'site', ...key);
-			// the shoots of one flush, mature by flowering time
-			return fr() < f.chance && born < f.opens - 0.5 && born > f.opens - 1.25;
+			// the shoots of the last flush before flowering: the outermost tips of the crown when it blooms
+			return fr() < f.chance && born < f.opens - 0.05 && born > f.opens - 0.75;
 		};
 		const shoots = spec.flush
 			? flushCrown(bag, { seed, g, from: s.top.clone(), spec: { ...spec.flush, stop: (key, gen, born) => tipSite(key, gen, born) } })
@@ -94,6 +94,12 @@ export function orchard(spec) {
 		const sites = [];
 		for (const sh of shoots) {
 			if (f.sites === 'tips' && sh.end && tipSite(sh.key, sh.gen, sh.born)) sites.push({ at: sh.tip, dir: sh.dir, key: sh.key });
+			// spurs: short fruiting spurs all along the older shoots (the stone fruit, the pear), `chance` of them a metre
+			if (f.sites === 'spurs' && sh.gen >= 2 && sh.born < f.opens - 0.5) {
+				const sr = chance(seed, 'spur', ...sh.key);
+				const n = Math.floor(sh.length * f.chance + sr());
+				for (let k = 0; k < n; k++) sites.push({ ...along(sh.pts, between(sr, 0.15, 0.95)), key: [...sh.key, 'spur', k] });
+			}
 			if (f.sites === 'limbs' && sh.gen === 1) {
 				const lr = chance(seed, 'limb-site', ...sh.key);
 				const n = Math.floor(sh.length * f.chance);
