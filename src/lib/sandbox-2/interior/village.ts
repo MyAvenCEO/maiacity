@@ -16,7 +16,7 @@
 import * as THREE from 'three'
 import { DOMES, DOORS, adiff, bake, box, geodesic, glassSheen, lantern, mats, mountInterior, polar, portal, sofa, table, type DomeKind, type EmbeddedDome } from './interior'
 import { cafes, coops, coopsAround, henPatches, playground, rabbitPatches, squaresAround, type Kit } from './spaces'
-import { water } from './textures'
+import { groundCover, water } from './textures'
 import { appleTree, banana, berryBush, canopyTree, climber, clover, coconutPalm, comfrey, fruitTree, ginger, herb, papaya, passionVine, seeded, smallFruitTree, squash, strawberries, tropicalShrub, forestFloor, FLOOR_KINDS, floorPick, grassTuft, type Plant } from './plants'
 import { antHills, apiary, fishes, herd } from './animals'
 import { settled as actorsSettled } from '$lib/actors/build'
@@ -28,7 +28,7 @@ import { createObstacles } from '$lib/sandbox-kit/obstacles.js'
 import { connectFilm, filmDraws, filmHoldsSize, worldTime } from '$lib/sandbox-kit/film.js'
 import { ambience, levelsAt } from './ambience'
 import { createForest, type Forest } from './flora.js'
-import { pick, type Flora } from './sandbox5.js'
+import { OUTDOOR_SPACING, pick, type Flora } from './sandbox5.js'
 
 export type VillageDome = { kind: DomeKind; x: number; z: number; R: number; ext: number }
 export type VillageHandle = {
@@ -125,7 +125,16 @@ export async function mountVillage(container: HTMLElement, onProgress: (label: s
 		else hexShape.lineTo(Math.cos(a) * WORLD, Math.sin(a) * WORLD)
 	}
 	hexShape.holes.push(new THREE.Path().absarc(0, 0, Math.max(4.5, domes[0]!.R * 0.22) + 0.3, 0, Math.PI * 2, true))
-	const hex = new THREE.Mesh(new THREE.ShapeGeometry(hexShape, 48), m.grass)
+	// Sandbox 5: the cell is a forest garden to its edges, its soil covered by a living mat (clover, sorrel, purslane,
+	// the leaf litter) as under the glass, not mown lawn; its uv is metres, so one tile every 2.2 m
+	const livingGround = () => {
+		const t = groundCover().clone()
+		t.wrapS = t.wrapT = THREE.RepeatWrapping
+		t.repeat.set(1 / 2.2, 1 / 2.2)
+		t.needsUpdate = true
+		return new THREE.MeshStandardMaterial({ map: t, roughness: 1 })
+	}
+	const hex = new THREE.Mesh(new THREE.ShapeGeometry(hexShape, 48), opts.flora ? livingGround() : m.grass)
 	hex.rotation.x = -Math.PI / 2
 	hex.receiveShadow = true
 	scene.add(hex)
@@ -620,18 +629,62 @@ export async function mountVillage(container: HTMLElement, onProgress: (label: s
 	/* ── Sandbox 5: the forest grown from our plants (./flora.js), the same guilds in the same places: a tree, and round
 	   it its shrubs, its cover and its climbers, each a plant of the middle-European forest garden at its stage
 	   (./sandbox5.js). Put down here, grown once the whole cell is laid out. ── */
-	const forest: Forest | null = flora ? createForest({ near: 38, mid: 95, cover: 30, shrubs: 70 }) : null
+	const forest: Forest | null = flora ? createForest({ tree: [18, 45], shrub: [10, 26], cover: [6, 13] }) : null
 	type Planted = { kind: ReturnType<typeof pick>; x: number; z: number; s: number }
 	const plantedTrees: Planted[] = []
-	const plantTree = (r: () => number, x: number, z: number) => {
-		const kind = pick(flora!.outside.trees, r, flora!.seed)
-		const s = 0.85 + r() * 0.3
-		forest!.add(kind, 'tree', x, 0, z, r() * 6.28, s)
-		plantedTrees.push({ kind, x, z, s })
-	}
-	const plantUnder = (r: () => number, x: number, z: number, layer: 'shrubs' | 'climbers' | 'cover') => {
-		const kind = pick(flora!.outside[layer], r, flora!.seed)
-		forest!.add(kind, layer === 'cover' ? 'cover' : 'shrub', x, 0, z, r() * 6.28, 0.85 + r() * 0.3)
+	/** Sandbox 5's forest garden, layer under layer, each at its own spacing (OUTDOOR_SPACING), over the whole cell */
+	const plantGarden = async () => {
+		const O = flora!.outside, seed = flora!.seed, r = seeded(505)
+		/** the trunks so far, filed by 4 m cells: nothing is planted into a trunk */
+		const trunks = new Map<number, { x: number; z: number; r: number }[]>()
+		const trunkKey = (ix: number, iz: number) => (ix + 512) * 1024 + iz + 512
+		const clearOf = (x: number, z: number, gap: number) => {
+			const ix = Math.floor(x / 4), iz = Math.floor(z / 4)
+			for (let dx = -2; dx <= 2; dx++)
+				for (let dz = -2; dz <= 2; dz++) for (const t of trunks.get(trunkKey(ix + dx, iz + dz)) ?? []) if (Math.hypot(t.x - x, t.z - z) < t.r + gap) return false
+			return true
+		}
+		const open = (x: number, z: number, margin: number) => inHex(x, z) && !inDome(x, z, margin + 1) && !inSquare(x, z) && !nearPath(x, z, margin + 0.6) && !nearWater(x, z, W / 2 + margin)
+		/** a jittered grid, a point every `every` square metres */
+		const grid = async (every: number, label: string, at: (x: number, z: number) => void) => {
+			const step = Math.sqrt(every)
+			let n = 0
+			for (let gx = -WORLD; gx < WORLD; gx += step)
+				for (let gz = -WORLD; gz < WORLD; gz += step) {
+					at(gx + r() * step, gz + r() * step)
+					if (++n % 6000 === 0) await pause(label)
+				}
+		}
+		const tree = (layer: 'canopy' | 'trees', x: number, z: number, keep: number) => {
+			const kind = pick(O[layer], r, seed)
+			const s = 0.9 + r() * 0.25
+			forest!.add(kind, 'tree', x, 0, z, r() * 6.28, s)
+			plantedTrees.push({ kind, x, z, s })
+			const k = trunkKey(Math.floor(x / 4), Math.floor(z / 4))
+			const list = trunks.get(k) ?? []
+			list.push({ x, z, r: keep })
+			trunks.set(k, list)
+		}
+		const S = OUTDOOR_SPACING
+		// the canopy: nut trees, the lime, the alder, big standards; wide apart, their crowns meeting overhead
+		await grid(S.canopy, 'Planting the canopy', (x, z) => open(x, z, 3.5) && clearOf(x, z, 4) && tree('canopy', x, z, 3))
+		// the fruit trees, close under and between them
+		await grid(S.trees, 'Planting the fruit trees', (x, z) => {
+			if (!open(x, z, 2.4) || !clearOf(x, z, 1.4)) return
+			tree('trees', x, z, 1)
+			// a climber up a fruit tree now and then: the vine, the kiwi, the hop
+			if (r() < 0.2) {
+				const b = r() * 6.28
+				forest!.add(pick(O.climbers, r, seed), 'shrub', x + Math.cos(b) * 0.8, 0, z + Math.sin(b) * 0.8, r() * 6.28, 0.9 + r() * 0.2)
+			}
+		})
+		// the shrubs, packed between the trunks
+		await grid(S.shrubs, 'Planting the shrubs', (x, z) => open(x, z, 1.4) && clearOf(x, z, 0.9) && forest!.add(pick(O.shrubs, r, seed), 'shrub', x, 0, z, r() * 6.28, 0.85 + r() * 0.3))
+		// climbers on their own canes and posts
+		await grid(S.climbers, 'Planting the climbers', (x, z) => open(x, z, 1.2) && clearOf(x, z, 0.8) && forest!.add(pick(O.climbers, r, seed), 'shrub', x, 0, z, r() * 6.28, 0.9 + r() * 0.2))
+		// and every bit of soil covered: perennial vegetables and herbs, roots, the ground cover, the mushrooms
+		for (const [layer, every] of [['herbs', S.herbs], ['roots', S.roots], ['ground', S.ground], ['fungi', S.fungi]] as const)
+			await grid(every, 'Covering the ground', (x, z) => open(x, z, 0.5) && clearOf(x, z, 0.35) && forest!.add(pick(O[layer], r, seed), 'cover', x, 0, z, r() * 6.28, 0.8 + r() * 0.4))
 	}
 	const floorIndex = (r: () => number) => FLOOR_KINDS.indexOf(floorPick(r))
 	// and tufts of meadow grass standing up out of the lawn, drawn with the floor, near you
@@ -664,27 +717,14 @@ export async function mountVillage(container: HTMLElement, onProgress: (label: s
 				if (Math.hypot(x, z) > INNER || !inHex(x, z)) continue
 				if (inDome(x, z, 6) || inSquare(x, z) || nearPath(x, z, 3.2) || nearWater(x, z, W / 2 + 2.2)) continue
 				if (flora) {
-					plantTree(r, x, z)
-					const around5 = (count: number, dist: number, layer: 'shrubs' | 'climbers' | 'cover') => {
-						for (let j = 0; j < count; j++) {
-							const b = r() * 6.28, dd = dist * (0.6 + r() * 0.6)
-							const ox = x + Math.cos(b) * dd, oz = z + Math.sin(b) * dd
-							if (inDome(ox, oz, 2) || nearPath(ox, oz, 1.8) || nearWater(ox, oz, W / 2 + 0.6)) continue
-							plantUnder(r, ox, oz, layer)
-						}
-					}
-					// the forest floor: the same wood, stones and earth as Sandbox 4's, never its stand-in moss
+					// Sandbox 5 plants its layers below (plantGarden); here only the forest floor: the same wood, stones
+					// and earth as Sandbox 4's, never its stand-in moss
 					if (r() < 0.6) {
 						const b = r() * 6.28, dd = 1.5 + r() * 2.5
 						const ox = x + Math.cos(b) * dd, oz = z + Math.sin(b) * dd
 						const f = floorIndex(r)
 						if (FLOOR_KINDS[f] !== 'moss' && !inDome(ox, oz, 2) && !nearPath(ox, oz, 2) && !nearWater(ox, oz, W / 2 + 0.8)) tileAt(ox, oz).floor[f]!.push(mat(ox, 0, oz, r() * 6.28, 0.8 + r() * 0.5))
 					}
-					around5(2, 2.4, 'shrubs')
-					around5(3, 1.7, 'cover')
-					around5(4, 2.7, 'cover')
-					if (r() < 0.45) around5(1, 1.4, 'climbers')
-					if (++n % 400 === 0) await pause('Planting the food forest')
 					continue
 				}
 				const t = tileAt(x, z)
@@ -730,17 +770,7 @@ export async function mountVillage(container: HTMLElement, onProgress: (label: s
 				const rr = Math.hypot(x, z)
 				if (rr < INNER - 6 || !inHex(x, z)) continue
 				if (inDome(x, z, 4) || nearPath(x, z, 2.8) || nearWater(x, z, W / 2 + 1.6)) continue
-				if (flora) {
-					plantTree(r, x, z)
-					for (let j = 0; j < 3; j++) {
-						const b = r() * 6.28, dd = 1.2 + r() * 1.6
-						const ox = x + Math.cos(b) * dd, oz = z + Math.sin(b) * dd
-						if (nearPath(ox, oz, 1.6) || nearWater(ox, oz, W / 2 + 0.5)) continue
-						plantUnder(r, ox, oz, j === 0 ? 'shrubs' : j === 1 && r() < 0.3 ? 'climbers' : 'cover')
-					}
-					if (++n % 500 === 0) await pause('Planting the edges')
-					continue
-				}
+				if (flora) continue
 				const t = tileAt(x, z)
 				const k = Math.floor(r() * MAIN.length)
 				const sz = 0.8 + r() * 0.7
@@ -772,6 +802,7 @@ export async function mountVillage(container: HTMLElement, onProgress: (label: s
 	}
 	await pause('Planting the edges')
 	if (forest) {
+		await plantGarden()
 		// every kind grown (in workers, side by side), then each tree stands in the walker's way by its trunk
 		await forest.grown((done, of) => {
 			if (done === of || done % 10 === 0) onProgress(`Growing the forest: ${done} of ${of} kinds`)
@@ -938,6 +969,8 @@ export async function mountVillage(container: HTMLElement, onProgress: (label: s
 		floorAt: (x, z, ground) => floorHere(x, z, ground)
 	})
 	const pos = walker.position
+	// for a look round from the console (and the checks that photograph the cell): __walker.place(x, z, yaw, pitch)
+	;(window as unknown as { __walker?: typeof walker }).__walker = walker
 
 	// every tree, pillar and table, filed by 8 m cells for walking ($lib/sandbox-kit/obstacles)
 	const blockers = createObstacles(colliders)

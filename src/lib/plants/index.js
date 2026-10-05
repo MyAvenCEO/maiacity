@@ -35,6 +35,10 @@ import { CHARD_STAGES, KALE_STAGES, chard, kale } from './greens.js';
 import { BEAN_STAGES, beans } from './beans.js';
 
 import { at, versioned } from '../app/versions.js';
+import { WALD as WALD_CANOPY } from './wald-canopy.js';
+import { WALD as WALD_LOWTREES } from './wald-lowtrees.js';
+import { WALD as WALD_BERRIES } from './wald-berries.js';
+import { WALD as WALD_PERENNIALS } from './wald-perennials.js';
 
 /** @typedef {{ name: string, day: number, note: string }} Stage */
 /**
@@ -671,6 +675,9 @@ const LAYER_OF = /** @type {Record<string, Layer>} */ ({
 	'wine-cap': 'fungi', shiitake: 'fungi', oyster: 'fungi'
 });
 
+/** the plants of the temperate forest garden, each file with its own entries and their layers (./wald-*.js) */
+const WALD = [...WALD_CANOPY, ...WALD_LOWTREES, ...WALD_BERRIES, ...WALD_PERENNIALS];
+
 /**
  * The plants' older versions, by id, each with its frozen `grow` ($lib/app/versions.js): a plant changed goes up a
  * version, its old grow function kept here, so the worlds anchored to it (Sandbox 5) grow it as they were planted.
@@ -684,7 +691,7 @@ const HISTORY = {};
  * @type {(Plant & { versions: import('../app/versions.js').Version<Plant['grow']>[], version: number })[]}
  */
 export const PLANTS = versioned(
-	LAYERS.flatMap((l) => ALL.filter((p) => (LAYER_OF[p.id] ?? 'herbaceous') === l.id).map((p) => ({ ...p, layer: l.id }))),
+	LAYERS.flatMap((l) => [...ALL, ...WALD].filter((p) => (p.layer ?? LAYER_OF[p.id] ?? 'herbaceous') === l.id).map((p) => ({ ...p, layer: l.id }))),
 	'grow',
 	HISTORY
 );
