@@ -11,12 +11,15 @@
 	import PickList from '$lib/app/PickList.svelte';
 	import TouchStick from '$lib/touch/TouchStick.svelte';
 	import WalkHint from '$lib/sandbox-kit/WalkHint.svelte';
+	import { at } from '$lib/app/versions.js';
 
 	let canvasBox = $state<HTMLDivElement>();
 	let viewBox = $state<HTMLElement>();
 	let chosen = $state<Model>(MODELS[0]!);
+	/** the version of it shown: its latest, or an older one picked from its history */
+	let version = $state<number>(MODELS[0]!.version);
 	let size = $state<[number, number, number] | null>(null);
-	let show: ((m: Model) => void) | null = null;
+	let show: ((m: Model, v: number) => void) | null = null;
 	let walkable = $state(false);
 	let roofed = $state(false);
 	let roofOff = $state(false);
@@ -59,11 +62,11 @@
 
 		let walker: ReturnType<typeof createWalker> | null = null;
 		const lamps: InstanceType<typeof THREE.PointLight>[] = [];
-		show = (m: Model) => {
+		show = (m: Model, v: number) => {
 			walkOut?.();
 			if (current) scene.remove(current);
 			if (grid) scene.remove(grid);
-			current = m.make();
+			current = (at(m.versions, v) ?? at(m.versions)!).build();
 			walkable = !!current.userData.walk;
 			roofed = !!current.userData.roof;
 			roofOff = false;
@@ -160,7 +163,7 @@
 		const ro = new ResizeObserver(resize);
 		ro.observe(box);
 		resize();
-		show(chosen);
+		show(chosen, version);
 		const start = performance.now();
 		let raf = 0;
 		let last = performance.now();
@@ -187,7 +190,12 @@
 
 	const pick = (m: Model) => {
 		chosen = m;
-		show?.(m);
+		version = m.version;
+		show?.(m, version);
+	};
+	const pickVersion = (v: number) => {
+		version = v;
+		show?.(chosen, v);
 	};
 	const cm = (v: number) => Math.round(v * 100);
 	const toggleRoof = () => {
@@ -201,7 +209,7 @@
 </svelte:head>
 
 <main class="models">
-	<PickList title="3D models" lede="The things the worlds are built from, each to its real measure." items={MODELS} {chosen} where={(m) => m.usedIn} onpick={pick} />
+	<PickList title="3D models" lede="The things the worlds are built from, each to its real measure." items={MODELS} {chosen} where={(m) => m.usedIn} onpick={pick} {version} onversion={pickVersion} />
 	<section class="view" bind:this={viewBox}>
 		<div class="canvas" bind:this={canvasBox}></div>
 		{#if walkable || roofed}

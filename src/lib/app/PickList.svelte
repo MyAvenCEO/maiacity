@@ -1,12 +1,15 @@
 <!--
 	The list down the left of a turntable (the 3D models, the actors, the plants): a narrow column of one-line rows, each
-	thing's name and where it is from, and the chosen one opened to its note; grouped under headings if it is given `group`. The thing itself, its measure and what it can do, is
-	on the turntable beside it.
+	thing's name, its version and where it is from, and the chosen one opened to its note and its history (every version,
+	newest first: pick one to see it as it was — $lib/app/versions.js); grouped under headings if it is given `group`. The
+	thing itself, its measure and what it can do, is on the turntable beside it.
 
 	On a narrow screen it sits above the turntable instead, a few rows high; either way it scrolls clear of the app's nav
 	pill at its foot (--nav-room, src/app.css).
 -->
 <script>
+	import { day, tag } from './versions.js';
+
 	/**
 	 * Each item has its `id`, `label` and `note`; `where` says where it is from, `onpick` hands back the item itself.
 	 * @type {{
@@ -16,10 +19,12 @@
 	 *   chosen: { id: string },
 	 *   where: (item: any) => string,
 	 *   onpick: (item: any) => void,
-	 *   group?: (item: any) => string
+	 *   group?: (item: any) => string,
+	 *   version?: number,
+	 *   onversion?: (v: number) => void
 	 * }}
 	 */
-	let { title, lede, items, chosen, where, onpick, group } = $props();
+	let { title, lede, items, chosen, where, onpick, group, version, onversion } = $props();
 </script>
 
 <aside class="picks">
@@ -31,9 +36,21 @@
 			{#if group && (i === 0 || group(items[i - 1]) !== group(item))}<li class="group">{group(item)}</li>{/if}
 			<li>
 				<button class:on aria-current={on ? 'true' : undefined} onclick={() => onpick(item)}>
-					<span class="row"><b>{item.label}</b><small title={where(item)}>{where(item)}</small></span>
+					<span class="row"><b>{item.label}</b>{#if item.version}<em class="v">{tag(on && version ? version : item.version)}</em>{/if}<small title={where(item)}>{where(item)}</small></span>
 					{#if on}<span class="note">{item.note}</span>{/if}
 				</button>
+				{#if on && item.versions?.length}
+					<ol class="history" aria-label="History">
+						{#each [...item.versions].reverse() as ver (ver.v)}
+							{@const shown = (version ?? item.version) === ver.v}
+							<li>
+								<button class="ver" class:shown aria-pressed={shown} onclick={() => onversion?.(ver.v)} disabled={!onversion}>
+									<b>{tag(ver.v)}</b><span>{ver.note}</span><small>{day(ver.date)}{ver.v === item.version ? ' · latest' : ''}</small>
+								</button>
+							</li>
+						{/each}
+					</ol>
+				{/if}
 			</li>
 		{/each}
 	</ul>
@@ -143,6 +160,54 @@
 		text-overflow: ellipsis;
 		white-space: nowrap;
 		opacity: 0.5;
+	}
+
+	.v {
+		flex: none;
+		font-size: 0.66rem;
+		font-style: normal;
+		font-variant-numeric: tabular-nums;
+		opacity: 0.55;
+	}
+
+	/* the chosen one's history: a short list of its versions under it */
+	.history {
+		display: flex;
+		flex-direction: column;
+		gap: 1px;
+		margin: 0.15rem 0 0.4rem 0.9rem;
+		padding: 0 0 0 0.5rem;
+		border-left: 2px solid rgb(0 0 0 / 0.08);
+		list-style: none;
+	}
+
+	.ver {
+		display: grid;
+		grid-template-columns: auto 1fr;
+		gap: 0 0.45rem;
+		padding: 0.25rem 0.4rem;
+		font-size: 0.72rem;
+	}
+
+	.ver span {
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+		opacity: 0.75;
+	}
+
+	.ver small {
+		grid-column: 2;
+		font-size: 0.66rem;
+		opacity: 0.5;
+	}
+
+	.ver.shown {
+		background: rgb(0 0 0 / 0.05);
+	}
+
+	.ver:disabled {
+		cursor: default;
 	}
 
 	.note {

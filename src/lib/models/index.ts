@@ -1,8 +1,9 @@
 /*
  * THE 3D MODELS — every reusable model, as the 3D models viewer (/app/models/) lists it: its name, what it is, where
  * it is used, and the function that builds it (./furniture.ts, ./hallway.ts, ./kitchen.ts, ./bathroom.ts,
- * ./outdoor.ts, ./terrace.ts, ./yard.ts, ./containers.js; a machine that works is an actor, ./actors). A world places them (src/lib/worlds); a new one is a function there and a line
- * here.
+ * ./outdoor.ts, ./terrace.ts, ./yard.ts, ./containers.js; a machine that works is an actor, ./actors). A world places
+ * them (src/lib/worlds); a new one is a function there and a line here. Each has its version and history
+ * ($lib/app/versions.js): a changed model goes up a version, its old builder kept in HISTORY below.
  */
 import type * as THREE from 'three';
 import type { Cast } from '$lib/actors/rig';
@@ -16,7 +17,7 @@ import { excavator } from '$lib/actors/excavator.js';
 import { kitchenContainer, sanitaryContainer, techContainer, workshopContainer } from './containers';
 import { ashtray, barnLamp, casementWindow, cityBike, doorCanopy, entranceDoor, floodlight, foldingChair, hedge, insectHotel, ivyCone, mailboxPost, rainBarrel, redTin, stationClock, steelWindow, stonewareCrock, teakRecliner, teakTable, windowBox, workshopDoor } from './yard';
 
-export type Model = { id: string; label: string; note: string; usedIn: string; make: () => THREE.Object3D };
+import { versioned, type Version, type Change } from '$lib/app/versions.js';
 
 /** A rigged machine as a model: its rig in the world, playing one of its moves (`userData.tick(t)`, as the viewer's clock runs). */
 function working(cast: Cast, clip: string): THREE.Object3D {
@@ -26,7 +27,13 @@ function working(cast: Cast, clip: string): THREE.Object3D {
 	return cast.rig.object;
 }
 
-export const MODELS: Model[] = [
+type Make = () => THREE.Object3D;
+export type Model = { id: string; label: string; note: string; usedIn: string; make: Make; versions: Version<Make>[]; version: number };
+
+/** the models' older versions, by id, each with its frozen builder (none yet: everything is at v1) */
+const HISTORY: Record<string, (Change & { build?: Make })[]> = {};
+
+const LIST: Omit<Model, 'versions' | 'version'>[] = [
 	{ id: 'bed', label: 'Bed', note: '140 × 200, a solid oak frame, the blue fitted sheet, a crumpled grey duvet, two mustard pillows', usedIn: 'The room', make: () => bed() },
 	{ id: 'wine-crate', label: 'Wine crate', note: '50 × 33 × 42 cm, slatted boards, handle cut-outs, on its end as a shelf', usedIn: 'The room', make: () => wineCrate('pine') },
 	{ id: 'crate-tower-left', label: 'Crate shelf, left', note: 'white, pine, dark pine: the shelf left of the bed, 1.26 m high', usedIn: 'The room', make: () => crateTower(['white', 'pine', 'dark']) },
@@ -116,3 +123,5 @@ export const MODELS: Model[] = [
 	{ id: 'container-sanitary', label: 'Sanitary container', note: 'washing machines and dryers, three washbasins, three showers and three toilets in cubicles, the hot-water heat pump; a rainwater tank outside. Walk in', usedIn: 'Sandbox 1', make: () => sanitaryContainer() },
 	{ id: 'mini-excavator', label: 'Mini excavator', note: 'a 1.7 t digger on rubber tracks, 1.55 m long, 0.99 m wide, 2.3 m to its canopy, 3.9 m reach — rigged: it digs, slews and dumps (its other moves in the Actors gallery)', usedIn: 'Sandbox 1', make: () => working(excavator(), 'dig') }
 ];
+
+export const MODELS: Model[] = versioned(LIST, 'make', HISTORY);
