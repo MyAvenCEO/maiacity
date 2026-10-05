@@ -2,7 +2,8 @@
  * ORCHARD — a fruit tree from its seed, made from a description (`Orchard`): the seed and how it comes up (its seed
  * leaves above the soil, or kept inside the seed below it), its roots, its crown (./crown.js: in flushes or with a
  * leader), its leaves (in whorls at the shoot tips or all along them), its flowers (where they come — at the shoot
- * tips, along the limbs, or on the trunk itself — and what they look like) and its fruit (its shape and skin, how it
+ * tips, in the leaf axils of the newest shoots, on spurs on the thin outer branches, along the limbs, or on the trunk
+ * itself — and what they look like) and its fruit (its shape and skin, how it
  * hangs, how it ripens). The mango, the apple, the orange, the lemon, the durian and the jackfruit are each one such
  * description (./trees.js).
  *
@@ -22,7 +23,7 @@ import { flushCrown, leaderCrown } from './crown.js';
  *   flush?: import('./crown.js').Flush, leader?: import('./crown.js').Leader,
  *   roots: { tap: number, spread: number, count: number, radius: number },
  *   leaf: { length: number, width: number, shape: (u: number) => number, colour: string, young: string, style: 'whorl' | 'along', per: number, droop: number, from?: number, gloss?: boolean },
- *   flower: { kind?: import('./bloom.js').Kind, panicle?: boolean, catkin?: boolean, size: number, opens: number, sites: 'tips' | 'spurs' | 'limbs' | 'trunk', chance: number, per: [number, number] },
+ *   flower: { kind?: import('./bloom.js').Kind, panicle?: boolean, catkin?: boolean, size: number, opens: number, sites: 'tips' | 'shoots' | 'spurs' | 'limbs' | 'trunk', chance: number, per: [number, number], axils?: [number, number] },
  *   fruit: {
  *     length: number, width: number, shape: (u: number, v: number) => number, colour: (ripe: number, u: number, v: number) => THREE.Color,
  *     skin?: { colour: (ripe: number) => string, count: number, size: number, length: number }, stalk: number, keep: [number, number],
@@ -74,7 +75,7 @@ export function orchard(spec) {
 		// flushes no further — it is a flowering and fruiting terminal now
 		const f = spec.flower;
 		const tipSite = (/** @type {(string | number)[]} */ key, /** @type {number} */ gen, /** @type {number} */ born) => {
-			if (f.sites !== 'tips' || gen < 2) return false;
+			if ((f.sites !== 'tips' && f.sites !== 'shoots') || gen < 2) return false;
 			const fr = chance(seed, 'site', ...key);
 			// the shoots of the last flush before flowering: the outermost tips of the crown when it blooms
 			return fr() < f.chance && born < f.opens - 0.05 && born > f.opens - 0.75;
@@ -94,11 +95,20 @@ export function orchard(spec) {
 		const sites = [];
 		for (const sh of shoots) {
 			if (f.sites === 'tips' && sh.end && tipSite(sh.key, sh.gen, sh.born)) sites.push({ at: sh.tip, dir: sh.dir, key: sh.key });
-			// spurs: short fruiting spurs all along the older shoots (the stone fruit, the pear), `chance` of them a metre
-			if (f.sites === 'spurs' && sh.gen >= 2 && sh.born < f.opens - 0.5) {
+			// shoots: the flowers in the leaf axils of the newest shoots, one to a leaf (the kaki, the fig, the mulberry,
+			// the peach) — out at the crown's edge, among the leaves, `axils` of them a shoot
+			if (f.sites === 'shoots' && tipSite(sh.key, sh.gen, sh.born)) {
+				const ar = chance(seed, 'axils', ...sh.key);
+				const [a, b] = f.axils ?? [2, 4];
+				const n = a + Math.floor(ar() * (b - a + 1));
+				for (let k = 0; k < n; k++) sites.push(onBark(along(sh.pts, 0.35 + (0.6 * (k + ar() * 0.6)) / n), sh.radius, ar, [...sh.key, 'axil', k]));
+			}
+			// spurs: short fruiting spurs on the two- and three-year-old wood (the stone fruit, the pear), `chance` of them
+			// a metre — the thin outer branches, never the scaffold limbs or the thick wood they branch from
+			if (f.sites === 'spurs' && sh.gen >= 3 && sh.born < f.opens - 0.05) {
 				const sr = chance(seed, 'spur', ...sh.key);
 				const n = Math.floor(sh.length * f.chance + sr());
-				for (let k = 0; k < n; k++) sites.push({ ...along(sh.pts, between(sr, 0.15, 0.95)), key: [...sh.key, 'spur', k] });
+				for (let k = 0; k < n; k++) sites.push(onBark(along(sh.pts, between(sr, 0.3, 0.95)), sh.radius, sr, [...sh.key, 'spur', k]));
 			}
 			if (f.sites === 'limbs' && sh.gen === 1) {
 				const lr = chance(seed, 'limb-site', ...sh.key);
@@ -130,6 +140,19 @@ export function orchard(spec) {
 }
 
 /** a place along a path, u 0 … 1 */
+/**
+ * A site on the bark of a shoot rather than in its core: moved out to its surface on a side drawn by `r`, facing out
+ * and a little along the shoot.
+ * @param {{ at: THREE.Vector3, dir: THREE.Vector3 }} p @param {number} radius @param {() => number} r @param {(string | number)[]} key
+ */
+function onBark(p, radius, r, key) {
+	const side = new THREE.Vector3().crossVectors(p.dir, Math.abs(p.dir.y) > 0.9 ? v3(1, 0, 0) : v3(0, 1, 0)).normalize();
+	side.applyAxisAngle(p.dir, r() * Math.PI * 2);
+	// below the shoot rather than on top of it, mostly: where the fruit hang
+	if (side.y > 0.3) side.y *= -1;
+	return { at: p.at.clone().addScaledVector(side, radius * 0.9), dir: side.clone().addScaledVector(p.dir, 0.6).normalize(), key };
+}
+
 function along(/** @type {THREE.Vector3[]} */ pts, /** @type {number} */ u) {
 	const f = clamp(u) * (pts.length - 1), k = Math.min(pts.length - 2, Math.floor(f));
 	return { at: pts[k].clone().lerp(pts[k + 1], f - k), dir: pts[k + 1].clone().sub(pts[k]).normalize() };
