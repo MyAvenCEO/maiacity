@@ -2,7 +2,7 @@
  * THE PLANTS — every plant grown from code, as the plants viewer (/app/plants/) lists it: its name, what it is, its
  * ten stages from seed to ripe fruit (the last four the fruit's own: set, green, turning, ripe), and the function that
  * grows it at a stage from a seed id (./strawberry.js, ./cucumber.js, ./raspberry.js, ./tomato.js with its oxheart,
- * ./eggplant.js, ./coconut.js, ./grape.js, ./tropics.js (banana, red banana, pineapple, papaya, passion fruit), ./fruittrees.js (cherry, pear, peach, apricot, plum, safou, soursop, sapodilla, avocado), ./garden.js (pepper, pumpkin, blueberry), ./vegetables.js (radish, carrot, lettuce, garlic) and ./trees.js (mango,
+ * ./eggplant.js, ./coconut.js, ./grape.js, ./tropics.js (banana, red banana, pineapple, papaya, passion fruit), ./ground.js (haircap moss, wine cap, shiitake, oyster), ./fruittrees.js (cherry, pear, peach, apricot, plum, safou, soursop, sapodilla, avocado), ./garden.js (pepper, pumpkin, blueberry), ./vegetables.js (radish, carrot, lettuce, garlic) and ./trees.js (mango,
  * apple, orange, lemon, durian, jackfruit, through ./orchard.js and ./crown.js) — all of it made of ./grow.js,
  * ./sprout.js, ./leaves.js, ./bloom.js and ./tree.js). The same seed id grows the same plant every time; another id, a
  * sister plant — leaner or bushier, its leaves turned otherwise, its roots another way through the soil. A new plant is
@@ -18,6 +18,7 @@ import { APPLE_STAGES, DURIAN_STAGES, JACKFRUIT_STAGES, LEMON_STAGES, MANGO_STAG
 import { CARROT_STAGES, GARLIC_STAGES, LETTUCE_STAGES, RADISH_STAGES, carrot, garlic, lettuce, radish } from './vegetables.js';
 import { STAGES as GRAPE, grape } from './grape.js';
 import { BANANA_STAGES, RED_BANANA_STAGES, PAPAYA_STAGES, PASSION_STAGES, PINEAPPLE_STAGES, banana, papaya, passionFruit, pineapple, redBanana } from './tropics.js';
+import { MOSS_STAGES, OYSTER_STAGES, SHIITAKE_STAGES, WINECAP_STAGES, moss, oyster, shiitake, wineCap } from './ground.js';
 import { APRICOT_STAGES, AVOCADO_STAGES, CHERRY_STAGES, PEACH_STAGES, PEAR_STAGES, PLUM_STAGES, SAFOU_STAGES, SAPODILLA_STAGES, SOURSOP_STAGES, apricot, avocado, cherry, peach, pear, plum, safou, sapodilla, soursop } from './fruittrees.js';
 import { BLUEBERRY_STAGES, PEPPER_STAGES, PUMPKIN_STAGES, blueberry, pepper, pumpkin } from './garden.js';
 
@@ -345,6 +346,42 @@ export const PLANTS = [
 		from: 'Tree · 7 years',
 		stages: AVOCADO_STAGES,
 		grow: avocado
+	},
+	{
+		id: 'moss',
+		label: 'Haircap moss',
+		latin: "Polytrichum commune · Widertonmoos",
+		note: 'From a spore: a green thread over the soil, buds, star-like leafy shoots crowding into a cushion and a carpet; red-brown stalks with hairy-capped capsules that ripen and shed their spores.',
+		from: 'Ground · 2 years',
+		stages: MOSS_STAGES,
+		grow: moss
+	},
+	{
+		id: 'wine-cap',
+		label: 'Wine cap',
+		latin: "Stropharia rugosoannulata · Riesenträuschling",
+		note: 'The food forest’s mushroom: spawn in a bed of wood chips, white rhizomorphs binding the chips and running into the soil, then a troop of wine-red caps on white stems.',
+		from: 'Fungus · 4 months',
+		stages: WINECAP_STAGES,
+		grow: wineCap
+	},
+	{
+		id: 'shiitake',
+		label: 'Shiitake',
+		latin: "Lentinula edodes · Shiitake",
+		note: 'An oak log plugged with spawn and sealed with wax; months of colonising, a cold soak, then brown flecked caps breaking from the bark, again for years.',
+		from: 'Fungus · 1 year',
+		stages: SHIITAKE_STAGES,
+		grow: shiitake
+	},
+	{
+		id: 'oyster',
+		label: 'Oyster mushroom',
+		latin: "Pleurotus ostreatus · Austernpilz",
+		note: 'A standing beech log; after the first cold rains, clusters of grey-blue fans that spread into overlapping shelves, their white gills running down the stem.',
+		from: 'Fungus · 5 months',
+		stages: OYSTER_STAGES,
+		grow: oyster
 	}
 ];
 
