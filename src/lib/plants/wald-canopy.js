@@ -248,13 +248,13 @@ class Clear {
  *   roots: { tap: number, spread: number, count: number, radius: number }, nodules?: boolean,
  *   flush?: import('./crown.js').Flush, leader?: import('./crown.js').Leader,
  *   coppice?: { stems: [number, number], from: number, every: number, lean: number, stool: number, leader: import('./crown.js').Leader },
- *   leaf: { blade: Blade, colour: string, young: string, autumn: string, droop: number, gap: number, per: number, twig: number, tuft: number, from?: number, inner?: number, limb?: number, top?: number, bare?: boolean },
+ *   leaf: { blade: Blade, colour: string, young: string, autumn: string, droop: number, gap: number, per: number, twig: number, tuft: number, from?: number, inner?: number, limb?: number, top?: number, bare?: boolean, spring?: boolean },
  *   bear: (ctx: Ctx) => void
  * }} Wood — a tree of the forest garden, described: its seed, its roots (`nodules` the alder's), its crown (in flushes,
  *   with a leader, or a coppice of `stems` leaders from the stool, one every `every` stages from `from`), its leaves
  *   (a node every `gap` metres along the outer shoots, of one leaf or a short twig `twig` long with `per`; `tuft` more
  *   at each tip; along the older wood within, `inner` times sparser; on a leader's limbs from `limb` of the way out,
- *   and in sprays up its `top` metres; `bare` if it flowers before they come)
+ *   and in sprays up its `top` metres; `bare` if it flowers before they come, `spring` if as they come)
  *   and `bear`, which grows its flowers and its nuts
  */
 
@@ -299,7 +299,9 @@ function wood(spec) {
 		// the crown
 		/** @type {Shoot[]} */
 		let shoots = [];
-		if (spec.flush) shoots = flushCrown(bag, { seed, g, from: s.top.clone(), spec: spec.flush });
+		// (a sapling is a slim whip: the wood thickens with the years, not only with each shoot's age)
+		const girth = table(g, [[2, 0.12], [3, 0.25], [4, 0.55], [5, 0.8], [6, 0.92], [9, 1]]);
+		if (spec.flush) shoots = flushCrown(bag, { seed, g, from: s.top.clone(), spec: { ...spec.flush, radius: spec.flush.radius * girth } });
 		else if (spec.leader) shoots = leaderCrown(bag, { seed, g, from: s.top.clone(), spec: spec.leader });
 		else if (spec.coppice) shoots = coppice(bag, seed, g, s.top.clone(), spec.coppice);
 
@@ -345,9 +347,11 @@ function foliage(bag, leaves, spec, seed, g, sh, tpls, clear, season, unfold, fa
 	// enough to keep them (the lime, the chestnut)
 	const inner = !leafy && sh.gen >= 1 && L.inner ? L.inner : 0;
 	if (!leafy && !inner) return;
-	const age = Math.min(clamp((g - sh.born) / 0.9), unfold);
+	const age = Math.min(clamp((g - sh.born) / 0.6), unfold);
 	const reach = L.blade.pinnate ? L.blade.length * 1.1 : L.blade.length + L.blade.stalk;
 	const young = new THREE.Color(L.young), old = new THREE.Color(L.colour), autumn = new THREE.Color(L.autumn);
+	// a tree that flowers as its leaves come (the walnut): the whole crown its young colour again then, for a while
+	const spring = L.spring ? 0.75 * table(g, [[4.4, 0], [4.75, 1], [5.3, 1], [5.9, 0]]) : 0;
 	/** one leaf at p, reaching out along `out` @param {THREE.Vector3} p @param {THREE.Vector3} out */
 	const leaf = (p, out) => {
 		const size = between(lr, 0.8, 1.1) * lerp(0.45, 1, age) * lerp(0.55, 1, clamp(g - 2)) * season;
@@ -374,7 +378,7 @@ function foliage(bag, leaves, spec, seed, g, sh, tpls, clear, season, unfold, fa
 			}
 		}
 		if (!dir) return;
-		const colour = young.clone().lerp(old, age).multiplyScalar(0.92 + 0.16 * tint).lerp(autumn, yellow * 0.75);
+		const colour = young.clone().lerp(old, age * (1 - spring)).multiplyScalar(0.92 + 0.16 * tint).lerp(autumn, yellow * 0.75);
 		leaves.stamp(tpl, aim(p, dir, roll).multiply(new THREE.Matrix4().makeScale(size, size, size)), colour);
 	};
 	/** out from the shoot, round it by `bear`, and a little out from the trunk */
@@ -403,7 +407,9 @@ function foliage(bag, leaves, spec, seed, g, sh, tpls, clear, season, unfold, fa
 	}
 	// along it (on a leader's limbs, their outer part only): a leaf at each node, or a short twig of `per` leaves
 	const from = leader && sh.gen === 1 ? L.limb ?? 0.5 : inner ? 0.3 : 0.12;
-	const n = Math.min(40, Math.max(1, Math.round((sh.length * (1 - from)) / (L.gap * (inner || 1)))));
+	// (a sapling's stem, its leaves closer)
+	const gap = sh.gen === 0 && !leader ? Math.min(L.gap, 0.09) : L.gap * (inner || 1);
+	const n = Math.min(40, Math.max(1, Math.round((sh.length * (1 - from)) / gap)));
 	const bark = new THREE.Color(spec.flush?.bark[0] ?? spec.leader?.bark[0] ?? spec.coppice?.leader.bark[0] ?? '#6a5a4a');
 	for (let k = 0; k < n; k++) {
 		const u = from + ((k + 0.5) / n) * (1 - from);
@@ -622,12 +628,12 @@ export const walnut = wood({
 	hypogeal: true,
 	// a broad, open dome: a clear grey trunk, a few big scaffold limbs, stout shoots
 	flush: {
-		trunk: 1.8, trunkBorn: 1.7, trunkFlush: 1.4, scaffolds: [3, 5], scaffoldAngle: 0.6, gens: 6, flush: 0.2, rest: 0.11,
+		trunk: 1.8, trunkBorn: 1.6, trunkFlush: 1.2, scaffolds: [3, 5], scaffoldAngle: 0.6, gens: 6, flush: 0.16, rest: 0.08,
 		shoot: (gen) => [0, 1.6, 1.2, 0.92, 0.7, 0.55, 0.42][gen] ?? 0.4, whorl: [2, 3], spread: 0.62, up: 0.045, droop: 0.05,
-		wander: 0.12, radius: 0.24, taper: 0.62, thicken: 3.5, bark: ['#8e8a7e', '#68645c']
+		wander: 0.12, radius: 0.15, taper: 0.62, thicken: 3.5, bark: ['#8e8a7e', '#68645c']
 	},
 	roots: { tap: 2.4, spread: 3.6, count: 9, radius: 0.08 },
-	leaf: { blade: { stalk: 0, length: 0.38, width: 0, shape: () => 1, along: 4, pinnate: 3 }, colour: '#3f6a2a', young: '#8a6236', autumn: '#c8b04a', droop: 0.05, gap: 0.26, per: 1, twig: 0, tuft: 6, from: 4 },
+	leaf: { blade: { stalk: 0, length: 0.38, width: 0, shape: () => 1, along: 4, pinnate: 3 }, colour: '#3f6a2a', young: '#8a6236', autumn: '#c8b04a', droop: 0.05, gap: 0.26, per: 1, twig: 0, tuft: 6, from: 4, spring: true },
 	bear(ctx) {
 		const { bag, g, seed } = ctx;
 		// the male catkins: from the side buds of last year's wood, below the new shoots
@@ -717,9 +723,9 @@ export const chestnut = wood({
 	seed: { size: v3(0.014, 0.011, 0.016), coat: '#6a3a20', shade: '#3a2010', depth: 0.04 },
 	hypogeal: true,
 	flush: {
-		trunk: 1.9, trunkBorn: 1.7, trunkFlush: 1.4, scaffolds: [3, 5], scaffoldAngle: 0.6, gens: 6, flush: 0.2, rest: 0.11,
+		trunk: 1.9, trunkBorn: 1.6, trunkFlush: 1.2, scaffolds: [3, 5], scaffoldAngle: 0.6, gens: 6, flush: 0.16, rest: 0.08,
 		shoot: (gen) => [0, 1.6, 1.2, 0.9, 0.7, 0.52, 0.4][gen] ?? 0.38, whorl: [2, 3], spread: 0.6, up: 0.055, droop: 0.045,
-		wander: 0.12, radius: 0.25, taper: 0.62, thicken: 3.5, bark: ['#7e7462', '#5a5044']
+		wander: 0.12, radius: 0.16, taper: 0.62, thicken: 3.5, bark: ['#7e7462', '#5a5044']
 	},
 	roots: { tap: 2.2, spread: 3.4, count: 9, radius: 0.08 },
 	leaf: {
@@ -792,9 +798,9 @@ export const alder = wood({
 	nodules: true,
 	// upright and narrow: a straight trunk, many steep limbs, the crown an egg narrowing to its top
 	flush: {
-		trunk: 1.5, trunkBorn: 1.6, trunkFlush: 1.4, scaffolds: [4, 6], scaffoldAngle: 0.28, gens: 6, flush: 0.2, rest: 0.11,
+		trunk: 1.5, trunkBorn: 1.6, trunkFlush: 1.2, scaffolds: [4, 6], scaffoldAngle: 0.28, gens: 6, flush: 0.16, rest: 0.08,
 		shoot: (gen) => [0, 2.8, 1.6, 1.05, 0.72, 0.52, 0.4][gen] ?? 0.38, whorl: [2, 3], spread: 0.45, up: 0.085, droop: 0.04,
-		wander: 0.12, radius: 0.2, taper: 0.6, thicken: 3.5, bark: ['#6a5e50', '#4a423c']
+		wander: 0.12, radius: 0.13, taper: 0.62, thicken: 3.5, bark: ['#6a5e50', '#4a423c']
 	},
 	roots: { tap: 1.6, spread: 3, count: 9, radius: 0.06 },
 	leaf: {
@@ -878,9 +884,9 @@ export const linden = wood({
 	cotyledon: { length: 0.018, width: 0.011, colour: '#5a9a3a' },
 	// a tall dense dome: many limbs, steep, densely twigged, leafy down to the lowest
 	flush: {
-		trunk: 1.6, trunkBorn: 1.7, trunkFlush: 1.5, scaffolds: [4, 6], scaffoldAngle: 0.5, gens: 6, flush: 0.2, rest: 0.11,
+		trunk: 1.6, trunkBorn: 1.6, trunkFlush: 1.2, scaffolds: [4, 6], scaffoldAngle: 0.5, gens: 6, flush: 0.16, rest: 0.08,
 		shoot: (gen) => [0, 1.5, 1.1, 0.85, 0.65, 0.5, 0.38][gen] ?? 0.36, whorl: [2, 3], spread: 0.58, up: 0.06, droop: 0.05,
-		wander: 0.13, radius: 0.22, taper: 0.62, thicken: 3.5, bark: ['#7e7a6e', '#5c5850']
+		wander: 0.13, radius: 0.14, taper: 0.62, thicken: 3.5, bark: ['#7e7a6e', '#5c5850']
 	},
 	roots: { tap: 2.0, spread: 3.2, count: 9, radius: 0.07 },
 	leaf: {
@@ -889,7 +895,7 @@ export const linden = wood({
 	},
 	bear(ctx) {
 		const { bag, g, seed } = ctx;
-		for (const sh of tips(ctx, 0.55)) {
+		for (const sh of tips(ctx, 0.45)) {
 			const fr = chance(seed, 'flowering', ...sh.key);
 			const n = 1 + Math.floor(fr() * 2);
 			for (let k = 0; k < n; k++) {
@@ -912,19 +918,20 @@ export const linden = wood({
 				const bractDir = mid.clone().sub(at).normalize();
 				bag.add('body', sheet({ length: 0.075 * lerp(0.4, 1, grown), width: 0.009 * lerp(0.4, 1, grown), shape: (u) => Math.pow(Math.sin(Math.PI * Math.min(1, 0.08 + u * 0.92)), 0.5), lift: (u, v) => 0.04 * v * v, paint: () => bractColour, along: 4, across: 1 }), aim(at.clone().addScaledVector(bractDir, 0.004), bractDir.clone().add(v3(0, -0.3, 0)), 1.2));
 				// the cyme: five to eleven flowers, then the nutlets
-				const flowers = 5 + Math.floor(kr() * 6);
+				const flowers = 5 + Math.floor(kr() * 5);
 				const set = span(phase, 0.5, 2.2);
 				// of the flowers, one to three set a nutlet
 				const keep = phase < 0.55 ? flowers : 1 + Math.floor(kr() * 3);
 				for (let f = 0; f < keep; f++) {
 					const b = f * 2.39996 + kr();
 					const d = v3(Math.cos(b), -0.6 - kr() * 0.6, Math.sin(b)).normalize();
-					const p = end.clone().addScaledVector(d, 0.014);
-					bag.add('body', tube([end, p], () => 0.0006, () => '#a8b060', 3));
+					const p = end.clone().addScaledVector(d, 0.018);
+					bag.add('body', tube([end, p], () => 0.0007, () => '#a8b060', 3));
 					if (phase < 0.55) {
 						const open = span(phase, -0.3, 0.05);
 						const fade = span(phase, 0.3, 0.55);
-						bag.add('body', bead(p, v3(1, 0.8, 1).multiplyScalar(lerp(0.0025, 0.0062, open)), open < 0.5 ? '#c8d08a' : mix('#f4eba0', '#b8a868', fade), 3));
+						// a starry flower, its long stamens a pale yellow puff
+						bag.add('body', bead(p, v3(1, 0.75, 1).multiplyScalar(lerp(0.0028, 0.0085, open)), open < 0.5 ? '#c8d08a' : mix('#f6eca0', '#b8a868', fade), 3));
 					} else {
 						const r = lerp(0.0015, 0.0038, set);
 						bag.add('body', bead(p.clone().addScaledVector(d, r * 0.5), v3(r, r * 1.05, r), ripe < 0.5 ? mix('#8aa05a', '#9a9a6a', ripe * 2) : mix('#9a9a6a', '#7a6248', (ripe - 0.5) * 2), 3));
@@ -977,7 +984,7 @@ export const hazel = wood({
 			const sites = sr() < 0.35 ? 1 : 0;
 			for (let s = 0; s < sites; s++) {
 				const fr = chance(seed, 'flowering', ...sh.key, s);
-				const { at, dir } = along(sh.pts, between(fr, 0.45, 0.95));
+				const { at, dir } = along(sh.pts, between(fr, 0.72, 1));
 				const opens = 4.55 + fr() * 0.25;
 				const phase = g - opens;
 				// lamb's tails: one to four from the node, hanging
