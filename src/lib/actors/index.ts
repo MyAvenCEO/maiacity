@@ -1,7 +1,7 @@
 /*
  * THE ACTORS — everyone and everything rigged to move, as the Actors gallery (/app/actors/) lists it: the stand-in a
  * shot is blocked with, and the animals of the worlds, kind by kind — the chickens (six breeds of hen, the rooster, the
- * chick), the rabbits, the geese, the goats, the sheep, the frogs, the bee, the fish — each kind with its variants.
+ * chick), the rabbits, the geese, the goats, the sheep, the frogs, the bee, the ants and their hill, the fish — each kind with its variants.
  * Each is built by a function that hands back its rig (./rig.ts), its moves (clips) and, for the stand-in, its poses.
  * An animal is its species' (./species/, on its body plan in ./plans/) and a line in ./casts.ts; it shows here with a
  * line in its kind below.
@@ -110,6 +110,16 @@ export const FAMILIES: Family[] = [
 		note: '1.5 cm, striped, furred, pollen in its baskets: hovers, flies, its wings beating in a figure of eight',
 		from: 'Sandbox 4: the hives and the flowers',
 		variants: [animal('bee', 'Honeybee', 'a worker')]
+	},
+	{
+		id: 'ant',
+		label: 'Ant',
+		note: 'the red wood ant, 8 mm, walking in a tripod; and its hill: a thatched mound of needles and twigs, the colony busy all over it',
+		from: 'Sandbox 4: the food forest floor',
+		variants: [
+			animal('ant-hill', 'Ant hill', 'a mound of needles, twigs and bark half a metre high, its doors all over it, eighty ants going round it and out'),
+			animal('ant', 'Wood ant', 'a worker: red-brown head and thorax, the black shining gaster, elbowed antennae')
+		]
 	},
 	{
 		id: 'fish',

@@ -147,7 +147,7 @@ function leaves(bag, spec, seed, g, sh) {
 	// which shoots carry leaves: the outermost (still at the crown's surface); a young tree's trunk too
 	// the outermost two flushes keep their leaves; a young tree's trunk too
 	const outer = (spec.flush?.gens ?? 0) - 1;
-	const leafy = isLeader ? sh.gen >= 1 : sh.end || (sh.gen === 0 && g < 3.4) || sh.gen >= Math.min(L.from ?? 99, outer);
+	const leafy = isLeader ? sh.gen >= 1 || g > 3.5 : sh.end || (sh.gen === 0 && g < 3.4) || sh.gen >= Math.min(L.from ?? 99, outer);
 	if (!leafy) return;
 	const age = clamp((g - sh.born) / 0.9);
 	const colour = (/** @type {number} */ u, /** @type {number} */ v) => mix(L.young, L.colour, age).lerp(new THREE.Color('#d8d8a0'), Math.abs(v) < 0.1 ? 0.25 : 0);
@@ -168,6 +168,20 @@ function leaves(bag, spec, seed, g, sh) {
 			const out = v3(Math.cos(bear), 0, Math.sin(bear)).addScaledVector(sh.dir, 0.7);
 			const { at } = along(sh.pts, 1 - (k % 3) * 0.08);
 			leaf(at, out);
+		}
+		return;
+	}
+	if (isLeader && sh.gen === 0) {
+		// the leader's own top: sprays up its last two metres or so, so it does not stand bare over the crown
+		const top = Math.min(2.4, sh.length * 0.3);
+		for (let k = 0; k < 18; k++) {
+			const { at, dir } = along(sh.pts, 1 - (top / sh.length) * (k / 18));
+			for (let m = 0; m < L.per * 2; m++) {
+				const a = (k * L.per * 2 + m) * 2.39996;
+				// on short twigs out from the leader, the higher the shorter
+				const twig = 0.05 + 0.35 * (k / 18);
+				leaf(at.clone().add(v3(Math.cos(a) * twig, 0, Math.sin(a) * twig)), v3(Math.cos(a), 0, Math.sin(a)).addScaledVector(dir, 0.6));
+			}
 		}
 		return;
 	}

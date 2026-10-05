@@ -4,6 +4,7 @@
  */
 import type { Cast } from './rig';
 import { bee } from './species/bee';
+import { ant, antHill } from './species/ant.js';
 import { chicken, CHICKEN_KINDS } from './species/chicken';
 import { fish, FISH_KINDS } from './species/fish';
 import { frog, FROG_KINDS } from './species/frog';
@@ -22,5 +23,7 @@ export const CASTS: Record<string, () => Cast> = {
 	...each('rabbit', RABBIT_COATS, rabbit),
 	...each('frog', FROG_KINDS, frog),
 	...each('fish', FISH_KINDS, fish),
-	bee
+	bee,
+	ant,
+	'ant-hill': antHill
 };

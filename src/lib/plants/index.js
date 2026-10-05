@@ -27,12 +27,12 @@ import { BLUEBERRY_STAGES, PEPPER_STAGES, PUMPKIN_STAGES, blueberry, pepper, pum
 /**
  * @typedef {{
  *   id: string, label: string, latin: string, note: string, from: string, stages: Stage[],
- *   grow: (stage: number, seed: string) => import('three').Group
+ *   grow: (stage: number, seed: string) => import('three').Group, layer?: Layer
  * }} Plant — `grow` builds it at a stage (0 … 9, the stages' indices; between them, on the way)
  */
 
 /** @type {Plant[]} */
-export const PLANTS = [
+const ALL = [
 	{
 		id: 'strawberry',
 		label: 'Strawberry',
@@ -495,6 +495,39 @@ export const PLANTS = [
 ];
 
 /** seed ids to start from: any text grows a plant */
+/**
+ * THE SEVEN LAYERS of a food forest, as permaculture plants one — from the canopy down through the soil, and up the
+ * others: every plant here is put in the one it grows in when grown, and the list is shown layer by layer. The fungi,
+ * the mycelium threading the soil and feeding the roots, are the eighth layer some count.
+ * @typedef {'canopy' | 'sub-canopy' | 'shrub' | 'herbaceous' | 'ground' | 'root' | 'climber' | 'fungi'} Layer
+ */
+/** @type {{ id: Layer, label: string, note: string }[]} */
+export const LAYERS = [
+	{ id: 'canopy', label: '1 · Canopy', note: 'the tall trees over everything' },
+	{ id: 'sub-canopy', label: '2 · Low trees', note: 'the smaller trees under the canopy: fruit and nut trees, the big herbs that stand like them' },
+	{ id: 'shrub', label: '3 · Shrubs', note: 'the bushes: berries, woody herbs' },
+	{ id: 'herbaceous', label: '4 · Herbaceous', note: 'soft plants that die back or are grown each year: vegetables and herbs' },
+	{ id: 'ground', label: '5 · Ground cover', note: 'low and spreading over the soil, keeping it covered' },
+	{ id: 'root', label: '6 · Roots', note: 'grown for what they swell below the soil: roots, tubers, bulbs' },
+	{ id: 'climber', label: '7 · Climbers', note: 'vines that climb the trees, the stakes and the wires' },
+	{ id: 'fungi', label: '8 · Fungi', note: 'the mycelium in the soil and the wood, and the mushrooms it fruits' }
+];
+
+/** which layer each plant grows in */
+const LAYER_OF = /** @type {Record<string, Layer>} */ ({
+	'king-coconut': 'canopy', mango: 'canopy', durian: 'canopy', jackfruit: 'canopy', avocado: 'canopy', safou: 'canopy', sapodilla: 'canopy',
+	apple: 'sub-canopy', pear: 'sub-canopy', cherry: 'sub-canopy', peach: 'sub-canopy', apricot: 'sub-canopy', plum: 'sub-canopy', orange: 'sub-canopy', lemon: 'sub-canopy', soursop: 'sub-canopy', papaya: 'sub-canopy', banana: 'sub-canopy', 'red-banana': 'sub-canopy',
+	raspberry: 'shrub', blueberry: 'shrub', rosemary: 'shrub', sage: 'shrub',
+	tomato: 'herbaceous', oxheart: 'herbaceous', eggplant: 'herbaceous', pepper: 'herbaceous', lettuce: 'herbaceous', pineapple: 'herbaceous', basil: 'herbaceous', parsley: 'herbaceous', chives: 'herbaceous', mint: 'herbaceous', 'lemon-balm': 'herbaceous', dill: 'herbaceous', coriander: 'herbaceous',
+	strawberry: 'ground', thyme: 'ground', oregano: 'ground', pumpkin: 'ground', moss: 'ground', 'wild-garlic': 'ground',
+	carrot: 'root', radish: 'root', garlic: 'root',
+	cucumber: 'climber', grape: 'climber', 'passion-fruit': 'climber',
+	'wine-cap': 'fungi', shiitake: 'fungi', oyster: 'fungi'
+});
+
+/** every plant, layer by layer from the canopy down (in each layer as they were added) */
+export const PLANTS = LAYERS.flatMap((l) => ALL.filter((p) => (LAYER_OF[p.id] ?? 'herbaceous') === l.id).map((p) => ({ ...p, layer: l.id })));
+
 export const SEEDS = ['maia', 'isar', 'samuel', 'backyard', 'seed-0042', 'sun', 'rain', 'domes'];
 
 /** a fresh seed id, five letters and digits */

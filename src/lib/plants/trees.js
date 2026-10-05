@@ -214,13 +214,15 @@ export const JACKFRUIT_STAGES = stages([
 export const jackfruit = orchard({
 	seed: { size: v3(0.016, 0.009, 0.01), coat: '#c9a678', shade: '#8a6a44', depth: 0.03 },
 	hypogeal: true,
-	leader: {
-		height: [[1.2, 0], [2, 0.16], [3, 0.6], [4, 1.9], [5, 3.9], [6, 5.3], [7, 6.4], [8, 7.3], [9, 8]],
-		radius: 0.32, tiers: 26, clear: 1.6, spacing: 0.32, angle: 1.12, limb: (h) => 3.0 * (1 - 0.55 * h) + 0.6,
-		rate: 2, crown: 6.5, sides: 1.0, side: 0.24, bark: ['#857462', '#6a5a48'], droop: 0.04
+	// a dense dome on a stout trunk: a tall clear trunk (where the fruit comes), then flush after flush
+	flush: {
+		trunk: 2.0, trunkBorn: 1.2, trunkFlush: 2.2, scaffolds: [4, 5], scaffoldAngle: 0.8,
+		gens: 6, flush: 0.28, rest: 0.25, shoot: (gen) => [0, 1.6, 1.15, 0.85, 0.62, 0.48, 0.38][gen] ?? 0.35,
+		whorl: [2, 3], spread: 0.6, up: 0.03, droop: 0.05, wander: 0.08, radius: 0.24, taper: 0.62, thicken: 4,
+		bark: ['#857462', '#6a5a48']
 	},
 	roots: { tap: 2, spread: 2.8, count: 18, radius: 0.07 },
-	leaf: { length: 0.16, width: 0.075, shape: ellipse, colour: '#2a4f22', young: '#7aa04a', style: 'along', per: 5, droop: 0.25 },
+	leaf: { length: 0.16, width: 0.075, shape: ellipse, colour: '#2a4f22', young: '#7aa04a', style: 'along', per: 0, droop: 0.25 },
 	flower: { catkin: true, size: 1, opens: 4.9, sites: 'trunk', chance: 1.3, per: [1, 3] },
 	fruit: {
 		length: 0.45, width: 0.14, stalk: 0.06, keep: [1, 1], setFor: 2.3, ripeFrom: 3.1, ripeFor: 0.8, gloss: false,

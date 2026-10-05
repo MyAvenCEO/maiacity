@@ -9,7 +9,7 @@
 	import { onDestroy, onMount } from 'svelte';
 	import { page } from '$app/state';
 	import { replaceState } from '$app/navigation';
-	import { PLANTS, SEEDS, freshSeed } from '$lib/plants';
+	import { LAYERS, PLANTS, SEEDS, freshSeed } from '$lib/plants';
 	import PickList from '$lib/app/PickList.svelte';
 
 	/** @typedef {import('$lib/plants').Plant} Plant */
@@ -351,7 +351,7 @@
 <svelte:window onkeydown={onKey} />
 
 <main class="plants">
-	<PickList title="Plants" lede="Grown from code, seed to fruit, the roots and the shoot: tab through the ten stages, change the seed id for a sister plant." items={PLANTS} {chosen} where={(p) => p.from} onpick={pick} />
+	<PickList title="Plants" lede="Grown from code, seed to fruit, roots and all, in the seven layers of a food forest: tab through the ten stages, change the seed id for a sister plant." items={PLANTS} {chosen} where={(p) => p.from} onpick={pick} group={(p) => LAYERS.find((l) => l.id === p.layer)?.label ?? ''} />
 	<section class="view">
 		<div class="canvas" bind:this={canvasBox}></div>
 

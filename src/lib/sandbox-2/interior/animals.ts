@@ -15,7 +15,7 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js'
 import { CASTS } from '$lib/actors/casts'
 import { prepare, ready } from '$lib/actors/build'
 import { crowd, FAR, type Eye } from '$lib/actors/crowd'
-import { blend, type Clip, type Motion, type Pose } from '$lib/actors/rig'
+import { blend, lowDetail, type Clip, type Motion, type Pose } from '$lib/actors/rig'
 import { seeded } from './plants'
 
 export type { Eye }
@@ -328,4 +328,48 @@ export function fishes(pools: { x: number; z: number; r: number; y: number; n: n
 	}
 	update(0)
 	return { object: school.object, update }
+}
+
+/**
+ * Ant hills on the forest floor, the wood ants busy on them: from afar a still mound (the ants too small to see),
+ * near the eye the rigged hill with its colony going round it — built the first time the eye comes near, and posed
+ * only while it is near.
+ */
+export function antHills(spots: { x: number; z: number; rot: number; size: number }[], eye?: Eye): { object: THREE.Group; update: (t: number) => void; where: () => { x: number; z: number }[] } {
+	const object = new THREE.Group()
+	const NEAR = 22
+	const make = CASTS['ant-hill']!
+	// the mound from afar: the hill built coarse, its ants (each far smaller than the mound) left off
+	const far = lowDetail(make, 0.45).rig.object
+	far.castShadow = far.receiveShadow = true
+	type Hill = { s: (typeof spots)[number]; far: THREE.Object3D; near?: ReturnType<typeof make> }
+	const hills: Hill[] = spots.map((s) => {
+		const o = far.clone()
+		o.position.set(s.x, 0, s.z)
+		o.rotation.y = s.rot
+		o.scale.setScalar(s.size)
+		object.add(o)
+		return { s, far: o }
+	})
+	const update = (t: number) => {
+		const at = eye?.()
+		for (const h of hills) {
+			const near = !!at && (h.s.x - at.x) ** 2 + (h.s.z - at.z) ** 2 < NEAR * NEAR
+			if (near && !h.near) {
+				h.near = make()
+				const o = h.near.rig.object
+				o.position.set(h.s.x, 0, h.s.z)
+				o.rotation.y = h.s.rot
+				o.scale.setScalar(h.s.size)
+				object.add(o)
+			}
+			h.far.visible = !near
+			if (h.near) {
+				h.near.rig.object.visible = near
+				if (near) h.near.rig.pose(h.near.clips.busy!(t + h.s.x))
+			}
+		}
+	}
+	update(0)
+	return { object, update, where: () => spots }
 }
