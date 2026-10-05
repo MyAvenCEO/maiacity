@@ -7,7 +7,7 @@ import type { Founder } from '$lib/auth/client';
 
 export type Release = 'draft' | 'published';
 export type Place = { href: string; label: string; icon: IconName; cap?: string; note?: string; /** a picture, by hash */ cover?: string; release?: Release };
-export type IconName = 'back' | 'home' | 'play' | 'board' | 'calendar' | 'media' | 'studio' | 'journal' | 'spark' | 'user' | 'key' | 'ledger' | 'coops';
+export type IconName = 'back' | 'home' | 'play' | 'board' | 'calendar' | 'media' | 'studio' | 'journal' | 'spark' | 'user' | 'key' | 'ledger' | 'coops' | 'leaf';
 
 // a founder's own apps: their money, and the communities — cities and settlements, founded, joined and backed here,
 // with no map. Every sandbox draws the same ones.
@@ -42,6 +42,7 @@ export const ADMIN: Place[] = [
 	{ href: `${base}/app/worlds/`, label: 'Worlds', icon: 'play', cap: 'media:admin', note: 'Real places as 3D worlds, to walk and film' },
 	{ href: `${base}/app/models/`, label: '3D models', icon: 'media', cap: 'media:admin', note: 'The things the worlds are built from' },
 	{ href: `${base}/app/actors/`, label: 'Actors', icon: 'user', cap: 'media:admin', note: 'The stand-in and the animals, rigged to move' },
+	{ href: `${base}/app/plants/`, label: 'Plants', icon: 'leaf', cap: 'media:admin', note: 'Grown from code, seed to fruit, roots and all' },
 	{ href: `${base}/app/skills/`, label: 'Skills', icon: 'journal', cap: 'media:admin', note: "The film crew's skills, as a wiki" },
 	{ href: `${base}/app/device/`, label: 'Terminal', icon: 'key', cap: 'media:admin', note: 'Sign a terminal in' }
 ];
@@ -57,11 +58,12 @@ export const released = (founder: Founder | null, p: Place) => p.release !== 'dr
 /** The game (or world) a path is in, if any: a draft one is closed to whoever is no admin. */
 export const gameAt = (path: string) =>
 	[...PLAY, ...WORLDS].find((p) => path.startsWith(p.href)) ??
-	(path.startsWith(`${base}/app/worlds/`) ? WORLDS_TILE : path.startsWith(`${base}/app/models/`) ? MODELS_TILE : path.startsWith(`${base}/app/actors/`) ? ACTORS_TILE : path.startsWith(`${base}/app/skills/`) ? SKILLS_TILE : undefined);
-/** the Worlds grid, the 3D models, the Actors and the Skills: only an admin's */
+	(path.startsWith(`${base}/app/worlds/`) ? WORLDS_TILE : path.startsWith(`${base}/app/models/`) ? MODELS_TILE : path.startsWith(`${base}/app/actors/`) ? ACTORS_TILE : path.startsWith(`${base}/app/plants/`) ? PLANTS_TILE : path.startsWith(`${base}/app/skills/`) ? SKILLS_TILE : undefined);
+/** the Worlds grid, the 3D models, the Actors, the Plants and the Skills: only an admin's */
 const WORLDS_TILE: Place = { href: `${base}/app/worlds/`, label: 'Worlds', icon: 'play', release: 'draft' };
 const MODELS_TILE: Place = { href: `${base}/app/models/`, label: '3D models', icon: 'media', release: 'draft' };
 const ACTORS_TILE: Place = { href: `${base}/app/actors/`, label: 'Actors', icon: 'user', release: 'draft' };
+const PLANTS_TILE: Place = { href: `${base}/app/plants/`, label: 'Plants', icon: 'leaf', release: 'draft' };
 const SKILLS_TILE: Place = { href: `${base}/app/skills/`, label: 'Skills', icon: 'journal', release: 'draft' };
 
 /** Where a path is, in words: the top bar's title. */
@@ -72,6 +74,7 @@ export function placeOf(path: string): string {
 	if (rel.startsWith('/app/worlds/')) return WORLDS.find((p) => path.startsWith(p.href))?.label ?? 'Worlds';
 	if (rel.startsWith('/app/models/')) return '3D models';
 	if (rel.startsWith('/app/actors/')) return 'Actors';
+	if (rel.startsWith('/app/plants/')) return 'Plants';
 	if (rel.startsWith('/app/skills/')) return 'Skills';
 	const app = APPS.find((p) => path.startsWith(p.href));
 	if (app) return app.label;
