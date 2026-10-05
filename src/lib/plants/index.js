@@ -2,8 +2,9 @@
  * THE PLANTS — every plant grown from code, as the plants viewer (/app/plants/) lists it: its name, what it is, its
  * ten stages from seed to ripe fruit (the last four the fruit's own: set, green, turning, ripe), and the function that
  * grows it at a stage from a seed id (./strawberry.js, ./cucumber.js, ./raspberry.js, ./tomato.js with its oxheart,
- * ./eggplant.js, ./coconut.js, ./mango.js — all of it made of ./grow.js, ./sprout.js, ./leaves.js, ./bloom.js and
- * ./tree.js). The same seed id grows the same plant every time; another id, a
+ * ./eggplant.js, ./coconut.js, ./grape.js, ./vegetables.js (radish, carrot, lettuce, garlic) and ./trees.js (mango,
+ * apple, orange, lemon, durian, jackfruit, through ./orchard.js and ./crown.js) — all of it made of ./grow.js,
+ * ./sprout.js, ./leaves.js, ./bloom.js and ./tree.js). The same seed id grows the same plant every time; another id, a
  * sister plant — leaner or bushier, its leaves turned otherwise, its roots another way through the soil. A new plant is
  * a file here and a line below.
  */
@@ -13,7 +14,9 @@ import { STAGES as RASPBERRY, raspberry } from './raspberry.js';
 import { OXHEART_STAGES, STAGES as TOMATO, oxheart, tomato } from './tomato.js';
 import { STAGES as EGGPLANT, eggplant } from './eggplant.js';
 import { STAGES as COCONUT, coconut } from './coconut.js';
-import { STAGES as MANGO, mango } from './mango.js';
+import { APPLE_STAGES, DURIAN_STAGES, JACKFRUIT_STAGES, LEMON_STAGES, MANGO_STAGES, ORANGE_STAGES, apple, durian, jackfruit, lemon, mango, orange } from './trees.js';
+import { CARROT_STAGES, GARLIC_STAGES, LETTUCE_STAGES, RADISH_STAGES, carrot, garlic, lettuce, radish } from './vegetables.js';
+import { STAGES as GRAPE, grape } from './grape.js';
 
 /** @typedef {{ name: string, day: number, note: string }} Stage */
 /**
@@ -92,10 +95,100 @@ export const PLANTS = [
 		id: 'mango',
 		label: 'Mango',
 		latin: 'Mangifera indica',
-		note: 'From a flat stone to a domed tree: bronze-red flushes greening to leathery leaves, upright panicles of tiny flowers, mangoes on long stalks turning gold and red.',
+		note: 'From a flat stone to a dome as wide as it is tall: a short trunk, scaffold limbs at 45°, flush after flush breaking in whorls from each tip; bronze-red new leaves, panicles at the tips, mangoes on long stalks turning gold and red.',
 		from: 'Tree · 6 years',
-		stages: MANGO,
+		stages: MANGO_STAGES,
 		grow: mango
+	},
+	{
+		id: 'radish',
+		label: 'Radish',
+		latin: 'Raphanus sativus · Radieschen',
+		note: 'Four weeks from seed: heart-shaped seed leaves, rough lobed leaves, the stem below them swelling into a red ball half out of the soil.',
+		from: 'Root · 28 days',
+		stages: RADISH_STAGES,
+		grow: radish
+	},
+	{
+		id: 'carrot',
+		label: 'Carrot',
+		latin: 'Daucus carota · Karotte',
+		note: 'Grass-like seed leaves, then a fountain of ferny leaves over a taproot thickening down its length into a long orange cone.',
+		from: 'Root · 95 days',
+		stages: CARROT_STAGES,
+		grow: carrot
+	},
+	{
+		id: 'lettuce',
+		label: 'Lettuce',
+		latin: 'Lactuca sativa · Kopfsalat',
+		note: 'A butterhead: a rosette of broad wavy leaves, the inner ones standing up and cupping over each other into a pale, buttery head.',
+		from: 'Head · 55 days',
+		stages: LETTUCE_STAGES,
+		grow: lettuce
+	},
+	{
+		id: 'garlic',
+		label: 'Garlic',
+		latin: 'Allium sativum · Knoblauch',
+		note: 'A clove planted in autumn: roots from its base, flat blue-green leaves in two ranks, a winter’s rest, then a bulb of new cloves under purple-streaked skins and a curling scape.',
+		from: 'Bulb · 9 months',
+		stages: GARLIC_STAGES,
+		grow: garlic
+	},
+	{
+		id: 'grape',
+		label: 'Red grape',
+		latin: 'Vitis vinifera · Traube',
+		note: 'From a pip to a vine trained on its post and wire: a woody trunk, two arms, green shoots with five-lobed leaves and tendrils, bunches turning red berry by berry.',
+		from: 'Vine · 3 summers',
+		stages: GRAPE,
+		grow: grape
+	},
+	{
+		id: 'apple',
+		label: 'Apple',
+		latin: 'Malus domestica · Apfel',
+		note: 'From a pip to an open crown on scaffold limbs: toothed leaves, clusters of pink-budded white blossom, apples flushing red on the sunny side.',
+		from: 'Tree · 6 years',
+		stages: APPLE_STAGES,
+		grow: apple
+	},
+	{
+		id: 'orange',
+		label: 'Orange',
+		latin: 'Citrus × sinensis · Orange',
+		note: 'A dense evergreen dome of glossy leaves, waxy white blossom heavy with scent, round fruit full-sized green before they turn orange.',
+		from: 'Tree · 7 years',
+		stages: ORANGE_STAGES,
+		grow: orange
+	},
+	{
+		id: 'lemon',
+		label: 'Lemon',
+		latin: 'Citrus × limon · Zitrone',
+		note: 'An open, thorny little tree, its new leaves flushed purple, purple-budded white flowers, oval fruit with a nipple turning yellow from the tip.',
+		from: 'Tree · 6 years',
+		stages: LEMON_STAGES,
+		grow: lemon
+	},
+	{
+		id: 'durian',
+		label: 'Durian',
+		latin: 'Durio zibethinus',
+		note: 'A tall conical tree, its near-level limbs in tiers; clusters of cream flowers along the limbs, then heavy spiny fruit hanging from them.',
+		from: 'Tree · 8 years',
+		stages: DURIAN_STAGES,
+		grow: durian
+	},
+	{
+		id: 'jackfruit',
+		label: 'Jackfruit',
+		latin: 'Artocarpus heterophyllus · Jackfrucht',
+		note: 'A dense dome over a stout trunk; its flower heads and huge knobbly fruit burst straight out of the trunk and thickest limbs.',
+		from: 'Tree · 6 years',
+		stages: JACKFRUIT_STAGES,
+		grow: jackfruit
 	}
 ];
 
