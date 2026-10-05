@@ -46,7 +46,7 @@ export function strawberry(stage, seed) {
 	const g = growth(stage);
 	const bag = new Bag();
 	/** what is where: the berries, so that none grows through another */
-	const space = new Space();
+	const space = bag.space;
 	const r = chance(seed, 'plant');
 	const vigour = about(r, 1, 0.12);
 

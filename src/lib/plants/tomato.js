@@ -179,7 +179,7 @@ function grow(sort, g, seed) {
 	}
 
 	// what is where: the cane, the stem, the fruit, for the fruit and leaves to keep clear of
-	const space = new Space();
+	const space = bag.space;
 	if (g >= 3.6) space.rod([STAKE.clone(), STAKE.clone().add(v3(0, sort.stake, 0))], 0.008);
 	if (g >= 3.6) bag.add('prop', tube([STAKE.clone().add(v3(0, -0.25, 0)), STAKE.clone().add(v3(0, sort.stake, 0))], (u) => 0.0055 * (1 - 0.3 * u), (u) => mix('#c8a865', '#d9c08a', Math.abs(Math.sin(u * 60)) < 0.06 ? 0 : 1), 8));
 

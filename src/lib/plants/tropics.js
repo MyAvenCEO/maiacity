@@ -387,6 +387,7 @@ export function papaya(g, seed) {
 	const base = s.top.clone();
 	const R = lerp(0.006, 0.075, span(g, 2.5, 8)) * vigour;
 	const top = base.clone().add(v3(0, H, 0));
+	if (H > 0.05) bag.space.rod([base, top], R * 1.05);
 	const made = table(g, [[2, 0], [3, 4], [4, 18], [5, 30], [6, 36], [7, 44], [8, 52], [9, 58]]);
 	const live = Math.min(made, 22);
 	if (H > 0.01) {
@@ -422,8 +423,23 @@ export function papaya(g, seed) {
 		}
 		const ripe = span(g, opens + 2.4, opens + 3.2);
 		const L = (0.05 + 0.2 * set) * vigour * about(lr, 1, 0.1), W = L * 0.36;
+		// it hangs against the stem where there is room: turned a little round it, set out a little, or lower — the
+		// papayas crowd round the stem and squeeze past each other, never through
+		const here = R * (1.3 - 0.6 * clamp((p.y - base.y) / Math.max(0.01, H)));
+		/** @type {{ balls: { c: THREE.Vector3, r: number }[], cost: number, data: { from: THREE.Vector3, tilt: THREE.Vector3 } }[]} */
+		const ways = [];
+		for (const drop of [0, 0.25, 0.5])
+			for (const turn of [0, 0.3, -0.3, 0.6, -0.6, 0.95, -0.95])
+				for (const push of [0, 0.5, 1]) {
+					const o = out.clone().applyAxisAngle(v3(0, 1, 0), turn);
+					const from = p.clone().addScaledVector(o, here + W * (0.92 + push * 0.6)).add(v3(0, -drop * L, 0));
+					const tilt = o.clone().multiplyScalar(push * 0.18).add(v3(0, -1, 0)).normalize();
+					const balls = [0.2, 0.45, 0.7, 0.9].map((f) => ({ c: from.clone().addScaledVector(tilt, L * f), r: W * (0.8 + 0.25 * f) * 0.95 }));
+					ways.push({ balls, cost: Math.abs(turn) * 0.004 + push * 0.006 + drop * 0.01, data: { from, tilt } });
+				}
+		const way = bag.space.best(ways);
 		const axis = [];
-		for (let k = 0; k <= 14; k++) axis.push(axil.clone().addScaledVector(out, W * 0.9).add(v3(0, -(k / 14) * L, 0)));
+		for (let k = 0; k <= 14; k++) axis.push(way.from.clone().addScaledVector(way.tilt, (k / 14) * L));
 		bag.add('gloss', tube(axis, (u, v) => W * Math.pow(Math.max(0, Math.sin(Math.PI * Math.min(1, 0.04 + u * 0.98))), 0.45) * (0.8 + 0.25 * u) * (1 + 0.05 * Math.cos(v * Math.PI * 10)), (u) => mix('#3f7a2e', '#f2a02a', clamp(ripe * 1.6 - (1 - u) * 0.7)), 16));
 	}
 	return bag.build();
@@ -506,6 +522,7 @@ export function passionFruit(g, seed) {
 			const pts = [];
 			for (let k = 0; k <= 10; k++) pts.push(from.clone().add(v3((sr() - 0.5) * 0.04 * k / 10, -(k / 10) * len, (sr() - 0.5) * 0.06 * k / 10 + 0.02 * k / 10)));
 			bag.add('body', tube(pts, (u) => 0.003 * (1 - 0.5 * u), () => '#7aa04a', 4));
+			bag.space.rod(pts, 0.005);
 			for (let k = 1; k <= 10; k += 2) {
 				const a = k * 2.4 + h;
 				leaf(pts[k], v3(Math.cos(a), 0, Math.sin(a)), 1);
@@ -522,8 +539,11 @@ export function passionFruit(g, seed) {
 					const ripe = span(g, opens + 2.0, opens + 2.9);
 					const r = (0.008 + 0.028 * set) * vigour;
 					const wrinkle = span(g, 8.6, 9.5) * 0.12;
+					// where it touches no other fruit, nor the shoot it hangs from
+					const place = bag.space.settle(stalkEnd, v3(0, -1, 0), (at2, d) => [{ c: at2.clone().addScaledVector(d, r * 1.05), r: r * 0.98 }], 0.04);
+					if (place.at.distanceTo(stalkEnd) > 1e-4) bag.add('body', tube([stalkEnd, place.at], () => 0.0012, () => '#7aa04a', 3));
 					const ax = [];
-					for (let m = 0; m <= 12; m++) ax.push(stalkEnd.clone().add(v3(0, -(m / 12) * r * 2.1, 0)));
+					for (let m = 0; m <= 12; m++) ax.push(place.at.clone().addScaledVector(place.dir, (m / 12) * r * 2.1));
 					bag.add('gloss', tube(ax, (u, v) => r * Math.pow(Math.max(0, Math.sin(Math.PI * u)), 0.5) * (1 + wrinkle * Math.sin(u * 23 + v * 31) * Math.sin(v * 17)), () => mix(mix('#4f8a2e', '#5a7a3a', ripe), '#4a1a4a', ripe), 14));
 				}
 			}

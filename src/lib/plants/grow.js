@@ -242,6 +242,8 @@ export class Bag {
 	constructor() {
 		/** @type {Record<Kind, THREE.BufferGeometry[]>} */
 		this.parts = { body: [], sheet: [], gloss: [], prop: [] };
+		/** what the plant has put where, for its fruit and leaves to keep clear of (see Space) */
+		this.space = new Space();
 	}
 	/** @param {Kind} kind @param {THREE.BufferGeometry} geometry @param {THREE.Matrix4} [m] */
 	add(kind, geometry, m) {
@@ -421,6 +423,27 @@ export class Space {
 		}
 		for (const b of shape(best.at, best.dir)) this.ball(b.c, b.r);
 		return best;
+	}
+	/**
+	 * Of a few ways to place a thing (each its balls, and how much less it is liked than the first), the one that touches
+	 * least of what is already there — the first that touches nothing. Its balls are added to the space.
+	 * @template T
+	 * @param {{ balls: { c: THREE.Vector3, r: number }[], cost: number, data: T }[]} options
+	 * @returns {T}
+	 */
+	best(options) {
+		let pick = options[0], low = Infinity;
+		for (const o of options) {
+			let cost = this.overlap(o.balls) * 10 + o.cost;
+			for (const b of o.balls) cost += Math.max(0, b.r - b.c.y) * 10;
+			if (cost < low) {
+				low = cost;
+				pick = o;
+			}
+			if (cost <= o.cost + 1e-9) break;
+		}
+		for (const b of pick.balls) this.ball(b.c, b.r);
+		return pick.data;
 	}
 	/**
 	 * Which way a leaf reaches: its bearing turned as little as it needs so that its blade (points along it, out from

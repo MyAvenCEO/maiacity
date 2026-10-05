@@ -113,7 +113,7 @@ export function cucumber(stage, seed) {
 	// the vine: from between the seed leaves up and round the stake
 	const L = vineLength(g) * vigour;
 	// what is where: the stake, the vine, the cucumbers, for the cucumbers and leaves to keep clear of
-	const space = new Space();
+	const space = bag.space;
 	if (g >= 3.5) space.rod([STAKE.clone(), STAKE.clone().add(v3(0, 1.7, 0))], 0.008);
 	if (L > 0.002) vine(bag, seed, s.top, L, g, vigour, space);
 	return bag.build();

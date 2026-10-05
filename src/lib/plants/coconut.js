@@ -108,7 +108,7 @@ export function coconut(g, seed) {
 		return Math.abs(a) < Math.abs(b) ? a : b;
 	};
 	/** what is where: the trunk, then the nuts, so none grows through the trunk or another */
-	const space = new Space();
+	const space = bag.space;
 	if (g > 1.6) {
 		const ht = Math.max(0.05, H);
 		// close enough along it for every ring to be its own groove

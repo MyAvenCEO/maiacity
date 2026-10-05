@@ -97,7 +97,7 @@ export function eggplant(g, seed) {
 	});
 
 	// what is where: the stems, then the fruit, for the fruit and the leaves to keep clear of
-	const space = new Space();
+	const space = bag.space;
 	for (const l of limbs) space.rod(l.pts, 0.008 * (l.order ? 0.6 : 1) + 0.004);
 	/** the leaves wait until the fruit hang, then turn away from them @type {(() => void)[]} */
 	const leaves = [];
