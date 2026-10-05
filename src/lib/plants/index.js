@@ -1,15 +1,19 @@
 /*
  * THE PLANTS — every plant grown from code, as the plants viewer (/app/plants/) lists it: its name, what it is, its
  * ten stages from seed to ripe fruit (the last four the fruit's own: set, green, turning, ripe), and the function that
- * grows it at a stage from a seed id (./strawberry.js, ./cucumber.js, ./raspberry.js, ./tomato.js, all of it made of
- * ./grow.js, ./sprout.js, ./leaves.js and ./bloom.js). The same seed id grows the same plant every time; another id, a
+ * grows it at a stage from a seed id (./strawberry.js, ./cucumber.js, ./raspberry.js, ./tomato.js with its oxheart,
+ * ./eggplant.js, ./coconut.js, ./mango.js — all of it made of ./grow.js, ./sprout.js, ./leaves.js, ./bloom.js and
+ * ./tree.js). The same seed id grows the same plant every time; another id, a
  * sister plant — leaner or bushier, its leaves turned otherwise, its roots another way through the soil. A new plant is
  * a file here and a line below.
  */
 import { STAGES as STRAWBERRY, strawberry } from './strawberry.js';
 import { STAGES as CUCUMBER, cucumber } from './cucumber.js';
 import { STAGES as RASPBERRY, raspberry } from './raspberry.js';
-import { STAGES as TOMATO, tomato } from './tomato.js';
+import { OXHEART_STAGES, STAGES as TOMATO, oxheart, tomato } from './tomato.js';
+import { STAGES as EGGPLANT, eggplant } from './eggplant.js';
+import { STAGES as COCONUT, coconut } from './coconut.js';
+import { STAGES as MANGO, mango } from './mango.js';
 
 /** @typedef {{ name: string, day: number, note: string }} Stage */
 /**
@@ -56,6 +60,42 @@ export const PLANTS = [
 		from: 'Cordon · 105 days',
 		stages: TOMATO,
 		grow: tomato
+	},
+	{
+		id: 'oxheart',
+		label: 'Oxheart tomato',
+		latin: 'Solanum lycopersicum · Ochsenherz',
+		note: 'A tall slender cordon, its wispy leaves hanging as if wilted; few, huge heart-shaped tomatoes to a truss, ribbed at the shoulders, ripening late to a pinkish red.',
+		from: 'Cordon · 125 days',
+		stages: OXHEART_STAGES,
+		grow: oxheart
+	},
+	{
+		id: 'eggplant',
+		label: 'Eggplant',
+		latin: 'Solanum melongena · Aubergine',
+		note: 'A forked bush of big soft grey-green leaves with purple midribs, nodding violet stars, long glossy black-purple fruit under spiny green calyxes.',
+		from: 'Bush · 115 days',
+		stages: EGGPLANT,
+		grow: eggplant
+	},
+	{
+		id: 'king-coconut',
+		label: 'King coconut',
+		latin: "Cocos nucifera 'King' · Thambili",
+		note: 'A palm from a whole golden nut: whole first leaves, then a ringed trunk and a crown of arching fronds, cream flower spikes and bunches of golden-orange nuts.',
+		from: 'Palm · 7 years',
+		stages: COCONUT,
+		grow: coconut
+	},
+	{
+		id: 'mango',
+		label: 'Mango',
+		latin: 'Mangifera indica',
+		note: 'From a flat stone to a domed tree: bronze-red flushes greening to leathery leaves, upright panicles of tiny flowers, mangoes on long stalks turning gold and red.',
+		from: 'Tree · 6 years',
+		stages: MANGO,
+		grow: mango
 	}
 ];
 

@@ -16,9 +16,10 @@ import { aim, chance, clamp, lerp, mix, sheet, tube, v3 } from './grow.js';
  * @param {{
  *   seed: string, key: (string | number)[], at: THREE.Vector3, out: THREE.Vector3, lift: number, length: number,
  *   pairs: number, leaflet: Leaflet, grown: number, old?: number, between?: boolean, stalk: string, radius: number,
- *   terminal?: number
+ *   terminal?: number, droop?: number, curl?: number
  * }} o — `out` the way it reaches (level), `lift` how far up from level it starts (radians), `length` the stalk and
- *   rachis together, `terminal` the end leaflet's size against the pairs', `between` small leaflets between the pairs
+ *   rachis together, `terminal` the end leaflet's size against the pairs', `between` small leaflets between the pairs,
+ *   `droop` how much more it hangs, `curl` its leaflets rolled along their midribs even when grown (an oxheart's)
  */
 export function pinnate(bag, o) {
 	const r = chance(o.seed, 'pinnate', ...o.key);
@@ -32,7 +33,7 @@ export function pinnate(bag, o) {
 	let p = o.at.clone();
 	/** @type {THREE.Vector3[]} */
 	const pts = [];
-	const droop = 0.05 + r() * 0.05 + old * 0.12;
+	const droop = 0.05 + r() * 0.05 + old * 0.12 + (o.droop ?? 0);
 	for (let k = 0; k <= 12; k++) {
 		pts.push(p.clone());
 		d = d.clone().addScaledVector(v3(0, -1, 0), droop * (k / 12)).normalize();
@@ -44,7 +45,7 @@ export function pinnate(bag, o) {
 		const f = u * 12, k = Math.min(11, Math.floor(f));
 		return { p: pts[k].clone().lerp(pts[k + 1], f - k), d: pts[k + 1].clone().sub(pts[k]).normalize() };
 	};
-	const fold = (1 - g) * 0.9 + 0.05 + old * 0.2;
+	const fold = (1 - g) * 0.9 + 0.05 + old * 0.2 + (o.curl ?? 0);
 	const leaf = o.leaflet;
 	const paint = (/** @type {number} */ u, /** @type {number} */ v) => {
 		const vein = Math.abs(v) < 0.09 ? 0.45 : 0;
@@ -67,7 +68,7 @@ export function pinnate(bag, o) {
 			length: l,
 			width: l * (leaf.width / leaf.length),
 			shape: leaf.shape,
-			lift: (uu, v) => fold * Math.abs(v) * 0.3 - (0.08 + old * 0.2) * uu * uu,
+			lift: (uu, v) => fold * Math.abs(v) * 0.3 - (0.08 + old * 0.2 + (o.droop ?? 0)) * uu * uu,
 			paint,
 			along: 36,
 			across: 6

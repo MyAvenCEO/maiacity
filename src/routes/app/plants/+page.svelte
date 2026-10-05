@@ -72,36 +72,42 @@
 		key.shadow.bias = -0.0004;
 		scene.add(key, key.target);
 
-		// the soil: a block of earth, its near faces cut away (we look in through them) and its far walls and floor
-		// solid, so the roots show against the earth behind them from whichever side we look
+		// the earth: the round floor everything stands on is the soil itself, a disc of earth as deep as the grown
+		// plant's roots. Its near side and its top are see-through (we look in through them), its far wall and its
+		// floor solid, so the roots show against the earth behind them from whichever side we look.
 		const grain = soilTexture(THREE);
-		const walls = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshStandardMaterial({ color: '#c09a74', map: grain, roughness: 1, side: THREE.BackSide }));
+		const surfaceGrain = grain.clone();
+		const walls = new THREE.Mesh(new THREE.CylinderGeometry(1, 1, 1, 96, 1, false), new THREE.MeshStandardMaterial({ color: '#c09a74', map: grain, roughness: 1, side: THREE.BackSide }));
 		walls.receiveShadow = true;
-		const front = new THREE.Mesh(
-			new THREE.BoxGeometry(1, 1, 1),
+		const sides = new THREE.Mesh(
+			new THREE.CylinderGeometry(1, 1, 1, 96, 1, true),
 			new THREE.MeshStandardMaterial({ color: '#a07a56', map: grain, roughness: 1, transparent: true, opacity: 0.1, depthWrite: false })
 		);
-		front.receiveShadow = true;
-		const edges = new THREE.LineSegments(new THREE.EdgesGeometry(new THREE.BoxGeometry(1, 1, 1)), new THREE.LineBasicMaterial({ color: '#4a3424', transparent: true, opacity: 0.45 }));
+		const top = new THREE.Mesh(
+			new THREE.CircleGeometry(1, 96).rotateX(-Math.PI / 2).translate(0, 0.5, 0),
+			new THREE.MeshStandardMaterial({ color: '#b08860', map: surfaceGrain, roughness: 1, transparent: true, opacity: 0.32, depthWrite: false })
+		);
+		top.receiveShadow = true;
+		const ring = (/** @type {number} */ y) => {
+			const pts = [];
+			for (let k = 0; k <= 96; k++) pts.push(new THREE.Vector3(Math.cos((k / 96) * Math.PI * 2), y, Math.sin((k / 96) * Math.PI * 2)));
+			return new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts), new THREE.LineBasicMaterial({ color: '#4a3424', transparent: true, opacity: 0.4 }));
+		};
 		const earth = new THREE.Group();
-		earth.add(walls, front, edges);
+		earth.add(walls, sides, top, ring(0.5), ring(-0.5));
 		scene.add(earth);
 		showSoil = (/** @type {Soil} */ mode) => {
 			walls.visible = mode === 'cutaway';
-			front.visible = mode !== 'bare';
-			const m = /** @type {import('three').MeshStandardMaterial} */ (front.material);
-			m.opacity = mode === 'solid' ? 1 : 0.1;
-			m.transparent = mode !== 'solid';
-			m.depthWrite = mode === 'solid';
-			m.needsUpdate = true;
+			sides.visible = mode !== 'bare';
+			for (const [mesh, see] of /** @type {const} */ ([[sides, 0.1], [top, mode === 'bare' ? 0.12 : 0.32]])) {
+				const m = /** @type {import('three').MeshStandardMaterial} */ (mesh.material);
+				m.opacity = mode === 'solid' ? 1 : see;
+				m.transparent = mode !== 'solid';
+				m.depthWrite = mode === 'solid';
+				m.needsUpdate = true;
+			}
 		};
 		showSoil(soil);
-
-		// the ground the soil block stands on: the same floor at every stage
-		const ground = new THREE.Mesh(new THREE.CircleGeometry(1, 64), new THREE.MeshStandardMaterial({ color: '#dcd6cb', roughness: 1 }));
-		ground.rotation.x = -Math.PI / 2;
-		ground.receiveShadow = true;
-		scene.add(ground);
 
 		/** @type {import('three').Group | null} */
 		let current = null;
@@ -109,9 +115,9 @@
 		const goal = { mid: new THREE.Vector3(), reach: 0.1 };
 		let easing = 0;
 		let first = true;
-		/** the soil block for this plant and seed: sized once, to the plant fully grown */
+		/** the earth for this plant and seed (its radius and depth): sized once, to the plant fully grown */
 		let soilFor = '';
-		const block = { w: 0.1, d: 0.1 };
+		const ground = { r: 0.1, d: 0.1 };
 		/** @type {import('three').Box3 | null} */
 		let plantBox = null;
 
@@ -125,27 +131,27 @@
 		};
 		const toss = (/** @type {import('three').Group} */ group) => group.traverse((o) => /** @type {import('three').Mesh} */ (o).geometry?.dispose());
 
-		/** the soil the grown plant needs, with room round its roots: the same block from seed to fruit */
+		/** the earth the grown plant needs, with room round its roots: the same from seed to fruit */
 		const sizeSoil = (/** @type {Plant} */ plant, /** @type {string} */ id) => {
 			const grown = plant.grow(plant.stages.length - 1, id);
 			const b = bounds(grown);
 			toss(grown);
 			const below = Math.max(0, -b.min.y);
 			const half = Math.max(Math.abs(b.min.x), Math.abs(b.max.x), Math.abs(b.min.z), Math.abs(b.max.z));
-			block.w = Math.max(below * 0.6, half * 1.12 + Math.max(below, half) * 0.1) + 0.01;
-			block.d = below * 1.12 + 0.02;
-			earth.scale.set(block.w * 2, block.d, block.w * 2);
-			earth.position.y = -block.d / 2;
-			grain.repeat.set(Math.max(1, (block.w * 2) / 0.06), Math.max(1, block.d / 0.06));
-			ground.position.y = -block.d - 0.0005;
-			ground.scale.setScalar(block.w * 6);
+			// a round floor, wide round the plant and its roots
+			ground.r = Math.max(below * 1.1, half * 1.6 + Math.max(below, half) * 0.15) + 0.02;
+			ground.d = below * 1.12 + 0.02;
+			earth.scale.set(ground.r, ground.d, ground.r);
+			earth.position.y = -ground.d / 2;
+			grain.repeat.set(Math.max(1, (ground.r * Math.PI * 2) / 0.06), Math.max(1, ground.d / 0.06));
+			surfaceGrain.repeat.set(Math.max(1, (ground.r * 2) / 0.06), Math.max(1, (ground.r * 2) / 0.06));
 		};
 
-		/** frame the plant as it is now (close in), or the whole soil block and the plant over it */
+		/** frame the plant as it is now (close in), or the whole earth and the plant over it */
 		reframe = (/** @type {Frame} */ mode) => {
 			if (!plantBox) return;
 			const all = plantBox.clone();
-			if (mode === 'whole') all.union(new THREE.Box3(new THREE.Vector3(-block.w, -block.d, -block.w), new THREE.Vector3(block.w, 0, block.w)));
+			if (mode === 'whole') all.union(new THREE.Box3(new THREE.Vector3(-ground.r, -ground.d, -ground.r), new THREE.Vector3(ground.r, 0, ground.r)));
 			else all.expandByScalar(0.004);
 			goal.mid.copy(all.getCenter(new THREE.Vector3()));
 			const s = all.getSize(new THREE.Vector3());
@@ -373,7 +379,7 @@
 			<span class="label">Frame</span>
 			<div class="chips">
 				<button class:on={frame === 'plant'} onclick={() => toFrame('plant')}>The plant</button>
-				<button class:on={frame === 'whole'} onclick={() => toFrame('whole')}>Whole soil</button>
+				<button class:on={frame === 'whole'} onclick={() => toFrame('whole')}>Whole earth</button>
 			</div>
 			<span class="label">Soil</span>
 			<div class="chips">
