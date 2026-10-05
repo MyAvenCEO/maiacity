@@ -347,3 +347,102 @@ export function root(bag, o) {
 		r();
 	}
 }
+
+/**
+ * SPACE — what a plant has already put where, so that what comes next keeps clear of it: its stems and stakes as rods
+ * (capsules), its fruit as balls. A fruit looks for a way to hang that touches nothing (`settle`), a leaf turns on its
+ * stalk away from the fruit and the stems (`steer`). Nothing here is physics: a search, the same every time.
+ */
+export class Space {
+	constructor() {
+		/** @type {{ c: THREE.Vector3, r: number }[]} */
+		this.balls = [];
+		/** @type {{ a: THREE.Vector3, b: THREE.Vector3, r: number }[]} */
+		this.rods = [];
+	}
+	/** @param {THREE.Vector3} c @param {number} r */
+	ball(c, r) {
+		this.balls.push({ c: c.clone(), r });
+	}
+	/** a rod along a path, as a capsule per few points @param {THREE.Vector3[]} pts @param {number} r */
+	rod(pts, r) {
+		const step = Math.max(1, Math.floor(pts.length / 12));
+		for (let i = 0; i + step < pts.length; i += step) this.rods.push({ a: pts[i].clone(), b: pts[Math.min(pts.length - 1, i + step)].clone(), r });
+	}
+	/** how deep a ball at c of radius r sinks into what is already there (0 when it touches nothing) */
+	depth(/** @type {THREE.Vector3} */ c, /** @type {number} */ r) {
+		let worst = 0;
+		for (const b of this.balls) worst = Math.max(worst, r + b.r - c.distanceTo(b.c));
+		const ab = new THREE.Vector3(), ac = new THREE.Vector3(), q = new THREE.Vector3();
+		for (const s of this.rods) {
+			ab.subVectors(s.b, s.a);
+			ac.subVectors(c, s.a);
+			const t = clamp(ac.dot(ab) / Math.max(1e-12, ab.lengthSq()));
+			q.copy(s.a).addScaledVector(ab, t);
+			worst = Math.max(worst, r + s.r - c.distanceTo(q));
+		}
+		return Math.max(0, worst);
+	}
+	/** how far a set of balls overlaps what is there, all told */
+	overlap(/** @type {{ c: THREE.Vector3, r: number }[]} */ shape) {
+		let sum = 0;
+		for (const s of shape) sum += this.depth(s.c, s.r);
+		return sum;
+	}
+	/**
+	 * Where a fruit hangs: from `at`, along a direction near `dir`, its stalk perhaps a little longer, so that its
+	 * balls (`shape(at, dir)`) touch nothing — or as little as can be. It keeps the place, and the fruit's balls are
+	 * added to the space.
+	 * @param {THREE.Vector3} at @param {THREE.Vector3} dir
+	 * @param {(at: THREE.Vector3, dir: THREE.Vector3) => { c: THREE.Vector3, r: number }[]} shape
+	 * @param {number} reach how far it may lengthen its stalk
+	 */
+	settle(at, dir, shape, reach) {
+		const d0 = dir.clone().normalize();
+		let best = { at: at.clone(), dir: d0, cost: Infinity };
+		const side = new THREE.Vector3();
+		for (const ext of [0, 0.5, 1]) {
+			for (const swing of [0, 0.45, 0.9, 1.4, 2]) {
+				for (let k = 0; k < (swing ? 8 : 1); k++) {
+					const a = (k / 8) * Math.PI * 2;
+					side.set(Math.cos(a), 0, Math.sin(a));
+					const d = d0.clone().addScaledVector(side, swing).normalize();
+					if (d.y > 0.35) continue;
+					const p = at.clone().addScaledVector(d, ext * reach);
+					const balls = shape(p, d);
+					// below the soil is no place for a fruit either
+					let cost = this.overlap(balls) * 10 + swing * 0.004 + ext * 0.003;
+					for (const b of balls) cost += Math.max(0, b.r - b.c.y) * 10;
+					if (cost < best.cost) best = { at: p, dir: d, cost };
+				}
+				if (best.cost < 0.004 * (swing + 0.5)) break;
+			}
+			if (best.cost < 0.01) break;
+		}
+		for (const b of shape(best.at, best.dir)) this.ball(b.c, b.r);
+		return best;
+	}
+	/**
+	 * Which way a leaf reaches: its bearing turned as little as it needs so that its blade (points along it, out from
+	 * `at`) keeps out of the fruit and the stems.
+	 * @param {THREE.Vector3} at @param {THREE.Vector3} out level @param {number} lift @param {number} reach @param {number} r
+	 */
+	steer(at, out, lift, reach, r) {
+		let best = { out: out.clone(), cost: Infinity };
+		for (const turn of [0, 0.3, -0.3, 0.6, -0.6, 0.95, -0.95, 1.35, -1.35, 1.8, -1.8, 2.4, -2.4]) {
+			const o = out.clone().applyAxisAngle(new THREE.Vector3(0, 1, 0), turn).setY(0).normalize();
+			const d = o.clone().multiplyScalar(Math.cos(lift)).add(new THREE.Vector3(0, Math.sin(lift), 0));
+			const across = new THREE.Vector3(-o.z, 0, o.x);
+			let cost = Math.abs(turn) * 0.002;
+			// along the midrib, and out to either side where the leaflets or the blade's edges reach
+			for (const f of [0.3, 0.55, 0.8, 1]) {
+				const p = at.clone().addScaledVector(d, reach * f).add(new THREE.Vector3(0, -reach * 0.12 * f * f, 0));
+				cost += this.depth(p, r);
+				for (const side of [-1, 1]) cost += this.depth(p.clone().addScaledVector(across, side * reach * 0.22), r * 0.8);
+			}
+			if (cost < best.cost) best = { out: o, cost };
+			if (cost < 0.0005) break;
+		}
+		return best.out;
+	}
+}

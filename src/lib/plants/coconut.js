@@ -10,7 +10,7 @@
  * All of it at real measure (metres), the soil's surface at y = 0.
  */
 import * as THREE from 'three';
-import { Bag, about, aim, bead, between, chance, clamp, lerp, mix, root, sheet, span, table, tube, v3 } from './grow.js';
+import { Bag, Space, about, aim, bead, between, chance, clamp, lerp, mix, root, sheet, span, table, tube, v3 } from './grow.js';
 
 export const STAGES = [
 	{ name: 'Seed nut', day: 0, note: 'The whole golden husked nut, laid on its side half sunk in moist soil: the seed of a palm is its fruit.' },
@@ -71,7 +71,7 @@ export function coconut(g, seed) {
 			key: ['palm', i],
 			from,
 			dir: fromNut ? v3((rr() - 0.5) * 0.4, -1, (rr() - 0.5) * 0.4) : v3(Math.cos(bear), -between(rr, 0.3, 1.1), Math.sin(bear)),
-			length: fromNut ? 0.45 : between(rr, 0.9, 1.8) * vigour,
+			length: fromNut ? 0.45 : between(rr, 1.2, 2.4) * vigour,
 			grown: (g - born) / 2.4,
 			radius: fromNut ? 0.003 : 0.0045,
 			down: 0.025,
@@ -86,28 +86,66 @@ export function coconut(g, seed) {
 	}
 
 	// the trunk: a broad base, then grey and ringed, leaning a little and curving back up
-	const H = table(g, [[3.8, 0], [4.4, 0.06], [5, 0.7], [6, 1.6], [7, 2.4], [8, 3.1], [9, 3.8]]) * vigour;
+	const H = table(g, [[3.8, 0], [4.4, 0.12], [5, 1.5], [6, 3.3], [7, 5], [8, 6.5], [9, 7.8]]) * vigour;
 	const lean = chance(seed, 'lean');
 	const leanTo = v3(Math.cos(lean() * 6.283), 0, Math.sin(lean() * 6.283));
-	const bow = between(lean, 0.04, 0.12);
+	const bow = between(lean, 0.04, 0.1);
 	const trunkAt = (/** @type {number} */ u) => BASE.clone().addScaledVector(leanTo, Math.sin(u * 1.4) * bow * H).add(v3(0, u * H, 0));
-	const bole = lerp(0.03, 0.2, span(g, 1.8, 5.5)) * vigour;
+	const bole = lerp(0.03, 0.17, span(g, 1.8, 6)) * vigour;
+	// the leaf scars, from the base up: a ring where each fallen frond was, a hand apart, laid down as the trunk grew
+	const sr = chance(seed, 'scars');
+	const scars = [0.25];
+	while (scars[scars.length - 1] < 9) scars.push(scars[scars.length - 1] + between(sr, 0.07, 0.13));
+	/** how far from the nearest scar a height is (above it +, below it −), and the scar's own depth */
+	const nearest = (/** @type {number} */ h) => {
+		let lo = 0, hi = scars.length - 1;
+		while (hi - lo > 1) {
+			const mid = (lo + hi) >> 1;
+			if (scars[mid] > h) hi = mid;
+			else lo = mid;
+		}
+		const a = h - scars[lo], b = h - scars[hi];
+		return Math.abs(a) < Math.abs(b) ? a : b;
+	};
+	/** what is where: the trunk, then the nuts, so none grows through the trunk or another */
+	const space = new Space();
 	if (g > 1.6) {
-		const pts = [];
-		for (let k = 0; k <= 24; k++) pts.push(trunkAt(k / 24));
 		const ht = Math.max(0.05, H);
+		// close enough along it for every ring to be its own groove
+		const n = Math.max(24, Math.min(700, Math.round(ht / 0.012)));
+		const pts = [];
+		for (let k = 0; k <= n; k++) pts.push(trunkAt(k / n));
+		if (H > 0.3) space.rod(pts, bole * 1.05);
 		bag.add(
 			'body',
 			tube(
 				H > 0.02 ? pts : [BASE.clone().add(v3(0, -0.05, 0)), BASE.clone().add(v3(0, bole * 0.8, 0))],
-				(u) => bole * (1 + 0.5 * Math.pow(1 - Math.min(1, (u * ht) / 0.5), 2)) * (1 - 0.3 * u),
-				(u) => {
-					const ring = Math.abs(Math.sin((u * ht) / 0.07 * Math.PI));
-					return mix(mix('#8a7a62', '#9c8f7a', u), '#5e5244', ring < 0.12 ? 0.6 : 0).lerp(new THREE.Color('#6b7a3c'), clamp(1 - H / 0.4) * 0.6);
+				(u, v) => {
+					const h = u * ht;
+					// the bole swollen at the foot, then a slow taper, a little thicker again under the crown
+					const body = bole * (1 + 0.7 * Math.pow(1 - Math.min(1, h / 0.8), 2)) * (1 - 0.28 * u + 0.12 * Math.pow(u, 6));
+					// each scar a groove with a lip just above it, rough round the trunk
+					const d = nearest(h);
+					const ring = h > 0.2 ? -0.035 * Math.exp(-Math.pow(d / 0.006, 2)) + 0.03 * Math.exp(-Math.pow((d - 0.014) / 0.01, 2)) : 0;
+					return body * (1 + ring + 0.008 * Math.sin(v * Math.PI * 2 * 9 + h * 3));
 				},
-				16
+				(u, v) => {
+					const h = u * ht;
+					const d = nearest(h);
+					const scar = h > 0.2 ? Math.exp(-Math.pow(d / 0.007, 2)) : 0;
+					const lip = h > 0.2 ? Math.exp(-Math.pow((d - 0.016) / 0.012, 2)) : 0;
+					// grey and weathered below, browner and greener toward the crown, fine vertical cracks
+					const bark = mix(mix('#8d8476', '#7a6a52', clamp((u - 0.7) / 0.3)), '#6c5f4c', Math.pow(Math.abs(Math.sin(v * Math.PI * 2 * 23 + h * 1.7)), 12) * 0.6);
+					return bark.lerp(new THREE.Color('#463d33'), scar * 0.75).lerp(new THREE.Color('#aaa08e'), lip * 0.35).lerp(new THREE.Color('#6b7a3c'), clamp(1 - H / 0.4) * 0.6);
+				},
+				22
 			)
 		);
+		// the boot of old frond bases wrapped round the top of the trunk, fibrous brown
+		if (H > 0.3) {
+			const boot = [trunkAt(Math.max(0, 1 - 0.45 / ht)), trunkAt(1).add(v3(0, 0.12, 0))];
+			bag.add('body', tube(boot, (u) => bole * (0.98 + 0.25 * Math.sin(Math.PI * u)), (u, v) => mix('#7a5f3e', '#9a8358', Math.abs(Math.sin(v * 40 + u * 9))), 18));
+		}
 	}
 	const crown = H > 0.02 ? trunkAt(1) : BASE.clone().add(v3(0, g < 1.6 ? 0 : bole * 0.6, 0));
 
@@ -134,7 +172,7 @@ export function coconut(g, seed) {
 		const opens = 4.85 + b * 0.32;
 		const phase = g - opens;
 		if (phase < -0.3 || H < 0.3) continue;
-		bunch(bag, { seed, b, at: crown, phase, vigour, bear: (made(opens) % 5) * 2.513 + b * 2.513 });
+		bunch(bag, { seed, b, at: crown, phase, vigour, bear: (made(opens) % 5) * 2.513 + b * 2.513, space, reach: bole });
 	}
 	return bag.build();
 }
@@ -152,7 +190,7 @@ function frond(bag, o) {
 	const fr = chance(o.seed, 'frond', o.j);
 	const bear = o.j * 2.513 + about(fr, 0, 0.15);
 	const out = v3(Math.cos(bear), 0, Math.sin(bear));
-	const full = table(o.born, [[1, 0.35], [2, 0.6], [3, 1.0], [4, 1.9], [5, 3.0], [6, 3.8], [9, 4.2]]) * o.vigour;
+	const full = table(o.born, [[1, 0.35], [2, 0.6], [3, 1.0], [4, 2.1], [5, 3.6], [6, 4.7], [9, 5.4]]) * o.vigour;
 	const len = full * lerp(0.35, 1, o.opened);
 	// up when new, out and over as it ages, then hanging dead against the trunk
 	const tilt = lerp(0.1, 1.55, Math.pow(clamp(o.age), 0.75)) + Math.max(0, o.age - 0.85) * 4 + about(fr, 0, 0.1);
@@ -207,7 +245,7 @@ function frond(bag, o) {
  * A bunch from a leaf axil: first a closed spathe, then the branched cream flower spike, then the buttons, then the nuts
  * swelling, golden-orange, hanging below the crown on a long stalk.
  * @param {Bag} bag
- * @param {{ seed: string, b: number, at: THREE.Vector3, phase: number, vigour: number, bear: number }} o
+ * @param {{ seed: string, b: number, at: THREE.Vector3, phase: number, vigour: number, bear: number, space: Space, reach: number }} o
  */
 function bunch(bag, o) {
 	const br = chance(o.seed, 'bunch', o.b);
@@ -215,7 +253,7 @@ function bunch(bag, o) {
 	const heavy = span(o.phase, 0.6, 2.2);
 	const stalkLen = 0.55 * lerp(0.5, 1, clamp(o.phase + 0.3));
 	const d = out.clone().multiplyScalar(0.8).add(v3(0, lerp(0.5, -0.9, heavy), 0)).normalize();
-	const start = o.at.clone().addScaledVector(out, 0.12).add(v3(0, -0.15, 0));
+	const start = o.at.clone().addScaledVector(out, o.reach * 1.25 + 0.03).add(v3(0, -0.2, 0));
 	const end = start.clone().addScaledVector(d, stalkLen);
 	if (o.phase < 0) {
 		// the spathe, closed: a long brown-green boat between the frond bases
@@ -248,7 +286,10 @@ function bunch(bag, o) {
 		const at = end.clone().add(v3(Math.cos(a) * ring * lerp(0.6, 1.6, grown), -0.06 - (n % 4) * 0.05 * lerp(0.3, 1.4, grown), Math.sin(a) * ring * lerp(0.6, 1.6, grown)));
 		const dir = at.clone().sub(end).add(v3(0, -0.25, 0)).normalize();
 		const ripe = span(o.phase, 2.2, 3.4);
-		nut(bag, { seed: o.seed, key: ['bunch', o.b, n], at, dir, size: lerp(0.12, 1, grown) * about(nr, 0.9, 0.08) * o.vigour, grown, colour: mix(mix('#c9b04a', '#f29a2e', clamp(grown * 1.5)), '#a8692e', ripe) });
+		const size = lerp(0.12, 1, grown) * about(nr, 0.9, 0.08) * o.vigour;
+		// each nut where it touches neither the trunk nor its neighbours
+		const place = o.space.settle(at, dir, (a, d) => [{ c: a.clone(), r: 0.23 * size * 0.38 }], 0.08);
+		nut(bag, { seed: o.seed, key: ['bunch', o.b, n], at: place.at, dir: place.dir, size, grown, colour: mix(mix('#c9b04a', '#f29a2e', clamp(grown * 1.5)), '#a8692e', ripe) });
 	}
 }
 

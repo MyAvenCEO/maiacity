@@ -12,7 +12,7 @@
  * All of it at real measure (metres), the soil's surface at y = 0.
  */
 import * as THREE from 'three';
-import { Bag, about, bead, between, chance, clamp, lerp, mix, root, sheet, span, table, tube, v3 } from './grow.js';
+import { Bag, Space, about, bead, between, chance, clamp, lerp, mix, root, sheet, span, table, tube, v3 } from './grow.js';
 import { sprout } from './sprout.js';
 import { bloom } from './bloom.js';
 import { pinnate } from './leaves.js';
@@ -49,9 +49,11 @@ export const OXHEART_STAGES = [
  * @typedef {{
  *   height: [number, number][], stake: number, leaflet: { length: number, width: number, shape: (u: number) => number },
  *   droop: number, curl: number, lift: [number, number], fruits: [number, number], fruit: (o: Fruit) => void, setFor: number,
- *   ripeFrom: number, ripeFor: number, double: boolean
+ *   ripeFrom: number, ripeFor: number, double: boolean, truss: number,
+ *   balls: (at: THREE.Vector3, dir: THREE.Vector3, size: number, set: number) => { c: THREE.Vector3, r: number }[]
  * }} Sort — how a tomato grows: its height through the stages, its leaves (and how they hang), how many fruit to a
- *   truss (at least, and up to how many more), the fruit it bears, how long they take to set and to ripen
+ *   truss (at least, and up to how many more), the fruit it bears and the room it takes (`balls`, so the fruit keep
+ *   clear of each other, the stem and the cane), the truss's length, how long the fruit take to set and to ripen
  */
 /** @typedef {{ bag: Bag, seed: string, key: (string | number)[], at: THREE.Vector3, dir: THREE.Vector3, size: number, set: number, ripe: number }} Fruit */
 
@@ -88,7 +90,12 @@ const ROUND = {
 	setFor: 1.5,
 	ripeFrom: 2.8,
 	ripeFor: 0.6,
-	double: false
+	double: false,
+	truss: 0.11,
+	balls: (at, dir, size, set) => {
+		const R = 0.027 * size * lerp(0.15, 1, set);
+		return [{ c: at.clone().addScaledVector(dir, 0.002 + R * 0.85), r: R * 0.98 }];
+	}
 };
 
 /** @type {Sort} */
@@ -104,7 +111,15 @@ const OXHEART = {
 	setFor: 1.9,
 	ripeFrom: 3.1,
 	ripeFor: 0.6,
-	double: true
+	double: true,
+	truss: 0.17,
+	balls: (at, dir, size, set) => {
+		const R = 0.043 * size * lerp(0.15, 1, set);
+		return [
+			{ c: at.clone().addScaledVector(dir, 0.002 + R * 0.7), r: R * 0.98 },
+			{ c: at.clone().addScaledVector(dir, 0.002 + R * 1.5), r: R * 0.62 }
+		];
+	}
 };
 
 /**
@@ -163,18 +178,22 @@ function grow(sort, g, seed) {
 		root(bag, { seed, key: ['stem', i], from: v3(0, -0.004 - ar() * 0.02, 0), dir: v3(Math.cos(bear), -0.3, Math.sin(bear)), length: between(ar, 0.1, 0.2), grown: (g - born) / 2, radius: 0.001, down: 0.06, wander: 0.3, laterals: 5, depth: 1, age: (g - born - 1) / 3, young: '#f6efdc', old: '#c8a77c' });
 	}
 
+	// what is where: the cane, the stem, the fruit, for the fruit and leaves to keep clear of
+	const space = new Space();
+	if (g >= 3.6) space.rod([STAKE.clone(), STAKE.clone().add(v3(0, sort.stake, 0))], 0.008);
 	if (g >= 3.6) bag.add('prop', tube([STAKE.clone().add(v3(0, -0.25, 0)), STAKE.clone().add(v3(0, sort.stake, 0))], (u) => 0.0055 * (1 - 0.3 * u), (u) => mix('#c8a865', '#d9c08a', Math.abs(Math.sin(u * 60)) < 0.06 ? 0 : 1), 8));
 
 	const L = table(g, sort.height) * vigour;
-	if (L > 0.002) stem(bag, sort, seed, s.top, L, g, vigour);
+	if (L > 0.002) stem(bag, sort, seed, s.top, L, g, vigour, space);
 	return bag.build();
 }
 
 /**
  * The stem: up the cane in a slight zigzag (node to node), its leaves, its trusses.
  * @param {Bag} bag @param {Sort} sort @param {string} seed @param {THREE.Vector3} start @param {number} L @param {number} g @param {number} vigour
+ * @param {Space} space
  */
-function stem(bag, sort, seed, start, L, g, vigour) {
+function stem(bag, sort, seed, start, L, g, vigour, space) {
 	const vr = chance(seed, 'stem');
 	const step = 0.02;
 	const pts = [start.clone()];
@@ -190,6 +209,9 @@ function stem(bag, sort, seed, start, L, g, vigour) {
 	if (now.length < 2) return;
 	const thick = 0.0022 + 0.0042 * span(g, 3, 7);
 	bag.add('body', tube(now, (u) => thick * (1 - 0.6 * Math.pow(u, 2)), (u) => mix('#5f7f3a', '#86ae55', u), 7));
+	space.rod(now, thick + 0.004);
+	/** the leaves wait until the fruit hang, then turn away from them @type {(() => void)[]} */
+	const leaves = [];
 	const at = (/** @type {number} */ s) => {
 		const f = Math.min(pts.length - 1.001, s / step), k = Math.floor(f);
 		return pts[k].clone().lerp(pts[k + 1], f - k);
@@ -207,13 +229,14 @@ function stem(bag, sort, seed, start, L, g, vigour) {
 		const out = v3(Math.cos(bear), 0, Math.sin(bear));
 		const size = lerp(0.35, 1, clamp(i / 6)) * about(nr, 1, 0.1) * vigour;
 		const old = i < 4 ? span(g, 6.8 + i * 0.25, 8.2 + i * 0.25) : 0;
-		if (old < 1) {
+		const lift = between(nr, sort.lift[0], sort.lift[1]);
+		if (old < 1) leaves.push(() =>
 			pinnate(bag, {
 				seed,
 				key: ['leaf', i],
 				at: p,
-				out,
-				lift: between(nr, sort.lift[0], sort.lift[1]),
+				out: space.steer(p, out, lift - sort.droop, 0.34 * size, sort.leaflet.width * size * 0.7),
+				lift,
 				length: 0.34 * size,
 				pairs: i < 2 ? 1 : i < 4 ? 2 : i < 7 ? 3 : 4,
 				between: i >= 3,
@@ -225,14 +248,15 @@ function stem(bag, sort, seed, start, L, g, vigour) {
 				stalk: '#6f9a45',
 				radius: 0.0016 * size + 0.0006,
 				terminal: 1.15
-			});
-		}
+			})
+		);
 		// a truss every third node from the seventh, set off the leaf's side
 		if (i >= 6 && (i - 6) % 3 === 0) {
-			trussAt(bag, sort, seed, truss, p, out.clone().applyAxisAngle(v3(0, 1, 0), Math.PI * 0.8), g, past, vigour);
+			trussAt(bag, sort, seed, truss, p, out.clone().applyAxisAngle(v3(0, 1, 0), Math.PI * 0.8), g, past, vigour, space);
 			truss++;
 		}
 	}
+	for (const leaf of leaves) leaf();
 	bag.add('body', bead(now[now.length - 1], v3(1, 1.3, 1).multiplyScalar(0.004), '#86b85a'));
 }
 
@@ -244,14 +268,15 @@ const FLOWER = { petals: 6, length: 0.011, width: 0.0028, colour: '#f2d22a', hea
  * growing heavy, the whole truss hanging.
  * @param {Bag} bag @param {Sort} sort @param {string} seed @param {number} t which truss, from the bottom @param {THREE.Vector3} at
  * @param {THREE.Vector3} out @param {number} g @param {number} past how far the stem has grown past it @param {number} vigour
+ * @param {Space} space
  */
-function trussAt(bag, sort, seed, t, at, out, g, past, vigour) {
+function trussAt(bag, sort, seed, t, at, out, g, past, vigour, space) {
 	const tr = chance(seed, 'truss', t);
 	const born = 4.3 + t * 0.55 + tr() * 0.1;
 	if (g <= born || past < 0.04) return;
 	const grown = clamp((g - born) / 0.5);
 	const heavy = span(g, born + 1.2, born + 2.4);
-	const len = 0.1 * lerp(0.3, 1, grown) * about(tr, 1, 0.15);
+	const len = sort.truss * lerp(0.3, 1, grown) * about(tr, 1, 0.15);
 	/** @type {THREE.Vector3[]} */
 	const pts = [];
 	let d = out.clone().multiplyScalar(0.8).add(v3(0, 0.45 - heavy * 0.7, 0)).normalize();
@@ -276,14 +301,18 @@ function trussAt(bag, sort, seed, t, at, out, g, past, vigour) {
 		const double = sort.double && t === 0 && k === 0;
 		const pd = side.multiplyScalar(0.5).add(v3(0, -0.6 - set * 0.4, 0)).addScaledVector(d, 0.2).normalize();
 		const end = base.clone().addScaledVector(pd, 0.018 * lerp(0.4, 1, clamp((g - born) / 0.4)));
-		bag.add('body', tube([base, end], () => 0.0008, () => '#6c9442', 4));
+		if (g < opens || set < 0.03) bag.add('body', tube([base, end], () => 0.0008, () => '#6c9442', 4));
 		if (g < opens) {
 			const b = clamp((g - born) / Math.max(0.05, opens - born));
 			bag.add('body', bead(end.clone().addScaledVector(pd, 0.003), v3(0.0018, 0.004, 0.0018).multiplyScalar(0.5 + b * 0.5), mix('#7fae4a', '#d8d05a', b * 0.6)));
 		} else if (set < 0.03) {
 			bloom(bag, FLOWER, end, pd, double ? 1.9 : 1.35, clamp((g - opens) / 0.2), span(g, opens + 0.3, opens + 0.5));
 		} else {
-			sort.fruit({ bag, seed, key: [t, k], at: end, dir: v3(0, -1, 0).lerp(pd, 0.25).normalize(), size: vigour * (double ? 1.3 : k < 4 ? 1 : 0.8) * about(fr, 1, 0.1), set, ripe: span(g, opens + sort.ripeFrom, opens + sort.ripeFrom + sort.ripeFor) });
+			const size = vigour * (double ? 1.3 : k < 4 ? 1 : 0.8) * about(fr, 1, 0.1);
+			// it hangs where it touches nothing: swung aside, its stalk a little longer if need be
+			const place = space.settle(end, v3(0, -1, 0).lerp(pd, 0.25), (a, d) => sort.balls(a, d, size, set), 0.04);
+			bag.add('body', tube([base, end, place.at], () => 0.0008 + 0.0008 * set, () => '#6c9442', 4));
+			sort.fruit({ bag, seed, key: [t, k], at: place.at, dir: place.dir, size, set, ripe: span(g, opens + sort.ripeFrom, opens + sort.ripeFrom + sort.ripeFor) });
 		}
 	}
 }

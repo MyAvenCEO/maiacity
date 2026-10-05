@@ -8,7 +8,7 @@
  * All of it at real measure (metres), the soil's surface at y = 0.
  */
 import * as THREE from 'three';
-import { Bag, about, aim, bead, between, chance, clamp, lerp, mix, root, sheet, span, table, tube, v3 } from './grow.js';
+import { Bag, Space, about, aim, bead, between, chance, clamp, lerp, mix, root, sheet, span, table, tube, v3 } from './grow.js';
 import { sprout } from './sprout.js';
 import { bloom } from './bloom.js';
 import { limb } from './tree.js';
@@ -96,6 +96,11 @@ export function eggplant(g, seed) {
 		out: limbs
 	});
 
+	// what is where: the stems, then the fruit, for the fruit and the leaves to keep clear of
+	const space = new Space();
+	for (const l of limbs) space.rod(l.pts, 0.008 * (l.order ? 0.6 : 1) + 0.004);
+	/** the leaves wait until the fruit hang, then turn away from them @type {(() => void)[]} */
+	const leaves = [];
 	let flowered = 0;
 	for (const l of limbs) {
 		const total = l.length;
@@ -109,14 +114,16 @@ export function eggplant(g, seed) {
 			if (past <= 0) continue;
 			const { p } = along(l.pts, s0 / total);
 			const old = l.order === 0 && k < 3 ? span(g, 7 + k * 0.4, 8.5 + k * 0.4) : 0;
-			if (old < 1) leaf(bag, p, v3(Math.cos(bear), 0, Math.sin(bear)), size, clamp(past / 0.1), old);
+			const grownLeaf = clamp(past / 0.1);
+			if (old < 1) leaves.push(() => leaf(bag, p, space.steer(p, v3(Math.cos(bear), 0, Math.sin(bear)), -0.1, 0.24 * size, 0.035 * size), size, grownLeaf, old));
 			// a flower in the axil of the second leaf of each branch
 			if (l.order >= 1 && k === 1 && flowered < 9) {
 				flowered++;
-				blossom(bag, seed, [...l.key, k], p, v3(Math.cos(bear + Math.PI), 0, Math.sin(bear + Math.PI)), g, vigour);
+				blossom(bag, seed, [...l.key, k], p, v3(Math.cos(bear + Math.PI), 0, Math.sin(bear + Math.PI)), g, vigour, space);
 			}
 		}
 	}
+	for (const leaf of leaves) leaf();
 	return bag.build();
 }
 
@@ -161,8 +168,9 @@ function leaf(bag, at, out, size, grown, old) {
 /**
  * A flower in a leaf axil, nodding on its stalk; then the fruit it sets, under its spiny calyx, growing long and dark.
  * @param {Bag} bag @param {string} seed @param {(string | number)[]} key @param {THREE.Vector3} at @param {THREE.Vector3} out @param {number} g @param {number} vigour
+ * @param {Space} space
  */
-function blossom(bag, seed, key, at, out, g, vigour) {
+function blossom(bag, seed, key, at, out, g, vigour, space) {
 	const fr = chance(seed, 'eggplant-flower', ...key);
 	const opens = 4.4 + fr() * 1.3;
 	const bud = clamp((g - (opens - 0.35)) / 0.35);
@@ -171,15 +179,26 @@ function blossom(bag, seed, key, at, out, g, vigour) {
 	const hang = clamp(set * 1.5);
 	const d = out.clone().multiplyScalar(0.6).add(v3(0, 0.2 - hang * 1.1, 0)).normalize();
 	const end = at.clone().addScaledVector(d, 0.035);
-	bag.add('body', tube([at, end], () => 0.0018 + 0.0018 * set, () => '#6a6150', 5));
+	if (set < 0.03) bag.add('body', tube([at, end], () => 0.0018, () => '#6a6150', 5));
 	const facing = d.clone().lerp(v3(0, -1, 0), 0.4).normalize();
 	if (g < opens) {
 		bag.add('body', bead(end.clone().addScaledVector(facing, 0.006), v3(0.004, 0.008, 0.004).multiplyScalar(0.5 + bud * 0.5), mix('#5f5a4a', '#8d6cb8', bud * 0.7)));
 	} else if (set < 0.03) {
 		bloom(bag, FLOWER, end, facing, 1.4, clamp((g - opens) / 0.2), span(g, opens + 0.25, opens + 0.4));
 	} else {
-		fruit(bag, { seed, key, at: end, dir: d.clone().lerp(v3(0, -1, 0), 0.6).normalize(), size: vigour * about(fr, 1, 0.12), set, gloss: span(g, opens + 1.2, opens + 2.5) });
+		const size = vigour * about(fr, 1, 0.12);
+		// it hangs where it touches nothing: no fruit through another, nor through a stem
+		const place = space.settle(end, d.clone().lerp(v3(0, -1, 0), 0.6), (a, dd) => fruitBalls(a, dd, size, set), 0.05);
+		bag.add('body', tube([at, end, place.at], () => 0.0018 + 0.0018 * set, () => '#6a6150', 5));
+		fruit(bag, { seed, key, at: place.at, dir: place.dir, size, set, gloss: span(g, opens + 1.2, opens + 2.5) });
 	}
+}
+
+/** the room an eggplant takes: three balls down its length, the last the broadest */
+function fruitBalls(/** @type {THREE.Vector3} */ at, /** @type {THREE.Vector3} */ dir, /** @type {number} */ size, /** @type {number} */ set) {
+	const L = 0.2 * size * lerp(0.12, 1, set);
+	const R = L * 0.25;
+	return [0.22, 0.52, 0.8].map((f, i) => ({ c: at.clone().addScaledVector(dir, 0.004 + L * f), r: R * [0.75, 0.92, 1][i] }));
 }
 
 /**
