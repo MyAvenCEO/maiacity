@@ -828,7 +828,7 @@ export const japaneseRose = shrub({
 	roots: { length: 0.55, count: 8 },
 	leaf: {
 		blade: compound({ pairs: 3, leaflet: 0.33, width: 0.55, shape: (u) => Math.pow(Math.sin(Math.PI * Math.pow(u, 0.75)), 0.7), rachis: '#5a7a3a', wrinkle: 1, across: 1 }),
-		length: 0.13, stalk: 0.015, stalkColour: '#5a7a3a', spacing: 0.068, from: 0, bare: 0.3, colour: '#2e6a2a', young: '#6aa040', vein: '#7ea866', shade: '#285c26', droop: 0.15,
+		length: 0.13, stalk: 0.01, stalkColour: '#5a7a3a', spacing: 0.068, from: 0, bare: 0.3, colour: '#2e6a2a', young: '#6aa040', vein: '#7ea866', shade: '#285c26', droop: 0.15,
 		autumn: { colour: '#d8a830', from: 8.5, share: 0.18 }
 	},
 	wood: (ctx, t) => {
@@ -905,15 +905,15 @@ export const BLACKBERRY_STAGES = stages([
 /** @type {Leafing} */
 const BRAMBLE_LEAF = {
 	blade: compound({ pairs: 2, digitate: true, leaflet: 0.55, width: 0.6, shape: (u) => Math.pow(Math.sin(Math.PI * Math.pow(u, 0.7)), 0.7) * (1 + (u > 0.1 && u < 0.92 ? ((u * 15) % 1) * 0.08 : 0)), rachis: '#6a7a3a' }),
-	length: 0.2, stalk: 0.055, stalkColour: '#7a6a3a', spacing: 0.075, from: 0, bare: 0.12, colour: '#2f622a', young: '#6a9a40', vein: '#86a864', shade: '#28562a', droop: 0.2
+	length: 0.2, stalk: 0.055, stalkColour: '#7a6a3a', spacing: 0.085, from: 0, bare: 0.12, colour: '#2f622a', young: '#6a9a40', vein: '#86a864', shade: '#28562a', droop: 0.2
 };
 
 /** a blackberry: a bumpy oval of drupelets, glossy, green, red, then black */
 function bramble(/** @type {Bag} */ bag, /** @type {THREE.Vector3} */ at, /** @type {THREE.Vector3} */ dir, /** @type {number} */ L, /** @type {number} */ W, /** @type {number} */ ripe) {
 	const c = ramp([[0, '#8aa848'], [0.25, '#b8b058'], [0.5, '#c43040'], [0.75, '#5a1626'], [1, '#141014']], ripe);
 	const pts = [];
-	for (let k = 0; k <= 7; k++) pts.push(at.clone().addScaledVector(dir, (k / 7) * L));
-	bag.add('gloss', tube(pts, (u, v) => W * Math.pow(Math.max(0, Math.sin(Math.PI * (0.06 + u * 0.94))), 0.5) * (1 + 0.14 * Math.abs(Math.sin(v * Math.PI * 6 + u * 9)) * Math.abs(Math.sin(u * Math.PI * 6))), (u, v) => c.clone().multiplyScalar(0.85 + 0.3 * Math.abs(Math.sin(v * Math.PI * 6 + u * 9))), 8));
+	for (let k = 0; k <= 6; k++) pts.push(at.clone().addScaledVector(dir, (k / 6) * L));
+	bag.add('gloss', tube(pts, (u, v) => W * Math.pow(Math.max(0, Math.sin(Math.PI * (0.06 + u * 0.94))), 0.5) * (1 + 0.14 * Math.abs(Math.sin(v * Math.PI * 6 + u * 9)) * Math.abs(Math.sin(u * Math.PI * 6))), (u, v) => c.clone().multiplyScalar(0.85 + 0.3 * Math.abs(Math.sin(v * Math.PI * 6 + u * 9))), 7));
 }
 
 /**
@@ -993,7 +993,7 @@ export function blackberry(g, seed) {
 			const kr = chance(seed, 'bramble-lateral', j, k);
 			const sAt = (0.28 + k * 0.042) * full;
 			const pick = kr(), len = between(kr, 0.18, 0.36) * vigour, a = kr();
-			if (pick > 0.62 || sAt > L - 0.05) continue;
+			if (pick > 0.55 || sAt > L - 0.05) continue;
 			const born = 4.5 + kr() * 0.15;
 			if (g <= born) continue;
 			const w = walk(now, sAt);

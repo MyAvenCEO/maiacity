@@ -674,7 +674,7 @@ const cornel = grove({
 	flush: crown({ trunk: 0.55, scaffolds: [4, 5], scaffoldAngle: 0.5, gens: 6, whorl: [2, 3], spread: 0.6, up: 0.07, droop: 0.035, wander: 0.12, radius: 0.1, taper: 0.62, shoot: (gen) => [0, 1.2, 0.85, 0.6, 0.44, 0.32, 0.24][gen] ?? 0.24, bark: ['#8a6a50', '#5a4636'] }),
 	roots: { tap: 1.0, spread: 1.6, count: 10, radius: 0.03 },
 	leaf: { length: 0.075, width: 0.038, shape: pointed, colour: '#3e6a2e', dark: '#34602a', young: '#8ab45a', opposite: true, spacing: 0.6, droop: 0.3, from: 4, tuft: 2, curl: 0.12, on: [[4.25, 1], [4.55, 0], [5.3, 0], [6.1, 1]] },
-	bloom: { sites: 'twigs', opens: 4.6, chance: 6, gen: 4, pairs: true },
+	bloom: { sites: 'twigs', opens: 4.6, chance: 4, gen: 4, pairs: true },
 	site: (s) => {
 		const fr = chance(s.seed, 'umbel', ...s.key);
 		const up = s.dir.clone().lerp(UP, 0.5).normalize();
@@ -682,7 +682,7 @@ const cornel = grove({
 			// a little umbel: four yellow-brown bracts round twenty tiny four-petalled yellow flowers on stalks
 			const open = clamp((s.phase + 0.4) / 0.5), fall = span(s.phase, 0.35, 0.55);
 			for (let k = 0; k < 4; k++) s.bag.add('sheet', sheet({ length: 0.005, width: 0.003, shape: (u) => Math.sin(Math.PI * u), paint: () => col('#a89048'), along: 2, across: 1 }), aim(s.at, across(up, (k * Math.PI) / 2).multiplyScalar(lerp(0.2, 0.8, open)).addScaledVector(up, 1).normalize(), 0));
-			const n = 18;
+			const n = 10;
 			for (let k = 0; k < n; k++) {
 				const d = up.clone().addScaledVector(across(up, k * 2.39996), lerp(0.2, 0.9, open) * Math.sqrt((k + 0.5) / n)).normalize();
 				const end = s.at.clone().addScaledVector(d, 0.01 * lerp(0.4, 1, open));
@@ -693,7 +693,7 @@ const cornel = grove({
 		}
 		// most umbels keep none; some one, a few two
 		const x = fr();
-		const keep = s.shoot.gen < 5 || x < 0.72 ? 0 : x < 0.94 ? 1 : 2;
+		const keep = s.shoot.gen < 5 || x < 0.6 ? 0 : x < 0.9 ? 1 : 2;
 		const { set, ripe } = fruiting(s.phase, 2.5, 1.3, 1.6);
 		const c = ripe < 0.35 ? mix('#86a048', '#d8c050', ripe / 0.35) : ripe < 0.65 ? mix('#d8c050', '#d8261e', (ripe - 0.35) / 0.3) : mix('#d8261e', '#a8101c', (ripe - 0.65) / 0.35);
 		for (let k = 0; k < keep; k++) {
