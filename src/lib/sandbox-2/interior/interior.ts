@@ -37,6 +37,8 @@ import { skyHour } from '$lib/sandbox-kit/skyTime.svelte.js'
 import { createWalker } from '$lib/sandbox-kit/walker.js'
 import { createObstacles } from '$lib/sandbox-kit/obstacles.js'
 import { connectFilm, filmDraws, filmHoldsSize, worldTime } from '$lib/sandbox-kit/film.js'
+import { createForest, type Forest } from './flora.js'
+import { pick as pickPlant, type Garden } from './sandbox5.js'
 import { forestFloor, floorPick, grassTuft, appleTree, banana, berryBush, canopyTree, climber, clover, coconutPalm, comfrey, crop, CROPS, type Crop, fruitTree, ginger, grapePergola, herb, papaya, passionVine, potted, seeded, shrub, smallFruitTree, squash, strawberries, tropicalShrub, vineAlong, type Plant } from './plants'
 
 export type DomeKind = 'tent' | 'glamp' | 'home' | 'large' | 'master' | 'factory'
@@ -484,7 +486,11 @@ export type InteriorHandle = {
 }
 
 /** Where to come in, and what to do on walking back out (Sandbox 4's village). */
-export type InteriorOptions = { entry?: number; onLeave?: (door: number) => void; host?: DomeHost; cancelled?: () => boolean; hurry?: () => boolean; background?: () => boolean }
+export type InteriorOptions = {
+	entry?: number; onLeave?: (door: number) => void; host?: DomeHost; cancelled?: () => boolean; hurry?: () => boolean; background?: () => boolean
+	/** Sandbox 5: the food forest inside grown from our plants ($lib/plants, ./flora.js), from this garden (./sandbox5.js) */
+	flora?: { garden: Garden; seed: string }
+}
 /**
  * Building a dome into someone else's world (Sandbox 4's village): its scene,
  * camera and renderer, and where the dome stands. The dome then brings no sky,
@@ -694,8 +700,15 @@ export async function mountInterior(container: HTMLElement, kind: DomeKind, onPr
 	const herds: Parameters<typeof levelsAt>[4] = {}
 	/** the small plants of each forest sector, hidden when you are far from them */
 	const detail: { group: THREE.Object3D; x: number; z: number }[] = []
+	/** Sandbox 5: the forest inside grown from our plants, drawn as the eye moves and looks round (./flora.js) */
+	let forest: Forest | null = null
+	const looking = new THREE.Vector3()
 	const keepDetail = (cx: number, cz: number) => {
 		for (const d of detail) d.group.visible = Math.hypot(d.x - cx, d.z - cz) < Math.max(30, R * 0.45)
+		if (forest) {
+			camera.getWorldDirection(looking)
+			forest.update(cx, cz, looking.x, looking.z)
+		}
 	}
 
 	/* the land outside, seen through the glass */
@@ -1300,6 +1313,10 @@ export async function mountInterior(container: HTMLElement, kind: DomeKind, onPr
 			return sc
 		}
 		const r = seeded(kind === 'home' ? 3 : kind === 'large' ? 5 : 9)
+		const flora = opts.flora
+		if (flora) forest = createForest({ near: 30, mid: 80, cover: 26, shrubs: 60 })
+		/** Sandbox 5's trees, to stand in the way by their trunks once grown */
+		const floraTrees: { c: { x: number; z: number; r: number }; kind: ReturnType<typeof pickPlant>; s: number }[] = []
 		const area = Math.PI * (rIn * rIn - Rc * Rc)
 		const trees = Math.min(kind === 'master' ? 200 : 230, Math.round(area / (lush ? 17 : 26)))
 		const onPath = (rr: number, a: number) =>
@@ -1314,16 +1331,39 @@ export async function mountInterior(container: HTMLElement, kind: DomeKind, onPr
 			const [x, z] = polar(rr, a)
 			if (nearStream(x, z, width + 1.4)) continue
 			if (colliders.some((c) => Math.hypot(c.x - x, c.z - z) < 2.8)) continue
-			const pick = r()
+			if (flora) {
+				// Sandbox 5: a tree of the warm garden at its stage, and round it its guild, all from our plants
+				const fs = 0.85 + r() * 0.3
+				const kind = pickPlant(flora.garden.trees, r, flora.seed)
+				forest!.add(kind, 'tree', x, 0, z, r() * 6.28, fs)
+				const c = { x, z, r: 0.5 }
+				colliders.push(c)
+				floraTrees.push({ c, kind, s: fs })
+				placed++
+				const near5 = (count: number, dist: number, layer: 'shrubs' | 'climbers' | 'cover') => {
+					for (let j = 0; j < count; j++) {
+						const b = r() * 6.28, dd = dist * (0.6 + r() * 0.6)
+						const ox = x + Math.cos(b) * dd, oz = z + Math.sin(b) * dd
+						const orr = Math.hypot(ox, oz)
+						if (orr > rIn - 0.8 || onPath(orr, Math.atan2(ox, oz)) || nearStream(ox, oz, width * 0.8)) continue
+						forest!.add(pickPlant(flora.garden[layer], r, flora.seed), layer === 'cover' ? 'cover' : 'shrub', ox, 0, oz, r() * 6.28, 0.85 + r() * 0.3)
+					}
+				}
+				near5(1, 2.3, 'shrubs')
+				near5(2, 2.2, 'cover')
+				if (r() < 0.3) near5(1, 1.1, 'climbers')
+				continue
+			}
+			const pick5 = r()
 			const s = 1 + r() * 0.7
 			let plant: Plant
-			if (pick < 0.16) plant = coconutPalm(400 + placed, tall + r() * 4)
-			else if (pick < 0.36) plant = fruitTree('mango', 100 + placed, s)
-			else if (pick < 0.52) plant = fruitTree('avocado', 200 + placed, s)
-			else if (pick < 0.64) plant = fruitTree('citrus', 300 + placed, s)
-			else if (pick < 0.73) plant = papaya(500 + placed, 3.4 + r() * 1.6)
-			else if (pick < 0.8) plant = smallFruitTree('fig', 520 + placed, s)
-			else if (pick < 0.86) plant = smallFruitTree('pomegranate', 540 + placed, s * 0.9)
+			if (pick5 < 0.16) plant = coconutPalm(400 + placed, tall + r() * 4)
+			else if (pick5 < 0.36) plant = fruitTree('mango', 100 + placed, s)
+			else if (pick5 < 0.52) plant = fruitTree('avocado', 200 + placed, s)
+			else if (pick5 < 0.64) plant = fruitTree('citrus', 300 + placed, s)
+			else if (pick5 < 0.73) plant = papaya(500 + placed, 3.4 + r() * 1.6)
+			else if (pick5 < 0.8) plant = smallFruitTree('fig', 520 + placed, s)
+			else if (pick5 < 0.86) plant = smallFruitTree('pomegranate', 540 + placed, s * 0.9)
 			else plant = banana(600 + placed, 3 + r() * 1.2)
 			plant.object.position.set(x, 0, z)
 			plant.object.rotation.y = r() * 6.28
@@ -1394,6 +1434,11 @@ export async function mountInterior(container: HTMLElement, kind: DomeKind, onPr
 					green.position.set(x, 0.008 + r() * 0.004, z)
 					green.receiveShadow = true
 					sectorAt(x, z).cover.add(green)
+					if (flora) {
+						// Sandbox 5: a plant of the warm garden's cover, or now and then a climber, over the green
+						forest!.add(pickPlant(flora.garden[tall ? 'climbers' : 'cover'], r, flora.seed), tall ? 'shrub' : 'cover', x, 0.01, z, r() * 6.28, 0.8 + r() * 0.4)
+						continue
+					}
 					const pick = tall ? (r() < 0.6 ? 'tomato' : 'beans') : LOW[Math.floor(r() * LOW.length)]!
 					const sd = 12000 + n
 					const o = pick === 'moss' ? forestFloor('moss', sd) : pick === 'clover' ? clover(sd, 1.2 * s) : pick === 'squash' ? squash(sd) : crop(pick, sd, PATCH * 0.95)
@@ -1418,6 +1463,20 @@ export async function mountInterior(container: HTMLElement, kind: DomeKind, onPr
 				if (offBand(rr, a)) continue
 				const [x, z] = polar(rr, a)
 				if (colliders.some((c) => Math.hypot(c.x - x, c.z - z) < 1.6)) continue
+				if (flora) {
+					// Sandbox 5: a shrub of the warm garden, and round it its cover
+					forest!.add(pickPlant(flora.garden.shrubs, r, flora.seed), 'shrub', x, 0, z, r() * 6.28, 0.85 + r() * 0.3)
+					colliders.push({ x, z, r: 0.5 })
+					n++
+					for (let j = 0; j < 3; j++) {
+						const b = r() * 6.28, dd = 0.9 + r() * 1.1
+						const ox = x + Math.cos(b) * dd, oz = z + Math.sin(b) * dd
+						const orr = Math.hypot(ox, oz)
+						if (orr < r0b - 0.3 || orr > R - 0.8 || offBand(orr, Math.atan2(ox, oz))) continue
+						forest!.add(pickPlant(flora.garden.cover, r, flora.seed), 'cover', ox, 0, oz, r() * 6.28, 0.8 + r() * 0.4)
+					}
+					continue
+				}
 				const pick = r()
 				const shrub = pick < 0.3 ? tropicalShrub('coffee', 7000 + n, 1.1 + r() * 0.4) : pick < 0.55 ? tropicalShrub('cacao', 7000 + n, 1.2 + r() * 0.3) : berryBush(7000 + n, 0.8 + r() * 0.4)
 				shrub.object.position.set(x, 0, z)
@@ -1443,6 +1502,7 @@ export async function mountInterior(container: HTMLElement, kind: DomeKind, onPr
 				const rr = r0b - 0.3 + r() * (R - 0.8 - r0b)
 				if (offBand(rr, a)) continue
 				const [x, z] = polar(rr, a)
+				if (flora) continue
 				const hb = herb(9000 + i, 0.2 + r() * 0.25)
 				hb.position.set(x, 0, z)
 				sectorAt(x, z).cover.add(hb)
@@ -1453,6 +1513,12 @@ export async function mountInterior(container: HTMLElement, kind: DomeKind, onPr
 			small.add(await bakeIn(sc.cover, false), await bakeIn(sc.understorey, false))
 			scene.add(await bakeIn(sc.forest), small)
 			detail.push({ group: small, x: sc.x, z: sc.z })
+		}
+		if (forest) {
+			// every kind grown (in workers, side by side), then each tree stands in the way by its trunk
+			await forest.grown()
+			for (const t of floraTrees) t.c.r = Math.min(0.6, (forest.shape(t.kind)?.foot ?? 0.3) * t.s) + 0.2
+			scene.add(forest.group)
 		}
 		await pause('Planting the forest inside')
 
@@ -1934,6 +2000,8 @@ export async function mountInterior(container: HTMLElement, kind: DomeKind, onPr
 		const stands = createObstacles([...colliders, ...outsideColliders] as { x: number; z: number; r: number; y?: number }[])
 		const disposeAll = () => {
 			host.scene.remove(scene)
+			// the forest's plants are shared with the rest of the page: only its own instances go
+			forest?.dispose()
 			scene.traverse((o) => (o as THREE.Mesh).geometry?.dispose())
 		}
 		const embedded: EmbeddedDome = {

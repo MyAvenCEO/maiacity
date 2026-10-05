@@ -8,12 +8,16 @@
 	import { onDestroy, onMount } from 'svelte';
 	import { FAMILIES, type Actor, type Family } from '$lib/actors';
 	import PickList from '$lib/app/PickList.svelte';
+	import { at } from '$lib/app/versions.js';
 	import type { Cast, Pose, V3 } from '$lib/actors/rig';
 
 	let canvasBox = $state<HTMLDivElement>();
 	/** the kind chosen on the left, and which of its variants is on the turntable */
 	let chosen = $state<Family>(FAMILIES[0]!);
 	let variant = $state<Actor>(FAMILIES[0]!.variants[0]!);
+	/** the version of the kind shown (its latest, or one picked from its history), and the variants it had */
+	let version = $state<number>(FAMILIES[0]!.version);
+	const variants = $derived((at(chosen.versions, version) ?? at(chosen.versions)!).build);
 	let cast = $state.raw<Cast | null>(null);
 	/** what it does: a move it plays, or a pose it holds */
 	let doing = $state<{ kind: 'clip' | 'pose'; name: string }>({ kind: 'clip', name: '' });
@@ -126,7 +130,12 @@
 
 	const pick = (f: Family) => {
 		chosen = f;
+		version = f.version;
 		vary(f.variants[0]!);
+	};
+	const pickVersion = (v: number) => {
+		version = v;
+		vary((at(chosen.versions, v) ?? at(chosen.versions)!).build[0]!);
 	};
 	const vary = (a: Actor) => {
 		variant = a;
@@ -159,13 +168,13 @@
 </svelte:head>
 
 <main class="actors">
-	<PickList title="Actors" lede="Everyone and everything rigged to move: the stand-in a shot is blocked with, and the animals of the worlds, kind by kind." items={FAMILIES} {chosen} where={(f) => `${f.variants.length > 1 ? `${f.variants.length} · ` : ''}${f.from}`} onpick={pick} />
+	<PickList title="Actors" lede="Everyone and everything rigged to move: the stand-in a shot is blocked with, and the animals of the worlds, kind by kind." items={FAMILIES} {chosen} where={(f) => `${f.variants.length > 1 ? `${f.variants.length} · ` : ''}${f.from}`} onpick={pick} {version} onversion={pickVersion} />
 	<section class="view">
 		<div class="canvas" bind:this={canvasBox}></div>
-		{#if chosen.variants.length > 1}
+		{#if variants.length > 1}
 			<nav class="variants" aria-label="{chosen.label}: variants">
 				<span class="label">{chosen.label}</span>
-				{#each chosen.variants as v (v.id)}
+				{#each variants as v (v.id)}
 					<button class:on={variant.id === v.id} aria-current={variant.id === v.id ? 'true' : undefined} onclick={() => vary(v)}>{v.label}</button>
 				{/each}
 			</nav>
@@ -206,8 +215,8 @@
 			{/if}
 		{/if}
 		<div class="readout">
-			<b>{chosen.variants.length > 1 ? `${chosen.label} · ${variant.label}` : chosen.label}</b>
-			{#if chosen.variants.length > 1}<span class="what">{variant.note}</span>{/if}
+			<b>{variants.length > 1 ? `${chosen.label} · ${variant.label}` : chosen.label}</b>
+			{#if variants.length > 1}<span class="what">{variant.note}</span>{/if}
 			{#if size && cast}<span>{measure(Math.max(size[0], size[2]))} long · {measure(size[1])} high · {cast.rig.names.length} bones</span>{/if}
 			<small>Drag to turn round it · scroll to come closer{doing.kind === 'pose' ? ' · turn any joint by hand' : ''}</small>
 		</div>

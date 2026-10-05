@@ -4,9 +4,14 @@
 // released yet. Flip it here to publish or withdraw a sandbox.
 import { base } from '$app/paths';
 import type { Founder } from '$lib/auth/client';
+import { latestOf, versionsOf, type Change, type Version } from '$lib/app/versions.js';
 
 export type Release = 'draft' | 'published';
-export type Place = { href: string; label: string; icon: IconName; cap?: string; note?: string; /** a picture, by hash */ cover?: string; release?: Release };
+export type Place = {
+	href: string; label: string; icon: IconName; cap?: string; note?: string; /** a picture, by hash */ cover?: string; release?: Release
+	/** a world's or sandbox's versions and history ($lib/app/versions.js), the latest its own; and what it is anchored to */
+	versions?: Version<string>[]; version?: number; anchors?: string
+};
 export type IconName = 'back' | 'home' | 'play' | 'board' | 'calendar' | 'media' | 'studio' | 'journal' | 'spark' | 'user' | 'key' | 'ledger' | 'coops' | 'leaf';
 
 // a founder's own apps: their money, and the communities — cities and settlements, founded, joined and backed here,
@@ -16,20 +21,30 @@ export const APPS: Place[] = [
 	{ href: `${base}/app/coops/`, label: 'Coops', icon: 'coops', note: 'Found, join and back cities and settlements' }
 ];
 
-export const PLAY: Place[] = [
+/** the worlds' and sandboxes' older versions, by address, each with what it was (none yet: everything is at v1) */
+const HISTORY: Record<string, (Change & { build?: string })[]> = {};
+/** a list of worlds with their versions */
+const withVersions = (list: Place[]): Place[] =>
+	list.map((p) => {
+		const versions = versionsOf(p.href, HISTORY[p.href]);
+		return { ...p, versions, version: latestOf(versions) };
+	});
+
+export const PLAY: Place[] = withVersions([
 	{ href: `${base}/app/games/sandbox-1/`, label: 'Sandbox 1', icon: 'play', release: 'draft', note: 'A hex island to settle', cover: '6a08f524a54384aa2c902b0e19f3d01b0264f1c218f62a7c47c2950ed0a0b620.jpg' },
 	{ href: `${base}/app/games/sandbox-2/`, label: 'Sandbox 2', icon: 'play', release: 'draft', note: 'The planet and its first cities', cover: '88528c9521de8682f676c3e2539c3a19ffd2a4731a2343410761025e27fde55e.jpg' },
 	{ href: `${base}/app/games/sandbox-3/`, label: 'Sandbox 3', icon: 'play', release: 'draft', note: 'Inside the domes', cover: 'd17cce66bce1298077dfa2617b08d868a2564503ee8bfabbbf01f40bdc30e2f9.jpg' },
-	{ href: `${base}/app/games/sandbox-4/`, label: 'Sandbox 4', icon: 'play', release: 'draft', note: 'A whole dome cell', cover: '1427db9edf3652e5354bb645e1c8155930dd53bf7cb17e39a4019efe33c6c2d6.jpg' }
-];
+	{ href: `${base}/app/games/sandbox-4/`, label: 'Sandbox 4', icon: 'play', release: 'draft', note: 'A whole dome cell', cover: '1427db9edf3652e5354bb645e1c8155930dd53bf7cb17e39a4019efe33c6c2d6.jpg' },
+	{ href: `${base}/app/games/sandbox-5/`, label: 'Sandbox 5', icon: 'play', release: 'draft', note: 'The dome cell, its food forest grown from our plants', cover: '1427db9edf3652e5354bb645e1c8155930dd53bf7cb17e39a4019efe33c6c2d6.jpg', anchors: 'the Plants, each at the version its forest was planted with' }
+]);
 
 // the 3D worlds made from real places, to walk and to film (an admin's: drafts, opened from the Worlds tile)
-export const WORLDS: Place[] = [
+export const WORLDS: Place[] = withVersions([
 	{ href: `${base}/app/worlds/room/`, label: 'Apartment of Samuel', icon: 'play', release: 'draft', note: 'Day 02 · his room, the hallway, the kitchen, the bathroom' },
 	{ href: `${base}/app/worlds/tired-land/`, label: 'The tired land', icon: 'play', release: 'draft', note: 'Day 19 · fields of one crop, a highway, trucks' },
 	{ href: `${base}/app/worlds/isar/`, label: 'The Isar', icon: 'play', release: 'draft', note: 'Munich · from the Wittelsbacherbrücke south to the railway bridge' },
 	{ href: `${base}/app/worlds/backyard/`, label: 'The backyard', icon: 'play', release: 'draft', note: 'Munich · the courtyard, the pergola terrace, the garden corner' }
-];
+]);
 
 export const READ: Place[] = [
 	{ href: `${base}/blog/`, label: 'Journal', icon: 'journal', note: 'Day by day' },

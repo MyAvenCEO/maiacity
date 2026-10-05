@@ -9,10 +9,10 @@
 	import { onDestroy, onMount } from 'svelte';
 	import { page } from '$app/state';
 	import { replaceState } from '$app/navigation';
-	import { LAYERS, PLANTS, SEEDS, freshSeed } from '$lib/plants';
+	import { LAYERS, PLANTS, SEEDS, freshSeed, plantAt } from '$lib/plants';
 	import PickList from '$lib/app/PickList.svelte';
 
-	/** @typedef {import('$lib/plants').Plant} Plant */
+	/** @typedef {(typeof import('$lib/plants').PLANTS)[number]} Plant */
 	/** @typedef {'cutaway' | 'bare' | 'solid'} Soil */
 	/** @typedef {'plant' | 'whole'} Frame */
 
@@ -25,6 +25,10 @@
 	/** where it has grown to: 0 … the last stage, the stages its whole numbers */
 	let g = $state(Math.min(opened.stages.length - 1, Math.max(0, Number(asked.get('stage') ?? 1) - 1 || 0)));
 	let seed = $state(asked.get('seed') || SEEDS[0]);
+	/** the version of it grown: its latest, or one picked from its history (?v=) */
+	let version = $state(Number(asked.get('v')) || opened.version);
+	/** the plant as it was at that version */
+	const grown = $derived(plantAt(chosen.id, version) ?? chosen);
 	/** @type {Soil} */
 	let soil = $state('cutaway');
 	/** @type {Frame} */
@@ -199,7 +203,7 @@
 		const ro = new ResizeObserver(resize);
 		ro.observe(box);
 		resize();
-		show(chosen, g, seed);
+		show(grown, g, seed);
 
 		let raf = 0;
 		let then = performance.now();
@@ -213,7 +217,7 @@
 				g = Math.min(last, g + dt * 0.5);
 				if (now - built > 80 || g >= last) {
 					built = now;
-					show?.(chosen, g, seed);
+					show?.(grown, g, seed);
 				}
 				if (g >= last) playing = false;
 			}
@@ -279,6 +283,8 @@
 		url.searchParams.set('plant', chosen.id);
 		url.searchParams.set('stage', String(stage + 1));
 		url.searchParams.set('seed', seed);
+		if (version !== chosen.version) url.searchParams.set('v', String(version));
+		else url.searchParams.delete('v');
 		try {
 			replaceState(url, {});
 		} catch {
@@ -286,14 +292,19 @@
 		}
 	};
 	const regrow = () => {
-		show?.(chosen, g, seed);
+		show?.(grown, g, seed);
 		remember();
 	};
 
 	const pick = (/** @type {Plant} */ p) => {
 		chosen = p;
+		version = p.version;
 		playing = false;
 		g = Math.min(g, p.stages.length - 1);
+		regrow();
+	};
+	const pickVersion = (/** @type {number} */ v) => {
+		version = v;
 		regrow();
 	};
 	const goTo = (/** @type {number} */ k) => {
@@ -351,7 +362,7 @@
 <svelte:window onkeydown={onKey} />
 
 <main class="plants">
-	<PickList title="Plants" lede="Grown from code, seed to fruit, roots and all, in the seven layers of a food forest: tab through the ten stages, change the seed id for a sister plant." items={PLANTS} {chosen} where={(p) => p.from} onpick={pick} group={(p) => LAYERS.find((l) => l.id === p.layer)?.label ?? ''} />
+	<PickList title="Plants" lede="Grown from code, seed to fruit, roots and all, in the seven layers of a food forest: tab through the ten stages, change the seed id for a sister plant." items={PLANTS} {chosen} where={(p) => p.from} onpick={pick} group={(p) => LAYERS.find((l) => l.id === p.layer)?.label ?? ''} {version} onversion={pickVersion} />
 	<section class="view">
 		<div class="canvas" bind:this={canvasBox}></div>
 

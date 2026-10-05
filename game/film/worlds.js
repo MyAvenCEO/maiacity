@@ -23,6 +23,8 @@ export const WORLDS = {
 	'sandbox-3': { label: 'Sandbox 3 · inside a dome', areas: ['home', 'tent', 'glamp', 'large', 'master', 'factory'] },
 	// a whole dome cell: thirteen domes, their insides built as the camera comes
 	'sandbox-4': { label: 'Sandbox 4 · a dome cell', areas: null, domes: 13, sets: ['tired-land'] },
+	// the same dome cell, its food forest grown from our plants (src/lib/sandbox-2/interior/sandbox5.js)
+	'sandbox-5': { label: 'Sandbox 5 · a dome cell grown from our plants', areas: null, domes: 13, sets: ['tired-land'] },
 	// a real apartment, built from photos: Samuel's 14 m² room — the bed, two wine-crate towers, two chairs, the window,
 	// the door, a bulb — and round it the hallway, the kitchen and the bathroom (src/lib/worlds/room.ts, apartment.ts;
 	// Day 02)

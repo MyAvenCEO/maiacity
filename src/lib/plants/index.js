@@ -2,11 +2,16 @@
  * THE PLANTS — every plant grown from code, as the plants viewer (/app/plants/) lists it: its name, what it is, its
  * ten stages from seed to ripe fruit (the last four the fruit's own: set, green, turning, ripe), and the function that
  * grows it at a stage from a seed id (./strawberry.js, ./cucumber.js, ./raspberry.js, ./tomato.js with its oxheart,
- * ./eggplant.js, ./coconut.js, ./grape.js, ./tropics.js (banana, red banana, pineapple, papaya, passion fruit), ./herbs.js (the kitchen herbs and Bärlauch), ./ground.js (haircap moss, wine cap, shiitake, oyster), ./fruittrees.js (cherry, pear, peach, apricot, plum, persimmon, mulberry, fig, safou, soursop, sapodilla, avocado), ./garden.js (pepper, pumpkin, blueberry), ./vegetables.js (radish, carrot, lettuce, garlic) and ./trees.js (mango,
- * apple, orange, lemon, durian, jackfruit, through ./orchard.js and ./crown.js) — all of it made of ./grow.js,
- * ./sprout.js, ./leaves.js, ./bloom.js and ./tree.js). The same seed id grows the same plant every time; another id, a
- * sister plant — leaner or bushier, its leaves turned otherwise, its roots another way through the soil. A new plant is
- * a file here and a line below.
+ * ./eggplant.js, ./coconut.js, ./grape.js, ./tropics.js (banana, red banana, pineapple, papaya, passion fruit),
+ * ./herbs.js (the kitchen herbs, lavender and Bärlauch), ./ground.js (haircap moss, wine cap, shiitake, oyster),
+ * ./fruittrees.js (cherry, pear, peach, apricot, plum, persimmon, mulberry, fig, safou, soursop, sapodilla, avocado),
+ * ./garden.js (pepper, pumpkin, blueberry), ./vegetables.js (radish, carrot, lettuce, garlic), ./trees.js (mango,
+ * apple, orange, lemon, durian, jackfruit, through ./orchard.js and ./crown.js), ./groves.js (pomegranate, olive,
+ * coffee, cacao, through ./orchard.js too), ./ginger.js, ./allies.js (comfrey, white clover), ./greens.js (Swiss chard,
+ * kale) and ./beans.js (the runner bean up its cane) — all of it made of ./grow.js, ./sprout.js, ./leaves.js,
+ * ./bloom.js and ./tree.js). The same seed id grows the same plant every time; another id, a sister plant — leaner or
+ * bushier, its leaves turned otherwise, its roots another way through the soil. A new plant is a file here and a line
+ * below.
  */
 import { STAGES as STRAWBERRY, strawberry } from './strawberry.js';
 import { STAGES as CUCUMBER, cucumber } from './cucumber.js';
@@ -18,11 +23,18 @@ import { APPLE_STAGES, DURIAN_STAGES, JACKFRUIT_STAGES, LEMON_STAGES, MANGO_STAG
 import { CARROT_STAGES, GARLIC_STAGES, LETTUCE_STAGES, RADISH_STAGES, carrot, garlic, lettuce, radish } from './vegetables.js';
 import { STAGES as GRAPE, grape } from './grape.js';
 import { BANANA_STAGES, RED_BANANA_STAGES, PAPAYA_STAGES, PASSION_STAGES, PINEAPPLE_STAGES, banana, papaya, passionFruit, pineapple, redBanana } from './tropics.js';
-import { BASIL_STAGES, CHIVES_STAGES, CORIANDER_STAGES, DILL_STAGES, LEMON_BALM_STAGES, MINT_STAGES, OREGANO_STAGES, PARSLEY_STAGES, ROSEMARY_STAGES, SAGE_STAGES, THYME_STAGES, WILD_GARLIC_STAGES, basil, chives, coriander, dill, lemonBalm, mint, oregano, parsley, rosemary, sage, thyme, wildGarlic } from './herbs.js';
+import { BASIL_STAGES, CHIVES_STAGES, CORIANDER_STAGES, DILL_STAGES, LAVENDER_STAGES, LEMON_BALM_STAGES, MINT_STAGES, OREGANO_STAGES, PARSLEY_STAGES, ROSEMARY_STAGES, SAGE_STAGES, THYME_STAGES, WILD_GARLIC_STAGES, basil, chives, coriander, dill, lavender, lemonBalm, mint, oregano, parsley, rosemary, sage, thyme, wildGarlic } from './herbs.js';
 import { MOSS_STAGES, OYSTER_STAGES, SHIITAKE_STAGES, WINECAP_STAGES, moss, oyster, shiitake, wineCap } from './ground.js';
 import { FIG_STAGES, MULBERRY_STAGES, PERSIMMON_STAGES, fig, mulberry, persimmon } from './fruittrees.js';
 import { APRICOT_STAGES, AVOCADO_STAGES, CHERRY_STAGES, PEACH_STAGES, PEAR_STAGES, PLUM_STAGES, SAFOU_STAGES, SAPODILLA_STAGES, SOURSOP_STAGES, apricot, avocado, cherry, peach, pear, plum, safou, sapodilla, soursop } from './fruittrees.js';
 import { BLUEBERRY_STAGES, PEPPER_STAGES, PUMPKIN_STAGES, blueberry, pepper, pumpkin } from './garden.js';
+import { CACAO_STAGES, COFFEE_STAGES, OLIVE_STAGES, POMEGRANATE_STAGES, cacao, coffee, olive, pomegranate } from './groves.js';
+import { GINGER_STAGES, ginger } from './ginger.js';
+import { CLOVER_STAGES, COMFREY_STAGES, clover, comfrey } from './allies.js';
+import { CHARD_STAGES, KALE_STAGES, chard, kale } from './greens.js';
+import { BEAN_STAGES, beans } from './beans.js';
+
+import { at, versioned } from '../app/versions.js';
 
 /** @typedef {{ name: string, day: number, note: string }} Stage */
 /**
@@ -519,6 +531,105 @@ const ALL = [
 		from: 'Tree · 4 years',
 		stages: FIG_STAGES,
 		grow: fig
+	},
+	{
+		id: 'pomegranate',
+		label: 'Pomegranate',
+		latin: "Punica granatum · Granatapfel",
+		note: "A small tree of many stems, twiggy, its narrow glossy leaves bronze when new; scarlet trumpets at the shoot tips, then round leathery fruit under a crown, yellow flushing red.",
+		from: 'Tree · 4 years',
+		stages: POMEGRANATE_STAGES,
+		grow: pomegranate
+	},
+	{
+		id: 'olive',
+		label: 'Olive',
+		latin: "Olea europaea · Olive",
+		note: "A gnarled grey trunk under a dome of narrow silvery leaves; sprays of tiny cream flowers in the leaf axils of last year’s shoots, olives ripening green, violet, black.",
+		from: 'Tree · 6 years',
+		stages: OLIVE_STAGES,
+		grow: olive
+	},
+	{
+		id: 'coffee',
+		label: 'Coffee',
+		latin: "Coffea arabica · Kaffee",
+		note: "One upright stem, level branches in pairs tier on tier, glossy dark leaves; white star flowers crowding the leaf axils along the branches, then cherries turning yellow and red.",
+		from: 'Shrub · 4 years',
+		stages: COFFEE_STAGES,
+		grow: coffee
+	},
+	{
+		id: 'cacao',
+		label: 'Cacao',
+		latin: "Theobroma cacao · Kakao",
+		note: "A stem to its jorquette, then a fan of level branches hung with big limp leaves, red when new; tiny pink-white flowers and big ridged pods straight out of the trunk and thick limbs.",
+		from: 'Tree · 4 years',
+		stages: CACAO_STAGES,
+		grow: cacao
+	},
+	{
+		id: 'ginger',
+		label: 'Ginger',
+		latin: "Zingiber officinale · Ingwer",
+		note: "From a piece of rhizome: reed-like stems a metre high, two ranks of narrow leaves; below the soil, the hand branching into knobbly fingers, pink where each stem rises.",
+		from: 'Rhizome · 9 months',
+		stages: GINGER_STAGES,
+		grow: ginger
+	},
+	{
+		id: 'comfrey',
+		label: 'Comfrey',
+		latin: "Symphytum officinale · Beinwell",
+		note: "A clump of big bristly leaves over a deep black taproot; stems of curled cymes uncurling as their nodding purple bells open; cut and laid down as mulch, again and again.",
+		from: 'Herb · perennial',
+		stages: COMFREY_STAGES,
+		grow: comfrey
+	},
+	{
+		id: 'clover',
+		label: 'White clover',
+		latin: "Trifolium repens · Weißklee",
+		note: "Stolons creeping over the soil and rooting at every node; leaves of three with a pale chevron, round white flower heads, pink nodules on the roots fixing nitrogen.",
+		from: 'Ground · perennial',
+		stages: CLOVER_STAGES,
+		grow: clover
+	},
+	{
+		id: 'chard',
+		label: 'Swiss chard',
+		latin: "Beta vulgaris var. cicla · Mangold",
+		note: "A rosette of big glossy, blistered leaves on thick stalks — red, yellow, orange, pink or white by the seed — picked from the outside all summer.",
+		from: 'Leaves · 110 days',
+		stages: CHARD_STAGES,
+		grow: chard
+	},
+	{
+		id: 'kale',
+		label: 'Kale',
+		latin: "Brassica oleracea var. sabellica · Grünkohl",
+		note: "An upright stem crowned with blue-green leaves, curled and frilled or long and blistered (Lacinato); picked from the bottom up, the stem bare and scarred like a little palm.",
+		from: 'Leaves · 180 days',
+		stages: KALE_STAGES,
+		grow: kale
+	},
+	{
+		id: 'beans',
+		label: 'Runner bean',
+		latin: "Phaseolus coccineus · Feuerbohne",
+		note: "The bean stays below; the shoot winds anticlockwise up its cane, leaves of three, sprays of scarlet (or white) flowers, long green pods hanging in bunches.",
+		from: 'Vine · 95 days',
+		stages: BEAN_STAGES,
+		grow: beans
+	},
+	{
+		id: 'lavender',
+		label: 'Lavender',
+		latin: "Lavandula angustifolia · Lavendel",
+		note: "A grey-green mound of narrow leaves on a woody base; long bare stalks above it, each tipped with a spike of purple whorls.",
+		from: 'Shrub · perennial',
+		stages: LAVENDER_STAGES,
+		grow: lavender
 	}
 ];
 
@@ -545,6 +656,12 @@ export const LAYERS = [
 const LAYER_OF = /** @type {Record<string, Layer>} */ ({
 	'king-coconut': 'canopy', mango: 'canopy', durian: 'canopy', jackfruit: 'canopy', avocado: 'canopy', safou: 'canopy', sapodilla: 'canopy',
 	persimmon: 'sub-canopy', mulberry: 'sub-canopy', fig: 'sub-canopy',
+	pomegranate: 'sub-canopy', olive: 'sub-canopy', cacao: 'sub-canopy',
+	coffee: 'shrub', lavender: 'shrub',
+	comfrey: 'herbaceous', chard: 'herbaceous', kale: 'herbaceous',
+	clover: 'ground',
+	ginger: 'root',
+	beans: 'climber',
 	apple: 'sub-canopy', pear: 'sub-canopy', cherry: 'sub-canopy', peach: 'sub-canopy', apricot: 'sub-canopy', plum: 'sub-canopy', orange: 'sub-canopy', lemon: 'sub-canopy', soursop: 'sub-canopy', papaya: 'sub-canopy', banana: 'sub-canopy', 'red-banana': 'sub-canopy',
 	raspberry: 'shrub', blueberry: 'shrub', rosemary: 'shrub', sage: 'shrub',
 	tomato: 'herbaceous', oxheart: 'herbaceous', eggplant: 'herbaceous', pepper: 'herbaceous', lettuce: 'herbaceous', pineapple: 'herbaceous', basil: 'herbaceous', parsley: 'herbaceous', chives: 'herbaceous', mint: 'herbaceous', 'lemon-balm': 'herbaceous', dill: 'herbaceous', coriander: 'herbaceous',
@@ -554,8 +671,34 @@ const LAYER_OF = /** @type {Record<string, Layer>} */ ({
 	'wine-cap': 'fungi', shiitake: 'fungi', oyster: 'fungi'
 });
 
-/** every plant, layer by layer from the canopy down (in each layer as they were added) */
-export const PLANTS = LAYERS.flatMap((l) => ALL.filter((p) => (LAYER_OF[p.id] ?? 'herbaceous') === l.id).map((p) => ({ ...p, layer: l.id })));
+/**
+ * The plants' older versions, by id, each with its frozen `grow` ($lib/app/versions.js): a plant changed goes up a
+ * version, its old grow function kept here, so the worlds anchored to it (Sandbox 5) grow it as they were planted.
+ * None yet: every plant is at v1.
+ * @type {Record<string, (import('../app/versions.js').Change & { build?: Plant['grow'] })[]>}
+ */
+const HISTORY = {};
+
+/**
+ * every plant, layer by layer from the canopy down (in each layer as they were added), with its versions
+ * @type {(Plant & { versions: import('../app/versions.js').Version<Plant['grow']>[], version: number })[]}
+ */
+export const PLANTS = versioned(
+	LAYERS.flatMap((l) => ALL.filter((p) => (LAYER_OF[p.id] ?? 'herbaceous') === l.id).map((p) => ({ ...p, layer: l.id }))),
+	'grow',
+	HISTORY
+);
+
+/**
+ * A plant as it was at version `v` (its latest when not given): its `grow` that version's. Undefined if it has no such
+ * version. A world asks for the version it was planted with.
+ * @param {string} id @param {number} [v]
+ */
+export function plantAt(id, v) {
+	const p = PLANTS.find((x) => x.id === id);
+	const ver = p && at(p.versions, v);
+	return p && ver ? { ...p, grow: ver.build, version: ver.v } : undefined;
+}
 
 export const SEEDS = ['maia', 'isar', 'samuel', 'backyard', 'seed-0042', 'sun', 'rain', 'domes'];
 

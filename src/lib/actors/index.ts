@@ -10,15 +10,20 @@ import { prepare } from './build';
 import { CASTS } from './casts';
 import { human } from './human';
 import type { Cast } from './rig';
+import { versioned, type Change, type Version } from '$lib/app/versions.js';
 
 /** one actor: a breed, a coat, the stand-in */
 export type Actor = { id: string; label: string; note: string; make: () => Cast; ready?: () => Promise<void> };
-/** a kind of actor and its variants (the first shown first) */
-export type Family = { id: string; label: string; note: string; from: string; variants: Actor[] };
+/** a kind of actor and its variants (the first shown first), with its version and history: a kind is versioned as a
+ * whole (its species is one body plan), each version bringing the variants it made ($lib/app/versions.js) */
+export type Family = { id: string; label: string; note: string; from: string; variants: Actor[]; versions: Version<Actor[]>[]; version: number };
+
+/** the kinds' older versions, by id, each with its frozen variants (none yet: everything is at v1) */
+const HISTORY: Record<string, (Change & { build?: Actor[] })[]> = {};
 
 const animal = (id: string, label: string, note: string): Actor => ({ id, label, note, make: CASTS[id]!, ready: () => prepare(id) });
 
-export const FAMILIES: Family[] = [
+const LIST: Omit<Family, 'versions' | 'version'>[] = [
 	{
 		id: 'stand-in',
 		label: 'Stand-in',
@@ -136,3 +141,5 @@ export const FAMILIES: Family[] = [
 		]
 	}
 ];
+
+export const FAMILIES: Family[] = versioned(LIST, 'variants', HISTORY);
