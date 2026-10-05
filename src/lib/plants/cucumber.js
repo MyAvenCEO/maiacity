@@ -9,7 +9,7 @@
  * All of it at real measure (metres), the soil's surface at y = 0.
  */
 import * as THREE from 'three';
-import { Bag, about, aim, bead, between, chance, clamp, fan, lerp, mix, root, sheet, span, table, tube, v3 } from './grow.js';
+import { Bag, Space, about, aim, bead, between, chance, clamp, fan, lerp, mix, root, sheet, span, table, tube, v3 } from './grow.js';
 import { sprout } from './sprout.js';
 
 export const STAGES = [
@@ -112,7 +112,10 @@ export function cucumber(stage, seed) {
 
 	// the vine: from between the seed leaves up and round the stake
 	const L = vineLength(g) * vigour;
-	if (L > 0.002) vine(bag, seed, s.top, L, g, vigour);
+	// what is where: the stake, the vine, the cucumbers, for the cucumbers and leaves to keep clear of
+	const space = new Space();
+	if (g >= 3.5) space.rod([STAKE.clone(), STAKE.clone().add(v3(0, 1.7, 0))], 0.008);
+	if (L > 0.002) vine(bag, seed, s.top, L, g, vigour, space);
 	return bag.build();
 }
 
@@ -142,8 +145,9 @@ function vinePath(seed, start) {
 
 /**
  * @param {Bag} bag @param {string} seed @param {THREE.Vector3} start @param {number} L @param {number} g @param {number} vigour
+ * @param {Space} space
  */
-function vine(bag, seed, start, L, g, vigour) {
+function vine(bag, seed, start, L, g, vigour, space) {
 	const { pts, step } = vinePath(seed, start);
 	const n = Math.min(pts.length - 1, L / step);
 	const whole = Math.floor(n);
@@ -152,6 +156,9 @@ function vine(bag, seed, start, L, g, vigour) {
 	if (now.length < 2) return;
 	const thick = 0.0028 + 0.0022 * span(g, 3, 6);
 	bag.add('body', tube(now, (u) => thick * (1 - 0.55 * Math.pow(u, 3)), (u) => mix('#6f9440', '#8fbf5a', u), 7));
+	space.rod(now, thick + 0.004);
+	/** the leaves wait until the cucumbers hang, then turn away from them @type {(() => void)[]} */
+	const leaves = [];
 	/** a place along the vine, and its direction */
 	const at = (/** @type {number} */ s) => {
 		const f = Math.min(pts.length - 1.001, s / step);
@@ -175,10 +182,11 @@ function vine(bag, seed, start, L, g, vigour) {
 		const grown = clamp(past / 0.16);
 		const size = lerp(0.55, 1, clamp(i / 4)) * about(nr, 1, 0.12) * vigour;
 		const old = i < 3 ? span(g, 5.4 + i * 0.2, 6.3 + i * 0.2) : 0;
-		leaf(bag, { seed, key: i, at: p, out, size, grown, old });
+		leaves.push(() => leaf(bag, { seed, key: i, at: p, out: space.steer(p, out, 0.2, 0.17 * size, 0.05 * size), size, grown, old }));
 		if (i >= 2 && past > 0.03) tendril(bag, seed, i, p, d, out, clamp((past - 0.03) / 0.2));
-		if (i >= 4) flowers(bag, seed, i, p, out, g, past, vigour);
+		if (i >= 4) flowers(bag, seed, i, p, out, g, past, vigour, space);
 	}
+	for (const leaf of leaves) leaf();
 	// the growing tip: a tight bud of folded leaves
 	const tip = now[now.length - 1];
 	bag.add('body', bead(tip, v3(1, 1.4, 1).multiplyScalar(0.004), '#9bc46a'));
@@ -272,8 +280,9 @@ function tendril(bag, seed, i, at, along, out, grown) {
  * The flowers at a node: a cluster of male flowers on short stalks, or one female flower with its ovary behind it —
  * the cucumber it becomes once it is pollinated.
  * @param {Bag} bag @param {string} seed @param {number} i @param {THREE.Vector3} at @param {THREE.Vector3} out @param {number} g @param {number} past @param {number} vigour
+ * @param {Space} space
  */
-function flowers(bag, seed, i, at, out, g, past, vigour) {
+function flowers(bag, seed, i, at, out, g, past, vigour, space) {
 	const fr = chance(seed, 'flowers', i);
 	const female = i >= 6 && (i % 2 === 0 ? fr() < 0.75 : fr() < 0.3);
 	const opens = 4.25 + i * 0.07 + fr() * 0.15;
@@ -301,9 +310,13 @@ function flowers(bag, seed, i, at, out, g, past, vigour) {
 	const hang = clamp(set * 1.6);
 	const dir = up.clone().lerp(v3(0, -1, 0), 0.25 + hang * 0.7).normalize();
 	const stalkEnd = at.clone().addScaledVector(dir, 0.015 + 0.02 * set);
-	bag.add('body', tube([at.clone(), stalkEnd], () => 0.0012 + 0.002 * set, () => '#6e9640', 5));
 	const size = vigour * about(fr, 1, 0.12) * (i > 13 ? 0.7 : 1);
-	const tipAt = fruit(bag, seed, i, stalkEnd, dir, lerp(0.022 * bud, 0.21 * size, set), set);
+	const length = lerp(0.022 * bud, 0.21 * size, set);
+	// it hangs where it touches nothing: not through the vine, the stake, or another cucumber
+	const R = length * 0.15;
+	const place = space.settle(stalkEnd, dir, (a, d) => [0.15, 0.38, 0.62, 0.85].map((f) => ({ c: a.clone().addScaledVector(d, length * f), r: R })), 0.04);
+	bag.add('body', tube([at.clone(), stalkEnd, place.at], () => 0.0012 + 0.002 * set, () => '#6e9640', 5));
+	const tipAt = fruit(bag, seed, i, place.at, place.dir, length, set);
 	const life = clamp((g - opens) / 0.2);
 	const wilt = span(g, opens + 0.5, opens + 0.9);
 	blossom(bag, tipAt.p, tipAt.d, life, wilt, 1);

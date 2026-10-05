@@ -9,7 +9,7 @@
  * All of it at real measure (metres), the soil's surface at y = 0.
  */
 import * as THREE from 'three';
-import { Bag, about, aim, bead, between, chance, clamp, heading, lerp, mix, root, sheet, span, table, tube, v3 } from './grow.js';
+import { Bag, Space, about, aim, bead, between, chance, clamp, heading, lerp, mix, root, sheet, span, table, tube, v3 } from './grow.js';
 import { sprout } from './sprout.js';
 import { bloom } from './bloom.js';
 
@@ -45,6 +45,8 @@ const leafBirth = (/** @type {number} */ i) => (i === 0 ? 2.0 : i === 1 ? 2.45 :
 export function strawberry(stage, seed) {
 	const g = growth(stage);
 	const bag = new Bag();
+	/** what is where: the berries, so that none grows through another */
+	const space = new Space();
 	const r = chance(seed, 'plant');
 	const vigour = about(r, 1, 0.12);
 
@@ -134,7 +136,7 @@ export function strawberry(stage, seed) {
 		const tr = chance(seed, 'truss', j);
 		const born = 4.1 + j * 0.16 + tr() * 0.1;
 		if (g <= born) continue;
-		truss(bag, { seed, key: j, at: crown, born, g, bear: tr() * Math.PI * 2, tilt: between(tr, 0.35, 0.75), vigour });
+		truss(bag, { seed, key: j, at: crown, born, g, bear: tr() * Math.PI * 2, tilt: between(tr, 0.35, 0.75), vigour, space });
 	}
 
 	// the runner: a stolon along the soil, a daughter plant rooting at its end
@@ -208,7 +210,7 @@ function trifoliate(bag, o) {
  * A truss: a stalk from the crown that forks into a few flowers, the first and largest opening first; each flower
  * sheds its petals and swells into a berry, its stalk bowing over as the berry grows heavy.
  * @param {Bag} bag
- * @param {{ seed: string, key: number, at: THREE.Vector3, born: number, g: number, bear: number, tilt: number, vigour: number }} o
+ * @param {{ seed: string, key: number, at: THREE.Vector3, born: number, g: number, bear: number, tilt: number, vigour: number, space: Space }} o
  */
 function truss(bag, o) {
 	const tr = chance(o.seed, 'truss-shape', o.key);
@@ -272,7 +274,11 @@ function truss(bag, o) {
 				flat.normalize().multiplyScalar(Math.sqrt(1 - Math.max(0, room) ** 2));
 				dir.set(flat.x, -Math.max(0, room), flat.z).normalize();
 			}
-			berry(bag, { seed: o.seed, key: [o.key, k], at: end, dir, size: big * o.vigour, grown: fruitT, ripe: span(g, opens + 1.4, opens + 2.0) });
+			// and where it touches no other berry
+			const L = 0.036 * big * o.vigour * lerp(0.18, 1, fruitT);
+			const place = o.space.settle(end, dir, (a, d) => [{ c: a.clone().addScaledVector(d, L * 0.42), r: L * 0.46 }], 0.012);
+			if (place.at.distanceTo(end) > 1e-5) bag.add('body', tube([end, place.at], () => 0.0007 * big, () => '#7fa548', 4));
+			berry(bag, { seed: o.seed, key: [o.key, k], at: place.at, dir: place.dir, size: big * o.vigour, grown: fruitT, ripe: span(g, opens + 1.4, opens + 2.0) });
 		}
 	}
 }
