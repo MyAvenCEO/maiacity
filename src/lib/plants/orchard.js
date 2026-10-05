@@ -86,7 +86,7 @@ export function orchard(spec) {
 				: [];
 
 		// what is where, so the fruit hang clear of the wood and of each other
-		const space = new Space();
+		const space = bag.space;
 		for (const sh of shoots) if (sh.gen <= 2 && sh.radius > 0.01) space.rod(sh.pts, sh.radius + 0.01);
 
 		// the flowering sites

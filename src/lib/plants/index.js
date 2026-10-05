@@ -2,7 +2,7 @@
  * THE PLANTS — every plant grown from code, as the plants viewer (/app/plants/) lists it: its name, what it is, its
  * ten stages from seed to ripe fruit (the last four the fruit's own: set, green, turning, ripe), and the function that
  * grows it at a stage from a seed id (./strawberry.js, ./cucumber.js, ./raspberry.js, ./tomato.js with its oxheart,
- * ./eggplant.js, ./coconut.js, ./grape.js, ./tropics.js (banana, red banana, pineapple, papaya, passion fruit), ./ground.js (haircap moss, wine cap, shiitake, oyster), ./fruittrees.js (cherry, pear, peach, apricot, plum, safou, soursop, sapodilla, avocado), ./garden.js (pepper, pumpkin, blueberry), ./vegetables.js (radish, carrot, lettuce, garlic) and ./trees.js (mango,
+ * ./eggplant.js, ./coconut.js, ./grape.js, ./tropics.js (banana, red banana, pineapple, papaya, passion fruit), ./herbs.js (the kitchen herbs and Bärlauch), ./ground.js (haircap moss, wine cap, shiitake, oyster), ./fruittrees.js (cherry, pear, peach, apricot, plum, safou, soursop, sapodilla, avocado), ./garden.js (pepper, pumpkin, blueberry), ./vegetables.js (radish, carrot, lettuce, garlic) and ./trees.js (mango,
  * apple, orange, lemon, durian, jackfruit, through ./orchard.js and ./crown.js) — all of it made of ./grow.js,
  * ./sprout.js, ./leaves.js, ./bloom.js and ./tree.js). The same seed id grows the same plant every time; another id, a
  * sister plant — leaner or bushier, its leaves turned otherwise, its roots another way through the soil. A new plant is
@@ -18,6 +18,7 @@ import { APPLE_STAGES, DURIAN_STAGES, JACKFRUIT_STAGES, LEMON_STAGES, MANGO_STAG
 import { CARROT_STAGES, GARLIC_STAGES, LETTUCE_STAGES, RADISH_STAGES, carrot, garlic, lettuce, radish } from './vegetables.js';
 import { STAGES as GRAPE, grape } from './grape.js';
 import { BANANA_STAGES, RED_BANANA_STAGES, PAPAYA_STAGES, PASSION_STAGES, PINEAPPLE_STAGES, banana, papaya, passionFruit, pineapple, redBanana } from './tropics.js';
+import { BASIL_STAGES, CHIVES_STAGES, CORIANDER_STAGES, DILL_STAGES, LEMON_BALM_STAGES, MINT_STAGES, OREGANO_STAGES, PARSLEY_STAGES, ROSEMARY_STAGES, SAGE_STAGES, THYME_STAGES, WILD_GARLIC_STAGES, basil, chives, coriander, dill, lemonBalm, mint, oregano, parsley, rosemary, sage, thyme, wildGarlic } from './herbs.js';
 import { MOSS_STAGES, OYSTER_STAGES, SHIITAKE_STAGES, WINECAP_STAGES, moss, oyster, shiitake, wineCap } from './ground.js';
 import { APRICOT_STAGES, AVOCADO_STAGES, CHERRY_STAGES, PEACH_STAGES, PEAR_STAGES, PLUM_STAGES, SAFOU_STAGES, SAPODILLA_STAGES, SOURSOP_STAGES, apricot, avocado, cherry, peach, pear, plum, safou, sapodilla, soursop } from './fruittrees.js';
 import { BLUEBERRY_STAGES, PEPPER_STAGES, PUMPKIN_STAGES, blueberry, pepper, pumpkin } from './garden.js';
@@ -382,6 +383,114 @@ export const PLANTS = [
 		from: 'Fungus · 5 months',
 		stages: OYSTER_STAGES,
 		grow: oyster
+	},
+	{
+		id: 'basil',
+		label: 'Basil',
+		latin: "Ocimum basilicum · Basilikum",
+		note: "Glossy cupped leaves in pairs on a soft square stem, pinched into a bush; white whorled flower spikes; an annual.",
+		from: 'Herb · 100 days',
+		stages: BASIL_STAGES,
+		grow: basil
+	},
+	{
+		id: 'parsley',
+		label: 'Parsley',
+		latin: "Petroselinum crispum · Petersilie",
+		note: "A rosette of flat, divided, toothed leaves through its first year; in its second, a stem of yellow-green umbels and ribbed seeds.",
+		from: 'Herb · 2 years',
+		stages: PARSLEY_STAGES,
+		grow: parsley
+	},
+	{
+		id: 'chives',
+		label: 'Chives',
+		latin: "Allium schoenoprasum · Schnittlauch",
+		note: "A clump of little bulbs and hollow tubular leaves, cut and cut again; purple pompoms in its second spring.",
+		from: 'Herb · perennial',
+		stages: CHIVES_STAGES,
+		grow: chives
+	},
+	{
+		id: 'wild-garlic',
+		label: 'Wild garlic',
+		latin: "Allium ursinum · Bärlauch",
+		note: "A woodland bulb from a seed that needs a winter’s cold: years later, two or three broad garlicky leaves, a ball of white stars, then gone till next spring.",
+		from: 'Bulb · 3 years',
+		stages: WILD_GARLIC_STAGES,
+		grow: wildGarlic
+	},
+	{
+		id: 'thyme',
+		label: 'Thyme',
+		latin: "Thymus vulgaris · Thymian",
+		note: "A little woody evergreen shrub of wiry stems and tiny leaves, clouds of pink flowers at the tips.",
+		from: 'Herb · perennial',
+		stages: THYME_STAGES,
+		grow: thyme
+	},
+	{
+		id: 'rosemary',
+		label: 'Rosemary',
+		latin: "Salvia rosmarinus · Rosmarin",
+		note: "Upright woody stems crowded with dark needle leaves, pale blue flowers along them in late winter.",
+		from: 'Shrub · perennial',
+		stages: ROSEMARY_STAGES,
+		grow: rosemary
+	},
+	{
+		id: 'sage',
+		label: 'Sage',
+		latin: "Salvia officinalis · Salbei",
+		note: "A shrub of soft, pebbled, silver-grey leaves on woody stems; violet-blue flowers in whorls up tall spikes.",
+		from: 'Shrub · perennial',
+		stages: SAGE_STAGES,
+		grow: sage
+	},
+	{
+		id: 'mint',
+		label: 'Mint',
+		latin: "Mentha × piperita · Minze",
+		note: "Toothed wrinkled leaves on purplish square stems, runners rooting all round it, lilac flower spikes.",
+		from: 'Herb · perennial',
+		stages: MINT_STAGES,
+		grow: mint
+	},
+	{
+		id: 'oregano',
+		label: 'Oregano',
+		latin: "Origanum vulgare · Oregano",
+		note: "A low mat of small round leaves sending up branching stems topped with clusters of pink-purple flowers.",
+		from: 'Herb · perennial',
+		stages: OREGANO_STAGES,
+		grow: oregano
+	},
+	{
+		id: 'lemon-balm',
+		label: 'Lemon balm',
+		latin: "Melissa officinalis · Zitronenmelisse",
+		note: "A clump of bright, crinkled, heart-shaped lemony leaves; small white flowers in the axils.",
+		from: 'Herb · perennial',
+		stages: LEMON_BALM_STAGES,
+		grow: lemonBalm
+	},
+	{
+		id: 'dill',
+		label: 'Dill',
+		latin: "Anethum graveolens · Dill",
+		note: "Thread-fine blue-green leaves, a single hollow stem, big umbels of yellow flowers, then flat seeds.",
+		from: 'Herb · 95 days',
+		stages: DILL_STAGES,
+		grow: dill
+	},
+	{
+		id: 'coriander',
+		label: 'Coriander',
+		latin: "Coriandrum sativum · Koriander",
+		note: "Broad lobed leaves first, feathery upper ones as it bolts; lacy white umbels, then round seeds.",
+		from: 'Herb · 90 days',
+		stages: CORIANDER_STAGES,
+		grow: coriander
 	}
 ];
 

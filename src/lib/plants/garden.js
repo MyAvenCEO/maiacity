@@ -9,7 +9,7 @@
  * then berries green, pink, then blue under a pale bloom.
  */
 import * as THREE from 'three';
-import { Bag, Space, about, aim, bead, between, chance, clamp, fan, lerp, mix, root, sheet, span, table, tube, v3 } from './grow.js';
+import { Bag, about, aim, bead, between, chance, clamp, fan, lerp, mix, root, sheet, span, table, tube, v3 } from './grow.js';
 import { sprout } from './sprout.js';
 import { bloom } from './bloom.js';
 import { limb } from './tree.js';
@@ -60,7 +60,7 @@ export function pepper(g, seed) {
 	/** @type {import('./tree.js').Limb[]} */
 	const limbs = [];
 	limb(bag, { seed, key: ['stem'], from: s.top.clone(), dir: v3(0, 1, 0), length: 0.25 * vigour, grown: table(g, [[2, 0], [3, 0.3], [4, 0.9], [5, 1.6], [6, 2.2], [7, 2.6], [9, 2.8]]), radius: 0.008, up: 0.04, wander: 0.08, spread: 0.55, children: 2, shorten: [0.8, 0.95], depth: 3, from0: 0.95, young: '#6f9a42', old: '#5a7a3a', age: span(g, 4, 8), out: limbs });
-	const space = new Space();
+	const space = bag.space;
 	for (const l of limbs) space.rod(l.pts, 0.006);
 	/** @type {(() => void)[]} */
 	const leaves = [];
