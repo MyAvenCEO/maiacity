@@ -2,7 +2,7 @@
  * THE PLANTS — every plant grown from code, as the plants viewer (/app/plants/) lists it: its name, what it is, its
  * ten stages from seed to ripe fruit (the last four the fruit's own: set, green, turning, ripe), and the function that
  * grows it at a stage from a seed id (./strawberry.js, ./cucumber.js, ./raspberry.js, ./tomato.js with its oxheart,
- * ./eggplant.js, ./coconut.js, ./grape.js, ./tropics.js (banana, red banana, pineapple, papaya, passion fruit), ./herbs.js (the kitchen herbs and Bärlauch), ./ground.js (haircap moss, wine cap, shiitake, oyster), ./fruittrees.js (cherry, pear, peach, apricot, plum, safou, soursop, sapodilla, avocado), ./garden.js (pepper, pumpkin, blueberry), ./vegetables.js (radish, carrot, lettuce, garlic) and ./trees.js (mango,
+ * ./eggplant.js, ./coconut.js, ./grape.js, ./tropics.js (banana, red banana, pineapple, papaya, passion fruit), ./herbs.js (the kitchen herbs and Bärlauch), ./ground.js (haircap moss, wine cap, shiitake, oyster), ./fruittrees.js (cherry, pear, peach, apricot, plum, persimmon, mulberry, fig, safou, soursop, sapodilla, avocado), ./garden.js (pepper, pumpkin, blueberry), ./vegetables.js (radish, carrot, lettuce, garlic) and ./trees.js (mango,
  * apple, orange, lemon, durian, jackfruit, through ./orchard.js and ./crown.js) — all of it made of ./grow.js,
  * ./sprout.js, ./leaves.js, ./bloom.js and ./tree.js). The same seed id grows the same plant every time; another id, a
  * sister plant — leaner or bushier, its leaves turned otherwise, its roots another way through the soil. A new plant is
@@ -20,6 +20,7 @@ import { STAGES as GRAPE, grape } from './grape.js';
 import { BANANA_STAGES, RED_BANANA_STAGES, PAPAYA_STAGES, PASSION_STAGES, PINEAPPLE_STAGES, banana, papaya, passionFruit, pineapple, redBanana } from './tropics.js';
 import { BASIL_STAGES, CHIVES_STAGES, CORIANDER_STAGES, DILL_STAGES, LEMON_BALM_STAGES, MINT_STAGES, OREGANO_STAGES, PARSLEY_STAGES, ROSEMARY_STAGES, SAGE_STAGES, THYME_STAGES, WILD_GARLIC_STAGES, basil, chives, coriander, dill, lemonBalm, mint, oregano, parsley, rosemary, sage, thyme, wildGarlic } from './herbs.js';
 import { MOSS_STAGES, OYSTER_STAGES, SHIITAKE_STAGES, WINECAP_STAGES, moss, oyster, shiitake, wineCap } from './ground.js';
+import { FIG_STAGES, MULBERRY_STAGES, PERSIMMON_STAGES, fig, mulberry, persimmon } from './fruittrees.js';
 import { APRICOT_STAGES, AVOCADO_STAGES, CHERRY_STAGES, PEACH_STAGES, PEAR_STAGES, PLUM_STAGES, SAFOU_STAGES, SAPODILLA_STAGES, SOURSOP_STAGES, apricot, avocado, cherry, peach, pear, plum, safou, sapodilla, soursop } from './fruittrees.js';
 import { BLUEBERRY_STAGES, PEPPER_STAGES, PUMPKIN_STAGES, blueberry, pepper, pumpkin } from './garden.js';
 
@@ -491,6 +492,33 @@ const ALL = [
 		from: 'Herb · 90 days',
 		stages: CORIANDER_STAGES,
 		grow: coriander
+	},
+	{
+		id: 'persimmon',
+		label: 'Persimmon',
+		latin: "Diospyros kaki · Kaki",
+		note: "A rounded crown of big glossy leaves; pale bell flowers in the leaf axils, glossy orange fruit in four-lobed calyxes that hang on like lanterns after the leaves fall.",
+		from: 'Tree · 6 years',
+		stages: PERSIMMON_STAGES,
+		grow: persimmon
+	},
+	{
+		id: 'mulberry',
+		label: 'Mulberry',
+		latin: "Morus nigra · Maulbeere",
+		note: "A broad spreading crown of toothed, often lobed leaves; green catkins, then berries like long blackberries going white, red, black, for weeks.",
+		from: 'Tree · 4 years',
+		stages: MULBERRY_STAGES,
+		grow: mulberry
+	},
+	{
+		id: 'fig',
+		label: 'Fig',
+		latin: "Ficus carica · Feige",
+		note: "A low, many-stemmed tree of big rough hand-shaped leaves; its flowers hidden inside the figs, one in each leaf axil, pear-shaped, ripening purple.",
+		from: 'Tree · 4 years',
+		stages: FIG_STAGES,
+		grow: fig
 	}
 ];
 
@@ -516,6 +544,7 @@ export const LAYERS = [
 /** which layer each plant grows in */
 const LAYER_OF = /** @type {Record<string, Layer>} */ ({
 	'king-coconut': 'canopy', mango: 'canopy', durian: 'canopy', jackfruit: 'canopy', avocado: 'canopy', safou: 'canopy', sapodilla: 'canopy',
+	persimmon: 'sub-canopy', mulberry: 'sub-canopy', fig: 'sub-canopy',
 	apple: 'sub-canopy', pear: 'sub-canopy', cherry: 'sub-canopy', peach: 'sub-canopy', apricot: 'sub-canopy', plum: 'sub-canopy', orange: 'sub-canopy', lemon: 'sub-canopy', soursop: 'sub-canopy', papaya: 'sub-canopy', banana: 'sub-canopy', 'red-banana': 'sub-canopy',
 	raspberry: 'shrub', blueberry: 'shrub', rosemary: 'shrub', sage: 'shrub',
 	tomato: 'herbaceous', oxheart: 'herbaceous', eggplant: 'herbaceous', pepper: 'herbaceous', lettuce: 'herbaceous', pineapple: 'herbaceous', basil: 'herbaceous', parsley: 'herbaceous', chives: 'herbaceous', mint: 'herbaceous', 'lemon-balm': 'herbaceous', dill: 'herbaceous', coriander: 'herbaceous',
