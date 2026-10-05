@@ -2,7 +2,7 @@
  * THE PLANTS — every plant grown from code, as the plants viewer (/app/plants/) lists it: its name, what it is, its
  * ten stages from seed to ripe fruit (the last four the fruit's own: set, green, turning, ripe), and the function that
  * grows it at a stage from a seed id (./strawberry.js, ./cucumber.js, ./raspberry.js, ./tomato.js with its oxheart,
- * ./eggplant.js, ./coconut.js, ./grape.js, ./vegetables.js (radish, carrot, lettuce, garlic) and ./trees.js (mango,
+ * ./eggplant.js, ./coconut.js, ./grape.js, ./tropics.js (banana, pineapple), ./garden.js (pepper, pumpkin, blueberry), ./vegetables.js (radish, carrot, lettuce, garlic) and ./trees.js (mango,
  * apple, orange, lemon, durian, jackfruit, through ./orchard.js and ./crown.js) — all of it made of ./grow.js,
  * ./sprout.js, ./leaves.js, ./bloom.js and ./tree.js). The same seed id grows the same plant every time; another id, a
  * sister plant — leaner or bushier, its leaves turned otherwise, its roots another way through the soil. A new plant is
@@ -17,6 +17,8 @@ import { STAGES as COCONUT, coconut } from './coconut.js';
 import { APPLE_STAGES, DURIAN_STAGES, JACKFRUIT_STAGES, LEMON_STAGES, MANGO_STAGES, ORANGE_STAGES, apple, durian, jackfruit, lemon, mango, orange } from './trees.js';
 import { CARROT_STAGES, GARLIC_STAGES, LETTUCE_STAGES, RADISH_STAGES, carrot, garlic, lettuce, radish } from './vegetables.js';
 import { STAGES as GRAPE, grape } from './grape.js';
+import { BANANA_STAGES, PINEAPPLE_STAGES, banana, pineapple } from './tropics.js';
+import { BLUEBERRY_STAGES, PEPPER_STAGES, PUMPKIN_STAGES, blueberry, pepper, pumpkin } from './garden.js';
 
 /** @typedef {{ name: string, day: number, note: string }} Stage */
 /**
@@ -189,6 +191,51 @@ export const PLANTS = [
 		from: 'Tree · 6 years',
 		stages: JACKFRUIT_STAGES,
 		grow: jackfruit
+	},
+	{
+		id: 'banana',
+		label: 'Banana',
+		latin: 'Musa acuminata · Banane',
+		note: 'From a sucker: a pseudostem of rolled leaf sheaths, huge paddle leaves torn by the wind; the flower stalk bends over, purple bracts lift off hands of fingers curving up, the male bud hanging below.',
+		from: 'Herb · 13 months',
+		stages: BANANA_STAGES,
+		grow: banana
+	},
+	{
+		id: 'pepper',
+		label: 'Bell pepper',
+		latin: 'Capsicum annuum · Paprika',
+		note: 'A little forking bush of glossy pointed leaves, a white flower nodding in every fork, blocky bells hanging green, then turning red.',
+		from: 'Bush · 135 days',
+		stages: PEPPER_STAGES,
+		grow: pepper
+	},
+	{
+		id: 'pumpkin',
+		label: 'Pumpkin',
+		latin: 'Cucurbita maxima · Kürbis (Hokkaido)',
+		note: 'A vine running along the ground, rooting at its nodes, huge lobed leaves standing up, big yellow trumpets, ribbed pumpkins lying on the soil turning deep orange.',
+		from: 'Vine · 110 days',
+		stages: PUMPKIN_STAGES,
+		grow: pumpkin
+	},
+	{
+		id: 'pineapple',
+		label: 'Pineapple',
+		latin: 'Ananas comosus · Ananas',
+		note: 'From a crown: a rosette of stiff spiny grey-green leaves; a red cone of violet flowers rises from its heart and fuses into one fruit, its eyes in spirals, yellowing from the base.',
+		from: 'Rosette · 2 years',
+		stages: PINEAPPLE_STAGES,
+		grow: pineapple
+	},
+	{
+		id: 'blueberry',
+		label: 'Blueberry',
+		latin: 'Vaccinium corymbosum · Blaubeere',
+		note: 'A twiggy shrub of many canes, small elliptic leaves, hanging clusters of white urn-shaped bells, berries turning pink, then blue under a silvery bloom.',
+		from: 'Shrub · 4 years',
+		stages: BLUEBERRY_STAGES,
+		grow: blueberry
 	}
 ];
 
