@@ -27,6 +27,8 @@ import { createWalker } from '$lib/sandbox-kit/walker.js'
 import { createObstacles } from '$lib/sandbox-kit/obstacles.js'
 import { connectFilm, filmDraws, filmHoldsSize, worldTime } from '$lib/sandbox-kit/film.js'
 import { ambience, levelsAt } from './ambience'
+import { createForest, type Forest } from './flora.js'
+import { pick, type Flora } from './sandbox5.js'
 
 export type VillageDome = { kind: DomeKind; x: number; z: number; R: number; ext: number }
 export type VillageHandle = {
@@ -59,7 +61,14 @@ function layout(): VillageDome[] {
 	return out
 }
 
-export async function mountVillage(container: HTMLElement, onProgress: (label: string) => void): Promise<VillageHandle> {
+/**
+ * Which sandbox the village is: Sandbox 4 as it was built (its forest of simple stand-in plants, ./plants.ts), or
+ * Sandbox 5, its forest grown from our own plants ($lib/plants, ./flora.js) as its `flora` says (./sandbox5.js).
+ */
+export type VillageOptions = { sandbox?: 'sandbox-4' | 'sandbox-5'; flora?: Flora }
+
+export async function mountVillage(container: HTMLElement, onProgress: (label: string) => void, opts: VillageOptions = {}): Promise<VillageHandle> {
+	const flora = opts.flora
 	const pause = async (label: string) => {
 		onProgress(label)
 		await new Promise((r) => requestAnimationFrame(() => setTimeout(r, 0)))
@@ -574,7 +583,8 @@ export async function mountVillage(container: HTMLElement, onProgress: (label: s
 	}
 	const MAIN: { parts: Part[]; radius: number }[] = []
 	const mainPlant = (p: Plant) => MAIN.push({ parts: species(p.object, true), radius: p.radius })
-	for (const seed of [1, 2]) {
+	// Sandbox 5 grows its own (flora, below): none of these are made
+	if (!flora) for (const seed of [1, 2]) {
 		mainPlant(canopyTree(2000 + seed, 1.2))
 		mainPlant(appleTree(2100 + seed, 1.1))
 		mainPlant(fruitTree('mango', 2200 + seed, 1.1))
@@ -584,13 +594,13 @@ export async function mountVillage(container: HTMLElement, onProgress: (label: s
 	}
 	// the edge forest has more of everything: papaya, fig, pomegranate, coconut palms
 	const EDGE_ONLY = MAIN.length
-	for (const seed of [1, 2]) {
+	if (!flora) for (const seed of [1, 2]) {
 		mainPlant(papaya(2600 + seed, 4))
 		mainPlant(smallFruitTree('fig', 2700 + seed, 1.2))
 		mainPlant(smallFruitTree('pomegranate', 2800 + seed, 1.1))
 		mainPlant(coconutPalm(2900 + seed, 11))
 	}
-	const UNDER: Part[][] = [
+	const UNDER: Part[][] = flora ? [] : [
 		species(berryBush(3001, 1).object, false),
 		species(berryBush(3002, 0.8).object, false),
 		species(comfrey(3003, 0.7), false),
@@ -607,6 +617,22 @@ export async function mountVillage(container: HTMLElement, onProgress: (label: s
 	]
 	// the forest floor, one of each kind drawn once and scattered: moss, mycelium, earth, ant hills, wood, stones, rock
 	const FLOOR = FLOOR_KINDS.map((k, i) => species(forestFloor(k, 4000 + i), false))
+	/* ── Sandbox 5: the forest grown from our plants (./flora.js), the same guilds in the same places: a tree, and round
+	   it its shrubs, its cover and its climbers, each a plant of the middle-European forest garden at its stage
+	   (./sandbox5.js). Put down here, grown once the whole cell is laid out. ── */
+	const forest: Forest | null = flora ? createForest({ near: 38, mid: 95, cover: 30, shrubs: 70 }) : null
+	type Planted = { kind: ReturnType<typeof pick>; x: number; z: number; s: number }
+	const plantedTrees: Planted[] = []
+	const plantTree = (r: () => number, x: number, z: number) => {
+		const kind = pick(flora!.outside.trees, r, flora!.seed)
+		const s = 0.85 + r() * 0.3
+		forest!.add(kind, 'tree', x, 0, z, r() * 6.28, s)
+		plantedTrees.push({ kind, x, z, s })
+	}
+	const plantUnder = (r: () => number, x: number, z: number, layer: 'shrubs' | 'climbers' | 'cover') => {
+		const kind = pick(flora!.outside[layer], r, flora!.seed)
+		forest!.add(kind, layer === 'cover' ? 'cover' : 'shrub', x, 0, z, r() * 6.28, 0.85 + r() * 0.3)
+	}
 	const floorIndex = (r: () => number) => FLOOR_KINDS.indexOf(floorPick(r))
 	// and tufts of meadow grass standing up out of the lawn, drawn with the floor, near you
 	FLOOR.push(species(grassTuft(0.55), false))
@@ -637,6 +663,30 @@ export async function mountVillage(container: HTMLElement, onProgress: (label: s
 				const x = gx + r() * step, z = gz + r() * step
 				if (Math.hypot(x, z) > INNER || !inHex(x, z)) continue
 				if (inDome(x, z, 6) || inSquare(x, z) || nearPath(x, z, 3.2) || nearWater(x, z, W / 2 + 2.2)) continue
+				if (flora) {
+					plantTree(r, x, z)
+					const around5 = (count: number, dist: number, layer: 'shrubs' | 'climbers' | 'cover') => {
+						for (let j = 0; j < count; j++) {
+							const b = r() * 6.28, dd = dist * (0.6 + r() * 0.6)
+							const ox = x + Math.cos(b) * dd, oz = z + Math.sin(b) * dd
+							if (inDome(ox, oz, 2) || nearPath(ox, oz, 1.8) || nearWater(ox, oz, W / 2 + 0.6)) continue
+							plantUnder(r, ox, oz, layer)
+						}
+					}
+					// the forest floor: the same wood, stones and earth as Sandbox 4's, never its stand-in moss
+					if (r() < 0.6) {
+						const b = r() * 6.28, dd = 1.5 + r() * 2.5
+						const ox = x + Math.cos(b) * dd, oz = z + Math.sin(b) * dd
+						const f = floorIndex(r)
+						if (FLOOR_KINDS[f] !== 'moss' && !inDome(ox, oz, 2) && !nearPath(ox, oz, 2) && !nearWater(ox, oz, W / 2 + 0.8)) tileAt(ox, oz).floor[f]!.push(mat(ox, 0, oz, r() * 6.28, 0.8 + r() * 0.5))
+					}
+					around5(2, 2.4, 'shrubs')
+					around5(3, 1.7, 'cover')
+					around5(4, 2.7, 'cover')
+					if (r() < 0.45) around5(1, 1.4, 'climbers')
+					if (++n % 400 === 0) await pause('Planting the food forest')
+					continue
+				}
 				const t = tileAt(x, z)
 				const k = Math.floor(r() * EDGE_ONLY)
 				const s = 0.8 + r() * 0.6
@@ -680,6 +730,17 @@ export async function mountVillage(container: HTMLElement, onProgress: (label: s
 				const rr = Math.hypot(x, z)
 				if (rr < INNER - 6 || !inHex(x, z)) continue
 				if (inDome(x, z, 4) || nearPath(x, z, 2.8) || nearWater(x, z, W / 2 + 1.6)) continue
+				if (flora) {
+					plantTree(r, x, z)
+					for (let j = 0; j < 3; j++) {
+						const b = r() * 6.28, dd = 1.2 + r() * 1.6
+						const ox = x + Math.cos(b) * dd, oz = z + Math.sin(b) * dd
+						if (nearPath(ox, oz, 1.6) || nearWater(ox, oz, W / 2 + 0.5)) continue
+						plantUnder(r, ox, oz, j === 0 ? 'shrubs' : j === 1 && r() < 0.3 ? 'climbers' : 'cover')
+					}
+					if (++n % 500 === 0) await pause('Planting the edges')
+					continue
+				}
 				const t = tileAt(x, z)
 				const k = Math.floor(r() * MAIN.length)
 				const sz = 0.8 + r() * 0.7
@@ -710,6 +771,17 @@ export async function mountVillage(container: HTMLElement, onProgress: (label: s
 		}
 	}
 	await pause('Planting the edges')
+	if (forest) {
+		// every kind grown (in workers, side by side), then each tree stands in the walker's way by its trunk
+		await forest.grown((done, of) => {
+			if (done === of || done % 10 === 0) onProgress(`Growing the forest: ${done} of ${of} kinds`)
+		})
+		for (const t of plantedTrees) colliders.push({ x: t.x, z: t.z, r: Math.min(0.6, (forest.shape(t.kind)?.foot ?? 0.3) * t.s) + 0.2 })
+		scene.add(forest.group)
+		// for a look at its weight from the console: __forest.weight()
+		;(window as unknown as { __forest?: Forest }).__forest = forest
+		await pause('Growing the forest')
+	}
 	{
 		const trunkMat = new THREE.MeshStandardMaterial({ color: '#6d5238', roughness: 0.9 })
 		const crownMat = new THREE.MeshStandardMaterial({ color: '#ffffff', roughness: 0.85, flatShading: true })
@@ -745,7 +817,15 @@ export async function mountVillage(container: HTMLElement, onProgress: (label: s
 	}
 	/** Near you the forest in full, further off its stand-ins. */
 	const NEAR = 72
+	const look = new THREE.Vector3()
+	/** Sandbox 5's forest: what is drawn how, for where the eye is and where it looks (cheap unless it moved) */
+	const forestTick = () => {
+		if (!forest) return
+		camera.getWorldDirection(look)
+		forest.update(camera.position.x, camera.position.z, look.x, look.z)
+	}
 	const levelOfDetail = (x: number, z: number) => {
+		forestTick()
 		for (const t of tiles.values()) {
 			const near = Math.hypot(t.cx - x, t.cz - z) < NEAR
 			if (t.near) t.near.visible = near
@@ -919,7 +999,7 @@ export async function mountVillage(container: HTMLElement, onProgress: (label: s
 		const job = { i, cancelled: false }
 		building = job
 		// on film nothing is drawn while the world is readied (__filmDraw): every dome builds in long stretches
-		mountInterior(container, d.kind, () => {}, { host: { scene, camera, renderer, x: d.x, z: d.z }, cancelled: () => job.cancelled, hurry: () => gapTo(i) < 12 || filmDraws(), background: () => gapTo(i) > 45 && !filmDraws() })
+		mountInterior(container, d.kind, () => {}, { host: { scene, camera, renderer, x: d.x, z: d.z }, cancelled: () => job.cancelled, hurry: () => gapTo(i) < 12 || filmDraws(), background: () => gapTo(i) > 45 && !filmDraws(), flora: flora ? { garden: flora.inside, seed: flora.seed } : undefined })
 			.then((h) => {
 				if (building === job) building = null
 				if (job.cancelled || !h.embedded) return h.dispose()
@@ -1031,6 +1111,7 @@ export async function mountVillage(container: HTMLElement, onProgress: (label: s
 			sound.set(levelsAt(pos.x, pos.z, indoors, waterPts, herds), indoors)
 		}
 		for (const i of shown) built.get(i)!.update(t)
+		forestTick()
 		// the film camera draws the canvas itself while it holds it (src/lib/film)
 		if (!filmDraws()) renderer.render(scene, camera)
 		// keep it smooth; while a film is shot every frame is rendered at the resolution it asks for
@@ -1054,7 +1135,7 @@ export async function mountVillage(container: HTMLElement, onProgress: (label: s
 		for (const i of built.keys()) place(i)
 	}
 	const world = connectFilm({
-		sandbox: 'sandbox-4',
+		sandbox: opts.sandbox ?? 'sandbox-4',
 		renderer,
 		scene,
 		camera,

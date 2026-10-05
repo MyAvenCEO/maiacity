@@ -11,6 +11,30 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 
+/**
+ * How finely a plant is made: 1 in the plants viewer, less when a world plants hundreds of it (`lite`). Below 1 every
+ * tube has fewer sides and rings, every sheet fewer rows, every bead fewer facets — and with `roots` off nothing
+ * under the soil is grown at all, which no one walking a forest sees; and with `thin` under 1 only that part of the
+ * leaves, petals and beads is kept, each grown bigger to fill the gap (a crown seen from metres away reads the same).
+ */
+export const DETAIL = { level: 1, roots: true, thin: 1 };
+
+/**
+ * Builds with `make` at a lower detail (see DETAIL), and puts it back as it was.
+ * @template T @param {{ level?: number, roots?: boolean }} o @param {() => T} make @returns {T}
+ */
+export function lite(o, make) {
+	const keep = { ...DETAIL };
+	Object.assign(DETAIL, o);
+	try {
+		return make();
+	} finally {
+		Object.assign(DETAIL, keep);
+	}
+}
+/** a count of divisions at the present detail, never under `least` */
+const fewer = (/** @type {number} */ n, least = 1) => (DETAIL.level >= 1 ? n : Math.max(least, Math.round(n * DETAIL.level)));
+
 /** @typedef {() => number} Chance a number 0 … 1, the next one every call */
 /** @typedef {(u: number, v: number) => THREE.ColorRepresentation | THREE.Color} Paint a colour for a place on a shape (u along it, v round or across it) */
 
@@ -102,6 +126,12 @@ export const mix = (/** @type {THREE.ColorRepresentation} */ a, /** @type {THREE
  * @param {number} [sides]
  */
 export function tube(points, radius, paint, sides = 6) {
+	if (DETAIL.level < 1) {
+		sides = fewer(sides, 3);
+		// every other point or more, the ends always kept
+		const every = Math.max(1, Math.round(1 / DETAIL.level));
+		if (every > 1 && points.length > 3) points = points.filter((_, i) => i % every === 0 || i === points.length - 1);
+	}
 	const n = points.length;
 	const pos = [], nor = [], uv = [], col = [], idx = [];
 	// the length along it, to spread u evenly by distance
@@ -148,6 +178,8 @@ export function tube(points, radius, paint, sides = 6) {
  * @param {{ length: number, width: number, shape: (u: number) => number, lift?: (u: number, v: number) => number, paint: Paint, along?: number, across?: number }} o
  */
 export function sheet({ length, width, shape, lift = () => 0, paint, along = 16, across = 6 }) {
+	along = fewer(along, 2);
+	across = fewer(across, 1);
 	const pos = [], nor = [], uv = [], col = [], idx = [];
 	for (let i = 0; i <= along; i++) {
 		const u = i / along;
@@ -175,6 +207,8 @@ export function sheet({ length, width, shape, lift = () => 0, paint, along = 16,
  * @param {{ size: number, from: number, to: number, edge: (a: number) => number, lift?: (s: number, a: number) => number, paint: Paint, rings?: number, rays?: number }} o
  */
 export function fan({ size, from, to, edge, lift = () => 0, paint, rings = 8, rays = 40 }) {
+	rings = fewer(rings, 1);
+	rays = fewer(rays, 5);
 	const pos = [], nor = [], uv = [], col = [], idx = [];
 	for (let j = 0; j <= rays; j++) {
 		const a = lerp(from, to, j / rays);
@@ -198,6 +232,7 @@ export function fan({ size, from, to, edge, lift = () => 0, paint, rings = 8, ra
 
 /** a small round thing — a seed, an achene, a wart, a bud — at `at`, stretched by `scale`, of one colour */
 export function bead(/** @type {THREE.Vector3} */ at, /** @type {THREE.Vector3} */ scale, /** @type {THREE.ColorRepresentation} */ color, detail = 6, /** @type {THREE.Quaternion} */ turn = new THREE.Quaternion()) {
+	detail = fewer(detail, 2);
 	const g = new THREE.SphereGeometry(1, detail + 2, detail);
 	g.applyMatrix4(new THREE.Matrix4().compose(at, turn, scale));
 	const c = new THREE.Color(color);
@@ -244,10 +279,24 @@ export class Bag {
 		this.parts = { body: [], sheet: [], gloss: [], prop: [] };
 		/** what the plant has put where, for its fruit and leaves to keep clear of (see Space) */
 		this.space = new Space();
+		/** how far into the next sheet kept, when thinned (DETAIL.thin) */
+		this.sheets = 0;
 	}
 	/** @param {Kind} kind @param {THREE.BufferGeometry} geometry @param {THREE.Matrix4} [m] */
 	add(kind, geometry, m) {
 		if (m) geometry.applyMatrix4(m);
+		const isBead = geometry.type === 'SphereGeometry';
+		if ((kind === 'sheet' || isBead) && DETAIL.thin < 1) {
+			// keep one sheet (or bead) in so many, evenly, and grow it from where it is attached (a sheet's first vertex,
+			// a bead's middle) to cover for the ones left out
+			this.sheets = (this.sheets ?? 0) + DETAIL.thin;
+			if (this.sheets < 1) return this;
+			this.sheets -= 1;
+			if (isBead) geometry.computeBoundingSphere();
+			const at = isBead ? /** @type {THREE.Sphere} */ (geometry.boundingSphere).center.clone() : new THREE.Vector3().fromBufferAttribute(geometry.attributes.position, 0);
+			const grow = Math.min(1.8, isBead ? 1 / Math.cbrt(DETAIL.thin) : 1 / Math.sqrt(DETAIL.thin));
+			geometry.applyMatrix4(new THREE.Matrix4().makeTranslation(-at.x, -at.y, -at.z)).applyMatrix4(new THREE.Matrix4().makeScale(grow, grow, grow)).applyMatrix4(new THREE.Matrix4().makeTranslation(at.x, at.y, at.z));
+		}
 		this.parts[kind].push(geometry);
 		return this;
 	}
@@ -281,6 +330,7 @@ export class Bag {
  * }} o
  */
 export function root(bag, o) {
+	if (!DETAIL.roots) return;
 	const { seed, key, from, length, radius, young, old } = o;
 	const grown = clamp(o.grown);
 	if (grown <= 0.002 || length * grown < 1e-4) return;

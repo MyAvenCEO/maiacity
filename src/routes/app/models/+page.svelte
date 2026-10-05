@@ -6,11 +6,14 @@
 	import { onDestroy, onMount } from 'svelte';
 	import { MODELS, type Model } from '$lib/models';
 	import PickList from '$lib/app/PickList.svelte';
+	import { at } from '$lib/app/versions.js';
 
 	let canvasBox = $state<HTMLDivElement>();
 	let chosen = $state<Model>(MODELS[0]!);
+	/** the version of it shown: its latest, or an older one picked from its history */
+	let version = $state<number>(MODELS[0]!.version);
 	let size = $state<[number, number, number] | null>(null);
-	let show: ((m: Model) => void) | null = null;
+	let show: ((m: Model, v: number) => void) | null = null;
 	let dispose: (() => void) | null = null;
 
 	onMount(async () => {
@@ -42,10 +45,10 @@
 		let grid: InstanceType<typeof THREE.Group> | null = null;
 		let current: InstanceType<typeof THREE.Object3D> | null = null;
 
-		show = (m: Model) => {
+		show = (m: Model, v: number) => {
 			if (current) scene.remove(current);
 			if (grid) scene.remove(grid);
-			current = m.make();
+			current = (at(m.versions, v) ?? at(m.versions)!).build();
 			current.traverse((o) => {
 				if ((o as InstanceType<typeof THREE.Mesh>).isMesh) o.castShadow = true;
 			});
@@ -85,7 +88,7 @@
 		const ro = new ResizeObserver(resize);
 		ro.observe(box);
 		resize();
-		show(chosen);
+		show(chosen, version);
 		let frame = 0;
 		const tick = () => {
 			controls.update();
@@ -105,7 +108,12 @@
 
 	const pick = (m: Model) => {
 		chosen = m;
-		show?.(m);
+		version = m.version;
+		show?.(m, version);
+	};
+	const pickVersion = (v: number) => {
+		version = v;
+		show?.(chosen, v);
 	};
 	const cm = (v: number) => Math.round(v * 100);
 </script>
@@ -115,7 +123,7 @@
 </svelte:head>
 
 <main class="models">
-	<PickList title="3D models" lede="The things the worlds are built from, each to its real measure." items={MODELS} {chosen} where={(m) => m.usedIn} onpick={pick} />
+	<PickList title="3D models" lede="The things the worlds are built from, each to its real measure." items={MODELS} {chosen} where={(m) => m.usedIn} onpick={pick} {version} onversion={pickVersion} />
 	<section class="view">
 		<div class="canvas" bind:this={canvasBox}></div>
 		<div class="readout">

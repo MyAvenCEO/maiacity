@@ -3,8 +3,8 @@
  *
  * The mint family (Lamiaceae): square stems, leaves in opposite pairs, each pair turned a quarter from the last; side
  * shoots from the leaf axils; little two-lipped flowers in whorls up spikes at the tips, or in the axils. Basil, mint
- * (which runs underground and over it), sage, thyme, rosemary, oregano, lemon balm — soft and annual, or woody and
- * evergreen.
+ * (which runs underground and over it), sage, thyme, rosemary, oregano, lemon balm, lavender — soft and annual, or
+ * woody and evergreen.
  *
  * The carrot family (Apiaceae): a rosette of divided leaves, then a hollow stem carrying flat umbels of tiny flowers,
  * each ray ending in a smaller umbel, then the seeds. Parsley, dill, coriander.
@@ -25,10 +25,11 @@ const stages = (/** @type {[string, number, string][]} */ rows) => rows.map(([na
  * @typedef {{
  *   seed: { size: number, colour: string }, height: [number, number][], internode: number, branching: number, depth: number,
  *   spread: number, stem: string, woody?: string, leaf: { length: number, width: number, shape: (u: number) => number, colour: string, young: string, droop: number, wrinkle?: number, grey?: number },
- *   flower: { colour: string, at: number, kind: 'spike' | 'axils' | 'cluster', size: number, seed?: string }, runners?: number, stems?: number
+ *   flower: { colour: string, at: number, kind: 'spike' | 'axils' | 'cluster', size: number, seed?: string, stalk?: number, length?: number, whorls?: number }, runners?: number, stems?: number
  * }} Bush — a mint-family herb: its seed, its height through the stages, the spacing of its leaf pairs, how readily it
  *   branches and how deep, its leaves (and how grey or wrinkled), its flowers (in spikes at the tips, in the leaf
- *   axils, or in clusters), and whether it runs (mint)
+ *   axils, or in clusters; a spike `length` long in so many `whorls`, raised on a bare `stalk` above the leaves for
+ *   lavender), and whether it runs (mint)
  */
 
 /**
@@ -152,17 +153,26 @@ function shoot(bag, spec, seed, key, from, dir, length, grown, order, g, vigour)
 	if (!flowering || spec.flower.kind === 'axils' || grown < 0.6) return;
 	const f = span(g, spec.flower.at, spec.flower.at + 0.6);
 	const seeding = span(g, spec.flower.at + 1.5, spec.flower.at + 2.5);
-	const tip = pts[10];
+	let tip = pts[10];
 	const td = pts[10].clone().sub(pts[9]).normalize();
 	if (spec.flower.kind === 'spike') {
-		const spikeLen = 0.06 * f * (order ? 0.7 : 1);
-		const end = tip.clone().addScaledVector(td, spikeLen);
+		// a bare stalk first, if it has one (lavender's), rising straight out of the leaves
+		const stalk = (spec.flower.stalk ?? 0) * span(g, spec.flower.at, spec.flower.at + 0.7) * (order ? 0.8 : 1) * vigour;
+		if (stalk > 0) {
+			const sd = td.clone().lerp(v3(0, 1, 0), 0.6).normalize();
+			const top = tip.clone().addScaledVector(sd, stalk);
+			bag.add('body', tube([tip, tip.clone().addScaledVector(td, stalk * 0.3).lerp(top, 0.3), top], () => radius * 0.45, () => spec.stem, 3));
+			tip = top;
+		}
+		const whorls = spec.flower.whorls ?? 6;
+		const spikeLen = (spec.flower.length ?? 0.06) * f * (order ? 0.7 : 1);
+		const end = tip.clone().addScaledVector(stalk > 0 ? v3(0, 1, 0).lerp(td, 0.3).normalize() : td, spikeLen);
 		bag.add('body', tube([tip, end], () => radius * 0.5, () => spec.stem, 3));
-		for (let w = 0; w < 6; w++) {
-			const p = tip.clone().lerp(end, (w + 0.5) / 6);
+		for (let w = 0; w < whorls; w++) {
+			const p = tip.clone().lerp(end, (w + 0.5) / whorls);
 			for (let m = 0; m < 6; m++) {
 				const a = (m / 6) * Math.PI * 2 + w;
-				bag.add('body', bead(p.clone().add(v3(Math.cos(a) * 0.004, 0, Math.sin(a) * 0.004)), v3(1, 1.4, 1).multiplyScalar(spec.flower.size * (w > 3 ? 0.6 : 1)), seeding > 0.5 ? (spec.flower.seed ?? '#6a5a3a') : spec.flower.colour, 2));
+				bag.add('body', bead(p.clone().add(v3(Math.cos(a) * 0.004, 0, Math.sin(a) * 0.004)), v3(1, 1.4, 1).multiplyScalar(spec.flower.size * (w > whorls * 0.6 ? 0.6 : 1)), seeding > 0.5 ? (spec.flower.seed ?? '#6a5a3a') : spec.flower.colour, 2));
 			}
 		}
 	} else {
@@ -288,6 +298,25 @@ export const lemonBalm = bush({
 	internode: 0.04, branching: 0.5, depth: 2, spread: 0.9, stem: '#7a9a4a', stems: 4,
 	leaf: { length: 0.05, width: 0.024, shape: heart, colour: '#5a9a3a', young: '#8ac05a', droop: 0.2, wrinkle: 0.5 },
 	flower: { colour: '#f6f2e8', at: 7.0, kind: 'axils', size: 0.0016 }
+});
+
+export const LAVENDER_STAGES = stages([
+	['Seed', 0, 'A small, shiny dark-brown seed pressed onto the surface: slow and uneven to come up — most lavender is grown from cuttings.'],
+	['Germination', 21, 'The radicle goes down, the hook comes up.'],
+	['Seed leaves', 28, 'Two small round seed leaves.'],
+	['True leaves', 45, 'Narrow grey-green leaves in pairs, already smelling of lavender.'],
+	['Young plant', 90, 'Upright stems crowded with narrow leaves, branching from low down.'],
+	['Bushing', 240, 'A round mound of grey-green, the oldest stems turning woody.'],
+	['Woody', 400, 'An evergreen sub-shrub on a woody base, half a metre across.'],
+	['Buds', 520, 'Its second summer: long bare stalks rise above the leaves, tipped with spikes of grey-violet buds.'],
+	['Flowering', 545, 'The spikes open, whorl over whorl of small purple flowers, loud with bees.'],
+	['Harvest', 560, 'Cut the stalks as the first flowers open and hang them to dry; then trim the mound back to keep it from going leggy.']
+]);
+export const lavender = bush({
+	seed: { size: 0.0012, colour: '#3a2a20' }, height: [[2, 0], [3, 0.03], [4, 0.12], [5, 0.24], [6, 0.34], [7, 0.4], [9, 0.44]],
+	internode: 0.02, branching: 0.4, depth: 2, spread: 0.9, stem: '#7a8a6a', woody: '#6a5a48', stems: 8,
+	leaf: { length: 0.035, width: 0.0026, shape: needle, colour: '#6a7f62', young: '#8a9a7a', droop: 0.05, grey: 0.35 },
+	flower: { colour: '#7a5aa8', at: 6.6, kind: 'spike', size: 0.0019, seed: '#6a5a88', stalk: 0.2, length: 0.055, whorls: 8 }
 });
 
 /* ------------------------------------------------------------------------------------------------ carrot family */
