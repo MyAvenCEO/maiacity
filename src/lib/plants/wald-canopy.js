@@ -964,7 +964,7 @@ export const hazel = wood({
 		blade: {
 			stalk: 0.014, length: 0.11, width: 0.05,
 			shape: (u) => (u < 0.2 ? 0.55 + 0.45 * Math.sin((Math.PI / 2) * (u / 0.2)) : u < 0.72 ? 1 - 0.12 * Math.pow((u - 0.2) / 0.52, 2) : 0.88 * Math.pow(Math.cos((Math.PI / 2) * ((u - 0.72) / 0.28)), 0.7)),
-			back: 0.08, along: 4, bow: 0.07
+			back: 0.08, along: 6, bow: 0.07
 		},
 		colour: '#3e6e2a', young: '#9ac060', autumn: '#d0b040', droop: 0.3, gap: 0.07, per: 3, twig: 0.14, tuft: 3, limb: 0.25, top: 3, bare: true
 	},
@@ -984,8 +984,8 @@ export const hazel = wood({
 					const n = 1 + Math.floor(fr() * 4);
 					for (let k = 0; k < n; k++) {
 						const a = k * 2.39996 + fr();
-						const len = lerp(0.025, 0.07, span(phase, -0.45, -0.05)) * lerp(1, 0.6, span(phase, 0.3, 0.6));
-						catkin(bag, at, v3(Math.cos(a), -0.3, Math.sin(a)).addScaledVector(dir, 0.3), len, 0.0042, phase < 0.25 ? mix('#a8a860', '#e8d050', span(phase, -0.3, -0.05)) : mix('#e8d050', '#7a6a40', span(phase, 0.25, 0.55)), 0.05);
+						const len = lerp(0.025, 0.075, span(phase, -0.45, -0.05)) * lerp(1, 0.6, span(phase, 0.3, 0.6));
+						catkin(bag, at, v3(Math.cos(a) * 0.3, -1, Math.sin(a) * 0.3), len, 0.0048, phase < 0.25 ? mix('#a8a860', '#e8d050', span(phase, -0.3, -0.05)) : mix('#e8d050', '#7a6a40', span(phase, 0.25, 0.55)), 0.05);
 					}
 				}
 				// the female flower: a little bud with a tuft of crimson stigmas
