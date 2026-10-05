@@ -1,19 +1,30 @@
 /*
  * THE 3D MODELS — every reusable model, as the 3D models viewer (/app/models/) lists it: its name, what it is, where
  * it is used, and the function that builds it (./furniture.ts, ./hallway.ts, ./kitchen.ts, ./bathroom.ts,
- * ./outdoor.ts, ./terrace.ts, ./yard.ts). A world places them (src/lib/worlds); a new one is a function there and a line
+ * ./outdoor.ts, ./terrace.ts, ./yard.ts, ./containers.js; a machine that works is an actor, ./actors). A world places them (src/lib/worlds); a new one is a function there and a line
  * here.
  */
 import type * as THREE from 'three';
+import type { Cast } from '$lib/actors/rig';
 import { bed, chair, crateTower, edisonBulb, framedPicture, neewerCb60, sheepskin, truck, wineCrate } from './furniture';
 import { barCounter, barStool, canvasPrint, coatStand, door, palletShelf, pendantLamp, retroFridge } from './hallway';
 import { gasBoiler, kitchenRun, panRail, pedalBin, xShelf } from './kitchen';
 import { glassShower, towelRadiator, washbasin, wallToilet } from './bathroom';
 import { bridgeLamp, equestrianStatue, limestoneBlock, parkBench, tree } from './outdoor';
 import { bambooTable, bistroChair, bistroTable, clubSofa, festoonLights, ficusTree, geraniumPot, monstera, oliveTree, paperLantern, ribbedPlanter, strelitzia, terracottaPot, toyBee, toyMonkey } from './terrace';
+import { excavator } from '$lib/actors/excavator.js';
+import { kitchenContainer, sanitaryContainer, techContainer, workshopContainer } from './containers';
 import { ashtray, barnLamp, casementWindow, cityBike, doorCanopy, entranceDoor, floodlight, foldingChair, hedge, insectHotel, ivyCone, mailboxPost, rainBarrel, redTin, stationClock, steelWindow, stonewareCrock, teakRecliner, teakTable, windowBox, workshopDoor } from './yard';
 
 export type Model = { id: string; label: string; note: string; usedIn: string; make: () => THREE.Object3D };
+
+/** A rigged machine as a model: its rig in the world, playing one of its moves (`userData.tick(t)`, as the viewer's clock runs). */
+function working(cast: Cast, clip: string): THREE.Object3D {
+	const play = (t: number) => cast.rig.pose(cast.clips[clip]!(t));
+	play(0);
+	cast.rig.object.userData.tick = play;
+	return cast.rig.object;
+}
 
 export const MODELS: Model[] = [
 	{ id: 'bed', label: 'Bed', note: '140 × 200, a solid oak frame, the blue fitted sheet, a crumpled grey duvet, two mustard pillows', usedIn: 'The room', make: () => bed() },
@@ -98,5 +109,10 @@ export const MODELS: Model[] = [
 	{ id: 'tree-corkscrew', label: 'Corkscrew willow', note: 'two twisted trunks, a drooping crown of narrow leaves, about 5.5 m', usedIn: 'The backyard', make: () => tree('corkscrew') },
 	{ id: 'tree-maple', label: 'Field maple', note: 'small, by a door, about 4.3 m', usedIn: 'The backyard', make: () => tree('maple') },
 	{ id: 'tree-privet', label: 'Privet tree', note: 'several stems, narrow leaves, about 4.5 m', usedIn: 'The backyard', make: () => tree('privet') },
-	{ id: 'sapling', label: 'Sapling', note: 'one thin stem and a few leaves, about 2.2 m', usedIn: 'The backyard', make: () => tree('sapling') }
+	{ id: 'sapling', label: 'Sapling', note: 'one thin stem and a few leaves, about 2.2 m', usedIn: 'The backyard', make: () => tree('sapling') },
+	{ id: 'container-kitchen', label: 'Kitchen container', note: "a 40' high cube (12.19 × 2.44 × 2.90 m) fitted as the crew's central kitchen: six-burner range under its hood, combi steamer, sinks, dishwasher, fridges and freezer, the serving hatch — and the pantry behind a partition. Walk in", usedIn: 'Sandbox 1', make: () => kitchenContainer() },
+	{ id: 'container-workshop', label: 'Workshop container', note: "the workshop: a 4 m bench under a pegboard of hand tools, timber rack, pillar drill, grinder, mitre saw, table saw, welder, compressor, cordless tools in their cases, spades, ladder, wheelbarrow; a mixer outside. Walk in", usedIn: 'Sandbox 1', make: () => workshopContainer() },
+	{ id: 'container-tech', label: 'Tech container', note: "28 solar panels (about 11 kWp) on the roof and fold-out wings, 40 kWh of batteries, inverters, a hydrogen fuel cell and electrolyser, Starlink, and the AI server room behind glass. Walk in", usedIn: 'Sandbox 1', make: () => techContainer() },
+	{ id: 'container-sanitary', label: 'Sanitary container', note: 'washing machines and dryers, three washbasins, three showers and three toilets in cubicles, the hot-water heat pump; a rainwater tank outside. Walk in', usedIn: 'Sandbox 1', make: () => sanitaryContainer() },
+	{ id: 'mini-excavator', label: 'Mini excavator', note: 'a 1.7 t digger on rubber tracks, 1.55 m long, 0.99 m wide, 2.3 m to its canopy, 3.9 m reach — rigged: it digs, slews and dumps (its other moves in the Actors gallery)', usedIn: 'Sandbox 1', make: () => working(excavator(), 'dig') }
 ];
