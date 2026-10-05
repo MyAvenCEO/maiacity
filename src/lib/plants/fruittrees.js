@@ -302,3 +302,104 @@ export const avocado = orchard({
 		colour: (ripe, u, v) => mix('#3f6a2a', '#2a1a2a', ripe).lerp(new THREE.Color(ripe > 0.5 ? '#4a2a3a' : '#5a7a3a'), Math.pow(Math.abs(Math.sin(u * 70 + v * 50)), 8) * 0.35)
 	}
 });
+
+/* ------------------------------------------------------------------------------------------------ persimmon */
+
+export const PERSIMMON_STAGES = stages([
+	['Seed', 0, 'A flat brown seed from a ripe kaki, chilled through the winter, two centimetres down.'],
+	['Germination', 30, 'Slow: a thick root goes down first, then the hook comes up.'],
+	['Seedling', 60, 'Two leathery seed leaves, then broad glossy true leaves.'],
+	['Sapling', 365, 'A slender young tree, its bark already chequered.'],
+	['Young tree', 1460, 'A rounded crown of big, glossy, leathery leaves.'],
+	['Flowering', 2000, 'Small pale-yellow bell flowers, one in each leaf axil of the new shoots, under a big green calyx.'],
+	['Fruit set', 2015, 'The bells drop; little green fruit sit in their four-lobed calyxes.'],
+	['Green fruit', 2080, 'Round green fruit swelling among the leaves.'],
+	['Colouring', 2160, 'They turn yellow, then orange, as the leaves turn scarlet.'],
+	['Ripe', 2190, 'Glossy orange kaki like lanterns; they hang on even after the leaves have fallen.']
+]);
+
+export const persimmon = orchard({
+	seed: { size: v3(0.009, 0.004, 0.006), coat: '#6a4a2a', shade: '#4a3020', depth: 0.02 },
+	hypogeal: false,
+	cotyledon: { length: 0.025, width: 0.012, colour: '#5a8a3a' },
+	flush: crown({ trunk: 1.0, scaffolds: [3, 4], scaffoldAngle: 0.8, droop: 0.06, radius: 0.13, bark: ['#6a5a4a', '#3a3028'] }),
+	roots: { tap: 1.6, spread: 2, count: 16, radius: 0.045 },
+	leaf: { length: 0.14, width: 0.075, shape: ellipse, colour: '#2a5a24', young: '#9ab45a', style: 'along', per: 0, droop: 0.3 },
+	flower: { kind: { petals: 4, length: 0.009, width: 0.006, colour: '#f0e8b0', heart: '#d8c87a', sepals: 4, sepal: 0.012, stamens: 0, flat: -0.6 }, size: 1.2, opens: 4.6, sites: 'spurs', chance: 4, per: [1, 1] },
+	fruit: {
+		length: 0.06, width: 0.04, stalk: 0.012, keep: [1, 1], setFor: 1.9, ripeFrom: 2.8, ripeFor: 1.0, gloss: true, calyx: '#4a6a2a',
+		// round, a little flattened, faintly four-sided
+		shape: (u, v) => Math.pow(Math.max(0, Math.sin(Math.PI * u)), 0.38) * (1 + 0.035 * Math.cos(v * Math.PI * 8)),
+		colour: (ripe) => (ripe < 0.5 ? mix('#6a9a3a', '#e8b02a', ripe * 2) : mix('#e8b02a', '#e8641a', (ripe - 0.5) * 2))
+	}
+});
+
+/* ------------------------------------------------------------------------------------------------ mulberry */
+
+export const MULBERRY_STAGES = stages([
+	['Seed', 0, 'A tiny seed from a berry, sown on the surface.'],
+	['Germination', 14, 'The radicle goes down, the hook comes up.'],
+	['Seedling', 30, 'Two small seed leaves, then toothed, heart-shaped leaves.'],
+	['Sapling', 365, 'Fast: a branching young tree, some leaves lobed, some whole.'],
+	['Young tree', 1100, 'A broad, spreading, rounded crown.'],
+	['Flowering', 1460, 'Small green catkins hang among the new leaves in spring.'],
+	['Fruit set', 1470, 'The catkins swell into little green berries along their length.'],
+	['Green berries', 1495, 'Clusters of hard green mulberries, like small blackberries.'],
+	['Colouring', 1510, 'They go white, then red, berry by berry.'],
+	['Ripe', 1525, 'Black mulberries, soft and juicy, ripening for weeks: the ground under the tree stained purple.']
+]);
+
+/** a mulberry leaf: heart-shaped, toothed, often cut into lobes */
+const mulberryLeaf = (/** @type {number} */ u) => toothed(u) * (u > 0.3 && u < 0.7 ? 1 - 0.35 * Math.sin(((u - 0.3) / 0.4) * Math.PI) : 1);
+
+export const mulberry = orchard({
+	seed: { size: v3(0.002, 0.0012, 0.0015), coat: '#a8865a', shade: '#7a5a3a', depth: 0.004 },
+	hypogeal: false,
+	cotyledon: { length: 0.008, width: 0.004, colour: '#6aa046' },
+	flush: crown({ trunk: 0.9, scaffolds: [4, 5], scaffoldAngle: 0.95, droop: 0.075, spread: 0.65, radius: 0.15, shoot: (gen) => [0, 1.4, 1.0, 0.75, 0.55, 0.42, 0.34][gen] ?? 0.3, bark: ['#8a7058', '#5a4838'] }),
+	roots: { tap: 1.4, spread: 2.4, count: 16, radius: 0.05 },
+	leaf: { length: 0.13, width: 0.08, shape: mulberryLeaf, colour: '#3a6a2a', young: '#9ac05a', style: 'along', per: 0, droop: 0.35 },
+	flower: { catkin: true, size: 0.5, opens: 4.6, sites: 'spurs', chance: 9, per: [1, 2] },
+	fruit: {
+		length: 0.03, width: 0.008, stalk: 0.012, keep: [2, 4], setFor: 1.6, ripeFrom: 2.2, ripeFor: 1.6, gloss: true,
+		shape: (u) => Math.pow(Math.max(0, Math.sin(Math.PI * u)), 0.5),
+		colour: (ripe) => (ripe < 0.35 ? mix('#8ab84a', '#ece8d8', ripe / 0.35) : ripe < 0.65 ? mix('#ece8d8', '#c8283a', (ripe - 0.35) / 0.3) : mix('#c8283a', '#2a0a1a', (ripe - 0.65) / 0.35)),
+		// its drupelets, a knobbly skin
+		skin: { colour: (ripe) => (ripe < 0.35 ? '#9ac05a' : ripe < 0.65 ? '#e04a5a' : '#3a0a1a'), count: 16, size: 0.0032, length: 1 }
+	}
+});
+
+/* ------------------------------------------------------------------------------------------------ fig */
+
+export const FIG_STAGES = stages([
+	['Seed', 0, 'A tiny seed from a fig — though most figs are grown from cuttings, pushed into the soil in spring.'],
+	['Germination', 21, 'The radicle goes down, the hook comes up.'],
+	['Seedling', 45, 'Small seed leaves, then rough, lobed leaves.'],
+	['Sapling', 365, 'Thick grey shoots, big lobed leaves, the milky sap in every cut.'],
+	['Young tree', 1100, 'A low, spreading, many-stemmed tree of big hand-shaped leaves, rough as sandpaper.'],
+	['Breba', 1300, 'Early figs (brebas) swell on last year’s wood; the flowers are hidden inside them.'],
+	['Fruit set', 1340, 'New little green figs in the leaf axils of this year’s shoots, one to each leaf.'],
+	['Green figs', 1380, 'Pear-shaped green figs, swelling slowly, hard.'],
+	['Colouring', 1420, 'They swell suddenly, soften and darken to purple, their eye at the tip opening.'],
+	['Ripe', 1430, 'Soft purple figs hanging on their necks, a drop of nectar at the eye: picking time.']
+]);
+
+/** a fig leaf: three to five deep lobes, a long cut in either side */
+const figLeaf = (/** @type {number} */ u) => Math.pow(Math.sin(Math.PI * Math.pow(u, 0.65)), 0.6) * (1 - 0.55 * Math.exp(-Math.pow((u - 0.45) / 0.08, 2)) - 0.35 * Math.exp(-Math.pow((u - 0.75) / 0.06, 2)));
+
+export const fig = orchard({
+	seed: { size: v3(0.0015, 0.001, 0.001), coat: '#c8a878', shade: '#8a6a44', depth: 0.004 },
+	hypogeal: false,
+	cotyledon: { length: 0.007, width: 0.0035, colour: '#6aa046' },
+	flush: crown({ trunk: 0.5, scaffolds: [4, 6], scaffoldAngle: 1.0, gens: 5, droop: 0.06, spread: 0.6, radius: 0.12, taper: 0.66, shoot: (gen) => [0, 1.2, 0.9, 0.65, 0.48, 0.38][gen] ?? 0.32, bark: ['#9a9890', '#7a7a74'] }),
+	roots: { tap: 1.2, spread: 2.6, count: 16, radius: 0.04 },
+	leaf: { length: 0.2, width: 0.11, shape: figLeaf, colour: '#2f5f2a', young: '#8ab45a', style: 'along', per: 0, droop: 0.35 },
+	// no flower to see: it blooms inside the fig
+	flower: { size: 0.6, opens: 4.7, sites: 'spurs', chance: 6, per: [1, 1] },
+	fruit: {
+		length: 0.06, width: 0.026, stalk: 0.012, keep: [1, 1], setFor: 2.0, ripeFrom: 2.9, ripeFor: 0.9, gloss: false,
+		// pear-shaped: a narrow neck at the stalk, round at the end, the eye a small dimple
+		shape: (u) => Math.pow(Math.max(0, Math.sin(Math.PI * u)), 0.45) * (0.42 + 0.58 * Math.pow(clamp(u * 1.4), 1.3)) * (u > 0.96 ? 0.85 : 1),
+		colour: (ripe, u, v) => mix('#7a9a4a', '#4a2a4a', clamp(ripe * 1.3 - (1 - u) * 0.3)).lerp(new THREE.Color('#9aa070'), Math.pow(Math.abs(Math.sin(v * Math.PI * 12)), 10) * 0.25)
+	}
+});
