@@ -18,7 +18,7 @@ import { DOMES, DOORS, adiff, bake, box, geodesic, glassSheen, lantern, mats, mo
 import { cafes, coops, coopsAround, henPatches, playground, rabbitPatches, squaresAround, type Kit } from './spaces'
 import { water } from './textures'
 import { appleTree, banana, berryBush, canopyTree, climber, clover, coconutPalm, comfrey, fruitTree, ginger, herb, papaya, passionVine, seeded, smallFruitTree, squash, strawberries, tropicalShrub, forestFloor, FLOOR_KINDS, floorPick, grassTuft, type Plant } from './plants'
-import { apiary, fishes, herd } from './animals'
+import { antHills, apiary, fishes, herd } from './animals'
 import { settled as actorsSettled } from '$lib/actors/build'
 import { flow, pond, shore, stream } from './water'
 import { createStage } from '$lib/sandbox-kit/stage.js'
@@ -820,6 +820,23 @@ export async function mountVillage(container: HTMLElement, onProgress: (label: s
 		for (const f of [goats, sheep, geese, frogs, hives]) {
 			scene.add(f.object)
 			animated.push(f.update)
+		}
+		// ant hills, at random all over the food forest of the cell: never on a path, by the water, against a dome, on a
+		// square, or on top of a tree or another hill; the wood ants on them busy as you come near
+		{
+			const ar = seeded(79)
+			const spots: { x: number; z: number; rot: number; size: number }[] = []
+			for (let tries = 0; spots.length < 48 && tries < 4000; tries++) {
+				const [x, z] = polar(60 + Math.sqrt(ar()) * 235, ar() * Math.PI * 2)
+				if (nearPath(x, z, 3) || nearWater(x, z, 4) || domes.some((d) => Math.hypot(x - d.x, z - d.z) < d.ext + 4) || AROUND_MASTER.some((c) => Math.hypot(x - c.x, z - c.z) < c.r + 3)) continue
+				if (colliders.some((c) => Math.abs(c.x - x) < c.r + 1 && Math.abs(c.z - z) < c.r + 1 && Math.hypot(c.x - x, c.z - z) < c.r + 0.9)) continue
+				if (spots.some((q) => Math.hypot(q.x - x, q.z - z) < 12)) continue
+				spots.push({ x, z, rot: ar() * Math.PI * 2, size: 0.7 + ar() * 0.6 })
+			}
+			const ants = antHills(spots, eye)
+			scene.add(ants.object)
+			animated.push(ants.update)
+			for (const q of spots) colliders.push({ x: q.x, z: q.z, r: 0.75 * q.size })
 		}
 		// the goats' bleat is a sheep's: both flocks sound it
 		herds.goats = () => [...goats.where(), ...sheep.where()]

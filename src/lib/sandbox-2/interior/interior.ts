@@ -24,7 +24,7 @@ import * as THREE from 'three'
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js'
 import { flagstone, grass, groundCover, leaves, limestone, oak, soil, water } from './textures'
 import { cafes, coops, coopsAround, henPatches, rabbitPatches, squaresAround, workshops, type Kit } from './spaces'
-import { apiary, fishes, herd, TANK_FISH } from './animals'
+import { antHills, apiary, fishes, herd, TANK_FISH } from './animals'
 import { settled as actorsSettled } from '$lib/actors/build'
 import { buildFactory, LEVELS as FACTORY_LEVELS, NAMES as FACTORY_NAMES } from './factory'
 import { buildTent } from './tent'
@@ -892,6 +892,23 @@ export async function mountInterior(container: HTMLElement, kind: DomeKind, onPr
 		herds.bees = hives.where
 		for (const hs of hiveSpots) outsideColliders.push({ x: hs.x, z: hs.z, r: 0.5 })
 		if (flocks[3]) herds.hens = flocks[3].where
+		// ant hills, scattered at random over the forest floor (off the paths and the streams), the wood ants busy on them
+		{
+			const ar = seeded(76)
+			const spots: { x: number; z: number; rot: number; size: number }[] = []
+			const want = lite ? 6 : kind === 'master' ? 14 : 10
+			for (let tries = 0; spots.length < want && tries < want * 30; tries++) {
+				const [x, z] = polar(ringPath + 3 + Math.sqrt(ar()) * (outerR - ringPath - 4), ar() * Math.PI * 2)
+				if (onOutsidePath(x, z) || nearOutStream(x, z, streamW / 2 + 1.5)) continue
+				if (outsideColliders.some((c) => Math.hypot(c.x - x, c.z - z) < c.r + 0.9)) continue
+				if (spots.some((p) => Math.hypot(p.x - x, p.z - z) < 6)) continue
+				spots.push({ x, z, rot: ar() * Math.PI * 2, size: 0.7 + ar() * 0.6 })
+			}
+			const ants = antHills(spots, eye)
+			scene.add(ants.object)
+			animated.push(ants.update)
+			for (const p of spots) outsideColliders.push({ x: p.x, z: p.z, r: 0.7 * p.size })
+		}
 	}
 	await pause('Planting the food forest outside')
 

@@ -199,7 +199,7 @@ function frond(bag, o) {
 	const steps = 14;
 	const pts = [o.at.clone()];
 	let d = out.clone().multiplyScalar(Math.sin(tilt)).add(v3(0, Math.cos(tilt), 0)).normalize();
-	const arch = 0.035 + 0.045 * o.age;
+	const arch = 0.06 + 0.06 * o.age;
 	for (let k = 0; k < steps; k++) {
 		d = d.clone().add(v3(0, -arch * (k / steps) * (o.opened > 0.7 ? 1 : 0.3), 0)).normalize();
 		pts.push(pts[k].clone().addScaledVector(d, len / steps));

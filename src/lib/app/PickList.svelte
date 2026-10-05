@@ -1,6 +1,6 @@
 <!--
-	The list down the left of a turntable (the 3D models, the actors): a narrow column of one-line rows, each thing's name
-	and where it is from, and the chosen one opened to its note. The thing itself, its measure and what it can do, is
+	The list down the left of a turntable (the 3D models, the actors, the plants): a narrow column of one-line rows, each
+	thing's name and where it is from, and the chosen one opened to its note; grouped under headings if it is given `group`. The thing itself, its measure and what it can do, is
 	on the turntable beside it.
 
 	On a narrow screen it sits above the turntable instead, a few rows high; either way it scrolls clear of the app's nav
@@ -15,18 +15,20 @@
 	 *   items: any[],
 	 *   chosen: { id: string },
 	 *   where: (item: any) => string,
-	 *   onpick: (item: any) => void
+	 *   onpick: (item: any) => void,
+	 *   group?: (item: any) => string
 	 * }}
 	 */
-	let { title, lede, items, chosen, where, onpick } = $props();
+	let { title, lede, items, chosen, where, onpick, group } = $props();
 </script>
 
 <aside class="picks">
 	<h1>{title} <span>{items.length}</span></h1>
 	<p class="lede" title={lede}>{lede}</p>
 	<ul>
-		{#each items as item (item.id)}
+		{#each items as item, i (item.id)}
 			{@const on = chosen.id === item.id}
+			{#if group && (i === 0 || group(items[i - 1]) !== group(item))}<li class="group">{group(item)}</li>{/if}
 			<li>
 				<button class:on aria-current={on ? 'true' : undefined} onclick={() => onpick(item)}>
 					<span class="row"><b>{item.label}</b><small title={where(item)}>{where(item)}</small></span>
@@ -76,6 +78,18 @@
 		margin: 0;
 		padding: 0;
 		list-style: none;
+	}
+
+	.group {
+		margin: 0.7rem 0.5rem 0.15rem;
+		font-size: 0.68rem;
+		letter-spacing: 0.08em;
+		text-transform: uppercase;
+		opacity: 0.55;
+	}
+
+	.group:first-child {
+		margin-top: 0.1rem;
 	}
 
 	button {
