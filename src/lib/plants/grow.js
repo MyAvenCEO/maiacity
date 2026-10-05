@@ -297,9 +297,12 @@ export class Bag {
 			this.sheets = (this.sheets ?? 0) + DETAIL.thin;
 			if (this.sheets < 1) return this;
 			this.sheets -= 1;
-			if (isBead) geometry.computeBoundingSphere();
-			const at = isBead ? /** @type {THREE.Sphere} */ (geometry.boundingSphere).center.clone() : new THREE.Vector3().fromBufferAttribute(geometry.attributes.position, 0);
-			const grow = Math.min(2.6, isBead ? 1 / Math.cbrt(DETAIL.thin) : 1 / Math.sqrt(DETAIL.thin)) * (isBead ? 1 : DETAIL.fill);
+			geometry.computeBoundingSphere();
+			const sphere = /** @type {THREE.Sphere} */ (geometry.boundingSphere);
+			const at = isBead ? sphere.center.clone() : new THREE.Vector3().fromBufferAttribute(geometry.attributes.position, 0);
+			// a small leaf may grow a lot, a big one hardly at all: none ends up longer than about 28 cm because of it
+			const most = Math.max(1, 0.14 / Math.max(1e-4, sphere.radius));
+			const grow = Math.min(2.6, most, (isBead ? 1 / Math.cbrt(DETAIL.thin) : 1 / Math.sqrt(DETAIL.thin)) * (isBead ? 1 : DETAIL.fill));
 			geometry.applyMatrix4(new THREE.Matrix4().makeTranslation(-at.x, -at.y, -at.z)).applyMatrix4(new THREE.Matrix4().makeScale(grow, grow, grow)).applyMatrix4(new THREE.Matrix4().makeTranslation(at.x, at.y, at.z));
 		}
 		this.parts[kind].push(geometry);
