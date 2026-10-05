@@ -19,22 +19,29 @@ export const STAGES = [
 	{ name: 'True leaves', day: 18, note: 'The first rough, lobed true leaves; the vine begins between the seed leaves.' },
 	{ name: 'Vining', day: 32, note: 'Half a metre of vine, a leaf at each node, tendrils finding the stake and coiling round it.' },
 	{ name: 'Flowering', day: 45, note: 'Yellow flowers in the leaf axils: clusters of male ones, and females with a tiny cucumber behind.' },
-	{ name: 'Fruit', day: 60, note: 'Cucumbers hang from the vine, dark and warted; the lowest leaves yellow, the roots spread wide.' }
+	{ name: 'Fruit set', day: 50, note: 'Pollinated, the tiny prickly cucumbers behind the female flowers start to swell; the flowers shrivel.' },
+	{ name: 'Swelling', day: 55, note: 'The first cucumbers hang a hand long, pale-striped and spiny; more flowers open higher up.' },
+	{ name: 'Filling out', day: 62, note: 'Cucumbers down the vine, dark green and warted; the lowest leaves begin to yellow.' },
+	{ name: 'Harvest', day: 70, note: 'Full-sized cucumbers ready to cut, young ones following behind; the roots spread wide and shallow.' }
 ];
+
+/** the stages as the plant grows them: flowering at 5, then the fruit's four stages */
+const growth = (/** @type {number} */ stage) => (stage <= 5 ? stage : 5 + (stage - 5) * 0.5);
 
 const SEED_AT = v3(0, -0.02, 0);
 const NODES = 20;
 const STAKE = v3(0.05, 0, 0.0);
 
 /** how long the vine is at g */
-const vineLength = (/** @type {number} */ g) => table(g, [[2.2, 0], [3, 0.13], [4, 0.5], [5, 1.15], [6, 1.6]]);
+const vineLength = (/** @type {number} */ g) => table(g, [[2.2, 0], [3, 0.13], [4, 0.5], [5, 1.15], [6, 1.6], [7, 1.75]]);
 
 /**
- * The cucumber at growth g (0 … 6) from the seed id.
- * @param {number} g
+ * The cucumber at a stage (0 … 9, between them on the way) from the seed id.
+ * @param {number} stage
  * @param {string} seed
  */
-export function cucumber(g, seed) {
+export function cucumber(stage, seed) {
+	const g = growth(stage);
 	const bag = new Bag();
 	const r = chance(seed, 'plant');
 	const vigour = about(r, 1, 0.1);

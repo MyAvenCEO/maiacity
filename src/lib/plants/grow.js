@@ -94,10 +94,10 @@ const toColor = (/** @type {THREE.ColorRepresentation | THREE.Color} */ c) => (c
 export const mix = (/** @type {THREE.ColorRepresentation} */ a, /** @type {THREE.ColorRepresentation} */ b, /** @type {number} */ t) => new THREE.Color(a).lerp(new THREE.Color(b), clamp(t));
 
 /**
- * A tube swept along points, its radius changing along it (`radius(u)`, u 0 … 1 base to tip), its frames carried along
- * without twist. A root, a stem, a petiole, a tendril, a berry, a cucumber.
+ * A tube swept along points, its radius changing along it (`radius(u, v)`, u 0 … 1 base to tip, v 0 … 1 round it — a
+ * tomato's ribs), its frames carried along without twist. A root, a stem, a petiole, a tendril, a berry, a cucumber.
  * @param {THREE.Vector3[]} points
- * @param {(u: number) => number} radius
+ * @param {(u: number, v: number) => number} radius
  * @param {Paint} paint
  * @param {number} [sides]
  */
@@ -122,11 +122,10 @@ export function tube(points, radius, paint, sides = 6) {
 		prev = t;
 		const bin = new THREE.Vector3().crossVectors(t, normal).normalize();
 		const u = along[i] / total;
-		const r = Math.max(0, radius(u));
 		for (let s = 0; s <= sides; s++) {
 			const a = (s / sides) * Math.PI * 2;
 			const d = normal.clone().multiplyScalar(Math.cos(a)).addScaledVector(bin, Math.sin(a));
-			const p = points[i].clone().addScaledVector(d, r);
+			const p = points[i].clone().addScaledVector(d, Math.max(0, radius(u, s / sides)));
 			pos.push(p.x, p.y, p.z);
 			nor.push(d.x, d.y, d.z);
 			uv.push(u, s / sides);
@@ -137,7 +136,7 @@ export function tube(points, radius, paint, sides = 6) {
 	for (let i = 0; i < n - 1; i++)
 		for (let s = 0; s < sides; s++) {
 			const a = i * (sides + 1) + s, b = a + sides + 1;
-			idx.push(a, b, a + 1, b, b + 1, a + 1);
+			idx.push(a, a + 1, b, b, a + 1, b + 1);
 		}
 	return made(pos, nor, uv, col, idx, false);
 }

@@ -1,6 +1,7 @@
 <!--
-	Plants: every plant grown from code (src/lib/plants), from its seed to the plant in fruit, in seven stages to tab
-	through across the top (or ← → and 1 – 7 on the keyboard; Grow plays it on from where it is). The soil is cut away
+	Plants: every plant grown from code (src/lib/plants), from its seed to the plant in fruit, in ten stages to tab
+	through across the top — the last four the fruit's own, set to ripe (or ← → and 1 – 0 on the keyboard; Grow plays it on
+	from where it is). The soil is cut away
 	so the roots grow as plainly as the shoot — or laid bare, or shut. Each plant grows from a seed id: the same id the
 	same plant every time, another id a sister plant. Drag to turn round it, scroll to come closer. An admin's.
 -->
@@ -13,24 +14,29 @@
 
 	/** @typedef {import('$lib/plants').Plant} Plant */
 	/** @typedef {'cutaway' | 'bare' | 'solid'} Soil */
+	/** @typedef {'plant' | 'whole'} Frame */
 
 	const asked = page.url.searchParams;
 	/** @type {HTMLDivElement | undefined} */
 	let canvasBox = $state();
+	const opened = PLANTS.find((p) => p.id === asked.get('plant')) ?? PLANTS[0];
 	/** @type {Plant} */
-	let chosen = $state(PLANTS.find((p) => p.id === asked.get('plant')) ?? PLANTS[0]);
-	/** where it has grown to: 0 … 6, the stages its whole numbers */
-	let g = $state(Math.min(6, Math.max(0, Number(asked.get('stage') ?? 1) - 1 || 0)));
+	let chosen = $state(opened);
+	/** where it has grown to: 0 … the last stage, the stages its whole numbers */
+	let g = $state(Math.min(opened.stages.length - 1, Math.max(0, Number(asked.get('stage') ?? 1) - 1 || 0)));
 	let seed = $state(asked.get('seed') || SEEDS[0]);
 	/** @type {Soil} */
 	let soil = $state('cutaway');
+	/** @type {Frame} */
+	let frame = $state('plant');
 	let playing = $state(false);
 	/** @type {{ above: number, below: number, across: number } | null} */
 	let size = $state(null);
 
+	const last = $derived(chosen.stages.length - 1);
 	const stage = $derived(Math.round(g));
 	const day = $derived.by(() => {
-		const s = chosen.stages, k = Math.min(5, Math.floor(g));
+		const s = chosen.stages, k = Math.min(s.length - 2, Math.floor(g));
 		return Math.round(s[k].day + (s[k + 1].day - s[k].day) * (g - k));
 	});
 
@@ -38,6 +44,8 @@
 	let show = null;
 	/** @type {((soil: Soil) => void) | null} */
 	let showSoil = null;
+	/** @type {((frame: Frame) => void) | null} */
+	let reframe = null;
 	/** @type {(() => void) | null} */
 	let dispose = null;
 
@@ -89,54 +97,91 @@
 		};
 		showSoil(soil);
 
+		// the ground the soil block stands on: the same floor at every stage
+		const ground = new THREE.Mesh(new THREE.CircleGeometry(1, 64), new THREE.MeshStandardMaterial({ color: '#dcd6cb', roughness: 1 }));
+		ground.rotation.x = -Math.PI / 2;
+		ground.receiveShadow = true;
+		scene.add(ground);
+
 		/** @type {import('three').Group | null} */
 		let current = null;
 		/** where the camera is easing to: the plant's middle and how far back to stand */
 		const goal = { mid: new THREE.Vector3(), reach: 0.1 };
 		let easing = 0;
 		let first = true;
+		/** the soil block for this plant and seed: sized once, to the plant fully grown */
+		let soilFor = '';
+		const block = { w: 0.1, d: 0.1 };
+		/** @type {import('three').Box3 | null} */
+		let plantBox = null;
 
-		show = (plant, at, id) => {
-			if (current) {
-				scene.remove(current);
-				current.traverse((o) => /** @type {import('three').Mesh} */ (o).geometry?.dispose());
-			}
-			current = plant.grow(at, id || ' ');
-			scene.add(current);
-			// its bounds, the stake left out
+		/** a plant's bounds, its stake left out */
+		const bounds = (/** @type {import('three').Group} */ group) => {
 			const b = new THREE.Box3();
-			current.traverse((o) => {
+			group.traverse((o) => {
 				if (/** @type {import('three').Mesh} */ (o).isMesh && !o.userData.prop) b.expandByObject(o);
 			});
-			const above = Math.max(0, b.max.y), below = Math.max(0, -b.min.y);
+			return b;
+		};
+		const toss = (/** @type {import('three').Group} */ group) => group.traverse((o) => /** @type {import('three').Mesh} */ (o).geometry?.dispose());
+
+		/** the soil the grown plant needs, with room round its roots: the same block from seed to fruit */
+		const sizeSoil = (/** @type {Plant} */ plant, /** @type {string} */ id) => {
+			const grown = plant.grow(plant.stages.length - 1, id);
+			const b = bounds(grown);
+			toss(grown);
+			const below = Math.max(0, -b.min.y);
 			const half = Math.max(Math.abs(b.min.x), Math.abs(b.max.x), Math.abs(b.min.z), Math.abs(b.max.z));
-			size = { above, below, across: Math.max(b.max.x - b.min.x, b.max.z - b.min.z) };
-			// the soil block round the roots, with room
-			const big = Math.max(above, below, half);
-			const w = half * 1.12 + big * 0.12 + 0.002;
-			const d = Math.max(below * 1.1 + big * 0.08, w * 0.6) + 0.001;
-			earth.scale.set(w * 2, d, w * 2);
-			earth.position.y = -d / 2;
-			grain.repeat.set(Math.max(1, (w * 2) / 0.06), Math.max(1, d / 0.06));
-			// frame plant and soil together
-			const all = b.clone().union(new THREE.Box3(new THREE.Vector3(-w, -d, -w), new THREE.Vector3(w, 0, w)));
+			block.w = Math.max(below * 0.6, half * 1.12 + Math.max(below, half) * 0.1) + 0.01;
+			block.d = below * 1.12 + 0.02;
+			earth.scale.set(block.w * 2, block.d, block.w * 2);
+			earth.position.y = -block.d / 2;
+			grain.repeat.set(Math.max(1, (block.w * 2) / 0.06), Math.max(1, block.d / 0.06));
+			ground.position.y = -block.d - 0.0005;
+			ground.scale.setScalar(block.w * 6);
+		};
+
+		/** frame the plant as it is now (close in), or the whole soil block and the plant over it */
+		reframe = (/** @type {Frame} */ mode) => {
+			if (!plantBox) return;
+			const all = plantBox.clone();
+			if (mode === 'whole') all.union(new THREE.Box3(new THREE.Vector3(-block.w, -block.d, -block.w), new THREE.Vector3(block.w, 0, block.w)));
+			else all.expandByScalar(0.004);
 			goal.mid.copy(all.getCenter(new THREE.Vector3()));
 			const s = all.getSize(new THREE.Vector3());
-			goal.reach = Math.max(s.x, s.y, s.z);
+			goal.reach = Math.max(0.012, s.x, s.y, s.z);
 			easing = 1;
 			if (first) {
 				first = false;
 				controls.target.copy(goal.mid);
 				camera.position.copy(goal.mid).add(new THREE.Vector3(0.9, 0.45, 1.25).normalize().multiplyScalar(goal.reach * 2.1));
 			}
+			// the sun's shadows over what is framed
 			key.position.copy(goal.mid).add(new THREE.Vector3(1.2, 2.2, 0.9).multiplyScalar(goal.reach));
 			key.target.position.copy(goal.mid);
 			const sh = key.shadow.camera;
-			sh.left = sh.bottom = -goal.reach;
-			sh.right = sh.top = goal.reach;
+			sh.left = sh.bottom = -goal.reach * 1.2;
+			sh.right = sh.top = goal.reach * 1.2;
 			sh.near = goal.reach * 0.1;
 			sh.far = goal.reach * 6;
 			sh.updateProjectionMatrix();
+		};
+
+		show = (plant, at, id) => {
+			if (current) {
+				scene.remove(current);
+				toss(current);
+			}
+			if (soilFor !== `${plant.id}|${id}`) {
+				soilFor = `${plant.id}|${id}`;
+				sizeSoil(plant, id || ' ');
+			}
+			current = plant.grow(at, id || ' ');
+			scene.add(current);
+			const b = bounds(current);
+			plantBox = b;
+			size = { above: Math.max(0, b.max.y), below: Math.max(0, -b.min.y), across: Math.max(b.max.x - b.min.x, b.max.z - b.min.z) };
+			reframe?.(frame);
 		};
 
 		const resize = () => {
@@ -150,21 +195,21 @@
 		resize();
 		show(chosen, g, seed);
 
-		let frame = 0;
-		let last = performance.now();
+		let raf = 0;
+		let then = performance.now();
 		let built = 0;
 		const tick = () => {
 			const now = performance.now();
-			const dt = Math.min(0.1, (now - last) / 1000);
-			last = now;
+			const dt = Math.min(0.1, (now - then) / 1000);
+			then = now;
 			// growing on: a little further each frame, the plant regrown a dozen times a second
 			if (playing) {
-				g = Math.min(6, g + dt * 0.4);
-				if (now - built > 80 || g >= 6) {
+				g = Math.min(last, g + dt * 0.5);
+				if (now - built > 80 || g >= last) {
 					built = now;
 					show?.(chosen, g, seed);
 				}
-				if (g >= 6) playing = false;
+				if (g >= last) playing = false;
 			}
 			// the camera eases to the new framing, keeping the way it looks from
 			if (easing > 0.001) {
@@ -182,11 +227,11 @@
 			camera.updateProjectionMatrix();
 			controls.update();
 			renderer.render(scene, camera);
-			frame = requestAnimationFrame(tick);
+			raf = requestAnimationFrame(tick);
 		};
 		tick();
 		dispose = () => {
-			cancelAnimationFrame(frame);
+			cancelAnimationFrame(raf);
 			ro.disconnect();
 			controls.dispose();
 			if (current) current.traverse((o) => /** @type {import('three').Mesh} */ (o).geometry?.dispose());
@@ -242,11 +287,12 @@
 	const pick = (/** @type {Plant} */ p) => {
 		chosen = p;
 		playing = false;
+		g = Math.min(g, p.stages.length - 1);
 		regrow();
 	};
 	const goTo = (/** @type {number} */ k) => {
 		playing = false;
-		g = Math.min(6, Math.max(0, k));
+		g = Math.min(last, Math.max(0, k));
 		regrow();
 	};
 	const grow = () => {
@@ -255,7 +301,7 @@
 			g = Math.round(g);
 			return regrow();
 		}
-		if (g >= 6) g = 0;
+		if (g >= last) g = 0;
 		playing = true;
 	};
 	const reseed = (/** @type {string} */ id) => {
@@ -267,13 +313,18 @@
 		showSoil?.(mode);
 	};
 
-	/** ← → step a stage, 1 – 7 jump to one, space grows — unless typing a seed id */
+	const toFrame = (/** @type {Frame} */ mode) => {
+		frame = mode;
+		reframe?.(mode);
+	};
+
+	/** ← → step a stage, 1 – 9 and 0 (the tenth) jump to one, space grows — unless typing a seed id */
 	const onKey = (/** @type {KeyboardEvent} */ e) => {
 		const t = /** @type {HTMLElement | null} */ (e.target);
 		if (t?.tagName === 'INPUT' || e.metaKey || e.ctrlKey || e.altKey) return;
 		if (e.key === 'ArrowRight') goTo(Math.floor(g) + 1);
 		else if (e.key === 'ArrowLeft') goTo(Math.ceil(g) - 1);
-		else if (/^[1-7]$/.test(e.key)) goTo(Number(e.key) - 1);
+		else if (/^[0-9]$/.test(e.key)) goTo(e.key === '0' ? 9 : Number(e.key) - 1);
 		else if (e.key === ' ' && t?.tagName !== 'BUTTON') grow();
 		else return;
 		e.preventDefault();
@@ -294,13 +345,14 @@
 <svelte:window onkeydown={onKey} />
 
 <main class="plants">
-	<PickList title="Plants" lede="Grown from code, seed to fruit, the roots and the shoot: tab through the seven stages, change the seed id for a sister plant." items={PLANTS} {chosen} where={(p) => p.from} onpick={pick} />
+	<PickList title="Plants" lede="Grown from code, seed to fruit, the roots and the shoot: tab through the ten stages, change the seed id for a sister plant." items={PLANTS} {chosen} where={(p) => p.from} onpick={pick} />
 	<section class="view">
 		<div class="canvas" bind:this={canvasBox}></div>
 
 		<div class="stages" role="tablist" aria-label="{chosen.label}: stages">
 			{#each chosen.stages as s, k (s.name)}
-				<button role="tab" class:on={!playing && stage === k} class:past={k < g} aria-selected={stage === k} onclick={() => goTo(k)}>
+				{#if k === 6}<span class="fruit-mark" aria-hidden="true">Fruit</span>{/if}
+				<button role="tab" class:fruit={k >= 6} class:on={!playing && stage === k} class:past={k < g} aria-selected={stage === k} onclick={() => goTo(k)}>
 					<small>{k + 1}</small>{s.name}
 				</button>
 			{/each}
@@ -318,6 +370,11 @@
 					<button class:on={seed === id} onclick={() => reseed(id)}>{id}</button>
 				{/each}
 			</div>
+			<span class="label">Frame</span>
+			<div class="chips">
+				<button class:on={frame === 'plant'} onclick={() => toFrame('plant')}>The plant</button>
+				<button class:on={frame === 'whole'} onclick={() => toFrame('whole')}>Whole soil</button>
+			</div>
 			<span class="label">Soil</span>
 			<div class="chips">
 				{#each SOILS as [mode, label] (mode)}
@@ -333,7 +390,7 @@
 				Day {day}
 				{#if size} · {measure(size.above)} above the soil · {measure(size.below)} below · {measure(size.across)} across{/if}
 			</span>
-			<small>← → or 1 – 7 for the stages · space grows · drag to turn round it · scroll to come closer</small>
+			<small>← → or 1 – 0 for the stages · space grows · drag to turn round it · scroll to come closer</small>
 		</div>
 	</section>
 </main>
@@ -378,26 +435,42 @@
 		cursor: pointer;
 	}
 
-	/* the seven stages, in a row across the top */
+	/* the ten stages, in a row across the top, the fruit's four marked off */
 	.stages {
 		top: 1rem;
 		left: 1rem;
 		right: 1rem;
 		display: flex;
+		flex-wrap: wrap;
 		align-items: center;
 		gap: 0.3rem;
-		overflow-x: auto;
 	}
 
 	.stages button {
 		display: flex;
 		align-items: baseline;
 		gap: 0.35rem;
-		padding: 0.35rem 0.75rem;
+		flex: none;
+		padding: 0.32rem 0.6rem;
 		border: 1px solid rgb(0 0 0 / 0.12);
 		border-radius: 999px;
 		background: rgb(255 255 255 / 0.7);
+		font-size: 0.8rem;
 		white-space: nowrap;
+	}
+
+	.fruit-mark {
+		margin: 0 0.1rem 0 0.4rem;
+		padding-left: 0.6rem;
+		border-left: 1px solid rgb(0 0 0 / 0.15);
+		font-size: 0.68rem;
+		letter-spacing: 0.08em;
+		text-transform: uppercase;
+		color: #a3312a;
+	}
+
+	.stages button.fruit:not(.on) {
+		border-color: rgb(163 49 42 / 0.3);
 	}
 
 	.stages button small {
@@ -428,7 +501,7 @@
 	}
 
 	.panel {
-		top: 4.6rem;
+		top: 6.6rem;
 		right: 1rem;
 		display: flex;
 		flex-direction: column;
