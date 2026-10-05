@@ -69,7 +69,7 @@ export const APPLE_STAGES = stages([
 	['Germination', 20, 'The radicle goes down, the hook comes up; the seed leaves lift out of the soil.'],
 	['Seedling', 35, 'Two oval seed leaves and the first toothed true leaves.'],
 	['Sapling', 365, 'A whip with a few side shoots, its leaves soft and downy beneath.'],
-	['Young tree', 1460, 'An open crown on three or four scaffold limbs; short knobbly fruiting spurs along them.'],
+	['Young tree', 1460, 'An open crown on three or four scaffold limbs; short knobbly fruiting spurs on the outer branches.'],
 	['Blossom', 2200, 'Clusters of five or six pink-budded white flowers on the spurs, the king bloom in the middle first.'],
 	['Fruit set', 2215, 'The petals fall; the king fruit and one or two others swell, the rest drop in the June drop.'],
 	['Green apples', 2260, 'Hard green apples hanging on their short stalks among the leaves.'],

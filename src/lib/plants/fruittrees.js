@@ -40,7 +40,7 @@ export const CHERRY_STAGES = stages([
 	['Germination', 20, 'The stone cracks along its seam; the root goes down, the hook comes up.'],
 	['Seedling', 40, 'Two fleshy seed leaves, then toothed true leaves, the stem reddish.'],
 	['Sapling', 365, 'A straight leader, its side shoots in tiers.'],
-	['Young tree', 1460, 'A tall, steep crown; short fruiting spurs along the older limbs.'],
+	['Young tree', 1460, 'A tall, steep crown; short fruiting spurs on the thin outer branches.'],
 	['Blossom', 1830, 'Clusters of white blossom on long stalks hang from every spur.'],
 	['Fruit set', 1840, 'The petals snow down; little green cherries in pairs and threes.'],
 	['Green cherries', 1860, 'Hard green cherries swelling on their long stalks.'],
@@ -70,7 +70,7 @@ export const PEAR_STAGES = stages([
 	['Germination', 20, 'The radicle goes down, the seed leaves lift out of the soil.'],
 	['Seedling', 35, 'Two oval seed leaves and the first glossy true leaves.'],
 	['Sapling', 365, 'An upright whip, its branches steep.'],
-	['Young tree', 1600, 'A tall narrow crown, spurs along its limbs.'],
+	['Young tree', 1600, 'A tall narrow crown, spurs on its outer branches.'],
 	['Blossom', 2200, 'White blossom with dark red anthers in clusters, early in the spring.'],
 	['Fruit set', 2215, 'Little green pears on their stalks, the calyx still on their tips.'],
 	['Green pears', 2270, 'The pears lengthen and fill, narrow at the stalk, broad below.'],
@@ -115,7 +115,7 @@ export const peach = orchard({
 	flush: crown({ trunk: 0.6, scaffolds: [3, 4], scaffoldAngle: 1.0, droop: 0.07, spread: 0.55, radius: 0.11, bark: ['#8a5a4a', '#5a4038'] }),
 	roots: { tap: 1.0, spread: 1.8, count: 14, radius: 0.035 },
 	leaf: { length: 0.15, width: 0.035, shape: lance, colour: '#3a6a2a', young: '#9ab45a', style: 'along', per: 0, droop: 0.45 },
-	flower: { kind: rosy('#f2a8c0', 0.016), size: 1.2, opens: 4.5, sites: 'spurs', chance: 2.2, per: [1, 2] },
+	flower: { kind: rosy('#f2a8c0', 0.016), size: 1.2, opens: 4.5, sites: 'shoots', chance: 0.55, axils: [2, 3], per: [1, 2] },
 	fruit: {
 		length: 0.068, width: 0.035, stalk: 0.012, keep: [1, 2], setFor: 1.9, ripeFrom: 2.8, ripeFor: 1.0, gloss: false,
 		shape: (u, v) => sutured(u, v, 0.45),
@@ -130,7 +130,7 @@ export const APRICOT_STAGES = stages([
 	['Germination', 25, 'The stone splits along its edge; the root goes down.'],
 	['Seedling', 45, 'Round, pointed leaves on long reddish stalks.'],
 	['Sapling', 365, 'A young tree, its bark reddish.'],
-	['Young tree', 1100, 'An open, spreading crown, spurs along its limbs.'],
+	['Young tree', 1100, 'An open, spreading crown, spurs on its outer branches.'],
 	['Blossom', 1300, 'White blossom blushed pink, the very first of the year.'],
 	['Fruit set', 1315, 'Small velvety green apricots set.'],
 	['Green apricots', 1360, 'They fill out, their suture showing.'],
@@ -144,7 +144,7 @@ export const apricot = orchard({
 	flush: crown({ trunk: 0.7, scaffolds: [3, 4], scaffoldAngle: 0.95, droop: 0.06, radius: 0.12, bark: ['#8a4a3a', '#5a3a30'] }),
 	roots: { tap: 1.1, spread: 1.9, count: 14, radius: 0.035 },
 	leaf: { length: 0.08, width: 0.06, shape: (u) => toothed(u) * (1 - 0.25 * u), colour: '#3a6a2a', young: '#a85a4a', style: 'along', per: 0, droop: 0.3 },
-	flower: { kind: rosy('#fbeef0', 0.014), size: 1.1, opens: 4.4, sites: 'spurs', chance: 2.4, per: [1, 2] },
+	flower: { kind: rosy('#fbeef0', 0.014), size: 1.1, opens: 4.5, sites: 'spurs', chance: 4, per: [1, 2] },
 	fruit: {
 		length: 0.05, width: 0.024, stalk: 0.01, keep: [1, 3], setFor: 1.8, ripeFrom: 2.7, ripeFor: 1.0, gloss: false,
 		shape: (u, v) => sutured(u, v, 0.45),
@@ -159,7 +159,7 @@ export const PLUM_STAGES = stages([
 	['Germination', 25, 'The stone splits; the root goes down.'],
 	['Seedling', 45, 'Toothed oval leaves on a downy stem.'],
 	['Sapling', 365, 'A young tree, its shoots grey-brown.'],
-	['Young tree', 1300, 'A rounded crown, its old limbs knobbly with spurs.'],
+	['Young tree', 1300, 'A rounded crown, its outer branches knobbly with spurs.'],
 	['Blossom', 1700, 'White blossom in pairs, smothering the spurs.'],
 	['Fruit set', 1715, 'Little green plums set.'],
 	['Green plums', 1780, 'Oval green plums, their suture down one side.'],
@@ -325,7 +325,7 @@ export const persimmon = orchard({
 	flush: crown({ trunk: 1.0, scaffolds: [3, 4], scaffoldAngle: 0.8, droop: 0.06, radius: 0.13, bark: ['#6a5a4a', '#3a3028'] }),
 	roots: { tap: 1.6, spread: 2, count: 16, radius: 0.045 },
 	leaf: { length: 0.14, width: 0.075, shape: ellipse, colour: '#2a5a24', young: '#9ab45a', style: 'along', per: 0, droop: 0.3 },
-	flower: { kind: { petals: 4, length: 0.009, width: 0.006, colour: '#f0e8b0', heart: '#d8c87a', sepals: 4, sepal: 0.012, stamens: 0, flat: -0.6 }, size: 1.2, opens: 4.6, sites: 'spurs', chance: 4, per: [1, 1] },
+	flower: { kind: { petals: 4, length: 0.009, width: 0.006, colour: '#f0e8b0', heart: '#d8c87a', sepals: 4, sepal: 0.012, stamens: 0, flat: -0.6 }, size: 1.2, opens: 4.6, sites: 'shoots', chance: 0.7, axils: [2, 4], per: [1, 1] },
 	fruit: {
 		length: 0.06, width: 0.04, stalk: 0.012, keep: [1, 1], setFor: 1.9, ripeFrom: 2.8, ripeFor: 1.0, gloss: true, calyx: '#4a6a2a',
 		// round, a little flattened, faintly four-sided
@@ -359,7 +359,7 @@ export const mulberry = orchard({
 	flush: crown({ trunk: 0.9, scaffolds: [4, 5], scaffoldAngle: 0.95, droop: 0.075, spread: 0.65, radius: 0.15, shoot: (gen) => [0, 1.4, 1.0, 0.75, 0.55, 0.42, 0.34][gen] ?? 0.3, bark: ['#8a7058', '#5a4838'] }),
 	roots: { tap: 1.4, spread: 2.4, count: 16, radius: 0.05 },
 	leaf: { length: 0.13, width: 0.08, shape: mulberryLeaf, colour: '#3a6a2a', young: '#9ac05a', style: 'along', per: 0, droop: 0.35 },
-	flower: { catkin: true, size: 0.5, opens: 4.6, sites: 'spurs', chance: 9, per: [1, 2] },
+	flower: { catkin: true, size: 0.5, opens: 4.6, sites: 'shoots', chance: 0.6, axils: [2, 4], per: [1, 2] },
 	fruit: {
 		length: 0.03, width: 0.008, stalk: 0.012, keep: [2, 4], setFor: 1.6, ripeFrom: 2.2, ripeFor: 1.6, gloss: true,
 		shape: (u) => Math.pow(Math.max(0, Math.sin(Math.PI * u)), 0.5),
@@ -395,7 +395,7 @@ export const fig = orchard({
 	roots: { tap: 1.2, spread: 2.6, count: 16, radius: 0.04 },
 	leaf: { length: 0.2, width: 0.11, shape: figLeaf, colour: '#2f5f2a', young: '#8ab45a', style: 'along', per: 0, droop: 0.35 },
 	// no flower to see: it blooms inside the fig
-	flower: { size: 0.6, opens: 4.7, sites: 'spurs', chance: 6, per: [1, 1] },
+	flower: { size: 0.6, opens: 4.7, sites: 'shoots', chance: 0.6, axils: [2, 3], per: [1, 1] },
 	fruit: {
 		length: 0.06, width: 0.026, stalk: 0.012, keep: [1, 1], setFor: 2.0, ripeFrom: 2.9, ripeFor: 0.9, gloss: false,
 		// pear-shaped: a narrow neck at the stalk, round at the end, the eye a small dimple
