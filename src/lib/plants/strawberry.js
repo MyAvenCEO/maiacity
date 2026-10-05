@@ -11,6 +11,7 @@
 import * as THREE from 'three';
 import { Bag, about, aim, bead, between, chance, clamp, heading, lerp, mix, root, sheet, span, table, tube, v3 } from './grow.js';
 import { sprout } from './sprout.js';
+import { bloom } from './bloom.js';
 
 export const STAGES = [
 	{ name: 'Seed', day: 0, note: 'An achene a millimetre long, sown on the soil, barely covered: strawberry seeds want light to sprout.' },
@@ -19,23 +20,30 @@ export const STAGES = [
 	{ name: 'True leaves', day: 40, note: 'The first trifoliate leaves, toothed, from between the seed leaves: the crown has begun.' },
 	{ name: 'Rosette', day: 75, note: 'A crown of leaves on long stalks, the seed leaves gone, fibrous roots spreading from the crown.' },
 	{ name: 'Flowering', day: 110, note: 'Trusses of white five-petalled flowers rise between the leaves, bees welcome.' },
-	{ name: 'Fruit', day: 140, note: 'Berries hang toward the soil, ripening from green through white to red; a runner sets a daughter plant.' }
+	{ name: 'Fruit set', day: 120, note: 'The petals fall; behind each flower the receptacle swells into a small green berry, its seeds standing out.' },
+	{ name: 'Green berries', day: 130, note: 'The berries fill out, still hard and green, their stalks bowing toward the soil; a runner sets out.' },
+	{ name: 'Turning', day: 140, note: 'The first berries pale to white and blush red from the tip up; a daughter plant roots at the runner’s end.' },
+	{ name: 'Ripe', day: 150, note: 'Berry after berry red and glossy, hanging on the straw: picking time.' }
 ];
+
+/** the stages as the plant grows them: flowering at 5, then the fruit's four stages over a longer stretch of growth */
+const growth = (/** @type {number} */ stage) => (stage <= 5 ? stage : 5 + (stage - 5) * 0.65);
 
 const SEED_AT = v3(0, -0.0022, 0);
 const LEAVES = 16;
 const ROOTS = 22;
-const TRUSSES = 4;
+const TRUSSES = 6;
 
 /** the leaves' births: the first slowly, one after the other, then a new one every few days */
 const leafBirth = (/** @type {number} */ i) => (i === 0 ? 2.0 : i === 1 ? 2.45 : i === 2 ? 2.85 : 3.1 + (i - 3) * 0.18);
 
 /**
- * The strawberry at growth g (0 … 6) from the seed id.
- * @param {number} g
+ * The strawberry at a stage (0 … 9, between them on the way) from the seed id.
+ * @param {number} stage
  * @param {string} seed
  */
-export function strawberry(g, seed) {
+export function strawberry(stage, seed) {
+	const g = growth(stage);
 	const bag = new Bag();
 	const r = chance(seed, 'plant');
 	const vigour = about(r, 1, 0.12);
@@ -124,7 +132,7 @@ export function strawberry(g, seed) {
 	// the trusses: flowers on branching stalks, then berries
 	for (let j = 0; j < TRUSSES; j++) {
 		const tr = chance(seed, 'truss', j);
-		const born = 4.1 + j * 0.32 + tr() * 0.12;
+		const born = 4.1 + j * 0.16 + tr() * 0.1;
 		if (g <= born) continue;
 		truss(bag, { seed, key: j, at: crown, born, g, bear: tr() * Math.PI * 2, tilt: between(tr, 0.35, 0.75), vigour });
 	}
@@ -224,17 +232,17 @@ function truss(bag, o) {
 	const fork = pts[steps];
 	const tip = pts[steps].clone().sub(pts[steps - 1]).normalize();
 
-	const flowers = 2 + Math.floor(tr() * 3);
+	const flowers = 3 + Math.floor(tr() * 3);
 	for (let k = 0; k < flowers; k++) {
 		const fr = chance(o.seed, 'flower', o.key, k);
-		const opens = o.born + 0.35 + k * 0.17 + fr() * 0.06;
+		const opens = o.born + 0.3 + k * 0.1 + fr() * 0.05;
 		const big = k === 0 ? 1 : k < 3 ? 0.78 : 0.6;
 		const spread = k === 0 ? 0 : between(fr, 0.5, 1.0);
 		const side = new THREE.Vector3().crossVectors(tip, v3(0, 1, 0)).normalize().applyAxisAngle(tip, fr() * Math.PI * 2);
 		// its own stalk off the fork
 		const pdir = tip.clone().applyAxisAngle(side, spread).normalize();
 		const plen = (k === 0 ? 0.025 : 0.04) * lerp(0.4, 1, grown);
-		const fruitT = span(g, opens + 0.5, opens + 1.3);
+		const fruitT = span(g, opens + 0.5, opens + 1.4);
 		const hang = clamp(span(g, opens + 0.35, opens + 0.9) * 1.1);
 		const ppts = [];
 		let pd = pdir.clone();
@@ -253,7 +261,7 @@ function truss(bag, o) {
 			const b = clamp((g - o.born) / (opens - o.born));
 			bag.add('body', bead(end.clone().addScaledVector(facing, 0.002), v3(1, 1, 1).multiplyScalar(0.0015 + 0.0025 * b * big), mix('#7fae4a', '#dfe6c0', b * 0.5)));
 		} else if (g < opens + 0.55 || fruitT <= 0.02) {
-			flower(bag, end, facing, big, clamp((g - opens) / 0.2), span(g, opens + 0.35, opens + 0.55));
+			bloom(bag, FLOWER, end, facing, big, clamp((g - opens) / 0.2), span(g, opens + 0.35, opens + 0.55));
 		} else {
 			// it hangs, unless it would hang into the soil: then it lies along it
 			const dir = facing.clone().lerp(v3(0, -1, 0), 0.75 + hang * 0.2).normalize();
@@ -264,47 +272,13 @@ function truss(bag, o) {
 				flat.normalize().multiplyScalar(Math.sqrt(1 - Math.max(0, room) ** 2));
 				dir.set(flat.x, -Math.max(0, room), flat.z).normalize();
 			}
-			berry(bag, { seed: o.seed, key: [o.key, k], at: end, dir, size: big * o.vigour, grown: fruitT, ripe: span(g, opens + 0.95, opens + 1.55) });
+			berry(bag, { seed: o.seed, key: [o.key, k], at: end, dir, size: big * o.vigour, grown: fruitT, ripe: span(g, opens + 1.4, opens + 2.0) });
 		}
 	}
 }
 
-/**
- * A strawberry flower: five white round petals, the green sepals behind them, a yellow cushion of pistils ringed by
- * the stamens. Built facing up, then turned to face `facing`.
- * @param {Bag} bag @param {THREE.Vector3} at @param {THREE.Vector3} facing @param {number} size @param {number} open @param {number} fall the petals dropping
- */
-function flower(bag, at, facing, size, open, fall) {
-	const m = new THREE.Matrix4().compose(at, new THREE.Quaternion().setFromUnitVectors(v3(0, 1, 0), facing), v3(size, size, size));
-	const turn = (/** @type {number} */ a, /** @type {number} */ up) => new THREE.Matrix4().makeRotationY(-a).multiply(new THREE.Matrix4().makeRotationZ(up));
-	for (let k = 0; k < 10; k++) {
-		const sepal = sheet({ length: k % 2 ? 0.006 : 0.008, width: 0.0018, shape: (u) => Math.sin(Math.PI * Math.pow(u, 0.6)) * (1 - u * 0.6), lift: (u) => -0.15 * u, paint: () => '#5f8f34', along: 6, across: 2 });
-		bag.add('sheet', sepal, m.clone().multiply(turn((k / 10) * Math.PI * 2 + 0.3, -0.25)));
-	}
-	if (fall < 1) {
-		const petals = 5;
-		for (let k = 0; k < petals; k++) {
-			const petal = sheet({
-				length: 0.012 * lerp(0.4, 1, open),
-				width: 0.0062 * lerp(0.4, 1, open),
-				shape: (u) => Math.pow(Math.sin(Math.PI * Math.pow(u, 0.62)), 0.55),
-				lift: (u, v) => 0.12 * u * u + 0.04 * v * v,
-				paint: (u) => mix('#f3efe2', '#fffdf6', u),
-				along: 10,
-				across: 6
-			});
-			// opening from upright to flat, then (falling) drooping back and away
-			const up = lerp(1.25, 0.12, open) - fall * 0.9;
-			bag.add('sheet', petal, m.clone().multiply(new THREE.Matrix4().makeTranslation(0, 0.0006, 0)).multiply(turn((k / petals) * Math.PI * 2, up)).multiply(new THREE.Matrix4().makeScale(1 - fall * 0.6, 1, 1 - fall * 0.6)));
-		}
-	}
-	// the cushion of pistils, and the ring of stamens round it
-	bag.add('body', bead(v3(0, 0.0012, 0).applyMatrix4(m), v3(0.0034, 0.0022, 0.0034).multiplyScalar(size), fall > 0.5 ? '#bfc35a' : '#d9cf47', 8));
-	for (let k = 0; k < 20; k++) {
-		const a = (k / 20) * Math.PI * 2;
-		bag.add('body', bead(v3(Math.cos(a) * 0.0042, 0.0018, Math.sin(a) * 0.0042).applyMatrix4(m), v3(0.0006, 0.0006, 0.0006).multiplyScalar(size), fall > 0.5 ? '#9c7a3a' : '#e9b52a', 2));
-	}
-}
+/** a strawberry flower: five white round petals, the green sepals behind them, a yellow cushion of pistils ringed by the stamens */
+const FLOWER = { petals: 5, length: 0.012, width: 0.0062, colour: '#f3efe2', heart: '#d9cf47' };
 
 /**
  * A berry: the swollen receptacle hanging from its green calyx, its achenes (the true seeds) on the outside. It
