@@ -18,7 +18,7 @@
  * the leaves turn away from them.
  */
 import * as THREE from 'three';
-import { Bag, DETAIL, about, aim, bead, between, chance, clamp, lerp, mix, root, sheet, span, table, tube, v3 } from './grow.js';
+import { Bag, DETAIL, about, aim, bead, between, chance, clamp, fan, lerp, mix, root, sheet, span, table, tube, v3 } from './grow.js';
 import { sprout } from './sprout.js';
 import { bloom } from './bloom.js';
 import { flushCrown, leaderCrown } from './crown.js';
@@ -237,19 +237,24 @@ function grove(spec) {
 		for (const sh of shoots) {
 			if (sh.gen < B.gen) continue;
 			const sr = chance(seed, 'site', ...sh.key);
-			const opens = B.opens + sr() * 0.3;
+			const opens = B.opens + sr() * 0.2;
 			const phase = g - opens;
 			if (phase < -0.4) continue;
 			/** @param {THREE.Vector3} p @param {THREE.Vector3} d @param {(string | number)[]} key */
 			const draw = (p, d, key) => spec.site({ bag, seed, key, at: p, dir: d, g, phase, grid, vigour, shoot: sh });
+			// grown before it flowers (a leader's limbs and side shoots, all of them old wood by then)
+			const old = !!spec.leader || sh.born < opens - 0.15;
 			if (B.sites === 'tips') {
-				if (sh.end && sh.born < opens - 0.15 && sr() < B.chance) draw(sh.tip.clone(), sh.dir.clone(), sh.key);
-			} else if (B.sites === 'wood') {
-				if (sh.born < opens - 0.15 && sr() < B.chance) {
+				if (sh.end && old && sr() < B.chance) {
 					bearing.add(sh);
 					draw(sh.tip.clone(), sh.dir.clone(), sh.key);
 				}
-			} else if (sh.born < opens - 0.15) {
+			} else if (B.sites === 'wood') {
+				if (old && sr() < B.chance) {
+					bearing.add(sh);
+					draw(sh.tip.clone(), sh.dir.clone(), sh.key);
+				}
+			} else if (old) {
 				// along last year's twigs (on a leader's limbs, their outer half): one, or a pair, to a node
 				const from = spec.leader && sh.gen === 1 ? 0.5 : 0.2;
 				const n = Math.floor(sh.length * (1 - from) * B.chance + sr());
@@ -266,7 +271,7 @@ function grove(spec) {
 		}
 
 		// the leaves
-		for (const sh of shoots) foliage(bag, spec, seed, g, sh, grid, gens, bearing.has(sh));
+		for (const sh of shoots) foliage(bag, spec, seed, g, sh, grid, bearing.has(sh));
 		return bag.build();
 	};
 }
@@ -275,9 +280,10 @@ function grove(spec) {
  * The leaves of a shoot: at nodes along its outer part, one to a node in a spiral or two opposite (each pair square to
  * the last), a tuft at its tip; each turned on its stalk away from any fruit it would run into.
  * @param {Bag} bag @param {Grove} spec @param {string} seed @param {number} g @param {import('./crown.js').Shoot} sh
- * @param {Grid} grid @param {number} gens @param {boolean} bears whether its old wood is packed with fruit (its leaves then only beyond it)
+ * @param {Grid} grid @param {boolean} bears whether it flowers and fruits at its tip, or along its old wood (its leaves
+ *   then only beyond it)
  */
-function foliage(bag, spec, seed, g, sh, grid, gens, bears) {
+function foliage(bag, spec, seed, g, sh, grid, bears) {
 	const L = spec.leaf;
 	const leader = !!spec.leader;
 	const leafy = leader ? true : sh.end || sh.gen >= L.from || (sh.gen === 0 && g < 3.4);
@@ -336,8 +342,8 @@ function foliage(bag, spec, seed, g, sh, grid, gens, bears) {
 			for (const m of [0, Math.PI]) leaf(at, across(dir, turn + m).addScaledVector(dir, 0.45));
 		} else leaf(at, across(dir, k * 2.39996 + about(lr, 0, 0.3)).addScaledVector(dir, 0.45));
 	}
-	// the tuft at the tip: the newest leaves, reaching on with the shoot
-	if (sh.end && L.tuft) {
+	// the tuft at the tip: the newest leaves, reaching on with the shoot (not where a flower or a fruit is)
+	if (sh.end && L.tuft && !bears) {
 		for (let k = 0; k < L.tuft; k++) leaf(sh.tip, across(sh.dir, k * 2.39996 + lr()).multiplyScalar(0.6).addScaledVector(sh.dir, 1));
 	}
 }
@@ -465,7 +471,7 @@ const toothed = (/** @type {number} */ u) => pointed(u) * (1 + (u > 0.1 && u < 0
 
 /** a crown in flushes, finished by the spring it flowers: a few of its numbers changed */
 const crown = (/** @type {Partial<import('./crown.js').Flush>} */ o) => ({
-	trunk: 0.8, trunkBorn: 1.5, trunkFlush: 1.1, scaffolds: /** @type {[number, number]} */ ([3, 4]), scaffoldAngle: 0.8,
+	trunk: 0.8, trunkBorn: 1.3, trunkFlush: 1.1, scaffolds: /** @type {[number, number]} */ ([3, 4]), scaffoldAngle: 0.8,
 	gens: 6, flush: 0.2, rest: 0.13, shoot: (/** @type {number} */ gen) => [0, 1.1, 0.8, 0.6, 0.45, 0.35, 0.28][gen] ?? 0.28,
 	whorl: /** @type {[number, number]} */ ([2, 3]), spread: 0.6, up: 0.035, droop: 0.06, wander: 0.12, radius: 0.12, taper: 0.6, thicken: 4,
 	bark: /** @type {[string, string]} */ (['#7d6a4c', '#5a4a3e']),
@@ -478,7 +484,7 @@ export const QUINCE_STAGES = stages([
 	['Pip', 0, 'A brown quince pip, its coat turning to slime when wet, chilled through the winter, a centimetre down.'],
 	['Germination', 25, 'The radicle goes down; the hook comes up and lifts its seed leaves.'],
 	['Seedling', 45, 'Two oval seed leaves, then round true leaves, woolly underneath.'],
-	['Sapling', 365, 'A twiggy young tree, its shoots felted grey, already leaning its own way.'],
+	['Sapling', 1100, 'A twiggy young tree, its shoots felted grey, already leaning its own way.'],
 	['Young tree', 1460, 'A small crooked tree of four metres, low-branched, its round felted leaves dense.'],
 	['Blossom', 1830, 'Late in the spring, one big pale-pink flower at the tip of each short new shoot, among the leaves.'],
 	['Fruit set', 1845, 'The petals fall; a woolly green fruit swells under the five leafy sepals.'],
@@ -502,12 +508,12 @@ const quince = grove({
 	flush: crown({ trunk: 0.7, scaffolds: [3, 5], scaffoldAngle: 0.7, gens: 6, whorl: [2, 3], spread: 0.6, up: 0.06, droop: 0.04, wander: 0.2, radius: 0.12, taper: 0.62, shoot: (gen) => [0, 1.0, 0.75, 0.55, 0.42, 0.32, 0.25][gen] ?? 0.25, bark: ['#8a7a68', '#5a4c40'] }),
 	roots: { tap: 1.0, spread: 1.8, count: 10, radius: 0.035 },
 	leaf: { length: 0.085, width: 0.06, shape: ovate, colour: '#5a7a44', dark: '#4a6a3a', young: '#a8b890', spacing: 0.32, droop: 0.35, from: 4, tuft: 3, curl: 0.1 },
-	bloom: { sites: 'tips', opens: 4.75, chance: 0.3, gen: 5 },
+	bloom: { sites: 'tips', opens: 4.6, chance: 0.38, gen: 5 },
 	site: (s) => {
 		const up = s.dir.clone().lerp(UP, 0.65).normalize();
 		if (s.phase < 0.55) {
 			if (s.phase < 0) return void s.bag.add('body', bead(s.at.clone().addScaledVector(up, 0.008), v3(0.006, 0.009, 0.006), mix('#c8d0a0', '#f0b8c0', s.phase + 0.4), 4));
-			bloom(s.bag, { petals: 5, length: 0.017, width: 0.016, colour: '#f6d4da', heart: '#e8d06a', sepals: 5, sepal: 0.009, sepalColour: '#6a8a44', stamens: 20, stamenColour: '#e8c040' }, s.at.clone().addScaledVector(up, 0.006), up, 1.4, clamp(s.phase / 0.2), span(s.phase, 0.35, 0.55));
+			bloom(s.bag, { petals: 5, length: 0.017, width: 0.016, colour: '#f6d4da', heart: '#e8d06a', sepals: 5, sepal: 0.009, sepalColour: '#6a8a44', stamens: 20, stamenColour: '#e8c040' }, s.at.clone().addScaledVector(up, 0.012), up, 1.75, clamp(s.phase / 0.2), span(s.phase, 0.35, 0.55));
 			return;
 		}
 		const { set, ripe } = fruiting(s.phase, 2.5, 1.3, 1.8);
@@ -530,7 +536,7 @@ export const MEDLAR_STAGES = stages([
 	['Stone', 0, 'One of the five hard stones of a medlar, chilled through two winters, two centimetres down: slow and fickle — most are grafted.'],
 	['Germination', 60, 'In its second spring the stone splits; the root goes down, the seed leaves come up.'],
 	['Seedling', 90, 'Two oval seed leaves, then long narrow downy leaves.'],
-	['Sapling', 365, 'A slender young tree, its shoots downy, a few thorns on a wild one.'],
+	['Sapling', 1100, 'A slender young tree, its shoots downy, a few thorns on a wild one.'],
 	['Young tree', 1500, 'A small tree as wide as it is high, its branches crooked and spreading level.'],
 	['Blossom', 1880, 'In late spring, one big white flower at the tip of each short leafy shoot, its long sepals between the petals.'],
 	['Fruit set', 1895, 'The petals fall; the sepals stay, round a green fruit already open at its end.'],
@@ -551,10 +557,10 @@ const medlar = grove({
 	hypogeal: false,
 	cotyledon: { length: 0.014, width: 0.007, colour: '#6aa046' },
 	// a short crooked trunk, limbs spreading near level, the crown wide and low
-	flush: crown({ trunk: 0.8, scaffolds: [3, 5], scaffoldAngle: 0.85, gens: 6, whorl: [2, 3], spread: 0.62, up: 0.045, droop: 0.045, wander: 0.18, radius: 0.12, taper: 0.62, shoot: (gen) => [0, 1.15, 0.85, 0.62, 0.45, 0.34, 0.26][gen] ?? 0.26, bark: ['#8a7058', '#5e4a3a'] }),
+	flush: crown({ trunk: 0.8, scaffolds: [3, 5], scaffoldAngle: 0.85, gens: 6, whorl: [2, 3], spread: 0.62, up: 0.045, droop: 0.045, wander: 0.18, radius: 0.12, taper: 0.62, shoot: (gen) => [0, 1.05, 0.8, 0.6, 0.44, 0.33, 0.26][gen] ?? 0.26, bark: ['#8a7058', '#5e4a3a'] }),
 	roots: { tap: 1.0, spread: 1.9, count: 10, radius: 0.035 },
 	leaf: { length: 0.12, width: 0.035, shape: oblong, colour: '#4a6a32', dark: '#3e5e2c', young: '#9ab468', spacing: 0.24, droop: 0.4, from: 4, tuft: 4, curl: 0.08 },
-	bloom: { sites: 'tips', opens: 4.75, chance: 0.32, gen: 5 },
+	bloom: { sites: 'tips', opens: 4.6, chance: 0.4, gen: 5 },
 	site: (s) => {
 		const up = s.dir.clone().lerp(UP, 0.65).normalize();
 		const sepals = (/** @type {THREE.Matrix4} */ m, /** @type {number} */ L, /** @type {number} */ W, /** @type {number} */ grown, /** @type {string} */ colour) => {
@@ -569,13 +575,13 @@ const medlar = grove({
 		};
 		if (s.phase < 0.55) {
 			if (s.phase < 0) return void s.bag.add('body', bead(s.at.clone().addScaledVector(up, 0.008), v3(0.006, 0.01, 0.006), '#e8ecd8', 4));
-			bloom(s.bag, { petals: 5, length: 0.016, width: 0.014, colour: '#fbfaf2', heart: '#d8c878', sepals: 5, sepal: 0.018, sepalColour: '#6a8a3a', sepalBack: 0.05, stamens: 30, stamenColour: '#9a2a2a' }, s.at.clone().addScaledVector(up, 0.006), up, 1.35, clamp(s.phase / 0.2), span(s.phase, 0.35, 0.55));
+			bloom(s.bag, { petals: 5, length: 0.016, width: 0.014, colour: '#fbfaf2', heart: '#d8c878', sepals: 5, sepal: 0.018, sepalColour: '#6a8a3a', sepalBack: 0.05, stamens: 30, stamenColour: '#9a2a2a' }, s.at.clone().addScaledVector(up, 0.012), up, 1.6, clamp(s.phase / 0.2), span(s.phase, 0.35, 0.55));
 			return;
 		}
 		const { set, ripe } = fruiting(s.phase, 2.4, 1.3, 1.8);
 		const ground = ripening('#7a9048', '#8a7a44', '#7a5030', ripe);
 		const r = hangFruit(s, 0, {
-			L: 0.04, W: 0.03, stalk: 0.012, set, gloss: false, out: 0.5,
+			L: 0.036, W: 0.027, stalk: 0.012, set, gloss: false, out: 0.5,
 			shape: medlarShape,
 			// russet, rough, speckled; the eye darker
 			paint: (u, v) => ground.clone().lerp(new THREE.Color('#a88a5a'), Math.pow(Math.abs(Math.sin(u * 47 + v * 61)), 18) * 0.5).lerp(new THREE.Color('#3a2a1a'), u > 0.9 ? 0.5 : 0)
@@ -590,7 +596,7 @@ export const SERVICEBERRY_STAGES = stages([
 	['Seed', 0, 'A tiny brown seed from a berry, chilled through the winter, barely covered.'],
 	['Germination', 30, 'A root goes down, a tiny hook comes up.'],
 	['Seedling', 50, 'Two round seed leaves, then small oval toothed leaves, bronze as they unfold.'],
-	['Young bush', 365, 'Thin stems from the base, grey and smooth.'],
+	['Young bush', 1100, 'Thin stems from the base, grey and smooth, the tallest above your head.'],
 	['Young tree', 1460, 'A small tree of many grey stems, four metres high, its crown light and airy.'],
 	['Blossom', 1680, 'Early in the spring, as the bronze leaves unfold: clouds of white stars in loose racemes at every shoot tip.'],
 	['Fruit set', 1695, 'The petals fall; little green berries along the racemes, each crowned by its sepals.'],
@@ -606,8 +612,8 @@ const serviceberry = grove({
 	// many stems from the base, steep, arching a little at the top
 	flush: crown({ trunk: 0.08, trunkFlush: 0.9, scaffolds: [5, 7], scaffoldAngle: 0.32, gens: 6, whorl: [2, 3], spread: 0.55, up: 0.04, droop: 0.05, wander: 0.12, radius: 0.07, taper: 0.66, shoot: (gen) => [0, 1.5, 0.95, 0.65, 0.45, 0.32, 0.24][gen] ?? 0.24, bark: ['#8a8680', '#5e5a56'] }),
 	roots: { tap: 0.8, spread: 1.5, count: 10, radius: 0.025 },
-	leaf: { length: 0.06, width: 0.038, shape: toothed, colour: '#4a7234', dark: '#3a6230', young: '#9a5a3e', spacing: 0.6, droop: 0.35, from: 5, tuft: 3, on: [[4.3, 1], [4.55, 0.35], [5.4, 1]] },
-	bloom: { sites: 'tips', opens: 4.75, chance: 0.45, gen: 5 },
+	leaf: { length: 0.07, width: 0.045, shape: toothed, colour: '#4a7234', dark: '#3a6230', young: '#9a5a3e', spacing: 0.6, droop: 0.35, from: 5, tuft: 3, on: [[4.3, 1], [4.55, 0.35], [5.4, 1]] },
+	bloom: { sites: 'tips', opens: 4.6, chance: 0.45, gen: 5 },
 	site: (s) => {
 		const out = s.dir.clone().setY(0);
 		if (out.lengthSq() < 1e-6) out.set(1, 0, 0);
@@ -632,12 +638,12 @@ const serviceberry = grove({
 			if (s.phase < 0.55) {
 				// a white star of five long narrow petals
 				if (s.phase < 0) s.bag.add('body', bead(end, v3(0.0025, 0.004, 0.0025), '#f0eee0', 2));
-				else star(s.bag, end, pd.clone().lerp(UP, 0.3), { petals: 5, length: 0.013, width: 0.0028, colour: '#fcfcf6', heart: '#e0d890', shape: (uu) => Math.pow(Math.sin(Math.PI * Math.pow(uu, 0.6)), 0.5) }, clamp(s.phase / 0.2), span(s.phase, 0.35, 0.55));
+				else star(s.bag, end, pd.clone().lerp(UP, 0.3), { petals: 5, length: 0.015, width: 0.0032, colour: '#fcfcf6', heart: '#e0d890', shape: (uu) => Math.pow(Math.sin(Math.PI * Math.pow(uu, 0.6)), 0.5) }, clamp(s.phase / 0.2), span(s.phase, 0.35, 0.55));
 				continue;
 			}
 			if (fr() > 0.75) continue;
-			// the berries at the raceme's base ripen first
-			const t = clamp(ripe * 1.35 - (1 - u) * 0.0 - u * 0.3);
+			// the berries at the raceme's base ripen first: a cluster red and purple-black at once
+			const t = clamp(ripe * 1.3 - u * 0.45 - fr() * 0.15);
 			const c = t < 0.45 ? mix('#8aa04a', '#c83038', t / 0.45) : mix('#c83038', '#3a1834', (t - 0.45) / 0.55);
 			const r = (0.0018 + 0.0037 * set) * s.vigour * about(fr, 1, 0.08);
 			berry(s, end.clone().add(v3(0, -r, 0)), r, c.lerp(new THREE.Color('#7a6a8a'), t * 0.15), DOWN, { crown: '#3a2a2a' });
@@ -651,7 +657,7 @@ export const CORNEL_STAGES = stages([
 	['Stone', 0, 'An oblong ribbed stone from a cornel cherry, two centimetres down: it lies two winters before it wakes.'],
 	['Germination', 540, 'In its second spring the root goes down and the seed leaves come up.'],
 	['Seedling', 570, 'Two oval seed leaves, then true leaves in opposite pairs, their veins curving to the tip.'],
-	['Sapling', 900, 'A slow, upright little tree, its twigs in pairs.'],
+	['Sapling', 1500, 'A slow, upright little tree, its twigs in pairs.'],
 	['Young tree', 2200, 'A dense small tree of five metres, branching in pairs, leafy to the ground.'],
 	['Blossom', 2600, 'In February, on the bare twigs: tiny yellow flowers in little umbels at every pair of buds, the whole tree a yellow haze.'],
 	['Fruit set', 2650, 'The opposite oval leaves unfold after the flowers; a few small green fruit hold in each umbel.'],
@@ -668,7 +674,7 @@ const cornel = grove({
 	flush: crown({ trunk: 0.55, scaffolds: [4, 5], scaffoldAngle: 0.5, gens: 6, whorl: [2, 3], spread: 0.6, up: 0.07, droop: 0.035, wander: 0.12, radius: 0.1, taper: 0.62, shoot: (gen) => [0, 1.2, 0.85, 0.6, 0.44, 0.32, 0.24][gen] ?? 0.24, bark: ['#8a6a50', '#5a4636'] }),
 	roots: { tap: 1.0, spread: 1.6, count: 10, radius: 0.03 },
 	leaf: { length: 0.075, width: 0.038, shape: pointed, colour: '#3e6a2e', dark: '#34602a', young: '#8ab45a', opposite: true, spacing: 0.6, droop: 0.3, from: 4, tuft: 2, curl: 0.12, on: [[4.25, 1], [4.55, 0], [5.3, 0], [6.1, 1]] },
-	bloom: { sites: 'twigs', opens: 4.75, chance: 4.5, gen: 5, pairs: true },
+	bloom: { sites: 'twigs', opens: 4.6, chance: 6, gen: 4, pairs: true },
 	site: (s) => {
 		const fr = chance(s.seed, 'umbel', ...s.key);
 		const up = s.dir.clone().lerp(UP, 0.5).normalize();
@@ -676,18 +682,18 @@ const cornel = grove({
 			// a little umbel: four yellow-brown bracts round twenty tiny four-petalled yellow flowers on stalks
 			const open = clamp((s.phase + 0.4) / 0.5), fall = span(s.phase, 0.35, 0.55);
 			for (let k = 0; k < 4; k++) s.bag.add('sheet', sheet({ length: 0.005, width: 0.003, shape: (u) => Math.sin(Math.PI * u), paint: () => col('#a89048'), along: 2, across: 1 }), aim(s.at, across(up, (k * Math.PI) / 2).multiplyScalar(lerp(0.2, 0.8, open)).addScaledVector(up, 1).normalize(), 0));
-			const n = 14;
+			const n = 18;
 			for (let k = 0; k < n; k++) {
 				const d = up.clone().addScaledVector(across(up, k * 2.39996), lerp(0.2, 0.9, open) * Math.sqrt((k + 0.5) / n)).normalize();
-				const end = s.at.clone().addScaledVector(d, 0.008 * lerp(0.4, 1, open));
+				const end = s.at.clone().addScaledVector(d, 0.01 * lerp(0.4, 1, open));
 				s.bag.add('body', tube([s.at, end], () => 0.0004, () => col('#8a8a3a'), 3));
-				s.bag.add('body', bead(end, v3(0.0022, 0.0016, 0.0022).multiplyScalar(lerp(0.6, 1, open) * (1 - fall * 0.6)), fall > 0.5 ? '#9a9a4a' : mix('#c8b438', '#f0d020', open), 2));
+				s.bag.add('body', bead(end, v3(0.003, 0.0022, 0.003).multiplyScalar(lerp(0.6, 1, open) * (1 - fall * 0.6)), fall > 0.5 ? '#9a9a4a' : mix('#c8b438', '#f0d020', open), 2));
 			}
 			return;
 		}
 		// most umbels keep none; some one, a few two
 		const x = fr();
-		const keep = x < 0.6 ? 0 : x < 0.9 ? 1 : 2;
+		const keep = s.shoot.gen < 5 || x < 0.72 ? 0 : x < 0.94 ? 1 : 2;
 		const { set, ripe } = fruiting(s.phase, 2.5, 1.3, 1.6);
 		const c = ripe < 0.35 ? mix('#86a048', '#d8c050', ripe / 0.35) : ripe < 0.65 ? mix('#d8c050', '#d8261e', (ripe - 0.35) / 0.3) : mix('#d8261e', '#a8101c', (ripe - 0.65) / 0.35);
 		for (let k = 0; k < keep; k++) {
@@ -717,10 +723,10 @@ const elder = grove({
 	hypogeal: false,
 	cotyledon: { length: 0.008, width: 0.004, colour: '#6aa046' },
 	// many stems from the base, arching out and bowing under their leaves and fruit
-	flush: crown({ trunk: 0.06, trunkFlush: 0.9, scaffolds: [5, 7], scaffoldAngle: 0.38, gens: 5, whorl: [2, 3], spread: 0.6, up: 0.04, droop: 0.1, wander: 0.12, radius: 0.08, taper: 0.64, rest: 0.2, flush: 0.24, shoot: (gen) => [0, 2.0, 1.05, 0.7, 0.48, 0.36][gen] ?? 0.36, bark: ['#9a9282', '#6a6458'] }),
-	roots: { tap: 0.7, spread: 1.6, count: 6, radius: 0.03 },
-	leaf: { length: 0.095, width: 0.038, shape: toothed, colour: '#3e6a2c', dark: '#335c26', young: '#86b052', opposite: true, pinnate: { pairs: [2, 3], length: 0.27, width: 0.11 }, spacing: 0.55, droop: 0.25, from: 4, tuft: 2, along: 3, across: 1 },
-	bloom: { sites: 'tips', opens: 4.75, chance: 0.22, gen: 4 },
+	flush: crown({ trunk: 0.06, trunkFlush: 0.9, scaffolds: [5, 7], scaffoldAngle: 0.38, gens: 5, whorl: [2, 3], spread: 0.6, up: 0.04, droop: 0.1, wander: 0.12, radius: 0.08, taper: 0.64, rest: 0.15, flush: 0.22, shoot: (gen) => [0, 2.0, 1.05, 0.7, 0.48, 0.36][gen] ?? 0.36, bark: ['#9a9282', '#6a6458'] }),
+	roots: { tap: 0.7, spread: 1.6, count: 5, radius: 0.03 },
+	leaf: { length: 0.095, width: 0.038, shape: toothed, colour: '#3e6a2c', dark: '#335c26', young: '#86b052', opposite: true, pinnate: { pairs: [2, 3], length: 0.27, width: 0.11 }, spacing: 0.7, droop: 0.25, from: 4, tuft: 2, along: 3, across: 1 },
+	bloom: { sites: 'tips', opens: 4.6, chance: 0.45, gen: 4 },
 	site: (s) => {
 		const fr = chance(s.seed, 'umbel', ...s.key);
 		const { set, ripe } = fruiting(s.phase, 2.5, 1.3, 1.4);
@@ -730,7 +736,7 @@ const elder = grove({
 		out.normalize();
 		const turnOver = span(s.phase, 0.6, 2.2);
 		const axis = UP.clone().multiplyScalar(Math.cos(turnOver * 2.4)).addScaledVector(out, Math.sin(turnOver * 2.4) + 0.15).normalize();
-		const stalkEnd = s.at.clone().addScaledVector(s.dir.clone().lerp(UP, 0.5).normalize(), 0.03).addScaledVector(axis, 0.03);
+		const stalkEnd = s.at.clone().addScaledVector(s.dir.clone().lerp(UP, 0.7).normalize(), 0.07).addScaledVector(axis, 0.05);
 		const stalk = ripe > 0.3 ? mix('#6a8a3a', '#9a1e3a', (ripe - 0.3) / 0.4) : new THREE.Color('#6a8a3a');
 		s.bag.add('body', tube([s.at, stalkEnd], () => 0.002, () => stalk, 4));
 		const Rd = 0.075 * lerp(0.6, 1, clamp((s.phase + 0.4) / 0.6)) * (1 + 0.15 * set) * about(fr, 1, 0.1);
@@ -744,7 +750,15 @@ const elder = grove({
 			nodes.push({ a, p: local(Math.cos(a) * Rd * 0.42, H * 0.45, Math.sin(a) * Rd * 0.42) });
 			s.bag.add('body', tube([stalkEnd, nodes[k].p], () => 0.0011, () => stalk, 3));
 		}
-		const n = 40;
+		// in flower, the umbel reads as one cream plate: hundreds of tiny flowers, a few dozen of them drawn, over a
+		// shallow dome of cream just under them
+		if (s.phase < 0.55 && s.phase > -0.2) {
+			const fall = span(s.phase, 0.35, 0.55);
+			const plate = fan({ size: Rd, from: -Math.PI, to: Math.PI, edge: () => 0.92 * (1 - fall * 0.5), lift: (r) => (H * (1 - 0.35 * r * r) - 0.003) / Rd, paint: () => col(s.phase < 0 ? '#d8dcb0' : '#ece4c0'), rings: 2, rays: 12 });
+			s.bag.add('body', plate, new THREE.Matrix4().compose(stalkEnd, q, v3(1, 1, 1)));
+		}
+		// sixty-odd flowers; every other one keeps its berry
+		const n = 64;
 		for (let k = 0; k < n; k++) {
 			const rho = Rd * Math.sqrt((k + 0.5) / n);
 			const a = k * 2.39996;
@@ -752,14 +766,14 @@ const elder = grove({
 			const p = local(Math.cos(a) * rho, y, Math.sin(a) * rho);
 			let near = nodes[0];
 			for (const nd of nodes) if (Math.abs(Math.atan2(Math.sin(nd.a - a), Math.cos(nd.a - a))) < Math.abs(Math.atan2(Math.sin(near.a - a), Math.cos(near.a - a)))) near = nd;
-			s.bag.add('body', tube([rho < Rd * 0.2 ? stalkEnd : near.p, p], () => 0.0005, () => stalk, 3));
+			if (s.phase < 0.55 || k % 2 === 0) s.bag.add('body', tube([rho < Rd * 0.2 ? stalkEnd : near.p, p], () => 0.0005, () => stalk, 3));
 			if (s.phase < 0.55) {
 				// a tiny cream star, five petals
 				const open = clamp((s.phase + 0.2) / 0.25), fall = span(s.phase, 0.35, 0.55);
-				if (fall < 1) s.bag.add('body', bead(p.clone().addScaledVector(axis, 0.001), v3(0.0028, 0.001, 0.0028).multiplyScalar(lerp(0.55, 1, open) * (1 - fall * 0.5)), open < 0.5 ? '#e0e0b8' : '#f6f0d6', 2, q));
+				if (fall < 1) s.bag.add('body', bead(p.clone().addScaledVector(axis, 0.001), v3(0.0042, 0.0014, 0.0042).multiplyScalar(lerp(0.55, 1, open) * (1 - fall * 0.5)), open < 0.5 ? '#e0e0b8' : '#f6f0d6', 2, q));
 				continue;
 			}
-			if (fr() > 0.85) continue;
+			if (k % 2 || fr() > 0.85) continue;
 			const t = clamp(ripe * 1.2 - fr() * 0.2);
 			const c = t < 0.4 ? mix('#7a9a42', '#8a3a4a', t / 0.4) : mix('#8a3a4a', '#1c1222', (t - 0.4) / 0.6);
 			const r = (0.0012 + 0.0026 * set) * s.vigour;
@@ -774,7 +788,7 @@ export const SEA_BUCKTHORN_STAGES = stages([
 	['Seed', 0, 'A small glossy brown seed from an orange berry, a centimetre down in sandy soil.'],
 	['Germination', 20, 'A root goes down, two narrow seed leaves come up; soon Frankia, a soil bacterium, finds the roots.'],
 	['Seedling', 45, 'Narrow silvery leaves; little orange-brown nodules swelling on the roots, fixing nitrogen from the air.'],
-	['Young bush', 365, 'Thorny stems, suckering, the leaves silver beneath.'],
+	['Young bush', 730, 'Thorny stems, suckering, the leaves silver beneath.'],
 	['Bush', 1100, 'A thorny silver shrub of three metres, many-stemmed, its twigs ending in thorns.'],
 	['Flowering', 1250, 'In April, before the leaves: tiny greenish flowers crowded along last year’s twigs (on the female bush; the wind brings the pollen from a male).'],
 	['Fruit set', 1270, 'The narrow silver leaves unfold; little green berries set, packed along the twigs.'],
@@ -788,19 +802,19 @@ const seaBuckthorn = grove({
 	hypogeal: false,
 	cotyledon: { length: 0.008, width: 0.003, colour: '#7a9a5a' },
 	// many stems from the base and from suckers, upright then spreading, stiff and thorny
-	flush: crown({ trunk: 0.06, trunkFlush: 0.9, scaffolds: [5, 7], scaffoldAngle: 0.4, gens: 5, whorl: [2, 3], spread: 0.6, up: 0.04, droop: 0.04, wander: 0.14, radius: 0.04, taper: 0.64, rest: 0.18, flush: 0.24, shoot: (gen) => [0, 1.3, 0.75, 0.5, 0.36, 0.28][gen] ?? 0.28, bark: ['#7a6a58', '#4a4038'] }),
+	flush: crown({ trunk: 0.06, trunkFlush: 0.9, scaffolds: [5, 7], scaffoldAngle: 0.4, gens: 5, whorl: [2, 3], spread: 0.6, up: 0.04, droop: 0.04, wander: 0.14, radius: 0.04, taper: 0.64, rest: 0.15, flush: 0.22, shoot: (gen) => [0, 1.3, 0.75, 0.5, 0.36, 0.28][gen] ?? 0.28, bark: ['#7a6a58', '#4a4038'] }),
 	roots: { tap: 0.6, spread: 1.6, count: 8, radius: 0.025, nodules: true },
 	leaf: { length: 0.07, width: 0.011, shape: linear, colour: '#9aa892', dark: '#86967e', young: '#c0cab0', spacing: 0.15, droop: 0.15, from: 3, start: 0.62, tuft: 6, max: 30, along: 3, across: 1, on: [[4.25, 1], [4.55, 0], [5.15, 0], [5.9, 1]] },
 	thorns: 5,
-	bloom: { sites: 'wood', opens: 4.75, chance: 0.6, gen: 4 },
+	bloom: { sites: 'wood', opens: 4.6, chance: 0.6, gen: 4 },
 	site: (s) => {
 		// berries packed all along last year's wood, in a tight spiral, each just clear of the next
 		const sh = s.shoot;
 		const fr = chance(s.seed, 'packed', ...s.key);
 		const { set, ripe } = fruiting(s.phase, 2.5, 1.3, 1.5);
-		const r = (0.0012 + 0.0024 * set) * s.vigour;
-		const step = 0.0058;
-		const from = 0.12, to = 0.58;
+		const r = (0.0012 + 0.0029 * set) * s.vigour;
+		const step = 0.0068;
+		const from = 0.12, to = 0.62;
 		const n = Math.floor((sh.length * (to - from)) / step);
 		const t0 = fr() * Math.PI * 2;
 		for (let k = 0; k < n; k++) {
@@ -825,7 +839,7 @@ export const PAWPAW_STAGES = stages([
 	['Seed', 0, 'A big flat brown seed from a pawpaw, never dried, chilled through the winter, two centimetres down.'],
 	['Germination', 60, 'Slow: the root goes deep first; the seed leaves stay in the seed below the soil.'],
 	['Seedling', 100, 'A shoot with its first long leaves, wanting shade its first years.'],
-	['Sapling', 730, 'A slender young tree, its leaves big and drooping, its limbs in tiers.'],
+	['Sapling', 1100, 'A slender young tree, its leaves big and drooping, its limbs in tiers.'],
 	['Young tree', 1800, 'A narrow pyramid four metres high, its great drooping leaves hanging in layers, tropical-looking.'],
 	['Flowering', 2200, 'In spring, as the leaves unfold: nodding maroon bells, three-petalled twice, on last year’s bare wood, smelling faintly of yeast.'],
 	['Fruit set', 2220, 'Several fruit from each flower: little green clusters, like tiny bananas.'],
@@ -839,12 +853,12 @@ const pawpaw = grove({
 	hypogeal: true,
 	// a straight leader and tiers of limbs, the lowest the longest: a pyramid
 	leader: {
-		height: [[1.8, 0], [3, 0.6], [4, 2.6], [5, 3.9], [6, 4.5], [7, 4.8], [9, 5.1]], radius: 0.17, tiers: 30, clear: 0.7, spacing: 0.15, angle: 1.0,
-		limb: (h) => 1.8 * (1 - h) + 0.3, rate: 1.4, crown: 4.6, sides: 0.5, side: 0.13, bark: ['#8a8070', '#5e564c'], droop: 0.14
+		height: [[1.8, 0], [3, 0.6], [4, 2.6], [5, 3.9], [6, 4.5], [7, 4.8], [9, 5.1]], radius: 0.17, tiers: 36, clear: 0.7, spacing: 0.12, angle: 1.0,
+		limb: (h) => 1.8 * (1 - h) + 0.35, rate: 1.4, crown: 4.6, sides: 0.55, side: 0.11, bark: ['#8a8070', '#5e564c'], droop: 0.14
 	},
 	roots: { tap: 1.3, spread: 1.8, count: 10, radius: 0.035 },
 	leaf: { length: 0.26, width: 0.11, shape: obovate, colour: '#3e6a2c', dark: '#34602a', young: '#9ab86a', spacing: 0.24, droop: 0.85, from: 1, tuft: 3, max: 12, curl: 0.05, on: [[4.3, 1], [4.6, 0.15], [5.5, 1]] },
-	bloom: { sites: 'twigs', opens: 4.75, chance: 3.2, gen: 1 },
+	bloom: { sites: 'twigs', opens: 4.6, chance: 2.4, gen: 1 },
 	site: (s) => {
 		const out = s.dir.clone().setY(0);
 		if (out.lengthSq() < 1e-6) out.set(1, 0, 0);
@@ -870,7 +884,7 @@ const pawpaw = grove({
 		const fr = chance(s.seed, 'cluster', ...s.key);
 		// few flowers set: most none, some one to four fruit from the one flower
 		const x = fr();
-		const keep = x < 0.6 ? 0 : x < 0.75 ? 1 : x < 0.9 ? 2 : 3 + Math.floor(fr() * 2);
+		const keep = x < 0.78 ? 0 : x < 0.86 ? 1 : x < 0.95 ? 2 : 3 + Math.floor(fr() * 2);
 		const { set, ripe } = fruiting(s.phase, 2.6, 1.2, 1.9);
 		const ground = ripening('#5f8a34', '#8aa040', '#c0be5a', ripe);
 		for (let k = 0; k < keep; k++) {

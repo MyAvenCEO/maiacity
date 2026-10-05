@@ -120,19 +120,21 @@ class Slivers {
 	 * @param {THREE.Vector3} at @param {THREE.Vector3} dir @param {number} length @param {number} width its half-width
 	 * @param {THREE.ColorRepresentation} colour @param {number} [droop] how far its tip bends down, in parts of its length
 	 * @param {boolean} [needle] a needle: one slim triangle, not a diamond
+	 * @param {THREE.Vector3} [across] which way its width lies (level, across its direction, if not given)
 	 */
-	add(at, dir, length, width, colour, droop = 0, needle = false) {
+	add(at, dir, length, width, colour, droop = 0, needle = false, across) {
 		const dl = Math.hypot(dir.x, dir.y, dir.z) || 1;
 		const dx = dir.x / dl, dy = dir.y / dl, dz = dir.z / dl;
 		// across it, level: dir × up
-		let sx = -dz, sz = dx;
-		const sl = Math.hypot(sx, sz);
-		if (sl < 1e-6) (sx = 1), (sz = 0);
-		else (sx /= sl), (sz /= sl);
+		let sx = -dz, sy = 0, sz = dx;
+		if (across) (sx = across.x), (sy = across.y), (sz = across.z);
+		const sl = Math.hypot(sx, sy, sz);
+		if (sl < 1e-6) (sx = 1), (sy = 0), (sz = 0);
+		else (sx /= sl), (sy /= sl), (sz /= sl);
 		const m = needle ? 0 : 0.4;
 		const mx = at.x + dx * length * m, my = at.y + dy * length * m, mz = at.z + dz * length * m;
 		const tip = [at.x + dx * length, at.y + dy * length - droop * length, at.z + dz * length];
-		const l = [mx + sx * width, my, mz + sz * width], r = [mx - sx * width, my, mz - sz * width];
+		const l = [mx + sx * width, my + sy * width, mz + sz * width], r = [mx - sx * width, my - sy * width, mz - sz * width];
 		const base = [at.x, at.y, at.z];
 		const c = tint(colour);
 		for (const [a, b, e] of needle ? [[l, tip, r]] : [[base, l, tip], [base, tip, r]]) {
@@ -201,6 +203,11 @@ export function rhubarb(g, seed) {
 		const a = k * 2.39996 + cr();
 		const d = k ? 0.025 + 0.035 * build : 0;
 		bag.add('body', bead(crown.clone().add(v3(Math.cos(a) * d, -0.01 - cr() * 0.015, Math.sin(a) * d)), v3(1, 0.7, 1).multiplyScalar((0.03 + 0.02 * build) * vigour), mix('#5a3e2c', '#7a5440', cr()), 5));
+	}
+	// its fat red buds, sitting on top of the crown until they break
+	for (let k = 0; k < 2; k++) {
+		const swell = 1 - span(g, 0.7 + k * 0.3, 1.2 + k * 0.3);
+		if (swell > 0) bag.add('gloss', bead(crown.clone().add(v3(k * 0.035 - 0.015, 0.03 + 0.01 * (1 - swell), k * 0.01)), v3(0.018, 0.024, 0.018).multiplyScalar(lerp(0.6, 1, swell)), '#b02238', 6));
 	}
 	// the thick fleshy roots, yellow inside a brown skin, going down a metre when old
 	for (let i = 0; i < 6; i++) {
@@ -755,6 +762,7 @@ export function asparagus(g, seed) {
 		const fern = sh.cut < Infinity ? 0 : span(g, sh.born + 0.4, sh.born + 1.4);
 		const h = Math.max(spear - base.y, (sh.H - base.y) * fern) * vigour;
 		const lean = v3(sr() - 0.5, 0, sr() - 0.5).multiplyScalar(0.12);
+		/** @type {THREE.Vector3[]} */
 		const stem = [];
 		for (let m = 0; m <= 8; m++) {
 			const t = (m / 8) * h;
@@ -1081,6 +1089,7 @@ export function woodruff(g, seed) {
 	}
 	root(bag, { seed, key: ['clump'], from: v3(0, -0.01, 0), dir: v3(0, -1, 0), length: 0.1, grown: span(g, 0, 2), radius: 0.001, laterals: 6, depth: 1, young: '#f6efdc', old: '#d8c49a' });
 	const buds = span(g, 5.6, 6), bloom = span(g, 6.6, 7.0), burs = span(g, 7.6, 8.2), ripe = span(g, 8.7, 9.3);
+	const slivers = new Slivers();
 	for (const st of stems) {
 		if (g <= st.born) continue;
 		const sr = chance(seed, 'woodruff-stem', ...st.key);
@@ -1092,6 +1101,8 @@ export function woodruff(g, seed) {
 		bag.add('body', tube(stem, () => 0.0011, () => tint('#6a9a4a'), 4));
 		// the whorls: the upper ones the biggest, each leaf narrow and pointed, spread in a star
 		for (let w = 0; w < 6; w++) {
+			// planted by the thousand, every other lower whorl is left out
+			if (DETAIL.level < 1 && (w === 1 || w === 3)) continue;
 			const u = 0.18 + w * 0.15;
 			const p = point(stem, u);
 			const age = clamp((1 - u) * 1.2 + grown * 1.2 - 0.6);
@@ -1099,25 +1110,28 @@ export function woodruff(g, seed) {
 			const len = (0.022 + 0.018 * (w / 5)) * lerp(0.35, 1, age);
 			for (let m = 0; m < n; m++) {
 				const out = level((m / n) * Math.PI * 2 + w * 0.4);
-				bag.add('sheet', sheet({ length: len, width: len * 0.15, shape: (uu) => Math.pow(Math.sin(Math.PI * Math.pow(uu, 0.75)), 0.7), lift: (uu) => -0.1 * uu * uu, paint: (uu, v) => mix('#3a7a2e', '#7ab04a', 1 - age).lerp(tint('#a8c88a'), Math.abs(v) < 0.1 ? 0.3 : 0), along: 3, across: 1 }), aim(p, tilted(out, lerp(0.3, 1.4, age)), 0));
+				slivers.add(p, tilted(out, lerp(0.3, 1.4, age)), len, len * 0.13, mix('#3a7a2e', '#7ab04a', (1 - age) * 0.8 + (m % 2) * 0.08), 0.12);
 			}
 		}
 		// the flowers at the top: a loose spray of tiny white stars, then the bristly burs
 		if (buds <= 0 || grown < 0.9 || sr() < 0.2) continue;
 		const top = stem[4];
-		for (let f = 0; f < 7; f++) {
+		for (let f = 0; f < 9; f++) {
 			const a = f * 2.39996 + sr();
-			const fp = top.clone().add(v3(Math.cos(a) * 0.012 * (f ? 1 : 0), 0.012 + 0.006 * (f % 3), Math.sin(a) * 0.012 * (f ? 1 : 0)));
+			const d = f ? 0.006 + 0.007 * Math.sqrt(f / 8) : 0;
+			const fp = top.clone().add(v3(Math.cos(a) * d, 0.012 + 0.005 * (f % 3) - d * 0.4, Math.sin(a) * d));
 			bag.add('body', tube([top, fp], () => 0.0004, () => tint('#7aa04a'), 2));
 			if (burs > 0.3) {
 				bag.add('body', bead(fp, v3(0.0018, 0.0016, 0.0018), mix('#7a9a4a', '#3a3a24', ripe), 2));
 			} else if (bloom < 0.2) {
-				bag.add('body', bead(fp, v3(0.0015, 0.0017, 0.0015), '#e8eedc', 2));
+				bag.add('body', bead(fp, v3(0.0017, 0.002, 0.0017), '#e8eedc', 2));
 			} else {
-				for (let q = 0; q < 4; q++) bag.add('sheet', sheet({ length: 0.0035, width: 0.0012, shape: (uu) => Math.sin(Math.PI * Math.pow(uu, 0.6)), paint: () => tint('#fbfbf4'), along: 1, across: 1 }), aim(fp, level(q * Math.PI / 2 + a).add(v3(0, 0.3, 0)).normalize(), 0));
+				bag.add('body', bead(fp, v3(0.0012, 0.0008, 0.0012), '#f4f0d8', 2));
+				for (let q = 0; q < 4; q++) slivers.add(fp, level(q * Math.PI / 2 + a).add(v3(0, 0.35, 0)), 0.0042 * bloom, 0.002, '#fbfbf4');
 			}
 		}
 	}
+	slivers.into(bag);
 	return bag.build();
 }
 
@@ -1173,7 +1187,7 @@ export function jerusalemArtichoke(g, seed) {
 			if (grow > 0) bag.add('body', tube([foot, foot.clone().lerp(under[1], grow)], () => 0.003, () => tint('#f0e8d8'), 4));
 			continue;
 		}
-		const lean = level(a).multiplyScalar(between(sr, 0.03, 0.08));
+		const lean = level(a).multiplyScalar(between(sr, 0.05, 0.13));
 		const stem = [...under];
 		for (let m = 1; m <= 12; m++) {
 			const h = (m / 12) * H;
@@ -1184,12 +1198,12 @@ export function jerusalemArtichoke(g, seed) {
 		space.rod(stem, R);
 		const above = stem.slice(2);
 		// the flowers: a head at the top and on short branches from the top nodes
-		const bud = span(g, 5.4, 5.9), open = span(g, 5.9, 6.4), fade = span(g, 7.2, 8.2);
+		const bud = span(g, 5.0, 5.5), open = span(g, 5.5, 6.0), fade = span(g, 7.2, 8.2);
 		if (bud > 0) {
 			const heads = [{ at: above[12], dir: towards(above, 1) }];
-			for (let b = 0; b < 4; b++) {
+			for (let b = 0; b < 6; b++) {
 				const br = chance(seed, 'topinambur-branch', k, b);
-				const from = point(above, 0.7 + b * 0.065);
+				const from = point(above, 0.62 + b * 0.06);
 				const len = between(br, 0.15, 0.35) * bud;
 				const twig = arch(from, tilted(level(a + b * 2.39996), 0.6), len, -0.3, 4);
 				bag.add('body', tube(twig, (u) => R * 0.35 * (1 - 0.4 * u), () => mix('#4a6a2e', '#7a6648', frost), 4));
@@ -1204,14 +1218,14 @@ export function jerusalemArtichoke(g, seed) {
 		}
 		// the leaves: in pairs low down, alternate higher up, the topmost small
 		let n = 0;
-		for (let h = 0.08; h < H - 0.02; h += 0.11, n++) {
+		for (let h = 0.08; h < H - 0.02; h += 0.09, n++) {
 			const lr = chance(seed, 'topinambur-leaf', k, n);
 			const u = h / H;
 			const p = point(above, u);
 			const grown = clamp((H - h) / 0.4);
 			// the lowest drop as it grows tall, and after the frost the rest go too, a few at a time
-			if (h < 0.5 * clamp((g - 3.5) / 2) || frost * 1.2 > 0.4 + lr() * 0.8 + (1 - span(g, 8.6, 9.4))) continue;
-			const L = (0.24 - 0.12 * clamp((h - 1.4) / 1.4)) * lerp(0.3, 1, grown) * vigour * about(lr, 1, 0.08);
+			if (h < 0.5 * clamp((g - 3.5) / 2) || lr() < span(g, 8.3, 9.3) * 0.8) continue;
+			const L = (0.28 - 0.14 * clamp((h - 1.4) / 1.4)) * lerp(0.3, 1, grown) * vigour * about(lr, 1, 0.08);
 			const pair = h < 1.0;
 			for (const side of pair ? [0, Math.PI] : [0]) {
 				const bear = a + n * (pair ? Math.PI / 2 : 2.39996) + side;
@@ -1225,14 +1239,14 @@ export function jerusalemArtichoke(g, seed) {
 						'sheet',
 						sheet({
 							length: L,
-							width: L * 0.28,
+							width: L * 0.34,
 							shape: (uu) => Math.pow(Math.sin(Math.PI * Math.pow(uu, 0.68)), 0.7) * (1 + (uu > 0.15 && uu < 0.9 ? ((uu * 16) % 1) * 0.08 : 0)),
 							lift: (uu, v) => 0.06 * v * v - (0.12 + frost * 0.4) * uu * uu,
-							paint: (uu, v) => mix(leafColour('#2f5426', '#5a8a3a', grown, 0, uu), '#2e2a1e', frost * 1.1).lerp(tint('#7a9a5a'), Math.abs(v) < 0.07 ? 0.35 * (1 - frost) : 0),
+							paint: (uu, v) => mix(leafColour('#3a682c', '#5a8a3a', grown, 0, uu), '#2e2a1e', frost * 1.1).lerp(tint('#7a9a5a'), Math.abs(v) < 0.07 ? 0.35 * (1 - frost) : 0),
 							along: 8,
 							across: 3
 						}),
-						aim(st, dir.clone().add(v3(0, -0.1, 0)).normalize(), 0)
+						aim(st, dir.clone().add(v3(0, -0.25, 0)).normalize(), (lr() - 0.5) * 0.8)
 					);
 				});
 			}
@@ -1259,7 +1273,7 @@ export function jerusalemArtichoke(g, seed) {
 /**
  * A knobbly tuber from `at` along `dir`: lumpy, its eyes swollen into knobs, one or two knobs grown out to the side.
  * @param {Bag} bag @param {string} seed @param {(string | number)[]} key @param {THREE.Vector3} at @param {THREE.Vector3} dir
- * @param {number} length @param {number} R @param {string} skin
+ * @param {number} length @param {number} R @param {THREE.ColorRepresentation} skin
  */
 function tuber(bag, seed, key, at, dir, length, R, skin) {
 	const tr = chance(seed, 'tuber', ...key);
@@ -1327,7 +1341,7 @@ export const HORSERADISH_STAGES = stages([
 export function horseradish(g, seed) {
 	const bag = new Bag();
 	const vigour = about(chance(seed, 'plant'), 1, 0.08);
-	const crown = v3(0, -0.03, 0);
+	const crown = v3(0, 0.003, 0);
 	// the taproot, from the slanting thong it grew from, thickening; side roots from all along it
 	const fat = span(g, 2.5, 9);
 	const Lr = (0.18 + 0.2 * span(g, 2, 9)) * vigour;
@@ -1350,7 +1364,7 @@ export function horseradish(g, seed) {
 	/** @type {{ key: number, born: number, size: number, wither: number, comb: boolean }[]} */
 	const leaves = [];
 	for (let i = 0; i < 11; i++) leaves.push({ key: i, born: 0.9 + i * 0.3, size: 0.32 + 0.055 * i, wither: span(g, 4.3 + i * 0.02, 4.8), comb: i < 3 });
-	for (let j = 0; j < 14; j++) leaves.push({ key: 11 + j, born: 4.6 + j * 0.2, size: 0.85 + 0.15 * clamp(j / 4), wither: span(g, 8.8 + (j % 4) * 0.15, 9.8) * (j < 6 ? 0.6 : 0.2), comb: false });
+	for (let j = 0; j < 22; j++) leaves.push({ key: 11 + j, born: 4.5 + j * 0.09, size: 0.85 + 0.15 * clamp(j / 4), wither: span(g, 8.8 + (j % 4) * 0.15, 9.8) * (j < 6 ? 0.6 : 0.2), comb: false });
 	const top = v3(0, 0.005, 0);
 	for (const L of leaves) {
 		if (g <= L.born || L.wither >= 1) continue;
@@ -1358,7 +1372,7 @@ export function horseradish(g, seed) {
 		const grown = clamp((g - L.born) / 1.1);
 		const out = level(L.key * 2.39996 + about(lr, 0, 0.2));
 		const S = L.size * vigour * about(lr, 1, 0.08);
-		const tilt = lerp(0.05, between(lr, 0.2, 0.5), grown) + L.wither * 0.8;
+		const tilt = lerp(0.05, between(lr, 0.25, 0.7), grown) + L.wither * 0.8;
 		const P = (0.06 + 0.22 * S) * lerp(0.3, 1, grown);
 		const stalk = arch(top.clone().addScaledVector(out, 0.008), tilted(out, tilt), P, 0.04, 4);
 		bag.add('body', tube(stalk, (u) => 0.004 * lerp(0.4, 1, grown) * (1 - 0.3 * u), () => mix('#a8c088', '#c8b060', L.wither), 4));
@@ -1369,9 +1383,9 @@ export function horseradish(g, seed) {
 			sheet({
 				length: len,
 				width: len * (comb ? 0.2 : 0.15),
-				shape: (u) => Math.pow(Math.sin(Math.PI * Math.pow(u, 0.85)), 0.5) * (comb ? 0.2 + 0.8 * Math.abs(Math.sin(u * Math.PI * 6)) : 1 + 0.06 * Math.sin(u * 40)),
+				shape: (u) => Math.pow(Math.sin(Math.PI * Math.pow(u, 0.85)), 0.5) * (comb ? 0.2 + 0.8 * Math.abs(Math.sin(u * Math.PI * 6)) : 1 + 0.03 * Math.abs(Math.sin(u * 45))),
 				// wavy and crinkled at the edges, arching over at the tip
-				lift: (u, v) => 0.04 * v * v + 0.04 * Math.sin(u * 30 + v) * Math.pow(Math.abs(v), 1.5) * grown - (0.07 + L.wither * 0.3) * u * u,
+				lift: (u, v) => 0.05 * v * v + 0.018 * Math.sin(u * 24 + v) * Math.pow(Math.abs(v), 2) * grown - (0.12 + L.wither * 0.3) * u * u,
 				paint: (u, v) => leafColour('#2f6a2a', '#6aa040', grown, L.wither, u).lerp(tint('#b8d098'), Math.abs(v) < 0.07 ? 0.5 : Math.abs(Math.sin(u * 14 - Math.abs(v) * 3)) > 0.95 ? 0.18 : 0),
 				along: 18,
 				across: 4
@@ -1396,13 +1410,13 @@ export function horseradish(g, seed) {
 			const t = 0.5 + b * 0.09;
 			const twig = arch(point(stem, t), tilted(level(a + b * 2.39996), 0.6), (0.18 - b * 0.02) * rise, -0.1, 3);
 			bag.add('body', tube(twig, () => 0.0012, () => mix('#7a9a5a', '#8a7a4a', brown), 3));
-			for (let m = 0; m < 10; m++) {
-				const p = point(twig, 0.2 + m * 0.085);
-				const side = level(m * 2.39996 + b).multiplyScalar(0.006);
+			for (let m = 0; m < 14; m++) {
+				const p = point(twig, 0.15 + m * 0.062);
+				const side = level(m * 2.39996 + b).multiplyScalar(0.008);
 				const fp = p.clone().add(side).add(v3(0, 0.002, 0));
 				if (over >= 1) continue;
 				if (bloom <= 0) bag.add('body', bead(fp, v3(0.0016, 0.0016, 0.0016), '#d8e0b8', 2));
-				else bag.add('body', bead(fp, v3(0.003, 0.0018, 0.003).multiplyScalar(lerp(0.6, 1, bloom) * (1 - over * 0.5)), mix('#fafaf2', '#c8c8a0', over), 2));
+				else bag.add('body', bead(fp, v3(0.006, 0.0035, 0.006).multiplyScalar(lerp(0.6, 1, bloom) * (1 - over * 0.5)), mix('#fafaf2', '#c8c8a0', over), 2));
 			}
 		}
 	}
@@ -1503,7 +1517,7 @@ export function hop(g, seed) {
 		/** @type {Space | null} */
 		let below = null;
 		for (let n = 0; ; n++) {
-			const h = 0.15 + n * 0.28;
+			const h = 0.15 + n * 0.24;
 			if (H < h + 0.02) break;
 			const nr = chance(seed, 'hop-node', b, n);
 			const p = bineAt(h);
@@ -1521,31 +1535,35 @@ export function hop(g, seed) {
 			if (!stripped) {
 				for (const s of [-1, 1]) {
 					const d = out.clone().applyAxisAngle(UP, s * (0.9 + (n % 2) * 0.3) + about(nr, 0, 0.2));
-					hopLeaf(bag, near, p, d, (h > 3.6 ? 0.075 : 0.1) * vigour * about(nr, 1, 0.1), grown, h > 3.6 ? 3 : 5, old);
+					hopLeaf(bag, near, p, d, (h > 3.6 ? 0.11 : 0.14) * vigour * about(nr, 1, 0.1), grown, h > 3.6 ? 3 : 5, old);
 				}
 			}
-			// a side arm from one axil of each upper node, alternating
-			if (h < 1.6) continue;
-			const armBorn = 4.4 + (h - 1.6) * 0.18;
+			// the side arms from the axils of the upper nodes: one, alternating, then a pair higher up
+			if (h < 1.4) continue;
+			const armBorn = 4.4 + (h - 1.4) * 0.16;
 			const arm = span(g, armBorn, armBorn + 1.3);
 			if (arm <= 0) continue;
-			const ad = out.clone().applyAxisAngle(UP, n % 2 ? 1.2 : -1.2).multiplyScalar(0.85).add(v3(0, 0.45, 0));
-			const len = between(nr, 0.3, 0.55) * arm * vigour;
-			const ap = arch(p, ad, len, 0.9, 6);
-			bag.add('body', tube(ap, (u) => 0.0022 * (1 - 0.5 * u), () => mix('#5a7a3a', '#8a7a4a', yellow), 4));
-			near.rod(ap, 0.004);
-			for (let m = 1; m <= 3; m++) {
-				const u = m / 3;
-				const q = point(ap, u);
-				const ta = towards(ap, u).setY(0);
-				const side = ta.lengthSq() > 1e-8 ? ta.normalize() : out;
-				if (m < 3) for (const s of [-1, 1]) hopLeaf(bag, near, q, side.clone().applyAxisAngle(UP, s * 1.3), 0.06 * vigour, clamp(arm * 3 - m * 0.6), 3, old);
-				if (m > 1) clusters.push({ at: q, size: m === 3 ? 4 : 3, key: [b, n, m], near });
+			for (const s of h > 2.4 ? [-1, 1] : [n % 2 ? 1 : -1]) {
+				const ar = chance(seed, 'hop-arm', b, n, s);
+				const ad = out.clone().applyAxisAngle(UP, s * 1.1 + about(ar, 0, 0.2)).multiplyScalar(0.85).add(v3(0, 0.5, 0));
+				const len = between(ar, 0.3, 0.55) * arm * vigour;
+				const ap = arch(p, ad, len, 0.7, 6);
+				bag.add('body', tube(ap, (u) => 0.0024 * (1 - 0.5 * u), () => mix('#5a7a3a', '#8a7a4a', yellow), 4));
+				near.rod(ap, 0.004);
+				for (let m = 1; m <= 3; m++) {
+					const u = m / 3;
+					const q = point(ap, u);
+					const ta = towards(ap, u).setY(0);
+					const side = ta.lengthSq() > 1e-8 ? ta.normalize() : out;
+					for (const t of [-1, 1]) hopLeaf(bag, near, q, side.clone().applyAxisAngle(UP, t * (m < 3 ? 1.3 : 0.7)), (m < 3 ? 0.085 : 0.06) * vigour * about(ar, 1, 0.1), clamp(arm * 3 - m * 0.6), m < 3 ? 3 : 1, old);
+					if (m > 1) clusters.push({ at: q, size: m === 3 ? 3 : 2, key: [b, n, s, m], near });
+				}
 			}
 		}
 	}
 	// the flowers on the side arms: burrs, then cones, papery, green, ripening golden; each hangs clear of the leaves
 	const burr = span(g, 5.6, 6.1), cone = span(g, 6.3, 7.3), ripe = span(g, 7.8, 8.6), gold = span(g, 8.7, 9.4);
+	const bracts = new Slivers();
 	if (burr > 0) {
 		for (const c of clusters) {
 			for (let k = 0; k < c.size; k++) {
@@ -1562,10 +1580,11 @@ export function hop(g, seed) {
 				}
 				const place = c.near.best(options);
 				bag.add('body', tube([c.at, place.at], () => 0.0008, () => tint('#7a9a4a'), 3));
-				hopCone(bag, place.at, place.dir, L, R, burr, cone, ripe, gold, cr());
+				hopCone(bag, bracts, place.at, place.dir, L, R, burr, cone, ripe, gold, cr());
 			}
 		}
 	}
+	bracts.into(bag);
 	return bag.build();
 }
 
@@ -1582,7 +1601,7 @@ function hopLeaf(bag, space, at, out, size, grown, lobes, old) {
 	const stalk = arch(at, o.clone().add(v3(0, 0.5, 0)), R * 0.6, 0.6, 2);
 	const top = stalk[2];
 	bag.add('body', tube(stalk, () => 0.0012, () => mix('#6a8a3a', '#a89a4a', old), 3));
-	const dir = o.clone().add(v3(0, lerp(1.4, -0.5, grown) - old * 0.5, 0)).normalize();
+	const dir = o.clone().add(v3(0, lerp(1.4, -0.85, grown) - old * 0.5, 0)).normalize();
 	space.ball(top.clone().addScaledVector(dir, R * 0.55), R * 0.5);
 	bag.add(
 		'sheet',
@@ -1593,8 +1612,8 @@ function hopLeaf(bag, space, at, out, size, grown, lobes, old) {
 			edge: (a) => hopEdge(a, lobes) * (1 - 0.4 * (1 - grown) * Math.abs(Math.sin(a))),
 			lift: (s, a) => (1 - grown) * 0.6 * s * Math.abs(Math.sin(a)) - 0.08 * s * s + 0.015 * Math.sin(s * 14) * Math.cos(a * 6) * s,
 			paint: (s, a) => leafColour('#2f5a24', '#6a9a3a', grown, old, s).lerp(tint('#7a9a5a'), [0, 0.85, -0.85, 1.65, -1.65].some((t) => Math.abs(a - t) < 0.035) ? 0.4 : 0),
-			rings: 4,
-			rays: 16
+			rings: 3,
+			rays: 15
 		}),
 		face(top, dir, UP)
 	);
@@ -1603,10 +1622,10 @@ function hopLeaf(bag, space, at, out, size, grown, lobes, old) {
 /**
  * A hop cone hanging from `at` along `dir`: first a soft spiky burr, then papery bracts overlapping down a short
  * axis, green, drying straw-yellow, then golden with brown tips.
- * @param {Bag} bag @param {THREE.Vector3} at @param {THREE.Vector3} dir @param {number} L @param {number} R
- * @param {number} burr @param {number} cone @param {number} ripe @param {number} gold @param {number} twist
+ * @param {Bag} bag @param {Slivers} bracts where its bracts are gathered @param {THREE.Vector3} at @param {THREE.Vector3} dir
+ * @param {number} L @param {number} R @param {number} burr @param {number} cone @param {number} ripe @param {number} gold @param {number} twist
  */
-function hopCone(bag, at, dir, L, R, burr, cone, ripe, gold, twist) {
+function hopCone(bag, bracts, at, dir, L, R, burr, cone, ripe, gold, twist) {
 	const d = dir.clone().normalize();
 	const turn = upTo(d);
 	const colour = mix(mix('#a8c86a', '#d0d080', ripe), '#c8a858', gold);
@@ -1621,18 +1640,15 @@ function hopCone(bag, at, dir, L, R, burr, cone, ripe, gold, twist) {
 		}
 		return;
 	}
-	const n = 11;
+	const tip = mix(colour, '#8a6a3a', gold * 0.6);
+	const n = DETAIL.level < 1 ? 6 : 9;
 	for (let k = 0; k < n; k++) {
 		const t = (k + 0.5) / n;
 		const a = k * 2.39996 + twist * 6;
 		const radial = v3(Math.cos(a), 0, Math.sin(a)).applyQuaternion(turn);
 		const p = at.clone().addScaledVector(d, L * (0.1 + 0.75 * t)).addScaledVector(radial, R * 0.45 * Math.sin(Math.PI * (0.2 + 0.7 * t)));
 		const bd = d.clone().addScaledVector(radial, 0.35 + 0.25 * ripe).normalize();
-		bag.add(
-			'sheet',
-			sheet({ length: L * 0.45 * cone, width: R * 0.55, shape: (u) => Math.pow(Math.sin(Math.PI * Math.pow(u, 0.6)), 0.6), lift: (u, v) => -0.2 * v * v, paint: (u) => mix(colour, '#8a6a3a', gold * clamp(u * 2 - 1)), along: 2, across: 1 }),
-			face(p, bd, radial)
-		);
+		bracts.add(p, bd, L * 0.45 * cone, R * 0.5, k % 3 ? colour : tip, 0, false, new THREE.Vector3().crossVectors(bd, radial));
 	}
 }
 

@@ -288,7 +288,7 @@ function strig(ctx, site, S) {
 		const c = axis.clone().addScaledVector(side, R * 1.05).addScaledVector(d, r * 0.3);
 		const ripe = span(g, S.season.ripeFrom + k * S.step + r2 * 0.15, S.season.ripeFrom + S.season.ripeFor + k * S.step + r2 * 0.15);
 		bag.add('body', tube([axis, c], () => 0.0005, () => S.stalk, 3));
-		bag.add('gloss', bead(c, v3(r, r * 1.04, r), S.colour(ripe), 4));
+		bag.add('gloss', bead(c, v3(r, r * 1.04, r), S.colour(ripe), 3));
 		bag.add('body', bead(c.clone().addScaledVector(side, r * 0.95), v3(1, 1, 1).multiplyScalar(r * 0.18), S.calyx, 2));
 	}
 }
@@ -397,7 +397,7 @@ function shrub(spec) {
 			const from = c === 0 ? s.top.clone() : v3(Math.cos(bear) * off, 0, Math.sin(bear) * off);
 			limb(bag, {
 				seed, key: ['stem', c], from, dir: v3(Math.cos(bear) * Math.sin(lean), Math.cos(lean), Math.sin(bear) * Math.sin(lean)),
-				length: length * vigour * size, grown: Math.min(2.6, (g - born) * S.rate), radius: S.radius * lerp(0.5, 1, size),
+				length: length * vigour * size, grown: Math.min(2.6, (g - born) * S.rate), radius: S.radius * lerp(0.3, 1, size),
 				up: S.up, wander: S.wander, spread: S.spread, children: S.children, shorten: S.shorten, depth: S.depth, from0: S.from0,
 				young: S.young, old: S.old, age: clamp((g - born) / 3), out: twigs, sides: 5
 			});
@@ -453,17 +453,17 @@ const CURRANT_LEAF = { blade: lobed(0.88, 0.6, 0.32), length: 0.06, stalk: 0.04,
 export const redcurrant = shrub({
 	seed: { size: v3(0.0014, 0.0009, 0.001), coat: '#d8c8a0', shade: '#a8946a' },
 	cotyledon: { length: 0.005, width: 0.0028, colour: '#6aa046' },
-	stems: { count: 10, first: 2, every: 0.32, rate: 0.85, length: [0.6, 0.76], lean: [0.12, 0.45], crown: 0.14, radius: 0.014, up: 0.012, wander: 0.08, spread: 0.8, children: 4, shorten: [0.45, 0.7], depth: 2, from0: 0.25, young: '#b09272', old: '#6e6258', size: [[2, 0.2], [3, 0.4], [4, 0.8], [5, 1]] },
+	stems: { count: 10, first: 2, every: 0.19, rate: 1.3, length: [0.6, 0.76], lean: [0.12, 0.45], crown: 0.14, radius: 0.014, up: 0.012, wander: 0.08, spread: 0.8, children: 4, shorten: [0.45, 0.7], depth: 2, from0: 0.25, young: '#b09272', old: '#6e6258', size: [[2, 0.2], [3, 0.4], [4, 0.8], [5, 1]] },
 	roots: { length: 0.45, count: 7 },
 	leaf: CURRANT_LEAF,
 	fruit: (ctx) => {
-		// spurs on the two- and three-year-old wood: along the stems and their first branches, never their bare base
+		// spurs on the two- and three-year-old wood: along the stems and their branches, never the stems' bare base nor the
+		// youngest wood at the tips
 		for (const t of ctx.twigs) {
-			if (t.order > 1) continue;
 			const sr = chance(ctx.seed, 'spur', ...t.key);
-			const n = Math.floor(t.length * (t.order ? 2.2 : 2.8) + sr());
+			const n = Math.floor(t.length * [2.6, 2.4, 1.2][t.order] + sr());
 			for (let k = 0; k < n; k++) {
-				const s = between(sr, t.order ? 0.15 : 0.35, 0.92) * t.length;
+				const s = between(sr, t.order ? 0.1 : 0.35, t.order === 2 ? 0.5 : 0.92) * t.length;
 				const a = sr() * Math.PI * 2;
 				const per = 1 + Math.floor(sr() * 1.6);
 				const w = walk(t.pts, s);
@@ -481,7 +481,7 @@ export const redcurrant = shrub({
 const RED_STRIG = {
 	count: [9, 15], r: 0.0045, drop: 3, stalk: '#7a8a46', bud: '#b8b878', flower: '#c8c27a', heart: '#a87a58', bloom: 0.0035,
 	colour: (t) => ramp([[0, '#9cbc5e'], [0.35, '#dcd8a0'], [0.62, '#ec7e70'], [1, '#c81428']], t),
-	season: { opens: 4.85, setFor: 2.1, ripeFrom: 7.55, ripeFor: 0.8 }, step: 0.035, calyx: '#5a3a2a'
+	season: { opens: 4.7, setFor: 2.1, ripeFrom: 7.55, ripeFor: 0.8 }, step: 0.035, calyx: '#5a3a2a'
 };
 
 export const BLACKCURRANT_STAGES = stages([
@@ -501,13 +501,13 @@ export const BLACKCURRANT_STAGES = stages([
 const BLACK_STRIG = {
 	count: [5, 9], r: 0.0062, drop: 2, stalk: '#6a7a40', bud: '#a88a8a', flower: '#b88a96', heart: '#7a6a3a', bloom: 0.004,
 	colour: (t) => ramp([[0, '#8fb05a'], [0.4, '#8a7a50'], [0.7, '#4a2236'], [1, '#17111c']], t),
-	season: { opens: 4.8, setFor: 2.1, ripeFrom: 7.6, ripeFor: 0.85 }, step: 0.05, calyx: '#3a2a22'
+	season: { opens: 4.65, setFor: 2.1, ripeFrom: 7.6, ripeFor: 0.85 }, step: 0.05, calyx: '#3a2a22'
 };
 
 export const blackcurrant = shrub({
 	seed: { size: v3(0.0014, 0.0009, 0.001), coat: '#4a3424', shade: '#2a1c14' },
 	cotyledon: { length: 0.005, width: 0.003, colour: '#5f9a42' },
-	stems: { count: 13, first: 2, every: 0.24, rate: 0.9, length: [0.66, 0.84], lean: [0.15, 0.62], crown: 0.2, radius: 0.013, up: 0.01, wander: 0.09, spread: 0.85, children: 4, shorten: [0.45, 0.7], depth: 2, from0: 0.22, young: '#a07a5a', old: '#5e4e44', size: [[2, 0.2], [3, 0.42], [4, 0.82], [5, 1]] },
+	stems: { count: 13, first: 2, every: 0.19, rate: 1.3, length: [0.66, 0.84], lean: [0.15, 0.62], crown: 0.2, radius: 0.013, up: 0.01, wander: 0.09, spread: 0.85, children: 4, shorten: [0.45, 0.7], depth: 2, from0: 0.22, young: '#a07a5a', old: '#5e4e44', size: [[2, 0.2], [3, 0.42], [4, 0.82], [5, 1]] },
 	roots: { length: 0.5, count: 8 },
 	leaf: { ...CURRANT_LEAF, blade: lobed(0.86, 0.55, 0.26), length: 0.072, stalk: 0.045, spacing: 0.05, colour: '#3e7a30', shade: '#2f6428', young: '#7aae4e', bare: 0.25 },
 	fruit: (ctx) => {
@@ -518,7 +518,7 @@ export const blackcurrant = shrub({
 			const n = Math.floor(t.length / 0.06);
 			for (let k = 1; k < n; k++) {
 				const a = sr() * Math.PI * 2, keep = sr();
-				if (keep > (t.order === 2 ? 0.13 : 0.05)) continue;
+				if (keep > (t.order === 2 ? 0.24 : 0.1)) continue;
 				const w = walk(t.pts, k * 0.06);
 				if (!w) break;
 				const side = round(w.d, a);
@@ -553,9 +553,9 @@ const gooseberryPaint = (/** @type {number} */ ripe) => (/** @type {number} */ u
 export const gooseberry = shrub({
 	seed: { size: v3(0.0016, 0.001, 0.0011), coat: '#b8a07a', shade: '#8a7450' },
 	cotyledon: { length: 0.005, width: 0.003, colour: '#6aa046' },
-	stems: { count: 9, first: 2, every: 0.3, rate: 0.85, length: [0.52, 0.68], lean: [0.35, 0.75], crown: 0.12, radius: 0.011, up: -0.035, wander: 0.1, spread: 0.85, children: 4, shorten: [0.45, 0.68], depth: 2, from0: 0.22, young: '#a8946a', old: '#6a5a48', size: [[2, 0.2], [3, 0.4], [4, 0.8], [5, 1]] },
+	stems: { count: 9, first: 2, every: 0.19, rate: 1.3, length: [0.52, 0.68], lean: [0.35, 0.75], crown: 0.12, radius: 0.011, up: -0.035, wander: 0.1, spread: 0.85, children: 4, shorten: [0.45, 0.68], depth: 2, from0: 0.22, young: '#a8946a', old: '#6a5a48', size: [[2, 0.2], [3, 0.4], [4, 0.8], [5, 1]] },
 	roots: { length: 0.4, count: 7 },
-	leaf: { ...CURRANT_LEAF, blade: lobed(0.85, 0.55, 0.36), length: 0.036, stalk: 0.02, spacing: 0.035, tuft: 4, spur: 0.045, colour: '#4a8a3a', shade: '#3a7432', young: '#8ac05a', bare: 0.2 },
+	leaf: { ...CURRANT_LEAF, blade: lobed(0.85, 0.55, 0.36), length: 0.045, stalk: 0.02, spacing: 0.03, tuft: 4, spur: 0.04, colour: '#4a8a3a', shade: '#3a7432', young: '#8ac05a', bare: 0.2 },
 	wood: (ctx, t) => {
 		// a spine (one to three together) at every node of the wood
 		const pr = chance(ctx.seed, 'spines', ...t.key);
@@ -605,7 +605,7 @@ function bell(bag, at, down, len, mouth, colour, lip, open, fall) {
 /** @type {Hanging} */
 const GOOSE = {
 	L: 0.024, W: 0.0098, stalk: 0.014, stalkColour: '#8a8a52',
-	season: { opens: 4.75, setFor: 2.2, ripeFrom: 7.6, ripeFor: 1.1 },
+	season: { opens: 4.6, setFor: 2.2, ripeFrom: 7.6, ripeFor: 1.1 },
 	bud: (bag, at, down, open, fall) => bell(bag, at, down, 0.009, 0.003, '#a8b066', '#8a4a5e', open, fall),
 	draw: (bag, at, dir, L, W, ripe) => {
 		oblong(bag, at, dir, L, W, ovalShape, gooseberryPaint(ripe), '#5a3a2a', 10);
@@ -693,15 +693,15 @@ function corymb(ctx, site, C) {
 
 /** @type {Corymb} */
 const ARONIA_CORYMB = {
-	count: [10, 18], r: 0.0048, drop: 3, stalk: '#7a6a40', bud: '#e8dccc', flower: '#f6f2ea', heart: '#d08aa0', bloom: 0.0055,
+	count: [10, 18], r: 0.0048, drop: 3, stalk: '#7a6a40', bud: '#e8dccc', flower: '#f6f2ea', heart: '#d08aa0', bloom: 0.0075,
 	colour: (t) => ramp([[0, '#8aac50'], [0.35, '#c4604a'], [0.65, '#5a1e38'], [1, '#1a1420']], t),
-	season: { opens: 4.95, setFor: 2.3, ripeFrom: 7.6, ripeFor: 1.1 }
+	season: { opens: 4.7, setFor: 2.3, ripeFrom: 7.6, ripeFor: 1.1 }
 };
 
 export const aronia = shrub({
 	seed: { size: v3(0.0012, 0.0008, 0.0008), coat: '#7a5a3a', shade: '#4a3424' },
 	cotyledon: { length: 0.005, width: 0.0028, colour: '#5f9a42' },
-	stems: { count: 13, first: 2, every: 0.24, rate: 0.85, length: [0.82, 1.02], lean: [0.08, 0.35], crown: 0.3, radius: 0.015, up: 0.015, wander: 0.08, spread: 0.7, children: 4, shorten: [0.42, 0.66], depth: 2, from0: 0.3, young: '#8a5a44', old: '#5a4a44', size: [[2, 0.18], [3, 0.38], [4, 0.78], [5, 1]] },
+	stems: { count: 13, first: 2, every: 0.19, rate: 1.3, length: [0.82, 1.02], lean: [0.08, 0.35], crown: 0.3, radius: 0.015, up: 0.015, wander: 0.08, spread: 0.7, children: 4, shorten: [0.42, 0.66], depth: 2, from0: 0.3, young: '#8a5a44', old: '#5a4a44', size: [[2, 0.18], [3, 0.38], [4, 0.78], [5, 1]] },
 	roots: { length: 0.55, count: 8 },
 	leaf: {
 		blade: simple((u) => Math.pow(Math.sin(Math.PI * Math.pow(u, 0.6)), 0.75) * (1 + (u > 0.15 && u < 0.92 ? ((u * 14) % 1) * 0.05 : 0)), 0.6, 0.04),
@@ -713,7 +713,7 @@ export const aronia = shrub({
 		for (const t of ctx.twigs) {
 			if (t.order < 1 || !t.end) continue;
 			const tr = chance(ctx.seed, 'aronia-tip', ...t.key);
-			if (tr() > (t.order === 2 ? 0.32 : 0.2)) continue;
+			if (tr() > (t.order === 2 ? 0.42 : 0.25)) continue;
 			corymb(ctx, { at: t.tip, dir: t.dir, key: t.key }, ARONIA_CORYMB);
 		}
 	}
@@ -753,7 +753,7 @@ const HASKAP = {
 export const haskap = shrub({
 	seed: { size: v3(0.0011, 0.0007, 0.0007), coat: '#8a6a4a', shade: '#5a4430' },
 	cotyledon: { length: 0.004, width: 0.0028, colour: '#6aa046' },
-	stems: { count: 10, first: 2, every: 0.3, rate: 0.85, length: [0.66, 0.84], lean: [0.3, 0.75], crown: 0.14, radius: 0.012, up: 0.008, wander: 0.11, spread: 0.85, children: 4, shorten: [0.45, 0.7], depth: 2, from0: 0.22, young: '#8a6a50', old: '#7a5a46', size: [[2, 0.2], [3, 0.4], [4, 0.8], [5, 1]] },
+	stems: { count: 10, first: 2, every: 0.19, rate: 1.3, length: [0.66, 0.84], lean: [0.3, 0.75], crown: 0.14, radius: 0.012, up: 0.008, wander: 0.11, spread: 0.85, children: 4, shorten: [0.45, 0.7], depth: 2, from0: 0.22, young: '#8a6a50', old: '#7a5a46', size: [[2, 0.2], [3, 0.4], [4, 0.8], [5, 1]] },
 	roots: { length: 0.45, count: 7 },
 	leaf: { blade: simple((u) => Math.pow(Math.sin(Math.PI * Math.pow(u, 0.85)), 0.6), 0.52, 0.05), length: 0.058, stalk: 0.005, stalkColour: '#7a8a4a', spacing: 0.045, opposite: true, from: 0, bare: 0.3, colour: '#5a8a4c', young: '#94b86a', vein: '#a8c08a', shade: '#4a7a4a', droop: 0.12 },
 	fruit: (ctx) => {
@@ -824,7 +824,7 @@ function hip(bag, at, dir, R, ripe) {
 export const japaneseRose = shrub({
 	seed: { size: v3(0.0035, 0.0022, 0.0024), coat: '#c8b08a', shade: '#9a805a' },
 	cotyledon: { length: 0.008, width: 0.004, colour: '#5f9a42' },
-	stems: { count: 15, first: 2, every: 0.2, rate: 0.9, length: [0.62, 0.82], lean: [0.08, 0.5], crown: 0.36, radius: 0.012, up: 0.01, wander: 0.09, spread: 0.75, children: 4, shorten: [0.42, 0.66], depth: 2, from0: 0.3, young: '#8a6a4a', old: '#6a5a50', size: [[2, 0.18], [3, 0.4], [4, 0.8], [5, 1]] },
+	stems: { count: 15, first: 2, every: 0.19, rate: 1.3, length: [0.62, 0.82], lean: [0.08, 0.5], crown: 0.36, radius: 0.012, up: 0.01, wander: 0.09, spread: 0.75, children: 4, shorten: [0.42, 0.66], depth: 2, from0: 0.3, young: '#8a6a4a', old: '#6a5a50', size: [[2, 0.18], [3, 0.4], [4, 0.8], [5, 1]] },
 	roots: { length: 0.55, count: 8 },
 	leaf: {
 		blade: compound({ pairs: 3, leaflet: 0.33, width: 0.55, shape: (u) => Math.pow(Math.sin(Math.PI * Math.pow(u, 0.75)), 0.7), rachis: '#5a7a3a', wrinkle: 1, across: 1 }),
@@ -851,11 +851,11 @@ export const japaneseRose = shrub({
 			if (t.order < 1 || !t.end) continue;
 			const tr = chance(seed, 'rose-tip', ...t.key);
 			const pick = tr(), late = tr();
-			if (pick > (t.order === 2 ? 0.4 : 0.25)) continue;
+			if (pick > (t.order === 2 ? 0.55 : 0.3)) continue;
 			const n = 1 + Math.floor(tr() * 2.4);
 			for (let k = 0; k < n; k++) {
 				const kr = chance(seed, 'rose', ...t.key, k);
-				const opens = 4.85 + kr() * 0.6 + k * 0.25;
+				const opens = 4.6 + kr() * 0.35 + k * 0.12;
 				const a = kr() * 6.28;
 				const R = 0.0125 * vigour * about(kr, 1, 0.1);
 				if (g < opens - 0.5) continue;
@@ -905,7 +905,7 @@ export const BLACKBERRY_STAGES = stages([
 /** @type {Leafing} */
 const BRAMBLE_LEAF = {
 	blade: compound({ pairs: 2, digitate: true, leaflet: 0.55, width: 0.6, shape: (u) => Math.pow(Math.sin(Math.PI * Math.pow(u, 0.7)), 0.7) * (1 + (u > 0.1 && u < 0.92 ? ((u * 15) % 1) * 0.08 : 0)), rachis: '#6a7a3a' }),
-	length: 0.17, stalk: 0.05, stalkColour: '#7a6a3a', spacing: 0.075, from: 0, bare: 0.12, colour: '#2f622a', young: '#6a9a40', vein: '#86a864', shade: '#28562a', droop: 0.2
+	length: 0.2, stalk: 0.055, stalkColour: '#7a6a3a', spacing: 0.075, from: 0, bare: 0.12, colour: '#2f622a', young: '#6a9a40', vein: '#86a864', shade: '#28562a', droop: 0.2
 };
 
 /** a blackberry: a bumpy oval of drupelets, glossy, green, red, then black */
@@ -934,7 +934,7 @@ export function blackberry(g, seed) {
 	});
 	shrubRoots(bag, seed, g, at, { length: 0.65, count: 11 }, vigour);
 	/** @type {{ born: number, first: boolean }[]} */
-	const canes = [2.1, 3.25, 3.35, 3.45, 3.55, 3.7, 3.85, 4.6, 4.72, 4.85, 5.0, 5.2, 5.5].map((born) => ({ born, first: born < 4 }));
+	const canes = [2.1, 3.2, 3.3, 3.4, 3.5, 3.6, 3.7, 3.8, 3.9, 4.6, 4.7, 4.8, 4.9, 5.05, 5.25, 5.5].map((born) => ({ born, first: born < 4 }));
 	const ctx = { bag, seed, g, vigour, twigs: /** @type {Limb[]} */ ([]) };
 	/** @type {{ pts: THREE.Vector3[], length: number, order: number, key: (string | number)[], fade?: number }[]} */
 	const leafy = [];
@@ -1015,7 +1015,7 @@ export function blackberry(g, seed) {
 	});
 	for (const f of fruiting) f();
 	leafOut(ctx, BRAMBLE_LEAF, leafy);
-	leafOut(ctx, { ...BRAMBLE_LEAF, blade: compound({ pairs: 1, digitate: true, leaflet: 0.6, width: 0.6, shape: (u) => Math.pow(Math.sin(Math.PI * Math.pow(u, 0.7)), 0.7), rachis: '#6a7a3a' }), length: 0.12, stalk: 0.03, spacing: 0.05, bare: 0 }, shoots);
+	leafOut(ctx, { ...BRAMBLE_LEAF, blade: compound({ pairs: 1, digitate: true, leaflet: 0.6, width: 0.6, shape: (u) => Math.pow(Math.sin(Math.PI * Math.pow(u, 0.7)), 0.7), rachis: '#6a7a3a' }), length: 0.14, stalk: 0.03, spacing: 0.05, bare: 0 }, shoots);
 	return bag.build();
 }
 
@@ -1031,7 +1031,7 @@ function spray(ctx, key, end, dir, lp) {
 	const pink = sr() < 0.4;
 	for (let k = 0; k < n; k++) {
 		const kr = chance(seed, ...key, k);
-		const opens = 4.95 + k * 0.05 + kr() * 0.15;
+		const opens = 4.7 + k * 0.04 + kr() * 0.15;
 		const base = k === 0 ? end : lp[Math.max(2, 6 - Math.floor(k / 2))];
 		const a = k * 2.39996 + kr();
 		const stalk = round(dir, a).addScaledVector(dir, 0.5).add(v3(0, 0.2, 0)).normalize();
@@ -1078,7 +1078,7 @@ const TWIST = (Math.PI * 2) / 0.45;
 /** @type {Hanging} */
 const KIWI = {
 	L: 0.027, W: 0.0105, stalk: 0.03, stalkColour: '#8a6a48',
-	season: { opens: 5, setFor: 2.4, ripeFrom: 7.8, ripeFor: 1.1 },
+	season: { opens: 4.7, setFor: 2.4, ripeFrom: 7.8, ripeFor: 1.1 },
 	bud: (bag, at, down, open, fall) => {
 		if (fall < 1) floret(bag, at, down.clone().lerp(UP, 0.25).normalize(), 0.0095 * (1 - fall * 0.4), '#f8f4e6', '#3a2a30', open, 5, 0.35);
 	},
@@ -1162,12 +1162,12 @@ export function kiwiberry(g, seed) {
 			const kr = chance(seed, 'kiwi-shoot', side, k);
 			const born = 4.35 + x * 0.6 + kr() * 0.1;
 			const over = k % 2 ? 1 : -1;
-			const length = between(kr, 0.9, 1.35) * vigour;
+			const length = between(kr, 0.8, 1.15) * vigour;
 			const sway = (kr() - 0.5) * 0.6;
 			if (x > A - 0.04 || g <= born) continue;
 			limb(bag, {
 				seed, key: ['shoot', side, k], from: armAt(x), dir: v3(side * 0.2 + sway, 0.45, over * 0.9).normalize(), length, grown: Math.min(2, (g - born) * 1.4),
-				radius: 0.0065, up: -0.24, wander: 0.08, spread: 0.7, children: 2, shorten: [0.4, 0.65], depth: 1, from0: 0.35, young: '#9a8058', old: '#7a6048', age: clamp((g - born) / 4), out: shoots, sides: 5
+				radius: 0.0065, up: -0.17, wander: 0.08, spread: 0.7, children: 2, shorten: [0.4, 0.65], depth: 1, from0: 0.35, young: '#9a8058', old: '#7a6048', age: clamp((g - born) / 4), out: shoots, sides: 5
 			});
 		}
 	}

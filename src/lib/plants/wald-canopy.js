@@ -723,7 +723,7 @@ export const chestnut = wood({
 	roots: { tap: 2.2, spread: 3.4, count: 9, radius: 0.08 },
 	leaf: {
 		blade: { stalk: 0.02, length: 0.21, width: 0.032, shape: (u) => Math.pow(Math.sin(Math.PI * Math.pow(u, 0.8)), 0.7) * (u < 0.05 ? u / 0.05 : 1), along: 5, bow: 0.1 },
-		colour: '#2c5420', young: '#9ab04a', autumn: '#c8a038', droop: 0.25, gap: 0.1, per: 3, twig: 0.16, tuft: 4, from: 4, inner: 3
+		colour: '#2c5420', young: '#4a7a2a', autumn: '#c8a038', droop: 0.25, gap: 0.1, per: 3, twig: 0.16, tuft: 4, from: 4, inner: 3
 	},
 	bear(ctx) {
 		const { bag, g, seed } = ctx;
@@ -740,8 +740,8 @@ export const chestnut = wood({
 					const { at, dir } = along(sh.pts, 0.55 + (0.45 * k) / n);
 					const a = k * 2.39996 + fr();
 					const d = dir.clone().add(v3(Math.cos(a), 0.4, Math.sin(a)).multiplyScalar(0.8)).normalize();
-					const len = 0.17 * lerp(0.2, 1, span(phase, -0.35, 0.05)) * lerp(1, 0.55, span(phase, 0.4, 0.95));
-					catkin(bag, at, d, len, 0.0032, phase < 0.35 ? mix('#c8d08a', '#f2e8b0', span(phase, -0.2, 0.05)) : mix('#f2e8b0', '#8a6a3a', span(phase, 0.35, 0.8)), 0.55);
+					const len = 0.19 * lerp(0.2, 1, span(phase, -0.35, 0.05)) * lerp(1, 0.55, span(phase, 0.4, 0.95));
+					catkin(bag, at, d, len, 0.0062, phase < 0.35 ? mix('#d8dc9a', '#fbf0b8', span(phase, -0.2, 0.05)) : mix('#fbf0b8', '#8a6a3a', span(phase, 0.35, 0.8)), 0.55);
 				}
 			}
 			// the burrs, from the female flowers at the foot of the upper catkins
@@ -789,25 +789,25 @@ export const alder = wood({
 	hypogeal: false,
 	cotyledon: { length: 0.005, width: 0.0028, colour: '#5f9a3e' },
 	nodules: true,
-	leader: {
-		height: [[1.6, 0], [2, 0.1], [3, 1.2], [4, 3.6], [5, 6.2], [6, 8.2], [7, 9.3], [9, 10.5]], radius: 0.22, tiers: 44, clear: 1.6, spacing: 0.23, angle: 0.8,
-		limb: (h) => 0.6 + 2.5 * Math.sin(Math.PI * Math.min(1, h * 0.9 + 0.15)), rate: 1.8, crown: 8.5, sides: 1.0, side: 0.16, bark: ['#6a5e50', '#4a423c'], droop: 0.06
+	// upright and narrow: a straight trunk, many steep limbs, the crown an egg narrowing to its top
+	flush: {
+		trunk: 1.5, trunkBorn: 1.6, trunkFlush: 1.4, scaffolds: [4, 6], scaffoldAngle: 0.28, gens: 6, flush: 0.2, rest: 0.11,
+		shoot: (gen) => [0, 2.8, 1.6, 1.05, 0.72, 0.52, 0.4][gen] ?? 0.38, whorl: [2, 3], spread: 0.45, up: 0.085, droop: 0.04,
+		wander: 0.12, radius: 0.2, taper: 0.6, thicken: 3.5, bark: ['#6a5e50', '#4a423c']
 	},
-	roots: { tap: 1.6, spread: 3, count: 12, radius: 0.06 },
+	roots: { tap: 1.6, spread: 3, count: 9, radius: 0.06 },
 	leaf: {
 		blade: {
 			stalk: 0.025, length: 0.095, width: 0.048,
 			shape: (u) => (u < 0.62 ? Math.pow(Math.sin((Math.PI / 2) * (u / 0.62)), 0.8) : Math.sqrt(1 - 0.78 * Math.pow((u - 0.62) / 0.38, 2))),
 			along: 4, bow: 0.05
 		},
-		colour: '#44703a', young: '#74a444', autumn: '#4a7232', droop: 0.15, gap: 0.085, per: 3, twig: 0.14, tuft: 4, limb: 0.15, top: 2.6, bare: true
+		colour: '#44703a', young: '#74a444', autumn: '#4a7232', droop: 0.15, gap: 0.085, per: 3, twig: 0.14, tuft: 4, from: 4, inner: 2, bare: true
 	},
 	bear(ctx) {
 		const { bag, g, seed } = ctx;
-		for (const sh of ctx.shoots) {
-			if (sh.gen !== 2) continue;
+		for (const sh of tips(ctx, 0.22)) {
 			const fr = chance(seed, 'flowering', ...sh.key);
-			if (fr() > 0.24) continue;
 			const opens = 4.55 + fr() * 0.25;
 			const phase = g - opens;
 			if (phase < -0.4) continue;
@@ -825,7 +825,7 @@ export const alder = wood({
 			// the female catkins, then the cones they become, on short stalks just behind the tip
 			const set = span(phase, 0.2, 2);
 			const ripe = span(phase, 2.4, 3.6);
-			const n = 2 + Math.floor(fr() * 4);
+			const n = 2 + Math.floor(fr() * 3);
 			const { at: base } = along(sh.pts, 0.88);
 			for (let k = 0; k < n; k++) {
 				const kr = chance(seed, 'cone', ...sh.key, k);
@@ -875,16 +875,16 @@ export const linden = wood({
 	seed: { size: v3(0.0035, 0.0033, 0.0033), coat: '#8a7a5a', shade: '#5a4a34', depth: 0.012 },
 	hypogeal: false,
 	cotyledon: { length: 0.018, width: 0.011, colour: '#5a9a3a' },
-	// a tall dense dome: steeper limbs, more of them, many fine shoots
+	// a tall dense dome: many limbs, steep, densely twigged, leafy down to the lowest
 	flush: {
-		trunk: 1.8, trunkBorn: 1.7, trunkFlush: 1.5, scaffolds: [4, 6], scaffoldAngle: 0.4, gens: 6, flush: 0.2, rest: 0.11,
-		shoot: (gen) => [0, 1.9, 1.3, 0.92, 0.68, 0.5, 0.38][gen] ?? 0.36, whorl: [2, 3], spread: 0.58, up: 0.07, droop: 0.05,
+		trunk: 1.6, trunkBorn: 1.7, trunkFlush: 1.5, scaffolds: [4, 6], scaffoldAngle: 0.5, gens: 6, flush: 0.2, rest: 0.11,
+		shoot: (gen) => [0, 1.5, 1.1, 0.85, 0.65, 0.5, 0.38][gen] ?? 0.36, whorl: [2, 3], spread: 0.58, up: 0.06, droop: 0.05,
 		wander: 0.13, radius: 0.22, taper: 0.62, thicken: 3.5, bark: ['#7e7a6e', '#5c5850']
 	},
 	roots: { tap: 2.0, spread: 3.2, count: 9, radius: 0.07 },
 	leaf: {
 		blade: { stalk: 0.032, length: 0.07, width: 0.033, shape: heart, back: 0.12, along: 4, bow: 0.06 },
-		colour: '#2f5a24', young: '#a2c050', autumn: '#d8c04a', droop: 0.35, gap: 0.12, per: 4, twig: 0.16, tuft: 4, from: 3, inner: 2.5
+		colour: '#2f5a24', young: '#5a8a34', autumn: '#d8c04a', droop: 0.35, gap: 0.11, per: 4, twig: 0.16, tuft: 3, from: 3, inner: 1.6
 	},
 	bear(ctx) {
 		const { bag, g, seed } = ctx;
