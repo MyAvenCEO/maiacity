@@ -286,7 +286,8 @@ function grove(spec) {
 function foliage(bag, spec, seed, g, sh, grid, bears) {
 	const L = spec.leaf;
 	const leader = !!spec.leader;
-	const leafy = leader ? true : sh.end || sh.gen >= L.from || (sh.gen === 0 && g < 3.4);
+	// the outer shoots keep their leaves; any shoot still in its first year has them too (a young tree is leafy throughout)
+	const leafy = leader || sh.end || sh.gen >= L.from || g - sh.born < 1.1;
 	if (!leafy) return;
 	const on = L.on ? table(g, L.on) : 1;
 	if (on < 0.04) return;

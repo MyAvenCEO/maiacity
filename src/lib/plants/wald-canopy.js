@@ -292,7 +292,7 @@ function wood(spec) {
 			const rr = chance(seed, 'feeder', i);
 			const born = 2.6 + i * (4 / spec.roots.count);
 			const bear = i * 2.39996 + rr() * 0.4;
-			root(bag, { seed, key: ['feeder', i], from: at.clone().add(v3(0, -0.04 - rr() * 0.12, 0)), dir: v3(Math.cos(bear), -0.15, Math.sin(bear)), length: between(rr, 0.6, 1) * spec.roots.spread * vigour, grown: (g - born) / 2.8, radius: 0.003 + spec.roots.radius * 0.4 * span(g, 3, 8), down: 0.01, wander: 0.14, laterals: 5, lateral: 0.25, depth: 2, age: (g - born - 0.6) / 2.5, young: '#efdcb8', old: '#5e4632' });
+			root(bag, { seed, key: ['feeder', i], from: at.clone().add(v3(0, -0.04 - rr() * 0.12, 0)), dir: v3(Math.cos(bear), -0.15, Math.sin(bear)), length: between(rr, 0.6, 1) * spec.roots.spread * vigour, grown: (g - born) / 2.8, radius: 0.003 + spec.roots.radius * 0.4 * span(g, 3, 8), down: 0.01, wander: 0.14, laterals: 4, lateral: 0.25, depth: 2, age: (g - born - 0.6) / 2.5, young: '#efdcb8', old: '#5e4632' });
 		}
 		if (spec.nodules) nodules(bag, seed, g, at);
 
@@ -615,7 +615,7 @@ export const WALNUT_STAGES = stages([
 	['Ripe', 3240, 'The husks go brown-black and split; the wrinkled nuts show and drop — gather them quickly, before the squirrels.']
 ]);
 
-const WALNUT_GREEN = new THREE.Color('#5f8f34');
+const WALNUT_GREEN = new THREE.Color('#78a83e');
 
 export const walnut = wood({
 	seed: { size: v3(0.018, 0.016, 0.016), coat: '#a8875a', shade: '#6a5236', depth: 0.05 },
@@ -627,7 +627,7 @@ export const walnut = wood({
 		wander: 0.12, radius: 0.24, taper: 0.62, thicken: 3.5, bark: ['#8e8a7e', '#68645c']
 	},
 	roots: { tap: 2.4, spread: 3.6, count: 9, radius: 0.08 },
-	leaf: { blade: { stalk: 0, length: 0.38, width: 0, shape: () => 1, along: 4, pinnate: 3 }, colour: '#3f6a2a', young: '#8a6236', autumn: '#c8b04a', droop: 0.05, gap: 0.22, per: 1, twig: 0, tuft: 6, from: 4 },
+	leaf: { blade: { stalk: 0, length: 0.38, width: 0, shape: () => 1, along: 4, pinnate: 3 }, colour: '#3f6a2a', young: '#8a6236', autumn: '#c8b04a', droop: 0.05, gap: 0.26, per: 1, twig: 0, tuft: 6, from: 4 },
 	bear(ctx) {
 		const { bag, g, seed } = ctx;
 		// the male catkins: from the side buds of last year's wood, below the new shoots
@@ -646,7 +646,7 @@ export const walnut = wood({
 			}
 		}
 		// the female flowers and the nuts, at the tips of the new shoots
-		for (const sh of tips(ctx, 0.32)) {
+		for (const sh of tips(ctx, 0.45)) {
 			const fr = chance(seed, 'flowering', ...sh.key);
 			const opens = 4.75 + fr() * 0.4;
 			const phase = g - opens;
@@ -679,7 +679,8 @@ export const walnut = wood({
 				const L = 0.052 * size * lerp(0.2, 1, set), W = 0.021 * size * lerp(0.2, 1, set);
 				const swing = v3(Math.cos(k * 2.4 + kr() * 2), 0, Math.sin(k * 2.4 + kr() * 2));
 				const start = sh.tip.clone().addScaledVector(up, 0.012);
-				const place = hang(ctx, start.clone().addScaledVector(swing, 0.012).add(v3(0, -0.01, 0)), DOWN.clone().addScaledVector(swing, 0.5), L, W, 0.03 + W);
+				// on a short stout stalk, hanging out below the leaves of the tip
+				const place = hang(ctx, start.clone().addScaledVector(swing, 0.02).add(v3(0, -0.035, 0)), DOWN.clone().addScaledVector(swing, 0.6), L, W, 0.03 + W);
 				bag.add('body', tube([sh.tip, start, place.at], (u) => 0.0035 * (1 - 0.3 * u) + 0.002 * set, () => '#6a7040', 4));
 				const blotch = kr() * TAU;
 				husked(bag, hung(place.at, place.dir, kr() * TAU), L, W, {
@@ -735,7 +736,7 @@ export const chestnut = wood({
 			const up = sh.dir.clone().lerp(v3(0, 1, 0), 0.35).normalize();
 			// the catkins: from the axils of the shoot's last leaves, spreading out and up, then sagging
 			if (phase < 0.95) {
-				const n = 3 + Math.floor(fr() * 4);
+				const n = 3 + Math.floor(fr() * 3);
 				for (let k = 0; k < n; k++) {
 					const { at, dir } = along(sh.pts, 0.55 + (0.45 * k) / n);
 					const a = k * 2.39996 + fr();
@@ -802,7 +803,7 @@ export const alder = wood({
 			shape: (u) => (u < 0.62 ? Math.pow(Math.sin((Math.PI / 2) * (u / 0.62)), 0.8) : Math.sqrt(1 - 0.78 * Math.pow((u - 0.62) / 0.38, 2))),
 			along: 4, bow: 0.05
 		},
-		colour: '#44703a', young: '#74a444', autumn: '#4a7232', droop: 0.15, gap: 0.085, per: 3, twig: 0.14, tuft: 4, from: 4, inner: 2, bare: true
+		colour: '#44703a', young: '#74a444', autumn: '#4a7232', droop: 0.15, gap: 0.09, per: 3, twig: 0.14, tuft: 4, from: 4, inner: 2, bare: true
 	},
 	bear(ctx) {
 		const { bag, g, seed } = ctx;
@@ -884,7 +885,7 @@ export const linden = wood({
 	roots: { tap: 2.0, spread: 3.2, count: 9, radius: 0.07 },
 	leaf: {
 		blade: { stalk: 0.032, length: 0.07, width: 0.033, shape: heart, back: 0.12, along: 4, bow: 0.06 },
-		colour: '#2f5a24', young: '#5a8a34', autumn: '#d8c04a', droop: 0.35, gap: 0.11, per: 4, twig: 0.16, tuft: 3, from: 3, inner: 1.6
+		colour: '#2f5a24', young: '#5a8a34', autumn: '#d8c04a', droop: 0.35, gap: 0.1, per: 4, twig: 0.2, tuft: 3, from: 3, inner: 1.6
 	},
 	bear(ctx) {
 		const { bag, g, seed } = ctx;
@@ -966,7 +967,7 @@ export const hazel = wood({
 			shape: (u) => (u < 0.2 ? 0.55 + 0.45 * Math.sin((Math.PI / 2) * (u / 0.2)) : u < 0.72 ? 1 - 0.12 * Math.pow((u - 0.2) / 0.52, 2) : 0.88 * Math.pow(Math.cos((Math.PI / 2) * ((u - 0.72) / 0.28)), 0.7)),
 			back: 0.08, along: 6, bow: 0.07
 		},
-		colour: '#3e6e2a', young: '#9ac060', autumn: '#d0b040', droop: 0.3, gap: 0.07, per: 3, twig: 0.14, tuft: 3, limb: 0.25, top: 3, bare: true
+		colour: '#3e6e2a', young: '#9ac060', autumn: '#d0b040', droop: 0.3, gap: 0.08, per: 3, twig: 0.14, tuft: 3, limb: 0.25, top: 3, bare: true
 	},
 	bear(ctx) {
 		const { bag, g, seed } = ctx;
@@ -1018,13 +1019,13 @@ export const hazel = wood({
 						const husk = ripe < 0.5 ? mix('#6a9a3a', '#9aa04a', ripe * 2) : mix('#9aa04a', '#9a7a4a', (ripe - 0.5) * 2);
 						const axis = [];
 						for (let r = 0; r <= 5; r++) axis.push(v3(0, -0.001 - (r / 5) * L * 1.05, 0));
-						bag.add('body', tube(axis, (u, v) => W * (0.55 + 0.75 * Math.sqrt(u)) * (u > 0.6 ? 1 + 0.35 * (u - 0.6) * Math.abs(Math.sin(v * Math.PI * 5)) : 1) * (1 + 0.15 * ripe * u), (u, v) => husk.clone().multiplyScalar(u > 0.8 ? 1.15 : 0.95 + 0.1 * Math.sin(v * 31)), 10), m);
+						bag.add('body', tube(axis, (u, v) => W * (0.55 + 0.75 * Math.sqrt(u)) * (u > 0.6 ? 1 + 0.35 * (u - 0.6) * Math.abs(Math.sin(v * Math.PI * 5)) : 1) * (1 + 0.15 * ripe * u), (u, v) => husk.clone().multiplyScalar(u > 0.8 ? 1.15 : 0.95 + 0.1 * Math.sin(v * 31)), 8), m);
 					}
 				}
 				// next year's catkins, formed in the summer: small, stiff, grey-green
 				const next = span(g, 6.6, 8.6);
 				if (next > 0.02) {
-					const m = 1 + Math.floor(chance(seed, 'next', ...sh.key, s)() * 3);
+					const m = 1 + Math.floor(chance(seed, 'next', ...sh.key, s)() * 2);
 					for (let k = 0; k < m; k++) {
 						const a = k * 2.39996 + 1.2;
 						catkin(bag, at, v3(Math.cos(a), -0.2, Math.sin(a)).addScaledVector(dir, 0.4), 0.022 * next, 0.0026, '#8a8a62', 0.8);
