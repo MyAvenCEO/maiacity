@@ -41,7 +41,8 @@ const J: QuadJoints = {
 	hind: [[0.1, 0.56, -0.3], [0.11, 0.4, -0.2], [0.1, 0.23, -0.38], [0.09, 0.065, -0.35], [0.09, 0, -0.3]]
 };
 
-export function sheep(breed: SheepBreed = 'suffolk'): Cast {
+/** `moves`: the body plan's way of moving it (an older version's, for the Actors gallery's history) */
+export function sheep(breed: SheepBreed = 'suffolk', moves: typeof quadMoves = quadMoves): Cast {
 	const L = LOOK[breed];
 	const q = quadSkeleton(J);
 	const w = L.depth; // how much fleece over the body (1: a year's)
@@ -115,7 +116,7 @@ export function sheep(breed: SheepBreed = 'suffolk'): Cast {
 
 	const r = rig(q.bones, parts, animalMaterials(0.95));
 	r.object.name = `sheep-${breed}`;
-	const clips = quadMoves(q, {
+	const clips = moves(q, {
 		seed: SHEEP_BREEDS.indexOf(breed) + 11,
 		gaits: {
 			walk: { speed: 0.6, stride: 0.62, duty: 0.68, feet: { HL: 0, FL: 0.25, HR: 0.5, FR: 0.75 }, lift: 0.07, bob: 0.012, roll: 0.025, pitch: 0.012, tilt: 0.35, fold: [1.0, 0.45], flip: 0.7, nod: 0.05, flex: 0.02 },

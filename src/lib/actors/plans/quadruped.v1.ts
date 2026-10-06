@@ -1,4 +1,5 @@
-/*
+/* FROZEN: the four-legged plan as goats, sheep and rabbits were at v1 (their grazing head folded back between the forelegs), kept for the Actors gallery's history. Do not change.
+ *
  * FOUR LEGS — the body plan of a sheep, a goat, a rabbit: one skeleton with the same bones by the same names for all
  * of them, built from where a species' joints are (measured, the left side; the right is its mirror), and one way of
  * moving it, tuned by numbers per species.
@@ -214,30 +215,20 @@ export function quadMoves(q: QuadSkeleton, life: QuadLife): Record<string, Clip>
 		legs(q, pose, null, null, 0);
 		return pose;
 	};
-	const len = (a: V3, b: V3) => Math.hypot(b[0] - a[0], b[1] - a[1], b[2] - a[2]);
-	const headLen = len(j.head, j.muzzle);
-	const neckLen = len(j.neck[0], j.neck[1]) + len(j.neck[1], j.head);
 	moves.graze = (t) => {
 		const pose = stand(t);
-		// the forehand dropped to the grass: the body tipped forward and settled a little on its legs, the forefeet set
-		// a little apart and forward, as a sheep or a goat stands to graze
+		// the forefeet set a little apart and forward, the body leaning to them, the mouth down in the grass
 		const shift = wander(t, 5, seed + 5);
-		pose.root = [(pose.root as V3)[0], (pose.root as V3)[1] - 0.008, 0];
-		pose.body = [0.09, 0.04 * shift, 0];
-		pose.chest = [0.06, 0, 0];
+		pose.body = [0.06, 0.04 * shift, 0];
+		pose.chest = [0.05, 0, 0];
+		const headLen = Math.hypot(j.muzzle[0] - j.head[0], j.muzzle[1] - j.head[1], j.muzzle[2] - j.head[2]);
 		const bite = Math.max(0, Math.sin(t * 5.5)) ** 2;
-		// the muzzle down in the grass, the face sloping forward
-		const look = new THREE.Vector3(0.12 * shift, -1, 0.7).normalize();
-		// the neck stretched forward and down from where its base now is, nearly straight: the poll where the neck reaches,
-		// so the mouth comes to the grass well ahead of the forefeet, never back between them
-		const base = q.sk.joint(pose, 'neck');
-		const pollY = 0.014 + 0.015 * bite - look.y * headLen;
-		const drop = base.y - pollY;
-		const ahead = Math.sqrt(Math.max(0.05 ** 2, (0.96 * neckLen) ** 2 - drop * drop));
-		const poll = new THREE.Vector3(0.04 * shift, pollY, base.z + ahead);
-		headTo(q, pose, poll, look);
+		const look = new THREE.Vector3(0.15 * shift, -1, 0.45).normalize();
+		// the muzzle just off the ground, a little ahead of the forefeet
+		const mouth = new THREE.Vector3(0.05 * shift, 0.012 + 0.015 * bite, j.fore[4][2] + headLen * 0.35);
+		headTo(q, pose, mouth.addScaledVector(look, -headLen), look);
 		if (j.jaw) pose.jaw = [0.12 * bite, 0.04 * Math.sin(t * 5.5), 0];
-		legs(q, pose, null, null, 0, { FL: { z: 0.05 }, FR: { z: 0.01 } });
+		legs(q, pose, null, null, 0, { FL: { z: 0.02 }, FR: { z: -0.02 } });
 		return pose;
 	};
 	return moves;

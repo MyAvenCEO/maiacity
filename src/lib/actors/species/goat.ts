@@ -42,7 +42,8 @@ const J: QuadJoints = {
 	hind: [[0.09, 0.62, -0.32], [0.1, 0.45, -0.22], [0.09, 0.26, -0.4], [0.085, 0.07, -0.37], [0.085, 0, -0.32]]
 };
 
-export function goat(breed: GoatBreed = 'saanen'): Cast {
+/** `moves`: the body plan's way of moving it (an older version's, for the Actors gallery's history) */
+export function goat(breed: GoatBreed = 'saanen', moves: typeof quadMoves = quadMoves): Cast {
 	const L = LOOK[breed];
 	const q = quadSkeleton(J);
 	const s = sculpt(q.bones);
@@ -141,7 +142,7 @@ export function goat(breed: GoatBreed = 'saanen'): Cast {
 
 	const r = rig(q.bones, parts, animalMaterials(0.85));
 	r.object.name = `goat-${breed}`;
-	const clips = quadMoves(q, {
+	const clips = moves(q, {
 		seed: GOAT_BREEDS.indexOf(breed) + 21,
 		gaits: {
 			walk: { speed: 0.65, stride: 0.7, duty: 0.66, feet: { HL: 0, FL: 0.25, HR: 0.5, FR: 0.75 }, lift: 0.08, bob: 0.012, roll: 0.02, pitch: 0.012, tilt: 0.35, fold: [1.1, 0.5], flip: 0.7, nod: 0.06, flex: 0.02 },
