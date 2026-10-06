@@ -247,7 +247,8 @@ export function apiary(spots: { x: number; z: number; rot: number }[], seed: num
 	const swarm = crowd(
 		bees.make,
 		[paths.length],
-		{ near: 6, max: 30, scale: 1.6, lift: 0.012, shadows: false, ready: bees.ready, farShape: () => ({ geometry: speck, material: new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.6 }) }) }
+		// (rigged only the few nearest, close by: a bee in full is thousands of faces for a centimetre and a half)
+		{ near: 4, max: 10, scale: 1.6, lift: 0.012, shadows: false, ready: bees.ready, farShape: () => ({ geometry: speck, material: new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.6 }) }) }
 	)
 	object.add(swarm.object)
 	const update = (t: number) => {

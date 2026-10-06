@@ -841,7 +841,7 @@ export async function mountVillage(container: HTMLElement, onProgress: (label: s
 	// Sandbox 5's floor cover: the food forest biome's grasses, moss, flowers, strawberries, ferns, leaves and deadwood,
 	// each in its colonies, laid out in tiles round you as you go ($lib/biomes/stream.js) — too dense for the whole cell;
 	// all of it near you, thinning out further off, each plant growing out of the ground as you come (so it has no edge)
-	const floorCover = flora ? coverStream({ recipe: FLOOR_BIOME, open: (x, z) => floorOpen(x, z), tile: 10, reach: 30, near: 9, thin: 0.22, density: 3.8, seed: 505 }) : null
+	const floorCover = flora ? coverStream({ recipe: FLOOR_BIOME, open: (x, z) => floorOpen(x, z), tile: 10, reach: 28, near: 7, thin: 0.2, density: 3.4, seed: 505 }) : null
 	if (floorCover) scene.add(floorCover.object)
 	const TILE = 70
 	type Tile = { cx: number; cz: number; main: THREE.Matrix4[][]; under: THREE.Matrix4[][]; floor: THREE.Matrix4[][]; far: THREE.Matrix4[]; farCrowns: THREE.Matrix4[]; farColors: THREE.Color[]; dense: THREE.Matrix4[]; denseCrowns: THREE.Matrix4[]; denseColors: THREE.Color[]; near?: THREE.Group; farMesh?: THREE.Group; ground?: THREE.Group }
