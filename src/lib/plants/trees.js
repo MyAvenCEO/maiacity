@@ -78,13 +78,13 @@ export const APPLE_STAGES = stages([
 	['Pip', 0, 'A brown teardrop pip, chilled through the winter, a centimetre down.'],
 	['Germination', 20, 'The radicle goes down, the hook comes up; the seed leaves lift out of the soil.'],
 	['Seedling', 35, 'Two oval seed leaves and the first toothed true leaves.'],
-	['Sapling', 365, 'A whip with a few side shoots, its leaves soft and downy beneath.'],
-	['Young tree', 1460, 'An open crown on three or four scaffold limbs; short knobbly fruiting spurs on the outer branches.'],
-	['Blossom', 2200, 'Clusters of five or six pink-budded white flowers on the spurs, the king bloom in the middle first.'],
+	['Sapling', 365, 'A slender red-brown whip, its oval leaves soft and downy beneath.'],
+	['Young tree', 1460, 'A clear trunk, tiers of scaffold limbs and laterals along them; the first knobbly spurs, each a rosette of leaves.'],
+	['Blossom', 2200, 'On every spur a rosette of young leaves and a cluster of five or six: deep pink buds, the king flower in the middle opening first, white flushed pink.'],
 	['Fruit set', 2215, 'The petals fall; the king fruit and one or two others swell, the rest drop in the June drop.'],
 	['Green apples', 2260, 'Hard green apples hanging on their short stalks among the leaves.'],
 	['Colouring', 2300, 'The sunny side flushes red, the ground colour turns from green to yellow.'],
-	['Ripe', 2320, 'Red-striped apples come away with a lift and a twist: picking time.']
+	['Ripe', 2320, 'Hundreds of red-striped apples in clusters, the laterals bowed under them; they come away with a lift and a twist.']
 ]);
 
 /** its description at v1, frozen: ./orchard.v1.js grows it (the apple's history, ./index.js); v2 is ./apple.js
