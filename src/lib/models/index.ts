@@ -13,8 +13,10 @@ import { gasBoiler, kitchenRun, panRail, pedalBin, xShelf } from './kitchen';
 import { glassShower, towelRadiator, washbasin, wallToilet } from './bathroom';
 import { bridgeLamp, equestrianStatue, limestoneBlock, parkBench, tree } from './outdoor';
 import { bambooTable, bistroChair, bistroTable, clubSofa, festoonLights, ficusTree, geraniumPot, monstera, oliveTree, paperLantern, ribbedPlanter, strelitzia, terracottaPot, toyBee, toyMonkey } from './terrace';
-import { excavator } from '$lib/actors/excavator.js';
+import { crawlerExcavator } from '$lib/actors/crawler-excavator.js';
+import { miniExcavator } from '$lib/actors/excavator.js';
 import { excavator as excavatorV1 } from '$lib/actors/excavator.v1.js';
+import { excavator as excavatorV2 } from '$lib/actors/excavator.v2.js';
 import { kitchenContainer, sanitaryContainer, techContainer, workshopContainer } from './containers';
 import { ashtray, barnLamp, casementWindow, cityBike, doorCanopy, entranceDoor, floodlight, foldingChair, hedge, insectHotel, ivyCone, mailboxPost, rainBarrel, redTin, stationClock, steelWindow, stonewareCrock, teakRecliner, teakTable, windowBox, workshopDoor } from './yard';
 
@@ -29,13 +31,17 @@ function working(cast: Cast, clip: string): THREE.Object3D {
 }
 
 type Make = () => THREE.Object3D;
-export type Model = { id: string; label: string; note: string; usedIn: string; make: Make; versions: Version<Make>[]; version: number };
+/** one kind of a model (a small and a big excavator): the viewer shows its variants to switch between, as the Actors
+ *  gallery shows a kind's breeds; `make` is the first's */
+export type Variant = { id: string; label: string; note: string; make: Make };
+export type Model = { id: string; label: string; note: string; usedIn: string; make: Make; variants?: Variant[]; versions: Version<Make>[]; version: number };
 
 /** the models' older versions, by id, each with its frozen builder (the rest are at v1) */
 const HISTORY: Record<string, (Change & { build?: Make })[]> = {
-	'mini-excavator': [
+	excavator: [
 		{ ...FIRST, build: () => working(excavatorV1(), 'dig') },
-		{ v: 2, date: '2026-10-06', note: 'Twice the size; the bucket turned round, its mouth and teeth towards the machine as a backhoe’s are' }
+		{ v: 2, date: '2026-10-06', note: 'Twice the size; the bucket turned round, its mouth and teeth towards the machine as a backhoe’s are', build: () => working(excavatorV2(), 'dig') },
+		{ v: 3, date: '2026-10-06', note: 'Two variants: small, the 1.7 t mini back at its own size; big, a 14 t crawler excavator built as one' }
 	]
 };
 
@@ -127,7 +133,17 @@ const LIST: Omit<Model, 'versions' | 'version'>[] = [
 	{ id: 'container-workshop', label: 'Workshop container', note: "the workshop: a 4 m bench under a pegboard of hand tools, timber rack, pillar drill, grinder, mitre saw, table saw, welder, compressor, cordless tools in their cases, spades, ladder, wheelbarrow; a mixer outside. Walk in", usedIn: 'Sandbox 1', make: () => workshopContainer() },
 	{ id: 'container-tech', label: 'Tech container', note: "28 solar panels (about 11 kWp) on the roof and fold-out wings, 40 kWh of batteries, inverters, a hydrogen fuel cell and electrolyser, Starlink, and the AI server room behind glass. Walk in", usedIn: 'Sandbox 1', make: () => techContainer() },
 	{ id: 'container-sanitary', label: 'Sanitary container', note: 'washing machines and dryers, three washbasins, three showers and three toilets in cubicles, the hot-water heat pump; a rainwater tank outside. Walk in', usedIn: 'Sandbox 1', make: () => sanitaryContainer() },
-	{ id: 'mini-excavator', label: 'Excavator', note: 'a digger on rubber tracks, 3.1 m long, 2 m wide, 4.6 m to its canopy, 7.8 m reach, an 80 cm backhoe bucket — rigged: it digs, slews and dumps (its other moves in the Actors gallery)', usedIn: 'Sandbox 1', make: () => working(excavator(), 'dig') }
+	{
+		id: 'excavator',
+		label: 'Excavator',
+		note: 'two sizes, each rigged — it digs, slews and dumps (its other moves in the Actors gallery): small, the 1.7 t mini; big, a 14 t crawler',
+		usedIn: 'Sandbox 1',
+		make: () => working(miniExcavator(), 'dig'),
+		variants: [
+			{ id: 'small', label: 'Small · 1.7 t', note: 'a mini excavator on rubber tracks, 1.55 m long, 0.99 m wide, 2.3 m to its canopy, 3.9 m reach: a dozer blade, a boom that swings, a 40 cm backhoe bucket', make: () => working(miniExcavator(), 'dig') },
+			{ id: 'big', label: 'Big · 14 t', note: 'a crawler excavator on steel tracks, 3.7 m long, 2.49 m wide, 2.95 m to its cab roof: an enclosed cab, a 4.6 m mono boom on two rams, a 2.5 m arm, a 1 m bucket, 8.3 m reach', make: () => working(crawlerExcavator(), 'dig') }
+		]
+	}
 ];
 
 export const MODELS: Model[] = versioned(LIST, 'make', HISTORY);
