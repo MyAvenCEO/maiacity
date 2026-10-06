@@ -1,4 +1,8 @@
 /*
+ * ORCHARD, AS IT WAS AT v1 — frozen (5 October 2026): the plants whose fruit it placed differently then (the
+ * cacao, the jackfruit, the durian, the soursop: their fruit on the trunk and the limbs) keep their v1 here, in their
+ * history ($lib/app/versions.js). Never change this file; ./orchard.js is the living one.
+ *
  * ORCHARD — a fruit tree from its seed, made from a description (`Orchard`): the seed and how it comes up (its seed
  * leaves above the soil, or kept inside the seed below it), its roots, its crown (./crown.js: in flushes or with a
  * leader), its leaves (in whorls at the shoot tips or all along them), its flowers (where they come — at the shoot
@@ -88,13 +92,7 @@ export function orchard(spec) {
 
 		// what is where, so the fruit hang clear of the wood and of each other
 		const space = bag.space;
-		// a tree that fruits on its old wood: its trunk and limbs taper as they are drawn, so the fruit can lie against them
-		const onWood = f.sites === 'trunk' || f.sites === 'limbs';
-		for (const sh of shoots) {
-			if (sh.gen > 2 || sh.radius <= 0.01) continue;
-			if (!onWood) space.rod(sh.pts, sh.radius + 0.01);
-			else for (let i = 0; i + 1 < sh.pts.length; i++) space.rods.push({ a: sh.pts[i].clone(), b: sh.pts[i + 1].clone(), r: sh.radius * (1 - 0.35 * ((i + 1) / (sh.pts.length - 1))) + 0.01 });
-		}
+		for (const sh of shoots) if (sh.gen <= 2 && sh.radius > 0.01) space.rod(sh.pts, sh.radius + 0.01);
 
 		// the flowering sites
 		/** @type {{ at: THREE.Vector3, dir: THREE.Vector3, key: (string | number)[] }[]} */
@@ -119,29 +117,22 @@ export function orchard(spec) {
 			if (f.sites === 'limbs' && sh.gen === 1) {
 				const lr = chance(seed, 'limb-site', ...sh.key);
 				const n = Math.floor(sh.length * f.chance);
-				for (let k = 0; k < n; k++) {
-					const u = between(lr, 0.25, 0.8);
-					sites.push(onBark(along(sh.pts, u), sh.radius * (1 - 0.35 * u), lr, [...sh.key, k]));
-				}
+				for (let k = 0; k < n; k++) sites.push({ ...along(sh.pts, between(lr, 0.25, 0.8)), key: [...sh.key, k] });
 			}
 			if (f.sites === 'trunk' && sh.gen === 0) {
 				const tr = chance(seed, 'trunk-site');
 				const n = Math.floor(sh.length * f.chance);
 				for (let k = 0; k < n; k++) {
-					const u = between(tr, 0.12, 0.7);
-					const p = along(sh.pts, u);
+					const p = along(sh.pts, between(tr, 0.12, 0.7));
 					const a = tr() * Math.PI * 2;
-					// on the bark's surface where it is (the trunk tapers as it rises), facing out
-					p.at.add(v3(Math.cos(a), 0, Math.sin(a)).multiplyScalar(sh.radius * (1 - 0.35 * u) * 0.95));
+					// on the bark's surface, facing out
+					p.at.add(v3(Math.cos(a), 0, Math.sin(a)).multiplyScalar(sh.radius * 0.8));
 					sites.push({ at: p.at, dir: v3(Math.cos(a), 0, Math.sin(a)), key: ['trunk', k] });
 				}
 			}
 			if (f.sites === 'trunk' && sh.gen === 1) {
 				const lr = chance(seed, 'limb-site', ...sh.key);
-				if (lr() < 0.5) {
-					const u = between(lr, 0.1, 0.35);
-					sites.push(onBark(along(sh.pts, u), sh.radius * (1 - 0.35 * u), lr, sh.key));
-				}
+				if (lr() < 0.5) sites.push({ ...along(sh.pts, between(lr, 0.1, 0.35)), key: sh.key });
 			}
 		}
 		for (const site of sites) flowering(bag, spec, seed, g, site, space, vigour);
@@ -309,20 +300,9 @@ function flowering(bag, spec, seed, g, site, space, vigour) {
 		const L = F.length * size * lerp(0.15, 1, set);
 		const W = F.width * size * lerp(0.15, 1, set);
 		const swing = v3(Math.cos(k * 2.4 + kr() * 3), 0, Math.sin(k * 2.4 + kr() * 3));
-		let start, place;
-		if (f.sites === 'trunk' || f.sites === 'limbs') {
-			// out of the old wood (cauliflory: the cacao's pods, the jackfruit): a short stout stalk out of the bark, the
-			// fruit hanging straight down from it, its side against the wood; the fruit of one cushion fanned round it
-			const out = site.dir.clone().setY(0);
-			if (out.lengthSq() < 1e-6) out.copy(swing);
-			out.normalize().applyAxisAngle(v3(0, 1, 0), (k - (keep - 1) / 2) * 0.7 + (kr() - 0.5) * 0.3);
-			start = site.at.clone().addScaledVector(out, F.stalk * 0.5 + W * 0.9);
-			place = space.settle(start, v3(0, -1, 0).addScaledVector(out, 0.08), (a, d) => [0.3, 0.7].map((t) => ({ c: a.clone().addScaledVector(d, L * t), r: W * 0.92 })), W * 0.6);
-		} else {
-			start = site.at.clone().addScaledVector(f.sites === 'tips' ? up : site.dir, F.stalk * 0.25);
-			const hangFrom = start.clone().addScaledVector(swing, F.stalk * 0.25).add(v3(0, -F.stalk * lerp(0.3, 1, set), 0));
-			place = space.settle(hangFrom, v3(0, -1, 0).addScaledVector(swing, 0.15), (a, d) => [0.3, 0.7].map((t) => ({ c: a.clone().addScaledVector(d, L * t), r: W * 0.92 })), F.stalk * 0.5 + W);
-		}
+		const start = site.at.clone().addScaledVector(f.sites === 'tips' ? up : site.dir, F.stalk * 0.25);
+		const hangFrom = start.clone().addScaledVector(swing, F.stalk * 0.25).add(v3(0, -F.stalk * lerp(0.3, 1, set), 0));
+		const place = space.settle(hangFrom, v3(0, -1, 0).addScaledVector(swing, 0.15), (a, d) => [0.3, 0.7].map((t) => ({ c: a.clone().addScaledVector(d, L * t), r: W * 0.92 })), F.stalk * 0.5 + W);
 		bag.add('body', tube([site.at, start, place.at], (u) => 0.002 + 0.004 * set * (F.width / 0.05) * (1 - 0.4 * u), () => '#6f6a3a', 4));
 		fruitOf(bag, F, { seed, key: [...site.key, k], at: place.at, dir: place.dir, L, W, ripe, set });
 	}

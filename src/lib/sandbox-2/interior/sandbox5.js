@@ -26,58 +26,120 @@ const SHRUB = [5, 7, 9];
 /** a vegetable's or a herb's: growing, ready, and gone on to flower and fruit or seed */
 const CROP = [5, 7, 9];
 
-/** @type {Garden} */
+/**
+ * Outside: a temperate forest garden planted for the most it can give, layer under layer as the most productive ones
+ * are (Martin Crawford's at Dartington, the syntropic plantings): a canopy of nut trees and the nitrogen-fixing alder
+ * high over everything, a dense layer of fruit trees under it, shrubs packed between their trunks, every bit of soil
+ * under them covered — perennial vegetables and herbs, roots, a carpet of ground cover — climbers up the trees and the
+ * canes, mushrooms on the logs. Each layer has its own spacing (`OUTDOOR_SPACING`).
+ * @type {Garden & { canopy: Planting[], herbs: Planting[], ground: Planting[], roots: Planting[], fungi: Planting[] }}
+ */
 const OUTSIDE = {
+	// the tall trees: nuts, the lime's leaves and flowers, the alder feeding the soil; big standard fruit trees with them
+	canopy: [
+		{ id: 'walnut', v: 1, stages: [7, 9], weight: 3 },
+		{ id: 'chestnut', v: 1, stages: [7, 9], weight: 3 },
+		{ id: 'linden', v: 1, stages: [9], weight: 2 },
+		{ id: 'alder', v: 1, stages: [9], weight: 2 },
+		{ id: 'pear', v: 1, stages: [9] },
+		{ id: 'cherry', v: 1, stages: [9] },
+		{ id: 'mulberry', v: 1, stages: [9] }
+	],
+	// the low trees: the fruit, close together under and between the canopy
 	trees: [
-		{ id: 'apple', v: 1, stages: TREE, weight: 3 },
-		{ id: 'pear', v: 1, stages: TREE, weight: 2 },
-		{ id: 'cherry', v: 1, stages: TREE, weight: 2 },
-		{ id: 'plum', v: 1, stages: TREE, weight: 2 },
-		{ id: 'apricot', v: 1, stages: TREE },
-		{ id: 'peach', v: 1, stages: TREE },
-		{ id: 'mulberry', v: 1, stages: TREE },
-		{ id: 'persimmon', v: 1, stages: TREE },
-		{ id: 'fig', v: 1, stages: TREE }
+		{ id: 'apple', v: 1, stages: [4, 9], weight: 4 },
+		{ id: 'pear', v: 1, stages: [7, 9], weight: 2 },
+		{ id: 'plum', v: 1, stages: [7, 9], weight: 3 },
+		{ id: 'cherry', v: 1, stages: [7, 9], weight: 2 },
+		{ id: 'apricot', v: 1, stages: [7, 9] },
+		{ id: 'peach', v: 1, stages: [7, 9] },
+		{ id: 'persimmon', v: 1, stages: [7, 9] },
+		{ id: 'fig', v: 1, stages: [7, 9] },
+		{ id: 'quince', v: 1, stages: [7, 9], weight: 2 },
+		{ id: 'medlar', v: 1, stages: [7, 9] },
+		{ id: 'serviceberry', v: 1, stages: [7, 9], weight: 2 },
+		{ id: 'cornel', v: 1, stages: [7, 9] },
+		{ id: 'hazel', v: 1, stages: [7, 9], weight: 3 },
+		{ id: 'pawpaw', v: 1, stages: [7, 9] }
 	],
 	shrubs: [
-		{ id: 'raspberry', v: 1, stages: SHRUB, weight: 2 },
-		{ id: 'blueberry', v: 1, stages: SHRUB, weight: 2 },
-		{ id: 'lavender', v: 1, stages: SHRUB },
-		{ id: 'sage', v: 1, stages: SHRUB },
-		{ id: 'comfrey', v: 1, stages: SHRUB, weight: 2 }
+		{ id: 'redcurrant', v: 1, stages: [7, 9], weight: 3 },
+		{ id: 'blackcurrant', v: 1, stages: [7, 9], weight: 3 },
+		{ id: 'gooseberry', v: 1, stages: [7, 9], weight: 2 },
+		{ id: 'raspberry', v: 1, stages: [7, 9], weight: 3 },
+		{ id: 'blackberry', v: 1, stages: [7, 9], weight: 2 },
+		{ id: 'blueberry', v: 1, stages: [7, 9], weight: 2 },
+		{ id: 'aronia', v: 1, stages: [7, 9], weight: 2 },
+		{ id: 'haskap', v: 1, stages: [7, 9], weight: 2 },
+		{ id: 'elder', v: 1, stages: [7, 9], weight: 2 },
+		{ id: 'sea-buckthorn', v: 1, stages: [7, 9], weight: 2 },
+		{ id: 'rose', v: 1, stages: [7, 9], weight: 2 },
+		{ id: 'lavender', v: 1, stages: [7, 9] },
+		{ id: 'sage', v: 1, stages: [7, 9] },
+		{ id: 'rosemary', v: 1, stages: [7, 9] }
 	],
 	climbers: [
-		{ id: 'grape', v: 1, stages: SHRUB, weight: 2 },
-		{ id: 'beans', v: 1, stages: CROP },
-		{ id: 'cucumber', v: 1, stages: CROP }
+		{ id: 'grape', v: 1, stages: [7, 9], weight: 3 },
+		{ id: 'kiwiberry', v: 1, stages: [7, 9], weight: 2 },
+		{ id: 'hop', v: 1, stages: [7, 9], weight: 2 },
+		{ id: 'beans', v: 1, stages: [7, 9], weight: 2 },
+		{ id: 'cucumber', v: 1, stages: [7, 9] }
 	],
-	cover: [
-		{ id: 'strawberry', v: 1, stages: CROP, weight: 3 },
-		{ id: 'clover', v: 1, stages: CROP, weight: 3 },
-		{ id: 'wild-garlic', v: 1, stages: CROP, weight: 2 },
-		{ id: 'moss', v: 1, stages: [6, 9], weight: 2 },
-		{ id: 'pumpkin', v: 1, stages: CROP },
-		{ id: 'tomato', v: 1, stages: CROP },
-		{ id: 'oxheart', v: 1, stages: CROP },
-		{ id: 'lettuce', v: 1, stages: CROP },
-		{ id: 'chard', v: 1, stages: CROP },
-		{ id: 'kale', v: 1, stages: CROP },
-		{ id: 'radish', v: 1, stages: CROP },
-		{ id: 'carrot', v: 1, stages: CROP },
-		{ id: 'garlic', v: 1, stages: CROP },
-		{ id: 'chives', v: 1, stages: CROP },
-		{ id: 'mint', v: 1, stages: CROP },
-		{ id: 'lemon-balm', v: 1, stages: CROP },
-		{ id: 'thyme', v: 1, stages: CROP },
-		{ id: 'oregano', v: 1, stages: CROP },
-		{ id: 'parsley', v: 1, stages: CROP },
-		{ id: 'dill', v: 1, stages: CROP },
-		{ id: 'coriander', v: 1, stages: CROP },
-		{ id: 'wine-cap', v: 1, stages: [6, 9] },
-		{ id: 'shiitake', v: 1, stages: [6, 9] },
-		{ id: 'oyster', v: 1, stages: [6, 9] }
-	]
+	// the perennial vegetables and the herbs, and the annuals sown between them
+	herbs: [
+		{ id: 'comfrey', v: 1, stages: [7, 9], weight: 3 },
+		{ id: 'rhubarb', v: 1, stages: [7, 9], weight: 3 },
+		{ id: 'sorrel', v: 1, stages: [7, 9], weight: 2 },
+		{ id: 'nettle', v: 1, stages: [7, 9], weight: 2 },
+		{ id: 'artichoke', v: 1, stages: [7, 9], weight: 2 },
+		{ id: 'asparagus', v: 1, stages: [7, 9], weight: 2 },
+		{ id: 'chard', v: 1, stages: [7, 9], weight: 2 },
+		{ id: 'kale', v: 1, stages: [7, 9], weight: 2 },
+		{ id: 'tomato', v: 1, stages: [7, 9] },
+		{ id: 'oxheart', v: 1, stages: [7, 9] },
+		{ id: 'lettuce', v: 1, stages: [7, 9] },
+		{ id: 'chives', v: 1, stages: [7, 9] },
+		{ id: 'mint', v: 1, stages: [7, 9] },
+		{ id: 'lemon-balm', v: 1, stages: [7, 9] },
+		{ id: 'parsley', v: 1, stages: [7, 9] },
+		{ id: 'dill', v: 1, stages: [7, 9] },
+		{ id: 'coriander', v: 1, stages: [7, 9] }
+	],
+	// over the soil: nothing bare
+	ground: [
+		{ id: 'strawberry', v: 1, stages: [7, 9], weight: 4 },
+		{ id: 'clover', v: 1, stages: [7, 9], weight: 3 },
+		{ id: 'wild-garlic', v: 1, stages: [7, 9], weight: 3 },
+		{ id: 'woodruff', v: 1, stages: [7, 9], weight: 2 },
+		{ id: 'nasturtium', v: 1, stages: [7, 9], weight: 2 },
+		{ id: 'thyme', v: 1, stages: [7, 9] },
+		{ id: 'oregano', v: 1, stages: [7, 9] },
+		{ id: 'pumpkin', v: 1, stages: [7, 9] },
+		{ id: 'moss', v: 1, stages: [9] }
+	],
+	roots: [
+		{ id: 'jerusalem-artichoke', v: 1, stages: [7, 9], weight: 2 },
+		{ id: 'horseradish', v: 1, stages: [7, 9] },
+		{ id: 'garlic', v: 1, stages: [7, 9] },
+		{ id: 'carrot', v: 1, stages: [7, 9] },
+		{ id: 'radish', v: 1, stages: [7, 9] }
+	],
+	fungi: [
+		{ id: 'wine-cap', v: 1, stages: [9] },
+		{ id: 'shiitake', v: 1, stages: [9] },
+		{ id: 'oyster', v: 1, stages: [9] }
+	],
+	// all the small ones together, for the guilds round the trees (and the interior's way of planting)
+	get cover() {
+		return [...this.herbs, ...this.ground, ...this.roots, ...this.fungi];
+	}
 };
+
+/**
+ * How close each layer of the outdoor forest garden stands: a plant every so many square metres (on a jittered grid),
+ * and how far it keeps from a canopy tree's trunk.
+ */
+export const OUTDOOR_SPACING = { canopy: 64, trees: 12, shrubs: 5, herbs: 3.2, ground: 2.6, roots: 12, climbers: 30, fungi: 70 };
 
 /** @type {Garden} */
 const INSIDE = {
@@ -90,14 +152,14 @@ const INSIDE = {
 		{ id: 'banana', v: 1, stages: [5, 7, 9], weight: 2 },
 		{ id: 'red-banana', v: 1, stages: [5, 7, 9] },
 		{ id: 'papaya', v: 1, stages: [5, 7, 9], weight: 2 },
-		{ id: 'jackfruit', v: 1, stages: TREE },
-		{ id: 'durian', v: 1, stages: TREE },
+		{ id: 'jackfruit', v: 2, stages: TREE },
+		{ id: 'durian', v: 2, stages: TREE },
 		{ id: 'safou', v: 1, stages: TREE },
 		{ id: 'sapodilla', v: 1, stages: TREE },
-		{ id: 'soursop', v: 1, stages: TREE },
+		{ id: 'soursop', v: 2, stages: TREE },
 		{ id: 'pomegranate', v: 1, stages: TREE },
 		{ id: 'olive', v: 1, stages: TREE },
-		{ id: 'cacao', v: 1, stages: TREE, weight: 2 }
+		{ id: 'cacao', v: 2, stages: TREE, weight: 2 }
 	],
 	shrubs: [
 		{ id: 'coffee', v: 1, stages: SHRUB, weight: 3 },

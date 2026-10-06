@@ -34,7 +34,7 @@ const waiting = new Map();
 
 function workers() {
 	if (pool.length || typeof Worker === 'undefined') return pool;
-	const n = Math.max(1, Math.min(4, (navigator.hardwareConcurrency || 4) - 1));
+	const n = Math.max(1, Math.min(6, (navigator.hardwareConcurrency || 4) - 1));
 	for (let i = 0; i < n; i++) {
 		try {
 			const worker = new Worker(new URL('./flora.worker.js', import.meta.url), { type: 'module' });
@@ -108,22 +108,28 @@ const crownGeo = new THREE.IcosahedronGeometry(1, 1);
 const trunkMat = new THREE.MeshStandardMaterial({ color: '#6d5238', roughness: 0.9 });
 const crownMat = new THREE.MeshStandardMaterial({ color: '#ffffff', roughness: 0.85, flatShading: true });
 
+/** @typedef {{ meshes: THREE.InstancedMesh[], attr: THREE.InstancedBufferAttribute }} Tier the instances of one kind at one detail */
 /**
  * @typedef {{
- *   kind: Kind, reach: Reach, n: number, x: number[], z: number[], m: number[], mf?: Float32Array, colour?: THREE.Color,
- *   near?: { meshes: THREE.InstancedMesh[], attr: THREE.InstancedBufferAttribute },
- *   mid?: { meshes: THREE.InstancedMesh[], attr: THREE.InstancedBufferAttribute },
- *   shape?: Shape
- * }} Stand all the plants of one kind in a forest
+ *   kind: Kind, reach: Reach, n: number, add: number[], shape?: Shape, colour?: THREE.Color,
+ *   x?: Float32Array, y?: Float32Array, z?: Float32Array, c?: Float32Array, s?: Float32Array,
+ *   cells?: Map<number, number[]>, near?: Tier, mid?: Tier
+ * }} Stand all the plants of one kind in a forest: where each stands (x, y, z), its turn (c, s: cos and sin times its
+ *   scale), in cells of the ground so only the ones near the eye are looked at
  */
+
+/** the side of a cell of the ground the small plants are filed in, metres */
+const CELL = 24;
+/** a cell's key @param {number} x @param {number} z */
+const cellOf = (x, z) => (Math.floor(x / CELL) + 4096) * 8192 + (Math.floor(z / CELL) + 4096);
 
 /**
  * A forest: plants put down in it, drawn as you see them.
- * @param {{ near?: number, mid?: number, cover?: number, shrubs?: number, shadows?: boolean }} [o] how far each tier
- *   reaches: the fine plants to `near`, the coarse ones to `mid`; the cover to `cover`, the shrubs to `shrubs`
+ * @param {{ tree?: [number, number], shrub?: [number, number], cover?: [number, number] }} [o] how far each reach is
+ *   drawn: [the fine plants to, the coarse ones to]; a tree beyond is its stand-in, anything else beyond is left out
  */
 export function createForest(o = {}) {
-	const NEAR = o.near ?? 40, MID = o.mid ?? 100, COVER = o.cover ?? 32, SHRUBS = o.shrubs ?? 75;
+	const REACH = { tree: o.tree ?? [32, 80], shrub: o.shrub ?? [18, 45], cover: o.cover ?? [10, 24] };
 	const group = new THREE.Group();
 	group.name = 'flora';
 	/** @type {Map<string, Stand>} */
@@ -131,7 +137,6 @@ export function createForest(o = {}) {
 	/** the trees far away: a trunk and a crown each, every tree of the forest */
 	/** @type {{ trunks: THREE.InstancedMesh, crowns: THREE.InstancedMesh } | null} */
 	let far = null;
-	const mx = new THREE.Matrix4(), q = new THREE.Quaternion(), p = new THREE.Vector3(), s = new THREE.Vector3(), up = new THREE.Vector3(0, 1, 0);
 	let dirty = true;
 	const last = { x: Infinity, z: Infinity, a: Infinity };
 
@@ -142,17 +147,28 @@ export function createForest(o = {}) {
 	function add(kind, reach, x, y, z, turn, scale) {
 		const key = keyOf(kind);
 		let st = stands.get(key);
-		if (!st) stands.set(key, (st = { kind, reach, n: 0, x: [], z: [], m: [] }));
-		mx.compose(p.set(x, y, z), q.setFromAxisAngle(up, turn), s.set(scale, scale, scale));
-		st.x.push(x);
-		st.z.push(z);
-		st.m.push(...mx.elements);
+		if (!st) stands.set(key, (st = { kind, reach, n: 0, add: [] }));
+		st.add.push(x, y, z, turn, scale);
 		st.n++;
 		dirty = true;
 	}
 
-	/** the kinds this forest has, to grow them before planting (each a promise of its near shape) */
+	/** the kinds this forest has */
 	const kinds = () => [...stands.values()].map((st) => st.kind);
+
+	/**
+	 * A tier's instances, room for `need` of them: grown (doubled) when there is not room enough.
+	 * @param {Stand} st @param {'near' | 'mid'} t @param {number} need
+	 */
+	function room(st, t, need) {
+		const tier = /** @type {Tier} */ (st[t]);
+		if (tier.attr.count >= need) return tier.attr;
+		const attr = new THREE.InstancedBufferAttribute(new Float32Array(Math.min(st.n, Math.max(need, tier.attr.count * 2)) * 16), 16);
+		attr.setUsage(THREE.DynamicDrawUsage);
+		for (const m of tier.meshes) m.instanceMatrix = attr;
+		tier.attr = attr;
+		return attr;
+	}
 
 	/**
 	 * Grows every kind of the forest (both tiers) and gets its drawing ready; `onKind` hears each kind as it is ready.
@@ -163,7 +179,7 @@ export function createForest(o = {}) {
 		let done = 0;
 		await Promise.all(
 			list.map(async (st) => {
-				const tiers = /** @type {('near' | 'mid')[]} */ (st.reach === 'cover' ? ['near'] : ['near', 'mid']);
+				const tiers = /** @type {const} */ (['near', 'mid']);
 				/** @type {Shape[]} */
 				let got;
 				try {
@@ -175,18 +191,42 @@ export function createForest(o = {}) {
 					return;
 				}
 				st.shape = got[0];
-				st.mf = new Float32Array(st.m);
+				// where each stands, packed; and the small ones filed by their cell of the ground
+				const n = st.n, a = st.add;
+				st.x = new Float32Array(n);
+				st.y = new Float32Array(n);
+				st.z = new Float32Array(n);
+				st.c = new Float32Array(n);
+				st.s = new Float32Array(n);
+				if (st.reach !== 'tree') st.cells = new Map();
+				for (let i = 0; i < n; i++) {
+					const x = a[i * 5], z = a[i * 5 + 2], turn = a[i * 5 + 3], k = a[i * 5 + 4];
+					st.x[i] = x;
+					st.y[i] = a[i * 5 + 1];
+					st.z[i] = z;
+					st.c[i] = Math.cos(turn) * k;
+					st.s[i] = Math.sin(turn) * k;
+					if (st.cells) {
+						const key = cellOf(x, z);
+						let cell = st.cells.get(key);
+						if (!cell) st.cells.set(key, (cell = []));
+						cell.push(i);
+					}
+				}
+				st.add = [];
 				tiers.forEach((t, i) => {
 					const shape = got[i];
-					const attr = new THREE.InstancedBufferAttribute(new Float32Array(st.n * 16), 16);
+					const attr = new THREE.InstancedBufferAttribute(new Float32Array(Math.min(n, 64) * 16), 16);
 					attr.setUsage(THREE.DynamicDrawUsage);
 					const meshes = shape.parts.map((part) => {
-						const mesh = new THREE.InstancedMesh(geometryOf(`${keyOf(st.kind)}/${t}/${part.kind}`, part), MATERIALS[part.kind], st.n);
+						const mesh = new THREE.InstancedMesh(geometryOf(`${keyOf(st.kind)}/${t}/${part.kind}`, part), MATERIALS[part.kind], n);
 						mesh.instanceMatrix = attr;
 						mesh.count = 0;
+						mesh.visible = false;
 						// which are drawn is chosen here (update), never by three's culling, which sees only the first
 						mesh.frustumCulled = false;
-						mesh.castShadow = t === 'near' && st.reach !== 'cover';
+						// the small plants near you cast no shadows: the trees' are enough, and theirs cost the most
+						mesh.castShadow = t === 'near' && st.reach === 'tree';
 						mesh.receiveShadow = true;
 						group.add(mesh);
 						return mesh;
@@ -215,7 +255,35 @@ export function createForest(o = {}) {
 		dirty = true;
 	}
 
-	const placed = new THREE.Matrix4(), standIn = new THREE.Matrix4(), cp = new THREE.Vector3(), cq = new THREE.Quaternion(), cs = new THREE.Vector3();
+	/**
+	 * Writes plant i of a stand into an instance array at slot k: turned about the up axis, scaled, put in place.
+	 * @param {Float32Array} arr @param {number} k @param {Stand} st @param {number} i
+	 */
+	const put = (arr, k, st, i) => {
+		const c = /** @type {Float32Array} */ (st.c)[i], sn = /** @type {Float32Array} */ (st.s)[i], j = k * 16;
+		const sc = Math.hypot(c, sn);
+		arr[j] = c;
+		arr[j + 1] = 0;
+		arr[j + 2] = -sn;
+		arr[j + 3] = 0;
+		arr[j + 4] = 0;
+		arr[j + 5] = sc;
+		arr[j + 6] = 0;
+		arr[j + 7] = 0;
+		arr[j + 8] = sn;
+		arr[j + 9] = 0;
+		arr[j + 10] = c;
+		arr[j + 11] = 0;
+		arr[j + 12] = /** @type {Float32Array} */ (st.x)[i];
+		arr[j + 13] = /** @type {Float32Array} */ (st.y)[i];
+		arr[j + 14] = /** @type {Float32Array} */ (st.z)[i];
+		arr[j + 15] = 1;
+	};
+
+	const standIn = new THREE.Matrix4(), cp = new THREE.Vector3(), cq = new THREE.Quaternion(), cs = new THREE.Vector3(), upAxis = new THREE.Vector3(0, 1, 0);
+	/** the indices of a stand worth looking at from x, z: every one for the trees, the near cells' for the rest */
+	/** @type {number[]} */
+	const near = [];
 	/**
 	 * Draws what the eye at x, z looking along (fx, fz) should see. Cheap when nothing has changed: the choice is made
 	 * again only once the eye has moved a little or turned.
@@ -224,7 +292,7 @@ export function createForest(o = {}) {
 	function update(x, z, fx, fz) {
 		const a = Math.atan2(fx, fz);
 		const turned = Math.abs(Math.atan2(Math.sin(a - last.a), Math.cos(a - last.a)));
-		if (!dirty && Math.hypot(x - last.x, z - last.z) < 2.5 && turned < 0.12) return;
+		if (!dirty && Math.hypot(x - last.x, z - last.z) < 2 && turned < 0.12) return;
 		dirty = false;
 		last.x = x;
 		last.z = z;
@@ -234,28 +302,44 @@ export function createForest(o = {}) {
 		fz /= fl;
 		let farN = 0;
 		for (const st of stands.values()) {
-			if (!st.near || !st.mf) continue;
-			const M = st.mf;
+			if (!st.near || !st.x) continue;
 			const shape = /** @type {Shape} */ (st.shape);
+			const [nearTo, midTo] = REACH[st.reach];
 			// what reaches past the frame's edge still shows: the plant's own reach, scaled up a little
 			const r = Math.max(1, shape.reach * 1.3 + 1);
-			const nearArr = /** @type {Float32Array} */ (st.near.attr.array), midArr = st.mid ? /** @type {Float32Array} */ (st.mid.attr.array) : null;
-			const nearTo = st.reach === 'cover' ? COVER : NEAR;
-			const midTo = st.reach === 'tree' ? MID : st.reach === 'shrub' ? SHRUBS : 0;
+			const X = st.x, Z = st.z;
+			/** @type {Iterable<number> | null} */
+			let which = null;
+			if (st.cells) {
+				near.length = 0;
+				const span = Math.ceil((midTo + r) / CELL);
+				const cx = Math.floor(x / CELL), cz = Math.floor(z / CELL);
+				for (let i = -span; i <= span; i++)
+					for (let j = -span; j <= span; j++) {
+						const cell = st.cells.get((cx + i + 4096) * 8192 + (cz + j + 4096));
+						if (cell) for (const k of cell) near.push(k);
+					}
+				which = near;
+			}
 			let nN = 0, nM = 0;
-			for (let i = 0; i < st.n; i++) {
-				const dx = st.x[i] - x, dz = st.z[i] - z;
+			let nearArr = /** @type {Float32Array} */ (st.near.attr.array), midArr = /** @type {Float32Array} */ (/** @type {Tier} */ (st.mid).attr.array);
+			const look = (/** @type {number} */ i) => {
+				const dx = X[i] - x, dz = /** @type {Float32Array} */ (Z)[i] - z;
 				const d = Math.hypot(dx, dz);
 				// behind the eye: not drawn (the frame is never wider than about 100°)
-				if (d > r && dx * fx + dz * fz < -0.15 * d + r * 0.9) continue;
-				if (d < nearTo) nearArr.set(M.subarray(i * 16, i * 16 + 16), 16 * nN++);
-				else if (midArr && d < midTo) midArr.set(M.subarray(i * 16, i * 16 + 16), 16 * nM++);
-				else if (far && st.reach === 'tree') {
+				if (d > r && dx * fx + dz * fz < -0.15 * d + r * 0.9) return;
+				if (d < nearTo) {
+					if (nN * 16 >= nearArr.length) nearArr = /** @type {Float32Array} */ (room(st, 'near', nN + 1).array);
+					put(nearArr, nN++, st, i);
+				} else if (d < midTo) {
+					if (nM * 16 >= midArr.length) midArr = /** @type {Float32Array} */ (room(st, 'mid', nM + 1).array);
+					put(midArr, nM++, st, i);
+				} else if (far && st.reach === 'tree') {
 					// its stand-in: a trunk to under its crown, an ellipsoid crown as wide as it reaches
-					placed.fromArray(M, i * 16);
-					placed.decompose(cp, cq, cs);
-					const h = shape.height * cs.y, w = Math.max(0.3, shape.reach * cs.x);
-					standIn.compose(cp, cq, cs.set(Math.max(0.06, shape.foot * cs.x * 1.2), h * 0.45, Math.max(0.06, shape.foot * cs.z * 1.2)));
+					const k = Math.hypot(/** @type {Float32Array} */ (st.c)[i], /** @type {Float32Array} */ (st.s)[i]);
+					const h = shape.height * k, w = Math.max(0.3, shape.reach * k), foot = Math.max(0.06, shape.foot * k * 1.2);
+					cq.setFromAxisAngle(upAxis, Math.atan2(/** @type {Float32Array} */ (st.s)[i], /** @type {Float32Array} */ (st.c)[i]));
+					standIn.compose(cp.set(X[i], /** @type {Float32Array} */ (st.y)[i], /** @type {Float32Array} */ (Z)[i]), cq, cs.set(foot, h * 0.45, foot));
 					far.trunks.setMatrixAt(farN, standIn);
 					cp.y += h * 0.62;
 					standIn.compose(cp, cq, cs.set(w * 0.85, h * 0.38, w * 0.85));
@@ -263,14 +347,15 @@ export function createForest(o = {}) {
 					far.crowns.setColorAt(farN, /** @type {THREE.Color} */ (st.colour));
 					farN++;
 				}
-			}
-			st.near.attr.needsUpdate = true;
+			};
+			if (which) for (const i of which) look(i);
+			else for (let i = 0; i < st.n; i++) look(i);
 			// none drawn is no draw call at all
+			st.near.attr.needsUpdate = true;
 			for (const m of st.near.meshes) m.visible = (m.count = nN) > 0;
-			if (st.mid) {
-				st.mid.attr.needsUpdate = true;
-				for (const m of st.mid.meshes) m.visible = (m.count = nM) > 0;
-			}
+			const mid = /** @type {Tier} */ (st.mid);
+			mid.attr.needsUpdate = true;
+			for (const m of mid.meshes) m.visible = (m.count = nM) > 0;
 		}
 		if (far) {
 			far.trunks.count = far.crowns.count = farN;
@@ -280,15 +365,16 @@ export function createForest(o = {}) {
 		}
 	}
 
-	/** how many triangles the forest draws now, for a check on its weight */
+	/** how many triangles the forest draws now, for a check on its weight; and how many plants it has */
 	const weight = () => {
 		let tris = 0;
 		group.traverse((o) => {
 			const m = /** @type {THREE.InstancedMesh} */ (o);
-			if (m.isInstancedMesh) tris += ((m.geometry.index?.count ?? 0) / 3) * m.count;
+			if (m.isInstancedMesh && m.visible) tris += ((m.geometry.index?.count ?? 0) / 3) * m.count;
 		});
 		return tris;
 	};
+	const plants = () => [...stands.values()].reduce((a, st) => a + st.n, 0);
 
 	/** The kind's shape, once grown (for its size: how far a plant of it reaches, how thick its foot). @param {Kind} kind */
 	const shape = (kind) => stands.get(keyOf(kind))?.shape;
@@ -300,7 +386,7 @@ export function createForest(o = {}) {
 		far?.crowns.dispose();
 	}
 
-	return { group, add, kinds, grown, update, weight, shape, dispose };
+	return { group, add, kinds, grown, update, weight, plants, shape, dispose };
 }
 
 /** @typedef {ReturnType<typeof createForest>} Forest */

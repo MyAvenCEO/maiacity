@@ -1314,7 +1314,7 @@ export async function mountInterior(container: HTMLElement, kind: DomeKind, onPr
 		}
 		const r = seeded(kind === 'home' ? 3 : kind === 'large' ? 5 : 9)
 		const flora = opts.flora
-		if (flora) forest = createForest({ near: 30, mid: 80, cover: 26, shrubs: 60 })
+		if (flora) forest = createForest({ tree: [28, 75], shrub: [16, 40], cover: [9, 22] })
 		/** Sandbox 5's trees, to stand in the way by their trunks once grown */
 		const floraTrees: { c: { x: number; z: number; r: number }; kind: ReturnType<typeof pickPlant>; s: number }[] = []
 		const area = Math.PI * (rIn * rIn - Rc * Rc)

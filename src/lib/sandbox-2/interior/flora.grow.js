@@ -10,8 +10,8 @@ import { plantAt } from '$lib/plants/index.js';
 
 /** how finely the plants are grown: near you, and further off (see DETAIL in $lib/plants/grow.js) */
 export const TIERS = {
-	near: { level: 0.3, roots: false, thin: 0.45 },
-	mid: { level: 0.14, roots: false, thin: 0.16 }
+	near: { level: 0.25, roots: false, thin: 0.45, fill: 1.3, finest: 0.0016 },
+	mid: { level: 0.1, roots: false, thin: 0.12, fill: 1.6, finest: 0.006 }
 };
 
 /** @typedef {{ id: string, v: number, stage: number, seed: string }} Kind a plant at its version, stage and seed */

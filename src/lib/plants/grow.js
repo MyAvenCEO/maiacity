@@ -15,9 +15,11 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
  * How finely a plant is made: 1 in the plants viewer, less when a world plants hundreds of it (`lite`). Below 1 every
  * tube has fewer sides and rings, every sheet fewer rows, every bead fewer facets — and with `roots` off nothing
  * under the soil is grown at all, which no one walking a forest sees; and with `thin` under 1 only that part of the
- * leaves, petals and beads is kept, each grown bigger to fill the gap (a crown seen from metres away reads the same).
+ * leaves, petals and beads is kept, each grown bigger to fill the gap (a crown seen from metres away reads the same);
+ * `fill` over 1 grows every kept leaf and petal by that much more, for a crown that reads full from far off; and any
+ * tube thinner than `finest` (a twig, a stalk, a spine, in metres) is left out, as no one sees it from there.
  */
-export const DETAIL = { level: 1, roots: true, thin: 1 };
+export const DETAIL = { level: 1, roots: true, thin: 1, fill: 1, finest: 0 };
 
 /**
  * Builds with `make` at a lower detail (see DETAIL), and puts it back as it was.
@@ -126,6 +128,7 @@ export const mix = (/** @type {THREE.ColorRepresentation} */ a, /** @type {THREE
  * @param {number} [sides]
  */
 export function tube(points, radius, paint, sides = 6) {
+	if (DETAIL.finest > 0 && Math.max(radius(0, 0), radius(0.5, 0)) < DETAIL.finest) return made([], [], [], [], [], false);
 	if (DETAIL.level < 1) {
 		sides = fewer(sides, 3);
 		// every other point or more, the ends always kept
@@ -284,17 +287,22 @@ export class Bag {
 	}
 	/** @param {Kind} kind @param {THREE.BufferGeometry} geometry @param {THREE.Matrix4} [m] */
 	add(kind, geometry, m) {
+		// left out at this detail (see DETAIL.finest)
+		if (!geometry.attributes.position.count) return this;
 		if (m) geometry.applyMatrix4(m);
 		const isBead = geometry.type === 'SphereGeometry';
-		if ((kind === 'sheet' || isBead) && DETAIL.thin < 1) {
+		if ((kind === 'sheet' || isBead) && (DETAIL.thin < 1 || DETAIL.fill !== 1)) {
 			// keep one sheet (or bead) in so many, evenly, and grow it from where it is attached (a sheet's first vertex,
 			// a bead's middle) to cover for the ones left out
 			this.sheets = (this.sheets ?? 0) + DETAIL.thin;
 			if (this.sheets < 1) return this;
 			this.sheets -= 1;
-			if (isBead) geometry.computeBoundingSphere();
-			const at = isBead ? /** @type {THREE.Sphere} */ (geometry.boundingSphere).center.clone() : new THREE.Vector3().fromBufferAttribute(geometry.attributes.position, 0);
-			const grow = Math.min(1.8, isBead ? 1 / Math.cbrt(DETAIL.thin) : 1 / Math.sqrt(DETAIL.thin));
+			geometry.computeBoundingSphere();
+			const sphere = /** @type {THREE.Sphere} */ (geometry.boundingSphere);
+			const at = isBead ? sphere.center.clone() : new THREE.Vector3().fromBufferAttribute(geometry.attributes.position, 0);
+			// a small leaf may grow a lot, a big one hardly at all: none ends up longer than about 28 cm because of it
+			const most = Math.max(1, 0.14 / Math.max(1e-4, sphere.radius));
+			const grow = Math.min(2.6, most, (isBead ? 1 / Math.cbrt(DETAIL.thin) : 1 / Math.sqrt(DETAIL.thin)) * (isBead ? 1 : DETAIL.fill));
 			geometry.applyMatrix4(new THREE.Matrix4().makeTranslation(-at.x, -at.y, -at.z)).applyMatrix4(new THREE.Matrix4().makeScale(grow, grow, grow)).applyMatrix4(new THREE.Matrix4().makeTranslation(at.x, at.y, at.z));
 		}
 		this.parts[kind].push(geometry);
