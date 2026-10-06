@@ -227,13 +227,24 @@ export function lowDetail<T>(build: () => T, detail = 0.45): T {
 	}
 }
 
-/** Between two poses: each bone's turn and the root's place, t of the way from a to b. */
+const qa = new THREE.Quaternion(), qb = new THREE.Quaternion(), eb = new THREE.Euler();
+/**
+ * Between two poses: the root's place, and each bone turned t of the way from a to b along the shortest arc (its turns
+ * as rotations, not three angles each run on its own: a neck going from grazing to walking swings up the way a neck
+ * does, not through the odd tilts the angles pass on their own way), its size between.
+ */
 export function blend(a: Pose, b: Pose, t: number): Pose {
 	const out: Pose = {};
 	for (const name of new Set([...Object.keys(a), ...Object.keys(b)])) {
 		const x = (a[name] ?? [0, 0, 0, 1]) as number[], y = (b[name] ?? [0, 0, 0, 1]) as number[];
-		const n = name === 'root' ? 3 : 4;
-		out[name] = Array.from({ length: n }, (_, k) => (x[k] ?? (k === 3 ? 1 : 0)) + ((y[k] ?? (k === 3 ? 1 : 0)) - (x[k] ?? (k === 3 ? 1 : 0))) * t) as Turn;
+		if (name === 'root') {
+			out[name] = [0, 1, 2].map((k) => (x[k] ?? 0) + ((y[k] ?? 0) - (x[k] ?? 0)) * t) as V3;
+			continue;
+		}
+		qa.setFromEuler(eb.set(x[0] ?? 0, x[1] ?? 0, x[2] ?? 0));
+		qb.setFromEuler(eb.set(y[0] ?? 0, y[1] ?? 0, y[2] ?? 0));
+		eb.setFromQuaternion(qa.slerp(qb, t));
+		out[name] = [eb.x, eb.y, eb.z, (x[3] ?? 1) + ((y[3] ?? 1) - (x[3] ?? 1)) * t] as Turn;
 	}
 	return out;
 }

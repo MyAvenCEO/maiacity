@@ -18,6 +18,8 @@ import { goat, GOAT_BREEDS } from './species/goat';
 import { sheep, SHEEP_BREEDS } from './species/sheep';
 import { rabbit, RABBIT_COATS } from './species/rabbit';
 import { quadMoves as quadMovesV1 } from './plans/quadruped.v1';
+import { goose, GOOSE_BREEDS } from './species/goose';
+import { birdMoves as birdMovesV1 } from './plans/bird.v1';
 import { FIRST, versioned, type Change, type Version } from '$lib/app/versions.js';
 
 /** one actor: a breed, a coat, the stand-in */
@@ -31,8 +33,12 @@ const quadV1 = <T extends string>(kind: string, ids: readonly T[], make: (id: T,
 	ids.map((id) => ({ id: `${kind}-${id}`, label: id[0]!.toUpperCase() + id.slice(1), note: 'as at v1', make: () => make(id, quadMovesV1) }));
 const GRAZE_V2 = { v: 2, date: '2026-10-06', note: 'Grazing realigned: the neck reaches forward and down, the muzzle in the grass ahead of the forefeet, the forehand tipped to it (it folded back between the forelegs)' };
 
+/** the geese as they moved at v1 */
+const GEESE_V1: Actor[] = GOOSE_BREEDS.map((id) => ({ id: `goose-${id}`, label: id[0]!.toUpperCase() + id.slice(1), note: 'as at v1', make: () => goose(id, birdMovesV1) }));
+
 /** the kinds' older versions, by id, each with its frozen variants (the rest are at v1) */
 const HISTORY: Record<string, (Change & { build?: Actor[] })[]> = {
+	goose: [{ ...FIRST, build: GEESE_V1 }, { v: 2, date: '2026-10-06', note: 'Grazing with the neck stretched forward and down in one curve, the bill in the grass ahead of the feet (the head bent back under the breast); the head carried level walking, slow long looks standing' }],
 	goat: [{ ...FIRST, build: quadV1('goat', GOAT_BREEDS, goat) }, GRAZE_V2],
 	sheep: [{ ...FIRST, build: quadV1('sheep', SHEEP_BREEDS, sheep) }, GRAZE_V2],
 	rabbit: [{ ...FIRST, build: quadV1('rabbit', RABBIT_COATS, rabbit) }, GRAZE_V2],

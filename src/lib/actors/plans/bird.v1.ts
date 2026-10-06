@@ -1,4 +1,5 @@
-/*
+/* FROZEN: the bird plan as the geese were at v1 (grazing with the head bent back under the breast, a nodding head walking), kept for the Actors gallery's history. Do not change.
+ *
  * TWO LEGS AND WINGS — the body plan of a hen, a rooster, a chick, a goose: one skeleton by the same names for each,
  * built from where a species' joints are (the left; the right its mirror), and one way of moving it.
  *
@@ -102,8 +103,6 @@ export type BirdLife = {
 	wag?: number;
 	/** a goose's: the neck's base held up and back (rad) */
 	carry?: number;
-	/** how slowly it looks round standing: 1 a hen's quick glances, more a goose's slow, long looks */
-	steady?: number;
 };
 
 /**
@@ -143,10 +142,8 @@ export function birdMoves(b: BirdSkeleton, life: BirdLife): Record<string, Clip>
 				const z = u < g.hold ? span * (0.5 - u / g.hold) : span * (-0.5 + smooth((u - g.hold) / (1 - g.hold)));
 				birdHead(b, pose, new THREE.Vector3(0, j.head[1], j.head[2] + z + 0.01), beakDir.clone());
 			} else {
-				// a goose carries its head steady as it waddles: the neck gives a little with each step, the head kept level
-				const give = 0.025 * pace * Math.sin(TAU * 2 * ph);
-				pose[neck[neck.length - 1]!] = [give, turn * 0.2, 0];
-				pose.head = [-give, turn * 0.15, 0];
+				pose[neck[neck.length - 1]!] = [0.06 * Math.sin(TAU * 2 * ph), turn * 0.2, 0];
+				pose.head = [-0.06 * Math.sin(TAU * 2 * ph), turn * 0.2, 0];
 			}
 			return pose;
 		};
@@ -154,10 +151,9 @@ export function birdMoves(b: BirdSkeleton, life: BirdLife): Record<string, Clip>
 	moves.idle = (t) => {
 		const pose = rest(t);
 		// a look one way and then the other: a bird turns its head to look with one eye
-		const k = life.steady ?? 1;
-		const look = wander(t, 1.6 * k, seed + 1), up = wander(t, 2.3 * k, seed + 3);
+		const look = wander(t, 1.6, seed + 1), up = wander(t, 2.3, seed + 3);
 		birdLegs(b, pose, null, null, 0);
-		birdHead(b, pose, new THREE.Vector3(0.01 * look, j.head[1] + 0.01 * up, j.head[2] - 0.01 + 0.01 * up), beakDir.clone().applyAxisAngle(new THREE.Vector3(0, 1, 0), (0.9 / Math.sqrt(k)) * look).applyAxisAngle(new THREE.Vector3(1, 0, 0), (-0.15 / k) * up));
+		birdHead(b, pose, new THREE.Vector3(0.01 * look, j.head[1] + 0.01 * up, j.head[2] - 0.01 + 0.01 * up), beakDir.clone().applyAxisAngle(new THREE.Vector3(0, 1, 0), 0.9 * look).applyAxisAngle(new THREE.Vector3(1, 0, 0), -0.15 * up));
 		return pose;
 	};
 	/** the head down to the ground ahead of the feet, `k` of the way (0: up as it stands) */
@@ -193,25 +189,13 @@ export function birdMoves(b: BirdSkeleton, life: BirdLife): Record<string, Clip>
 		down(pose, 0.35 + 0.2 * Math.sin(t * 3), 0.05);
 		return pose;
 	};
-	/** the neck's length, joint to joint, from its base to the head */
-	const neckLen = [...j.neck, j.head].reduce((sum, p, i, all) => (i ? sum + Math.hypot(p[0] - all[i - 1]![0], p[1] - all[i - 1]![1], p[2] - all[i - 1]![2]) : 0), 0);
 	moves.graze = (t) => {
 		const pose = rest(t);
-		// a goose crops the grass with its long neck stretched forward and down in one easy curve, the body only a little
-		// tipped, the bill in the grass well ahead of its feet; it nibbles, and moves its head a little along the sward
 		const nibble = Math.max(0, Math.sin(t * 7)) ** 2;
-		const side = 0.05 * wander(t, 2.6, seed + 6);
-		pose.body = [0.22, 0, 0];
+		pose.body = [0.3, 0, 0];
+		if (life.carry) pose[neck[0]!] = [0.5, 0.15 * wander(t, 3, seed), 0];
 		birdLegs(b, pose, null, null, 0);
-		const look = new THREE.Vector3(side * 0.6, -0.8, 0.6).normalize();
-		const base = b.sk.joint(pose, neck[0]!);
-		const headY = 0.008 + 0.012 * nibble - look.y * headLen * 0.9;
-		const drop = base.y - headY;
-		const ahead = Math.sqrt(Math.max(0.04 ** 2, (0.97 * neckLen) ** 2 - drop * drop));
-		const target = new THREE.Vector3(side, headY, base.z + ahead);
-		// the neck's base pointed along the line to the head, the rest of it reaching the head from there
-		point(b.sk, pose, neck[0]!, j.neck[1] ?? j.head, target.clone().sub(base));
-		birdHead(b, pose, target, look);
+		down(pose, 0.9 + 0.08 * nibble, 0.1, 0.04 * wander(t, 2, seed + 6));
 		return pose;
 	};
 	moves.flap = (t) => {
