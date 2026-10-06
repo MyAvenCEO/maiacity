@@ -1,7 +1,7 @@
 /*
  * THE 3D MODELS — every reusable model, as the 3D models viewer (/app/models/) lists it: its name, what it is, where
  * it is used, and the function that builds it (./furniture.ts, ./hallway.ts, ./kitchen.ts, ./bathroom.ts,
- * ./outdoor.ts, ./terrace.ts, ./yard.ts, ./containers.js, ./minidomes.js; a machine that works is an actor, ./actors). A world places
+ * ./outdoor.ts, ./terrace.ts, ./yard.ts, ./containers.js, ./minidomes.js, ./domerooms.js; a machine that works is an actor, ./actors). A world places
  * them (src/lib/worlds); a new one is a function there and a line here. Each has its version and history
  * ($lib/app/versions.js): a changed model goes up a version, its old builder kept in HISTORY below.
  */
@@ -21,6 +21,7 @@ import { kitchenContainer, sanitaryContainer, techContainer, workshopContainer }
 import { ashtray, barnLamp, casementWindow, cityBike, doorCanopy, entranceDoor, floodlight, foldingChair, hedge, insectHotel, ivyCone, mailboxPost, rainBarrel, redTin, stationClock, steelWindow, stonewareCrock, teakRecliner, teakTable, windowBox, workshopDoor } from './yard';
 
 import { henDome, playDome, rabbitDome } from './minidomes.js';
+import { DOME_ROOMS } from './domerooms.js';
 import { playground, timberCoop, timberHutch } from '$lib/sandbox-2/interior/spaces';
 import { FIRST, versioned, type Version, type Change } from '$lib/app/versions.js';
 
@@ -163,4 +164,4 @@ const LIST: Omit<Model, 'versions' | 'version'>[] = [
 	}
 ];
 
-export const MODELS: Model[] = versioned(LIST, 'make', HISTORY);
+export const MODELS: Model[] = versioned([...LIST, ...DOME_ROOMS], 'make', HISTORY);
