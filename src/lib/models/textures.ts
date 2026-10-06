@@ -16,7 +16,7 @@ function rng(seed: number) {
 	};
 }
 const cache = new Map<string, THREE.Texture>();
-function canvasTexture(key: string, w: number, h: number, draw: (x: CanvasRenderingContext2D, r: () => number) => void, srgb = true): THREE.CanvasTexture {
+export function canvasTexture(key: string, w: number, h: number, draw: (x: CanvasRenderingContext2D, r: () => number) => void, srgb = true): THREE.CanvasTexture {
 	const hit = cache.get(key);
 	if (hit) return hit as THREE.CanvasTexture;
 	const c = document.createElement('canvas');
