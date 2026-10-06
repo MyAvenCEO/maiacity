@@ -881,7 +881,7 @@ export async function mountInterior(container: HTMLElement, kind: DomeKind, onPr
 		}
 	// and the hens, in coops among the trees beyond the squares
 	if (kind === 'master' && !host)
-		for (const c of coops(kit, squareR)) {
+		for (const c of coops(kit, squareR, !!opts.flora)) {
 			scene.add(bake(c.group))
 			outsideColliders.push(...c.colliders)
 		}

@@ -9,6 +9,7 @@
  */
 import * as THREE from 'three'
 import { berryBush, herb, seeded, shrub } from './plants'
+import { henDome, rabbitDome } from '$lib/models/minidomes.js'
 
 /** What the scene lends the spaces: its furniture and its materials. */
 export type Kit = {
@@ -747,9 +748,32 @@ export function rabbitPatches(squareR: number): { x: number; z: number; r: numbe
 		})
 }
 
-export function coops(k: Kit, squareR: number): Space[] {
-	return coopsAround(squareR).map(({ a, r }, i) => place(isHutch(i) ? hutch(k, 3 + i) : coop(k, 3 + i), r, a))
+/** The coops round the squares; as mini domes (`$lib/models/minidomes.js`, the coop's and the hutch's v2) in Sandbox 5. */
+export function coops(k: Kit, squareR: number, mini = false): Space[] {
+	return coopsAround(squareR).map(({ a, r }, i) => place(isHutch(i) ? (mini ? rabbitDome(3 + i) : hutch(k, 3 + i)) : mini ? henDome(3 + i) : coop(k, 3 + i), r, a))
 }
+
+/** the plain surfaces the 3D models viewer builds the timber coop and hutch with (their v1), away from any world */
+function plainKit(): Kit {
+	const c = (hex: string, rough = 0.8) => new THREE.MeshStandardMaterial({ color: hex, roughness: rough })
+	const box: Kit['box'] = (w, h, d, mat, x = 0, y = 0, z = 0, rotY = 0) => {
+		const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat)
+		m.position.set(x, y + h / 2, z)
+		m.rotation.y = rotY
+		m.castShadow = m.receiveShadow = true
+		return m
+	}
+	const none = () => new THREE.Group()
+	return {
+		box, table: none, sofa: none, lantern: none,
+		oak: c('#a8774c', 0.82), lime: c('#d9d2c2', 0.9), stone: () => c('#a9a49a', 0.85), dark: c('#23262a', 0.5), steel: c('#2e3236', 0.4),
+		counter: c('#f3f1ec', 0.3), timber: c('#9c6b3f', 0.6), linen: c('#f1ece2', 0.95), cushion: c('#c47a4a', 0.9), rug: c('#b9a589', 1), paper: c('#fff4e2', 0.9)
+	}
+}
+/** the timber henhouse and its run, as Sandbox 3 and 4 have it (the chicken coop's v1) */
+export const timberCoop = () => coop(plainKit(), 3).group
+/** the timber rabbit hutch and its run (the rabbit hutch's v1) */
+export const timberHutch = () => hutch(plainKit(), 4).group
 
 /* ── the playgrounds between the domes: all wood, all rounded ─────────── */
 
