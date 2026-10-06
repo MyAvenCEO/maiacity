@@ -7,7 +7,7 @@
 -->
 <script lang="ts">
 	import { onDestroy, onMount } from 'svelte';
-	import { MODELS, type Model } from '$lib/models';
+	import { MODELS, type Model, type Variant } from '$lib/models';
 	import PickList from '$lib/app/PickList.svelte';
 	import TouchStick from '$lib/touch/TouchStick.svelte';
 	import WalkHint from '$lib/sandbox-kit/WalkHint.svelte';
@@ -18,8 +18,11 @@
 	let chosen = $state<Model>(MODELS[0]!);
 	/** the version of it shown: its latest, or an older one picked from its history */
 	let version = $state<number>(MODELS[0]!.version);
+	/** which of its variants is shown (a small or a big excavator), when it has them: they are its latest version's */
+	let variant = $state<Variant | null>(MODELS[0]!.variants?.[0] ?? null);
+	const variants = $derived(version === chosen.version ? (chosen.variants ?? []) : []);
 	let size = $state<[number, number, number] | null>(null);
-	let show: ((m: Model, v: number) => void) | null = null;
+	let show: ((m: Model, v: number, kind?: Variant | null) => void) | null = null;
 	let walkable = $state(false);
 	let roofed = $state(false);
 	let roofOff = $state(false);
@@ -62,11 +65,11 @@
 
 		let walker: ReturnType<typeof createWalker> | null = null;
 		const lamps: InstanceType<typeof THREE.PointLight>[] = [];
-		show = (m: Model, v: number) => {
+		show = (m: Model, v: number, kind?: Variant | null) => {
 			walkOut?.();
 			if (current) scene.remove(current);
 			if (grid) scene.remove(grid);
-			current = (at(m.versions, v) ?? at(m.versions)!).build();
+			current = kind && v === m.version ? kind.make() : (at(m.versions, v) ?? at(m.versions)!).build();
 			walkable = !!current.userData.walk;
 			roofed = !!current.userData.roof;
 			roofOff = false;
@@ -163,7 +166,7 @@
 		const ro = new ResizeObserver(resize);
 		ro.observe(box);
 		resize();
-		show(chosen, version);
+		show(chosen, version, variant);
 		const start = performance.now();
 		let raf = 0;
 		let last = performance.now();
@@ -191,11 +194,16 @@
 	const pick = (m: Model) => {
 		chosen = m;
 		version = m.version;
-		show?.(m, version);
+		variant = m.variants?.[0] ?? null;
+		show?.(m, version, variant);
 	};
 	const pickVersion = (v: number) => {
 		version = v;
-		show?.(chosen, v);
+		show?.(chosen, v, variant);
+	};
+	const vary = (k: Variant) => {
+		variant = k;
+		show?.(chosen, version, k);
 	};
 	const cm = (v: number) => Math.round(v * 100);
 	const toggleRoof = () => {
@@ -212,6 +220,14 @@
 	<PickList title="3D models" lede="The things the worlds are built from, each to its real measure." items={MODELS} {chosen} where={(m) => m.usedIn} onpick={pick} {version} onversion={pickVersion} />
 	<section class="view" bind:this={viewBox}>
 		<div class="canvas" bind:this={canvasBox}></div>
+		{#if variants.length > 1 && !walking}
+			<nav class="variants" aria-label="{chosen.label}: variants">
+				<span class="label">{chosen.label}</span>
+				{#each variants as k (k.id)}
+					<button class:on={variant?.id === k.id} aria-current={variant?.id === k.id ? 'true' : undefined} onclick={() => vary(k)}>{k.label}</button>
+				{/each}
+			</nav>
+		{/if}
 		{#if walkable || roofed}
 			<div class="walkbar">
 				{#if walkable}<button type="button" onclick={() => (walking ? walkOut?.() : walkIn?.())}>{walking ? 'Walk out' : 'Walk inside'}</button>{/if}
@@ -223,7 +239,8 @@
 			<WalkHint keys="Drag to look · WASD to walk · Shift to hurry · Esc to walk out" />
 		{:else}
 			<div class="readout">
-				<b>{chosen.label}</b>
+				<b>{variants.length > 1 && variant ? `${chosen.label} · ${variant.label}` : chosen.label}</b>
+				{#if variants.length > 1 && variant}<small>{variant.note}</small>{/if}
 				{#if size}<span>{cm(size[0])} × {cm(size[2])} × {cm(size[1])} cm <small>(width × depth × height)</small></span>{/if}
 				<small>Drag to turn round it · scroll to come closer · the grid is 10 cm</small>
 			</div>
@@ -268,10 +285,51 @@
 		-webkit-backdrop-filter: blur(10px);
 		backdrop-filter: blur(10px);
 		font-size: 0.85rem;
+		max-width: min(32rem, calc(100% - 2rem));
 	}
 
 	.readout small {
 		opacity: 0.6;
+	}
+
+	/* the model's variants, down the right: one pressed, the one on the turntable (as the Actors gallery's) */
+	.variants {
+		position: absolute;
+		top: 1rem;
+		right: 1rem;
+		display: flex;
+		flex-direction: column;
+		align-items: stretch;
+		gap: 0.3rem;
+		padding: 0.6rem;
+		border-radius: 12px;
+		background: rgb(255 255 255 / 0.75);
+		-webkit-backdrop-filter: blur(10px);
+		backdrop-filter: blur(10px);
+		font-size: 0.85rem;
+	}
+
+	.variants .label {
+		margin: 0 0 0.15rem;
+		font-size: 0.75rem;
+		opacity: 0.6;
+	}
+
+	.variants button {
+		padding: 0.3rem 0.75rem;
+		border: 1px solid rgb(0 0 0 / 0.12);
+		border-radius: 999px;
+		background: rgb(255 255 255 / 0.7);
+		font: inherit;
+		text-align: left;
+		white-space: nowrap;
+		cursor: pointer;
+	}
+
+	.variants button.on {
+		background: #1f2a23;
+		border-color: #1f2a23;
+		color: #fff;
 	}
 
 	.walkbar {

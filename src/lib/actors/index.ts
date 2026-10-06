@@ -152,12 +152,12 @@ const LIST: Omit<Family, 'versions' | 'version'>[] = [
 	},
 	{
 		id: 'excavator',
-		label: 'Excavators',
+		label: 'Excavator',
 		note: 'tracked diggers, each rigged: the house slews, boom, arm and bucket work on their rams, the wheels turn; they dig, slew and dump, drive, and the mini dozes with its blade',
 		from: 'Sandbox 1: building the settlement',
 		variants: [
-			{ id: 'excavator-crawler', label: 'Crawler excavator', note: '14 t: steel tracks, an enclosed cab, a mono boom on two rams, a 1 m bucket, 8.3 m reach', make: () => crawlerExcavator() },
-			{ id: 'excavator-mini', label: 'Mini excavator', note: '1.7 t: rubber tracks, an open canopy, a dozer blade, a swinging boom, a 40 cm bucket', make: () => miniExcavator() }
+			{ id: 'excavator-small', label: 'Small · 1.7 t', note: 'a mini excavator: rubber tracks, an open canopy, a dozer blade, a swinging boom, a 40 cm bucket', make: () => miniExcavator() },
+			{ id: 'excavator-big', label: 'Big · 14 t', note: 'a crawler excavator: steel tracks, an enclosed cab, a mono boom on two rams, a 1 m bucket, 8.3 m reach', make: () => crawlerExcavator() }
 		]
 	}
 ];
