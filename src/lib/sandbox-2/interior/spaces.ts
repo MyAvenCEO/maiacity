@@ -854,3 +854,7 @@ export function playground(seed: number): Space {
 	g.traverse((o) => (o as THREE.Mesh).isMesh && (((o as THREE.Mesh).castShadow = true), ((o as THREE.Mesh).receiveShadow = true)))
 	return { group: g, colliders: cs }
 }
+
+/* the workshops' and squares' builders and pieces, for the 3D models library ($lib/models/domerooms.js) */
+export { awnings, bakery, bistro, cowork, kiosk, library, oven, parasol, pergola, pottery, repair, square, stool, studio, woodshop }
+export type { Space }
