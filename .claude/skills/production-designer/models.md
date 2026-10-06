@@ -36,7 +36,7 @@ library, shown on its own in the 3D models viewer and placed in any world.
 - `/app/models` (admin) — the viewer: every model on a turntable on a grid of 10 cm squares, with its width × depth ×
   height in centimetres. Check every new model there before placing it. A model with `userData.walk` can be walked
   inside (the sandboxes' walker, Esc to walk out); one with `userData.roof` can have its roof lifted; one with
-  `userData.tick(t)` (a rigged machine, the excavator) plays its work.
+  `userData.tick(t)` (a rigged machine, the excavators) plays its work.
 
 ## The conventions every model keeps
 
@@ -65,9 +65,14 @@ under one skinned mesh, built in its rest pose (facing +z, on y 0), its parts ri
   17 bones, a T-shirt, jeans, trainers, a face that shows where it looks.
   Its poses (stand, sit, sit with elbows on knees, fallen back, lie, kneel, look up, wave, think, arms crossed,
   point) and moves (idle, walk, wave, sit down). `standIn(pose)` gives one held in a pose for a world to place.
-- `excavator.js` — the excavator (a mini excavator's parts at twice their measure, `SCALE`; its backhoe bucket opening towards the machine): rigid parts on joints — the house slewing, the boom swinging, boom, arm
-  and bucket, the blade, the wheels — and each hydraulic ram as a barrel joint and a rod joint that `machine()` keeps
-  on the line between their pins. Its moves: dig, drive, doze, idle.
+- `excavator-rig.js` — what every tracked excavator is rigged and moved with: a spec (its joints, its cylinder pins,
+  its parts, the poses it digs between) becomes an actor — rigid parts on joints (the house slewing, a mini's boom
+  swinging, boom, arm and bucket, a blade, the wheels) and each hydraulic ram as a barrel joint and a rod joint kept
+  on the line between their pins. Its moves: dig, drive, doze (with a blade), idle. The machines on it:
+  `excavator.js`, the 1.7 t mini (rubber tracks, a canopy, a blade, a swinging boom), and `crawler-excavator.js`, the
+  14 t crawler — a bigger machine is a different kind, never a mini scaled up: steel tracks on rollers, an enclosed
+  cab at a person's measure, a mono boom pinned to the house on two rams, no blade. Both dig with a backhoe bucket,
+  its mouth towards the machine.
 - `animals.ts` — Sandbox 4's creatures, rigged: the hen (pecks, flaps), the goose (waddles, grazes, hisses), the
   goat and the sheep (walk, graze), the frog (croaks, hops), the bee (hovers, flies), the carp and the tilapia (swim).
 - `crowd.ts` — how a world holds many of them (Sandbox 4's flocks, hives and ponds; Sandbox 3's): the nearest to the
