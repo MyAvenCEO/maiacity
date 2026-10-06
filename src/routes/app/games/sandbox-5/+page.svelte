@@ -3,12 +3,14 @@
 	forest grown from our own plants ($lib/plants, through interior/flora.js): every
 	plant at its stage, from young tree to ripe fruit; the plants of a middle-European
 	garden outside, the ones that need the warmth inside the domes. Each plant is
-	anchored to the version it was planted with (interior/sandbox5.js).
+	anchored to the version it was planted with (interior/sandbox5.js). Click or tap
+	any plant: a card beside the world tells what it is and where it is in its life.
 -->
 <script lang="ts">
 	import { asset } from '$lib/media/url';
 	import { onDestroy, onMount } from 'svelte';
-	import type { VillageHandle } from '$lib/sandbox-2/interior/village';
+	import type { PickedPlant, VillageHandle } from '$lib/sandbox-2/interior/village';
+	import { base } from '$app/paths';
 	import TouchStick from '$lib/touch/TouchStick.svelte';
 	import { WalkHint, WorldBar } from '$lib/sandbox-kit';
 
@@ -23,6 +25,30 @@
 	/** the dome being opened as you walk up to it */
 	let opening = $state<string | null>(null);
 	const openingTimer = setInterval(() => (opening = village?.opening() ?? null), 300);
+
+	/** the plant picked by a click or a tap, and what the library knows of it */
+	type Card = { picked: PickedPlant; label: string; latin: string; note: string; from: string; layer: string; stages: { name: string; day: number; note: string }[] };
+	let card = $state<Card | null>(null);
+	let plants: typeof import('$lib/plants') | null = null;
+	/** a press that comes up where it went down, soon, is a click on the world, not a look round */
+	let press: { x: number; y: number; t: number } | null = null;
+	const down = (e: PointerEvent) => (press = { x: e.clientX, y: e.clientY, t: performance.now() });
+	const up = async (e: PointerEvent) => {
+		const p = press;
+		press = null;
+		if (!p || !village || Math.hypot(e.clientX - p.x, e.clientY - p.y) > 6 || performance.now() - p.t > 450) return;
+		const picked = village.pickPlant(e.clientX, e.clientY);
+		if (!picked) return close();
+		plants ??= await import('$lib/plants');
+		const plant = plants.plantAt(picked.id, picked.v);
+		if (!plant) return (card = null);
+		const layer = plants.LAYERS.find((l) => l.id === plant.layer);
+		card = { picked, label: plant.label, latin: plant.latin, note: plant.note, from: plant.from, layer: layer ? `${layer.label} — ${layer.note}` : '', stages: plant.stages };
+	};
+	const close = () => {
+		card = null;
+		village?.unpick();
+	};
 
 	onMount(() => {
 		requestAnimationFrame(() =>
@@ -60,7 +86,7 @@
 </svelte:head>
 
 <div class="village">
-	<div class="stage" bind:this={stage}></div>
+	<div class="stage" bind:this={stage} role="application" aria-label="Sandbox 5: walk, look round, click a plant" onpointerdown={down} onpointerup={up}></div>
 	<WorldBar title="avenCITY Sandbox 5" subtitle="A dome cell · grown from our plants" />
 	<WalkHint keys="Drag to look · WASD to walk · Shift to hurry · walk through any door to step inside" />
 	<!-- on a phone: the joystick walks, any other finger on the world looks round -->
@@ -68,8 +94,33 @@
 		move={(x, y, hurry) => village?.move(x, y, hurry)}
 		look={(dx, dy) => village?.look(dx, dy)}
 		{stage}
-		taps=".bar a, .bar button"
+		taps=".bar a, .bar button, .card a, .card button"
 	/>
+	{#if card}
+		{@const st = card.stages[card.picked.stage]}
+		<aside class="card" aria-label="{card.label}: about this plant">
+			<button class="close" onclick={close} aria-label="Close">×</button>
+			<p class="eyebrow">{card.picked.inside ? 'Under the glass' : 'The forest garden'} · v{card.picked.v}</p>
+			<h2>{card.label}</h2>
+			<p class="latin">{card.latin}</p>
+			<p class="about">{card.note}</p>
+			<dl>
+				<dt>Layer</dt>
+				<dd>{card.layer}</dd>
+				<dt>Grows</dt>
+				<dd>{card.from} · {card.picked.height.toFixed(1)} m high here</dd>
+			</dl>
+			<h3>Now: {st?.name} <span>stage {card.picked.stage + 1} of {card.stages.length} · day {st?.day}</span></h3>
+			<ol class="life" aria-label="Its stages">
+				{#each card.stages as s, k (s.name)}
+					<li class:past={k < card.picked.stage} class:now={k === card.picked.stage} class:fruit={k >= 6} title={s.name}></li>
+				{/each}
+			</ol>
+			<p class="about">{st?.note}</p>
+			{#if card.picked.stage < card.stages.length - 1}<p class="next">Next: {card.stages[card.picked.stage + 1]!.name}</p>{/if}
+			<a class="open" href="{base}/app/plants/?plant={card.picked.id}&stage={card.picked.stage + 1}&v={card.picked.v}">Grow it in the plants library →</a>
+		</aside>
+	{/if}
 	{#if opening}<p class="opening">The {opening.toLowerCase()} ahead is opening its doors…</p>{/if}
 
 	{#if loading}
@@ -116,6 +167,153 @@
 		font-size: 0.8rem;
 		white-space: nowrap;
 	}
+	/* the picked plant's card, beside the world on the right; over the foot of it on a phone */
+	.card {
+		position: absolute;
+		top: 4.5rem;
+		right: 1rem;
+		z-index: 2;
+		width: min(21rem, calc(100vw - 2rem));
+		max-height: calc(100% - 9rem - var(--nav-room));
+		overflow: auto;
+		padding: 1rem 1.1rem 1.1rem;
+		border-radius: 16px;
+		background: rgb(250 248 242 / 0.82);
+		border: 1px solid rgb(255 255 255 / 0.4);
+		-webkit-backdrop-filter: blur(14px) saturate(1.2);
+		backdrop-filter: blur(14px) saturate(1.2);
+		color: #1f2a23;
+		box-shadow: 0 10px 30px rgb(0 0 0 / 0.18);
+	}
+
+	.card .close {
+		position: absolute;
+		top: 0.5rem;
+		right: 0.6rem;
+		width: 1.8rem;
+		height: 1.8rem;
+		border: 0;
+		border-radius: 999px;
+		background: rgb(0 0 0 / 0.06);
+		font-size: 1.1rem;
+		line-height: 1;
+		cursor: pointer;
+	}
+
+	.card .eyebrow {
+		margin: 0;
+		font-size: 0.68rem;
+		letter-spacing: 0.08em;
+		text-transform: uppercase;
+		opacity: 0.6;
+	}
+
+	.card h2 {
+		margin: 0.2rem 0 0;
+		font-size: 1.3rem;
+	}
+
+	.card .latin {
+		margin: 0.1rem 0 0.6rem;
+		font-size: 0.82rem;
+		font-style: italic;
+		opacity: 0.7;
+	}
+
+	.card .about {
+		margin: 0.4rem 0;
+		font-size: 0.84rem;
+		line-height: 1.4;
+	}
+
+	.card dl {
+		display: grid;
+		grid-template-columns: auto 1fr;
+		gap: 0.25rem 0.7rem;
+		margin: 0.6rem 0;
+		font-size: 0.78rem;
+	}
+
+	.card dt {
+		opacity: 0.55;
+	}
+
+	.card dd {
+		margin: 0;
+	}
+
+	.card h3 {
+		margin: 0.9rem 0 0.4rem;
+		font-size: 0.95rem;
+	}
+
+	.card h3 span {
+		display: block;
+		font-size: 0.72rem;
+		font-weight: 400;
+		opacity: 0.6;
+	}
+
+	/* its ten stages as a row of pips: the ones it has passed, the one it is at, the fruit's own four warmer */
+	.life {
+		display: flex;
+		gap: 4px;
+		margin: 0;
+		padding: 0;
+		list-style: none;
+	}
+
+	.life li {
+		flex: 1;
+		height: 6px;
+		border-radius: 3px;
+		background: rgb(31 42 35 / 0.12);
+	}
+
+	.life li.fruit {
+		background: rgb(180 80 40 / 0.18);
+	}
+
+	.life li.past {
+		background: rgb(61 107 52 / 0.55);
+	}
+
+	.life li.fruit.past {
+		background: rgb(190 90 40 / 0.6);
+	}
+
+	.life li.now {
+		background: #2f5f2a;
+		box-shadow: 0 0 0 2px rgb(47 95 42 / 0.25);
+	}
+
+	.life li.fruit.now {
+		background: #c25a22;
+		box-shadow: 0 0 0 2px rgb(194 90 34 / 0.25);
+	}
+
+	.card .next {
+		margin: 0.2rem 0 0.6rem;
+		font-size: 0.75rem;
+		opacity: 0.6;
+	}
+
+	.card .open {
+		display: inline-block;
+		margin-top: 0.3rem;
+		font-size: 0.8rem;
+		color: #2f5f2a;
+	}
+
+	@media (max-width: 640px) {
+		.card {
+			top: auto;
+			bottom: calc(5.5rem + var(--nav-room));
+			right: 1rem;
+			max-height: 45vh;
+		}
+	}
+
 	.loading {
 		position: absolute;
 		inset: 0;

@@ -144,18 +144,18 @@ export const OUTDOOR_SPACING = { canopy: 64, trees: 12, shrubs: 5, herbs: 3.2, g
 /** @type {Garden} */
 const INSIDE = {
 	trees: [
-		{ id: 'mango', v: 1, stages: TREE, weight: 3 },
-		{ id: 'avocado', v: 1, stages: TREE, weight: 2 },
+		{ id: 'mango', v: 1, stages: TREE, weight: 5 },
+		{ id: 'avocado', v: 1, stages: TREE, weight: 3 },
 		{ id: 'orange', v: 1, stages: TREE, weight: 2 },
 		{ id: 'lemon', v: 1, stages: TREE, weight: 2 },
-		{ id: 'king-coconut', v: 1, stages: [5, 7, 9], weight: 2 },
-		{ id: 'banana', v: 1, stages: [5, 7, 9], weight: 2 },
-		{ id: 'red-banana', v: 1, stages: [5, 7, 9] },
+		{ id: 'king-coconut', v: 1, stages: [5, 7, 9], weight: 6 },
+		{ id: 'banana', v: 1, stages: [5, 7, 9], weight: 6 },
+		{ id: 'red-banana', v: 1, stages: [5, 7, 9], weight: 3 },
 		{ id: 'papaya', v: 1, stages: [5, 7, 9], weight: 2 },
-		{ id: 'jackfruit', v: 2, stages: TREE },
-		{ id: 'durian', v: 2, stages: TREE },
-		{ id: 'safou', v: 1, stages: TREE },
-		{ id: 'sapodilla', v: 1, stages: TREE },
+		{ id: 'jackfruit', v: 2, stages: TREE, weight: 3 },
+		{ id: 'durian', v: 2, stages: TREE, weight: 3 },
+		{ id: 'safou', v: 1, stages: TREE, weight: 2 },
+		{ id: 'sapodilla', v: 1, stages: TREE, weight: 2 },
 		{ id: 'soursop', v: 2, stages: TREE },
 		{ id: 'pomegranate', v: 1, stages: TREE },
 		{ id: 'olive', v: 1, stages: TREE },
@@ -191,6 +191,11 @@ export const SANDBOX_5 = {
  * @returns {import('./flora.grow.js').Kind}
  */
 export function pick(layer, r, seed) {
+	return stageOf(planting(layer, r), r, seed);
+}
+
+/** One planting of a layer, drawn by its weight. @param {Planting[]} layer @param {() => number} r */
+export function planting(layer, r) {
 	const total = layer.reduce((a, p) => a + (p.weight ?? 1), 0);
 	let x = r() * total;
 	let p = layer[layer.length - 1];
@@ -198,10 +203,25 @@ export function pick(layer, r, seed) {
 		p = q;
 		break;
 	}
+	return p;
+}
+
+/**
+ * A planting at one of its stages: the kind to grow.
+ * @param {Planting} p @param {() => number} r @param {string} seed @returns {import('./flora.grow.js').Kind}
+ */
+export function stageOf(p, r, seed) {
 	// the later stages a little more often: a food forest is mostly grown
 	const k = Math.min(p.stages.length - 1, Math.floor(Math.pow(r(), 0.8) * p.stages.length));
 	return { id: p.id, v: p.v, stage: p.stages[k], seed };
 }
+
+/**
+ * Below the trees the plants grow in drifts, as a forest garden is planted and as they spread: 5 to 15 of one kind
+ * together, closer than they would stand alone (`gap` metres apart), the drifts of a layer as many, all told, as its
+ * spacing asks (OUTDOOR_SPACING).
+ */
+export const DRIFT = { least: 5, most: 15, gap: { shrubs: 1.1, climbers: 0.9, herbs: 0.5, roots: 0.45, ground: 0.38, fungi: 0.3 } };
 
 /** every plant a garden can grow, as kinds (for growing them all ahead) @param {Garden} garden @param {string} seed */
 export const kindsOf = (garden, seed) =>

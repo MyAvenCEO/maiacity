@@ -38,6 +38,7 @@ import { createWalker } from '$lib/sandbox-kit/walker.js'
 import { createObstacles } from '$lib/sandbox-kit/obstacles.js'
 import { connectFilm, filmDraws, filmHoldsSize, worldTime } from '$lib/sandbox-kit/film.js'
 import { createForest, type Forest } from './flora.js'
+import { swapLegacy } from './legacy.js'
 import { pick as pickPlant, type Garden } from './sandbox5.js'
 import { forestFloor, floorPick, grassTuft, appleTree, banana, berryBush, canopyTree, climber, clover, coconutPalm, comfrey, crop, CROPS, type Crop, fruitTree, ginger, grapePergola, herb, papaya, passionVine, potted, seeded, shrub, smallFruitTree, squash, strawberries, tropicalShrub, vineAlong, type Plant } from './plants'
 
@@ -510,6 +511,8 @@ export type EmbeddedDome = {
 	spots: { x: number; y: number; z: number; base: number; reach: number }[]
 	update: (t: number) => void
 	setHour: (hour: number) => void
+	/** Sandbox 5: the plant of its forest a ray (in the dome's own ground) meets first, if any */
+	pickPlant?: Forest['pick']
 	dispose: () => void
 }
 
@@ -531,7 +534,10 @@ export async function mountInterior(container: HTMLElement, kind: DomeKind, onPr
 		lastYield = performance.now()
 		stopIfCancelled()
 	}
-	const bakeIn = (group: THREE.Group, shadows = true) => bakeSliced(group, shadows, slice)
+	const bakeIn = (group: THREE.Group, shadows = true) => {
+		swap(group)
+		return bakeSliced(group, shadows, slice)
+	}
 	/** Hand the page back for a frame whenever this build has held it for more than a few milliseconds. */
 	const slice = async () => {
 		// the standalone view is behind its loading screen: it can work in longer stretches
@@ -700,9 +706,16 @@ export async function mountInterior(container: HTMLElement, kind: DomeKind, onPr
 	const herds: Parameters<typeof levelsAt>[4] = {}
 	/** the small plants of each forest sector, hidden when you are far from them */
 	const detail: { group: THREE.Object3D; x: number; z: number }[] = []
-	/** Sandbox 5: the forest inside grown from our plants, drawn as the eye moves and looks round (./flora.js) */
-	let forest: Forest | null = null
+	/** Sandbox 5: the forest inside grown from our plants, drawn as the eye moves and looks round (./flora.js); every
+	 *  stand-in plant of Sandbox 4's (in a bed, a pot, on a pergola) traded for one of them (./legacy.js) */
+	const forest: Forest | null = opts.flora ? createForest({ tree: [28, 75], shrub: [16, 40], cover: [9, 22] }) : null
+	const swapR = seeded(kind.length * 97 + 13)
+	const swap = (root: THREE.Object3D) => {
+		if (forest && opts.flora) swapLegacy(root, scene, forest, { warm: true, seed: opts.flora.seed, r: swapR })
+	}
 	const looking = new THREE.Vector3()
+	/** Sandbox 5's trees, to stand in the way by their trunks once grown */
+	const floraTreesAll: { c: { x: number; z: number; r: number }; kind: ReturnType<typeof pickPlant>; s: number }[] = []
 	const keepDetail = (cx: number, cz: number) => {
 		for (const d of detail) d.group.visible = Math.hypot(d.x - cx, d.z - cz) < Math.max(30, R * 0.45)
 		if (forest) {
@@ -1314,11 +1327,17 @@ export async function mountInterior(container: HTMLElement, kind: DomeKind, onPr
 		}
 		const r = seeded(kind === 'home' ? 3 : kind === 'large' ? 5 : 9)
 		const flora = opts.flora
-		if (flora) forest = createForest({ tree: [28, 75], shrub: [16, 40], cover: [9, 22] })
 		/** Sandbox 5's trees, to stand in the way by their trunks once grown */
 		const floraTrees: { c: { x: number; z: number; r: number }; kind: ReturnType<typeof pickPlant>; s: number }[] = []
 		const area = Math.PI * (rIn * rIn - Rc * Rc)
-		const trees = Math.min(kind === 'master' ? 200 : 230, Math.round(area / (lush ? 17 : 26)))
+		// Sandbox 5 plants its warm forest much closer: a tree every 9 m² (11 where it is a house too)
+		const trees = opts.flora ? Math.min(kind === 'master' ? 900 : 700, Math.round(area / (lush ? 9 : 11))) : Math.min(kind === 'master' ? 200 : 230, Math.round(area / (lush ? 17 : 26)))
+		/** Sandbox 5: whether a plant reaching `reach` round rr, a would stand on stone: the plaza (in the master dome the
+		 *  theatre's stone ring round its bowl), the ring path, the paths to the doors and the stairs, the paved corners */
+		const onStone = (rr: number, a: number, reach: number) =>
+			rr < Rc + (theatre ? 2.4 : 0) + reach + 0.25 ||
+			(!lush && Math.abs(rr - Rp) < 1.1 + reach + 0.15) ||
+			[...DOORS, ...STAIRS].some((d) => Math.abs(adiff(a, d)) < Math.PI / 2 && Math.abs(Math.sin(adiff(a, d))) * rr < 1 + reach + 0.15)
 		const onPath = (rr: number, a: number) =>
 			rr < Rc + 1.2 || (!lush && Math.abs(rr - Rp) < (small ? 1.8 : 3.4)) || [...DOORS, ...STAIRS].some((d) => Math.abs(adiff(a, d)) < Math.PI / 2 && Math.abs(adiff(a, d)) * rr < 1.8)
 		const tall = kind === 'home' ? 7 : 10
@@ -1327,10 +1346,10 @@ export async function mountInterior(container: HTMLElement, kind: DomeKind, onPr
 			await slice()
 			const a = r() * Math.PI * 2
 			const rr = Rc + 1.5 + r() * (rIn - Rc - 3)
-			if (onPath(rr, a)) continue
+			if (onPath(rr, a) || (opts.flora && onStone(rr, a, 1.2))) continue
 			const [x, z] = polar(rr, a)
 			if (nearStream(x, z, width + 1.4)) continue
-			if (colliders.some((c) => Math.hypot(c.x - x, c.z - z) < 2.8)) continue
+			if (colliders.some((c) => Math.hypot(c.x - x, c.z - z) < (opts.flora ? 2.1 : 2.8))) continue
 			if (flora) {
 				// Sandbox 5: a tree of the warm garden at its stage, and round it its guild, all from our plants
 				const fs = 0.85 + r() * 0.3
@@ -1345,7 +1364,8 @@ export async function mountInterior(container: HTMLElement, kind: DomeKind, onPr
 						const b = r() * 6.28, dd = dist * (0.6 + r() * 0.6)
 						const ox = x + Math.cos(b) * dd, oz = z + Math.sin(b) * dd
 						const orr = Math.hypot(ox, oz)
-						if (orr > rIn - 0.8 || onPath(orr, Math.atan2(ox, oz)) || nearStream(ox, oz, width * 0.8)) continue
+						const reach = layer === 'cover' ? 0.45 : 0.9
+						if (orr > rIn - 0.8 || onStone(orr, Math.atan2(ox, oz), reach) || nearStream(ox, oz, width / 2 + reach + 0.2)) continue
 						forest!.add(pickPlant(flora.garden[layer], r, flora.seed), layer === 'cover' ? 'cover' : 'shrub', ox, 0, oz, r() * 6.28, 0.85 + r() * 0.3)
 					}
 				}
@@ -1428,17 +1448,17 @@ export async function mountInterior(container: HTMLElement, kind: DomeKind, onPr
 					if (rr > rIn - 0.7 || onWalk(rr, a, reach) || nearStream(x, z, width / 2 + reach + 0.25)) continue
 					// up to a trunk, never through it (a tree's reach is its canopy, not its trunk)
 					if (colliders.some((c) => Math.hypot(c.x - x, c.z - z) < Math.min(0.6, c.r * 0.5))) continue
+					if (flora) {
+						// Sandbox 5: a plant of the warm garden's cover, or now and then a climber, on the living ground
+						if (!onStone(rr, a, tall ? 0.6 : 0.45)) forest!.add(pickPlant(flora.garden[tall ? 'climbers' : 'cover'], r, flora.seed), tall ? 'shrub' : 'cover', x, 0.01, z, r() * 6.28, 0.8 + r() * 0.4)
+						continue
+					}
 					const green = new THREE.Mesh(mat, mats3[Math.floor(r() * mats3.length)]!)
 					green.rotation.set(-Math.PI / 2, 0, r() * 6.28)
 					green.scale.set(PATCH * (0.62 + r() * 0.14), PATCH * (0.55 + r() * 0.14), 1)
 					green.position.set(x, 0.008 + r() * 0.004, z)
 					green.receiveShadow = true
 					sectorAt(x, z).cover.add(green)
-					if (flora) {
-						// Sandbox 5: a plant of the warm garden's cover, or now and then a climber, over the green
-						forest!.add(pickPlant(flora.garden[tall ? 'climbers' : 'cover'], r, flora.seed), tall ? 'shrub' : 'cover', x, 0.01, z, r() * 6.28, 0.8 + r() * 0.4)
-						continue
-					}
 					const pick = tall ? (r() < 0.6 ? 'tomato' : 'beans') : LOW[Math.floor(r() * LOW.length)]!
 					const sd = 12000 + n
 					const o = pick === 'moss' ? forestFloor('moss', sd) : pick === 'clover' ? clover(sd, 1.2 * s) : pick === 'squash' ? squash(sd) : crop(pick, sd, PATCH * 0.95)
@@ -1514,12 +1534,7 @@ export async function mountInterior(container: HTMLElement, kind: DomeKind, onPr
 			scene.add(await bakeIn(sc.forest), small)
 			detail.push({ group: small, x: sc.x, z: sc.z })
 		}
-		if (forest) {
-			// every kind grown (in workers, side by side), then each tree stands in the way by its trunk
-			await forest.grown()
-			for (const t of floraTrees) t.c.r = Math.min(0.6, (forest.shape(t.kind)?.foot ?? 0.3) * t.s) + 0.2
-			scene.add(forest.group)
-		}
+		floraTreesAll.push(...floraTrees)
 		await pause('Planting the forest inside')
 
 		await slice()
@@ -1990,6 +2005,15 @@ export async function mountInterior(container: HTMLElement, kind: DomeKind, onPr
 		start = { x: 0, z: Rc + 2, look: 0 }
 	}
 
+	if (forest) {
+		// the stand-ins put straight into the scene (not baked) traded too; then every kind grown (in workers, side by
+		// side), and each tree stands in the walker's way by its trunk
+		swap(scene)
+		await forest.grown()
+		for (const t of floraTreesAll) t.c.r = Math.min(0.6, (forest.shape(t.kind)?.foot ?? 0.3) * t.s) + 0.2
+		scene.add(forest.group)
+	}
+
 	// the lamps are all in place: set them for the hour
 	setSun(hourNow())
 
@@ -2025,6 +2049,7 @@ export async function mountInterior(container: HTMLElement, kind: DomeKind, onPr
 				keepDetail(camera.position.x - host.x, camera.position.z - host.z)
 			},
 			setHour: (hour) => setSun(hour),
+			pickPlant: (o, d, far) => forest?.pick(o, d, far) ?? null,
 			dispose: disposeAll
 		}
 		/* before it joins the village, ready everything the graphics card will need, a little at
