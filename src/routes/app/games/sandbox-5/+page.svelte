@@ -13,6 +13,8 @@
 	import { base } from '$app/paths';
 	import TouchStick from '$lib/touch/TouchStick.svelte';
 	import { WalkHint, WorldBar } from '$lib/sandbox-kit';
+	import PlantLook from '$lib/sandbox-2/interior/PlantLook.svelte';
+	import { fly } from 'svelte/transition';
 
 	let stage = $state<HTMLDivElement>();
 	let village: VillageHandle | null = null;
@@ -30,19 +32,22 @@
 	type Card = { picked: PickedPlant; label: string; latin: string; note: string; from: string; layer: string; stages: { name: string; day: number; note: string }[] };
 	let card = $state<Card | null>(null);
 	let plants: typeof import('$lib/plants') | null = null;
-	/** a press that comes up where it went down, soon, is a click on the world, not a look round */
+	/** the card slides in from the right beside the world; on a phone, up from the foot of it */
+	let narrow = $state(false);
+	/** a press that comes up where it went down, soon (by the events' own times: a busy frame between them is no matter), is a click on the world, not a look round */
 	let press: { x: number; y: number; t: number } | null = null;
-	const down = (e: PointerEvent) => (press = { x: e.clientX, y: e.clientY, t: performance.now() });
+	const down = (e: PointerEvent) => (press = { x: e.clientX, y: e.clientY, t: e.timeStamp });
 	const up = async (e: PointerEvent) => {
 		const p = press;
 		press = null;
-		if (!p || !village || Math.hypot(e.clientX - p.x, e.clientY - p.y) > 6 || performance.now() - p.t > 450) return;
+		if (!p || !village || Math.hypot(e.clientX - p.x, e.clientY - p.y) > 6 || e.timeStamp - p.t > 450) return;
 		const picked = village.pickPlant(e.clientX, e.clientY);
 		if (!picked) return close();
 		plants ??= await import('$lib/plants');
 		const plant = plants.plantAt(picked.id, picked.v);
 		if (!plant) return (card = null);
 		const layer = plants.LAYERS.find((l) => l.id === plant.layer);
+		narrow = matchMedia('(max-width: 640px)').matches;
 		card = { picked, label: plant.label, latin: plant.latin, note: plant.note, from: plant.from, layer: layer ? `${layer.label} — ${layer.note}` : '', stages: plant.stages };
 	};
 	const close = () => {
@@ -98,27 +103,32 @@
 	/>
 	{#if card}
 		{@const st = card.stages[card.picked.stage]}
-		<aside class="card" aria-label="{card.label}: about this plant">
-			<button class="close" onclick={close} aria-label="Close">×</button>
-			<p class="eyebrow">{card.picked.inside ? 'Under the glass' : 'The forest garden'} · v{card.picked.v}</p>
-			<h2>{card.label}</h2>
-			<p class="latin">{card.latin}</p>
-			<p class="about">{card.note}</p>
-			<dl>
-				<dt>Layer</dt>
-				<dd>{card.layer}</dd>
-				<dt>Grows</dt>
-				<dd>{card.from} · {card.picked.height.toFixed(1)} m high here</dd>
-			</dl>
-			<h3>Now: {st?.name} <span>stage {card.picked.stage + 1} of {card.stages.length} · day {st?.day}</span></h3>
-			<ol class="life" aria-label="Its stages">
-				{#each card.stages as s, k (s.name)}
-					<li class:past={k < card.picked.stage} class:now={k === card.picked.stage} class:fruit={k >= 6} title={s.name}></li>
-				{/each}
-			</ol>
-			<p class="about">{st?.note}</p>
-			{#if card.picked.stage < card.stages.length - 1}<p class="next">Next: {card.stages[card.picked.stage + 1]!.name}</p>{/if}
-			<a class="open" href="{base}/app/plants/?plant={card.picked.id}&stage={card.picked.stage + 1}&v={card.picked.v}">Grow it in the plants library →</a>
+		<aside class="card" aria-label="{card.label}: about this plant" transition:fly={narrow ? { y: 400, duration: 300 } : { x: 400, duration: 320 }}>
+			<div class="look">
+				<PlantLook kind={{ id: card.picked.id, v: card.picked.v, stage: card.picked.stage, seed: card.picked.seed }} />
+				<button class="close" onclick={close} aria-label="Close">×</button>
+			</div>
+			<div class="text">
+				<p class="eyebrow">{card.picked.inside ? 'Under the glass' : 'The forest garden'} · v{card.picked.v}</p>
+				<h2>{card.label}</h2>
+				<p class="latin">{card.latin}</p>
+				<p class="about">{card.note}</p>
+				<dl>
+					<dt>Layer</dt>
+					<dd>{card.layer}</dd>
+					<dt>Grows</dt>
+					<dd>{card.from} · {card.picked.height.toFixed(1)} m high here</dd>
+				</dl>
+				<h3>Now: {st?.name} <span>stage {card.picked.stage + 1} of {card.stages.length} · day {st?.day}</span></h3>
+				<ol class="life" aria-label="Its stages">
+					{#each card.stages as s, k (s.name)}
+						<li class:past={k < card.picked.stage} class:now={k === card.picked.stage} class:fruit={k >= 6} title={s.name}></li>
+					{/each}
+				</ol>
+				<p class="about">{st?.note}</p>
+				{#if card.picked.stage < card.stages.length - 1}<p class="next">Next: {card.stages[card.picked.stage + 1]!.name}</p>{/if}
+				<a class="open" href="{base}/app/plants/?plant={card.picked.id}&stage={card.picked.stage + 1}&v={card.picked.v}">Grow it in the plants library →</a>
+			</div>
 		</aside>
 	{/if}
 	{#if opening}<p class="opening">The {opening.toLowerCase()} ahead is opening its doors…</p>{/if}
@@ -167,35 +177,53 @@
 		font-size: 0.8rem;
 		white-space: nowrap;
 	}
-	/* the picked plant's card, beside the world on the right; over the foot of it on a phone */
+	/* the picked plant's card: a panel down the whole right side of the world, over its bar, the plant itself turning
+	   at the top of it; on a phone a sheet up from the foot of it */
 	.card {
 		position: absolute;
-		top: 4.5rem;
-		right: 1rem;
-		z-index: 2;
-		width: min(21rem, calc(100vw - 2rem));
-		max-height: calc(100% - 9rem - var(--nav-room));
-		overflow: auto;
-		padding: 1rem 1.1rem 1.1rem;
-		border-radius: 16px;
-		background: rgb(250 248 242 / 0.82);
-		border: 1px solid rgb(255 255 255 / 0.4);
-		-webkit-backdrop-filter: blur(14px) saturate(1.2);
-		backdrop-filter: blur(14px) saturate(1.2);
+		top: 0;
+		right: 0;
+		bottom: 0;
+		z-index: 4;
+		display: flex;
+		flex-direction: column;
+		width: min(23rem, 100vw);
+		padding: max(0.75rem, env(safe-area-inset-top, 0px)) 0.75rem 0 0.75rem;
+		box-sizing: border-box;
+		background: rgb(250 248 242 / 0.86);
+		border-left: 1px solid rgb(255 255 255 / 0.45);
+		-webkit-backdrop-filter: blur(16px) saturate(1.2);
+		backdrop-filter: blur(16px) saturate(1.2);
 		color: #1f2a23;
-		box-shadow: 0 10px 30px rgb(0 0 0 / 0.18);
+		box-shadow: -10px 0 30px rgb(0 0 0 / 0.16);
+	}
+
+	.card .look {
+		position: relative;
+		flex: none;
+		height: clamp(11rem, 34vh, 17rem);
+	}
+
+	.card .text {
+		flex: 1;
+		min-height: 0;
+		overflow: auto;
+		/* room at its foot for the app's nav pill, should the world be narrow enough for it to reach the panel */
+		padding: 0.9rem 0.4rem var(--nav-room);
+		overscroll-behavior: contain;
 	}
 
 	.card .close {
 		position: absolute;
 		top: 0.5rem;
-		right: 0.6rem;
-		width: 1.8rem;
-		height: 1.8rem;
+		right: 0.5rem;
+		width: 2rem;
+		height: 2rem;
 		border: 0;
 		border-radius: 999px;
-		background: rgb(0 0 0 / 0.06);
-		font-size: 1.1rem;
+		background: rgb(250 248 242 / 0.8);
+		box-shadow: 0 1px 4px rgb(0 0 0 / 0.12);
+		font-size: 1.15rem;
 		line-height: 1;
 		cursor: pointer;
 	}
@@ -308,9 +336,16 @@
 	@media (max-width: 640px) {
 		.card {
 			top: auto;
-			bottom: calc(5.5rem + var(--nav-room));
-			right: 1rem;
-			max-height: 45vh;
+			left: 0;
+			width: auto;
+			height: 72vh;
+			border-left: 0;
+			border-radius: 18px 18px 0 0;
+			box-shadow: 0 -10px 30px rgb(0 0 0 / 0.16);
+		}
+
+		.card .look {
+			height: 30vh;
 		}
 	}
 

@@ -8,10 +8,14 @@
 import { lite, material } from '$lib/plants/grow.js';
 import { plantAt } from '$lib/plants/index.js';
 
-/** how finely the plants are grown: near you, and further off (see DETAIL in $lib/plants/grow.js) */
+/**
+ * how finely the plants are grown: near you, and further off (see DETAIL in $lib/plants/grow.js); and one alone, in
+ * the picked plant's card (./PlantLook.svelte), finer than any in the forest
+ */
 export const TIERS = {
 	near: { level: 0.25, roots: false, thin: 0.45, fill: 1.3, finest: 0.0016 },
-	mid: { level: 0.1, roots: false, thin: 0.12, fill: 1.6, finest: 0.006 }
+	mid: { level: 0.1, roots: false, thin: 0.12, fill: 1.6, finest: 0.006 },
+	look: { level: 0.5, roots: false, thin: 0.6, fill: 1.2, finest: 0.0008 }
 };
 
 /** @typedef {{ id: string, v: number, stage: number, seed: string }} Kind a plant at its version, stage and seed */
@@ -30,7 +34,7 @@ export const keyOf = (k) => `${k.id}@${k.v}:${k.stage}:${k.seed}`;
 
 /**
  * Grows a plant for a world at one of the tiers' detail.
- * @param {Kind} kind @param {'near' | 'mid'} tier @returns {Shape}
+ * @param {Kind} kind @param {keyof TIERS} tier @returns {Shape}
  */
 export function grow(kind, tier) {
 	const plant = plantAt(kind.id, kind.v);

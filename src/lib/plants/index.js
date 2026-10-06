@@ -8,10 +8,10 @@
  * ./garden.js (pepper, pumpkin, blueberry), ./vegetables.js (radish, carrot, lettuce, garlic), ./trees.js (mango,
  * apple, orange, lemon, durian, jackfruit, through ./orchard.js and ./crown.js), ./groves.js (pomegranate, olive,
  * coffee, cacao, through ./orchard.js too), ./ginger.js, ./allies.js (comfrey, white clover), ./greens.js (Swiss chard,
- * kale) and ./beans.js (the runner bean up its cane) — all of it made of ./grow.js, ./sprout.js, ./leaves.js,
- * ./bloom.js and ./tree.js). The same seed id grows the same plant every time; another id, a sister plant — leaner or
- * bushier, its leaves turned otherwise, its roots another way through the soil. A new plant is a file here and a line
- * below.
+ * kale), ./beans.js (the runner bean up its cane) and ./fields.js (bamboo, hemp, lentil, edamame, chickpea, oats, for
+ * the mini fields) — all of it made of ./grow.js, ./sprout.js, ./leaves.js, ./bloom.js and ./tree.js). The same seed id
+ * grows the same plant every time; another id, a sister plant — leaner or bushier, its leaves turned otherwise, its
+ * roots another way through the soil. A new plant is a file here and a line below.
  */
 import { STAGES as STRAWBERRY, strawberry } from './strawberry.js';
 import { STAGES as CUCUMBER, cucumber } from './cucumber.js';
@@ -40,6 +40,8 @@ import { WALD as WALD_CANOPY } from './wald-canopy.js';
 import { WALD as WALD_LOWTREES } from './wald-lowtrees.js';
 import { WALD as WALD_BERRIES } from './wald-berries.js';
 import { WALD as WALD_PERENNIALS } from './wald-perennials.js';
+// the plants of the forest garden's mini fields, sown many side by side
+import { FIELDS } from './fields.js';
 
 /** @typedef {{ name: string, day: number, note: string }} Stage */
 /**
@@ -717,7 +719,7 @@ const HISTORY = {
  * @type {(Plant & { versions: import('../app/versions.js').Version<Plant['grow']>[], version: number })[]}
  */
 export const PLANTS = versioned(
-	LAYERS.flatMap((l) => [...ALL, ...WALD].filter((p) => (p.layer ?? LAYER_OF[p.id] ?? 'herbaceous') === l.id).map((p) => ({ ...p, layer: l.id }))),
+	LAYERS.flatMap((l) => [...ALL, ...WALD, ...FIELDS].filter((p) => (p.layer ?? LAYER_OF[p.id] ?? 'herbaceous') === l.id).map((p) => ({ ...p, layer: l.id }))),
 	'grow',
 	HISTORY
 );

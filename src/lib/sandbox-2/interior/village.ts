@@ -29,7 +29,7 @@ import { connectFilm, filmDraws, filmHoldsSize, worldTime } from '$lib/sandbox-k
 import { ambience, levelsAt } from './ambience'
 import { createForest, type Forest } from './flora.js'
 import { swapLegacy } from './legacy.js'
-import { DRIFT, OUTDOOR_SPACING, pick, planting, stageOf, type Flora } from './sandbox5.js'
+import { DRIFT, FIELDS, OUTDOOR_SPACING, pick, planting, stageOf, type Flora } from './sandbox5.js'
 
 export type VillageDome = { kind: DomeKind; x: number; z: number; R: number; ext: number }
 export type VillageHandle = {
@@ -55,7 +55,7 @@ export type VillageHandle = {
 	dispose: () => void
 }
 /** a plant picked in Sandbox 5's forest: which (its id, version, stage), where, and how far from the eye */
-export type PickedPlant = { id: string; v: number; stage: number; x: number; z: number; height: number; distance: number; inside: boolean }
+export type PickedPlant = { id: string; v: number; stage: number; seed: string; x: number; z: number; height: number; distance: number; inside: boolean }
 
 const WORLD = 380
 
@@ -661,7 +661,15 @@ export async function mountVillage(container: HTMLElement, onProgress: (label: s
 		/** the trunks so far, filed by 4 m cells: nothing is planted into a trunk */
 		const trunks = new Map<number, { x: number; z: number; r: number }[]>()
 		const trunkKey = (ix: number, iz: number) => (ix + 512) * 1024 + iz + 512
+		/** the mini fields sown so far, each a turned rectangle: nothing else is planted in one */
+		const sown: { x: number; z: number; c: number; s: number; hw: number; hl: number }[] = []
+		const inField = (x: number, z: number, margin: number) =>
+			sown.some((f) => {
+				const dx = x - f.x, dz = z - f.z
+				return Math.abs(dx * f.c + dz * f.s) < f.hw + margin && Math.abs(-dx * f.s + dz * f.c) < f.hl + margin
+			})
 		const clearOf = (x: number, z: number, gap: number) => {
+			if (inField(x, z, gap)) return false
 			const ix = Math.floor(x / 4), iz = Math.floor(z / 4)
 			for (let dx = -2; dx <= 2; dx++)
 				for (let dz = -2; dz <= 2; dz++) for (const t of trunks.get(trunkKey(ix + dx, iz + dz)) ?? []) if (Math.hypot(t.x - x, t.z - z) < t.r + gap) return false
@@ -689,6 +697,78 @@ export async function mountVillage(container: HTMLElement, onProgress: (label: s
 			trunks.set(k, list)
 		}
 		const S = OUTDOOR_SPACING
+		/** the fields' tilled soil: one mesh for all of them, ridged along their rows, the furrows darker */
+		const soil = { pos: [] as number[], col: [] as number[], idx: [] as number[] }
+		const ridge = new THREE.Color('#7a5a3c'), furrow = new THREE.Color('#4e3826')
+		const tilled = (x: number, z: number, c: number, sn: number, hw: number, hl: number, row: number) => {
+			// across the rows: a ridge under each row, a furrow between
+			const steps = Math.max(2, Math.round((hw * 2) / (row / 2)))
+			const first = soil.pos.length / 3
+			for (let k = 0; k <= steps; k++) {
+				const u = -hw + (k / steps) * hw * 2
+				const up = k % 2 === 0 ? 0.035 : 0.01
+				const tint = k % 2 === 0 ? ridge : furrow
+				for (const v of [-hl, hl]) {
+					soil.pos.push(x + u * c - v * sn, up, z + u * sn + v * c)
+					soil.col.push(tint.r, tint.g, tint.b)
+				}
+			}
+			for (let k = 0; k < steps; k++) {
+				const a = first + k * 2
+				soil.idx.push(a, a + 1, a + 2, a + 1, a + 3, a + 2)
+			}
+		}
+		// first the mini fields, in open ground between where the trees will stand: oats, lentils, chickpeas, edamame,
+		// hemp in rows, bamboo in clumps, each field sown at once and so mostly at one stage
+		for (const crop of FIELDS) {
+			for (let f = 0, tries = 0; f < crop.fields && tries < 400; tries++) {
+				const [w, l] = crop.size
+				const a = r() * Math.PI * 2, d = 40 + r() * (WORLD - 60)
+				const x = Math.cos(a) * d, z = Math.sin(a) * d, turn = r() * Math.PI
+				const c = Math.cos(turn), sn = Math.sin(turn), hw = w / 2, hl = l / 2
+				// the whole field in open ground, clear of the fields before it
+				let fits = !inField(x, z, Math.hypot(hw, hl) + 3)
+				for (let u = -1; fits && u <= 1; u += 0.5) for (let v = -1; fits && v <= 1; v += 0.5) {
+					const px = x + u * hw * c - v * hl * sn, pz = z + u * hw * sn + v * hl * c
+					if (!open(px, pz, 1)) fits = false
+				}
+				if (!fits) continue
+				sown.push({ x, z, c, s: sn, hw, hl })
+				if (crop.tilled) tilled(x, z, c, sn, hw + 0.3, hl + 0.3, crop.row)
+				f++
+				const stage = crop.stages[Math.floor(r() * crop.stages.length)]!
+				for (let u = -hw + crop.row / 2; u < hw; u += crop.row)
+					for (let v = -hl + crop.gap / 2; v < hl; v += crop.gap) {
+						// a row a little crooked, a gap here and there, a plant or two behind or ahead of the rest
+						if (r() < 0.04) continue
+						const ju = u + (r() - 0.5) * crop.row * 0.25, jv = v + (r() - 0.5) * crop.gap * 0.5
+						const px = x + ju * c - jv * sn, pz = z + ju * sn + jv * c
+						const at = r() < 0.85 ? stage : crop.stages[Math.floor(r() * crop.stages.length)]!
+						forest!.add({ id: crop.id, v: crop.v, stage: at, seed }, crop.reach, px, 0, pz, r() * 6.28, 0.88 + r() * 0.24)
+					}
+			}
+		}
+		{
+			const g = new THREE.BufferGeometry()
+			g.setAttribute('position', new THREE.Float32BufferAttribute(soil.pos, 3))
+			g.setAttribute('color', new THREE.Float32BufferAttribute(soil.col, 3))
+			g.setIndex(soil.idx)
+			g.computeVertexNormals()
+			const fields = new THREE.Mesh(g, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -2 }))
+			fields.receiveShadow = true
+			scene.add(fields)
+			// the forest floor's tufts, stones and wood laid before the fields were sown are cleared off them
+			const off = (list: THREE.Matrix4[]) => {
+				for (let k = list.length - 1; k >= 0; k--) {
+					const e = list[k]!.elements
+					if (inField(e[12]!, e[14]!, 0.4)) list.splice(k, 1)
+				}
+			}
+			for (const t of tiles.values()) for (const lists of [t.floor, t.under, t.main]) for (const list of lists) off(list)
+		}
+		await pause('Sowing the fields')
+		// for a walk to them from the console: __fields
+		;(window as unknown as { __fields?: typeof sown }).__fields = sown
 		// the canopy: nut trees, the lime, the alder, big standards; wide apart, their crowns meeting overhead
 		await grid(S.canopy, 'Planting the canopy', (x, z) => open(x, z, 3.5) && clearOf(x, z, 4) && tree('canopy', x, z, 3))
 		// the fruit trees, close under and between them
@@ -1313,11 +1393,11 @@ export async function mountVillage(container: HTMLElement, onProgress: (label: s
 			const o = ray.ray.origin, d = ray.ray.direction
 			let got: PickedPlant | null = null
 			const hit = forest.pick(o, d)
-			if (hit) got = { id: hit.kind.id, v: hit.kind.v, stage: hit.kind.stage, x: hit.x, z: hit.z, height: hit.height, distance: hit.t, inside: false }
+			if (hit) got = { id: hit.kind.id, v: hit.kind.v, stage: hit.kind.stage, seed: hit.kind.seed, x: hit.x, z: hit.z, height: hit.height, distance: hit.t, inside: false }
 			// and the forests inside the domes built near you, in their own ground
 			for (const i of shown) {
 				const dm = domes[i]!, inner = built.get(i)?.pickPlant?.(new THREE.Vector3(o.x - dm.x, o.y, o.z - dm.z), d)
-				if (inner && (!got || inner.t < got.distance)) got = { id: inner.kind.id, v: inner.kind.v, stage: inner.kind.stage, x: inner.x + dm.x, z: inner.z + dm.z, height: inner.height, distance: inner.t, inside: true }
+				if (inner && (!got || inner.t < got.distance)) got = { id: inner.kind.id, v: inner.kind.v, stage: inner.kind.stage, seed: inner.kind.seed, x: inner.x + dm.x, z: inner.z + dm.z, height: inner.height, distance: inner.t, inside: true }
 			}
 			marker.visible = !!got
 			if (got) {
