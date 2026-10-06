@@ -930,7 +930,7 @@ export async function mountInterior(container: HTMLElement, kind: DomeKind, onPr
 				if (spots.some((p) => Math.hypot(p.x - x, p.z - z) < 6)) continue
 				spots.push({ x, z, rot: ar() * Math.PI * 2, size: 0.7 + ar() * 0.6 })
 			}
-			const ants = antHills(spots, eye)
+			const ants = antHills(spots, eye, (x, z) => onOutsidePath(x, z) || nearOutStream(x, z, streamW / 2 + 0.4) || Math.hypot(x, z) < Rt + 1)
 			scene.add(ants.object)
 			animated.push(ants.update)
 			for (const p of spots) outsideColliders.push({ x: p.x, z: p.z, r: 0.7 * p.size })

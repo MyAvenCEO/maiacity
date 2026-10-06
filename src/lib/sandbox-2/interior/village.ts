@@ -983,7 +983,8 @@ export async function mountVillage(container: HTMLElement, onProgress: (label: s
 				if (spots.some((q) => Math.hypot(q.x - x, q.z - z) < 12)) continue
 				spots.push({ x, z, rot: ar() * Math.PI * 2, size: 0.7 + ar() * 0.6 })
 			}
-			const ants = antHills(spots, eye)
+			// their roads run off over the floor, never over a path, into the water or a dome
+			const ants = antHills(spots, eye, (x, z) => nearPath(x, z, 0.8) || nearWater(x, z, W / 2 + 0.4) || domes.some((d) => Math.hypot(x - d.x, z - d.z) < d.ext + 1))
 			scene.add(ants.object)
 			animated.push(ants.update)
 			for (const q of spots) colliders.push({ x: q.x, z: q.z, r: 0.75 * q.size })
