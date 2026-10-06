@@ -160,7 +160,8 @@ export const CACAO_STAGES = stages([
 	['Ripe', 1640, 'Heavy yellow-orange pods rattling with beans in their white pulp: cut, split, ferment, dry.']
 ]);
 
-export const cacao = orchard({
+/** its description, kept for its versions (./orchard.v1.js grows its v1) @type {import('./orchard.js').Orchard} */
+export const CACAO = {
 	seed: { size: v3(0.024, 0.012, 0.015), coat: '#9a6a5a', shade: '#6a3a30', depth: 0.02 },
 	hypogeal: false,
 	cotyledon: { length: 0.035, width: 0.016, colour: '#7a9a4a' },
@@ -180,4 +181,5 @@ export const cacao = orchard({
 			return (r < 0.5 ? mix('#4a7a2a', '#d0b830', r * 2) : mix('#d0b830', '#d8702a', (r - 0.5) * 2)).lerp(new THREE.Color('#2f4a20'), ripe < 0.2 ? ridge * 0.2 : 0);
 		}
 	}
-});
+};
+export const cacao = orchard(CACAO);

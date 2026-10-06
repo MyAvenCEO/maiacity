@@ -19,22 +19,23 @@ import { STAGES as RASPBERRY, raspberry } from './raspberry.js';
 import { OXHEART_STAGES, STAGES as TOMATO, oxheart, tomato } from './tomato.js';
 import { STAGES as EGGPLANT, eggplant } from './eggplant.js';
 import { STAGES as COCONUT, coconut } from './coconut.js';
-import { APPLE_STAGES, DURIAN_STAGES, JACKFRUIT_STAGES, LEMON_STAGES, MANGO_STAGES, ORANGE_STAGES, apple, durian, jackfruit, lemon, mango, orange } from './trees.js';
+import { APPLE_STAGES, DURIAN, DURIAN_STAGES, JACKFRUIT, JACKFRUIT_STAGES, LEMON_STAGES, MANGO_STAGES, ORANGE_STAGES, apple, durian, jackfruit, lemon, mango, orange } from './trees.js';
 import { CARROT_STAGES, GARLIC_STAGES, LETTUCE_STAGES, RADISH_STAGES, carrot, garlic, lettuce, radish } from './vegetables.js';
 import { STAGES as GRAPE, grape } from './grape.js';
 import { BANANA_STAGES, RED_BANANA_STAGES, PAPAYA_STAGES, PASSION_STAGES, PINEAPPLE_STAGES, banana, papaya, passionFruit, pineapple, redBanana } from './tropics.js';
 import { BASIL_STAGES, CHIVES_STAGES, CORIANDER_STAGES, DILL_STAGES, LAVENDER_STAGES, LEMON_BALM_STAGES, MINT_STAGES, OREGANO_STAGES, PARSLEY_STAGES, ROSEMARY_STAGES, SAGE_STAGES, THYME_STAGES, WILD_GARLIC_STAGES, basil, chives, coriander, dill, lavender, lemonBalm, mint, oregano, parsley, rosemary, sage, thyme, wildGarlic } from './herbs.js';
 import { MOSS_STAGES, OYSTER_STAGES, SHIITAKE_STAGES, WINECAP_STAGES, moss, oyster, shiitake, wineCap } from './ground.js';
 import { FIG_STAGES, MULBERRY_STAGES, PERSIMMON_STAGES, fig, mulberry, persimmon } from './fruittrees.js';
-import { APRICOT_STAGES, AVOCADO_STAGES, CHERRY_STAGES, PEACH_STAGES, PEAR_STAGES, PLUM_STAGES, SAFOU_STAGES, SAPODILLA_STAGES, SOURSOP_STAGES, apricot, avocado, cherry, peach, pear, plum, safou, sapodilla, soursop } from './fruittrees.js';
+import { APRICOT_STAGES, AVOCADO_STAGES, CHERRY_STAGES, PEACH_STAGES, PEAR_STAGES, PLUM_STAGES, SAFOU_STAGES, SAPODILLA_STAGES, SOURSOP, SOURSOP_STAGES, apricot, avocado, cherry, peach, pear, plum, safou, sapodilla, soursop } from './fruittrees.js';
 import { BLUEBERRY_STAGES, PEPPER_STAGES, PUMPKIN_STAGES, blueberry, pepper, pumpkin } from './garden.js';
-import { CACAO_STAGES, COFFEE_STAGES, OLIVE_STAGES, POMEGRANATE_STAGES, cacao, coffee, olive, pomegranate } from './groves.js';
+import { CACAO, CACAO_STAGES, COFFEE_STAGES, OLIVE_STAGES, POMEGRANATE_STAGES, cacao, coffee, olive, pomegranate } from './groves.js';
 import { GINGER_STAGES, ginger } from './ginger.js';
 import { CLOVER_STAGES, COMFREY_STAGES, clover, comfrey } from './allies.js';
 import { CHARD_STAGES, KALE_STAGES, chard, kale } from './greens.js';
 import { BEAN_STAGES, beans } from './beans.js';
 
-import { at, versioned } from '../app/versions.js';
+import { FIRST, at, versioned } from '../app/versions.js';
+import { orchard as orchardV1 } from './orchard.v1.js';
 import { WALD as WALD_CANOPY } from './wald-canopy.js';
 import { WALD as WALD_LOWTREES } from './wald-lowtrees.js';
 import { WALD as WALD_BERRIES } from './wald-berries.js';
@@ -684,7 +685,26 @@ const WALD = [...WALD_CANOPY, ...WALD_LOWTREES, ...WALD_BERRIES, ...WALD_PERENNI
  * None yet: every plant is at v1.
  * @type {Record<string, (import('../app/versions.js').Change & { build?: Plant['grow'] })[]>}
  */
-const HISTORY = {};
+const HISTORY = {
+	// v2: the fruit of the old wood lies against the bark, hanging straight down from a short stout stalk, where v1 left it
+	// floating off the trunk; and the jackfruit bears many more
+	cacao: [
+		{ ...FIRST, build: orchardV1(CACAO) },
+		{ v: 2, date: '2026-10-06', note: 'Pods hang against the trunk and thick limbs on short stalks' }
+	],
+	jackfruit: [
+		{ ...FIRST, build: orchardV1({ ...JACKFRUIT, flower: { ...JACKFRUIT.flower, chance: 1.3 } }) },
+		{ v: 2, date: '2026-10-06', note: 'Fruit hangs against the trunk on stout stalks, many more of them' }
+	],
+	durian: [
+		{ ...FIRST, build: orchardV1(DURIAN) },
+		{ v: 2, date: '2026-10-06', note: 'Fruit hangs from the bark of the limbs, not out of their middle' }
+	],
+	soursop: [
+		{ ...FIRST, build: orchardV1(SOURSOP) },
+		{ v: 2, date: '2026-10-06', note: 'Fruit hangs from the bark of the limbs, not out of their middle' }
+	]
+};
 
 /**
  * every plant, layer by layer from the canopy down (in each layer as they were added), with its versions
