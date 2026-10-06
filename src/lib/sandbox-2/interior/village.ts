@@ -16,6 +16,7 @@
 import * as THREE from 'three'
 import { DOMES, DOORS, adiff, bake, box, geodesic, glassSheen, lantern, mats, mountInterior, polar, portal, sofa, table, type DomeKind, type EmbeddedDome } from './interior'
 import { cafes, coops, coopsAround, henPatches, playground, rabbitPatches, squaresAround, type Kit } from './spaces'
+import { playDome } from '$lib/models/minidomes.js'
 import { groundCover, water } from './textures'
 import { appleTree, banana, berryBush, canopyTree, climber, clover, coconutPalm, comfrey, fruitTree, ginger, herb, papaya, passionVine, seeded, smallFruitTree, squash, strawberries, tropicalShrub, forestFloor, FLOOR_KINDS, floorPick, grassTuft, type Plant } from './plants'
 import { antHills, apiary, fishes, herd } from './animals'
@@ -569,13 +570,15 @@ export async function mountVillage(container: HTMLElement, onProgress: (label: s
 			oak: m.oak(1), lime: m.lime(1), stone: (rep) => m.stone(rep), dark: m.dark, steel: m.steel, counter: m.counter,
 			timber: m.timberFrame, linen: m.linen, cushion: m.cushion, rug: m.rug, paper: m.paper
 		}
-		for (const sq of [...cafes(kit, SQUARE_R), ...coops(kit, SQUARE_R)]) {
+		// in Sandbox 5 the coops, hutches and playgrounds are mini domes ($lib/models/minidomes.js)
+		const mini = !!flora
+		for (const sq of [...cafes(kit, SQUARE_R), ...coops(kit, SQUARE_R, mini)]) {
 			swap(sq.group)
 			scene.add(bake(sq.group))
 			colliders.push(...sq.colliders)
 		}
 		for (const [i, pg] of PLAYGROUNDS.entries()) {
-			const p = playground(90 + i)
+			const p = mini ? playDome(90 + i) : playground(90 + i)
 			p.group.position.set(pg.x, 0, pg.z)
 			p.group.rotation.y = Math.atan2(pg.x, pg.z)
 			scene.add(bake(p.group))

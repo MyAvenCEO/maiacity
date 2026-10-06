@@ -1,7 +1,7 @@
 /*
  * THE 3D MODELS — every reusable model, as the 3D models viewer (/app/models/) lists it: its name, what it is, where
  * it is used, and the function that builds it (./furniture.ts, ./hallway.ts, ./kitchen.ts, ./bathroom.ts,
- * ./outdoor.ts, ./terrace.ts, ./yard.ts, ./containers.js; a machine that works is an actor, ./actors). A world places
+ * ./outdoor.ts, ./terrace.ts, ./yard.ts, ./containers.js, ./minidomes.js; a machine that works is an actor, ./actors). A world places
  * them (src/lib/worlds); a new one is a function there and a line here. Each has its version and history
  * ($lib/app/versions.js): a changed model goes up a version, its old builder kept in HISTORY below.
  */
@@ -20,6 +20,8 @@ import { excavator as excavatorV2 } from '$lib/actors/excavator.v2.js';
 import { kitchenContainer, sanitaryContainer, techContainer, workshopContainer } from './containers';
 import { ashtray, barnLamp, casementWindow, cityBike, doorCanopy, entranceDoor, floodlight, foldingChair, hedge, insectHotel, ivyCone, mailboxPost, rainBarrel, redTin, stationClock, steelWindow, stonewareCrock, teakRecliner, teakTable, windowBox, workshopDoor } from './yard';
 
+import { henDome, playDome, rabbitDome } from './minidomes.js';
+import { playground, timberCoop, timberHutch } from '$lib/sandbox-2/interior/spaces';
 import { FIRST, versioned, type Version, type Change } from '$lib/app/versions.js';
 
 /** A rigged machine as a model: its rig in the world, playing one of its moves (`userData.tick(t)`, as the viewer's clock runs). */
@@ -42,6 +44,18 @@ const HISTORY: Record<string, (Change & { build?: Make })[]> = {
 		{ ...FIRST, build: () => working(excavatorV1(), 'dig') },
 		{ v: 2, date: '2026-10-06', note: 'Twice the size; the bucket turned round, its mouth and teeth towards the machine as a backhoe’s are', build: () => working(excavatorV2(), 'dig') },
 		{ v: 3, date: '2026-10-06', note: 'Two variants: small, the 1.7 t mini back at its own size; big, a 14 t crawler excavator built as one' }
+	],
+	'chicken-coop': [
+		{ ...FIRST, build: timberCoop },
+		{ v: 2, date: '2026-10-06', note: 'A mini geodesic dome: wire round its foot, clear over the run, a shingled back to roost in; perches, three nesting boxes with eggs in them' }
+	],
+	'rabbit-hutch': [
+		{ ...FIRST, build: timberHutch },
+		{ v: 2, date: '2026-10-06', note: 'A mini geodesic dome of wire on grass, a little shingled dome inside to sleep in' }
+	],
+	playground: [
+		{ ...FIRST, build: () => playground(90).group },
+		{ v: 2, date: '2026-10-06', note: 'A climbing dome of round logs with a platform and a slide at its middle; the swing on an arch of logs' }
 	]
 };
 
@@ -129,6 +143,9 @@ const LIST: Omit<Model, 'versions' | 'version'>[] = [
 	{ id: 'tree-maple', label: 'Field maple', note: 'small, by a door, about 4.3 m', usedIn: 'The backyard', make: () => tree('maple') },
 	{ id: 'tree-privet', label: 'Privet tree', note: 'several stems, narrow leaves, about 4.5 m', usedIn: 'The backyard', make: () => tree('privet') },
 	{ id: 'sapling', label: 'Sapling', note: 'one thin stem and a few leaves, about 2.2 m', usedIn: 'The backyard', make: () => tree('sapling') },
+	{ id: 'chicken-coop', label: 'Chicken coop', note: 'a mini geodesic dome of timber struts, 5.6 m across and 2.3 m high: wire round its foot, clear panels over the run, a cedar-shingled back where the hens roost; a ladder of perches, three nesting boxes on hay with the day’s eggs, a feeder and a water trough', usedIn: 'Sandbox 5', make: () => henDome().group },
+	{ id: 'rabbit-hutch', label: 'Rabbit hutch', note: 'a mini geodesic dome of wire against foxes and hawks, 5.2 m across and 1.6 m high, on grass: a little shingled dome to sleep in, a hay rack, a water bowl, a hollow log to hide in', usedIn: 'Sandbox 5', make: () => rabbitDome().group },
+	{ id: 'playground', label: 'Playground', note: 'about 16 m across, all wood: a sandpit ringed with stumps round a climbing dome of round logs (4.4 m across, a platform at 1.2 m, a rope net under its crown, a slide out of its side), a swing on an arch of logs, balance logs and stepping stumps', usedIn: 'Sandbox 5', make: () => playDome().group },
 	{ id: 'container-kitchen', label: 'Kitchen container', note: "a 40' high cube (12.19 × 2.44 × 2.90 m) fitted as the crew's central kitchen: six-burner range under its hood, combi steamer, sinks, dishwasher, fridges and freezer, the serving hatch — and the pantry behind a partition. Walk in", usedIn: 'Sandbox 1', make: () => kitchenContainer() },
 	{ id: 'container-workshop', label: 'Workshop container', note: "the workshop: a 4 m bench under a pegboard of hand tools, timber rack, pillar drill, grinder, mitre saw, table saw, welder, compressor, cordless tools in their cases, spades, ladder, wheelbarrow; a mixer outside. Walk in", usedIn: 'Sandbox 1', make: () => workshopContainer() },
 	{ id: 'container-tech', label: 'Tech container', note: "28 solar panels (about 11 kWp) on the roof and fold-out wings, 40 kWh of batteries, inverters, a hydrogen fuel cell and electrolyser, Starlink, and the AI server room behind glass. Walk in", usedIn: 'Sandbox 1', make: () => techContainer() },
