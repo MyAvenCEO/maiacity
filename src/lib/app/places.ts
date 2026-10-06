@@ -21,9 +21,10 @@ export const APPS: Place[] = [
 	{ href: `${base}/app/coops/`, label: 'Coops', icon: 'coops', note: 'Found, join and back cities and settlements' }
 ];
 
-/** the worlds' and sandboxes' older versions, by address, each with what it was (none yet: everything is at v1) */
+/** the worlds' and sandboxes' older versions, by address, each with what it was */
 const HISTORY: Record<string, (Change & { build?: string })[]> = {
-	[`${base}/app/games/sandbox-5/`]: [FIRST, { v: 2, date: '2026-10-06', note: 'Replanted the cacao, jackfruit, durian and soursop at their v2' }, { v: 3, date: '2026-10-06', note: 'Replanted the apple trees at v2' }, { v: 4, date: '2026-10-06', note: 'Mini fields of oats, lentils, chickpeas, edamame and hemp, and bamboo groves' }]
+	[`${base}/app/games/sandbox-5/`]: [FIRST, { v: 2, date: '2026-10-06', note: 'Replanted the cacao, jackfruit, durian and soursop at their v2' }, { v: 3, date: '2026-10-06', note: 'Replanted the apple trees at v2' }, { v: 4, date: '2026-10-06', note: 'Mini fields of oats, lentils, chickpeas, edamame and hemp, and bamboo groves' }, { v: 5, date: '2026-10-06', note: 'The chicken coops, rabbit hutches and playgrounds as mini domes (their v2), eggs in the nests' }, { v: 6, date: '2026-10-06', note: 'Paths routed round the coops and squares: in from every dome to the master’s nearest door' }],
+	[`${base}/app/games/sandbox-4/`]: [FIRST, { v: 2, date: '2026-10-06', note: 'Paths routed round the coops and squares: in from every dome to the master’s nearest door' }]
 };
 /** a list of worlds with their versions */
 const withVersions = (list: Place[]): Place[] =>

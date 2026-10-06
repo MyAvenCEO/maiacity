@@ -20,6 +20,7 @@ import { water } from './textures'
 import { BIOMES, groundMaterial } from '$lib/biomes'
 import { coverStream } from '$lib/biomes/stream.js'
 import { songbirds } from './birds.js'
+import { playDome } from '$lib/models/minidomes.js'
 import { appleTree, banana, berryBush, canopyTree, climber, clover, coconutPalm, comfrey, fruitTree, ginger, herb, papaya, passionVine, seeded, smallFruitTree, squash, strawberries, tropicalShrub, forestFloor, FLOOR_KINDS, floorPick, grassTuft, type Plant } from './plants'
 import { antHills, apiary, fishes, herd } from './animals'
 import { settled as actorsSettled } from '$lib/actors/build'
@@ -205,6 +206,17 @@ export async function mountVillage(container: HTMLElement, onProgress: (label: s
 			})
 		return pts
 	}
+	/**
+	 * A line's own curve, a point every few metres along it: pushed clear (`clear`) a point at a time, a path clears a
+	 * coop or a square all along it, not only at its few bends, between which its curve would cut straight through.
+	 */
+	const denser = (pts: THREE.Vector3[], closed = false, every = 4) => {
+		const curve = new THREE.CatmullRomCurve3(pts, closed)
+		const n = Math.max(pts.length, Math.round(curve.getLength() / every))
+		const out = curve.getSpacedPoints(n)
+		if (closed) out.pop()
+		return out
+	}
 	/** A smooth, gently wandering line from a to b. */
 	const meander = (a: THREE.Vector3, b: THREE.Vector3, wobble: number, seed: number) => {
 		const r = seeded(seed)
@@ -263,29 +275,27 @@ export async function mountVillage(container: HTMLElement, onProgress: (label: s
 	}
 	const master = domes[0]!
 	domes.slice(1).forEach((d, i) => {
-		// from the door that faces the centre, in to the master's ring
+		// from the door that faces the centre, in to the master's nearest door: through the gaps between its café
+		// squares and coops, never between a square and a coop, too close together for a path
 		const door = doorToward(d, 0, 0)
 		const a = doorPoint(d, door, 2.6)
 		const target = doorPoint(master, doorToward(master, d.x, d.z), 2.6)
-		const aim = Math.atan2(a.x, a.z)
-		const [bx, bz] = polar(master.ext + 2.6, aim)
-		const b = new THREE.Vector3(bx, 0, bz)
-		addPath(clear(meander(a, d.kind === 'large' ? target : b, 5, 300 + i), 3))
+		addPath(clear(denser(meander(a, target, 5, 300 + i)), 3))
 	})
 	// a loop round the whole cell, and a short path out to it from every outer door
 	const loopR = 252
-	const loop = clear(Array.from({ length: 40 }, (_, i) => {
+	const loop = clear(denser(Array.from({ length: 40 }, (_, i) => {
 		const a = (i / 40) * Math.PI * 2
 		const rr = loopR + Math.sin(a * 5) * 9
 		return new THREE.Vector3(Math.sin(a) * rr, 0, Math.cos(a) * rr)
-	}), 6, false)
+	}), true), 6, false)
 	addPath(loop, 2.4, true)
 	domes.slice(1).forEach((d, i) => {
 		const door = doorToward(d, d.x * 2, d.z * 2)
 		const a = doorPoint(d, door, 2.6)
 		const aim = Math.atan2(a.x, a.z)
 		const b = new THREE.Vector3(Math.sin(aim) * (loopR + Math.sin(aim * 5) * 9), 0, Math.cos(aim) * (loopR + Math.sin(aim * 5) * 9))
-		addPath(clear(meander(a, b, 3, 400 + i), 3))
+		addPath(clear(denser(meander(a, b, 3, 400 + i)), 3))
 	})
 	// and out to the edges of the cell, where the next cells would begin
 	for (let k = 0; k < 3; k++) {
@@ -566,13 +576,15 @@ export async function mountVillage(container: HTMLElement, onProgress: (label: s
 			oak: m.oak(1), lime: m.lime(1), stone: (rep) => m.stone(rep), dark: m.dark, steel: m.steel, counter: m.counter,
 			timber: m.timberFrame, linen: m.linen, cushion: m.cushion, rug: m.rug, paper: m.paper
 		}
-		for (const sq of [...cafes(kit, SQUARE_R), ...coops(kit, SQUARE_R)]) {
+		// in Sandbox 5 the coops, hutches and playgrounds are mini domes ($lib/models/minidomes.js)
+		const mini = !!flora
+		for (const sq of [...cafes(kit, SQUARE_R), ...coops(kit, SQUARE_R, mini)]) {
 			swap(sq.group)
 			scene.add(bake(sq.group))
 			colliders.push(...sq.colliders)
 		}
 		for (const [i, pg] of PLAYGROUNDS.entries()) {
-			const p = playground(90 + i)
+			const p = mini ? playDome(90 + i) : playground(90 + i)
 			p.group.position.set(pg.x, 0, pg.z)
 			p.group.rotation.y = Math.atan2(pg.x, pg.z)
 			scene.add(bake(p.group))
