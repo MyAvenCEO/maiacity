@@ -27,23 +27,27 @@ const YEARS = /** @type {[number, number][]} */ ([
 	[1.6, 0],
 	[2, 0.1],
 	[3, 1],
-	[4, 3.6],
-	[5, 5],
-	[6, 5.15],
-	[7, 5.45],
-	[8, 5.55],
-	[9, 5.6]
+	[4, 3.8],
+	[5, 5.6],
+	[6, 5.75],
+	[7, 6.05],
+	[8, 6.15],
+	[9, 6.2]
 ]);
+/** the year of the blossom: the spurs on wood old enough by then flower */
+const BLOOM = linear(5, YEARS);
 /** the trunk's (the leader's) length through the years */
 const LEADER = /** @type {[number, number][]} */ ([
 	[0, 0],
-	[0.15, 0.12],
-	[1, 1.75],
-	[2, 2.45],
+	[0.15, 0.1],
+	[1, 0.8],
+	[2, 1.85],
+	[2.5, 2.25],
 	[3, 3.0],
 	[4, 3.45],
-	[5, 3.85],
-	[6, 4.1]
+	[5, 3.75],
+	[6, 4.05],
+	[7, 4.2]
 ]);
 
 /** straight between the rows of a table */
@@ -63,13 +67,13 @@ function leaderAt(/** @type {number} */ h) {
  * apples asks it thousands of times.
  */
 class GridSpace extends Space {
-	constructor(cell = 0.2) {
+	constructor(cell = 0.12) {
 		super();
 		this.cell = cell;
 		/** @type {Map<number, { c?: THREE.Vector3, a?: THREE.Vector3, b?: THREE.Vector3, r: number }[]>} */
 		this.grid = new Map();
 		/** how far round a place a question reaches at most (a fruit's radius, a leaf's) */
-		this.reach = 0.06;
+		this.reach = 0.045;
 	}
 	/** @param {number} x @param {number} y @param {number} z */
 	key(x, y, z) {
@@ -208,10 +212,10 @@ export function design(seed) {
 	/** a branch off `parent`, s metres along it, going d, as long as the crown leaves room for */
 	const branch = (/** @type {Branch} */ parent, /** @type {(string | number)[]} */ key, /** @type {number} */ s, /** @type {THREE.Vector3} */ d, /** @type {number} */ order, /** @type {number} */ full, /** @type {number} */ born) => {
 		const r = chance(seed, 'apple-branch', ...key);
-		const n = order === 1 ? 10 : order === 2 ? 7 : 4;
-		const shape = order === 1 ? [0.07, 0.09, 0.1] : order === 2 ? [0.03, 0.12, 0.17] : [0.03, 0.14, 0.2];
+		const n = order === 1 ? 10 : order === 2 ? 7 : order === 3 ? 4 : 3;
+		const shape = order === 1 ? [0.07, 0.09, 0.1] : order === 2 ? [0.03, 0.12, 0.17] : order === 3 ? [0.03, 0.14, 0.2] : [0.08, 0.1, 0.22];
 		/** @type {Branch} */
-		const b = { key, order, at: s, dirs: way(r, d, n, shape[0], shape[1], shape[2]), step: full / n, full, born, rate: order === 1 ? 1.05 : order === 2 ? 0.75 : 0.5, kids: [], spurs: [], load: [] };
+		const b = { key, order, at: s, dirs: way(r, d, n, shape[0], shape[1], shape[2]), step: full / n, full, born, rate: order === 1 ? 1.05 : order === 2 ? 0.75 : order === 3 ? 0.5 : 0.55, kids: [], spurs: [], load: [] };
 		parent.kids.push(b);
 		return b;
 	};
@@ -270,6 +274,23 @@ export function design(seed) {
 				s += spacing * about(r, 1, 0.25);
 			}
 		}
+		// the season's leafy shoots off the laterals and their shoots, filling the crown between them
+		if (b.order === 2 || b.order === 3) {
+			const tr4 = chance(seed, 'apple-twigs', ...b.key);
+			let s = 0.12 + tr4() * 0.15;
+			let k = 0;
+			let phyl = tr4() * Math.PI * 2;
+			while (s < b.full - 0.05) {
+				phyl += 2.4 + about(tr4, 0, 0.5);
+				const d = leave(dirAt(b, s), between(tr4, 0.6, 1.1), phyl);
+				d.y = d.y * 0.7 + 0.25;
+				d.normalize();
+				const full = clamp(edge(point(from, b, s), d) * 0.7, 0.08, between(tr4, 0.14, 0.34));
+				branch(b, [...b.key, 'twig', k], s, d, 4, full, madeAt(b, s) + 0.4 + tr4() * 0.4);
+				k++;
+				s += (b.order === 2 ? 0.28 : 0.22) * about(tr4, 1, 0.3);
+			}
+		}
 		// spurs on the wood from its second year (not on the leader, nor the first half of a scaffold)
 		if (b.order >= 1) {
 			const sr = chance(seed, 'apple-spurs', ...b.key);
@@ -284,12 +305,12 @@ export function design(seed) {
 				d.normalize();
 				const made = madeAt(b, s);
 				// a spur flowers from the wood's third year; the young tree's first blossom is sparse
-				const flowers = sr() < (5 - made >= 1.5 ? 0.36 : 5 - made >= 0.9 ? 0.22 : 0) ? 5 + (sr() < 0.5 ? 1 : 0) : 0;
+				const flowers = sr() < (BLOOM - made >= 1.5 ? 0.85 : BLOOM - made >= 0.9 ? 0.55 : 0) ? 5 + (sr() < 0.5 ? 1 : 0) : 0;
 				const k5 = sr();
-				const keep = flowers && sr() < 0.85 ? (k5 < 0.3 ? 1 : k5 < 0.66 ? 2 : k5 < 0.88 ? 3 : k5 < 0.97 ? 4 : 5) : 0;
-				b.spurs.push({ s, dir: d, len: between(sr, 0.015, 0.045), born: made + 0.7, flowers, keep, key: [...b.key, 'spur', k] });
+				const keep = flowers && sr() < 0.45 ? (k5 < 0.3 ? 1 : k5 < 0.66 ? 2 : k5 < 0.88 ? 3 : k5 < 0.97 ? 4 : 5) : 0;
+				b.spurs.push({ s, dir: d, len: between(sr, 0.015, 0.045), born: made + 0.45, flowers, keep, key: [...b.key, 'spur', k] });
 				k++;
-				s += (b.order === 1 ? 0.14 : 0.095) * about(sr, 1, 0.35);
+				s += (b.order === 1 ? 0.14 : 0.11) * about(sr, 1, 0.35);
 			}
 		}
 	};
@@ -309,6 +330,9 @@ const LEAF = (/** @type {number} */ u) => (u < 0.25 ? 0.07 : Math.max(0.07 * (1 
 const APPLE = (/** @type {number} */ u) => Math.pow(Math.max(0, Math.sin(Math.PI * u)), 0.42) * (1 - 0.13 * u);
 /** a petal: rounded, broadest beyond its middle, on a short claw */
 const PETAL = (/** @type {number} */ u) => Math.pow(Math.sin(Math.PI * Math.pow(u, 0.7)), 0.6);
+/** the bark's colours: young shoots red-brown, older wood grey-brown, the trunk's plates, their flaking edges, the cracks */
+const BARK = { young: new THREE.Color('#8a5a3e'), old: new THREE.Color('#7c7065'), flake: new THREE.Color('#998c7c'), crack: new THREE.Color('#3d332b'), plate: new THREE.Color('#5e5248'), c: new THREE.Color() };
+const PETAL_C = { white: new THREE.Color('#fffdfb'), pink: new THREE.Color('#f0a2b9'), c: new THREE.Color() };
 
 /**
  * The apple tree, v2.
@@ -379,7 +403,7 @@ export function apple(g, seed) {
 
 	/** @type {{ at: THREE.Vector3, dir: THREE.Vector3, along: THREE.Vector3, spur: Spur, radius: number }[]} */
 	const spurs = [];
-	/** @type {{ pts: THREE.Vector3[], from: number, key: (string | number)[] }[]} */
+	/** @type {{ pts: THREE.Vector3[], from: number, key: (string | number)[], twig: boolean }[]} */
 	const leafy = [];
 
 	/**
@@ -393,12 +417,12 @@ export function apple(g, seed) {
 		// thick for the tree it carries and its years: the trunk the most
 		const R =
 			b.order === 0
-				? 0.004 + 0.072 * Math.pow(clamp(Y / 5.6), 1.25)
+				? 0.004 + 0.072 * Math.pow(clamp(Y / 6.2), 1.25)
 				: b.order === 1
 					? 0.005 + 0.026 * Math.sqrt(length / 2.6) * clamp(age / 4.5)
 					: b.order === 2
 						? 0.0035 + 0.012 * Math.sqrt(length / 1.3) * clamp(age / 3)
-						: 0.0028 + 0.0045 * clamp(length / 0.45);
+						: b.order === 3 ? 0.0028 + 0.0045 * clamp(length / 0.45) : 0.0022 + 0.001 * clamp(length / 0.3);
 		const pts = [from.clone()];
 		const qs = [turn.clone()];
 		const q = turn.clone();
@@ -408,7 +432,7 @@ export function apple(g, seed) {
 			// the fruit beyond bows it: the more, the thinner the wood here
 			const r = Math.max(0.003, R * (1 - 0.55 * (i / b.dirs.length)));
 			const stiff = b.order === 0 ? 0 : b.order === 1 ? 0.35 : 0.9;
-			const bow = Math.min(0.22, (0.0011 * b.load[i] * b.step) / Math.pow(r / 0.01, 2.6)) * stiff;
+			const bow = Math.min(0.25, (0.002 * b.load[i] * b.step) / Math.pow(r / 0.01, 2.6)) * stiff;
 			if (bow > 1e-5) {
 				const axis = new THREE.Vector3().crossVectors(UP, d);
 				if (axis.lengthSq() > 1e-6) {
@@ -432,10 +456,10 @@ export function apple(g, seed) {
 		const madeAt = (/** @type {number} */ u) => (b.order === 0 ? leaderAt(u * L) : b.born + (u * L) / b.rate);
 		const paint = (/** @type {number} */ u, /** @type {number} */ v) => {
 			const woodAge = Y - madeAt(u);
-			const c = mix('#8a5a3e', '#7c7065', clamp((woodAge - 0.6) / 1.8));
+			const c = BARK.c.lerpColors(BARK.young, BARK.old, clamp((woodAge - 0.6) / 1.8));
 			if (b.order <= 1 && woodAge > 2.5) {
 				const s = scales(u, v);
-				c.lerp(new THREE.Color(s > 0.55 ? '#998c7c' : s < -0.6 ? '#3d332b' : '#5e5248'), clamp((woodAge - 2.5) / 2) * (b.order === 0 ? 1 : 0.5));
+				c.lerp(s > 0.55 ? BARK.flake : s < -0.6 ? BARK.crack : BARK.plate, clamp((woodAge - 2.5) / 2) * (b.order === 0 ? 1 : 0.5));
 			}
 			return c;
 		};
@@ -443,7 +467,7 @@ export function apple(g, seed) {
 			const r = Math.max(0.0022, R * (1 - (b.order === 0 ? 0.62 : 0.6) * u)) * flare(u);
 			return b.order === 0 && Y > 3 ? r * (1 + 0.035 * clamp((Y - 3) / 2) * scales(u, v) * (u < 0.5 ? 1 : 0)) : r;
 		};
-		const sides = b.order === 0 ? 11 : b.order === 1 ? 7 : b.order === 2 ? 5 : 4;
+		const sides = b.order === 0 ? 11 : b.order === 1 ? 7 : b.order === 2 ? 5 : b.order === 3 ? 4 : 3;
 		bag.add('body', tube(pts, radius, paint, sides));
 		if (b.order <= 2 && R > 0.006) space.rod(pts, R * 0.8 + 0.006);
 		/** where s metres along it is, which way it goes there, and how it has turned there */
@@ -454,7 +478,7 @@ export function apple(g, seed) {
 		// its leaves: along the season's growth at its tip (on a young tree, all its young wood)
 		const grownBefore = b.order === 0 ? linear(Y - 1, LEADER) : b.full * clamp(((Y - 1 - b.born) * b.rate) / b.full);
 		const season = clamp(length - grownBefore, Math.min(length, 0.14 + 0.08 * (b.key.length % 3) / 2), b.order === 0 ? 0.9 : 0.55);
-		leafy.push({ pts, from: length - season, key: b.key });
+		leafy.push({ pts, from: b.order === 4 ? 0.015 : length - season, key: b.key, twig: b.order === 4 });
 		for (const kid of b.kids) {
 			if (kid.at > length) continue;
 			const w = where(kid.at);
@@ -479,7 +503,7 @@ export function apple(g, seed) {
 	for (const s of spurs) {
 		if (!s.spur.flowers) continue;
 		const fr = chance(seed, 'apple-cluster', ...s.spur.key);
-		const opens = 4.82 + fr() * 0.16;
+		const opens = 4.7 + fr() * 0.15;
 		const up = s.dir.clone().lerp(UP, 0.5).normalize();
 		const n = s.spur.flowers;
 		const sideOf = new THREE.Vector3().crossVectors(up, Math.abs(up.y) > 0.95 ? v3(1, 0, 0) : UP).normalize();
@@ -493,13 +517,13 @@ export function apple(g, seed) {
 			for (let k = 0; k < n; k++) {
 				const { d, len } = flowerAt(k);
 				const end = s.at.clone().addScaledVector(d, len);
-				const o = opens + (k ? 0.05 + k * 0.025 : 0);
+				const o = opens + (k ? 0.03 + k * 0.022 : 0);
 				const open = clamp((g - o) / 0.12);
 				const fall = span(g, o + 0.42, o + 0.62);
 				const kept = k < s.spur.keep;
 				if (fall >= 1 && (!kept || g > 5.55)) continue;
 				bag.add('body', tube([s.at, end], () => 0.0009, () => '#7a8a3e', 3));
-				const face = d.clone().lerp(UP, 0.3).normalize();
+				const face = d.clone().lerp(UP, 0.15).normalize();
 				if (open <= 0) {
 					// the bud: deep pink, swelling
 					const bud = 0.0042 + 0.0018 * clamp((g - (o - 0.3)) / 0.3);
@@ -582,12 +606,12 @@ export function apple(g, seed) {
 			const toTip = (total - s) / 0.12;
 			const size = leafSize * seedling * lerp(0.5, 1, clamp(toTip));
 			leaf(p, side.clone().addScaledVector(d, 0.6), lerp(0.55, between(lr, -0.35, 0.25), clamp(toTip)), size, lr);
-			s += 0.045 * about(lr, 1, 0.2);
+			s += (sh.twig ? 0.036 : 0.045) * about(lr, 1, 0.2);
 		}
 	}
 	for (const s of spurs) {
 		const lr = chance(seed, 'apple-rosette', ...s.spur.key);
-		const n = 4 + Math.floor(lr() * 3);
+		const n = 3 + Math.floor(lr() * 3);
 		const side = new THREE.Vector3().crossVectors(s.dir, Math.abs(s.dir.y) > 0.95 ? v3(1, 0, 0) : UP).normalize();
 		const age = clamp((Y - s.spur.born) / 0.6);
 		for (let k = 0; k < n; k++) {
@@ -619,14 +643,14 @@ function flower(bag, at, facing, open, fall, pink, spin) {
 	if (fall < 1) {
 		const petal = () =>
 			sheet({
-				length: 0.018 * lerp(0.5, 1, open),
-				width: 0.0072 * lerp(0.5, 1, open),
+				length: 0.02 * lerp(0.5, 1, open),
+				width: 0.0082 * lerp(0.5, 1, open),
 				shape: PETAL,
 				lift: (u, v) => 0.18 * u * u + 0.06 * v * v,
 				// a fresh flower blushes pink at the edges, an older one is white
-				paint: (u) => mix('#fffaf6', '#f1a9be', clamp(pink * (0.25 + u * u * 0.9) * (1.15 - open * 0.55))),
+				paint: (u) => PETAL_C.c.lerpColors(PETAL_C.white, PETAL_C.pink, clamp(pink * (0.1 + u * u * 0.8) * (1.2 - open * 0.7))),
 				along: 3,
-				across: 2
+				across: 1
 			});
 		for (let k = 0; k < 5; k++) {
 			const up = lerp(1.2, 0.18, open) - fall * 0.9;
@@ -650,7 +674,7 @@ function appleFruit(bag, o) {
 	const rings = 8;
 	// the stalk sits in a hollow: the axis starts a little inside the shoulder
 	for (let k = 0; k <= rings; k++) axis.push(v3(0, o.W * 0.12 - (k / rings) * o.L, 0));
-	const green = new THREE.Color('#7fae3e'), yellow = new THREE.Color('#d9cf62');
+	const green = new THREE.Color('#a3c450'), yellow = new THREE.Color('#dccf62');
 	const red = new THREE.Color('#c0202c'), deep = new THREE.Color('#8a1424');
 	const colour = (/** @type {number} */ u, /** @type {number} */ v) => {
 		const ground = green.clone().lerp(yellow, clamp(o.ripe * 1.2));
