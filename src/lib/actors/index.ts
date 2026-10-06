@@ -14,6 +14,10 @@ import { excavator as excavatorV1 } from './excavator.v1.js';
 import { excavator as excavatorV2 } from './excavator.v2.js';
 import { human } from './human';
 import type { Cast } from './rig';
+import { goat, GOAT_BREEDS } from './species/goat';
+import { sheep, SHEEP_BREEDS } from './species/sheep';
+import { rabbit, RABBIT_COATS } from './species/rabbit';
+import { quadMoves as quadMovesV1 } from './plans/quadruped.v1';
 import { FIRST, versioned, type Change, type Version } from '$lib/app/versions.js';
 
 /** one actor: a breed, a coat, the stand-in */
@@ -22,8 +26,16 @@ export type Actor = { id: string; label: string; note: string; make: () => Cast;
  * whole (its species is one body plan), each version bringing the variants it made ($lib/app/versions.js) */
 export type Family = { id: string; label: string; note: string; from: string; variants: Actor[]; versions: Version<Actor[]>[]; version: number };
 
+/** a four-legged kind as it moved at v1: its breeds, grazing with the head folded back between the forelegs */
+const quadV1 = <T extends string>(kind: string, ids: readonly T[], make: (id: T, moves: typeof quadMovesV1) => Cast): Actor[] =>
+	ids.map((id) => ({ id: `${kind}-${id}`, label: id[0]!.toUpperCase() + id.slice(1), note: 'as at v1', make: () => make(id, quadMovesV1) }));
+const GRAZE_V2 = { v: 2, date: '2026-10-06', note: 'Grazing realigned: the neck reaches forward and down, the muzzle in the grass ahead of the forefeet, the forehand tipped to it (it folded back between the forelegs)' };
+
 /** the kinds' older versions, by id, each with its frozen variants (the rest are at v1) */
 const HISTORY: Record<string, (Change & { build?: Actor[] })[]> = {
+	goat: [{ ...FIRST, build: quadV1('goat', GOAT_BREEDS, goat) }, GRAZE_V2],
+	sheep: [{ ...FIRST, build: quadV1('sheep', SHEEP_BREEDS, sheep) }, GRAZE_V2],
+	rabbit: [{ ...FIRST, build: quadV1('rabbit', RABBIT_COATS, rabbit) }, GRAZE_V2],
 	excavator: [
 		{ ...FIRST, build: [{ id: 'excavator', label: 'Mini excavator', note: 'yellow, an open canopy, a 40 cm bucket', make: () => excavatorV1() }] },
 		{ v: 2, date: '2026-10-06', note: 'Twice the size; the bucket turned round, its mouth and teeth towards the machine as a backhoe’s are', build: [{ id: 'excavator', label: 'Excavator', note: 'yellow, an open canopy, an 80 cm backhoe bucket', make: () => excavatorV2() }] },
@@ -32,6 +44,7 @@ const HISTORY: Record<string, (Change & { build?: Actor[] })[]> = {
 };
 
 const animal = (id: string, label: string, note: string): Actor => ({ id, label, note, make: CASTS[id]!, ready: () => prepare(id) });
+
 
 const LIST: Omit<Family, 'versions' | 'version'>[] = [
 	{

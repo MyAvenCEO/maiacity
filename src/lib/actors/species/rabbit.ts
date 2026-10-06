@@ -41,7 +41,8 @@ const J: QuadJoints = {
 	hind: [[0.038, 0.1, -0.088], [0.05, 0.072, -0.02], [0.045, 0.014, -0.135], [0.045, 0.009, -0.045], [0.045, 0, -0.018]]
 };
 
-export function rabbit(coat: RabbitCoat = 'wild'): Cast {
+/** `moves`: the body plan's way of moving it (an older version's, for the Actors gallery's history) */
+export function rabbit(coat: RabbitCoat = 'wild', moves: typeof quadMoves = quadMoves): Cast {
 	const L = LOOK[coat];
 	const q = quadSkeleton(J);
 	const s = sculpt(q.bones);
@@ -118,7 +119,7 @@ export function rabbit(coat: RabbitCoat = 'wild'): Cast {
 
 	const r = rig(q.bones, parts, animalMaterials(0.9));
 	r.object.name = `rabbit-${coat}`;
-	const clips = quadMoves(q, {
+	const clips = moves(q, {
 		seed: RABBIT_COATS.indexOf(coat) + 31,
 		gaits: {
 			// a lazy half-bound: the hind feet together, landing ahead of where the forefeet came down
