@@ -2,7 +2,7 @@
 	3D models: every reusable model the worlds are built from (src/lib/models), one at a time on a turntable — drag to
 	turn round it, scroll to come closer — on a grid of 10 cm squares, with its measure. A model that can be walked
 	(`userData.walk`: the containers) is walked in first person, the sandboxes' walker; one with a roof (`userData.roof`)
-	can have it lifted off to look in from above; a rigged machine (`userData.tick`: the excavator) plays its work. An
+	can have it lifted off to look in from above; a rigged machine (`userData.tick`: the excavators) plays its work. An
 	admin's.
 -->
 <script lang="ts">

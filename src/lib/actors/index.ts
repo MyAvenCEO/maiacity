@@ -8,8 +8,10 @@
  */
 import { prepare } from './build';
 import { CASTS } from './casts';
-import { excavator } from './excavator.js';
+import { crawlerExcavator } from './crawler-excavator.js';
+import { miniExcavator } from './excavator.js';
 import { excavator as excavatorV1 } from './excavator.v1.js';
+import { excavator as excavatorV2 } from './excavator.v2.js';
 import { human } from './human';
 import type { Cast } from './rig';
 import { FIRST, versioned, type Change, type Version } from '$lib/app/versions.js';
@@ -24,7 +26,8 @@ export type Family = { id: string; label: string; note: string; from: string; va
 const HISTORY: Record<string, (Change & { build?: Actor[] })[]> = {
 	excavator: [
 		{ ...FIRST, build: [{ id: 'excavator', label: 'Mini excavator', note: 'yellow, an open canopy, a 40 cm bucket', make: () => excavatorV1() }] },
-		{ v: 2, date: '2026-10-06', note: 'Twice the size; the bucket turned round, its mouth and teeth towards the machine as a backhoe’s are' }
+		{ v: 2, date: '2026-10-06', note: 'Twice the size; the bucket turned round, its mouth and teeth towards the machine as a backhoe’s are', build: [{ id: 'excavator', label: 'Excavator', note: 'yellow, an open canopy, an 80 cm backhoe bucket', make: () => excavatorV2() }] },
+		{ v: 3, date: '2026-10-06', note: 'Two machines: a 14-tonne crawler excavator built as one (steel tracks, an enclosed cab, a mono boom on two rams, no blade), and the mini back at its own size' }
 	]
 };
 
@@ -149,10 +152,13 @@ const LIST: Omit<Family, 'versions' | 'version'>[] = [
 	},
 	{
 		id: 'excavator',
-		label: 'Excavator',
-		note: 'a digger on rubber tracks, 7.8 m reach: the house slews, the boom swings, boom, arm and bucket work on their rams, the blade dozes, the wheels turn',
+		label: 'Excavators',
+		note: 'tracked diggers, each rigged: the house slews, boom, arm and bucket work on their rams, the wheels turn; they dig, slew and dump, drive, and the mini dozes with its blade',
 		from: 'Sandbox 1: building the settlement',
-		variants: [{ id: 'excavator', label: 'Excavator', note: 'yellow, an open canopy, an 80 cm backhoe bucket', make: () => excavator() }]
+		variants: [
+			{ id: 'excavator-crawler', label: 'Crawler excavator', note: '14 t: steel tracks, an enclosed cab, a mono boom on two rams, a 1 m bucket, 8.3 m reach', make: () => crawlerExcavator() },
+			{ id: 'excavator-mini', label: 'Mini excavator', note: '1.7 t: rubber tracks, an open canopy, a dozer blade, a swinging boom, a 40 cm bucket', make: () => miniExcavator() }
+		]
 	}
 ];
 
