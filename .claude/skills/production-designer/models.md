@@ -22,12 +22,21 @@ library, shown on its own in the 3D models viewer and placed in any world.
   door, the workshop door, the door canopy, the barn lamp, the letterbox on its post, window boxes, the city bike, the
   rain barrel, the insect hotel, the floodlight, the station clock, the teak table and recliners, the folding chair,
   the stoneware crock, the red tin, the ashtray, the clipped hedge, the ivy cone.
+- `src/lib/models/containers.js` — Sandbox 1's settlement containers, 40-foot high cubes (12.19 × 2.44 × 2.90 m) fitted
+  out and walkable: the kitchen (range, combi steamer, sinks, fridges, the serving hatch, the pantry behind a
+  partition), the workshop (bench and pegboard, timber rack, the machines and power tools), the tech container (solar on
+  the roof and fold-out wings, batteries, inverters, a hydrogen fuel cell and electrolyser, Starlink, the AI server
+  room) and the sanitary container (washers and dryers, basins, three showers and three toilets). The open cargo end is
+  the way in; each has `userData.roof` (the viewer lifts it off) and `userData.walk` (where to start, `canStand`,
+  `floorAt`, the ceiling lamps) for the walker.
 - `src/lib/models/textures.ts` — their surfaces, drawn once on a canvas and shared: limed oak, pine (fresh and aged),
   painted pine, plaster (as a bump map), wool, the face on the wall.
 - `src/lib/models/index.ts` — `MODELS`: each model's id, label, note (its measure and what it is), where it is used,
   and the function that makes it. A new model is a function in `furniture.ts` and a line here.
 - `/app/models` (admin) — the viewer: every model on a turntable on a grid of 10 cm squares, with its width × depth ×
-  height in centimetres. Check every new model there before placing it.
+  height in centimetres. Check every new model there before placing it. A model with `userData.walk` can be walked
+  inside (the sandboxes' walker, Esc to walk out); one with `userData.roof` can have its roof lifted; one with
+  `userData.tick(t)` (a rigged machine, the excavator) plays its work.
 
 ## The conventions every model keeps
 
@@ -56,6 +65,9 @@ under one skinned mesh, built in its rest pose (facing +z, on y 0), its parts ri
   17 bones, a T-shirt, jeans, trainers, a face that shows where it looks.
   Its poses (stand, sit, sit with elbows on knees, fallen back, lie, kneel, look up, wave, think, arms crossed,
   point) and moves (idle, walk, wave, sit down). `standIn(pose)` gives one held in a pose for a world to place.
+- `excavator.js` — the mini excavator (1.7 t): rigid parts on joints — the house slewing, the boom swinging, boom, arm
+  and bucket, the blade, the wheels — and each hydraulic ram as a barrel joint and a rod joint that `machine()` keeps
+  on the line between their pins. Its moves: dig, drive, doze, idle.
 - `animals.ts` — Sandbox 4's creatures, rigged: the hen (pecks, flaps), the goose (waddles, grazes, hisses), the
   goat and the sheep (walk, graze), the frog (croaks, hops), the bee (hovers, flies), the carp and the tilapia (swim).
 - `crowd.ts` — how a world holds many of them (Sandbox 4's flocks, hives and ponds; Sandbox 3's): the nearest to the

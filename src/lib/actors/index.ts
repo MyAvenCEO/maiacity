@@ -8,6 +8,7 @@
  */
 import { prepare } from './build';
 import { CASTS } from './casts';
+import { excavator } from './excavator.js';
 import { human } from './human';
 import type { Cast } from './rig';
 import { versioned, type Change, type Version } from '$lib/app/versions.js';
@@ -139,6 +140,13 @@ const LIST: Omit<Family, 'versions' | 'version'>[] = [
 			animal('fish-nile', 'Nile tilapia', 'grey-green and barred, its tail edged red, in the tanks'),
 			animal('fish-redtilapia', 'Red tilapia', 'pink-orange, in the tanks')
 		]
+	},
+	{
+		id: 'excavator',
+		label: 'Mini excavator',
+		note: 'a 1.7 t digger on rubber tracks, 3.9 m reach: the house slews, the boom swings, boom, arm and bucket work on their rams, the blade dozes, the wheels turn',
+		from: 'Sandbox 1: building the settlement',
+		variants: [{ id: 'excavator', label: 'Mini excavator', note: 'yellow, an open canopy, a 40 cm bucket', make: () => excavator() }]
 	}
 ];
 
