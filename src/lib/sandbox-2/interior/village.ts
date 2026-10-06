@@ -426,10 +426,13 @@ export async function mountVillage(container: HTMLElement, onProgress: (label: s
 		shell.group.position.set(d.x, 0, d.z)
 		scene.add(shell.group)
 		own.push(shell.group)
-		for (const hole of shell.holes) {
-			const pr = portal(m, hole, d.kind)
-			pr.position.x += d.x
-			pr.position.z += d.z
+		// its doors, all four merged into a few meshes (a door is a dozen small parts: drawn one by one, the cell's
+		// thirteen domes cost hundreds of draw calls for them)
+		{
+			const doors = new THREE.Group()
+			for (const hole of shell.holes) doors.add(portal(m, hole, d.kind))
+			const pr = bake(doors)
+			pr.position.set(d.x, 0, d.z)
 			scene.add(pr)
 			own.push(pr)
 		}
@@ -836,7 +839,7 @@ export async function mountVillage(container: HTMLElement, onProgress: (label: s
 	// Sandbox 5's floor cover: the food forest biome's grasses, moss, flowers, strawberries, ferns, leaves and deadwood,
 	// each in its colonies, laid out in tiles round you as you go ($lib/biomes/stream.js) — too dense for the whole cell;
 	// all of it near you, thinning out further off, each plant growing out of the ground as you come (so it has no edge)
-	const floorCover = flora ? coverStream({ recipe: FLOOR_BIOME, open: (x, z) => floorOpen(x, z), tile: 10, reach: 34, near: 12, thin: 0.3, density: 4.5, seed: 505 }) : null
+	const floorCover = flora ? coverStream({ recipe: FLOOR_BIOME, open: (x, z) => floorOpen(x, z), tile: 10, reach: 30, near: 9, thin: 0.22, density: 3.8, seed: 505 }) : null
 	if (floorCover) scene.add(floorCover.object)
 	const TILE = 70
 	type Tile = { cx: number; cz: number; main: THREE.Matrix4[][]; under: THREE.Matrix4[][]; floor: THREE.Matrix4[][]; far: THREE.Matrix4[]; farCrowns: THREE.Matrix4[]; farColors: THREE.Color[]; dense: THREE.Matrix4[]; denseCrowns: THREE.Matrix4[]; denseColors: THREE.Color[]; near?: THREE.Group; farMesh?: THREE.Group; ground?: THREE.Group }
@@ -1029,7 +1032,7 @@ export async function mountVillage(container: HTMLElement, onProgress: (label: s
 		const spots: THREE.Vector3[] = []
 		for (const ps of paths) for (let i = 0; i < ps.length; i += 9) spots.push(ps[i]!)
 		const posts = new THREE.InstancedMesh(new THREE.CylinderGeometry(0.06, 0.08, 0.55, 8).translate(0, 0.275, 0), m.dark, spots.length)
-		const tops = new THREE.InstancedMesh(new THREE.SphereGeometry(0.09, 10, 8), glowMat, spots.length)
+		const tops = new THREE.InstancedMesh(new THREE.SphereGeometry(0.09, 6, 4), glowMat, spots.length)
 		const m4 = new THREE.Matrix4()
 		spots.forEach((p, i) => {
 			posts.setMatrixAt(i, m4.makeTranslation(p.x + 1.5, 0, p.z))

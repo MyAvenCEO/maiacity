@@ -1570,7 +1570,7 @@ export async function mountInterior(container: HTMLElement, kind: DomeKind, onPr
 				if (rr > rIn - 0.6) return lush && rr > r0b - 0.3 && !paved(a) && !DOORS.some((d) => Math.abs(adiff(a, d)) * rr < 1.7)
 				return !onStone(rr, a, 0.1) && !nearStream(x, z, width / 2 + 0.3) && !inTrunk(x, z)
 			}
-			floorCover = coverStream({ recipe: WARM_BIOME, open, tile: 8, reach: 26, near: 10, thin: 0.3, density: 4.5, seed: 707 + kind.length, origin: host ? [host.x, host.z] : [0, 0] })
+			floorCover = coverStream({ recipe: WARM_BIOME, open, tile: 8, reach: 24, near: 9, thin: 0.25, density: 3.8, seed: 707 + kind.length, origin: host ? [host.x, host.z] : [0, 0] })
 			scene.add(floorCover.object)
 		}
 		await pause('Planting the forest inside')
