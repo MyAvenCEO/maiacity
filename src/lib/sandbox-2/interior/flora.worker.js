@@ -5,7 +5,7 @@
  */
 import { grow } from './flora.grow.js';
 
-self.onmessage = (/** @type {MessageEvent<{ job: number, kind: import('./flora.grow.js').Kind, tier: 'near' | 'mid' }>} */ e) => {
+self.onmessage = (/** @type {MessageEvent<{ job: number, kind: import('./flora.grow.js').Kind, tier: keyof typeof import('./flora.grow.js').TIERS }>} */ e) => {
 	const { job, kind, tier } = e.data;
 	try {
 		const shape = grow(kind, tier);

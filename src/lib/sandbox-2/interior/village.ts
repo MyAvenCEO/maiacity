@@ -55,7 +55,7 @@ export type VillageHandle = {
 	dispose: () => void
 }
 /** a plant picked in Sandbox 5's forest: which (its id, version, stage), where, and how far from the eye */
-export type PickedPlant = { id: string; v: number; stage: number; x: number; z: number; height: number; distance: number; inside: boolean }
+export type PickedPlant = { id: string; v: number; stage: number; seed: string; x: number; z: number; height: number; distance: number; inside: boolean }
 
 const WORLD = 380
 
@@ -1313,11 +1313,11 @@ export async function mountVillage(container: HTMLElement, onProgress: (label: s
 			const o = ray.ray.origin, d = ray.ray.direction
 			let got: PickedPlant | null = null
 			const hit = forest.pick(o, d)
-			if (hit) got = { id: hit.kind.id, v: hit.kind.v, stage: hit.kind.stage, x: hit.x, z: hit.z, height: hit.height, distance: hit.t, inside: false }
+			if (hit) got = { id: hit.kind.id, v: hit.kind.v, stage: hit.kind.stage, seed: hit.kind.seed, x: hit.x, z: hit.z, height: hit.height, distance: hit.t, inside: false }
 			// and the forests inside the domes built near you, in their own ground
 			for (const i of shown) {
 				const dm = domes[i]!, inner = built.get(i)?.pickPlant?.(new THREE.Vector3(o.x - dm.x, o.y, o.z - dm.z), d)
-				if (inner && (!got || inner.t < got.distance)) got = { id: inner.kind.id, v: inner.kind.v, stage: inner.kind.stage, x: inner.x + dm.x, z: inner.z + dm.z, height: inner.height, distance: inner.t, inside: true }
+				if (inner && (!got || inner.t < got.distance)) got = { id: inner.kind.id, v: inner.kind.v, stage: inner.kind.stage, seed: inner.kind.seed, x: inner.x + dm.x, z: inner.z + dm.z, height: inner.height, distance: inner.t, inside: true }
 			}
 			marker.visible = !!got
 			if (got) {
