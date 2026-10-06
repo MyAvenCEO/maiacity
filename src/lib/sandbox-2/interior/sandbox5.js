@@ -35,16 +35,16 @@ const CROP = [5, 7, 9];
  * @type {Garden & { canopy: Planting[], herbs: Planting[], ground: Planting[], roots: Planting[], fungi: Planting[] }}
  */
 const OUTSIDE = {
-	// the tall trees, close enough that their crowns meet: nuts, acorns and beechnuts, the lime's leaves and flowers,
-	// the alder and the locust feeding the soil; big standard fruit trees with them
+	// the tall trees, close enough that their crowns meet, nearly all of them bearing: walnuts, chestnuts, pecans,
+	// hazelnuts and pine nuts, the lime's leaves and flowers, the alder feeding the soil; big standard fruit trees with them
 	canopy: [
 		{ id: 'walnut', v: 1, stages: [7, 9], weight: 3 },
 		{ id: 'chestnut', v: 1, stages: [7, 9], weight: 3 },
 		{ id: 'linden', v: 1, stages: [9], weight: 2 },
 		{ id: 'alder', v: 1, stages: [9], weight: 2 },
-		{ id: 'oak', v: 1, stages: [7, 9], weight: 3 },
-		{ id: 'beech', v: 1, stages: [7, 9], weight: 2 },
-		{ id: 'locust', v: 1, stages: [5, 9], weight: 2 },
+		{ id: 'pecan', v: 1, stages: [7, 9], weight: 3 },
+		{ id: 'tree-hazel', v: 1, stages: [7, 9], weight: 3 },
+		{ id: 'korean-pine', v: 1, stages: [7, 9], weight: 2 },
 		{ id: 'pear', v: 1, stages: [9] },
 		{ id: 'cherry', v: 1, stages: [9] },
 		{ id: 'mulberry', v: 1, stages: [9] }
