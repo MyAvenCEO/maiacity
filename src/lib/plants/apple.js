@@ -45,9 +45,9 @@ const LEADER = /** @type {[number, number][]} */ ([
 	[2.5, 2.25],
 	[3, 3.0],
 	[4, 3.45],
-	[5, 3.75],
-	[6, 4.05],
-	[7, 4.2]
+	[5, 3.95],
+	[6, 4.4],
+	[7, 4.65]
 ]);
 
 /** straight between the rows of a table */
@@ -150,7 +150,7 @@ export function design(seed) {
 	const pr = chance(seed, 'apple-tree');
 	const vigour = about(pr, 1, 0.07);
 	// the crown it fills: a dome over the clear trunk, a little lopsided
-	const env = { c: v3(about(pr, 0, 0.15), 3.05 * vigour, about(pr, 0, 0.15)), rx: 2.35 * vigour * about(pr, 1, 0.06), rz: 2.35 * vigour * about(pr, 1, 0.06), up: 1.65 * vigour, down: 1.75 * vigour };
+	const env = { c: v3(about(pr, 0, 0.15), 3.15 * vigour, about(pr, 0, 0.15)), rx: 3.0 * vigour * about(pr, 1, 0.06), rz: 3.0 * vigour * about(pr, 1, 0.06), up: 2.0 * vigour, down: 1.95 * vigour };
 	/** how far from p along d to the crown's edge */
 	const edge = (/** @type {THREE.Vector3} */ p, /** @type {THREE.Vector3} */ d) => {
 		for (const ry of [env.up, env.down]) {
@@ -213,7 +213,7 @@ export function design(seed) {
 	const branch = (/** @type {Branch} */ parent, /** @type {(string | number)[]} */ key, /** @type {number} */ s, /** @type {THREE.Vector3} */ d, /** @type {number} */ order, /** @type {number} */ full, /** @type {number} */ born) => {
 		const r = chance(seed, 'apple-branch', ...key);
 		const n = order === 1 ? 10 : order === 2 ? 7 : order === 3 ? 4 : 3;
-		const shape = order === 1 ? [0.07, 0.09, 0.1] : order === 2 ? [0.03, 0.12, 0.17] : order === 3 ? [0.03, 0.14, 0.2] : [0.08, 0.1, 0.22];
+		const shape = order === 1 ? [0.03, 0.13, 0.08] : order === 2 ? [0.01, 0.16, 0.17] : order === 3 ? [0.03, 0.14, 0.2] : [0.08, 0.1, 0.22];
 		/** @type {Branch} */
 		const b = { key, order, at: s, dirs: way(r, d, n, shape[0], shape[1], shape[2]), step: full / n, full, born, rate: order === 1 ? 1.05 : order === 2 ? 0.75 : order === 3 ? 0.5 : 0.55, kids: [], spurs: [], load: [] };
 		parent.kids.push(b);
@@ -225,9 +225,9 @@ export function design(seed) {
 
 	// the scaffold limbs, in three tiers up the leader, spiralling round it
 	const tiers = [
-		{ n: 3 + Math.floor(tr() * 2), from: 1.42, to: 1.8, tilt: 1.12, longest: 2.9 },
-		{ n: 2 + Math.floor(tr() * 2), from: 2.35, to: 2.85, tilt: 0.95, longest: 2.2 },
-		{ n: 2, from: 3.2, to: 3.6, tilt: 0.62, longest: 1.4 }
+		{ n: 4 + Math.floor(tr() * 2), from: 1.42, to: 1.85, tilt: 1.0, longest: 3.4 },
+		{ n: 2 + Math.floor(tr() * 2), from: 2.4, to: 2.95, tilt: 0.92, longest: 2.8 },
+		{ n: 2, from: 3.35, to: 3.8, tilt: 0.78, longest: 1.8 }
 	];
 	let turn = tr() * Math.PI * 2;
 	tiers.forEach((t, ti) => {
@@ -249,15 +249,15 @@ export function design(seed) {
 		// the leader's top carries laterals as the limbs do
 		const kidOrder = b.order === 0 ? 2 : b.order + 1;
 		if (kidOrder <= 3) {
-			const spacing = kidOrder === 2 ? 0.24 : 0.16;
-			let s = b.order === 0 ? 3.0 : kidOrder === 2 ? 0.22 : 0.1;
+			const spacing = kidOrder === 2 ? 0.3 : 0.2;
+			let s = b.order === 0 ? 3.3 : kidOrder === 2 ? 0.22 : 0.1;
 			let k = 0;
 			let phyl = r() * Math.PI * 2;
 			while (s < b.full - (kidOrder === 2 ? 0.15 : 0.08)) {
 				phyl += 2.4 + about(r, 0, 0.35);
 				const d0 = leave(dirAt(b, s), between(r, 0.85, 1.2), phyl);
 				// plagiotropic: the laterals lie out more level than they leave
-				d0.y = d0.y * 0.55 + (kidOrder === 2 ? 0.05 : -0.02);
+				d0.y = d0.y * 0.45 + (kidOrder === 2 ? -0.02 : -0.04);
 				d0.normalize();
 				const p = point(from, b, s);
 				// those turned in toward the middle are shaded out: short, or gone
@@ -265,7 +265,7 @@ export function design(seed) {
 				const inward = d0.x * out.x + d0.z * out.z < -0.25;
 				if (!(inward && r() < 0.6)) {
 					const room = edge(p, d0) * between(r, kidOrder === 2 ? 0.6 : 0.4, kidOrder === 2 ? 0.95 : 0.8) * (inward ? 0.45 : 1);
-					const full = clamp(room, kidOrder === 2 ? 0.25 : 0.1, kidOrder === 2 ? 1.35 : 0.5);
+					const full = clamp(room, kidOrder === 2 ? 0.25 : 0.1, kidOrder === 2 ? 1.6 : 0.55);
 					const kid = branch(b, [...b.key, k], s, d0, kidOrder, full, madeAt(b, s) + 0.35 + r() * 0.3);
 					starts.set(kid, p);
 					furnish(kid);
@@ -288,7 +288,7 @@ export function design(seed) {
 				const full = clamp(edge(point(from, b, s), d) * 0.7, 0.08, between(tr4, 0.14, 0.34));
 				branch(b, [...b.key, 'twig', k], s, d, 4, full, madeAt(b, s) + 0.4 + tr4() * 0.4);
 				k++;
-				s += (b.order === 2 ? 0.28 : 0.22) * about(tr4, 1, 0.3);
+				s += (b.order === 2 ? 0.36 : 0.3) * about(tr4, 1, 0.3);
 			}
 		}
 		// spurs on the wood from its second year (not on the leader, nor the first half of a scaffold)
@@ -307,10 +307,19 @@ export function design(seed) {
 				// a spur flowers from the wood's third year; the young tree's first blossom is sparse
 				const flowers = sr() < (BLOOM - made >= 1.5 ? 0.85 : BLOOM - made >= 0.9 ? 0.55 : 0) ? 5 + (sr() < 0.5 ? 1 : 0) : 0;
 				const k5 = sr();
-				const keep = flowers && sr() < 0.45 ? (k5 < 0.3 ? 1 : k5 < 0.66 ? 2 : k5 < 0.88 ? 3 : k5 < 0.97 ? 4 : 5) : 0;
+				const keep = flowers && sr() < 0.55 ? (k5 < 0.3 ? 1 : k5 < 0.66 ? 2 : k5 < 0.88 ? 3 : k5 < 0.97 ? 4 : 5) : 0;
 				b.spurs.push({ s, dir: d, len: between(sr, 0.015, 0.045), born: made + 0.45, flowers, keep, key: [...b.key, 'spur', k] });
 				k++;
-				s += (b.order === 1 ? 0.14 : 0.11) * about(sr, 1, 0.35);
+				s += (b.order === 1 ? 0.18 : 0.15) * about(sr, 1, 0.35);
+			}
+			// the shoots out at the crown's edge bear at their tips too (tip-bearing), where the fruit is seen
+			if (b.order >= 2 && sr() < 0.6) {
+				const made = madeAt(b, b.full);
+				const flowers = BLOOM - made >= 0.6 ? 5 + (sr() < 0.5 ? 1 : 0) : 0;
+				const k5 = sr();
+				const keep = flowers && sr() < 0.7 ? (k5 < 0.3 ? 1 : k5 < 0.66 ? 2 : k5 < 0.88 ? 3 : 4) : 0;
+				const d = dirAt(b, b.full).clone().setY(0.35).normalize();
+				b.spurs.push({ s: b.full - 0.005, dir: d, len: 0.012, born: made + 0.3, flowers, keep, key: [...b.key, 'tip'] });
 			}
 		}
 	};
@@ -419,7 +428,7 @@ export function apple(g, seed) {
 			b.order === 0
 				? 0.004 + 0.072 * Math.pow(clamp(Y / 6.2), 1.25)
 				: b.order === 1
-					? 0.005 + 0.026 * Math.sqrt(length / 2.6) * clamp(age / 4.5)
+					? 0.005 + 0.03 * Math.sqrt(length / 3) * clamp(age / 4.5)
 					: b.order === 2
 						? 0.0035 + 0.012 * Math.sqrt(length / 1.3) * clamp(age / 3)
 						: b.order === 3 ? 0.0028 + 0.0045 * clamp(length / 0.45) : 0.0022 + 0.001 * clamp(length / 0.3);
@@ -432,7 +441,7 @@ export function apple(g, seed) {
 			// the fruit beyond bows it: the more, the thinner the wood here
 			const r = Math.max(0.003, R * (1 - 0.55 * (i / b.dirs.length)));
 			const stiff = b.order === 0 ? 0 : b.order === 1 ? 0.35 : 0.9;
-			const bow = Math.min(0.25, (0.002 * b.load[i] * b.step) / Math.pow(r / 0.01, 2.6)) * stiff;
+			const bow = Math.min(0.25, (0.003 * b.load[i] * b.step) / Math.pow(r / 0.01, 2.6)) * stiff;
 			if (bow > 1e-5) {
 				const axis = new THREE.Vector3().crossVectors(UP, d);
 				if (axis.lengthSq() > 1e-6) {
@@ -671,7 +680,7 @@ function flower(bag, at, facing, open, fall, pink, spin) {
 function appleFruit(bag, o) {
 	const m = new THREE.Matrix4().compose(o.at, new THREE.Quaternion().setFromUnitVectors(v3(0, -1, 0), o.dir.clone().normalize()).multiply(new THREE.Quaternion().setFromAxisAngle(UP, o.sun)), v3(1, 1, 1));
 	const axis = [];
-	const rings = 8;
+	const rings = 7;
 	// the stalk sits in a hollow: the axis starts a little inside the shoulder
 	for (let k = 0; k <= rings; k++) axis.push(v3(0, o.W * 0.12 - (k / rings) * o.L, 0));
 	const green = new THREE.Color('#a3c450'), yellow = new THREE.Color('#dccf62');
@@ -684,7 +693,7 @@ function appleFruit(bag, o) {
 		const c = ground.lerp(red, cover);
 		return c.lerp(deep, clamp((cover - 0.8) * 1.5 * sunny * (1 - streak + 0.3)));
 	};
-	bag.add('gloss', tube(axis, (u) => o.W * APPLE(u), colour, 9), m);
+	bag.add('gloss', tube(axis, (u) => o.W * APPLE(u), colour, 8), m);
 	// the eye, the dried calyx at the bottom
 	bag.add('body', bead(v3(0, o.W * 0.12 - o.L * 0.985, 0), v3(o.W * 0.16, o.W * 0.06, o.W * 0.16), '#4e3e26', 2), m);
 }
