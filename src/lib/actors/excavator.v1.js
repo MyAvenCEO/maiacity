@@ -1,10 +1,11 @@
 /*
- * THE EXCAVATOR — the digger the crew builds the settlement with (Sandbox 1). Its parts are measured as a 1.7-tonne
- * mini excavator's and the whole machine is shown at twice that (`SCALE`): rubber tracks 3.1 m long on an
- * undercarriage 2 m wide, a dozer blade at the front, the house on its slewing ring with an open canopy over the seat,
- * the counterweight behind, and the digging arm — a swinging boom bracket, a bent boom, the arm (the dipper) and an
- * 80 cm backhoe bucket, its mouth and four teeth turned towards the machine. About 7.8 m reach, 4.4 m digging depth,
- * 4.6 m to the canopy.
+ * FROZEN — the excavator as it was at v1 (5 October 2026): a 1.7-tonne mini excavator, its bucket turned the wrong
+ * way (a front shovel's). Kept so a world built on `excavator@1` still gets it; the excavator today is ./excavator.js.
+ *
+ * THE MINI EXCAVATOR — the 1.7-tonne digger the crew builds the settlement with (Sandbox 1): rubber tracks 1.55 m
+ * long on an undercarriage 0.99 m wide, a dozer blade at the front, the house on its slewing ring with an open
+ * canopy over the seat, the counterweight behind, and the digging arm — a swinging boom bracket, a bent boom, the arm
+ * (the dipper) and a 40 cm bucket with four teeth. About 3.9 m reach, 2.2 m digging depth, 2.3 m to the canopy.
  *
  * Rigged as every actor is (./rig.ts): a skeleton of joints under one skinned mesh, every part riding its joint
  * rigidly, as a machine's parts do. The joints: `base` (the undercarriage), `blade`, the four wheels `sprocketL/R`
@@ -47,8 +48,6 @@ const RAMS = {
 };
 const SIDES = /** @type {const} */ ([['L', 1], ['R', -1]]);
 const TRACK_X = 0.37, TRACK_W = 0.25, TRACK_L = 1.55, WHEEL = 0.17;
-/** how much bigger than the mini it is built as: twice, every measure */
-export const SCALE = 2;
 
 /** a box w × h × len from a to b (len its length), its other sides across, turned along the line */
 /** @param {V3} a @param {V3} b @param {number} w @param {number} h @param {number} [r] */
@@ -81,11 +80,9 @@ function bucketParts() {
 	const cy = py - 0.24, cz = pz + 0.04, R = 0.24, w = 0.4;
 	/** @type {Piece[]} */
 	const out = [];
-	/** a point on the curl, φ from up (0) through out (π/2, away from the cab) to down (π) and on round under it: a
-	 *  backhoe's bucket, its back to the outside and its mouth and teeth towards the machine @param {number} phi
-	 *  @param {number} [r] @returns {V3} */
+	/** a point on the curl, φ from up (0) through back (−π/2) to down (−π) @param {number} phi @param {number} [r] @returns {V3} */
 	const at = (phi, r = R) => [0, cy + Math.cos(phi) * r, cz + Math.sin(phi) * r];
-	const n = 9, from = -0.15, to = Math.PI + 0.55;
+	const n = 9, from = 0.15, to = -Math.PI - 0.55;
 	for (let i = 0; i < n; i++) {
 		const p0 = at(from + ((to - from) * i) / n), p1 = at(from + ((to - from) * (i + 1)) / n);
 		out.push({ geo: beam(p0, p1, w, 0.025, 0.006), color: DARK, bone: 'bucket' });
@@ -104,15 +101,12 @@ function bucketParts() {
 		g.translate(sx * (w / 2) + (sx > 0 ? 0.015 : 0), cy, cz);
 		out.push({ geo: g, color: DARK, bone: 'bucket' });
 	}
-	// the teeth carry on round the curl from its lip
-	const lip = at(to), along = new THREE.Vector3(0, -Math.sin(to), Math.cos(to));
-	const aim = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), along);
+	const lip = at(to);
 	for (let k = 0; k < 4; k++) {
 		const x = -0.15 + k * 0.1;
 		const tooth = new THREE.ConeGeometry(0.025, 0.09, 6);
-		tooth.translate(0, 0.045, 0);
-		tooth.applyQuaternion(aim);
-		tooth.translate(x, lip[1], lip[2]);
+		tooth.applyMatrix4(new THREE.Matrix4().makeRotationX(-Math.PI / 2 - 0.35));
+		tooth.translate(x, lip[1] - 0.01, lip[2] + 0.035);
 		out.push({ geo: tooth, color: STEEL, bone: 'bucket' });
 	}
 	// the ears its pins go through
@@ -338,8 +332,7 @@ export function excavator() {
 		])
 	];
 	const r = rig(bones, parts(), [skin(0.5, { side: THREE.DoubleSide })]);
-	r.object.name = 'excavator';
-	r.object.scale.setScalar(SCALE); // built at the mini's measure, shown at twice it
+	r.object.name = 'mini excavator';
 
 	/** @type {Record<string, import('./rig').Clip>} */
 	const clips = {
