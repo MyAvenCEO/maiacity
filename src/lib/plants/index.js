@@ -19,7 +19,7 @@ import { STAGES as RASPBERRY, raspberry } from './raspberry.js';
 import { OXHEART_STAGES, STAGES as TOMATO, oxheart, tomato } from './tomato.js';
 import { STAGES as EGGPLANT, eggplant } from './eggplant.js';
 import { STAGES as COCONUT, coconut } from './coconut.js';
-import { APPLE_STAGES, DURIAN, DURIAN_STAGES, JACKFRUIT, JACKFRUIT_STAGES, LEMON_STAGES, MANGO_STAGES, ORANGE_STAGES, apple, durian, jackfruit, lemon, mango, orange } from './trees.js';
+import { APPLE_STAGES, APPLE_V1, DURIAN, DURIAN_STAGES, JACKFRUIT, JACKFRUIT_STAGES, LEMON_STAGES, MANGO_STAGES, ORANGE_STAGES, apple, durian, jackfruit, lemon, mango, orange } from './trees.js';
 import { CARROT_STAGES, GARLIC_STAGES, LETTUCE_STAGES, RADISH_STAGES, carrot, garlic, lettuce, radish } from './vegetables.js';
 import { STAGES as GRAPE, grape } from './grape.js';
 import { BANANA_STAGES, RED_BANANA_STAGES, PAPAYA_STAGES, PASSION_STAGES, PINEAPPLE_STAGES, banana, papaya, passionFruit, pineapple, redBanana } from './tropics.js';
@@ -703,6 +703,12 @@ const HISTORY = {
 	soursop: [
 		{ ...FIRST, build: orchardV1(SOURSOP) },
 		{ v: 2, date: '2026-10-06', note: 'Fruit hangs from the bark of the limbs, not out of their middle' }
+	],
+	// v2: grown branch by branch (./apple.js) into a dense round crown on a clear trunk, spurs with leaf rosettes,
+	// blossom in corymbs, hundreds of apples in clusters bowing the laterals
+	apple: [
+		{ ...FIRST, build: orchardV1(APPLE_V1) },
+		{ v: 2, date: '2026-10-06', note: 'Dense round crown on a clear trunk; blossom and apples in clusters on spurs' }
 	]
 };
 

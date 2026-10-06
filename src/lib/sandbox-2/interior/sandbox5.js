@@ -47,7 +47,7 @@ const OUTSIDE = {
 	],
 	// the low trees: the fruit, close together under and between the canopy
 	trees: [
-		{ id: 'apple', v: 1, stages: [4, 9], weight: 4 },
+		{ id: 'apple', v: 2, stages: [4, 9], weight: 4 },
 		{ id: 'pear', v: 1, stages: [7, 9], weight: 2 },
 		{ id: 'plum', v: 1, stages: [7, 9], weight: 3 },
 		{ id: 'cherry', v: 1, stages: [7, 9], weight: 2 },

@@ -11,6 +11,16 @@
 import * as THREE from 'three';
 import { clamp, mix, v3 } from './grow.js';
 import { orchard } from './orchard.js';
+import { apple as appleV2 } from './apple.js';
+
+/** a description frozen through and through, so a version kept cannot change @template T @param {T} o @returns {T} */
+function deepFreeze(o) {
+	if (o && typeof o === 'object' && !Object.isFrozen(o)) {
+		Object.freeze(o);
+		for (const v of Object.values(o)) if (!(v instanceof THREE.Vector3)) deepFreeze(v);
+	}
+	return o;
+}
 
 /** the ten stages of a fruit tree, its days and notes */
 const stages = (/** @type {[string, number, string][]} */ rows) => rows.map(([name, day, note]) => ({ name, day, note }));
@@ -68,16 +78,18 @@ export const APPLE_STAGES = stages([
 	['Pip', 0, 'A brown teardrop pip, chilled through the winter, a centimetre down.'],
 	['Germination', 20, 'The radicle goes down, the hook comes up; the seed leaves lift out of the soil.'],
 	['Seedling', 35, 'Two oval seed leaves and the first toothed true leaves.'],
-	['Sapling', 365, 'A whip with a few side shoots, its leaves soft and downy beneath.'],
-	['Young tree', 1460, 'An open crown on three or four scaffold limbs; short knobbly fruiting spurs on the outer branches.'],
-	['Blossom', 2200, 'Clusters of five or six pink-budded white flowers on the spurs, the king bloom in the middle first.'],
+	['Sapling', 365, 'A slender red-brown whip, its oval leaves soft and downy beneath.'],
+	['Young tree', 1460, 'A clear trunk, tiers of scaffold limbs and laterals along them; the first knobbly spurs, each a rosette of leaves.'],
+	['Blossom', 2200, 'On every spur a rosette of young leaves and a cluster of five or six: deep pink buds, the king flower in the middle opening first, white flushed pink.'],
 	['Fruit set', 2215, 'The petals fall; the king fruit and one or two others swell, the rest drop in the June drop.'],
 	['Green apples', 2260, 'Hard green apples hanging on their short stalks among the leaves.'],
 	['Colouring', 2300, 'The sunny side flushes red, the ground colour turns from green to yellow.'],
-	['Ripe', 2320, 'Red-striped apples come away with a lift and a twist: picking time.']
+	['Ripe', 2320, 'Hundreds of red-striped apples in clusters, the laterals bowed under them; they come away with a lift and a twist.']
 ]);
 
-export const apple = orchard({
+/** its description at v1, frozen: ./orchard.v1.js grows it (the apple's history, ./index.js); v2 is ./apple.js
+ * @type {import('./orchard.js').Orchard} */
+export const APPLE_V1 = deepFreeze({
 	seed: { size: v3(0.004, 0.0022, 0.002), coat: '#5a3a22', shade: '#3a2414', depth: 0.01 },
 	hypogeal: false,
 	cotyledon: { length: 0.012, width: 0.0045, colour: '#6aa046' },
@@ -96,6 +108,8 @@ export const apple = orchard({
 		colour: (ripe, u, v) => APPLE_BASE(ripe).lerp(new THREE.Color('#b8232f'), clamp(ripe * 1.3 - 0.2) * (0.55 + 0.45 * Math.max(0, Math.cos(v * Math.PI * 2))) * (0.75 + 0.25 * Math.abs(Math.sin(v * Math.PI * 28))))
 	}
 });
+/** the apple as it grows now: a half-standard grown branch by branch (./apple.js) */
+export const apple = appleV2;
 
 /** a citrus skin: round, finely pitted with oil glands */
 const pitted = (/** @type {number} */ u, /** @type {number} */ v, /** @type {number} */ p = 0.5) => Math.pow(Math.max(0, Math.sin(Math.PI * u)), p) * (1 + 0.012 * Math.sin(v * Math.PI * 2 * 31 + u * 47) * Math.sin(u * 61));
