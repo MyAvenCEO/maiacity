@@ -4,7 +4,7 @@
 // released yet. Flip it here to publish or withdraw a sandbox.
 import { base } from '$app/paths';
 import type { Founder } from '$lib/auth/client';
-import { latestOf, versionsOf, type Change, type Version } from '$lib/app/versions.js';
+import { FIRST, latestOf, versionsOf, type Change, type Version } from '$lib/app/versions.js';
 
 export type Release = 'draft' | 'published';
 export type Place = {
@@ -22,7 +22,9 @@ export const APPS: Place[] = [
 ];
 
 /** the worlds' and sandboxes' older versions, by address, each with what it was (none yet: everything is at v1) */
-const HISTORY: Record<string, (Change & { build?: string })[]> = {};
+const HISTORY: Record<string, (Change & { build?: string })[]> = {
+	[`${base}/app/games/sandbox-5/`]: [FIRST, { v: 2, date: '2026-10-06', note: 'Replanted the cacao, jackfruit, durian and soursop at their v2' }]
+};
 /** a list of worlds with their versions */
 const withVersions = (list: Place[]): Place[] =>
 	list.map((p) => {

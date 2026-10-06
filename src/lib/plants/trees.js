@@ -179,7 +179,8 @@ export const DURIAN_STAGES = stages([
 	['Ripe', 3020, 'Ripe durians, yellow-brown and fragrant, ready to fall in the night.']
 ]);
 
-export const durian = orchard({
+/** its description, kept for its versions (./orchard.v1.js grows its v1) @type {import('./orchard.js').Orchard} */
+export const DURIAN = {
 	seed: { size: v3(0.02, 0.013, 0.014), coat: '#7a4a2a', shade: '#4a2a18', depth: 0.03 },
 	hypogeal: true,
 	leader: {
@@ -196,7 +197,8 @@ export const durian = orchard({
 		colour: (ripe) => DURIAN_COLOUR(ripe),
 		skin: { colour: (ripe) => (ripe < 0.5 ? '#6a8434' : '#9a8a42'), count: 230, size: 0.0065, length: 2.4 }
 	}
-});
+};
+export const durian = orchard(DURIAN);
 
 export const JACKFRUIT_STAGES = stages([
 	['Seed', 0, 'A pale brown seed three centimetres long, its slimy coat washed off, sown fresh.'],
@@ -211,7 +213,8 @@ export const JACKFRUIT_STAGES = stages([
 	['Ripe', 2380, 'Ripe jackfruit, half a metre long and tens of kilograms, borne on the trunk itself.']
 ]);
 
-export const jackfruit = orchard({
+/** its description, kept for its versions (./orchard.v1.js grows its v1) @type {import('./orchard.js').Orchard} */
+export const JACKFRUIT = {
 	seed: { size: v3(0.016, 0.009, 0.01), coat: '#c9a678', shade: '#8a6a44', depth: 0.03 },
 	hypogeal: true,
 	// a dense dome on a stout trunk: a tall clear trunk (where the fruit comes), then flush after flush
@@ -223,11 +226,12 @@ export const jackfruit = orchard({
 	},
 	roots: { tap: 2, spread: 2.8, count: 18, radius: 0.07 },
 	leaf: { length: 0.16, width: 0.075, shape: ellipse, colour: '#2a4f22', young: '#7aa04a', style: 'along', per: 0, droop: 0.25 },
-	flower: { catkin: true, size: 1, opens: 4.9, sites: 'trunk', chance: 1.3, per: [1, 3] },
+	flower: { catkin: true, size: 1, opens: 4.9, sites: 'trunk', chance: 3, per: [1, 3] },
 	fruit: {
 		length: 0.45, width: 0.14, stalk: 0.06, keep: [1, 1], setFor: 2.3, ripeFrom: 3.1, ripeFor: 0.8, gloss: false,
 		shape: (u, v) => Math.pow(Math.max(0, Math.sin(Math.PI * u)), 0.42) * (1 + 0.03 * Math.sin(v * Math.PI * 2 * 26) * Math.sin(u * 70)),
 		colour: (ripe) => JACK_COLOUR(ripe),
 		skin: { colour: (ripe) => (ripe < 0.5 ? '#5f8a34' : '#a89a3a'), count: 240, size: 0.006, length: 1.3 }
 	}
-});
+};
+export const jackfruit = orchard(JACKFRUIT);

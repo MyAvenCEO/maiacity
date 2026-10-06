@@ -226,7 +226,8 @@ export const SOURSOP_STAGES = stages([
 	['Ripe', 1470, 'Soft to a thumb: white custard flesh, sweet and sour — corossol.']
 ]);
 
-export const soursop = orchard({
+/** its description, kept for its versions (./orchard.v1.js grows its v1) @type {import('./orchard.js').Orchard} */
+export const SOURSOP = {
 	seed: { size: v3(0.009, 0.005, 0.006), coat: '#1a1410', shade: '#3a2a20', depth: 0.01 },
 	hypogeal: false,
 	cotyledon: { length: 0.022, width: 0.009, colour: '#5a8a3a' },
@@ -241,7 +242,8 @@ export const soursop = orchard({
 		colour: (ripe) => mix('#3f6a2a', '#8a9a4a', ripe),
 		skin: { colour: (ripe) => (ripe < 0.5 ? '#2f5a24' : '#5a6a34'), count: 220, size: 0.003, length: 2.6 }
 	}
-});
+};
+export const soursop = orchard(SOURSOP);
 
 /* ------------------------------------------------------------------------------------------------ sapodilla */
 

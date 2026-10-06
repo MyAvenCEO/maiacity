@@ -152,14 +152,14 @@ const INSIDE = {
 		{ id: 'banana', v: 1, stages: [5, 7, 9], weight: 2 },
 		{ id: 'red-banana', v: 1, stages: [5, 7, 9] },
 		{ id: 'papaya', v: 1, stages: [5, 7, 9], weight: 2 },
-		{ id: 'jackfruit', v: 1, stages: TREE },
-		{ id: 'durian', v: 1, stages: TREE },
+		{ id: 'jackfruit', v: 2, stages: TREE },
+		{ id: 'durian', v: 2, stages: TREE },
 		{ id: 'safou', v: 1, stages: TREE },
 		{ id: 'sapodilla', v: 1, stages: TREE },
-		{ id: 'soursop', v: 1, stages: TREE },
+		{ id: 'soursop', v: 2, stages: TREE },
 		{ id: 'pomegranate', v: 1, stages: TREE },
 		{ id: 'olive', v: 1, stages: TREE },
-		{ id: 'cacao', v: 1, stages: TREE, weight: 2 }
+		{ id: 'cacao', v: 2, stages: TREE, weight: 2 }
 	],
 	shrubs: [
 		{ id: 'coffee', v: 1, stages: SHRUB, weight: 3 },
