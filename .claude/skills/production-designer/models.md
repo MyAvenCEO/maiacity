@@ -36,7 +36,14 @@ library, shown on its own in the 3D models viewer and placed in any world.
   colonies on the surface it belongs on — herbs carpet their patches rather than being sprinkled evenly, moss sits on
   what rises, grass and flowers only where light reaches. A biome (`index.js`) is surface weights plus colonies;
   `mix(a, b, t)` runs two together. Its cover is too dense for a whole world at once, so a world streams it in tiles
-  round the eye (`stream.js`). Sandbox 5's floor is the food forest biome. A new floor is a recipe there.
+  round the eye (`stream.js`): one instanced mesh a kind for all tiles, every plant ranked so the cover thins out with
+  distance (`near`, `thin`) and grows out of the ground as you come (no edge, no pop); `origin` lays it in a dome's
+  own ground. Sandbox 5's floor is the food forest biome, under its domes' glass the warm food forest. A new floor is
+  a recipe there.
+- Sandbox 5's forest (`src/lib/sandbox-2/interior/flora.js`) draws each tree in full near you, coarser further off,
+  and beyond that as an impostor (`impostors.js`): each kind photographed from eight sides into one texture once
+  grown, each far tree one card turned to the eye that also throws the tree's shadow. `forest.mask(circles)` leaves
+  out ground whose own forest is shown (a dome's full inside).
 - `src/lib/models/textures.ts` — their surfaces, drawn once on a canvas and shared: limed oak, pine (fresh and aged),
   painted pine, plaster (as a bump map), wool, the face on the wall.
 - `src/lib/models/index.ts` — `MODELS`: each model's id, label, note (its measure and what it is), where it is used,

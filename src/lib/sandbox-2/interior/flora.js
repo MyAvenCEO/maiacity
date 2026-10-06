@@ -6,14 +6,16 @@
  * in a worker (./flora.worker.js, ./flora.grow.js), twice over: finely for near you, coarsely for further off. Every
  * plant of that kind in the world is then one more instance of it, drawn with all the others in a handful of draw
  * calls. Which plant is drawn how is chosen afresh as you walk and look round: in front of you and near, the fine one;
- * further, the coarse one; further still a tree is a trunk and a crown in its leaves' colour, and the small plants are
- * left out; behind you nothing at all.
+ * further, the coarse one; further still a tree is a picture of itself turned to you (./impostors.js; a trunk and a
+ * crown in its leaves' colour where there is no renderer to take the pictures with), and the small plants are left
+ * out; behind you nothing at all.
  *
  * A forest is a list of plants put somewhere (`add`); `grown` waits for their kinds to have grown, `update` keeps
  * the drawing in step with the eye.
  */
 import * as THREE from 'three';
 import { grow, keyOf } from './flora.grow.js';
+import { impostors } from './impostors.js';
 
 /** @typedef {import('./flora.grow.js').Kind} Kind */
 /** @typedef {import('./flora.grow.js').Shape} Shape */
@@ -125,8 +127,10 @@ const cellOf = (x, z) => (Math.floor(x / CELL) + 4096) * 8192 + (Math.floor(z / 
 
 /**
  * A forest: plants put down in it, drawn as you see them.
- * @param {{ tree?: [number, number], shrub?: [number, number], cover?: [number, number] }} [o] how far each reach is
- *   drawn: [the fine plants to, the coarse ones to]; a tree beyond is its stand-in, anything else beyond is left out
+ * @param {{ tree?: [number, number], shrub?: [number, number], cover?: [number, number], renderer?: THREE.WebGLRenderer }} [o]
+ *   how far each reach is drawn: [the fine plants to, the coarse ones to]; a tree beyond is its stand-in, anything
+ *   else beyond is left out. With a `renderer`, a tree's stand-in is a picture of the tree itself (./impostors.js),
+ *   not a trunk and a ball
  */
 export function createForest(o = {}) {
 	const REACH = { tree: o.tree ?? [32, 80], shrub: o.shrub ?? [18, 45], cover: o.cover ?? [10, 24] };
@@ -137,8 +141,14 @@ export function createForest(o = {}) {
 	/** the trees far away: a trunk and a crown each, every tree of the forest */
 	/** @type {{ trunks: THREE.InstancedMesh, crowns: THREE.InstancedMesh } | null} */
 	let far = null;
+	/** the trees far away as pictures of themselves, when the forest has a renderer to take them with */
+	/** @type {ReturnType<typeof impostors> | null} */
+	let cards = null;
 	let dirty = true;
 	const last = { x: Infinity, z: Infinity, a: Infinity };
+	/** the circles of ground whose plants are not drawn (a dome whose own full forest is shown there) */
+	/** @type {{ x: number, z: number, r: number }[]} */
+	let masked = [];
 
 	/**
 	 * A plant put down at x, z (on the ground at y), turned by `turn`, at `scale` of its kind's size.
@@ -238,7 +248,27 @@ export function createForest(o = {}) {
 		);
 		const trees = list.filter((st) => st.reach === 'tree' && st.shape);
 		const count = trees.reduce((a, st) => a + st.n, 0);
-		if (count) {
+		if (count && o.renderer) {
+			cards = impostors(
+				o.renderer,
+				trees.map((st) => {
+					const shape = /** @type {Shape} */ (st.shape), near = /** @type {Tier} */ (st.near);
+					return {
+						parts: shape.parts.map((p, i) => ({ geometry: /** @type {THREE.InstancedMesh} */ (near.meshes[i]).geometry, kind: p.kind })),
+						height: shape.height,
+						reach: shape.reach,
+						leaf: new THREE.Color().setRGB(...shape.leaf),
+						x: /** @type {Float32Array} */ (st.x), y: /** @type {Float32Array} */ (st.y), z: /** @type {Float32Array} */ (st.z),
+						c: /** @type {Float32Array} */ (st.c), s: /** @type {Float32Array} */ (st.s), n: st.n
+					};
+				}),
+				REACH.tree[1],
+				// the coarse trees cast no shadows of their own: their pictures cast them
+				REACH.tree[0]
+			);
+			cards.mask(masked);
+			group.add(cards.mesh);
+		} else if (count) {
 			const trunks = new THREE.InstancedMesh(trunkGeo, trunkMat, count);
 			const crowns = new THREE.InstancedMesh(crownGeo, crownMat, count);
 			for (const st of trees) st.colour = new THREE.Color().setRGB(...(/** @type {Shape} */ (st.shape).leaf));
@@ -297,6 +327,8 @@ export function createForest(o = {}) {
 		last.x = x;
 		last.z = z;
 		last.a = a;
+		// the pictures of the far trees stand from where the full ones end, round this same eye
+		cards?.eye(x, z);
 		const fl = Math.hypot(fx, fz) || 1;
 		fx /= fl;
 		fz /= fl;
@@ -326,6 +358,7 @@ export function createForest(o = {}) {
 			const look = (/** @type {number} */ i) => {
 				const dx = X[i] - x, dz = /** @type {Float32Array} */ (Z)[i] - z;
 				const d = Math.hypot(dx, dz);
+				for (const m of masked) if ((X[i] - m.x) ** 2 + (/** @type {Float32Array} */ (Z)[i] - m.z) ** 2 < m.r * m.r) return;
 				// behind the eye: not drawn (the frame is never wider than about 100°)
 				if (d > r && dx * fx + dz * fz < -0.15 * d + r * 0.9) return;
 				if (d < nearTo) {
@@ -450,12 +483,23 @@ export function createForest(o = {}) {
 
 	function dispose() {
 		group.removeFromParent();
+		cards?.dispose();
 		for (const st of stands.values()) for (const t of [st.near, st.mid]) for (const m of t?.meshes ?? []) m.dispose();
 		far?.trunks.dispose();
 		far?.crowns.dispose();
 	}
 
-	return { group, add, kinds, grown, update, weight, plants, shape, pick, dispose };
+	/**
+	 * Leaves out every plant standing in these circles of ground (at most eight), until the next mask.
+	 * @param {{ x: number, z: number, r: number }[]} list
+	 */
+	function mask(list) {
+		masked = list.slice(0, 8);
+		cards?.mask(masked);
+		dirty = true;
+	}
+
+	return { group, add, kinds, grown, update, weight, plants, shape, pick, mask, dispose };
 }
 
 /** @typedef {ReturnType<typeof createForest>} Forest */
