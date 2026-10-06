@@ -1146,7 +1146,7 @@ export const treeHazel = wood({
 	leaf: {
 		blade: {
 			stalk: 0.02, length: 0.12, width: 0.06,
-			shape: (u) => (u < 0.2 ? 0.55 + 0.45 * Math.sin((Math.PI / 2) * (u / 0.2)) : u < 0.7 ? 1 - 0.12 * Math.pow((u - 0.2) / 0.5, 2) : 0.88 * Math.pow(Math.cos((Math.PI / 2) * ((u - 0.7) / 0.3)), 0.7)) * (1 + 0.04 * Math.sin(u * 50)),
+			shape: (u) => (u < 0.2 ? 0.55 + 0.45 * Math.sin((Math.PI / 2) * (u / 0.2)) : u < 0.7 ? 1 - 0.12 * Math.pow((u - 0.2) / 0.5, 2) : 0.88 * Math.pow(Math.max(0, Math.cos((Math.PI / 2) * ((u - 0.7) / 0.3))), 0.7)) * (1 + 0.04 * Math.sin(u * 50)),
 			back: 0.08, along: 6, bow: 0.07
 		},
 		colour: '#2e5a22', young: '#7ab048', autumn: '#c8a840', droop: 0.3, gap: 0.08, per: 3, twig: 0.14, tuft: 3, limb: 0.2, top: 2.4, bare: true
