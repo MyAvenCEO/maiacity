@@ -73,6 +73,11 @@ under one skinned mesh, built in its rest pose (facing +z, on y 0), its parts ri
   14 t crawler — a bigger machine is a different kind, never a mini scaled up: steel tracks on rollers, an enclosed
   cab at a person's measure, a mono boom pinned to the house on two rams, no blade. Both dig with a backhoe bucket,
   its mouth towards the machine.
+- `species/songbird.js` — five songbirds on the bird plan, to their measure (14–25 cm): the robin, the blackbird, the
+  great tit, the house sparrow and the chaffinch. Two bones of their own: a `jaw`, which opens as it sings, and a
+  whole wing riding each wing bone — folded along the flank, swung out flat and beaten to fly (`wingTurn`). Their
+  moves: fly (bounding: beats, then the wings shut), hop (both feet together), peck, sing, sit, idle. In Sandbox 5
+  they live round a few trees each (`src/lib/sandbox-2/interior/birds.js`).
 - `animals.ts` — Sandbox 4's creatures, rigged: the hen (pecks, flaps), the goose (waddles, grazes, hisses), the
   goat and the sheep (walk, graze), the frog (croaks, hops), the bee (hovers, flies), the carp and the tilapia (swim).
 - `crowd.ts` — how a world holds many of them (Sandbox 4's flocks, hives and ponds; Sandbox 3's): the nearest to the

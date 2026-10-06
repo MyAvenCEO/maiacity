@@ -12,6 +12,7 @@ import { goat, GOAT_BREEDS } from './species/goat';
 import { goose, GOOSE_BREEDS } from './species/goose';
 import { rabbit, RABBIT_COATS } from './species/rabbit';
 import { sheep, SHEEP_BREEDS } from './species/sheep';
+import { songbird, SONGBIRDS } from './species/songbird.js';
 
 const each = <T extends string>(kind: string, ids: readonly T[], make: (id: T) => Cast) => Object.fromEntries(ids.map((id) => [`${kind}-${id}`, () => make(id)]));
 
@@ -23,6 +24,7 @@ export const CASTS: Record<string, () => Cast> = {
 	...each('rabbit', RABBIT_COATS, rabbit),
 	...each('frog', FROG_KINDS, frog),
 	...each('fish', FISH_KINDS, fish),
+	...each('bird', SONGBIRDS, songbird),
 	bee,
 	ant,
 	'ant-hill': antHill
