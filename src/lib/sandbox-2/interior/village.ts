@@ -409,6 +409,8 @@ export async function mountVillage(container: HTMLElement, onProgress: (label: s
 	const crownGeo = new THREE.IcosahedronGeometry(1, 1)
 	const treeTrunkMat = new THREE.MeshStandardMaterial({ color: '#6d5238', roughness: 0.9 })
 	const treeCrownMat = new THREE.MeshStandardMaterial({ color: '#4f8a38', roughness: 0.8, flatShading: true })
+	/** Sandbox 5: the simple insides' floor, the warm food forest biome's, as the full insides' is (interior.ts) */
+	const warmFloor = flora ? groundMaterial(BIOMES.find((b) => b.id === 'warm-food-forest')!.surface) : null
 	/** Sandbox 5: the warm garden's trees for the simple insides, each ripe (one kind a tree, few to grow) */
 	const RIPE = flora ? flora.inside.trees.map((p) => ({ ...p, stages: [p.stages[p.stages.length - 1]!] })) : []
 	/** each dome's simple version, all of it, so it can step aside for the full one */
@@ -490,7 +492,7 @@ export async function mountVillage(container: HTMLElement, onProgress: (label: s
 		terrace(H, 0, rWall - 0.4)
 		if (twoFloors) terrace(H2, H, Math.sqrt(R * R - H2 * H2) - 0.4)
 		// through the glass: soil, the plaza or the stage, the galleries and the rooms
-		const soil = new THREE.Mesh(new THREE.CircleGeometry(R - 0.1, 48), m.soil(R / 2))
+		const soil = new THREE.Mesh(new THREE.CircleGeometry(R - 0.1, 48), warmFloor ?? m.soil(R / 2))
 		soil.rotation.x = -Math.PI / 2
 		soil.position.y = 0.02
 		g.add(soil)
