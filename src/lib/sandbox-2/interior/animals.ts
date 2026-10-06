@@ -333,42 +333,143 @@ export function fishes(pools: { x: number; z: number; r: number; y: number; n: n
 /**
  * Ant hills on the forest floor, the wood ants busy on them: from afar a still mound (the ants too small to see),
  * near the eye the rigged hill with its colony going round it — built the first time the eye comes near, and posed
- * only while it is near.
+ * only while it is near. From every hill run its ant roads (Ameisenstraßen), three to five, each winding off four to
+ * ten metres over the floor to where the colony forages — a worn track on the ground, and near the eye a stream of
+ * ants along it, going out and coming home, side by side. `blocked` keeps the roads off paths and water.
  */
-export function antHills(spots: { x: number; z: number; rot: number; size: number }[], eye?: Eye): { object: THREE.Group; update: (t: number) => void; where: () => { x: number; z: number }[] } {
+export function antHills(
+	spots: { x: number; z: number; rot: number; size: number }[],
+	eye?: Eye,
+	blocked?: (x: number, z: number) => boolean
+): { object: THREE.Group; update: (t: number) => void; where: () => { x: number; z: number }[] } {
 	const object = new THREE.Group()
 	const NEAR = 22
 	const make = CASTS['ant-hill']!
 	// the mound from afar: the hill built coarse, its ants (each far smaller than the mound) left off
 	const far = lowDetail(make, 0.45).rig.object
 	far.castShadow = far.receiveShadow = true
-	type Hill = { s: (typeof spots)[number]; far: THREE.Object3D; near?: ReturnType<typeof make> }
+	/** a road: its points, and how far along it each one is */
+	type Road = { pts: THREE.Vector2[]; at: number[]; len: number }
+	type Hill = { s: (typeof spots)[number]; far: THREE.Object3D; near?: ReturnType<typeof make>; holder?: THREE.Group; roads: Road[] }
 	const hills: Hill[] = spots.map((s) => {
 		const o = far.clone()
 		o.position.set(s.x, 0, s.z)
 		o.rotation.y = s.rot
 		o.scale.setScalar(s.size)
 		object.add(o)
-		return { s, far: o }
+		// its roads: off the mound's foot, each its own way, wandering as an ant road does, until it is long enough or meets
+		// a path or the water
+		const r = seeded(Math.round(s.x * 131 + s.z * 17) + 5)
+		const n = 3 + Math.floor(r() * 3)
+		const roads: Road[] = []
+		for (let k = 0; k < n; k++) {
+			let a = s.rot + (k / n) * Math.PI * 2 + (r() - 0.5) * 0.9
+			const want = 4 + r() * 6
+			const p = new THREE.Vector2(s.x + Math.cos(a) * 0.55 * s.size, s.z + Math.sin(a) * 0.55 * s.size)
+			const pts = [p.clone()], at = [0]
+			let len = 0
+			while (len < want) {
+				a += (r() - 0.5) * 0.55
+				const q = p.clone().add(new THREE.Vector2(Math.cos(a), Math.sin(a)).multiplyScalar(0.4))
+				if (blocked?.(q.x, q.y)) break
+				len += 0.4
+				p.copy(q)
+				pts.push(q)
+				at.push(len)
+			}
+			if (len >= 1.6) roads.push({ pts, at, len })
+		}
+		return { s, far: o, roads }
 	})
+	// the roads worn into the floor: a strip of bare, trodden earth each, all of them one mesh
+	{
+		const pos: number[] = [], idx: number[] = []
+		for (const h of hills)
+			for (const rd of h.roads)
+				for (let i = 0; i < rd.pts.length; i++) {
+					const p = rd.pts[i]!, q = rd.pts[Math.min(rd.pts.length - 1, i + 1)]!, b = rd.pts[Math.max(0, i - 1)]!
+					const dx = q.x - b.x, dz = q.y - b.y, l = Math.hypot(dx, dz) || 1
+					// narrowing as it goes, fading out where the ants spread to forage
+					const w = 0.06 * (1 - (0.6 * i) / rd.pts.length)
+					const base = pos.length / 3
+					pos.push(p.x - (dz / l) * w, 0.012, p.y + (dx / l) * w, p.x + (dz / l) * w, 0.012, p.y - (dx / l) * w)
+					if (i > 0) idx.push(base - 2, base - 1, base, base - 1, base + 1, base)
+				}
+		const g = new THREE.BufferGeometry()
+		g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3))
+		g.setIndex(idx)
+		g.computeVertexNormals()
+		const track = new THREE.Mesh(g, new THREE.MeshStandardMaterial({ color: '#5a4630', roughness: 1, transparent: true, opacity: 0.75, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2 }))
+		track.receiveShadow = true
+		track.renderOrder = 1
+		object.add(track)
+	}
+	// the ants on the roads, near the eye: a red wood ant each (head, thorax and the black gaster), about 9 mm long,
+	// drawn all together; five to a metre of road, half going out, half coming home
+	const antGeo = model([
+		{ geo: new THREE.SphereGeometry(1, 6, 4), color: '#7a2e14', at: [0, 0.0018, 0.0034], scale: [0.0012, 0.0011, 0.0013] },
+		{ geo: new THREE.SphereGeometry(1, 6, 4), color: '#8a3a18', at: [0, 0.002, 0.0012], scale: [0.0009, 0.0009, 0.0017] },
+		{ geo: new THREE.SphereGeometry(1, 6, 4), color: '#1a1410', at: [0, 0.0022, -0.0024], scale: [0.0018, 0.0016, 0.0024] }
+	])
+	const MAX = 2400
+	const ants = new THREE.InstancedMesh(antGeo, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.5 }), MAX)
+	ants.frustumCulled = false
+	ants.count = 0
+	object.add(ants)
+	const mx = new THREE.Matrix4(), q = new THREE.Quaternion(), pp = new THREE.Vector3(), one = new THREE.Vector3(1, 1, 1), upY = new THREE.Vector3(0, 1, 0)
+	/** where along a road, at a distance d from the hill: its place and its heading */
+	const along = (rd: Road, d: number) => {
+		let i = 1
+		while (i < rd.at.length - 1 && rd.at[i]! < d) i++
+		const a = rd.pts[i - 1]!, b = rd.pts[i]!
+		const f = Math.min(1, Math.max(0, (d - rd.at[i - 1]!) / (rd.at[i]! - rd.at[i - 1]! || 1)))
+		return { x: a.x + (b.x - a.x) * f, z: a.y + (b.y - a.y) * f, heading: Math.atan2(b.x - a.x, b.y - a.y) }
+	}
 	const update = (t: number) => {
 		const at = eye?.()
+		let n = 0
 		for (const h of hills) {
 			const near = !!at && (h.s.x - at.x) ** 2 + (h.s.z - at.z) ** 2 < NEAR * NEAR
 			if (near && !h.near) {
 				h.near = make()
-				const o = h.near.rig.object
-				o.position.set(h.s.x, 0, h.s.z)
-				o.rotation.y = h.s.rot
-				o.scale.setScalar(h.s.size)
-				object.add(o)
+				// the rig's pose sets its own root where the clip says, so it stands in a holder placed at its spot: posed
+				// bare, the hill would end up at the middle of the world (the master dome's stage)
+				const holder = new THREE.Group()
+				holder.position.set(h.s.x, 0, h.s.z)
+				holder.rotation.y = h.s.rot
+				holder.scale.setScalar(h.s.size)
+				holder.add(h.near.rig.object)
+				h.holder = holder
+				object.add(holder)
 			}
 			h.far.visible = !near
-			if (h.near) {
-				h.near.rig.object.visible = near
+			if (h.near && h.holder) {
+				h.holder.visible = near
 				if (near) h.near.rig.pose(h.near.clips.busy!(t + h.s.x))
 			}
+			if (!near) continue
+			// the streams of ants: each at its own place in the stream, moving at about 3 cm a second, out on one side of
+			// the road and home on the other
+			for (const [ri, rd] of h.roads.entries()) {
+				const count = Math.floor(rd.len * 5)
+				for (let k = 0; k < count && n < MAX; k++) {
+					const out = k % 2 === 0
+					const jitter = Math.sin(k * 12.9898 + ri * 78.233) * 43758.5453
+					const phase = jitter - Math.floor(jitter)
+					let d = ((phase * rd.len + t * 0.03 * (out ? 1 : -1)) % rd.len + rd.len) % rd.len
+					const p = along(rd, d)
+					const side = (out ? 1 : -1) * 0.012 + Math.sin(t * 3 + k) * 0.004
+					const hd = p.heading + (out ? 0 : Math.PI)
+					pp.set(p.x + Math.cos(p.heading) * side, 0.004, p.z - Math.sin(p.heading) * side)
+					q.setFromAxisAngle(upY, hd)
+					ants.setMatrixAt(n++, mx.compose(pp, q, one))
+					void d
+				}
+			}
 		}
+		ants.count = n
+		ants.visible = n > 0
+		ants.instanceMatrix.needsUpdate = true
 	}
 	update(0)
 	return { object, update, where: () => spots }
