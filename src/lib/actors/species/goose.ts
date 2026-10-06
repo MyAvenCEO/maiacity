@@ -26,7 +26,8 @@ const J: BirdJoints = {
 	leg: [[0.07, 0.31, -0.01], [0.078, 0.25, 0.05], [0.078, 0.13, -0.005], [0.078, 0.012, 0.03], [0.078, 0, 0.11]]
 };
 
-export function goose(breed: GooseBreed = 'embden'): Cast {
+/** `moves`: the body plan's way of moving it (an older version's, for the Actors gallery's history) */
+export function goose(breed: GooseBreed = 'embden', moves: typeof birdMoves = birdMoves): Cast {
 	const b = birdSkeleton(J);
 	const s = sculpt(b.bones);
 	const feather = { tag: 'feather', bump: 0.004, lumps: 0.02 };
@@ -89,11 +90,12 @@ export function goose(breed: GooseBreed = 'embden'): Cast {
 
 	const r = rig(b.bones, parts, animalMaterials(0.8));
 	r.object.name = `goose-${breed}`;
-	const clips = birdMoves(b, {
+	const clips = moves(b, {
 		seed: GOOSE_BREEDS.indexOf(breed) + 51,
 		gaits: { walk: { speed: 0.45, stride: 0.3, duty: 0.64, feet: { L: 0, R: 0.5 }, lift: 0.035, bob: 0.008, roll: 0.13, pitch: 0.015, tilt: 0.4, fold: 0.9, curl: 0.8, hold: 0 } },
 		wag: 0.25,
-		carry: 0.15
+		carry: 0.15,
+		steady: 2.6
 	});
 	return { rig: r, clips, first: 'walk', gears: { walk: 0.45 }, feet: ['toesL', 'toesR'] };
 }

@@ -87,7 +87,7 @@ const KINDS: Record<Kind, Spec> = {
 		speed: 0.45, turn: 3, stop: [0.6, 3], walk: [0.5, 2], moving: 'walk', still: ['peck', 'scratch', 'peck', 'idle'], near: 35, max: 20, accel: 1.5
 	},
 	goat: { breeds: breeds('goat', [['saanen', 3], ['alpine', 3], ['pied', 2], ['nubian', 2], ['boer', 2]]), speed: 0.6, turn: 1.4, stop: [2, 7], walk: [1, 4], moving: 'walk', still: ['graze', 'graze', 'idle', 'alert'], near: 45, max: 16, accel: 0.8 },
-	goose: { breeds: breeds('goose', [['embden', 3], ['toulouse', 2], ['chinese', 1]]), speed: 0.4, turn: 1.2, stop: [1, 4], walk: [1.5, 5], moving: 'walk', still: ['graze', 'idle', 'graze'], near: 40, max: 18, accel: 0.8 },
+	goose: { breeds: breeds('goose', [['embden', 3], ['toulouse', 2], ['chinese', 1]]), speed: 0.4, turn: 1.2, stop: [4, 11], walk: [1.2, 3.5], moving: 'walk', still: ['graze', 'idle', 'graze'], near: 40, max: 18, accel: 0.8 },
 	// a frog sits still a long while, then hops once or twice, landing before it stops
 	frog: { breeds: [{ id: 'frog-bullfrog', often: 2, speed: 0.4, stride: 0.32 }, { id: 'frog-green', often: 2, speed: 0.4, stride: 0.32 }, { id: 'frog-common', often: 2, speed: 0.28, stride: 0.224 }], speed: 0.4, turn: 4, stop: [3, 10], walk: [0.5, 1.4], moving: 'hop', still: ['idle', 'idle', 'croak'], near: 15, max: 14, accel: Infinity },
 	// sheep graze the forest between the domes in flocks, a black one among them, one just shorn
