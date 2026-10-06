@@ -404,14 +404,13 @@ export function apple(g, seed) {
 	const weight = (/** @type {Branch} */ b) => {
 		const n = b.dirs.length;
 		b.load = new Array(n).fill(0);
-		if (!fruiting) return 0;
 		let total = 0;
 		const add = (/** @type {number} */ s, /** @type {number} */ w) => {
 			const k = Math.min(n - 1, Math.floor(s / b.step));
 			for (let i = 0; i <= k; i++) b.load[i] += w;
 			total += w;
 		};
-		for (const sp of b.spurs) if (sp.keep) add(sp.s, sp.keep * set * set);
+		if (fruiting) for (const sp of b.spurs) if (sp.keep) add(sp.s, sp.keep * set * set);
 		for (const kid of b.kids) add(kid.at, weight(kid));
 		return total;
 	};
