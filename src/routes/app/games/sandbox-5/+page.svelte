@@ -34,13 +34,13 @@
 	let plants: typeof import('$lib/plants') | null = null;
 	/** the card slides in from the right beside the world; on a phone, up from the foot of it */
 	let narrow = $state(false);
-	/** a press that comes up where it went down, soon, is a click on the world, not a look round */
+	/** a press that comes up where it went down, soon (by the events' own times: a busy frame between them is no matter), is a click on the world, not a look round */
 	let press: { x: number; y: number; t: number } | null = null;
-	const down = (e: PointerEvent) => (press = { x: e.clientX, y: e.clientY, t: performance.now() });
+	const down = (e: PointerEvent) => (press = { x: e.clientX, y: e.clientY, t: e.timeStamp });
 	const up = async (e: PointerEvent) => {
 		const p = press;
 		press = null;
-		if (!p || !village || Math.hypot(e.clientX - p.x, e.clientY - p.y) > 6 || performance.now() - p.t > 450) return;
+		if (!p || !village || Math.hypot(e.clientX - p.x, e.clientY - p.y) > 6 || e.timeStamp - p.t > 450) return;
 		const picked = village.pickPlant(e.clientX, e.clientY);
 		if (!picked) return close();
 		plants ??= await import('$lib/plants');

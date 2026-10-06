@@ -223,6 +223,23 @@ export function stageOf(p, r, seed) {
  */
 export const DRIFT = { least: 5, most: 15, gap: { shrubs: 1.1, climbers: 0.9, herbs: 0.5, roots: 0.45, ground: 0.38, fungi: 0.3 } };
 
+/**
+ * MINI FIELDS — between the forest garden's trees, small fields sown in rows the way a field is: oats (Hafer), lentils,
+ * chickpeas and edamame, hemp, and a grove of bamboo. Each field one crop, sown together and so mostly at one stage,
+ * `size` metres (width × length), its rows `row` apart and its plants `gap` apart along them; `fields` of each crop over
+ * the cell; the row crops on `tilled` soil. A bamboo grove stands in clumps, not rows, out of the forest floor. `reach`
+ * is how far off the forest draws the crop.
+ * @type {{ id: string, v: number, stages: number[], size: [number, number], row: number, gap: number, fields: number, reach: 'cover' | 'shrub' | 'tree', tilled: boolean }[]}
+ */
+export const FIELDS = [
+	{ id: 'oats', v: 1, stages: [6, 7, 8, 9], size: [4, 6], row: 0.24, gap: 0.2, fields: 4, reach: 'shrub', tilled: true },
+	{ id: 'lentil', v: 1, stages: [6, 7, 8, 9], size: [4, 5], row: 0.24, gap: 0.2, fields: 3, reach: 'shrub', tilled: true },
+	{ id: 'chickpea', v: 1, stages: [6, 7, 8, 9], size: [4, 6], row: 0.42, gap: 0.36, fields: 3, reach: 'shrub', tilled: true },
+	{ id: 'edamame', v: 1, stages: [5, 6, 7, 8], size: [4, 6], row: 0.45, gap: 0.38, fields: 3, reach: 'shrub', tilled: true },
+	{ id: 'hemp', v: 1, stages: [6, 7, 8, 9], size: [5, 7], row: 0.38, gap: 0.34, fields: 3, reach: 'shrub', tilled: true },
+	{ id: 'bamboo', v: 1, stages: [6, 7, 8, 9], size: [9, 10], row: 2.6, gap: 2.4, fields: 3, reach: 'tree', tilled: false }
+];
+
 /** every plant a garden can grow, as kinds (for growing them all ahead) @param {Garden} garden @param {string} seed */
 export const kindsOf = (garden, seed) =>
 	Object.values(garden).flatMap((layer) => layer.flatMap((/** @type {Planting} */ p) => p.stages.map((stage) => ({ id: p.id, v: p.v, stage, seed }))));
