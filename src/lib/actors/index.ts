@@ -9,9 +9,10 @@
 import { prepare } from './build';
 import { CASTS } from './casts';
 import { excavator } from './excavator.js';
+import { excavator as excavatorV1 } from './excavator.v1.js';
 import { human } from './human';
 import type { Cast } from './rig';
-import { versioned, type Change, type Version } from '$lib/app/versions.js';
+import { FIRST, versioned, type Change, type Version } from '$lib/app/versions.js';
 
 /** one actor: a breed, a coat, the stand-in */
 export type Actor = { id: string; label: string; note: string; make: () => Cast; ready?: () => Promise<void> };
@@ -19,8 +20,13 @@ export type Actor = { id: string; label: string; note: string; make: () => Cast;
  * whole (its species is one body plan), each version bringing the variants it made ($lib/app/versions.js) */
 export type Family = { id: string; label: string; note: string; from: string; variants: Actor[]; versions: Version<Actor[]>[]; version: number };
 
-/** the kinds' older versions, by id, each with its frozen variants (none yet: everything is at v1) */
-const HISTORY: Record<string, (Change & { build?: Actor[] })[]> = {};
+/** the kinds' older versions, by id, each with its frozen variants (the rest are at v1) */
+const HISTORY: Record<string, (Change & { build?: Actor[] })[]> = {
+	excavator: [
+		{ ...FIRST, build: [{ id: 'excavator', label: 'Mini excavator', note: 'yellow, an open canopy, a 40 cm bucket', make: () => excavatorV1() }] },
+		{ v: 2, date: '2026-10-06', note: 'Twice the size; the bucket turned round, its mouth and teeth towards the machine as a backhoe’s are' }
+	]
+};
 
 const animal = (id: string, label: string, note: string): Actor => ({ id, label, note, make: CASTS[id]!, ready: () => prepare(id) });
 
@@ -143,10 +149,10 @@ const LIST: Omit<Family, 'versions' | 'version'>[] = [
 	},
 	{
 		id: 'excavator',
-		label: 'Mini excavator',
-		note: 'a 1.7 t digger on rubber tracks, 3.9 m reach: the house slews, the boom swings, boom, arm and bucket work on their rams, the blade dozes, the wheels turn',
+		label: 'Excavator',
+		note: 'a digger on rubber tracks, 7.8 m reach: the house slews, the boom swings, boom, arm and bucket work on their rams, the blade dozes, the wheels turn',
 		from: 'Sandbox 1: building the settlement',
-		variants: [{ id: 'excavator', label: 'Mini excavator', note: 'yellow, an open canopy, a 40 cm bucket', make: () => excavator() }]
+		variants: [{ id: 'excavator', label: 'Excavator', note: 'yellow, an open canopy, an 80 cm backhoe bucket', make: () => excavator() }]
 	}
 ];
 

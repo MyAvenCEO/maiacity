@@ -14,10 +14,11 @@ import { glassShower, towelRadiator, washbasin, wallToilet } from './bathroom';
 import { bridgeLamp, equestrianStatue, limestoneBlock, parkBench, tree } from './outdoor';
 import { bambooTable, bistroChair, bistroTable, clubSofa, festoonLights, ficusTree, geraniumPot, monstera, oliveTree, paperLantern, ribbedPlanter, strelitzia, terracottaPot, toyBee, toyMonkey } from './terrace';
 import { excavator } from '$lib/actors/excavator.js';
+import { excavator as excavatorV1 } from '$lib/actors/excavator.v1.js';
 import { kitchenContainer, sanitaryContainer, techContainer, workshopContainer } from './containers';
 import { ashtray, barnLamp, casementWindow, cityBike, doorCanopy, entranceDoor, floodlight, foldingChair, hedge, insectHotel, ivyCone, mailboxPost, rainBarrel, redTin, stationClock, steelWindow, stonewareCrock, teakRecliner, teakTable, windowBox, workshopDoor } from './yard';
 
-import { versioned, type Version, type Change } from '$lib/app/versions.js';
+import { FIRST, versioned, type Version, type Change } from '$lib/app/versions.js';
 
 /** A rigged machine as a model: its rig in the world, playing one of its moves (`userData.tick(t)`, as the viewer's clock runs). */
 function working(cast: Cast, clip: string): THREE.Object3D {
@@ -30,8 +31,13 @@ function working(cast: Cast, clip: string): THREE.Object3D {
 type Make = () => THREE.Object3D;
 export type Model = { id: string; label: string; note: string; usedIn: string; make: Make; versions: Version<Make>[]; version: number };
 
-/** the models' older versions, by id, each with its frozen builder (none yet: everything is at v1) */
-const HISTORY: Record<string, (Change & { build?: Make })[]> = {};
+/** the models' older versions, by id, each with its frozen builder (the rest are at v1) */
+const HISTORY: Record<string, (Change & { build?: Make })[]> = {
+	'mini-excavator': [
+		{ ...FIRST, build: () => working(excavatorV1(), 'dig') },
+		{ v: 2, date: '2026-10-06', note: 'Twice the size; the bucket turned round, its mouth and teeth towards the machine as a backhoe’s are' }
+	]
+};
 
 const LIST: Omit<Model, 'versions' | 'version'>[] = [
 	{ id: 'bed', label: 'Bed', note: '140 × 200, a solid oak frame, the blue fitted sheet, a crumpled grey duvet, two mustard pillows', usedIn: 'The room', make: () => bed() },
@@ -121,7 +127,7 @@ const LIST: Omit<Model, 'versions' | 'version'>[] = [
 	{ id: 'container-workshop', label: 'Workshop container', note: "the workshop: a 4 m bench under a pegboard of hand tools, timber rack, pillar drill, grinder, mitre saw, table saw, welder, compressor, cordless tools in their cases, spades, ladder, wheelbarrow; a mixer outside. Walk in", usedIn: 'Sandbox 1', make: () => workshopContainer() },
 	{ id: 'container-tech', label: 'Tech container', note: "28 solar panels (about 11 kWp) on the roof and fold-out wings, 40 kWh of batteries, inverters, a hydrogen fuel cell and electrolyser, Starlink, and the AI server room behind glass. Walk in", usedIn: 'Sandbox 1', make: () => techContainer() },
 	{ id: 'container-sanitary', label: 'Sanitary container', note: 'washing machines and dryers, three washbasins, three showers and three toilets in cubicles, the hot-water heat pump; a rainwater tank outside. Walk in', usedIn: 'Sandbox 1', make: () => sanitaryContainer() },
-	{ id: 'mini-excavator', label: 'Mini excavator', note: 'a 1.7 t digger on rubber tracks, 1.55 m long, 0.99 m wide, 2.3 m to its canopy, 3.9 m reach — rigged: it digs, slews and dumps (its other moves in the Actors gallery)', usedIn: 'Sandbox 1', make: () => working(excavator(), 'dig') }
+	{ id: 'mini-excavator', label: 'Excavator', note: 'a digger on rubber tracks, 3.1 m long, 2 m wide, 4.6 m to its canopy, 7.8 m reach, an 80 cm backhoe bucket — rigged: it digs, slews and dumps (its other moves in the Actors gallery)', usedIn: 'Sandbox 1', make: () => working(excavator(), 'dig') }
 ];
 
 export const MODELS: Model[] = versioned(LIST, 'make', HISTORY);

@@ -65,7 +65,7 @@ under one skinned mesh, built in its rest pose (facing +z, on y 0), its parts ri
   17 bones, a T-shirt, jeans, trainers, a face that shows where it looks.
   Its poses (stand, sit, sit with elbows on knees, fallen back, lie, kneel, look up, wave, think, arms crossed,
   point) and moves (idle, walk, wave, sit down). `standIn(pose)` gives one held in a pose for a world to place.
-- `excavator.js` — the mini excavator (1.7 t): rigid parts on joints — the house slewing, the boom swinging, boom, arm
+- `excavator.js` — the excavator (a mini excavator's parts at twice their measure, `SCALE`; its backhoe bucket opening towards the machine): rigid parts on joints — the house slewing, the boom swinging, boom, arm
   and bucket, the blade, the wheels — and each hydraulic ram as a barrel joint and a rod joint that `machine()` keeps
   on the line between their pins. Its moves: dig, drive, doze, idle.
 - `animals.ts` — Sandbox 4's creatures, rigged: the hen (pecks, flaps), the goose (waddles, grazes, hisses), the
