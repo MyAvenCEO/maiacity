@@ -29,6 +29,14 @@ library, shown on its own in the 3D models viewer and placed in any world.
   room) and the sanitary container (washers and dryers, basins, three showers and three toilets). The open cargo end is
   the way in; each has `userData.roof` (the viewer lifts it off) and `userData.walk` (where to start, `canStand`,
   `floorAt`, the ceiling lamps) for the walker.
+- `src/lib/biomes/` — the floors the worlds stand on, as recipes that mix (`/app/biomes`, admin): **surfaces**
+  (`surfaces.js`: leaf litter, humus, needles, moss carpet, the living mat, bare soil) blended by one shader in
+  patches of their own size, and **cover** (`cover.js`: grasses, sedge, moss cushions, low flowers, woodruff, wood
+  sorrel, ramsons, strawberries, blueberry, ferns, leaves and twigs, deadwood, stones, mushrooms), each kind in its
+  colonies on the surface it belongs on — herbs carpet their patches rather than being sprinkled evenly, moss sits on
+  what rises, grass and flowers only where light reaches. A biome (`index.js`) is surface weights plus colonies;
+  `mix(a, b, t)` runs two together. Its cover is too dense for a whole world at once, so a world streams it in tiles
+  round the eye (`stream.js`). Sandbox 5's floor is the food forest biome. A new floor is a recipe there.
 - `src/lib/models/textures.ts` — their surfaces, drawn once on a canvas and shared: limed oak, pine (fresh and aged),
   painted pine, plaster (as a bump map), wool, the face on the wall.
 - `src/lib/models/index.ts` — `MODELS`: each model's id, label, note (its measure and what it is), where it is used,

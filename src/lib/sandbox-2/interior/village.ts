@@ -17,7 +17,8 @@ import * as THREE from 'three'
 import { DOMES, DOORS, adiff, bake, box, geodesic, glassSheen, lantern, mats, mountInterior, polar, portal, sofa, table, type DomeKind, type EmbeddedDome } from './interior'
 import { cafes, coops, coopsAround, henPatches, playground, rabbitPatches, squaresAround, type Kit } from './spaces'
 import { water } from './textures'
-import { coverKinds, coverPick, forestGround } from './forestfloor.js'
+import { BIOMES, groundMaterial } from '$lib/biomes'
+import { coverStream } from '$lib/biomes/stream.js'
 import { songbirds } from './birds.js'
 import { appleTree, banana, berryBush, canopyTree, climber, clover, coconutPalm, comfrey, fruitTree, ginger, herb, papaya, passionVine, seeded, smallFruitTree, squash, strawberries, tropicalShrub, forestFloor, FLOOR_KINDS, floorPick, grassTuft, type Plant } from './plants'
 import { antHills, apiary, fishes, herd } from './animals'
@@ -144,9 +145,10 @@ export async function mountVillage(container: HTMLElement, onProgress: (label: s
 		else hexShape.lineTo(Math.cos(a) * WORLD, Math.sin(a) * WORLD)
 	}
 	hexShape.holes.push(new THREE.Path().absarc(0, 0, Math.max(4.5, domes[0]!.R * 0.22) + 0.3, 0, Math.PI * 2, true))
-	// Sandbox 5: the cell is a forest garden to its edges, its soil never bare: humus under fallen leaves where the
-	// trees close over it, a living mat of clover and grasses where the light comes through, in drifts (./forestfloor.js)
-	const hex = new THREE.Mesh(new THREE.ShapeGeometry(hexShape, 48), opts.flora ? forestGround() : m.grass)
+	// Sandbox 5: the cell is a forest garden to its edges, its soil never bare — its floor is the food forest biome's
+	// ($lib/biomes): a living mat of clover and grasses in the light, leaf litter, humus and moss under the trees
+	const FLOOR_BIOME = BIOMES.find((b) => b.id === 'food-forest')!
+	const hex = new THREE.Mesh(new THREE.ShapeGeometry(hexShape, 48), opts.flora ? groundMaterial(FLOOR_BIOME.surface) : m.grass)
 	hex.rotation.x = -Math.PI / 2
 	hex.receiveShadow = true
 	scene.add(hex)
@@ -799,23 +801,20 @@ export async function mountVillage(container: HTMLElement, onProgress: (label: s
 		await drifts('climbers', S.climbers, 'Planting the climbers', 1.2, 0.8)
 		// and every bit of soil covered: perennial vegetables and herbs, roots, the ground cover, the mushrooms
 		for (const [layer, every] of [['herbs', S.herbs], ['roots', S.roots], ['ground', S.ground], ['fungi', S.fungi]] as const) await drifts(layer, every, 'Covering the ground', 0.5, 0.35)
-		// and the floor itself, under all of it and between: clumps of grass, moss cushions, low flowers, wild
-		// strawberries, ferns and fallen leaves, each where its drift has it (green or humus), drawn near you
-		const cr = seeded(606)
-		await grid(COVER_EVERY, 'Covering the floor', (x, z) => {
-			if (!open(x, z, 0.1) || !clearOf(x, z, 0.2)) return
-			tileAt(x, z).floor[COVER0 + coverPick(cr, x, z)]!.push(mat(x, 0, z, cr() * 6.28, 0.75 + cr() * 0.6))
-		})
+		// and the floor itself under all of it, the biome's cover, may stand wherever the ground is open: not on a path,
+		// in the water, a dome, a field or a trunk
+		floorOpen = (x, z) => open(x, z, 0.1) && clearOf(x, z, 0.15)
 	}
+	/** where the floor's cover may stand (set once the garden is planted) */
+	let floorOpen = (_x: number, _z: number) => true
 	const floorIndex = (r: () => number) => FLOOR_KINDS.indexOf(floorPick(r))
 	// and tufts of meadow grass standing up out of the lawn, drawn with the floor, near you
 	FLOOR.push(species(grassTuft(0.55), false))
 	const TUFT = FLOOR.length - 1
-	// Sandbox 5's floor cover (./forestfloor.js): one of each kind, scattered over the whole cell, a clump every
-	// COVER_EVERY square metres
-	const COVER0 = FLOOR.length
-	const COVER_EVERY = 1.5
-	if (flora) for (const kind of coverKinds()) FLOOR.push(species(kind, false))
+	// Sandbox 5's floor cover: the food forest biome's grasses, moss, flowers, strawberries, ferns, leaves and deadwood,
+	// each in its colonies, laid out in tiles round you as you go ($lib/biomes/stream.js) — too dense for the whole cell
+	const floorCover = flora ? coverStream({ recipe: FLOOR_BIOME, open: (x, z) => floorOpen(x, z), tile: 12, reach: 26, density: 4.5, seed: 505 }) : null
+	if (floorCover) scene.add(floorCover.object)
 	const TILE = 70
 	type Tile = { cx: number; cz: number; main: THREE.Matrix4[][]; under: THREE.Matrix4[][]; floor: THREE.Matrix4[][]; far: THREE.Matrix4[]; farCrowns: THREE.Matrix4[]; farColors: THREE.Color[]; dense: THREE.Matrix4[]; denseCrowns: THREE.Matrix4[]; denseColors: THREE.Color[]; near?: THREE.Group; farMesh?: THREE.Group; ground?: THREE.Group }
 	const tiles = new Map<string, Tile>()
@@ -992,8 +991,9 @@ export async function mountVillage(container: HTMLElement, onProgress: (label: s
 		camera.getWorldDirection(look)
 		forest.update(camera.position.x, camera.position.z, look.x, look.z)
 	}
-	const levelOfDetail = (x: number, z: number) => {
+	const levelOfDetail = (x: number, z: number, all = false) => {
 		forestTick()
+		floorCover?.update(x, z, all ? 999 : 3)
 		for (const t of tiles.values()) {
 			const near = Math.hypot(t.cx - x, t.cz - z) < NEAR
 			if (t.near) t.near.visible = near
@@ -1318,7 +1318,7 @@ export async function mountVillage(container: HTMLElement, onProgress: (label: s
 		},
 		// the far forest, the lamps, the open domes; then what the hour gives the lights, before the shot's own changes
 		advance: (t) => {
-			levelOfDetail(camera.position.x, camera.position.z)
+			levelOfDetail(camera.position.x, camera.position.z, true)
 			lightNearest()
 			for (const i of shown) built.get(i)!.update(t)
 			glowMat.emissive.set(GLOW)
