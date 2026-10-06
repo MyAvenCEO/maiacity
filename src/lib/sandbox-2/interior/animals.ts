@@ -389,8 +389,8 @@ export function antHills(
 				for (let i = 0; i < rd.pts.length; i++) {
 					const p = rd.pts[i]!, q = rd.pts[Math.min(rd.pts.length - 1, i + 1)]!, b = rd.pts[Math.max(0, i - 1)]!
 					const dx = q.x - b.x, dz = q.y - b.y, l = Math.hypot(dx, dz) || 1
-					// narrowing as it goes, fading out where the ants spread to forage
-					const w = 0.06 * (1 - (0.6 * i) / rd.pts.length)
+					// a hand wide at the mound, narrowing as it goes, fading out where the ants spread to forage
+					const w = 0.075 * (1 - (0.55 * i) / rd.pts.length)
 					const base = pos.length / 3
 					pos.push(p.x - (dz / l) * w, 0.012, p.y + (dx / l) * w, p.x + (dz / l) * w, 0.012, p.y - (dx / l) * w)
 					if (i > 0) idx.push(base - 2, base - 1, base, base - 1, base + 1, base)
@@ -399,19 +399,23 @@ export function antHills(
 		g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3))
 		g.setIndex(idx)
 		g.computeVertexNormals()
-		const track = new THREE.Mesh(g, new THREE.MeshStandardMaterial({ color: '#5a4630', roughness: 1, transparent: true, opacity: 0.75, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2 }))
+		// bare earth, paler than the green round it, as a trodden road is; seen from either side (its strips wind
+		// whichever way the road turns)
+		const track = new THREE.Mesh(g, new THREE.MeshStandardMaterial({ color: '#8a6c4a', roughness: 1, transparent: true, opacity: 0.9, depthWrite: false, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -2 }))
 		track.receiveShadow = true
 		track.renderOrder = 1
 		object.add(track)
 	}
-	// the ants on the roads, near the eye: a red wood ant each (head, thorax and the black gaster), about 9 mm long,
-	// drawn all together; five to a metre of road, half going out, half coming home
+	// the ants on the roads, near the eye: a red wood ant each (head, thorax and the black gaster), drawn 1.4 cm long
+	// (a little larger than the largest workers, to be seen from standing height), all together; a crowded stream, twenty to a metre
+	// of road, half going out, half coming home
 	const antGeo = model([
 		{ geo: new THREE.SphereGeometry(1, 6, 4), color: '#7a2e14', at: [0, 0.0018, 0.0034], scale: [0.0012, 0.0011, 0.0013] },
 		{ geo: new THREE.SphereGeometry(1, 6, 4), color: '#8a3a18', at: [0, 0.002, 0.0012], scale: [0.0009, 0.0009, 0.0017] },
 		{ geo: new THREE.SphereGeometry(1, 6, 4), color: '#1a1410', at: [0, 0.0022, -0.0024], scale: [0.0018, 0.0016, 0.0024] }
 	])
-	const MAX = 2400
+	const MAX = 9000
+	antGeo.scale(1.55, 1.55, 1.55)
 	const ants = new THREE.InstancedMesh(antGeo, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.5 }), MAX)
 	ants.frustumCulled = false
 	ants.count = 0
@@ -451,16 +455,16 @@ export function antHills(
 			// the streams of ants: each at its own place in the stream, moving at about 3 cm a second, out on one side of
 			// the road and home on the other
 			for (const [ri, rd] of h.roads.entries()) {
-				const count = Math.floor(rd.len * 5)
+				const count = Math.floor(rd.len * 22)
 				for (let k = 0; k < count && n < MAX; k++) {
 					const out = k % 2 === 0
 					const jitter = Math.sin(k * 12.9898 + ri * 78.233) * 43758.5453
 					const phase = jitter - Math.floor(jitter)
 					let d = ((phase * rd.len + t * 0.03 * (out ? 1 : -1)) % rd.len + rd.len) % rd.len
 					const p = along(rd, d)
-					const side = (out ? 1 : -1) * 0.012 + Math.sin(t * 3 + k) * 0.004
+					const side = (out ? 1 : -1) * 0.02 + Math.sin(t * 3 + k) * 0.006
 					const hd = p.heading + (out ? 0 : Math.PI)
-					pp.set(p.x + Math.cos(p.heading) * side, 0.004, p.z - Math.sin(p.heading) * side)
+					pp.set(p.x + Math.cos(p.heading) * side, 0.024, p.z - Math.sin(p.heading) * side)
 					q.setFromAxisAngle(upY, hd)
 					ants.setMatrixAt(n++, mx.compose(pp, q, one))
 					void d
