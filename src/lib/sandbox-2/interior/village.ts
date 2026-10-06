@@ -787,8 +787,9 @@ export async function mountVillage(container: HTMLElement, onProgress: (label: s
 		await pause('Sowing the fields')
 		// for a walk to them from the console: __fields
 		;(window as unknown as { __fields?: typeof sown }).__fields = sown
-		// the canopy: nut trees, the lime, the alder, big standards; wide apart, their crowns meeting overhead
-		await grid(S.canopy, 'Planting the canopy', (x, z) => open(x, z, 3.5) && clearOf(x, z, 4) && tree('canopy', x, z, 3))
+		// the canopy: nut trees, oaks and beeches, the lime, the alder and the locust, big standards; close, their crowns
+		// meeting and overlapping overhead (a trunk every five metres or so)
+		await grid(S.canopy, 'Planting the canopy', (x, z) => open(x, z, 3) && clearOf(x, z, 2.8) && tree('canopy', x, z, 2.2))
 		// the fruit trees, close under and between them
 		await grid(S.trees, 'Planting the fruit trees', (x, z) => {
 			if (!open(x, z, 2.4) || !clearOf(x, z, 1.4)) return

@@ -1,7 +1,8 @@
 /*
  * THE CANOPY — the tall trees of a temperate forest garden, and the hazel under them: the walnut, the sweet chestnut,
- * the black alder (the nitrogen-fixer the others lean on), the small-leaved lime, and the hazel coppice of the
- * sub-canopy. Each entry is a plant as ./index.js lists it, with its food-forest `layer`; ./index.js adds every entry
+ * the black alder (the nitrogen-fixer the others lean on), the small-leaved lime, the pedunculate oak, the European
+ * beech, the black locust (a second nitrogen-fixer, its open crown letting the light through), and the hazel coppice
+ * of the sub-canopy. Each entry is a plant as ./index.js lists it, with its food-forest `layer`; ./index.js adds every entry
  * of WALD to the library.
  *
  * They are grown like ./orchard.js grows a fruit tree — the seed, its roots, a crown from ./crown.js — but with their
@@ -148,10 +149,11 @@ function simpleLeaf(o) {
 }
 
 /**
- * The walnut's leaf: a long arching rachis, its leaflets in pairs growing larger toward the tip, and one at the end.
- * @param {number} length the rachis @param {number} pairs
+ * The walnut's leaf: a long arching rachis, its leaflets in pairs growing larger toward the tip, and one at the end
+ * (`wide`, how broad a leaflet is for its length: the walnut's long, the locust's round).
+ * @param {number} length the rachis @param {number} pairs @param {number} [wide]
  */
-function pinnateLeaf(length, pairs) {
+function pinnateLeaf(length, pairs, wide = 0.24) {
 	const parts = [];
 	const bow = (/** @type {number} */ u) => -0.16 * u * u * length;
 	parts.push(sheet({ length, width: 0.0028, shape: (u) => 1 - 0.5 * u, lift: (u) => -0.16 * u * u, paint: () => shade(1.1, 1.08, 0.75), along: 2, across: 1 }));
@@ -161,7 +163,7 @@ function pinnateLeaf(length, pairs) {
 		const d = v3(Math.cos(turn), slope + (side ? -0.05 : 0), Math.sin(turn)).normalize();
 		const blade = sheet({
 			length: len,
-			width: len * 0.24,
+			width: len * wide,
 			shape: (t) => Math.pow(Math.sin(Math.PI * Math.pow(t, 0.85)), 0.6) * (t < 0.05 ? t / 0.05 : 1),
 			lift: (t) => -0.06 * t * t,
 			paint: () => shade(side > 0 ? 1.04 : side < 0 ? 0.96 : 1.08),
@@ -238,8 +240,9 @@ class Clear {
 /**
  * @typedef {{
  *   stalk: number, length: number, width: number, shape: (u: number) => number, back?: number, cup?: number, bow?: number,
- *   along: number, pinnate?: number
- * }} Blade — a leaf's make: a simple blade, or `pinnate` pairs of leaflets along a rachis `length` long
+ *   along: number, pinnate?: number, wide?: number
+ * }} Blade — a leaf's make: a simple blade, or `pinnate` pairs of leaflets along a rachis `length` long (`wide` how
+ *   broad each leaflet is for its length)
  */
 /**
  * @typedef {{
@@ -315,7 +318,7 @@ function wood(spec) {
 		const L = spec.leaf;
 		const tr = chance(seed, 'leaf-make');
 		const B = L.blade;
-		const make = () => (B.pinnate ? pinnateLeaf(B.length * about(tr, 1, 0.06), B.pinnate) : simpleLeaf({ ...B, length: B.length * about(tr, 1, 0.06) }));
+		const make = () => (B.pinnate ? pinnateLeaf(B.length * about(tr, 1, 0.06), B.pinnate, B.wide) : simpleLeaf({ ...B, length: B.length * about(tr, 1, 0.06) }));
 		const tpls = [make(), make(), make()];
 		// a tree that flowers before its leaves come (the hazel, the alder): bare through the late winter, then the
 		// new leaves unfolding
@@ -1043,6 +1046,224 @@ export const hazel = wood({
 	}
 });
 
+/* ------------------------------------------------------------------------------------------------ pedunculate oak */
+
+export const OAK_STAGES = stages([
+	['Acorn', 0, 'A fresh acorn, glossy brown, sown in the autumn where a jay would bury it, three centimetres down; it must not dry out.'],
+	['Germination', 20, 'Still in the autumn the root splits the acorn’s tip and goes straight down; the shoot waits for the spring. The seed leaves stay in the acorn.'],
+	['Seedling', 200, 'A stiff shoot with a few small lobed leaves in a tuft at its top, and a taproot already deeper than it is tall.'],
+	['Sapling', 900, 'A zigzag whip, its leaves bunched at the shoot tips; slow above ground for its first years, while the roots go deep.'],
+	['Young tree', 2600, 'A broad, rugged crown on a stout trunk, its limbs twisting out wide; the bark beginning to fissure.'],
+	['Flowering', 3300, 'In May with the new leaves, soft and bronze-green: yellow-green catkins hanging in tassels from last year’s wood; the tiny female flowers on long stalks at the new shoot tips.'],
+	['Acorn set', 3330, 'The catkins fall; on their long stalks, one to three tiny green acorns in scaly cups.'],
+	['Green acorns', 3420, 'Green acorns half out of their cups, hanging in ones to threes on stalks as long as a finger.'],
+	['Turning', 3480, 'The acorns go yellow-green, then tan from the tip.'],
+	['Ripe', 3510, 'Glossy brown acorns dropping out of their cups in October: food for the pigs, the jays — and, leached, for us.']
+]);
+
+/** an oak leaf: short-stalked, widest beyond its middle, in four or five round lobes a side, two small ears at its foot */
+const oakLobes = (/** @type {number} */ u) => {
+	const env = u < 0.08 ? 0.35 + 6 * u : Math.pow(Math.sin(Math.PI * Math.min(1, 0.06 + u * 0.95)), 0.55) * (0.6 + 0.45 * u);
+	return env * (0.58 + 0.42 * Math.pow(Math.abs(Math.cos(u * Math.PI * 4.6)), 0.7));
+};
+
+export const oak = wood({
+	seed: { size: v3(0.011, 0.011, 0.02), coat: '#8a5a2a', shade: '#5a3a1a', depth: 0.03 },
+	hypogeal: true,
+	// a broad, rugged dome: a short trunk, a few heavy limbs angled wide, the shoots wandering and crooked
+	flush: {
+		trunk: 1.6, trunkBorn: 1.6, trunkFlush: 1.2, scaffolds: [3, 5], scaffoldAngle: 0.72, gens: 6, flush: 0.16, rest: 0.08,
+		shoot: (gen) => [0, 1.7, 1.25, 0.95, 0.72, 0.55, 0.42][gen] ?? 0.4, whorl: [2, 3], spread: 0.7, up: 0.035, droop: 0.05,
+		wander: 0.2, radius: 0.17, taper: 0.62, thicken: 3.5, bark: ['#6e685c', '#4a443c']
+	},
+	roots: { tap: 2.8, spread: 3.6, count: 10, radius: 0.09 },
+	leaf: {
+		blade: { stalk: 0.006, length: 0.1, width: 0.045, shape: oakLobes, along: 10, bow: 0.06 },
+		colour: '#3a6224', young: '#9aa848', autumn: '#b8863a', droop: 0.2, gap: 0.08, per: 4, twig: 0.12, tuft: 8, from: 3, inner: 1.6, spring: true
+	},
+	bear(ctx) {
+		const { bag, g, seed } = ctx;
+		// the catkins: tassels hanging from last year's wood, below the new shoots
+		for (const sh of ctx.shoots) {
+			if (sh.gen !== ctx.gens - 1) continue;
+			const cr = chance(seed, 'catkins', ...sh.key);
+			const phase = g - (4.7 + cr() * 0.25);
+			if (phase < -0.4 || phase > 0.5) continue;
+			const n = 1 + Math.floor(cr() * 3);
+			for (let k = 0; k < n; k++) {
+				const { at, dir } = along(sh.pts, between(cr, 0.6, 0.95));
+				const len = 0.06 * lerp(0.3, 1, span(phase, -0.4, -0.05)) * lerp(1, 0.6, span(phase, 0.2, 0.5));
+				catkin(bag, at, dir.clone().add(v3(cr() - 0.5, -0.6, cr() - 0.5)).normalize(), len, 0.0028, phase < 0.15 ? mix('#8a9a4a', '#c8c060', span(phase, -0.2, 0.1)) : mix('#c8c060', '#6a5a3a', span(phase, 0.2, 0.45)), 0.05);
+			}
+		}
+		// the acorns, on long stalks from the tips of the new shoots
+		for (const sh of tips(ctx, 0.5)) {
+			const fr = chance(seed, 'acorns', ...sh.key);
+			const phase = g - (4.8 + fr() * 0.25);
+			if (phase < 0.3) continue;
+			const set = span(phase, 0.3, 2.2), ripe = span(phase, 2.5, 3.6);
+			const keep = 1 + Math.floor(fr() * 3);
+			const swing0 = fr() * TAU;
+			// the stalk: out from the tip and down, the acorns along its last part
+			const stalkEnd = hang(ctx, sh.tip.clone().add(v3(Math.cos(swing0) * 0.03, -0.05, Math.sin(swing0) * 0.03)), v3(Math.cos(swing0), -1.2, Math.sin(swing0)), 0.03, 0.014, 0.03);
+			bag.add('body', tube([sh.tip, stalkEnd.at], () => 0.0012 + 0.0008 * set, () => '#6a6a3a', 3));
+			for (let k = 0; k < keep; k++) {
+				const kr = chance(seed, 'acorn', ...sh.key, k);
+				const size = ctx.vigour * about(kr, 1, 0.08) * lerp(0.15, 1, set);
+				const L = 0.026 * size, W = 0.0105 * size;
+				const at = sh.tip.clone().lerp(stalkEnd.at, 0.7 + 0.15 * k);
+				const d = v3(Math.cos(k * 2.4 + kr()), -1.4, Math.sin(k * 2.4 + kr())).normalize();
+				const m = hung(at, d, kr() * TAU);
+				// the nut: green, then yellow-green, then glossy brown, half out of its cup
+				const nut = ripe < 0.4 ? mix('#7a9a3e', '#b0a446', ripe / 0.4) : mix('#b0a446', '#7a4a22', (ripe - 0.4) / 0.6);
+				bag.add('gloss', bead(v3(0, -L * 0.55, 0), v3(W, L * 0.52, W), nut, 4), m);
+				// the cup: a scaly bowl round its top third
+				const axis = [];
+				for (let r = 0; r <= 4; r++) axis.push(v3(0, -0.001 - (r / 4) * L * 0.4, 0));
+				const cup = ripe < 0.5 ? mix('#8a9454', '#9a8a5a', ripe * 2) : mix('#9a8a5a', '#6e5a3e', (ripe - 0.5) * 2);
+				bag.add('body', tube(axis, (u, v) => W * (0.55 + 0.6 * Math.sqrt(u)) * (1 + 0.08 * Math.sin(v * 37 + u * 19)), (u, v) => cup.clone().multiplyScalar(0.9 + 0.2 * Math.abs(Math.sin(v * 23 + u * 13))), 8), m);
+			}
+		}
+	}
+});
+
+/* ------------------------------------------------------------------------------------------------ European beech */
+
+export const BEECH_STAGES = stages([
+	['Beechnut', 0, 'A three-sided brown beechnut, sown in the autumn just under the leaf litter, chilled by the winter.'],
+	['Germination', 160, 'In the spring the root goes down; the shoot lifts the nut’s shell off two broad seed leaves.'],
+	['Seedling', 190, 'Two fleshy kidney-shaped seed leaves, dark above and silvery beneath, then the first true leaves, oval and silky-edged.'],
+	['Sapling', 900, 'A slender young tree content in the shade, its long pointed buds and its leaves in two rows; it keeps its dead brown leaves through the winter.'],
+	['Young tree', 2700, 'A tall dense dome on a smooth silver-grey trunk, its leaves in level sprays: so much shade that little grows under it.'],
+	['Flowering', 3330, 'In May with the bright new leaves: round tassels of male flowers hanging on long stalks, the female flowers in pairs in a bristly cup at the shoot tips.'],
+	['Mast set', 3360, 'The tassels fall; the bristly cups swell green round their two nuts.'],
+	['Green mast', 3440, 'Bristly green husks the size of a hazelnut on short stalks along the shoot tips.'],
+	['Turning', 3500, 'The husks go yellow-brown and woody.'],
+	['Ripe', 3530, 'The husks split in four and open back: two glossy three-sided beechnuts in each, dropping in October — a mast year every few years.']
+]);
+
+export const beech = wood({
+	seed: { size: v3(0.006, 0.009, 0.006), coat: '#7a4e2a', shade: '#5a3a20', depth: 0.015 },
+	hypogeal: false,
+	cotyledon: { length: 0.022, width: 0.026, colour: '#3e6a2a' },
+	// a tall dense dome: a smooth trunk, limbs rising steeply, the twigs fanned out in level sprays
+	flush: {
+		trunk: 2.0, trunkBorn: 1.6, trunkFlush: 1.2, scaffolds: [4, 6], scaffoldAngle: 0.45, gens: 6, flush: 0.16, rest: 0.08,
+		shoot: (gen) => [0, 1.6, 1.15, 0.88, 0.68, 0.52, 0.4][gen] ?? 0.38, whorl: [2, 3], spread: 0.6, up: 0.06, droop: 0.06,
+		wander: 0.1, radius: 0.15, taper: 0.62, thicken: 3.5, bark: ['#a29c92', '#7e7a72']
+	},
+	roots: { tap: 1.2, spread: 3.8, count: 12, radius: 0.08 },
+	leaf: {
+		blade: { stalk: 0.008, length: 0.075, width: 0.038, shape: (u) => Math.pow(Math.sin(Math.PI * Math.pow(u, 0.92)), 0.72) * (1 + 0.05 * Math.sin(u * 44)), along: 5, bow: 0.04 },
+		colour: '#356624', young: '#86b844', autumn: '#c0782e', droop: 0.15, gap: 0.07, per: 4, twig: 0.16, tuft: 4, from: 3, inner: 1.3
+	},
+	bear(ctx) {
+		const { bag, g, seed } = ctx;
+		for (const sh of tips(ctx, 0.5)) {
+			const fr = chance(seed, 'flowering', ...sh.key);
+			const phase = g - (4.75 + fr() * 0.25);
+			if (phase < -0.35) continue;
+			// the male flowers: round tassels hanging on long stalks from the new shoot's lower leaves
+			if (phase < 0.55) {
+				const n = 2 + Math.floor(fr() * 3);
+				for (let k = 0; k < n; k++) {
+					const { at } = along(sh.pts, 0.3 + (0.4 * k) / n);
+					const a = k * 2.39996 + fr();
+					const end = at.clone().add(v3(Math.cos(a) * 0.012, -0.045 * lerp(0.4, 1, span(phase, -0.35, 0)), Math.sin(a) * 0.012));
+					bag.add('body', tube([at, end], () => 0.0007, () => '#9a9a5a', 3));
+					const open = span(phase, -0.3, 0.05), fade = span(phase, 0.25, 0.55);
+					bag.add('body', bead(end, v3(1, 0.9, 1).multiplyScalar(lerp(0.004, 0.009, open)), fade < 0.5 ? mix('#a8a85a', '#e0cc70', open) : mix('#e0cc70', '#7a6a42', fade), 3));
+				}
+			}
+			// the mast: bristly husks on short stalks, splitting in four over two nuts
+			const set = span(phase, 0.3, 2.2), ripe = span(phase, 2.5, 3.6);
+			if (set <= 0) continue;
+			const keep = 1 + Math.floor(fr() * 2);
+			for (let k = 0; k < keep; k++) {
+				const kr = chance(seed, 'mast', ...sh.key, k);
+				const size = ctx.vigour * about(kr, 1, 0.08) * lerp(0.2, 1, set);
+				const L = 0.022 * size, W = 0.011 * size;
+				const swing = v3(Math.cos(k * 2.4 + kr() * 2), 0, Math.sin(k * 2.4 + kr() * 2));
+				const start = sh.tip.clone().add(v3(0, -0.005, 0));
+				const place = hang(ctx, start.clone().addScaledVector(swing, 0.012), swing.clone().add(v3(0, -0.9, 0)), L, W * 1.3, 0.02 + W);
+				bag.add('body', tube([sh.tip, place.at], () => 0.0014, () => '#6a6a3a', 3));
+				husked(bag, hung(place.at, place.dir, kr() * TAU), L, W, {
+					shape: (u) => Math.pow(Math.max(0, Math.sin(Math.PI * Math.min(1, 0.05 + u * 0.95))), 0.55),
+					husk: (u) => (ripe < 0.5 ? mix('#86a442', '#a8984a', ripe * 2) : mix('#a8984a', '#7a5a34', (ripe - 0.5) * 2)).multiplyScalar(0.9 + 0.2 * u),
+					split: span(ripe, 0.55, 1), valves: 4, spines: 0.45 * lerp(0.4, 1, set), rings: 6, sides: 10, nut: '#6a3e1e', nuts: 2, nutSize: 0.9
+				});
+			}
+		}
+	}
+});
+
+/* ------------------------------------------------------------------------------------------------ black locust */
+
+export const LOCUST_STAGES = stages([
+	['Seed', 0, 'A small hard kidney-shaped seed, scalded with hot water overnight so its coat lets water in, sown in the late spring.'],
+	['Germination', 8, 'A root down within days; the hook up, lifting two oval seed leaves.'],
+	['Seedling', 30, 'The first leaves, small and pinnate, round leaflets folding up at night; on its roots, the first nodules — rhizobia fixing nitrogen.'],
+	['Sapling', 365, 'A fast, thorny whip, a metre and more a year, each leaf with a pair of sharp spines at its foot.'],
+	['Young tree', 1800, 'An open, airy crown of crooked limbs on a deeply furrowed trunk, its light shade letting the plants under it grow; the soil round it richer every year.'],
+	['Flowering', 2700, 'In late May, after the leaves: long hanging clusters of white pea-flowers all over the crown, honey-scented, humming with bees — sweet to eat raw, or fried in batter.'],
+	['Pod set', 2720, 'The flowers drop; thin green pods grow out of the clusters.'],
+	['Green pods', 2780, 'Flat green pods a hand long hanging in bunches.'],
+	['Turning', 2840, 'The pods go reddish-brown and papery.'],
+	['Ripe', 2880, 'Dark brown pods rattling on the bare twigs into the winter, their seeds inside — hard, and like the bark poisonous raw.']
+]);
+
+export const locust = wood({
+	seed: { size: v3(0.0045, 0.0022, 0.003), coat: '#5a3a2a', shade: '#3a2418', depth: 0.01 },
+	hypogeal: false,
+	cotyledon: { length: 0.012, width: 0.007, colour: '#6aa244' },
+	nodules: true,
+	// an open, irregular crown: a few crooked limbs, the shoots zigzag and wandering, light let through
+	flush: {
+		trunk: 1.8, trunkBorn: 1.6, trunkFlush: 1.2, scaffolds: [2, 4], scaffoldAngle: 0.55, gens: 6, flush: 0.16, rest: 0.08,
+		shoot: (gen) => [0, 1.9, 1.35, 1.0, 0.74, 0.55, 0.42][gen] ?? 0.4, whorl: [1, 3], spread: 0.66, up: 0.05, droop: 0.05,
+		wander: 0.22, radius: 0.14, taper: 0.62, thicken: 3.5, bark: ['#7a6a58', '#54483c']
+	},
+	roots: { tap: 1.8, spread: 4, count: 10, radius: 0.07 },
+	leaf: {
+		blade: { stalk: 0, length: 0.24, width: 0, shape: () => 1, along: 3, pinnate: 5, wide: 0.5 },
+		colour: '#4a7a30', young: '#8ab84a', autumn: '#c8b84a', droop: 0.15, gap: 0.1, per: 2, twig: 0.1, tuft: 7, from: 3, inner: 2.2
+	},
+	bear(ctx) {
+		const { bag, g, seed } = ctx;
+		for (const sh of tips(ctx, 0.7)) {
+			const fr = chance(seed, 'racemes', ...sh.key);
+			const n = 2 + Math.floor(fr() * 3);
+			for (let k = 0; k < n; k++) {
+				const kr = chance(seed, 'raceme', ...sh.key, k);
+				const phase = g - (4.85 + kr() * 0.2);
+				if (phase < -0.35) continue;
+				const { at, dir } = along(sh.pts, between(kr, 0.4, 0.95));
+				const a = k * 2.39996 + kr();
+				const out = dir.clone().add(v3(Math.cos(a), -0.5, Math.sin(a))).normalize();
+				// the flowers: a long hanging cluster of white pea-flowers, browning as they fall
+				if (phase < 0.6) {
+					const len = 0.15 * lerp(0.3, 1, span(phase, -0.35, 0)) * lerp(1, 0.75, span(phase, 0.3, 0.6));
+					const colour = phase < 0.3 ? mix('#d8e0b8', '#f8f4e8', span(phase, -0.3, 0)) : mix('#f8f4e8', '#a89a7a', span(phase, 0.3, 0.6));
+					catkin(bag, at, out, len, 0.011 * lerp(0.4, 1, span(phase, -0.3, 0.05)), colour, 0.05);
+					continue;
+				}
+				// the pods: flat, hanging in a bunch of two to four, green, then reddish, then dark brown
+				const set = span(phase, 0.6, 2), ripe = span(phase, 2.2, 3.5);
+				const pods = 2 + Math.floor(kr() * 3);
+				const colour = ripe < 0.4 ? mix('#7a9a46', '#8a6a3a', ripe / 0.4) : mix('#8a6a3a', '#3e2a1c', (ripe - 0.4) / 0.6);
+				const base = at.clone().addScaledVector(out, 0.03);
+				bag.add('body', tube([at, base], () => 0.0012, () => '#5a5a32', 3));
+				for (let p = 0; p < pods; p++) {
+					const b = p * 2.39996 + kr();
+					const d = v3(Math.cos(b) * 0.25, -1, Math.sin(b) * 0.25).normalize();
+					const place = hang(ctx, base, d, 0.08, 0.008, 0.01);
+					bag.add('body', sheet({ length: 0.085 * lerp(0.25, 1, set), width: 0.0075 * lerp(0.4, 1, set), shape: (u) => Math.pow(Math.sin(Math.PI * Math.min(1, 0.04 + u * 0.96)), 0.35) * (1 + 0.08 * Math.sin(u * 30)), lift: (u, v) => 0.12 * v * v - 0.05 * u, paint: (u) => colour.clone().multiplyScalar(0.9 + 0.15 * u), along: 5, across: 1 }), aim(place.at, place.dir, kr() * TAU));
+				}
+			}
+		}
+	}
+});
+
 /* ------------------------------------------------------------------------------------------------ the list */
 
 /** @type {(import('./index.js').Plant & { layer: import('./index.js').Layer })[]} */
@@ -1085,6 +1306,36 @@ export const WALD = [
 		from: 'Tree · 9 years',
 		stages: LINDEN_STAGES,
 		grow: linden,
+		layer: 'canopy'
+	},
+	{
+		id: 'oak',
+		label: 'Pedunculate oak',
+		latin: 'Quercus robur · Stieleiche',
+		note: 'A broad, rugged crown of twisting limbs on a fissured trunk: lobed leaves in tufts at the shoot tips, yellow-green catkin tassels in May, then glossy acorns in scaly cups, one to three on a long stalk.',
+		from: 'Tree · 10 years',
+		stages: OAK_STAGES,
+		grow: oak,
+		layer: 'canopy'
+	},
+	{
+		id: 'beech',
+		label: 'European beech',
+		latin: 'Fagus sylvatica · Rotbuche',
+		note: 'A tall dense dome on a smooth silver-grey trunk, oval silky-edged leaves in level sprays (young, good in a salad); round flower tassels in May, then bristly husks opening in four over two three-sided beechnuts.',
+		from: 'Tree · 10 years',
+		stages: BEECH_STAGES,
+		grow: beech,
+		layer: 'canopy'
+	},
+	{
+		id: 'locust',
+		label: 'Black locust',
+		latin: 'Robinia pseudoacacia · Robinie',
+		note: 'The fast support tree: an open crown on a furrowed trunk, round-leafleted pinnate leaves letting the light through, nodules on its roots fixing nitrogen; long white honey-scented flower clusters in late May, then flat pods browning on the twigs.',
+		from: 'Tree · 8 years',
+		stages: LOCUST_STAGES,
+		grow: locust,
 		layer: 'canopy'
 	},
 	{

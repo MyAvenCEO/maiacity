@@ -35,17 +35,21 @@ const CROP = [5, 7, 9];
  * @type {Garden & { canopy: Planting[], herbs: Planting[], ground: Planting[], roots: Planting[], fungi: Planting[] }}
  */
 const OUTSIDE = {
-	// the tall trees: nuts, the lime's leaves and flowers, the alder feeding the soil; big standard fruit trees with them
+	// the tall trees, close enough that their crowns meet: nuts, acorns and beechnuts, the lime's leaves and flowers,
+	// the alder and the locust feeding the soil; big standard fruit trees with them
 	canopy: [
 		{ id: 'walnut', v: 1, stages: [7, 9], weight: 3 },
 		{ id: 'chestnut', v: 1, stages: [7, 9], weight: 3 },
 		{ id: 'linden', v: 1, stages: [9], weight: 2 },
 		{ id: 'alder', v: 1, stages: [9], weight: 2 },
+		{ id: 'oak', v: 1, stages: [7, 9], weight: 3 },
+		{ id: 'beech', v: 1, stages: [7, 9], weight: 2 },
+		{ id: 'locust', v: 1, stages: [5, 9], weight: 2 },
 		{ id: 'pear', v: 1, stages: [9] },
 		{ id: 'cherry', v: 1, stages: [9] },
 		{ id: 'mulberry', v: 1, stages: [9] }
 	],
-	// the low trees: the fruit, close together under and between the canopy
+	// the low trees: the fruit, fewer now under the closed canopy, in its gaps
 	trees: [
 		{ id: 'apple', v: 2, stages: [4, 9], weight: 4 },
 		{ id: 'pear', v: 1, stages: [7, 9], weight: 2 },
@@ -139,7 +143,7 @@ const OUTSIDE = {
  * How close each layer of the outdoor forest garden stands: a plant every so many square metres (on a jittered grid),
  * and how far it keeps from a canopy tree's trunk.
  */
-export const OUTDOOR_SPACING = { canopy: 64, trees: 12, shrubs: 5, herbs: 3.2, ground: 2.6, roots: 12, climbers: 30, fungi: 70 };
+export const OUTDOOR_SPACING = { canopy: 26, trees: 24, shrubs: 5, herbs: 3.2, ground: 2.6, roots: 12, climbers: 30, fungi: 70 };
 
 /** @type {Garden} */
 const INSIDE = {
