@@ -28,7 +28,8 @@ import { createObstacles } from '$lib/sandbox-kit/obstacles.js'
 import { connectFilm, filmDraws, filmHoldsSize, worldTime } from '$lib/sandbox-kit/film.js'
 import { ambience, levelsAt } from './ambience'
 import { createForest, type Forest } from './flora.js'
-import { OUTDOOR_SPACING, pick, type Flora } from './sandbox5.js'
+import { swapLegacy } from './legacy.js'
+import { DRIFT, OUTDOOR_SPACING, pick, planting, stageOf, type Flora } from './sandbox5.js'
 
 export type VillageDome = { kind: DomeKind; x: number; z: number; R: number; ext: number }
 export type VillageHandle = {
@@ -44,8 +45,17 @@ export type VillageHandle = {
 	move: (x: number, y: number, hurry: boolean) => void
 	/** turn the view by a finger's drag, in pixels */
 	look: (dx: number, dy: number) => void
+	/**
+	 * Sandbox 5: the plant under a point of the screen (client pixels), marked with a ring at its foot; null (and no
+	 * ring) when there is none
+	 */
+	pickPlant: (clientX: number, clientY: number) => PickedPlant | null
+	/** take the ring away again */
+	unpick: () => void
 	dispose: () => void
 }
+/** a plant picked in Sandbox 5's forest: which (its id, version, stage), where, and how far from the eye */
+export type PickedPlant = { id: string; v: number; stage: number; x: number; z: number; height: number; distance: number; inside: boolean }
 
 const WORLD = 380
 
@@ -80,6 +90,13 @@ export async function mountVillage(container: HTMLElement, onProgress: (label: s
 	const eye = () => camera.position
 	const m = mats()
 	const domes = layout()
+	/** Sandbox 5: the cell's forest grown from our plants (./flora.js), planted below with the food forest; the stand-in
+	 *  plants of Sandbox 4's squares traded for its plants too (./legacy.js) */
+	const forest: Forest | null = flora ? createForest({ tree: [18, 45], shrub: [10, 26], cover: [6, 13] }) : null
+	const swapR = seeded(707)
+	const swap = (root: THREE.Object3D) => {
+		if (forest && flora) swapLegacy(root, scene, forest, { warm: false, seed: flora.seed, r: swapR })
+	}
 	const animated: ((t: number) => void)[] = []
 	/** what can be heard: the water, and where each herd is */
 	const waterPts: { x: number; z: number }[] = []
@@ -553,6 +570,7 @@ export async function mountVillage(container: HTMLElement, onProgress: (label: s
 			timber: m.timberFrame, linen: m.linen, cushion: m.cushion, rug: m.rug, paper: m.paper
 		}
 		for (const sq of [...cafes(kit, SQUARE_R), ...coops(kit, SQUARE_R)]) {
+			swap(sq.group)
 			scene.add(bake(sq.group))
 			colliders.push(...sq.colliders)
 		}
@@ -629,7 +647,12 @@ export async function mountVillage(container: HTMLElement, onProgress: (label: s
 	/* ── Sandbox 5: the forest grown from our plants (./flora.js), the same guilds in the same places: a tree, and round
 	   it its shrubs, its cover and its climbers, each a plant of the middle-European forest garden at its stage
 	   (./sandbox5.js). Put down here, grown once the whole cell is laid out. ── */
-	const forest: Forest | null = flora ? createForest({ tree: [18, 45], shrub: [10, 26], cover: [6, 13] }) : null
+	/** the ring at the foot of a plant picked in Sandbox 5's forest */
+	const ray = new THREE.Raycaster()
+	const marker = new THREE.Mesh(new THREE.RingGeometry(0.92, 1, 48).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: '#fff4c8', transparent: true, opacity: 0.85, depthWrite: false }))
+	marker.visible = false
+	marker.renderOrder = 2
+	scene.add(marker)
 	type Planted = { kind: ReturnType<typeof pick>; x: number; z: number; s: number }
 	const plantedTrees: Planted[] = []
 	/** Sandbox 5's forest garden, layer under layer, each at its own spacing (OUTDOOR_SPACING), over the whole cell */
@@ -678,13 +701,29 @@ export async function mountVillage(container: HTMLElement, onProgress: (label: s
 				forest!.add(pick(O.climbers, r, seed), 'shrub', x + Math.cos(b) * 0.8, 0, z + Math.sin(b) * 0.8, r() * 6.28, 0.9 + r() * 0.2)
 			}
 		})
-		// the shrubs, packed between the trunks
-		await grid(S.shrubs, 'Planting the shrubs', (x, z) => open(x, z, 1.4) && clearOf(x, z, 0.9) && forest!.add(pick(O.shrubs, r, seed), 'shrub', x, 0, z, r() * 6.28, 0.85 + r() * 0.3))
+		/** a drift of one kind round x, z: 5 to 15 of it close together, on a sunflower spiral, most at one stage */
+		const drift = (layer: 'shrubs' | 'climbers' | 'herbs' | 'roots' | 'ground' | 'fungi', x: number, z: number, margin: number, keep: number) => {
+			const species = planting(O[layer], r)
+			const main = stageOf(species, r, seed)
+			const n = DRIFT.least + Math.floor(r() * (DRIFT.most - DRIFT.least + 1))
+			const gap = DRIFT.gap[layer], turn = r() * 6.28
+			for (let k = 0; k < n; k++) {
+				const d = gap * Math.sqrt(k + 0.3) * (0.85 + r() * 0.3), a = turn + k * 2.39996
+				const px = x + Math.cos(a) * d, pz = z + Math.sin(a) * d
+				if (!open(px, pz, margin) || !clearOf(px, pz, keep)) continue
+				const kind = r() < 0.75 ? main : stageOf(species, r, seed)
+				forest!.add(kind, layer === 'shrubs' || layer === 'climbers' ? 'shrub' : 'cover', px, 0, pz, r() * 6.28, 0.85 + r() * 0.3)
+			}
+		}
+		/** a layer's drifts, as many as its spacing asks: a drift every so many plants' worth of ground */
+		const drifts = (layer: Parameters<typeof drift>[0], every: number, label: string, margin: number, keep: number) =>
+			grid(every * ((DRIFT.least + DRIFT.most) / 2), label, (x, z) => drift(layer, x, z, margin, keep))
+		// the shrubs, in drifts between the trunks
+		await drifts('shrubs', S.shrubs, 'Planting the shrubs', 1.4, 0.9)
 		// climbers on their own canes and posts
-		await grid(S.climbers, 'Planting the climbers', (x, z) => open(x, z, 1.2) && clearOf(x, z, 0.8) && forest!.add(pick(O.climbers, r, seed), 'shrub', x, 0, z, r() * 6.28, 0.9 + r() * 0.2))
+		await drifts('climbers', S.climbers, 'Planting the climbers', 1.2, 0.8)
 		// and every bit of soil covered: perennial vegetables and herbs, roots, the ground cover, the mushrooms
-		for (const [layer, every] of [['herbs', S.herbs], ['roots', S.roots], ['ground', S.ground], ['fungi', S.fungi]] as const)
-			await grid(every, 'Covering the ground', (x, z) => open(x, z, 0.5) && clearOf(x, z, 0.35) && forest!.add(pick(O[layer], r, seed), 'cover', x, 0, z, r() * 6.28, 0.8 + r() * 0.4))
+		for (const [layer, every] of [['herbs', S.herbs], ['roots', S.roots], ['ground', S.ground], ['fungi', S.fungi]] as const) await drifts(layer, every, 'Covering the ground', 0.5, 0.35)
 	}
 	const floorIndex = (r: () => number) => FLOOR_KINDS.indexOf(floorPick(r))
 	// and tufts of meadow grass standing up out of the lawn, drawn with the floor, near you
@@ -1266,6 +1305,30 @@ export async function mountVillage(container: HTMLElement, onProgress: (label: s
 		},
 		move: walker.move,
 		look: walker.look,
+		pickPlant: (cx, cy) => {
+			if (!forest) return null
+			const rect = renderer.domElement.getBoundingClientRect()
+			ray.setFromCamera(new THREE.Vector2(((cx - rect.left) / rect.width) * 2 - 1, -((cy - rect.top) / rect.height) * 2 + 1), camera)
+			const o = ray.ray.origin, d = ray.ray.direction
+			let got: PickedPlant | null = null
+			const hit = forest.pick(o, d)
+			if (hit) got = { id: hit.kind.id, v: hit.kind.v, stage: hit.kind.stage, x: hit.x, z: hit.z, height: hit.height, distance: hit.t, inside: false }
+			// and the forests inside the domes built near you, in their own ground
+			for (const i of shown) {
+				const dm = domes[i]!, inner = built.get(i)?.pickPlant?.(new THREE.Vector3(o.x - dm.x, o.y, o.z - dm.z), d)
+				if (inner && (!got || inner.t < got.distance)) got = { id: inner.kind.id, v: inner.kind.v, stage: inner.kind.stage, x: inner.x + dm.x, z: inner.z + dm.z, height: inner.height, distance: inner.t, inside: true }
+			}
+			marker.visible = !!got
+			if (got) {
+				marker.position.set(got.x, 0.06, got.z)
+				const w = Math.max(0.35, Math.min(3, (hit && !got.inside ? hit.reach : got.height * 0.4)))
+				marker.scale.setScalar(w)
+			}
+			return got
+		},
+		unpick: () => {
+			marker.visible = false
+		},
 		dispose() {
 			running = false
 			cancelAnimationFrame(frame)

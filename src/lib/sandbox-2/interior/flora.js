@@ -376,6 +376,75 @@ export function createForest(o = {}) {
 	};
 	const plants = () => [...stands.values()].reduce((a, st) => a + st.n, 0);
 
+	/** a mesh to cast rays at one plant's own shape, moved to wherever it stands */
+	const probe = new THREE.Mesh();
+	const caster = new THREE.Raycaster();
+	/**
+	 * The plant a ray from o along d meets first, within `far` metres: found by its leaves, its wood and its fruit, as
+	 * drawn near you. The plants the ray passes close to (each taken as an upright cylinder as tall as it is and as
+	 * wide as it reaches) are tried, nearest first, against their own shapes. Null when it meets none.
+	 * @param {THREE.Vector3} o @param {THREE.Vector3} d @param {number} [far]
+	 * @returns {{ kind: Kind, x: number, y: number, z: number, height: number, reach: number, t: number } | null}
+	 */
+	function pick(o, d, far = 45) {
+		/** @type {{ st: Stand, i: number, t: number }[]} */
+		const near = [];
+		const dd = d.x * d.x + d.z * d.z;
+		for (const st of stands.values()) {
+			if (!st.x || !st.shape || !st.near) continue;
+			const X = st.x, Y = /** @type {Float32Array} */ (st.y), Z = /** @type {Float32Array} */ (st.z), C = /** @type {Float32Array} */ (st.c), S = /** @type {Float32Array} */ (st.s);
+			const shape = st.shape;
+			const test = (/** @type {number} */ i) => {
+				const cx = X[i] - o.x, cz = Z[i] - o.z;
+				if (cx * cx + cz * cz > far * far) return;
+				const k = Math.hypot(C[i], S[i]);
+				const w = Math.max(0.3, shape.reach * k + 0.2), h = Math.max(0.2, shape.height * k);
+				// the stretch of the ray inside the plant's cylinder, if any: where it enters (or 0, from inside)
+				let t0 = 0, t1 = far;
+				if (dd > 1e-9) {
+					const b = -(cx * d.x + cz * d.z), c = cx * cx + cz * cz - w * w;
+					const disc = b * b - dd * c;
+					if (disc < 0) return;
+					t0 = Math.max(0, (-b - Math.sqrt(disc)) / dd);
+					t1 = (-b + Math.sqrt(disc)) / dd;
+					if (t1 < 0) return;
+				} else if (cx * cx + cz * cz > w * w) return;
+				const ya = o.y + d.y * t0, yb = o.y + d.y * t1;
+				if (Math.max(ya, yb) < Y[i] - 0.1 || Math.min(ya, yb) > Y[i] + h + 0.1) return;
+				near.push({ st, i, t: t0 });
+			};
+			if (st.cells) {
+				const span = Math.ceil(far / CELL), ix = Math.floor(o.x / CELL), iz = Math.floor(o.z / CELL);
+				for (let a = -span; a <= span; a++)
+					for (let b = -span; b <= span; b++) for (const i of st.cells.get((ix + a + 4096) * 8192 + (iz + b + 4096)) ?? []) test(i);
+			} else for (let i = 0; i < st.n; i++) test(i);
+		}
+		near.sort((a, b) => a.t - b.t);
+		caster.set(o, d.clone().normalize());
+		caster.far = far;
+		/** @type {{ kind: Kind, x: number, y: number, z: number, height: number, reach: number, t: number } | null} */
+		let best = null;
+		const arr = new Float32Array(16);
+		for (const { st, i, t } of near.slice(0, 40)) {
+			// nothing nearer than the one already found can come after it
+			if (best && t > best.t) break;
+			put(arr, 0, st, i);
+			probe.matrixWorld.fromArray(arr);
+			for (const m of /** @type {Tier} */ (st.near).meshes) {
+				probe.geometry = m.geometry;
+				probe.material = m.material;
+				const hits = caster.intersectObject(probe, false);
+				const hit = hits[0];
+				if (hit && (!best || hit.distance < best.t)) {
+					const k = Math.hypot(/** @type {Float32Array} */ (st.c)[i], /** @type {Float32Array} */ (st.s)[i]);
+					const shape = /** @type {Shape} */ (st.shape);
+					best = { kind: st.kind, x: /** @type {Float32Array} */ (st.x)[i], y: /** @type {Float32Array} */ (st.y)[i], z: /** @type {Float32Array} */ (st.z)[i], height: shape.height * k, reach: shape.reach * k, t: hit.distance };
+				}
+			}
+		}
+		return best;
+	}
+
 	/** The kind's shape, once grown (for its size: how far a plant of it reaches, how thick its foot). @param {Kind} kind */
 	const shape = (kind) => stands.get(keyOf(kind))?.shape;
 
@@ -386,7 +455,7 @@ export function createForest(o = {}) {
 		far?.crowns.dispose();
 	}
 
-	return { group, add, kinds, grown, update, weight, plants, shape, dispose };
+	return { group, add, kinds, grown, update, weight, plants, shape, pick, dispose };
 }
 
 /** @typedef {ReturnType<typeof createForest>} Forest */

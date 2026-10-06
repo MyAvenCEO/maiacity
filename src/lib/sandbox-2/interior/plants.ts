@@ -85,6 +85,23 @@ function trunk(group: THREE.Group, height: number, radius: number, lean = 0) {
 
 export type Plant = { object: THREE.Group; radius: number }
 
+/**
+ * What a stand-in plant is, written on it (`userData.legacy`), so that Sandbox 5 can put the plant of our own library
+ * ($lib/plants) in its place (./legacy.js): a bed of a crop `len` long, a plant in a pot standing `ph` above its foot,
+ * a tuft of herbs, a vine along a rail, a pergola's vines, or a whole plant of a kind.
+ */
+export type Legacy =
+	| { crop: Crop; len: number }
+	| { potted: 'olive' | 'lemon' | 'lavender' | 'rosemary'; ph: number; size: number }
+	| { herb: number }
+	| { vine: number }
+	| { pergola: { w: number; d: number; h: number } }
+	| { plant: 'shrub' | 'berry' | 'banana' | 'citrus' | 'mango' | 'avocado'; size: number }
+const mark = <T extends THREE.Object3D>(o: T, legacy: Legacy): T => {
+	o.userData.legacy = legacy
+	return o
+}
+
 /** A broad fruit tree: mango, avocado or citrus. `scale` 1 is a mature tree of about six metres. */
 export function fruitTree(kind: 'mango' | 'avocado' | 'citrus', seed: number, scale = 1): Plant {
 	const r = seeded(seed)
@@ -109,7 +126,7 @@ export function fruitTree(kind: 'mango' | 'avocado' | 'citrus', seed: number, sc
 		hang(g, r, h + crown * 0.3, crown * 0.95, crown * 0.6, 18, fruit.orange(), [0.06, 0.06, 0.06])
 		hang(g, r, h + crown * 0.3, crown * 0.95, crown * 0.6, 6, fruit.lemon(), [0.05, 0.065, 0.05])
 	}
-	return { object: g, radius: 0.35 * scale }
+	return { object: mark(g, { plant: kind, size: scale }), radius: 0.35 * scale }
 }
 
 /** A coconut palm: a curving ringed trunk, a crown of fronds, and coconuts under it. */
@@ -189,7 +206,7 @@ export function banana(seed: number, height = 3.2): Plant {
 		bunch.add(b)
 	}
 	g.add(bunch)
-	return { object: g, radius: 0.25 }
+	return { object: mark(g, { plant: 'banana', size: height / 3.2 }), radius: 0.25 }
 }
 
 /** An understorey shrub — coffee, cacao, berries — about a metre high. */
@@ -198,7 +215,7 @@ export function shrub(seed: number, size = 1): Plant {
 	const g = new THREE.Group()
 	canopy(g, r, 0, 0.55 * size, 0, 0.6 * size, 0.5 * size, 18, r() < 0.5 ? leafMat() : fineLeafMat(), 0.6 * size)
 	if (r() < 0.5) hang(g, r, 0.6 * size, 0.5 * size, 0.3, 10, r() < 0.5 ? fruit.orange() : fruit.mangoRipe(), [0.03, 0.03, 0.03])
-	return { object: g, radius: 0 }
+	return { object: mark(g, { plant: 'shrub', size }), radius: 0 }
 }
 
 /** A tuft of herbs or lettuce for the beds and the aquaponics troughs. */
@@ -206,7 +223,7 @@ export function herb(seed: number, size = 0.3): THREE.Group {
 	const r = seeded(seed)
 	const g = new THREE.Group()
 	canopy(g, r, 0, size * 0.5, 0, size, size * 0.6, 7, fineLeafMat(), size * 0.9)
-	return g
+	return mark(g, { herb: size })
 }
 
 /* ── the seven layers of a food forest, for the land outside the domes ──
@@ -265,7 +282,7 @@ export function berryBush(seed: number, size = 1): Plant {
 	const g = new THREE.Group()
 	canopy(g, r, 0, 0.6 * size, 0, 0.7 * size, 0.55 * size, 22, fineLeafMat(), 0.55 * size)
 	hang(g, r, 0.7 * size, 0.6 * size, 0.4, 24, r() < 0.5 ? more.berry() : more.redBerry(), [0.025, 0.025, 0.025])
-	return { object: g, radius: 0 }
+	return { object: mark(g, { plant: 'berry', size }), radius: 0 }
 }
 
 /** Layer 4 — herbaceous: comfrey and tall herbs, some in flower. */
@@ -629,7 +646,7 @@ export function crop(kind: Crop, seed: number, len: number): THREE.Group {
 	else if (kind === 'strawberry') along(0.45, (x, z) => g.add(strawberries(seed + Math.round(x * 10), 0.4).translateX(x).translateZ(z)))
 	else along(0.3, (x, z) => g.add(herb(seed + Math.round(x * 100 + z * 10), 0.18 + r() * 0.1).translateX(x).translateZ(z)), [-0.3, 0, 0.3])
 	g.traverse((o) => (o.castShadow = false))
-	return g
+	return mark(g, { crop: kind, len })
 }
 
 /* ── the Mediterranean balconies: olive, lemon, lavender and rosemary in
@@ -676,7 +693,8 @@ export function potted(kind: 'olive' | 'lemon' | 'lavender' | 'rosemary', seed: 
 			g.add(f)
 		}
 	} else canopy(g, r, 0, ph + 0.28 * size, 0, pr * 1.1, 0.3 * size, 16, garden.olive(), 0.28 * size)
-	return g
+	// the pot and its rim are its first two children: the plant is the rest
+	return mark(g, { potted: kind, ph, size })
 }
 
 /** Grapes trained along a rail of `len` metres at height 0: leaves along it, clusters hanging below. */
@@ -691,7 +709,7 @@ export function vineAlong(seed: number, len: number): THREE.Group {
 		g.add(c)
 	}
 	for (let k = 0; k < len * 0.8; k++) grapes(g, r, -len / 2 + r() * len, -0.05, (r() - 0.5) * 0.2)
-	return g
+	return mark(g, { vine: len })
 }
 
 function grapes(g: THREE.Group, r: Rand, x: number, y: number, z: number) {
@@ -718,14 +736,17 @@ export function grapePergola(seed: number, w: number, d: number, h = 2.5): THREE
 		slat.position.set(0, h + 0.1, -d / 2 + (i * d) / 5)
 		g.add(slat)
 	}
+	// the vines, on their own so Sandbox 5 can grow its own in their place
+	const vines = mark(new THREE.Group(), { pergola: { w, d, h } })
+	g.add(vines)
 	for (let i = 0; i < w * d * 9; i++) {
 		const c = new THREE.Mesh(card(), leafMat())
 		c.position.set((r() - 0.5) * (w + 0.2), h + 0.12 + r() * 0.3, (r() - 0.5) * (d + 0.2))
 		c.rotation.set(-Math.PI / 2 + (r() - 0.5) * 1.2, 0, r() * 6)
 		c.scale.setScalar(0.42)
-		g.add(c)
+		vines.add(c)
 	}
-	for (let k = 0; k < w * d * 0.8; k++) grapes(g, r, (r() - 0.5) * w * 0.9, h, (r() - 0.5) * d * 0.9)
+	for (let k = 0; k < w * d * 0.8; k++) grapes(vines, r, (r() - 0.5) * w * 0.9, h, (r() - 0.5) * d * 0.9)
 	// the vines' trunks, twisting up two of the posts
 	for (const sx of [-1, 1]) {
 		for (let i = 0; i < 10; i++) {
@@ -733,7 +754,7 @@ export function grapePergola(seed: number, w: number, d: number, h = 2.5): THREE
 			c.position.set((sx * w) / 2 + (r() - 0.5) * 0.25, (i / 10) * h, d / 2 + (r() - 0.5) * 0.25)
 			c.rotation.set(r() * 3, r() * 3, r() * 3)
 			c.scale.setScalar(0.3)
-			g.add(c)
+			vines.add(c)
 		}
 	}
 	return g

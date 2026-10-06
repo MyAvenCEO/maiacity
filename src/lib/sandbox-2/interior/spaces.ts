@@ -329,6 +329,8 @@ function bakery(k: Kit): Space {
 	g.add(k.box(6, 0.05, 0.05, k.timber, 1.4, 2.6, 0.6))
 	for (let i = 0; i < 14; i++) {
 		const h = herb(700 + i, 0.2)
+		// cut and drying, not growing: no plant of Sandbox 5's takes its place
+		delete h.userData.legacy
 		h.position.set(-1.4 + i * 0.4, 2.2, 0.6)
 		g.add(h)
 	}
