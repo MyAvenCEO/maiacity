@@ -12,8 +12,9 @@
  * what piles up gets cheap. A city sells what it has spare to whoever pays most and buys what it lacks from whoever
  * asks least, among the cities it can reach. Coins are only how wares change hands: nothing in the score counts them.
  *
- * Needs. Everyone eats (fish or bread, best both), drinks, and keeps a home (planks and stone). A village's happiness
- * (0–100) is how well its needs were met over the last minutes, how varied its food was, and how much it has put by.
+ * Needs. Everyone eats, drinks (in kg and litres a week, grown by the hexes and drawn from wells: ./food.js) and keeps
+ * a home (planks and stone). A village's happiness (0–100) is how well its needs were met lately and how much it has
+ * put by.
  *
  * Abundance. The valley's abundance is the geometric mean of every village's happiness, yours and the neighbours':
  * one hungry village pulls everyone down, and no amount of plenty in one place makes up for it.
@@ -22,14 +23,15 @@
  * start joined by a route) and with you once you join them, and now and then one asks you for what it lacks most: a
  * request, paid from its own purse — or, when its purse is empty, a plea for help.
  */
-import { FOOD, WARES } from './rules.js';
+import { WARES } from './rules.js';
+import { DAY } from './food.js';
 
 /**
- * what a person needs, a minute. A great dome holds 248 where a great house held 16, so a person needs 16/248 of what
- * they used to: a full village eats what it did when it held 96.
+ * what a person's home needs, a minute, in planks and stone. A great dome holds 248 where a great house held 16, so a
+ * person needs 16/248 of what they used to. Food and water are counted in kg and litres instead (./food.js).
  */
 const PER = 16 / 248;
-export const NEEDS = { food: 0.11 * PER, water: 0.06 * PER, plank: 0.022 * PER, stone: 0.014 * PER };
+export const NEEDS = { plank: 0.022 * PER, stone: 0.014 * PER };
 export const NEED_LABEL = { food: 'Food', water: 'Water', plank: 'Planks', stone: 'Stone' };
 /** what a cart carries */
 export const CART = 8;
@@ -57,8 +59,8 @@ export const HEARTS = {
 	perHour: 24,
 	/** HEARTs in one gold */
 	perGold: 1000,
-	/** an in-game hour in seconds of play: the calendar runs thirty times faster than real time (game/time.ts) */
-	hour: 120,
+	/** an in-game hour in seconds of play: the valley's calendar, a day a second (./food.js) */
+	hour: DAY / 24,
 	/** what a treasury loses in an in-game year */
 	demurrage: 0.07,
 	/** hours in an in-game year: twelve months of thirty days */
@@ -76,7 +78,7 @@ export const heartsFor = (w) => base(w) * 10;
  * @param {number} pop your people
  */
 export function orderRule(w, pop) {
-	const need = /** @type {Record<string, number>} */ (NEEDS)[w] ?? (FOOD.includes(w) ? NEEDS.food / 2 : 0);
+	const need = /** @type {Record<string, number>} */ (NEEDS)[w] ?? 0;
 	const lives = Math.ceil(need * pop * PUT_BY);
 	return {
 		keep: Math.max(12, lives),
@@ -120,11 +122,15 @@ export function party(/** @type {string} */ name, /** @type {number} */ pop) {
 		name,
 		pop,
 		/** how well each need was met, lately (0…1) */
-		sat: { food: 0.55, water: 0.7, plank: 0.5, stone: 0.5 },
-		/** what is owed to each need: eaten later, if it can be */
-		owe: { food: 0, water: 0, plank: 0, stone: 0 },
-		/** the food eaten lately, by kind */
-		mix: { fish: 1, bread: 1 },
+		sat: { food: 1, water: 1, plank: 0.5, stone: 0.5 },
+		/** what is owed to each need of its homes: used later, if it can be */
+		owe: { plank: 0, stone: 0 },
+		/** the food in its store, kg, and the water in its tanks, litres */
+		kg: 0,
+		litres: 0,
+		/** what its food and water did lately, a week (kg, litres, gold): grown, eaten, bought from your villages and
+		 * from the world, sold, spoiled; drawn from its wells, used */
+		flow: { grown: 0, eaten: 0, fromVillages: 0, fromWorld: 0, sold: 0, spoiled: 0, spent: 0, earned: 0, drawn: 0, used: 0 },
 		reserve: 0.3,
 		wb: 50,
 		/** @type {Record<string, number>} */ stock: {},
@@ -144,7 +150,7 @@ export function priceFor(w, want, have) {
 }
 /** what a neighbour wants to have of a ware @param {any} p @param {string} w */
 export const keepOf = (p, w) => {
-	const need = /** @type {Record<string, number>} */ (NEEDS)[w] ?? (FOOD.includes(w) ? NEEDS.food / 2 : 0);
+	const need = /** @type {Record<string, number>} */ (NEEDS)[w] ?? 0;
 	return need ? need * p.pop * PUT_BY * 1.1 : w === 'tools' ? 4 : 6;
 };
 /** a neighbour's price for a ware @param {any} p @param {string} w */
@@ -154,17 +160,10 @@ export const spareIn = (p, w) => Math.floor((p.stock[w] ?? 0) - keepOf(p, w));
 /** what a neighbour lacks of a ware (what is on its way counts) @param {any} p @param {string} w */
 export const shortIn = (p, w) => Math.ceil(keepOf(p, w) - (p.stock[w] ?? 0) - (p.coming[w] ?? 0));
 
-/** how varied the food eaten lately was: 0 one kind only, 1 both alike */
-export function variety(/** @type {any} */ p) {
-	const total = FOOD.reduce((s, f) => s + p.mix[f], 0);
-	if (total <= 0) return 0;
-	const simpson = 1 - FOOD.reduce((s, f) => s + (p.mix[f] / total) ** 2, 0);
-	return Math.min(1, simpson / (1 - 1 / FOOD.length));
-}
-/** a settlement's wellbeing from its needs, the variety of its food and what it has put by */
+/** a settlement's wellbeing from its needs and what it has put by */
 export function wellbeing(/** @type {any} */ p) {
 	const s = p.sat;
-	return 100 * (0.4 * s.food * (0.7 + 0.3 * variety(p)) + 0.2 * s.water + 0.2 * ((s.plank + s.stone) / 2) + 0.2 * p.reserve);
+	return 100 * (0.4 * s.food + 0.2 * s.water + 0.2 * ((s.plank + s.stone) / 2) + 0.2 * p.reserve);
 }
 /** the valley's abundance: the geometric mean of every settlement's wellbeing */
 export function abundance(/** @type {any[]} */ parties) {
@@ -172,41 +171,36 @@ export function abundance(/** @type {any[]} */ parties) {
 }
 
 /**
- * Needs met for a while: each settlement eats, drinks and keeps its homes, and its wellbeing follows.
+ * Needs met for a while: each settlement keeps its homes, and its wellbeing follows (its food and water were met
+ * already, in kg and litres: `put` is how full its store and tanks are against what it keeps, 0…1 each).
  * `take(ware)` takes one unit from a settlement's stores and says whether it could; `has(ware)` counts them.
  * @param {any} p
  * @param {number} pop
  * @param {number} dt seconds
  * @param {(w: string) => boolean} take
  * @param {(w: string) => number} has
+ * @param {number[]} [put]
  */
-export function live(p, pop, dt, take, has) {
+export function live(p, pop, dt, take, has, put = []) {
 	for (const [need, rate] of /** @type {[keyof typeof NEEDS, number][]} */ (Object.entries(NEEDS))) {
 		const per = (rate * pop) / 60;
 		p.owe[need] = Math.min(p.owe[need] + per * dt, per * 180 + 1);
-		// eat what is owed, a unit at a time; food the kind eaten least lately
+		// use what is owed, a unit at a time
 		while (p.owe[need] >= 1) {
-			/** @type {string} */
-			let w = need;
-			if (need === 'food') {
-				const kinds = FOOD.filter((f) => has(f) >= 1).sort((a, b) => p.mix[a] - p.mix[b]);
-				if (!kinds.length) break;
-				w = kinds[0];
-			}
-			if (!take(w)) break;
+			if (!take(need)) break;
 			p.owe[need] -= 1;
-			if (need === 'food') p.mix[w] += 1;
 		}
 		const now = p.owe[need] <= 1.2 ? 1 : Math.max(0, 1 - (p.owe[need] - 1.2) / Math.max(0.5, per * 150));
 		p.sat[need] += (now - p.sat[need]) * Math.min(1, dt / 90);
 	}
-	for (const f of FOOD) p.mix[f] *= Math.exp(-dt / 300);
-	const put = Object.entries(NEEDS).map(([need, rate]) => {
-		const want = rate * pop * PUT_BY;
-		const have = need === 'food' ? FOOD.reduce((s, f) => s + has(f), 0) : has(need);
-		return want > 0 ? Math.min(1, have / want) : 1;
-	});
-	p.reserve += (put.reduce((a, b) => a + b, 0) / put.length - p.reserve) * Math.min(1, dt / 60);
+	const all = [
+		...put,
+		...Object.entries(NEEDS).map(([need, rate]) => {
+			const want = rate * pop * PUT_BY;
+			return want > 0 ? Math.min(1, has(need) / want) : 1;
+		})
+	];
+	p.reserve += (all.reduce((a, b) => a + b, 0) / all.length - p.reserve) * Math.min(1, dt / 60);
 	p.wb = wellbeing(p);
 }
 
@@ -220,13 +214,13 @@ export function make(p, k, dt) {
 export function request(m, parties, time, rand) {
 	const open = m.contracts.filter((/** @type {any} */ c) => c.got < c.n && c.until > time);
 	if (open.length >= 3) return null;
-	let k = 0, worst = Infinity, need = 'food';
+	let k = 0, worst = Infinity, need = 'plank';
 	for (let j = 1; j < parties.length; j++) {
 		if (open.some((/** @type {any} */ c) => c.k === j)) continue;
 		const q = parties[j];
 		for (const [n, rate] of Object.entries(NEEDS)) {
 			// how short it is: of what it eats now, or of what it has put by
-			const have = n === 'food' ? FOOD.reduce((t, f) => t + (q.stock[f] ?? 0), 0) : q.stock[n] ?? 0;
+			const have = q.stock[n] ?? 0;
 			const s = Math.min(q.sat[/** @type {keyof typeof NEEDS} */ (n)], have / (rate * q.pop * PUT_BY));
 			if (s < worst) (worst = s), (k = j), (need = n);
 		}
@@ -234,7 +228,7 @@ export function request(m, parties, time, rand) {
 	// only a shortage is worth asking for
 	if (!k || worst > 0.8) return null;
 	const p = parties[k];
-	const w = need === 'food' ? [...FOOD].sort((a, b) => p.mix[a] - p.mix[b])[Math.floor(rand() * 2)] : need;
+	const w = need;
 	// as much as it is short, in fives; it pays from its own purse, and with none left it asks for help
 	const rate = /** @type {Record<string, number>} */ (NEEDS)[need];
 	const n = Math.max(10, Math.min(30, Math.round((rate * p.pop * PUT_BY) / 5) * 5));

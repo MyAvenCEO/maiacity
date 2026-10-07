@@ -3,7 +3,7 @@
  * each building stands one column after the wares it needs, each ware one column after the building that makes it.
  * Read from the rules (./rules.js), so it always shows the game as it is. The page draws it (./Tree.svelte).
  */
-import { BUILDINGS, FOOD, WARES } from './rules.js';
+import { BUILDINGS, WARES } from './rules.js';
 import { NEEDS } from './market.js';
 
 /** where in the land a gatherer finds its work */
@@ -16,8 +16,9 @@ export const SOURCE = /** @type {Record<string, string>} */ ({
 	well: 'anywhere',
 	ironmine: 'iron rock'
 });
-/** the wares people live on (what wellbeing counts) */
-export const LIVED_ON = new Set([...FOOD, ...Object.keys(NEEDS).filter((n) => n !== 'food')]);
+/** the wares people live on (what wellbeing counts): water from the wells, and their homes' planks and stone; their
+ * food grows in the hexes' food forests (./food.js), and fish and bread feed the miners */
+export const LIVED_ON = new Set(['water', ...Object.keys(NEEDS)]);
 
 /** buildings that make or gather something: the chains */
 const CHAIN = Object.values(BUILDINGS).filter((b) => b.group && (b.out || b.kind === 'forester'));
