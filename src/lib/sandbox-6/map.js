@@ -144,7 +144,7 @@ export function growValley(seed) {
 
 	// the seats' villages are open grass, cleared, and gently level
 	const cleared = new Set();
-	for (const s of [hq, ...villages]) for (const k of plan.villages[plan.villageOf[plan.plotOf[s]]].plots) cleared.add(k);
+	for (const s of [hq]) for (const k of plan.villages[plan.villageOf[plan.plotOf[s]]].plots) cleared.add(k);
 	for (const k of cleared) {
 		const c = plan.centre[k];
 		for (const j of [c, ...Array.from({ length: 6 }, (_, d) => g.nb(c, d))]) {
@@ -156,7 +156,7 @@ export function growValley(seed) {
 		}
 		for (let d = 0; d < 6; d++) if (g.nb(c, d) >= 0) height[g.nb(c, d)] = height[c];
 	}
-	// your first village keeps a forest hex and a stone hex of its own (the ones toward the nearest rocks and woods), so
+	// your first village keeps two forest hexes and a stone hex of its own (the ones toward the nearest rocks and woods), so
 	// a woodcutter and a quarry can start at home; water and iron are for the villages you found next
 	const home = plan.villages[plan.villageOf[plan.plotOf[hq]]];
 	const outer = home.plots.filter((k) => k !== home.centre);
@@ -164,12 +164,15 @@ export function growValley(seed) {
 	const [rx, ry] = ROCKS[ROCKS.length - 1];
 	const stoneHex = toward(rx, ry);
 	const [fx, fy] = [...FORESTS].sort((a, b) => g.dist(hq, node(a[0], a[1])) - g.dist(hq, node(b[0], b[1])))[0];
-	const forestHex = toward(fx, fy) === stoneHex ? outer.find((k) => k !== stoneHex) ?? stoneHex : toward(fx, fy);
+	// two forest hexes (room for woodcutters and a forester), the two outer hexes nearest the woods
+	const forestHexes = outer.filter((k) => k !== stoneHex).sort((a, b) => g.dist(plan.centre[a], node(fx, fy)) - g.dist(plan.centre[b], node(fx, fy))).slice(0, 2);
 	for (const [d, j] of plan.spots[stoneHex].entries()) if (d > 0 && j >= 0) obj[j] = { k: 'rock', n: 6 };
-	const fc = plan.centre[forestHex];
-	for (let d = 0; d < 6; d++) {
-		const j = g.nb(fc, d);
-		if (j >= 0 && j !== plan.spots[forestHex][0]) obj[j] = { k: 'tree', g: 1 };
+	for (const k of forestHexes) {
+		const fc = plan.centre[k];
+		for (let d = 0; d < 6; d++) {
+			const j = g.nb(fc, d);
+			if (j >= 0 && j !== plan.spots[k][0]) obj[j] = { k: 'tree', g: 1 };
+		}
 	}
 	return { W, H, terrain, height, ore, amount, fish, obj, hq, villages, biome: biomes(g, plan, terrain, obj, ore) };
 }

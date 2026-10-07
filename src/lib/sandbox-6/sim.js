@@ -16,7 +16,7 @@
  *   · every village eats, drinks and keeps its homes, and the valley's abundance follows how well they all live.
  */
 import { ABUNDANT, BIOMES, BUILDINGS, FOOD, GOALS, GRASS, HOLD, HOUSE_BEDS, HOUSE_UP, IRON, MOUNTAIN, START, WARES, WATER, holdsLand } from './rules.js';
-import { CART, NEEDS, NEIGHBOURS, TRADED, abundance, keepOf, live, make, newMarket, orderRule, party, priceIn, request, shortIn, spareIn, variety } from './market.js';
+import { CART, HEARTS, NEEDS, NEIGHBOURS, TRADED, heartsFor, abundance, keepOf, live, make, newMarket, orderRule, party, priceIn, request, shortIn, spareIn, variety } from './market.js';
 import { SE, findPath, makeGrid } from './hex.js';
 import { makePlan } from './plots.js';
 import { biomes, growValley } from './map.js';
@@ -48,7 +48,7 @@ export function newGame(seed = 7) {
 	const v = growValley(seed);
 	const N = v.W * v.H;
 	const st = {
-		v: 6,
+		v: 7,
 		seed,
 		time: 0,
 		rng: (Math.imul(seed, 2654435761) >>> 0) || 1,
@@ -105,7 +105,7 @@ export function newGame(seed = 7) {
 /** A game from its saved state. @param {string | object} saved */
 export function loadGame(saved) {
 	const st = typeof saved === 'string' ? JSON.parse(saved) : saved;
-	if (!st || st.v !== 6 || !Array.isArray(st.terrain)) throw new Error('Not a Sandbox 6 game of this kind');
+	if (!st || st.v !== 7 || !Array.isArray(st.terrain)) throw new Error('Not a Sandbox 6 game of this kind');
 	return createSim(st);
 }
 
@@ -358,7 +358,9 @@ export function createSim(st) {
 			timer: 0, out: 0, paused: false, status: live ? '' : 'Waiting for a builder', eff: 0,
 			stock: /** @type {Record<string, number>} */ ({}), settlers: 0, deposit: 0, fields: 0, level: 0,
 			/** a village center's: what is on its way to it along the trade routes */
-			coming: /** @type {Record<string, number>} */ ({})
+			coming: /** @type {Record<string, number>} */ ({}),
+			/** a village center's treasury, in HEARTs (its settlers issue them) */
+			hearts: 0
 		};
 		for (const w of Object.keys(b.cost)) (b.used[w] = 0), (b.got[w] = 0), (b.inc[w] = 0);
 		if (t.kind === 'mine') b.deposit = depositAt(node);
@@ -585,7 +587,7 @@ export function createSim(st) {
 					b.status = !any ? 'Not connected by road' : noTools ? 'Waiting for tools (build a toolmaker)' : 'Waiting for a settler';
 					if (any && noTools && st.time - (st.toolsWarned ?? -999) > 300) {
 						st.toolsWarned = st.time;
-						say('You are out of tools: a toolmaker makes them from iron ore and planks, or buy them from a neighbour.', b.node, 'alert');
+						say('Out of tools: a toolmaker makes them from planks and iron ore, which comes only from an iron hex.', b.node, 'alert');
 					}
 					continue;
 				}
@@ -1067,7 +1069,8 @@ export function createSim(st) {
 
 	// ── trade routes under the ground, and the carts on them ──
 	/** your purse */
-	const purse = () => st.parties[PLAYER].coins;
+	/** your gold: what all your village centers' treasuries hold */
+	const purse = () => myCentres().reduce((s, c) => s + (c.hearts ?? 0), 0) / HEARTS.perGold;
 	/** what selling or buying a ware means for you now (./market.js) */
 	const rule = (/** @type {string} */ w) => orderRule(w, st.parties[PLAYER].pop ?? 0);
 	/** every village center that stands: yours and the neighbours' */
@@ -1202,6 +1205,12 @@ export function createSim(st) {
 		}
 		// the buyer pays on delivery
 		if (d.pay) st.parties[d.seller].coins += d.pay;
+		// between your own villages: the giver's treasury gets the gold, and it counts as trade
+		if (d.hearts) {
+			const giver = st.buildings[d.from];
+			if (giver) giver.hearts = (giver.hearts ?? 0) + d.hearts;
+			st.market.sold += /** @type {number} */ (Object.values(u.load)[0] ?? 0);
+		}
 		if (d.kind === 'request') {
 			const c = st.market.contracts.find((/** @type {any} */ x) => x.id === d.cid);
 			if (c) {
@@ -1247,12 +1256,14 @@ export function createSim(st) {
 			});
 			const donor = rows.reduce((a, b) => (b.r > a.r ? b : a), rows[0]), recv = rows.reduce((a, b) => (b.r < a.r ? b : a), rows[0]);
 			if (!donor || donor === recv || donor.r - recv.r < 0.3 || recv.r >= 1.5 || !reach(donor.c.id).has(recv.c.id) || onWay(recv.c.id, w)) continue;
-			// as much as evens them out
+			// as much as evens them out, and as the taker's treasury can pay for: in gold, to the giver, on delivery
 			const even = (donor.have + recv.have + (comingTo(recv.c)[w] ?? 0)) / (donor.want + recv.want);
-			const n = Math.min(CART, Math.floor(donor.have - even * donor.want), Math.ceil(even * recv.want - recv.have - (comingTo(recv.c)[w] ?? 0)));
+			const each = heartsFor(w);
+			const n = Math.min(CART, Math.floor(donor.have - even * donor.want), Math.ceil(even * recv.want - recv.have - (comingTo(recv.c)[w] ?? 0)), Math.floor((recv.c.hearts ?? 0) / each));
 			if (n < 1) continue;
 			donor.c.stock[w] -= n;
-			sendCart(donor.c, recv.c, { [w]: n }, { kind: 'move' });
+			recv.c.hearts -= n * each;
+			sendCart(donor.c, recv.c, { [w]: n }, { kind: 'move', hearts: n * each, from: donor.c.id });
 		}
 		// and settlers move to where there are beds for them
 		for (const c of mine) {
@@ -1481,8 +1492,11 @@ export function createSim(st) {
 		const m = st.market;
 		// each of your villages lives on what its center holds
 		const vs = yourVillages();
+		// every settler issues HEARTs into its village center's treasury; what a treasury holds wanes by the year
+		const wane = Math.pow(1 - HEARTS.demurrage, dt / (HEARTS.yearHours * HEARTS.hour));
 		for (const { v, c, p } of vs) {
 			p.pop = villagePeople(v);
+			c.hearts = (c.hearts ?? 0) * wane + (HEARTS.perHour * p.pop * dt) / HEARTS.hour;
 			live(
 				p,
 				p.pop,
@@ -1601,9 +1615,8 @@ export function createSim(st) {
 			if (goal.id === 'wood') done = live('woodcutter') && live('quarry');
 			else if (goal.id === 'house') done = blds().some((b) => b.type === 'house' && b.owner === PLAYER && b.level >= 4);
 			else if (goal.id === 'village') done = myCentres().length >= 2;
-			else if (goal.id === 'market') done = st.market.sold > 0;
+			else if (goal.id === 'route') done = Object.values(st.tunnels).some((t) => t.owner === PLAYER);
 			else if (goal.id === 'trade') done = st.market.sold + st.market.bought >= /** @type {number} */ (goal.n);
-			else if (goal.id === 'contract') done = st.market.filled > 0;
 			else if (goal.id === 'abundance') done = !!st.goals.abundance;
 			else if (goal.ware) done = progress(goal.ware) >= /** @type {number} */ (goal.n);
 			if (done) {
@@ -1895,18 +1908,10 @@ export function createSim(st) {
 			const hq = makeBuilding('centre', v.hq, PLAYER, true);
 			hq.stock = { ...START.stock };
 			hq.settlers = START.settlers;
-			st.parties[PLAYER].coins = START.coins;
+			hq.hearts = 0;
 			hq.since = 0;
 			st.hq = hq.id;
-			// the neighbours hold their land first
-			st.villages = v.villages.map((n, k) => {
-				const b = makeBuilding('village', n, k + 1, true);
-				b.since = -1;
-				return b.id;
-			});
-			// the neighbours' two cities are joined by a trade route of old
-			const [e, h] = st.villages.map((/** @type {number} */ id) => st.buildings[id]);
-			if (e && h) dig(e, h, false);
+			st.villages = [];
 			// the first houses round your village center, nearest first
 			const ring = plan.villages[villageAt(hq.node)].plots.filter((k) => k !== plan.plotOf[hq.node]).sort((a, b) => g.dist(plan.centre[a], hq.node) - g.dist(plan.centre[b], hq.node));
 			START.houses.forEach((level, x) => {
@@ -1919,7 +1924,7 @@ export function createSim(st) {
 			territory();
 			for (const b of blds()) if (b.type === 'house') autoRoad(b.flag);
 			neighbourTowns();
-			say('Welcome to your city: a village center and one house of two. Every settlement is a hex: a house and two factories round its middle, joined to the next by a path. Build homes beside the center first, then a woodcutter and a quarry.', hq.node);
+			say('Welcome to your valley: a village center and one house of two. Every settlement is a hex: a house and two factories round its middle. Woods, rocks, water and iron lie on their own hexes, so found villages where they are and join them. Build homes first, then a woodcutter and a quarry.', hq.node);
 		},
 		canBuild,
 		canFlag,
@@ -2074,7 +2079,7 @@ export function createSim(st) {
 				for (const [w, n] of Object.entries(wh.stock)) stock[w] = (stock[w] ?? 0) + /** @type {number} */ (n);
 				settlers += wh.settlers;
 			}
-			stock.coin = Math.floor(purse());
+			stock.coin = Math.round(purse() * 10) / 10;
 			let carriers = 0, workers = 0;
 			for (const u of units()) if (u.owner === PLAYER && u.kind !== 'cart') u.kind === 'carrier' ? carriers++ : workers++;
 			const m = st.market;
@@ -2141,6 +2146,8 @@ export function createSim(st) {
 				beds: bed,
 				cap,
 				wb: p.wb,
+				/** its treasury, in gold */
+				gold: (c.hearts ?? 0) / HEARTS.perGold,
 				villages: all.map((x) => ({ name: x.p.name, node: x.c.node })),
 				stock: { ...c.stock },
 				needs,

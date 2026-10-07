@@ -36,16 +36,32 @@ export const BASE = { plank: 4, stone: 4, fish: 4, grain: 2, water: 1.5, bread: 
 /** the wares that are traded (not coins: they are what is paid) */
 export const TRADED = Object.keys(BASE);
 /**
- * The two neighbours (in the valley's east, see ./map.js). Each makes some of everything, plenty of one ware and
- * none of another, so each can live on its own at first and needs the others to grow — a loop of three: you (plenty of
- * food, little iron) need Eastmere's ore and tools, Eastmere needs Highfold's planks, Highfold needs your fish.
- * What each makes, a person a minute.
+ * Neighbour cities, each with what it makes well and lacks. None for now: you play the valley on your own, founding
+ * and joining your own villages (Samuel, 2026-10-07).
  * @type {{ name: string, about: string, plenty: string, short: string, builds: string[], make: Record<string, number> }[]}
  */
-export const NEIGHBOURS = [
-	{ name: 'Eastmere', about: 'Miners and smiths under the eastern peaks: plenty of iron ore and tools, but little wood.', plenty: 'ore', short: 'plank', builds: ['toolmaker', 'quarry', 'bakery', 'well', 'fishery', 'farm'], make: { ore: 0.06, tools: 0.03, fish: 0.04, bread: 0.06, water: 0.08, stone: 0.05, grain: 0.02, plank: 0.015 } },
-	{ name: 'Highfold', about: 'Woodcutters in the northern hills: plenty of planks, but no fish.', plenty: 'plank', short: 'fish', builds: ['woodcutter', 'forester', 'bakery', 'well', 'farm', 'quarry'], make: { plank: 0.1, bread: 0.1, water: 0.08, stone: 0.03 } }
-];
+export const NEIGHBOURS = [];
+
+/**
+ * Gold, the HEARTS way: nobody mints it but the people. Every settler brings 24 HEARTs into the world each in-game hour,
+ * paid into the treasury of the village center they live by; 1,000 HEARTs are one gold. What a treasury holds loses 7%
+ * a year (demurrage), so gold is for using, not hoarding. Gold only pays for wares one of your village centers takes
+ * from another; building, enlarging and founding cost wares alone.
+ */
+export const HEARTS = {
+	/** what one settler issues, an in-game hour */
+	perHour: 24,
+	/** HEARTs in one gold */
+	perGold: 1000,
+	/** an in-game hour in seconds of play: the calendar runs thirty times faster than real time (game/time.ts) */
+	hour: 120,
+	/** what a treasury loses in an in-game year */
+	demurrage: 0.07,
+	/** hours in an in-game year: twelve months of thirty days */
+	yearHours: 12 * 30 * 24
+};
+/** what one of a ware costs a village center that takes it from another of yours, in HEARTs @param {string} w */
+export const heartsFor = (w) => base(w) * 10;
 
 /**
  * Your orders at the fair are one word a ware: sell or buy. What that means is fixed, so there is nothing to tune:
