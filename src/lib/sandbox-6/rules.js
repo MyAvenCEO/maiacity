@@ -5,7 +5,7 @@
  * carriers bring them, one carrier to a road, from flag to flag, to whoever needs them. A building is a site until a
  * builder has used up its planks and stone; then a worker moves in and it runs its chain. Eight wares, short chains:
  *
- *   trees → woodcutter → planks          (a forester plants new trees)
+ *   trees → forester → planks            (one building that grows: forester, woodcutter, sawmill, timber works)
  *   rocks → quarry → stone
  *   water's edge → fishery → fish
  *   field → farm → grain ┐
@@ -91,8 +91,8 @@ export const IRON = 2;
 export const BUILDINGS = {
 	centre: { id: 'centre', label: 'Village center', group: 'Homes', about: 'Founds a village in the middle of a village next to yours: its storehouse, market and hall in one — nobody lives here. A trade route under the ground joins it to the village center that founded it, and four settlers come to build its houses.', cost: { plank: 6, stone: 4 }, kind: 'centre' },
 	house: { id: 'house', label: 'House', group: 'Homes', about: 'Founds a settlement: settlers live here, 2 at first, then twice as many each time you enlarge it, up to 248. Its two factory spots open once it stands.', cost: { plank: 2, stone: 1 }, kind: 'house' },
-	woodcutter: { id: 'woodcutter', label: 'Woodcutter', group: 'Basics', about: 'Fells grown trees nearby and splits them into planks; build it on a forest hex.', cost: { plank: 2 }, kind: 'gather', biome: 'forest', worker: 'Woodcutter', tools: true, out: 'plank', time: 6, rest: 4, range: 10 },
-	forester: { id: 'forester', label: 'Forester', group: 'Basics', about: 'Plants young trees nearby, on a forest hex; they grow in about two minutes.', cost: { plank: 2 }, kind: 'forester', biome: 'forest', worker: 'Forester', tools: true, time: 3, rest: 5, range: 8 },
+	woodcutter: { id: 'woodcutter', label: 'Forester', group: 'Basics', about: 'Your wood, in one building that grows: a forester plants young trees round it; upgraded, a woodcutter fells grown trees and plants a young one where each stood, then a sawmill and a timber works cut more planks from every tree. Build it on a forest hex.', cost: { plank: 2 }, kind: 'gather', biome: 'forest', worker: 'Forester', tools: true, out: 'plank', time: 6, rest: 4, range: 10 },
+	forester: { id: 'forester', label: 'Forester', group: '', about: 'Plants young trees nearby, on a forest hex; they grow in about two minutes. (Now the first level of the wood building.)', cost: { plank: 2 }, kind: 'forester', biome: 'forest', worker: 'Forester', tools: true, time: 3, rest: 5, range: 8 },
 	quarry: { id: 'quarry', label: 'Quarry', group: 'Basics', about: 'Cuts stone from rocks nearby; build it on a stone hex.', cost: { plank: 2 }, kind: 'gather', biome: 'stone', worker: 'Stonecutter', tools: true, out: 'stone', time: 6, rest: 4, range: 10 },
 	fishery: { id: 'fishery', label: 'Fishery', group: 'Food', about: 'Fishes at the water’s edge, for the miners; build it on a water hex, by a lake or the sea.', cost: { plank: 2 }, kind: 'gather', biome: 'water', worker: 'Fisher', tools: true, out: 'fish', yield: 3, time: 6, rest: 4, range: 10 },
 	farm: { id: 'farm', label: 'Farm', group: 'Food', about: 'Sows fields round it and reaps the grain.', cost: { plank: 3, stone: 2 }, kind: 'farm', worker: 'Farmer', tools: true, out: 'grain', yield: 2, time: 4, rest: 3, range: 5 },
@@ -127,6 +127,26 @@ export const HOUSE_SIZE = ['Hut', 'Cottage', 'House', 'Great house', 'Hall', 'Gr
 /** the largest a house gets: its size and its beds */
 export const HOUSE_TOP = HOUSE_BEDS.length;
 export const HOUSE_MOST = HOUSE_BEDS[HOUSE_TOP - 1];
+
+/**
+ * The wood building's levels: what it is called, and how many planks it cuts from a tree (a forester only plants).
+ * Each upgrade brings more timber a week from the same trees; from a woodcutter on, it plants a tree for every one it
+ * fells, so its forest stays.
+ */
+export const WOOD = [
+	{ label: 'Forester', planks: 0 },
+	{ label: 'Woodcutter', planks: 1 },
+	{ label: 'Sawmill', planks: 2 },
+	{ label: 'Timber works', planks: 3 }
+];
+/** what each upgrade of the wood building costs */
+export const WOOD_UP = [
+	{ plank: 2, stone: 1 },
+	{ plank: 4, stone: 3 },
+	{ plank: 6, stone: 4 }
+];
+/** a plank, in tonnes: a truckload of sawn timber */
+export const PLANK_T = 5;
 
 /** what the headquarters holds as a game starts */
 export const START = {

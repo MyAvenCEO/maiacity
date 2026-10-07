@@ -180,10 +180,13 @@ function spire(R, H, owner) {
  * The model of a building.
  * @param {string} type
  * @param {number} owner
+ * @param {number} [level] the wood building's level: a forester (1), a woodcutter (2), a sawmill (3), a timber works (4)
  * @returns {THREE.Group}
  */
-export function buildingModel(type, owner) {
+export function buildingModel(type, owner, level = 2) {
 	const g = new THREE.Group();
+	// the wood building starts as a forester, and looks it
+	if (type === 'woodcutter' && level === 1) type = 'forester';
 	switch (type) {
 		case 'centre':
 		case 'village': {
@@ -220,6 +223,15 @@ export function buildingModel(type, owner) {
 			axe.rotation.z = 0.35;
 			g.add(axe);
 			g.add(band(owner, 0.8, PLINTH + 0.15));
+			// a sawmill: a round saw on its bench and planks stacked; a timber works: a second bench and a taller stack
+			for (let k = 0; k < Math.min(2, level - 2); k++) {
+				const x = -0.9 + k * 0.3, z = 0.45 - k * 0.75;
+				g.add(part(new THREE.BoxGeometry(0.5, 0.2, 0.22), mat(TIMBER), x, 0.1, z));
+				const saw = part(new THREE.CylinderGeometry(0.2, 0.2, 0.02, 16), mat('#c9ccd1', 0.3), x, 0.32, z);
+				saw.rotation.x = Math.PI / 2;
+				g.add(saw);
+			}
+			for (let k = 0; k < (level - 2) * 2; k++) g.add(part(new THREE.BoxGeometry(0.55, 0.06, 0.16), mat('#e0b46a'), -0.25, 0.04 + k * 0.07, -1.0));
 			break;
 		}
 		case 'forester':

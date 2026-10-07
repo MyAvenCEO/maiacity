@@ -8,7 +8,7 @@
 	import { onDestroy, onMount } from 'svelte';
 	import TouchStick from '$lib/touch/TouchStick.svelte';
 	import { WorldBar } from '$lib/sandbox-kit';
-	import { BUILDINGS, HOUSE_BEDS, HOUSE_SIZE, MENU, WARES, WARE_ORDER } from './rules.js';
+	import { BUILDINGS, HOUSE_BEDS, HOUSE_SIZE, MENU, PLANK_T, WARES, WARE_ORDER, WOOD } from './rules.js';
 	import { NEED_LABEL } from './market.js';
 	import { FOOD_KG, KEEP, PRICE, WATER_L, WATER_USE } from './food.js';
 	import { PLAYER } from './sim.js';
@@ -64,6 +64,10 @@
 	const num = (/** @type {number} */ n) => Math.round(n).toLocaleString('en-US').replace('-', '−');
 	/** how full a store is against what it keeps, as a bar's class */
 	const fill = (/** @type {number} */ have, /** @type {number} */ want) => (have >= want * 0.99 ? 'good' : have >= want / 2 ? 'fair' : 'poor');
+	/** planks as tonnes of sawn timber */
+	const tonnes = (/** @type {number} */ planks) => `${Number.isInteger(planks * PLANK_T) ? planks * PLANK_T : (planks * PLANK_T).toFixed(1)} t`;
+	/** what the wood building cuts from a tree at a stage */
+	const perTree = (/** @type {number} */ level) => `${WOOD[level - 1].planks} plank${WOOD[level - 1].planks === 1 ? '' : 's'} (${tonnes(WOOD[level - 1].planks)})`;
 
 	function refresh() {
 		if (!game) return;
@@ -327,6 +331,15 @@
 				{#if card.owner === PLAYER && card.up && !card.upgrading}
 					<div class="actions">
 						<button class="go up" title="Enlarge to {HOUSE_BEDS[card.level]} settlers: {Object.entries(card.up).map(([w, n]) => `${n} ${label(w).toLowerCase()}`).join(', ')}" onclick={() => card && (game?.sim.upgrade(card.id), refresh())}>Enlarge → {HOUSE_BEDS[card.level]}{#each Object.entries(card.up) as [w, n] (w)}<span class="cost"><i style:background={WARES[w].color}></i>{n}</span>{/each}</button>
+					</div>
+				{/if}
+			{/if}
+			{#if card.type === 'woodcutter' && card.level}
+				<p class="label">{WOOD[card.level - 1].label} · stage <b>{card.level}</b> of {WOOD.length}{card.upgrading ? ` · growing to a ${WOOD[card.level].label.toLowerCase()}` : ''}</p>
+				<p class="small">{card.level === 1 ? 'It plants young trees and fells none yet' : `${perTree(card.level)} from every tree it fells, and a young one planted in its place`}{card.level > 1 ? ` · lately ${tonnes(card.lately)} a week` : ''}</p>
+				{#if card.owner === PLAYER && card.up && !card.upgrading}
+					<div class="actions">
+						<button class="go up" title="Upgrade to a {WOOD[card.level].label.toLowerCase()}: {perTree(card.level + 1)} from every tree. It costs {Object.entries(card.up).map(([w, n]) => `${n} ${label(w).toLowerCase()}`).join(', ')}" onclick={() => card && (game?.sim.upgrade(card.id), refresh())}>Upgrade → {WOOD[card.level].label}{#each Object.entries(card.up) as [w, n] (w)}<span class="cost"><i style:background={WARES[w].color}></i>{n}</span>{/each}</button>
 					</div>
 				{/if}
 			{/if}

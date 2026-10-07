@@ -17,7 +17,7 @@
  *     each year, it buys the rest by itself, and its wells fill its tanks; it keeps its homes, and its wellbeing
  *     follows how well it lives. There is no goal to win.
  */
-import { BIOMES, BUILDINGS, FOOD, GRASS, HOUSE_BEDS, HOUSE_MOST, HOUSE_TOP, HOUSE_UP, IRON, MOUNTAIN, START, WARES, WATER, holdsLand } from './rules.js';
+import { BIOMES, BUILDINGS, FOOD, GRASS, HOUSE_BEDS, HOUSE_MOST, HOUSE_TOP, HOUSE_UP, IRON, MOUNTAIN, START, WARES, WATER, WOOD, WOOD_UP, holdsLand } from './rules.js';
 import { CART, HEARTS, NEEDS, NEIGHBOURS, TRADED, heartsFor, abundance, keepOf, live, make, newMarket, orderRule, party, priceIn, request, shortIn, spareIn } from './market.js';
 import { SE, STEP, findPath, makeGrid } from './hex.js';
 import { FOOD_KG, KEEP, MOST, PRICE, TANK, WATER_L, WEEK, WELL_L, YEAR, DAY, calendar, forestShare } from './food.js';
@@ -38,6 +38,10 @@ const WALK = 3.6 / STEP, CARRY = 2.9 / STEP;
 const CART_SPEED = 2.6 / STEP;
 /** a forester plants until so many trees stand round it */
 const FORESTER_TREES = 45;
+/** weeks over which a building's output a week is averaged */
+const LATELY = 4;
+/** the wood building's level, 1 (forester) to 4 (timber works); one built before it grew levels was a woodcutter */
+export const woodLevel = (/** @type {any} */ b) => b.level || 2;
 /** a neighbour city's people when its village is full: six houses of sixteen */
 /** the most villages a neighbour founds */
 const CITY_VILLAGES = 5;
@@ -851,8 +855,19 @@ export function createSim(st) {
 		const near = g.within(b.node, t.range ?? 0).sort((x, y) => g.dist(b.node, x) - g.dist(b.node, y));
 		switch (b.type) {
 			case 'woodcutter': {
-				const j = near.find((n) => st.obj[n]?.k === 'tree' && st.obj[n].g >= 1 && !st.obj[n].r);
-				return j === undefined ? null : [j, j];
+				// a forester plants; from a woodcutter on, it fells a grown tree and plants a young one in its place, and
+				// plants more while none is grown
+				const grown = woodLevel(b) >= 2 ? near.find((n) => st.obj[n]?.k === 'tree' && st.obj[n].g >= 1 && !st.obj[n].r) : undefined;
+				if (grown === undefined) {
+					let trees = 0;
+					for (const n of near) if (st.obj[n]?.k === 'tree') trees++;
+					const spots = trees < FORESTER_TREES ? near.filter((n) => g.dist(b.node, n) >= 2 && g.dist(b.node, n) <= 8 && freeSpot(n)) : [];
+					if (spots.length) {
+						const j = spots[Math.floor(rand() * spots.length)];
+						return [j, j];
+					}
+				}
+				return grown === undefined ? null : [grown, grown];
 			}
 			case 'quarry': {
 				const j = near.find((n) => st.obj[n]?.k === 'rock' && !st.obj[n].r);
@@ -893,7 +908,7 @@ export function createSim(st) {
 		}
 		return null;
 	}
-	const NOTHING = /** @type {Record<string, string>} */ ({ woodcutter: 'No grown trees nearby', quarry: 'No rocks nearby', fishery: 'No fish nearby', forester: 'The forest round it is full', farm: 'Fields are growing' });
+	const NOTHING = /** @type {Record<string, string>} */ ({ woodcutter: 'The forest round it is full, and no tree is grown yet', quarry: 'No rocks nearby', fishery: 'No fish nearby', forester: 'The forest round it is full', farm: 'Fields are growing' });
 
 	/** how much of a ware the storehouses hold */
 	const stocked = (/** @type {string} */ ware) => warehouses().reduce((s, w) => s + (w.stock[ware] ?? 0), 0);
@@ -954,17 +969,17 @@ export function createSim(st) {
 			if (b.out > 0 && !flushOutput(b, /** @type {string} */ (t.out))) b.status = 'Its stop is full';
 			else if (b.timer > 0) b.timer -= dt;
 			else if (b.paused) b.status = 'Paused';
-			else if (t.out && stocked(t.out) >= ENOUGH) {
+			else if (t.out && stocked(t.out) >= ENOUGH && !(b.type === 'woodcutter' && woodLevel(b) === 1)) {
 				b.status = 'Resting: the storehouses are full of it';
 				b.timer = 3;
 			} else {
 				const target = findTarget(b);
 				const path = target && findPath(g, b.node, target[1], walkable, 1500);
 				if (!target || !path) {
-					b.status = NOTHING[b.type] ?? 'Nothing to do';
+					b.status = b.type === 'woodcutter' && woodLevel(b) === 1 ? 'The forest round it is full: upgrade it to a woodcutter to fell trees' : NOTHING[b.type] ?? 'Nothing to do';
 					b.timer = 3;
 				} else {
-					const plant = (b.type === 'farm' && st.obj[target[0]]?.k !== 'field') || b.type === 'forester';
+					const plant = (b.type === 'farm' && st.obj[target[0]]?.k !== 'field') || b.type === 'forester' || (b.type === 'woodcutter' && !st.obj[target[0]]);
 					if (st.obj[target[0]] && !plant) st.obj[target[0]].r = u.id;
 					Object.assign(u, { inside: false, path, p: 0, tgt: path.length - 1, job: 'w-out', target: target[0] });
 					b.status = 'Working';
@@ -973,11 +988,12 @@ export function createSim(st) {
 			}
 		} else busy = true;
 		b.eff += ((busy ? 1 : 0) - b.eff) * Math.min(1, dt / 40);
+		if (b.lately) b.lately *= Math.exp(-dt / (LATELY * WEEK));
 	}
 	function finish(/** @type {any} */ b) {
 		// a village center that opens joins the trade routes dug to it
 		if (b.type === 'centre') st.tunV++;
-		if (b.type === 'house') {
+		if (b.type === 'house' || b.type === 'woodcutter') {
 			const was = b.level;
 			b.level = Math.max(1, b.level + (b.level ? 1 : 0));
 			b.cost = {};
@@ -987,7 +1003,7 @@ export function createSim(st) {
 				const u = st.units[b.builder];
 				b.builder = 0;
 				if (u) goHome(u);
-				say(`A house now holds ${HOUSE_BEDS[b.level - 1]} settlers`, b.node, 'good');
+				say(b.type === 'house' ? `A house now holds ${HOUSE_BEDS[b.level - 1]} settlers` : `Your forester is now a ${WOOD[b.level - 1].label.toLowerCase()}`, b.node, 'good');
 				st.objV++;
 				return;
 			}
@@ -1026,10 +1042,12 @@ export function createSim(st) {
 			u.inside = true;
 			u.job = 'w-in';
 			if (u.ware) {
-				for (let k = 0; k < (T(b).yield ?? 1); k++) {
+				const n = b.type === 'woodcutter' ? WOOD[woodLevel(b) - 1].planks : T(b).yield ?? 1;
+				for (let k = 0; k < n; k++) {
 					b.out++;
 					made(u.ware);
 				}
+				b.lately = (b.lately ?? 0) + n;
 				u.ware = '';
 			}
 			b.timer = /** @type {number} */ (T(b).rest);
@@ -1042,9 +1060,12 @@ export function createSim(st) {
 		if (o?.r === u.id) delete o.r;
 		switch (b.type) {
 			case 'woodcutter':
-				if (o?.k === 'tree') {
-					st.obj[j] = null;
+				if (o?.k === 'tree' && o.g >= 1 && woodLevel(b) >= 2) {
+					st.obj[j] = { k: 'tree', g: 0.04 };
 					u.ware = 'plank';
+					st.objV++;
+				} else if (!o && !st.road[j]) {
+					st.obj[j] = { k: 'tree', g: 0.04 };
 					st.objV++;
 				}
 				break;
@@ -2076,10 +2097,12 @@ export function createSim(st) {
 		/** enlarge a house to its next size: builders bring what it costs, and its settlers stay meanwhile */
 		upgrade(/** @type {number} */ id) {
 			const b = st.buildings[id];
-			if (!b || b.owner !== PLAYER || b.type !== 'house') return { ok: false, why: 'Only your houses grow' };
+			if (!b || b.owner !== PLAYER || (b.type !== 'house' && b.type !== 'woodcutter')) return { ok: false, why: 'Only your houses and your wood grow' };
 			if (b.stage !== 'live') return { ok: false, why: 'It is being built' };
-			if (b.level >= HOUSE_TOP) return { ok: false, why: 'It is as large as a house gets' };
-			b.cost = { ...HOUSE_UP[b.level - 1] };
+			const wood = b.type === 'woodcutter';
+			if (wood) b.level = woodLevel(b);
+			if (b.level >= (wood ? WOOD.length : HOUSE_TOP)) return { ok: false, why: wood ? 'It is a timber works already' : 'It is as large as a house gets' };
+			b.cost = { ...(wood ? WOOD_UP : HOUSE_UP)[b.level - 1] };
 			for (const w of Object.keys(b.cost)) (b.used[w] = 0), (b.got[w] = 0), (b.inc[w] = 0);
 			b.stage = 'site';
 			b.status = 'Waiting for a builder';
@@ -2273,7 +2296,7 @@ export function createSim(st) {
 			return {
 				id: b.id,
 				type: b.type,
-				label: t.label,
+				label: b.type === 'woodcutter' && (b.level || b.stage === 'live') ? WOOD[woodLevel(b) - 1].label : t.label,
 				about: b.type === 'village' ? NEIGHBOURS[b.owner - 1].about : t.about,
 				name: b.type === 'village' ? st.parties[b.owner].name : b.type === 'centre' ? st.vill[villageAt(b.node)]?.name ?? '' : '',
 				owner: b.owner,
@@ -2293,10 +2316,12 @@ export function createSim(st) {
 				stock: isWarehouse(b) ? { ...b.stock } : null,
 				settlers: b.settlers,
 				party: b.type === 'village' ? { ...st.parties[b.owner], stock: { ...st.parties[b.owner].stock } } : b.type === 'centre' && st.vill[villageAt(b.node)] ? { ...st.vill[villageAt(b.node)], beds: bedsIn(villageAt(b.node)) } : null,
-				level: b.level,
+				level: b.type === 'woodcutter' && b.stage === 'live' ? woodLevel(b) : b.level,
 				beds: b.type === 'house' && b.level ? HOUSE_BEDS[b.level - 1] : 0,
-				upgrading: b.type === 'house' && b.stage === 'site' && b.level > 0,
-				up: b.type === 'house' && b.level >= 1 && b.level < HOUSE_TOP ? HOUSE_UP[b.level - 1] : null,
+				upgrading: (b.type === 'house' || b.type === 'woodcutter') && b.stage === 'site' && b.level > 0,
+				up: b.type === 'house' && b.level >= 1 && b.level < HOUSE_TOP ? HOUSE_UP[b.level - 1] : b.type === 'woodcutter' && b.stage === 'live' && woodLevel(b) < WOOD.length ? WOOD_UP[woodLevel(b) - 1] : null,
+				/** what it made a week, lately (its ware's units) */
+				lately: (b.lately ?? 0) / LATELY,
 				village: villageAt(b.node)
 			};
 		},
