@@ -38,8 +38,8 @@ const WALK = 3.6 / STEP, CARRY = 2.9 / STEP;
 const CART_SPEED = 2.6 / STEP;
 /** a forester plants until so many trees stand round it */
 const FORESTER_TREES = 45;
-/** weeks over which a building's output a week is averaged */
-const LATELY = 4;
+/** weeks over which a building's output a week is averaged: a quarter year */
+const LATELY = 13;
 /** the wood building's level, 1 (forester) to 4 (timber works); one built before it grew levels was a woodcutter */
 export const woodLevel = (/** @type {any} */ b) => b.level || 2;
 /** a neighbour city's people when its village is full: six houses of sixteen */
@@ -1553,7 +1553,7 @@ export function createSim(st) {
 	 * @param {{ v: number, c: any, p: any }[]} vs @param {number} dt
 	 */
 	function eatAndDrink(vs, dt) {
-		const days = dt / DAY, fade = 1 - Math.exp(-dt / (2 * WEEK));
+		const days = dt / DAY, fade = 1 - Math.exp(-dt / (4 * WEEK));
 		/** @type {Map<any, Record<string, number>>} */
 		const did = new Map();
 		const add = (/** @type {any} */ p, /** @type {string} */ k, /** @type {number} */ n) => {
@@ -1829,8 +1829,8 @@ export function createSim(st) {
 			trade();
 		}
 		if (st.time >= c.needs) {
-			c.needs = st.time + 2;
-			settlements(2);
+			c.needs = st.time + 1;
+			settlements(1);
 		}
 		if (st.fx.length && st.time - st.fx[0].t > 12) st.fx.shift();
 	}
