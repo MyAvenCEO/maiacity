@@ -117,12 +117,15 @@ export function createView(scene, sim) {
 	const poles = inst(new THREE.CylinderGeometry(0.03, 0.03, 1.0, 5).translate(0, 0.5, 0), mat('#5a3d27'), 2000);
 	const cloths = inst(new THREE.BoxGeometry(0.34, 0.22, 0.02).translate(0.17, 0.88, 0), white, 2000);
 	const wares = inst(new THREE.BoxGeometry(0.2, 0.17, 0.2), white, 4000);
-	const bodies = inst(new THREE.CylinderGeometry(0.13, 0.17, 0.5, 6).translate(0, 0.25, 0), white, 1500);
-	const heads = inst(new THREE.SphereGeometry(0.12, 6, 4).translate(0, 0.62, 0), mat('#f0c8a0'), 1500);
-	const loads = inst(new THREE.BoxGeometry(0.22, 0.18, 0.22).translate(0, 0.86, 0), white, 1500);
-	// a cart on a trade route under the ground is a light moving beneath
-	const lights = inst(new THREE.SphereGeometry(0.32, 10, 6), keep(new THREE.MeshBasicMaterial({ color: '#ffffff' })), 300, false);
-	lights.receiveShadow = false;
+	// everyone travels by bus: a small driverless pod, the same both ways round (it never turns, it just sets off the
+	// other way), its body in the colour of its job, a band of glass round it, a lamp at either end and its load on the roof
+	const BUSES = 1800;
+	const buses = inst(new THREE.CapsuleGeometry(0.15, 0.3, 4, 10).rotateX(Math.PI / 2).scale(1, 0.85, 1).translate(0, 0.2, 0), white, BUSES);
+	const glass = inst(new THREE.CapsuleGeometry(0.155, 0.22, 4, 10).rotateX(Math.PI / 2).scale(1, 0.42, 1).translate(0, 0.25, 0), keep(new THREE.MeshStandardMaterial({ color: '#1d2a33', roughness: 0.2, metalness: 0.4 })), BUSES);
+	const lampGeo = new THREE.SphereGeometry(0.04, 6, 4);
+	const lamps = inst(lampGeo.clone().translate(0, 0.18, 0.29), keep(new THREE.MeshBasicMaterial({ color: '#fff4c8' })), BUSES, false);
+	const lampsBack = inst(lampGeo.translate(0, 0.18, -0.29), keep(new THREE.MeshBasicMaterial({ color: '#fff4c8' })), BUSES, false);
+	const loads = inst(new THREE.BoxGeometry(0.2, 0.12, 0.26).translate(0, 0.4, 0), white, BUSES);
 	const spots = inst(new THREE.CylinderGeometry(0.5, 0.5, 0.06, 6), keep(new THREE.MeshBasicMaterial({ color: '#ffffff', transparent: true, opacity: 0.55 })), g.N, false);
 	spots.receiveShadow = false;
 
@@ -362,40 +365,44 @@ export function createView(scene, sim) {
 		return at.set(X(a) + (X(b) - X(a)) * f, Math.max(Y(a), SEA) + (Math.max(Y(b), SEA) - Math.max(Y(a), SEA)) * f, Z(a) + (Z(b) - Z(a)) * f);
 	}
 	function syncUnits(/** @type {number} */ t) {
-		let k = 0, l = 0, c = 0;
+		let k = 0, l = 0;
 		for (const u of Object.values(st.units)) {
 			if (u.inside) continue;
 			const p = u.kind === 'cart' ? cartPos(u) : unitPos(u);
 			let x = p.x, y = p.y, z = p.z, bob = 0;
 			const moving = u.p !== u.tgt && !u.wait;
-			if (moving) bob = Math.abs(Math.sin(t * 11 + u.id)) * 0.07;
+			if (moving) bob = Math.abs(Math.sin(t * 11 + u.id)) * 0.015;
 			if (u.job === 'b-work') {
 				x += 0.9;
 				z += 0.4;
-				bob = Math.abs(Math.sin(t * 9 + u.id)) * 0.12;
-			} else if (u.wait > 0) bob = Math.abs(Math.sin(t * 8 + u.id)) * 0.1;
-			const was = last.get(u.id);
-			const turn = was ? Math.atan2(p.x - was[0], p.z - was[1]) : 0;
-			if (was) (was[0] = p.x), (was[1] = p.z);
-			else last.set(u.id, [p.x, p.z]);
-			if (u.kind === 'cart') {
-				// a cart under the ground: a pulsing light in the colour of what it carries (its city's, with settlers)
-				put(lights, c, x, y + 0.2, z, 0.85 + Math.sin(t * 6 + u.id) * 0.15);
-				lights.setColorAt(c++, u.ware ? wareColor[u.ware] : teamColor[u.owner]);
-				continue;
+				bob = Math.abs(Math.sin(t * 9 + u.id)) * 0.05;
 			}
-			put(bodies, k, x, y + bob, z, 1.35, moving ? turn : 0);
-			put(heads, k, x, y + bob, z, 1.35);
-			bodies.setColorAt(k++, /** @type {Record<string, THREE.Color>} */ (KIND)[u.kind]);
-			if (u.ware) {
-				put(loads, l, x, y + bob, z, 1.35);
+			const was = last.get(u.id);
+			// a bus keeps the line it last ran along: it has no front, so it only lines up with the way, never turns round
+			const dx = was ? p.x - was[0] : 0, dz = was ? p.z - was[1] : 0;
+			if (was) {
+				if (dx * dx + dz * dz > 1e-6) was[2] = Math.atan2(dx, dz) % Math.PI;
+				(was[0] = p.x), (was[1] = p.z);
+			} else last.set(u.id, [p.x, p.z, 0]);
+			const turn = last.get(u.id)?.[2] ?? 0;
+			if (k >= BUSES) continue;
+			// on a trade route under the ground: the same bus at twice the size, in the colour of what it carries (its city's, with settlers)
+			const cart = u.kind === 'cart', size = cart ? 2.7 : 1.35, lift = cart ? 0.02 : bob;
+			put(buses, k, x, y + lift, z, size, turn);
+			put(glass, k, x, y + lift, z, size, turn);
+			put(lamps, k, x, y + lift, z, size, turn);
+			put(lampsBack, k, x, y + lift, z, size, turn);
+			buses.setColorAt(k++, cart ? (u.ware ? wareColor[u.ware] : teamColor[u.owner]) : /** @type {Record<string, THREE.Color>} */ (KIND)[u.kind]);
+			if (u.ware && !cart) {
+				put(loads, l, x, y + bob, z, size, turn);
 				loads.setColorAt(l++, wareColor[u.ware]);
 			}
 		}
-		done(bodies, k);
-		done(heads, k);
+		done(buses, k);
+		done(glass, k);
+		done(lamps, k);
+		done(lampsBack, k);
 		done(loads, l);
-		done(lights, c);
 		if (last.size > k * 2 + 50) for (const id of last.keys()) if (!st.units[id]) last.delete(id);
 	}
 
