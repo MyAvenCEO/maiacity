@@ -98,6 +98,13 @@
 	const num = (/** @type {number} */ n) => Math.round(n).toLocaleString('en-US').replace('-', '−');
 	/** gold, from gold */
 	const goldOf = (/** @type {number} */ g) => fmt(g);
+	/** the valley's own clock for the time control: its date and hour, running at the speed you play */
+	const valleyClock = $derived.by(() => {
+		const d = summary?.date;
+		if (!d) return null;
+		const h = Math.floor(d.hour), m = Math.floor((d.hour - h) * 60);
+		return { day: `Y${d.year} · M${d.month} · D${d.day}`, hour: `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`, about: "The valley's clock: year, month, day and hour. It runs at the speed you play" };
+	});
 	/** the valley's date */
 	const when = (/** @type {{ year: number, month: number, day: number }} */ d) => `year ${d.year}, month ${d.month}, day ${d.day}`;
 	/** what a building's card says of its energy, a week */
@@ -287,7 +294,7 @@
 
 <div class="valley">
 	<div class="stage" bind:this={stage} role="application" aria-label="Sandbox 5: the valley. Drag to turn the map, scroll to zoom, click to select or build"></div>
-	<WorldBar title="avenCITY #S5" />
+	<WorldBar title="avenCITY #S5" clock={valleyClock} />
 	{#if summary}
 		<!-- three numbers for all your villages together, each known by its icon: cashflow (click it for your books),
 		     treasury and settlers -->

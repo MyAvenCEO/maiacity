@@ -1,6 +1,7 @@
 <!--
 	The time of a sandbox's sky, the same control in every world: Auto follows the in-game clock (shown as it runs);
-	Manual gives a slider over the day, starting at noon. It sets the one state every world's sky reads
+	Manual gives a slider over the day, starting at noon. A world with a clock of its own (one you can speed up) gives it
+	as `worldClock`, and Auto shows that instead. It sets the one state every world's sky reads
 	(./skyTime.svelte.js), so the choice holds from one sandbox to the next; every visit starts on Auto.
 
 	On a phone the two buttons answer as the finger comes down: no click to wait for, which a browser will not make
@@ -11,8 +12,9 @@
 	import { gameClock } from '../../../game/time';
 	import { automatic, manual, skyTime } from './skyTime.svelte.js';
 
-	/** @type {{ class?: string }} */
-	let { class: cls = '' } = $props();
+	/** `worldClock`: the world's own clock, its day and its hour (and what its title says), instead of the master clock */
+	/** @type {{ class?: string, worldClock?: { day: string, hour: string, about?: string } | null }} */
+	let { class: cls = '', worldClock = null } = $props();
 
 	let clock = $state(gameClock().label);
 	$effect(() => {
@@ -20,7 +22,8 @@
 		return () => clearInterval(timer);
 	});
 	/** the in-game day and its hour apart, so an upright phone can show the hour alone */
-	const [day, hour] = $derived(clock.split(' '));
+	const [day, hour] = $derived(worldClock ? [worldClock.day, worldClock.hour] : clock.split(' '));
+	const about = $derived(worldClock?.about ?? 'In-game time: a game hour passes every two real minutes');
 	const label = $derived(`${String(Math.floor(skyTime.hour) % 24).padStart(2, '0')}:${String(Math.round((skyTime.hour % 1) * 60) % 60).padStart(2, '0')}`);
 	/** the sun by day, the moon by night: what the hand-set hour is */
 	const daylight = $derived(skyTime.hour >= 6 && skyTime.hour < 19.5);
@@ -62,11 +65,11 @@
 
 <div class="sky-control {cls}" class:manual={!skyTime.auto} role="group" aria-label="Time of day">
 	<div class="modes">
-		<button bind:this={autoButton} class:on={skyTime.auto} aria-pressed={skyTime.auto} title="The sky follows the in-game clock: a game hour every two real minutes" onclick={() => click(true)}>Auto</button>
+		<button bind:this={autoButton} class:on={skyTime.auto} aria-pressed={skyTime.auto} title={worldClock ? 'The sky follows the in-game clock' : 'The sky follows the in-game clock: a game hour every two real minutes'} onclick={() => click(true)}>Auto</button>
 		<button bind:this={handButton} class:on={!skyTime.auto} aria-pressed={!skyTime.auto} title="Set the time of day by hand" onclick={() => click(false)}>Manual</button>
 	</div>
 	{#if skyTime.auto}
-		<span class="clock" title="In-game time: a game hour passes every two real minutes"><span class="day">{day}</span> {hour}</span>
+		<span class="clock" title={about}><span class="day">{day}</span> {hour}</span>
 	{:else}
 		<svg viewBox="0 0 24 24" aria-hidden="true">
 			{#if daylight}
