@@ -1,5 +1,5 @@
 /*
- * VERSIONS — every asset the explorers show (the plants, the actors, the 3D models, the worlds and sandboxes) carries a
+ * VERSIONS — every asset the explorers show (the plants, the actors, the assets, the buildings, the worlds and sandboxes) carries a
  * version number and its history, so a world can be anchored to the asset as it was when the world was made: Sandbox 5
  * plants `apple@1`, and an apple changed later is `apple@2` in the explorer while Sandbox 5 still grows `apple@1`.
  *

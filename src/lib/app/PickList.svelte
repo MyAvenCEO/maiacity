@@ -1,5 +1,5 @@
 <!--
-	The list down the left of a turntable (the 3D models, the actors, the plants): a narrow column of one-line rows, each
+	The list down the left of a turntable (the assets, the buildings, the actors, the plants): a narrow column of one-line rows, each
 	thing's name, its version and where it is from, and the chosen one opened to its note and its history (every version,
 	newest first: pick one to see it as it was — $lib/app/versions.js); grouped under headings if it is given `group`. The
 	thing itself, its measure and what it can do, is on the turntable beside it.

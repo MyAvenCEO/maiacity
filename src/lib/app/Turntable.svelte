@@ -1,5 +1,5 @@
 <!--
-	The one layout of every turntable of the app (the biomes, the 3D models, the actors, the plants), on a phone, a
+	The one layout of every turntable of the app (the biomes, the assets, the buildings, the actors, the plants), on a phone, a
 	tablet and a desktop alike: the list to pick from ($lib/app/PickList.svelte), the thing itself on its canvas, and
 	round it what the page gives it to say and do, in three places —
 

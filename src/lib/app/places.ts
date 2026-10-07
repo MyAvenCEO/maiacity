@@ -59,7 +59,8 @@ export const ADMIN: Place[] = [
 	{ href: `${base}/app/stories/`, label: 'Stories', icon: 'board', cap: 'content:admin', note: 'Every story, idea to published, and when it goes out' },
 	{ href: `${base}/app/studio/`, label: 'Studio', icon: 'studio', cap: 'media:admin', note: 'Films and sound' },
 	{ href: `${base}/app/worlds/`, label: 'Worlds', icon: 'play', cap: 'media:admin', note: 'Real places as 3D worlds, to walk and film' },
-	{ href: `${base}/app/models/`, label: '3D models', icon: 'media', cap: 'media:admin', note: 'The things the worlds are built from' },
+	{ href: `${base}/app/models/`, label: 'Assets', icon: 'media', cap: 'media:admin', note: 'The things the worlds are built from' },
+	{ href: `${base}/app/buildings/`, label: 'Buildings', icon: 'home', cap: 'media:admin', note: 'The tents, the domes and the containers, to walk inside' },
 	{ href: `${base}/app/actors/`, label: 'Actors', icon: 'user', cap: 'media:admin', note: 'The stand-in and the animals, rigged to move' },
 	{ href: `${base}/app/plants/`, label: 'Plants', icon: 'leaf', cap: 'media:admin', note: 'Grown from code, seed to fruit, roots and all' },
 	{ href: `${base}/app/biomes/`, label: 'Biomes', icon: 'leaf', cap: 'media:admin', note: 'The floors the worlds stand on, in layers that mix' },
@@ -78,10 +79,11 @@ export const released = (founder: Founder | null, p: Place) => p.release !== 'dr
 /** The game (or world) a path is in, if any: a draft one is closed to whoever is no admin. */
 export const gameAt = (path: string) =>
 	[...PLAY, ...WORLDS].find((p) => path.startsWith(p.href)) ??
-	(path.startsWith(`${base}/app/worlds/`) ? WORLDS_TILE : path.startsWith(`${base}/app/models/`) ? MODELS_TILE : path.startsWith(`${base}/app/actors/`) ? ACTORS_TILE : path.startsWith(`${base}/app/plants/`) ? PLANTS_TILE : path.startsWith(`${base}/app/biomes/`) ? BIOMES_TILE : path.startsWith(`${base}/app/skills/`) ? SKILLS_TILE : undefined);
-/** the Worlds grid, the 3D models, the Actors, the Plants and the Skills: only an admin's */
+	(path.startsWith(`${base}/app/worlds/`) ? WORLDS_TILE : path.startsWith(`${base}/app/models/`) ? MODELS_TILE : path.startsWith(`${base}/app/buildings/`) ? BUILDINGS_TILE : path.startsWith(`${base}/app/actors/`) ? ACTORS_TILE : path.startsWith(`${base}/app/plants/`) ? PLANTS_TILE : path.startsWith(`${base}/app/biomes/`) ? BIOMES_TILE : path.startsWith(`${base}/app/skills/`) ? SKILLS_TILE : undefined);
+/** the Worlds grid, the Assets, the Buildings, the Actors, the Plants and the Skills: only an admin's */
 const WORLDS_TILE: Place = { href: `${base}/app/worlds/`, label: 'Worlds', icon: 'play', release: 'draft' };
-const MODELS_TILE: Place = { href: `${base}/app/models/`, label: '3D models', icon: 'media', release: 'draft' };
+const MODELS_TILE: Place = { href: `${base}/app/models/`, label: 'Assets', icon: 'media', release: 'draft' };
+const BUILDINGS_TILE: Place = { href: `${base}/app/buildings/`, label: 'Buildings', icon: 'home', release: 'draft' };
 const ACTORS_TILE: Place = { href: `${base}/app/actors/`, label: 'Actors', icon: 'user', release: 'draft' };
 const PLANTS_TILE: Place = { href: `${base}/app/plants/`, label: 'Plants', icon: 'leaf', release: 'draft' };
 const BIOMES_TILE: Place = { href: `${base}/app/biomes/`, label: 'Biomes', icon: 'leaf', release: 'draft' };
@@ -93,7 +95,8 @@ export function placeOf(path: string): string {
 	if (rel === '/app/') return 'Dashboard';
 	if (rel.startsWith('/app/games/')) return PLAY.find((p) => path.startsWith(p.href))?.label ?? 'Games';
 	if (rel.startsWith('/app/worlds/')) return WORLDS.find((p) => path.startsWith(p.href))?.label ?? 'Worlds';
-	if (rel.startsWith('/app/models/')) return '3D models';
+	if (rel.startsWith('/app/models/')) return 'Assets';
+	if (rel.startsWith('/app/buildings/')) return 'Buildings';
 	if (rel.startsWith('/app/actors/')) return 'Actors';
 	if (rel.startsWith('/app/plants/')) return 'Plants';
 	if (rel.startsWith('/app/biomes/')) return 'Biomes';
