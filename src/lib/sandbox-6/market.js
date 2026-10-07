@@ -5,7 +5,7 @@
  * The world market. Everything the valley needs can be bought from the world beyond it, at real prices in euros: a
  * village center pays from its treasury and the load is in its storehouse at once. A gold is 1,000 €, so a HEART is a
  * euro. Food and water a village buys there by itself, and sells what its forests grow beyond two weeks put by
- * (./food.js); planks and stone you buy and sell (WORLD), or your orders do.
+ * (./food.js); planks and steel you buy and sell (WORLD), or your orders do.
  *
  * Trade routes. Village centers are joined by trade routes under the ground: carts run along them at twice a walker's
  * pace. Your own routes share wares between your villages; a route to another city's village center lets you trade
@@ -17,8 +17,8 @@
  * what piles up gets cheap. A city sells what it has spare to whoever pays most and buys what it lacks from whoever
  * asks least, among the cities it can reach. Coins are only how wares change hands: nothing in the score counts them.
  *
- * Needs. Everyone eats, drinks (in kg and litres a week, grown by the hexes and drawn from wells: ./food.js) and keeps
- * a home (planks and stone). Each need is met (0–1) as far as the village had what it took lately.
+ * Needs. Everyone eats, drinks (in kg and litres a week, grown by the hexes, caught by the roofs and drawn from wells:
+ * ./food.js) and keeps a home (planks and steel). Each need is met (0–1) as far as the village had what it took lately.
  *
  * Neighbours. Each makes some wares well and runs short of others, so they trade with each other (their two cities
  * start joined by a route) and with you once you join them, and now and then one asks you for what it lacks most: a
@@ -28,26 +28,26 @@ import { WARES } from './rules.js';
 import { DAY } from './food.js';
 
 /**
- * what a person's home needs, a minute, in planks and stone. A great dome holds 248 where a great house held 16, so a
+ * what a person's home needs, a minute, in planks and steel. A great dome holds 248 where a great house held 16, so a
  * person needs 16/248 of what they used to. Food and water are counted in kg and litres instead (./food.js).
  */
 const PER = 16 / 248;
-export const NEEDS = { plank: 0.022 * PER, stone: 0.014 * PER };
+export const NEEDS = { plank: 0.022 * PER, steel: 0.014 * PER };
 /** what a cart carries */
 export const CART = 8;
 /** minutes of needs a settlement likes to have put by */
 const PUT_BY = 10;
 /** a ware's usual price, in coins */
-export const BASE = { plank: 4, stone: 4 };
+export const BASE = { plank: 4, steel: 4 };
 /** euros in a gold: a HEART is a euro */
 export const EUR_PER_GOLD = 1000;
 /**
  * What the world market asks for a ware, in euros (HEARTs), and what one of it is: real prices, a load being 5 t.
- * Building timber is the average of sawn softwood across Europe, about 800 € a tonne.
+ * Building timber is the average of sawn softwood across Europe, about 800 € a tonne; structural steel, about 1,000 €.
  */
 export const WORLD = /** @type {Record<string, { eur: number, unit: string }>} */ ({
 	plank: { eur: 4000, unit: 'a load: 5 t of sawn building timber at 800 € a t' },
-	stone: { eur: 750, unit: 'a load: 5 t of building stone at 150 € a t' }
+	steel: { eur: 5000, unit: 'a load: 5 t of steel struts at 1,000 € a t' }
 });
 /** the wares that are traded (not coins: they are what is paid) */
 export const TRADED = Object.keys(BASE);
@@ -93,7 +93,7 @@ export function orderRule(w, pop) {
 	const lives = Math.ceil(need * pop * PUT_BY);
 	return {
 		keep: Math.max(12, lives),
-		upTo: w === 'plank' ? Math.max(40, lives) : w === 'stone' ? Math.max(30, lives) : Math.max(20, lives),
+		upTo: w === 'plank' ? Math.max(40, lives) : w === 'steel' ? Math.max(30, lives) : Math.max(20, lives),
 		above: base(w) * 0.5,
 		below: base(w) * 2.5
 	};
@@ -109,7 +109,7 @@ export function newMarket() {
 		// something put by of every need
 		p.stock.water = (p.stock.water ?? 0) + 6;
 		p.stock.plank = (p.stock.plank ?? 0) + 2;
-		p.stock.stone = (p.stock.stone ?? 0) + 2;
+		p.stock.steel = (p.stock.steel ?? 0) + 2;
 	}
 	return {
 		market: {
@@ -138,7 +138,7 @@ export function party(/** @type {string} */ name, /** @type {number} */ pop) {
 		/** whether its people went without food or water lately: its treasury could not pay for it */
 		hungry: false,
 		/** what is owed to each need of its homes: used later, if it can be */
-		owe: { plank: 0, stone: 0 },
+		owe: { plank: 0, steel: 0 },
 		/** what it trades lately, booked to its next week: € paid out and taken in @type {Record<string, number>} */
 		pend: {},
 		/** the food in its store, kg, and the water in its tanks, litres */
@@ -177,7 +177,7 @@ export const spareIn = (p, w) => Math.floor((p.stock[w] ?? 0) - keepOf(p, w));
 export const shortIn = (p, w) => Math.ceil(keepOf(p, w) - (p.stock[w] ?? 0) - (p.coming[w] ?? 0));
 
 /**
- * Needs met for a while: each settlement keeps its homes up with planks and stone (its food and water were met
+ * Needs met for a while: each settlement keeps its homes up with planks and steel (its food and water were met
  * already, in kg and litres). `take(ware)` takes one unit from a settlement's stores and says whether it could.
  * @param {any} p
  * @param {number} pop

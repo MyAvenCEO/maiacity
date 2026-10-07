@@ -166,7 +166,8 @@ export function growValley(seed) {
 	}
 
 	// your first village: open grass, level round each hex's middle and gently on out; two woods and a field of rocks
-	// grow over three of its hexes (and on past them), so a woodcutter and a quarry can start at home
+	// grow over three of its hexes (and on past them), and iron lies under the rocks, so a woodcutter and an iron mine
+	// can start at home
 	for (let i = 0; i < N; i++) {
 		if (!atHome(i)) continue;
 		const k = plan.plotOf[i], c = plan.centre[k], d = g.dist(i, c);
@@ -197,6 +198,9 @@ export function growValley(seed) {
 	};
 	for (const k of [outer[1], outer[2]]) patch(k, 0.62 * HS, 0.5, 34, () => ({ k: 'tree', g: 0.8 + rand() * 0.2 }));
 	patch(outer[4], 0.5 * HS, 0.3, 12, () => ({ k: 'rock', n: 5 + Math.floor(rand() * 3) }));
+	// the iron: round the first factory spot of the rocky hex, rich enough for a long while
+	const lode = plan.spots[outer[4]][1];
+	if (lode >= 0) for (const i of g.within(lode, 3)) if (terrain[i] === GRASS) (ore[i] = IRON), (amount[i] = 6 + Math.floor(rand() * 4));
 	for (const k of [outer[0], outer[3], outer[5]]) for (const i of hexNodes[k]) if (!plan.clear[i] && !obj[i] && rand() < 0.03) obj[i] = { k: 'tree', g: 0.75 + rand() * 0.25 };
 	const biome = biomes(g, plan, terrain, obj, ore);
 	return { W, H, terrain, height, ore, amount, fish, obj, hq: plan.spots[home.centre][0], villages: [], biome };
@@ -204,7 +208,7 @@ export function growValley(seed) {
 
 /**
  * What each hex is good for, from the land that grew on it: a lake where its middle is under water; iron where a
- * factory spot stands on rock with iron ore round it; stone where rocks lie; bare mountain where it is mostly rock;
+ * factory spot has iron ore round it; stone where rocks lie; bare mountain where it is mostly rock;
  * water on a shore (a lake's or the sea's); forest where trees stand thick; else meadow.
  * @param {import('./hex.js').Grid} g
  * @param {import('./plots.js').Plan} plan
@@ -222,7 +226,7 @@ export function biomes(g, plan, terrain, obj, ore) {
 		const hex = nodes[k];
 		const count = (/** @type {(j: number) => boolean} */ f) => hex.filter(f).length;
 		const [, ...factories] = plan.spots[k];
-		if (factories.some((j) => j >= 0 && terrain[j] === MOUNTAIN && g.within(j, 3).some((n) => terrain[n] === MOUNTAIN && ore[n] === IRON))) return 'iron';
+		if (factories.some((j) => j >= 0 && terrain[j] !== WATER && g.within(j, 3).some((n) => ore[n] === IRON))) return 'iron';
 		if (count((j) => obj[j]?.k === 'rock') >= 8) return 'stone';
 		if (count((j) => terrain[j] === MOUNTAIN) * 2 >= hex.length) return 'mountain';
 		if (count((j) => terrain[j] === WATER) >= 6) return 'water';
