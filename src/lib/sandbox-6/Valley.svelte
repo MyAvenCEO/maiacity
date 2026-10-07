@@ -25,7 +25,6 @@
 	let speed = $state(1);
 	let menuOpen = $state(false);
 	let group = $state(MENU[0].group);
-	let stockOpen = $state(true);
 	let goalsOpen = $state(false);
 	let narrow = $state(false);
 	/** @type {import('./game.js').Selection} */
@@ -48,9 +47,7 @@
 	let links = $state([]);
 	/** what a Connect button said when the route could not be dug */
 	let linkWhy = $state('');
-	/** the village the stock panel shows: the one last picked, or your first */
-	let vilNode = $state(-1);
-	/** @type {ReturnType<import('./sim.js').Sim['village']>} */
+	/** a village center of yours, as its card shows it: each need, its stock, what makes it @type {ReturnType<import('./sim.js').Sim['village']>} */
 	let vil = $state(null);
 	let seenMsg = 0;
 	/** @type {{ text: string, tone: string, node: number, key: number }[]} */
@@ -72,10 +69,9 @@
 		}
 		speed = game.speed;
 		const s = selected;
-		if (s && /** @type {any} */ (s).node >= 0) vilNode = /** @type {any} */ (s).node;
-		vil = sim.village(vilNode);
 		card = s?.k === 'building' ? sim.inspect(s.id) : null;
 		if (s?.k === 'building' && !card) select(null);
+		vil = card?.type === 'centre' && card.owner === PLAYER && card.stage === 'live' ? sim.village(card.node) : null;
 		links = card?.type === 'centre' && card.owner === PLAYER && card.stage === 'live' ? sim.links(card.id) : [];
 		if (s?.k === 'flag') {
 			const f = sim.state.flags[s.id];
@@ -143,7 +139,6 @@
 	let timer = 0;
 	onMount(() => {
 		narrow = matchMedia('(max-width: 720px)').matches;
-		stockOpen = !narrow;
 		requestAnimationFrame(async () => {
 			const { mountGame } = await import('./game.js');
 			if (!stage) return;
@@ -222,44 +217,12 @@
 	<!-- what the storehouses hold, and the goals -->
 	{#if summary}
 		<aside class="side">
-			{#if vil}
-				<section class="panel stock" aria-label="{vil.name}: stock and needs">
-					<button class="head" onclick={() => (stockOpen = !stockOpen)} aria-expanded={stockOpen}>
-						<span>{vil.name}</span>
-						<span class="people">{vil.pop}/{vil.beds} beds · wb {Math.round(vil.wb)} · {summary.stock.coin ?? 0} coins · {clock(summary.time)}</span>
-					</button>
-					{#if vil.villages.length > 1}
-						<div class="vtabs">
-							{#each vil.villages as x (x.node)}
-								<button class:on={x.node === vil.node} onclick={() => ((vilNode = x.node), refresh())} title={x.name}>{x.name.replace('Village ', 'V')}</button>
-							{/each}
-						</div>
-					{/if}
-					{#if stockOpen}
-						<ul class="wares wants">
-							{#each WARE_ORDER as w (w)}
-								{@const n = vil.need[w]}
-								<li class={n?.tone ?? ''} class:none={!n && !(vil.stock[w] ?? 0)} class:wide={!!n} title={n ? `${label(w)}: ${n.hint}` : label(w)}>
-									<i style:background={WARES[w].color}></i><span>{label(w)}</span><b>{Math.floor(vil.stock[w] ?? 0)}</b>
-									{#if n}<small>{n.hint}</small>{/if}
-								</li>
-							{/each}
-						</ul>
-						{#each vil.notes as x, k (k)}
-							<button class="note {x.tone}" onclick={() => game?.focus(x.node)}><i></i>{x.text}</button>
-						{/each}
-						<p class="people small">{summary.people} people in {summary.villages} {summary.villages === 1 ? 'village' : 'villages'} · {summary.carriers} on buses · {summary.workers} at work</p>
-					{/if}
-				</section>
-			{/if}
 			<section class="panel abundance" aria-label="The valley's abundance">
 				<div class="head">
 					<span>Abundance <span class="people">{summary.thriving}/{summary.allVillages} at {ABUNDANT}+{summary.held >= 0 ? ` · held ${clock(summary.held)}/${clock(HOLD)}` : ''}</span></span>
 					<span class="big {tone(summary.abundance)}">{Math.round(summary.abundance)}</span>
 				</div>
-				{#if founding}
-					<p class="people small">Villages: {founding}</p>
-				{/if}
+				<p class="people small">{summary.people} people · {summary.villages} {summary.villages === 1 ? 'village' : 'villages'} · {summary.stock.coin ?? 0} coins · {clock(summary.time)}{founding ? ` · ${founding}` : ''}</p>
 				<ul class="lives">
 					{#each market?.parties ?? [] as p (p.name)}
 						<li>
@@ -355,6 +318,22 @@
 						<li><i style:background={WARES[c.ware].color}></i>{label(c.ware)} <b>{c.have} of {c.need}</b>{#if c.coming}<em> · {c.coming} coming</em>{/if}</li>
 					{/each}
 				</ul>
+			{:else if vil}
+				<p class="label">{vil.pop} of {vil.beds} beds · wellbeing <b>{Math.round(vil.wb)}</b></p>
+				<ul class="wants">
+					{#each vil.needs as n (n.key)}
+						<li class={n.tone}>
+							<span class="k">{n.label}</span>
+							<span class="bar"><span class={n.sat >= 0.8 ? 'good' : n.sat >= 0.5 ? 'fair' : 'poor'} style:width="{Math.round(n.sat * 100)}%"></span></span>
+							<span class="w">{#each n.wares as w (w)}<span title={label(w)}><i style:background={WARES[w].color}></i>{Math.floor(vil.stock[w] ?? 0)}</span>{/each}</span>
+							{#if n.fix}<span class="fix" title="Build: {n.fix}">+ {n.fix}</span>{/if}
+						</li>
+					{/each}
+				</ul>
+				<p class="more">{#each vil.more as m (m.w)}<span class={m.tone} class:none={!m.n} title={m.tone ? `${label(m.w)}: out, build a toolmaker` : label(m.w)}><i style:background={WARES[m.w].color}></i>{label(m.w)} {m.n}</span>{/each}</p>
+				{#each vil.notes as x, k (k)}
+					<button class="note {x.tone}" onclick={() => game?.focus(x.node)}><i></i>{x.text}</button>
+				{/each}
 			{:else if card.party}
 				<p class="label">{card.party.pop} people{card.party.beds !== undefined ? ` in ${card.party.beds} beds` : ''} · wellbeing <b>{Math.round(card.party.wb)}</b>{card.owner !== PLAYER ? ` · ${Math.round(card.party.coins)} coins` : ''}</p>
 				<ul class="needs">
@@ -677,9 +656,6 @@
 		overflow: hidden;
 		text-overflow: ellipsis;
 	}
-	.wares li.none {
-		opacity: 0.4;
-	}
 	.wares.tight {
 		grid-template-columns: 1fr 1fr 1fr;
 	}
@@ -829,51 +805,67 @@
 		height: 0.6rem;
 		border-radius: 2px;
 	}
-	.stock .head > span:first-child {
-		white-space: nowrap;
+	.wants {
+		display: grid;
+		gap: 0.2rem;
+		margin: 0.4rem 0 0;
+		padding: 0;
+		list-style: none;
+		font-size: 0.74rem;
 	}
-	.stock .head .people {
-		text-align: right;
+	.wants li {
+		display: grid;
+		grid-template-columns: 3.2rem 1fr auto;
+		align-items: center;
+		gap: 0.1rem 0.45rem;
 	}
-	.vtabs {
+	.wants .bar {
+		height: 0.3rem;
+		margin: 0;
+	}
+	.wants .w {
+		display: inline-flex;
+		gap: 0.45rem;
+		font-variant-numeric: tabular-nums;
+	}
+	.wants .w span,
+	.more span {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.2rem;
+	}
+	.wants i,
+	.more i {
+		width: 0.5rem;
+		height: 0.5rem;
+		border-radius: 2px;
+	}
+	.wants .fix {
+		grid-column: 2 / -1;
+		font-size: 0.66rem;
+		line-height: 1.1;
+		opacity: 0.75;
+	}
+	.wants li.alert .k,
+	.wants li.alert .fix,
+	.more .alert {
+		color: #a3322a;
+		opacity: 1;
+	}
+	.wants li.todo .fix {
+		color: #8a6510;
+		opacity: 1;
+	}
+	.more {
 		display: flex;
 		flex-wrap: wrap;
-		gap: 0.2rem;
-		margin: 0.35rem 0 0;
+		gap: 0.15rem 0.7rem;
+		margin: 0.4rem 0 0;
+		font-size: 0.7rem;
+		opacity: 0.85;
 	}
-	.vtabs button {
-		padding: 0.05rem 0.4rem;
-		border: 1px solid rgba(0, 0, 0, 0.12);
-		border-radius: 999px;
-		background: none;
-		font-size: 0.68rem;
-		color: inherit;
-		cursor: pointer;
-	}
-	.vtabs button.on {
-		background: #2c3a2e;
-		border-color: #2c3a2e;
-		color: #fff;
-	}
-	.wares.wants li {
-		flex-wrap: wrap;
-	}
-	.wares.wants li.wide {
-		grid-column: 1 / -1;
-	}
-	.wares.wants small {
-		flex-basis: 100%;
-		padding-left: 0.95rem;
-		font-size: 0.66rem;
-		line-height: 1.2;
-	}
-	.wares.wants li.alert small,
-	.wares.wants li.alert b {
-		color: #a3322a;
-		font-weight: 600;
-	}
-	.wares.wants li.todo small {
-		color: #8a6510;
+	.more .none {
+		opacity: 0.45;
 	}
 	.note {
 		display: flex;
