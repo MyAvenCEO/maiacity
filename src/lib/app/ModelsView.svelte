@@ -186,7 +186,7 @@
 			const e = (dome = h.embedded);
 			e.setHour(13);
 			const root = e.root;
-			// in by the north door, or the south where there is none (the large dome's fish tank is on its north)
+			// in by the north door, or the south where there is none (the large dome's pond is on its north)
 			const door = doorsOf(kind).includes(0) ? 0 : Math.PI;
 			const out = R + Math.max(2, R * 0.12);
 			root.userData.tick = (/** @type {number} */ t) => e.update(t);
