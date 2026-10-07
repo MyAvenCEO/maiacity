@@ -16,7 +16,7 @@
  *   · every village eats, drinks and keeps its homes, and the valley's abundance follows how well they all live.
  */
 import { ABUNDANT, BUILDINGS, FOOD, GOALS, GRASS, HOLD, HOUSE_BEDS, HOUSE_UP, IRON, MOUNTAIN, START, WARES, WATER, holdsLand } from './rules.js';
-import { CART, NEEDS, NEIGHBOURS, TRADED, abundance, keepOf, live, make, newMarket, orderRule, party, priceIn, request, shortIn, spareIn } from './market.js';
+import { CART, NEEDS, NEIGHBOURS, TRADED, abundance, keepOf, live, make, newMarket, orderRule, party, priceIn, request, shortIn, spareIn, variety } from './market.js';
 import { SE, findPath, makeGrid } from './hex.js';
 import { makePlan } from './plots.js';
 import { growValley } from './map.js';
@@ -404,14 +404,78 @@ export function createSim(st) {
 		if (h && h.owner === u.owner) {
 			h.settlers++;
 			if (u.ware && isWarehouse(h)) h.stock[u.ware] = (h.stock[u.ware] ?? 0) + 1;
+			// a worker sent home brings its tools back
+			if (u.tool && isWarehouse(h)) h.stock.tools = (h.stock.tools ?? 0) + 1;
 		}
 		removeUnit(u);
 	}
 
-	/** settlers become carriers, builders and workers */
+	/** a city of under eight people: one builder at a time, carrying what it builds with */
+	let smallAt = -1, smallWas = false;
+	const small = () => (smallAt === st.time ? smallWas : ((smallAt = st.time), (smallWas = yourPeople() < 8)));
+	/** whether a site has what it is built of: at the site, or (a small city's builder brings it) in a store */
+	function ready(/** @type {any} */ b, /** @type {boolean} */ few) {
+		const left = /** @type {[string, number][]} */ (Object.keys(b.cost).map((w) => [w, b.cost[w] - (b.got[w] ?? 0) - (b.used[w] ?? 0)]));
+		if (left.every(([, n]) => n <= 0)) return true;
+		const wh = few && nearestWarehouse(b.flag, () => true);
+		return !!wh && left.every(([w, n]) => (wh.stock[w] ?? 0) >= n);
+	}
+	/** settlers become builders, carriers and workers, in that order: with few people, building comes first */
 	function people() {
-		for (const r of all(st.roads)) {
+		// while the city is small, one builder at a time, so someone is left to carry
+		let builders = all(st.units).filter((u) => u.owner === PLAYER && u.kind === 'builder').length;
+		const few = small();
+		for (const b of all(st.buildings)) {
+			if (b.owner !== PLAYER || b.stage !== 'site' || b.builder || b.type === 'centre') continue;
+			if (few && builders >= 1) {
+				b.status = 'Waiting for a builder';
+				continue;
+			}
+			// a builder sets out once it can build: its planks and stone are at the site (or, in a small city, in store
+			// for it to bring), so nobody stands idle at a site while the woodcutter has no one
+			if (!ready(b, few)) continue;
+			const wh = nearestWarehouse(b.flag, (w) => w.settlers > 0);
+			const walk = wh && roadWalk(wh.flag, b.flag);
+			if (!wh || !walk) {
+				b.status = wh ? 'Not connected by road' : 'No settlers free';
+				continue;
+			}
+			wh.settlers--;
+			const u = spawn('builder', PLAYER, [wh.node, ...walk, b.node], 'b-go', { bld: b.id, vil: villageAt(wh.node) });
+			b.builder = u.id;
+			b.status = 'A builder is on the way';
+			builders++;
+			// in a small city the builder brings what the site needs, so no road waits on a carrier nobody can spare
+			if (few)
+				for (const [w, need] of Object.entries(b.cost)) {
+					const n = Math.min(need - (b.got[w] ?? 0) - (b.inc[w] ?? 0), Math.floor(wh.stock[w] ?? 0));
+					if (n <= 0) continue;
+					wh.stock[w] -= n;
+					b.got[w] = (b.got[w] ?? 0) + n;
+				}
+		}
+		// a site waits for a builder, or a path for its bus, and nobody is free: a worker with nothing to do (its goods
+		// are stocked up, or its land has nothing left) goes home to take it
+		const waiting = all(st.buildings).some((x) => x.owner === PLAYER && x.stage === 'site' && !x.builder && x.type !== 'centre' && ready(x, few));
+		// at most half the people drive the buses, so the other half can work (food first)
+		let drivers = all(st.units).filter((u) => u.owner === PLAYER && u.kind === 'carrier').length;
+		const most = Math.max(2, Math.ceil(yourPeople() / 2));
+		const unmanned = all(st.roads).some((r) => r.owner === PLAYER && !r.carrier && (drivers < most || (st.flags[r.a]?.wares.length ?? 0) + (st.flags[r.b]?.wares.length ?? 0) > 0));
+		if ((unmanned || (waiting && !(few && builders >= 1))) && !warehouses().some((w) => w.owner === PLAYER && w.settlers > 0)) {
+			const idle = all(st.buildings).find((x) => x.owner === PLAYER && x.stage === 'live' && st.units[x.worker]?.job === 'w-in' && /^Resting|full|^No |growing/.test(x.status ?? ''));
+			if (idle) {
+				const u = st.units[idle.worker];
+				idle.worker = 0;
+				idle.status = 'Its worker went to build';
+				u.bld = 0;
+				goHome(u);
+			}
+		}
+		// a path with wares waiting at its ends gets its bus first, whatever the count
+		const busy = (/** @type {any} */ r) => (st.flags[r.a]?.wares.length ?? 0) + (st.flags[r.b]?.wares.length ?? 0);
+		for (const r of all(st.roads).sort((x, y) => busy(y) - busy(x))) {
 			if (r.carrier || r.owner !== PLAYER) continue;
+			if (drivers >= most && !busy(r)) break;
 			const wh = nearestWarehouse(r.a, (w) => w.settlers > 0);
 			const walk = wh && roadWalk(wh.flag, r.a);
 			if (!wh || !walk) continue;
@@ -419,23 +483,15 @@ export function createSim(st) {
 			const u = spawn('carrier', PLAYER, [wh.node, ...walk], 'c-go', { road: r.id, vil: villageAt(wh.node) });
 			u.speed = WALK;
 			r.carrier = u.id;
+			drivers++;
 		}
 		for (const b of all(st.buildings)) {
 			if (b.owner !== PLAYER) continue;
 			const t = T(b);
-			if (b.stage === 'site' && !b.builder && b.type !== 'centre') {
-				const wh = nearestWarehouse(b.flag, (w) => w.settlers > 0);
-				const walk = wh && roadWalk(wh.flag, b.flag);
-				if (!wh || !walk) {
-					b.status = wh ? 'Not connected by road' : 'No settlers free';
-					continue;
-				}
-				wh.settlers--;
-				const u = spawn('builder', PLAYER, [wh.node, ...walk, b.node], 'b-go', { bld: b.id, vil: villageAt(wh.node) });
-				b.builder = u.id;
-				b.status = 'A builder is on the way';
-			} else if (b.stage === 'live' && t.worker && !b.worker) {
-				const wh = nearestWarehouse(b.flag, (w) => w.settlers > 0 && (!t.tools || (w.stock.tools ?? 0) > 0));
+			if (b.stage === 'live' && t.worker && !b.worker) {
+				// the last free settler is kept for a building site that waits for its builder
+				const keep = waiting ? 1 : 0;
+				const wh = nearestWarehouse(b.flag, (w) => w.settlers > keep && (!t.tools || (w.stock.tools ?? 0) > 0));
 				const walk = wh && roadWalk(wh.flag, b.flag);
 				if (!wh || !walk) {
 					const any = nearestWarehouse(b.flag, () => true);
@@ -449,7 +505,7 @@ export function createSim(st) {
 				}
 				wh.settlers--;
 				if (t.tools) wh.stock.tools--;
-				const u = spawn('worker', PLAYER, [wh.node, ...walk, b.node], 'w-go', { bld: b.id, vil: villageAt(wh.node) });
+				const u = spawn('worker', PLAYER, [wh.node, ...walk, b.node], 'w-go', { bld: b.id, vil: villageAt(wh.node), tool: !!t.tools });
 				b.worker = u.id;
 				b.status = `A ${t.worker?.toLowerCase()} is on the way`;
 			}
@@ -460,6 +516,8 @@ export function createSim(st) {
 	function requestsOf(/** @type {any} */ b) {
 		const t = T(b);
 		if (b.stage === 'site' && b.type === 'centre') return [];
+		// a small city's builders bring their own planks and stone (see people)
+		if (b.stage === 'site' && b.owner === PLAYER && small()) return [];
 		if (b.stage === 'site') return Object.keys(b.cost).map((w) => ({ types: [w], slot: -1, n: b.cost[w] - b.used[w] - b.got[w] - b.inc[w] }));
 		if (b.stage !== 'live') return [];
 		if (b.paused || !b.worker) return [];
@@ -772,7 +830,7 @@ export function createSim(st) {
 					if (t.kind === 'mine') b.deposit--;
 				}
 			}
-			if (b.out > 0 && !flushOutput(b, /** @type {string} */ (t.out))) b.status = 'Its flag is full';
+			if (b.out > 0 && !flushOutput(b, /** @type {string} */ (t.out))) b.status = 'Its stop is full';
 			else if (b.timer > 0) b.status = 'Working';
 			else if (b.paused) b.status = 'Paused';
 			else if (t.kind === 'mine' && b.deposit <= 0) b.status = 'The vein is used up';
@@ -789,7 +847,7 @@ export function createSim(st) {
 			}
 		} else if (u.inside) {
 			// a gatherer: rest, then out into the land
-			if (b.out > 0 && !flushOutput(b, /** @type {string} */ (t.out))) b.status = 'Its flag is full';
+			if (b.out > 0 && !flushOutput(b, /** @type {string} */ (t.out))) b.status = 'Its stop is full';
 			else if (b.timer > 0) b.timer -= dt;
 			else if (b.paused) b.status = 'Paused';
 			else if (t.out && stocked(t.out) >= ENOUGH) {
@@ -1246,6 +1304,61 @@ export function createSim(st) {
 						makeBuilding(type, spot, k, true).since = -1;
 					}
 				});
+				cityPaths(k, c, v);
+			}
+		}
+	}
+
+	/** lay a path: trees felled, a stop at each end, and a stop wherever it meets another path or crosses a settlement's
+	 * middle, so paths join each other there */
+	function layPath(/** @type {number[]} */ path, /** @type {number} */ owner) {
+		for (const j of path) if (st.obj[j]?.k === 'tree') (st.obj[j] = null), st.objV++;
+		const cut = path.map((j, x) => x === 0 || x === path.length - 1 || !!flagAt(j) || !!st.road[j] || plan.centre[plan.plotOf[j]] === j);
+		for (const [x, j] of path.entries()) if (cut[x] && !flagAt(j)) makeFlag(j, owner);
+		/** @type {any} */
+		let r = null;
+		for (let x = 0, y = 1; y < path.length; y++)
+			if (cut[y]) {
+				const seg = path.slice(x, y + 1);
+				const fa = flagAt(seg[0]), fb = flagAt(seg[seg.length - 1]);
+				if (fa && fb && !all(st.roads).some((q) => (q.a === fa.id && q.b === fb.id) || (q.a === fb.id && q.b === fa.id))) r = makeRoad(seg, owner);
+				x = y;
+			}
+		return r;
+	}
+	/** a neighbour's walking paths, laid as yours are: from the middle of each settlement that has a building, hex by
+	 * hex to its village center, over the free nodes between the spots */
+	function cityPaths(/** @type {number} */ k, /** @type {any} */ c, /** @type {number} */ v) {
+		const vill = plan.villages[v];
+		const middle = vill.centre;
+		const stop = (/** @type {number} */ plot) => (plot === middle ? st.flags[c.flag]?.node ?? -1 : plan.centre[plot]);
+		const linked = (/** @type {any} */ fa, /** @type {any} */ fb) => all(st.roads).some((r) => (r.a === fa.id && r.b === fb.id) || (r.a === fb.id && r.b === fa.id));
+		// every hex of the village, by its steps to the middle
+		/** @type {Map<number, number>} */
+		const toward = new Map([[middle, -1]]);
+		const open = [middle];
+		while (open.length) {
+			const p = /** @type {number} */ (open.shift());
+			for (const q of nearPlots(p)) if (!toward.has(q) && vill.plots.includes(q)) (toward.set(q, p), open.push(q));
+		}
+		for (const plot of vill.plots) {
+			if (plot === middle || !plan.spots[plot].some((n) => n >= 0 && buildingAt(n)?.owner === k)) continue;
+			for (let p = plot, q = toward.get(plot) ?? -1; q >= 0; p = q, q = toward.get(q) ?? -1) {
+				const a = stop(p), b = stop(q);
+				if (a < 0 || b < 0 || st.terrain[a] === WATER || st.terrain[b] === WATER) break;
+				for (const n of [a, b]) if (!flagAt(n)) {
+					if (st.obj[n] && st.obj[n].k !== 'tree') break;
+					st.obj[n] = null;
+					makeFlag(n, k);
+				}
+				const fa = flagAt(a), fb = flagAt(b);
+				if (!fa || !fb) break;
+				if (linked(fa, fb)) continue;
+				const meet = (/** @type {number} */ j) => !st.obj[j] || st.obj[j].k === 'tree' || (st.obj[j].k === 'flag' && flagAt(j)?.owner === k);
+				const ok = (/** @type {number} */ j) => (plan.plotOf[j] === p || plan.plotOf[j] === q) && (plan.spotOf[j] < 0 || plan.plotOf[j] === middle) && st.terrain[j] !== WATER && meet(j) && (!st.road[j] || st.roads[st.road[j]]?.owner === k);
+				const path = findPath(g, a, b, ok, 400);
+				if (!path) break;
+				layPath(path, k);
 			}
 		}
 	}
@@ -1374,6 +1487,58 @@ export function createSim(st) {
 			)
 		];
 	}
+	/**
+	 * What to work towards next, the most pressing first: what your villages lack and how to make it, beds, sites that
+	 * wait, the next goal, and what the win still needs (villages, the neighbours' shortfalls, the hold).
+	 * @returns {{ tone: 'alert' | 'todo' | 'info' | 'good', text: string, node: number }[]}
+	 */
+	function needs() {
+		/** @type {{ tone: 'alert' | 'todo' | 'info' | 'good', text: string, node: number }[]} */
+		const out = [];
+		const add = (/** @type {'alert' | 'todo' | 'info' | 'good'} */ tone, /** @type {string} */ text, node = -1) => out.push({ tone, text, node });
+		const mine = myCentres();
+		const stock = (/** @type {string} */ w) => mine.reduce((n, c) => n + (c.stock[w] ?? 0), 0);
+		// your villages: the need that pulls each down most, and what makes it
+		for (const { v, c, p } of yourVillages()) {
+			const pop = villagePeople(v), bed = bedsIn(v), cap = capOf(v);
+			if (pop > 0) {
+				const s = p.sat;
+				if (s.food < 0.8) add('alert', `${p.name} is going hungry: build a fishery by the water, or a farm and a bakery`, c.node);
+				else if (s.water < 0.8) add('alert', `${p.name} is thirsty: build a well`, c.node);
+				else if (s.plank < 0.8) add('alert', `${p.name} needs planks for its homes: a woodcutter and a forester, or buy planks`, c.node);
+				else if (s.stone < 0.8) add('alert', `${p.name} needs stone for its homes: a quarry, or buy stone`, c.node);
+				else if (variety(p) < 0.5) add('todo', p.mix.fish < p.mix.bread ? `${p.name} eats only bread: build a fishery, or buy fish` : `${p.name} eats only fish: build a farm and a bakery, or buy bread`, c.node);
+				else if (p.reserve < 0.45) add('todo', `${p.name} has little put by: make more food and water than it eats`, c.node);
+			}
+			if (pop >= bed && bed < cap) add('todo', `${p.name} has no free bed (${bed} of ${cap}): enlarge a house or build one`, c.node);
+		}
+		// building sites nobody can reach, and work that waits for tools
+		const cut = all(st.buildings).find((b) => b.owner === PLAYER && b.stage === 'site' && b.status === 'Not connected by road');
+		if (cut) add('alert', `A ${T(cut).label.toLowerCase()} site is not joined to a village center by a path`, cut.node);
+		if (all(st.buildings).some((b) => b.owner === PLAYER && /tools/.test(b.status ?? ''))) add('alert', 'Out of tools: build a toolmaker, or buy tools', -1);
+		if (stock('plank') < 6) add('todo', `Planks run low (${Math.floor(stock('plank'))}): build a woodcutter`, -1);
+		else if (stock('stone') < 4) add('todo', `Stone runs low (${Math.floor(stock('stone'))}): build a quarry by rocks`, -1);
+		// the next goal on the way
+		const next = GOALS.find((x) => x.id !== 'abundance' && !st.goals[x.id]);
+		if (next) {
+			const have = next.ware ? progress(next.ware) : next.id === 'trade' ? st.market.sold + st.market.bought : undefined;
+			add('todo', `Next goal: ${next.label}${next.n ? ` (${Math.min(Math.floor(have ?? 0), next.n)} of ${next.n})` : ''}`, -1);
+		}
+		// the win: five villages for every city, every village full and at 80+, held
+		if (mine.length < CITY_VILLAGES) add('info', `You: ${mine.length} of ${CITY_VILLAGES} villages (found the next beside yours)`, -1);
+		const joined = (/** @type {number} */ k) => !!cityCentre(k) && mine.some((c) => reach(c.id).has(cityCentre(k).id));
+		for (let k = 1; k < st.parties.length; k++) {
+			const p = st.parties[k];
+			const w = TRADED.filter((x) => shortIn(p, x) >= 1 && keepOf(p, x) > 0).sort((a, b) => shortIn(p, b) / keepOf(p, b) - shortIn(p, a) / keepOf(p, a))[0];
+			const n = cityVillages(k).length;
+			if (p.wb < ABUNDANT && w) add('info', `${p.name} lives at ${Math.round(p.wb)} and lacks ${WARES[w].label.toLowerCase()}: ${joined(k) ? 'sell it to them in the Market' : 'join them by a trade route (Connect on your village center), then sell it'}`, cityCentre(k)?.node ?? -1);
+			else if (n < CITY_VILLAGES) add('info', `${p.name}: ${n} of ${CITY_VILLAGES} villages (it founds the next when all are full)`, cityCentre(k)?.node ?? -1);
+		}
+		const m = st.market;
+		if (m.since >= 0) add('good', `Every village is full and at ${ABUNDANT}+: hold it, ${Math.ceil((HOLD - (st.time - m.since)) / 60)} min to go`, -1);
+		const rank = { alert: 0, good: 1, todo: 2, info: 3 };
+		return out.sort((a, b) => rank[a.tone] - rank[b.tone]).slice(0, 6);
+	}
 	/** a ware's price across the valley: what the neighbours would pay, on average */
 	const valleyPrice = (/** @type {string} */ w) => st.parties.slice(1).reduce((/** @type {number} */ s, /** @type {any} */ p) => s + priceIn(p, w), 0) / Math.max(1, st.parties.length - 1);
 
@@ -1491,9 +1656,10 @@ export function createSim(st) {
 			for (let k = 1; k < st.parties.length; k++) {
 				const p = st.parties[k];
 				// a family more for each of its villages; once every village is full, it founds the next
-				const cap = cityCap(k), n = cityVillages(k).length;
+				// and the valley grows together: a neighbour stays within a village (96) of your people
+				const cap = Math.min(cityCap(k), 96 + yourPeople()), n = cityVillages(k).length;
 				if (p.wb >= 72 && p.reserve >= 0.45 && p.pop < cap) p.pop = Math.min(cap, p.pop + 2 * n);
-				else if (p.wb >= 72 && p.reserve >= 0.45 && p.pop >= cap && n < CITY_VILLAGES) cityFounds(k);
+				else if (p.wb >= 72 && p.reserve >= 0.45 && p.pop >= cityCap(k) && n < CITY_VILLAGES) cityFounds(k);
 				else if (p.wb < 40 && p.pop > 10 && rand() < 0.2) {
 					p.pop--;
 					if (rand() < 0.3) say(`${p.name} is struggling: a family left the valley`, cityCentre(k)?.node ?? -1, 'alert');
@@ -1555,7 +1721,7 @@ export function createSim(st) {
 			return '';
 		}
 		if (middle) return 'The village center fills the middle of the village';
-		if (spot < 0) return 'Buildings stand round a settlement’s flag: pick a marked spot';
+		if (spot < 0) return 'Buildings stand round the middle of a settlement: pick a marked spot';
 		if (type === 'house' && spot !== 0) return 'A house stands on its settlement’s house spot';
 		if (type !== 'house' && spot === 0) return 'This spot is for the settlement’s house';
 		if (vo !== PLAYER) return 'Outside your city: found a village center first';
@@ -1569,10 +1735,10 @@ export function createSim(st) {
 		if (st.road[n]) return 'A road runs here';
 		if (t.on === 'mountain' ? st.terrain[n] !== MOUNTAIN : st.terrain[n] !== GRASS) return t.on === 'mountain' ? 'Mines stand on mountains' : 'Needs open grass';
 		const c = plan.centre[plan.plotOf[n]];
-		if (st.terrain[c] === WATER) return 'Its flag would stand in water';
+		if (st.terrain[c] === WATER) return 'The middle of its settlement is water';
 		const f = flagAt(c);
 		if (f && f.owner !== PLAYER) return 'Not yours';
-		if (st.road[c]) return 'A road runs where its flag goes';
+		if (st.road[c]) return 'A path runs where its stop goes';
 		if (type === 'fishery' && !g.within(n, 4).some((j) => st.terrain[j] === WATER)) return 'Needs water nearby';
 		if (t.kind === 'mine' && depositAt(n) <= 0) return 'No iron ore in this rock';
 		return '';
@@ -1594,39 +1760,91 @@ export function createSim(st) {
 		const end = flagAt(to);
 		if (end ? end.owner !== PLAYER : canFlag(to)) return null;
 		if (villageAt(to) !== villageAt(from)) return null;
-		// roads keep to the lanes between settlements where they can (a building spot only when there is no other way), never over another settlement's middle
-		// and above ground, roads stay within their village: villages are joined by trade routes below; a house's spot is kept free for it
-		const v = villageAt(from);
-		const open = (/** @type {number} */ j) => st.owner[j] === PLAYER && villageAt(j) === v && st.terrain[j] !== WATER && (!st.obj[j] || st.obj[j].k === 'tree') && !st.road[j] && plan.centre[plan.plotOf[j]] !== j && (plan.spotOf[j] !== 0 || st.terrain[j] !== GRASS);
-		// a tree in the way is felled for the road, if there is no way round
-		const path = findPath(g, from, to, open, 2500, (j) => (plan.spotOf[j] >= 0 ? 3 : 0) + (st.obj[j]?.k === 'tree' ? 4 : 0));
+		// walking paths run from the middle of one settlement's hex to the middle of the next, over the three free nodes
+		// between its building spots: never over a spot, so a path never takes a house's or a factory's place (only the
+		// village center's own hex has none). Above ground, paths stay within their village: villages are joined below.
+		const v = villageAt(from), pa = plan.plotOf[from], pb = plan.plotOf[to];
+		const free = (/** @type {number} */ j) => plan.spotOf[j] < 0 || plan.villages[v].centre === plan.plotOf[j];
+		// only through the two hexes it joins: one path from one middle to the next, never along the edge of a third
+		const mine = (/** @type {number} */ j) => plan.plotOf[j] === pa || plan.plotOf[j] === pb;
+		// it may meet another path on the way (two paths share the free node between three hexes): they join there
+		const meet = (/** @type {number} */ j) => !st.obj[j] || st.obj[j].k === 'tree' || (st.obj[j].k === 'flag' && flagAt(j)?.owner === PLAYER);
+		const open = (/** @type {number} */ j) => mine(j) && st.owner[j] === PLAYER && villageAt(j) === v && st.terrain[j] !== WATER && meet(j) && free(j);
+		// a tree in the way is felled for the path, if there is no way round
+		const path = findPath(g, from, to, open, 2500, (j) => (st.obj[j]?.k === 'tree' ? 4 : 0));
 		return path && path.length <= 40 ? path : null;
 	}
 	function buildRoad(/** @type {number} */ from, /** @type {number} */ to) {
 		const path = planRoad(from, to);
-		if (!path) return null;
-		for (const j of path) if (st.obj[j]?.k === 'tree') (st.obj[j] = null), st.objV++;
-		if (!flagAt(to)) makeFlag(to, PLAYER);
-		return makeRoad(path, PLAYER);
+		return path ? layPath(path, PLAYER) : null;
 	}
-	/** a road from a flag to the nearest flag (or road) joined to the headquarters */
+	/** where a settlement's paths meet: the middle of its hex (beside the village center, in the village's middle hex) */
+	const stopOf = (/** @type {number} */ plot) => {
+		const c = plan.centre[plot];
+		const b = buildingAt(c);
+		return b && (b.type === 'centre' || b.type === 'village') ? st.flags[b.flag]?.node ?? -1 : c;
+	};
+	/** the hexes next to a settlement's */
+	const nearPlots = (/** @type {number} */ plot) => {
+		/** @type {number[]} */
+		const out = [];
+		for (const [k, c] of plan.centre.entries()) if (k !== plot && g.dist(c, plan.centre[plot]) === 3) out.push(k);
+		return out;
+	};
+	/** join a settlement's middle to its village center: hex by hex, the fewest paths, a stop in every hex it crosses */
 	function autoRoad(/** @type {number} */ flagId) {
 		const f = st.flags[flagId];
 		const hq = f && myCentres().find((c) => villageAt(c.node) === villageAt(f.node));
 		if (!f || !hq) return null;
 		const joined = route(hq.flag);
 		if (joined.has(f.id)) return null;
-		/** @type {number[]} */
-		const ends = [];
-		for (const x of all(st.flags)) if (x.id !== f.id && x.owner === PLAYER && joined.has(x.id)) ends.push(x.node);
-		for (const r of all(st.roads)) if (joined.has(r.a)) for (let k = 1; k < r.path.length - 1; k++) if (!canFlag(r.path[k])) ends.push(r.path[k]);
-		ends.sort((a, b) => g.dist(f.node, a) - g.dist(f.node, b));
-		let best = null;
-		for (const e of ends.slice(0, 10)) {
-			const p = planRoad(f.node, e);
-			if (p && (!best || p.length < best.length)) best = p;
+		const v = villageAt(f.node);
+		const start = plan.plotOf[f.node];
+		/** @type {Map<number, number>} */
+		const prev = new Map([[start, -1]]);
+		const open = [start];
+		let goal = -1;
+		while (open.length && goal < 0) {
+			const p = /** @type {number} */ (open.shift());
+			for (const q of nearPlots(p)) {
+				if (prev.has(q) || plan.villageOf[q] !== v) continue;
+				const a = stopOf(p), b = stopOf(q);
+				if (a < 0 || b < 0) continue;
+				const fa = flagAt(a), fb = flagAt(b);
+				// already joined by a path, or a path could run
+				const linked = fa && fb && all(st.roads).some((r) => (r.a === fa.id && r.b === fb.id) || (r.a === fb.id && r.b === fa.id));
+				if (!linked && !planBetween(a, b)) continue;
+				prev.set(q, p);
+				if (fb && joined.has(fb.id)) {
+					goal = q;
+					break;
+				}
+				open.push(q);
+			}
 		}
-		return best ? buildRoad(best[0], best[best.length - 1]) : null;
+		if (goal < 0) return null;
+		/** @type {any} */
+		let last = null;
+		for (let q = goal; prev.get(q) !== -1; q = /** @type {number} */ (prev.get(q))) {
+			const p = /** @type {number} */ (prev.get(q));
+			const a = stopOf(p), b = stopOf(q);
+			if (!flagAt(a)) makeFlag(a, PLAYER);
+			const fa = flagAt(a), fb = flagAt(b);
+			if (fa && fb && all(st.roads).some((r) => (r.a === fa.id && r.b === fb.id) || (r.a === fb.id && r.b === fa.id))) continue;
+			last = buildRoad(a, b) ?? last;
+		}
+		return last;
+	}
+	/** the way for a path between two stops, as planRoad finds it, whether or not either has its stop yet */
+	function planBetween(/** @type {number} */ a, /** @type {number} */ b) {
+		if (flagAt(a)) return planRoad(a, b);
+		if (st.obj[a] || st.road[a]) return null;
+		st.obj[a] = { k: 'flag', id: -1 };
+		st.flags[-1] = { id: -1, node: a, owner: PLAYER, wares: [], bld: 0 };
+		const p = planRoad(a, b);
+		delete st.flags[-1];
+		st.obj[a] = null;
+		return p;
 	}
 
 	return {
@@ -1662,7 +1880,7 @@ export function createSim(st) {
 			territory();
 			for (const b of all(st.buildings)) if (b.type === 'house') autoRoad(b.flag);
 			neighbourTowns();
-			say('Welcome to your city. Every building stands round a settlement’s flag: a house and two factories. Build a woodcutter and a quarry beside a house, and join them to the village center by road.', hq.node);
+			say('Welcome to your city: a village center and one house of two. Every settlement is a hex: a house and two factories round its middle, joined to the next by a path. Build homes beside the center first, then a woodcutter and a quarry.', hq.node);
 		},
 		canBuild,
 		canFlag,
@@ -1836,6 +2054,8 @@ export function createSim(st) {
 				/** seconds the valley has been abundant, or -1 */
 				held: m.since >= 0 ? st.time - m.since : -1,
 				allVillages: m.villages ?? 0,
+				/** what to work towards next, the most pressing first */
+				needs: needs(),
 				/** how many villages each city has, against the five the valley needs */
 				cities: (m.cities ?? []).map((/** @type {any} */ c) => ({ ...c })),
 				need: CITY_VILLAGES,

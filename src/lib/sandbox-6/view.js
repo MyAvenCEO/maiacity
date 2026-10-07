@@ -114,8 +114,6 @@ export function createView(scene, sim) {
 	const rocks = inst(new THREE.DodecahedronGeometry(0.42, 0).translate(0, 0.2, 0), mat('#a19d95'), g.N);
 	const fields = inst(new THREE.CylinderGeometry(0.95, 0.95, 0.12, 6), white, g.N, false);
 	const posts = inst(new THREE.CylinderGeometry(0.07, 0.09, 0.5, 5).translate(0, 0.25, 0), white, g.N, false);
-	const poles = inst(new THREE.CylinderGeometry(0.03, 0.03, 1.0, 5).translate(0, 0.5, 0), mat('#5a3d27'), 2000);
-	const cloths = inst(new THREE.BoxGeometry(0.34, 0.22, 0.02).translate(0.17, 0.88, 0), white, 2000);
 	const wares = inst(new THREE.BoxGeometry(0.2, 0.17, 0.2), white, 4000);
 	// everyone travels by bus: a small driverless pod, the same both ways round (it never turns, it just sets off the
 	// other way), its body in the colour of its job, a band of glass round it, a lamp at either end and its load on the roof
@@ -126,6 +124,11 @@ export function createView(scene, sim) {
 	const lamps = inst(lampGeo.clone().translate(0, 0.18, 0.29), keep(new THREE.MeshBasicMaterial({ color: '#fff4c8' })), BUSES, false);
 	const lampsBack = inst(lampGeo.translate(0, 0.18, -0.29), keep(new THREE.MeshBasicMaterial({ color: '#fff4c8' })), BUSES, false);
 	const loads = inst(new THREE.BoxGeometry(0.2, 0.12, 0.26).translate(0, 0.4, 0), white, BUSES);
+	// and four wheels under it
+	const tyre = keep(new THREE.MeshStandardMaterial({ color: '#22262a', roughness: 0.9 }));
+	const wheels = [
+		[-1, -1], [1, -1], [-1, 1], [1, 1]
+	].map(([sx, sz]) => inst(new THREE.CylinderGeometry(0.065, 0.065, 0.05, 10).rotateZ(Math.PI / 2).translate(sx * 0.14, 0.065, sz * 0.19), tyre, BUSES));
 	const spots = inst(new THREE.CylinderGeometry(0.5, 0.5, 0.06, 6), keep(new THREE.MeshBasicMaterial({ color: '#ffffff', transparent: true, opacity: 0.55 })), g.N, false);
 	spots.receiveShadow = false;
 
@@ -217,6 +220,35 @@ export function createView(scene, sim) {
 		for (let k = 0; k < n.count; k++) if (n.getY(k) < 0) n.setXYZ(k, -n.getX(k), -n.getY(k), -n.getZ(k));
 		return geo;
 	}
+	/** the ground's height under a point: whichever node it is nearest, never below the water */
+	const groundY = (/** @type {number} */ x, /** @type {number} */ z) => {
+		const n = g.at(x, z);
+		return n < 0 ? SEA : Math.max(Y(n), SEA);
+	};
+	/** straight ribbons from end to end, lying on the ground all the way (sampled a few times a step, so no hill hides their middle) */
+	function line(/** @type {number[][]} */ ends, /** @type {number} */ width, /** @type {number} */ lift) {
+		/** @type {number[]} */
+		const pos = [];
+		for (const [a, b] of ends) {
+			const ax = X(a), az = Z(a), bx = X(b), bz = Z(b);
+			const dx = bx - ax, dz = bz - az, len = Math.hypot(dx, dz);
+			if (len < 1e-6) continue;
+			const nx = (-dz / len) * (width / 2), nz = (dx / len) * (width / 2);
+			const steps = Math.max(1, Math.ceil(len * 3));
+			for (let k = 0; k < steps; k++) {
+				const f0 = k / steps, f1 = (k + 1) / steps;
+				const x0 = ax + dx * f0, z0 = az + dz * f0, x1 = ax + dx * f1, z1 = az + dz * f1;
+				const y0 = groundY(x0, z0) + lift, y1 = groundY(x1, z1) + lift;
+				pos.push(x0 + nx, y0, z0 + nz, x1 + nx, y1, z1 + nz, x1 - nx, y1, z1 - nz, x0 + nx, y0, z0 + nz, x1 - nx, y1, z1 - nz, x0 - nx, y0, z0 - nz);
+			}
+		}
+		const geo = new THREE.BufferGeometry();
+		geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+		geo.computeVertexNormals();
+		const n = /** @type {THREE.BufferAttribute} */ (geo.getAttribute('normal'));
+		for (let k = 0; k < n.count; k++) if (n.getY(k) < 0) n.setXYZ(k, -n.getX(k), -n.getY(k), -n.getZ(k));
+		return geo;
+	}
 	function syncRoads() {
 		if (netSeen === st.netV) return;
 		netSeen = st.netV;
@@ -246,8 +278,8 @@ export function createView(scene, sim) {
 		/** @type {Record<number, number[][]>} */
 		const dashes = {};
 		for (const t of Object.values(st.tunnels)) (dashes[t.owner] ??= []).push([t.path[0], t.path[t.path.length - 1]]);
-		for (const [o, paths] of Object.entries(dashes)) {
-			const m = new THREE.Mesh(ribbon(paths, 0.2, 0.07), tunMats[+o]);
+		for (const [o, ends] of Object.entries(dashes)) {
+			const m = new THREE.Mesh(line(ends, 0.2, 0.1), tunMats[+o]);
 			root.add(m);
 			tunMeshes.push(m);
 		}
@@ -256,12 +288,10 @@ export function createView(scene, sim) {
 	// ── flags and the wares at them ──
 	const wareColor = Object.fromEntries(Object.values(WARES).map((w) => [w.id, new THREE.Color(w.color)]));
 	function syncFlags() {
-		let f = 0, w = 0;
+		let w = 0;
 		for (const flag of Object.values(st.flags)) {
 			const n = flag.node, x = X(n), y = Math.max(Y(n), SEA), z = Z(n);
-			put(poles, f, x, y, z);
-			put(cloths, f, x, y, z, 1, 0.3 + Math.sin(performance.now() / 400 + flag.id) * 0.25);
-			cloths.setColorAt(f++, teamColor[flag.owner]);
+			// no flag stands there any more: a settlement's middle is a stop where its paths meet, its wares round it
 			flag.wares.forEach((/** @type {number} */ id, /** @type {number} */ k) => {
 				const ware = st.wares[id];
 				if (!ware) return;
@@ -270,8 +300,6 @@ export function createView(scene, sim) {
 				wares.setColorAt(w++, wareColor[ware.type]);
 			});
 		}
-		done(poles, f);
-		done(cloths, f);
 		done(wares, w);
 	}
 
@@ -362,7 +390,8 @@ export function createView(scene, sim) {
 		while (k0 > 0 && !isCentre(u.path[k0])) k0--;
 		while (k1 < n - 1 && !isCentre(u.path[k1])) k1++;
 		const a = u.path[k0], b = u.path[k1], f = k1 > k0 ? (p - k0) / (k1 - k0) : 0;
-		return at.set(X(a) + (X(b) - X(a)) * f, Math.max(Y(a), SEA) + (Math.max(Y(b), SEA) - Math.max(Y(a), SEA)) * f, Z(a) + (Z(b) - Z(a)) * f);
+		const x = X(a) + (X(b) - X(a)) * f, z = Z(a) + (Z(b) - Z(a)) * f;
+		return at.set(x, groundY(x, z), z);
 	}
 	function syncUnits(/** @type {number} */ t) {
 		let k = 0, l = 0;
@@ -392,6 +421,7 @@ export function createView(scene, sim) {
 			put(glass, k, x, y + lift, z, size, turn);
 			put(lamps, k, x, y + lift, z, size, turn);
 			put(lampsBack, k, x, y + lift, z, size, turn);
+			for (const w of wheels) put(w, k, x, y + lift, z, size, turn);
 			buses.setColorAt(k++, cart ? (u.ware ? wareColor[u.ware] : teamColor[u.owner]) : /** @type {Record<string, THREE.Color>} */ (KIND)[u.kind]);
 			if (u.ware && !cart) {
 				put(loads, l, x, y + bob, z, size, turn);
@@ -402,6 +432,7 @@ export function createView(scene, sim) {
 		done(glass, k);
 		done(lamps, k);
 		done(lampsBack, k);
+		for (const w of wheels) done(w, k);
 		done(loads, l);
 		if (last.size > k * 2 + 50) for (const id of last.keys()) if (!st.units[id]) last.delete(id);
 	}

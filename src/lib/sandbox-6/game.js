@@ -117,7 +117,7 @@ export function mountGame(container, o = {}) {
 		refreshSpots();
 		if (m === 'road' && selected?.k === 'flag') startRoad(selected.node);
 		else if (m === 'road' && selected?.k === 'building') startRoad(sim.grid.nb(selected.node, 5));
-		hint(m === 'build' ? 'Click a green spot to build there' : m === 'road' ? (roadFrom >= 0 ? 'Click where the road should go' : 'Click a flag to start a road from') : m === 'flag' ? 'Click open ground or a road to set a flag' : m === 'demolish' ? 'Click a building, a flag or a road to tear it down' : '');
+		hint(m === 'build' ? 'Click a green spot to build there' : m === 'road' ? (roadFrom >= 0 ? 'Click the middle of the next settlement' : 'Click the middle of a settlement to start a path from') : m === 'flag' ? 'Click open ground or a road to set a flag' : m === 'demolish' ? 'Click a building or a path to tear it down' : '');
 		o.onMode?.(mode, buildType);
 	}
 	function refreshSpots() {
@@ -251,7 +251,6 @@ export function mountGame(container, o = {}) {
 			if (mode !== 'look') setMode('look');
 			else select(null);
 		} else if (e.key === 'r' || e.key === 'R') setMode('road');
-		else if (e.key === 'f' || e.key === 'F') setMode('flag');
 		else if (e.key === 'x' || e.key === 'X') setMode('demolish');
 		else if (e.key === ' ') {
 			e.preventDefault();
