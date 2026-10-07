@@ -47,7 +47,7 @@
 						<foreignObject width={W} height={H}>
 							<button class="node b" class:have={owned[id]} onclick={() => onBuild(id)} title="{BUILDINGS[id].about} Costs {costOf(id)}.{BUILDINGS[id].inputs?.length ? ` Needs ${BUILDINGS[id].inputs?.map((s) => s.map(label).join(' or ')).join(' + ')}.` : ''}">
 								<strong>{BUILDINGS[id].label}{#if owned[id]}<em> ×{owned[id]}</em>{/if}</strong>
-								<span>{SOURCE[id] ? `${SOURCE[id]} · ` : ''}{costOf(id)}{BUILDINGS[id].tools ? ' · ⚒' : ''}</span>
+								<span>{SOURCE[id] ? `${SOURCE[id]} · ` : ''}{costOf(id)}</span>
 							</button>
 						</foreignObject>
 					{:else}
@@ -71,7 +71,7 @@
 			</button>
 		{/each}
 	</div>
-	<p class="small">⚒ its worker takes a tool from your stores when it starts: tools come from the toolmaker (iron ore and planks) or from the world market. Food and water are not wares: the food forests grow food, the wells pipe water, and the world market sells the rest.</p>
+	<p class="small">Food and water are not wares: the food forests grow food, the wells pipe water, and the world market sells the rest and buys what you have spare.</p>
 </section>
 
 <style>

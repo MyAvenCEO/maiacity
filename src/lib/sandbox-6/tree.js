@@ -11,8 +11,7 @@ export const SOURCE = /** @type {Record<string, string>} */ ({
 	woodcutter: 'grown trees',
 	forester: 'free grass',
 	quarry: 'rocks',
-	well: 'anywhere',
-	ironmine: 'iron rock'
+	well: 'anywhere'
 });
 /** the wares people live on: their homes' planks and stone (their food grows in the hexes' food forests and their water
  * comes from the wells, ./food.js) */
@@ -97,7 +96,6 @@ export function chainTree(colW = 168, rowH = 50) {
 
 /** where in the valley a ware comes from: the hex it is made on, a line under the ware */
 export const TRADE_NOTE = /** @type {Record<string, string>} */ ({
-	ore: 'Iron hexes only: rust-red rock',
 	plank: 'Forest hexes only',
 	stone: 'Stone hexes only'
 });

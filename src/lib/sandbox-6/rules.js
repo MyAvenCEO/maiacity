@@ -3,11 +3,10 @@
  *
  * A valley economy in the spirit of the old settler games, without the war, its own names and its own numbers: wares lie at flags and
  * carriers bring them, one carrier to a road, from flag to flag, to whoever needs them. A building is a site until a
- * builder has used up its planks and stone; then a worker moves in and it runs its chain. Four wares, short chains:
+ * builder has used up its planks and stone; then a worker moves in and it runs its chain. Two wares, short chains:
  *
  *   trees → forester → planks            (one building that grows: forester, woodcutter, sawmill, timber works)
  *   rocks → quarry → stone
- *   iron hex → iron mine → iron ore;  iron ore + planks → toolmaker → tools
  *
  * Food and water are not wares: every house's hex grows food, wells pipe water straight to the tanks, and what a
  * village lacks it buys from the world market (./food.js).
@@ -31,9 +30,7 @@
 /** @type {Record<string, Ware>} */
 export const WARES = {
 	plank: { id: 'plank', label: 'Planks', color: '#e0b46a' },
-	stone: { id: 'stone', label: 'Stone', color: '#a4a49e' },
-	ore: { id: 'ore', label: 'Iron ore', color: '#a35b3a' },
-	tools: { id: 'tools', label: 'Tools', color: '#2f9690' }
+	stone: { id: 'stone', label: 'Stone', color: '#a4a49e' }
 };
 export const WARE_ORDER = Object.keys(WARES);
 
@@ -67,7 +64,6 @@ export const IRON = 2;
  * @property {Record<string, number>} cost planks and stone a builder uses up
  * @property {'centre'|'house'|'make'|'mine'|'gather'|'forester'|'well'|'village'} kind
  * @property {string} [worker] who works it
- * @property {boolean} [tools] its worker needs tools to start
  * @property {string[][]} [inputs] each slot takes any one of its wares
  * @property {string} [out] the ware it makes
  * @property {number} [time] seconds for one ware (made inside), or one job out in the land
@@ -84,18 +80,16 @@ export const IRON = 2;
 export const BUILDINGS = {
 	centre: { id: 'centre', label: 'Village center', group: 'Homes', about: 'Founds a village in the middle of a village next to yours: its storehouse, market and hall in one — nobody lives here. A trade route under the ground joins it to the village center that founded it, and four settlers come to build its houses.', cost: { plank: 6, stone: 4 }, kind: 'centre' },
 	house: { id: 'house', label: 'House', group: 'Homes', about: 'Founds a settlement: settlers live here, 2 at first, then twice as many each time you enlarge it, up to 248. Its two factory spots open once it stands.', cost: { plank: 2, stone: 1 }, kind: 'house' },
-	woodcutter: { id: 'woodcutter', label: 'Forester', group: 'Basics', about: 'Your wood, in one building that grows: a forester plants young trees round it; upgraded, a woodcutter fells grown trees and plants a young one where each stood, then a sawmill and a timber works cut more planks from every tree. Build it on a forest hex.', cost: { plank: 2 }, kind: 'gather', biome: 'forest', worker: 'Forester', tools: true, out: 'plank', time: 6, rest: 4, range: 10 },
-	forester: { id: 'forester', label: 'Forester', group: '', about: 'Plants young trees nearby, on a forest hex; they grow in about two minutes. (Now the first level of the wood building.)', cost: { plank: 2 }, kind: 'forester', biome: 'forest', worker: 'Forester', tools: true, time: 3, rest: 5, range: 8 },
-	quarry: { id: 'quarry', label: 'Quarry', group: 'Basics', about: 'Cuts stone from rocks nearby; build it on a stone hex.', cost: { plank: 2 }, kind: 'gather', biome: 'stone', worker: 'Stonecutter', tools: true, out: 'stone', time: 6, rest: 4, range: 10 },
+	woodcutter: { id: 'woodcutter', label: 'Forester', group: 'Basics', about: 'Your wood, in one building that grows: a forester plants young trees round it; upgraded, a woodcutter fells grown trees and plants a young one where each stood, then a sawmill and a timber works cut more planks from every tree. Build it on a forest hex.', cost: { plank: 2 }, kind: 'gather', biome: 'forest', worker: 'Forester', out: 'plank', time: 6, rest: 4, range: 10 },
+	forester: { id: 'forester', label: 'Forester', group: '', about: 'Plants young trees nearby, on a forest hex; they grow in about two minutes. (Now the first level of the wood building.)', cost: { plank: 2 }, kind: 'forester', biome: 'forest', worker: 'Forester', time: 3, rest: 5, range: 8 },
+	quarry: { id: 'quarry', label: 'Quarry', group: 'Basics', about: 'Cuts stone from rocks nearby; build it on a stone hex.', cost: { plank: 2 }, kind: 'gather', biome: 'stone', worker: 'Stonecutter', out: 'stone', time: 6, rest: 4, range: 10 },
 	well: { id: 'well', label: 'Well', group: 'Water', about: 'A borehole: pipes 2 L a second straight to its village’s tanks, water for about 1,150 people. Nobody needs to work it.', cost: { plank: 2 }, kind: 'well' },
-	ironmine: { id: 'ironmine', label: 'Iron mine', group: 'Tools', about: 'Digs iron ore; miners bring their own picks (so tools can always be made again). Build it on an iron hex (rust-red rock).', cost: { plank: 4 }, kind: 'mine', biome: 'iron', worker: 'Miner', inputs: [], out: 'ore', time: 8, on: 'mountain', ore: 'iron' },
-	toolmaker: { id: 'toolmaker', label: 'Toolmaker', group: 'Tools', about: 'Forges tools from iron ore and planks: every new worker needs some.', cost: { plank: 2, stone: 2 }, kind: 'make', worker: 'Toolmaker', inputs: [['ore'], ['plank']], out: 'tools', time: 10 },
 	village: { id: 'village', label: 'Village center', group: '', about: 'A neighbour city’s village center.', cost: {}, kind: 'village' }
 };
 
 
 /** the build menu, in its groups */
-export const GROUPS = ['Homes', 'Basics', 'Water', 'Tools'];
+export const GROUPS = ['Homes', 'Basics', 'Water'];
 export const MENU = GROUPS.map((g) => ({ group: g, types: Object.values(BUILDINGS).filter((b) => b.group === g) }));
 
 /** buildings that hold their village as land: its center */
@@ -140,7 +134,7 @@ export const PLANK_T = 5;
 
 /** what the headquarters holds as a game starts */
 export const START = {
-	stock: { plank: 16, stone: 10, tools: 8 },
+	stock: { plank: 16, stone: 10 },
 	coins: 30,
 	settlers: 2,
 	/** the houses that stand round your first village center as a game starts: their sizes (1…4) — one house of two */

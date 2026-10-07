@@ -9,7 +9,7 @@
 	import TouchStick from '$lib/touch/TouchStick.svelte';
 	import { WorldBar } from '$lib/sandbox-kit';
 	import { BUILDINGS, HOUSE_BEDS, HOUSE_SIZE, MENU, PLANK_T, WARES, WARE_ORDER, WOOD } from './rules.js';
-	import { EUR_PER_GOLD, NEED_LABEL } from './market.js';
+	import { EUR_PER_GOLD } from './market.js';
 	import { FOOD_KG, PRICE, SPEEDS, WATER_L, WATER_PRICE, WATER_USE } from './food.js';
 	import { PLAYER } from './sim.js';
 	import Tree from './Tree.svelte';
@@ -64,8 +64,16 @@
 	const fd = $derived(home?.food);
 	const wt = $derived(home?.water);
 	const flow = $derived(fd ? fd.grown - fd.week : 0);
-	/** what buying and selling food does to its treasury, a week, € */
-	const foodEur = $derived(fd ? fd.earned - fd.buy * fd.perKg : 0);
+	/** what buying and exporting food does to its treasury, a week, € */
+	const foodEur = $derived(fd ? fd.exported * PRICE.world - fd.buy * fd.perKg : 0);
+	/** your cashflow and the shown village's, gold a week: exports less imports */
+	const cash = $derived.by(() => {
+		const c = /** @type {{ exp: number, imp: number } | undefined} */ (/** @type {any} */ (summary)?.cash);
+		return c ? (c.exp - c.imp) / EUR_PER_GOLD : 0;
+	});
+	const homeCash = $derived(home ? (home.cash.exp - home.cash.imp) / EUR_PER_GOLD : 0);
+	/** gold with its sign */
+	const signed = (/** @type {number} */ g) => `${g > 0.05 ? '+' : ''}${goldOf(g)}`;
 	let seenMsg = 0;
 	/** @type {{ text: string, tone: string, node: number, key: number }[]} */
 	let toasts = $state([]);
@@ -187,11 +195,16 @@
 	}
 	/** the clock's top speed: ten years a real day */
 	const TOP = SPEEDS[SPEEDS.length - 1].s;
-	/** buy a ware from the world market for the village shown */
-	function buy(/** @type {string} */ w) {
+	/** buy a ware from the world market for the village shown, or sell it one */
+	function trade(/** @type {'buy' | 'sell'} */ how, /** @type {string} */ w) {
 		if (!game || !home) return;
-		const r = game.sim.buy(home.node, w, 1);
+		const r = how === 'buy' ? game.sim.buy(home.node, w, 1) : game.sim.sell(home.node, w, 1);
 		buyWhy = r.ok ? '' : r.why ?? '';
+		refresh();
+	}
+	/** let a ware trade by itself: bought when short, its surplus exported (or not) */
+	function auto(/** @type {string} */ w, /** @type {boolean} */ on) {
+		game?.sim.order(w, on ? 'both' : null);
 		refresh();
 	}
 	function newValley() {
@@ -237,6 +250,12 @@
 <div class="valley">
 	<div class="stage" bind:this={stage} role="application" aria-label="Sandbox 5: the valley. Drag to turn the map, scroll to zoom, click to select or build"></div>
 	<WorldBar title="avenCITY Sandbox 5" subtitle="A valley of settlers · villages, trade routes underground" />
+	{#if summary}
+		<div class="cash" class:up={cash > 0.05} class:down={cash < -0.05} title="Your goal: become a prosumer, cashflow positive, exporting more to the world market than you import from it. What all your villages take in by exports, less what they pay for imports (food, water, planks, stone), a week lately; the HEARTs your settlers issue are not counted.">
+			<span class="big">Cashflow <b>{signed(cash)}</b> gold a week</span>
+			<small>exports {goldOf(summary.cash.exp / EUR_PER_GOLD)} · imports {goldOf(summary.cash.imp / EUR_PER_GOLD)} · goal: positive</small>
+		</div>
+	{/if}
 	<TouchStick move={(x, y, hurry) => game?.move(x, y, hurry)} {stage} taps=".tools button, .panel button, .card button" />
 
 	<!-- the tools, down the left -->
@@ -297,7 +316,8 @@
 						{#each home.villages as v (v.node)}<button class:on={v.node === home.node} onclick={() => pickVillage(v.node)}>{v.name}</button>{/each}
 					</div>
 				{/if}
-				<p class="label stats" title="Its settlers add 24 HEARTs each an in-game hour to its treasury: {num(home.income)} a week. A HEART is a euro, 1,000 are a gold. It buys from the world market only with the gold it has">{home.pop}/{home.beds} beds · <b class:debt={home.gold < 0}>{goldOf(home.gold)}</b> gold · {num(home.eur)} €</p>
+				<p class="label stats cashline" title="What it took in by exports to the world market and sales to your other villages, less what it paid for imports from them, a week lately. Your goal: more in than out">Cashflow <b class:debt={homeCash < -0.05} class:gain={homeCash > 0.05}>{signed(homeCash)}</b> gold a week · exports {goldOf(home.cash.exp / EUR_PER_GOLD)} · imports {goldOf(home.cash.imp / EUR_PER_GOLD)}</p>
+				<p class="label stats" title="Its settlers add a HEART each an in-game hour to its treasury (720 a month each): {num(home.income)} a week. A HEART is a euro, 1,000 are a gold. It buys from the world market only with the gold it has">{home.pop}/{home.beds} beds · <b class:debt={home.gold < 0}>{goldOf(home.gold)}</b> gold · {num(home.eur)} €</p>
 				{#if fd}
 				<section class="ledger" aria-label="Food">
 					<p class="ledger-head" class:short={fd.short}><b>Food</b><span title="A hex's food forest grows 10% of what its people eat in its first year, 10% more each year up to 100% in its tenth, then up to 150% from its fifteenth year">forests in year {fd.year} · grow {Math.round(fd.share * 100)}%</span></p>
@@ -307,8 +327,9 @@
 						<dt title="{FOOD_KG.toFixed(1)} kg a person a week, the European diet">Eaten a week</dt><dd>{num(fd.week)} kg</dd>
 						<dt>Grown a week</dt><dd>{num(fd.grown)} kg</dd>
 						{#if fd.buy >= 1}<dt title="What its forests do not grow: from your villages with more than two weeks put by at {PRICE.village} € a kg, else from the world market at {PRICE.world} € a kg (100 € for a person's week)">Bought a week</dt><dd>{num(fd.buy)} kg · {num(fd.buy * fd.perKg)} €</dd>{/if}
+						{#if fd.exported >= 1}<dt title="What its forests grow beyond what its people eat goes to the world market at {PRICE.world} € a kg, once two weeks are put by">Exported a week</dt><dd>{num(fd.exported)} kg · {num(fd.exported * PRICE.world)} €</dd>{/if}
 						{#if fd.sold >= 1}<dt title="To your villages that lack it, {PRICE.village} € a kg, lately">Sold a week</dt><dd>{num(fd.sold)} kg</dd>{/if}
-						<dt title="What its forests grow against what its people eat, a week, and what buying and selling food did to its treasury">Cashflow</dt><dd class:debt={flow < -0.5} class:gain={flow > 0.5}>{flow > 0.5 ? '+' : ''}{num(flow)} kg · {foodEur > 0.5 ? '+' : ''}{num(foodEur)} €</dd>
+						<dt title="What its forests grow against what its people eat, a week, and what buying and exporting food does to its treasury">Balance</dt><dd class:debt={flow < -0.5} class:gain={flow > 0.5}>{flow > 0.5 ? '+' : ''}{num(flow)} kg · {foodEur > 0.5 ? '+' : ''}{num(foodEur)} €</dd>
 					</dl>
 				</section>
 				{/if}
@@ -328,13 +349,15 @@
 					<p class="ledger-head"><b>World market</b><span title="A gold is 1,000 €: a HEART is a euro">1 gold = {num(EUR_PER_GOLD)} €</span></p>
 					<ul class="buy">
 						{#each home.world as x (x.w)}
-							<li title="{label(x.w)}: {x.unit}. It is in this village center's storehouse at once.">
+							<li title="{label(x.w)}: {x.unit}. Bought or sold at this village center's storehouse, at once.">
 								<span class="k"><i style:background={WARES[x.w]?.color}></i>{label(x.w)}</span>
 								<span class="n">{num(x.eur)} €</span>
-								<button onclick={() => buy(x.w)} disabled={home.eur < x.eur}>Buy</button>
+								<button onclick={() => trade('buy', x.w)} disabled={home.eur < x.eur}>Buy</button>
+								<button onclick={() => trade('sell', x.w)} disabled={x.have < 1}>Sell</button>
+								<button class="auto" class:on={x.order === 'both'} onclick={() => auto(x.w, x.order !== 'both')} title="By itself: bought when your villages run short, and what they have beyond exported, so its makers never rest">Auto</button>
 							</li>
 						{/each}
-						<li title="Each village buys what its food forests do not grow, by itself, while its treasury can pay"><span class="k">Food</span><span class="n">{PRICE.world} € a kg</span><em>by itself</em></li>
+						<li title="Each village buys what its food forests do not grow, while its treasury can pay, and exports what they grow beyond two weeks put by"><span class="k">Food</span><span class="n">{PRICE.world} € a kg</span><em>by itself</em></li>
 						<li title="Each village buys what its wells do not give, by itself, while its treasury can pay"><span class="k">Water</span><span class="n">{WATER_PRICE * 1000} € a m³</span><em>by itself</em></li>
 					</ul>
 					{#if home.wares >= 1}<dl><dt>Spent on wares a week</dt><dd>{num(home.wares)} €</dd></dl>{/if}
@@ -394,11 +417,6 @@
 				</ul>
 			{:else if card.party}
 				<p class="label">{card.party.pop} people{card.party.beds !== undefined ? ` in ${card.party.beds} beds` : ''}{card.owner !== PLAYER ? ` · ${Math.round(card.party.coins)} coins` : ''}</p>
-				<ul class="needs">
-					{#each Object.entries(card.party.sat) as [need, v] (need)}
-						<li>{NEED_LABEL[/** @type {keyof typeof NEED_LABEL} */ (need)]} <b>{Math.round(/** @type {number} */ (v) * 100)}%</b></li>
-					{/each}
-				</ul>
 				<p class="label">In store</p>
 				<ul class="wares tight">
 					{#each Object.entries(card.stock ?? card.party.stock).filter(([, n]) => n >= 1) as [w, n] (w)}<li title={label(w)}><i style:background={WARES[w].color}></i><span>{label(w)}</span><b>{Math.floor(/** @type {number} */ (n))}</b></li>{/each}
@@ -437,7 +455,6 @@
 					</ul>
 				{/if}
 				{#if card.out}<p class="label">Makes <i class="dot" style:background={WARES[card.out].color}></i>{label(card.out)}</p>{/if}
-				{#if card.kind === 'mine'}<p class="small">Ore left in the vein: {card.deposit}</p>{/if}
 				<p class="label">Busy <b>{card.eff}%</b></p>
 				<div class="bar"><span style:width="{card.eff}%"></span></div>
 			{/if}
@@ -881,9 +898,9 @@
 	}
 	.buy li {
 		display: grid;
-		grid-template-columns: 1fr auto 3.4rem;
+		grid-template-columns: 1fr auto 2.3rem 2.3rem 2.3rem;
 		align-items: center;
-		gap: 0.5rem;
+		gap: 0.3rem;
 		min-height: 1.5rem;
 	}
 	.buy .k {
@@ -894,6 +911,7 @@
 	.buy .n {
 		text-align: right;
 		font-variant-numeric: tabular-nums;
+		white-space: nowrap;
 	}
 	.buy button {
 		padding: 0.2rem 0;
@@ -901,17 +919,65 @@
 		border-radius: 999px;
 		background: #24452f;
 		color: #f4f1e8;
-		font-size: 0.68rem;
+		font-size: 0.62rem;
 	}
 	.buy button:disabled {
 		opacity: 0.35;
 		cursor: default;
 	}
+	.buy button.auto {
+		background: transparent;
+		color: #24452f;
+	}
+	.buy button.auto.on {
+		background: #2f7a3a;
+		border-color: #2f7a3a;
+		color: #f4f1e8;
+	}
 	.buy em {
+		grid-column: span 3;
 		font-style: normal;
 		font-size: 0.64rem;
 		opacity: 0.6;
 		text-align: center;
+	}
+	.cashline b {
+		font-variant-numeric: tabular-nums;
+	}
+	.cash {
+		position: absolute;
+		z-index: 3;
+		top: calc(1rem + env(safe-area-inset-top, 0px));
+		left: 50%;
+		transform: translateX(-50%);
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		padding: 0.35rem 1rem 0.4rem;
+		border-radius: 18px;
+		background: rgb(250 248 242 / 0.9);
+		border: 1px solid rgb(255 255 255 / 0.5);
+		box-shadow: 0 4px 18px rgb(0 0 0 / 0.12);
+		color: #1f2a23;
+		line-height: 1.25;
+		white-space: nowrap;
+	}
+	.cash .big {
+		font-size: 0.95rem;
+	}
+	.cash .big b {
+		font-size: 1.05rem;
+		font-variant-numeric: tabular-nums;
+	}
+	.cash.up .big b {
+		color: #2f7a3a;
+	}
+	.cash.down .big b {
+		color: #a3322a;
+	}
+	.cash small {
+		font-size: 0.66rem;
+		opacity: 0.7;
 	}
 	.gain {
 		color: #2f7a3a;
@@ -1163,17 +1229,33 @@
 		.speednote {
 			display: none;
 		}
+		.buy li {
+			grid-template-columns: repeat(3, 1fr);
+		}
+		.buy .k {
+			grid-column: span 2;
+		}
+		.buy em {
+			display: none;
+		}
+		.cash {
+			top: calc(6.7rem + env(safe-area-inset-top, 0px));
+			left: 0.5rem;
+			right: 0.5rem;
+			transform: none;
+			padding: 0.3rem 0.6rem;
+		}
 		.tools .quiet {
 			margin: 0;
 		}
 		.menu {
-			top: calc(7rem + env(safe-area-inset-top, 0px));
+			top: calc(9.4rem + env(safe-area-inset-top, 0px));
 			left: 0.5rem;
 			width: calc(100vw - 1rem);
 			max-height: 55vh;
 		}
 		.side {
-			top: calc(7rem + env(safe-area-inset-top, 0px));
+			top: calc(9.4rem + env(safe-area-inset-top, 0px));
 			right: 0.5rem;
 			width: 13.5rem;
 			max-height: 40vh;
@@ -1182,7 +1264,7 @@
 			grid-template-columns: 1fr;
 		}
 		.market {
-			top: calc(7rem + env(safe-area-inset-top, 0px));
+			top: calc(9.4rem + env(safe-area-inset-top, 0px));
 			left: 0.5rem;
 			width: calc(100vw - 1rem);
 			max-height: 60vh;
