@@ -44,6 +44,21 @@ export const WARE_ORDER = Object.keys(WARES);
 /** what a miner eats: any one of these */
 export const FOOD = ['fish', 'bread'];
 
+/**
+ * What a settlement hex is good for: meadow (farmland) is everywhere; forest, stone, iron and water are scarce, and a
+ * woodcutter or forester, a quarry, an iron mine or a fishery only stands on a hex of its own kind. A lake's own hexes
+ * are water to fish from, not land: 'lake'; bare mountain without iron is 'mountain'.
+ */
+export const BIOMES = {
+	meadow: { id: 'meadow', label: 'Meadow', color: '#9fc46a' },
+	forest: { id: 'forest', label: 'Forest', color: '#2f6b3a' },
+	stone: { id: 'stone', label: 'Stone', color: '#9a9a94' },
+	iron: { id: 'iron', label: 'Iron', color: '#a35b3a' },
+	water: { id: 'water', label: 'Water', color: '#4aa3df' },
+	mountain: { id: 'mountain', label: 'Mountain', color: '#8c8f96' },
+	lake: { id: 'lake', label: 'Lake', color: '#3a7fb8' }
+};
+
 /** the land a node is */
 export const GRASS = 0, WATER = 1, MOUNTAIN = 2, SAND = 3;
 /** what a mountain node holds: 0 bare rock, 2 iron */
@@ -67,6 +82,7 @@ export const IRON = 2;
  * @property {number} [yield] how many of its ware one round of work makes (1 if not said)
  * @property {'mountain'|'grass'} [on] the land it stands on (grass by default)
  * @property {string} [ore] the ore a mine digs
+ * @property {'forest'|'stone'|'iron'|'water'} [biome] the only kind of hex it stands on (any hex if not said)
  * @property {number} [beds] settlers who live in it
  */
 
@@ -74,14 +90,14 @@ export const IRON = 2;
 export const BUILDINGS = {
 	centre: { id: 'centre', label: 'Village center', group: 'Homes', about: 'Founds a village in the middle of a village next to yours: its storehouse, market and hall in one — nobody lives here. A trade route under the ground joins it to the village center that founded it, and four settlers come to build its houses.', cost: { plank: 6, stone: 4 }, kind: 'centre' },
 	house: { id: 'house', label: 'House', group: 'Homes', about: 'Founds a settlement: settlers live here, 2 at first, then 4, 8 and 16 as you enlarge it. Its two factory spots open once it stands.', cost: { plank: 2, stone: 1 }, kind: 'house' },
-	woodcutter: { id: 'woodcutter', label: 'Woodcutter', group: 'Basics', about: 'Fells grown trees nearby and splits them into planks.', cost: { plank: 2 }, kind: 'gather', worker: 'Woodcutter', tools: true, out: 'plank', time: 6, rest: 4, range: 6 },
-	forester: { id: 'forester', label: 'Forester', group: 'Basics', about: 'Plants young trees nearby; they grow in about two minutes.', cost: { plank: 2 }, kind: 'forester', worker: 'Forester', tools: true, time: 3, rest: 5, range: 5 },
-	quarry: { id: 'quarry', label: 'Quarry', group: 'Basics', about: 'Cuts stone from rocks nearby.', cost: { plank: 2 }, kind: 'gather', worker: 'Stonecutter', tools: true, out: 'stone', time: 6, rest: 4, range: 6 },
-	fishery: { id: 'fishery', label: 'Fishery', group: 'Food', about: 'Fishes at the water’s edge; build it near a lake.', cost: { plank: 2 }, kind: 'gather', worker: 'Fisher', tools: true, out: 'fish', yield: 3, time: 6, rest: 4, range: 5 },
+	woodcutter: { id: 'woodcutter', label: 'Woodcutter', group: 'Basics', about: 'Fells grown trees nearby and splits them into planks; build it on a forest hex.', cost: { plank: 2 }, kind: 'gather', biome: 'forest', worker: 'Woodcutter', tools: true, out: 'plank', time: 6, rest: 4, range: 6 },
+	forester: { id: 'forester', label: 'Forester', group: 'Basics', about: 'Plants young trees nearby, on a forest hex; they grow in about two minutes.', cost: { plank: 2 }, kind: 'forester', biome: 'forest', worker: 'Forester', tools: true, time: 3, rest: 5, range: 5 },
+	quarry: { id: 'quarry', label: 'Quarry', group: 'Basics', about: 'Cuts stone from rocks nearby; build it on a stone hex.', cost: { plank: 2 }, kind: 'gather', biome: 'stone', worker: 'Stonecutter', tools: true, out: 'stone', time: 6, rest: 4, range: 6 },
+	fishery: { id: 'fishery', label: 'Fishery', group: 'Food', about: 'Fishes at the water’s edge; build it on a water hex, by a lake or the sea.', cost: { plank: 2 }, kind: 'gather', biome: 'water', worker: 'Fisher', tools: true, out: 'fish', yield: 3, time: 6, rest: 4, range: 5 },
 	farm: { id: 'farm', label: 'Farm', group: 'Food', about: 'Sows fields round it and reaps the grain.', cost: { plank: 3, stone: 2 }, kind: 'farm', worker: 'Farmer', tools: true, out: 'grain', yield: 2, time: 4, rest: 3, range: 3 },
 	well: { id: 'well', label: 'Well', group: 'Food', about: 'Draws water.', cost: { plank: 2 }, kind: 'make', worker: 'Water carrier', inputs: [], out: 'water', time: 8 },
 	bakery: { id: 'bakery', label: 'Bakery', group: 'Food', about: 'Bakes bread from grain and water.', cost: { plank: 2, stone: 2 }, kind: 'make', worker: 'Baker', tools: true, inputs: [['grain'], ['water']], out: 'bread', yield: 2, time: 8 },
-	ironmine: { id: 'ironmine', label: 'Iron mine', group: 'Tools', about: 'Digs iron ore; miners eat fish or bread. Build on rust-red rock.', cost: { plank: 4 }, kind: 'mine', worker: 'Miner', tools: true, inputs: [FOOD], out: 'ore', time: 8, on: 'mountain', ore: 'iron' },
+	ironmine: { id: 'ironmine', label: 'Iron mine', group: 'Tools', about: 'Digs iron ore; miners eat fish or bread. Build it on an iron hex (rust-red rock).', cost: { plank: 4 }, kind: 'mine', biome: 'iron', worker: 'Miner', tools: true, inputs: [FOOD], out: 'ore', time: 8, on: 'mountain', ore: 'iron' },
 	toolmaker: { id: 'toolmaker', label: 'Toolmaker', group: 'Tools', about: 'Forges tools from iron ore and planks: every new worker needs some.', cost: { plank: 2, stone: 2 }, kind: 'make', worker: 'Toolmaker', inputs: [['ore'], ['plank']], out: 'tools', time: 10 },
 	village: { id: 'village', label: 'Village center', group: '', about: 'A neighbour city’s village center.', cost: {}, kind: 'village' }
 };

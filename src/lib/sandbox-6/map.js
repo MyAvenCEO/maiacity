@@ -27,6 +27,7 @@ const S = 1.3;
  * @property {({ k: 'tree', g: number } | { k: 'rock', n: number } | null)[]} obj trees and rocks
  * @property {number} hq where your first village center stands
  * @property {number[]} villages where the neighbours live
+ * @property {string[]} biome what each settlement hex is good for (./rules.js BIOMES)
  */
 
 /** @param {number} seed @returns {Valley} */
@@ -155,5 +156,45 @@ export function growValley(seed) {
 		}
 		for (let d = 0; d < 6; d++) if (g.nb(c, d) >= 0) height[g.nb(c, d)] = height[c];
 	}
-	return { W, H, terrain, height, ore, amount, fish, obj, hq, villages };
+	// your first village keeps a forest hex and a stone hex of its own (the ones toward the nearest rocks and woods), so
+	// a woodcutter and a quarry can start at home; water and iron are for the villages you found next
+	const home = plan.villages[plan.villageOf[plan.plotOf[hq]]];
+	const outer = home.plots.filter((k) => k !== home.centre);
+	const toward = (/** @type {number} */ cx, /** @type {number} */ cy) => outer.reduce((a, b) => (g.dist(plan.centre[b], node(cx, cy)) < g.dist(plan.centre[a], node(cx, cy)) ? b : a));
+	const [rx, ry] = ROCKS[ROCKS.length - 1];
+	const stoneHex = toward(rx, ry);
+	const [fx, fy] = [...FORESTS].sort((a, b) => g.dist(hq, node(a[0], a[1])) - g.dist(hq, node(b[0], b[1])))[0];
+	const forestHex = toward(fx, fy) === stoneHex ? outer.find((k) => k !== stoneHex) ?? stoneHex : toward(fx, fy);
+	for (const [d, j] of plan.spots[stoneHex].entries()) if (d > 0 && j >= 0) obj[j] = { k: 'rock', n: 6 };
+	const fc = plan.centre[forestHex];
+	for (let d = 0; d < 6; d++) {
+		const j = g.nb(fc, d);
+		if (j >= 0 && j !== plan.spots[forestHex][0]) obj[j] = { k: 'tree', g: 1 };
+	}
+	return { W, H, terrain, height, ore, amount, fish, obj, hq, villages, biome: biomes(g, plan, terrain, obj, ore) };
+}
+
+/**
+ * What each settlement hex is good for, from the land as it was grown: iron where its rock holds iron ore, stone where
+ * rocks lie, bare mountain, water on a shore (a lake's or the sea's), forest where trees stand, else meadow. A hex whose middle is
+ * water is the lake itself.
+ * @param {import('./hex.js').Grid} g
+ * @param {import('./plots.js').Plan} plan
+ * @param {number[]} terrain
+ * @param {any[]} obj
+ * @param {number[]} ore
+ * @returns {string[]}
+ */
+export function biomes(g, plan, terrain, obj, ore) {
+	return plan.centre.map((c) => {
+		if (terrain[c] === WATER) return 'lake';
+		const hex = [c, ...Array.from({ length: 6 }, (_, d) => g.nb(c, d))].filter((j) => j >= 0);
+		const count = (/** @type {(j: number) => boolean} */ f) => hex.filter(f).length;
+		if (count((j) => terrain[j] === MOUNTAIN && ore[j] === IRON) >= 1) return 'iron';
+		if (count((j) => obj[j]?.k === 'rock') >= 2) return 'stone';
+		if (count((j) => terrain[j] === MOUNTAIN) >= 4) return 'mountain';
+		if (count((j) => terrain[j] === WATER) >= 2) return 'water';
+		if (count((j) => obj[j]?.k === 'tree') >= 3) return 'forest';
+		return 'meadow';
+	});
 }

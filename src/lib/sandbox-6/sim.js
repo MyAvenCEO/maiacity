@@ -15,11 +15,11 @@
  *     the cities trade by the orders you set and by what the neighbours have spare and lack (./market.js);
  *   · every village eats, drinks and keeps its homes, and the valley's abundance follows how well they all live.
  */
-import { ABUNDANT, BUILDINGS, FOOD, GOALS, GRASS, HOLD, HOUSE_BEDS, HOUSE_UP, IRON, MOUNTAIN, START, WARES, WATER, holdsLand } from './rules.js';
+import { ABUNDANT, BIOMES, BUILDINGS, FOOD, GOALS, GRASS, HOLD, HOUSE_BEDS, HOUSE_UP, IRON, MOUNTAIN, START, WARES, WATER, holdsLand } from './rules.js';
 import { CART, NEEDS, NEIGHBOURS, TRADED, abundance, keepOf, live, make, newMarket, orderRule, party, priceIn, request, shortIn, spareIn, variety } from './market.js';
 import { SE, findPath, makeGrid } from './hex.js';
 import { makePlan } from './plots.js';
-import { growValley } from './map.js';
+import { biomes, growValley } from './map.js';
 
 /** seconds of game time a step moves on */
 export const TICK = 0.1;
@@ -55,6 +55,8 @@ export function newGame(seed = 7) {
 		W: v.W,
 		H: v.H,
 		terrain: v.terrain,
+		/** what each settlement hex is good for (./rules.js BIOMES), as the valley was grown @type {string[]} */
+		biome: v.biome,
 		height: v.height,
 		ore: v.ore,
 		amount: v.amount,
@@ -119,6 +121,8 @@ export function createSim(st) {
 	const size = `${st.W}x${st.H}`;
 	if (!plans.has(size)) plans.set(size, makePlan(g));
 	const plan = /** @type {ReturnType<typeof makePlan>} */ (plans.get(size));
+	// a game saved before the hexes had biomes: read them from the land as it is now
+	st.biome ??= biomes(g, plan, st.terrain, st.obj, st.ore);
 	/** the village a node lies in */
 	const villageAt = (/** @type {number} */ n) => plan.villageOf[plan.plotOf[n]];
 
@@ -1758,8 +1762,13 @@ export function createSim(st) {
 			const home = buildingAt(plan.spots[plot][0]);
 			if (!home || home.owner !== PLAYER || home.type !== 'house') return 'Build this settlement’s house first';
 		}
-		// a house clears its own spot: the tree is felled, the rock broken, the field ploughed under
-		if (st.obj[n] && !(type === 'house' && ['tree', 'rock', 'field'].includes(st.obj[n].k))) return st.obj[n].k === 'tree' ? 'A tree stands here' : st.obj[n].k === 'rock' ? 'A rock lies here' : 'Something stands here';
+		// a woodcutter, forester, quarry, iron mine or fishery only stands on a hex of its own kind
+		if (t.biome && st.biome[plot] !== t.biome) return `${t.label}s stand on ${BIOMES[t.biome].label.toLowerCase()} hexes`;
+		// a house clears its own spot: the tree is felled, the rock broken, the field ploughed under (and a woodcutter or
+		// forester its tree, a quarry its rock)
+		const k = st.obj[n]?.k;
+		const clears = type === 'house' ? ['tree', 'rock', 'field'].includes(k) : (t.biome === 'forest' && k === 'tree') || (t.biome === 'stone' && k === 'rock');
+		if (st.obj[n] && !clears) return st.obj[n].k === 'tree' ? 'A tree stands here' : st.obj[n].k === 'rock' ? 'A rock lies here' : 'Something stands here';
 		if (st.road[n]) return 'A road runs here';
 		if (t.on === 'mountain' ? st.terrain[n] !== MOUNTAIN : st.terrain[n] !== GRASS) return t.on === 'mountain' ? 'Mines stand on mountains' : 'Needs open grass';
 		const c = plan.centre[plan.plotOf[n]];

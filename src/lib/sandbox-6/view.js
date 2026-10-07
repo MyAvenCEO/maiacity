@@ -7,7 +7,7 @@
 import * as THREE from 'three';
 import { GRASS, MOUNTAIN, SAND, WARES, WATER } from './rules.js';
 import { buildingModel, mat, recolour, scaffold, TEAM } from './models.js';
-import { SE } from './hex.js';
+import { SE, STEP } from './hex.js';
 
 const ROAD_W = 0.42;
 /** the water's surface */
@@ -131,6 +131,9 @@ export function createView(scene, sim) {
 	].map(([sx, sz]) => inst(new THREE.CylinderGeometry(0.065, 0.065, 0.05, 10).rotateZ(Math.PI / 2).translate(sx * 0.14, 0.065, sz * 0.19), tyre, BUSES));
 	const spots = inst(new THREE.CylinderGeometry(0.5, 0.5, 0.06, 6), keep(new THREE.MeshBasicMaterial({ color: '#ffffff', transparent: true, opacity: 0.55 })), g.N, false);
 	spots.receiveShadow = false;
+	// the settlement hexes of one biome, tinted, while a building that needs it is being placed
+	const tiles = inst(new THREE.CylinderGeometry(STEP * 1.45, STEP * 1.45, 0.04, 6).rotateY(Math.PI / 6), keep(new THREE.MeshBasicMaterial({ color: '#ffffff', transparent: true, opacity: 0.32, depthWrite: false })), g.N, false);
+	tiles.receiveShadow = false;
 
 	const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), s3 = new THREE.Vector3(), p3 = new THREE.Vector3(), yAxis = new THREE.Vector3(0, 1, 0);
 	/** @param {THREE.InstancedMesh} mesh @param {number} k @param {number} x @param {number} y @param {number} z */
@@ -607,6 +610,14 @@ export function createView(scene, sim) {
 				spots.setColorAt(k, c.set('#9dff8a'));
 			});
 			done(spots, nodes.length);
+		},
+		/** tint whole settlement hexes (by their middle nodes) in a biome's colour @param {number[]} centres @param {string} color */
+		tiles(centres, color = '#ffffff') {
+			centres.forEach((n, k) => {
+				put(tiles, k, X(n), Math.max(Y(n), SEA) + 0.03, Z(n));
+				tiles.setColorAt(k, c.set(color));
+			});
+			done(tiles, centres.length);
 		},
 		/** the way a road would take @param {number[] | null} path */
 		road(path) {
