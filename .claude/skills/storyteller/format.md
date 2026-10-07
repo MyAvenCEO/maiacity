@@ -34,7 +34,7 @@ three rules in `scenes.md`:
 | Principle | In her words | For us |
 |---|---|---|
 | **Write every idea down** | "Every time something pops into my head" — then pre-production only once it is strong enough | The Idea step: one pad per story, links and fragments, nothing lost (the Stories board) |
-| **Pre-production is the hard part** | "If I do my pre-production well, filming goes smoothly and the editing is way easier" — an outline, bullet points or a script; a shot list; drawn shots on days of 30 | Hook → Journey → Writing before a frame is shot; the shot list and storyboard (`director`) |
+| **Pre-production is the hard part** | "If I do my pre-production well, filming goes smoothly and the editing is way easier" — an outline, bullet points or a script; a shot list; drawn shots on days of 30 | Journey → Hook → Writing before a frame is shot; the shot list and storyboard (`director`) |
 | **Choose stories that carry a full arc** | Relevant to her now, a compelling case, "a full story arc in it"; a marathon or a transformation has one built in | Every episode is a step of a transformation already under way: the city being built |
 | **Make people care: plead your case** | "Assume that nobody knows anything about you … sometimes making someone care is as simple as providing context" — her marathon film made the audience know her people first | Every episode stands alone: who Samuel is, what maiaCITY is, why it matters, said again in new words each time (context, `arc.md`) |
 | **Style = inspiration × constraints** | Filming alone on a tripod, she shot "a ton of angles" — now her signature | Our constraints are our style: one man, one room, the 3D worlds as his second camera crew |
