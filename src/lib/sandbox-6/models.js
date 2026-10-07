@@ -120,20 +120,6 @@ function tree(/** @type {number} */ x, /** @type {number} */ y, /** @type {numbe
 	g.add(part(new THREE.ConeGeometry(0.3 * s, 0.75 * s, 7), mat('#3f7a3c'), x, y + 0.7 * s, z));
 	return g;
 }
-/** an open canopy: a shallow dome on posts @param {number} r @param {string} color */
-function canopy(r, color, x = 0, z = 0, h = 0.9, posts = 4) {
-	const g = new THREE.Group();
-	g.position.set(x, 0, z);
-	for (let k = 0; k < posts; k++) {
-		const a = (k / posts) * Math.PI * 2 + Math.PI / posts;
-		g.add(part(new THREE.CylinderGeometry(0.035, 0.035, h, 5), mat(TIMBER), Math.sin(a) * r * 0.85, h / 2, Math.cos(a) * r * 0.85));
-	}
-	const cap = part(new THREE.SphereGeometry(r, 12, 5, 0, Math.PI * 2, 0, Math.PI / 2), mat(color, 0.7), 0, h, 0);
-	cap.scale.y = 0.55;
-	g.add(cap);
-	return g;
-}
-
 /**
  * A village center's hall: one shell turned round its axis, in the domes' own faceted cream. It rises from the
  * plinth's outer ring like a dome, sweeps in to a slender tower and closes in a rounded top: one structure, the
@@ -279,15 +265,6 @@ export function buildingModel(type, owner, level = 2) {
 			g.add(band(owner, 0.87, PLINTH + 0.15));
 			break;
 		}
-		case 'well':
-			// an open dome over the water, on four posts
-			g.add(part(new THREE.CylinderGeometry(0.45, 0.5, 0.4, 12), mat(STONE), 0, 0.2, 0));
-			g.add(part(new THREE.CylinderGeometry(0.38, 0.38, 0.05, 12), mat('#3c7fa6', 0.3), 0, 0.4, 0));
-			g.add(canopy(0.62, '#5a8fb3', 0, 0, 1.0));
-			g.add(part(new THREE.CylinderGeometry(0.02, 0.02, 0.5, 5), mat(TIMBER), 0, 0.75, 0));
-			g.add(part(new THREE.BoxGeometry(0.14, 0.14, 0.14), mat(TIMBER), 0, 0.5, 0));
-			g.add(band(owner, 0.5, 0.38));
-			break;
 		case 'bakery':
 			// a terracotta oven dome, its chimney at the crown, loaves at the door
 			g.add(dome(0.85, 0.75, '#c0653a'));

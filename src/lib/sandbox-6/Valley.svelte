@@ -337,15 +337,14 @@
 				{/if}
 				{#if wt}
 				<section class="ledger" aria-label="Water">
-					<p class="ledger-head" class:short={wt.short}><b>Water</b><span title="Rain falls most in summer and least in winter; its tanks carry it through the dry months">{MONTHS[wt.month - 1]} rain{wt.wells ? ` · ${wt.wells} ${wt.wells === 1 ? 'well' : 'wells'}` : ''}</span></p>
-					<span class="bar" title="What its roofs catch and its wells give against the fresh water its people use: its tanks carry the rest, and the world market sells it when they run dry"><span style:width="{Math.min(100, ((wt.rain + wt.drawn) / Math.max(1, wt.week)) * 100)}%"></span></span>
+					<p class="ledger-head" class:short={wt.short}><b>Water</b><span title="Rain falls most in summer and least in winter; its tanks carry it through the dry months">{MONTHS[wt.month - 1]} rain</span></p>
+					<span class="bar" title="What its roofs catch against the fresh water its people use: its tanks carry the rest, and the world market sells it when they run dry"><span style:width="{Math.min(100, (wt.rain / Math.max(1, wt.week)) * 100)}%"></span></span>
 					<dl>
 						<dt title="Four weeks of fresh water for each bed; what they cannot hold runs off">In its tanks</dt><dd>{num(wt.litres / 1000)} of {num(wt.tank / 1000)} m³</dd>
 						<dt title="{WATER_L} L a person a day: {WATER_USE.drinking} to drink, {WATER_USE.home} at home and {WATER_USE.crops} for the crops. The crops take the home's greywater again, so {FRESH_L} L of it is fresh">Used a week</dt><dd>{num(wt.week / 1000)} m³</dd>
 						<dt title="The home's greywater, cleaned in the hex's reed beds, waters the crops">Greywater to crops</dt><dd>{num(wt.grey / 1000)} m³</dd>
 						<dt title="Each dome's roof catches {RAIN_MM} mm of rain a year into its tanks, nine tenths of it: about 71 m² a bed, more in summer, less in winter">Rain a week</dt><dd class:gain={wt.rain >= wt.week} class:debt={wt.rain < wt.week}>{num(wt.rain / 1000)} m³</dd>
-						{#if wt.drawn >= 1}<dt>Wells give a week</dt><dd>{num(wt.drawn / 1000)} m³</dd>{/if}
-						{#if wt.bought >= 1}<dt title="What its rain and wells do not give while its tanks are dry, from the world market at {WATER_PRICE * 1000} € a m³">Bought a week</dt><dd>{num(wt.bought / 1000)} m³ · {num(wt.spent)} €</dd>{/if}
+						{#if wt.bought >= 1}<dt title="What its rain does not give while its tanks are dry, from the world market at {WATER_PRICE * 1000} € a m³">Bought a week</dt><dd>{num(wt.bought / 1000)} m³ · {num(wt.spent)} €</dd>{/if}
 					</dl>
 				</section>
 				{/if}
@@ -362,7 +361,7 @@
 							</li>
 						{/each}
 						<li title="Each village buys what its food forests do not grow, while its treasury can pay, and exports what they grow beyond two weeks put by"><span class="k">Food</span><span class="n">{PRICE.world} € a kg</span><em>by itself</em></li>
-						<li title="Each village buys what its rain and wells do not give once its tanks run dry, by itself, while its treasury can pay"><span class="k">Water</span><span class="n">{WATER_PRICE * 1000} € a m³</span><em>by itself</em></li>
+						<li title="Each village buys what its rain does not give once its tanks run dry, by itself, while its treasury can pay"><span class="k">Water</span><span class="n">{WATER_PRICE * 1000} € a m³</span><em>by itself</em></li>
 					</ul>
 					{#if home.wares >= 1}<dl><dt>Spent on wares a week</dt><dd>{num(home.wares)} €</dd></dl>{/if}
 					{#if buyWhy}<p class="status">{buyWhy}</p>{/if}

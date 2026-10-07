@@ -17,8 +17,7 @@
  * what piles up gets cheap. A city sells what it has spare to whoever pays most and buys what it lacks from whoever
  * asks least, among the cities it can reach. Coins are only how wares change hands: nothing in the score counts them.
  *
- * Needs. Everyone eats, drinks (in kg and litres a week, grown by the hexes, caught by the roofs and drawn from wells:
- * ./food.js) and keeps a home (planks and steel). Each need is met (0–1) as far as the village had what it took lately.
+ * Needs. Everyone eats, drinks (in kg and litres a week, grown by the hexes and caught by the roofs: ./food.js) and keeps a home (planks and steel). Each need is met (0–1) as far as the village had what it took lately.
  *
  * Neighbours. Each makes some wares well and runs short of others, so they trade with each other (their two cities
  * start joined by a route) and with you once you join them, and now and then one asks you for what it lacks most: a
@@ -145,10 +144,10 @@ export function party(/** @type {string} */ name, /** @type {number} */ pop) {
 		kg: 0,
 		litres: 0,
 		/** what it did lately, a week (kg, litres, €): its food grown, eaten, bought from your villages and from the
-		 * world, sold to your villages and exported, spoiled, spent and earned on it; its water drawn from its wells,
+		 * world, sold to your villages and exported, spoiled, spent and earned on it; its water caught by its roofs,
 		 * bought, used, spent on it; what it spent on wares from the world market; and all it paid out (imp) and took
 		 * in (exp) in trade with the world and your other villages, its cashflow, and of that with the world alone */
-		flow: { grown: 0, eaten: 0, fromVillages: 0, fromWorld: 0, sold: 0, exported: 0, spoiled: 0, spent: 0, earned: 0, rain: 0, drawn: 0, boughtL: 0, used: 0, waterSpent: 0, wares: 0, imp: 0, exp: 0, wimp: 0, wexp: 0 },
+		flow: { grown: 0, eaten: 0, fromVillages: 0, fromWorld: 0, sold: 0, exported: 0, spoiled: 0, spent: 0, earned: 0, rain: 0, boughtL: 0, used: 0, waterSpent: 0, wares: 0, imp: 0, exp: 0, wimp: 0, wexp: 0 },
 		/** @type {Record<string, number>} */ stock: {},
 		/** what is on its way to it, by ware @type {Record<string, number>} */ coming: {},
 		coins: 0

@@ -8,8 +8,8 @@
  *   trees → forester → planks            (one building that grows: forester, woodcutter, sawmill, timber works)
  *   iron → iron mine → steel             (one building that grows: iron mine, furnace, steelworks)
  *
- * Food and water are not wares: every house's hex grows food, its roof catches rain into the tanks and wells pipe
- * the rest, and what a village lacks it buys from the world market (./food.js).
+ * Food and water are not wares: every house's hex grows food and its roof catches rain into the tanks, and what a
+ * village lacks it buys from the world market (./food.js).
  *
  * Every building stands in a settlement (./plots.js): a house and two factory domes round one flag. Houses are where
  * settlers live — 2, then twice as many each time they are enlarged, up to 248 — so a village has only as many people
@@ -62,7 +62,7 @@ export const IRON = 2;
  * @property {string} group which part of the build menu
  * @property {string} about one line
  * @property {Record<string, number>} cost planks and steel a builder uses up
- * @property {'centre'|'house'|'make'|'mine'|'gather'|'forester'|'well'|'village'} kind
+ * @property {'centre'|'house'|'make'|'mine'|'gather'|'forester'|'village'} kind
  * @property {string} [worker] who works it
  * @property {string[][]} [inputs] each slot takes any one of its wares
  * @property {string} [out] the ware it makes
@@ -83,13 +83,12 @@ export const BUILDINGS = {
 	woodcutter: { id: 'woodcutter', label: 'Forester', group: 'Basics', about: 'Your wood, in one building that grows: a forester plants young trees round it; upgraded, a woodcutter fells grown trees and plants a young one where each stood, then a sawmill and a timber works cut more planks from every tree. Build it on a forest hex.', cost: { plank: 2 }, kind: 'gather', biome: 'forest', worker: 'Forester', out: 'plank', time: 6, rest: 4, range: 10 },
 	forester: { id: 'forester', label: 'Forester', group: '', about: 'Plants young trees nearby, on a forest hex; they grow in about two minutes. (Now the first level of the wood building.)', cost: { plank: 2 }, kind: 'forester', biome: 'forest', worker: 'Forester', time: 3, rest: 5, range: 8 },
 	ironmine: { id: 'ironmine', label: 'Iron mine', group: 'Basics', about: 'Your steel, in one building that grows: an iron mine digs iron ore and smelts a load of steel struts from each load; upgraded, a furnace makes two and a steelworks three from the same ore. Build it on an iron hex, by rust-red rock.', cost: { plank: 4 }, kind: 'mine', biome: 'iron', worker: 'Miner', inputs: [], out: 'steel', time: 8, on: 'any', ore: 'iron' },
-	well: { id: 'well', label: 'Well', group: 'Water', about: 'A borehole: pipes 2 L a second straight to its village’s tanks, fresh water for about 1,700 people, for when the rain its roofs catch runs short. Nobody needs to work it.', cost: { plank: 2 }, kind: 'well' },
 	village: { id: 'village', label: 'Village center', group: '', about: 'A neighbour city’s village center.', cost: {}, kind: 'village' }
 };
 
 
 /** the build menu, in its groups */
-export const GROUPS = ['Homes', 'Basics', 'Water'];
+export const GROUPS = ['Homes', 'Basics'];
 export const MENU = GROUPS.map((g) => ({ group: g, types: Object.values(BUILDINGS).filter((b) => b.group === g) }));
 
 /** buildings that hold their village as land: its center */

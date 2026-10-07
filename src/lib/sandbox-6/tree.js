@@ -10,11 +10,10 @@ import { NEEDS } from './market.js';
 export const SOURCE = /** @type {Record<string, string>} */ ({
 	woodcutter: 'grown trees',
 	forester: 'free grass',
-	ironmine: 'iron ore',
-	well: 'anywhere'
+	ironmine: 'iron ore'
 });
 /** the wares people live on: their homes' planks and steel (their food grows in the hexes' food forests and their water
- * falls on their roofs, wells give the rest, ./food.js) */
+ * falls on their roofs, ./food.js) */
 export const LIVED_ON = new Set(Object.keys(NEEDS));
 
 /** buildings that make or gather something: the chains */
