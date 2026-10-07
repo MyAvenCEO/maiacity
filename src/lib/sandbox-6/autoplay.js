@@ -1,6 +1,6 @@
 /**
  * SANDBOX 6 · AUTOPLAY — a player that builds the whole economy by itself, step by step, the way a person would:
- * homes and wood, steel and glass first, then houses until its villages are full (their roofs catch their water),
+ * its logistics hub, then homes and wood, steel and glass, then houses until its villages are full (their roofs catch their water),
  * trading planks, steel, fired clay and glass with the world market. Its domes cost real tonnes, so it enlarges a house
  * once its treasury can pay for what its stores lack (it never borrows by choice). The film camera grows its valley with it (a settlement that is
  * already busy), and it plays a whole game headless to prove every chain runs end to end.
@@ -176,8 +176,8 @@ export function createAutoplay(sim) {
 				owe(Object.fromEntries(Object.entries(/** @type {Record<string, number>} */ (b.cost)).map(([w, n]) => [w, Math.max(0, n - (b.got[w] ?? 0) - (b.used[w] ?? 0) - (b.inc?.[w] ?? 0))])));
 		const rows = sim.market().parties.filter((/** @type {any} */ r) => r.owner === PLAYER);
 		const gold = (/** @type {any} */ row) => (row?.eur ?? 0) - (row?.pop ?? 0) * FOOD_KG * KEEP * PRICE.world;
-		const pays = (/** @type {Record<string, number>} */ cost, /** @type {any} */ row = rows[0]) =>
-			Object.entries(cost).reduce((e, [w, n]) => e + Math.max(0, n + (owed[w] ?? 0) - (s.stock[w] ?? 0)) * (WORLD[w]?.eur ?? 0), 0) <= gold(row);
+		const pays = (/** @type {Record<string, number>} */ cost, /** @type {any} */ row = rows[0], eur = 0) =>
+			Object.entries(cost).reduce((e, [w, n]) => e + Math.max(0, n + (owed[w] ?? 0) - (s.stock[w] ?? 0)) * (WORLD[w]?.eur ?? 0), 0) + eur <= gold(row);
 		return { owe, rows, pays };
 	}
 	/** beds before people: in each village that is nearly full and lives well, enlarge its largest house that can still grow, or build a new one */
@@ -229,6 +229,11 @@ export function createAutoplay(sim) {
 	}
 	return {
 		tick() {
+			// a new valley: its logistics hub first, in the village the valley was grown with for it
+			if (!hq()) {
+				sim.build('centre', sim.spotFor('centre', st.home ?? 0), true);
+				return;
+			}
 			// a used-up mine is torn down and dug again elsewhere
 			for (const b of sim.buildingList())
 				if (b.owner === PLAYER && b.deposit <= 0 && BUILDINGS[b.type].ore && b.stage === 'live') {
@@ -249,6 +254,11 @@ export function createAutoplay(sim) {
 						break;
 					}
 				}
+			}
+			// a village center grows (its hub into the village center, then more wells) once its treasury can pay for it
+			for (const row of sim.market().parties.filter((/** @type {any} */ p) => p.owner === PLAYER)) {
+				const next = sim.village(row.node)?.power.next, c = sim.at(row.node);
+				if (next && c?.k === 'building' && pays(next.up, row, next.gold * 1000)) sim.grow(/** @type {number} */ (c.id));
 			}
 			// on your own in the valley: past the first buildings, homes and new villages go on as the plan does
 			const joined = st.auto >= PLAN.length - 2 && (!sim.links(st.hq).some((l) => !l.mine) || join());

@@ -58,10 +58,6 @@ export const WORLD = /** @type {Record<string, { eur: number, unit: string }>} *
 /** electricity on the world grid, € a kWh: it buys what your villages make beyond what they use, and sells what they
  * lack, 80 € a MWh */
 export const GRID_EUR_KWH = 0.08;
-/** what drilling a geothermal stage costs, €, as Samuel set it (2026-10-07; our research says 30 to 45 M € for a
- * plant): paid in gold as a new village is founded and for each stage drilled after; your first village's comes with
- * the valley */
-export const WELL_EUR = 25e6;
 /**
  * What a treasury lacks, it borrows: an annuity loan, paid back in equal monthly payments over fifteen years at 1% a
  * month (Samuel, 2026-10-07), about 1.2% of what was borrowed each month, up to 125 gold (125,000 €) for each of its

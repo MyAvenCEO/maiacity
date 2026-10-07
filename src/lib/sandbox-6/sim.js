@@ -21,8 +21,8 @@
  *     out;
  *   · what a treasury lacks it borrows, an annuity loan over fifteen years (./market.js LOAN). There is no goal to win.
  */
-import { BIOMES, BUILDINGS, BUILD_MWH_T, ENERGY, GROWS, GRASS, HOUSE_BEDS, HOUSE_MOST, HOUSE_TOP, HOUSE_UP, IRON, LAND, LOAD_T, MOUNTAIN, RECIPES, ROUNDS_YEAR, ROUTE_T_KM, START, UNIT_M, WARES, WATER, holdsLand, loadsRound, recipe, sunBedDay, yearOf } from './rules.js';
-import { CART, GRID_EUR_KWH, HEARTS, LOAN, LOAN_PAY, NEEDS, NEIGHBOURS, TRADED, WELL_EUR, WORLD, heartsFor, keepOf, live, loanMonths, make, newMarket, orderRule, party, priceIn, request, shortIn, spareIn } from './market.js';
+import { BIOMES, BUILDINGS, BUILD_MWH_T, CENTRE, ENERGY, GROWS, GRASS, HOUSE_BEDS, HOUSE_MOST, HOUSE_TOP, HOUSE_UP, IRON, LAND, LOAD_T, MOUNTAIN, RECIPES, ROUNDS_YEAR, ROUTE_T_KM, START, UNIT_M, WARES, WATER, centreStage, holdsLand, loadsRound, recipe, sunBedDay, yearOf } from './rules.js';
+import { CART, GRID_EUR_KWH, HEARTS, LOAN, LOAN_PAY, NEEDS, NEIGHBOURS, TRADED, WORLD, heartsFor, keepOf, live, loanMonths, make, newMarket, orderRule, party, priceIn, request, shortIn, spareIn } from './market.js';
 import { SE, STEP, findPath, makeGrid } from './hex.js';
 import { CISTERN, FOOD_KG, FRESH_L, KEEP, MOST, PACE, PRICE, RAIN_L, RAIN_MONTH, TANK, WATER_PRICE, WATER_USE, WEEK, YEAR, DAY, MONTH, calendar, forestShare } from './food.js';
 import { makePlan, spoke } from './plots.js';
@@ -46,11 +46,12 @@ const FORESTER_TREES = 45;
 const LATELY = 13;
 /** the wood building's level, 1 (forester) to 4 (timber works); one built before it grew levels was a woodcutter */
 export const woodLevel = (/** @type {any} */ b) => b.level || 2;
-/** a building's level as it stands: a house's size, the wood building's or the steel building's stage (1 for an iron
- * mine) */
-export const levelOf = (/** @type {any} */ b) => (b.type === 'woodcutter' ? woodLevel(b) : RECIPES[b.type] ? b.level || 1 : b.level);
-/** the geothermal stages under a village center: an injector and two producers, then two more producers each */
-export const wellsOf = (/** @type {any} */ c) => c.wells ?? 1;
+/** a building's level as it stands: a house's size, a factory's stage (1 for its first), a village center's (1, a
+ * logistics hub) */
+export const levelOf = (/** @type {any} */ b) => (b.type === 'woodcutter' ? woodLevel(b) : RECIPES[b.type] || b.type === 'centre' ? b.level || 1 : b.level);
+/** the geothermal stages under a village center, by its stage: none under a logistics hub, an injector and two
+ * producers under the village center, then two more producers each */
+export const wellsOf = (/** @type {any} */ c) => (c.type === 'centre' ? centreStage(levelOf(c)).wells : 0);
 /** a neighbour city's people when its village is full: six houses of sixteen */
 /** the most villages a neighbour founds */
 const CITY_VILLAGES = 5;
@@ -62,7 +63,7 @@ export function newGame(seed = 7) {
 	const v = growValley(seed);
 	const N = v.W * v.H;
 	const st = {
-		v: 19,
+		v: 20,
 		seed,
 		time: 0,
 		/** days of the valley's calendar gone by (./food.js) */
@@ -105,6 +106,8 @@ export function newGame(seed = 7) {
 		/** when the slower rules next run */
 		clocks: { dispatch: 0, people: 0, grow: 0, pop: 18, needs: 0, trade: 5, grow2: 60 },
 		hq: 0,
+		/** where the valley would have your first village: the camera starts here until you put up your hub */
+		home: 0,
 		/** the neighbours' village centers (building ids) */
 		/** @type {number[]} */ villages: [],
 		...newMarket(),
@@ -121,7 +124,7 @@ export function newGame(seed = 7) {
 /** A game from its saved state. @param {string | object} saved */
 export function loadGame(saved) {
 	const st = typeof saved === 'string' ? JSON.parse(saved) : saved;
-	if (!st || st.v !== 19 || !Array.isArray(st.terrain)) throw new Error('Not a Sandbox 6 game of this kind');
+	if (!st || st.v !== 20 || !Array.isArray(st.terrain)) throw new Error('Not a Sandbox 6 game of this kind');
 	return createSim(st);
 }
 
@@ -378,9 +381,9 @@ export function createSim(st) {
 			coming: /** @type {Record<string, number>} */ ({}),
 			/** a village center's treasury, in HEARTs (its settlers issue them) */
 			hearts: 0,
-			/** a village center's geothermal stages: one as it is founded (an injector and two producers) */
-			wells: type === 'centre' ? 1 : 0
 		};
+		// a village center is founded as a logistics hub, its first stage
+		if (type === 'centre') b.level = 1;
 		for (const w of Object.keys(b.cost)) (b.used[w] = 0), (b.got[w] = 0), (b.inc[w] = 0);
 		if (t.ore) b.deposit = depositAt(node);
 		flag.bld ||= b.id;
@@ -1663,8 +1666,9 @@ export function createSim(st) {
 	const wellsDay = (/** @type {any} */ c) => wellsOf(c) * ENERGY.wellKw * 24 * ENERGY.uptime;
 	/** kWh a day so many people use at home */
 	const homeDay = (/** @type {number} */ pop) => (pop * ENERGY.home) / YEAR;
-	/** kWh a day a village center uses: its hall, its storehouse, its trade routes' lights and trains */
-	const centreDay = ENERGY.centre / YEAR;
+	/** kWh a day a village center uses at its stage (its keep): its hall, its storehouse, its trade routes' lights and
+	 * trains; a logistics hub less */
+	const centreDay = (/** @type {any} */ c) => (centreStage(levelOf(c)).keep.in.energy * 1000) / YEAR;
 	/** kWh a day its domes' climate uses: each bed's share, taken or not */
 	const climateIn = (/** @type {number} */ v) => (bedsIn(v) * ENERGY.climateBed) / YEAR;
 	/**
@@ -1789,7 +1793,7 @@ export function createSim(st) {
 		/** @type {Map<any, number>} */
 		const over = new Map();
 		for (const { v, c, p } of vs) {
-			const well = wellsDay(c) * days, sun = sunIn(v) * days, home = homeDay(p.pop) * days, climate = climateIn(v) * days, centre = centreDay * days, work = p.pend?.kwhWork ?? 0;
+			const well = wellsDay(c) * days, sun = sunIn(v) * days, home = homeDay(p.pop) * days, climate = climateIn(v) * days, centre = centreDay(c) * days, work = p.pend?.kwhWork ?? 0;
 			if (p.pend) delete p.pend.kwhWork;
 			add(p, 'kwhWell', well);
 			add(p, 'kwhSun', sun);
@@ -1880,6 +1884,11 @@ export function createSim(st) {
 		const loads = {};
 		let kwh = 0;
 		for (const b of mineIn(v)) {
+			// a village center's: its wares here, its energy with its hall's (centreDay)
+			if (b.type === 'centre' && b.stage === 'live') {
+				for (const [w, t] of Object.entries(centreStage(levelOf(b)).keep.in)) if (w !== 'energy') loads[w] = (loads[w] ?? 0) + t / LOAD_T;
+				continue;
+			}
 			const r = RECIPES[b.type] && (b.stage === 'live' || b.level > 0) ? recipe(b.type, levelOf(b)) : null;
 			if (!r) continue;
 			for (const [w, t] of Object.entries(r.keep.in)) if (w === 'energy') kwh += t * 1000;
@@ -2115,15 +2124,17 @@ export function createSim(st) {
 			const mid = plan.centre[plot];
 			if (st.terrain[n] !== GRASS || st.terrain[mid] !== GRASS) return 'Needs open grass';
 			if (st.obj[n]?.k === 'bld' || st.road[n] || st.obj[mid]?.k === 'bld' || st.road[mid]) return 'Something stands here';
+			// your first comes with your settlers, wherever there is room for three homes round it
+			if (first()) return homesRound(v) >= 3 ? '' : 'Too little open land round it for homes';
 			const f = founder(v);
-			if (!f) return plan.villages[v].near.some((x) => st.villageOwner[x] === PLAYER) ? `The village next to it cannot pay for its center, its geothermal wells (${(WELL_EUR / HEARTS.perGold).toLocaleString('en-US')} gold) and the trade route to it, fired clay, from what its treasury holds and may borrow` : 'Too far: found villages next to your city';
+			if (!f) return plan.villages[v].near.some((x) => st.villageOwner[x] === PLAYER) ? 'The village next to it cannot pay for its logistics hub and the trade route to it, fired clay, from what its treasury holds and may borrow' : 'Too far: found villages next to your city';
 			return '';
 		}
 		if (middle) return 'The village center fills the middle of the village';
 		if (spot < 0) return 'Buildings stand round the middle of a settlement: pick a marked spot';
 		if (type === 'house' && spot !== 0) return 'A house stands on its settlement’s house spot';
 		if (type !== 'house' && spot === 0) return 'This spot is for the settlement’s house';
-		if (vo !== PLAYER) return 'Outside your city: found a village center first';
+		if (vo !== PLAYER) return first() ? 'Put up your logistics hub first, in the middle hex of a village' : 'Outside your city: found a village with a logistics hub first';
 		if (!mineIn(v).some((b) => b.type === 'centre' && b.stage === 'live')) return 'This village’s center is still being founded';
 		// a woodcutter, forester or iron mine only stands on a hex of its own kind
 		if (t.biome && st.biome[plot] !== t.biome) return `${t.label}s stand on ${BIOMES[t.biome].label.toLowerCase()} hexes`;
@@ -2143,13 +2154,17 @@ export function createSim(st) {
 		if (t.ore && depositAt(n) <= 0) return 'No iron ore in this rock';
 		return '';
 	}
-	/** the village center of yours that can found a village: next to it, with what it costs and the route */
+	/** whether you have no village yet: your first logistics hub is still to put up */
+	const first = () => !blds().some((b) => b.owner === PLAYER && b.type === 'centre');
+	/** the hexes round a village's middle with room for a home */
+	const homesRound = (/** @type {number} */ v) => plan.villages[v].plots.filter((x) => x !== plan.villages[v].centre && plan.spots[x][0] >= 0 && st.terrain[plan.spots[x][0]] === GRASS).length;
+	/** the village center of yours that can found a village: next to it, with what its hub costs and the route */
 	function founder(/** @type {number} */ v) {
 		const cost = BUILDINGS.centre.cost, mid = plan.centre[plan.villages[v].centre];
 		return (
 			myCentres()
 				.filter((c) => plan.villages[v].near.includes(villageAt(c.node)))
-				.filter((c) => payable(c, { ...cost, clay: tunnelCost(c.node, mid) }, WELL_EUR))
+				.filter((c) => payable(c, { ...cost, clay: tunnelCost(c.node, mid) }))
 				.sort((a, b) => g.dist(a.node, mid) - g.dist(b.node, mid))[0] ?? null
 		);
 	}
@@ -2241,7 +2256,7 @@ export function createSim(st) {
 	function power(b) {
 		const week = WEEK / YEAR;
 		if (b.stage !== 'live' && !(b.level > 0)) return null;
-		if (b.type === 'centre') return { made: wellsDay(b) * 7, used: centreDay * 7, next: null };
+		if (b.type === 'centre') return { made: wellsDay(b) * 7, used: centreDay(b) * 7, next: null };
 		if (b.type === 'house' && b.level) {
 			const beds = HOUSE_BEDS[b.level - 1];
 			return { made: beds * sunBedDay(calendar(st.cal).month) * 7, used: homeDay(beds) * 7 + ((beds * ENERGY.climateBed) / YEAR) * 7, next: null };
@@ -2258,29 +2273,17 @@ export function createSim(st) {
 		/** every building, as a list kept until one comes or goes: read it, don't change it */
 		buildingList: blds,
 		step,
+		/** a new valley: nothing stands in it; you put up your first logistics hub where you like (the valley was grown
+		 * with a good village for it, `home`, where the camera starts) */
 		setup(/** @type {import('./map.js').Valley} */ v) {
-			const hq = makeBuilding('centre', v.hq, PLAYER, true);
-			hq.stock = { ...START.stock };
-			hq.settlers = START.settlers;
-			hq.hearts = 0;
-			hq.wells = START.wells;
-			hq.since = 0;
-			st.hq = hq.id;
+			st.hq = 0;
+			st.home = v.hq;
 			st.villages = [];
-			// the first houses round your village center, nearest first
-			const ring = plan.villages[villageAt(hq.node)].plots.filter((k) => k !== plan.plotOf[hq.node]).sort((a, b) => g.dist(plan.centre[a], hq.node) - g.dist(plan.centre[b], hq.node));
-			START.houses.forEach((level, x) => {
-				const h = plan.spots[ring[x]][0];
-				if (h < 0) return;
-				const b = makeBuilding('house', h, PLAYER, true);
-				b.level = level;
-				b.since = 0;
-				st.forest[plan.plotOf[h]] = 0;
-			});
 			territory();
-			for (const b of blds()) if (b.type === 'house') autoRoad(b.flag);
 			neighbourTowns();
 		},
+		/** where your first village is, or would be: its center's node */
+		homeNode: () => st.buildings[st.hq]?.node ?? st.home ?? 0,
 		canBuild,
 		canFlag,
 		planRoad,
@@ -2301,13 +2304,23 @@ export function createSim(st) {
 			// a village center stands on the middle of its hex: what grew there is cleared
 			if (type === 'centre')
 				clearAround(plan.centre[plan.plotOf[n]], 2);
+			// your first logistics hub: your settlers put it up as they come, with what they bring
+			if (type === 'centre' && first()) {
+				const hq = makeBuilding('centre', n, PLAYER, true);
+				hq.stock = { ...START.stock };
+				hq.settlers = START.settlers;
+				hq.since = 0;
+				st.hq = hq.id;
+				territory();
+				say('Your settlers put up their logistics hub. Build your first hut on a hex round it', n, 'good');
+				return { ok: true, id: hq.id, linked: true };
+			}
 			const b = makeBuilding(type, n, PLAYER);
 			b.since = st.time;
 			if (type === 'centre') {
-				// founded from the village center next to it: the cost and its geothermal wells, a trade route and four
-				// settlers go by cart
+				// founded from the village center next to it: its hub, a trade route and four settlers go by cart
 				const from = /** @type {any} */ (founder(villageAt(n)));
-				payAll(from, b.cost, WELL_EUR);
+				payAll(from, b.cost);
 				const t = dig(from, b);
 				territory();
 				const settlers = Math.min(4, from.settlers);
@@ -2449,16 +2462,24 @@ export function createSim(st) {
 			say(`A trade route now runs to ${b.owner === PLAYER ? st.vill[villageAt(b.node)]?.name ?? 'your village' : st.parties[b.owner].name}`, b.node, 'good');
 			return { ok: true };
 		},
-		/** drill another geothermal stage (two more producers) under a village center of yours: gold from the treasuries
-		 * joined to it */
-		drill(/** @type {number} */ id) {
+		/** grow a village center of yours to its next stage (./rules.js CENTRE): a logistics hub into the great village
+		 * center with its first geothermal wells, then two more producers at a time. Its wares come from the stores
+		 * joined to it (what they lack, bought from the world market), its wells' gold from their treasuries (what they
+		 * lack, borrowed), and it grows at once */
+		grow(/** @type {number} */ id) {
 			const c = st.buildings[id];
-			if (!c || c.type !== 'centre' || c.owner !== PLAYER || c.stage !== 'live') return { ok: false, why: 'Only your village centers have geothermal wells' };
-			if (wellsOf(c) >= ENERGY.wellsMost) return { ok: false, why: `Its geothermal plant is at its last stage, ${ENERGY.wellsMost} of ${ENERGY.wellsMost}` };
-			if (!payable(c, {}, WELL_EUR)) return { ok: false, why: `Drilling takes ${(WELL_EUR / HEARTS.perGold).toLocaleString('en-US')} gold: more than its treasury holds and may borrow, 125 gold a villager` };
-			spend(c, WELL_EUR);
-			c.wells = wellsOf(c) + 1;
-			say(`${st.vill[villageAt(c.node)]?.name ?? 'Your village'} drilled two more geothermal producers: ${((c.wells * ENERGY.wellKw) / 1000).toLocaleString('en-US')} MW`, c.node, 'good');
+			if (!c || c.type !== 'centre' || c.owner !== PLAYER || c.stage !== 'live') return { ok: false, why: 'Only your village centers grow here' };
+			const next = CENTRE[levelOf(c)];
+			if (!next) return { ok: false, why: `It is at its last stage, ${CENTRE.length} of ${CENTRE.length}` };
+			const eur = next.gold * HEARTS.perGold;
+			if (!payable(c, next.up, eur)) return { ok: false, why: `Growing takes ${(lacking(c, next.up) / HEARTS.perGold + next.gold).toLocaleString('en-US', { maximumFractionDigits: 0 })} gold: more than its treasury holds and may borrow, 125 gold a villager` };
+			payAll(c, next.up, eur);
+			const p = st.vill[villageAt(c.node)];
+			if (p) (p.pend ??= {}), (p.pend.kwhWork = (p.pend.kwhWork ?? 0) + next.build.in.energy * 1000);
+			c.level = levelOf(c) + 1;
+			st.objV++;
+			const name = p?.name ?? 'Your village';
+			say(next.wells > 1 ? `${name} drilled two more geothermal producers: ${((next.wells * ENERGY.wellKw) / 1000).toLocaleString('en-US')} MW` : `${name} has its village center, and its geothermal wells: ${(ENERGY.wellKw / 1000).toLocaleString('en-US')} MW`, c.node, 'good');
 			return { ok: true };
 		},
 		/** what stands at a node */
@@ -2536,7 +2557,7 @@ export function createSim(st) {
 			].filter((r) => r.need > 0 || r.have > 0);
 			/** @type {{ tone: string, text: string, node: number }[]} */
 			const notes = [];
-			if (pop >= bed && bed < cap) notes.push({ tone: 'todo', text: `No free bed: enlarge a house or build one`, node: c.node });
+			if (pop >= bed && bed < cap) notes.push({ tone: 'todo', text: bed ? `No free bed: enlarge a house or build one` : `No home yet: build your first hut on a hex round its hub`, node: c.node });
 			if (hungry) notes.push({ tone: 'alert', text: `Its treasury cannot pay for all its food and water: no newcomers until it can`, node: c.node });
 			if (p.dark) notes.push({ tone: 'alert', text: `Its treasury cannot pay the world grid for all the power it lacks`, node: c.node });
 			const cut = blds().find((b) => b.owner === PLAYER && b.stage === 'site' && villageAt(b.node) === v && b.status === 'Not connected by road');
@@ -2606,14 +2627,16 @@ export function createSim(st) {
 					sun: sunIn(v) * 7,
 					home: homeDay(pop) * 7,
 					climate: climateIn(v) * 7,
-					centre: centreDay * 7,
+					centre: centreDay(c) * 7,
 					work: f.kwhWork ?? 0,
 					sold: f.kwhSold ?? 0,
 					bought: f.kwhBought ?? 0,
 					earned: f.gridEarned ?? 0,
 					spent: f.gridSpent ?? 0,
 					month: calendar(st.cal).month,
-					drill: wellsOf(c) < ENERGY.wellsMost ? WELL_EUR : 0,
+					/** its center's stage and the stage it grows to next, or null at its last */
+					stage: levelOf(c),
+					next: CENTRE[levelOf(c)] ?? null,
 					short: !!p.dark
 				},
 				villages: all.map((x) => ({ name: x.p.name, node: x.c.node })),
@@ -2630,7 +2653,7 @@ export function createSim(st) {
 			return {
 				id: b.id,
 				type: b.type,
-				label: GROWS[b.type] && (b.level || b.stage === 'live') ? GROWS[b.type].levels[levelOf(b) - 1].label : t.label,
+				label: b.type === 'centre' ? centreStage(levelOf(b)).label : GROWS[b.type] && (b.level || b.stage === 'live') ? GROWS[b.type].levels[levelOf(b) - 1].label : t.label,
 				about: b.type === 'village' ? NEIGHBOURS[b.owner - 1].about : t.about,
 				name: b.type === 'village' ? st.parties[b.owner].name : b.type === 'centre' ? st.vill[villageAt(b.node)]?.name ?? '' : '',
 				owner: b.owner,

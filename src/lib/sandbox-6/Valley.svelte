@@ -8,11 +8,11 @@
 	import { onDestroy, onMount } from 'svelte';
 	import TouchStick from '$lib/touch/TouchStick.svelte';
 	import { WorldBar } from '$lib/sandbox-kit';
-	import { BIOMES, BUILDINGS, ENERGY, HOUSE_BEDS, HOUSE_SIZE, LAND, LOAD_T, MENU, RECIPES, WARES, buildIn } from './rules.js';
+	import { BIOMES, BUILDINGS, ENERGY, HOUSE_BEDS, HOUSE_SIZE, LAND, LOAD_T, MENU, RECIPES, START, WARES, buildIn } from './rules.js';
 	import { EUR_PER_GOLD, GRID_EUR_KWH } from './market.js';
 	import { UNIT_OF, costLine, craftLine, energy, fmt, food, gold, nameOf, side, ware, water } from './units.js';
 	import { MONTHS, PRICE, SIM_SPEED, SPEEDS, WATER_PRICE } from './food.js';
-	import { PLAYER, wellsOf } from './sim.js';
+	import { PLAYER, levelOf } from './sim.js';
 	import Tree from './Tree.svelte';
 
 	/** @type {HTMLDivElement | undefined} */
@@ -61,8 +61,8 @@
 	let linkWhy = $state('');
 	/** what an Enlarge or Upgrade button said when it could not grow */
 	let upWhy = $state('');
-	/** what the Drill button said when the wells could not be paid */
-	let drillWhy = $state('');
+	/** what the Grow button of a village center said when it could not be paid */
+	let growWhy = $state('');
 	/** the village of yours the right side shows — the one picked, else your first: each need against its stock */
 	let home = $state(/** @type {ReturnType<import('./sim.js').Sim['village']>} */ (null));
 	/** whether the pick is a village center of yours: then the right side is its card */
@@ -121,8 +121,8 @@
 			for (const b of Object.values(sim.state.buildings)) {
 				if (b.owner !== PLAYER) continue;
 				n[b.type] = (n[b.type] ?? 0) + 1;
-				// and by the stage it stands at: a village center by its geothermal stages
-				const lv = b.type === 'centre' ? (b.stage === 'live' ? wellsOf(b) : 0) : b.level;
+				// and by the stage it stands at: a village center by its own (a logistics hub first)
+				const lv = b.type === 'centre' ? (b.stage === 'live' ? levelOf(b) : 0) : b.level;
 				if (lv) n[`${b.type}:${lv}`] = (n[`${b.type}:${lv}`] ?? 0) + 1;
 			}
 			owned = n;
@@ -170,14 +170,15 @@
 		selected = s;
 		linkWhy = '';
 		upWhy = '';
-		drillWhy = '';
+		growWhy = '';
 		refresh();
 	}
-	/** drill two more geothermal producers under the selected village center */
-	function drill() {
-		if (!card || !game) return;
-		const r = game.sim.drill(card.id);
-		drillWhy = r.ok ? '' : r.why ?? '';
+	/** grow the shown village's center to its next stage: a logistics hub into the village center, then more wells */
+	function grow() {
+		const at = home && game?.sim.at(home.node);
+		if (!game || at?.k !== 'building') return;
+		const r = game.sim.grow(/** @type {number} */ (at.id));
+		growWhy = r.ok ? '' : r.why ?? '';
 		refresh();
 	}
 	/** dig a trade route from the selected village center to another */
@@ -275,7 +276,7 @@
 	const chainOf = (/** @type {any} */ t) => {
 		const r = RECIPES[t.id];
 		if (r) return `On a ${BIOMES[/** @type {keyof typeof BIOMES} */ (r.biome)].label.toLowerCase()} hex: ${LAND[/** @type {keyof typeof LAND} */ (r.land)].label} → ${label(t.out).toLowerCase()}, grows in ${r.stages.length} stages`;
-		return t.kind === 'centre' ? 'Its village’s storehouse, market, hall and geothermal power plant' : t.kind === 'house' ? 'Beds for 2, doubling each time it is enlarged, up to 248; plants its hex’s food forest' : '';
+		return t.kind === 'centre' ? 'A small store dome in a village’s middle hex; grows into its village center and geothermal power plant' : t.kind === 'house' ? 'Beds for 2, doubling each time it is enlarged, up to 248; plants its hex’s food forest' : '';
 	};
 </script>
 
@@ -338,12 +339,25 @@
 		</section>
 	{/if}
 
+	<!-- a new valley: nothing stands yet; your first logistics hub, wherever you like -->
+	{#if summary && !home && !simulating}
+		<aside class="side">
+			<section class="panel village" aria-label="A new valley">
+				<p class="eyebrow">A new valley</p>
+				<h2>Found your village</h2>
+				<p class="label">Put up your logistics hub in the middle hex of a village: your {START.settlers} settlers bring it, with {costLine(START.stock)} in its store. Then build your first hut on a hex round it.</p>
+				<div class="actions"><button class="go" onclick={() => tool('build', 'centre')}>Place your logistics hub</button></div>
+				<p class="small">It grows into your village center later, with its geothermal wells. What its treasury lacks it borrows, up to 125 gold a villager.</p>
+			</section>
+		</aside>
+	{/if}
+
 	<!-- your village, on the right: what it has against what it needs -->
 	{#if home && summary}
 		<aside class="side">
 			<section class="panel village" aria-label="{home.name}: what it has, against what it needs">
 				{#if ownCentre}<button class="close" onclick={() => game?.select(null)} aria-label="Close">×</button>{/if}
-				<p class="eyebrow">Your village{ownCentre ? ' · village center' : ''}</p>
+				<p class="eyebrow">Your village{ownCentre && card ? ` · ${card.label.toLowerCase()}` : ''}</p>
 				<h2>{home.name}</h2>
 				{#if home.villages.length > 1}
 					<div class="tabs" role="group" aria-label="Your villages">
@@ -383,9 +397,10 @@
 						</li>
 					{/each}
 				</ul>
-				{#if ownCentre && pw?.drill}
-					<div class="actions"><button class="go" onclick={drill} title="Drill two more geothermal producers under its village center: {ENERGY.wellKw / 1000} MW more, {energy(ENERGY.wellKw * 168 * ENERGY.uptime)} energy a week, paid in gold by the treasuries joined to it (what they lack, borrowed)">Drill two producers · {gold(pw.drill)} gold</button></div>
-					{#if drillWhy}<p class="status">{drillWhy}</p>{/if}
+				{#if pw?.next}
+					{@const nx = pw.next}
+					<div class="actions"><button class="go up grow" onclick={grow} title="{nx.wells > 1 ? `Drill two more geothermal producers under its village center: ${fmt(ENERGY.wellKw / 1000)} MW more` : `Grow its logistics hub into its village center, a dome as large as a great dome of 248, and drill its first geothermal triplet under it: ${fmt(ENERGY.wellKw / 1000)} MW, ${energy(ENERGY.wellKw * 168 * ENERGY.uptime)} energy a week`}. Its build: {side(nx.build.in, ', ')}, from your stores (what they lack, bought) and its treasury (what it lacks, borrowed). It grows at once."><span>Grow → {nx.label}</span><span class="chips">{#each Object.entries(nx.up) as [w, n] (w)}<span class="cost"><i style:background={WARES[w].color}></i>{ware(n)}</span>{/each}{#if nx.build.in.energy}<span class="cost"><i class="bolt"></i>{fmt(nx.build.in.energy)}</span>{/if}<span class="cost"><i class="coin"></i>{fmt(nx.gold)}</span></span></button></div>
+					{#if growWhy}<p class="status">{growWhy}</p>{/if}
 				{/if}
 				{#each home.notes as x, k (k)}
 					<button class="note {x.tone}" onclick={() => game?.focus(x.node)}><i></i>{x.text}</button>
@@ -933,6 +948,23 @@
 	}
 	i.bolt {
 		background: #e8b730;
+	}
+	.grow {
+		display: flex;
+		flex-direction: column;
+		align-items: flex-start;
+		gap: 0.15rem;
+		border-radius: 12px;
+		text-align: left;
+	}
+	.grow .chips {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.15rem 0.55rem;
+	}
+	i.coin {
+		background: #d9a520;
+		border-radius: 50%;
 	}
 	.recipe {
 		display: grid;

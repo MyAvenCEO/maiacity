@@ -52,7 +52,7 @@ export function mountGame(container, o = {}) {
 		clock: () => (skyTime.auto ? 12 + 4.5 * Math.sin((sim.state.time / 2400) * Math.PI * 2 - 0.6) : skyTime.hour)
 	});
 	let view = createView(scene, sim);
-	const home = () => view.place(sim.state.buildings[sim.state.hq]?.node ?? 0);
+	const home = () => view.place(sim.homeNode());
 	const start = home();
 	camera.position.set(start.x - 5, start.y + 62, start.z + 50);
 	const rig = createOrbitRig(camera, renderer.domElement, { minDistance: 7, maxDistance: 220, target: start, floorY: 1.5, moveSpeed: 50 });
@@ -392,7 +392,7 @@ export function mountGame(container, o = {}) {
 			view = createView(scene, sim);
 			select(null);
 			setMode('look');
-			focus(sim.state.buildings[sim.state.hq].node);
+			focus(sim.homeNode());
 			paused = false;
 			save();
 		},

@@ -2,14 +2,14 @@
 	Sandbox 6 · the building tree: every chain of the valley on one screen, a row each (./tree.js, read from the rules):
 	the hex a chain stands on and the land it works, every stage its building grows through with its three recipes of
 	the crafting engine (what building it or growing to it takes, what standing takes a year, and what it makes a
-	year), the ware it makes and what that is for; then energy, the village center's geothermal stages and every dome's
-	solar cells; then the homes, one dome through its eight sizes. All in units: a tonne, a MWh, a gold. A stage you have
+	year), the ware it makes and what that is for; then energy, the village center's stages (a logistics hub that grows into the
+	village center and its geothermal plant) and every dome's solar cells; then the homes, one dome through its eight sizes. All in units: a tonne, a MWh, a gold. A stage you have
 	is marked; click a first stage to build it (later stages grow on the building's card).
 -->
 <script>
 	import { WARES } from './rules.js';
 	import { GRID_EUR_KWH, EUR_PER_GOLD } from './market.js';
-	import { CHAINS, GEOTHERMAL, HOMES, SUN } from './tree.js';
+	import { CHAINS, CENTRES, HOMES, SUN } from './tree.js';
 	import { UNIT_OF, craftLine, fmt, side, ware } from './units.js';
 
 	/** @type {{ stock: Record<string, number>, owned: Record<string, number>, onBuild: (type: string) => void, onClose: () => void }} */
@@ -56,16 +56,15 @@
 				<div class="node use"><strong>{c.use}</strong><span>{c.useNote}</span></div>
 			{/each}
 
-			<div class="node land"><strong>Village center</strong><span><b>hot rock</b>: 5.5 km down, 175 °C</span></div>
-			{#each GEOTHERMAL as s, k (s.level)}
+			<div class="node land"><strong>A village's middle hex</strong><span><b>hot rock</b>: 5.5 km down, 175 °C</span></div>
+			{#each CENTRES as s, k (s.level)}
 				<button class="node b e" class:have={owned[`centre:${s.level}`]} class:first={k === 0} onclick={() => k === 0 && onBuild('centre')} title={titleOf(s, k > 0)}>
-					<strong>{s.label} · {fmt(s.mw)} MW{#if owned[`centre:${s.level}`]}<em>×{owned[`centre:${s.level}`]}</em>{/if}</strong>
-					<span class="r make"><b>make</b>{list(s.make.out)}</span>
+					<strong>{s.label}{s.mw ? ` · ${fmt(s.mw)} MW` : ''}{#if owned[`centre:${s.level}`]}<em>×{owned[`centre:${s.level}`]}</em>{/if}</strong>
+					<span class="r make"><b>make</b>{Object.keys(s.make.out).length ? list(s.make.out) : s.does}</span>
 					<span class="r"><b>keep</b>{list(s.keep.in)}</span>
 					<span class="r cost"><b>{k ? '↑ build' : 'build'}</b>{list(s.build.in)}</span>
 				</button>
 			{/each}
-			<div class="gap"></div>
 			<div class="node w e"><strong><i class="bolt"></i>Energy</strong><span>a flow, never stored</span></div>
 			<div class="node use"><strong>People, domes, factories</strong><span>the rest to the grid, {fmt((GRID_EUR_KWH * 1000) / EUR_PER_GOLD)} gold an energy</span></div>
 
