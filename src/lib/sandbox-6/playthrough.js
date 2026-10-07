@@ -9,7 +9,8 @@ import { loadGame, newGame } from './sim.js';
 import { createAutoplay } from './autoplay.js';
 
 const seed = Number(process.argv[2] ?? 7), end = Number(process.argv[3] ?? 5400);
-let sim = newGame(seed);
+// a test runs the valley's calendar fast: ten years in ten minutes
+let sim = newGame(seed, 'fast');
 let seen = 0;
 for (let k = 0; sim.state.time < end; k++) {
 	sim.step(0.1);
