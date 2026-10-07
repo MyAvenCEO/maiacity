@@ -13,14 +13,15 @@
 <script>
 	import SkyControl from './SkyControl.svelte';
 
-	/** without `sky` (a model walked in the viewer, with no sky of its own) the bar has only the name */
-	/** @type {{ title: string, subtitle?: string, sky?: boolean }} */
-	let { title, subtitle = '', sky = true } = $props();
+	/** without `sky` (a model walked in the viewer, with no sky of its own) the bar has only the name; `clock`, a world's
+	 * own clock for its time control (./SkyControl.svelte `worldClock`) */
+	/** @type {{ title: string, subtitle?: string, sky?: boolean, clock?: { day: string, hour: string, about?: string } | null }} */
+	let { title, subtitle = '', sky = true, clock = null } = $props();
 </script>
 
 <div class="bar">
 	<div class="title"><strong>{title}</strong>{#if subtitle}<span>{subtitle}</span>{/if}</div>
-	{#if sky}<SkyControl class="time" />{/if}
+	{#if sky}<SkyControl class="time" worldClock={clock} />{/if}
 </div>
 
 <style>

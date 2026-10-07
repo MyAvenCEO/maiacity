@@ -25,7 +25,7 @@
 import { BIOMES, BUILDINGS, BUILD_MWH_T, CENTRE, ENERGY, EUR_GOLD, GROWS, GRASS, HOUSE_BEDS, HOUSE_KEEP, HOUSE_MOST, HOUSE_TOP, HOUSE_UP, IRON, LAND, LOAD_T, MOUNTAIN, RECIPES, ROUNDS_YEAR, ROUTE_T_KM, START, UNIT_M, UPKEEP, WARES, WATER, WEEK_YEAR, centreStage, holdsLand, loadsRound, recipe, sunBedDay, weekOf } from './rules.js';
 import { CART, GRID_EUR_KWH, HEARTS, LOAN, LOAN_PAY, NEIGHBOURS, TRADED, WORLD, heartsFor, keepOf, loanMonths, make, newMarket, orderRule, party, priceIn, request, shortIn, spareIn } from './market.js';
 import { SE, STEP, findPath, makeGrid } from './hex.js';
-import { CISTERN, FOOD_KG, FRESH_L, KEEP, MOST, PACE, PRICE, RAIN_L, RAIN_MONTH, TANK, WATER_PRICE, WATER_USE, WEEK, YEAR, DAY, MONTH, calendar, forestShare } from './food.js';
+import { CISTERN, FOOD_KG, FRESH_L, KEEP, MOST, PACE, PRICE, RAIN_L, RAIN_MONTH, TANK, WATER_PRICE, WATER_USE, WEEK, YEAR, DAY, MONTH, calendar, clockOf, forestShare } from './food.js';
 import { makePlan, spoke } from './plots.js';
 import { growValley } from './map.js';
 
@@ -2476,8 +2476,8 @@ export function createSim(st) {
 				carriers,
 				workers,
 				parties: st.parties.map((/** @type {any} */ p) => ({ name: p.name })),
-				/** the valley's date */
-				date: calendar(st.cal),
+				/** the valley's date and hour of day */
+				date: clockOf(st.cal),
 				/** your cashflow, € a week lately: what all your villages took in by exports (exp) to the world market and
 				 * paid out for imports (imp) from it; what they trade among themselves cancels out */
 				cash: yourVillages().reduce((t, { p }) => ({ exp: t.exp + (p.flow?.wexp ?? 0), imp: t.imp + (p.flow?.wimp ?? 0), upkeep: t.upkeep + (p.flow?.upkeep ?? 0) }), { exp: 0, imp: 0, upkeep: 0 }),

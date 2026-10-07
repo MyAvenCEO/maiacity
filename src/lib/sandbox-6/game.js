@@ -19,6 +19,7 @@ import { createView } from './view.js';
 import { loadGame, newGame, PLAYER, TICK } from './sim.js';
 import { createAutoplay } from './autoplay.js';
 import { BIOMES, BUILDINGS } from './rules.js';
+import { PACE, clockOf } from './food.js';
 
 const SAVE = 'maiacity:sandbox-6:game';
 /** the film's valley, and how long it has been played before a shot starts */
@@ -43,13 +44,16 @@ export function mountGame(container, o = {}) {
 	const { renderer, scene, camera } = stage;
 	o.onProgress?.('Growing the valley');
 	let sim = film ? filmGame(FILM_START) : (restore() ?? newGame(Math.floor(Math.random() * 1e6)));
-	// the valley keeps its own day (Auto): from morning to late afternoon and back over forty minutes of play, never
-	// a night to farm in the dark; Manual is the time control's hour, as in every sandbox
+	/** the clock's speed (0 pauses: see setSpeed) */
+	let speed = 1;
+	let paused = false;
+	// the sky follows the valley's own clock (Auto), at the speed you play it; Manual is the time control's hour, as in
+	// every sandbox. Where a day would pass in under a real minute, the sun would flicker round, so it stands at noon
 	const sky = createSky(renderer, scene, {
 		shadowReach: 110,
 		shadowMap: 2048,
 		fog: { near: 240, far: 760 },
-		clock: () => (skyTime.auto ? 12 + 4.5 * Math.sin((sim.state.time / 2400) * Math.PI * 2 - 0.6) : skyTime.hour)
+		clock: () => (!skyTime.auto ? skyTime.hour : !paused && speed * PACE * 60 > 1 ? 12 : clockOf(sim.state.cal).hour)
 	});
 	let view = createView(scene, sim);
 	const home = () => view.place(sim.homeNode());
@@ -279,8 +283,6 @@ export function mountGame(container, o = {}) {
 	 * it plays half minutes (everyone walks and works that much further a step), as long as a frame can spare: 12 ms of
 	 * a quick frame, up to 50 ms of a slow one */
 	const BIG_STEP = 30, BUDGET_MS = 12, MOST_MS = 50;
-	let speed = 1;
-	let paused = false;
 	let acc = 0;
 	/** the simulation: ./autoplay.js plays, growing your first village full; it decides every few seconds of play */
 	let simulating = false, autoAt = 0;

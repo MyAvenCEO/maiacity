@@ -88,3 +88,11 @@ export function calendar(days) {
 	const year = Math.floor(days / YEAR) + 1, inYear = days - (year - 1) * YEAR, month = Math.floor(inYear / MONTH) + 1;
 	return { year, month, day: Math.floor(inYear - (month - 1) * MONTH) + 1 };
 }
+/** the hour a valley's first day begins at: a new valley wakes at eight in the morning, not in the dark */
+export const WAKE = 8;
+/** the valley's clock after so many days of its calendar: its date, and its hour of day (0 to 24), a valley's first day
+ * begun at WAKE. It runs with the calendar, so at every speed @param {number} days */
+export function clockOf(days) {
+	const d = days + WAKE / 24;
+	return { ...calendar(d), hour: (d - Math.floor(d)) * 24 };
+}
