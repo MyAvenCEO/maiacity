@@ -6,31 +6,32 @@
  *   · carriers walk their roads: each road has one, who takes a ware from the flag at one end to the flag at the
  *     other; at its last flag the ware goes into the building that asked for it;
  *   · every half second the economy matches wares to who needs them: a site its planks and stone, a workshop its
- *     inputs, a guard hut its coins; a ware nobody needs goes to the nearest storehouse; what a storehouse holds is
- *     sent out to whoever asks, nearest first; a ware finds its way flag by flag along the shortest roads;
+ *     inputs, a market hall what you sell; a ware nobody needs goes to the nearest storehouse; what a storehouse holds
+ *     is sent out to whoever asks, nearest first; a ware finds its way flag by flag along the shortest roads;
  *   · every second the people follow: a settler from a storehouse becomes the carrier of a new road, the builder of a
- *     site, the worker of a finished building (a worker takes tools along), a soldier fills a guard hut;
+ *     site, the worker of a finished building (a worker takes tools along);
  *   · buildings work: workshops turn inputs into wares, gatherers go out into the land (trees, rocks, fish, fields);
- *   · soldiers hold the land: an occupied military building widens it; land lost burns what stands on it;
- *   · the rival keeps its keep and towers manned, trains its soldiers, and in time comes for your borders.
+ *   · traders cart wares to the fair and back: yours by the orders you set, the neighbours' by what they have spare
+ *     and what they lack (./market.js);
+ *   · every settlement eats, drinks and keeps its homes, and the valley's abundance follows how well they all live.
  */
-import { BUILDINGS, FOOD, GOALS, GRASS, MAX_RANK, MOUNTAIN, START, WARES, WATER, holdsLand } from './rules.js';
+import { ABUNDANT, BUILDINGS, FOOD, GOALS, GRASS, HOLD, MOUNTAIN, PEOPLE, START, WARES, WATER, holdsLand } from './rules.js';
+import { CART, NEIGHBOURS, TRADED, abundance, buyOne, cost, fair, live, make, newMarket, price, request, sellOne, shop, toSell, trend } from './market.js';
 import { SE, findPath, makeGrid } from './hex.js';
 import { growValley } from './map.js';
 
 /** seconds of game time a step moves on */
 export const TICK = 0.1;
-export const PLAYER = 0, RIVAL = 1;
+/** who owns what: you, the three neighbours (1…3), and the fair */
+export const PLAYER = 0, FAIR = 4;
 /** wares a flag holds at most */
 export const FLAG_CAP = 8;
 /** each input of a workshop is kept this full */
 const SLOT_CAP = 4;
 /** nodes a second: walking, and carrying */
 const WALK = 1.8, CARRY = 1.45;
-/** how far soldiers march to attack */
-export const ATTACK_REACH = 14;
-/** soldiers the headquarters keeps home */
-const HQ_GUARD = 2;
+/** nodes a second a trader's cart goes */
+const CART_SPEED = 1.3;
 const FORESTER_TREES = 22;
 /** a building rests while the storehouses hold this much of what it makes */
 const ENOUGH = 40;
@@ -43,7 +44,7 @@ export function newGame(seed = 7) {
 	const v = growValley(seed);
 	const N = v.W * v.H;
 	const st = {
-		v: 1,
+		v: 2,
 		seed,
 		time: 0,
 		rng: (Math.imul(seed, 2654435761) >>> 0) || 1,
@@ -66,15 +67,20 @@ export function newGame(seed = 7) {
 		/** @type {Record<string, number>} */ made: {},
 		/** @type {{ t: number, text: string, node: number, tone: string, n: number }[]} */ msgs: [],
 		msgSeq: 0,
-		/** @type {null | 'won' | 'lost'} */ result: null,
+		/** @type {null | 'won'} */ result: null,
 		/** what changed, for whoever draws it */
 		netV: 1,
 		objV: 1,
 		terV: 1,
 		/** when the slower rules next run */
-		clocks: { dispatch: 0, people: 0, grow: 0, fish: 20, pop: 18, train: 10, goals: 1, reinforce: 110, rebalance: 45, promote: 260, raid: 2400 },
+		clocks: { dispatch: 0, people: 0, grow: 0, fish: 20, pop: 18, goals: 1, needs: 0, trade: 5, grow2: 60 },
 		hq: 0,
-		keep: 0,
+		/** the fair, and the neighbours' villages (building ids) */
+		fair: 0,
+		/** @type {number[]} */ villages: [],
+		...newMarket(),
+		/** your standing orders at the fair, by ware @type {Record<string, { sell: boolean, above: number, keep: number, buy: boolean, below: number, upTo: number }>} */
+		orders: {},
 		/** buildings burning, for a while */
 		/** @type {{ node: number, t: number }[]} */ fx: [],
 		/** @type {Record<string, boolean>} */ goals: {}
@@ -87,7 +93,7 @@ export function newGame(seed = 7) {
 /** A game from its saved state. @param {string | object} saved */
 export function loadGame(saved) {
 	const st = typeof saved === 'string' ? JSON.parse(saved) : saved;
-	if (!st || st.v !== 1 || !Array.isArray(st.terrain)) throw new Error('Not a Sandbox 6 game');
+	if (!st || st.v !== 2 || !Array.isArray(st.terrain)) throw new Error('Not a Sandbox 6 game of this kind');
 	return createSim(st);
 }
 
@@ -264,9 +270,9 @@ export function createSim(st) {
 			cost: { ...t.cost }, used: /** @type {Record<string, number>} */ ({}), got: /** @type {Record<string, number>} */ ({}), inc: /** @type {Record<string, number>} */ ({}),
 			builder: 0, worker: 0, slots: (t.inputs ?? []).map(() => ({ have: 0, inc: 0 })),
 			timer: 0, out: 0, paused: false, status: live ? '' : 'Waiting for a builder', eff: 0,
-			soldiers: /** @type {number[]} */ ([]), incS: 0, coins: 0, incC: 0,
-			stock: /** @type {Record<string, number>} */ ({}), settlers: 0, deposit: 0, fields: 0, alarm: -99,
-			/** @type {null | { a: number, d: number, t: number }} */ fight: null
+			stock: /** @type {Record<string, number>} */ ({}), settlers: 0, deposit: 0, fields: 0,
+			/** a market hall's: what waits to go to the fair, what is on its way to it, what came back */
+			box: /** @type {Record<string, number>} */ ({}), incBox: /** @type {Record<string, number>} */ ({}), outQ: /** @type {string[]} */ ([])
 		};
 		for (const w of Object.keys(b.cost)) (b.used[w] = 0), (b.got[w] = 0), (b.inc[w] = 0);
 		if (t.kind === 'mine') b.deposit = depositAt(node, /** @type {string} */ (t.ore));
@@ -297,7 +303,7 @@ export function createSim(st) {
 		w.dest = 0;
 		if (!b) return;
 		if (b.stage === 'site') b.inc[w.type] = Math.max(0, (b.inc[w.type] ?? 0) - 1);
-		else if (w.slot === -2) b.incC = Math.max(0, b.incC - 1);
+		else if (w.slot === -3) b.incBox[w.type] = Math.max(0, (b.incBox[w.type] ?? 0) - 1);
 		else if (w.slot >= 0 && b.slots[w.slot]) b.slots[w.slot].inc = Math.max(0, b.slots[w.slot].inc - 1);
 	}
 	function removeRoad(/** @type {any} */ r) {
@@ -325,7 +331,6 @@ export function createSim(st) {
 	}
 	function removeBuilding(/** @type {any} */ b, burn = true, retally = true) {
 		delete st.buildings[b.id];
-		if (b.fight && st.units[b.fight.d]) delete st.units[b.fight.d];
 		st.obj[b.node] = null;
 		const f = st.flags[b.flag];
 		if (f) f.bld = 0;
@@ -342,12 +347,6 @@ export function createSim(st) {
 			releaseTarget(u);
 			goHome(u);
 		}
-		// the soldiers inside walk home
-		if (holdsLand(b.type) && b.owner === PLAYER && !isWarehouse(b))
-			for (const rank of b.soldiers) {
-				const u = spawn('soldier', PLAYER, [b.node], 'home', { rank });
-				goHome(u);
-			}
 		if (burn) st.fx.push({ node: b.node, t: st.time });
 		st.objV++;
 		if (retally && holdsLand(b.type)) territory();
@@ -367,21 +366,13 @@ export function createSim(st) {
 		return u;
 	}
 	function removeUnit(/** @type {any} */ u) {
-		if (u.job === 's-go') {
-			const b = st.buildings[u.bld];
-			if (b) b.incS = Math.max(0, b.incS - 1);
-		}
 		releaseTarget(u);
 		delete st.units[u.id];
 	}
-	/** a unit with nothing left to do walks to the nearest storehouse (a rival's to its keep) */
+	/** a unit with nothing left to do walks to the nearest storehouse (a neighbour's to its village) */
 	function goHome(/** @type {any} */ u) {
-		if (u.job === 's-go') {
-			const b = st.buildings[u.bld];
-			if (b) b.incS = Math.max(0, b.incS - 1);
-		}
 		const here = nodeOf(u);
-		const homes = u.owner === PLAYER ? warehouses() : all(st.buildings).filter((b) => b.type === 'keep' && b.owner === RIVAL);
+		const homes = u.owner === PLAYER ? warehouses() : all(st.buildings).filter((b) => b.type === 'village' && b.owner === u.owner);
 		homes.sort((a, b) => g.dist(here, a.node) - g.dist(here, b.node));
 		for (const h of homes.slice(0, 3)) {
 			const path = findPath(g, here, h.node, walkable);
@@ -395,14 +386,14 @@ export function createSim(st) {
 	function arriveHome(/** @type {any} */ u) {
 		const h = st.buildings[u.home];
 		if (h && h.owner === u.owner) {
-			if (u.kind === 'soldier') h.soldiers.push(u.rank);
-			else h.settlers++;
-			if (u.ware && isWarehouse(h)) h.stock[u.ware] = (h.stock[u.ware] ?? 0) + 1;
+			h.settlers++;
+			if (u.ware === 'coin') st.parties[PLAYER].coins++;
+			else if (u.ware && isWarehouse(h)) h.stock[u.ware] = (h.stock[u.ware] ?? 0) + 1;
 		}
 		removeUnit(u);
 	}
 
-	/** settlers become carriers, builders and workers; soldiers go to man the military buildings */
+	/** settlers become carriers, builders and workers */
 	function people() {
 		for (const r of all(st.roads)) {
 			if (r.carrier || r.owner !== PLAYER) continue;
@@ -446,18 +437,6 @@ export function createSim(st) {
 				const u = spawn('worker', PLAYER, [wh.node, ...walk, b.node], 'w-go', { bld: b.id });
 				b.worker = u.id;
 				b.status = `A ${t.worker?.toLowerCase()} is on the way`;
-			} else if (b.stage === 'live' && t.kind === 'military' && b.soldiers.length + b.incS < /** @type {number} */ (t.capacity)) {
-				const wh = nearestWarehouse(b.flag, (w) => w.soldiers.length > (w.type === 'hq' ? HQ_GUARD : 0));
-				const walk = wh && roadWalk(wh.flag, b.flag);
-				if (!wh || !walk) {
-					if (!b.soldiers.length) b.status = nearestWarehouse(b.flag, () => true) ? 'Waiting for soldiers (forge weapons)' : 'Not connected by road';
-					continue;
-				}
-				const k = wh.soldiers.indexOf(Math.max(...wh.soldiers));
-				const rank = wh.soldiers.splice(k, 1)[0];
-				spawn('soldier', PLAYER, [wh.node, ...walk, b.node], 's-go', { bld: b.id, rank });
-				b.incS++;
-				if (!b.soldiers.length) b.status = 'Soldiers are on the way';
 			}
 		}
 	}
@@ -467,29 +446,30 @@ export function createSim(st) {
 		const t = T(b);
 		if (b.stage === 'site') return Object.keys(b.cost).map((w) => ({ types: [w], slot: -1, n: b.cost[w] - b.used[w] - b.got[w] - b.inc[w] }));
 		if (b.stage !== 'live') return [];
-		if (t.kind === 'military')
-			return b.soldiers.length && b.soldiers.some((/** @type {number} */ r) => r < MAX_RANK) ? [{ types: ['coin'], slot: -2, n: 2 - b.coins - b.incC }] : [];
 		if (b.paused || !b.worker) return [];
+		if (t.kind === 'market') return hallWants(b);
 		return (t.inputs ?? []).map((/** @type {string[]} */ types, /** @type {number} */ k) => ({ types, slot: k, n: SLOT_CAP - b.slots[k].have - b.slots[k].inc }));
 	}
 	function claim(/** @type {any} */ w, /** @type {any} */ b, /** @type {number} */ slot) {
 		w.dest = b.id;
 		w.slot = slot;
 		if (b.stage === 'site') b.inc[w.type]++;
-		else if (slot === -2) b.incC++;
+		else if (slot === -3) b.incBox[w.type] = (b.incBox[w.type] ?? 0) + 1;
 		else if (slot >= 0) b.slots[slot].inc++;
 	}
 	function deliver(/** @type {any} */ w) {
 		const b = st.buildings[w.dest];
 		delete st.wares[w.id];
 		if (!b) return;
-		if (isWarehouse(b) && b.stage === 'live') b.stock[w.type] = (b.stock[w.type] ?? 0) + 1;
+		// coins go into your purse
+		if (isWarehouse(b) && b.stage === 'live' && w.type === 'coin') st.parties[PLAYER].coins++;
+		else if (isWarehouse(b) && b.stage === 'live') b.stock[w.type] = (b.stock[w.type] ?? 0) + 1;
 		else if (b.stage === 'site') {
 			b.inc[w.type] = Math.max(0, b.inc[w.type] - 1);
 			b.got[w.type]++;
-		} else if (w.slot === -2) {
-			b.incC = Math.max(0, b.incC - 1);
-			b.coins++;
+		} else if (w.slot === -3) {
+			b.incBox[w.type] = Math.max(0, (b.incBox[w.type] ?? 0) - 1);
+			b.box[w.type] = (b.box[w.type] ?? 0) + 1;
 		} else if (w.slot >= 0 && b.slots[w.slot]) {
 			b.slots[w.slot].inc = Math.max(0, b.slots[w.slot].inc - 1);
 			b.slots[w.slot].have++;
@@ -681,7 +661,7 @@ export function createSim(st) {
 	}
 	/** a free spot of grass to plant on (a tree, a field): nothing on it, no road, no door or flag beside it */
 	function freeSpot(/** @type {number} */ j) {
-		if (st.terrain[j] !== GRASS || st.obj[j] || st.road[j] || st.owner[j] === RIVAL) return false;
+		if (st.terrain[j] !== GRASS || st.obj[j] || st.road[j] || st.owner[j] > PLAYER) return false;
 		for (let d = 0; d < 6; d++) {
 			const n = g.nb(j, d);
 			if (n < 0) return false;
@@ -763,19 +743,10 @@ export function createSim(st) {
 			return;
 		}
 		if (b.stage !== 'live') return;
-		if (t.kind === 'military') {
-			// a coin trains the weakest soldier a rank up
-			if (b.coins > 0 && b.soldiers.some((/** @type {number} */ r) => r < MAX_RANK)) {
-				b.coins--;
-				const k = b.soldiers.indexOf(Math.min(...b.soldiers));
-				b.soldiers[k]++;
-			}
-			if (b.soldiers.length) b.status = `${b.soldiers.length} of ${t.capacity} soldiers`;
-			return;
-		}
-		if (isWarehouse(b)) return;
+		if (isWarehouse(b) || !t.worker) return;
 		const u = st.units[b.worker];
 		if (!u || u.job === 'w-go') return;
+		if (t.kind === 'market') return hall(b, u, dt);
 		let busy = false;
 		if (t.kind === 'make' || t.kind === 'mine') {
 			if (b.timer > 0) {
@@ -832,12 +803,13 @@ export function createSim(st) {
 		b.timer = 0;
 		b.since = st.time;
 		const t = T(b);
-		b.status = t.kind === 'military' ? 'Waiting for soldiers' : t.worker ? 'Waiting for a worker' : '';
+		b.status = t.worker ? 'Waiting for a worker' : '';
 		const u = st.units[b.builder];
 		b.builder = 0;
 		if (u) goHome(u);
-		say(`${t.label} finished`, b.node, 'good');
+		say(t.kind === 'land' ? 'The boundary stone stands: your land grows' : `${t.label} finished`, b.node, 'good');
 		st.objV++;
+		if (holdsLand(b.type)) territory();
 	}
 	/** what a gatherer does when it reaches its spot, and after */
 	function workerArrive(/** @type {any} */ u) {
@@ -916,168 +888,160 @@ export function createSim(st) {
 		Object.assign(u, { path, p: 0, tgt: path.length - 1, job: 'w-back' });
 	}
 
-	// ── soldiers ──
-	function soldierArrive(/** @type {any} */ u) {
-		if (u.job === 's-go') {
-			const b = st.buildings[u.bld];
-			if (b && b.owner === u.owner && b.stage === 'live' && b.soldiers.length < (T(b).capacity ?? 0)) {
-				b.incS = Math.max(0, b.incS - 1);
-				const first = !b.soldiers.length;
-				b.soldiers.push(u.rank);
-				delete st.units[u.id];
-				if (first && b.type !== 'keep') {
-					b.since = st.time;
-					if (u.owner === PLAYER) say(`Soldiers moved into the ${T(b).label.toLowerCase()}: your land grows`, b.node, 'good');
-					territory();
-				}
-				return;
+	// ── trade ──
+	/** your purse */
+	const purse = () => st.parties[PLAYER].coins;
+	/** what of a ware is on its way to the storehouses from the market halls */
+	const coming = (/** @type {string} */ w) => all(st.buildings).reduce((s, b) => s + (b.type === 'market' ? b.outQ.filter((/** @type {string} */ x) => x === w).length : 0), 0);
+	/** contracts you took that still want a ware */
+	/** @returns {any[]} */
+	const promised = (/** @type {string} */ w) => st.market.contracts.filter((/** @type {any} */ c) => c.taken && c.w === w && c.got < c.n && c.until > st.time);
+	/** what a market hall asks the storehouses for: what your sell orders let go of, and what your requests promise */
+	function hallWants(/** @type {any} */ b) {
+		const reqs = [];
+		const boxed = Object.values(b.box).reduce((/** @type {number} */ s, /** @type {any} */ n) => s + n, 0) + Object.values(b.incBox).reduce((/** @type {number} */ s, /** @type {any} */ n) => s + n, 0);
+		let room = CART * 2 - boxed;
+		for (const w of TRADED) {
+			if (room <= 0) break;
+			const o = st.orders[w];
+			const owed = promised(w).reduce((s, c) => s + c.n - c.got, 0);
+			const inHand = (b.box[w] ?? 0) + (b.incBox[w] ?? 0);
+			let n = Math.max(0, Math.min(owed - inHand, stocked(w)));
+			if (o?.sell && price(st.market, w) >= o.above) n = Math.max(n, Math.min(CART - inHand, stocked(w) - o.keep));
+			n = Math.min(n, room);
+			if (n > 0) {
+				reqs.push({ types: [w], slot: -3, n });
+				room -= n;
 			}
-			return goHome(u);
 		}
-		if (u.job === 's-attack') {
-			u.job = 's-siege';
-			return;
-		}
-		if (u.job === 's-ret') {
-			const b = st.buildings[u.home];
-			if (b && b.owner === u.owner && (isWarehouse(b) || b.soldiers.length < (T(b).capacity ?? 0))) {
-				b.soldiers.push(u.rank);
-				delete st.units[u.id];
-				return;
-			}
-			return goHome(u);
-		}
+		return reqs;
 	}
-	/** send attackers home: back to where they came from */
-	function retreat(/** @type {any} */ u) {
-		const b = st.buildings[u.home];
-		const path = b && findPath(g, nodeOf(u), b.node, walkable);
-		if (path) Object.assign(u, { path, p: 0, tgt: path.length - 1, job: 's-ret' });
-		else goHome(u);
+	/** what your buy orders would fetch now: [ware, how many], the most wanted first */
+	function wantBuys() {
+		const m = st.market;
+		/** @type {[string, number][]} */
+		const list = [];
+		for (const w of TRADED) {
+			const o = st.orders[w];
+			if (!o?.buy || m.pool[w] < 1 || cost(m, w) > o.below || cost(m, w) > purse()) continue;
+			const n = Math.min(CART, o.upTo - stocked(w) - coming(w));
+			if (n > 0) list.push([w, n]);
+		}
+		return list.sort((a, b) => b[1] - a[1]);
 	}
-	/** the fights at the door of a besieged building, one duel at a time */
-	function sieges(/** @type {number} */ dt) {
-		/** @type {Map<number, any[]>} */
-		const at = new Map();
-		for (const u of all(st.units)) {
-			if (u.job !== 's-siege' && u.job !== 's-fight') continue;
-			const list = at.get(u.target) ?? [];
-			list.push(u);
-			at.set(u.target, list);
-		}
-		for (const [bid, attackers] of at) {
-			const b = st.buildings[bid];
-			if (!b || b.owner === attackers[0].owner) {
-				for (const a of attackers) if (a.job !== 's-fight') retreat(a);
-				continue;
-			}
-			if (b.owner === PLAYER && st.time - b.alarm > 40) {
-				b.alarm = st.time;
-				say(`Your ${T(b).label.toLowerCase()} is under attack!`, b.node, 'alert');
-			}
-			if (b.fight) {
-				b.fight.t -= dt;
-				if (b.fight.t > 0) continue;
-				const a = st.units[b.fight.a], d = st.units[b.fight.d];
-				b.fight = null;
-				if (!a || !d) {
-					if (d) {
-						b.soldiers.push(d.rank);
-						delete st.units[d.id];
-					}
-					if (a) a.job = 's-siege';
-					continue;
-				}
-				const pa = Math.max(0.12, Math.min(0.88, 0.5 + 0.12 * (a.rank - d.rank)));
-				if (rand() < pa) {
-					delete st.units[d.id];
-					a.job = 's-siege';
-				} else {
-					delete st.units[a.id];
-					b.soldiers.push(d.rank);
-					delete st.units[d.id];
-				}
-				continue;
-			}
-			const waiting = attackers.filter((a) => a.job === 's-siege');
-			if (!waiting.length) continue;
-			if (b.soldiers.length) {
-				const k = b.soldiers.indexOf(Math.max(...b.soldiers));
-				const rank = b.soldiers.splice(k, 1)[0];
-				const door = st.flags[b.flag]?.node ?? b.node;
-				const d = spawn('soldier', b.owner, [b.node, door], 's-defend', { rank, target: b.id });
-				const a = waiting[0];
-				a.job = 's-fight';
-				b.fight = { a: a.id, d: d.id, t: 2.8 };
-				continue;
-			}
-			capture(b, waiting);
-		}
-	}
-	function capture(/** @type {any} */ b, /** @type {any[]} */ attackers) {
-		const winner = attackers[0].owner;
-		const label = T(b).label;
-		if (b.type === 'hq') {
-			st.result = 'lost';
-			say('The rival took your headquarters. The valley is lost.', b.node, 'alert');
-			return;
-		}
-		if (b.type === 'keep') {
-			st.result = 'won';
-			st.goals.keep = true;
-			say('You took the rival keep. The valley is yours!', b.node, 'good');
-		}
-		b.owner = winner;
-		b.soldiers = [];
-		b.incS = 0;
-		b.coins = 0;
-		b.incC = 0;
-		b.since = -st.time - 1;
-		b.status = '';
+	/** a market hall at work: its trader sets out when there is a cartload to sell or something to buy */
+	function hall(/** @type {any} */ b, /** @type {any} */ u, /** @type {number} */ dt) {
 		const f = st.flags[b.flag];
-		if (f) {
-			for (const r of all(st.roads)) if (r.a === f.id || r.b === f.id) removeRoad(r);
-			for (const wid of [...f.wares]) if (st.wares[wid]) destroyWare(st.wares[wid]);
-			f.owner = winner;
+		while (b.outQ.length && f && f.wares.length < FLAG_CAP) newWare(b.outQ.shift(), f);
+		if (!u.inside) {
+			b.status = u.job === 't-go' ? 'The trader is on the way to the fair' : 'The trader is on the way back';
+			return;
 		}
-		for (const w of all(st.wares)) if (w.dest === b.id) unclaim(w);
-		const cap = T(b).capacity ?? 0;
-		for (const a of attackers) {
-			if (b.soldiers.length < cap) {
-				b.soldiers.push(a.rank);
-				delete st.units[a.id];
-			} else retreat(a);
+		if (b.timer > 0) return void (b.timer -= dt);
+		b.timer = 2;
+		if (b.paused) return void (b.status = 'Paused');
+		const boxed = Object.values(b.box).reduce((/** @type {number} */ s, /** @type {any} */ n) => s + n, 0);
+		const coming_ = Object.values(b.incBox).reduce((/** @type {number} */ s, /** @type {any} */ n) => s + n, 0);
+		const buys = wantBuys();
+		if (!(boxed >= CART || (boxed > 0 && coming_ === 0) || buys.length)) {
+			b.status = boxed || coming_ ? 'Loading wares for the fair' : 'Waiting for orders: set them in the Market';
+			return;
 		}
-		if (b.type !== 'keep') say(winner === PLAYER ? `You took the rival’s ${label.toLowerCase()}` : `The rival took your ${label.toLowerCase()}`, b.node, winner === PLAYER ? 'good' : 'alert');
-		st.objV++;
-		territory();
+		const fairB = st.buildings[st.fair];
+		const path = fairB && findPath(g, b.node, fairB.node, walkable);
+		if (!path) return void (b.status = 'No way to the fair');
+		/** @type {Record<string, number>} */
+		const load = {};
+		let room = CART;
+		for (const w of Object.keys(b.box).sort((x, y) => b.box[y] - b.box[x])) {
+			const n = Math.min(room, b.box[w]);
+			if (n <= 0) continue;
+			load[w] = n;
+			b.box[w] -= n;
+			room -= n;
+		}
+		Object.assign(u, { inside: false, path, p: 0, tgt: path.length - 1, job: 't-go', speed: CART_SPEED, load, ware: Object.keys(load)[0] ?? '' });
+		b.status = 'The trader is on the way to the fair';
 	}
-	/** soldiers set out to attack a rival building from the military buildings in reach */
-	function sendAttack(/** @type {any} */ target, /** @type {number} */ n, /** @type {number} */ owner) {
-		const door = st.flags[target.flag]?.node ?? target.node;
-		const sources = all(st.buildings)
-			.filter((b) => b.owner === owner && holdsLand(b.type) && b.stage === 'live' && g.dist(b.node, target.node) <= ATTACK_REACH)
-			.sort((a, b) => g.dist(a.node, target.node) - g.dist(b.node, target.node));
-		let sent = 0;
-		for (const s of sources) {
-			const keep = s.type === 'hq' ? HQ_GUARD : 1;
-			while (sent < n && s.soldiers.length > keep) {
-				const path = findPath(g, s.node, door, walkable);
-				if (!path) break;
-				const k = s.soldiers.indexOf(Math.max(...s.soldiers));
-				const rank = s.soldiers.splice(k, 1)[0];
-				spawn('soldier', owner, path, 's-attack', { rank, target: target.id, home: s.id });
-				sent++;
+	/** your trader at the fair: requests first, then your sell orders, then your buy orders */
+	function tradeHere(/** @type {any} */ u) {
+		const m = st.market;
+		const you = st.parties[PLAYER];
+		/** @type {Record<string, number>} */
+		const back = {};
+		for (let [w, n] of Object.entries(u.load)) {
+			for (const c of promised(w)) {
+				const give = Math.min(n, c.n - c.got);
+				c.got += give;
+				n -= give;
+				m.sold += give;
+				const p = st.parties[c.k];
+				p.stock[w] = (p.stock[w] ?? 0) + give;
+				if (c.got >= c.n) {
+					const paid = Math.min(c.reward, Math.floor(p.coins));
+					p.coins -= paid;
+					you.coins += paid;
+					m.filled++;
+					say(paid ? `${p.name} got its ${WARES[w].label.toLowerCase()} and paid ${paid} coins. Thank you!` : `${p.name} thanks you for the ${WARES[w].label.toLowerCase()}!`, -1, 'good');
+				}
 			}
+			const o = st.orders[w];
+			while (n > 0 && price(m, w) >= (o?.sell ? o.above : 0)) {
+				you.coins += sellOne(m, w);
+				m.sold++;
+				n--;
+			}
+			if (n > 0) back[w] = n;
 		}
-		return sent;
+		let room = CART - Object.values(back).reduce((a, b) => a + b, 0);
+		for (const [w, want] of wantBuys()) {
+			const o = st.orders[w];
+			let n = Math.min(want, room);
+			while (n > 0 && m.pool[w] >= 1 && cost(m, w) <= o.below && cost(m, w) <= you.coins) {
+				you.coins -= buyOne(m, w);
+				back[w] = (back[w] ?? 0) + 1;
+				m.bought++;
+				n--;
+				room--;
+			}
+			if (room <= 0) break;
+		}
+		u.load = back;
+		u.ware = Object.keys(back)[0] ?? '';
+	}
+	/** a trader reaches the fair, or home again */
+	function traderArrive(/** @type {any} */ u) {
+		const home = st.buildings[u.bld];
+		if (u.job === 't-go') {
+			if (u.owner === PLAYER) tradeHere(u);
+			else {
+				const m = st.market, p = st.parties[u.owner];
+				for (const [w, n] of Object.entries(u.load)) for (let k = 0; k < /** @type {number} */ (n); k++) p.coins += sellOne(m, w);
+				u.load = shop(m, p);
+				u.ware = Object.keys(u.load)[0] ?? '';
+			}
+			const path = home && findPath(g, nodeOf(u), home.node, walkable);
+			if (!path) return u.owner === PLAYER ? goHome(u) : removeUnit(u);
+			Object.assign(u, { path, p: 0, tgt: path.length - 1, job: 't-back' });
+			return;
+		}
+		// home again
+		if (u.owner === PLAYER) {
+			if (!home) return goHome(u);
+			for (const [w, n] of Object.entries(u.load)) for (let k = 0; k < /** @type {number} */ (n); k++) home.outQ.push(w);
+			Object.assign(u, { inside: true, job: 'w-in', load: {}, ware: '', speed: WALK });
+			return;
+		}
+		const p = st.parties[u.owner];
+		for (const [w, n] of Object.entries(u.load)) p.stock[w] = (p.stock[w] ?? 0) + /** @type {number} */ (n);
+		removeUnit(u);
 	}
 
 	// ── the land ──
 	function territory() {
 		const own = Array(N).fill(-1);
 		const holders = all(st.buildings)
-			.filter((b) => holdsLand(b.type) && b.stage === 'live' && (b.type === 'hq' || b.type === 'keep' || b.soldiers.length > 0))
+			.filter((b) => holdsLand(b.type) && b.stage === 'live')
 			.sort((a, b) => a.since - b.since);
 		for (const b of holders) for (const j of g.within(b.node, /** @type {number} */ (T(b).radius))) if (own[j] === -1) own[j] = b.owner;
 		for (const b of holders) {
@@ -1089,57 +1053,113 @@ export function createSim(st) {
 		st.terV++;
 		// what stands on land its owner lost, burns
 		for (const b of all(st.buildings))
-			if (st.buildings[b.id] && own[b.node] !== b.owner) {
+			if (st.buildings[b.id] && b.owner === PLAYER && own[b.node] !== b.owner) {
 				if (b.owner === PLAYER) say(`Your ${T(b).label.toLowerCase()} burned: the land is no longer yours`, b.node, 'alert');
 				removeBuilding(b, true, false);
 			}
-		for (const f of all(st.flags)) if (st.flags[f.id] && own[f.node] !== f.owner) removeFlag(f);
+		for (const f of all(st.flags)) if (st.flags[f.id] && f.owner === PLAYER && own[f.node] !== f.owner) removeFlag(f);
 		for (const r of all(st.roads)) if (st.roads[r.id] && r.path.some((/** @type {number} */ n) => own[n] !== r.owner)) removeRoad(r);
 	}
 
-	// ── the rival ──
-	function rival() {
-		const keep = st.buildings[st.keep];
-		if (!keep || keep.owner !== RIVAL) return;
-		const c = st.clocks;
-		const mine = all(st.buildings).filter((b) => b.owner === RIVAL && holdsLand(b.type) && b.stage === 'live');
-		if (st.time >= c.reinforce) {
-			c.reinforce = st.time + 110;
-			if (keep.soldiers.length < 10) keep.soldiers.push(Math.floor(rand() * 3));
+	// ── the settlements: needs, the neighbours' work and trade, abundance ──
+	/** your people: in the storehouses and out at work */
+	const yourPeople = () => warehouses().reduce((s, w) => s + w.settlers, 0) + all(st.units).filter((u) => u.owner === PLAYER).length;
+	function settlements(/** @type {number} */ dt) {
+		const m = st.market, c = st.clocks;
+		// yours eat from the storehouses, the fullest first
+		const you = st.parties[PLAYER];
+		you.pop = yourPeople();
+		live(
+			you,
+			you.pop,
+			dt,
+			(w) => {
+				const wh = warehouses().filter((x) => (x.stock[w] ?? 0) > 0).sort((a, b) => b.stock[w] - a.stock[w])[0];
+				if (!wh) return false;
+				wh.stock[w]--;
+				return true;
+			},
+			stocked
+		);
+		for (let k = 1; k < st.parties.length; k++) {
+			const p = st.parties[k];
+			make(p, k, dt);
+			live(
+				p,
+				p.pop,
+				dt,
+				(w) => ((p.stock[w] ?? 0) >= 1 ? ((p.stock[w] -= 1), true) : false),
+				(w) => p.stock[w] ?? 0
+			);
 		}
-		if (st.time >= c.rebalance) {
-			c.rebalance = st.time + 45;
-			for (const t of mine) {
-				if (t === keep || t.soldiers.length + t.incS >= 3 || keep.soldiers.length <= 3) continue;
-				const path = findPath(g, keep.node, t.node, walkable);
+		fair(m, st.time, dt);
+		// the neighbours' traders
+		if (st.time >= c.trade) {
+			c.trade = st.time + 1;
+			for (let k = 1; k < st.parties.length; k++) {
+				const p = st.parties[k];
+				const village = st.buildings[st.villages[k - 1]];
+				if (!village || st.time < p.trip || all(st.units).some((u) => u.kind === 'trader' && u.owner === k)) continue;
+				p.trip = st.time + 20 + rand() * 25;
+				const sell = toSell(m, p);
+				const short = Object.values(p.sat).some((x) => x < 0.97) || p.reserve < 0.8;
+				if (!sell && !(short && p.coins > 4)) continue;
+				const path = findPath(g, village.node, st.buildings[st.fair].node, walkable);
 				if (!path) continue;
-				const k = keep.soldiers.indexOf(Math.min(...keep.soldiers));
-				const rank = keep.soldiers.splice(k, 1)[0];
-				spawn('soldier', RIVAL, path, 's-go', { bld: t.id, rank });
-				t.incS++;
-				break;
-			}
-		}
-		if (st.time >= c.promote) {
-			c.promote = st.time + 260;
-			const pool = mine.filter((b) => b.soldiers.some((/** @type {number} */ r) => r < MAX_RANK));
-			const b = pool[Math.floor(rand() * pool.length)];
-			if (b) b.soldiers[b.soldiers.indexOf(Math.min(...b.soldiers))]++;
-		}
-		if (st.time >= c.raid) {
-			c.raid = st.time + 210;
-			const targets = all(st.buildings).filter((b) => b.owner === PLAYER && holdsLand(b.type) && b.stage === 'live' && (b.type === 'hq' || b.soldiers.length > 0));
-			let best = null, bd = Infinity;
-			for (const s of mine)
-				for (const t of targets) {
-					const d = g.dist(s.node, t.node);
-					if (d <= ATTACK_REACH && d < bd && s.soldiers.length >= 3) (best = [s, t]), (bd = d);
+				/** @type {Record<string, number>} */
+				const load = {};
+				if (sell) {
+					load[sell.w] = sell.n;
+					p.stock[sell.w] -= sell.n;
 				}
-			if (best) {
-				const [s, t] = best;
-				const n = sendAttack(t, Math.min(2, s.soldiers.length - 2), RIVAL);
-				if (n) say(`The rival marches on your ${T(t).label.toLowerCase()}!`, t.node, 'alert');
+				spawn('trader', k, path, 't-go', { bld: village.id, load, ware: sell?.w ?? '', speed: CART_SPEED });
 			}
+		}
+		// they grow when they live well, and shrink when they don't
+		if (st.time >= c.grow2) {
+			c.grow2 = st.time + 120;
+			for (let k = 1; k < st.parties.length; k++) {
+				const p = st.parties[k];
+				// a family settles where people live well and there is food put by for them
+				if (p.wb >= 78 && p.reserve >= 0.75 && p.pop < 50) p.pop++;
+				else if (p.wb < 40 && p.pop > 10) {
+					p.pop--;
+					if (rand() < 0.3) say(`${p.name} is struggling: a family left the valley`, st.buildings[st.villages[k - 1]]?.node ?? -1, 'alert');
+				}
+			}
+		}
+		// requests
+		if (st.time >= m.clock.contract) {
+			m.clock.contract = st.time + 120 + rand() * 90;
+			const req = request(m, st.parties, st.time, rand);
+			const what = req && `${req.n} ${WARES[req.w].label.toLowerCase()}`;
+			if (req) say(req.reward ? `${st.parties[req.k].name} asks for ${what}: ${req.reward} coins. See the Market.` : `${st.parties[req.k].name} has no coins left and asks for help: ${what}. See the Market.`, st.buildings[st.villages[req.k - 1]]?.node ?? -1, req.reward ? 'info' : 'alert');
+		}
+		for (const ct of m.contracts)
+			if (!ct.gone && ct.got < ct.n && ct.until <= st.time) {
+				ct.gone = true;
+				if (ct.taken) say(`Too late: ${st.parties[ct.k].name}’s request for ${WARES[ct.w].label.toLowerCase()} ran out`, -1, 'alert');
+			}
+		// abundance
+		m.abundance = abundance(st.parties);
+		// the last goal: it counts once the others are reached
+		const ready = GOALS.every((x) => x.id === 'abundance' || st.goals[x.id]);
+		const pops = st.parties.map((/** @type {any} */ p, /** @type {number} */ k) => (k ? p.pop : yourPeople()));
+		m.thriving = st.parties.filter((/** @type {any} */ p, /** @type {number} */ k) => p.wb >= ABUNDANT && pops[k] >= PEOPLE).length;
+		if (ready && m.thriving === st.parties.length) {
+			if (m.since < 0) {
+				m.since = st.time;
+				say(`Every settlement lives well (abundance ${Math.round(m.abundance)}). Hold it for ten minutes!`, -1, 'good');
+			}
+			if (st.time - m.since >= HOLD && !st.goals.abundance) {
+				st.result = 'won';
+				st.goals.abundance = true;
+				say('Ten minutes of abundance for the whole valley. Everyone lives well!', -1, 'good');
+			}
+		} else if (m.since >= 0) {
+			m.since = -1;
+			const who = st.parties.find((/** @type {any} */ p, /** @type {number} */ k) => p.wb < ABUNDANT || pops[k] < PEOPLE);
+			say(`${who?.name === 'You' ? 'Your settlement' : who?.name ?? 'A settlement'} slipped below ${ABUNDANT} or ${PEOPLE} people: see the Market`, -1, 'alert');
 		}
 	}
 
@@ -1168,8 +1188,10 @@ export function createSim(st) {
 			if (st.goals[goal.id]) continue;
 			let done = false;
 			if (goal.id === 'wood') done = live('woodcutter') && live('sawmill');
-			else if (goal.id === 'land') done = landHeld() >= 3;
-			else if (goal.id === 'keep') done = st.result === 'won';
+			else if (goal.id === 'market') done = st.market.sold > 0;
+			else if (goal.id === 'trade') done = st.market.sold + st.market.bought >= /** @type {number} */ (goal.n);
+			else if (goal.id === 'contract') done = st.market.filled > 0;
+			else if (goal.id === 'abundance') done = !!st.goals.abundance;
 			else if (goal.ware) done = progress(goal.ware) >= /** @type {number} */ (goal.n);
 			if (done) {
 				st.goals[goal.id] = true;
@@ -1177,11 +1199,9 @@ export function createSim(st) {
 			}
 		}
 	}
-	const landHeld = () => all(st.buildings).filter((b) => b.owner === PLAYER && T(b).kind === 'military' && b.soldiers.length > 0).length;
 	const progress = (/** @type {string} */ ware) => (ware === 'food' ? FOOD.reduce((s, w) => s + (st.made[w] ?? 0), 0) : st.made[ware] ?? 0);
 
 	function step(dt = TICK) {
-		if (st.result === 'lost') return;
 		st.time += dt;
 		const c = st.clocks;
 		for (const u of all(st.units)) {
@@ -1202,7 +1222,7 @@ export function createSim(st) {
 				}
 				continue;
 			}
-			if (u.inside || u.job === 's-siege' || u.job === 's-fight' || u.job === 'b-work') continue;
+			if (u.inside || u.job === 'b-work') continue;
 			if (u.job === 'c-idle' && carrierJob(u) && u.p === u.tgt) {
 				carrierArrive(u);
 				continue;
@@ -1218,10 +1238,9 @@ export function createSim(st) {
 					u.p = u.tgt;
 					arrive(u);
 				}
-			} else if (u.job !== 'c-idle' && u.job !== 's-defend' && u.job !== 'w-in') arrive(u);
+			} else if (u.job !== 'c-idle' && u.job !== 'w-in') arrive(u);
 		}
 		for (const b of all(st.buildings)) if (st.buildings[b.id] && b.owner === PLAYER) work(b, dt);
-		sieges(dt);
 		if (st.time >= c.dispatch) {
 			c.dispatch = st.time + 0.5;
 			dispatch();
@@ -1241,28 +1260,17 @@ export function createSim(st) {
 		const hq = st.buildings[st.hq];
 		if (st.time >= c.pop) {
 			c.pop = st.time + 18;
-			if (hq && hq.owner === PLAYER && hq.settlers < 12) hq.settlers++;
+			// newcomers settle where people live well
+			if (hq && hq.settlers < 12 && st.parties[PLAYER].wb >= 45) hq.settlers++;
 		}
-		if (st.time >= c.train) {
-			c.train = st.time + 10;
-			for (const wh of warehouses()) {
-				if ((wh.stock.weapons ?? 0) > 0 && wh.settlers > 2) {
-					wh.stock.weapons--;
-					wh.settlers--;
-					wh.soldiers.push(0);
-				}
-				if ((wh.stock.coin ?? 0) > 0 && wh.soldiers.some((/** @type {number} */ r) => r < MAX_RANK)) {
-					wh.stock.coin--;
-					const k = wh.soldiers.indexOf(Math.min(...wh.soldiers));
-					wh.soldiers[k]++;
-				}
-			}
+		if (st.time >= c.needs) {
+			c.needs = st.time + 2;
+			settlements(2);
 		}
 		if (st.time >= c.goals) {
 			c.goals = st.time + 1;
 			goals();
 		}
-		rival();
 		if (st.fx.length && st.time - st.fx[0].t > 12) st.fx.shift();
 	}
 	function arrive(/** @type {any} */ u) {
@@ -1274,8 +1282,9 @@ export function createSim(st) {
 			u.job = 'b-work';
 			return;
 		}
+		if (u.kind === 'worker' && (u.job === 't-go' || u.job === 't-back')) return traderArrive(u);
 		if (u.kind === 'worker') return workerArrive(u);
-		if (u.kind === 'soldier') return soldierArrive(u);
+		if (u.kind === 'trader') return traderArrive(u);
 	}
 
 	// ── what a player may do ──
@@ -1348,16 +1357,6 @@ export function createSim(st) {
 		return best ? buildRoad(best[0], best[best.length - 1]) : null;
 	}
 
-	/** how many soldiers can attack a rival building from your military buildings in reach @param {number} id */
-	function attackable(id) {
-		const t = st.buildings[id];
-		if (!t || t.owner !== RIVAL || !holdsLand(t.type)) return 0;
-		let n = 0;
-		for (const b of all(st.buildings))
-			if (b.owner === PLAYER && holdsLand(b.type) && b.stage === 'live' && g.dist(b.node, t.node) <= ATTACK_REACH) n += Math.max(0, b.soldiers.length - (b.type === 'hq' ? HQ_GUARD : 1));
-		return n;
-	}
-
 	return {
 		state: st,
 		grid: g,
@@ -1366,19 +1365,18 @@ export function createSim(st) {
 			const hq = makeBuilding('hq', v.hq, PLAYER, true);
 			hq.stock = { ...START.stock };
 			hq.settlers = START.settlers;
-			hq.soldiers = [...START.soldiers];
+			delete hq.stock.coin;
+			st.parties[PLAYER].coins = START.stock.coin;
 			hq.since = 0;
 			st.hq = hq.id;
-			const keep = makeBuilding('keep', v.keep, RIVAL, true);
-			keep.soldiers = [0, 1, 1, 2, 1, 0];
-			keep.since = 0;
-			st.keep = keep.id;
-			const garrisons = [[0, 1], [1, 0, 1], [0, 1]];
-			v.towers.forEach((n, k) => {
-				const t = makeBuilding('watchtower', n, RIVAL, true);
-				t.soldiers = garrisons[k];
-				t.since = 1;
+			// the neighbours hold their land first
+			st.villages = v.villages.map((n, k) => {
+				const b = makeBuilding('village', n, k + 1, true);
+				b.since = -1;
+				return b.id;
 			});
+			const f = makeBuilding('fair', v.fair, FAIR, true);
+			st.fair = f.id;
 			territory();
 			say('Welcome to the valley. Build a woodcutter and a sawmill near the forest, and join them to your headquarters by road.', hq.node);
 		},
@@ -1430,13 +1428,40 @@ export function createSim(st) {
 			const b = st.buildings[id];
 			if (b && b.owner === PLAYER) b.paused = paused;
 		},
-		attackable,
-		attack(/** @type {number} */ id, /** @type {number} */ n) {
-			const t = st.buildings[id];
-			if (!t || t.owner !== RIVAL) return 0;
-			const sent = sendAttack(t, n, PLAYER);
-			if (sent) say(`${sent} soldier${sent === 1 ? '' : 's'} march on the ${T(t).label.toLowerCase()}`, t.node);
-			return sent;
+		/** set (or with null clear) your standing order for a ware at the fair */
+		order(/** @type {string} */ w, /** @type {{ sell: boolean, above: number, keep: number, buy: boolean, below: number, upTo: number } | null} */ o) {
+			if (!TRADED.includes(w)) return;
+			if (o) st.orders[w] = { ...o };
+			else delete st.orders[w];
+		},
+		/** take (or let go of) a neighbour's request: your market halls gather it and your trader brings it */
+		take(/** @type {number} */ id, on = true) {
+			const c = st.market.contracts.find((/** @type {any} */ x) => x.id === id);
+			if (c && c.got < c.n && c.until > st.time) c.taken = on;
+		},
+		/** the fair as the Market shows it */
+		market() {
+			const m = st.market;
+			return {
+				purse: purse(),
+				halls: all(st.buildings).filter((b) => b.type === 'market' && b.owner === PLAYER).length,
+				abundance: m.abundance,
+				since: m.since,
+				wares: TRADED.map((w) => ({ w, price: price(m, w), cost: cost(m, w), trend: trend(m, w), pool: Math.floor(m.pool[w]), stock: stocked(w), order: st.orders[w] ?? null, hist: [...m.hist[w], price(m, w)] })),
+				contracts: m.contracts.filter((/** @type {any} */ c) => c.got < c.n && c.until > st.time).map((/** @type {any} */ c) => ({ ...c, who: st.parties[c.k].name, left: c.until - st.time })),
+				parties: st.parties.map((/** @type {any} */ p, /** @type {number} */ k) => ({
+					name: p.name,
+					about: k ? NEIGHBOURS[k - 1].about : 'Your settlement.',
+					pop: k ? p.pop : yourPeople(),
+					wb: p.wb,
+					sat: { ...p.sat },
+					reserve: p.reserve,
+					coins: k ? p.coins : purse(),
+					node: k ? st.buildings[st.villages[k - 1]]?.node ?? -1 : st.buildings[st.hq]?.node ?? -1
+				})),
+				sold: m.sold,
+				bought: m.bought
+			};
 		},
 		/** what stands at a node */
 		at(/** @type {number} */ n) {
@@ -1452,28 +1477,29 @@ export function createSim(st) {
 		summary() {
 			/** @type {Record<string, number>} */
 			const stock = {};
-			let settlers = 0, soldiers = 0;
+			let settlers = 0;
 			for (const wh of warehouses()) {
 				for (const [w, n] of Object.entries(wh.stock)) stock[w] = (stock[w] ?? 0) + /** @type {number} */ (n);
 				settlers += wh.settlers;
-				soldiers += wh.soldiers.length;
 			}
-			let carriers = 0, workers = 0, posted = 0;
-			for (const u of all(st.units)) if (u.owner === PLAYER) u.kind === 'carrier' ? carriers++ : u.kind === 'soldier' ? posted++ : workers++;
-			for (const b of all(st.buildings)) if (b.owner === PLAYER && !isWarehouse(b)) posted += b.soldiers.length;
-			let rivals = 0;
-			for (const b of all(st.buildings)) if (b.owner === RIVAL) rivals += b.soldiers.length;
+			stock.coin = Math.floor(purse());
+			let carriers = 0, workers = 0;
+			for (const u of all(st.units)) if (u.owner === PLAYER) u.kind === 'carrier' ? carriers++ : workers++;
+			const m = st.market;
 			return {
 				time: st.time,
 				stock,
 				settlers,
-				soldiers,
-				posted,
 				carriers,
 				workers,
-				rivals,
+				abundance: m.abundance,
+				/** settlements living well with enough people */
+				thriving: m.thriving ?? 0,
+				/** seconds the valley has been abundant, or -1 */
+				held: m.since >= 0 ? st.time - m.since : -1,
+				parties: st.parties.map((/** @type {any} */ p) => ({ name: p.name, wb: p.wb })),
 				result: st.result,
-				goals: GOALS.map((x) => ({ ...x, done: !!st.goals[x.id], have: x.ware ? progress(x.ware) : x.id === 'land' ? landHeld() : undefined, need: x.n ?? (x.id === 'land' ? 3 : undefined) })),
+				goals: GOALS.map((x) => ({ ...x, done: !!st.goals[x.id], have: x.ware ? progress(x.ware) : x.id === 'trade' ? m.sold + m.bought : undefined, need: x.n })),
 				msgs: st.msgs.slice(-6)
 			};
 		},
@@ -1487,7 +1513,8 @@ export function createSim(st) {
 				id: b.id,
 				type: b.type,
 				label: t.label,
-				about: b.owner === RIVAL && b.type !== 'keep' ? 'The rival’s soldiers hold the land round it. Take it, and its land is yours.' : t.about,
+				about: b.type === 'village' ? NEIGHBOURS[b.owner - 1].about : t.about,
+				name: b.type === 'village' ? st.parties[b.owner].name : '',
 				owner: b.owner,
 				node: b.node,
 				stage: b.stage,
@@ -1502,15 +1529,12 @@ export function createSim(st) {
 				eff: Math.round(b.eff * 100),
 				deposit: b.deposit,
 				kind: t.kind,
-				soldiers: [...b.soldiers].sort((x, y) => y - x),
-				capacity: t.capacity ?? 0,
-				coins: b.coins + b.incC,
 				stock: isWarehouse(b) ? { ...b.stock } : null,
 				settlers: b.settlers,
-				attackable: b.owner === RIVAL ? attackable(id) : 0
+				box: t.kind === 'market' ? { ...b.box } : null,
+				party: b.type === 'village' ? { ...st.parties[b.owner], stock: { ...st.parties[b.owner].stock } } : null
 			};
 		},
-		landHeld,
 		toJSON: () => JSON.stringify(st)
 	};
 }

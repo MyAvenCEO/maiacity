@@ -2,7 +2,7 @@
  * SANDBOX 6 · THE GAME — the valley on a page: the stage, the sky and the map camera of the sandbox kit, the
  * simulation (./sim.js) run on the clock at the speed chosen, the view (./view.js) drawing it, and the player's hand:
  *
- *   look      click a building or a flag to see it (a rival building to attack it)
+ *   look      click a building or a flag to see it (a village to see how its people live)
  *   build     a building chosen in the menu: the green spots are where it may stand; click one, and a road to the
  *             nearest flag of your network comes with it
  *   road      click a flag (or a building, for its flag), then where the road should go: it finds its way round
@@ -59,7 +59,7 @@ export function mountGame(container, o = {}) {
 	/** a valley played by the autoplayer up to `t` seconds: the same valley every time */
 	function filmGame(/** @type {number} */ t) {
 		const s = newGame(FILM_SEED);
-		const auto = createAutoplay(s, { attack: false });
+		const auto = createAutoplay(s);
 		for (let k = 0; s.state.time < t; k++) {
 			if (k % 30 === 0) auto.tick();
 			s.step(TICK);
@@ -276,7 +276,7 @@ export function mountGame(container, o = {}) {
 			sim = filmGame(FILM_START);
 			view = createView(scene, sim);
 		}
-		const auto = film ? createAutoplay(sim, { attack: false }) : null;
+		const auto = film ? createAutoplay(sim) : null;
 		for (let k = 0; sim.state.time < t - 1e-6; k++) {
 			if (auto && k % 30 === 0) auto.tick();
 			sim.step(TICK);
@@ -297,7 +297,7 @@ export function mountGame(container, o = {}) {
 				sim.step(TICK);
 				acc -= TICK;
 			}
-			if (film && steps) createAutoplay(sim, { attack: false }).tick();
+			if (film && steps) createAutoplay(sim).tick();
 		}
 		if (mode === 'build' && now - spotsClock > 1000) {
 			spotsClock = now;

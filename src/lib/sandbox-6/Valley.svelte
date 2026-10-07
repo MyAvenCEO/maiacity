@@ -1,14 +1,16 @@
 <!--
 	avenCITY Sandbox 6 — a valley of settlers: the whole game on one page. The world fills the screen (./game.js); over
-	it the tools (build, road, flag, tear down, the clock), the build menu, what your storehouses hold, the goals, the
-	card of whatever is selected, and the valley's news.
+	it the tools (build, road, flag, tear down, the market, the clock), the build menu, the valley's abundance, what
+	your storehouses hold, the goals, the market (prices, your orders, the neighbours' requests), the card of whatever
+	is selected, and the valley's news.
 -->
 <script>
 	import { onDestroy, onMount } from 'svelte';
 	import TouchStick from '$lib/touch/TouchStick.svelte';
 	import { WorldBar } from '$lib/sandbox-kit';
-	import { BUILDINGS, MENU, RANKS, WARES, WARE_ORDER } from './rules.js';
-	import { ATTACK_REACH, PLAYER } from './sim.js';
+	import { ABUNDANT, BUILDINGS, HOLD, MENU, PEOPLE, WARES, WARE_ORDER } from './rules.js';
+	import { NEED_LABEL } from './market.js';
+	import { PLAYER } from './sim.js';
 
 	/** @type {HTMLDivElement | undefined} */
 	let stage = $state();
@@ -35,7 +37,13 @@
 	let flagCard = $state(null);
 	/** @type {any} */
 	let roadCard = $state(null);
-	let attackers = $state(1);
+	let marketOpen = $state(false);
+	/** @type {ReturnType<import('./sim.js').Sim['market']> | null} */
+	let market = $state(null);
+	/** the ware whose order is being set */
+	let editing = $state('');
+	/** @type {{ sell: boolean, above: number, keep: number, buy: boolean, below: number, upTo: number }} */
+	let draft = $state({ sell: false, above: 0, keep: 0, buy: false, below: 0, upTo: 0 });
 	let seenMsg = 0;
 	/** @type {{ text: string, tone: string, node: number, key: number }[]} */
 	let toasts = $state([]);
@@ -47,6 +55,7 @@
 		if (!game) return;
 		const sim = game.sim;
 		summary = sim.summary();
+		market = sim.market();
 		speed = game.speed;
 		const s = selected;
 		card = s?.k === 'building' ? sim.inspect(s.id) : null;
@@ -73,12 +82,25 @@
 	/** @param {import('./game.js').Selection} s */
 	function select(s) {
 		selected = s;
-		if (s?.k === 'building') {
-			const info = game?.sim.inspect(s.id);
-			attackers = Math.max(1, info?.attackable ?? 1);
-		}
 		refresh();
 	}
+	/** open a ware's order to set it: what is set now, or a sensible start from its price */
+	function edit(/** @type {string} */ w) {
+		if (editing === w) return void (editing = '');
+		const row = market?.wares.find((x) => x.w === w);
+		if (!row) return;
+		const p = Math.round(row.price * 10) / 10;
+		draft = row.order ? { ...row.order } : { sell: false, above: Math.max(1, Math.round(p)), keep: 10, buy: false, below: Math.max(1, Math.round(p * 1.2)), upTo: 20 };
+		editing = w;
+	}
+	function saveOrder() {
+		if (!editing) return;
+		game?.sim.order(editing, draft.sell || draft.buy ? { ...draft } : null);
+		editing = '';
+		refresh();
+	}
+	const money = (/** @type {number} */ n) => (n < 10 ? n.toFixed(1) : String(Math.round(n)));
+	const tone = (/** @type {number} */ wb) => (wb >= ABUNDANT ? 'good' : wb >= 55 ? 'fair' : 'poor');
 	/** @param {string} m @param {string} [type] */
 	function tool(m, type = '') {
 		if (m === 'build' && !type) {
@@ -127,12 +149,12 @@
 
 	const sitesCost = (/** @type {Record<string, number>} */ cost) => Object.entries(cost);
 	const chainOf = (/** @type {any} */ t) =>
-		t.kind === 'military' ? `Holds land ${t.radius} steps round · ${t.capacity} soldiers` : t.kind === 'warehouse' ? 'Stores wares and settlers' : t.kind === 'forester' ? 'Plants trees' : `${t.inputs?.length ? t.inputs.map((/** @type {string[]} */ s) => s.map(label).join(' or ')).join(' + ') + ' → ' : ''}${t.out ? label(t.out) : ''}`;
+		t.kind === 'land' ? `Holds land ${t.radius} steps round` : t.kind === 'market' ? 'Trades at the fair by your orders' : t.kind === 'warehouse' ? 'Stores wares and settlers' : t.kind === 'forester' ? 'Plants trees' : `${t.inputs?.length ? t.inputs.map((/** @type {string[]} */ s) => s.map(label).join(' or ')).join(' + ') + ' → ' : ''}${t.out ? label(t.out) : ''}`;
 </script>
 
 <div class="valley">
 	<div class="stage" bind:this={stage} role="application" aria-label="Sandbox 6: the valley. Drag to turn the map, scroll to zoom, click to select or build"></div>
-	<WorldBar title="avenCITY Sandbox 6" subtitle="A valley of settlers · roads, carriers, chains" />
+	<WorldBar title="avenCITY Sandbox 6" subtitle="A valley of settlers · trade, an open market, abundance" />
 	<TouchStick move={(x, y, hurry) => game?.move(x, y, hurry)} {stage} taps=".tools button, .panel button, .card button" />
 
 	<!-- the tools, down the left -->
@@ -141,6 +163,7 @@
 		<button class:on={mode === 'road'} onclick={() => tool('road')} title="Road (R)"><span class="ic">⟋</span>Road</button>
 		<button class:on={mode === 'flag'} onclick={() => tool('flag')} title="Flag (F)"><span class="ic">⚑</span>Flag</button>
 		<button class:on={mode === 'demolish'} onclick={() => tool('demolish')} title="Tear down (X)"><span class="ic">✕</span>Tear down</button>
+		<button class:on={marketOpen} onclick={() => ((marketOpen = !marketOpen), (menuOpen = false))} title="The market: prices, your orders, requests"><span class="ic">⚖</span>Market</button>
 		<div class="speed" role="group" aria-label="Speed">
 			{#each [[0, '❚❚'], [1, '1×'], [2, '2×'], [4, '4×']] as [s, t] (s)}
 				<button class:on={speed === s} onclick={() => (game?.setSpeed(/** @type {number} */ (s)), (speed = /** @type {number} */ (s)))} title={s ? `Speed ${t}` : 'Pause (Space)'}>{t}</button>
@@ -178,10 +201,28 @@
 	<!-- what the storehouses hold, and the goals -->
 	{#if summary}
 		<aside class="side">
+			<section class="panel abundance" aria-label="The valley's abundance">
+				<div class="head">
+					<span>Abundance</span>
+					<span class="big {tone(summary.abundance)}">{Math.round(summary.abundance)}</span>
+				</div>
+				<p class="people small">{summary.thriving} of {summary.parties.length} at {ABUNDANT}+ with {PEOPLE}+ people{summary.held >= 0 ? ` · held ${clock(summary.held)} of ${clock(HOLD)}` : ''}</p>
+				<ul class="lives">
+					{#each market?.parties ?? [] as p (p.name)}
+						<li>
+							<button onclick={() => p.node >= 0 && game?.focus(p.node)} title="{p.name}: wellbeing {Math.round(p.wb)}, {p.pop} people">
+								<span>{p.name} <em class:short={p.pop < PEOPLE}>{p.pop}</em></span>
+								<span class="bar"><span class={tone(p.wb)} style:width="{p.wb}%"></span></span>
+								<b>{Math.round(p.wb)}</b>
+							</button>
+						</li>
+					{/each}
+				</ul>
+			</section>
 			<section class="panel stock" aria-label="Your stock">
 				<button class="head" onclick={() => (stockOpen = !stockOpen)} aria-expanded={stockOpen}>
 					<span>Stock</span>
-					<span class="people">{summary.settlers} settlers · {summary.soldiers + summary.posted} soldiers · {clock(summary.time)}</span>
+					<span class="people">{summary.settlers} settlers · {summary.stock.coin ?? 0} coins · {clock(summary.time)}</span>
 				</button>
 				{#if stockOpen}
 					<ul class="wares">
@@ -189,7 +230,7 @@
 							<li title={label(w)} class:none={!(summary.stock[w] ?? 0)}><i style:background={WARES[w].color}></i><span>{label(w)}</span><b>{summary.stock[w] ?? 0}</b></li>
 						{/each}
 					</ul>
-					<p class="people small">{summary.carriers} carriers · {summary.workers} at work · rival soldiers {summary.rivals}</p>
+					<p class="people small">{summary.carriers} carriers · {summary.workers} at work</p>
 				{/if}
 			</section>
 			<section class="panel goals" aria-label="Goals">
@@ -213,12 +254,75 @@
 		</aside>
 	{/if}
 
+	<!-- the market: prices at the fair, your standing orders, the neighbours' requests -->
+	{#if marketOpen && market}
+		<section class="panel market" aria-label="Market">
+			<button class="close" onclick={() => (marketOpen = false)} aria-label="Close">×</button>
+			<p class="eyebrow">The fair · {money(market.purse)} coins in your purse</p>
+			<h2>Market</h2>
+			{#if !market.halls}<p class="status">Build a market hall (Trade) to send a trader to the fair.</p>{/if}
+			<p class="about">Prices follow how much of a ware the fair holds: selling makes it cheaper, buying dearer. Set an order and your trader fills it whenever the price allows.</p>
+			{#if market.contracts.length}
+				<p class="label">Requests</p>
+				<ul class="requests">
+					{#each market.contracts as c (c.id)}
+						<li>
+							<span><b>{c.who}</b> asks for {c.n} {label(c.w).toLowerCase()} · {c.reward ? `${c.reward} coins` : 'help: no coins left'} · {clock(c.left)} left{#if c.got}<em> · {c.got} brought</em>{/if}</span>
+							<button class:go={!c.taken} onclick={() => (game?.sim.take(c.id, !c.taken), refresh())}>{c.taken ? 'Taken' : 'Take it'}</button>
+						</li>
+					{/each}
+				</ul>
+			{/if}
+			<table class="prices">
+				<thead><tr><th>Ware</th><th>Price</th><th>Fair</th><th>Yours</th><th>Order</th></tr></thead>
+				<tbody>
+					{#each market.wares as x (x.w)}
+						<tr class:open={editing === x.w} onclick={() => edit(x.w)}>
+							<td><i style:background={WARES[x.w].color}></i> {label(x.w)}</td>
+							<td>{money(x.price)} <span class="trend t{x.trend}">{x.trend > 0 ? '▲' : x.trend < 0 ? '▼' : '·'}</span></td>
+							<td>{x.pool}</td>
+							<td>{x.stock}</td>
+							<td class="order">{x.order ? [x.order.sell ? `sell ≥${x.order.above}` : '', x.order.buy ? `buy ≤${x.order.below}` : ''].filter(Boolean).join(' · ') : '–'}</td>
+						</tr>
+						{#if editing === x.w}
+							<tr class="editor">
+								<td colspan="5">
+									<label><input type="checkbox" bind:checked={draft.sell} /> Sell when the price is at least <input type="number" min="0" step="0.5" bind:value={draft.above} />, keeping <input type="number" min="0" bind:value={draft.keep} /></label>
+									<label><input type="checkbox" bind:checked={draft.buy} /> Buy when the price is at most <input type="number" min="0" step="0.5" bind:value={draft.below} />, up to <input type="number" min="0" bind:value={draft.upTo} /> in store</label>
+									<div class="actions">
+										<button class="go" onclick={(e) => (e.stopPropagation(), saveOrder())}>Set order</button>
+										<button onclick={(e) => (e.stopPropagation(), (editing = ''))}>Cancel</button>
+									</div>
+								</td>
+							</tr>
+						{/if}
+					{/each}
+				</tbody>
+			</table>
+			<p class="label">How the valley lives</p>
+			<ul class="settlements">
+				{#each market.parties as p (p.name)}
+					<li>
+						<p><b>{p.name}</b> · {p.pop} people · wellbeing {Math.round(p.wb)}{#if p.name !== 'You'} · {Math.round(p.coins)} coins{/if}</p>
+						<div class="needbars">
+							{#each Object.entries(p.sat) as [need, v] (need)}
+								<span title="{NEED_LABEL[/** @type {keyof typeof NEED_LABEL} */ (need)]}: {Math.round(v * 100)}%"><em>{NEED_LABEL[/** @type {keyof typeof NEED_LABEL} */ (need)]}</em><span class="bar"><span class={tone(v * 100)} style:width="{v * 100}%"></span></span></span>
+							{/each}
+							<span title="Put by: {Math.round(p.reserve * 100)}%"><em>Put by</em><span class="bar"><span class={tone(p.reserve * 100)} style:width="{p.reserve * 100}%"></span></span></span>
+						</div>
+					</li>
+				{/each}
+			</ul>
+			<p class="small">You sold {market.sold} and bought {market.bought} wares at the fair.</p>
+		</section>
+	{/if}
+
 	<!-- the card of what is selected -->
 	{#if card}
 		<section class="panel card" aria-label="{card.label}">
 			<button class="close" onclick={() => game?.select(null)} aria-label="Close">×</button>
-			<p class="eyebrow">{card.owner === PLAYER ? (card.stage === 'site' ? 'Building site' : 'Yours') : 'The rival’s'}</p>
-			<h2>{card.label}</h2>
+			<p class="eyebrow">{card.owner === PLAYER ? (card.stage === 'site' ? 'Building site' : 'Yours') : card.type === 'fair' ? 'Open to all' : 'A neighbour'}</p>
+			<h2>{card.name || card.label}</h2>
 			<p class="about">{card.about}</p>
 			{#if card.status}<p class="status">{card.status}</p>{/if}
 			{#if card.stage === 'site'}
@@ -228,21 +332,27 @@
 						<li><i style:background={WARES[c.ware].color}></i>{label(c.ware)} <b>{c.have} of {c.need}</b>{#if c.coming}<em> · {c.coming} coming</em>{/if}</li>
 					{/each}
 				</ul>
-			{:else if card.kind === 'military' || card.type === 'hq'}
-				<p class="label">Soldiers {card.type === 'hq' ? '' : `· ${card.soldiers.length} of ${card.capacity}`}</p>
-				<ul class="ranks">
-					{#each card.soldiers as r, k (k)}<li class="r{r}" title={RANKS[r]}>{r + 1}</li>{/each}
-					{#if !card.soldiers.length}<li class="empty">none</li>{/if}
+			{:else if card.party}
+				<p class="label">{card.party.pop} people · wellbeing <b>{Math.round(card.party.wb)}</b> · {Math.round(card.party.coins)} coins</p>
+				<ul class="needs">
+					{#each Object.entries(card.party.sat) as [need, v] (need)}
+						<li>{NEED_LABEL[/** @type {keyof typeof NEED_LABEL} */ (need)]} <b>{Math.round(/** @type {number} */ (v) * 100)}%</b></li>
+					{/each}
 				</ul>
-				{#if card.owner === PLAYER && card.kind === 'military'}<p class="small">Coins train them a rank up{card.coins ? ` · ${card.coins} on the way` : ''}.</p>{/if}
-				{#if card.owner !== PLAYER}
-					{#if card.attackable > 0}
-						<label class="attack">Send <input type="range" min="1" max={card.attackable} bind:value={attackers} /> <b>{Math.min(attackers, card.attackable)}</b> of {card.attackable}</label>
-						<button class="go danger" onclick={() => (game?.sim.attack(card?.id ?? 0, Math.min(attackers, card?.attackable ?? 0)), refresh())}>Attack</button>
-					{:else}
-						<p class="small">Out of reach: your soldiers attack from military buildings at most {ATTACK_REACH} steps away, and each keeps one soldier home.</p>
-					{/if}
-				{/if}
+				<p class="label">In store</p>
+				<ul class="wares tight">
+					{#each Object.entries(card.party.stock).filter(([, n]) => n >= 1) as [w, n] (w)}<li title={label(w)}><i style:background={WARES[w].color}></i><span>{label(w)}</span><b>{Math.floor(/** @type {number} */ (n))}</b></li>{/each}
+				</ul>
+			{:else if card.type === 'fair'}
+				<div class="actions"><button class="go" onclick={() => (marketOpen = true)}>Open the Market</button></div>
+			{/if}
+			{#if card.box}
+				<p class="label">Waiting to go to the fair</p>
+				<ul class="wares tight">
+					{#each Object.entries(card.box).filter(([, n]) => n > 0) as [w, n] (w)}<li title={label(w)}><i style:background={WARES[w].color}></i><span>{label(w)}</span><b>{n}</b></li>{/each}
+					{#if !Object.values(card.box).some((n) => n > 0)}<li class="none"><span>nothing yet</span></li>{/if}
+				</ul>
+				<div class="actions"><button onclick={() => (marketOpen = true)}>Orders in the Market</button></div>
 			{/if}
 			{#if card.stock}
 				<p class="label">{card.settlers} settlers inside</p>
@@ -275,7 +385,7 @@
 	{:else if flagCard}
 		<section class="panel card" aria-label="Flag">
 			<button class="close" onclick={() => game?.select(null)} aria-label="Close">×</button>
-			<p class="eyebrow">{flagCard.owner === PLAYER ? 'Your flag' : 'The rival’s flag'}{flagCard.bld ? ` · ${flagCard.bld}` : ''}</p>
+			<p class="eyebrow">{flagCard.owner === PLAYER ? 'Your flag' : 'A neighbour’s flag'}{flagCard.bld ? ` · ${flagCard.bld}` : ''}</p>
 			<h2>Flag</h2>
 			<p class="about">Wares wait here for a carrier: {flagCard.wares.length} of 8.</p>
 			<ul class="wares tight">
@@ -312,10 +422,10 @@
 		<div class="end" role="dialog" aria-label="The end of the game">
 			<div>
 				<p class="eyebrow">{clock(summary.time)} in the valley</p>
-				<h2>{summary.result === 'won' ? 'The valley is yours' : 'The valley is lost'}</h2>
-				<p>{summary.result === 'won' ? 'Your soldiers hold the rival keep. Every road, every carrier and every ware brought you here.' : 'The rival took your headquarters.'}</p>
+				<h2>Abundance for all</h2>
+				<p>Ten minutes of plenty for the whole valley: you and every neighbour fed, watered, housed and with something put by. Every road, every carrier and every cartload to the fair brought you here.</p>
 				<button class="go" onclick={() => (game?.restart(), (seenMsg = -1), (toasts = []))}>A new valley</button>
-				{#if summary.result === 'won'}<button onclick={() => (game && (game.sim.state.result = null), refresh())}>Keep building</button>{/if}
+				<button onclick={() => (game && (game.sim.state.result = null), refresh())}>Keep building</button>
 			</div>
 		</div>
 	{/if}
@@ -653,49 +763,172 @@
 		font-style: normal;
 		opacity: 0.6;
 	}
-	.ranks {
-		display: flex;
-		flex-wrap: wrap;
-		gap: 0.25rem;
-		margin: 0;
+	.big {
+		font-size: 1.5rem;
+		font-weight: 600;
+	}
+	.big.good,
+	.trend.t1 {
+		color: #2f7a3a;
+	}
+	.big.fair {
+		color: #a47a1c;
+	}
+	.big.poor,
+	.trend.t-1 {
+		color: #a3322a;
+	}
+	.lives {
+		margin: 0.35rem 0 0;
 		padding: 0;
 		list-style: none;
-	}
-	.ranks li {
-		width: 1.4rem;
-		height: 1.4rem;
-		border-radius: 6px;
 		display: grid;
-		place-items: center;
-		font-size: 0.68rem;
-		color: #fff;
-		background: #7f8a96;
+		gap: 0.2rem;
 	}
-	.ranks li.r1 {
-		background: #4d7fb3;
-	}
-	.ranks li.r2 {
-		background: #2f5f99;
-	}
-	.ranks li.r3 {
-		background: #c79a1c;
-	}
-	.ranks li.empty {
-		width: auto;
-		padding: 0 0.4rem;
-		background: none;
-		color: inherit;
-		opacity: 0.5;
-	}
-	.attack {
-		display: flex;
+	.lives button {
+		display: grid;
+		grid-template-columns: 4.6rem 1fr 1.6rem;
 		align-items: center;
 		gap: 0.4rem;
-		margin: 0.6rem 0 0.3rem;
-		font-size: 0.78rem;
+		width: 100%;
+		padding: 0;
+		border: 0;
+		background: none;
+		font-size: 0.74rem;
+		text-align: left;
 	}
-	.attack input {
-		flex: 1;
+	.lives b {
+		text-align: right;
+	}
+	.lives em {
+		font-style: normal;
+		font-size: 0.66rem;
+		opacity: 0.55;
+	}
+	.lives em.short {
+		color: #a3322a;
+		opacity: 1;
+	}
+	.bar span.good {
+		background: #3d8f4a;
+	}
+	.bar span.fair {
+		background: #c79a1c;
+	}
+	.bar span.poor {
+		background: #b8483a;
+	}
+	.market {
+		position: absolute;
+		z-index: 4;
+		top: calc(5rem + env(safe-area-inset-top, 0px));
+		left: calc(9rem + env(safe-area-inset-left, 0px));
+		width: min(27rem, calc(100vw - 2rem));
+		max-height: calc(100vh - 9rem - var(--nav-room, 4rem));
+		overflow: auto;
+	}
+	.market h2 {
+		margin: 0.15rem 0 0.3rem;
+		font-size: 1.15rem;
+	}
+	.market .close {
+		position: absolute;
+		top: 0.4rem;
+		right: 0.5rem;
+		border: 0;
+		background: none;
+		font-size: 1.2rem;
+	}
+	.prices {
+		width: 100%;
+		border-collapse: collapse;
+		font-size: 0.75rem;
+	}
+	.prices th {
+		text-align: left;
+		font-weight: 500;
+		opacity: 0.6;
+		padding: 0.2rem 0.25rem;
+	}
+	.prices td {
+		padding: 0.22rem 0.25rem;
+		border-top: 1px solid rgb(31 42 35 / 0.07);
+		white-space: nowrap;
+	}
+	.prices tbody tr {
+		cursor: pointer;
+	}
+	.prices tbody tr:hover,
+	.prices tr.open {
+		background: rgb(255 255 255 / 0.6);
+	}
+	.prices .order {
+		font-size: 0.7rem;
+		opacity: 0.8;
+	}
+	.trend {
+		font-size: 0.62rem;
+		opacity: 0.8;
+	}
+	.editor td {
+		white-space: normal;
+		background: rgb(255 255 255 / 0.75);
+	}
+	.editor label {
+		display: block;
+		margin: 0.25rem 0;
+		line-height: 1.8;
+	}
+	.editor input[type='number'] {
+		width: 3.4rem;
+		font: inherit;
+	}
+	.requests,
+	.settlements {
+		margin: 0 0 0.4rem;
+		padding: 0;
+		list-style: none;
+		display: grid;
+		gap: 0.3rem;
+		font-size: 0.75rem;
+	}
+	.requests li {
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+		justify-content: space-between;
+	}
+	.requests button {
+		flex: none;
+		padding: 0.3rem 0.65rem;
+		border: 1px solid rgb(31 42 35 / 0.15);
+		border-radius: 999px;
+		background: rgb(255 255 255 / 0.7);
+		font-size: 0.72rem;
+	}
+	.requests button.go,
+	.actions button.go {
+		background: #24452f;
+		color: #f4f1e8;
+		border-color: #24452f;
+	}
+	.requests em {
+		font-style: normal;
+		opacity: 0.6;
+	}
+	.settlements p {
+		margin: 0 0 0.15rem;
+	}
+	.needbars {
+		display: grid;
+		grid-template-columns: repeat(5, 1fr);
+		gap: 0.3rem;
+	}
+	.needbars em {
+		display: block;
+		font-style: normal;
+		font-size: 0.64rem;
+		opacity: 0.6;
 	}
 	.actions {
 		display: flex;
@@ -861,6 +1094,12 @@
 		}
 		.wares {
 			grid-template-columns: 1fr;
+		}
+		.market {
+			top: calc(7rem + env(safe-area-inset-top, 0px));
+			left: 0.5rem;
+			width: calc(100vw - 1rem);
+			max-height: 60vh;
 		}
 		.card {
 			top: auto;
