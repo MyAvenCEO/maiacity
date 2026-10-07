@@ -485,6 +485,15 @@ export function createSim(st) {
 			r.carrier = u.id;
 			drivers++;
 		}
+		// more buses than half the people while a workplace stands empty: a bus waiting on a quiet path goes home
+		if (drivers > most && !warehouses().some((w) => w.owner === PLAYER && w.settlers > 0) && all(st.buildings).some((x) => x.owner === PLAYER && x.stage === 'live' && T(x).worker && !x.worker)) {
+			const r = all(st.roads).find((x) => x.owner === PLAYER && x.carrier && !busy(x) && st.units[x.carrier]?.job === 'c-idle' && !st.units[x.carrier].ware);
+			if (r) {
+				const u = st.units[r.carrier];
+				r.carrier = 0;
+				goHome(u);
+			}
+		}
 		for (const b of all(st.buildings)) {
 			if (b.owner !== PLAYER) continue;
 			const t = T(b);
