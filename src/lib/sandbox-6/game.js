@@ -379,7 +379,7 @@ export function mountGame(container, o = {}) {
 		/** a fresh valley */
 		restart() {
 			view.dispose();
-			sim = newGame(Math.floor(Math.random() * 1e6), sim.state.pace);
+			sim = newGame(Math.floor(Math.random() * 1e6));
 			sim.state.autoFocus = simulating;
 			view = createView(scene, sim);
 			select(null);
