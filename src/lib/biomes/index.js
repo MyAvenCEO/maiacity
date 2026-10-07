@@ -13,7 +13,8 @@
  * purpose: a living mulch of clover and wild strawberries between the plants, leaf litter under the trees.
  *
  * The Biomes explorer (/app/biomes/) shows each on a patch of ground, every layer to show or hide, and mixed with
- * another; Sandbox 5's floor is the food forest's (src/lib/sandbox-2/interior/village.ts).
+ * another; Sandbox 5's floor is the food forest's (src/lib/sandbox-2/interior/village.ts), and under the glass of its
+ * domes the warm food forest's (interior.ts).
  */
 import { COVER } from './cover.js';
 import { SURFACES, surfacesAt } from './surfaces.js';
@@ -69,6 +70,26 @@ const LIST = [
 			{ kind: 'fern', share: 2, colony: 5, spread: 0.3, on: 'humus', fill: 0.08 },
 			{ kind: 'mushrooms', share: 0.4, colony: 6, spread: 0.2, on: 'humus', fill: 0.006 },
 			{ kind: 'deadwood', share: 0.4, colony: 8, spread: 0.3, on: 'litter', fill: 0.0018 },
+			{ kind: 'stones', share: 0.3, colony: 8, spread: 0.2, fill: 0.004 }
+		]
+	},
+	{
+		id: 'warm-food-forest',
+		label: 'Food forest under glass',
+		note: 'The warm forest garden inside a dome: moist, shaded, never bare — big fallen leaves of banana, mango and fig over dark humus, moss where it stays damp, ferns in the shade of the palms, a living mat of clover, wild strawberries and soft grass where the light comes through the glass.',
+		from: 'Sandbox 5, inside the domes',
+		surface: { green: 4, litter: 3, humus: 2, moss: 1.5 },
+		density: 7,
+		cover: [
+			{ kind: 'grass', share: 4, colony: 4, spread: 0.55, on: 'green' },
+			{ kind: 'clover', share: 3, colony: 3, spread: 0.35, on: 'green' },
+			{ kind: 'strawberry', share: 4, colony: 3, spread: 0.4, on: 'green' },
+			{ kind: 'woodsorrel', share: 3, colony: 3, spread: 0.3, on: 'humus' },
+			{ kind: 'fern', share: 4, colony: 4, spread: 0.4, on: 'humus', fill: 0.12 },
+			{ kind: 'moss', share: 3, colony: 3, spread: 0.45, on: 'moss', fill: 0.18 },
+			{ kind: 'litter', share: 5, colony: 5, spread: 0.6, on: 'litter', fill: 0.12 },
+			{ kind: 'forgetmenot', share: 1, colony: 2, spread: 0.2 },
+			{ kind: 'mushrooms', share: 0.6, colony: 5, spread: 0.25, on: 'humus', fill: 0.008 },
 			{ kind: 'stones', share: 0.3, colony: 8, spread: 0.2, fill: 0.004 }
 		]
 	},

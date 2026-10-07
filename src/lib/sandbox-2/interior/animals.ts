@@ -247,7 +247,8 @@ export function apiary(spots: { x: number; z: number; rot: number }[], seed: num
 	const swarm = crowd(
 		bees.make,
 		[paths.length],
-		{ near: 6, max: 30, scale: 1.6, lift: 0.012, shadows: false, ready: bees.ready, farShape: () => ({ geometry: speck, material: new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.6 }) }) }
+		// (rigged only the few nearest, close by: a bee in full is thousands of faces for a centimetre and a half)
+		{ near: 4, max: 10, scale: 1.6, lift: 0.012, shadows: false, ready: bees.ready, farShape: () => ({ geometry: speck, material: new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.6 }) }) }
 	)
 	object.add(swarm.object)
 	const update = (t: number) => {
@@ -345,18 +346,20 @@ export function antHills(
 	const object = new THREE.Group()
 	const NEAR = 22
 	const make = CASTS['ant-hill']!
-	// the mound from afar: the hill built coarse, its ants (each far smaller than the mound) left off
-	const far = lowDetail(make, 0.45).rig.object
+	// the mound from afar: the hill built coarse, its ants (each far smaller than the mound) left off — every far hill
+	// one instance of it, all in one draw call, and none at all past FAR (a mound a metre across is lost in the floor)
+	const FAR_HILLS = 70
+	const farShape = lowDetail(make, 0.22).rig.object as THREE.Mesh
+	const far = new THREE.InstancedMesh(farShape.geometry, farShape.material, Math.max(1, spots.length))
 	far.castShadow = far.receiveShadow = true
+	far.frustumCulled = false
+	far.count = 0
+	object.add(far)
+	const placed = new THREE.Matrix4(), turnQ = new THREE.Quaternion(), at3 = new THREE.Vector3(), size3 = new THREE.Vector3(), up3 = new THREE.Vector3(0, 1, 0)
 	/** a road: its points, and how far along it each one is */
 	type Road = { pts: THREE.Vector2[]; at: number[]; len: number }
-	type Hill = { s: (typeof spots)[number]; far: THREE.Object3D; near?: ReturnType<typeof make>; holder?: THREE.Group; roads: Road[] }
+	type Hill = { s: (typeof spots)[number]; near?: ReturnType<typeof make>; holder?: THREE.Group; roads: Road[] }
 	const hills: Hill[] = spots.map((s) => {
-		const o = far.clone()
-		o.position.set(s.x, 0, s.z)
-		o.rotation.y = s.rot
-		o.scale.setScalar(s.size)
-		object.add(o)
 		// its roads: off the mound's foot, each its own way, wandering as an ant road does, until it is long enough or meets
 		// a path or the water
 		const r = seeded(Math.round(s.x * 131 + s.z * 17) + 5)
@@ -379,7 +382,7 @@ export function antHills(
 			}
 			if (len >= 1.6) roads.push({ pts, at, len })
 		}
-		return { s, far: o, roads }
+		return { s, roads }
 	})
 	// the roads worn into the floor: a strip of bare, trodden earth each, all of them one mesh
 	{
@@ -431,9 +434,12 @@ export function antHills(
 	}
 	const update = (t: number) => {
 		const at = eye?.()
-		let n = 0
+		let n = 0, nf = 0
 		for (const h of hills) {
-			const near = !!at && (h.s.x - at.x) ** 2 + (h.s.z - at.z) ** 2 < NEAR * NEAR
+			const d2 = at ? (h.s.x - at.x) ** 2 + (h.s.z - at.z) ** 2 : 0
+			const near = !!at && d2 < NEAR * NEAR
+			if (!near && (!at || d2 < FAR_HILLS * FAR_HILLS))
+				far.setMatrixAt(nf++, placed.compose(at3.set(h.s.x, 0, h.s.z), turnQ.setFromAxisAngle(up3, h.s.rot), size3.setScalar(h.s.size)))
 			if (near && !h.near) {
 				h.near = make()
 				// the rig's pose sets its own root where the clip says, so it stands in a holder placed at its spot: posed
@@ -446,7 +452,6 @@ export function antHills(
 				h.holder = holder
 				object.add(holder)
 			}
-			h.far.visible = !near
 			if (h.near && h.holder) {
 				h.holder.visible = near
 				if (near) h.near.rig.pose(h.near.clips.busy!(t + h.s.x))
@@ -474,6 +479,9 @@ export function antHills(
 		ants.count = n
 		ants.visible = n > 0
 		ants.instanceMatrix.needsUpdate = true
+		far.count = nf
+		far.visible = nf > 0
+		far.instanceMatrix.needsUpdate = true
 	}
 	update(0)
 	return { object, update, where: () => spots }

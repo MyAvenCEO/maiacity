@@ -38,6 +38,8 @@ import { createWalker } from '$lib/sandbox-kit/walker.js'
 import { createObstacles } from '$lib/sandbox-kit/obstacles.js'
 import { connectFilm, filmDraws, filmHoldsSize, worldTime } from '$lib/sandbox-kit/film.js'
 import { createForest, type Forest } from './flora.js'
+import { BIOMES, groundMaterial } from '$lib/biomes'
+import { coverStream } from '$lib/biomes/stream.js'
 import { swapLegacy } from './legacy.js'
 import { pick as pickPlant, type Garden } from './sandbox5.js'
 import { forestFloor, floorPick, grassTuft, appleTree, banana, berryBush, canopyTree, climber, clover, coconutPalm, comfrey, crop, CROPS, type Crop, fruitTree, ginger, grapePergola, herb, papaya, passionVine, potted, seeded, shrub, smallFruitTree, squash, strawberries, tropicalShrub, vineAlong, type Plant } from './plants'
@@ -60,6 +62,8 @@ export const doorsOf = (kind: DomeKind) => (kind === 'glamp' || kind === 'tent' 
 /** A door's half-width, and its height at the top of the arch (the glamping door is square-headed). */
 const doorSize = (kind: DomeKind) => (kind === 'tent' ? { dw: 0.55, dh: 1.8, top: 1.8 } : kind === 'glamp' ? { dw: 0.75, dh: 2.5, top: 2.5 } : { dw: 1.3, dh: 3, top: 3 + 1.3 * 0.4 })
 /** The signed difference between two angles, in -π..π. */
+/** Sandbox 5: the biome of the floor under the glass ($lib/biomes) */
+const WARM_BIOME = BIOMES.find((b) => b.id === 'warm-food-forest')!
 export const adiff = (a: number, b: number) => Math.atan2(Math.sin(a - b), Math.cos(a - b))
 
 /** A texture tiled to a world size: `metres` of surface per repeat of the image. */
@@ -716,7 +720,11 @@ export async function mountInterior(container: HTMLElement, kind: DomeKind, onPr
 	const looking = new THREE.Vector3()
 	/** Sandbox 5's trees, to stand in the way by their trunks once grown */
 	const floraTreesAll: { c: { x: number; z: number; r: number }; kind: ReturnType<typeof pickPlant>; s: number }[] = []
+	/** Sandbox 5: the floor's cover, streamed round the eye (made once the forest inside is planted) */
+	let floorCover: ReturnType<typeof coverStream> | null = null
 	const keepDetail = (cx: number, cz: number) => {
+		// on film every tile in reach is built for the frame it is first seen in
+		floorCover?.update(cx, cz, filmDraws() ? 999 : 1)
 		for (const d of detail) d.group.visible = Math.hypot(d.x - cx, d.z - cz) < Math.max(30, R * 0.45)
 		if (forest) {
 			camera.getWorldDirection(looking)
@@ -1131,7 +1139,10 @@ export async function mountInterior(container: HTMLElement, kind: DomeKind, onPr
 		/* ground: soil, a stone plaza, a ring path and spokes */
 		// the master dome's centre is a theatre sunk into the ground, so its floor is a ring round the bowl
 		const theatre = kind === 'master'
-		const ground = new THREE.Mesh(theatre ? new THREE.RingGeometry(Rc, R, 96, 1) : new THREE.CircleGeometry(R, 96), m.soil(R / 2))
+		// Sandbox 5: the floor under the glass is the warm food forest biome's ($lib/biomes): big fallen leaves, humus,
+		// moss and a living mat, run into each other in patches; its cover streamed round you (below)
+		const warmFloor = opts.flora ? groundMaterial(WARM_BIOME.surface) : null
+		const ground = new THREE.Mesh(theatre ? new THREE.RingGeometry(Rc, R, 96, 1) : new THREE.CircleGeometry(R, 96), warmFloor ?? m.soil(R / 2))
 		ground.rotation.x = -Math.PI / 2
 		ground.receiveShadow = true
 		scene.add(ground)
@@ -1417,7 +1428,7 @@ export async function mountInterior(container: HTMLElement, kind: DomeKind, onPr
 		{
 			// the whole food-forest floor is a living ground cover, not bare soil (the paths, the plaza, the water lie
 			// over it): the earth shows only in specks
-			const living = new THREE.Mesh(new THREE.RingGeometry(Rc + 0.2, rIn, 128, 2), new THREE.MeshStandardMaterial({ map: tiled(groundCover(), rIn / 2.2), roughness: 1 }))
+			const living = new THREE.Mesh(new THREE.RingGeometry(Rc + 0.2, rIn, 128, 2), warmFloor ?? new THREE.MeshStandardMaterial({ map: tiled(groundCover(), rIn / 2.2), roughness: 1 }))
 			living.rotation.x = -Math.PI / 2
 			living.position.y = 0.006
 			living.receiveShadow = true
@@ -1535,6 +1546,33 @@ export async function mountInterior(container: HTMLElement, kind: DomeKind, onPr
 			detail.push({ group: small, x: sc.x, z: sc.z })
 		}
 		floraTreesAll.push(...floraTrees)
+		if (flora) {
+			/* Sandbox 5: the warm food forest's cover on its floor — grasses, clover and strawberries in the light, ferns,
+			   wood sorrel and moss in the shade, the big leaves fallen — wherever the ground is open: off the plaza, the
+			   paths and the stairs, the water, the beds and the trunks; under the gallery too in the medium dome */
+			const cell = 4, near = new Map<number, { x: number; z: number; r: number }[]>()
+			const cellKey = (ix: number, iz: number) => (ix + 512) * 1024 + iz + 512
+			for (const c of colliders) {
+				const k = cellKey(Math.floor(c.x / cell), Math.floor(c.z / cell))
+				near.set(k, [...(near.get(k) ?? []), c])
+			}
+			const inTrunk = (x: number, z: number) => {
+				const ix = Math.floor(x / cell), iz = Math.floor(z / cell)
+				for (let dx = -1; dx <= 1; dx++)
+					for (let dz = -1; dz <= 1; dz++) for (const c of near.get(cellKey(ix + dx, iz + dz)) ?? []) if (Math.hypot(c.x - x, c.z - z) < Math.min(0.7, c.r * 0.6) + 0.1) return true
+				return false
+			}
+			const r0b = rIn + commonsW + 0.6
+			const open = (x: number, z: number) => {
+				const rr = Math.hypot(x, z), a = Math.atan2(x, z)
+				if (rr > R - 0.9) return false
+				// under the gallery: only the medium dome's planted band, off its paved stretches and its doors
+				if (rr > rIn - 0.6) return lush && rr > r0b - 0.3 && !paved(a) && !DOORS.some((d) => Math.abs(adiff(a, d)) * rr < 1.7)
+				return !onStone(rr, a, 0.1) && !nearStream(x, z, width / 2 + 0.3) && !inTrunk(x, z)
+			}
+			floorCover = coverStream({ recipe: WARM_BIOME, open, tile: 8, reach: 24, near: 9, thin: 0.25, density: 3.8, seed: 707 + kind.length, origin: host ? [host.x, host.z] : [0, 0] })
+			scene.add(floorCover.object)
+		}
 		await pause('Planting the forest inside')
 
 		await slice()
@@ -2184,6 +2222,8 @@ export async function mountInterior(container: HTMLElement, kind: DomeKind, onPr
 		last = now
 		const t = worldTime() ?? (now - clock0) / 1000
 		for (const a of animated) a(t)
+		// the floor's cover follows the eye every frame (it fades in and out as it goes)
+		floorCover?.update(camera.position.x, camera.position.z)
 		if (now - lampsChecked > 300) {
 			lampsChecked = now
 			lightNearest()
