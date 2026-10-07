@@ -20,8 +20,8 @@ const HEX_R = (K * STEP) / Math.sqrt(3), HEX_IN = (K * STEP) / 2;
 const GROUND = /** @type {Record<string, string>} */ ({ meadow: '#86b35a', forest: '#4f8a45', stone: '#a9a597', iron: '#a2735a', water: '#d8c690', mountain: '#8d867b', lake: '#4f6f64', sea: '#2d5a6a' });
 /** the six ways out of a hex, in the world: east, north-east, north-west, west, south-west, south-east */
 const WAYS = [[1, 0], [0.5, -Math.sqrt(3) / 2], [-0.5, -Math.sqrt(3) / 2], [-1, 0], [-0.5, Math.sqrt(3) / 2], [0.5, Math.sqrt(3) / 2]];
-/** how much larger a village center is drawn than its model: it fills its hex; and the domes round a hex's middle */
-const CENTRE_SCALE = 1.9, DOME_SCALE = 1.3;
+/** how much larger a village center is drawn than its model (half its hex across, land all round it); and the domes round a hex's middle */
+const CENTRE_SCALE = 1.12, DOME_SCALE = 0.95;
 
 /**
  * @param {THREE.Scene} scene
@@ -60,7 +60,7 @@ export function createView(scene, sim) {
 	const pines = inst(new THREE.ConeGeometry(0.55, 1.6, 6).translate(0, 1.3, 0), mat('#3f7a3c'), g.N);
 	const leaves = inst(new THREE.IcosahedronGeometry(0.62, 0).translate(0, 1.15, 0), mat('#5c9440'), g.N);
 	const rocks = inst(new THREE.DodecahedronGeometry(0.42, 0).translate(0, 0.2, 0), mat('#a19d95'), g.N);
-	const fields = inst(new THREE.CylinderGeometry(0.95, 0.95, 0.12, 6), white, g.N, false);
+	const fields = inst(new THREE.CylinderGeometry(STEP * 0.47, STEP * 0.47, 0.12, 6), white, g.N, false);
 	const wares = inst(new THREE.BoxGeometry(0.2, 0.17, 0.2), white, 4000);
 	// everyone travels by bus: a small driverless pod, the same both ways round (it never turns, it just sets off the
 	// other way), its body in the colour of its job, a band of glass round it, a lamp at either end and its load on the roof
@@ -100,7 +100,8 @@ export function createView(scene, sim) {
 	/** a hex's middle in the world, and the top of its tile */
 	const HX = (/** @type {number} */ k) => X(plan.centre[k]), HZ = (/** @type {number} */ k) => Z(plan.centre[k]);
 	const top = (/** @type {number} */ k) => Y(plan.centre[k]);
-	const land = inst(new THREE.CylinderGeometry(HEX_R * 0.95, HEX_R * 0.99, 3, 6).translate(0, -1.5, 0), keep(new THREE.MeshStandardMaterial({ roughness: 0.95, flatShading: true })), P, false);
+	// seamless: one hex runs on into the next, so the hexes only show where the biome changes (their lines show while placing)
+	const land = inst(new THREE.CylinderGeometry(HEX_R, HEX_R, 3, 6).translate(0, -1.5, 0), keep(new THREE.MeshStandardMaterial({ roughness: 0.95, flatShading: true })), P, false);
 	land.name = 'land';
 	const peaks = inst(new THREE.ConeGeometry(1, 1, 6).translate(0, 0.5, 0), keep(new THREE.MeshStandardMaterial({ roughness: 0.9, flatShading: true })), P * 8);
 	{
@@ -110,16 +111,16 @@ export function createView(scene, sim) {
 			if (b === 'sea') continue;
 			const y = b === 'lake' ? top(k) + 0.2 : top(k);
 			put(land, n, HX(k), y, HZ(k));
-			land.setColorAt(n++, c.set(GROUND[b] ?? GROUND.meadow).lerp(tint.set('#ffffff'), (hash(k + 101) - 0.5) * 0.08));
+			land.setColorAt(n++, c.set(GROUND[b] ?? GROUND.meadow));
 			// a mountain: a great peak in its middle and smaller ones round it; iron: rust-red crags on its free corners
 			const peak = (/** @type {number} */ x, /** @type {number} */ z, /** @type {number} */ r, /** @type {number} */ h, /** @type {string} */ col) => {
 				put(peaks, m, x, top(k) - 0.05, z, r, hash(m + 3) * 6.3, h);
 				peaks.setColorAt(m++, c.set(col).lerp(tint.set('#ffffff'), hash(m + 9) * 0.12));
 			};
 			if (b === 'mountain') {
-				peak(HX(k), HZ(k), 2.3, 3.6 + hash(k) * 1.4, '#8a8378');
-				for (const j of [...plan.spots[k], ...plan.free[k]]) if (j >= 0) peak(X(j), Z(j), 1.1 + hash(j) * 0.4, 1.5 + hash(j + 1) * 1.2, '#958d81');
-			} else if (b === 'iron') for (const j of plan.free[k]) if (j >= 0) peak(X(j), Z(j), 1.0 + hash(j) * 0.3, 1.2 + hash(j + 1) * 0.8, '#9a5638');
+				peak(HX(k), HZ(k), 2.2, 3.6 + hash(k) * 1.4, '#8a8378');
+				for (const j of [...plan.spots[k], ...plan.free[k]]) if (j >= 0) peak(X(j), Z(j), 0.9 + hash(j) * 0.4, 1.4 + hash(j + 1) * 1.1, '#958d81');
+			} else if (b === 'iron') for (const j of plan.free[k]) if (j >= 0) peak(X(j), Z(j), 0.8 + hash(j) * 0.3, 1.0 + hash(j + 1) * 0.7, '#9a5638');
 		}
 		done(land, n);
 		done(peaks, m);
@@ -134,6 +135,26 @@ export function createView(scene, sim) {
 	seabed.rotation.x = -Math.PI / 2;
 	seabed.position.y = SEA - 1.0;
 	root.add(seabed);
+	// the hexes' outlines: faint, and only while placing a building or a path
+	const outline = (() => {
+		/** @type {number[]} */
+		const pos = [];
+		for (let k = 0; k < P; k++) {
+			if (st.biome[k] === 'sea') continue;
+			const y = Math.max(top(k), SEA) + 0.04;
+			for (const [dx, dz] of WAYS) {
+				const a = Math.atan2(dz, dx);
+				for (const t of [a - Math.PI / 6, a + Math.PI / 6]) pos.push(HX(k) + Math.cos(t) * HEX_R, y, HZ(k) + Math.sin(t) * HEX_R);
+			}
+		}
+		const geo = keep(new THREE.BufferGeometry());
+		geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+		const lines = new THREE.LineSegments(geo, keep(new THREE.LineBasicMaterial({ color: '#ffffff', transparent: true, opacity: 0.4, depthWrite: false })));
+		lines.visible = false;
+		lines.renderOrder = 2;
+		root.add(lines);
+		return lines;
+	})();
 
 	let objSeen = -1;
 	function syncObjects() {
@@ -167,7 +188,9 @@ export function createView(scene, sim) {
 	let terSeen = -1;
 	const teamColor = TEAM.map((x) => new THREE.Color(x));
 	/** the borders of the villages held: a band along every side of a held hex that faces a hex held by nobody or another */
-	const borders = inst(new THREE.BoxGeometry(1, 0.14, 0.26), white, P * 6, false);
+	const borders = inst(new THREE.BoxGeometry(1, 0.05, 0.12), white, P * 6, false);
+	borders.visible = false;
+	let gridOn = false;
 	function syncBorder() {
 		if (terSeen === st.terV) return;
 		terSeen = st.terV;
@@ -179,7 +202,7 @@ export function createView(scene, sim) {
 			for (let d = 0; d < 6; d++) {
 				if (held(plan.nbr[k][d]) === o) continue;
 				const [dx, dz] = WAYS[d];
-				borders.setMatrixAt(n, m4.compose(p3.set(HX(k) + dx * (HEX_IN - 0.2), top(k) + 0.05, HZ(k) + dz * (HEX_IN - 0.2)), q.setFromAxisAngle(yAxis, Math.atan2(-dx, -dz)), s3.set(HEX_R * 0.98, 1, 1)));
+				borders.setMatrixAt(n, m4.compose(p3.set(HX(k) + dx * (HEX_IN - 0.1), top(k) + 0.05, HZ(k) + dz * (HEX_IN - 0.1)), q.setFromAxisAngle(yAxis, Math.atan2(-dx, -dz)), s3.set(HEX_R * 0.98, 1, 1)));
 				borders.setColorAt(n++, teamColor[o]);
 			}
 		}
@@ -569,8 +592,15 @@ export function createView(scene, sim) {
 			picked = b && big(b.type) ? b.id : 0;
 			ring.visible = node >= 0;
 			const at = b ? stand(b.type, node) : node;
-			ring.scale.setScalar(picked ? 3.4 : 1);
+			ring.scale.setScalar(picked ? 2.3 : 1);
+			borders.visible = gridOn || !!picked;
 			if (node >= 0) ring.position.set(X(at), Math.max(Y(at), SEA) + 0.08, Z(at));
+		},
+		/** show the hexes' outlines and the villages' borders (while placing), or hide them @param {boolean} on */
+		grid(on) {
+			gridOn = on;
+			outline.visible = on;
+			borders.visible = on || !!picked;
 		},
 		/** the ring under the cursor, in a colour @param {number} node @param {string} [color] */
 		hover(node, color = '#ffffff') {

@@ -17,8 +17,8 @@
  */
 import { ABUNDANT, BIOMES, BUILDINGS, FOOD, GRASS, HOLD, HOUSE_BEDS, HOUSE_UP, IRON, MOUNTAIN, START, WARES, WATER, holdsLand } from './rules.js';
 import { CART, HEARTS, NEEDS, NEIGHBOURS, TRADED, heartsFor, abundance, keepOf, live, make, newMarket, orderRule, party, priceIn, request, shortIn, spareIn } from './market.js';
-import { SE, findPath, makeGrid } from './hex.js';
-import { K, makePlan, spoke } from './plots.js';
+import { SE, STEP, findPath, makeGrid } from './hex.js';
+import { makePlan, spoke } from './plots.js';
 import { growValley } from './map.js';
 
 /** seconds of game time a step moves on */
@@ -29,11 +29,12 @@ export const PLAYER = 0;
 export const FLAG_CAP = 8;
 /** each input of a workshop is kept this full */
 const SLOT_CAP = 4;
-/** nodes a second: walking, and carrying */
-const WALK = 1.8, CARRY = 1.45;
+/** nodes a second: walking, and carrying (3.6 and 2.9 world units a second, however fine the grid) */
+const WALK = 3.6 / STEP, CARRY = 2.9 / STEP;
 /** nodes a second a trader's cart goes */
-const CART_SPEED = 1.3;
-const FORESTER_TREES = 22;
+const CART_SPEED = 2.6 / STEP;
+/** a forester plants until so many trees stand round it */
+const FORESTER_TREES = 45;
 /** a neighbour city's people when its village is full: six houses of sixteen */
 /** the villages a city needs before the valley can win, and the most a neighbour founds */
 const CITY_VILLAGES = 5;
@@ -373,7 +374,7 @@ export function createSim(st) {
 	/** how much ore a mine at a node can dig: what the rock round it holds */
 	function depositAt(/** @type {number} */ node) {
 		let n = 0;
-		for (const j of g.within(node, 2)) if (st.terrain[j] === MOUNTAIN && st.ore[j] === IRON) n += st.amount[j];
+		for (const j of g.within(node, 3)) if (st.terrain[j] === MOUNTAIN && st.ore[j] === IRON) n += st.amount[j];
 		return n * 4;
 	}
 	function destroyWare(/** @type {any} */ w) {
@@ -819,9 +820,9 @@ export function createSim(st) {
 	}
 	/** a free spot of grass to plant on (a tree, a field): nothing on it, no road, not a building's spot, no door or flag beside it */
 	function freeSpot(/** @type {number} */ j) {
-		if (st.terrain[j] !== GRASS || st.obj[j] || st.road[j] || st.owner[j] > PLAYER || plan.spotOf[j] >= 0) return false;
-		// a village's middle hex is its village center's alone
-		if (plan.villages[villageAt(j)].centre === plan.plotOf[j]) return false;
+		if (st.terrain[j] !== GRASS || st.obj[j] || st.road[j] || st.owner[j] > PLAYER || plan.spotOf[j] >= 0 || plan.lane[j]) return false;
+		// a village center stands on the middle of its hex: the land round it is free
+		if (plan.villages[villageAt(j)].centre === plan.plotOf[j] && g.dist(j, plan.centre[plan.plotOf[j]]) <= 2) return false;
 		for (let d = 0; d < 6; d++) {
 			const n = g.nb(j, d);
 			if (n < 0) return false;
@@ -1167,8 +1168,8 @@ export function createSim(st) {
 	}
 	/** a village center's stop: the middle of its hex, where its trade routes start */
 	const stopAt = (/** @type {any} */ c) => st.flags[c.flag]?.node ?? c.node;
-	/** what a trade route between two village centers costs: a stone for every two steps */
-	const tunnelCost = (/** @type {number} */ a, /** @type {number} */ b) => Math.ceil(g.dist(a, b) / 2);
+	/** what a trade route between two village centers costs: a stone for every four world units */
+	const tunnelCost = (/** @type {number} */ a, /** @type {number} */ b) => Math.ceil((g.dist(a, b) * STEP) / 4);
 	/** dig a trade route between two village centers (paid by the first) */
 	function dig(/** @type {any} */ a, /** @type {any} */ b, pay = true) {
 		// always straight from center to center, under whatever lies between: the nodes along the line, a step apart
@@ -1774,7 +1775,7 @@ export function createSim(st) {
 		const f = flagAt(c);
 		if (f && f.owner !== PLAYER) return 'Not yours';
 		if (st.road[c]) return 'A path runs where its stop goes';
-		if (type === 'fishery' && !g.within(n, 4).some((j) => st.terrain[j] === WATER)) return 'Needs water nearby';
+		if (type === 'fishery' && !g.within(n, 6).some((j) => st.terrain[j] === WATER)) return 'Needs water nearby';
 		if (t.kind === 'mine' && depositAt(n) <= 0) return 'No iron ore in this rock';
 		return '';
 	}
@@ -1918,9 +1919,9 @@ export function createSim(st) {
 		build(/** @type {string} */ type, /** @type {number} */ n, connect = true) {
 			const why = canBuild(type, n);
 			if (why) return { ok: false, why };
-			// a village center fills its hex: what grew there is cleared
+			// a village center stands on the middle of its hex: what grew there is cleared
 			if (type === 'centre')
-				for (const j of g.within(n, K * 2)) if (plan.plotOf[j] === plan.plotOf[n] && st.obj[j] && st.obj[j].k !== 'bld' && st.obj[j].k !== 'flag') (st.obj[j] = null), st.objV++;
+				for (const j of g.within(plan.centre[plan.plotOf[n]], 2)) if (st.obj[j] && st.obj[j].k !== 'bld' && st.obj[j].k !== 'flag') (st.obj[j] = null), st.objV++;
 			const b = makeBuilding(type, n, PLAYER);
 			b.since = st.time;
 			if (type === 'centre') {

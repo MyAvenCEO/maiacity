@@ -11,7 +11,7 @@
  */
 
 /** steps from the middle of a hex to the middle of the next */
-export const K = 4;
+export const K = 6;
 /** the corners round a hex's middle, by the two directions between which each lies (as in ./hex.js): each [dq, dr] */
 const CORNERS = [[2, -1], [1, -2], [-1, -1], [-2, 1], [-1, 2], [1, 1]];
 /** which corners are the house's and the two factories': a triangle, the house at the back (north) */
@@ -27,6 +27,7 @@ const DIRS = [[1, 0], [1, -1], [0, -1], [-1, 0], [-1, 1], [0, 1]];
  * @property {number[][]} nbr each hex's six neighbours by direction (-1 none)
  * @property {Int32Array} plotOf the hex a node belongs to (-1 none)
  * @property {Int32Array} spotOf for a node that is a spot: 0 house, 1 or 2 factory; else -1
+ * @property {Uint8Array} lane 1 for a node on the straight way between two middles (where a path may run), else 0
  * @property {number[]} villageOf each hex's village
  * @property {{ centre: number, plots: number[], near: number[] }[]} villages the middle hex, its seven hexes, the villages round it
  */
@@ -91,6 +92,11 @@ export function makePlan(g) {
 	});
 	const free = centre.map((_, k) => [0, 2, 4].map((x) => corner(k, x)));
 	const nbr = ab.map(([a, b]) => DIRS.map(([da, db]) => plotAt.get(`${a + da},${b + db}`) ?? -1));
+	// the ways from every middle to the next: kept open for paths
+	const lane = new Uint8Array(N);
+	for (let k = 0; k < centre.length; k++)
+		for (let d = 0; d < 6; d++)
+			for (let s = 1, j = g.nb(centre[k], d); s < K && j >= 0; s++, j = g.nb(j, d)) lane[j] = 1;
 	// villages: a middle hex and the six round it, on a lattice of their own that tiles the hexes
 	/** @type {Map<string, number>} */
 	const villAt = new Map();
@@ -112,7 +118,7 @@ export function makePlan(g) {
 		const [s, t] = key.split(',').map(Number);
 		villages[v].near = DIRS.map(([ds, dt]) => villAt.get(`${s + ds},${t + dt}`)).filter((x) => x !== undefined).map(Number);
 	}
-	return { centre, spots, free, nbr, plotOf, spotOf, villageOf, villages };
+	return { centre, spots, free, nbr, plotOf, spotOf, lane, villageOf, villages };
 }
 
 /**

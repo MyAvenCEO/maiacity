@@ -115,6 +115,7 @@ export function mountGame(container, o = {}) {
 		view.road(null);
 		view.ghost('', -1, false);
 		view.hover(-1);
+		view.grid(m === 'build' || m === 'road');
 		refreshSpots();
 		if (m === 'road' && selected?.k === 'flag') startRoad(selected.node);
 		else if (m === 'road' && selected?.k === 'building') startRoad(middle(selected.node));

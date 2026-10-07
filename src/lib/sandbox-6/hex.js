@@ -8,7 +8,7 @@
  */
 
 /** world units between two neighbouring nodes */
-export const STEP = 2.0;
+export const STEP = 4 / 3;
 /** world units between two rows */
 export const ROW = (STEP * Math.sqrt(3)) / 2;
 
