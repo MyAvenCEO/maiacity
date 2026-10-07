@@ -1291,7 +1291,7 @@ export function createSim(st) {
 			}
 		// abundance: every village counts, yours and the neighbours'
 		const rows = villageRows();
-		m.abundance = abundance(rows);
+		m.abundance = abundance(rows.map((r) => ({ wb: r.score })));
 		const ready = GOALS.every((x) => x.id === 'abundance' || st.goals[x.id]);
 		m.thriving = rows.filter((r) => r.wb >= ABUNDANT && r.full).length;
 		m.villages = rows.length;
@@ -1312,10 +1312,18 @@ export function createSim(st) {
 		}
 	}
 	/** every village of the valley as the abundance panel shows it: yours by name, then each neighbour city's */
+	/** how many people a village holds when it is full: 16 in every settlement that has room for a house */
+	const capOf = (/** @type {number} */ v) =>
+		16 * plan.villages[v].plots.filter((k) => k !== plan.villages[v].centre && plan.spots[k][0] >= 0 && st.terrain[plan.spots[k][0]] === GRASS).length;
+	/**
+	 * Every village of the valley as the abundance panel shows it: yours by name, then each neighbour city's. Its
+	 * abundance is how well its people live (wellbeing) times how full it is: a hamlet that lives well is not yet abundant.
+	 */
 	function villageRows() {
+		const row = (/** @type {any} */ r) => ({ ...r, score: r.wb * Math.min(1, r.pop / Math.max(1, r.cap)) });
 		return [
-			...yourVillages().map(({ v, c, p }) => ({ name: p.name, city: 'You', pop: p.pop, beds: bedsIn(v), wb: p.wb, sat: { ...p.sat }, reserve: p.reserve, full: fullVillage(v, PLAYER), node: c.node, owner: PLAYER })),
-			...st.parties.slice(1).map((/** @type {any} */ p, /** @type {number} */ j) => ({ name: p.name, city: p.name, pop: p.pop, beds: NEIGHBOUR_BEDS, wb: p.wb, sat: { ...p.sat }, reserve: p.reserve, full: p.pop >= NEIGHBOUR_BEDS && !!cityCentre(j + 1) && fullVillage(villageAt(cityCentre(j + 1).node), j + 1), node: cityCentre(j + 1)?.node ?? -1, owner: j + 1 }))
+			...yourVillages().map(({ v, c, p }) => row({ name: p.name, city: 'You', pop: p.pop, beds: bedsIn(v), cap: capOf(v), wb: p.wb, sat: { ...p.sat }, reserve: p.reserve, full: fullVillage(v, PLAYER), node: c.node, owner: PLAYER })),
+			...st.parties.slice(1).map((/** @type {any} */ p, /** @type {number} */ j) => row({ name: p.name, city: p.name, pop: p.pop, beds: NEIGHBOUR_BEDS, cap: NEIGHBOUR_BEDS, wb: p.wb, sat: { ...p.sat }, reserve: p.reserve, full: p.pop >= NEIGHBOUR_BEDS && !!cityCentre(j + 1) && fullVillage(villageAt(cityCentre(j + 1).node), j + 1), node: cityCentre(j + 1)?.node ?? -1, owner: j + 1 }))
 		];
 	}
 	/** a ware's price across the valley: what the neighbours would pay, on average */

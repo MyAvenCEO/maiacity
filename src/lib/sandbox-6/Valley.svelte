@@ -220,10 +220,10 @@
 				<ul class="lives">
 					{#each market?.parties ?? [] as p (p.name)}
 						<li>
-							<button onclick={() => p.node >= 0 && game?.focus(p.node)} title="{p.name} ({p.city === 'You' ? 'your city' : 'a neighbour city'}): wellbeing {Math.round(p.wb)}, {p.pop} people in {p.beds} beds{p.full ? ', full' : ''}">
-								<span>{p.name} <em class:short={!p.full}>{p.pop}/{p.beds}</em></span>
-								<span class="bar"><span class={tone(p.wb)} style:width="{p.wb}%"></span></span>
-								<b>{Math.round(p.wb)}</b>
+							<button onclick={() => p.node >= 0 && game?.focus(p.node)} title="{p.name} ({p.city === 'You' ? 'your city' : 'a neighbour city'}): abundance {Math.round(p.score)} = wellbeing {Math.round(p.wb)} × {p.pop} of {p.cap} people when full ({p.beds} beds now){p.full ? ', full' : ''}">
+								<span>{p.name} <em class:short={!p.full}>{p.pop}/{p.cap}</em><em> wellbeing {Math.round(p.wb)}</em></span>
+								<span class="bar"><span class={tone(p.score)} style:width="{p.score}%"></span></span>
+								<b>{Math.round(p.score)}</b>
 							</button>
 						</li>
 					{/each}
