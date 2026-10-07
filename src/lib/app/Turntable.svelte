@@ -181,8 +181,10 @@
 	}
 
 	/* nothing over a walk but its bar, and that only as wide as it is */
+	/* full: the canvas alone, on every screen (a phone's row for the list goes with the list) */
 	.turntable.full {
-		grid-template-columns: 1fr;
+		grid-template-columns: minmax(0, 1fr);
+		grid-template-rows: minmax(0, 1fr);
 	}
 
 	.full .bar {
