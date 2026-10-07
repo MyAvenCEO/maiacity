@@ -82,6 +82,7 @@ const LIST = [
 		density: 9,
 		cover: [
 			{ kind: 'grass', share: 6, colony: 5, spread: 0.72, on: 'green', fill: 0.95 },
+			{ kind: 'tallgrass', share: 3, colony: 4, spread: 0.45, on: 'green', fill: 0.6 },
 			{ kind: 'clover', share: 4, colony: 3.5, spread: 0.5, on: 'green', fill: 0.95 },
 			{ kind: 'strawberry', share: 5, colony: 3.5, spread: 0.55, on: 'green', fill: 0.95 },
 			{ kind: 'woodsorrel', share: 4, colony: 3, spread: 0.45, on: 'humus', fill: 0.95 },

@@ -1547,8 +1547,8 @@ export async function mountInterior(container: HTMLElement, kind: DomeKind, onPr
 		}
 		floraTreesAll.push(...floraTrees)
 		if (flora) {
-			/* Sandbox 5: the warm food forest's cover on its floor, thick (a dome's floor is small: it can be fuller than the
-			   cell's outside) — grasses, clover and strawberries in the light, ferns,
+			/* Sandbox 5: the warm food forest's cover on its floor, thick and knee-high (a dome's floor is small: it can be
+			   fuller than the cell's outside, and under the warm glass it grows half again as tall) — grasses, clover and strawberries in the light, ferns,
 			   wood sorrel and moss in the shade, the big leaves fallen — wherever the ground is open: off the plaza, the
 			   paths and the stairs, the water, the beds and the trunks; under the gallery too in the medium dome */
 			const cell = 4, near = new Map<number, { x: number; z: number; r: number }[]>()
@@ -1571,7 +1571,7 @@ export async function mountInterior(container: HTMLElement, kind: DomeKind, onPr
 				if (rr > rIn - 0.6) return lush && rr > r0b - 0.3 && !paved(a) && !DOORS.some((d) => Math.abs(adiff(a, d)) * rr < 1.7)
 				return !onStone(rr, a, 0.1) && !nearStream(x, z, width / 2 + 0.3) && !inTrunk(x, z)
 			}
-			floorCover = coverStream({ recipe: WARM_BIOME, open, tile: 8, reach: 26, near: 13, thin: 0.35, density: 6.5, seed: 707 + kind.length, origin: host ? [host.x, host.z] : [0, 0] })
+			floorCover = coverStream({ recipe: WARM_BIOME, open, tile: 8, reach: 26, near: 13, thin: 0.35, density: 6.5, scale: 1.6, seed: 707 + kind.length, origin: host ? [host.x, host.z] : [0, 0] })
 			scene.add(floorCover.object)
 		}
 		await pause('Planting the forest inside')
