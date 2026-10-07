@@ -4,7 +4,7 @@
  * then houses and ever more food until its villages are full. The film camera grows its valley with it (a settlement that is already busy), and it
  * plays a whole game headless to prove every chain runs end to end.
  */
-import { BUILDINGS, GRASS, IRON, MOUNTAIN, WATER } from './rules.js';
+import { BUILDINGS, GRASS, HOUSE_MOST, HOUSE_TOP, IRON, MOUNTAIN, WATER } from './rules.js';
 import { PLAYER } from './sim.js';
 
 /** the plan: what to build, in order, and where it would rather stand */
@@ -65,11 +65,11 @@ export function createAutoplay(sim) {
 		const east = g.x(n) - g.x(home);
 		switch (want) {
 			case 'trees':
-				return count((j) => st.obj[j]?.k === 'tree', n, 7) * 2 - d;
+				return count((j) => st.obj[j]?.k === 'tree', n, 10) * 2 - d;
 			case 'rocks':
-				return count((j) => st.obj[j]?.k === 'rock', n, 6) * 4 - d;
+				return count((j) => st.obj[j]?.k === 'rock', n, 9) * 4 - d;
 			case 'water':
-				return count((j) => st.terrain[j] === WATER, n, 4) * 1.5 - d * 1.5;
+				return count((j) => st.terrain[j] === WATER, n, 7) * 1.5 - d * 1.5;
 			case 'woodcutter': {
 				const w = ofType('woodcutter')[0];
 				return w ? -g.dist(w.node, n) * 2 - d * 0.3 : -d;
@@ -78,7 +78,7 @@ export function createAutoplay(sim) {
 				return count((j) => st.ore[j] === IRON, n, 3) * 2 - d;
 			}
 			case 'open':
-				return count((j) => !st.obj[j] && st.terrain[j] === 0, n, 3) - d;
+				return count((j) => !st.obj[j] && st.terrain[j] === 0, n, 5) - d;
 			case 'south':
 				return g.z(n) - g.z(home) + east * 0.3;
 			default:
@@ -133,7 +133,7 @@ export function createAutoplay(sim) {
 		const t = BUILDINGS[type];
 		if (st.obj[n]?.k === 'bld' || st.road[n]) return false;
 		if (t.on === 'mountain' ? st.terrain[n] !== MOUNTAIN : st.terrain[n] !== GRASS) return false;
-		if (type === 'fishery') return g.within(n, 6).some((j) => st.terrain[j] === WATER);
+		if (type === 'fishery') return g.within(n, 10).some((j) => st.terrain[j] === WATER);
 		if (type === 'quarry') return count((j) => st.obj[j]?.k === 'rock', n, t.range ?? 6) >= 2;
 		if (type === 'woodcutter' && !ofType('woodcutter').length) return count((j) => st.obj[j]?.k === 'tree', n, t.range ?? 6) >= 4;
 		if (t.kind === 'mine') return g.within(n, 3).some((j) => st.ore[j] === IRON && st.amount[j] > 0);
@@ -160,7 +160,7 @@ export function createAutoplay(sim) {
 		const rows = sim.market().parties.filter((/** @type {any} */ r) => r.owner === PLAYER);
 		const housed = rows.every((/** @type {any} */ r) => {
 			const v = sim.plan.villageOf[sim.plan.plotOf[r.node]];
-			return ofType('house').filter((b) => b.stage === 'live' && sim.plan.villageOf[sim.plan.plotOf[b.node]] === v).length * 16 >= r.cap && r.pop >= r.beds - 4;
+			return ofType('house').filter((b) => b.stage === 'live' && sim.plan.villageOf[sim.plan.plotOf[b.node]] === v).length * HOUSE_MOST >= r.cap && r.pop >= r.beds - 4;
 		});
 		if (!housed || (s.stock.plank ?? 0) < 14 || (s.stock.stone ?? 0) < 10) return;
 		const home = hq().node;
@@ -186,7 +186,7 @@ export function createAutoplay(sim) {
 			const mine = houses.filter((b) => sim.plan.villageOf[sim.plan.plotOf[b.node]] === v);
 			// only where everyone has a bed and eats and drinks well: more beds bring more mouths
 			if (mine.some((b) => b.stage === 'site') || row.pop < row.beds - 2 || (row.beds > 0 && (row.wb < 75 || row.sat.food < 0.9 || row.sat.water < 0.9))) continue;
-			const small = mine.filter((b) => b.level < 4).sort((a, b) => b.level - a.level)[0];
+			const small = mine.filter((b) => b.level < HOUSE_TOP).sort((a, b) => b.level - a.level)[0];
 			if (small) {
 				if (has(sim.inspect(small.id)?.up ?? {})) return void sim.upgrade(small.id);
 			} else if (has(BUILDINGS.house.cost)) {

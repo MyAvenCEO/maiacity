@@ -24,8 +24,12 @@
  */
 import { FOOD, WARES } from './rules.js';
 
-/** what a person needs, a minute */
-export const NEEDS = { food: 0.11, water: 0.06, plank: 0.022, stone: 0.014 };
+/**
+ * what a person needs, a minute. A great dome holds 248 where a great house held 16, so a person needs 16/248 of what
+ * they used to: a full village eats what it did when it held 96.
+ */
+const PER = 16 / 248;
+export const NEEDS = { food: 0.11 * PER, water: 0.06 * PER, plank: 0.022 * PER, stone: 0.014 * PER };
 export const NEED_LABEL = { food: 'Food', water: 'Water', plank: 'Planks', stone: 'Stone' };
 /** what a cart carries */
 export const CART = 8;

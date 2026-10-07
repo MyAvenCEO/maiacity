@@ -13,7 +13,8 @@
  *   fish | bread → iron mine → iron ore;  iron ore + planks → toolmaker → tools
  *
  * Every building stands in a settlement (./plots.js): a house and two factory domes round one flag. Houses are where
- * settlers live — 2, then 4, 8 and 16 as they are enlarged — so a village has only as many people as it has beds.
+ * settlers live — 2, then twice as many each time they are enlarged, up to 248 — so a village has only as many people
+ * as it has beds.
  * Seven settlements make a village: six round its middle, where the village center stands — its storehouse, its
  * market and its hall in one, holding everything the village has. Roads above ground are for walking within a
  * village; village centers are joined by trade routes under the ground (./market.js), your own to share wares
@@ -90,12 +91,12 @@ export const IRON = 2;
 /** @type {Record<string, BuildingType>} */
 export const BUILDINGS = {
 	centre: { id: 'centre', label: 'Village center', group: 'Homes', about: 'Founds a village in the middle of a village next to yours: its storehouse, market and hall in one — nobody lives here. A trade route under the ground joins it to the village center that founded it, and four settlers come to build its houses.', cost: { plank: 6, stone: 4 }, kind: 'centre' },
-	house: { id: 'house', label: 'House', group: 'Homes', about: 'Founds a settlement: settlers live here, 2 at first, then 4, 8 and 16 as you enlarge it. Its two factory spots open once it stands.', cost: { plank: 2, stone: 1 }, kind: 'house' },
-	woodcutter: { id: 'woodcutter', label: 'Woodcutter', group: 'Basics', about: 'Fells grown trees nearby and splits them into planks; build it on a forest hex.', cost: { plank: 2 }, kind: 'gather', biome: 'forest', worker: 'Woodcutter', tools: true, out: 'plank', time: 6, rest: 4, range: 8 },
-	forester: { id: 'forester', label: 'Forester', group: 'Basics', about: 'Plants young trees nearby, on a forest hex; they grow in about two minutes.', cost: { plank: 2 }, kind: 'forester', biome: 'forest', worker: 'Forester', tools: true, time: 3, rest: 5, range: 6 },
-	quarry: { id: 'quarry', label: 'Quarry', group: 'Basics', about: 'Cuts stone from rocks nearby; build it on a stone hex.', cost: { plank: 2 }, kind: 'gather', biome: 'stone', worker: 'Stonecutter', tools: true, out: 'stone', time: 6, rest: 4, range: 8 },
-	fishery: { id: 'fishery', label: 'Fishery', group: 'Food', about: 'Fishes at the water’s edge; build it on a water hex, by a lake or the sea.', cost: { plank: 2 }, kind: 'gather', biome: 'water', worker: 'Fisher', tools: true, out: 'fish', yield: 3, time: 6, rest: 4, range: 6 },
-	farm: { id: 'farm', label: 'Farm', group: 'Food', about: 'Sows fields round it and reaps the grain.', cost: { plank: 3, stone: 2 }, kind: 'farm', worker: 'Farmer', tools: true, out: 'grain', yield: 2, time: 4, rest: 3, range: 4 },
+	house: { id: 'house', label: 'House', group: 'Homes', about: 'Founds a settlement: settlers live here, 2 at first, then twice as many each time you enlarge it, up to 248. Its two factory spots open once it stands.', cost: { plank: 2, stone: 1 }, kind: 'house' },
+	woodcutter: { id: 'woodcutter', label: 'Woodcutter', group: 'Basics', about: 'Fells grown trees nearby and splits them into planks; build it on a forest hex.', cost: { plank: 2 }, kind: 'gather', biome: 'forest', worker: 'Woodcutter', tools: true, out: 'plank', time: 6, rest: 4, range: 10 },
+	forester: { id: 'forester', label: 'Forester', group: 'Basics', about: 'Plants young trees nearby, on a forest hex; they grow in about two minutes.', cost: { plank: 2 }, kind: 'forester', biome: 'forest', worker: 'Forester', tools: true, time: 3, rest: 5, range: 8 },
+	quarry: { id: 'quarry', label: 'Quarry', group: 'Basics', about: 'Cuts stone from rocks nearby; build it on a stone hex.', cost: { plank: 2 }, kind: 'gather', biome: 'stone', worker: 'Stonecutter', tools: true, out: 'stone', time: 6, rest: 4, range: 10 },
+	fishery: { id: 'fishery', label: 'Fishery', group: 'Food', about: 'Fishes at the water’s edge; build it on a water hex, by a lake or the sea.', cost: { plank: 2 }, kind: 'gather', biome: 'water', worker: 'Fisher', tools: true, out: 'fish', yield: 3, time: 6, rest: 4, range: 10 },
+	farm: { id: 'farm', label: 'Farm', group: 'Food', about: 'Sows fields round it and reaps the grain.', cost: { plank: 3, stone: 2 }, kind: 'farm', worker: 'Farmer', tools: true, out: 'grain', yield: 2, time: 4, rest: 3, range: 5 },
 	well: { id: 'well', label: 'Well', group: 'Food', about: 'Draws water.', cost: { plank: 2 }, kind: 'make', worker: 'Water carrier', inputs: [], out: 'water', time: 8 },
 	bakery: { id: 'bakery', label: 'Bakery', group: 'Food', about: 'Bakes bread from grain and water.', cost: { plank: 2, stone: 2 }, kind: 'make', worker: 'Baker', tools: true, inputs: [['grain'], ['water']], out: 'bread', yield: 2, time: 8 },
 	ironmine: { id: 'ironmine', label: 'Iron mine', group: 'Tools', about: 'Digs iron ore; miners eat fish or bread. Build it on an iron hex (rust-red rock).', cost: { plank: 4 }, kind: 'mine', biome: 'iron', worker: 'Miner', tools: true, inputs: [FOOD], out: 'ore', time: 8, on: 'mountain', ore: 'iron' },
@@ -112,10 +113,21 @@ export const MENU = GROUPS.map((g) => ({ group: g, types: Object.values(BUILDING
 export const holdsLand = (/** @type {string} */ type) => type === 'centre' || type === 'village';
 
 /** settlers a house holds at each size, and what enlarging it to the next size costs */
-export const HOUSE_BEDS = [2, 4, 8, 16];
-export const HOUSE_UP = [{ plank: 2, stone: 1 }, { plank: 4, stone: 2 }, { plank: 6, stone: 3 }];
+export const HOUSE_BEDS = [2, 4, 8, 16, 32, 64, 128, 248];
+export const HOUSE_UP = [
+	{ plank: 2, stone: 1 },
+	{ plank: 3, stone: 2 },
+	{ plank: 4, stone: 2 },
+	{ plank: 5, stone: 3 },
+	{ plank: 6, stone: 3 },
+	{ plank: 7, stone: 4 },
+	{ plank: 8, stone: 4 }
+];
 /** a house's size as a word */
-export const HOUSE_SIZE = ['Hut', 'Cottage', 'House', 'Great house'];
+export const HOUSE_SIZE = ['Hut', 'Cottage', 'House', 'Great house', 'Hall', 'Great hall', 'Dome', 'Great dome'];
+/** the largest a house gets: its size and its beds */
+export const HOUSE_TOP = HOUSE_BEDS.length;
+export const HOUSE_MOST = HOUSE_BEDS[HOUSE_TOP - 1];
 
 /** what the headquarters holds as a game starts */
 export const START = {

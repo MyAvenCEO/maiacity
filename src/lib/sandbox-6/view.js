@@ -20,9 +20,9 @@ const HEX_R = (K * STEP) / Math.sqrt(3);
 /** the six ways out of a hex, in the world: east, north-east, north-west, west, south-west, south-east */
 const WAYS = [[1, 0], [0.5, -Math.sqrt(3) / 2], [-0.5, -Math.sqrt(3) / 2], [-1, 0], [-0.5, Math.sqrt(3) / 2], [0.5, Math.sqrt(3) / 2]];
 /** how much larger a village center is drawn than its model: half its hex across, land all round it */
-const CENTRE_SCALE = 1.45, CENTRE_TALL = 1.1;
+const CENTRE_SCALE = 2.4, CENTRE_TALL = 1.8;
 /** the little square in the middle of a hex where its paths meet */
-const SQUARE_R = 0.8;
+const SQUARE_R = 1.2;
 
 /**
  * @param {THREE.Scene} scene
@@ -198,7 +198,7 @@ export function createView(scene, sim) {
 				const o = plan.nbr[k][d];
 				if (d >= 3 && o >= 0 && dry[o]) continue;
 				const [ax, az] = corner(k, (d + 5) % 6), [bx, bz] = corner(k, d);
-				const n = Math.ceil(Math.hypot(bx - ax, bz - az) / 0.4);
+				const n = Math.ceil(Math.hypot(bx - ax, bz - az) / 0.6);
 				for (let s = 0; s < n; s++) {
 					const x0 = ax + ((bx - ax) * s) / n, z0 = az + ((bz - az) * s) / n, x1 = ax + ((bx - ax) * (s + 1)) / n, z1 = az + ((bz - az) * (s + 1)) / n;
 					pos.push(x0, heightAt(x0, z0) + 0.07, z0, x1, heightAt(x1, z1) + 0.07, z1);
@@ -221,7 +221,7 @@ export function createView(scene, sim) {
 	function sheet(hexes, inset) {
 		/** @type {number[]} */
 		const pos = [];
-		const CUT = 5;
+		const CUT = 9;
 		const pt = (/** @type {number} */ x, /** @type {number} */ z) => pos.push(x, heightAt(x, z) + 0.08, z);
 		for (const k of hexes)
 			for (let d = 0; d < 6; d++) {
@@ -498,8 +498,9 @@ export function createView(scene, sim) {
 	const big = (/** @type {string} */ type) => type === 'centre' || type === 'village';
 	/** where a building stands: a village center in the middle of its hex, which it fills; the rest on their spots */
 	const stand = (/** @type {string} */ type, /** @type {number} */ node) => (big(type) ? plan.centre[plan.plotOf[node]] : node);
-	/** a house grows with its size */
-	const HOUSE_SCALE = [0.62, 0.78, 0.94, 1.15];
+	/** a house grows with its size, one dome ever larger: from a hut to a great dome of 248 */
+	const HOUSE_SCALE = [0.62, 0.78, 0.94, 1.15, 1.4, 1.7, 2.0, 2.35];
+	const sizeHouse = (/** @type {THREE.Object3D} */ m, /** @type {number} */ level) => m.scale.setScalar(HOUSE_SCALE[level - 1]);
 	function syncBuildings(/** @type {number} */ t) {
 		for (const [id, s] of shown)
 			if (!st.buildings[id]) {
@@ -528,14 +529,14 @@ export function createView(scene, sim) {
 				const total = Object.values(b.cost).reduce((/** @type {number} */ a, /** @type {any} */ n) => a + n, 0);
 				const used = Object.values(b.used).reduce((/** @type {number} */ a, /** @type {any} */ n) => a + n, 0);
 				// a house being enlarged stands meanwhile at its size; anything new rises from the ground
-				if (b.type === 'house' && b.level) s.model.scale.setScalar(HOUSE_SCALE[b.level - 1]);
+				if (b.type === 'house' && b.level) sizeHouse(s.model, b.level);
 				else s.model.scale.set(1, Math.max(0.06, used / Math.max(1, total)), 1);
 			} else if (s.scaffold) {
 				s.group.remove(s.scaffold);
 				s.scaffold = null;
 				s.model.scale.set(1, 1, 1);
 			}
-			if (b.type === 'house' && b.stage === 'live') s.model.scale.setScalar(HOUSE_SCALE[Math.max(0, b.level - 1)]);
+			if (b.type === 'house' && b.stage === 'live') sizeHouse(s.model, Math.max(1, b.level));
 			if (s.owner !== b.owner) {
 				recolour(s.model, b.owner);
 				s.owner = b.owner;
@@ -723,7 +724,8 @@ export function createView(scene, sim) {
 			picked = b && big(b.type) ? b.id : 0;
 			ring.visible = node >= 0;
 			const at = b ? stand(b.type, node) : node;
-			ring.scale.setScalar(picked ? 3.1 : 1);
+			// round what is picked: a village center, a house of its size, any other dome
+			ring.scale.setScalar(picked ? CENTRE_SCALE * 1.95 : b?.type === 'house' && b.level ? Math.max(1, HOUSE_SCALE[b.level - 1] * 1.15) : 1);
 			borders.visible = gridOn || !!picked;
 			if (node >= 0) ring.position.set(X(at), Math.max(Y(at), SEA) + 0.08, Z(at));
 		},

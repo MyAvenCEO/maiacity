@@ -10,14 +10,16 @@
  * Pure: the same seed grows the same valley.
  */
 import { GRASS, IRON, MOUNTAIN, SAND, WATER } from './rules.js';
-import { makeGrid, rng } from './hex.js';
-import { makePlan } from './plots.js';
+import { STEP, makeGrid, rng } from './hex.js';
+import { K, makePlan } from './plots.js';
 
-/** the valley's size in nodes: room for some thirty villages, the sea round them */
-export const W = 120, H = 104;
+/** the valley's size in nodes: room for some twenty-five villages, the sea round them */
+export const W = 186, H = 160;
 /** the valley was first laid out on a coarser grid of 60 by 52 nodes: its features are given in those old steps
- * (columns across, rows down), and so is its noise, so it grows as it always did, now 3.2 world units to the step */
-const OLD = 3.2, OW = 60, OH = 52, S = 1.3;
+ * (columns across, rows down), and so is its noise, so it grows as it always did, now 5 world units to the step */
+const OLD = 5, OW = 60, OH = 52, S = 1.3;
+/** world units from one hex's middle to the next */
+const HS = K * STEP;
 
 /**
  * @typedef {object} Valley
@@ -141,9 +143,9 @@ export function growValley(seed) {
 		return [Math.round(x - (r & 1) * 0.5), r];
 	};
 	// a little way out of it: a pond to fish, and rocks
-	const pond = /** @type {[number, number, number]} */ ([...fromHome(-14, 25), 2.4]);
+	const pond = /** @type {[number, number, number]} */ ([...fromHome(-1.06 * HS, 2.02 * HS), 2.4]);
 	for (let i = 0; i < N; i++) if (!atHome(i)) lay(i, [], [pond]);
-	ROCKS.push([...fromHome(21, -16), 1.8]);
+	ROCKS.push([...fromHome(1.73 * HS, -1.35 * HS), 1.8]);
 	for (let i = 0; i < N; i++) {
 		if (terrain[i] === WATER) {
 			height[i] = -1.4;
@@ -173,7 +175,7 @@ export function growValley(seed) {
 		amount[i] = 0;
 		obj[i] = null;
 		const level = Math.min(Math.max(height[c], 0.4), 1.0);
-		const w = Math.max(0, Math.min(1, (d - (k === home.centre ? 2.5 : 1.5)) / 2));
+		const w = Math.max(0, Math.min(1, (d - 5) / 3));
 		height[i] = level + (height[i] - level) * w;
 	}
 	const outer = home.plots.filter((k) => k !== home.centre);
@@ -185,16 +187,16 @@ export function growValley(seed) {
 		const c = plan.centre[k];
 		const x = g.x(c) + (g.x(c) - g.x(middle)) * 0.3, z = g.z(c) + (g.z(c) - g.z(middle)) * 0.3;
 		const open = (/** @type {number} */ i) => terrain[i] === GRASS && !obj[i] && !plan.clear[i];
-		for (const i of g.within(c, 9)) {
+		for (const i of g.within(c, K + 2)) {
 			if (!open(i) || (atHome(i) && plan.plotOf[i] !== k)) continue;
-			const edge = R + (noise(px(i), py(i), 0.45) - 0.5) * 2.2 * OLD - Math.hypot(g.x(i) - x, g.z(i) - z);
+			const edge = R + (noise(px(i), py(i), 0.45) - 0.5) * 0.7 * R - Math.hypot(g.x(i) - x, g.z(i) - z);
 			if (edge > 0 && rand() < dense) obj[i] = make();
 		}
 		const near = hexNodes[k].filter(open).sort((a, b) => Math.hypot(g.x(a) - x, g.z(a) - z) - Math.hypot(g.x(b) - x, g.z(b) - z));
 		for (let n = hexNodes[k].filter((i) => obj[i]).length; n < least && near.length; n++) obj[/** @type {number} */ (near.shift())] = make();
 	};
-	for (const k of [outer[1], outer[2]]) patch(k, 7, 0.55, 12, () => ({ k: 'tree', g: 0.8 + rand() * 0.2 }));
-	patch(outer[4], 6, 0.35, 6, () => ({ k: 'rock', n: 5 + Math.floor(rand() * 3) }));
+	for (const k of [outer[1], outer[2]]) patch(k, 0.62 * HS, 0.5, 34, () => ({ k: 'tree', g: 0.8 + rand() * 0.2 }));
+	patch(outer[4], 0.5 * HS, 0.3, 12, () => ({ k: 'rock', n: 5 + Math.floor(rand() * 3) }));
 	for (const k of [outer[0], outer[3], outer[5]]) for (const i of hexNodes[k]) if (!plan.clear[i] && !obj[i] && rand() < 0.03) obj[i] = { k: 'tree', g: 0.75 + rand() * 0.25 };
 	const biome = biomes(g, plan, terrain, obj, ore);
 	return { W, H, terrain, height, ore, amount, fish, obj, hq: plan.spots[home.centre][0], villages: [], biome };
@@ -221,10 +223,10 @@ export function biomes(g, plan, terrain, obj, ore) {
 		const count = (/** @type {(j: number) => boolean} */ f) => hex.filter(f).length;
 		const [, ...factories] = plan.spots[k];
 		if (factories.some((j) => j >= 0 && terrain[j] === MOUNTAIN && g.within(j, 3).some((n) => terrain[n] === MOUNTAIN && ore[n] === IRON))) return 'iron';
-		if (count((j) => obj[j]?.k === 'rock') >= 4) return 'stone';
+		if (count((j) => obj[j]?.k === 'rock') >= 8) return 'stone';
 		if (count((j) => terrain[j] === MOUNTAIN) * 2 >= hex.length) return 'mountain';
-		if (count((j) => terrain[j] === WATER) >= 3) return 'water';
-		if (count((j) => obj[j]?.k === 'tree') >= 9) return 'forest';
+		if (count((j) => terrain[j] === WATER) >= 6) return 'water';
+		if (count((j) => obj[j]?.k === 'tree') >= 25) return 'forest';
 		return 'meadow';
 	});
 }
