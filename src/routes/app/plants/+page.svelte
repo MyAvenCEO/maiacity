@@ -1,9 +1,8 @@
 <!--
 	Plants: every plant grown from code (src/lib/plants), from its seed to the plant in fruit, in ten stages to tab
 	through across the top — the last four the fruit's own, set to ripe (or ← → and 1 – 0 on the keyboard; Grow plays it on
-	from where it is). The soil is cut away
-	so the roots grow as plainly as the shoot — or laid bare, or shut. Each plant grows from a seed id: the same id the
-	same plant every time, another id a sister plant. Drag to turn round it, scroll to come closer. An admin's.
+	from where it is). The soil is cut away, so the roots grow as plainly as the shoot, and the camera keeps the plant
+	framed. Each plant grows from a seed id: the same id the same plant every time, New seed a sister plant. Drag to turn round it, scroll to come closer. An admin's.
 -->
 <script>
 	import { onDestroy, onMount } from 'svelte';
@@ -30,10 +29,11 @@
 	let version = $state(Number(asked.get('v')) || opened.version);
 	/** the plant as it was at that version */
 	const grown = $derived(plantAt(chosen.id, version) ?? chosen);
+	/** the soil cut away, the plant framed close: the one view (the others are kept in the code below, not offered) */
 	/** @type {Soil} */
-	let soil = $state('cutaway');
+	const soil = 'cutaway';
 	/** @type {Frame} */
-	let frame = $state('plant');
+	const frame = 'plant';
 	let playing = $state(false);
 	/** @type {{ above: number, below: number, across: number } | null} */
 	let size = $state(null);
@@ -326,16 +326,6 @@
 		seed = id;
 		regrow();
 	};
-	const toSoil = (/** @type {Soil} */ mode) => {
-		soil = mode;
-		showSoil?.(mode);
-	};
-
-	const toFrame = (/** @type {Frame} */ mode) => {
-		frame = mode;
-		reframe?.(mode);
-	};
-
 	/** ← → step a stage, 1 – 9 and 0 (the tenth) jump to one, space grows — unless typing a seed id */
 	const onKey = (/** @type {KeyboardEvent} */ e) => {
 		const t = /** @type {HTMLElement | null} */ (e.target);
@@ -349,11 +339,6 @@
 	};
 
 	const measure = (/** @type {number} */ v) => (v < 0.01 ? `${(v * 1000).toFixed(1)} mm` : v < 1 ? `${(v * 100).toFixed(v < 0.1 ? 1 : 0)} cm` : `${v.toFixed(2)} m`);
-	const SOILS = /** @type {const} */ ([
-		['cutaway', 'Cut away'],
-		['bare', 'Roots bare'],
-		['solid', 'Soil shut']
-	]);
 </script>
 
 <svelte:head>
@@ -379,28 +364,10 @@
 		</div>
 	{/snippet}
 	{#snippet panel()}
-		<div class="settings">
-			<label class="seed">
-				<span class="label">Seed id</span>
-				<input value={seed} spellcheck="false" autocomplete="off" onchange={(e) => reseed(e.currentTarget.value.trim() || SEEDS[0])} onkeydown={(e) => e.key === 'Enter' && e.currentTarget.blur()} />
-			</label>
+		<div class="seed">
+			<span class="label">Seed</span>
+			<code title="The same seed id grows the same plant every time">{seed}</code>
 			<button class="dice" onclick={() => reseed(freshSeed())}>New seed</button>
-			<div class="chips">
-				{#each SEEDS as id (id)}
-					<button class="chip" class:on={seed === id} onclick={() => reseed(id)}>{id}</button>
-				{/each}
-			</div>
-			<span class="label">Frame</span>
-			<div class="chips">
-				<button class="chip" class:on={frame === 'plant'} onclick={() => toFrame('plant')}>The plant</button>
-				<button class="chip" class:on={frame === 'whole'} onclick={() => toFrame('whole')}>Whole earth</button>
-			</div>
-			<span class="label">Soil</span>
-			<div class="chips">
-				{#each SOILS as [mode, label] (mode)}
-					<button class="chip" class:on={soil === mode} onclick={() => toSoil(mode)}>{label}</button>
-				{/each}
-			</div>
 		</div>
 	{/snippet}
 	{#snippet readout()}
@@ -421,7 +388,6 @@
 		align-items: baseline;
 		gap: 0.35rem;
 		flex: none;
-		font-size: 0.8rem;
 	}
 
 	.fruit-mark {
@@ -460,40 +426,29 @@
 		border-color: #8a5a2b;
 	}
 
-	.settings {
-		display: flex;
-		flex-direction: column;
-		gap: 0.45rem;
-	}
-
+	/* the seed id it grew from, and a new one at random */
 	.seed {
 		display: flex;
-		flex-direction: column;
-		gap: 0.25rem;
+		align-items: center;
+		gap: 0.5rem;
 	}
 
-	.seed input {
-		padding: 0.4rem 0.6rem;
-		border: 1px solid rgb(0 0 0 / 0.15);
-		border-radius: 8px;
-		background: #fff;
-		font: inherit;
+	.seed code {
+		flex: 1;
+		min-width: 0;
+		overflow: hidden;
 		font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-		font-size: max(16px, 1em);
-		color: inherit;
+		text-overflow: ellipsis;
+		white-space: nowrap;
 	}
 
 	.dice {
-		padding: 0.35rem 0.6rem;
+		flex: none;
+		padding: 0.3rem 0.65rem;
 		border: 1px solid #3d6b2e;
-		border-radius: 8px;
+		border-radius: 999px;
 		background: #3d6b2e;
 		color: #fff;
-	}
-
-	.settings .chip {
-		padding: 0.2rem 0.55rem;
-		font-size: 0.78rem;
 	}
 
 	em {
