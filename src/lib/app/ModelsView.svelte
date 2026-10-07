@@ -178,7 +178,9 @@
 			}, {
 				host: { scene, camera, renderer, x: 0, z: 0 },
 				cancelled: () => mine !== build,
-				hurry: () => true
+				hurry: () => true,
+				// a dome planted with our real plants grows the warm garden Sandbox 4 grows under its glass
+				flora: m.flora ? await import('$lib/sandbox-2/interior/sandbox5.js').then(({ SANDBOX_5 }) => ({ garden: SANDBOX_5.flora.inside, seed: SANDBOX_5.flora.seed })) : undefined
 			}).catch(() => null);
 			landless = null;
 			if (!h) return;
