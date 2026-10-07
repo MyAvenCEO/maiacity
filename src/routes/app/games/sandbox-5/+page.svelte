@@ -86,13 +86,13 @@
 </script>
 
 <svelte:head>
-	<title>avenCITY Sandbox 5 · A dome cell grown from our plants · maiaCITY</title>
+	<title>avenCITY Sandbox 4 · A dome cell grown from our plants · maiaCITY</title>
 	<meta name="description" content="Walk a whole maiaCITY dome cell whose food forest is grown from our own plants, stage by stage: a middle-European forest garden outside, the tropics inside the domes." />
 </svelte:head>
 
 <div class="village">
-	<div class="stage" bind:this={stage} role="application" aria-label="Sandbox 5: walk, look round, click a plant" onpointerdown={down} onpointerup={up}></div>
-	<WorldBar title="avenCITY Sandbox 5" subtitle="A dome cell · grown from our plants" />
+	<div class="stage" bind:this={stage} role="application" aria-label="Sandbox 4: walk, look round, click a plant" onpointerdown={down} onpointerup={up}></div>
+	<WorldBar title="avenCITY Sandbox 4" subtitle="A dome cell · grown from our plants" />
 	<WalkHint keys="Drag to look · WASD to walk · Shift to hurry · walk through any door to step inside" />
 	<!-- on a phone: the joystick walks, any other finger on the world looks round -->
 	<TouchStick
@@ -138,7 +138,7 @@
 			<img src={asset('9e442ce81d3237243f561780fa6d3aeeeb7f1d83ea8e68f3a166650739c398b2.jpg') /* Day 03: a dome from inside */} alt="" />
 			<div class="shade"></div>
 			<div class="label">
-				<p class="eyebrow">avenCITY Sandbox 5</p>
+				<p class="eyebrow">avenCITY Sandbox 4</p>
 				<strong>A dome cell, grown from our plants</strong>
 				<span class="size">a forest garden outside, the tropics inside the domes</span>
 				<div class="progress"><span style:width="{Math.min(100, (done / STEPS) * 100)}%"></span></div>

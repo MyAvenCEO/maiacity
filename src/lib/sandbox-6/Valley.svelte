@@ -168,8 +168,8 @@
 </script>
 
 <div class="valley">
-	<div class="stage" bind:this={stage} role="application" aria-label="Sandbox 6: the valley. Drag to turn the map, scroll to zoom, click to select or build"></div>
-	<WorldBar title="avenCITY Sandbox 6" subtitle="A valley of settlers · villages, trade routes underground, abundance" />
+	<div class="stage" bind:this={stage} role="application" aria-label="Sandbox 5: the valley. Drag to turn the map, scroll to zoom, click to select or build"></div>
+	<WorldBar title="avenCITY Sandbox 5" subtitle="A valley of settlers · villages, trade routes underground, abundance" />
 	<TouchStick move={(x, y, hurry) => game?.move(x, y, hurry)} {stage} taps=".tools button, .panel button, .card button" />
 
 	<!-- the tools, down the left -->
@@ -456,7 +456,7 @@
 	{/if}
 
 	{#if loading}
-		<div class="loading" role="status"><p class="eyebrow">avenCITY Sandbox 6</p><strong>A valley of settlers</strong><span>Growing the valley…</span></div>
+		<div class="loading" role="status"><p class="eyebrow">avenCITY Sandbox 5</p><strong>A valley of settlers</strong><span>Growing the valley…</span></div>
 	{/if}
 </div>
 

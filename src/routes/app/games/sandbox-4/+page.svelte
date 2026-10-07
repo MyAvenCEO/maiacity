@@ -52,13 +52,13 @@
 </script>
 
 <svelte:head>
-	<title>avenCITY Sandbox 4 · A dome cell · maiaCITY</title>
+	<title>avenCITY Sandbox 3 · A dome cell · maiaCITY</title>
 	<meta name="description" content="Walk a whole maiaCITY dome cell: the master dome, six large domes and six medium domes, with paths, streams and a food forest between them. Step into any of them." />
 </svelte:head>
 
 <div class="village">
 	<div class="stage" bind:this={stage}></div>
-	<WorldBar title="avenCITY Sandbox 4" subtitle="A dome cell · thirteen domes" />
+	<WorldBar title="avenCITY Sandbox 3" subtitle="A dome cell · thirteen domes" />
 	<WalkHint keys="Drag to look · WASD to walk · Shift to hurry · walk through any door to step inside" />
 	<!-- on a phone: the joystick walks, any other finger on the world looks round -->
 	<TouchStick
@@ -74,7 +74,7 @@
 			<img src={asset('9e442ce81d3237243f561780fa6d3aeeeb7f1d83ea8e68f3a166650739c398b2.jpg') /* Day 03: a dome from inside */} alt="" />
 			<div class="shade"></div>
 			<div class="label">
-				<p class="eyebrow">avenCITY Sandbox 4</p>
+				<p class="eyebrow">avenCITY Sandbox 3</p>
 				<strong>A dome cell</strong>
 				<span class="size">the master dome, six large domes, six medium domes</span>
 				<div class="progress"><span style:width="{Math.min(100, (done / STEPS) * 100)}%"></span></div>
