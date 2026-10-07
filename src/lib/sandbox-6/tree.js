@@ -100,8 +100,8 @@ export function chainTree(colW = 168, rowH = 50) {
 export const TRADE_NOTE = /** @type {Record<string, string>} */ ({
 	ore: 'Little in your land: Eastmere has plenty',
 	tools: 'Eastmere has plenty',
-	fish: 'Reedholm has plenty',
+	fish: 'Your plenty: Highfold has none',
 	plank: 'Highfold has plenty',
 	grain: 'Your plenty: wide farmland',
-	stone: 'Reedholm has none'
+	stone: 'Eastmere has plenty'
 });
