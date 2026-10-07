@@ -563,11 +563,11 @@ export function createView(scene, sim) {
 	const HOUSE_SCALE = [0.62, 0.78, 0.94, 1.15, 1.4, 1.7, 2.0, 2.35];
 	const sizeHouse = (/** @type {THREE.Object3D} */ m, /** @type {number} */ level) => m.scale.setScalar(HOUSE_SCALE[level - 1]);
 	/** the wood building's dome grows with each upgrade too: forester, woodcutter, sawmill, timber works; and so do the
-	 * steel building's (iron mine, furnace, steelworks) and the lime building's (lime pit, kiln, block works) */
+	 * steel building's (iron mine, furnace, steelworks) and the clay building's (clay pit, kiln, block works) */
 	const WOOD_SCALE = [0.8, 1, 1.3, 1.6];
 	const STEEL_SCALE = [1, 1.25, 1.55];
 	/** the buildings that grow by upgrades, besides houses */
-	const grows = (/** @type {string | undefined} */ type) => type === 'woodcutter' || type === 'ironmine' || type === 'limeworks';
+	const grows = (/** @type {string | undefined} */ type) => type === 'woodcutter' || type === 'ironmine' || type === 'clayworks';
 	/** how large a building that grows by upgrades stands at a level */
 	const grown = (/** @type {string} */ type, /** @type {number} */ level) => (type === 'woodcutter' ? WOOD_SCALE : STEEL_SCALE)[level - 1];
 	function syncBuildings(/** @type {number} */ t) {
@@ -856,7 +856,7 @@ export function createView(scene, sim) {
 			}
 			if (!ghost || ghostType !== type) {
 				if (ghost) root.remove(ghost);
-				ghost = buildingModel(type, 0, type === 'ironmine' || type === 'limeworks' ? 1 : undefined);
+				ghost = buildingModel(type, 0, type === 'ironmine' || type === 'clayworks' ? 1 : undefined);
 				ghostType = type;
 				root.add(ghost);
 			}

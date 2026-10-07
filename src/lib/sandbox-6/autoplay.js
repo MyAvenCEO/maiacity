@@ -1,7 +1,7 @@
 /**
  * SANDBOX 6 · AUTOPLAY — a player that builds the whole economy by itself, step by step, the way a person would:
  * wood and steel first, then houses until its villages are full (their roofs catch their water), trading planks,
- * steel and lime with the world market. Its domes cost real tonnes and their glass gold, so it enlarges a house once
+ * steel and fired clay with the world market. Its domes cost real tonnes and their glass gold, so it enlarges a house once
  * its treasury can pay for what its stores lack. The film camera grows its valley with it (a settlement that is
  * already busy), and it plays a whole game headless to prove every chain runs end to end.
  */
@@ -20,12 +20,12 @@ const PLAN = [
 	['woodcutter', 'trees'],
 	['ironmine', 'mine'],
 	['woodcutter', 'trees'],
-	['limeworks', 'lime']
+	['clayworks', 'meadow']
 ];
 
-/** what it trades with the world market (and a neighbour a trade route runs to): it buys planks, steel and lime when
+/** what it trades with the world market (and a neighbour a trade route runs to): it buys planks, steel and clay when
  * short, while its treasury can pay, and exports what it has beyond */
-const ORDERS = /** @type {Record<string, 'sell' | 'buy' | 'both'>} */ ({ plank: 'both', steel: 'both', lime: 'both' });
+const ORDERS = /** @type {Record<string, 'sell' | 'buy' | 'both'>} */ ({ plank: 'both', steel: 'both', clay: 'both' });
 
 /**
  * Plays a game one decision at a time: call `tick()` now and then (every few seconds of game time).
@@ -58,8 +58,8 @@ export function createAutoplay(sim) {
 			case 'mine': {
 				return count((j) => st.ore[j] === IRON, n, 3) * 2 - d;
 			}
-			case 'lime':
-				return count((j) => st.obj[j]?.k === 'rock', n, 4) * 2 - d;
+			case 'meadow':
+				return count((j) => !st.obj[j] && st.terrain[j] === GRASS, n, 4) * 0.5 - d;
 			case 'open':
 				return count((j) => !st.obj[j] && st.terrain[j] === 0, n, 5) - d;
 			case 'south':
@@ -78,7 +78,7 @@ export function createAutoplay(sim) {
 		// the house would make the spot buildable: everything else about it must already be fine
 		// (a woodcutter or forester fells the tree on its spot, an iron mine breaks the rock)
 		const k = st.obj[n]?.k, b = BUILDINGS[type].biome;
-		const clears = (b === 'forest' && k === 'tree') || ((b === 'iron' || b === 'stone') && k === 'rock');
+		const clears = (b === 'forest' && k === 'tree') || ((b === 'iron' || b === 'stone') && k === 'rock') || (b === 'meadow' && (k === 'tree' || k === 'rock'));
 		return (st.obj[n] && !clears) || !suits(type, n) ? null : 'house';
 	}
 	function place(/** @type {string} */ type, /** @type {string} */ want) {
@@ -215,7 +215,7 @@ export function createAutoplay(sim) {
 			}
 		}
 	}
-	/** join the nearest neighbour city by a trade route once it can pay for its lime blocks */
+	/** join the nearest neighbour city by a trade route once it can pay for its fired clay */
 	function join() {
 		const first = ofType('centre').find((b) => b.stage === 'live');
 		if (!first) return false;
@@ -236,9 +236,9 @@ export function createAutoplay(sim) {
 			const s = sim.summary();
 			const { pays } = means(s);
 			// a wood building starts as a forester: upgrade it to a woodcutter as soon as it stands, and on to a sawmill and
-			// a timber works once it can pay for it; an iron mine to a furnace and a steelworks likewise, and a lime pit to a
+			// a timber works once it can pay for it; an iron mine to a furnace and a steelworks likewise, and a clay pit to a
 			// kiln and a block works
-			for (const type of ['woodcutter', 'ironmine', 'limeworks']) {
+			for (const type of ['woodcutter', 'ironmine', 'clayworks']) {
 				const growing = ofType(type).some((b) => b.stage === 'site' && b.level > 0);
 				for (const b of growing ? [] : ofType(type)) {
 					const up = b.stage === 'live' ? sim.inspect(b.id)?.up : null;
