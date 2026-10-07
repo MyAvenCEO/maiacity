@@ -48,7 +48,7 @@
 	const variants = $derived(!isDome(chosen) && version === chosen.version ? (chosen.variants ?? []) : []);
 	// walking inside a model the walk has the whole screen, as a dome's does: the nav pill's way back walks out
 	$effect(() => {
-		if (walking) return wayBack('Walk out', () => walkOut?.());
+		if (walking) return wayBack('Back outside', () => walkOut?.());
 	});
 	/** a dome being walked inside, full screen */
 	let inside = $state(false);
@@ -284,7 +284,7 @@
 			</div>
 		{:else if walkable || roofed}
 			<div class="chips walkbar">
-				{#if walkable}<button type="button" class="chip dark" onclick={() => (walking ? walkOut?.() : walkIn?.())}>{walking ? 'Walk out' : 'Walk inside'}</button>{/if}
+				{#if walkable}<button type="button" class="chip dark" onclick={() => (walking ? walkOut?.() : walkIn?.())}>{walking ? 'Step outside' : 'Step inside'}</button>{/if}
 				{#if roofed && !walking}<button type="button" class="chip dark" onclick={toggleRoof}>{roofOff ? 'Put the roof on' : 'Lift the roof'}</button>{/if}
 			</div>
 		{/if}
@@ -317,7 +317,7 @@
 	{#if walking}
 		<WorldBar title={chosen.label} subtitle="{title} · {chosen.usedIn}" sky={false} />
 		<TouchStick move={(x, y, h) => stick?.move(x, y, h)} look={(dx, dy) => stick?.look(dx, dy)} stage={viewBox} taps=".walkbar button" />
-		<WalkHint keys="Drag to look · WASD to walk · Shift to hurry · Esc to walk out" />
+		<WalkHint keys="Drag to look · WASD to walk · Shift to hurry · Esc to step outside" />
 	{/if}
 </Turntable>
 
