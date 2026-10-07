@@ -11,7 +11,7 @@ import { CONTAINERS } from '$lib/models';
 import { versioned } from '$lib/app/versions.js';
 
 /** @typedef {import('$lib/sandbox-2/interior/interior').DomeKind} DomeKind */
-/** @typedef {{ id: string, label: string, note: string, usedIn: string, dome: DomeKind, image: string, size: string, versions: import('$lib/app/versions.js').Version<DomeKind>[], version: number }} Dome */
+/** @typedef {{ id: string, label: string, note: string, usedIn: string, dome: DomeKind, image: string, size: string, flora?: boolean, versions: import('$lib/app/versions.js').Version<DomeKind>[], version: number }} Dome */
 /** @typedef {import('$lib/models').Model} Model */
 /** @typedef {Dome | Model} Building */
 
@@ -20,7 +20,10 @@ import { versioned } from '$lib/app/versions.js';
  * goes up a version here, its old interior kept as its own kind of $lib/sandbox-2/interior to walk as it was.
  * @type {Record<string, (import('$lib/app/versions.js').Change & { build?: DomeKind })[]>}
  */
-const HISTORY = {};
+const HISTORY = {
+	// (its first version, the glass fish tank, was never built into a world, so it is not kept)
+	'dome-grand': [{ v: 2, date: '2026-10-07', note: 'A green middle, a sunken rainforest pond with a waterfall and a creek, and our real plants' }]
+};
 
 const DOME_LIST = DOMES_IN_ORDER.map((d) => ({
 	id: `dome-${d.kind}`,
@@ -29,7 +32,8 @@ const DOME_LIST = DOMES_IN_ORDER.map((d) => ({
 	usedIn: 'Sandbox 3',
 	dome: d.kind,
 	image: d.image,
-	size: `${DOMES[d.kind].diameter} m across · ${DOMES[d.kind].people}`
+	size: `${DOMES[d.kind].diameter} m across · ${DOMES[d.kind].people}`,
+	flora: !!d.flora
 }));
 
 /** @type {Dome[]} */
