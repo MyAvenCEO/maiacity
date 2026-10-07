@@ -26,6 +26,13 @@
 	let speed = $state(1);
 	/** how fast the valley's calendar runs: the master clock's pace, or ten years in ten minutes for tests */
 	let pace = $state('master');
+	/** the simulation: autoplay grows the first village full on fast years, at 16×; what it was set to before, and how
+	 * far it got (the first village's people of its beds at most, and the year) */
+	let simulating = $state(false);
+	/** @type {{ pace: string, speed: number } | null} */
+	let before = null;
+	/** @type {{ name: string, pop: number, cap: number, year: number, done: boolean } | null} */
+	let simNote = $state(null);
 	let menuOpen = $state(false);
 	let group = $state(MENU[0].group);
 	let narrow = $state(false);
@@ -87,6 +94,18 @@
 		}
 		speed = game.speed;
 		pace = sim.state.pace;
+		// the simulation's first village, and its end once every house holds 248
+		if (simulating || simNote?.done) {
+			const hq = sim.state.buildings[sim.state.hq];
+			const row = market?.parties.find((/** @type {any} */ p) => p.owner === PLAYER && p.node === hq?.node);
+			if (row) simNote = { name: row.name, pop: row.pop, cap: row.cap, year: summary.date.year, done: simNote?.done ?? false };
+			if (simulating && row && row.cap > 0 && row.pop >= row.cap) {
+				stopSim();
+				game.setSpeed(0);
+				speed = 0;
+				simNote = { ...row, year: summary.date.year, done: true };
+			}
+		}
 		const s = selected;
 		card = s?.k === 'building' ? sim.inspect(s.id) : null;
 		if (s?.k === 'building' && !card) select(null);
@@ -141,6 +160,28 @@
 		menuOpen = false;
 		game?.setMode(mode === m && !type ? 'look' : /** @type {import('./game.js').Mode} */ (m), type);
 	}
+	/** start the simulation (fast years, 16×, autoplay growing the first village full), or stop it and go back */
+	function simulate() {
+		if (!game) return;
+		if (!simulating) {
+			before = { pace, speed };
+			game.sim.setPace('fast');
+			game.setSpeed(16);
+			game.simulate(true);
+			simulating = true;
+		} else stopSim();
+		refresh();
+	}
+	function stopSim() {
+		if (!game) return;
+		game.simulate(false);
+		simulating = false;
+		if (before) {
+			game.sim.setPace(/** @type {'master' | 'fast'} */ (before.pace));
+			game.setSpeed(before.speed || 1);
+			before = null;
+		}
+	}
 	function newValley() {
 		if (!confirm('Start a new valley? This one will be gone.')) return;
 		game?.restart();
@@ -193,7 +234,7 @@
 		<button class:on={mode === 'demolish'} onclick={() => tool('demolish')} title="Tear down (X)"><span class="ic">✕</span>Tear down</button>
 		<button class:on={treeOpen} onclick={() => ((treeOpen = !treeOpen), (menuOpen = false), refresh())} title="The building tree: what each building needs and makes"><span class="ic">⌥</span>Tree</button>
 		<div class="speed" role="group" aria-label="Speed">
-			{#each [[0, '❚❚'], [1, '1×'], [2, '2×'], [4, '4×']] as [s, t] (s)}
+			{#each [[0, '❚❚'], [1, '1×'], [2, '2×'], [4, '4×'], [16, '16×']] as [s, t] (s)}
 				<button class:on={speed === s} onclick={() => (game?.setSpeed(/** @type {number} */ (s)), (speed = /** @type {number} */ (s)))} title={s ? `Speed ${t}` : 'Pause (Space)'}>{t}</button>
 			{/each}
 		</div>
@@ -202,6 +243,10 @@
 				<button class:on={pace === p} onclick={() => (game?.sim.setPace(/** @type {'master' | 'fast'} */ (p)), (pace = p))} title={about}>{t}</button>
 			{/each}
 		</div>
+		<button class="sim" class:on={simulating} onclick={simulate} title={simulating ? 'Stop the simulation and play on yourself' : 'Simulate: autoplay builds on fast years (ten years in ten minutes) at 16×, growing your first village until all six houses hold 248 people'}>{simulating ? '■ Stop' : '▶ Simulate'}</button>
+		{#if simNote && (simulating || simNote.done)}
+			<p class="simnote">{simNote.done ? `${simNote.name} is full: ${num(simNote.pop)} people, in year ${simNote.year}` : `${simNote.name}: ${num(simNote.pop)} of ${num(simNote.cap)} people · year ${simNote.year}`}</p>
+		{/if}
 		<button class="quiet" onclick={newValley} title="Start a new valley">New valley</button>
 	</nav>
 
@@ -489,10 +534,25 @@
 	}
 	.speed button {
 		flex: 1;
+		min-width: 0;
 		padding: 0.4rem 0;
 		border-radius: 999px;
-		font-size: 0.72rem;
+		font-size: 0.66rem;
 		text-align: center;
+		justify-content: center;
+	}
+	.tools .sim {
+		justify-content: center;
+		font-size: 0.78rem;
+	}
+	.simnote {
+		margin: 0;
+		padding: 0.35rem 0.55rem;
+		border-radius: 12px;
+		background: rgba(244, 241, 232, 0.88);
+		color: #24452f;
+		font-size: 0.7rem;
+		line-height: 1.3;
 	}
 	.tools .quiet {
 		margin-top: 0.4rem;

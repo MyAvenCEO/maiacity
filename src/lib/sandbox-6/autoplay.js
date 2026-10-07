@@ -140,7 +140,8 @@ export function createAutoplay(sim) {
 	/** no spot anywhere in reach: found the village next to the city nearest home where the building would stand */
 	function expand(/** @type {string} */ type) {
 		// three villages hold what the plan builds; the fourth and fifth come once these are housed (see settle)
-		if (ofType('centre').some((b) => b.stage === 'site') || ofType('centre').length >= 3) return false;
+		// (growing one village full, up to five: its rocks, trees and iron run out, and new ones are found further out)
+		if (ofType('centre').some((b) => b.stage === 'site') || ofType('centre').length >= (st.autoFocus ? 5 : 3)) return false;
 		const home = hq().node;
 		let best = -1, bd = Infinity;
 		for (const v of sim.plan.villages) {
@@ -153,6 +154,7 @@ export function createAutoplay(sim) {
 	}
 	/** every village has a house in each settlement: found the next, up to five, where most houses fit, nearest home */
 	function settle(/** @type {any} */ s) {
+		if (st.autoFocus) return;
 		const cs = ofType('centre');
 		if (cs.length >= 5 || cs.some((b) => b.stage === 'site')) return;
 		const rows = sim.market().parties.filter((/** @type {any} */ r) => r.owner === PLAYER);
@@ -179,12 +181,17 @@ export function createAutoplay(sim) {
 		const great = houses.filter((b) => b.stage === 'live' && b.level < 4).sort((a, b) => b.level - a.level)[0];
 		if (!houses.some((b) => b.level >= 4) && great && (s.stock.plank ?? 0) >= 16 && (s.stock.stone ?? 0) >= 10) return void sim.upgrade(great.id);
 		const has = (/** @type {Record<string, number>} */ cost) => Object.entries(cost).every(([w, n]) => (s.stock[w] ?? 0) >= n + 3);
+		const first = sim.plan.villageOf[sim.plan.plotOf[hq().node]];
 		for (const row of sim.market().parties.filter((/** @type {any} */ r) => r.owner === PLAYER)) {
 			const v = sim.plan.villageOf[sim.plan.plotOf[row.node]];
+			// growing one village full: homes only in the first
+			if (st.autoFocus && v !== first) continue;
 			const mine = houses.filter((b) => sim.plan.villageOf[sim.plan.plotOf[b.node]] === v);
-			// only where everyone has a bed and eats and drinks well: more beds bring more mouths
-			if (mine.some((b) => b.stage === 'site') || row.pop < row.beds - 2 || (row.beds > 0 && (row.wb < 75 || row.sat.food < 0.9 || row.sat.water < 0.9))) continue;
-			const small = mine.filter((b) => b.level < HOUSE_TOP).sort((a, b) => b.level - a.level)[0];
+			// only where everyone has a bed and eats and drinks well: more beds bring more mouths. Growing one village full,
+			// two homes grow at once, and the next starts while the last beds still fill
+			const sites = mine.filter((b) => b.stage === 'site').length, fill = st.autoFocus ? Math.min(row.beds - 2, row.beds * 0.8) : row.beds - 2;
+			if (sites >= (st.autoFocus ? 2 : 1) || row.pop < fill || (row.beds > 0 && (row.wb < 75 || row.sat.food < 0.9 || row.sat.water < 0.9))) continue;
+			const small = mine.filter((b) => b.level < HOUSE_TOP && b.stage === 'live').sort((a, b) => b.level - a.level)[0];
 			if (small) {
 				if (has(sim.inspect(small.id)?.up ?? {})) return void sim.upgrade(small.id);
 			} else if (has(BUILDINGS.house.cost)) {
@@ -223,6 +230,14 @@ export function createAutoplay(sim) {
 				plan.splice(st.auto, 0, ['quarry', 'rocks']);
 			}
 			const s = sim.summary();
+			// alone in the valley, tools come only from iron: an iron mine and a toolmaker once the tools run low
+			const coming = (/** @type {string} */ t) => ofType(t).length > 0 || plan.slice(st.auto).some((/** @type {string[]} */ x) => x[0] === t);
+			if (st.auto >= 8 && ((s.stock.tools ?? 0) < 3 || st.autoFocus) && st.time >= (st.autoIron ?? 0)) {
+				// asked again a while later if there was no iron within reach
+				st.autoIron = st.time + 300;
+				if (!coming('ironmine')) plan.splice(st.auto, 0, ['ironmine', 'mine']);
+				if (!coming('toolmaker')) plan.splice(st.auto + 1, 0, ['toolmaker', 'home']);
+			}
 			// a wood building starts as a forester: upgrade it to a woodcutter as soon as it stands, and on to a sawmill and
 			// a timber works when there is wood and stone to spare
 			const growing = ofType('woodcutter').some((b) => b.stage === 'site' && b.level > 0);

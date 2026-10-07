@@ -278,6 +278,8 @@ export function mountGame(container, o = {}) {
 	let speed = 1;
 	let paused = false;
 	let acc = 0;
+	/** the simulation: ./autoplay.js plays, growing your first village full; it decides every few seconds of play */
+	let simulating = false, autoAt = 0;
 	/** bring the valley on to a time (a film's shot clock: from its start, the same valley every time) */
 	function simTo(/** @type {number} */ t) {
 		if (film && t < sim.state.time - 1e-6) {
@@ -307,6 +309,10 @@ export function mountGame(container, o = {}) {
 				acc -= TICK;
 			}
 			if (film && steps) createAutoplay(sim).tick();
+			else if (simulating && sim.state.time >= autoAt) {
+				autoAt = sim.state.time + 3;
+				createAutoplay(sim).tick();
+			}
 		}
 		if (mode === 'build' && now - spotsClock > 1000) {
 			spotsClock = now;
@@ -350,6 +356,15 @@ export function mountGame(container, o = {}) {
 		},
 		select,
 		focus,
+		/** let autoplay play your valley, growing its first village full (or stop it) */
+		simulate(/** @type {boolean} */ on) {
+			simulating = on;
+			sim.state.autoFocus = on;
+			autoAt = 0;
+		},
+		get simulating() {
+			return simulating;
+		},
 		/** the speed of the clock: 0 pauses */
 		setSpeed(/** @type {number} */ s) {
 			if (s === 0) paused = true;
@@ -365,6 +380,7 @@ export function mountGame(container, o = {}) {
 		restart() {
 			view.dispose();
 			sim = newGame(Math.floor(Math.random() * 1e6), sim.state.pace);
+			sim.state.autoFocus = simulating;
 			view = createView(scene, sim);
 			select(null);
 			setMode('look');
