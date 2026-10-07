@@ -2,7 +2,7 @@
  * THE ACTORS — everyone and everything rigged to move, as the Actors gallery (/app/actors/) lists it: the stand-in a
  * shot is blocked with, and the animals of the worlds, kind by kind — the chickens (six breeds of hen, the rooster, the
  * chick), the rabbits, the geese, the goats, the sheep, the frogs, the bee, the ants and their hill, the fish, and the
- * machines (the excavators, the pod) — each kind with its variants.
+ * machines (the excavators, the pod, the forklift) — each kind with its variants.
  * Each is built by a function that hands back its rig (./rig.ts), its moves (clips) and, for the stand-in, its poses.
  * An animal is its species' (./species/, on its body plan in ./plans/) and a line in ./casts.ts; it shows here with a
  * line in its kind below.
@@ -18,6 +18,8 @@ import { pod } from './pod.js';
 import { pod as podV1 } from './pod.v1.js';
 import { pod as podV2 } from './pod.v2.js';
 import { pod as podV3 } from './pod.v3.js';
+import { pod as podV4 } from './pod.v4.js';
+import { forklift } from './forklift.js';
 import type { Cast } from './rig';
 import { goat, GOAT_BREEDS } from './species/goat';
 import { sheep, SHEEP_BREEDS } from './species/sheep';
@@ -74,8 +76,18 @@ const HISTORY: Record<string, (Change & { build?: Actor[] })[]> = {
 				{ id: 'pod-goods', label: 'Goods', note: 'as at v3: open shelves over the axles', make: () => podV3('goods') }
 			]
 		},
-		{ v: 4, date: '2026-10-07', note: 'The goods pod’s shelves over its axles become racks: five compartments of different heights each side, behind one tall door per rack; they open one by one as a move. Both pods: the shell’s edges and corners softly rounded as one piece, the roof sensors flush in it, the roof up to 2.59 m' }
+		{
+			v: 4,
+			date: '2026-10-07',
+			note: 'The goods pod’s shelves over its axles become racks: five compartments of different heights each side, behind one tall door per rack; they open one by one as a move. Both pods: the shell’s edges and corners softly rounded as one piece, the roof sensors flush in it, the roof up to 2.59 m',
+			build: [
+				{ id: 'pod-people', label: 'People', note: 'as at v4', make: () => podV4('people') },
+				{ id: 'pod-goods', label: 'Goods', note: 'as at v4: its pallets sliding in and out on their own', make: () => podV4('goods') }
+			]
+		},
+		{ v: 5, date: '2026-10-07', note: 'The goods pod’s pallets are carried in and out by forklifts, one to each pallet: the Forklift actor built into its rig, driving in under the pallet, lifting it and carrying it through the doors; the pallets go out far enough to clear the doors’ swing' }
 	],
+	forklift: [{ ...FIRST, date: '2026-10-07' }],
 	excavator: [
 		{ ...FIRST, build: [{ id: 'excavator', label: 'Mini excavator', note: 'yellow, an open canopy, a 40 cm bucket', make: () => excavatorV1() }] },
 		{ v: 2, date: '2026-10-06', note: 'Twice the size; the bucket turned round, its mouth and teeth towards the machine as a backhoe’s are', build: [{ id: 'excavator', label: 'Excavator', note: 'yellow, an open canopy, an 80 cm backhoe bucket', make: () => excavatorV2() }] },
@@ -233,7 +245,17 @@ const LIST: Omit<Family, 'versions' | 'version'>[] = [
 		from: 'Sandbox 5: between the hexes and through the tunnels',
 		variants: [
 			{ id: 'pod-people', label: 'People', note: 'twenty seats in two compartments, two benches of five facing each other in each, a door each side between them; the bay under the floor between the axles, a flap on each side', make: () => pod('people') },
-			{ id: 'pod-goods', label: 'Goods', note: 'four Euro pallets (1200 × 800 mm) in two rows lengthwise, each row behind two doors on its side that swing open left and right; a hold 2.2 m high; over the axles, racks of five compartments at different heights, each rack behind one tall door', make: () => pod('goods') }
+			{ id: 'pod-goods', label: 'Goods', note: 'four Euro pallets (1200 × 800 mm) in two rows lengthwise, carried in and out by four forklifts, each row behind two doors on its side that swing open left and right; a hold 2.2 m high; over the axles, racks of five compartments at different heights, each rack behind one tall door', make: () => pod('goods') }
+		]
+	},
+	{
+		id: 'forklift',
+		label: 'Forklift',
+		note: 'the pallet mover: autonomous, on a battery, as small as a machine lifting a loaded Euro pallet can be; no cab, a low body, two uprights, forks for a Euro pallet’s openings; it lifts, drives and carries, and it is built into the goods pod’s rig to load and unload it',
+		from: 'Sandbox 5: loading the pods at the hubs',
+		variants: [
+			{ id: 'forklift', label: 'Forklift', note: '1.8 m long with its forks, 0.84 m wide, 1.23 m high; forks 0.8 m long, lifting 75 cm', make: () => forklift() },
+			{ id: 'forklift-pallet', label: 'With a pallet', note: 'a loaded Euro pallet (1200 × 800 mm, cartons to 1.2 m) on its forks', make: () => forklift({ pallet: true }) }
 		]
 	}
 ];
