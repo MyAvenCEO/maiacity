@@ -1,8 +1,7 @@
 <!--
 	avenCITY Sandbox 6 — a valley of settlers: the whole game on one page. The world fills the screen (./game.js); over
-	it the tools (build, road, flag, tear down, the market, the building tree, the clock), the build menu, the abundance of
-	every village, what your village centers hold, the goals, the market (what to sell and buy, the neighbours' requests),
-	the card of whatever is selected (a village center's card joins it to other villages by trade routes), and the news.
+	it the tools (build, road, tear down, the building tree, the clock), the build menu, the abundance of every village, the
+	goals,	the card of whatever is selected (a village center's card joins it to other villages by trade routes), and the news.
 -->
 <script>
 	import { onDestroy, onMount } from 'svelte';
@@ -37,7 +36,6 @@
 	let flagCard = $state(null);
 	/** @type {any} */
 	let roadCard = $state(null);
-	let marketOpen = $state(false);
 	let treeOpen = $state(false);
 	/** how many of each building you have, sites too */
 	let owned = $state(/** @type {Record<string, number>} */ ({}));
@@ -105,12 +103,6 @@
 		linkWhy = r.ok ? '' : r.why ?? '';
 		refresh();
 	}
-	/** sell or buy a ware with the neighbour cities; the same again stops it */
-	function setOrder(/** @type {string} */ w, /** @type {'sell' | 'buy'} */ o) {
-		game?.sim.order(w, market?.wares.find((x) => x.w === w)?.order === o ? null : o);
-		refresh();
-	}
-	const money = (/** @type {number} */ n) => (n < 10 ? n.toFixed(1) : String(Math.round(n)));
 	/** how many villages each city has, while any still lacks the five the valley needs */
 	const founding = $derived.by(() => {
 		const s = /** @type {any} */ (summary);
@@ -178,8 +170,7 @@
 		<button class:on={mode === 'build' || menuOpen} onclick={() => tool('build')} title="Build (choose a building)"><span class="ic">⌂</span>Build</button>
 		<button class:on={mode === 'road'} onclick={() => tool('road')} title="Road (R)"><span class="ic">⟋</span>Road</button>
 		<button class:on={mode === 'demolish'} onclick={() => tool('demolish')} title="Tear down (X)"><span class="ic">✕</span>Tear down</button>
-		<button class:on={marketOpen} onclick={() => ((marketOpen = !marketOpen), (menuOpen = false), (treeOpen = false))} title="The market: what to sell and buy"><span class="ic">⚖</span>Market</button>
-		<button class:on={treeOpen} onclick={() => ((treeOpen = !treeOpen), (menuOpen = false), (marketOpen = false), refresh())} title="The building tree: what each building needs and makes"><span class="ic">⌥</span>Tree</button>
+		<button class:on={treeOpen} onclick={() => ((treeOpen = !treeOpen), (menuOpen = false), refresh())} title="The building tree: what each building needs and makes"><span class="ic">⌥</span>Tree</button>
 		<div class="speed" role="group" aria-label="Speed">
 			{#each [[0, '❚❚'], [1, '1×'], [2, '2×'], [4, '4×']] as [s, t] (s)}
 				<button class:on={speed === s} onclick={() => (game?.setSpeed(/** @type {number} */ (s)), (speed = /** @type {number} */ (s)))} title={s ? `Speed ${t}` : 'Pause (Space)'}>{t}</button>
@@ -222,7 +213,7 @@
 					<span>Abundance <span class="people">{summary.thriving}/{summary.allVillages} at {ABUNDANT}+{summary.held >= 0 ? ` · held ${clock(summary.held)}/${clock(HOLD)}` : ''}</span></span>
 					<span class="big {tone(summary.abundance)}">{Math.round(summary.abundance)}</span>
 				</div>
-				<p class="people small">{summary.people} people · {summary.villages} {summary.villages === 1 ? 'village' : 'villages'} · {summary.stock.coin ?? 0} coins · {clock(summary.time)}{founding ? ` · ${founding}` : ''}</p>
+				<p class="people small">{summary.people} people · {summary.villages} {summary.villages === 1 ? 'village' : 'villages'} · {summary.stock.coin ?? 0} gold · {clock(summary.time)}{founding ? ` · ${founding}` : ''}</p>
 				<ul class="lives">
 					{#each market?.parties ?? [] as p (p.name)}
 						<li>
@@ -261,47 +252,6 @@
 		<Tree stock={summary.stock} {owned} onBuild={(t) => ((treeOpen = false), tool('build', t))} onClose={() => (treeOpen = false)} />
 	{/if}
 
-	<!-- the market: the neighbour cities your routes reach, their prices, your standing orders, their requests -->
-	{#if marketOpen && market}
-		<section class="panel market" aria-label="Market">
-			<button class="close" onclick={() => (marketOpen = false)} aria-label="Close">×</button>
-			<p class="eyebrow">Trade between cities · {money(market.purse)} coins in your purse</p>
-			<h2>Market</h2>
-			<ul class="cities">
-				{#each market.cities as c (c.k)}
-					<li>
-						<button onclick={() => c.node >= 0 && game?.focus(c.node)}>{c.name}</button>
-						<span class:joined={c.joined}>{c.joined ? 'Joined by a trade route' : 'Not joined yet'}</span>
-					</li>
-				{/each}
-			</ul>
-			{#if !market.cities.some((/** @type {any} */ c) => c.joined)}<p class="status">Select one of your village centers and press Connect to dig a trade route to a neighbour city. Carts carry what you sell and buy along it, under the ground.</p>{/if}
-			{#if market.contracts.length}
-				<ul class="requests">
-					{#each market.contracts as c (c.id)}
-						<li>
-							<span><b>{c.who}</b> needs {c.n} {label(c.w).toLowerCase()} · {c.reward ? `pays ${c.reward}` : 'no coins left'}{#if c.got}<em> · {c.got} brought</em>{/if}</span>
-							<button class:go={!c.taken} disabled={!c.joined} title={c.joined ? '' : `Join ${c.who} by a trade route first`} onclick={() => (game?.sim.take(c.id, !c.taken), refresh())}>{c.taken ? 'Sending ✓' : 'Send'}</button>
-						</li>
-					{/each}
-				</ul>
-			{/if}
-			<ul class="trade">
-				{#each market.wares as x (x.w)}
-					<li>
-						<i style:background={WARES[x.w].color}></i>
-						<span class="name">{label(x.w)}<em>{x.stock}</em></span>
-						<span class="price">{x.price === null ? '—' : money(x.price)}<span class="trend t{x.trend}">{x.trend > 0 ? '▲' : x.trend < 0 ? '▼' : ''}</span></span>
-						<span class="pick">
-							<button class:sell={x.order === 'sell'} onclick={() => setOrder(x.w, 'sell')}>Sell</button>
-							<button class:buy={x.order === 'buy'} onclick={() => setOrder(x.w, 'buy')}>Buy</button>
-						</span>
-					</li>
-				{/each}
-			</ul>
-			<p class="small">Sell sends what you can spare to the joined city that pays most; Buy brings what you are short of from the one that asks least. The buyer pays when the cart arrives.</p>
-		</section>
-	{/if}
 
 	<!-- the card of what is selected -->
 	{#if card}
@@ -320,6 +270,7 @@
 				</ul>
 			{:else if vil}
 				<p class="label">{vil.pop} of {vil.beds} beds · wellbeing <b>{Math.round(vil.wb)}</b></p>
+				<p class="label" title="Its settlers add 24 HEARTs each an in-game hour; 1,000 HEARTs are a gold">Treasury <b>{vil.gold.toFixed(1)} gold</b></p>
 				<ul class="wants">
 					{#each vil.needs as n (n.key)}
 						<li class={n.tone}>
@@ -360,7 +311,7 @@
 					{/each}
 				</ul>
 				{#if linkWhy}<p class="status">{linkWhy}</p>{/if}
-				<p class="small">A route reaches every village center joined to the one it meets, and carts on it go twice as fast as walkers.</p>
+				<p class="small">A route reaches every village center joined to the one it meets. A village short of a ware takes it from one with plenty and pays in gold.</p>
 			{/if}
 			{#if card.type === 'house' && card.level}
 				<p class="label">{HOUSE_SIZE[card.level - 1]} · home of <b>{card.beds}</b> settlers{card.upgrading ? ` · growing to ${HOUSE_BEDS[card.level]}` : ''}</p>
@@ -435,7 +386,7 @@
 			<div>
 				<p class="eyebrow">{clock(summary.time)} in the valley</p>
 				<h2>Abundance for all</h2>
-				<p>Ten minutes of plenty for the whole valley: you and every neighbour fed, watered, housed and with something put by. Every road, every carrier and every cart along the trade routes brought you here.</p>
+				<p>Ten minutes of plenty in all five of your villages: fed, watered, housed and with something put by. Every path, every bus and every cart along the trade routes brought you here.</p>
 				<button class="go" onclick={() => (game?.restart(), (seenMsg = -1), (toasts = []))}>A new valley</button>
 				<button onclick={() => (game && (game.sim.state.result = null), refresh())}>Keep building</button>
 			</div>
@@ -949,76 +900,11 @@
 		max-height: calc(100vh - 9rem - var(--nav-room, 4rem));
 		overflow: auto;
 	}
-	.market h2 {
-		margin: 0.15rem 0 0.3rem;
-		font-size: 1.15rem;
-	}
-	.market .close {
-		position: absolute;
-		top: 0.4rem;
-		right: 0.5rem;
-		border: 0;
-		background: none;
-		font-size: 1.2rem;
-	}
-	.trade {
-		margin: 0.2rem 0 0.4rem;
-		padding: 0;
-		list-style: none;
-		font-size: 0.78rem;
-	}
-	.trade li {
-		display: grid;
-		grid-template-columns: 0.6rem 1fr auto auto;
-		align-items: center;
-		gap: 0.5rem;
-		padding: 0.22rem 0;
-		border-top: 1px solid rgb(31 42 35 / 0.07);
-	}
-	.trade i {
-		width: 0.6rem;
-		height: 0.6rem;
-		border-radius: 3px;
-	}
-	.trade .name em {
-		margin-left: 0.4rem;
-		font-style: normal;
-		opacity: 0.5;
-	}
-	.trade .price {
-		min-width: 2.6rem;
-		text-align: right;
-		font-variant-numeric: tabular-nums;
-	}
-	.pick {
-		display: flex;
-		border: 1px solid rgb(31 42 35 / 0.15);
-		border-radius: 999px;
-		overflow: hidden;
-	}
-	.pick button {
-		padding: 0.25rem 0.6rem;
-		border: 0;
-		background: rgb(255 255 255 / 0.7);
-		font-size: 0.72rem;
-	}
-	.pick button + button {
-		border-left: 1px solid rgb(31 42 35 / 0.15);
-	}
-	.pick button.sell {
-		background: #24452f;
-		color: #f4f1e8;
-	}
-	.pick button.buy {
-		background: #2f6fb3;
-		color: #fff;
-	}
 	.trend {
 		font-size: 0.62rem;
 		opacity: 0.8;
 		margin-left: 0.1rem;
 	}
-	.cities,
 	.routes {
 		margin: 0 0 0.5rem;
 		padding: 0;
@@ -1027,14 +913,12 @@
 		gap: 0.3rem;
 		font-size: 0.75rem;
 	}
-	.cities li,
 	.routes li {
 		display: flex;
 		align-items: center;
 		gap: 0.5rem;
 		justify-content: space-between;
 	}
-	.cities button,
 	.routes button.name {
 		border: 0;
 		background: none;
@@ -1053,49 +937,15 @@
 		color: #f4f1e8;
 		font-size: 0.72rem;
 	}
-	.cities span {
-		opacity: 0.6;
-	}
-	.cities span.joined,
 	.routes .joined {
 		opacity: 1;
 		color: #2e7a45;
 		font-weight: 600;
 	}
-	.requests button:disabled {
-		opacity: 0.45;
-	}
-	.requests {
-		margin: 0 0 0.4rem;
-		padding: 0;
-		list-style: none;
-		display: grid;
-		gap: 0.3rem;
-		font-size: 0.75rem;
-	}
-	.requests li {
-		display: flex;
-		align-items: center;
-		gap: 0.5rem;
-		justify-content: space-between;
-	}
-	.requests button {
-		flex: none;
-		padding: 0.3rem 0.65rem;
-		border: 1px solid rgb(31 42 35 / 0.15);
-		border-radius: 999px;
-		background: rgb(255 255 255 / 0.7);
-		font-size: 0.72rem;
-	}
-	.requests button.go,
 	.actions button.go {
 		background: #24452f;
 		color: #f4f1e8;
 		border-color: #24452f;
-	}
-	.requests em {
-		font-style: normal;
-		opacity: 0.6;
 	}
 	.actions {
 		display: flex;

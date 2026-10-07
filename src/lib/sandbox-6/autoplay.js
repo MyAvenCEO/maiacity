@@ -14,8 +14,8 @@ const PLAN = [
 	['house', 'home'],
 	['woodcutter', 'trees'],
 	['quarry', 'rocks'],
-	['woodcutter', 'trees'],
 	['forester', 'woodcutter'],
+	['woodcutter', 'trees'],
 	['fishery', 'water'],
 	['well', 'home'],
 	['farm', 'open'],
@@ -226,8 +226,8 @@ export function createAutoplay(sim) {
 				plan.splice(st.auto, 0, ['quarry', 'rocks']);
 			}
 			const s = sim.summary();
-			// a trade route to a neighbour comes first: until it runs, stone is saved for it
-			const joined = st.auto >= 8 && join(s);
+			// on your own in the valley: past the first buildings, homes and new villages go on as the plan does
+			const joined = st.auto >= 8 && (!sim.links(st.hq).some((l) => !l.mine) || join(s));
 			// homes before the route only while the city is tiny: it starts with one house of two
 			if (joined || s.beds < 24) homes(s);
 			if (joined && st.auto >= plan.length) settle(s);

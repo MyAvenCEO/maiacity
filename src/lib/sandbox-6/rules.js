@@ -125,8 +125,8 @@ export const START = {
 	houses: [1]
 };
 
-/** the win: every village on the map — yours and the neighbours' — has a house in each of its settlements, every bed
- * taken, and lives at least this well, for this long */
+/** the win: every one of your villages has a house in each of its settlements, every bed taken, and lives at least
+ * this well, for this long */
 export const ABUNDANT = 80, HOLD = 600;
 
 /** the goals of a game, in order: its last is the win */
@@ -136,8 +136,8 @@ export const GOALS = [
 	{ id: 'food', label: 'Gather 25 food (fish or bread)', ware: 'food', n: 25 },
 	{ id: 'house', label: 'Enlarge a house to 16 settlers', hint: 'Select a house and enlarge it: 2, 4, 8, then 16 settlers. People only come when there are beds for them.' },
 	{ id: 'village', label: 'Found a second village', hint: 'Build a village center in the middle of a village next to yours: a trade route under the ground joins the two.' },
-	{ id: 'market', label: 'Connect to a neighbour city and sell to it', hint: 'Select a village center and connect it to a neighbour’s; then mark a ware to sell in the Market.' },
-	{ id: 'trade', label: 'Trade 80 wares with the neighbours', n: 80 },
-	{ id: 'contract', label: 'Fill a neighbour’s request', hint: 'Neighbours ask for what they lack. Send it from the Market, and a cart brings it along the trade route.' },
-	{ id: 'abundance', label: `Five villages for every city, each full and at ${ABUNDANT}+, for 10 minutes`, hint: 'You, Eastmere and Highfold each need five villages. Happiness is counted per village: fed, with variety, watered, housed and with something put by. A village is full when each of its settlements has a house and every bed is taken. The neighbours found their next village once theirs are full and live well. It counts once the other goals are reached.' }
+	{ id: 'route', label: 'Join two of your villages by a trade route', hint: 'Select a village center and press Connect: a route under the ground joins it to another of yours, and carts carry wares along it.' },
+	{ id: 'trade', label: 'Trade 80 wares between your villages', n: 80, hint: 'A village short of something takes it from one of yours with plenty, and pays in gold from its treasury.' },
+	{ id: 'iron', label: 'Dig 10 iron ore', ware: 'ore', n: 10, hint: 'An iron mine stands only on an iron hex: found a village where the rock is rust-red.' },
+	{ id: 'abundance', label: `Five villages, each full and at ${ABUNDANT}+, for 10 minutes`, hint: 'Happiness is counted per village: fed, with variety, watered, housed and with something put by. A village is full when each of its settlements has a house and every bed is taken. It counts once the other goals are reached.' }
 ];

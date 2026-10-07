@@ -96,12 +96,12 @@ export function chainTree(colW = 168, rowH = 50) {
 	return { nodes, edges, width, height };
 }
 
-/** who in the valley has plenty of a ware, or where it is missing: a line under the ware */
+/** where in the valley a ware comes from: the hex it is made on, a line under the ware */
 export const TRADE_NOTE = /** @type {Record<string, string>} */ ({
-	ore: 'Little in your land: Eastmere has plenty',
-	tools: 'Eastmere has plenty',
-	fish: 'Your plenty: Highfold has none',
-	plank: 'Highfold has plenty',
-	grain: 'Your plenty: wide farmland',
-	stone: 'Eastmere has plenty'
+	ore: 'Iron hexes only: rust-red rock',
+	plank: 'Forest hexes only',
+	stone: 'Stone hexes only',
+	fish: 'Water hexes only: a lake or sea shore',
+	grain: 'Any meadow',
+	water: 'A well, anywhere'
 });
