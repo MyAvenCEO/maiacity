@@ -51,6 +51,10 @@
 	let treeOpen = $state(false);
 	/** whether the world market's card is open */
 	let marketOpen = $state(false);
+	/** your books, open under the cashflow in the top bar (./sim.js books) */
+	let booksOpen = $state(false);
+	/** @type {any} */
+	let books = $state(null);
 	/** how many of each building you have, sites too */
 	let owned = $state(/** @type {Record<string, number>} */ ({}));
 	/** @type {ReturnType<import('./sim.js').Sim['market']> | null} */
@@ -115,6 +119,7 @@
 		const sim = game.sim;
 		summary = sim.summary();
 		market = sim.market();
+		books = booksOpen ? sim.books() : null;
 		if (treeOpen) {
 			/** @type {Record<string, number>} */
 			const n = {};
@@ -282,12 +287,71 @@
 
 <div class="valley">
 	<div class="stage" bind:this={stage} role="application" aria-label="Sandbox 5: the valley. Drag to turn the map, scroll to zoom, click to select or build"></div>
-	<WorldBar title="avenCITY Sandbox 5" subtitle="A valley of settlers · villages, trade routes underground" />
+	<WorldBar title="avenCITY #S5" />
 	{#if summary}
-		<div class="cash" class:up={cash > 0.05} class:down={cash < -0.05} title="Your goal: become a prosumer, cashflow positive, exporting more to the world market than you import from it. What all your villages take in by exports, less what they pay for imports (food, water, power, planks, steel, glass) and for the upkeep of their homes, factories and village centers, a week lately; the HEARTs your settlers issue are not counted.">
-			<span class="big">Cashflow <b>{signed(cash)}</b> gold a week</span>
-			<small>exports {goldOf(summary.cash.exp / EUR_PER_GOLD)} · imports {goldOf(summary.cash.imp / EUR_PER_GOLD)} · upkeep {goldOf(summary.cash.upkeep / EUR_PER_GOLD)} · goal: positive</small>
+		<!-- three numbers for all your villages together, each known by its icon: cashflow (click it for your books),
+		     treasury and settlers -->
+		<div class="topstats">
+			<button class="stat flow" class:up={cash > 0.05} class:down={cash < -0.05} aria-expanded={booksOpen} onclick={() => ((booksOpen = !booksOpen), refresh())} title="Cashflow, gold a week lately: what all your villages take in by exports to the world market, less what they pay it for imports and for their upkeep. Your goal: positive. Click for your books">
+				<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M1.5 11.5l4-4 3 3 6-6" /><path d="M10.5 4.5h4v4" /></svg>
+				<b>{signed(cash)}</b><small>a week</small><i class="caret" aria-hidden="true"></i>
+			</button>
+			<span class="stat" class:down={(summary.stock.coin ?? 0) < 0} title="Treasury: the gold all your villages' treasuries hold now">
+				<svg viewBox="0 0 16 16" aria-hidden="true"><ellipse cx="8" cy="4" rx="5.5" ry="2" /><path d="M2.5 4v4c0 1.1 2.5 2 5.5 2s5.5-.9 5.5-2V4" /><path d="M2.5 8v4c0 1.1 2.5 2 5.5 2s5.5-.9 5.5-2V8" /></svg>
+				<b>{goldOf(summary.stock.coin ?? 0)}</b>
+			</span>
+			<span class="stat" title="Settlers: the people living in all your villages, {summary.people} in {summary.beds} beds">
+				<svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="4.5" r="2.5" /><path d="M2.5 14.5c0-3.2 2.5-5.5 5.5-5.5s5.5 2.3 5.5 5.5" /></svg>
+				<b>{fmt(summary.people)}</b>
+			</span>
 		</div>
+		{#if booksOpen && books}
+			{@const b = books}
+			{@const exp = b.exports.food + b.exports.energy + b.exports.wares}
+			{@const imp = b.imports.food + b.imports.water + b.imports.energy + b.imports.wares}
+			{@const owns = Math.max(0, b.treasury) + b.stores + b.buildings}
+			{@const owes = b.loan.left + Math.max(0, -b.treasury)}
+			{@const change = b.cashflow + b.hearts - b.repaid + b.borrowed - b.demurrage}
+			<!-- your books, as in the Cashflow game: a week's income and costs, then what you own and owe -->
+			<section class="books" aria-label="Your books">
+				<button class="close" onclick={() => (booksOpen = false)} aria-label="Close">×</button>
+				<p class="eyebrow">Your books · all villages</p>
+				<p class="sub">A week, lately</p>
+				<dl>
+					<dt class="head" title="What the world market paid your villages">Exports</dt><dd class="head gain">+{gold(exp)}</dd>
+					<dt>Food</dt><dd>{gold(b.exports.food)}</dd>
+					<dt>Energy</dt><dd>{gold(b.exports.energy)}</dd>
+					<dt>Wares</dt><dd>{gold(b.exports.wares)}</dd>
+					<dt class="head" title="What your villages paid the world market">Imports</dt><dd class="head debt">−{gold(imp)}</dd>
+					<dt>Food</dt><dd>{gold(b.imports.food)}</dd>
+					<dt>Water</dt><dd>{gold(b.imports.water)}</dd>
+					<dt>Energy</dt><dd>{gold(b.imports.energy)}</dd>
+					<dt>Wares</dt><dd>{gold(b.imports.wares)}</dd>
+					<dt class="head" title="Keeping your homes, factories and village centers up: 2% a year of what they are built of">Upkeep</dt><dd class="head debt">−{gold(b.upkeep)}</dd>
+					<dt class="total" title="Exports less imports and upkeep. Your goal: positive">Cashflow</dt><dd class="total" class:gain={b.cashflow > 50} class:debt={b.cashflow < -50}>{signed(b.cashflow / EUR_PER_GOLD)}</dd>
+				</dl>
+				<p class="sub">Besides</p>
+				<dl>
+					<dt title="A HEART each settler issues an in-game hour into its village's treasury">HEARTs issued</dt><dd class="gain">+{gold(b.hearts)}</dd>
+					<dt title="Interest and repayment together; {gold(b.interest)} of it interest">Loan payments</dt><dd class="debt">−{gold(b.repaid)}</dd>
+					<dt title="What the treasuries lacked to pay">Borrowed</dt><dd>+{gold(b.borrowed)}</dd>
+					<dt title="What the treasuries hold loses 7% a year">Demurrage</dt><dd class="debt">−{gold(b.demurrage)}</dd>
+					<dt class="total">Treasury change</dt><dd class="total" class:gain={change > 50} class:debt={change < -50}>{signed(change / EUR_PER_GOLD)}</dd>
+				</dl>
+				<p class="sub">Balance sheet, now</p>
+				<dl>
+					<dt class="head">Assets</dt><dd class="head">{gold(owns)}</dd>
+					<dt>Treasury</dt><dd>{gold(Math.max(0, b.treasury))}</dd>
+					<dt title="What your stores hold, at the world market's prices">Wares in store</dt><dd>{gold(b.stores)}</dd>
+					<dt title="What your homes, factories and village centers are built of, at world prices, and your geothermal plants">Buildings</dt><dd>{gold(b.buildings)}</dd>
+					<dt class="head">Liabilities</dt><dd class="head">{gold(owes)}</dd>
+					<dt title="What your villages still owe on their loans">Loans</dt><dd>{gold(b.loan.left)}</dd>
+					{#if b.treasury < 0}<dt title="What the treasuries are short, beyond what they may borrow">Overdrawn</dt><dd>{gold(-b.treasury)}</dd>{/if}
+					<dt class="total">Net worth</dt><dd class="total" class:gain={owns > owes} class:debt={owns < owes}>{signed((owns - owes) / EUR_PER_GOLD)}</dd>
+				</dl>
+				<p class="small">{b.loan.left >= 1 ? `Loans pay ${gold(b.loan.pay)} a month, ${span(b.loan.months)} left · ` : ''}they may owe up to {gold(b.loan.most)}, 125 gold a settler · {fmt(b.people)} settlers in {fmt(b.beds)} beds. All in gold.</p>
+			</section>
+		{/if}
 	{/if}
 	<TouchStick move={(x, y, hurry) => game?.move(x, y, hurry)} {stage} taps=".tools button, .panel button, .card button" />
 
@@ -835,7 +899,8 @@
 		overflow: auto;
 	}
 	.card .close,
-	.village .close {
+	.village .close,
+	.books .close {
 		position: absolute;
 		top: 0.4rem;
 		right: 0.5rem;
@@ -1055,40 +1120,136 @@
 	.cashline b {
 		font-variant-numeric: tabular-nums;
 	}
-	.cash {
+	/* the top bar's three numbers: one pill in the middle, each number known by its icon */
+	.topstats {
 		position: absolute;
 		z-index: 3;
 		top: calc(1rem + env(safe-area-inset-top, 0px));
 		left: 50%;
 		transform: translateX(-50%);
 		display: flex;
-		flex-direction: column;
-		align-items: center;
-		padding: 0.35rem 1rem 0.4rem;
-		border-radius: 18px;
+		align-items: stretch;
+		border-radius: 999px;
 		background: rgb(250 248 242 / 0.9);
 		border: 1px solid rgb(255 255 255 / 0.5);
 		box-shadow: 0 4px 18px rgb(0 0 0 / 0.12);
 		color: #1f2a23;
-		line-height: 1.25;
 		white-space: nowrap;
+		overflow: hidden;
 	}
-	.cash .big {
-		font-size: 0.95rem;
+	.stat {
+		display: flex;
+		align-items: center;
+		gap: 0.35rem;
+		padding: 0.5rem 0.85rem;
+		font: inherit;
+		font-size: 0.9rem;
+		color: inherit;
+		background: none;
+		border: 0;
 	}
-	.cash .big b {
-		font-size: 1.05rem;
+	.stat + .stat {
+		border-left: 1px solid rgb(31 42 35 / 0.12);
+	}
+	.stat svg {
+		width: 1rem;
+		height: 1rem;
+		fill: none;
+		stroke: currentColor;
+		stroke-width: 1.4;
+		stroke-linecap: round;
+		stroke-linejoin: round;
+		opacity: 0.7;
+	}
+	.stat b {
 		font-variant-numeric: tabular-nums;
 	}
-	.cash.up .big b {
+	.stat small {
+		font-size: 0.7rem;
+		opacity: 0.65;
+	}
+	.stat.up b {
 		color: #2f7a3a;
 	}
-	.cash.down .big b {
+	.stat.down b {
 		color: #a3322a;
 	}
-	.cash small {
-		font-size: 0.66rem;
-		opacity: 0.7;
+	button.stat {
+		cursor: pointer;
+	}
+	button.stat:hover,
+	button.stat[aria-expanded='true'] {
+		background: rgb(31 42 35 / 0.06);
+	}
+	.caret {
+		width: 0.4rem;
+		height: 0.4rem;
+		border-right: 1.5px solid currentColor;
+		border-bottom: 1.5px solid currentColor;
+		transform: translateY(-0.12rem) rotate(45deg);
+		opacity: 0.5;
+	}
+	[aria-expanded='true'] .caret {
+		transform: translateY(0.1rem) rotate(-135deg);
+	}
+	/* your books: a sheet under the numbers */
+	.books {
+		position: absolute;
+		z-index: 4;
+		top: calc(4.2rem + env(safe-area-inset-top, 0px));
+		left: 50%;
+		transform: translateX(-50%);
+		width: min(21rem, calc(100vw - 1rem));
+		max-height: calc(100vh - 6rem - var(--nav-room, 4rem));
+		overflow: auto;
+		padding: 0.7rem 0.9rem 0.8rem;
+		border-radius: 16px;
+		background: rgb(250 248 242 / 0.96);
+		border: 1px solid rgb(255 255 255 / 0.5);
+		box-shadow: 0 8px 28px rgb(0 0 0 / 0.16);
+		color: #1f2a23;
+		font-size: 0.8rem;
+	}
+	.books .sub {
+		margin: 0.55rem 0 0.15rem;
+		font-size: 0.7rem;
+		letter-spacing: 0.04em;
+		text-transform: uppercase;
+		color: #7b857a;
+	}
+	.books dl {
+		display: grid;
+		grid-template-columns: 1fr auto;
+		gap: 0.1rem 0;
+		margin: 0;
+	}
+	.books dt {
+		padding-left: 0.8rem;
+		color: #4d574e;
+	}
+	.books dd {
+		margin: 0;
+		padding-left: 0.8rem;
+		text-align: right;
+		font-variant-numeric: tabular-nums;
+	}
+	.books .head {
+		padding-left: 0;
+		margin-top: 0.2rem;
+		color: #1f2a23;
+		font-weight: 600;
+	}
+	.books .total {
+		padding: 0.2rem 0 0;
+		margin-top: 0.15rem;
+		border-top: 1px solid rgb(31 42 35 / 0.15);
+		color: #1f2a23;
+		font-weight: 700;
+	}
+	.books .small {
+		margin: 0.6rem 0 0;
+		font-size: 0.7rem;
+		color: #7b857a;
 	}
 	.gain {
 		color: #2f7a3a;
@@ -1358,12 +1519,19 @@
 		.buy em {
 			display: none;
 		}
-		.cash {
+		.topstats {
 			top: calc(6.7rem + env(safe-area-inset-top, 0px));
 			left: 0.5rem;
 			right: 0.5rem;
 			transform: none;
-			padding: 0.3rem 0.6rem;
+			justify-content: space-around;
+		}
+		.stat {
+			padding: 0.35rem 0.6rem;
+			font-size: 0.8rem;
+		}
+		.books {
+			top: calc(9.4rem + env(safe-area-inset-top, 0px));
 		}
 		.tools .quiet {
 			margin: 0;
