@@ -247,6 +247,24 @@ export function buildingModel(type, owner, level = 2) {
 			g.add(band(owner, 0.82, PLINTH + 0.12));
 			break;
 		}
+		case 'glassworks': {
+			// a pale glazed dome over the pit, heaps of washed sand round it; a glassworks: its furnace stack and panes
+			// stacked at the door; a solar panel works: a second stack and the panes go dark blue with their cells
+			g.add(dome(0.8, 0.75, '#bfe3ec', { rough: 0.3 }));
+			for (const [x, z, s] of [[0.95, 0.3, 1], [1.05, -0.2, 0.85], [-0.95, 0.45, 0.9]]) g.add(part(new THREE.SphereGeometry(0.22 * s, 7, 5, 0, Math.PI * 2, 0, Math.PI / 2), mat('#e6d5a2', 1), x, 0, z));
+			for (let k = 0; k < Math.min(2, level - 1); k++) {
+				const x = -0.55 + k * 0.4, z = -0.45 - k * 0.2;
+				g.add(chimney(x, PLINTH + 0.4, z, 0.65 + k * 0.15, '#a9b4b8'));
+				g.add(part(new THREE.CylinderGeometry(0.2, 0.24, 0.28, 8), mat('#f0a04a', 0.6), -1.0 + k * 0.1, 0.14, -0.2 - k * 0.45));
+			}
+			for (let k = 0; k < (level - 1) * 3; k++) {
+				const pane = part(new THREE.BoxGeometry(0.04, 0.36, 0.3), mat(level > 2 && k % 3 ? '#2b4f7a' : '#a8d8e4', 0.2), 0.45 + (k % 3) * 0.12, 0.18, 1.0 - Math.floor(k / 3) * 0.05);
+				pane.rotation.z = 0.12;
+				g.add(pane);
+			}
+			g.add(band(owner, 0.82, PLINTH + 0.12));
+			break;
+		}
 		case 'fishery': {
 			// a dome glazed like the lake, a drying rack of fish and a boat
 			g.add(dome(0.75, 0.75, '#7fb2c4', { rough: 0.45 }));

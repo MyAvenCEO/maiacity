@@ -64,10 +64,11 @@ export const GRID_EUR_KWH = 0.08;
 export const WELL_EUR = 25e6;
 /**
  * What a treasury lacks, it borrows: an annuity loan, paid back in equal monthly payments over fifteen years at 1% a
- * month (Samuel, 2026-10-07), about 1.2% of what was borrowed each month. A treasury never holds less than nothing:
- * what it would, it borrows, and each borrowing adds its own payment.
+ * month (Samuel, 2026-10-07), about 1.2% of what was borrowed each month, up to 125 gold (125,000 €) for each of its
+ * villagers. A treasury holds less than nothing only when its loan is full: what it would, it borrows, and each
+ * borrowing adds its own payment.
  */
-export const LOAN = { rate: 0.01, months: 180 };
+export const LOAN = { rate: 0.01, months: 180, perHead: 125000 };
 /** the share of a loan paid each month, interest and repayment together */
 export const LOAN_PAY = LOAN.rate / (1 - Math.pow(1 + LOAN.rate, -LOAN.months));
 /** months left on a loan of so much at so much a month @param {number} left @param {number} pay */

@@ -1215,14 +1215,15 @@ export function createSim(st) {
 	}
 	/** the gold your village centers joined to one of yours hold, in € (HEARTs) */
 	const goldIn = (/** @type {any} */ a) => pool(a).reduce((s, c) => s + Math.max(0, c.hearts ?? 0), 0);
-	/** a treasury may always pay: what it lacks it borrows (./market.js LOAN), so nothing waits on gold in hand */
-	const CREDIT = Infinity;
+	/** what a village center may still borrow, in € (./market.js LOAN): 125 gold a villager, less what it owes and what
+	 * it is behind */
+	const credit = (/** @type {any} */ c) => (c.type === 'centre' ? Math.max(0, LOAN.perHead * villagePeople(villageAt(c.node)) - (c.loan?.left ?? 0) - Math.max(0, -(c.hearts ?? 0))) : 0);
 	/** what the world market asks for what the stores joined to a village center lack of a cost, in € */
 	const lacking = (/** @type {any} */ a, /** @type {Record<string, number>} */ cost) =>
 		Object.entries(cost).reduce((e, [w, n]) => e + Math.max(0, n - pool(a).reduce((s, c) => s + (c.stock[w] ?? 0), 0)) * (WORLD[w]?.eur ?? Infinity), 0);
 	/** whether a village center can pay for something: from the stores joined to it, what they lack bought from the
 	 * world market with their gold, and gold besides; what they lack of that it borrows @param {any} a @param {Record<string, number>} cost */
-	const payable = (a, cost, eur = 0) => lacking(a, cost) + eur <= goldIn(a) + CREDIT;
+	const payable = (a, cost, eur = 0) => lacking(a, cost) + eur <= goldIn(a) + credit(a);
 	/** gold paid out of the treasuries joined to a village center, its own first, for the world market; what they lack
 	 * it borrows @param {any} a @param {number} eur */
 	function spend(a, eur) {
@@ -1462,7 +1463,7 @@ export function createSim(st) {
 		const price = WORLD[w]?.eur;
 		if (!price) return 0;
 		// what its treasury lacks it borrows
-		const k = Math.min(n, Math.floor(((c.hearts ?? 0) - keep + CREDIT) / price));
+		const k = Math.min(n, Math.floor((Math.max(0, c.hearts ?? 0) - keep + credit(c)) / price));
 		if (k < 1) return 0;
 		c.hearts -= k * price;
 		c.stock[w] = (c.stock[w] ?? 0) + k;
@@ -1705,7 +1706,7 @@ export function createSim(st) {
 		// then from the world market
 		const keepOf = (/** @type {any} */ p) => p.pop * FOOD_KG * KEEP;
 		/** what a treasury can pay, in HEARTs (€): all it needs, borrowing what it lacks */
-		const can = (/** @type {any} */ c) => Math.max(0, (c.hearts ?? 0) + CREDIT);
+		const can = (/** @type {any} */ c) => Math.max(0, c.hearts ?? 0) + credit(c);
 		for (const x of vs) {
 			let short = want.get(x.p).need - x.p.kg;
 			if (short <= 0) continue;
@@ -1863,9 +1864,10 @@ export function createSim(st) {
 				(p.pend ??= {}), (p.pend.interest = (p.pend.interest ?? 0) + interest), (p.pend.repaid = (p.pend.repaid ?? 0) + due);
 				if (L.left < 1) c.loan = null;
 			}
-			if ((c.hearts ?? 0) < 0) {
-				const x = -c.hearts;
-				c.hearts = 0;
+			// what it is behind it borrows, as far as its loan reaches; beyond that it stays behind
+			const x = Math.min(-(c.hearts ?? 0), LOAN.perHead * p.pop - (c.loan?.left ?? 0));
+			if (x > 0) {
+				c.hearts += x;
 				c.loan = { left: (c.loan?.left ?? 0) + x, pay: (c.loan?.pay ?? 0) + x * LOAN_PAY, since: c.loan?.since ?? st.cal };
 				(p.pend ??= {}), (p.pend.borrowed = (p.pend.borrowed ?? 0) + x);
 			}
@@ -2114,7 +2116,7 @@ export function createSim(st) {
 			if (st.terrain[n] !== GRASS || st.terrain[mid] !== GRASS) return 'Needs open grass';
 			if (st.obj[n]?.k === 'bld' || st.road[n] || st.obj[mid]?.k === 'bld' || st.road[mid]) return 'Something stands here';
 			const f = founder(v);
-			if (!f) return plan.villages[v].near.some((x) => st.villageOwner[x] === PLAYER) ? `The village next to it cannot pay for its center, its geothermal wells (${Math.round(WELL_EUR / 1e6)} M €) and the trade route to it: fired clay, and gold for what its stores lack` : 'Too far: found villages next to your city';
+			if (!f) return plan.villages[v].near.some((x) => st.villageOwner[x] === PLAYER) ? `The village next to it cannot pay for its center, its geothermal wells (${(WELL_EUR / HEARTS.perGold).toLocaleString('en-US')} gold) and the trade route to it, fired clay, from what its treasury holds and may borrow` : 'Too far: found villages next to your city';
 			return '';
 		}
 		if (middle) return 'The village center fills the middle of the village';
@@ -2377,7 +2379,7 @@ export function createSim(st) {
 			if (!c) return { ok: false, why: 'Only your villages buy' };
 			if (!WORLD[w]) return { ok: false, why: 'The world market does not sell that' };
 			const k = worldBuy(c, w, n);
-			return k ? { ok: true, n: k } : { ok: false, why: `Its treasury holds less than ${Math.round(WORLD[w].eur).toLocaleString('en-US')} €` };
+			return k ? { ok: true, n: k } : { ok: false, why: `Its treasury cannot pay ${(WORLD[w].eur / HEARTS.perGold).toLocaleString('en-US')} gold, even borrowing` };
 		},
 		/** sell wares to the world market from the village a node lies in: an export, into its treasury */
 		sell(/** @type {number} */ node, /** @type {string} */ w, n = 1) {
@@ -2453,6 +2455,7 @@ export function createSim(st) {
 			const c = st.buildings[id];
 			if (!c || c.type !== 'centre' || c.owner !== PLAYER || c.stage !== 'live') return { ok: false, why: 'Only your village centers have geothermal wells' };
 			if (wellsOf(c) >= ENERGY.wellsMost) return { ok: false, why: `Its geothermal plant is at its last stage, ${ENERGY.wellsMost} of ${ENERGY.wellsMost}` };
+			if (!payable(c, {}, WELL_EUR)) return { ok: false, why: `Drilling takes ${(WELL_EUR / HEARTS.perGold).toLocaleString('en-US')} gold: more than its treasury holds and may borrow, 125 gold a villager` };
 			spend(c, WELL_EUR);
 			c.wells = wellsOf(c) + 1;
 			say(`${st.vill[villageAt(c.node)]?.name ?? 'Your village'} drilled two more geothermal producers: ${((c.wells * ENERGY.wellKw) / 1000).toLocaleString('en-US')} MW`, c.node, 'good');
@@ -2550,6 +2553,8 @@ export function createSim(st) {
 				/** its loan, €: what it still owes, what it pays a month (interest and repayment), the months left; and lately,
 				 * a week, the interest, what it paid back and what it borrowed */
 				loan: c.loan ? { left: c.loan.left, pay: c.loan.pay, months: loanMonths(c.loan.left, c.loan.pay) } : null,
+				/** the most it may owe, €: 125 gold a villager */
+				loanMost: LOAN.perHead * pop,
 				interest: f.interest ?? 0,
 				repaid: f.repaid ?? 0,
 				borrowed: f.borrowed ?? 0,
