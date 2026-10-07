@@ -163,24 +163,39 @@ export function growValley(seed) {
 		else if (rand() < 0.0035) obj[i] = { k: 'rock', n: 3 + Math.floor(rand() * 3) };
 	}
 
-	// your first village: open grass, gently level round each hex's middle; two of its hexes wooded and one rocky, so a
-	// woodcutter and a quarry can start at home
-	const outer = home.plots.filter((k) => k !== home.centre);
-	const woods = [outer[1], outer[2]], rocky = outer[4];
+	// your first village: open grass, level round each hex's middle and gently on out; two woods and a field of rocks
+	// grow over three of its hexes (and on past them), so a woodcutter and a quarry can start at home
 	for (let i = 0; i < N; i++) {
 		if (!atHome(i)) continue;
 		const k = plan.plotOf[i], c = plan.centre[k], d = g.dist(i, c);
 		terrain[i] = GRASS;
 		ore[i] = 0;
 		amount[i] = 0;
-		const level = Math.min(Math.max(height[c], 0.4), 1.0);
-		height[i] = d <= 2 || k === home.centre ? level : level + (height[i] - level) * 0.5;
 		obj[i] = null;
-		if (d < 3 || plan.lane[i]) continue;
-		if (woods.includes(k) && rand() < 0.7) obj[i] = { k: 'tree', g: 0.8 + rand() * 0.2 };
-		else if (k === rocky && rand() < 0.4) obj[i] = { k: 'rock', n: 5 + Math.floor(rand() * 3) };
-		else if (k !== home.centre && rand() < 0.03) obj[i] = { k: 'tree', g: 0.75 + rand() * 0.25 };
+		const level = Math.min(Math.max(height[c], 0.4), 1.0);
+		const w = Math.max(0, Math.min(1, (d - (k === home.centre ? 2.5 : 1.5)) / 2));
+		height[i] = level + (height[i] - level) * w;
 	}
+	const outer = home.plots.filter((k) => k !== home.centre);
+	const middle = plan.centre[home.centre];
+	/** a patch grown round the outer side of one of your hexes, ragged at its edge, over its land and on out of the
+	 * village (never into your other hexes), and at least so many in the hex itself
+	 * @param {number} k @param {number} R @param {number} dense @param {number} least @param {() => any} make */
+	const patch = (k, R, dense, least, make) => {
+		const c = plan.centre[k];
+		const x = g.x(c) + (g.x(c) - g.x(middle)) * 0.3, z = g.z(c) + (g.z(c) - g.z(middle)) * 0.3;
+		const open = (/** @type {number} */ i) => terrain[i] === GRASS && !obj[i] && !plan.clear[i];
+		for (const i of g.within(c, 9)) {
+			if (!open(i) || (atHome(i) && plan.plotOf[i] !== k)) continue;
+			const edge = R + (noise(px(i), py(i), 0.45) - 0.5) * 2.2 * OLD - Math.hypot(g.x(i) - x, g.z(i) - z);
+			if (edge > 0 && rand() < dense) obj[i] = make();
+		}
+		const near = hexNodes[k].filter(open).sort((a, b) => Math.hypot(g.x(a) - x, g.z(a) - z) - Math.hypot(g.x(b) - x, g.z(b) - z));
+		for (let n = hexNodes[k].filter((i) => obj[i]).length; n < least && near.length; n++) obj[/** @type {number} */ (near.shift())] = make();
+	};
+	for (const k of [outer[1], outer[2]]) patch(k, 7, 0.55, 12, () => ({ k: 'tree', g: 0.8 + rand() * 0.2 }));
+	patch(outer[4], 6, 0.35, 6, () => ({ k: 'rock', n: 5 + Math.floor(rand() * 3) }));
+	for (const k of [outer[0], outer[3], outer[5]]) for (const i of hexNodes[k]) if (!plan.clear[i] && !obj[i] && rand() < 0.03) obj[i] = { k: 'tree', g: 0.75 + rand() * 0.25 };
 	const biome = biomes(g, plan, terrain, obj, ore);
 	return { W, H, terrain, height, ore, amount, fish, obj, hq: plan.spots[home.centre][0], villages: [], biome };
 }
