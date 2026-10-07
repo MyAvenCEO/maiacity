@@ -227,7 +227,7 @@ export function createView(scene, sim) {
 		root.add(roadMesh);
 	}
 
-	// the trade routes: an unbroken line in its digger's colour over where it runs under the ground, lakes included
+	// the trade routes: a straight line in its digger's colour from village center to village center, where it runs under the ground
 	let tunSeen = -1;
 	/** @type {THREE.Mesh[]} */
 	let tunMeshes = [];
@@ -242,7 +242,7 @@ export function createView(scene, sim) {
 		tunMeshes = [];
 		/** @type {Record<number, number[][]>} */
 		const dashes = {};
-		for (const t of Object.values(st.tunnels)) (dashes[t.owner] ??= []).push(t.path);
+		for (const t of Object.values(st.tunnels)) (dashes[t.owner] ??= []).push([t.path[0], t.path[t.path.length - 1]]);
 		for (const [o, paths] of Object.entries(dashes)) {
 			const m = new THREE.Mesh(ribbon(paths, 0.2, 0.07), tunMats[+o]);
 			root.add(m);
@@ -346,11 +346,26 @@ export function createView(scene, sim) {
 		const a = u.path[k], b = u.path[Math.min(n - 1, k + 1)];
 		return at.set(X(a) + (X(b) - X(a)) * f, Math.max(Y(a), SEA) + (Math.max(Y(b), SEA) - Math.max(Y(a), SEA)) * f, Z(a) + (Z(b) - Z(a)) * f);
 	}
+	/** whether a node is a village center's: where a cart's straight legs meet */
+	const isCentre = (/** @type {number} */ n) => {
+		const o = st.obj[n];
+		const b = o?.k === 'bld' ? st.buildings[o.id] : null;
+		return !!b && (b.type === 'centre' || b.type === 'village');
+	};
+	/** a cart goes straight from village center to village center, however its steps were counted */
+	function cartPos(/** @type {any} */ u) {
+		const n = u.path.length, p = Math.max(0, Math.min(n - 1, u.p));
+		let k0 = Math.floor(p), k1 = Math.min(n - 1, k0 + 1);
+		while (k0 > 0 && !isCentre(u.path[k0])) k0--;
+		while (k1 < n - 1 && !isCentre(u.path[k1])) k1++;
+		const a = u.path[k0], b = u.path[k1], f = k1 > k0 ? (p - k0) / (k1 - k0) : 0;
+		return at.set(X(a) + (X(b) - X(a)) * f, Math.max(Y(a), SEA) + (Math.max(Y(b), SEA) - Math.max(Y(a), SEA)) * f, Z(a) + (Z(b) - Z(a)) * f);
+	}
 	function syncUnits(/** @type {number} */ t) {
 		let k = 0, l = 0, c = 0;
 		for (const u of Object.values(st.units)) {
 			if (u.inside) continue;
-			const p = unitPos(u);
+			const p = u.kind === 'cart' ? cartPos(u) : unitPos(u);
 			let x = p.x, y = p.y, z = p.z, bob = 0;
 			const moving = u.p !== u.tgt && !u.wait;
 			if (moving) bob = Math.abs(Math.sin(t * 11 + u.id)) * 0.07;

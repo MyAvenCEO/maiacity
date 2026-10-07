@@ -979,8 +979,14 @@ export function createSim(st) {
 	const tunnelCost = (/** @type {number} */ a, /** @type {number} */ b) => Math.ceil(g.dist(a, b) / 2);
 	/** dig a trade route between two village centers (paid by the first) */
 	function dig(/** @type {any} */ a, /** @type {any} */ b, pay = true) {
-		const path = findPath(g, a.node, b.node, () => true, 60000);
-		if (!path) return null;
+		// always straight from center to center, under whatever lies between: the nodes along the line, a step apart
+		const n = Math.max(1, g.dist(a.node, b.node)), ax = g.x(a.node), az = g.z(a.node), bx = g.x(b.node), bz = g.z(b.node);
+		/** @type {number[]} */
+		const path = [];
+		for (let k = 0; k <= n; k++) {
+			const j = k === 0 ? a.node : k === n ? b.node : g.at(ax + ((bx - ax) * k) / n, az + ((bz - az) * k) / n);
+			if (j >= 0 && j !== path[path.length - 1]) path.push(j);
+		}
 		if (pay) payPooled(a, { stone: tunnelCost(a.node, b.node) });
 		const t = { id: newId(), a: a.id, b: b.id, path, owner: a.owner };
 		st.tunnels[t.id] = t;
