@@ -4,7 +4,7 @@
  * then houses and ever more food until its villages are full. The film camera grows its valley with it (a settlement that is already busy), and it
  * plays a whole game headless to prove every chain runs end to end.
  */
-import { BUILDINGS, GRASS, HOUSE_MOST, HOUSE_TOP, IRON, MOUNTAIN, WATER } from './rules.js';
+import { BUILDINGS, GRASS, HOUSE_MOST, HOUSE_TOP, IRON, MOUNTAIN, WATER, WOOD_UP } from './rules.js';
 import { PLAYER } from './sim.js';
 
 /** the plan: what to build, in order, and where it would rather stand */
@@ -15,32 +15,16 @@ const PLAN = [
 	['woodcutter', 'trees'],
 	['quarry', 'rocks'],
 	['woodcutter', 'trees'],
-	['fishery', 'water'],
 	['well', 'home'],
-	['farm', 'open'],
-	['fishery', 'water'],
-	['bakery', 'home'],
-	['farm', 'open'],
-	['toolmaker', 'home'],
-	['fishery', 'water'],
-	['farm', 'open'],
-	['bakery', 'home'],
-	['well', 'home'],
-	['fishery', 'water'],
 	['quarry', 'rocks'],
-	['farm', 'open'],
-	['bakery', 'home'],
-	['fishery', 'water'],
+	['toolmaker', 'home'],
 	['woodcutter', 'trees'],
-	['farm', 'open'],
 	['well', 'home']
 ];
 
-/** what it adds while a neighbour goes short of food */
-const MORE = [[['fishery', 'water']], [['farm', 'open'], ['bakery', 'home']], [['fishery', 'water']], [['well', 'home'], ['bakery', 'home']]];
-
-/** what it trades once a trade route runs to a neighbour: food out; building goods, iron ore and tools in (buying the neighbours' wares is how their coins come back to them) */
-const ORDERS = /** @type {Record<string, 'sell' | 'buy'>} */ ({ fish: 'sell', bread: 'sell', plank: 'buy', stone: 'buy', tools: 'buy', ore: 'buy' });
+/** what it buys, from the world market (and from a neighbour a trade route runs to): building goods, iron ore and
+ * tools, while its treasury can pay */
+const ORDERS = /** @type {Record<string, 'sell' | 'buy'>} */ ({ plank: 'buy', stone: 'buy', tools: 'buy', ore: 'buy' });
 
 /**
  * Plays a game one decision at a time: call `tick()` now and then (every few seconds of game time).
@@ -131,7 +115,6 @@ export function createAutoplay(sim) {
 		const t = BUILDINGS[type];
 		if (st.obj[n]?.k === 'bld' || st.road[n]) return false;
 		if (t.on === 'mountain' ? st.terrain[n] !== MOUNTAIN : st.terrain[n] !== GRASS) return false;
-		if (type === 'fishery') return g.within(n, 10).some((j) => st.terrain[j] === WATER);
 		if (type === 'quarry') return count((j) => st.obj[j]?.k === 'rock', n, t.range ?? 6) >= 2;
 		if (type === 'woodcutter' && !ofType('woodcutter').length) return count((j) => st.obj[j]?.k === 'tree', n, t.range ?? 6) >= 4;
 		if (t.kind === 'mine') return g.within(n, 3).some((j) => st.ore[j] === IRON && st.amount[j] > 0);
@@ -177,10 +160,25 @@ export function createAutoplay(sim) {
 	/** beds before people: in each village that is nearly full and lives well, enlarge its largest house that can still grow, or build a new one */
 	function homes(/** @type {any} */ s) {
 		const houses = ofType('house');
+		// what the building sites still wait for is theirs, and so is a forester's growing into a woodcutter while
+		// nothing cuts wood yet: homes take only what is left over
+		/** @type {Record<string, number>} */
+		const owed = {};
+		const owe = (/** @type {Record<string, number>} */ cost) => {
+			for (const [w, n] of Object.entries(cost)) owed[w] = (owed[w] ?? 0) + n;
+		};
+		for (const b of sim.buildingList())
+			if (b.owner === PLAYER && b.stage === 'site')
+				owe(Object.fromEntries(Object.entries(/** @type {Record<string, number>} */ (b.cost)).map(([w, n]) => [w, Math.max(0, n - (b.got[w] ?? 0) - (b.used[w] ?? 0) - (b.inc?.[w] ?? 0))])));
+		// and until a woodcutter cuts, the first planks are for the plan's buildings, beyond a first few beds
+		if (!ofType('woodcutter').some((b) => b.stage === 'live' && b.level >= 2)) {
+			if (s.beds >= 6) return;
+			owe(WOOD_UP[0]);
+		}
+		const has = (/** @type {Record<string, number>} */ cost) => Object.entries(cost).every(([w, n]) => (s.stock[w] ?? 0) >= n + 3 + (owed[w] ?? 0));
 		// one great house early, once there is wood and stone to spare
 		const great = houses.filter((b) => b.stage === 'live' && b.level < 4).sort((a, b) => b.level - a.level)[0];
-		if (!houses.some((b) => b.level >= 4) && great && (s.stock.plank ?? 0) >= 16 && (s.stock.stone ?? 0) >= 10) return void sim.upgrade(great.id);
-		const has = (/** @type {Record<string, number>} */ cost) => Object.entries(cost).every(([w, n]) => (s.stock[w] ?? 0) >= n + 3);
+		if (!houses.some((b) => b.level >= 4) && great && has({ plank: 13, stone: 7 })) return void sim.upgrade(great.id);
 		const first = sim.plan.villageOf[sim.plan.plotOf[hq().node]];
 		for (const row of sim.market().parties.filter((/** @type {any} */ r) => r.owner === PLAYER)) {
 			const v = sim.plan.villageOf[sim.plan.plotOf[row.node]];
@@ -190,7 +188,7 @@ export function createAutoplay(sim) {
 			// only where everyone has a bed and eats and drinks well: more beds bring more mouths. Growing one village full,
 			// two homes grow at once, and the next starts while the last beds still fill
 			const sites = mine.filter((b) => b.stage === 'site').length, fill = st.autoFocus ? Math.min(row.beds - 2, row.beds * 0.8) : row.beds - 2;
-			if (sites >= (st.autoFocus ? 2 : 1) || row.pop < fill || (row.beds > 0 && (row.wb < 75 || row.sat.food < 0.9 || row.sat.water < 0.9))) continue;
+			if (sites >= (st.autoFocus ? 2 : 1) || row.pop < fill || (row.beds > 0 && (row.sat.food < 0.9 || row.sat.water < 0.9))) continue;
 			const small = mine.filter((b) => b.level < HOUSE_TOP && b.stage === 'live').sort((a, b) => b.level - a.level)[0];
 			if (small) {
 				if (has(sim.inspect(small.id)?.up ?? {})) return void sim.upgrade(small.id);
@@ -265,7 +263,7 @@ export function createAutoplay(sim) {
 					}
 				} else st.autoTries = (st.autoTries ?? 0) + 1;
 			}
-			// once the plan is built, more water while yours runs short, more food while anyone goes short
+			// once the plan is built, more water while yours runs short, more wood and stone while they do
 			if (st.auto >= plan.length && plan.length < PLAN.length + 60 && st.time >= (st.autoMore ?? 0)) {
 				st.autoMore = st.time + 180;
 				const rows = sim.market().parties.filter((/** @type {any} */ p) => p.owner === PLAYER);
@@ -273,15 +271,10 @@ export function createAutoplay(sim) {
 				if (st.parties[PLAYER].sat.water < 0.9) plan.push(['well', 'home']);
 				else if (low('plank')) plan.push(['woodcutter', 'trees']);
 				else if (low('stone')) plan.push(['quarry', 'rocks']);
-				else if (sim.market().parties.some((/** @type {any} */ p) => p.sat.food < 0.9)) {
-					// bakeries idle without grain: a farm first while there are more bakeries than farms
-					if ((s.stock.grain ?? 0) < 10 && ofType('bakery').length > ofType('farm').length) plan.push(['farm', 'open']);
-					else plan.push(...MORE[(plan.length - PLAN.length) % MORE.length]);
-				}
 			}
-			// once the food is going: a trade route to a neighbour, then the orders, and every request it can fill
+			// its orders, and with a trade route to a neighbour every request it can fill
+			for (const [w, o] of Object.entries(ORDERS)) if (!st.orders[w]) sim.order(w, o);
 			if (joined) {
-				for (const [w, o] of Object.entries(ORDERS)) if (!st.orders[w]) sim.order(w, o);
 				// requests and pleas alike: what helps a neighbour helps the valley
 				for (const c of st.market.contracts) if (!c.taken && c.got < c.n && c.until > st.time + 120 && (s.stock[c.w] ?? 0) >= c.n / 3) sim.take(c.id);
 			}

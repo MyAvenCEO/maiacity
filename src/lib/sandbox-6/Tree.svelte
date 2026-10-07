@@ -34,7 +34,7 @@
 	<button class="close" onclick={onClose} aria-label="Close">×</button>
 	<p class="eyebrow">How the valley works</p>
 	<h2>Building tree</h2>
-	<p class="about">From the land on the left to the last ware on the right: each building takes the wares that lead into it and makes the ware it points to. <b>♥</b> marks what people live on (wellbeing counts it). Click a building to build it.</p>
+	<p class="about">From the land on the left to the last ware on the right: each building takes the wares that lead into it and makes the ware it points to. <b>♥</b> marks what people's homes are built of. Click a building to build it.</p>
 	<div class="scroll">
 		<svg width={tree.width + PAD * 2} height={tree.height + PAD * 2} role="img" aria-label="The chains of buildings and wares">
 			{#each tree.edges as e (e.from + e.to)}
@@ -71,7 +71,7 @@
 			</button>
 		{/each}
 	</div>
-	<p class="small">⚒ its worker takes a tool from your stores when it starts: tools come from the toolmaker (iron ore and planks) or by trade. A dashed line means either ware will do: miners eat fish or bread.</p>
+	<p class="small">⚒ its worker takes a tool from your stores when it starts: tools come from the toolmaker (iron ore and planks) or from the world market. Food and water are not wares: the food forests grow food, the wells pipe water, and the world market sells the rest.</p>
 </section>
 
 <style>

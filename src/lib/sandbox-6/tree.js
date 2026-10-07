@@ -11,14 +11,12 @@ export const SOURCE = /** @type {Record<string, string>} */ ({
 	woodcutter: 'grown trees',
 	forester: 'free grass',
 	quarry: 'rocks',
-	fishery: 'a lake',
-	farm: 'open grass',
 	well: 'anywhere',
 	ironmine: 'iron rock'
 });
-/** the wares people live on (what wellbeing counts): water from the wells, and their homes' planks and stone; their
- * food grows in the hexes' food forests (./food.js), and fish and bread feed the miners */
-export const LIVED_ON = new Set(['water', ...Object.keys(NEEDS)]);
+/** the wares people live on: their homes' planks and stone (their food grows in the hexes' food forests and their water
+ * comes from the wells, ./food.js) */
+export const LIVED_ON = new Set(Object.keys(NEEDS));
 
 /** buildings that make or gather something: the chains */
 const CHAIN = Object.values(BUILDINGS).filter((b) => b.group && (b.out || b.kind === 'forester'));
@@ -88,7 +86,7 @@ export function chainTree(colW = 168, rowH = 50) {
 	const edges = [];
 	for (const b of CHAIN) {
 		if (bLevel[b.id] === undefined) continue;
-		// a slot that takes any one ware: drawn from those that come before it (fish feeds the first miners)
+		// a slot that takes any one ware: drawn from those that come before it
 		for (const slot of b.inputs ?? []) for (const w of slot) if (wareLevel[w] !== undefined && wareLevel[w] < bLevel[b.id]) edges.push({ from: `w:${w}`, to: `b:${b.id}`, alt: slot.length > 1 });
 		if (b.out) edges.push({ from: `b:${b.id}`, to: `w:${b.out}`, alt: false });
 	}
@@ -101,8 +99,5 @@ export function chainTree(colW = 168, rowH = 50) {
 export const TRADE_NOTE = /** @type {Record<string, string>} */ ({
 	ore: 'Iron hexes only: rust-red rock',
 	plank: 'Forest hexes only',
-	stone: 'Stone hexes only',
-	fish: 'Water hexes only: a lake or sea shore',
-	grain: 'Any meadow',
-	water: 'A well, anywhere'
+	stone: 'Stone hexes only'
 });

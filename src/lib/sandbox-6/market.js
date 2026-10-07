@@ -1,6 +1,11 @@
 /**
- * SANDBOX 6 · TRADE AND ABUNDANCE — the rules of trade and of living well, as plain data and pure functions; the
- * simulation (./sim.js) calls them, the page shows them.
+ * SANDBOX 6 · TRADE — the rules of trade, of the world market and of what a home needs, as plain data and pure
+ * functions; the simulation (./sim.js) calls them, the page shows them.
+ *
+ * The world market. Everything the valley needs can be bought from the world beyond it, at real prices in euros: a
+ * village center pays from its treasury and the load is in its storehouse at once. A gold is 1,000 €, so a HEART is a
+ * euro. Food and water a village buys there by itself (./food.js); planks, stone, iron ore and tools you buy (WORLD),
+ * or your orders do.
  *
  * Trade routes. Village centers are joined by trade routes under the ground: carts run along them at twice a walker's
  * pace. Your own routes share wares between your villages; a route to another city's village center lets you trade
@@ -13,11 +18,7 @@
  * asks least, among the cities it can reach. Coins are only how wares change hands: nothing in the score counts them.
  *
  * Needs. Everyone eats, drinks (in kg and litres a week, grown by the hexes and drawn from wells: ./food.js) and keeps
- * a home (planks and stone). A village's happiness (0–100) is how well its needs were met lately and how much it has
- * put by.
- *
- * Abundance. The valley's abundance is the geometric mean of every village's happiness, yours and the neighbours':
- * one hungry village pulls everyone down, and no amount of plenty in one place makes up for it.
+ * a home (planks and stone). Each need is met (0–1) as far as the village had what it took lately.
  *
  * Neighbours. Each makes some wares well and runs short of others, so they trade with each other (their two cities
  * start joined by a route) and with you once you join them, and now and then one asks you for what it lacks most: a
@@ -38,7 +39,19 @@ export const CART = 8;
 /** minutes of needs a settlement likes to have put by */
 const PUT_BY = 10;
 /** a ware's usual price, in coins */
-export const BASE = { plank: 4, stone: 4, fish: 4, grain: 2, water: 1.5, bread: 5, ore: 5, tools: 14 };
+export const BASE = { plank: 4, stone: 4, ore: 5, tools: 14 };
+/** euros in a gold: a HEART is a euro */
+export const EUR_PER_GOLD = 1000;
+/**
+ * What the world market asks for a ware, in euros (HEARTs), and what one of it is: real prices, a load being 5 t.
+ * Building timber is the average of sawn softwood across Europe, about 800 € a tonne.
+ */
+export const WORLD = /** @type {Record<string, { eur: number, unit: string }>} */ ({
+	plank: { eur: 4000, unit: 'a load: 5 t of sawn building timber at 800 € a t' },
+	stone: { eur: 750, unit: 'a load: 5 t of building stone at 150 € a t' },
+	ore: { eur: 500, unit: 'a load: 5 t of iron ore at 100 € a t' },
+	tools: { eur: 500, unit: 'a set of tools' }
+});
 /** the wares that are traded (not coins: they are what is paid) */
 export const TRADED = Object.keys(BASE);
 /**
@@ -50,9 +63,9 @@ export const NEIGHBOURS = [];
 
 /**
  * Gold, the HEARTS way: nobody mints it but the people. Every settler brings 24 HEARTs into the world each in-game hour,
- * paid into the treasury of the village center they live by; 1,000 HEARTs are one gold. What a treasury holds loses 7%
- * a year (demurrage), so gold is for using, not hoarding. Gold only pays for wares one of your village centers takes
- * from another; building, enlarging and founding cost wares alone.
+ * paid into the treasury of the village center they live by; 1,000 HEARTs are one gold, 1,000 €. What a treasury holds
+ * loses 7% a year (demurrage), so gold is for using, not hoarding. Gold pays for what one of your village centers takes
+ * from another and for what it buys from the world market; building, enlarging and founding cost wares alone.
  */
 export const HEARTS = {
 	/** what one settler issues, an in-game hour */
@@ -66,8 +79,9 @@ export const HEARTS = {
 	/** hours in an in-game year: twelve months of thirty days */
 	yearHours: 12 * 30 * 24
 };
-/** what one of a ware costs a village center that takes it from another of yours, in HEARTs @param {string} w */
-export const heartsFor = (w) => base(w) * 10;
+/** what one of a ware costs a village center that takes it from another of yours, in HEARTs: half what the world
+ * market asks, as with food @param {string} w */
+export const heartsFor = (w) => (WORLD[w]?.eur ?? 0) / 2;
 
 /**
  * Your orders at the fair are one word a ware: sell or buy. What that means is fixed, so there is nothing to tune:
@@ -109,14 +123,15 @@ export function newMarket() {
 			contractSeq: 0,
 			sold: 0,
 			bought: 0,
+			/** what your villages bought from the world market, by ware @type {Record<string, number>} */
+			fromWorld: {},
 			filled: 0,
-			abundance: 50,
 			clock: { hist: 0, contract: 300 }
 		},
 		parties
 	};
 }
-/** how a city or a village lives: its needs, its food, its happiness (and a neighbour city's stores and purse) */
+/** how a city or a village lives: its needs and its food and water (and a neighbour city's stores and purse) */
 export function party(/** @type {string} */ name, /** @type {number} */ pop) {
 	return {
 		name,
@@ -128,11 +143,10 @@ export function party(/** @type {string} */ name, /** @type {number} */ pop) {
 		/** the food in its store, kg, and the water in its tanks, litres */
 		kg: 0,
 		litres: 0,
-		/** what its food and water did lately, a week (kg, litres, gold): grown, eaten, bought from your villages and
-		 * from the world, sold, spoiled; drawn from its wells, used */
-		flow: { grown: 0, eaten: 0, fromVillages: 0, fromWorld: 0, sold: 0, spoiled: 0, spent: 0, earned: 0, drawn: 0, used: 0 },
-		reserve: 0.3,
-		wb: 50,
+		/** what its food and water did lately, a week (kg, litres, €): grown, eaten, bought from your villages and
+		 * from the world, sold, spoiled, spent and earned on it; drawn from its wells, bought, used, spent on it; and
+		 * spent on wares from the world market */
+		flow: { grown: 0, eaten: 0, fromVillages: 0, fromWorld: 0, sold: 0, spoiled: 0, spent: 0, earned: 0, drawn: 0, boughtL: 0, used: 0, waterSpent: 0, wares: 0 },
 		/** @type {Record<string, number>} */ stock: {},
 		/** what is on its way to it, by ware @type {Record<string, number>} */ coming: {},
 		coins: 0
@@ -160,28 +174,15 @@ export const spareIn = (p, w) => Math.floor((p.stock[w] ?? 0) - keepOf(p, w));
 /** what a neighbour lacks of a ware (what is on its way counts) @param {any} p @param {string} w */
 export const shortIn = (p, w) => Math.ceil(keepOf(p, w) - (p.stock[w] ?? 0) - (p.coming[w] ?? 0));
 
-/** a settlement's wellbeing from its needs and what it has put by */
-export function wellbeing(/** @type {any} */ p) {
-	const s = p.sat;
-	return 100 * (0.4 * s.food + 0.2 * s.water + 0.2 * ((s.plank + s.stone) / 2) + 0.2 * p.reserve);
-}
-/** the valley's abundance: the geometric mean of every settlement's wellbeing */
-export function abundance(/** @type {any[]} */ parties) {
-	return Math.exp(parties.reduce((s, p) => s + Math.log(Math.max(1, p.wb)), 0) / parties.length);
-}
-
 /**
- * Needs met for a while: each settlement keeps its homes, and its wellbeing follows (its food and water were met
- * already, in kg and litres: `put` is how full its store and tanks are against what it keeps, 0…1 each).
- * `take(ware)` takes one unit from a settlement's stores and says whether it could; `has(ware)` counts them.
+ * Needs met for a while: each settlement keeps its homes up with planks and stone (its food and water were met
+ * already, in kg and litres). `take(ware)` takes one unit from a settlement's stores and says whether it could.
  * @param {any} p
  * @param {number} pop
  * @param {number} dt seconds
  * @param {(w: string) => boolean} take
- * @param {(w: string) => number} has
- * @param {number[]} [put]
  */
-export function live(p, pop, dt, take, has, put = []) {
+export function live(p, pop, dt, take) {
 	for (const [need, rate] of /** @type {[keyof typeof NEEDS, number][]} */ (Object.entries(NEEDS))) {
 		const per = (rate * pop) / 60;
 		p.owe[need] = Math.min(p.owe[need] + per * dt, per * 180 + 1);
@@ -193,15 +194,6 @@ export function live(p, pop, dt, take, has, put = []) {
 		const now = p.owe[need] <= 1.2 ? 1 : Math.max(0, 1 - (p.owe[need] - 1.2) / Math.max(0.5, per * 150));
 		p.sat[need] += (now - p.sat[need]) * Math.min(1, dt / 90);
 	}
-	const all = [
-		...put,
-		...Object.entries(NEEDS).map(([need, rate]) => {
-			const want = rate * pop * PUT_BY;
-			return want > 0 ? Math.min(1, has(need) / want) : 1;
-		})
-	];
-	p.reserve += (all.reduce((a, b) => a + b, 0) / all.length - p.reserve) * Math.min(1, dt / 60);
-	p.wb = wellbeing(p);
 }
 
 /** a neighbour makes its wares (hungry people work less) @param {any} p @param {number} k @param {number} dt */

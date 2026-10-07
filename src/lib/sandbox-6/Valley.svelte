@@ -9,8 +9,8 @@
 	import TouchStick from '$lib/touch/TouchStick.svelte';
 	import { WorldBar } from '$lib/sandbox-kit';
 	import { BUILDINGS, HOUSE_BEDS, HOUSE_SIZE, MENU, PLANK_T, WARES, WARE_ORDER, WOOD } from './rules.js';
-	import { NEED_LABEL } from './market.js';
-	import { FOOD_KG, KEEP, PRICE, WATER_L, WATER_USE } from './food.js';
+	import { EUR_PER_GOLD, NEED_LABEL } from './market.js';
+	import { FOOD_KG, PRICE, SPEEDS, WATER_L, WATER_PRICE, WATER_USE } from './food.js';
 	import { PLAYER } from './sim.js';
 	import Tree from './Tree.svelte';
 
@@ -23,16 +23,17 @@
 	let mode = $state('look');
 	let buildType = $state('');
 	let hint = $state('');
+	/** the clock's speed on the master clock: 1 a month a real day, 12 a year, 120 ten years; 0 paused */
 	let speed = $state(1);
-	/** how fast the valley's calendar runs: the master clock's pace, or ten years in ten minutes for tests */
-	let pace = $state('master');
-	/** the simulation: autoplay grows the first village full on fast years, at 16×; what it was set to before, and how
-	 * far it got (the first village's people of its beds at most, and the year) */
+	/** the simulation: autoplay grows the first village full at ten years a real day; the speed it had before, and how
+	 * far it got (the first village's people of its beds at most, and the date) */
 	let simulating = $state(false);
-	/** @type {{ pace: string, speed: number } | null} */
+	/** @type {number | null} */
 	let before = null;
-	/** @type {{ name: string, pop: number, cap: number, year: number, done: boolean } | null} */
+	/** @type {{ name: string, pop: number, cap: number, date: { year: number, month: number, day: number }, done: boolean } | null} */
 	let simNote = $state(null);
+	/** what a Buy button at the world market said when it could not */
+	let buyWhy = $state('');
 	let menuOpen = $state(false);
 	let group = $state(MENU[0].group);
 	let narrow = $state(false);
@@ -63,14 +64,19 @@
 	const fd = $derived(home?.food);
 	const wt = $derived(home?.water);
 	const flow = $derived(fd ? fd.grown - fd.week : 0);
-	const gold = $derived(fd ? fd.earned - fd.spent : 0);
+	/** what buying and selling food does to its treasury, a week, € */
+	const foodEur = $derived(fd ? fd.earned - fd.buy * fd.perKg : 0);
 	let seenMsg = 0;
 	/** @type {{ text: string, tone: string, node: number, key: number }[]} */
 	let toasts = $state([]);
 
 	const label = (/** @type {string} */ w) => WARES[w]?.label ?? w;
-	/** a number of kg, litres or gold, whole, with its thousands marked */
+	/** a number of kg, litres or euros, whole, with its thousands marked */
 	const num = (/** @type {number} */ n) => Math.round(n).toLocaleString('en-US').replace('-', '−');
+	/** gold, to a tenth while it is little */
+	const goldOf = (/** @type {number} */ g) => (Math.abs(g) < 100 ? (Math.round(g * 10) / 10).toLocaleString('en-US') : num(g)).replace('-', '−');
+	/** the valley's date */
+	const when = (/** @type {{ year: number, month: number, day: number }} */ d) => `year ${d.year}, month ${d.month}, day ${d.day}`;
 	/** how full a store is against what it keeps, as a bar's class */
 	const fill = (/** @type {number} */ have, /** @type {number} */ want) => (have >= want * 0.99 ? 'good' : have >= want / 2 ? 'fair' : 'poor');
 	/** planks as tonnes of sawn timber */
@@ -93,17 +99,16 @@
 			owned = n;
 		}
 		speed = game.speed;
-		pace = sim.state.pace;
 		// the simulation's first village, and its end once every house holds 248
 		if (simulating || simNote?.done) {
 			const hq = sim.state.buildings[sim.state.hq];
 			const row = market?.parties.find((/** @type {any} */ p) => p.owner === PLAYER && p.node === hq?.node);
-			if (row) simNote = { name: row.name, pop: row.pop, cap: row.cap, year: summary.date.year, done: simNote?.done ?? false };
+			if (row) simNote = { name: row.name, pop: row.pop, cap: row.cap, date: summary.date, done: simNote?.done ?? false };
 			if (simulating && row && row.cap > 0 && row.pop >= row.cap) {
 				stopSim();
 				game.setSpeed(0);
 				speed = 0;
-				simNote = { ...row, year: summary.date.year, done: true };
+				simNote = { name: row.name, pop: row.pop, cap: row.cap, date: summary.date, done: true };
 			}
 		}
 		const s = selected;
@@ -160,13 +165,12 @@
 		menuOpen = false;
 		game?.setMode(mode === m && !type ? 'look' : /** @type {import('./game.js').Mode} */ (m), type);
 	}
-	/** start the simulation (fast years, 16×, autoplay growing the first village full), or stop it and go back */
+	/** start the simulation (ten years a real day, autoplay growing the first village full), or stop it and go back */
 	function simulate() {
 		if (!game) return;
 		if (!simulating) {
-			before = { pace, speed };
-			game.sim.setPace('fast');
-			game.setSpeed(16);
+			before = speed;
+			game.setSpeed(TOP);
 			game.simulate(true);
 			simulating = true;
 		} else stopSim();
@@ -176,11 +180,19 @@
 		if (!game) return;
 		game.simulate(false);
 		simulating = false;
-		if (before) {
-			game.sim.setPace(/** @type {'master' | 'fast'} */ (before.pace));
-			game.setSpeed(before.speed || 1);
+		if (before !== null) {
+			game.setSpeed(before || 1);
 			before = null;
 		}
+	}
+	/** the clock's top speed: ten years a real day */
+	const TOP = SPEEDS[SPEEDS.length - 1].s;
+	/** buy a ware from the world market for the village shown */
+	function buy(/** @type {string} */ w) {
+		if (!game || !home) return;
+		const r = game.sim.buy(home.node, w, 1);
+		buyWhy = r.ok ? '' : r.why ?? '';
+		refresh();
 	}
 	function newValley() {
 		if (!confirm('Start a new valley? This one will be gone.')) return;
@@ -233,19 +245,16 @@
 		<button class:on={mode === 'road'} onclick={() => tool('road')} title="Road (R)"><span class="ic">⟋</span>Road</button>
 		<button class:on={mode === 'demolish'} onclick={() => tool('demolish')} title="Tear down (X)"><span class="ic">✕</span>Tear down</button>
 		<button class:on={treeOpen} onclick={() => ((treeOpen = !treeOpen), (menuOpen = false), refresh())} title="The building tree: what each building needs and makes"><span class="ic">⌥</span>Tree</button>
-		<div class="speed" role="group" aria-label="Speed">
-			{#each [[0, '❚❚'], [1, '1×'], [2, '2×'], [4, '4×'], [16, '16×']] as [s, t] (s)}
-				<button class:on={speed === s} onclick={() => (game?.setSpeed(/** @type {number} */ (s)), (speed = /** @type {number} */ (s)))} title={s ? `Speed ${t}` : 'Pause (Space)'}>{t}</button>
+		<div class="speed" role="group" aria-label="Speed: how much of the calendar a real day holds">
+			<button class:on={speed === 0} onclick={() => (game?.setSpeed(0), (speed = 0))} title="Pause (Space)">❚❚</button>
+			{#each SPEEDS as x (x.s)}
+				<button class:on={speed === x.s} onclick={() => (game?.setSpeed(x.s), (speed = x.s))} title="{x.about[0].toUpperCase()}{x.about.slice(1)} ({x.s}×)">{x.short}</button>
 			{/each}
 		</div>
-		<div class="speed" role="group" aria-label="Calendar">
-			{#each [['master', 'Master', 'The master clock: a real day is a month, a year takes twelve real days'], ['fast', 'Fast', 'Fast years, for tests: ten years in ten minutes']] as [p, t, about] (p)}
-				<button class:on={pace === p} onclick={() => (game?.sim.setPace(/** @type {'master' | 'fast'} */ (p)), (pace = p))} title={about}>{t}</button>
-			{/each}
-		</div>
-		<button class="sim" class:on={simulating} onclick={simulate} title={simulating ? 'Stop the simulation and play on yourself' : 'Simulate: autoplay builds on fast years (ten years in ten minutes) at 16×, growing your first village until all six houses hold 248 people'}>{simulating ? '■ Stop' : '▶ Simulate'}</button>
+		<p class="speednote">{speed ? `${SPEEDS.find((x) => x.s === speed)?.about ?? `${speed}×`}` : 'Paused'}</p>
+		<button class="sim" class:on={simulating} onclick={simulate} title={simulating ? 'Stop the simulation and play on yourself' : 'Simulate: autoplay builds at ten years a real day, growing your first village until all six houses hold 248 people'}>{simulating ? '■ Stop' : '▶ Simulate'}</button>
 		{#if simNote && (simulating || simNote.done)}
-			<p class="simnote">{simNote.done ? `${simNote.name} is full: ${num(simNote.pop)} people, in year ${simNote.year}` : `${simNote.name}: ${num(simNote.pop)} of ${num(simNote.cap)} people · year ${simNote.year}`}</p>
+			<p class="simnote">{simNote.done ? `${simNote.name} is full: ${num(simNote.pop)} people, on ${when(simNote.date)}` : `${simNote.name}: ${num(simNote.pop)} of ${num(simNote.cap)} people · ${when(simNote.date)}`}</p>
 		{/if}
 		<button class="quiet" onclick={newValley} title="Start a new valley">New valley</button>
 	</nav>
@@ -288,33 +297,49 @@
 						{#each home.villages as v (v.node)}<button class:on={v.node === home.node} onclick={() => pickVillage(v.node)}>{v.name}</button>{/each}
 					</div>
 				{/if}
-				<p class="label stats" title="Its settlers add 24 HEARTs each an in-game hour to its treasury; 1,000 HEARTs are a gold. Below 0 it is in debt, from buying food">{home.pop}/{home.beds} beds · wellbeing <b>{Math.round(home.wb)}</b> · <b class:debt={home.gold < 0}>{num(home.gold)}</b> gold</p>
+				<p class="label stats" title="Its settlers add 24 HEARTs each an in-game hour to its treasury: {num(home.income)} a week. A HEART is a euro, 1,000 are a gold. Below 0 it is in debt, from buying food and water">{home.pop}/{home.beds} beds · <b class:debt={home.gold < 0}>{goldOf(home.gold)}</b> gold · {num(home.eur)} €</p>
 				{#if fd}
 				<section class="ledger" aria-label="Food">
 					<p class="ledger-head" class:short={fd.short}><b>Food</b><span title="A hex's food forest grows 10% of what its people eat in its first year, 10% more each year up to 100% in its tenth, then up to 150% from its fifteenth year">forests in year {fd.year} · grow {Math.round(fd.share * 100)}%</span></p>
-					<span class="bar" title="In store against the {KEEP} weeks a village keeps"><span class={fill(fd.kg, fd.keep)} style:width="{Math.min(100, (fd.kg / Math.max(1, fd.keep)) * 100)}%"></span></span>
+					<span class="bar" title="What its food forests grow against what its people eat: the world market sells the rest"><span style:width="{Math.min(100, (fd.grown / Math.max(1, fd.week)) * 100)}%"></span></span>
 					<dl>
 						<dt>In store</dt><dd>{num(fd.kg)} kg</dd>
 						<dt title="{FOOD_KG.toFixed(1)} kg a person a week, the European diet">Eaten a week</dt><dd>{num(fd.week)} kg</dd>
 						<dt>Grown a week</dt><dd>{num(fd.grown)} kg</dd>
-						{#if fd.fromVillages >= 1}<dt title="From your villages that grow more than they eat, {PRICE.village} gold a kg">Bought nearby</dt><dd>{num(fd.fromVillages)} kg</dd>{/if}
-						{#if fd.fromWorld >= 1}<dt title="From beyond the valley, {PRICE.world} gold a kg">Bought outside</dt><dd>{num(fd.fromWorld)} kg</dd>{/if}
-						{#if fd.sold >= 1}<dt title="To your villages that lack it, {PRICE.village} gold a kg">Sold</dt><dd>{num(fd.sold)} kg</dd>{/if}
-						<dt title="What its forests grow against what its people eat, a week, and what buying and selling food did to its gold">Cashflow</dt><dd class:debt={flow < -0.5} class:gain={flow > 0.5}>{flow > 0.5 ? '+' : ''}{num(flow)} kg · {gold > 0.5 ? '+' : ''}{num(gold)} gold</dd>
+						{#if fd.buy >= 1}<dt title="What its forests do not grow: from your villages with more than two weeks put by at {PRICE.village} € a kg, else from the world market at {PRICE.world} € a kg (100 € for a person's week)">Bought a week</dt><dd>{num(fd.buy)} kg · {num(fd.buy * fd.perKg)} €</dd>{/if}
+						{#if fd.sold >= 1}<dt title="To your villages that lack it, {PRICE.village} € a kg, lately">Sold a week</dt><dd>{num(fd.sold)} kg</dd>{/if}
+						<dt title="What its forests grow against what its people eat, a week, and what buying and selling food did to its treasury">Cashflow</dt><dd class:debt={flow < -0.5} class:gain={flow > 0.5}>{flow > 0.5 ? '+' : ''}{num(flow)} kg · {foodEur > 0.5 ? '+' : ''}{num(foodEur)} €</dd>
 					</dl>
 				</section>
 				{/if}
 				{#if wt}
 				<section class="ledger" aria-label="Water">
 					<p class="ledger-head" class:short={wt.short}><b>Water</b><span>{wt.wells} {wt.wells === 1 ? 'well' : 'wells'}</span></p>
-					<span class="bar" title="In its tanks against {KEEP} weeks of use"><span class={fill(wt.litres, wt.week * KEEP)} style:width="{Math.min(100, (wt.litres / Math.max(1, wt.week * KEEP)) * 100)}%"></span></span>
+					<span class="bar" title="What its wells give against what its people use: the world market sells the rest"><span style:width="{Math.min(100, (wt.drawn / Math.max(1, wt.week)) * 100)}%"></span></span>
 					<dl>
 						<dt>In its tanks</dt><dd>{num(wt.litres)} L</dd>
 						<dt title="{WATER_L} L a person a day: {WATER_USE.drinking} to drink, {WATER_USE.home} at home, {WATER_USE.crops} for the crops">Used a week</dt><dd>{num(wt.week)} L</dd>
 						<dt>Wells give a week</dt><dd>{num(wt.drawn)} L</dd>
+						{#if wt.bought >= 1}<dt title="What its wells do not give, from the world market at {WATER_PRICE * 1000} € a m³">Bought a week</dt><dd>{num(wt.bought)} L · {num(wt.spent)} €</dd>{/if}
 					</dl>
 				</section>
 				{/if}
+				<section class="ledger" aria-label="World market">
+					<p class="ledger-head"><b>World market</b><span title="A gold is 1,000 €: a HEART is a euro">1 gold = {num(EUR_PER_GOLD)} €</span></p>
+					<ul class="buy">
+						{#each home.world as x (x.w)}
+							<li title="{label(x.w)}: {x.unit}. It is in this village center's storehouse at once.">
+								<span class="k"><i style:background={WARES[x.w]?.color}></i>{label(x.w)}</span>
+								<span class="n">{num(x.eur)} €</span>
+								<button onclick={() => buy(x.w)} disabled={home.eur < x.eur}>Buy</button>
+							</li>
+						{/each}
+						<li title="Each village buys what its food forests do not grow, by itself"><span class="k">Food</span><span class="n">{PRICE.world} € a kg</span><em>by itself</em></li>
+						<li title="Each village buys what its wells do not give, by itself"><span class="k">Water</span><span class="n">{WATER_PRICE * 1000} € a m³</span><em>by itself</em></li>
+					</ul>
+					{#if home.wares >= 1}<dl><dt>Spent on wares a week</dt><dd>{num(home.wares)} €</dd></dl>{/if}
+					{#if buyWhy}<p class="status">{buyWhy}</p>{/if}
+				</section>
 				<ul class="wants" aria-label="What it has, against what it needs">
 					{#each home.rows as r (r.key)}
 						<li class:short={r.short} title="{r.label}: {r.have} in store, needs {r.need}">
@@ -342,7 +367,7 @@
 				{#if ownCentre}
 					<div class="actions"><button onclick={() => game?.setMode('road')}>Path from here</button></div>
 				{/if}
-				<p class="people small">Year {summary.date.year} · month {summary.date.month} · {summary.people} people · {summary.villages} {summary.villages === 1 ? 'village' : 'villages'}</p>
+				<p class="people small">Year {summary.date.year} · month {summary.date.month} · day {summary.date.day} · {summary.people} people · {summary.villages} {summary.villages === 1 ? 'village' : 'villages'}</p>
 			</section>
 		</aside>
 	{/if}
@@ -368,7 +393,7 @@
 					{/each}
 				</ul>
 			{:else if card.party}
-				<p class="label">{card.party.pop} people{card.party.beds !== undefined ? ` in ${card.party.beds} beds` : ''} · wellbeing <b>{Math.round(card.party.wb)}</b>{card.owner !== PLAYER ? ` · ${Math.round(card.party.coins)} coins` : ''}</p>
+				<p class="label">{card.party.pop} people{card.party.beds !== undefined ? ` in ${card.party.beds} beds` : ''}{card.owner !== PLAYER ? ` · ${Math.round(card.party.coins)} coins` : ''}</p>
 				<ul class="needs">
 					{#each Object.entries(card.party.sat) as [need, v] (need)}
 						<li>{NEED_LABEL[/** @type {keyof typeof NEED_LABEL} */ (need)]} <b>{Math.round(/** @type {number} */ (v) * 100)}%</b></li>
@@ -544,6 +569,14 @@
 	.tools .sim {
 		justify-content: center;
 		font-size: 0.78rem;
+	}
+	.speednote {
+		margin: -0.2rem 0 0;
+		padding: 0 0.4rem;
+		color: #f4f1e8;
+		font-size: 0.64rem;
+		line-height: 1.25;
+		text-shadow: 0 1px 2px rgb(0 0 0 / 0.45);
 	}
 	.simnote {
 		margin: 0;
@@ -839,6 +872,47 @@
 	.debt {
 		color: #a3322a;
 	}
+	.buy {
+		display: grid;
+		gap: 0.2rem;
+		margin: 0.3rem 0 0;
+		padding: 0;
+		list-style: none;
+	}
+	.buy li {
+		display: grid;
+		grid-template-columns: 1fr auto 3.4rem;
+		align-items: center;
+		gap: 0.5rem;
+		min-height: 1.5rem;
+	}
+	.buy .k {
+		display: flex;
+		align-items: center;
+		gap: 0.35rem;
+	}
+	.buy .n {
+		text-align: right;
+		font-variant-numeric: tabular-nums;
+	}
+	.buy button {
+		padding: 0.2rem 0;
+		border: 1px solid #24452f;
+		border-radius: 999px;
+		background: #24452f;
+		color: #f4f1e8;
+		font-size: 0.68rem;
+	}
+	.buy button:disabled {
+		opacity: 0.35;
+		cursor: default;
+	}
+	.buy em {
+		font-style: normal;
+		font-size: 0.64rem;
+		opacity: 0.6;
+		text-align: center;
+	}
 	.gain {
 		color: #2f7a3a;
 	}
@@ -1085,6 +1159,9 @@
 		}
 		.speed button {
 			width: 2.2rem;
+		}
+		.speednote {
+			display: none;
 		}
 		.tools .quiet {
 			margin: 0;

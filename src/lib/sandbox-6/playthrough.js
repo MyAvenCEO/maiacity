@@ -9,8 +9,7 @@ import { loadGame, newGame } from './sim.js';
 import { createAutoplay } from './autoplay.js';
 
 const seed = Number(process.argv[2] ?? 7), end = Number(process.argv[3] ?? 5400);
-// a test runs the valley's calendar fast: ten years in ten minutes
-let sim = newGame(seed, 'fast');
+let sim = newGame(seed);
 let seen = 0;
 for (let k = 0; sim.state.time < end; k++) {
 	sim.step(0.1);
@@ -20,7 +19,7 @@ for (let k = 0; sim.state.time < end; k++) {
 	for (const m of sim.state.msgs) if (m.n > seen && (seen = m.n) && /founded|left/.test(m.text)) console.log(`${String(Math.round(m.t)).padStart(5)} s  ${m.text}`);
 	if (k % 3000 === 0) {
 		const m = sim.market();
-		console.log(`${String(Math.round(sim.state.time)).padStart(5)} s  abundance ${Math.round(m.abundance)} · ${m.parties.map((/** @type {any} */ p) => `${p.name} ${Math.round(p.score)} wb${Math.round(p.wb)} r${p.reserve.toFixed(2)} (${p.pop}/${p.cap}${p.full ? ' full' : ''})`).join(' · ')} · purse ${Math.round(m.purse)} · sold ${m.sold} bought ${m.bought}`);
+		console.log(`${String(Math.round(sim.state.time)).padStart(5)} s  ${m.parties.map((/** @type {any} */ p) => `${p.name} (${p.pop}/${p.cap}${p.full ? ' full' : ''})`).join(' · ')} · purse ${Math.round(m.purse)} gold · bought from the world ${JSON.stringify(sim.state.market.fromWorld)}`);
 	}
 }
 const s = sim.summary();

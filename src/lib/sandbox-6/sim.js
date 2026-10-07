@@ -10,17 +10,16 @@
  *     its village asks, nearest first; a ware finds its way flag by flag along the shortest roads;
  *   · every second the people follow: a settler from a village center becomes the carrier of a new road, the builder
  *     of a site, the worker of a finished building (a worker takes tools along);
- *   · buildings work: workshops turn inputs into wares, gatherers go out into the land (trees, rocks, fish, fields);
+ *   · buildings work: workshops turn inputs into wares, gatherers go out into the land (trees, rocks);
  *   · carts run the trade routes under the ground between village centers: your villages share what they have, and
  *     the cities trade by the orders you set and by what the neighbours have spare and lack (./market.js);
  *   · every village eats and drinks, in kg and litres (./food.js): its hexes' food forests grow a share of it, more
- *     each year, it buys the rest by itself, and its wells fill its tanks; it keeps its homes, and its wellbeing
- *     follows how well it lives. There is no goal to win.
+ *     each year, it buys the rest by itself, and its wells fill its tanks. There is no goal to win.
  */
-import { BIOMES, BUILDINGS, FOOD, GRASS, HOUSE_BEDS, HOUSE_MOST, HOUSE_TOP, HOUSE_UP, IRON, MOUNTAIN, START, WARES, WATER, WOOD, WOOD_UP, holdsLand } from './rules.js';
-import { CART, HEARTS, NEEDS, NEIGHBOURS, TRADED, heartsFor, abundance, keepOf, live, make, newMarket, orderRule, party, priceIn, request, shortIn, spareIn } from './market.js';
+import { BIOMES, BUILDINGS, GRASS, HOUSE_BEDS, HOUSE_MOST, HOUSE_TOP, HOUSE_UP, IRON, MOUNTAIN, START, WARES, WATER, WOOD, WOOD_UP, holdsLand } from './rules.js';
+import { CART, HEARTS, NEEDS, NEIGHBOURS, TRADED, WORLD, heartsFor, keepOf, live, make, newMarket, orderRule, party, priceIn, request, shortIn, spareIn } from './market.js';
 import { SE, STEP, findPath, makeGrid } from './hex.js';
-import { FOOD_KG, KEEP, MOST, PACE, PRICE, TANK, WATER_L, WEEK, WELL_L, YEAR, DAY, calendar, forestShare } from './food.js';
+import { FOOD_KG, KEEP, MOST, PACE, PRICE, TANK, WATER_L, WATER_PRICE, WEEK, WELL_L, YEAR, DAY, calendar, forestShare } from './food.js';
 import { makePlan, spoke } from './plots.js';
 import { growValley } from './map.js';
 
@@ -48,22 +47,16 @@ const CITY_VILLAGES = 5;
 /** a building rests while the storehouses hold this much of what it makes */
 const ENOUGH = 40;
 
-/**
- * A new game in a valley grown from a seed.
- * @param {number} [seed]
- */
-/** a new valley; its calendar runs at the master clock's pace, or fast (ten years in ten minutes) for tests
- * @param {number} [seed] @param {'master' | 'fast'} [pace] */
-export function newGame(seed = 7, pace = 'master') {
+/** a new valley, grown from a seed; its calendar runs at the master clock's pace @param {number} [seed] */
+export function newGame(seed = 7) {
 	const v = growValley(seed);
 	const N = v.W * v.H;
 	const st = {
-		v: 12,
+		v: 13,
 		seed,
 		time: 0,
-		/** days of the valley's calendar gone by (./food.js), and how fast they go */
+		/** days of the valley's calendar gone by (./food.js) */
 		cal: 0,
-		pace,
 		rng: (Math.imul(seed, 2654435761) >>> 0) || 1,
 		W: v.W,
 		H: v.H,
@@ -100,7 +93,7 @@ export function newGame(seed = 7, pace = 'master') {
 		objV: 1,
 		terV: 1,
 		/** when the slower rules next run */
-		clocks: { dispatch: 0, people: 0, grow: 0, fish: 20, pop: 18, needs: 0, trade: 5, grow2: 60 },
+		clocks: { dispatch: 0, people: 0, grow: 0, pop: 18, needs: 0, trade: 5, grow2: 60 },
 		hq: 0,
 		/** the neighbours' village centers (building ids) */
 		/** @type {number[]} */ villages: [],
@@ -118,14 +111,7 @@ export function newGame(seed = 7, pace = 'master') {
 /** A game from its saved state. @param {string | object} saved */
 export function loadGame(saved) {
 	const st = typeof saved === 'string' ? JSON.parse(saved) : saved;
-	// a game from before the valley kept the master clock's pace ran ten years in ten minutes: six days a second
-	if (st?.v === 11) {
-		st.cal = st.time * PACE.fast;
-		for (const k of Object.keys(st.forest ?? {})) st.forest[k] *= PACE.fast;
-		st.pace = 'master';
-		st.v = 12;
-	}
-	if (!st || st.v !== 12 || !Array.isArray(st.terrain)) throw new Error('Not a Sandbox 6 game of this kind');
+	if (!st || st.v !== 13 || !Array.isArray(st.terrain)) throw new Error('Not a Sandbox 6 game of this kind');
 	return createSim(st);
 }
 
@@ -143,8 +129,6 @@ export function createSim(st) {
 	const plan = /** @type {ReturnType<typeof makePlan>} */ (plans.get(size));
 	/** the village a node lies in */
 	const villageAt = (/** @type {number} */ n) => plan.villageOf[plan.plotOf[n]];
-	/** days of the valley's calendar a second of play */
-	const pace = () => (st.pace === 'fast' ? PACE.fast : PACE.master);
 
 	const rand = () => {
 		st.rng = (st.rng + 0x6d2b79f5) >>> 0;
@@ -614,10 +598,10 @@ export function createSim(st) {
 				if (!wh || !walk) {
 					const any = nearestWarehouse(b.flag, () => true);
 					const noTools = t.tools && (any?.stock.tools ?? 0) <= 0;
-					b.status = !any ? 'Not connected by road' : noTools ? 'Waiting for tools (build a toolmaker)' : 'Waiting for a settler';
+					b.status = !any ? 'Not connected by road' : noTools ? 'Waiting for tools (build a toolmaker or buy some)' : 'Waiting for a settler';
 					if (any && noTools && st.time - (st.toolsWarned ?? -999) > 300) {
 						st.toolsWarned = st.time;
-						say('Out of tools: a toolmaker makes them from planks and iron ore, which comes only from an iron hex.', b.node, 'alert');
+						say('Out of tools: a toolmaker makes them from planks and iron ore, or a village center buys them from the world market.', b.node, 'alert');
 					}
 					continue;
 				}
@@ -893,16 +877,6 @@ export function createSim(st) {
 				}
 				return null;
 			}
-			case 'fishery': {
-				for (const j of near) {
-					if (st.terrain[j] !== WATER || st.fish[j] <= 0) continue;
-					for (let d = 0; d < 6; d++) {
-						const s = g.nb(j, d);
-						if (s >= 0 && st.terrain[s] !== WATER && walkable(s)) return [j, s];
-					}
-				}
-				return null;
-			}
 			case 'forester': {
 				let trees = 0;
 				for (const n of near) if (st.obj[n]?.k === 'tree') trees++;
@@ -912,17 +886,10 @@ export function createSim(st) {
 				const j = spots[Math.floor(rand() * spots.length)];
 				return [j, j];
 			}
-			case 'farm': {
-				const ripe = near.find((n) => st.obj[n]?.k === 'field' && st.obj[n].b === b.id && st.obj[n].g >= 1 && !st.obj[n].r);
-				if (ripe !== undefined) return [ripe, ripe];
-				if (b.fields >= 7) return null;
-				const j = near.find((n) => freeSpot(n));
-				return j === undefined ? null : [j, j];
-			}
 		}
 		return null;
 	}
-	const NOTHING = /** @type {Record<string, string>} */ ({ woodcutter: 'The forest round it is full, and no tree is grown yet', quarry: 'No rocks nearby', fishery: 'No fish nearby', forester: 'The forest round it is full', farm: 'Fields are growing' });
+	const NOTHING = /** @type {Record<string, string>} */ ({ woodcutter: 'The forest round it is full, and no tree is grown yet', quarry: 'No rocks nearby', forester: 'The forest round it is full' });
 
 	/** how much of a ware the storehouses hold */
 	const stocked = (/** @type {string} */ ware) => warehouses().reduce((s, w) => s + (w.stock[ware] ?? 0), 0);
@@ -993,7 +960,7 @@ export function createSim(st) {
 					b.status = b.type === 'woodcutter' && woodLevel(b) === 1 ? 'The forest round it is full: upgrade it to a woodcutter to fell trees' : NOTHING[b.type] ?? 'Nothing to do';
 					b.timer = 3;
 				} else {
-					const plant = (b.type === 'farm' && st.obj[target[0]]?.k !== 'field') || b.type === 'forester' || (b.type === 'woodcutter' && !st.obj[target[0]]);
+					const plant = b.type === 'forester' || (b.type === 'woodcutter' && !st.obj[target[0]]);
 					if (st.obj[target[0]] && !plant) st.obj[target[0]].r = u.id;
 					Object.assign(u, { inside: false, path, p: 0, tgt: path.length - 1, job: 'w-out', target: target[0] });
 					b.status = 'Working';
@@ -1004,7 +971,7 @@ export function createSim(st) {
 		b.eff += ((busy ? 1 : 0) - b.eff) * Math.min(1, dt / 40);
 		// what it made lately, and over how many weeks: both fade over a quarter year
 		if (b.lately !== undefined) {
-			const weeks = (dt * pace()) / WEEK, fade = Math.exp(-weeks / LATELY);
+			const weeks = (dt * PACE) / WEEK, fade = Math.exp(-weeks / LATELY);
 			b.lately *= fade;
 			b.span = (b.span ?? 0) * fade + weeks;
 		}
@@ -1096,27 +1063,9 @@ export function createSim(st) {
 					st.objV++;
 				}
 				break;
-			case 'fishery':
-				if (st.fish[j] > 0) {
-					st.fish[j]--;
-					u.ware = 'fish';
-				}
-				break;
 			case 'forester':
 				if (!st.obj[j] && !st.road[j]) {
 					st.obj[j] = { k: 'tree', g: 0.04 };
-					st.objV++;
-				}
-				break;
-			case 'farm':
-				if (o?.k === 'field' && o.g >= 1) {
-					st.obj[j] = null;
-					b.fields = Math.max(0, b.fields - 1);
-					u.ware = 'grain';
-					st.objV++;
-				} else if (!o && !st.road[j]) {
-					st.obj[j] = { k: 'field', g: 0, b: b.id };
-					b.fields++;
 					st.objV++;
 				}
 				break;
@@ -1401,6 +1350,32 @@ export function createSim(st) {
 				pb.coins -= pay;
 				sendCart(ca, cb, { [w]: n }, { kind: 'sale', pay, seller: a });
 			}
+		// and what your orders buy, the world market sells: what you are short of, a cart's worth at a time, to the
+		// village that lacks it most, paid from its treasury while it keeps two weeks of its food in hand
+		for (const w of TRADED) {
+			if (st.orders[w] !== 'buy') continue;
+			const short = Math.ceil(rule(w).upTo - total(w) - coming(w));
+			if (short < 1) continue;
+			const to = [...mine].sort((a, b) => (a.stock[w] ?? 0) - wantAt(a, w) - ((b.stock[w] ?? 0) - wantAt(b, w)))[0];
+			if (to) worldBuy(to, w, Math.min(CART, short), villagePeople(villageAt(to.node)) * FOOD_KG * KEEP * PRICE.world);
+		}
+	}
+	/**
+	 * Buy from the world market (./market.js WORLD): a village center pays from its treasury, never into debt, beyond
+	 * what it keeps in hand, and the wares are in its storehouse at once. How many it bought.
+	 * @param {any} c @param {string} w @param {number} n @param {number} [keep] HEARTs (€) it keeps
+	 */
+	function worldBuy(c, w, n, keep = 0) {
+		const price = WORLD[w]?.eur;
+		if (!price) return 0;
+		const k = Math.min(n, Math.floor(((c.hearts ?? 0) - keep) / price));
+		if (k < 1) return 0;
+		c.hearts -= k * price;
+		c.stock[w] = (c.stock[w] ?? 0) + k;
+		const p = st.vill[villageAt(c.node)];
+		if (p) p.pendWares = (p.pendWares ?? 0) + k * price;
+		st.market.fromWorld[w] = (st.market.fromWorld[w] ?? 0) + k;
+		return k;
 	}
 
 	// ── the land ──
@@ -1520,7 +1495,7 @@ export function createSim(st) {
 		}
 	}
 
-	// ── the villages and cities: needs, the neighbours' work, abundance ──
+	// ── the villages and cities: needs, the neighbours' work ──
 	/** the people of one of your villages: in its center and out at work */
 	const villagePeople = (/** @type {number} */ v) => {
 		let n = 0;
@@ -1562,13 +1537,14 @@ export function createSim(st) {
 			}
 		return beds ? grown / beds : 0;
 	}
-	/** litres a day a village's wells give: every well with its worker in, not paused */
-	const wellsIn = (/** @type {number} */ v) => mineIn(v).filter((b) => b.type === 'well' && b.stage === 'live' && b.worker && !b.paused).length * WELL_L;
+	/** litres a day a village's wells give: every well that stands, not paused */
+	const wellsIn = (/** @type {number} */ v) => mineIn(v).filter((b) => b.type === 'well' && b.stage === 'live' && !b.paused).length * WELL_L;
 	/**
 	 * A while of eating and drinking, in kg and litres (./food.js): each village's forests grow, its people eat from its
-	 * store, its wells fill its tanks and its people use them. Then it buys what its store lacks of two weeks' food:
-	 * first from your villages joined to it that have more than that (5 gold a kg, to them), then from the world (10 gold
-	 * a kg); and tanks share their water along the trade routes. What a village did, a week, is kept in its `flow`.
+	 * store, its wells fill its tanks and its people use them. What its store lacks of what they eat it buys as they
+	 * eat it: first from your villages joined to it that have more than two weeks put by (5 € a kg, to them), then from
+	 * the world market (10 € a kg); tanks share their water along the trade routes, and what they lack of what is used
+	 * the world market sells (2 € a m³). What a village did, a week, is kept in its `flow`.
 	 * @param {{ v: number, c: any, p: any }[]} vs @param {number} dd the days of the valley's calendar gone by
 	 */
 	function eatAndDrink(vs, dd) {
@@ -1581,30 +1557,23 @@ export function createSim(st) {
 			d[k] = (d[k] ?? 0) + n;
 			did.set(p, d);
 		};
+		/** what each village eats and drinks meanwhile, kg and litres */
+		const want = new Map();
 		for (const { v, p } of vs) {
 			p.kg ??= 0;
 			p.litres ??= 0;
-			const need = (p.pop * FOOD_KG * days) / 7, grown = need * forestOf(v);
+			const need = (p.pop * FOOD_KG * days) / 7, grown = need * forestOf(v), drawn = wellsIn(v) * days;
+			want.set(p, { need, thirst: p.pop * WATER_L * days });
 			p.kg += grown;
-			const eaten = Math.min(p.kg, need);
-			p.kg -= eaten;
-			add(p, 'grown', grown);
-			add(p, 'eaten', eaten);
-			const thirst = p.pop * WATER_L * days, drawn = (wellsIn(v) * days);
 			p.litres += drawn;
-			const used = Math.min(p.litres, thirst);
-			p.litres -= used;
+			add(p, 'grown', grown);
 			add(p, 'drawn', drawn);
-			add(p, 'used', used);
-			// how well they ate and drank, lately: hunger shows within a couple of weeks
-			const ease = Math.min(1, dd / (2 * WEEK));
-			p.sat.food += ((need > 0 ? eaten / need : 1) - p.sat.food) * ease;
-			p.sat.water += ((thirst > 0 ? used / thirst : 1) - p.sat.water) * ease;
 		}
-		// buying what each store lacks: from your joined villages with more than they keep, then from the world
+		// what its store lacks of what its people eat now: from your joined villages with more than two weeks put by,
+		// then from the world market
 		const keepOf = (/** @type {any} */ p) => p.pop * FOOD_KG * KEEP;
 		for (const x of vs) {
-			let short = keepOf(x.p) - x.p.kg;
+			let short = want.get(x.p).need - x.p.kg;
 			if (short <= 0) continue;
 			const near = reach(x.c.id);
 			for (const y of vs) {
@@ -1614,44 +1583,65 @@ export function createSim(st) {
 				y.p.kg -= n;
 				x.p.kg += n;
 				short -= n;
-				const gold = n * PRICE.village;
-				x.c.hearts = (x.c.hearts ?? 0) - gold * HEARTS.perGold;
-				y.c.hearts = (y.c.hearts ?? 0) + gold * HEARTS.perGold;
+				const eur = n * PRICE.village;
+				x.c.hearts = (x.c.hearts ?? 0) - eur;
+				y.c.hearts = (y.c.hearts ?? 0) + eur;
 				add(x.p, 'fromVillages', n);
-				add(x.p, 'spent', gold);
+				add(x.p, 'spent', eur);
 				add(y.p, 'sold', n);
-				add(y.p, 'earned', gold);
+				add(y.p, 'earned', eur);
 				if (short <= 0) break;
 			}
 			if (short > 0) {
 				x.p.kg += short;
-				x.c.hearts = (x.c.hearts ?? 0) - short * PRICE.world * HEARTS.perGold;
+				x.c.hearts = (x.c.hearts ?? 0) - short * PRICE.world;
 				add(x.p, 'fromWorld', short);
 				add(x.p, 'spent', short * PRICE.world);
 			}
 		}
-		for (const { p } of vs) {
-			// what a store holds beyond a quarter year spoils; tanks overflow beyond four weeks
-			const most = Math.max(50, p.pop * FOOD_KG * MOST);
-			if (p.kg > most) add(p, 'spoiled', p.kg - most), (p.kg = most);
-		}
 		// water runs along the trade routes from tanks with more than two weeks to tanks with less
 		for (const x of vs) {
-			const want = x.p.pop * WATER_L * 7 * KEEP;
+			const two = x.p.pop * WATER_L * 7 * KEEP;
 			for (const y of vs) {
-				if (x.p.litres >= want) break;
+				if (x.p.litres >= two) break;
 				if (y === x || !reach(x.c.id).has(y.c.id)) continue;
-				const n = Math.min(want - x.p.litres, y.p.litres - y.p.pop * WATER_L * 7 * KEEP);
+				const n = Math.min(two - x.p.litres, y.p.litres - y.p.pop * WATER_L * 7 * KEEP);
 				if (n > 0) (y.p.litres -= n), (x.p.litres += n);
 			}
+		}
+		for (const x of vs) {
+			const { need, thirst } = want.get(x.p);
+			// what its wells and the routes leave short of what its people use, the world market sells
+			const short = thirst - x.p.litres;
+			if (short > 0) {
+				x.p.litres += short;
+				x.c.hearts = (x.c.hearts ?? 0) - short * WATER_PRICE;
+				add(x.p, 'boughtL', short);
+				add(x.p, 'waterSpent', short * WATER_PRICE);
+			}
+			const p = x.p, eaten = Math.min(p.kg, need), used = Math.min(p.litres, thirst);
+			p.kg -= eaten;
+			p.litres -= used;
+			add(p, 'eaten', eaten);
+			add(p, 'used', used);
+			// how well they ate and drank, lately: hunger shows within a couple of weeks
+			const ease = Math.min(1, dd / (2 * WEEK));
+			p.sat.food += ((need > 0 ? eaten / need : 1) - p.sat.food) * ease;
+			p.sat.water += ((thirst > 0 ? used / thirst : 1) - p.sat.water) * ease;
+			// what a store holds beyond a quarter year spoils
+			const most = Math.max(50, p.pop * FOOD_KG * MOST);
+			if (p.kg > most) add(p, 'spoiled', p.kg - most), (p.kg = most);
 		}
 		for (const { p } of vs) p.litres = Math.min(p.litres, Math.max(20000, p.pop * WATER_L * 7 * TANK));
 		// a week of each, lately: an average over the last month or so, weighed by how much of it the valley has seen yet
 		for (const { p } of vs) {
 			p.flow ??= {};
 			const d = did.get(p) ?? {};
+			// and what it spent on wares from the world market meanwhile
+			d.wares = p.pendWares ?? 0;
+			p.pendWares = 0;
 			const was = (p.flowW ?? 0) * (1 - fade), w = was + fade;
-			for (const k of ['grown', 'eaten', 'fromVillages', 'fromWorld', 'sold', 'spoiled', 'spent', 'earned', 'drawn', 'used'])
+			for (const k of ['grown', 'eaten', 'fromVillages', 'fromWorld', 'sold', 'spoiled', 'spent', 'earned', 'drawn', 'boughtL', 'used', 'waterSpent', 'wares'])
 				p.flow[k] = ((p.flow[k] ?? 0) * was + (((d[k] ?? 0) * WEEK) / dd) * fade) / w;
 			p.flowW = w;
 		}
@@ -1669,23 +1659,18 @@ export function createSim(st) {
 			c.hearts = ((c.hearts ?? 0) > 0 ? c.hearts * wane : c.hearts ?? 0) + (HEARTS.perHour * p.pop * dd) / HEARTS.hour;
 		}
 		eatAndDrink(vs, dd);
-		for (const { v, c, p } of vs) {
-			const keep = p.pop * FOOD_KG * KEEP, tank = p.pop * WATER_L * 7 * KEEP;
+		for (const { c, p } of vs) {
 			live(
 				p,
 				p.pop,
 				dt,
-				(w) => ((c.stock[w] ?? 0) >= 1 ? ((c.stock[w] -= 1), true) : false),
-				(w) => c.stock[w] ?? 0,
-				[keep > 0 ? Math.min(1, p.kg / keep) : 1, tank > 0 ? Math.min(1, p.litres / tank) : 1]
+				(w) => ((c.stock[w] ?? 0) >= 1 ? ((c.stock[w] -= 1), true) : false)
 			);
 		}
 		// your city, as the market and the page see it: everyone counted, happiness the people's average
 		const you = st.parties[PLAYER];
 		you.pop = vs.reduce((s, x) => s + x.p.pop, 0);
 		const weigh = (/** @type {(p: any) => number} */ f) => vs.reduce((s, x) => s + f(x.p) * Math.max(1, x.p.pop), 0) / Math.max(1, vs.reduce((s, x) => s + Math.max(1, x.p.pop), 0));
-		you.wb = weigh((p) => p.wb);
-		you.reserve = weigh((p) => p.reserve);
 		for (const n of Object.keys(you.sat)) you.sat[n] = weigh((p) => p.sat[n]);
 		for (let k = 1; k < st.parties.length; k++) {
 			const p = st.parties[k];
@@ -1694,8 +1679,7 @@ export function createSim(st) {
 				p,
 				p.pop,
 				dt,
-				(w) => ((p.stock[w] ?? 0) >= 1 ? ((p.stock[w] -= 1), true) : false),
-				(w) => p.stock[w] ?? 0
+				(w) => ((p.stock[w] ?? 0) >= 1 ? ((p.stock[w] -= 1), true) : false)
 			);
 		}
 		// prices across the valley, remembered
@@ -1718,24 +1702,18 @@ export function createSim(st) {
 				ct.gone = true;
 				if (ct.taken) say(`Too late: ${st.parties[ct.k].name}’s request for ${WARES[ct.w].label.toLowerCase()} ran out`, -1, 'alert');
 			}
-		// abundance: how well every village lives, together (the playthrough reads it; nothing is won by it)
-		const rows = villageRows();
-		m.abundance = abundance(rows.map((r) => ({ wb: r.score })));
-		m.villages = rows.length;
+		m.villages = villageRows().length;
 	}
 	/** how many people a village holds when it is full: a great dome's worth in every settlement that has room for a house */
 	const capOf = (/** @type {number} */ v) =>
 		HOUSE_MOST * plan.villages[v].plots.filter((k) => k !== plan.villages[v].centre && plan.spots[k][0] >= 0 && st.terrain[plan.spots[k][0]] === GRASS).length;
-	/**
-	 * Every village of the valley: yours by name, then each neighbour city's. Its
-	 * abundance is how well its people live (wellbeing) times how full it is: a hamlet that lives well is not yet abundant.
-	 */
+	/** every village of the valley: yours by name, then each neighbour city's */
 	function villageRows() {
-		const row = (/** @type {any} */ r) => ({ ...r, score: r.wb * Math.min(1, r.pop / Math.max(1, r.cap)) });
+		const row = (/** @type {any} */ r) => r;
 		return [
-			...yourVillages().map(({ v, c, p }) => row({ name: p.name, city: 'You', pop: p.pop, beds: bedsIn(v), cap: capOf(v), wb: p.wb, sat: { ...p.sat }, reserve: p.reserve, full: fullVillage(v, PLAYER), node: c.node, owner: PLAYER })),
+			...yourVillages().map(({ v, c, p }) => row({ name: p.name, city: 'You', pop: p.pop, beds: bedsIn(v), cap: capOf(v), sat: { ...p.sat }, full: fullVillage(v, PLAYER), node: c.node, owner: PLAYER })),
 			...st.parties.slice(1).flatMap((/** @type {any} */ p, /** @type {number} */ j) =>
-				cityShares(j + 1).map(({ c, v, cap, pop }, x) => row({ name: x ? `${p.name} ${x + 1}` : p.name, city: p.name, pop, beds: cap, cap, wb: p.wb, sat: { ...p.sat }, reserve: p.reserve, full: pop >= cap && fullVillage(v, j + 1), node: c.node, owner: j + 1 }))
+				cityShares(j + 1).map(({ c, v, cap, pop }, x) => row({ name: x ? `${p.name} ${x + 1}` : p.name, city: p.name, pop, beds: cap, cap, sat: { ...p.sat }, full: pop >= cap && fullVillage(v, j + 1), node: c.node, owner: j + 1 }))
 			)
 		];
 	}
@@ -1763,7 +1741,7 @@ export function createSim(st) {
 	}
 	function step(dt = TICK) {
 		st.time += dt;
-		st.cal += dt * pace();
+		st.cal += dt * PACE;
 		const c = st.clocks;
 		for (const u of units()) {
 			if (!st.units[u.id]) continue;
@@ -1814,17 +1792,13 @@ export function createSim(st) {
 			c.grow = st.time + 1;
 			grow();
 		}
-		if (st.time >= c.fish) {
-			c.fish = st.time + 20;
-			for (let i = 0; i < N; i++) if (st.terrain[i] === WATER && st.fish[i] < 4 && rand() < 0.35) st.fish[i]++;
-		}
 		if (st.time >= c.pop) {
 			c.pop = st.time + 6;
-			// newcomers settle in a village that lives well and has a bed for them; with too few beds, people leave. They
+			// newcomers settle in a village with a bed for them; with too few beds, people leave. They
 			// come and go a family at a time, one for every 96 beds, so a large village fills as fast as a small one did
 			for (const { v, c: ctr, p } of yourVillages()) {
 				const people = villagePeople(v), room = bedsIn(v), family = Math.max(1, Math.ceil(room / 96));
-				if (people < room && p.wb >= 60) ctr.settlers += Math.min(family, room - people);
+				if (people < room) ctr.settlers += Math.min(family, room - people);
 				else if (room > 0 && people > room && ctr.settlers > 0) {
 					ctr.settlers -= Math.min(family, people - room, ctr.settlers);
 					say(`A settler left ${p.name}: there are not enough beds. Build or enlarge houses.`, ctr.node, 'alert');
@@ -1839,9 +1813,9 @@ export function createSim(st) {
 				// a family more for each of its villages; once every village is full, it founds the next
 				// and the valley grows together: a neighbour stays within a village of your people
 				const cap = Math.min(cityCap(k), 6 * HOUSE_MOST + yourPeople()), n = cityVillages(k).length;
-				if (p.wb >= 72 && p.reserve >= 0.45 && p.pop < cap) p.pop = Math.min(cap, p.pop + 2 * n);
-				else if (p.wb >= 72 && p.reserve >= 0.45 && p.pop >= cityCap(k) && n < CITY_VILLAGES) cityFounds(k);
-				else if (p.wb < 40 && p.pop > 10 && rand() < 0.2) {
+				if (p.sat.food >= 0.9 && p.pop < cap) p.pop = Math.min(cap, p.pop + 2 * n);
+				else if (p.sat.food >= 0.9 && p.pop >= cityCap(k) && n < CITY_VILLAGES) cityFounds(k);
+				else if (p.sat.food < 0.5 && p.pop > 10 && rand() < 0.2) {
 					p.pop--;
 					if (rand() < 0.3) say(`${p.name} is struggling: a family left the valley`, cityCentre(k)?.node ?? -1, 'alert');
 				}
@@ -1906,7 +1880,7 @@ export function createSim(st) {
 		if (type !== 'house' && spot === 0) return 'This spot is for the settlement’s house';
 		if (vo !== PLAYER) return 'Outside your city: found a village center first';
 		if (!mineIn(v).some((b) => b.type === 'centre' && b.stage === 'live')) return 'This village’s center is still being founded';
-		// a woodcutter, forester, quarry, iron mine or fishery only stands on a hex of its own kind
+		// a woodcutter, forester, quarry or iron mine only stands on a hex of its own kind
 		if (t.biome && st.biome[plot] !== t.biome) return `${t.label}s stand on ${BIOMES[t.biome].label.toLowerCase()} hexes`;
 		if (type !== 'house') {
 			const home = buildingAt(plan.spots[plot][0]);
@@ -1921,7 +1895,6 @@ export function createSim(st) {
 		const f = flagAt(c);
 		if (f && f.owner !== PLAYER) return 'Not yours';
 		if (st.road[c]) return 'A path runs where its stop goes';
-		if (type === 'fishery' && !g.within(n, 10).some((j) => st.terrain[j] === WATER)) return 'Needs water nearby';
 		if (t.kind === 'mine' && depositAt(n) <= 0) return 'No iron ore in this rock';
 		return '';
 	}
@@ -2120,9 +2093,6 @@ export function createSim(st) {
 			return { ok: false, why: 'Nothing to tear down here' };
 		},
 		/** enlarge a house to its next size: builders bring what it costs, and its settlers stay meanwhile */
-		setPace(/** @type {'master' | 'fast'} */ pace) {
-			st.pace = pace === 'fast' ? 'fast' : 'master';
-		},
 		upgrade(/** @type {number} */ id) {
 			const b = st.buildings[id];
 			if (!b || b.owner !== PLAYER || (b.type !== 'house' && b.type !== 'woodcutter')) return { ok: false, why: 'Only your houses and your wood grow' };
@@ -2140,6 +2110,15 @@ export function createSim(st) {
 		pause(/** @type {number} */ id, /** @type {boolean} */ paused) {
 			const b = st.buildings[id];
 			if (b && b.owner === PLAYER) b.paused = paused;
+		},
+		/** buy wares from the world market for the village a node lies in: its treasury pays, never into debt, and they
+		 * are in its storehouse at once */
+		buy(/** @type {number} */ node, /** @type {string} */ w, n = 1) {
+			const c = myCentres().find((x) => villageAt(x.node) === villageAt(node));
+			if (!c) return { ok: false, why: 'Only your villages buy' };
+			if (!WORLD[w]) return { ok: false, why: 'The world market does not sell that' };
+			const k = worldBuy(c, w, n);
+			return k ? { ok: true, n: k } : { ok: false, why: `Its treasury holds less than ${Math.round(WORLD[w].eur).toLocaleString('en-US')} €` };
 		},
 		/** sell or buy a ware, or (null) neither */
 		order(/** @type {string} */ w, /** @type {'sell' | 'buy' | null} */ o) {
@@ -2159,7 +2138,6 @@ export function createSim(st) {
 			const reachable = st.parties.map((/** @type {any} */ _, /** @type {number} */ k) => k > 0 && joined(k));
 			return {
 				purse: purse(),
-				abundance: m.abundance,
 				cities: st.parties.slice(1).map((/** @type {any} */ p, /** @type {number} */ j) => ({ k: j + 1, name: p.name, joined: reachable[j + 1], coins: p.coins, node: cityCentre(j + 1)?.node ?? -1 })),
 				wares: TRADED.map((w) => {
 					const at = st.parties.map((/** @type {any} */ p, /** @type {number} */ k) => (reachable[k] ? priceIn(p, w) : 0)).filter((/** @type {number} */ x) => x > 0);
@@ -2232,11 +2210,9 @@ export function createSim(st) {
 				villages: st.villageOwner.filter((/** @type {number} */ o) => o === PLAYER).length,
 				carriers,
 				workers,
-				parties: st.parties.map((/** @type {any} */ p) => ({ name: p.name, wb: p.wb })),
+				parties: st.parties.map((/** @type {any} */ p) => ({ name: p.name })),
 				/** the valley's date */
 				date: calendar(st.cal),
-				/** how fast the valley's calendar runs: the master clock's pace, or fast for tests */
-				pace: st.pace,
 				/** all your villages' food, a week: grown, eaten, and gold spent and earned on it */
 				food: yourVillages().reduce((t, { p }) => ({ grown: t.grown + (p.flow?.grown ?? 0), need: t.need + p.pop * FOOD_KG, spent: t.spent + (p.flow?.spent ?? 0), earned: t.earned + (p.flow?.earned ?? 0) }), { grown: 0, need: 0, spent: 0, earned: 0 }),
 				msgs: st.msgs.slice(-6)
@@ -2268,14 +2244,13 @@ export function createSim(st) {
 			const rows = [
 				row('plank', 'Planks', ['plank'], lived && s.plank < 0.8),
 				row('stone', 'Stone', ['stone'], lived && s.stone < 0.8),
-				row('grain', 'Grain', ['grain'], false),
 				row('ore', 'Iron ore', ['ore'], false),
 				row('tools', 'Tools', ['tools'], noTools)
 			].filter((r) => r.need > 0 || r.have > 0);
 			/** @type {{ tone: string, text: string, node: number }[]} */
 			const notes = [];
 			if (pop >= bed && bed < cap) notes.push({ tone: 'todo', text: `No free bed: enlarge a house or build one`, node: c.node });
-			if (lived && !wellsIn(v) && (p.litres ?? 0) < pop * WATER_L * 7 * KEEP) notes.push({ tone: 'alert', text: `No well: its tanks are running dry`, node: c.node });
+			if (lived && !wellsIn(v)) notes.push({ tone: 'todo', text: `No well: it buys its water from the world market`, node: c.node });
 			const cut = blds().find((b) => b.owner === PLAYER && b.stage === 'site' && villageAt(b.node) === v && b.status === 'Not connected by road');
 			if (cut) notes.push({ tone: 'alert', text: `A ${T(cut).label.toLowerCase()} site has no path`, node: cut.node });
 			return {
@@ -2284,31 +2259,38 @@ export function createSim(st) {
 				pop,
 				beds: bed,
 				cap,
-				wb: p.wb,
-				/** its treasury, in gold (below 0, a debt) */
+				/** its treasury, in gold (below 0, a debt), and in euros: a HEART is a euro */
 				gold: (c.hearts ?? 0) / HEARTS.perGold,
-				/** its food, kg: in store, what its people eat a week, what it keeps, and a week of what was grown, bought
-				 * and sold (and its gold); its forests' share of what they eat now, and the oldest forest's year */
+				eur: c.hearts ?? 0,
+				/** what its settlers issue a week, in HEARTs (€) */
+				income: HEARTS.perHour * 24 * 7 * pop,
+				/** what the world market sells it, and what it spent there on wares a week, € */
+				world: TRADED.map((w) => ({ w, eur: WORLD[w].eur, unit: WORLD[w].unit, have: Math.floor(has(w)) })),
+				wares: f.wares ?? 0,
+				/** its food, kg: in store, and as it stands now a week what its people eat, its forests grow and it buys
+				 * (and what that costs, at what it paid lately a kg); lately a week, what it sold to your others and earned;
+				 * its forests' share of what they eat, and the oldest forest's year */
 				food: {
 					kg: p.kg ?? 0,
 					week: pop * FOOD_KG,
 					keep: pop * FOOD_KG * KEEP,
-					grown: f.grown ?? 0,
-					eaten: f.eaten ?? 0,
-					fromVillages: f.fromVillages ?? 0,
-					fromWorld: f.fromWorld ?? 0,
+					grown: pop * FOOD_KG * forestOf(v),
+					buy: Math.max(0, pop * FOOD_KG * (1 - forestOf(v))),
+					perKg: (f.fromVillages ?? 0) + (f.fromWorld ?? 0) > 1 ? (f.spent ?? 0) / ((f.fromVillages ?? 0) + (f.fromWorld ?? 0)) : PRICE.world,
 					sold: f.sold ?? 0,
-					spent: f.spent ?? 0,
 					earned: f.earned ?? 0,
 					share: forestOf(v),
 					year: Math.floor(Math.max(0, ...mineIn(v).filter((b) => b.type === 'house' && st.forest[plan.plotOf[b.node]] !== undefined).map((b) => st.cal - st.forest[plan.plotOf[b.node]])) / YEAR) + 1,
 					short: lived && s.food < 0.8
 				},
-				/** its water, litres: in its tanks, what its people use a week, what its wells gave a week, and how many wells */
+				/** its water, litres: in its tanks, and as it stands now a week what its people use, its wells give and it
+				 * buys (and the € it pays), and how many wells */
 				water: {
 					litres: p.litres ?? 0,
 					week: pop * WATER_L * 7,
-					drawn: f.drawn ?? 0,
+					drawn: wellsIn(v) * 7,
+					bought: Math.max(0, pop * WATER_L * 7 - wellsIn(v) * 7),
+					spent: Math.max(0, pop * WATER_L * 7 - wellsIn(v) * 7) * WATER_PRICE,
 					wells: wellsIn(v) / WELL_L,
 					short: lived && s.water < 0.8
 				},
