@@ -10,7 +10,8 @@
 	import { page } from '$app/state';
 	import { replaceState } from '$app/navigation';
 	import { LAYERS, PLANTS, SEEDS, freshSeed, plantAt } from '$lib/plants';
-	import PickList from '$lib/app/PickList.svelte';
+	import Turntable from '$lib/app/Turntable.svelte';
+	import { fit } from '$lib/app/turntable.js';
 
 	/** @typedef {(typeof import('$lib/plants').PLANTS)[number]} Plant */
 	/** @typedef {'cutaway' | 'bare' | 'solid'} Soil */
@@ -66,6 +67,7 @@
 		const scene = new THREE.Scene();
 		scene.background = new THREE.Color('#e9e6e0');
 		const camera = new THREE.PerspectiveCamera(38, 1, 0.001, 100);
+		camera.userData.fov = 38; // widened on an upright canvas ($lib/app/turntable.js)
 		camera.position.set(0.3, 0.2, 0.4);
 		const controls = new OrbitControls(camera, renderer.domElement);
 		controls.enableDamping = true;
@@ -197,8 +199,7 @@
 		const resize = () => {
 			const w = box.clientWidth, h = box.clientHeight;
 			renderer.setSize(w, h);
-			camera.aspect = w / Math.max(1, h);
-			camera.updateProjectionMatrix();
+			fit(camera, w, h);
 		};
 		const ro = new ResizeObserver(resize);
 		ro.observe(box);
@@ -361,22 +362,24 @@
 
 <svelte:window onkeydown={onKey} />
 
-<main class="plants">
-	<PickList title="Plants" lede="Grown from code, seed to fruit, roots and all, in the seven layers of a food forest: tab through the ten stages, change the seed id for a sister plant." items={PLANTS} {chosen} where={(p) => p.from} onpick={pick} group={(p) => LAYERS.find((l) => l.id === p.layer)?.label ?? ''} {version} onversion={pickVersion} />
-	<section class="view">
-		<div class="canvas" bind:this={canvasBox}></div>
-
-		<div class="stages" role="tablist" aria-label="{chosen.label}: stages">
+<Turntable
+	name="plants"
+	bind:canvas={canvasBox}
+	picks={{ title: 'Plants', lede: 'Grown from code, seed to fruit, roots and all, in the seven layers of a food forest: tab through the ten stages, change the seed id for a sister plant.', items: PLANTS, chosen, where: (/** @type {Plant} */ p) => p.from, onpick: pick, group: (/** @type {Plant} */ p) => LAYERS.find((l) => l.id === p.layer)?.label ?? '', version, onversion: pickVersion }}
+>
+	{#snippet bar()}
+		<div class="chips stages" role="tablist" aria-label="{chosen.label}: stages">
+			<button class="chip grow" class:on={playing} onclick={grow} title="Grow on from here (space)">{playing ? 'Pause' : 'Grow ▸'}</button>
 			{#each chosen.stages as s, k (s.name)}
 				{#if k === 6}<span class="fruit-mark" aria-hidden="true">Fruit</span>{/if}
-				<button role="tab" class:fruit={k >= 6} class:on={!playing && stage === k} class:past={k < g} aria-selected={stage === k} onclick={() => goTo(k)}>
+				<button role="tab" class="chip" class:fruit={k >= 6} class:on={!playing && stage === k} class:past={k < g} aria-selected={stage === k} onclick={() => goTo(k)}>
 					<small>{k + 1}</small>{s.name}
 				</button>
 			{/each}
-			<button class="grow" class:on={playing} onclick={grow} title="Grow on from here (space)">{playing ? 'Pause' : 'Grow ▸'}</button>
 		</div>
-
-		<div class="panel">
+	{/snippet}
+	{#snippet panel()}
+		<div class="settings">
 			<label class="seed">
 				<span class="label">Seed id</span>
 				<input value={seed} spellcheck="false" autocomplete="off" onchange={(e) => reseed(e.currentTarget.value.trim() || SEEDS[0])} onkeydown={(e) => e.key === 'Enter' && e.currentTarget.blur()} />
@@ -384,99 +387,45 @@
 			<button class="dice" onclick={() => reseed(freshSeed())}>New seed</button>
 			<div class="chips">
 				{#each SEEDS as id (id)}
-					<button class:on={seed === id} onclick={() => reseed(id)}>{id}</button>
+					<button class="chip" class:on={seed === id} onclick={() => reseed(id)}>{id}</button>
 				{/each}
 			</div>
 			<span class="label">Frame</span>
 			<div class="chips">
-				<button class:on={frame === 'plant'} onclick={() => toFrame('plant')}>The plant</button>
-				<button class:on={frame === 'whole'} onclick={() => toFrame('whole')}>Whole earth</button>
+				<button class="chip" class:on={frame === 'plant'} onclick={() => toFrame('plant')}>The plant</button>
+				<button class="chip" class:on={frame === 'whole'} onclick={() => toFrame('whole')}>Whole earth</button>
 			</div>
 			<span class="label">Soil</span>
 			<div class="chips">
 				{#each SOILS as [mode, label] (mode)}
-					<button class:on={soil === mode} onclick={() => toSoil(mode)}>{label}</button>
+					<button class="chip" class:on={soil === mode} onclick={() => toSoil(mode)}>{label}</button>
 				{/each}
 			</div>
 		</div>
-
-		<div class="readout">
-			<b>{chosen.label} · {chosen.stages[stage].name} <em>{chosen.latin}</em></b>
-			<span class="what">{chosen.stages[stage].note}</span>
-			<span>
-				Day {day}
-				{#if size} · {measure(size.above)} above the soil · {measure(size.below)} below · {measure(size.across)} across{/if}
-			</span>
-			<small>← → or 1 – 0 for the stages · space grows · drag to turn round it · scroll to come closer</small>
-		</div>
-	</section>
-</main>
+	{/snippet}
+	{#snippet readout()}
+		<b>{chosen.label} · {chosen.stages[stage].name} <em>{chosen.latin}</em></b>
+		<small>{chosen.stages[stage].note}</small>
+		<span>
+			Day {day}
+			{#if size} · {measure(size.above)} above the soil · {measure(size.below)} below · {measure(size.across)} across{/if}
+		</span>
+		<small class="keys">← → or 1 – 0 for the stages · space grows · drag to turn round it · scroll to come closer</small>
+	{/snippet}
+</Turntable>
 
 <style>
-	.plants {
-		position: fixed;
-		inset: 0;
-		padding: env(safe-area-inset-top, 0px) env(safe-area-inset-right, 0px) env(safe-area-inset-bottom, 0px) env(safe-area-inset-left, 0px);
-		display: grid;
-		grid-template-columns: auto 1fr;
-		background: #f4f1eb;
-		color: #1f2a23;
-	}
-
-	.view {
-		position: relative;
-		min-width: 0;
-	}
-
-	.canvas {
-		position: absolute;
-		inset: 0;
-		cursor: grab;
-	}
-
-	.stages,
-	.panel,
-	.readout {
-		position: absolute;
-		padding: 0.6rem 0.8rem;
-		border-radius: 12px;
-		background: rgb(255 255 255 / 0.78);
-		-webkit-backdrop-filter: blur(10px);
-		backdrop-filter: blur(10px);
-		font-size: 0.85rem;
-	}
-
-	button {
-		font: inherit;
-		color: inherit;
-		cursor: pointer;
-	}
-
-	/* the ten stages, in a row across the top, the fruit's four marked off */
-	.stages {
-		top: 1rem;
-		left: 1rem;
-		right: 1rem;
-		display: flex;
-		flex-wrap: wrap;
-		align-items: center;
-		gap: 0.3rem;
-	}
-
-	.stages button {
+	/* the ten stages, in a row across the top, the fruit's four marked off, Grow first */
+	.stages .chip {
 		display: flex;
 		align-items: baseline;
 		gap: 0.35rem;
 		flex: none;
-		padding: 0.32rem 0.6rem;
-		border: 1px solid rgb(0 0 0 / 0.12);
-		border-radius: 999px;
-		background: rgb(255 255 255 / 0.7);
 		font-size: 0.8rem;
-		white-space: nowrap;
 	}
 
 	.fruit-mark {
+		flex: none;
 		margin: 0 0.1rem 0 0.4rem;
 		padding-left: 0.6rem;
 		border-left: 1px solid rgb(0 0 0 / 0.15);
@@ -486,27 +435,21 @@
 		color: #a3312a;
 	}
 
-	.stages button.fruit:not(.on) {
+	.stages .chip.fruit:not(.on) {
 		border-color: rgb(163 49 42 / 0.3);
 	}
 
-	.stages button small {
+	.stages .chip small {
 		font-size: 0.7rem;
 		opacity: 0.5;
 	}
 
-	.stages button.past:not(.on) {
+	.stages .chip.past:not(.on) {
 		background: #e3ead9;
 	}
 
-	.stages button.on {
-		background: #1f2a23;
-		border-color: #1f2a23;
-		color: #fff;
-	}
-
-	.stages .grow {
-		margin-left: auto;
+	.stages .grow,
+	.stages .grow.on {
 		background: #3d6b2e;
 		border-color: #3d6b2e;
 		color: #fff;
@@ -517,20 +460,10 @@
 		border-color: #8a5a2b;
 	}
 
-	.panel {
-		top: 6.6rem;
-		right: 1rem;
+	.settings {
 		display: flex;
 		flex-direction: column;
 		gap: 0.45rem;
-		width: 14rem;
-	}
-
-	.label {
-		font-size: 0.72rem;
-		letter-spacing: 0.08em;
-		text-transform: uppercase;
-		opacity: 0.55;
 	}
 
 	.seed {
@@ -546,6 +479,7 @@
 		background: #fff;
 		font: inherit;
 		font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+		font-size: max(16px, 1em);
 		color: inherit;
 	}
 
@@ -557,66 +491,20 @@
 		color: #fff;
 	}
 
-	.chips {
-		display: flex;
-		flex-wrap: wrap;
-		gap: 0.25rem;
-	}
-
-	.chips button {
+	.settings .chip {
 		padding: 0.2rem 0.55rem;
-		border: 1px solid rgb(0 0 0 / 0.12);
-		border-radius: 999px;
-		background: rgb(255 255 255 / 0.7);
 		font-size: 0.78rem;
 	}
 
-	.chips button.on {
-		background: #1f2a23;
-		border-color: #1f2a23;
-		color: #fff;
-	}
-
-	/* at the foot, above the app's nav pill (--nav-room, src/app.css) */
-	.readout {
-		left: 1rem;
-		bottom: calc(1rem + var(--nav-room) - env(safe-area-inset-bottom, 0px));
-		display: flex;
-		flex-direction: column;
-		gap: 0.15rem;
-		max-width: 30rem;
-	}
-
-	.readout em {
+	em {
 		margin-left: 0.3rem;
 		font-weight: 400;
 		opacity: 0.55;
 	}
 
-	.readout small,
-	.readout .what {
-		opacity: 0.65;
-	}
-
-	@media (max-width: 720px) {
-		.plants {
-			grid-template-columns: 1fr;
-			grid-template-rows: auto 1fr;
-		}
-
-		.panel {
-			top: auto;
-			right: 1rem;
-			left: 1rem;
-			width: auto;
-			bottom: calc(8.5rem + var(--nav-room));
-		}
-
-		.panel .chips:first-of-type {
-			display: none;
-		}
-
-		.readout small {
+	/* no keyboard on a phone */
+	@media (hover: none) and (pointer: coarse) {
+		.keys {
 			display: none;
 		}
 	}
