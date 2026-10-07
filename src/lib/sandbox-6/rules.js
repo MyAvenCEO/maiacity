@@ -148,7 +148,7 @@ export const HOUSE_UP = HOUSE_BEDS.slice(1).map((n, k) => domeStep(HOUSE_BEDS[k]
 
 /** @type {Record<string, BuildingType>} */
 export const BUILDINGS = {
-	centre: { id: 'centre', label: 'Logistics hub', group: 'Homes', about: 'Founds a village in its middle hex: a small store dome, its storehouse and market — nobody lives here. Your first comes with your settlers, anywhere in the valley; every next one in the village next to one of yours, joined to it by a trade route under the ground, laid of fired clay voussoirs (what your stores lack, bought from the world market), and four settlers come to build its houses. It grows into its village’s great village center, the village’s power plant too: geothermal wells under it, drilled for gold, run day and night.', cost: {}, kind: 'centre' },
+	centre: { id: 'centre', label: 'Logistics hub', group: 'Homes', about: 'Founds a village in its middle hex: a small store dome, its storehouse and market — nobody lives here. Your first comes with your settlers, anywhere in the valley; every next one in the village next to one of yours, joined to it by a trade route under the ground, laid of fired clay voussoirs (what your stores lack, bought from the world market), and four settlers come to build its houses. It grows into its village’s great village center, the village’s power plant too: a geothermal plant under it, its wells drilled for gold, runs day and night.', cost: {}, kind: 'centre' },
 	house: { id: 'house', label: 'House', group: 'Homes', about: 'Founds a settlement: settlers live here, 2 at first, then twice as many each time you enlarge it, up to 248. A dome of glass on struts and steel joints, all three from your stores. Its two factory spots open once it stands.', cost: domeStep(0, HOUSE_BEDS[0]), kind: 'house' },
 	woodcutter: { id: 'woodcutter', label: 'Forester', group: 'Basics', about: 'Your wood, in one building that grows: a forester plants young trees round it; upgraded, a woodcutter fells grown trees and plants a young one where each stood, then a sawmill and a timber works cut more planks from every tree. Build it on a forest hex.', cost: { plank: 2 }, kind: 'gather', biome: 'forest', worker: 'Forester', out: 'plank', time: 6, rest: 4, range: 10 },
 	forester: { id: 'forester', label: 'Forester', group: '', about: 'Plants young trees nearby, on a forest hex; they grow in about two minutes. (Now the first level of the wood building.)', cost: { plank: 2 }, kind: 'forester', biome: 'forest', worker: 'Forester', time: 3, rest: 5, range: 8 },
@@ -304,33 +304,31 @@ export const GROWS = /** @type {Record<string, { levels: Stage[], up: Record<str
 );
 
 /**
- * @typedef {{ label: string, does: string, wells: number, build: Craft, keep: Craft, make: Craft, up: Record<string, number>, gold: number }} CentreStage
+ * @typedef {{ label: string, does: string, plant: number, build: Craft, keep: Craft, make: Craft, up: Record<string, number>, gold: number }} CentreStage
  */
 /**
  * The village center grows by the crafting engine's recipes too (Samuel, 2026-10-07): a village starts as a logistics
  * hub, a small store dome; it grows into the great village center, a dome as large as a great dome of 248, its hall,
- * market and storehouse, and its geothermal power plant, the wells of the first triplet drilled for gold under it; then
- * two more producers at a time. More stages will come between the hub and the great center. Its build is in tonnes,
- * with its builders' energy and the gold for its wells; its keep, 2% a year of what it is built of and the energy of
- * its hall, storehouse and routes (ENERGY); its make, what its wells make a year. Its wares come from its stores at once
- * (what they lack, bought from the world market), and it grows at once.
+ * market and storehouse, and its village's one geothermal plant, its wells drilled for gold under it. The plant is not
+ * upgraded (Samuel). More stages will come between the hub and the great center. Its build is in tonnes, with its
+ * builders' energy and the gold for its plant; its keep, 2% a year of what it is built of and the energy of its hall,
+ * storehouse and routes (ENERGY); its make, what its plant makes a year. Its wares come from its stores at once (what
+ * they lack, bought from the world market), and it grows at once.
  * @type {CentreStage[]}
  */
 export const CENTRE = /** @type {any} */ ([
-	{ label: 'Logistics hub', build: { plank: 30, steel: 20, glass: 10 }, gold: 0, wells: 0, does: 'stores and trades its village’s wares; it makes no power' },
-	// its wells' gold as Samuel set it (2026-10-07; our research says 30 to 45 M € for a plant): 25,000 gold a stage
-	{ label: 'Village center', build: { ...DOME_T }, gold: 25000, wells: 1, does: '' },
-	{ label: 'Geothermal 2', build: {}, gold: 25000, wells: 2, does: '' },
-	{ label: 'Geothermal 3', build: {}, gold: 25000, wells: 3, does: '' }
+	{ label: 'Logistics hub', build: { plank: 30, steel: 20, glass: 10 }, gold: 0, plant: 0, does: 'stores and trades its village’s wares; it makes no power' },
+	// its geothermal plant's gold as Samuel set it (2026-10-07; our research says 30 to 45 M € for a plant)
+	{ label: 'Village center', build: { ...DOME_T }, gold: 25000, plant: 1, does: '' }
 ]);
 
 /**
  * Energy, in kWh here (a MWh is its unit on the page): electricity only (a dome's heat comes from its fish pond and the village's geothermal heat loop).
  * Our village energy research, 2026-10-07 (project file energy/village-energy.md).
  *
- * Every village center is also its village's power plant: an enhanced geothermal triplet under it (as Fervo drilled
- * for Google; in Bavaria one injector and two producers), 3.4 MW net, running 94% of the time, about 540 MWh a week;
- * each further stage drills two more producers and as much again. Every dome makes some with the see-through solar
+ * Every village center is also its village's power plant: one enhanced geothermal plant under it (as Fervo drilled
+ * for Google: its wells, one injecting and two producing, 5.5 km down), 3.4 MW net, running 94% of the time, about
+ * 540 MWh a week; it is not upgraded (Samuel, 2026-10-07). A logistics hub has none yet. Every dome makes some with the see-through solar
  * cells in its glass, which leave 70% of the light: a great dome of 248 about 1.3 GWh a year, so 5,242 kWh a bed (a
  * smaller dome as much as its glass), most in summer and little in winter; and its climate (fans, pumps, heat pumps)
  * uses 0.17 GWh a year. A person uses 900 kWh a year at home, as people sharing a dome do, so a dome's sun makes about
@@ -339,10 +337,9 @@ export const CENTRE = /** @type {any} */ ([
  * theirs as their recipes say (RECIPES), a round at a time.
  */
 export const ENERGY = {
-	/** a geothermal stage's net power, kW, the share of the time it runs, and the most stages a village center drills */
+	/** a geothermal plant's net power, kW, and the share of the time it runs */
 	wellKw: 3400,
 	uptime: 0.94,
-	wellsMost: 3,
 	/** kWh a year a bed's share of its dome's solar cells makes, and of what its climate uses */
 	sunBed: 1300000 / HOUSE_MOST,
 	climateBed: 170000 / HOUSE_MOST,
@@ -358,7 +355,7 @@ export const ENERGY = {
 	hub: 30000
 };
 // the village center's three recipes at each stage, as a factory's: its build in tonnes with its builders' energy and its
-// wells' gold (and in loads, `up`), its keep of all it is built of by then, and what its wells make a year
+// geothermal plant's gold (and in loads, `up`), its keep of all it is built of by then, and what its plant makes a year
 {
 	/** @type {Record<string, number>} */
 	const built = {};
@@ -367,8 +364,8 @@ export const ENERGY = {
 		x.up = Object.fromEntries(Object.entries(wares).map(([w, t]) => [w, Math.ceil(t / LOAD_T)]));
 		for (const [w, t] of Object.entries(wares)) built[w] = (built[w] ?? 0) + t;
 		x.build = { in: { ...buildIn(wares), ...(x.gold ? { gold: x.gold } : {}) }, out: {} };
-		x.keep = { in: { ...keepIn(built), energy: (x.wells ? ENERGY.centre : ENERGY.hub) / 1000 }, out: {} };
-		x.make = { in: {}, out: x.wells ? { energy: (x.wells * ENERGY.wellKw * 24 * YEAR * ENERGY.uptime) / 1000 } : {} };
+		x.keep = { in: { ...keepIn(built), energy: (x.plant ? ENERGY.centre : ENERGY.hub) / 1000 }, out: {} };
+		x.make = { in: {}, out: x.plant ? { energy: (x.plant * ENERGY.wellKw * 24 * YEAR * ENERGY.uptime) / 1000 } : {} };
 	}
 	BUILDINGS.centre.cost = CENTRE[0].up;
 }
