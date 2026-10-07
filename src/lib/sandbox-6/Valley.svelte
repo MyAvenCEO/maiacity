@@ -10,6 +10,7 @@
 	import { WorldBar } from '$lib/sandbox-kit';
 	import { BUILDINGS, HOUSE_BEDS, HOUSE_SIZE, MENU, WARES, WARE_ORDER } from './rules.js';
 	import { NEED_LABEL } from './market.js';
+	import { FOOD_KG, KEEP, PRICE, WATER_L, WATER_USE } from './food.js';
 	import { PLAYER } from './sim.js';
 	import Tree from './Tree.svelte';
 
@@ -45,16 +46,24 @@
 	let links = $state([]);
 	/** what a Connect button said when the route could not be dug */
 	let linkWhy = $state('');
-	/** the village of yours the right side shows — the one picked, else your first: each need against its stock @type {ReturnType<import('./sim.js').Sim['village']>} */
-	let home = $state(null);
+	/** the village of yours the right side shows — the one picked, else your first: each need against its stock */
+	let home = $state(/** @type {ReturnType<import('./sim.js').Sim['village']>} */ (null));
 	/** whether the pick is a village center of yours: then the right side is its card */
 	let ownCentre = $state(false);
+	/** its food and water, and a week of food against what its people eat (kg) and in gold */
+	const fd = $derived(home?.food);
+	const wt = $derived(home?.water);
+	const flow = $derived(fd ? fd.grown - fd.week : 0);
+	const gold = $derived(fd ? fd.earned - fd.spent : 0);
 	let seenMsg = 0;
 	/** @type {{ text: string, tone: string, node: number, key: number }[]} */
 	let toasts = $state([]);
 
 	const label = (/** @type {string} */ w) => WARES[w]?.label ?? w;
-	const clock = (/** @type {number} */ t) => `${Math.floor(t / 60)}:${String(Math.floor(t % 60)).padStart(2, '0')}`;
+	/** a number of kg, litres or gold, whole, with its thousands marked */
+	const num = (/** @type {number} */ n) => Math.round(n).toLocaleString('en-US').replace('-', '−');
+	/** how full a store is against what it keeps, as a bar's class */
+	const fill = (/** @type {number} */ have, /** @type {number} */ want) => (have >= want * 0.99 ? 'good' : have >= want / 2 ? 'fair' : 'poor');
 
 	function refresh() {
 		if (!game) return;
@@ -159,7 +168,7 @@
 
 	const sitesCost = (/** @type {Record<string, number>} */ cost) => Object.entries(cost);
 	const chainOf = (/** @type {any} */ t) =>
-		t.kind === 'centre' ? 'Its village’s storehouse, market and hall' : t.kind === 'house' ? 'Beds for 2, doubling each time it is enlarged, up to 248' : t.kind === 'forester' ? 'Plants trees' : `${t.inputs?.length ? t.inputs.map((/** @type {string[]} */ s) => s.map(label).join(' or ')).join(' + ') + ' → ' : ''}${t.out ? label(t.out) : ''}`;
+		t.kind === 'centre' ? 'Its village’s storehouse, market and hall' : t.kind === 'house' ? 'Beds for 2, doubling each time it is enlarged, up to 248; plants its hex’s food forest' : t.kind === 'forester' ? 'Plants trees' : `${t.inputs?.length ? t.inputs.map((/** @type {string[]} */ s) => s.map(label).join(' or ')).join(' + ') + ' → ' : ''}${t.out ? label(t.out) : ''}`;
 </script>
 
 <div class="valley">
@@ -219,7 +228,33 @@
 						{#each home.villages as v (v.node)}<button class:on={v.node === home.node} onclick={() => pickVillage(v.node)}>{v.name}</button>{/each}
 					</div>
 				{/if}
-				<p class="label" title="Its settlers add 24 HEARTs each an in-game hour to its treasury; 1,000 HEARTs are a gold">{home.pop}/{home.beds} beds · wellbeing <b>{Math.round(home.wb)}</b> · <b>{home.gold.toFixed(1)}</b> gold</p>
+				<p class="label stats" title="Its settlers add 24 HEARTs each an in-game hour to its treasury; 1,000 HEARTs are a gold. Below 0 it is in debt, from buying food">{home.pop}/{home.beds} beds · wellbeing <b>{Math.round(home.wb)}</b> · <b class:debt={home.gold < 0}>{num(home.gold)}</b> gold</p>
+				{#if fd}
+				<section class="ledger" aria-label="Food">
+					<p class="ledger-head" class:short={fd.short}><b>Food</b><span title="A hex's food forest grows 10% of what its people eat in its first year, 10% more each year up to 100% in its tenth, then up to 150% from its fifteenth year">forests in year {fd.year} · grow {Math.round(fd.share * 100)}%</span></p>
+					<span class="bar" title="In store against the {KEEP} weeks a village keeps"><span class={fill(fd.kg, fd.keep)} style:width="{Math.min(100, (fd.kg / Math.max(1, fd.keep)) * 100)}%"></span></span>
+					<dl>
+						<dt>In store</dt><dd>{num(fd.kg)} kg</dd>
+						<dt title="{FOOD_KG.toFixed(1)} kg a person a week, the European diet">Eaten a week</dt><dd>{num(fd.week)} kg</dd>
+						<dt>Grown a week</dt><dd>{num(fd.grown)} kg</dd>
+						{#if fd.fromVillages >= 1}<dt title="From your villages that grow more than they eat, {PRICE.village} gold a kg">Bought nearby</dt><dd>{num(fd.fromVillages)} kg</dd>{/if}
+						{#if fd.fromWorld >= 1}<dt title="From beyond the valley, {PRICE.world} gold a kg">Bought outside</dt><dd>{num(fd.fromWorld)} kg</dd>{/if}
+						{#if fd.sold >= 1}<dt title="To your villages that lack it, {PRICE.village} gold a kg">Sold</dt><dd>{num(fd.sold)} kg</dd>{/if}
+						<dt title="What its forests grow against what its people eat, a week, and what buying and selling food did to its gold">Cashflow</dt><dd class:debt={flow < -0.5} class:gain={flow > 0.5}>{flow > 0.5 ? '+' : ''}{num(flow)} kg · {gold > 0.5 ? '+' : ''}{num(gold)} gold</dd>
+					</dl>
+				</section>
+				{/if}
+				{#if wt}
+				<section class="ledger" aria-label="Water">
+					<p class="ledger-head" class:short={wt.short}><b>Water</b><span>{wt.wells} {wt.wells === 1 ? 'well' : 'wells'}</span></p>
+					<span class="bar" title="In its tanks against {KEEP} weeks of use"><span class={fill(wt.litres, wt.week * KEEP)} style:width="{Math.min(100, (wt.litres / Math.max(1, wt.week * KEEP)) * 100)}%"></span></span>
+					<dl>
+						<dt>In its tanks</dt><dd>{num(wt.litres)} L</dd>
+						<dt title="{WATER_L} L a person a day: {WATER_USE.drinking} to drink, {WATER_USE.home} at home, {WATER_USE.crops} for the crops">Used a week</dt><dd>{num(wt.week)} L</dd>
+						<dt>Wells give a week</dt><dd>{num(wt.drawn)} L</dd>
+					</dl>
+				</section>
+				{/if}
 				<ul class="wants" aria-label="What it has, against what it needs">
 					{#each home.rows as r (r.key)}
 						<li class:short={r.short} title="{r.label}: {r.have} in store, needs {r.need}">
@@ -247,7 +282,7 @@
 				{#if ownCentre}
 					<div class="actions"><button onclick={() => game?.setMode('road')}>Path from here</button></div>
 				{/if}
-				<p class="people small">{summary.people} people · {summary.villages} {summary.villages === 1 ? 'village' : 'villages'} · {clock(summary.time)}</p>
+				<p class="people small">Year {summary.date.year} · week {summary.date.week} · {summary.people} people · {summary.villages} {summary.villages === 1 ? 'village' : 'villages'}</p>
 			</section>
 		</aside>
 	{/if}
@@ -676,6 +711,52 @@
 		width: 0.6rem;
 		height: 0.6rem;
 		border-radius: 2px;
+	}
+	.label.stats {
+		display: block;
+		line-height: 1.4;
+	}
+	.ledger {
+		margin: 0.55rem 0 0;
+		font-size: 0.74rem;
+	}
+	.ledger-head {
+		display: flex;
+		justify-content: space-between;
+		align-items: baseline;
+		gap: 0.5rem;
+		margin: 0 0 0.25rem;
+	}
+	.ledger-head span {
+		font-size: 0.68rem;
+		opacity: 0.7;
+	}
+	.ledger-head.short b {
+		color: #b23b2f;
+	}
+	.ledger .bar {
+		display: block;
+		height: 0.4rem;
+	}
+	.ledger dl {
+		display: grid;
+		grid-template-columns: auto 1fr;
+		gap: 0.1rem 0.6rem;
+		margin: 0.35rem 0 0;
+	}
+	.ledger dt {
+		opacity: 0.7;
+	}
+	.ledger dd {
+		margin: 0;
+		text-align: right;
+		font-variant-numeric: tabular-nums;
+	}
+	.debt {
+		color: #a3322a;
+	}
+	.gain {
+		color: #2f7a3a;
 	}
 	.wants {
 		display: grid;

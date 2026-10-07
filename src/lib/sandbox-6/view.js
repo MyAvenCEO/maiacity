@@ -24,8 +24,9 @@ const HEX_R = (K * STEP) / Math.sqrt(3);
 const WAYS = [[1, 0], [0.5, -Math.sqrt(3) / 2], [-0.5, -Math.sqrt(3) / 2], [-1, 0], [-0.5, Math.sqrt(3) / 2], [0.5, Math.sqrt(3) / 2]];
 /** how much larger a village center is drawn than its model: half its hex across, land all round it */
 const CENTRE_SCALE = 2.4, CENTRE_TALL = 1.8;
-/** the stop in the middle of a hex where its paths meet: just wider than a path */
-const SQUARE_R = 0.62;
+/** the roundabout in the middle of a hex where its paths meet: the ring the buses drive round (half a step out, where
+ * a path's last step begins), its road from the island out, and the island in its middle, where wares wait */
+const RING = STEP / 2, RING_OUT = RING + 0.38, ISLE = RING - 0.33;
 
 /**
  * @param {THREE.Scene} scene
@@ -82,8 +83,13 @@ export function createView(scene, sim) {
 	].map(([sx, sz]) => inst(new THREE.CylinderGeometry(0.065, 0.065, 0.05, 10).rotateZ(Math.PI / 2).translate(sx * 0.14, 0.065, sz * 0.19), tyre, BUSES));
 	const spots = inst(new THREE.CylinderGeometry(0.5, 0.5, 0.06, 6), keep(new THREE.MeshBasicMaterial({ color: '#ffffff', transparent: true, opacity: 0.55 })), g.N, false);
 	spots.receiveShadow = false;
-	// the squares where paths meet
-	const squares = inst(new THREE.CylinderGeometry(SQUARE_R, SQUARE_R, 0.06, 18), keep(new THREE.MeshStandardMaterial({ color: '#b39468', roughness: 1, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 })), g.N, false);
+	// the roundabouts where paths meet: a ring of road, a kerb, and a green island with a bush on it
+	const squares = inst(new THREE.CylinderGeometry(RING_OUT, RING_OUT, 0.06, 28), keep(new THREE.MeshStandardMaterial({ color: '#b39468', roughness: 1, polygonOffset: true, polygonOffsetFactor: -3, polygonOffsetUnits: -3 })), g.N, false);
+	const kerbs = inst(new THREE.CylinderGeometry(ISLE + 0.05, ISLE + 0.05, 0.1, 24).translate(0, 0.05, 0), mat('#d9d4c6'), g.N, false);
+	const isles = inst(new THREE.CylinderGeometry(ISLE, ISLE, 0.14, 24).translate(0, 0.07, 0), mat('#6f9e4c'), g.N, false);
+	const bushes = inst(new THREE.IcosahedronGeometry(0.16, 0).translate(0, 0.24, 0), mat('#4f8a3a'), g.N);
+	/** the stops in use: where the roundabouts stand */
+	const stops = new Set();
 
 	const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), s3 = new THREE.Vector3(), p3 = new THREE.Vector3(), yAxis = new THREE.Vector3(0, 1, 0);
 	/** @param {THREE.InstancedMesh} mesh @param {number} k @param {number} x @param {number} y @param {number} z */
@@ -452,8 +458,17 @@ export function createView(scene, sim) {
 		stubMesh.receiveShadow = true;
 		root.add(stubMesh);
 		let k = 0;
-		for (const n of used) if (plan.centre[plan.plotOf[n]] === n) put(squares, k++, X(n), Math.max(Y(n), SEA) + 0.02, Z(n));
-		done(squares, k);
+		stops.clear();
+		for (const n of used)
+			if (plan.centre[plan.plotOf[n]] === n) {
+				const y = Math.max(Y(n), SEA);
+				put(squares, k, X(n), y + 0.03, Z(n));
+				put(kerbs, k, X(n), y, Z(n));
+				put(isles, k, X(n), y + 0.02, Z(n));
+				put(bushes, k++, X(n) + 0.12, y + 0.02, Z(n) - 0.1, 1, n);
+				stops.add(n);
+			}
+		for (const m of [squares, kerbs, isles, bushes]) done(m, k);
 	}
 
 	// the trade routes: two-lane tunnels in their digger's colour from village center to village center, shown (seen
@@ -518,12 +533,13 @@ export function createView(scene, sim) {
 		let w = 0;
 		for (const flag of Object.values(st.flags)) {
 			const n = flag.node, x = X(n), y = Math.max(Y(n), SEA), z = Z(n);
-			// no flag stands there any more: a settlement's middle is a stop where its paths meet, its wares round it
+			// no flag stands there any more: a settlement's middle is a roundabout where its paths meet, its wares on its island
+			const isle = stops.has(n) ? 0.16 : 0;
 			flag.wares.forEach((/** @type {number} */ id, /** @type {number} */ k) => {
 				const ware = st.wares[id];
 				if (!ware) return;
-				const a = (k / 8) * Math.PI * 2 + 0.4;
-				put(wares, w, x + Math.cos(a) * 0.42, y + 0.09, z + Math.sin(a) * 0.42, 1, a);
+				const a = (k / 8) * Math.PI * 2 + 0.4, r = isle ? ISLE * 0.62 : 0.42;
+				put(wares, w, x + Math.cos(a) * r, y + 0.09 + isle, z + Math.sin(a) * r, isle ? 0.8 : 1, a);
 				wares.setColorAt(w++, wareColor[ware.type]);
 			});
 		}
@@ -604,13 +620,27 @@ export function createView(scene, sim) {
 	/** where each walker was last frame, to face where it goes @type {Map<number, number[]>} */
 	const last = new Map();
 	function unitPos(/** @type {any} */ u) {
-		const n = u.path.length;
-		const k = Math.max(0, Math.min(n - 1, Math.floor(u.p)));
-		const f = Math.min(1, Math.max(0, u.p - k));
+		const n = u.path.length, p = Math.max(0, Math.min(n - 1, u.p)), dir = u.tgt >= u.p ? 1 : -1;
+		// within half a step of a roundabout it drives round the island, counter-clockwise (the way right-hand traffic
+		// goes round), from the path it came by to the path it leaves by
+		const i = Math.round(p), m = u.path[i];
+		if (stops.has(m)) {
+			const from = u.path[i - dir], to = u.path[i + dir];
+			const ang = (/** @type {number} */ j) => Math.atan2(Z(j) - Z(m), X(j) - X(m));
+			const ain = from !== undefined ? ang(from) : to !== undefined ? ang(to) : 0, aout = to !== undefined ? ang(to) : ain;
+			const sweep = (((ain - aout) % (2 * Math.PI)) + 2 * Math.PI) % (2 * Math.PI);
+			const s = Math.min(1, Math.max(0, (p - i) * dir + 0.5));
+			const a = ain - sweep * s, x = X(m) + Math.cos(a) * RING, z = Z(m) + Math.sin(a) * RING;
+			return at.set(x, groundY(x, z), z);
+		}
+		const k = Math.min(n - 1, Math.floor(p));
+		const f = Math.min(1, Math.max(0, p - k));
 		const a = u.path[k], b = u.path[Math.min(n - 1, k + 1)];
-		// it keeps to the right-hand lane of the way it goes, so every path runs both ways at once
+		// it keeps to the right-hand lane of the way it goes, so every path runs both ways at once (easing into the
+		// middle of the road where it meets a roundabout)
 		const a0 = a === b && k > 0 ? u.path[k - 1] : a, b0 = a === b && k > 0 ? a : b;
-		const dx = X(b0) - X(a0), dz = Z(b0) - Z(a0), len = Math.hypot(dx, dz), side = len > 1e-6 ? ((u.tgt >= u.p ? 1 : -1) * LANE) / len : 0;
+		const near = Math.min(stops.has(a) ? f : 1, stops.has(b) ? 1 - f : 1);
+		const dx = X(b0) - X(a0), dz = Z(b0) - Z(a0), len = Math.hypot(dx, dz), side = len > 1e-6 ? ((dir * LANE) / len) * Math.min(1, Math.max(0, (near - 0.5) * 2)) : 0;
 		return at.set(X(a) + (X(b) - X(a)) * f - dz * side, Math.max(Y(a), SEA) + (Math.max(Y(b), SEA) - Math.max(Y(a), SEA)) * f, Z(a) + (Z(b) - Z(a)) * f + dx * side);
 	}
 	/** whether a node is a village center's stop: where a cart's straight legs meet */
