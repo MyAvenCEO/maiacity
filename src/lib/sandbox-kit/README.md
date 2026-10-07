@@ -9,7 +9,7 @@ What every avenCITY sandbox world is made with — the same sky and universe, th
 | 2 · a city's island (`src/lib/sandbox-2/island`) | its own canvas | `createSky` (island size) | `createOrbitRig` | `&area=island`, grown from `world.seed` |
 | 3 · inside a dome (`src/lib/sandbox-2/interior`) | `createStage` | `createSky` (dome size) | `createWalker` | `&area=home` … `factory` |
 | 4 · a dome cell (`src/lib/sandbox-2/interior/village.ts`) | `createStage` | `createSky` | `createWalker` | the cell, its domes built as the camera comes |
-| 6 · a valley of settlers (`src/lib/sandbox-6`) | `createStage` | `createSky` (its own day on Auto) | `createOrbitRig` | the valley played by its autoplayer from one seed |
+| 6 · a valley of settlers (`src/lib/sandbox-6`) | `createStage` | `createSky` (its own day on Auto) | `createOrbitRig` | the valley played by its autoplayer from one seed (trade with three neighbours, no war) |
 
 **One universe, one source of truth.** Every world is a view of the same universe (`universe.js`), zoomed in more or less. From space (Sandbox 2's planet) it is a dark blue universe, its stars and the Milky Way, the sun a star, the planet turning in its light with a day side and a night side; come down and you are deeper in the air — the sky turns blue and light round you — until on the ground (the islands, the domes) it is the full sky: the Preetham scattering by day, sunsets, the blue hour, and the stars coming out as the sun goes deeper below the horizon, turning round the pole through the night. The fog takes the colour of the real horizon, so what is far away melts into the sky that is there.
 

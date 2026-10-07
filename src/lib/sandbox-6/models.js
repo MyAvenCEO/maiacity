@@ -6,8 +6,8 @@
  */
 import * as THREE from 'three';
 
-/** the owners' colours: yours, the rival's */
-export const TEAM = ['#2f6fb3', '#b8392f'];
+/** the owners' colours: yours, the three neighbours', the fair's */
+export const TEAM = ['#2f6fb3', '#c8642a', '#7a55a8', '#3d8f5c', '#8a7f6e'];
 
 /** @type {Map<string, THREE.MeshStandardMaterial>} */
 const mats = new Map();
@@ -201,38 +201,64 @@ export function buildingModel(type, owner) {
 			g.add(part(new THREE.BoxGeometry(0.18, 0.18, 0.18), mat(TIMBER), 1.0, 0.09, 0.2));
 			g.add(chimney(-0.4, 1.0, -0.2, 0.5));
 			break;
-		case 'armourer':
-			g.add(house(1.4, 1.1, 0.85, '#4a5260'));
-			for (const [x, z] of [[1.0, 0.0], [1.0, 0.45]]) {
-				const shield = part(new THREE.CylinderGeometry(0.2, 0.2, 0.05, 8), mat(TEAM[owner], 0.5), x, 0.35, z);
-				shield.rotation.z = Math.PI / 2;
-				g.add(shield);
-			}
-			g.add(chimney(-0.4, 1.0, -0.2, 0.6));
-			break;
 		case 'mint':
 			g.add(part(new THREE.BoxGeometry(1.4, 1.0, 1.1), mat(WALL), 0, 0.5, 0));
 			g.add(part(new THREE.ConeGeometry(1.05, 0.7, 4), mat('#d9a92e', 0.4), 0, 1.35, 0).rotateY(Math.PI / 4));
 			g.add(part(new THREE.CylinderGeometry(0.16, 0.16, 0.05, 10), mat('#ffd23f', 0.3), 0.85, 0.05, 0.3));
 			break;
-		case 'guardhut':
-			g.add(part(new THREE.BoxGeometry(1.1, 1.3, 1.1), mat(STONE), 0, 0.65, 0));
-			for (const sx of [-1, 1]) for (const sz of [-1, 1]) g.add(part(new THREE.BoxGeometry(0.24, 0.24, 0.24), mat(STONE), sx * 0.43, 1.42, sz * 0.43));
-			g.add(banner(owner, 2.3, 0, 0));
+		case 'market': {
+			g.add(house(2.0, 1.4, 1.0, '#b0822e'));
+			// an awning over the door, and the cart waiting
+			const awning = part(new THREE.BoxGeometry(1.2, 0.05, 0.55), mat('#d9b44a', 0.7), 0.2, 0.85, 0.95);
+			awning.rotation.x = 0.35;
+			g.add(awning);
+			g.add(part(new THREE.BoxGeometry(0.7, 0.28, 0.42), mat(TIMBER), -1.25, 0.32, 0.45));
+			for (const sz of [-1, 1]) {
+				const wheel = part(new THREE.CylinderGeometry(0.17, 0.17, 0.05, 10), mat(DARK), -1.25, 0.17, 0.45 + sz * 0.24);
+				wheel.rotation.x = Math.PI / 2;
+				g.add(wheel);
+			}
+			g.add(banner(owner, 2.4, 0.9, -0.5));
 			break;
-		case 'watchtower':
-			g.add(part(new THREE.CylinderGeometry(0.6, 0.75, 2.6, 8), mat(STONE), 0, 1.3, 0));
-			g.add(part(new THREE.ConeGeometry(0.85, 0.9, 8), mat(owner ? '#6b2a24' : '#2a4a72', 0.7), 0, 3.05, 0));
-			g.add(banner(owner, 4.2, 0, 0));
+		}
+		case 'boundary':
+			g.add(part(new THREE.BoxGeometry(0.42, 1.3, 0.28), mat('#b9b2a4'), 0, 0.65, 0));
+			g.add(part(new THREE.BoxGeometry(0.46, 0.08, 0.32), mat(TEAM[owner], 0.6), 0, 1.0, 0));
+			g.add(part(new THREE.CylinderGeometry(0.55, 0.65, 0.12, 8), mat(STONE), 0, 0.06, 0));
 			break;
-		case 'keep': {
-			g.add(part(new THREE.BoxGeometry(2.0, 2.4, 2.0), mat('#8e877c'), 0, 1.2, 0));
-			for (const sx of [-1, 1])
-				for (const sz of [-1, 1]) {
-					g.add(part(new THREE.CylinderGeometry(0.45, 0.5, 3.0, 8), mat(STONE), sx * 1.05, 1.5, sz * 1.05));
-					g.add(part(new THREE.ConeGeometry(0.58, 0.8, 8), mat(TEAM[owner], 0.7), sx * 1.05, 3.4, sz * 1.05));
-				}
-			g.add(banner(owner, 4.4, 0, 0));
+		case 'village': {
+			// a cluster of homes round a green, a well and the village banner
+			const roofs = ['#8a4a35', '#a3683c', '#7b5a3a', '#9a5040'];
+			[[-1.1, -0.5, 0.2], [1.0, -0.7, -0.4], [-0.9, 1.0, 1.2], [1.2, 0.8, 0.6]].forEach(([x, z, turn], k) => {
+				const h = house(1.2, 0.9, 0.75, roofs[k]);
+				h.position.set(x, 0, z);
+				h.rotation.y = turn;
+				g.add(h);
+			});
+			g.add(part(new THREE.CylinderGeometry(0.3, 0.34, 0.35, 10), mat(STONE), 0, 0.18, 0.1));
+			g.add(banner(owner, 3.2, 0.1, -0.2));
+			break;
+		}
+		case 'fair': {
+			// stalls under coloured awnings round a pole with pennants
+			const colours = ['#c8642a', '#7a55a8', '#3d8f5c', '#2f6fb3', '#d9b44a'];
+			for (let k = 0; k < 5; k++) {
+				const a = (k / 5) * Math.PI * 2;
+				const x = Math.cos(a) * 1.3, z = Math.sin(a) * 1.3;
+				const stall = new THREE.Group();
+				stall.position.set(x, 0, z);
+				stall.rotation.y = -a + Math.PI / 2;
+				stall.add(part(new THREE.BoxGeometry(0.8, 0.45, 0.4), mat(TIMBER), 0, 0.23, 0));
+				for (const sx of [-1, 1]) stall.add(part(new THREE.CylinderGeometry(0.025, 0.025, 0.9, 5), mat(TIMBER), sx * 0.38, 0.45, -0.18));
+				stall.add(part(new THREE.BoxGeometry(0.95, 0.05, 0.6), mat(colours[k], 0.7), 0, 0.92, 0));
+				g.add(stall);
+			}
+			g.add(part(new THREE.CylinderGeometry(0.05, 0.06, 3.2, 6), mat(TIMBER), 0, 1.6, 0));
+			for (let k = 0; k < 4; k++) {
+				const pennant = part(new THREE.ConeGeometry(0.12, 0.4, 3), mat(colours[k], 0.6), 0.2, 3.0 - k * 0.32, 0);
+				pennant.rotation.z = -Math.PI / 2;
+				g.add(pennant);
+			}
 			break;
 		}
 		default:
@@ -250,7 +276,7 @@ export function scaffold() {
 	return g;
 }
 
-/** Puts the owner's colour on a model taken from the rival (or back). */
+/** Puts an owner's colour on a model's banner. */
 export function recolour(/** @type {THREE.Object3D} */ model, /** @type {number} */ owner) {
 	model.traverse((o) => {
 		if (o.name === 'cloth' && o instanceof THREE.Mesh) o.material = mat(TEAM[owner], 0.6);
