@@ -246,6 +246,34 @@ export function bead(/** @type {THREE.Vector3} */ at, /** @type {THREE.Vector3} 
 	return g;
 }
 
+/**
+ * Its normals worked out from its shape, smooth across its seams: a swept tube's first and last sides meet at the same
+ * places without sharing vertices, so the normals of every vertex at one place are averaged.
+ * @param {THREE.BufferGeometry} geo
+ */
+export function smoothNormals(geo) {
+	geo.computeVertexNormals();
+	const pos = geo.attributes.position, nor = geo.attributes.normal;
+	/** @type {Map<string, number[]>} */
+	const at = new Map();
+	for (let i = 0; i < pos.count; i++) {
+		const k = `${Math.round(pos.getX(i) * 1e5)},${Math.round(pos.getY(i) * 1e5)},${Math.round(pos.getZ(i) * 1e5)}`;
+		const list = at.get(k);
+		if (list) list.push(i);
+		else at.set(k, [i]);
+	}
+	const n = new THREE.Vector3();
+	for (const list of at.values()) {
+		if (list.length < 2) continue;
+		n.set(0, 0, 0);
+		for (const i of list) n.x += nor.getX(i), n.y += nor.getY(i), n.z += nor.getZ(i);
+		n.normalize();
+		for (const i of list) nor.setXYZ(i, n.x, n.y, n.z);
+	}
+	nor.needsUpdate = true;
+	return geo;
+}
+
 /** @returns {THREE.BufferGeometry} */
 function made(/** @type {number[]} */ pos, /** @type {number[]} */ nor, /** @type {number[]} */ uv, /** @type {number[]} */ col, /** @type {number[]} */ idx, /** @type {boolean} */ flat) {
 	const g = new THREE.BufferGeometry();

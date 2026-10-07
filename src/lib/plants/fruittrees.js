@@ -278,18 +278,19 @@ export const sapodilla = orchard({
 /* ------------------------------------------------------------------------------------------------ avocado */
 
 export const AVOCADO_STAGES = stages([
-	['Stone', 0, 'The big round avocado stone, its broad end down, its tip just showing above the soil.'],
-	['Germination', 30, 'The stone splits from its base; a thick root goes down, a reddish shoot comes up — the seed leaves stay inside the stone.'],
-	['Seedling', 60, 'A tall bare shoot, then a tuft of big bronze-red leaves at its tip, greening.'],
-	['Sapling', 365, 'A leggy young tree, flushing at its tip.'],
-	['Young tree', 1500, 'A broad dense dome of big leathery leaves.'],
-	['Flowering', 2200, 'Panicles of hundreds of small greenish-yellow flowers at the shoot tips.'],
-	['Fruit set', 2220, 'Few flowers hold: small green avocados on long stalks.'],
-	['Green fruit', 2350, 'Pear-shaped avocados hanging on their stalks, growing for months.'],
-	['Mature', 2450, 'Full-sized, their pebbly Hass skin dull green; they ripen only once picked.'],
-	['Ripe', 2480, 'Picked and darkened to purple-black, soft at the neck: ripe.']
+	['Stone', 0, 'The big avocado stone, five centimetres, set broad end down with its tip at the surface.'],
+	['Germination', 30, 'The stone splits from its base; a thick root goes down, a shoot comes up between the halves — the seed leaves stay inside the stone.'],
+	['Seedling', 60, 'A bare stem with little scale leaves, a tuft of big leaves at its top, bronze as they unfold.'],
+	['Sapling', 365, 'A leggy young tree, a cluster of leaves at the tip of each flush, its first limbs breaking.'],
+	['Young tree', 1500, 'A spreading young tree on a short trunk, strong limbs arching out and over, leaves crowded at the shoot tips.'],
+	['Flowering', 2200, 'Clusters of panicles at the shoot tips, hundreds of small yellow-green flowers each.'],
+	['Fruit set', 2220, 'Of all those flowers a panicle keeps one, rarely two; the shoot grows on out of it in a bronze flush.'],
+	['Green fruit', 2350, 'Pear-shaped avocados hanging under the new leaves on long stalks that thicken toward the fruit.'],
+	['Mature', 2550, 'Full-sized, 8–10 cm, the pebbly Hass skin dull dark green; they keep on the tree and ripen only once picked.'],
+	['Late season', 2650, 'Left on the tree, the sunny side of the skin turns purple-black; picked, they soften within a week.']
 ]);
 
+/** its v1 (./orchard.js), kept for its versions; ./avocado.js grows its v2 */
 export const avocado = orchard({
 	seed: { size: v3(0.026, 0.03, 0.026), coat: '#8a5a3a', shade: '#5a3a24', depth: 0.02 },
 	hypogeal: true,
