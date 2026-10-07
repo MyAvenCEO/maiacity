@@ -209,6 +209,8 @@ function raceme(bag, seed, n, at, out, g, white, vigour, above) {
 		// a pod left on (the lowest sprays' first) swells lumpy and yellows
 		const left = n < 6 && k === 0 ? span(g, 8.3, 9.4) : 0;
 		const place = bag.space.settle(ped, v3(side.x * 0.2, -1, side.z * 0.2), (c, dd) => [0.15, 0.4, 0.65, 0.9].map((f) => ({ c: c.clone().addScaledVector(dd, L * f), r: W * 1.3 })), 0.03);
+		// one pod: its stalk (drawn whole here) from the raceme, the pod hanging from it
+		bag.fruit([n, k], p, place.dir);
 		bag.add('body', tube([p, ped, place.at], () => 0.0012, () => '#6a9a42', 3));
 		const m = new THREE.Matrix4().compose(place.at, new THREE.Quaternion().setFromUnitVectors(v3(0, -1, 0), place.dir), v3(1, 1, 1));
 		const bend = fr() < 0.5 ? -1 : 1;
@@ -228,6 +230,7 @@ function raceme(bag, seed, n, at, out, g, white, vigour, above) {
 			),
 			m
 		);
+		bag.fruitDone();
 	}
 }
 

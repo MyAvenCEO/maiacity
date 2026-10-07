@@ -573,10 +573,12 @@ export function apple(g, seed) {
 			const hang = v3(0, -1, 0).lerp(d, clamp(0.85 - set * 1.4)).addScaledVector(swing, 0.35).normalize();
 			const from = start.clone().addScaledVector(hang, stalk * 0.55);
 			const place = space.settle(from, hang, (a, dd) => [0.32, 0.68].map((t) => ({ c: a.clone().addScaledVector(dd, Lf * t), r: W * 0.93 })), stalk * 0.9 + W * 0.6);
+			bag.fruit([...s.spur.key, k], s.at, place.dir);
 			bag.add('body', tube([s.at, start, place.at], (u) => 0.0011 + 0.0007 * set * (1 - 0.4 * u), () => C.stalk, 3));
 			// the sunny side: the outer and higher apples colour more
 			const out = clamp(Math.hypot(place.at.x, place.at.z) / 2.2) * 0.5 + clamp((place.at.y - 1.4) / 3) * 0.5;
 			appleFruit(bag, { at: place.at, dir: place.dir, L: Lf, W, ripe, sun: kr() * Math.PI * 2, blush: lerp(0.55, 1, out) * about(kr, 1, 0.12) });
+			bag.fruitDone();
 		}
 	}
 

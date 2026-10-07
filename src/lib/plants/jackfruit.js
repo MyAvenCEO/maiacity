@@ -475,10 +475,12 @@ export function jackfruit(g, seed) {
 			if (kept && Math.min(...options.map((o) => crowd.overlap(o.balls))) > fullW * 0.45) continue;
 			const place = crowd.best(options);
 			const stalkR = 0.005 + 0.012 * grow;
+			bag.fruit([...st.key, k], tip, place.dir);
 			bag.add('body', tube([tip.clone().addScaledVector(f.out, -0.01), tip, place.at.clone().add(v3(0, 0.004, 0))], (u) => stalkR * (1 - 0.15 * u), () => C.stalk, 6));
 			// the fleshy ring at its foot
 			bag.add('body', bead(place.at, v3(Wf * 0.32, Wf * 0.12, Wf * 0.32), C.ring, 5, new THREE.Quaternion().setFromUnitVectors(UP, place.dir.clone().negate())));
 			jack(bag, { at: place.at, dir: place.dir, L: Lf, W: Wf, ripe: kept ? ripe * between(kr, 0.8, 1) : 0, dark: drop, r: kr, set: grow });
+			bag.fruitDone();
 		}
 	}
 	// male heads among the leaves of the young shoots
