@@ -8,9 +8,9 @@
 	import { onDestroy, onMount } from 'svelte';
 	import TouchStick from '$lib/touch/TouchStick.svelte';
 	import { WorldBar } from '$lib/sandbox-kit';
-	import { BUILDINGS, HOUSE_BEDS, HOUSE_SIZE, MENU, PLANK_T, ROUNDS_YEAR, STEEL, WARES, WARE_ORDER, WOOD } from './rules.js';
-	import { EUR_PER_GOLD } from './market.js';
-	import { FOOD_KG, FRESH_L, MONTHS, PRICE, RAIN_MM, SPEEDS, WATER_L, WATER_PRICE, WATER_USE } from './food.js';
+	import { BUILDINGS, HOUSE_BEDS, HOUSE_GLASS, HOUSE_SIZE, LIME, LOAD_T, MENU, PLANK_T, ROUNDS_YEAR, STEEL, WARES, WARE_ORDER, WOOD } from './rules.js';
+	import { EUR_PER_GOLD, GLASS_EUR_T } from './market.js';
+	import { FOOD_KG, FRESH_L, MONTHS, PRICE, RAIN_MM, SIM_SPEED, SPEEDS, WATER_L, WATER_PRICE, WATER_USE } from './food.js';
 	import { PLAYER } from './sim.js';
 	import Tree from './Tree.svelte';
 
@@ -25,8 +25,8 @@
 	let hint = $state('');
 	/** the clock's speed on the master clock: 1 a month a real day, 12 a year, 120 ten years; 0 paused */
 	let speed = $state(1);
-	/** the simulation: autoplay grows the first village full at ten years a real day; the speed it had before, and how
-	 * far it got (the first village's people of its beds at most, and the date) */
+	/** the simulation: autoplay grows the first village full at ten years in ten real minutes; the speed it had before,
+	 * and how far it got (the first village's people of its beds at most, and the date) */
 	let simulating = $state(false);
 	/** @type {number | null} */
 	let before = null;
@@ -56,6 +56,8 @@
 	let links = $state([]);
 	/** what a Connect button said when the route could not be dug */
 	let linkWhy = $state('');
+	/** what an Enlarge button said when the house could not grow (its glass costs more gold than the treasury holds) */
+	let upWhy = $state('');
 	/** the village of yours the right side shows — the one picked, else your first: each need against its stock */
 	let home = $state(/** @type {ReturnType<import('./sim.js').Sim['village']>} */ (null));
 	/** whether the pick is a village center of yours: then the right side is its card */
@@ -95,7 +97,11 @@
 	/** what the wood building cuts from a tree at a stage */
 	const perTree = (/** @type {number} */ level) => `${WOOD[level - 1].planks} plank${WOOD[level - 1].planks === 1 ? '' : 's'} (${tonnes(WOOD[level - 1].planks)})`;
 	/** what the steel building makes from a load of ore at a stage */
-	const perLoad = (/** @type {number} */ level) => `${STEEL[level - 1].struts} load${STEEL[level - 1].struts === 1 ? '' : 's'} of struts (${tonnes(STEEL[level - 1].struts)})`;
+	const perLoad = (/** @type {number} */ level) => `${STEEL[level - 1].struts} load${STEEL[level - 1].struts === 1 ? '' : 's'} of joints (${tonnes(STEEL[level - 1].struts)})`;
+	/** what the lime building makes from a round of its pit at a stage */
+	const perRound = (/** @type {number} */ level) => `${LIME[level - 1].blocks} load${LIME[level - 1].blocks === 1 ? '' : 's'} of lime blocks (${tonnes(LIME[level - 1].blocks)})`;
+	/** glass, on a chip: it is not a ware, the world market sells it for gold */
+	const GLASS_COLOR = '#a9d3e0';
 
 	function refresh() {
 		if (!game) return;
@@ -150,6 +156,7 @@
 	function select(s) {
 		selected = s;
 		linkWhy = '';
+		upWhy = '';
 		refresh();
 	}
 	/** dig a trade route from the selected village center to another */
@@ -175,12 +182,12 @@
 		menuOpen = false;
 		game?.setMode(mode === m && !type ? 'look' : /** @type {import('./game.js').Mode} */ (m), type);
 	}
-	/** start the simulation (ten years a real day, autoplay growing the first village full), or stop it and go back */
+	/** start the simulation (ten years in ten real minutes, autoplay growing the first village full), or stop it and go back */
 	function simulate() {
 		if (!game) return;
 		if (!simulating) {
 			before = speed;
-			game.setSpeed(TOP);
+			game.setSpeed(SIM_SPEED);
 			game.simulate(true);
 			simulating = true;
 		} else stopSim();
@@ -195,8 +202,6 @@
 			before = null;
 		}
 	}
-	/** the clock's top speed: ten years a real day */
-	const TOP = SPEEDS[SPEEDS.length - 1].s;
 	/** buy a ware from the world market for the village shown, or sell it one */
 	function trade(/** @type {'buy' | 'sell'} */ how, /** @type {string} */ w) {
 		if (!game || !home) return;
@@ -272,8 +277,8 @@
 				<button class:on={speed === x.s} onclick={() => (game?.setSpeed(x.s), (speed = x.s))} title="{x.about[0].toUpperCase()}{x.about.slice(1)} ({x.s}×)">{x.short}</button>
 			{/each}
 		</div>
-		<p class="speednote">{speed ? `${SPEEDS.find((x) => x.s === speed)?.about ?? `${speed}×`}` : 'Paused'}</p>
-		<button class="sim" class:on={simulating} onclick={simulate} title={simulating ? 'Stop the simulation and play on yourself' : 'Simulate: autoplay builds at ten years a real day, growing your first village until all six houses hold 248 people'}>{simulating ? '■ Stop' : '▶ Simulate'}</button>
+		<p class="speednote">{speed === SIM_SPEED ? 'ten years in ten real minutes' : speed ? `${SPEEDS.find((x) => x.s === speed)?.about ?? `${speed}×`}` : 'Paused'}</p>
+		<button class="sim" class:on={simulating} onclick={simulate} title={simulating ? 'Stop the simulation and play on yourself' : 'Simulate: autoplay builds at ten years in ten real minutes, growing your first village until all six houses hold 248 people'}>{simulating ? '■ Stop' : '▶ Simulate'}</button>
 		{#if simNote && (simulating || simNote.done)}
 			<p class="simnote">{simNote.done ? `${simNote.name} is full: ${num(simNote.pop)} people, on ${when(simNote.date)}` : `${simNote.name}: ${num(simNote.pop)} of ${num(simNote.cap)} people · ${when(simNote.date)}`}</p>
 		{/if}
@@ -297,6 +302,7 @@
 								{#each sitesCost(t.cost) as [w, n] (w)}
 									<span class="chip" class:short={(summary?.stock[w] ?? 0) < n}><i style:background={WARES[w].color}></i>{n} {label(w).toLowerCase()}</span>
 								{/each}
+								{#if t.id === 'house'}<span class="chip" class:short={(home?.eur ?? 0) < HOUSE_GLASS[0] * GLASS_EUR_T} title="Its glass comes from the world market, paid in gold as it is begun"><i style:background={GLASS_COLOR}></i>{num(HOUSE_GLASS[0])} t glass · {num(HOUSE_GLASS[0] * GLASS_EUR_T)} €</span>{/if}
 							</span>
 						</button>
 					</li>
@@ -384,7 +390,7 @@
 						{#each links as l (l.id)}
 							<li>
 								<button class="name" onclick={() => game?.focus(l.node)}>{l.name}{l.mine ? '' : ' · city'}</button>
-								{#if l.joined}<span class="joined">Joined</span>{:else}<button class="go" onclick={() => connect(l.id)}>Connect · {l.cost} steel</button>{/if}
+								{#if l.joined}<span class="joined">Joined</span>{:else}<button class="go" title="Two arched cells for 40 ft containers, laid of {num(l.cost * LOAD_T)} t of lime blocks: from your stores, and what they lack from the world market, {num(l.eur)} €" onclick={() => connect(l.id)}>Connect · {num(l.cost * LOAD_T)} t lime{l.eur > 0 ? ` · ${goldOf(l.eur / EUR_PER_GOLD)} gold` : ''}</button>{/if}
 							</li>
 						{/each}
 					</ul>
@@ -432,8 +438,9 @@
 				<p class="label">{HOUSE_SIZE[card.level - 1]} · home of <b>{card.beds}</b> settlers{card.upgrading ? ` · growing to ${HOUSE_BEDS[card.level]}` : ''}</p>
 				{#if card.owner === PLAYER && card.up && !card.upgrading}
 					<div class="actions">
-						<button class="go up" title="Enlarge to {HOUSE_BEDS[card.level]} settlers: {Object.entries(card.up).map(([w, n]) => `${n} ${label(w).toLowerCase()}`).join(', ')}" onclick={() => card && (game?.sim.upgrade(card.id), refresh())}>Enlarge → {HOUSE_BEDS[card.level]}{#each Object.entries(card.up) as [w, n] (w)}<span class="cost"><i style:background={WARES[w].color}></i>{n}</span>{/each}</button>
+						<button class="go up" title="Enlarge to {HOUSE_BEDS[card.level]} settlers: {Object.entries(card.up).map(([w, n]) => `${n} ${label(w).toLowerCase()} (${tonnes(n)})`).join(', ')}, and {num(card.upGlass)} t of glass from the world market, {num(card.upGlassEur)} € paid as it is begun" onclick={() => card && (upWhy = game?.sim.upgrade(card.id)?.why ?? '', refresh())}>Enlarge → {HOUSE_BEDS[card.level]}{#each Object.entries(card.up) as [w, n] (w)}<span class="cost"><i style:background={WARES[w].color}></i>{n}</span>{/each}<span class="cost"><i style:background={GLASS_COLOR}></i>{num(card.upGlass)} t</span></button>
 					</div>
+					{#if upWhy}<p class="status">{upWhy}</p>{/if}
 				{/if}
 			{/if}
 			{#if card.type === 'woodcutter' && card.level}
@@ -442,6 +449,15 @@
 				{#if card.owner === PLAYER && card.up && !card.upgrading}
 					<div class="actions">
 						<button class="go up" title="Upgrade to a {WOOD[card.level].label.toLowerCase()}: {perTree(card.level + 1)} from every tree. It costs {Object.entries(card.up).map(([w, n]) => `${n} ${label(w).toLowerCase()}`).join(', ')}" onclick={() => card && (game?.sim.upgrade(card.id), refresh())}>Upgrade → {WOOD[card.level].label}{#each Object.entries(card.up) as [w, n] (w)}<span class="cost"><i style:background={WARES[w].color}></i>{n}</span>{/each}</button>
+					</div>
+				{/if}
+			{/if}
+			{#if card.type === 'limeworks' && card.level}
+				<p class="label">{LIME[card.level - 1].label} · stage <b>{card.level}</b> of {LIME.length}{card.upgrading ? ` · growing to a ${LIME[card.level].label.toLowerCase()}` : ''}</p>
+				<p class="small">{perRound(card.level)} from every round of limestone and clay, {ROUNDS_YEAR.limeworks} rounds a year · lately {tonnes(card.lately)} a week</p>
+				{#if card.owner === PLAYER && card.up && !card.upgrading}
+					<div class="actions">
+						<button class="go up" title="Upgrade to a {LIME[card.level].label.toLowerCase()}: {perRound(card.level + 1)} from every round. It costs {Object.entries(card.up).map(([w, n]) => `${n} ${label(w).toLowerCase()}`).join(', ')}" onclick={() => card && (game?.sim.upgrade(card.id), refresh())}>Upgrade → {LIME[card.level].label}{#each Object.entries(card.up) as [w, n] (w)}<span class="cost"><i style:background={WARES[w].color}></i>{n}</span>{/each}</button>
 					</div>
 				{/if}
 			{/if}

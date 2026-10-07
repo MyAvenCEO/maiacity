@@ -562,10 +562,12 @@ export function createView(scene, sim) {
 	/** a house grows with its size, one dome ever larger: from a hut to a great dome of 248 */
 	const HOUSE_SCALE = [0.62, 0.78, 0.94, 1.15, 1.4, 1.7, 2.0, 2.35];
 	const sizeHouse = (/** @type {THREE.Object3D} */ m, /** @type {number} */ level) => m.scale.setScalar(HOUSE_SCALE[level - 1]);
-	/** the wood building's dome grows with each upgrade too: forester, woodcutter, sawmill, timber works; and so does the
-	 * steel building's: iron mine, furnace, steelworks */
+	/** the wood building's dome grows with each upgrade too: forester, woodcutter, sawmill, timber works; and so do the
+	 * steel building's (iron mine, furnace, steelworks) and the lime building's (lime pit, kiln, block works) */
 	const WOOD_SCALE = [0.8, 1, 1.3, 1.6];
 	const STEEL_SCALE = [1, 1.25, 1.55];
+	/** the buildings that grow by upgrades, besides houses */
+	const grows = (/** @type {string | undefined} */ type) => type === 'woodcutter' || type === 'ironmine' || type === 'limeworks';
 	/** how large a building that grows by upgrades stands at a level */
 	const grown = (/** @type {string} */ type, /** @type {number} */ level) => (type === 'woodcutter' ? WOOD_SCALE : STEEL_SCALE)[level - 1];
 	function syncBuildings(/** @type {number} */ t) {
@@ -577,7 +579,7 @@ export function createView(scene, sim) {
 		for (const b of Object.values(st.buildings)) {
 			let s = shown.get(b.id);
 			// the wood and steel buildings look their level: built anew when they are upgraded
-			const look = b.type === 'woodcutter' ? (b.level ? b.level : b.stage === 'live' ? 2 : 1) : b.type === 'ironmine' ? b.level || 1 : 0;
+			const look = b.type === 'woodcutter' ? (b.level ? b.level : b.stage === 'live' ? 2 : 1) : grows(b.type) ? b.level || 1 : 0;
 			if (s && s.look !== look) {
 				root.remove(s.group);
 				s.group.traverse((o) => o instanceof THREE.Mesh && o.geometry.dispose());
@@ -606,7 +608,7 @@ export function createView(scene, sim) {
 				// a house being enlarged stands meanwhile at its size, and wood being upgraded as it was; anything new rises
 				// from the ground
 				if (b.type === 'house' && b.level) sizeHouse(s.model, b.level);
-				else if ((b.type === 'woodcutter' || b.type === 'ironmine') && b.level) s.model.scale.setScalar(grown(b.type, b.level));
+				else if (grows(b.type) && b.level) s.model.scale.setScalar(grown(b.type, b.level));
 				else {
 					const w = b.type === 'woodcutter' ? WOOD_SCALE[0] : 1;
 					s.model.scale.set(w, w * Math.max(0.06, used / Math.max(1, total)), w);
@@ -617,7 +619,7 @@ export function createView(scene, sim) {
 				s.model.scale.set(1, 1, 1);
 			}
 			if (b.type === 'house' && b.stage === 'live') sizeHouse(s.model, Math.max(1, b.level));
-			if ((b.type === 'woodcutter' || b.type === 'ironmine') && b.stage === 'live') s.model.scale.setScalar(grown(b.type, look));
+			if (grows(b.type) && b.stage === 'live') s.model.scale.setScalar(grown(b.type, look));
 			if (s.owner !== b.owner) {
 				recolour(s.model, b.owner);
 				s.owner = b.owner;
@@ -823,7 +825,7 @@ export function createView(scene, sim) {
 			ring.visible = node >= 0;
 			const at = b ? stand(b.type, node) : node;
 			// round what is picked: a village center, a house of its size, any other dome
-			ring.scale.setScalar(picked ? CENTRE_SCALE * 1.95 : b?.type === 'house' && b.level ? Math.max(1, HOUSE_SCALE[b.level - 1] * 1.15) : (b?.type === 'woodcutter' || b?.type === 'ironmine') && b.level ? Math.max(1, grown(b.type, b.level) * 1.1) : 1);
+			ring.scale.setScalar(picked ? CENTRE_SCALE * 1.95 : b?.type === 'house' && b.level ? Math.max(1, HOUSE_SCALE[b.level - 1] * 1.15) : grows(b?.type) && b.level ? Math.max(1, grown(b.type, b.level) * 1.1) : 1);
 			// a picked village center shows its own village's border, alone
 			pickBorder.visible = !!picked && !gridOn;
 			if (picked && b) {
@@ -854,7 +856,7 @@ export function createView(scene, sim) {
 			}
 			if (!ghost || ghostType !== type) {
 				if (ghost) root.remove(ghost);
-				ghost = buildingModel(type, 0, type === 'ironmine' ? 1 : undefined);
+				ghost = buildingModel(type, 0, type === 'ironmine' || type === 'limeworks' ? 1 : undefined);
 				ghostType = type;
 				root.add(ghost);
 			}

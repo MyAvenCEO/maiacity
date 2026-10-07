@@ -275,6 +275,10 @@ export function mountGame(container, o = {}) {
 	window.addEventListener('keydown', onKey);
 
 	// ── the clock ──
+	/** a step at the simulation's pace: a year a real minute is far too many tenths of a second to play one by one, so
+	 * it plays half minutes (everyone walks and works that much further a step), as long as a frame can spare: 12 ms of
+	 * a quick frame, up to 50 ms of a slow one */
+	const BIG_STEP = 30, BUDGET_MS = 12, MOST_MS = 50;
 	let speed = 1;
 	let paused = false;
 	let acc = 0;
@@ -296,23 +300,27 @@ export function mountGame(container, o = {}) {
 	let frame = 0, last = performance.now(), spotsClock = 0, saveClock = performance.now();
 	const tick = () => {
 		const now = performance.now();
-		const real = Math.min(0.5, (now - last) / 1000);
+		const real = Math.min(speed > 1000 ? 1 : 0.5, (now - last) / 1000);
 		const dt = Math.min(0.1, real);
 		last = now;
 		const wt = worldTime();
 		if (wt !== undefined) simTo(FILM_START + wt);
 		else if (!paused) {
 			acc += real * speed;
+			const each = speed > 1000 ? BIG_STEP : TICK, until = now + Math.min(MOST_MS, Math.max(BUDGET_MS, real * 400));
 			let steps = 0;
-			while (acc >= TICK && steps++ < 80) {
-				sim.step(TICK);
-				acc -= TICK;
+			while (acc >= each && (each === TICK ? steps < 80 : performance.now() < until)) {
+				sim.step(each);
+				acc -= each;
+				steps++;
+				if (!film && simulating && sim.state.time >= autoAt) {
+					autoAt = sim.state.time + 3;
+					createAutoplay(sim).tick();
+				}
 			}
+			// what a frame could not play is let go, rather than piled up
+			if (each === BIG_STEP) acc = Math.min(acc, BIG_STEP);
 			if (film && steps) createAutoplay(sim).tick();
-			else if (simulating && sim.state.time >= autoAt) {
-				autoAt = sim.state.time + 3;
-				createAutoplay(sim).tick();
-			}
 		}
 		if (mode === 'build' && now - spotsClock > 1000) {
 			spotsClock = now;
