@@ -3,6 +3,8 @@
 	through across the top — the last four the fruit's own, set to ripe (or ← → and 1 – 0 on the keyboard; Grow plays it on
 	from where it is). The soil is cut away, so the roots grow as plainly as the shoot, and the camera keeps the plant
 	framed. Each plant grows from a seed id: the same id the same plant every time, New seed a sister plant. Drag to turn round it, scroll to come closer. An admin's.
+	Plant | Fruit: the whole plant, or one of its fruit on its own (src/lib/plants/fruit.js), hung by its stalk through the
+	fruit's four stages — the seed picks which fruit, and gives it its own small differences of size, shape and colour.
 -->
 <script>
 	import { onDestroy, onMount } from 'svelte';
@@ -11,10 +13,12 @@
 	import { LAYERS, PLANTS, SEEDS, freshSeed, plantAt } from '$lib/plants';
 	import Turntable from '$lib/app/Turntable.svelte';
 	import { fit } from '$lib/app/turntable.js';
+	import { fruitOf, oneFruit } from '$lib/plants/fruit.js';
 
 	/** @typedef {(typeof import('$lib/plants').PLANTS)[number]} Plant */
 	/** @typedef {'cutaway' | 'bare' | 'solid'} Soil */
 	/** @typedef {'plant' | 'whole'} Frame */
+	/** @typedef {'plant' | 'fruit'} View */
 
 	const asked = page.url.searchParams;
 	/** @type {HTMLDivElement | undefined} */
@@ -23,7 +27,7 @@
 	/** @type {Plant} */
 	let chosen = $state(opened);
 	/** where it has grown to: 0 … the last stage, the stages its whole numbers */
-	let g = $state(Math.min(opened.stages.length - 1, Math.max(0, Number(asked.get('stage') ?? 1) - 1 || 0)));
+	let g = $state(Math.min(opened.stages.length - 1, Math.max(asked.get('view') === 'fruit' ? 6 : 0, Number(asked.get('stage') ?? 1) - 1 || 0)));
 	let seed = $state(asked.get('seed') || SEEDS[0]);
 	/** the version of it grown: its latest, or one picked from its history (?v=) */
 	let version = $state(Number(asked.get('v')) || opened.version);
@@ -35,6 +39,16 @@
 	/** @type {Frame} */
 	const frame = 'plant';
 	let playing = $state(false);
+	/** the whole plant, or one of its fruit on its own (?view=fruit) */
+	/** @type {View} */
+	let view = $state(asked.get('view') === 'fruit' ? 'fruit' : 'plant');
+	/** the fruit this plant bears, and the one its seed picks — undefined when it bears none (known once grown) */
+	/** @type {{ keys: string[], pick: string } | undefined} */
+	let fruit = $state();
+	/** the first of the fruit's stages: set */
+	const FRUIT = 6;
+	/** the fruit shown has not set yet at this stage */
+	let unset = $state(false);
 	/** @type {{ above: number, below: number, across: number } | null} */
 	let size = $state(null);
 
@@ -179,11 +193,39 @@
 			sh.updateProjectionMatrix();
 		};
 
+		/** which fruit it bears, grown ripe: once a plant, version and seed */
+		let fruitFor = '';
 		show = (plant, at, id) => {
 			if (current) {
 				scene.remove(current);
 				toss(current);
+				current = null;
 			}
+			const whose = `${plant.id}|${plant.version}|${id}`;
+			if (fruitFor !== whose) {
+				fruitFor = whose;
+				fruit = fruitOf(plant.grow, plant.stages.length - 1, id || ' ');
+			}
+			// a plant (or a version of it) with no fruit is shown whole
+			if (view === 'fruit' && !fruit) view = 'plant';
+			earth.visible = view === 'plant';
+			if (view === 'fruit') {
+				const one = fruit && oneFruit(plant.grow, at, id || ' ', fruit.pick);
+				unset = !one;
+				if (!one) {
+					plantBox = null;
+					size = null;
+					return;
+				}
+				current = one;
+				scene.add(current);
+				const b = bounds(current);
+				plantBox = b;
+				size = { above: b.max.y - b.min.y, below: 0, across: Math.max(b.max.x - b.min.x, b.max.z - b.min.z) };
+				reframe?.(frame);
+				return;
+			}
+			unset = false;
 			if (soilFor !== `${plant.id}|${id}`) {
 				soilFor = `${plant.id}|${id}`;
 				sizeSoil(plant, id || ' ');
@@ -284,6 +326,8 @@
 		url.searchParams.set('plant', chosen.id);
 		url.searchParams.set('stage', String(stage + 1));
 		url.searchParams.set('seed', seed);
+		if (view === 'fruit') url.searchParams.set('view', 'fruit');
+		else url.searchParams.delete('view');
 		if (version !== chosen.version) url.searchParams.set('v', String(version));
 		else url.searchParams.delete('v');
 		try {
@@ -304,13 +348,20 @@
 		g = Math.min(g, p.stages.length - 1);
 		regrow();
 	};
+	/** the whole plant, or its fruit alone — from the fruit's set on */
+	const see = (/** @type {View} */ v) => {
+		view = v;
+		playing = false;
+		if (v === 'fruit' && g < FRUIT) g = last;
+		regrow();
+	};
 	const pickVersion = (/** @type {number} */ v) => {
 		version = v;
 		regrow();
 	};
 	const goTo = (/** @type {number} */ k) => {
 		playing = false;
-		g = Math.min(last, Math.max(0, k));
+		g = Math.min(last, Math.max(view === 'fruit' ? FRUIT : 0, k));
 		regrow();
 	};
 	const grow = () => {
@@ -319,7 +370,7 @@
 			g = Math.round(g);
 			return regrow();
 		}
-		if (g >= last) g = 0;
+		if (g >= last) g = view === 'fruit' ? FRUIT : 0;
 		playing = true;
 	};
 	const reseed = (/** @type {string} */ id) => {
@@ -357,13 +408,18 @@
 			<button class="chip grow" class:on={playing} onclick={grow} title="Grow on from here (space)">{playing ? 'Pause' : 'Grow ▸'}</button>
 			{#each chosen.stages as s, k (s.name)}
 				{#if k === 6}<span class="fruit-mark" aria-hidden="true">Fruit</span>{/if}
-				<button role="tab" class="chip" class:fruit={k >= 6} class:on={!playing && stage === k} class:past={k < g} aria-selected={stage === k} onclick={() => goTo(k)}>
+				<button role="tab" class="chip" class:fruit={k >= 6} class:on={!playing && stage === k} class:past={k < g} aria-selected={stage === k} disabled={view === 'fruit' && k < FRUIT} onclick={() => goTo(k)}>
 					<small>{k + 1}</small>{s.name}
 				</button>
 			{/each}
 		</div>
 	{/snippet}
 	{#snippet panel()}
+		<div class="chips views" role="tablist" aria-label="Show">
+			<span class="label">Show</span>
+			<button role="tab" class="chip" class:on={view === 'plant'} aria-selected={view === 'plant'} onclick={() => see('plant')}>Plant</button>
+			<button role="tab" class="chip" class:on={view === 'fruit'} aria-selected={view === 'fruit'} disabled={!fruit} title={fruit ? 'One fruit on its own, picked and shaped by the seed' : 'This plant bears no fruit'} onclick={() => see('fruit')}>Fruit</button>
+		</div>
 		<div class="seed">
 			<span class="label">Seed</span>
 			<code title="The same seed id grows the same plant every time">{seed}</code>
@@ -371,11 +427,11 @@
 		</div>
 	{/snippet}
 	{#snippet readout()}
-		<b>{chosen.label} · {chosen.stages[stage].name} <em>{chosen.latin}</em></b>
-		<small>{chosen.stages[stage].note}</small>
+		<b>{chosen.label}{view === 'fruit' ? ' · one fruit' : ''} · {chosen.stages[stage].name} <em>{chosen.latin}</em></b>
+		<small>{view === 'fruit' && unset ? 'This fruit has not set yet.' : chosen.stages[stage].note}</small>
 		<span>
 			Day {day}
-			{#if size} · {measure(size.above)} above the soil · {measure(size.below)} below · {measure(size.across)} across{/if}
+			{#if size && view === 'fruit'} · {measure(size.above)} long, stalk and all · {measure(size.across)} across{:else if size} · {measure(size.above)} above the soil · {measure(size.below)} below · {measure(size.across)} across{/if}
 		</span>
 		<small class="keys">← → or 1 – 0 for the stages · space grows · drag to turn round it · scroll to come closer</small>
 	{/snippet}
@@ -424,6 +480,17 @@
 	.stages .grow.on {
 		background: #8a5a2b;
 		border-color: #8a5a2b;
+	}
+
+	/* the whole plant or one fruit, before the stages */
+	.views {
+		margin-bottom: 0.5rem;
+	}
+
+	.views .chip:disabled,
+	.stages .chip:disabled {
+		opacity: 0.35;
+		cursor: default;
 	}
 
 	/* the seed id it grew from, and a new one at random */

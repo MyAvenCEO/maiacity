@@ -96,14 +96,16 @@ export function moss(g, seed) {
 /* ------------------------------------------------------------------------------------------------ mushrooms */
 
 /**
- * A mushroom: a stipe, perhaps with a ring, a cap from a closed button to open and flat, its gills beneath.
+ * A mushroom: a stipe, perhaps with a ring, a cap from a closed button to open and flat, its gills beneath — all of
+ * it one fruit (Bag.fruit) named `key`, standing from `at` along `up`.
  * @param {Bag} bag
- * @param {{ at: THREE.Vector3, up: THREE.Vector3, stipe: number, stipeR: number, capR: number, open: number, cap: (u: number, a: number) => THREE.Color | string, gills: string, stem: string, ring?: string }} o
+ * @param {{ key: (string | number)[], at: THREE.Vector3, up: THREE.Vector3, stipe: number, stipeR: number, capR: number, open: number, cap: (u: number, a: number) => THREE.Color | string, gills: string, stem: string, ring?: string }} o
  */
 function mushroom(bag, o) {
 	const q = new THREE.Quaternion().setFromUnitVectors(v3(0, 1, 0), o.up.clone().normalize());
 	const m = new THREE.Matrix4().compose(o.at, q, v3(1, 1, 1));
 	const H = o.stipe * lerp(0.35, 1, o.open);
+	bag.fruit(o.key, o.at, o.up);
 	bag.add('body', tube([v3(0, -0.002, 0), v3(0, H * 0.5, 0), v3(0, H, 0)], (u) => o.stipeR * (1.25 - 0.35 * u), () => o.stem, 8), m);
 	if (o.ring && o.open > 0.5) bag.add('sheet', fan({ size: o.stipeR * 2.2, from: -Math.PI, to: Math.PI, edge: () => 1, lift: (s) => -0.25 * s, paint: () => o.ring ?? '#fff', rings: 2, rays: 16 }), m.clone().multiply(new THREE.Matrix4().makeTranslation(0, H * 0.75, 0)));
 	// the cap: a dome from its top down to its rim, the rim curled in while it is young
@@ -114,6 +116,7 @@ function mushroom(bag, o) {
 	bag.add('body', tube(axis, (u) => o.capR * Math.pow(Math.sin(Math.min(1, u * 1.05) * Math.PI / 2), 0.55) * (1 - rim(u)), (u, v) => o.cap(u, v * Math.PI * 2), 16), m);
 	// the gills: a disc beneath, ruled with gills
 	bag.add('sheet', fan({ size: o.capR * (1 - rim(1)) * 0.98, from: -Math.PI, to: Math.PI, edge: () => 1, lift: (s) => 0.25 * (1 - o.open) * s * s, paint: (s, a) => mix(o.gills, '#3a2a20', Math.abs(Math.sin(a * 40)) > 0.85 ? 0.25 : 0), rings: 3, rays: 40 }), m.clone().multiply(new THREE.Matrix4().makeTranslation(0, H + capH * 0.85 - capH + 0.0005, 0)));
+	bag.fruitDone();
 }
 
 /** a log: bark round it, its cut ends showing the wood, white with mycelium as it is colonised */
@@ -173,6 +176,7 @@ export function wineCap(g, seed) {
 		const size = about(fr, 1, 0.2);
 		const fade = span(g, 7.3, 8.6);
 		mushroom(bag, {
+			key: ['troop', k],
 			at: v3(Math.cos(a) * d, 0.02, Math.sin(a) * d), up: v3(fr() - 0.5, 4, fr() - 0.5), stipe: 0.12 * size * lerp(0.2, 1, grow), stipeR: 0.012 * size * lerp(0.4, 1, grow), capR: 0.065 * size * lerp(0.12, 1, grow), open: span(g, 5.6, 7.2),
 			cap: (u) => mix('#7a1e2a', '#c89a6a', fade).lerp(new THREE.Color('#a8545a'), u * 0.25), gills: mix('#e8e2dc', '#5a4a5a', span(g, 6.5, 7.5)).getStyle(), stem: '#f2ece0', ring: '#eae2d4'
 		});
@@ -222,6 +226,7 @@ export function shiitake(g, seed) {
 		const size = about(fr, 1, 0.2);
 		const up = radial.clone().lerp(v3(0, 1, 0), 0.5).normalize();
 		mushroom(bag, {
+			key: ['flush', k],
 			at: a.clone().lerp(b, u).addScaledVector(radial, R * 0.95), up, stipe: 0.035 * size * lerp(0.3, 1, grow), stipeR: 0.007 * size, capR: 0.05 * size * lerp(0.15, 1, grow), open: span(g, 6, 7.8),
 			cap: (uu, ang2) => mix('#6a3e24', '#a8784a', uu * 0.6).lerp(new THREE.Color('#e8dcc8'), uu > 0.4 && Math.abs(Math.sin(ang2 * 9 + uu * 30)) > 0.93 ? 0.6 : 0), gills: '#efe6d2', stem: '#e2d6c0'
 		});
@@ -267,6 +272,8 @@ export function oyster(g, seed) {
 			const size = about(fr, 1, 0.25) * lerp(0.15, 1, grow);
 			const dir = base.clone().setY(0).normalize().add(v3(0, 0.25 - spent * 0.4, 0)).normalize();
 			const stem = base.clone().addScaledVector(dir, 0.015 * size);
+			// one oyster: its short stem from the bark, its cap fanning out along `dir`
+			bag.fruit(['shelf', c, k], base, dir);
 			bag.add('body', tube([base, stem], () => 0.006 * size, () => '#e8e4dc', 5));
 			// the fan-shaped cap, its edge wavy, its gills running down underneath
 			const capColour = mix(mix('#4a5a6a', '#8a8a8a', grow), '#d8d0c0', spent);
@@ -275,6 +282,7 @@ export function oyster(g, seed) {
 			bag.add('body', fan({ size: capR * 0.98, from: -1.5, to: 1.5, edge: (a2) => 1 + 0.06 * Math.sin(a2 * 7), lift: (s, a2) => 0.12 * s * (1 - s) + (spent * 0.3 - 0.08) * s * s + 0.02 * Math.sin(a2 * 7) * s + 0.09 * (1 - s) * (1 - s), paint: () => capColour, rings: 6, rays: 28 }), m);
 			bag.add('body', fan({ size: capR, from: -1.5, to: 1.5, edge: (a2) => 1 + 0.06 * Math.sin(a2 * 7), lift: (s, a2) => 0.12 * s * (1 - s) + (spent * 0.3 - 0.08) * s * s + 0.02 * Math.sin(a2 * 7) * s, paint: (s) => capColour.clone().lerp(new THREE.Color('#2a3a4a'), (1 - s) * 0.15 * (1 - spent)), rings: 6, rays: 28 }), m);
 			bag.add('sheet', fan({ size: capR * 0.97, from: -1.5, to: 1.5, edge: (a2) => 1 + 0.06 * Math.sin(a2 * 7), lift: (s, a2) => 0.12 * s * (1 - s) + (spent * 0.3 - 0.08) * s * s + 0.02 * Math.sin(a2 * 7) * s - 0.006, paint: (s, a2) => mix('#f2eee4', '#c8c0b0', Math.abs(Math.sin(a2 * 45)) > 0.8 ? 0.5 : 0), rings: 4, rays: 40 }), m);
+			bag.fruitDone();
 		}
 	}
 	return bag.build();

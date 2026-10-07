@@ -265,8 +265,11 @@ function strig(ctx, site, S) {
 	const d = place.dir;
 	const L = len * lerp(0.3, 1, emerge);
 	const top = place.at;
-	bag.add('body', tube([site.at, top, top.clone().addScaledVector(d, L)], (u) => 0.001 * (1 - 0.5 * u), () => S.stalk, 3));
 	const set = span(g, opens + 0.4, opens + 0.4 + S.season.setFor);
+	// once set, the whole strig is picked as one
+	const bearing = set >= 0.02 && keep > 0;
+	if (bearing) bag.fruit(site.key, site.at, d);
+	bag.add('body', tube([site.at, top, top.clone().addScaledVector(d, L)], (u) => 0.001 * (1 - 0.5 * u), () => S.stalk, 3));
 	for (let k = 0; k < n; k++) {
 		const kr = chance(seed, 'strig-berry', ...site.key, k);
 		const r1 = kr(), r2 = kr();
@@ -291,6 +294,7 @@ function strig(ctx, site, S) {
 		bag.add('gloss', bead(c, v3(r, r * 1.04, r), S.colour(ripe), 3));
 		bag.add('body', bead(c.clone().addScaledVector(side, r * 0.95), v3(1, 1, 1).multiplyScalar(r * 0.18), S.calyx, 2));
 	}
+	if (bearing) bag.fruitDone();
 }
 
 /**
@@ -335,12 +339,14 @@ function hanging(ctx, at, out, key, o) {
 	const L = o.L * size, W = o.W * size;
 	const start = at.clone().addScaledVector(out, 0.004);
 	const place = bag.space.settle(start.clone().add(v3(0, -o.stalk * 0.5, 0)).addScaledVector(out, o.stalk * 0.3), v3(0, -1, 0).addScaledVector(out, 0.3), (a, d) => [0.3, 0.72].map((t) => ({ c: a.clone().addScaledVector(d, L * t), r: W * 1.05 })), o.stalk * 0.6);
+	if (set >= 0.02) bag.fruit(key, at, place.dir);
 	bag.add('body', tube([at, start, place.at], () => 0.0006, () => o.stalkColour, 3));
 	if (set < 0.02) {
 		o.bud(bag, place.at, place.dir, clamp((g - opens) / 0.2), span(g, opens + 0.3, opens + 0.45));
 		return;
 	}
 	o.draw(bag, place.at, place.dir, L * lerp(0.25, 1, set), W * lerp(0.22, 1, set), span(g, ripeAt, ripeAt + o.season.ripeFor));
+	bag.fruitDone();
 }
 
 /* ------------------------------------------------------------------------------------------------ the shrub */
@@ -667,6 +673,9 @@ function corymb(ctx, site, C) {
 	const sag = span(set, 0.15, 0.9);
 	const axis = up.clone().lerp(place.dir, sag).normalize();
 	const base = start.clone().lerp(place.at, sag);
+	// once set, the whole cluster is picked as one
+	const bearing = set >= 0.02 && n - Math.floor(lost * (C.drop + 1)) > 0;
+	if (bearing) bag.fruit(site.key, site.at, place.dir);
 	bag.add('body', tube([site.at, start, base], () => 0.0013, () => C.stalk, 3));
 	const centre = base.clone().addScaledVector(axis, Rc * lerp(0.5, 1.05, emerge));
 	for (let k = 0; k < n; k++) {
@@ -689,6 +698,7 @@ function corymb(ctx, site, C) {
 		bag.add('gloss', bead(p, v3(r, r * 0.92, r), C.colour(ripe), 3));
 		bag.add('body', bead(p.clone().addScaledVector(axis, r * 0.9), v3(1, 1, 1).multiplyScalar(r * 0.22), '#3a2a2a', 2));
 	}
+	if (bearing) bag.fruitDone();
 }
 
 /** @type {Corymb} */
@@ -862,16 +872,19 @@ export const japaneseRose = shrub({
 				const out = k ? round(t.dir, a).addScaledVector(t.dir, 0.8).normalize() : t.dir.clone();
 				const at = t.tip.clone().addScaledVector(out, 0.012 + k * 0.006);
 				const set = span(g, opens + 0.45, opens + 2.4);
+				// a hip, once set, picked with its stalk from the shoot's tip
+				const place = set < 0.02 ? null : bag.space.settle(at, out.clone().lerp(v3(0, -1, 0), 0.5).normalize(), (p, d) => [{ c: p.clone().addScaledVector(d, R * 0.9), r: R * 1.05 }], 0.015);
+				if (place) bag.fruit([...t.key, k], t.tip, place.dir);
 				bag.add('body', tube([t.tip, at], () => 0.0012, () => '#5a7a3a', 3));
-				if (set < 0.02) {
+				if (!place) {
 					const facing = out.clone().lerp(UP, 0.55).normalize();
 					if (g < opens) bag.add('body', bead(at.clone().addScaledVector(facing, 0.006), v3(0.005, 0.008, 0.005).multiplyScalar(lerp(0.4, 1, span(g, opens - 0.5, opens))), '#b0306a', 4, new THREE.Quaternion().setFromUnitVectors(UP, facing)));
 					else rose(bag, at, facing, clamp((g - opens) / 0.2), span(g, opens + 0.3, opens + 0.45), pink);
 					continue;
 				}
-				const place = bag.space.settle(at, out.clone().lerp(v3(0, -1, 0), 0.5).normalize(), (p, d) => [{ c: p.clone().addScaledVector(d, R * 0.9), r: R * 1.05 }], 0.015);
 				bag.add('body', tube([at, place.at], () => 0.0012, () => '#5a7a3a', 3));
 				hip(bag, place.at, place.dir, R * lerp(0.3, 1, set), span(g, 7.4 + kr() * 0.4, 8.5 + kr() * 0.4));
+				bag.fruitDone();
 			}
 			// rugosa flowers on through the summer: a late one here and there beside the hips
 			if (late < 0.12) {
@@ -1048,8 +1061,10 @@ function spray(ctx, key, end, dir, lp) {
 		}
 		const L = 0.021 * size * lerp(0.3, 1, set), W = 0.0095 * size * lerp(0.3, 1, set);
 		const place = bag.space.settle(at, stalk.clone().lerp(v3(0, -1, 0), 0.6).normalize(), (p, d) => [0.3, 0.72].map((t) => ({ c: p.clone().addScaledVector(d, 0.021 * size * t), r: 0.0095 * size * 1.05 })), 0.02);
+		bag.fruit([...key, k], base, place.dir);
 		bag.add('body', tube([base, at, place.at], () => 0.0008, () => '#6a7a3a', 3));
 		bramble(bag, place.at, place.dir, L, W, span(g, ripeAt, ripeAt + 0.9));
+		bag.fruitDone();
 	}
 }
 

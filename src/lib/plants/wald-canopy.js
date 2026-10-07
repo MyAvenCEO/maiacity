@@ -691,6 +691,7 @@ export const walnut = wood({
 				const start = sh.tip.clone().addScaledVector(up, 0.012);
 				// on a short stout stalk, hanging out below the leaves of the tip
 				const place = hang(ctx, start.clone().addScaledVector(swing, 0.02).add(v3(0, -0.035, 0)), DOWN.clone().addScaledVector(swing, 0.6), L, W, 0.03 + W);
+				bag.fruit(['walnut', ...sh.key, k], sh.tip, place.dir);
 				bag.add('body', tube([sh.tip, start, place.at], (u) => 0.0035 * (1 - 0.3 * u) + 0.002 * set, () => '#6a7040', 4));
 				const blotch = kr() * TAU;
 				husked(bag, hung(place.at, place.dir, kr() * TAU), L, W, {
@@ -703,6 +704,7 @@ export const walnut = wood({
 					},
 					split, valves: 4, rings: 7, sides: 10, nut: '#b8925e', nuts: 1, nutSize: 0.86
 				});
+				bag.fruitDone();
 			}
 		}
 	}
@@ -768,6 +770,7 @@ export const chestnut = wood({
 				const swing = v3(Math.cos(k * 2.4 + kr() * 2), 0, Math.sin(k * 2.4 + kr() * 2));
 				const start = sh.tip.clone().addScaledVector(up, 0.01);
 				const place = hang(ctx, start.clone().addScaledVector(swing, 0.01), swing.clone().add(v3(0, -0.5, 0)), L, W * 1.35, 0.02 + W);
+				bag.fruit(['burr', ...sh.key, k], sh.tip, place.dir);
 				bag.add('body', tube([sh.tip, start, place.at], () => 0.0035 + 0.002 * set, () => '#6a7040', 4));
 				const green = mix('#86b03e', '#b8b84a', ripe * 1.5);
 				husked(bag, hung(place.at, place.dir, kr() * TAU), L, W, {
@@ -775,6 +778,7 @@ export const chestnut = wood({
 					husk: (u) => (ripe < 0.6 ? green.clone() : mix('#b8a04a', '#8a6a38', (ripe - 0.6) / 0.4)).multiplyScalar(0.9 + 0.2 * u),
 					split, valves: 4, spines: 1.1 * lerp(0.4, 1, set), rings: 8, sides: 12, nut: '#6a3218', nuts: 2 + Math.floor(kr() * 2), nutSize: 0.95
 				});
+				bag.fruitDone();
 			}
 		}
 	}
@@ -844,12 +848,15 @@ export const alder = wood({
 				const a = k * 2.39996 + kr();
 				const out = v3(Math.cos(a), set < 0.3 ? 0.6 : -0.6, Math.sin(a));
 				const place = hang(ctx, base.clone().addScaledVector(out.clone().setY(0), 0.008), out.clone().setY(-0.8).normalize(), L, W, 0.012 + W);
+				// a cone once the female catkin has set (before that, a flower)
+				if (set > 0) bag.fruit(['cone', ...sh.key, k], base, place.dir);
 				bag.add('body', tube([base, place.at], () => 0.0012, () => '#4a3a2a', 3));
 				const colour = set < 0.25 ? mix('#7a2a30', '#5a7a34', set * 4) : ripe < 0.5 ? mix('#5a7a34', '#6a6034', ripe * 2) : mix('#6a6034', '#3a2618', (ripe - 0.5) * 2);
 				const open = span(ripe, 0.6, 1);
 				const axis = [];
 				for (let r = 0; r <= 6; r++) axis.push(v3(0, -(r / 6) * L, 0));
 				bag.add('body', tube(axis, (u, v) => W * Math.pow(Math.max(0, Math.sin(Math.PI * Math.min(1, 0.06 + u * 0.94))), 0.6) * (1 + (0.12 + 0.25 * open) * ((Math.round(u * 6) + Math.round(v * 6)) % 2)), (u, v) => colour.clone().multiplyScalar((Math.round(u * 6) + Math.round(v * 6)) % 2 ? 1.1 : 0.75), 6), hung(place.at, place.dir, kr() * TAU));
+				if (set > 0) bag.fruitDone();
 			}
 			// next year's catkins, formed in the summer: small, stiff, purple-brown
 			const next = span(g, 6.6, 8.6);
@@ -916,6 +923,9 @@ export const linden = wood({
 				const place = hang(ctx, at.clone().addScaledVector(out, 0.01), out.clone().add(v3(0, -1.6, 0)).normalize(), 0.03, 0.022, 0.02);
 				const end = place.at.clone().addScaledVector(place.dir, peduncle);
 				const mid = at.clone().lerp(end, 0.5).addScaledVector(out, 0.012);
+				// the cluster of nutlets with its bract, once the flowers have set
+				const nutlets = phase >= 0.55;
+				if (nutlets) bag.fruit(['cyme', ...sh.key, k], at, place.dir);
 				bag.add('body', tube([at, mid, end], () => 0.0009, () => '#a8b060', 3));
 				const ripe = span(phase, 2.4, 3.6);
 				const bractColour = ripe < 0.4 ? mix('#c8d88a', '#d8d090', ripe * 2) : mix('#d8d090', '#b89a62', (ripe - 0.4) / 0.6);
@@ -941,6 +951,7 @@ export const linden = wood({
 						bag.add('body', bead(p.clone().addScaledVector(d, r * 0.5), v3(r, r * 1.05, r), ripe < 0.5 ? mix('#8aa05a', '#9a9a6a', ripe * 2) : mix('#9a9a6a', '#7a6248', (ripe - 0.5) * 2), 3));
 					}
 				}
+				if (nutlets) bag.fruitDone();
 			}
 		}
 	}
@@ -1021,6 +1032,7 @@ export const hazel = wood({
 						const L = 0.02 * size, W = 0.008 * size;
 						const swing = v3(Math.cos(k * 2.4 + kr()), 0, Math.sin(k * 2.4 + kr()));
 						const place = hang(ctx, at.clone().addScaledVector(swing, 0.008), swing.clone().add(v3(0, -0.8, 0)).normalize(), L * 1.1, W * 1.3, 0.02 + W);
+						bag.fruit(['hazelnut', ...sh.key, s, k], at, place.dir);
 						bag.add('body', tube([at, place.at], () => 0.0016, () => '#6a7a3a', 3));
 						const m = hung(place.at, place.dir, kr() * TAU);
 						// the nut: green-white, then tan, then brown
@@ -1031,6 +1043,7 @@ export const hazel = wood({
 						const axis = [];
 						for (let r = 0; r <= 5; r++) axis.push(v3(0, -0.001 - (r / 5) * L * 1.05, 0));
 						bag.add('body', tube(axis, (u, v) => W * (0.55 + 0.75 * Math.sqrt(u)) * (u > 0.6 ? 1 + 0.35 * (u - 0.6) * Math.abs(Math.sin(v * Math.PI * 5)) : 1) * (1 + 0.15 * ripe * u), (u, v) => husk.clone().multiplyScalar(u > 0.8 ? 1.15 : 0.95 + 0.1 * Math.sin(v * 31)), 8), m);
+						bag.fruitDone();
 					}
 				}
 				// next year's catkins, formed in the summer: small, stiff, grey-green
@@ -1103,6 +1116,7 @@ export const pecan = wood({
 				const swing = v3(Math.cos(k * 2.4 + kr() * 2), 0, Math.sin(k * 2.4 + kr() * 2));
 				const start = sh.tip.clone().addScaledVector(up, 0.01 + 0.012 * k);
 				const place = hang(ctx, start.clone().addScaledVector(swing, 0.015), DOWN.clone().addScaledVector(swing, 0.7), L, W, 0.02 + W);
+				bag.fruit(['pecan', ...sh.key, k], sh.tip, place.dir);
 				bag.add('body', tube([sh.tip, start, place.at], () => 0.0026 + 0.0014 * set, () => '#6a7040', 4));
 				husked(bag, hung(place.at, place.dir, kr() * TAU), L, W, {
 					shape: (u) => Math.pow(Math.max(0, Math.sin(Math.PI * Math.min(1, 0.04 + u * 0.96))), 0.65),
@@ -1114,6 +1128,7 @@ export const pecan = wood({
 					},
 					split: span(ripe, 0.5, 1), valves: 4, rings: 8, sides: 12, nut: '#8a5a32', nuts: 1, nutSize: 0.9
 				});
+				bag.fruitDone();
 			}
 		}
 	}
@@ -1178,6 +1193,7 @@ export const treeHazel = wood({
 				const L = 0.019 * size, W = 0.0085 * size;
 				const swing = v3(Math.cos(k * 2.4 + kr()), 0, Math.sin(k * 2.4 + kr()));
 				const place = hang(ctx, at.clone().addScaledVector(swing, 0.01), swing.clone().add(v3(0, -0.7, 0)).normalize(), L * 1.6, W * 1.5, 0.02 + W);
+				bag.fruit(['treehazel', ...sh.key, k], at, place.dir);
 				bag.add('body', tube([at, place.at], () => 0.0018, () => '#6a7a3a', 3));
 				const m = hung(place.at, place.dir, kr() * TAU);
 				const nut = ripe < 0.4 ? mix('#d8dcb0', '#c8a868', ripe / 0.4) : mix('#c8a868', '#8a5a2e', (ripe - 0.4) / 0.6);
@@ -1187,6 +1203,7 @@ export const treeHazel = wood({
 				const axis = [];
 				for (let r = 0; r <= 6; r++) axis.push(v3(0, -0.001 - (r / 6) * L * 1.6, 0));
 				bag.add('body', tube(axis, (u, v) => W * (0.55 + 0.9 * Math.sqrt(u)) * (u > 0.45 ? 1 + 0.6 * (u - 0.45) * Math.abs(Math.sin(v * Math.PI * 7)) : 1) * (1 + 0.2 * ripe * u), (u, v) => husk.clone().multiplyScalar(u > 0.75 ? 1.12 : 0.94 + 0.1 * Math.sin(v * 31)), 10), m);
+				bag.fruitDone();
 			}
 		}
 	}
@@ -1244,12 +1261,15 @@ export const pine = wood({
 				const a = k * 2.39996 + kr();
 				const dir = v3(Math.cos(a) * 0.25, 1, Math.sin(a) * 0.25).normalize();
 				const base = sh.tip.clone().addScaledVector(dir, 0.01);
+				// a cone once pollinated (before that, a red seed-cone flower)
+				if (set > 0) bag.fruit(['cone', ...sh.key, k], sh.tip, dir);
 				// built from its foot along its axis, standing up
 				const colour = set < 0.15 ? mix('#a83a3a', '#6a8a4a', set / 0.15) : ripe < 0.5 ? mix('#6a8a4a', '#7a6a3a', ripe * 2) : mix('#7a6a3a', '#5a3a22', (ripe - 0.5) * 2);
 				const open = span(ripe, 0.6, 1);
 				const axis = [];
 				for (let r = 0; r <= 8; r++) axis.push(v3(0, -(r / 8) * L, 0));
 				bag.add('body', tube(axis, (u, v) => W * Math.pow(Math.max(0, Math.sin(Math.PI * Math.min(1, 0.08 + u * 0.92))), 0.55) * (1 + (0.1 + 0.22 * open) * ((Math.round(u * 9) + Math.round(v * 8)) % 2)), (u, v) => colour.clone().multiplyScalar((Math.round(u * 9) + Math.round(v * 8)) % 2 ? 1.12 : 0.78), 8), hung(base, dir, kr() * TAU));
+				if (set > 0) bag.fruitDone();
 			}
 		}
 	}

@@ -311,8 +311,11 @@ function trussAt(bag, sort, seed, t, at, out, g, past, vigour, space) {
 			const size = vigour * (double ? 1.3 : k < 4 ? 1 : 0.8) * about(fr, 1, 0.1);
 			// it hangs where it touches nothing: swung aside, its stalk a little longer if need be
 			const place = space.settle(end, v3(0, -1, 0).lerp(pd, 0.25), (a, d) => sort.balls(a, d, size, set), 0.04);
+			// one tomato, picked with its pedicel from the truss
+			bag.fruit([t, k], base, place.dir);
 			bag.add('body', tube([base, end, place.at], () => 0.0008 + 0.0008 * set, () => '#6c9442', 4));
 			sort.fruit({ bag, seed, key: [t, k], at: place.at, dir: place.dir, size, set, ripe: span(g, opens + sort.ripeFrom, opens + sort.ripeFrom + sort.ripeFor) });
+			bag.fruitDone();
 		}
 	}
 }

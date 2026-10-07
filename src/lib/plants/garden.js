@@ -96,6 +96,8 @@ export function pepper(g, seed) {
 			const size = vigour * about(fr, 1, 0.1);
 			const L = 0.1 * size * lerp(0.15, 1, set), R = 0.042 * size * lerp(0.15, 1, set);
 			const place = space.settle(fork.clone().addScaledVector(down, 0.02), down, (a, d) => [{ c: a.clone().addScaledVector(d, L * 0.45), r: R * 0.95 }], 0.04);
+			// one pepper: its stalk from the fork, the fruit hanging from it
+			bag.fruit([...l.key], fork, place.dir);
 			bag.add('body', tube([fork, place.at], () => 0.0025 + 0.002 * set, () => '#5f8a3a', 5));
 			const ripe = span(g, opens + 2.3, opens + 3.3);
 			const colour = ripe < 0.4 ? mix('#2f7a2a', '#3a4a22', ripe / 0.4) : mix('#3a4a22', '#c41e1e', (ripe - 0.4) / 0.6);
@@ -106,6 +108,7 @@ export function pepper(g, seed) {
 			// blocky: broad shoulders, near-straight sides, lobed at the blossom end
 			bag.add('gloss', tube(axis, (u, v) => R * Math.pow(Math.max(0, Math.sin(Math.PI * Math.min(1, 0.08 + u * 0.95))), 0.3) * (1 - 0.1 * u) * (1 + 0.09 * Math.cos(v * Math.PI * 2 * lobes) * (0.3 + u)), () => colour, 20), m);
 			bag.add('body', bead(v3(0, -0.002, 0), v3(R * 0.45, R * 0.18, R * 0.45), '#4f7a2e', 6), m);
+			bag.fruitDone();
 		}
 	}
 	for (const leaf of leaves) leaf();
@@ -228,8 +231,11 @@ function vine(bag, seed, key, from, head, run, g, vigour, main) {
 		const axis = [];
 		for (let k = 0; k <= 14; k++) axis.push(c.clone().add(v3(0, Hh - (k / 14) * Hh, 0)));
 		const colour = mix('#3f6a2a', '#e06418', ripe);
+		// one pumpkin, sitting on the soil: its stalk from the vine onto its top, its body from the stalk down
+		bag.fruit([...key, i], p, v3(0, -1, 0));
 		bag.add('gloss', tube(axis, (u, v) => R * Math.pow(Math.max(0, Math.sin(Math.PI * u)), 0.55) * (1 + 0.06 * Math.cos(v * Math.PI * 2 * 10)) * (1 - 0.12 * Math.pow(1 - u, 3)), (u, v) => colour.clone().lerp(new THREE.Color(ripe > 0.5 ? '#f08a3a' : '#8aa86a'), Math.pow(Math.abs(Math.cos(v * Math.PI * 10)), 30) * 0.4), 30));
 		bag.add('body', tube([p, c.clone().add(v3(0, Hh + 0.03, 0)), c.clone().add(v3(0, Hh - 0.005, 0))], () => 0.008, () => mix('#6a9a3a', '#b8a06a', ripe), 6));
+		bag.fruitDone();
 	}
 }
 
@@ -300,6 +306,8 @@ export function blueberry(g, seed) {
 		for (let k = 0; k < count; k++) {
 			const a = k * 2.39996;
 			const hang = t.tip.clone().add(v3(Math.cos(a) * 0.012 * (1 + k * 0.15), -0.012 - k * 0.006, Math.sin(a) * 0.012 * (1 + k * 0.15)));
+			// once set, one berry: its pedicel from the twig's tip, the berry hanging below
+			if (set >= 0.03) bag.fruit([...t.key, k], t.tip, v3(0, -1, 0));
 			bag.add('body', tube([t.tip, hang], () => 0.0006, () => '#8a6a4a', 3));
 			if (set < 0.03) {
 				// a white urn-shaped bell, mouth down
@@ -314,6 +322,7 @@ export function blueberry(g, seed) {
 			const p = hang.clone().add(v3(0, -r, 0));
 			bag.add('gloss', bead(p, v3(r, r * 0.9, r), c.lerp(new THREE.Color('#8a9ac0'), turn * 0.3), 5));
 			bag.add('body', bead(p.clone().add(v3(0, -r * 0.85, 0)), v3(r * 0.35, r * 0.15, r * 0.35), '#3a2a3a', 3));
+			bag.fruitDone();
 		}
 	}
 	return bag.build();

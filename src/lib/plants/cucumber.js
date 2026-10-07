@@ -315,8 +315,11 @@ function flowers(bag, seed, i, at, out, g, past, vigour, space) {
 	// it hangs where it touches nothing: not through the vine, the stake, or another cucumber
 	const R = length * 0.15;
 	const place = space.settle(stalkEnd, dir, (a, d) => [0.15, 0.38, 0.62, 0.85].map((f) => ({ c: a.clone().addScaledVector(d, length * f), r: R })), 0.04);
+	// once set, one cucumber, picked with its stalk from the node (the flower at its end is not the fruit)
+	if (set > 0) bag.fruit([i], at, place.dir);
 	bag.add('body', tube([at.clone(), stalkEnd, place.at], () => 0.0012 + 0.002 * set, () => '#6e9640', 5));
 	const tipAt = fruit(bag, seed, i, place.at, place.dir, length, set);
+	bag.fruitDone();
 	const life = clamp((g - opens) / 0.2);
 	const wilt = span(g, opens + 0.5, opens + 0.9);
 	blossom(bag, tipAt.p, tipAt.d, life, wilt, 1);

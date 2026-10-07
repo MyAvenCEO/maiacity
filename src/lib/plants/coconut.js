@@ -289,7 +289,10 @@ function bunch(bag, o) {
 		const size = lerp(0.12, 1, grown) * about(nr, 0.9, 0.08) * o.vigour;
 		// each nut where it touches neither the trunk nor its neighbours
 		const place = o.space.settle(at, dir, (a, d) => [{ c: a.clone(), r: 0.23 * size * 0.38 }], 0.08);
+		// once set (no longer a button), one nut: no stalk of its own, picked at its stem end, the calyx
+		if (grown > 0) bag.fruit(['bunch', o.b, n], place.at.clone().addScaledVector(place.dir, -0.23 * size * 0.5), place.dir);
 		nut(bag, { seed: o.seed, key: ['bunch', o.b, n], at: place.at, dir: place.dir, size, grown, colour: mix(mix('#c9b04a', '#f29a2e', clamp(grown * 1.5)), '#a8692e', ripe) });
+		bag.fruitDone();
 	}
 }
 

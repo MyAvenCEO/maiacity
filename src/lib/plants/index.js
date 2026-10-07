@@ -6,7 +6,7 @@
  * ./herbs.js (the kitchen herbs, lavender and Bärlauch), ./ground.js (haircap moss, wine cap, shiitake, oyster),
  * ./fruittrees.js (cherry, pear, peach, apricot, plum, persimmon, mulberry, fig, safou, soursop, sapodilla, avocado),
  * ./garden.js (pepper, pumpkin, blueberry), ./vegetables.js (radish, carrot, lettuce, garlic), ./trees.js (mango,
- * apple, orange, lemon, durian, jackfruit, through ./orchard.js and ./crown.js), ./groves.js (pomegranate, olive,
+ * apple, orange, lemon, durian, jackfruit, through ./orchard.js and ./crown.js), ./avocado.js and ./jackfruit.js (their latest), ./groves.js (pomegranate, olive,
  * coffee, cacao, through ./orchard.js too), ./ginger.js, ./allies.js (comfrey, white clover), ./greens.js (Swiss chard,
  * kale), ./beans.js (the runner bean up its cane) and ./fields.js (bamboo, hemp, lentil, edamame, chickpea, oats, for
  * the mini fields) — all of it made of ./grow.js, ./sprout.js, ./leaves.js, ./bloom.js and ./tree.js). The same seed id
@@ -21,13 +21,14 @@ import { STAGES as EGGPLANT, eggplant } from './eggplant.js';
 import { STAGES as COCONUT, coconut } from './coconut.js';
 import { APPLE_STAGES, APPLE_V1, DURIAN, DURIAN_STAGES, JACKFRUIT, JACKFRUIT_STAGES, LEMON_STAGES, MANGO_STAGES, ORANGE_STAGES, apple, durian, jackfruit as jackfruitV2, lemon, mango, orange } from './trees.js';
 import { jackfruit } from './jackfruit.js';
+import { avocado } from './avocado.js';
 import { CARROT_STAGES, GARLIC_STAGES, LETTUCE_STAGES, RADISH_STAGES, carrot, garlic, lettuce, radish } from './vegetables.js';
 import { STAGES as GRAPE, grape } from './grape.js';
 import { BANANA_STAGES, RED_BANANA_STAGES, PAPAYA_STAGES, PASSION_STAGES, PINEAPPLE_STAGES, banana, papaya, passionFruit, pineapple, redBanana } from './tropics.js';
 import { BASIL_STAGES, CHIVES_STAGES, CORIANDER_STAGES, DILL_STAGES, LAVENDER_STAGES, LEMON_BALM_STAGES, MINT_STAGES, OREGANO_STAGES, PARSLEY_STAGES, ROSEMARY_STAGES, SAGE_STAGES, THYME_STAGES, WILD_GARLIC_STAGES, basil, chives, coriander, dill, lavender, lemonBalm, mint, oregano, parsley, rosemary, sage, thyme, wildGarlic } from './herbs.js';
 import { MOSS_STAGES, OYSTER_STAGES, SHIITAKE_STAGES, WINECAP_STAGES, moss, oyster, shiitake, wineCap } from './ground.js';
 import { FIG_STAGES, MULBERRY_STAGES, PERSIMMON_STAGES, fig, mulberry, persimmon } from './fruittrees.js';
-import { APRICOT_STAGES, AVOCADO_STAGES, CHERRY_STAGES, PEACH_STAGES, PEAR_STAGES, PLUM_STAGES, SAFOU_STAGES, SAPODILLA_STAGES, SOURSOP, SOURSOP_STAGES, apricot, avocado, cherry, peach, pear, plum, safou, sapodilla, soursop } from './fruittrees.js';
+import { APRICOT_STAGES, AVOCADO_STAGES, CHERRY_STAGES, PEACH_STAGES, PEAR_STAGES, PLUM_STAGES, SAFOU_STAGES, SAPODILLA_STAGES, SOURSOP, SOURSOP_STAGES, apricot, avocado as avocadoV1, cherry, peach, pear, plum, safou, sapodilla, soursop } from './fruittrees.js';
 import { BLUEBERRY_STAGES, PEPPER_STAGES, PUMPKIN_STAGES, blueberry, pepper, pumpkin } from './garden.js';
 import { CACAO, CACAO_STAGES, COFFEE_STAGES, OLIVE_STAGES, POMEGRANATE_STAGES, cacao, coffee, olive, pomegranate } from './groves.js';
 import { GINGER_STAGES, ginger } from './ginger.js';
@@ -364,7 +365,7 @@ const ALL = [
 		id: 'avocado',
 		label: 'Avocado',
 		latin: "Persea americana 'Hass' · Avocado",
-		note: 'From a big stone that splits open: bronze-red flushes greening to big leathery leaves, a broad dome, panicles of tiny flowers, pear-shaped pebbly fruit on long stalks darkening to purple-black.',
+		note: 'From a big stone that splits open: a leggy stem, then strong limbs arching into a broad dome skirted to the ground; leaves crowded at the shoot tips, each flush bronze; panicles of tiny yellow-green flowers, and pear-shaped pebbly fruit hanging under the new leaves on long stalks.',
 		from: 'Tree · 7 years',
 		stages: AVOCADO_STAGES,
 		grow: avocado
@@ -703,6 +704,13 @@ const HISTORY = {
 	durian: [
 		{ ...FIRST, build: orchardV1(DURIAN) },
 		{ v: 2, date: '2026-10-06', note: 'Fruit hangs from the bark of the limbs, not out of their middle' }
+	],
+	// v2 (./avocado.js): a leggy seedling, strong limbs arching into a broad dome with a skirt; leaves crowded at the
+	// shoot tips, the flush bronze; clusters of panicles at the tips, the shoot growing on out of them; one fruit in a
+	// panicle, rarely two, hanging under the new leaves on a long stalk thickening to a button
+	avocado: [
+		{ ...FIRST, build: avocadoV1 },
+		{ v: 2, date: '2026-10-07', note: 'Grown as an avocado grows: limbs arching into a skirted dome, bronze flushes, fruit hanging on long stalks under the new leaves' }
 	],
 	soursop: [
 		{ ...FIRST, build: orchardV1(SOURSOP) },

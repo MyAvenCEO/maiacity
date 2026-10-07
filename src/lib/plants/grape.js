@@ -167,11 +167,13 @@ function bunch(bag, seed, key, at, bear, g, vigour) {
 	const set = span(g, opens + 0.3, opens + 2.5);
 	const out = v3(Math.cos(bear), 0, Math.sin(bear));
 	const peduncle = at.clone().addScaledVector(out, 0.04).add(v3(0, -0.02 - 0.03 * set, 0));
+	const flowering = g < opens + 0.3;
+	// once set, the whole bunch is one fruit as picked, cut at the shoot
+	if (!flowering) bag.fruit(key, at, v3(0, -1, 0));
 	bag.add('body', tube([at, at.clone().addScaledVector(out, 0.03), peduncle], () => 0.002, () => '#7a8a3a', 4));
 	const L = (0.06 + 0.1 * set) * vigour * about(br, 1, 0.15);
 	const W = L * 0.42;
 	const n = 70;
-	const flowering = g < opens + 0.3;
 	for (let k = 0; k < n; k++) {
 		const t = (k + 0.5) / n;
 		const a = k * 2.39996;
@@ -189,4 +191,5 @@ function bunch(bag, seed, key, at, bear, g, vigour) {
 		bag.add('gloss', bead(p, v3(r, r * 1.08, r), c.lerp(new THREE.Color('#8a6a8a'), span(g, 8.5, 9) * 0.18), 4));
 	}
 	bag.add('body', tube([peduncle, peduncle.clone().add(v3(0, -L, 0))], () => 0.0012, () => '#7a8a3a', 3));
+	bag.fruitDone();
 }

@@ -323,8 +323,10 @@ function flowering(bag, spec, seed, g, site, space, vigour) {
 			const hangFrom = start.clone().addScaledVector(swing, F.stalk * 0.25).add(v3(0, -F.stalk * lerp(0.3, 1, set), 0));
 			place = space.settle(hangFrom, v3(0, -1, 0).addScaledVector(swing, 0.15), (a, d) => [0.3, 0.7].map((t) => ({ c: a.clone().addScaledVector(d, L * t), r: W * 0.92 })), F.stalk * 0.5 + W);
 		}
+		bag.fruit([...site.key, k], site.at, place.dir);
 		bag.add('body', tube([site.at, start, place.at], (u) => 0.002 + 0.004 * set * (F.width / 0.05) * (1 - 0.4 * u), () => '#6f6a3a', 4));
 		fruitOf(bag, F, { seed, key: [...site.key, k], at: place.at, dir: place.dir, L, W, ripe, set });
+		bag.fruitDone();
 	}
 }
 
