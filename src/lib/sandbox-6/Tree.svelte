@@ -1,8 +1,8 @@
 <!--
 	Sandbox 6 · the building tree: every chain of the valley on one screen, a row each (./tree.js, read from the rules):
-	the hex a chain stands on and the land it works, every stage its building grows through with its three recipes of
-	the crafting engine (what building it or growing to it takes, what standing takes a week, and what it makes a
-	week), the ware it makes and what that is for; then energy, the village center's stages (a logistics hub that grows into the
+	the hex a chain stands on and the land it works, every stage its building grows through with its recipes of the
+	crafting engine (what building it or growing to it takes, its upkeep a week in gold, the energy standing uses a
+	week, and what it makes a week), the ware it makes and what that is for; then energy, the village center's stages (a logistics hub that grows into the
 	village center and its geothermal plant) and every dome's solar cells; then the homes, one dome through its eight sizes. All in units: a tonne, a MWh, a gold. A stage you have
 	is marked; click a first stage to build it (later stages grow on the building's card).
 -->
@@ -18,16 +18,16 @@
 	const label = (/** @type {string} */ w) => WARES[w]?.label ?? w;
 	/** a recipe side as a list: "10 planks, 5 steel, 1.5 energy" @param {Record<string, number>} m */
 	const list = (m) => side(m, ', ');
-	/** a stage's three recipes, as its title says them @param {{ label: string, build: any, keep: any, make: any, does?: string }} s @param {boolean} up */
+	/** a stage's recipes, as its title says them @param {{ label: string, build: any, keep: any, use: any, make: any, does?: string }} s @param {boolean} up */
 	const titleOf = (s, up) =>
-		`${s.label}\n${up ? 'Grow to it' : 'Build it'}: ${list(s.build.in)}\nKeep it, a week: ${list(s.keep.in)}\nMake, a week: ${s.make && Object.keys(s.make.out).length ? craftLine(s.make) : (s.does ?? 'nothing')}`;
+		`${s.label}\n${up ? 'Grow to it' : 'Build it'}: ${list(s.build.in)}\nKeep it, a week: ${list(s.keep.in)}\nIt uses, a week: ${list(s.use.in)}\nMake, a week: ${s.make && Object.keys(s.make.out).length ? craftLine(s.make) : (s.does ?? 'nothing')}`;
 </script>
 
 <section class="tree" aria-label="Building tree">
 	<button class="close" onclick={onClose} aria-label="Close">×</button>
 	<p class="eyebrow">How the valley works</p>
 	<h2>Building tree</h2>
-	<p class="about">Each row runs from the hex it stands on to what it is for, through every stage its building grows. Every stage is three recipes: <b>build</b>, what building it or growing to it takes once (↑ for an upgrade); <b>keep</b>, what standing takes a week; <b>make</b>, what its land and energy make a week. A green stage is one you have. Click a first stage to build it; the next ones grow on its card.</p>
+	<p class="about">Each row runs from the hex it stands on to what it is for, through every stage its building grows. Every stage has its recipes: <b>build</b>, what building it or growing to it takes once (↑ for an upgrade); <b>keep</b>, its upkeep a week, always in gold (2% a year of what it is built of, at world prices); <b>use</b>, the energy standing takes a week; <b>make</b>, what its land and energy make a week. A green stage is one you have. Click a first stage to build it; the next ones grow on its card.</p>
 	<p class="units">1 of anything is a real unit: a ware, land or food {UNIT_OF.ware} · water {UNIT_OF.water} · energy {UNIT_OF.energy} · gold {UNIT_OF.gold}</p>
 
 	<div class="scroll">
@@ -46,6 +46,7 @@
 							<strong>{s.label}{#if owned[`${c.type}:${s.level}`]}<em>×{owned[`${c.type}:${s.level}`]}</em>{/if}</strong>
 							<span class="r make"><b>make</b>{Object.keys(s.make.out).length ? craftLine(s.make) : s.does}</span>
 							<span class="r"><b>keep</b>{list(s.keep.in)}</span>
+							<span class="r"><b>use</b>{list(s.use.in)}</span>
 							<span class="r cost"><b>{k ? '↑ build' : 'build'}</b>{list(s.build.in)}</span>
 						</button>
 					{:else}
@@ -63,6 +64,7 @@
 					{#if s.mw}<span>with its geothermal plant, {fmt(s.mw)} MW</span>{/if}
 					<span class="r make"><b>make</b>{Object.keys(s.make.out).length ? list(s.make.out) : s.does}</span>
 					<span class="r"><b>keep</b>{list(s.keep.in)}</span>
+					<span class="r"><b>use</b>{list(s.use.in)}</span>
 					<span class="r cost"><b>{k ? '↑ build' : 'build'}</b>{list(s.build.in)}</span>
 				</button>
 			{/each}
@@ -71,7 +73,7 @@
 			<div class="node use"><strong>People, domes, factories</strong><span>the rest to the grid, {fmt((GRID_EUR_KWH * 1000) / EUR_PER_GOLD)} gold an energy</span></div>
 
 			<div class="node land"><strong>Every dome</strong><span><b>sun</b>: through its glass</span></div>
-			<div class="node b e wide"><strong>Its solar cells</strong><span class="r make"><b>make</b>{fmt(SUN.make)} energy a bed a week over the year, most in summer</span><span class="r"><b>keep</b>its climate, {fmt(SUN.climate)} energy a bed a week</span></div>
+			<div class="node b e wide"><strong>Its solar cells</strong><span class="r make"><b>make</b>{fmt(SUN.make)} energy a bed a week over the year, most in summer</span><span class="r"><b>use</b>its climate, {fmt(SUN.climate)} energy a bed a week</span></div>
 			<div class="gap"></div>
 			<div class="gap"></div>
 			<div class="node w e"><strong><i class="bolt"></i>Energy</strong><span>a flow, never stored</span></div>
@@ -86,11 +88,12 @@
 				<strong>{h.label} · {h.beds} beds{#if owned[`house:${h.level}`]}<em>×{owned[`house:${h.level}`]}</em>{/if}</strong>
 				<span class="r make"><b>make</b>{list(h.make.out)}</span>
 				<span class="r"><b>keep</b>{list(h.keep.in)}</span>
+				<span class="r"><b>use</b>{list(h.use.in)}</span>
 				<span class="r cost"><b>{k ? '↑ build' : 'build'}</b>{list(h.build.in)}</span>
 			</button>
 		{/each}
 	</div>
-	<p class="small">Make and keep are a week's, as on the village card. Food and water are not wares: each hex's food forest grows food, the domes' roofs catch rain, and the world market sells the rest and buys what you have spare, for gold. What a village's treasury lacks it borrows, up to 125 gold a villager.</p>
+	<p class="small">Make, keep and use are a week's, as on the village card. Food and water are not wares: each hex's food forest grows food, the domes' roofs catch rain, and the world market sells the rest and buys what you have spare, for gold. What a village's treasury lacks it borrows, up to 125 gold a villager.</p>
 </section>
 
 <style>
