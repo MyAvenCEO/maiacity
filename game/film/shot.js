@@ -50,7 +50,7 @@ import { DEFAULT_SANDBOX, WORLDS } from './worlds.js';
  * }} Spec
  */
 /** @typedef {'sun' | 'fill' | 'glow' | 'lamps' | 'sky' | 'glass' | 'cb60'} LightId */
-/** @typedef {'sandbox-1' | 'sandbox-2' | 'sandbox-3' | 'sandbox-4' | 'room' | 'tired-land' | 'isar' | 'backyard'} Sandbox */
+/** @typedef {'sandbox-1' | 'sandbox-2' | 'sandbox-3' | 'sandbox-4' | 'sandbox-5' | 'sandbox-6' | 'room' | 'tired-land' | 'isar' | 'backyard'} Sandbox */
 
 /** The delivery shapes, width over height. */
 export const SHAPES = /** @type {Record<Shape, number>} */ ({ '1:1': 1, '16:9': 16 / 9, '9:16': 9 / 16, '4:5': 4 / 5 });
