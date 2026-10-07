@@ -49,7 +49,7 @@ export function newGame(seed = 7) {
 	const v = growValley(seed);
 	const N = v.W * v.H;
 	const st = {
-		v: 8,
+		v: 9,
 		seed,
 		time: 0,
 		rng: (Math.imul(seed, 2654435761) >>> 0) || 1,
@@ -107,7 +107,7 @@ export function newGame(seed = 7) {
 /** A game from its saved state. @param {string | object} saved */
 export function loadGame(saved) {
 	const st = typeof saved === 'string' ? JSON.parse(saved) : saved;
-	if (!st || st.v !== 8 || !Array.isArray(st.terrain)) throw new Error('Not a Sandbox 6 game of this kind');
+	if (!st || st.v !== 9 || !Array.isArray(st.terrain)) throw new Error('Not a Sandbox 6 game of this kind');
 	return createSim(st);
 }
 
@@ -349,6 +349,9 @@ export function createSim(st) {
 		// every building's door faces the flag in the middle of its settlement
 		const mid = plan.centre[plan.plotOf[node]];
 		const fnode = mid === node ? g.nb(node, SE) : mid;
+		// it clears its own ground and the square at its door
+		clearAround(node, 1);
+		clearAround(fnode, 1);
 		if (st.obj[fnode] && st.obj[fnode].k !== 'flag') st.obj[fnode] = null;
 		const flag = flagAt(fnode) ?? makeFlag(fnode, owner);
 		const b = {
@@ -818,18 +821,20 @@ export function createSim(st) {
 		}
 		return b.out === 0;
 	}
-	/** a free spot of grass to plant on (a tree, a field): nothing on it, no road, not a building's spot, no door or flag beside it */
+	/** a free spot of grass to plant on (a tree, a field): nothing on it, no path, and not where a hex keeps its ground
+	 * clear (its square, its spots and round them, its village center) */
 	function freeSpot(/** @type {number} */ j) {
-		if (st.terrain[j] !== GRASS || st.obj[j] || st.road[j] || st.owner[j] > PLAYER || plan.spotOf[j] >= 0 || plan.lane[j]) return false;
-		// a village center stands on the middle of its hex: the land round it is free
-		if (plan.villages[villageAt(j)].centre === plan.plotOf[j] && g.dist(j, plan.centre[plan.plotOf[j]]) <= 2) return false;
-		for (let d = 0; d < 6; d++) {
-			const n = g.nb(j, d);
-			if (n < 0) return false;
-			const o = st.obj[n];
-			if (o && (o.k === 'flag' || o.k === 'bld')) return false;
+		return st.terrain[j] === GRASS && !st.obj[j] && !st.road[j] && st.owner[j] <= PLAYER && !plan.clear[j];
+	}
+	/** what grew round a node is cleared: trees felled, rocks broken, fields ploughed under */
+	function clearAround(/** @type {number} */ n, /** @type {number} */ r) {
+		for (const j of g.within(n, r)) {
+			const o = st.obj[j];
+			if (!o || (o.k !== 'tree' && o.k !== 'rock' && o.k !== 'field')) continue;
+			if (o.k === 'field' && st.buildings[o.b]) st.buildings[o.b].fields = Math.max(0, st.buildings[o.b].fields - 1);
+			st.obj[j] = null;
+			st.objV++;
 		}
-		return true;
 	}
 	/** where a gatherer goes next: [the node it works, the node it stands on], or null */
 	function findTarget(/** @type {any} */ b) {
@@ -1410,14 +1415,10 @@ export function createSim(st) {
 		}
 	}
 
-	/** lay a path: trees felled and fields ploughed under, a stop at each end, and a stop wherever it meets another path
-	 * or crosses a settlement's middle, so paths join each other there */
+	/** lay a path: trees felled, rocks broken and fields ploughed under, a stop at each end, and a stop wherever it meets
+	 * another path or crosses a settlement's middle, so paths join each other there */
 	function layPath(/** @type {number[]} */ path, /** @type {number} */ owner) {
-		for (const j of path) {
-			const o = st.obj[j];
-			if (o?.k === 'field' && st.buildings[o.b]) st.buildings[o.b].fields = Math.max(0, st.buildings[o.b].fields - 1);
-			if (o?.k === 'tree' || o?.k === 'field') (st.obj[j] = null), st.objV++;
-		}
+		for (const j of path) if (st.obj[j]?.k !== 'flag' && st.obj[j]?.k !== 'bld') clearAround(j, 0);
 		const cut = path.map((j, x) => x === 0 || x === path.length - 1 || !!flagAt(j) || !!st.road[j] || plan.centre[plan.plotOf[j]] === j);
 		for (const [x, j] of path.entries()) if (cut[x] && !flagAt(j)) makeFlag(j, owner);
 		/** @type {any} */
@@ -1763,11 +1764,8 @@ export function createSim(st) {
 			const home = buildingAt(plan.spots[plot][0]);
 			if (!home || home.owner !== PLAYER || home.type !== 'house') return 'Build this settlement’s house first';
 		}
-		// a house clears its own spot: the tree is felled, the rock broken, the field ploughed under (and a woodcutter or
-		// forester its tree, a quarry its rock)
-		const k = st.obj[n]?.k;
-		const clears = type === 'house' ? ['tree', 'rock', 'field'].includes(k) : (t.biome === 'forest' && k === 'tree') || (t.biome === 'stone' && k === 'rock');
-		if (st.obj[n] && !clears) return st.obj[n].k === 'tree' ? 'A tree stands here' : st.obj[n].k === 'rock' ? 'A rock lies here' : 'Something stands here';
+		// a building clears its own ground: a tree there is felled, a rock broken, a field ploughed under
+		if (st.obj[n] && !['tree', 'rock', 'field'].includes(st.obj[n].k)) return 'Something stands here';
 		if (st.road[n]) return 'A road runs here';
 		if (t.on === 'mountain' ? st.terrain[n] !== MOUNTAIN : st.terrain[n] !== GRASS) return t.on === 'mountain' ? 'Mines stand on mountains' : 'Needs open grass';
 		const c = plan.centre[plan.plotOf[n]];
@@ -1791,8 +1789,8 @@ export function createSim(st) {
 	}
 	/**
 	 * The way for a path from a stop to the middle of a hex next to it (the hex a node lies in), or null: always straight
-	 * along the grid, from the middle of one hex to the middle of the next, over nothing but grass (a tree on the way is
-	 * felled). Above ground, paths stay within their village: villages are joined below.
+	 * along the grid, from the middle of one hex to the middle of the next, over dry land (a tree or a rock on the way is
+	 * cleared). Above ground, paths stay within their village: villages are joined below.
 	 * @param {number} from @param {number} to
 	 */
 	function planRoad(from, to) {
@@ -1806,7 +1804,7 @@ export function createSim(st) {
 		if (villageAt(end) !== villageAt(from)) return null;
 		const path = spoke(g, plan, pa, d);
 		if (!path || path[path.length - 1] !== end) return null;
-		for (const j of path.slice(1, -1)) if (st.owner[j] !== PLAYER || st.terrain[j] === WATER || st.road[j] || (st.obj[j] && st.obj[j].k !== 'tree' && st.obj[j].k !== 'field')) return null;
+		for (const j of path.slice(1, -1)) if (st.owner[j] !== PLAYER || st.terrain[j] === WATER || st.road[j] || (st.obj[j] && !['tree', 'rock', 'field'].includes(st.obj[j].k))) return null;
 		return path;
 	}
 	function buildRoad(/** @type {number} */ from, /** @type {number} */ to) {
@@ -1921,7 +1919,7 @@ export function createSim(st) {
 			if (why) return { ok: false, why };
 			// a village center stands on the middle of its hex: what grew there is cleared
 			if (type === 'centre')
-				for (const j of g.within(plan.centre[plan.plotOf[n]], 2)) if (st.obj[j] && st.obj[j].k !== 'bld' && st.obj[j].k !== 'flag') (st.obj[j] = null), st.objV++;
+				clearAround(plan.centre[plan.plotOf[n]], 2);
 			const b = makeBuilding(type, n, PLAYER);
 			b.since = st.time;
 			if (type === 'centre') {

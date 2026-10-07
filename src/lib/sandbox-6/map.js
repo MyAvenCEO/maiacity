@@ -1,31 +1,29 @@
 /**
- * SANDBOX 6 · THE VALLEY — one island of big hexes grown from a seed, the way the island of Sandbox 1 grows: the sea
- * round a ragged coast, and on the land one biome to a hex, in patches (a weighted Voronoi over scattered region
- * centres), so each biome comes back across the island in small and middling patches, never one great blob. Meadow
- * is most of it; forest, stone, iron, mountains and lakes are pockets you go looking for, and a hex on a lake's or the
- * sea's shore is water to fish from. The land of each hex follows its biome: trees in a forest, rocks on stone, rust-red
- * rock on iron, water in a lake.
+ * SANDBOX 6 · THE VALLEY — one island valley grown from a seed: rolling grass, the sea round a sandy coast, mountains
+ * with snow on their peaks and iron in their hearts, lakes, woods and fields of rocks. Your first village lies in the
+ * west, open grass with two woods and a field of rocks of its own; the water and the iron are out in the valley, for
+ * the villages you found next.
  *
- * Your first village lies inland, with two forest hexes and a stone hex of its own; water and iron lie in the villages
- * round it, for you to found.
+ * The valley does not know the hexes it is cut into (./plots.js): what each hex is good for is read from the land
+ * that grew on it (`biomes`).
  *
  * Pure: the same seed grows the same valley.
  */
-import { GRASS, IRON, MOUNTAIN, WATER } from './rules.js';
+import { GRASS, IRON, MOUNTAIN, SAND, WATER } from './rules.js';
 import { makeGrid, rng } from './hex.js';
-import { K, makePlan } from './plots.js';
+import { makePlan } from './plots.js';
 
-/** the valley's size in nodes: room for some forty villages and the sea round them */
-export const W = 108, H = 90;
-
-/** how common each biome is (relative shares of the region centres, and how far each region reaches) */
-const SHARE = { meadow: 10, forest: 2.4, stone: 1.2, mountain: 0.9, iron: 0.5, lake: 0.65 };
+/** the valley's size in nodes: room for some thirty villages, the sea round them */
+export const W = 120, H = 104;
+/** the valley was first laid out on a coarser grid of 60 by 52 nodes: its features are given in those old steps
+ * (columns across, rows down), and so is its noise, so it grows as it always did, now 3.2 world units to the step */
+const OLD = 3.2, OW = 60, OH = 52, S = 1.3;
 
 /**
  * @typedef {object} Valley
  * @property {number} W
  * @property {number} H
- * @property {number[]} terrain GRASS, WATER or MOUNTAIN per node
+ * @property {number[]} terrain GRASS, WATER, MOUNTAIN or SAND per node
  * @property {number[]} height metres
  * @property {number[]} ore 0 bare rock, 2 iron
  * @property {number[]} amount how much ore a mountain node holds
@@ -33,7 +31,7 @@ const SHARE = { meadow: 10, forest: 2.4, stone: 1.2, mountain: 0.9, iron: 0.5, l
  * @property {({ k: 'tree', g: number } | { k: 'rock', n: number } | null)[]} obj trees and rocks
  * @property {number} hq where your first village center stands
  * @property {number[]} villages where the neighbours live (none: you play the valley on your own)
- * @property {string[]} biome what each hex is (./rules.js BIOMES)
+ * @property {string[]} biome what each hex is good for (./rules.js BIOMES)
  */
 
 /** @param {number} seed @returns {Valley} */
@@ -41,117 +39,29 @@ export function growValley(seed) {
 	const g = makeGrid(W, H);
 	const N = W * H;
 	const rand = rng(seed * 7919 + 13);
-	// smooth value noise on the plane
+	// smooth value noise on the plane of the old steps
 	const lattice = Array.from({ length: 64 * 64 }, () => rand());
-	const noise = (/** @type {number} */ x, /** @type {number} */ y) => {
-		const x0 = Math.floor(x), y0 = Math.floor(y);
-		const tx = x - x0, ty = y - y0;
+	const noise = (/** @type {number} */ x, /** @type {number} */ y, /** @type {number} */ f) => {
+		const fx = x * f, fy = y * f;
+		const x0 = Math.floor(fx), y0 = Math.floor(fy);
+		const tx = fx - x0, ty = fy - y0;
 		const sx = tx * tx * (3 - 2 * tx), sy = ty * ty * (3 - 2 * ty);
 		const L = (/** @type {number} */ a, /** @type {number} */ b) => lattice[(((a % 64) + 64) % 64) * 64 + (((b % 64) + 64) % 64)];
 		const a = L(x0, y0) + (L(x0 + 1, y0) - L(x0, y0)) * sx;
 		const b = L(x0, y0 + 1) + (L(x0 + 1, y0 + 1) - L(x0, y0 + 1)) * sx;
 		return a + (b - a) * sy;
 	};
-	const plan = makePlan(g);
-	const P = plan.centre.length;
-	const hx = (/** @type {number} */ k) => g.x(plan.centre[k]), hz = (/** @type {number} */ k) => g.z(plan.centre[k]);
-	const halfX = Math.max(...plan.centre.map((c) => Math.abs(g.x(c)))), halfZ = Math.max(...plan.centre.map((c) => Math.abs(g.z(c))));
-	/** hexes apart */
-	const apart = (/** @type {number} */ a, /** @type {number} */ b) => g.dist(plan.centre[a], plan.centre[b]) / K;
-
-	// ── the island: land hex by hex, the sea round a ragged coast (every hex at the map's edge is sea) ──
-	const whole = (/** @type {number} */ k) => plan.nbr[k].every((j) => j >= 0);
-	const land = plan.centre.map((_, k) => {
-		if (!whole(k)) return false;
-		const x = hx(k), z = hz(k);
-		const edge = Math.min(1 - Math.abs(x) / halfX, 1 - Math.abs(z) / halfZ);
-		return edge + (noise(x * 0.045 + 7, z * 0.045 + 3) - 0.5) * 0.28 > 0.13;
-	});
-	// no single sea hexes inside the land, no single land hexes out at sea
-	for (let k = 0; k < P; k++) {
-		const n = plan.nbr[k].filter((j) => j >= 0 && land[j]).length;
-		if (!land[k] && whole(k) && n >= 5) land[k] = true;
-		else if (land[k] && n <= 1) land[k] = false;
-	}
-	const landHexes = plan.centre.map((_, k) => k).filter((k) => land[k]);
-	const inland = (/** @type {number} */ k) => land[k] && plan.nbr[k].every((j) => j >= 0 && land[j]);
-
-	// ── the biomes: many region centres, each a biome, a hex taking the nearest (weighted, a little jittered) ──
-	const kinds = /** @type {(keyof typeof SHARE)[]} */ (Object.keys(SHARE));
-	const total = kinds.reduce((s, b) => s + SHARE[b], 0);
-	const count = Math.max(14, Math.round(landHexes.length / 7));
-	/** @type {(keyof typeof SHARE)[]} */
-	const picks = ['lake', 'forest', 'stone', 'mountain', 'iron'];
-	while (picks.length < count) {
-		let r = rand() * total;
-		let b = kinds[0];
-		for (const x of kinds) if ((r -= SHARE[x]) <= 0) {
-			b = x;
-			break;
-		}
-		picks.push(b);
-	}
-	/** @type {{ k: number, biome: string, weight: number }[]} */
-	const regions = [];
-	for (const biome of picks) {
-		const pool = biome === 'lake' ? landHexes.filter(inland) : landHexes;
-		let best = pool[Math.floor(rand() * pool.length)];
-		for (let t = 0; t < 16; t++) {
-			const k = pool[Math.floor(rand() * pool.length)];
-			best = k;
-			if (regions.every((r) => apart(r.k, k) >= 2.5)) break;
-		}
-		// meadow reaches furthest; lakes stay ponds and meres
-		const pull = biome === 'lake' ? 0.5 : biome === 'meadow' ? 1.25 : 0.62 + 0.05 * SHARE[biome];
-		regions.push({ k: best, biome, weight: (0.8 + rand() * 0.5) * pull });
-	}
-	const biome = plan.centre.map((_, k) => {
-		if (!land[k]) return 'sea';
-		let best = regions[0], bd = Infinity;
-		for (const r of regions) {
-			const d = (apart(k, r.k) + (rand() - 0.5) * 0.3) / r.weight;
-			if (d < bd) (bd = d), (best = r);
-		}
-		return best.biome;
-	});
-	// lakes only inland
-	for (const k of landHexes) if (biome[k] === 'lake' && !inland(k)) biome[k] = 'meadow';
-
-	// ── your first village: a whole village inland, toward the west, of meadow, with two forest hexes and a stone hex ──
-	const good = plan.villages
-		.map((v, i) => ({ v, i }))
-		.filter(({ v }) => v.plots.length === 7 && v.plots.every((k) => inland(k) && plan.nbr[k].every((j) => biome[j] !== 'lake')));
-	const home = good.reduce((a, b) => (score(b.v) > score(a.v) ? b : a), good[0]);
-	function score(/** @type {{ centre: number }} */ v) {
-		const x = hx(v.centre) / halfX, z = hz(v.centre) / halfZ;
-		return -Math.hypot(x + 0.35, z * 1.2);
-	}
-	const outer = home.v.plots.filter((k) => k !== home.v.centre);
-	for (const k of home.v.plots) biome[k] = 'meadow';
-	biome[outer[0]] = 'forest';
-	biome[outer[1]] = 'forest';
-	biome[outer[3]] = 'stone';
-	// the villages round it hold the water and the iron you will want (and wood and stone besides)
-	const around = home.v.plots.flatMap((k) => plan.nbr[k]).filter((k) => k >= 0 && !home.v.plots.includes(k) && land[k]);
-	const ring = [...new Set(around)].sort((a, b) => a - b);
-	const need = (/** @type {string} */ b, /** @type {number} */ far) => {
-		const near = landHexes.filter((k) => !home.v.plots.includes(k) && apart(k, home.v.centre) <= far);
-		if (near.some((k) => biome[k] === b)) return;
-		const k = ring[Math.floor(rand() * ring.length)];
-		if (k !== undefined) biome[k] = b;
+	/** a node's place in old steps: across, and down (rows of 0.866) */
+	const px = (/** @type {number} */ i) => g.x(i) / OLD + (OW - 0.5) / 2;
+	const py = (/** @type {number} */ i) => g.z(i) / OLD + ((OH - 1) * 0.866) / 2;
+	/** an old node (column, row) in old steps */
+	const oldAt = (/** @type {number} */ c, /** @type {number} */ r) => [c + (r & 1) * 0.5, r * 0.866];
+	/** how deep a node is in a blob round an old node of radius R (old steps): above 0 inside, with a ragged edge */
+	const inBlob = (/** @type {number} */ i, /** @type {number} */ cx, /** @type {number} */ cy, /** @type {number} */ R) => {
+		const [x, y] = oldAt(cx, cy);
+		return R + (noise(px(i), py(i), 0.45) - 0.5) * 2.2 - Math.hypot(px(i) - x, py(i) - y);
 	};
-	need('iron', 4.5);
-	need('lake', 4.5);
-	for (const k of ring) if (biome[k] === 'lake' && !inland(k)) biome[k] = 'meadow';
-	// a land hex on a lake's or the sea's shore is water to fish from
-	for (const k of landHexes) {
-		if (biome[k] !== 'meadow' || home.v.plots.includes(k)) continue;
-		const lake = plan.nbr[k].some((j) => j >= 0 && biome[j] === 'lake');
-		const sea = plan.nbr[k].filter((j) => j < 0 || biome[j] === 'sea').length;
-		if (lake || (sea >= 2 && noise(hx(k) * 0.08 + 31, hz(k) * 0.08) > 0.62)) biome[k] = 'water';
-	}
 
-	// ── the land of every node, from its hex ──
 	const terrain = Array(N).fill(GRASS);
 	const height = Array(N).fill(0);
 	const ore = Array(N).fill(0);
@@ -159,54 +69,147 @@ export function growValley(seed) {
 	const fish = Array(N).fill(0);
 	/** @type {Valley['obj']} */
 	const obj = Array(N).fill(null);
-	/** each hex's own height: the land level, so one hex runs on into the next; mountains and iron raised, water down */
-	const tile = plan.centre.map((_, k) => {
-		const b = biome[k];
-		if (b === 'sea' || b === 'lake') return -1.4;
-		if (b === 'mountain') return 1.5;
-		if (b === 'iron') return 1.05;
-		return 0.3;
-	});
+
+	/** a feature laid out for the smallest map, moved and grown to this one @param {any[]} f @returns {any} */
+	const scaled = (f) => [Math.round(f[0] * S), Math.round(f[1] * S), f[2] * S, ...f.slice(3)];
+	/** @type {[number, number, number, (string | null)[]][]} mountains: centre, radius, the ores from its heart out */
+	const MOUNTAINS = [
+		[8, 12, 4.4, [null]],
+		[19, 32, 3.7, ['iron', 'iron', null]],
+		[24, 4, 3.2, [null]],
+		[39, 7, 4.2, ['iron', 'iron', null]]
+	].map(scaled);
+	/** @type {[number, number, number][]} lakes */
+	const LAKES = [[4, 30, 3.4], [25, 20, 2.4], [42, 33, 3.2], [11, 35, 2.0]].map(scaled);
+	/** @type {[number, number, number][]} forests */
+	const FORESTS = [[18, 13, 3.6], [15, 26, 3.0], [5, 20, 2.2], [32, 33, 4.2], [33, 5, 3.0], [21, 23, 1.8]].map(scaled);
+	/** @type {[number, number, number][]} rock fields */
+	const ROCKS = [[13, 15, 1.8], [7, 25, 1.6], [26, 14, 1.5], [40, 22, 1.8]].map(scaled);
+
+	/** raise the mountains and fill the lakes over a node @param {typeof MOUNTAINS} mountains @param {typeof LAKES} lakes */
+	const lay = (/** @type {number} */ i, mountains, lakes) => {
+		const x = px(i), y = py(i);
+		for (const [cx, cy, R, ores] of mountains) {
+			const k = inBlob(i, cx, cy, R);
+			if (k > 0) {
+				terrain[i] = MOUNTAIN;
+				height[i] = 1.8 + k * 1.5 + noise(x, y, 0.7) * 1.1;
+				const o = ores[Math.min(ores.length - 1, Math.floor((1 - Math.min(1, k / R)) * ores.length * 1.15))];
+				ore[i] = o === 'iron' ? IRON : 0;
+				// the vein in the south holds little
+				amount[i] = o ? (cy > 26 ? 2 : 3) + Math.floor(rand() * (cy > 26 ? 2 : 4)) : 0;
+			}
+		}
+		for (const [cx, cy, R] of lakes) {
+			const k = inBlob(i, cx, cy, R);
+			if (k > 0) {
+				terrain[i] = WATER;
+				ore[i] = 0;
+			} else if (k > -1.1 && terrain[i] !== WATER && terrain[i] !== MOUNTAIN) terrain[i] = SAND;
+		}
+	};
 	for (let i = 0; i < N; i++) {
-		const k = plan.plotOf[i], b = biome[k];
-		height[i] = tile[k];
-		if (b === 'sea' || b === 'lake') {
-			terrain[i] = WATER;
+		const x = px(i), y = py(i);
+		height[i] = 0.35 + noise(x, y, 0.18) * 0.9 + noise(x, y, 0.5) * 0.25;
+		// the island: the sea round the edge, a beach before it
+		const edge = Math.min(x, OW - 0.5 - x, y / 0.866, OH - 1 - y / 0.866) + (noise(x, y, 0.3) - 0.5) * 1.6;
+		if (edge < 1.6) terrain[i] = WATER;
+		else if (edge < 2.5) terrain[i] = SAND;
+		lay(i, MOUNTAINS, LAKES);
+	}
+
+	// ── your first village: in the west, the whole village nearest there that is all grass ──
+	const plan = makePlan(g);
+	/** @type {number[][]} */
+	const hexNodes = plan.centre.map(() => []);
+	for (let i = 0; i < N; i++) hexNodes[plan.plotOf[i]].push(i);
+	const [hx, hy] = oldAt(Math.round(11 * S), Math.round(21 * S));
+	const want = { x: (hx - (OW - 0.5) / 2) * OLD, z: (hy - ((OH - 1) * 0.866) / 2) * OLD };
+	const far = (/** @type {number} */ k) => Math.hypot(g.x(plan.centre[k]) - want.x, g.z(plan.centre[k]) - want.z);
+	/** how much of a village is not grass (and how near the edge of the valley it is) */
+	const rough = (/** @type {{ plots: number[] }} */ v) => v.plots.reduce((s, k) => s + hexNodes[k].filter((j) => terrain[j] !== GRASS).length, 0);
+	const home = plan.villages
+		.filter((v) => v.plots.length === 7 && v.plots.every((k) => plan.nbr[k].every((j) => j >= 0)))
+		.reduce((a, b) => (rough(b) * 40 + far(b.centre) < rough(a) * 40 + far(a.centre) ? b : a));
+	const homeHexes = new Set(home.plots);
+	const atHome = (/** @type {number} */ i) => homeHexes.has(plan.plotOf[i]);
+	/** the old node a world offset from your village center lands on @returns {[number, number]} */
+	const fromHome = (/** @type {number} */ dx, /** @type {number} */ dz) => {
+		const c = plan.centre[home.centre];
+		const x = (g.x(c) + dx) / OLD + (OW - 0.5) / 2, y = (g.z(c) + dz) / OLD + ((OH - 1) * 0.866) / 2;
+		const r = Math.round(y / 0.866);
+		return [Math.round(x - (r & 1) * 0.5), r];
+	};
+	// a little way out of it: a pond to fish, and rocks
+	const pond = /** @type {[number, number, number]} */ ([...fromHome(-14, 25), 2.4]);
+	for (let i = 0; i < N; i++) if (!atHome(i)) lay(i, [], [pond]);
+	ROCKS.push([...fromHome(21, -16), 1.8]);
+	for (let i = 0; i < N; i++) {
+		if (terrain[i] === WATER) {
+			height[i] = -1.4;
 			fish[i] = 4;
-		} else if (b === 'mountain') terrain[i] = MOUNTAIN;
+		} else if (terrain[i] === SAND) height[i] = 0.18 + noise(px(i), py(i), 0.5) * 0.12;
 	}
-	/** each hex's open land: not its middle, not on a way between middles, not a building spot */
-	const open = plan.centre.map(() => /** @type {number[]} */ ([]));
-	for (let i = 0; i < N; i++) if (i !== plan.centre[plan.plotOf[i]] && !plan.lane[i] && plan.spotOf[i] < 0) open[plan.plotOf[i]].push(i);
-	const tree = () => ({ k: /** @type {'tree'} */ ('tree'), g: 0.75 + rand() * 0.25 });
-	for (let k = 0; k < P; k++) {
-		const b = biome[k], [, ...factories] = plan.spots[k];
-		const corners = [...factories, ...plan.free[k]].filter((j) => j >= 0);
-		if (b === 'iron')
-			// the hex's rock holds the iron: its factory spots, free corners and some land round them (its middle, its house
-			// spot and its ways stay grass)
-			for (const j of [...corners, ...open[k].filter(() => rand() < 0.4)]) {
-				terrain[j] = MOUNTAIN;
-				ore[j] = IRON;
-				amount[j] = corners.includes(j) ? 2 + Math.floor(rand() * 3) : 1 + Math.floor(rand() * 2);
-			}
-		else if (b === 'forest') {
-			// a wood all round its middle (its ways stay open, a woodcutter or forester fells the tree on its spot)
-			for (const j of [...open[k], ...factories]) if (j >= 0 && rand() < 0.85) obj[j] = tree();
-		} else if (b === 'stone') {
-			for (const j of corners) obj[j] = { k: 'rock', n: 5 + Math.floor(rand() * 3) };
-			for (const j of open[k]) if (!obj[j] && rand() < 0.3) obj[j] = { k: 'rock', n: 3 + Math.floor(rand() * 3) };
-		} else if (b === 'meadow' || b === 'water')
-			for (const j of open[k]) {
-				const r = rand();
-				if (r < 0.05) obj[j] = tree();
-				else if (r < 0.062) obj[j] = { k: 'rock', n: 3 + Math.floor(rand() * 3) };
-			}
-	}
-	// your first village is open meadow but for its forest and stone hexes
+
+	// woods and fields of rocks on the grass (as thick on the ground as on the old, coarser grid)
 	for (let i = 0; i < N; i++) {
-		const k = plan.plotOf[i];
-		if (home.v.plots.includes(k) && biome[k] === 'meadow') obj[i] = null;
+		if (terrain[i] !== GRASS || atHome(i)) continue;
+		let tree = rand() < 0.016;
+		for (const [cx, cy, R] of FORESTS) if (inBlob(i, cx, cy, R) > 0 && rand() < 0.36) tree = true;
+		let rock = false;
+		for (const [cx, cy, R] of ROCKS) if (inBlob(i, cx, cy, R) > 0 && rand() < 0.3) rock = true;
+		if (rock) obj[i] = { k: 'rock', n: 4 + Math.floor(rand() * 4) };
+		else if (tree) obj[i] = { k: 'tree', g: 0.75 + rand() * 0.25 };
+		else if (rand() < 0.0035) obj[i] = { k: 'rock', n: 3 + Math.floor(rand() * 3) };
 	}
-	return { W, H, terrain, height, ore, amount, fish, obj, hq: plan.spots[home.v.centre][0], villages: [], biome };
+
+	// your first village: open grass, gently level round each hex's middle; two of its hexes wooded and one rocky, so a
+	// woodcutter and a quarry can start at home
+	const outer = home.plots.filter((k) => k !== home.centre);
+	const woods = [outer[1], outer[2]], rocky = outer[4];
+	for (let i = 0; i < N; i++) {
+		if (!atHome(i)) continue;
+		const k = plan.plotOf[i], c = plan.centre[k], d = g.dist(i, c);
+		terrain[i] = GRASS;
+		ore[i] = 0;
+		amount[i] = 0;
+		const level = Math.min(Math.max(height[c], 0.4), 1.0);
+		height[i] = d <= 2 || k === home.centre ? level : level + (height[i] - level) * 0.5;
+		obj[i] = null;
+		if (d < 3 || plan.lane[i]) continue;
+		if (woods.includes(k) && rand() < 0.7) obj[i] = { k: 'tree', g: 0.8 + rand() * 0.2 };
+		else if (k === rocky && rand() < 0.4) obj[i] = { k: 'rock', n: 5 + Math.floor(rand() * 3) };
+		else if (k !== home.centre && rand() < 0.03) obj[i] = { k: 'tree', g: 0.75 + rand() * 0.25 };
+	}
+	const biome = biomes(g, plan, terrain, obj, ore);
+	return { W, H, terrain, height, ore, amount, fish, obj, hq: plan.spots[home.centre][0], villages: [], biome };
+}
+
+/**
+ * What each hex is good for, from the land that grew on it: a lake where its middle is under water; iron where a
+ * factory spot stands on rock with iron ore round it; stone where rocks lie; bare mountain where it is mostly rock;
+ * water on a shore (a lake's or the sea's); forest where trees stand thick; else meadow.
+ * @param {import('./hex.js').Grid} g
+ * @param {import('./plots.js').Plan} plan
+ * @param {number[]} terrain
+ * @param {any[]} obj
+ * @param {number[]} ore
+ * @returns {string[]}
+ */
+export function biomes(g, plan, terrain, obj, ore) {
+	/** @type {number[][]} */
+	const nodes = plan.centre.map(() => []);
+	for (let i = 0; i < g.N; i++) nodes[plan.plotOf[i]]?.push(i);
+	return plan.centre.map((c, k) => {
+		if (terrain[c] === WATER) return 'lake';
+		const hex = nodes[k];
+		const count = (/** @type {(j: number) => boolean} */ f) => hex.filter(f).length;
+		const [, ...factories] = plan.spots[k];
+		if (factories.some((j) => j >= 0 && terrain[j] === MOUNTAIN && g.within(j, 3).some((n) => terrain[n] === MOUNTAIN && ore[n] === IRON))) return 'iron';
+		if (count((j) => obj[j]?.k === 'rock') >= 4) return 'stone';
+		if (count((j) => terrain[j] === MOUNTAIN) * 2 >= hex.length) return 'mountain';
+		if (count((j) => terrain[j] === WATER) >= 3) return 'water';
+		if (count((j) => obj[j]?.k === 'tree') >= 9) return 'forest';
+		return 'meadow';
+	});
 }
