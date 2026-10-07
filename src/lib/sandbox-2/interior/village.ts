@@ -1,8 +1,8 @@
 /**
  * AVENCITY SANDBOX 4 — a whole dome cell in one world you can walk.
  *
- * The master dome stands in the middle, six large domes in a ring round it,
- * six medium domes further out between them: the same glass shells, stone
+ * The master dome stands in the middle, six medium domes in a ring round it,
+ * six small domes further out between them: the same glass shells, stone
  * arcades, terraces and doors as the domes in Sandbox 3, built full size.
  * Meandering paths join every door; a turquoise stream winds round the cell
  * and sends its creeks in between the domes, with a timber bridge wherever a
@@ -63,7 +63,7 @@ export type PickedPlant = { id: string; v: number; stage: number; seed: string; 
 
 const WORLD = 380
 
-/** The cell: the master dome, six large domes round it, six medium domes further out between them. */
+/** The cell: the master dome, six medium domes round it, six small domes further out between them. */
 function layout(): VillageDome[] {
 	const make = (kind: DomeKind, x: number, z: number): VillageDome => {
 		const R = DOMES[kind].diameter / 2
@@ -616,7 +616,7 @@ export async function mountVillage(container: HTMLElement, onProgress: (label: s
 	}
 
 	/* ── the food forest: as dense as round a single dome, planted as seven-layer guilds;
-	   beyond the medium domes, out to the edges of the cell, a thick forest. It is laid
+	   beyond the small domes, out to the edges of the cell, a thick forest. It is laid
 	   out in tiles: near you every plant is drawn in full, further off simple trees
 	   stand in for them, and the tiles swap as you walk. ── */
 	type Part = { geo: THREE.BufferGeometry; mat: THREE.Material; shadow: boolean }
@@ -914,7 +914,7 @@ export async function mountVillage(container: HTMLElement, onProgress: (label: s
 				if (r() < 0.4) around(1, 1.9, [5])
 				if (++n % 400 === 0) await pause('Planting the food forest')
 			}
-		// beyond the medium domes, out to the edges: a thick food forest, a guild every 20 m²,
+		// beyond the small domes, out to the edges: a thick food forest, a guild every 20 m²,
 		// every layer full and every kind in it
 		const dense = Math.sqrt(20)
 		for (let gx = -WORLD; gx < WORLD; gx += dense)

@@ -2,8 +2,9 @@
  * INSIDE A DOME — a walkable, first-person interior for each dome of a village:
  *
  *   glamp   16 m   a home for four under canvas and glass, a door onto a deck
- *   home    40 m   the medium domes of the first ring
- *   large   70 m   the large domes of the second ring
+ *   home    40 m   the small domes of the first ring
+ *   large   70 m   the medium domes of the second ring
+ *   grand  100 m   the large dome: its north a fish tank behind a glass wall, the wall behind it closed stone
  *   master 136 m   the master dome in the centre: a round theatre sunk into its floor,
  *                  and its ground ring given to the village's workshops
  *
@@ -44,21 +45,27 @@ import { swapLegacy } from './legacy.js'
 import { pick as pickPlant, type Garden } from './sandbox5.js'
 import { forestFloor, floorPick, grassTuft, appleTree, banana, berryBush, canopyTree, climber, clover, coconutPalm, comfrey, crop, CROPS, type Crop, fruitTree, ginger, grapePergola, herb, papaya, passionVine, potted, seeded, shrub, smallFruitTree, squash, strawberries, tropicalShrub, vineAlong, type Plant } from './plants'
 
-export type DomeKind = 'tent' | 'glamp' | 'home' | 'large' | 'master' | 'factory'
+export type DomeKind = 'tent' | 'glamp' | 'home' | 'large' | 'grand' | 'master' | 'factory'
 
 type Spec = { diameter: number; detail: number; strut: number; gallery?: { height: number; depth: number; rooms: number; floors: 1 | 2 } }
 export const DOMES: Record<DomeKind, Spec & { label: string; people: string }> = {
 	tent: { label: 'Bell tent', people: 'two people', diameter: 4.2, detail: 0, strut: 0 },
 	glamp: { label: 'Glamping dome', people: 'four people', diameter: 16, detail: 3, strut: 0.06 },
-	home: { label: 'Medium dome', people: 'twelve people', diameter: 40, detail: 4, strut: 0.09, gallery: { height: 4.2, depth: 8, rooms: 6, floors: 1 } },
-	large: { label: 'Large dome', people: 'twenty-four people', diameter: 70, detail: 5, strut: 0.12, gallery: { height: 5, depth: 10.5, rooms: 10, floors: 2 } },
+	// the ids stay as they were (Sandbox 3 and 4 build 'home' and 'large'); only the names moved up for the new large dome
+	home: { label: 'Small dome', people: 'twelve people', diameter: 40, detail: 4, strut: 0.09, gallery: { height: 4.2, depth: 8, rooms: 6, floors: 1 } },
+	large: { label: 'Medium dome', people: 'twenty-four people', diameter: 70, detail: 5, strut: 0.12, gallery: { height: 5, depth: 10.5, rooms: 10, floors: 2 } },
+	grand: { label: 'Large dome', people: 'forty-eight people', diameter: 100, detail: 6, strut: 0.14, gallery: { height: 5.5, depth: 11.5, rooms: 12, floors: 2 } },
 	master: { label: 'Master dome', people: 'the commons', diameter: 136, detail: 7, strut: 0.16, gallery: { height: 6, depth: 12.5, rooms: 16, floors: 2 } },
 	factory: { label: 'Solar factory dome', people: 'the factory coop', diameter: 136, detail: 7, strut: 0.16 }
 }
 
-/** The big domes have four doors, one to each point of the compass; the glamping dome has one. */
+/** The big domes have four doors, one to each point of the compass; the glamping dome has one; the large dome
+ *  none to the north, where its fish tank stands against a closed wall. */
 export const DOORS = [0, Math.PI / 2, Math.PI, -Math.PI / 2]
-export const doorsOf = (kind: DomeKind) => (kind === 'glamp' || kind === 'tent' ? [0] : DOORS)
+export const doorsOf = (kind: DomeKind) => (kind === 'glamp' || kind === 'tent' ? [0] : kind === 'grand' ? DOORS.slice(1) : DOORS)
+/** The large dome's fish tank: the north of the floor behind a straight glass wall a seventh of the dome's width in
+ *  from the north wall, the wall behind it closed and massive. The glass's line (z) is null in every other dome. */
+export const tankLine = (kind: DomeKind, R: number) => (kind === 'grand' ? R - (2 * R) / 7 : null)
 /** A door's half-width, and its height at the top of the arch (the glamping door is square-headed). */
 const doorSize = (kind: DomeKind) => (kind === 'tent' ? { dw: 0.55, dh: 1.8, top: 1.8 } : kind === 'glamp' ? { dw: 0.75, dh: 2.5, top: 2.5 } : { dw: 1.3, dh: 3, top: 3 + 1.3 * 0.4 })
 /** The signed difference between two angles, in -π..π. */
@@ -286,6 +293,9 @@ export function geodesic(spec: Spec, m: Mats, kind: DomeKind): { group: THREE.Gr
 	const glass: number[] = []
 	const clear: number[] = []
 	const cloth: number[] = []
+	// the large dome's north wall, behind its fish tank: closed, massive stone
+	const wall: number[] = []
+	const tankZ = tankLine(kind, R)
 	const edges = new Map<string, [THREE.Vector3, THREE.Vector3]>()
 	const key = (v: THREE.Vector3) => `${v.x.toFixed(2)},${v.y.toFixed(2)},${v.z.toFixed(2)}`
 	const tris: { tri: THREE.Vector3[]; c: THREE.Vector3; ca: number }[] = []
@@ -331,7 +341,7 @@ export function geodesic(spec: Spec, m: Mats, kind: DomeKind): { group: THREE.Gr
 		// in front of the rooms the glass is clear, no cells in it: a window onto the terrace and the land
 		const gal = spec.gallery
 		const byRooms = gal && [gal.height, ...(gal.floors === 2 ? [gal.height + 3.6] : [])].some((f) => c.y > f - 0.4 && c.y < f + 3.4)
-		;(!isWindow ? cloth : byRooms ? clear : glass).push(...tri.flatMap((v) => [v.x, v.y, v.z]))
+		;(tankZ !== null && c.z > tankZ ? wall : !isWindow ? cloth : byRooms ? clear : glass).push(...tri.flatMap((v) => [v.x, v.y, v.z]))
 		for (let k = 0; k < 3; k++) {
 			const a = tri[k]!, b = tri[(k + 1) % 3]!
 			const id = [key(a), key(b)].sort().join('|')
@@ -354,6 +364,12 @@ export function geodesic(spec: Spec, m: Mats, kind: DomeKind): { group: THREE.Gr
 	shell(glass, m.solar, false)
 	shell(clear, m.glass, false)
 	shell(cloth, m.canvas, true)
+	if (wall.length) {
+		const stone = m.lime(1).clone()
+		stone.side = THREE.DoubleSide
+		stone.color.set('#cfc3ad')
+		shell(wall, stone, true)
+	}
 
 	const strut = new THREE.CylinderGeometry(spec.strut, spec.strut, 1, 6)
 	const inst = new THREE.InstancedMesh(strut, kind === 'glamp' ? m.timberFrame : m.steel, edges.size)
@@ -1118,7 +1134,7 @@ export async function mountInterior(container: HTMLElement, kind: DomeKind, onPr
 		const rIn = rWall - g.depth
 		const Rc = Math.max(4.5, R * 0.22)
 		const Rp = (Rc + rIn) / 2
-		/* the medium dome is a garden before it is a house: no ring path through its forest, and
+		/* the small dome is a garden before it is a house: no ring path through its forest, and
 		   under its gallery only a walk along the front, the kitchen and the fish tanks are paved;
 		   the rest, out to the glass, is planted */
 		const lush = kind === 'home'
@@ -1126,11 +1142,32 @@ export async function mountInterior(container: HTMLElement, kind: DomeKind, onPr
 		const kitchenA = Math.PI * 0.25 + Math.PI, aquaA = Math.PI * 0.25 - Math.PI / 2
 		const PAVED = [[kitchenA, 0.3], [aquaA, 0.4]] as const
 		const paved = (a: number) => PAVED.some(([c, w]) => Math.abs(adiff(a, c)) < w)
+		/* the large dome's fish tank fills the north behind its glass wall: no door, stair, room or gallery there.
+		   The gallery runs round the rest, from the tank's east end round by the south to its west end */
+		const tankZ = tankLine(kind, R)
+		const doors = doorsOf(kind)
+		const TAU = Math.PI * 2
+		const galEnd = tankZ === null ? 0 : Math.atan2(Math.sqrt(R * R - tankZ * tankZ), tankZ) + 0.1
+		const GAL = { a0: galEnd, len: TAU - 2 * galEnd }
+		const onGal = (a: number, pad = 0) => tankZ === null || Math.abs(adiff(a, 0)) > galEnd + pad / rIn
+		/** The gallery's arcs left between cuts, `half` either side of each, as [start, length]. */
+		const arcs = (cuts: number[], half: number): [number, number][] => {
+			const cs = cuts.map((a) => GAL.a0 + ((((a - GAL.a0) % TAU) + TAU) % TAU)).filter((a) => a - half > GAL.a0 && a + half < GAL.a0 + GAL.len).sort((p, q) => p - q)
+			if (tankZ === null && cs.length) return cs.map((c, i) => [c + half, (i + 1 < cs.length ? cs[i + 1]! : cs[0]! + TAU) - c - 2 * half])
+			const out: [number, number][] = []
+			let from = GAL.a0
+			for (const c of cs) out.push([from, c - half - from]), (from = c + half)
+			out.push([from, GAL.a0 + GAL.len - from])
+			return out
+		}
+		/** A ring laid flat, and a wall standing, over the gallery's arc (in polar's angles). */
+		const galRing = (r0g: number, r1g: number, segs: number) => new THREE.RingGeometry(r0g, r1g, segs, 1, GAL.a0 - Math.PI / 2, GAL.len)
+		const galWall = (rg: number, h: number, segs: number) => new THREE.CylinderGeometry(rg, rg, h, segs, 1, true, GAL.a0, GAL.len)
 		// the stair on a diagonal, so each spoke runs clear from the plaza to its door
 		const aStair = Math.PI * 0.25
 		// four stairs up to the gallery, one on each diagonal between the doors
-		const STAIRS = [0, 1, 2, 3].map((k) => aStair + (k * Math.PI) / 2)
-		// the medium dome's stair is steeper, so it still lands clear of the plaza
+		const STAIRS = [0, 1, 2, 3].map((k) => aStair + (k * Math.PI) / 2).filter((a) => onGal(a, 3))
+		// the small dome's stair is steeper, so it still lands clear of the plaza
 		const run = H * (kind === 'home' ? 1.6 : 1.9)
 		const r0 = rIn - run
 		const stairHalf = 0.9
@@ -1218,7 +1255,7 @@ export async function mountInterior(container: HTMLElement, kind: DomeKind, onPr
 			flat(new THREE.RingGeometry(rIn - 0.4, rIn + commonsW, 128), m.stone((R * 2) / 3))
 			for (const [a, w] of PAVED) flat(new THREE.RingGeometry(rIn + commonsW - 0.01, R, 24, 1, a - w - Math.PI / 2, 2 * w), m.stone((R * 2) / 3))
 		}
-		for (const a of DOORS) {
+		for (const a of doors) {
 			const len = R - Rc
 			const strip = flat(new THREE.PlaneGeometry(2, len), m.stone(2 / 3, Math.round(len / 3)), 0.021)
 			const [x, z] = polar(Rc + len / 2, a)
@@ -1241,7 +1278,8 @@ export async function mountInterior(container: HTMLElement, kind: DomeKind, onPr
 		const a0 = aStair + Math.PI * 0.75
 		for (let i = 0; i <= 40; i++) {
 			const t = i / 40
-			const a = a0 + t * Math.PI * 0.9
+			// in the large dome it stops short of the fish tank
+			const a = a0 + t * Math.PI * (tankZ === null ? 0.9 : 0.7)
 			const rr = Rp + (rIn - Rp) * 0.5 + Math.sin(t * Math.PI * 5) * (rIn - Rp) * 0.18 - (1 - t) * (Rp - Rc) * 0.9 * (t < 0.2 ? 1 - t / 0.2 : 0)
 			const [x, z] = polar(rr, a)
 			streamPts.push(new THREE.Vector3(x, 0.03, z))
@@ -1281,11 +1319,12 @@ export async function mountInterior(container: HTMLElement, kind: DomeKind, onPr
 			animated.push(fish.update)
 		}
 		const pondAt = samples[samples.length - 1]!
-		const nearStream = (x: number, z: number, d: number) => Math.hypot(pondAt.x - x, pondAt.z - z) < width * 3.6 * 1.35 + d || samples.some((p) => Math.hypot(p.x - x, p.z - z) < d)
+		// the fish tank is water too, with a stone walk and its grow beds along the glass
+		const nearStream = (x: number, z: number, d: number) => Math.hypot(pondAt.x - x, pondAt.z - z) < width * 3.6 * 1.35 + d || samples.some((p) => Math.hypot(p.x - x, p.z - z) < d) || (tankZ !== null && z > tankZ - 3.4 - d)
 
 		await slice()
 		/* the kitchen garden: patches along both sides of the ring path, for everything that wants a greenhouse —
-		   in the medium dome, where the ground is narrower, eight on the diagonals. Grown straight in the soil (no
+		   in the small dome, where the ground is narrower, eight on the diagonals. Grown straight in the soil (no
 		   boxes): two strips of a crop side by side, the next patch another crop */
 		const bedLen = 3
 		const garden = new THREE.Group()
@@ -1298,7 +1337,7 @@ export async function mountInterior(container: HTMLElement, kind: DomeKind, onPr
 					// both strips clear of the ring path (1.1 either side of it) with room for their leaves to spread
 					const rr = Rp + side * 2.45
 					const a = small ? Math.PI / 4 + Math.floor(k / 2) * (Math.PI / 2) + (k % 2 ? 0.28 : -0.28) : ((k + (side > 0 ? 0.5 : 0)) / perSide) * Math.PI * 2
-					if ([...DOORS, ...STAIRS].some((d) => Math.abs(adiff(a, d)) * rr < 3.2)) continue
+					if ([...doors, ...STAIRS].some((d) => Math.abs(adiff(a, d)) * rr < 3.2)) continue
 					const [x, z] = polar(rr, a)
 					if (nearStream(x, z, width / 2 + 2)) continue
 					const bed = new THREE.Group()
@@ -1348,9 +1387,9 @@ export async function mountInterior(container: HTMLElement, kind: DomeKind, onPr
 		const onStone = (rr: number, a: number, reach: number) =>
 			rr < Rc + (theatre ? 2.4 : 0) + reach + 0.25 ||
 			(!lush && Math.abs(rr - Rp) < 1.1 + reach + 0.15) ||
-			[...DOORS, ...STAIRS].some((d) => Math.abs(adiff(a, d)) < Math.PI / 2 && Math.abs(Math.sin(adiff(a, d))) * rr < 1 + reach + 0.15)
+			[...doors, ...STAIRS].some((d) => Math.abs(adiff(a, d)) < Math.PI / 2 && Math.abs(Math.sin(adiff(a, d))) * rr < 1 + reach + 0.15)
 		const onPath = (rr: number, a: number) =>
-			rr < Rc + 1.2 || (!lush && Math.abs(rr - Rp) < (small ? 1.8 : 3.4)) || [...DOORS, ...STAIRS].some((d) => Math.abs(adiff(a, d)) < Math.PI / 2 && Math.abs(adiff(a, d)) * rr < 1.8)
+			rr < Rc + 1.2 || (!lush && Math.abs(rr - Rp) < (small ? 1.8 : 3.4)) || [...doors, ...STAIRS].some((d) => Math.abs(adiff(a, d)) < Math.PI / 2 && Math.abs(adiff(a, d)) * rr < 1.8)
 		const tall = kind === 'home' ? 7 : 10
 		let placed = 0
 		for (let tries = 0; placed < trees && tries < trees * 20; tries++) {
@@ -1443,7 +1482,7 @@ export async function mountInterior(container: HTMLElement, kind: DomeKind, onPr
 			const onWalk = (rr: number, a: number, reach: number) =>
 				rr < Rc + reach + 0.3 ||
 				(!lush && Math.abs(rr - Rp) < 1.1 + reach + 0.15) ||
-				[...DOORS, ...STAIRS].some((d) => Math.abs(adiff(a, d)) < Math.PI / 2 && Math.abs(Math.sin(adiff(a, d))) * rr < 1 + reach + 0.15)
+				[...doors, ...STAIRS].some((d) => Math.abs(adiff(a, d)) < Math.PI / 2 && Math.abs(Math.sin(adiff(a, d))) * rr < 1 + reach + 0.15)
 			const LOW: (Crop | 'moss' | 'clover' | 'squash')[] = ['lettuce', 'radish', 'herbs', 'kale', 'strawberry', 'moss', 'lettuce', 'chard', 'clover', 'radish', 'herbs', 'pepper', 'moss', 'squash']
 			let n = 0
 			for (let gx = -rIn; gx < rIn; gx += PATCH)
@@ -1485,7 +1524,7 @@ export async function mountInterior(container: HTMLElement, kind: DomeKind, onPr
 			   comfrey, strawberries, herbs, moss on the ground */
 			const r0b = rIn + commonsW + 0.6, r1b = R - 1.1
 			const bandArea = Math.PI * (r1b * r1b - r0b * r0b)
-			const offBand = (rr: number, a: number) => paved(a) || DOORS.some((d) => Math.abs(adiff(a, d)) * rr < 1.7)
+			const offBand = (rr: number, a: number) => paved(a) || doors.some((d) => Math.abs(adiff(a, d)) * rr < 1.7)
 			let n = 0
 			for (let tries = 0; n < bandArea / 4.5 && tries < 2000; tries++) {
 				if (tries % 20 === 0) await slice()
@@ -1549,7 +1588,7 @@ export async function mountInterior(container: HTMLElement, kind: DomeKind, onPr
 		if (flora) {
 			/* Sandbox 5: the warm food forest's cover on its floor — grasses, clover and strawberries in the light, ferns,
 			   wood sorrel and moss in the shade, the big leaves fallen — wherever the ground is open: off the plaza, the
-			   paths and the stairs, the water, the beds and the trunks; under the gallery too in the medium dome */
+			   paths and the stairs, the water, the beds and the trunks; under the gallery too in the small dome */
 			const cell = 4, near = new Map<number, { x: number; z: number; r: number }[]>()
 			const cellKey = (ix: number, iz: number) => (ix + 512) * 1024 + iz + 512
 			for (const c of colliders) {
@@ -1566,8 +1605,8 @@ export async function mountInterior(container: HTMLElement, kind: DomeKind, onPr
 			const open = (x: number, z: number) => {
 				const rr = Math.hypot(x, z), a = Math.atan2(x, z)
 				if (rr > R - 0.9) return false
-				// under the gallery: only the medium dome's planted band, off its paved stretches and its doors
-				if (rr > rIn - 0.6) return lush && rr > r0b - 0.3 && !paved(a) && !DOORS.some((d) => Math.abs(adiff(a, d)) * rr < 1.7)
+				// under the gallery: only the small dome's planted band, off its paved stretches and its doors
+				if (rr > rIn - 0.6) return lush && rr > r0b - 0.3 && !paved(a) && !doors.some((d) => Math.abs(adiff(a, d)) * rr < 1.7)
 				return !onStone(rr, a, 0.1) && !nearStream(x, z, width / 2 + 0.3) && !inTrunk(x, z)
 			}
 			floorCover = coverStream({ recipe: WARM_BIOME, open, tile: 8, reach: 24, near: 9, thin: 0.25, density: 3.8, seed: 707 + kind.length, origin: host ? [host.x, host.z] : [0, 0] })
@@ -1635,7 +1674,7 @@ export async function mountInterior(container: HTMLElement, kind: DomeKind, onPr
 			const segs = Math.round((2 * Math.PI * rIn) / 2.6)
 			for (let k = 0; k < segs; k++) {
 				const a = ((k + 0.5) / segs) * Math.PI * 2
-				if (gaps.some((gp) => Math.abs(adiff(a, gp)) * rIn < 2.6) || k % 4 === 3) continue
+				if (gaps.some((gp) => Math.abs(adiff(a, gp)) * rIn < 2.6) || k % 4 === 3 || !onGal(a, 1.5)) continue
 				const v = vineAlong(6000 + k + Math.round(y) * 100, 2.4)
 				const [x, z] = polar(rIn, a)
 				v.position.set(x, y + 1.05, z)
@@ -1646,31 +1685,33 @@ export async function mountInterior(container: HTMLElement, kind: DomeKind, onPr
 
 		await slice()
 		/* the gallery: an oak ring on limestone pillars, with a glass railing */
-		const galleryFloor = new THREE.Mesh(new THREE.RingGeometry(rIn, R, 160), m.oak(R / 2))
+		const galleryFloor = new THREE.Mesh(galRing(rIn, R, 160), m.oak(R / 2))
 		galleryFloor.rotation.x = -Math.PI / 2
 		galleryFloor.position.y = H
 		galleryFloor.castShadow = galleryFloor.receiveShadow = true
 		;(galleryFloor.material as THREE.Material).side = THREE.DoubleSide
 		scene.add(galleryFloor)
-		const fascia = new THREE.Mesh(new THREE.CylinderGeometry(rIn, rIn, 0.45, 160, 1, true), m.oak((Math.PI * rIn) / 2, 0.2))
+		const fascia = new THREE.Mesh(galWall(rIn, 0.45, 160), m.oak((Math.PI * rIn) / 2, 0.2))
 		fascia.position.y = H - 0.22
 		fascia.castShadow = true
 		scene.add(fascia)
 		// the glass railing, open where each of the four stairs arrives
 		const gap = (stairHalf * 1.3) / rIn
-		for (const as of STAIRS) {
-			const rail = new THREE.Mesh(new THREE.CylinderGeometry(rIn, rIn, 1.05, 48, 1, true, as + gap, Math.PI / 2 - 2 * gap), m.glass)
-			rail.position.y = H + 0.52
+		/** A glass railing along an arc of the gallery's edge, with a steel rail on top. */
+		const railing = (from: number, len: number, y: number) => {
+			const rail = new THREE.Mesh(new THREE.CylinderGeometry(rIn, rIn, 1.05, Math.max(8, Math.round(len * 32)), 1, true, from, len), m.glass)
+			rail.position.y = y + 0.52
 			scene.add(rail)
-			// a torus arc starts at +x and runs toward -z once laid flat; turn it to start past the stair
-			const top = new THREE.Mesh(new THREE.TorusGeometry(rIn, 0.035, 8, 60, Math.PI / 2 - 2 * gap), m.steel)
+			// a torus arc starts at +x and runs toward -z once laid flat; turn it to start where the railing does
+			const top = new THREE.Mesh(new THREE.TorusGeometry(rIn, 0.035, 8, Math.max(8, Math.round(len * 40)), len), m.steel)
 			top.rotation.x = -Math.PI / 2
 			const topRing = new THREE.Group()
 			topRing.add(top)
-			topRing.rotation.y = as + gap - Math.PI / 2
-			topRing.position.y = H + 1.05
+			topRing.rotation.y = from - Math.PI / 2
+			topRing.position.y = y + 1.05
 			scene.add(topRing)
 		}
+		for (const [from, len] of arcs(STAIRS, gap)) railing(from, len, H)
 		{
 			const vines = new THREE.Group()
 			const vr = seeded(11)
@@ -1678,7 +1719,7 @@ export async function mountInterior(container: HTMLElement, kind: DomeKind, onPr
 			const vineMat = new THREE.MeshStandardMaterial({ map: leaves('fine'), alphaTest: 0.45, side: THREE.DoubleSide, roughness: 0.7 })
 			for (let k = 0; k < drops; k++) {
 				const a = (k / drops) * Math.PI * 2
-				if (STAIRS.some((as) => Math.abs(adiff(a, as)) * rIn < 2)) continue
+				if (STAIRS.some((as) => Math.abs(adiff(a, as)) * rIn < 2) || !onGal(a, 1)) continue
 				if (vr() < 0.35) continue
 				const len = 0.6 + vr() * (H * 0.55)
 				const [x, z] = polar(rIn - 0.05, a)
@@ -1699,7 +1740,7 @@ export async function mountInterior(container: HTMLElement, kind: DomeKind, onPr
 		const pillars = Math.round((2 * Math.PI * rIn) / 6)
 		for (let k = 0; k < pillars; k++) {
 			const a = (k / pillars) * Math.PI * 2 + 0.05
-			if ([...STAIRS, ...DOORS].some((d) => Math.abs(adiff(a, d)) * rIn < 2)) continue
+			if ([...STAIRS, ...doors].some((d) => Math.abs(adiff(a, d)) * rIn < 2) || !onGal(a, 1)) continue
 			const [x, z] = polar(rIn + 0.4, a)
 			const pl = box(0.7, H, 0.7, m.lime(0.5, H / 2), x, 0, z, a)
 			scene.add(pl)
@@ -1711,13 +1752,25 @@ export async function mountInterior(container: HTMLElement, kind: DomeKind, onPr
 		const roomH = 3
 		const rFront = rIn + walkway
 		const roomPlaster = new THREE.MeshStandardMaterial({ color: '#efe4d2', roughness: 0.96, side: THREE.DoubleSide })
+		// the rooms side by side round the ring, each floor's turned half a room from the one below; in the large
+		// dome they fill the gallery's arc, one floor over the other, closed by a wall at each end
+		const roomSpan = tankZ === null ? TAU / g.rooms : GAL.len / g.rooms
+		const roomFrom = (turn: number) => (tankZ === null ? aStair + turn + roomSpan / 2 : GAL.a0)
 		const roomsAt = async (Hf: number, turn: number) => {
 			const rooms = g.rooms
 			const topR = Math.sqrt(R * R - (Hf + roomH) ** 2)
 			const group = new THREE.Group()
+			if (tankZ !== null)
+				for (const a1 of [GAL.a0, GAL.a0 + GAL.len]) {
+					// the end walls, and the glass across the walkway's end
+					const [px, pz] = polar((rFront + topR) / 2, a1)
+					group.add(box(0.3, roomH, topR - rFront, roomPlaster, px, Hf, pz, a1))
+					const [gx, gz] = polar(rIn + walkway / 2, a1)
+					group.add(box(0.04, 1.05, walkway, m.glass, gx, Hf, gz, a1))
+				}
 			for (let k = 0; k < rooms; k++) {
-				const a1 = aStair + turn + ((k + 0.5) / rooms) * Math.PI * 2
-				const span = (Math.PI * 2) / rooms
+				const a1 = roomFrom(turn) + k * roomSpan
+				const span = roomSpan
 				// the partition: a plaster wall with a rounded end toward the walkway
 				const [px, pz] = polar((rFront + topR) / 2, a1)
 				group.add(box(0.24, roomH, topR - rFront, roomPlaster, px, Hf, pz, a1))
@@ -1758,8 +1811,8 @@ export async function mountInterior(container: HTMLElement, kind: DomeKind, onPr
 		await slice()
 		if (twoFloors) {
 			/* the second floor: an oak ring over the first floor's rooms, open where its stair comes up */
-			const outerBand = new THREE.Mesh(new THREE.RingGeometry(rFront, R, 160), m.oak(R / 2))
-			const innerBands = STAIRS2.map((a2) => new THREE.Mesh(new THREE.RingGeometry(rIn, rFront, 40, 1, a2 + span2 - Math.PI / 2, Math.PI / 2 - span2), m.oak(R / 2)))
+			const outerBand = new THREE.Mesh(galRing(rFront, R, 160), m.oak(R / 2))
+			const innerBands = arcs(STAIRS2.map((a2) => a2 + span2 / 2), span2 / 2).map(([from, len]) => new THREE.Mesh(new THREE.RingGeometry(rIn, rFront, 40, 1, from - Math.PI / 2, len), m.oak(R / 2)))
 			for (const band of [outerBand, ...innerBands]) {
 				band.rotation.x = -Math.PI / 2
 				band.position.y = H2
@@ -1767,16 +1820,10 @@ export async function mountInterior(container: HTMLElement, kind: DomeKind, onPr
 				;(band.material as THREE.Material).side = THREE.DoubleSide
 				scene.add(band)
 			}
-			const fascia2 = new THREE.Mesh(new THREE.CylinderGeometry(rIn, rIn, 0.45, 160, 1, true), m.oak((Math.PI * rIn) / 2, 0.2))
+			const fascia2 = new THREE.Mesh(galWall(rIn, 0.45, 160), m.oak((Math.PI * rIn) / 2, 0.2))
 			fascia2.position.y = H2 - 0.22
 			scene.add(fascia2)
-			const rail2 = new THREE.Mesh(new THREE.CylinderGeometry(rIn, rIn, 1.05, 160, 1, true), m.glass)
-			rail2.position.y = H2 + 0.52
-			scene.add(rail2)
-			const top2 = new THREE.Mesh(new THREE.TorusGeometry(rIn, 0.035, 8, 200), m.steel)
-			top2.rotation.x = -Math.PI / 2
-			top2.position.y = H2 + 1.05
-			scene.add(top2)
+			railing(GAL.a0, GAL.len, H2)
 			/* its stair climbs round the first-floor walkway */
 			const steps2 = Math.ceil((H2 - H) / 0.18)
 			const stair2 = new THREE.Group()
@@ -1792,7 +1839,9 @@ export async function mountInterior(container: HTMLElement, kind: DomeKind, onPr
 			const balcony2 = new THREE.Group()
 			const pots2 = Math.round((2 * Math.PI * rIn) / 2.7)
 			for (let k = 0; k < pots2; k++) {
-				const [px, pz] = polar(rIn + 0.45, ((k + 0.5) / pots2) * Math.PI * 2)
+				const a = ((k + 0.5) / pots2) * Math.PI * 2
+				if (!onGal(a, 1)) continue
+				const [px, pz] = polar(rIn + 0.45, a)
 				balcony2.add(balconyPot(k * 3 + 1, px, H2, pz))
 			}
 			railVines(balcony2, H2, [])
@@ -1807,20 +1856,22 @@ export async function mountInterior(container: HTMLElement, kind: DomeKind, onPr
 		const pillarAngles = Array.from({ length: perQuarter * 4 }, (_, k) => (k + 0.5) * arcStep)
 		const terraceRing = async (y: number, base: number, rInner: number, seed: number) => {
 			const terrace = new THREE.Group()
-			const deck = new THREE.Mesh(new THREE.RingGeometry(rInner, Rt, 160), m.stone(R / 1.5))
+			const deck = new THREE.Mesh(galRing(rInner, Rt, 160), m.stone(R / 1.5))
 			deck.rotation.x = -Math.PI / 2
 			deck.position.y = y + 0.02
 			terrace.add(deck)
-			const under = new THREE.Mesh(new THREE.RingGeometry(rInner, Rt, 160), m.lime(R / 2))
+			// (a ring turned face down runs its angles the other way)
+			const under = new THREE.Mesh(new THREE.RingGeometry(rInner, Rt, 160, 1, Math.PI / 2 - GAL.a0 - GAL.len, GAL.len), m.lime(R / 2))
 			under.rotation.x = Math.PI / 2
 			under.position.y = y - 0.35
 			terrace.add(under)
-			const edge = new THREE.Mesh(new THREE.CylinderGeometry(Rt, Rt, 0.4, 160, 1, true), m.lime((Math.PI * Rt) / 2, 0.2))
+			const edge = new THREE.Mesh(galWall(Rt, 0.4, 160), m.lime((Math.PI * Rt) / 2, 0.2))
 			edge.position.y = y - 0.15
 			terrace.add(edge)
 			// pillars between the doors, and round arches from pillar to pillar
 			const archR = (arcStep * Rt) / 2 - 0.4
 			pillarAngles.forEach((a, k) => {
+				if (!onGal(a) || !onGal(k * arcStep, 2)) return
 				const [x, z] = polar(Rt - 0.45, a)
 				terrace.add(box(0.8, y - base - 0.3, 0.8, m.lime(0.6, (y - base) / 2), x, base, z, a))
 				if (base === 0) outsideColliders.push({ x, z, r: 0.6 })
@@ -1833,19 +1884,30 @@ export async function mountInterior(container: HTMLElement, kind: DomeKind, onPr
 			// a timber balustrade, planters, tables
 			const posts = Math.round((Math.PI * 2 * Rt) / 1.1)
 			for (let k = 0; k < posts; k++) {
+				if (!onGal((k / posts) * Math.PI * 2)) continue
 				const [x, z] = polar(Rt - 0.2, (k / posts) * Math.PI * 2)
 				terrace.add(box(0.1, 0.95, 0.1, m.timberFrame, x, y, z))
 			}
-			const rail = new THREE.Mesh(new THREE.TorusGeometry(Rt - 0.2, 0.07, 6, 240), m.timberFrame)
+			const rail = new THREE.Mesh(new THREE.TorusGeometry(Rt - 0.2, 0.07, 6, 240, GAL.len), m.timberFrame)
 			rail.rotation.x = -Math.PI / 2
-			rail.position.y = y + 0.98
-			terrace.add(rail)
+			const railRing = new THREE.Group()
+			railRing.add(rail)
+			railRing.rotation.y = GAL.a0 - Math.PI / 2
+			railRing.position.y = y + 0.98
+			terrace.add(railRing)
+			if (tankZ !== null)
+				for (const a of [GAL.a0, GAL.a0 + GAL.len]) {
+					// the terrace's ends, closed against the north wall by a balustrade
+					const [ex, ez] = polar((rInner + Rt) / 2, a)
+					terrace.add(box(0.1, 0.95, Rt - rInner, m.timberFrame, ex, y, ez, a))
+				}
 			const rr = seeded(seed)
 			const sets = Math.round((Math.PI * 2 * Rt) / 10)
 			// clear of the pillars of the storey above
 			const clear = (a: number) => pillarAngles.every((p) => Math.abs(adiff(a, p)) * Rt > 1.3)
 			for (let k = 0; k < sets; k++) {
 				const a = ((k + 0.5 + (seed % 2) * 0.5) / sets) * Math.PI * 2
+				if (!onGal(a, 3)) continue
 				const [tx, tz] = polar((rInner + Rt) / 2 - 0.3, a)
 				// a table under the vines, daybeds, a curved bench, hanging chairs: in turn round the ring
 				const variant = (k + seed) % 4
@@ -1899,8 +1961,9 @@ export async function mountInterior(container: HTMLElement, kind: DomeKind, onPr
 			scene.add(box(3.2, 0.92, 1.1, m.lime(1), ix, 0, iz, ak))
 			scene.add(box(3.3, 0.05, 1.2, m.counter, ix, 0.92, iz, ak))
 			colliders.push({ x: ix, z: iz, r: 1.7 })
+			// (the large dome's fish live in its tank on the north, where these would stand)
 			const aq = aStair - Math.PI / 2
-			for (let i = -2; i <= 2; i++) {
+			for (let i = -2; i <= 2 && tankZ === null; i++) {
 				const a = aq + (i * 2.4) / kr
 				const [x, z] = polar(kr + 0.6, a)
 				const tank = new THREE.Mesh(new THREE.CylinderGeometry(0.75, 0.75, 1.1, 24), m.tank)
@@ -1926,6 +1989,130 @@ export async function mountInterior(container: HTMLElement, kind: DomeKind, onPr
 		}
 
 		await slice()
+		/* the large dome's fish tank: the north of the floor, behind a straight glass wall a seventh of the dome's width
+		   in from the north wall. Water up to the top of the second floor's rooms is the dome's warmth store; the wall
+		   above it and the shell behind it are closed stone, to the top. Carp and tilapia swim in it, and its water runs
+		   to the grow beds along the glass */
+		if (tankZ !== null) {
+			const c = tankZ
+			const level = H2 + roomH
+			// the tank's back: a stone wall standing just inside the shell, as high as the water
+			const rBack = Math.sqrt(R * R - (level + 0.6) ** 2) - 0.4
+			const hw = Math.sqrt(rBack * rBack - c * c)
+			const span = Math.atan2(hw, c)
+			const tank = new THREE.Group()
+			const mossy = m.stone(rBack / 3, (level + 0.6) / 3).clone()
+			mossy.color.set('#6f7f6a')
+			mossy.side = THREE.DoubleSide
+			const back = new THREE.Mesh(new THREE.CylinderGeometry(rBack, rBack, level + 0.6, 64, 1, true, -span, 2 * span), mossy)
+			back.position.y = (level + 0.6) / 2
+			tank.add(back)
+			// the plan of the water: from the glass's line out to the back wall
+			const plan = new THREE.Shape()
+			plan.moveTo(-hw, -c)
+			plan.lineTo(hw, -c)
+			for (let i = 1; i < 48; i++) {
+				const a = span - (i / 48) * 2 * span
+				plan.lineTo(rBack * Math.sin(a), -rBack * Math.cos(a))
+			}
+			plan.lineTo(-hw, -c)
+			const bed = new THREE.Mesh(new THREE.ShapeGeometry(plan), new THREE.MeshStandardMaterial({ color: '#7b7462', roughness: 1 }))
+			bed.rotation.x = -Math.PI / 2
+			bed.position.y = 0.03
+			bed.receiveShadow = true
+			tank.add(bed)
+			const water = new THREE.Mesh(
+				new THREE.ExtrudeGeometry(plan, { depth: level, bevelEnabled: false, curveSegments: 1 }),
+				new THREE.MeshStandardMaterial({ color: '#2a7a80', roughness: 0.1, transparent: true, opacity: 0.42, depthWrite: false })
+			)
+			water.rotation.x = -Math.PI / 2
+			water.renderOrder = 3
+			// a hair behind the glass, so the two never flicker through each other
+			water.position.z = 0.04
+			tank.add(water)
+			// stones and water plants on its floor
+			const tr = seeded(31)
+			for (let i = 0; i < 60; i++) {
+				const x = (tr() * 2 - 1) * hw * 0.9
+				const zMax = Math.sqrt(rBack * rBack - x * x) - 0.8
+				const z = c + 0.8 + tr() * (zMax - c - 0.8)
+				const st = new THREE.Mesh(new THREE.DodecahedronGeometry(0.3 + tr() * 0.7, 0), m.pebble)
+				st.position.set(x, 0.1, z)
+				st.scale.y = 0.5
+				st.rotation.set(tr(), tr() * 6, tr())
+				tank.add(st)
+				if (i % 2) continue
+				const weed = new THREE.Mesh(new THREE.ConeGeometry(0.25, 1.5 + tr() * 3, 5), new THREE.MeshStandardMaterial({ color: '#3f6b3a', roughness: 0.9 }))
+				weed.position.set(x + 0.6, 0.9, z)
+				tank.add(weed)
+			}
+			// the glass: one straight wall across the dome, in steel mullions, on a stone curb
+			const sill = 0.5
+			const glassWall = new THREE.Mesh(new THREE.PlaneGeometry(2 * hw, level + 0.3 - sill), m.glass)
+			glassWall.position.set(0, sill + (level + 0.3 - sill) / 2, c)
+			tank.add(glassWall)
+			tank.add(box(2 * hw, sill, 0.6, m.lime(hw / 2, 0.2), 0, 0, c))
+			const bays = Math.round((2 * hw) / 3.2)
+			for (let i = 0; i <= bays; i++) tank.add(box(0.14, level + 0.3 - sill, 0.3, m.steel, -hw + (i / bays) * 2 * hw, sill, c - 0.1))
+			for (const y of [H, H2, level + 0.3]) tank.add(box(2 * hw, 0.16, 0.3, m.steel, 0, y - 0.08, c - 0.1))
+			// above the water, the wall closes on up to the shell: stone, as massive as the wall behind it
+			const rise = Math.sqrt(R * R - c * c)
+			const upper = new THREE.Shape()
+			upper.moveTo(-rise, 0)
+			upper.lineTo(rise, 0)
+			upper.absarc(0, 0, rise, 0, Math.PI, false)
+			const hole = new THREE.Path()
+			hole.moveTo(-hw, sill)
+			hole.lineTo(-hw, level + 0.3)
+			hole.lineTo(hw, level + 0.3)
+			hole.lineTo(hw, sill)
+			upper.holes.push(hole)
+			const wallMat = m.lime(1 / 3.2, 1 / 3.2).clone()
+			wallMat.side = THREE.DoubleSide
+			const upperWall = new THREE.Mesh(new THREE.ShapeGeometry(upper, 48), wallMat)
+			upperWall.position.z = c + 0.05
+			upperWall.receiveShadow = true
+			tank.add(upperWall)
+			scene.add(tank)
+			// the fish, in schools at four depths, near enough to the glass to be seen
+			const pools: { x: number; z: number; r: number; y: number; n: number }[] = []
+			for (const [j, y] of [1.2, 3.4, 6.2, 9.4].entries())
+				for (let i = 0; i < 6; i++) {
+					const x = -hw * 0.75 + ((i + (j % 2) * 0.5) / 6) * hw * 1.5
+					const deep = Math.sqrt(rBack * rBack - x * x) - c
+					const r = Math.min(3.2, deep / 2 - 0.6)
+					if (r < 1) continue
+					pools.push({ x, z: c + r + 0.5, r, y, n: 6 })
+				}
+			const fish = fishes(pools, [], 63, eye, ['fish-carp', 'fish-nile', 'fish-redtilapia'])
+			scene.add(fish.object)
+			animated.push(fish.update)
+			for (const x of [-hw / 2, hw / 2]) addLamp(x, level - 1, c + 4, 30, 18, 0)
+			for (let i = 0; i <= 8; i++) waterPts.push(new THREE.Vector3(-hw + (i / 8) * 2 * hw, 0.5, c))
+			/* along the glass: a stone walk and the grow beds its water runs to, by a pipe at the glass's foot */
+			const walkW = 3.4
+			flat(new THREE.PlaneGeometry(2 * hw, walkW), m.stone((2 * hw) / 3, walkW / 3), 0.03).position.set(0, 0.03, c - walkW / 2)
+			const pipe = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.07, 2 * hw, 10), m.steel)
+			pipe.rotation.z = Math.PI / 2
+			pipe.position.set(0, 0.62, c - 0.45)
+			scene.add(pipe)
+			const beds = new THREE.Group()
+			const n = Math.floor((2 * hw - 4) / 3.6)
+			for (let i = 0; i < n; i++) {
+				const x = -hw + 2 + (i + 0.5) * ((2 * hw - 4) / n)
+				if (Math.abs(x) < 2) continue
+				const z = c - 1.5
+				beds.add(box(2.8, 0.45, 0.9, m.oak(1), x, 0, z))
+				const cr = crop(CROPS[(i * 5) % CROPS.length]!, 90 + i, 2.6)
+				cr.position.set(x, 0.45, z)
+				cr.rotation.y = Math.PI / 2
+				beds.add(cr)
+				colliders.push({ x: x - 0.8, z, r: 0.6 }, { x: x + 0.8, z, r: 0.6 })
+			}
+			scene.add(await bakeIn(beds))
+		}
+
+		await slice()
 		/* in the master dome, the rest of the ring is the village's workshops */
 		if (kind === 'master')
 			for (const w of workshops(kit, (rIn + rWall) / 2 + 0.5)) {
@@ -1944,6 +2131,7 @@ export async function mountInterior(container: HTMLElement, kind: DomeKind, onPr
 			const count = kind === 'home' ? 6 : 8
 			for (let k = 0; k < count; k++) {
 				const a = ((k + 0.5) / count) * Math.PI * 2
+				if (!onGal(a, 2)) continue
 				const [x, z] = polar(rIn + walkway / 2, a)
 				const l = lantern(m, 0.22, H + 2.7)
 				l.position.set(x, 0, z)
@@ -1952,6 +2140,7 @@ export async function mountInterior(container: HTMLElement, kind: DomeKind, onPr
 			}
 			for (let k = 0; k < 4; k++) {
 				const a = DOORS[k]! + Math.PI / 4 + 0.35
+				if (!onGal(a, 2)) continue
 				const [x, z] = polar((rIn + rWall) / 2, a)
 				scene.add(box(0.6, 0.06, 0.6, glowMat, x, H - 0.52, z))
 				addLamp(x, H - 0.7, z, 16, 14, 0)
@@ -2016,8 +2205,9 @@ export async function mountInterior(container: HTMLElement, kind: DomeKind, onPr
 			if (s !== null) options.push(s)
 			const s2 = inStair2(x, z)
 			if (s2 !== null) options.push(s2)
-			if (rr >= rIn - 0.05 && rr < Rt) options.push(H)
-			if (twoFloors && rr >= rIn - 0.05 && s2 === null) options.push(H2)
+			const gal = onGal(Math.atan2(x, z))
+			if (gal && rr >= rIn - 0.05 && rr < Rt) options.push(H)
+			if (gal && twoFloors && rr >= rIn - 0.05 && s2 === null) options.push(H2)
 			return Math.max(...options.filter((h) => h <= feet + 0.55))
 		}
 		// out through the glass onto the terraces, at the first floor and the second
@@ -2027,13 +2217,15 @@ export async function mountInterior(container: HTMLElement, kind: DomeKind, onPr
 			// on the galleries the railings keep you from stepping off, and on a stair its
 			// handrails keep you on the treads: up off the ground, only a stair holds you
 			if (feet > 0.25 && rr < rIn && inStair(x, z) === null) return true
+			// the fish tank's glass, and the ends of the large dome's gallery
+			if (tankZ !== null && (z > tankZ - 0.35 || (feet > 0.25 && rr > rIn - 0.4 && !onGal(Math.atan2(x, z), 0.4)))) return true
 			// and outside, the balustrade round the terrace
 			if (feet > H - 0.6 && rr > Rt - 0.5) return true
 			// the rooms' walls: their fronts on the walkway, open only at each room's door, and the walls between them
 			for (const [Hf, turn] of twoFloors ? [[H, 0], [H2, Math.PI / g.rooms]] : [[H, 0]]) {
 				if (Math.abs(feet - Hf!) > 0.5 || rr < rFront - 0.35 || rr > R) continue
-				const span = (Math.PI * 2) / g.rooms
-				const rel = (((Math.atan2(x, z) - (aStair + turn! + span / 2)) % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2)
+				const span = roomSpan
+				const rel = (((Math.atan2(x, z) - roomFrom(turn!)) % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2)
 				const along = (rel / span - Math.floor(rel / span)) * span
 				if (Math.abs(rr - rFront) < 0.3 && along * rFront > 1.4) return true
 				if (rr > rFront - 0.1 && Math.min(along, span - along) * rr < 0.3) return true

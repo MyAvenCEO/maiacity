@@ -160,7 +160,7 @@
 			const mine = build;
 			building = 'Opening the doors';
 			built = 0;
-			const { mountInterior, DOMES } = await import('$lib/sandbox-2/interior/interior');
+			const { mountInterior, DOMES, doorsOf } = await import('$lib/sandbox-2/interior/interior');
 			if (mine !== build) return;
 			const R = DOMES[kind].diameter / 2;
 			// meanwhile the camera already stands where it will see it whole, the ground laid
@@ -185,7 +185,8 @@
 			const e = (dome = h.embedded);
 			e.setHour(13);
 			const root = e.root;
-			const door = 0;
+			// in by the north door, or the south where there is none (the large dome's fish tank is on its north)
+			const door = doorsOf(kind).includes(0) ? 0 : Math.PI;
 			const out = R + Math.max(2, R * 0.12);
 			root.userData.tick = (/** @type {number} */ t) => e.update(t);
 			root.userData.walk = {

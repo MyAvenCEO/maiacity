@@ -1,6 +1,6 @@
 <!--
 	avenCITY Sandbox 4 — a whole dome cell in one world: the master dome, six
-	large domes, six medium domes, the paths and streams between them and the
+	medium domes, six small domes, the paths and streams between them and the
 	food forest round it all (interior/village.ts). Walk up to any dome and its
 	full inside is built into the village as you come; walk in through its door
 	with nothing to wait for.
@@ -53,7 +53,7 @@
 
 <svelte:head>
 	<title>avenCITY Sandbox 3 · A dome cell · maiaCITY</title>
-	<meta name="description" content="Walk a whole maiaCITY dome cell: the master dome, six large domes and six medium domes, with paths, streams and a food forest between them. Step into any of them." />
+	<meta name="description" content="Walk a whole maiaCITY dome cell: the master dome, six medium domes and six small domes, with paths, streams and a food forest between them. Step into any of them." />
 </svelte:head>
 
 <div class="village">
@@ -76,7 +76,7 @@
 			<div class="label">
 				<p class="eyebrow">avenCITY Sandbox 3</p>
 				<strong>A dome cell</strong>
-				<span class="size">the master dome, six large domes, six medium domes</span>
+				<span class="size">the master dome, six medium domes, six small domes</span>
 				<div class="progress"><span style:width="{Math.min(100, (done / STEPS) * 100)}%"></span></div>
 				<span class="step">{fading ? 'Welcome' : `${step}…`}</span>
 			</div>
