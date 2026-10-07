@@ -22,7 +22,7 @@
  *     out;
  *   · what a treasury lacks it borrows, an annuity loan over fifteen years (./market.js LOAN). There is no goal to win.
  */
-import { BIOMES, BUILDINGS, BUILD_MWH_T, CENTRE, ENERGY, EUR_GOLD, GROWS, GRASS, HOUSE_BEDS, HOUSE_KEEP, HOUSE_MOST, HOUSE_TOP, HOUSE_UP, IRON, LAND, LOAD_T, MOUNTAIN, RECIPES, ROUNDS_YEAR, ROUTE_T_KM, START, UNIT_M, WARES, WATER, centreStage, holdsLand, loadsRound, recipe, sunBedDay, weekOf } from './rules.js';
+import { BIOMES, BUILDINGS, BUILD_MWH_T, CENTRE, ENERGY, EUR_GOLD, GROWS, GRASS, HOUSE_BEDS, HOUSE_KEEP, HOUSE_MOST, HOUSE_TOP, HOUSE_UP, IRON, LAND, LOAD_T, MOUNTAIN, RECIPES, ROUNDS_YEAR, ROUTE_T_KM, START, UNIT_M, UPKEEP, WARES, WATER, WEEK_YEAR, centreStage, holdsLand, loadsRound, recipe, sunBedDay, weekOf } from './rules.js';
 import { CART, GRID_EUR_KWH, HEARTS, LOAN, LOAN_PAY, NEIGHBOURS, TRADED, WORLD, heartsFor, keepOf, loanMonths, make, newMarket, orderRule, party, priceIn, request, shortIn, spareIn } from './market.js';
 import { SE, STEP, findPath, makeGrid } from './hex.js';
 import { CISTERN, FOOD_KG, FRESH_L, KEEP, MOST, PACE, PRICE, RAIN_L, RAIN_MONTH, TANK, WATER_PRICE, WATER_USE, WEEK, YEAR, DAY, MONTH, calendar, forestShare } from './food.js';
@@ -1860,6 +1860,13 @@ export function createSim(st) {
 		}
 		return { gold, kwh };
 	}
+	/** what a village's buildings are worth, €: what they are built of at world prices (their upkeep a week is 2% a year
+	 * of it), and the gold of its geothermal plant @param {number} v */
+	function worthIn(v) {
+		let plant = 0;
+		for (const b of mineIn(v)) if (b.type === 'centre' && b.stage === 'live') plant += CENTRE.slice(0, levelOf(b)).reduce((t, x) => t + (x.gold ?? 0), 0) * EUR_GOLD;
+		return (upkeepIn(v).gold * EUR_GOLD) / (UPKEEP * WEEK_YEAR) + plant;
+	}
 	/** @param {number} dt seconds of play @param {number} dd days of the valley's calendar */
 	function settlements(dt, dd) {
 		const m = st.market;
@@ -2475,6 +2482,41 @@ export function createSim(st) {
 				/** all your villages' food, a week: grown, eaten, and gold spent and earned on it */
 				food: yourVillages().reduce((t, { p }) => ({ grown: t.grown + (p.flow?.grown ?? 0), need: t.need + p.pop * FOOD_KG, spent: t.spent + (p.flow?.spent ?? 0), earned: t.earned + (p.flow?.earned ?? 0) }), { grown: 0, need: 0, spent: 0, earned: 0 }),
 				msgs: st.msgs.slice(-6)
+			};
+		},
+		/**
+		 * Your books, all your villages together, as in the Cashflow game (Samuel, 2026-10-07): what they took in and paid
+		 * out a week lately, € (your cashflow is the world market's exports less its imports and your upkeep; the HEARTs
+		 * your settlers issue, your loans and demurrage come besides), and their balance sheet now: what they own (their
+		 * treasuries, the wares in their stores and their buildings, at world prices) and what they owe.
+		 */
+		books() {
+			const vs = yourVillages();
+			const sum = (/** @type {string} */ k) => vs.reduce((t, { p }) => t + (p.flow?.[k] ?? 0), 0);
+			const pop = vs.reduce((t, { p }) => t + p.pop, 0);
+			const exp = sum('wexp'), imp = sum('wimp'), upkeep = sum('upkeep');
+			const food = sum('exported') * PRICE.world, energy = sum('gridEarned');
+			const treasury = vs.reduce((t, { c }) => t + (c.hearts ?? 0), 0);
+			const left = vs.reduce((t, { c }) => t + (c.loan?.left ?? 0), 0), pay = vs.reduce((t, { c }) => t + (c.loan?.pay ?? 0), 0);
+			return {
+				exports: { food, energy, wares: Math.max(0, exp - food - energy) },
+				imports: { food: sum('fromWorld') * PRICE.world, water: sum('waterSpent'), energy: sum('gridSpent'), wares: sum('wares') },
+				upkeep,
+				cashflow: exp - imp - upkeep,
+				/** what your settlers issue a week, in HEARTs (€) */
+				hearts: HEARTS.perHour * 24 * WEEK * pop,
+				interest: sum('interest'),
+				repaid: sum('repaid'),
+				borrowed: sum('borrowed'),
+				/** what a week's demurrage takes from what the treasuries hold */
+				demurrage: Math.max(0, treasury) * (1 - Math.pow(1 - HEARTS.demurrage, WEEK / YEAR)),
+				treasury,
+				stores: vs.reduce((t, { c }) => t + Object.entries(c.stock ?? {}).reduce((u, [w, n]) => u + /** @type {number} */ (n) * (WORLD[w]?.eur ?? 0), 0), 0),
+				buildings: vs.reduce((t, { v }) => t + worthIn(v), 0),
+				/** your loans together: what is owed, what they pay a month, the months left, and the most you may owe */
+				loan: { left, pay, months: loanMonths(left, pay), most: LOAN.perHead * pop },
+				people: pop,
+				beds: beds()
 			};
 		},
 		/**
