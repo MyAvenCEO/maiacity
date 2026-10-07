@@ -1,5 +1,5 @@
 /*
- * The turntables' camera ($lib/app/Turntable.svelte: the biomes, the 3D models, the actors, the plants), fitted to the
+ * The turntables' camera ($lib/app/Turntable.svelte: the biomes, the assets, the buildings, the actors, the plants), fitted to the
  * canvas it draws on. A turntable frames its thing for a canvas as wide as it is high or wider; on a canvas taller than
  * it is wide (a phone upright, a tablet) the same field of view would cut the thing off at its sides, so the view
  * widens there until it is as wide as it would be on a square canvas.
