@@ -6,7 +6,8 @@
 	(`userData.tick`: the excavators) plays its work. An item that is a dome (`dome`: the Buildings' tents and domes) is
 	built alone, without the forest and land round it, as Sandbox 3's village builds its domes into its own world
 	(mountInterior with a host, $lib/sandbox-2/interior), and stepped inside the same way. With `round` (the
-	Buildings) every building stands on the same round ground ($lib/buildings/ground.js) instead of the square grid.
+	Buildings) every building stands on the same round ground ($lib/buildings/ground.js) instead of the square grid;
+	with `enter` (the Buildings too) picking one steps inside it at once, a loading screen over it while it is built.
 -->
 <script>
 	import { onDestroy, onMount, untrack } from 'svelte';
@@ -24,9 +25,9 @@
 	/** @typedef {import('$lib/buildings').Dome} Dome */
 
 	/**
-	 * @type {{ name: string, title: string, lede: string, items: (Model | Dome)[], group?: (item: any) => string, round?: boolean }}
+	 * @type {{ name: string, title: string, lede: string, items: (Model | Dome)[], group?: (item: any) => string, round?: boolean, enter?: boolean }}
 	 */
-	let { name, title, lede, items, group, round = false } = $props();
+	let { name, title, lede, items, group, round = false, enter = false } = $props();
 	/** @param {Model | Dome} m @returns {m is Dome} */
 	const isDome = (m) => 'dome' in m;
 	/** @param {Model | Dome} m */
@@ -46,6 +47,12 @@
 	/** @type {Variant | null} */
 	let variant = $state((!isDome(first) && first.variants?.[0]) || null);
 	const variants = $derived(!isDome(chosen) && version === chosen.version ? (chosen.variants ?? []) : []);
+	/** stops a building being built (the way back from its loading screen), back to the list */
+	/** @type {(() => void) | null} */
+	let stopBuilding = null;
+	$effect(() => {
+		if (enter && building) return wayBack('Back to the list', () => stopBuilding?.());
+	});
 	// walking inside a model the walk has the whole screen, as a dome's does: the nav pill's way back walks out
 	$effect(() => {
 		if (walking) return wayBack('Back outside', () => walkOut?.());
@@ -53,6 +60,9 @@
 	/** a dome being built: what it is doing now (null once it stands) */
 	/** @type {string | null} */
 	let building = $state(null);
+	/** how many of its steps are done, for the loading screen's bar */
+	let built = $state(0);
+	const STEPS = 5;
 	/** @type {[number, number, number] | null} */
 	let size = $state(null);
 	/** @type {((m: Model | Dome, v: number, kind?: Variant | null) => void) | null} */
@@ -125,6 +135,7 @@
 			build++;
 			building = null;
 		};
+		stopBuilding = clear;
 		show = (m, v, kind) => {
 			clear();
 			walkable = roofed = roofOff = false;
@@ -138,6 +149,7 @@
 			});
 			scene.add(current);
 			place(current);
+			if (enter && walkable) walkIn?.();
 		};
 		/**
 		 * A tent or a dome alone: built into this scene as Sandbox 3's village builds one into its own (no sky, land
@@ -146,7 +158,8 @@
 		 */
 		const raise = async (m, kind) => {
 			const mine = build;
-			building = 'Starting';
+			building = 'Opening the doors';
+			built = 0;
 			const { mountInterior, DOMES } = await import('$lib/sandbox-2/interior/interior');
 			if (mine !== build) return;
 			const R = DOMES[kind].diameter / 2;
@@ -157,7 +170,11 @@
 			// it joins the scene as a scene of its own before its last pieces show: the meadow it lays round itself is
 			// hidden as soon as it comes, every few frames while it is built
 			landless = (/** @type {InstanceType<typeof THREE.Object3D>} */ o) => o !== scene && /** @type {any} */ (o).isScene && keepToItself(o, R);
-			const h = await mountInterior(box, kind, (label) => mine === build && label !== 'ready' && (building = label), {
+			const h = await mountInterior(box, kind, (label) => {
+				if (mine !== build || label === 'ready') return;
+				building = label;
+				built += 1;
+			}, {
 				host: { scene, camera, renderer, x: 0, z: 0 },
 				cancelled: () => mine !== build,
 				hurry: () => true
@@ -192,6 +209,7 @@
 			const own = keepToItself(root, R);
 			if (!own.isEmpty()) root.userData.measured = own;
 			place(root, root.userData.measured);
+			if (enter) walkIn?.();
 		};
 		/** while a dome is built: hides the land it lays round itself, as it comes @type {((o: InstanceType<typeof THREE.Object3D>) => void) | null} */
 		let landless = null;
@@ -384,7 +402,7 @@
 	{name}
 	bind:canvas={canvasBox}
 	bind:stage={viewBox}
-	full={walking}
+	full={walking || (enter && !!building)}
 	picks={{ title, lede, items, chosen, where: (/** @type {Model | Dome} */ m) => m.usedIn, onpick: pick, group, version, onversion: pickVersion }}
 >
 	{#snippet bar()}
@@ -416,6 +434,15 @@
 		{/if}
 		<small>Drag to turn round it · pinch or scroll to come closer · the grid is {round ? '1 m' : '10 cm'}</small>
 	{/snippet}
+	{#if enter && building}
+		<div class="loading" role="status" aria-live="polite">
+			<p class="eyebrow">Stepping inside</p>
+			<strong>{chosen.label}</strong>
+			{#if isDome(chosen)}<span class="size">{chosen.size}</span>{/if}
+			<div class="progress"><span style:width="{Math.min(100, (built / STEPS) * 100)}%"></span></div>
+			<span class="step">{building}…</span>
+		</div>
+	{/if}
 	{#if walking}
 		<WorldBar title={chosen.label} subtitle="{title} · {chosen.usedIn}" sky={false} />
 		<TouchStick move={(x, y, h) => stick?.move(x, y, h)} look={(dx, dy) => stick?.look(dx, dy)} stage={viewBox} taps=".walkbar button" />
@@ -426,6 +453,51 @@
 <style>
 	.building {
 		opacity: 0.7;
+	}
+	/* while a building is built, before stepping inside it: its name and how far it is, over the whole screen */
+	.loading {
+		position: absolute;
+		inset: 0;
+		z-index: 3;
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		justify-content: center;
+		gap: 0.5rem;
+		background: #f2efe7;
+		color: #1f2a23;
+		text-align: center;
+	}
+	.loading .eyebrow {
+		margin: 0;
+		font-size: 0.75rem;
+		letter-spacing: 0.08em;
+		text-transform: uppercase;
+		color: #c8744f;
+	}
+	.loading strong {
+		font-family: var(--font-display, serif);
+		font-size: 2rem;
+		font-weight: 500;
+	}
+	.loading .size,
+	.loading .step {
+		font-size: 0.85rem;
+		opacity: 0.7;
+	}
+	.progress {
+		width: min(18rem, 70vw);
+		height: 4px;
+		margin: 0.6rem 0 0.2rem;
+		border-radius: 2px;
+		background: rgb(31 42 35 / 0.12);
+		overflow: hidden;
+	}
+	.progress span {
+		display: block;
+		height: 100%;
+		background: #c8744f;
+		transition: width 400ms ease;
 	}
 	.chip.dark {
 		padding: 0.5rem 0.9rem;
