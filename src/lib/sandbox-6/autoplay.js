@@ -65,11 +65,11 @@ export function createAutoplay(sim) {
 		const east = g.x(n) - g.x(home);
 		switch (want) {
 			case 'trees':
-				return count((j) => st.obj[j]?.k === 'tree', n, 7) * 2 - d;
+				return count((j) => st.obj[j]?.k === 'tree', n, 10) * 2 - d;
 			case 'rocks':
-				return count((j) => st.obj[j]?.k === 'rock', n, 6) * 4 - d;
+				return count((j) => st.obj[j]?.k === 'rock', n, 9) * 4 - d;
 			case 'water':
-				return count((j) => st.terrain[j] === WATER, n, 4) * 1.5 - d * 1.5;
+				return count((j) => st.terrain[j] === WATER, n, 7) * 1.5 - d * 1.5;
 			case 'woodcutter': {
 				const w = ofType('woodcutter')[0];
 				return w ? -g.dist(w.node, n) * 2 - d * 0.3 : -d;
@@ -78,7 +78,7 @@ export function createAutoplay(sim) {
 				return count((j) => st.ore[j] === IRON, n, 3) * 2 - d;
 			}
 			case 'open':
-				return count((j) => !st.obj[j] && st.terrain[j] === 0, n, 3) - d;
+				return count((j) => !st.obj[j] && st.terrain[j] === 0, n, 5) - d;
 			case 'south':
 				return g.z(n) - g.z(home) + east * 0.3;
 			default:
@@ -133,7 +133,7 @@ export function createAutoplay(sim) {
 		const t = BUILDINGS[type];
 		if (st.obj[n]?.k === 'bld' || st.road[n]) return false;
 		if (t.on === 'mountain' ? st.terrain[n] !== MOUNTAIN : st.terrain[n] !== GRASS) return false;
-		if (type === 'fishery') return g.within(n, 6).some((j) => st.terrain[j] === WATER);
+		if (type === 'fishery') return g.within(n, 10).some((j) => st.terrain[j] === WATER);
 		if (type === 'quarry') return count((j) => st.obj[j]?.k === 'rock', n, t.range ?? 6) >= 2;
 		if (type === 'woodcutter' && !ofType('woodcutter').length) return count((j) => st.obj[j]?.k === 'tree', n, t.range ?? 6) >= 4;
 		if (t.kind === 'mine') return g.within(n, 3).some((j) => st.ore[j] === IRON && st.amount[j] > 0);

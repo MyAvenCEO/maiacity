@@ -49,7 +49,7 @@ export function newGame(seed = 7) {
 	const v = growValley(seed);
 	const N = v.W * v.H;
 	const st = {
-		v: 9,
+		v: 10,
 		seed,
 		time: 0,
 		rng: (Math.imul(seed, 2654435761) >>> 0) || 1,
@@ -107,7 +107,7 @@ export function newGame(seed = 7) {
 /** A game from its saved state. @param {string | object} saved */
 export function loadGame(saved) {
 	const st = typeof saved === 'string' ? JSON.parse(saved) : saved;
-	if (!st || st.v !== 9 || !Array.isArray(st.terrain)) throw new Error('Not a Sandbox 6 game of this kind');
+	if (!st || st.v !== 10 || !Array.isArray(st.terrain)) throw new Error('Not a Sandbox 6 game of this kind');
 	return createSim(st);
 }
 
@@ -1174,7 +1174,7 @@ export function createSim(st) {
 	/** a village center's stop: the middle of its hex, where its trade routes start */
 	const stopAt = (/** @type {any} */ c) => st.flags[c.flag]?.node ?? c.node;
 	/** what a trade route between two village centers costs: a stone for every four world units */
-	const tunnelCost = (/** @type {number} */ a, /** @type {number} */ b) => Math.ceil((g.dist(a, b) * STEP) / 4);
+	const tunnelCost = (/** @type {number} */ a, /** @type {number} */ b) => Math.ceil((g.dist(a, b) * STEP) / 8);
 	/** dig a trade route between two village centers (paid by the first) */
 	function dig(/** @type {any} */ a, /** @type {any} */ b, pay = true) {
 		// always straight from center to center, under whatever lies between: the nodes along the line, a step apart
@@ -1578,7 +1578,7 @@ export function createSim(st) {
 		}
 	}
 	/** every village of the valley as the abundance panel shows it: yours by name, then each neighbour city's */
-	/** how many people a village holds when it is full: a great tower's worth in every settlement that has room for a house */
+	/** how many people a village holds when it is full: a great dome's worth in every settlement that has room for a house */
 	const capOf = (/** @type {number} */ v) =>
 		HOUSE_MOST * plan.villages[v].plots.filter((k) => k !== plan.villages[v].centre && plan.spots[k][0] >= 0 && st.terrain[plan.spots[k][0]] === GRASS).length;
 	/**
@@ -1774,7 +1774,7 @@ export function createSim(st) {
 		const f = flagAt(c);
 		if (f && f.owner !== PLAYER) return 'Not yours';
 		if (st.road[c]) return 'A path runs where its stop goes';
-		if (type === 'fishery' && !g.within(n, 6).some((j) => st.terrain[j] === WATER)) return 'Needs water nearby';
+		if (type === 'fishery' && !g.within(n, 10).some((j) => st.terrain[j] === WATER)) return 'Needs water nearby';
 		if (t.kind === 'mine' && depositAt(n) <= 0) return 'No iron ore in this rock';
 		return '';
 	}

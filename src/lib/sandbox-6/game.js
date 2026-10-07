@@ -46,16 +46,16 @@ export function mountGame(container, o = {}) {
 	// the valley keeps its own day (Auto): from morning to late afternoon and back over forty minutes of play, never
 	// a night to farm in the dark; Manual is the time control's hour, as in every sandbox
 	const sky = createSky(renderer, scene, {
-		shadowReach: 70,
+		shadowReach: 110,
 		shadowMap: 2048,
-		fog: { near: 160, far: 520 },
+		fog: { near: 240, far: 760 },
 		clock: () => (skyTime.auto ? 12 + 4.5 * Math.sin((sim.state.time / 2400) * Math.PI * 2 - 0.6) : skyTime.hour)
 	});
 	let view = createView(scene, sim);
 	const home = () => view.place(sim.state.buildings[sim.state.hq]?.node ?? 0);
 	const start = home();
-	camera.position.set(start.x - 3, start.y + 40, start.z + 32);
-	const rig = createOrbitRig(camera, renderer.domElement, { minDistance: 7, maxDistance: 130, target: start, floorY: 1.5, moveSpeed: 32 });
+	camera.position.set(start.x - 5, start.y + 62, start.z + 50);
+	const rig = createOrbitRig(camera, renderer.domElement, { minDistance: 7, maxDistance: 220, target: start, floorY: 1.5, moveSpeed: 50 });
 
 	/** a valley played by the autoplayer up to `t` seconds: the same valley every time */
 	function filmGame(/** @type {number} */ t) {

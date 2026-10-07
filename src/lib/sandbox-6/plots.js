@@ -4,17 +4,18 @@
  *
  * The valley is cut into big hexes. A hex's middle is a little square where paths meet, and six straight paths can
  * run from it, one to the middle of each hex next to it, along the lines of the grid. Between those six ways lie six
- * corners, half way out: three of them, in a triangle round the square, are the hex's building spots — one for its
- * house, two for the factory domes that work beside it, every door facing the square — and the other three stay free.
- * The outer half of the hex is land: trees, rocks, fields. Seven hexes make a village: one in the middle, filled by
+ * corners, a third of the way out: three of them, in a triangle round the square, are the hex's building spots — one
+ * for its house (a dome that grows to hold 248), two for the factory domes that work beside it, every door facing the
+ * square — and the other three stay free. The rest of the hex, most of it, is land: trees, rocks, fields. Seven hexes make a village: one in the middle, filled by
  * its one large village center, and the six round it; villages tile the valley too. A city is the villages one owner
  * holds. Pure, and the same for every valley of a size.
  */
 
 /** steps from the middle of a hex to the middle of the next */
-export const K = 7;
-/** the corners round a hex's middle, by the two directions between which each lies (as in ./hex.js): each [dq, dr] */
-const CORNERS = [[2, -1], [1, -2], [-1, -1], [-2, 1], [-1, 2], [1, 1]];
+export const K = 13;
+/** the corners round a hex's middle, by the two directions between which each lies (as in ./hex.js): each [dq, dr],
+ * a third of the way out, so a great dome on one stays clear of the paths either side of it */
+const CORNERS = [[4, -2], [2, -4], [-2, -2], [-4, 2], [-2, 4], [2, 2]];
 /** which corners are the house's and the two factories': a triangle, the house at the back (north) */
 export const HOUSE_CORNER = 1, FACTORY_CORNERS = [3, 5];
 /** the six directions in axial steps, as in ./hex.js: east, north-east, north-west, west, south-west, south-east */
@@ -135,9 +136,10 @@ export function makePlan(g) {
 	};
 	for (let k = 0; k < centre.length; k++) {
 		ring(centre[k], 1);
-		for (const j of spots[k]) ring(j, 1);
+		// the house grows into a great dome; a factory stays small
+		spots[k].forEach((j, x) => ring(j, x === 0 ? 2 : 1));
 	}
-	for (const v of villages) ring(centre[v.centre], 2);
+	for (const v of villages) ring(centre[v.centre], 3);
 	return { centre, spots, free, nbr, plotOf, spotOf, lane, clear, villageOf, villages };
 }
 

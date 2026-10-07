@@ -25,7 +25,7 @@
 import { FOOD, WARES } from './rules.js';
 
 /**
- * what a person needs, a minute. A great tower holds 248 where a great house held 16, so a person needs 16/248 of what
+ * what a person needs, a minute. A great dome holds 248 where a great house held 16, so a person needs 16/248 of what
  * they used to: a full village eats what it did when it held 96.
  */
 const PER = 16 / 248;
