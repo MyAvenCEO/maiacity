@@ -4,37 +4,51 @@
 	the rooster and the chick) to switch between on the right, one at a time on a turntable, playing its moves. The stand-in also holds its poses, and any joint of
 	it can be turned by hand (the pose copied out as data). Drag to turn round it, scroll to come closer. An admin's.
 -->
-<script lang="ts">
+<script>
 	import { onDestroy, onMount } from 'svelte';
-	import { FAMILIES, type Actor, type Family } from '$lib/actors';
-	import PickList from '$lib/app/PickList.svelte';
-	import { at } from '$lib/app/versions.js';
-	import type { Cast, Pose, V3 } from '$lib/actors/rig';
+	import { FAMILIES } from '$lib/actors';
+	import Turntable from '$lib/app/Turntable.svelte';
+	import { fit } from '$lib/app/turntable.js';
+	import { atOrLatest } from '$lib/app/versions.js';
 
-	let canvasBox = $state<HTMLDivElement>();
+	/** @typedef {import('$lib/actors').Actor} Actor */
+	/** @typedef {import('$lib/actors').Family} Family */
+	/** @typedef {import('$lib/actors/rig').Cast} Cast */
+	/** @typedef {import('$lib/actors/rig').Pose} Pose */
+	/** @typedef {import('$lib/actors/rig').V3} V3 */
+
+	/** @type {HTMLDivElement | undefined} */
+	let canvasBox = $state();
 	/** the kind chosen on the left, and which of its variants is on the turntable */
-	let chosen = $state<Family>(FAMILIES[0]!);
-	let variant = $state<Actor>(FAMILIES[0]!.variants[0]!);
+	/** @type {Family} */
+	let chosen = $state(FAMILIES[0]);
+	/** @type {Actor} */
+	let variant = $state(FAMILIES[0].variants[0]);
 	/** the version of the kind shown (its latest, or one picked from its history), and the variants it had */
-	let version = $state<number>(FAMILIES[0]!.version);
-	const variants = $derived((at(chosen.versions, version) ?? at(chosen.versions)!).build);
-	let cast = $state.raw<Cast | null>(null);
+	let version = $state(FAMILIES[0].version);
+	const variants = $derived(atOrLatest(chosen.versions, version).build);
+	let cast = $state.raw(/** @type {Cast | null} */ (null));
 	/** what it does: a move it plays, or a pose it holds */
-	let doing = $state<{ kind: 'clip' | 'pose'; name: string }>({ kind: 'clip', name: '' });
+	/** @type {{ kind: 'clip' | 'pose', name: string }} */
+	let doing = $state({ kind: 'clip', name: '' });
 	/** the joints turned by hand, over the pose it holds */
-	let edits = $state<Record<string, V3>>({});
+	/** @type {Record<string, V3>} */
+	let edits = $state({});
 	let joint = $state('head');
-	let size = $state<[number, number, number] | null>(null);
+	/** @type {[number, number, number] | null} */
+	let size = $state(null);
 	let copied = $state(false);
-	let show: ((a: Actor) => void) | null = null;
-	let dispose: (() => void) | null = null;
+	/** @type {((a: Actor) => void) | null} */
+	let show = null;
+	/** @type {(() => void) | null} */
+	let dispose = null;
 
 	const holding = $derived(doing.kind === 'pose' && cast?.poses ? { ...cast.poses[doing.name], ...edits } : null);
 
 	onMount(async () => {
 		const THREE = await import('three');
 		const { OrbitControls } = await import('three/addons/controls/OrbitControls.js');
-		const box = canvasBox!;
+		const box = /** @type {HTMLDivElement} */ (canvasBox);
 		const renderer = new THREE.WebGLRenderer({ antialias: true });
 		renderer.setPixelRatio(Math.min(2, window.devicePixelRatio));
 		renderer.shadowMap.enabled = true;
@@ -44,6 +58,7 @@
 		const scene = new THREE.Scene();
 		scene.background = new THREE.Color('#e9e6e0');
 		const camera = new THREE.PerspectiveCamera(40, 1, 0.01, 200);
+		camera.userData.fov = 40; // widened on an upright canvas ($lib/app/turntable.js)
 		const controls = new OrbitControls(camera, renderer.domElement);
 		controls.enableDamping = true;
 		scene.add(new THREE.HemisphereLight('#ffffff', '#b9b2a6', 1.2));
@@ -55,9 +70,10 @@
 		floor.rotation.x = -Math.PI / 2;
 		floor.receiveShadow = true;
 		scene.add(floor);
-		let grid: InstanceType<typeof THREE.Group> | null = null;
+		/** @type {InstanceType<typeof THREE.Group> | null} */
+		let grid = null;
 
-		show = async (a: Actor) => {
+		show = async (a) => {
 			// an animal's skin is meshed off the page first; picked away from meanwhile, it is not shown
 			await a.ready?.();
 			if (variant.id !== a.id) return;
@@ -66,9 +82,9 @@
 			const c = a.make();
 			cast = c;
 			edits = {};
-			doing = { kind: 'clip', name: c.first in c.clips ? c.first : Object.keys(c.clips)[0]! };
+			doing = { kind: 'clip', name: c.first in c.clips ? c.first : Object.keys(c.clips)[0] };
 			if (c.poses && c.first in c.poses) doing = { kind: 'pose', name: c.first };
-			joint = c.rig.names.includes('head') ? 'head' : c.rig.names[0]!;
+			joint = c.rig.names.includes('head') ? 'head' : c.rig.names[0];
 			scene.add(c.rig.object);
 			// framed on its rest pose, with room round it to move
 			const b = new THREE.Box3().setFromObject(c.rig.object);
@@ -98,8 +114,7 @@
 		const resize = () => {
 			const w = box.clientWidth, h = box.clientHeight;
 			renderer.setSize(w, h);
-			camera.aspect = w / Math.max(1, h);
-			camera.updateProjectionMatrix();
+			fit(camera, w, h);
 		};
 		const ro = new ResizeObserver(resize);
 		ro.observe(box);
@@ -111,7 +126,7 @@
 			const t = (performance.now() - start) / 1000;
 			if (cast) {
 				if (doing.kind === 'clip') cast.rig.pose(cast.clips[doing.name]?.(t) ?? {});
-				else if (holding) cast.rig.pose(holding as Pose);
+				else if (holding) cast.rig.pose(/** @type {Pose} */ (holding));
 			}
 			controls.update();
 			renderer.render(scene, camera);
@@ -128,226 +143,139 @@
 	});
 	onDestroy(() => dispose?.());
 
-	const pick = (f: Family) => {
+	/** @param {Family} f */
+	const pick = (f) => {
 		chosen = f;
 		version = f.version;
-		vary(f.variants[0]!);
+		vary(f.variants[0]);
 	};
-	const pickVersion = (v: number) => {
+	/** @param {number} v */
+	const pickVersion = (v) => {
 		version = v;
-		vary((at(chosen.versions, v) ?? at(chosen.versions)!).build[0]!);
+		vary(atOrLatest(chosen.versions, v).build[0]);
 	};
-	const vary = (a: Actor) => {
+	/** @param {Actor} a */
+	const vary = (a) => {
 		variant = a;
 		show?.(a);
 	};
-	const play = (name: string) => (doing = { kind: 'clip', name });
-	const hold = (name: string) => {
+	/** @param {string} name */
+	const play = (name) => (doing = { kind: 'clip', name });
+	/** @param {string} name */
+	const hold = (name) => {
 		doing = { kind: 'pose', name };
 		edits = {};
 	};
 	/** a joint's turn now: what the hand gave it, else the pose's */
-	const turnOf = (bone: string): V3 => edits[bone] ?? ((holding?.[bone] as V3 | undefined)?.slice(0, 3) as V3 | undefined) ?? [0, 0, 0];
-	const turn = (axis: 0 | 1 | 2, value: number) => {
-		const t = [...turnOf(joint)] as V3;
+	/** @param {string} bone @returns {V3} */
+	const turnOf = (bone) => edits[bone] ?? /** @type {V3 | undefined} */ (/** @type {number[] | undefined} */ (holding?.[bone])?.slice(0, 3)) ?? [0, 0, 0];
+	/** @param {0 | 1 | 2} axis @param {number} value */
+	const turn = (axis, value) => {
+		const t = /** @type {V3} */ ([...turnOf(joint)]);
 		t[axis] = value;
 		edits = { ...edits, [joint]: t };
 	};
 	const copy = async () => {
 		if (!holding) return;
-		const rounded = Object.fromEntries(Object.entries(holding).map(([k, v]) => [k, (v as number[]).map((x) => Math.round(x * 1000) / 1000)]));
+		const rounded = Object.fromEntries(Object.entries(holding).map(([k, v]) => [k, /** @type {number[]} */ (v).map((x) => Math.round(x * 1000) / 1000)]));
 		await navigator.clipboard.writeText(JSON.stringify(rounded));
 		copied = true;
 		setTimeout(() => (copied = false), 1500);
 	};
-	const measure = (v: number) => (v < 0.1 ? `${Math.round(v * 1000)} mm` : `${Math.round(v * 100)} cm`);
+	/** @param {number} v */
+	const measure = (v) => (v < 0.1 ? `${Math.round(v * 1000)} mm` : `${Math.round(v * 100)} cm`);
 </script>
 
 <svelte:head>
 	<title>Actors · maiaCITY</title>
 </svelte:head>
 
-<main class="actors">
-	<PickList title="Actors" lede="Everyone and everything rigged to move: the stand-in a shot is blocked with, and the animals of the worlds, kind by kind." items={FAMILIES} {chosen} where={(f) => `${f.variants.length > 1 ? `${f.variants.length} · ` : ''}${f.from}`} onpick={pick} {version} onversion={pickVersion} />
-	<section class="view">
-		<div class="canvas" bind:this={canvasBox}></div>
-		{#if variants.length > 1}
-			<nav class="variants" aria-label="{chosen.label}: variants">
-				<span class="label">{chosen.label}</span>
-				{#each variants as v (v.id)}
-					<button class:on={variant.id === v.id} aria-current={variant.id === v.id ? 'true' : undefined} onclick={() => vary(v)}>{v.label}</button>
-				{/each}
-			</nav>
-		{/if}
+<Turntable
+	name="actors"
+	bind:canvas={canvasBox}
+	picks={{ title: 'Actors', lede: 'Everyone and everything rigged to move: the stand-in a shot is blocked with, and the animals of the worlds, kind by kind.', items: FAMILIES, chosen, where: (/** @type {Family} */ f) => `${f.variants.length > 1 ? `${f.variants.length} · ` : ''}${f.from}`, onpick: pick, version, onversion: pickVersion }}
+>
+	{#snippet bar()}
 		{#if cast}
-			<div class="moves">
+			<div class="chips">
 				<span class="label">Moves</span>
 				{#each Object.keys(cast.clips) as name (name)}
-					<button class:on={doing.kind === 'clip' && doing.name === name} onclick={() => play(name)}>{name}</button>
+					<button class="chip" class:on={doing.kind === 'clip' && doing.name === name} onclick={() => play(name)}>{name}</button>
 				{/each}
 				{#if cast.poses}
 					<span class="label">Poses</span>
 					{#each Object.keys(cast.poses) as name (name)}
-						<button class:on={doing.kind === 'pose' && doing.name === name} onclick={() => hold(name)}>{name}</button>
+						<button class="chip" class:on={doing.kind === 'pose' && doing.name === name} onclick={() => hold(name)}>{name}</button>
 					{/each}
 				{/if}
 			</div>
-			{#if holding}
-				<div class="joints">
-					<label>
-						<span>Joint</span>
-						<select bind:value={joint}>
-							{#each cast.rig.names as name (name)}<option value={name}>{name}</option>{/each}
-						</select>
-					</label>
-					{#each ['x', 'y', 'z'] as axis, i (axis)}
-						<label>
-							<span>{axis}</span>
-							<input type="range" min={-Math.PI} max={Math.PI} step="0.01" value={turnOf(joint)[i]} oninput={(e) => turn(i as 0 | 1 | 2, +(e.currentTarget as HTMLInputElement).value)} />
-							<output>{Math.round((turnOf(joint)[i]! * 180) / Math.PI)}°</output>
-						</label>
-					{/each}
-					<div class="row">
-						<button onclick={() => (edits = {})}>Reset</button>
-						<button onclick={copy}>{copied ? 'Copied' : 'Copy pose'}</button>
-					</div>
-				</div>
-			{/if}
 		{/if}
-		<div class="readout">
-			<b>{variants.length > 1 ? `${chosen.label} · ${variant.label}` : chosen.label}</b>
-			{#if variants.length > 1}<span class="what">{variant.note}</span>{/if}
-			{#if size && cast}<span>{measure(Math.max(size[0], size[2]))} long · {measure(size[1])} high · {cast.rig.names.length} bones</span>{/if}
-			<small>Drag to turn round it · scroll to come closer{doing.kind === 'pose' ? ' · turn any joint by hand' : ''}</small>
-		</div>
-	</section>
-</main>
+	{/snippet}
+	{#snippet panel()}
+		{#if variants.length > 1}
+			<nav class="chips variants" aria-label="{chosen.label}: variants">
+				<span class="label">{chosen.label}</span>
+				{#each variants as v (v.id)}
+					<button class="chip" class:on={variant.id === v.id} aria-current={variant.id === v.id ? 'true' : undefined} onclick={() => vary(v)}>{v.label}</button>
+				{/each}
+			</nav>
+		{/if}
+		{#if cast && holding}
+			<div class="joints">
+				<label>
+					<span>Joint</span>
+					<select bind:value={joint}>
+						{#each cast.rig.names as name (name)}<option value={name}>{name}</option>{/each}
+					</select>
+				</label>
+				{#each ['x', 'y', 'z'] as axis, i (axis)}
+					<label>
+						<span>{axis}</span>
+						<input type="range" min={-Math.PI} max={Math.PI} step="0.01" value={turnOf(joint)[i]} oninput={(e) => turn(/** @type {0 | 1 | 2} */ (i), +e.currentTarget.value)} />
+						<output>{Math.round((turnOf(joint)[i] * 180) / Math.PI)}°</output>
+					</label>
+				{/each}
+				<div class="row">
+					<button class="chip" onclick={() => (edits = {})}>Reset</button>
+					<button class="chip" onclick={copy}>{copied ? 'Copied' : 'Copy pose'}</button>
+				</div>
+			</div>
+		{/if}
+	{/snippet}
+	{#snippet readout()}
+		<b>{variants.length > 1 ? `${chosen.label} · ${variant.label}` : chosen.label}</b>
+		{#if variants.length > 1}<small>{variant.note}</small>{/if}
+		{#if size && cast}<span>{measure(Math.max(size[0], size[2]))} long · {measure(size[1])} high · {cast.rig.names.length} bones</span>{/if}
+		<small>Drag to turn round it · pinch or scroll to come closer{doing.kind === 'pose' ? ' · turn any joint by hand' : ''}</small>
+	{/snippet}
+</Turntable>
 
 <style>
-	.actors {
-		position: fixed;
-		inset: 0;
-		display: grid;
-		grid-template-columns: auto 1fr;
-		background: #f4f1eb;
-		color: #1f2a23;
-	}
-
-	.view {
-		position: relative;
-		min-width: 0;
-	}
-
-	.canvas {
-		position: absolute;
-		inset: 0;
-		cursor: grab;
-	}
-
-	.moves,
-	.variants,
-	.joints,
-	.readout {
-		position: absolute;
-		padding: 0.6rem 0.8rem;
-		border-radius: 12px;
-		background: rgb(255 255 255 / 0.78);
-		-webkit-backdrop-filter: blur(10px);
-		backdrop-filter: blur(10px);
-		font-size: 0.85rem;
-	}
-
-	.moves {
-		top: 1rem;
-		left: 1rem;
-		right: 1rem;
-		display: flex;
-		flex-wrap: wrap;
-		align-items: center;
-		gap: 0.35rem;
-	}
-
-	.label {
-		margin: 0 0.2rem 0 0.4rem;
-		font-size: 0.72rem;
-		letter-spacing: 0.08em;
-		text-transform: uppercase;
-		opacity: 0.55;
-	}
-
-	.label:first-child {
-		margin-left: 0;
-	}
-
-	button {
-		font: inherit;
-		color: inherit;
-		cursor: pointer;
-	}
-
-	.moves button,
-	.row button {
-		padding: 0.3rem 0.65rem;
-		border: 1px solid rgb(0 0 0 / 0.12);
-		border-radius: 999px;
-		background: rgb(255 255 255 / 0.7);
-	}
-
-	.moves button.on {
-		background: #1f2a23;
-		border-color: #1f2a23;
-		color: #fff;
-	}
-
-	/* the kind's variants, down the right: one pressed, the one on the turntable */
-	.variants {
-		top: 5.2rem;
-		right: 1rem;
-		display: flex;
-		flex-direction: column;
-		align-items: stretch;
-		gap: 0.3rem;
-		max-height: calc(100% - 7rem - var(--nav-room));
-		overflow: auto;
-	}
-
-	.variants .label {
-		margin: 0 0 0.15rem;
-	}
-
-	.variants button {
-		padding: 0.3rem 0.75rem;
-		border: 1px solid rgb(0 0 0 / 0.12);
-		border-radius: 999px;
-		background: rgb(255 255 255 / 0.7);
-		text-align: left;
-		white-space: nowrap;
-	}
-
-	.variants button.on {
-		background: #1f2a23;
-		border-color: #1f2a23;
-		color: #fff;
+	.variants + .joints {
+		margin-top: 0.8rem;
 	}
 
 	.joints {
-		top: 5.2rem;
-		right: 1rem;
 		display: flex;
 		flex-direction: column;
 		gap: 0.4rem;
-		width: 15rem;
 	}
 
 	.joints label {
 		display: grid;
-		grid-template-columns: 2.6rem 1fr 2.6rem;
+		grid-template-columns: 2.6rem minmax(0, 1fr) 2.6rem;
 		align-items: center;
 		gap: 0.4rem;
 	}
 
 	.joints label:first-child {
-		grid-template-columns: 2.6rem 1fr;
+		grid-template-columns: 2.6rem minmax(0, 1fr);
+	}
+
+	.joints select,
+	.joints input {
+		width: 100%;
+		min-width: 0;
 	}
 
 	.joints output {
@@ -360,44 +288,5 @@
 		display: flex;
 		gap: 0.4rem;
 		justify-content: flex-end;
-	}
-
-	/* at the foot, above the app's nav pill (--nav-room, src/app.css) */
-	.readout {
-		left: 1rem;
-		bottom: calc(1rem + var(--nav-room));
-		display: flex;
-		flex-direction: column;
-		gap: 0.15rem;
-	}
-
-	.readout small,
-	.readout .what {
-		opacity: 0.6;
-	}
-
-	.readout .what {
-		max-width: 26rem;
-	}
-
-	@media (max-width: 720px) {
-		.actors {
-			grid-template-columns: 1fr;
-			grid-template-rows: auto 1fr;
-		}
-
-		.joints {
-			top: auto;
-			bottom: calc(5.5rem + var(--nav-room));
-		}
-
-		/* across the top under the moves on a phone, scrolling sideways */
-		.variants {
-			top: auto;
-			left: 1rem;
-			bottom: calc(6.5rem + var(--nav-room));
-			flex-direction: row;
-			overflow-x: auto;
-		}
 	}
 </style>
