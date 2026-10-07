@@ -3,7 +3,7 @@
  * each building stands one column after the wares it needs, each ware one column after the building that makes it.
  * Read from the rules (./rules.js), so it always shows the game as it is. The page draws it (./Tree.svelte).
  */
-import { BUILDINGS, WARES } from './rules.js';
+import { BUILDINGS, FOOD, WARES } from './rules.js';
 import { NEEDS } from './market.js';
 
 /** where in the land a gatherer finds its work */
@@ -14,12 +14,10 @@ export const SOURCE = /** @type {Record<string, string>} */ ({
 	fishery: 'a lake',
 	farm: 'open grass',
 	well: 'anywhere',
-	coalmine: 'coal rock',
-	ironmine: 'iron rock',
-	goldmine: 'gold rock'
+	ironmine: 'iron rock'
 });
 /** the wares people live on (what wellbeing counts) */
-export const LIVED_ON = new Set(['fish', 'bread', 'meat', ...Object.keys(NEEDS).filter((n) => n !== 'food')]);
+export const LIVED_ON = new Set([...FOOD, ...Object.keys(NEEDS).filter((n) => n !== 'food')]);
 
 /** buildings that make or gather something: the chains */
 const CHAIN = Object.values(BUILDINGS).filter((b) => b.group && (b.out || b.kind === 'forester'));
@@ -100,13 +98,10 @@ export function chainTree(colW = 168, rowH = 50) {
 
 /** who in the valley has plenty of a ware, or where it is missing: a line under the ware */
 export const TRADE_NOTE = /** @type {Record<string, string>} */ ({
-	ironOre: 'None in your land: Eastmere has the iron',
-	iron: 'Eastmere has plenty',
+	ore: 'Little in your land: Eastmere has plenty',
 	tools: 'Eastmere has plenty',
-	coal: 'Eastmere has plenty',
 	fish: 'Reedholm has plenty',
 	plank: 'Highfold has plenty',
-	log: 'Highfold has plenty',
 	grain: 'Your plenty: wide farmland',
 	stone: 'Reedholm has none'
 });

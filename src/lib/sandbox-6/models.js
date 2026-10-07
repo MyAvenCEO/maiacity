@@ -2,9 +2,8 @@
  * SANDBOX 6 · THE MODELS — every building of the valley is a dome, in our own low-poly style: a stone plinth, a dome
  * whose colour says what the building is, a vaulted porch facing its flag, round windows, and a band in its owner's
  * colour. Each has one thing of its own that says what it does: a tree growing from the forester's dome, the
- * fishery's drying rack and boat, the mill's sails, the bakery's oven chimney, the smelter's glowing vent, the coin
- * standing on the mint's dome. One builder per type (`buildingModel`), the moving parts named so the view can turn
- * them (`sails`, `blade`) and puff them (`smoke`).
+ * fishery's drying rack and boat, the bakery's oven chimney, the toolmaker's anvil, the market hall's awning. One
+ * builder per type (`buildingModel`), the chimneys named so the view can puff them (`smoke`).
  */
 import * as THREE from 'three';
 
@@ -207,20 +206,6 @@ export function buildingModel(type, owner) {
 			g.add(band(owner, 0.82, PLINTH + 0.12));
 			break;
 		}
-		case 'sawmill': {
-			// the saw blade standing beside the dome, logs in and planks out
-			g.add(dome(0.9, 0.8, '#c48a50'));
-			const blade = part(new THREE.CylinderGeometry(0.42, 0.42, 0.04, 16), mat('#c9ccd0', 0.35), 1.15, 0.55, 0.1);
-			blade.rotation.x = Math.PI / 2;
-			blade.name = 'blade';
-			g.add(blade);
-			g.add(part(new THREE.BoxGeometry(0.7, 0.12, 0.3), mat(TIMBER), 1.15, 0.3, 0.1));
-			g.add(log(-1.05, 0.35, 0.4));
-			g.add(log(-1.1, 0.0, 0.3));
-			g.add(pile('#e0b46a', -1.0, -0.6, 3));
-			g.add(band(owner, 0.92, PLINTH + 0.15));
-			break;
-		}
 		case 'fishery': {
 			// a dome glazed like the lake, a drying rack of fish and a boat
 			g.add(dome(0.75, 0.75, '#7fb2c4', { rough: 0.45 }));
@@ -256,27 +241,6 @@ export function buildingModel(type, owner) {
 			g.add(part(new THREE.BoxGeometry(0.14, 0.14, 0.14), mat(TIMBER), 0, 0.5, 0));
 			g.add(band(owner, 0.5, 0.38));
 			break;
-		case 'mill': {
-			// a tower with a dome on top, and its sails
-			g.add(part(new THREE.CylinderGeometry(0.55, 0.72, 1.7, 12), mat(WALL), 0, 0.85, 0));
-			const top = part(new THREE.SphereGeometry(0.58, 12, 6, 0, Math.PI * 2, 0, Math.PI / 2), mat('#8a5a3b', 0.7), 0, 1.7, 0);
-			top.scale.y = 1.1;
-			g.add(top);
-			g.add(vault(0.72));
-			const sails = new THREE.Group();
-			sails.name = 'sails';
-			sails.position.set(0, 1.85, 0.72);
-			for (let k = 0; k < 4; k++) {
-				const arm = part(new THREE.BoxGeometry(0.22, 1.25, 0.03), mat('#e8dcc0', 0.95), 0, 0.68, 0);
-				const holder = new THREE.Group();
-				holder.rotation.z = (k * Math.PI) / 2;
-				holder.add(arm);
-				sails.add(holder);
-			}
-			g.add(sails);
-			g.add(band(owner, 0.66, 0.6));
-			break;
-		}
 		case 'bakery':
 			// a terracotta oven dome, its chimney at the crown, loaves at the door
 			g.add(dome(0.85, 0.75, '#c0653a'));
@@ -284,22 +248,9 @@ export function buildingModel(type, owner) {
 			for (let k = 0; k < 3; k++) g.add(part(new THREE.SphereGeometry(0.1, 7, 4), mat('#c47f34'), 0.55 + k * 0.2, 0.08, 1.05));
 			g.add(band(owner, 0.87, PLINTH + 0.15));
 			break;
-		case 'livestock': {
-			// a long rosy dome barn with a pen and its pigs
-			const barn = dome(0.85, 0.7, '#a8707e');
-			barn.scale.x = 1.25;
-			g.add(barn);
-			const fence = mat(TIMBER);
-			for (let k = 0; k < 6; k++) g.add(part(new THREE.BoxGeometry(0.05, 0.3, 0.05), fence, 1.15 + (k % 3) * 0.3, 0.15, -0.45 + Math.floor(k / 3) * 0.9));
-			for (const [x, z] of [[1.3, -0.15], [1.55, 0.25]]) g.add(part(new THREE.BoxGeometry(0.3, 0.2, 0.18), mat('#e9a7a3'), x, 0.12, z));
-			g.add(band(owner, 0.87, PLINTH + 0.15));
-			break;
-		}
-		case 'coalmine':
-		case 'ironmine':
-		case 'goldmine': {
+		case 'ironmine': {
 			// a dark dome over the shaft, a timbered tunnel mouth and a cart of what it digs
-			const ore = type === 'coalmine' ? '#2a2a2c' : type === 'ironmine' ? '#a35b3a' : '#e2b93b';
+			const ore = '#a35b3a';
 			g.add(dome(0.85, 0.75, '#6b645a', { porch: false, windows: 0 }));
 			g.add(part(new THREE.BoxGeometry(0.6, 0.6, 0.3), mat('#141312'), 0, 0.3, 0.75));
 			for (const sx of [-1, 1]) g.add(part(new THREE.BoxGeometry(0.1, 0.72, 0.1), mat(TIMBER), sx * 0.34, 0.36, 0.9));
@@ -310,36 +261,12 @@ export function buildingModel(type, owner) {
 			g.add(band(owner, 0.87, PLINTH + 0.12));
 			break;
 		}
-		case 'smelter': {
-			// a dark dome with a glowing vent ring, and a tall chimney
-			g.add(dome(0.85, 0.85, '#5a534c'));
-			const glow = part(new THREE.TorusGeometry(0.72, 0.05, 5, 20), new THREE.MeshStandardMaterial({ color: '#ff8a3c', emissive: '#ff6a1a', emissiveIntensity: 0.9 }), 0, PLINTH + 0.45, 0);
-			glow.rotation.x = Math.PI / 2;
-			g.add(glow);
-			g.add(chimney(-0.55, 0.3, -0.55, 1.4, '#4a4440'));
-			g.add(band(owner, 0.87, PLINTH + 0.12));
-			break;
-		}
 		case 'toolmaker': {
 			// a teal dome, an anvil on its block, and the forge chimney
 			g.add(dome(0.85, 0.8, '#3f9a92'));
 			g.add(part(new THREE.BoxGeometry(0.2, 0.22, 0.2), mat(TIMBER), 1.0, 0.11, 0.35));
 			g.add(part(new THREE.BoxGeometry(0.4, 0.12, 0.18), mat(DARK, 0.35), 1.0, 0.28, 0.35));
 			g.add(chimney(-0.4, PLINTH + 0.5, -0.35, 0.55));
-			g.add(band(owner, 0.87, PLINTH + 0.15));
-			break;
-		}
-		case 'mint': {
-			// a golden dome with a great coin standing on its crown
-			g.add(dome(0.85, 0.85, '#e0b13a', { rough: 0.35 }));
-			const coin = new THREE.Group();
-			coin.position.set(0, PLINTH + 1.2, 0);
-			const face = part(new THREE.CylinderGeometry(0.34, 0.34, 0.07, 20), mat('#ffd23f', 0.25));
-			face.rotation.x = Math.PI / 2;
-			coin.add(face);
-			coin.add(part(new THREE.TorusGeometry(0.34, 0.04, 5, 20), mat('#c79a1c', 0.3)));
-			g.add(coin);
-			g.add(part(new THREE.CylinderGeometry(0.04, 0.04, 0.3, 5), mat('#c79a1c', 0.3), 0, PLINTH + 0.85, 0));
 			g.add(band(owner, 0.87, PLINTH + 0.15));
 			break;
 		}

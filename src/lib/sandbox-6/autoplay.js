@@ -1,16 +1,15 @@
 /**
  * SANDBOX 6 · AUTOPLAY — a player that builds the whole economy by itself, step by step, the way a person would:
- * wood first, then stone and food, the market hall and its orders (iron and tools come by trade), and then ever more food
+ * wood and stone first, then food, the market hall and what it trades (iron ore and tools come by trade), and then ever more food
  * for a valley that needs it. The film camera grows its valley with it (a settlement that is already busy), and it
  * plays a whole game headless to prove every chain runs end to end.
  */
-import { BUILDINGS, WATER } from './rules.js';
+import { BUILDINGS, IRON, WATER } from './rules.js';
 import { PLAYER } from './sim.js';
 
 /** the plan: what to build, in order, and where it would rather stand */
 const PLAN = [
 	['woodcutter', 'trees'],
-	['sawmill', 'home'],
 	['quarry', 'rocks'],
 	['woodcutter', 'trees'],
 	['forester', 'woodcutter'],
@@ -19,48 +18,31 @@ const PLAN = [
 	['farm', 'open'],
 	['market', 'fair'],
 	['fishery', 'water'],
-	['mill', 'home'],
 	['bakery', 'home'],
 	['farm', 'open'],
-	['livestock', 'home'],
-	['coalmine', 'mine'],
 	['toolmaker', 'home'],
 	['boundary', 'fair'],
 	['fishery', 'water'],
 	['farm', 'open'],
-	['livestock', 'home'],
+	['bakery', 'home'],
 	['well', 'home'],
 	['boundary', 'south'],
 	['fishery', 'water'],
 	['quarry', 'rocks'],
 	['farm', 'open'],
-	['mill', 'home'],
 	['bakery', 'home'],
 	['fishery', 'water'],
 	['woodcutter', 'trees'],
 	['forester', 'woodcutter'],
-	['livestock', 'home'],
 	['farm', 'open'],
 	['well', 'home']
 ];
 
 /** what it adds while a neighbour goes short of food */
-const MORE = [[['fishery', 'water']], [['farm', 'open'], ['livestock', 'home']], [['fishery', 'water']], [['well', 'home'], ['bakery', 'home']]];
+const MORE = [[['fishery', 'water']], [['farm', 'open'], ['bakery', 'home']], [['fishery', 'water']], [['well', 'home'], ['bakery', 'home']]];
 
-/** the standing orders it sets once a market hall stands: sell food, buy building goods, tools and iron */
-const ORDERS = {
-	fish: { sell: true, above: 2, keep: 12, buy: false, below: 0, upTo: 0 },
-	bread: { sell: true, above: 3, keep: 10, buy: false, below: 0, upTo: 0 },
-	meat: { sell: true, above: 3, keep: 10, buy: false, below: 0, upTo: 0 },
-	// building goods from the neighbours: buying them is how their coins come back to them for food
-	plank: { sell: false, above: 0, keep: 0, buy: true, below: 6, upTo: 60 },
-	stone: { sell: false, above: 0, keep: 0, buy: true, below: 10, upTo: 40 },
-	tools: { sell: false, above: 0, keep: 0, buy: true, below: 40, upTo: 8 },
-	// coal and grain from the neighbours: what you buy is how their coins come back to them
-	coal: { sell: false, above: 0, keep: 0, buy: true, below: 7, upTo: 30 },
-	grain: { sell: false, above: 0, keep: 0, buy: true, below: 3, upTo: 20 },
-	iron: { sell: false, above: 0, keep: 0, buy: true, below: 18, upTo: 6 }
-};
+/** what it trades once a market hall stands: food out; building goods, iron ore and tools in (buying the neighbours' wares is how their coins come back to them) */
+const ORDERS = /** @type {Record<string, 'sell' | 'buy'>} */ ({ fish: 'sell', bread: 'sell', plank: 'buy', stone: 'buy', tools: 'buy', ore: 'buy' });
 
 /**
  * Plays a game one decision at a time: call `tick()` now and then (every few seconds of game time).
@@ -96,9 +78,7 @@ export function createAutoplay(sim) {
 				return w ? -g.dist(w.node, n) * 2 - d * 0.3 : -d;
 			}
 			case 'mine': {
-				const ore = /** @type {string} */ (BUILDINGS[type].ore);
-				const code = ore === 'coal' ? 1 : ore === 'iron' ? 2 : 3;
-				return count((j) => st.ore[j] === code, n, 2) * 3 - d;
+				return count((j) => st.ore[j] === IRON, n, 2) * 3 - d;
 			}
 			case 'open':
 				return count((j) => !st.obj[j] && st.terrain[j] === 0, n, 2) - d;

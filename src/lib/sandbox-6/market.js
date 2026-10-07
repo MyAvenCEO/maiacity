@@ -8,7 +8,7 @@
  * away and, slowly, bring a little of what runs short. Coins are only how wares change hands: the fair pays them out and
  * takes them in, and nothing in the score counts them.
  *
- * Needs. Everyone in a settlement eats (fish, bread or meat, the more kinds the better), drinks, and keeps a home
+ * Needs. Everyone in a settlement eats (fish or bread, best both), drinks, and keeps a home
  * (planks and stone). A settlement's wellbeing (0–100) is how well its needs were met over the last minutes, how
  * varied its food was, and how much it has put by. A settlement doing well grows, so it needs more; one doing badly
  * shrinks.
@@ -32,11 +32,11 @@ export const CART = 8;
 /** minutes of needs a settlement likes to have put by */
 const PUT_BY = 10;
 /** a ware's usual price at the fair, in coins */
-export const BASE = { log: 2, plank: 4, stone: 4, grain: 2, flour: 3, water: 1.5, bread: 6, fish: 4, meat: 6, coal: 4, ironOre: 4, goldOre: 8, iron: 9, tools: 16 };
+export const BASE = { plank: 4, stone: 4, fish: 4, grain: 2, water: 1.5, bread: 5, ore: 5, tools: 14 };
 /** the wares traded at the fair (not coins: they are what is paid) */
 export const TRADED = Object.keys(BASE);
 /** a pool's usual level */
-const REF = (/** @type {string} */ w) => (w === 'tools' ? 16 : w === 'iron' || w === 'goldOre' || FOOD.includes(w) ? 24 : 40);
+const REF = (/** @type {string} */ w) => (w === 'tools' ? 16 : w === 'ore' || FOOD.includes(w) ? 24 : 40);
 /** how hard the price leans on the pool */
 const LEAN = 0.85;
 
@@ -48,10 +48,29 @@ const LEAN = 0.85;
  * @type {{ name: string, about: string, plenty: string, short: string, make: Record<string, number> }[]}
  */
 export const NEIGHBOURS = [
-	{ name: 'Eastmere', about: 'Miners and smiths under the eastern peaks: plenty of iron, coal and tools, but no wood.', plenty: 'iron', short: 'wood', make: { iron: 0.06, coal: 0.08, tools: 0.02, fish: 0.03, bread: 0.03, meat: 0.02, water: 0.06, stone: 0.04, grain: 0.02 } },
-	{ name: 'Reedholm', about: 'Fishers by the southern lake: plenty of fish, but no stone.', plenty: 'fish', short: 'stone', make: { fish: 0.13, bread: 0.02, grain: 0.03, water: 0.06, plank: 0.015, log: 0.01 } },
-	{ name: 'Highfold', about: 'Woodcutters in the northern hills: plenty of planks and logs, but no fish.', plenty: 'wood', short: 'fish', make: { plank: 0.08, log: 0.05, bread: 0.04, meat: 0.04, water: 0.06, stone: 0.03, coal: 0.01 } }
+	{ name: 'Eastmere', about: 'Miners and smiths under the eastern peaks: plenty of iron ore and tools, but no wood.', plenty: 'ore', short: 'plank', make: { ore: 0.06, tools: 0.03, fish: 0.03, bread: 0.05, water: 0.06, stone: 0.05, grain: 0.02 } },
+	{ name: 'Reedholm', about: 'Fishers by the southern lake: plenty of fish, but no stone.', plenty: 'fish', short: 'stone', make: { fish: 0.15, bread: 0.02, grain: 0.03, water: 0.06, plank: 0.03 } },
+	{ name: 'Highfold', about: 'Woodcutters in the northern hills: plenty of planks, but no fish.', plenty: 'plank', short: 'fish', make: { plank: 0.1, bread: 0.08, water: 0.06, stone: 0.03 } }
 ];
+
+/**
+ * Your orders at the fair are one word a ware: sell or buy. What that means is fixed, so there is nothing to tune:
+ * selling lets go of what you can spare (you keep ten minutes of what your people live on, or a dozen of anything
+ * else) while it fetches at least half its usual price; buying fetches what you are short of (up to a stock that
+ * suits the ware) while it costs at most two and a half times its usual price.
+ * @param {string} w
+ * @param {number} pop your people
+ */
+export function orderRule(w, pop) {
+	const need = /** @type {Record<string, number>} */ (NEEDS)[w] ?? (FOOD.includes(w) ? NEEDS.food / 2 : 0);
+	const lives = Math.ceil(need * pop * PUT_BY);
+	return {
+		keep: Math.max(12, lives),
+		upTo: w === 'tools' ? 8 : w === 'ore' ? 12 : w === 'plank' ? Math.max(40, lives) : w === 'stone' ? Math.max(30, lives) : Math.max(20, lives),
+		above: base(w) * 0.5,
+		below: base(w) * 2.5
+	};
+}
 
 /** a fresh fair and a fresh valley of settlements: yours first, then the neighbours */
 export function newMarket() {
@@ -66,7 +85,7 @@ export function newMarket() {
 		/** what is owed to each need: eaten later, if it can be */
 		owe: { food: 0, water: 0, plank: 0, stone: 0 },
 		/** the food eaten lately, by kind */
-		mix: { fish: 1, bread: 1, meat: 1 },
+		mix: { fish: 1, bread: 1 },
 		reserve: 0.3,
 		wb: 50,
 		/** @type {Record<string, number>} */ stock: {},
@@ -134,7 +153,7 @@ export function trend(m, w) {
 	return now > was * 1.06 ? 1 : now < was * 0.94 ? -1 : 0;
 }
 
-/** how varied the food eaten lately was: 0 one kind only, 1 all three alike */
+/** how varied the food eaten lately was: 0 one kind only, 1 both alike */
 export function variety(/** @type {any} */ p) {
 	const total = FOOD.reduce((s, f) => s + p.mix[f], 0);
 	if (total <= 0) return 0;

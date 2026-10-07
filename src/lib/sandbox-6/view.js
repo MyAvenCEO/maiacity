@@ -35,7 +35,7 @@ export function createView(scene, sim) {
 	// ── the land ──
 	const positions = new Float32Array(g.N * 3), colors = new Float32Array(g.N * 3);
 	const c = new THREE.Color(), tint = new THREE.Color();
-	const ORE_TINT = [null, new THREE.Color('#34322f'), new THREE.Color('#a4583a'), new THREE.Color('#e0b53c')];
+	const ORE_TINT = [null, null, new THREE.Color('#a4583a')];
 	for (let i = 0; i < g.N; i++) {
 		positions.set([X(i), Y(i), Z(i)], i * 3);
 		const n = hash(i);
@@ -249,7 +249,7 @@ export function createView(scene, sim) {
 	}
 
 	// ── buildings ──
-	/** @type {Map<number, { group: THREE.Group, model: THREE.Group, scaffold: THREE.Group | null, owner: number, sails: THREE.Object3D | undefined, blade: THREE.Object3D | undefined, smoke: THREE.Object3D[] }>} */
+	/** @type {Map<number, { group: THREE.Group, model: THREE.Group, scaffold: THREE.Group | null, owner: number, smoke: THREE.Object3D[] }>} */
 	const shown = new Map();
 	const DOOR = Math.atan2(0.5, Math.sqrt(3) / 2);
 	function syncBuildings(/** @type {number} */ t) {
@@ -269,7 +269,7 @@ export function createView(scene, sim) {
 				group.userData.building = b.id;
 				const smoke = /** @type {THREE.Object3D[]} */ ([]);
 				model.traverse((o) => o.name === 'smoke' && smoke.push(o));
-				s = { group, model, scaffold: null, owner: b.owner, sails: model.getObjectByName('sails'), blade: model.getObjectByName('blade'), smoke };
+				s = { group, model, scaffold: null, owner: b.owner, smoke };
 				root.add(group);
 				shown.set(b.id, s);
 			}
@@ -288,8 +288,6 @@ export function createView(scene, sim) {
 				s.owner = b.owner;
 			}
 			const busy = b.stage === 'live' && b.timer > 0 && !b.paused;
-			if (s.sails && busy) s.sails.rotation.z = t * 1.6;
-			if (s.blade && busy) s.blade.rotation.y = t * 9;
 			for (const sm of s.smoke) {
 				sm.visible = busy;
 				if (busy)
