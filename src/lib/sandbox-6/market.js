@@ -13,7 +13,7 @@
  * varied its food was, and how much it has put by. A settlement doing well grows, so it needs more; one doing badly
  * shrinks.
  *
- * Abundance. The valley's abundance is the geometric mean of every settlement's wellbeing, yours and the three
+ * Abundance. The valley's abundance is the geometric mean of every settlement's wellbeing, yours and the two
  * neighbours': one hungry neighbour pulls everyone down, and no amount of plenty in one place makes up for it.
  *
  * Neighbours. Each makes some wares well and runs short of others. Their traders sell what they have spare and buy
@@ -41,15 +41,14 @@ const REF = (/** @type {string} */ w) => (w === 'tools' ? 16 : w === 'ore' || FO
 const LEAN = 0.85;
 
 /**
- * The three neighbours (in the valley's east, see ./map.js). Each makes some of everything, plenty of one ware and
- * none of another, so each can live on its own at first and needs the others to grow: Eastmere needs Highfold's wood,
- * Highfold needs Reedholm's fish, Reedholm needs stone — and you (plenty of grain, no iron) need Eastmere's iron.
+ * The two neighbours (in the valley's east, see ./map.js). Each makes some of everything, plenty of one ware and
+ * none of another, so each can live on its own at first and needs the others to grow — a loop of three: you (plenty of
+ * food, little iron) need Eastmere's ore and tools, Eastmere needs Highfold's planks, Highfold needs your fish.
  * What each makes, a person a minute.
  * @type {{ name: string, about: string, plenty: string, short: string, make: Record<string, number> }[]}
  */
 export const NEIGHBOURS = [
 	{ name: 'Eastmere', about: 'Miners and smiths under the eastern peaks: plenty of iron ore and tools, but no wood.', plenty: 'ore', short: 'plank', make: { ore: 0.06, tools: 0.03, fish: 0.03, bread: 0.05, water: 0.06, stone: 0.05, grain: 0.02 } },
-	{ name: 'Reedholm', about: 'Fishers by the southern lake: plenty of fish, but no stone.', plenty: 'fish', short: 'stone', make: { fish: 0.15, bread: 0.02, grain: 0.03, water: 0.06, plank: 0.03 } },
 	{ name: 'Highfold', about: 'Woodcutters in the northern hills: plenty of planks, but no fish.', plenty: 'plank', short: 'fish', make: { plank: 0.1, bread: 0.08, water: 0.06, stone: 0.03 } }
 ];
 

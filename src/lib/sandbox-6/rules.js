@@ -14,7 +14,7 @@
  *   a market hall → its trader takes wares to the fair and brings back what you bought (./market.js)
  *   a boundary stone widens your land
  *
- * Nobody fights here: the valley is shared with three neighbour settlements, each with plenty of one ware and none of
+ * Nobody fights here: the valley is shared with two neighbour settlements, each with plenty of one ware and none of
  * another (yours: plenty of grain on wide farmland, but no iron in your mountains), and the game is won by abundance for all of them — every
  * settlement fed, watered, housed, with something put by, and grown — not by coins.
  *

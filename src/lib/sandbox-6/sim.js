@@ -22,7 +22,7 @@ import { growValley } from './map.js';
 
 /** seconds of game time a step moves on */
 export const TICK = 0.1;
-/** who owns what: you, the three neighbours (1…3), and the fair */
+/** who owns what: you, the two neighbours (1, 2), and the fair */
 export const PLAYER = 0, FAIR = 4;
 /** wares a flag holds at most */
 export const FLAG_CAP = 8;
@@ -44,7 +44,7 @@ export function newGame(seed = 7) {
 	const v = growValley(seed);
 	const N = v.W * v.H;
 	const st = {
-		v: 3,
+		v: 4,
 		seed,
 		time: 0,
 		rng: (Math.imul(seed, 2654435761) >>> 0) || 1,
@@ -93,7 +93,7 @@ export function newGame(seed = 7) {
 /** A game from its saved state. @param {string | object} saved */
 export function loadGame(saved) {
 	const st = typeof saved === 'string' ? JSON.parse(saved) : saved;
-	if (!st || st.v !== 3 || !Array.isArray(st.terrain)) throw new Error('Not a Sandbox 6 game of this kind');
+	if (!st || st.v !== 4 || !Array.isArray(st.terrain)) throw new Error('Not a Sandbox 6 game of this kind');
 	return createSim(st);
 }
 

@@ -7,8 +7,8 @@
  */
 import * as THREE from 'three';
 
-/** the owners' colours: yours, the three neighbours', the fair's */
-export const TEAM = ['#2f6fb3', '#c8642a', '#7a55a8', '#3d8f5c', '#8a7f6e'];
+/** the owners' colours: yours, the two neighbours', (a spare), the fair's */
+export const TEAM = ['#2f6fb3', '#c8642a', '#3d8f5c', '#7a55a8', '#8a7f6e'];
 
 /** @type {Map<string, THREE.MeshStandardMaterial>} */
 const mats = new Map();
@@ -315,9 +315,9 @@ export function buildingModel(type, owner) {
 		}
 		case 'fair': {
 			// open stalls under coloured canopies, round a pole with pennants
-			const colours = ['#c8642a', '#7a55a8', '#3d8f5c', '#2f6fb3', '#d9b44a'];
-			for (let k = 0; k < 5; k++) {
-				const a = (k / 5) * Math.PI * 2;
+			const colours = [TEAM[1], TEAM[2], TEAM[0], '#d9b44a'];
+			for (let k = 0; k < 4; k++) {
+				const a = (k / 4) * Math.PI * 2 + 0.4;
 				const x = Math.cos(a) * 1.35, z = Math.sin(a) * 1.35;
 				g.add(canopy(0.45, colours[k], x, z, 0.8, 3));
 				g.add(part(new THREE.BoxGeometry(0.5, 0.35, 0.3), mat(TIMBER), x, 0.18, z));

@@ -1,6 +1,6 @@
 /**
- * SANDBOX 6 · THE VALLEY — one island valley grown from a seed: your headquarters in the west, three neighbour
- * villages in the east (by the peaks, by the southern lake, in the northern hills), the fair between you, and round
+ * SANDBOX 6 · THE VALLEY — one island valley grown from a seed: your headquarters in the west, two neighbour
+ * villages in the east (under the peaks, in the northern hills), the fair between you, and round
  * them what an economy needs: forests, rocks, lakes to fish and mountains to mine. Your mountains are mostly bare rock,
  * with one thin vein of iron in the south: the rich iron lies under Eastmere's peaks, so most of your tools come by trade.
  *
@@ -63,7 +63,7 @@ export function growValley(seed) {
 	const obj = Array(N).fill(null);
 
 	const hq = node(11, 21);
-	const villages = [node(35, 18), node(36, 29), node(29, 10)];
+	const villages = [node(35, 18), node(29, 10)];
 	const fair = node(22, 15);
 
 	/** @type {[number, number, number, (string | null)[]][]} mountains: centre, radius, the ores from its heart out */
