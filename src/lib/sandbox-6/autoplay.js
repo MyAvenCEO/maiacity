@@ -14,7 +14,6 @@ const PLAN = [
 	['house', 'home'],
 	['woodcutter', 'trees'],
 	['quarry', 'rocks'],
-	['forester', 'woodcutter'],
 	['woodcutter', 'trees'],
 	['fishery', 'water'],
 	['well', 'home'],
@@ -33,7 +32,6 @@ const PLAN = [
 	['bakery', 'home'],
 	['fishery', 'water'],
 	['woodcutter', 'trees'],
-	['forester', 'woodcutter'],
 	['farm', 'open'],
 	['well', 'home']
 ];
@@ -225,6 +223,16 @@ export function createAutoplay(sim) {
 				plan.splice(st.auto, 0, ['quarry', 'rocks']);
 			}
 			const s = sim.summary();
+			// a wood building starts as a forester: upgrade it to a woodcutter as soon as it stands, and on to a sawmill and
+			// a timber works when there is wood and stone to spare
+			const growing = ofType('woodcutter').some((b) => b.stage === 'site' && b.level > 0);
+			for (const b of growing ? [] : ofType('woodcutter')) {
+				const up = b.stage === 'live' ? sim.inspect(b.id)?.up : null;
+				if (up && (b.level <= 1 || Object.entries(up).every(([w, n]) => (s.stock[w] ?? 0) >= n + 10))) {
+					sim.upgrade(b.id);
+					break;
+				}
+			}
 			// on your own in the valley: past the first buildings, homes and new villages go on as the plan does
 			const joined = st.auto >= 8 && (!sim.links(st.hq).some((l) => !l.mine) || join(s));
 			// homes before the route only while the city is tiny: it starts with one house of two
@@ -248,7 +256,7 @@ export function createAutoplay(sim) {
 				const rows = sim.market().parties.filter((/** @type {any} */ p) => p.owner === PLAYER);
 				const low = (/** @type {string} */ w) => rows.some((/** @type {any} */ p) => p.sat[w] < 0.7) && (s.stock[w] ?? 0) < 20;
 				if (st.parties[PLAYER].sat.water < 0.9) plan.push(['well', 'home']);
-				else if (low('plank')) plan.push(['woodcutter', 'trees'], ['forester', 'woodcutter']);
+				else if (low('plank')) plan.push(['woodcutter', 'trees']);
 				else if (low('stone')) plan.push(['quarry', 'rocks']);
 				else if (sim.market().parties.some((/** @type {any} */ p) => p.sat.food < 0.9)) {
 					// bakeries idle without grain: a farm first while there are more bakeries than farms

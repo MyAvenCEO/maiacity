@@ -547,7 +547,7 @@ export function createView(scene, sim) {
 	}
 
 	// ── buildings ──
-	/** @type {Map<number, { group: THREE.Group, model: THREE.Group, scaffold: THREE.Group | null, owner: number, smoke: THREE.Object3D[] }>} */
+	/** @type {Map<number, { group: THREE.Group, model: THREE.Group, scaffold: THREE.Group | null, owner: number, smoke: THREE.Object3D[], look: number }>} */
 	const shown = new Map();
 	/** a building turns its door to its hex's middle */
 	const door = (/** @type {number} */ node) => {
@@ -568,9 +568,17 @@ export function createView(scene, sim) {
 			}
 		for (const b of Object.values(st.buildings)) {
 			let s = shown.get(b.id);
+			// the wood building looks its level: built anew when it is upgraded
+			const look = b.type === 'woodcutter' ? (b.level ? b.level : b.stage === 'live' ? 2 : 1) : 0;
+			if (s && s.look !== look) {
+				root.remove(s.group);
+				s.group.traverse((o) => o instanceof THREE.Mesh && o.geometry.dispose());
+				shown.delete(b.id);
+				s = undefined;
+			}
 			if (!s) {
 				const group = new THREE.Group();
-				const model = buildingModel(b.type, b.owner);
+				const model = buildingModel(b.type, b.owner, look || undefined);
 				group.add(model);
 				const at = stand(b.type, b.node);
 				group.position.set(X(at), Y(at), Z(at));
@@ -579,7 +587,7 @@ export function createView(scene, sim) {
 				group.userData.building = b.id;
 				const smoke = /** @type {THREE.Object3D[]} */ ([]);
 				model.traverse((o) => o.name === 'smoke' && smoke.push(o));
-				s = { group, model, scaffold: null, owner: b.owner, smoke };
+				s = { group, model, scaffold: null, owner: b.owner, smoke, look };
 				root.add(group);
 				shown.set(b.id, s);
 			}
@@ -587,8 +595,10 @@ export function createView(scene, sim) {
 				if (!s.scaffold) s.group.add((s.scaffold = scaffold()));
 				const total = Object.values(b.cost).reduce((/** @type {number} */ a, /** @type {any} */ n) => a + n, 0);
 				const used = Object.values(b.used).reduce((/** @type {number} */ a, /** @type {any} */ n) => a + n, 0);
-				// a house being enlarged stands meanwhile at its size; anything new rises from the ground
+				// a house being enlarged stands meanwhile at its size, and wood being upgraded as it was; anything new rises
+				// from the ground
 				if (b.type === 'house' && b.level) sizeHouse(s.model, b.level);
+				else if (b.type === 'woodcutter' && b.level) s.model.scale.set(1, 1, 1);
 				else s.model.scale.set(1, Math.max(0.06, used / Math.max(1, total)), 1);
 			} else if (s.scaffold) {
 				s.group.remove(s.scaffold);
