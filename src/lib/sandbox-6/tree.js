@@ -21,7 +21,7 @@ export const LIVED_ON = new Set([...FOOD, ...Object.keys(NEEDS).filter((n) => n 
 
 /** buildings that make or gather something: the chains */
 const CHAIN = Object.values(BUILDINGS).filter((b) => b.group && (b.out || b.kind === 'forester'));
-/** the rest you build: storage, trade, land */
+/** the rest you build: houses and village centers */
 export const OTHERS = Object.values(BUILDINGS).filter((b) => b.group && !CHAIN.includes(b));
 
 /**

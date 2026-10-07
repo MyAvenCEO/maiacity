@@ -1,6 +1,6 @@
 /**
  * SANDBOX 6 · THE VALLEY — one island valley grown from a seed: your headquarters in the west, two neighbour
- * villages in the east (under the peaks, in the northern hills), the fair between you, and round
+ * villages in the east (under the peaks, in the northern hills), and round
  * them what an economy needs: forests, rocks, lakes to fish and mountains to mine. Your mountains are mostly bare rock,
  * with one thin vein of iron in the south: the rich iron lies under Eastmere's peaks, so most of your tools come by trade.
  *
@@ -25,9 +25,8 @@ const S = 1.3;
  * @property {number[]} amount how much ore a mountain node holds
  * @property {number[]} fish fish in a water node
  * @property {({ k: 'tree', g: number } | { k: 'rock', n: number } | null)[]} obj trees and rocks
- * @property {number} hq where your headquarters stands
+ * @property {number} hq where your first village center stands
  * @property {number[]} villages where the neighbours live
- * @property {number} fair where the valley's open market is held
  */
 
 /** @param {number} seed @returns {Valley} */
@@ -67,16 +66,15 @@ export function growValley(seed) {
 	const obj = Array(N).fill(null);
 
 	const plan = makePlan(g);
-	/** a seat: the house spot of the nearest whole village's middle settlement (the fair: of the nearest settlement) */
-	const seat = (/** @type {number} */ c, /** @type {number} */ r, village = true) => {
+	/** a city's seat: the very middle of the nearest whole village, where its village center stands */
+	const seat = (/** @type {number} */ c, /** @type {number} */ r) => {
 		const want = node(Math.round(c * S), Math.round(r * S));
-		const plots = village ? plan.villages.filter((v) => v.plots.length === 7).map((v) => v.centre) : plan.centre.map((_, k) => k);
+		const plots = plan.villages.filter((v) => v.plots.length === 7).map((v) => v.centre);
 		const k = plots.reduce((a, b) => (g.dist(plan.centre[b], want) < g.dist(plan.centre[a], want) ? b : a));
-		return plan.spots[k][0];
+		return plan.centre[k];
 	};
 	const hq = seat(11, 21);
 	const villages = [seat(35, 18), seat(29, 10)];
-	const fair = seat(22, 15, false);
 
 	/** a feature laid out for the smaller map, moved and grown to this one @param {any[]} f @returns {any} */
 	const scaled = (f) => [Math.round(f[0] * S), Math.round(f[1] * S), f[2] * S, ...f.slice(3)];
@@ -93,6 +91,10 @@ export function growValley(seed) {
 	const FORESTS = [[18, 13, 3.6], [15, 26, 3.0], [5, 20, 2.2], [32, 33, 4.2], [33, 5, 3.0], [21, 23, 1.8]].map(scaled);
 	/** @type {[number, number, number][]} rock fields */
 	const ROCKS = [[13, 15, 1.8], [7, 25, 1.6], [26, 14, 1.5], [40, 22, 1.8]].map(scaled);
+	// right outside your first village: a pond to fish and a field of rocks to cut
+	const hc = hq % W, hr = Math.floor(hq / W);
+	LAKES.push([hc - 5, hr + 7, 2.4]);
+	ROCKS.push([hc + 6, hr - 4, 2.2]);
 
 	for (let i = 0; i < N; i++) {
 		const x = px(i), y = py(i);
@@ -139,10 +141,9 @@ export function growValley(seed) {
 		else if (rand() < 0.008) obj[i] = { k: 'rock', n: 3 + Math.floor(rand() * 3) };
 	}
 
-	// the seats' villages (the fair's settlement) are open grass, cleared, and gently level
+	// the seats' villages are open grass, cleared, and gently level
 	const cleared = new Set();
 	for (const s of [hq, ...villages]) for (const k of plan.villages[plan.villageOf[plan.plotOf[s]]].plots) cleared.add(k);
-	cleared.add(plan.plotOf[fair]);
 	for (const k of cleared) {
 		const c = plan.centre[k];
 		for (const j of [c, ...Array.from({ length: 6 }, (_, d) => g.nb(c, d))]) {
@@ -154,5 +155,5 @@ export function growValley(seed) {
 		}
 		for (let d = 0; d < 6; d++) if (g.nb(c, d) >= 0) height[g.nb(c, d)] = height[c];
 	}
-	return { W, H, terrain, height, ore, amount, fish, obj, hq, villages, fair };
+	return { W, H, terrain, height, ore, amount, fish, obj, hq, villages };
 }

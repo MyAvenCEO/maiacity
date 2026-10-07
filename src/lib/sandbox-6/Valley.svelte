@@ -1,14 +1,14 @@
 <!--
 	avenCITY Sandbox 6 — a valley of settlers: the whole game on one page. The world fills the screen (./game.js); over
-	it the tools (build, road, flag, tear down, the market, the building tree, the clock), the build menu, the valley's abundance, what
-	your storehouses hold, the goals, the market (what to sell and buy, the neighbours' requests), the card of whatever
-	is selected, and the valley's news.
+	it the tools (build, road, flag, tear down, the market, the building tree, the clock), the build menu, the abundance of
+	every village, what your village centers hold, the goals, the market (what to sell and buy, the neighbours' requests),
+	the card of whatever is selected (a village center's card joins it to other villages by trade routes), and the news.
 -->
 <script>
 	import { onDestroy, onMount } from 'svelte';
 	import TouchStick from '$lib/touch/TouchStick.svelte';
 	import { WorldBar } from '$lib/sandbox-kit';
-	import { ABUNDANT, BUILDINGS, HOLD, HOUSE_BEDS, HOUSE_SIZE, MENU, PEOPLE, WARES, WARE_ORDER } from './rules.js';
+	import { ABUNDANT, BUILDINGS, HOLD, HOUSE_BEDS, HOUSE_SIZE, MENU, WARES, WARE_ORDER } from './rules.js';
 	import { NEED_LABEL } from './market.js';
 	import { PLAYER } from './sim.js';
 	import Tree from './Tree.svelte';
@@ -44,6 +44,10 @@
 	let owned = $state(/** @type {Record<string, number>} */ ({}));
 	/** @type {ReturnType<import('./sim.js').Sim['market']> | null} */
 	let market = $state(null);
+	/** the trade routes a selected village center of yours can dig, and the ones it has @type {ReturnType<import('./sim.js').Sim['links']>} */
+	let links = $state([]);
+	/** what a Connect button said when the route could not be dug */
+	let linkWhy = $state('');
 	let seenMsg = 0;
 	/** @type {{ text: string, tone: string, node: number, key: number }[]} */
 	let toasts = $state([]);
@@ -66,6 +70,7 @@
 		const s = selected;
 		card = s?.k === 'building' ? sim.inspect(s.id) : null;
 		if (s?.k === 'building' && !card) select(null);
+		links = card?.type === 'centre' && card.owner === PLAYER && card.stage === 'live' ? sim.links(card.id) : [];
 		if (s?.k === 'flag') {
 			const f = sim.state.flags[s.id];
 			flagCard = f ? { owner: f.owner, wares: f.wares.map((/** @type {number} */ id) => sim.state.wares[id]?.type).filter(Boolean), bld: f.bld ? BUILDINGS[sim.state.buildings[f.bld]?.type]?.label : '' } : null;
@@ -88,9 +93,17 @@
 	/** @param {import('./game.js').Selection} s */
 	function select(s) {
 		selected = s;
+		linkWhy = '';
 		refresh();
 	}
-	/** sell or buy a ware at the fair; the same again stops it */
+	/** dig a trade route from the selected village center to another */
+	function connect(/** @type {number} */ to) {
+		if (!card || !game) return;
+		const r = game.sim.connect(card.id, to);
+		linkWhy = r.ok ? '' : r.why ?? '';
+		refresh();
+	}
+	/** sell or buy a ware with the neighbour cities; the same again stops it */
 	function setOrder(/** @type {string} */ w, /** @type {'sell' | 'buy'} */ o) {
 		game?.sim.order(w, market?.wares.find((x) => x.w === w)?.order === o ? null : o);
 		refresh();
@@ -145,12 +158,12 @@
 
 	const sitesCost = (/** @type {Record<string, number>} */ cost) => Object.entries(cost);
 	const chainOf = (/** @type {any} */ t) =>
-		t.kind === 'land' ? `Holds land ${t.radius} steps round` : t.kind === 'market' ? 'Trades at the fair by your orders' : t.kind === 'warehouse' ? 'Stores wares and settlers' : t.kind === 'forester' ? 'Plants trees' : `${t.inputs?.length ? t.inputs.map((/** @type {string[]} */ s) => s.map(label).join(' or ')).join(' + ') + ' → ' : ''}${t.out ? label(t.out) : ''}`;
+		t.kind === 'centre' ? 'Its village’s storehouse, market and hall' : t.kind === 'house' ? 'Beds for 2, then 4, 8 and 16' : t.kind === 'forester' ? 'Plants trees' : `${t.inputs?.length ? t.inputs.map((/** @type {string[]} */ s) => s.map(label).join(' or ')).join(' + ') + ' → ' : ''}${t.out ? label(t.out) : ''}`;
 </script>
 
 <div class="valley">
 	<div class="stage" bind:this={stage} role="application" aria-label="Sandbox 6: the valley. Drag to turn the map, scroll to zoom, click to select or build"></div>
-	<WorldBar title="avenCITY Sandbox 6" subtitle="A valley of settlers · trade, an open market, abundance" />
+	<WorldBar title="avenCITY Sandbox 6" subtitle="A valley of settlers · villages, trade routes underground, abundance" />
 	<TouchStick move={(x, y, hurry) => game?.move(x, y, hurry)} {stage} taps=".tools button, .panel button, .card button" />
 
 	<!-- the tools, down the left -->
@@ -203,12 +216,12 @@
 					<span>Abundance</span>
 					<span class="big {tone(summary.abundance)}">{Math.round(summary.abundance)}</span>
 				</div>
-				<p class="people small">{summary.thriving} of {summary.parties.length} at {ABUNDANT}+ with {PEOPLE}+ people{summary.held >= 0 ? ` · held ${clock(summary.held)} of ${clock(HOLD)}` : ''}</p>
+				<p class="people small">{summary.thriving} of {summary.allVillages} villages full and at {ABUNDANT}+{summary.held >= 0 ? ` · held ${clock(summary.held)} of ${clock(HOLD)}` : ''}</p>
 				<ul class="lives">
 					{#each market?.parties ?? [] as p (p.name)}
 						<li>
-							<button onclick={() => p.node >= 0 && game?.focus(p.node)} title="{p.name}: wellbeing {Math.round(p.wb)}, {p.pop} people">
-								<span>{p.name} <em class:short={p.pop < PEOPLE}>{p.pop}</em></span>
+							<button onclick={() => p.node >= 0 && game?.focus(p.node)} title="{p.name} ({p.city === 'You' ? 'your city' : 'a neighbour city'}): wellbeing {Math.round(p.wb)}, {p.pop} people in {p.beds} beds{p.full ? ', full' : ''}">
+								<span>{p.name} <em class:short={!p.full}>{p.pop}/{p.beds}</em></span>
 								<span class="bar"><span class={tone(p.wb)} style:width="{p.wb}%"></span></span>
 								<b>{Math.round(p.wb)}</b>
 							</button>
@@ -255,19 +268,27 @@
 		<Tree stock={summary.stock} {owned} onBuild={(t) => ((treeOpen = false), tool('build', t))} onClose={() => (treeOpen = false)} />
 	{/if}
 
-	<!-- the market: prices at the fair, your standing orders, the neighbours' requests -->
+	<!-- the market: the neighbour cities your routes reach, their prices, your standing orders, their requests -->
 	{#if marketOpen && market}
 		<section class="panel market" aria-label="Market">
 			<button class="close" onclick={() => (marketOpen = false)} aria-label="Close">×</button>
-			<p class="eyebrow">The fair · {money(market.purse)} coins in your purse</p>
+			<p class="eyebrow">Trade between cities · {money(market.purse)} coins in your purse</p>
 			<h2>Market</h2>
-			{#if !market.halls}<p class="status">Build a market hall (Trade) to send a trader to the fair.</p>{/if}
+			<ul class="cities">
+				{#each market.cities as c (c.k)}
+					<li>
+						<button onclick={() => c.node >= 0 && game?.focus(c.node)}>{c.name}</button>
+						<span class:joined={c.joined}>{c.joined ? 'Joined by a trade route' : 'Not joined yet'}</span>
+					</li>
+				{/each}
+			</ul>
+			{#if !market.cities.some((/** @type {any} */ c) => c.joined)}<p class="status">Select one of your village centers and press Connect to dig a trade route to a neighbour city. Carts carry what you sell and buy along it, under the ground.</p>{/if}
 			{#if market.contracts.length}
 				<ul class="requests">
 					{#each market.contracts as c (c.id)}
 						<li>
 							<span><b>{c.who}</b> needs {c.n} {label(c.w).toLowerCase()} · {c.reward ? `pays ${c.reward}` : 'no coins left'}{#if c.got}<em> · {c.got} brought</em>{/if}</span>
-							<button class:go={!c.taken} onclick={() => (game?.sim.take(c.id, !c.taken), refresh())}>{c.taken ? 'Sending ✓' : 'Send'}</button>
+							<button class:go={!c.taken} disabled={!c.joined} title={c.joined ? '' : `Join ${c.who} by a trade route first`} onclick={() => (game?.sim.take(c.id, !c.taken), refresh())}>{c.taken ? 'Sending ✓' : 'Send'}</button>
 						</li>
 					{/each}
 				</ul>
@@ -277,7 +298,7 @@
 					<li>
 						<i style:background={WARES[x.w].color}></i>
 						<span class="name">{label(x.w)}<em>{x.stock}</em></span>
-						<span class="price">{money(x.price)}<span class="trend t{x.trend}">{x.trend > 0 ? '▲' : x.trend < 0 ? '▼' : ''}</span></span>
+						<span class="price">{x.price === null ? '—' : money(x.price)}<span class="trend t{x.trend}">{x.trend > 0 ? '▲' : x.trend < 0 ? '▼' : ''}</span></span>
 						<span class="pick">
 							<button class:sell={x.order === 'sell'} onclick={() => setOrder(x.w, 'sell')}>Sell</button>
 							<button class:buy={x.order === 'buy'} onclick={() => setOrder(x.w, 'buy')}>Buy</button>
@@ -285,7 +306,7 @@
 					</li>
 				{/each}
 			</ul>
-			<p class="small">Sell lets your trader take what you can spare; Buy brings what you are short of. Selling makes a ware cheaper, buying dearer.</p>
+			<p class="small">Sell sends what you can spare to the joined city that pays most; Buy brings what you are short of from the one that asks least. The buyer pays when the cart arrives.</p>
 		</section>
 	{/if}
 
@@ -293,7 +314,7 @@
 	{#if card}
 		<section class="panel card" aria-label="{card.label}">
 			<button class="close" onclick={() => game?.select(null)} aria-label="Close">×</button>
-			<p class="eyebrow">{card.owner === PLAYER ? (card.stage === 'site' ? 'Building site' : 'Yours') : card.type === 'fair' ? 'Open to all' : 'A neighbour'}</p>
+			<p class="eyebrow">{card.owner === PLAYER ? (card.stage === 'site' ? 'Building site' : 'Yours') : 'A neighbour city'}</p>
 			<h2>{card.name || card.label}</h2>
 			<p class="about">{card.about}</p>
 			{#if card.status}<p class="status">{card.status}</p>{/if}
@@ -305,7 +326,7 @@
 					{/each}
 				</ul>
 			{:else if card.party}
-				<p class="label">{card.party.pop} people · wellbeing <b>{Math.round(card.party.wb)}</b> · {Math.round(card.party.coins)} coins</p>
+				<p class="label">{card.party.pop} people{card.party.beds !== undefined ? ` in ${card.party.beds} beds` : ''} · wellbeing <b>{Math.round(card.party.wb)}</b>{card.owner !== PLAYER ? ` · ${Math.round(card.party.coins)} coins` : ''}</p>
 				<ul class="needs">
 					{#each Object.entries(card.party.sat) as [need, v] (need)}
 						<li>{NEED_LABEL[/** @type {keyof typeof NEED_LABEL} */ (need)]} <b>{Math.round(/** @type {number} */ (v) * 100)}%</b></li>
@@ -313,21 +334,24 @@
 				</ul>
 				<p class="label">In store</p>
 				<ul class="wares tight">
-					{#each Object.entries(card.party.stock).filter(([, n]) => n >= 1) as [w, n] (w)}<li title={label(w)}><i style:background={WARES[w].color}></i><span>{label(w)}</span><b>{Math.floor(/** @type {number} */ (n))}</b></li>{/each}
+					{#each Object.entries(card.stock ?? card.party.stock).filter(([, n]) => n >= 1) as [w, n] (w)}<li title={label(w)}><i style:background={WARES[w].color}></i><span>{label(w)}</span><b>{Math.floor(/** @type {number} */ (n))}</b></li>{/each}
 				</ul>
-			{:else if card.type === 'fair'}
-				<div class="actions"><button class="go" onclick={() => (marketOpen = true)}>Open the Market</button></div>
 			{/if}
-			{#if card.box}
-				<p class="label">Waiting to go to the fair</p>
-				<ul class="wares tight">
-					{#each Object.entries(card.box).filter(([, n]) => n > 0) as [w, n] (w)}<li title={label(w)}><i style:background={WARES[w].color}></i><span>{label(w)}</span><b>{n}</b></li>{/each}
-					{#if !Object.values(card.box).some((n) => n > 0)}<li class="none"><span>nothing yet</span></li>{/if}
+			{#if card.stock && card.owner === PLAYER && card.stage === 'live'}
+				<p class="label">{card.settlers} settlers free</p>
+			{/if}
+			{#if links.length}
+				<p class="label">Trade routes, under the ground</p>
+				<ul class="routes">
+					{#each links as l (l.id)}
+						<li>
+							<button class="name" onclick={() => game?.focus(l.node)}>{l.name}{l.mine ? '' : ' · city'}</button>
+							{#if l.joined}<span class="joined">Joined</span>{:else}<button class="go" onclick={() => connect(l.id)}>Connect · {l.cost} stone</button>{/if}
+						</li>
+					{/each}
 				</ul>
-				<div class="actions"><button onclick={() => (marketOpen = true)}>Open the Market</button></div>
-			{/if}
-			{#if card.stock}
-				<p class="label">{card.settlers} settlers inside</p>
+				{#if linkWhy}<p class="status">{linkWhy}</p>{/if}
+				<p class="small">A route reaches every village center joined to the one it meets, and carts on it go twice as fast as walkers.</p>
 			{/if}
 			{#if card.type === 'house' && card.level}
 				<p class="label">{HOUSE_SIZE[card.level - 1]} · home of <b>{card.beds}</b> settlers{card.upgrading ? ` · growing to ${HOUSE_BEDS[card.level]}` : ''}</p>
@@ -358,7 +382,7 @@
 				<div class="actions">
 					{#if card.stage === 'live' && card.worker}<button onclick={() => (game?.sim.pause(card?.id ?? 0, !card?.paused), refresh())}>{card.paused ? 'Resume' : 'Pause'}</button>{/if}
 					<button onclick={() => game?.setMode('road')}>Road from its flag</button>
-					{#if card.type !== 'hq'}<button class="danger" onclick={() => (game?.sim.demolish(card?.node ?? -1), game?.select(null))}>Tear down</button>{/if}
+					{#if card.type !== 'centre'}<button class="danger" onclick={() => (game?.sim.demolish(card?.node ?? -1), game?.select(null))}>Tear down</button>{/if}
 				</div>
 			{/if}
 		</section>
@@ -403,7 +427,7 @@
 			<div>
 				<p class="eyebrow">{clock(summary.time)} in the valley</p>
 				<h2>Abundance for all</h2>
-				<p>Ten minutes of plenty for the whole valley: you and every neighbour fed, watered, housed and with something put by. Every road, every carrier and every cartload to the fair brought you here.</p>
+				<p>Ten minutes of plenty for the whole valley: you and every neighbour fed, watered, housed and with something put by. Every road, every carrier and every cart along the trade routes brought you here.</p>
 				<button class="go" onclick={() => (game?.restart(), (seenMsg = -1), (toasts = []))}>A new valley</button>
 				<button onclick={() => (game && (game.sim.state.result = null), refresh())}>Keep building</button>
 			</div>
@@ -875,6 +899,53 @@
 		font-size: 0.62rem;
 		opacity: 0.8;
 		margin-left: 0.1rem;
+	}
+	.cities,
+	.routes {
+		margin: 0 0 0.5rem;
+		padding: 0;
+		list-style: none;
+		display: grid;
+		gap: 0.3rem;
+		font-size: 0.75rem;
+	}
+	.cities li,
+	.routes li {
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+		justify-content: space-between;
+	}
+	.cities button,
+	.routes button.name {
+		border: 0;
+		background: none;
+		padding: 0;
+		font: inherit;
+		font-weight: 600;
+		text-align: left;
+		cursor: pointer;
+	}
+	.routes button.go {
+		flex: none;
+		padding: 0.3rem 0.65rem;
+		border: 1px solid #24452f;
+		border-radius: 999px;
+		background: #24452f;
+		color: #f4f1e8;
+		font-size: 0.72rem;
+	}
+	.cities span {
+		opacity: 0.6;
+	}
+	.cities span.joined,
+	.routes .joined {
+		opacity: 1;
+		color: #2e7a45;
+		font-weight: 600;
+	}
+	.requests button:disabled {
+		opacity: 0.45;
 	}
 	.requests {
 		margin: 0 0 0.4rem;
