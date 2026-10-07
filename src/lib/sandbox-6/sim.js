@@ -15,8 +15,8 @@
  *     the cities trade by the orders you set and by what the neighbours have spare and lack (./market.js);
  *   · every village eats, drinks and keeps its homes, and the valley's abundance follows how well they all live.
  */
-import { ABUNDANT, BIOMES, BUILDINGS, FOOD, GOALS, GRASS, HOLD, HOUSE_BEDS, HOUSE_UP, IRON, MOUNTAIN, START, WARES, WATER, holdsLand } from './rules.js';
-import { CART, HEARTS, NEEDS, NEIGHBOURS, TRADED, heartsFor, abundance, keepOf, live, make, newMarket, orderRule, party, priceIn, request, shortIn, spareIn, variety } from './market.js';
+import { ABUNDANT, BIOMES, BUILDINGS, FOOD, GRASS, HOLD, HOUSE_BEDS, HOUSE_UP, IRON, MOUNTAIN, START, WARES, WATER, holdsLand } from './rules.js';
+import { CART, HEARTS, NEEDS, NEIGHBOURS, TRADED, heartsFor, abundance, keepOf, live, make, newMarket, orderRule, party, priceIn, request, shortIn, spareIn } from './market.js';
 import { SE, findPath, makeGrid } from './hex.js';
 import { makePlan } from './plots.js';
 import { biomes, growValley } from './map.js';
@@ -86,7 +86,7 @@ export function newGame(seed = 7) {
 		objV: 1,
 		terV: 1,
 		/** when the slower rules next run */
-		clocks: { dispatch: 0, people: 0, grow: 0, fish: 20, pop: 18, goals: 1, needs: 0, trade: 5, grow2: 60 },
+		clocks: { dispatch: 0, people: 0, grow: 0, fish: 20, pop: 18, needs: 0, trade: 5, grow2: 60 },
 		hq: 0,
 		/** the neighbours' village centers (building ids) */
 		/** @type {number[]} */ villages: [],
@@ -95,7 +95,8 @@ export function newGame(seed = 7) {
 		orders: {},
 		/** buildings burning, for a while */
 		/** @type {{ node: number, t: number }[]} */ fx: [],
-		/** @type {Record<string, boolean>} */ goals: {}
+		/** whether the valley was won once (you may keep building after) */
+		won: false
 	};
 	const sim = createSim(st);
 	sim.setup(v);
@@ -1546,20 +1547,19 @@ export function createSim(st) {
 		// abundance: every village counts, yours and the neighbours'
 		const rows = villageRows();
 		m.abundance = abundance(rows.map((r) => ({ wb: r.score })));
-		const ready = GOALS.every((x) => x.id === 'abundance' || st.goals[x.id]);
 		m.thriving = rows.filter((r) => r.wb >= ABUNDANT && r.full).length;
 		m.villages = rows.length;
 		// every city needs its five villages first: you and each neighbour
 		m.cities = [{ name: 'You', n: myCentres().length }, ...st.parties.slice(1).map((/** @type {any} */ p, /** @type {number} */ j) => ({ name: p.name, n: cityVillages(j + 1).length }))];
 		const grown = m.cities.every((/** @type {any} */ c) => c.n >= CITY_VILLAGES);
-		if (ready && grown && m.thriving === rows.length) {
+		if (grown && m.thriving === rows.length) {
 			if (m.since < 0) {
 				m.since = st.time;
 				say(`Every village is full and lives well (abundance ${Math.round(m.abundance)}). Hold it for ten minutes!`, -1, 'good');
 			}
-			if (st.time - m.since >= HOLD && !st.goals.abundance) {
+			if (st.time - m.since >= HOLD && !st.won && !st.goals?.abundance) {
 				st.result = 'won';
-				st.goals.abundance = true;
+				st.won = true;
 				say('Ten minutes of abundance for the whole valley. Everyone lives well!', -1, 'good');
 			}
 		} else if (m.since >= 0) {
@@ -1607,26 +1607,6 @@ export function createSim(st) {
 		}
 		if (changed) st.objV++;
 	}
-	function goals() {
-		const live = (/** @type {string} */ type) => blds().some((b) => b.type === type && b.owner === PLAYER && b.stage === 'live' && st.units[b.worker]?.job === 'w-in');
-		for (const goal of GOALS) {
-			if (st.goals[goal.id]) continue;
-			let done = false;
-			if (goal.id === 'wood') done = live('woodcutter') && live('quarry');
-			else if (goal.id === 'house') done = blds().some((b) => b.type === 'house' && b.owner === PLAYER && b.level >= 4);
-			else if (goal.id === 'village') done = myCentres().length >= 2;
-			else if (goal.id === 'route') done = Object.values(st.tunnels).some((t) => t.owner === PLAYER);
-			else if (goal.id === 'trade') done = st.market.sold + st.market.bought >= /** @type {number} */ (goal.n);
-			else if (goal.id === 'abundance') done = !!st.goals.abundance;
-			else if (goal.ware) done = progress(goal.ware) >= /** @type {number} */ (goal.n);
-			if (done) {
-				st.goals[goal.id] = true;
-				say(`Goal reached: ${goal.label}`, -1, 'good');
-			}
-		}
-	}
-	const progress = (/** @type {string} */ ware) => (ware === 'food' ? FOOD.reduce((s, w) => s + (st.made[w] ?? 0), 0) : st.made[ware] ?? 0);
-
 	function step(dt = TICK) {
 		st.time += dt;
 		const c = st.clocks;
@@ -1719,10 +1699,6 @@ export function createSim(st) {
 		if (st.time >= c.needs) {
 			c.needs = st.time + 2;
 			settlements(2);
-		}
-		if (st.time >= c.goals) {
-			c.goals = st.time + 1;
-			goals();
 		}
 		if (st.fx.length && st.time - st.fx[0].t > 12) st.fx.shift();
 	}
@@ -2070,7 +2046,7 @@ export function createSim(st) {
 			if (o) return { k: o.k };
 			return null;
 		},
-		/** what the page shows: the stock, the people, the goals, the news */
+		/** what the page shows: the stock, the people, the news */
 		summary() {
 			/** @type {Record<string, number>} */
 			const stock = {};
@@ -2103,7 +2079,6 @@ export function createSim(st) {
 				need: CITY_VILLAGES,
 				parties: st.parties.map((/** @type {any} */ p) => ({ name: p.name, wb: p.wb })),
 				result: st.result,
-				goals: GOALS.map((x) => ({ ...x, done: !!st.goals[x.id], have: x.ware ? progress(x.ware) : x.id === 'trade' ? m.sold + m.bought : undefined, need: x.n })),
 				msgs: st.msgs.slice(-6)
 			};
 		},
@@ -2119,24 +2094,29 @@ export function createSim(st) {
 			if (!it) return null;
 			const { v, c, p } = it;
 			const pop = villagePeople(v), bed = bedsIn(v), cap = capOf(v), lived = pop > 0;
-			const s = p.sat, mix = variety(p) < 0.5 && lived;
+			const s = p.sat;
 			const noTools = blds().some((b) => b.owner === PLAYER && villageAt(b.node) === v && /tools/.test(b.status ?? ''));
 			const has = (/** @type {string} */ w) => c.stock[w] ?? 0;
-			/** each need: how well it is met lately, the wares that meet it, and (when short) what makes them */
-			const need = (/** @type {string} */ key, /** @type {string} */ label, /** @type {string[]} */ wares, /** @type {string} */ tone, /** @type {string} */ fix) => ({ key, label, sat: lived ? /** @type {any} */ (s)[key] : 1, wares, tone, fix });
-			const hungry = lived && s.food < 0.8;
-			const needs = [
-				need('food', 'Food', ['fish', 'bread'], hungry ? 'alert' : mix ? 'todo' : '', hungry ? 'fishery, or farm + bakery' : mix ? (p.mix.fish < p.mix.bread ? 'fishery: only bread' : 'farm + bakery: only fish') : ''),
-				need('water', 'Water', ['water'], lived && s.water < 0.8 ? 'alert' : '', lived && s.water < 0.8 ? 'well' : ''),
-				need('plank', 'Planks', ['plank'], lived && s.plank < 0.8 ? 'alert' : has('plank') < 6 ? 'todo' : '', lived && s.plank < 0.8 || has('plank') < 6 ? 'woodcutter' : ''),
-				need('stone', 'Stone', ['stone'], lived && s.stone < 0.8 ? 'alert' : has('stone') < 4 ? 'todo' : '', lived && s.stone < 0.8 || has('stone') < 4 ? 'quarry' : '')
-			];
-			/** what else its store holds (what the needs are made from, and tools) */
-			const more = ['grain', 'ore', 'tools'].map((w) => ({ w, n: Math.floor(has(w)), tone: w === 'tools' && noTools ? 'alert' : '' }));
+			/** per resource, what its store has against what it needs: its people's ten minutes (more with each settler), its sites and its factories; short when its people go without */
+			const row = (/** @type {string} */ key, /** @type {string} */ label, /** @type {string[]} */ wares, /** @type {boolean} */ short) => ({
+				key,
+				label,
+				have: Math.floor(wares.reduce((t, w) => t + has(w), 0)),
+				need: Math.ceil(wares.reduce((t, w) => t + wantAt(c, w), 0)),
+				short
+			});
+			const rows = [
+				row('food', 'Food', FOOD, lived && s.food < 0.8),
+				row('water', 'Water', ['water'], lived && s.water < 0.8),
+				row('plank', 'Planks', ['plank'], lived && s.plank < 0.8),
+				row('stone', 'Stone', ['stone'], lived && s.stone < 0.8),
+				row('grain', 'Grain', ['grain'], false),
+				row('ore', 'Iron ore', ['ore'], false),
+				row('tools', 'Tools', ['tools'], noTools)
+			].filter((r) => r.need > 0 || r.have > 0);
 			/** @type {{ tone: string, text: string, node: number }[]} */
 			const notes = [];
 			if (pop >= bed && bed < cap) notes.push({ tone: 'todo', text: `No free bed: enlarge a house or build one`, node: c.node });
-			if (lived && !mix && s.food >= 0.8 && p.reserve < 0.45) notes.push({ tone: 'todo', text: 'Little put by: make more than it eats', node: c.node });
 			const cut = blds().find((b) => b.owner === PLAYER && b.stage === 'site' && villageAt(b.node) === v && b.status === 'Not connected by road');
 			if (cut) notes.push({ tone: 'alert', text: `A ${T(cut).label.toLowerCase()} site has no path`, node: cut.node });
 			return {
@@ -2149,9 +2129,7 @@ export function createSim(st) {
 				/** its treasury, in gold */
 				gold: (c.hearts ?? 0) / HEARTS.perGold,
 				villages: all.map((x) => ({ name: x.p.name, node: x.c.node })),
-				stock: { ...c.stock },
-				needs,
-				more,
+				rows,
 				notes
 			};
 		},
