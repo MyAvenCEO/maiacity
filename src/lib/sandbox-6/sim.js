@@ -109,11 +109,16 @@ export function loadGame(saved) {
 
 /** @typedef {ReturnType<typeof createSim>} Sim */
 
+/** the settlement plan of a valley's size, made once (it is only read) @type {Map<string, ReturnType<typeof makePlan>>} */
+const plans = new Map();
+
 /** @param {any} st */
 export function createSim(st) {
 	const g = makeGrid(st.W, st.H);
 	const N = g.N;
-	const plan = makePlan(g);
+	const size = `${st.W}x${st.H}`;
+	if (!plans.has(size)) plans.set(size, makePlan(g));
+	const plan = /** @type {ReturnType<typeof makePlan>} */ (plans.get(size));
 	/** the village a node lies in */
 	const villageAt = (/** @type {number} */ n) => plan.villageOf[plan.plotOf[n]];
 
@@ -134,9 +139,68 @@ export function createSim(st) {
 	const T = (/** @type {any} */ b) => BUILDINGS[b.type];
 	const isWarehouse = (/** @type {any} */ b) => b.type === 'centre';
 	const all = (/** @type {Record<string, any>} */ o) => Object.values(o);
+	// the buildings and the people as lists, kept until one comes or goes (never saved: st is what is saved). Frozen,
+	// so a caller sorts a copy; a list handed out stays as it was, as Object.values would
+	/** @type {readonly any[] | null} */
+	let bldList = null;
+	/** @type {readonly any[] | null} */
+	let unitList = null;
+	const blds = () => (bldList ??= Object.freeze(Object.values(st.buildings)));
+	const units = () => (unitList ??= Object.freeze(Object.values(st.units)));
+	/** @type {readonly any[] | null} */
+	let roadList = null;
+	const roads = () => (roadList ??= Object.freeze(Object.values(st.roads)));
+	/** @type {{ of: readonly any[], ends: Set<string> } | null} */
+	let rIdx = null;
+	/** whether a road joins two flags, either way round */
+	const joins = (/** @type {number} */ a, /** @type {number} */ b) => {
+		const list = roads();
+		if (rIdx?.of !== list) rIdx = { of: list, ends: new Set(list.map((r) => (r.a < r.b ? `${r.a},${r.b}` : `${r.b},${r.a}`))) };
+		return rIdx.ends.has(a < b ? `${a},${b}` : `${b},${a}`);
+	};
+	// what is read off those lists again and again, rebuilt with them (a building's type, owner and node never change,
+	// nor a unit's kind, owner and village)
+	/** @type {{ of: readonly any[], hubs: any[], mine: Map<number, any[]> } | null} */
+	let bIdx = null;
+	/** @type {{ of: readonly any[], carts: any[], folk: Map<number, number> } | null} */
+	let uIdx = null;
+	/** every village center (yours and the neighbours'), and your buildings by village; each in list order */
+	const bIndex = () => {
+		const list = blds();
+		if (bIdx?.of === list) return bIdx;
+		/** @type {any[]} */
+		const hubs = [];
+		/** @type {Map<number, any[]>} */
+		const mine = new Map();
+		for (const b of list) {
+			if (b.type === 'centre' || b.type === 'village') hubs.push(b);
+			if (b.owner !== PLAYER) continue;
+			const v = villageAt(b.node);
+			const l = mine.get(v);
+			if (l) l.push(b);
+			else mine.set(v, [b]);
+		}
+		return (bIdx = { of: list, hubs, mine });
+	};
+	/** your buildings in a village @returns {any[]} */
+	const mineIn = (/** @type {number} */ v) => bIndex().mine.get(v) ?? [];
+	/** the carts on the trade routes, and how many of your people (carts aside) are out of each village */
+	const uIndex = () => {
+		const list = units();
+		if (uIdx?.of === list) return uIdx;
+		/** @type {any[]} */
+		const carts = [];
+		/** @type {Map<number, number>} */
+		const folk = new Map();
+		for (const u of list) {
+			if (u.kind === 'cart') carts.push(u);
+			else if (u.owner === PLAYER) folk.set(u.vil, (folk.get(u.vil) ?? 0) + 1);
+		}
+		return (uIdx = { of: list, carts, folk });
+	};
 	const flagAt = (/** @type {number} */ n) => (st.obj[n]?.k === 'flag' ? st.flags[st.obj[n].id] : null);
 	const buildingAt = (/** @type {number} */ n) => (st.obj[n]?.k === 'bld' ? st.buildings[st.obj[n].id] : null);
-	const warehouses = (owner = PLAYER) => all(st.buildings).filter((b) => b.owner === owner && isWarehouse(b) && b.stage === 'live');
+	const warehouses = (owner = PLAYER) => bIndex().hubs.filter((b) => b.owner === owner && isWarehouse(b) && b.stage === 'live');
 	/** where a unit stands now, as a node */
 	const nodeOf = (/** @type {any} */ u) => u.path[Math.max(0, Math.min(u.path.length - 1, Math.round(u.p)))];
 	/** a walk across the land: anywhere but water and other buildings */
@@ -155,7 +219,7 @@ export function createSim(st) {
 		routes.clear();
 		adj = {};
 		for (const f of all(st.flags)) adj[f.id] = [];
-		for (const r of all(st.roads)) {
+		for (const r of roads()) {
 			const cost = r.path.length - 1 + 0.5;
 			adj[r.a]?.push({ road: r.id, to: r.b, cost });
 			adj[r.b]?.push({ road: r.id, to: r.a, cost });
@@ -237,6 +301,7 @@ export function createSim(st) {
 		const r = { id: newId(), a: a.id, b: b.id, path, carrier: 0, owner };
 		for (let k = 1; k < path.length - 1; k++) st.road[path[k]] = r.id;
 		st.roads[r.id] = r;
+		roadList = null;
 		st.netV++;
 		return r;
 	}
@@ -246,6 +311,7 @@ export function createSim(st) {
 		const u = st.units[r.carrier];
 		for (let j = 1; j < r.path.length - 1; j++) st.road[r.path[j]] = 0;
 		delete st.roads[r.id];
+		roadList = null;
 		const r1 = makeRoad(r.path.slice(0, k + 1), r.owner);
 		const r2 = makeRoad(r.path.slice(k), r.owner);
 		if (!u) return;
@@ -295,6 +361,7 @@ export function createSim(st) {
 		flag.bld ||= b.id;
 		st.obj[node] = { k: 'bld', id: b.id };
 		st.buildings[b.id] = b;
+		bldList = null;
 		st.objV++;
 		return b;
 	}
@@ -324,6 +391,7 @@ export function createSim(st) {
 	function removeRoad(/** @type {any} */ r) {
 		for (let k = 1; k < r.path.length - 1; k++) st.road[r.path[k]] = 0;
 		delete st.roads[r.id];
+		roadList = null;
 		const u = st.units[r.carrier];
 		if (u) {
 			if (u.wareId && st.wares[u.wareId]) destroyWare(st.wares[u.wareId]);
@@ -336,8 +404,8 @@ export function createSim(st) {
 		st.objV++;
 	}
 	function removeFlag(/** @type {any} */ f) {
-		for (const r of all(st.roads)) if (r.a === f.id || r.b === f.id) removeRoad(r);
-		for (const b of all(st.buildings)) if (b.flag === f.id && st.buildings[b.id]) removeBuilding(b);
+		for (const r of roads()) if (r.a === f.id || r.b === f.id) removeRoad(r);
+		for (const b of blds()) if (b.flag === f.id && st.buildings[b.id]) removeBuilding(b);
 		for (const wid of [...f.wares]) if (st.wares[wid]) destroyWare(st.wares[wid]);
 		delete st.flags[f.id];
 		st.obj[f.node] = null;
@@ -346,9 +414,10 @@ export function createSim(st) {
 	}
 	function removeBuilding(/** @type {any} */ b, burn = true, retally = true) {
 		delete st.buildings[b.id];
+		bldList = null;
 		st.obj[b.node] = null;
 		const f = st.flags[b.flag];
-		if (f && f.bld === b.id) f.bld = all(st.buildings).find((x) => x.flag === f.id)?.id ?? 0;
+		if (f && f.bld === b.id) f.bld = blds().find((x) => x.flag === f.id)?.id ?? 0;
 		for (const w of all(st.wares)) if (w.dest === b.id) w.dest = 0;
 		for (const uid of [b.worker, b.builder]) {
 			const u = st.units[uid];
@@ -378,17 +447,19 @@ export function createSim(st) {
 			road: 0, bld: 0, home: 0, target: -1, ware: '', wareId: 0, rank: 0, wait: 0, inside: false, end: 0, ...extra
 		};
 		st.units[u.id] = u;
+		unitList = null;
 		return u;
 	}
 	function removeUnit(/** @type {any} */ u) {
 		releaseTarget(u);
 		delete st.units[u.id];
+		unitList = null;
 	}
 	/** a unit with nothing left to do walks to the nearest storehouse (a neighbour's to its village) */
 	function goHome(/** @type {any} */ u) {
 		const here = nodeOf(u);
 		const mine = warehouses().filter((b) => villageAt(b.node) === u.vil);
-		const homes = u.owner === PLAYER ? (mine.length ? mine : warehouses()) : all(st.buildings).filter((b) => b.type === 'village' && b.owner === u.owner);
+		const homes = u.owner === PLAYER ? (mine.length ? mine : warehouses()) : blds().filter((b) => b.type === 'village' && b.owner === u.owner);
 		homes.sort((a, b) => g.dist(here, a.node) - g.dist(here, b.node));
 		for (const h of homes.slice(0, 3)) {
 			const path = findPath(g, here, h.node, walkable);
@@ -423,9 +494,9 @@ export function createSim(st) {
 	/** settlers become builders, carriers and workers, in that order: with few people, building comes first */
 	function people() {
 		// while the city is small, one builder at a time, so someone is left to carry
-		let builders = all(st.units).filter((u) => u.owner === PLAYER && u.kind === 'builder').length;
+		let builders = units().filter((u) => u.owner === PLAYER && u.kind === 'builder').length;
 		const few = small();
-		for (const b of all(st.buildings)) {
+		for (const b of blds()) {
 			if (b.owner !== PLAYER || b.stage !== 'site' || b.builder || b.type === 'centre') continue;
 			if (few && builders >= 1) {
 				b.status = 'Waiting for a builder';
@@ -456,13 +527,13 @@ export function createSim(st) {
 		}
 		// a site waits for a builder, or a path for its bus, and nobody is free: a worker with nothing to do (its goods
 		// are stocked up, or its land has nothing left) goes home to take it
-		const waiting = all(st.buildings).some((x) => x.owner === PLAYER && x.stage === 'site' && !x.builder && x.type !== 'centre' && ready(x, few));
+		const waiting = blds().some((x) => x.owner === PLAYER && x.stage === 'site' && !x.builder && x.type !== 'centre' && ready(x, few));
 		// at most half the people drive the buses, so the other half can work (food first)
-		let drivers = all(st.units).filter((u) => u.owner === PLAYER && u.kind === 'carrier').length;
+		let drivers = units().filter((u) => u.owner === PLAYER && u.kind === 'carrier').length;
 		const most = Math.max(2, Math.ceil(yourPeople() / 2));
-		const unmanned = all(st.roads).some((r) => r.owner === PLAYER && !r.carrier && (drivers < most || (st.flags[r.a]?.wares.length ?? 0) + (st.flags[r.b]?.wares.length ?? 0) > 0));
+		const unmanned = roads().some((r) => r.owner === PLAYER && !r.carrier && (drivers < most || (st.flags[r.a]?.wares.length ?? 0) + (st.flags[r.b]?.wares.length ?? 0) > 0));
 		if ((unmanned || (waiting && !(few && builders >= 1))) && !warehouses().some((w) => w.owner === PLAYER && w.settlers > 0)) {
-			const idle = all(st.buildings).find((x) => x.owner === PLAYER && x.stage === 'live' && st.units[x.worker]?.job === 'w-in' && /^Resting|full|^No |growing/.test(x.status ?? ''));
+			const idle = blds().find((x) => x.owner === PLAYER && x.stage === 'live' && st.units[x.worker]?.job === 'w-in' && /^Resting|full|^No |growing/.test(x.status ?? ''));
 			if (idle) {
 				const u = st.units[idle.worker];
 				idle.worker = 0;
@@ -473,7 +544,9 @@ export function createSim(st) {
 		}
 		// a path with wares waiting at its ends gets its bus first, whatever the count
 		const busy = (/** @type {any} */ r) => (st.flags[r.a]?.wares.length ?? 0) + (st.flags[r.b]?.wares.length ?? 0);
-		for (const r of all(st.roads).sort((x, y) => busy(y) - busy(x))) {
+		// (each road's count taken once, then a stable sort: the same order as counting in the comparison)
+		const byBusy = roads().map((r) => /** @type {[number, any]} */ ([busy(r), r])).sort((x, y) => y[0] - x[0]).map(([, r]) => r);
+		for (const r of byBusy) {
 			if (r.carrier || r.owner !== PLAYER) continue;
 			if (drivers >= most && !busy(r)) break;
 			const wh = nearestWarehouse(r.a, (w) => w.settlers > 0);
@@ -486,15 +559,15 @@ export function createSim(st) {
 			drivers++;
 		}
 		// more buses than half the people while a workplace stands empty: a bus waiting on a quiet path goes home
-		if (drivers > most && !warehouses().some((w) => w.owner === PLAYER && w.settlers > 0) && all(st.buildings).some((x) => x.owner === PLAYER && x.stage === 'live' && T(x).worker && !x.worker)) {
-			const r = all(st.roads).find((x) => x.owner === PLAYER && x.carrier && !busy(x) && st.units[x.carrier]?.job === 'c-idle' && !st.units[x.carrier].ware);
+		if (drivers > most && !warehouses().some((w) => w.owner === PLAYER && w.settlers > 0) && blds().some((x) => x.owner === PLAYER && x.stage === 'live' && T(x).worker && !x.worker)) {
+			const r = roads().find((x) => x.owner === PLAYER && x.carrier && !busy(x) && st.units[x.carrier]?.job === 'c-idle' && !st.units[x.carrier].ware);
 			if (r) {
 				const u = st.units[r.carrier];
 				r.carrier = 0;
 				goHome(u);
 			}
 		}
-		for (const b of all(st.buildings)) {
+		for (const b of blds()) {
 			if (b.owner !== PLAYER) continue;
 			const t = T(b);
 			if (b.stage === 'live' && t.worker && !b.worker) {
@@ -577,7 +650,7 @@ export function createSim(st) {
 			} else if (!route(b.flag).has(w.flag)) unclaim(w);
 		}
 		const loose = all(st.wares).filter((w) => w.flag && (!w.dest || isWarehouse(st.buildings[w.dest])));
-		const list = all(st.buildings).filter((b) => b.owner === PLAYER);
+		const list = blds().filter((b) => b.owner === PLAYER);
 		turn = (turn + 1) % Math.max(1, list.length);
 		const ordered = [...list.slice(turn), ...list.slice(0, turn)].sort((a, b) => (a.stage === 'site' ? 0 : 1) - (b.stage === 'site' ? 0 : 1));
 		const whs = warehouses();
@@ -700,7 +773,7 @@ export function createSim(st) {
 				return idle(u, r);
 			}
 			// the flag of a storehouse is full: the storehouse takes the ware in, and sends it on when there is room
-			const home = all(st.buildings).find((x) => x.flag === f.id && isWarehouse(x));
+			const home = bIndex().hubs.find((x) => x.flag === f.id && isWarehouse(x));
 			if (home && isWarehouse(home) && home.owner === u.owner && home.stage === 'live') {
 				unclaim(w);
 				w.dest = home.id;
@@ -994,7 +1067,7 @@ export function createSim(st) {
 	/** what selling or buying a ware means for you now (./market.js) */
 	const rule = (/** @type {string} */ w) => orderRule(w, st.parties[PLAYER].pop ?? 0);
 	/** every village center that stands: yours and the neighbours' */
-	const centres = () => all(st.buildings).filter((b) => (b.type === 'centre' || b.type === 'village') && b.stage === 'live');
+	const centres = () => bIndex().hubs.filter((b) => (b.type === 'centre' || b.type === 'village') && b.stage === 'live');
 	const myCentres = () => centres().filter((b) => b.owner === PLAYER);
 	/** the wares a village center holds: yours in the building, a neighbour city's in its stores */
 	const storeOf = (/** @type {any} */ c) => (c.type === 'centre' ? c.stock : st.parties[c.owner].stock);
@@ -1003,7 +1076,7 @@ export function createSim(st) {
 	/** the neighbour's village center */
 	const cityCentre = (/** @type {number} */ k) => st.buildings[st.villages[k - 1]];
 	/** a neighbour city's village centers, its seat first, then the villages it founded in turn */
-	const cityVillages = (/** @type {number} */ k) => all(st.buildings).filter((b) => b.type === 'village' && b.owner === k).sort((a, b) => a.id - b.id);
+	const cityVillages = (/** @type {number} */ k) => bIndex().hubs.filter((b) => b.type === 'village' && b.owner === k).sort((a, b) => a.id - b.id);
 	/** how many people a neighbour city holds when every one of its villages is full */
 	const cityCap = (/** @type {number} */ k) => cityVillages(k).reduce((s, c) => s + capOf(villageAt(c.node)), 0);
 	/** a neighbour city's people, village by village: each filled in turn, the newest takes what is left */
@@ -1149,8 +1222,7 @@ export function createSim(st) {
 		const pop = villagePeople(v);
 		const need = /** @type {Record<string, number>} */ (NEEDS)[w] ?? (FOOD.includes(w) ? NEEDS.food / 2 : 0);
 		let want = need * pop * 10;
-		for (const b of all(st.buildings)) {
-			if (b.owner !== PLAYER || villageAt(b.node) !== v) continue;
+		for (const b of mineIn(v)) {
 			if (b.stage === 'site') want += Math.max(0, (b.cost[w] ?? 0) - (b.used[w] ?? 0) - (b.got[w] ?? 0) - (b.inc[w] ?? 0));
 			else if ((T(b).inputs ?? []).some((/** @type {string[]} */ s) => s.includes(w))) want += 4;
 			else if (w === 'tools' && T(b).tools && !b.worker) want += 1;
@@ -1159,7 +1231,7 @@ export function createSim(st) {
 		return want;
 	}
 	/** a cart already on its way with a ware between two places */
-	const onWay = (/** @type {number} */ to, /** @type {string} */ w) => all(st.units).some((u) => u.kind === 'cart' && u.to === to && u.load[w]);
+	const onWay = (/** @type {number} */ to, /** @type {string} */ w) => uIndex().carts.some((u) => u.to === to && u.load[w]);
 	/** every few seconds: wares shared between your villages, your sales and purchases, the neighbours' trade, requests */
 	function trade() {
 		const m = st.market, mine = myCentres();
@@ -1182,10 +1254,10 @@ export function createSim(st) {
 		for (const c of mine) {
 			const v = villageAt(c.node);
 			// to fill new beds, or to build when a site there waits for a builder
-			const waits = all(st.buildings).some((b) => b.owner === PLAYER && b.stage === 'site' && !b.builder && b.type !== 'centre' && villageAt(b.node) === v);
+			const waits = mineIn(v).some((b) => b.stage === 'site' && !b.builder && b.type !== 'centre');
 			if (c.settlers > 0 || (villagePeople(v) >= bedsIn(v) && !waits)) continue;
 			const from = mine.find((x) => x !== c && x.settlers >= 4 && reach(x.id).has(c.id));
-			if (!from || all(st.units).some((u) => u.kind === 'cart' && u.to === c.id && u.deal.settlers)) continue;
+			if (!from || uIndex().carts.some((u) => u.to === c.id && u.deal.settlers)) continue;
 			from.settlers -= 2;
 			sendCart(from, c, {}, { kind: 'move', settlers: 2 });
 		}
@@ -1259,25 +1331,25 @@ export function createSim(st) {
 	function territory() {
 		// a village belongs to whoever has its village center
 		const vo = Array(plan.villages.length).fill(-1);
-		for (const b of all(st.buildings).sort((x, y) => x.since - y.since)) if (holdsLand(b.type) && vo[villageAt(b.node)] === -1) vo[villageAt(b.node)] = b.owner;
+		for (const b of [...blds()].sort((x, y) => x.since - y.since)) if (holdsLand(b.type) && vo[villageAt(b.node)] === -1) vo[villageAt(b.node)] = b.owner;
 		st.villageOwner = vo;
 		const own = Array(N).fill(-1);
 		for (let i = 0; i < N; i++) own[i] = vo[villageAt(i)];
 		st.owner = own;
 		st.terV++;
 		// what stands on land its owner lost, burns
-		for (const b of all(st.buildings))
+		for (const b of blds())
 			if (st.buildings[b.id] && b.owner === PLAYER && own[b.node] !== b.owner) {
 				if (b.owner === PLAYER) say(`Your ${T(b).label.toLowerCase()} burned: the land is no longer yours`, b.node, 'alert');
 				removeBuilding(b, true, false);
 			}
 		for (const f of all(st.flags)) if (st.flags[f.id] && f.owner === PLAYER && own[f.node] !== f.owner) removeFlag(f);
-		for (const r of all(st.roads)) if (st.roads[r.id] && r.path.some((/** @type {number} */ n) => own[n] !== r.owner)) removeRoad(r);
+		for (const r of roads()) if (st.roads[r.id] && r.path.some((/** @type {number} */ n) => own[n] !== r.owner)) removeRoad(r);
 	}
 
 	// ── homes ──
 	/** the beds in one of your villages: every house's (a house being enlarged keeps its beds meanwhile); nobody lives in a village center */
-	const bedsIn = (/** @type {number} */ v) => all(st.buildings).reduce((s, b) => s + (b.owner === PLAYER && b.type === 'house' && b.level && villageAt(b.node) === v ? HOUSE_BEDS[b.level - 1] : 0), 0);
+	const bedsIn = (/** @type {number} */ v) => mineIn(v).reduce((s, b) => s + (b.type === 'house' && b.level ? HOUSE_BEDS[b.level - 1] : 0), 0);
 	const beds = () => myCentres().reduce((s, c) => s + bedsIn(villageAt(c.node)), 0);
 	/** the neighbours' cities as they grow: a settlement (a house, two factories) for every sixteen or so people */
 	function neighbourTowns() {
@@ -1330,7 +1402,7 @@ export function createSim(st) {
 			if (cut[y]) {
 				const seg = path.slice(x, y + 1);
 				const fa = flagAt(seg[0]), fb = flagAt(seg[seg.length - 1]);
-				if (fa && fb && !all(st.roads).some((q) => (q.a === fa.id && q.b === fb.id) || (q.a === fb.id && q.b === fa.id))) r = makeRoad(seg, owner);
+				if (fa && fb && !joins(fa.id, fb.id)) r = makeRoad(seg, owner);
 				x = y;
 			}
 		return r;
@@ -1341,7 +1413,7 @@ export function createSim(st) {
 		const vill = plan.villages[v];
 		const middle = vill.centre;
 		const stop = (/** @type {number} */ plot) => (plot === middle ? st.flags[c.flag]?.node ?? -1 : plan.centre[plot]);
-		const linked = (/** @type {any} */ fa, /** @type {any} */ fb) => all(st.roads).some((r) => (r.a === fa.id && r.b === fb.id) || (r.a === fb.id && r.b === fa.id));
+		const linked = (/** @type {any} */ fa, /** @type {any} */ fb) => joins(fa.id, fb.id);
 		// every hex of the village, by its steps to the middle
 		/** @type {Map<number, number>} */
 		const toward = new Map([[middle, -1]]);
@@ -1376,9 +1448,8 @@ export function createSim(st) {
 	/** the people of one of your villages: in its center and out at work */
 	const villagePeople = (/** @type {number} */ v) => {
 		let n = 0;
-		for (const b of all(st.buildings)) if (b.type === 'centre' && b.owner === PLAYER && villageAt(b.node) === v) n += b.settlers;
-		for (const u of all(st.units)) if (u.owner === PLAYER && u.kind !== 'cart' && u.vil === v) n++;
-		return n;
+		for (const b of mineIn(v)) if (b.type === 'centre') n += b.settlers;
+		return n + (uIndex().folk.get(v) ?? 0);
 	};
 	/** all your people */
 	const yourPeople = () => myCentres().reduce((s, c) => s + villagePeople(villageAt(c.node)), 0);
@@ -1522,9 +1593,9 @@ export function createSim(st) {
 			if (pop >= bed && bed < cap) add('todo', `${p.name} has no free bed (${bed} of ${cap}): enlarge a house or build one`, c.node);
 		}
 		// building sites nobody can reach, and work that waits for tools
-		const cut = all(st.buildings).find((b) => b.owner === PLAYER && b.stage === 'site' && b.status === 'Not connected by road');
+		const cut = blds().find((b) => b.owner === PLAYER && b.stage === 'site' && b.status === 'Not connected by road');
 		if (cut) add('alert', `A ${T(cut).label.toLowerCase()} site is not joined to a village center by a path`, cut.node);
-		if (all(st.buildings).some((b) => b.owner === PLAYER && /tools/.test(b.status ?? ''))) add('alert', 'Out of tools: build a toolmaker, or buy tools', -1);
+		if (blds().some((b) => b.owner === PLAYER && /tools/.test(b.status ?? ''))) add('alert', 'Out of tools: build a toolmaker, or buy tools', -1);
 		if (stock('plank') < 6) add('todo', `Planks run low (${Math.floor(stock('plank'))}): build a woodcutter`, -1);
 		else if (stock('stone') < 4) add('todo', `Stone runs low (${Math.floor(stock('stone'))}): build a quarry by rocks`, -1);
 		// the next goal on the way
@@ -1571,12 +1642,12 @@ export function createSim(st) {
 		if (changed) st.objV++;
 	}
 	function goals() {
-		const live = (/** @type {string} */ type) => all(st.buildings).some((b) => b.type === type && b.owner === PLAYER && b.stage === 'live' && st.units[b.worker]?.job === 'w-in');
+		const live = (/** @type {string} */ type) => blds().some((b) => b.type === type && b.owner === PLAYER && b.stage === 'live' && st.units[b.worker]?.job === 'w-in');
 		for (const goal of GOALS) {
 			if (st.goals[goal.id]) continue;
 			let done = false;
 			if (goal.id === 'wood') done = live('woodcutter') && live('quarry');
-			else if (goal.id === 'house') done = all(st.buildings).some((b) => b.type === 'house' && b.owner === PLAYER && b.level >= 4);
+			else if (goal.id === 'house') done = blds().some((b) => b.type === 'house' && b.owner === PLAYER && b.level >= 4);
 			else if (goal.id === 'village') done = myCentres().length >= 2;
 			else if (goal.id === 'market') done = st.market.sold > 0;
 			else if (goal.id === 'trade') done = st.market.sold + st.market.bought >= /** @type {number} */ (goal.n);
@@ -1594,7 +1665,7 @@ export function createSim(st) {
 	function step(dt = TICK) {
 		st.time += dt;
 		const c = st.clocks;
-		for (const u of all(st.units)) {
+		for (const u of units()) {
 			if (!st.units[u.id]) continue;
 			if (u.wait > 0) {
 				u.wait -= dt;
@@ -1630,7 +1701,7 @@ export function createSim(st) {
 				}
 			} else if (u.job !== 'c-idle' && u.job !== 'w-in') arrive(u);
 		}
-		for (const b of all(st.buildings)) if (st.buildings[b.id] && b.owner === PLAYER) work(b, dt);
+		for (const b of blds()) if (st.buildings[b.id] && b.owner === PLAYER) work(b, dt);
 		if (st.time >= c.dispatch) {
 			c.dispatch = st.time + 0.5;
 			dispatch();
@@ -1734,7 +1805,7 @@ export function createSim(st) {
 		if (type === 'house' && spot !== 0) return 'A house stands on its settlement’s house spot';
 		if (type !== 'house' && spot === 0) return 'This spot is for the settlement’s house';
 		if (vo !== PLAYER) return 'Outside your city: found a village center first';
-		if (!all(st.buildings).some((b) => b.type === 'centre' && b.owner === PLAYER && b.stage === 'live' && villageAt(b.node) === v)) return 'This village’s center is still being founded';
+		if (!mineIn(v).some((b) => b.type === 'centre' && b.stage === 'live')) return 'This village’s center is still being founded';
 		if (type !== 'house') {
 			const home = buildingAt(plan.spots[plot][0]);
 			if (!home || home.owner !== PLAYER || home.type !== 'house') return 'Build this settlement’s house first';
@@ -1821,7 +1892,7 @@ export function createSim(st) {
 				if (a < 0 || b < 0) continue;
 				const fa = flagAt(a), fb = flagAt(b);
 				// already joined by a path, or a path could run
-				const linked = fa && fb && all(st.roads).some((r) => (r.a === fa.id && r.b === fb.id) || (r.a === fb.id && r.b === fa.id));
+				const linked = fa && fb && joins(fa.id, fb.id);
 				if (!linked && !planBetween(a, b)) continue;
 				prev.set(q, p);
 				if (fb && joined.has(fb.id)) {
@@ -1839,7 +1910,7 @@ export function createSim(st) {
 			const a = stopOf(p), b = stopOf(q);
 			if (!flagAt(a)) makeFlag(a, PLAYER);
 			const fa = flagAt(a), fb = flagAt(b);
-			if (fa && fb && all(st.roads).some((r) => (r.a === fa.id && r.b === fb.id) || (r.a === fb.id && r.b === fa.id))) continue;
+			if (fa && fb && joins(fa.id, fb.id)) continue;
 			last = buildRoad(a, b) ?? last;
 		}
 		return last;
@@ -1860,6 +1931,8 @@ export function createSim(st) {
 		state: st,
 		grid: g,
 		plan,
+		/** every building, as a list kept until one comes or goes: read it, don't change it */
+		buildingList: blds,
 		step,
 		setup(/** @type {import('./map.js').Valley} */ v) {
 			const hq = makeBuilding('centre', v.hq, PLAYER, true);
@@ -1887,7 +1960,7 @@ export function createSim(st) {
 				b.since = 0;
 			});
 			territory();
-			for (const b of all(st.buildings)) if (b.type === 'house') autoRoad(b.flag);
+			for (const b of blds()) if (b.type === 'house') autoRoad(b.flag);
 			neighbourTowns();
 			say('Welcome to your city: a village center and one house of two. Every settlement is a hex: a house and two factories round its middle, joined to the next by a path. Build homes beside the center first, then a woodcutter and a quarry.', hq.node);
 		},
@@ -1938,7 +2011,7 @@ export function createSim(st) {
 			}
 			const f = flagAt(n);
 			if (f) {
-				if (f.owner !== PLAYER || all(st.buildings).some((x) => x.flag === f.id && x.type === 'centre')) return { ok: false, why: 'This flag stays' };
+				if (f.owner !== PLAYER || blds().some((x) => x.flag === f.id && x.type === 'centre')) return { ok: false, why: 'This flag stays' };
 				removeFlag(f);
 				return { ok: true };
 			}
@@ -2046,7 +2119,7 @@ export function createSim(st) {
 			}
 			stock.coin = Math.floor(purse());
 			let carriers = 0, workers = 0;
-			for (const u of all(st.units)) if (u.owner === PLAYER && u.kind !== 'cart') u.kind === 'carrier' ? carriers++ : workers++;
+			for (const u of units()) if (u.owner === PLAYER && u.kind !== 'cart') u.kind === 'carrier' ? carriers++ : workers++;
 			const m = st.market;
 			return {
 				time: st.time,

@@ -56,7 +56,7 @@ export function createAutoplay(sim) {
 	const plan = st.autoPlan;
 	const hq = () => st.buildings[st.hq];
 	const count = (/** @type {(n: number) => boolean} */ f, /** @type {number} */ n, /** @type {number} */ r) => g.within(n, r).filter(f).length;
-	const ofType = (/** @type {string} */ t) => Object.values(st.buildings).filter((b) => b.type === t && b.owner === PLAYER);
+	const ofType = (/** @type {string} */ t) => sim.buildingList().filter((b) => b.type === t && b.owner === PLAYER);
 
 	/** how well a node suits a building: higher is better, -Infinity where it may not stand */
 	function score(/** @type {string} */ type, /** @type {string} */ want, /** @type {number} */ n) {
@@ -210,7 +210,7 @@ export function createAutoplay(sim) {
 		tick() {
 			if (st.result) return;
 			// a used-up mine is torn down and dug again elsewhere
-			for (const b of Object.values(st.buildings))
+			for (const b of sim.buildingList())
 				if (b.owner === PLAYER && b.deposit <= 0 && BUILDINGS[b.type].kind === 'mine' && b.stage === 'live') {
 					sim.demolish(b.node);
 					plan.splice(st.auto, 0, [b.type, 'mine']);
@@ -231,7 +231,7 @@ export function createAutoplay(sim) {
 			if (st.auto < plan.length) {
 				const [type, want] = plan[st.auto];
 				const cost = BUILDINGS[type].cost;
-				const sites = Object.values(st.buildings).filter((b) => b.owner === PLAYER && b.stage === 'site').length;
+				const sites = sim.buildingList().filter((b) => b.owner === PLAYER && b.stage === 'site').length;
 				const enough = Object.entries(cost).every(([w, n]) => (s.stock[w] ?? 0) >= n);
 				if (sites < 3 && (enough || (st.autoTries ?? 0) > 8)) {
 					if (place(type, want) || (st.autoTries = (st.autoTries ?? 0) + 1) > 12) {
