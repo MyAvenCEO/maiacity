@@ -1,7 +1,8 @@
 /*
  * THE ACTORS — everyone and everything rigged to move, as the Actors gallery (/app/actors/) lists it: the stand-in a
  * shot is blocked with, and the animals of the worlds, kind by kind — the chickens (six breeds of hen, the rooster, the
- * chick), the rabbits, the geese, the goats, the sheep, the frogs, the bee, the ants and their hill, the fish — each kind with its variants.
+ * chick), the rabbits, the geese, the goats, the sheep, the frogs, the bee, the ants and their hill, the fish, and the
+ * machines (the excavators, the pod) — each kind with its variants.
  * Each is built by a function that hands back its rig (./rig.ts), its moves (clips) and, for the stand-in, its poses.
  * An animal is its species' (./species/, on its body plan in ./plans/) and a line in ./casts.ts; it shows here with a
  * line in its kind below.
@@ -13,6 +14,7 @@ import { miniExcavator } from './excavator.js';
 import { excavator as excavatorV1 } from './excavator.v1.js';
 import { excavator as excavatorV2 } from './excavator.v2.js';
 import { human } from './human';
+import { pod } from './pod.js';
 import type { Cast } from './rig';
 import { goat, GOAT_BREEDS } from './species/goat';
 import { sheep, SHEEP_BREEDS } from './species/sheep';
@@ -190,6 +192,16 @@ const LIST: Omit<Family, 'versions' | 'version'>[] = [
 		variants: [
 			{ id: 'excavator-small', label: 'Small · 1.7 t', note: 'a mini excavator: rubber tracks, an open canopy, a dozer blade, a swinging boom, a 40 cm bucket', make: () => miniExcavator() },
 			{ id: 'excavator-big', label: 'Big · 14 t', note: 'a crawler excavator: steel tracks, an enclosed cab, a mono boom on two rams, a 1 m bucket, 8.3 m reach', make: () => crawlerExcavator() }
+		]
+	},
+	{
+		id: 'pod',
+		label: 'Pod',
+		note: 'the mini transporter: autonomous and electric, no front and no back, 4 m long so three fill a 40 ft container, as wide and high as one; all four wheels steer, white lamps lead and red trail either way',
+		from: 'Sandbox 5: between the hexes and through the tunnels',
+		variants: [
+			{ id: 'pod-people', label: 'People', note: 'eight seats on two benches facing each other, double doors both sides, and the bay under the floor the whole length, open at both ends for pushing goods in', make: () => pod('people') },
+			{ id: 'pod-goods', label: 'Goods', note: 'one hold the full height from a low floor, 2 m inside, barn doors over both ends as a container has', make: () => pod('goods') }
 		]
 	}
 ];
