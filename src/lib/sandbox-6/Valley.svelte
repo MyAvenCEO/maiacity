@@ -65,7 +65,10 @@
 	/** how full a store is against what it keeps, as a bar's class */
 	const fill = (/** @type {number} */ have, /** @type {number} */ want) => (have >= want * 0.99 ? 'good' : have >= want / 2 ? 'fair' : 'poor');
 	/** planks as tonnes of sawn timber */
-	const tonnes = (/** @type {number} */ planks) => `${Number.isInteger(planks * PLANK_T) ? planks * PLANK_T : (planks * PLANK_T).toFixed(1)} t`;
+	const tonnes = (/** @type {number} */ planks) => {
+		const t = planks * PLANK_T;
+		return `${Number.isInteger(t) ? t : t.toFixed(t < 1 ? 2 : 1)} t`;
+	};
 	/** what the wood building cuts from a tree at a stage */
 	const perTree = (/** @type {number} */ level) => `${WOOD[level - 1].planks} plank${WOOD[level - 1].planks === 1 ? '' : 's'} (${tonnes(WOOD[level - 1].planks)})`;
 
@@ -286,7 +289,7 @@
 				{#if ownCentre}
 					<div class="actions"><button onclick={() => game?.setMode('road')}>Path from here</button></div>
 				{/if}
-				<p class="people small">Year {summary.date.year} · week {summary.date.week} · {summary.people} people · {summary.villages} {summary.villages === 1 ? 'village' : 'villages'}</p>
+				<p class="people small">Year {summary.date.year} · month {summary.date.month} · {summary.people} people · {summary.villages} {summary.villages === 1 ? 'village' : 'villages'}</p>
 			</section>
 		</aside>
 	{/if}

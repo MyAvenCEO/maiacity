@@ -1,8 +1,10 @@
 /**
  * SANDBOX 6 · FOOD AND WATER — what a village eats and drinks, in kilograms and litres, and what its hexes grow.
  *
- * The valley's calendar. A day passes every second of play (at 1×): a week in 7 s, a year of twelve months of thirty
- * days in 6 min. So a food forest planted now is grown in an hour of play, a quarter of that at 4×.
+ * The valley's calendar is the master clock's (game/time.ts, game/policy.hearts.json): a month of thirty days, a year
+ * of twelve months. Out in maiaCITY a real day is a month, so a year takes twelve real days and a food forest grows
+ * full in four real months. The valley runs that calendar faster, ten years in ten minutes of play (at 1×): a year a
+ * minute, a month in 5 s, a week in about 1.2 s. Its people still walk at their own pace.
  *
  * Food. A person eats about 10 kg a week, the European diet of our land-use table (vegetables, fruit, legumes, seeds
  * and nuts, eggs, chicken, fish), all counted together in kg. It grows in the hexes: every hex with a house is a food
@@ -21,8 +23,10 @@
  * Plain numbers and pure functions: the simulation (./sim.js) calls them, the page shows them.
  */
 
-/** seconds of play: a day, a week, a year */
-export const DAY = 1, WEEK = 7 * DAY, YEAR = 360 * DAY;
+/** the master clock's calendar: days in a month, months in a year */
+export const MONTH_DAYS = 30, YEAR_MONTHS = 12;
+/** seconds of play: a year (ten years in ten minutes), a month, a day, a week */
+export const YEAR = 60, MONTH = YEAR / YEAR_MONTHS, DAY = MONTH / MONTH_DAYS, WEEK = 7 * DAY;
 
 /** what a person eats a week, kg (the European land-use table) */
 export const DIET = { vegetables: 4.62, fruits: 1.4, legumes: 0.7, 'seeds, nuts and oats': 2.15, eggs: 0.42, chicken: 0.2, 'fish and seafood': 0.38 };
@@ -50,8 +54,8 @@ export const TANK = 4;
  */
 export const forestShare = (age) => Math.min(1.5, 0.1 * (Math.floor(Math.max(0, age)) + 1));
 
-/** the valley's date at a time of play: its year and its week, from 1 @param {number} t */
+/** the valley's date at a time of play, on the master clock's calendar: its year and its month, from 1 @param {number} t */
 export function calendar(t) {
 	const year = Math.floor(t / YEAR) + 1;
-	return { year, week: Math.floor((t - (year - 1) * YEAR) / WEEK) + 1 };
+	return { year, month: Math.floor((t - (year - 1) * YEAR) / MONTH) + 1 };
 }
