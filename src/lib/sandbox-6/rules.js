@@ -186,17 +186,27 @@ export const LAND = {
 	sand: { label: 'sand', about: 'the glass sand of its heath or beach, with soda and lime' }
 };
 
+/** energy a building takes to build, MWh a tonne of what it is built of (its cranes, welding and presses), and what
+ * standing takes a year: a share of what it is built of, and MWh a tonne for its dome's lights, fans and controls */
+export const BUILD_MWH_T = 0.1, KEEP_MWH_T = 0.2;
+
 /**
- * @typedef {{ label: string, in: Record<string, number>, out: Record<string, number>, up: Record<string, number>, does?: string }} Stage
+ * @typedef {{ in: Record<string, number>, out: Record<string, number> }} Craft
+ * @typedef {{ label: string, does?: string, build: Craft, keep: Craft, make: Craft, up: Record<string, number> }} Stage
  * @typedef {{ biome: string, land: string, rounds: number, stages: Stage[] }} Recipe
  */
 /**
- * THE CRAFTING ENGINE — every factory stage is one recipe: what a round of its work takes and what it makes, in units
- * (UNITS: tonnes, and MWh of energy). What it takes comes from the land of its hex (LAND), as much a round as the land
- * gives it a year (`rounds`), and the energy from its village's grid; a ware it took would come from your stores by bus.
- * What it makes goes to its stop, a truckload (5 t) at a time. Each upgrade is the next stage of the same building
- * (`up`: what growing to it costs, in loads; a first stage costs what the building does). The simulation runs every
- * factory on it (./sim.js `craft`), the cards and the building tree show it (./tree.js).
+ * THE CRAFTING ENGINE — everything a building does is a recipe, what goes in and what comes out, in units (UNITS:
+ * tonnes, and MWh of energy), and every stage of a factory has three:
+ *   build — once, as it is built or grown to it: the wares its builders carry in and the energy they use, out comes the
+ *           stage itself;
+ *   keep  — a year, while it stands: the wares that keep it up (2% of what it is built of) and the energy its dome uses,
+ *           nothing out;
+ *   make  — a round of its work: what it takes from the land of its hex (LAND), as much a round as the land gives it a
+ *           year (`rounds`), and energy from its village's grid; out comes its ware, to its stop a truckload (5 t) at a
+ *           time. A ware it took would come from your stores by bus.
+ * The simulation runs every factory on it (./sim.js `craft`, and its builders and upkeep), the cards and the building
+ * tree show it (./tree.js).
  *
  * Wood: a hex's 10 ha of hemp, bamboo and woods give 150 t a year, ten trees of 15 t; a woodcutter cuts 5 t of planks
  * from each (by hand, the rest firewood), a sawmill 10 t, a timber works all of it, glued into glulam and scrimber,
@@ -210,16 +220,16 @@ export const LAND = {
  * 18 t into 15 t, laying see-through solar cells into it (about 2 MWh a tonne in all).
  * @type {Record<string, Recipe>}
  */
-export const RECIPES = {
+export const RECIPES = /** @type {any} */ ({
 	woodcutter: {
 		biome: 'forest',
 		land: 'logs',
 		rounds: (FIELD_HA * FIELD_T) / 15,
 		stages: [
-			{ label: 'Forester', in: {}, out: {}, up: {}, does: 'plants young trees round it and fells none' },
-			{ label: 'Woodcutter', in: { logs: 15, energy: 0.1 }, out: { plank: 5 }, up: { plank: 2, steel: 1 } },
-			{ label: 'Sawmill', in: { logs: 15, energy: 3.5 }, out: { plank: 10 }, up: { plank: 4, steel: 3 } },
-			{ label: 'Timber works', in: { logs: 15, energy: 7.5 }, out: { plank: 15 }, up: { plank: 6, steel: 4 } }
+			{ label: 'Forester', build: { plank: 10 }, make: {}, does: 'plants young trees round it and fells none' },
+			{ label: 'Woodcutter', build: { plank: 10, steel: 5 }, make: { in: { logs: 15, energy: 0.1 }, out: { plank: 5 } } },
+			{ label: 'Sawmill', build: { plank: 20, steel: 15 }, make: { in: { logs: 15, energy: 3.5 }, out: { plank: 10 } } },
+			{ label: 'Timber works', build: { plank: 30, steel: 20 }, make: { in: { logs: 15, energy: 7.5 }, out: { plank: 15 } } }
 		]
 	},
 	ironmine: {
@@ -227,9 +237,9 @@ export const RECIPES = {
 		land: 'ore',
 		rounds: 10,
 		stages: [
-			{ label: 'Iron mine', in: { ore: 25, energy: 25 }, out: { steel: 5 }, up: {} },
-			{ label: 'Furnace', in: { ore: 25, energy: 42 }, out: { steel: 10 }, up: { plank: 4, steel: 2 } },
-			{ label: 'Steelworks', in: { ore: 25, energy: 54 }, out: { steel: 15 }, up: { plank: 6, steel: 3 } }
+			{ label: 'Iron mine', build: { plank: 20 }, make: { in: { ore: 25, energy: 25 }, out: { steel: 5 } } },
+			{ label: 'Furnace', build: { plank: 20, steel: 10 }, make: { in: { ore: 25, energy: 42 }, out: { steel: 10 } } },
+			{ label: 'Steelworks', build: { plank: 30, steel: 15 }, make: { in: { ore: 25, energy: 54 }, out: { steel: 15 } } }
 		]
 	},
 	clayworks: {
@@ -237,9 +247,9 @@ export const RECIPES = {
 		land: 'loam',
 		rounds: 200,
 		stages: [
-			{ label: 'Clay pit', in: { loam: 20, energy: 0.05 }, out: { clay: 5 }, up: {} },
-			{ label: 'Kiln', in: { loam: 20, energy: 10 }, out: { clay: 10 }, up: { plank: 4, steel: 2 } },
-			{ label: 'Block works', in: { loam: 20, energy: 7.5 }, out: { clay: 15 }, up: { plank: 6, steel: 3 } }
+			{ label: 'Clay pit', build: { plank: 20 }, make: { in: { loam: 20, energy: 0.05 }, out: { clay: 5 } } },
+			{ label: 'Kiln', build: { plank: 20, steel: 10 }, make: { in: { loam: 20, energy: 10 }, out: { clay: 10 } } },
+			{ label: 'Block works', build: { plank: 30, steel: 15 }, make: { in: { loam: 20, energy: 7.5 }, out: { clay: 15 } } }
 		]
 	},
 	glassworks: {
@@ -247,22 +257,40 @@ export const RECIPES = {
 		land: 'sand',
 		rounds: 100,
 		stages: [
-			{ label: 'Sand pit', in: {}, out: {}, up: {}, does: 'digs and washes glass sand and melts none yet' },
-			{ label: 'Glassworks', in: { sand: 12, energy: 13 }, out: { glass: 10 }, up: { plank: 6, steel: 3 } },
-			{ label: 'Solar panel works', in: { sand: 18, energy: 30 }, out: { glass: 15 }, up: { plank: 8, steel: 5 } }
+			{ label: 'Sand pit', build: { plank: 20 }, make: {}, does: 'digs and washes glass sand and melts none yet' },
+			{ label: 'Glassworks', build: { plank: 30, steel: 15 }, make: { in: { sand: 12, energy: 13 }, out: { glass: 10 } } },
+			{ label: 'Solar panel works', build: { plank: 40, steel: 25 }, make: { in: { sand: 18, energy: 30 }, out: { glass: 15 } } }
 		]
 	}
-};
-for (const [type, r] of Object.entries(RECIPES)) r.stages[0].up = BUILDINGS[type].cost;
-/** a factory's recipe at a stage (1 for the first) @param {string} type @param {number} level */
+});
+/** what a building of so many tonnes takes to build: its wares, and its builders' energy @param {Record<string, number>} wares */
+export const buildIn = (wares) => ({ ...wares, energy: Object.values(wares).reduce((s, t) => s + t, 0) * BUILD_MWH_T });
+/** what standing takes a year, of a building of so many tonnes all told @param {Record<string, number>} built */
+export const keepIn = (built) => ({ ...Object.fromEntries(Object.entries(built).map(([w, t]) => [w, t * UPKEEP])), energy: Object.values(built).reduce((s, t) => s + t, 0) * KEEP_MWH_T });
+// each stage's three recipes in full: its build (its wares in tonnes, with its builders' energy; and in loads for the
+// builders, `up`), its keep (of everything it is built of by then) and its make
+for (const [type, r] of Object.entries(RECIPES)) {
+	/** @type {Record<string, number>} */
+	const built = {};
+	for (const x of r.stages) {
+		const wares = /** @type {Record<string, number>} */ (/** @type {any} */ (x).build);
+		x.up = Object.fromEntries(Object.entries(wares).map(([w, t]) => [w, Math.ceil(t / LOAD_T)]));
+		for (const [w, t] of Object.entries(wares)) built[w] = (built[w] ?? 0) + t;
+		x.build = { in: buildIn(wares), out: {} };
+		x.keep = { in: keepIn(built), out: {} };
+		x.make = { in: x.make.in ?? {}, out: x.make.out ?? {} };
+	}
+	BUILDINGS[type].cost = r.stages[0].up;
+}
+/** a factory's stage at a level (1 for the first) @param {string} type @param {number} level */
 export const recipe = (type, level) => RECIPES[type]?.stages[Math.max(1, level) - 1];
 /** loads of its ware a factory makes from a round at a stage @param {string} type @param {number} level */
-export const loadsRound = (type, level) => Object.values(recipe(type, level)?.out ?? {}).reduce((s, t) => s + t, 0) / LOAD_T;
-/** a recipe a year, working all its land gives it: what it takes and makes, in units @param {string} type @param {number} level */
+export const loadsRound = (type, level) => Object.values(recipe(type, level)?.make.out ?? {}).reduce((s, t) => s + t, 0) / LOAD_T;
+/** a stage's make a year, working all its land gives it: what it takes and makes, in units @param {string} type @param {number} level */
 export const yearOf = (type, level) => {
 	const r = recipe(type, level), n = RECIPES[type]?.rounds ?? 0;
 	const scale = (/** @type {Record<string, number>} */ m) => Object.fromEntries(Object.entries(m ?? {}).map(([k, v]) => [k, v * n]));
-	return { in: scale(r?.in ?? {}), out: scale(r?.out ?? {}) };
+	return { in: scale(r?.make.in ?? {}), out: scale(r?.make.out ?? {}) };
 };
 /** tonnes of its ware a factory makes a year at a stage @param {string} type @param {number} level */
 export const tonnesYear = (type, level) => Object.values(yearOf(type, level).out).reduce((s, t) => s + t, 0);

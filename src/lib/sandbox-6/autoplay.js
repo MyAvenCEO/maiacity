@@ -243,7 +243,7 @@ export function createAutoplay(sim) {
 				const growing = ofType(type).some((b) => b.stage === 'site' && b.level > 0);
 				for (const b of growing ? [] : ofType(type)) {
 					const up = b.stage === 'live' ? sim.inspect(b.id)?.up : null;
-					const idle = !Object.keys(RECIPES[type].stages[Math.max(1, b.level) - 1].out).length;
+					const idle = !Object.keys(RECIPES[type].stages[Math.max(1, b.level) - 1].make.out).length;
 					if (up && (idle || pays(up))) {
 						sim.upgrade(b.id);
 						break;

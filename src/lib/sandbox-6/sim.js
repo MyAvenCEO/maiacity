@@ -21,7 +21,7 @@
  *     out;
  *   · what a treasury lacks it borrows, an annuity loan over fifteen years (./market.js LOAN). There is no goal to win.
  */
-import { BIOMES, BUILDINGS, ENERGY, GROWS, GRASS, HOUSE_BEDS, HOUSE_MOST, HOUSE_TOP, HOUSE_UP, IRON, LAND, LOAD_T, MOUNTAIN, RECIPES, ROUNDS_YEAR, ROUTE_T_KM, START, UNIT_M, WARES, WATER, holdsLand, loadsRound, recipe, sunBedDay, yearOf } from './rules.js';
+import { BIOMES, BUILDINGS, BUILD_MWH_T, ENERGY, GROWS, GRASS, HOUSE_BEDS, HOUSE_MOST, HOUSE_TOP, HOUSE_UP, IRON, LAND, LOAD_T, MOUNTAIN, RECIPES, ROUNDS_YEAR, ROUTE_T_KM, START, UNIT_M, WARES, WATER, holdsLand, loadsRound, recipe, sunBedDay, yearOf } from './rules.js';
 import { CART, GRID_EUR_KWH, HEARTS, LOAN, LOAN_PAY, NEEDS, NEIGHBOURS, TRADED, WELL_EUR, WORLD, heartsFor, keepOf, live, loanMonths, make, newMarket, orderRule, party, priceIn, request, shortIn, spareIn } from './market.js';
 import { SE, STEP, findPath, makeGrid } from './hex.js';
 import { CISTERN, FOOD_KG, FRESH_L, KEEP, MOST, PACE, PRICE, RAIN_L, RAIN_MONTH, TANK, WATER_PRICE, WATER_USE, WEEK, YEAR, DAY, MONTH, calendar, forestShare } from './food.js';
@@ -900,16 +900,17 @@ export function createSim(st) {
 	const quotaOf = (/** @type {any} */ b) => b.quota ?? 1;
 	/** what a building that waits on its land says: how much its land gives a year, and when the next round is ready */
 	const waits = (/** @type {any} */ b) => {
-		const r = RECIPES[b.type], days = Math.ceil(((1 - quotaOf(b)) * YEAR) / r.rounds), land = r.stages[levelOf(b) - 1].in[r.land] ?? 0;
+		const r = RECIPES[b.type], days = Math.ceil(((1 - quotaOf(b)) * YEAR) / r.rounds), land = r.stages[levelOf(b) - 1].make.in[r.land] ?? 0;
 		const when = `${days} ${days === 1 ? 'day' : 'days'}`;
 		return b.type === 'woodcutter'
 			? `Its land grows ${r.rounds} trees a year: the next is ready in ${when}`
 			: `Its land gives ${r.rounds} rounds a year of ${land} t of ${LAND[/** @type {keyof typeof LAND} */ (r.land)].label}: the next in ${when}`;
 	};
 	/**
-	 * The crafting engine at work: a factory's round by its recipe at its stage (./rules.js RECIPES). Its land gave the
-	 * round already (its quota); the energy it takes is booked to its village's grid, and what it makes goes out to its
-	 * stop a truckload at a time. How many loads it made.
+	 * The crafting engine at work: a factory's round by its make recipe at its stage (./rules.js RECIPES). Its land gave
+	 * the round already (its quota); the energy it takes is booked to its village's grid, and what it makes goes out to
+	 * its stop a truckload at a time. How many loads it made. (Its build recipe is its builders' work, and its keep its
+	 * village's upkeep: see finish and settlements.)
 	 * @param {any} b
 	 */
 	function craft(b) {
@@ -921,7 +922,7 @@ export function createSim(st) {
 			made(/** @type {string} */ (t.out));
 		}
 		b.lately = (b.lately ?? 0) + n;
-		book(b, 'kwhWork', (r.in.energy ?? 0) * 1000);
+		book(b, 'kwhWork', (r.make.in.energy ?? 0) * 1000);
 		return n;
 	}
 	function work(/** @type {any} */ b, /** @type {number} */ dt) {
@@ -1024,6 +1025,8 @@ export function createSim(st) {
 		}
 	}
 	function finish(/** @type {any} */ b) {
+		// its build recipe's energy: its builders' cranes, welding and presses, for every tonne it is built of
+		book(b, 'kwhWork', Object.values(b.cost).reduce((/** @type {number} */ s, /** @type {any} */ n) => s + n, 0) * LOAD_T * BUILD_MWH_T * 1000);
 		// a village center that opens joins the trade routes dug to it
 		if (b.type === 'centre') st.tunV++;
 		if (b.type === 'house' || GROWS[b.type]) {
@@ -1868,6 +1871,20 @@ export function createSim(st) {
 			}
 		}
 	}
+	/** what a village's factories take a year to keep standing, by their keep recipes: wares in loads, energy in kWh
+	 * @param {number} v */
+	function upkeepIn(v) {
+		/** @type {Record<string, number>} */
+		const loads = {};
+		let kwh = 0;
+		for (const b of mineIn(v)) {
+			const r = RECIPES[b.type] && (b.stage === 'live' || b.level > 0) ? recipe(b.type, levelOf(b)) : null;
+			if (!r) continue;
+			for (const [w, t] of Object.entries(r.keep.in)) if (w === 'energy') kwh += t * 1000;
+			else loads[w] = (loads[w] ?? 0) + t / LOAD_T;
+		}
+		return { loads, kwh };
+	}
 	/** @param {number} dt seconds of play @param {number} dd days of the valley's calendar */
 	function settlements(dt, dd) {
 		const m = st.market;
@@ -1882,13 +1899,17 @@ export function createSim(st) {
 		}
 		eatAndDrink(vs, dd);
 		loans(vs, dd);
-		for (const { c, p } of vs) {
+		for (const { v, c, p } of vs) {
+			// its homes' upkeep and its factories' keep recipes: wares from its stores, energy from its grid
+			const k = upkeepIn(v);
 			live(
 				p,
 				p.pop,
 				dd,
-				(w) => ((c.stock[w] ?? 0) >= 1 ? ((c.stock[w] -= 1), true) : false)
+				(w) => ((c.stock[w] ?? 0) >= 1 ? ((c.stock[w] -= 1), true) : false),
+				k.loads
 			);
+			(p.pend ??= {}), (p.pend.kwhWork = (p.pend.kwhWork ?? 0) + (k.kwh * dd) / YEAR);
 		}
 		// your city, as the market and the page see it: everyone counted
 		const you = st.parties[PLAYER];
@@ -2224,7 +2245,7 @@ export function createSim(st) {
 			return { made: beds * sunBedDay(calendar(st.cal).month) * 7, used: homeDay(beds) * 7 + ((beds * ENERGY.climateBed) / YEAR) * 7, next: null };
 		}
 		if (!RECIPES[b.type]) return null;
-		const k = levelOf(b), use = (/** @type {number} */ l) => (yearOf(b.type, l).in.energy ?? 0) * 1000 * week;
+		const k = levelOf(b), use = (/** @type {number} */ l) => ((yearOf(b.type, l).in.energy ?? 0) + (recipe(b.type, l)?.keep.in.energy ?? 0)) * 1000 * week;
 		return { made: 0, used: use(k), next: k < RECIPES[b.type].stages.length ? use(k + 1) : null };
 	}
 

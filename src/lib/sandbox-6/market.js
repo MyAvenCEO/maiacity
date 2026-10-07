@@ -208,10 +208,11 @@ export const shortIn = (p, w) => Math.ceil(keepOf(p, w) - (p.stock[w] ?? 0) - (p
  * @param {number} pop
  * @param {number} days of the valley's calendar
  * @param {(w: string) => boolean} take
+ * @param {Record<string, number>} [extra] loads a year besides, by ware: what its factories take to keep standing
  */
-export function live(p, pop, days, take) {
+export function live(p, pop, days, take, extra = /** @type {Record<string, number>} */ ({})) {
 	for (const [need, rate] of /** @type {[keyof typeof NEEDS, number][]} */ (Object.entries(NEEDS))) {
-		const per = (rate * pop) / YEAR;
+		const per = (rate * pop + (extra[need] ?? 0)) / YEAR;
 		p.owe[need] = Math.min((p.owe[need] ?? 0) + per * days, per * (YEAR / 4) + 1);
 		// use what is owed, a unit at a time
 		while (p.owe[need] >= 1) {
