@@ -401,7 +401,8 @@ function fruitBody(bag, o) {
 
 /**
  * A big fruit hanging from a site: a place found for it clear of the wood and the other fruit (`grid`), its stalk,
- * and its body. Hands back its matrix, its length and girth, for anything more on it (an eye, a calyx).
+ * and its body. Hands back its matrix, its length and girth, for anything more on it (an eye, a calyx). It starts
+ * the fruit's mark (`Bag.fruit`): the caller ends it (`fruitDone`) once it has drawn the rest of it.
  * @param {Site} s @param {number} k
  * @param {{ L: number, W: number, stalk: number, shape: (u: number, v: number) => number, paint: (u: number, v: number) => THREE.Color,
  *   gloss: boolean, set: number, sides?: number, rings?: number, bend?: number, out?: number, stalkColour?: string }} F
@@ -415,6 +416,7 @@ function hangFruit(s, k, F) {
 	const start = s.at.clone().addScaledVector(s.dir, F.stalk * 0.3);
 	const hangFrom = start.clone().addScaledVector(swing, F.stalk * (F.out ?? 0.25)).add(v3(0, -F.stalk * lerp(0.3, 0.8, F.set), 0));
 	const place = s.grid.settle(hangFrom, DOWN.clone().addScaledVector(swing, 0.15), (a, d) => [0.3, 0.72].map((t) => ({ c: a.clone().addScaledVector(d, L * t), r: W * 0.95 })), F.stalk * 0.5 + W);
+	s.bag.fruit([...s.key, k], s.at, place.dir);
 	s.bag.add('body', tube([s.at, start, place.at], (u) => (0.0015 + 0.0035 * F.set * (F.W / 0.03)) * (1 - 0.4 * u), () => col(F.stalkColour ?? '#6f6a3a'), 4));
 	const m = fruitBody(s.bag, { at: place.at, dir: place.dir, L, W, shape: F.shape, paint: F.paint, sides: F.sides ?? 12, rings: F.rings ?? 10, gloss: F.gloss, turn: kr() * Math.PI * 2, bend: F.bend });
 	return { m, L, W };
@@ -528,6 +530,7 @@ const quince = grove({
 		});
 		// the dried sepals at its end
 		s.bag.add('body', bead(v3(0, -r.L * 0.985, 0), v3(r.W * 0.22, r.W * 0.1, r.W * 0.22), ripe > 0.5 ? '#5a4024' : '#6a7a3a', 3), r.m);
+		s.bag.fruitDone();
 	}
 });
 
@@ -588,6 +591,7 @@ const medlar = grove({
 			paint: (u, v) => ground.clone().lerp(new THREE.Color('#a88a5a'), Math.pow(Math.abs(Math.sin(u * 47 + v * 61)), 18) * 0.5).lerp(new THREE.Color('#3a2a1a'), u > 0.9 ? 0.5 : 0)
 		});
 		sepals(r.m, r.L, r.W, lerp(0.6, 1, set), ripe > 0.5 ? '#5a4024' : '#5a7a34');
+		s.bag.fruitDone();
 	}
 });
 
@@ -627,6 +631,9 @@ const serviceberry = grove({
 		const axisDir = out.clone().multiplyScalar(0.7).add(v3(0, lerp(0.75, -0.9, tilt), 0)).normalize();
 		const len = 0.055 * lerp(0.5, 1, clamp((s.phase + 0.4) / 0.5));
 		const tip = s.at.clone().addScaledVector(axisDir, len);
+		// once set, the whole raceme is picked as one
+		const bearing = s.phase >= 0.55;
+		if (bearing) s.bag.fruit(s.key, s.at, axisDir);
 		s.bag.add('body', tube([s.at, s.at.clone().lerp(tip, 0.5).add(v3(0, 0.004 * (1 - tilt), 0)), tip], (u) => 0.0012 * (1 - 0.5 * u), () => col(ripe > 0.3 ? '#8a3a3a' : '#6a7a3a'), 3));
 		for (let k = 0; k < n; k++) {
 			const u = 0.2 + (0.8 * k) / (n - 1);
@@ -649,6 +656,7 @@ const serviceberry = grove({
 			const r = (0.0018 + 0.0037 * set) * s.vigour * about(fr, 1, 0.08);
 			berry(s, end.clone().add(v3(0, -r, 0)), r, c.lerp(new THREE.Color('#7a6a8a'), t * 0.15), DOWN, { crown: '#3a2a2a' });
 		}
+		if (bearing) s.bag.fruitDone();
 	}
 });
 
@@ -700,6 +708,7 @@ const cornel = grove({
 		for (let k = 0; k < keep; k++) {
 			const r = hangFruit(s, k, { L: 0.021, W: 0.0075, stalk: 0.016, set, gloss: true, sides: 8, rings: 7, out: 0.4, shape: (u) => Math.pow(Math.max(0, Math.sin(Math.PI * u)), 0.5), paint: () => c });
 			s.bag.add('body', bead(v3(0, -r.L, 0), v3(r.W * 0.25, r.W * 0.12, r.W * 0.25), '#3a2a1a', 2), r.m);
+			s.bag.fruitDone();
 		}
 	}
 });
@@ -739,6 +748,9 @@ const elder = grove({
 		const axis = UP.clone().multiplyScalar(Math.cos(turnOver * 2.4)).addScaledVector(out, Math.sin(turnOver * 2.4) + 0.15).normalize();
 		const stalkEnd = s.at.clone().addScaledVector(s.dir.clone().lerp(UP, 0.7).normalize(), 0.07).addScaledVector(axis, 0.05);
 		const stalk = ripe > 0.3 ? mix('#6a8a3a', '#9a1e3a', (ripe - 0.3) / 0.4) : new THREE.Color('#6a8a3a');
+		// once set, the whole umbel is picked as one, hanging from its stalk's foot
+		const bearing = s.phase >= 0.55;
+		if (bearing) s.bag.fruit(s.key, s.at, stalkEnd.clone().addScaledVector(axis, 0.025).sub(s.at));
 		s.bag.add('body', tube([s.at, stalkEnd], () => 0.002, () => stalk, 4));
 		const Rd = 0.075 * lerp(0.6, 1, clamp((s.phase + 0.4) / 0.6)) * (1 + 0.15 * set) * about(fr, 1, 0.1);
 		const H = 0.05 * (1 + 0.3 * set);
@@ -780,6 +792,7 @@ const elder = grove({
 			const r = (0.0012 + 0.0026 * set) * s.vigour;
 			berry(s, p.clone().addScaledVector(axis, r * 0.9), r, c, axis.clone(), { detail: 2 });
 		}
+		if (bearing) s.bag.fruitDone();
 	}
 });
 
@@ -829,7 +842,10 @@ const seaBuckthorn = grove({
 			if (fr() > 0.9) continue;
 			const t = clamp(ripe * 1.2 - fr() * 0.2);
 			const c = t < 0.5 ? mix('#8aa04a', '#e8c030', t * 2) : mix('#e8c030', '#e8741a', (t - 0.5) * 2);
+			// each berry sits on the twig without a stalk: picked one by one
+			s.bag.fruit([...s.key, k], p.at.clone().addScaledVector(side, sh.radius), side);
 			berry(s, p.at.clone().addScaledVector(side, sh.radius + r * 1.05), r, c, side.clone().negate(), { long: 1.2, detail: 2 });
+			s.bag.fruitDone();
 		}
 	}
 });
@@ -894,6 +910,7 @@ const pawpaw = grove({
 				shape: (u) => Math.pow(Math.max(0, Math.sin(Math.PI * u)), 0.5) * (0.82 + 0.18 * u),
 				paint: (u, v) => ground.clone().lerp(new THREE.Color('#6a4a2a'), ripe * 0.6 * Math.pow(Math.abs(Math.sin(u * 53 + v * 71)), 24))
 			});
+			s.bag.fruitDone();
 		}
 	}
 });

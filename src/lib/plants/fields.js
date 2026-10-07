@@ -205,6 +205,37 @@ class Blades {
 			if (i) this.idx.push(a - 2, a - 1, a, a, a - 1, a + 1);
 		}
 	}
+	/** how far it has got: where what is drawn next begins (see `pick`) */
+	mark() {
+		return { v: this.pos.length / 3, i: this.idx.length };
+	}
+	/**
+	 * What was drawn here since `from` (a `mark()`), as a piece of the fruit `bag` is drawing (Bag.fruit): the bag
+	 * only sees what goes through its own `add`, and blades go into it whole at the end. The piece is made only when
+	 * asked for (the fruit viewer, `pickFruit`), so it costs next to nothing otherwise.
+	 * @param {Bag} bag @param {{ v: number, i: number }} from
+	 */
+	pick(bag, from) {
+		const fruit = bag.drawing;
+		if (!fruit || this.idx.length === from.i) return;
+		const v1 = this.pos.length / 3, i1 = this.idx.length;
+		const { pos, col, idx } = this;
+		/** @type {THREE.BufferGeometry | null} */
+		let made = null;
+		fruit.parts.push({
+			kind: 'sheet',
+			get geometry() {
+				if (made) return made;
+				made = new THREE.BufferGeometry();
+				made.setAttribute('position', new THREE.Float32BufferAttribute(pos.slice(from.v * 3, v1 * 3), 3));
+				made.setAttribute('uv', new THREE.Float32BufferAttribute(new Float32Array((v1 - from.v) * 2), 2));
+				made.setAttribute('color', new THREE.Float32BufferAttribute(col.slice(from.v * 3, v1 * 3), 3));
+				made.setIndex(idx.slice(from.i, i1).map((k) => k - from.v));
+				made.computeVertexNormals();
+				return made;
+			}
+		});
+	}
 	/** into the bag, as one piece of its sheets (past the bag's own thinning: it is thinned here) */
 	into(/** @type {Bag} */ bag) {
 		if (!this.idx.length) return;
@@ -759,7 +790,12 @@ function lentilStem(ctx, key, from, dir, max, reach, order) {
 				const len = 0.014 * lerp(0.4, 1, set);
 				const pd = level(bear + m * 1.4 - 0.3).multiplyScalar(0.6).add(v3(0, -0.4, 0)).normalize();
 				const seeds = 1 + (nr() < 0.5 ? 1 : 0);
+				// one pod (the stalk it shares with its twin left on the plant)
+				bag.fruit([...key, n, m], fa, pd);
+				const from = blades.mark();
 				blades.add({ at: fa, dir: pd, up: level(bear + m * 1.4 - 0.3 + Math.PI / 2), length: len, width: 0.0045 * lerp(0.5, 1, set), shape: (u) => oval(u) * (seeds > 1 ? 1 - 0.12 * Math.cos(u * Math.PI * 4) : 1), segs: 4, twin: 0.35 * set, paint: (u) => mix(mix('#9ac464', '#72a048', set), '#c8a868', dry * 1.2 - u * 0.1), round: true });
+				blades.pick(bag, from);
+				bag.fruitDone();
 			}
 		}
 	}
@@ -856,16 +892,22 @@ function chickpeaStem(ctx, key, from, dir, max, reach, order) {
 		const set = nr() < 0.8 ? span(g, opens + 0.5, opens + 1.7) : 0;
 		const ped = arch(p, tilted(fout, 0.7), 0.022, 0.3 + set * 0.9, 2);
 		const end = ped[ped.length - 1];
+		const pd = fout.clone().multiplyScalar(0.5).add(v3(0, -0.85, 0)).normalize();
+		// once set, one pod on its own long stalk: the stalk (a tube, or a ribbon at lower detail) and the pod
+		const pod = set >= 0.05;
+		if (pod) bag.fruit([...key, n], p, pd);
+		const from = blades.mark();
 		wire(bag, blades, ped, 0.0005, stalk, 3, UP);
+		if (pod) blades.pick(bag, from);
 		if (set < 0.05) {
 			peaFlower(blades, end, fout, 0.009, desi ? '#c87ab0' : '#f6f4ee', desi ? '#a85a98' : '#f0ece4', open, fall);
 			continue;
 		}
 		// the pod: an inflated oval, hairy, with a little beak
-		const pd = fout.clone().multiplyScalar(0.5).add(v3(0, -0.85, 0)).normalize();
 		const size = lerp(0.35, 1, set) * about(nr, 1, 0.1);
 		const c = end.clone().addScaledVector(pd, 0.011 * size);
 		bag.add('body', bead(c, v3(0.012, 0.0075, 0.0068).multiplyScalar(size), mix(mix('#a8c47a', '#8cb064', set), '#d4ae6c', dry * 1.2), 3, alongX(pd)));
+		bag.fruitDone();
 	}
 }
 
@@ -979,7 +1021,12 @@ function soyStem(ctx, key, from, dir, max, reach, order) {
 			const pd = level(a).multiplyScalar(0.5).add(v3(0, -0.85 + 0.3 * (m % 2), 0)).normalize();
 			const beans = 2 + (nr() < 0.6 ? 1 : 0);
 			const len = 0.05 * lerp(0.3, 1, fill) * about(nr, 1, 0.08);
+			// one pod, stalkless in its cluster in the axil
+			bag.fruit([...key, n, m], fa, pd);
+			const from = blades.mark();
 			blades.add({ at: fa, dir: pd, up: level(a + Math.PI / 2), length: len, width: 0.0066 * lerp(0.5, 1, fill), shape: (u) => Math.pow(Math.sin(Math.PI * Math.pow(u, 0.9)), 0.4) * (1 - 0.18 * plump * Math.pow(Math.cos(u * Math.PI * beans), 2)), segs: 6, twin: lerp(0.3, 1.2, plump), droop: 0.25, paint: (u, v) => mix(mix('#a8c470', '#90b85a', fill), '#a8885a', old * 1.2).lerp(tint('#d8dcb0'), Math.abs(v) > 0.9 ? 0.45 : 0), round: true });
+			blades.pick(bag, from);
+			bag.fruitDone();
 		}
 	}
 }
@@ -1113,12 +1160,24 @@ function tiller(bag, blades, seed, i, base, out, lean, born, g, H, late, ripe, s
 			for (const f of w < 2 ? [1, 0.55] : [1]) {
 				const sp = point(bp, f);
 				const hang = ob.clone().multiplyScalar(lerp(0.6, 0.3, fill)).add(v3(0, lerp(-0.2, -1, out_), 0)).normalize();
+				// once its grain fills, one spikelet (the branch it hangs from left on the panicle)
+				if (fill > 0) bag.fruit([i, w, b, f], sp, hang);
+				const from = blades.mark();
 				blades.add({ at: sp, dir: hang, up: ob, length: 0.022 * lerp(0.5, 1, out_), width: 0.004, shape: lance, segs: 2, twin: 0.7, paint: spike, round: true });
+				if (fill > 0) blades.pick(bag, from);
+				bag.fruitDone();
 			}
 		}
 	}
 	// and one at the very top
-	if (emerge > 0.1) blades.add({ at: at(top), dir: out.clone().multiplyScalar(0.5).add(v3(0, -1, 0)).normalize(), up: out, length: 0.022, width: 0.004, shape: lance, segs: 2, twin: 0.7, paint: spike, round: true });
+	if (emerge > 0.1) {
+		const hang = out.clone().multiplyScalar(0.5).add(v3(0, -1, 0)).normalize();
+		if (fill > 0) bag.fruit([i, 'top'], at(top), hang);
+		const from = blades.mark();
+		blades.add({ at: at(top), dir: hang, up: out, length: 0.022, width: 0.004, shape: lance, segs: 2, twin: 0.7, paint: spike, round: true });
+		if (fill > 0) blades.pick(bag, from);
+		bag.fruitDone();
+	}
 }
 
 /* ------------------------------------------------------------------------------------------------ the list */

@@ -61,3 +61,11 @@ export function versioned(items, key, history = {}) {
 		return { ...it, versions, version: latestOf(versions) };
 	});
 }
+
+/**
+ * The version `v` of an asset's versions, or its latest when it has no such version (or `v` is not given).
+ * @template B
+ * @param {Version<B>[]} versions @param {number} [v]
+ * @returns {Version<B>}
+ */
+export const atOrLatest = (versions, v) => at(versions, v) ?? versions[versions.length - 1];

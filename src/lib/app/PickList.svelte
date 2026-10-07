@@ -4,8 +4,9 @@
 	newest first: pick one to see it as it was — $lib/app/versions.js); grouped under headings if it is given `group`. The
 	thing itself, its measure and what it can do, is on the turntable beside it.
 
-	On a narrow screen it sits above the turntable instead, a few rows high; either way it scrolls clear of the app's nav
-	pill at its foot (--nav-room, src/app.css).
+	On a phone upright it is folded to one line above the turntable, the chosen one's name: tap it for the whole list,
+	over the turntable, which folds again once one is picked. Either way it scrolls clear of the app's nav pill at its foot
+	(--nav-room, src/app.css). Its place in the page is $lib/app/Turntable.svelte's.
 -->
 <script>
 	import { day, tag } from './versions.js';
@@ -16,7 +17,7 @@
 	 *   title: string,
 	 *   lede: string,
 	 *   items: any[],
-	 *   chosen: { id: string },
+	 *   chosen: { id: string, label: string, version?: number },
 	 *   where: (item: any) => string,
 	 *   onpick: (item: any) => void,
 	 *   group?: (item: any) => string,
@@ -25,17 +26,38 @@
 	 * }}
 	 */
 	let { title, lede, items, chosen, where, onpick, group, version, onversion } = $props();
+
+	/** on a phone: the whole list unfolded over the turntable */
+	let open = $state(false);
+	/** @param {any} item */
+	const pick = (item) => {
+		open = false;
+		onpick(item);
+	};
+	/** @param {number} v */
+	const pickVersion = (v) => {
+		open = false;
+		onversion?.(v);
+	};
 </script>
 
-<aside class="picks">
-	<h1>{title} <span>{items.length}</span></h1>
+<svelte:window onkeydown={(e) => e.key === 'Escape' && (open = false)} />
+
+<aside class="picks" class:open>
+	<div class="head">
+		<h1>{title} <span>{items.length}</span></h1>
+		<button class="fold" onclick={() => (open = !open)} aria-expanded={open} aria-label="{title}: {open ? 'close the list' : 'open the list'}">
+			<b>{chosen.label}</b>{#if chosen.version}<em class="v">{tag(version ?? chosen.version)}</em>{/if}
+			<svg viewBox="0 0 12 12" aria-hidden="true"><path d="M2.5 4.5 6 8l3.5-3.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" /></svg>
+		</button>
+	</div>
 	<p class="lede" title={lede}>{lede}</p>
 	<ul>
 		{#each items as item, i (item.id)}
 			{@const on = chosen.id === item.id}
 			{#if group && (i === 0 || group(items[i - 1]) !== group(item))}<li class="group">{group(item)}</li>{/if}
 			<li>
-				<button class:on aria-current={on ? 'true' : undefined} onclick={() => onpick(item)}>
+				<button class:on aria-current={on ? 'true' : undefined} onclick={() => pick(item)}>
 					<span class="row"><b>{item.label}</b>{#if item.version}<em class="v">{tag(on && version ? version : item.version)}</em>{/if}<small title={where(item)}>{where(item)}</small></span>
 					{#if on}<span class="note">{item.note}</span>{/if}
 				</button>
@@ -44,7 +66,7 @@
 						{#each [...item.versions].reverse() as ver (ver.v)}
 							{@const shown = (version ?? item.version) === ver.v}
 							<li>
-								<button class="ver" class:shown aria-pressed={shown} onclick={() => onversion?.(ver.v)} disabled={!onversion}>
+								<button class="ver" class:shown aria-pressed={shown} onclick={() => pickVersion(ver.v)} disabled={!onversion}>
 									<b>{tag(ver.v)}</b><span>{ver.note}</span><small>{day(ver.date)}{ver.v === item.version ? ' · latest' : ''}</small>
 								</button>
 							</li>
@@ -55,6 +77,7 @@
 		{/each}
 	</ul>
 </aside>
+{#if open}<button class="scrim" aria-label="Close the list" onclick={() => (open = false)}></button>{/if}
 
 <style>
 	.picks {
@@ -62,6 +85,17 @@
 		overflow: auto;
 		padding: 1rem 0.6rem calc(1rem + var(--nav-room));
 		border-right: 1px solid rgb(0 0 0 / 0.08);
+	}
+
+	.head {
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+	}
+
+	.fold,
+	.scrim {
+		display: none;
 	}
 
 	h1 {
@@ -216,14 +250,106 @@
 		opacity: 0.7;
 	}
 
-	/* a narrow screen: above the turntable, a few rows high */
+	/* a phone upright: one line above the turntable, the chosen one's name to tap for the whole list, unfolded over it */
 	@media (max-width: 720px) {
 		.picks {
+			position: relative;
+			z-index: 3;
 			width: auto;
-			max-height: 34vh;
-			padding-bottom: 0.6rem;
+			overflow: visible;
+			padding: 0.4rem 0.75rem;
 			border-right: 0;
 			border-bottom: 1px solid rgb(0 0 0 / 0.08);
+		}
+
+		.head {
+			justify-content: space-between;
+		}
+
+		h1 {
+			flex: none;
+			margin: 0;
+		}
+
+		.fold {
+			display: flex;
+			flex-direction: row;
+			align-items: center;
+			gap: 0.4rem;
+			width: auto;
+			min-width: 0;
+			min-height: 2.5rem;
+			padding: 0.35rem 0.75rem;
+			border-color: rgb(0 0 0 / 0.12);
+			border-radius: 999px;
+			background: #fff;
+			font-size: 0.9rem;
+		}
+
+		.fold b {
+			overflow: hidden;
+			font-weight: 600;
+			text-overflow: ellipsis;
+			white-space: nowrap;
+		}
+
+		.fold svg {
+			flex: none;
+			width: 0.8rem;
+			height: 0.8rem;
+			opacity: 0.6;
+			transition: transform 0.15s;
+		}
+
+		.open .fold svg {
+			transform: rotate(180deg);
+		}
+
+		.lede,
+		ul {
+			display: none;
+		}
+
+		/* unfolded: the whole list over the turntable, scrolling, clear of the nav pill */
+		.open ul {
+			display: flex;
+			position: absolute;
+			top: 100%;
+			left: 0;
+			right: 0;
+			max-height: min(70vh, calc(100dvh - 100% - var(--nav-room) - env(safe-area-inset-top, 0px)));
+			overflow: auto;
+			overscroll-behavior: contain;
+			padding: 0.4rem 0.6rem 0.8rem;
+			background: #f4f1eb;
+			border-bottom: 1px solid rgb(0 0 0 / 0.08);
+			box-shadow: 0 12px 24px rgb(0 0 0 / 0.12);
+		}
+
+		.open ul button {
+			padding: 0.6rem 0.5rem;
+			font-size: 0.9rem;
+		}
+
+		.scrim {
+			display: block;
+			position: fixed;
+			inset: 0;
+			z-index: 2;
+			border: 0;
+			border-radius: 0;
+			background: rgb(0 0 0 / 0.2);
+		}
+	}
+
+	/* a phone on its side: down the left still, a little narrower */
+	@media (max-height: 500px) and (min-width: 721px) {
+		.picks {
+			width: 13rem;
+		}
+
+		.lede {
+			display: none;
 		}
 	}
 </style>

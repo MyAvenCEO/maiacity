@@ -189,8 +189,11 @@ function blossom(bag, seed, key, at, out, g, vigour, space) {
 		const size = vigour * about(fr, 1, 0.12);
 		// it hangs where it touches nothing: no fruit through another, nor through a stem
 		const place = space.settle(end, d.clone().lerp(v3(0, -1, 0), 0.6), (a, dd) => fruitBalls(a, dd, size, set), 0.05);
+		// one eggplant, picked with its stalk from the leaf axil
+		bag.fruit(key, at, place.dir);
 		bag.add('body', tube([at, end, place.at], () => 0.0018 + 0.0018 * set, () => '#6a6150', 5));
 		fruit(bag, { seed, key, at: place.at, dir: place.dir, size, set, gloss: span(g, opens + 1.2, opens + 2.5) });
+		bag.fruitDone();
 	}
 }
 

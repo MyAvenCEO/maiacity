@@ -291,6 +291,8 @@ export function rhubarb(g, seed) {
 			bag.add('body', bead(stem[10], v3(0.035, 0.05, 0.035).multiplyScalar(lerp(0.6, 1, rise)), '#d8c8a8', 6));
 		} else {
 			const flower = seeding > 0 ? mix('#efe6c8', '#a8402c', seeding) : mix('#d8d0a8', '#f2ecd2', bloom);
+			// in seed, the whole plume is the seed head
+			if (seeding > 0) bag.fruit(['rhubarb-spike'], point(stem, 0.45), towards(stem, 0.45));
 			const branches = 22;
 			for (let b = 0; b < branches; b++) {
 				const t = b / (branches - 1);
@@ -309,6 +311,7 @@ export function rhubarb(g, seed) {
 				}
 			}
 			for (let m = 0; m < 6; m++) bag.add('body', bead(point(stem, 0.94 + m * 0.012).add(level(m * 2.4).multiplyScalar(0.008)), v3(0.008, 0.008, 0.008), flower, 2));
+			if (seeding > 0) bag.fruitDone();
 		}
 	}
 	return bag.build();
@@ -396,6 +399,8 @@ export function sorrel(g, seed) {
 		}
 		const bloom = span(g, 7.6, 8.1), seeding = span(g, 8.5, 9.2);
 		const flower = seeding > 0 ? mix('#b04a34', '#8a3420', seeding) : mix('#8aa04a', '#b85a44', bloom);
+		// in seed, the panicle at the top of the stem is the seed head
+		if (seeding > 0) bag.fruit(['sorrel-stem', k], point(stem, 0.55), towards(stem, 0.55));
 		for (let b = 0; b < 5; b++) {
 			const t = 0.55 + b * 0.09;
 			const from = point(stem, t);
@@ -407,6 +412,7 @@ export function sorrel(g, seed) {
 				for (let m = 0; m < 3; m++) bag.add('body', bead(p.clone().add(level(m * 2.1 + w).multiplyScalar(0.003)), v3(0.0018, 0.0022, 0.0018).multiplyScalar(lerp(0.5, 1, rise)), flower, 2));
 			}
 		}
+		if (seeding > 0) bag.fruitDone();
 	}
 	return bag.build();
 }
@@ -829,10 +835,13 @@ function fernBranches(bag, seed, key, stem, h, open, gold, bells, berries, femal
 			// a bell, then a berry, hanging under the branchlet's foot
 			if (bells > 0 && fr() < 0.5) {
 				const hang = p.clone().add(v3(0, -0.012, 0));
+				const berry = berries > 0 && female;
+				if (berry) bag.fruit(['asparagus-berry', key, b, l], p, v3(0, -1, 0));
 				bag.add('body', tube([p, hang], () => 0.0004, () => tint('#8aa860'), 3));
-				if (berries > 0 && female) {
+				if (berry) {
 					const R = 0.0035 * lerp(0.5, 1, berries);
 					bag.add('gloss', bead(hang.clone().add(v3(0, -R, 0)), v3(R, R, R), mix('#5a8a3a', '#c81e1e', berries), 4));
+					bag.fruitDone();
 				} else if (berries <= 0) bag.add('body', bead(hang.clone().add(v3(0, -0.002, 0)), v3(0.0016, 0.0028, 0.0016).multiplyScalar(bells), '#dcdca0', 2));
 			}
 		}
@@ -944,6 +953,8 @@ function trail(bag, seed, key, from, head, run, g, born, vigour, colours, leaves
 		const open = span(g, opens, opens + 0.25), fall = span(g, opens + 1.1, opens + 1.3);
 		const sets = nr() < 0.75, swell = sets ? span(g, opens + 1.2, opens + 2.1) : 0, ripe = span(g, 8.9, 9.5);
 		if (fall >= 1 && swell <= 0) continue;
+		// the seeds on their stalk: one fruit
+		if (swell > 0) bag.fruit(['nasturtium-node', ...key, i], p, at.clone().sub(p));
 		bag.add('body', tube(stalk, () => 0.0012, () => tint('#8aa860'), 3));
 		if (swell > 0) {
 			// three wrinkled seeds joined in a triangle, nodding on the stalk
@@ -953,6 +964,7 @@ function trail(bag, seed, key, from, head, run, g, born, vigour, colours, leaves
 				const sp = c.clone().addScaledVector(level(q * 2.094 + b), R * 0.9);
 				bag.add('body', bead(sp, v3(R, R * 0.9, R), mix('#6a9a3a', '#c8b890', ripe), 4));
 			}
+			bag.fruitDone();
 			space.ball(c, R * 2);
 		} else {
 			flower(bag, at, fd.clone().add(v3(0, 0.7, 0)).normalize(), colours, open, fall);
@@ -1120,9 +1132,11 @@ export function woodruff(g, seed) {
 			const a = f * 2.39996 + sr();
 			const d = f ? 0.006 + 0.007 * Math.sqrt(f / 8) : 0;
 			const fp = top.clone().add(v3(Math.cos(a) * d, 0.012 + 0.005 * (f % 3) - d * 0.4, Math.sin(a) * d));
+			if (burs > 0.3) bag.fruit(['woodruff-bur', ...st.key, f], top, fp.clone().sub(top));
 			bag.add('body', tube([top, fp], () => 0.0004, () => tint('#7aa04a'), 2));
 			if (burs > 0.3) {
 				bag.add('body', bead(fp, v3(0.0018, 0.0016, 0.0018), mix('#7a9a4a', '#3a3a24', ripe), 2));
+				bag.fruitDone();
 			} else if (bloom < 0.2) {
 				bag.add('body', bead(fp, v3(0.0017, 0.002, 0.0017), '#e8eedc', 2));
 			} else {
@@ -1563,7 +1577,6 @@ export function hop(g, seed) {
 	}
 	// the flowers on the side arms: burrs, then cones, papery, green, ripening golden; each hangs clear of the leaves
 	const burr = span(g, 5.6, 6.1), cone = span(g, 6.3, 7.3), ripe = span(g, 7.8, 8.6), gold = span(g, 8.7, 9.4);
-	const bracts = new Slivers();
 	if (burr > 0) {
 		for (const c of clusters) {
 			for (let k = 0; k < c.size; k++) {
@@ -1579,12 +1592,16 @@ export function hop(g, seed) {
 					options.push({ balls: [{ c: at.clone().addScaledVector(dir, L * 0.3), r: R }, { c: at.clone().addScaledVector(dir, L * 0.75), r: R * 0.8 }], cost: o * 0.002, data: { at, dir } });
 				}
 				const place = c.near.best(options);
+				// a cone once the burr has become one (before that, the female flower)
+				if (cone > 0) bag.fruit(['hop-cone', ...c.key, k], c.at, place.dir);
 				bag.add('body', tube([c.at, place.at], () => 0.0008, () => tint('#7a9a4a'), 3));
+				const bracts = new Slivers();
 				hopCone(bag, bracts, place.at, place.dir, L, R, burr, cone, ripe, gold, cr());
+				bracts.into(bag);
+				if (cone > 0) bag.fruitDone();
 			}
 		}
 	}
-	bracts.into(bag);
 	return bag.build();
 }
 

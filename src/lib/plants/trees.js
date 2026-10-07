@@ -216,15 +216,15 @@ export const durian = orchard(DURIAN);
 
 export const JACKFRUIT_STAGES = stages([
 	['Seed', 0, 'A pale brown seed three centimetres long, its slimy coat washed off, sown fresh.'],
-	['Germination', 15, 'A root goes down, the shoot comes up; the seed leaves stay below.'],
-	['Seedling', 45, 'A slender stem of glossy dark leaves, its sap white and sticky.'],
-	['Sapling', 365, 'A straight leader with its first side limbs.'],
-	['Young tree', 1300, 'A dense dome over a stout trunk, the lower limbs thick and spreading.'],
-	['Flowering', 2200, 'Green club-shaped flower heads burst straight out of the trunk and the thickest limbs.'],
-	['Fruit set', 2220, 'The female heads swell into small knobbly green fruit, right on the bark.'],
-	['Green fruit', 2300, 'Huge oblong fruit hanging from the trunk, knobbly with short blunt spines.'],
+	['Germination', 15, 'A root goes down, the shoot comes up; the fleshy seed leaves stay inside the seed below.'],
+	['Seedling', 45, 'A slender green stem, its first leaves glossy and often two- or three-lobed; its sap white and sticky.'],
+	['Sapling', 365, 'A straight leader a metre tall, its leaves now whole, its first side limbs breaking.'],
+	['Young tree', 1300, 'A cone of near-level limbs round one straight trunk, big glossy leaves crowded at the shoot tips.'],
+	['Flowering', 2200, 'A dense dome over a clear trunk; short leafy footstalks burst from the bark with club-shaped green flower heads.'],
+	['Fruit set', 2220, 'The male heads blacken and drop; the female heads swell into small knobbly green fruit, right on the bark.'],
+	['Green fruit', 2300, 'Huge oblong fruit hanging straight down against the trunk, knobbly with short blunt spines.'],
 	['Ripening', 2360, 'The skin yellows, the spines flatten; it smells sweet.'],
-	['Ripe', 2380, 'Ripe jackfruit, half a metre long and tens of kilograms, borne on the trunk itself.']
+	['Ripe', 2380, 'Ripe jackfruit, up to half a metre long and tens of kilograms, in clusters all up the trunk and along the limbs.']
 ]);
 
 /** its description, kept for its versions (./orchard.v1.js grows its v1) @type {import('./orchard.js').Orchard} */

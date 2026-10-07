@@ -8,7 +8,8 @@
 	import { onDestroy, onMount } from 'svelte';
 	import { BIOMES, COVER, SURFACE, SURFACES, groundMaterial, mix } from '$lib/biomes';
 	import { coverStream } from '$lib/biomes/stream.js';
-	import PickList from '$lib/app/PickList.svelte';
+	import Turntable from '$lib/app/Turntable.svelte';
+	import { fit } from '$lib/app/turntable.js';
 
 	/** @typedef {(typeof BIOMES)[number]} Biome */
 	/** @typedef {import('$lib/biomes').Recipe} Recipe */
@@ -57,6 +58,7 @@
 		scene.background = new THREE.Color('#cfdbe0');
 		scene.fog = new THREE.Fog('#cfdbe0', 14, 34);
 		const camera = new THREE.PerspectiveCamera(50, 1, 0.05, 200);
+		camera.userData.fov = 50; // widened on an upright canvas ($lib/app/turntable.js)
 		const controls = new OrbitControls(camera, renderer.domElement);
 		controls.enableDamping = true;
 		controls.maxPolarAngle = Math.PI / 2 - 0.05;
@@ -97,8 +99,7 @@
 		const resize = () => {
 			const w = box.clientWidth, h = box.clientHeight;
 			renderer.setSize(w, h);
-			camera.aspect = w / Math.max(1, h);
-			camera.updateProjectionMatrix();
+			fit(camera, w, h);
 		};
 		const ro = new ResizeObserver(resize);
 		ro.observe(box);
@@ -147,10 +148,18 @@
 	<title>Biomes · maiaCITY</title>
 </svelte:head>
 
-<main class="biomes">
-	<PickList title="Biomes" lede="The floors the worlds stand on: their surfaces and what grows on them, in layers that mix." items={BIOMES} {chosen} where={(b) => b.from} onpick={pick} />
-	<section class="view">
-		<div class="canvas" bind:this={canvasBox}></div>
+<Turntable
+	name="biomes"
+	bind:canvas={canvasBox}
+	picks={{ title: 'Biomes', lede: 'The floors the worlds stand on: their surfaces and what grows on them, in layers that mix.', items: BIOMES, chosen, where: (/** @type {Biome} */ b) => b.from, onpick: pick }}
+>
+	{#snippet bar()}
+		<div class="chips">
+			<button type="button" class="chip" class:on={!above} onclick={() => { above = false; look?.(false); }}>Standing</button>
+			<button type="button" class="chip" class:on={above} onclick={() => { above = true; look?.(true); }}>From above</button>
+		</div>
+	{/snippet}
+	{#snippet panel()}
 		<div class="layers">
 			<span class="label">Surfaces</span>
 			{#each surfaceShare as { s, share } (s)}
@@ -166,81 +175,48 @@
 			</select>
 			<input type="range" min="0" max="1" step="0.05" bind:value={amount} onchange={redraw} aria-label="How much of it" />
 			<small>{pct(1 - amount)} {chosen.label} · {pct(amount)} {BIOMES.find((b) => b.id === other)?.label}</small>
-			<button type="button" onclick={() => { above = !above; look?.(above); }}>{above ? 'Standing' : 'From above'}</button>
 		</div>
-		<div class="readout">
-			<b>{chosen.label}</b>
-			<small>{chosen.note}</small>
-			<small>Drag to turn round it · scroll to come closer · 16 m across</small>
-		</div>
-	</section>
-</main>
+	{/snippet}
+	{#snippet readout()}
+		<b>{chosen.label}</b>
+		<small>{chosen.note}</small>
+		<small>Drag to turn round it · pinch or scroll to come closer · 16 m across</small>
+	{/snippet}
+</Turntable>
 
 <style>
-	.biomes {
-		position: fixed;
-		inset: 0;
-		padding: env(safe-area-inset-top, 0px) env(safe-area-inset-right, 0px) env(safe-area-inset-bottom, 0px) env(safe-area-inset-left, 0px);
-		display: grid;
-		grid-template-columns: auto 1fr;
-		background: #f4f1eb;
-		color: #1f2a23;
-	}
-
-	.view {
-		position: relative;
-		min-width: 0;
-	}
-
-	.canvas {
-		position: absolute;
-		inset: 0;
-		cursor: grab;
-	}
-
-	.layers,
-	.readout {
-		position: absolute;
+	.layers {
 		display: flex;
 		flex-direction: column;
 		gap: 0.25rem;
-		padding: 0.7rem 0.9rem;
-		border-radius: 12px;
-		background: rgb(255 255 255 / 0.8);
-		-webkit-backdrop-filter: blur(10px);
-		backdrop-filter: blur(10px);
 		font-size: 0.82rem;
-	}
-
-	.layers {
-		top: 1rem;
-		right: 1rem;
-		width: 15rem;
-		max-height: calc(100% - 2rem - var(--nav-room));
-		overflow: auto;
 	}
 
 	.layers .label {
 		margin-top: 0.4rem;
-		font-size: 0.72rem;
-		text-transform: uppercase;
-		letter-spacing: 0.06em;
-		opacity: 0.6;
+	}
+
+	.layers .label:first-child {
+		margin-top: 0;
 	}
 
 	.layers label {
 		display: flex;
 		align-items: center;
 		gap: 0.4rem;
+		min-height: 1.6rem;
 	}
 
-	.layers label small {
-		margin-left: auto;
+	.layers label small,
+	.layers > small {
 		opacity: 0.6;
 		font-variant-numeric: tabular-nums;
 	}
 
-	.layers button,
+	.layers label small {
+		margin-left: auto;
+	}
+
 	.layers select {
 		margin-top: 0.3rem;
 		padding: 0.35rem 0.7rem;
@@ -248,32 +224,5 @@
 		border-radius: 999px;
 		background: #fff;
 		font: inherit;
-	}
-
-	.readout {
-		left: 1rem;
-		bottom: calc(1rem + var(--nav-room) - env(safe-area-inset-bottom, 0px));
-		max-width: min(32rem, calc(100% - 19rem));
-	}
-
-	.readout small {
-		opacity: 0.65;
-	}
-
-	@media (max-width: 720px) {
-		.biomes {
-			grid-template-columns: 1fr;
-			grid-template-rows: auto 1fr;
-		}
-
-		.layers {
-			width: auto;
-			left: 1rem;
-			max-height: 40%;
-		}
-
-		.readout {
-			max-width: calc(100% - 2rem);
-		}
 	}
 </style>
