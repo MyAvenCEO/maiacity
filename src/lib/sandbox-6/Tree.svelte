@@ -1,77 +1,92 @@
 <!--
-	Sandbox 6 · the building tree: every chain of the valley on one screen, from the land to the last ware (laid out by
-	./tree.js from the rules). A building shows what it costs, where it finds its work and how many you have; a ware
-	shows what you hold, whether people live on it, and who in the valley has plenty of it. Click a building to build it.
+	Sandbox 6 · the building tree: every chain of the valley on one screen, a row each (./tree.js, read from the rules):
+	the land a building works, every stage it grows through with what it makes and uses a year and what growing to it
+	costs, the ware it makes and what that is for; then energy, the village center's geothermal stages and every dome's
+	solar cells; then the homes, one dome through its eight sizes. A stage you have is marked; click a first stage to
+	build it (later stages grow on the building's card).
 -->
 <script>
-	import { BUILDINGS, WARES } from './rules.js';
-	import { LIVED_ON, OTHERS, SOURCE, TRADE_NOTE, chainTree } from './tree.js';
+	import { ENERGY, WARES } from './rules.js';
+	import { GRID_EUR_KWH, GLASS_EUR_T } from './market.js';
+	import { CHAINS, GEOTHERMAL, HOMES } from './tree.js';
 
 	/** @type {{ stock: Record<string, number>, owned: Record<string, number>, onBuild: (type: string) => void, onClose: () => void }} */
 	let { stock, owned, onBuild, onClose } = $props();
 
-	const W = 138, H = 40, COL = 156, ROW = 50, PAD = 14;
-	const tree = chainTree(COL, ROW);
-	const byId = Object.fromEntries(tree.nodes.map((n) => [n.id, n]));
 	const label = (/** @type {string} */ w) => WARES[w]?.label ?? w;
-	const costOf = (/** @type {string} */ t) =>
-		Object.entries(BUILDINGS[t].cost)
+	const num = (/** @type {number} */ n) => Math.round(n).toLocaleString('en-US');
+	/** energy: kWh, MWh or GWh */
+	const kwh = (/** @type {number} */ n) => (n >= 1e6 ? `${(n / 1e6).toFixed(1)} GWh` : n >= 1e4 ? `${num(n / 1000)} MWh` : `${num(n)} kWh`);
+	/** a cost in loads, short */
+	const costOf = (/** @type {Record<string, number>} */ c) =>
+		Object.entries(c)
 			.map(([w, n]) => `${n} ${label(w).toLowerCase()}`)
-			.join(' · ');
-	/** a curve from the right of one node to the left of the next */
-	const path = (/** @type {{ from: string, to: string }} */ e) => {
-		const a = byId[e.from], b = byId[e.to];
-		const x1 = a.x + W + PAD, y1 = a.y + H / 2 + PAD, x2 = b.x + PAD, y2 = b.y + H / 2 + PAD;
-		const mid = (x1 + x2) / 2;
-		return `M${x1},${y1} C${mid},${y1} ${mid},${y2} ${x2},${y2}`;
-	};
-	let hover = $state('');
-	/** what a hovered node touches */
-	const lit = $derived(new Set(hover ? tree.edges.filter((e) => e.from === hover || e.to === hover).flatMap((e) => [e.from, e.to]) : []));
+			.join(', ') || 'nothing';
 </script>
 
 <section class="tree" aria-label="Building tree">
 	<button class="close" onclick={onClose} aria-label="Close">×</button>
 	<p class="eyebrow">How the valley works</p>
 	<h2>Building tree</h2>
-	<p class="about">From the land on the left to the last ware on the right: each building takes the wares that lead into it and makes the ware it points to. <b>♥</b> marks what people's homes are built of. Click a building to build it.</p>
+	<p class="about">Each row runs from the land to what it is for, through every stage its building grows: what a stage makes and uses a year, and what growing to it costs (in loads of 5 t). A green stage is one you have. Click a first stage to build it; the next ones grow on its card.</p>
+
 	<div class="scroll">
-		<svg width={tree.width + PAD * 2} height={tree.height + PAD * 2} role="img" aria-label="The chains of buildings and wares">
-			{#each tree.edges as e (e.from + e.to)}
-				<path d={path(e)} class:alt={e.alt} class:lit={lit.has(e.from) && lit.has(e.to) && (e.from === hover || e.to === hover)} />
-			{/each}
-			{#each tree.nodes as n (n.id)}
-				{@const id = n.id.slice(2)}
-				<g transform="translate({n.x + PAD},{n.y + PAD})" class:dim={hover && !lit.has(n.id) && hover !== n.id} onmouseenter={() => (hover = n.id)} onmouseleave={() => (hover = '')} role="presentation">
-					{#if n.kind === 'building'}
-						<foreignObject width={W} height={H}>
-							<button class="node b" class:have={owned[id]} onclick={() => onBuild(id)} title="{BUILDINGS[id].about} Costs {costOf(id)}.{BUILDINGS[id].inputs?.length ? ` Needs ${BUILDINGS[id].inputs?.map((s) => s.map(label).join(' or ')).join(' + ')}.` : ''}">
-								<strong>{BUILDINGS[id].label}{#if owned[id]}<em> ×{owned[id]}</em>{/if}</strong>
-								<span>{SOURCE[id] ? `${SOURCE[id]} · ` : ''}{costOf(id)}</span>
-							</button>
-						</foreignObject>
+		<div class="grid">
+			<p class="head">Land</p>
+			<p class="head stages">Stages, each an upgrade of the one before</p>
+			<p class="head">Makes</p>
+			<p class="head">For</p>
+
+			{#each CHAINS as c (c.type)}
+				<div class="node land"><strong>{c.land}</strong><span>{c.landNote}</span></div>
+				{#each [0, 1, 2, 3] as k (k)}
+					{@const s = c.stages[k]}
+					{#if s}
+						<button class="node b" class:have={owned[`${c.type}:${s.level}`]} class:first={k === 0} onclick={() => k === 0 && onBuild(c.type)} title={k === 0 ? `Build a ${s.label.toLowerCase()}: ${costOf(s.cost)}` : `Upgrade a ${c.stages[k - 1].label.toLowerCase()} on its card: ${costOf(s.cost)}`}>
+							<strong>{s.label}{#if owned[`${c.type}:${s.level}`]}<em>×{owned[`${c.type}:${s.level}`]}</em>{/if}</strong>
+							<span>{s.t ? `${num(s.t)} t a year · ${kwh(s.kwh)}` : 'plants young trees, cuts none'}</span>
+							<span class="cost">{k ? '↑ ' : ''}{costOf(s.cost)}</span>
+						</button>
 					{:else}
-						<foreignObject width={W} height={H}>
-							<div class="node w" title={TRADE_NOTE[id] ?? ''}>
-								<strong><i style:background={WARES[id].color}></i>{label(id)}{#if LIVED_ON.has(id)}<b class="heart">♥</b>{/if}<em>{stock[id] ?? 0}</em></strong>
-								<span>{TRADE_NOTE[id] ?? ''}</span>
-							</div>
-						</foreignObject>
+						<div class="gap"></div>
 					{/if}
-				</g>
+				{/each}
+				<div class="node w"><strong><i style:background={WARES[c.ware].color}></i>{label(c.ware)}<em>{Math.floor(stock[c.ware] ?? 0)}</em></strong><span>in your stores, loads</span></div>
+				<div class="node use"><strong>{c.use}</strong><span>{c.useNote}</span></div>
 			{/each}
-		</svg>
+
+			<div class="node land"><strong>Hot rock</strong><span>5.5 km down, 175 °C</span></div>
+			{#each GEOTHERMAL as s, k (s.level)}
+				<button class="node b e" class:have={owned[`centre:${s.level}`]} class:first={k === 0} onclick={() => k === 0 && onBuild('centre')} title={k === 0 ? `Found a village: its center stands on geothermal wells, one injector and two producers (${num(s.eur)} €, your first village's come with the valley)` : `Drill two more producers on its village center's card: ${num(s.eur)} €`}>
+					<strong>{s.label}{#if owned[`centre:${s.level}`]}<em>×{owned[`centre:${s.level}`]}</em>{/if}</strong>
+					<span>{s.mw.toFixed(1)} MW · {kwh(s.kwh)} a year</span>
+					<span class="cost">{k ? '↑ ' : ''}{num(s.eur / 1e6)} M €{k ? '' : ' for a new village'}</span>
+				</button>
+			{/each}
+			<div class="gap"></div>
+			<div class="node w e"><strong><i class="bolt"></i>Energy</strong><span>kWh, a flow</span></div>
+			<div class="node use"><strong>People, domes, factories</strong><span>the rest to the grid, {num(GRID_EUR_KWH * 1000)} € a MWh</span></div>
+
+			<div class="node land"><strong>Sun</strong><span>through the domes' glass</span></div>
+			<div class="node b e wide"><strong>Every dome's solar cells</strong><span>{kwh(ENERGY.sunBed)} a bed a year, most in summer; its climate uses {kwh(ENERGY.climateBed)}</span></div>
+			<div class="gap"></div>
+			<div class="gap"></div>
+			<div class="node w e"><strong><i class="bolt"></i>Energy</strong><span>kWh, a flow</span></div>
+			<div class="node use"><strong>People at home</strong><span>{num(ENERGY.home)} kWh a year each</span></div>
+		</div>
 	</div>
-	<p class="label">Also to build</p>
-	<div class="others">
-		{#each OTHERS as b (b.id)}
-			<button class="node b" class:have={owned[b.id]} onclick={() => onBuild(b.id)} title={b.about}>
-				<strong>{b.label}{#if owned[b.id]}<em> ×{owned[b.id]}</em>{/if}</strong>
-				<span>{b.about.split('.')[0]} · {costOf(b.id)}</span>
+
+	<p class="label">Homes: one dome that grows</p>
+	<div class="homes">
+		{#each HOMES as h, k (h.level)}
+			<button class="node b" class:have={owned[`house:${h.level}`]} class:first={k === 0} onclick={() => k === 0 && onBuild('house')} title={k === 0 ? `Build a hut of ${h.beds}: ${costOf(h.cost)} and ${num(h.glass)} t of glass, ${num(h.glass * GLASS_EUR_T)} € from the world market` : `Enlarge on the house's card: ${costOf(h.cost)} and ${num(h.glass)} t of glass, ${num(h.glass * GLASS_EUR_T)} €`}>
+				<strong>{h.label} · {h.beds}{#if owned[`house:${h.level}`]}<em>×{owned[`house:${h.level}`]}</em>{/if}</strong>
+				<span>sun {kwh(h.sun)} a year</span>
+				<span class="cost">{k ? '↑ ' : ''}{costOf(h.cost)}, {num(h.glass)} t glass</span>
 			</button>
 		{/each}
 	</div>
-	<p class="small">Food and water are not wares: the food forests grow food, the roofs catch rain, and the world market sells the rest and buys what you have spare.</p>
+	<p class="small">Food and water are not wares: each hex's food forest grows food, the domes' roofs catch rain, and the world market sells the rest and buys what you have spare. Glass comes from the world market, paid in gold as a dome is begun.</p>
 </section>
 
 <style>
@@ -80,12 +95,12 @@
 		z-index: 5;
 		top: calc(5rem + env(safe-area-inset-top, 0px));
 		left: calc(9rem + env(safe-area-inset-left, 0px));
-		right: calc(17.5rem + env(safe-area-inset-right, 0px));
+		right: calc(18.6rem + env(safe-area-inset-right, 0px));
 		max-height: calc(100vh - 9rem - var(--nav-room, 4rem));
 		overflow: auto;
 		padding: 0.7rem 0.8rem;
 		border-radius: 16px;
-		background: rgb(250 248 242 / 0.94);
+		background: rgb(250 248 242 / 0.96);
 		border: 1px solid rgb(255 255 255 / 0.5);
 		-webkit-backdrop-filter: blur(14px) saturate(1.2);
 		backdrop-filter: blur(14px) saturate(1.2);
@@ -109,14 +124,14 @@
 		font-size: 0.66rem;
 		letter-spacing: 0.08em;
 		text-transform: uppercase;
-		opacity: 0.6;
+		color: #6b736d;
 	}
 	.about,
 	.small {
 		margin: 0 0 0.5rem;
 		font-size: 0.76rem;
 		line-height: 1.35;
-		opacity: 0.8;
+		color: #47504a;
 	}
 	.label {
 		margin: 0.6rem 0 0.3rem;
@@ -125,81 +140,110 @@
 	}
 	.scroll {
 		overflow-x: auto;
+		padding: 0.5rem;
 		border-radius: 12px;
 		background: rgb(31 42 35 / 0.04);
 	}
-	svg {
-		display: block;
+	.grid {
+		display: grid;
+		grid-template-columns: 6.6rem repeat(4, 7.6rem) 6.4rem 7.6rem;
+		column-gap: 1rem;
+		row-gap: 0.5rem;
+		width: max-content;
 	}
-	path {
-		fill: none;
-		stroke: rgb(31 42 35 / 0.28);
-		stroke-width: 1.6;
+	.head {
+		margin: 0;
+		font-size: 0.64rem;
+		letter-spacing: 0.06em;
+		text-transform: uppercase;
+		color: #6b736d;
 	}
-	path.alt {
-		stroke-dasharray: 4 3;
-	}
-	path.lit {
-		stroke: #24452f;
-		stroke-width: 2.4;
-	}
-	g.dim {
-		opacity: 0.35;
+	.head.stages {
+		grid-column: span 4;
 	}
 	.node {
+		position: relative;
 		box-sizing: border-box;
 		display: flex;
 		flex-direction: column;
 		justify-content: center;
-		gap: 0.1rem;
-		width: 100%;
-		height: 100%;
-		padding: 0.2rem 0.5rem;
+		gap: 0.05rem;
+		min-height: 3.3rem;
+		padding: 0.25rem 0.5rem;
 		border-radius: 10px;
 		font: inherit;
 		font-size: 0.72rem;
 		text-align: left;
 		color: #1f2a23;
-		overflow: hidden;
+	}
+	/* an arrow from the node before */
+	.node:not(.land)::before {
+		content: '→';
+		position: absolute;
+		left: -0.9rem;
+		top: 50%;
+		transform: translateY(-50%);
+		font-size: 0.7rem;
+		color: #8a928c;
+	}
+	.gap {
+		align-self: center;
+		height: 0;
+		border-top: 1px dashed rgb(31 42 35 / 0.25);
+		margin: 0 -1rem;
 	}
 	.node strong {
 		display: flex;
 		align-items: center;
 		gap: 0.3rem;
-		white-space: nowrap;
+		font-size: 0.74rem;
 	}
 	.node em {
 		margin-left: auto;
 		font-style: normal;
-		font-weight: 500;
-		opacity: 0.7;
+		font-weight: 600;
+		color: #3d8f4a;
 	}
 	.node span {
 		font-size: 0.64rem;
-		opacity: 0.65;
-		white-space: nowrap;
-		overflow: hidden;
-		text-overflow: ellipsis;
+		line-height: 1.25;
+		color: #5c645e;
+	}
+	.node .cost {
+		color: #7b6a4a;
+	}
+	.node.land {
+		background: rgb(159 196 106 / 0.18);
+		border: 1px solid rgb(95 130 60 / 0.25);
 	}
 	.node.b {
 		border: 1px solid rgb(31 42 35 / 0.15);
 		background: #fff;
+		cursor: default;
+	}
+	.node.b.first {
 		cursor: pointer;
 	}
-	.node.b:hover {
+	.node.b.first:hover {
 		border-color: #24452f;
 	}
 	.node.b.have {
 		border-color: #3d8f4a;
 		box-shadow: inset 3px 0 0 #3d8f4a;
 	}
-	.node.w {
-		border: 1px dashed rgb(31 42 35 / 0.2);
-		background: rgb(255 255 255 / 0.55);
+	.node.b.e {
+		background: #fffbea;
 	}
-	.heart {
-		color: #b8442e;
-		font-size: 0.7rem;
+	.node.wide {
+		grid-column: span 2;
+	}
+	.node.w {
+		border: 1px dashed rgb(31 42 35 / 0.25);
+		background: rgb(255 255 255 / 0.6);
+	}
+	.node.use {
+		border: 1px solid rgb(31 42 35 / 0.08);
+		background: rgb(31 42 35 / 0.05);
 	}
 	i {
 		display: inline-block;
@@ -209,14 +253,16 @@
 		box-shadow: inset 0 0 0 1px rgb(0 0 0 / 0.15);
 		flex: none;
 	}
-	.others {
-		display: grid;
-		grid-template-columns: repeat(auto-fill, minmax(12rem, 1fr));
-		gap: 0.4rem;
+	i.bolt {
+		background: #e8b730;
 	}
-	.others .node {
-		height: auto;
-		min-height: 2.6rem;
+	.homes {
+		display: grid;
+		grid-template-columns: repeat(auto-fill, minmax(8.4rem, 1fr));
+		gap: 0.5rem 1rem;
+	}
+	.homes .node:first-child::before {
+		content: none;
 	}
 	@media (max-width: 720px) {
 		.tree {

@@ -1,102 +1,54 @@
 /**
- * SANDBOX 6 · THE BUILDING TREE — the valley's chains as a graph, laid out in columns from the land to the last ware:
- * each building stands one column after the wares it needs, each ware one column after the building that makes it.
- * Read from the rules (./rules.js), so it always shows the game as it is. The page draws it (./Tree.svelte).
+ * SANDBOX 6 · THE BUILDING TREE — the valley's chains, a row each, from the land to what they are for: the land a
+ * building works, every stage it grows through (what it makes and uses a year, and what growing to it costs), the ware
+ * it makes, and what that ware builds. Energy has its rows too (the village center's geothermal stages, every dome's
+ * solar cells), and the homes theirs: one dome that grows through eight sizes. Read from the rules (./rules.js), so it
+ * always shows the game as it is. The page draws it (./Tree.svelte).
  */
-import { BUILDINGS, WARES } from './rules.js';
-import { NEEDS } from './market.js';
-
-/** where in the land a gatherer finds its work */
-export const SOURCE = /** @type {Record<string, string>} */ ({
-	woodcutter: 'grown trees',
-	forester: 'free grass',
-	ironmine: 'iron ore',
-	clayworks: 'clay under a meadow'
-});
-/** the wares people live on: their homes' planks and steel (their food grows in the hexes' food forests and their water
- * falls on their roofs, ./food.js) */
-export const LIVED_ON = new Set(Object.keys(NEEDS));
-
-/** buildings that make or gather something: the chains */
-const CHAIN = Object.values(BUILDINGS).filter((b) => b.group && (b.out || b.kind === 'forester'));
-/** the rest you build: houses and village centers */
-export const OTHERS = Object.values(BUILDINGS).filter((b) => b.group && !CHAIN.includes(b));
+import { BUILDINGS, ENERGY, FIELD_HA, GROWS, HOUSE_BEDS, HOUSE_GLASS, HOUSE_SIZE, HOUSE_UP, ROUNDS_YEAR, ROUTE_T_KM, tonnesYear } from './rules.js';
+import { WELL_EUR } from './market.js';
+import { YEAR } from './food.js';
 
 /**
- * @typedef {{ id: string, kind: 'building' | 'ware', col: number, row: number, x: number, y: number }} TreeNode
- * @typedef {{ from: string, to: string, alt: boolean }} TreeEdge
+ * @typedef {{ label: string, level: number, t: number, kwh: number, cost: Record<string, number> }} Stage
+ * @typedef {{ type: string, land: string, landNote: string, stages: Stage[], ware: string, use: string, useNote: string }} Chain
  */
 
-/** the tree, laid out: nodes in columns, edges ware → building (an input) and building → ware (what it makes) */
-export function chainTree(colW = 168, rowH = 50) {
-	/** @type {Record<string, number>} */
-	const wareLevel = {};
-	/** @type {Record<string, number>} */
-	const bLevel = {};
-	// a building comes after the wares it needs: the latest of its slots, the earliest ware of a slot that takes any one
-	for (let pass = 0; pass < 12; pass++)
-		for (const b of CHAIN) {
-			const slots = b.inputs ?? [];
-			let lv = 0;
-			for (const slot of slots) {
-				const ws = slot.map((w) => wareLevel[w]).filter((x) => x !== undefined);
-				lv = Math.max(lv, ws.length ? Math.min(...ws) + 1 : 99);
-			}
-			if (lv >= 99) continue;
-			bLevel[b.id] = lv;
-			if (b.out) wareLevel[b.out] = Math.min(wareLevel[b.out] ?? Infinity, lv);
-		}
-	/** @type {TreeNode[]} */
-	const nodes = [];
-	/** @type {Map<number, string[]>} */
-	const cols = new Map();
-	const put = (/** @type {string} */ id, /** @type {number} */ col) => cols.set(col, [...(cols.get(col) ?? []), id]);
-	for (const b of CHAIN) if (bLevel[b.id] !== undefined) put(`b:${b.id}`, bLevel[b.id] * 2);
-	for (const [w, lv] of Object.entries(wareLevel)) put(`w:${w}`, lv * 2 + 1);
-	// keep a ware level with the building that makes it, and a building near the wares it takes
-	const order = Object.keys(WARES);
-	const rows = Math.max(...[...cols.values()].map((c) => c.length));
-	/** @type {Record<string, number>} */
-	const at = {};
-	for (const col of [...cols.keys()].sort((a, b) => a - b)) {
-		const ids = /** @type {string[]} */ (cols.get(col));
-		const want = (/** @type {string} */ id) => {
-			if (id.startsWith('w:')) {
-				const maker = CHAIN.find((b) => b.out === id.slice(2) && bLevel[b.id] * 2 === col - 1);
-				return maker ? at[`b:${maker.id}`] ?? 0 : order.indexOf(id.slice(2));
-			}
-			const b = BUILDINGS[id.slice(2)];
-			const ins = (b.inputs ?? []).flat().map((w) => at[`w:${w}`]).filter((x) => x !== undefined);
-			return ins.length ? ins.reduce((a, c) => a + c, 0) / ins.length : CHAIN.indexOf(b) * 0.01;
-		};
-		ids.sort((a, b) => want(a) - want(b));
-		const taken = new Set();
-		for (const id of ids) {
-			let r = Math.max(0, Math.round(want(id)));
-			if (col === 0) r = ids.indexOf(id);
-			while (taken.has(r)) r++;
-			taken.add(r);
-			at[id] = r;
-		}
-	}
-	for (const [col, ids] of cols)
-		for (const id of ids) nodes.push({ id, kind: id.startsWith('b:') ? 'building' : 'ware', col, row: at[id], x: col * colW, y: at[id] * rowH });
-	/** @type {TreeEdge[]} */
-	const edges = [];
-	for (const b of CHAIN) {
-		if (bLevel[b.id] === undefined) continue;
-		// a slot that takes any one ware: drawn from those that come before it
-		for (const slot of b.inputs ?? []) for (const w of slot) if (wareLevel[w] !== undefined && wareLevel[w] < bLevel[b.id]) edges.push({ from: `w:${w}`, to: `b:${b.id}`, alt: slot.length > 1 });
-		if (b.out) edges.push({ from: `b:${b.id}`, to: `w:${b.out}`, alt: false });
-	}
-	const width = (Math.max(...nodes.map((n) => n.col)) + 1) * colW;
-	const height = (Math.max(rows, ...nodes.map((n) => n.row + 1))) * rowH;
-	return { nodes, edges, width, height };
-}
+/** the chains of wares, a row each: wood, steel and fired clay */
+export const CHAINS = /** @type {Chain[]} */ (
+	[
+		{ type: 'woodcutter', land: 'Forest hex', landNote: `${FIELD_HA} ha of hemp, bamboo and woods`, ware: 'plank', use: 'Domes', useNote: 'their glulam struts' },
+		{ type: 'ironmine', land: 'Iron hex', landNote: `${ROUNDS_YEAR.ironmine * 25} t of iron ore a year`, ware: 'steel', use: 'Domes', useNote: 'their steel joints' },
+		{ type: 'clayworks', land: 'Meadow hex', landNote: 'clay under the grass', ware: 'clay', use: 'Trade routes', useNote: `${ROUTE_T_KM.toLocaleString('en-US')} t a km` }
+	].map((c) => ({
+		...c,
+		stages: GROWS[c.type].levels.map((l, k) => ({
+			label: l.label,
+			level: k + 1,
+			t: tonnesYear(c.type, k + 1),
+			kwh: tonnesYear(c.type, k + 1) * ENERGY.perT[c.type][k],
+			cost: k ? GROWS[c.type].up[k - 1] : BUILDINGS[c.type].cost
+		}))
+	}))
+);
 
-/** where in the valley a ware comes from: the hex it is made on, a line under the ware */
-export const TRADE_NOTE = /** @type {Record<string, string>} */ ({
-	plank: 'Forest hexes only',
-	steel: 'Iron hexes only',
-	clay: 'Meadow hexes only'
-});
+/** the village center's geothermal stages: its power, what it makes a year, and what drilling it costs (the first
+ * comes with your first village, and with every village you found for that much) */
+export const GEOTHERMAL = Array.from({ length: ENERGY.wellsMost }, (_, k) => ({
+	label: k ? `Geothermal ${k + 1}` : 'Village center',
+	level: k + 1,
+	mw: ((k + 1) * ENERGY.wellKw) / 1000,
+	kwh: (k + 1) * ENERGY.wellKw * 24 * YEAR * ENERGY.uptime,
+	eur: WELL_EUR
+}));
+
+/** a home's sizes: one dome that grows, its beds, what growing to it costs in loads and glass, and what its solar
+ * cells make a year */
+export const HOMES = HOUSE_BEDS.map((beds, k) => ({
+	label: HOUSE_SIZE[k],
+	level: k + 1,
+	beds,
+	cost: /** @type {Record<string, number>} */ (k ? HOUSE_UP[k - 1] : BUILDINGS.house.cost),
+	glass: HOUSE_GLASS[k],
+	sun: beds * ENERGY.sunBed
+}));
