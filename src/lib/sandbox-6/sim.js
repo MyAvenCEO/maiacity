@@ -2209,7 +2209,6 @@ export function createSim(st) {
 			territory();
 			for (const b of blds()) if (b.type === 'house') autoRoad(b.flag);
 			neighbourTowns();
-			say('Welcome to your valley: a village center and one house of two. Every hex holds a house and two factories in a triangle round its middle, and paths run straight from middle to middle. Woods, rocks, water and iron lie on their own hexes, so found villages where they are and join them. Build homes first, then a woodcutter, an iron mine and a clay pit. Domes cost real tonnes, their glass gold from the world market. Your village center is also a geothermal power plant: the world grid buys what your village does not use.', hq.node);
 		},
 		canBuild,
 		canFlag,
