@@ -109,6 +109,12 @@
 		refresh();
 	}
 	const money = (/** @type {number} */ n) => (n < 10 ? n.toFixed(1) : String(Math.round(n)));
+	/** how many villages each city has, while any still lacks the five the valley needs */
+	const founding = $derived.by(() => {
+		const s = /** @type {any} */ (summary);
+		if (!s || !s.cities.some((/** @type {any} */ c) => c.n < s.need)) return '';
+		return s.cities.map((/** @type {any} */ c) => `${c.name} ${Math.min(c.n, s.need)}/${s.need}`).join(' · ');
+	});
 	const tone = (/** @type {number} */ wb) => (wb >= ABUNDANT ? 'good' : wb >= 55 ? 'fair' : 'poor');
 	/** @param {string} m @param {string} [type] */
 	function tool(m, type = '') {
@@ -217,6 +223,9 @@
 					<span class="big {tone(summary.abundance)}">{Math.round(summary.abundance)}</span>
 				</div>
 				<p class="people small">{summary.thriving} of {summary.allVillages} villages full and at {ABUNDANT}+{summary.held >= 0 ? ` · held ${clock(summary.held)} of ${clock(HOLD)}` : ''}</p>
+				{#if founding}
+					<p class="people small">Villages: {founding}</p>
+				{/if}
 				<ul class="lives">
 					{#each market?.parties ?? [] as p (p.name)}
 						<li>

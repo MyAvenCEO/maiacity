@@ -43,8 +43,8 @@ export const TRADED = Object.keys(BASE);
  * @type {{ name: string, about: string, plenty: string, short: string, builds: string[], make: Record<string, number> }[]}
  */
 export const NEIGHBOURS = [
-	{ name: 'Eastmere', about: 'Miners and smiths under the eastern peaks: plenty of iron ore and tools, but no wood.', plenty: 'ore', short: 'plank', builds: ['toolmaker', 'quarry', 'bakery', 'well', 'fishery', 'farm'], make: { ore: 0.06, tools: 0.03, fish: 0.04, bread: 0.06, water: 0.06, stone: 0.05, grain: 0.02 } },
-	{ name: 'Highfold', about: 'Woodcutters in the northern hills: plenty of planks, but no fish.', plenty: 'plank', short: 'fish', builds: ['woodcutter', 'forester', 'bakery', 'well', 'farm', 'quarry'], make: { plank: 0.1, bread: 0.1, water: 0.06, stone: 0.03 } }
+	{ name: 'Eastmere', about: 'Miners and smiths under the eastern peaks: plenty of iron ore and tools, but little wood.', plenty: 'ore', short: 'plank', builds: ['toolmaker', 'quarry', 'bakery', 'well', 'fishery', 'farm'], make: { ore: 0.06, tools: 0.03, fish: 0.04, bread: 0.06, water: 0.08, stone: 0.05, grain: 0.02, plank: 0.015 } },
+	{ name: 'Highfold', about: 'Woodcutters in the northern hills: plenty of planks, but no fish.', plenty: 'plank', short: 'fish', builds: ['woodcutter', 'forester', 'bakery', 'well', 'farm', 'quarry'], make: { plank: 0.1, bread: 0.1, water: 0.08, stone: 0.03 } }
 ];
 
 /**
