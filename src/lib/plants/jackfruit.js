@@ -12,9 +12,10 @@
  * It flowers and fruits on the old wood (cauliflory): short, stout, leafy footstalks break straight out of the trunk
  * and the thick limbs, each with a club-shaped green male head or an oblong female one, a fleshy ring at its foot;
  * smaller male heads also among the leaves. The male heads shed their pollen and blacken; the female heads swell over
- * months into the largest fruit any tree bears, 35–60 cm and tens of kilograms, oblong, often lopsided, covered in
- * blunt hexagonal knobs. Each hangs straight down on its thick short stalk, leaning against the bark it grew from —
- * not held out on a stalk. Green, then yellowing as it ripens, its knobs flattening and browning at their tips.
+ * months into the largest fruit any tree bears, 30–55 cm and tens of kilograms, oblong to round, often lopsided and
+ * lumpy, covered in blunt hexagonal knobs — dozens of them, singly and in clusters of two to four, all up the trunk
+ * into the crown and along the big limbs. Each hangs straight down on its thick short stalk, leaning against the bark
+ * it grew from — not held out on a stalk. Green, then yellowing as it ripens, its knobs flattening and browning at their tips.
  *
  * Every limb, footstalk and fruit draws its chance by its place in the tree, and the tree is designed whole and shown
  * as far as it has grown (`Y` years), so a tree tabbed through its stages grows. ./orchard.v1.js and ./orchard.js grow
@@ -214,19 +215,21 @@ function design(seed) {
 	};
 	for (const b of [...trunk.kids]) furnish(b);
 
-	// the footstalks of the old wood: up the clear trunk from knee height, and on the thick lower part of the big limbs
+	// the footstalks of the old wood: all up the trunk from knee height into the crown, and all along the big limbs
+	// out to where they thin — the fruit hangs in clusters from the wood throughout the tree, not only low down
 	const fr = chance(seed, 'jack-sites');
-	const sites = Math.round((CLEAR + 0.5 - 0.4) * 6.5);
+	const high = top * 0.72;
+	const sites = Math.round((high - 0.4) * 6);
 	for (let i = 0; i < sites; i++) {
 		const a = fr() * Math.PI * 2;
-		trunk.sites.push(site(fr, between(fr, 0.4, CLEAR + 0.5), v3(Math.cos(a), 0, Math.sin(a)), ['trunk', i]));
+		trunk.sites.push(site(fr, lerp(0.4, high, (i + fr()) / sites), v3(Math.cos(a), 0, Math.sin(a)), ['trunk', i]));
 	}
 	for (const b of trunk.kids) {
-		if (b.dies < 99 || b.full < 1.4) continue;
+		if (b.dies < 99 || b.full < 0.9) continue;
 		const lr = chance(seed, 'jack-limb-sites', ...b.key);
-		const n = Math.floor(lr() * 3.2);
+		const n = Math.floor(b.full * 1.7 + lr());
 		for (let i = 0; i < n; i++) {
-			const at = between(lr, 0.12, 0.5) * b.full;
+			const at = lerp(0.12, 0.75, (i + lr()) / n) * b.full;
 			// out of its underside or its flanks, where the fruit can hang
 			const d = dirAt(b, at);
 			const side = new THREE.Vector3().crossVectors(d, UP).normalize().applyAxisAngle(d, between(lr, -1.2, 1.2) + Math.PI / 2);
@@ -241,9 +244,10 @@ function design(seed) {
 
 /** a footstalk: male or female, and how many fruit a female head keeps @param {Chance} r */
 function site(r, /** @type {number} */ s, /** @type {THREE.Vector3} */ out, /** @type {(string | number)[]} */ key) {
-	const female = r() < 0.62;
+	const female = r() < 0.68;
 	const k = r();
-	return { s, out, key, female, keep: female ? (k < 0.18 ? 0 : k < 0.86 ? 1 : 2) : 0, len: between(r, 0.035, 0.07) };
+	// a cushion keeps one fruit, or a cluster of two to four
+	return { s, out, key, female, keep: female ? (k < 0.14 ? 0 : k < 0.5 ? 1 : k < 0.76 ? 2 : k < 0.92 ? 3 : 4) : 0, len: between(r, 0.035, 0.07) };
 }
 
 /** a leaf: a short stout stalk, then a blade broadest a little beyond its middle (obovate), with a short blunt tip */
@@ -263,7 +267,7 @@ const C = {
 	barkOld: new THREE.Color('#6d6255'), barkYoung: new THREE.Color('#6b6e44'), scar: new THREE.Color('#a59a7c'),
 	plate: new THREE.Color('#5b5045'), lichen: new THREE.Color('#9a9888'), flake: new THREE.Color('#8b8070'), crack: new THREE.Color('#362e27'),
 	footstalk: new THREE.Color('#6a6a42'), stalk: new THREE.Color('#5e6a34'), ring: new THREE.Color('#7e8a46'),
-	green: new THREE.Color('#5a8a2c'), greenTip: new THREE.Color('#3b6220'), ripe: new THREE.Color('#c2ab42'), ripeTip: new THREE.Color('#7e6a2a'),
+	green: new THREE.Color('#5a8a2c'), greenTip: new THREE.Color('#3b6220'), ripe: new THREE.Color('#bcb244'), ripeTip: new THREE.Color('#7c7a2c'),
 	male: new THREE.Color('#5f7d34'), pollen: new THREE.Color('#c9c060'), spent: new THREE.Color('#2b2a20'),
 	c: new THREE.Color()
 };
@@ -407,7 +411,7 @@ export function jackfruit(g, seed) {
 	const crowd = new Space();
 	crowd.rods = space.rods;
 	for (const f of footstalks) {
-		if (!blooming || f.wood < 2) continue;
+		if (!blooming || f.wood < 1.2) continue;
 		const st = f.site;
 		const r = chance(seed, 'jack-flower', ...st.key);
 		const grownStalk = clamp((g - 4.55) / 0.3);
@@ -437,37 +441,44 @@ export function jackfruit(g, seed) {
 			const drop = kept ? 0 : span(g, 5.4, 6.2);
 			if (drop >= 1) continue;
 			const kr = chance(seed, 'jack-fruit', ...st.key, k);
-			const size = about(kr, 1, 0.12);
+			// a cluster's fruit smaller than a lone one, and every one its own shape: long and barrel-shaped, or short and round
+			const size = about(kr, 1, 0.14) * (n > 2 ? 0.82 : n > 1 ? 0.9 : 1);
+			const stout = between(kr, 0.95, 1.45);
 			const grow = kept ? set : 0;
-			const Lf = lerp(0.1, 0.5 * size, grow) * lerp(0.6, 1, clamp((g - 4.55) / 0.4));
-			const Wf = lerp(0.026, 0.125 * size * about(kr, 1, 0.08), grow) * lerp(0.6, 1, clamp((g - 4.55) / 0.4));
-			// two from one cushion part to either side
-			const out = f.out.clone().setY(0).normalize().applyAxisAngle(UP, n > 1 ? (k ? 0.55 : -0.55) : about(kr, 0, 0.2));
+			const Lf = lerp(0.1, (0.46 * size) / Math.sqrt(stout), grow) * lerp(0.6, 1, clamp((g - 4.55) / 0.4));
+			const Wf = lerp(0.026, 0.12 * size * Math.sqrt(stout), grow) * lerp(0.6, 1, clamp((g - 4.55) / 0.4));
+			// the fruit of one cushion fanned round it, some hanging lower than the others
+			const flat = f.out.clone().setY(0);
+			if (flat.lengthSq() < 0.01) flat.copy(f.along).setY(0);
+			if (flat.lengthSq() < 1e-6) flat.set(1, 0, 0);
+			const out = flat.normalize().applyAxisAngle(UP, (k - (n - 1) / 2) * 0.75 + about(kr, 0, 0.2));
+			const lower = k % 2 ? 0.35 : 0;
 			// it hangs straight down from its short thick stalk, its top end against the footstalk, its side against
 			// the bark, leaning a little out — not held off the wood
 			const lean = f.limb ? 0.12 : 0.3 + kr() * 0.12;
 			const shape = (/** @type {THREE.Vector3} */ a, /** @type {THREE.Vector3} */ d, L = Lf, W = Wf) => [0.18, 0.4, 0.62, 0.84].map((t) => ({ c: a.clone().addScaledVector(d, L * t), r: W * PROFILE(t) * 0.86 }));
 			// where it hangs is chosen by the room the grown fruit will need, so it hangs in the same place at every stage
-			const fullL = kept ? 0.5 * size : Lf, fullW = kept ? 0.125 * size : Wf;
+			const fullL = kept ? (0.46 * size) / Math.sqrt(stout) : Lf, fullW = kept ? 0.12 * size * Math.sqrt(stout) : Wf;
 			// of a few hangs — leaning more or less, turned a little round the wood — the one that touches least; never held
 			// out sideways
 			/** @type {{ balls: { c: THREE.Vector3, r: number }[], cost: number, data: { at: THREE.Vector3, dir: THREE.Vector3 } }[]} */
 			const options = [];
-			for (const [more, turn, cost] of [[0, 0, 0], [0.15, 0, 0.004], [0, 0.35, 0.006], [0, -0.35, 0.006], [0.3, 0.3, 0.01], [0.3, -0.3, 0.01], [0.45, 0, 0.014], [0, 0.7, 0.018], [0, -0.7, 0.018]]) {
+			for (const [more, turn, cost, drop] of [[0, 0, 0, lower], [0.15, 0, 0.004, lower], [0, 0.4, 0.006, lower], [0, -0.4, 0.006, lower], [0, 0, 0.008, lower + 0.4], [0.3, 0.35, 0.01, lower], [0.3, -0.35, 0.01, lower], [0, 0.8, 0.014, lower + 0.3], [0, -0.8, 0.014, lower + 0.3], [0.45, 0, 0.016, lower + 0.6], [0, 1.3, 0.02, lower], [0, -1.3, 0.02, lower]]) {
 				const o = out.clone().applyAxisAngle(UP, turn);
 				const dir = v3(0, -1, 0).addScaledVector(o, lean + more * 0.5).normalize();
-				const at = tip.clone().addScaledVector(o, Wf * (0.3 + more)).add(v3(0, -0.012 - Wf * 0.15, 0));
-				const full = tip.clone().addScaledVector(o, fullW * (0.3 + more)).add(v3(0, -0.012 - fullW * 0.15, 0));
+				// some hang lower, on a longer stalk
+				const at = tip.clone().addScaledVector(o, Wf * (0.3 + more)).add(v3(0, -0.012 - Wf * 0.15 - drop * Lf * 0.3, 0));
+				const full = tip.clone().addScaledVector(o, fullW * (0.3 + more)).add(v3(0, -0.012 - fullW * 0.15 - drop * fullL * 0.3, 0));
 				options.push({ balls: shape(full, dir, fullL, fullW), cost, data: { at, dir } });
 			}
 			// a fruit with no room to grow is one the tree would have dropped
-			if (kept && Math.min(...options.map((o) => crowd.overlap(o.balls))) > fullW * 0.35) continue;
+			if (kept && Math.min(...options.map((o) => crowd.overlap(o.balls))) > fullW * 0.45) continue;
 			const place = crowd.best(options);
 			const stalkR = 0.005 + 0.012 * grow;
 			bag.add('body', tube([tip.clone().addScaledVector(f.out, -0.01), tip, place.at.clone().add(v3(0, 0.004, 0))], (u) => stalkR * (1 - 0.15 * u), () => C.stalk, 6));
 			// the fleshy ring at its foot
 			bag.add('body', bead(place.at, v3(Wf * 0.32, Wf * 0.12, Wf * 0.32), C.ring, 5, new THREE.Quaternion().setFromUnitVectors(UP, place.dir.clone().negate())));
-			jack(bag, { at: place.at, dir: place.dir, L: Lf, W: Wf, ripe: kept ? ripe : 0, dark: drop, r: kr, set: grow });
+			jack(bag, { at: place.at, dir: place.dir, L: Lf, W: Wf, ripe: kept ? ripe * between(kr, 0.8, 1) : 0, dark: drop, r: kr, set: grow });
 		}
 	}
 	// male heads among the leaves of the young shoots
@@ -558,9 +569,9 @@ function jack(bag, o) {
 	const turn = r() * Math.PI * 2;
 	const m = new THREE.Matrix4().compose(o.at, new THREE.Quaternion().setFromUnitVectors(v3(0, -1, 0), o.dir.clone().normalize()).multiply(new THREE.Quaternion().setFromAxisAngle(UP, turn)), v3(1, 1, 1));
 	// the knobs: as many round it and along it as a grown fruit has (they grow with it), on a staggered grid
-	const N = 30 + Math.floor(r() * 6), M = 24 + Math.floor(r() * 5);
+	const N = 22 + Math.floor(r() * 5), M = 17 + Math.floor(r() * 4);
 	const sides = N * 2, rings = M * 2;
-	const bend = about(r, 0, 0.06), lop = between(r, 0.04, 0.12), lopAt = r() * Math.PI * 2, waist = r() * 0.08;
+	const bend = about(r, 0, 0.07), lop = between(r, 0.04, 0.14), lopAt = r() * Math.PI * 2, waist = r() * 0.1, lump = between(r, 0.03, 0.11), lumpAt = r() * Math.PI * 2;
 	const axis = [];
 	for (let k = 0; k <= rings; k++) {
 		const u = k / rings;
@@ -575,7 +586,8 @@ function jack(bag, o) {
 	};
 	const height = lerp(0.1, 0.05, o.ripe) * o.W * lerp(0.5, 1, o.set);
 	const radius = (/** @type {number} */ u, /** @type {number} */ v) => {
-		const side = 1 + lop * Math.cos(v * Math.PI * 2 - lopAt) * Math.sin(Math.PI * u) - waist * Math.sin(Math.PI * u * 2) * 0.5;
+		// lopsided, waisted, and swollen in lumps where its flowers set unevenly
+		const side = 1 + lop * Math.cos(v * Math.PI * 2 - lopAt) * Math.sin(Math.PI * u) - waist * Math.sin(Math.PI * u * 2) * 0.5 + lump * Math.sin(v * Math.PI * 2 * 2 + lumpAt) * Math.sin(Math.PI * u * 3 + lumpAt) * Math.sin(Math.PI * u);
 		const base = o.W * PROFILE(u) * side;
 		return base + (u > 0.03 && u < 0.98 ? knob(u, v) * height : 0);
 	};
