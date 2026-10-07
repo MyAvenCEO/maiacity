@@ -1,20 +1,24 @@
 <!--
 	Plants: every plant grown from code (src/lib/plants), from its seed to the plant in fruit, in ten stages to tab
 	through across the top — the last four the fruit's own, set to ripe (or ← → and 1 – 0 on the keyboard; Grow plays it on
-	from where it is). The soil is cut away
-	so the roots grow as plainly as the shoot — or laid bare, or shut. Each plant grows from a seed id: the same id the
-	same plant every time, another id a sister plant. Drag to turn round it, scroll to come closer. An admin's.
+	from where it is). The soil is cut away, so the roots grow as plainly as the shoot, and the camera keeps the plant
+	framed. Each plant grows from a seed id: the same id the same plant every time, New seed a sister plant. Drag to turn round it, scroll to come closer. An admin's.
+	Plant | Fruit: the whole plant, or one of its fruit on its own (src/lib/plants/fruit.js), hung by its stalk through the
+	fruit's four stages — the seed picks which fruit, and gives it its own small differences of size, shape and colour.
 -->
 <script>
 	import { onDestroy, onMount } from 'svelte';
 	import { page } from '$app/state';
 	import { replaceState } from '$app/navigation';
 	import { LAYERS, PLANTS, SEEDS, freshSeed, plantAt } from '$lib/plants';
-	import PickList from '$lib/app/PickList.svelte';
+	import Turntable from '$lib/app/Turntable.svelte';
+	import { fit } from '$lib/app/turntable.js';
+	import { fruitOf, oneFruit } from '$lib/plants/fruit.js';
 
 	/** @typedef {(typeof import('$lib/plants').PLANTS)[number]} Plant */
 	/** @typedef {'cutaway' | 'bare' | 'solid'} Soil */
 	/** @typedef {'plant' | 'whole'} Frame */
+	/** @typedef {'plant' | 'fruit'} View */
 
 	const asked = page.url.searchParams;
 	/** @type {HTMLDivElement | undefined} */
@@ -23,17 +27,28 @@
 	/** @type {Plant} */
 	let chosen = $state(opened);
 	/** where it has grown to: 0 … the last stage, the stages its whole numbers */
-	let g = $state(Math.min(opened.stages.length - 1, Math.max(0, Number(asked.get('stage') ?? 1) - 1 || 0)));
+	let g = $state(Math.min(opened.stages.length - 1, Math.max(asked.get('view') === 'fruit' ? 6 : 0, Number(asked.get('stage') ?? 1) - 1 || 0)));
 	let seed = $state(asked.get('seed') || SEEDS[0]);
 	/** the version of it grown: its latest, or one picked from its history (?v=) */
 	let version = $state(Number(asked.get('v')) || opened.version);
 	/** the plant as it was at that version */
 	const grown = $derived(plantAt(chosen.id, version) ?? chosen);
+	/** the soil cut away, the plant framed close: the one view (the others are kept in the code below, not offered) */
 	/** @type {Soil} */
-	let soil = $state('cutaway');
+	const soil = 'cutaway';
 	/** @type {Frame} */
-	let frame = $state('plant');
+	const frame = 'plant';
 	let playing = $state(false);
+	/** the whole plant, or one of its fruit on its own (?view=fruit) */
+	/** @type {View} */
+	let view = $state(asked.get('view') === 'fruit' ? 'fruit' : 'plant');
+	/** the fruit this plant bears, and the one its seed picks — undefined when it bears none (known once grown) */
+	/** @type {{ keys: string[], pick: string } | undefined} */
+	let fruit = $state();
+	/** the first of the fruit's stages: set */
+	const FRUIT = 6;
+	/** the fruit shown has not set yet at this stage */
+	let unset = $state(false);
 	/** @type {{ above: number, below: number, across: number } | null} */
 	let size = $state(null);
 
@@ -66,6 +81,7 @@
 		const scene = new THREE.Scene();
 		scene.background = new THREE.Color('#e9e6e0');
 		const camera = new THREE.PerspectiveCamera(38, 1, 0.001, 100);
+		camera.userData.fov = 38; // widened on an upright canvas ($lib/app/turntable.js)
 		camera.position.set(0.3, 0.2, 0.4);
 		const controls = new OrbitControls(camera, renderer.domElement);
 		controls.enableDamping = true;
@@ -177,11 +193,39 @@
 			sh.updateProjectionMatrix();
 		};
 
+		/** which fruit it bears, grown ripe: once a plant, version and seed */
+		let fruitFor = '';
 		show = (plant, at, id) => {
 			if (current) {
 				scene.remove(current);
 				toss(current);
+				current = null;
 			}
+			const whose = `${plant.id}|${plant.version}|${id}`;
+			if (fruitFor !== whose) {
+				fruitFor = whose;
+				fruit = fruitOf(plant.grow, plant.stages.length - 1, id || ' ');
+			}
+			// a plant (or a version of it) with no fruit is shown whole
+			if (view === 'fruit' && !fruit) view = 'plant';
+			earth.visible = view === 'plant';
+			if (view === 'fruit') {
+				const one = fruit && oneFruit(plant.grow, at, id || ' ', fruit.pick);
+				unset = !one;
+				if (!one) {
+					plantBox = null;
+					size = null;
+					return;
+				}
+				current = one;
+				scene.add(current);
+				const b = bounds(current);
+				plantBox = b;
+				size = { above: b.max.y - b.min.y, below: 0, across: Math.max(b.max.x - b.min.x, b.max.z - b.min.z) };
+				reframe?.(frame);
+				return;
+			}
+			unset = false;
 			if (soilFor !== `${plant.id}|${id}`) {
 				soilFor = `${plant.id}|${id}`;
 				sizeSoil(plant, id || ' ');
@@ -197,8 +241,7 @@
 		const resize = () => {
 			const w = box.clientWidth, h = box.clientHeight;
 			renderer.setSize(w, h);
-			camera.aspect = w / Math.max(1, h);
-			camera.updateProjectionMatrix();
+			fit(camera, w, h);
 		};
 		const ro = new ResizeObserver(resize);
 		ro.observe(box);
@@ -283,6 +326,8 @@
 		url.searchParams.set('plant', chosen.id);
 		url.searchParams.set('stage', String(stage + 1));
 		url.searchParams.set('seed', seed);
+		if (view === 'fruit') url.searchParams.set('view', 'fruit');
+		else url.searchParams.delete('view');
 		if (version !== chosen.version) url.searchParams.set('v', String(version));
 		else url.searchParams.delete('v');
 		try {
@@ -303,13 +348,20 @@
 		g = Math.min(g, p.stages.length - 1);
 		regrow();
 	};
+	/** the whole plant, or its fruit alone — from the fruit's set on */
+	const see = (/** @type {View} */ v) => {
+		view = v;
+		playing = false;
+		if (v === 'fruit' && g < FRUIT) g = last;
+		regrow();
+	};
 	const pickVersion = (/** @type {number} */ v) => {
 		version = v;
 		regrow();
 	};
 	const goTo = (/** @type {number} */ k) => {
 		playing = false;
-		g = Math.min(last, Math.max(0, k));
+		g = Math.min(last, Math.max(view === 'fruit' ? FRUIT : 0, k));
 		regrow();
 	};
 	const grow = () => {
@@ -318,23 +370,13 @@
 			g = Math.round(g);
 			return regrow();
 		}
-		if (g >= last) g = 0;
+		if (g >= last) g = view === 'fruit' ? FRUIT : 0;
 		playing = true;
 	};
 	const reseed = (/** @type {string} */ id) => {
 		seed = id;
 		regrow();
 	};
-	const toSoil = (/** @type {Soil} */ mode) => {
-		soil = mode;
-		showSoil?.(mode);
-	};
-
-	const toFrame = (/** @type {Frame} */ mode) => {
-		frame = mode;
-		reframe?.(mode);
-	};
-
 	/** ← → step a stage, 1 – 9 and 0 (the tenth) jump to one, space grows — unless typing a seed id */
 	const onKey = (/** @type {KeyboardEvent} */ e) => {
 		const t = /** @type {HTMLElement | null} */ (e.target);
@@ -348,11 +390,6 @@
 	};
 
 	const measure = (/** @type {number} */ v) => (v < 0.01 ? `${(v * 1000).toFixed(1)} mm` : v < 1 ? `${(v * 100).toFixed(v < 0.1 ? 1 : 0)} cm` : `${v.toFixed(2)} m`);
-	const SOILS = /** @type {const} */ ([
-		['cutaway', 'Cut away'],
-		['bare', 'Roots bare'],
-		['solid', 'Soil shut']
-	]);
 </script>
 
 <svelte:head>
@@ -361,122 +398,56 @@
 
 <svelte:window onkeydown={onKey} />
 
-<main class="plants">
-	<PickList title="Plants" lede="Grown from code, seed to fruit, roots and all, in the seven layers of a food forest: tab through the ten stages, change the seed id for a sister plant." items={PLANTS} {chosen} where={(p) => p.from} onpick={pick} group={(p) => LAYERS.find((l) => l.id === p.layer)?.label ?? ''} {version} onversion={pickVersion} />
-	<section class="view">
-		<div class="canvas" bind:this={canvasBox}></div>
-
-		<div class="stages" role="tablist" aria-label="{chosen.label}: stages">
+<Turntable
+	name="plants"
+	bind:canvas={canvasBox}
+	picks={{ title: 'Plants', lede: 'Grown from code, seed to fruit, roots and all, in the seven layers of a food forest: tab through the ten stages, change the seed id for a sister plant.', items: PLANTS, chosen, where: (/** @type {Plant} */ p) => p.from, onpick: pick, group: (/** @type {Plant} */ p) => LAYERS.find((l) => l.id === p.layer)?.label ?? '', version, onversion: pickVersion }}
+>
+	{#snippet bar()}
+		<div class="chips stages" role="tablist" aria-label="{chosen.label}: stages">
+			<button class="chip grow" class:on={playing} onclick={grow} title="Grow on from here (space)">{playing ? 'Pause' : 'Grow ▸'}</button>
 			{#each chosen.stages as s, k (s.name)}
 				{#if k === 6}<span class="fruit-mark" aria-hidden="true">Fruit</span>{/if}
-				<button role="tab" class:fruit={k >= 6} class:on={!playing && stage === k} class:past={k < g} aria-selected={stage === k} onclick={() => goTo(k)}>
+				<button role="tab" class="chip" class:fruit={k >= 6} class:on={!playing && stage === k} class:past={k < g} aria-selected={stage === k} disabled={view === 'fruit' && k < FRUIT} onclick={() => goTo(k)}>
 					<small>{k + 1}</small>{s.name}
 				</button>
 			{/each}
-			<button class="grow" class:on={playing} onclick={grow} title="Grow on from here (space)">{playing ? 'Pause' : 'Grow ▸'}</button>
 		</div>
-
-		<div class="panel">
-			<label class="seed">
-				<span class="label">Seed id</span>
-				<input value={seed} spellcheck="false" autocomplete="off" onchange={(e) => reseed(e.currentTarget.value.trim() || SEEDS[0])} onkeydown={(e) => e.key === 'Enter' && e.currentTarget.blur()} />
-			</label>
+	{/snippet}
+	{#snippet panel()}
+		<div class="chips views" role="tablist" aria-label="Show">
+			<span class="label">Show</span>
+			<button role="tab" class="chip" class:on={view === 'plant'} aria-selected={view === 'plant'} onclick={() => see('plant')}>Plant</button>
+			<button role="tab" class="chip" class:on={view === 'fruit'} aria-selected={view === 'fruit'} disabled={!fruit} title={fruit ? 'One fruit on its own, picked and shaped by the seed' : 'This plant bears no fruit'} onclick={() => see('fruit')}>Fruit</button>
+		</div>
+		<div class="seed">
+			<span class="label">Seed</span>
+			<code title="The same seed id grows the same plant every time">{seed}</code>
 			<button class="dice" onclick={() => reseed(freshSeed())}>New seed</button>
-			<div class="chips">
-				{#each SEEDS as id (id)}
-					<button class:on={seed === id} onclick={() => reseed(id)}>{id}</button>
-				{/each}
-			</div>
-			<span class="label">Frame</span>
-			<div class="chips">
-				<button class:on={frame === 'plant'} onclick={() => toFrame('plant')}>The plant</button>
-				<button class:on={frame === 'whole'} onclick={() => toFrame('whole')}>Whole earth</button>
-			</div>
-			<span class="label">Soil</span>
-			<div class="chips">
-				{#each SOILS as [mode, label] (mode)}
-					<button class:on={soil === mode} onclick={() => toSoil(mode)}>{label}</button>
-				{/each}
-			</div>
 		</div>
-
-		<div class="readout">
-			<b>{chosen.label} · {chosen.stages[stage].name} <em>{chosen.latin}</em></b>
-			<span class="what">{chosen.stages[stage].note}</span>
-			<span>
-				Day {day}
-				{#if size} · {measure(size.above)} above the soil · {measure(size.below)} below · {measure(size.across)} across{/if}
-			</span>
-			<small>← → or 1 – 0 for the stages · space grows · drag to turn round it · scroll to come closer</small>
-		</div>
-	</section>
-</main>
+	{/snippet}
+	{#snippet readout()}
+		<b>{chosen.label}{view === 'fruit' ? ' · one fruit' : ''} · {chosen.stages[stage].name} <em>{chosen.latin}</em></b>
+		<small>{view === 'fruit' && unset ? 'This fruit has not set yet.' : chosen.stages[stage].note}</small>
+		<span>
+			Day {day}
+			{#if size && view === 'fruit'} · {measure(size.above)} long, stalk and all · {measure(size.across)} across{:else if size} · {measure(size.above)} above the soil · {measure(size.below)} below · {measure(size.across)} across{/if}
+		</span>
+		<small class="keys">← → or 1 – 0 for the stages · space grows · drag to turn round it · scroll to come closer</small>
+	{/snippet}
+</Turntable>
 
 <style>
-	.plants {
-		position: fixed;
-		inset: 0;
-		padding: env(safe-area-inset-top, 0px) env(safe-area-inset-right, 0px) env(safe-area-inset-bottom, 0px) env(safe-area-inset-left, 0px);
-		display: grid;
-		grid-template-columns: auto 1fr;
-		background: #f4f1eb;
-		color: #1f2a23;
-	}
-
-	.view {
-		position: relative;
-		min-width: 0;
-	}
-
-	.canvas {
-		position: absolute;
-		inset: 0;
-		cursor: grab;
-	}
-
-	.stages,
-	.panel,
-	.readout {
-		position: absolute;
-		padding: 0.6rem 0.8rem;
-		border-radius: 12px;
-		background: rgb(255 255 255 / 0.78);
-		-webkit-backdrop-filter: blur(10px);
-		backdrop-filter: blur(10px);
-		font-size: 0.85rem;
-	}
-
-	button {
-		font: inherit;
-		color: inherit;
-		cursor: pointer;
-	}
-
-	/* the ten stages, in a row across the top, the fruit's four marked off */
-	.stages {
-		top: 1rem;
-		left: 1rem;
-		right: 1rem;
-		display: flex;
-		flex-wrap: wrap;
-		align-items: center;
-		gap: 0.3rem;
-	}
-
-	.stages button {
+	/* the ten stages, in a row across the top, the fruit's four marked off, Grow first */
+	.stages .chip {
 		display: flex;
 		align-items: baseline;
 		gap: 0.35rem;
 		flex: none;
-		padding: 0.32rem 0.6rem;
-		border: 1px solid rgb(0 0 0 / 0.12);
-		border-radius: 999px;
-		background: rgb(255 255 255 / 0.7);
-		font-size: 0.8rem;
-		white-space: nowrap;
 	}
 
 	.fruit-mark {
+		flex: none;
 		margin: 0 0.1rem 0 0.4rem;
 		padding-left: 0.6rem;
 		border-left: 1px solid rgb(0 0 0 / 0.15);
@@ -486,27 +457,21 @@
 		color: #a3312a;
 	}
 
-	.stages button.fruit:not(.on) {
+	.stages .chip.fruit:not(.on) {
 		border-color: rgb(163 49 42 / 0.3);
 	}
 
-	.stages button small {
+	.stages .chip small {
 		font-size: 0.7rem;
 		opacity: 0.5;
 	}
 
-	.stages button.past:not(.on) {
+	.stages .chip.past:not(.on) {
 		background: #e3ead9;
 	}
 
-	.stages button.on {
-		background: #1f2a23;
-		border-color: #1f2a23;
-		color: #fff;
-	}
-
-	.stages .grow {
-		margin-left: auto;
+	.stages .grow,
+	.stages .grow.on {
 		background: #3d6b2e;
 		border-color: #3d6b2e;
 		color: #fff;
@@ -517,106 +482,51 @@
 		border-color: #8a5a2b;
 	}
 
-	.panel {
-		top: 6.6rem;
-		right: 1rem;
-		display: flex;
-		flex-direction: column;
-		gap: 0.45rem;
-		width: 14rem;
+	/* the whole plant or one fruit, before the stages */
+	.views {
+		margin-bottom: 0.5rem;
 	}
 
-	.label {
-		font-size: 0.72rem;
-		letter-spacing: 0.08em;
-		text-transform: uppercase;
-		opacity: 0.55;
+	.views .chip:disabled,
+	.stages .chip:disabled {
+		opacity: 0.35;
+		cursor: default;
 	}
 
+	/* the seed id it grew from, and a new one at random */
 	.seed {
 		display: flex;
-		flex-direction: column;
-		gap: 0.25rem;
+		align-items: center;
+		gap: 0.5rem;
 	}
 
-	.seed input {
-		padding: 0.4rem 0.6rem;
-		border: 1px solid rgb(0 0 0 / 0.15);
-		border-radius: 8px;
-		background: #fff;
-		font: inherit;
+	.seed code {
+		flex: 1;
+		min-width: 0;
+		overflow: hidden;
 		font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-		color: inherit;
+		text-overflow: ellipsis;
+		white-space: nowrap;
 	}
 
 	.dice {
-		padding: 0.35rem 0.6rem;
+		flex: none;
+		padding: 0.3rem 0.65rem;
 		border: 1px solid #3d6b2e;
-		border-radius: 8px;
+		border-radius: 999px;
 		background: #3d6b2e;
 		color: #fff;
 	}
 
-	.chips {
-		display: flex;
-		flex-wrap: wrap;
-		gap: 0.25rem;
-	}
-
-	.chips button {
-		padding: 0.2rem 0.55rem;
-		border: 1px solid rgb(0 0 0 / 0.12);
-		border-radius: 999px;
-		background: rgb(255 255 255 / 0.7);
-		font-size: 0.78rem;
-	}
-
-	.chips button.on {
-		background: #1f2a23;
-		border-color: #1f2a23;
-		color: #fff;
-	}
-
-	/* at the foot, above the app's nav pill (--nav-room, src/app.css) */
-	.readout {
-		left: 1rem;
-		bottom: calc(1rem + var(--nav-room) - env(safe-area-inset-bottom, 0px));
-		display: flex;
-		flex-direction: column;
-		gap: 0.15rem;
-		max-width: 30rem;
-	}
-
-	.readout em {
+	em {
 		margin-left: 0.3rem;
 		font-weight: 400;
 		opacity: 0.55;
 	}
 
-	.readout small,
-	.readout .what {
-		opacity: 0.65;
-	}
-
-	@media (max-width: 720px) {
-		.plants {
-			grid-template-columns: 1fr;
-			grid-template-rows: auto 1fr;
-		}
-
-		.panel {
-			top: auto;
-			right: 1rem;
-			left: 1rem;
-			width: auto;
-			bottom: calc(8.5rem + var(--nav-room));
-		}
-
-		.panel .chips:first-of-type {
-			display: none;
-		}
-
-		.readout small {
+	/* no keyboard on a phone */
+	@media (hover: none) and (pointer: coarse) {
+		.keys {
 			display: none;
 		}
 	}

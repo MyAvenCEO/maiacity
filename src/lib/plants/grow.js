@@ -246,6 +246,34 @@ export function bead(/** @type {THREE.Vector3} */ at, /** @type {THREE.Vector3} 
 	return g;
 }
 
+/**
+ * Its normals worked out from its shape, smooth across its seams: a swept tube's first and last sides meet at the same
+ * places without sharing vertices, so the normals of every vertex at one place are averaged.
+ * @param {THREE.BufferGeometry} geo
+ */
+export function smoothNormals(geo) {
+	geo.computeVertexNormals();
+	const pos = geo.attributes.position, nor = geo.attributes.normal;
+	/** @type {Map<string, number[]>} */
+	const at = new Map();
+	for (let i = 0; i < pos.count; i++) {
+		const k = `${Math.round(pos.getX(i) * 1e5)},${Math.round(pos.getY(i) * 1e5)},${Math.round(pos.getZ(i) * 1e5)}`;
+		const list = at.get(k);
+		if (list) list.push(i);
+		else at.set(k, [i]);
+	}
+	const n = new THREE.Vector3();
+	for (const list of at.values()) {
+		if (list.length < 2) continue;
+		n.set(0, 0, 0);
+		for (const i of list) n.x += nor.getX(i), n.y += nor.getY(i), n.z += nor.getZ(i);
+		n.normalize();
+		for (const i of list) nor.setXYZ(i, n.x, n.y, n.z);
+	}
+	nor.needsUpdate = true;
+	return geo;
+}
+
 /** @returns {THREE.BufferGeometry} */
 function made(/** @type {number[]} */ pos, /** @type {number[]} */ nor, /** @type {number[]} */ uv, /** @type {number[]} */ col, /** @type {number[]} */ idx, /** @type {boolean} */ flat) {
 	const g = new THREE.BufferGeometry();
@@ -273,6 +301,28 @@ export function material(kind) {
 
 /** @typedef {'body' | 'sheet' | 'gloss' | 'prop'} Kind */
 /**
+ * @typedef {{ key: string, at: THREE.Vector3, dir: THREE.Vector3, parts: { kind: Kind, geometry: THREE.BufferGeometry }[] }} Fruit
+ *   one fruit as a plant drew it (`Bag.fruit`): its pieces, where its stalk leaves the plant and the way it lies
+ */
+/** while the fruit viewer grows a plant (`pickFruit`), the bags it makes and the fruit drawn into them */
+const PICKING = /** @type {{ bags: Bag[] | null, fruits: Fruit[] }} */ ({ bags: null, fruits: [] });
+
+/**
+ * Grows a plant with `make` and gathers every fruit it drew (`Bag.fruit`), each with its pieces as drawn.
+ * @param {() => THREE.Group} make @returns {{ plant: THREE.Group, fruits: Fruit[] }}
+ */
+export function pickFruit(make) {
+	PICKING.bags = [];
+	PICKING.fruits = [];
+	try {
+		const plant = make();
+		return { plant, fruits: PICKING.fruits.filter((f) => f.parts.length) };
+	} finally {
+		PICKING.bags = null;
+		PICKING.fruits = [];
+	}
+}
+/**
  * Everything a plant is, gathered by material and merged at the end into one mesh each. Above or below the soil, all
  * one plant: the viewer cuts the soil away to show the roots.
  */
@@ -284,12 +334,32 @@ export class Bag {
 		this.space = new Space();
 		/** how far into the next sheet kept, when thinned (DETAIL.thin) */
 		this.sheets = 0;
+		/** @type {Fruit | null} the fruit being drawn, between `fruit()` and `fruitDone()` */
+		this.drawing = null;
+		if (PICKING.bags) PICKING.bags.push(this);
+	}
+	/**
+	 * What is added from here to `fruitDone()` is one fruit — the whole of it as one is picked: its stalk, its calyx,
+	 * the fruit itself (or for tiny berries borne in bunches, the bunch) — hanging from `at`, where its stalk leaves
+	 * the plant, its body lying along `dir` from there (down, for a hanging fruit); `key` names it, the same at every
+	 * stage. Only gathered when the fruit viewer asks for it (`pickFruit`), so it costs nothing otherwise.
+	 * @param {(string | number)[]} key @param {THREE.Vector3} at @param {THREE.Vector3} dir
+	 */
+	fruit(key, at, dir) {
+		this.drawing = { key: key.join('|'), at: at.clone(), dir: dir.clone().normalize(), parts: [] };
+		if (PICKING.bags) PICKING.fruits.push(this.drawing);
+		return this;
+	}
+	fruitDone() {
+		this.drawing = null;
+		return this;
 	}
 	/** @param {Kind} kind @param {THREE.BufferGeometry} geometry @param {THREE.Matrix4} [m] */
 	add(kind, geometry, m) {
 		// left out at this detail (see DETAIL.finest)
 		if (!geometry.attributes.position.count) return this;
 		if (m) geometry.applyMatrix4(m);
+		if (this.drawing && PICKING.bags) this.drawing.parts.push({ kind, geometry: geometry.clone() });
 		const isBead = geometry.type === 'SphereGeometry';
 		if ((kind === 'sheet' || isBead) && (DETAIL.thin < 1 || DETAIL.fill !== 1)) {
 			// keep one sheet (or bead) in so many, evenly, and grow it from where it is attached (a sheet's first vertex,

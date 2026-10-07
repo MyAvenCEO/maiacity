@@ -217,7 +217,10 @@ function bunch(bag, look, seed, top, g, vigour) {
 				fp.push(base.clone().addScaledVector(radial, len * (0.75 * t)).add(v3(0, len * (0.75 * t * t - 0.1 * t), 0)));
 			}
 			const colour = mix(mix('#4f7a2a', look.green, fill), look.ripe, clamp(ripe * 1.3 - h * 0.05));
+			// one finger, once it fills: it leaves the cushion at its base and lies along its curve
+			if (fill > 0) bag.fruit(['finger', h, n], base, fp[8].clone().sub(fp[0]));
 			bag.add('gloss', tube(fp, (t, v) => R * Math.pow(Math.max(0, Math.sin(Math.PI * Math.min(1, 0.05 + t))), 0.4) * (1 - 0.3 * t) * (1 + 0.06 * Math.cos(v * Math.PI * 10)), (t) => colour.clone().lerp(new THREE.Color(look.tip), clamp((t - 0.93) * 14)), 10));
+			bag.fruitDone();
 		}
 	}
 	// the male bud at the end, purple, on its bare stalk
@@ -311,6 +314,8 @@ function rosette(bag, seed, key, base, g, vigour, fruits) {
 	const axis = [];
 	for (let k = 0; k <= 14; k++) axis.push(stalkTop.clone().add(v3(0, (k / 14) * H, 0)));
 	const flowering = g < 5.6;
+	// the fruit with its crown, once it is fruit, standing up from the top of its stalk
+	if (!flowering) bag.fruit([...key, 'fruit'], stalkTop, v3(0, 1, 0));
 	bag.add('body', tube(axis, (u) => R * Math.pow(Math.max(0, Math.sin(Math.PI * Math.min(1, 0.12 + u * 0.88))), 0.45), (u) => (flowering ? mix('#c43a4a', '#e05a5a', u) : mix('#4f7a3a', '#e8a83a', clamp(ripe * 1.5 - u * 0.6))), 16));
 	// the eyes: one per flower, in spirals; a violet flower on each while it blooms
 	const eyes = 110;
@@ -332,6 +337,7 @@ function rosette(bag, seed, key, base, g, vigour, fruits) {
 		const dir = v3(Math.cos(a) * Math.sin(tilt), Math.cos(tilt), Math.sin(a) * Math.sin(tilt));
 		bag.add('sheet', sheet({ length: (0.05 + 0.1 * (1 - k / 26)) * lerp(0.4, 1, fruit) * vigour, width: 0.012, shape: sword, lift: (u) => -0.08 * u * u, paint: () => mix('#5f7a5a', '#4f6a4a', k / 26), along: 6, across: 2 }), aim(crownAt, dir, 0));
 	}
+	bag.fruitDone();
 }
 
 
@@ -440,7 +446,10 @@ export function papaya(g, seed) {
 		const way = bag.space.best(ways);
 		const axis = [];
 		for (let k = 0; k <= 14; k++) axis.push(way.from.clone().addScaledVector(way.tilt, (k / 14) * L));
+		// one papaya, stalkless against the stem, hanging along its tilt
+		bag.fruit(['papaya', j], way.from, way.tilt);
 		bag.add('gloss', tube(axis, (u, v) => W * Math.pow(Math.max(0, Math.sin(Math.PI * Math.min(1, 0.04 + u * 0.98))), 0.45) * (0.8 + 0.25 * u) * (1 + 0.05 * Math.cos(v * Math.PI * 10)), (u) => mix('#3f7a2e', '#f2a02a', clamp(ripe * 1.6 - (1 - u) * 0.7)), 16));
+		bag.fruitDone();
 	}
 	return bag.build();
 }
@@ -533,6 +542,8 @@ export function passionFruit(g, seed) {
 				const set = span(g, opens + 0.25, opens + 2.0);
 				const out = v3(Math.cos(a + Math.PI), 0, Math.sin(a + Math.PI));
 				const stalkEnd = pts[k].clone().addScaledVector(out, 0.03).add(v3(0, -0.05, 0));
+				// once set, one fruit: its stalk from the node, the fruit hanging below
+				if (set >= 0.03) bag.fruit(['passion', side, h, k], pts[k], v3(0, -1, 0));
 				bag.add('body', tube([pts[k], pts[k].clone().addScaledVector(out, 0.03), stalkEnd], () => 0.0012, () => '#7aa04a', 3));
 				if (set < 0.03) passionFlower(bag, stalkEnd, out.clone().add(v3(0, -0.3, 0)).normalize(), clamp((g - opens + 0.2) / 0.3), span(g, opens + 0.15, opens + 0.25));
 				else {
@@ -545,6 +556,7 @@ export function passionFruit(g, seed) {
 					const ax = [];
 					for (let m = 0; m <= 12; m++) ax.push(place.at.clone().addScaledVector(place.dir, (m / 12) * r * 2.1));
 					bag.add('gloss', tube(ax, (u, v) => r * Math.pow(Math.max(0, Math.sin(Math.PI * u)), 0.5) * (1 + wrinkle * Math.sin(u * 23 + v * 31) * Math.sin(v * 17)), () => mix(mix('#4f8a2e', '#5a7a3a', ripe), '#4a1a4a', ripe), 14));
+					bag.fruitDone();
 				}
 			}
 		}

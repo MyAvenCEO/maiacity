@@ -255,14 +255,16 @@ function truss(bag, o) {
 			pp = pp.clone().addScaledVector(pd, plen / 6);
 			pp.y = Math.max(pp.y, 0.005);
 		}
-		bag.add('body', tube(ppts, () => 0.0007 * big, () => '#7fa548', 4));
+		const stalk = tube(ppts, () => 0.0007 * big, () => '#7fa548', 4);
 		const end = ppts[6];
 		const facing = ppts[6].clone().sub(ppts[5]).normalize();
 		if (g < opens) {
+			bag.add('body', stalk);
 			// a bud: a green ball in its sepals
 			const b = clamp((g - o.born) / (opens - o.born));
 			bag.add('body', bead(end.clone().addScaledVector(facing, 0.002), v3(1, 1, 1).multiplyScalar(0.0015 + 0.0025 * b * big), mix('#7fae4a', '#dfe6c0', b * 0.5)));
 		} else if (g < opens + 0.55 || fruitT <= 0.02) {
+			bag.add('body', stalk);
 			bloom(bag, FLOWER, end, facing, big, clamp((g - opens) / 0.2), span(g, opens + 0.35, opens + 0.55));
 		} else {
 			// it hangs, unless it would hang into the soil: then it lies along it
@@ -277,8 +279,12 @@ function truss(bag, o) {
 			// and where it touches no other berry
 			const L = 0.036 * big * o.vigour * lerp(0.18, 1, fruitT);
 			const place = o.space.settle(end, dir, (a, d) => [{ c: a.clone().addScaledVector(d, L * 0.42), r: L * 0.46 }], 0.012);
+			// one berry, picked with its own stalk from the fork
+			bag.fruit([o.key, k], fork, place.dir);
+			bag.add('body', stalk);
 			if (place.at.distanceTo(end) > 1e-5) bag.add('body', tube([end, place.at], () => 0.0007 * big, () => '#7fa548', 4));
 			berry(bag, { seed: o.seed, key: [o.key, k], at: place.at, dir: place.dir, size: big * o.vigour, grown: fruitT, ripe: span(g, opens + 1.4, opens + 2.0) });
+			bag.fruitDone();
 		}
 	}
 }

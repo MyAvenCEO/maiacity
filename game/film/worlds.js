@@ -25,6 +25,9 @@ export const WORLDS = {
 	'sandbox-4': { label: 'Sandbox 4 · a dome cell', areas: null, domes: 13, sets: ['tired-land'] },
 	// the same dome cell, its food forest grown from our plants (src/lib/sandbox-2/interior/sandbox5.js)
 	'sandbox-5': { label: 'Sandbox 5 · a dome cell grown from our plants', areas: null, domes: 13, sets: ['tired-land'] },
+	// a valley of settlers, played by its autoplayer from the same seed: roads, carriers, workshops
+	// (src/lib/sandbox-6)
+	'sandbox-6': { label: 'Sandbox 6 · a valley of settlers', areas: null },
 	// a real apartment, built from photos: Samuel's 14 m² room — the bed, two wine-crate towers, two chairs, the window,
 	// the door, a bulb — and round it the hallway, the kitchen and the bathroom (src/lib/worlds/room.ts, apartment.ts;
 	// Day 02)

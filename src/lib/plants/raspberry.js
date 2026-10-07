@@ -212,6 +212,10 @@ function shoot(bag, seed, i, at, out, g, vigour, high) {
 		const hang = clamp(set * 1.3);
 		const stalk = pd.clone().lerp(v3(0, -1, 0), hang * 0.5).normalize();
 		const tip = base.clone().addScaledVector(stalk, 0.02 * lerp(0.3, 1, clamp((g - born) / 0.5)));
+		const dir = stalk.clone().lerp(v3(0, -1, 0), 0.6).normalize();
+		// once set, one raspberry, picked with its own stalk
+		const fruiting = g >= opens && set >= 0.03;
+		if (fruiting) bag.fruit([i, k], base, dir);
 		bag.add('body', tube([base, tip], () => 0.0006, () => '#7f9a48', 4));
 		if (g < opens) {
 			const b = clamp((g - born) / Math.max(0.05, opens - born));
@@ -219,7 +223,8 @@ function shoot(bag, seed, i, at, out, g, vigour, high) {
 		} else if (set < 0.03) {
 			bloom(bag, FLOWER, tip, stalk.clone().lerp(v3(0, 1, 0), 0.2).normalize(), 1, clamp((g - opens) / 0.2), span(g, opens + 0.3, opens + 0.45));
 		} else {
-			berry(bag, { seed, key: [i, k], at: tip, dir: stalk.clone().lerp(v3(0, -1, 0), 0.6).normalize(), size: vigour * about(fr, 1, 0.12), set, ripe: span(g, opens + 2.2, opens + 3.0) });
+			berry(bag, { seed, key: [i, k], at: tip, dir, size: vigour * about(fr, 1, 0.12), set, ripe: span(g, opens + 2.2, opens + 3.0) });
+			bag.fruitDone();
 		}
 	}
 }
