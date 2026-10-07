@@ -1,26 +1,26 @@
 /**
- * SANDBOX 6 · THE OPEN MARKET AND ABUNDANCE — the rules of trade and of living well, as plain data and pure
- * functions; the simulation (./sim.js) calls them, the page shows them.
+ * SANDBOX 6 · TRADE AND ABUNDANCE — the rules of trade and of living well, as plain data and pure functions; the
+ * simulation (./sim.js) calls them, the page shows them.
  *
- * The fair. Every settlement's trader carts wares to the fair and back. The fair keeps a pool of each ware: selling
- * puts wares in it, buying takes them out, and the price follows the pool, unit by unit. A ware that piles up gets
- * cheap, a ware that runs short gets dear; every trade nudges its price. Only the valley's cities trade here: every ware
- * in the fair's pool was brought by one of them. Coins are only how wares change hands: the fair pays them out and
- * takes them in, and nothing in the score counts them.
+ * Trade routes. Village centers are joined by trade routes under the ground: carts run along them at twice a walker's
+ * pace. Your own routes share wares between your villages; a route to another city's village center lets you trade
+ * with that city, and any route may be passed through, whoever dug it — as long as a way runs from one village center
+ * to the other. Nobody trades with anyone beyond the valley: every ware that changes hands was made by one of its
+ * three cities, and the coins it fetches go from the buyer's purse to the seller's.
  *
- * Needs. Everyone in a settlement eats (fish or bread, best both), drinks, and keeps a home
- * (planks and stone). A settlement's wellbeing (0–100) is how well its needs were met over the last minutes, how
- * varied its food was, and how much it has put by. A settlement doing well grows, so it needs more; one doing badly
- * shrinks.
+ * Prices. Each city prices a ware by how much of it it has against how much it wants: what runs short gets dear,
+ * what piles up gets cheap. A city sells what it has spare to whoever pays most and buys what it lacks from whoever
+ * asks least, among the cities it can reach. Coins are only how wares change hands: nothing in the score counts them.
  *
- * Abundance. The valley's abundance is the geometric mean of every settlement's wellbeing, yours and the two
- * neighbours': one hungry neighbour pulls everyone down, and no amount of plenty in one place makes up for it.
+ * Needs. Everyone eats (fish or bread, best both), drinks, and keeps a home (planks and stone). A village's happiness
+ * (0–100) is how well its needs were met over the last minutes, how varied its food was, and how much it has put by.
  *
- * Neighbours. Each makes some wares well and runs short of others. Their traders sell what they have spare and buy
- * what they lack, so they trade with each other through the fair as well as with you, and now and then one asks you
- * for what it lacks most: a request, paid from its own purse — or, when its purse is empty, a plea for help. Coins
- * that pile up in one place leave the others unable to buy: spending them on the neighbours' wares (or answering a
- * plea) is how the valley stays well.
+ * Abundance. The valley's abundance is the geometric mean of every village's happiness, yours and the neighbours':
+ * one hungry village pulls everyone down, and no amount of plenty in one place makes up for it.
+ *
+ * Neighbours. Each makes some wares well and runs short of others, so they trade with each other (their two cities
+ * start joined by a route) and with you once you join them, and now and then one asks you for what it lacks most: a
+ * request, paid from its own purse — or, when its purse is empty, a plea for help.
  */
 import { FOOD, WARES } from './rules.js';
 
@@ -31,15 +31,10 @@ export const NEED_LABEL = { food: 'Food', water: 'Water', plank: 'Planks', stone
 export const CART = 8;
 /** minutes of needs a settlement likes to have put by */
 const PUT_BY = 10;
-/** a ware's usual price at the fair, in coins */
+/** a ware's usual price, in coins */
 export const BASE = { plank: 4, stone: 4, fish: 4, grain: 2, water: 1.5, bread: 5, ore: 5, tools: 14 };
-/** the wares traded at the fair (not coins: they are what is paid) */
+/** the wares that are traded (not coins: they are what is paid) */
 export const TRADED = Object.keys(BASE);
-/** a pool's usual level */
-const REF = (/** @type {string} */ w) => (w === 'tools' ? 16 : w === 'ore' || FOOD.includes(w) ? 24 : 40);
-/** how hard the price leans on the pool */
-const LEAN = 0.85;
-
 /**
  * The two neighbours (in the valley's east, see ./map.js). Each makes some of everything, plenty of one ware and
  * none of another, so each can live on its own at first and needs the others to grow — a loop of three: you (plenty of
@@ -48,8 +43,8 @@ const LEAN = 0.85;
  * @type {{ name: string, about: string, plenty: string, short: string, builds: string[], make: Record<string, number> }[]}
  */
 export const NEIGHBOURS = [
-	{ name: 'Eastmere', about: 'Miners and smiths under the eastern peaks: plenty of iron ore and tools, but no wood.', plenty: 'ore', short: 'plank', builds: ['toolmaker', 'quarry', 'bakery', 'well', 'fishery', 'farm'], make: { ore: 0.06, tools: 0.03, fish: 0.03, bread: 0.05, water: 0.06, stone: 0.05, grain: 0.02 } },
-	{ name: 'Highfold', about: 'Woodcutters in the northern hills: plenty of planks, but no fish.', plenty: 'plank', short: 'fish', builds: ['woodcutter', 'forester', 'bakery', 'well', 'farm', 'quarry'], make: { plank: 0.1, bread: 0.08, water: 0.06, stone: 0.03 } }
+	{ name: 'Eastmere', about: 'Miners and smiths under the eastern peaks: plenty of iron ore and tools, but no wood.', plenty: 'ore', short: 'plank', builds: ['toolmaker', 'quarry', 'bakery', 'well', 'fishery', 'farm'], make: { ore: 0.06, tools: 0.03, fish: 0.04, bread: 0.06, water: 0.06, stone: 0.05, grain: 0.02 } },
+	{ name: 'Highfold', about: 'Woodcutters in the northern hills: plenty of planks, but no fish.', plenty: 'plank', short: 'fish', builds: ['woodcutter', 'forester', 'bakery', 'well', 'farm', 'quarry'], make: { plank: 0.1, bread: 0.1, water: 0.06, stone: 0.03 } }
 ];
 
 /**
@@ -71,27 +66,8 @@ export function orderRule(w, pop) {
 	};
 }
 
-/** a fresh fair and a fresh valley of settlements: yours first, then the neighbours */
+/** a fresh valley's trade and its cities: yours first, then the neighbours */
 export function newMarket() {
-	/** @type {Record<string, number>} */
-	const pool = {};
-	for (const w of TRADED) pool[w] = REF(w) * (FOOD.includes(w) ? 0.25 : 0.6);
-	const party = (/** @type {string} */ name, /** @type {number} */ pop) => ({
-		name,
-		pop,
-		/** how well each need was met, lately (0…1) */
-		sat: { food: 0.55, water: 0.7, plank: 0.5, stone: 0.5 },
-		/** what is owed to each need: eaten later, if it can be */
-		owe: { food: 0, water: 0, plank: 0, stone: 0 },
-		/** the food eaten lately, by kind */
-		mix: { fish: 1, bread: 1 },
-		reserve: 0.3,
-		wb: 50,
-		/** @type {Record<string, number>} */ stock: {},
-		coins: 0,
-		/** when the trader last set out */
-		trip: 0
-	});
 	const parties = [party('You', 0), ...NEIGHBOURS.map((n) => party(n.name, 18))];
 	for (const [k, n] of NEIGHBOURS.entries()) {
 		const p = parties[k + 1];
@@ -104,9 +80,8 @@ export function newMarket() {
 	}
 	return {
 		market: {
-			pool,
-			/** each ware's price, a sample every 20 s (the last 30) @type {Record<string, number[]>} */
-			hist: Object.fromEntries(TRADED.map((w) => [w, [/** @type {number} */ (BASE[/** @type {keyof typeof BASE} */ (w)])]])),
+			/** each ware's price across the valley, a sample every 20 s (the last 30) @type {Record<string, number[]>} */
+			hist: Object.fromEntries(TRADED.map((w) => [w, [base(w)]])),
 			/** @type {{ id: number, k: number, w: string, n: number, got: number, reward: number, until: number, taken: boolean }[]} */
 			contracts: [],
 			contractSeq: 0,
@@ -116,41 +91,50 @@ export function newMarket() {
 			abundance: 50,
 			/** since when the valley has been abundant, or -1 */
 			since: -1,
-			clock: { needs: 0, grow: 60, hist: 0, drift: 0, contract: 300 }
+			clock: { hist: 0, contract: 300 }
 		},
 		parties
 	};
 }
+/** how a city or a village lives: its needs, its food, its happiness (and a neighbour city's stores and purse) */
+export function party(/** @type {string} */ name, /** @type {number} */ pop) {
+	return {
+		name,
+		pop,
+		/** how well each need was met, lately (0…1) */
+		sat: { food: 0.55, water: 0.7, plank: 0.5, stone: 0.5 },
+		/** what is owed to each need: eaten later, if it can be */
+		owe: { food: 0, water: 0, plank: 0, stone: 0 },
+		/** the food eaten lately, by kind */
+		mix: { fish: 1, bread: 1 },
+		reserve: 0.3,
+		wb: 50,
+		/** @type {Record<string, number>} */ stock: {},
+		/** what is on its way to it, by ware @type {Record<string, number>} */ coming: {},
+		coins: 0
+	};
+}
 
 const base = (/** @type {string} */ w) => /** @type {number} */ (BASE[/** @type {keyof typeof BASE} */ (w)] ?? 1);
-/** a ware's price at the fair for a pool level */
-const priceAt = (/** @type {string} */ w, /** @type {number} */ level) => {
-	const R = REF(w), k = R / 3;
-	return base(w) * Math.pow((R + k) / (Math.max(0, level) + k), LEAN);
+/**
+ * What a ware is worth to a city: its usual price, dearer the shorter it runs of what it wants, cheaper the more it
+ * has beyond. @param {number} want @param {number} have @param {string} w
+ */
+export function priceFor(w, want, have) {
+	const k = want / 3 + 2;
+	return base(w) * Math.pow((want + k) / (Math.max(0, have) + k), 0.85);
+}
+/** what a neighbour wants to have of a ware @param {any} p @param {string} w */
+export const keepOf = (p, w) => {
+	const need = /** @type {Record<string, number>} */ (NEEDS)[w] ?? (FOOD.includes(w) ? NEEDS.food / 2 : 0);
+	return need ? need * p.pop * PUT_BY * 1.1 : w === 'tools' ? 4 : 6;
 };
-/** what one unit of a ware fetches at the fair now @param {any} m @param {string} w */
-export const price = (m, w) => priceAt(w, m.pool[w]);
-/** what one unit of a ware costs at the fair now (the price once it is taken from the pool) @param {any} m @param {string} w */
-export const cost = (m, w) => priceAt(w, m.pool[w] - 1);
-/** sell one unit: what it fetches @param {any} m @param {string} w */
-export function sellOne(m, w) {
-	const p = price(m, w);
-	m.pool[w] += 1;
-	return p;
-}
-/** buy one unit if the pool has it: what it cost, or 0 @param {any} m @param {string} w */
-export function buyOne(m, w) {
-	if (m.pool[w] < 1) return 0;
-	const p = cost(m, w);
-	m.pool[w] -= 1;
-	return p;
-}
-/** how a price moved over the last two minutes: −1, 0, 1 @param {any} m @param {string} w */
-export function trend(m, w) {
-	const h = m.hist[w];
-	const was = h[Math.max(0, h.length - 7)], now = price(m, w);
-	return now > was * 1.06 ? 1 : now < was * 0.94 ? -1 : 0;
-}
+/** a neighbour's price for a ware @param {any} p @param {string} w */
+export const priceIn = (p, w) => priceFor(w, keepOf(p, w), (p.stock[w] ?? 0) + (p.coming[w] ?? 0));
+/** what a neighbour can spare of a ware @param {any} p @param {string} w */
+export const spareIn = (p, w) => Math.floor((p.stock[w] ?? 0) - keepOf(p, w));
+/** what a neighbour lacks of a ware (what is on its way counts) @param {any} p @param {string} w */
+export const shortIn = (p, w) => Math.ceil(keepOf(p, w) - (p.stock[w] ?? 0) - (p.coming[w] ?? 0));
 
 /** how varied the food eaten lately was: 0 one kind only, 1 both alike */
 export function variety(/** @type {any} */ p) {
@@ -214,66 +198,7 @@ export function make(p, k, dt) {
 	for (const [w, r] of Object.entries(NEIGHBOURS[k - 1].make)) p.stock[w] = (p.stock[w] ?? 0) + ((r * p.pop) / 60) * dt * work;
 }
 
-/** what a neighbour keeps of a ware before it sells any @param {any} p @param {string} w */
-const keepOf = (p, w) => {
-	const need = /** @type {Record<string, number>} */ (NEEDS)[w] ?? (FOOD.includes(w) ? NEEDS.food / 2 : 0);
-	return need ? need * p.pop * PUT_BY * 1.1 : 1;
-};
-/** what a neighbour's trader takes to the fair: the ware it has most to spare of, by worth, or null @param {any} m @param {any} p */
-export function toSell(m, p) {
-	let best = null, bv = 0;
-	for (const w of TRADED) {
-		const spare = Math.floor((p.stock[w] ?? 0) - keepOf(p, w));
-		if (spare < 3) continue;
-		const v = Math.min(CART, spare) * price(m, w);
-		if (v > bv) (best = w), (bv = v);
-	}
-	return best ? { w: best, n: Math.min(CART, Math.floor((p.stock[best] ?? 0) - keepOf(p, best))) } : null;
-}
-/**
- * What a neighbour buys at the fair, its most pressing need first: a cartload at most, while it has the coins and the
- * price is bearable. @param {any} m @param {any} p @returns {Record<string, number>}
- */
-export function shop(m, p) {
-	/** @type {Record<string, number>} */
-	const got = {};
-	let room = CART;
-	const wants = Object.entries(NEEDS)
-		.map(([need, rate]) => {
-			const have = need === 'food' ? FOOD.reduce((s, f) => s + (p.stock[f] ?? 0), 0) : p.stock[need] ?? 0;
-			return { need, short: rate * p.pop * PUT_BY - have, urgent: p.sat[need] };
-		})
-		.filter((x) => x.short > 0.5)
-		.sort((a, b) => a.urgent - b.urgent || b.short - a.short);
-	for (const x of wants) {
-		let n = Math.min(room, Math.ceil(x.short));
-		while (n > 0) {
-			// food: the kind eaten least lately that the fair has at a bearable price
-			const w = x.need === 'food' ? FOOD.filter((f) => m.pool[f] >= 1 && cost(m, f) <= base(f) * 3).sort((a, b) => p.mix[a] - p.mix[b] || cost(m, a) - cost(m, b))[0] : x.need;
-			if (!w || m.pool[w] < 1 || cost(m, w) > base(w) * 3 || cost(m, w) > p.coins) break;
-			p.coins -= buyOne(m, w);
-			got[w] = (got[w] ?? 0) + 1;
-			if (x.need === 'food') p.mix[w] += 0.2;
-			n--;
-			room--;
-		}
-		if (!room) break;
-	}
-	return got;
-}
-
-/** the fair's slow clock: prices remembered, pools pulled back toward their usual level @param {any} m @param {number} time @param {number} dt */
-export function fair(m, time, dt) {
-	if (time >= m.clock.hist) {
-		m.clock.hist = time + 20;
-		for (const w of TRADED) {
-			m.hist[w].push(price(m, w));
-			if (m.hist[w].length > 30) m.hist[w].shift();
-		}
-	}
-}
-
-/** a neighbour asks for what it lacks most, with a reward: a request, or null @param {any} m @param {any[]} parties @param {number} time @param {() => number} rand */
+/** a neighbour asks you for what it lacks most, with a reward: a request, or null @param {any} m @param {any[]} parties @param {number} time @param {() => number} rand */
 export function request(m, parties, time, rand) {
 	const open = m.contracts.filter((/** @type {any} */ c) => c.got < c.n && c.until > time);
 	if (open.length >= 3) return null;
@@ -295,8 +220,8 @@ export function request(m, parties, time, rand) {
 	// as much as it is short, in fives; it pays from its own purse, and with none left it asks for help
 	const rate = /** @type {Record<string, number>} */ (NEEDS)[need];
 	const n = Math.max(10, Math.min(30, Math.round((rate * p.pop * PUT_BY) / 5) * 5));
-	const fair = Math.round(n * Math.max(price(m, w), base(w)) * 1.4);
-	const reward = Math.min(fair, Math.floor(p.coins * 0.8));
+	const worth = Math.round(n * Math.max(priceIn(p, w), base(w)) * 1.4);
+	const reward = Math.min(worth, Math.floor(p.coins * 0.8));
 	const c = { id: ++m.contractSeq, k, w, n, got: 0, reward: reward >= n ? reward : 0, until: time + 600, taken: false };
 	m.contracts.push(c);
 	if (m.contracts.length > 12) m.contracts.shift();

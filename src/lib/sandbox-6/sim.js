@@ -6,25 +6,25 @@
  *   · carriers walk their roads: each road has one, who takes a ware from the flag at one end to the flag at the
  *     other; at its last flag the ware goes into the building that asked for it;
  *   · every half second the economy matches wares to who needs them: a site its planks and stone, a workshop its
- *     inputs, a market hall what you sell; a ware nobody needs goes to the nearest storehouse; what a storehouse holds
- *     is sent out to whoever asks, nearest first; a ware finds its way flag by flag along the shortest roads;
- *   · every second the people follow: a settler from a storehouse becomes the carrier of a new road, the builder of a
- *     site, the worker of a finished building (a worker takes tools along);
+ *     inputs; a ware nobody needs goes to its village center; what a village center holds is sent out to whoever in
+ *     its village asks, nearest first; a ware finds its way flag by flag along the shortest roads;
+ *   · every second the people follow: a settler from a village center becomes the carrier of a new road, the builder
+ *     of a site, the worker of a finished building (a worker takes tools along);
  *   · buildings work: workshops turn inputs into wares, gatherers go out into the land (trees, rocks, fish, fields);
- *   · traders cart wares to the fair and back: yours by the orders you set, the neighbours' by what they have spare
- *     and what they lack (./market.js);
- *   · every settlement eats, drinks and keeps its homes, and the valley's abundance follows how well they all live.
+ *   · carts run the trade routes under the ground between village centers: your villages share what they have, and
+ *     the cities trade by the orders you set and by what the neighbours have spare and lack (./market.js);
+ *   · every village eats, drinks and keeps its homes, and the valley's abundance follows how well they all live.
  */
-import { ABUNDANT, BUILDINGS, FOOD, GOALS, GRASS, HOLD, HOUSE_BEDS, HOUSE_UP, IRON, MOUNTAIN, PEOPLE, START, WARES, WATER, holdsLand } from './rules.js';
-import { CART, NEIGHBOURS, TRADED, abundance, buyOne, cost, fair, live, make, newMarket, orderRule, price, request, sellOne, shop, toSell, trend } from './market.js';
-import { findPath, makeGrid } from './hex.js';
+import { ABUNDANT, BUILDINGS, FOOD, GOALS, GRASS, HOLD, HOUSE_BEDS, HOUSE_UP, IRON, MOUNTAIN, START, WARES, WATER, holdsLand } from './rules.js';
+import { CART, NEEDS, NEIGHBOURS, TRADED, abundance, keepOf, live, make, newMarket, orderRule, party, priceIn, request, shortIn, spareIn } from './market.js';
+import { SE, findPath, makeGrid } from './hex.js';
 import { makePlan } from './plots.js';
 import { growValley } from './map.js';
 
 /** seconds of game time a step moves on */
 export const TICK = 0.1;
-/** who owns what: you, the two neighbours (1, 2), and the fair */
-export const PLAYER = 0, FAIR = 4;
+/** who owns what: you, and the two neighbours (1, 2) */
+export const PLAYER = 0;
 /** wares a flag holds at most */
 export const FLAG_CAP = 8;
 /** each input of a workshop is kept this full */
@@ -34,6 +34,8 @@ const WALK = 1.8, CARRY = 1.45;
 /** nodes a second a trader's cart goes */
 const CART_SPEED = 1.3;
 const FORESTER_TREES = 22;
+/** a neighbour city's people when its village is full: six houses of sixteen */
+const NEIGHBOUR_BEDS = 96;
 /** a building rests while the storehouses hold this much of what it makes */
 const ENOUGH = 40;
 
@@ -45,7 +47,7 @@ export function newGame(seed = 7) {
 	const v = growValley(seed);
 	const N = v.W * v.H;
 	const st = {
-		v: 5,
+		v: 6,
 		seed,
 		time: 0,
 		rng: (Math.imul(seed, 2654435761) >>> 0) || 1,
@@ -61,6 +63,11 @@ export function newGame(seed = 7) {
 		owner: /** @type {number[]} */ (Array(N).fill(-1)),
 		/** who holds each village (./plots.js), or -1 @type {number[]} */
 		villageOwner: [],
+		/** the trade routes under the ground, village center to village center @type {Record<string, { id: number, a: number, b: number, path: number[], owner: number }>} */
+		tunnels: {},
+		tunV: 1,
+		/** how each of your villages lives, by village @type {Record<string, any>} */
+		vill: {},
 		/** @type {Record<string, any>} */ flags: {},
 		/** @type {Record<string, any>} */ roads: {},
 		/** @type {Record<string, any>} */ buildings: {},
@@ -78,11 +85,10 @@ export function newGame(seed = 7) {
 		/** when the slower rules next run */
 		clocks: { dispatch: 0, people: 0, grow: 0, fish: 20, pop: 18, goals: 1, needs: 0, trade: 5, grow2: 60 },
 		hq: 0,
-		/** the fair, and the neighbours' villages (building ids) */
-		fair: 0,
+		/** the neighbours' village centers (building ids) */
 		/** @type {number[]} */ villages: [],
 		...newMarket(),
-		/** your orders at the fair: sell or buy, by ware @type {Record<string, 'sell' | 'buy'>} */
+		/** your orders: sell or buy, by ware @type {Record<string, 'sell' | 'buy'>} */
 		orders: {},
 		/** buildings burning, for a while */
 		/** @type {{ node: number, t: number }[]} */ fx: [],
@@ -96,7 +102,7 @@ export function newGame(seed = 7) {
 /** A game from its saved state. @param {string | object} saved */
 export function loadGame(saved) {
 	const st = typeof saved === 'string' ? JSON.parse(saved) : saved;
-	if (!st || st.v !== 5 || !Array.isArray(st.terrain)) throw new Error('Not a Sandbox 6 game of this kind');
+	if (!st || st.v !== 6 || !Array.isArray(st.terrain)) throw new Error('Not a Sandbox 6 game of this kind');
 	return createSim(st);
 }
 
@@ -125,7 +131,7 @@ export function createSim(st) {
 		if (st.msgs.length > 40) st.msgs.shift();
 	};
 	const T = (/** @type {any} */ b) => BUILDINGS[b.type];
-	const isWarehouse = (/** @type {any} */ b) => b.type === 'hq' || b.type === 'storehouse';
+	const isWarehouse = (/** @type {any} */ b) => b.type === 'centre';
 	const all = (/** @type {Record<string, any>} */ o) => Object.values(o);
 	const flagAt = (/** @type {number} */ n) => (st.obj[n]?.k === 'flag' ? st.flags[st.obj[n].id] : null);
 	const buildingAt = (/** @type {number} */ n) => (st.obj[n]?.k === 'bld' ? st.buildings[st.obj[n].id] : null);
@@ -270,7 +276,8 @@ export function createSim(st) {
 	function makeBuilding(/** @type {string} */ type, /** @type {number} */ node, /** @type {number} */ owner, live = false) {
 		const t = BUILDINGS[type];
 		// every building's door faces the flag in the middle of its settlement
-		const fnode = plan.centre[plan.plotOf[node]];
+		const mid = plan.centre[plan.plotOf[node]];
+		const fnode = mid === node ? g.nb(node, SE) : mid;
 		if (st.obj[fnode] && st.obj[fnode].k !== 'flag') st.obj[fnode] = null;
 		const flag = flagAt(fnode) ?? makeFlag(fnode, owner);
 		const b = {
@@ -279,8 +286,8 @@ export function createSim(st) {
 			builder: 0, worker: 0, slots: (t.inputs ?? []).map(() => ({ have: 0, inc: 0 })),
 			timer: 0, out: 0, paused: false, status: live ? '' : 'Waiting for a builder', eff: 0,
 			stock: /** @type {Record<string, number>} */ ({}), settlers: 0, deposit: 0, fields: 0, level: 0,
-			/** a market hall's: what waits to go to the fair, what is on its way to it, what came back */
-			box: /** @type {Record<string, number>} */ ({}), incBox: /** @type {Record<string, number>} */ ({}), outQ: /** @type {string[]} */ ([])
+			/** a village center's: what is on its way to it along the trade routes */
+			coming: /** @type {Record<string, number>} */ ({})
 		};
 		for (const w of Object.keys(b.cost)) (b.used[w] = 0), (b.got[w] = 0), (b.inc[w] = 0);
 		if (t.kind === 'mine') b.deposit = depositAt(node);
@@ -379,7 +386,8 @@ export function createSim(st) {
 	/** a unit with nothing left to do walks to the nearest storehouse (a neighbour's to its village) */
 	function goHome(/** @type {any} */ u) {
 		const here = nodeOf(u);
-		const homes = u.owner === PLAYER ? warehouses() : all(st.buildings).filter((b) => b.type === 'village' && b.owner === u.owner);
+		const mine = warehouses().filter((b) => villageAt(b.node) === u.vil);
+		const homes = u.owner === PLAYER ? (mine.length ? mine : warehouses()) : all(st.buildings).filter((b) => b.type === 'village' && b.owner === u.owner);
 		homes.sort((a, b) => g.dist(here, a.node) - g.dist(here, b.node));
 		for (const h of homes.slice(0, 3)) {
 			const path = findPath(g, here, h.node, walkable);
@@ -407,14 +415,14 @@ export function createSim(st) {
 			const walk = wh && roadWalk(wh.flag, r.a);
 			if (!wh || !walk) continue;
 			wh.settlers--;
-			const u = spawn('carrier', PLAYER, [wh.node, ...walk], 'c-go', { road: r.id });
+			const u = spawn('carrier', PLAYER, [wh.node, ...walk], 'c-go', { road: r.id, vil: villageAt(wh.node) });
 			u.speed = WALK;
 			r.carrier = u.id;
 		}
 		for (const b of all(st.buildings)) {
 			if (b.owner !== PLAYER) continue;
 			const t = T(b);
-			if (b.stage === 'site' && !b.builder) {
+			if (b.stage === 'site' && !b.builder && b.type !== 'centre') {
 				const wh = nearestWarehouse(b.flag, (w) => w.settlers > 0);
 				const walk = wh && roadWalk(wh.flag, b.flag);
 				if (!wh || !walk) {
@@ -422,7 +430,7 @@ export function createSim(st) {
 					continue;
 				}
 				wh.settlers--;
-				const u = spawn('builder', PLAYER, [wh.node, ...walk, b.node], 'b-go', { bld: b.id });
+				const u = spawn('builder', PLAYER, [wh.node, ...walk, b.node], 'b-go', { bld: b.id, vil: villageAt(wh.node) });
 				b.builder = u.id;
 				b.status = 'A builder is on the way';
 			} else if (b.stage === 'live' && t.worker && !b.worker) {
@@ -430,17 +438,17 @@ export function createSim(st) {
 				const walk = wh && roadWalk(wh.flag, b.flag);
 				if (!wh || !walk) {
 					const any = nearestWarehouse(b.flag, () => true);
-					const noTools = t.tools && !warehouses().some((w) => (w.stock.tools ?? 0) > 0);
+					const noTools = t.tools && (any?.stock.tools ?? 0) <= 0;
 					b.status = !any ? 'Not connected by road' : noTools ? 'Waiting for tools (build a toolmaker)' : 'Waiting for a settler';
 					if (any && noTools && st.time - (st.toolsWarned ?? -999) > 300) {
 						st.toolsWarned = st.time;
-						say('You are out of tools: a toolmaker makes them from iron ore and planks, or buy them at the fair.', b.node, 'alert');
+						say('You are out of tools: a toolmaker makes them from iron ore and planks, or buy them from a neighbour.', b.node, 'alert');
 					}
 					continue;
 				}
 				wh.settlers--;
 				if (t.tools) wh.stock.tools--;
-				const u = spawn('worker', PLAYER, [wh.node, ...walk, b.node], 'w-go', { bld: b.id });
+				const u = spawn('worker', PLAYER, [wh.node, ...walk, b.node], 'w-go', { bld: b.id, vil: villageAt(wh.node) });
 				b.worker = u.id;
 				b.status = `A ${t.worker?.toLowerCase()} is on the way`;
 			}
@@ -450,10 +458,10 @@ export function createSim(st) {
 	// ── the economy: who needs what, and where it comes from ──
 	function requestsOf(/** @type {any} */ b) {
 		const t = T(b);
+		if (b.stage === 'site' && b.type === 'centre') return [];
 		if (b.stage === 'site') return Object.keys(b.cost).map((w) => ({ types: [w], slot: -1, n: b.cost[w] - b.used[w] - b.got[w] - b.inc[w] }));
 		if (b.stage !== 'live') return [];
 		if (b.paused || !b.worker) return [];
-		if (t.kind === 'market') return hallWants(b);
 		return (t.inputs ?? []).map((/** @type {string[]} */ types, /** @type {number} */ k) => ({ types, slot: k, n: SLOT_CAP - b.slots[k].have - b.slots[k].inc }));
 	}
 	function claim(/** @type {any} */ w, /** @type {any} */ b, /** @type {number} */ slot) {
@@ -750,15 +758,16 @@ export function createSim(st) {
 		if (isWarehouse(b) || !t.worker) return;
 		const u = st.units[b.worker];
 		if (!u || u.job === 'w-go') return;
-		if (t.kind === 'market') return hall(b, u, dt);
 		let busy = false;
 		if (t.kind === 'make' || t.kind === 'mine') {
 			if (b.timer > 0) {
 				busy = true;
 				b.timer -= dt;
 				if (b.timer <= 0) {
-					b.out++;
-					made(/** @type {string} */ (t.out));
+					for (let k = 0; k < (t.yield ?? 1); k++) {
+						b.out++;
+						made(/** @type {string} */ (t.out));
+					}
 					if (t.kind === 'mine') b.deposit--;
 				}
 			}
@@ -803,6 +812,8 @@ export function createSim(st) {
 		b.eff += ((busy ? 1 : 0) - b.eff) * Math.min(1, dt / 40);
 	}
 	function finish(/** @type {any} */ b) {
+		// a village center that opens joins the trade routes dug to it
+		if (b.type === 'centre') st.tunV++;
 		if (b.type === 'house') {
 			const was = b.level;
 			b.level = Math.max(1, b.level + (b.level ? 1 : 0));
@@ -850,8 +861,10 @@ export function createSim(st) {
 			u.inside = true;
 			u.job = 'w-in';
 			if (u.ware) {
-				b.out++;
-				made(u.ware);
+				for (let k = 0; k < (T(b).yield ?? 1); k++) {
+					b.out++;
+					made(u.ware);
+				}
 				u.ware = '';
 			}
 			b.timer = /** @type {number} */ (T(b).rest);
@@ -907,164 +920,229 @@ export function createSim(st) {
 		Object.assign(u, { path, p: 0, tgt: path.length - 1, job: 'w-back' });
 	}
 
-	// ── trade ──
+	// ── trade routes under the ground, and the carts on them ──
 	/** your purse */
 	const purse = () => st.parties[PLAYER].coins;
-	/** what of a ware is on its way to the storehouses from the market halls */
-	const coming = (/** @type {string} */ w) => all(st.buildings).reduce((s, b) => s + (b.type === 'market' ? b.outQ.filter((/** @type {string} */ x) => x === w).length : 0), 0);
-	/** contracts you took that still want a ware */
-	/** @returns {any[]} */
-	const promised = (/** @type {string} */ w) => st.market.contracts.filter((/** @type {any} */ c) => c.taken && c.w === w && c.got < c.n && c.until > st.time);
 	/** what selling or buying a ware means for you now (./market.js) */
 	const rule = (/** @type {string} */ w) => orderRule(w, st.parties[PLAYER].pop ?? 0);
-	/** what a market hall asks the storehouses for: what your sell orders let go of, and what your requests promise */
-	function hallWants(/** @type {any} */ b) {
-		const reqs = [];
-		const boxed = Object.values(b.box).reduce((/** @type {number} */ s, /** @type {any} */ n) => s + n, 0) + Object.values(b.incBox).reduce((/** @type {number} */ s, /** @type {any} */ n) => s + n, 0);
-		let room = CART * 2 - boxed;
-		for (const w of TRADED) {
-			if (room <= 0) break;
-			const o = st.orders[w];
-			const owed = promised(w).reduce((s, c) => s + c.n - c.got, 0);
-			const inHand = (b.box[w] ?? 0) + (b.incBox[w] ?? 0);
-			let n = Math.max(0, Math.min(owed - inHand, stocked(w)));
-			if (o === 'sell') {
-				const r = rule(w);
-				if (price(st.market, w) >= r.above) n = Math.max(n, Math.min(CART - inHand, stocked(w) - r.keep));
+	/** every village center that stands: yours and the neighbours' */
+	const centres = () => all(st.buildings).filter((b) => (b.type === 'centre' || b.type === 'village') && b.stage === 'live');
+	const myCentres = () => centres().filter((b) => b.owner === PLAYER);
+	/** the wares a village center holds: yours in the building, a neighbour city's in its stores */
+	const storeOf = (/** @type {any} */ c) => (c.type === 'centre' ? c.stock : st.parties[c.owner].stock);
+	/** what is on its way to a village center */
+	const comingTo = (/** @type {any} */ c) => (c.type === 'centre' ? (c.coming ??= {}) : st.parties[c.owner].coming);
+	/** the neighbour's village center */
+	const cityCentre = (/** @type {number} */ k) => st.buildings[st.villages[k - 1]];
+	let tunSeen = -1;
+	/** @type {Map<number, Map<number, number[]>>} */
+	const ways = new Map();
+	/** every village center one reaches along the trade routes, through anyone's, with the way there (nodes) */
+	function reach(/** @type {number} */ from) {
+		if (tunSeen !== st.tunV) {
+			tunSeen = st.tunV;
+			ways.clear();
+		}
+		let m = ways.get(from);
+		if (m) return m;
+		const a = st.buildings[from];
+		m = new Map([[from, a ? [a.node] : []]]);
+		const open = [from];
+		while (open.length) {
+			const x = /** @type {number} */ (open.shift());
+			const here = /** @type {number[]} */ (m.get(x));
+			for (const t of all(st.tunnels)) {
+				const y = t.a === x ? t.b : t.b === x ? t.a : 0;
+				if (!y || m.has(y) || st.buildings[y]?.stage !== 'live') continue;
+				const p = t.a === x ? t.path : [...t.path].reverse();
+				m.set(y, [...here, ...p.slice(1)]);
+				open.push(y);
 			}
-			n = Math.min(n, room);
-			if (n > 0) {
-				reqs.push({ types: [w], slot: -3, n });
-				room -= n;
+		}
+		ways.set(from, m);
+		return m;
+	}
+	/** your village centers joined to one of yours by trade routes, itself first: what they hold, they pay together */
+	const pool = (/** @type {any} */ a) => [a, ...[...reach(a.id).keys()].map((id) => st.buildings[id]).filter((c) => c && c !== a && c.type === 'centre' && c.owner === PLAYER)];
+	const pooled = (/** @type {any} */ a, /** @type {Record<string, number>} */ cost) => Object.entries(cost).every(([w, n]) => pool(a).reduce((s, c) => s + (c.stock[w] ?? 0), 0) >= n);
+	function payPooled(/** @type {any} */ a, /** @type {Record<string, number>} */ cost) {
+		for (const [w, n] of Object.entries(cost)) {
+			let left = n;
+			for (const c of pool(a)) {
+				const k = Math.min(left, c.stock[w] ?? 0);
+				c.stock[w] = (c.stock[w] ?? 0) - k;
+				left -= k;
 			}
 		}
-		return reqs;
 	}
-	/** what your buy orders would fetch now: [ware, how many], the most wanted first */
-	function wantBuys() {
-		const m = st.market;
-		/** @type {[string, number][]} */
-		const list = [];
-		for (const w of TRADED) {
-			if (st.orders[w] !== 'buy') continue;
-			const r = rule(w);
-			if (m.pool[w] < 1 || cost(m, w) > r.below || cost(m, w) > purse()) continue;
-			const n = Math.min(CART, r.upTo - stocked(w) - coming(w));
-			if (n > 0) list.push([w, n]);
-		}
-		return list.sort((a, b) => b[1] - a[1]);
+	/** what a trade route between two village centers costs: a stone for every two steps */
+	const tunnelCost = (/** @type {number} */ a, /** @type {number} */ b) => Math.ceil(g.dist(a, b) / 2);
+	/** dig a trade route between two village centers (paid by the first) */
+	function dig(/** @type {any} */ a, /** @type {any} */ b, pay = true) {
+		const path = findPath(g, a.node, b.node, () => true, 60000);
+		if (!path) return null;
+		if (pay) payPooled(a, { stone: tunnelCost(a.node, b.node) });
+		const t = { id: newId(), a: a.id, b: b.id, path, owner: a.owner };
+		st.tunnels[t.id] = t;
+		st.tunV++;
+		return t;
 	}
-	/** a market hall at work: its trader sets out when there is a cartload to sell or something to buy */
-	function hall(/** @type {any} */ b, /** @type {any} */ u, /** @type {number} */ dt) {
-		const f = st.flags[b.flag];
-		while (b.outQ.length && f && f.wares.length < FLAG_CAP) newWare(b.outQ.shift(), f);
-		if (!u.inside) {
-			b.status = u.job === 't-go' ? 'The trader is on the way to the fair' : 'The trader is on the way back';
-			return;
-		}
-		if (b.timer > 0) return void (b.timer -= dt);
-		b.timer = 2;
-		if (b.paused) return void (b.status = 'Paused');
-		const boxed = Object.values(b.box).reduce((/** @type {number} */ s, /** @type {any} */ n) => s + n, 0);
-		const coming_ = Object.values(b.incBox).reduce((/** @type {number} */ s, /** @type {any} */ n) => s + n, 0);
-		const buys = wantBuys();
-		if (!(boxed >= CART || (boxed > 0 && coming_ === 0) || buys.length)) {
-			b.status = boxed || coming_ ? 'Loading wares for the fair' : 'Nothing to trade: choose what to sell or buy in the Market';
-			return;
-		}
-		const fairB = st.buildings[st.fair];
-		const path = fairB && findPath(g, b.node, fairB.node, walkable);
-		if (!path) return void (b.status = 'No way to the fair');
-		/** @type {Record<string, number>} */
-		const load = {};
-		let room = CART;
-		for (const w of Object.keys(b.box).sort((x, y) => b.box[y] - b.box[x])) {
-			const n = Math.min(room, b.box[w]);
-			if (n <= 0) continue;
-			load[w] = n;
-			b.box[w] -= n;
-			room -= n;
-		}
-		Object.assign(u, { inside: false, path, p: 0, tgt: path.length - 1, job: 't-go', speed: CART_SPEED, load, ware: Object.keys(load)[0] ?? '' });
-		b.status = 'The trader is on the way to the fair';
+	/** a cart sets out along the trade routes, at twice a walker's pace */
+	function sendCart(/** @type {any} */ from, /** @type {any} */ to, /** @type {Record<string, number>} */ load, /** @type {any} */ deal, /** @type {number[] | null} */ way = null) {
+		const path = way ?? reach(from.id).get(to.id);
+		if (!path || path.length < 2) return null;
+		for (const [w, n] of Object.entries(load)) comingTo(to)[w] = (comingTo(to)[w] ?? 0) + n;
+		return spawn('cart', from.owner, path, 'cart', { load, deal, to: to.id, speed: CART_SPEED * 2, ware: Object.keys(load)[0] ?? '' });
 	}
-	/** your trader at the fair: requests first, then your sell orders, then your buy orders */
-	function tradeHere(/** @type {any} */ u) {
-		const m = st.market;
-		const you = st.parties[PLAYER];
-		/** @type {Record<string, number>} */
-		const back = {};
-		for (let [w, n] of Object.entries(u.load)) {
-			for (const c of promised(w)) {
-				const give = Math.min(n, c.n - c.got);
-				c.got += give;
-				n -= give;
-				m.sold += give;
-				const p = st.parties[c.k];
-				p.stock[w] = (p.stock[w] ?? 0) + give;
+	function cartArrive(/** @type {any} */ u) {
+		const to = st.buildings[u.to], d = u.deal;
+		removeUnit(u);
+		for (const [w, n] of Object.entries(u.load)) {
+			if (!to) continue;
+			comingTo(to)[w] = Math.max(0, (comingTo(to)[w] ?? 0) - /** @type {number} */ (n));
+			storeOf(to)[w] = (storeOf(to)[w] ?? 0) + /** @type {number} */ (n);
+		}
+		if (!to) return;
+		if (d.settlers) to.settlers += d.settlers;
+		if (d.kind === 'found') {
+			finish(to);
+			say('A new village is founded: build houses round its center', to.node, 'good');
+		}
+		// the buyer pays on delivery
+		if (d.pay) st.parties[d.seller].coins += d.pay;
+		if (d.kind === 'request') {
+			const c = st.market.contracts.find((/** @type {any} */ x) => x.id === d.cid);
+			if (c) {
+				const n = /** @type {number} */ (Object.values(u.load)[0] ?? 0);
+				c.got += n;
+				c.sending = Math.max(0, (c.sending ?? 0) - n);
+				st.market.sold += n;
 				if (c.got >= c.n) {
+					const p = st.parties[c.k];
 					const paid = Math.min(c.reward, Math.floor(p.coins));
 					p.coins -= paid;
-					you.coins += paid;
-					m.filled++;
-					say(paid ? `${p.name} got its ${WARES[w].label.toLowerCase()} and paid ${paid} coins. Thank you!` : `${p.name} thanks you for the ${WARES[w].label.toLowerCase()}!`, -1, 'good');
+					st.parties[PLAYER].coins += paid;
+					st.market.filled++;
+					say(paid ? `${p.name} got its ${WARES[c.w].label.toLowerCase()} and paid ${paid} coins. Thank you!` : `${p.name} thanks you for the ${WARES[c.w].label.toLowerCase()}!`, to.node, 'good');
 				}
 			}
-			const floor = st.orders[w] === 'sell' ? rule(w).above : 0;
-			while (n > 0 && price(m, w) >= floor) {
-				you.coins += sellOne(m, w);
-				m.sold++;
-				n--;
-			}
-			if (n > 0) back[w] = n;
 		}
-		let room = CART - Object.values(back).reduce((a, b) => a + b, 0);
-		for (const [w, want] of wantBuys()) {
-			const below = rule(w).below;
-			let n = Math.min(want, room);
-			while (n > 0 && m.pool[w] >= 1 && cost(m, w) <= below && cost(m, w) <= you.coins) {
-				you.coins -= buyOne(m, w);
-				back[w] = (back[w] ?? 0) + 1;
-				m.bought++;
-				n--;
-				room--;
-			}
-			if (room <= 0) break;
-		}
-		u.load = back;
-		u.ware = Object.keys(back)[0] ?? '';
 	}
-	/** a trader reaches the fair, or home again */
-	function traderArrive(/** @type {any} */ u) {
-		const home = st.buildings[u.bld];
-		if (u.job === 't-go') {
-			if (u.owner === PLAYER) tradeHere(u);
-			else {
-				const m = st.market, p = st.parties[u.owner];
-				for (const [w, n] of Object.entries(u.load)) for (let k = 0; k < /** @type {number} */ (n); k++) p.coins += sellOne(m, w);
-				u.load = shop(m, p);
-				u.ware = Object.keys(u.load)[0] ?? '';
+	/** what a village of yours wants to hold of a ware: food and water for its people, wood and stone for its sites, what its factories work with */
+	function wantAt(/** @type {any} */ c, /** @type {string} */ w) {
+		const v = villageAt(c.node);
+		const pop = villagePeople(v);
+		const need = /** @type {Record<string, number>} */ (NEEDS)[w] ?? (FOOD.includes(w) ? NEEDS.food / 2 : 0);
+		let want = need * pop * 10;
+		for (const b of all(st.buildings)) {
+			if (b.owner !== PLAYER || villageAt(b.node) !== v) continue;
+			if (b.stage === 'site') want += Math.max(0, (b.cost[w] ?? 0) - (b.used[w] ?? 0) - (b.got[w] ?? 0) - (b.inc[w] ?? 0));
+			else if ((T(b).inputs ?? []).some((/** @type {string[]} */ s) => s.includes(w))) want += 4;
+			else if (w === 'tools' && T(b).tools && !b.worker) want += 1;
+		}
+		if (w === 'plank' || w === 'stone') want = Math.max(want, 6);
+		return want;
+	}
+	/** a cart already on its way with a ware between two places */
+	const onWay = (/** @type {number} */ to, /** @type {string} */ w) => all(st.units).some((u) => u.kind === 'cart' && u.to === to && u.load[w]);
+	/** every few seconds: wares shared between your villages, your sales and purchases, the neighbours' trade, requests */
+	function trade() {
+		const m = st.market, mine = myCentres();
+		// your villages share: from the one best stocked to the one worst stocked, for what each wants
+		for (const w of TRADED) {
+			const rows = mine.map((c) => {
+				const want = Math.max(1, wantAt(c, w)), have = c.stock[w] ?? 0;
+				return { c, want, have, r: (have + (comingTo(c)[w] ?? 0)) / want };
+			});
+			const donor = rows.reduce((a, b) => (b.r > a.r ? b : a), rows[0]), recv = rows.reduce((a, b) => (b.r < a.r ? b : a), rows[0]);
+			if (!donor || donor === recv || donor.r - recv.r < 0.3 || recv.r >= 1.5 || !reach(donor.c.id).has(recv.c.id) || onWay(recv.c.id, w)) continue;
+			// as much as evens them out
+			const even = (donor.have + recv.have + (comingTo(recv.c)[w] ?? 0)) / (donor.want + recv.want);
+			const n = Math.min(CART, Math.floor(donor.have - even * donor.want), Math.ceil(even * recv.want - recv.have - (comingTo(recv.c)[w] ?? 0)));
+			if (n < 1) continue;
+			donor.c.stock[w] -= n;
+			sendCart(donor.c, recv.c, { [w]: n }, { kind: 'move' });
+		}
+		// and settlers move to where there are beds for them
+		for (const c of mine) {
+			const v = villageAt(c.node);
+			// to fill new beds, or to build when a site there waits for a builder
+			const waits = all(st.buildings).some((b) => b.owner === PLAYER && b.stage === 'site' && !b.builder && b.type !== 'centre' && villageAt(b.node) === v);
+			if (c.settlers > 0 || (villagePeople(v) >= bedsIn(v) && !waits)) continue;
+			const from = mine.find((x) => x !== c && x.settlers >= 4 && reach(x.id).has(c.id));
+			if (!from || all(st.units).some((u) => u.kind === 'cart' && u.to === c.id && u.deal.settlers)) continue;
+			from.settlers -= 2;
+			sendCart(from, c, {}, { kind: 'move', settlers: 2 });
+		}
+		const total = (/** @type {string} */ w) => mine.reduce((s, c) => s + (c.stock[w] ?? 0), 0);
+		const coming = (/** @type {string} */ w) => mine.reduce((s, c) => s + (comingTo(c)[w] ?? 0), 0);
+		const you = st.parties[PLAYER];
+		for (let k = 1; k < st.parties.length; k++) {
+			const p = st.parties[k], their = cityCentre(k);
+			if (!their) continue;
+			const near = mine.filter((c) => reach(c.id).has(their.id));
+			if (!near.length) continue;
+			for (const w of TRADED) {
+				const r = rule(w);
+				// what you sell: to whoever pays most (the first neighbour that pays enough, as each is asked in turn)
+				if (st.orders[w] === 'sell' && !onWay(their.id, w)) {
+					const spare = Math.floor(total(w) - r.keep), price = priceIn(p, w);
+					const n = Math.min(CART, spare, shortIn(p, w), Math.floor(p.coins / Math.max(0.1, price)));
+					const from = near.filter((c) => (c.stock[w] ?? 0) >= n).sort((a, b) => b.stock[w] - a.stock[w])[0];
+					if (n >= 1 && price >= r.above && from) {
+						const pay = Math.min(p.coins, Math.round(n * price * 10) / 10);
+						from.stock[w] -= n;
+						p.coins -= pay;
+						sendCart(from, their, { [w]: n }, { kind: 'sale', pay, seller: PLAYER });
+						m.sold += n;
+					}
+				}
+				// what you buy: from whoever asks least
+				if (st.orders[w] === 'buy') {
+					const price = priceIn(p, w);
+					const n = Math.min(CART, Math.ceil(r.upTo - total(w) - coming(w)), spareIn(p, w), Math.floor(you.coins / Math.max(0.1, price)));
+					const to = near.sort((a, b) => (a.stock[w] ?? 0) - (b.stock[w] ?? 0))[0];
+					const cheaper = st.parties.some((/** @type {any} */ q, /** @type {number} */ j) => j > 0 && j !== k && cityCentre(j) && near.some((c) => reach(c.id).has(cityCentre(j).id)) && spareIn(q, w) >= 1 && priceIn(q, w) < price);
+					if (n >= 1 && price <= r.below && !cheaper && !onWay(to.id, w)) {
+						const pay = Math.min(you.coins, Math.round(n * price * 10) / 10);
+						p.stock[w] -= n;
+						you.coins -= pay;
+						sendCart(their, to, { [w]: n }, { kind: 'sale', pay, seller: k });
+						m.bought += n;
+					}
+				}
 			}
-			const path = home && findPath(g, nodeOf(u), home.node, walkable);
-			if (!path) return u.owner === PLAYER ? goHome(u) : removeUnit(u);
-			Object.assign(u, { path, p: 0, tgt: path.length - 1, job: 't-back' });
-			return;
+			// requests you took: a cart brings them
+			for (const c of m.contracts) {
+				if (c.k !== k || !c.taken || c.got + (c.sending ?? 0) >= c.n || c.until <= st.time) continue;
+				const from = near.filter((x) => (x.stock[c.w] ?? 0) >= 1).sort((a, b) => b.stock[c.w] - a.stock[c.w])[0];
+				if (!from) continue;
+				const n = Math.min(CART, c.n - c.got - (c.sending ?? 0), Math.floor(from.stock[c.w]));
+				from.stock[c.w] -= n;
+				c.sending = (c.sending ?? 0) + n;
+				sendCart(from, their, { [c.w]: n }, { kind: 'request', cid: c.id });
+			}
 		}
-		// home again
-		if (u.owner === PLAYER) {
-			if (!home) return goHome(u);
-			for (const [w, n] of Object.entries(u.load)) for (let k = 0; k < /** @type {number} */ (n); k++) home.outQ.push(w);
-			Object.assign(u, { inside: true, job: 'w-in', load: {}, ware: '', speed: WALK });
-			return;
-		}
-		const p = st.parties[u.owner];
-		for (const [w, n] of Object.entries(u.load)) p.stock[w] = (p.stock[w] ?? 0) + /** @type {number} */ (n);
-		removeUnit(u);
+		// the neighbours trade with each other where a route runs between them: the ware the buyer lacks most
+		for (let a = 1; a < st.parties.length; a++)
+			for (let b = 1; b < st.parties.length; b++) {
+				const pa = st.parties[a], pb = st.parties[b], ca = cityCentre(a), cb = cityCentre(b);
+				if (a === b || !ca || !cb || !reach(ca.id).has(cb.id)) continue;
+				const w = TRADED.filter((x) => spareIn(pa, x) >= 3 && shortIn(pb, x) >= 1 && !onWay(cb.id, x)).sort((x, y) => shortIn(pb, y) / keepOf(pb, y) - shortIn(pb, x) / keepOf(pb, x))[0];
+				if (!w) continue;
+				const price = priceIn(pb, w);
+				const n = Math.min(CART, spareIn(pa, w), shortIn(pb, w), Math.floor(pb.coins / Math.max(0.1, price)));
+				if (n < 1) continue;
+				const pay = Math.min(pb.coins, Math.round(n * price * 10) / 10);
+				pa.stock[w] -= n;
+				pb.coins -= pay;
+				sendCart(ca, cb, { [w]: n }, { kind: 'sale', pay, seller: a });
+			}
 	}
 
 	// ── the land ──
 	function territory() {
-		// a village belongs to whoever has a house (or a city hall, or the fair) in it
+		// a village belongs to whoever has its village center
 		const vo = Array(plan.villages.length).fill(-1);
 		for (const b of all(st.buildings).sort((x, y) => x.since - y.since)) if (holdsLand(b.type) && vo[villageAt(b.node)] === -1) vo[villageAt(b.node)] = b.owner;
 		st.villageOwner = vo;
@@ -1083,9 +1161,10 @@ export function createSim(st) {
 	}
 
 	// ── homes ──
-	/** the beds in your city: the city hall's and every house's (a house being enlarged keeps its beds meanwhile) */
-	const beds = () => all(st.buildings).reduce((s, b) => s + (b.owner !== PLAYER ? 0 : b.type === 'hq' ? /** @type {number} */ (BUILDINGS.hq.beds) : b.type === 'house' && b.level ? HOUSE_BEDS[b.level - 1] : 0), 0);
-	/** the neighbours' cities as they grow: a settlement (a house, two factories) for every eight or so people */
+	/** the beds in one of your villages: every house's (a house being enlarged keeps its beds meanwhile); nobody lives in a village center */
+	const bedsIn = (/** @type {number} */ v) => all(st.buildings).reduce((s, b) => s + (b.owner === PLAYER && b.type === 'house' && b.level && villageAt(b.node) === v ? HOUSE_BEDS[b.level - 1] : 0), 0);
+	const beds = () => myCentres().reduce((s, c) => s + bedsIn(villageAt(c.node)), 0);
+	/** the neighbours' cities as they grow: a settlement (a house, two factories) for every sixteen or so people */
 	function neighbourTowns() {
 		for (let k = 1; k < st.parties.length; k++) {
 			const p = st.parties[k];
@@ -1093,14 +1172,13 @@ export function createSim(st) {
 			if (!hall) continue;
 			const vill = plan.villages[villageAt(hall.node)];
 			const ring = vill.plots.filter((x) => x !== plan.plotOf[hall.node]);
-			const count = Math.max(1, Math.min(ring.length, Math.ceil(p.pop / 8)));
+			const count = Math.max(1, Math.min(ring.length, Math.ceil(p.pop / 16)));
 			let level = 1;
 			while (level < 4 && count * HOUSE_BEDS[level - 1] < p.pop) level++;
 			const kinds = NEIGHBOURS[k - 1].builds;
-			const want = [plan.plotOf[hall.node], ...ring.slice(0, count)];
-			want.forEach((plot, x) => {
+			ring.slice(0, count).forEach((plot, x) => {
 				const [h, f1, f2] = plan.spots[plot];
-				if (x > 0 && h >= 0) {
+				if (h >= 0) {
 					const b = buildingAt(h);
 					if (!b) {
 						if (st.obj[h]) st.obj[h] = null;
@@ -1123,26 +1201,57 @@ export function createSim(st) {
 		}
 	}
 
-	// ── the settlements: needs, the neighbours' work and trade, abundance ──
-	/** your people: in the storehouses and out at work */
-	const yourPeople = () => warehouses().reduce((s, w) => s + w.settlers, 0) + all(st.units).filter((u) => u.owner === PLAYER).length;
+	// ── the villages and cities: needs, the neighbours' work, abundance ──
+	/** the people of one of your villages: in its center and out at work */
+	const villagePeople = (/** @type {number} */ v) => {
+		let n = 0;
+		for (const b of all(st.buildings)) if (b.type === 'centre' && b.owner === PLAYER && villageAt(b.node) === v) n += b.settlers;
+		for (const u of all(st.units)) if (u.owner === PLAYER && u.kind !== 'cart' && u.vil === v) n++;
+		return n;
+	};
+	/** all your people */
+	const yourPeople = () => myCentres().reduce((s, c) => s + villagePeople(villageAt(c.node)), 0);
+	/** your villages that have a center standing, with how each lives */
+	function yourVillages() {
+		return myCentres().map((c) => {
+			const v = villageAt(c.node);
+			const p = (st.vill[v] ??= { ...party(`Village ${Object.keys(st.vill).length + 1}`, 0), v });
+			return { v, c, p };
+		});
+	}
+	/** whether a village is full: a house of 16 in each of its settlements that can hold one, and every bed taken */
+	function fullVillage(/** @type {number} */ v, /** @type {number} */ owner) {
+		const vill = plan.villages[v];
+		for (const k of vill.plots) {
+			if (k === vill.centre) continue;
+			const h = plan.spots[k][0];
+			if (h < 0 || st.terrain[h] !== GRASS) continue;
+			const b = buildingAt(h);
+			if (!b || b.owner !== owner || b.type !== 'house' || b.level < 4 || b.stage !== 'live') return false;
+		}
+		return owner === PLAYER ? villagePeople(v) >= bedsIn(v) : true;
+	}
 	function settlements(/** @type {number} */ dt) {
-		const m = st.market, c = st.clocks;
-		// yours eat from the storehouses, the fullest first
+		const m = st.market;
+		// each of your villages lives on what its center holds
+		const vs = yourVillages();
+		for (const { v, c, p } of vs) {
+			p.pop = villagePeople(v);
+			live(
+				p,
+				p.pop,
+				dt,
+				(w) => ((c.stock[w] ?? 0) >= 1 ? ((c.stock[w] -= 1), true) : false),
+				(w) => c.stock[w] ?? 0
+			);
+		}
+		// your city, as the market and the page see it: everyone counted, happiness the people's average
 		const you = st.parties[PLAYER];
-		you.pop = yourPeople();
-		live(
-			you,
-			you.pop,
-			dt,
-			(w) => {
-				const wh = warehouses().filter((x) => (x.stock[w] ?? 0) > 0).sort((a, b) => b.stock[w] - a.stock[w])[0];
-				if (!wh) return false;
-				wh.stock[w]--;
-				return true;
-			},
-			stocked
-		);
+		you.pop = vs.reduce((s, x) => s + x.p.pop, 0);
+		const weigh = (/** @type {(p: any) => number} */ f) => vs.reduce((s, x) => s + f(x.p) * Math.max(1, x.p.pop), 0) / Math.max(1, vs.reduce((s, x) => s + Math.max(1, x.p.pop), 0));
+		you.wb = weigh((p) => p.wb);
+		you.reserve = weigh((p) => p.reserve);
+		for (const n of Object.keys(you.sat)) you.sat[n] = weigh((p) => p.sat[n]);
 		for (let k = 1; k < st.parties.length; k++) {
 			const p = st.parties[k];
 			make(p, k, dt);
@@ -1154,40 +1263,12 @@ export function createSim(st) {
 				(w) => p.stock[w] ?? 0
 			);
 		}
-		fair(m, st.time, dt);
-		// the neighbours' traders
-		if (st.time >= c.trade) {
-			c.trade = st.time + 1;
-			for (let k = 1; k < st.parties.length; k++) {
-				const p = st.parties[k];
-				const village = st.buildings[st.villages[k - 1]];
-				if (!village || st.time < p.trip || all(st.units).some((u) => u.kind === 'trader' && u.owner === k)) continue;
-				p.trip = st.time + 20 + rand() * 25;
-				const sell = toSell(m, p);
-				const short = Object.values(p.sat).some((x) => x < 0.97) || p.reserve < 0.8;
-				if (!sell && !(short && p.coins > 4)) continue;
-				const path = findPath(g, village.node, st.buildings[st.fair].node, walkable);
-				if (!path) continue;
-				/** @type {Record<string, number>} */
-				const load = {};
-				if (sell) {
-					load[sell.w] = sell.n;
-					p.stock[sell.w] -= sell.n;
-				}
-				spawn('trader', k, path, 't-go', { bld: village.id, load, ware: sell?.w ?? '', speed: CART_SPEED });
-			}
-		}
-		// they grow when they live well, and shrink when they don't
-		if (st.time >= c.grow2) {
-			c.grow2 = st.time + 120;
-			for (let k = 1; k < st.parties.length; k++) {
-				const p = st.parties[k];
-				// a family settles where people live well and there is food put by for them
-				if (p.wb >= 78 && p.reserve >= 0.75 && p.pop < 50) p.pop++;
-				else if (p.wb < 40 && p.pop > 10) {
-					p.pop--;
-					if (rand() < 0.3) say(`${p.name} is struggling: a family left the valley`, st.buildings[st.villages[k - 1]]?.node ?? -1, 'alert');
-				}
+		// prices across the valley, remembered
+		if (st.time >= m.clock.hist) {
+			m.clock.hist = st.time + 20;
+			for (const w of TRADED) {
+				m.hist[w].push(valleyPrice(w));
+				if (m.hist[w].length > 30) m.hist[w].shift();
 			}
 		}
 		// requests
@@ -1195,23 +1276,23 @@ export function createSim(st) {
 			m.clock.contract = st.time + 120 + rand() * 90;
 			const req = request(m, st.parties, st.time, rand);
 			const what = req && `${req.n} ${WARES[req.w].label.toLowerCase()}`;
-			if (req) say(req.reward ? `${st.parties[req.k].name} asks for ${what}: ${req.reward} coins. See the Market.` : `${st.parties[req.k].name} has no coins left and asks for help: ${what}. See the Market.`, st.buildings[st.villages[req.k - 1]]?.node ?? -1, req.reward ? 'info' : 'alert');
+			if (req) say(req.reward ? `${st.parties[req.k].name} asks for ${what}: ${req.reward} coins. See the Market.` : `${st.parties[req.k].name} has no coins left and asks for help: ${what}. See the Market.`, cityCentre(req.k)?.node ?? -1, req.reward ? 'info' : 'alert');
 		}
 		for (const ct of m.contracts)
 			if (!ct.gone && ct.got < ct.n && ct.until <= st.time) {
 				ct.gone = true;
 				if (ct.taken) say(`Too late: ${st.parties[ct.k].name}’s request for ${WARES[ct.w].label.toLowerCase()} ran out`, -1, 'alert');
 			}
-		// abundance
-		m.abundance = abundance(st.parties);
-		// the last goal: it counts once the others are reached
+		// abundance: every village counts, yours and the neighbours'
+		const rows = villageRows();
+		m.abundance = abundance(rows);
 		const ready = GOALS.every((x) => x.id === 'abundance' || st.goals[x.id]);
-		const pops = st.parties.map((/** @type {any} */ p, /** @type {number} */ k) => (k ? p.pop : yourPeople()));
-		m.thriving = st.parties.filter((/** @type {any} */ p, /** @type {number} */ k) => p.wb >= ABUNDANT && pops[k] >= PEOPLE).length;
-		if (ready && m.thriving === st.parties.length) {
+		m.thriving = rows.filter((r) => r.wb >= ABUNDANT && r.full).length;
+		m.villages = rows.length;
+		if (ready && m.thriving === rows.length) {
 			if (m.since < 0) {
 				m.since = st.time;
-				say(`Every settlement lives well (abundance ${Math.round(m.abundance)}). Hold it for ten minutes!`, -1, 'good');
+				say(`Every village is full and lives well (abundance ${Math.round(m.abundance)}). Hold it for ten minutes!`, -1, 'good');
 			}
 			if (st.time - m.since >= HOLD && !st.goals.abundance) {
 				st.result = 'won';
@@ -1220,10 +1301,19 @@ export function createSim(st) {
 			}
 		} else if (m.since >= 0) {
 			m.since = -1;
-			const who = st.parties.find((/** @type {any} */ p, /** @type {number} */ k) => p.wb < ABUNDANT || pops[k] < PEOPLE);
-			say(`${who?.name === 'You' ? 'Your settlement' : who?.name ?? 'A settlement'} slipped below ${ABUNDANT} or ${PEOPLE} people: see the Market`, -1, 'alert');
+			const who = rows.find((r) => r.wb < ABUNDANT || !r.full);
+			say(`${who?.name ?? 'A village'} slipped below ${ABUNDANT}, or is no longer full`, -1, 'alert');
 		}
 	}
+	/** every village of the valley as the abundance panel shows it: yours by name, then each neighbour city's */
+	function villageRows() {
+		return [
+			...yourVillages().map(({ v, c, p }) => ({ name: p.name, city: 'You', pop: p.pop, beds: bedsIn(v), wb: p.wb, sat: { ...p.sat }, reserve: p.reserve, full: fullVillage(v, PLAYER), node: c.node, owner: PLAYER })),
+			...st.parties.slice(1).map((/** @type {any} */ p, /** @type {number} */ j) => ({ name: p.name, city: p.name, pop: p.pop, beds: NEIGHBOUR_BEDS, wb: p.wb, sat: { ...p.sat }, reserve: p.reserve, full: p.pop >= NEIGHBOUR_BEDS && !!cityCentre(j + 1) && fullVillage(villageAt(cityCentre(j + 1).node), j + 1), node: cityCentre(j + 1)?.node ?? -1, owner: j + 1 }))
+		];
+	}
+	/** a ware's price across the valley: what the neighbours would pay, on average */
+	const valleyPrice = (/** @type {string} */ w) => st.parties.slice(1).reduce((/** @type {number} */ s, /** @type {any} */ p) => s + priceIn(p, w), 0) / Math.max(1, st.parties.length - 1);
 
 	// ── time ──
 	function grow() {
@@ -1251,6 +1341,7 @@ export function createSim(st) {
 			let done = false;
 			if (goal.id === 'wood') done = live('woodcutter') && live('quarry');
 			else if (goal.id === 'house') done = all(st.buildings).some((b) => b.type === 'house' && b.owner === PLAYER && b.level >= 4);
+			else if (goal.id === 'village') done = myCentres().length >= 2;
 			else if (goal.id === 'market') done = st.market.sold > 0;
 			else if (goal.id === 'trade') done = st.market.sold + st.market.bought >= /** @type {number} */ (goal.n);
 			else if (goal.id === 'contract') done = st.market.filled > 0;
@@ -1320,20 +1411,34 @@ export function createSim(st) {
 			c.fish = st.time + 20;
 			for (let i = 0; i < N; i++) if (st.terrain[i] === WATER && st.fish[i] < 4 && rand() < 0.35) st.fish[i]++;
 		}
-		const hq = st.buildings[st.hq];
 		if (st.time >= c.pop) {
-			c.pop = st.time + 18;
-			// newcomers settle where people live well and there is a bed for them; with too few beds, people leave
-			const people = yourPeople(), room = beds();
-			if (hq && people < room && st.parties[PLAYER].wb >= 45) hq.settlers++;
-			else if (people > room) {
-				const wh = warehouses().find((w) => w.settlers > 0);
-				if (wh) {
-					wh.settlers--;
-					say('A settler left: there are not enough beds. Build or enlarge houses.', wh.node, 'alert');
+			c.pop = st.time + 6;
+			// newcomers settle in a village that lives well and has a bed for them; with too few beds, people leave
+			for (const { v, c: ctr, p } of yourVillages()) {
+				const people = villagePeople(v), room = bedsIn(v);
+				if (people < room && p.wb >= 60) ctr.settlers++;
+				else if (room > 0 && people > room && ctr.settlers > 0) {
+					ctr.settlers--;
+					say(`A settler left ${p.name}: there are not enough beds. Build or enlarge houses.`, ctr.node, 'alert');
+				}
+			}
+		}
+		if (st.time >= c.grow2) {
+			c.grow2 = st.time + 20;
+			// the neighbours grow when they live well, and shrink when they don't
+			for (let k = 1; k < st.parties.length; k++) {
+				const p = st.parties[k];
+				if (p.wb >= 72 && p.reserve >= 0.6 && p.pop < NEIGHBOUR_BEDS) p.pop = Math.min(NEIGHBOUR_BEDS, p.pop + 2);
+				else if (p.wb < 40 && p.pop > 10 && rand() < 0.2) {
+					p.pop--;
+					if (rand() < 0.3) say(`${p.name} is struggling: a family left the valley`, cityCentre(k)?.node ?? -1, 'alert');
 				}
 			}
 			neighbourTowns();
+		}
+		if (st.time >= c.trade) {
+			c.trade = st.time + 3;
+			trade();
 		}
 		if (st.time >= c.needs) {
 			c.needs = st.time + 2;
@@ -1354,9 +1459,8 @@ export function createSim(st) {
 			u.job = 'b-work';
 			return;
 		}
-		if (u.kind === 'worker' && (u.job === 't-go' || u.job === 't-back')) return traderArrive(u);
 		if (u.kind === 'worker') return workerArrive(u);
-		if (u.kind === 'trader') return traderArrive(u);
+		if (u.kind === 'cart') return cartArrive(u);
 	}
 
 	// ── what a player may do ──
@@ -1375,18 +1479,28 @@ export function createSim(st) {
 		if (!t || !t.group) return 'Not something you can build';
 		if (n < 0) return 'Off the map';
 		const plot = plan.plotOf[n], spot = plan.spotOf[n];
+		const v = villageAt(n), vo = st.villageOwner[v] ?? -1, middle = plan.villages[v].centre === plot;
+		if (type === 'centre') {
+			if (!middle || plan.centre[plot] !== n) return 'A village center stands in the very middle of a village';
+			if (vo !== -1) return vo === PLAYER ? 'This village has its center' : 'This village is not yours';
+			if (st.terrain[n] !== GRASS || g.nb(n, SE) < 0 || st.terrain[g.nb(n, SE)] === WATER) return 'Needs open grass';
+			if (st.obj[n]?.k === 'bld' || st.road[n]) return 'Something stands here';
+			const f = founder(v);
+			if (!f) return plan.villages[v].near.some((x) => st.villageOwner[x] === PLAYER) ? 'The village center next to it needs more planks and stone' : 'Too far: found villages next to your city';
+			return '';
+		}
+		if (middle) return 'The village center fills the middle of the village';
 		if (spot < 0) return 'Buildings stand round a settlement’s flag: pick a marked spot';
 		if (type === 'house' && spot !== 0) return 'A house stands on its settlement’s house spot';
 		if (type !== 'house' && spot === 0) return 'This spot is for the settlement’s house';
-		const v = villageAt(n), vo = st.villageOwner[v] ?? -1;
-		if (type === 'house') {
-			if (vo !== PLAYER && !(vo === -1 && plan.villages[v].near.some((x) => st.villageOwner[x] === PLAYER))) return vo === -1 ? 'Too far: found houses in your city or in a village next to it' : 'This village is not yours';
-		} else {
-			if (vo !== PLAYER) return 'Outside your city';
+		if (vo !== PLAYER) return 'Outside your city: found a village center first';
+		if (!all(st.buildings).some((b) => b.type === 'centre' && b.owner === PLAYER && b.stage === 'live' && villageAt(b.node) === v)) return 'This village’s center is still being founded';
+		if (type !== 'house') {
 			const home = buildingAt(plan.spots[plot][0]);
-			if (!home || home.owner !== PLAYER || (home.type !== 'house' && home.type !== 'hq')) return 'Build this settlement’s house first';
+			if (!home || home.owner !== PLAYER || home.type !== 'house') return 'Build this settlement’s house first';
 		}
-		if (st.obj[n]) return st.obj[n].k === 'tree' ? 'A tree stands here' : st.obj[n].k === 'rock' ? 'A rock lies here' : 'Something stands here';
+		// a house clears its own spot: the tree is felled, the rock broken, the field ploughed under
+		if (st.obj[n] && !(type === 'house' && ['tree', 'rock', 'field'].includes(st.obj[n].k))) return st.obj[n].k === 'tree' ? 'A tree stands here' : st.obj[n].k === 'rock' ? 'A rock lies here' : 'Something stands here';
 		if (st.road[n]) return 'A road runs here';
 		if (t.on === 'mountain' ? st.terrain[n] !== MOUNTAIN : st.terrain[n] !== GRASS) return t.on === 'mountain' ? 'Mines stand on mountains' : 'Needs open grass';
 		const c = plan.centre[plan.plotOf[n]];
@@ -1398,27 +1512,42 @@ export function createSim(st) {
 		if (t.kind === 'mine' && depositAt(n) <= 0) return 'No iron ore in this rock';
 		return '';
 	}
+	/** the village center of yours that can found a village: next to it, with what it costs and the route */
+	function founder(/** @type {number} */ v) {
+		const cost = BUILDINGS.centre.cost, mid = plan.centre[plan.villages[v].centre];
+		return (
+			myCentres()
+				.filter((c) => plan.villages[v].near.includes(villageAt(c.node)))
+				.filter((c) => pooled(c, { plank: /** @type {number} */ (cost.plank), stone: /** @type {number} */ (cost.stone) + tunnelCost(c.node, mid) }))
+				.sort((a, b) => g.dist(a.node, mid) - g.dist(b.node, mid))[0] ?? null
+		);
+	}
 	/** the open way for a road between a flag and a node, or null @param {number} from @param {number} to */
 	function planRoad(from, to) {
 		const start = flagAt(from);
 		if (!start || start.owner !== PLAYER || from === to || to < 0) return null;
 		const end = flagAt(to);
 		if (end ? end.owner !== PLAYER : canFlag(to)) return null;
+		if (villageAt(to) !== villageAt(from)) return null;
 		// roads keep to the lanes between settlements where they can (a building spot only when there is no other way), never over another settlement's middle
-		const open = (/** @type {number} */ j) => st.owner[j] === PLAYER && st.terrain[j] !== WATER && !st.obj[j] && !st.road[j] && plan.centre[plan.plotOf[j]] !== j;
-		const path = findPath(g, from, to, open, 2500, (j) => (plan.spotOf[j] >= 0 ? 3 : 0));
+		// and above ground, roads stay within their village: villages are joined by trade routes below; a house's spot is kept free for it
+		const v = villageAt(from);
+		const open = (/** @type {number} */ j) => st.owner[j] === PLAYER && villageAt(j) === v && st.terrain[j] !== WATER && (!st.obj[j] || st.obj[j].k === 'tree') && !st.road[j] && plan.centre[plan.plotOf[j]] !== j && (plan.spotOf[j] !== 0 || st.terrain[j] !== GRASS);
+		// a tree in the way is felled for the road, if there is no way round
+		const path = findPath(g, from, to, open, 2500, (j) => (plan.spotOf[j] >= 0 ? 3 : 0) + (st.obj[j]?.k === 'tree' ? 4 : 0));
 		return path && path.length <= 40 ? path : null;
 	}
 	function buildRoad(/** @type {number} */ from, /** @type {number} */ to) {
 		const path = planRoad(from, to);
 		if (!path) return null;
+		for (const j of path) if (st.obj[j]?.k === 'tree') (st.obj[j] = null), st.objV++;
 		if (!flagAt(to)) makeFlag(to, PLAYER);
 		return makeRoad(path, PLAYER);
 	}
 	/** a road from a flag to the nearest flag (or road) joined to the headquarters */
 	function autoRoad(/** @type {number} */ flagId) {
 		const f = st.flags[flagId];
-		const hq = st.buildings[st.hq];
+		const hq = f && myCentres().find((c) => villageAt(c.node) === villageAt(f.node));
 		if (!f || !hq) return null;
 		const joined = route(hq.flag);
 		if (joined.has(f.id)) return null;
@@ -1441,7 +1570,7 @@ export function createSim(st) {
 		plan,
 		step,
 		setup(/** @type {import('./map.js').Valley} */ v) {
-			const hq = makeBuilding('hq', v.hq, PLAYER, true);
+			const hq = makeBuilding('centre', v.hq, PLAYER, true);
 			hq.stock = { ...START.stock };
 			hq.settlers = START.settlers;
 			st.parties[PLAYER].coins = START.coins;
@@ -1453,9 +1582,10 @@ export function createSim(st) {
 				b.since = -1;
 				return b.id;
 			});
-			const f = makeBuilding('fair', v.fair, FAIR, true);
-			st.fair = f.id;
-			// the first houses round the city hall, nearest first
+			// the neighbours' two cities are joined by a trade route of old
+			const [e, h] = st.villages.map((/** @type {number} */ id) => st.buildings[id]);
+			if (e && h) dig(e, h, false);
+			// the first houses round your village center, nearest first
 			const ring = plan.villages[villageAt(hq.node)].plots.filter((k) => k !== plan.plotOf[hq.node]).sort((a, b) => g.dist(plan.centre[a], hq.node) - g.dist(plan.centre[b], hq.node));
 			START.houses.forEach((level, x) => {
 				const h = plan.spots[ring[x]][0];
@@ -1467,7 +1597,7 @@ export function createSim(st) {
 			territory();
 			for (const b of all(st.buildings)) if (b.type === 'house') autoRoad(b.flag);
 			neighbourTowns();
-			say('Welcome to your city. Every building stands round a settlement’s flag: a house and two factories. Build a woodcutter and a quarry beside a house.', hq.node);
+			say('Welcome to your city. Every building stands round a settlement’s flag: a house and two factories. Build a woodcutter and a quarry beside a house, and join them to the village center by road.', hq.node);
 		},
 		canBuild,
 		canFlag,
@@ -1478,9 +1608,21 @@ export function createSim(st) {
 			if (why) return { ok: false, why };
 			const b = makeBuilding(type, n, PLAYER);
 			b.since = st.time;
-			if (type === 'house') territory();
+			if (type === 'centre') {
+				// founded from the village center next to it: the cost, a trade route and four settlers go by cart
+				const from = /** @type {any} */ (founder(villageAt(n)));
+				payPooled(from, b.cost);
+				const t = dig(from, b);
+				territory();
+				const settlers = Math.min(4, from.settlers);
+				from.settlers -= settlers;
+				sendCart(from, b, {}, { kind: 'found', settlers }, t?.path ?? null);
+				b.status = 'Being founded: a cart is on its way';
+				return { ok: true, id: b.id, linked: true };
+			}
+			const home = myCentres().find((c) => villageAt(c.node) === villageAt(n));
 			const linked = connect ? autoRoad(b.flag) : null;
-			return { ok: true, id: b.id, linked: !!linked || route(st.buildings[st.hq].flag).has(b.flag) };
+			return { ok: true, id: b.id, linked: !!linked || (!!home && route(home.flag).has(b.flag)) };
 		},
 		flag(/** @type {number} */ n) {
 			const why = canFlag(n);
@@ -1498,13 +1640,13 @@ export function createSim(st) {
 		demolish(/** @type {number} */ n) {
 			const b = buildingAt(n);
 			if (b) {
-				if (b.owner !== PLAYER || b.type === 'hq') return { ok: false, why: b.type === 'hq' ? 'The city hall stays' : 'Not yours' };
+				if (b.owner !== PLAYER || b.type === 'centre') return { ok: false, why: b.type === 'centre' ? 'A village center stays' : 'Not yours' };
 				removeBuilding(b);
 				return { ok: true };
 			}
 			const f = flagAt(n);
 			if (f) {
-				if (f.owner !== PLAYER || all(st.buildings).some((x) => x.flag === f.id && x.type === 'hq')) return { ok: false, why: 'This flag stays' };
+				if (f.owner !== PLAYER || all(st.buildings).some((x) => x.flag === f.id && x.type === 'centre')) return { ok: false, why: 'This flag stays' };
 				removeFlag(f);
 				return { ok: true };
 			}
@@ -1531,40 +1673,65 @@ export function createSim(st) {
 			const b = st.buildings[id];
 			if (b && b.owner === PLAYER) b.paused = paused;
 		},
-		/** sell or buy a ware at the fair, or (null) neither */
+		/** sell or buy a ware, or (null) neither */
 		order(/** @type {string} */ w, /** @type {'sell' | 'buy' | null} */ o) {
 			if (!TRADED.includes(w)) return;
 			if (o) st.orders[w] = o;
 			else delete st.orders[w];
 		},
-		/** take (or let go of) a neighbour's request: your market halls gather it and your trader brings it */
+		/** take (or let go of) a neighbour's request: a cart brings it along the trade routes */
 		take(/** @type {number} */ id, on = true) {
 			const c = st.market.contracts.find((/** @type {any} */ x) => x.id === id);
 			if (c && c.got < c.n && c.until > st.time) c.taken = on;
 		},
-		/** the fair as the Market shows it */
+		/** trade as the Market shows it */
 		market() {
-			const m = st.market;
+			const m = st.market, mine = myCentres();
+			const joined = (/** @type {number} */ k) => !!cityCentre(k) && mine.some((c) => reach(c.id).has(cityCentre(k).id));
+			const reachable = st.parties.map((/** @type {any} */ _, /** @type {number} */ k) => k > 0 && joined(k));
 			return {
 				purse: purse(),
-				halls: all(st.buildings).filter((b) => b.type === 'market' && b.owner === PLAYER).length,
 				abundance: m.abundance,
 				since: m.since,
-				wares: TRADED.map((w) => ({ w, price: price(m, w), cost: cost(m, w), trend: trend(m, w), pool: Math.floor(m.pool[w]), stock: stocked(w), order: st.orders[w] ?? null, hist: [...m.hist[w], price(m, w)] })),
-				contracts: m.contracts.filter((/** @type {any} */ c) => c.got < c.n && c.until > st.time).map((/** @type {any} */ c) => ({ ...c, who: st.parties[c.k].name, left: c.until - st.time })),
-				parties: st.parties.map((/** @type {any} */ p, /** @type {number} */ k) => ({
-					name: p.name,
-					about: k ? NEIGHBOURS[k - 1].about : 'Your settlement.',
-					pop: k ? p.pop : yourPeople(),
-					wb: p.wb,
-					sat: { ...p.sat },
-					reserve: p.reserve,
-					coins: k ? p.coins : purse(),
-					node: k ? st.buildings[st.villages[k - 1]]?.node ?? -1 : st.buildings[st.hq]?.node ?? -1
-				})),
+				cities: st.parties.slice(1).map((/** @type {any} */ p, /** @type {number} */ j) => ({ k: j + 1, name: p.name, joined: reachable[j + 1], coins: p.coins, node: cityCentre(j + 1)?.node ?? -1 })),
+				wares: TRADED.map((w) => {
+					const at = st.parties.map((/** @type {any} */ p, /** @type {number} */ k) => (reachable[k] ? priceIn(p, w) : 0)).filter((/** @type {number} */ x) => x > 0);
+					const h = m.hist[w], now = valleyPrice(w), was = h[Math.max(0, h.length - 7)] ?? now;
+					return { w, price: at.length ? at.reduce((/** @type {number} */ a, /** @type {number} */ b) => a + b, 0) / at.length : null, trend: now > was * 1.06 ? 1 : now < was * 0.94 ? -1 : 0, stock: stocked(w), order: st.orders[w] ?? null };
+				}),
+				contracts: m.contracts.filter((/** @type {any} */ c) => c.got < c.n && c.until > st.time).map((/** @type {any} */ c) => ({ ...c, who: st.parties[c.k].name, left: c.until - st.time, joined: reachable[c.k] })),
+				parties: villageRows(),
 				sold: m.sold,
 				bought: m.bought
 			};
+		},
+		/** the village centers one can join by a trade route, and whether it is joined already */
+		links(/** @type {number} */ id) {
+			const b = st.buildings[id];
+			if (!b || b.type !== 'centre' || b.owner !== PLAYER) return [];
+			const r = reach(b.id);
+			return centres()
+				.filter((c) => c.id !== b.id)
+				.map((c) => ({
+					id: c.id,
+					name: c.owner === PLAYER ? st.vill[villageAt(c.node)]?.name ?? 'Your village' : st.parties[c.owner].name,
+					mine: c.owner === PLAYER,
+					joined: r.has(c.id),
+					cost: tunnelCost(b.node, c.node),
+					node: c.node
+				}))
+				.sort((x, y) => Number(x.joined) - Number(y.joined) || g.dist(b.node, x.node) - g.dist(b.node, y.node));
+		},
+		/** dig a trade route from a village center of yours to another, paid in stone by yours */
+		connect(/** @type {number} */ from, /** @type {number} */ to) {
+			const a = st.buildings[from], b = st.buildings[to];
+			if (!a || !b || a.type !== 'centre' || a.owner !== PLAYER || b.stage !== 'live') return { ok: false, why: 'Not a village center' };
+			if (reach(a.id).has(b.id)) return { ok: false, why: 'Already joined' };
+			const cost = tunnelCost(a.node, b.node);
+			if (!pooled(a, { stone: cost })) return { ok: false, why: `The route needs ${cost} stone` };
+			dig(a, b);
+			say(`A trade route now runs to ${b.owner === PLAYER ? st.vill[villageAt(b.node)]?.name ?? 'your village' : st.parties[b.owner].name}`, b.node, 'good');
+			return { ok: true };
 		},
 		/** what stands at a node */
 		at(/** @type {number} */ n) {
@@ -1587,7 +1754,7 @@ export function createSim(st) {
 			}
 			stock.coin = Math.floor(purse());
 			let carriers = 0, workers = 0;
-			for (const u of all(st.units)) if (u.owner === PLAYER) u.kind === 'carrier' ? carriers++ : workers++;
+			for (const u of all(st.units)) if (u.owner === PLAYER && u.kind !== 'cart') u.kind === 'carrier' ? carriers++ : workers++;
 			const m = st.market;
 			return {
 				time: st.time,
@@ -1603,6 +1770,7 @@ export function createSim(st) {
 				thriving: m.thriving ?? 0,
 				/** seconds the valley has been abundant, or -1 */
 				held: m.since >= 0 ? st.time - m.since : -1,
+				allVillages: m.villages ?? 0,
 				parties: st.parties.map((/** @type {any} */ p) => ({ name: p.name, wb: p.wb })),
 				result: st.result,
 				goals: GOALS.map((x) => ({ ...x, done: !!st.goals[x.id], have: x.ware ? progress(x.ware) : x.id === 'trade' ? m.sold + m.bought : undefined, need: x.n })),
@@ -1620,7 +1788,7 @@ export function createSim(st) {
 				type: b.type,
 				label: t.label,
 				about: b.type === 'village' ? NEIGHBOURS[b.owner - 1].about : t.about,
-				name: b.type === 'village' ? st.parties[b.owner].name : '',
+				name: b.type === 'village' ? st.parties[b.owner].name : b.type === 'centre' ? st.vill[villageAt(b.node)]?.name ?? '' : '',
 				owner: b.owner,
 				node: b.node,
 				stage: b.stage,
@@ -1637,10 +1805,9 @@ export function createSim(st) {
 				kind: t.kind,
 				stock: isWarehouse(b) ? { ...b.stock } : null,
 				settlers: b.settlers,
-				box: t.kind === 'market' ? { ...b.box } : null,
-				party: b.type === 'village' ? { ...st.parties[b.owner], stock: { ...st.parties[b.owner].stock } } : null,
+				party: b.type === 'village' ? { ...st.parties[b.owner], stock: { ...st.parties[b.owner].stock } } : b.type === 'centre' && st.vill[villageAt(b.node)] ? { ...st.vill[villageAt(b.node)], beds: bedsIn(villageAt(b.node)) } : null,
 				level: b.level,
-				beds: b.type === 'house' && b.level ? HOUSE_BEDS[b.level - 1] : b.type === 'hq' ? BUILDINGS.hq.beds : 0,
+				beds: b.type === 'house' && b.level ? HOUSE_BEDS[b.level - 1] : 0,
 				upgrading: b.type === 'house' && b.stage === 'site' && b.level > 0,
 				up: b.type === 'house' && b.level >= 1 && b.level < 4 ? HOUSE_UP[b.level - 1] : null,
 				village: villageAt(b.node)

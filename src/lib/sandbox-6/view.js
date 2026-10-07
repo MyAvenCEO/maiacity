@@ -120,8 +120,9 @@ export function createView(scene, sim) {
 	const bodies = inst(new THREE.CylinderGeometry(0.13, 0.17, 0.5, 6).translate(0, 0.25, 0), white, 1500);
 	const heads = inst(new THREE.SphereGeometry(0.12, 6, 4).translate(0, 0.62, 0), mat('#f0c8a0'), 1500);
 	const loads = inst(new THREE.BoxGeometry(0.22, 0.18, 0.22).translate(0, 0.86, 0), white, 1500);
-	const carts = inst(new THREE.BoxGeometry(0.42, 0.22, 0.55).translate(0, 0.3, -0.5), mat('#7a5232'), 200);
-	const cargo = inst(new THREE.BoxGeometry(0.34, 0.16, 0.4).translate(0, 0.49, -0.5), white, 200);
+	// a cart on a trade route under the ground is a light moving beneath
+	const lights = inst(new THREE.SphereGeometry(0.32, 10, 6), keep(new THREE.MeshBasicMaterial({ color: '#ffffff' })), 300, false);
+	lights.receiveShadow = false;
 	const spots = inst(new THREE.CylinderGeometry(0.5, 0.5, 0.06, 6), keep(new THREE.MeshBasicMaterial({ color: '#ffffff', transparent: true, opacity: 0.55 })), g.N, false);
 	spots.receiveShadow = false;
 
@@ -226,6 +227,34 @@ export function createView(scene, sim) {
 		root.add(roadMesh);
 	}
 
+	// the trade routes: a dashed line in its digger's colour over where it runs under the ground
+	let tunSeen = -1;
+	/** @type {THREE.Mesh[]} */
+	let tunMeshes = [];
+	const tunMats = TEAM.map((c) => keep(new THREE.MeshBasicMaterial({ color: c, transparent: true, opacity: 0.7, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -3, polygonOffsetUnits: -3 })));
+	function syncTunnels() {
+		if (tunSeen === st.tunV) return;
+		tunSeen = st.tunV;
+		for (const m of tunMeshes) {
+			m.geometry.dispose();
+			root.remove(m);
+		}
+		tunMeshes = [];
+		/** @type {Record<number, number[][]>} */
+		const dashes = {};
+		for (const t of Object.values(st.tunnels))
+			for (let j = 1; j < t.path.length - 2; j++) {
+				const a = t.path[j], b = t.path[j + 1];
+				if (j % 3 === 0 || st.terrain[a] === WATER || st.terrain[b] === WATER) continue;
+				(dashes[t.owner] ??= []).push([a, b]);
+			}
+		for (const [o, paths] of Object.entries(dashes)) {
+			const m = new THREE.Mesh(ribbon(paths, 0.16, 0.07), tunMats[+o]);
+			root.add(m);
+			tunMeshes.push(m);
+		}
+	}
+
 	// ── flags and the wares at them ──
 	const wareColor = Object.fromEntries(Object.values(WARES).map((w) => [w.id, new THREE.Color(w.color)]));
 	function syncFlags() {
@@ -323,7 +352,7 @@ export function createView(scene, sim) {
 		return at.set(X(a) + (X(b) - X(a)) * f, Math.max(Y(a), SEA) + (Math.max(Y(b), SEA) - Math.max(Y(a), SEA)) * f, Z(a) + (Z(b) - Z(a)) * f);
 	}
 	function syncUnits(/** @type {number} */ t) {
-		let k = 0, l = 0, c = 0, cc = 0;
+		let k = 0, l = 0, c = 0;
 		for (const u of Object.values(st.units)) {
 			if (u.inside) continue;
 			const p = unitPos(u);
@@ -339,19 +368,16 @@ export function createView(scene, sim) {
 			const turn = was ? Math.atan2(p.x - was[0], p.z - was[1]) : 0;
 			if (was) (was[0] = p.x), (was[1] = p.z);
 			else last.set(u.id, [p.x, p.z]);
-			const trader = u.job === 't-go' || u.job === 't-back';
+			if (u.kind === 'cart') {
+				// a cart under the ground: a pulsing light in the colour of what it carries (its city's, with settlers)
+				put(lights, c, x, y + 0.2, z, 0.85 + Math.sin(t * 6 + u.id) * 0.15);
+				lights.setColorAt(c++, u.ware ? wareColor[u.ware] : teamColor[u.owner]);
+				continue;
+			}
 			put(bodies, k, x, y + bob, z, 1.35, moving ? turn : 0);
 			put(heads, k, x, y + bob, z, 1.35);
-			bodies.setColorAt(k++, trader ? teamColor[u.owner] : /** @type {Record<string, THREE.Color>} */ (KIND)[u.kind]);
-			if (trader) {
-				// a trader pulls a cart, its cargo in the colour of the first ware it carries
-				put(carts, c, x, y, z, 1.35, turn);
-				if (u.ware) {
-					put(cargo, cc, x, y, z, 1.35, turn);
-					cargo.setColorAt(cc++, wareColor[u.ware]);
-				}
-				c++;
-			} else if (u.ware) {
+			bodies.setColorAt(k++, /** @type {Record<string, THREE.Color>} */ (KIND)[u.kind]);
+			if (u.ware) {
 				put(loads, l, x, y + bob, z, 1.35);
 				loads.setColorAt(l++, wareColor[u.ware]);
 			}
@@ -359,8 +385,7 @@ export function createView(scene, sim) {
 		done(bodies, k);
 		done(heads, k);
 		done(loads, l);
-		done(carts, c);
-		done(cargo, cc);
+		done(lights, c);
 		if (last.size > k * 2 + 50) for (const id of last.keys()) if (!st.units[id]) last.delete(id);
 	}
 
@@ -431,6 +456,7 @@ export function createView(scene, sim) {
 			syncObjects();
 			syncBorder();
 			syncRoads();
+			syncTunnels();
 			if (t - flagClock > 0.1) {
 				flagClock = t;
 				syncFlags();
@@ -514,6 +540,7 @@ export function createView(scene, sim) {
 			ghost?.traverse((o) => o instanceof THREE.Mesh && o.geometry.dispose());
 			preview?.geometry.dispose();
 			roadMesh?.geometry.dispose();
+			for (const m of tunMeshes) m.geometry.dispose();
 			for (const grp of fires.values()) grp.traverse((o) => o instanceof THREE.Mesh && o.geometry.dispose());
 			for (const d of disposables) d.dispose();
 		}
