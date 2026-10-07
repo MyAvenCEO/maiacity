@@ -18,8 +18,8 @@
 import { ABUNDANT, BIOMES, BUILDINGS, FOOD, GRASS, HOLD, HOUSE_BEDS, HOUSE_UP, IRON, MOUNTAIN, START, WARES, WATER, holdsLand } from './rules.js';
 import { CART, HEARTS, NEEDS, NEIGHBOURS, TRADED, heartsFor, abundance, keepOf, live, make, newMarket, orderRule, party, priceIn, request, shortIn, spareIn } from './market.js';
 import { SE, findPath, makeGrid } from './hex.js';
-import { makePlan } from './plots.js';
-import { biomes, growValley } from './map.js';
+import { K, makePlan, spoke } from './plots.js';
+import { growValley } from './map.js';
 
 /** seconds of game time a step moves on */
 export const TICK = 0.1;
@@ -48,7 +48,7 @@ export function newGame(seed = 7) {
 	const v = growValley(seed);
 	const N = v.W * v.H;
 	const st = {
-		v: 7,
+		v: 8,
 		seed,
 		time: 0,
 		rng: (Math.imul(seed, 2654435761) >>> 0) || 1,
@@ -106,7 +106,7 @@ export function newGame(seed = 7) {
 /** A game from its saved state. @param {string | object} saved */
 export function loadGame(saved) {
 	const st = typeof saved === 'string' ? JSON.parse(saved) : saved;
-	if (!st || st.v !== 7 || !Array.isArray(st.terrain)) throw new Error('Not a Sandbox 6 game of this kind');
+	if (!st || st.v !== 8 || !Array.isArray(st.terrain)) throw new Error('Not a Sandbox 6 game of this kind');
 	return createSim(st);
 }
 
@@ -122,8 +122,6 @@ export function createSim(st) {
 	const size = `${st.W}x${st.H}`;
 	if (!plans.has(size)) plans.set(size, makePlan(g));
 	const plan = /** @type {ReturnType<typeof makePlan>} */ (plans.get(size));
-	// a game saved before the hexes had biomes: read them from the land as it is now
-	st.biome ??= biomes(g, plan, st.terrain, st.obj, st.ore);
 	/** the village a node lies in */
 	const villageAt = (/** @type {number} */ n) => plan.villageOf[plan.plotOf[n]];
 
@@ -819,9 +817,11 @@ export function createSim(st) {
 		}
 		return b.out === 0;
 	}
-	/** a free spot of grass to plant on (a tree, a field): nothing on it, no road, no door or flag beside it */
+	/** a free spot of grass to plant on (a tree, a field): nothing on it, no road, not a building's spot, no door or flag beside it */
 	function freeSpot(/** @type {number} */ j) {
-		if (st.terrain[j] !== GRASS || st.obj[j] || st.road[j] || st.owner[j] > PLAYER) return false;
+		if (st.terrain[j] !== GRASS || st.obj[j] || st.road[j] || st.owner[j] > PLAYER || plan.spotOf[j] >= 0) return false;
+		// a village's middle hex is its village center's alone
+		if (plan.villages[villageAt(j)].centre === plan.plotOf[j]) return false;
 		for (let d = 0; d < 6; d++) {
 			const n = g.nb(j, d);
 			if (n < 0) return false;
@@ -1136,7 +1136,7 @@ export function createSim(st) {
 		let m = ways.get(from);
 		if (m) return m;
 		const a = st.buildings[from];
-		m = new Map([[from, a ? [a.node] : []]]);
+		m = new Map([[from, a ? [stopAt(a)] : []]]);
 		const open = [from];
 		while (open.length) {
 			const x = /** @type {number} */ (open.shift());
@@ -1165,19 +1165,22 @@ export function createSim(st) {
 			}
 		}
 	}
+	/** a village center's stop: the middle of its hex, where its trade routes start */
+	const stopAt = (/** @type {any} */ c) => st.flags[c.flag]?.node ?? c.node;
 	/** what a trade route between two village centers costs: a stone for every two steps */
 	const tunnelCost = (/** @type {number} */ a, /** @type {number} */ b) => Math.ceil(g.dist(a, b) / 2);
 	/** dig a trade route between two village centers (paid by the first) */
 	function dig(/** @type {any} */ a, /** @type {any} */ b, pay = true) {
 		// always straight from center to center, under whatever lies between: the nodes along the line, a step apart
-		const n = Math.max(1, g.dist(a.node, b.node)), ax = g.x(a.node), az = g.z(a.node), bx = g.x(b.node), bz = g.z(b.node);
+		const an = stopAt(a), bn = stopAt(b);
+		const n = Math.max(1, g.dist(an, bn)), ax = g.x(an), az = g.z(an), bx = g.x(bn), bz = g.z(bn);
 		/** @type {number[]} */
 		const path = [];
 		for (let k = 0; k <= n; k++) {
-			const j = k === 0 ? a.node : k === n ? b.node : g.at(ax + ((bx - ax) * k) / n, az + ((bz - az) * k) / n);
+			const j = k === 0 ? an : k === n ? bn : g.at(ax + ((bx - ax) * k) / n, az + ((bz - az) * k) / n);
 			if (j >= 0 && j !== path[path.length - 1]) path.push(j);
 		}
-		if (pay) payPooled(a, { stone: tunnelCost(a.node, b.node) });
+		if (pay) payPooled(a, { stone: tunnelCost(an, bn) });
 		const t = { id: newId(), a: a.id, b: b.id, path, owner: a.owner };
 		st.tunnels[t.id] = t;
 		st.tunV++;
@@ -1406,10 +1409,14 @@ export function createSim(st) {
 		}
 	}
 
-	/** lay a path: trees felled, a stop at each end, and a stop wherever it meets another path or crosses a settlement's
-	 * middle, so paths join each other there */
+	/** lay a path: trees felled and fields ploughed under, a stop at each end, and a stop wherever it meets another path
+	 * or crosses a settlement's middle, so paths join each other there */
 	function layPath(/** @type {number[]} */ path, /** @type {number} */ owner) {
-		for (const j of path) if (st.obj[j]?.k === 'tree') (st.obj[j] = null), st.objV++;
+		for (const j of path) {
+			const o = st.obj[j];
+			if (o?.k === 'field' && st.buildings[o.b]) st.buildings[o.b].fields = Math.max(0, st.buildings[o.b].fields - 1);
+			if (o?.k === 'tree' || o?.k === 'field') (st.obj[j] = null), st.objV++;
+		}
 		const cut = path.map((j, x) => x === 0 || x === path.length - 1 || !!flagAt(j) || !!st.road[j] || plan.centre[plan.plotOf[j]] === j);
 		for (const [x, j] of path.entries()) if (cut[x] && !flagAt(j)) makeFlag(j, owner);
 		/** @type {any} */
@@ -1721,8 +1728,8 @@ export function createSim(st) {
 		if (n < 0) return 'Off the map';
 		if (st.owner[n] !== PLAYER) return 'Outside your land';
 		if (st.terrain[n] === WATER) return 'Water';
+		if (plan.centre[plan.plotOf[n]] !== n) return 'Stops stand in the middle of a hex';
 		if (st.obj[n]) return 'Something stands here';
-		for (let d = 0; d < 6; d++) if (st.obj[g.nb(n, d)]?.k === 'flag') return 'Too close to another flag';
 		return '';
 	}
 	/** why this building may not stand here ('' when it may) @param {string} type @param {number} n */
@@ -1733,10 +1740,12 @@ export function createSim(st) {
 		const plot = plan.plotOf[n], spot = plan.spotOf[n];
 		const v = villageAt(n), vo = st.villageOwner[v] ?? -1, middle = plan.villages[v].centre === plot;
 		if (type === 'centre') {
-			if (!middle || plan.centre[plot] !== n) return 'A village center stands in the very middle of a village';
+			// it fills the village's middle hex: it stands round the hex's middle, which is its stop
+			if (!middle || plan.spots[plot][0] !== n) return 'A village center fills the middle hex of a village';
 			if (vo !== -1) return vo === PLAYER ? 'This village has its center' : 'This village is not yours';
-			if (st.terrain[n] !== GRASS || g.nb(n, SE) < 0 || st.terrain[g.nb(n, SE)] === WATER) return 'Needs open grass';
-			if (st.obj[n]?.k === 'bld' || st.road[n]) return 'Something stands here';
+			const mid = plan.centre[plot];
+			if (st.terrain[n] !== GRASS || st.terrain[mid] !== GRASS) return 'Needs open grass';
+			if (st.obj[n]?.k === 'bld' || st.road[n] || st.obj[mid]?.k === 'bld' || st.road[mid]) return 'Something stands here';
 			const f = founder(v);
 			if (!f) return plan.villages[v].near.some((x) => st.villageOwner[x] === PLAYER) ? 'The village center next to it needs more planks and stone' : 'Too far: found villages next to your city';
 			return '';
@@ -1747,12 +1756,12 @@ export function createSim(st) {
 		if (type !== 'house' && spot === 0) return 'This spot is for the settlement’s house';
 		if (vo !== PLAYER) return 'Outside your city: found a village center first';
 		if (!mineIn(v).some((b) => b.type === 'centre' && b.stage === 'live')) return 'This village’s center is still being founded';
+		// a woodcutter, forester, quarry, iron mine or fishery only stands on a hex of its own kind
+		if (t.biome && st.biome[plot] !== t.biome) return `${t.label}s stand on ${BIOMES[t.biome].label.toLowerCase()} hexes`;
 		if (type !== 'house') {
 			const home = buildingAt(plan.spots[plot][0]);
 			if (!home || home.owner !== PLAYER || home.type !== 'house') return 'Build this settlement’s house first';
 		}
-		// a woodcutter, forester, quarry, iron mine or fishery only stands on a hex of its own kind
-		if (t.biome && st.biome[plot] !== t.biome) return `${t.label}s stand on ${BIOMES[t.biome].label.toLowerCase()} hexes`;
 		// a house clears its own spot: the tree is felled, the rock broken, the field ploughed under (and a woodcutter or
 		// forester its tree, a quarry its rock)
 		const k = st.obj[n]?.k;
@@ -1779,44 +1788,34 @@ export function createSim(st) {
 				.sort((a, b) => g.dist(a.node, mid) - g.dist(b.node, mid))[0] ?? null
 		);
 	}
-	/** the open way for a road between a flag and a node, or null @param {number} from @param {number} to */
+	/**
+	 * The way for a path from a stop to the middle of a hex next to it (the hex a node lies in), or null: always straight
+	 * along the grid, from the middle of one hex to the middle of the next, over nothing but grass (a tree on the way is
+	 * felled). Above ground, paths stay within their village: villages are joined below.
+	 * @param {number} from @param {number} to
+	 */
 	function planRoad(from, to) {
 		const start = flagAt(from);
-		if (!start || start.owner !== PLAYER || from === to || to < 0) return null;
-		const end = flagAt(to);
-		if (end ? end.owner !== PLAYER : canFlag(to)) return null;
-		if (villageAt(to) !== villageAt(from)) return null;
-		// walking paths run from the middle of one settlement's hex to the middle of the next, over the three free nodes
-		// between its building spots: never over a spot, so a path never takes a house's or a factory's place (only the
-		// village center's own hex has none). Above ground, paths stay within their village: villages are joined below.
-		const v = villageAt(from), pa = plan.plotOf[from], pb = plan.plotOf[to];
-		const free = (/** @type {number} */ j) => plan.spotOf[j] < 0 || plan.villages[v].centre === plan.plotOf[j];
-		// only through the two hexes it joins: one path from one middle to the next, never along the edge of a third
-		const mine = (/** @type {number} */ j) => plan.plotOf[j] === pa || plan.plotOf[j] === pb;
-		// it may meet another path on the way (two paths share the free node between three hexes): they join there
-		const meet = (/** @type {number} */ j) => !st.obj[j] || st.obj[j].k === 'tree' || (st.obj[j].k === 'flag' && flagAt(j)?.owner === PLAYER);
-		const open = (/** @type {number} */ j) => mine(j) && st.owner[j] === PLAYER && villageAt(j) === v && st.terrain[j] !== WATER && meet(j) && free(j);
-		// a tree in the way is felled for the path, if there is no way round
-		const path = findPath(g, from, to, open, 2500, (j) => (st.obj[j]?.k === 'tree' ? 4 : 0));
-		return path && path.length <= 40 ? path : null;
+		if (!start || start.owner !== PLAYER || to < 0) return null;
+		const pa = plan.plotOf[from], pb = plan.plotOf[to];
+		const d = plan.nbr[pa].indexOf(pb);
+		if (plan.centre[pa] !== from || d < 0) return null;
+		const end = plan.centre[pb], fe = flagAt(end);
+		if (fe ? fe.owner !== PLAYER : canFlag(end)) return null;
+		if (villageAt(end) !== villageAt(from)) return null;
+		const path = spoke(g, plan, pa, d);
+		if (!path || path[path.length - 1] !== end) return null;
+		for (const j of path.slice(1, -1)) if (st.owner[j] !== PLAYER || st.terrain[j] === WATER || st.road[j] || (st.obj[j] && st.obj[j].k !== 'tree' && st.obj[j].k !== 'field')) return null;
+		return path;
 	}
 	function buildRoad(/** @type {number} */ from, /** @type {number} */ to) {
 		const path = planRoad(from, to);
 		return path ? layPath(path, PLAYER) : null;
 	}
-	/** where a settlement's paths meet: the middle of its hex (beside the village center, in the village's middle hex) */
-	const stopOf = (/** @type {number} */ plot) => {
-		const c = plan.centre[plot];
-		const b = buildingAt(c);
-		return b && (b.type === 'centre' || b.type === 'village') ? st.flags[b.flag]?.node ?? -1 : c;
-	};
-	/** the hexes next to a settlement's */
-	const nearPlots = (/** @type {number} */ plot) => {
-		/** @type {number[]} */
-		const out = [];
-		for (const [k, c] of plan.centre.entries()) if (k !== plot && g.dist(c, plan.centre[plot]) === 3) out.push(k);
-		return out;
-	};
+	/** where a hex's paths meet: its middle (the village center's stop, in a village's middle hex) */
+	const stopOf = (/** @type {number} */ plot) => plan.centre[plot];
+	/** the hexes next to a hex */
+	const nearPlots = (/** @type {number} */ plot) => plan.nbr[plot].filter((k) => k >= 0);
 	/** join a settlement's middle to its village center: hex by hex, the fewest paths, a stop in every hex it crosses */
 	function autoRoad(/** @type {number} */ flagId) {
 		const f = st.flags[flagId];
@@ -1900,15 +1899,28 @@ export function createSim(st) {
 			territory();
 			for (const b of blds()) if (b.type === 'house') autoRoad(b.flag);
 			neighbourTowns();
-			say('Welcome to your valley: a village center and one house of two. Every settlement is a hex: a house and two factories round its middle. Woods, rocks, water and iron lie on their own hexes, so found villages where they are and join them. Build homes first, then a woodcutter and a quarry.', hq.node);
+			say('Welcome to your valley: a village center and one house of two. Every hex holds a house and two factories in a triangle round its middle, and paths run straight from middle to middle. Woods, rocks, water and iron lie on their own hexes, so found villages where they are and join them. Build homes first, then a woodcutter and a quarry.', hq.node);
 		},
 		canBuild,
 		canFlag,
 		planRoad,
+		/** the spot a building would take when the hex round a node is clicked: its house spot (a village center's, in a
+		 * village's middle hex), or the factory spot nearest the node that it may stand on */
+		spotFor(/** @type {string} */ type, /** @type {number} */ n) {
+			if (n < 0) return -1;
+			const [house, ...factories] = plan.spots[plan.plotOf[n]];
+			if (type === 'centre' || type === 'house') return house;
+			if (factories.includes(n)) return n;
+			const ok = factories.filter((j) => j >= 0 && !canBuild(type, j));
+			return (ok.length ? ok : factories.filter((j) => j >= 0)).sort((a, b) => g.dist(n, a) - g.dist(n, b))[0] ?? -1;
+		},
 		/** place a building (its flag comes with it); with `connect`, a road to the network too */
 		build(/** @type {string} */ type, /** @type {number} */ n, connect = true) {
 			const why = canBuild(type, n);
 			if (why) return { ok: false, why };
+			// a village center fills its hex: what grew there is cleared
+			if (type === 'centre')
+				for (const j of g.within(n, K * 2)) if (plan.plotOf[j] === plan.plotOf[n] && st.obj[j] && st.obj[j].k !== 'bld' && st.obj[j].k !== 'flag') (st.obj[j] = null), st.objV++;
 			const b = makeBuilding(type, n, PLAYER);
 			b.since = st.time;
 			if (type === 'centre') {

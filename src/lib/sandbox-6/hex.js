@@ -3,12 +3,12 @@
  * shifted half a step east, so three nodes always make an even triangle (the terrain is drawn from those triangles).
  * Buildings, flags, trees and rocks stand on nodes; roads run from node to node.
  *
- * Directions, by index: 0 east, 1 north-east, 2 north-west, 3 west, 4 south-west, 5 south-east. A building's flag is
- * always at its south-east neighbour (its door).
+ * Directions, by index: 0 east, 1 north-east, 2 north-west, 3 west, 4 south-west, 5 south-east. The big hexes the
+ * valley is made of (./plots.js) lie on these nodes: a building's stop is the middle of its hex.
  */
 
 /** world units between two neighbouring nodes */
-export const STEP = 2.4;
+export const STEP = 2.0;
 /** world units between two rows */
 export const ROW = (STEP * Math.sqrt(3)) / 2;
 

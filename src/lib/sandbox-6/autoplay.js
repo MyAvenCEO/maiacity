@@ -146,7 +146,7 @@ export function createAutoplay(sim) {
 		const home = hq().node;
 		let best = -1, bd = Infinity;
 		for (const v of sim.plan.villages) {
-			const n = sim.plan.centre[v.centre];
+			const n = sim.plan.spots[v.centre][0];
 			if (sim.canBuild('centre', n)) continue;
 			const ok = v.plots.some((k) => k !== v.centre && sim.plan.spots[k].slice(1).some((j) => j >= 0 && suits(type, j)));
 			if (ok && g.dist(home, n) < bd) (bd = g.dist(home, n)), (best = n);
@@ -166,7 +166,7 @@ export function createAutoplay(sim) {
 		const home = hq().node;
 		let best = -1, bs = -Infinity;
 		for (const v of sim.plan.villages) {
-			const n = sim.plan.centre[v.centre];
+			const n = sim.plan.spots[v.centre][0];
 			if (sim.canBuild('centre', n)) continue;
 			const room = v.plots.filter((k) => k !== v.centre && sim.plan.spots[k][0] >= 0 && st.terrain[sim.plan.spots[k][0]] === GRASS).length;
 			const sc = room * 4 - g.dist(home, n);
