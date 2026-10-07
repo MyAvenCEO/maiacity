@@ -1,4 +1,8 @@
 /*
+ * FROZEN — the Pod as it was at v4 (7 October 2026): racks behind one tall door, a smooth rounded shell; its pallets
+ * slid in and out on their own. Kept so a world built on `pod@4` still gets it; the Pod today is ./pod.js.
+ */
+/*
  * THE POD — the settlement's mini transporter: an autonomous electric car on rails with no front and no back, for
  * people and for goods. It is built to the box of a shipping container: 4 m long, so three stand end to end in the
  * footprint of a 40 ft container (12.19 m), and as wide (2.44 m) and as high (2.59 m) as one, so it travels where
@@ -17,22 +21,17 @@
  *   side that swing open to the left and the right, the whole 2.76 m between the axles. It carries Euro pallets (EPAL,
  *   1200 × 800 × 144 mm): four, in two rows of two lengthwise, each row loaded from its own side, every pallet stacked
  *   1.6 m high. Over each axle, to the left and the right of them, a rack for parcels: on each side five compartments
- *   stacked, from 42 cm high at the bottom to 27 cm at the top, all behind one tall door of their own. Its pallets are
- *   carried in and out by four forklifts (./forklift.js, an actor of its own built into this one's rig), one to each
- *   pallet, coming from the platform beside it: in through the doors under the pallet, lift, back out with it.
+ *   stacked, from 42 cm high at the bottom to 27 cm at the top, all behind one tall door of their own.
  *
  * Built facing +z (the "north" end), the wheels on y 0. Bones: `base` (the body), the two axles (rolling, about x),
  * the doors, flaps and racks' doors on their hinges, the lamps (shown or hidden by their size), and the goods pod's pallets, each
- * on a bone pivoted far below it, so a small turn slides it sideways out of the doors and back (a bone only turns),
- * under one pivoted far to its end, which lifts it off the floor; and the forklifts' bones (hidden but to load and unload).
+ * on a bone pivoted far below it, so a small turn slides it sideways out of the doors and back (a bone only turns).
  * Moves: shuttle (drive one way, stop, open, drive back the other way), open, close, idle; the goods pod also load
  * and unload, and opens its racks one by one.
  */
 import * as THREE from 'three';
 import { limb, loop, rig, skin } from './rig';
 import { block, ease, wheel } from './excavator-rig.js';
-import { forkliftParts, forkliftPose } from './forklift.js';
-import { euroPallet } from './pallet.js';
 
 /** @typedef {import('./rig').V3} V3 */
 /** @typedef {import('./rig').Piece} Piece */
@@ -52,12 +51,9 @@ const R = 0.2, GX = 1.435 / 2, AZ = HL - 0.3;
 const MID = 1.38, BAY_Y = [0.14, 0.52], CABIN = 0.58;
 /** the people mover's doors: their middle (z) and width; the goods pod's floor */
 const DOOR_Z = 0.975, DOOR_W = 0.8, LOAD = 0.16;
-/** the goods pod's Euro pallets (./pallet.js): their rows' x and places' z, how far they are carried out of the doors,
- *  and how far below (and towards their end) their bones pivot */
-const ROW_X = 0.6, PALLET_Z = 0.62, OUT = 2.45, PIVOT = 400;
-/** the forklifts' heels (x, out from the middle): where each is built, under its pallet in the hold, with it out on the
- *  platform, waiting there, backed off; how high they lift a pallet, and how much the pallet rises with that */
-const FK_REST = 0.15, FK_IN = ROW_X + 0.42, FK_OUT = FK_IN + OUT, FK_WAIT = 3.6, FK_OFF = FK_OUT + 0.85, FK_LIFT = 0.08, UP = FK_LIFT - 0.035;
+/** a Euro pallet (EPAL): its length, width and height; the goods pod's pallets: their rows' x and places' z, the
+ *  height they are stacked to, how far they slide out of the doors, and how far below them their bones pivot */
+const PL = 1.2, PW = 0.8, PH = 0.144, ROW_X = 0.6, PALLET_Z = 0.62, STACK = 1.6, OUT = 2.2, PIVOT = 400;
 /** the goods pod's racks over the axles: their compartments' heights from the floor up (m), a shelf between each */
 const RACK = [0.42, 0.36, 0.32, 0.28, 0.27];
 /** each compartment's bottom and top */
@@ -65,6 +61,7 @@ const LEVELS = RACK.map((h, i) => {
 	const y0 = CABIN + RACK.slice(0, i).reduce((a, b) => a + b, 0) + i * 0.015;
 	return /** @type {[number, number]} */ ([y0, y0 + h]);
 });
+const WOOD = '#c9a878', WOOD2 = '#b8955f', WRAP = '#dfe3e2';
 
 const SIDES = /** @type {const} */ ([['L', 1], ['R', -1]]);
 const ENDS = /** @type {const} */ ([['N', 1], ['S', -1]]);
@@ -167,6 +164,23 @@ function people(add) {
 	for (const [, sz] of ENDS) add(block(0.5, 0.05, 1.0, [0, top - 0.04, sz * DOOR_Z], 0.02), '#fbf7ea', 'base'); // the ceiling lights
 }
 
+/**
+ * A Euro pallet on the floor at (x, y, z), its length along z: five top boards along it, three cross boards under
+ * them, nine blocks, three bottom boards; and its load, cartons stacked to `STACK`, wrapped in film.
+ * @param {Add} add @param {number} x @param {number} y @param {number} z @param {string} bone
+ */
+function pallet(add, x, y, z, bone) {
+	for (const [bx, w] of [[-0.3275, 0.145], [-0.16, 0.1], [0, 0.145], [0.16, 0.1], [0.3275, 0.145]]) add(block(w, 0.022, PL, [x + bx, y + PH - 0.011, z], 0.004), WOOD, bone);
+	for (const bz of [-0.5275, 0, 0.5275]) {
+		add(block(PW, 0.022, 0.145, [x, y + 0.111, z + bz], 0.004), WOOD2, bone);
+		for (const bx of [-0.3275, 0, 0.3275]) add(block(0.145, 0.078, 0.145, [x + bx, y + 0.061, z + bz], 0.006), WOOD2, bone);
+	}
+	for (const bx of [-0.3275, 0, 0.3275]) add(block(0.1, 0.022, PL, [x + bx, y + 0.011, z], 0.004), WOOD, bone);
+	const top = STACK - PH;
+	for (let k = 0; k < 3; k++) add(block(PW - 0.02, top / 3 - 0.01, PL - 0.02, [x, y + PH + (k + 0.5) * (top / 3), z], 0.02), k % 2 ? CRATE : CRATE2, bone);
+	add(block(PW + 0.004, top * 0.7, PL + 0.004, [x, y + PH + top * 0.5, z], 0.02), WRAP, bone, 1);
+}
+
 /** the goods pod: a low hold between the axles, two doors each side, four Euro pallets; racks over the axles */
 /** @param {Add} add */
 function goods(add) {
@@ -205,7 +219,7 @@ function goods(add) {
 		}
 	}
 	// what it carries: four Euro pallets, two rows of two lengthwise, each row on its own side; parcels in the racks
-	for (const [s, sx] of SIDES) for (const [e, sz] of ENDS) euroPallet(add, [sx * ROW_X, LOAD, sz * PALLET_Z], Math.PI / 2, `pallet${s}${e}`);
+	for (const [s, sx] of SIDES) for (const [e, sz] of ENDS) pallet(add, sx * ROW_X, LOAD, sz * PALLET_Z, `pallet${s}${e}`);
 	for (const sz of [-1, 1])
 		for (const sx of [-1, 1])
 			for (const [i, [y0, y1]] of LEVELS.entries()) {
@@ -219,14 +233,12 @@ function goods(add) {
 /**
  * The pod at a moment: where it is along z (driving), which way it leads, its doors (0 shut … 1 open), its bay's
  * flaps, how far the goods pod's pallets are out of their doors (0 in … 1 out on the platform beside it), and its
- * racks' doors (one number for all, or one each by name: `LN` is the left one at the north end); how high the pallets
- * are lifted off the floor (0 … 1: as a forklift lifts them), and the forklifts: where their heels are (x, out from the
- * middle) and how high their forks (none: hidden).
+ * racks' doors (one number for all, or one each by name: `LN` is the left one at the north end).
  * @param {Kind} kind
- * @param {{ z?: number, lead?: -1 | 0 | 1, doors?: number, flaps?: number, out?: number, up?: number, racks?: number | ((name: string) => number), fk?: { x: number, lift: number } | null }} s
+ * @param {{ z?: number, lead?: -1 | 0 | 1, doors?: number, flaps?: number, out?: number, racks?: number | ((name: string) => number) }} s
  * @returns {Pose}
  */
-function at(kind, { z = 0, lead = 0, doors = 0, flaps = 0, out = 0, up = 0, racks = 0, fk = null }) {
+function at(kind, { z = 0, lead = 0, doors = 0, flaps = 0, out = 0, racks = 0 }) {
 	/** @type {Pose} */
 	const p = { root: [0, 0, z] };
 	for (const [e, sz] of ENDS) {
@@ -241,12 +253,8 @@ function at(kind, { z = 0, lead = 0, doors = 0, flaps = 0, out = 0, up = 0, rack
 		} else
 			for (const [e, sz] of ENDS) {
 				p[`door${s}${e}`] = [0, -sx * sz * 1.6 * doors, 0];
-				// a turn about z of the bone far below: the pallet slides out sideways (sinking 8 mm at most)
+				// a turn about z of the bone far below: the pallet slides out sideways (sinking 6 mm at most)
 				p[`pallet${s}${e}`] = [0, 0, -Math.asin((sx * OUT * out) / PIVOT)];
-				// and a turn about x of the one far towards its end: it rises off the floor (and makes up that sinking)
-				const sink = PIVOT - Math.sqrt(PIVOT ** 2 - (OUT * out) ** 2);
-				p[`palletUp${s}${e}`] = [-sz * Math.asin((UP * up + sink) / PIVOT), 0, 0];
-				forkliftPose(p, `fk${s}${e}`, (-sx * Math.PI) / 2, fk ? { move: FK_REST - fk.x, lift: fk.lift } : { show: false });
 				p[`rack${s}${e}`] = [0, -sx * sz * 1.7 * (typeof racks === 'number' ? racks : racks(`${s}${e}`)), 0];
 			}
 	}
@@ -274,8 +282,7 @@ export function pod(kind) {
 		} else
 			for (const [e, sz] of ENDS) {
 				bones.push({ name: `door${s}${e}`, parent: 'base', at: [sx * (HW - 0.02), LOAD, sz * MID] });
-				bones.push({ name: `palletUp${s}${e}`, parent: 'base', at: [sx * ROW_X, LOAD, sz * (PALLET_Z - PIVOT)] });
-				bones.push({ name: `pallet${s}${e}`, parent: `palletUp${s}${e}`, at: [sx * ROW_X, LOAD - PIVOT, sz * PALLET_Z] });
+				bones.push({ name: `pallet${s}${e}`, parent: 'base', at: [sx * ROW_X, LOAD - PIVOT, sz * PALLET_Z] });
 				bones.push({ name: `rack${s}${e}`, parent: 'base', at: [sx * (HW - 0.02), CABIN, sz * (HL - 0.1)] });
 			}
 	}
@@ -285,8 +292,6 @@ export function pod(kind) {
 	const add = (geo, color, bone, mat) => void parts.push({ geo, color, bone, ...(mat ? { mat } : {}) });
 	chassis(add);
 	(kind === 'people' ? people : goods)(add);
-	// the goods pod's forklifts, one to each pallet, facing in from its side; built in the hold, shown only working
-	if (kind === 'goods') for (const [s, sx] of SIDES) for (const [e, sz] of ENDS) forkliftParts(add, bones, { name: `fk${s}${e}`, parent: 'base', heel: [sx * FK_REST, LOAD, sz * PALLET_Z], yaw: (-sx * Math.PI) / 2 });
 	const r = rig(bones, parts, [skin(0.45, { side: THREE.DoubleSide }), skin(0.06, { transparent: true, opacity: 0.3, depthWrite: false })]);
 	r.object.name = kind === 'people' ? 'pod (people)' : 'pod (goods)';
 
@@ -319,21 +324,15 @@ export function pod(kind) {
 		idle: () => m({})
 	};
 	if (kind === 'goods') {
-		// a forklift comes to each pallet out on the platform beside the pod as its doors open, in under it, lifts it,
-		// carries it in through the doors to its place, sets it down, backs out, and the doors close behind it
+		// the pallets brought in from the platforms either side: the doors open, the rows slide in, the doors close
 		clips.load = (t) => {
-			const u = loop(t, 12);
-			const lift = FK_LIFT * (ramp(u, 0.22, 0.28) - ramp(u, 0.55, 0.61));
-			const x = FK_OFF - (FK_OFF - FK_OUT) * ramp(u, 0.06, 0.2) - OUT * ramp(u, 0.28, 0.55) + (FK_WAIT - FK_IN) * ramp(u, 0.61, 0.78);
-			return m({ doors: ramp(u, 0, 0.1) - ramp(u, 0.74, 0.86), out: 1 - ramp(u, 0.28, 0.55), up: lift / FK_LIFT, fk: { x, lift } });
+			const u = loop(t, 10);
+			return m({ doors: ramp(u, 0, 0.12) - ramp(u, 0.5, 0.62), out: 1 - ramp(u, 0.15, 0.45) });
 		};
-		// and out: the doors open, each forklift drives in under its pallet, lifts it, carries it out onto the platform,
-		// sets it down there and backs off; the doors close behind them
+		// and taken out: the doors open, the rows slide out to either side, the doors close behind them
 		clips.unload = (t) => {
-			const u = loop(t, 12);
-			const lift = FK_LIFT * (ramp(u, 0.3, 0.38) - ramp(u, 0.62, 0.68));
-			const x = FK_WAIT - (FK_WAIT - FK_IN) * ramp(u, 0.1, 0.3) + OUT * ramp(u, 0.38, 0.62) + (FK_OFF - FK_OUT) * ramp(u, 0.68, 0.8);
-			return m({ doors: ramp(u, 0, 0.1) - ramp(u, 0.74, 0.86), out: ramp(u, 0.38, 0.62), up: lift / FK_LIFT, fk: { x, lift } });
+			const u = loop(t, 10);
+			return m({ doors: ramp(u, 0.04, 0.16) - ramp(u, 0.55, 0.67), out: ramp(u, 0.2, 0.5) });
 		};
 		// the racks one after another, as parcels are picked up: each opens, stays open a moment, shuts
 		const ORDER = ['LN', 'LS', 'RS', 'RN'];
@@ -348,6 +347,6 @@ export function pod(kind) {
 		};
 	}
 	/** @type {Record<string, Pose>} */
-	const poses = kind === 'people' ? { closed: m({}), 'doors open': m({ doors: 1 }), 'bay open': m({ flaps: 1 }), 'all open': m({ doors: 1, flaps: 1 }) } : { closed: m({}), 'doors open': m({ doors: 1 }), 'racks open': m({ racks: 1 }), unloaded: m({ doors: 1, out: 1, fk: { x: FK_OFF, lift: 0 } }) };
+	const poses = kind === 'people' ? { closed: m({}), 'doors open': m({ doors: 1 }), 'bay open': m({ flaps: 1 }), 'all open': m({ doors: 1, flaps: 1 }) } : { closed: m({}), 'doors open': m({ doors: 1 }), 'racks open': m({ racks: 1 }), unloaded: m({ doors: 1, out: 1 }) };
 	return { rig: r, clips, poses, first: 'shuttle' };
 }
