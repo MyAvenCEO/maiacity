@@ -364,7 +364,7 @@ export function mountGame(container, o = {}) {
 		/** a fresh valley */
 		restart() {
 			view.dispose();
-			sim = newGame(Math.floor(Math.random() * 1e6));
+			sim = newGame(Math.floor(Math.random() * 1e6), sim.state.pace);
 			view = createView(scene, sim);
 			select(null);
 			setMode('look');

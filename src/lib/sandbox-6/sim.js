@@ -20,7 +20,7 @@
 import { BIOMES, BUILDINGS, FOOD, GRASS, HOUSE_BEDS, HOUSE_MOST, HOUSE_TOP, HOUSE_UP, IRON, MOUNTAIN, START, WARES, WATER, WOOD, WOOD_UP, holdsLand } from './rules.js';
 import { CART, HEARTS, NEEDS, NEIGHBOURS, TRADED, heartsFor, abundance, keepOf, live, make, newMarket, orderRule, party, priceIn, request, shortIn, spareIn } from './market.js';
 import { SE, STEP, findPath, makeGrid } from './hex.js';
-import { FOOD_KG, KEEP, MOST, PRICE, TANK, WATER_L, WEEK, WELL_L, YEAR, DAY, calendar, forestShare } from './food.js';
+import { FOOD_KG, KEEP, MOST, PACE, PRICE, TANK, WATER_L, WEEK, WELL_L, YEAR, DAY, calendar, forestShare } from './food.js';
 import { makePlan, spoke } from './plots.js';
 import { growValley } from './map.js';
 
@@ -52,13 +52,18 @@ const ENOUGH = 40;
  * A new game in a valley grown from a seed.
  * @param {number} [seed]
  */
-export function newGame(seed = 7) {
+/** a new valley; its calendar runs at the master clock's pace, or fast (ten years in ten minutes) for tests
+ * @param {number} [seed] @param {'master' | 'fast'} [pace] */
+export function newGame(seed = 7, pace = 'master') {
 	const v = growValley(seed);
 	const N = v.W * v.H;
 	const st = {
-		v: 11,
+		v: 12,
 		seed,
 		time: 0,
+		/** days of the valley's calendar gone by (./food.js), and how fast they go */
+		cal: 0,
+		pace,
 		rng: (Math.imul(seed, 2654435761) >>> 0) || 1,
 		W: v.W,
 		H: v.H,
@@ -113,7 +118,14 @@ export function newGame(seed = 7) {
 /** A game from its saved state. @param {string | object} saved */
 export function loadGame(saved) {
 	const st = typeof saved === 'string' ? JSON.parse(saved) : saved;
-	if (!st || st.v !== 11 || !Array.isArray(st.terrain)) throw new Error('Not a Sandbox 6 game of this kind');
+	// a game from before the valley kept the master clock's pace ran ten years in ten minutes: six days a second
+	if (st?.v === 11) {
+		st.cal = st.time * PACE.fast;
+		for (const k of Object.keys(st.forest ?? {})) st.forest[k] *= PACE.fast;
+		st.pace = 'master';
+		st.v = 12;
+	}
+	if (!st || st.v !== 12 || !Array.isArray(st.terrain)) throw new Error('Not a Sandbox 6 game of this kind');
 	return createSim(st);
 }
 
@@ -131,6 +143,8 @@ export function createSim(st) {
 	const plan = /** @type {ReturnType<typeof makePlan>} */ (plans.get(size));
 	/** the village a node lies in */
 	const villageAt = (/** @type {number} */ n) => plan.villageOf[plan.plotOf[n]];
+	/** days of the valley's calendar a second of play */
+	const pace = () => (st.pace === 'fast' ? PACE.fast : PACE.master);
 
 	const rand = () => {
 		st.rng = (st.rng + 0x6d2b79f5) >>> 0;
@@ -988,7 +1002,12 @@ export function createSim(st) {
 			}
 		} else busy = true;
 		b.eff += ((busy ? 1 : 0) - b.eff) * Math.min(1, dt / 40);
-		if (b.lately) b.lately *= Math.exp(-dt / (LATELY * WEEK));
+		// what it made lately, and over how many weeks: both fade over a quarter year
+		if (b.lately !== undefined) {
+			const weeks = (dt * pace()) / WEEK, fade = Math.exp(-weeks / LATELY);
+			b.lately *= fade;
+			b.span = (b.span ?? 0) * fade + weeks;
+		}
 	}
 	function finish(/** @type {any} */ b) {
 		// a village center that opens joins the trade routes dug to it
@@ -1012,7 +1031,7 @@ export function createSim(st) {
 		b.timer = 0;
 		b.since = st.time;
 		// a house's first finishing plants its hex's food forest
-		if (b.type === 'house') st.forest[plan.plotOf[b.node]] ??= st.time;
+		if (b.type === 'house') st.forest[plan.plotOf[b.node]] ??= st.cal;
 		const t = T(b);
 		b.status = t.worker ? 'Waiting for a worker' : '';
 		const u = st.units[b.builder];
@@ -1539,7 +1558,7 @@ export function createSim(st) {
 			if (b.type === 'house' && b.level) {
 				const n = HOUSE_BEDS[b.level - 1], k = plan.plotOf[b.node];
 				beds += n;
-				grown += n * forestShare((st.time - (st.forest[k] ?? b.since ?? st.time)) / YEAR);
+				grown += n * forestShare((st.cal - (st.forest[k] ?? st.cal)) / YEAR);
 			}
 		return beds ? grown / beds : 0;
 	}
@@ -1550,10 +1569,11 @@ export function createSim(st) {
 	 * store, its wells fill its tanks and its people use them. Then it buys what its store lacks of two weeks' food:
 	 * first from your villages joined to it that have more than that (5 gold a kg, to them), then from the world (10 gold
 	 * a kg); and tanks share their water along the trade routes. What a village did, a week, is kept in its `flow`.
-	 * @param {{ v: number, c: any, p: any }[]} vs @param {number} dt
+	 * @param {{ v: number, c: any, p: any }[]} vs @param {number} dd the days of the valley's calendar gone by
 	 */
-	function eatAndDrink(vs, dt) {
-		const days = dt / DAY, fade = 1 - Math.exp(-dt / (4 * WEEK));
+	function eatAndDrink(vs, dd) {
+		if (dd <= 0) return;
+		const days = dd / DAY, fade = 1 - Math.exp(-dd / (4 * WEEK));
 		/** @type {Map<any, Record<string, number>>} */
 		const did = new Map();
 		const add = (/** @type {any} */ p, /** @type {string} */ k, /** @type {number} */ n) => {
@@ -1577,7 +1597,7 @@ export function createSim(st) {
 			add(p, 'drawn', drawn);
 			add(p, 'used', used);
 			// how well they ate and drank, lately: hunger shows within a couple of weeks
-			const ease = Math.min(1, dt / (2 * WEEK));
+			const ease = Math.min(1, dd / (2 * WEEK));
 			p.sat.food += ((need > 0 ? eaten / need : 1) - p.sat.food) * ease;
 			p.sat.water += ((thirst > 0 ? used / thirst : 1) - p.sat.water) * ease;
 		}
@@ -1626,26 +1646,29 @@ export function createSim(st) {
 			}
 		}
 		for (const { p } of vs) p.litres = Math.min(p.litres, Math.max(20000, p.pop * WATER_L * 7 * TANK));
-		// a week of each, lately
+		// a week of each, lately: an average over the last month or so, weighed by how much of it the valley has seen yet
 		for (const { p } of vs) {
 			p.flow ??= {};
 			const d = did.get(p) ?? {};
+			const was = (p.flowW ?? 0) * (1 - fade), w = was + fade;
 			for (const k of ['grown', 'eaten', 'fromVillages', 'fromWorld', 'sold', 'spoiled', 'spent', 'earned', 'drawn', 'used'])
-				p.flow[k] = (p.flow[k] ?? 0) + (((d[k] ?? 0) * WEEK) / dt - (p.flow[k] ?? 0)) * fade;
+				p.flow[k] = ((p.flow[k] ?? 0) * was + (((d[k] ?? 0) * WEEK) / dd) * fade) / w;
+			p.flowW = w;
 		}
 	}
-	function settlements(/** @type {number} */ dt) {
+	/** @param {number} dt seconds of play @param {number} dd days of the valley's calendar */
+	function settlements(dt, dd) {
 		const m = st.market;
 		// each of your villages lives on what its center holds
 		const vs = yourVillages();
 		// every settler issues HEARTs into its village center's treasury; what a treasury holds wanes by the year (a debt
 		// does not)
-		const wane = Math.pow(1 - HEARTS.demurrage, dt / (HEARTS.yearHours * HEARTS.hour));
+		const wane = Math.pow(1 - HEARTS.demurrage, dd / (HEARTS.yearHours * HEARTS.hour));
 		for (const { v, c, p } of vs) {
 			p.pop = villagePeople(v);
-			c.hearts = ((c.hearts ?? 0) > 0 ? c.hearts * wane : c.hearts ?? 0) + (HEARTS.perHour * p.pop * dt) / HEARTS.hour;
+			c.hearts = ((c.hearts ?? 0) > 0 ? c.hearts * wane : c.hearts ?? 0) + (HEARTS.perHour * p.pop * dd) / HEARTS.hour;
 		}
-		eatAndDrink(vs, dt);
+		eatAndDrink(vs, dd);
 		for (const { v, c, p } of vs) {
 			const keep = p.pop * FOOD_KG * KEEP, tank = p.pop * WATER_L * 7 * KEEP;
 			live(
@@ -1740,6 +1763,7 @@ export function createSim(st) {
 	}
 	function step(dt = TICK) {
 		st.time += dt;
+		st.cal += dt * pace();
 		const c = st.clocks;
 		for (const u of units()) {
 			if (!st.units[u.id]) continue;
@@ -1830,7 +1854,8 @@ export function createSim(st) {
 		}
 		if (st.time >= c.needs) {
 			c.needs = st.time + 1;
-			settlements(1);
+			settlements(1, st.cal - (c.cal ?? st.cal));
+			c.cal = st.cal;
 		}
 		if (st.fx.length && st.time - st.fx[0].t > 12) st.fx.shift();
 	}
@@ -2095,6 +2120,9 @@ export function createSim(st) {
 			return { ok: false, why: 'Nothing to tear down here' };
 		},
 		/** enlarge a house to its next size: builders bring what it costs, and its settlers stay meanwhile */
+		setPace(/** @type {'master' | 'fast'} */ pace) {
+			st.pace = pace === 'fast' ? 'fast' : 'master';
+		},
 		upgrade(/** @type {number} */ id) {
 			const b = st.buildings[id];
 			if (!b || b.owner !== PLAYER || (b.type !== 'house' && b.type !== 'woodcutter')) return { ok: false, why: 'Only your houses and your wood grow' };
@@ -2206,7 +2234,9 @@ export function createSim(st) {
 				workers,
 				parties: st.parties.map((/** @type {any} */ p) => ({ name: p.name, wb: p.wb })),
 				/** the valley's date */
-				date: calendar(st.time),
+				date: calendar(st.cal),
+				/** how fast the valley's calendar runs: the master clock's pace, or fast for tests */
+				pace: st.pace,
 				/** all your villages' food, a week: grown, eaten, and gold spent and earned on it */
 				food: yourVillages().reduce((t, { p }) => ({ grown: t.grown + (p.flow?.grown ?? 0), need: t.need + p.pop * FOOD_KG, spent: t.spent + (p.flow?.spent ?? 0), earned: t.earned + (p.flow?.earned ?? 0) }), { grown: 0, need: 0, spent: 0, earned: 0 }),
 				msgs: st.msgs.slice(-6)
@@ -2271,7 +2301,7 @@ export function createSim(st) {
 					spent: f.spent ?? 0,
 					earned: f.earned ?? 0,
 					share: forestOf(v),
-					year: Math.floor(Math.max(0, ...mineIn(v).filter((b) => b.type === 'house' && st.forest[plan.plotOf[b.node]] !== undefined).map((b) => st.time - st.forest[plan.plotOf[b.node]])) / YEAR) + 1,
+					year: Math.floor(Math.max(0, ...mineIn(v).filter((b) => b.type === 'house' && st.forest[plan.plotOf[b.node]] !== undefined).map((b) => st.cal - st.forest[plan.plotOf[b.node]])) / YEAR) + 1,
 					short: lived && s.food < 0.8
 				},
 				/** its water, litres: in its tanks, what its people use a week, what its wells gave a week, and how many wells */
@@ -2321,7 +2351,7 @@ export function createSim(st) {
 				upgrading: (b.type === 'house' || b.type === 'woodcutter') && b.stage === 'site' && b.level > 0,
 				up: b.type === 'house' && b.level >= 1 && b.level < HOUSE_TOP ? HOUSE_UP[b.level - 1] : b.type === 'woodcutter' && b.stage === 'live' && woodLevel(b) < WOOD.length ? WOOD_UP[woodLevel(b) - 1] : null,
 				/** what it made a week, lately (its ware's units) */
-				lately: (b.lately ?? 0) / LATELY,
+				lately: b.span ? (b.lately ?? 0) / b.span : 0,
 				village: villageAt(b.node)
 			};
 		},

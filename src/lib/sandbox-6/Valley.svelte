@@ -24,6 +24,8 @@
 	let buildType = $state('');
 	let hint = $state('');
 	let speed = $state(1);
+	/** how fast the valley's calendar runs: the master clock's pace, or ten years in ten minutes for tests */
+	let pace = $state('master');
 	let menuOpen = $state(false);
 	let group = $state(MENU[0].group);
 	let narrow = $state(false);
@@ -67,7 +69,7 @@
 	/** planks as tonnes of sawn timber */
 	const tonnes = (/** @type {number} */ planks) => {
 		const t = planks * PLANK_T;
-		return `${Number.isInteger(t) ? t : t.toFixed(t < 1 ? 2 : 1)} t`;
+		return `${t >= 100 ? num(t) : Number.isInteger(t) ? t : t.toFixed(t < 1 ? 2 : 1)} t`;
 	};
 	/** what the wood building cuts from a tree at a stage */
 	const perTree = (/** @type {number} */ level) => `${WOOD[level - 1].planks} plank${WOOD[level - 1].planks === 1 ? '' : 's'} (${tonnes(WOOD[level - 1].planks)})`;
@@ -84,6 +86,7 @@
 			owned = n;
 		}
 		speed = game.speed;
+		pace = sim.state.pace;
 		const s = selected;
 		card = s?.k === 'building' ? sim.inspect(s.id) : null;
 		if (s?.k === 'building' && !card) select(null);
@@ -192,6 +195,11 @@
 		<div class="speed" role="group" aria-label="Speed">
 			{#each [[0, '❚❚'], [1, '1×'], [2, '2×'], [4, '4×']] as [s, t] (s)}
 				<button class:on={speed === s} onclick={() => (game?.setSpeed(/** @type {number} */ (s)), (speed = /** @type {number} */ (s)))} title={s ? `Speed ${t}` : 'Pause (Space)'}>{t}</button>
+			{/each}
+		</div>
+		<div class="speed" role="group" aria-label="Calendar">
+			{#each [['master', 'Master', 'The master clock: a real day is a month, a year takes twelve real days'], ['fast', 'Fast', 'Fast years, for tests: ten years in ten minutes']] as [p, t, about] (p)}
+				<button class:on={pace === p} onclick={() => (game?.sim.setPace(/** @type {'master' | 'fast'} */ (p)), (pace = p))} title={about}>{t}</button>
 			{/each}
 		</div>
 		<button class="quiet" onclick={newValley} title="Start a new valley">New valley</button>

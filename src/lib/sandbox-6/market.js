@@ -59,7 +59,7 @@ export const HEARTS = {
 	perHour: 24,
 	/** HEARTs in one gold */
 	perGold: 1000,
-	/** an in-game hour in seconds of play: the valley's calendar, a day a second (./food.js) */
+	/** an in-game hour, in days of the valley's calendar (./food.js) */
 	hour: DAY / 24,
 	/** what a treasury loses in an in-game year */
 	demurrage: 0.07,
