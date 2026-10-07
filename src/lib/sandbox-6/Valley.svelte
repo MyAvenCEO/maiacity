@@ -71,7 +71,7 @@
 	/** its energy a week: what its wells and domes make, what its people and factories use, and what is left for the
 	 * world grid (kWh, and €) */
 	const pwMade = $derived(pw ? pw.well + pw.sun : 0);
-	const pwUsed = $derived(pw ? pw.home + pw.climate + pw.work : 0);
+	const pwUsed = $derived(pw ? pw.home + pw.climate + pw.centre + pw.work : 0);
 	const pwGrid = $derived(pw ? pw.sold - pw.bought : 0);
 	const pwEur = $derived(pw ? pw.earned - pw.spent : 0);
 	const flow = $derived(fd ? fd.grown - fd.week : 0);
@@ -115,7 +115,7 @@
 	const powerLine = (/** @type {{ made: number, used: number, next: number | null }} */ p, /** @type {string} */ type) =>
 		[
 			p.made ? `makes ${kwh(p.made)}${type === 'house' ? ' of solar this month' : ' of geothermal'}` : '',
-			p.used ? `uses ${kwh(p.used)}${type === 'house' ? ' for its climate and its people, every bed taken' : ' working all its land gives it'}` : '',
+			p.used ? `uses ${kwh(p.used)}${type === 'house' ? ' for its climate and its people, every bed taken' : type === 'centre' ? ' for its hall, storehouse and routes' : ' working all its land gives it'}` : '',
 			p.next !== null ? `${p.next > p.used ? 'more' : 'less'} at its next stage: ${kwh(p.next)}` : ''
 		]
 			.filter(Boolean)
@@ -389,8 +389,9 @@
 					<dl>
 						<dt title="{pw.wells * 2} producer wells and an injector under its village center, {num(pw.wells * ENERGY.wellKw / 1000)} MW net, running {Math.round(ENERGY.uptime * 100)}% of the time">Geothermal a week</dt><dd>{kwh(pw.well)}</dd>
 						<dt title="The see-through solar cells in each dome's glass: a great dome of 248 makes about 1.3 GWh a year, most in summer">Solar a week</dt><dd>{kwh(pw.sun)}</dd>
-						<dt title="{num(ENERGY.home)} kWh a person a year at home">Homes a week</dt><dd>{kwh(pw.home)}</dd>
+						<dt title="{num(ENERGY.home)} kWh a person a year at home: people sharing a dome use less than a household, with hot water from the geothermal heat loop and shared kitchens, cold stores and laundries">Homes a week</dt><dd>{kwh(pw.home)}</dd>
 						<dt title="Each dome's fans, pumps and heat pumps: a great dome of 248 uses about 0.17 GWh a year">Dome climate a week</dt><dd>{kwh(pw.climate)}</dd>
+						<dt title="Its village center's hall and storehouse, and its trade routes' lights and trains: {num(ENERGY.centre / 1000)} MWh a year">Village center a week</dt><dd>{kwh(pw.centre)}</dd>
 						<dt title="What its factories used for every tonne they made, lately: a timber works for its saws and kilns, a steelworks for its electric furnace, a kiln and a block works for firing">Factories a week</dt><dd>{kwh(pw.work)}</dd>
 						<dt title="What it has over goes to the world grid at {num(GRID_EUR_KWH * 1000)} € a MWh, and what it lacks the grid sells it, after your villages joined to it share theirs; lately">To the grid</dt><dd class:gain={pwGrid > 0.5} class:debt={pwGrid < -0.5}>{pwGrid > 0.5 ? '+' : ''}{kwh(pwGrid)} · {pwEur > 0.5 ? '+' : ''}{num(pwEur)} €</dd>
 					</dl>
