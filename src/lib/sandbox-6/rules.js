@@ -8,8 +8,8 @@
  *   trees → forester → planks            (one building that grows: forester, woodcutter, sawmill, timber works)
  *   rocks → quarry → stone
  *
- * Food and water are not wares: every house's hex grows food, wells pipe water straight to the tanks, and what a
- * village lacks it buys from the world market (./food.js).
+ * Food and water are not wares: every house's hex grows food, its roof catches rain into the tanks and wells pipe
+ * the rest, and what a village lacks it buys from the world market (./food.js).
  *
  * Every building stands in a settlement (./plots.js): a house and two factory domes round one flag. Houses are where
  * settlers live — 2, then twice as many each time they are enlarged, up to 248 — so a village has only as many people
@@ -83,7 +83,7 @@ export const BUILDINGS = {
 	woodcutter: { id: 'woodcutter', label: 'Forester', group: 'Basics', about: 'Your wood, in one building that grows: a forester plants young trees round it; upgraded, a woodcutter fells grown trees and plants a young one where each stood, then a sawmill and a timber works cut more planks from every tree. Build it on a forest hex.', cost: { plank: 2 }, kind: 'gather', biome: 'forest', worker: 'Forester', out: 'plank', time: 6, rest: 4, range: 10 },
 	forester: { id: 'forester', label: 'Forester', group: '', about: 'Plants young trees nearby, on a forest hex; they grow in about two minutes. (Now the first level of the wood building.)', cost: { plank: 2 }, kind: 'forester', biome: 'forest', worker: 'Forester', time: 3, rest: 5, range: 8 },
 	quarry: { id: 'quarry', label: 'Quarry', group: 'Basics', about: 'Cuts stone from rocks nearby; build it on a stone hex.', cost: { plank: 2 }, kind: 'gather', biome: 'stone', worker: 'Stonecutter', out: 'stone', time: 6, rest: 4, range: 10 },
-	well: { id: 'well', label: 'Well', group: 'Water', about: 'A borehole: pipes 2 L a second straight to its village’s tanks, water for about 1,150 people. Nobody needs to work it.', cost: { plank: 2 }, kind: 'well' },
+	well: { id: 'well', label: 'Well', group: 'Water', about: 'A borehole: pipes 2 L a second straight to its village’s tanks, fresh water for about 1,700 people, for when the rain its roofs catch runs short. Nobody needs to work it.', cost: { plank: 2 }, kind: 'well' },
 	village: { id: 'village', label: 'Village center', group: '', about: 'A neighbour city’s village center.', cost: {}, kind: 'village' }
 };
 
