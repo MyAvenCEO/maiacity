@@ -15,6 +15,7 @@ import { excavator as excavatorV1 } from './excavator.v1.js';
 import { excavator as excavatorV2 } from './excavator.v2.js';
 import { human } from './human';
 import { pod } from './pod.js';
+import { pod as podV1 } from './pod.v1.js';
 import type { Cast } from './rig';
 import { goat, GOAT_BREEDS } from './species/goat';
 import { sheep, SHEEP_BREEDS } from './species/sheep';
@@ -44,6 +45,17 @@ const HISTORY: Record<string, (Change & { build?: Actor[] })[]> = {
 	goat: [{ ...FIRST, build: quadV1('goat', GOAT_BREEDS, goat) }, GRAZE_V2],
 	sheep: [{ ...FIRST, build: quadV1('sheep', SHEEP_BREEDS, sheep) }, GRAZE_V2],
 	rabbit: [{ ...FIRST, build: quadV1('rabbit', RABBIT_COATS, rabbit) }, GRAZE_V2],
+	pod: [
+		{
+			...FIRST,
+			date: '2026-10-07',
+			build: [
+				{ id: 'pod-people', label: 'People', note: 'as at v1: eight seats, an underfloor bay open at the ends', make: () => podV1('people') },
+				{ id: 'pod-goods', label: 'Goods', note: 'as at v1: barn doors at both ends', make: () => podV1('goods') }
+			]
+		},
+		{ v: 2, date: '2026-10-07', note: 'On rails: small flanged wheels on two axles at the very ends, the room between them to carry things; opens only to its sides; twenty seats in two compartments; the goods pod’s sides lift as wings' }
+	],
 	excavator: [
 		{ ...FIRST, build: [{ id: 'excavator', label: 'Mini excavator', note: 'yellow, an open canopy, a 40 cm bucket', make: () => excavatorV1() }] },
 		{ v: 2, date: '2026-10-06', note: 'Twice the size; the bucket turned round, its mouth and teeth towards the machine as a backhoe’s are', build: [{ id: 'excavator', label: 'Excavator', note: 'yellow, an open canopy, an 80 cm backhoe bucket', make: () => excavatorV2() }] },
@@ -197,11 +209,11 @@ const LIST: Omit<Family, 'versions' | 'version'>[] = [
 	{
 		id: 'pod',
 		label: 'Pod',
-		note: 'the mini transporter: autonomous and electric, no front and no back, 4 m long so three fill a 40 ft container, as wide and high as one; all four wheels steer, white lamps lead and red trail either way',
+		note: 'the mini transporter: autonomous and electric on rails, no front and no back, 4 m long so three fill a 40 ft container, as wide and high as one; small wheels at the very ends, it opens only to its sides, white lamps lead and red trail either way',
 		from: 'Sandbox 5: between the hexes and through the tunnels',
 		variants: [
-			{ id: 'pod-people', label: 'People', note: 'eight seats on two benches facing each other, double doors both sides, and the bay under the floor the whole length, open at both ends for pushing goods in', make: () => pod('people') },
-			{ id: 'pod-goods', label: 'Goods', note: 'one hold the full height from a low floor, 2 m inside, barn doors over both ends as a container has', make: () => pod('goods') }
+			{ id: 'pod-people', label: 'People', note: 'twenty seats in two compartments, two benches of five facing each other in each, a door each side between them; the bay under the floor between the axles, a flap on each side', make: () => pod('people') },
+			{ id: 'pod-goods', label: 'Goods', note: 'a hold 2.2 m high from a floor 16 cm up between the axles, a shelf over each axle, its whole sides lifting as wings', make: () => pod('goods') }
 		]
 	}
 ];
