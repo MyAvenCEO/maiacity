@@ -281,8 +281,7 @@ export function createAutoplay(sim) {
 			// once the plan is built, more wood and steel while they run short
 			if (st.auto >= plan.length && plan.length < PLAN.length + 60 && st.time >= (st.autoMore ?? 0)) {
 				st.autoMore = st.time + 180;
-				const rows = sim.market().parties.filter((/** @type {any} */ p) => p.owner === PLAYER);
-				const low = (/** @type {string} */ w) => rows.some((/** @type {any} */ p) => (p.owe?.[w] ?? 0) > 2) && (s.stock[w] ?? 0) < 20;
+				const low = (/** @type {string} */ w) => (s.stock[w] ?? 0) < 20;
 				if (low('plank')) plan.push(['woodcutter', 'trees']);
 				else if (low('steel')) plan.push(['ironmine', 'mine']);
 			}

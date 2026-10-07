@@ -177,8 +177,15 @@ export const ROUTE_T_KM = 36000, UNIT_M = 32;
 
 /** a hex's fields and woods, besides its food forest: 10 ha of hemp and bamboo, about 15 t a hectare a year */
 export const FIELD_HA = 10, FIELD_T = 15;
-/** what keeping homes up takes a year: a share of what they cost to build */
+/** what keeping a building up takes a year, homes, factories and village centers alike: a share of what it is built
+ * of, paid in gold at world prices (Samuel, 2026-10-07: upkeep is always gold) */
 export const UPKEEP = 0.02;
+/**
+ * What the world market asks for a tonne of each ware, in € (./market.js WORLD says where the prices come from), and €
+ * in a gold: what upkeep costs and what the world market trades at.
+ */
+export const EUR_T = /** @type {Record<string, number>} */ ({ plank: 800, steel: 1000, clay: 200, glass: 2500 });
+export const EUR_GOLD = 1000;
 
 /** what a factory takes from the land of its hex, a round at a time: in tonnes */
 export const LAND = {
@@ -188,13 +195,13 @@ export const LAND = {
 	sand: { label: 'sand', about: 'the glass sand of its heath or beach, with soda and lime' }
 };
 
-/** energy a building takes to build, MWh a tonne of what it is built of (its cranes, welding and presses), and what
- * standing takes a year: a share of what it is built of, and MWh a tonne for its dome's lights, fans and controls */
+/** energy a building takes to build, MWh a tonne of what it is built of (its cranes, welding and presses), and what it
+ * uses a year to stand, MWh a tonne for its dome's lights, fans and controls */
 export const BUILD_MWH_T = 0.1, KEEP_MWH_T = 0.2;
 
 /**
  * @typedef {{ in: Record<string, number>, out: Record<string, number> }} Craft
- * @typedef {{ label: string, does?: string, build: Craft, keep: Craft, make: Craft, up: Record<string, number> }} Stage
+ * @typedef {{ label: string, does?: string, build: Craft, keep: Craft, use: Craft, make: Craft, up: Record<string, number> }} Stage
  * @typedef {{ biome: string, land: string, rounds: number, stages: Stage[] }} Recipe
  */
 /**
@@ -271,11 +278,16 @@ export const buildIn = (wares) => ({ ...wares, energy: Object.values(wares).redu
 export const WEEK_YEAR = WEEK / YEAR;
 /** so much a year, a week @param {Record<string, number>} m */
 export const aWeek = (m) => Object.fromEntries(Object.entries(m).map(([k, v]) => [k, v * WEEK_YEAR]));
-/** what standing takes a week, of a building of so many tonnes all told: 2% a year of it, and its dome's energy
+/** what standing takes a week, of a building of so many tonnes all told: its upkeep, always in gold, 2% a year of what
+ * it is built of at world prices @param {Record<string, number>} built */
+export const keepIn = (built) => ({ gold: (Object.entries(built).reduce((s, [w, t]) => s + t * UPKEEP * (EUR_T[w] ?? 0), 0) / EUR_GOLD) * WEEK_YEAR });
+/** the energy standing uses a week, of a building of so many tonnes all told: its dome's lights, fans and controls
  * @param {Record<string, number>} built */
-export const keepIn = (built) => aWeek({ ...Object.fromEntries(Object.entries(built).map(([w, t]) => [w, t * UPKEEP])), energy: Object.values(built).reduce((s, t) => s + t, 0) * KEEP_MWH_T });
-// each stage's three recipes in full: its build (its wares in tonnes, with its builders' energy; and in loads for the
-// builders, `up`), its keep (of everything it is built of by then) and its make
+export const useIn = (built) => ({ energy: Object.values(built).reduce((s, t) => s + t, 0) * KEEP_MWH_T * WEEK_YEAR });
+/** a home's upkeep a week at each size, in gold: 2% a year of its dome */
+export const HOUSE_KEEP = HOUSE_BEDS.map((n) => keepIn(domeOf(n)).gold);
+// each stage's recipes in full: its build (its wares in tonnes, with its builders' energy; and in loads for the
+// builders, `up`), its keep in gold and the energy it uses to stand (of everything it is built of by then), and its make
 for (const [type, r] of Object.entries(RECIPES)) {
 	/** @type {Record<string, number>} */
 	const built = {};
@@ -285,6 +297,7 @@ for (const [type, r] of Object.entries(RECIPES)) {
 		for (const [w, t] of Object.entries(wares)) built[w] = (built[w] ?? 0) + t;
 		x.build = { in: buildIn(wares), out: {} };
 		x.keep = { in: keepIn(built), out: {} };
+		x.use = { in: useIn(built), out: {} };
 		x.make = { in: x.make.in ?? {}, out: x.make.out ?? {} };
 	}
 	BUILDINGS[type].cost = r.stages[0].up;
@@ -308,15 +321,15 @@ export const GROWS = /** @type {Record<string, { levels: Stage[], up: Record<str
 );
 
 /**
- * @typedef {{ label: string, does: string, plant: number, build: Craft, keep: Craft, make: Craft, up: Record<string, number>, gold: number }} CentreStage
+ * @typedef {{ label: string, does: string, plant: number, build: Craft, keep: Craft, use: Craft, make: Craft, up: Record<string, number>, gold: number }} CentreStage
  */
 /**
  * The village center grows by the crafting engine's recipes too (Samuel, 2026-10-07): a village starts as a logistics
  * hub, a small store dome; it grows into the great village center, a dome as large as a great dome of 248, its hall,
  * market and storehouse, and its village's one geothermal plant, its wells drilled for gold under it. The plant is not
  * upgraded (Samuel). More stages will come between the hub and the great center. Its build is in tonnes, with its
- * builders' energy and the gold for its plant; its keep, 2% a year of what it is built of and the energy of its hall,
- * storehouse and routes (ENERGY); its make, what its plant makes a year. Its wares come from its stores at once (what
+ * builders' energy and the gold for its plant; its keep, 2% a year of what it is built of, in gold; what it uses, the
+ * energy of its hall, storehouse and routes (ENERGY); its make, what its plant makes a week. Its wares come from its stores at once (what
  * they lack, bought from the world market), and it grows at once.
  * @type {CentreStage[]}
  */
@@ -358,9 +371,9 @@ export const ENERGY = {
 	centre: 300000,
 	hub: 30000
 };
-// the village center's three recipes at each stage, as a factory's: its build in tonnes with its builders' energy and its
-// geothermal plant's gold (and in loads, `up`), its keep a week of all it is built of by then, and what its plant makes
-// a week
+// the village center's recipes at each stage, as a factory's: its build in tonnes with its builders' energy and its
+// geothermal plant's gold (and in loads, `up`), its keep a week in gold of all it is built of by then, the energy its
+// hall uses a week, and what its plant makes a week
 {
 	/** @type {Record<string, number>} */
 	const built = {};
@@ -369,7 +382,8 @@ export const ENERGY = {
 		x.up = Object.fromEntries(Object.entries(wares).map(([w, t]) => [w, Math.ceil(t / LOAD_T)]));
 		for (const [w, t] of Object.entries(wares)) built[w] = (built[w] ?? 0) + t;
 		x.build = { in: { ...buildIn(wares), ...(x.gold ? { gold: x.gold } : {}) }, out: {} };
-		x.keep = { in: { ...keepIn(built), energy: ((x.plant ? ENERGY.centre : ENERGY.hub) / 1000) * WEEK_YEAR }, out: {} };
+		x.keep = { in: keepIn(built), out: {} };
+		x.use = { in: { energy: ((x.plant ? ENERGY.centre : ENERGY.hub) / 1000) * WEEK_YEAR }, out: {} };
 		x.make = { in: {}, out: x.plant ? { energy: (x.plant * ENERGY.wellKw * 24 * WEEK * ENERGY.uptime) / 1000 } : {} };
 	}
 	BUILDINGS.centre.cost = CENTRE[0].up;
