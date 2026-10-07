@@ -351,8 +351,9 @@ export function createView(scene, sim) {
 		const f = sim.plan.centre[sim.plan.plotOf[node]];
 		return Math.atan2(X(f) - X(node), Z(f) - Z(node));
 	};
-	/** a house grows with its size */
-	const HOUSE_SCALE = [0.62, 0.78, 0.94, 1.15];
+	/** a house grows with its size: wider up to a great house, then, with factories either side, upwards into a tower */
+	const HOUSE_WIDE = [0.62, 0.78, 0.94, 1.15, 1.2, 1.25, 1.3, 1.35], HOUSE_TALL = [0.62, 0.78, 0.94, 1.15, 1.5, 1.9, 2.4, 3];
+	const sizeHouse = (/** @type {THREE.Object3D} */ m, /** @type {number} */ level) => m.scale.set(HOUSE_WIDE[level - 1], HOUSE_TALL[level - 1], HOUSE_WIDE[level - 1]);
 	function syncBuildings(/** @type {number} */ t) {
 		for (const [id, s] of shown)
 			if (!st.buildings[id]) {
@@ -379,14 +380,14 @@ export function createView(scene, sim) {
 				const total = Object.values(b.cost).reduce((/** @type {number} */ a, /** @type {any} */ n) => a + n, 0);
 				const used = Object.values(b.used).reduce((/** @type {number} */ a, /** @type {any} */ n) => a + n, 0);
 				// a house being enlarged stands meanwhile at its size; anything new rises from the ground
-				if (b.type === 'house' && b.level) s.model.scale.setScalar(HOUSE_SCALE[b.level - 1]);
+				if (b.type === 'house' && b.level) sizeHouse(s.model, b.level);
 				else s.model.scale.set(1, Math.max(0.06, used / Math.max(1, total)), 1);
 			} else if (s.scaffold) {
 				s.group.remove(s.scaffold);
 				s.scaffold = null;
 				s.model.scale.set(1, 1, 1);
 			}
-			if (b.type === 'house' && b.stage === 'live') s.model.scale.setScalar(HOUSE_SCALE[Math.max(0, b.level - 1)]);
+			if (b.type === 'house' && b.stage === 'live') sizeHouse(s.model, Math.max(1, b.level));
 			if (s.owner !== b.owner) {
 				recolour(s.model, b.owner);
 				s.owner = b.owner;

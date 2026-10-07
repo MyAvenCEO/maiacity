@@ -4,7 +4,7 @@
  * then houses and ever more food until its villages are full. The film camera grows its valley with it (a settlement that is already busy), and it
  * plays a whole game headless to prove every chain runs end to end.
  */
-import { BUILDINGS, GRASS, IRON, MOUNTAIN, WATER } from './rules.js';
+import { BUILDINGS, GRASS, HOUSE_MOST, HOUSE_TOP, IRON, MOUNTAIN, WATER } from './rules.js';
 import { PLAYER } from './sim.js';
 
 /** the plan: what to build, in order, and where it would rather stand */
@@ -160,7 +160,7 @@ export function createAutoplay(sim) {
 		const rows = sim.market().parties.filter((/** @type {any} */ r) => r.owner === PLAYER);
 		const housed = rows.every((/** @type {any} */ r) => {
 			const v = sim.plan.villageOf[sim.plan.plotOf[r.node]];
-			return ofType('house').filter((b) => b.stage === 'live' && sim.plan.villageOf[sim.plan.plotOf[b.node]] === v).length * 16 >= r.cap && r.pop >= r.beds - 4;
+			return ofType('house').filter((b) => b.stage === 'live' && sim.plan.villageOf[sim.plan.plotOf[b.node]] === v).length * HOUSE_MOST >= r.cap && r.pop >= r.beds - 4;
 		});
 		if (!housed || (s.stock.plank ?? 0) < 14 || (s.stock.stone ?? 0) < 10) return;
 		const home = hq().node;
@@ -186,7 +186,7 @@ export function createAutoplay(sim) {
 			const mine = houses.filter((b) => sim.plan.villageOf[sim.plan.plotOf[b.node]] === v);
 			// only where everyone has a bed and eats and drinks well: more beds bring more mouths
 			if (mine.some((b) => b.stage === 'site') || row.pop < row.beds - 2 || (row.beds > 0 && (row.wb < 75 || row.sat.food < 0.9 || row.sat.water < 0.9))) continue;
-			const small = mine.filter((b) => b.level < 4).sort((a, b) => b.level - a.level)[0];
+			const small = mine.filter((b) => b.level < HOUSE_TOP).sort((a, b) => b.level - a.level)[0];
 			if (small) {
 				if (has(sim.inspect(small.id)?.up ?? {})) return void sim.upgrade(small.id);
 			} else if (has(BUILDINGS.house.cost)) {

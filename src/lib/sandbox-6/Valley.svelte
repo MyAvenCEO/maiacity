@@ -156,7 +156,7 @@
 
 	const sitesCost = (/** @type {Record<string, number>} */ cost) => Object.entries(cost);
 	const chainOf = (/** @type {any} */ t) =>
-		t.kind === 'centre' ? 'Its village’s storehouse, market and hall' : t.kind === 'house' ? 'Beds for 2, then 4, 8 and 16' : t.kind === 'forester' ? 'Plants trees' : `${t.inputs?.length ? t.inputs.map((/** @type {string[]} */ s) => s.map(label).join(' or ')).join(' + ') + ' → ' : ''}${t.out ? label(t.out) : ''}`;
+		t.kind === 'centre' ? 'Its village’s storehouse, market and hall' : t.kind === 'house' ? 'Beds for 2, doubling each time it is enlarged, up to 248' : t.kind === 'forester' ? 'Plants trees' : `${t.inputs?.length ? t.inputs.map((/** @type {string[]} */ s) => s.map(label).join(' or ')).join(' + ') + ' → ' : ''}${t.out ? label(t.out) : ''}`;
 </script>
 
 <div class="valley">
