@@ -8,7 +8,7 @@
 	import { onDestroy, onMount } from 'svelte';
 	import TouchStick from '$lib/touch/TouchStick.svelte';
 	import { WorldBar } from '$lib/sandbox-kit';
-	import { BUILDINGS, HOUSE_BEDS, HOUSE_SIZE, MENU, PLANK_T, WARES, WARE_ORDER, WOOD } from './rules.js';
+	import { BUILDINGS, HOUSE_BEDS, HOUSE_SIZE, MENU, PLANK_T, STEEL, WARES, WARE_ORDER, WOOD } from './rules.js';
 	import { EUR_PER_GOLD } from './market.js';
 	import { FOOD_KG, FRESH_L, MONTHS, PRICE, RAIN_MM, SPEEDS, WATER_L, WATER_PRICE, WATER_USE } from './food.js';
 	import { PLAYER } from './sim.js';
@@ -87,13 +87,15 @@
 	const when = (/** @type {{ year: number, month: number, day: number }} */ d) => `year ${d.year}, month ${d.month}, day ${d.day}`;
 	/** how full a store is against what it keeps, as a bar's class */
 	const fill = (/** @type {number} */ have, /** @type {number} */ want) => (have >= want * 0.99 ? 'good' : have >= want / 2 ? 'fair' : 'poor');
-	/** planks as tonnes of sawn timber */
+	/** planks (or steel) as tonnes: a load is 5 t */
 	const tonnes = (/** @type {number} */ planks) => {
 		const t = planks * PLANK_T;
 		return `${t >= 100 ? num(t) : Number.isInteger(t) ? t : t.toFixed(t < 1 ? 2 : 1)} t`;
 	};
 	/** what the wood building cuts from a tree at a stage */
 	const perTree = (/** @type {number} */ level) => `${WOOD[level - 1].planks} plank${WOOD[level - 1].planks === 1 ? '' : 's'} (${tonnes(WOOD[level - 1].planks)})`;
+	/** what the steel building makes from a load of ore at a stage */
+	const perLoad = (/** @type {number} */ level) => `${STEEL[level - 1].struts} load${STEEL[level - 1].struts === 1 ? '' : 's'} of struts (${tonnes(STEEL[level - 1].struts)})`;
 
 	function refresh() {
 		if (!game) return;
@@ -251,7 +253,7 @@
 	<div class="stage" bind:this={stage} role="application" aria-label="Sandbox 5: the valley. Drag to turn the map, scroll to zoom, click to select or build"></div>
 	<WorldBar title="avenCITY Sandbox 5" subtitle="A valley of settlers · villages, trade routes underground" />
 	{#if summary}
-		<div class="cash" class:up={cash > 0.05} class:down={cash < -0.05} title="Your goal: become a prosumer, cashflow positive, exporting more to the world market than you import from it. What all your villages take in by exports, less what they pay for imports (food, water, planks, stone), a week lately; the HEARTs your settlers issue are not counted.">
+		<div class="cash" class:up={cash > 0.05} class:down={cash < -0.05} title="Your goal: become a prosumer, cashflow positive, exporting more to the world market than you import from it. What all your villages take in by exports, less what they pay for imports (food, water, planks, steel), a week lately; the HEARTs your settlers issue are not counted.">
 			<span class="big">Cashflow <b>{signed(cash)}</b> gold a week</span>
 			<small>exports {goldOf(summary.cash.exp / EUR_PER_GOLD)} · imports {goldOf(summary.cash.imp / EUR_PER_GOLD)} · goal: positive</small>
 		</div>
@@ -383,7 +385,7 @@
 						{#each links as l (l.id)}
 							<li>
 								<button class="name" onclick={() => game?.focus(l.node)}>{l.name}{l.mine ? '' : ' · city'}</button>
-								{#if l.joined}<span class="joined">Joined</span>{:else}<button class="go" onclick={() => connect(l.id)}>Connect · {l.cost} stone</button>{/if}
+								{#if l.joined}<span class="joined">Joined</span>{:else}<button class="go" onclick={() => connect(l.id)}>Connect · {l.cost} steel</button>{/if}
 							</li>
 						{/each}
 					</ul>
@@ -441,6 +443,15 @@
 				{#if card.owner === PLAYER && card.up && !card.upgrading}
 					<div class="actions">
 						<button class="go up" title="Upgrade to a {WOOD[card.level].label.toLowerCase()}: {perTree(card.level + 1)} from every tree. It costs {Object.entries(card.up).map(([w, n]) => `${n} ${label(w).toLowerCase()}`).join(', ')}" onclick={() => card && (game?.sim.upgrade(card.id), refresh())}>Upgrade → {WOOD[card.level].label}{#each Object.entries(card.up) as [w, n] (w)}<span class="cost"><i style:background={WARES[w].color}></i>{n}</span>{/each}</button>
+					</div>
+				{/if}
+			{/if}
+			{#if card.type === 'ironmine' && card.level}
+				<p class="label">{STEEL[card.level - 1].label} · stage <b>{card.level}</b> of {STEEL.length}{card.upgrading ? ` · growing to a ${STEEL[card.level].label.toLowerCase()}` : ''}</p>
+				<p class="small">{perLoad(card.level)} from every load of iron ore it digs · {num(card.deposit)} loads of ore left · lately {tonnes(card.lately)} a week</p>
+				{#if card.owner === PLAYER && card.up && !card.upgrading}
+					<div class="actions">
+						<button class="go up" title="Upgrade to a {STEEL[card.level].label.toLowerCase()}: {perLoad(card.level + 1)} from every load of ore. It costs {Object.entries(card.up).map(([w, n]) => `${n} ${label(w).toLowerCase()}`).join(', ')}" onclick={() => card && (game?.sim.upgrade(card.id), refresh())}>Upgrade → {STEEL[card.level].label}{#each Object.entries(card.up) as [w, n] (w)}<span class="cost"><i style:background={WARES[w].color}></i>{n}</span>{/each}</button>
 					</div>
 				{/if}
 			{/if}

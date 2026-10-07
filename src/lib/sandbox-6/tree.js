@@ -10,10 +10,10 @@ import { NEEDS } from './market.js';
 export const SOURCE = /** @type {Record<string, string>} */ ({
 	woodcutter: 'grown trees',
 	forester: 'free grass',
-	quarry: 'rocks',
+	ironmine: 'iron ore',
 	well: 'anywhere'
 });
-/** the wares people live on: their homes' planks and stone (their food grows in the hexes' food forests and their water
+/** the wares people live on: their homes' planks and steel (their food grows in the hexes' food forests and their water
  * falls on their roofs, wells give the rest, ./food.js) */
 export const LIVED_ON = new Set(Object.keys(NEEDS));
 
@@ -97,5 +97,5 @@ export function chainTree(colW = 168, rowH = 50) {
 /** where in the valley a ware comes from: the hex it is made on, a line under the ware */
 export const TRADE_NOTE = /** @type {Record<string, string>} */ ({
 	plank: 'Forest hexes only',
-	stone: 'Stone hexes only'
+	steel: 'Iron hexes only'
 });
