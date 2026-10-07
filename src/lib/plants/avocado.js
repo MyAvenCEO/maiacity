@@ -27,7 +27,7 @@
  * (./fruittrees.js `avocado`).
  */
 import * as THREE from 'three';
-import { Bag, Space, about, aim, bead, between, chance, clamp, lerp, root, sheet, smoothNormals, span, tube, v3 } from './grow.js';
+import { Bag, DETAIL, Space, about, aim, bead, between, chance, clamp, lerp, root, sheet, smoothNormals, span, tube, v3 } from './grow.js';
 import { sprout } from './sprout.js';
 
 const UP = v3(0, 1, 0);
@@ -389,7 +389,7 @@ export function avocado(g, seed) {
 		const r = chance(seed, 'avo-flowers', ...pn.panicle.key);
 		if (bloom > 0.01) {
 			// a cluster of branched panicles round the tip, crowded with small yellow-green flowers, then shed
-			const n = 4 + Math.floor(r() * 4);
+			const n = 3 + Math.floor(r() * 3);
 			const open = clamp((g - 4.6) / 0.25);
 			for (let k = 0; k < n; k++) {
 				const a = (k / n) * Math.PI * 2 + r();
@@ -398,13 +398,12 @@ export function avocado(g, seed) {
 				const len = between(r, 0.07, 0.13) * lerp(0.4, 1, clamp((g - 4.45) / 0.3)) * bloom;
 				const end = pn.at.clone().addScaledVector(d, len).add(v3(0, -len * len * 2, 0));
 				bag.add('body', tube([pn.at, pn.at.clone().lerp(end, 0.5).add(v3(0, len * 0.08, 0)), end], (u) => 0.0022 * (1 - 0.6 * u), () => C.axis, 3));
+				// its side branches each a clump of flowers, close along the axis
 				for (let m = 0; m < 5; m++) {
 					const u = 0.25 + m * 0.17;
-					const p = pn.at.clone().lerp(end, u);
 					const t = new THREE.Vector3().crossVectors(d, UP).normalize().applyAxisAngle(d, m * 2.4 + a);
-					const twig = p.clone().addScaledVector(t, 0.018 * (1 - u * 0.5));
-					bag.add('body', tube([p, twig], () => 0.0009, () => C.axis, 3));
-					for (const q of [twig, p.clone().lerp(twig, 0.5)]) bag.add('body', bead(q, v3(0.0035, 0.0035, 0.0035).multiplyScalar(lerp(0.6, 1, open)), open > 0.4 ? C.flower : C.bud, 2));
+					const q = pn.at.clone().lerp(end, u).addScaledVector(t, 0.008 * (1 - u * 0.5));
+					bag.add('body', bead(q, v3(0.009, 0.006, 0.009).multiplyScalar(lerp(0.6, 1, open) * (1 - u * 0.35)), open > 0.4 ? C.flower : C.bud, 2));
 				}
 			}
 		}
@@ -442,7 +441,7 @@ export function avocado(g, seed) {
 			const curve = [0, 0.2, 0.4, 0.6, 0.8, 1].map((t) => from.clone().multiplyScalar((1 - t) * (1 - t)).addScaledVector(bow, 2 * t * (1 - t)).addScaledVector(at, t * t));
 			bag.add('body', tube(curve, (u) => (0.0018 + 0.0035 * set) * (0.75 + 0.5 * u * u), () => C.stalk, 5));
 			bag.add('body', bead(at, v3(1, 0.8, 1).multiplyScalar(0.003 + 0.0045 * set), C.button, 4));
-			hass(bag, { at: at.clone().add(v3(0, -0.002, 0)), dir: place.dir, L: Lf, W: Wf, neck, set, late: late * between(kr, 0.5, 1), r: kr });
+			hass(bag, { at: at.clone().add(v3(0, -0.002, 0)), dir: place.dir, L: Lf, W: Wf, neck, set, late: late * between(kr, 0.5, 1), r: kr, near: DETAIL.fruit === [...pn.panicle.key, k].join('|') });
 			bag.fruitDone();
 		}
 	}
@@ -487,7 +486,7 @@ export function avocado(g, seed) {
 			const lift = lerp(between(lr, -0.25, 0.25), -0.95, young) + (toTip < 1 ? 0.25 * (1 - toTip) : 0);
 			const dir = out.multiplyScalar(Math.cos(lift)).add(v3(0, Math.sin(lift), 0));
 			const len = 0.19 * size;
-			bag.add('sheet', sheet({ length: len, width: len * between(lr, 0.3, 0.42), shape: LEAF, lift: (u, v) => 0.045 * Math.abs(v) - (0.06 + 0.1 * young) * u * u, paint: leafPaint(lr, young), along: 6, across: 2 }), aim(p.clone().addScaledVector(dir, 0.004), dir, (lr() - 0.5) * 0.6));
+			bag.add('sheet', sheet({ length: len, width: len * between(lr, 0.3, 0.42), shape: LEAF, lift: (u, v) => 0.045 * Math.abs(v) - (0.06 + 0.1 * young) * u * u, paint: leafPaint(lr, young), along: 4, across: 2 }), aim(p.clone().addScaledVector(dir, 0.004), dir, (lr() - 0.5) * 0.6));
 			s += (sh.seedling ? 0.025 : 0.024) * about(lr, 1, 0.25);
 		}
 	}
@@ -521,13 +520,15 @@ function leafPaint(r, /** @type {number} */ young) {
  * A Hass avocado hanging from `at` along `dir`: pear- to egg-shaped, narrowest at the stalk, a little lopsided, its thick
  * skin pebbly; bright green when it sets, then a dull dark green, and late in the season its sunny side purple-black.
  * @param {Bag} bag
- * @param {{ at: THREE.Vector3, dir: THREE.Vector3, L: number, W: number, neck: number, set: number, late: number, r: Chance }} o
+ * @param {{ at: THREE.Vector3, dir: THREE.Vector3, L: number, W: number, neck: number, set: number, late: number, r: Chance, near: boolean }} o
  */
 function hass(bag, o) {
 	const r = o.r;
 	const turn = r() * Math.PI * 2;
 	const m = new THREE.Matrix4().compose(o.at, new THREE.Quaternion().setFromUnitVectors(v3(0, -1, 0), o.dir.clone().normalize()).multiply(new THREE.Quaternion().setFromAxisAngle(UP, turn)), v3(1, 1, 1));
-	const rings = 48, sides = 44;
+	// on the tree a few hundred vertices each, its skin only mottled; up close (the fruit viewer) its pebbles modelled
+	const near = o.near;
+	const rings = near ? 48 : 14, sides = near ? 44 : 12;
 	const bend = about(r, 0, 0.05), lop = between(r, 0.02, 0.07), lopAt = r() * Math.PI * 2, sun = r() * Math.PI * 2;
 	const axis = [];
 	for (let k = 0; k <= rings; k++) {
@@ -565,10 +566,10 @@ function hass(bag, o) {
 	const height = 0.03 * o.W * lerp(0.25, 1, o.set);
 	const radius = (/** @type {number} */ u, /** @type {number} */ v) => {
 		const side = 1 + lop * Math.cos(v * Math.PI * 2 - lopAt) * Math.sin(Math.PI * u);
-		return Math.max(0.0008, o.W * profile(u) * side + (u > 0.04 && u < 0.97 ? (pebble(u, v) - 0.4) * height * Math.min(1, profile(u) * 2) : 0));
+		return Math.max(0.0008, o.W * profile(u) * side + (near && u > 0.04 && u < 0.97 ? (pebble(u, v) - 0.4) * height * Math.min(1, profile(u) * 2) : 0));
 	};
 	const paint = (/** @type {number} */ u, /** @type {number} */ v) => {
-		const pb = pebble(u, v);
+		const pb = near ? pebble(u, v) : 0.35 + 0.3 * Math.sin(u * 23 + v * 31) * Math.sin(v * 47 - u * 11);
 		const sunny = clamp(o.late * (1.15 + 0.6 * Math.cos(v * Math.PI * 2 - sun)) - 0.15);
 		const green = C.c.lerpColors(C.fruitSet, C.fruitGreen, span(o.set, 0.2, 0.8));
 		const c = green.lerp(C.fruitDark, sunny);
@@ -577,6 +578,6 @@ function hass(bag, o) {
 	};
 	const geo = tube(axis, radius, paint, sides);
 	// its pebbles shaded as pebbles
-	smoothNormals(geo);
+	if (near) smoothNormals(geo);
 	bag.add('body', geo, m);
 }

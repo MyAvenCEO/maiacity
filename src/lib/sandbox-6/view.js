@@ -120,6 +120,8 @@ export function createView(scene, sim) {
 	const bodies = inst(new THREE.CylinderGeometry(0.13, 0.17, 0.5, 6).translate(0, 0.25, 0), white, 1500);
 	const heads = inst(new THREE.SphereGeometry(0.12, 6, 4).translate(0, 0.62, 0), mat('#f0c8a0'), 1500);
 	const loads = inst(new THREE.BoxGeometry(0.22, 0.18, 0.22).translate(0, 0.86, 0), white, 1500);
+	const carts = inst(new THREE.BoxGeometry(0.42, 0.22, 0.55).translate(0, 0.3, -0.5), mat('#7a5232'), 200);
+	const cargo = inst(new THREE.BoxGeometry(0.34, 0.16, 0.4).translate(0, 0.49, -0.5), white, 200);
 	const spots = inst(new THREE.CylinderGeometry(0.5, 0.5, 0.06, 6), keep(new THREE.MeshBasicMaterial({ color: '#ffffff', transparent: true, opacity: 0.55 })), g.N, false);
 	spots.receiveShadow = false;
 
@@ -314,23 +316,14 @@ export function createView(scene, sim) {
 		return at.set(X(a) + (X(b) - X(a)) * f, Math.max(Y(a), SEA) + (Math.max(Y(b), SEA) - Math.max(Y(a), SEA)) * f, Z(a) + (Z(b) - Z(a)) * f);
 	}
 	function syncUnits(/** @type {number} */ t) {
-		let k = 0, l = 0;
+		let k = 0, l = 0, c = 0, cc = 0;
 		for (const u of Object.values(st.units)) {
 			if (u.inside) continue;
 			const p = unitPos(u);
 			let x = p.x, y = p.y, z = p.z, bob = 0;
 			const moving = u.p !== u.tgt && !u.wait;
 			if (moving) bob = Math.abs(Math.sin(t * 11 + u.id)) * 0.07;
-			if (u.job === 's-siege' || u.job === 's-fight') {
-				const a = (u.id % 7) * 0.9;
-				const r = u.job === 's-fight' ? 0.45 : 1.0;
-				x += Math.cos(a) * r;
-				z += Math.sin(a) * r;
-				if (u.job === 's-fight') bob = Math.abs(Math.sin(t * 16 + u.id)) * 0.18;
-			} else if (u.job === 's-defend') {
-				x += 0.2;
-				bob = Math.abs(Math.sin(t * 16 + u.id)) * 0.18;
-			} else if (u.job === 'b-work') {
+			if (u.job === 'b-work') {
 				x += 0.9;
 				z += 0.4;
 				bob = Math.abs(Math.sin(t * 9 + u.id)) * 0.12;
@@ -339,11 +332,19 @@ export function createView(scene, sim) {
 			const turn = was ? Math.atan2(p.x - was[0], p.z - was[1]) : 0;
 			if (was) (was[0] = p.x), (was[1] = p.z);
 			else last.set(u.id, [p.x, p.z]);
-			const size = u.kind === 'soldier' ? 1.5 : 1.35;
-			put(bodies, k, x, y + bob, z, size, moving ? turn : 0);
-			put(heads, k, x, y + bob, z, size);
-			bodies.setColorAt(k++, u.kind === 'soldier' ? teamColor[u.owner] : /** @type {Record<string, THREE.Color>} */ (KIND)[u.kind]);
-			if (u.ware) {
+			const trader = u.job === 't-go' || u.job === 't-back';
+			put(bodies, k, x, y + bob, z, 1.35, moving ? turn : 0);
+			put(heads, k, x, y + bob, z, 1.35);
+			bodies.setColorAt(k++, trader ? teamColor[u.owner] : /** @type {Record<string, THREE.Color>} */ (KIND)[u.kind]);
+			if (trader) {
+				// a trader pulls a cart, its cargo in the colour of the first ware it carries
+				put(carts, c, x, y, z, 1.35, turn);
+				if (u.ware) {
+					put(cargo, cc, x, y, z, 1.35, turn);
+					cargo.setColorAt(cc++, wareColor[u.ware]);
+				}
+				c++;
+			} else if (u.ware) {
 				put(loads, l, x, y + bob, z, 1.35);
 				loads.setColorAt(l++, wareColor[u.ware]);
 			}
@@ -351,6 +352,8 @@ export function createView(scene, sim) {
 		done(bodies, k);
 		done(heads, k);
 		done(loads, l);
+		done(carts, c);
+		done(cargo, cc);
 		if (last.size > k * 2 + 50) for (const id of last.keys()) if (!st.units[id]) last.delete(id);
 	}
 

@@ -1,11 +1,11 @@
 /**
  * SANDBOX 6 · AUTOPLAY — a player that builds the whole economy by itself, step by step, the way a person would:
- * wood first, then stone and food, the mines, the smiths, the soldiers, and at last the march on the keep. The film
- * camera grows its valley with it (a settlement that is already busy), and it plays a whole game headless to prove
- * every chain runs end to end.
+ * wood first, then stone and food, the market hall and its orders (iron and tools come by trade), and then ever more food
+ * for a valley that needs it. The film camera grows its valley with it (a settlement that is already busy), and it
+ * plays a whole game headless to prove every chain runs end to end.
  */
 import { BUILDINGS, WATER } from './rules.js';
-import { PLAYER, RIVAL } from './sim.js';
+import { PLAYER } from './sim.js';
 
 /** the plan: what to build, in order, and where it would rather stand */
 const PLAN = [
@@ -17,34 +17,56 @@ const PLAN = [
 	['fishery', 'water'],
 	['well', 'home'],
 	['farm', 'open'],
-	['coalmine', 'mine'],
-	['ironmine', 'mine'],
-	['guardhut', 'east'],
+	['market', 'fair'],
+	['fishery', 'water'],
 	['mill', 'home'],
 	['bakery', 'home'],
-	['smelter', 'home'],
 	['farm', 'open'],
 	['livestock', 'home'],
-	['armourer', 'home'],
-	['toolmaker', 'home'],
-	['fishery', 'water'],
-	['guardhut', 'south'],
-	['watchtower', 'east'],
 	['coalmine', 'mine'],
-	['forester', 'woodcutter'],
-	['goldmine', 'mine'],
-	['mint', 'home'],
-	['armourer', 'home'],
+	['toolmaker', 'home'],
+	['boundary', 'fair'],
+	['fishery', 'water'],
+	['farm', 'open'],
+	['livestock', 'home'],
 	['well', 'home'],
-	['guardhut', 'east']
+	['boundary', 'south'],
+	['fishery', 'water'],
+	['quarry', 'rocks'],
+	['farm', 'open'],
+	['mill', 'home'],
+	['bakery', 'home'],
+	['fishery', 'water'],
+	['woodcutter', 'trees'],
+	['forester', 'woodcutter'],
+	['livestock', 'home'],
+	['farm', 'open'],
+	['well', 'home']
 ];
+
+/** what it adds while a neighbour goes short of food */
+const MORE = [[['fishery', 'water']], [['farm', 'open'], ['livestock', 'home']], [['fishery', 'water']], [['well', 'home'], ['bakery', 'home']]];
+
+/** the standing orders it sets once a market hall stands: sell food, buy building goods, tools and iron */
+const ORDERS = {
+	fish: { sell: true, above: 2, keep: 12, buy: false, below: 0, upTo: 0 },
+	bread: { sell: true, above: 3, keep: 10, buy: false, below: 0, upTo: 0 },
+	meat: { sell: true, above: 3, keep: 10, buy: false, below: 0, upTo: 0 },
+	// building goods from the neighbours: buying them is how their coins come back to them for food
+	plank: { sell: false, above: 0, keep: 0, buy: true, below: 6, upTo: 60 },
+	stone: { sell: false, above: 0, keep: 0, buy: true, below: 10, upTo: 40 },
+	tools: { sell: false, above: 0, keep: 0, buy: true, below: 40, upTo: 8 },
+	// coal and grain from the neighbours: what you buy is how their coins come back to them
+	coal: { sell: false, above: 0, keep: 0, buy: true, below: 7, upTo: 30 },
+	grain: { sell: false, above: 0, keep: 0, buy: true, below: 3, upTo: 20 },
+	iron: { sell: false, above: 0, keep: 0, buy: true, below: 18, upTo: 6 }
+};
 
 /**
  * Plays a game one decision at a time: call `tick()` now and then (every few seconds of game time).
  * @param {import('./sim.js').Sim} sim
- * @param {{ attack?: boolean }} [o]
  */
-export function createAutoplay(sim, o = {}) {
+export function createAutoplay(sim) {
 	const st = sim.state, g = sim.grid;
 	st.auto ??= 0;
 	/** @type {string[][]} the plan as this game follows it (a used-up mine adds its rebuilding) */
@@ -52,7 +74,7 @@ export function createAutoplay(sim, o = {}) {
 	const plan = st.autoPlan;
 	let tries = 0;
 	const hq = () => st.buildings[st.hq];
-	const keep = () => st.buildings[st.keep];
+	const fair = () => st.buildings[st.fair];
 	const count = (/** @type {(n: number) => boolean} */ f, /** @type {number} */ n, /** @type {number} */ r) => g.within(n, r).filter(f).length;
 	const ofType = (/** @type {string} */ t) => Object.values(st.buildings).filter((b) => b.type === t && b.owner === PLAYER);
 
@@ -80,12 +102,9 @@ export function createAutoplay(sim, o = {}) {
 			}
 			case 'open':
 				return count((j) => !st.obj[j] && st.terrain[j] === 0, n, 2) - d;
-			case 'east': {
-				// toward the rival, at the edge of the land
-				return east * 0.8 + (g.dist(n, keep()?.node ?? n) < 9 ? -50 : 0) - Math.abs(g.z(n) - g.z(keep()?.node ?? home)) * 0.2;
-			}
-			case 'keep':
-				return -g.dist(n, keep()?.node ?? n);
+			case 'fair':
+				// toward the fair, on the way the traders go
+				return -g.dist(n, fair()?.node ?? n) - d * 0.2;
 			case 'south':
 				return g.z(n) - g.z(home) + east * 0.3;
 			default:
@@ -141,23 +160,17 @@ export function createAutoplay(sim, o = {}) {
 					}
 				} else tries++;
 			}
-			// once the plan is built, towers toward the keep, so enough soldiers stand in reach of it
-			const k = keep();
-			if (st.auto >= plan.length && k && k.owner === RIVAL) {
-				const near = Object.values(st.buildings).filter((b) => b.owner === PLAYER && BUILDINGS[b.type].kind === 'military' && g.dist(b.node, k.node) <= 14);
-				const building = near.some((b) => b.stage === 'site');
-				if (!building && near.length < 5 && (s.stock.plank ?? 0) >= 3 && (s.stock.stone ?? 0) >= 4) place('watchtower', 'keep');
+			// once the plan is built, more water while yours runs short, more food while anyone goes short
+			if (st.auto >= plan.length && plan.length < PLAN.length + 40 && st.time >= (st.autoMore ?? 0)) {
+				st.autoMore = st.time + 180;
+				if (st.parties[PLAYER].sat.water < 0.9) plan.push(['well', 'home']);
+				else if (st.parties.some((/** @type {any} */ p) => p.sat.food < 0.85)) plan.push(...MORE[(plan.length - PLAN.length) % MORE.length]);
 			}
-			if (o.attack !== false) {
-				// march on the nearest rival building that can be taken
-				const targets = Object.values(st.buildings).filter((b) => b.owner === RIVAL && sim.attackable(b.id) > 0);
-				for (const t of targets) {
-					const have = sim.attackable(t.id);
-					if (have >= t.soldiers.length + 2) {
-						sim.attack(t.id, have);
-						break;
-					}
-				}
+			// once a market hall stands: the orders, and every request it can fill
+			if (ofType('market').some((b) => b.stage === 'live')) {
+				for (const [w, o] of Object.entries(ORDERS)) if (!st.orders[w]) sim.order(w, o);
+				// requests and pleas alike: what helps a neighbour helps the valley
+				for (const c of st.market.contracts) if (!c.taken && c.got < c.n && c.until > st.time + 120 && (s.stock[c.w] ?? 0) >= c.n / 3) sim.take(c.id);
 			}
 		},
 		get step() {

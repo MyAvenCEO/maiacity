@@ -14,7 +14,7 @@
       {
         "label": "main",
         "title": "maiaCITY Studio",
-        "url": "app/studio/",
+        "url": "/app/studio/",
         "width": 1320,
         "height": 860,
         "minWidth": 960,

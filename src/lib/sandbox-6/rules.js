@@ -1,7 +1,7 @@
 /**
  * SANDBOX 6 · THE RULES — every ware, every building and what it makes, in one table.
  *
- * A valley economy in the spirit of the old settler games, its own names and its own numbers: wares lie at flags and
+ * A valley economy in the spirit of the old settler games, without the war, its own names and its own numbers: wares lie at flags and
  * carriers bring them, one carrier to a road, from flag to flag, to whoever needs them. A building is a site until a
  * builder has used up its planks and stone; then a worker moves in and it runs its chain:
  *
@@ -11,9 +11,14 @@
  *   well → water ────────────────────────────────────────────────────────────┴→ bakery → bread
  *   grain + water → livestock farm → meat
  *   fish | bread | meat → coal mine, iron mine, gold mine → coal, iron ore, gold ore
- *   iron ore + coal → smelter → iron;  iron + planks → toolmaker → tools;  iron + coal → armourer → weapons
- *   gold ore + coal → mint → coins (coins train soldiers a rank up)
- *   a settler + weapons → a soldier (in a storehouse);  soldiers hold guard huts and towers, which widen the land
+ *   iron ore + coal → smelter → iron;  iron + planks → toolmaker → tools
+ *   gold ore + coal → mint → coins: the valley's money, a means of exchange and nothing more
+ *   a market hall → its trader takes wares to the fair and brings back what you bought (./market.js)
+ *   a boundary stone widens your land
+ *
+ * Nobody fights here: the valley is shared with three neighbour settlements, each with plenty of one ware and none of
+ * another (yours: plenty of grain on wide farmland, but no iron in your mountains), and the game is won by abundance for all of them — every
+ * settlement fed, watered, housed, with something put by, and grown — not by coins.
  *
  * Plain data: the simulation (./sim.js) and the page read it alike.
  */
@@ -36,7 +41,6 @@ export const WARES = {
 	goldOre: { id: 'goldOre', label: 'Gold ore', color: '#e2b93b' },
 	iron: { id: 'iron', label: 'Iron', color: '#bcc6cf' },
 	tools: { id: 'tools', label: 'Tools', color: '#2f9690' },
-	weapons: { id: 'weapons', label: 'Weapons', color: '#59626e' },
 	coin: { id: 'coin', label: 'Coins', color: '#ffd23f' }
 };
 export const WARE_ORDER = Object.keys(WARES);
@@ -56,7 +60,7 @@ export const ORES = [null, 'coal', 'iron', 'gold'];
  * @property {string} group which part of the build menu
  * @property {string} about one line
  * @property {Record<string, number>} cost planks and stone a builder uses up
- * @property {'warehouse'|'make'|'mine'|'gather'|'forester'|'farm'|'military'} kind
+ * @property {'warehouse'|'make'|'mine'|'gather'|'forester'|'farm'|'land'|'market'|'village'|'fair'} kind
  * @property {string} [worker] who works it
  * @property {boolean} [tools] its worker needs tools to start
  * @property {string[][]} [inputs] each slot takes any one of its wares
@@ -66,13 +70,12 @@ export const ORES = [null, 'coal', 'iron', 'gold'];
  * @property {number} [range] how far its worker goes out
  * @property {'mountain'|'grass'} [on] the land it stands on (grass by default)
  * @property {string} [ore] the ore a mine digs
- * @property {number} [radius] the land a military building holds
- * @property {number} [capacity] how many soldiers it houses
+ * @property {number} [radius] the land it holds
  */
 
 /** @type {Record<string, BuildingType>} */
 export const BUILDINGS = {
-	hq: { id: 'hq', label: 'Headquarters', group: '', about: 'Your first storehouse and garrison: settlers, tools and soldiers start here.', cost: {}, kind: 'warehouse', radius: 9, capacity: 99 },
+	hq: { id: 'hq', label: 'Headquarters', group: '', about: 'Your first storehouse: settlers and tools start here.', cost: {}, kind: 'warehouse', radius: 9 },
 	storehouse: { id: 'storehouse', label: 'Storehouse', group: 'Basics', about: 'Keeps wares and settlers closer to where they are needed.', cost: { plank: 4, stone: 3 }, kind: 'warehouse' },
 	woodcutter: { id: 'woodcutter', label: 'Woodcutter', group: 'Basics', about: 'Fells grown trees nearby.', cost: { plank: 2 }, kind: 'gather', worker: 'Woodcutter', tools: true, out: 'log', time: 5, rest: 4, range: 6 },
 	forester: { id: 'forester', label: 'Forester', group: 'Basics', about: 'Plants young trees nearby; they grow in about two minutes.', cost: { plank: 2 }, kind: 'forester', worker: 'Forester', tools: true, time: 3, rest: 5, range: 5 },
@@ -89,38 +92,36 @@ export const BUILDINGS = {
 	goldmine: { id: 'goldmine', label: 'Gold mine', group: 'Mining', about: 'Digs gold ore; miners eat. Build on glittering rock.', cost: { plank: 4 }, kind: 'mine', worker: 'Miner', tools: true, inputs: [FOOD], out: 'goldOre', time: 9, on: 'mountain', ore: 'gold' },
 	smelter: { id: 'smelter', label: 'Smelter', group: 'Metal', about: 'Smelts iron ore with coal into iron.', cost: { plank: 2, stone: 3 }, kind: 'make', worker: 'Smelter', tools: true, inputs: [['ironOre'], ['coal']], out: 'iron', time: 9 },
 	toolmaker: { id: 'toolmaker', label: 'Toolmaker', group: 'Metal', about: 'Makes tools from iron and planks: every new worker needs some.', cost: { plank: 2, stone: 2 }, kind: 'make', worker: 'Toolmaker', inputs: [['iron'], ['plank']], out: 'tools', time: 10 },
-	armourer: { id: 'armourer', label: 'Armourer', group: 'Metal', about: 'Forges weapons from iron and coal; a settler with weapons is a soldier.', cost: { plank: 2, stone: 2 }, kind: 'make', worker: 'Armourer', tools: true, inputs: [['iron'], ['coal']], out: 'weapons', time: 11 },
-	mint: { id: 'mint', label: 'Mint', group: 'Metal', about: 'Strikes coins from gold ore and coal; coins train soldiers a rank up.', cost: { plank: 2, stone: 3 }, kind: 'make', worker: 'Minter', tools: true, inputs: [['goldOre'], ['coal']], out: 'coin', time: 12 },
-	guardhut: { id: 'guardhut', label: 'Guard hut', group: 'Military', about: 'Two soldiers; widens your land a little.', cost: { plank: 2, stone: 1 }, kind: 'military', radius: 6, capacity: 2 },
-	watchtower: { id: 'watchtower', label: 'Watchtower', group: 'Military', about: 'Five soldiers; widens your land far.', cost: { plank: 3, stone: 4 }, kind: 'military', radius: 8, capacity: 5 },
-	keep: { id: 'keep', label: 'Rival keep', group: '', about: 'The rival’s seat. Take it and the valley is yours.', cost: {}, kind: 'military', radius: 9, capacity: 12 }
+	mint: { id: 'mint', label: 'Mint', group: 'Metal', about: 'Strikes coins from gold ore and coal; the valley trades with them.', cost: { plank: 2, stone: 3 }, kind: 'make', worker: 'Minter', tools: true, inputs: [['goldOre'], ['coal']], out: 'coin', time: 12 },
+	market: { id: 'market', label: 'Market hall', group: 'Trade', about: 'Its trader carts what you sell to the fair and brings back what you buy. Set your orders in the Market.', cost: { plank: 4, stone: 3 }, kind: 'market', worker: 'Trader' },
+	boundary: { id: 'boundary', label: 'Boundary stone', group: 'Trade', about: 'Widens your land once it stands. It cannot take land a neighbour already holds.', cost: { plank: 1, stone: 3 }, kind: 'land', radius: 6 },
+	village: { id: 'village', label: 'Village', group: '', about: 'A neighbour settlement.', cost: {}, kind: 'village', radius: 6 },
+	fair: { id: 'fair', label: 'The fair', group: '', about: 'The valley’s open market: every settlement’s traders come here to sell and buy.', cost: {}, kind: 'fair' }
 };
 
 /** the build menu, in its groups */
-export const GROUPS = ['Basics', 'Food', 'Mining', 'Metal', 'Military'];
+export const GROUPS = ['Basics', 'Food', 'Mining', 'Metal', 'Trade'];
 export const MENU = GROUPS.map((g) => ({ group: g, types: Object.values(BUILDINGS).filter((b) => b.group === g) }));
 
-/** buildings that hold land and soldiers */
-export const holdsLand = (/** @type {string} */ type) => type === 'hq' || BUILDINGS[type]?.kind === 'military';
-
-/** the highest rank a soldier reaches (four ranks: 0…3) */
-export const MAX_RANK = 3;
-export const RANKS = ['Recruit', 'Private', 'Sergeant', 'Captain'];
+/** buildings that hold land */
+export const holdsLand = (/** @type {string} */ type) => type === 'hq' || BUILDINGS[type]?.kind === 'land' || BUILDINGS[type]?.kind === 'village';
 
 /** what the headquarters holds as a game starts */
 export const START = {
-	stock: { log: 6, plank: 32, stone: 22, grain: 2, water: 2, fish: 6, bread: 4, meat: 2, coal: 6, ironOre: 4, iron: 4, tools: 20, weapons: 2 },
-	settlers: 28,
-	soldiers: [0, 0, 0, 1, 1, 2]
+	stock: { log: 6, plank: 32, stone: 22, grain: 2, water: 8, fish: 10, bread: 6, meat: 4, coal: 6, ironOre: 4, iron: 4, tools: 20, coin: 60 },
+	settlers: 28
 };
+
+/** the win: every settlement (yours and each neighbour's) lives this well, with this many people, for this long */
+export const ABUNDANT = 80, PEOPLE = 40, HOLD = 600;
 
 /** the goals of a game, in order: its last is the win */
 export const GOALS = [
 	{ id: 'wood', label: 'Run a woodcutter and a sawmill', hint: 'Build both near trees and connect them to your headquarters with roads.' },
 	{ id: 'planks', label: 'Saw 12 planks', ware: 'plank', n: 12 },
-	{ id: 'food', label: 'Gather 15 food (fish, bread or meat)', ware: 'food', n: 15 },
-	{ id: 'iron', label: 'Smelt 6 iron', ware: 'iron', n: 6 },
-	{ id: 'weapons', label: 'Forge 6 weapons', ware: 'weapons', n: 6 },
-	{ id: 'land', label: 'Hold 3 military buildings', hint: 'Guard huts and watchtowers widen your land once a soldier moves in.' },
-	{ id: 'keep', label: 'Take the rival keep', hint: 'Select a rival building near your land and send soldiers to attack it.' }
+	{ id: 'food', label: 'Gather 25 food (fish, bread or meat)', ware: 'food', n: 25 },
+	{ id: 'market', label: 'Build a market hall and sell at the fair', hint: 'Open the Market and set a sell order: your trader carts the wares to the fair.' },
+	{ id: 'trade', label: 'Trade 80 wares at the fair', n: 80 },
+	{ id: 'contract', label: 'Fill a neighbour’s request', hint: 'Neighbours ask for what they lack. Take a request in the Market, and your trader brings it.' },
+	{ id: 'abundance', label: `Every settlement at wellbeing ${ABUNDANT} with ${PEOPLE} people, for 10 minutes`, hint: 'Wellbeing is how well a settlement lives: fed, with variety, watered, housed and with something put by. Settlements that live well grow. It counts once the other goals are reached.' }
 ];

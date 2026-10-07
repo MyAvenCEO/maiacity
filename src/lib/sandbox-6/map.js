@@ -1,8 +1,8 @@
 /**
- * SANDBOX 6 · THE VALLEY — one island valley grown from a seed: your headquarters in the west, the rival keep in the
- * east, and between them what an economy needs. Each side has its forest, its rocks, a lake to fish and a mountain to
- * mine (coal and iron); the gold lies in the mountain in the middle of the valley, so the way to coins goes through
- * the land between the two.
+ * SANDBOX 6 · THE VALLEY — one island valley grown from a seed: your headquarters in the west, three neighbour
+ * villages in the east (by the peaks, by the southern lake, in the northern hills), the fair between you, and round
+ * them what an economy needs: forests, rocks, lakes to fish and mountains to mine. Your mountains hold coal and gold
+ * but no iron: the only iron lies under Eastmere's peaks, so iron and tools come to you by trade.
  *
  * Pure: the same seed grows the same valley.
  */
@@ -22,8 +22,8 @@ export const W = 46, H = 40;
  * @property {number[]} fish fish in a water node
  * @property {({ k: 'tree', g: number } | { k: 'rock', n: number } | null)[]} obj trees and rocks
  * @property {number} hq where your headquarters stands
- * @property {number} keep where the rival keep stands
- * @property {number[]} towers the rival's watchtowers
+ * @property {number[]} villages where the neighbours live
+ * @property {number} fair where the valley's open market is held
  */
 
 /** @param {number} seed @returns {Valley} */
@@ -62,14 +62,15 @@ export function growValley(seed) {
 	/** @type {Valley['obj']} */
 	const obj = Array(N).fill(null);
 
-	const hq = node(11, 21), keep = node(35, 18);
-	const towers = [node(29, 11), node(28, 26), node(37, 28)];
+	const hq = node(11, 21);
+	const villages = [node(35, 18), node(36, 29), node(29, 10)];
+	const fair = node(22, 15);
 
 	/** @type {[number, number, number, string[]][]} mountains: centre, radius, the ores from its heart out */
 	const MOUNTAINS = [
-		[8, 12, 4.4, ['iron', 'coal']],
+		[8, 12, 4.4, ['coal']],
 		[19, 32, 3.7, ['gold', 'coal']],
-		[24, 4, 3.2, ['coal', 'iron']],
+		[24, 4, 3.2, ['coal']],
 		[39, 7, 4.2, ['iron', 'coal']]
 	];
 	/** @type {[number, number, number][]} lakes */
@@ -124,7 +125,7 @@ export function growValley(seed) {
 	}
 
 	// room round the seats: grass, cleared
-	for (const [seat, r] of /** @type {[number, number][]} */ ([[hq, 2], [keep, 2], ...towers.map((t) => /** @type {[number, number]} */ ([t, 1]))])) {
+	for (const [seat, r] of /** @type {[number, number][]} */ ([[hq, 2], [fair, 2], ...villages.map((t) => /** @type {[number, number]} */ ([t, 2]))])) {
 		for (const j of g.within(seat, r)) {
 			terrain[j] = GRASS;
 			obj[j] = null;
@@ -135,9 +136,9 @@ export function growValley(seed) {
 		for (const j of g.within(flag, 1)) obj[j] = null;
 	}
 	// flatten the land a building stands on a little, so the seats sit level
-	for (const seat of [hq, keep, ...towers]) {
+	for (const seat of [hq, fair, ...villages]) {
 		const h = height[seat];
 		for (const j of g.within(seat, 1)) height[j] = h;
 	}
-	return { W, H, terrain, height, ore, amount, fish, obj, hq, keep, towers };
+	return { W, H, terrain, height, ore, amount, fish, obj, hq, villages, fair };
 }

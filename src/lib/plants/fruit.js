@@ -11,7 +11,7 @@
  */
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
-import { about, between, chance, clamp, material, pickFruit, smoothNormals } from './grow.js';
+import { about, between, chance, clamp, lite, material, pickFruit, smoothNormals } from './grow.js';
 
 /** @typedef {import('./grow.js').Fruit} Fruit */
 
@@ -27,15 +27,19 @@ function sizeOf(/** @type {Fruit} */ f) {
 }
 
 /**
- * The fruit a plant grown from `seed` bears when ripe (its last stage), and which of them the seed picks: one of the
- * well-grown ones, not a straggler. Undefined if the plant bears no fruit.
+ * A plant grown from `seed` to its last stage, ripe, once for all the viewer needs of it then: the plant itself, the
+ * fruit it bears and which of them the seed picks — one of the well-grown ones, not a straggler (`fruit` undefined if
+ * it bears none).
  * @param {(g: number, seed: string) => THREE.Group} grow @param {number} last @param {string} seed
- * @returns {{ keys: string[], pick: string } | undefined}
+ * @returns {{ plant: THREE.Group, fruit: { keys: string[], pick: string } | undefined }}
  */
-export function fruitOf(grow, last, seed) {
+export function ripeOf(grow, last, seed) {
 	const { plant, fruits } = pickFruit(() => grow(last, seed));
-	dispose(plant);
-	if (!fruits.length) return undefined;
+	return { plant, fruit: fruits.length ? pick(fruits, seed) : undefined };
+}
+
+/** of a plant's fruit, the well-grown ones, and the one the seed picks @param {Fruit[]} fruits @param {string} seed */
+function pick(fruits, seed) {
 	const sized = fruits.map((f) => ({ key: f.key, size: sizeOf(f) }));
 	for (const f of fruits) for (const p of f.parts) p.geometry.dispose();
 	const most = Math.max(...sized.map((f) => f.size));
@@ -51,7 +55,7 @@ export function fruitOf(grow, last, seed) {
  * @returns {THREE.Group | undefined}
  */
 export function oneFruit(grow, g, seed, key) {
-	const { plant, fruits } = pickFruit(() => grow(g, seed));
+	const { plant, fruits } = lite({ fruit: key }, () => pickFruit(() => grow(g, seed)));
 	dispose(plant);
 	const f = fruits.find((x) => x.key === key);
 	for (const x of fruits) if (x !== f) for (const p of x.parts) p.geometry.dispose();
