@@ -2,7 +2,7 @@
  * SANDBOX 6 · THE MODELS — every building of the valley is a dome, in our own low-poly style: a stone plinth, a dome
  * whose colour says what the building is, a vaulted porch facing its flag, round windows, and a band in its owner's
  * colour. Houses are domes too, and grow as they are enlarged. Each has one thing of its own that says what it does: a tree growing from the forester's dome, the
- * fishery's drying rack and boat, the bakery's oven chimney, the toolmaker's anvil, the lattice tower on a village
+ * fishery's drying rack and boat, the bakery's oven chimney, the toolmaker's anvil, the tower of a village
  * center. One
  * builder per type (`buildingModel`), the chimneys named so the view can puff them (`smoke`).
  */
@@ -143,48 +143,46 @@ function canopy(r, color, x = 0, z = 0, h = 0.9, posts = 4) {
 	return g;
 }
 
-/** a beam from one point to another @param {THREE.Vector3} a @param {THREE.Vector3} b @param {number} r @param {THREE.Material} m */
-function beam(a, b, r, m) {
-	const d = new THREE.Vector3().subVectors(b, a);
-	const mesh = part(new THREE.CylinderGeometry(r, r, d.length(), 5), m);
-	mesh.position.copy(a).addScaledVector(d, 0.5);
-	mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), d.normalize());
-	return mesh;
-}
 /**
- * A lattice tower like the one in Paris: four legs curving in from a wide foot to a slender spire, arches between
- * the feet, two platforms and cross-bracing, a golden lantern on top. It stands from `y`, `h` tall.
- * @param {number} y @param {number} h
+ * A village center's hall: one shell turned round its axis, in the domes' own faceted cream. It rises from the
+ * plinth's outer ring like a dome, sweeps in to a slender tower and closes in a rounded top: one structure, the
+ * tallest of its village. Window rings and a band in its owner's colour run round it.
+ * @param {number} R radius at the foot @param {number} H height of the shell @param {number} owner
  */
-function tower(y, h) {
+function spire(R, H, owner) {
 	const g = new THREE.Group();
-	g.position.y = y;
-	const iron = mat('#8a6a4c', 0.55);
-	/** the half-width of the tower at height fraction t: wide at the foot, curving in */
-	const w = (/** @type {number} */ t) => 0.6 * Math.pow(1 - t, 2.3) + 0.045;
-	const T = [0, 0.12, 0.27, 0.45, 0.66, 0.86, 1];
-	const corners = [[1, 1], [1, -1], [-1, -1], [-1, 1]];
-	const at = (/** @type {number} */ t, /** @type {number[]} */ c) => new THREE.Vector3(c[0] * w(t), t * h, c[1] * w(t));
-	for (const c of corners) for (let k = 0; k < T.length - 1; k++) g.add(beam(at(T[k], c), at(T[k + 1], c), 0.045 - k * 0.004, iron));
-	// cross-bracing on every face, an X between each pair of levels
-	for (let f = 0; f < 4; f++) {
-		const c0 = corners[f], c1 = corners[(f + 1) % 4];
-		for (let k = 1; k < T.length - 2; k++) {
-			g.add(beam(at(T[k], c0), at(T[k + 1], c1), 0.016, iron));
-			g.add(beam(at(T[k], c1), at(T[k + 1], c0), 0.016, iron));
-		}
-		// the arch between two feet
-		const mid = at(0.06, [(c0[0] + c1[0]) / 2, (c0[1] + c1[1]) / 2]);
-		const arch = part(new THREE.TorusGeometry(w(0.06) * 0.9, 0.03, 4, 10, Math.PI), iron, mid.x, 0, mid.z);
-		arch.rotation.y = c0[0] === c1[0] ? Math.PI / 2 : 0;
-		g.add(arch);
+	g.add(part(new THREE.CylinderGeometry(R * 1.06, R * 1.12, PLINTH, 16), mat(STONE), 0, PLINTH / 2, 0));
+	// the profile, foot to top: a dome's shoulder, the waist curving in, the tower, the rounded cap
+	const top = 0.3;
+	/** @type {THREE.Vector2[]} */
+	const pts = [];
+	for (let k = 0; k <= 16; k++) {
+		const t = k / 16;
+		// the radius narrows smoothly from the foot to the tower (a little flare at the bottom, like the domes)
+		const r = top + (R - top) * Math.pow(1 - t, 2.2) * (1 + 0.35 * Math.sin(Math.PI * Math.min(1, t * 2.2)));
+		pts.push(new THREE.Vector2(Math.min(R, r), t * (H - top)));
 	}
-	// the platforms
-	for (const t of [T[1], T[3]]) g.add(part(new THREE.BoxGeometry(w(t) * 2.3, 0.06, w(t) * 2.3), iron, 0, t * h, 0));
-	g.add(part(new THREE.BoxGeometry(w(T[5]) * 2.4, 0.05, w(T[5]) * 2.4), iron, 0, T[5] * h, 0));
-	// the spire and its light
-	g.add(part(new THREE.CylinderGeometry(0.012, 0.03, 0.5, 5), iron, 0, h + 0.25, 0));
-	g.add(part(new THREE.SphereGeometry(0.07, 8, 5), mat('#d9a92e', 0.4), 0, h + 0.05, 0));
+	for (let k = 1; k <= 6; k++) {
+		const a = (k / 6) * (Math.PI / 2);
+		pts.push(new THREE.Vector2(Math.max(0.001, top * Math.cos(a)), H - top + top * Math.sin(a)));
+	}
+	const shell = part(new THREE.LatheGeometry(pts, 16), mat('#e6dcc4', 0.75), 0, PLINTH, 0);
+	g.add(shell);
+	/** the shell's radius at a height */
+	const at = (/** @type {number} */ y) => {
+		for (let k = 1; k < pts.length; k++) if (pts[k].y >= y) return pts[k - 1].x + ((pts[k].x - pts[k - 1].x) * (y - pts[k - 1].y)) / Math.max(1e-6, pts[k].y - pts[k - 1].y);
+		return top;
+	};
+	// rings of windows up the tower, and the owner's band round the foot
+	for (const y of [0.55, 1.6, 2.4, 3.1]) {
+		const ring = part(new THREE.TorusGeometry(at(y) + 0.01, 0.035, 4, 16), mat(DARK, 0.4), 0, PLINTH + y, 0);
+		ring.rotation.x = Math.PI / 2;
+		g.add(ring);
+	}
+	g.add(band(owner, at(0.3) + 0.03, PLINTH + 0.3));
+	// the light at the top
+	g.add(part(new THREE.SphereGeometry(0.09, 8, 5), mat('#d9a92e', 0.4), 0, PLINTH + H + 0.05, 0));
+	g.add(vault(R));
 	return g;
 }
 /**
@@ -198,12 +196,9 @@ export function buildingModel(type, owner) {
 	switch (type) {
 		case 'centre':
 		case 'village': {
-			// the village center: storehouse, market and hall in one, nobody lives here. The greatest dome of the
-			// village, a lattice tower rising from its top like the one in Paris, crates and the trade cart at its door
-			const R = 1.6, H = 1.4;
-			g.add(dome(R, H, '#e6dcc4', { windows: 5 }));
-			g.add(band(owner, R + 0.02, PLINTH + 0.4));
-			g.add(tower(PLINTH + H * 0.86, 3.6));
+			// the village center: storehouse, market and hall in one, nobody lives here. One shell from the dome's foot
+			// to a rounded tower top, the tallest of its village; crates and the trade cart at its door
+			g.add(spire(1.6, 4.6, owner));
 			g.add(pile('#c8a26a', 1.55, 1.05, 4));
 			g.add(part(new THREE.BoxGeometry(0.7, 0.28, 0.42), mat(TIMBER), -1.6, 0.32, 0.95));
 			for (const sz of [-1, 1]) {

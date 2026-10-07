@@ -227,7 +227,7 @@ export function createView(scene, sim) {
 		root.add(roadMesh);
 	}
 
-	// the trade routes: a dashed line in its digger's colour over where it runs under the ground
+	// the trade routes: an unbroken line in its digger's colour over where it runs under the ground, lakes included
 	let tunSeen = -1;
 	/** @type {THREE.Mesh[]} */
 	let tunMeshes = [];
@@ -242,14 +242,9 @@ export function createView(scene, sim) {
 		tunMeshes = [];
 		/** @type {Record<number, number[][]>} */
 		const dashes = {};
-		for (const t of Object.values(st.tunnels))
-			for (let j = 1; j < t.path.length - 2; j++) {
-				const a = t.path[j], b = t.path[j + 1];
-				if (j % 3 === 0 || st.terrain[a] === WATER || st.terrain[b] === WATER) continue;
-				(dashes[t.owner] ??= []).push([a, b]);
-			}
+		for (const t of Object.values(st.tunnels)) (dashes[t.owner] ??= []).push(t.path);
 		for (const [o, paths] of Object.entries(dashes)) {
-			const m = new THREE.Mesh(ribbon(paths, 0.16, 0.07), tunMats[+o]);
+			const m = new THREE.Mesh(ribbon(paths, 0.2, 0.07), tunMats[+o]);
 			root.add(m);
 			tunMeshes.push(m);
 		}
