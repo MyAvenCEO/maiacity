@@ -3,18 +3,21 @@
  *
  * A valley economy in the spirit of the old settler games, without the war, its own names and its own numbers: wares lie at flags and
  * carriers bring them, one carrier to a road, from flag to flag, to whoever needs them. A building is a site until a
- * builder has used up what it is built of; then a worker moves in and it runs its chain. Three wares, short chains:
+ * builder has used up what it is built of; then a worker moves in and it runs its chain. Four wares, short chains,
+ * each one building that grows by stages, every stage a recipe of the crafting engine (RECIPES):
  *
- *   trees → forester → planks            (one building that grows: forester, woodcutter, sawmill, timber works)
- *   iron → iron mine → steel             (one building that grows: iron mine, furnace, steelworks)
- *   clay → clay pit → fired clay         (one building that grows: clay pit, kiln, block works)
+ *   forest hex: logs → forester, woodcutter, sawmill, timber works → planks
+ *   iron hex: iron ore → iron mine, furnace, steelworks → steel
+ *   meadow hex: raw clay → clay pit, kiln, block works → fired clay
+ *   sand hex: sand → sand pit, glassworks, solar panel works → glass
  *
- * They are counted in real tonnes of what they end as: planks as the glulam struts of the domes, steel as their joints,
- * fired clay as the voussoirs of the trade routes. A dome is built as the real one is (DOME_T): its struts and joints
- * from your stores, its glass from the world market, paid in gold as it is begun.
+ * One unit for everything, a real one (UNITS): a tonne of a ware, a tonne of food, a m³ of water, a MWh of energy, and a
+ * gold, the world market's real prices read at 1,000 € a gold (the game shows gold only). Planks are the glulam struts
+ * of the domes, steel their joints, glass their glazing with its solar cells, fired clay the voussoirs of the trade
+ * routes. A dome is built as the real one is (DOME_T), of all three from your stores.
  *
- * Energy is not a ware but a flow, in kWh (ENERGY): every village center is also a geothermal power plant, every dome
- * makes some with its solar glass, and people and factories use it.
+ * Energy is not a ware but a flow (ENERGY): every village center is also a geothermal power plant, every dome makes
+ * some with its solar glass, and people and factories use it.
  *
  * Food and water are not wares: every house's hex grows food and its roof catches rain into the tanks, and what a
  * village lacks it buys from the world market (./food.js).
@@ -39,14 +42,15 @@
 export const WARES = {
 	plank: { id: 'plank', label: 'Planks', color: '#e0b46a' },
 	steel: { id: 'steel', label: 'Steel', color: '#8796a6' },
-	clay: { id: 'clay', label: 'Fired clay', color: '#c4734f' }
+	clay: { id: 'clay', label: 'Fired clay', color: '#c4734f' },
+	glass: { id: 'glass', label: 'Glass', color: '#9fd3e0' }
 };
 export const WARE_ORDER = Object.keys(WARES);
 
 /**
- * What a hex is good for: meadow (farmland) is everywhere; forest, stone, iron and water (a lake's or the sea's shore)
- * are scarce, and a woodcutter or forester and an iron mine only stand on a hex of their own kind, a clay pit on a
- * meadow, where the clay lies under the grass.
+ * What a hex is good for: meadow (farmland) is everywhere; forest, iron, sand (a sandy heath or a beach), stone and
+ * water (a lake's or the sea's shore) are scarce. Every factory stands on the hex its land is on (RECIPES): wood on a
+ * forest, steel on iron, fired clay on a meadow, where the clay lies under the grass, glass on sand.
  * A hex whose middle is under water (a lake's or the sea's) is 'lake', not land; bare mountain is 'mountain'. Read
  * from the land as the valley grew (./map.js).
  */
@@ -55,6 +59,7 @@ export const BIOMES = {
 	forest: { id: 'forest', label: 'Forest', color: '#2f6b3a' },
 	stone: { id: 'stone', label: 'Stone', color: '#9a9a94' },
 	iron: { id: 'iron', label: 'Iron', color: '#a35b3a' },
+	sand: { id: 'sand', label: 'Sand', color: '#dcc893' },
 	water: { id: 'water', label: 'Water', color: '#4aa3df' },
 	mountain: { id: 'mountain', label: 'Mountain', color: '#8c8f96' },
 	lake: { id: 'lake', label: 'Lake', color: '#3a7fb8' }
@@ -72,11 +77,24 @@ export const HOUSE_SIZE = ['Hut', 'Cottage', 'House', 'Great house', 'Hall', 'Gr
 /** the largest a house gets: its size and its beds */
 export const HOUSE_TOP = HOUSE_BEDS.length;
 export const HOUSE_MOST = HOUSE_BEDS[HOUSE_TOP - 1];
-/** a load of any ware, in tonnes: a truckload */
+/**
+ * The units everything is counted in, a real one each: what one of it is. The stores and the buses count wares in
+ * truckloads of 5 t (LOAD_T), and the page shows them in tonnes; euros never show, they are only how the world
+ * market's real prices are read into gold.
+ */
+export const UNITS = {
+	ware: '1 t',
+	food: '1 t, 1,000 kg',
+	water: '1 m³, 1,000 L',
+	energy: '1 MWh',
+	gold: '1,000 € of real prices'
+};
+/** a load of any ware, in tonnes: a truckload, what a bus carries and the stores count */
 export const LOAD_T = 5;
 /**
  * The real great dome of 248, 150 m across (our engineering research, 2026-10-07), in tonnes: its larch and Douglas
- * glulam struts, its finished steel joints (cast hubs, screws, brackets) and its laminated double glazing.
+ * glulam struts, its finished steel joints (cast hubs, screws, brackets) and its laminated double glazing with its
+ * see-through solar cells.
  */
 export const DOME_T = { plank: 1500, steel: 200, glass: 1000 };
 /**
@@ -89,24 +107,21 @@ export const domeOf = (beds) => {
 	const r = beds / HOUSE_MOST;
 	return { plank: DOME_T.plank * r ** 1.25, steel: DOME_T.steel * r ** 1.25, glass: DOME_T.glass * r };
 };
-/** a dome's struts and joints in loads, rounded up @param {number} beds */
+/** a dome's struts, joints and glass in loads, rounded up @param {number} beds */
 const domeLoads = (beds) => {
 	const t = domeOf(beds);
-	return { plank: Math.ceil(t.plank / LOAD_T), steel: Math.ceil(t.steel / LOAD_T) };
+	return { plank: Math.ceil(t.plank / LOAD_T), steel: Math.ceil(t.steel / LOAD_T), glass: Math.ceil(t.glass / LOAD_T) };
 };
-/** what of a ware the larger dome takes beyond the smaller (none left out) @param {number} from @param {number} to */
+/** what of each ware the larger dome takes beyond the smaller (none left out) @param {number} from @param {number} to */
 const domeStep = (from, to) => {
-	const a = from ? domeLoads(from) : { plank: 0, steel: 0 }, b = domeLoads(to);
+	const a = from ? domeLoads(from) : { plank: 0, steel: 0, glass: 0 }, b = domeLoads(to);
 	/** @type {Record<string, number>} */
 	const step = {};
-	if (b.plank > a.plank) step.plank = b.plank - a.plank;
-	if (b.steel > a.steel) step.steel = b.steel - a.steel;
+	for (const w of /** @type {const} */ (['plank', 'steel', 'glass'])) if (b[w] > a[w]) step[w] = b[w] - a[w];
 	return step;
 };
-/** what enlarging a house to its next size costs, in loads of struts and joints from your stores */
+/** what enlarging a house to its next size costs, in loads of struts, joints and glass from your stores */
 export const HOUSE_UP = HOUSE_BEDS.slice(1).map((n, k) => domeStep(HOUSE_BEDS[k], n));
-/** the glass a house takes, in tonnes: a hut's as it is built, then what each enlarging adds */
-export const HOUSE_GLASS = HOUSE_BEDS.map((n, k) => domeOf(n).glass - (k ? domeOf(HOUSE_BEDS[k - 1]).glass : 0));
 
 /**
  * @typedef {object} BuildingType
@@ -114,7 +129,7 @@ export const HOUSE_GLASS = HOUSE_BEDS.map((n, k) => domeOf(n).glass - (k ? domeO
  * @property {string} label
  * @property {string} group which part of the build menu
  * @property {string} about one line
- * @property {Record<string, number>} cost planks and steel a builder uses up
+ * @property {Record<string, number>} cost what a builder uses up, in loads
  * @property {'centre'|'house'|'make'|'mine'|'gather'|'forester'|'village'} kind
  * @property {string} [worker] who works it
  * @property {string[][]} [inputs] each slot takes any one of its wares
@@ -125,18 +140,19 @@ export const HOUSE_GLASS = HOUSE_BEDS.map((n, k) => domeOf(n).glass - (k ? domeO
  * @property {number} [yield] how many of its ware one round of work makes (1 if not said)
  * @property {'mountain'|'grass'|'any'} [on] the land it stands on: grass by default, or rock, or either
  * @property {string} [ore] the ore a mine digs
- * @property {'meadow'|'forest'|'stone'|'iron'|'water'} [biome] the only kind of hex it stands on (any hex if not said)
+ * @property {'meadow'|'forest'|'stone'|'iron'|'sand'|'water'} [biome] the only kind of hex it stands on (any hex if not said)
  * @property {number} [beds] settlers who live in it
  */
 
 /** @type {Record<string, BuildingType>} */
 export const BUILDINGS = {
 	centre: { id: 'centre', label: 'Village center', group: 'Homes', about: 'Founds a village in the middle of a village next to yours: its storehouse, market and hall in one — nobody lives here. A trade route under the ground, laid of fired clay voussoirs (what your stores lack, bought from the world market), joins it to the village center that founded it, and four settlers come to build its houses. It is also its village’s power plant: geothermal wells under it, drilled for gold, run day and night.', cost: { plank: 6, steel: 4 }, kind: 'centre' },
-	house: { id: 'house', label: 'House', group: 'Homes', about: 'Founds a settlement: settlers live here, 2 at first, then twice as many each time you enlarge it, up to 248. A dome of glass on struts and steel joints, its glass bought from the world market as it is begun. Its two factory spots open once it stands.', cost: domeStep(0, HOUSE_BEDS[0]), kind: 'house' },
+	house: { id: 'house', label: 'House', group: 'Homes', about: 'Founds a settlement: settlers live here, 2 at first, then twice as many each time you enlarge it, up to 248. A dome of glass on struts and steel joints, all three from your stores. Its two factory spots open once it stands.', cost: domeStep(0, HOUSE_BEDS[0]), kind: 'house' },
 	woodcutter: { id: 'woodcutter', label: 'Forester', group: 'Basics', about: 'Your wood, in one building that grows: a forester plants young trees round it; upgraded, a woodcutter fells grown trees and plants a young one where each stood, then a sawmill and a timber works cut more planks from every tree. Build it on a forest hex.', cost: { plank: 2 }, kind: 'gather', biome: 'forest', worker: 'Forester', out: 'plank', time: 6, rest: 4, range: 10 },
 	forester: { id: 'forester', label: 'Forester', group: '', about: 'Plants young trees nearby, on a forest hex; they grow in about two minutes. (Now the first level of the wood building.)', cost: { plank: 2 }, kind: 'forester', biome: 'forest', worker: 'Forester', time: 3, rest: 5, range: 8 },
-	ironmine: { id: 'ironmine', label: 'Iron mine', group: 'Basics', about: 'Your steel, in one building that grows: an iron mine digs iron ore and smelts a load of steel joints from every five loads; upgraded, a furnace makes two and a steelworks three from the same ore. Build it on an iron hex, by rust-red rock.', cost: { plank: 4 }, kind: 'mine', biome: 'iron', worker: 'Miner', inputs: [], out: 'steel', time: 8, on: 'any', ore: 'iron' },
+	ironmine: { id: 'ironmine', label: 'Iron mine', group: 'Basics', about: 'Your steel, in one building that grows: an iron mine digs iron ore and smelts 5 t of steel joints from every 25 t; upgraded, a furnace makes 10 t and a steelworks 15 t from the same ore. Build it on an iron hex, by rust-red rock.', cost: { plank: 4 }, kind: 'mine', biome: 'iron', worker: 'Miner', inputs: [], out: 'steel', time: 8, on: 'any', ore: 'iron' },
 	clayworks: { id: 'clayworks', label: 'Clay pit', group: 'Basics', about: 'Your fired clay, in one building that grows: a clay pit digs the clay under a meadow and fires bricks in a clamp; upgraded, an electric kiln fires twice as much, and a block works presses the hollow, interlocking voussoirs of the trade routes in five moulds and fires three times as much in a tunnel kiln, from the same pit. Build it on a meadow hex.', cost: { plank: 4 }, kind: 'mine', biome: 'meadow', worker: 'Brick maker', inputs: [], out: 'clay', time: 8, on: 'any' },
+	glassworks: { id: 'glassworks', label: 'Sand pit', group: 'Basics', about: 'Your glass, in one building that grows: a sand pit digs and washes the glass sand of a sandy hex; upgraded, a glassworks melts it with soda and lime in an electric furnace and floats it into panes, and a solar panel works lays see-through solar cells into more of it, the glazing every dome makes its power with. Build it on a sand hex.', cost: { plank: 4 }, kind: 'mine', biome: 'sand', worker: 'Glass maker', inputs: [], out: 'glass', time: 8, on: 'any' },
 	village: { id: 'village', label: 'Village center', group: '', about: 'A neighbour city’s village center.', cost: {}, kind: 'village' }
 };
 
@@ -150,61 +166,6 @@ export const holdsLand = (/** @type {string} */ type) => type === 'centre' || ty
 
 
 /**
- * The wood building's levels: what it is called, and how many planks it cuts from a tree (a forester only plants).
- * Each upgrade brings more timber a week from the same trees; from a woodcutter on, it plants a tree for every one it
- * fells, so its forest stays.
- */
-export const WOOD = [
-	{ label: 'Forester', planks: 0 },
-	{ label: 'Woodcutter', planks: 1 },
-	{ label: 'Sawmill', planks: 2 },
-	{ label: 'Timber works', planks: 3 }
-];
-/** what each upgrade of the wood building costs */
-export const WOOD_UP = [
-	{ plank: 2, steel: 1 },
-	{ plank: 4, steel: 3 },
-	{ plank: 6, steel: 4 }
-];
-/** a plank, in tonnes: a truckload of sawn timber */
-export const PLANK_T = LOAD_T;
-
-/**
- * The steel building's levels: what it is called, and how many loads of steel joints it makes from a round of iron
- * ore (five loads, 25 t). Each upgrade makes more from the same ore: an iron mine smelts a little, a furnace more, a
- * steelworks most (15 t, the iron in 25 t of ore). (The key says struts, as it did before the struts became glulam.)
- */
-export const STEEL = [
-	{ label: 'Iron mine', struts: 1 },
-	{ label: 'Furnace', struts: 2 },
-	{ label: 'Steelworks', struts: 3 }
-];
-/** what each upgrade of the steel building costs */
-export const STEEL_UP = [
-	{ plank: 4, steel: 2 },
-	{ plank: 6, steel: 3 }
-];
-/** a load of steel, in tonnes: a truckload of joints */
-export const STEEL_T = LOAD_T;
-
-/**
- * The clay building's levels: what it is called, and how many loads of fired clay it makes from a round of its pit's
- * clay. A clay pit fires bricks in a clamp of its wood waste, a kiln fires more with electricity, and a block works
- * presses the hollow-core voussoirs (about 100 kg each, five shapes) and fires them in a tunnel kiln: fired clay is
- * counted in tonnes of blocks, what the trade routes are laid of, dry and without mortar.
- */
-export const CLAY = [
-	{ label: 'Clay pit', blocks: 1 },
-	{ label: 'Kiln', blocks: 2 },
-	{ label: 'Block works', blocks: 3 }
-];
-/** what each upgrade of the clay building costs */
-export const CLAY_UP = [
-	{ plank: 4, steel: 2 },
-	{ plank: 6, steel: 3 }
-];
-
-/**
  * A trade route under the ground, as the real one is built (our tunnel research, 2026-10-07): two arched cells for
  * 40 ft containers, laid dry of interlocking fired clay voussoirs with no steel and no mortar, about 36,000 t of them a
  * km. Its gravel bed, drains and clay seal are dug from its own trench. A world unit of the valley is about 32 m: a hex
@@ -214,31 +175,134 @@ export const ROUTE_T_KM = 36000, UNIT_M = 32;
 
 /** a hex's fields and woods, besides its food forest: 10 ha of hemp and bamboo, about 15 t a hectare a year */
 export const FIELD_HA = 10, FIELD_T = 15;
-/**
- * What a wood, steel or clay building may work a year, on the master clock, whatever its people do on screen: its hex's
- * harvest in trees (15 t each, so 150 t a year; a woodcutter cuts a load of planks from each, a sawmill two, a timber
- * works all three), its iron hex's ore in rounds of five loads (25 t each, so 250 t a year; an iron mine smelts
- * one load of joints from each, a furnace two, a steelworks three), or what its kiln fires, 200 rounds a year (a
- * clay pit a load of fired clay from each, 1,000 t a year, a kiln two, a block works three, 3,000 t: a small works of
- * about 10 t a day).
- */
-export const ROUNDS_YEAR = /** @type {Record<string, number>} */ ({ woodcutter: (FIELD_HA * FIELD_T) / (3 * PLANK_T), ironmine: 10, clayworks: 200 });
 /** what keeping homes up takes a year: a share of what they cost to build */
 export const UPKEEP = 0.02;
 
-/** the buildings that grow by upgrades, besides houses: their levels and what each upgrade costs */
-export const GROWS = /** @type {Record<string, { levels: { label: string }[], up: Record<string, number>[] }>} */ ({
-	woodcutter: { levels: WOOD, up: WOOD_UP },
-	ironmine: { levels: STEEL, up: STEEL_UP },
-	clayworks: { levels: CLAY, up: CLAY_UP }
-});
-/** loads a wood, steel or clay building makes from one round of its land at a stage (1 for the first) @param {string} type @param {number} level */
-export const perRound = (type, level) => (type === 'woodcutter' ? WOOD[level - 1].planks : type === 'ironmine' ? STEEL[level - 1].struts : type === 'clayworks' ? CLAY[level - 1].blocks : 1);
-/** tonnes it makes a year at a stage, working all its land gives it @param {string} type @param {number} level */
-export const tonnesYear = (type, level) => (ROUNDS_YEAR[type] ?? 0) * perRound(type, level) * LOAD_T;
+/** what a factory takes from the land of its hex, a round at a time: in tonnes */
+export const LAND = {
+	logs: { label: 'logs', about: `its hex's ${FIELD_HA} ha of hemp, bamboo and woods, a tree of 15 t at a time` },
+	ore: { label: 'iron ore', about: 'the iron round its rust-red rock' },
+	loam: { label: 'raw clay', about: 'the clay under its meadow' },
+	sand: { label: 'sand', about: 'the glass sand of its heath or beach, with soda and lime' }
+};
+
+/** energy a building takes to build, MWh a tonne of what it is built of (its cranes, welding and presses), and what
+ * standing takes a year: a share of what it is built of, and MWh a tonne for its dome's lights, fans and controls */
+export const BUILD_MWH_T = 0.1, KEEP_MWH_T = 0.2;
 
 /**
- * Energy, in kWh: electricity only (a dome's heat comes from its fish pond and the village's geothermal heat loop).
+ * @typedef {{ in: Record<string, number>, out: Record<string, number> }} Craft
+ * @typedef {{ label: string, does?: string, build: Craft, keep: Craft, make: Craft, up: Record<string, number> }} Stage
+ * @typedef {{ biome: string, land: string, rounds: number, stages: Stage[] }} Recipe
+ */
+/**
+ * THE CRAFTING ENGINE — everything a building does is a recipe, what goes in and what comes out, in units (UNITS:
+ * tonnes, and MWh of energy), and every stage of a factory has three:
+ *   build — once, as it is built or grown to it: the wares its builders carry in and the energy they use, out comes the
+ *           stage itself;
+ *   keep  — a year, while it stands: the wares that keep it up (2% of what it is built of) and the energy its dome uses,
+ *           nothing out;
+ *   make  — a round of its work: what it takes from the land of its hex (LAND), as much a round as the land gives it a
+ *           year (`rounds`), and energy from its village's grid; out comes its ware, to its stop a truckload (5 t) at a
+ *           time. A ware it took would come from your stores by bus.
+ * The simulation runs every factory on it (./sim.js `craft`, and its builders and upkeep), the cards and the building
+ * tree show it (./tree.js).
+ *
+ * Wood: a hex's 10 ha of hemp, bamboo and woods give 150 t a year, ten trees of 15 t; a woodcutter cuts 5 t of planks
+ * from each (by hand, the rest firewood), a sawmill 10 t, a timber works all of it, glued into glulam and scrimber,
+ * using energy for its saws, presses and drying kilns. A forester only plants.
+ * Steel: an iron hex gives ten rounds of 25 t of ore a year; an iron mine smelts 5 t of joints from each, a furnace 10 t
+ * and a steelworks 15 t, the iron in 25 t of ore, in an electric furnace (about 3.6 to 5 MWh a tonne).
+ * Fired clay: a meadow's pit gives 200 rounds of 20 t of raw clay a year; a clay pit fires 5 t of bricks from each in a
+ * clamp of wood waste, a kiln 10 t with electricity, a block works 15 t of voussoirs in a tunnel kiln, about 10 t a day.
+ * Glass: a sand hex gives 100 rounds a year; a sand pit digs and washes the sand and melts none yet, a glassworks melts
+ * 12 t of sand, soda and lime into 10 t of float glass in an electric furnace (1.3 MWh a tonne), and a solar panel works
+ * 18 t into 15 t, laying see-through solar cells into it (about 2 MWh a tonne in all).
+ * @type {Record<string, Recipe>}
+ */
+export const RECIPES = /** @type {any} */ ({
+	woodcutter: {
+		biome: 'forest',
+		land: 'logs',
+		rounds: (FIELD_HA * FIELD_T) / 15,
+		stages: [
+			{ label: 'Forester', build: { plank: 10 }, make: {}, does: 'plants young trees round it and fells none' },
+			{ label: 'Woodcutter', build: { plank: 10, steel: 5 }, make: { in: { logs: 15, energy: 0.1 }, out: { plank: 5 } } },
+			{ label: 'Sawmill', build: { plank: 20, steel: 15 }, make: { in: { logs: 15, energy: 3.5 }, out: { plank: 10 } } },
+			{ label: 'Timber works', build: { plank: 30, steel: 20 }, make: { in: { logs: 15, energy: 7.5 }, out: { plank: 15 } } }
+		]
+	},
+	ironmine: {
+		biome: 'iron',
+		land: 'ore',
+		rounds: 10,
+		stages: [
+			{ label: 'Iron mine', build: { plank: 20 }, make: { in: { ore: 25, energy: 25 }, out: { steel: 5 } } },
+			{ label: 'Furnace', build: { plank: 20, steel: 10 }, make: { in: { ore: 25, energy: 42 }, out: { steel: 10 } } },
+			{ label: 'Steelworks', build: { plank: 30, steel: 15 }, make: { in: { ore: 25, energy: 54 }, out: { steel: 15 } } }
+		]
+	},
+	clayworks: {
+		biome: 'meadow',
+		land: 'loam',
+		rounds: 200,
+		stages: [
+			{ label: 'Clay pit', build: { plank: 20 }, make: { in: { loam: 20, energy: 0.05 }, out: { clay: 5 } } },
+			{ label: 'Kiln', build: { plank: 20, steel: 10 }, make: { in: { loam: 20, energy: 10 }, out: { clay: 10 } } },
+			{ label: 'Block works', build: { plank: 30, steel: 15 }, make: { in: { loam: 20, energy: 7.5 }, out: { clay: 15 } } }
+		]
+	},
+	glassworks: {
+		biome: 'sand',
+		land: 'sand',
+		rounds: 100,
+		stages: [
+			{ label: 'Sand pit', build: { plank: 20 }, make: {}, does: 'digs and washes glass sand and melts none yet' },
+			{ label: 'Glassworks', build: { plank: 30, steel: 15 }, make: { in: { sand: 12, energy: 13 }, out: { glass: 10 } } },
+			{ label: 'Solar panel works', build: { plank: 40, steel: 25 }, make: { in: { sand: 18, energy: 30 }, out: { glass: 15 } } }
+		]
+	}
+});
+/** what a building of so many tonnes takes to build: its wares, and its builders' energy @param {Record<string, number>} wares */
+export const buildIn = (wares) => ({ ...wares, energy: Object.values(wares).reduce((s, t) => s + t, 0) * BUILD_MWH_T });
+/** what standing takes a year, of a building of so many tonnes all told @param {Record<string, number>} built */
+export const keepIn = (built) => ({ ...Object.fromEntries(Object.entries(built).map(([w, t]) => [w, t * UPKEEP])), energy: Object.values(built).reduce((s, t) => s + t, 0) * KEEP_MWH_T });
+// each stage's three recipes in full: its build (its wares in tonnes, with its builders' energy; and in loads for the
+// builders, `up`), its keep (of everything it is built of by then) and its make
+for (const [type, r] of Object.entries(RECIPES)) {
+	/** @type {Record<string, number>} */
+	const built = {};
+	for (const x of r.stages) {
+		const wares = /** @type {Record<string, number>} */ (/** @type {any} */ (x).build);
+		x.up = Object.fromEntries(Object.entries(wares).map(([w, t]) => [w, Math.ceil(t / LOAD_T)]));
+		for (const [w, t] of Object.entries(wares)) built[w] = (built[w] ?? 0) + t;
+		x.build = { in: buildIn(wares), out: {} };
+		x.keep = { in: keepIn(built), out: {} };
+		x.make = { in: x.make.in ?? {}, out: x.make.out ?? {} };
+	}
+	BUILDINGS[type].cost = r.stages[0].up;
+}
+/** a factory's stage at a level (1 for the first) @param {string} type @param {number} level */
+export const recipe = (type, level) => RECIPES[type]?.stages[Math.max(1, level) - 1];
+/** loads of its ware a factory makes from a round at a stage @param {string} type @param {number} level */
+export const loadsRound = (type, level) => Object.values(recipe(type, level)?.make.out ?? {}).reduce((s, t) => s + t, 0) / LOAD_T;
+/** a stage's make a year, working all its land gives it: what it takes and makes, in units @param {string} type @param {number} level */
+export const yearOf = (type, level) => {
+	const r = recipe(type, level), n = RECIPES[type]?.rounds ?? 0;
+	const scale = (/** @type {Record<string, number>} */ m) => Object.fromEntries(Object.entries(m ?? {}).map(([k, v]) => [k, v * n]));
+	return { in: scale(r?.make.in ?? {}), out: scale(r?.make.out ?? {}) };
+};
+/** tonnes of its ware a factory makes a year at a stage @param {string} type @param {number} level */
+export const tonnesYear = (type, level) => Object.values(yearOf(type, level).out).reduce((s, t) => s + t, 0);
+/** rounds a factory's land gives it a year */
+export const ROUNDS_YEAR = /** @type {Record<string, number>} */ (Object.fromEntries(Object.entries(RECIPES).map(([k, r]) => [k, r.rounds])));
+/** the buildings that grow by upgrades, besides houses: their stages and what growing to each next one costs */
+export const GROWS = /** @type {Record<string, { levels: Stage[], up: Record<string, number>[] }>} */ (
+	Object.fromEntries(Object.entries(RECIPES).map(([k, r]) => [k, { levels: r.stages, up: r.stages.slice(1).map((x) => x.up) }]))
+);
+
+/**
+ * Energy, in kWh here (a MWh is its unit on the page): electricity only (a dome's heat comes from its fish pond and the village's geothermal heat loop).
  * Our village energy research, 2026-10-07 (project file energy/village-energy.md).
  *
  * Every village center is also its village's power plant: an enhanced geothermal triplet under it (as Fervo drilled
@@ -249,8 +313,7 @@ export const tonnesYear = (type, level) => (ROUNDS_YEAR[type] ?? 0) * perRound(t
  * uses 0.17 GWh a year. A person uses 900 kWh a year at home, as people sharing a dome do, so a dome's sun makes about
  * three times what its people and climate use over a year, but a little less than that in midwinter. A village
  * center uses 0.3 GWh a year for its hall, its storehouse and its trade routes' lights and trains. Factories use
- * theirs for every tonne they make, by stage: a sawmill and a timber works for their saws and kilns, a steelworks for
- * its electric furnace, a kiln and a block works for firing.
+ * theirs as their recipes say (RECIPES), a round at a time.
  */
 export const ENERGY = {
 	/** a geothermal stage's net power, kW, the share of the time it runs, and the most stages a village center drills */
@@ -267,9 +330,7 @@ export const ENERGY = {
 	 */
 	home: 900,
 	/** kWh a year a village center uses: its hall and storehouse, the lights and trains of its trade routes */
-	centre: 300000,
-	/** kWh a tonne its factories use, by stage */
-	perT: /** @type {Record<string, number[]>} */ ({ woodcutter: [0, 20, 350, 500], ironmine: [5000, 4200, 3600], clayworks: [10, 1000, 500] })
+	centre: 300000
 };
 /** a dome's solar by month, in % of its year, January first (our village energy research): a month's share is its
  * part of their sum */
@@ -277,16 +338,16 @@ export const SUN_MONTH = [2.9, 4.6, 8.0, 11.2, 13.1, 13.9, 14.2, 12.3, 8.9, 5.7,
 const SUN_YEAR = SUN_MONTH.reduce((a, b) => a + b, 0);
 /** kWh a day a bed's solar glass makes in a month (1 to 12) */
 export const sunBedDay = (/** @type {number} */ month) => (ENERGY.sunBed * SUN_MONTH[month - 1]) / SUN_YEAR / 30;
-/** kWh a building uses for each load it makes at its stage @param {string} type @param {number} level */
-export const kwhLoad = (type, level) => (ENERGY.perT[type]?.[level - 1] ?? 0) * LOAD_T;
 
 /** what the headquarters holds as a game starts */
 export const START = {
-	stock: { plank: 16, steel: 10 },
+	/** in loads: 120 t of planks, 60 t of steel and 50 t of glass, enough for a hut on each of your first hexes and
+	 * their first factories */
+	stock: { plank: 24, steel: 12, glass: 10 },
 	coins: 30,
 	settlers: 2,
-	/** the houses that stand round your first village center as a game starts: their sizes (1…4) — one house of two */
-	houses: [1],
+	/** the houses that stand round your first village center as a game starts: none, you place your first yourself */
+	houses: /** @type {number[]} */ ([]),
 	/** the geothermal stages under your first village center */
 	wells: 1
 };

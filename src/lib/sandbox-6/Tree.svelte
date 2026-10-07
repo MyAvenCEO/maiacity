@@ -1,92 +1,95 @@
 <!--
 	Sandbox 6 · the building tree: every chain of the valley on one screen, a row each (./tree.js, read from the rules):
-	the land a building works, every stage it grows through with what it makes and uses a year and what growing to it
-	costs, the ware it makes and what that is for; then energy, the village center's geothermal stages and every dome's
-	solar cells; then the homes, one dome through its eight sizes. A stage you have is marked; click a first stage to
-	build it (later stages grow on the building's card).
+	the hex a chain stands on and the land it works, every stage its building grows through with its three recipes of
+	the crafting engine (what building it or growing to it takes, what standing takes a year, and what it makes a
+	year), the ware it makes and what that is for; then energy, the village center's geothermal stages and every dome's
+	solar cells; then the homes, one dome through its eight sizes. All in units: a tonne, a MWh, a gold. A stage you have
+	is marked; click a first stage to build it (later stages grow on the building's card).
 -->
 <script>
-	import { ENERGY, WARES } from './rules.js';
-	import { GRID_EUR_KWH, GLASS_EUR_T } from './market.js';
-	import { CHAINS, GEOTHERMAL, HOMES } from './tree.js';
+	import { WARES } from './rules.js';
+	import { GRID_EUR_KWH, EUR_PER_GOLD } from './market.js';
+	import { CHAINS, GEOTHERMAL, HOMES, SUN } from './tree.js';
+	import { UNIT_OF, craftLine, fmt, side, ware } from './units.js';
 
 	/** @type {{ stock: Record<string, number>, owned: Record<string, number>, onBuild: (type: string) => void, onClose: () => void }} */
 	let { stock, owned, onBuild, onClose } = $props();
 
 	const label = (/** @type {string} */ w) => WARES[w]?.label ?? w;
-	const num = (/** @type {number} */ n) => Math.round(n).toLocaleString('en-US');
-	/** energy: kWh, MWh or GWh */
-	const kwh = (/** @type {number} */ n) => (n >= 1e6 ? `${(n / 1e6).toFixed(1)} GWh` : n >= 1e4 ? `${num(n / 1000)} MWh` : `${num(n)} kWh`);
-	/** a cost in loads, short */
-	const costOf = (/** @type {Record<string, number>} */ c) =>
-		Object.entries(c)
-			.map(([w, n]) => `${n} ${label(w).toLowerCase()}`)
-			.join(', ') || 'nothing';
+	/** a recipe side as a list: "10 planks, 5 steel, 1.5 energy" @param {Record<string, number>} m */
+	const list = (m) => side(m, ', ');
+	/** a stage's three recipes, as its title says them @param {{ label: string, build: any, keep: any, make: any, does?: string }} s @param {boolean} up */
+	const titleOf = (s, up) =>
+		`${s.label}\n${up ? 'Grow to it' : 'Build it'}: ${list(s.build.in)}\nKeep it, a year: ${list(s.keep.in)}\nMake, a year: ${s.make && Object.keys(s.make.out).length ? craftLine(s.make) : (s.does ?? 'nothing')}`;
 </script>
 
 <section class="tree" aria-label="Building tree">
 	<button class="close" onclick={onClose} aria-label="Close">×</button>
 	<p class="eyebrow">How the valley works</p>
 	<h2>Building tree</h2>
-	<p class="about">Each row runs from the land to what it is for, through every stage its building grows: what a stage makes and uses a year, and what growing to it costs (in loads of 5 t). A green stage is one you have. Click a first stage to build it; the next ones grow on its card.</p>
+	<p class="about">Each row runs from the hex it stands on to what it is for, through every stage its building grows. Every stage is three recipes: <b>build</b>, what building it or growing to it takes once (↑ for an upgrade); <b>keep</b>, what standing takes a year; <b>make</b>, what its land and energy make a year. A green stage is one you have. Click a first stage to build it; the next ones grow on its card.</p>
+	<p class="units">1 of anything is a real unit: a ware, land or food {UNIT_OF.ware} · water {UNIT_OF.water} · energy {UNIT_OF.energy} · gold {UNIT_OF.gold}</p>
 
 	<div class="scroll">
 		<div class="grid">
-			<p class="head">Land</p>
+			<p class="head">Hex and land</p>
 			<p class="head stages">Stages, each an upgrade of the one before</p>
 			<p class="head">Makes</p>
 			<p class="head">For</p>
 
 			{#each CHAINS as c (c.type)}
-				<div class="node land"><strong>{c.land}</strong><span>{c.landNote}</span></div>
+				<div class="node land"><strong>{c.hex}</strong><span><b>{c.land}</b>: {c.landNote}</span></div>
 				{#each [0, 1, 2, 3] as k (k)}
 					{@const s = c.stages[k]}
 					{#if s}
-						<button class="node b" class:have={owned[`${c.type}:${s.level}`]} class:first={k === 0} onclick={() => k === 0 && onBuild(c.type)} title={k === 0 ? `Build a ${s.label.toLowerCase()}: ${costOf(s.cost)}` : `Upgrade a ${c.stages[k - 1].label.toLowerCase()} on its card: ${costOf(s.cost)}`}>
+						<button class="node b" class:have={owned[`${c.type}:${s.level}`]} class:first={k === 0} onclick={() => k === 0 && onBuild(c.type)} title={titleOf(s, k > 0)}>
 							<strong>{s.label}{#if owned[`${c.type}:${s.level}`]}<em>×{owned[`${c.type}:${s.level}`]}</em>{/if}</strong>
-							<span>{s.t ? `${num(s.t)} t a year · ${kwh(s.kwh)}` : 'plants young trees, cuts none'}</span>
-							<span class="cost">{k ? '↑ ' : ''}{costOf(s.cost)}</span>
+							<span class="r make"><b>make</b>{Object.keys(s.make.out).length ? craftLine(s.make) : s.does}</span>
+							<span class="r"><b>keep</b>{list(s.keep.in)}</span>
+							<span class="r cost"><b>{k ? '↑ build' : 'build'}</b>{list(s.build.in)}</span>
 						</button>
 					{:else}
 						<div class="gap"></div>
 					{/if}
 				{/each}
-				<div class="node w"><strong><i style:background={WARES[c.ware].color}></i>{label(c.ware)}<em>{Math.floor(stock[c.ware] ?? 0)}</em></strong><span>in your stores, loads</span></div>
+				<div class="node w"><strong><i style:background={WARES[c.ware].color}></i>{label(c.ware)}<em>{ware(stock[c.ware] ?? 0)}</em></strong><span>in your stores</span></div>
 				<div class="node use"><strong>{c.use}</strong><span>{c.useNote}</span></div>
 			{/each}
 
-			<div class="node land"><strong>Hot rock</strong><span>5.5 km down, 175 °C</span></div>
+			<div class="node land"><strong>Village center</strong><span><b>hot rock</b>: 5.5 km down, 175 °C</span></div>
 			{#each GEOTHERMAL as s, k (s.level)}
-				<button class="node b e" class:have={owned[`centre:${s.level}`]} class:first={k === 0} onclick={() => k === 0 && onBuild('centre')} title={k === 0 ? `Found a village: its center stands on geothermal wells, one injector and two producers (${num(s.eur)} €, your first village's come with the valley)` : `Drill two more producers on its village center's card: ${num(s.eur)} €`}>
-					<strong>{s.label}{#if owned[`centre:${s.level}`]}<em>×{owned[`centre:${s.level}`]}</em>{/if}</strong>
-					<span>{s.mw.toFixed(1)} MW · {kwh(s.kwh)} a year</span>
-					<span class="cost">{k ? '↑ ' : ''}{num(s.eur / 1e6)} M €{k ? '' : ' for a new village'}</span>
+				<button class="node b e" class:have={owned[`centre:${s.level}`]} class:first={k === 0} onclick={() => k === 0 && onBuild('centre')} title={titleOf(s, k > 0)}>
+					<strong>{s.label} · {fmt(s.mw)} MW{#if owned[`centre:${s.level}`]}<em>×{owned[`centre:${s.level}`]}</em>{/if}</strong>
+					<span class="r make"><b>make</b>{list(s.make.out)}</span>
+					<span class="r"><b>keep</b>{list(s.keep.in)}</span>
+					<span class="r cost"><b>{k ? '↑ build' : 'build'}</b>{list(s.build.in)}</span>
 				</button>
 			{/each}
 			<div class="gap"></div>
-			<div class="node w e"><strong><i class="bolt"></i>Energy</strong><span>kWh, a flow</span></div>
-			<div class="node use"><strong>People, domes, factories</strong><span>the rest to the grid, {num(GRID_EUR_KWH * 1000)} € a MWh</span></div>
+			<div class="node w e"><strong><i class="bolt"></i>Energy</strong><span>a flow, never stored</span></div>
+			<div class="node use"><strong>People, domes, factories</strong><span>the rest to the grid, {fmt((GRID_EUR_KWH * 1000) / EUR_PER_GOLD)} gold an energy</span></div>
 
-			<div class="node land"><strong>Sun</strong><span>through the domes' glass</span></div>
-			<div class="node b e wide"><strong>Every dome's solar cells</strong><span>{kwh(ENERGY.sunBed)} a bed a year, most in summer; its climate uses {kwh(ENERGY.climateBed)}</span></div>
+			<div class="node land"><strong>Every dome</strong><span><b>sun</b>: through its glass</span></div>
+			<div class="node b e wide"><strong>Its solar cells</strong><span class="r make"><b>make</b>{fmt(SUN.make)} energy a bed a year, most in summer</span><span class="r"><b>keep</b>its climate, {fmt(SUN.climate)} energy a bed a year</span></div>
 			<div class="gap"></div>
 			<div class="gap"></div>
-			<div class="node w e"><strong><i class="bolt"></i>Energy</strong><span>kWh, a flow</span></div>
-			<div class="node use"><strong>People at home</strong><span>{num(ENERGY.home)} kWh a year each</span></div>
+			<div class="node w e"><strong><i class="bolt"></i>Energy</strong><span>a flow, never stored</span></div>
+			<div class="node use"><strong>People at home</strong><span>and the domes' fans and pumps</span></div>
 		</div>
 	</div>
 
 	<p class="label">Homes: one dome that grows</p>
 	<div class="homes">
 		{#each HOMES as h, k (h.level)}
-			<button class="node b" class:have={owned[`house:${h.level}`]} class:first={k === 0} onclick={() => k === 0 && onBuild('house')} title={k === 0 ? `Build a hut of ${h.beds}: ${costOf(h.cost)} and ${num(h.glass)} t of glass, ${num(h.glass * GLASS_EUR_T)} € from the world market` : `Enlarge on the house's card: ${costOf(h.cost)} and ${num(h.glass)} t of glass, ${num(h.glass * GLASS_EUR_T)} €`}>
-				<strong>{h.label} · {h.beds}{#if owned[`house:${h.level}`]}<em>×{owned[`house:${h.level}`]}</em>{/if}</strong>
-				<span>sun {kwh(h.sun)} a year</span>
-				<span class="cost">{k ? '↑ ' : ''}{costOf(h.cost)}, {num(h.glass)} t glass</span>
+			<button class="node b" class:have={owned[`house:${h.level}`]} class:first={k === 0} onclick={() => k === 0 && onBuild('house')} title={titleOf(h, k > 0)}>
+				<strong>{h.label} · {h.beds} beds{#if owned[`house:${h.level}`]}<em>×{owned[`house:${h.level}`]}</em>{/if}</strong>
+				<span class="r make"><b>make</b>{list(h.make.out)}</span>
+				<span class="r"><b>keep</b>{list(h.keep.in)}</span>
+				<span class="r cost"><b>{k ? '↑ build' : 'build'}</b>{list(h.build.in)}</span>
 			</button>
 		{/each}
 	</div>
-	<p class="small">Food and water are not wares: each hex's food forest grows food, the domes' roofs catch rain, and the world market sells the rest and buys what you have spare. Glass comes from the world market, paid in gold as a dome is begun.</p>
+	<p class="small">Make and keep are a year's. Food and water are not wares: each hex's food forest grows food, the domes' roofs catch rain, and the world market sells the rest and buys what you have spare, for gold. What a village's treasury lacks it borrows, up to 125 gold a villager.</p>
 </section>
 
 <style>
@@ -133,6 +136,11 @@
 		line-height: 1.35;
 		color: #47504a;
 	}
+	.units {
+		margin: 0 0 0.5rem;
+		font-size: 0.7rem;
+		color: #6b736d;
+	}
 	.label {
 		margin: 0.6rem 0 0.3rem;
 		font-size: 0.78rem;
@@ -146,7 +154,7 @@
 	}
 	.grid {
 		display: grid;
-		grid-template-columns: 6.6rem repeat(4, 7.6rem) 6.4rem 7.6rem;
+		grid-template-columns: 8rem repeat(4, 10rem) 6.4rem 7.6rem;
 		column-gap: 1rem;
 		row-gap: 0.5rem;
 		width: max-content;
@@ -167,9 +175,9 @@
 		display: flex;
 		flex-direction: column;
 		justify-content: center;
-		gap: 0.05rem;
+		gap: 0.1rem;
 		min-height: 3.3rem;
-		padding: 0.25rem 0.5rem;
+		padding: 0.3rem 0.5rem;
 		border-radius: 10px;
 		font: inherit;
 		font-size: 0.72rem;
@@ -208,6 +216,27 @@
 		font-size: 0.64rem;
 		line-height: 1.25;
 		color: #5c645e;
+	}
+	.node.land span b {
+		font-weight: 600;
+		color: #3f5a2a;
+	}
+	/* a stage's recipe line: its kind, then its wares and energy */
+	.node .r {
+		display: grid;
+		grid-template-columns: 2.6rem 1fr;
+		column-gap: 0.25rem;
+	}
+	.node .r b {
+		font-weight: 600;
+		font-size: 0.58rem;
+		letter-spacing: 0.03em;
+		text-transform: uppercase;
+		color: #8a928c;
+		padding-top: 0.05rem;
+	}
+	.node .r.make {
+		color: #1f2a23;
 	}
 	.node .cost {
 		color: #7b6a4a;
@@ -258,7 +287,7 @@
 	}
 	.homes {
 		display: grid;
-		grid-template-columns: repeat(auto-fill, minmax(8.4rem, 1fr));
+		grid-template-columns: repeat(auto-fill, minmax(10rem, 1fr));
 		gap: 0.5rem 1rem;
 	}
 	.homes .node:first-child::before {

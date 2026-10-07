@@ -16,13 +16,15 @@
  *   · every village eats and drinks, in kg and litres (./food.js): its hexes' food forests grow a share of it, more
  *     each year, it buys the rest by itself, and its roofs fill its tanks with rain;
  *   · every village makes and uses energy, in kWh (./rules.js ENERGY): its center's geothermal wells and its domes'
- *     solar glass make it, its people and factories use it, and the world grid buys what is left over. There is no
- *     goal to win.
+ *     solar glass make it, its people and factories use it, and the world grid buys what is left over;
+ *   · every factory works by its recipe (./rules.js RECIPES, `craft` here): a round of its land and energy in, its ware
+ *     out;
+ *   · what a treasury lacks it borrows, an annuity loan over fifteen years (./market.js LOAN). There is no goal to win.
  */
-import { BIOMES, BUILDINGS, ENERGY, GROWS, GRASS, HOUSE_BEDS, HOUSE_GLASS, HOUSE_MOST, HOUSE_TOP, HOUSE_UP, IRON, LOAD_T, MOUNTAIN, ROUNDS_YEAR, ROUTE_T_KM, START, UNIT_M, WARES, WATER, WOOD, holdsLand, kwhLoad, perRound, sunBedDay, tonnesYear } from './rules.js';
-import { CART, GLASS_EUR_T, GRID_EUR_KWH, HEARTS, NEEDS, NEIGHBOURS, TRADED, WELL_EUR, WORLD, heartsFor, keepOf, live, make, newMarket, orderRule, party, priceIn, request, shortIn, spareIn } from './market.js';
+import { BIOMES, BUILDINGS, BUILD_MWH_T, ENERGY, GROWS, GRASS, HOUSE_BEDS, HOUSE_MOST, HOUSE_TOP, HOUSE_UP, IRON, LAND, LOAD_T, MOUNTAIN, RECIPES, ROUNDS_YEAR, ROUTE_T_KM, START, UNIT_M, WARES, WATER, holdsLand, loadsRound, recipe, sunBedDay, yearOf } from './rules.js';
+import { CART, GRID_EUR_KWH, HEARTS, LOAN, LOAN_PAY, NEEDS, NEIGHBOURS, TRADED, WELL_EUR, WORLD, heartsFor, keepOf, live, loanMonths, make, newMarket, orderRule, party, priceIn, request, shortIn, spareIn } from './market.js';
 import { SE, STEP, findPath, makeGrid } from './hex.js';
-import { CISTERN, FOOD_KG, FRESH_L, KEEP, MOST, PACE, PRICE, RAIN_L, RAIN_MONTH, TANK, WATER_PRICE, WATER_USE, WEEK, YEAR, DAY, calendar, forestShare } from './food.js';
+import { CISTERN, FOOD_KG, FRESH_L, KEEP, MOST, PACE, PRICE, RAIN_L, RAIN_MONTH, TANK, WATER_PRICE, WATER_USE, WEEK, YEAR, DAY, MONTH, calendar, forestShare } from './food.js';
 import { makePlan, spoke } from './plots.js';
 import { growValley } from './map.js';
 
@@ -46,7 +48,7 @@ const LATELY = 13;
 export const woodLevel = (/** @type {any} */ b) => b.level || 2;
 /** a building's level as it stands: a house's size, the wood building's or the steel building's stage (1 for an iron
  * mine) */
-export const levelOf = (/** @type {any} */ b) => (b.type === 'woodcutter' ? woodLevel(b) : b.type === 'ironmine' || b.type === 'clayworks' ? b.level || 1 : b.level);
+export const levelOf = (/** @type {any} */ b) => (b.type === 'woodcutter' ? woodLevel(b) : RECIPES[b.type] ? b.level || 1 : b.level);
 /** the geothermal stages under a village center: an injector and two producers, then two more producers each */
 export const wellsOf = (/** @type {any} */ c) => c.wells ?? 1;
 /** a neighbour city's people when its village is full: six houses of sixteen */
@@ -60,7 +62,7 @@ export function newGame(seed = 7) {
 	const v = growValley(seed);
 	const N = v.W * v.H;
 	const st = {
-		v: 18,
+		v: 19,
 		seed,
 		time: 0,
 		/** days of the valley's calendar gone by (./food.js) */
@@ -119,7 +121,7 @@ export function newGame(seed = 7) {
 /** A game from its saved state. @param {string | object} saved */
 export function loadGame(saved) {
 	const st = typeof saved === 'string' ? JSON.parse(saved) : saved;
-	if (!st || st.v !== 18 || !Array.isArray(st.terrain)) throw new Error('Not a Sandbox 6 game of this kind');
+	if (!st || st.v !== 19 || !Array.isArray(st.terrain)) throw new Error('Not a Sandbox 6 game of this kind');
 	return createSim(st);
 }
 
@@ -898,13 +900,31 @@ export function createSim(st) {
 	const quotaOf = (/** @type {any} */ b) => b.quota ?? 1;
 	/** what a building that waits on its land says: how much its land gives a year, and when the next round is ready */
 	const waits = (/** @type {any} */ b) => {
-		const days = Math.ceil(((1 - quotaOf(b)) * YEAR) / ROUNDS_YEAR[b.type]);
+		const r = RECIPES[b.type], days = Math.ceil(((1 - quotaOf(b)) * YEAR) / r.rounds), land = r.stages[levelOf(b) - 1].make.in[r.land] ?? 0;
+		const when = `${days} ${days === 1 ? 'day' : 'days'}`;
 		return b.type === 'woodcutter'
-			? `Its land grows ${ROUNDS_YEAR[b.type]} trees a year: the next is ready in ${days} ${days === 1 ? 'day' : 'days'}`
-			: b.type === 'clayworks'
-				? `Its kiln fires ${ROUNDS_YEAR[b.type]} rounds a year: the next in ${days} ${days === 1 ? 'day' : 'days'}`
-				: `Its iron gives ${ROUNDS_YEAR[b.type] * 25} t of ore a year: the next 25 t in ${days} ${days === 1 ? 'day' : 'days'}`;
+			? `Its land grows ${r.rounds} trees a year: the next is ready in ${when}`
+			: `Its land gives ${r.rounds} rounds a year of ${land} t of ${LAND[/** @type {keyof typeof LAND} */ (r.land)].label}: the next in ${when}`;
 	};
+	/**
+	 * The crafting engine at work: a factory's round by its make recipe at its stage (./rules.js RECIPES). Its land gave
+	 * the round already (its quota); the energy it takes is booked to its village's grid, and what it makes goes out to
+	 * its stop a truckload at a time. How many loads it made. (Its build recipe is its builders' work, and its keep its
+	 * village's upkeep: see finish and settlements.)
+	 * @param {any} b
+	 */
+	function craft(b) {
+		const r = recipe(b.type, levelOf(b)), t = T(b);
+		if (!r) return 0;
+		const n = Math.round(loadsRound(b.type, levelOf(b)));
+		for (let k = 0; k < n; k++) {
+			b.out++;
+			made(/** @type {string} */ (t.out));
+		}
+		b.lately = (b.lately ?? 0) + n;
+		book(b, 'kwhWork', (r.make.in.energy ?? 0) * 1000);
+		return n;
+	}
 	function work(/** @type {any} */ b, /** @type {number} */ dt) {
 		const t = T(b);
 		// a wood or steel building's land gives it so much a year, on the calendar
@@ -937,14 +957,13 @@ export function createSim(st) {
 				busy = true;
 				b.timer -= dt;
 				if (b.timer <= 0) {
-					// the steel and clay buildings make more from a round of their pit at each stage, and use energy for it
-					const n = GROWS[b.type] ? perRound(b.type, levelOf(b)) : t.yield ?? 1;
-					for (let k = 0; k < n; k++) {
-						b.out++;
-						made(/** @type {string} */ (t.out));
-					}
-					b.lately = (b.lately ?? 0) + n;
-					book(b, 'kwhWork', n * kwhLoad(b.type, levelOf(b)));
+					// a round of its recipe: more from the same land at each stage, and energy for it
+					if (RECIPES[b.type]) craft(b);
+					else
+						for (let k = 0; k < (t.yield ?? 1); k++) {
+							b.out++;
+							made(/** @type {string} */ (t.out));
+						}
 					if (t.ore) b.deposit--;
 				}
 			}
@@ -952,6 +971,11 @@ export function createSim(st) {
 			else if (b.timer > 0) b.status = 'Working';
 			else if (b.paused) b.status = 'Paused';
 			else if (t.ore && b.deposit <= 0) b.status = 'The vein is used up';
+			else if (RECIPES[b.type] && !loadsRound(b.type, levelOf(b))) {
+				// a first stage that only gets its land ready (a sand pit): it makes nothing until it is upgraded
+				const next = recipe(b.type, levelOf(b) + 1);
+				b.status = `It ${recipe(b.type, levelOf(b))?.does ?? 'makes nothing yet'}${next ? `: upgrade it to a ${next.label.toLowerCase()}` : ''}`;
+			}
 			else if (stocked(/** @type {string} */ (t.out)) >= ENOUGH && !exported(/** @type {string} */ (t.out))) b.status = 'Resting: the storehouses are full of it';
 			else if (ROUNDS_YEAR[b.type] && quotaOf(b) < 1) b.status = waits(b);
 			else {
@@ -1001,6 +1025,8 @@ export function createSim(st) {
 		}
 	}
 	function finish(/** @type {any} */ b) {
+		// its build recipe's energy: its builders' cranes, welding and presses, for every tonne it is built of
+		book(b, 'kwhWork', Object.values(b.cost).reduce((/** @type {number} */ s, /** @type {any} */ n) => s + n, 0) * LOAD_T * BUILD_MWH_T * 1000);
 		// a village center that opens joins the trade routes dug to it
 		if (b.type === 'centre') st.tunV++;
 		if (b.type === 'house' || GROWS[b.type]) {
@@ -1052,13 +1078,12 @@ export function createSim(st) {
 			u.inside = true;
 			u.job = 'w-in';
 			if (u.ware) {
-				const n = b.type === 'woodcutter' ? WOOD[woodLevel(b) - 1].planks : T(b).yield ?? 1;
-				for (let k = 0; k < n; k++) {
-					b.out++;
-					made(u.ware);
-				}
-				b.lately = (b.lately ?? 0) + n;
-				book(b, 'kwhWork', n * kwhLoad(b.type, levelOf(b)));
+				if (RECIPES[b.type]) craft(b);
+				else
+					for (let k = 0; k < (T(b).yield ?? 1); k++) {
+						b.out++;
+						made(u.ware);
+					}
 				u.ware = '';
 			}
 			b.timer = /** @type {number} */ (T(b).rest);
@@ -1190,13 +1215,17 @@ export function createSim(st) {
 	}
 	/** the gold your village centers joined to one of yours hold, in € (HEARTs) */
 	const goldIn = (/** @type {any} */ a) => pool(a).reduce((s, c) => s + Math.max(0, c.hearts ?? 0), 0);
+	/** what a village center may still borrow, in € (./market.js LOAN): 125 gold a villager, less what it owes and what
+	 * it is behind */
+	const credit = (/** @type {any} */ c) => (c.type === 'centre' ? Math.max(0, LOAN.perHead * villagePeople(villageAt(c.node)) - (c.loan?.left ?? 0) - Math.max(0, -(c.hearts ?? 0))) : 0);
 	/** what the world market asks for what the stores joined to a village center lack of a cost, in € */
 	const lacking = (/** @type {any} */ a, /** @type {Record<string, number>} */ cost) =>
 		Object.entries(cost).reduce((e, [w, n]) => e + Math.max(0, n - pool(a).reduce((s, c) => s + (c.stock[w] ?? 0), 0)) * (WORLD[w]?.eur ?? Infinity), 0);
 	/** whether a village center can pay for something: from the stores joined to it, what they lack bought from the
-	 * world market with their gold, and gold besides (a dome's glass) @param {any} a @param {Record<string, number>} cost */
-	const payable = (a, cost, eur = 0) => lacking(a, cost) + eur <= goldIn(a);
-	/** gold paid out of the treasuries joined to a village center, its own first, for the world market @param {any} a @param {number} eur */
+	 * world market with their gold, and gold besides; what they lack of that it borrows @param {any} a @param {Record<string, number>} cost */
+	const payable = (a, cost, eur = 0) => lacking(a, cost) + eur <= goldIn(a) + credit(a);
+	/** gold paid out of the treasuries joined to a village center, its own first, for the world market; what they lack
+	 * it borrows @param {any} a @param {number} eur */
 	function spend(a, eur) {
 		let left = eur;
 		for (const c of pool(a)) {
@@ -1207,6 +1236,12 @@ export function createSim(st) {
 			book(c, 'wimp', k);
 			book(c, 'wares', k);
 			left -= k;
+		}
+		if (left > 0) {
+			a.hearts = (a.hearts ?? 0) - left;
+			book(a, 'imp', left);
+			book(a, 'wimp', left);
+			book(a, 'wares', left);
 		}
 	}
 	/** pay for something (see payable): what the stores lack is bought from the world market first, then it all goes,
@@ -1221,17 +1256,6 @@ export function createSim(st) {
 		}
 		payPooled(a, cost);
 		if (eur > 0) spend(a, eur);
-	}
-	/** a dome's glass, in €: from the world market, as the dome is begun @param {number} tonnes */
-	const glassEur = (tonnes) => tonnes * GLASS_EUR_T;
-	/** buy a dome's glass for the village a node lies in, or say why it cannot @param {number} node @param {number} tonnes */
-	function buyGlass(node, tonnes) {
-		const c = myCentres().find((x) => villageAt(x.node) === villageAt(node));
-		const eur = glassEur(tonnes);
-		if (!c || goldIn(c) < eur) return `Its ${Math.round(tonnes)} t of glass cost ${Math.round(eur).toLocaleString('en-US')} € from the world market: the treasury holds ${Math.round(c ? goldIn(c) : 0).toLocaleString('en-US')} €`;
-		spend(c, eur);
-		st.market.fromWorld.glass = (st.market.fromWorld.glass ?? 0) + tonnes;
-		return '';
 	}
 	/** a village center's stop: the middle of its hex, where its trade routes start */
 	const stopAt = (/** @type {any} */ c) => st.flags[c.flag]?.node ?? c.node;
@@ -1438,7 +1462,8 @@ export function createSim(st) {
 	function worldBuy(c, w, n, keep = 0) {
 		const price = WORLD[w]?.eur;
 		if (!price) return 0;
-		const k = Math.min(n, Math.floor(((c.hearts ?? 0) - keep) / price));
+		// what its treasury lacks it borrows
+		const k = Math.min(n, Math.floor((Math.max(0, c.hearts ?? 0) - keep + credit(c)) / price));
 		if (k < 1) return 0;
 		c.hearts -= k * price;
 		c.stock[w] = (c.stock[w] ?? 0) + k;
@@ -1680,8 +1705,8 @@ export function createSim(st) {
 		// what its store lacks of what its people eat now: from your joined villages with more than two weeks put by,
 		// then from the world market
 		const keepOf = (/** @type {any} */ p) => p.pop * FOOD_KG * KEEP;
-		/** what a treasury can pay, in HEARTs (€): it buys only with the gold it has, never into debt */
-		const can = (/** @type {any} */ c) => Math.max(0, c.hearts ?? 0);
+		/** what a treasury can pay, in HEARTs (€): all it needs, borrowing what it lacks */
+		const can = (/** @type {any} */ c) => Math.max(0, c.hearts ?? 0) + credit(c);
 		for (const x of vs) {
 			let short = want.get(x.p).need - x.p.kg;
 			if (short <= 0) continue;
@@ -1816,10 +1841,51 @@ export function createSim(st) {
 			for (const [k, n] of Object.entries(p.pend ?? {})) d[k] = (d[k] ?? 0) + n;
 			p.pend = {};
 			const was = (p.flowW ?? 0) * (1 - fade), w = was + fade;
-			for (const k of ['grown', 'eaten', 'fromVillages', 'fromWorld', 'sold', 'exported', 'spoiled', 'spent', 'earned', 'rain', 'boughtL', 'used', 'waterSpent', 'wares', 'imp', 'exp', 'wimp', 'wexp', 'kwhWell', 'kwhSun', 'kwhHome', 'kwhClimate', 'kwhCentre', 'kwhWork', 'kwhSold', 'kwhBought', 'gridEarned', 'gridSpent'])
+			for (const k of ['grown', 'eaten', 'fromVillages', 'fromWorld', 'sold', 'exported', 'spoiled', 'spent', 'earned', 'rain', 'boughtL', 'used', 'waterSpent', 'wares', 'imp', 'exp', 'wimp', 'wexp', 'interest', 'repaid', 'borrowed', 'kwhWell', 'kwhSun', 'kwhHome', 'kwhClimate', 'kwhCentre', 'kwhWork', 'kwhSold', 'kwhBought', 'gridEarned', 'gridSpent'])
 				p.flow[k] = ((p.flow[k] ?? 0) * was + (((d[k] ?? 0) * WEEK) / dd) * fade) / w;
 			p.flowW = w;
 		}
+	}
+	/**
+	 * Each village's loan (./market.js LOAN): what is owed grows by 1% a month, and the treasury pays its monthly
+	 * payment, a share of the calendar at a time; what a treasury lacks (it went below nothing paying for something), it
+	 * borrows, which adds that borrowing's own payment, fifteen years of it.
+	 * @param {{ c: any, p: any }[]} vs @param {number} dd days of the valley's calendar
+	 */
+	function loans(vs, dd) {
+		for (const { c, p } of vs) {
+			const L = c.loan;
+			if (L) {
+				const interest = L.left * (Math.pow(1 + LOAN.rate, dd / MONTH) - 1);
+				L.left += interest;
+				const due = Math.min(L.left, (L.pay * dd) / MONTH);
+				L.left -= due;
+				c.hearts = (c.hearts ?? 0) - due;
+				(p.pend ??= {}), (p.pend.interest = (p.pend.interest ?? 0) + interest), (p.pend.repaid = (p.pend.repaid ?? 0) + due);
+				if (L.left < 1) c.loan = null;
+			}
+			// what it is behind it borrows, as far as its loan reaches; beyond that it stays behind
+			const x = Math.min(-(c.hearts ?? 0), LOAN.perHead * p.pop - (c.loan?.left ?? 0));
+			if (x > 0) {
+				c.hearts += x;
+				c.loan = { left: (c.loan?.left ?? 0) + x, pay: (c.loan?.pay ?? 0) + x * LOAN_PAY, since: c.loan?.since ?? st.cal };
+				(p.pend ??= {}), (p.pend.borrowed = (p.pend.borrowed ?? 0) + x);
+			}
+		}
+	}
+	/** what a village's factories take a year to keep standing, by their keep recipes: wares in loads, energy in kWh
+	 * @param {number} v */
+	function upkeepIn(v) {
+		/** @type {Record<string, number>} */
+		const loads = {};
+		let kwh = 0;
+		for (const b of mineIn(v)) {
+			const r = RECIPES[b.type] && (b.stage === 'live' || b.level > 0) ? recipe(b.type, levelOf(b)) : null;
+			if (!r) continue;
+			for (const [w, t] of Object.entries(r.keep.in)) if (w === 'energy') kwh += t * 1000;
+			else loads[w] = (loads[w] ?? 0) + t / LOAD_T;
+		}
+		return { loads, kwh };
 	}
 	/** @param {number} dt seconds of play @param {number} dd days of the valley's calendar */
 	function settlements(dt, dd) {
@@ -1834,13 +1900,18 @@ export function createSim(st) {
 			c.hearts = ((c.hearts ?? 0) > 0 ? c.hearts * wane : c.hearts ?? 0) + (HEARTS.perHour * p.pop * dd) / HEARTS.hour;
 		}
 		eatAndDrink(vs, dd);
-		for (const { c, p } of vs) {
+		loans(vs, dd);
+		for (const { v, c, p } of vs) {
+			// its homes' upkeep and its factories' keep recipes: wares from its stores, energy from its grid
+			const k = upkeepIn(v);
 			live(
 				p,
 				p.pop,
 				dd,
-				(w) => ((c.stock[w] ?? 0) >= 1 ? ((c.stock[w] -= 1), true) : false)
+				(w) => ((c.stock[w] ?? 0) >= 1 ? ((c.stock[w] -= 1), true) : false),
+				k.loads
 			);
+			(p.pend ??= {}), (p.pend.kwhWork = (p.pend.kwhWork ?? 0) + (k.kwh * dd) / YEAR);
 		}
 		// your city, as the market and the page see it: everyone counted
 		const you = st.parties[PLAYER];
@@ -2045,7 +2116,7 @@ export function createSim(st) {
 			if (st.terrain[n] !== GRASS || st.terrain[mid] !== GRASS) return 'Needs open grass';
 			if (st.obj[n]?.k === 'bld' || st.road[n] || st.obj[mid]?.k === 'bld' || st.road[mid]) return 'Something stands here';
 			const f = founder(v);
-			if (!f) return plan.villages[v].near.some((x) => st.villageOwner[x] === PLAYER) ? `The village next to it cannot pay for its center, its geothermal wells (${Math.round(WELL_EUR / 1e6)} M €) and the trade route to it: fired clay, and gold for what its stores lack` : 'Too far: found villages next to your city';
+			if (!f) return plan.villages[v].near.some((x) => st.villageOwner[x] === PLAYER) ? `The village next to it cannot pay for its center, its geothermal wells (${(WELL_EUR / HEARTS.perGold).toLocaleString('en-US')} gold) and the trade route to it, fired clay, from what its treasury holds and may borrow` : 'Too far: found villages next to your city';
 			return '';
 		}
 		if (middle) return 'The village center fills the middle of the village';
@@ -2063,7 +2134,7 @@ export function createSim(st) {
 		// a building clears its own ground: a tree there is felled, a rock broken, a field ploughed under
 		if (st.obj[n] && !['tree', 'rock', 'field'].includes(st.obj[n].k)) return 'Something stands here';
 		if (st.road[n]) return 'A road runs here';
-		if (t.on === 'mountain' ? st.terrain[n] !== MOUNTAIN : t.on === 'any' ? st.terrain[n] !== GRASS && st.terrain[n] !== MOUNTAIN : st.terrain[n] !== GRASS) return t.on === 'mountain' ? 'Mines stand on mountains' : t.on === 'any' ? 'Needs dry land' : 'Needs open grass';
+		if (t.on === 'mountain' ? st.terrain[n] !== MOUNTAIN : t.on === 'any' ? st.terrain[n] === WATER : st.terrain[n] !== GRASS) return t.on === 'mountain' ? 'Mines stand on mountains' : t.on === 'any' ? 'Needs dry land' : 'Needs open grass';
 		const c = plan.centre[plan.plotOf[n]];
 		if (st.terrain[c] === WATER) return 'The middle of its settlement is water';
 		const f = flagAt(c);
@@ -2175,9 +2246,9 @@ export function createSim(st) {
 			const beds = HOUSE_BEDS[b.level - 1];
 			return { made: beds * sunBedDay(calendar(st.cal).month) * 7, used: homeDay(beds) * 7 + ((beds * ENERGY.climateBed) / YEAR) * 7, next: null };
 		}
-		if (!GROWS[b.type]) return null;
-		const k = levelOf(b), use = (/** @type {number} */ l) => (tonnesYear(b.type, l) / LOAD_T) * kwhLoad(b.type, l) * week;
-		return { made: 0, used: use(k), next: k < GROWS[b.type].levels.length ? use(k + 1) : null };
+		if (!RECIPES[b.type]) return null;
+		const k = levelOf(b), use = (/** @type {number} */ l) => ((yearOf(b.type, l).in.energy ?? 0) + (recipe(b.type, l)?.keep.in.energy ?? 0)) * 1000 * week;
+		return { made: 0, used: use(k), next: k < RECIPES[b.type].stages.length ? use(k + 1) : null };
 	}
 
 	return {
@@ -2227,11 +2298,6 @@ export function createSim(st) {
 		build(/** @type {string} */ type, /** @type {number} */ n, connect = true) {
 			const why = canBuild(type, n);
 			if (why) return { ok: false, why };
-			// a house's glass comes from the world market as it is begun
-			if (type === 'house') {
-				const no = buyGlass(n, HOUSE_GLASS[0]);
-				if (no) return { ok: false, why: no };
-			}
 			// a village center stands on the middle of its hex: what grew there is cleared
 			if (type === 'centre')
 				clearAround(plan.centre[plan.plotOf[n]], 2);
@@ -2290,15 +2356,11 @@ export function createSim(st) {
 		 * meanwhile */
 		upgrade(/** @type {number} */ id) {
 			const b = st.buildings[id];
-			if (!b || b.owner !== PLAYER || (b.type !== 'house' && !GROWS[b.type])) return { ok: false, why: 'Only your houses, your wood and your steel grow' };
+			if (!b || b.owner !== PLAYER || (b.type !== 'house' && !GROWS[b.type])) return { ok: false, why: 'Only your houses and your factories grow' };
 			if (b.stage !== 'live') return { ok: false, why: 'It is being built' };
 			const grows = GROWS[b.type];
 			b.level = levelOf(b);
 			if (b.level >= (grows ? grows.levels.length : HOUSE_TOP)) return { ok: false, why: grows ? `It is a ${grows.levels[b.level - 1].label.toLowerCase()} already` : 'It is as large as a house gets' };
-			if (!grows) {
-				const no = buyGlass(b.node, HOUSE_GLASS[b.level]);
-				if (no) return { ok: false, why: no };
-			}
 			b.cost = { ...(grows ? grows.up : HOUSE_UP)[b.level - 1] };
 			for (const w of Object.keys(b.cost)) (b.used[w] = 0), (b.got[w] = 0), (b.inc[w] = 0);
 			b.stage = 'site';
@@ -2317,7 +2379,7 @@ export function createSim(st) {
 			if (!c) return { ok: false, why: 'Only your villages buy' };
 			if (!WORLD[w]) return { ok: false, why: 'The world market does not sell that' };
 			const k = worldBuy(c, w, n);
-			return k ? { ok: true, n: k } : { ok: false, why: `Its treasury holds less than ${Math.round(WORLD[w].eur).toLocaleString('en-US')} €` };
+			return k ? { ok: true, n: k } : { ok: false, why: `Its treasury cannot pay ${(WORLD[w].eur / HEARTS.perGold).toLocaleString('en-US')} gold, even borrowing` };
 		},
 		/** sell wares to the world market from the village a node lies in: an export, into its treasury */
 		sell(/** @type {number} */ node, /** @type {string} */ w, n = 1) {
@@ -2382,7 +2444,7 @@ export function createSim(st) {
 			if (!a || !b || a.type !== 'centre' || a.owner !== PLAYER || b.stage !== 'live') return { ok: false, why: 'Not a village center' };
 			if (reach(a.id).has(b.id)) return { ok: false, why: 'Already joined' };
 			const cost = tunnelCost(a.node, b.node);
-			if (!payable(a, { clay: cost })) return { ok: false, why: `The route takes ${(cost * LOAD_T).toLocaleString('en-US')} t of fired clay: what your stores lack costs ${Math.round(lacking(a, { clay: cost })).toLocaleString('en-US')} € from the world market` };
+			if (!payable(a, { clay: cost })) return { ok: false, why: `The route takes ${(cost * LOAD_T).toLocaleString('en-US')} t of fired clay: what your stores lack costs ${Math.round(lacking(a, { clay: cost }) / HEARTS.perGold).toLocaleString('en-US')} gold from the world market` };
 			dig(a, b);
 			say(`A trade route now runs to ${b.owner === PLAYER ? st.vill[villageAt(b.node)]?.name ?? 'your village' : st.parties[b.owner].name}`, b.node, 'good');
 			return { ok: true };
@@ -2393,7 +2455,7 @@ export function createSim(st) {
 			const c = st.buildings[id];
 			if (!c || c.type !== 'centre' || c.owner !== PLAYER || c.stage !== 'live') return { ok: false, why: 'Only your village centers have geothermal wells' };
 			if (wellsOf(c) >= ENERGY.wellsMost) return { ok: false, why: `Its geothermal plant is at its last stage, ${ENERGY.wellsMost} of ${ENERGY.wellsMost}` };
-			if (goldIn(c) < WELL_EUR) return { ok: false, why: `Two more producers cost ${WELL_EUR.toLocaleString('en-US')} €: the treasury holds ${Math.round(goldIn(c)).toLocaleString('en-US')} €` };
+			if (!payable(c, {}, WELL_EUR)) return { ok: false, why: `Drilling takes ${(WELL_EUR / HEARTS.perGold).toLocaleString('en-US')} gold: more than its treasury holds and may borrow, 125 gold a villager` };
 			spend(c, WELL_EUR);
 			c.wells = wellsOf(c) + 1;
 			say(`${st.vill[villageAt(c.node)]?.name ?? 'Your village'} drilled two more geothermal producers: ${((c.wells * ENERGY.wellKw) / 1000).toLocaleString('en-US')} MW`, c.node, 'good');
@@ -2469,7 +2531,8 @@ export function createSim(st) {
 			const rows = [
 				row('plank', 'Planks', ['plank'], lived && (p.owe?.plank ?? 0) > 2),
 				row('steel', 'Steel', ['steel'], lived && (p.owe?.steel ?? 0) > 2),
-				row('clay', 'Fired clay', ['clay'], false)
+				row('clay', 'Fired clay', ['clay'], false),
+				row('glass', 'Glass', ['glass'], false)
 			].filter((r) => r.need > 0 || r.have > 0);
 			/** @type {{ tone: string, text: string, node: number }[]} */
 			const notes = [];
@@ -2484,9 +2547,17 @@ export function createSim(st) {
 				pop,
 				beds: bed,
 				cap,
-				/** its treasury, in gold (below 0, a debt to your other villages), and in euros: a HEART is a euro */
+				/** its treasury, in gold, and in HEARTs (€ of real prices, a thousandth of a gold) */
 				gold: (c.hearts ?? 0) / HEARTS.perGold,
 				eur: c.hearts ?? 0,
+				/** its loan, €: what it still owes, what it pays a month (interest and repayment), the months left; and lately,
+				 * a week, the interest, what it paid back and what it borrowed */
+				loan: c.loan ? { left: c.loan.left, pay: c.loan.pay, months: loanMonths(c.loan.left, c.loan.pay) } : null,
+				/** the most it may owe, €: 125 gold a villager */
+				loanMost: LOAN.perHead * pop,
+				interest: f.interest ?? 0,
+				repaid: f.repaid ?? 0,
+				borrowed: f.borrowed ?? 0,
 				/** what its settlers issue a week, in HEARTs (€) */
 				income: HEARTS.perHour * 24 * 7 * pop,
 				/** what the world market trades with it, your order for each ware, and what it spent there on wares a week, € */
@@ -2583,9 +2654,11 @@ export function createSim(st) {
 				beds: b.type === 'house' && b.level ? HOUSE_BEDS[b.level - 1] : 0,
 				upgrading: (b.type === 'house' || !!GROWS[b.type]) && b.stage === 'site' && b.level > 0,
 				up: b.type === 'house' && b.level >= 1 && b.level < HOUSE_TOP ? HOUSE_UP[b.level - 1] : GROWS[b.type] && b.stage === 'live' && levelOf(b) < GROWS[b.type].levels.length ? GROWS[b.type].up[levelOf(b) - 1] : null,
-				/** the glass enlarging a house takes, in tonnes, and what it costs from the world market, € */
-				upGlass: b.type === 'house' && b.level >= 1 && b.level < HOUSE_TOP ? HOUSE_GLASS[b.level] : 0,
-				upGlassEur: b.type === 'house' && b.level >= 1 && b.level < HOUSE_TOP ? glassEur(HOUSE_GLASS[b.level]) : 0,
+				/** a factory's recipe at its stage, and at the next (./rules.js RECIPES) */
+				recipe: RECIPES[b.type] ? recipe(b.type, levelOf(b)) : null,
+				next: RECIPES[b.type] ? recipe(b.type, levelOf(b) + 1) ?? null : null,
+				stages: RECIPES[b.type]?.stages.length ?? 0,
+				rounds: RECIPES[b.type]?.rounds ?? 0,
 				/** its energy, kWh a week: what a village center's wells make, a house's solar glass this month and what its
 				 * beds use when full, what a factory uses working all its land gives it, and at its next stage */
 				power: power(b),

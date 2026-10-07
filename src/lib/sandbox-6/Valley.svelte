@@ -8,8 +8,9 @@
 	import { onDestroy, onMount } from 'svelte';
 	import TouchStick from '$lib/touch/TouchStick.svelte';
 	import { WorldBar } from '$lib/sandbox-kit';
-	import { BUILDINGS, CLAY, ENERGY, HOUSE_BEDS, HOUSE_GLASS, HOUSE_SIZE, LOAD_T, MENU, PLANK_T, ROUNDS_YEAR, STEEL, WARES, WARE_ORDER, WOOD } from './rules.js';
-	import { EUR_PER_GOLD, GLASS_EUR_T, GRID_EUR_KWH } from './market.js';
+	import { BIOMES, BUILDINGS, ENERGY, HOUSE_BEDS, HOUSE_SIZE, LAND, LOAD_T, MENU, RECIPES, WARES, buildIn } from './rules.js';
+	import { EUR_PER_GOLD, GRID_EUR_KWH } from './market.js';
+	import { UNIT_OF, costLine, craftLine, energy, fmt, food, gold, nameOf, side, ware, water } from './units.js';
 	import { MONTHS, PRICE, SIM_SPEED, SPEEDS, WATER_PRICE } from './food.js';
 	import { PLAYER, wellsOf } from './sim.js';
 	import Tree from './Tree.svelte';
@@ -58,7 +59,7 @@
 	let links = $state([]);
 	/** what a Connect button said when the route could not be dug */
 	let linkWhy = $state('');
-	/** what an Enlarge button said when the house could not grow (its glass costs more gold than the treasury holds) */
+	/** what an Enlarge or Upgrade button said when it could not grow */
 	let upWhy = $state('');
 	/** what the Drill button said when the wells could not be paid */
 	let drillWhy = $state('');
@@ -71,7 +72,7 @@
 	const wt = $derived(home?.water);
 	const pw = $derived(home?.power);
 	/** its energy a week: what its wells and domes make, what its people and factories use, and what is left for the
-	 * world grid (kWh, and €) */
+	 * world grid (kWh, and € of real prices: the page shows energy and gold) */
 	const pwMade = $derived(pw ? pw.well + pw.sun : 0);
 	const pwUsed = $derived(pw ? pw.home + pw.climate + pw.centre + pw.work : 0);
 	const pwGrid = $derived(pw ? pw.sold - pw.bought : 0);
@@ -83,46 +84,31 @@
 	});
 	const homeCash = $derived(home ? (home.cash.exp - home.cash.imp) / EUR_PER_GOLD : 0);
 	/** gold with its sign */
-	const signed = (/** @type {number} */ g) => `${g > 0.05 ? '+' : ''}${goldOf(g)}`;
+	const signed = (/** @type {number} */ g) => `${g > 0.05 ? '+' : ''}${fmt(g)}`;
 	let seenMsg = 0;
 	/** @type {{ text: string, tone: string, node: number, key: number }[]} */
 	let toasts = $state([]);
 
 	const label = (/** @type {string} */ w) => WARES[w]?.label ?? w;
-	/** a number of kg, litres or euros, whole, with its thousands marked */
+	/** a number of people, whole, with its thousands marked */
 	const num = (/** @type {number} */ n) => Math.round(n).toLocaleString('en-US').replace('-', '−');
-	/** gold, to a tenth while it is little */
-	const goldOf = (/** @type {number} */ g) => (Math.abs(g) < 100 ? (Math.round(g * 10) / 10).toLocaleString('en-US') : num(g)).replace('-', '−');
+	/** gold, from gold */
+	const goldOf = (/** @type {number} */ g) => fmt(g);
 	/** the valley's date */
 	const when = (/** @type {{ year: number, month: number, day: number }} */ d) => `year ${d.year}, month ${d.month}, day ${d.day}`;
-	/** how full a store is against what it keeps, as a bar's class */
-	const fill = (/** @type {number} */ have, /** @type {number} */ want) => (have >= want * 0.99 ? 'good' : have >= want / 2 ? 'fair' : 'poor');
-	/** planks (or steel) as tonnes: a load is 5 t */
-	const tonnes = (/** @type {number} */ planks) => {
-		const t = planks * PLANK_T;
-		return `${t >= 100 ? num(t) : Number.isInteger(t) ? t : t.toFixed(t < 1 ? 2 : 1)} t`;
-	};
-	/** what the wood building cuts from a tree at a stage */
-	const perTree = (/** @type {number} */ level) => `${WOOD[level - 1].planks} plank${WOOD[level - 1].planks === 1 ? '' : 's'} (${tonnes(WOOD[level - 1].planks)})`;
-	/** what the steel building makes from a load of ore at a stage */
-	const perLoad = (/** @type {number} */ level) => `${STEEL[level - 1].struts} load${STEEL[level - 1].struts === 1 ? '' : 's'} of joints (${tonnes(STEEL[level - 1].struts)})`;
-	/** what the clay building makes from a round of its pit at a stage */
-	const perRound = (/** @type {number} */ level) => `${CLAY[level - 1].blocks} load${CLAY[level - 1].blocks === 1 ? '' : 's'} of fired clay (${tonnes(CLAY[level - 1].blocks)})`;
-	/** energy in MWh, short: whole, or to a tenth while it is little */
-	const mwh = (/** @type {number} */ k) => (k >= 10000 ? num(k / 1000) : (Math.round(k / 100) / 10).toLocaleString('en-US'));
-	/** energy: kWh, or MWh once it is many */
-	const kwh = (/** @type {number} */ n) => (Math.abs(n) >= 10000 ? `${num(n / 1000)} MWh` : `${num(n)} kWh`);
 	/** what a building's card says of its energy, a week */
 	const powerLine = (/** @type {{ made: number, used: number, next: number | null }} */ p, /** @type {string} */ type) =>
 		[
-			p.made ? `makes ${kwh(p.made)}${type === 'house' ? ' of solar this month' : ' of geothermal'}` : '',
-			p.used ? `uses ${kwh(p.used)}${type === 'house' ? ' for its climate and its people, every bed taken' : type === 'centre' ? ' for its hall, storehouse and routes' : ' working all its land gives it'}` : '',
-			p.next !== null ? `${p.next > p.used ? 'more' : 'less'} at its next stage: ${kwh(p.next)}` : ''
+			p.made ? `makes ${energy(p.made)}${type === 'house' ? ' of solar this month' : ' of geothermal'}` : '',
+			p.used ? `uses ${energy(p.used)}${type === 'house' ? ' for its climate and its people, every bed taken' : type === 'centre' ? ' for its hall, storehouse and routes' : ', working all its land gives it and keeping its dome'}` : '',
+			p.next !== null ? `${p.next > p.used ? 'more' : 'less'} at its next stage: ${energy(p.next)}` : ''
 		]
 			.filter(Boolean)
 			.join(' · ') || 'none';
-	/** glass, on a chip: it is not a ware, the world market sells it for gold */
-	const GLASS_COLOR = '#a9d3e0';
+	/** a cost on a button: its wares, in units, and its builders' energy */
+	const buildOf = (/** @type {Record<string, number>} */ loads) => buildIn(Object.fromEntries(Object.entries(loads).map(([w, n]) => [w, n * LOAD_T])));
+	/** years and months, short */
+	const span = (/** @type {number} */ months) => (!Number.isFinite(months) ? 'never' : months >= 12 ? `${fmt(months / 12)} years` : `${Math.ceil(months)} months`);
 
 	function refresh() {
 		if (!game) return;
@@ -286,8 +272,11 @@
 	});
 
 	const sitesCost = (/** @type {Record<string, number>} */ cost) => Object.entries(cost);
-	const chainOf = (/** @type {any} */ t) =>
-		t.kind === 'centre' ? 'Its village’s storehouse, market and hall' : t.kind === 'house' ? 'Beds for 2, doubling each time it is enlarged, up to 248; plants its hex’s food forest' : t.kind === 'forester' ? 'Plants trees' : `${t.inputs?.length ? t.inputs.map((/** @type {string[]} */ s) => s.map(label).join(' or ')).join(' + ') + ' → ' : ''}${t.out ? label(t.out) : ''}`;
+	const chainOf = (/** @type {any} */ t) => {
+		const r = RECIPES[t.id];
+		if (r) return `On a ${BIOMES[/** @type {keyof typeof BIOMES} */ (r.biome)].label.toLowerCase()} hex: ${LAND[/** @type {keyof typeof LAND} */ (r.land)].label} → ${label(t.out).toLowerCase()}, grows in ${r.stages.length} stages`;
+		return t.kind === 'centre' ? 'Its village’s storehouse, market, hall and geothermal power plant' : t.kind === 'house' ? 'Beds for 2, doubling each time it is enlarged, up to 248; plants its hex’s food forest' : '';
+	};
 </script>
 
 <div class="valley">
@@ -307,7 +296,7 @@
 		<button class:on={mode === 'road'} onclick={() => tool('road')} title="Road (R)"><span class="ic">⟋</span>Road</button>
 		<button class:on={mode === 'demolish'} onclick={() => tool('demolish')} title="Tear down (X)"><span class="ic">✕</span>Tear down</button>
 		<button class:on={treeOpen} onclick={() => ((treeOpen = !treeOpen), (menuOpen = false), (marketOpen = false), refresh())} title="The building tree: every chain and every stage of its buildings"><span class="ic">⌥</span>Tree</button>
-		<button class:on={marketOpen} onclick={() => ((marketOpen = !marketOpen), (menuOpen = false), (treeOpen = false), (buyWhy = ''))} title="The world market: buy and sell, and what your village trades a week"><span class="ic">€</span>Market</button>
+		<button class:on={marketOpen} onclick={() => ((marketOpen = !marketOpen), (menuOpen = false), (treeOpen = false), (buyWhy = ''))} title="The world market: buy and sell, and what your village trades a week"><span class="ic">⇄</span>Market</button>
 		<div class="speed" role="group" aria-label="Speed: how much of the calendar a real day holds">
 			<button class:on={speed === 0} onclick={() => (game?.setSpeed(0), (speed = 0))} title="Pause (Space)">❚❚</button>
 			{#each SPEEDS as x (x.s)}
@@ -337,9 +326,9 @@
 							<span class="chain">{chainOf(t)}</span>
 							<span class="cost">
 								{#each sitesCost(t.cost) as [w, n] (w)}
-									<span class="chip" class:short={(summary?.stock[w] ?? 0) < n}><i style:background={WARES[w].color}></i>{n} {label(w).toLowerCase()}</span>
+									<span class="chip" class:short={(summary?.stock[w] ?? 0) < n}><i style:background={WARES[w].color}></i>{ware(n)} {nameOf(w)}</span>
 								{/each}
-								{#if t.id === 'house'}<span class="chip" class:short={(home?.eur ?? 0) < HOUSE_GLASS[0] * GLASS_EUR_T} title="Its glass comes from the world market, paid in gold as it is begun"><i style:background={GLASS_COLOR}></i>{num(HOUSE_GLASS[0])} t glass · {num(HOUSE_GLASS[0] * GLASS_EUR_T)} €</span>{/if}
+								<span class="chip" title="Its builders' energy: their cranes, welding and presses"><i class="bolt"></i>{fmt(buildOf(t.cost).energy)} energy</span>
 							</span>
 						</button>
 					</li>
@@ -362,39 +351,40 @@
 					</div>
 				{/if}
 				<p class="label stats cashline" title="What it took in by exports to the world market and sales to your other villages, less what it paid for imports from them, a week lately. Your goal: more in than out">Cashflow <b class:debt={homeCash < -0.05} class:gain={homeCash > 0.05}>{signed(homeCash)}</b> gold a week · exports {goldOf(home.cash.exp / EUR_PER_GOLD)} · imports {goldOf(home.cash.imp / EUR_PER_GOLD)}</p>
-				<p class="label stats" title="Its settlers add a HEART each an in-game hour to its treasury (720 a month each): {num(home.income)} a week. A HEART is a euro, 1,000 are a gold. It buys from the world market only with the gold it has">{home.pop}/{home.beds} beds · <b class:debt={home.gold < 0}>{goldOf(home.gold)}</b> gold · {num(home.eur)} €</p>
+				<p class="label stats" title="Its settlers add a HEART each an in-game hour to its treasury (720 a month each, a thousandth of a gold): {gold(home.income)} gold a week. What it lacks to pay, it borrows">{home.pop}/{home.beds} beds · <b class:debt={home.gold < 0}>{goldOf(home.gold)}</b> gold</p>
+				{#if home.loan}<p class="label stats" title="What its treasury lacked it borrowed: an annuity loan over fifteen years at 1% a month, up to 125 gold a villager. It pays the same each month, interest and repayment together, so it owes less each month">Loan <b class="debt">{gold(home.loan.left)}</b> of {gold(home.loanMost)} gold · pays {gold(home.loan.pay)} a month · {span(home.loan.months)} left</p>{/if}
 				<ul class="wants" aria-label="Its core resources: what it makes or has, against what it needs">
 					{#if fd}
-						<li class:short={fd.short} title="Food a week: its forests grow {num(fd.grown)} kg ({Math.round(fd.share * 100)}%, forests in year {fd.year}) of the {num(fd.week)} kg its people eat. {fd.buy >= 1 ? `It buys ${num(fd.buy)} kg, ${num(fd.buy * fd.perKg)} €.` : fd.exported >= 1 ? `It exports ${num(fd.exported)} kg, ${num(fd.exported * PRICE.world)} €.` : ''} {num(fd.kg)} kg in store.">
-							<span class="k">Food<em>kg</em></span>
+						<li class:short={fd.short} title="Food a week, a food being a tonne: its forests grow {food(fd.grown)} ({Math.round(fd.share * 100)}%, forests in year {fd.year}) of the {food(fd.week)} its people eat. {fd.buy >= 1 ? `It buys ${food(fd.buy)}, ${gold(fd.buy * fd.perKg)} gold.` : fd.exported >= 1 ? `It exports ${food(fd.exported)}, ${gold(fd.exported * PRICE.world)} gold.` : ''} {food(fd.kg)} in store.">
+							<span class="k">Food</span>
 							<span class="bar"><span class={fd.short ? 'poor' : fd.share >= 0.999 ? 'good' : 'fair'} style:width="{Math.min(100, fd.share * 100)}%"></span></span>
-							<span class="n">{num(fd.grown)}<em>/{num(fd.week)}</em></span>
+							<span class="n">{food(fd.grown)}<em>/{food(fd.week)}</em></span>
 						</li>
 					{/if}
 					{#if wt}
-						<li class:short={wt.short} title="Water a week: its roofs catch {num(wt.rain / 1000)} m³ of {MONTHS[wt.month - 1]} rain against the {num(wt.week / 1000)} m³ of fresh water its people use; its crops take {num(wt.grey / 1000)} m³ of greywater again. Its tanks hold {num(wt.litres / 1000)} of {num(wt.tank / 1000)} m³.{wt.bought >= 1 ? ` It buys ${num(wt.bought / 1000)} m³, ${num(wt.spent)} €.` : ''}">
-							<span class="k">Water<em>m³</em></span>
+						<li class:short={wt.short} title="Water a week, a water being a m³ (1,000 L): its roofs catch {water(wt.rain)} of {MONTHS[wt.month - 1]} rain against the {water(wt.week)} of fresh water its people use; its crops take {water(wt.grey)} of greywater again. Its tanks hold {water(wt.litres)} of {water(wt.tank)}.{wt.bought >= 1 ? ` It buys ${water(wt.bought)}, ${gold(wt.spent)} gold.` : ''}">
+							<span class="k">Water</span>
 							<span class="bar"><span class={wt.short ? 'poor' : wt.rain >= wt.week ? 'good' : 'fair'} style:width="{Math.min(100, (wt.rain / Math.max(1, wt.week)) * 100)}%"></span></span>
-							<span class="n">{num(wt.rain / 1000)}<em>/{num(wt.week / 1000)}</em></span>
+							<span class="n">{water(wt.rain)}<em>/{water(wt.week)}</em></span>
 						</li>
 					{/if}
 					{#if pw}
-						<li class:short={pw.short} title="Energy a week: geothermal {kwh(pw.well)} (stage {pw.wells} of {ENERGY.wellsMost}) and solar {kwh(pw.sun)} ({MONTHS[pw.month - 1]} sun), against homes {kwh(pw.home)}, dome climate {kwh(pw.climate)}, village center {kwh(pw.centre)} and factories {kwh(pw.work)}. To the grid {kwh(pwGrid)}, {num(pwEur)} €.">
-							<span class="k">Energy<em>MWh</em></span>
+						<li class:short={pw.short} title="Energy a week, an energy being a MWh: geothermal {energy(pw.well)} (stage {pw.wells} of {ENERGY.wellsMost}) and solar {energy(pw.sun)} ({MONTHS[pw.month - 1]} sun), against homes {energy(pw.home)}, dome climate {energy(pw.climate)}, village center {energy(pw.centre)} and factories {energy(pw.work)} (their work, building and upkeep). To the grid {energy(pwGrid)}, {gold(pwEur)} gold.">
+							<span class="k">Energy</span>
 							<span class="bar"><span class={pw.short ? 'poor' : pwMade >= pwUsed ? 'good' : 'fair'} style:width="{Math.min(100, (pwMade / Math.max(1, pwUsed)) * 100)}%"></span></span>
-							<span class="n">{mwh(pwMade)}<em>/{mwh(pwUsed)}</em></span>
+							<span class="n">{energy(pwMade)}<em>/{energy(pwUsed)}</em></span>
 						</li>
 					{/if}
 					{#each home.rows as r (r.key)}
-						<li class:short={r.short} title="{r.label}: {r.have} loads in store, needs {r.need}">
+						<li class:short={r.short} title="{r.label}, a tonne each: {ware(r.have)} in store, needs {ware(r.need)} for its homes' upkeep, its building sites and its factories">
 							<span class="k">{r.label}</span>
 							<span class="bar"><span class={r.short || r.have < r.need / 2 ? 'poor' : r.have < r.need ? 'fair' : 'good'} style:width="{Math.min(100, (r.have / Math.max(1, r.need)) * 100)}%"></span></span>
-							<span class="n">{r.have}<em>/{r.need}</em></span>
+							<span class="n">{ware(r.have)}<em>/{ware(r.need)}</em></span>
 						</li>
 					{/each}
 				</ul>
 				{#if ownCentre && pw?.drill}
-					<div class="actions"><button class="go" onclick={drill} title="Drill two more geothermal producers under its village center: {ENERGY.wellKw / 1000} MW more, {kwh(ENERGY.wellKw * 168 * ENERGY.uptime)} a week, paid in gold by the treasuries joined to it ({num(pw.drill)} €)">Drill two producers · {goldOf(pw.drill / EUR_PER_GOLD)} gold</button></div>
+					<div class="actions"><button class="go" onclick={drill} title="Drill two more geothermal producers under its village center: {ENERGY.wellKw / 1000} MW more, {energy(ENERGY.wellKw * 168 * ENERGY.uptime)} energy a week, paid in gold by the treasuries joined to it (what they lack, borrowed)">Drill two producers · {gold(pw.drill)} gold</button></div>
 					{#if drillWhy}<p class="status">{drillWhy}</p>{/if}
 				{/if}
 				{#each home.notes as x, k (k)}
@@ -406,7 +396,7 @@
 						{#each links as l (l.id)}
 							<li>
 								<button class="name" onclick={() => game?.focus(l.node)}>{l.name}{l.mine ? '' : ' · city'}</button>
-								{#if l.joined}<span class="joined">Joined</span>{:else}<button class="go" title="Two arched cells for 40 ft containers, laid dry of {num(l.cost * LOAD_T)} t of fired clay voussoirs: from your stores, and what they lack from the world market, {num(l.eur)} €" onclick={() => connect(l.id)}>Connect · {num(l.cost * LOAD_T)} t fired clay{l.eur > 0 ? ` · ${goldOf(l.eur / EUR_PER_GOLD)} gold` : ''}</button>{/if}
+								{#if l.joined}<span class="joined">Joined</span>{:else}<button class="go" title="Two arched cells for 40 ft containers, laid dry of {ware(l.cost)} fired clay voussoirs: from your stores, and what they lack from the world market, {gold(l.eur)} gold" onclick={() => connect(l.id)}>Connect · {ware(l.cost)} fired clay{l.eur > 0 ? ` · ${gold(l.eur)} gold` : ''}</button>{/if}
 							</li>
 						{/each}
 					</ul>
@@ -429,27 +419,30 @@
 			<p class="label stats" title="What it took in by exports to the world market and sales to your other villages, less what it paid for imports from them, a week lately. Your goal: more in than out">Cashflow <b class:debt={homeCash < -0.05} class:gain={homeCash > 0.05}>{signed(homeCash)}</b> gold a week · {goldOf(home.gold)} gold in its treasury</p>
 			<ul class="buy">
 				{#each home.world as x (x.w)}
-					<li title="{label(x.w)}: {x.unit}. Bought or sold at this village center's storehouse, at once.">
+					<li title="{label(x.w)}: {x.unit}, {gold(x.eur / LOAD_T)} gold a tonne. Bought or sold at this village center's storehouse, a truckload of {LOAD_T} at a time, at once; what its treasury lacks it borrows.">
 						<span class="k"><i style:background={WARES[x.w]?.color}></i>{label(x.w)}</span>
-						<span class="n">{num(x.eur)} €</span>
-						<button onclick={() => trade('buy', x.w)} disabled={home.eur < x.eur}>Buy</button>
-						<button onclick={() => trade('sell', x.w)} disabled={x.have < 1}>Sell</button>
+						<span class="n">{gold(x.eur / LOAD_T)} gold</span>
+						<button onclick={() => trade('buy', x.w)}>Buy {LOAD_T}</button>
+						<button onclick={() => trade('sell', x.w)} disabled={x.have < 1}>Sell {LOAD_T}</button>
 						<button class="auto" class:on={x.order === 'both'} onclick={() => auto(x.w, x.order !== 'both')} title="By itself: bought when your villages run short, and what they have beyond exported, so its makers never rest">Auto</button>
 					</li>
 				{/each}
-				<li title="Each village buys what its food forests do not grow, while its treasury can pay, and exports what they grow beyond two weeks put by"><span class="k">Food</span><span class="n">{PRICE.world} € a kg</span><em>by itself</em></li>
-				<li title="Each village buys what its rain does not give once its tanks run dry, by itself, while its treasury can pay"><span class="k">Water</span><span class="n">{WATER_PRICE * 1000} € a m³</span><em>by itself</em></li>
-				<li title="Each village sells the world grid the power it has over, and buys what it lacks, by itself"><span class="k">Power</span><span class="n">{num(GRID_EUR_KWH * 1000)} € a MWh</span><em>by itself</em></li>
+				<li title="Each village buys what its food forests do not grow and exports what they grow beyond two weeks put by; a food is a tonne"><span class="k">Food</span><span class="n">{gold(PRICE.world * 1000)} gold</span><em>by itself</em></li>
+				<li title="Each village buys what its rain does not give once its tanks run dry, by itself; a water is a m³, 1,000 L"><span class="k">Water</span><span class="n">{gold(WATER_PRICE * 1000)} gold</span><em>by itself</em></li>
+				<li title="Each village sells the world grid the energy it has over, and buys what it lacks, by itself; an energy is a MWh"><span class="k">Energy</span><span class="n">{gold(GRID_EUR_KWH * 1000)} gold</span><em>by itself</em></li>
 			</ul>
 			<section class="ledger" aria-label="A week of trade">
-				<p class="ledger-head"><b>A week</b><span title="A gold is 1,000 €: a HEART is a euro">1 gold = {num(EUR_PER_GOLD)} €</span></p>
+				<p class="ledger-head"><b>A week</b><span title="Every number is in one real unit: a ware, a food or a land's tonne, a water's m³, an energy's MWh; a gold is what 1,000 € of real prices buy">1 = {UNIT_OF.ware} · water {UNIT_OF.water} · energy {UNIT_OF.energy}</span></p>
 				<dl>
-					{#if fd && fd.buy >= 1}<dt title="What its forests do not grow: from your villages with more than two weeks put by at {PRICE.village} € a kg, else from the world market">Food bought</dt><dd class="debt">{num(fd.buy)} kg · −{num(fd.buy * fd.perKg)} €</dd>{/if}
-					{#if fd && fd.exported >= 1}<dt title="What its forests grow beyond what its people eat">Food exported</dt><dd class="gain">{num(fd.exported)} kg · +{num(fd.exported * PRICE.world)} €</dd>{/if}
-					{#if wt && wt.bought >= 1}<dt title="What its rain does not give while its tanks are dry">Water bought</dt><dd class="debt">{num(wt.bought / 1000)} m³ · −{num(wt.spent)} €</dd>{/if}
-					{#if pw}<dt title="What it has over goes to the world grid, and what it lacks the grid sells it, after your villages joined to it share theirs; lately">Power to the grid</dt><dd class:gain={pwGrid > 0.5} class:debt={pwGrid < -0.5}>{pwGrid > 0.5 ? '+' : ''}{kwh(pwGrid)} · {pwEur > 0.5 ? '+' : ''}{num(pwEur)} €</dd>{/if}
-					{#if home.wares >= 1}<dt title="Planks, steel, fired clay and glass bought from the world market, lately">Spent on wares</dt><dd class="debt">−{num(home.wares)} €</dd>{/if}
-					<dt title="What its settlers issue into its treasury: a HEART each an in-game hour">HEARTs issued</dt><dd>+{num(home.income)} €</dd>
+					{#if fd && fd.buy >= 1}<dt title="What its forests do not grow: from your villages with more than two weeks put by, at half the world's price, else from the world market">Food bought</dt><dd class="debt">{food(fd.buy)} food · −{gold(fd.buy * fd.perKg)} gold</dd>{/if}
+					{#if fd && fd.exported >= 1}<dt title="What its forests grow beyond what its people eat">Food exported</dt><dd class="gain">{food(fd.exported)} food · +{gold(fd.exported * PRICE.world)} gold</dd>{/if}
+					{#if wt && wt.bought >= 1}<dt title="What its rain does not give while its tanks are dry">Water bought</dt><dd class="debt">{water(wt.bought)} water · −{gold(wt.spent)} gold</dd>{/if}
+					{#if pw}<dt title="What it has over goes to the world grid, and what it lacks the grid sells it, after your villages joined to it share theirs; lately">Energy to the grid</dt><dd class:gain={pwGrid > 0.5} class:debt={pwGrid < -0.5}>{pwGrid > 0.5 ? '+' : ''}{energy(pwGrid)} energy · {pwEur > 0.5 ? '+' : ''}{gold(pwEur)} gold</dd>{/if}
+					{#if home.wares >= 1}<dt title="Planks, steel, fired clay and glass bought from the world market, lately">Spent on wares</dt><dd class="debt">−{gold(home.wares)} gold</dd>{/if}
+					{#if home.interest >= 1}<dt title="1% a month on what it owes">Loan interest</dt><dd class="debt">−{gold(home.interest)} gold</dd>{/if}
+					{#if home.repaid >= 1}<dt title="Its loan's payments, interest and repayment together">Loan payments</dt><dd class="debt">−{gold(home.repaid)} gold</dd>{/if}
+					{#if home.borrowed >= 1}<dt title="What its treasury lacked to pay, lately">Borrowed</dt><dd>+{gold(home.borrowed)} gold</dd>{/if}
+					<dt title="What its settlers issue into its treasury: a HEART each an in-game hour, a thousandth of a gold">HEARTs issued</dt><dd>+{gold(home.income)} gold</dd>
 				</dl>
 			</section>
 			{#if buyWhy}<p class="status">{buyWhy}</p>{/if}
@@ -473,14 +466,14 @@
 				<div class="bar"><span style:width="{card.progress * 100}%"></span></div>
 				<ul class="needs">
 					{#each card.cost as c (c.ware)}
-						<li><i style:background={WARES[c.ware].color}></i>{label(c.ware)} <b>{c.have} of {c.need}</b>{#if c.coming}<em> · {c.coming} coming</em>{/if}</li>
+						<li><i style:background={WARES[c.ware].color}></i>{label(c.ware)} <b>{ware(c.have)} of {ware(c.need)}</b>{#if c.coming}<em> · {ware(c.coming)} coming</em>{/if}</li>
 					{/each}
 				</ul>
 			{:else if card.party}
-				<p class="label">{card.party.pop} people{card.party.beds !== undefined ? ` in ${card.party.beds} beds` : ''}{card.owner !== PLAYER ? ` · ${Math.round(card.party.coins)} coins` : ''}</p>
+				<p class="label">{card.party.pop} people{card.party.beds !== undefined ? ` in ${card.party.beds} beds` : ''}</p>
 				<p class="label">In store</p>
 				<ul class="wares tight">
-					{#each Object.entries(card.stock ?? card.party.stock).filter(([, n]) => n >= 1) as [w, n] (w)}<li title={label(w)}><i style:background={WARES[w].color}></i><span>{label(w)}</span><b>{Math.floor(/** @type {number} */ (n))}</b></li>{/each}
+					{#each Object.entries(card.stock ?? card.party.stock).filter(([w, n]) => WARES[w] && n >= 1) as [w, n] (w)}<li title={label(w)}><i style:background={WARES[w].color}></i><span>{label(w)}</span><b>{ware(Math.floor(/** @type {number} */ (n)))}</b></li>{/each}
 				</ul>
 			{/if}
 			{#if card.stock && card.owner === PLAYER && card.stage === 'live'}
@@ -490,40 +483,30 @@
 				<p class="label">{HOUSE_SIZE[card.level - 1]} · home of <b>{card.beds}</b> settlers{card.upgrading ? ` · growing to ${HOUSE_BEDS[card.level]}` : ''}</p>
 				{#if card.owner === PLAYER && card.up && !card.upgrading}
 					<div class="actions">
-						<button class="go up" title="Enlarge to {HOUSE_BEDS[card.level]} settlers: {Object.entries(card.up).map(([w, n]) => `${n} ${label(w).toLowerCase()} (${tonnes(n)})`).join(', ')}, and {num(card.upGlass)} t of glass from the world market, {num(card.upGlassEur)} € paid as it is begun" onclick={() => card && (upWhy = game?.sim.upgrade(card.id)?.why ?? '', refresh())}>Enlarge → {HOUSE_BEDS[card.level]}{#each Object.entries(card.up) as [w, n] (w)}<span class="cost"><i style:background={WARES[w].color}></i>{n}</span>{/each}<span class="cost"><i style:background={GLASS_COLOR}></i>{num(card.upGlass)} t</span></button>
+						<button class="go up" title="Enlarge to {HOUSE_BEDS[card.level]} settlers. Its build: {side(buildOf(card.up), ', ')}, from your stores (what they lack, bought)" onclick={() => card && ((upWhy = game?.sim.upgrade(card.id)?.why ?? ''), refresh())}>Enlarge → {HOUSE_BEDS[card.level]}{#each Object.entries(card.up) as [w, n] (w)}<span class="cost"><i style:background={WARES[w].color}></i>{ware(n)}</span>{/each}<span class="cost"><i class="bolt"></i>{fmt(buildOf(card.up).energy)}</span></button>
 					</div>
 					{#if upWhy}<p class="status">{upWhy}</p>{/if}
 				{/if}
 			{/if}
-			{#if card.type === 'woodcutter' && card.level}
-				<p class="label">{WOOD[card.level - 1].label} · stage <b>{card.level}</b> of {WOOD.length}{card.upgrading ? ` · growing to a ${WOOD[card.level].label.toLowerCase()}` : ''}</p>
-				<p class="small">{card.level === 1 ? 'It plants young trees and fells none yet' : `${perTree(card.level)} from every tree it fells, and a young one planted in its place`}{card.level > 1 ? ` · lately ${tonnes(card.lately)} a week` : ''}</p>
-				{#if card.owner === PLAYER && card.up && !card.upgrading}
+			{#if card.recipe && card.level}
+				<!-- a factory: its stage, and its three recipes (./rules.js RECIPES), in units -->
+				<p class="label">{card.recipe.label} · stage <b>{card.level}</b> of {card.stages}{card.upgrading && card.next ? ` · growing to a ${card.next.label.toLowerCase()}` : ''}</p>
+				<dl class="recipe">
+					<dt title="A round of its work: what it takes from its hex's land and the grid, and what it makes">Makes</dt>
+					<dd>{Object.keys(card.recipe.make.out).length ? `${craftLine(card.recipe.make)}, ${card.rounds} rounds a year` : `It ${card.recipe.does}`}</dd>
+					<dt title="What standing takes a year: 2% of what it is built of, and its dome's energy">Keeps</dt>
+					<dd>{side(card.recipe.keep.in, ', ')} a year</dd>
+					{#if Object.keys(card.recipe.make.out).length}<dt title="What it made a week, lately">Lately</dt><dd>{ware(card.lately)} {nameOf(card.out)} a week{card.type === 'ironmine' ? ` · ore for ${num(card.deposit / card.rounds)} years` : ''}</dd>{/if}
+				</dl>
+				{#if card.owner === PLAYER && card.up && !card.upgrading && card.next}
 					<div class="actions">
-						<button class="go up" title="Upgrade to a {WOOD[card.level].label.toLowerCase()}: {perTree(card.level + 1)} from every tree. It costs {Object.entries(card.up).map(([w, n]) => `${n} ${label(w).toLowerCase()}`).join(', ')}" onclick={() => card && (game?.sim.upgrade(card.id), refresh())}>Upgrade → {WOOD[card.level].label}{#each Object.entries(card.up) as [w, n] (w)}<span class="cost"><i style:background={WARES[w].color}></i>{n}</span>{/each}</button>
+						<button class="go up" title="Upgrade to a {card.next.label.toLowerCase()}: {Object.keys(card.next.make.out).length ? craftLine(card.next.make) : card.next.does}, {card.rounds} rounds a year. Its build: {side(card.next.build.in, ', ')}" onclick={() => card && ((upWhy = game?.sim.upgrade(card.id)?.why ?? ''), refresh())}>Upgrade → {card.next.label}{#each Object.entries(card.up) as [w, n] (w)}<span class="cost"><i style:background={WARES[w].color}></i>{ware(n)}</span>{/each}<span class="cost"><i class="bolt"></i>{fmt(card.next.build.in.energy ?? 0)}</span></button>
 					</div>
-				{/if}
-			{/if}
-			{#if card.type === 'clayworks' && card.level}
-				<p class="label">{CLAY[card.level - 1].label} · stage <b>{card.level}</b> of {CLAY.length}{card.upgrading ? ` · growing to a ${CLAY[card.level].label.toLowerCase()}` : ''}</p>
-				<p class="small">{perRound(card.level)} from every round of its pit's clay, {ROUNDS_YEAR.clayworks} rounds a year · lately {tonnes(card.lately)} a week</p>
-				{#if card.owner === PLAYER && card.up && !card.upgrading}
-					<div class="actions">
-						<button class="go up" title="Upgrade to a {CLAY[card.level].label.toLowerCase()}: {perRound(card.level + 1)} from every round. It costs {Object.entries(card.up).map(([w, n]) => `${n} ${label(w).toLowerCase()}`).join(', ')}" onclick={() => card && (game?.sim.upgrade(card.id), refresh())}>Upgrade → {CLAY[card.level].label}{#each Object.entries(card.up) as [w, n] (w)}<span class="cost"><i style:background={WARES[w].color}></i>{n}</span>{/each}</button>
-					</div>
-				{/if}
-			{/if}
-			{#if card.type === 'ironmine' && card.level}
-				<p class="label">{STEEL[card.level - 1].label} · stage <b>{card.level}</b> of {STEEL.length}{card.upgrading ? ` · growing to a ${STEEL[card.level].label.toLowerCase()}` : ''}</p>
-				<p class="small">{perLoad(card.level)} from every 25 t of iron ore it digs · ore for {num(card.deposit / ROUNDS_YEAR.ironmine)} years left · lately {tonnes(card.lately)} a week</p>
-				{#if card.owner === PLAYER && card.up && !card.upgrading}
-					<div class="actions">
-						<button class="go up" title="Upgrade to a {STEEL[card.level].label.toLowerCase()}: {perLoad(card.level + 1)} from every 25 t of ore. It costs {Object.entries(card.up).map(([w, n]) => `${n} ${label(w).toLowerCase()}`).join(', ')}" onclick={() => card && (game?.sim.upgrade(card.id), refresh())}>Upgrade → {STEEL[card.level].label}{#each Object.entries(card.up) as [w, n] (w)}<span class="cost"><i style:background={WARES[w].color}></i>{n}</span>{/each}</button>
-					</div>
+					{#if upWhy}<p class="status">{upWhy}</p>{/if}
 				{/if}
 			{/if}
 			{#if card.power && card.owner === PLAYER}
-				<p class="small" title="Electricity, a week: a house's solar glass and what its people use at home, a factory's use for every tonne it makes at its stage">Energy: {powerLine(card.power, card.type)}</p>
+				<p class="small" title="Energy a week, an energy being a MWh: a house's solar glass and what its people use at home, a factory's work and its dome's upkeep">Energy a week: {powerLine(card.power, card.type)}</p>
 			{/if}
 			{#if card.stage === 'live' && card.worker}
 				{#if card.inputs.length}
@@ -947,6 +930,24 @@
 	.ledger-head span {
 		font-size: 0.68rem;
 		opacity: 0.7;
+	}
+	i.bolt {
+		background: #e8b730;
+	}
+	.recipe {
+		display: grid;
+		grid-template-columns: auto 1fr;
+		gap: 0.15rem 0.6rem;
+		margin: 0.3rem 0 0.2rem;
+		font-size: 0.74rem;
+		line-height: 1.35;
+	}
+	.recipe dt {
+		font-weight: 600;
+		opacity: 0.65;
+	}
+	.recipe dd {
+		margin: 0;
 	}
 	.ledger dl {
 		display: grid;
