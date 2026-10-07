@@ -10,8 +10,8 @@
 	import { WorldBar } from '$lib/sandbox-kit';
 	import { BUILDINGS, CLAY, ENERGY, HOUSE_BEDS, HOUSE_GLASS, HOUSE_SIZE, LOAD_T, MENU, PLANK_T, ROUNDS_YEAR, STEEL, WARES, WARE_ORDER, WOOD } from './rules.js';
 	import { EUR_PER_GOLD, GLASS_EUR_T, GRID_EUR_KWH } from './market.js';
-	import { FOOD_KG, FRESH_L, MONTHS, PRICE, RAIN_MM, SIM_SPEED, SPEEDS, WATER_L, WATER_PRICE, WATER_USE } from './food.js';
-	import { PLAYER } from './sim.js';
+	import { MONTHS, PRICE, SIM_SPEED, SPEEDS, WATER_PRICE } from './food.js';
+	import { PLAYER, wellsOf } from './sim.js';
 	import Tree from './Tree.svelte';
 
 	/** @type {HTMLDivElement | undefined} */
@@ -48,6 +48,8 @@
 	/** @type {any} */
 	let roadCard = $state(null);
 	let treeOpen = $state(false);
+	/** whether the world market's card is open */
+	let marketOpen = $state(false);
 	/** how many of each building you have, sites too */
 	let owned = $state(/** @type {Record<string, number>} */ ({}));
 	/** @type {ReturnType<import('./sim.js').Sim['market']> | null} */
@@ -74,9 +76,6 @@
 	const pwUsed = $derived(pw ? pw.home + pw.climate + pw.centre + pw.work : 0);
 	const pwGrid = $derived(pw ? pw.sold - pw.bought : 0);
 	const pwEur = $derived(pw ? pw.earned - pw.spent : 0);
-	const flow = $derived(fd ? fd.grown - fd.week : 0);
-	/** what buying and exporting food does to its treasury, a week, € */
-	const foodEur = $derived(fd ? fd.exported * PRICE.world - fd.buy * fd.perKg : 0);
 	/** your cashflow and the shown village's, gold a week: exports less imports */
 	const cash = $derived.by(() => {
 		const c = /** @type {{ exp: number, imp: number } | undefined} */ (/** @type {any} */ (summary)?.cash);
@@ -109,6 +108,8 @@
 	const perLoad = (/** @type {number} */ level) => `${STEEL[level - 1].struts} load${STEEL[level - 1].struts === 1 ? '' : 's'} of joints (${tonnes(STEEL[level - 1].struts)})`;
 	/** what the clay building makes from a round of its pit at a stage */
 	const perRound = (/** @type {number} */ level) => `${CLAY[level - 1].blocks} load${CLAY[level - 1].blocks === 1 ? '' : 's'} of fired clay (${tonnes(CLAY[level - 1].blocks)})`;
+	/** energy in MWh, short: whole, or to a tenth while it is little */
+	const mwh = (/** @type {number} */ k) => (k >= 10000 ? num(k / 1000) : (Math.round(k / 100) / 10).toLocaleString('en-US'));
 	/** energy: kWh, or MWh once it is many */
 	const kwh = (/** @type {number} */ n) => (Math.abs(n) >= 10000 ? `${num(n / 1000)} MWh` : `${num(n)} kWh`);
 	/** what a building's card says of its energy, a week */
@@ -131,7 +132,13 @@
 		if (treeOpen) {
 			/** @type {Record<string, number>} */
 			const n = {};
-			for (const b of Object.values(sim.state.buildings)) if (b.owner === PLAYER) n[b.type] = (n[b.type] ?? 0) + 1;
+			for (const b of Object.values(sim.state.buildings)) {
+				if (b.owner !== PLAYER) continue;
+				n[b.type] = (n[b.type] ?? 0) + 1;
+				// and by the stage it stands at: a village center by its geothermal stages
+				const lv = b.type === 'centre' ? (b.stage === 'live' ? wellsOf(b) : 0) : b.level;
+				if (lv) n[`${b.type}:${lv}`] = (n[`${b.type}:${lv}`] ?? 0) + 1;
+			}
 			owned = n;
 		}
 		speed = game.speed;
@@ -204,6 +211,7 @@
 	function tool(m, type = '') {
 		if (m === 'build' && !type) {
 			menuOpen = !menuOpen;
+			if (menuOpen) (marketOpen = false), (treeOpen = false);
 			if (!menuOpen && mode === 'build') game?.setMode('look');
 			return;
 		}
@@ -298,7 +306,8 @@
 		<button class:on={mode === 'build' || menuOpen} onclick={() => tool('build')} title="Build (choose a building)"><span class="ic">⌂</span>Build</button>
 		<button class:on={mode === 'road'} onclick={() => tool('road')} title="Road (R)"><span class="ic">⟋</span>Road</button>
 		<button class:on={mode === 'demolish'} onclick={() => tool('demolish')} title="Tear down (X)"><span class="ic">✕</span>Tear down</button>
-		<button class:on={treeOpen} onclick={() => ((treeOpen = !treeOpen), (menuOpen = false), refresh())} title="The building tree: what each building needs and makes"><span class="ic">⌥</span>Tree</button>
+		<button class:on={treeOpen} onclick={() => ((treeOpen = !treeOpen), (menuOpen = false), (marketOpen = false), refresh())} title="The building tree: every chain and every stage of its buildings"><span class="ic">⌥</span>Tree</button>
+		<button class:on={marketOpen} onclick={() => ((marketOpen = !marketOpen), (menuOpen = false), (treeOpen = false), (buyWhy = ''))} title="The world market: buy and sell, and what your village trades a week"><span class="ic">€</span>Market</button>
 		<div class="speed" role="group" aria-label="Speed: how much of the calendar a real day holds">
 			<button class:on={speed === 0} onclick={() => (game?.setSpeed(0), (speed = 0))} title="Pause (Space)">❚❚</button>
 			{#each SPEEDS as x (x.s)}
@@ -354,81 +363,40 @@
 				{/if}
 				<p class="label stats cashline" title="What it took in by exports to the world market and sales to your other villages, less what it paid for imports from them, a week lately. Your goal: more in than out">Cashflow <b class:debt={homeCash < -0.05} class:gain={homeCash > 0.05}>{signed(homeCash)}</b> gold a week · exports {goldOf(home.cash.exp / EUR_PER_GOLD)} · imports {goldOf(home.cash.imp / EUR_PER_GOLD)}</p>
 				<p class="label stats" title="Its settlers add a HEART each an in-game hour to its treasury (720 a month each): {num(home.income)} a week. A HEART is a euro, 1,000 are a gold. It buys from the world market only with the gold it has">{home.pop}/{home.beds} beds · <b class:debt={home.gold < 0}>{goldOf(home.gold)}</b> gold · {num(home.eur)} €</p>
-				{#if fd}
-				<section class="ledger" aria-label="Food">
-					<p class="ledger-head" class:short={fd.short}><b>Food</b><span title="A hex's food forest grows 10% of what its people eat in its first year, 10% more each year up to 100% in its tenth, then up to 150% from its fifteenth year">forests in year {fd.year} · grow {Math.round(fd.share * 100)}%</span></p>
-					<span class="bar" title="What its food forests grow against what its people eat: the world market sells the rest"><span style:width="{Math.min(100, (fd.grown / Math.max(1, fd.week)) * 100)}%"></span></span>
-					<dl>
-						<dt>In store</dt><dd>{num(fd.kg)} kg</dd>
-						<dt title="{FOOD_KG.toFixed(1)} kg a person a week, the European diet">Eaten a week</dt><dd>{num(fd.week)} kg</dd>
-						<dt>Grown a week</dt><dd>{num(fd.grown)} kg</dd>
-						{#if fd.buy >= 1}<dt title="What its forests do not grow: from your villages with more than two weeks put by at {PRICE.village} € a kg, else from the world market at {PRICE.world} € a kg (100 € for a person's week)">Bought a week</dt><dd>{num(fd.buy)} kg · {num(fd.buy * fd.perKg)} €</dd>{/if}
-						{#if fd.exported >= 1}<dt title="What its forests grow beyond what its people eat goes to the world market at {PRICE.world} € a kg, once two weeks are put by">Exported a week</dt><dd>{num(fd.exported)} kg · {num(fd.exported * PRICE.world)} €</dd>{/if}
-						{#if fd.sold >= 1}<dt title="To your villages that lack it, {PRICE.village} € a kg, lately">Sold a week</dt><dd>{num(fd.sold)} kg</dd>{/if}
-						<dt title="What its forests grow against what its people eat, a week, and what buying and exporting food does to its treasury">Balance</dt><dd class:debt={flow < -0.5} class:gain={flow > 0.5}>{flow > 0.5 ? '+' : ''}{num(flow)} kg · {foodEur > 0.5 ? '+' : ''}{num(foodEur)} €</dd>
-					</dl>
-				</section>
-				{/if}
-				{#if wt}
-				<section class="ledger" aria-label="Water">
-					<p class="ledger-head" class:short={wt.short}><b>Water</b><span title="Rain falls most in summer and least in winter; its tanks carry it through the dry months">{MONTHS[wt.month - 1]} rain</span></p>
-					<span class="bar" title="What its roofs catch against the fresh water its people use: its tanks carry the rest, and the world market sells it when they run dry"><span style:width="{Math.min(100, (wt.rain / Math.max(1, wt.week)) * 100)}%"></span></span>
-					<dl>
-						<dt title="Four weeks of fresh water for each bed; what they cannot hold runs off">In its tanks</dt><dd>{num(wt.litres / 1000)} of {num(wt.tank / 1000)} m³</dd>
-						<dt title="{WATER_L} L a person a day: {WATER_USE.drinking} to drink, {WATER_USE.home} at home and {WATER_USE.crops} for the crops. The crops take the home's greywater again, so {FRESH_L} L of it is fresh">Used a week</dt><dd>{num(wt.week / 1000)} m³</dd>
-						<dt title="The home's greywater, cleaned in the hex's reed beds, waters the crops">Greywater to crops</dt><dd>{num(wt.grey / 1000)} m³</dd>
-						<dt title="Each dome's roof catches {RAIN_MM} mm of rain a year into its tanks, nine tenths of it: about 71 m² a bed, more in summer, less in winter">Rain a week</dt><dd class:gain={wt.rain >= wt.week} class:debt={wt.rain < wt.week}>{num(wt.rain / 1000)} m³</dd>
-						{#if wt.bought >= 1}<dt title="What its rain does not give while its tanks are dry, from the world market at {WATER_PRICE * 1000} € a m³">Bought a week</dt><dd>{num(wt.bought / 1000)} m³ · {num(wt.spent)} €</dd>{/if}
-					</dl>
-				</section>
-				{/if}
-				{#if pw}
-				<section class="ledger" aria-label="Energy">
-					<p class="ledger-head" class:short={pw.short}><b>Energy</b><span title="Its village center stands on enhanced geothermal wells: one injector and two producers, {ENERGY.wellKw / 1000} MW net, and each further stage two more producers and as much again; its domes' solar cells make most in summer and little in winter">geothermal {pw.wells} of {ENERGY.wellsMost} · {MONTHS[pw.month - 1]} sun</span></p>
-					<span class="bar" title="What its wells and domes make against what its people, domes and factories use: the world grid buys the rest"><span style:width="{Math.min(100, (pwMade / Math.max(1, pwUsed)) * 100)}%"></span></span>
-					<dl>
-						<dt title="{pw.wells * 2} producer wells and an injector under its village center, {num(pw.wells * ENERGY.wellKw / 1000)} MW net, running {Math.round(ENERGY.uptime * 100)}% of the time">Geothermal a week</dt><dd>{kwh(pw.well)}</dd>
-						<dt title="The see-through solar cells in each dome's glass: a great dome of 248 makes about 1.3 GWh a year, most in summer">Solar a week</dt><dd>{kwh(pw.sun)}</dd>
-						<dt title="{num(ENERGY.home)} kWh a person a year at home: people sharing a dome use less than a household, with hot water from the geothermal heat loop and shared kitchens, cold stores and laundries">Homes a week</dt><dd>{kwh(pw.home)}</dd>
-						<dt title="Each dome's fans, pumps and heat pumps: a great dome of 248 uses about 0.17 GWh a year">Dome climate a week</dt><dd>{kwh(pw.climate)}</dd>
-						<dt title="Its village center's hall and storehouse, and its trade routes' lights and trains: {num(ENERGY.centre / 1000)} MWh a year">Village center a week</dt><dd>{kwh(pw.centre)}</dd>
-						<dt title="What its factories used for every tonne they made, lately: a timber works for its saws and kilns, a steelworks for its electric furnace, a kiln and a block works for firing">Factories a week</dt><dd>{kwh(pw.work)}</dd>
-						<dt title="What it has over goes to the world grid at {num(GRID_EUR_KWH * 1000)} € a MWh, and what it lacks the grid sells it, after your villages joined to it share theirs; lately">To the grid</dt><dd class:gain={pwGrid > 0.5} class:debt={pwGrid < -0.5}>{pwGrid > 0.5 ? '+' : ''}{kwh(pwGrid)} · {pwEur > 0.5 ? '+' : ''}{num(pwEur)} €</dd>
-					</dl>
-					{#if ownCentre && pw.drill}
-						<div class="actions"><button class="go" onclick={drill} title="Drill two more geothermal producers under its village center: {ENERGY.wellKw / 1000} MW more, {kwh(ENERGY.wellKw * 168 * ENERGY.uptime)} a week, paid in gold by the treasuries joined to it ({num(pw.drill)} €)">Drill two producers · {goldOf(pw.drill / EUR_PER_GOLD)} gold</button></div>
-						{#if drillWhy}<p class="status">{drillWhy}</p>{/if}
+				<ul class="wants" aria-label="Its core resources: what it makes or has, against what it needs">
+					{#if fd}
+						<li class:short={fd.short} title="Food a week: its forests grow {num(fd.grown)} kg ({Math.round(fd.share * 100)}%, forests in year {fd.year}) of the {num(fd.week)} kg its people eat. {fd.buy >= 1 ? `It buys ${num(fd.buy)} kg, ${num(fd.buy * fd.perKg)} €.` : fd.exported >= 1 ? `It exports ${num(fd.exported)} kg, ${num(fd.exported * PRICE.world)} €.` : ''} {num(fd.kg)} kg in store.">
+							<span class="k">Food<em>kg</em></span>
+							<span class="bar"><span class={fd.short ? 'poor' : fd.share >= 0.999 ? 'good' : 'fair'} style:width="{Math.min(100, fd.share * 100)}%"></span></span>
+							<span class="n">{num(fd.grown)}<em>/{num(fd.week)}</em></span>
+						</li>
 					{/if}
-				</section>
-				{/if}
-				<section class="ledger" aria-label="World market">
-					<p class="ledger-head"><b>World market</b><span title="A gold is 1,000 €: a HEART is a euro">1 gold = {num(EUR_PER_GOLD)} €</span></p>
-					<ul class="buy">
-						{#each home.world as x (x.w)}
-							<li title="{label(x.w)}: {x.unit}. Bought or sold at this village center's storehouse, at once.">
-								<span class="k"><i style:background={WARES[x.w]?.color}></i>{label(x.w)}</span>
-								<span class="n">{num(x.eur)} €</span>
-								<button onclick={() => trade('buy', x.w)} disabled={home.eur < x.eur}>Buy</button>
-								<button onclick={() => trade('sell', x.w)} disabled={x.have < 1}>Sell</button>
-								<button class="auto" class:on={x.order === 'both'} onclick={() => auto(x.w, x.order !== 'both')} title="By itself: bought when your villages run short, and what they have beyond exported, so its makers never rest">Auto</button>
-							</li>
-						{/each}
-						<li title="Each village buys what its food forests do not grow, while its treasury can pay, and exports what they grow beyond two weeks put by"><span class="k">Food</span><span class="n">{PRICE.world} € a kg</span><em>by itself</em></li>
-						<li title="Each village buys what its rain does not give once its tanks run dry, by itself, while its treasury can pay"><span class="k">Water</span><span class="n">{WATER_PRICE * 1000} € a m³</span><em>by itself</em></li>
-						<li title="Each village sells the world grid the power it has over, and buys what it lacks, by itself"><span class="k">Power</span><span class="n">{num(GRID_EUR_KWH * 1000)} € a MWh</span><em>by itself</em></li>
-					</ul>
-					{#if home.wares >= 1}<dl><dt>Spent on wares a week</dt><dd>{num(home.wares)} €</dd></dl>{/if}
-					{#if buyWhy}<p class="status">{buyWhy}</p>{/if}
-				</section>
-				<ul class="wants" aria-label="What it has, against what it needs">
+					{#if wt}
+						<li class:short={wt.short} title="Water a week: its roofs catch {num(wt.rain / 1000)} m³ of {MONTHS[wt.month - 1]} rain against the {num(wt.week / 1000)} m³ of fresh water its people use; its crops take {num(wt.grey / 1000)} m³ of greywater again. Its tanks hold {num(wt.litres / 1000)} of {num(wt.tank / 1000)} m³.{wt.bought >= 1 ? ` It buys ${num(wt.bought / 1000)} m³, ${num(wt.spent)} €.` : ''}">
+							<span class="k">Water<em>m³</em></span>
+							<span class="bar"><span class={wt.short ? 'poor' : wt.rain >= wt.week ? 'good' : 'fair'} style:width="{Math.min(100, (wt.rain / Math.max(1, wt.week)) * 100)}%"></span></span>
+							<span class="n">{num(wt.rain / 1000)}<em>/{num(wt.week / 1000)}</em></span>
+						</li>
+					{/if}
+					{#if pw}
+						<li class:short={pw.short} title="Energy a week: geothermal {kwh(pw.well)} (stage {pw.wells} of {ENERGY.wellsMost}) and solar {kwh(pw.sun)} ({MONTHS[pw.month - 1]} sun), against homes {kwh(pw.home)}, dome climate {kwh(pw.climate)}, village center {kwh(pw.centre)} and factories {kwh(pw.work)}. To the grid {kwh(pwGrid)}, {num(pwEur)} €.">
+							<span class="k">Energy<em>MWh</em></span>
+							<span class="bar"><span class={pw.short ? 'poor' : pwMade >= pwUsed ? 'good' : 'fair'} style:width="{Math.min(100, (pwMade / Math.max(1, pwUsed)) * 100)}%"></span></span>
+							<span class="n">{mwh(pwMade)}<em>/{mwh(pwUsed)}</em></span>
+						</li>
+					{/if}
 					{#each home.rows as r (r.key)}
-						<li class:short={r.short} title="{r.label}: {r.have} in store, needs {r.need}">
+						<li class:short={r.short} title="{r.label}: {r.have} loads in store, needs {r.need}">
 							<span class="k">{r.label}</span>
 							<span class="bar"><span class={r.short || r.have < r.need / 2 ? 'poor' : r.have < r.need ? 'fair' : 'good'} style:width="{Math.min(100, (r.have / Math.max(1, r.need)) * 100)}%"></span></span>
 							<span class="n">{r.have}<em>/{r.need}</em></span>
 						</li>
 					{/each}
 				</ul>
+				{#if ownCentre && pw?.drill}
+					<div class="actions"><button class="go" onclick={drill} title="Drill two more geothermal producers under its village center: {ENERGY.wellKw / 1000} MW more, {kwh(ENERGY.wellKw * 168 * ENERGY.uptime)} a week, paid in gold by the treasuries joined to it ({num(pw.drill)} €)">Drill two producers · {goldOf(pw.drill / EUR_PER_GOLD)} gold</button></div>
+					{#if drillWhy}<p class="status">{drillWhy}</p>{/if}
+				{/if}
 				{#each home.notes as x, k (k)}
 					<button class="note {x.tone}" onclick={() => game?.focus(x.node)}><i></i>{x.text}</button>
 				{/each}
@@ -450,6 +418,42 @@
 				<p class="people small">Year {summary.date.year} · month {summary.date.month} · day {summary.date.day} · {summary.people} people · {summary.villages} {summary.villages === 1 ? 'village' : 'villages'}</p>
 			</section>
 		</aside>
+	{/if}
+
+	<!-- the world market, a card of its own from the left: what the shown village buys and sells, and its trade a week -->
+	{#if marketOpen && home}
+		<section class="panel market" aria-label="World market">
+			<button class="close" onclick={() => (marketOpen = false)} aria-label="Close">×</button>
+			<p class="eyebrow">World market · {home.name}</p>
+			<h2>Trade</h2>
+			<p class="label stats" title="What it took in by exports to the world market and sales to your other villages, less what it paid for imports from them, a week lately. Your goal: more in than out">Cashflow <b class:debt={homeCash < -0.05} class:gain={homeCash > 0.05}>{signed(homeCash)}</b> gold a week · {goldOf(home.gold)} gold in its treasury</p>
+			<ul class="buy">
+				{#each home.world as x (x.w)}
+					<li title="{label(x.w)}: {x.unit}. Bought or sold at this village center's storehouse, at once.">
+						<span class="k"><i style:background={WARES[x.w]?.color}></i>{label(x.w)}</span>
+						<span class="n">{num(x.eur)} €</span>
+						<button onclick={() => trade('buy', x.w)} disabled={home.eur < x.eur}>Buy</button>
+						<button onclick={() => trade('sell', x.w)} disabled={x.have < 1}>Sell</button>
+						<button class="auto" class:on={x.order === 'both'} onclick={() => auto(x.w, x.order !== 'both')} title="By itself: bought when your villages run short, and what they have beyond exported, so its makers never rest">Auto</button>
+					</li>
+				{/each}
+				<li title="Each village buys what its food forests do not grow, while its treasury can pay, and exports what they grow beyond two weeks put by"><span class="k">Food</span><span class="n">{PRICE.world} € a kg</span><em>by itself</em></li>
+				<li title="Each village buys what its rain does not give once its tanks run dry, by itself, while its treasury can pay"><span class="k">Water</span><span class="n">{WATER_PRICE * 1000} € a m³</span><em>by itself</em></li>
+				<li title="Each village sells the world grid the power it has over, and buys what it lacks, by itself"><span class="k">Power</span><span class="n">{num(GRID_EUR_KWH * 1000)} € a MWh</span><em>by itself</em></li>
+			</ul>
+			<section class="ledger" aria-label="A week of trade">
+				<p class="ledger-head"><b>A week</b><span title="A gold is 1,000 €: a HEART is a euro">1 gold = {num(EUR_PER_GOLD)} €</span></p>
+				<dl>
+					{#if fd && fd.buy >= 1}<dt title="What its forests do not grow: from your villages with more than two weeks put by at {PRICE.village} € a kg, else from the world market">Food bought</dt><dd class="debt">{num(fd.buy)} kg · −{num(fd.buy * fd.perKg)} €</dd>{/if}
+					{#if fd && fd.exported >= 1}<dt title="What its forests grow beyond what its people eat">Food exported</dt><dd class="gain">{num(fd.exported)} kg · +{num(fd.exported * PRICE.world)} €</dd>{/if}
+					{#if wt && wt.bought >= 1}<dt title="What its rain does not give while its tanks are dry">Water bought</dt><dd class="debt">{num(wt.bought / 1000)} m³ · −{num(wt.spent)} €</dd>{/if}
+					{#if pw}<dt title="What it has over goes to the world grid, and what it lacks the grid sells it, after your villages joined to it share theirs; lately">Power to the grid</dt><dd class:gain={pwGrid > 0.5} class:debt={pwGrid < -0.5}>{pwGrid > 0.5 ? '+' : ''}{kwh(pwGrid)} · {pwEur > 0.5 ? '+' : ''}{num(pwEur)} €</dd>{/if}
+					{#if home.wares >= 1}<dt title="Planks, steel, fired clay and glass bought from the world market, lately">Spent on wares</dt><dd class="debt">−{num(home.wares)} €</dd>{/if}
+					<dt title="What its settlers issue into its treasury: a HEART each an in-game hour">HEARTs issued</dt><dd>+{num(home.income)} €</dd>
+				</dl>
+			</section>
+			{#if buyWhy}<p class="status">{buyWhy}</p>{/if}
+		</section>
 	{/if}
 
 	{#if treeOpen && summary}
@@ -944,13 +948,6 @@
 		font-size: 0.68rem;
 		opacity: 0.7;
 	}
-	.ledger-head.short b {
-		color: #b23b2f;
-	}
-	.ledger .bar {
-		display: block;
-		height: 0.4rem;
-	}
 	.ledger dl {
 		display: grid;
 		grid-template-columns: auto 1fr;
@@ -1063,6 +1060,7 @@
 	}
 	.wants {
 		display: grid;
+		grid-template-columns: auto 1fr auto;
 		gap: 0.3rem;
 		margin: 0.5rem 0 0;
 		padding: 0;
@@ -1071,15 +1069,23 @@
 	}
 	.wants li {
 		display: grid;
-		grid-template-columns: 3.6rem 1fr 3.2rem;
+		grid-column: 1 / -1;
+		grid-template-columns: subgrid;
 		align-items: center;
 		gap: 0.5rem;
+	}
+	.wants .k em {
+		margin-left: 0.25rem;
+		font-style: normal;
+		font-size: 0.64rem;
+		opacity: 0.55;
 	}
 	.wants .bar {
 		height: 0.4rem;
 		margin: 0;
 	}
 	.wants .n {
+		white-space: nowrap;
 		text-align: right;
 		font-variant-numeric: tabular-nums;
 		font-weight: 600;
