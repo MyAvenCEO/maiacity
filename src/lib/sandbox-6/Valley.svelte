@@ -493,7 +493,7 @@
 				</ul>
 			{/if}
 			{#if card.stock && card.owner === PLAYER && card.stage === 'live'}
-				<p class="label">{card.settlers} settlers free</p>
+				<p class="label">{card.settlers} settlers live in its village</p>
 			{/if}
 			{#if card.type === 'house' && card.level}
 				<p class="label">{HOUSE_SIZE[card.level - 1]} · home of <b>{card.beds}</b> settlers{card.upgrading ? ` · growing to ${HOUSE_BEDS[card.level]}` : ''}</p>

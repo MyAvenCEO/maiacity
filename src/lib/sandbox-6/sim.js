@@ -8,9 +8,9 @@
  *   · every half second the economy matches wares to who needs them: a site its planks and steel, a workshop its
  *     inputs; a ware nobody needs goes to its village center; what a village center holds is sent out to whoever in
  *     its village asks, nearest first; a ware finds its way flag by flag along the shortest roads;
- *   · every second the people follow: a settler from a village center becomes the carrier of a new road or the worker
- *     of a finished building (a worker takes tools along); a site's builder is a vehicle from its village center, no
- *     settler (Samuel, 2026-10-07);
+ *   · every second the robots follow: from its village center every site gets its builder, every path its bus, every
+ *     finished building its worker; they are autonomous robots, and settlers only live in the village (Samuel,
+ *     2026-10-07);
  *   · buildings work: workshops turn inputs into wares, gatherers go out into the land (trees, rocks);
  *   · carts run the trade routes under the ground between village centers: your villages share what they have, and
  *     the cities trade by the orders you set and by what the neighbours have spare and lack (./market.js);
@@ -216,8 +216,8 @@ export function createSim(st) {
 		const folk = new Map();
 		for (const u of list) {
 			if (u.kind === 'cart') carts.push(u);
-			// a builder is a vehicle, not one of its people
-			else if (u.owner === PLAYER && u.kind !== 'builder') folk.set(u.vil, (folk.get(u.vil) ?? 0) + 1);
+			// your builders, buses and workers are robots, not people: only a neighbour's walkers are its folk
+			else if (u.owner !== PLAYER) folk.set(u.vil, (folk.get(u.vil) ?? 0) + 1);
 		}
 		return (uIdx = { of: list, carts, folk });
 	};
@@ -510,7 +510,8 @@ export function createSim(st) {
 	function arriveHome(/** @type {any} */ u) {
 		const h = st.buildings[u.home];
 		if (h && h.owner === u.owner) {
-			if (u.kind !== 'builder') h.settlers++;
+			// your robots park there; a neighbour's walkers are its people
+			if (u.owner !== PLAYER) h.settlers++;
 			if (u.ware && isWarehouse(h)) h.stock[u.ware] = (h.stock[u.ware] ?? 0) + 1;
 		}
 		removeUnit(u);
@@ -526,8 +527,9 @@ export function createSim(st) {
 		const wh = few && nearestWarehouse(b.flag, () => true);
 		return !!wh && left.every(([w, n]) => (wh.stock[w] ?? 0) >= n);
 	}
-	/** sites get their builders, and settlers become carriers and workers, in that order. A builder is a vehicle, not a
-	 * settler (Samuel, 2026-10-07): every site gets one from its nearest village center, however busy its people are */
+	/** every site gets its builder, every path its bus and every finished building its worker, each from its nearest
+	 * village center. They are all autonomous robots, not settlers (Samuel, 2026-10-07): settlers only live in the
+	 * village, so however many there are, nothing waits for one */
 	function people() {
 		const few = small();
 		for (const b of blds()) {
@@ -544,7 +546,7 @@ export function createSim(st) {
 			const u = spawn('builder', PLAYER, [wh.node, ...walk, b.node], 'b-go', { bld: b.id, vil: villageAt(wh.node) });
 			b.builder = u.id;
 			b.status = 'A builder is on the way';
-			// in a small city the builder brings what the site needs, so no road waits on a carrier nobody can spare
+			// in a small city the builder brings what the site needs, so a first hut goes up at once
 			if (few)
 				for (const [w, need] of Object.entries(b.cost)) {
 					const n = Math.min(need - (b.got[w] ?? 0) - (b.inc[w] ?? 0), Math.floor(wh.stock[w] ?? 0));
@@ -553,58 +555,28 @@ export function createSim(st) {
 					b.got[w] = (b.got[w] ?? 0) + n;
 				}
 		}
-		// a path waits for its bus and nobody is free: a worker with nothing to do (its goods are stocked up, or its land
-		// has nothing left) goes home to take it
-		// at most half the people drive the buses, so the other half can work (food first)
-		let drivers = units().filter((u) => u.owner === PLAYER && u.kind === 'carrier').length;
-		const most = Math.max(2, Math.ceil(yourPeople() / 2));
-		const unmanned = roads().some((r) => r.owner === PLAYER && !r.carrier && (drivers < most || (st.flags[r.a]?.wares.length ?? 0) + (st.flags[r.b]?.wares.length ?? 0) > 0));
-		if (unmanned && !warehouses().some((w) => w.owner === PLAYER && w.settlers > 0)) {
-			const idle = blds().find((x) => x.owner === PLAYER && x.stage === 'live' && st.units[x.worker]?.job === 'w-in' && /^Resting|full|^No |growing/.test(x.status ?? ''));
-			if (idle) {
-				const u = st.units[idle.worker];
-				idle.worker = 0;
-				idle.status = 'Its worker went to build';
-				u.bld = 0;
-				goHome(u);
-			}
-		}
-		// a path with wares waiting at its ends gets its bus first, whatever the count
+		// every path gets its bus, the busiest first (each road's count taken once, then a stable sort)
 		const busy = (/** @type {any} */ r) => (st.flags[r.a]?.wares.length ?? 0) + (st.flags[r.b]?.wares.length ?? 0);
-		// (each road's count taken once, then a stable sort: the same order as counting in the comparison)
 		const byBusy = roads().map((r) => /** @type {[number, any]} */ ([busy(r), r])).sort((x, y) => y[0] - x[0]).map(([, r]) => r);
 		for (const r of byBusy) {
 			if (r.carrier || r.owner !== PLAYER) continue;
-			if (drivers >= most && !busy(r)) break;
-			const wh = nearestWarehouse(r.a, (w) => w.settlers > 0);
+			const wh = nearestWarehouse(r.a, () => true);
 			const walk = wh && roadWalk(wh.flag, r.a);
 			if (!wh || !walk) continue;
-			wh.settlers--;
 			const u = spawn('carrier', PLAYER, [wh.node, ...walk], 'c-go', { road: r.id, vil: villageAt(wh.node) });
 			u.speed = WALK;
 			r.carrier = u.id;
-			drivers++;
-		}
-		// more buses than half the people while a workplace stands empty: a bus waiting on a quiet path goes home
-		if (drivers > most && !warehouses().some((w) => w.owner === PLAYER && w.settlers > 0) && blds().some((x) => x.owner === PLAYER && x.stage === 'live' && T(x).worker && !x.worker)) {
-			const r = roads().find((x) => x.owner === PLAYER && x.carrier && !busy(x) && st.units[x.carrier]?.job === 'c-idle' && !st.units[x.carrier].ware);
-			if (r) {
-				const u = st.units[r.carrier];
-				r.carrier = 0;
-				goHome(u);
-			}
 		}
 		for (const b of blds()) {
 			if (b.owner !== PLAYER) continue;
 			const t = T(b);
 			if (b.stage === 'live' && t.worker && !b.worker) {
-				const wh = nearestWarehouse(b.flag, (w) => w.settlers > 0);
+				const wh = nearestWarehouse(b.flag, () => true);
 				const walk = wh && roadWalk(wh.flag, b.flag);
 				if (!wh || !walk) {
-					b.status = !nearestWarehouse(b.flag, () => true) ? 'Not connected by road' : 'Waiting for a settler';
+					b.status = 'Not connected by road';
 					continue;
 				}
-				wh.settlers--;
 				const u = spawn('worker', PLAYER, [wh.node, ...walk, b.node], 'w-go', { bld: b.id, vil: villageAt(wh.node) });
 				b.worker = u.id;
 				b.status = `A ${t.worker?.toLowerCase()} is on the way`;
@@ -1601,7 +1573,7 @@ export function createSim(st) {
 	}
 
 	// ── the villages and cities: needs, the neighbours' work ──
-	/** the people of one of your villages: in its center and out at work */
+	/** the people of one of your villages: those who live in it (its robots are not people) */
 	const villagePeople = (/** @type {number} */ v) => {
 		let n = 0;
 		for (const b of mineIn(v)) if (b.type === 'centre') n += b.settlers;
