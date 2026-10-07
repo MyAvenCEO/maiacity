@@ -20,9 +20,8 @@
  * village; village centers are joined by trade routes under the ground (./market.js), your own to share wares
  * between your villages, and other cities' to trade with them. Your city grows a village at a time.
  *
- * Nobody fights here: the valley is shared with two neighbour cities, each with plenty of one ware and none of
- * another (yours: plenty of grain on wide farmland, but no iron in your mountains), and the game is won by abundance for all of them — every
- * city fed, watered, housed, with something put by, and grown — not by coins.
+ * Nobody fights here, and nothing is won: you grow your villages, keep every one fed, watered and housed with
+ * something put by, and see how far the valley goes.
  *
  * Plain data: the simulation (./sim.js) and the page read it alike.
  */
@@ -137,7 +136,3 @@ export const START = {
 	/** the houses that stand round your first village center as a game starts: their sizes (1…4) — one house of two */
 	houses: [1]
 };
-
-/** the win: every one of your villages has a house in each of its settlements, every bed taken, and lives at least
- * this well, for this long */
-export const ABUNDANT = 80, HOLD = 600;

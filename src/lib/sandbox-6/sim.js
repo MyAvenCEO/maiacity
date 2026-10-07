@@ -13,9 +13,9 @@
  *   · buildings work: workshops turn inputs into wares, gatherers go out into the land (trees, rocks, fish, fields);
  *   · carts run the trade routes under the ground between village centers: your villages share what they have, and
  *     the cities trade by the orders you set and by what the neighbours have spare and lack (./market.js);
- *   · every village eats, drinks and keeps its homes, and the valley's abundance follows how well they all live.
+ *   · every village eats, drinks and keeps its homes; its wellbeing follows how well it lives. There is no goal to win.
  */
-import { ABUNDANT, BIOMES, BUILDINGS, FOOD, GRASS, HOLD, HOUSE_BEDS, HOUSE_MOST, HOUSE_TOP, HOUSE_UP, IRON, MOUNTAIN, START, WARES, WATER, holdsLand } from './rules.js';
+import { BIOMES, BUILDINGS, FOOD, GRASS, HOUSE_BEDS, HOUSE_MOST, HOUSE_TOP, HOUSE_UP, IRON, MOUNTAIN, START, WARES, WATER, holdsLand } from './rules.js';
 import { CART, HEARTS, NEEDS, NEIGHBOURS, TRADED, heartsFor, abundance, keepOf, live, make, newMarket, orderRule, party, priceIn, request, shortIn, spareIn } from './market.js';
 import { SE, STEP, findPath, makeGrid } from './hex.js';
 import { makePlan, spoke } from './plots.js';
@@ -36,7 +36,7 @@ const CART_SPEED = 2.6 / STEP;
 /** a forester plants until so many trees stand round it */
 const FORESTER_TREES = 45;
 /** a neighbour city's people when its village is full: six houses of sixteen */
-/** the villages a city needs before the valley can win, and the most a neighbour founds */
+/** the most villages a neighbour founds */
 const CITY_VILLAGES = 5;
 /** a building rests while the storehouses hold this much of what it makes */
 const ENOUGH = 40;
@@ -81,7 +81,6 @@ export function newGame(seed = 7) {
 		/** @type {Record<string, number>} */ made: {},
 		/** @type {{ t: number, text: string, node: number, tone: string, n: number }[]} */ msgs: [],
 		msgSeq: 0,
-		/** @type {null | 'won'} */ result: null,
 		/** what changed, for whoever draws it */
 		netV: 1,
 		objV: 1,
@@ -95,9 +94,7 @@ export function newGame(seed = 7) {
 		/** your orders: sell or buy, by ware @type {Record<string, 'sell' | 'buy'>} */
 		orders: {},
 		/** buildings burning, for a while */
-		/** @type {{ node: number, t: number }[]} */ fx: [],
-		/** whether the valley was won once (you may keep building after) */
-		won: false
+		/** @type {{ node: number, t: number }[]} */ fx: []
 	};
 	const sim = createSim(st);
 	sim.setup(v);
@@ -1553,36 +1550,16 @@ export function createSim(st) {
 				ct.gone = true;
 				if (ct.taken) say(`Too late: ${st.parties[ct.k].name}’s request for ${WARES[ct.w].label.toLowerCase()} ran out`, -1, 'alert');
 			}
-		// abundance: every village counts, yours and the neighbours'
+		// abundance: how well every village lives, together (the playthrough reads it; nothing is won by it)
 		const rows = villageRows();
 		m.abundance = abundance(rows.map((r) => ({ wb: r.score })));
-		m.thriving = rows.filter((r) => r.wb >= ABUNDANT && r.full).length;
 		m.villages = rows.length;
-		// every city needs its five villages first: you and each neighbour
-		m.cities = [{ name: 'You', n: myCentres().length }, ...st.parties.slice(1).map((/** @type {any} */ p, /** @type {number} */ j) => ({ name: p.name, n: cityVillages(j + 1).length }))];
-		const grown = m.cities.every((/** @type {any} */ c) => c.n >= CITY_VILLAGES);
-		if (grown && m.thriving === rows.length) {
-			if (m.since < 0) {
-				m.since = st.time;
-				say(`Every village is full and lives well (abundance ${Math.round(m.abundance)}). Hold it for ten minutes!`, -1, 'good');
-			}
-			if (st.time - m.since >= HOLD && !st.won && !st.goals?.abundance) {
-				st.result = 'won';
-				st.won = true;
-				say('Ten minutes of abundance for the whole valley. Everyone lives well!', -1, 'good');
-			}
-		} else if (m.since >= 0) {
-			m.since = -1;
-			const who = rows.find((r) => r.wb < ABUNDANT || !r.full) ?? m.cities.find((/** @type {any} */ c) => c.n < CITY_VILLAGES);
-			say(`${who?.name ?? 'A village'} slipped below ${ABUNDANT}, or is no longer full`, -1, 'alert');
-		}
 	}
-	/** every village of the valley as the abundance panel shows it: yours by name, then each neighbour city's */
 	/** how many people a village holds when it is full: a great dome's worth in every settlement that has room for a house */
 	const capOf = (/** @type {number} */ v) =>
 		HOUSE_MOST * plan.villages[v].plots.filter((k) => k !== plan.villages[v].centre && plan.spots[k][0] >= 0 && st.terrain[plan.spots[k][0]] === GRASS).length;
 	/**
-	 * Every village of the valley as the abundance panel shows it: yours by name, then each neighbour city's. Its
+	 * Every village of the valley: yours by name, then each neighbour city's. Its
 	 * abundance is how well its people live (wellbeing) times how full it is: a hamlet that lives well is not yet abundant.
 	 */
 	function villageRows() {
@@ -2007,7 +1984,6 @@ export function createSim(st) {
 			return {
 				purse: purse(),
 				abundance: m.abundance,
-				since: m.since,
 				cities: st.parties.slice(1).map((/** @type {any} */ p, /** @type {number} */ j) => ({ k: j + 1, name: p.name, joined: reachable[j + 1], coins: p.coins, node: cityCentre(j + 1)?.node ?? -1 })),
 				wares: TRADED.map((w) => {
 					const at = st.parties.map((/** @type {any} */ p, /** @type {number} */ k) => (reachable[k] ? priceIn(p, w) : 0)).filter((/** @type {number} */ x) => x > 0);
@@ -2080,17 +2056,7 @@ export function createSim(st) {
 				villages: st.villageOwner.filter((/** @type {number} */ o) => o === PLAYER).length,
 				carriers,
 				workers,
-				abundance: m.abundance,
-				/** settlements living well with enough people */
-				thriving: m.thriving ?? 0,
-				/** seconds the valley has been abundant, or -1 */
-				held: m.since >= 0 ? st.time - m.since : -1,
-				allVillages: m.villages ?? 0,
-				/** how many villages each city has, against the five the valley needs */
-				cities: (m.cities ?? []).map((/** @type {any} */ c) => ({ ...c })),
-				need: CITY_VILLAGES,
 				parties: st.parties.map((/** @type {any} */ p) => ({ name: p.name, wb: p.wb })),
-				result: st.result,
 				msgs: st.msgs.slice(-6)
 			};
 		},

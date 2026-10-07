@@ -211,7 +211,6 @@ export function createAutoplay(sim) {
 	}
 	return {
 		tick() {
-			if (st.result) return;
 			// a used-up mine is torn down and dug again elsewhere
 			for (const b of sim.buildingList())
 				if (b.owner === PLAYER && b.deposit <= 0 && BUILDINGS[b.type].kind === 'mine' && b.stage === 'live') {

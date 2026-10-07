@@ -109,8 +109,6 @@ export function newMarket() {
 			bought: 0,
 			filled: 0,
 			abundance: 50,
-			/** since when the valley has been abundant, or -1 */
-			since: -1,
 			clock: { hist: 0, contract: 300 }
 		},
 		parties

@@ -1,13 +1,14 @@
 <!--
 	avenCITY Sandbox 6 — a valley of settlers: the whole game on one page. The world fills the screen (./game.js); over
-	it the tools (build, road, tear down, the building tree, the clock), the build menu, the abundance of every village,
-	the card of whatever is selected (a village center's card joins it to other villages by trade routes), and the news.
+	it the tools (build, road, tear down, the building tree, the clock), the build menu, on the right what your village
+	has against what it needs (with a village center picked, its trade routes too), the card of whatever else is
+	selected, and the news. There is no goal: you grow your villages and see how far the valley goes.
 -->
 <script>
 	import { onDestroy, onMount } from 'svelte';
 	import TouchStick from '$lib/touch/TouchStick.svelte';
 	import { WorldBar } from '$lib/sandbox-kit';
-	import { ABUNDANT, BUILDINGS, HOLD, HOUSE_BEDS, HOUSE_SIZE, MENU, WARES, WARE_ORDER } from './rules.js';
+	import { BUILDINGS, HOUSE_BEDS, HOUSE_SIZE, MENU, WARES, WARE_ORDER } from './rules.js';
 	import { NEED_LABEL } from './market.js';
 	import { PLAYER } from './sim.js';
 	import Tree from './Tree.svelte';
@@ -44,8 +45,10 @@
 	let links = $state([]);
 	/** what a Connect button said when the route could not be dug */
 	let linkWhy = $state('');
-	/** a village center of yours, as its card shows it: each need, its stock, what makes it @type {ReturnType<import('./sim.js').Sim['village']>} */
-	let vil = $state(null);
+	/** the village of yours the right side shows — the one picked, else your first: each need against its stock @type {ReturnType<import('./sim.js').Sim['village']>} */
+	let home = $state(null);
+	/** whether the pick is a village center of yours: then the right side is its card */
+	let ownCentre = $state(false);
 	let seenMsg = 0;
 	/** @type {{ text: string, tone: string, node: number, key: number }[]} */
 	let toasts = $state([]);
@@ -68,8 +71,9 @@
 		const s = selected;
 		card = s?.k === 'building' ? sim.inspect(s.id) : null;
 		if (s?.k === 'building' && !card) select(null);
-		vil = card?.type === 'centre' && card.owner === PLAYER && card.stage === 'live' ? sim.village(card.node) : null;
-		links = card?.type === 'centre' && card.owner === PLAYER && card.stage === 'live' ? sim.links(card.id) : [];
+		ownCentre = card?.type === 'centre' && card.owner === PLAYER && card.stage === 'live';
+		home = sim.village(s ? s.node : -1);
+		links = card && ownCentre ? sim.links(card.id) : [];
 		if (s?.k === 'flag') {
 			const f = sim.state.flags[s.id];
 			flagCard = f ? { owner: f.owner, wares: f.wares.map((/** @type {number} */ id) => sim.state.wares[id]?.type).filter(Boolean), bld: f.bld ? BUILDINGS[sim.state.buildings[f.bld]?.type]?.label : '' } : null;
@@ -102,13 +106,12 @@
 		linkWhy = r.ok ? '' : r.why ?? '';
 		refresh();
 	}
-	/** how many villages each city has, while any still lacks the five the valley needs */
-	const founding = $derived.by(() => {
-		const s = /** @type {any} */ (summary);
-		if (!s || !s.cities.some((/** @type {any} */ c) => c.n < s.need)) return '';
-		return s.cities.map((/** @type {any} */ c) => `${c.name} ${Math.min(c.n, s.need)}/${s.need}`).join(' · ');
-	});
-	const tone = (/** @type {number} */ wb) => (wb >= ABUNDANT ? 'good' : wb >= 55 ? 'fair' : 'poor');
+	/** pick one of your villages: the map flies to its center and the right side shows it */
+	function pickVillage(/** @type {number} */ node) {
+		const at = game?.sim.at(node);
+		if (at?.k === 'building') game?.select({ k: 'building', id: /** @type {number} */ (at.id), node });
+		game?.focus(node);
+	}
 	/** @param {string} m @param {string} [type] */
 	function tool(m, type = '') {
 		if (m === 'build' && !type) {
@@ -161,7 +164,7 @@
 
 <div class="valley">
 	<div class="stage" bind:this={stage} role="application" aria-label="Sandbox 5: the valley. Drag to turn the map, scroll to zoom, click to select or build"></div>
-	<WorldBar title="avenCITY Sandbox 5" subtitle="A valley of settlers · villages, trade routes underground, abundance" />
+	<WorldBar title="avenCITY Sandbox 5" subtitle="A valley of settlers · villages, trade routes underground" />
 	<TouchStick move={(x, y, hurry) => game?.move(x, y, hurry)} {stage} taps=".tools button, .panel button, .card button" />
 
 	<!-- the tools, down the left -->
@@ -204,27 +207,47 @@
 		</section>
 	{/if}
 
-	<!-- how well every village lives -->
-	{#if summary}
+	<!-- your village, on the right: what it has against what it needs -->
+	{#if home && summary}
 		<aside class="side">
-			<section class="panel abundance" aria-label="The valley's abundance">
-				<div class="head">
-					<span>Abundance <span class="people">{summary.thriving}/{summary.allVillages} at {ABUNDANT}+{summary.held >= 0 ? ` · held ${clock(summary.held)}/${clock(HOLD)}` : ''}</span></span>
-					<span class="big {tone(summary.abundance)}">{Math.round(summary.abundance)}</span>
-				</div>
-				<p class="people small">{summary.people} people · {summary.villages} {summary.villages === 1 ? 'village' : 'villages'} · {summary.stock.coin ?? 0} gold · {clock(summary.time)}{founding ? ` · ${founding}` : ''}</p>
-				<ul class="lives">
-					{#each market?.parties ?? [] as p (p.name)}
-						<li>
-							<button onclick={() => p.node >= 0 && game?.focus(p.node)} title="{p.name} ({p.city === 'You' ? 'your city' : 'a neighbour city'}): abundance {Math.round(p.score)} = wellbeing {Math.round(p.wb)} × {p.pop} of {p.cap} people when full ({p.beds} beds now){p.full ? ', full' : ''}">
-								<span class="n">{p.name}</span>
-								<span class="bar"><span class={tone(p.score)} style:width="{p.score}%"></span></span>
-								<em class:short={!p.full}>{p.pop}/{p.cap}</em>
-								<b>{Math.round(p.score)}</b>
-							</button>
+			<section class="panel village" aria-label="{home.name}: what it has, against what it needs">
+				{#if ownCentre}<button class="close" onclick={() => game?.select(null)} aria-label="Close">×</button>{/if}
+				<p class="eyebrow">Your village{ownCentre ? ' · village center' : ''}</p>
+				<h2>{home.name}</h2>
+				{#if home.villages.length > 1}
+					<div class="tabs" role="group" aria-label="Your villages">
+						{#each home.villages as v (v.node)}<button class:on={v.node === home.node} onclick={() => pickVillage(v.node)}>{v.name}</button>{/each}
+					</div>
+				{/if}
+				<p class="label" title="Its settlers add 24 HEARTs each an in-game hour to its treasury; 1,000 HEARTs are a gold">{home.pop}/{home.beds} beds · wellbeing <b>{Math.round(home.wb)}</b> · <b>{home.gold.toFixed(1)}</b> gold</p>
+				<ul class="wants" aria-label="What it has, against what it needs">
+					{#each home.rows as r (r.key)}
+						<li class:short={r.short} title="{r.label}: {r.have} in store, needs {r.need}">
+							<span class="k">{r.label}</span>
+							<span class="bar"><span class={r.short || r.have < r.need / 2 ? 'poor' : r.have < r.need ? 'fair' : 'good'} style:width="{Math.min(100, (r.have / Math.max(1, r.need)) * 100)}%"></span></span>
+							<span class="n">{r.have}<em>/{r.need}</em></span>
 						</li>
 					{/each}
 				</ul>
+				{#each home.notes as x, k (k)}
+					<button class="note {x.tone}" onclick={() => game?.focus(x.node)}><i></i>{x.text}</button>
+				{/each}
+				{#if ownCentre && links.length}
+					<p class="label">Trade routes, under the ground</p>
+					<ul class="routes">
+						{#each links as l (l.id)}
+							<li>
+								<button class="name" onclick={() => game?.focus(l.node)}>{l.name}{l.mine ? '' : ' · city'}</button>
+								{#if l.joined}<span class="joined">Joined</span>{:else}<button class="go" onclick={() => connect(l.id)}>Connect · {l.cost} stone</button>{/if}
+							</li>
+						{/each}
+					</ul>
+					{#if linkWhy}<p class="status">{linkWhy}</p>{/if}
+				{/if}
+				{#if ownCentre}
+					<div class="actions"><button onclick={() => game?.setMode('road')}>Path from here</button></div>
+				{/if}
+				<p class="people small">{summary.people} people · {summary.villages} {summary.villages === 1 ? 'village' : 'villages'} · {clock(summary.time)}</p>
 			</section>
 		</aside>
 	{/if}
@@ -234,13 +257,13 @@
 	{/if}
 
 
-	<!-- the card of what is selected -->
-	{#if card}
+	<!-- the card of what is selected (a village center of yours is the right side itself) -->
+	{#if card && !ownCentre}
 		<section class="panel card" aria-label="{card.label}">
 			<button class="close" onclick={() => game?.select(null)} aria-label="Close">×</button>
 			<p class="eyebrow">{card.owner === PLAYER ? (card.stage === 'site' ? 'Building site' : 'Yours') : 'A neighbour city'}</p>
 			<h2>{card.name || card.label}</h2>
-			{#if !vil}<p class="about">{card.about}</p>{/if}
+			<p class="about">{card.about}</p>
 			{#if card.status}<p class="status">{card.status}</p>{/if}
 			{#if card.stage === 'site'}
 				<div class="bar"><span style:width="{card.progress * 100}%"></span></div>
@@ -249,20 +272,6 @@
 						<li><i style:background={WARES[c.ware].color}></i>{label(c.ware)} <b>{c.have} of {c.need}</b>{#if c.coming}<em> · {c.coming} coming</em>{/if}</li>
 					{/each}
 				</ul>
-			{:else if vil}
-				<p class="label" title="Its settlers add 24 HEARTs each an in-game hour to its treasury; 1,000 HEARTs are a gold">{vil.pop}/{vil.beds} beds · wellbeing <b>{Math.round(vil.wb)}</b> · <b>{vil.gold.toFixed(1)}</b> gold</p>
-				<ul class="wants" aria-label="What it has, against what it needs">
-					{#each vil.rows as r (r.key)}
-						<li class:short={r.short} title="{r.label}: {r.have} in store, needs {r.need}">
-							<span class="k">{r.label}</span>
-							<span class="bar"><span class={r.short || r.have < r.need / 2 ? 'poor' : r.have < r.need ? 'fair' : 'good'} style:width="{Math.min(100, (r.have / Math.max(1, r.need)) * 100)}%"></span></span>
-							<span class="n">{r.have}<em>/{r.need}</em></span>
-						</li>
-					{/each}
-				</ul>
-				{#each vil.notes as x, k (k)}
-					<button class="note {x.tone}" onclick={() => game?.focus(x.node)}><i></i>{x.text}</button>
-				{/each}
 			{:else if card.party}
 				<p class="label">{card.party.pop} people{card.party.beds !== undefined ? ` in ${card.party.beds} beds` : ''} · wellbeing <b>{Math.round(card.party.wb)}</b>{card.owner !== PLAYER ? ` · ${Math.round(card.party.coins)} coins` : ''}</p>
 				<ul class="needs">
@@ -275,20 +284,8 @@
 					{#each Object.entries(card.stock ?? card.party.stock).filter(([, n]) => n >= 1) as [w, n] (w)}<li title={label(w)}><i style:background={WARES[w].color}></i><span>{label(w)}</span><b>{Math.floor(/** @type {number} */ (n))}</b></li>{/each}
 				</ul>
 			{/if}
-			{#if card.stock && card.owner === PLAYER && card.stage === 'live' && !vil}
+			{#if card.stock && card.owner === PLAYER && card.stage === 'live'}
 				<p class="label">{card.settlers} settlers free</p>
-			{/if}
-			{#if links.length}
-				<p class="label">Trade routes, under the ground</p>
-				<ul class="routes">
-					{#each links as l (l.id)}
-						<li>
-							<button class="name" onclick={() => game?.focus(l.node)}>{l.name}{l.mine ? '' : ' · city'}</button>
-							{#if l.joined}<span class="joined">Joined</span>{:else}<button class="go" onclick={() => connect(l.id)}>Connect · {l.cost} stone</button>{/if}
-						</li>
-					{/each}
-				</ul>
-				{#if linkWhy}<p class="status">{linkWhy}</p>{/if}
 			{/if}
 			{#if card.type === 'house' && card.level}
 				<p class="label">{HOUSE_SIZE[card.level - 1]} · home of <b>{card.beds}</b> settlers{card.upgrading ? ` · growing to ${HOUSE_BEDS[card.level]}` : ''}</p>
@@ -357,18 +354,6 @@
 		{/each}
 	</div>
 	{#if hint && mode !== 'look'}<p class="hint">{hint}</p>{/if}
-
-	{#if summary?.result}
-		<div class="end" role="dialog" aria-label="The end of the game">
-			<div>
-				<p class="eyebrow">{clock(summary.time)} in the valley</p>
-				<h2>Abundance for all</h2>
-				<p>Ten minutes of plenty in all five of your villages: fed, watered, housed and with something put by. Every path, every bus and every cart along the trade routes brought you here.</p>
-				<button class="go" onclick={() => (game?.restart(), (seenMsg = -1), (toasts = []))}>A new valley</button>
-				<button onclick={() => (game && (game.sim.state.result = null), refresh())}>Keep building</button>
-			</div>
-		</div>
-	{/if}
 
 	{#if loading}
 		<div class="loading" role="status"><p class="eyebrow">avenCITY Sandbox 5</p><strong>A valley of settlers</strong><span>Growing the valley…</span></div>
@@ -538,21 +523,22 @@
 		z-index: 2;
 		top: calc(5rem + env(safe-area-inset-top, 0px));
 		right: calc(1rem + env(safe-area-inset-right, 0px));
-		width: 15.5rem;
+		width: 17rem;
+		max-height: calc(100vh - 9rem - var(--nav-room, 4rem));
 		display: flex;
 		flex-direction: column;
 		gap: 0.5rem;
 	}
-	.head {
-		display: flex;
-		justify-content: space-between;
-		align-items: baseline;
-		gap: 0.5rem;
-		width: 100%;
-		padding: 0;
-		border: 0;
-		background: none;
-		font-weight: 600;
+	.side .village {
+		position: relative;
+		overflow: auto;
+	}
+	.village h2 {
+		margin: 0.15rem 0 0.3rem;
+		font-size: 1.15rem;
+	}
+	.village .tabs {
+		margin: 0.2rem 0 0;
 	}
 	.people {
 		font-weight: 400;
@@ -590,13 +576,14 @@
 	.card {
 		position: absolute;
 		z-index: 3;
-		right: calc(17.5rem + env(safe-area-inset-right, 0px));
+		right: calc(19rem + env(safe-area-inset-right, 0px));
 		top: calc(5rem + env(safe-area-inset-top, 0px));
 		width: 17rem;
 		max-height: calc(100vh - 9rem - var(--nav-room, 4rem));
 		overflow: auto;
 	}
-	.card .close {
+	.card .close,
+	.village .close {
 		position: absolute;
 		top: 0.4rem;
 		right: 0.5rem;
@@ -666,18 +653,9 @@
 		font-style: normal;
 		opacity: 0.6;
 	}
-	.big {
-		font-size: 1.5rem;
-		font-weight: 600;
-	}
-	.big.good,
 	.trend.t1 {
 		color: #2f7a3a;
 	}
-	.big.fair {
-		color: #a47a1c;
-	}
-	.big.poor,
 	.trend.t-1 {
 		color: #a3322a;
 	}
@@ -755,46 +733,6 @@
 	.note.alert i {
 		background: #c2412f;
 	}
-	.lives {
-		margin: 0.3rem 0 0;
-		padding: 0;
-		list-style: none;
-		display: grid;
-		gap: 0.05rem;
-	}
-	.lives button {
-		display: grid;
-		grid-template-columns: 4.8rem 1fr 2.6rem 1.3rem;
-		align-items: center;
-		gap: 0.35rem;
-		line-height: 1.25;
-		width: 100%;
-		padding: 0;
-		border: 0;
-		background: none;
-		font-size: 0.74rem;
-		text-align: left;
-	}
-	.lives b {
-		text-align: right;
-	}
-	.lives .n {
-		white-space: nowrap;
-		overflow: hidden;
-		text-overflow: ellipsis;
-	}
-	.lives em {
-		text-align: right;
-	}
-	.lives em {
-		font-style: normal;
-		font-size: 0.66rem;
-		opacity: 0.55;
-	}
-	.lives em.short {
-		color: #a3322a;
-		opacity: 1;
-	}
 	.bar span.good {
 		background: #3d8f4a;
 	}
@@ -867,8 +805,7 @@
 		margin-top: 0.7rem;
 	}
 	.actions button,
-	.go,
-	.end button {
+	.go {
 		padding: 0.4rem 0.75rem;
 		border: 1px solid rgb(31 42 35 / 0.15);
 		border-radius: 999px;
@@ -938,30 +875,6 @@
 		white-space: nowrap;
 		pointer-events: none;
 	}
-	.end {
-		position: absolute;
-		z-index: 6;
-		inset: 0;
-		display: grid;
-		place-items: center;
-		background: rgb(20 26 22 / 0.45);
-	}
-	.end > div {
-		width: min(26rem, calc(100vw - 2rem));
-		padding: 1.4rem;
-		border-radius: 20px;
-		background: rgb(250 248 242 / 0.95);
-		text-align: center;
-	}
-	.end h2 {
-		margin: 0.3rem 0;
-		font-family: var(--font-display, serif);
-		font-size: 1.8rem;
-		font-weight: 400;
-	}
-	.end p {
-		line-height: 1.45;
-	}
 	.loading {
 		position: absolute;
 		inset: 0;
@@ -1020,7 +933,8 @@
 		.side {
 			top: calc(7rem + env(safe-area-inset-top, 0px));
 			right: 0.5rem;
-			width: 12.5rem;
+			width: 13.5rem;
+			max-height: 40vh;
 		}
 		.wares {
 			grid-template-columns: 1fr;
