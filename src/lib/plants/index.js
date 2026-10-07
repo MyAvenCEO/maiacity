@@ -19,7 +19,8 @@ import { STAGES as RASPBERRY, raspberry } from './raspberry.js';
 import { OXHEART_STAGES, STAGES as TOMATO, oxheart, tomato } from './tomato.js';
 import { STAGES as EGGPLANT, eggplant } from './eggplant.js';
 import { STAGES as COCONUT, coconut } from './coconut.js';
-import { APPLE_STAGES, APPLE_V1, DURIAN, DURIAN_STAGES, JACKFRUIT, JACKFRUIT_STAGES, LEMON_STAGES, MANGO_STAGES, ORANGE_STAGES, apple, durian, jackfruit, lemon, mango, orange } from './trees.js';
+import { APPLE_STAGES, APPLE_V1, DURIAN, DURIAN_STAGES, JACKFRUIT, JACKFRUIT_STAGES, LEMON_STAGES, MANGO_STAGES, ORANGE_STAGES, apple, durian, jackfruit as jackfruitV2, lemon, mango, orange } from './trees.js';
+import { jackfruit } from './jackfruit.js';
 import { CARROT_STAGES, GARLIC_STAGES, LETTUCE_STAGES, RADISH_STAGES, carrot, garlic, lettuce, radish } from './vegetables.js';
 import { STAGES as GRAPE, grape } from './grape.js';
 import { BANANA_STAGES, RED_BANANA_STAGES, PAPAYA_STAGES, PASSION_STAGES, PINEAPPLE_STAGES, banana, papaya, passionFruit, pineapple, redBanana } from './tropics.js';
@@ -210,7 +211,7 @@ const ALL = [
 		id: 'jackfruit',
 		label: 'Jackfruit',
 		latin: 'Artocarpus heterophyllus · Jackfrucht',
-		note: 'A dense dome over a stout trunk; its flower heads and huge knobbly fruit burst straight out of the trunk and thickest limbs.',
+		note: 'One straight trunk under a dense dome of big glossy leaves; its flower heads and huge knobbly fruit come straight out of the trunk and the thickest limbs, the fruit hanging against the bark.',
 		from: 'Tree · 6 years',
 		stages: JACKFRUIT_STAGES,
 		grow: jackfruit
@@ -684,7 +685,7 @@ const WALD = [...WALD_CANOPY, ...WALD_LOWTREES, ...WALD_BERRIES, ...WALD_PERENNI
 /**
  * The plants' older versions, by id, each with its frozen `grow` ($lib/app/versions.js): a plant changed goes up a
  * version, its old grow function kept here, so the worlds anchored to it (Sandbox 5) grow it as they were planted.
- * None yet: every plant is at v1.
+ * Plants changed since their first version keep each older one here.
  * @type {Record<string, (import('../app/versions.js').Change & { build?: Plant['grow'] })[]>}
  */
 const HISTORY = {
@@ -696,7 +697,8 @@ const HISTORY = {
 	],
 	jackfruit: [
 		{ ...FIRST, build: orchardV1({ ...JACKFRUIT, flower: { ...JACKFRUIT.flower, chance: 1.3 } }) },
-		{ v: 2, date: '2026-10-06', note: 'Fruit hangs against the trunk on stout stalks, many more of them' }
+		{ v: 2, date: '2026-10-06', note: 'Fruit hangs against the trunk on stout stalks, many more of them', build: jackfruitV2 },
+		{ v: 3, date: '2026-10-07', note: 'Grown as a jackfruit grows: a leader, a dense dome, big glossy leaves; fruit hangs on the bark' }
 	],
 	durian: [
 		{ ...FIRST, build: orchardV1(DURIAN) },
@@ -706,6 +708,9 @@ const HISTORY = {
 		{ ...FIRST, build: orchardV1(SOURSOP) },
 		{ v: 2, date: '2026-10-06', note: 'Fruit hangs from the bark of the limbs, not out of their middle' }
 	],
+	// v3 (./jackfruit.js): one straight leader and a dense dome, leaves 10–20 cm crowded at the shoot tips, the lowest
+	// limbs shed for a clear trunk; leafy footstalks out of the trunk and thick limbs, oblong knobbly fruit hanging on
+	// them against the bark
 	// v2: grown branch by branch (./apple.js) into a dense round crown on a clear trunk, spurs with leaf rosettes,
 	// blossom in corymbs, hundreds of apples in clusters bowing the laterals
 	apple: [
