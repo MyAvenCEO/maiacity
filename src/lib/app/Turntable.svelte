@@ -39,11 +39,35 @@
 	 */
 	let { name, picks, canvas = $bindable(), stage = $bindable(), full = false, bar, panel, readout, children } = $props();
 
-	// full screen in the app: the nav pill over it, no strip kept for the status bar (the page keeps clear of the notch)
-	onMount(() => enter());
+	/**
+	 * Which side the notch is on, a phone on its side: iOS keeps the same room on both sides then (its safe-area insets
+	 * are alike, left and right), but only the notch's side needs it — the page runs to the screen's edge on the other.
+	 * Turned to the left (the angle 90) the notch is on the left, turned to the right (270, or -90) on the right.
+	 * @type {'left' | 'right' | ''}
+	 */
+	let notch = $state('');
+	const turned = () => {
+		const angle = screen.orientation?.angle ?? Number(/** @type {any} */ (window).orientation ?? 0);
+		notch = angle === 90 ? 'left' : angle === 270 || angle === -90 ? 'right' : '';
+	};
+
+	onMount(() => {
+		turned();
+		screen.orientation?.addEventListener('change', turned);
+		window.addEventListener('orientationchange', turned);
+		window.addEventListener('resize', turned);
+		// full screen in the app: the nav pill over it, no strip kept for the status bar (the page keeps clear of the notch)
+		const leave = enter();
+		return () => {
+			screen.orientation?.removeEventListener('change', turned);
+			window.removeEventListener('orientationchange', turned);
+			window.removeEventListener('resize', turned);
+			leave();
+		};
+	});
 </script>
 
-<main class="turntable {name}" class:full>
+<main class="turntable {name}" class:full class:notch-left={notch === 'left'} class:notch-right={notch === 'right'}>
 	<PickList {...picks} />
 	<section class="view">
 		<div class="stage" bind:this={stage}>
@@ -62,14 +86,22 @@
 	.turntable {
 		position: fixed;
 		inset: 0;
-		/* clear of the notch and the home bar (the page runs edge to edge) */
-		padding: env(safe-area-inset-top, 0px) env(safe-area-inset-right, 0px) 0 env(safe-area-inset-left, 0px);
+		/* clear of the notch (on its side only, below) — otherwise edge to edge; the nav pill keeps clear of the home bar */
+		padding: env(safe-area-inset-top, 0px) 0 0;
 		display: grid;
 		grid-template-columns: auto 1fr;
 		grid-template-rows: minmax(0, 1fr);
 		background: #f4f1eb;
 		color: #1f2a23;
 		font-size: 0.85rem;
+	}
+
+	.notch-left {
+		padding-left: env(safe-area-inset-left, 0px);
+	}
+
+	.notch-right {
+		padding-right: env(safe-area-inset-right, 0px);
 	}
 
 	.view {
@@ -310,7 +342,7 @@
 	@media (max-height: 500px) and (min-width: 721px) {
 		.turntable:not(.full) .view {
 			display: grid;
-			grid-template-columns: minmax(0, 1fr) 17rem;
+			grid-template-columns: minmax(0, 1fr) 13.5rem;
 		}
 
 		.turntable:not(.full) .stage {
@@ -323,9 +355,9 @@
 			inset: auto;
 			display: flex;
 			flex-direction: column;
-			gap: 0.5rem;
-			padding: 0.6rem calc(0.6rem + env(safe-area-inset-right, 0px)) var(--nav-room) 0.6rem;
-			margin-right: calc(-1 * env(safe-area-inset-right, 0px));
+			gap: 0.35rem;
+			padding: 0.35rem 0.35rem var(--nav-room);
+			font-size: 0.75rem;
 			overflow: auto;
 			overscroll-behavior: contain;
 			border-left: 1px solid rgb(0 0 0 / 0.08);
@@ -339,9 +371,40 @@
 			max-width: none;
 			max-height: none;
 			overflow: visible;
+			padding: 0.45rem 0.55rem;
+			border-radius: 10px;
 			background: #fff;
 			-webkit-backdrop-filter: none;
 			backdrop-filter: none;
+		}
+
+		/* compact: small chips, the bar's in one row scrolling sideways */
+		.turntable:not(.full) .deck :global(.chips) {
+			gap: 0.25rem;
+		}
+
+		.turntable:not(.full) .deck :global(.chip) {
+			padding: 0.2rem 0.5rem;
+		}
+
+		.turntable:not(.full) .deck :global(.label) {
+			font-size: 0.62rem;
+		}
+
+		.turntable:not(.full) .bar :global(.chips) {
+			flex-wrap: nowrap;
+			overflow-x: auto;
+			scrollbar-width: none;
+			margin: -0.2rem -0.55rem;
+			padding: 0.2rem 0.55rem;
+		}
+
+		.turntable:not(.full) .bar :global(.chips)::-webkit-scrollbar {
+			display: none;
+		}
+
+		.turntable:not(.full) .bar :global(.chip) {
+			flex: none;
 		}
 	}
 </style>
