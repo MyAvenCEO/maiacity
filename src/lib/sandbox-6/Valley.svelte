@@ -8,7 +8,7 @@
 	import { onDestroy, onMount } from 'svelte';
 	import TouchStick from '$lib/touch/TouchStick.svelte';
 	import { WorldBar } from '$lib/sandbox-kit';
-	import { BUILDINGS, HOUSE_BEDS, HOUSE_SIZE, MENU, PLANK_T, STEEL, WARES, WARE_ORDER, WOOD } from './rules.js';
+	import { BUILDINGS, HOUSE_BEDS, HOUSE_SIZE, MENU, PLANK_T, ROUNDS_YEAR, STEEL, WARES, WARE_ORDER, WOOD } from './rules.js';
 	import { EUR_PER_GOLD } from './market.js';
 	import { FOOD_KG, FRESH_L, MONTHS, PRICE, RAIN_MM, SPEEDS, WATER_L, WATER_PRICE, WATER_USE } from './food.js';
 	import { PLAYER } from './sim.js';
@@ -447,10 +447,10 @@
 			{/if}
 			{#if card.type === 'ironmine' && card.level}
 				<p class="label">{STEEL[card.level - 1].label} · stage <b>{card.level}</b> of {STEEL.length}{card.upgrading ? ` · growing to a ${STEEL[card.level].label.toLowerCase()}` : ''}</p>
-				<p class="small">{perLoad(card.level)} from every load of iron ore it digs · {num(card.deposit)} loads of ore left · lately {tonnes(card.lately)} a week</p>
+				<p class="small">{perLoad(card.level)} from every 25 t of iron ore it digs · ore for {num(card.deposit / ROUNDS_YEAR.ironmine)} years left · lately {tonnes(card.lately)} a week</p>
 				{#if card.owner === PLAYER && card.up && !card.upgrading}
 					<div class="actions">
-						<button class="go up" title="Upgrade to a {STEEL[card.level].label.toLowerCase()}: {perLoad(card.level + 1)} from every load of ore. It costs {Object.entries(card.up).map(([w, n]) => `${n} ${label(w).toLowerCase()}`).join(', ')}" onclick={() => card && (game?.sim.upgrade(card.id), refresh())}>Upgrade → {STEEL[card.level].label}{#each Object.entries(card.up) as [w, n] (w)}<span class="cost"><i style:background={WARES[w].color}></i>{n}</span>{/each}</button>
+						<button class="go up" title="Upgrade to a {STEEL[card.level].label.toLowerCase()}: {perLoad(card.level + 1)} from every 25 t of ore. It costs {Object.entries(card.up).map(([w, n]) => `${n} ${label(w).toLowerCase()}`).join(', ')}" onclick={() => card && (game?.sim.upgrade(card.id), refresh())}>Upgrade → {STEEL[card.level].label}{#each Object.entries(card.up) as [w, n] (w)}<span class="cost"><i style:background={WARES[w].color}></i>{n}</span>{/each}</button>
 					</div>
 				{/if}
 			{/if}

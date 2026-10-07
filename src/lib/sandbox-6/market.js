@@ -23,19 +23,20 @@
  * start joined by a route) and with you once you join them, and now and then one asks you for what it lacks most: a
  * request, paid from its own purse — or, when its purse is empty, a plea for help.
  */
-import { WARES } from './rules.js';
-import { DAY } from './food.js';
+import { BUILDINGS, HOUSE_MOST, HOUSE_UP, UPKEEP, WARES } from './rules.js';
+import { DAY, YEAR } from './food.js';
 
+/** what a bed costs to build, in loads: a house enlarged to a great dome, over its 248 beds */
+const BED = Object.fromEntries(['plank', 'steel'].map((w) => [w, [BUILDINGS.house.cost, ...HOUSE_UP].reduce((s, /** @type {Record<string, number>} */ c) => s + (c[w] ?? 0), 0) / HOUSE_MOST]));
 /**
- * what a person's home needs, a minute, in planks and steel. A great dome holds 248 where a great house held 16, so a
- * person needs 16/248 of what they used to. Food and water are counted in kg and litres instead (./food.js).
+ * what a person's home needs a year to keep it up, in loads of planks and steel: 2% of what their bed cost to build.
+ * Food and water are counted in kg and litres instead (./food.js).
  */
-const PER = 16 / 248;
-export const NEEDS = { plank: 0.022 * PER, steel: 0.014 * PER };
+export const NEEDS = { plank: UPKEEP * BED.plank, steel: UPKEEP * BED.steel };
 /** what a cart carries */
 export const CART = 8;
-/** minutes of needs a settlement likes to have put by */
-const PUT_BY = 10;
+/** years of upkeep a settlement likes to have put by: a quarter */
+const PUT_BY = 0.25;
 /** a ware's usual price, in coins */
 export const BASE = { plank: 4, steel: 4 };
 /** euros in a gold: a HEART is a euro */
@@ -81,7 +82,7 @@ export const heartsFor = (w) => (WORLD[w]?.eur ?? 0) / 2;
 
 /**
  * Your orders at the fair are one word a ware: sell or buy. What that means is fixed, so there is nothing to tune:
- * selling lets go of what you can spare (you keep ten minutes of what your people live on, or a dozen of anything
+ * selling lets go of what you can spare (you keep a quarter year of what your homes need, or a dozen of anything
  * else) while it fetches at least half its usual price; buying fetches what you are short of (up to a stock that
  * suits the ware) while it costs at most two and a half times its usual price.
  * @param {string} w
@@ -176,17 +177,18 @@ export const spareIn = (p, w) => Math.floor((p.stock[w] ?? 0) - keepOf(p, w));
 export const shortIn = (p, w) => Math.ceil(keepOf(p, w) - (p.stock[w] ?? 0) - (p.coming[w] ?? 0));
 
 /**
- * Needs met for a while: each settlement keeps its homes up with planks and steel (its food and water were met
- * already, in kg and litres). `take(ware)` takes one unit from a settlement's stores and says whether it could.
+ * Needs met for a while, on the calendar: each settlement keeps its homes up with planks and steel (its food and
+ * water were met already, in kg and litres). `take(ware)` takes one unit from a settlement's stores and says whether
+ * it could.
  * @param {any} p
  * @param {number} pop
- * @param {number} dt seconds
+ * @param {number} days of the valley's calendar
  * @param {(w: string) => boolean} take
  */
-export function live(p, pop, dt, take) {
+export function live(p, pop, days, take) {
 	for (const [need, rate] of /** @type {[keyof typeof NEEDS, number][]} */ (Object.entries(NEEDS))) {
-		const per = (rate * pop) / 60;
-		p.owe[need] = Math.min(p.owe[need] + per * dt, per * 180 + 1);
+		const per = (rate * pop) / YEAR;
+		p.owe[need] = Math.min((p.owe[need] ?? 0) + per * days, per * (YEAR / 4) + 1);
 		// use what is owed, a unit at a time
 		while (p.owe[need] >= 1) {
 			if (!take(need)) break;

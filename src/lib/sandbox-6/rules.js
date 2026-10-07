@@ -82,7 +82,7 @@ export const BUILDINGS = {
 	house: { id: 'house', label: 'House', group: 'Homes', about: 'Founds a settlement: settlers live here, 2 at first, then twice as many each time you enlarge it, up to 248. Its two factory spots open once it stands.', cost: { plank: 2, steel: 1 }, kind: 'house' },
 	woodcutter: { id: 'woodcutter', label: 'Forester', group: 'Basics', about: 'Your wood, in one building that grows: a forester plants young trees round it; upgraded, a woodcutter fells grown trees and plants a young one where each stood, then a sawmill and a timber works cut more planks from every tree. Build it on a forest hex.', cost: { plank: 2 }, kind: 'gather', biome: 'forest', worker: 'Forester', out: 'plank', time: 6, rest: 4, range: 10 },
 	forester: { id: 'forester', label: 'Forester', group: '', about: 'Plants young trees nearby, on a forest hex; they grow in about two minutes. (Now the first level of the wood building.)', cost: { plank: 2 }, kind: 'forester', biome: 'forest', worker: 'Forester', time: 3, rest: 5, range: 8 },
-	ironmine: { id: 'ironmine', label: 'Iron mine', group: 'Basics', about: 'Your steel, in one building that grows: an iron mine digs iron ore and smelts a load of steel struts from each load; upgraded, a furnace makes two and a steelworks three from the same ore. Build it on an iron hex, by rust-red rock.', cost: { plank: 4 }, kind: 'mine', biome: 'iron', worker: 'Miner', inputs: [], out: 'steel', time: 8, on: 'any', ore: 'iron' },
+	ironmine: { id: 'ironmine', label: 'Iron mine', group: 'Basics', about: 'Your steel, in one building that grows: an iron mine digs iron ore and smelts a load of steel struts from every five loads; upgraded, a furnace makes two and a steelworks three from the same ore. Build it on an iron hex, by rust-red rock.', cost: { plank: 4 }, kind: 'mine', biome: 'iron', worker: 'Miner', inputs: [], out: 'steel', time: 8, on: 'any', ore: 'iron' },
 	village: { id: 'village', label: 'Village center', group: '', about: 'A neighbour city’s village center.', cost: {}, kind: 'village' }
 };
 
@@ -132,8 +132,9 @@ export const WOOD_UP = [
 export const PLANK_T = 5;
 
 /**
- * The steel building's levels: what it is called, and how many loads of steel struts it makes from a load of iron ore.
- * Each upgrade makes more from the same ore: an iron mine smelts a little, a furnace more, a steelworks most.
+ * The steel building's levels: what it is called, and how many loads of steel struts it makes from a round of iron
+ * ore (five loads, 25 t). Each upgrade makes more from the same ore: an iron mine smelts a little, a furnace more, a
+ * steelworks most (15 t, the iron in 25 t of ore).
  */
 export const STEEL = [
 	{ label: 'Iron mine', struts: 1 },
@@ -147,6 +148,18 @@ export const STEEL_UP = [
 ];
 /** a load of steel, in tonnes: a truckload of struts */
 export const STEEL_T = 5;
+
+/** a hex's fields and woods, besides its food forest: 10 ha of hemp and bamboo, about 15 t a hectare a year */
+export const FIELD_HA = 10, FIELD_T = 15;
+/**
+ * What a wood or steel building may work a year, on the master clock, whatever its people do on screen: its hex's
+ * harvest in trees (15 t each, so 150 t a year; a woodcutter cuts a load of planks from each, a sawmill two, a timber
+ * works all three), or its iron hex's ore in rounds of five loads (25 t each, so 250 t a year; an iron mine smelts
+ * one load of struts from each, a furnace two, a steelworks three).
+ */
+export const ROUNDS_YEAR = /** @type {Record<string, number>} */ ({ woodcutter: (FIELD_HA * FIELD_T) / (3 * PLANK_T), ironmine: 10 });
+/** what keeping homes up takes a year: a share of what they cost to build */
+export const UPKEEP = 0.02;
 
 /** the buildings that grow by upgrades, besides houses: their levels and what each upgrade costs */
 export const GROWS = /** @type {Record<string, { levels: { label: string }[], up: Record<string, number>[] }>} */ ({
