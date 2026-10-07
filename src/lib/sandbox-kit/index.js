@@ -24,7 +24,7 @@ export { createStage } from './stage.js';
 export { createSky, createSkyClock, lightAt, sunAt } from './sky.js';
 export { celestial, createUniverse, horizonAt } from './universe.js';
 export { automatic, manual, skyHour, skyTime, NOON } from './skyTime.svelte.js';
-export { createWalker } from './walker.js';
+export { createWalker, PACE } from './walker.js';
 export { createObstacles } from './obstacles.js';
 export { createOrbitRig } from './orbit.js';
 export { connectFilm, createCameraHold, filmDraws, filmHoldsSize, worldTime } from './film.js';

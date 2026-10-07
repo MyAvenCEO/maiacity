@@ -85,7 +85,7 @@
 	onMount(async () => {
 		const THREE = await import('three');
 		const { OrbitControls } = await import('three/addons/controls/OrbitControls.js');
-		const { createWalker } = await import('$lib/sandbox-kit/walker.js');
+		const { createWalker, PACE } = await import('$lib/sandbox-kit/walker.js');
 		const box = /** @type {HTMLDivElement} */ (canvasBox);
 		const renderer = new THREE.WebGLRenderer({ antialias: true });
 		renderer.setPixelRatio(Math.min(2, window.devicePixelRatio));
@@ -192,8 +192,6 @@
 				x: out * Math.sin(door),
 				z: out * Math.cos(door),
 				yaw: door,
-				walk: kind === 'tent' || kind === 'glamp' ? 1.4 : 3,
-				hurry: kind === 'tent' || kind === 'glamp' ? 3.2 : 8,
 				floorAt: e.floorAt,
 				// in through its door and round on its own floors, or out on the ground round it
 				canStand: (/** @type {number} */ x, /** @type {number} */ z, /** @type {number} */ here, /** @type {number} */ ground, /** @type {{ x: number, z: number }} */ from) => {
@@ -294,8 +292,9 @@
 				z: w.z,
 				yaw: w.yaw,
 				pitch: -0.05,
-				walk: w.walk ?? 1.4,
-				hurry: w.hurry ?? 3.2,
+				// at the sandboxes' pace, as in every world ($lib/sandbox-kit/walker.js)
+				walk: PACE.walk,
+				hurry: PACE.hurry,
 				// on the round ground, never off its edge
 				canStand: groundR
 					? (/** @type {number} */ x, /** @type {number} */ z, /** @type {number} */ here, /** @type {number} */ ground, /** @type {any} */ from) =>

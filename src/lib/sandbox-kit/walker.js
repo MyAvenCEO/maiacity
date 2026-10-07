@@ -36,6 +36,10 @@
  * @property {() => void} dispose
  */
 
+/** The sandboxes' pace, walking and hurrying (m/s): every world walks at it unless it says otherwise (Sandbox 3's
+ *  domes and village, the Buildings viewer's tents, domes and containers). */
+export const PACE = { walk: 6.45, hurry: 14.6 };
+
 const KEYS = ['w', 'a', 's', 'd', 'arrowup', 'arrowdown', 'arrowleft', 'arrowright', 'shift'];
 /* round a tree, a pillar or a wall rather than stopping at it: the stride is turned a little
    at a time, either way, until it is free, and slowed the further it must turn */
@@ -64,8 +68,8 @@ const TURNS = [25, 50, 75, 90].map((d) => (d * Math.PI) / 180);
 export function createWalker(camera, dom, options = {}) {
 	const {
 		eye = 1.65,
-		walk = 6.45,
-		hurry = 14.6,
+		walk = PACE.walk,
+		hurry = PACE.hurry,
 		keyboard = { walk, hurry },
 		turn = 1.8,
 		mouse = 0.0042,
