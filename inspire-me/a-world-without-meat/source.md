@@ -1,0 +1,21 @@
+Source: https://www.youtube.com/watch?v=JAyuHIthHco
+
+Note: TED-Ed animated lesson, transcript as shared by Samuel on 2026-10-07.
+
+---
+
+Let's explore a hypothetical together. There are over four times as many livestock as people. Farmed cattle alone weigh nearly ten times as much as all wild mammals combined. So imagine if a wizard of meatless dining suddenly appeared and with one wave of a wand wiped away all meat from our shelves— along with any desire to eat it. Farm animals destined for food vanish— whisked away to another planet. What happens in the following days, years, and even millennia?
+
+Overnight, food related greenhouse gas emissions drop by about 63%. We no longer get protein and key nutrients from the approximately 70 billion chickens, 1.5 billion pigs, 300 million cattle, and 200 million tons of fish and shellfish processed for consumption each year. To help fill this nutritional gap, our demand for fruits, vegetables, and legumes go up— a diet that most dietitians agree contains all of the nutrients we need for a healthy life. But initially there aren't enough of these foods to go around. The rise in demand causes produce costs to soar. In regions like Mongolia, where the harsh environment makes it difficult to grow vegetables, a sudden lack of meat leaves people with little to eat.
+
+Cultures built around meat lose their foundations. Members of salmon-eating tribes in the Pacific Northwest of the United States, for example, lose not only sustenance and livelihoods, but an integral component of their religion. Tens of millions of anglers lose work that was already threatened by dwindling fish populations. As the meat industry collapses, many households in developing countries are left scrambling for income that once came from livestock farming. Some meat producers shift to agricultural crops, which leave workers— and neighboring communities— less susceptible to respiratory diseases associated with livestock production.
+
+As crop agriculture expands, prices come down. Ultimately, vegetarianism becomes less expensive than meat-eating in most countries. Luckily, we don't need to clear new farmland to grow all this food. Without animals raised for meat, land that had been used to grow feed is now available. All things considered, our new diets require less land and water. Millions of deaths are avoided every year, thanks in part to lower rates of heart disease, cancer, and other conditions associated with red meat consumption. We no longer contract new pathogens from wild animals hunted for food, or novel influenza viruses from farmed pigs, or drug-resistant superbugs that develop in beef cattle that have been preemptively fed antibiotics.
+
+As the years pass, global biodiversity rises as habitat loss, pesticide use, and other pressures from agriculture subside. Amazonian birds have more forest to fly over. Fewer cheetahs are shot for stalking too close to livestock. Bee, wasp, and butterfly communities thrive as natural areas expand. In turn, insect-pollinated crops produce higher yields. Many ocean species rebound from overfishing.
+
+Throughout history, humans in traditionally vegetarian regions have evolved a genetic mutation that helps them more efficiently process fats from plants. So over thousands of years, our bodies may evolve to make the most of our veggies. Or we may lose some adaptations, like the ability to extract iron from meat.
+
+Of course, a wizard will not turn our world meatless. Though many individuals are choosing to go vegetarian, globally, meat eating is still on the rise. This trend spells trouble for our climate. Even if we suddenly stopped burning fossil fuels, business as usual food systems paired with a growing population would push global temperatures over 1.5°C by the end of the century.
+
+Cattle are the biggest culprit. Beef and dairy production are responsible for over 60% of all food-based emissions, while only providing around 18% of the world's calories. In fact, diets containing modest portions of meats like chicken often produce less greenhouse gas than vegetarian diets high in dairy. Reducing beef, cheese, and milk consumption could go a long way toward achieving many of the benefits of a meatless world— no magic required.
