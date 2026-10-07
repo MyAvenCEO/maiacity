@@ -17,7 +17,8 @@
 	  - a tablet upright: the list down the left, the canvas, and under it the bar, then the readout and the panel side
 	    by side;
 	  - a phone on its side: the list down the left, the canvas, and the bar, the panel and the readout down the right.
-	`full` gives the canvas the whole of it (a walk inside a model): only the bar stays, over it.
+	`full` gives the canvas the whole screen (a walk inside a model, as a dome is walked): the list folds away and only the
+	bar stays, over it.
 -->
 <script>
 	import PickList from './PickList.svelte';
@@ -68,7 +69,7 @@
 </script>
 
 <main class="turntable {name}" class:full class:notch-left={notch === 'left'} class:notch-right={notch === 'right'}>
-	<PickList {...picks} />
+	{#if !full}<PickList {...picks} />{/if}
 	<section class="view">
 		<div class="stage" bind:this={stage}>
 			<div class="canvas" bind:this={canvas}></div>
@@ -180,6 +181,10 @@
 	}
 
 	/* nothing over a walk but its bar, and that only as wide as it is */
+	.turntable.full {
+		grid-template-columns: 1fr;
+	}
+
 	.full .bar {
 		justify-self: end;
 		padding: 0;

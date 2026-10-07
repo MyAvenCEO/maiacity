@@ -16,6 +16,8 @@
 	import { atOrLatest } from '$lib/app/versions.js';
 	import { asset } from '$lib/media/url';
 	import DomeInterior from '$lib/sandbox-2/DomeInterior.svelte';
+	import { WorldBar } from '$lib/sandbox-kit';
+	import { wayBack } from '$lib/app/back.svelte';
 
 	/** @typedef {import('$lib/models').Model} Model */
 	/** @typedef {import('$lib/models').Variant} Variant */
@@ -44,6 +46,10 @@
 	/** @type {Variant | null} */
 	let variant = $state((!isDome(first) && first.variants?.[0]) || null);
 	const variants = $derived(!isDome(chosen) && version === chosen.version ? (chosen.variants ?? []) : []);
+	// walking inside a model the walk has the whole screen, as a dome's does: the nav pill's way back walks out
+	$effect(() => {
+		if (walking) return wayBack('Walk out', () => walkOut?.());
+	});
 	/** a dome being walked inside, full screen */
 	let inside = $state(false);
 	/** @type {[number, number, number] | null} */
@@ -309,6 +315,7 @@
 		<img class="poster" src={asset(chosen.image)} alt="Inside the {chosen.label.toLowerCase()}" />
 	{/if}
 	{#if walking}
+		<WorldBar title={chosen.label} subtitle="{title} · {chosen.usedIn}" sky={false} />
 		<TouchStick move={(x, y, h) => stick?.move(x, y, h)} look={(dx, dy) => stick?.look(dx, dy)} stage={viewBox} taps=".walkbar button" />
 		<WalkHint keys="Drag to look · WASD to walk · Shift to hurry · Esc to walk out" />
 	{/if}

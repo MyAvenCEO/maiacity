@@ -13,13 +13,14 @@
 <script>
 	import SkyControl from './SkyControl.svelte';
 
-	/** @type {{ title: string, subtitle?: string }} */
-	let { title, subtitle = '' } = $props();
+	/** without `sky` (a model walked in the viewer, with no sky of its own) the bar has only the name */
+	/** @type {{ title: string, subtitle?: string, sky?: boolean }} */
+	let { title, subtitle = '', sky = true } = $props();
 </script>
 
 <div class="bar">
 	<div class="title"><strong>{title}</strong>{#if subtitle}<span>{subtitle}</span>{/if}</div>
-	<SkyControl class="time" />
+	{#if sky}<SkyControl class="time" />{/if}
 </div>
 
 <style>
