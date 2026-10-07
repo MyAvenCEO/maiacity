@@ -1,7 +1,7 @@
 <!--
 	avenCITY Sandbox 6 — a valley of settlers: the whole game on one page. The world fills the screen (./game.js); over
 	it the tools (build, road, flag, tear down, the market, the building tree, the clock), the build menu, the valley's abundance, what
-	your storehouses hold, the goals, the market (prices, your orders, the neighbours' requests), the card of whatever
+	your storehouses hold, the goals, the market (what to sell and buy, the neighbours' requests), the card of whatever
 	is selected, and the valley's news.
 -->
 <script>
@@ -44,10 +44,6 @@
 	let owned = $state(/** @type {Record<string, number>} */ ({}));
 	/** @type {ReturnType<import('./sim.js').Sim['market']> | null} */
 	let market = $state(null);
-	/** the ware whose order is being set */
-	let editing = $state('');
-	/** @type {{ sell: boolean, above: number, keep: number, buy: boolean, below: number, upTo: number }} */
-	let draft = $state({ sell: false, above: 0, keep: 0, buy: false, below: 0, upTo: 0 });
 	let seenMsg = 0;
 	/** @type {{ text: string, tone: string, node: number, key: number }[]} */
 	let toasts = $state([]);
@@ -94,19 +90,9 @@
 		selected = s;
 		refresh();
 	}
-	/** open a ware's order to set it: what is set now, or a sensible start from its price */
-	function edit(/** @type {string} */ w) {
-		if (editing === w) return void (editing = '');
-		const row = market?.wares.find((x) => x.w === w);
-		if (!row) return;
-		const p = Math.round(row.price * 10) / 10;
-		draft = row.order ? { ...row.order } : { sell: false, above: Math.max(1, Math.round(p)), keep: 10, buy: false, below: Math.max(1, Math.round(p * 1.2)), upTo: 20 };
-		editing = w;
-	}
-	function saveOrder() {
-		if (!editing) return;
-		game?.sim.order(editing, draft.sell || draft.buy ? { ...draft } : null);
-		editing = '';
+	/** sell or buy a ware at the fair; the same again stops it */
+	function setOrder(/** @type {string} */ w, /** @type {'sell' | 'buy'} */ o) {
+		game?.sim.order(w, market?.wares.find((x) => x.w === w)?.order === o ? null : o);
 		refresh();
 	}
 	const money = (/** @type {number} */ n) => (n < 10 ? n.toFixed(1) : String(Math.round(n)));
@@ -173,7 +159,7 @@
 		<button class:on={mode === 'road'} onclick={() => tool('road')} title="Road (R)"><span class="ic">⟋</span>Road</button>
 		<button class:on={mode === 'flag'} onclick={() => tool('flag')} title="Flag (F)"><span class="ic">⚑</span>Flag</button>
 		<button class:on={mode === 'demolish'} onclick={() => tool('demolish')} title="Tear down (X)"><span class="ic">✕</span>Tear down</button>
-		<button class:on={marketOpen} onclick={() => ((marketOpen = !marketOpen), (menuOpen = false), (treeOpen = false))} title="The market: prices, your orders, requests"><span class="ic">⚖</span>Market</button>
+		<button class:on={marketOpen} onclick={() => ((marketOpen = !marketOpen), (menuOpen = false), (treeOpen = false))} title="The market: what to sell and buy"><span class="ic">⚖</span>Market</button>
 		<button class:on={treeOpen} onclick={() => ((treeOpen = !treeOpen), (menuOpen = false), (marketOpen = false), refresh())} title="The building tree: what each building needs and makes"><span class="ic">⌥</span>Tree</button>
 		<div class="speed" role="group" aria-label="Speed">
 			{#each [[0, '❚❚'], [1, '1×'], [2, '2×'], [4, '4×']] as [s, t] (s)}
@@ -276,59 +262,30 @@
 			<p class="eyebrow">The fair · {money(market.purse)} coins in your purse</p>
 			<h2>Market</h2>
 			{#if !market.halls}<p class="status">Build a market hall (Trade) to send a trader to the fair.</p>{/if}
-			<p class="about">Prices follow how much of a ware the fair holds: selling makes it cheaper, buying dearer. Set an order and your trader fills it whenever the price allows.</p>
 			{#if market.contracts.length}
-				<p class="label">Requests</p>
 				<ul class="requests">
 					{#each market.contracts as c (c.id)}
 						<li>
-							<span><b>{c.who}</b> asks for {c.n} {label(c.w).toLowerCase()} · {c.reward ? `${c.reward} coins` : 'help: no coins left'} · {clock(c.left)} left{#if c.got}<em> · {c.got} brought</em>{/if}</span>
-							<button class:go={!c.taken} onclick={() => (game?.sim.take(c.id, !c.taken), refresh())}>{c.taken ? 'Taken' : 'Take it'}</button>
+							<span><b>{c.who}</b> needs {c.n} {label(c.w).toLowerCase()} · {c.reward ? `pays ${c.reward}` : 'no coins left'}{#if c.got}<em> · {c.got} brought</em>{/if}</span>
+							<button class:go={!c.taken} onclick={() => (game?.sim.take(c.id, !c.taken), refresh())}>{c.taken ? 'Sending ✓' : 'Send'}</button>
 						</li>
 					{/each}
 				</ul>
 			{/if}
-			<table class="prices">
-				<thead><tr><th>Ware</th><th>Price</th><th>Fair</th><th>Yours</th><th>Order</th></tr></thead>
-				<tbody>
-					{#each market.wares as x (x.w)}
-						<tr class:open={editing === x.w} onclick={() => edit(x.w)}>
-							<td><i style:background={WARES[x.w].color}></i> {label(x.w)}</td>
-							<td>{money(x.price)} <span class="trend t{x.trend}">{x.trend > 0 ? '▲' : x.trend < 0 ? '▼' : '·'}</span></td>
-							<td>{x.pool}</td>
-							<td>{x.stock}</td>
-							<td class="order">{x.order ? [x.order.sell ? `sell ≥${x.order.above}` : '', x.order.buy ? `buy ≤${x.order.below}` : ''].filter(Boolean).join(' · ') : '–'}</td>
-						</tr>
-						{#if editing === x.w}
-							<tr class="editor">
-								<td colspan="5">
-									<label><input type="checkbox" bind:checked={draft.sell} /> Sell when the price is at least <input type="number" min="0" step="0.5" bind:value={draft.above} />, keeping <input type="number" min="0" bind:value={draft.keep} /></label>
-									<label><input type="checkbox" bind:checked={draft.buy} /> Buy when the price is at most <input type="number" min="0" step="0.5" bind:value={draft.below} />, up to <input type="number" min="0" bind:value={draft.upTo} /> in store</label>
-									<div class="actions">
-										<button class="go" onclick={(e) => (e.stopPropagation(), saveOrder())}>Set order</button>
-										<button onclick={(e) => (e.stopPropagation(), (editing = ''))}>Cancel</button>
-									</div>
-								</td>
-							</tr>
-						{/if}
-					{/each}
-				</tbody>
-			</table>
-			<p class="label">How the valley lives</p>
-			<ul class="settlements">
-				{#each market.parties as p (p.name)}
+			<ul class="trade">
+				{#each market.wares as x (x.w)}
 					<li>
-						<p><b>{p.name}</b> · {p.pop} people · wellbeing {Math.round(p.wb)}{#if p.name !== 'You'} · {Math.round(p.coins)} coins{/if}</p>
-						<div class="needbars">
-							{#each Object.entries(p.sat) as [need, v] (need)}
-								<span title="{NEED_LABEL[/** @type {keyof typeof NEED_LABEL} */ (need)]}: {Math.round(v * 100)}%"><em>{NEED_LABEL[/** @type {keyof typeof NEED_LABEL} */ (need)]}</em><span class="bar"><span class={tone(v * 100)} style:width="{v * 100}%"></span></span></span>
-							{/each}
-							<span title="Put by: {Math.round(p.reserve * 100)}%"><em>Put by</em><span class="bar"><span class={tone(p.reserve * 100)} style:width="{p.reserve * 100}%"></span></span></span>
-						</div>
+						<i style:background={WARES[x.w].color}></i>
+						<span class="name">{label(x.w)}<em>{x.stock}</em></span>
+						<span class="price">{money(x.price)}<span class="trend t{x.trend}">{x.trend > 0 ? '▲' : x.trend < 0 ? '▼' : ''}</span></span>
+						<span class="pick">
+							<button class:sell={x.order === 'sell'} onclick={() => setOrder(x.w, 'sell')}>Sell</button>
+							<button class:buy={x.order === 'buy'} onclick={() => setOrder(x.w, 'buy')}>Buy</button>
+						</span>
 					</li>
 				{/each}
 			</ul>
-			<p class="small">You sold {market.sold} and bought {market.bought} wares at the fair.</p>
+			<p class="small">Sell lets your trader take what you can spare; Buy brings what you are short of. Selling makes a ware cheaper, buying dearer.</p>
 		</section>
 	{/if}
 
@@ -367,7 +324,7 @@
 					{#each Object.entries(card.box).filter(([, n]) => n > 0) as [w, n] (w)}<li title={label(w)}><i style:background={WARES[w].color}></i><span>{label(w)}</span><b>{n}</b></li>{/each}
 					{#if !Object.values(card.box).some((n) => n > 0)}<li class="none"><span>nothing yet</span></li>{/if}
 				</ul>
-				<div class="actions"><button onclick={() => (marketOpen = true)}>Orders in the Market</button></div>
+				<div class="actions"><button onclick={() => (marketOpen = true)}>Open the Market</button></div>
 			{/if}
 			{#if card.stock}
 				<p class="label">{card.settlers} settlers inside</p>
@@ -854,52 +811,64 @@
 		background: none;
 		font-size: 1.2rem;
 	}
-	.prices {
-		width: 100%;
-		border-collapse: collapse;
-		font-size: 0.75rem;
+	.trade {
+		margin: 0.2rem 0 0.4rem;
+		padding: 0;
+		list-style: none;
+		font-size: 0.78rem;
 	}
-	.prices th {
-		text-align: left;
-		font-weight: 500;
-		opacity: 0.6;
-		padding: 0.2rem 0.25rem;
-	}
-	.prices td {
-		padding: 0.22rem 0.25rem;
+	.trade li {
+		display: grid;
+		grid-template-columns: 0.6rem 1fr auto auto;
+		align-items: center;
+		gap: 0.5rem;
+		padding: 0.22rem 0;
 		border-top: 1px solid rgb(31 42 35 / 0.07);
-		white-space: nowrap;
 	}
-	.prices tbody tr {
-		cursor: pointer;
+	.trade i {
+		width: 0.6rem;
+		height: 0.6rem;
+		border-radius: 3px;
 	}
-	.prices tbody tr:hover,
-	.prices tr.open {
-		background: rgb(255 255 255 / 0.6);
+	.trade .name em {
+		margin-left: 0.4rem;
+		font-style: normal;
+		opacity: 0.5;
 	}
-	.prices .order {
-		font-size: 0.7rem;
-		opacity: 0.8;
+	.trade .price {
+		min-width: 2.6rem;
+		text-align: right;
+		font-variant-numeric: tabular-nums;
+	}
+	.pick {
+		display: flex;
+		border: 1px solid rgb(31 42 35 / 0.15);
+		border-radius: 999px;
+		overflow: hidden;
+	}
+	.pick button {
+		padding: 0.25rem 0.6rem;
+		border: 0;
+		background: rgb(255 255 255 / 0.7);
+		font-size: 0.72rem;
+	}
+	.pick button + button {
+		border-left: 1px solid rgb(31 42 35 / 0.15);
+	}
+	.pick button.sell {
+		background: #24452f;
+		color: #f4f1e8;
+	}
+	.pick button.buy {
+		background: #2f6fb3;
+		color: #fff;
 	}
 	.trend {
 		font-size: 0.62rem;
 		opacity: 0.8;
+		margin-left: 0.1rem;
 	}
-	.editor td {
-		white-space: normal;
-		background: rgb(255 255 255 / 0.75);
-	}
-	.editor label {
-		display: block;
-		margin: 0.25rem 0;
-		line-height: 1.8;
-	}
-	.editor input[type='number'] {
-		width: 3.4rem;
-		font: inherit;
-	}
-	.requests,
-	.settlements {
+	.requests {
 		margin: 0 0 0.4rem;
 		padding: 0;
 		list-style: none;
@@ -929,20 +898,6 @@
 	}
 	.requests em {
 		font-style: normal;
-		opacity: 0.6;
-	}
-	.settlements p {
-		margin: 0 0 0.15rem;
-	}
-	.needbars {
-		display: grid;
-		grid-template-columns: repeat(5, 1fr);
-		gap: 0.3rem;
-	}
-	.needbars em {
-		display: block;
-		font-style: normal;
-		font-size: 0.64rem;
 		opacity: 0.6;
 	}
 	.actions {

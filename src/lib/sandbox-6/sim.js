@@ -15,8 +15,8 @@
  *     and what they lack (./market.js);
  *   · every settlement eats, drinks and keeps its homes, and the valley's abundance follows how well they all live.
  */
-import { ABUNDANT, BUILDINGS, FOOD, GOALS, GRASS, HOLD, MOUNTAIN, PEOPLE, START, WARES, WATER, holdsLand } from './rules.js';
-import { CART, NEIGHBOURS, TRADED, abundance, buyOne, cost, fair, live, make, newMarket, price, request, sellOne, shop, toSell, trend } from './market.js';
+import { ABUNDANT, BUILDINGS, FOOD, GOALS, GRASS, HOLD, IRON, MOUNTAIN, PEOPLE, START, WARES, WATER, holdsLand } from './rules.js';
+import { CART, NEIGHBOURS, TRADED, abundance, buyOne, cost, fair, live, make, newMarket, orderRule, price, request, sellOne, shop, toSell, trend } from './market.js';
 import { SE, findPath, makeGrid } from './hex.js';
 import { growValley } from './map.js';
 
@@ -44,7 +44,7 @@ export function newGame(seed = 7) {
 	const v = growValley(seed);
 	const N = v.W * v.H;
 	const st = {
-		v: 2,
+		v: 3,
 		seed,
 		time: 0,
 		rng: (Math.imul(seed, 2654435761) >>> 0) || 1,
@@ -79,7 +79,7 @@ export function newGame(seed = 7) {
 		fair: 0,
 		/** @type {number[]} */ villages: [],
 		...newMarket(),
-		/** your standing orders at the fair, by ware @type {Record<string, { sell: boolean, above: number, keep: number, buy: boolean, below: number, upTo: number }>} */
+		/** your orders at the fair: sell or buy, by ware @type {Record<string, 'sell' | 'buy'>} */
 		orders: {},
 		/** buildings burning, for a while */
 		/** @type {{ node: number, t: number }[]} */ fx: [],
@@ -93,7 +93,7 @@ export function newGame(seed = 7) {
 /** A game from its saved state. @param {string | object} saved */
 export function loadGame(saved) {
 	const st = typeof saved === 'string' ? JSON.parse(saved) : saved;
-	if (!st || st.v !== 2 || !Array.isArray(st.terrain)) throw new Error('Not a Sandbox 6 game of this kind');
+	if (!st || st.v !== 3 || !Array.isArray(st.terrain)) throw new Error('Not a Sandbox 6 game of this kind');
 	return createSim(st);
 }
 
@@ -275,7 +275,7 @@ export function createSim(st) {
 			box: /** @type {Record<string, number>} */ ({}), incBox: /** @type {Record<string, number>} */ ({}), outQ: /** @type {string[]} */ ([])
 		};
 		for (const w of Object.keys(b.cost)) (b.used[w] = 0), (b.got[w] = 0), (b.inc[w] = 0);
-		if (t.kind === 'mine') b.deposit = depositAt(node, /** @type {string} */ (t.ore));
+		if (t.kind === 'mine') b.deposit = depositAt(node);
 		flag.bld = b.id;
 		st.obj[node] = { k: 'bld', id: b.id };
 		st.buildings[b.id] = b;
@@ -283,10 +283,9 @@ export function createSim(st) {
 		return b;
 	}
 	/** how much ore a mine at a node can dig: what the rock round it holds */
-	function depositAt(/** @type {number} */ node, /** @type {string} */ ore) {
-		const code = ore === 'coal' ? 1 : ore === 'iron' ? 2 : 3;
+	function depositAt(/** @type {number} */ node) {
 		let n = 0;
-		for (const j of g.within(node, 2)) if (st.terrain[j] === MOUNTAIN && st.ore[j] === code) n += st.amount[j];
+		for (const j of g.within(node, 2)) if (st.terrain[j] === MOUNTAIN && st.ore[j] === IRON) n += st.amount[j];
 		return n * 4;
 	}
 	function destroyWare(/** @type {any} */ w) {
@@ -387,8 +386,7 @@ export function createSim(st) {
 		const h = st.buildings[u.home];
 		if (h && h.owner === u.owner) {
 			h.settlers++;
-			if (u.ware === 'coin') st.parties[PLAYER].coins++;
-			else if (u.ware && isWarehouse(h)) h.stock[u.ware] = (h.stock[u.ware] ?? 0) + 1;
+			if (u.ware && isWarehouse(h)) h.stock[u.ware] = (h.stock[u.ware] ?? 0) + 1;
 		}
 		removeUnit(u);
 	}
@@ -428,7 +426,7 @@ export function createSim(st) {
 					b.status = !any ? 'Not connected by road' : noTools ? 'Waiting for tools (build a toolmaker)' : 'Waiting for a settler';
 					if (any && noTools && st.time - (st.toolsWarned ?? -999) > 300) {
 						st.toolsWarned = st.time;
-						say('You are out of tools: a toolmaker makes them from iron and planks.', b.node, 'alert');
+						say('You are out of tools: a toolmaker makes them from iron ore and planks, or buy them at the fair.', b.node, 'alert');
 					}
 					continue;
 				}
@@ -461,9 +459,7 @@ export function createSim(st) {
 		const b = st.buildings[w.dest];
 		delete st.wares[w.id];
 		if (!b) return;
-		// coins go into your purse
-		if (isWarehouse(b) && b.stage === 'live' && w.type === 'coin') st.parties[PLAYER].coins++;
-		else if (isWarehouse(b) && b.stage === 'live') b.stock[w.type] = (b.stock[w.type] ?? 0) + 1;
+		if (isWarehouse(b) && b.stage === 'live') b.stock[w.type] = (b.stock[w.type] ?? 0) + 1;
 		else if (b.stage === 'site') {
 			b.inc[w.type] = Math.max(0, b.inc[w.type] - 1);
 			b.got[w.type]++;
@@ -847,7 +843,7 @@ export function createSim(st) {
 			case 'woodcutter':
 				if (o?.k === 'tree') {
 					st.obj[j] = null;
-					u.ware = 'log';
+					u.ware = 'plank';
 					st.objV++;
 				}
 				break;
@@ -896,6 +892,8 @@ export function createSim(st) {
 	/** contracts you took that still want a ware */
 	/** @returns {any[]} */
 	const promised = (/** @type {string} */ w) => st.market.contracts.filter((/** @type {any} */ c) => c.taken && c.w === w && c.got < c.n && c.until > st.time);
+	/** what selling or buying a ware means for you now (./market.js) */
+	const rule = (/** @type {string} */ w) => orderRule(w, st.parties[PLAYER].pop ?? 0);
 	/** what a market hall asks the storehouses for: what your sell orders let go of, and what your requests promise */
 	function hallWants(/** @type {any} */ b) {
 		const reqs = [];
@@ -907,7 +905,10 @@ export function createSim(st) {
 			const owed = promised(w).reduce((s, c) => s + c.n - c.got, 0);
 			const inHand = (b.box[w] ?? 0) + (b.incBox[w] ?? 0);
 			let n = Math.max(0, Math.min(owed - inHand, stocked(w)));
-			if (o?.sell && price(st.market, w) >= o.above) n = Math.max(n, Math.min(CART - inHand, stocked(w) - o.keep));
+			if (o === 'sell') {
+				const r = rule(w);
+				if (price(st.market, w) >= r.above) n = Math.max(n, Math.min(CART - inHand, stocked(w) - r.keep));
+			}
 			n = Math.min(n, room);
 			if (n > 0) {
 				reqs.push({ types: [w], slot: -3, n });
@@ -922,9 +923,10 @@ export function createSim(st) {
 		/** @type {[string, number][]} */
 		const list = [];
 		for (const w of TRADED) {
-			const o = st.orders[w];
-			if (!o?.buy || m.pool[w] < 1 || cost(m, w) > o.below || cost(m, w) > purse()) continue;
-			const n = Math.min(CART, o.upTo - stocked(w) - coming(w));
+			if (st.orders[w] !== 'buy') continue;
+			const r = rule(w);
+			if (m.pool[w] < 1 || cost(m, w) > r.below || cost(m, w) > purse()) continue;
+			const n = Math.min(CART, r.upTo - stocked(w) - coming(w));
 			if (n > 0) list.push([w, n]);
 		}
 		return list.sort((a, b) => b[1] - a[1]);
@@ -944,7 +946,7 @@ export function createSim(st) {
 		const coming_ = Object.values(b.incBox).reduce((/** @type {number} */ s, /** @type {any} */ n) => s + n, 0);
 		const buys = wantBuys();
 		if (!(boxed >= CART || (boxed > 0 && coming_ === 0) || buys.length)) {
-			b.status = boxed || coming_ ? 'Loading wares for the fair' : 'Waiting for orders: set them in the Market';
+			b.status = boxed || coming_ ? 'Loading wares for the fair' : 'Nothing to trade: choose what to sell or buy in the Market';
 			return;
 		}
 		const fairB = st.buildings[st.fair];
@@ -985,8 +987,8 @@ export function createSim(st) {
 					say(paid ? `${p.name} got its ${WARES[w].label.toLowerCase()} and paid ${paid} coins. Thank you!` : `${p.name} thanks you for the ${WARES[w].label.toLowerCase()}!`, -1, 'good');
 				}
 			}
-			const o = st.orders[w];
-			while (n > 0 && price(m, w) >= (o?.sell ? o.above : 0)) {
+			const floor = st.orders[w] === 'sell' ? rule(w).above : 0;
+			while (n > 0 && price(m, w) >= floor) {
 				you.coins += sellOne(m, w);
 				m.sold++;
 				n--;
@@ -995,9 +997,9 @@ export function createSim(st) {
 		}
 		let room = CART - Object.values(back).reduce((a, b) => a + b, 0);
 		for (const [w, want] of wantBuys()) {
-			const o = st.orders[w];
+			const below = rule(w).below;
 			let n = Math.min(want, room);
-			while (n > 0 && m.pool[w] >= 1 && cost(m, w) <= o.below && cost(m, w) <= you.coins) {
+			while (n > 0 && m.pool[w] >= 1 && cost(m, w) <= below && cost(m, w) <= you.coins) {
 				you.coins -= buyOne(m, w);
 				back[w] = (back[w] ?? 0) + 1;
 				m.bought++;
@@ -1187,7 +1189,7 @@ export function createSim(st) {
 		for (const goal of GOALS) {
 			if (st.goals[goal.id]) continue;
 			let done = false;
-			if (goal.id === 'wood') done = live('woodcutter') && live('sawmill');
+			if (goal.id === 'wood') done = live('woodcutter') && live('quarry');
 			else if (goal.id === 'market') done = st.market.sold > 0;
 			else if (goal.id === 'trade') done = st.market.sold + st.market.bought >= /** @type {number} */ (goal.n);
 			else if (goal.id === 'contract') done = st.market.filled > 0;
@@ -1318,7 +1320,7 @@ export function createSim(st) {
 			if (st.flags[o.id].bld) return 'That flag already serves a building';
 		} else if (canFlag(f)) return `No room for its flag: ${canFlag(f).toLowerCase()}`;
 		if (type === 'fishery' && !g.within(n, 4).some((j) => st.terrain[j] === WATER)) return 'Needs water nearby';
-		if (t.kind === 'mine' && depositAt(n, /** @type {string} */ (t.ore)) <= 0) return `No ${t.ore === 'iron' ? 'iron ore' : t.ore === 'gold' ? 'gold' : 'coal'} in this rock`;
+		if (t.kind === 'mine' && depositAt(n) <= 0) return 'No iron ore in this rock';
 		return '';
 	}
 	/** the open way for a road between a flag and a node, or null @param {number} from @param {number} to */
@@ -1365,8 +1367,7 @@ export function createSim(st) {
 			const hq = makeBuilding('hq', v.hq, PLAYER, true);
 			hq.stock = { ...START.stock };
 			hq.settlers = START.settlers;
-			delete hq.stock.coin;
-			st.parties[PLAYER].coins = START.stock.coin;
+			st.parties[PLAYER].coins = START.coins;
 			hq.since = 0;
 			st.hq = hq.id;
 			// the neighbours hold their land first
@@ -1378,7 +1379,7 @@ export function createSim(st) {
 			const f = makeBuilding('fair', v.fair, FAIR, true);
 			st.fair = f.id;
 			territory();
-			say('Welcome to the valley. Build a woodcutter and a sawmill near the forest, and join them to your headquarters by road.', hq.node);
+			say('Welcome to the valley. Build a woodcutter near the forest and a quarry near the rocks, and join them to your headquarters by road.', hq.node);
 		},
 		canBuild,
 		canFlag,
@@ -1428,10 +1429,10 @@ export function createSim(st) {
 			const b = st.buildings[id];
 			if (b && b.owner === PLAYER) b.paused = paused;
 		},
-		/** set (or with null clear) your standing order for a ware at the fair */
-		order(/** @type {string} */ w, /** @type {{ sell: boolean, above: number, keep: number, buy: boolean, below: number, upTo: number } | null} */ o) {
+		/** sell or buy a ware at the fair, or (null) neither */
+		order(/** @type {string} */ w, /** @type {'sell' | 'buy' | null} */ o) {
 			if (!TRADED.includes(w)) return;
-			if (o) st.orders[w] = { ...o };
+			if (o) st.orders[w] = o;
 			else delete st.orders[w];
 		},
 		/** take (or let go of) a neighbour's request: your market halls gather it and your trader brings it */

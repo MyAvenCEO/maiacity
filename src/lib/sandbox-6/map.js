@@ -1,12 +1,12 @@
 /**
  * SANDBOX 6 · THE VALLEY — one island valley grown from a seed: your headquarters in the west, three neighbour
  * villages in the east (by the peaks, by the southern lake, in the northern hills), the fair between you, and round
- * them what an economy needs: forests, rocks, lakes to fish and mountains to mine. Your mountains hold coal and gold
- * but no iron: the only iron lies under Eastmere's peaks, so iron and tools come to you by trade.
+ * them what an economy needs: forests, rocks, lakes to fish and mountains to mine. Your mountains are mostly bare rock,
+ * with one thin vein of iron in the south: the rich iron lies under Eastmere's peaks, so most of your tools come by trade.
  *
  * Pure: the same seed grows the same valley.
  */
-import { GRASS, MOUNTAIN, SAND, WATER } from './rules.js';
+import { GRASS, IRON, MOUNTAIN, SAND, WATER } from './rules.js';
 import { makeGrid, rng } from './hex.js';
 
 export const W = 46, H = 40;
@@ -17,7 +17,7 @@ export const W = 46, H = 40;
  * @property {number} H
  * @property {number[]} terrain GRASS, WATER, MOUNTAIN or SAND per node
  * @property {number[]} height metres
- * @property {number[]} ore 0 none, 1 coal, 2 iron, 3 gold
+ * @property {number[]} ore 0 bare rock, 2 iron
  * @property {number[]} amount how much ore a mountain node holds
  * @property {number[]} fish fish in a water node
  * @property {({ k: 'tree', g: number } | { k: 'rock', n: number } | null)[]} obj trees and rocks
@@ -66,12 +66,12 @@ export function growValley(seed) {
 	const villages = [node(35, 18), node(36, 29), node(29, 10)];
 	const fair = node(22, 15);
 
-	/** @type {[number, number, number, string[]][]} mountains: centre, radius, the ores from its heart out */
+	/** @type {[number, number, number, (string | null)[]][]} mountains: centre, radius, the ores from its heart out */
 	const MOUNTAINS = [
-		[8, 12, 4.4, ['coal']],
-		[19, 32, 3.7, ['gold', 'coal']],
-		[24, 4, 3.2, ['coal']],
-		[39, 7, 4.2, ['iron', 'coal']]
+		[8, 12, 4.4, [null]],
+		[19, 32, 3.7, ['iron', null, null]],
+		[24, 4, 3.2, [null]],
+		[39, 7, 4.2, ['iron', 'iron', null]]
 	];
 	/** @type {[number, number, number][]} lakes */
 	const LAKES = [[4, 30, 3.4], [25, 20, 2.4], [42, 33, 3.2], [11, 35, 2.0]];
@@ -93,8 +93,9 @@ export function growValley(seed) {
 				terrain[i] = MOUNTAIN;
 				height[i] = 1.8 + k * 1.5 + noise(x, y, 0.7) * 1.1;
 				const o = ores[Math.min(ores.length - 1, Math.floor((1 - Math.min(1, k / R)) * ores.length * 1.15))];
-				ore[i] = o === 'coal' ? 1 : o === 'iron' ? 2 : 3;
-				amount[i] = 3 + Math.floor(rand() * 5);
+				ore[i] = o === 'iron' ? IRON : 0;
+				// your thin vein in the south holds little
+				amount[i] = o ? (cy > 20 ? 2 : 3) + Math.floor(rand() * (cy > 20 ? 2 : 5)) : 0;
 			}
 		}
 		for (const [cx, cy, R] of LAKES) {

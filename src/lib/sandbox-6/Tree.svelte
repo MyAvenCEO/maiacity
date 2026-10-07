@@ -54,7 +54,7 @@
 						<foreignObject width={W} height={H}>
 							<div class="node w" title={TRADE_NOTE[id] ?? ''}>
 								<strong><i style:background={WARES[id].color}></i>{label(id)}{#if LIVED_ON.has(id)}<b class="heart">♥</b>{/if}<em>{stock[id] ?? 0}</em></strong>
-								<span>{TRADE_NOTE[id] ?? (id === 'coin' ? 'Money: only for trade' : '')}</span>
+								<span>{TRADE_NOTE[id] ?? ''}</span>
 							</div>
 						</foreignObject>
 					{/if}
@@ -71,7 +71,7 @@
 			</button>
 		{/each}
 	</div>
-	<p class="small">⚒ its worker takes a tool from your stores when it starts: tools come from the toolmaker (iron and planks) or by trade. A dashed line means any one of these wares will do: miners eat fish, bread or meat.</p>
+	<p class="small">⚒ its worker takes a tool from your stores when it starts: tools come from the toolmaker (iron ore and planks) or by trade. A dashed line means either ware will do: miners eat fish or bread.</p>
 </section>
 
 <style>
