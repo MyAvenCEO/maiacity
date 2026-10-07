@@ -16,7 +16,7 @@
  *   · every village eats and drinks, in kg and litres (./food.js): its hexes' food forests grow a share of it, more
  *     each year, it buys the rest by itself, and its roofs fill its tanks with rain. There is no goal to win.
  */
-import { BIOMES, BUILDINGS, GROWS, GRASS, HOUSE_BEDS, HOUSE_MOST, HOUSE_TOP, HOUSE_UP, IRON, MOUNTAIN, START, STEEL, WARES, WATER, WOOD, holdsLand } from './rules.js';
+import { BIOMES, BUILDINGS, GROWS, GRASS, HOUSE_BEDS, HOUSE_MOST, HOUSE_TOP, HOUSE_UP, IRON, MOUNTAIN, ROUNDS_YEAR, START, STEEL, WARES, WATER, WOOD, holdsLand } from './rules.js';
 import { CART, HEARTS, NEEDS, NEIGHBOURS, TRADED, WORLD, heartsFor, keepOf, live, make, newMarket, orderRule, party, priceIn, request, shortIn, spareIn } from './market.js';
 import { SE, STEP, findPath, makeGrid } from './hex.js';
 import { CISTERN, FOOD_KG, FRESH_L, KEEP, MOST, PACE, PRICE, RAIN_L, RAIN_MONTH, TANK, WATER_PRICE, WATER_USE, WEEK, YEAR, DAY, calendar, forestShare } from './food.js';
@@ -885,8 +885,20 @@ export function createSim(st) {
 	};
 	/** how much of a ware the storehouses hold */
 	const stocked = (/** @type {string} */ ware) => warehouses().reduce((s, w) => s + (w.stock[ware] ?? 0), 0);
+	/** how many rounds a building's land gives it yet (trees to fell, loads of ore to dig): it gathers with the
+	 * calendar, up to a quarter year's, and a new building starts with one */
+	const quotaOf = (/** @type {any} */ b) => b.quota ?? 1;
+	/** what a building that waits on its land says: how much its land gives a year, and when the next round is ready */
+	const waits = (/** @type {any} */ b) => {
+		const days = Math.ceil(((1 - quotaOf(b)) * YEAR) / ROUNDS_YEAR[b.type]);
+		return b.type === 'woodcutter'
+			? `Its land grows ${ROUNDS_YEAR[b.type]} trees a year: the next is ready in ${days} ${days === 1 ? 'day' : 'days'}`
+			: `Its iron gives ${ROUNDS_YEAR[b.type] * 25} t of ore a year: the next 25 t in ${days} ${days === 1 ? 'day' : 'days'}`;
+	};
 	function work(/** @type {any} */ b, /** @type {number} */ dt) {
 		const t = T(b);
+		// a wood or steel building's land gives it so much a year, on the calendar
+		if (ROUNDS_YEAR[b.type] && b.stage === 'live') b.quota = Math.min(Math.max(1, ROUNDS_YEAR[b.type] / 4), quotaOf(b) + (ROUNDS_YEAR[b.type] * dt * PACE) / YEAR);
 		if (b.stage === 'site') {
 			const u = st.units[b.builder];
 			if (!u || u.job !== 'b-work') return;
@@ -930,11 +942,13 @@ export function createSim(st) {
 			else if (b.paused) b.status = 'Paused';
 			else if (t.kind === 'mine' && b.deposit <= 0) b.status = 'The vein is used up';
 			else if (stocked(/** @type {string} */ (t.out)) >= ENOUGH && !exported(/** @type {string} */ (t.out))) b.status = 'Resting: the storehouses are full of it';
+			else if (ROUNDS_YEAR[b.type] && quotaOf(b) < 1) b.status = waits(b);
 			else {
 				const missing = b.slots.findIndex((/** @type {any} */ s) => s.have < 1);
 				if (missing >= 0) b.status = `Waiting for ${/** @type {string[][]} */ (t.inputs)[missing].map((w) => WARES[w].label.toLowerCase()).join(' or ')}`;
 				else {
 					for (const s of b.slots) s.have--;
+					if (ROUNDS_YEAR[b.type]) b.quota = quotaOf(b) - 1;
 					b.timer = /** @type {number} */ (t.time);
 					b.status = 'Working';
 					busy = true;
@@ -953,6 +967,10 @@ export function createSim(st) {
 				const path = target && findPath(g, b.node, target[1], walkable, 1500);
 				if (!target || !path) {
 					b.status = b.type === 'woodcutter' && woodLevel(b) === 1 ? 'The forest round it is full: upgrade it to a woodcutter to fell trees' : NOTHING[b.type] ?? 'Nothing to do';
+					b.timer = 3;
+				} else if (b.type === 'woodcutter' && st.obj[target[0]] && quotaOf(b) < 1) {
+					// a grown tree, but its land has given this year's: it waits for the calendar
+					b.status = waits(b);
 					b.timer = 3;
 				} else {
 					const plant = b.type === 'forester' || (b.type === 'woodcutter' && !st.obj[target[0]]);
@@ -1044,6 +1062,7 @@ export function createSim(st) {
 				if (o?.k === 'tree' && o.g >= 1 && woodLevel(b) >= 2) {
 					st.obj[j] = { k: 'tree', g: 0.04 };
 					u.ware = 'plank';
+					b.quota = quotaOf(b) - 1;
 					st.objV++;
 				} else if (!o && !st.road[j]) {
 					st.obj[j] = { k: 'tree', g: 0.04 };
@@ -1231,7 +1250,7 @@ export function createSim(st) {
 		const v = villageAt(c.node);
 		const pop = villagePeople(v);
 		const need = /** @type {Record<string, number>} */ (NEEDS)[w] ?? 0;
-		let want = need * pop * 10;
+		let want = need * pop * 0.25;
 		for (const b of mineIn(v)) {
 			if (b.stage === 'site') want += Math.max(0, (b.cost[w] ?? 0) - (b.used[w] ?? 0) - (b.got[w] ?? 0) - (b.inc[w] ?? 0));
 			else if ((T(b).inputs ?? []).some((/** @type {string[]} */ s) => s.includes(w))) want += 4;
@@ -1700,7 +1719,7 @@ export function createSim(st) {
 			live(
 				p,
 				p.pop,
-				dt,
+				dd,
 				(w) => ((c.stock[w] ?? 0) >= 1 ? ((c.stock[w] -= 1), true) : false)
 			);
 		}
@@ -1713,7 +1732,7 @@ export function createSim(st) {
 			live(
 				p,
 				p.pop,
-				dt,
+				dd,
 				(w) => ((p.stock[w] ?? 0) >= 1 ? ((p.stock[w] -= 1), true) : false)
 			);
 		}
@@ -2281,7 +2300,7 @@ export function createSim(st) {
 			// what it buys of water now, a week: what its rain leaves short, while its tanks are dry
 			const dry = runsDry(v, p, 1) ? Math.max(0, (pop * FRESH_L - rainIn(v)) * 7) : 0;
 			const has = (/** @type {string} */ w) => c.stock[w] ?? 0;
-			/** per resource, what its store has against what it needs: its people's ten minutes (more with each settler), its sites and its factories; short when its people go without */
+			/** per resource, what its store has against what it needs: a quarter year of its homes' upkeep (more with each settler), its sites and its factories; short when its people go without */
 			const row = (/** @type {string} */ key, /** @type {string} */ label, /** @type {string[]} */ wares, /** @type {boolean} */ short) => ({
 				key,
 				label,
