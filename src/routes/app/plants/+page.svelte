@@ -13,7 +13,7 @@
 	import { LAYERS, PLANTS, SEEDS, freshSeed, plantAt } from '$lib/plants';
 	import Turntable from '$lib/app/Turntable.svelte';
 	import { fit } from '$lib/app/turntable.js';
-	import { fruitOf, oneFruit } from '$lib/plants/fruit.js';
+	import { oneFruit, ripeOf } from '$lib/plants/fruit.js';
 
 	/** @typedef {(typeof import('$lib/plants').PLANTS)[number]} Plant */
 	/** @typedef {'cutaway' | 'bare' | 'solid'} Soil */
@@ -136,7 +136,6 @@
 		let easing = 0;
 		let first = true;
 		/** the earth for this plant and seed (its radius and depth): sized once, to the plant fully grown */
-		let soilFor = '';
 		const ground = { r: 0.1, d: 0.1 };
 		/** @type {import('three').Box3 | null} */
 		let plantBox = null;
@@ -152,10 +151,8 @@
 		const toss = (/** @type {import('three').Group} */ group) => group.traverse((o) => /** @type {import('three').Mesh} */ (o).geometry?.dispose());
 
 		/** the earth the grown plant needs, with room round its roots: the same from seed to fruit */
-		const sizeSoil = (/** @type {Plant} */ plant, /** @type {string} */ id) => {
-			const grown = plant.grow(plant.stages.length - 1, id);
+		const sizeSoil = (/** @type {import('three').Group} */ grown) => {
 			const b = bounds(grown);
-			toss(grown);
 			const below = Math.max(0, -b.min.y);
 			const half = Math.max(Math.abs(b.min.x), Math.abs(b.max.x), Math.abs(b.min.z), Math.abs(b.max.z));
 			// a round floor, wide round the plant and its roots
@@ -193,8 +190,8 @@
 			sh.updateProjectionMatrix();
 		};
 
-		/** which fruit it bears, grown ripe: once a plant, version and seed */
-		let fruitFor = '';
+		/** the plant grown ripe, once a plant, version and seed: the earth it needs and the fruit it bears */
+		let ripeFor = '';
 		show = (plant, at, id) => {
 			if (current) {
 				scene.remove(current);
@@ -202,9 +199,16 @@
 				current = null;
 			}
 			const whose = `${plant.id}|${plant.version}|${id}`;
-			if (fruitFor !== whose) {
-				fruitFor = whose;
-				fruit = fruitOf(plant.grow, plant.stages.length - 1, id || ' ');
+			/** @type {import('three').Group | null} the ripe plant, if it is what is shown now */
+			let ripe = null;
+			if (ripeFor !== whose) {
+				ripeFor = whose;
+				const last = plant.stages.length - 1;
+				const grownRipe = ripeOf(plant.grow, last, id || ' ');
+				fruit = grownRipe.fruit;
+				sizeSoil(grownRipe.plant);
+				if (at === last && view === 'plant') ripe = grownRipe.plant;
+				else toss(grownRipe.plant);
 			}
 			// a plant (or a version of it) with no fruit is shown whole
 			if (view === 'fruit' && !fruit) view = 'plant';
@@ -226,11 +230,7 @@
 				return;
 			}
 			unset = false;
-			if (soilFor !== `${plant.id}|${id}`) {
-				soilFor = `${plant.id}|${id}`;
-				sizeSoil(plant, id || ' ');
-			}
-			current = plant.grow(at, id || ' ');
+			current = ripe ?? plant.grow(at, id || ' ');
 			scene.add(current);
 			const b = bounds(current);
 			plantBox = b;
