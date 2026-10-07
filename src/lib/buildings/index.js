@@ -1,8 +1,9 @@
 /*
  * THE BUILDINGS — what a settlement lives and works in, as the Buildings viewer (/app/buildings/) lists it: the tent a
- * settler starts in, the four domes of a village and the factory that makes their glass (Sandbox 3's, walked inside
- * with $lib/sandbox-2/DomeInterior.svelte), and the shipping containers fitted out as the crew's kitchen, workshop,
- * power and washroom (Sandbox 1's, $lib/models/containers.js, on the turntable and walked in there).
+ * settler starts in, the four domes of a village and the factory that makes their glass (built alone, as Sandbox 3's
+ * village builds them into its world: $lib/sandbox-2/interior), and the shipping containers fitted out as the crew's
+ * kitchen, workshop, power and washroom (Sandbox 1's, $lib/models/containers.js). Each stands on the same round ground
+ * (./ground.js) on the turntable, and is stepped inside there.
  */
 import { DOMES } from '$lib/sandbox-2/interior/interior';
 import { DOMES_IN_ORDER } from './domes.js';

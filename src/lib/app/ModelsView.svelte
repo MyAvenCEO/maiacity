@@ -4,8 +4,9 @@
 	measure. A model that can be walked (`userData.walk`: the containers) is walked in first person, the sandboxes'
 	walker; one with a roof (`userData.roof`) can have it lifted off to look in from above; a rigged machine
 	(`userData.tick`: the excavators) plays its work. An item that is a dome (`dome`: the Buildings' tents and domes) is
-	too big for the turntable: its picture from inside stands there instead, and stepping inside walks it full screen
-	($lib/sandbox-2/DomeInterior.svelte, as Sandbox 3 does).
+	built alone, without the forest and land round it, as Sandbox 3's village builds its domes into its own world
+	(mountInterior with a host, $lib/sandbox-2/interior), and stepped inside the same way. With `round` (the
+	Buildings) every building stands on the same round ground ($lib/buildings/ground.js) instead of the square grid.
 -->
 <script>
 	import { onDestroy, onMount, untrack } from 'svelte';
@@ -14,9 +15,8 @@
 	import TouchStick from '$lib/touch/TouchStick.svelte';
 	import WalkHint from '$lib/sandbox-kit/WalkHint.svelte';
 	import { atOrLatest } from '$lib/app/versions.js';
-	import { asset } from '$lib/media/url';
-	import DomeInterior from '$lib/sandbox-2/DomeInterior.svelte';
 	import { WorldBar } from '$lib/sandbox-kit';
+	import { roundGround, groundRadius } from '$lib/buildings/ground.js';
 	import { wayBack } from '$lib/app/back.svelte';
 
 	/** @typedef {import('$lib/models').Model} Model */
@@ -24,9 +24,9 @@
 	/** @typedef {import('$lib/buildings').Dome} Dome */
 
 	/**
-	 * @type {{ name: string, title: string, lede: string, items: (Model | Dome)[], group?: (item: any) => string }}
+	 * @type {{ name: string, title: string, lede: string, items: (Model | Dome)[], group?: (item: any) => string, round?: boolean }}
 	 */
-	let { name, title, lede, items, group } = $props();
+	let { name, title, lede, items, group, round = false } = $props();
 	/** @param {Model | Dome} m @returns {m is Dome} */
 	const isDome = (m) => 'dome' in m;
 	/** @param {Model | Dome} m */
@@ -50,8 +50,9 @@
 	$effect(() => {
 		if (walking) return wayBack('Back outside', () => walkOut?.());
 	});
-	/** a dome being walked inside, full screen */
-	let inside = $state(false);
+	/** a dome being built: what it is doing now (null once it stands) */
+	/** @type {string | null} */
+	let building = $state(null);
 	/** @type {[number, number, number] | null} */
 	let size = $state(null);
 	/** @type {((m: Model | Dome, v: number, kind?: Variant | null) => void) | null} */
@@ -108,35 +109,117 @@
 		let walker = null;
 		/** @type {InstanceType<typeof THREE.PointLight>[]} */
 		const lamps = [];
-		show = (m, v, kind) => {
+		/** the dome standing now, built into this scene; and the build under way (a newer pick cancels it) */
+		/** @type {import('$lib/sandbox-2/interior/interior').EmbeddedDome | null} */
+		let dome = null;
+		let build = 0;
+		/** the round ground's radius, when the buildings stand on one: a walk keeps to it */
+		let groundR = 0;
+		const clear = () => {
 			walkOut?.();
 			if (current) scene.remove(current);
 			if (grid) scene.remove(grid);
-			current = grid = null;
-			if (isDome(m)) {
-				walkable = roofed = roofOff = false;
-				size = null;
-				return;
-			}
+			dome?.dispose();
+			current = grid = dome = null;
+			groundR = 0;
+			build++;
+			building = null;
+		};
+		show = (m, v, kind) => {
+			clear();
+			walkable = roofed = roofOff = false;
+			size = null;
+			if (isDome(m)) return void raise(m, atOrLatest(m.versions, v).build);
 			current = kind && v === m.version ? kind.make() : atOrLatest(m.versions, v).build();
 			walkable = !!current.userData.walk;
 			roofed = !!current.userData.roof;
-			roofOff = false;
 			current.traverse((o) => {
 				if (/** @type {InstanceType<typeof THREE.Mesh>} */ (o).isMesh) o.castShadow = true;
 			});
 			scene.add(current);
-			const b = new THREE.Box3().setFromObject(current);
+			place(current);
+		};
+		/**
+		 * A tent or a dome alone: built into this scene as Sandbox 3's village builds one into its own (no sky, land
+		 * or forest round it), a little at a time while the readout says how far it is; walked on its own floors.
+		 * @param {Dome} m @param {import('$lib/sandbox-2/interior/interior').DomeKind} kind
+		 */
+		const raise = async (m, kind) => {
+			const mine = build;
+			building = 'Starting';
+			const { mountInterior, DOMES } = await import('$lib/sandbox-2/interior/interior');
+			if (mine !== build) return;
+			const R = DOMES[kind].diameter / 2;
+			// meanwhile the camera already stands where it will see it whole, the ground laid
+			const ghost = new THREE.Box3(new THREE.Vector3(-R, 0, -R), new THREE.Vector3(R, R * (kind === 'tent' ? 1.2 : 0.55), R));
+			placeGround(ghost);
+			frame(ghost);
+			// it joins the scene as a scene of its own before its last pieces show: the meadow it lays round itself is
+			// hidden as soon as it comes, every few frames while it is built
+			landless = (/** @type {InstanceType<typeof THREE.Object3D>} */ o) => o !== scene && /** @type {any} */ (o).isScene && keepToItself(o, R);
+			const h = await mountInterior(box, kind, (label) => mine === build && label !== 'ready' && (building = label), {
+				host: { scene, camera, renderer, x: 0, z: 0 },
+				cancelled: () => mine !== build,
+				hurry: () => true
+			}).catch(() => null);
+			landless = null;
+			if (!h) return;
+			if (mine !== build || !h.embedded) return h.dispose();
+			const e = (dome = h.embedded);
+			e.setHour(13);
+			const root = e.root;
+			const door = 0;
+			const out = R + Math.max(2, R * 0.12);
+			root.userData.tick = (/** @type {number} */ t) => e.update(t);
+			root.userData.walk = {
+				x: out * Math.sin(door),
+				z: out * Math.cos(door),
+				yaw: door,
+				walk: kind === 'tent' || kind === 'glamp' ? 1.4 : 3,
+				hurry: kind === 'tent' || kind === 'glamp' ? 3.2 : 8,
+				floorAt: e.floorAt,
+				// in through its door and round on its own floors, or out on the ground round it
+				canStand: (/** @type {number} */ x, /** @type {number} */ z, /** @type {number} */ here, /** @type {number} */ ground, /** @type {{ x: number, z: number }} */ from) => {
+					const nf = e.floorAt(x, z, ground);
+					const outside = nf < 0.5 && here < 0.5 && Math.hypot(x, z) > R + 0.6;
+					return (outside || e.inside(x, z, nf)) && !e.blocked(x, z, here) && !e.hits(x, z, nf, from);
+				},
+				lamps: []
+			};
+			current = root;
+			walkable = true;
+			building = null;
+			const own = keepToItself(root, R);
+			if (!own.isEmpty()) root.userData.measured = own;
+			place(root, root.userData.measured);
+		};
+		/** while a dome is built: hides the land it lays round itself, as it comes @type {((o: InstanceType<typeof THREE.Object3D>) => void) | null} */
+		let landless = null;
+		/**
+		 * A dome without the land a village lays round it (a meadow reaching far past it): every piece wider than the
+		 * dome's own reach is hidden, so it stands on the round ground alone. Hands back what is left, measured.
+		 * @param {InstanceType<typeof THREE.Object3D>} root @param {number} R
+		 */
+		const keepToItself = (root, R) => {
+			const own = new THREE.Box3();
+			root.updateMatrixWorld(true);
+			root.traverse((o) => {
+				if (!(/** @type {InstanceType<typeof THREE.Mesh>} */ (o).isMesh)) return;
+				const bb = new THREE.Box3().setFromObject(o);
+				if (bb.isEmpty()) return;
+				const z = bb.getSize(new THREE.Vector3());
+				if (Math.max(z.x, z.z) <= R * 2.6) own.union(bb);
+				else o.visible = false;
+			});
+			return own;
+		};
+		/** the model or building in its place: measured, on its ground, lit, and seen whole @param {InstanceType<typeof THREE.Object3D>} obj @param {InstanceType<typeof THREE.Box3>} [measured] */
+		const place = (obj, measured) => {
+			const b = measured ?? new THREE.Box3().setFromObject(obj);
 			const s = b.getSize(new THREE.Vector3());
 			size = [s.x, s.y, s.z];
 			const reach = Math.max(s.x, s.y, s.z);
-			// the grid as large as the model, in 10 cm squares
-			const span = Math.ceil((Math.max(s.x, s.z) + 0.6) * 2) / 2;
-			grid = new THREE.Group();
-			grid.add(new THREE.GridHelper(span, Math.round(span * 10), '#cfc9bf', '#cfc9bf'));
-			grid.add(new THREE.GridHelper(span, Math.max(1, Math.round(span)), '#a59e92', '#a59e92'));
-			grid.position.y = 0.001;
-			scene.add(grid);
+			placeGround(b);
 			const mid = b.getCenter(new THREE.Vector3());
 			key.position.set(mid.x + reach * 2, reach * 3, mid.z + reach * 1.5);
 			key.target.position.copy(mid);
@@ -147,6 +230,25 @@
 			sh.near = 0.01;
 			sh.far = reach * 10;
 			sh.updateProjectionMatrix();
+		};
+		/** the ground under it: the round ground (the Buildings), or a square grid of 10 cm squares as large as the model @param {InstanceType<typeof THREE.Box3>} b */
+		const placeGround = (b) => {
+			if (grid) scene.remove(grid);
+			const s = b.getSize(new THREE.Vector3());
+			const mid = b.getCenter(new THREE.Vector3());
+			if (round) {
+				groundR = groundRadius(Math.hypot(s.x, s.z) / 2);
+				grid = roundGround(groundR);
+				grid.position.set(mid.x, 0, mid.z);
+				floor.visible = false;
+			} else {
+				const span = Math.ceil((Math.max(s.x, s.z) + 0.6) * 2) / 2;
+				grid = new THREE.Group();
+				grid.add(new THREE.GridHelper(span, Math.round(span * 10), '#cfc9bf', '#cfc9bf'));
+				grid.add(new THREE.GridHelper(span, Math.max(1, Math.round(span)), '#a59e92', '#a59e92'));
+				grid.position.y = 0.001;
+			}
+			scene.add(grid);
 		};
 		// the turntable's view of a model: round it, from a little above
 		/** @param {InstanceType<typeof THREE.Box3>} b */
@@ -174,9 +276,13 @@
 				z: w.z,
 				yaw: w.yaw,
 				pitch: -0.05,
-				walk: 1.4,
-				hurry: 3.2,
-				canStand: w.canStand,
+				walk: w.walk ?? 1.4,
+				hurry: w.hurry ?? 3.2,
+				// on the round ground, never off its edge
+				canStand: groundR
+					? (/** @type {number} */ x, /** @type {number} */ z, /** @type {number} */ here, /** @type {number} */ ground, /** @type {any} */ from) =>
+							Math.hypot(x - (grid?.position.x ?? 0), z - (grid?.position.z ?? 0)) < groundR - 0.4 && w.canStand(x, z, here, ground, from)
+					: w.canStand,
 				floorAt: w.floorAt,
 				onKey: (/** @type {string} */ k, /** @type {boolean} */ down) => {
 					if (k !== 'escape' || !down) return false;
@@ -193,7 +299,7 @@
 			camera.userData.fov = 0; // a walk sees as a walker does, upright or not
 			camera.fov = 70;
 			camera.near = 0.05;
-			camera.far = 400;
+			camera.far = Math.max(400, groundR * 4);
 			camera.updateProjectionMatrix();
 			stick = { move: (x, y, h) => walker?.move(x, y, h), look: (dx, dy) => walker?.look(dx, dy) };
 			walking = true;
@@ -205,7 +311,7 @@
 			stick = null;
 			for (const lamp of lamps.splice(0)) scene.remove(lamp);
 			controls.enabled = true;
-			if (current) frame(new THREE.Box3().setFromObject(current));
+			if (current) frame(current.userData.measured ?? new THREE.Box3().setFromObject(current));
 			walking = false;
 		};
 		const resize = () => {
@@ -220,18 +326,20 @@
 		const start = performance.now();
 		let raf = 0;
 		let last = performance.now();
+		let frames = 0;
 		const tick = () => {
 			const now = performance.now();
 			if (walker) walker.update(Math.min(0.1, (now - last) / 1000));
 			else controls.update();
 			current?.userData.tick?.((now - start) / 1000); // a rigged machine at work
+			if (landless && ++frames % 20 === 0) scene.children.forEach(landless);
 			last = now;
 			renderer.render(scene, camera);
 			raf = requestAnimationFrame(tick);
 		};
 		tick();
 		dispose = () => {
-			walkOut?.();
+			clear();
 			cancelAnimationFrame(raf);
 			ro.disconnect();
 			controls.dispose();
@@ -260,6 +368,8 @@
 	};
 	/** @param {number} v */
 	const cm = (v) => Math.round(v * 100);
+	/** a measure as it reads best: centimetres for a model, metres from 10 m up @param {number} v */
+	const metres = (v) => (v >= 10 ? `${Math.round(v * 10) / 10} m` : `${cm(v)} cm`);
 	const toggleRoof = () => {
 		roofOff = !roofOff;
 		liftRoof?.(roofOff);
@@ -278,11 +388,7 @@
 	picks={{ title, lede, items, chosen, where: (/** @type {Model | Dome} */ m) => m.usedIn, onpick: pick, group, version, onversion: pickVersion }}
 >
 	{#snippet bar()}
-		{#if isDome(chosen)}
-			<div class="chips walkbar">
-				<button type="button" class="chip dark" onclick={() => (inside = true)}>Step inside</button>
-			</div>
-		{:else if walkable || roofed}
+		{#if walkable || roofed}
 			<div class="chips walkbar">
 				{#if walkable}<button type="button" class="chip dark" onclick={() => (walking ? walkOut?.() : walkIn?.())}>{walking ? 'Step outside' : 'Step inside'}</button>{/if}
 				{#if roofed && !walking}<button type="button" class="chip dark" onclick={toggleRoof}>{roofOff ? 'Put the roof on' : 'Lift the roof'}</button>{/if}
@@ -300,20 +406,16 @@
 		{/if}
 	{/snippet}
 	{#snippet readout()}
-		{#if isDome(chosen)}
-			<b>{chosen.label}</b>
-			<span>{chosen.size}</span>
-			<small>Step inside to walk it: drag to look, WASD to walk, Shift to hurry</small>
-		{:else}
-			<b>{variants.length > 1 && variant ? `${chosen.label} · ${variant.label}` : chosen.label}</b>
-			{#if variants.length > 1 && variant}<small>{variant.note}</small>{/if}
-			{#if size}<span>{cm(size[0])} × {cm(size[2])} × {cm(size[1])} cm <small>(width × depth × height)</small></span>{/if}
-			<small>Drag to turn round it · pinch or scroll to come closer · the grid is 10 cm</small>
+		<b>{variants.length > 1 && variant ? `${chosen.label} · ${variant.label}` : chosen.label}</b>
+		{#if variants.length > 1 && variant}<small>{variant.note}</small>{/if}
+		{#if isDome(chosen)}<span>{chosen.size}</span>{/if}
+		{#if building}
+			<span class="building">{building}…</span>
+		{:else if size}
+			<span>{metres(size[0])} × {metres(size[2])} × {metres(size[1])} <small>(width × depth × height)</small></span>
 		{/if}
+		<small>Drag to turn round it · pinch or scroll to come closer · the grid is {round ? '1 m' : '10 cm'}</small>
 	{/snippet}
-	{#if isDome(chosen)}
-		<img class="poster" src={asset(chosen.image)} alt="Inside the {chosen.label.toLowerCase()}" />
-	{/if}
 	{#if walking}
 		<WorldBar title={chosen.label} subtitle="{title} · {chosen.usedIn}" sky={false} />
 		<TouchStick move={(x, y, h) => stick?.move(x, y, h)} look={(dx, dy) => stick?.look(dx, dy)} stage={viewBox} taps=".walkbar button" />
@@ -321,23 +423,9 @@
 	{/if}
 </Turntable>
 
-{#if inside && isDome(chosen)}
-	<div class="walk"><DomeInterior kind={atOrLatest(chosen.versions, version).build} place={chosen.usedIn} onclose={() => (inside = false)} /></div>
-{/if}
-
 <style>
-	/* a dome's picture from inside, where the turntable would be */
-	.poster {
-		position: absolute;
-		inset: 0;
-		width: 100%;
-		height: 100%;
-		object-fit: cover;
-	}
-	.walk {
-		position: fixed;
-		inset: 0;
-		z-index: 50;
+	.building {
+		opacity: 0.7;
 	}
 	.chip.dark {
 		padding: 0.5rem 0.9rem;
