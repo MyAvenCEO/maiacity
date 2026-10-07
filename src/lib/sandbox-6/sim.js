@@ -15,7 +15,7 @@
  *     the cities trade by the orders you set and by what the neighbours have spare and lack (./market.js);
  *   · every village eats, drinks and keeps its homes, and the valley's abundance follows how well they all live.
  */
-import { ABUNDANT, BIOMES, BUILDINGS, FOOD, GRASS, HOLD, HOUSE_BEDS, HOUSE_UP, IRON, MOUNTAIN, START, WARES, WATER, holdsLand } from './rules.js';
+import { ABUNDANT, BIOMES, BUILDINGS, FOOD, GRASS, HOLD, HOUSE_BEDS, HOUSE_MOST, HOUSE_TOP, HOUSE_UP, IRON, MOUNTAIN, START, WARES, WATER, holdsLand } from './rules.js';
 import { CART, HEARTS, NEEDS, NEIGHBOURS, TRADED, heartsFor, abundance, keepOf, live, make, newMarket, orderRule, party, priceIn, request, shortIn, spareIn } from './market.js';
 import { SE, STEP, findPath, makeGrid } from './hex.js';
 import { makePlan, spoke } from './plots.js';
@@ -1376,7 +1376,7 @@ export function createSim(st) {
 	/** the beds in one of your villages: every house's (a house being enlarged keeps its beds meanwhile); nobody lives in a village center */
 	const bedsIn = (/** @type {number} */ v) => mineIn(v).reduce((s, b) => s + (b.type === 'house' && b.level ? HOUSE_BEDS[b.level - 1] : 0), 0);
 	const beds = () => myCentres().reduce((s, c) => s + bedsIn(villageAt(c.node)), 0);
-	/** the neighbours' cities as they grow: a settlement (a house, two factories) for every sixteen or so people */
+	/** the neighbours' cities as they grow: a settlement (a house, two factories) for every full house of people */
 	function neighbourTowns() {
 		for (let k = 1; k < st.parties.length; k++) {
 			const kinds = NEIGHBOURS[k - 1].builds;
@@ -1385,9 +1385,9 @@ export function createSim(st) {
 				// the settlements with room for a house first, nearest the center first
 				const home = (/** @type {number} */ x) => plan.spots[x][0] >= 0 && st.terrain[plan.spots[x][0]] === GRASS;
 				const ring = vill.plots.filter((x) => x !== vill.centre).sort((a, b) => +home(b) - +home(a) || g.dist(plan.centre[a], c.node) - g.dist(plan.centre[b], c.node));
-				const count = Math.max(1, Math.min(ring.length, Math.ceil(pop / 16)));
+				const count = Math.max(1, Math.min(ring.length, Math.ceil(pop / HOUSE_MOST)));
 				let level = 1;
-				while (level < 4 && count * HOUSE_BEDS[level - 1] < pop) level++;
+				while (level < HOUSE_TOP && count * HOUSE_BEDS[level - 1] < pop) level++;
 				ring.slice(0, count).forEach((plot, x) => {
 					const [h, f1, f2] = plan.spots[plot];
 					if (h >= 0) {
@@ -1486,7 +1486,7 @@ export function createSim(st) {
 			return { v, c, p };
 		});
 	}
-	/** whether a village is full: a house of 16 in each of its settlements that can hold one, and every bed taken */
+	/** whether a village is full: a house of the largest size in each of its settlements that can hold one, and every bed taken */
 	function fullVillage(/** @type {number} */ v, /** @type {number} */ owner) {
 		const vill = plan.villages[v];
 		for (const k of vill.plots) {
@@ -1494,7 +1494,7 @@ export function createSim(st) {
 			const h = plan.spots[k][0];
 			if (h < 0 || st.terrain[h] !== GRASS) continue;
 			const b = buildingAt(h);
-			if (!b || b.owner !== owner || b.type !== 'house' || b.level < 4 || b.stage !== 'live') return false;
+			if (!b || b.owner !== owner || b.type !== 'house' || b.level < HOUSE_TOP || b.stage !== 'live') return false;
 		}
 		return owner === PLAYER ? villagePeople(v) >= bedsIn(v) : true;
 	}
@@ -1578,9 +1578,9 @@ export function createSim(st) {
 		}
 	}
 	/** every village of the valley as the abundance panel shows it: yours by name, then each neighbour city's */
-	/** how many people a village holds when it is full: 16 in every settlement that has room for a house */
+	/** how many people a village holds when it is full: a great tower's worth in every settlement that has room for a house */
 	const capOf = (/** @type {number} */ v) =>
-		16 * plan.villages[v].plots.filter((k) => k !== plan.villages[v].centre && plan.spots[k][0] >= 0 && st.terrain[plan.spots[k][0]] === GRASS).length;
+		HOUSE_MOST * plan.villages[v].plots.filter((k) => k !== plan.villages[v].centre && plan.spots[k][0] >= 0 && st.terrain[plan.spots[k][0]] === GRASS).length;
 	/**
 	 * Every village of the valley as the abundance panel shows it: yours by name, then each neighbour city's. Its
 	 * abundance is how well its people live (wellbeing) times how full it is: a hamlet that lives well is not yet abundant.
@@ -1674,12 +1674,13 @@ export function createSim(st) {
 		}
 		if (st.time >= c.pop) {
 			c.pop = st.time + 6;
-			// newcomers settle in a village that lives well and has a bed for them; with too few beds, people leave
+			// newcomers settle in a village that lives well and has a bed for them; with too few beds, people leave. They
+			// come and go a family at a time, one for every 96 beds, so a large village fills as fast as a small one did
 			for (const { v, c: ctr, p } of yourVillages()) {
-				const people = villagePeople(v), room = bedsIn(v);
-				if (people < room && p.wb >= 60) ctr.settlers++;
+				const people = villagePeople(v), room = bedsIn(v), family = Math.max(1, Math.ceil(room / 96));
+				if (people < room && p.wb >= 60) ctr.settlers += Math.min(family, room - people);
 				else if (room > 0 && people > room && ctr.settlers > 0) {
-					ctr.settlers--;
+					ctr.settlers -= Math.min(family, people - room, ctr.settlers);
 					say(`A settler left ${p.name}: there are not enough beds. Build or enlarge houses.`, ctr.node, 'alert');
 				}
 			}
@@ -1690,8 +1691,8 @@ export function createSim(st) {
 			for (let k = 1; k < st.parties.length; k++) {
 				const p = st.parties[k];
 				// a family more for each of its villages; once every village is full, it founds the next
-				// and the valley grows together: a neighbour stays within a village (96) of your people
-				const cap = Math.min(cityCap(k), 96 + yourPeople()), n = cityVillages(k).length;
+				// and the valley grows together: a neighbour stays within a village of your people
+				const cap = Math.min(cityCap(k), 6 * HOUSE_MOST + yourPeople()), n = cityVillages(k).length;
 				if (p.wb >= 72 && p.reserve >= 0.45 && p.pop < cap) p.pop = Math.min(cap, p.pop + 2 * n);
 				else if (p.wb >= 72 && p.reserve >= 0.45 && p.pop >= cityCap(k) && n < CITY_VILLAGES) cityFounds(k);
 				else if (p.wb < 40 && p.pop > 10 && rand() < 0.2) {
@@ -1975,7 +1976,7 @@ export function createSim(st) {
 			const b = st.buildings[id];
 			if (!b || b.owner !== PLAYER || b.type !== 'house') return { ok: false, why: 'Only your houses grow' };
 			if (b.stage !== 'live') return { ok: false, why: 'It is being built' };
-			if (b.level >= 4) return { ok: false, why: 'It is as large as a house gets' };
+			if (b.level >= HOUSE_TOP) return { ok: false, why: 'It is as large as a house gets' };
 			b.cost = { ...HOUSE_UP[b.level - 1] };
 			for (const w of Object.keys(b.cost)) (b.used[w] = 0), (b.got[w] = 0), (b.inc[w] = 0);
 			b.stage = 'site';
@@ -2176,7 +2177,7 @@ export function createSim(st) {
 				level: b.level,
 				beds: b.type === 'house' && b.level ? HOUSE_BEDS[b.level - 1] : 0,
 				upgrading: b.type === 'house' && b.stage === 'site' && b.level > 0,
-				up: b.type === 'house' && b.level >= 1 && b.level < 4 ? HOUSE_UP[b.level - 1] : null,
+				up: b.type === 'house' && b.level >= 1 && b.level < HOUSE_TOP ? HOUSE_UP[b.level - 1] : null,
 				village: villageAt(b.node)
 			};
 		},
