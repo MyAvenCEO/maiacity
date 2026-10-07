@@ -167,7 +167,7 @@ function spire(R, H, owner) {
  * @param {string} type
  * @param {number} owner
  * @param {number} [level] the wood building's level: a forester (1), a woodcutter (2), a sawmill (3), a timber works (4);
- * or the steel building's: an iron mine (1), a furnace (2), a steelworks (3)
+ * a factory's stage; a village center's (1, a logistics hub)
  * @returns {THREE.Group}
  */
 export function buildingModel(type, owner, level = 2) {
@@ -176,6 +176,22 @@ export function buildingModel(type, owner, level = 2) {
 	if (type === 'woodcutter' && level === 1) type = 'forester';
 	switch (type) {
 		case 'centre':
+			// a logistics hub, a village center's first stage: a low store dome, crates piled round it and the trade cart at
+			// its door (it grows into the village center's tower)
+			if (level === 1) {
+				g.add(dome(0.85, 0.6, '#d9ccb0', { windows: 2 }));
+				g.add(pile('#c8a26a', 0.95, 0.6, 5));
+				g.add(pile('#b8925a', -0.95, -0.3, 3));
+				g.add(part(new THREE.BoxGeometry(0.5, 0.2, 0.3), mat(TIMBER), -0.95, 0.24, 0.65));
+				for (const sz of [-1, 1]) {
+					const wheel = part(new THREE.CylinderGeometry(0.12, 0.12, 0.04, 10), mat(DARK), -0.95, 0.12, 0.65 + sz * 0.17);
+					wheel.rotation.x = Math.PI / 2;
+					g.add(wheel);
+				}
+				g.add(band(owner, 0.87, PLINTH + 0.12));
+				break;
+			}
+		// falls through: the village center
 		case 'village': {
 			// the village center: storehouse, market and hall in one, nobody lives here. One shell from the dome's foot
 			// to a rounded tower top, the tallest of its village; crates and the trade cart at its door

@@ -580,7 +580,7 @@ export function createView(scene, sim) {
 		for (const b of Object.values(st.buildings)) {
 			let s = shown.get(b.id);
 			// the wood and steel buildings look their level: built anew when they are upgraded
-			const look = b.type === 'woodcutter' ? (b.level ? b.level : b.stage === 'live' ? 2 : 1) : grows(b.type) ? b.level || 1 : 0;
+			const look = b.type === 'woodcutter' ? (b.level ? b.level : b.stage === 'live' ? 2 : 1) : grows(b.type) || b.type === 'centre' ? b.level || 1 : 0;
 			if (s && s.look !== look) {
 				root.remove(s.group);
 				s.group.traverse((o) => o instanceof THREE.Mesh && o.geometry.dispose());
@@ -857,7 +857,7 @@ export function createView(scene, sim) {
 			}
 			if (!ghost || ghostType !== type) {
 				if (ghost) root.remove(ghost);
-				ghost = buildingModel(type, 0, type === 'ironmine' || type === 'clayworks' || type === 'glassworks' ? 1 : undefined);
+				ghost = buildingModel(type, 0, type === 'ironmine' || type === 'clayworks' || type === 'glassworks' || type === 'centre' ? 1 : undefined);
 				ghostType = type;
 				root.add(ghost);
 			}

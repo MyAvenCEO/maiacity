@@ -6,9 +6,8 @@
  * cells), and the homes theirs: one dome that grows through eight sizes. Read from the rules, so it always shows the
  * game as it is. The page draws it (./Tree.svelte).
  */
-import { BIOMES, BUILDINGS, ENERGY, HOUSE_BEDS, HOUSE_SIZE, HOUSE_UP, LAND, LOAD_T, RECIPES, ROUTE_T_KM, WARES, buildIn, yearOf } from './rules.js';
-import { NEEDS, WELL_EUR, EUR_PER_GOLD } from './market.js';
-import { YEAR } from './food.js';
+import { BIOMES, BUILDINGS, CENTRE, ENERGY, HOUSE_BEDS, HOUSE_SIZE, HOUSE_UP, LAND, LOAD_T, RECIPES, ROUTE_T_KM, WARES, buildIn, yearOf } from './rules.js';
+import { NEEDS } from './market.js';
 
 /** loads, as tonnes @param {Record<string, number>} loads */
 const tonnes = (loads) => Object.fromEntries(Object.entries(loads).map(([w, n]) => [w, n * LOAD_T]));
@@ -51,16 +50,10 @@ export const CHAINS = /** @type {Chain[]} */ (
 	})
 );
 
-/** the village center's geothermal stages: its build (the first: the center itself, and its wells for a new village),
- * what it keeps a year (its hall, storehouse and routes), and what its wells make a year */
-export const GEOTHERMAL = Array.from({ length: ENERGY.wellsMost }, (_, k) => ({
-	label: k ? `Geothermal ${k + 1}` : 'Village center',
-	level: k + 1,
-	mw: ((k + 1) * ENERGY.wellKw) / 1000,
-	build: { in: k ? { gold: WELL_EUR / EUR_PER_GOLD } : { ...buildIn(tonnes(BUILDINGS.centre.cost)), gold: WELL_EUR / EUR_PER_GOLD }, out: {} },
-	keep: { in: { energy: ENERGY.centre / 1000 }, out: {} },
-	make: { in: { 'hot rock': 0 }, out: { energy: (ENERGY.wellKw * 24 * YEAR * ENERGY.uptime) / 1000 } }
-}));
+/** the village center's stages (./rules.js CENTRE): a logistics hub, then the great village center with its first
+ * geothermal wells, then two more producers each; each with its build, what it keeps a year (its upkeep, and its hall's,
+ * storehouse's and routes' energy) and what its wells make a year */
+export const CENTRES = CENTRE.map((x, k) => ({ label: x.label, level: k + 1, does: x.does, mw: (x.wells * ENERGY.wellKw) / 1000, build: x.build, keep: x.keep, make: x.make }));
 /** every dome's solar cells, a bed's share a year, and its climate's */
 export const SUN = { make: ENERGY.sunBed / 1000, climate: ENERGY.climateBed / 1000 };
 
