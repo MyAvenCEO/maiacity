@@ -45,9 +45,9 @@ export const WARE_ORDER = Object.keys(WARES);
 export const FOOD = ['fish', 'bread'];
 
 /**
- * What a settlement hex is good for: meadow (farmland) is everywhere; forest, stone, iron and water are scarce, and a
- * woodcutter or forester, a quarry, an iron mine or a fishery only stands on a hex of its own kind. A lake's own hexes
- * are water to fish from, not land: 'lake'; bare mountain without iron is 'mountain'.
+ * What a hex is good for: meadow (farmland) is everywhere; forest, stone, iron and water (a lake's or the sea's shore)
+ * are scarce, and a woodcutter or forester, a quarry, an iron mine or a fishery only stands on a hex of its own kind.
+ * A lake's own hexes and the sea's are water to fish from, not land: 'lake', 'sea'; bare mountain is 'mountain'.
  */
 export const BIOMES = {
 	meadow: { id: 'meadow', label: 'Meadow', color: '#9fc46a' },
@@ -56,7 +56,8 @@ export const BIOMES = {
 	iron: { id: 'iron', label: 'Iron', color: '#a35b3a' },
 	water: { id: 'water', label: 'Water', color: '#4aa3df' },
 	mountain: { id: 'mountain', label: 'Mountain', color: '#8c8f96' },
-	lake: { id: 'lake', label: 'Lake', color: '#3a7fb8' }
+	lake: { id: 'lake', label: 'Lake', color: '#3a7fb8' },
+	sea: { id: 'sea', label: 'Sea', color: '#2f6f9a' }
 };
 
 /** the land a node is */

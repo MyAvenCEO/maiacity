@@ -3,10 +3,10 @@
  * simulation (./sim.js) run on the clock at the speed chosen, the view (./view.js) drawing it, and the player's hand:
  *
  *   look      click a building or a flag to see it (a village to see how its people live)
- *   build     a building chosen in the menu: the green spots are where it may stand; click one, and a road to the
- *             nearest flag of your network comes with it
- *   road      click a flag (or a building, for its flag), then where the road should go: it finds its way round
- *             what stands there, and sets a flag at its end; go on from that flag, Esc to stop
+ *   build     a building chosen in the menu: the green spots are where it may stand; click one (or anywhere in its
+ *             hex), and a path to your village center comes with it
+ *   road      click the middle of a hex (or a building, for its hex), then a hex next to it: a straight path runs
+ *             from middle to middle; go on from there, Esc to stop
  *   flag      set a flag, on open ground or on a road (it splits the road: two carriers share it)
  *   demolish  tear down a building, a flag (with its roads) or a road
  *
@@ -117,8 +117,8 @@ export function mountGame(container, o = {}) {
 		view.hover(-1);
 		refreshSpots();
 		if (m === 'road' && selected?.k === 'flag') startRoad(selected.node);
-		else if (m === 'road' && selected?.k === 'building') startRoad(sim.grid.nb(selected.node, 5));
-		hint(m === 'build' ? 'Click a green spot to build there' : m === 'road' ? (roadFrom >= 0 ? 'Click the middle of the next settlement' : 'Click the middle of a settlement to start a path from') : m === 'flag' ? 'Click open ground or a road to set a flag' : m === 'demolish' ? 'Click a building or a path to tear it down' : '');
+		else if (m === 'road' && selected?.k === 'building') startRoad(middle(selected.node));
+		hint(m === 'build' ? 'Click a green spot (or its hex) to build there' : m === 'road' ? (roadFrom >= 0 ? 'Click a hex next to it' : 'Click a hex to start a path from its middle') : m === 'flag' ? 'Click open ground or a road to set a flag' : m === 'demolish' ? 'Click a building or a path to tear it down' : '');
 		o.onMode?.(mode, buildType);
 	}
 	function refreshSpots() {
@@ -127,9 +127,13 @@ export function mountGame(container, o = {}) {
 		view.tiles(biome ? sim.plan.centre.filter((_, k) => sim.state.biome[k] === biome) : [], biome ? BIOMES[biome].color : undefined);
 		if (mode !== 'build' || !buildType) return view.spots([]);
 		const list = [];
-		for (let n = 0; n < sim.grid.N; n++) if (sim.state.owner[n] === PLAYER && !sim.canBuild(buildType, n)) list.push(n);
-		view.spots(list);
+		for (let n = 0; n < sim.grid.N; n++) if (sim.state.owner[n] === PLAYER && !sim.canBuild(buildType, n)) list.push(buildType === 'centre' ? middle(n) : n);
+		// a village center may be founded where your land does not reach yet: next to it
+		if (buildType === 'centre') for (const v of sim.plan.villages) if (!sim.canBuild('centre', sim.plan.spots[v.centre][0])) list.push(sim.plan.centre[v.centre]);
+		view.spots([...new Set(list)]);
 	}
+	/** the middle of the hex a node lies in */
+	const middle = (/** @type {number} */ n) => (n < 0 ? -1 : sim.plan.centre[sim.plan.plotOf[n]]);
 	function startRoad(/** @type {number} */ n) {
 		const at = sim.at(n);
 		if (at?.k === 'flag' && sim.state.flags[at.id].owner === PLAYER) {
@@ -146,7 +150,7 @@ export function mountGame(container, o = {}) {
 		o.onSelect?.(s);
 	}
 	function click(/** @type {PointerEvent} */ e) {
-		const n = nodeAt(e);
+		let n = nodeAt(e);
 		if (mode === 'look') {
 			aim(e);
 			const bid = view.pickBuilding(ray);
@@ -158,6 +162,7 @@ export function mountGame(container, o = {}) {
 		}
 		if (n < 0) return;
 		if (mode === 'build') {
+			n = sim.spotFor(buildType, n);
 			const r = sim.build(buildType, n, true);
 			if (!r.ok) return hint(/** @type {string} */ (r.why));
 			const id = /** @type {number} */ (r.id);
@@ -182,11 +187,10 @@ export function mountGame(container, o = {}) {
 		}
 		if (mode === 'road') {
 			if (roadFrom < 0) {
-				const at = sim.at(n);
-				const flagNode = at?.k === 'building' ? sim.grid.nb(n, 5) : n;
-				if (!startRoad(flagNode)) hint('Start a road at one of your flags');
+				if (!startRoad(middle(n))) hint('Start a path in a hex your paths already reach');
 				return;
 			}
+			n = middle(n);
 			if (n === roadFrom) return setMode('look');
 			const wasFlag = sim.at(n)?.k === 'flag';
 			const r = sim.road(roadFrom, n);
@@ -202,15 +206,16 @@ export function mountGame(container, o = {}) {
 		if (mode === 'look') return;
 		const n = nodeAt(e);
 		if (mode === 'build') {
-			const why = n < 0 ? 'Off the map' : sim.canBuild(buildType, n);
-			view.ghost(buildType, n, !why);
-			view.hover(n, why ? '#ff7a6a' : '#9dff8a');
+			const at = sim.spotFor(buildType, n);
+			const why = at < 0 ? 'Off the map' : sim.canBuild(buildType, at);
+			view.ghost(buildType, at, !why);
+			view.hover(buildType === 'centre' ? middle(at) : at, why ? '#ff7a6a' : '#9dff8a');
 			hint(why || 'Click to build here');
 		} else if (mode === 'road' && roadFrom >= 0) {
-			const path = n >= 0 ? sim.planRoad(roadFrom, n) : null;
+			const path = n >= 0 ? sim.planRoad(roadFrom, middle(n)) : null;
 			view.road(path);
-			view.hover(n, path ? '#fff6c8' : '#ff7a6a');
-			hint(path ? `A road ${path.length - 1} steps long · click to build it` : 'No way for a road there');
+			view.hover(middle(n), path ? '#fff6c8' : '#ff7a6a');
+			hint(path ? 'A straight path to the middle of this hex · click to build it' : 'Paths run straight to the middle of a hex next to this one, in the same village');
 		} else if (mode === 'flag') {
 			const why = n < 0 ? 'Off the map' : sim.canFlag(n);
 			view.hover(n, why ? '#ff7a6a' : '#9dff8a');
