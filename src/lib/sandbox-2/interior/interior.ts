@@ -2057,8 +2057,9 @@ export async function mountInterior(container: HTMLElement, kind: DomeKind, onPr
 
 	/* built into a host's world: hand back the dome's floors and lamps, and walk no further */
 	if (host) {
-		const wallLimit = (y: number) => Math.sqrt(Math.max(0, R * R - (y + 1.8) ** 2)) - (kind === 'glamp' ? 0.4 : 0.8)
-		const doorHalf = kind === 'glamp' ? 0.6 : 1.1
+		// the tent too (the Buildings viewer builds one alone): only where there is headroom under the canvas
+		const wallLimit = (y: number) => (kind === 'tent' ? 1.15 : Math.sqrt(Math.max(0, R * R - (y + 1.8) ** 2)) - (kind === 'glamp' ? 0.4 : 0.8))
+		const doorHalf = kind === 'tent' ? 0.45 : kind === 'glamp' ? 0.6 : 1.1
 		const stands = createObstacles([...colliders, ...outsideColliders] as { x: number; z: number; r: number; y?: number }[])
 		const disposeAll = () => {
 			host.scene.remove(scene)
