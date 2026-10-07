@@ -16,6 +16,7 @@ import { excavator as excavatorV2 } from './excavator.v2.js';
 import { human } from './human';
 import { pod } from './pod.js';
 import { pod as podV1 } from './pod.v1.js';
+import { pod as podV2 } from './pod.v2.js';
 import type { Cast } from './rig';
 import { goat, GOAT_BREEDS } from './species/goat';
 import { sheep, SHEEP_BREEDS } from './species/sheep';
@@ -54,7 +55,16 @@ const HISTORY: Record<string, (Change & { build?: Actor[] })[]> = {
 				{ id: 'pod-goods', label: 'Goods', note: 'as at v1: barn doors at both ends', make: () => podV1('goods') }
 			]
 		},
-		{ v: 2, date: '2026-10-07', note: 'On rails: small flanged wheels on two axles at the very ends, the room between them to carry things; opens only to its sides; twenty seats in two compartments; the goods pod’s sides lift as wings' }
+		{
+			v: 2,
+			date: '2026-10-07',
+			note: 'On rails: small flanged wheels on two axles at the very ends, the room between them to carry things; opens only to its sides; twenty seats in two compartments; the goods pod’s sides lift as wings',
+			build: [
+				{ id: 'pod-people', label: 'People', note: 'as at v2', make: () => podV2('people') },
+				{ id: 'pod-goods', label: 'Goods', note: 'as at v2: its sides lifting as wings, roll cages in it', make: () => podV2('goods') }
+			]
+		},
+		{ v: 3, date: '2026-10-07', note: 'The goods pod’s doors swing open left and right, two each side; four Euro pallets in it, loaded and unloaded through them; open, close, load and unload as moves' }
 	],
 	excavator: [
 		{ ...FIRST, build: [{ id: 'excavator', label: 'Mini excavator', note: 'yellow, an open canopy, a 40 cm bucket', make: () => excavatorV1() }] },
@@ -213,7 +223,7 @@ const LIST: Omit<Family, 'versions' | 'version'>[] = [
 		from: 'Sandbox 5: between the hexes and through the tunnels',
 		variants: [
 			{ id: 'pod-people', label: 'People', note: 'twenty seats in two compartments, two benches of five facing each other in each, a door each side between them; the bay under the floor between the axles, a flap on each side', make: () => pod('people') },
-			{ id: 'pod-goods', label: 'Goods', note: 'a hold 2.2 m high from a floor 16 cm up between the axles, a shelf over each axle, its whole sides lifting as wings', make: () => pod('goods') }
+			{ id: 'pod-goods', label: 'Goods', note: 'four Euro pallets (1200 × 800 mm) in two rows lengthwise, each row behind two doors on its side that swing open left and right; a hold 2.2 m high', make: () => pod('goods') }
 		]
 	}
 ];
