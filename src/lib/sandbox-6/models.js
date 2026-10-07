@@ -1,7 +1,7 @@
 /**
  * SANDBOX 6 · THE MODELS — every building of the valley is a dome, in our own low-poly style: a stone plinth, a dome
  * whose colour says what the building is, a vaulted porch facing its flag, round windows, and a band in its owner's
- * colour. Each has one thing of its own that says what it does: a tree growing from the forester's dome, the
+ * colour. Houses are domes too, and grow as they are enlarged. Each has one thing of its own that says what it does: a tree growing from the forester's dome, the
  * fishery's drying rack and boat, the bakery's oven chimney, the toolmaker's anvil, the market hall's awning. One
  * builder per type (`buildingModel`), the chimneys named so the view can puff them (`smoke`).
  */
@@ -159,6 +159,15 @@ export function buildingModel(type, owner) {
 			g.add(band(owner, 1.27, PLINTH + 0.45));
 			g.add(lantern(PLINTH + 1.35, '#d9a92e', 1.4));
 			g.add(banner(owner, 3.4, -1.35, -0.55));
+			break;
+		}
+		case 'house': {
+			// a home: a cream dome with round windows, a small chimney and a bench at the door (it grows as it is enlarged)
+			g.add(dome(0.9, 0.95, '#efe3c8', { windows: 3 }));
+			g.add(part(new THREE.CylinderGeometry(0.08, 0.1, 0.45, 6), mat('#9a5a3a'), -0.35, PLINTH + 0.95, -0.3));
+			g.add(part(new THREE.BoxGeometry(0.5, 0.08, 0.16), mat(TIMBER), 0.62, 0.22, 0.75));
+			for (const x of [-0.55, 0.55]) g.add(part(new THREE.SphereGeometry(0.12, 7, 4), mat('#6f9a4a'), x, 0.12, 0.95));
+			g.add(band(owner, 0.92, PLINTH + 0.15));
 			break;
 		}
 		case 'storehouse': {

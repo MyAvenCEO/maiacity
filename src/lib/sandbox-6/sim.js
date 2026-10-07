@@ -15,9 +15,10 @@
  *     and what they lack (./market.js);
  *   · every settlement eats, drinks and keeps its homes, and the valley's abundance follows how well they all live.
  */
-import { ABUNDANT, BUILDINGS, FOOD, GOALS, GRASS, HOLD, IRON, MOUNTAIN, PEOPLE, START, WARES, WATER, holdsLand } from './rules.js';
+import { ABUNDANT, BUILDINGS, FOOD, GOALS, GRASS, HOLD, HOUSE_BEDS, HOUSE_UP, IRON, MOUNTAIN, PEOPLE, START, WARES, WATER, holdsLand } from './rules.js';
 import { CART, NEIGHBOURS, TRADED, abundance, buyOne, cost, fair, live, make, newMarket, orderRule, price, request, sellOne, shop, toSell, trend } from './market.js';
-import { SE, findPath, makeGrid } from './hex.js';
+import { findPath, makeGrid } from './hex.js';
+import { makePlan } from './plots.js';
 import { growValley } from './map.js';
 
 /** seconds of game time a step moves on */
@@ -44,7 +45,7 @@ export function newGame(seed = 7) {
 	const v = growValley(seed);
 	const N = v.W * v.H;
 	const st = {
-		v: 4,
+		v: 5,
 		seed,
 		time: 0,
 		rng: (Math.imul(seed, 2654435761) >>> 0) || 1,
@@ -58,6 +59,8 @@ export function newGame(seed = 7) {
 		obj: /** @type {any[]} */ (v.obj),
 		road: /** @type {number[]} */ (Array(N).fill(0)),
 		owner: /** @type {number[]} */ (Array(N).fill(-1)),
+		/** who holds each village (./plots.js), or -1 @type {number[]} */
+		villageOwner: [],
 		/** @type {Record<string, any>} */ flags: {},
 		/** @type {Record<string, any>} */ roads: {},
 		/** @type {Record<string, any>} */ buildings: {},
@@ -93,7 +96,7 @@ export function newGame(seed = 7) {
 /** A game from its saved state. @param {string | object} saved */
 export function loadGame(saved) {
 	const st = typeof saved === 'string' ? JSON.parse(saved) : saved;
-	if (!st || st.v !== 4 || !Array.isArray(st.terrain)) throw new Error('Not a Sandbox 6 game of this kind');
+	if (!st || st.v !== 5 || !Array.isArray(st.terrain)) throw new Error('Not a Sandbox 6 game of this kind');
 	return createSim(st);
 }
 
@@ -103,6 +106,9 @@ export function loadGame(saved) {
 export function createSim(st) {
 	const g = makeGrid(st.W, st.H);
 	const N = g.N;
+	const plan = makePlan(g);
+	/** the village a node lies in */
+	const villageAt = (/** @type {number} */ n) => plan.villageOf[plan.plotOf[n]];
 
 	const rand = () => {
 		st.rng = (st.rng + 0x6d2b79f5) >>> 0;
@@ -263,20 +269,22 @@ export function createSim(st) {
 	}
 	function makeBuilding(/** @type {string} */ type, /** @type {number} */ node, /** @type {number} */ owner, live = false) {
 		const t = BUILDINGS[type];
-		const fnode = g.nb(node, SE);
+		// every building's door faces the flag in the middle of its settlement
+		const fnode = plan.centre[plan.plotOf[node]];
+		if (st.obj[fnode] && st.obj[fnode].k !== 'flag') st.obj[fnode] = null;
 		const flag = flagAt(fnode) ?? makeFlag(fnode, owner);
 		const b = {
 			id: newId(), type, node, flag: flag.id, owner, stage: live ? 'live' : 'site', since: st.time,
 			cost: { ...t.cost }, used: /** @type {Record<string, number>} */ ({}), got: /** @type {Record<string, number>} */ ({}), inc: /** @type {Record<string, number>} */ ({}),
 			builder: 0, worker: 0, slots: (t.inputs ?? []).map(() => ({ have: 0, inc: 0 })),
 			timer: 0, out: 0, paused: false, status: live ? '' : 'Waiting for a builder', eff: 0,
-			stock: /** @type {Record<string, number>} */ ({}), settlers: 0, deposit: 0, fields: 0,
+			stock: /** @type {Record<string, number>} */ ({}), settlers: 0, deposit: 0, fields: 0, level: 0,
 			/** a market hall's: what waits to go to the fair, what is on its way to it, what came back */
 			box: /** @type {Record<string, number>} */ ({}), incBox: /** @type {Record<string, number>} */ ({}), outQ: /** @type {string[]} */ ([])
 		};
 		for (const w of Object.keys(b.cost)) (b.used[w] = 0), (b.got[w] = 0), (b.inc[w] = 0);
 		if (t.kind === 'mine') b.deposit = depositAt(node);
-		flag.bld = b.id;
+		flag.bld ||= b.id;
 		st.obj[node] = { k: 'bld', id: b.id };
 		st.buildings[b.id] = b;
 		st.objV++;
@@ -321,7 +329,7 @@ export function createSim(st) {
 	}
 	function removeFlag(/** @type {any} */ f) {
 		for (const r of all(st.roads)) if (r.a === f.id || r.b === f.id) removeRoad(r);
-		if (f.bld && st.buildings[f.bld]) removeBuilding(st.buildings[f.bld]);
+		for (const b of all(st.buildings)) if (b.flag === f.id && st.buildings[b.id]) removeBuilding(b);
 		for (const wid of [...f.wares]) if (st.wares[wid]) destroyWare(st.wares[wid]);
 		delete st.flags[f.id];
 		st.obj[f.node] = null;
@@ -332,7 +340,7 @@ export function createSim(st) {
 		delete st.buildings[b.id];
 		st.obj[b.node] = null;
 		const f = st.flags[b.flag];
-		if (f) f.bld = 0;
+		if (f && f.bld === b.id) f.bld = all(st.buildings).find((x) => x.flag === f.id)?.id ?? 0;
 		for (const w of all(st.wares)) if (w.dest === b.id) w.dest = 0;
 		for (const uid of [b.worker, b.builder]) {
 			const u = st.units[uid];
@@ -616,7 +624,7 @@ export function createSim(st) {
 				return idle(u, r);
 			}
 			// the flag of a storehouse is full: the storehouse takes the ware in, and sends it on when there is room
-			const home = st.buildings[f.bld];
+			const home = all(st.buildings).find((x) => x.flag === f.id && isWarehouse(x));
 			if (home && isWarehouse(home) && home.owner === u.owner && home.stage === 'live') {
 				unclaim(w);
 				w.dest = home.id;
@@ -795,6 +803,21 @@ export function createSim(st) {
 		b.eff += ((busy ? 1 : 0) - b.eff) * Math.min(1, dt / 40);
 	}
 	function finish(/** @type {any} */ b) {
+		if (b.type === 'house') {
+			const was = b.level;
+			b.level = Math.max(1, b.level + (b.level ? 1 : 0));
+			b.cost = {};
+			if (was) {
+				b.stage = 'live';
+				b.status = '';
+				const u = st.units[b.builder];
+				b.builder = 0;
+				if (u) goHome(u);
+				say(`A house now holds ${HOUSE_BEDS[b.level - 1]} settlers`, b.node, 'good');
+				st.objV++;
+				return;
+			}
+		}
 		b.stage = 'live';
 		b.timer = 0;
 		b.since = st.time;
@@ -803,7 +826,7 @@ export function createSim(st) {
 		const u = st.units[b.builder];
 		b.builder = 0;
 		if (u) goHome(u);
-		say(t.kind === 'land' ? 'The boundary stone stands: your land grows' : `${t.label} finished`, b.node, 'good');
+		say(`${t.label} finished`, b.node, 'good');
 		st.objV++;
 		if (holdsLand(b.type)) territory();
 	}
@@ -1041,16 +1064,12 @@ export function createSim(st) {
 
 	// ── the land ──
 	function territory() {
+		// a village belongs to whoever has a house (or a city hall, or the fair) in it
+		const vo = Array(plan.villages.length).fill(-1);
+		for (const b of all(st.buildings).sort((x, y) => x.since - y.since)) if (holdsLand(b.type) && vo[villageAt(b.node)] === -1) vo[villageAt(b.node)] = b.owner;
+		st.villageOwner = vo;
 		const own = Array(N).fill(-1);
-		const holders = all(st.buildings)
-			.filter((b) => holdsLand(b.type) && b.stage === 'live')
-			.sort((a, b) => a.since - b.since);
-		for (const b of holders) for (const j of g.within(b.node, /** @type {number} */ (T(b).radius))) if (own[j] === -1) own[j] = b.owner;
-		for (const b of holders) {
-			own[b.node] = b.owner;
-			const f = st.flags[b.flag];
-			if (f) own[f.node] = b.owner;
-		}
+		for (let i = 0; i < N; i++) own[i] = vo[villageAt(i)];
 		st.owner = own;
 		st.terV++;
 		// what stands on land its owner lost, burns
@@ -1061,6 +1080,47 @@ export function createSim(st) {
 			}
 		for (const f of all(st.flags)) if (st.flags[f.id] && f.owner === PLAYER && own[f.node] !== f.owner) removeFlag(f);
 		for (const r of all(st.roads)) if (st.roads[r.id] && r.path.some((/** @type {number} */ n) => own[n] !== r.owner)) removeRoad(r);
+	}
+
+	// ── homes ──
+	/** the beds in your city: the city hall's and every house's (a house being enlarged keeps its beds meanwhile) */
+	const beds = () => all(st.buildings).reduce((s, b) => s + (b.owner !== PLAYER ? 0 : b.type === 'hq' ? /** @type {number} */ (BUILDINGS.hq.beds) : b.type === 'house' && b.level ? HOUSE_BEDS[b.level - 1] : 0), 0);
+	/** the neighbours' cities as they grow: a settlement (a house, two factories) for every eight or so people */
+	function neighbourTowns() {
+		for (let k = 1; k < st.parties.length; k++) {
+			const p = st.parties[k];
+			const hall = st.buildings[st.villages[k - 1]];
+			if (!hall) continue;
+			const vill = plan.villages[villageAt(hall.node)];
+			const ring = vill.plots.filter((x) => x !== plan.plotOf[hall.node]);
+			const count = Math.max(1, Math.min(ring.length, Math.ceil(p.pop / 8)));
+			let level = 1;
+			while (level < 4 && count * HOUSE_BEDS[level - 1] < p.pop) level++;
+			const kinds = NEIGHBOURS[k - 1].builds;
+			const want = [plan.plotOf[hall.node], ...ring.slice(0, count)];
+			want.forEach((plot, x) => {
+				const [h, f1, f2] = plan.spots[plot];
+				if (x > 0 && h >= 0) {
+					const b = buildingAt(h);
+					if (!b) {
+						if (st.obj[h]) st.obj[h] = null;
+						const nb = makeBuilding('house', h, k, true);
+						nb.level = level;
+						nb.since = -1;
+					} else if (b.type === 'house' && b.level !== level) {
+						b.level = level;
+						st.objV++;
+					}
+				}
+				for (const [y, spot] of [f1, f2].entries()) {
+					if (spot < 0 || buildingAt(spot)) continue;
+					const type = kinds[(x * 2 + y) % kinds.length];
+					if (BUILDINGS[type].on === 'mountain' ? st.terrain[spot] !== MOUNTAIN : st.terrain[spot] === WATER) continue;
+					if (st.obj[spot]) st.obj[spot] = null;
+					makeBuilding(type, spot, k, true).since = -1;
+				}
+			});
+		}
 	}
 
 	// ── the settlements: needs, the neighbours' work and trade, abundance ──
@@ -1190,6 +1250,7 @@ export function createSim(st) {
 			if (st.goals[goal.id]) continue;
 			let done = false;
 			if (goal.id === 'wood') done = live('woodcutter') && live('quarry');
+			else if (goal.id === 'house') done = all(st.buildings).some((b) => b.type === 'house' && b.owner === PLAYER && b.level >= 4);
 			else if (goal.id === 'market') done = st.market.sold > 0;
 			else if (goal.id === 'trade') done = st.market.sold + st.market.bought >= /** @type {number} */ (goal.n);
 			else if (goal.id === 'contract') done = st.market.filled > 0;
@@ -1262,8 +1323,17 @@ export function createSim(st) {
 		const hq = st.buildings[st.hq];
 		if (st.time >= c.pop) {
 			c.pop = st.time + 18;
-			// newcomers settle where people live well
-			if (hq && hq.settlers < 12 && st.parties[PLAYER].wb >= 45) hq.settlers++;
+			// newcomers settle where people live well and there is a bed for them; with too few beds, people leave
+			const people = yourPeople(), room = beds();
+			if (hq && people < room && st.parties[PLAYER].wb >= 45) hq.settlers++;
+			else if (people > room) {
+				const wh = warehouses().find((w) => w.settlers > 0);
+				if (wh) {
+					wh.settlers--;
+					say('A settler left: there are not enough beds. Build or enlarge houses.', wh.node, 'alert');
+				}
+			}
+			neighbourTowns();
 		}
 		if (st.time >= c.needs) {
 			c.needs = st.time + 2;
@@ -1304,21 +1374,26 @@ export function createSim(st) {
 		const t = BUILDINGS[type];
 		if (!t || !t.group) return 'Not something you can build';
 		if (n < 0) return 'Off the map';
-		if (st.owner[n] !== PLAYER) return 'Outside your land';
+		const plot = plan.plotOf[n], spot = plan.spotOf[n];
+		if (spot < 0) return 'Buildings stand round a settlement’s flag: pick a marked spot';
+		if (type === 'house' && spot !== 0) return 'A house stands on its settlement’s house spot';
+		if (type !== 'house' && spot === 0) return 'This spot is for the settlement’s house';
+		const v = villageAt(n), vo = st.villageOwner[v] ?? -1;
+		if (type === 'house') {
+			if (vo !== PLAYER && !(vo === -1 && plan.villages[v].near.some((x) => st.villageOwner[x] === PLAYER))) return vo === -1 ? 'Too far: found houses in your city or in a village next to it' : 'This village is not yours';
+		} else {
+			if (vo !== PLAYER) return 'Outside your city';
+			const home = buildingAt(plan.spots[plot][0]);
+			if (!home || home.owner !== PLAYER || (home.type !== 'house' && home.type !== 'hq')) return 'Build this settlement’s house first';
+		}
 		if (st.obj[n]) return st.obj[n].k === 'tree' ? 'A tree stands here' : st.obj[n].k === 'rock' ? 'A rock lies here' : 'Something stands here';
 		if (st.road[n]) return 'A road runs here';
 		if (t.on === 'mountain' ? st.terrain[n] !== MOUNTAIN : st.terrain[n] !== GRASS) return t.on === 'mountain' ? 'Mines stand on mountains' : 'Needs open grass';
-		for (let d = 0; d < 6; d++) {
-			const j = g.nb(n, d);
-			if (j < 0) return 'Too close to the edge';
-			if (st.obj[j]?.k === 'bld') return 'Too close to another building';
-		}
-		const f = g.nb(n, SE);
-		const o = st.obj[f];
-		if (o?.k === 'flag') {
-			if (st.flags[o.id].owner !== PLAYER) return 'Outside your land';
-			if (st.flags[o.id].bld) return 'That flag already serves a building';
-		} else if (canFlag(f)) return `No room for its flag: ${canFlag(f).toLowerCase()}`;
+		const c = plan.centre[plan.plotOf[n]];
+		if (st.terrain[c] === WATER) return 'Its flag would stand in water';
+		const f = flagAt(c);
+		if (f && f.owner !== PLAYER) return 'Not yours';
+		if (st.road[c]) return 'A road runs where its flag goes';
 		if (type === 'fishery' && !g.within(n, 4).some((j) => st.terrain[j] === WATER)) return 'Needs water nearby';
 		if (t.kind === 'mine' && depositAt(n) <= 0) return 'No iron ore in this rock';
 		return '';
@@ -1329,8 +1404,9 @@ export function createSim(st) {
 		if (!start || start.owner !== PLAYER || from === to || to < 0) return null;
 		const end = flagAt(to);
 		if (end ? end.owner !== PLAYER : canFlag(to)) return null;
-		const open = (/** @type {number} */ j) => st.owner[j] === PLAYER && st.terrain[j] !== WATER && !st.obj[j] && !st.road[j];
-		const path = findPath(g, from, to, open, 2500);
+		// roads keep to the lanes between settlements where they can (a building spot only when there is no other way), never over another settlement's middle
+		const open = (/** @type {number} */ j) => st.owner[j] === PLAYER && st.terrain[j] !== WATER && !st.obj[j] && !st.road[j] && plan.centre[plan.plotOf[j]] !== j;
+		const path = findPath(g, from, to, open, 2500, (j) => (plan.spotOf[j] >= 0 ? 3 : 0));
 		return path && path.length <= 40 ? path : null;
 	}
 	function buildRoad(/** @type {number} */ from, /** @type {number} */ to) {
@@ -1362,6 +1438,7 @@ export function createSim(st) {
 	return {
 		state: st,
 		grid: g,
+		plan,
 		step,
 		setup(/** @type {import('./map.js').Valley} */ v) {
 			const hq = makeBuilding('hq', v.hq, PLAYER, true);
@@ -1378,8 +1455,19 @@ export function createSim(st) {
 			});
 			const f = makeBuilding('fair', v.fair, FAIR, true);
 			st.fair = f.id;
+			// the first houses round the city hall, nearest first
+			const ring = plan.villages[villageAt(hq.node)].plots.filter((k) => k !== plan.plotOf[hq.node]).sort((a, b) => g.dist(plan.centre[a], hq.node) - g.dist(plan.centre[b], hq.node));
+			START.houses.forEach((level, x) => {
+				const h = plan.spots[ring[x]][0];
+				if (h < 0) return;
+				const b = makeBuilding('house', h, PLAYER, true);
+				b.level = level;
+				b.since = 0;
+			});
 			territory();
-			say('Welcome to the valley. Build a woodcutter near the forest and a quarry near the rocks, and join them to your headquarters by road.', hq.node);
+			for (const b of all(st.buildings)) if (b.type === 'house') autoRoad(b.flag);
+			neighbourTowns();
+			say('Welcome to your city. Every building stands round a settlement’s flag: a house and two factories. Build a woodcutter and a quarry beside a house.', hq.node);
 		},
 		canBuild,
 		canFlag,
@@ -1390,6 +1478,7 @@ export function createSim(st) {
 			if (why) return { ok: false, why };
 			const b = makeBuilding(type, n, PLAYER);
 			b.since = st.time;
+			if (type === 'house') territory();
 			const linked = connect ? autoRoad(b.flag) : null;
 			return { ok: true, id: b.id, linked: !!linked || route(st.buildings[st.hq].flag).has(b.flag) };
 		},
@@ -1409,13 +1498,13 @@ export function createSim(st) {
 		demolish(/** @type {number} */ n) {
 			const b = buildingAt(n);
 			if (b) {
-				if (b.owner !== PLAYER || b.type === 'hq') return { ok: false, why: b.type === 'hq' ? 'The headquarters stays' : 'Not yours' };
+				if (b.owner !== PLAYER || b.type === 'hq') return { ok: false, why: b.type === 'hq' ? 'The city hall stays' : 'Not yours' };
 				removeBuilding(b);
 				return { ok: true };
 			}
 			const f = flagAt(n);
 			if (f) {
-				if (f.owner !== PLAYER || st.buildings[f.bld]?.type === 'hq') return { ok: false, why: 'This flag stays' };
+				if (f.owner !== PLAYER || all(st.buildings).some((x) => x.flag === f.id && x.type === 'hq')) return { ok: false, why: 'This flag stays' };
 				removeFlag(f);
 				return { ok: true };
 			}
@@ -1424,6 +1513,19 @@ export function createSim(st) {
 				return { ok: true };
 			}
 			return { ok: false, why: 'Nothing to tear down here' };
+		},
+		/** enlarge a house to its next size: builders bring what it costs, and its settlers stay meanwhile */
+		upgrade(/** @type {number} */ id) {
+			const b = st.buildings[id];
+			if (!b || b.owner !== PLAYER || b.type !== 'house') return { ok: false, why: 'Only your houses grow' };
+			if (b.stage !== 'live') return { ok: false, why: 'It is being built' };
+			if (b.level >= 4) return { ok: false, why: 'It is as large as a house gets' };
+			b.cost = { ...HOUSE_UP[b.level - 1] };
+			for (const w of Object.keys(b.cost)) (b.used[w] = 0), (b.got[w] = 0), (b.inc[w] = 0);
+			b.stage = 'site';
+			b.status = 'Waiting for a builder';
+			st.objV++;
+			return { ok: true };
 		},
 		pause(/** @type {number} */ id, /** @type {boolean} */ paused) {
 			const b = st.buildings[id];
@@ -1491,6 +1593,9 @@ export function createSim(st) {
 				time: st.time,
 				stock,
 				settlers,
+				people: yourPeople(),
+				beds: beds(),
+				villages: st.villageOwner.filter((/** @type {number} */ o) => o === PLAYER).length,
 				carriers,
 				workers,
 				abundance: m.abundance,
@@ -1533,7 +1638,12 @@ export function createSim(st) {
 				stock: isWarehouse(b) ? { ...b.stock } : null,
 				settlers: b.settlers,
 				box: t.kind === 'market' ? { ...b.box } : null,
-				party: b.type === 'village' ? { ...st.parties[b.owner], stock: { ...st.parties[b.owner].stock } } : null
+				party: b.type === 'village' ? { ...st.parties[b.owner], stock: { ...st.parties[b.owner].stock } } : null,
+				level: b.level,
+				beds: b.type === 'house' && b.level ? HOUSE_BEDS[b.level - 1] : b.type === 'hq' ? BUILDINGS.hq.beds : 0,
+				upgrading: b.type === 'house' && b.stage === 'site' && b.level > 0,
+				up: b.type === 'house' && b.level >= 1 && b.level < 4 ? HOUSE_UP[b.level - 1] : null,
+				village: villageAt(b.node)
 			};
 		},
 		toJSON: () => JSON.stringify(st)

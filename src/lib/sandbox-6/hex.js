@@ -94,9 +94,10 @@ export function makeGrid(W, H) {
  * @param {number} to
  * @param {(i: number) => boolean} open whether a walk may pass through a node (the two ends are always open)
  * @param {number} [limit] give up beyond so many nodes searched
+ * @param {(i: number) => number} [extra] what stepping onto a node costs beyond one step (to keep a way off some nodes)
  * @returns {number[] | null}
  */
-export function findPath(g, from, to, open, limit = 4000) {
+export function findPath(g, from, to, open, limit = 4000, extra) {
 	if (from === to) return [from];
 	const came = new Map([[from, -1]]);
 	const cost = new Map([[from, 0]]);
@@ -141,7 +142,7 @@ export function findPath(g, from, to, open, limit = 4000) {
 		for (let d = 0; d < 6; d++) {
 			const j = g.nbr[i * 6 + d];
 			if (j < 0 || (j !== to && !open(j))) continue;
-			const cj = ci + 1;
+			const cj = ci + 1 + (extra ? extra(j) : 0);
 			if (cj < (cost.get(j) ?? Infinity)) {
 				cost.set(j, cj);
 				came.set(j, i);

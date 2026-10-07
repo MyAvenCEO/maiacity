@@ -8,7 +8,7 @@
 	import { onDestroy, onMount } from 'svelte';
 	import TouchStick from '$lib/touch/TouchStick.svelte';
 	import { WorldBar } from '$lib/sandbox-kit';
-	import { ABUNDANT, BUILDINGS, HOLD, MENU, PEOPLE, WARES, WARE_ORDER } from './rules.js';
+	import { ABUNDANT, BUILDINGS, HOLD, HOUSE_BEDS, HOUSE_SIZE, MENU, PEOPLE, WARES, WARE_ORDER } from './rules.js';
 	import { NEED_LABEL } from './market.js';
 	import { PLAYER } from './sim.js';
 	import Tree from './Tree.svelte';
@@ -219,7 +219,7 @@
 			<section class="panel stock" aria-label="Your stock">
 				<button class="head" onclick={() => (stockOpen = !stockOpen)} aria-expanded={stockOpen}>
 					<span>Stock</span>
-					<span class="people">{summary.settlers} settlers · {summary.stock.coin ?? 0} coins · {clock(summary.time)}</span>
+					<span class="people">{summary.people} of {summary.beds} beds · {summary.villages} {summary.villages === 1 ? 'village' : 'villages'} · {summary.stock.coin ?? 0} coins · {clock(summary.time)}</span>
 				</button>
 				{#if stockOpen}
 					<ul class="wares">
@@ -328,6 +328,14 @@
 			{/if}
 			{#if card.stock}
 				<p class="label">{card.settlers} settlers inside</p>
+			{/if}
+			{#if card.type === 'house' && card.level}
+				<p class="label">{HOUSE_SIZE[card.level - 1]} · home of <b>{card.beds}</b> settlers{card.upgrading ? ` · growing to ${HOUSE_BEDS[card.level]}` : ''}</p>
+				{#if card.owner === PLAYER && card.up && !card.upgrading}
+					<div class="actions">
+						<button class="go" onclick={() => card && (game?.sim.upgrade(card.id), refresh())}>Enlarge to {HOUSE_BEDS[card.level]} settlers · {Object.entries(card.up).map(([w, n]) => `${n} ${label(w).toLowerCase()}`).join(', ')}</button>
+					</div>
+				{/if}
 			{/if}
 			{#if card.stage === 'live' && card.worker}
 				{#if card.inputs.length}
