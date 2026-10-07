@@ -255,7 +255,7 @@ export function createAutoplay(sim) {
 					}
 				}
 			}
-			// a village center grows (its hub into the village center, then more wells) once its treasury can pay for it
+			// a village center grows (its hub into the village center and its geothermal plant) once its treasury can pay for it
 			for (const row of sim.market().parties.filter((/** @type {any} */ p) => p.owner === PLAYER)) {
 				const next = sim.village(row.node)?.power.next, c = sim.at(row.node);
 				if (next && c?.k === 'building' && pays(next.up, row, next.gold * 1000)) sim.grow(/** @type {number} */ (c.id));

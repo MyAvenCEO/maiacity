@@ -2,7 +2,7 @@
  * SANDBOX 6 · THE BUILDING TREE — the valley's chains, a row each, from the land to what they are for, every stage with
  * its three recipes of the crafting engine (./rules.js RECIPES), in units (a tonne, a MWh): what building it or growing
  * to it takes, what standing takes a year, and what it makes a year, working all its land gives it. The hex each
- * chain stands on leads its row. Energy has its rows too (the village center's geothermal stages, every dome's solar
+ * chain stands on leads its row. Energy has its rows too (the village center's stages and its geothermal plant, every dome's solar
  * cells), and the homes theirs: one dome that grows through eight sizes. Read from the rules, so it always shows the
  * game as it is. The page draws it (./Tree.svelte).
  */
@@ -51,9 +51,9 @@ export const CHAINS = /** @type {Chain[]} */ (
 );
 
 /** the village center's stages (./rules.js CENTRE): a logistics hub, then the great village center with its first
- * geothermal wells, then two more producers each; each with its build, what it keeps a year (its upkeep, and its hall's,
- * storehouse's and routes' energy) and what its wells make a year */
-export const CENTRES = CENTRE.map((x, k) => ({ label: x.label, level: k + 1, does: x.does, mw: (x.wells * ENERGY.wellKw) / 1000, build: x.build, keep: x.keep, make: x.make }));
+ * geothermal plant; each with its build, what it keeps a year (its upkeep, and its hall's, storehouse's and routes'
+ * energy) and what its plant makes a year */
+export const CENTRES = CENTRE.map((x, k) => ({ label: x.label, level: k + 1, does: x.does, mw: (x.plant * ENERGY.wellKw) / 1000, build: x.build, keep: x.keep, make: x.make }));
 /** every dome's solar cells, a bed's share a year, and its climate's */
 export const SUN = { make: ENERGY.sunBed / 1000, climate: ENERGY.climateBed / 1000 };
 

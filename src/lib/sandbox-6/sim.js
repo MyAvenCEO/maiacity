@@ -15,7 +15,7 @@
  *     the cities trade by the orders you set and by what the neighbours have spare and lack (./market.js);
  *   · every village eats and drinks, in kg and litres (./food.js): its hexes' food forests grow a share of it, more
  *     each year, it buys the rest by itself, and its roofs fill its tanks with rain;
- *   · every village makes and uses energy, in kWh (./rules.js ENERGY): its center's geothermal wells and its domes'
+ *   · every village makes and uses energy, in kWh (./rules.js ENERGY): its center's geothermal plant and its domes'
  *     solar glass make it, its people and factories use it, and the world grid buys what is left over;
  *   · every factory works by its recipe (./rules.js RECIPES, `craft` here): a round of its land and energy in, its ware
  *     out;
@@ -49,9 +49,9 @@ export const woodLevel = (/** @type {any} */ b) => b.level || 2;
 /** a building's level as it stands: a house's size, a factory's stage (1 for its first), a village center's (1, a
  * logistics hub) */
 export const levelOf = (/** @type {any} */ b) => (b.type === 'woodcutter' ? woodLevel(b) : RECIPES[b.type] || b.type === 'centre' ? b.level || 1 : b.level);
-/** the geothermal stages under a village center, by its stage: none under a logistics hub, an injector and two
- * producers under the village center, then two more producers each */
-export const wellsOf = (/** @type {any} */ c) => (c.type === 'centre' ? centreStage(levelOf(c)).wells : 0);
+/** the geothermal plants under a village center, by its stage: none under a logistics hub, one under the village
+ * center */
+export const plantOf = (/** @type {any} */ c) => (c.type === 'centre' ? centreStage(levelOf(c)).plant : 0);
 /** a neighbour city's people when its village is full: six houses of sixteen */
 /** the most villages a neighbour founds */
 const CITY_VILLAGES = 5;
@@ -1662,8 +1662,8 @@ export function createSim(st) {
 	const runsDry = (/** @type {number} */ v, /** @type {any} */ p, /** @type {number} */ days) => p.pop > 0 && (p.litres ?? 0) < p.pop * FRESH_L * days && rainIn(v) < p.pop * FRESH_L;
 	/** kWh a day its domes' solar glass makes now: each bed's share, as much as the sun gives this month */
 	const sunIn = (/** @type {number} */ v) => bedsIn(v) * sunBedDay(calendar(st.cal).month);
-	/** kWh a day a village center's geothermal stages make, day and night, as much of the time as they run */
-	const wellsDay = (/** @type {any} */ c) => wellsOf(c) * ENERGY.wellKw * 24 * ENERGY.uptime;
+	/** kWh a day a village center's geothermal plant makes, day and night, as much of the time as it runs */
+	const wellsDay = (/** @type {any} */ c) => plantOf(c) * ENERGY.wellKw * 24 * ENERGY.uptime;
 	/** kWh a day so many people use at home */
 	const homeDay = (/** @type {number} */ pop) => (pop * ENERGY.home) / YEAR;
 	/** kWh a day a village center uses at its stage (its keep): its hall, its storehouse, its trade routes' lights and
@@ -2463,8 +2463,8 @@ export function createSim(st) {
 			return { ok: true };
 		},
 		/** grow a village center of yours to its next stage (./rules.js CENTRE): a logistics hub into the great village
-		 * center with its first geothermal wells, then two more producers at a time. Its wares come from the stores
-		 * joined to it (what they lack, bought from the world market), its wells' gold from their treasuries (what they
+		 * center with its geothermal plant (not upgraded after). Its wares come from the stores joined to it (what they
+		 * lack, bought from the world market), its plant's gold from their treasuries (what they
 		 * lack, borrowed), and it grows at once */
 		grow(/** @type {number} */ id) {
 			const c = st.buildings[id];
@@ -2479,7 +2479,7 @@ export function createSim(st) {
 			c.level = levelOf(c) + 1;
 			st.objV++;
 			const name = p?.name ?? 'Your village';
-			say(next.wells > 1 ? `${name} drilled two more geothermal producers: ${((next.wells * ENERGY.wellKw) / 1000).toLocaleString('en-US')} MW` : `${name} has its village center, and its geothermal wells: ${(ENERGY.wellKw / 1000).toLocaleString('en-US')} MW`, c.node, 'good');
+			say(`${name} has its village center, and its geothermal plant: ${(ENERGY.wellKw / 1000).toLocaleString('en-US')} MW`, c.node, 'good');
 			return { ok: true };
 		},
 		/** what stands at a node */
@@ -2618,11 +2618,11 @@ export function createSim(st) {
 					spent: dry * WATER_PRICE,
 					short: hungry
 				},
-				/** its energy, kWh a week: what its center's geothermal stages make and its domes' solar cells this month, what
+				/** its energy, kWh a week: what its center's geothermal plant makes and its domes' solar cells this month, what
 				 * its people use at home and its domes' climate, as it stands now; what its factories used, what went to the
-				 * world grid and came from it, and the €, lately; and what drilling another stage costs (0 at the last) */
+				 * world grid and came from it, and the €, lately; and its center's stage and the next */
 				power: {
-					wells: wellsOf(c),
+					plant: plantOf(c),
 					well: wellsDay(c) * 7,
 					sun: sunIn(v) * 7,
 					home: homeDay(pop) * 7,

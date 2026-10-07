@@ -59,12 +59,14 @@
 			<div class="node land"><strong>A village's middle hex</strong><span><b>hot rock</b>: 5.5 km down, 175 °C</span></div>
 			{#each CENTRES as s, k (s.level)}
 				<button class="node b e" class:have={owned[`centre:${s.level}`]} class:first={k === 0} onclick={() => k === 0 && onBuild('centre')} title={titleOf(s, k > 0)}>
-					<strong>{s.label}{s.mw ? ` · ${fmt(s.mw)} MW` : ''}{#if owned[`centre:${s.level}`]}<em>×{owned[`centre:${s.level}`]}</em>{/if}</strong>
+					<strong>{s.label}{#if owned[`centre:${s.level}`]}<em>×{owned[`centre:${s.level}`]}</em>{/if}</strong>
+					{#if s.mw}<span>with its geothermal plant, {fmt(s.mw)} MW</span>{/if}
 					<span class="r make"><b>make</b>{Object.keys(s.make.out).length ? list(s.make.out) : s.does}</span>
 					<span class="r"><b>keep</b>{list(s.keep.in)}</span>
 					<span class="r cost"><b>{k ? '↑ build' : 'build'}</b>{list(s.build.in)}</span>
 				</button>
 			{/each}
+			{#each { length: 4 - CENTRES.length } as _, k (k)}<div class="gap"></div>{/each}
 			<div class="node w e"><strong><i class="bolt"></i>Energy</strong><span>a flow, never stored</span></div>
 			<div class="node use"><strong>People, domes, factories</strong><span>the rest to the grid, {fmt((GRID_EUR_KWH * 1000) / EUR_PER_GOLD)} gold an energy</span></div>
 

@@ -173,7 +173,7 @@
 		growWhy = '';
 		refresh();
 	}
-	/** grow the shown village's center to its next stage: a logistics hub into the village center, then more wells */
+	/** grow the shown village's center to its next stage: a logistics hub into the village center and its geothermal plant */
 	function grow() {
 		const at = home && game?.sim.at(home.node);
 		if (!game || at?.k !== 'building') return;
@@ -347,7 +347,7 @@
 				<h2>Found your village</h2>
 				<p class="label">Put up your logistics hub in the middle hex of a village: your {START.settlers} settlers bring it, with {costLine(START.stock)} in its store. Then build your first hut on a hex round it.</p>
 				<div class="actions"><button class="go" onclick={() => tool('build', 'centre')}>Place your logistics hub</button></div>
-				<p class="small">It grows into your village center later, with its geothermal wells. What its treasury lacks it borrows, up to 125 gold a villager.</p>
+				<p class="small">It grows into your village center later, with its geothermal plant. What its treasury lacks it borrows, up to 125 gold a villager.</p>
 			</section>
 		</aside>
 	{/if}
@@ -383,7 +383,7 @@
 						</li>
 					{/if}
 					{#if pw}
-						<li class:short={pw.short} title="Energy a week, an energy being a MWh: geothermal {energy(pw.well)} (stage {pw.wells} of {ENERGY.wellsMost}) and solar {energy(pw.sun)} ({MONTHS[pw.month - 1]} sun), against homes {energy(pw.home)}, dome climate {energy(pw.climate)}, village center {energy(pw.centre)} and factories {energy(pw.work)} (their work, building and upkeep). To the grid {energy(pwGrid)}, {gold(pwEur)} gold.">
+						<li class:short={pw.short} title="Energy a week, an energy being a MWh: geothermal plant {energy(pw.well)}{pw.plant ? '' : ' (none yet: it comes with the village center)'} and solar {energy(pw.sun)} ({MONTHS[pw.month - 1]} sun), against homes {energy(pw.home)}, dome climate {energy(pw.climate)}, village center {energy(pw.centre)} and factories {energy(pw.work)} (their work, building and upkeep). To the grid {energy(pwGrid)}, {gold(pwEur)} gold.">
 							<span class="k">Energy</span>
 							<span class="bar"><span class={pw.short ? 'poor' : pwMade >= pwUsed ? 'good' : 'fair'} style:width="{Math.min(100, (pwMade / Math.max(1, pwUsed)) * 100)}%"></span></span>
 							<span class="n">{energy(pwMade)}<em>/{energy(pwUsed)}</em></span>
@@ -399,7 +399,7 @@
 				</ul>
 				{#if pw?.next}
 					{@const nx = pw.next}
-					<div class="actions"><button class="go up grow" onclick={grow} title="{nx.wells > 1 ? `Drill two more geothermal producers under its village center: ${fmt(ENERGY.wellKw / 1000)} MW more` : `Grow its logistics hub into its village center, a dome as large as a great dome of 248, and drill its first geothermal triplet under it: ${fmt(ENERGY.wellKw / 1000)} MW, ${energy(ENERGY.wellKw * 168 * ENERGY.uptime)} energy a week`}. Its build: {side(nx.build.in, ', ')}, from your stores (what they lack, bought) and its treasury (what it lacks, borrowed). It grows at once."><span>Grow → {nx.label}</span><span class="chips">{#each Object.entries(nx.up) as [w, n] (w)}<span class="cost"><i style:background={WARES[w].color}></i>{ware(n)}</span>{/each}{#if nx.build.in.energy}<span class="cost"><i class="bolt"></i>{fmt(nx.build.in.energy)}</span>{/if}<span class="cost"><i class="coin"></i>{fmt(nx.gold)}</span></span></button></div>
+					<div class="actions"><button class="go up grow" onclick={grow} title="Grow its logistics hub into its village center, a dome as large as a great dome of 248, with its geothermal plant under it: {fmt(ENERGY.wellKw / 1000)} MW, {energy(ENERGY.wellKw * 168 * ENERGY.uptime)} energy a week. Its build: {side(nx.build.in, ', ')}, from your stores (what they lack, bought) and its treasury (what it lacks, borrowed). It grows at once."><span>Grow → {nx.label}</span><span class="chips">{#each Object.entries(nx.up) as [w, n] (w)}<span class="cost"><i style:background={WARES[w].color}></i>{ware(n)}</span>{/each}{#if nx.build.in.energy}<span class="cost"><i class="bolt"></i>{fmt(nx.build.in.energy)}</span>{/if}<span class="cost"><i class="coin"></i>{fmt(nx.gold)}</span></span></button></div>
 					{#if growWhy}<p class="status">{growWhy}</p>{/if}
 				{/if}
 				{#each home.notes as x, k (k)}
