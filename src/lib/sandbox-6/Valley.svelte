@@ -307,49 +307,66 @@
 		</div>
 		{#if booksOpen && books}
 			{@const b = books}
-			{@const exp = b.exports.food + b.exports.energy + b.exports.wares}
-			{@const imp = b.imports.food + b.imports.water + b.imports.energy + b.imports.wares}
+			{@const costs = b.imports.food + b.imports.water + b.imports.energy + b.imports.wares + b.upkeep + b.repaid + b.demurrage}
+			{@const income = b.exports.food + b.exports.energy + b.exports.wares + b.hearts + b.borrowed}
 			{@const owns = Math.max(0, b.treasury) + b.stores + b.buildings}
 			{@const owes = b.loan.left + Math.max(0, -b.treasury)}
-			{@const change = b.cashflow + b.hearts - b.repaid + b.borrowed - b.demurrage}
-			<!-- your books, as in the Cashflow game: a week's income and costs, then what you own and owe -->
+			<!-- your books, as in the Cashflow game, two-sided (Samuel): a week's costs on the left against its income on the
+			     right, then what you owe on the left against what you own on the right -->
 			<section class="books" aria-label="Your books">
 				<button class="close" onclick={() => (booksOpen = false)} aria-label="Close">×</button>
-				<p class="eyebrow">Your books · all villages</p>
+				<p class="eyebrow">Your books · all villages · in gold</p>
 				<p class="sub">A week, lately</p>
-				<dl>
-					<dt class="head" title="What the world market paid your villages">Exports</dt><dd class="head gain">+{gold(exp)}</dd>
-					<dt>Food</dt><dd>{gold(b.exports.food)}</dd>
-					<dt>Energy</dt><dd>{gold(b.exports.energy)}</dd>
-					<dt>Wares</dt><dd>{gold(b.exports.wares)}</dd>
-					<dt class="head" title="What your villages paid the world market">Imports</dt><dd class="head debt">−{gold(imp)}</dd>
-					<dt>Food</dt><dd>{gold(b.imports.food)}</dd>
-					<dt>Water</dt><dd>{gold(b.imports.water)}</dd>
-					<dt>Energy</dt><dd>{gold(b.imports.energy)}</dd>
-					<dt>Wares</dt><dd>{gold(b.imports.wares)}</dd>
-					<dt class="head" title="Keeping your homes, factories and village centers up: 2% a year of what they are built of">Upkeep</dt><dd class="head debt">−{gold(b.upkeep)}</dd>
-					<dt class="total" title="Exports less imports and upkeep. Your goal: positive">Cashflow</dt><dd class="total" class:gain={b.cashflow > 50} class:debt={b.cashflow < -50}>{signed(b.cashflow / EUR_PER_GOLD)}</dd>
-				</dl>
-				<p class="sub">Besides</p>
-				<dl>
-					<dt title="A HEART each settler issues an in-game hour into its village's treasury">HEARTs issued</dt><dd class="gain">+{gold(b.hearts)}</dd>
-					<dt title="Interest and repayment together; {gold(b.interest)} of it interest">Loan payments</dt><dd class="debt">−{gold(b.repaid)}</dd>
-					<dt title="What the treasuries lacked to pay">Borrowed</dt><dd>+{gold(b.borrowed)}</dd>
-					<dt title="What the treasuries hold loses 7% a year">Demurrage</dt><dd class="debt">−{gold(b.demurrage)}</dd>
-					<dt class="total">Treasury change</dt><dd class="total" class:gain={change > 50} class:debt={change < -50}>{signed(change / EUR_PER_GOLD)}</dd>
-				</dl>
+				<div class="t">
+					<div class="leg">
+						<p class="head">Costs</p>
+						<dl>
+							<dt title="Food the world market sold your villages">Food bought</dt><dd>{gold(b.imports.food)}</dd>
+							<dt title="Water the world market sold your villages">Water bought</dt><dd>{gold(b.imports.water)}</dd>
+							<dt title="Energy the world grid sold your villages">Energy bought</dt><dd>{gold(b.imports.energy)}</dd>
+							<dt title="Planks, steel, fired clay and glass the world market sold your villages">Wares bought</dt><dd>{gold(b.imports.wares)}</dd>
+							<dt title="Keeping your homes, factories and village centers up: 2% a year of what they are built of">Upkeep</dt><dd>{gold(b.upkeep)}</dd>
+							<dt title="Interest and repayment together; {gold(b.interest)} of it interest">Loan payments</dt><dd>{gold(b.repaid)}</dd>
+							<dt title="What the treasuries hold loses 7% a year">Demurrage</dt><dd>{gold(b.demurrage)}</dd>
+						</dl>
+						<p class="sum"><span>Total</span><b class="debt">{gold(costs)}</b></p>
+					</div>
+					<div class="leg">
+						<p class="head">Income</p>
+						<dl>
+							<dt title="Food the world market bought from your villages">Food sold</dt><dd>{gold(b.exports.food)}</dd>
+							<dt title="Energy the world grid bought from your villages">Energy sold</dt><dd>{gold(b.exports.energy)}</dd>
+							<dt title="Wares the world market bought from your villages">Wares sold</dt><dd>{gold(b.exports.wares)}</dd>
+							<dt title="A HEART each settler issues an in-game hour into its village's treasury">HEARTs issued</dt><dd>{gold(b.hearts)}</dd>
+							<dt title="What the treasuries lacked to pay, lent">Borrowed</dt><dd>{gold(b.borrowed)}</dd>
+						</dl>
+						<p class="sum"><span>Total</span><b class="gain">{gold(income)}</b></p>
+					</div>
+				</div>
+				<p class="net" title="What all your villages sold the world market less what they bought from it and their upkeep. Your goal: positive"><span>Cashflow</span><b class:gain={b.cashflow > 50} class:debt={b.cashflow < -50}>{signed(b.cashflow / EUR_PER_GOLD)}</b></p>
+				<p class="net" title="Income less costs: what the treasuries gained or lost"><span>Treasury change</span><b class:gain={income - costs > 50} class:debt={income - costs < -50}>{signed((income - costs) / EUR_PER_GOLD)}</b></p>
 				<p class="sub">Balance sheet, now</p>
-				<dl>
-					<dt class="head">Assets</dt><dd class="head">{gold(owns)}</dd>
-					<dt>Treasury</dt><dd>{gold(Math.max(0, b.treasury))}</dd>
-					<dt title="What your stores hold, at the world market's prices">Wares in store</dt><dd>{gold(b.stores)}</dd>
-					<dt title="What your homes, factories and village centers are built of, at world prices, and your geothermal plants">Buildings</dt><dd>{gold(b.buildings)}</dd>
-					<dt class="head">Liabilities</dt><dd class="head">{gold(owes)}</dd>
-					<dt title="What your villages still owe on their loans">Loans</dt><dd>{gold(b.loan.left)}</dd>
-					{#if b.treasury < 0}<dt title="What the treasuries are short, beyond what they may borrow">Overdrawn</dt><dd>{gold(-b.treasury)}</dd>{/if}
-					<dt class="total">Net worth</dt><dd class="total" class:gain={owns > owes} class:debt={owns < owes}>{signed((owns - owes) / EUR_PER_GOLD)}</dd>
-				</dl>
-				<p class="small">{b.loan.left >= 1 ? `Loans pay ${gold(b.loan.pay)} a month, ${span(b.loan.months)} left · ` : ''}they may owe up to {gold(b.loan.most)}, 125 gold a settler · {fmt(b.people)} settlers in {fmt(b.beds)} beds. All in gold.</p>
+				<div class="t">
+					<div class="leg">
+						<p class="head">Liabilities</p>
+						<dl>
+							<dt title="What your villages still owe on their loans">Loans</dt><dd>{gold(b.loan.left)}</dd>
+							{#if b.treasury < 0}<dt title="What the treasuries are short, beyond what they may borrow">Overdrawn</dt><dd>{gold(-b.treasury)}</dd>{/if}
+						</dl>
+						<p class="sum"><span>Total</span><b class="debt">{gold(owes)}</b></p>
+					</div>
+					<div class="leg">
+						<p class="head">Assets</p>
+						<dl>
+							<dt>Treasury</dt><dd>{gold(Math.max(0, b.treasury))}</dd>
+							<dt title="What your stores hold, at the world market's prices">Wares in store</dt><dd>{gold(b.stores)}</dd>
+							<dt title="What your homes, factories and village centers are built of, at world prices, and your geothermal plants">Buildings</dt><dd>{gold(b.buildings)}</dd>
+						</dl>
+						<p class="sum"><span>Total</span><b class="gain">{gold(owns)}</b></p>
+					</div>
+				</div>
+				<p class="net" title="Assets less liabilities"><span>Net worth</span><b class:gain={owns > owes} class:debt={owns < owes}>{signed((owns - owes) / EUR_PER_GOLD)}</b></p>
+				<p class="small">{b.loan.left >= 1 ? `Loans pay ${gold(b.loan.pay)} a month, ${span(b.loan.months)} left · ` : ''}they may owe up to {gold(b.loan.most)}, 125 gold a settler · {fmt(b.people)} settlers in {fmt(b.beds)} beds</p>
 			</section>
 		{/if}
 	{/if}
@@ -1199,7 +1216,7 @@
 		top: calc(4.2rem + env(safe-area-inset-top, 0px));
 		left: 50%;
 		transform: translateX(-50%);
-		width: min(21rem, calc(100vw - 1rem));
+		width: min(30rem, calc(100vw - 1rem));
 		max-height: calc(100vh - 6rem - var(--nav-room, 4rem));
 		overflow: auto;
 		padding: 0.7rem 0.9rem 0.8rem;
@@ -1217,34 +1234,63 @@
 		text-transform: uppercase;
 		color: #7b857a;
 	}
+	/* two sides, as a T: costs and liabilities on the left, income and assets on the right */
+	.books .t {
+		display: grid;
+		grid-template-columns: 1fr 1fr;
+		border-top: 1px solid rgb(31 42 35 / 0.25);
+	}
+	.books .leg {
+		display: flex;
+		flex-direction: column;
+		padding: 0.25rem 0.6rem 0.3rem 0;
+	}
+	.books .leg + .leg {
+		padding: 0.25rem 0 0.3rem 0.6rem;
+		border-left: 1px solid rgb(31 42 35 / 0.25);
+	}
+	.books .head {
+		margin: 0 0 0.15rem;
+		font-weight: 600;
+	}
 	.books dl {
 		display: grid;
 		grid-template-columns: 1fr auto;
-		gap: 0.1rem 0;
+		gap: 0.1rem 0.5rem;
 		margin: 0;
 	}
 	.books dt {
-		padding-left: 0.8rem;
 		color: #4d574e;
+		white-space: nowrap;
 	}
 	.books dd {
 		margin: 0;
-		padding-left: 0.8rem;
 		text-align: right;
 		font-variant-numeric: tabular-nums;
 	}
-	.books .head {
-		padding-left: 0;
-		margin-top: 0.2rem;
-		color: #1f2a23;
+	.books .sum,
+	.books .net {
+		display: flex;
+		justify-content: space-between;
+		gap: 0.5rem;
+		margin: 0;
+		font-variant-numeric: tabular-nums;
+	}
+	.books .sum {
+		margin-top: auto;
+		padding-top: 0.25rem;
+		border-top: 1px solid rgb(31 42 35 / 0.15);
 		font-weight: 600;
 	}
-	.books .total {
-		padding: 0.2rem 0 0;
-		margin-top: 0.15rem;
-		border-top: 1px solid rgb(31 42 35 / 0.15);
-		color: #1f2a23;
+	.books .net {
+		padding: 0.3rem 0 0.1rem;
+		border-top: 1px solid rgb(31 42 35 / 0.25);
 		font-weight: 700;
+	}
+	.books .net + .net {
+		border-top: 0;
+		padding-top: 0;
+		font-weight: 600;
 	}
 	.books .small {
 		margin: 0.6rem 0 0;
@@ -1532,6 +1578,8 @@
 		}
 		.books {
 			top: calc(9.4rem + env(safe-area-inset-top, 0px));
+			padding: 0.6rem 0.6rem 0.7rem;
+			font-size: 0.72rem;
 		}
 		.tools .quiet {
 			margin: 0;

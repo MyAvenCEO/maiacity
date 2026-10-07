@@ -517,27 +517,36 @@ export function createSim(st) {
 		removeUnit(u);
 	}
 
-	/** a city of under eight people: its builders carry what they build with */
-	let smallAt = -1, smallWas = false;
-	const small = () => (smallAt === st.time ? smallWas : ((smallAt = st.time), (smallWas = yourPeople() < 8)));
-	/** whether a site has what it is built of: at the site, or (a small city's builder brings it) in a store */
-	function ready(/** @type {any} */ b, /** @type {boolean} */ few) {
-		const left = /** @type {[string, number][]} */ (Object.keys(b.cost).map((w) => [w, b.cost[w] - (b.got[w] ?? 0) - (b.used[w] ?? 0)]));
-		if (left.every(([, n]) => n <= 0)) return true;
-		const wh = few && nearestWarehouse(b.flag, () => true);
-		return !!wh && left.every(([w, n]) => (wh.stock[w] ?? 0) >= n);
+	/** what a site still lacks of each ware: its cost less what it has, has used and has on its way */
+	const lacks = (/** @type {any} */ b) =>
+		/** @type {[string, number][]} */ (Object.keys(b.cost).map((w) => [w, b.cost[w] - (b.got[w] ?? 0) - (b.used[w] ?? 0) - (b.inc[w] ?? 0)])).filter(([, n]) => n > 0);
+	/** what an idle builder waits for: the wares neither at the site nor on their way */
+	function waitingFor(/** @type {any} */ b) {
+		const w = lacks(b).map(([x]) => WARES[x].label.toLowerCase());
+		return w.length ? `Waiting for ${w.length > 1 ? `${w.slice(0, -1).join(', ')} and ${w.at(-1)}` : w[0]}` : 'Waiting for materials';
+	}
+	/** a site's builder fetches what it still lacks from its store, as much as the store holds */
+	function fetchFor(/** @type {any} */ b, /** @type {any} */ wh) {
+		for (const [w, n] of lacks(b)) {
+			const k = Math.min(n, Math.floor(wh.stock[w] ?? 0));
+			if (k <= 0) continue;
+			wh.stock[w] -= k;
+			b.got[w] = (b.got[w] ?? 0) + k;
+		}
 	}
 	/** every site gets its builder, every path its bus and every finished building its worker, each from its nearest
 	 * village center. They are all autonomous robots, not settlers (Samuel, 2026-10-07): settlers only live in the
 	 * village, so however many there are, nothing waits for one */
 	function people() {
-		const few = small();
 		for (const b of blds()) {
-			if (b.owner !== PLAYER || b.stage !== 'site' || b.builder || b.type === 'centre') continue;
-			// a builder sets out once it can build: its planks and steel are at the site (or, in a small city, in store
-			// for it to bring)
-			if (!ready(b, few)) continue;
+			if (b.owner !== PLAYER || b.stage !== 'site' || b.type === 'centre') continue;
+			// a builder sets out for every site at once and brings what it is built of from the store, fetching the rest
+			// from there as it comes in (bought, made or brought by cart), so no site waits on a bus
 			const wh = nearestWarehouse(b.flag, () => true);
+			if (b.builder) {
+				if (wh) fetchFor(b, wh);
+				continue;
+			}
 			const walk = wh && roadWalk(wh.flag, b.flag);
 			if (!wh || !walk) {
 				b.status = 'Not connected by road';
@@ -546,14 +555,7 @@ export function createSim(st) {
 			const u = spawn('builder', PLAYER, [wh.node, ...walk, b.node], 'b-go', { bld: b.id, vil: villageAt(wh.node) });
 			b.builder = u.id;
 			b.status = 'A builder is on the way';
-			// in a small city the builder brings what the site needs, so a first hut goes up at once
-			if (few)
-				for (const [w, need] of Object.entries(b.cost)) {
-					const n = Math.min(need - (b.got[w] ?? 0) - (b.inc[w] ?? 0), Math.floor(wh.stock[w] ?? 0));
-					if (n <= 0) continue;
-					wh.stock[w] -= n;
-					b.got[w] = (b.got[w] ?? 0) + n;
-				}
+			fetchFor(b, wh);
 		}
 		// every path gets its bus, the busiest first (each road's count taken once, then a stable sort)
 		const busy = (/** @type {any} */ r) => (st.flags[r.a]?.wares.length ?? 0) + (st.flags[r.b]?.wares.length ?? 0);
@@ -588,8 +590,8 @@ export function createSim(st) {
 	function requestsOf(/** @type {any} */ b) {
 		const t = T(b);
 		if (b.stage === 'site' && b.type === 'centre') return [];
-		// a small city's builders bring their own planks and steel (see people)
-		if (b.stage === 'site' && b.owner === PLAYER && small()) return [];
+		// your builders fetch what they build with from the store (see people)
+		if (b.stage === 'site' && b.owner === PLAYER) return [];
 		if (b.stage === 'site') return Object.keys(b.cost).map((w) => ({ types: [w], slot: -1, n: b.cost[w] - b.used[w] - b.got[w] - b.inc[w] }));
 		if (b.stage !== 'live') return [];
 		if (b.paused || !b.worker) return [];
@@ -911,7 +913,7 @@ export function createSim(st) {
 			} else if (Object.values(b.got).some((n) => /** @type {number} */ (n) > 0)) {
 				b.timer = 2.4;
 				b.status = 'Being built';
-			} else b.status = 'Waiting for materials';
+			} else b.status = waitingFor(b);
 			return;
 		}
 		if (b.stage !== 'live') return;
