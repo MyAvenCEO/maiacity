@@ -13,7 +13,7 @@ export const DOMES_IN_ORDER = [
 	{ kind: 'home', image: 'c935e441677083b12f6a009aa98946ee2e9526a57a23cf5df053cd99d027f7cd.jpg' /* home-from-the-gallery */, text: 'The first permanent ring: a seven-layer forest and a kitchen garden below, rooms on the gallery above, a terrace under vines.' },
 	{ kind: 'large', image: '694121fdfc58ecafd5e7b4ae64e30bebd14ab7d9d199264906c1641f1891d6a4.jpg' /* large-terraces */, text: 'The second ring, nearly twice the size: two floors of rooms, a deeper forest, a stream running to a pond.' },
 	// (no picture of its own yet: the medium dome's stands in)
-	{ kind: 'grand', image: '694121fdfc58ecafd5e7b4ae64e30bebd14ab7d9d199264906c1641f1891d6a4.jpg' /* large-terraces */, text: 'The third ring: two floors of rooms round the south, and on the north a great fish tank behind a glass wall, its water the dome’s warmth store, the wall behind it closed stone.' },
+	{ kind: 'grand', image: '694121fdfc58ecafd5e7b4ae64e30bebd14ab7d9d199264906c1641f1891d6a4.jpg' /* large-terraces */, text: 'The third ring: a green middle, two floors of rooms round the south, and on the north a sunken rainforest pond with a waterfall down a stone wall, its water the dome’s warmth store, a creek running from it.' },
 	{ kind: 'master', image: '0eb03432164eedc6f5ef7580f119d9197abd10fe2eb62888f348002e8e4382f7.jpg' /* master-stage */, text: 'The centre of the village: a round stage sunk into the floor, and the workshops and kitchens round its edge.' },
 	{ kind: 'factory', image: '7291d181201e0a5c5f5794e6e1c147529d3e220e6196d151374fb5030fba7584.jpg' /* factory */, text: 'The factory coop that makes the domes’ glass from sand, quartz and copper: five floors round one great lift.' }
 ];

@@ -4,7 +4,7 @@
  *   glamp   16 m   a home for four under canvas and glass, a door onto a deck
  *   home    40 m   the small domes of the first ring
  *   large   70 m   the medium domes of the second ring
- *   grand  100 m   the large dome: its north a fish tank behind a glass wall, the wall behind it closed stone
+ *   grand  100 m   the large dome: a green middle, and on its north a sunken pond with a waterfall, the wall behind closed stone
  *   master 136 m   the master dome in the centre: a round theatre sunk into its floor,
  *                  and its ground ring given to the village's workshops
  *
@@ -31,7 +31,7 @@ import { buildFactory, LEVELS as FACTORY_LEVELS, NAMES as FACTORY_NAMES } from '
 import { buildTent } from './tent'
 import { furnish, terraceSet } from './rooms'
 import { ambience, levelsAt, nearness } from './ambience'
-import { flow, pond as pondShape, shore, stream as streamShape } from './water'
+import { flow, pond as pondShape, shore, stream as streamShape, waterMaterial } from './water'
 import { createStage, type StageHandle } from '$lib/sandbox-kit/stage.js'
 import { createSky, type SkyHandle } from '$lib/sandbox-kit/sky.js'
 import { skyHour } from '$lib/sandbox-kit/skyTime.svelte.js'
@@ -60,11 +60,11 @@ export const DOMES: Record<DomeKind, Spec & { label: string; people: string }> =
 }
 
 /** The big domes have four doors, one to each point of the compass; the glamping dome has one; the large dome
- *  none to the north, where its fish tank stands against a closed wall. */
+ *  none to the north, where its pond lies against a closed wall. */
 export const DOORS = [0, Math.PI / 2, Math.PI, -Math.PI / 2]
 export const doorsOf = (kind: DomeKind) => (kind === 'glamp' || kind === 'tent' ? [0] : kind === 'grand' ? DOORS.slice(1) : DOORS)
-/** The large dome's fish tank: the north of the floor behind a straight glass wall a seventh of the dome's width in
- *  from the north wall, the wall behind it closed and massive. The glass's line (z) is null in every other dome. */
+/** The large dome's closed north: its shell north of this line (z, a seventh of the dome's width in from the north
+ *  wall) is massive stone, over its pond. Null in every other dome. */
 export const tankLine = (kind: DomeKind, R: number) => (kind === 'grand' ? R - (2 * R) / 7 : null)
 /** A door's half-width, and its height at the top of the arch (the glamping door is square-headed). */
 const doorSize = (kind: DomeKind) => (kind === 'tent' ? { dw: 0.55, dh: 1.8, top: 1.8 } : kind === 'glamp' ? { dw: 0.75, dh: 2.5, top: 2.5 } : { dw: 1.3, dh: 3, top: 3 + 1.3 * 0.4 })
@@ -293,7 +293,7 @@ export function geodesic(spec: Spec, m: Mats, kind: DomeKind): { group: THREE.Gr
 	const glass: number[] = []
 	const clear: number[] = []
 	const cloth: number[] = []
-	// the large dome's north wall, behind its fish tank: closed, massive stone
+	// the large dome's north wall, behind its pond: closed, massive stone
 	const wall: number[] = []
 	const tankZ = tankLine(kind, R)
 	const edges = new Map<string, [THREE.Vector3, THREE.Vector3]>()
@@ -1142,7 +1142,7 @@ export async function mountInterior(container: HTMLElement, kind: DomeKind, onPr
 		const kitchenA = Math.PI * 0.25 + Math.PI, aquaA = Math.PI * 0.25 - Math.PI / 2
 		const PAVED = [[kitchenA, 0.3], [aquaA, 0.4]] as const
 		const paved = (a: number) => PAVED.some(([c, w]) => Math.abs(adiff(a, c)) < w)
-		/* the large dome's fish tank fills the north behind its glass wall: no door, stair, room or gallery there.
+		/* the large dome's north is its pond's, against the closed wall: no door, stair, room or gallery there.
 		   The gallery runs round the rest, from the tank's east end round by the south to its west end */
 		const tankZ = tankLine(kind, R)
 		const doors = doorsOf(kind)
@@ -1163,6 +1163,46 @@ export async function mountInterior(container: HTMLElement, kind: DomeKind, onPr
 		/** A ring laid flat, and a wall standing, over the gallery's arc (in polar's angles). */
 		const galRing = (r0g: number, r1g: number, segs: number) => new THREE.RingGeometry(r0g, r1g, segs, 1, GAL.a0 - Math.PI / 2, GAL.len)
 		const galWall = (rg: number, h: number, segs: number) => new THREE.CylinderGeometry(rg, rg, h, segs, 1, true, GAL.a0, GAL.len)
+		/* and in its place a pond sunk into the ground, its edge curving irregularly, the closed north wall behind it
+		   with a waterfall down a low stone wall: the dome's warmth store, a piece of rainforest to sit and watch the
+		   fish by. Its creek runs off south into the green middle, clear of every path. Its rim, by the angle round
+		   its middle (x along cos, z along sin) */
+		const pondC = { x: 0, z: R * 0.74 }
+		const RIM = 180
+		const pondRim = new Float32Array(RIM)
+		if (tankZ !== null)
+			for (let i = 0; i < RIM; i++) {
+				const t = (i / RIM) * TAU
+				const ax = R * 0.48, az = R * 0.2
+				let rr = ((ax * az) / Math.hypot(az * Math.cos(t), ax * Math.sin(t))) * (1 + 0.09 * Math.sin(3 * t + 1.3) + 0.06 * Math.sin(5 * t + 0.4) + 0.04 * Math.sin(7 * t + 2.1))
+				// up to the north wall, never through it
+				while (Math.hypot(pondC.x + Math.cos(t) * rr, pondC.z + Math.sin(t) * rr) > R - 3.5) rr -= 0.1
+				pondRim[i] = rr
+			}
+		const rimAt = (t: number) => {
+			const u = ((((t % TAU) + TAU) % TAU) / TAU) * RIM
+			const i = Math.floor(u), f = u - i
+			return pondRim[i % RIM]! * (1 - f) + pondRim[(i + 1) % RIM]! * f
+		}
+		/** Whether x, z is in the pond, or within d of it. */
+		const inPond = (x: number, z: number, d: number) => tankZ !== null && Math.hypot(x - pondC.x, z - pondC.z) < rimAt(Math.atan2(z - pondC.z, x - pondC.x)) + d
+		/** The pond's rim, `grow` out from it, as a shape laid flat (its y is -z). */
+		const pondShapeAt = (grow: number) => new THREE.Shape(Array.from({ length: RIM }, (_, i) => new THREE.Vector2(pondC.x + Math.cos((i / RIM) * TAU) * (pondRim[i]! + grow), -(pondC.z + Math.sin((i / RIM) * TAU) * (pondRim[i]! + grow)))))
+		// the ring path stops short of the pond, either side of where its creek leaves it; and the middle is green
+		const ringGap = tankZ === null ? 0 : 0.5
+		const ringOn = (a: number) => Math.abs(adiff(a, 0)) > ringGap
+		const green = tankZ !== null
+		// from each end of the ring path a short path runs on north to a deck at the pond's edge
+		const sideX = Rp * Math.sin(ringGap), sideZ0 = Rp * Math.cos(ringGap)
+		let sideZ1 = sideZ0
+		if (green) while (!inPond(sideX, sideZ1, 2.2) && sideZ1 < R) sideZ1 += 0.1
+		const onSide = (rr: number, a: number, reach: number) => {
+			if (!green) return false
+			const x = rr * Math.sin(a), z = rr * Math.cos(a)
+			return Math.abs(Math.abs(x) - sideX) < 1 + reach + 0.15 && z > sideZ0 - 1 - reach && z < sideZ1 + 3 + reach
+		}
+		// in the green middle there is no plaza: the forest grows to the centre
+		const Rmid = green ? 0.5 : Rc
 		// the stair on a diagonal, so each spoke runs clear from the plaza to its door
 		const aStair = Math.PI * 0.25
 		// four stairs up to the gallery, one on each diagonal between the doors
@@ -1179,7 +1219,16 @@ export async function mountInterior(container: HTMLElement, kind: DomeKind, onPr
 		// Sandbox 5: the floor under the glass is the warm food forest biome's ($lib/biomes): big fallen leaves, humus,
 		// moss and a living mat, run into each other in patches; its cover streamed round you (below)
 		const warmFloor = opts.flora ? groundMaterial(WARM_BIOME.surface) : null
-		const ground = new THREE.Mesh(theatre ? new THREE.RingGeometry(Rc, R, 96, 1) : new THREE.CircleGeometry(R, 96), warmFloor ?? m.soil(R / 2))
+		const groundWithPond = () => {
+			const sh = new THREE.Shape().absarc(0, 0, R, 0, TAU, false)
+			sh.holes.push(new THREE.Path(pondShapeAt(0).getPoints()))
+			const geo = new THREE.ShapeGeometry(sh, 96)
+			// its texture laid as a disc's would be
+			const pos = geo.attributes.position!, uv = geo.attributes.uv!
+			for (let i = 0; i < pos.count; i++) uv.setXY(i, (pos.getX(i) + R) / (2 * R), (pos.getY(i) + R) / (2 * R))
+			return geo
+		}
+		const ground = new THREE.Mesh(theatre ? new THREE.RingGeometry(Rc, R, 96, 1) : green ? groundWithPond() : new THREE.CircleGeometry(R, 96), warmFloor ?? m.soil(R / 2))
 		ground.rotation.x = -Math.PI / 2
 		ground.receiveShadow = true
 		scene.add(ground)
@@ -1192,7 +1241,7 @@ export async function mountInterior(container: HTMLElement, kind: DomeKind, onPr
 			return mesh
 		}
 		if (theatre) flat(new THREE.RingGeometry(Rc, Rc + 2.4, 96), m.stone(((Rc + 2.4) * 2) / 3))
-		else flat(new THREE.CircleGeometry(Rc, 64), m.stone((Rc * 2) / 3))
+		else if (!green) flat(new THREE.CircleGeometry(Rc, 64), m.stone((Rc * 2) / 3))
 		/* the theatre: a round stage at the bottom of a bowl of stone tiers, seated all the way round */
 		// six tiers of seats, and the rest of the bowl a wide stage
 		const aisle = 1.2
@@ -1248,17 +1297,19 @@ export async function mountInterior(container: HTMLElement, kind: DomeKind, onPr
 			bowl.add(sideWall)
 			scene.add(await bakeIn(bowl))
 		}
-		if (!lush) flat(new THREE.RingGeometry(Rp - 1.1, Rp + 1.1, 128), m.stone((Rp * 2) / 3))
+		if (!lush) flat(new THREE.RingGeometry(Rp - 1.1, Rp + 1.1, 128, 1, ringGap - Math.PI / 2, TAU - 2 * ringGap), m.stone((Rp * 2) / 3))
 		// under the gallery the floor is stone too: the covered commons round the edge
-		if (!lush) flat(new THREE.RingGeometry(rIn - 0.4, R, 128), m.stone((R * 2) / 3))
+		if (!lush) flat(galRing(rIn - 0.4, R, 128), m.stone((R * 2) / 3))
 		else {
 			flat(new THREE.RingGeometry(rIn - 0.4, rIn + commonsW, 128), m.stone((R * 2) / 3))
 			for (const [a, w] of PAVED) flat(new THREE.RingGeometry(rIn + commonsW - 0.01, R, 24, 1, a - w - Math.PI / 2, 2 * w), m.stone((R * 2) / 3))
 		}
 		for (const a of doors) {
-			const len = R - Rc
+			// in the green middle the paths to the doors start at the ring path
+			const from = green ? Rp : Rc
+			const len = R - from
 			const strip = flat(new THREE.PlaneGeometry(2, len), m.stone(2 / 3, Math.round(len / 3)), 0.021)
-			const [x, z] = polar(Rc + len / 2, a)
+			const [x, z] = polar(from + len / 2, a)
 			strip.position.x = x
 			strip.position.z = z
 			strip.rotation.z = -a
@@ -1273,13 +1324,19 @@ export async function mountInterior(container: HTMLElement, kind: DomeKind, onPr
 			scene.add(knee)
 		}
 
-		/* the stream: from a spring by the plaza, winding through the forest to a pond */
+		/* the stream: from a spring by the plaza, winding through the forest to a pond — in the large dome a smaller
+		   creek, out of its big pond and south through the gap in the ring path, winding into the green middle and
+		   sinking into a little pool there, never touching a path */
 		const streamPts: THREE.Vector3[] = []
 		const a0 = aStair + Math.PI * 0.75
+		const creekFrom = pondC.z - rimAt(-Math.PI / 2) + 0.6
 		for (let i = 0; i <= 40; i++) {
 			const t = i / 40
-			// in the large dome it stops short of the fish tank
-			const a = a0 + t * Math.PI * (tankZ === null ? 0.9 : 0.7)
+			if (green) {
+				streamPts.push(new THREE.Vector3(Math.sin(t * Math.PI * 2.5) * 3 * Math.min(1, t / 0.08), 0.03, creekFrom - t * (creekFrom - 3)))
+				continue
+			}
+			const a = a0 + t * Math.PI * 0.9
 			const rr = Rp + (rIn - Rp) * 0.5 + Math.sin(t * Math.PI * 5) * (rIn - Rp) * 0.18 - (1 - t) * (Rp - Rc) * 0.9 * (t < 0.2 ? 1 - t / 0.2 : 0)
 			const [x, z] = polar(rr, a)
 			streamPts.push(new THREE.Vector3(x, 0.03, z))
@@ -1287,7 +1344,8 @@ export async function mountInterior(container: HTMLElement, kind: DomeKind, onPr
 		const curve = new THREE.CatmullRomCurve3(streamPts)
 		const samples = curve.getSpacedPoints(160)
 		waterPts.push(...samples)
-		const width = Math.max(0.9, R * 0.035)
+		const width = green ? 1.1 : Math.max(0.9, R * 0.035)
+		const endR = width * (green ? 2.2 : 3.6)
 		{
 			scene.add(streamShape(samples, width, 0.05))
 			scene.add(await bakeIn(shore(samples, width / 2, 17), false))
@@ -1309,18 +1367,18 @@ export async function mountInterior(container: HTMLElement, kind: DomeKind, onPr
 			scene.add(await bakeIn(stones))
 			const end = samples[samples.length - 1]!
 			// the pond it runs into: an irregular shape, deeper in the middle, reeds and lilies round it
-			const pd = pondShape(end.x, end.z, width * 3.6, 91, 0.05)
+			const pd = pondShape(end.x, end.z, endR, 91, 0.05)
 			scene.add(pd.group)
 			scene.add(await bakeIn(shore(pd.outline, 0, 19, { x: end.x, z: end.z }), false))
 			waterPts.push(...pd.outline)
 			// fish in the pond, and a few in the stream
-			const fish = fishes([{ x: end.x, z: end.z, r: width * 3.2, y: 0.02, n: kind === 'master' ? 22 : 12 }], [{ line: samples, y: 0.02, n: kind === 'master' ? 10 : 5 }], 61, eye)
+			const fish = fishes([{ x: end.x, z: end.z, r: endR * 0.9, y: 0.02, n: kind === 'master' ? 22 : green ? 5 : 12 }], [{ line: samples, y: 0.02, n: kind === 'master' ? 10 : 5 }], 61, eye)
 			scene.add(fish.object)
 			animated.push(fish.update)
 		}
 		const pondAt = samples[samples.length - 1]!
-		// the fish tank is water too, with a stone walk and its grow beds along the glass
-		const nearStream = (x: number, z: number, d: number) => Math.hypot(pondAt.x - x, pondAt.z - z) < width * 3.6 * 1.35 + d || samples.some((p) => Math.hypot(p.x - x, p.z - z) < d) || (tankZ !== null && z > tankZ - 3.4 - d)
+		// the large dome's big pond is water too, with a bank round it for its own plants
+		const nearStream = (x: number, z: number, d: number) => Math.hypot(pondAt.x - x, pondAt.z - z) < endR * 1.35 + d || samples.some((p) => Math.hypot(p.x - x, p.z - z) < d) || inPond(x, z, 2.4 + d)
 
 		await slice()
 		/* the kitchen garden: patches along both sides of the ring path, for everything that wants a greenhouse —
@@ -1337,7 +1395,7 @@ export async function mountInterior(container: HTMLElement, kind: DomeKind, onPr
 					// both strips clear of the ring path (1.1 either side of it) with room for their leaves to spread
 					const rr = Rp + side * 2.45
 					const a = small ? Math.PI / 4 + Math.floor(k / 2) * (Math.PI / 2) + (k % 2 ? 0.28 : -0.28) : ((k + (side > 0 ? 0.5 : 0)) / perSide) * Math.PI * 2
-					if ([...doors, ...STAIRS].some((d) => Math.abs(adiff(a, d)) * rr < 3.2)) continue
+					if ([...doors, ...STAIRS].some((d) => Math.abs(adiff(a, d)) * rr < 3.2) || !ringOn(a) || onSide(rr, a, 1.5)) continue
 					const [x, z] = polar(rr, a)
 					if (nearStream(x, z, width / 2 + 2)) continue
 					const bed = new THREE.Group()
@@ -1365,12 +1423,12 @@ export async function mountInterior(container: HTMLElement, kind: DomeKind, onPr
 		const sectors = new Map<string, Sector>()
 		const sectorAt = (x: number, z: number) => {
 			const a = Math.floor(((Math.atan2(x, z) + Math.PI) / (Math.PI * 2)) * 16)
-			const band = Math.hypot(x, z) < (Rc + rIn) / 2 ? 0 : 1
+			const band = Math.hypot(x, z) < (Rmid + rIn) / 2 ? 0 : 1
 			const key = `${a},${band}`
 			let sc = sectors.get(key)
 			if (!sc) {
 				const ca = ((a + 0.5) / 16) * Math.PI * 2 - Math.PI
-				const [cx, cz] = polar(band ? (rIn + (Rc + rIn) / 2) / 2 : (Rc + (Rc + rIn) / 2) / 2, ca)
+				const [cx, cz] = polar(band ? (rIn + (Rmid + rIn) / 2) / 2 : (Rmid + (Rmid + rIn) / 2) / 2, ca)
 				sectors.set(key, (sc = { forest: new THREE.Group(), understorey: new THREE.Group(), cover: new THREE.Group(), x: cx, z: cz }))
 			}
 			return sc
@@ -1379,23 +1437,24 @@ export async function mountInterior(container: HTMLElement, kind: DomeKind, onPr
 		const flora = opts.flora
 		/** Sandbox 5's trees, to stand in the way by their trunks once grown */
 		const floraTrees: { c: { x: number; z: number; r: number }; kind: ReturnType<typeof pickPlant>; s: number }[] = []
-		const area = Math.PI * (rIn * rIn - Rc * Rc)
+		const area = Math.PI * (rIn * rIn - Rmid * Rmid)
 		// Sandbox 5 plants its warm forest much closer: a tree every 9 m² (11 where it is a house too)
 		const trees = opts.flora ? Math.min(kind === 'master' ? 900 : 700, Math.round(area / (lush ? 9 : 11))) : Math.min(kind === 'master' ? 200 : 230, Math.round(area / (lush ? 17 : 26)))
 		/** Sandbox 5: whether a plant reaching `reach` round rr, a would stand on stone: the plaza (in the master dome the
 		 *  theatre's stone ring round its bowl), the ring path, the paths to the doors and the stairs, the paved corners */
 		const onStone = (rr: number, a: number, reach: number) =>
-			rr < Rc + (theatre ? 2.4 : 0) + reach + 0.25 ||
-			(!lush && Math.abs(rr - Rp) < 1.1 + reach + 0.15) ||
+			rr < Rmid + (theatre ? 2.4 : 0) + reach + 0.25 ||
+			(!lush && ringOn(a) && Math.abs(rr - Rp) < 1.1 + reach + 0.15) ||
+			onSide(rr, a, reach) ||
 			[...doors, ...STAIRS].some((d) => Math.abs(adiff(a, d)) < Math.PI / 2 && Math.abs(Math.sin(adiff(a, d))) * rr < 1 + reach + 0.15)
 		const onPath = (rr: number, a: number) =>
-			rr < Rc + 1.2 || (!lush && Math.abs(rr - Rp) < (small ? 1.8 : 3.4)) || [...doors, ...STAIRS].some((d) => Math.abs(adiff(a, d)) < Math.PI / 2 && Math.abs(adiff(a, d)) * rr < 1.8)
+			rr < Rmid + 1.2 || (!lush && ringOn(a) && Math.abs(rr - Rp) < (small ? 1.8 : 3.4)) || onSide(rr, a, 1) || [...doors, ...STAIRS].some((d) => Math.abs(adiff(a, d)) < Math.PI / 2 && Math.abs(adiff(a, d)) * rr < 1.8)
 		const tall = kind === 'home' ? 7 : 10
 		let placed = 0
 		for (let tries = 0; placed < trees && tries < trees * 20; tries++) {
 			await slice()
 			const a = r() * Math.PI * 2
-			const rr = Rc + 1.5 + r() * (rIn - Rc - 3)
+			const rr = Rmid + 1.5 + r() * (rIn - Rmid - 3)
 			if (onPath(rr, a) || (opts.flora && onStone(rr, a, 1.2))) continue
 			const [x, z] = polar(rr, a)
 			if (nearStream(x, z, width + 1.4)) continue
@@ -1467,7 +1526,7 @@ export async function mountInterior(container: HTMLElement, kind: DomeKind, onPr
 		{
 			// the whole food-forest floor is a living ground cover, not bare soil (the paths, the plaza, the water lie
 			// over it): the earth shows only in specks
-			const living = new THREE.Mesh(new THREE.RingGeometry(Rc + 0.2, rIn, 128, 2), warmFloor ?? new THREE.MeshStandardMaterial({ map: tiled(groundCover(), rIn / 2.2), roughness: 1 }))
+			const living = new THREE.Mesh(green ? groundWithPond() : new THREE.RingGeometry(Rmid + 0.2, rIn, 128, 2), warmFloor ?? new THREE.MeshStandardMaterial({ map: tiled(groundCover(), rIn / 2.2), roughness: 1 }))
 			living.rotation.x = -Math.PI / 2
 			living.position.y = 0.006
 			living.receiveShadow = true
@@ -1480,8 +1539,9 @@ export async function mountInterior(container: HTMLElement, kind: DomeKind, onPr
 			// a planting reaches `reach` from its middle: all of it stays off the ring path (1.1 either side), the door
 			// paths and the stairs (1 either side of their line), the plaza — never a leaf over a path
 			const onWalk = (rr: number, a: number, reach: number) =>
-				rr < Rc + reach + 0.3 ||
-				(!lush && Math.abs(rr - Rp) < 1.1 + reach + 0.15) ||
+				rr < Rmid + reach + 0.3 ||
+				(!lush && ringOn(a) && Math.abs(rr - Rp) < 1.1 + reach + 0.15) ||
+				onSide(rr, a, reach) ||
 				[...doors, ...STAIRS].some((d) => Math.abs(adiff(a, d)) < Math.PI / 2 && Math.abs(Math.sin(adiff(a, d))) * rr < 1 + reach + 0.15)
 			const LOW: (Crop | 'moss' | 'clover' | 'squash')[] = ['lettuce', 'radish', 'herbs', 'kale', 'strawberry', 'moss', 'lettuce', 'chard', 'clover', 'radish', 'herbs', 'pepper', 'moss', 'squash']
 			let n = 0
@@ -1641,7 +1701,7 @@ export async function mountInterior(container: HTMLElement, kind: DomeKind, onPr
 			drum.position.set(0, floorY + 0.3, 0)
 			props.add(drum)
 			scene.add(await bakeIn(props))
-		} else {
+		} else if (!green) {
 			const t = table(m, 4.2, 10)
 			t.position.set(0, 0, -Rc * 0.3)
 			scene.add(t)
@@ -1989,127 +2049,199 @@ export async function mountInterior(container: HTMLElement, kind: DomeKind, onPr
 		}
 
 		await slice()
-		/* the large dome's fish tank: the north of the floor, behind a straight glass wall a seventh of the dome's width
-		   in from the north wall. Water up to the top of the second floor's rooms is the dome's warmth store; the wall
-		   above it and the shell behind it are closed stone, to the top. Carp and tilapia swim in it, and its water runs
-		   to the grow beds along the glass */
-		if (tankZ !== null) {
-			const c = tankZ
-			const level = H2 + roomH
-			// the tank's back: a stone wall standing just inside the shell, as high as the water
-			const rBack = Math.sqrt(R * R - (level + 0.6) ** 2) - 0.4
-			const hw = Math.sqrt(rBack * rBack - c * c)
-			const span = Math.atan2(hw, c)
-			const tank = new THREE.Group()
-			const mossy = m.stone(rBack / 3, (level + 0.6) / 3).clone()
-			mossy.color.set('#6f7f6a')
-			mossy.side = THREE.DoubleSide
-			const back = new THREE.Mesh(new THREE.CylinderGeometry(rBack, rBack, level + 0.6, 64, 1, true, -span, 2 * span), mossy)
-			back.position.y = (level + 0.6) / 2
-			tank.add(back)
-			// the plan of the water: from the glass's line out to the back wall
-			const plan = new THREE.Shape()
-			plan.moveTo(-hw, -c)
-			plan.lineTo(hw, -c)
-			for (let i = 1; i < 48; i++) {
-				const a = span - (i / 48) * 2 * span
-				plan.lineTo(rBack * Math.sin(a), -rBack * Math.cos(a))
+		/* the large dome's pond: sunk into the ground, its curving bank planted as a piece of rainforest, a waterfall
+		   down the low stone wall against the north wall, pumped round from the pond itself; at its edge two decks with
+		   benches, at the end of the paths from the ring, to sit and watch the fish */
+		if (green) {
+			// (the ground round a dome is laid at 0 by whatever world it stands in, so the water lies at the ground and its
+			// depth is in its colour: clear and light at the bank, dark in the middle)
+			const level = 0.05
+			const pondG = new THREE.Group()
+			const rimPt = (i: number, k = 1): [number, number] => {
+				const t = ((i % RIM) / RIM) * TAU, rr = pondRim[i % RIM]! * k
+				return [pondC.x + Math.cos(t) * rr, pondC.z + Math.sin(t) * rr]
 			}
-			plan.lineTo(-hw, -c)
-			const bed = new THREE.Mesh(new THREE.ShapeGeometry(plan), new THREE.MeshStandardMaterial({ color: '#7b7462', roughness: 1 }))
-			bed.rotation.x = -Math.PI / 2
-			bed.position.y = 0.03
-			bed.receiveShadow = true
-			tank.add(bed)
-			const water = new THREE.Mesh(
-				new THREE.ExtrudeGeometry(plan, { depth: level, bevelEnabled: false, curveSegments: 1 }),
-				new THREE.MeshStandardMaterial({ color: '#2a7a80', roughness: 0.1, transparent: true, opacity: 0.42, depthWrite: false })
-			)
-			water.rotation.x = -Math.PI / 2
-			water.renderOrder = 3
-			// a hair behind the glass, so the two never flicker through each other
-			water.position.z = 0.04
-			tank.add(water)
-			// stones and water plants on its floor
-			const tr = seeded(31)
-			for (let i = 0; i < 60; i++) {
-				const x = (tr() * 2 - 1) * hw * 0.9
-				const zMax = Math.sqrt(rBack * rBack - x * x) - 0.8
-				const z = c + 0.8 + tr() * (zMax - c - 0.8)
-				const st = new THREE.Mesh(new THREE.DodecahedronGeometry(0.3 + tr() * 0.7, 0), m.pebble)
-				st.position.set(x, 0.1, z)
-				st.scale.y = 0.5
-				st.rotation.set(tr(), tr() * 6, tr())
-				tank.add(st)
-				if (i % 2) continue
-				const weed = new THREE.Mesh(new THREE.ConeGeometry(0.25, 1.5 + tr() * 3, 5), new THREE.MeshStandardMaterial({ color: '#3f6b3a', roughness: 0.9 }))
-				weed.position.set(x + 0.6, 0.9, z)
-				tank.add(weed)
+			const rings = [1, 0.9, 0.75, 0.55, 0.3], deep = [0, 0.4, 0.7, 0.9, 1]
+			const build = (yy: number, mat: THREE.Material) => {
+				const pos: number[] = [], dep: number[] = [], uv: number[] = [], idx: number[] = []
+				rings.forEach((k, j) => {
+					for (let i = 0; i < RIM; i++) {
+						const [x, z] = rimPt(i, k)
+						pos.push(x, yy, z)
+						dep.push(deep[j]!)
+						uv.push(x / 4, z / 4)
+					}
+				})
+				const mid = pos.length / 3
+				pos.push(pondC.x, yy, pondC.z)
+				dep.push(1)
+				uv.push(pondC.x / 4, pondC.z / 4)
+				for (let j = 0; j < rings.length - 1; j++)
+					for (let i = 0; i < RIM; i++) {
+						const a0 = j * RIM + i, a1 = j * RIM + ((i + 1) % RIM), b0 = a0 + RIM, b1 = a1 + RIM
+						idx.push(a0, b0, a1, a1, b0, b1)
+					}
+				const last = (rings.length - 1) * RIM
+				for (let i = 0; i < RIM; i++) idx.push(last + i, mid, last + ((i + 1) % RIM))
+				const geo = new THREE.BufferGeometry()
+				geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3))
+				geo.setAttribute('depth', new THREE.Float32BufferAttribute(dep, 1))
+				geo.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2))
+				geo.setIndex(idx)
+				geo.computeVertexNormals()
+				const mesh = new THREE.Mesh(geo, mat)
+				mesh.receiveShadow = true
+				return mesh
 			}
-			// the glass: one straight wall across the dome, in steel mullions, on a stone curb
-			const sill = 0.5
-			const glassWall = new THREE.Mesh(new THREE.PlaneGeometry(2 * hw, level + 0.3 - sill), m.glass)
-			glassWall.position.set(0, sill + (level + 0.3 - sill) / 2, c)
-			tank.add(glassWall)
-			tank.add(box(2 * hw, sill, 0.6, m.lime(hw / 2, 0.2), 0, 0, c))
-			const bays = Math.round((2 * hw) / 3.2)
-			for (let i = 0; i <= bays; i++) tank.add(box(0.14, level + 0.3 - sill, 0.3, m.steel, -hw + (i / bays) * 2 * hw, sill, c - 0.1))
-			for (const y of [H, H2, level + 0.3]) tank.add(box(2 * hw, 0.16, 0.3, m.steel, 0, y - 0.08, c - 0.1))
-			// above the water, the wall closes on up to the shell: stone, as massive as the wall behind it
-			const rise = Math.sqrt(R * R - c * c)
-			const upper = new THREE.Shape()
-			upper.moveTo(-rise, 0)
-			upper.lineTo(rise, 0)
-			upper.absarc(0, 0, rise, 0, Math.PI, false)
-			const hole = new THREE.Path()
-			hole.moveTo(-hw, sill)
-			hole.lineTo(-hw, level + 0.3)
-			hole.lineTo(hw, level + 0.3)
-			hole.lineTo(hw, sill)
-			upper.holes.push(hole)
-			const wallMat = m.lime(1 / 3.2, 1 / 3.2).clone()
-			wallMat.side = THREE.DoubleSide
-			const upperWall = new THREE.Mesh(new THREE.ShapeGeometry(upper, 48), wallMat)
-			upperWall.position.z = c + 0.05
-			upperWall.receiveShadow = true
-			tank.add(upperWall)
-			scene.add(tank)
-			// the fish, in schools at four depths, near enough to the glass to be seen
-			const pools: { x: number; z: number; r: number; y: number; n: number }[] = []
-			for (const [j, y] of [1.2, 3.4, 6.2, 9.4].entries())
-				for (let i = 0; i < 6; i++) {
-					const x = -hw * 0.75 + ((i + (j % 2) * 0.5) / 6) * hw * 1.5
-					const deep = Math.sqrt(rBack * rBack - x * x) - c
-					const r = Math.min(3.2, deep / 2 - 0.6)
-					if (r < 1) continue
-					pools.push({ x, z: c + r + 0.5, r, y, n: 6 })
+			pondG.add(build(0.025, new THREE.MeshStandardMaterial({ color: '#4a4030', roughness: 1, side: THREE.DoubleSide })))
+			const surf = build(level, waterMaterial())
+			surf.renderOrder = 3
+			pondG.add(surf)
+			animated.push(flow)
+			// stones along its edge, lilies on the water near it
+			const pr = seeded(41)
+			const padMat = new THREE.MeshStandardMaterial({ color: '#4f7a3a', roughness: 0.8, side: THREE.DoubleSide })
+			const bloom = new THREE.MeshStandardMaterial({ color: '#f3d6e4', roughness: 0.6 })
+			for (let i = 0; i < RIM; i += 2) {
+				const [x, z] = rimPt(i)
+				if (Math.hypot(x, z) > R - 4 || (Math.abs(x) < 3 && z < pondC.z) || onSide(Math.hypot(x, z), Math.atan2(x, z), 1.5)) continue
+				const st = new THREE.Mesh(new THREE.DodecahedronGeometry(0.35 + pr() * 0.45, 0), new THREE.MeshStandardMaterial({ color: pr() < 0.5 ? '#7d7b6e' : '#6b7560', roughness: 0.95 }))
+				st.position.set(x, 0.05, z)
+				st.scale.y = 0.6
+				st.rotation.set(pr(), pr() * 6, pr())
+				pondG.add(st)
+				if (pr() < 0.4) {
+					const [lx, lz] = rimPt(i, 0.82 + pr() * 0.08)
+					for (let k = 0; k < 3; k++) {
+						const pad = new THREE.Mesh(new THREE.CircleGeometry(0.3 + pr() * 0.2, 10, 0.3, TAU - 0.6), padMat)
+						pad.rotation.set(-Math.PI / 2, 0, pr() * 6.28)
+						pad.position.set(lx + (pr() - 0.5) * 1.6, level + 0.02, lz + (pr() - 0.5) * 1.6)
+						pondG.add(pad)
+						if (pr() < 0.25) {
+							const fl = new THREE.Mesh(new THREE.SphereGeometry(0.09, 8, 6), bloom)
+							fl.position.set(pad.position.x, level + 0.07, pad.position.z)
+							pondG.add(fl)
+						}
+					}
 				}
-			const fish = fishes(pools, [], 63, eye, ['fish-carp', 'fish-nile', 'fish-redtilapia'])
+			}
+			/* the low stone wall against the north wall, boulders laid in courses, and its waterfall */
+			const wallR = R - 3.3, wallHalf = 0.2
+			const boulder = [new THREE.MeshStandardMaterial({ color: '#7a776b', roughness: 0.95 }), new THREE.MeshStandardMaterial({ color: '#66705c', roughness: 0.95 }), new THREE.MeshStandardMaterial({ color: '#8a8475', roughness: 0.95 })]
+			for (let row = 0; row < 6; row++)
+				for (let k = -7; k <= 7; k++) {
+					const a = (k / 7) * wallHalf + (row % 2 ? 0.012 : 0)
+					const top = 4.4 - Math.abs(k / 7) * 1.6
+					const y = level - 0.3 + row * 0.8
+					if (y > top) continue
+					const b = new THREE.Mesh(new THREE.DodecahedronGeometry(0.62 + pr() * 0.3, 0), boulder[Math.floor(pr() * 3)]!)
+					const [x, z] = polar(wallR + pr() * 0.5, a)
+					b.position.set(x, y, z)
+					b.scale.set(1.2, 0.75, 1)
+					b.rotation.set(pr(), a, pr())
+					pondG.add(b)
+				}
+			// ferns and moss over its top
+			for (let k = 0; k < 10; k++) {
+				const f = forestFloor(k % 2 ? 'moss' : 'mycelium', 4200 + k)
+				const [x, z] = polar(wallR + 0.3, ((k + 0.5) / 10 - 0.5) * 2 * wallHalf)
+				f.position.set(x, 4.4 - Math.abs(((k + 0.5) / 10 - 0.5) * 2) * 1.6 + 0.1, z)
+				pondG.add(f)
+			}
+			// the falling water: a sheet streaked white, running down, and foam where it meets the pond
+			const streaks = document.createElement('canvas')
+			streaks.width = 64
+			streaks.height = 256
+			const sx = streaks.getContext('2d')!
+			sx.fillStyle = '#9fc4c4'
+			sx.fillRect(0, 0, 64, 256)
+			for (let i = 0; i < 90; i++) {
+				sx.fillStyle = `rgba(255,255,255,${0.25 + pr() * 0.5})`
+				sx.fillRect(pr() * 64, pr() * 256, 1 + pr() * 2, 20 + pr() * 60)
+			}
+			const fallTex = new THREE.CanvasTexture(streaks)
+			fallTex.wrapS = fallTex.wrapT = THREE.RepeatWrapping
+			fallTex.repeat.set(2, 1.5)
+			const fallH = 4.4 - level
+			const fall = new THREE.Mesh(new THREE.PlaneGeometry(2.6, fallH, 1, 1), new THREE.MeshStandardMaterial({ map: fallTex, transparent: true, opacity: 0.75, roughness: 0.2, side: THREE.DoubleSide, depthWrite: false }))
+			const [fx, fz] = polar(wallR - 1.1, 0)
+			fall.position.set(fx, level + fallH / 2, fz)
+			fall.rotation.x = -0.08
+			pondG.add(fall)
+			const foamMat = new THREE.MeshStandardMaterial({ color: '#ffffff', transparent: true, opacity: 0.55, roughness: 0.4, depthWrite: false })
+			const foam = Array.from({ length: 7 }, (_, k) => {
+				const f = new THREE.Mesh(new THREE.SphereGeometry(0.5 + pr() * 0.4, 10, 6), foamMat)
+				f.position.set(fx + (k - 3) * 0.45, level, fz - 0.6 - pr() * 0.8)
+				f.scale.y = 0.25
+				pondG.add(f)
+				return f
+			})
+			animated.push((t) => {
+				fallTex.offset.y = t * 0.9
+				foam.forEach((f, k) => f.scale.set(1 + 0.12 * Math.sin(t * 5 + k), 0.25, 1 + 0.12 * Math.cos(t * 4 + k)))
+			})
+			// the pump that lifts it back up, in a stone box at the wall's foot
+			const [qx, qz] = polar(wallR - 0.4, wallHalf + 0.06)
+			pondG.add(box(0.9, 0.7, 0.7, m.lime(1), qx, level, qz))
+			scene.add(await bakeIn(pondG, false))
+			for (let i = 0; i < RIM; i += 12) {
+				const [wx, wz] = rimPt(i)
+				waterPts.push(new THREE.Vector3(wx, 0, wz))
+			}
+			waterPts.push(new THREE.Vector3(fx, 0, fz))
+			addLamp(fx, 3, fz - 3, 20, 14, level)
+			// fish at three depths, round the whole pond
+			const pools: { x: number; z: number; r: number; y: number; n: number }[] = []
+			for (const [j, y] of [0.02, 0.02, 0.02].entries())
+				for (let i = 0; i < 5; i++) {
+					const x = pondC.x + (((i + 0.5 + (j % 2) * 0.3) / 5) * 2 - 1) * rimAt(0) * 0.7
+					const z = pondC.z + (j - 1) * 1.2, r = 3.2
+					if (!inPond(x, z, -r - 0.6)) continue
+					pools.push({ x, z, r, y, n: 5 })
+				}
+			const fish = fishes(pools, [], 63, eye, ['fish-carp', 'fish-koi', 'fish-nile'])
 			scene.add(fish.object)
 			animated.push(fish.update)
-			for (const x of [-hw / 2, hw / 2]) addLamp(x, level - 1, c + 4, 30, 18, 0)
-			for (let i = 0; i <= 8; i++) waterPts.push(new THREE.Vector3(-hw + (i / 8) * 2 * hw, 0.5, c))
-			/* along the glass: a stone walk and the grow beds its water runs to, by a pipe at the glass's foot */
-			const walkW = 3.4
-			flat(new THREE.PlaneGeometry(2 * hw, walkW), m.stone((2 * hw) / 3, walkW / 3), 0.03).position.set(0, 0.03, c - walkW / 2)
-			const pipe = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.07, 2 * hw, 10), m.steel)
-			pipe.rotation.z = Math.PI / 2
-			pipe.position.set(0, 0.62, c - 0.45)
-			scene.add(pipe)
-			const beds = new THREE.Group()
-			const n = Math.floor((2 * hw - 4) / 3.6)
-			for (let i = 0; i < n; i++) {
-				const x = -hw + 2 + (i + 0.5) * ((2 * hw - 4) / n)
-				if (Math.abs(x) < 2) continue
-				const z = c - 1.5
-				beds.add(box(2.8, 0.45, 0.9, m.oak(1), x, 0, z))
-				const cr = crop(CROPS[(i * 5) % CROPS.length]!, 90 + i, 2.6)
-				cr.position.set(x, 0.45, z)
-				cr.rotation.y = Math.PI / 2
-				beds.add(cr)
-				colliders.push({ x: x - 0.8, z, r: 0.6 }, { x: x + 0.8, z, r: 0.6 })
+			/* the paths on from the ring's ends, and a deck at each with benches facing the water */
+			for (const sgn of [-1, 1]) {
+				const x = sgn * sideX
+				const len = sideZ1 - sideZ0 + 0.6
+				flat(new THREE.PlaneGeometry(2, len), m.stone(2 / 3, Math.round(len / 3)), 0.021).position.set(x, 0.021, sideZ0 + len / 2 - 0.3)
+				const dz = sideZ1 + 1.4
+				flat(new THREE.PlaneGeometry(5, 3.4), m.oak(2, 1.4), 0.04).position.set(x, 0.04, dz)
+				for (const off of [-1.2, 1.2]) {
+					const bx = x + off, bz = dz + 0.9
+					scene.add(box(1.9, 0.08, 0.5, m.oak(1), bx, 0.42, bz))
+					for (const lx of [-0.75, 0.75]) scene.add(box(0.16, 0.42, 0.4, m.lime(1), bx + lx, 0, bz))
+					colliders.push({ x: bx, z: bz, r: 0.9 })
+				}
+				addLamp(x, 2.4, dz, 8, 10, 0)
 			}
-			scene.add(await bakeIn(beds))
+			/* the rainforest round it: bananas, palms, cacao and ginger on its bank, thickest by the wall */
+			const plantsG = new THREE.Group()
+			for (let i = 0; i < RIM; i += 3) {
+				const t = (i / RIM) * TAU
+				const out = 1.2 + pr() * 2.2
+				const x = pondC.x + Math.cos(t) * (pondRim[i]! + out), z = pondC.z + Math.sin(t) * (pondRim[i]! + out)
+				const rr = Math.hypot(x, z), a = Math.atan2(x, z)
+				if (rr > R - 1.6 || onSide(rr, a, 1.4) || (Math.abs(x) < 3.5 && z < pondC.z) || samples.some((p) => Math.hypot(p.x - x, p.z - z) < 1.6) || inPond(x, z, 0.4)) continue
+				if (colliders.some((c) => Math.hypot(c.x - x, c.z - z) < 1.4)) continue
+				if (flora) {
+					forest!.add(pickPlant(flora.garden[pr() < 0.3 ? 'trees' : 'shrubs'], pr, flora.seed), pr() < 0.3 ? 'tree' : 'shrub', x, 0, z, pr() * 6.28, 0.85 + pr() * 0.3)
+					colliders.push({ x, z, r: 0.5 })
+					continue
+				}
+				const pick = pr()
+				const plant = pick < 0.35 ? banana(8800 + i, 3 + pr() * 1.6) : pick < 0.5 ? coconutPalm(8900 + i, 6 + pr() * 4) : pick < 0.75 ? tropicalShrub('cacao', 9000 + i, 1.3 + pr() * 0.4) : tropicalShrub('coffee', 9100 + i, 1.2 + pr() * 0.4)
+				plant.object.position.set(x, 0, z)
+				plant.object.rotation.y = pr() * 6.28
+				plantsG.add(plant.object)
+				colliders.push({ x, z, r: plant.radius * 0.6 })
+				const g2 = ginger(9200 + i, 0.7 + pr() * 0.4)
+				g2.position.set(x + (pr() - 0.5) * 1.6, 0, z + (pr() - 0.5) * 1.6)
+				plantsG.add(g2)
+			}
+			scene.add(await bakeIn(plantsG))
 		}
 
 		await slice()
@@ -2217,8 +2349,8 @@ export async function mountInterior(container: HTMLElement, kind: DomeKind, onPr
 			// on the galleries the railings keep you from stepping off, and on a stair its
 			// handrails keep you on the treads: up off the ground, only a stair holds you
 			if (feet > 0.25 && rr < rIn && inStair(x, z) === null) return true
-			// the fish tank's glass, and the ends of the large dome's gallery
-			if (tankZ !== null && (z > tankZ - 0.35 || (feet > 0.25 && rr > rIn - 0.4 && !onGal(Math.atan2(x, z), 0.4)))) return true
+			// the large dome's pond, and the ends of its gallery
+			if (green && (inPond(x, z, 0.1) || (feet > 0.25 && rr > rIn - 0.4 && !onGal(Math.atan2(x, z), 0.4)))) return true
 			// and outside, the balustrade round the terrace
 			if (feet > H - 0.6 && rr > Rt - 0.5) return true
 			// the rooms' walls: their fronts on the walkway, open only at each room's door, and the walls between them
@@ -2232,7 +2364,8 @@ export async function mountInterior(container: HTMLElement, kind: DomeKind, onPr
 			}
 			return false
 		}
-		start = { x: 0, z: Rc + 2, look: 0 }
+		// (in the large dome, on the ring path by the south, looking north over the green middle to the pond)
+		start = green ? { x: 0, z: -Rp, look: Math.PI } : { x: 0, z: Rc + 2, look: 0 }
 	}
 
 	if (forest) {
