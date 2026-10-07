@@ -176,7 +176,6 @@
 	<nav class="tools" aria-label="Tools">
 		<button class:on={mode === 'build' || menuOpen} onclick={() => tool('build')} title="Build (choose a building)"><span class="ic">⌂</span>Build</button>
 		<button class:on={mode === 'road'} onclick={() => tool('road')} title="Road (R)"><span class="ic">⟋</span>Road</button>
-		<button class:on={mode === 'flag'} onclick={() => tool('flag')} title="Flag (F)"><span class="ic">⚑</span>Flag</button>
 		<button class:on={mode === 'demolish'} onclick={() => tool('demolish')} title="Tear down (X)"><span class="ic">✕</span>Tear down</button>
 		<button class:on={marketOpen} onclick={() => ((marketOpen = !marketOpen), (menuOpen = false), (treeOpen = false))} title="The market: what to sell and buy"><span class="ic">⚖</span>Market</button>
 		<button class:on={treeOpen} onclick={() => ((treeOpen = !treeOpen), (menuOpen = false), (marketOpen = false), refresh())} title="The building tree: what each building needs and makes"><span class="ic">⌥</span>Tree</button>
@@ -217,6 +216,20 @@
 	<!-- what the storehouses hold, and the goals -->
 	{#if summary}
 		<aside class="side">
+			<section class="panel next" aria-label="What to do next">
+				<div class="head"><span>What to do next</span></div>
+				<ul>
+					{#each summary.needs as n, k (k)}
+						<li class={n.tone}>
+							<button onclick={() => n.node >= 0 && game?.focus(n.node)} disabled={n.node < 0}>
+								<i></i><span>{n.text}</span>
+							</button>
+						</li>
+					{:else}
+						<li class="good"><button disabled><i></i><span>All is well: keep every village full and fed</span></button></li>
+					{/each}
+				</ul>
+			</section>
 			<section class="panel abundance" aria-label="The valley's abundance">
 				<div class="head">
 					<span>Abundance</span>
@@ -366,7 +379,7 @@
 				<p class="label">{HOUSE_SIZE[card.level - 1]} · home of <b>{card.beds}</b> settlers{card.upgrading ? ` · growing to ${HOUSE_BEDS[card.level]}` : ''}</p>
 				{#if card.owner === PLAYER && card.up && !card.upgrading}
 					<div class="actions">
-						<button class="go" onclick={() => card && (game?.sim.upgrade(card.id), refresh())}>Enlarge to {HOUSE_BEDS[card.level]} settlers · {Object.entries(card.up).map(([w, n]) => `${n} ${label(w).toLowerCase()}`).join(', ')}</button>
+						<button class="go up" title="Enlarge to {HOUSE_BEDS[card.level]} settlers: {Object.entries(card.up).map(([w, n]) => `${n} ${label(w).toLowerCase()}`).join(', ')}" onclick={() => card && (game?.sim.upgrade(card.id), refresh())}>Enlarge → {HOUSE_BEDS[card.level]}{#each Object.entries(card.up) as [w, n] (w)}<span class="cost"><i style:background={WARES[w].color}></i>{n}</span>{/each}</button>
 					</div>
 				{/if}
 			{/if}
@@ -390,23 +403,23 @@
 			{#if card.owner === PLAYER}
 				<div class="actions">
 					{#if card.stage === 'live' && card.worker}<button onclick={() => (game?.sim.pause(card?.id ?? 0, !card?.paused), refresh())}>{card.paused ? 'Resume' : 'Pause'}</button>{/if}
-					<button onclick={() => game?.setMode('road')}>Road from its flag</button>
+					<button onclick={() => game?.setMode('road')}>Path from here</button>
 					{#if card.type !== 'centre'}<button class="danger" onclick={() => (game?.sim.demolish(card?.node ?? -1), game?.select(null))}>Tear down</button>{/if}
 				</div>
 			{/if}
 		</section>
 	{:else if flagCard}
-		<section class="panel card" aria-label="Flag">
+		<section class="panel card" aria-label="Stop">
 			<button class="close" onclick={() => game?.select(null)} aria-label="Close">×</button>
-			<p class="eyebrow">{flagCard.owner === PLAYER ? 'Your flag' : 'A neighbour’s flag'}{flagCard.bld ? ` · ${flagCard.bld}` : ''}</p>
-			<h2>Flag</h2>
-			<p class="about">Wares wait here for a carrier: {flagCard.wares.length} of 8.</p>
+			<p class="eyebrow">{flagCard.owner === PLAYER ? 'Yours' : 'A neighbour’s'}{flagCard.bld ? ` · ${flagCard.bld}` : ''}</p>
+			<h2>Stop</h2>
+			<p class="about">The middle of a settlement, where its paths meet. Wares wait here for a bus: {flagCard.wares.length} of 8.</p>
 			<ul class="wares tight">
 				{#each flagCard.wares as w, k (k)}<li title={label(w)}><i style:background={WARES[w].color}></i><span>{label(w)}</span></li>{/each}
 			</ul>
 			{#if flagCard.owner === PLAYER}
 				<div class="actions">
-					<button onclick={() => game?.setMode('road')}>Road from here</button>
+					<button onclick={() => game?.setMode('road')}>Path from here</button>
 					<button class="danger" onclick={() => (game?.sim.demolish(selected?.node ?? -1), game?.select(null))}>Tear down</button>
 				</div>
 			{/if}
@@ -414,11 +427,10 @@
 	{:else if roadCard}
 		<section class="panel card" aria-label="Road">
 			<button class="close" onclick={() => game?.select(null)} aria-label="Close">×</button>
-			<p class="eyebrow">Your road</p>
-			<h2>Road · {roadCard.steps} steps</h2>
-			<p class="about">{roadCard.carrier ? (roadCard.busy ? 'Its carrier is carrying a ware.' : 'Its carrier waits for work.') : 'Waiting for a carrier.'} A flag in the middle splits a long road: two carriers share it.</p>
+			<p class="eyebrow">Your path</p>
+			<h2>Path · {roadCard.steps} steps</h2>
+			<p class="about">{roadCard.carrier ? (roadCard.busy ? 'Its bus is carrying a ware.' : 'Its bus waits for work.') : 'Waiting for a bus.'} A path runs from the middle of one settlement to the middle of the next.</p>
 			<div class="actions">
-				{#if roadCard.canFlag}<button onclick={() => (game?.sim.flag(selected?.node ?? -1), game?.select(null))}>Set a flag here</button>{/if}
 				<button class="danger" onclick={() => (game?.sim.demolish(selected?.node ?? -1), game?.select(null))}>Tear down</button>
 			</div>
 		</section>
@@ -790,6 +802,68 @@
 	.big.poor,
 	.trend.t-1 {
 		color: #a3322a;
+	}
+	.up {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.45rem;
+		white-space: nowrap;
+	}
+	.up .cost {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.2rem;
+		font-size: 0.8em;
+		opacity: 0.85;
+	}
+	.up .cost i {
+		width: 0.6rem;
+		height: 0.6rem;
+		border-radius: 2px;
+	}
+	.next ul {
+		margin: 0.35rem 0 0;
+		padding: 0;
+		list-style: none;
+		display: grid;
+		gap: 0.3rem;
+	}
+	.next button {
+		display: grid;
+		grid-template-columns: 0.55rem 1fr;
+		align-items: start;
+		gap: 0.45rem;
+		width: 100%;
+		padding: 0;
+		border: 0;
+		background: none;
+		font-size: 0.76rem;
+		line-height: 1.3;
+		text-align: left;
+		color: inherit;
+		cursor: pointer;
+	}
+	.next button:disabled {
+		cursor: default;
+	}
+	.next i {
+		width: 0.55rem;
+		height: 0.55rem;
+		margin-top: 0.3rem;
+		border-radius: 50%;
+		background: #8a8f86;
+	}
+	.next .alert i {
+		background: #c2412f;
+	}
+	.next .todo i {
+		background: #d19a1e;
+	}
+	.next .good i {
+		background: #3d8f4a;
+	}
+	.next .alert span {
+		font-weight: 600;
 	}
 	.lives {
 		margin: 0.35rem 0 0;

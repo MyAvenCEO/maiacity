@@ -102,11 +102,11 @@ export const HOUSE_SIZE = ['Hut', 'Cottage', 'House', 'Great house'];
 
 /** what the headquarters holds as a game starts */
 export const START = {
-	stock: { plank: 32, stone: 22, fish: 12, grain: 4, water: 8, bread: 8, ore: 4, tools: 20 },
-	coins: 60,
-	settlers: 20,
-	/** the houses that stand round your first village center as a game starts: their sizes (1…4) */
-	houses: [3, 3, 2]
+	stock: { plank: 16, stone: 10, fish: 8, water: 8, bread: 4, tools: 8 },
+	coins: 30,
+	settlers: 2,
+	/** the houses that stand round your first village center as a game starts: their sizes (1…4) — one house of two */
+	houses: [1]
 };
 
 /** the win: every village on the map — yours and the neighbours' — has a house in each of its settlements, every bed
@@ -115,7 +115,7 @@ export const ABUNDANT = 80, HOLD = 600;
 
 /** the goals of a game, in order: its last is the win */
 export const GOALS = [
-	{ id: 'wood', label: 'Run a woodcutter and a quarry', hint: 'Build them beside a house, near trees and rocks, and join their flags to your village center with roads.' },
+	{ id: 'wood', label: 'Run a woodcutter and a quarry', hint: 'Build them beside a house, near trees and rocks, and they join your village center by a path on their own.' },
 	{ id: 'planks', label: 'Cut 12 planks', ware: 'plank', n: 12 },
 	{ id: 'food', label: 'Gather 25 food (fish or bread)', ware: 'food', n: 25 },
 	{ id: 'house', label: 'Enlarge a house to 16 settlers', hint: 'Select a house and enlarge it: 2, 4, 8, then 16 settlers. People only come when there are beds for them.' },

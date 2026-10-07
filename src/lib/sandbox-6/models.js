@@ -86,15 +86,6 @@ function lantern(y, color, s = 1) {
 	g.add(part(new THREE.ConeGeometry(0.04 * s, 0.22 * s, 5), mat(color, 0.5), 0, 0.5 * s, 0));
 	return g;
 }
-/** a banner on a pole in the owner's colour */
-function banner(/** @type {number} */ owner, /** @type {number} */ h, x = 0, z = 0) {
-	const g = new THREE.Group();
-	g.add(part(new THREE.CylinderGeometry(0.03, 0.03, h, 5), mat(TIMBER), x, h / 2, z));
-	const cloth = part(new THREE.BoxGeometry(0.42, 0.28, 0.02), mat(TEAM[owner], 0.6), x + 0.22, h - 0.18, z);
-	cloth.name = 'cloth';
-	g.add(cloth);
-	return g;
-}
 /** a chimney that smokes while the building works */
 function chimney(/** @type {number} */ x, /** @type {number} */ y, /** @type {number} */ z, h = 0.7, color = STONE) {
 	const g = new THREE.Group();
@@ -206,7 +197,6 @@ export function buildingModel(type, owner) {
 				wheel.rotation.x = Math.PI / 2;
 				g.add(wheel);
 			}
-			g.add(banner(owner, 2.4, 1.75, -0.6));
 			break;
 		}
 		case 'house': {

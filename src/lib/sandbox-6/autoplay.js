@@ -9,6 +9,9 @@ import { PLAYER } from './sim.js';
 
 /** the plan: what to build, in order, and where it would rather stand */
 const PLAN = [
+	// a game starts with one house of two: homes beside the village center first, so there are hands to build and carry
+	['house', 'home'],
+	['house', 'home'],
 	['woodcutter', 'trees'],
 	['quarry', 'rocks'],
 	['woodcutter', 'trees'],
@@ -203,21 +206,9 @@ export function createAutoplay(sim) {
 		if (l && (s.stock.stone ?? 0) >= l.cost + 4) sim.connect(first.id, l.id);
 		return false;
 	}
-	/** split long roads with flags, so more carriers share the load */
-	function flags() {
-		for (const r of Object.values(st.roads)) {
-			if (r.path.length < 6) continue;
-			const k = Math.floor(r.path.length / 2);
-			if (!sim.canFlag(r.path[k])) {
-				sim.flag(r.path[k]);
-				return;
-			}
-		}
-	}
 	return {
 		tick() {
 			if (st.result) return;
-			flags();
 			// a used-up mine is torn down and dug again elsewhere
 			for (const b of Object.values(st.buildings))
 				if (b.owner === PLAYER && b.deposit <= 0 && BUILDINGS[b.type].kind === 'mine' && b.stage === 'live') {
@@ -234,7 +225,8 @@ export function createAutoplay(sim) {
 			const s = sim.summary();
 			// a trade route to a neighbour comes first: until it runs, stone is saved for it
 			const joined = st.auto >= 8 && join(s);
-			if (joined) homes(s);
+			// homes before the route only while the city is tiny: it starts with one house of two
+			if (joined || s.beds < 24) homes(s);
 			if (joined && st.auto >= plan.length) settle(s);
 			if (st.auto < plan.length) {
 				const [type, want] = plan[st.auto];
