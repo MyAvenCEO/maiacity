@@ -23,8 +23,7 @@
  * village's tanks. A great dome of 150 m roofs about 71 m² for each of its 248 beds, and 800 mm a year (as round
  * Munich), nine tenths of it caught, give a bed about 140 L a day: half again what it needs over a year, more in the
  * wet summer and less in the dry winter, when its tanks, four weeks of it, carry it through. Where they run dry, a
- * well gives the rest, piped straight to the tanks (a borehole giving 2 L a second, fresh water for about 1,700
- * people), and what neither gives, a village buys from the world market as its people use it (2 € a m³).
+ * village buys what its rain does not give from the world market as its people use it (2 € a m³).
  *
  * Plain numbers and pure functions: the simulation (./sim.js) calls them, the page shows them.
  */
@@ -52,8 +51,6 @@ export const WATER_USE = { drinking: 3, home: 97, crops: 50 };
 export const WATER_L = Object.values(WATER_USE).reduce((a, b) => a + b, 0);
 /** what a person needs a day of fresh water, litres: all of it but the crops', which take the home's greywater again */
 export const FRESH_L = WATER_L - WATER_USE.crops;
-/** what a well gives a day: a borehole at 2 L a second */
-export const WELL_L = 2 * 86400;
 /** rain a year, mm (round Munich), and the share of it a dome's roof catches into its tanks */
 export const RAIN_MM = 800, CATCH = 0.9;
 /** the roof each bed has, m²: a great dome of 150 m over its 248 beds */

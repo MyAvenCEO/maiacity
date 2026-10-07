@@ -71,7 +71,7 @@
 			</button>
 		{/each}
 	</div>
-	<p class="small">Food and water are not wares: the food forests grow food, the roofs catch rain and wells pipe what it lacks, and the world market sells the rest and buys what you have spare.</p>
+	<p class="small">Food and water are not wares: the food forests grow food, the roofs catch rain, and the world market sells the rest and buys what you have spare.</p>
 </section>
 
 <style>
