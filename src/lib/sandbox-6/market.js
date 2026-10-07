@@ -38,17 +38,22 @@ export const CART = 8;
 /** years of upkeep a settlement likes to have put by: a quarter */
 const PUT_BY = 0.25;
 /** a ware's usual price, in coins */
-export const BASE = { plank: 4, steel: 4 };
+export const BASE = { plank: 4, steel: 4, lime: 4 };
 /** euros in a gold: a HEART is a euro */
 export const EUR_PER_GOLD = 1000;
 /**
  * What the world market asks for a ware, in euros (HEARTs), and what one of it is: real prices, a load being 5 t.
- * Building timber is the average of sawn softwood across Europe, about 800 € a tonne; structural steel, about 1,000 €.
+ * Building timber is the average of sawn softwood across Europe, about 800 € a tonne; structural steel, about 1,000 €;
+ * cast lime blocks about 100 € (their lime, baked clay, gravel and casting).
  */
 export const WORLD = /** @type {Record<string, { eur: number, unit: string }>} */ ({
 	plank: { eur: 4000, unit: 'a load: 5 t of sawn building timber at 800 € a t' },
-	steel: { eur: 5000, unit: 'a load: 5 t of steel struts at 1,000 € a t' }
+	steel: { eur: 5000, unit: 'a load: 5 t of steel joints at 1,000 € a t' },
+	lime: { eur: 500, unit: 'a load: 5 t of lime blocks at 100 € a t' }
 });
+/** glass: nobody in the valley makes it, so a dome's comes from the world market, paid in gold as the dome is begun:
+ * laminated double glazing, about 40 kg and 100 € a m², so 2,500 € a tonne */
+export const GLASS_EUR_T = 2500;
 /** the wares that are traded (not coins: they are what is paid) */
 export const TRADED = Object.keys(BASE);
 /**
@@ -82,9 +87,10 @@ export const heartsFor = (w) => (WORLD[w]?.eur ?? 0) / 2;
 
 /**
  * Your orders at the fair are one word a ware: sell or buy. What that means is fixed, so there is nothing to tune:
- * selling lets go of what you can spare (you keep a quarter year of what your homes need, or a dozen of anything
- * else) while it fetches at least half its usual price; buying fetches what you are short of (up to a stock that
- * suits the ware) while it costs at most two and a half times its usual price.
+ * selling lets go of what you can spare (you keep a quarter year of what your homes need, or a few loads) while it
+ * fetches at least half its usual price; buying fetches what you are short of (a quarter year of upkeep and a few
+ * loads, or what your building sites wait for, if more) while it costs at most two and a half times its usual price.
+ * Real tonnes cost real gold, so nothing is bought to lie in store.
  * @param {string} w
  * @param {number} pop your people
  */
@@ -92,8 +98,8 @@ export function orderRule(w, pop) {
 	const need = /** @type {Record<string, number>} */ (NEEDS)[w] ?? 0;
 	const lives = Math.ceil(need * pop * PUT_BY);
 	return {
-		keep: Math.max(12, lives),
-		upTo: w === 'plank' ? Math.max(40, lives) : w === 'steel' ? Math.max(30, lives) : Math.max(20, lives),
+		keep: Math.max(4, lives),
+		upTo: w === 'plank' ? Math.max(6, lives) : w === 'steel' ? Math.max(4, lives) : lives,
 		above: base(w) * 0.5,
 		below: base(w) * 2.5
 	};

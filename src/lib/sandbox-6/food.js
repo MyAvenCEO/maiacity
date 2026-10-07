@@ -33,6 +33,8 @@ export const DAY = 1, WEEK = 7 * DAY, MONTH_DAYS = 30, YEAR_MONTHS = 12, MONTH =
 /** how fast the valley's calendar runs, days a second of play at 1×: the master clock's, a day in 48 real minutes
  * (game/time.ts) */
 export const PACE = 1 / 2880;
+/** the simulation's pace, play seconds a real second: ten years in ten real minutes, a year a real minute */
+export const SIM_SPEED = YEAR / 60 / PACE;
 /** the clock's speeds: how much of the calendar a real day holds */
 export const SPEEDS = [
 	{ s: 1, short: '1 mo', about: 'a month a real day, the master clock' },

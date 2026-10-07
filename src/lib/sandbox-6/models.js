@@ -228,14 +228,22 @@ export function buildingModel(type, owner, level = 2) {
 			for (const [x, z] of [[0.95, 0.35], [-0.95, 0.4], [0.75, -0.7]]) g.add(tree(x, 0, z, 0.55));
 			g.add(band(owner, 0.77, PLINTH + 0.15));
 			break;
-		case 'quarry': {
-			// a dome of cut stone facets, with blocks waiting
-			const g2 = dome(0.8, 0.75, '#a7a297', { porch: true });
+		case 'limeworks': {
+			// a pale dome of cut stone facets over the pit, with limestone waiting; a kiln: its squat stack glowing at the
+			// foot; a block works: a second stack and arch blocks stacked at the door
+			const g2 = dome(0.8, 0.75, '#c9c2b0', { porch: true });
 			g.add(g2);
-			const facets = part(new THREE.IcosahedronGeometry(0.82, 0), mat('#b5b1a6', 0.95), 0, PLINTH, 0);
+			const facets = part(new THREE.IcosahedronGeometry(0.82, 0), mat('#d6d0c0', 0.95), 0, PLINTH, 0);
 			facets.scale.set(1, 0.9, 1);
 			g.add(facets);
-			for (const [x, z, s] of [[0.95, 0.25, 1], [1.05, -0.25, 0.8], [-0.95, 0.45, 0.9], [0.75, 0.75, 0.7]]) g.add(part(new THREE.BoxGeometry(0.3 * s, 0.25 * s, 0.3 * s), mat('#c4c0b5'), x, 0.13 * s, z));
+			for (const [x, z, s] of [[0.95, 0.25, 1], [1.05, -0.25, 0.8], [-0.95, 0.45, 0.9]]) g.add(part(new THREE.BoxGeometry(0.3 * s, 0.25 * s, 0.3 * s), mat('#b9b4a6'), x, 0.13 * s, z));
+			for (let k = 0; k < Math.min(2, level - 1); k++) {
+				const x = -0.55 + k * 0.4, z = -0.45 - k * 0.2;
+				g.add(chimney(x, PLINTH + 0.4, z, 0.6 + k * 0.15, '#d8d2c2'));
+				g.add(part(new THREE.CylinderGeometry(0.22, 0.26, 0.28, 8), mat('#e8a25a', 0.6), -1.0 + k * 0.1, 0.14, -0.2 - k * 0.45));
+			}
+			// arch blocks: wedges laid in rows, as they wait for the trade routes
+			for (let k = 0; k < (level - 2) * 6; k++) g.add(part(new THREE.BoxGeometry(0.16, 0.12, 0.2), mat('#e4dccb'), 0.5 + (k % 3) * 0.18, 0.06 + Math.floor(k / 3) * 0.12, 0.95));
 			g.add(band(owner, 0.82, PLINTH + 0.12));
 			break;
 		}
@@ -282,7 +290,7 @@ export function buildingModel(type, owner, level = 2) {
 			g.add(part(new THREE.SphereGeometry(0.14, 8, 5), mat(ore, 0.4), 0, PLINTH + 0.75, 0));
 			g.add(part(new THREE.BoxGeometry(0.42, 0.22, 0.3), mat(TIMBER), 0.95, 0.15, 0.45));
 			g.add(part(new THREE.BoxGeometry(0.36, 0.1, 0.24), mat(ore, 0.5), 0.95, 0.3, 0.45));
-			// a furnace: its stack glowing at the foot; a steelworks: a second stack and steel struts stacked at the door
+			// a furnace: its stack glowing at the foot; a steelworks: a second stack and steel joints stacked at the door
 			for (let k = 0; k < Math.min(2, level - 1); k++) {
 				const x = -0.55 + k * 0.4, z = -0.45 - k * 0.2;
 				g.add(chimney(x, PLINTH + 0.45, z, 0.75 + k * 0.15));
