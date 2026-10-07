@@ -28,7 +28,7 @@
 	/** @param {Model | Dome} m @returns {m is Dome} */
 	const isDome = (m) => 'dome' in m;
 	/** @param {Model | Dome} m */
-	const latest = (m) => (isDome(m) ? 0 : m.version);
+	const latest = (m) => m.version;
 
 	/** @type {HTMLDivElement | undefined} */
 	let canvasBox = $state();
@@ -315,7 +315,7 @@
 </Turntable>
 
 {#if inside && isDome(chosen)}
-	<div class="walk"><DomeInterior kind={chosen.dome} place={chosen.usedIn} onclose={() => (inside = false)} /></div>
+	<div class="walk"><DomeInterior kind={atOrLatest(chosen.versions, version).build} place={chosen.usedIn} onclose={() => (inside = false)} /></div>
 {/if}
 
 <style>
