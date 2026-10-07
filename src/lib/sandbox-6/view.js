@@ -228,7 +228,7 @@ export function createView(scene, sim) {
 	/** straight ribbons from end to end, lying on the ground all the way (sampled a few times a step, so no hill hides their middle) */
 	function line(/** @type {number[][]} */ ends, /** @type {number} */ width, /** @type {number} */ lift) {
 		/** @type {number[]} */
-		const pos = [];
+		const pos = [], uv = [];
 		for (const [a, b] of ends) {
 			const ax = X(a), az = Z(a), bx = X(b), bz = Z(b);
 			const dx = bx - ax, dz = bz - az, len = Math.hypot(dx, dz);
@@ -240,10 +240,14 @@ export function createView(scene, sim) {
 				const x0 = ax + dx * f0, z0 = az + dz * f0, x1 = ax + dx * f1, z1 = az + dz * f1;
 				const y0 = groundY(x0, z0) + lift, y1 = groundY(x1, z1) + lift;
 				pos.push(x0 + nx, y0, z0 + nz, x1 + nx, y1, z1 + nz, x1 - nx, y1, z1 - nz, x0 + nx, y0, z0 + nz, x1 - nx, y1, z1 - nz, x0 - nx, y0, z0 - nz);
+				// across the ribbon 0…1, along it a repeat every so many world units (for a texture's dots and dashes)
+				const v0 = (len * f0) / width, v1 = (len * f1) / width;
+				uv.push(1, v0, 1, v1, 0, v1, 1, v0, 0, v1, 0, v0);
 			}
 		}
 		const geo = new THREE.BufferGeometry();
 		geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+		geo.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
 		geo.computeVertexNormals();
 		const n = /** @type {THREE.BufferAttribute} */ (geo.getAttribute('normal'));
 		for (let k = 0; k < n.count; k++) if (n.getY(k) < 0) n.setXYZ(k, -n.getX(k), -n.getY(k), -n.getZ(k));
@@ -262,24 +266,57 @@ export function createView(scene, sim) {
 		root.add(roadMesh);
 	}
 
-	// the trade routes: a straight line in its digger's colour from village center to village center, where it runs under the ground
-	let tunSeen = -1;
+	// the trade routes: two-lane tunnels in their digger's colour from village center to village center, shown (seen
+	// through the ground, dotted at their walls) only while a village center is picked: brighter where they touch it
+	let tunSeen = -1, tunPick = -1, picked = 0;
 	/** @type {THREE.Mesh[]} */
 	let tunMeshes = [];
-	const tunMats = TEAM.map((c) => keep(new THREE.MeshBasicMaterial({ color: c, transparent: true, opacity: 0.7, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -3, polygonOffsetUnits: -3 })));
+	const tunTex = (() => {
+		const c = document.createElement('canvas');
+		c.width = 64;
+		c.height = 64;
+		const x = /** @type {CanvasRenderingContext2D} */ (c.getContext('2d'));
+		// the two lanes: a see-through floor
+		x.fillStyle = 'rgba(255,255,255,0.32)';
+		x.fillRect(6, 0, 52, 64);
+		// its walls: dotted
+		x.fillStyle = 'rgba(255,255,255,0.95)';
+		for (let y = 0; y < 64; y += 16) {
+			x.fillRect(0, y + 2, 5, 9);
+			x.fillRect(59, y + 2, 5, 9);
+		}
+		// the middle: a dashed line between the lanes, one each way
+		x.fillStyle = 'rgba(255,255,255,0.85)';
+		for (let y = 0; y < 64; y += 32) x.fillRect(30, y + 4, 4, 18);
+		const t = new THREE.CanvasTexture(c);
+		t.wrapS = THREE.ClampToEdgeWrapping;
+		t.wrapT = THREE.RepeatWrapping;
+		t.colorSpace = THREE.SRGBColorSpace;
+		return keep(t);
+	})();
+	/** a tunnel's look in a colour: bright where it touches the picked village center, faint elsewhere */
+	const tunMat = (/** @type {string} */ c, /** @type {number} */ opacity) =>
+		keep(new THREE.MeshBasicMaterial({ color: c, map: tunTex, transparent: true, opacity, depthTest: false, depthWrite: false, side: THREE.DoubleSide }));
+	const tunMats = TEAM.map((c) => [tunMat(c, 0.45), tunMat(c, 0.95)]);
+	/** how wide a tunnel is: two lanes, a bus in each */
+	const TUN_W = 1.3;
 	function syncTunnels() {
-		if (tunSeen === st.tunV) return;
+		if (tunSeen === st.tunV && tunPick === picked) return;
 		tunSeen = st.tunV;
+		tunPick = picked;
 		for (const m of tunMeshes) {
 			m.geometry.dispose();
 			root.remove(m);
 		}
 		tunMeshes = [];
-		/** @type {Record<number, number[][]>} */
-		const dashes = {};
-		for (const t of Object.values(st.tunnels)) (dashes[t.owner] ??= []).push([t.path[0], t.path[t.path.length - 1]]);
-		for (const [o, ends] of Object.entries(dashes)) {
-			const m = new THREE.Mesh(line(ends, 0.2, 0.1), tunMats[+o]);
+		if (!picked) return;
+		/** @type {Record<string, number[][]>} */
+		const sets = {};
+		for (const t of Object.values(st.tunnels)) (sets[`${t.owner}:${t.a === picked || t.b === picked ? 1 : 0}`] ??= []).push([t.path[0], t.path[t.path.length - 1]]);
+		for (const [key, ends] of Object.entries(sets)) {
+			const [o, on] = key.split(':').map(Number);
+			const m = new THREE.Mesh(line(ends, TUN_W, 0.12), tunMats[o][on]);
+			m.renderOrder = 3 + on;
 			root.add(m);
 			tunMeshes.push(m);
 		}
@@ -390,13 +427,16 @@ export function createView(scene, sim) {
 		while (k0 > 0 && !isCentre(u.path[k0])) k0--;
 		while (k1 < n - 1 && !isCentre(u.path[k1])) k1++;
 		const a = u.path[k0], b = u.path[k1], f = k1 > k0 ? (p - k0) / (k1 - k0) : 0;
-		const x = X(a) + (X(b) - X(a)) * f, z = Z(a) + (Z(b) - Z(a)) * f;
+		// it keeps to its own lane: the right-hand one of the way it goes
+		const dx = X(b) - X(a), dz = Z(b) - Z(a), len = Math.hypot(dx, dz) || 1, side = ((u.tgt >= u.p ? 1 : -1) * TUN_W) / 4;
+		const x = X(a) + dx * f - (dz / len) * side, z = Z(a) + dz * f + (dx / len) * side;
 		return at.set(x, groundY(x, z), z);
 	}
 	function syncUnits(/** @type {number} */ t) {
 		let k = 0, l = 0;
 		for (const u of Object.values(st.units)) {
-			if (u.inside) continue;
+			// the buses under the ground show with their tunnels: while a village center is picked
+			if (u.inside || (u.kind === 'cart' && !picked)) continue;
 			const p = u.kind === 'cart' ? cartPos(u) : unitPos(u);
 			let x = p.x, y = p.y, z = p.z, bob = 0;
 			const moving = u.p !== u.tgt && !u.wait;
@@ -526,6 +566,8 @@ export function createView(scene, sim) {
 		},
 		/** the ring round what is selected @param {number} node */
 		select(node) {
+			const o = node >= 0 ? st.obj[node] : null;
+			picked = o?.k === 'bld' && ['centre', 'village'].includes(st.buildings[o.id]?.type) ? o.id : 0;
 			ring.visible = node >= 0;
 			if (node >= 0) ring.position.set(X(node), Math.max(Y(node), SEA) + 0.08, Z(node));
 		},
