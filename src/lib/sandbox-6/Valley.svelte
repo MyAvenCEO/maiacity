@@ -1,7 +1,7 @@
 <!--
 	avenCITY Sandbox 6 — a valley of settlers: the whole game on one page. The world fills the screen (./game.js); over
-	it the tools (build, road, tear down, the building tree, the clock), the build menu, the abundance of every village, the
-	goals,	the card of whatever is selected (a village center's card joins it to other villages by trade routes), and the news.
+	it the tools (build, road, tear down, the building tree, the clock), the build menu, the abundance of every village,
+	the card of whatever is selected (a village center's card joins it to other villages by trade routes), and the news.
 -->
 <script>
 	import { onDestroy, onMount } from 'svelte';
@@ -24,7 +24,6 @@
 	let speed = $state(1);
 	let menuOpen = $state(false);
 	let group = $state(MENU[0].group);
-	let goalsOpen = $state(false);
 	let narrow = $state(false);
 	/** @type {import('./game.js').Selection} */
 	let selected = $state(null);
@@ -205,7 +204,7 @@
 		</section>
 	{/if}
 
-	<!-- what the storehouses hold, and the goals -->
+	<!-- how well every village lives -->
 	{#if summary}
 		<aside class="side">
 			<section class="panel abundance" aria-label="The valley's abundance">
@@ -227,24 +226,6 @@
 					{/each}
 				</ul>
 			</section>
-			<section class="panel goals" aria-label="Goals">
-				<button class="head" onclick={() => (goalsOpen = !goalsOpen)} aria-expanded={goalsOpen}>
-					<span>Goals</span>
-					<span class="people">{summary.goals.filter((g) => g.done).length} of {summary.goals.length}</span>
-				</button>
-				{#if goalsOpen || !narrow}
-					<ol>
-						{#each summary.goals as g, k (g.id)}
-							{#if goalsOpen || g.done || k === summary.goals.findIndex((x) => !x.done)}
-								<li class:done={g.done} title={g.hint ?? ''}>
-									<span class="tick">{g.done ? '✓' : k + 1}</span>
-									<span>{g.label}{#if !g.done && g.need}<em> · {Math.min(g.have ?? 0, g.need)} of {g.need}</em>{/if}</span>
-								</li>
-							{/if}
-						{/each}
-					</ol>
-				{/if}
-			</section>
 		</aside>
 	{/if}
 
@@ -259,7 +240,7 @@
 			<button class="close" onclick={() => game?.select(null)} aria-label="Close">×</button>
 			<p class="eyebrow">{card.owner === PLAYER ? (card.stage === 'site' ? 'Building site' : 'Yours') : 'A neighbour city'}</p>
 			<h2>{card.name || card.label}</h2>
-			<p class="about">{card.about}</p>
+			{#if !vil}<p class="about">{card.about}</p>{/if}
 			{#if card.status}<p class="status">{card.status}</p>{/if}
 			{#if card.stage === 'site'}
 				<div class="bar"><span style:width="{card.progress * 100}%"></span></div>
@@ -269,19 +250,16 @@
 					{/each}
 				</ul>
 			{:else if vil}
-				<p class="label">{vil.pop} of {vil.beds} beds · wellbeing <b>{Math.round(vil.wb)}</b></p>
-				<p class="label" title="Its settlers add 24 HEARTs each an in-game hour; 1,000 HEARTs are a gold">Treasury <b>{vil.gold.toFixed(1)} gold</b></p>
-				<ul class="wants">
-					{#each vil.needs as n (n.key)}
-						<li class={n.tone}>
-							<span class="k">{n.label}</span>
-							<span class="bar"><span class={n.sat >= 0.8 ? 'good' : n.sat >= 0.5 ? 'fair' : 'poor'} style:width="{Math.round(n.sat * 100)}%"></span></span>
-							<span class="w">{#each n.wares as w (w)}<span title={label(w)}><i style:background={WARES[w].color}></i>{Math.floor(vil.stock[w] ?? 0)}</span>{/each}</span>
-							{#if n.fix}<span class="fix" title="Build: {n.fix}">+ {n.fix}</span>{/if}
+				<p class="label" title="Its settlers add 24 HEARTs each an in-game hour to its treasury; 1,000 HEARTs are a gold">{vil.pop}/{vil.beds} beds · wellbeing <b>{Math.round(vil.wb)}</b> · <b>{vil.gold.toFixed(1)}</b> gold</p>
+				<ul class="wants" aria-label="What it has, against what it needs">
+					{#each vil.rows as r (r.key)}
+						<li class:short={r.short} title="{r.label}: {r.have} in store, needs {r.need}">
+							<span class="k">{r.label}</span>
+							<span class="bar"><span class={r.short || r.have < r.need / 2 ? 'poor' : r.have < r.need ? 'fair' : 'good'} style:width="{Math.min(100, (r.have / Math.max(1, r.need)) * 100)}%"></span></span>
+							<span class="n">{r.have}<em>/{r.need}</em></span>
 						</li>
 					{/each}
 				</ul>
-				<p class="more">{#each vil.more as m (m.w)}<span class={m.tone} class:none={!m.n} title={m.tone ? `${label(m.w)}: out, build a toolmaker` : label(m.w)}><i style:background={WARES[m.w].color}></i>{label(m.w)} {m.n}</span>{/each}</p>
 				{#each vil.notes as x, k (k)}
 					<button class="note {x.tone}" onclick={() => game?.focus(x.node)}><i></i>{x.text}</button>
 				{/each}
@@ -297,7 +275,7 @@
 					{#each Object.entries(card.stock ?? card.party.stock).filter(([, n]) => n >= 1) as [w, n] (w)}<li title={label(w)}><i style:background={WARES[w].color}></i><span>{label(w)}</span><b>{Math.floor(/** @type {number} */ (n))}</b></li>{/each}
 				</ul>
 			{/if}
-			{#if card.stock && card.owner === PLAYER && card.stage === 'live'}
+			{#if card.stock && card.owner === PLAYER && card.stage === 'live' && !vil}
 				<p class="label">{card.settlers} settlers free</p>
 			{/if}
 			{#if links.length}
@@ -311,7 +289,6 @@
 					{/each}
 				</ul>
 				{#if linkWhy}<p class="status">{linkWhy}</p>{/if}
-				<p class="small">A route reaches every village center joined to the one it meets. A village short of a ware takes it from one with plenty and pays in gold.</p>
 			{/if}
 			{#if card.type === 'house' && card.level}
 				<p class="label">{HOUSE_SIZE[card.level - 1]} · home of <b>{card.beds}</b> settlers{card.upgrading ? ` · growing to ${HOUSE_BEDS[card.level]}` : ''}</p>
@@ -610,40 +587,6 @@
 	.wares.tight {
 		grid-template-columns: 1fr 1fr 1fr;
 	}
-	.goals ol {
-		margin: 0.5rem 0 0;
-		padding: 0;
-		list-style: none;
-		display: grid;
-		gap: 0.3rem;
-	}
-	.goals li {
-		display: flex;
-		gap: 0.45rem;
-		font-size: 0.75rem;
-		line-height: 1.3;
-	}
-	.goals li em {
-		font-style: normal;
-		opacity: 0.6;
-	}
-	.goals .tick {
-		flex: none;
-		width: 1.1rem;
-		height: 1.1rem;
-		border-radius: 999px;
-		background: rgb(31 42 35 / 0.08);
-		font-size: 0.65rem;
-		display: grid;
-		place-items: center;
-	}
-	.goals li.done {
-		opacity: 0.55;
-	}
-	.goals li.done .tick {
-		background: #3d6b34;
-		color: #fff;
-	}
 	.card {
 		position: absolute;
 		z-index: 3;
@@ -758,65 +701,35 @@
 	}
 	.wants {
 		display: grid;
-		gap: 0.2rem;
-		margin: 0.4rem 0 0;
+		gap: 0.3rem;
+		margin: 0.5rem 0 0;
 		padding: 0;
 		list-style: none;
 		font-size: 0.74rem;
 	}
 	.wants li {
 		display: grid;
-		grid-template-columns: 3.2rem 1fr auto;
+		grid-template-columns: 3.6rem 1fr 3.2rem;
 		align-items: center;
-		gap: 0.1rem 0.45rem;
+		gap: 0.5rem;
 	}
 	.wants .bar {
-		height: 0.3rem;
+		height: 0.4rem;
 		margin: 0;
 	}
-	.wants .w {
-		display: inline-flex;
-		gap: 0.45rem;
+	.wants .n {
+		text-align: right;
 		font-variant-numeric: tabular-nums;
+		font-weight: 600;
 	}
-	.wants .w span,
-	.more span {
-		display: inline-flex;
-		align-items: center;
-		gap: 0.2rem;
+	.wants .n em {
+		font-style: normal;
+		font-weight: 400;
+		opacity: 0.55;
 	}
-	.wants i,
-	.more i {
-		width: 0.5rem;
-		height: 0.5rem;
-		border-radius: 2px;
-	}
-	.wants .fix {
-		grid-column: 2 / -1;
-		font-size: 0.66rem;
-		line-height: 1.1;
-		opacity: 0.75;
-	}
-	.wants li.alert .k,
-	.wants li.alert .fix,
-	.more .alert {
+	.wants li.short .k,
+	.wants li.short .n {
 		color: #a3322a;
-		opacity: 1;
-	}
-	.wants li.todo .fix {
-		color: #8a6510;
-		opacity: 1;
-	}
-	.more {
-		display: flex;
-		flex-wrap: wrap;
-		gap: 0.15rem 0.7rem;
-		margin: 0.4rem 0 0;
-		font-size: 0.7rem;
-		opacity: 0.85;
-	}
-	.more .none {
-		opacity: 0.45;
 	}
 	.note {
 		display: flex;

@@ -177,9 +177,9 @@ export function createAutoplay(sim) {
 	/** beds before people: in each village that is nearly full and lives well, enlarge its largest house that can still grow, or build a new one */
 	function homes(/** @type {any} */ s) {
 		const houses = ofType('house');
-		// one great house, for the goal, once there is wood and stone to spare
+		// one great house early, once there is wood and stone to spare
 		const great = houses.filter((b) => b.stage === 'live' && b.level < 4).sort((a, b) => b.level - a.level)[0];
-		if (!st.goals.house && great && (s.stock.plank ?? 0) >= 16 && (s.stock.stone ?? 0) >= 10) return void sim.upgrade(great.id);
+		if (!houses.some((b) => b.level >= 4) && great && (s.stock.plank ?? 0) >= 16 && (s.stock.stone ?? 0) >= 10) return void sim.upgrade(great.id);
 		const has = (/** @type {Record<string, number>} */ cost) => Object.entries(cost).every(([w, n]) => (s.stock[w] ?? 0) >= n + 3);
 		for (const row of sim.market().parties.filter((/** @type {any} */ r) => r.owner === PLAYER)) {
 			const v = sim.plan.villageOf[sim.plan.plotOf[row.node]];
