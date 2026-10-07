@@ -93,7 +93,10 @@ export function createAutoplay(sim) {
 		const house = sim.plan.spots[sim.plan.plotOf[n]][0];
 		if (house < 0 || sim.canBuild('house', house)) return null;
 		// the house would make the spot buildable: everything else about it must already be fine
-		return st.obj[n] || !suits(type, n) ? null : 'house';
+		// (a woodcutter or forester fells the tree on its spot, a quarry breaks the rock)
+		const k = st.obj[n]?.k, b = BUILDINGS[type].biome;
+		const clears = (b === 'forest' && k === 'tree') || (b === 'stone' && k === 'rock');
+		return (st.obj[n] && !clears) || !suits(type, n) ? null : 'house';
 	}
 	function place(/** @type {string} */ type, /** @type {string} */ want) {
 		const spots = [];

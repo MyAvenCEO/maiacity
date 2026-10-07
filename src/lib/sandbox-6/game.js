@@ -18,6 +18,7 @@ import { connectFilm, createOrbitRig, createSky, createStage, filmDraws, filmHol
 import { createView } from './view.js';
 import { loadGame, newGame, PLAYER, TICK } from './sim.js';
 import { createAutoplay } from './autoplay.js';
+import { BIOMES, BUILDINGS } from './rules.js';
 
 const SAVE = 'maiacity:sandbox-6:game';
 /** the film's valley, and how long it has been played before a shot starts */
@@ -121,6 +122,9 @@ export function mountGame(container, o = {}) {
 		o.onMode?.(mode, buildType);
 	}
 	function refreshSpots() {
+		// a building that only stands on one kind of hex: every such hex in the valley shows, yours or not yet
+		const biome = mode === 'build' && buildType ? BUILDINGS[buildType]?.biome : undefined;
+		view.tiles(biome ? sim.plan.centre.filter((_, k) => sim.state.biome[k] === biome) : [], biome ? BIOMES[biome].color : undefined);
 		if (mode !== 'build' || !buildType) return view.spots([]);
 		const list = [];
 		for (let n = 0; n < sim.grid.N; n++) if (sim.state.owner[n] === PLAYER && !sim.canBuild(buildType, n)) list.push(n);
