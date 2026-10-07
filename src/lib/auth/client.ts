@@ -275,7 +275,7 @@ export async function deleteTimeline(id: string): Promise<void> {
  * and the posts derived from it; dated; out. The API sends its own list with every GET /api/content — this is the
  * fallback until it has answered.
  */
-export const STATUSES = ['idea', 'hook', 'journey', 'writing', 'movie', 'derivatives', 'scheduled', 'published'] as const;
+export const STATUSES = ['idea', 'journey', 'hook', 'writing', 'movie', 'derivatives', 'scheduled', 'published'] as const;
 export type Status = (typeof STATUSES)[number];
 
 /** What a beat of the journey is, as the arc moves (storyteller, arc.md) — each its own colour on the board. */

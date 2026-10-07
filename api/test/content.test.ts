@@ -43,7 +43,7 @@ test("an idea goes to the backlog; given a date it is scheduled; moved, it keeps
 
 test("a story moves through eight steps, and keeps its pad, its hook, its description and its journey", async () => {
   const { STATUSES, saveContent: save } = await import("../src/content");
-  expect(STATUSES).toEqual(["idea", "hook", "journey", "writing", "movie", "derivatives", "scheduled", "published"]);
+  expect(STATUSES).toEqual(["idea", "journey", "hook", "writing", "movie", "derivatives", "scheduled", "published"]);
   const s = await createContent("admin", { title: "Day 0 · the test story", idea: "- links\n- a 10 s trailer" });
   expect(s.status).toBe("idea");
   expect(s.idea).toContain("10 s trailer");
