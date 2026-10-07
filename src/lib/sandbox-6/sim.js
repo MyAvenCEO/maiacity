@@ -461,19 +461,26 @@ export function createSim(st) {
 		delete st.units[u.id];
 		unitList = null;
 	}
-	/** a unit with nothing left to do walks to the nearest storehouse (a neighbour's to its village) */
+	/** the stop a unit can set off from by road: the flag it stands at, or the flag of the building it is at; else 0 */
+	const setOffAt = (/** @type {number} */ n) => flagAt(n)?.id ?? buildingAt(n)?.flag ?? 0;
+	/** a unit with nothing left to do goes to the nearest storehouse (a neighbour's to its village): along the paths
+	 * when it stands at one, across the land only when no path leads there */
 	function goHome(/** @type {any} */ u) {
-		const here = nodeOf(u);
+		const here = nodeOf(u), from = setOffAt(here);
 		const mine = warehouses().filter((b) => villageAt(b.node) === u.vil);
 		const homes = u.owner === PLAYER ? (mine.length ? mine : warehouses()) : blds().filter((b) => b.type === 'village' && b.owner === u.owner);
 		homes.sort((a, b) => g.dist(here, a.node) - g.dist(here, b.node));
-		for (const h of homes.slice(0, 3)) {
-			const path = findPath(g, here, h.node, walkable);
-			if (path) {
-				Object.assign(u, { path, p: 0, tgt: path.length - 1, job: 'home', home: h.id, inside: false, wait: 0, road: 0 });
-				return;
+		const near = homes.slice(0, 3);
+		for (const byRoad of [true, false])
+			for (const h of near) {
+				const walk = byRoad && from && st.flags[from] && h.flag ? roadWalk(from, h.flag) : null;
+				if (byRoad && !walk) continue;
+				const path = walk ? [...(walk[0] === here ? [] : [here]), ...walk, ...(h.node === walk[walk.length - 1] ? [] : [h.node])] : findPath(g, here, h.node, walkable);
+				if (path) {
+					Object.assign(u, { path, p: 0, tgt: path.length - 1, job: 'home', home: h.id, inside: false, wait: 0, road: 0 });
+					return;
+				}
 			}
-		}
 		removeUnit(u);
 	}
 	function arriveHome(/** @type {any} */ u) {
