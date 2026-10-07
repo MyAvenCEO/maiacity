@@ -96,7 +96,8 @@ export async function mountVillage(container: HTMLElement, onProgress: (label: s
 	const domes = layout()
 	/** Sandbox 5: the cell's forest grown from our plants (./flora.js), planted below with the food forest; the stand-in
 	 *  plants of Sandbox 4's squares traded for its plants too (./legacy.js) */
-	const forest: Forest | null = flora ? createForest({ tree: [18, 45], shrub: [10, 26], cover: [6, 13] }) : null
+	// its trees in full near you, coarser to 40 m, and beyond that each a picture of itself (./impostors.js)
+	const forest: Forest | null = flora ? createForest({ tree: [16, 40], shrub: [10, 26], cover: [6, 13], renderer }) : null
 	const swapR = seeded(707)
 	const swap = (root: THREE.Object3D) => {
 		if (forest && flora) swapLegacy(root, scene, forest, { warm: false, seed: flora.seed, r: swapR })
@@ -408,6 +409,10 @@ export async function mountVillage(container: HTMLElement, onProgress: (label: s
 	const crownGeo = new THREE.IcosahedronGeometry(1, 1)
 	const treeTrunkMat = new THREE.MeshStandardMaterial({ color: '#6d5238', roughness: 0.9 })
 	const treeCrownMat = new THREE.MeshStandardMaterial({ color: '#4f8a38', roughness: 0.8, flatShading: true })
+	/** Sandbox 5: the simple insides' floor, the warm food forest biome's, as the full insides' is (interior.ts) */
+	const warmFloor = flora ? groundMaterial(BIOMES.find((b) => b.id === 'warm-food-forest')!.surface) : null
+	/** Sandbox 5: the warm garden's trees for the simple insides, each ripe (one kind a tree, few to grow) */
+	const RIPE = flora ? flora.inside.trees.map((p) => ({ ...p, stages: [p.stages[p.stages.length - 1]!] })) : []
 	/** each dome's simple version, all of it, so it can step aside for the full one */
 	const simple: THREE.Object3D[][] = []
 	let insideTrees: THREE.Matrix4[] = []
@@ -423,10 +428,13 @@ export async function mountVillage(container: HTMLElement, onProgress: (label: s
 		shell.group.position.set(d.x, 0, d.z)
 		scene.add(shell.group)
 		own.push(shell.group)
-		for (const hole of shell.holes) {
-			const pr = portal(m, hole, d.kind)
-			pr.position.x += d.x
-			pr.position.z += d.z
+		// its doors, all four merged into a few meshes (a door is a dozen small parts: drawn one by one, the cell's
+		// thirteen domes cost hundreds of draw calls for them)
+		{
+			const doors = new THREE.Group()
+			for (const hole of shell.holes) doors.add(portal(m, hole, d.kind))
+			const pr = bake(doors)
+			pr.position.set(d.x, 0, d.z)
 			scene.add(pr)
 			own.push(pr)
 		}
@@ -484,7 +492,7 @@ export async function mountVillage(container: HTMLElement, onProgress: (label: s
 		terrace(H, 0, rWall - 0.4)
 		if (twoFloors) terrace(H2, H, Math.sqrt(R * R - H2 * H2) - 0.4)
 		// through the glass: soil, the plaza or the stage, the galleries and the rooms
-		const soil = new THREE.Mesh(new THREE.CircleGeometry(R - 0.1, 48), m.soil(R / 2))
+		const soil = new THREE.Mesh(new THREE.CircleGeometry(R - 0.1, 48), warmFloor ?? m.soil(R / 2))
 		soil.rotation.x = -Math.PI / 2
 		soil.position.y = 0.02
 		g.add(soil)
@@ -539,13 +547,19 @@ export async function mountVillage(container: HTMLElement, onProgress: (label: s
 				g.add(box(0.3, 0.3, 0.3, glowMat, x, y! + 2.4, z))
 			}
 		}
-		// the forest inside, as simple trees: enough to see through the glass
+		// the forest inside, as simple trees: enough to see through the glass. Sandbox 5 plants its warm garden's own
+		// trees there in the outside forest, drawn as it is (in full near, as pictures far off) and left out of it
+		// while the dome's full inside, with its own forest, is shown (see `place`)
 		const r = seeded(Math.round(d.x * 7 + d.z * 3) + 11)
-		const count = Math.round(R * 1.3)
+		const count = Math.round(R * (flora ? 2 : 1.3))
 		for (let i = 0; i < count; i++) {
 			const a = r() * Math.PI * 2
 			const rr = Rc + 3 + r() * (rIn - Rc - 5)
 			const [x, z] = polar(rr, a)
+			if (forest && flora) {
+				forest.add(pick(RIPE, r, flora.seed), 'tree', d.x + x, 0, d.z + z, r() * 6.28, 0.85 + r() * 0.3)
+				continue
+			}
 			const h = 3 + r() * (d.kind === 'home' ? 3 : 6)
 			insideTrees.push(new THREE.Matrix4().compose(new THREE.Vector3(d.x + x, 0, d.z + z), new THREE.Quaternion(), new THREE.Vector3(1, h, 1)))
 			const c = 1.4 + r() * 1.6
@@ -778,8 +792,9 @@ export async function mountVillage(container: HTMLElement, onProgress: (label: s
 		await pause('Sowing the fields')
 		// for a walk to them from the console: __fields
 		;(window as unknown as { __fields?: typeof sown }).__fields = sown
-		// the canopy: nut trees, the lime, the alder, big standards; wide apart, their crowns meeting overhead
-		await grid(S.canopy, 'Planting the canopy', (x, z) => open(x, z, 3.5) && clearOf(x, z, 4) && tree('canopy', x, z, 3))
+		// the canopy: nut trees (walnut, chestnut, pecan, tree hazel, Korean pine), the lime, the alder, big standards; close, their crowns
+		// meeting and overlapping overhead (a trunk every five metres or so)
+		await grid(S.canopy, 'Planting the canopy', (x, z) => open(x, z, 3) && clearOf(x, z, 2.8) && tree('canopy', x, z, 2.2))
 		// the fruit trees, close under and between them
 		await grid(S.trees, 'Planting the fruit trees', (x, z) => {
 			if (!open(x, z, 2.4) || !clearOf(x, z, 1.4)) return
@@ -824,8 +839,9 @@ export async function mountVillage(container: HTMLElement, onProgress: (label: s
 	FLOOR.push(species(grassTuft(0.55), false))
 	const TUFT = FLOOR.length - 1
 	// Sandbox 5's floor cover: the food forest biome's grasses, moss, flowers, strawberries, ferns, leaves and deadwood,
-	// each in its colonies, laid out in tiles round you as you go ($lib/biomes/stream.js) — too dense for the whole cell
-	const floorCover = flora ? coverStream({ recipe: FLOOR_BIOME, open: (x, z) => floorOpen(x, z), tile: 12, reach: 26, density: 4.5, seed: 505 }) : null
+	// each in its colonies, laid out in tiles round you as you go ($lib/biomes/stream.js) — too dense for the whole cell;
+	// all of it near you, thinning out further off, each plant growing out of the ground as you come (so it has no edge)
+	const floorCover = flora ? coverStream({ recipe: FLOOR_BIOME, open: (x, z) => floorOpen(x, z), tile: 10, reach: 28, near: 7, thin: 0.2, density: 3.4, seed: 505 }) : null
 	if (floorCover) scene.add(floorCover.object)
 	const TILE = 70
 	type Tile = { cx: number; cz: number; main: THREE.Matrix4[][]; under: THREE.Matrix4[][]; floor: THREE.Matrix4[][]; far: THREE.Matrix4[]; farCrowns: THREE.Matrix4[]; farColors: THREE.Color[]; dense: THREE.Matrix4[]; denseCrowns: THREE.Matrix4[]; denseColors: THREE.Color[]; near?: THREE.Group; farMesh?: THREE.Group; ground?: THREE.Group }
@@ -1005,7 +1021,7 @@ export async function mountVillage(container: HTMLElement, onProgress: (label: s
 	}
 	const levelOfDetail = (x: number, z: number, all = false) => {
 		forestTick()
-		floorCover?.update(x, z, all ? 999 : 3)
+		if (all) floorCover?.update(x, z, 999)
 		for (const t of tiles.values()) {
 			const near = Math.hypot(t.cx - x, t.cz - z) < NEAR
 			if (t.near) t.near.visible = near
@@ -1018,7 +1034,7 @@ export async function mountVillage(container: HTMLElement, onProgress: (label: s
 		const spots: THREE.Vector3[] = []
 		for (const ps of paths) for (let i = 0; i < ps.length; i += 9) spots.push(ps[i]!)
 		const posts = new THREE.InstancedMesh(new THREE.CylinderGeometry(0.06, 0.08, 0.55, 8).translate(0, 0.275, 0), m.dark, spots.length)
-		const tops = new THREE.InstancedMesh(new THREE.SphereGeometry(0.09, 10, 8), glowMat, spots.length)
+		const tops = new THREE.InstancedMesh(new THREE.SphereGeometry(0.09, 6, 4), glowMat, spots.length)
 		const m4 = new THREE.Matrix4()
 		spots.forEach((p, i) => {
 			posts.setMatrixAt(i, m4.makeTranslation(p.x + 1.5, 0, p.z))
@@ -1205,7 +1221,14 @@ export async function mountVillage(container: HTMLElement, onProgress: (label: s
 		show(i, !near)
 		if (near) shown.add(i)
 		else shown.delete(i)
+		// Sandbox 5: the simple inside's trees, part of the outside forest, left out where the full inside is shown
+		const key = [...shown].sort().join(',')
+		if (forest && key !== maskedKey) {
+			maskedKey = key
+			forest.mask([...shown].map((k) => ({ x: domes[k]!.x, z: domes[k]!.z, r: domes[k]!.R })))
+		}
 	}
+	let maskedKey = ''
 	const manageDomes = () => {
 		const order = domes.map((_, i) => i).sort((a, b) => gapTo(a) - gapTo(b))
 		for (const i of built.keys()) {
@@ -1295,6 +1318,8 @@ export async function mountVillage(container: HTMLElement, onProgress: (label: s
 		}
 		for (const i of shown) built.get(i)!.update(t)
 		forestTick()
+		// the floor's cover follows the eye every frame (a tile at most built a frame; it fades in as it nears)
+		floorCover?.update(camera.position.x, camera.position.z, filmDraws() ? 999 : 1)
 		// the film camera draws the canvas itself while it holds it (src/lib/film)
 		if (!filmDraws()) renderer.render(scene, camera)
 		// keep it smooth; while a film is shot every frame is rendered at the resolution it asks for

@@ -73,7 +73,7 @@
 		const ground = new THREE.Mesh(new THREE.PlaneGeometry(SIZE * 4, SIZE * 4, 1, 1).rotateX(-Math.PI / 2), groundMaterial(chosen.surface));
 		ground.receiveShadow = true;
 		scene.add(ground);
-		const stream = coverStream({ recipe: chosen, tile: 8, reach: 26, shadows: true });
+		const stream = coverStream({ recipe: chosen, tile: 8, reach: 26, near: 22, shadows: true });
 		scene.add(stream.object);
 
 		show = (r, hs, hc) => {

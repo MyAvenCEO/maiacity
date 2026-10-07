@@ -242,7 +242,11 @@ ${GLSL}`
 				`vec2 bw = vec2(vBiomeXZ.x, -vBiomeXZ.y);
 	vec3 bAcc = vec3(0.0);
 	float bSum = 0.0;
-	#define BLAYER(i, tex) if (bW[i] > 0.0) { float f = bfbm(bw / bPatch[i] + float(i) * 17.3); float s = bW[i] * pow(0.35 + f, 6.0); bAcc += texture2D(tex, bw / bTile[i] + float(i) * 0.37).rgb * s; bSum += s; }
+	// no tile seen twice in a row: each texture is read twice, the second turned and shifted, and the two run into
+	// each other by a slow noise, so its repeat never lines up into a grid seen from afar
+	float bSwap = smoothstep(0.32, 0.68, bvn(bw * 0.23 + 5.1));
+	const mat2 bTurn = mat2(0.8253, 0.5646, -0.5646, 0.8253);
+	#define BLAYER(i, tex) if (bW[i] > 0.0) { float f = bfbm(bw / bPatch[i] + float(i) * 17.3); float s = bW[i] * pow(0.35 + f, 6.0); vec2 bu = bw / bTile[i] + float(i) * 0.37; bAcc += mix(texture2D(tex, bu).rgb, texture2D(tex, bTurn * bu * 0.83 + 0.41).rgb, bSwap) * s; bSum += s; }
 	${layers}
 	vec3 bCol = bAcc / max(bSum, 1e-5);
 	// the canopy's light and shade over it all, broad and slow
