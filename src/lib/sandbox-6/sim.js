@@ -1567,58 +1567,6 @@ export function createSim(st) {
 			)
 		];
 	}
-	/**
-	 * What to work towards next, the most pressing first: what your villages lack and how to make it, beds, sites that
-	 * wait, the next goal, and what the win still needs (villages, the neighbours' shortfalls, the hold).
-	 * @returns {{ tone: 'alert' | 'todo' | 'info' | 'good', text: string, node: number }[]}
-	 */
-	function needs() {
-		/** @type {{ tone: 'alert' | 'todo' | 'info' | 'good', text: string, node: number }[]} */
-		const out = [];
-		const add = (/** @type {'alert' | 'todo' | 'info' | 'good'} */ tone, /** @type {string} */ text, node = -1) => out.push({ tone, text, node });
-		const mine = myCentres();
-		const stock = (/** @type {string} */ w) => mine.reduce((n, c) => n + (c.stock[w] ?? 0), 0);
-		// your villages: the need that pulls each down most, and what makes it
-		for (const { v, c, p } of yourVillages()) {
-			const pop = villagePeople(v), bed = bedsIn(v), cap = capOf(v);
-			if (pop > 0) {
-				const s = p.sat;
-				if (s.food < 0.8) add('alert', `${p.name} is going hungry: build a fishery by the water, or a farm and a bakery`, c.node);
-				else if (s.water < 0.8) add('alert', `${p.name} is thirsty: build a well`, c.node);
-				else if (s.plank < 0.8) add('alert', `${p.name} needs planks for its homes: a woodcutter and a forester, or buy planks`, c.node);
-				else if (s.stone < 0.8) add('alert', `${p.name} needs stone for its homes: a quarry, or buy stone`, c.node);
-				else if (variety(p) < 0.5) add('todo', p.mix.fish < p.mix.bread ? `${p.name} eats only bread: build a fishery, or buy fish` : `${p.name} eats only fish: build a farm and a bakery, or buy bread`, c.node);
-				else if (p.reserve < 0.45) add('todo', `${p.name} has little put by: make more food and water than it eats`, c.node);
-			}
-			if (pop >= bed && bed < cap) add('todo', `${p.name} has no free bed (${bed} of ${cap}): enlarge a house or build one`, c.node);
-		}
-		// building sites nobody can reach, and work that waits for tools
-		const cut = blds().find((b) => b.owner === PLAYER && b.stage === 'site' && b.status === 'Not connected by road');
-		if (cut) add('alert', `A ${T(cut).label.toLowerCase()} site is not joined to a village center by a path`, cut.node);
-		if (blds().some((b) => b.owner === PLAYER && /tools/.test(b.status ?? ''))) add('alert', 'Out of tools: build a toolmaker, or buy tools', -1);
-		if (stock('plank') < 6) add('todo', `Planks run low (${Math.floor(stock('plank'))}): build a woodcutter`, -1);
-		else if (stock('stone') < 4) add('todo', `Stone runs low (${Math.floor(stock('stone'))}): build a quarry by rocks`, -1);
-		// the next goal on the way
-		const next = GOALS.find((x) => x.id !== 'abundance' && !st.goals[x.id]);
-		if (next) {
-			const have = next.ware ? progress(next.ware) : next.id === 'trade' ? st.market.sold + st.market.bought : undefined;
-			add('todo', `Next goal: ${next.label}${next.n ? ` (${Math.min(Math.floor(have ?? 0), next.n)} of ${next.n})` : ''}`, -1);
-		}
-		// the win: five villages for every city, every village full and at 80+, held
-		if (mine.length < CITY_VILLAGES) add('info', `You: ${mine.length} of ${CITY_VILLAGES} villages (found the next beside yours)`, -1);
-		const joined = (/** @type {number} */ k) => !!cityCentre(k) && mine.some((c) => reach(c.id).has(cityCentre(k).id));
-		for (let k = 1; k < st.parties.length; k++) {
-			const p = st.parties[k];
-			const w = TRADED.filter((x) => shortIn(p, x) >= 1 && keepOf(p, x) > 0).sort((a, b) => shortIn(p, b) / keepOf(p, b) - shortIn(p, a) / keepOf(p, a))[0];
-			const n = cityVillages(k).length;
-			if (p.wb < ABUNDANT && w) add('info', `${p.name} lives at ${Math.round(p.wb)} and lacks ${WARES[w].label.toLowerCase()}: ${joined(k) ? 'sell it to them in the Market' : 'join them by a trade route (Connect on your village center), then sell it'}`, cityCentre(k)?.node ?? -1);
-			else if (n < CITY_VILLAGES) add('info', `${p.name}: ${n} of ${CITY_VILLAGES} villages (it founds the next when all are full)`, cityCentre(k)?.node ?? -1);
-		}
-		const m = st.market;
-		if (m.since >= 0) add('good', `Every village is full and at ${ABUNDANT}+: hold it, ${Math.ceil((HOLD - (st.time - m.since)) / 60)} min to go`, -1);
-		const rank = { alert: 0, good: 1, todo: 2, info: 3 };
-		return out.sort((a, b) => rank[a.tone] - rank[b.tone]).slice(0, 6);
-	}
 	/** a ware's price across the valley: what the neighbours would pay, on average */
 	const valleyPrice = (/** @type {string} */ w) => st.parties.slice(1).reduce((/** @type {number} */ s, /** @type {any} */ p) => s + priceIn(p, w), 0) / Math.max(1, st.parties.length - 1);
 
@@ -2136,8 +2084,6 @@ export function createSim(st) {
 				/** seconds the valley has been abundant, or -1 */
 				held: m.since >= 0 ? st.time - m.since : -1,
 				allVillages: m.villages ?? 0,
-				/** what to work towards next, the most pressing first */
-				needs: needs(),
 				/** how many villages each city has, against the five the valley needs */
 				cities: (m.cities ?? []).map((/** @type {any} */ c) => ({ ...c })),
 				need: CITY_VILLAGES,
@@ -2145,6 +2091,51 @@ export function createSim(st) {
 				result: st.result,
 				goals: GOALS.map((x) => ({ ...x, done: !!st.goals[x.id], have: x.ware ? progress(x.ware) : x.id === 'trade' ? m.sold + m.bought : undefined, need: x.n })),
 				msgs: st.msgs.slice(-6)
+			};
+		},
+		/**
+		 * One of your villages as the panel shows it (the one a node lies in, else your first): its people, what its
+		 * storehouse holds, and per ware how well that need is met and what makes it; then what else it lacks.
+		 * @param {number} node
+		 */
+		village(node) {
+			const all = yourVillages();
+			const here = node >= 0 ? villageAt(node) : -1;
+			const it = all.find((x) => x.v === here) ?? all[0];
+			if (!it) return null;
+			const { v, c, p } = it;
+			const pop = villagePeople(v), bed = bedsIn(v), cap = capOf(v), lived = pop > 0;
+			const s = p.sat, mix = variety(p) < 0.5 && lived;
+			const noTools = blds().some((b) => b.owner === PLAYER && villageAt(b.node) === v && /tools/.test(b.status ?? ''));
+			/** @type {Record<string, { tone: string, hint: string }>} */
+			const need = {};
+			const set = (/** @type {string} */ w, /** @type {string} */ tone, /** @type {string} */ hint) => (need[w] = { tone, hint });
+			if (lived && s.food < 0.8) (set('fish', 'alert', 'Hungry: build a fishery'), set('bread', 'alert', 'Hungry: or a farm + bakery'));
+			else if (mix && p.mix.fish < p.mix.bread) set('fish', 'todo', 'Eats only bread: fishery');
+			else if (mix) set('bread', 'todo', 'Eats only fish: farm + bakery');
+			if (lived && s.water < 0.8) set('water', 'alert', 'Thirsty: build a well');
+			if (lived && s.plank < 0.8) set('plank', 'alert', 'Homes need planks: woodcutter');
+			else if ((c.stock.plank ?? 0) < 6) set('plank', 'todo', 'Low: woodcutter + forester');
+			if (lived && s.stone < 0.8) set('stone', 'alert', 'Homes need stone: quarry');
+			else if ((c.stock.stone ?? 0) < 4) set('stone', 'todo', 'Low: quarry by rocks');
+			if (noTools) set('tools', 'alert', 'Out of tools: toolmaker');
+			/** @type {{ tone: string, text: string, node: number }[]} */
+			const notes = [];
+			if (pop >= bed && bed < cap) notes.push({ tone: 'todo', text: `No free bed: enlarge a house or build one`, node: c.node });
+			if (lived && !mix && s.food >= 0.8 && p.reserve < 0.45) notes.push({ tone: 'todo', text: 'Little put by: make more than it eats', node: c.node });
+			const cut = blds().find((b) => b.owner === PLAYER && b.stage === 'site' && villageAt(b.node) === v && b.status === 'Not connected by road');
+			if (cut) notes.push({ tone: 'alert', text: `A ${T(cut).label.toLowerCase()} site has no path`, node: cut.node });
+			return {
+				name: p.name,
+				node: c.node,
+				pop,
+				beds: bed,
+				cap,
+				wb: p.wb,
+				villages: all.map((x) => ({ name: x.p.name, node: x.c.node })),
+				stock: { ...c.stock },
+				need,
+				notes
 			};
 		},
 		/** a building as its card shows it */

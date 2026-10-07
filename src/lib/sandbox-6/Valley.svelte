@@ -48,6 +48,10 @@
 	let links = $state([]);
 	/** what a Connect button said when the route could not be dug */
 	let linkWhy = $state('');
+	/** the village the stock panel shows: the one last picked, or your first */
+	let vilNode = $state(-1);
+	/** @type {ReturnType<import('./sim.js').Sim['village']>} */
+	let vil = $state(null);
 	let seenMsg = 0;
 	/** @type {{ text: string, tone: string, node: number, key: number }[]} */
 	let toasts = $state([]);
@@ -68,6 +72,8 @@
 		}
 		speed = game.speed;
 		const s = selected;
+		if (s && /** @type {any} */ (s).node >= 0) vilNode = /** @type {any} */ (s).node;
+		vil = sim.village(vilNode);
 		card = s?.k === 'building' ? sim.inspect(s.id) : null;
 		if (s?.k === 'building' && !card) select(null);
 		links = card?.type === 'centre' && card.owner === PLAYER && card.stage === 'live' ? sim.links(card.id) : [];
@@ -216,26 +222,41 @@
 	<!-- what the storehouses hold, and the goals -->
 	{#if summary}
 		<aside class="side">
-			<section class="panel next" aria-label="What to do next">
-				<div class="head"><span>What to do next</span></div>
-				<ul>
-					{#each summary.needs as n, k (k)}
-						<li class={n.tone}>
-							<button onclick={() => n.node >= 0 && game?.focus(n.node)} disabled={n.node < 0}>
-								<i></i><span>{n.text}</span>
-							</button>
-						</li>
-					{:else}
-						<li class="good"><button disabled><i></i><span>All is well: keep every village full and fed</span></button></li>
-					{/each}
-				</ul>
-			</section>
+			{#if vil}
+				<section class="panel stock" aria-label="{vil.name}: stock and needs">
+					<button class="head" onclick={() => (stockOpen = !stockOpen)} aria-expanded={stockOpen}>
+						<span>{vil.name}</span>
+						<span class="people">{vil.pop}/{vil.beds} beds · wb {Math.round(vil.wb)} · {summary.stock.coin ?? 0} coins · {clock(summary.time)}</span>
+					</button>
+					{#if vil.villages.length > 1}
+						<div class="vtabs">
+							{#each vil.villages as x (x.node)}
+								<button class:on={x.node === vil.node} onclick={() => ((vilNode = x.node), refresh())} title={x.name}>{x.name.replace('Village ', 'V')}</button>
+							{/each}
+						</div>
+					{/if}
+					{#if stockOpen}
+						<ul class="wares wants">
+							{#each WARE_ORDER as w (w)}
+								{@const n = vil.need[w]}
+								<li class={n?.tone ?? ''} class:none={!n && !(vil.stock[w] ?? 0)} class:wide={!!n} title={n ? `${label(w)}: ${n.hint}` : label(w)}>
+									<i style:background={WARES[w].color}></i><span>{label(w)}</span><b>{Math.floor(vil.stock[w] ?? 0)}</b>
+									{#if n}<small>{n.hint}</small>{/if}
+								</li>
+							{/each}
+						</ul>
+						{#each vil.notes as x, k (k)}
+							<button class="note {x.tone}" onclick={() => game?.focus(x.node)}><i></i>{x.text}</button>
+						{/each}
+						<p class="people small">{summary.people} people in {summary.villages} {summary.villages === 1 ? 'village' : 'villages'} · {summary.carriers} on buses · {summary.workers} at work</p>
+					{/if}
+				</section>
+			{/if}
 			<section class="panel abundance" aria-label="The valley's abundance">
 				<div class="head">
-					<span>Abundance</span>
+					<span>Abundance <span class="people">{summary.thriving}/{summary.allVillages} at {ABUNDANT}+{summary.held >= 0 ? ` · held ${clock(summary.held)}/${clock(HOLD)}` : ''}</span></span>
 					<span class="big {tone(summary.abundance)}">{Math.round(summary.abundance)}</span>
 				</div>
-				<p class="people small">{summary.thriving} of {summary.allVillages} villages full and at {ABUNDANT}+{summary.held >= 0 ? ` · held ${clock(summary.held)} of ${clock(HOLD)}` : ''}</p>
 				{#if founding}
 					<p class="people small">Villages: {founding}</p>
 				{/if}
@@ -243,27 +264,14 @@
 					{#each market?.parties ?? [] as p (p.name)}
 						<li>
 							<button onclick={() => p.node >= 0 && game?.focus(p.node)} title="{p.name} ({p.city === 'You' ? 'your city' : 'a neighbour city'}): abundance {Math.round(p.score)} = wellbeing {Math.round(p.wb)} × {p.pop} of {p.cap} people when full ({p.beds} beds now){p.full ? ', full' : ''}">
-								<span>{p.name} <em class:short={!p.full}>{p.pop}/{p.cap}</em><em> wellbeing {Math.round(p.wb)}</em></span>
+								<span class="n">{p.name}</span>
 								<span class="bar"><span class={tone(p.score)} style:width="{p.score}%"></span></span>
+								<em class:short={!p.full}>{p.pop}/{p.cap}</em>
 								<b>{Math.round(p.score)}</b>
 							</button>
 						</li>
 					{/each}
 				</ul>
-			</section>
-			<section class="panel stock" aria-label="Your stock">
-				<button class="head" onclick={() => (stockOpen = !stockOpen)} aria-expanded={stockOpen}>
-					<span>Stock</span>
-					<span class="people">{summary.people} of {summary.beds} beds · {summary.villages} {summary.villages === 1 ? 'village' : 'villages'} · {summary.stock.coin ?? 0} coins · {clock(summary.time)}</span>
-				</button>
-				{#if stockOpen}
-					<ul class="wares">
-						{#each WARE_ORDER as w (w)}
-							<li title={label(w)} class:none={!(summary.stock[w] ?? 0)}><i style:background={WARES[w].color}></i><span>{label(w)}</span><b>{summary.stock[w] ?? 0}</b></li>
-						{/each}
-					</ul>
-					<p class="people small">{summary.carriers} carriers · {summary.workers} at work</p>
-				{/if}
 			</section>
 			<section class="panel goals" aria-label="Goals">
 				<button class="head" onclick={() => (goalsOpen = !goalsOpen)} aria-expanded={goalsOpen}>
@@ -821,62 +829,89 @@
 		height: 0.6rem;
 		border-radius: 2px;
 	}
-	.next ul {
-		margin: 0.35rem 0 0;
-		padding: 0;
-		list-style: none;
-		display: grid;
-		gap: 0.3rem;
+	.stock .head > span:first-child {
+		white-space: nowrap;
 	}
-	.next button {
-		display: grid;
-		grid-template-columns: 0.55rem 1fr;
-		align-items: start;
-		gap: 0.45rem;
+	.stock .head .people {
+		text-align: right;
+	}
+	.vtabs {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.2rem;
+		margin: 0.35rem 0 0;
+	}
+	.vtabs button {
+		padding: 0.05rem 0.4rem;
+		border: 1px solid rgba(0, 0, 0, 0.12);
+		border-radius: 999px;
+		background: none;
+		font-size: 0.68rem;
+		color: inherit;
+		cursor: pointer;
+	}
+	.vtabs button.on {
+		background: #2c3a2e;
+		border-color: #2c3a2e;
+		color: #fff;
+	}
+	.wares.wants li {
+		flex-wrap: wrap;
+	}
+	.wares.wants li.wide {
+		grid-column: 1 / -1;
+	}
+	.wares.wants small {
+		flex-basis: 100%;
+		padding-left: 0.95rem;
+		font-size: 0.66rem;
+		line-height: 1.2;
+	}
+	.wares.wants li.alert small,
+	.wares.wants li.alert b {
+		color: #a3322a;
+		font-weight: 600;
+	}
+	.wares.wants li.todo small {
+		color: #8a6510;
+	}
+	.note {
+		display: flex;
+		align-items: center;
+		gap: 0.35rem;
 		width: 100%;
+		margin: 0.3rem 0 0;
 		padding: 0;
 		border: 0;
 		background: none;
-		font-size: 0.76rem;
-		line-height: 1.3;
+		font-size: 0.7rem;
 		text-align: left;
 		color: inherit;
 		cursor: pointer;
 	}
-	.next button:disabled {
-		cursor: default;
-	}
-	.next i {
-		width: 0.55rem;
-		height: 0.55rem;
-		margin-top: 0.3rem;
+	.note i {
+		flex: none;
+		width: 0.45rem;
+		height: 0.45rem;
 		border-radius: 50%;
-		background: #8a8f86;
-	}
-	.next .alert i {
-		background: #c2412f;
-	}
-	.next .todo i {
 		background: #d19a1e;
 	}
-	.next .good i {
-		background: #3d8f4a;
-	}
-	.next .alert span {
-		font-weight: 600;
+	.note.alert i {
+		background: #c2412f;
 	}
 	.lives {
-		margin: 0.35rem 0 0;
+		margin: 0.3rem 0 0;
 		padding: 0;
 		list-style: none;
 		display: grid;
-		gap: 0.2rem;
+		gap: 0.05rem;
 	}
 	.lives button {
 		display: grid;
-		grid-template-columns: 4.6rem 1fr 1.6rem;
+		grid-template-columns: 4.8rem 1fr 2.6rem 1.3rem;
 		align-items: center;
-		gap: 0.4rem;
+		gap: 0.35rem;
+		line-height: 1.25;
 		width: 100%;
 		padding: 0;
 		border: 0;
@@ -885,6 +920,14 @@
 		text-align: left;
 	}
 	.lives b {
+		text-align: right;
+	}
+	.lives .n {
+		white-space: nowrap;
+		overflow: hidden;
+		text-overflow: ellipsis;
+	}
+	.lives em {
 		text-align: right;
 	}
 	.lives em {
