@@ -2,10 +2,12 @@
  * SANDBOX 6 · TRADE — the rules of trade, of the world market and of what a home needs, as plain data and pure
  * functions; the simulation (./sim.js) calls them, the page shows them.
  *
- * The world market. Everything the valley needs can be bought from the world beyond it, at real prices in euros: a
- * village center pays from its treasury and the load is in its storehouse at once. A gold is 1,000 €, so a HEART is a
- * euro. Food and water a village buys there by itself, and sells what its forests grow beyond two weeks put by
- * (./food.js); planks and steel you buy and sell (WORLD), or your orders do.
+ * The world market. Everything the valley needs can be bought from the world beyond it, at real prices read into gold
+ * at 1,000 € a gold (the euros never show: they are only how real prices become gold; a HEART is a thousandth of a
+ * gold): a village center pays from its treasury and the load is in its storehouse at once. What a treasury lacks it
+ * borrows, a loan paid back over fifteen years (LOAN). Food and water a village buys there by itself, and sells what
+ * its forests grow beyond two weeks put by (./food.js); planks, steel, fired clay and glass you buy and sell (WORLD),
+ * or your orders do.
  *
  * Trade routes. Village centers are joined by trade routes under the ground: carts run along them at twice a walker's
  * pace. Your own routes share wares between your villages; a route to another city's village center lets you trade
@@ -38,22 +40,21 @@ export const CART = 8;
 /** years of upkeep a settlement likes to have put by: a quarter */
 const PUT_BY = 0.25;
 /** a ware's usual price, in coins */
-export const BASE = { plank: 4, steel: 4, clay: 4 };
+export const BASE = { plank: 4, steel: 4, clay: 4, glass: 4 };
 /** euros in a gold: a HEART is a euro */
 export const EUR_PER_GOLD = 1000;
 /**
- * What the world market asks for a ware, in euros (HEARTs), and what one of it is: real prices, a load being 5 t.
- * Building timber is the average of sawn softwood across Europe, about 800 € a tonne; structural steel, about 1,000 €;
- * fired clay voussoirs about 200 € (250 to 450 € a m³ of hollow blocks, by our tunnel research).
+ * What the world market asks for a ware, in euros (HEARTs) a load of 5 t, and what one tonne of it is: real prices.
+ * Building timber is the average of sawn softwood across Europe, about 800 € a tonne (0.8 gold); structural steel,
+ * about 1,000 € (1 gold); fired clay voussoirs about 200 € (250 to 450 € a m³ of hollow blocks, by our tunnel research);
+ * laminated double glazing with see-through solar cells, about 40 kg and 100 € a m², so 2,500 € a tonne (2.5 gold).
  */
 export const WORLD = /** @type {Record<string, { eur: number, unit: string }>} */ ({
-	plank: { eur: 4000, unit: 'a load: 5 t of sawn building timber at 800 € a t' },
-	steel: { eur: 5000, unit: 'a load: 5 t of steel joints at 1,000 € a t' },
-	clay: { eur: 1000, unit: 'a load: 5 t of fired clay voussoirs at 200 € a t' }
+	plank: { eur: 4000, unit: 'sawn building timber, glulam' },
+	steel: { eur: 5000, unit: 'steel joints: cast hubs, screws, brackets' },
+	clay: { eur: 1000, unit: 'fired clay voussoirs' },
+	glass: { eur: 12500, unit: 'laminated double glazing with see-through solar cells' }
 });
-/** glass: nobody in the valley makes it, so a dome's comes from the world market, paid in gold as the dome is begun:
- * laminated double glazing, about 40 kg and 100 € a m², so 2,500 € a tonne */
-export const GLASS_EUR_T = 2500;
 /** electricity on the world grid, € a kWh: it buys what your villages make beyond what they use, and sells what they
  * lack, 80 € a MWh */
 export const GRID_EUR_KWH = 0.08;
@@ -61,6 +62,16 @@ export const GRID_EUR_KWH = 0.08;
  * plant): paid in gold as a new village is founded and for each stage drilled after; your first village's comes with
  * the valley */
 export const WELL_EUR = 25e6;
+/**
+ * What a treasury lacks, it borrows: an annuity loan, paid back in equal monthly payments over fifteen years at 1% a
+ * month (Samuel, 2026-10-07), about 1.2% of what was borrowed each month. A treasury never holds less than nothing:
+ * what it would, it borrows, and each borrowing adds its own payment.
+ */
+export const LOAN = { rate: 0.01, months: 180 };
+/** the share of a loan paid each month, interest and repayment together */
+export const LOAN_PAY = LOAN.rate / (1 - Math.pow(1 + LOAN.rate, -LOAN.months));
+/** months left on a loan of so much at so much a month @param {number} left @param {number} pay */
+export const loanMonths = (left, pay) => (pay > left * LOAN.rate ? -Math.log(1 - (LOAN.rate * left) / pay) / Math.log(1 + LOAN.rate) : Infinity);
 /** the wares that are traded (not coins: they are what is paid) */
 export const TRADED = Object.keys(BASE);
 /**

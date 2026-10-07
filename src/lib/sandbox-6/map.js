@@ -166,8 +166,8 @@ export function growValley(seed) {
 	}
 
 	// your first village: open grass, level round each hex's middle and gently on out; two woods and a field of rocks
-	// grow over three of its hexes (and on past them), iron lies under the rocks, and the other three are meadows, so a
-	// woodcutter, an iron mine and a clay pit can start at home
+	// grow over three of its hexes (and on past them), iron lies under the rocks, a sandy heath covers one more, and the
+	// other two are meadows, so a woodcutter, an iron mine, a sand pit and a clay pit can start at home
 	for (let i = 0; i < N; i++) {
 		if (!atHome(i)) continue;
 		const k = plan.plotOf[i], c = plan.centre[k], d = g.dist(i, c);
@@ -201,15 +201,25 @@ export function growValley(seed) {
 	// the iron: round the first factory spot of the rocky hex, rich enough for a long while
 	const lode = plan.spots[outer[4]][1];
 	if (lode >= 0) for (const i of g.within(lode, 3)) if (terrain[i] === GRASS) (ore[i] = IRON), (amount[i] = 6 + Math.floor(rand() * 4));
-	for (const k of [outer[0], outer[3], outer[5]]) for (const i of hexNodes[k]) if (!plan.clear[i] && !obj[i] && rand() < 0.03) obj[i] = { k: 'tree', g: 0.75 + rand() * 0.25 };
+	for (const k of [outer[0], outer[3]]) for (const i of hexNodes[k]) if (!plan.clear[i] && !obj[i] && rand() < 0.03) obj[i] = { k: 'tree', g: 0.75 + rand() * 0.25 };
+	// the sandy heath: glass sand round the outer side of the last hex, ragged at its edge (its spots and square stay grass)
+	{
+		const k = outer[5], c = plan.centre[k], R = 0.6 * HS;
+		const x = g.x(c) + (g.x(c) - g.x(middle)) * 0.3, z = g.z(c) + (g.z(c) - g.z(middle)) * 0.3;
+		for (const i of hexNodes[k]) {
+			if (terrain[i] !== GRASS || plan.clear[i]) continue;
+			if (R + (noise(px(i), py(i), 0.45) - 0.5) * 0.7 * R - Math.hypot(g.x(i) - x, g.z(i) - z) > 0) (terrain[i] = SAND), (obj[i] = null);
+		}
+	}
 	const biome = biomes(g, plan, terrain, obj, ore);
 	return { W, H, terrain, height, ore, amount, fish, obj, hq: plan.spots[home.centre][0], villages: [], biome };
 }
 
 /**
  * What each hex is good for, from the land that grew on it: a lake where its middle is under water; iron where a
- * factory spot has iron ore round it; stone where rocks lie; bare mountain where it is mostly rock;
- * water on a shore (a lake's or the sea's); forest where trees stand thick; else meadow.
+ * factory spot has iron ore round it; stone where rocks lie; bare mountain where it is mostly rock; sand where a heath
+ * or a beach of it lies; water on a shore (a lake's or the sea's) without one; forest where trees stand thick; else
+ * meadow.
  * @param {import('./hex.js').Grid} g
  * @param {import('./plots.js').Plan} plan
  * @param {number[]} terrain
@@ -229,6 +239,7 @@ export function biomes(g, plan, terrain, obj, ore) {
 		if (factories.some((j) => j >= 0 && terrain[j] !== WATER && g.within(j, 3).some((n) => ore[n] === IRON))) return 'iron';
 		if (count((j) => obj[j]?.k === 'rock') >= 8) return 'stone';
 		if (count((j) => terrain[j] === MOUNTAIN) * 2 >= hex.length) return 'mountain';
+		if (count((j) => terrain[j] === SAND) >= 12) return 'sand';
 		if (count((j) => terrain[j] === WATER) >= 6) return 'water';
 		if (count((j) => obj[j]?.k === 'tree') >= 25) return 'forest';
 		return 'meadow';
