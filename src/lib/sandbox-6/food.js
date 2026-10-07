@@ -18,9 +18,13 @@
  * into its store; what a store holds beyond a quarter year spoils.
  *
  * Water. A person uses 150 L a day: 3 L to drink, 97 L at home (showering, cooking, washing) and 50 L for the crops
- * of the hex. Wells give it, piped straight to the village's tanks: a well is a borehole giving 2 L a second, enough
- * for about 1,150 people. Tanks hold four weeks; what its wells do not give of what its people use, a village buys
- * from the world market as they use it (2 € a m³).
+ * of the hex. The crops' 50 L are the home's greywater, cleaned in the hex's reed beds and used again, so a village
+ * needs 100 L of fresh water a person a day. Rain gives it: every dome's roof catches what falls on it into its
+ * village's tanks. A great dome of 150 m roofs about 71 m² for each of its 248 beds, and 800 mm a year (as round
+ * Munich), nine tenths of it caught, give a bed about 140 L a day: half again what it needs over a year, more in the
+ * wet summer and less in the dry winter, when its tanks, four weeks of it, carry it through. Where they run dry, a
+ * well gives the rest, piped straight to the tanks (a borehole giving 2 L a second, fresh water for about 1,700
+ * people), and what neither gives, a village buys from the world market as its people use it (2 € a m³).
  *
  * Plain numbers and pure functions: the simulation (./sim.js) calls them, the page shows them.
  */
@@ -46,8 +50,20 @@ export const FOOD_KG = Object.values(DIET).reduce((a, b) => a + b, 0);
 export const WATER_USE = { drinking: 3, home: 97, crops: 50 };
 /** all of it together: 150 L a person a day */
 export const WATER_L = Object.values(WATER_USE).reduce((a, b) => a + b, 0);
+/** what a person needs a day of fresh water, litres: all of it but the crops', which take the home's greywater again */
+export const FRESH_L = WATER_L - WATER_USE.crops;
 /** what a well gives a day: a borehole at 2 L a second */
 export const WELL_L = 2 * 86400;
+/** rain a year, mm (round Munich), and the share of it a dome's roof catches into its tanks */
+export const RAIN_MM = 800, CATCH = 0.9;
+/** the roof each bed has, m²: a great dome of 150 m over its 248 beds */
+export const ROOF_BED = (Math.PI * 75 ** 2) / 248;
+/** what a bed's roof catches a day, litres, over a year: about 140 L */
+export const RAIN_L = (ROOF_BED * RAIN_MM * CATCH) / YEAR;
+/** the months' names: the valley's year starts in January */
+export const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+/** how much of a year's average rain falls in each month, January first (Munich: dry winters, wet summers) */
+export const RAIN_MONTH = [0.6, 0.575, 0.75, 0.85, 1.35, 1.5625, 1.5625, 1.475, 1.025, 0.8, 0.7625, 0.6875];
 
 /** what a kg of food costs a village, in euros (HEARTs): from another village of yours, or from the world market */
 export const PRICE = { village: 5, world: 10 };
@@ -56,8 +72,10 @@ export const WATER_PRICE = 0.002;
 /** weeks of food a village keeps in store before it sells to your others, and the most a store holds before the rest
  * spoils */
 export const KEEP = 2, MOST = 13;
-/** weeks of water a village's tanks hold */
+/** weeks of fresh water a village's tanks hold for each bed */
 export const TANK = 4;
+/** the cistern a new village starts with, full, litres: four weeks for eight people, and the least its tanks hold */
+export const CISTERN = FRESH_L * 7 * TANK * 8;
 
 /**
  * The share of what its people eat that a hex's food forest grows in its nth year (counted from 0 for the first):

@@ -14,7 +14,7 @@ export const SOURCE = /** @type {Record<string, string>} */ ({
 	well: 'anywhere'
 });
 /** the wares people live on: their homes' planks and stone (their food grows in the hexes' food forests and their water
- * comes from the wells, ./food.js) */
+ * falls on their roofs, wells give the rest, ./food.js) */
 export const LIVED_ON = new Set(Object.keys(NEEDS));
 
 /** buildings that make or gather something: the chains */

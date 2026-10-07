@@ -1,7 +1,7 @@
 /**
  * SANDBOX 6 · AUTOPLAY — a player that builds the whole economy by itself, step by step, the way a person would:
- * wood and stone first, then wells, then houses until its villages are full, trading planks and stone with the world
- * market. The film camera grows its valley with it (a settlement that is already busy), and it
+ * wood and stone first, then houses until its villages are full (their roofs catch their water; a well where the
+ * tanks run dry), trading planks and stone with the world market. The film camera grows its valley with it (a settlement that is already busy), and it
  * plays a whole game headless to prove every chain runs end to end.
  */
 import { BUILDINGS, GRASS, HOUSE_MOST, HOUSE_TOP, IRON, MOUNTAIN, WATER, WOOD_UP } from './rules.js';
@@ -15,10 +15,8 @@ const PLAN = [
 	['woodcutter', 'trees'],
 	['quarry', 'rocks'],
 	['woodcutter', 'trees'],
-	['well', 'home'],
 	['quarry', 'rocks'],
-	['woodcutter', 'trees'],
-	['well', 'home']
+	['woodcutter', 'trees']
 ];
 
 /** what it trades with the world market (and a neighbour a trade route runs to): it buys planks and stone when short,
@@ -254,13 +252,17 @@ export function createAutoplay(sim) {
 					}
 				} else st.autoTries = (st.autoTries ?? 0) + 1;
 			}
-			// once the plan is built, a well while a village buys its water, more wood and stone while they do
+			// once the plan is built, a well while a village's tanks run dry, more wood and stone while they do
 			if (st.auto >= plan.length && plan.length < PLAN.length + 60 && st.time >= (st.autoMore ?? 0)) {
 				st.autoMore = st.time + 180;
 				const rows = sim.market().parties.filter((/** @type {any} */ p) => p.owner === PLAYER);
 				const low = (/** @type {string} */ w) => rows.some((/** @type {any} */ p) => (p.owe?.[w] ?? 0) > 2) && (s.stock[w] ?? 0) < 20;
-				if (rows.some((/** @type {any} */ p) => p.buysWater)) plan.push(['well', 'home']);
-				else if (low('plank')) plan.push(['woodcutter', 'trees']);
+				// one well at a time, not while another is still being built, and only for a village of some size: a few
+				// people buy what water they lack for pennies
+				const welling = Object.values(st.buildings).some((/** @type {any} */ b) => b && b.owner === PLAYER && b.type === 'well' && b.stage === 'site');
+				if (rows.some((/** @type {any} */ p) => p.buysWater && p.pop >= 20)) {
+					if (!welling) plan.push(['well', 'home']);
+				} else if (low('plank')) plan.push(['woodcutter', 'trees']);
 				else if (low('stone')) plan.push(['quarry', 'rocks']);
 			}
 			// its orders, and with a trade route to a neighbour every request it can fill

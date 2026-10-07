@@ -19,7 +19,7 @@
 import { BIOMES, BUILDINGS, GRASS, HOUSE_BEDS, HOUSE_MOST, HOUSE_TOP, HOUSE_UP, IRON, MOUNTAIN, START, WARES, WATER, WOOD, WOOD_UP, holdsLand } from './rules.js';
 import { CART, HEARTS, NEEDS, NEIGHBOURS, TRADED, WORLD, heartsFor, keepOf, live, make, newMarket, orderRule, party, priceIn, request, shortIn, spareIn } from './market.js';
 import { SE, STEP, findPath, makeGrid } from './hex.js';
-import { FOOD_KG, KEEP, MOST, PACE, PRICE, TANK, WATER_L, WATER_PRICE, WEEK, WELL_L, YEAR, DAY, calendar, forestShare } from './food.js';
+import { CISTERN, FOOD_KG, FRESH_L, KEEP, MOST, PACE, PRICE, RAIN_L, RAIN_MONTH, TANK, WATER_PRICE, WATER_USE, WEEK, WELL_L, YEAR, DAY, calendar, forestShare } from './food.js';
 import { makePlan, spoke } from './plots.js';
 import { growValley } from './map.js';
 
@@ -1531,8 +1531,8 @@ export function createSim(st) {
 	function yourVillages() {
 		return myCentres().map((c) => {
 			const v = villageAt(c.node);
-			// a new village's cistern starts with four weeks of water for eight people
-			const p = (st.vill[v] ??= { ...party(`Village ${Object.keys(st.vill).length + 1}`, 0), v, litres: WATER_L * 7 * 4 * 8 });
+			// a new village's cistern starts full: the least a village's tanks hold
+			const p = (st.vill[v] ??= { ...party(`Village ${Object.keys(st.vill).length + 1}`, 0), v, litres: CISTERN });
 			return { v, c, p };
 		});
 	}
@@ -1562,12 +1562,21 @@ export function createSim(st) {
 	}
 	/** litres a day a village's wells give: every well that stands, not paused */
 	const wellsIn = (/** @type {number} */ v) => mineIn(v).filter((b) => b.type === 'well' && b.stage === 'live' && !b.paused).length * WELL_L;
+	/** litres a day its houses' roofs catch now: each bed's share of its dome's roof, as much as falls this month */
+	const rainIn = (/** @type {number} */ v) => bedsIn(v) * RAIN_L * RAIN_MONTH[calendar(st.cal).month - 1];
+	/** litres its tanks hold: four weeks of fresh water for each bed (or each person, if more), at least the cistern a
+	 * village starts with */
+	const tankOf = (/** @type {number} */ v, /** @type {number} */ pop) => Math.max(CISTERN, Math.max(pop, bedsIn(v)) * FRESH_L * 7 * TANK);
+	/** whether a village's tanks run dry within so many days: its roofs and wells give less than it uses, and they hold
+	 * less than that many days of it */
+	const runsDry = (/** @type {number} */ v, /** @type {any} */ p, /** @type {number} */ days) => p.pop > 0 && (p.litres ?? 0) < p.pop * FRESH_L * days && rainIn(v) + wellsIn(v) < p.pop * FRESH_L;
 	/**
 	 * A while of eating and drinking, in kg and litres (./food.js): each village's forests grow, its people eat from its
-	 * store, its wells fill its tanks and its people use them. What its store lacks of what they eat it buys as they
-	 * eat it: first from your villages joined to it that have more than two weeks put by (5 € a kg, to them), then from
-	 * the world market (10 € a kg); tanks share their water along the trade routes, and what they lack of what is used
-	 * the world market sells (2 € a m³). It buys only with the gold its treasury holds: without, its people go short.
+	 * store, its roofs catch rain and its wells pump into its tanks, and its people use their fresh water (the crops take
+	 * its greywater again). What its store lacks of what they eat it buys as they eat it: first from your villages
+	 * joined to it that have more than two weeks put by (5 € a kg, to them), then from the world market (10 € a kg);
+	 * tanks share their water along the trade routes, and what they lack of what is used the world market sells
+	 * (2 € a m³); what the tanks cannot hold runs off. It buys only with the gold its treasury holds: without, its people go short.
 	 * What a village did, a week, is kept in its `flow`.
 	 * @param {{ v: number, c: any, p: any }[]} vs @param {number} dd the days of the valley's calendar gone by
 	 */
@@ -1586,11 +1595,12 @@ export function createSim(st) {
 		for (const { v, p } of vs) {
 			p.kg ??= 0;
 			p.litres ??= 0;
-			const need = (p.pop * FOOD_KG * days) / 7, grown = need * forestOf(v), drawn = wellsIn(v) * days;
-			want.set(p, { need, thirst: p.pop * WATER_L * days });
+			const need = (p.pop * FOOD_KG * days) / 7, grown = need * forestOf(v), rain = rainIn(v) * days, drawn = wellsIn(v) * days;
+			want.set(p, { need, thirst: p.pop * FRESH_L * days });
 			p.kg += grown;
-			p.litres += drawn;
+			p.litres += rain + drawn;
 			add(p, 'grown', grown);
+			add(p, 'rain', rain);
 			add(p, 'drawn', drawn);
 		}
 		// what its store lacks of what its people eat now: from your joined villages with more than two weeks put by,
@@ -1632,17 +1642,17 @@ export function createSim(st) {
 		}
 		// water runs along the trade routes from tanks with more than two weeks to tanks with less
 		for (const x of vs) {
-			const two = x.p.pop * WATER_L * 7 * KEEP;
+			const two = x.p.pop * FRESH_L * 7 * KEEP;
 			for (const y of vs) {
 				if (x.p.litres >= two) break;
 				if (y === x || !reach(x.c.id).has(y.c.id)) continue;
-				const n = Math.min(two - x.p.litres, y.p.litres - y.p.pop * WATER_L * 7 * KEEP);
+				const n = Math.min(two - x.p.litres, y.p.litres - y.p.pop * FRESH_L * 7 * KEEP);
 				if (n > 0) (y.p.litres -= n), (x.p.litres += n);
 			}
 		}
 		for (const x of vs) {
 			const { need, thirst } = want.get(x.p);
-			// what its wells and the routes leave short of what its people use, the world market sells
+			// what its rain, its wells and the routes leave short of what its people use, the world market sells
 			const short = Math.min(thirst - x.p.litres, can(x.c) / WATER_PRICE);
 			if (short > 0) {
 				x.p.litres += short;
@@ -1673,7 +1683,8 @@ export function createSim(st) {
 			const most = Math.max(50, p.pop * FOOD_KG * MOST);
 			if (p.kg > most) add(p, 'spoiled', p.kg - most), (p.kg = most);
 		}
-		for (const { p } of vs) p.litres = Math.min(p.litres, Math.max(20000, p.pop * WATER_L * 7 * TANK));
+		// what its tanks cannot hold runs off
+		for (const { v, p } of vs) p.litres = Math.min(p.litres, tankOf(v, p.pop));
 		// a week of each, lately: an average over the last month or so, weighed by how much of it the valley has seen yet
 		for (const { p } of vs) {
 			p.flow ??= {};
@@ -1682,7 +1693,7 @@ export function createSim(st) {
 			for (const [k, n] of Object.entries(p.pend ?? {})) d[k] = (d[k] ?? 0) + n;
 			p.pend = {};
 			const was = (p.flowW ?? 0) * (1 - fade), w = was + fade;
-			for (const k of ['grown', 'eaten', 'fromVillages', 'fromWorld', 'sold', 'exported', 'spoiled', 'spent', 'earned', 'drawn', 'boughtL', 'used', 'waterSpent', 'wares', 'imp', 'exp', 'wimp', 'wexp'])
+			for (const k of ['grown', 'eaten', 'fromVillages', 'fromWorld', 'sold', 'exported', 'spoiled', 'spent', 'earned', 'rain', 'drawn', 'boughtL', 'used', 'waterSpent', 'wares', 'imp', 'exp', 'wimp', 'wexp'])
 				p.flow[k] = ((p.flow[k] ?? 0) * was + (((d[k] ?? 0) * WEEK) / dd) * fade) / w;
 			p.flowW = w;
 		}
@@ -1750,7 +1761,7 @@ export function createSim(st) {
 	function villageRows() {
 		const row = (/** @type {any} */ r) => r;
 		return [
-			...yourVillages().map(({ v, c, p }) => row({ name: p.name, city: 'You', pop: p.pop, beds: bedsIn(v), cap: capOf(v), hungry: !!p.hungry, owe: { ...p.owe }, buysWater: wellsIn(v) < p.pop * WATER_L, full: fullVillage(v, PLAYER), node: c.node, owner: PLAYER })),
+			...yourVillages().map(({ v, c, p }) => row({ name: p.name, city: 'You', pop: p.pop, beds: bedsIn(v), cap: capOf(v), hungry: !!p.hungry, owe: { ...p.owe }, buysWater: runsDry(v, p, 7), full: fullVillage(v, PLAYER), node: c.node, owner: PLAYER })),
 			...st.parties.slice(1).flatMap((/** @type {any} */ p, /** @type {number} */ j) =>
 				cityShares(j + 1).map(({ c, v, cap, pop }, x) => row({ name: x ? `${p.name} ${x + 1}` : p.name, city: p.name, pop, beds: cap, cap, hungry: !!p.hungry, full: pop >= cap && fullVillage(v, j + 1), node: c.node, owner: j + 1 }))
 			)
@@ -2281,6 +2292,8 @@ export function createSim(st) {
 			const { v, c, p } = it;
 			const pop = villagePeople(v), bed = bedsIn(v), cap = capOf(v), lived = pop > 0;
 			const f = p.flow ?? {}, hungry = lived && !!p.hungry;
+			// what it buys of water now, a week: what its rain and wells leave short, while its tanks are dry
+			const dry = runsDry(v, p, 1) ? Math.max(0, (pop * FRESH_L - rainIn(v) - wellsIn(v)) * 7) : 0;
 			const has = (/** @type {string} */ w) => c.stock[w] ?? 0;
 			/** per resource, what its store has against what it needs: its people's ten minutes (more with each settler), its sites and its factories; short when its people go without */
 			const row = (/** @type {string} */ key, /** @type {string} */ label, /** @type {string[]} */ wares, /** @type {boolean} */ short) => ({
@@ -2298,7 +2311,7 @@ export function createSim(st) {
 			const notes = [];
 			if (pop >= bed && bed < cap) notes.push({ tone: 'todo', text: `No free bed: enlarge a house or build one`, node: c.node });
 			if (hungry) notes.push({ tone: 'alert', text: `Its treasury cannot pay for all its food and water: no newcomers until it can`, node: c.node });
-			if (lived && !wellsIn(v)) notes.push({ tone: 'todo', text: `No well: it buys its water from the world market`, node: c.node });
+			if (lived && runsDry(v, p, 7)) notes.push({ tone: 'todo', text: `Its tanks run dry within a week: then it buys water from the world market, unless a well gives it`, node: c.node });
 			const cut = blds().find((b) => b.owner === PLAYER && b.stage === 'site' && villageAt(b.node) === v && b.status === 'Not connected by road');
 			if (cut) notes.push({ tone: 'alert', text: `A ${T(cut).label.toLowerCase()} site has no path`, node: cut.node });
 			return {
@@ -2335,14 +2348,19 @@ export function createSim(st) {
 					year: Math.floor(Math.max(0, ...mineIn(v).filter((b) => b.type === 'house' && st.forest[plan.plotOf[b.node]] !== undefined).map((b) => st.cal - st.forest[plan.plotOf[b.node]])) / YEAR) + 1,
 					short: hungry
 				},
-				/** its water, litres: in its tanks, and as it stands now a week what its people use, its wells give and it
-				 * buys (and the € it pays), and how many wells */
+				/** its water, litres: in its tanks and what they hold; as it stands now a week the fresh water its people
+				 * use, the greywater its crops take again, what its roofs catch this month, what its wells give and what
+				 * it buys while its tanks are dry (and the € it pays); and how many wells */
 				water: {
 					litres: p.litres ?? 0,
-					week: pop * WATER_L * 7,
+					tank: tankOf(v, pop),
+					week: pop * FRESH_L * 7,
+					grey: pop * WATER_USE.crops * 7,
+					rain: rainIn(v) * 7,
+					month: calendar(st.cal).month,
 					drawn: wellsIn(v) * 7,
-					bought: Math.max(0, pop * WATER_L * 7 - wellsIn(v) * 7),
-					spent: Math.max(0, pop * WATER_L * 7 - wellsIn(v) * 7) * WATER_PRICE,
+					bought: dry,
+					spent: dry * WATER_PRICE,
 					wells: wellsIn(v) / WELL_L,
 					short: hungry
 				},
