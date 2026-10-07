@@ -13,10 +13,10 @@
  */
 import { GRASS, IRON, MOUNTAIN, WATER } from './rules.js';
 import { makeGrid, rng } from './hex.js';
-import { makePlan } from './plots.js';
+import { K, makePlan } from './plots.js';
 
 /** the valley's size in nodes: room for some forty villages and the sea round them */
-export const W = 72, H = 60;
+export const W = 108, H = 90;
 
 /** how common each biome is (relative shares of the region centres, and how far each region reaches) */
 const SHARE = { meadow: 10, forest: 2.4, stone: 1.2, mountain: 0.9, iron: 0.5, lake: 0.65 };
@@ -57,7 +57,7 @@ export function growValley(seed) {
 	const hx = (/** @type {number} */ k) => g.x(plan.centre[k]), hz = (/** @type {number} */ k) => g.z(plan.centre[k]);
 	const halfX = Math.max(...plan.centre.map((c) => Math.abs(g.x(c)))), halfZ = Math.max(...plan.centre.map((c) => Math.abs(g.z(c))));
 	/** hexes apart */
-	const apart = (/** @type {number} */ a, /** @type {number} */ b) => g.dist(plan.centre[a], plan.centre[b]) / 4;
+	const apart = (/** @type {number} */ a, /** @type {number} */ b) => g.dist(plan.centre[a], plan.centre[b]) / K;
 
 	// ── the island: land hex by hex, the sea round a ragged coast (every hex at the map's edge is sea) ──
 	const whole = (/** @type {number} */ k) => plan.nbr[k].every((j) => j >= 0);
@@ -159,13 +159,13 @@ export function growValley(seed) {
 	const fish = Array(N).fill(0);
 	/** @type {Valley['obj']} */
 	const obj = Array(N).fill(null);
-	/** each hex's own height: land a little up and down, mountains and iron raised, water down */
+	/** each hex's own height: the land level, so one hex runs on into the next; mountains and iron raised, water down */
 	const tile = plan.centre.map((_, k) => {
 		const b = biome[k];
 		if (b === 'sea' || b === 'lake') return -1.4;
 		if (b === 'mountain') return 1.5;
 		if (b === 'iron') return 1.05;
-		return 0.25 + Math.round(noise(hx(k) * 0.06 + 11, hz(k) * 0.06 + 5) * 4) * 0.08;
+		return 0.3;
 	});
 	for (let i = 0; i < N; i++) {
 		const k = plan.plotOf[i], b = biome[k];
@@ -175,26 +175,32 @@ export function growValley(seed) {
 			fish[i] = 4;
 		} else if (b === 'mountain') terrain[i] = MOUNTAIN;
 	}
+	/** each hex's open land: not its middle, not on a way between middles, not a building spot */
+	const open = plan.centre.map(() => /** @type {number[]} */ ([]));
+	for (let i = 0; i < N; i++) if (i !== plan.centre[plan.plotOf[i]] && !plan.lane[i] && plan.spotOf[i] < 0) open[plan.plotOf[i]].push(i);
+	const tree = () => ({ k: /** @type {'tree'} */ ('tree'), g: 0.75 + rand() * 0.25 });
 	for (let k = 0; k < P; k++) {
-		const b = biome[k], [house, ...factories] = plan.spots[k];
+		const b = biome[k], [, ...factories] = plan.spots[k];
 		const corners = [...factories, ...plan.free[k]].filter((j) => j >= 0);
 		if (b === 'iron')
-			// the hex's rock holds the iron: its factory spots and free corners (its middle, its house spot and its ways stay grass)
-			for (const j of corners) {
+			// the hex's rock holds the iron: its factory spots, free corners and some land round them (its middle, its house
+			// spot and its ways stay grass)
+			for (const j of [...corners, ...open[k].filter(() => rand() < 0.4)]) {
 				terrain[j] = MOUNTAIN;
 				ore[j] = IRON;
-				amount[j] = 3 + Math.floor(rand() * 4);
+				amount[j] = corners.includes(j) ? 2 + Math.floor(rand() * 3) : 1 + Math.floor(rand() * 2);
 			}
 		else if (b === 'forest') {
-			// trees everywhere but its middle and its house spot (a path through fells those in its way)
-			for (let i = 0; i < N; i++) if (plan.plotOf[i] === k && i !== plan.centre[k] && i !== house) obj[i] = { k: 'tree', g: 0.75 + rand() * 0.25 };
-		} else if (b === 'stone') for (const j of corners) obj[j] = { k: 'rock', n: 5 + Math.floor(rand() * 3) };
-		else if (b === 'meadow' || b === 'water')
-			for (const j of plan.free[k]) {
-				if (j < 0) continue;
+			// a wood all round its middle (its ways stay open, a woodcutter or forester fells the tree on its spot)
+			for (const j of [...open[k], ...factories]) if (j >= 0 && rand() < 0.85) obj[j] = tree();
+		} else if (b === 'stone') {
+			for (const j of corners) obj[j] = { k: 'rock', n: 5 + Math.floor(rand() * 3) };
+			for (const j of open[k]) if (!obj[j] && rand() < 0.3) obj[j] = { k: 'rock', n: 3 + Math.floor(rand() * 3) };
+		} else if (b === 'meadow' || b === 'water')
+			for (const j of open[k]) {
 				const r = rand();
-				if (r < 0.14) obj[j] = { k: 'tree', g: 0.75 + rand() * 0.25 };
-				else if (r < 0.18) obj[j] = { k: 'rock', n: 3 + Math.floor(rand() * 3) };
+				if (r < 0.05) obj[j] = tree();
+				else if (r < 0.062) obj[j] = { k: 'rock', n: 3 + Math.floor(rand() * 3) };
 			}
 	}
 	// your first village is open meadow but for its forest and stone hexes
