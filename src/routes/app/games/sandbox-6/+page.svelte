@@ -8,7 +8,7 @@
 </script>
 
 <svelte:head>
-	<title>avenCITY Sandbox 6 · A valley of settlers · maiaCITY</title>
+	<title>avenCITY Sandbox 5 · A valley of settlers · maiaCITY</title>
 	<meta name="description" content="Settle a valley: build roads and flags, let carriers bring wares from flag to flag, run production chains from logs to coins, and take the rival keep." />
 </svelte:head>
 

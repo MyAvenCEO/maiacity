@@ -144,9 +144,9 @@ const LIST: Omit<Model, 'versions' | 'version'>[] = [
 	{ id: 'tree-maple', label: 'Field maple', note: 'small, by a door, about 4.3 m', usedIn: 'The backyard', make: () => tree('maple') },
 	{ id: 'tree-privet', label: 'Privet tree', note: 'several stems, narrow leaves, about 4.5 m', usedIn: 'The backyard', make: () => tree('privet') },
 	{ id: 'sapling', label: 'Sapling', note: 'one thin stem and a few leaves, about 2.2 m', usedIn: 'The backyard', make: () => tree('sapling') },
-	{ id: 'chicken-coop', label: 'Chicken coop', note: 'a mini geodesic dome of timber struts, 5.6 m across and 2.3 m high: wire round its foot, clear panels over the run, a cedar-shingled back where the hens roost; a ladder of perches, three nesting boxes on hay with the day’s eggs, a feeder and a water trough', usedIn: 'Sandbox 5', make: () => henDome().group },
-	{ id: 'rabbit-hutch', label: 'Rabbit hutch', note: 'a mini geodesic dome of wire against foxes and hawks, 5.2 m across and 1.6 m high, on grass: a little shingled dome to sleep in, a hay rack, a water bowl, a hollow log to hide in', usedIn: 'Sandbox 5', make: () => rabbitDome().group },
-	{ id: 'playground', label: 'Playground', note: 'about 16 m across, all wood: a sandpit ringed with stumps round a climbing dome of round logs (4.4 m across, a platform at 1.2 m, a rope net under its crown, a slide out of its side), a swing on an arch of logs, balance logs and stepping stumps', usedIn: 'Sandbox 5', make: () => playDome().group },
+	{ id: 'chicken-coop', label: 'Chicken coop', note: 'a mini geodesic dome of timber struts, 5.6 m across and 2.3 m high: wire round its foot, clear panels over the run, a cedar-shingled back where the hens roost; a ladder of perches, three nesting boxes on hay with the day’s eggs, a feeder and a water trough', usedIn: 'Sandbox 4', make: () => henDome().group },
+	{ id: 'rabbit-hutch', label: 'Rabbit hutch', note: 'a mini geodesic dome of wire against foxes and hawks, 5.2 m across and 1.6 m high, on grass: a little shingled dome to sleep in, a hay rack, a water bowl, a hollow log to hide in', usedIn: 'Sandbox 4', make: () => rabbitDome().group },
+	{ id: 'playground', label: 'Playground', note: 'about 16 m across, all wood: a sandpit ringed with stumps round a climbing dome of round logs (4.4 m across, a platform at 1.2 m, a rope net under its crown, a slide out of its side), a swing on an arch of logs, balance logs and stepping stumps', usedIn: 'Sandbox 4', make: () => playDome().group },
 	{
 		id: 'excavator',
 		label: 'Excavator',

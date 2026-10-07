@@ -52,7 +52,7 @@ const LIST = [
 		id: 'food-forest',
 		label: 'Food forest floor',
 		note: 'A forest garden’s floor, its soil covered on purpose: a living mulch of clover, wild strawberries and grasses in the light between the plants, leaf litter and moss under the trees, ferns and wood anemones in the shade, a fallen branch now and then.',
-		from: 'Sandbox 5',
+		from: 'Sandbox 4',
 		surface: { green: 5, litter: 3, humus: 1, moss: 1 },
 		density: 7,
 		cover: [
@@ -77,7 +77,7 @@ const LIST = [
 		id: 'warm-food-forest',
 		label: 'Food forest under glass',
 		note: 'The warm forest garden inside a dome: moist, shaded, never bare — big fallen leaves of banana, mango and fig over dark humus, moss where it stays damp, ferns in the shade of the palms, a living mat of clover, wild strawberries and soft grass where the light comes through the glass.',
-		from: 'Sandbox 5, inside the domes',
+		from: 'Sandbox 4, inside the domes',
 		surface: { green: 4, litter: 3, humus: 2, moss: 1.5 },
 		density: 7,
 		cover: [

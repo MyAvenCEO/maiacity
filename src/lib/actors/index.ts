@@ -64,7 +64,7 @@ const LIST: Omit<Family, 'versions' | 'version'>[] = [
 		id: 'chicken',
 		label: 'Chicken',
 		note: 'six breeds of hen, the rooster and a chick: walks with the head held still, pecks, scratches, flaps',
-		from: 'Sandbox 4: the coops round the squares',
+		from: 'Sandbox 3: the coops round the squares',
 		variants: [
 			animal('chicken-red', 'Red hen', 'a brown layer, chestnut with gold hackles, her tail dark'),
 			animal('chicken-leghorn', 'Leghorn', 'white, her big single comb flopped over, white earlobes, yellow legs'),
@@ -80,7 +80,7 @@ const LIST: Omit<Family, 'versions' | 'version'>[] = [
 		id: 'rabbit',
 		label: 'Rabbit',
 		note: 'six coats: sits hunched on its long hind feet, hops in a half-bound, nibbles, sits up to look',
-		from: 'Sandbox 4: the hutches between the coops',
+		from: 'Sandbox 3: the hutches between the coops',
 		variants: [
 			animal('rabbit-wild', 'Wild agouti', 'grey-brown ticked, white beneath, the tail white below'),
 			animal('rabbit-dutch', 'Dutch', 'a white blaze, collar and forefeet, the rest black'),
@@ -94,7 +94,7 @@ const LIST: Omit<Family, 'versions' | 'version'>[] = [
 		id: 'goose',
 		label: 'Goose',
 		note: 'a long neck in three bones held in an S: waddles, grazes, hisses with its wings out',
-		from: 'Sandbox 4: along the streams',
+		from: 'Sandbox 3: along the streams',
 		variants: [
 			animal('goose-embden', 'Embden', 'white'),
 			animal('goose-toulouse', 'Toulouse', 'grey, barred on the wings, white beneath'),
@@ -105,7 +105,7 @@ const LIST: Omit<Family, 'versions' | 'version'>[] = [
 		id: 'goat',
 		label: 'Goat',
 		note: 'five breeds: walks with its hooves set down, grazes, looks round, the tail flicking',
-		from: 'Sandbox 4: the forest',
+		from: 'Sandbox 3: the forest',
 		variants: [
 			animal('goat-saanen', 'Saanen', 'white, hornless, a beard'),
 			animal('goat-alpine', 'Alpine', 'bay with a black stripe down its back, black legs and face stripes, horns'),
@@ -118,7 +118,7 @@ const LIST: Omit<Family, 'versions' | 'version'>[] = [
 		id: 'sheep',
 		label: 'Sheep',
 		note: 'five breeds, a lumpy fleece in one skin: walks, grazes, looks up',
-		from: 'Sandbox 4: grazing between the domes',
+		from: 'Sandbox 3: grazing between the domes',
 		variants: [
 			animal('sheep-whiteface', 'Whiteface', 'a white face, pricked ears'),
 			animal('sheep-suffolk', 'Suffolk', 'black face and legs, long black ears'),
@@ -131,7 +131,7 @@ const LIST: Omit<Family, 'versions' | 'version'>[] = [
 		id: 'frog',
 		label: 'Frog',
 		note: 'its legs folded in a Z: sits, its throat pulsing, croaks with a swelling sac, leaps',
-		from: 'Sandbox 4: the ponds',
+		from: 'Sandbox 3: the ponds',
 		variants: [
 			animal('frog-bullfrog', 'Bullfrog', 'olive-brown and mottled, its head green'),
 			animal('frog-green', 'Green', 'a paler green bullfrog'),
@@ -142,14 +142,14 @@ const LIST: Omit<Family, 'versions' | 'version'>[] = [
 		id: 'bee',
 		label: 'Bee',
 		note: '1.5 cm, striped, furred, pollen in its baskets: hovers, flies, its wings beating in a figure of eight',
-		from: 'Sandbox 4: the hives and the flowers',
+		from: 'Sandbox 3: the hives and the flowers',
 		variants: [animal('bee', 'Honeybee', 'a worker')]
 	},
 	{
 		id: 'ant',
 		label: 'Ant',
 		note: 'the red wood ant, 8 mm, walking in a tripod; and its hill: a thatched mound of needles and twigs, the colony busy all over it',
-		from: 'Sandbox 4: the food forest floor',
+		from: 'Sandbox 3: the food forest floor',
 		variants: [
 			animal('ant-hill', 'Ant hill', 'a mound of needles, twigs and bark half a metre high, its doors all over it, eighty ants going round it and out'),
 			animal('ant', 'Wood ant', 'a worker: red-brown head and thorax, the black shining gaster, elbowed antennae')
@@ -159,7 +159,7 @@ const LIST: Omit<Family, 'versions' | 'version'>[] = [
 		id: 'songbird',
 		label: 'Songbirds',
 		note: 'five birds of the garden and the forest edge, 14–25 cm: they fly in bounds, hop with both feet, peck, sing on a perch with the bill opening through each phrase, and sit',
-		from: 'Sandbox 5: in the trees and on the forest floor',
+		from: 'Sandbox 4: in the trees and on the forest floor',
 		variants: [
 			animal('bird-robin', 'Robin', 'olive-brown, the face and breast orange-red edged grey'),
 			animal('bird-blackbird', 'Blackbird', 'the male: black, his bill and eye-ring yellow-orange'),
@@ -172,7 +172,7 @@ const LIST: Omit<Family, 'versions' | 'version'>[] = [
 		id: 'fish',
 		label: 'Fish',
 		note: 'a wave down the body, a beat of the tail for every length swum: swims, turns, hangs sculling',
-		from: 'Sandbox 4: the ponds and the aquaponics tanks',
+		from: 'Sandbox 3: the ponds and the aquaponics tanks',
 		variants: [
 			animal('fish-koi', 'Koi, orange', 'in the ponds'),
 			animal('fish-kohaku', 'Koi, kohaku', 'white with red, in the ponds'),
