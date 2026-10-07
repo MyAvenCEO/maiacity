@@ -1638,6 +1638,8 @@ export function createSim(st) {
 	const wellsDay = (/** @type {any} */ c) => wellsOf(c) * ENERGY.wellKw * 24 * ENERGY.uptime;
 	/** kWh a day so many people use at home */
 	const homeDay = (/** @type {number} */ pop) => (pop * ENERGY.home) / YEAR;
+	/** kWh a day a village center uses: its hall, its storehouse, its trade routes' lights and trains */
+	const centreDay = ENERGY.centre / YEAR;
 	/** kWh a day its domes' climate uses: each bed's share, taken or not */
 	const climateIn = (/** @type {number} */ v) => (bedsIn(v) * ENERGY.climateBed) / YEAR;
 	/**
@@ -1647,7 +1649,7 @@ export function createSim(st) {
 	 * joined to it that have more than two weeks put by (5 € a kg, to them), then from the world market (10 € a kg);
 	 * tanks share their water along the trade routes, and what they lack of what is used the world market sells
 	 * (2 € a m³); what the tanks cannot hold runs off. It buys only with the gold its treasury holds: without, its people go short.
-	 * Its energy too: its center's wells and its domes' solar cells make it, its people, domes and factories use it; what a
+	 * Its energy too: its center's wells and its domes' solar cells make it, its people, domes, center and factories use it; what a
 	 * village lacks its joined villages give from what they have over, and the world grid buys what is left over and
 	 * sells what is still lacking (8 cents a kWh).
 	 * What a village did, a week, is kept in its `flow`.
@@ -1762,14 +1764,15 @@ export function createSim(st) {
 		/** @type {Map<any, number>} */
 		const over = new Map();
 		for (const { v, c, p } of vs) {
-			const well = wellsDay(c) * days, sun = sunIn(v) * days, home = homeDay(p.pop) * days, climate = climateIn(v) * days, work = p.pend?.kwhWork ?? 0;
+			const well = wellsDay(c) * days, sun = sunIn(v) * days, home = homeDay(p.pop) * days, climate = climateIn(v) * days, centre = centreDay * days, work = p.pend?.kwhWork ?? 0;
 			if (p.pend) delete p.pend.kwhWork;
 			add(p, 'kwhWell', well);
 			add(p, 'kwhSun', sun);
 			add(p, 'kwhHome', home);
 			add(p, 'kwhClimate', climate);
+			add(p, 'kwhCentre', centre);
 			add(p, 'kwhWork', work);
-			over.set(p, well + sun - home - climate - work - (p.kwhDue ?? 0));
+			over.set(p, well + sun - home - climate - centre - work - (p.kwhDue ?? 0));
 		}
 		// what one lacks, the villages joined to it give from what they have over
 		for (const x of vs)
@@ -1813,7 +1816,7 @@ export function createSim(st) {
 			for (const [k, n] of Object.entries(p.pend ?? {})) d[k] = (d[k] ?? 0) + n;
 			p.pend = {};
 			const was = (p.flowW ?? 0) * (1 - fade), w = was + fade;
-			for (const k of ['grown', 'eaten', 'fromVillages', 'fromWorld', 'sold', 'exported', 'spoiled', 'spent', 'earned', 'rain', 'boughtL', 'used', 'waterSpent', 'wares', 'imp', 'exp', 'wimp', 'wexp', 'kwhWell', 'kwhSun', 'kwhHome', 'kwhClimate', 'kwhWork', 'kwhSold', 'kwhBought', 'gridEarned', 'gridSpent'])
+			for (const k of ['grown', 'eaten', 'fromVillages', 'fromWorld', 'sold', 'exported', 'spoiled', 'spent', 'earned', 'rain', 'boughtL', 'used', 'waterSpent', 'wares', 'imp', 'exp', 'wimp', 'wexp', 'kwhWell', 'kwhSun', 'kwhHome', 'kwhClimate', 'kwhCentre', 'kwhWork', 'kwhSold', 'kwhBought', 'gridEarned', 'gridSpent'])
 				p.flow[k] = ((p.flow[k] ?? 0) * was + (((d[k] ?? 0) * WEEK) / dd) * fade) / w;
 			p.flowW = w;
 		}
@@ -2167,7 +2170,7 @@ export function createSim(st) {
 	function power(b) {
 		const week = WEEK / YEAR;
 		if (b.stage !== 'live' && !(b.level > 0)) return null;
-		if (b.type === 'centre') return { made: wellsDay(b) * 7, used: 0, next: null };
+		if (b.type === 'centre') return { made: wellsDay(b) * 7, used: centreDay * 7, next: null };
 		if (b.type === 'house' && b.level) {
 			const beds = HOUSE_BEDS[b.level - 1];
 			return { made: beds * sunBedDay(calendar(st.cal).month) * 7, used: homeDay(beds) * 7 + ((beds * ENERGY.climateBed) / YEAR) * 7, next: null };
@@ -2533,6 +2536,7 @@ export function createSim(st) {
 					sun: sunIn(v) * 7,
 					home: homeDay(pop) * 7,
 					climate: climateIn(v) * 7,
+					centre: centreDay * 7,
 					work: f.kwhWork ?? 0,
 					sold: f.kwhSold ?? 0,
 					bought: f.kwhBought ?? 0,

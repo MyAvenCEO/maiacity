@@ -246,10 +246,11 @@ export const tonnesYear = (type, level) => (ROUNDS_YEAR[type] ?? 0) * perRound(t
  * each further stage drills two more producers and as much again. Every dome makes some with the see-through solar
  * cells in its glass, which leave 70% of the light: a great dome of 248 about 1.3 GWh a year, so 5,242 kWh a bed (a
  * smaller dome as much as its glass), most in summer and little in winter; and its climate (fans, pumps, heat pumps)
- * uses 0.17 GWh a year. A person uses 1,500 kWh a year at home, so a
- * dome's sun makes about twice what its people and climate use over a year, but less than that in midwinter. Factories
- * use theirs for every tonne they make, by stage: a sawmill and a timber works for their saws and kilns, a steelworks
- * for its electric furnace, a kiln and a block works for firing.
+ * uses 0.17 GWh a year. A person uses 900 kWh a year at home, as people sharing a dome do, so a dome's sun makes about
+ * three times what its people and climate use over a year, but a little less than that in midwinter. A village
+ * center uses 0.3 GWh a year for its hall, its storehouse and its trade routes' lights and trains. Factories use
+ * theirs for every tonne they make, by stage: a sawmill and a timber works for their saws and kilns, a steelworks for
+ * its electric furnace, a kiln and a block works for firing.
  */
 export const ENERGY = {
 	/** a geothermal stage's net power, kW, the share of the time it runs, and the most stages a village center drills */
@@ -259,8 +260,14 @@ export const ENERGY = {
 	/** kWh a year a bed's share of its dome's solar cells makes, and of what its climate uses */
 	sunBed: 1300000 / HOUSE_MOST,
 	climateBed: 170000 / HOUSE_MOST,
-	/** kWh a year a person uses at home */
-	home: 1500,
+	/**
+	 * kWh a year a person uses at home: 900, where a German household uses about 1,500 a head. Sharing a dome saves the
+	 * rest (our estimate, Samuel 2026-10-07): hot water comes from the geothermal heat loop, not a heater; kitchens, cold
+	 * stores and laundries are shared, and clothes dry in the dome's warm air; daylight comes through the glass
+	 */
+	home: 900,
+	/** kWh a year a village center uses: its hall and storehouse, the lights and trains of its trade routes */
+	centre: 300000,
 	/** kWh a tonne its factories use, by stage */
 	perT: /** @type {Record<string, number[]>} */ ({ woodcutter: [0, 20, 350, 500], ironmine: [5000, 4200, 3600], clayworks: [10, 1000, 500] })
 };
