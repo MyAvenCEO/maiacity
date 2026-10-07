@@ -1,6 +1,6 @@
 <!--
 	avenCITY Sandbox 6 — a valley of settlers: the whole game on one page. The world fills the screen (./game.js); over
-	it the tools (build, road, flag, tear down, the market, the clock), the build menu, the valley's abundance, what
+	it the tools (build, road, flag, tear down, the market, the building tree, the clock), the build menu, the valley's abundance, what
 	your storehouses hold, the goals, the market (prices, your orders, the neighbours' requests), the card of whatever
 	is selected, and the valley's news.
 -->
@@ -11,6 +11,7 @@
 	import { ABUNDANT, BUILDINGS, HOLD, MENU, PEOPLE, WARES, WARE_ORDER } from './rules.js';
 	import { NEED_LABEL } from './market.js';
 	import { PLAYER } from './sim.js';
+	import Tree from './Tree.svelte';
 
 	/** @type {HTMLDivElement | undefined} */
 	let stage = $state();
@@ -38,6 +39,9 @@
 	/** @type {any} */
 	let roadCard = $state(null);
 	let marketOpen = $state(false);
+	let treeOpen = $state(false);
+	/** how many of each building you have, sites too */
+	let owned = $state(/** @type {Record<string, number>} */ ({}));
 	/** @type {ReturnType<import('./sim.js').Sim['market']> | null} */
 	let market = $state(null);
 	/** the ware whose order is being set */
@@ -56,6 +60,12 @@
 		const sim = game.sim;
 		summary = sim.summary();
 		market = sim.market();
+		if (treeOpen) {
+			/** @type {Record<string, number>} */
+			const n = {};
+			for (const b of Object.values(sim.state.buildings)) if (b.owner === PLAYER) n[b.type] = (n[b.type] ?? 0) + 1;
+			owned = n;
+		}
 		speed = game.speed;
 		const s = selected;
 		card = s?.k === 'building' ? sim.inspect(s.id) : null;
@@ -163,7 +173,8 @@
 		<button class:on={mode === 'road'} onclick={() => tool('road')} title="Road (R)"><span class="ic">⟋</span>Road</button>
 		<button class:on={mode === 'flag'} onclick={() => tool('flag')} title="Flag (F)"><span class="ic">⚑</span>Flag</button>
 		<button class:on={mode === 'demolish'} onclick={() => tool('demolish')} title="Tear down (X)"><span class="ic">✕</span>Tear down</button>
-		<button class:on={marketOpen} onclick={() => ((marketOpen = !marketOpen), (menuOpen = false))} title="The market: prices, your orders, requests"><span class="ic">⚖</span>Market</button>
+		<button class:on={marketOpen} onclick={() => ((marketOpen = !marketOpen), (menuOpen = false), (treeOpen = false))} title="The market: prices, your orders, requests"><span class="ic">⚖</span>Market</button>
+		<button class:on={treeOpen} onclick={() => ((treeOpen = !treeOpen), (menuOpen = false), (marketOpen = false), refresh())} title="The building tree: what each building needs and makes"><span class="ic">⌥</span>Tree</button>
 		<div class="speed" role="group" aria-label="Speed">
 			{#each [[0, '❚❚'], [1, '1×'], [2, '2×'], [4, '4×']] as [s, t] (s)}
 				<button class:on={speed === s} onclick={() => (game?.setSpeed(/** @type {number} */ (s)), (speed = /** @type {number} */ (s)))} title={s ? `Speed ${t}` : 'Pause (Space)'}>{t}</button>
@@ -252,6 +263,10 @@
 				{/if}
 			</section>
 		</aside>
+	{/if}
+
+	{#if treeOpen && summary}
+		<Tree stock={summary.stock} {owned} onBuild={(t) => ((treeOpen = false), tool('build', t))} onClose={() => (treeOpen = false)} />
 	{/if}
 
 	<!-- the market: prices at the fair, your standing orders, the neighbours' requests -->
