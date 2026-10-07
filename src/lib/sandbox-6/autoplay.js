@@ -1,7 +1,7 @@
 /**
  * SANDBOX 6 · AUTOPLAY — a player that builds the whole economy by itself, step by step, the way a person would:
- * wood and stone first, then food, a trade route to a neighbour and what it trades (iron ore and tools come by trade),
- * then houses and ever more food until its villages are full. The film camera grows its valley with it (a settlement that is already busy), and it
+ * wood and stone first, then wells, then houses until its villages are full, trading planks and stone with the world
+ * market. The film camera grows its valley with it (a settlement that is already busy), and it
  * plays a whole game headless to prove every chain runs end to end.
  */
 import { BUILDINGS, GRASS, HOUSE_MOST, HOUSE_TOP, IRON, MOUNTAIN, WATER, WOOD_UP } from './rules.js';
@@ -17,14 +17,13 @@ const PLAN = [
 	['woodcutter', 'trees'],
 	['well', 'home'],
 	['quarry', 'rocks'],
-	['toolmaker', 'home'],
 	['woodcutter', 'trees'],
 	['well', 'home']
 ];
 
-/** what it buys, from the world market (and from a neighbour a trade route runs to): building goods, iron ore and
- * tools, while its treasury can pay */
-const ORDERS = /** @type {Record<string, 'sell' | 'buy'>} */ ({ plank: 'buy', stone: 'buy', tools: 'buy', ore: 'buy' });
+/** what it trades with the world market (and a neighbour a trade route runs to): it buys planks and stone when short,
+ * while its treasury can pay, and exports what it has beyond */
+const ORDERS = /** @type {Record<string, 'sell' | 'buy' | 'both'>} */ ({ plank: 'both', stone: 'both' });
 
 /**
  * Plays a game one decision at a time: call `tick()` now and then (every few seconds of game time).
@@ -188,7 +187,7 @@ export function createAutoplay(sim) {
 			// only where everyone has a bed and eats and drinks well: more beds bring more mouths. Growing one village full,
 			// two homes grow at once, and the next starts while the last beds still fill
 			const sites = mine.filter((b) => b.stage === 'site').length, fill = st.autoFocus ? Math.min(row.beds - 2, row.beds * 0.8) : row.beds - 2;
-			if (sites >= (st.autoFocus ? 2 : 1) || row.pop < fill || (row.beds > 0 && (row.sat.food < 0.9 || row.sat.water < 0.9))) continue;
+			if (sites >= (st.autoFocus ? 2 : 1) || row.pop < fill || (row.beds > 0 && row.hungry)) continue;
 			const small = mine.filter((b) => b.level < HOUSE_TOP && b.stage === 'live').sort((a, b) => b.level - a.level)[0];
 			if (small) {
 				if (has(sim.inspect(small.id)?.up ?? {})) return void sim.upgrade(small.id);
@@ -228,14 +227,6 @@ export function createAutoplay(sim) {
 				plan.splice(st.auto, 0, ['quarry', 'rocks']);
 			}
 			const s = sim.summary();
-			// alone in the valley, tools come only from iron: an iron mine and a toolmaker once the tools run low
-			const coming = (/** @type {string} */ t) => ofType(t).length > 0 || plan.slice(st.auto).some((/** @type {string[]} */ x) => x[0] === t);
-			if (st.auto >= 8 && ((s.stock.tools ?? 0) < 3 || st.autoFocus) && st.time >= (st.autoIron ?? 0)) {
-				// asked again a while later if there was no iron within reach
-				st.autoIron = st.time + 300;
-				if (!coming('ironmine')) plan.splice(st.auto, 0, ['ironmine', 'mine']);
-				if (!coming('toolmaker')) plan.splice(st.auto + 1, 0, ['toolmaker', 'home']);
-			}
 			// a wood building starts as a forester: upgrade it to a woodcutter as soon as it stands, and on to a sawmill and
 			// a timber works when there is wood and stone to spare
 			const growing = ofType('woodcutter').some((b) => b.stage === 'site' && b.level > 0);
@@ -263,12 +254,12 @@ export function createAutoplay(sim) {
 					}
 				} else st.autoTries = (st.autoTries ?? 0) + 1;
 			}
-			// once the plan is built, more water while yours runs short, more wood and stone while they do
+			// once the plan is built, a well while a village buys its water, more wood and stone while they do
 			if (st.auto >= plan.length && plan.length < PLAN.length + 60 && st.time >= (st.autoMore ?? 0)) {
 				st.autoMore = st.time + 180;
 				const rows = sim.market().parties.filter((/** @type {any} */ p) => p.owner === PLAYER);
-				const low = (/** @type {string} */ w) => rows.some((/** @type {any} */ p) => p.sat[w] < 0.7) && (s.stock[w] ?? 0) < 20;
-				if (st.parties[PLAYER].sat.water < 0.9) plan.push(['well', 'home']);
+				const low = (/** @type {string} */ w) => rows.some((/** @type {any} */ p) => (p.owe?.[w] ?? 0) > 2) && (s.stock[w] ?? 0) < 20;
+				if (rows.some((/** @type {any} */ p) => p.buysWater)) plan.push(['well', 'home']);
 				else if (low('plank')) plan.push(['woodcutter', 'trees']);
 				else if (low('stone')) plan.push(['quarry', 'rocks']);
 			}
