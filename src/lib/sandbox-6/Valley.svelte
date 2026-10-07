@@ -297,7 +297,7 @@
 						{#each home.villages as v (v.node)}<button class:on={v.node === home.node} onclick={() => pickVillage(v.node)}>{v.name}</button>{/each}
 					</div>
 				{/if}
-				<p class="label stats" title="Its settlers add 24 HEARTs each an in-game hour to its treasury: {num(home.income)} a week. A HEART is a euro, 1,000 are a gold. Below 0 it is in debt, from buying food and water">{home.pop}/{home.beds} beds · <b class:debt={home.gold < 0}>{goldOf(home.gold)}</b> gold · {num(home.eur)} €</p>
+				<p class="label stats" title="Its settlers add 24 HEARTs each an in-game hour to its treasury: {num(home.income)} a week. A HEART is a euro, 1,000 are a gold. It buys from the world market only with the gold it has">{home.pop}/{home.beds} beds · <b class:debt={home.gold < 0}>{goldOf(home.gold)}</b> gold · {num(home.eur)} €</p>
 				{#if fd}
 				<section class="ledger" aria-label="Food">
 					<p class="ledger-head" class:short={fd.short}><b>Food</b><span title="A hex's food forest grows 10% of what its people eat in its first year, 10% more each year up to 100% in its tenth, then up to 150% from its fifteenth year">forests in year {fd.year} · grow {Math.round(fd.share * 100)}%</span></p>
@@ -334,8 +334,8 @@
 								<button onclick={() => buy(x.w)} disabled={home.eur < x.eur}>Buy</button>
 							</li>
 						{/each}
-						<li title="Each village buys what its food forests do not grow, by itself"><span class="k">Food</span><span class="n">{PRICE.world} € a kg</span><em>by itself</em></li>
-						<li title="Each village buys what its wells do not give, by itself"><span class="k">Water</span><span class="n">{WATER_PRICE * 1000} € a m³</span><em>by itself</em></li>
+						<li title="Each village buys what its food forests do not grow, by itself, while its treasury can pay"><span class="k">Food</span><span class="n">{PRICE.world} € a kg</span><em>by itself</em></li>
+						<li title="Each village buys what its wells do not give, by itself, while its treasury can pay"><span class="k">Water</span><span class="n">{WATER_PRICE * 1000} € a m³</span><em>by itself</em></li>
 					</ul>
 					{#if home.wares >= 1}<dl><dt>Spent on wares a week</dt><dd>{num(home.wares)} €</dd></dl>{/if}
 					{#if buyWhy}<p class="status">{buyWhy}</p>{/if}

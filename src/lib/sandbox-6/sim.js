@@ -1544,7 +1544,8 @@ export function createSim(st) {
 	 * store, its wells fill its tanks and its people use them. What its store lacks of what they eat it buys as they
 	 * eat it: first from your villages joined to it that have more than two weeks put by (5 € a kg, to them), then from
 	 * the world market (10 € a kg); tanks share their water along the trade routes, and what they lack of what is used
-	 * the world market sells (2 € a m³). What a village did, a week, is kept in its `flow`.
+	 * the world market sells (2 € a m³). It buys only with the gold its treasury holds: without, its people go short.
+	 * What a village did, a week, is kept in its `flow`.
 	 * @param {{ v: number, c: any, p: any }[]} vs @param {number} dd the days of the valley's calendar gone by
 	 */
 	function eatAndDrink(vs, dd) {
@@ -1572,13 +1573,15 @@ export function createSim(st) {
 		// what its store lacks of what its people eat now: from your joined villages with more than two weeks put by,
 		// then from the world market
 		const keepOf = (/** @type {any} */ p) => p.pop * FOOD_KG * KEEP;
+		/** what a treasury can pay, in HEARTs (€): it buys only with the gold it has, never into debt */
+		const can = (/** @type {any} */ c) => Math.max(0, c.hearts ?? 0);
 		for (const x of vs) {
 			let short = want.get(x.p).need - x.p.kg;
 			if (short <= 0) continue;
 			const near = reach(x.c.id);
 			for (const y of vs) {
 				if (y === x || !near.has(y.c.id)) continue;
-				const n = Math.min(short, y.p.kg - keepOf(y.p));
+				const n = Math.min(short, y.p.kg - keepOf(y.p), can(x.c) / PRICE.village);
 				if (n <= 0) continue;
 				y.p.kg -= n;
 				x.p.kg += n;
@@ -1592,11 +1595,12 @@ export function createSim(st) {
 				add(y.p, 'earned', eur);
 				if (short <= 0) break;
 			}
-			if (short > 0) {
-				x.p.kg += short;
-				x.c.hearts = (x.c.hearts ?? 0) - short * PRICE.world;
-				add(x.p, 'fromWorld', short);
-				add(x.p, 'spent', short * PRICE.world);
+			const n = Math.min(short, can(x.c) / PRICE.world);
+			if (n > 0) {
+				x.p.kg += n;
+				x.c.hearts = (x.c.hearts ?? 0) - n * PRICE.world;
+				add(x.p, 'fromWorld', n);
+				add(x.p, 'spent', n * PRICE.world);
 			}
 		}
 		// water runs along the trade routes from tanks with more than two weeks to tanks with less
@@ -1612,7 +1616,7 @@ export function createSim(st) {
 		for (const x of vs) {
 			const { need, thirst } = want.get(x.p);
 			// what its wells and the routes leave short of what its people use, the world market sells
-			const short = thirst - x.p.litres;
+			const short = Math.min(thirst - x.p.litres, can(x.c) / WATER_PRICE);
 			if (short > 0) {
 				x.p.litres += short;
 				x.c.hearts = (x.c.hearts ?? 0) - short * WATER_PRICE;
@@ -1794,11 +1798,12 @@ export function createSim(st) {
 		}
 		if (st.time >= c.pop) {
 			c.pop = st.time + 6;
-			// newcomers settle in a village with a bed for them; with too few beds, people leave. They
-			// come and go a family at a time, one for every 96 beds, so a large village fills as fast as a small one did
+			// newcomers settle in a village with a bed for them while it has the food and water for them; with too few beds,
+			// people leave. They come and go a family at a time, one for every 96 beds, so a large village fills as fast as
+			// a small one did
 			for (const { v, c: ctr, p } of yourVillages()) {
 				const people = villagePeople(v), room = bedsIn(v), family = Math.max(1, Math.ceil(room / 96));
-				if (people < room) ctr.settlers += Math.min(family, room - people);
+				if (people < room && p.sat.food >= 0.9 && p.sat.water >= 0.9) ctr.settlers += Math.min(family, room - people);
 				else if (room > 0 && people > room && ctr.settlers > 0) {
 					ctr.settlers -= Math.min(family, people - room, ctr.settlers);
 					say(`A settler left ${p.name}: there are not enough beds. Build or enlarge houses.`, ctr.node, 'alert');
@@ -2250,6 +2255,7 @@ export function createSim(st) {
 			/** @type {{ tone: string, text: string, node: number }[]} */
 			const notes = [];
 			if (pop >= bed && bed < cap) notes.push({ tone: 'todo', text: `No free bed: enlarge a house or build one`, node: c.node });
+			if (lived && (s.food < 0.9 || s.water < 0.9)) notes.push({ tone: 'alert', text: `Its treasury cannot pay for all its ${s.food < 0.9 ? 'food' : 'water'}: no newcomers until it can`, node: c.node });
 			if (lived && !wellsIn(v)) notes.push({ tone: 'todo', text: `No well: it buys its water from the world market`, node: c.node });
 			const cut = blds().find((b) => b.owner === PLAYER && b.stage === 'site' && villageAt(b.node) === v && b.status === 'Not connected by road');
 			if (cut) notes.push({ tone: 'alert', text: `A ${T(cut).label.toLowerCase()} site has no path`, node: cut.node });
@@ -2259,7 +2265,7 @@ export function createSim(st) {
 				pop,
 				beds: bed,
 				cap,
-				/** its treasury, in gold (below 0, a debt), and in euros: a HEART is a euro */
+				/** its treasury, in gold (below 0, a debt to your other villages), and in euros: a HEART is a euro */
 				gold: (c.hearts ?? 0) / HEARTS.perGold,
 				eur: c.hearts ?? 0,
 				/** what its settlers issue a week, in HEARTs (€) */
