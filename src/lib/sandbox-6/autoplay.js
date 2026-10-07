@@ -4,7 +4,7 @@
  * for a valley that needs it. The film camera grows its valley with it (a settlement that is already busy), and it
  * plays a whole game headless to prove every chain runs end to end.
  */
-import { BUILDINGS, IRON, WATER } from './rules.js';
+import { BUILDINGS, GRASS, IRON, MOUNTAIN, WATER } from './rules.js';
 import { PLAYER } from './sim.js';
 
 /** the plan: what to build, in order, and where it would rather stand */
@@ -21,12 +21,10 @@ const PLAN = [
 	['bakery', 'home'],
 	['farm', 'open'],
 	['toolmaker', 'home'],
-	['boundary', 'fair'],
 	['fishery', 'water'],
 	['farm', 'open'],
 	['bakery', 'home'],
 	['well', 'home'],
-	['boundary', 'south'],
 	['fishery', 'water'],
 	['quarry', 'rocks'],
 	['farm', 'open'],
@@ -62,7 +60,6 @@ export function createAutoplay(sim) {
 
 	/** how well a node suits a building: higher is better, -Infinity where it may not stand */
 	function score(/** @type {string} */ type, /** @type {string} */ want, /** @type {number} */ n) {
-		if (sim.canBuild(type, n)) return -Infinity;
 		const home = hq().node;
 		const d = g.dist(home, n);
 		const east = g.x(n) - g.x(home);
@@ -91,20 +88,90 @@ export function createAutoplay(sim) {
 				return -d - (count((j) => st.obj[j]?.k === 'bld', n, 3) > 3 ? 4 : 0);
 		}
 	}
+	/** whether a building could stand on a spot once its settlement has a house: '' if so, 'house' if the house comes first */
+	function fits(/** @type {string} */ type, /** @type {number} */ n) {
+		const why = sim.canBuild(type, n);
+		if (!why) return '';
+		if (type === 'house' || (why !== 'Build this settlement’s house first' && why !== 'Outside your city')) return null;
+		const house = sim.plan.spots[sim.plan.plotOf[n]][0];
+		if (house < 0 || sim.canBuild('house', house)) return null;
+		// the house would make the spot buildable: everything else about it must already be fine
+		if (st.obj[n] || st.road[n]) return null;
+		const t = BUILDINGS[type];
+		if (t.on === 'mountain' ? st.terrain[n] !== MOUNTAIN : st.terrain[n] !== GRASS) return null;
+		if (type === 'fishery' && !g.within(n, 4).some((j) => st.terrain[j] === WATER)) return null;
+		if (t.kind === 'mine' && !g.within(n, 2).some((j) => st.ore[j] === IRON && st.amount[j] > 0)) return null;
+		return 'house';
+	}
 	function place(/** @type {string} */ type, /** @type {string} */ want) {
 		const spots = [];
+		const kind = type === 'house' ? 0 : -1;
 		for (let n = 0; n < g.N; n++) {
-			if (st.owner[n] !== PLAYER) continue;
-			const s = score(type, want, n);
-			if (s > -Infinity) spots.push([s, n]);
+			const sp = sim.plan.spotOf[n];
+			if (sp < 0 || (kind === 0 ? sp !== 0 : sp === 0)) continue;
+			const f = fits(type, n);
+			if (f === null) continue;
+			const s = score(type, want, n) - (f ? 6 : 0);
+			if (s > -Infinity) spots.push([s, n, f]);
 		}
-		spots.sort((a, b) => b[0] - a[0]);
-		for (const [, n] of spots.slice(0, 6)) {
-			const r = sim.build(type, n, true);
+		spots.sort((a, b) => /** @type {number} */ (b[0]) - /** @type {number} */ (a[0]));
+		for (const [, n, f] of spots.slice(0, 12)) {
+			const node = /** @type {number} */ (n);
+			if (f === 'house') {
+				const h = sim.plan.spots[sim.plan.plotOf[node]][0];
+				const r = sim.build('house', h, true);
+				if (!r.ok) continue;
+				if (!r.linked) {
+					sim.demolish(h);
+					continue;
+				}
+			}
+			const r = sim.build(type, node, true);
 			if (r.ok && r.linked) return true;
-			if (r.ok) sim.demolish(n);
+			if (r.ok) sim.demolish(node);
 		}
+		if (!spots.length && type !== 'house') expand(want);
 		return false;
+	}
+	/** what a building looks for out in the land */
+	const LOOKS = /** @type {Record<string, (j: number) => boolean>} */ ({
+		trees: (j) => st.obj[j]?.k === 'tree',
+		rocks: (j) => st.obj[j]?.k === 'rock',
+		water: (j) => st.terrain[j] === WATER,
+		mine: (j) => st.ore[j] === IRON
+	});
+	/** no spot anywhere in reach: found a house in the next village toward what it needs */
+	function expand(/** @type {string} */ want) {
+		const look = LOOKS[want];
+		if (!look) return false;
+		let best = -1, bd = Infinity;
+		for (let n = 0; n < g.N; n++) {
+			if (sim.plan.spotOf[n] !== 0 || sim.canBuild('house', n)) continue;
+			let d = Infinity;
+			for (const j of g.within(n, 7)) if (look(j)) d = Math.min(d, g.dist(n, j));
+			d += g.dist(n, hq().node) * 0.1;
+			if (d < bd) (bd = d), (best = n);
+		}
+		if (best < 0) return false;
+		const r = sim.build('house', best, true);
+		if (r.ok && !r.linked) sim.demolish(best);
+		return r.ok && r.linked;
+	}
+	/** beds before people: enlarge the smallest house, or found a new one, when the city is nearly full */
+	function homes(/** @type {any} */ s) {
+		// one great house, for the goal, once there is wood and stone to spare
+		const great = ofType('house').filter((b) => b.stage === 'live' && b.level < 4).sort((a, b) => b.level - a.level)[0];
+		if (!st.goals.house && great && (s.stock.plank ?? 0) >= 16 && (s.stock.stone ?? 0) >= 10 && !ofType('house').some((b) => b.stage === 'site')) return void sim.upgrade(great.id);
+		// only while the city lives well enough to feed more
+		if (s.people < s.beds - 1 || s.settlers >= 4 || (s.people >= 24 && st.parties[PLAYER].wb < 70)) return;
+		const houses = ofType('house');
+		if (houses.some((b) => b.stage === 'site')) return;
+		const small = houses.filter((b) => b.level < 4).sort((a, b) => b.level - a.level)[0];
+		if (small) {
+			const up = sim.inspect(small.id)?.up ?? {};
+			if (Object.entries(up).every(([w, n]) => (s.stock[w] ?? 0) >= /** @type {number} */ (n) + 2)) return void sim.upgrade(small.id);
+		}
+		if ((s.stock.plank ?? 0) >= 6 && (s.stock.stone ?? 0) >= 3) place('house', 'home');
 	}
 	/** split long roads with flags, so more carriers share the load */
 	function flags() {
@@ -128,6 +195,7 @@ export function createAutoplay(sim) {
 					plan.splice(st.auto, 0, [b.type, 'mine']);
 				}
 			const s = sim.summary();
+			homes(s);
 			if (st.auto < plan.length) {
 				const [type, want] = plan[st.auto];
 				const cost = BUILDINGS[type].cost;

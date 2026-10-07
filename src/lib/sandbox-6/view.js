@@ -251,7 +251,13 @@ export function createView(scene, sim) {
 	// ── buildings ──
 	/** @type {Map<number, { group: THREE.Group, model: THREE.Group, scaffold: THREE.Group | null, owner: number, smoke: THREE.Object3D[] }>} */
 	const shown = new Map();
-	const DOOR = Math.atan2(0.5, Math.sqrt(3) / 2);
+	/** a building turns its door to its settlement's flag */
+	const door = (/** @type {number} */ node) => {
+		const f = sim.plan.centre[sim.plan.plotOf[node]];
+		return Math.atan2(X(f) - X(node), Z(f) - Z(node));
+	};
+	/** a house grows with its size */
+	const HOUSE_SCALE = [0.62, 0.78, 0.94, 1.15];
 	function syncBuildings(/** @type {number} */ t) {
 		for (const [id, s] of shown)
 			if (!st.buildings[id]) {
@@ -265,7 +271,7 @@ export function createView(scene, sim) {
 				const model = buildingModel(b.type, b.owner);
 				group.add(model);
 				group.position.set(X(b.node), Y(b.node), Z(b.node));
-				group.rotation.y = DOOR;
+				group.rotation.y = door(b.node);
 				group.userData.building = b.id;
 				const smoke = /** @type {THREE.Object3D[]} */ ([]);
 				model.traverse((o) => o.name === 'smoke' && smoke.push(o));
@@ -277,12 +283,15 @@ export function createView(scene, sim) {
 				if (!s.scaffold) s.group.add((s.scaffold = scaffold()));
 				const total = Object.values(b.cost).reduce((/** @type {number} */ a, /** @type {any} */ n) => a + n, 0);
 				const used = Object.values(b.used).reduce((/** @type {number} */ a, /** @type {any} */ n) => a + n, 0);
-				s.model.scale.set(1, Math.max(0.06, used / Math.max(1, total)), 1);
+				// a house being enlarged stands meanwhile at its size; anything new rises from the ground
+				if (b.type === 'house' && b.level) s.model.scale.setScalar(HOUSE_SCALE[b.level - 1]);
+				else s.model.scale.set(1, Math.max(0.06, used / Math.max(1, total)), 1);
 			} else if (s.scaffold) {
 				s.group.remove(s.scaffold);
 				s.scaffold = null;
 				s.model.scale.set(1, 1, 1);
 			}
+			if (b.type === 'house' && b.stage === 'live') s.model.scale.setScalar(HOUSE_SCALE[Math.max(0, b.level - 1)]);
 			if (s.owner !== b.owner) {
 				recolour(s.model, b.owner);
 				s.owner = b.owner;
@@ -462,12 +471,12 @@ export function createView(scene, sim) {
 			if (!ghost || ghostType !== type) {
 				if (ghost) root.remove(ghost);
 				ghost = buildingModel(type, 0);
-				ghost.rotation.y = DOOR;
 				ghostType = type;
 				root.add(ghost);
 			}
 			ghost.visible = true;
 			ghost.position.set(X(node), Y(node), Z(node));
+			ghost.rotation.y = door(node);
 			ghost.traverse((o) => {
 				if (o instanceof THREE.Mesh) {
 					o.material = ok ? ghostOk : ghostNo;

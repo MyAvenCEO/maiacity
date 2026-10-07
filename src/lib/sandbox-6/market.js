@@ -4,8 +4,8 @@
  *
  * The fair. Every settlement's trader carts wares to the fair and back. The fair keeps a pool of each ware: selling
  * puts wares in it, buying takes them out, and the price follows the pool, unit by unit. A ware that piles up gets
- * cheap, a ware that runs short gets dear; every trade nudges its price, and traders from beyond the valley take a glut
- * away and, slowly, bring a little of what runs short. Coins are only how wares change hands: the fair pays them out and
+ * cheap, a ware that runs short gets dear; every trade nudges its price. Only the valley's cities trade here: every ware
+ * in the fair's pool was brought by one of them. Coins are only how wares change hands: the fair pays them out and
  * takes them in, and nothing in the score counts them.
  *
  * Needs. Everyone in a settlement eats (fish or bread, best both), drinks, and keeps a home
@@ -45,11 +45,11 @@ const LEAN = 0.85;
  * none of another, so each can live on its own at first and needs the others to grow — a loop of three: you (plenty of
  * food, little iron) need Eastmere's ore and tools, Eastmere needs Highfold's planks, Highfold needs your fish.
  * What each makes, a person a minute.
- * @type {{ name: string, about: string, plenty: string, short: string, make: Record<string, number> }[]}
+ * @type {{ name: string, about: string, plenty: string, short: string, builds: string[], make: Record<string, number> }[]}
  */
 export const NEIGHBOURS = [
-	{ name: 'Eastmere', about: 'Miners and smiths under the eastern peaks: plenty of iron ore and tools, but no wood.', plenty: 'ore', short: 'plank', make: { ore: 0.06, tools: 0.03, fish: 0.03, bread: 0.05, water: 0.06, stone: 0.05, grain: 0.02 } },
-	{ name: 'Highfold', about: 'Woodcutters in the northern hills: plenty of planks, but no fish.', plenty: 'plank', short: 'fish', make: { plank: 0.1, bread: 0.08, water: 0.06, stone: 0.03 } }
+	{ name: 'Eastmere', about: 'Miners and smiths under the eastern peaks: plenty of iron ore and tools, but no wood.', plenty: 'ore', short: 'plank', builds: ['toolmaker', 'quarry', 'bakery', 'well', 'fishery', 'farm'], make: { ore: 0.06, tools: 0.03, fish: 0.03, bread: 0.05, water: 0.06, stone: 0.05, grain: 0.02 } },
+	{ name: 'Highfold', about: 'Woodcutters in the northern hills: plenty of planks, but no fish.', plenty: 'plank', short: 'fish', builds: ['woodcutter', 'forester', 'bakery', 'well', 'farm', 'quarry'], make: { plank: 0.1, bread: 0.08, water: 0.06, stone: 0.03 } }
 ];
 
 /**
@@ -271,8 +271,6 @@ export function fair(m, time, dt) {
 			if (m.hist[w].length > 30) m.hist[w].shift();
 		}
 	}
-	// traders from beyond the valley take away a glut quickly, and bring in a little of what runs short
-	for (const w of TRADED) m.pool[w] += (REF(w) - m.pool[w]) * (1 - Math.exp(-dt / (m.pool[w] > REF(w) ? 900 : 5000)));
 }
 
 /** a neighbour asks for what it lacks most, with a reward: a request, or null @param {any} m @param {any[]} parties @param {number} time @param {() => number} rand */
@@ -290,8 +288,8 @@ export function request(m, parties, time, rand) {
 			if (s < worst) (worst = s), (k = j), (need = n);
 		}
 	}
-	// only a real shortage is worth asking for
-	if (!k || worst > 0.6) return null;
+	// only a shortage is worth asking for
+	if (!k || worst > 0.8) return null;
 	const p = parties[k];
 	const w = need === 'food' ? [...FOOD].sort((a, b) => p.mix[a] - p.mix[b])[Math.floor(rand() * 2)] : need;
 	// as much as it is short, in fives; it pays from its own purse, and with none left it asks for help
