@@ -2107,18 +2107,18 @@ export function createSim(st) {
 			const pop = villagePeople(v), bed = bedsIn(v), cap = capOf(v), lived = pop > 0;
 			const s = p.sat, mix = variety(p) < 0.5 && lived;
 			const noTools = blds().some((b) => b.owner === PLAYER && villageAt(b.node) === v && /tools/.test(b.status ?? ''));
-			/** @type {Record<string, { tone: string, hint: string }>} */
-			const need = {};
-			const set = (/** @type {string} */ w, /** @type {string} */ tone, /** @type {string} */ hint) => (need[w] = { tone, hint });
-			if (lived && s.food < 0.8) (set('fish', 'alert', 'Hungry: build a fishery'), set('bread', 'alert', 'Hungry: or a farm + bakery'));
-			else if (mix && p.mix.fish < p.mix.bread) set('fish', 'todo', 'Eats only bread: fishery');
-			else if (mix) set('bread', 'todo', 'Eats only fish: farm + bakery');
-			if (lived && s.water < 0.8) set('water', 'alert', 'Thirsty: build a well');
-			if (lived && s.plank < 0.8) set('plank', 'alert', 'Homes need planks: woodcutter');
-			else if ((c.stock.plank ?? 0) < 6) set('plank', 'todo', 'Low: woodcutter + forester');
-			if (lived && s.stone < 0.8) set('stone', 'alert', 'Homes need stone: quarry');
-			else if ((c.stock.stone ?? 0) < 4) set('stone', 'todo', 'Low: quarry by rocks');
-			if (noTools) set('tools', 'alert', 'Out of tools: toolmaker');
+			const has = (/** @type {string} */ w) => c.stock[w] ?? 0;
+			/** each need: how well it is met lately, the wares that meet it, and (when short) what makes them */
+			const need = (/** @type {string} */ key, /** @type {string} */ label, /** @type {string[]} */ wares, /** @type {string} */ tone, /** @type {string} */ fix) => ({ key, label, sat: lived ? /** @type {any} */ (s)[key] : 1, wares, tone, fix });
+			const hungry = lived && s.food < 0.8;
+			const needs = [
+				need('food', 'Food', ['fish', 'bread'], hungry ? 'alert' : mix ? 'todo' : '', hungry ? 'fishery, or farm + bakery' : mix ? (p.mix.fish < p.mix.bread ? 'fishery: only bread' : 'farm + bakery: only fish') : ''),
+				need('water', 'Water', ['water'], lived && s.water < 0.8 ? 'alert' : '', lived && s.water < 0.8 ? 'well' : ''),
+				need('plank', 'Planks', ['plank'], lived && s.plank < 0.8 ? 'alert' : has('plank') < 6 ? 'todo' : '', lived && s.plank < 0.8 || has('plank') < 6 ? 'woodcutter' : ''),
+				need('stone', 'Stone', ['stone'], lived && s.stone < 0.8 ? 'alert' : has('stone') < 4 ? 'todo' : '', lived && s.stone < 0.8 || has('stone') < 4 ? 'quarry' : '')
+			];
+			/** what else its store holds (what the needs are made from, and tools) */
+			const more = ['grain', 'ore', 'tools'].map((w) => ({ w, n: Math.floor(has(w)), tone: w === 'tools' && noTools ? 'alert' : '' }));
 			/** @type {{ tone: string, text: string, node: number }[]} */
 			const notes = [];
 			if (pop >= bed && bed < cap) notes.push({ tone: 'todo', text: `No free bed: enlarge a house or build one`, node: c.node });
@@ -2134,7 +2134,8 @@ export function createSim(st) {
 				wb: p.wb,
 				villages: all.map((x) => ({ name: x.p.name, node: x.c.node })),
 				stock: { ...c.stock },
-				need,
+				needs,
+				more,
 				notes
 			};
 		},
