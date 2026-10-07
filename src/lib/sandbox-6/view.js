@@ -12,7 +12,10 @@ import { buildingModel, mat, recolour, scaffold, TEAM } from './models.js';
 import { ROW, SE, STEP } from './hex.js';
 import { K } from './plots.js';
 
-const ROAD_W = 0.42;
+/** a path's width: two lanes, a bus each way, a dashed line between them */
+const ROAD_W = 0.9;
+/** how far right of a path's middle a bus keeps: the middle of its own lane */
+const LANE = ROAD_W / 4;
 /** the water's surface */
 export const SEA = -0.3;
 /** a hex's radius, middle to corner */
@@ -21,8 +24,8 @@ const HEX_R = (K * STEP) / Math.sqrt(3);
 const WAYS = [[1, 0], [0.5, -Math.sqrt(3) / 2], [-0.5, -Math.sqrt(3) / 2], [-1, 0], [-0.5, Math.sqrt(3) / 2], [0.5, Math.sqrt(3) / 2]];
 /** how much larger a village center is drawn than its model: half its hex across, land all round it */
 const CENTRE_SCALE = 2.4, CENTRE_TALL = 1.8;
-/** the little square in the middle of a hex where its paths meet */
-const SQUARE_R = 1.2;
+/** the stop in the middle of a hex where its paths meet: just wider than a path */
+const SQUARE_R = 0.62;
 
 /**
  * @param {THREE.Scene} scene
@@ -179,7 +182,8 @@ export function createView(scene, sim) {
 					: a(c0) * (1 - t) + b(c0) * (t - f) + b(c0 + 1) * f;
 		return Math.max(y, SEA);
 	}
-	/** a hex's middle in the world, and one of its corners (between its ways d and d + 1) */
+	/** a hex's middle in the world, and one of its corners (between its ways d and d + 1): its side toward way d runs
+	 * from corner d to corner d + 1 */
 	const HX = (/** @type {number} */ k) => X(plan.centre[k]), HZ = (/** @type {number} */ k) => Z(plan.centre[k]);
 	const corner = (/** @type {number} */ k, /** @type {number} */ d, r = HEX_R) => {
 		const a = Math.atan2(WAYS[d][1], WAYS[d][0]) + Math.PI / 6;
@@ -197,7 +201,7 @@ export function createView(scene, sim) {
 				// a side two hexes share is drawn once
 				const o = plan.nbr[k][d];
 				if (d >= 3 && o >= 0 && dry[o]) continue;
-				const [ax, az] = corner(k, (d + 5) % 6), [bx, bz] = corner(k, d);
+				const [ax, az] = corner(k, d), [bx, bz] = corner(k, (d + 1) % 6);
 				const n = Math.ceil(Math.hypot(bx - ax, bz - az) / 0.6);
 				for (let s = 0; s < n; s++) {
 					const x0 = ax + ((bx - ax) * s) / n, z0 = az + ((bz - az) * s) / n, x1 = ax + ((bx - ax) * (s + 1)) / n, z1 = az + ((bz - az) * (s + 1)) / n;
@@ -282,47 +286,86 @@ export function createView(scene, sim) {
 
 	let terSeen = -1;
 	const teamColor = TEAM.map((x) => new THREE.Color(x));
-	/** the borders of the villages held: a thin band lying on the land along every side of a held hex that faces a hex
-	 * held by nobody or by another; shown while placing, or while a village center is picked */
-	const borderMat = keep(new THREE.MeshBasicMaterial({ vertexColors: true, transparent: true, opacity: 0.85, depthWrite: false, side: THREE.DoubleSide }));
+	/** the borders of the villages held: a band lying on the land just inside each village's own outline (its seven
+	 * hexes), in its owner's colour, so two villages side by side each show theirs; every village's while placing */
+	const borderMat = keep(new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -3, polygonOffsetUnits: -3 }));
 	const borders = new THREE.Mesh(new THREE.BufferGeometry(), borderMat);
 	borders.renderOrder = 3;
 	borders.visible = false;
 	root.add(borders);
+	/** and the picked village center's own village alone: one thin line round its seven hexes */
+	const pickBorder = new THREE.Mesh(new THREE.BufferGeometry(), borderMat);
+	pickBorder.renderOrder = 3;
+	pickBorder.visible = false;
+	root.add(pickBorder);
 	let gridOn = false;
-	function syncBorder() {
-		if (terSeen === st.terV) return;
-		terSeen = st.terV;
+	/** the band round each of these villages @param {number[]} vs @param {number} band its width */
+	function villageBand(vs, band) {
 		/** @type {number[]} */
 		const pos = [], col = [];
-		const held = (/** @type {number} */ k) => (k < 0 ? -1 : st.owner[plan.centre[k]]);
-		const BAND = 0.14, IN = HEX_R - 0.2;
-		for (let k = 0; k < P; k++) {
-			const o = held(k);
-			if (o < 0 || !dry[k]) continue;
-			const tc = teamColor[o] ?? teamColor[0];
-			for (let d = 0; d < 6; d++) {
-				if (held(plan.nbr[k][d]) === o) continue;
-				const [ax, az] = corner(k, (d + 5) % 6, IN), [bx, bz] = corner(k, d, IN);
-				const len = Math.hypot(bx - ax, bz - az), nx = (-(bz - az) / len) * (BAND / 2), nz = ((bx - ax) / len) * (BAND / 2);
-				const n = Math.ceil(len / 0.4);
-				for (let s = 0; s < n; s++) {
-					const x0 = ax + ((bx - ax) * s) / n, z0 = az + ((bz - az) * s) / n, x1 = ax + ((bx - ax) * (s + 1)) / n, z1 = az + ((bz - az) * (s + 1)) / n;
-					const y0 = heightAt(x0, z0) + 0.09, y1 = heightAt(x1, z1) + 0.09;
-					pos.push(x0 + nx, y0, z0 + nz, x1 + nx, y1, z1 + nz, x1 - nx, y1, z1 - nz, x0 + nx, y0, z0 + nz, x1 - nx, y1, z1 - nz, x0 - nx, y0, z0 - nz);
-					for (let v = 0; v < 6; v++) col.push(tc.r, tc.g, tc.b);
+		for (const v of vs) {
+			const tc = teamColor[st.villageOwner[v] ?? 0] ?? teamColor[0];
+			for (const k of plan.villages[v].plots)
+				for (let d = 0; d < 6; d++) {
+					const o = plan.nbr[k][d];
+					if (o >= 0 && plan.villageOf[o] === v) continue;
+					// a side of the village's outline: the band runs along it on the inside, a little past both ends so
+					// it meets the next side without a gap
+					const [cx, cz] = corner(k, d), [ex, ez] = corner(k, (d + 1) % 6);
+					const len = Math.hypot(ex - cx, ez - cz), tx = (ex - cx) / len, tz = (ez - cz) / len;
+					const mx = (cx + ex) / 2, mz = (cz + ez) / 2, il = Math.hypot(HX(k) - mx, HZ(k) - mz), ix = (HX(k) - mx) / il, iz = (HZ(k) - mz) / il;
+					const ax = cx - tx * band, az = cz - tz * band, bx = ex + tx * band, bz = ez + tz * band;
+					const n = Math.ceil((len + 2 * band) / 0.4);
+					for (let s = 0; s < n; s++) {
+						const x0 = ax + ((bx - ax) * s) / n, z0 = az + ((bz - az) * s) / n, x1 = ax + ((bx - ax) * (s + 1)) / n, z1 = az + ((bz - az) * (s + 1)) / n;
+						const p0 = [x0 + ix * 0.04, z0 + iz * 0.04], p1 = [x1 + ix * 0.04, z1 + iz * 0.04], q1 = [x1 + ix * (0.04 + band), z1 + iz * (0.04 + band)], q0 = [x0 + ix * (0.04 + band), z0 + iz * (0.04 + band)];
+						for (const [x, z] of [p0, p1, q1, p0, q1, q0]) pos.push(x, heightAt(x, z) + 0.09, z), col.push(tc.r, tc.g, tc.b);
+					}
 				}
-			}
 		}
-		borders.geometry.dispose();
 		const geo = new THREE.BufferGeometry();
 		geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
 		geo.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
-		borders.geometry = geo;
+		return geo;
+	}
+	function syncBorder() {
+		if (terSeen === st.terV) return;
+		terSeen = st.terV;
+		borders.geometry.dispose();
+		borders.geometry = villageBand(plan.villages.map((_, v) => v).filter((v) => (st.villageOwner[v] ?? -1) >= 0), 0.1);
 	}
 
 	// ── roads ──
 	const roadMat = keep(new THREE.MeshStandardMaterial({ color: '#b39468', roughness: 1, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 }));
+	// a path: two lanes with a dashed line between them, one way each
+	const laneTex = (() => {
+		const c = document.createElement('canvas');
+		c.width = 32;
+		c.height = 64;
+		const x = /** @type {CanvasRenderingContext2D} */ (c.getContext('2d'));
+		x.fillStyle = '#b39468';
+		x.fillRect(0, 0, 32, 64);
+		x.fillStyle = '#efe4c8';
+		x.fillRect(15, 6, 2, 26);
+		const t = new THREE.CanvasTexture(c);
+		t.wrapS = THREE.ClampToEdgeWrapping;
+		t.wrapT = THREE.RepeatWrapping;
+		t.colorSpace = THREE.SRGBColorSpace;
+		return keep(t);
+	})();
+	const laneMat = keep(new THREE.MeshStandardMaterial({ map: laneTex, roughness: 1, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 }));
+	/** a path's straight runs: its nodes where it turns @param {number[]} path */
+	const runs = (path) => {
+		const out = [];
+		let from = path[0];
+		for (let k = 1; k < path.length; k++) {
+			const a = path[k - 1], b = path[k], c = path[k + 1];
+			if (c !== undefined && Math.abs((X(b) - X(a)) * (Z(c) - Z(b)) - (Z(b) - Z(a)) * (X(c) - X(b))) < 1e-6) continue;
+			out.push([from, b]);
+			from = b;
+		}
+		return out;
+	};
 	/** @type {THREE.Mesh | null} */
 	let roadMesh = null;
 	/** a ribbon along a list of nodes @param {number[][]} paths @param {number} width @param {number} lift */
@@ -390,7 +433,7 @@ export function createView(scene, sim) {
 			m.geometry.dispose();
 			root.remove(m);
 		}
-		roadMesh = new THREE.Mesh(ribbon(Object.values(st.roads).map((r) => r.path), ROAD_W, 0.04), roadMat);
+		roadMesh = new THREE.Mesh(line(Object.values(st.roads).flatMap((r) => runs(r.path)), ROAD_W, 0.04), laneMat);
 		roadMat.side = THREE.DoubleSide;
 		roadMesh.receiveShadow = true;
 		root.add(roadMesh);
@@ -405,7 +448,7 @@ export function createView(scene, sim) {
 			if (!big(b.type)) doors.push([f.node, b.node]);
 		}
 		for (const r of Object.values(st.roads)) used.add(r.path[0]), used.add(r.path[r.path.length - 1]);
-		stubMesh = new THREE.Mesh(line(doors, ROAD_W * 0.85, 0.05), roadMat);
+		stubMesh = new THREE.Mesh(line(doors, ROAD_W * 0.5, 0.05), roadMat);
 		stubMesh.receiveShadow = true;
 		root.add(stubMesh);
 		let k = 0;
@@ -565,7 +608,10 @@ export function createView(scene, sim) {
 		const k = Math.max(0, Math.min(n - 1, Math.floor(u.p)));
 		const f = Math.min(1, Math.max(0, u.p - k));
 		const a = u.path[k], b = u.path[Math.min(n - 1, k + 1)];
-		return at.set(X(a) + (X(b) - X(a)) * f, Math.max(Y(a), SEA) + (Math.max(Y(b), SEA) - Math.max(Y(a), SEA)) * f, Z(a) + (Z(b) - Z(a)) * f);
+		// it keeps to the right-hand lane of the way it goes, so every path runs both ways at once
+		const a0 = a === b && k > 0 ? u.path[k - 1] : a, b0 = a === b && k > 0 ? a : b;
+		const dx = X(b0) - X(a0), dz = Z(b0) - Z(a0), len = Math.hypot(dx, dz), side = len > 1e-6 ? ((u.tgt >= u.p ? 1 : -1) * LANE) / len : 0;
+		return at.set(X(a) + (X(b) - X(a)) * f - dz * side, Math.max(Y(a), SEA) + (Math.max(Y(b), SEA) - Math.max(Y(a), SEA)) * f, Z(a) + (Z(b) - Z(a)) * f + dx * side);
 	}
 	/** whether a node is a village center's stop: where a cart's straight legs meet */
 	const isCentre = (/** @type {number} */ n) => {
@@ -726,14 +772,20 @@ export function createView(scene, sim) {
 			const at = b ? stand(b.type, node) : node;
 			// round what is picked: a village center, a house of its size, any other dome
 			ring.scale.setScalar(picked ? CENTRE_SCALE * 1.95 : b?.type === 'house' && b.level ? Math.max(1, HOUSE_SCALE[b.level - 1] * 1.15) : 1);
-			borders.visible = gridOn || !!picked;
+			// a picked village center shows its own village's border, alone
+			pickBorder.visible = !!picked && !gridOn;
+			if (picked && b) {
+				pickBorder.geometry.dispose();
+				pickBorder.geometry = villageBand([plan.villageOf[plan.plotOf[b.node]]], 0.12);
+			}
 			if (node >= 0) ring.position.set(X(at), Math.max(Y(at), SEA) + 0.08, Z(at));
 		},
 		/** show the hexes' outlines and the villages' borders (while placing), or hide them @param {boolean} on */
 		grid(on) {
 			gridOn = on;
 			outline.visible = on;
-			borders.visible = on || !!picked;
+			borders.visible = on;
+			pickBorder.visible = !!picked && !on;
 		},
 		/** the ring under the cursor, in a colour @param {number} node @param {string} [color] */
 		hover(node, color = '#ffffff') {
@@ -814,6 +866,7 @@ export function createView(scene, sim) {
 			stubMesh?.geometry.dispose();
 			tiles.geometry.dispose();
 			borders.geometry.dispose();
+			pickBorder.geometry.dispose();
 			for (const m of tunMeshes) m.geometry.dispose();
 			for (const grp of fires.values()) grp.traverse((o) => o instanceof THREE.Mesh && o.geometry.dispose());
 			for (const d of disposables) d.dispose();
