@@ -507,15 +507,15 @@
 				<!-- a factory: its stage, and its three recipes (./rules.js RECIPES), in units -->
 				<p class="label">{card.recipe.label} · stage <b>{card.level}</b> of {card.stages}{card.upgrading && card.next ? ` · growing to a ${card.next.label.toLowerCase()}` : ''}</p>
 				<dl class="recipe">
-					<dt title="A round of its work: what it takes from its hex's land and the grid, and what it makes">Makes</dt>
-					<dd>{Object.keys(card.recipe.make.out).length ? `${craftLine(card.recipe.make)}, ${card.rounds} rounds a year` : `It ${card.recipe.does}`}</dd>
-					<dt title="What standing takes a year: 2% of what it is built of, and its dome's energy">Keeps</dt>
-					<dd>{side(card.recipe.keep.in, ', ')} a year</dd>
+					<dt title="Its work a week, working all its land gives it ({card.rounds} rounds a year, each {craftLine(card.recipe.make)}): what it takes from its hex's land and the grid, and what it makes">Makes</dt>
+					<dd>{Object.keys(card.recipe.make.out).length && card.week ? `${craftLine(card.week)} a week` : `It ${card.recipe.does}`}</dd>
+					<dt title="What standing takes a week: 2% a year of what it is built of, and its dome's energy">Keeps</dt>
+					<dd>{side(card.recipe.keep.in, ', ')} a week</dd>
 					{#if Object.keys(card.recipe.make.out).length}<dt title="What it made a week, lately">Lately</dt><dd>{ware(card.lately)} {nameOf(card.out)} a week{card.type === 'ironmine' ? ` · ore for ${num(card.deposit / card.rounds)} years` : ''}</dd>{/if}
 				</dl>
 				{#if card.owner === PLAYER && card.up && !card.upgrading && card.next}
 					<div class="actions">
-						<button class="go up" title="Upgrade to a {card.next.label.toLowerCase()}: {Object.keys(card.next.make.out).length ? craftLine(card.next.make) : card.next.does}, {card.rounds} rounds a year. Its build: {side(card.next.build.in, ', ')}" onclick={() => card && ((upWhy = game?.sim.upgrade(card.id)?.why ?? ''), refresh())}>Upgrade → {card.next.label}{#each Object.entries(card.up) as [w, n] (w)}<span class="cost"><i style:background={WARES[w].color}></i>{ware(n)}</span>{/each}<span class="cost"><i class="bolt"></i>{fmt(card.next.build.in.energy ?? 0)}</span></button>
+						<button class="go up" title="Upgrade to a {card.next.label.toLowerCase()}: {Object.keys(card.next.make.out).length && card.nextWeek ? `${craftLine(card.nextWeek)} a week` : card.next.does}. Its build: {side(card.next.build.in, ', ')}" onclick={() => card && ((upWhy = game?.sim.upgrade(card.id)?.why ?? ''), refresh())}>Upgrade → {card.next.label}{#each Object.entries(card.up) as [w, n] (w)}<span class="cost"><i style:background={WARES[w].color}></i>{ware(n)}</span>{/each}<span class="cost"><i class="bolt"></i>{fmt(card.next.build.in.energy ?? 0)}</span></button>
 					</div>
 					{#if upWhy}<p class="status">{upWhy}</p>{/if}
 				{/if}

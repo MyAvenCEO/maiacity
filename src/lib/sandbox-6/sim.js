@@ -21,7 +21,7 @@
  *     out;
  *   · what a treasury lacks it borrows, an annuity loan over fifteen years (./market.js LOAN). There is no goal to win.
  */
-import { BIOMES, BUILDINGS, BUILD_MWH_T, CENTRE, ENERGY, GROWS, GRASS, HOUSE_BEDS, HOUSE_MOST, HOUSE_TOP, HOUSE_UP, IRON, LAND, LOAD_T, MOUNTAIN, RECIPES, ROUNDS_YEAR, ROUTE_T_KM, START, UNIT_M, WARES, WATER, centreStage, holdsLand, loadsRound, recipe, sunBedDay, yearOf } from './rules.js';
+import { BIOMES, BUILDINGS, BUILD_MWH_T, CENTRE, ENERGY, GROWS, GRASS, HOUSE_BEDS, HOUSE_MOST, HOUSE_TOP, HOUSE_UP, IRON, LAND, LOAD_T, MOUNTAIN, RECIPES, ROUNDS_YEAR, ROUTE_T_KM, START, UNIT_M, WARES, WATER, centreStage, holdsLand, loadsRound, recipe, sunBedDay, weekOf } from './rules.js';
 import { CART, GRID_EUR_KWH, HEARTS, LOAN, LOAN_PAY, NEEDS, NEIGHBOURS, TRADED, WORLD, heartsFor, keepOf, live, loanMonths, make, newMarket, orderRule, party, priceIn, request, shortIn, spareIn } from './market.js';
 import { SE, STEP, findPath, makeGrid } from './hex.js';
 import { CISTERN, FOOD_KG, FRESH_L, KEEP, MOST, PACE, PRICE, RAIN_L, RAIN_MONTH, TANK, WATER_PRICE, WATER_USE, WEEK, YEAR, DAY, MONTH, calendar, forestShare } from './food.js';
@@ -1668,7 +1668,7 @@ export function createSim(st) {
 	const homeDay = (/** @type {number} */ pop) => (pop * ENERGY.home) / YEAR;
 	/** kWh a day a village center uses at its stage (its keep): its hall, its storehouse, its trade routes' lights and
 	 * trains; a logistics hub less */
-	const centreDay = (/** @type {any} */ c) => (centreStage(levelOf(c)).keep.in.energy * 1000) / YEAR;
+	const centreDay = (/** @type {any} */ c) => (centreStage(levelOf(c)).keep.in.energy * 1000) / WEEK;
 	/** kWh a day its domes' climate uses: each bed's share, taken or not */
 	const climateIn = (/** @type {number} */ v) => (bedsIn(v) * ENERGY.climateBed) / YEAR;
 	/**
@@ -1877,8 +1877,8 @@ export function createSim(st) {
 			}
 		}
 	}
-	/** what a village's factories take a year to keep standing, by their keep recipes: wares in loads, energy in kWh
-	 * @param {number} v */
+	/** what a village's factories and center take a week to keep standing, by their keep recipes: wares in loads,
+	 * energy in kWh @param {number} v */
 	function upkeepIn(v) {
 		/** @type {Record<string, number>} */
 		const loads = {};
@@ -1911,16 +1911,16 @@ export function createSim(st) {
 		eatAndDrink(vs, dd);
 		loans(vs, dd);
 		for (const { v, c, p } of vs) {
-			// its homes' upkeep and its factories' keep recipes: wares from its stores, energy from its grid
+			// its homes' upkeep and its factories' keep recipes (a week's): wares from its stores, energy from its grid
 			const k = upkeepIn(v);
 			live(
 				p,
 				p.pop,
 				dd,
 				(w) => ((c.stock[w] ?? 0) >= 1 ? ((c.stock[w] -= 1), true) : false),
-				k.loads
+				Object.fromEntries(Object.entries(k.loads).map(([w, n]) => [w, (n * YEAR) / WEEK]))
 			);
-			(p.pend ??= {}), (p.pend.kwhWork = (p.pend.kwhWork ?? 0) + (k.kwh * dd) / YEAR);
+			(p.pend ??= {}), (p.pend.kwhWork = (p.pend.kwhWork ?? 0) + (k.kwh * dd) / WEEK);
 		}
 		// your city, as the market and the page see it: everyone counted
 		const you = st.parties[PLAYER];
@@ -2254,7 +2254,6 @@ export function createSim(st) {
 
 	/** a building's energy, kWh a week (see inspect) @param {any} b */
 	function power(b) {
-		const week = WEEK / YEAR;
 		if (b.stage !== 'live' && !(b.level > 0)) return null;
 		if (b.type === 'centre') return { made: wellsDay(b) * 7, used: centreDay(b) * 7, next: null };
 		if (b.type === 'house' && b.level) {
@@ -2262,7 +2261,7 @@ export function createSim(st) {
 			return { made: beds * sunBedDay(calendar(st.cal).month) * 7, used: homeDay(beds) * 7 + ((beds * ENERGY.climateBed) / YEAR) * 7, next: null };
 		}
 		if (!RECIPES[b.type]) return null;
-		const k = levelOf(b), use = (/** @type {number} */ l) => ((yearOf(b.type, l).in.energy ?? 0) + (recipe(b.type, l)?.keep.in.energy ?? 0)) * 1000 * week;
+		const k = levelOf(b), use = (/** @type {number} */ l) => ((weekOf(b.type, l).in.energy ?? 0) + (recipe(b.type, l)?.keep.in.energy ?? 0)) * 1000;
 		return { made: 0, used: use(k), next: k < RECIPES[b.type].stages.length ? use(k + 1) : null };
 	}
 
@@ -2680,6 +2679,9 @@ export function createSim(st) {
 				/** a factory's recipe at its stage, and at the next (./rules.js RECIPES) */
 				recipe: RECIPES[b.type] ? recipe(b.type, levelOf(b)) : null,
 				next: RECIPES[b.type] ? recipe(b.type, levelOf(b) + 1) ?? null : null,
+				/** what it makes a week at its stage and at the next, working all its land gives it */
+				week: RECIPES[b.type] ? weekOf(b.type, levelOf(b)) : null,
+				nextWeek: RECIPES[b.type] && recipe(b.type, levelOf(b) + 1) ? weekOf(b.type, levelOf(b) + 1) : null,
 				stages: RECIPES[b.type]?.stages.length ?? 0,
 				rounds: RECIPES[b.type]?.rounds ?? 0,
 				/** its energy, kWh a week: what a village center's wells make, a house's solar glass this month and what its

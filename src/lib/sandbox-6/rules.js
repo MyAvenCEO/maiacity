@@ -36,7 +36,7 @@
  * Plain data: the simulation (./sim.js) and the page read it alike.
  */
 
-import { YEAR } from './food.js';
+import { WEEK, YEAR } from './food.js';
 
 /** @typedef {{ id: string, label: string, color: string }} Ware */
 
@@ -202,13 +202,13 @@ export const BUILD_MWH_T = 0.1, KEEP_MWH_T = 0.2;
  * tonnes, and MWh of energy), and every stage of a factory has three:
  *   build — once, as it is built or grown to it: the wares its builders carry in and the energy they use, out comes the
  *           stage itself;
- *   keep  — a year, while it stands: the wares that keep it up (2% of what it is built of) and the energy its dome uses,
- *           nothing out;
+ *   keep  — a week, while it stands: the wares that keep it up (2% a year of what it is built of) and the energy its
+ *           dome uses, nothing out;
  *   make  — a round of its work: what it takes from the land of its hex (LAND), as much a round as the land gives it a
  *           year (`rounds`), and energy from its village's grid; out comes its ware, to its stop a truckload (5 t) at a
- *           time. A ware it took would come from your stores by bus.
- * The simulation runs every factory on it (./sim.js `craft`, and its builders and upkeep), the cards and the building
- * tree show it (./tree.js).
+ *           time. A ware it took would come from your stores by bus. The page says it a week (`weekOf`).
+ * Every keep and make shows a week, as the village card's needs do (Samuel, 2026-10-07). The simulation runs every
+ * factory on it (./sim.js `craft`, and its builders and upkeep), the cards and the building tree show it (./tree.js).
  *
  * Wood: a hex's 10 ha of hemp, bamboo and woods give 150 t a year, ten trees of 15 t; a woodcutter cuts 5 t of planks
  * from each (by hand, the rest firewood), a sawmill 10 t, a timber works all of it, glued into glulam and scrimber,
@@ -267,8 +267,13 @@ export const RECIPES = /** @type {any} */ ({
 });
 /** what a building of so many tonnes takes to build: its wares, and its builders' energy @param {Record<string, number>} wares */
 export const buildIn = (wares) => ({ ...wares, energy: Object.values(wares).reduce((s, t) => s + t, 0) * BUILD_MWH_T });
-/** what standing takes a year, of a building of so many tonnes all told @param {Record<string, number>} built */
-export const keepIn = (built) => ({ ...Object.fromEntries(Object.entries(built).map(([w, t]) => [w, t * UPKEEP])), energy: Object.values(built).reduce((s, t) => s + t, 0) * KEEP_MWH_T });
+/** a week's share of a year: every keep and make is said a week (Samuel, 2026-10-07), the valley's year being 360 days */
+export const WEEK_YEAR = WEEK / YEAR;
+/** so much a year, a week @param {Record<string, number>} m */
+export const aWeek = (m) => Object.fromEntries(Object.entries(m).map(([k, v]) => [k, v * WEEK_YEAR]));
+/** what standing takes a week, of a building of so many tonnes all told: 2% a year of it, and its dome's energy
+ * @param {Record<string, number>} built */
+export const keepIn = (built) => aWeek({ ...Object.fromEntries(Object.entries(built).map(([w, t]) => [w, t * UPKEEP])), energy: Object.values(built).reduce((s, t) => s + t, 0) * KEEP_MWH_T });
 // each stage's three recipes in full: its build (its wares in tonnes, with its builders' energy; and in loads for the
 // builders, `up`), its keep (of everything it is built of by then) and its make
 for (const [type, r] of Object.entries(RECIPES)) {
@@ -288,14 +293,13 @@ for (const [type, r] of Object.entries(RECIPES)) {
 export const recipe = (type, level) => RECIPES[type]?.stages[Math.max(1, level) - 1];
 /** loads of its ware a factory makes from a round at a stage @param {string} type @param {number} level */
 export const loadsRound = (type, level) => Object.values(recipe(type, level)?.make.out ?? {}).reduce((s, t) => s + t, 0) / LOAD_T;
-/** a stage's make a year, working all its land gives it: what it takes and makes, in units @param {string} type @param {number} level */
-export const yearOf = (type, level) => {
-	const r = recipe(type, level), n = RECIPES[type]?.rounds ?? 0;
+/** a stage's make a week, working all its land gives it (its rounds a year, a week's share of them): what it takes
+ * and makes, in units @param {string} type @param {number} level */
+export const weekOf = (type, level) => {
+	const r = recipe(type, level), n = (RECIPES[type]?.rounds ?? 0) * WEEK_YEAR;
 	const scale = (/** @type {Record<string, number>} */ m) => Object.fromEntries(Object.entries(m ?? {}).map(([k, v]) => [k, v * n]));
 	return { in: scale(r?.make.in ?? {}), out: scale(r?.make.out ?? {}) };
 };
-/** tonnes of its ware a factory makes a year at a stage @param {string} type @param {number} level */
-export const tonnesYear = (type, level) => Object.values(yearOf(type, level).out).reduce((s, t) => s + t, 0);
 /** rounds a factory's land gives it a year */
 export const ROUNDS_YEAR = /** @type {Record<string, number>} */ (Object.fromEntries(Object.entries(RECIPES).map(([k, r]) => [k, r.rounds])));
 /** the buildings that grow by upgrades, besides houses: their stages and what growing to each next one costs */
@@ -355,7 +359,8 @@ export const ENERGY = {
 	hub: 30000
 };
 // the village center's three recipes at each stage, as a factory's: its build in tonnes with its builders' energy and its
-// geothermal plant's gold (and in loads, `up`), its keep of all it is built of by then, and what its plant makes a year
+// geothermal plant's gold (and in loads, `up`), its keep a week of all it is built of by then, and what its plant makes
+// a week
 {
 	/** @type {Record<string, number>} */
 	const built = {};
@@ -364,8 +369,8 @@ export const ENERGY = {
 		x.up = Object.fromEntries(Object.entries(wares).map(([w, t]) => [w, Math.ceil(t / LOAD_T)]));
 		for (const [w, t] of Object.entries(wares)) built[w] = (built[w] ?? 0) + t;
 		x.build = { in: { ...buildIn(wares), ...(x.gold ? { gold: x.gold } : {}) }, out: {} };
-		x.keep = { in: { ...keepIn(built), energy: (x.plant ? ENERGY.centre : ENERGY.hub) / 1000 }, out: {} };
-		x.make = { in: {}, out: x.plant ? { energy: (x.plant * ENERGY.wellKw * 24 * YEAR * ENERGY.uptime) / 1000 } : {} };
+		x.keep = { in: { ...keepIn(built), energy: ((x.plant ? ENERGY.centre : ENERGY.hub) / 1000) * WEEK_YEAR }, out: {} };
+		x.make = { in: {}, out: x.plant ? { energy: (x.plant * ENERGY.wellKw * 24 * WEEK * ENERGY.uptime) / 1000 } : {} };
 	}
 	BUILDINGS.centre.cost = CENTRE[0].up;
 }
