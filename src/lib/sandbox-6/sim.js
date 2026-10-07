@@ -35,7 +35,8 @@ const WALK = 1.8, CARRY = 1.45;
 const CART_SPEED = 1.3;
 const FORESTER_TREES = 22;
 /** a neighbour city's people when its village is full: six houses of sixteen */
-const NEIGHBOUR_BEDS = 96;
+/** the villages a city needs before the valley can win, and the most a neighbour founds */
+const CITY_VILLAGES = 5;
 /** a building rests while the storehouses hold this much of what it makes */
 const ENOUGH = 40;
 
@@ -934,6 +935,47 @@ export function createSim(st) {
 	const comingTo = (/** @type {any} */ c) => (c.type === 'centre' ? (c.coming ??= {}) : st.parties[c.owner].coming);
 	/** the neighbour's village center */
 	const cityCentre = (/** @type {number} */ k) => st.buildings[st.villages[k - 1]];
+	/** a neighbour city's village centers, its seat first, then the villages it founded in turn */
+	const cityVillages = (/** @type {number} */ k) => all(st.buildings).filter((b) => b.type === 'village' && b.owner === k).sort((a, b) => a.id - b.id);
+	/** how many people a neighbour city holds when every one of its villages is full */
+	const cityCap = (/** @type {number} */ k) => cityVillages(k).reduce((s, c) => s + capOf(villageAt(c.node)), 0);
+	/** a neighbour city's people, village by village: each filled in turn, the newest takes what is left */
+	function cityShares(/** @type {number} */ k) {
+		const vs = cityVillages(k);
+		let left = st.parties[k].pop;
+		return vs.map((c, x) => {
+			const cap = capOf(villageAt(c.node)), n = x === vs.length - 1 ? left : Math.min(cap, left);
+			left -= n;
+			return { c, v: villageAt(c.node), cap, pop: n };
+		});
+	}
+	/** a neighbour city that is full and lives well founds its next village: free land beside one of its own, away from yours */
+	function cityFounds(/** @type {number} */ k) {
+		const mine = cityVillages(k);
+		const ownV = new Set(mine.map((c) => villageAt(c.node)));
+		const seat = cityCentre(k);
+		if (!seat) return;
+		const homes = (/** @type {number} */ v) => plan.villages[v].plots.filter((x) => x !== plan.villages[v].centre && plan.spots[x][0] >= 0 && st.terrain[plan.spots[x][0]] === GRASS).length;
+		const free = plan.villages
+			.map((vill, v) => ({ v, n: plan.centre[vill.centre] }))
+			.filter(({ v, n }) => (st.villageOwner[v] ?? -1) === -1 && plan.plotOf[n] === plan.villages[v].centre && homes(v) >= 3)
+			.filter(({ n }) => st.terrain[n] === GRASS && g.nb(n, SE) >= 0 && st.terrain[g.nb(n, SE)] === GRASS && st.obj[n]?.k !== 'bld' && !st.road[n] && !st.road[g.nb(n, SE)]);
+		// rather not beside your villages, rather beside its own, rather on its own side of the valley (nearer its seat
+		// than your first village center), then the nearest; boxed in, it takes the next free village it can
+		const home = st.buildings[st.hq]?.node ?? -1;
+		const byYou = (/** @type {number} */ v) => +plan.villages[v].near.some((x) => st.villageOwner[x] === PLAYER);
+		const apart = (/** @type {number} */ v) => +!plan.villages[v].near.some((x) => ownV.has(x));
+		const away = (/** @type {number} */ n) => +(home >= 0 && g.dist(n, seat.node) >= g.dist(n, home));
+		const near = (/** @type {number} */ n) => Math.min(...mine.map((c) => g.dist(c.node, n)));
+		const pick = free.sort((a, b) => byYou(a.v) - byYou(b.v) || apart(a.v) - apart(b.v) || away(a.n) - away(b.n) || near(a.n) - near(b.n))[0];
+		if (!pick) return;
+		if (st.obj[pick.n]) st.obj[pick.n] = null;
+		const b = makeBuilding('village', pick.n, k, true);
+		const to = mine.sort((x, y) => g.dist(x.node, pick.n) - g.dist(y.node, pick.n))[0];
+		dig(b, to, false);
+		territory();
+		say(`${st.parties[k].name} founded its ${['', '', 'second', 'third', 'fourth', 'fifth'][mine.length + 1] ?? 'next'} village`, pick.n, 'info');
+	}
 	let tunSeen = -1;
 	/** @type {Map<number, Map<number, number[]>>} */
 	const ways = new Map();
@@ -1173,37 +1215,38 @@ export function createSim(st) {
 	/** the neighbours' cities as they grow: a settlement (a house, two factories) for every sixteen or so people */
 	function neighbourTowns() {
 		for (let k = 1; k < st.parties.length; k++) {
-			const p = st.parties[k];
-			const hall = st.buildings[st.villages[k - 1]];
-			if (!hall) continue;
-			const vill = plan.villages[villageAt(hall.node)];
-			const ring = vill.plots.filter((x) => x !== plan.plotOf[hall.node]);
-			const count = Math.max(1, Math.min(ring.length, Math.ceil(p.pop / 16)));
-			let level = 1;
-			while (level < 4 && count * HOUSE_BEDS[level - 1] < p.pop) level++;
 			const kinds = NEIGHBOURS[k - 1].builds;
-			ring.slice(0, count).forEach((plot, x) => {
-				const [h, f1, f2] = plan.spots[plot];
-				if (h >= 0) {
-					const b = buildingAt(h);
-					if (!b) {
-						if (st.obj[h]) st.obj[h] = null;
-						const nb = makeBuilding('house', h, k, true);
-						nb.level = level;
-						nb.since = -1;
-					} else if (b.type === 'house' && b.level !== level) {
-						b.level = level;
-						st.objV++;
+			for (const { c, v, pop } of cityShares(k)) {
+				const vill = plan.villages[v];
+				// the settlements with room for a house first, nearest the center first
+				const home = (/** @type {number} */ x) => plan.spots[x][0] >= 0 && st.terrain[plan.spots[x][0]] === GRASS;
+				const ring = vill.plots.filter((x) => x !== vill.centre).sort((a, b) => +home(b) - +home(a) || g.dist(plan.centre[a], c.node) - g.dist(plan.centre[b], c.node));
+				const count = Math.max(1, Math.min(ring.length, Math.ceil(pop / 16)));
+				let level = 1;
+				while (level < 4 && count * HOUSE_BEDS[level - 1] < pop) level++;
+				ring.slice(0, count).forEach((plot, x) => {
+					const [h, f1, f2] = plan.spots[plot];
+					if (h >= 0) {
+						const b = buildingAt(h);
+						if (!b) {
+							if (st.obj[h]) st.obj[h] = null;
+							const nb = makeBuilding('house', h, k, true);
+							nb.level = level;
+							nb.since = -1;
+						} else if (b.type === 'house' && b.owner === k && b.level !== level) {
+							b.level = level;
+							st.objV++;
+						}
 					}
-				}
-				for (const [y, spot] of [f1, f2].entries()) {
-					if (spot < 0 || buildingAt(spot)) continue;
-					const type = kinds[(x * 2 + y) % kinds.length];
-					if (BUILDINGS[type].on === 'mountain' ? st.terrain[spot] !== MOUNTAIN : st.terrain[spot] === WATER) continue;
-					if (st.obj[spot]) st.obj[spot] = null;
-					makeBuilding(type, spot, k, true).since = -1;
-				}
-			});
+					for (const [y, spot] of [f1, f2].entries()) {
+						if (spot < 0 || buildingAt(spot) || st.road[spot]) continue;
+						const type = kinds[(x * 2 + y) % kinds.length];
+						if (BUILDINGS[type].on === 'mountain' ? st.terrain[spot] !== MOUNTAIN : st.terrain[spot] === WATER) continue;
+						if (st.obj[spot]) st.obj[spot] = null;
+						makeBuilding(type, spot, k, true).since = -1;
+					}
+				});
+			}
 		}
 	}
 
@@ -1295,7 +1338,10 @@ export function createSim(st) {
 		const ready = GOALS.every((x) => x.id === 'abundance' || st.goals[x.id]);
 		m.thriving = rows.filter((r) => r.wb >= ABUNDANT && r.full).length;
 		m.villages = rows.length;
-		if (ready && m.thriving === rows.length) {
+		// every city needs its five villages first: you and each neighbour
+		m.cities = [{ name: 'You', n: myCentres().length }, ...st.parties.slice(1).map((/** @type {any} */ p, /** @type {number} */ j) => ({ name: p.name, n: cityVillages(j + 1).length }))];
+		const grown = m.cities.every((/** @type {any} */ c) => c.n >= CITY_VILLAGES);
+		if (ready && grown && m.thriving === rows.length) {
 			if (m.since < 0) {
 				m.since = st.time;
 				say(`Every village is full and lives well (abundance ${Math.round(m.abundance)}). Hold it for ten minutes!`, -1, 'good');
@@ -1307,7 +1353,7 @@ export function createSim(st) {
 			}
 		} else if (m.since >= 0) {
 			m.since = -1;
-			const who = rows.find((r) => r.wb < ABUNDANT || !r.full);
+			const who = rows.find((r) => r.wb < ABUNDANT || !r.full) ?? m.cities.find((/** @type {any} */ c) => c.n < CITY_VILLAGES);
 			say(`${who?.name ?? 'A village'} slipped below ${ABUNDANT}, or is no longer full`, -1, 'alert');
 		}
 	}
@@ -1323,7 +1369,9 @@ export function createSim(st) {
 		const row = (/** @type {any} */ r) => ({ ...r, score: r.wb * Math.min(1, r.pop / Math.max(1, r.cap)) });
 		return [
 			...yourVillages().map(({ v, c, p }) => row({ name: p.name, city: 'You', pop: p.pop, beds: bedsIn(v), cap: capOf(v), wb: p.wb, sat: { ...p.sat }, reserve: p.reserve, full: fullVillage(v, PLAYER), node: c.node, owner: PLAYER })),
-			...st.parties.slice(1).map((/** @type {any} */ p, /** @type {number} */ j) => row({ name: p.name, city: p.name, pop: p.pop, beds: NEIGHBOUR_BEDS, cap: NEIGHBOUR_BEDS, wb: p.wb, sat: { ...p.sat }, reserve: p.reserve, full: p.pop >= NEIGHBOUR_BEDS && !!cityCentre(j + 1) && fullVillage(villageAt(cityCentre(j + 1).node), j + 1), node: cityCentre(j + 1)?.node ?? -1, owner: j + 1 }))
+			...st.parties.slice(1).flatMap((/** @type {any} */ p, /** @type {number} */ j) =>
+				cityShares(j + 1).map(({ c, v, cap, pop }, x) => row({ name: x ? `${p.name} ${x + 1}` : p.name, city: p.name, pop, beds: cap, cap, wb: p.wb, sat: { ...p.sat }, reserve: p.reserve, full: pop >= cap && fullVillage(v, j + 1), node: c.node, owner: j + 1 }))
+			)
 		];
 	}
 	/** a ware's price across the valley: what the neighbours would pay, on average */
@@ -1442,7 +1490,10 @@ export function createSim(st) {
 			// the neighbours grow when they live well, and shrink when they don't
 			for (let k = 1; k < st.parties.length; k++) {
 				const p = st.parties[k];
-				if (p.wb >= 72 && p.reserve >= 0.6 && p.pop < NEIGHBOUR_BEDS) p.pop = Math.min(NEIGHBOUR_BEDS, p.pop + 2);
+				// a family more for each of its villages; once every village is full, it founds the next
+				const cap = cityCap(k), n = cityVillages(k).length;
+				if (p.wb >= 72 && p.reserve >= 0.45 && p.pop < cap) p.pop = Math.min(cap, p.pop + 2 * n);
+				else if (p.wb >= 72 && p.reserve >= 0.45 && p.pop >= cap && n < CITY_VILLAGES) cityFounds(k);
 				else if (p.wb < 40 && p.pop > 10 && rand() < 0.2) {
 					p.pop--;
 					if (rand() < 0.3) say(`${p.name} is struggling: a family left the valley`, cityCentre(k)?.node ?? -1, 'alert');
@@ -1785,6 +1836,9 @@ export function createSim(st) {
 				/** seconds the valley has been abundant, or -1 */
 				held: m.since >= 0 ? st.time - m.since : -1,
 				allVillages: m.villages ?? 0,
+				/** how many villages each city has, against the five the valley needs */
+				cities: (m.cities ?? []).map((/** @type {any} */ c) => ({ ...c })),
+				need: CITY_VILLAGES,
 				parties: st.parties.map((/** @type {any} */ p) => ({ name: p.name, wb: p.wb })),
 				result: st.result,
 				goals: GOALS.map((x) => ({ ...x, done: !!st.goals[x.id], have: x.ware ? progress(x.ware) : x.id === 'trade' ? m.sold + m.bought : undefined, need: x.n })),

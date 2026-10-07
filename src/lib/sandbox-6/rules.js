@@ -77,7 +77,7 @@ export const BUILDINGS = {
 	woodcutter: { id: 'woodcutter', label: 'Woodcutter', group: 'Basics', about: 'Fells grown trees nearby and splits them into planks.', cost: { plank: 2 }, kind: 'gather', worker: 'Woodcutter', tools: true, out: 'plank', time: 6, rest: 4, range: 6 },
 	forester: { id: 'forester', label: 'Forester', group: 'Basics', about: 'Plants young trees nearby; they grow in about two minutes.', cost: { plank: 2 }, kind: 'forester', worker: 'Forester', tools: true, time: 3, rest: 5, range: 5 },
 	quarry: { id: 'quarry', label: 'Quarry', group: 'Basics', about: 'Cuts stone from rocks nearby.', cost: { plank: 2 }, kind: 'gather', worker: 'Stonecutter', tools: true, out: 'stone', time: 6, rest: 4, range: 6 },
-	fishery: { id: 'fishery', label: 'Fishery', group: 'Food', about: 'Fishes at the water’s edge; build it near a lake.', cost: { plank: 2 }, kind: 'gather', worker: 'Fisher', tools: true, out: 'fish', yield: 2, time: 6, rest: 4, range: 5 },
+	fishery: { id: 'fishery', label: 'Fishery', group: 'Food', about: 'Fishes at the water’s edge; build it near a lake.', cost: { plank: 2 }, kind: 'gather', worker: 'Fisher', tools: true, out: 'fish', yield: 3, time: 6, rest: 4, range: 5 },
 	farm: { id: 'farm', label: 'Farm', group: 'Food', about: 'Sows fields round it and reaps the grain.', cost: { plank: 3, stone: 2 }, kind: 'farm', worker: 'Farmer', tools: true, out: 'grain', yield: 2, time: 4, rest: 3, range: 3 },
 	well: { id: 'well', label: 'Well', group: 'Food', about: 'Draws water.', cost: { plank: 2 }, kind: 'make', worker: 'Water carrier', inputs: [], out: 'water', time: 8 },
 	bakery: { id: 'bakery', label: 'Bakery', group: 'Food', about: 'Bakes bread from grain and water.', cost: { plank: 2, stone: 2 }, kind: 'make', worker: 'Baker', tools: true, inputs: [['grain'], ['water']], out: 'bread', yield: 2, time: 8 },
@@ -123,5 +123,5 @@ export const GOALS = [
 	{ id: 'market', label: 'Connect to a neighbour city and sell to it', hint: 'Select a village center and connect it to a neighbour’s; then mark a ware to sell in the Market.' },
 	{ id: 'trade', label: 'Trade 80 wares with the neighbours', n: 80 },
 	{ id: 'contract', label: 'Fill a neighbour’s request', hint: 'Neighbours ask for what they lack. Send it from the Market, and a cart brings it along the trade route.' },
-	{ id: 'abundance', label: `Every village full and at ${ABUNDANT}+, for 10 minutes`, hint: 'Happiness is counted per village: fed, with variety, watered, housed and with something put by. A village is full when each of its settlements has a house and every bed is taken. It counts once the other goals are reached.' }
+	{ id: 'abundance', label: `Five villages for every city, each full and at ${ABUNDANT}+, for 10 minutes`, hint: 'You, Eastmere and Highfold each need five villages. Happiness is counted per village: fed, with variety, watered, housed and with something put by. A village is full when each of its settlements has a house and every bed is taken. The neighbours found their next village once theirs are full and live well. It counts once the other goals are reached.' }
 ];

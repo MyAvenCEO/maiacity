@@ -16,10 +16,10 @@ for (let k = 0; sim.state.time < end && !sim.state.result; k++) {
 	if (k % 30 === 0) createAutoplay(sim).tick();
 	// the game goes on the same from its saved state
 	if (k % 6000 === 0) sim = loadGame(JSON.stringify(sim.state));
-	for (const m of sim.state.msgs) if (m.n > seen && (seen = m.n) && /Goal|abundance|Abundance|asks|paid|left/.test(m.text)) console.log(`${String(Math.round(m.t)).padStart(5)} s  ${m.text}`);
+	for (const m of sim.state.msgs) if (m.n > seen && (seen = m.n) && /Goal|abundance|Abundance|founded|left/.test(m.text)) console.log(`${String(Math.round(m.t)).padStart(5)} s  ${m.text}`);
 	if (k % 3000 === 0) {
 		const m = sim.market();
-		console.log(`${String(Math.round(sim.state.time)).padStart(5)} s  abundance ${Math.round(m.abundance)} · ${m.parties.map((/** @type {any} */ p) => `${p.name} ${Math.round(p.score)} wb${Math.round(p.wb)} (${p.pop})`).join(' · ')} · purse ${Math.round(m.purse)} · sold ${m.sold} bought ${m.bought}`);
+		console.log(`${String(Math.round(sim.state.time)).padStart(5)} s  abundance ${Math.round(m.abundance)} · ${m.parties.map((/** @type {any} */ p) => `${p.name} ${Math.round(p.score)} wb${Math.round(p.wb)} r${p.reserve.toFixed(2)} (${p.pop}/${p.cap}${p.full ? ' full' : ''})`).join(' · ')} · purse ${Math.round(m.purse)} · sold ${m.sold} bought ${m.bought}`);
 	}
 }
 const s = sim.summary();

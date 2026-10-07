@@ -135,7 +135,7 @@ export function createAutoplay(sim) {
 	}
 	/** no spot anywhere in reach: found the village next to the city nearest home where the building would stand */
 	function expand(/** @type {string} */ type) {
-		// three villages hold what the plan builds: every village founded must be filled to win
+		// three villages hold what the plan builds; the fourth and fifth come once these are housed (see settle)
 		if (ofType('centre').some((b) => b.stage === 'site') || ofType('centre').length >= 3) return false;
 		const home = hq().node;
 		let best = -1, bd = Infinity;
@@ -146,6 +146,27 @@ export function createAutoplay(sim) {
 			if (ok && g.dist(home, n) < bd) (bd = g.dist(home, n)), (best = n);
 		}
 		return best >= 0 && sim.build('centre', best, true).ok;
+	}
+	/** every village has a house in each settlement: found the next, up to five, where most houses fit, nearest home */
+	function settle(/** @type {any} */ s) {
+		const cs = ofType('centre');
+		if (cs.length >= 5 || cs.some((b) => b.stage === 'site')) return;
+		const rows = sim.market().parties.filter((/** @type {any} */ r) => r.owner === PLAYER);
+		const housed = rows.every((/** @type {any} */ r) => {
+			const v = sim.plan.villageOf[sim.plan.plotOf[r.node]];
+			return ofType('house').filter((b) => b.stage === 'live' && sim.plan.villageOf[sim.plan.plotOf[b.node]] === v).length * 16 >= r.cap && r.pop >= r.beds - 4;
+		});
+		if (!housed || (s.stock.plank ?? 0) < 14 || (s.stock.stone ?? 0) < 10) return;
+		const home = hq().node;
+		let best = -1, bs = -Infinity;
+		for (const v of sim.plan.villages) {
+			const n = sim.plan.centre[v.centre];
+			if (sim.canBuild('centre', n)) continue;
+			const room = v.plots.filter((k) => k !== v.centre && sim.plan.spots[k][0] >= 0 && st.terrain[sim.plan.spots[k][0]] === GRASS).length;
+			const sc = room * 4 - g.dist(home, n);
+			if (room >= 4 && sc > bs) (bs = sc), (best = n);
+		}
+		if (best >= 0) sim.build('centre', best, true);
 	}
 	/** beds before people: in each village that is nearly full and lives well, enlarge its largest house that can still grow, or build a new one */
 	function homes(/** @type {any} */ s) {
@@ -214,6 +235,7 @@ export function createAutoplay(sim) {
 			// a trade route to a neighbour comes first: until it runs, stone is saved for it
 			const joined = st.auto >= 8 && join(s);
 			if (joined) homes(s);
+			if (joined && st.auto >= plan.length) settle(s);
 			if (st.auto < plan.length) {
 				const [type, want] = plan[st.auto];
 				const cost = BUILDINGS[type].cost;
@@ -227,10 +249,18 @@ export function createAutoplay(sim) {
 				} else st.autoTries = (st.autoTries ?? 0) + 1;
 			}
 			// once the plan is built, more water while yours runs short, more food while anyone goes short
-			if (st.auto >= plan.length && plan.length < PLAN.length + 40 && st.time >= (st.autoMore ?? 0)) {
+			if (st.auto >= plan.length && plan.length < PLAN.length + 60 && st.time >= (st.autoMore ?? 0)) {
 				st.autoMore = st.time + 180;
+				const rows = sim.market().parties.filter((/** @type {any} */ p) => p.owner === PLAYER);
+				const low = (/** @type {string} */ w) => rows.some((/** @type {any} */ p) => p.sat[w] < 0.7) && (s.stock[w] ?? 0) < 20;
 				if (st.parties[PLAYER].sat.water < 0.9) plan.push(['well', 'home']);
-				else if (sim.market().parties.some((/** @type {any} */ p) => p.sat.food < 0.9)) plan.push(...MORE[(plan.length - PLAN.length) % MORE.length]);
+				else if (low('plank')) plan.push(['woodcutter', 'trees'], ['forester', 'woodcutter']);
+				else if (low('stone')) plan.push(['quarry', 'rocks']);
+				else if (sim.market().parties.some((/** @type {any} */ p) => p.sat.food < 0.9)) {
+					// bakeries idle without grain: a farm first while there are more bakeries than farms
+					if ((s.stock.grain ?? 0) < 10 && ofType('bakery').length > ofType('farm').length) plan.push(['farm', 'open']);
+					else plan.push(...MORE[(plan.length - PLAN.length) % MORE.length]);
+				}
 			}
 			// once the food is going: a trade route to a neighbour, then the orders, and every request it can fill
 			if (joined) {
