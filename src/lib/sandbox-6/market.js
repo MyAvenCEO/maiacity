@@ -38,22 +38,29 @@ export const CART = 8;
 /** years of upkeep a settlement likes to have put by: a quarter */
 const PUT_BY = 0.25;
 /** a ware's usual price, in coins */
-export const BASE = { plank: 4, steel: 4, lime: 4 };
+export const BASE = { plank: 4, steel: 4, clay: 4 };
 /** euros in a gold: a HEART is a euro */
 export const EUR_PER_GOLD = 1000;
 /**
  * What the world market asks for a ware, in euros (HEARTs), and what one of it is: real prices, a load being 5 t.
  * Building timber is the average of sawn softwood across Europe, about 800 € a tonne; structural steel, about 1,000 €;
- * cast lime blocks about 100 € (their lime, baked clay, gravel and casting).
+ * fired clay voussoirs about 200 € (250 to 450 € a m³ of hollow blocks, by our tunnel research).
  */
 export const WORLD = /** @type {Record<string, { eur: number, unit: string }>} */ ({
 	plank: { eur: 4000, unit: 'a load: 5 t of sawn building timber at 800 € a t' },
 	steel: { eur: 5000, unit: 'a load: 5 t of steel joints at 1,000 € a t' },
-	lime: { eur: 500, unit: 'a load: 5 t of lime blocks at 100 € a t' }
+	clay: { eur: 1000, unit: 'a load: 5 t of fired clay voussoirs at 200 € a t' }
 });
 /** glass: nobody in the valley makes it, so a dome's comes from the world market, paid in gold as the dome is begun:
  * laminated double glazing, about 40 kg and 100 € a m², so 2,500 € a tonne */
 export const GLASS_EUR_T = 2500;
+/** electricity on the world grid, € a kWh: it buys what your villages make beyond what they use, and sells what they
+ * lack, 80 € a MWh */
+export const GRID_EUR_KWH = 0.08;
+/** what drilling a geothermal stage costs, €, as Samuel set it (2026-10-07; our research says 30 to 45 M € for a
+ * plant): paid in gold as a new village is founded and for each stage drilled after; your first village's comes with
+ * the valley */
+export const WELL_EUR = 25e6;
 /** the wares that are traded (not coins: they are what is paid) */
 export const TRADED = Object.keys(BASE);
 /**

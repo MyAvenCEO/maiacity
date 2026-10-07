@@ -1,8 +1,8 @@
 /**
  * SANDBOX 6 · THE VALLEY — one island valley grown from a seed: rolling grass, the sea round a sandy coast, mountains
  * with snow on their peaks and iron in their hearts, lakes, woods and fields of rocks. Your first village lies in the
- * west, open grass with two woods, a field of rocks with iron under it and a field of limestone rocks of its own; the
- * water is out in the valley, for the villages you found next.
+ * west, open grass with two woods, a field of rocks with iron under it and meadows with clay under them; the water is
+ * out in the valley, for the villages you found next.
  *
  * The valley does not know the hexes it is cut into (./plots.js): what each hex is good for is read from the land
  * that grew on it (`biomes`).
@@ -165,9 +165,9 @@ export function growValley(seed) {
 		else if (rand() < 0.0035) obj[i] = { k: 'rock', n: 3 + Math.floor(rand() * 3) };
 	}
 
-	// your first village: open grass, level round each hex's middle and gently on out; two woods and two fields of rocks
-	// grow over four of its hexes (and on past them), and iron lies under one of them, so a woodcutter, an iron mine and
-	// a lime pit can start at home
+	// your first village: open grass, level round each hex's middle and gently on out; two woods and a field of rocks
+	// grow over three of its hexes (and on past them), iron lies under the rocks, and the other three are meadows, so a
+	// woodcutter, an iron mine and a clay pit can start at home
 	for (let i = 0; i < N; i++) {
 		if (!atHome(i)) continue;
 		const k = plan.plotOf[i], c = plan.centre[k], d = g.dist(i, c);
@@ -201,9 +201,7 @@ export function growValley(seed) {
 	// the iron: round the first factory spot of the rocky hex, rich enough for a long while
 	const lode = plan.spots[outer[4]][1];
 	if (lode >= 0) for (const i of g.within(lode, 3)) if (terrain[i] === GRASS) (ore[i] = IRON), (amount[i] = 6 + Math.floor(rand() * 4));
-	// the limestone: a second field of rocks, with no iron under it
-	patch(outer[5], 0.5 * HS, 0.3, 12, () => ({ k: 'rock', n: 5 + Math.floor(rand() * 3) }));
-	for (const k of [outer[0], outer[3]]) for (const i of hexNodes[k]) if (!plan.clear[i] && !obj[i] && rand() < 0.03) obj[i] = { k: 'tree', g: 0.75 + rand() * 0.25 };
+	for (const k of [outer[0], outer[3], outer[5]]) for (const i of hexNodes[k]) if (!plan.clear[i] && !obj[i] && rand() < 0.03) obj[i] = { k: 'tree', g: 0.75 + rand() * 0.25 };
 	const biome = biomes(g, plan, terrain, obj, ore);
 	return { W, H, terrain, height, ore, amount, fish, obj, hq: plan.spots[home.centre][0], villages: [], biome };
 }

@@ -228,22 +228,22 @@ export function buildingModel(type, owner, level = 2) {
 			for (const [x, z] of [[0.95, 0.35], [-0.95, 0.4], [0.75, -0.7]]) g.add(tree(x, 0, z, 0.55));
 			g.add(band(owner, 0.77, PLINTH + 0.15));
 			break;
-		case 'limeworks': {
-			// a pale dome of cut stone facets over the pit, with limestone waiting; a kiln: its squat stack glowing at the
-			// foot; a block works: a second stack and arch blocks stacked at the door
-			const g2 = dome(0.8, 0.75, '#c9c2b0', { porch: true });
+		case 'clayworks': {
+			// a terracotta dome of fired facets over the pit, with heaps of dug clay waiting; a kiln: its squat stack glowing
+			// at the foot; a block works: a second stack and voussoirs stacked at the door
+			const g2 = dome(0.8, 0.75, '#c98a64', { porch: true });
 			g.add(g2);
-			const facets = part(new THREE.IcosahedronGeometry(0.82, 0), mat('#d6d0c0', 0.95), 0, PLINTH, 0);
+			const facets = part(new THREE.IcosahedronGeometry(0.82, 0), mat('#d39a72', 0.95), 0, PLINTH, 0);
 			facets.scale.set(1, 0.9, 1);
 			g.add(facets);
-			for (const [x, z, s] of [[0.95, 0.25, 1], [1.05, -0.25, 0.8], [-0.95, 0.45, 0.9]]) g.add(part(new THREE.BoxGeometry(0.3 * s, 0.25 * s, 0.3 * s), mat('#b9b4a6'), x, 0.13 * s, z));
+			for (const [x, z, s] of [[0.95, 0.25, 1], [1.05, -0.25, 0.8], [-0.95, 0.45, 0.9]]) g.add(part(new THREE.SphereGeometry(0.2 * s, 7, 5, 0, Math.PI * 2, 0, Math.PI / 2), mat('#8f6446'), x, 0, z));
 			for (let k = 0; k < Math.min(2, level - 1); k++) {
 				const x = -0.55 + k * 0.4, z = -0.45 - k * 0.2;
-				g.add(chimney(x, PLINTH + 0.4, z, 0.6 + k * 0.15, '#d8d2c2'));
+				g.add(chimney(x, PLINTH + 0.4, z, 0.6 + k * 0.15, '#b9785a'));
 				g.add(part(new THREE.CylinderGeometry(0.22, 0.26, 0.28, 8), mat('#e8a25a', 0.6), -1.0 + k * 0.1, 0.14, -0.2 - k * 0.45));
 			}
-			// arch blocks: wedges laid in rows, as they wait for the trade routes
-			for (let k = 0; k < (level - 2) * 6; k++) g.add(part(new THREE.BoxGeometry(0.16, 0.12, 0.2), mat('#e4dccb'), 0.5 + (k % 3) * 0.18, 0.06 + Math.floor(k / 3) * 0.12, 0.95));
+			// voussoirs: wedges laid in rows, as they wait for the trade routes
+			for (let k = 0; k < (level - 2) * 6; k++) g.add(part(new THREE.BoxGeometry(0.16, 0.12, 0.2), mat('#c4734f'), 0.5 + (k % 3) * 0.18, 0.06 + Math.floor(k / 3) * 0.12, 0.95));
 			g.add(band(owner, 0.82, PLINTH + 0.12));
 			break;
 		}
