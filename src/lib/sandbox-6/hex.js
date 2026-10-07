@@ -7,8 +7,8 @@
  * valley is made of (./plots.js) lie on these nodes: a building's stop is the middle of its hex.
  */
 
-/** world units between two neighbouring nodes */
-export const STEP = 4 / 3;
+/** world units between two neighbouring nodes: a dome stands on one, a tree on the next */
+export const STEP = 1.6;
 /** world units between two rows */
 export const ROW = (STEP * Math.sqrt(3)) / 2;
 

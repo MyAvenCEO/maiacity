@@ -1,17 +1,18 @@
 /**
- * SANDBOX 6 · CITIES, VILLAGES, SETTLEMENTS — the plan every city is built on, laid over the grid of nodes (./hex.js).
+ * SANDBOX 6 · CITIES, VILLAGES, SETTLEMENTS — the plan every city is built on, laid over the grid of nodes (./hex.js)
+ * and over the valley as it grew (./map.js), unseen until you place something.
  *
- * The valley is a field of big hexes, as on the island of Sandbox 1, one biome each. A hex's middle is a stop where
- * paths meet, and six straight paths can run from it, one to the middle of each hex next to it, along the lines of the
- * grid. Between those six ways lie six corners: three of them, in a triangle round the middle, are the hex's building
- * spots — one for its house, two for the factory domes that work beside it — and the other three stay free (trees,
- * rocks, fields). Seven hexes make a village: one in the middle, filled by its one large village center, and the six
- * round it; villages tile the valley too. A city is the villages one owner holds. Pure, and the same for every valley
- * of a size.
+ * The valley is cut into big hexes. A hex's middle is a little square where paths meet, and six straight paths can
+ * run from it, one to the middle of each hex next to it, along the lines of the grid. Between those six ways lie six
+ * corners, half way out: three of them, in a triangle round the square, are the hex's building spots — one for its
+ * house, two for the factory domes that work beside it, every door facing the square — and the other three stay free.
+ * The outer half of the hex is land: trees, rocks, fields. Seven hexes make a village: one in the middle, filled by
+ * its one large village center, and the six round it; villages tile the valley too. A city is the villages one owner
+ * holds. Pure, and the same for every valley of a size.
  */
 
 /** steps from the middle of a hex to the middle of the next */
-export const K = 6;
+export const K = 7;
 /** the corners round a hex's middle, by the two directions between which each lies (as in ./hex.js): each [dq, dr] */
 const CORNERS = [[2, -1], [1, -2], [-1, -1], [-2, 1], [-1, 2], [1, 1]];
 /** which corners are the house's and the two factories': a triangle, the house at the back (north) */
@@ -28,6 +29,8 @@ const DIRS = [[1, 0], [1, -1], [0, -1], [-1, 0], [-1, 1], [0, 1]];
  * @property {Int32Array} plotOf the hex a node belongs to (-1 none)
  * @property {Int32Array} spotOf for a node that is a spot: 0 house, 1 or 2 factory; else -1
  * @property {Uint8Array} lane 1 for a node on the straight way between two middles (where a path may run), else 0
+ * @property {Uint8Array} clear 1 where nothing grows: a hex's square and its spots, the ground round them, and the
+ *   middle of a village's middle hex, where its center stands (its ways may grow over until a path is laid)
  * @property {number[]} villageOf each hex's village
  * @property {{ centre: number, plots: number[], near: number[] }[]} villages the middle hex, its seven hexes, the villages round it
  */
@@ -118,7 +121,24 @@ export function makePlan(g) {
 		const [s, t] = key.split(',').map(Number);
 		villages[v].near = DIRS.map(([ds, dt]) => villAt.get(`${s + ds},${t + dt}`)).filter((x) => x !== undefined).map(Number);
 	}
-	return { centre, spots, free, nbr, plotOf, spotOf, lane, villageOf, villages };
+	// where nothing grows: the square and the ground round it, every spot and the ground round it; a village's middle
+	// hex out to where its center ends
+	const clear = new Uint8Array(N);
+	const ring = (/** @type {number} */ n, /** @type {number} */ r) => {
+		if (n < 0) return;
+		const [q0, r0] = axial(n);
+		for (let dq = -r; dq <= r; dq++)
+			for (let dr = Math.max(-r, -dq - r); dr <= Math.min(r, -dq + r); dr++) {
+				const j = node(q0 + dq, r0 + dr);
+				if (j >= 0) clear[j] = 1;
+			}
+	};
+	for (let k = 0; k < centre.length; k++) {
+		ring(centre[k], 1);
+		for (const j of spots[k]) ring(j, 1);
+	}
+	for (const v of villages) ring(centre[v.centre], 2);
+	return { centre, spots, free, nbr, plotOf, spotOf, lane, clear, villageOf, villages };
 }
 
 /**
