@@ -224,7 +224,7 @@ export const JACKFRUIT_STAGES = stages([
 	['Fruit set', 2220, 'The male heads blacken and drop; the female heads swell into small knobbly green fruit, right on the bark.'],
 	['Green fruit', 2300, 'Huge oblong fruit hanging straight down against the trunk, knobbly with short blunt spines.'],
 	['Ripening', 2360, 'The skin yellows, the spines flatten; it smells sweet.'],
-	['Ripe', 2380, 'Ripe jackfruit, half a metre long and tens of kilograms, hanging on short thick stalks against the trunk.']
+	['Ripe', 2380, 'Ripe jackfruit, up to half a metre long and tens of kilograms, in clusters all up the trunk and along the limbs.']
 ]);
 
 /** its description, kept for its versions (./orchard.v1.js grows its v1) @type {import('./orchard.js').Orchard} */

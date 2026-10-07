@@ -698,7 +698,7 @@ const HISTORY = {
 	jackfruit: [
 		{ ...FIRST, build: orchardV1({ ...JACKFRUIT, flower: { ...JACKFRUIT.flower, chance: 1.3 } }) },
 		{ v: 2, date: '2026-10-06', note: 'Fruit hangs against the trunk on stout stalks, many more of them', build: jackfruitV2 },
-		{ v: 3, date: '2026-10-07', note: 'Grown as a jackfruit grows: a leader, a dense dome, big glossy leaves; fruit hangs on the bark' }
+		{ v: 3, date: '2026-10-07', note: 'Grown as a jackfruit grows: a leader, a dense dome, big glossy leaves; clusters of fruit on the trunk and limbs' }
 	],
 	durian: [
 		{ ...FIRST, build: orchardV1(DURIAN) },
