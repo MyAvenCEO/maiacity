@@ -7,7 +7,8 @@
 	built alone, without the forest and land round it, as Sandbox 3's village builds its domes into its own world
 	(mountInterior with a host, $lib/sandbox-2/interior), and stepped inside the same way. With `round` (the
 	Buildings) every building stands on the same round ground ($lib/buildings/ground.js) instead of the square grid;
-	with `enter` (the Buildings too) picking one steps inside it at once, a loading screen over it while it is built.
+	with `enter` picking one steps inside it at once; with `inPlace` (the Buildings) it is walked where it stands, the
+	list kept beside it, never full screen. A building being built says how far it is over the canvas.
 -->
 <script>
 	import { onDestroy, onMount, untrack } from 'svelte';
@@ -25,9 +26,9 @@
 	/** @typedef {import('$lib/buildings').Dome} Dome */
 
 	/**
-	 * @type {{ name: string, title: string, lede: string, items: (Model | Dome)[], group?: (item: any) => string, round?: boolean, enter?: boolean }}
+	 * @type {{ name: string, title: string, lede: string, items: (Model | Dome)[], group?: (item: any) => string, round?: boolean, enter?: boolean, inPlace?: boolean }}
 	 */
-	let { name, title, lede, items, group, round = false, enter = false } = $props();
+	let { name, title, lede, items, group, round = false, enter = false, inPlace = false } = $props();
 	/** @param {Model | Dome} m @returns {m is Dome} */
 	const isDome = (m) => 'dome' in m;
 	/** @param {Model | Dome} m */
@@ -51,7 +52,7 @@
 	/** @type {(() => void) | null} */
 	let stopBuilding = null;
 	$effect(() => {
-		if (enter && building) return wayBack('Back to the list', () => stopBuilding?.());
+		if (enter && !inPlace && building) return wayBack('Back to the list', () => stopBuilding?.());
 	});
 	// walking inside a model the walk has the whole screen, as a dome's does: the nav pill's way back walks out
 	$effect(() => {
@@ -402,7 +403,7 @@
 	{name}
 	bind:canvas={canvasBox}
 	bind:stage={viewBox}
-	full={walking || (enter && !!building)}
+	full={!inPlace && (walking || (enter && !!building))}
 	picks={{ title, lede, items, chosen, where: (/** @type {Model | Dome} */ m) => m.usedIn, onpick: pick, group, version, onversion: pickVersion }}
 >
 	{#snippet bar()}
@@ -432,11 +433,11 @@
 		{:else if size}
 			<span>{metres(size[0])} × {metres(size[2])} × {metres(size[1])} <small>(width × depth × height)</small></span>
 		{/if}
-		<small>Drag to turn round it · pinch or scroll to come closer · the grid is {round ? '1 m' : '10 cm'}</small>
+		{#if !walking}<small>Drag to turn round it · pinch or scroll to come closer · the grid is {round ? '1 m' : '10 cm'}</small>{/if}
 	{/snippet}
-	{#if enter && building}
+	{#if building}
 		<div class="loading" role="status" aria-live="polite">
-			<p class="eyebrow">Stepping inside</p>
+			<p class="eyebrow">{enter ? 'Stepping inside' : 'Building'}</p>
 			<strong>{chosen.label}</strong>
 			{#if isDome(chosen)}<span class="size">{chosen.size}</span>{/if}
 			<div class="progress"><span style:width="{Math.min(100, (built / STEPS) * 100)}%"></span></div>
@@ -444,7 +445,7 @@
 		</div>
 	{/if}
 	{#if walking}
-		<WorldBar title={chosen.label} subtitle="{title} · {chosen.usedIn}" sky={false} />
+		{#if !inPlace}<WorldBar title={chosen.label} subtitle="{title} · {chosen.usedIn}" sky={false} />{/if}
 		<TouchStick move={(x, y, h) => stick?.move(x, y, h)} look={(dx, dy) => stick?.look(dx, dy)} stage={viewBox} taps=".walkbar button" />
 		<WalkHint keys="Drag to look · WASD to walk · Shift to hurry · Esc to step outside" />
 	{/if}

@@ -8,4 +8,4 @@
 	import ModelsView from '$lib/app/ModelsView.svelte';
 </script>
 
-<ModelsView name="buildings" title="Buildings" lede="What a settlement lives and works in: the tents and domes, and the containers." items={BUILDINGS} group={groupOf} round enter />
+<ModelsView name="buildings" title="Buildings" lede="What a settlement lives and works in: the tents and domes, and the containers." items={BUILDINGS} group={groupOf} round inPlace />
