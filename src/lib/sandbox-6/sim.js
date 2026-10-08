@@ -149,6 +149,8 @@ export function createSim(st) {
 	for (const b of Object.values(st.buildings ?? {})) if (b) delete b.paused;
 	// a ware the market came to trade after the valley was saved (solar panels) gets its price history
 	if (st.market?.hist) for (const w of TRADED) st.market.hist[w] ??= [4];
+	// solar panels glaze what glass did from 16 beds: a valley that let glass trade by itself lets them too
+	if (st.orders?.glass && !st.orders.solar) st.orders.solar = st.orders.glass;
 	const size = `${st.W}x${st.H}`;
 	if (!plans.has(size)) plans.set(size, makePlan(g));
 	const plan = /** @type {ReturnType<typeof makePlan>} */ (plans.get(size));
