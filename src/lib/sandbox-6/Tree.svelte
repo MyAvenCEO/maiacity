@@ -305,4 +305,13 @@
 			max-height: 70vh;
 		}
 	}
+	/* a phone on its side: across the screen under the top bar, down to the nav pill */
+	@media (max-height: 500px) {
+		.tree {
+			top: calc(2.9rem + env(safe-area-inset-top, 0px));
+			left: calc(0.5rem + env(safe-area-inset-left, 0px));
+			right: calc(0.5rem + env(safe-area-inset-right, 0px));
+			max-height: calc(100dvh - 3.4rem - env(safe-area-inset-top, 0px) - var(--nav-room, 4rem));
+		}
+	}
 </style>
