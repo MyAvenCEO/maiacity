@@ -4,8 +4,10 @@
 //!
 //! It grows with the phases: devices and their ops in P1, caps and sync by caps in P2, keys, reading and the blind
 //! server in P3, apps on a schema reading and editing items through their space's lane in P4, locked devices, blobs and
-//! checkpoints in P4b, history and branches in P5, and in P6 offline devices, sync by what each device holds of each
-//! log, gossip of one digest per log in random orders, and backups, whose restored devices fork.
+//! checkpoints in P4b, history and branches in P5, in P6 offline devices, sync by what each device holds of each log,
+//! gossip of one digest per log in random orders, and backups, whose restored devices fork, and in P7 what the tile
+//! shows and needs: each signer's name, and spare keys made ahead, so that a page making McEliece pairs in its
+//! workers never waits for one.
 //!
 //! A device shows each entry on every line of its history (`branch`): it opens each write it can, and builds the item
 //! of each line from the updates of that line's history. Branching, merging, promoting, restoring, undoing and
@@ -30,8 +32,9 @@
 //! peers stop trusting the curves (`set_pq_only`), each counts only the writes a checkpoint by their author covers
 //! (`policy::checkpointed`), and checkpoints each write of its own as it makes it.
 
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 use rand_core::Rng as _;
 use serde_json::Value;
@@ -196,6 +199,43 @@ impl KeyIndex {
     }
 }
 
+/// How many spare keys each new Lab keeps (`Lab::keep_spares`): none unless a page making McEliece pairs in its
+/// workers asks for some (`spare_keys`), as a test would make pairs it never uses.
+static SPARES: AtomicUsize = AtomicUsize::new(0);
+
+/// Have every Lab made from now on keep `n` spare keys.
+pub fn spare_keys(n: usize) {
+    SPARES.store(n, Ordering::Relaxed);
+}
+
+/// Keys made ahead for vault and space keys, each with its McEliece pair on its way.
+#[derive(Default)]
+struct Spares {
+    keys: VecDeque<Secret>,
+    keep: usize,
+}
+
+impl Spares {
+    /// A key to seal to: the oldest spare, or a new key if there is none, its pair started; then spares again.
+    fn take(&mut self, rng: &mut SeededRng) -> Secret {
+        let key = self.keys.pop_front().unwrap_or_else(|| {
+            let key = Secret::generate(rng);
+            key.prepare();
+            key
+        });
+        self.fill(rng);
+        key
+    }
+
+    fn fill(&mut self, rng: &mut SeededRng) {
+        while self.keys.len() < self.keep {
+            let key = Secret::generate(rng);
+            key.prepare();
+            self.keys.push_back(key);
+        }
+    }
+}
+
 /// A copy of what a device holds, as a backup keeps it: its signed ops and the blobs they name.
 #[derive(Clone)]
 pub struct Backup {
@@ -206,16 +246,21 @@ pub struct Backup {
 pub struct Lab {
     /// The keys at hand: passkeys, owner keys, and unlocked devices.
     keys: HashMap<SignerId, Key>,
+    /// Every signer's name, as the Lab made it.
+    names: HashMap<SignerId, String>,
     /// Each device whose keys derive from a passkey: that passkey, and the 32 bytes that end the device's salt.
     salts: HashMap<SignerId, (SignerId, [u8; 32])>,
     /// Devices in the order they were made.
     devices: Vec<SignerId>,
     stores: HashMap<SignerId, Store>,
     server: Option<(SignerId, VaultId)>,
+    /// The server's device and its owner key, once made (`server_device`).
+    server_signers: Option<(SignerId, SignerId)>,
     /// Keys made so far; each key's seed counts on from here.
     made: u64,
     /// The randomness of new keys, seals and nonces.
     rng: SeededRng,
+    spares: Spares,
     /// No device trusts the curves anymore: each counts only checkpointed writes.
     pq_only: bool,
     /// The devices off the network: they neither send nor receive.
@@ -230,17 +275,40 @@ impl Default for Lab {
 
 impl Lab {
     pub fn new() -> Lab {
-        Lab {
+        let mut lab = Lab {
             keys: HashMap::new(),
+            names: HashMap::new(),
             salts: HashMap::new(),
             devices: vec![],
             stores: HashMap::new(),
             server: None,
+            server_signers: None,
             made: 0,
             rng: SeededRng::new("lab randomness", b""),
+            spares: Spares::default(),
             pq_only: false,
             offline: HashSet::new(),
-        }
+        };
+        lab.keep_spares(SPARES.load(Ordering::Relaxed));
+        lab
+    }
+
+    /// Keep `n` keys made ahead for the vault and space keys devices make, each with its McEliece pair on its way
+    /// (`keys::Secret::prepare`), so that making one never waits for its pair: a device takes a spare and makes
+    /// another. A real device would do the same, as making a pair takes most of a second.
+    pub fn keep_spares(&mut self, n: usize) {
+        self.spares.keep = n;
+        self.spares.fill(&mut self.rng);
+    }
+
+    /// The name the Lab made signer `s` with.
+    pub fn name(&self, s: SignerId) -> Option<&str> {
+        self.names.get(&s).map(String::as_str)
+    }
+
+    /// The devices, in the order they were made.
+    pub fn devices(&self) -> &[SignerId] {
+        &self.devices
     }
 
     /// The seed of the next key the Lab makes: the Lab is deterministic, so a failing test replays exactly.
@@ -261,13 +329,14 @@ impl Lab {
         key.seal_secret().prepare();
         let id = key.id();
         self.keys.insert(id, Key::Passkey(key));
+        self.names.insert(id, if name.ends_with("passkey") { name.into() } else { format!("{name}'s passkey") });
         id
     }
 
     /// A device with keys of its own, as the server and strangers have, its own ops and its own store.
     pub fn device(&mut self, name: &str) -> SignerId {
         let key = DeviceKey::from_secret(self.secret("device", name));
-        self.add_device(key)
+        self.add_device(key, name)
     }
 
     /// A person's device: its keys derive from `passkey`'s PRF output on a salt of the device's own, as it derives
@@ -275,15 +344,16 @@ impl Lab {
     pub fn device_of(&mut self, passkey: SignerId, name: &str) -> SignerId {
         let nonce = self.secret("device salt", name);
         let Some(Key::Passkey(p)) = self.keys.get(&passkey) else { panic!("{passkey:?} is no passkey the Lab holds") };
-        let id = self.add_device(p.device(nonce));
+        let id = self.add_device(p.device(nonce), name);
         self.salts.insert(id, (passkey, nonce));
         id
     }
 
-    fn add_device(&mut self, key: DeviceKey) -> SignerId {
+    fn add_device(&mut self, key: DeviceKey, name: &str) -> SignerId {
         key.seal_secret().prepare();
         let id = key.id();
         self.keys.insert(id, Key::Device(key));
+        self.names.insert(id, name.to_string());
         self.devices.push(id);
         self.stores.insert(id, Store::default());
         id
@@ -295,17 +365,29 @@ impl Lab {
         if let Some(s) = self.server {
             return s;
         }
-        let device = self.device("the server");
-        let owner = DeviceKey::from_secret(self.secret("server owner", "the server"));
-        owner.seal_secret().prepare();
-        let owner_id = owner.id();
-        self.keys.insert(owner_id, Key::Device(owner));
+        let (device, owner_id) = self.server_signers();
         let genesis =
             Action::Genesis { kind: Kind::Human, owners: vec![Principal::Signer(owner_id)], threshold: 1, root: None, nonce: 0, seal_to: vec![] };
         let vault = VaultId::from(self.submit(device, &[owner_id], genesis).expect("the server's vault"));
         self.submit(device, &[owner_id, device], Action::AddDevice { vault, device, seal_to: None }).expect("the server's device");
         self.server = Some((device, vault));
         (device, vault)
+    }
+
+    /// The server's device and its owner key, made if they aren't yet, ahead of its vault (`server`): a page making
+    /// McEliece pairs in its workers makes theirs before the vault seals to them.
+    pub fn server_signers(&mut self) -> (SignerId, SignerId) {
+        if let Some(s) = self.server_signers {
+            return s;
+        }
+        let device = self.device("the server");
+        let owner = DeviceKey::from_secret(self.secret("server owner", "the server"));
+        owner.seal_secret().prepare();
+        let owner_id = owner.id();
+        self.keys.insert(owner_id, Key::Device(owner));
+        self.names.insert(owner_id, "the server's owner key".into());
+        self.server_signers = Some((device, owner_id));
+        (device, owner_id)
     }
 
     /// Lock device `d`: its keys, and every key and item they opened, leave its memory. Its ops and their ciphertext
@@ -482,7 +564,7 @@ impl Lab {
             }
             let ix = KeyIndex::of(&store.replay);
             open_keys(&mut store.keys, &ix, &mine);
-            let actions = upkeep(d, store, &ix, &mine, &mut self.rng);
+            let actions = upkeep(d, store, &ix, &mine, &mut self.rng, &mut self.spares);
             if actions.is_empty() {
                 show_items(d, store);
                 return;
@@ -727,6 +809,11 @@ impl Lab {
         }
     }
 
+    /// The devices no longer trust the curves (`set_pq_only`).
+    pub fn pq_only(&self) -> bool {
+        self.pq_only
+    }
+
     /// The schemas and lenses published into `space`'s lane, as device `d` holds them.
     pub fn lane(&self, d: SignerId, space: SpaceId) -> Lane {
         Lane::new(self.held(d).view().lane_of(space))
@@ -799,6 +886,11 @@ impl Lab {
     pub fn opens(&self, d: SignerId, k: KeyScope) -> bool {
         let current = self.stores.values().map(|s| s.view().epoch(k)).max().unwrap_or(0);
         self.held(d).held(k, current).next().is_some()
+    }
+
+    /// Device `d` holds the key of `k` at epoch `epoch`: it opened it, or made it.
+    pub fn holds_key(&self, d: SignerId, k: KeyScope, epoch: u64) -> bool {
+        self.held(d).held(k, epoch).next().is_some()
     }
 
     /// The ops device `d` holds; `log(d).view()` is what they say, every write counted.
@@ -1063,7 +1155,14 @@ fn open_keys(keyring: &mut BTreeMap<KeyId, Opened>, ix: &KeyIndex, mine: &[(Sign
 /// key nobody announced yet, boxed for every target without a box yet, and published if the family is public; and each
 /// older key it holds wrapped under the next epoch's key if nobody wrapped it yet. `mine` are the keys of the signers
 /// it may box for by wrapping: its own, and what owners lend it.
-fn upkeep(d: SignerId, store: &mut Store, ix: &KeyIndex, mine: &[(SignerId, Secret)], rng: &mut SeededRng) -> Vec<Action> {
+fn upkeep(
+    d: SignerId,
+    store: &mut Store,
+    ix: &KeyIndex,
+    mine: &[(SignerId, Secret)],
+    rng: &mut SeededRng,
+    spares: &mut Spares,
+) -> Vec<Action> {
     let st = store.replay.state.clone();
     let families: Vec<KeyScope> = st.key_scopes().into_iter().filter(|&k| st.entitled(d, k)).collect();
     // a key for every epoch from the oldest it holds to the current one, where nobody made one yet: several rotations at
@@ -1073,12 +1172,10 @@ fn upkeep(d: SignerId, store: &mut Store, ix: &KeyIndex, mine: &[(SignerId, Secr
         let from = store.keys.values().filter(|o| o.key == k).map(|o| o.epoch + 1).min().unwrap_or(e).min(e);
         for x in from..=e {
             if store.held(k, x).next().is_none() && !ix.exists(k, x) {
-                let secret = Secret::generate(rng);
                 // keys are sealed to vault and space keys, never to an entry key, which is only ever wrapped under the
                 // next one: only those carry a public half, announced below, and its McEliece pair takes a while
-                if x == e && !matches!(k, KeyScope::Entry(..)) {
-                    secret.prepare();
-                }
+                let secret =
+                    if x == e && !matches!(k, KeyScope::Entry(..)) { spares.take(rng) } else { Secret::generate(rng) };
                 store.keys.insert(secret.id(), Opened { key: k, epoch: x, secret });
             }
         }

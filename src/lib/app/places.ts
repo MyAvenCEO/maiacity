@@ -12,7 +12,7 @@ export type Place = {
 	/** a world's or sandbox's versions and history ($lib/app/versions.js), the latest its own; and what it is anchored to */
 	versions?: Version<string>[]; version?: number; anchors?: string
 };
-export type IconName = 'back' | 'home' | 'play' | 'board' | 'calendar' | 'media' | 'studio' | 'journal' | 'spark' | 'user' | 'key' | 'ledger' | 'coops' | 'leaf';
+export type IconName = 'back' | 'home' | 'play' | 'board' | 'calendar' | 'media' | 'studio' | 'journal' | 'spark' | 'user' | 'key' | 'ledger' | 'coops' | 'leaf' | 'database';
 
 // a founder's own apps: their money, and the communities — cities and settlements, founded, joined and backed here,
 // with no map. Every sandbox draws the same ones.
@@ -65,6 +65,7 @@ export const ADMIN: Place[] = [
 	{ href: `${base}/app/plants/`, label: 'Plants', icon: 'leaf', cap: 'media:admin', note: 'Grown from code, seed to fruit, roots and all' },
 	{ href: `${base}/app/biomes/`, label: 'Biomes', icon: 'leaf', cap: 'media:admin', note: 'The floors the worlds stand on, in layers that mix' },
 	{ href: `${base}/app/skills/`, label: 'Skills', icon: 'journal', cap: 'media:admin', note: "The film crew's skills, as a wiki" },
+	{ href: `${base}/app/avendb/`, label: 'avenDB', icon: 'database', cap: 'media:admin', note: 'The user-owned database: every device in one page' },
 	{ href: `${base}/app/device/`, label: 'Terminal', icon: 'key', cap: 'media:admin', note: 'Sign a terminal in' }
 ];
 
@@ -79,8 +80,8 @@ export const released = (founder: Founder | null, p: Place) => p.release !== 'dr
 /** The game (or world) a path is in, if any: a draft one is closed to whoever is no admin. */
 export const gameAt = (path: string) =>
 	[...PLAY, ...WORLDS].find((p) => path.startsWith(p.href)) ??
-	(path.startsWith(`${base}/app/worlds/`) ? WORLDS_TILE : path.startsWith(`${base}/app/models/`) ? MODELS_TILE : path.startsWith(`${base}/app/buildings/`) ? BUILDINGS_TILE : path.startsWith(`${base}/app/actors/`) ? ACTORS_TILE : path.startsWith(`${base}/app/plants/`) ? PLANTS_TILE : path.startsWith(`${base}/app/biomes/`) ? BIOMES_TILE : path.startsWith(`${base}/app/skills/`) ? SKILLS_TILE : undefined);
-/** the Worlds grid, the Assets, the Buildings, the Actors, the Plants and the Skills: only an admin's */
+	(path.startsWith(`${base}/app/worlds/`) ? WORLDS_TILE : path.startsWith(`${base}/app/models/`) ? MODELS_TILE : path.startsWith(`${base}/app/buildings/`) ? BUILDINGS_TILE : path.startsWith(`${base}/app/actors/`) ? ACTORS_TILE : path.startsWith(`${base}/app/plants/`) ? PLANTS_TILE : path.startsWith(`${base}/app/biomes/`) ? BIOMES_TILE : path.startsWith(`${base}/app/skills/`) ? SKILLS_TILE : path.startsWith(`${base}/app/avendb/`) ? AVENDB_TILE : undefined);
+/** the Worlds grid, the Assets, the Buildings, the Actors, the Plants, the Skills and avenDB: only an admin's */
 const WORLDS_TILE: Place = { href: `${base}/app/worlds/`, label: 'Worlds', icon: 'play', release: 'draft' };
 const MODELS_TILE: Place = { href: `${base}/app/models/`, label: 'Assets', icon: 'media', release: 'draft' };
 const BUILDINGS_TILE: Place = { href: `${base}/app/buildings/`, label: 'Buildings', icon: 'home', release: 'draft' };
@@ -88,6 +89,7 @@ const ACTORS_TILE: Place = { href: `${base}/app/actors/`, label: 'Actors', icon:
 const PLANTS_TILE: Place = { href: `${base}/app/plants/`, label: 'Plants', icon: 'leaf', release: 'draft' };
 const BIOMES_TILE: Place = { href: `${base}/app/biomes/`, label: 'Biomes', icon: 'leaf', release: 'draft' };
 const SKILLS_TILE: Place = { href: `${base}/app/skills/`, label: 'Skills', icon: 'journal', release: 'draft' };
+const AVENDB_TILE: Place = { href: `${base}/app/avendb/`, label: 'avenDB', icon: 'database', release: 'draft' };
 
 /** Where a path is, in words: the top bar's title. */
 export function placeOf(path: string): string {
@@ -101,6 +103,7 @@ export function placeOf(path: string): string {
 	if (rel.startsWith('/app/plants/')) return 'Plants';
 	if (rel.startsWith('/app/biomes/')) return 'Biomes';
 	if (rel.startsWith('/app/skills/')) return 'Skills';
+	if (rel.startsWith('/app/avendb/')) return 'avenDB';
 	const app = APPS.find((p) => path.startsWith(p.href));
 	if (app) return app.label;
 	return ADMIN.find((p) => path.startsWith(p.href))?.label ?? '';

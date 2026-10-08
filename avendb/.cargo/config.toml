@@ -1,0 +1,5 @@
+# The tile's WebAssembly (scripts/build-web.sh). It uses the 128-bit SIMD every current browser runs (Safari since
+# 16.4): Classic McEliece makes a key pair in about 0.8 s with it and 1.1 s without. And it has an 8 MB stack, not the
+# linker's 1 MB: a key pair's public matrix, well over a megabyte, is made on the stack.
+[target.wasm32-unknown-unknown]
+rustflags = ["-C", "target-feature=+simd128", "-C", "link-arg=-zstack-size=8388608"]

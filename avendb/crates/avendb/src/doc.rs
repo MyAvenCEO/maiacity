@@ -195,9 +195,16 @@ impl Item {
     /// The schemas the item's changes were written under, by their commit messages: each names one, or for a copy
     /// several, apart by spaces. A change without one (a promote, a restore, an undo) names none.
     pub fn authored(&self) -> BTreeSet<BlobId> {
+        self.authored_since(&Version::default())
+    }
+
+    /// The schemas the changes made after `since` were written under: what one write's update was written under,
+    /// imported on the version it builds on.
+    pub fn authored_since(&self, since: &Version) -> BTreeSet<BlobId> {
+        let from = since.vv();
         let mut out = BTreeSet::new();
         for (&peer, &end) in self.doc.oplog_vv().iter() {
-            let mut at: Counter = 0;
+            let mut at: Counter = from.get(&peer).copied().unwrap_or(0);
             while at < end {
                 let Some(change) = self.doc.get_change(ID::new(peer, at)) else { break };
                 out.extend(change.message.as_deref().unwrap_or_default().split(' ').filter_map(BlobId::from_hex));

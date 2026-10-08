@@ -166,10 +166,37 @@ impl Secret {
     }
 
     /// Start making the key's McEliece pair in the background, so that the first `public` or `open` that needs it
-    /// waits less: a device does so for its own key as it unlocks, and for a vault or space key as it makes one.
+    /// waits less: a device does so for its own key as it unlocks, and for a vault or space key as it makes one. A web
+    /// page has no threads, so there the pair is only wanted (`want`), for the page to make in its workers.
     pub fn prepare(&self) {
-        let key = self.clone();
-        std::thread::spawn(move || drop(key.mceliece()));
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            let key = self.clone();
+            std::thread::spawn(move || drop(key.mceliece()));
+        }
+        #[cfg(target_arch = "wasm32")]
+        self.want();
+    }
+
+    /// Note the key's McEliece pair as wanted, unless it is made already: `wanted_pairs` hands out its seed.
+    pub fn want(&self) {
+        let id = self.id();
+        if pairs().lock().expect("the pairs").get(&id).is_some_and(|slot| slot.get().is_some()) {
+            return;
+        }
+        let mut wanted = WANTED.lock().expect("the wanted pairs");
+        let seed = self.pair_seed();
+        if !wanted.iter().any(|w| w.0 == seed) {
+            wanted.push((seed, id, false));
+        }
+    }
+
+    /// The 32 bytes the key's McEliece pair is made from: all the randomness Classic McEliece draws for a pair. They
+    /// open nothing, so a pair can be made anywhere from them alone.
+    fn pair_seed(&self) -> [u8; 32] {
+        let mut h = Hasher::new("mceliece key pair");
+        h.update(&self.0);
+        h.reader().array()
     }
 }
 
@@ -181,21 +208,100 @@ struct McEliece {
     secret: mceliece::SecretKey<'static>,
 }
 
+/// One slot per key: whoever asks for the same key meanwhile waits for it, other keys are made side by side.
+type Slot = Arc<OnceLock<Arc<McEliece>>>;
+
+fn pairs() -> &'static Mutex<HashMap<KeyId, Slot>> {
+    static PAIRS: OnceLock<Mutex<HashMap<KeyId, Slot>>> = OnceLock::new();
+    PAIRS.get_or_init(Default::default)
+}
+
+/// The pairs wanted and not yet handed in: each seed, the key it is for, and whether `wanted_pairs` handed it out.
+static WANTED: Mutex<Vec<([u8; 32], KeyId, bool)>> = Mutex::new(vec![]);
+
 impl McEliece {
     fn of(key: &Secret) -> Arc<McEliece> {
-        type Slot = Arc<OnceLock<Arc<McEliece>>>;
-        static PAIRS: OnceLock<Mutex<HashMap<KeyId, Slot>>> = OnceLock::new();
-        // one slot per key: whoever asks for the same key meanwhile waits for it, other keys are made side by side
-        let slot = PAIRS.get_or_init(Default::default).lock().expect("the pairs").entry(key.id()).or_default().clone();
+        let slot = pairs().lock().expect("the pairs").entry(key.id()).or_default().clone();
         slot.get_or_init(|| {
-            let mut h = Hasher::new("mceliece key pair");
-            h.update(&key.0);
-            let (public, secret) = mceliece::keypair_boxed(&mut Rng06(h.reader()));
-            let public: Arc<[u8]> = public.as_array()[..].into();
-            Arc::new(McEliece { id: BlobId::of(&public), public, secret })
+            // made here after all: nobody needs to make it elsewhere anymore
+            let seed = key.pair_seed();
+            WANTED.lock().expect("the wanted pairs").retain(|w| w.0 != seed);
+            Arc::new(McEliece::made(&seed))
         })
         .clone()
     }
+
+    /// The pair `seed` makes (`Secret::pair_seed`).
+    fn made(seed: &[u8; 32]) -> McEliece {
+        let (public, secret) = mceliece::keypair_boxed(&mut PairSeed(Some(*seed)));
+        let public: Arc<[u8]> = public.as_array()[..].into();
+        McEliece { id: BlobId::of(&public), public, secret }
+    }
+}
+
+/// A key pair's randomness: its seed, once. Classic McEliece draws 32 bytes for a pair and expands them itself.
+struct PairSeed(Option<[u8; 32]>);
+
+impl rand_core_06::RngCore for PairSeed {
+    fn next_u32(&mut self) -> u32 {
+        unreachable!("Classic McEliece draws a pair's seed whole")
+    }
+
+    fn next_u64(&mut self) -> u64 {
+        unreachable!("Classic McEliece draws a pair's seed whole")
+    }
+
+    fn fill_bytes(&mut self, dst: &mut [u8]) {
+        dst.copy_from_slice(&self.0.take().expect("Classic McEliece draws one seed for a pair"));
+    }
+
+    fn try_fill_bytes(&mut self, dst: &mut [u8]) -> Result<(), rand_core_06::Error> {
+        self.fill_bytes(dst);
+        Ok(())
+    }
+}
+
+impl rand_core_06::CryptoRng for PairSeed {}
+
+/// The seeds of the McEliece pairs keys want (`Secret::want`) that nobody was handed yet: a web page makes each in a
+/// worker of its own (`make_pair`) and hands it in (`hand_in_pair`), as it has no threads to make them in the
+/// background.
+pub fn wanted_pairs() -> Vec<[u8; 32]> {
+    let mut out = vec![];
+    for w in WANTED.lock().expect("the wanted pairs").iter_mut().filter(|w| !w.2) {
+        w.2 = true;
+        out.push(w.0);
+    }
+    out
+}
+
+/// The McEliece pair a seed from `wanted_pairs` makes: its public key, a megabyte, and its secret key.
+pub fn make_pair(seed: &[u8; 32]) -> (Vec<u8>, Vec<u8>) {
+    let pair = McEliece::made(seed);
+    (pair.public.to_vec(), pair.secret.as_array().to_vec())
+}
+
+/// Hand in the pair `make_pair` made from a seed `wanted_pairs` gave out, for the key that wants it: false, keeping
+/// nothing, if no key wants that seed or the bytes aren't a pair's. Nothing checks that the pair is the seed's, which
+/// takes making it again: hand in only what `make_pair` made.
+pub fn hand_in_pair(seed: &[u8; 32], public: &[u8], secret: &[u8]) -> bool {
+    let Ok(secret) = <Box<[u8; mceliece::CRYPTO_SECRETKEYBYTES]>>::try_from(secret.to_vec().into_boxed_slice()) else {
+        return false;
+    };
+    if public.len() != MCELIECE_PUBLIC_BYTES {
+        return false;
+    }
+    let key = {
+        let mut wanted = WANTED.lock().expect("the wanted pairs");
+        let Some(at) = wanted.iter().position(|w| w.0 == *seed) else { return false };
+        wanted.remove(at).1
+    };
+    let public: Arc<[u8]> = public.into();
+    let pair = McEliece { id: BlobId::of(&public), public, secret: mceliece::SecretKey::from(secret) };
+    let slot = pairs().lock().expect("the pairs").entry(key).or_default().clone();
+    // a pair made meanwhile, where it was needed before it was handed in, stays: it is the same pair
+    let _ = slot.set(Arc::new(pair));
+    true
 }
 
 /// Randomness read from a hash, as McEliece takes it (rand 0.8's traits).
@@ -481,6 +587,34 @@ mod tests {
         let mut later = body.clone();
         later[0] = SUITE + 1;
         assert!(edit_key(&later).is_none() && open_edit(&key, &later, b"ctx").is_none());
+    }
+
+    #[test]
+    fn a_pair_made_from_its_seed_is_the_one_the_key_reads_from_its_hash() {
+        // the key's hash stream, which Classic McEliece read before pairs had seeds: the same pair
+        let key = Secret::derive("keys tests", &[3; 32]);
+        let mut h = Hasher::new("mceliece key pair");
+        h.update(&key.0);
+        let (public, secret) = mceliece::keypair_boxed(&mut Rng06(h.reader()));
+        assert_eq!(make_pair(&key.pair_seed()), (public.as_array().to_vec(), secret.as_array().to_vec()));
+    }
+
+    #[test]
+    fn a_wanted_pair_is_handed_out_once_and_handed_in_once() {
+        let key = Secret::derive("keys tests", &[4; 32]);
+        key.want();
+        key.want();
+        let seed = key.pair_seed();
+        assert_eq!(wanted_pairs().iter().filter(|s| **s == seed).count(), 1);
+        assert!(!wanted_pairs().contains(&seed));
+        let (public, secret) = make_pair(&seed);
+        assert!(!hand_in_pair(&seed, &public[1..], &secret) && !hand_in_pair(&[0; 32], &public, &secret));
+        assert!(hand_in_pair(&seed, &public, &secret));
+        assert!(!hand_in_pair(&seed, &public, &secret));
+        // the key reads its pair from what was handed in, and wants it no more
+        assert_eq!(key.mceliece_public()[..], public[..]);
+        key.want();
+        assert!(!wanted_pairs().contains(&seed));
     }
 
     #[test]

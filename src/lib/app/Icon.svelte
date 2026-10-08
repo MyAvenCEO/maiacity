@@ -34,5 +34,7 @@
 		<path d="M5 19c0-8 5-13.5 14-14 .5 9-5 14-14 14Z" /><path d="M5 19 14 10" /><path d="M9.5 14.5h3.5M9.5 14.5V11" />
 	{:else if name === 'key'}
 		<circle cx="8" cy="14" r="4" /><path d="m11 11 8.5-8.5M16 6l2.5 2.5M13.5 8.5 16 11" />
+	{:else if name === 'database'}
+		<ellipse cx="12" cy="6" rx="7" ry="2.5" /><path d="M5 6v12c0 1.4 3.1 2.5 7 2.5s7-1.1 7-2.5V6" /><path d="M5 12c0 1.4 3.1 2.5 7 2.5s7-1.1 7-2.5" />
 	{/if}
 </svg>

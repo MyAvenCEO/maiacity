@@ -96,7 +96,7 @@ governance as for writes. When removals clash, the senior one stands. Removals s
 before those of the coops it owns, since a coop's removals rest on its owners' approval, and within a vault its root,
 then its owners in the order they joined, then removals no owner approved (a device leaving). Revocations follow, the
 most senior revoker first: the space's founder, then whoever issued a grant higher up the revoked grant's chain. So a
-revoked owner can't keep his grant by revoking, on an old copy, a grant he gave beneath it, and a peer that never held
+revoked owner can't keep their grant by revoking, on an old copy, a grant they gave beneath it, and a peer that never held
 a coop's log settles its owners' vaults as everyone else does (a finding of P6).
 
 A human vault's passkey is its root, named at genesis: it approves anything for its vault on its own, wins every
