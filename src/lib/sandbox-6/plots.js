@@ -157,3 +157,48 @@ export function spoke(g, plan, k, d) {
 	}
 	return out;
 }
+
+/** how far a village center's ring road runs from the middle of its hex, where it stands, in world units: under the
+ * ground, round its tower (about 4.5 out with the crates at its door) and well inside its hex (whose edge is 10.4 out
+ * at the nearest) */
+export const RING_R = 7.5;
+
+/** a point on a village center's ring road, at an angle @param {{ x: number, z: number }} c @param {number} a */
+export const onRing = (c, a) => [c.x + RING_R * Math.cos(a), c.z + RING_R * Math.sin(a)];
+
+/**
+ * The way along the trade routes through a chain of village centers, as points on the ground [x, z] at most `step`
+ * apart. Out of the first one's door along its spur to its ring road, round the ring the short way to where the route
+ * to the next one leaves it, straight across to the next one's ring, round that one, and so on; at the last one, round
+ * to its spur and in at its door. A route never crosses a village center, only rings it. Each center is its stop
+ * (x, z), the middle of its hex where it stands, and the angle its door faces (door), where its spur leaves.
+ * @param {{ x: number, z: number, door: number }[]} chain @param {number} step
+ */
+export function ringWay(chain, step) {
+	/** @type {number[][]} */
+	const pts = [[chain[0].x, chain[0].z]];
+	const to = (/** @type {number[]} */ [x, z]) => {
+		const [lx, lz] = pts[pts.length - 1];
+		const n = Math.ceil(Math.hypot(x - lx, z - lz) / step - 1e-9);
+		for (let k = 1; k <= n; k++) pts.push([lx + ((x - lx) * k) / n, lz + ((z - lz) * k) / n]);
+	};
+	/** round a ring the short way, from one angle to another */
+	const round = (/** @type {{ x: number, z: number }} */ c, /** @type {number} */ a0, /** @type {number} */ a1) => {
+		const d = ((a1 - a0 + 3 * Math.PI) % (2 * Math.PI)) - Math.PI;
+		const n = Math.ceil((Math.abs(d) * RING_R) / step);
+		for (let k = 1; k <= n; k++) to(onRing(c, a0 + (d * k) / n));
+	};
+	let enter = chain[0].door;
+	to(onRing(chain[0], enter));
+	for (let k = 1; k < chain.length; k++) {
+		const p = chain[k - 1], c = chain[k];
+		const out = Math.atan2(c.z - p.z, c.x - p.x);
+		round(p, enter, out);
+		enter = out + Math.PI;
+		to(onRing(c, enter));
+	}
+	const last = chain[chain.length - 1];
+	round(last, enter, last.door);
+	to([last.x, last.z]);
+	return pts;
+}
