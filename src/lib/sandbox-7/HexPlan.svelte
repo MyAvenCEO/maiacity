@@ -40,7 +40,7 @@
 		{ id: 'landuse', label: 'Land use' },
 		{ id: 'labels', label: 'Labels' },
 		{ id: 'dims', label: 'Dimensions' },
-		{ id: 'shell', label: 'Glass & hemp shells' },
+		{ id: 'shell', label: 'Solar glass & hemp shells' },
 		{ id: 'inside', label: 'Inside' },
 		{ id: 'plants', label: 'Plants' },
 		{ id: 'outline', label: 'Hex lines' }
@@ -194,7 +194,7 @@
 					<tr><td>Glulam struts and cassettes</td><td class="num">{n0(card.shell.m.timber)} m³ · {tonnes(card.shell.t.timber)} t</td></tr>
 					<tr><td>Steel hubs, ring, connectors</td><td class="num">{tonnes(card.shell.t.steel)} t</td></tr>
 					<tr><td>Laminated double glazing</td><td class="num">{n0(card.shell.m.glass)} m² · {tonnes(card.shell.t.glass)} t</td></tr>
-					<tr><td>Hemp fibre, north third</td><td class="num">{n0(card.shell.m.hemp)} m³ · {tonnes(card.shell.t.hemp)} t</td></tr>
+					<tr><td>Hemp fibre, north side</td><td class="num">{n0(card.shell.m.hemp)} m³ · {tonnes(card.shell.t.hemp)} t</td></tr>
 					<tr><td>Lime footing</td><td class="num">{n0(card.shell.m.lime)} m³ · {tonnes(card.shell.t.lime)} t</td></tr>
 					<tr class="total"><td>Shell materials at today’s prices</td><td class="num">{eur(card.eur)}</td></tr>
 				</tbody>
@@ -244,7 +244,7 @@
 					{/each}
 				</tbody>
 			</table>
-			<p class="small">Every dome is a geodesic cap a third as high as it is wide (the 150 m dome’s 50 m), struts about 6 m long. Its north third ({n0(NORTH * 100)}% of the shell, north-west to north-east) is closed with solid hemp-fibre triangles in timber cassettes, the rest is laminated glass with see-through solar cells.</p>
+			<p class="small">Every dome is a geodesic cap a third as high as it is wide (the 150 m dome’s 50 m), struts about 6 m long. Its cold north side, north-west to north-east from the ground to a level line at three quarters of its height ({n0(NORTH * 100)}% of the shell), is closed with solid hemp-fibre triangles in timber cassettes; the crown, the east, the south and the west are laminated glass with see-through solar cells. On the tower the hemp stops where the apartments start.</p>
 		</section>
 	{/if}
 

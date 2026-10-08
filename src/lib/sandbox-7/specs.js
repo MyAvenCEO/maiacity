@@ -79,13 +79,43 @@ const REF = {
 	steel: 450
 };
 /**
- * The north third of every shell is closed (Samuel, 2026-10-08): solid triangles of hemp fibre in timber cassettes
- * on a stone plinth instead of glass and solar, holding the heat in; the rest is glass. A 120° sector, north-west to
- * north-east, is a third of a cap's shell.
+ * The cold north side of every shell is closed (Samuel, 2026-10-08): solid triangles of hemp fibre in timber cassettes
+ * on a stone plinth instead of glass and solar, holding the heat in. It runs north-west to north-east (120°) from the
+ * ground up to a level line at three quarters of a dome's height, so the crown, the east, the south and the west stay
+ * glass and take the sun all day; on the tower it stops where the apartments start, at about a third of its height.
  */
-export const NORTH = 1 / 3;
-/** the sector it covers, degrees either side of north */
 export const NORTH_HALF = 60;
+/** how high the hemp reaches: a dome's level line, as a share of its height */
+export const NORTH_UP = 0.75;
+/** and the tower's */
+export const TOWER_NORTH_UP = 0.35;
+/**
+ * The share of a shell of revolution (profile [radius, height] from the foot up or the crown down) that the north
+ * band covers, up to height Y.
+ * @param {[number, number][]} p
+ * @param {number} Y
+ */
+export function northShare(p, Y) {
+	let all = 0, north = 0;
+	for (let k = 1; k < p.length; k++) {
+		const [r0, y0] = p[k - 1], [r1, y1] = p[k];
+		const a = (r0 + r1) * Math.hypot(r1 - r0, y1 - y0);
+		all += a;
+		if ((y0 + y1) / 2 <= Y) north += (a * NORTH_HALF) / 180;
+	}
+	return north / all;
+}
+/** a dome's cap as a profile from its crown to its foot */
+export function capProfile(/** @type {number} */ D, n = 400) {
+	const c = capOf(D);
+	const theta = Math.acos((c.R - c.h) / c.R);
+	/** @type {[number, number][]} */
+	const p = [];
+	for (let k = 0; k <= n; k++) p.push([c.R * Math.sin((theta * k) / n), c.R * Math.cos((theta * k) / n) - (c.R - c.h)]);
+	return p;
+}
+/** the share of every dome's shell in hemp: the caps are all alike, so one number (a quarter) */
+export const NORTH = northShare(capProfile(150), NORTH_UP * capOf(150).h);
 /** how thick the hemp is in the north shell, m */
 const HEMP_M = 0.24;
 /** see-through cells lie in most of the glass, leaving ~70% of the light for the plants (village-energy.md) */
@@ -325,7 +355,7 @@ export const towerFloors = (T) =>
 
 /**
  * A tower's shell, as the dome tower research sized Tower250 (timber 10,200–13,600 m³, steel 2,000–4,800 t, glass
- * ~6,000 t; mid values) with its north third closed in hemp: the glass and the hemp by the m².
+ * ~6,000 t; mid values) with its cold north side closed in hemp: the glass and the hemp by the m².
  * @param {Tower} T
  */
 export function towerShell(T) {
@@ -337,7 +367,7 @@ export function towerShell(T) {
 		volume += (Math.PI * (y1 - y0) * (r0 * r0 + r0 * r1 + r1 * r1)) / 3;
 	}
 	const R = T.D / 2;
-	const north = shell * NORTH;
+	const north = shell * northShare(p, TOWER_NORTH_UP * T.H);
 	const glazed = shell - north;
 	// the research's ~6,000 t of glass was for the whole shell: a m² of it weighs that over the shell
 	const kgM2 = (TOWERS.t250.glass * 1000) / towerShell250();
@@ -405,7 +435,7 @@ export const EQUIPMENT = [
 /** energy, kWh a year (our research unless noted) */
 export const ENERGY = {
 	/** see-through cells leaving 70% of the light: the 150 m cap made ~1.3 GWh a year from ~19,100 m² of glass with a north
-	 * quarter closed; closing the north third takes away the panes that see the least sun, so a m² of the rest keeps that yield */
+	 * quarter closed, as ours are: a m² of the rest keeps that yield */
 	solarPerGlazed: 1.3e6 / (capOf(150).shell * 0.75),
 	/** the tower's glass is steeper and shaded by its own shoulder: assumed 60% of a dome's yield a m² */
 	towerSolarShare: 0.6,
