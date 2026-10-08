@@ -26,7 +26,7 @@ import { BIOMES, BUILDINGS, BUILD_MWH_T, CENTRE, ENERGY, EUR_GOLD, GROWS, GRASS,
 import { CART, GRID_EUR_KWH, HEARTS, LOAN, LOAN_PAY, NEIGHBOURS, TRADED, WORLD, heartsFor, keepOf, loanMonths, make, newMarket, orderRule, party, priceIn, request, shortIn, spareIn } from './market.js';
 import { SE, STEP, findPath, makeGrid } from './hex.js';
 import { CISTERN, FOOD_KG, FRESH_L, KEEP, MOST, PACE, PRICE, RAIN_L, RAIN_MONTH, TANK, WATER_PRICE, WATER_USE, WEEK, YEAR, DAY, MONTH, clockOf, forestShare } from './food.js';
-import { makePlan, ringWay, spoke } from './plots.js';
+import { makePlan, ringNodes, ringWay, spoke } from './plots.js';
 import { growValley } from './map.js';
 import { fmt } from './units.js';
 
@@ -137,6 +137,8 @@ export function loadGame(saved) {
 
 /** the settlement plan of a valley's size, made once (it is only read) @type {Map<string, ReturnType<typeof makePlan>>} */
 const plans = new Map();
+/** each size's ring roads by village (./plots.js ringNodes) @type {Map<string, number[][]>} */
+const rings = new Map();
 
 /** @param {any} st */
 export function createSim(st) {
@@ -156,6 +158,23 @@ export function createSim(st) {
 	const plan = /** @type {ReturnType<typeof makePlan>} */ (plans.get(size));
 	/** the village a node lies in */
 	const villageAt = (/** @type {number} */ n) => plan.villageOf[plan.plotOf[n]];
+	if (!rings.has(size)) rings.set(size, ringNodes(g, plan));
+	/** each village's ring road and its center's spur, under the ground and on it (./plots.js ringNodes) */
+	const ringAt = /** @type {number[][]} */ (rings.get(size));
+	const onRing = new Uint8Array(N);
+	for (const v of ringAt) for (const j of v) onRing[j] = 1;
+	/** what grew on a village's ring road is cleared: trees felled, rocks broken, fields ploughed under */
+	function clearRing(/** @type {number} */ v) {
+		for (const j of ringAt[v] ?? []) {
+			const o = st.obj[j];
+			if (!o || (o.k !== 'tree' && o.k !== 'rock' && o.k !== 'field')) continue;
+			if (o.k === 'field' && st.buildings[o.b]) st.buildings[o.b].fields = Math.max(0, st.buildings[o.b].fields - 1);
+			st.obj[j] = null;
+			st.objV = (st.objV ?? 0) + 1;
+		}
+	}
+	// a village center in an older save gets its ring road clear
+	for (const b of Object.values(st.buildings ?? {})) if (b && (b.type === 'centre' || b.type === 'village')) clearRing(villageAt(b.node));
 
 	const rand = () => {
 		st.rng = (st.rng + 0x6d2b79f5) >>> 0;
@@ -400,8 +419,9 @@ export function createSim(st) {
 			/** a village center's treasury, in HEARTs (its settlers issue them) */
 			hearts: 0,
 		};
-		// a village center is founded as a logistics hub, its first stage
+		// a village center is founded as a logistics hub, its first stage, and clears the ground for its ring road
 		if (type === 'centre') b.level = 1;
+		if (type === 'centre' || type === 'village') clearRing(villageAt(node));
 		for (const w of Object.keys(b.cost)) (b.used[w] = 0), (b.got[w] = 0), (b.inc[w] = 0);
 		if (t.ore) b.deposit = depositAt(node);
 		flag.bld ||= b.id;
@@ -821,9 +841,9 @@ export function createSim(st) {
 		return b.out === 0;
 	}
 	/** a free spot of grass to plant on (a tree, a field): nothing on it, no path, and not where a hex keeps its ground
-	 * clear (its square, its spots and round them, its village center) */
+	 * clear (its square, its spots and round them, its village center, its ring road) */
 	function freeSpot(/** @type {number} */ j) {
-		return st.terrain[j] === GRASS && !st.obj[j] && !st.road[j] && st.owner[j] <= PLAYER && !plan.clear[j];
+		return st.terrain[j] === GRASS && !st.obj[j] && !st.road[j] && st.owner[j] <= PLAYER && !plan.clear[j] && !onRing[j];
 	}
 	/** what grew round a node is cleared: trees felled, rocks broken, fields ploughed under */
 	function clearAround(/** @type {number} */ n, /** @type {number} */ r) {

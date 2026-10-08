@@ -11,6 +11,8 @@
  * holds. Pure, and the same for every valley of a size.
  */
 
+import { ROW } from './hex.js';
+
 /** steps from the middle of a hex to the middle of the next */
 export const K = 13;
 /** the corners round a hex's middle, by the two directions between which each lies (as in ./hex.js): each [dq, dr],
@@ -201,4 +203,26 @@ export function ringWay(chain, step) {
 	round(last, enter, last.door);
 	to([last.x, last.z]);
 	return pts;
+}
+
+/**
+ * The nodes under each village's ring road (RING_R round its middle hex's middle) and under the spur from its center's
+ * door out to it, by village: nothing grows there. The center stands on the middle and faces away from the house spot
+ * it is built on.
+ * @param {import('./hex.js').Grid} g @param {Plan} plan @returns {number[][]}
+ */
+export function ringNodes(g, plan) {
+	const reach = Math.ceil((RING_R + 2) / ROW);
+	return plan.villages.map((v) => {
+		const c = plan.centre[v.centre], s = plan.spots[v.centre][0];
+		if (c < 0) return [];
+		const cx = g.x(c), cz = g.z(c);
+		const door = s >= 0 ? Math.atan2(cz - g.z(s), cx - g.x(s)) : Math.PI / 2;
+		const ux = Math.cos(door), uz = Math.sin(door);
+		return g.within(c, reach).filter((j) => {
+			const dx = g.x(j) - cx, dz = g.z(j) - cz, d = Math.hypot(dx, dz);
+			const along = dx * ux + dz * uz, across = Math.abs(dz * ux - dx * uz);
+			return Math.abs(d - RING_R) < 1.2 || (along > 3.5 && along < RING_R && across < 1);
+		});
+	});
 }
