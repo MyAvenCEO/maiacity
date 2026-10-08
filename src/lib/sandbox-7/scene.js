@@ -30,6 +30,12 @@ const STRUT = new THREE.LineBasicMaterial({ color: '#6b5236', transparent: true,
 const DIM = new THREE.LineBasicMaterial({ color: '#ffffff', transparent: true, opacity: 0.9, depthTest: false });
 const STONE = '#9d978c';
 
+/**
+ * How high a dome's floor (and what lies on it) stands over the land outside, m: half a metre, so the depth buffer can
+ * tell them apart from a kilometre off (a few centimetres flickered)
+ */
+const FLOOR_Y = 0.5;
+
 /** the colours of the tower's floors, by use (the land-use map's where they match) */
 export const FLOOR_COLOURS = { utilities: USES.utilities.map, factory: USES.factory.map, park: '#5fae4a', community: '#e07a5f', offices: '#4a90c2', hotel: '#d9a03f', apartments: '#c2557a', sky: '#f2d16b' };
 
@@ -145,8 +151,8 @@ function domeShell(D) {
 function homeInside(/** @type {any} */ K, /** @type {THREE.Group} */ inside) {
 	const c = capOf(K.D);
 	const g = K.gallery;
-	inside.add(part(new THREE.CircleGeometry(c.a - 0.3, 64).rotateX(-Math.PI / 2), mat('#5e8a3e', 1), 0, 0.08, 0, false));
-	inside.add(sector(g.pondIn, g.pondOut, 0.06, 0.14, -90, 90, mat('#3f86a6', 0.2)));
+	inside.add(part(new THREE.CircleGeometry(c.a - 0.3, 64).rotateX(-Math.PI / 2), mat('#5e8a3e', 1), 0, FLOOR_Y, 0, false));
+	inside.add(sector(g.pondIn, g.pondOut, FLOOR_Y + 0.05, FLOOR_Y + 0.25, -90, 90, mat('#3f86a6', 0.2)));
 	const levels = /** @type {{ k: number, y: number, h: number, rIn: number, rOut: number }[]} */ (K.levels);
 	for (const L of levels) {
 		const next = levels[L.k + 1], below = levels[L.k - 1];
@@ -166,9 +172,9 @@ const box = (/** @type {number} */ w, /** @type {number} */ h, /** @type {number
 /** the utilities dome: pond, data center, batteries, hydrogen, water works, workshops, the office crescent, stores */
 function utilInside(/** @type {THREE.Group} */ outer) {
 	const c120 = capOf(120);
-	outer.add(part(new THREE.CircleGeometry(c120.a - 0.3, 72).rotateX(-Math.PI / 2), mat('#b9b3a8', 1), 0, 0.08, 0, false));
-	outer.add(part(new THREE.CircleGeometry(c120.a - 5, 72, Math.PI * 1.1, Math.PI * 0.8).rotateX(-Math.PI / 2), mat('#5e8a3e', 1), 0, 0.1, 0, false));
-	outer.add(sector(c120.a - POND_IN - POND_BAND, c120.a - POND_IN, 0.06, 0.16, (-POND_HALF * 180) / Math.PI, (POND_HALF * 180) / Math.PI, mat('#3f86a6', 0.2)));
+	outer.add(part(new THREE.CircleGeometry(c120.a - 0.3, 72).rotateX(-Math.PI / 2), mat('#b9b3a8', 1), 0, FLOOR_Y, 0, false));
+	outer.add(part(new THREE.CircleGeometry(c120.a - 5, 72, Math.PI * 1.1, Math.PI * 0.8).rotateX(-Math.PI / 2), mat('#5e8a3e', 1), 0, FLOOR_Y + 0.12, 0, false));
+	outer.add(sector(c120.a - POND_IN - POND_BAND, c120.a - POND_IN, FLOOR_Y + 0.05, FLOOR_Y + 0.25, (-POND_HALF * 180) / Math.PI, (POND_HALF * 180) / Math.PI, mat('#3f86a6', 0.2)));
 	// the machines laid out for a dome 150 m across, set in at four fifths
 	const inside = new THREE.Group();
 	inside.scale.set(0.8, 1, 0.8);
@@ -189,7 +195,7 @@ function utilInside(/** @type {THREE.Group} */ outer) {
 	}
 	// the water works: the bioreactor's tanks and a planted wetland
 	inside.add(box(16, 4, 10, '#c9c2b2', -45, 8));
-	inside.add(part(new THREE.BoxGeometry(44, 0.3, 34), mat('#4f8f7a', 0.3), -38, 0.2, 32, false));
+	inside.add(part(new THREE.BoxGeometry(44, 0.3, 34), mat('#4f8f7a', 0.3), -38, FLOOR_Y + 0.2, 32, false));
 	// prototyping workshops: three timber sheds
 	for (let k = 0; k < 3; k++) inside.add(box(36, 8, 20, '#b98a5a', -6 + k * 0.1, 14 + k * 23 - 4, 0.9).translateX(20));
 	// stores and the parcel hub
@@ -199,7 +205,7 @@ function utilInside(/** @type {THREE.Group} */ outer) {
 /** the machines of a factory dome, in the colours of what it makes */
 function factoryInside(/** @type {string} */ id, /** @type {THREE.Group} */ inside) {
 	const c = capOf(120);
-	inside.add(part(new THREE.CircleGeometry(c.a - 0.3, 64).rotateX(-Math.PI / 2), mat('#a49d90', 1), 0, 0.08, 0, false));
+	inside.add(part(new THREE.CircleGeometry(c.a - 0.3, 64).rotateX(-Math.PI / 2), mat('#a49d90', 1), 0, FLOOR_Y, 0, false));
 	/** @type {Record<string, string>} */
 	const COL = { timber: '#c8955a', hemp: '#b8b06a', bamboo: '#8fb05a', steel: '#6d7782', lime: '#e6e2d6', clay: '#c4734f', glass: '#9fd0dc', recycling: '#7e8f6a' };
 	const col = COL[id] ?? '#999';
@@ -213,8 +219,8 @@ function factoryInside(/** @type {string} */ id, /** @type {THREE.Group} */ insi
 /** the tropical food domes' pond and floor */
 function foodInside(/** @type {THREE.Group} */ inside) {
 	const c = capOf(120);
-	inside.add(part(new THREE.CircleGeometry(c.a - 0.3, 72).rotateX(-Math.PI / 2), mat('#4a7a33', 1), 0, 0.08, 0, false));
-	inside.add(sector(c.a - POND_IN - POND_BAND, c.a - POND_IN, 0.06, 0.16, (-POND_HALF * 180) / Math.PI, (POND_HALF * 180) / Math.PI, mat('#3f86a6', 0.2)));
+	inside.add(part(new THREE.CircleGeometry(c.a - 0.3, 72).rotateX(-Math.PI / 2), mat('#4a7a33', 1), 0, FLOOR_Y, 0, false));
+	inside.add(sector(c.a - POND_IN - POND_BAND, c.a - POND_IN, FLOOR_Y + 0.05, FLOOR_Y + 0.25, (-POND_HALF * 180) / Math.PI, (POND_HALF * 180) / Math.PI, mat('#3f86a6', 0.2)));
 	// packing, the cold store and the nursery, under the north shell west of the pond
 	inside.add(box(22, 6, 12, '#e8dcc0', -36, -32));
 }
@@ -237,14 +243,14 @@ function towerModel(T, plant) {
 	const levels = towerLevels(T);
 	const rim0 = towerRadius(T, 12) - FACADE;
 	g.inside.add(part(new THREE.CylinderGeometry(rim0, rim0, 12, 96), mat('#cfc6b4'), 0, 6, 0));
-	g.inside.add(part(new THREE.RingGeometry(T.stack, rim0, 96).rotateX(-Math.PI / 2), mat('#5fae4a', 1), 0, 12.05, 0, false));
+	g.inside.add(part(new THREE.RingGeometry(T.stack, rim0, 96).rotateX(-Math.PI / 2), mat('#5fae4a', 1), 0, 12.4, 0, false));
 	// a football pitch (105 × 68 m) and an amphitheatre on the deck, south of the stack
 	const pitchZ = T.stack + 8 + 34;
 	if (pitchZ + 34 < rim0 - 4) {
-		g.inside.add(part(new THREE.PlaneGeometry(68, 105).rotateX(-Math.PI / 2).rotateY(Math.PI / 2), mat('#3f9a4a', 1), 0, 12.12, pitchZ, false));
+		g.inside.add(part(new THREE.PlaneGeometry(68, 105).rotateX(-Math.PI / 2).rotateY(Math.PI / 2), mat('#3f9a4a', 1), 0, 12.7, pitchZ, false));
 		const lines = new THREE.EdgesGeometry(new THREE.PlaneGeometry(64, 101).rotateX(-Math.PI / 2).rotateY(Math.PI / 2));
 		const l = new THREE.LineSegments(lines, new THREE.LineBasicMaterial({ color: '#ffffff' }));
-		l.position.set(0, 12.2, pitchZ);
+		l.position.set(0, 12.8, pitchZ);
 		g.inside.add(l);
 	}
 	for (let k = 0; k < 6; k++) {
@@ -542,6 +548,8 @@ export function buildWorld(scene, village, progress) {
 	const hexes = {};
 	// the valley round the village, and the hexes beyond it
 	const valley = new THREE.Mesh(new THREE.CircleGeometry(7000, 64).rotateX(-Math.PI / 2), mat('#83a05e', 1));
+	// well under the hexes' ground: two surfaces only centimetres apart flicker against each other from afar
+	valley.position.y = -1.5;
 	valley.receiveShadow = true;
 	scene.add(valley);
 	const around = new THREE.Group();
