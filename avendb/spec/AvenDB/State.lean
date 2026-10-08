@@ -234,9 +234,9 @@ def Holder.entitled (st : State) : Holder → KeyScope → Bool
 def holders (st : State) : List Holder :=
   (signers st).map .signer ++ st.vaults.map (fun v => .vault v.id) ++ [.everyone]
 
-/-- The key pairs the current key of `k` is sealed to: a human vault's devices and owner signers (the passkey and
-    the recovery code, through keys derived from them), a coop's owner vaults, the vaults that can read a whole
-    space, and for an entry its space plus the vaults that may read just that entry. Relay caps get no key. -/
+/-- The key pairs the current key of `k` is sealed to: a human vault's devices and owner signers (its passkeys,
+    through keys derived from them), a coop's owner vaults, the vaults that can read a whole space, and for an entry
+    its space plus the vaults that may read just that entry. Relay caps get no key. -/
 def targets (st : State) : KeyScope → List KeyName
   | .vault v =>
     match st.vault? v with

@@ -152,12 +152,17 @@ pub fn human_on(lab: &mut Lab, passkey: SignerId, devices: &[SignerId]) -> Vault
     v
 }
 
+/// Each person's devices derive their keys from their passkey; the server and the stranger have keys of their own.
 pub fn world() -> World {
     let mut lab = Lab::new();
-    let (passkey_s, mac_s, phone_s) = (lab.passkey("Samuel"), lab.device("Samuel's Mac"), lab.device("Samuel's iPhone"));
-    let (passkey_b, mac_b) = (lab.passkey("Bob"), lab.device("Bob's Mac"));
-    let (passkey_c, mac_c) = (lab.passkey("Carol"), lab.device("Carol's Mac"));
-    let (passkey_d, mac_d) = (lab.passkey("Dave"), lab.device("Dave's Mac"));
+    let passkey_s = lab.passkey("Samuel");
+    let (mac_s, phone_s) = (lab.device_of(passkey_s, "Samuel's Mac"), lab.device_of(passkey_s, "Samuel's iPhone"));
+    let passkey_b = lab.passkey("Bob");
+    let mac_b = lab.device_of(passkey_b, "Bob's Mac");
+    let passkey_c = lab.passkey("Carol");
+    let mac_c = lab.device_of(passkey_c, "Carol's Mac");
+    let passkey_d = lab.passkey("Dave");
+    let mac_d = lab.device_of(passkey_d, "Dave's Mac");
     let (server, server_vault) = lab.server();
     let stranger = lab.device("a stranger");
     let samuel = human_on(&mut lab, passkey_s, &[mac_s, phone_s]);

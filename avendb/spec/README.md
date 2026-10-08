@@ -30,15 +30,15 @@ lake exe vectors
 |---|---|
 | `Basic.lean` | Ids, principals (signers and vaults), roles relay < read < write < owner, scopes (a space or one entry), grantees, key names |
 | `State.lean` | What a peer knows; acting for a vault, approving for it (its root, or its threshold of owners), holding a cap; symbolic keys (`Knows`), rotation and sealing |
-| `Step.lean` | Every op and the rules that accept or refuse it, publishing into a space's schema lane among them; the one order every peer replays in; strong removal: what a removal cuts, and which removals stand when they clash (`view`) |
-| `Sync.lean` | What a peer sends a device: sync by caps, item by item, and the revocations that took its caps away |
+| `Step.lean` | Every op and the rules that accept or refuse it, publishing into a space's schema lane and checkpoints among them; the one order every peer replays in; strong removal: what a removal cuts, and which removals stand when they clash (`view`); what a peer counts once it no longer trusts the curves (`checkpointed`) |
+| `Sync.lean` | What a peer sends a device: sync by caps, item by item (each item's writes and checkpoints), and the revocations that took its caps away |
 | `Doc.lean` | Documents as histories: merge and promote, against the laws we rely on from Loro |
 | `Lens.lean` | The markdown document and the todo in two schema versions and the lenses between them; items as stored, projected on read into each app's schema, and edits through each app's view; the lens laws (T9) |
-| `Theorems.lean` | T1 to T8, T11 to T14, T16 and T17 |
-| `Lemmas.lean` | The helper lemmas the proofs use: how a step changes a vault, ownership links and chains, what a step keeps that authorization reads, causal closure, the schema lane, replays |
+| `Theorems.lean` | T1 to T8, T11 to T14, and T16 to T18 |
+| `Lemmas.lean` | The helper lemmas the proofs use: how a step changes a vault, ownership links and chains, what a step keeps that authorization reads, causal closure, the schema lane, replays, and which op made each write |
 | `KeyLemmas.lean` | The helper lemmas for the keys: what settling seals and publishes, `opens` finding every key `Knows` gives, acting for a vault through chains, the invariants behind T5 and T6, `EverReads` |
-| `Examples.lean` | The plan's scenarios run on the model, including schema v2 (the schema lane, and a v2 app's edit of a document a v1 app wrote), one todo shared with several vaults and synced peer to peer, and strong removal: back-dated ops cut, clashes, a stolen passkey, the root handed on |
-| `Vectors.lean` | Cases for the Rust core: ops applied in order (which the model accepts) and ops at the depths they claim (which stand in the view), with the state at the end; and lens cases: what each app reads from stored blocks and todos, and what its edits store |
+| `Examples.lean` | The plan's scenarios run on the model, including schema v2 (the schema lane, and a v2 app's edit of a document a v1 app wrote), one todo shared with several vaults and synced peer to peer, strong removal (back-dated ops cut, clashes, a stolen passkey, the root handed on), and checkpoints once the curves fall |
+| `Vectors.lean` | Cases for the Rust core: ops applied in order (which the model accepts) and ops at the depths they claim (which stand in the view, or in the post-quantum view), with the state at the end; and lens cases: what each app reads from stored blocks and todos, and what its edits store |
 | `VectorsCheck.lean`, `WriteVectors.lean` | Check the files in `vectors/` on every build; write them (`lake exe vectors`) |
 | `vectors/vaults.json` | The cases with the model's answers, read by `crates/avendb/tests/vectors.rs` |
 | `vectors/lenses.json` | The lens cases with the model's views and edits, read by `the_lens_vectors` |
@@ -63,6 +63,7 @@ lake exe vectors
 | T14 | Accepted writes are causally closed: a write stands only with every write it builds on | Proven | `a_drop_takes_what_builds_on_it_along`, `t14_causally_closed`, the vectors |
 | T16 | Strong removal: an op stands only if it also stands without what each later removal that hadn't seen it takes away, and every removal chosen stands | Proven | `a_removed_owner_cannot_backdate_governance`, `handing_the_root_on_cuts_the_old_passkeys_backdated_ops`, `t16_strong_removal`, the view vectors |
 | T17 | Only a space's owners publish its schemas and lenses | Proven | `only_owners_publish_into_the_lane`, the vectors |
+| T18 | Once the curves fall: a peer that no longer trusts them counts a write only if a checkpoint by its own author covers it | Proven | `a_broken_curve_writes_nothing_that_counts`, `t18_checkpointed_writes`, the vectors |
 
 The Rust scenario tests (`crates/avendb/tests/scenarios.rs`) run the same scenarios as `Examples.lean`, on real devices
 and keys in the Lab. The vectors (`crates/avendb/tests/vectors.rs`) hold the Rust rules to the model's answers op by op, and
@@ -87,8 +88,16 @@ governance as for writes. When removals clash, the senior one stands: the vault'
 they joined, then removals no owner approved (a device leaving), then revocations.
 
 A human vault's passkey is its root, named at genesis: it approves anything for its vault on its own, wins every
-clash, and only it hands the root on (`setRoot`, which cuts what the old passkey signs on an old copy). A recovery
-code is an optional second owner, never the root.
+clash, and only it hands the root on (`setRoot`, which cuts what the old passkey signs on an old copy). Passkeys are
+the only way back in: a backup passkey may join as a second owner, never the root, and a device's keys derive from a
+passkey at every unlock.
+
+Every op is named by a SHA-3 hash, and every signature on it but a write's has a hash-based half (SLH-DSA) beside the
+classical one, so governance, grants and keys hold even once the curves fall. A write carries only the classical
+half, to stay fast and small; its device vouches for it in a checkpoint, which carries both. A peer that no longer
+trusts the curves counts only the writes that a checkpoint by their own author covers (T18), so whoever breaks a
+device's ed25519 key writes nothing such a peer counts. The model leaves signatures abstract: an op's signers are its
+author and cosigners, and T18 is stated over which ops a peer counts.
 
 Documents and todos are projected on read, never migrated by a commit: two devices migrating at once could each drop
 the other's new containers, and a default that a migration writes races a real edit. Each field stays in the
@@ -103,7 +112,8 @@ owner of the space (T17).
 
 None are axioms; each is part of the model:
 
-- Signatures can't be forged: an op's signers are the keys that signed it.
+- Signatures can't be forged: an op's signers are the keys that signed it. Where the curves fall, the Rust core keeps
+  this true for every op but a write (each carries a hash-based half), and T18 for writes.
 - Sealed or encrypted data reveals nothing without its key: a key is learned only through `Knows`.
 - Ids don't collide: a `Nodup` hypothesis where a theorem needs it.
 - Loro converges, and can revert a document to any version it contains: fields of the `Loro` structure.
@@ -121,11 +131,12 @@ what is still red.
 | Phase | Builds | Proves |
 |---|---|---|
 | P0 | This spec, the `avendb` API as stubs, every test | Statements compile, scenarios check |
-| P1 | Vaults, vault logs, chains; op ids and signatures (device keys, passkeys through the WebAuthn envelope, recovery codes); vectors for the vault rules | T2, T3 |
+| P1 | Vaults, vault logs, chains; op ids and signatures (device keys, passkeys through the WebAuthn envelope); vectors for the vault rules | T2, T3 |
 | P2 | Spaces, grants, revocation with strong removal, the passkey as root, Public, write checks with causal closure, what each device may receive | T1, T4, T8, T14, T16 |
 | P3 | Keys, sealing, encryption of every edit, rotation | T5, T6, T7 |
 | P4 | Schemas and lenses projected on read, edits through each app's view, the schema lane | T9, T17 |
+| P4b | Post-quantum: SHA-3 ids and hashes, SLH-DSA beside every classical signature but a write's, device keys derived from the passkey, X-Wing plus Classic McEliece in every sealed key box, checkpoints and the post-quantum-only replay | T18 |
 | P5 | History, branches, merge, promote | T10 in Rust |
 | P6 | Offline devices, random delivery orders, Lean ⇄ Rust vectors for the rest | T11, T12, T13 |
 | P7 | The avenDB tile | |
-| P8 | Sync on its own iroh ALPN with the bytes in iroh-blobs, passkeys from the browser's WebAuthn | |
+| P8 | Sync on its own iroh ALPN with X25519MLKEM768 on every connection and the bytes in iroh-blobs, passkeys from the browser's WebAuthn | |

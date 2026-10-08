@@ -245,6 +245,10 @@ theorem apply_vaults {st post : State} {op : Op} (h : apply st op = some post) :
     simp only [Option.ite_none_left_eq_some, Option.some.injEq] at h
     obtain ⟨-, -, rfl⟩ := h
     exact .inl rfl
+  · -- checkpoint: changes nothing
+    simp only [Option.ite_none_left_eq_some, Option.some.injEq] at h
+    obtain ⟨-, rfl⟩ := h
+    exact .inl rfl
 
 /-- What a step does to the vaults, told by lookups: nothing, a new vault with a free id and existing owners, or
     one existing vault changed as `VaultChange` says. -/
@@ -760,12 +764,14 @@ theorem closeDeps_closed (ws : List Write) : ∀ w ∈ closeDeps ws, depsIn (clo
 
 /-! ## What one step does to the writes and the grants -/
 
-/-- An accepted op leaves the writes alone, or adds one write that was authorized and whose dependencies were
-    accepted, and either way keeps what `authorized` reads; or it is a removal that drops writes (`dropUnseen`). -/
+/-- An accepted op leaves the writes alone, or is a write op adding its own write, which was authorized and whose
+    dependencies were accepted, and either way keeps what `authorized` reads; or it is a removal that drops writes
+    (`dropUnseen`). -/
 theorem apply_writes {st post : State} {op : Op} (h : apply st op = some post) :
     (post.writes = st.writes ∧ Keeps st post) ∨
     (∃ w, post.writes = st.writes ++ [w] ∧ authorized st w = true ∧ depsIn st.writes w = true ∧
-      Keeps st post) ∨
+      Keeps st post ∧ w.op = op.id ∧ w.author = op.author ∧
+      op.action = .write w.space w.entry w.actor w.epoch w.deps) ∨
     (∃ keep mid, op.action.keep? = some keep ∧ post = dropUnseen st mid keep ∧ mid.writes = st.writes) := by
   unfold apply at h
   split at h
@@ -831,11 +837,12 @@ theorem apply_writes {st post : State} {op : Op} (h : apply st op = some post) :
       obtain ⟨-, -, rfl⟩ := h
       exact .inr (.inr ⟨keep, _, by rw [heq]; rfl, rfl, rfl⟩)
   · -- write: the space may gain the entry
+    rename_i heq
     split at h
     · simp at h
     · simp at h
       obtain ⟨-, ⟨hact, hhold⟩, -, hdeps, rfl⟩ := h
-      refine .inr (.inl ⟨_, ?_, by simp [authorized, hact, hhold], hdeps, ?_⟩)
+      refine .inr (.inl ⟨_, ?_, by simp [authorized, hact, hhold], hdeps, ?_, rfl, rfl, heq⟩)
       · split <;> rfl
       · split
         · exact .of_vaults rfl (fun _ _ h => h) (fun _ h => h)
@@ -847,6 +854,10 @@ theorem apply_writes {st post : State} {op : Op} (h : apply st op = some post) :
   · -- publish
     simp only [Option.ite_none_left_eq_some, Option.some.injEq] at h
     obtain ⟨-, -, rfl⟩ := h
+    exact .inl ⟨rfl, .of_vaults rfl (fun _ _ h => h) (fun _ h => h)⟩
+  · -- checkpoint
+    simp only [Option.ite_none_left_eq_some, Option.some.injEq] at h
+    obtain ⟨-, rfl⟩ := h
     exact .inl ⟨rfl, .of_vaults rfl (fun _ _ h => h) (fun _ h => h)⟩
 
 /-- An accepted op only takes grants away, or adds one grant that names a vault or Public, Public only with read. -/
@@ -932,6 +943,10 @@ theorem apply_grants {st post : State} {op : Op} (h : apply st op = some post) :
     simp only [Option.ite_none_left_eq_some, Option.some.injEq] at h
     obtain ⟨-, -, rfl⟩ := h
     exact .inl fun _ h => h
+  · -- checkpoint
+    simp only [Option.ite_none_left_eq_some, Option.some.injEq] at h
+    obtain ⟨-, rfl⟩ := h
+    exact .inl fun _ h => h
 
 /-! ## What one step does to the schema lane -/
 
@@ -975,6 +990,56 @@ theorem runFrom_fst (rem : List Op) (cs : List (Nat × List OpId × List Fact)) 
         rw [hs]
         exact runFrom_fst rem cs st' rest
       · exact runFrom_fst rem cs st rest
+
+/-- The ops that stand in a run are among the ops it ran. -/
+theorem runFrom_snd_mem (rem : List Op) (cs : List (Nat × List OpId × List Fact)) :
+    ∀ (st : State) (l : List (Op × Nat)), ∀ o ∈ (runFrom rem cs st l).2, o ∈ l.map Prod.fst
+  | _, [] => by simp [runFrom]
+  | st, (op, i) :: rest => by
+    unfold runFrom
+    split
+    · exact fun o ho => List.mem_cons_of_mem _ (runFrom_snd_mem rem cs st rest o ho)
+    · split
+      · rename_i st' _ _
+        intro o ho
+        rcases List.mem_cons.1 ho with rfl | ho
+        · exact List.mem_cons_self
+        · exact List.mem_cons_of_mem _ (runFrom_snd_mem rem cs st' rest o ho)
+      · exact fun o ho => List.mem_cons_of_mem _ (runFrom_snd_mem rem cs st rest o ho)
+
+/-- The ops that stand in what a peer knows are among the ops it holds. -/
+theorem standing_mem (ops : List Op) : ∀ o ∈ standing ops, o ∈ ops := fun o ho => by
+  have h := runFrom_snd_mem _ _ _ _ o ho
+  rw [List.zipIdx_map_fst] at h
+  exact List.mem_mergeSort.1 h
+
+/-- Every write a replay holds was there at the start, or a write op it replayed made it, with the op's id and
+    author. -/
+theorem replay_writes_from :
+    ∀ (l : List Op) (st : State) (w : Write), w ∈ (replay st l).writes → w ∈ st.writes ∨
+      ∃ o ∈ l, o.id = w.op ∧ o.author = w.author ∧ o.action = .write w.space w.entry w.actor w.epoch w.deps
+  | [], _, _, h => .inl h
+  | op :: ops, st, w, h => by
+    change w ∈ (replay ((step st op).getD st) ops).writes at h
+    rcases replay_writes_from ops _ w h with h | ⟨o, ho, hrest⟩
+    · cases hs : step st op with
+      | none => rw [hs] at h; exact .inl h
+      | some st' =>
+        rw [hs] at h
+        unfold step at hs
+        obtain ⟨post, hpost, rfl⟩ := Option.map_eq_some_iff.1 hs
+        change w ∈ (settle st post).writes at h
+        rw [settle_writes] at h
+        rcases apply_writes hpost with ⟨hws, -⟩ | ⟨w', hws, -, -, -, hid, hauth, hact⟩ | ⟨keep, mid, -, rfl, hmid⟩
+        · exact .inl (hws ▸ h)
+        · rw [hws] at h
+          rcases List.mem_append.1 h with h | h
+          · exact .inl h
+          · rw [List.mem_singleton] at h
+            subst h
+            exact .inr ⟨op, List.mem_cons_self, hid.symm, hauth.symm, hact⟩
+        · exact .inl (hmid ▸ (List.mem_filter.1 ((closeDeps_sublist _).subset h)).1)
+    · exact .inr ⟨o, List.mem_cons_of_mem _ ho, hrest⟩
 
 /-- Every removal `resolve` picks stands in the run with the removals it picks: the fold only ever keeps a list
     whose run accepts all of it. -/

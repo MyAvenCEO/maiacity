@@ -1,7 +1,8 @@
 //! Sync by caps, item by item, as in `avendb/spec/AvenDB/Sync.lean`. A device asks a peer for what it may receive;
-//! the connection proves which device is asking (iroh's endpoint key is the device key). The peer answers from its own
-//! view: the logs of the vaults that device acts for, and for each item it may receive, the encrypted writes, the auth
-//! ops of the scopes covering it, and the logs of every vault those ops act for or name, up their chains of owners. A
+//! the connection proves which device is asking (iroh's endpoint key is the device's ed25519 key, and the device shows
+//! the rest of its keys, which hash to its signer id). The peer answers from its own view: the logs of the vaults that
+//! device acts for, and for each item it may receive, the encrypted writes and checkpoints, the auth ops of the scopes
+//! covering it, and the logs of every vault those ops act for or name, up their chains of owners. A
 //! revocation that took one of the device's caps away reaches it too, so it knows what it may no longer do. Nothing
 //! else about other items leaves the peer (T12), and two devices that answered each other hold the same writes for
 //! every item they share (T13).
@@ -17,8 +18,7 @@ use crate::policy::{removes, view, Action, Fact, Grant, Grantee, Op, Principal, 
 /// ops act for or name, and of every vault that owns one of them, up the chains.
 pub fn respond(ops: &[Op], d: SignerId) -> Vec<Op> {
     let st = view(ops);
-    let writes: Vec<&Op> =
-        ops.iter().filter(|op| op.write_target().is_some_and(|(sp, e)| st.may_receive(d, sp, e))).collect();
+    let writes: Vec<&Op> = ops.iter().filter(|op| op.item().is_some_and(|(sp, e)| st.may_receive(d, sp, e))).collect();
     let auth: Vec<&Op> = ops
         .iter()
         .filter(|op| auth_scope(ops, op).is_some_and(|sc| st.reaches(d, sc)) || takes_from(&st, ops, d, op))

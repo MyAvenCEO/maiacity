@@ -12,8 +12,8 @@ use avendb::id::{EntryId, GrantId, SignerId, SpaceId, VaultId};
 use avendb::keys::{KeyName, KeyScope};
 use avendb::lens::View;
 use avendb::policy::{
-    order, removes, replay, trace, view, Action, Fact, Grantee, Holder, Kind, Log, Op, Principal, Refusal, Role, Scope,
-    State,
+    checkpointed, order, removes, replay, trace, view, Action, Fact, Grantee, Holder, Kind, Log, Op, Principal, Refusal,
+    Role, Scope, State,
 };
 use avendb::sync::respond;
 
@@ -451,6 +451,39 @@ fn t16_strong_removal() {
     }
     // and the forks do clash: some ops the state just before them accepts are cut
     assert!(cut > 0);
+}
+
+#[test]
+fn t18_checkpointed_writes() {
+    let (mut counted, mut dropped) = (0, 0);
+    for seed in SEEDS {
+        let h = forked_caps_history(seed, 60);
+        let mut rng = Rng(seed.wrapping_mul(0x9e37_79b9_7f4a_7c15) | 1);
+        let mut ops = h.log.ops().to_vec();
+        // checkpoints of random writes, each covering more writes of its entry: most by the write's own author, some
+        // by any signer, and some covering others' writes too, which the rules refuse
+        let ws = h.log.view().all_writes().to_vec();
+        for _ in 0..ws.len() / 2 {
+            let w = &ws[rng.below(ws.len())];
+            let author = if rng.below(4) > 0 { w.author } else { rng.pick(&SIGNERS) };
+            let same = ws.iter().filter(|x| x.space == w.space && x.entry == w.entry && x.op != w.op);
+            let covers = std::iter::once(w.op).chain(same.filter(|_| rng.below(3) == 0).map(|x| x.op)).collect();
+            ops.push(h.log.draft(author, &[], Action::Checkpoint { space: w.space, entry: w.entry, covers }));
+        }
+        // a peer that no longer trusts the curves counts a write only if a checkpoint by its own author covers it
+        let st = replay(&checkpointed(&ops)).state;
+        for w in st.all_writes() {
+            let vouched = ops.iter().any(|c| {
+                c.author == w.author && matches!(&c.action, Action::Checkpoint { covers, .. } if covers.contains(&w.op))
+            });
+            assert!(vouched, "seed {seed}: {w:?} counts with no checkpoint by its author");
+        }
+        let all = view(&ops);
+        counted += st.all_writes().len();
+        dropped += all.all_writes().iter().filter(|w| !st.all_writes().contains(w)).count();
+    }
+    // the checkpoints cover some writes and leave others out
+    assert!(counted > 0 && dropped > 0, "{counted} counted, {dropped} dropped");
 }
 
 #[test]

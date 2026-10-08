@@ -3,12 +3,12 @@ import AvenDB.Step
 /-!
 # Sync by caps, item by item
 
-A device asks a peer for what it may receive. The peer answers from its own view and sends the ops of the vaults
-that device acts for, and for each item it may receive, the encrypted edits, the auth ops of the scopes covering it
-(among them the schemas and lenses published into its space's lane), and the ops of every vault those ops act for or
-name, up their chains of owners. A revocation that took one of the device's caps away reaches it too, so it knows what
-it may no longer do. Nothing else about other items leaves the peer. The connection proves which device is asking
-(iroh's endpoint key is the device key), so the request names the device.
+A device asks a peer for what it may receive. The peer answers from its own view and sends the ops of the vaults that
+device acts for, and for each item it may receive, the encrypted edits and the checkpoints vouching for them, the auth
+ops of the scopes covering it (among them the schemas and lenses published into its space's lane), and the ops of
+every vault those ops act for or name, up their chains of owners. A revocation that took one of the device's caps away
+reaches it too, so it knows what it may no longer do. Nothing else about other items leaves the peer. The connection
+proves which device is asking (iroh's endpoint key is the device key), so the request names the device.
 -/
 
 namespace AvenDB
@@ -32,6 +32,12 @@ def reaches (st : State) (d : SignerId) : Scope → Bool
 def Op.writeTarget? (op : Op) : Option (SpaceId × EntryId) :=
   match op.action with
   | .write sp e .. => some (sp, e)
+  | _ => none
+
+/-- The entry an op writes to or a checkpoint vouches for: what travels with the item. -/
+def Op.item? (op : Op) : Option (SpaceId × EntryId) :=
+  match op.action with
+  | .write sp e .. | .checkpoint sp e _ => some (sp, e)
   | _ => none
 
 /-- The scope an auth op is about: a space's founding, a grant's scope, for a revocation the scope of the grant it
@@ -91,7 +97,7 @@ def Op.takesFrom (st : State) (ops : List Op) (d : SignerId) (op : Op) : Bool :=
 /-- What a peer holding `ops` sends device `d`. -/
 def respond (ops : List Op) (d : SignerId) : List Op :=
   let st := view ops
-  let writes := ops.filter fun op => match op.writeTarget? with
+  let writes := ops.filter fun op => match op.item? with
     | some (sp, e) => mayReceive st d sp e
     | none => false
   let auth := ops.filter fun op => (match op.authScope? ops with

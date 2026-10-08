@@ -55,19 +55,14 @@ ids! {
     GrantId,
     /// A signed op: the hash of its encoding with its signatures.
     OpId,
-    /// A schema or a lens in a space's schema lane: the hash of its bytes.
+    /// Bytes named by their hash: a schema or a lens in a space's schema lane, or a Classic McEliece public key.
     BlobId,
 }
 
-/// What blob ids derive from.
-const BLOB_KEY: &str = "maiacity vault-db 2026-10-08 blob v1";
-
 impl BlobId {
-    /// The id of a blob: BLAKE3 of its bytes, keyed so it is unlike any other hash of them.
+    /// The id of a blob: the hash of its bytes (`hash`), unlike any other hash of them.
     pub fn of(bytes: &[u8]) -> BlobId {
-        let mut h = blake3::Hasher::new_derive_key(BLOB_KEY);
-        h.update(bytes);
-        BlobId(*h.finalize().as_bytes())
+        BlobId(crate::hash::hash("blob id", bytes))
     }
 
     /// The id in lowercase hex, as lenses name schemas and edits name the schema they were written under.

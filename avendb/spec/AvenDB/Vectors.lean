@@ -30,10 +30,12 @@ structure Case where
   name : String
   ops  : List (SignerId × List SignerId × Action)
 
-/-- A view case: each op with the depth it claims. -/
+/-- A view case: each op with the depth it claims. A post-quantum case (`pq`) is the view of a peer that no longer
+    trusts the curves, which counts only the ops `checkpointed` keeps. -/
 structure ViewCase where
   name : String
   ops  : List (Nat × SignerId × List SignerId × Action)
+  pq   : Bool := false
 
 /-- Apply the ops one after the other: whether each was accepted, and the state at the end. An op's id is its
     position. -/
@@ -51,13 +53,14 @@ def ViewCase.toOps (c : ViewCase) : List Op :=
 /-- Which ops stand in the view, in the order given, and the view. -/
 def runView (c : ViewCase) : List Bool × State :=
   let ops := c.toOps
-  let stood := standing ops
-  (ops.map fun o => stood.any (·.id == o.id), view ops)
+  let held := if c.pq then checkpointed ops else ops
+  let stood := standing held
+  (ops.map fun o => stood.any (·.id == o.id), view held)
 
 /-! ## The cases
 
 Signers: Samuel's passkey 1, his Mac 2, his iPhone 3, Bob's passkey 4 and Mac 5, Carol's passkey 6 and Mac 7, Dave's
-passkey 8, a second passkey or recovery code's signer 9, a new device 77, a stranger 555. Vaults: Samuel 100, Bob
+passkey 8, a second passkey 9 (Samuel's backup), a new device 77, a stranger 555. Vaults: Samuel 100, Bob
 101, Carol 102, Dave 103, coops from 200. Spaces: Handbook 10, Notes 11, Todos 12. Entries: Welcome 1, Charter 2,
 the door todo 21. Blobs (schemas and lenses): from 1. -/
 
@@ -75,7 +78,7 @@ def g (id : GrantId) (sc : Scope) (r : Role) (to : Grantee) (issuer : VaultId) (
 def toVault (v : VaultId) : Grantee := .principal (.vault v)
 
 def cases : List Case := [
-  { name := "a human vault, its devices and a recovery signer", ops := [
+  { name := "a human vault, its devices and a backup passkey", ops := [
     (1, [], .genesis 100 .human [.signer 1] 1),
     (1, [2], .addDevice 100 2),
     (1, [3], .addDevice 100 3),
@@ -94,7 +97,7 @@ def cases : List Case := [
     (1, [], .removeOwner 100 (.signer 1) []),
     -- a human vault is owned by signers
     (1, [], .addOwner 100 (.vault 100)),
-    -- a recovery code's signer joins as a second owner, and later replaces the lost passkey
+    -- a backup passkey joins as a second owner, and later replaces the lost passkey
     (1, [9], .addOwner 100 (.signer 9)),
     (9, [], .removeOwner 100 (.signer 1) []),
     (9, [77], .addDevice 100 77),
@@ -273,7 +276,26 @@ def cases : List Case := [
     -- Dave, made owner of the Handbook by both passkeys of the coop, publishes; so does Bob's Mac, for the coop
     (1, [4], g 2 (.space 10) .owner (toVault 103) 200),
     (8, [], .publish 10 103 3),
-    (5, [], .publish 10 200 4)] }]
+    (5, [], .publish 10 200 4)] },
+  { name := "a device vouches only for its own writes", ops := humans ++ [
+    (2, [], .foundSpace 11 100),
+    (1, [3], .addDevice 100 3),
+    (2, [], .write 11 1 100 0),
+    (2, [], .write 11 2 100 0),
+    (3, [], .write 11 1 100 0 [8]),
+    -- Samuel's Mac vouches for its edit of Welcome, his iPhone for its own
+    (2, [], .checkpoint 11 1 [8]),
+    (3, [], .checkpoint 11 1 [10]),
+    -- not for the other device's edit, nor for an edit of another entry, nor for none at all
+    (2, [], .checkpoint 11 1 [8, 10]),
+    (3, [], .checkpoint 11 1 [8]),
+    (2, [], .checkpoint 11 1 [9]),
+    (2, [], .checkpoint 11 2 [9, 99]),
+    (2, [], .checkpoint 11 2 []),
+    (2, [], .checkpoint 10 2 [9]),
+    -- Bob's Mac, a stranger to Notes, can't vouch for Samuel's edits
+    (5, [], .checkpoint 11 2 [9]),
+    (2, [], .checkpoint 11 2 [9])] }]
 
 /-- Samuel's, Bob's, Carol's and Dave's vaults, one op per depth. -/
 def humansV : List (Nat × SignerId × List SignerId × Action) := humans.zipIdx.map fun ((a, co, act), i) => (i, a, co, act)
@@ -355,7 +377,23 @@ def views : List ViewCase := [
     (10, 1, [], .removeOwner 200 (.vault 101) [8]),
     -- Samuel's Mac publishes the lens itself; Bob's Mac no longer can
     (11, 2, [], .publish 10 200 2),
-    (12, 5, [], .publish 10 200 3)] }]
+    (12, 5, [], .publish 10 200 3)] },
+  { name := "once the curves fall, only vouched writes count", pq := true, ops := humansV ++ [
+    (6, 2, [], .foundSpace 11 100),
+    (7, 1, [3], .addDevice 100 3),
+    -- Samuel's Mac edits Welcome and vouches for it; it vouches for its second edit of the Charter but not the
+    -- first, which the second builds on, so neither counts
+    (8, 2, [], .write 11 1 100 0),
+    (9, 2, [], .write 11 2 100 0),
+    (10, 2, [], .write 11 2 100 0 [9]),
+    (11, 2, [], .checkpoint 11 1 [8]),
+    (12, 2, [], .checkpoint 11 2 [10]),
+    -- the iPhone's edit is vouched for by the iPhone; a forger who broke the Mac's curve signs an edit as the Mac,
+    -- and can't vouch for it; nor can the iPhone vouch for it
+    (13, 3, [], .write 11 1 100 0 [8]),
+    (14, 3, [], .checkpoint 11 1 [13]),
+    (15, 2, [], .write 11 1 100 0 [13]),
+    (16, 3, [], .checkpoint 11 1 [15])] }]
 
 /-! ## JSON -/
 
@@ -423,6 +461,7 @@ def action : Action → String
   | .keys k epoch to pub => obj [("keys", obj [("key", keyScope k), ("epoch", nat epoch),
       ("to", arr (to.map keyName)), ("public", bool pub)])]
   | .publish sp a b => obj [("publish", obj [("space", nat sp), ("actor", nat a), ("blob", nat b)])]
+  | .checkpoint sp e covers => obj [("checkpoint", obj [("space", nat sp), ("entry", nat e), ("covers", ids covers)])]
 
 def vault (vt : Vault) : String :=
   obj [("id", nat vt.id), ("kind", kind vt.kind), ("owners", arr (vt.owners.map principal)),
@@ -459,8 +498,8 @@ def viewCase (c : ViewCase) : String :=
   let (stood, st) := runView c
   let ops := c.ops.map fun (depth, author, co, a) =>
     obj [("depth", nat depth), ("author", nat author), ("cosigners", arr (co.map nat)), ("action", action a)]
-  "{" ++ str "name" ++ ": " ++ str c.name ++ ",\n " ++ str "ops" ++ ": [\n  " ++ ",\n  ".intercalate ops ++ "],\n " ++
-    str "standing" ++ ": " ++ arr (stood.map bool) ++ ",\n " ++ state st ++ "}"
+  "{" ++ str "name" ++ ": " ++ str c.name ++ ",\n " ++ str "pq" ++ ": " ++ bool c.pq ++ ",\n " ++ str "ops" ++ ": [\n  " ++
+    ",\n  ".intercalate ops ++ "],\n " ++ str "standing" ++ ": " ++ arr (stood.map bool) ++ ",\n " ++ state st ++ "}"
 
 def render : String :=
   "{\"cases\": [\n" ++ ",\n".intercalate (cases.map case) ++ "\n],\n\"views\": [\n" ++
@@ -482,6 +521,8 @@ def created : Action → Option (Nat × Nat)
 #guard views.all fun c => nodup (c.toOps.map fun o => (o.depth, o.rank))
 -- in a step case, spaces and grants too
 #guard cases.all fun c => nodup (c.ops.filterMap fun (_, _, a) => (created a).filter (·.1 != 0))
+-- a post-quantum case drops some writes that would stand in the full view, so the Rust core must drop them too
+#guard views.all fun c => !c.pq || (runView c).1 != (runView { c with pq := false }).1
 
 /-! ## The lens cases
 

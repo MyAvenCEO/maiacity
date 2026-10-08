@@ -27,9 +27,6 @@ use serde_json::Value;
 use crate::id::{BlobId, SignerId};
 use crate::lens::{BlockV2, DocV1, DocV2, Record, Status, Stored, TodoV1, TodoV2, View};
 
-/// What a signer's Loro peer derives from.
-const PEER_KEY: &str = "maiacity vault-db 2026-10-08 loro peer v1";
-
 /// Peer ids at the very top are Loro's: it refuses `PeerID::MAX` and marks things internally with a few below it.
 const RESERVED: u64 = 16;
 
@@ -311,12 +308,11 @@ impl Clone for Item {
     }
 }
 
-/// The Loro peer of `signer`'s edits: the first 8 bytes of a keyed hash of the signer. Two signers share a peer only by
-/// a 64-bit collision.
+/// The Loro peer of `signer`'s edits: the first 8 bytes of a hash of the signer. Two signers share a peer only by a
+/// 64-bit collision.
 fn peer(signer: SignerId) -> PeerID {
-    let mut h = blake3::Hasher::new_derive_key(PEER_KEY);
-    h.update(&signer.0);
-    usable(u64::from_be_bytes(*h.finalize().as_bytes().first_chunk().expect("32 bytes")))
+    let h = crate::hash::hash("loro peer", &signer.0);
+    usable(u64::from_be_bytes(*h.first_chunk().expect("32 bytes")))
 }
 
 /// A peer id Loro takes: the reserved ones at the top move down below them.

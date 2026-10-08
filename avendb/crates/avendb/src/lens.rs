@@ -1,5 +1,5 @@
 //! Schemas and the lenses between their versions, as data: a schema is a JSON Schema and a lens a short list of steps,
-//! each a blob named by its BLAKE3 hash (`BlobId`). A space's owners publish them into its schema lane
+//! each a blob named by its SHA-3 hash (`BlobId`). A space's owners publish them into its schema lane
 //! (`Action::Publish`, T17), so an app learns a newer version's lens from the lane instead of shipping with it. The
 //! model is `avendb/spec/AvenDB/Lens.lean` (T9), and `avendb/spec/vectors/lenses.json` holds this engine to it.
 //!
@@ -1029,8 +1029,8 @@ pub mod blobs {
 
     pub const DOCUMENT_LENS: &str = r#"{
   "lens": "Markdown document, v1 to v2",
-  "from": "008b52fa60c9e62956d8e253f888c14076e8d9f5a0c1810acf4f7eb7f6d8cc29",
-  "to": "9f9c781f5894b9262170d86e3958afa21f5beee70a0dd04aa83d3248f6772c65",
+  "from": "516ba29a8009c5728821ee69ed2781960c858f16eb2384c65c67adb3a85875d6",
+  "to": "1bd29ba34c58ccd4e603e9ce455360ab4df65144a204b45d435bcfb046730868",
   "steps": [
     { "add": "tags" },
     { "in": { "field": "blocks", "steps": [
@@ -1063,8 +1063,8 @@ pub mod blobs {
 
     pub const TODO_LENS: &str = r#"{
   "lens": "Todo, v1 to v2",
-  "from": "fc36ea1af9ca64d5fcb00ae02c86f490e8c9154295b920d7913099104bf4ae75",
-  "to": "e59008d55a8c1b5d57e1f76d53d48376b39a2979c5adfa4ccc81f2fdae17f777",
+  "from": "307636b72ace1e476cd6acb0b13acd95abcbb40ad2e53d6c7bd71dd565147ba2",
+  "to": "9e9b2af29dc24ae8b4a59a5b136c912a0bc4239862a805ffe0cba8600fb03407",
   "steps": [
     { "convert": {
       "from": ["done"],

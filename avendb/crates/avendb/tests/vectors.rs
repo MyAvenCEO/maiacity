@@ -1,9 +1,10 @@
 //! The Lean model's test vectors (`avendb/spec/vectors/vaults.json` and `lenses.json`, written by `lake exe vectors`,
 //! checked by every `lake build`). A step case's ops, applied one after the other from the empty state, must be
 //! accepted or refused exactly as the model says. A view case's ops, each at the depth it claims, must stand or be cut
-//! exactly as in the model's view: that is where removals cut what they hadn't seen. Both must end with the same vaults,
-//! spaces, grants, writes, key schedule (each family's epoch, every seal, every published key) and schema lanes. The
-//! lens vectors hold each app's view of many stored blocks and todos, and what each edit through a view stores.
+//! exactly as in the model's view: that is where removals cut what they hadn't seen, and in a post-quantum case where
+//! the writes no checkpoint covers drop out (`checkpointed`). Both must end with the same vaults, spaces, grants,
+//! writes, key schedule (each family's epoch, every seal, every published key) and schema lanes. The lens vectors hold
+//! each app's view of many stored blocks and todos, and what each edit through a view stores.
 //!
 //! The model names what an op creates (a vault, a space, a grant) by a number, and an op by its place in the case; the
 //! core names them all by hashes, so each number maps to what its op created, and each place to that op's id. A keys
@@ -16,7 +17,9 @@ use serde_json::{json, Map, Value};
 use avendb::id::{BlobId, EntryId, GrantId, OpId, SignerId, SpaceId, VaultId};
 use avendb::keys::{KeyBox, KeyId, KeyName, KeyScope, Recipient, Seal};
 use avendb::lens::View;
-use avendb::policy::{replay, Action, Grant, Grantee, Kind, Op, Principal, Role, Scope, Space, State, Vault, Write};
+use avendb::policy::{
+    checkpointed, replay, Action, Grant, Grantee, Kind, Op, Principal, Role, Scope, Space, State, Vault, Write,
+};
 
 const VECTORS: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../../spec/vectors/vaults.json");
 const LENSES: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../../spec/vectors/lenses.json");
@@ -195,6 +198,9 @@ impl Names {
             "publish" => {
                 Action::Publish { space: self.space(&x["space"]), actor: self.vault(&x["actor"]), blob: blob(&x["blob"]) }
             }
+            "checkpoint" => {
+                Action::Checkpoint { space: self.space(&x["space"]), entry: entry(&x["entry"]), covers: self.ops(&x["covers"]) }
+            }
             other => panic!("no action {other}"),
         }
     }
@@ -325,7 +331,7 @@ fn each_op_stands_or_is_cut_as_in_the_lean_models_view() {
             names.created(v, &op, true);
             held.push(op);
         }
-        let r = replay(&held);
+        let r = if case["pq"].as_bool().unwrap() { replay(&checkpointed(&held)) } else { replay(&held) };
         let stood = r.standing();
         for (i, (op, want)) in held.iter().zip(standing).enumerate() {
             assert_eq!(stood.contains(&op.id()), want.as_bool().unwrap(), "{name}, op {i}: {}", ops[i]);

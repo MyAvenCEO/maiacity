@@ -147,7 +147,7 @@ fn a_removal_wins_over_a_concurrent_add_it_did_not_see() {
     assert_eq!(st.vault(trio).map(|v| v.owners.clone()), Some(vec![Principal::Vault(c.samuel), Principal::Vault(c.bob)]));
 }
 
-/// A second passkey of Samuel's, or a recovery code's signer: an owner, never the root.
+/// A second passkey of Samuel's, his backup: an owner, never the root.
 const SECOND: SignerId = SignerId::from_u64(98);
 
 #[test]
