@@ -33,6 +33,10 @@ inductive Action where
   | keys         (k : KeyScope) (epoch : Nat) (to : List KeyName) (pub : Bool := false)
   /-- A schema or a lens, published into the space's schema lane: blobs that hold no data, named by their hash. -/
   | publish      (sp : SpaceId) (actor : VaultId) (blob : BlobId)
+  /-- A device vouches for its own accepted writes of one entry, `covers`, with both halves of its signature, where
+      the writes carry only the classical half. It changes nothing; a peer that no longer trusts the curves counts
+      only the writes a checkpoint covers (`checkpointed`). -/
+  | checkpoint   (sp : SpaceId) (e : EntryId) (covers : List OpId)
   deriving DecidableEq, Repr
 
 /-- The ops a removal had seen and keeps; every removal names them. -/
@@ -223,6 +227,11 @@ def apply (st : State) (op : Op) : Option State :=
     -- only an owner of the space publishes into its lane
     else if !actsFor st op.author actor || !holds st actor (.space sp) .owner then none
     else some { st with lane := st.lane ++ [(sp, blob)] }
+  | .checkpoint sp e covers =>
+    -- a device vouches for its own accepted writes of the entry, and changes nothing
+    if covers.isEmpty || !covers.all (fun c => st.writes.any fun w =>
+        w.op == c && w.author == op.author && w.space == sp && w.entry == e) then none
+    else some st
 
 /-- One op: check it, then rotate and seal keys. -/
 def step (st : State) (op : Op) : Option State := (apply st op).map (settle st)
@@ -358,5 +367,25 @@ def view (ops : List Op) : State := let o := order ops; (runWith o (resolve o)).
 
 /-- The ops that stand in what a peer holding `ops` knows, in replay order. -/
 def standing (ops : List Op) : List Op := let o := order ops; (runWith o (resolve o)).2
+
+/-! ## Once the curves fall
+
+A write carries only the classical half of its author's signatures, so that writes stay fast and small; every other
+op carries the hash-based half too. A device vouches for its own writes with a checkpoint, which carries both. A
+peer that no longer trusts the curves replays only what a forger who broke them can't have made: every op but a
+write, and each write that a checkpoint by its own author covers (T18). -/
+
+/-- Checkpoint `c` vouches for op `o`: it is a checkpoint by `o`'s author that covers `o`. -/
+def vouches (c o : Op) : Bool :=
+  c.author == o.author && match c.action with
+    | .checkpoint _ _ covers => covers.contains o.id
+    | _ => false
+
+/-- The ops a peer counts once it no longer trusts the curves: every op but a write, and each write a checkpoint by
+    its own author covers. -/
+def checkpointed (ops : List Op) : List Op :=
+  ops.filter fun o => match o.action with
+    | .write .. => ops.any (vouches · o)
+    | _ => true
 
 end AvenDB

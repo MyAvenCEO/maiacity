@@ -52,7 +52,7 @@ theorem T1_revocation_wins {st st' : State} {op : Op} (h : step st op = some st'
   have hstill : ∀ s, Keeps s post → authorized s w = true → False := fun s hk ha => by
     rw [authorized_keeps (hk.trans (Keeps.settle st post)) ha] at hnow
     cases hnow
-  rcases apply_writes hpost with ⟨-, hk⟩ | ⟨_, -, -, -, hk⟩ | ⟨keep, mid, hkeep, rfl, -⟩
+  rcases apply_writes hpost with ⟨-, hk⟩ | ⟨_, -, -, -, hk, -⟩ | ⟨keep, mid, hkeep, rfl, -⟩
   · exact (hstill st hk hwas).elim
   · exact (hstill st hk hwas).elim
   · -- the write passed `dropUnseen`'s filter, and it isn't authorized after the removal, so the removal kept it
@@ -330,6 +330,26 @@ theorem T16_resolved_removals_stand (ops : List Op) :
     ∀ r ∈ resolve (order ops), (standing ops).any (·.id == r.id) :=
   resolve_stands (order ops)
 
+/-! ## Once the curves fall -/
+
+/-- T18 (post-quantum writes): a peer that no longer trusts the curves (`checkpointed`) counts a write only if its
+    author vouched for it in a checkpoint, which carries the hash-based half of the author's signature: whoever broke
+    the curves, and with them a device's classical key, writes nothing such a peer counts. -/
+theorem T18_checkpointed_writes (ops : List Op) {w : Write} (hw : w ∈ (view (checkpointed ops)).writes) :
+    ∃ c ∈ ops, c.author = w.author ∧ ∃ sp e covers, c.action = .checkpoint sp e covers ∧ w.op ∈ covers := by
+  rw [view_eq_replay] at hw
+  rcases replay_writes_from _ {} w hw with h | ⟨o, ho, hid, hauth, hact⟩
+  · simp at h
+  · obtain ⟨-, hkeep⟩ := List.mem_filter.1 (standing_mem _ o ho)
+    rw [hact] at hkeep
+    obtain ⟨c, hc, hv⟩ := List.any_eq_true.1 hkeep
+    simp only [vouches, Bool.and_eq_true, beq_iff_eq] at hv
+    obtain ⟨hca, hcov⟩ := hv
+    split at hcov
+    · rename_i sp e covers heq
+      exact ⟨c, hc, hca.trans hauth, sp, e, covers, heq, hid ▸ List.contains_iff_mem.1 hcov⟩
+    · cases hcov
+
 /-! ## Keys
 
 `EverReads`, what a holder could read over a history, is in `KeyLemmas.lean`. -/
@@ -405,11 +425,11 @@ theorem T11_convergence {ops₁ ops₂ : List Op} (hperm : ops₁.Perm ops₂) (
     view ops₁ = view ops₂ := by
   sorry -- P6
 
-/-- T12 (sync shares only what caps allow): every write a peer sends a device is on an entry that device may
-    receive by the peer's view, and every auth op it sends is about a scope that device reaches, or is a revocation
-    that took one of its caps away. -/
+/-- T12 (sync shares only what caps allow): every write or checkpoint a peer sends a device is on an entry that
+    device may receive by the peer's view, and every auth op it sends is about a scope that device reaches, or is a
+    revocation that took one of its caps away. -/
 theorem T12_sync_shares_only_caps (ops : List Op) (d : SignerId) {op : Op} (h : op ∈ respond ops d) :
-    (∀ sp e, op.writeTarget? = some (sp, e) → mayReceive (view ops) d sp e = true) ∧
+    (∀ sp e, op.item? = some (sp, e) → mayReceive (view ops) d sp e = true) ∧
     (∀ sc, op.authScope? ops = some sc → reaches (view ops) d sc = true ∨ op.takesFrom (view ops) ops d = true) := by
   sorry -- P6
 

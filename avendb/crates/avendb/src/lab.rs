@@ -3,36 +3,50 @@
 //! read, and any number of strangers. The scenario tests run on it, and so will the avenDB tile's Lab screen.
 //!
 //! It grows with the phases: devices and their ops in P1, caps and sync by caps in P2, keys, reading and the blind
-//! server in P3, apps on a schema reading and editing items through their space's lane in P4, branches in P5, and in
-//! P6 offline devices and random delivery orders.
+//! server in P3, apps on a schema reading and editing items through their space's lane in P4, locked devices, blobs and
+//! checkpoints in P4b, branches in P5, and in P6 offline devices and random delivery orders.
 //!
-//! Every device keeps its keys up to date as an honest app would, each time its ops change: it opens every box its
-//! standing `Keys` ops hold for a key it has, and for each family it may open, it makes the key of each epoch from its
-//! oldest to the current one if nobody has yet, seals each current key it holds to every target the schedule names
-//! that has no box yet, publishes it if the family is public, and wraps each older key it holds under the next
-//! epoch's key if nobody has yet. An owner key (a passkey, a recovery code, the server's owner key) authoring an op on
-//! a device lends it, for that ceremony only, the key that is sealed to the owner: that is how a new device reads
-//! again after every other device is lost.
+//! A person's device derives its keys from their passkey at every unlock (`sign::Passkey::device`) and holds them only
+//! while it is unlocked: a locked device keeps its ops and their ciphertext, and no key, nor anything a key opened. The
+//! server and strangers have keys of their own.
+//!
+//! Every unlocked device keeps its keys up to date as an honest app would, each time its ops change: it opens every box
+//! its standing `Keys` ops hold for a key it has, and for each family it may open, it makes the key of each epoch from
+//! its oldest to the current one if nobody has yet, announces each current vault or space key it holds (keys are sealed
+//! to those), boxes it for every target the schedule names that has no box yet, publishes it if the family is public,
+//! and wraps each older key it holds under the next epoch's key if nobody has yet. A box is wrapped where the device
+//! holds the key it goes to, and sealed to that key's public half otherwise. An owner key (a passkey, the server's owner
+//! key) authoring an op on a device lends it, for that ceremony only, the key that is sealed to the owner: that is how a
+//! new device reads again after every other device is lost.
+//!
+//! A Classic McEliece public key travels as a blob beside the ops that name it (`policy::Op::blobs`): a device keeps the
+//! blobs of the ops it keeps, each only if it hashes to its id, and seals to a key once it holds that key's blob. Before
+//! it syncs, a device vouches for the writes it made since its last checkpoint (`policy::Action::Checkpoint`); once
+//! peers stop trusting the curves (`set_pq_only`), each counts only the writes a checkpoint by their author covers
+//! (`policy::checkpointed`), and checkpoints each write of its own as it makes it.
 
 use std::collections::{BTreeMap, HashMap};
+use std::sync::Arc;
+
+use rand_core::Rng as _;
+use serde_json::Value;
 
 use crate::doc::{Item, Version};
 use crate::encode::{self, box_info, write_context};
-use crate::id::{EntryId, OpId, SignerId, SpaceId, VaultId};
+use crate::hash::{Hasher, Reader};
+use crate::id::{BlobId, EntryId, OpId, SignerId, SpaceId, VaultId};
 use crate::keys::{self, KeyBox, KeyId, KeyName, KeyScope, PublicKey, Recipient, SeededRng, Secret};
 use crate::lens::{Lane, Schema};
-use rand_core::Rng as _;
-use serde_json::Value;
-use crate::policy::{replay, Action, Kind, Log, Op, Principal, Refusal, Replay, State};
-use crate::sign::{DeviceKey, Passkey, RecoveryCode, Signature, Signed};
+use crate::policy::{checkpointed, replay, Action, Kind, Log, Op, Principal, Refusal, Replay, State};
+use crate::sign::{self, Classical, DeviceKey, Passkey, Signature, SignerKeys, Signed};
 use crate::sync::{respond, vault_logs};
-
-/// What the Lab's keys derive from: the Lab is deterministic, so a failing test replays exactly.
-const LAB_KEY: &str = "maiacity vault-db 2026-10-08 lab key v1";
 
 /// A device keeps its keys up to date in a few rounds at most: one to make and seal keys, one to seal newer keys to
 /// the keys it just made, one to find nothing left. More means an op the rules refuse, made again and again.
 const ROUNDS: usize = 6;
+
+/// Blobs by id: the McEliece public keys a device holds, or sends beside its ops.
+type Blobs = HashMap<BlobId, Arc<[u8]>>;
 
 /// A tampering attempt, delivered to a device to show that it is rejected or opens nothing.
 #[derive(Clone, Debug)]
@@ -45,27 +59,30 @@ pub enum Tamper {
     ChangedCiphertext(OpId),
     /// A key from before a revocation, sealed again to the revoked device and replayed.
     ReplayedSeal { key: KeyName, to: SignerId },
+    /// An op signed with only the classical half of `signer`'s key, as whoever broke its curve (ed25519, or a passkey's
+    /// P-256) could sign it: the hash-based half is missing.
+    BrokenClassicalKey { signer: SignerId, action: Action },
 }
 
-/// A signer's private key.
+/// A signer's private keys.
 enum Key {
-    /// A device, the server's owner key, or a recovery code's signer.
-    Ed25519(DeviceKey),
+    /// A device, or the server's owner key.
+    Device(DeviceKey),
     Passkey(Passkey),
 }
 
 impl Key {
-    fn sign(&mut self, op: OpId) -> Signature {
+    fn sign(&mut self, op: OpId, pq: bool) -> Signature {
         match self {
-            Key::Ed25519(k) => k.sign(op),
-            Key::Passkey(p) => p.sign(op),
+            Key::Device(k) => k.sign(op, pq),
+            Key::Passkey(p) => p.sign(op, pq),
         }
     }
 
     /// The key that keys are sealed to for this signer.
     fn seal_secret(&self) -> Secret {
         match self {
-            Key::Ed25519(k) => k.seal_secret(),
+            Key::Device(k) => k.seal_secret(),
             Key::Passkey(p) => p.seal_secret(),
         }
     }
@@ -79,21 +96,33 @@ struct Opened {
     secret: Secret,
 }
 
-/// What one device holds: its ops, each with its signatures, to pass on; what it makes of them; the keys it opened;
-/// and the items it shows.
+/// What one device holds: its ops, each with its signatures, to pass on, and the blobs they name; what it makes of
+/// them; the keys it opened; and the items it shows.
 struct Store {
     log: Log,
     signed: HashMap<OpId, Signed>,
-    /// The replay of its ops: which stand, and what it knows.
+    blobs: Blobs,
+    /// The replay of its ops: which stand, and what it knows. Of the checkpointed ones only, once it no longer trusts
+    /// the curves.
     replay: Replay,
-    /// By id, so the first of a family's keys at an epoch is the one with the smallest id.
+    /// By id, so the first of a family's keys at an epoch is the one with the smallest id. Empty while it is locked.
     keys: BTreeMap<KeyId, Opened>,
     items: BTreeMap<(SpaceId, EntryId), Item>,
+    /// The writes it made itself that no checkpoint of its own covers yet.
+    unvouched: Vec<OpId>,
 }
 
 impl Default for Store {
     fn default() -> Store {
-        Store { log: Log::new(), signed: HashMap::new(), replay: replay(&[]), keys: BTreeMap::new(), items: BTreeMap::new() }
+        Store {
+            log: Log::new(),
+            signed: HashMap::new(),
+            blobs: HashMap::new(),
+            replay: replay(&[]),
+            keys: BTreeMap::new(),
+            items: BTreeMap::new(),
+            unvouched: vec![],
+        }
     }
 }
 
@@ -108,10 +137,10 @@ impl Store {
     }
 }
 
-/// What a device's standing `Keys` ops say: the keys made, the boxes, and what is published.
+/// What a device's standing `Keys` ops say: the keys announced, the boxes, and what is published.
 #[derive(Default)]
 struct KeyIndex {
-    /// Each key made, by family and epoch, with the public key it is sealed to.
+    /// Each key announced, by family and epoch, with the public key it is sealed to.
     made: BTreeMap<(KeyScope, u64), Vec<(KeyId, PublicKey)>>,
     /// Each box, after the key it holds.
     boxes: Vec<(KeyScope, u64, KeyId, KeyBox)>,
@@ -151,7 +180,10 @@ impl KeyIndex {
 }
 
 pub struct Lab {
+    /// The keys at hand: passkeys, owner keys, and unlocked devices.
     keys: HashMap<SignerId, Key>,
+    /// Each device whose keys derive from a passkey: that passkey, and the 32 bytes that end the device's salt.
+    salts: HashMap<SignerId, (SignerId, [u8; 32])>,
     /// Devices in the order they were made.
     devices: Vec<SignerId>,
     stores: HashMap<SignerId, Store>,
@@ -160,6 +192,8 @@ pub struct Lab {
     made: u64,
     /// The randomness of new keys, seals and nonces.
     rng: SeededRng,
+    /// No device trusts the curves anymore: each counts only checkpointed writes.
+    pq_only: bool,
 }
 
 impl Default for Lab {
@@ -172,40 +206,57 @@ impl Lab {
     pub fn new() -> Lab {
         Lab {
             keys: HashMap::new(),
+            salts: HashMap::new(),
             devices: vec![],
             stores: HashMap::new(),
             server: None,
             made: 0,
-            rng: SeededRng::new(LAB_KEY, b"randomness"),
+            rng: SeededRng::new("lab randomness", b""),
+            pq_only: false,
         }
     }
 
-    fn seed(&mut self, what: &str, name: &str) -> blake3::OutputReader {
+    /// The seed of the next key the Lab makes: the Lab is deterministic, so a failing test replays exactly.
+    fn seed(&mut self, what: &str, name: &str) -> Reader {
         self.made += 1;
-        let mut h = blake3::Hasher::new_derive_key(LAB_KEY);
-        h.update(&self.made.to_be_bytes()).update(what.as_bytes()).update(name.as_bytes());
-        h.finalize_xof()
+        let mut h = Hasher::new("lab key");
+        h.update(&self.made.to_be_bytes()).update(&(what.len() as u32).to_be_bytes()).update(what.as_bytes()).update(name.as_bytes());
+        h.reader()
     }
 
     fn secret(&mut self, what: &str, name: &str) -> [u8; 32] {
-        let mut out = [0u8; 32];
-        self.seed(what, name).fill(&mut out);
-        out
+        self.seed(what, name).array()
     }
 
     /// A passkey: an owner signer that governs a human vault. It signs on whichever device it is used on.
     pub fn passkey(&mut self, name: &str) -> SignerId {
         let key = Passkey::from_seed(self.secret("passkey", name));
+        key.seal_secret().prepare();
         let id = key.id();
         self.keys.insert(id, Key::Passkey(key));
         id
     }
 
-    /// A device with its own signing and encryption keys, its own ops and its own store.
+    /// A device with keys of its own, as the server and strangers have, its own ops and its own store.
     pub fn device(&mut self, name: &str) -> SignerId {
         let key = DeviceKey::from_secret(self.secret("device", name));
+        self.add_device(key)
+    }
+
+    /// A person's device: its keys derive from `passkey`'s PRF output on a salt of the device's own, as it derives
+    /// them at every unlock. It starts unlocked.
+    pub fn device_of(&mut self, passkey: SignerId, name: &str) -> SignerId {
+        let nonce = self.secret("device salt", name);
+        let Some(Key::Passkey(p)) = self.keys.get(&passkey) else { panic!("{passkey:?} is no passkey the Lab holds") };
+        let id = self.add_device(p.device(nonce));
+        self.salts.insert(id, (passkey, nonce));
+        id
+    }
+
+    fn add_device(&mut self, key: DeviceKey) -> SignerId {
+        key.seal_secret().prepare();
         let id = key.id();
-        self.keys.insert(id, Key::Ed25519(key));
+        self.keys.insert(id, Key::Device(key));
         self.devices.push(id);
         self.stores.insert(id, Store::default());
         id
@@ -219,8 +270,9 @@ impl Lab {
         }
         let device = self.device("the server");
         let owner = DeviceKey::from_secret(self.secret("server owner", "the server"));
+        owner.seal_secret().prepare();
         let owner_id = owner.id();
-        self.keys.insert(owner_id, Key::Ed25519(owner));
+        self.keys.insert(owner_id, Key::Device(owner));
         let genesis =
             Action::Genesis { kind: Kind::Human, owners: vec![Principal::Signer(owner_id)], threshold: 1, root: None, nonce: 0, seal_to: vec![] };
         let vault = VaultId::from(self.submit(device, &[owner_id], genesis).expect("the server's vault"));
@@ -229,27 +281,36 @@ impl Lab {
         (device, vault)
     }
 
-    /// A new recovery code, as the app shows it once to write down. Its signer can sign from then on (the code is
-    /// at hand); add it to a human vault as an owner to make it a way back in.
-    pub fn recovery_code(&mut self) -> RecoveryCode {
-        let mut entropy = [0u8; 40];
-        self.seed("recovery code", "").fill(&mut entropy);
-        let code = RecoveryCode::new(entropy);
-        self.use_code(&code);
-        code
+    /// Lock device `d`: its keys, and every key and item they opened, leave its memory. Its ops and their ciphertext
+    /// stay, and it still receives and passes on ops.
+    pub fn lock(&mut self, d: SignerId) {
+        self.keys.remove(&d);
+        let store = self.stores.get_mut(&d).unwrap_or_else(|| panic!("{d:?} is no device of the Lab"));
+        store.keys.clear();
+        store.items.clear();
     }
 
-    /// Type a recovery code in: its signer can sign again.
-    pub fn use_code(&mut self, code: &RecoveryCode) -> SignerId {
-        let key = code.signer();
-        let id = key.id();
-        self.keys.insert(id, Key::Ed25519(key));
-        id
+    /// Unlock device `d` with the passkey its keys derive from: they derive again, and it opens again what its ops hold
+    /// for it. False if its keys derive from no passkey (the server, a stranger), or the passkey is lost.
+    pub fn unlock(&mut self, d: SignerId) -> bool {
+        let Some(&(passkey, nonce)) = self.salts.get(&d) else { return false };
+        let Some(Key::Passkey(p)) = self.keys.get(&passkey) else { return false };
+        let key = p.device(nonce);
+        assert_eq!(key.id(), d, "the same passkey and salt derive the same device");
+        self.keys.insert(d, Key::Device(key));
+        self.refresh(d, &[]);
+        true
+    }
+
+    /// Device `d` holds no key: it is locked.
+    pub fn locked(&self, d: SignerId) -> bool {
+        !self.keys.contains_key(&d)
     }
 
     /// A signer is lost: its key can't sign anymore, and a lost device's store is gone with it.
     pub fn lose(&mut self, s: SignerId) {
         self.keys.remove(&s);
+        self.salts.remove(&s);
         self.stores.remove(&s);
         self.devices.retain(|&d| d != s);
     }
@@ -258,48 +319,64 @@ impl Lab {
         self.stores.get(&d).unwrap_or_else(|| panic!("{d:?} is no device of the Lab"))
     }
 
-    /// The public key keys are sealed to for signer `s`, if the Lab holds its key.
-    fn seal_public(&self, s: SignerId) -> Option<PublicKey> {
-        Some(self.keys.get(&s)?.seal_secret().public())
+    fn unlocked(&self, d: SignerId) -> Result<(), Refusal> {
+        if self.keys.contains_key(&d) { Ok(()) } else { Err(Refusal::Locked) }
     }
 
-    /// Sign `op` with the key of each of its signers.
-    fn sign(&mut self, op: Op) -> Signed {
-        let id = op.id();
-        let sigs = op
-            .sigs()
-            .map(|s| self.keys.get_mut(&s).unwrap_or_else(|| panic!("the Lab holds no key for {s:?}")).sign(id))
-            .collect();
-        Signed { op, sigs }
+    /// The public key keys are sealed to for signer `s`, and the McEliece blob it names, if the Lab holds its key.
+    fn seal_public(&self, s: SignerId) -> Option<(PublicKey, Arc<[u8]>)> {
+        let secret = self.keys.get(&s)?.seal_secret();
+        Some((secret.public(), secret.mceliece_public()))
     }
 
-    /// Device `to` keeps signed ops: each once, and only if every signature checks out. Whether they stand is for its
-    /// replay to say. True if any was new.
-    fn keep(&mut self, to: SignerId, ops: Vec<Signed>) -> bool {
+    /// Sign `op` with the key of each of its signers: both halves, or on a write the classical half alone. `Locked` if
+    /// a signer's key isn't at hand.
+    fn sign(&mut self, op: Op) -> Result<Signed, Refusal> {
+        let (id, pq) = (op.id(), sign::needs_pq(&op));
+        let mut sigs = vec![];
+        for s in op.sigs() {
+            sigs.push(self.keys.get_mut(&s).ok_or(Refusal::Locked)?.sign(id, pq));
+        }
+        Ok(Signed { op, sigs })
+    }
+
+    /// Device `to` keeps signed ops, and the blobs among `blobs` they name: each op once, and only if every signature
+    /// checks out. Whether the ops stand is for its replay to say; a blob is checked against its id before anything is
+    /// sealed with it (`key_box`). True if any op was new.
+    fn keep(&mut self, to: SignerId, ops: Vec<Signed>, blobs: &Blobs) -> bool {
         let Some(store) = self.stores.get_mut(&to) else { return false };
         let mut new = false;
         for signed in ops {
-            let Ok(op) = signed.verify() else { continue };
-            let id = op.id();
-            if !store.signed.contains_key(&id) {
-                store.log.receive([op.clone()]);
-                store.signed.insert(id, signed);
-                new = true;
+            // an op it holds was checked when it arrived; a copy with other signatures adds nothing
+            let id = signed.op.id();
+            if store.signed.contains_key(&id) || signed.verify().is_err() {
+                continue;
             }
+            for b in signed.op.blobs() {
+                if let Some(bytes) = blobs.get(&b) {
+                    store.blobs.entry(b).or_insert_with(|| bytes.clone());
+                }
+            }
+            store.log.receive([signed.op.clone()]);
+            store.signed.insert(id, signed);
+            new = true;
         }
         new
     }
 
-    /// Device `to` receives signed ops, and brings its keys and items up to date if any was new.
-    fn deliver(&mut self, to: SignerId, ops: Vec<Signed>) {
-        if self.keep(to, ops) {
+    /// Device `to` receives signed ops and their blobs, and brings its keys and items up to date if any op was new.
+    fn deliver(&mut self, to: SignerId, ops: Vec<Signed>, blobs: &Blobs) {
+        if self.keep(to, ops, blobs) {
             self.refresh(to, &[]);
         }
     }
 
-    fn signed(&self, d: SignerId, ops: &[Op]) -> Vec<Signed> {
+    /// What device `d` sends with `ops`: each with its signatures, and the blobs they name.
+    fn outgoing(&self, d: SignerId, ops: &[Op]) -> (Vec<Signed>, Blobs) {
         let store = self.held(d);
-        ops.iter().map(|op| store.signed[&op.id()].clone()).collect()
+        let signed = ops.iter().map(|op| store.signed[&op.id()].clone()).collect();
+        let blobs = ops.iter().flat_map(Op::blobs).filter_map(|b| Some((b, store.blobs.get(&b)?.clone()))).collect();
+        (signed, blobs)
     }
 
     /// Device `from` hands vault `v`'s log to device `to`, as when two people exchange contact cards: a peer needs a
@@ -307,8 +384,8 @@ impl Lab {
     pub fn share_contact(&mut self, from: SignerId, to: SignerId, v: VaultId) {
         let store = self.held(from);
         let ops = vault_logs(store.log.ops(), store.view(), vec![v]);
-        let signed = self.signed(from, &ops);
-        self.deliver(to, signed);
+        let (signed, blobs) = self.outgoing(from, &ops);
+        self.deliver(to, signed, &blobs);
     }
 
     /// Sign `action` by `signers` and keep it on device `on`, if `on`'s view accepts it. The author, the first signer,
@@ -316,49 +393,65 @@ impl Lab {
     /// in when the Lab holds that signer.
     pub fn submit(&mut self, on: SignerId, signers: &[SignerId], mut action: Action) -> Result<OpId, Refusal> {
         let (&author, cosigners) = signers.split_first().expect("an op has an author");
-        self.fill_seal_to(&mut action);
+        let blobs = self.fill_seal_to(&mut action);
         let op = self.held(on).log.check(author, cosigners, action)?;
         let id = op.id();
-        let signed = self.sign(op);
+        let signed = self.sign(op)?;
         debug_assert!(signed.verify().is_ok());
         // an owner key authoring on this device lends it, for this ceremony, what is sealed to it
         let lent: Vec<(SignerId, Secret)> = match self.keys.get(&author) {
             Some(key) if !self.devices.contains(&author) => vec![(author, key.seal_secret())],
             _ => vec![],
         };
-        self.keep(on, vec![signed]);
+        self.keep(on, vec![signed], &blobs);
         self.refresh(on, &lent);
         Ok(id)
     }
 
-    fn fill_seal_to(&self, action: &mut Action) {
+    /// Fill in the keys to seal to that `action` brings for signers the Lab holds, and return the McEliece blobs they
+    /// name.
+    fn fill_seal_to(&self, action: &mut Action) -> Blobs {
+        let mut blobs = Blobs::new();
+        let mut public = |s: SignerId| {
+            let (key, blob) = self.seal_public(s)?;
+            blobs.insert(key.mceliece, blob);
+            Some(key)
+        };
         match action {
             Action::Genesis { kind: Kind::Human, owners, seal_to, .. } if seal_to.is_empty() => {
                 *seal_to = owners
                     .iter()
                     .filter_map(|p| match *p {
-                        Principal::Signer(s) => Some((s, self.seal_public(s)?)),
+                        Principal::Signer(s) => Some((s, public(s)?)),
                         Principal::Vault(_) => None,
                     })
                     .collect();
             }
-            Action::AddOwner { owner: Principal::Signer(s), seal_to: to @ None, .. } => *to = self.seal_public(*s),
-            Action::AddDevice { device, seal_to: to @ None, .. } => *to = self.seal_public(*device),
+            Action::AddOwner { owner: Principal::Signer(s), seal_to: to @ None, .. } => *to = public(*s),
+            Action::AddDevice { device, seal_to: to @ None, .. } => *to = public(*device),
             _ => {}
         }
+        blobs
     }
 
     /// Bring device `d`'s keys and items up to date with its ops, `lent` holding the keys of owners signing on it
-    /// right now. Each round replays its ops, opens what it can, and makes the `Keys` ops still missing.
+    /// right now. Each round replays its ops, opens what it can, and makes the `Keys` ops still missing. A locked
+    /// device only replays.
     fn refresh(&mut self, d: SignerId, lent: &[(SignerId, Secret)]) {
-        let Some(own) = self.keys.get(&d).map(Key::seal_secret) else { return };
-        let mine: Vec<(SignerId, Secret)> = std::iter::once((d, own)).chain(lent.iter().cloned()).collect();
+        let own = self.keys.get(&d).map(Key::seal_secret);
+        let unlocked = own.is_some();
+        let mine: Vec<(SignerId, Secret)> = own.map(|o| (d, o)).into_iter().chain(lent.iter().cloned()).collect();
         for round in 0.. {
+            let pq_only = self.pq_only;
             let Some(store) = self.stores.get_mut(&d) else { return };
-            store.replay = replay(store.log.ops());
+            store.replay = if pq_only { replay(&checkpointed(store.log.ops())) } else { store.log.replay() };
+            // a locked device holds no key, and opens nothing
+            if !unlocked {
+                return;
+            }
             let ix = KeyIndex::of(&store.replay);
             open_keys(&mut store.keys, &ix, &mine);
-            let actions = upkeep(d, store, &ix, &mut self.rng);
+            let actions = upkeep(d, store, &ix, &mine, &mut self.rng);
             if actions.is_empty() {
                 show_items(d, store);
                 return;
@@ -366,8 +459,8 @@ impl Lab {
             assert!(round < ROUNDS, "{d:?} keeps making keys ops its own view refuses: {actions:?}");
             for action in actions {
                 let op = self.held(d).log.draft(d, &[], action);
-                let signed = self.sign(op);
-                self.keep(d, vec![signed]);
+                let signed = self.sign(op).expect("an unlocked device signs");
+                self.keep(d, vec![signed], &Blobs::new());
             }
         }
     }
@@ -375,17 +468,18 @@ impl Lab {
     /// Create an item in `space` on device `on`, acting for `actor`: its first encrypted write. The item must have
     /// been made on `on`, as its Loro edits carry `on`'s peer.
     pub fn create(&mut self, on: SignerId, actor: VaultId, space: SpaceId, item: Item) -> Result<EntryId, Refusal> {
+        self.unlocked(on)?;
         let mut id = [0u8; 32];
         self.rng.fill_bytes(&mut id);
         let entry = EntryId(id);
         let draft = Action::Write { space, entry, actor, epoch: 0, deps: vec![], body: vec![] };
         let op = self.held(on).log.check(on, &[], draft)?;
-        self.write(on, op, &item.export(&Version::default()));
+        self.write(on, op, &item.export(&Version::default()))?;
         Ok(entry)
     }
 
     /// Edit an item on device `on`, acting for `actor`: the change becomes one encrypted write under the entry's
-    /// current key.
+    /// current key, building on the entry's writes the device counts.
     pub fn edit(
         &mut self,
         on: SignerId,
@@ -394,20 +488,23 @@ impl Lab {
         entry: EntryId,
         change: impl FnOnce(&mut Item),
     ) -> Result<OpId, Refusal> {
+        self.unlocked(on)?;
         let store = self.held(on);
         let epoch = store.view().epoch(KeyScope::Entry(space, entry));
-        let draft = Action::Write { space, entry, actor, epoch, deps: vec![], body: vec![] };
+        let deps = store.view().heads(space, entry);
+        let draft = Action::Write { space, entry, actor, epoch, deps, body: vec![] };
         let op = store.log.check(on, &[], draft)?;
         // the item as this device shows it; a copy edits as this device, and the change is what came after
         let mut item = store.items.get(&(space, entry)).cloned().unwrap_or_else(|| Item::new(on));
         let since = item.version();
         change(&mut item);
-        Ok(self.write(on, op, &item.export(&since)))
+        self.write(on, op, &item.export(&since))
     }
 
     /// Encrypt `update` into the write `op` under its entry's key at the write's epoch (the first the device holds,
-    /// or a new one), bound to the op, then sign and keep it.
-    fn write(&mut self, on: SignerId, mut op: Op, update: &[u8]) -> OpId {
+    /// or a new one), bound to the op, then sign and keep it; once peers count only checkpointed writes, vouch for it
+    /// at once.
+    fn write(&mut self, on: SignerId, mut op: Op, update: &[u8]) -> Result<OpId, Refusal> {
         let Action::Write { space, entry, epoch, .. } = op.action else { unreachable!("a write") };
         let k = KeyScope::Entry(space, entry);
         let store = self.stores.get_mut(&on).expect("a device");
@@ -425,9 +522,59 @@ impl Lab {
             *b = body;
         }
         let id = op.id();
-        let signed = self.sign(op);
-        self.deliver(on, vec![signed]);
-        id
+        let signed = self.sign(op)?;
+        self.keep(on, vec![signed], &Blobs::new());
+        self.stores.get_mut(&on).expect("a device").unvouched.push(id);
+        if self.pq_only {
+            self.vouch(on);
+        }
+        self.refresh(on, &[]);
+        Ok(id)
+    }
+
+    /// Device `d` vouches for the writes it made since its last checkpoint: a checkpoint for each entry, covering those
+    /// of its writes the entry has accepted, signed both ways. Nothing while it is locked.
+    pub fn checkpoint(&mut self, d: SignerId) {
+        if self.vouch(d) {
+            self.refresh(d, &[]);
+        }
+    }
+
+    /// `checkpoint` without bringing keys and items up to date: true if it made any.
+    fn vouch(&mut self, d: SignerId) -> bool {
+        if self.locked(d) {
+            return false;
+        }
+        let Some(store) = self.stores.get_mut(&d) else { return false };
+        if store.unvouched.is_empty() {
+            return false;
+        }
+        let unvouched = std::mem::take(&mut store.unvouched);
+        // its own writes as every op it holds has them, whether it counts them yet or not
+        let full = if self.pq_only { Some(store.log.view()) } else { None };
+        let st = full.as_ref().unwrap_or(store.view());
+        let mut by: BTreeMap<(SpaceId, EntryId), Vec<OpId>> = BTreeMap::new();
+        for w in st.all_writes() {
+            if unvouched.contains(&w.op) {
+                by.entry((w.space, w.entry)).or_default().push(w.op);
+            }
+        }
+        let made = !by.is_empty();
+        for ((space, entry), covers) in by {
+            let op = self.held(d).log.draft(d, &[], Action::Checkpoint { space, entry, covers });
+            let signed = self.sign(op).expect("an unlocked device signs");
+            self.keep(d, vec![signed], &Blobs::new());
+        }
+        made
+    }
+
+    /// Every device stops trusting the curves, or trusts them again: once they no longer do, each counts only the
+    /// writes a checkpoint by their author covers, and checkpoints each write of its own as it makes it.
+    pub fn set_pq_only(&mut self, on: bool) {
+        self.pq_only = on;
+        for d in self.devices.clone() {
+            self.refresh(d, &[]);
+        }
     }
 
     /// The schemas and lenses published into `space`'s lane, as device `d` holds them.
@@ -457,6 +604,7 @@ impl Lab {
         app: &Schema,
         change: impl FnOnce(&mut Value),
     ) -> Result<Option<OpId>, Refusal> {
+        self.unlocked(on)?;
         let item = self.item(on, space, entry).ok_or(Refusal::ReadOnly)?;
         let (view, read_only) = self.lane(on, space).view(app, &item.authored());
         let seen = item.read(&view).filter(|_| !read_only).ok_or(Refusal::ReadOnly)?;
@@ -474,7 +622,7 @@ impl Lab {
         .map(Some)
     }
 
-    /// The item as device `d` shows it: the writes it holds and can decrypt. `None` if it holds or opens none.
+    /// The item as device `d` shows it: the writes it counts and can decrypt. `None` if it counts or opens none.
     pub fn item(&self, d: SignerId, space: SpaceId, entry: EntryId) -> Option<&Item> {
         self.held(d).items.get(&(space, entry))
     }
@@ -490,9 +638,15 @@ impl Lab {
         self.held(d).held(k, current).next().is_some()
     }
 
-    /// The ops device `d` holds; `log(d).view()` is what it knows.
+    /// The ops device `d` holds; `log(d).view()` is what they say, every write counted.
     pub fn log(&self, d: SignerId) -> &Log {
         &self.held(d).log
+    }
+
+    /// What device `d` makes of the ops it holds: what `log(d).view()` says, but once it no longer trusts the curves,
+    /// of the checkpointed writes only.
+    pub fn state(&self, d: SignerId) -> &State {
+        self.held(d).view()
     }
 
     /// The signed op device `d` holds with id `op`, as it would send it.
@@ -501,21 +655,27 @@ impl Lab {
     }
 
     /// Every byte device `d` stores, to search for plaintext that shouldn't be there: its signed ops, the keys it
-    /// opened, and the items it shows, as their content reads.
+    /// opened, and the items it shows, as their content reads. The McEliece public keys it holds are left out: public,
+    /// and a megabyte each.
     pub fn store(&self, d: SignerId) -> Vec<u8> {
         let store = self.held(d);
         let mut out = vec![];
         for op in store.log.ops() {
             out.extend(encode::bytes(op));
             for sig in &store.signed[&op.id()].sigs {
-                match sig {
-                    Signature::Ed25519(b) => out.extend(b),
-                    Signature::Passkey(a) => {
-                        for part in [&a.key, &a.authenticator_data, &a.client_data_json, &a.signature] {
+                match &sig.keys {
+                    SignerKeys::Device { ed25519, slh } => out.extend(ed25519.iter().chain(slh)),
+                    SignerKeys::Passkey { p256, slh } => out.extend(p256.iter().chain(slh)),
+                }
+                match &sig.classical {
+                    Classical::Ed25519(b) => out.extend(b),
+                    Classical::Passkey(a) => {
+                        for part in [&a.authenticator_data, &a.client_data_json, &a.signature] {
                             out.extend(part);
                         }
                     }
                 }
+                out.extend(sig.pq.iter().flatten());
             }
         }
         for o in store.keys.values() {
@@ -527,11 +687,13 @@ impl Lab {
         out
     }
 
-    /// Device `from` answers device `to` once, sending what `to` may receive by `from`'s view.
+    /// Device `from` answers device `to` once, sending what `to` may receive by `from`'s view. It vouches for its new
+    /// writes first.
     pub fn sync(&mut self, from: SignerId, to: SignerId) {
+        self.checkpoint(from);
         let ops = respond(self.held(from).log.ops(), to);
-        let signed = self.signed(from, &ops);
-        self.deliver(to, signed);
+        let (signed, blobs) = self.outgoing(from, &ops);
+        self.deliver(to, signed, &blobs);
     }
 
     /// Every pair of online devices syncs until nothing new arrives, in an order drawn from `seed`.
@@ -564,20 +726,20 @@ impl Lab {
         todo!("P6: the network")
     }
 
-    /// Deliver a tampering attempt to device `to`: `Err` with why it rejects it, or `Ok` if it keeps it.
-    pub fn tamper(&mut self, to: SignerId, how: Tamper) -> Result<(), Refusal> {
+    /// Deliver a tampering attempt to device `to`: `Err` with why it rejects it, or the op's id if it keeps it.
+    pub fn tamper(&mut self, to: SignerId, how: Tamper) -> Result<OpId, Refusal> {
         let signed = match how {
             Tamper::Unchecked { signers, action } => {
                 let (&author, cosigners) = signers.split_first().expect("an op has an author");
                 // drafted on the author's own device when it is one, building on what that device holds
                 let on = if self.stores.contains_key(&author) { author } else { to };
                 let op = self.held(on).log.draft(author, cosigners, action);
-                self.sign(op)
+                self.sign(op)?
             }
             Tamper::ForgedSignature { claimed, action } => {
                 let op = self.held(to).log.draft(claimed, &[], action);
                 let forger = DeviceKey::from_secret(self.secret("forger", ""));
-                Signed { sigs: vec![forger.sign(op.id())], op }
+                Signed { sigs: vec![forger.sign(op.id(), sign::needs_pq(&op))], op }
             }
             Tamper::ChangedCiphertext(id) => {
                 let mut signed = self.stores.values().find_map(|s| s.signed.get(&id)).cloned().expect("an op some device holds");
@@ -594,24 +756,30 @@ impl Lab {
                 let holder = self.devices.iter().copied().find(|d| self.held(*d).held(k, e).next().is_some());
                 let holder = holder.expect("a device holding the key");
                 let secret = self.held(holder).held(k, e).next().expect("held").secret.clone();
-                let pk = self.seal_public(victim).expect("a signer of the Lab");
+                let (pk, blob) = self.seal_public(victim).expect("a signer of the Lab");
                 let recipient = Recipient::Signer(victim);
-                let bytes = keys::seal(&secret, &pk, &box_info(k, e, secret.id(), &recipient), &mut self.rng).expect("a key");
+                let info = box_info(k, e, secret.id(), &recipient);
+                let bytes = keys::seal(&secret, &pk, &blob, &info, &mut self.rng).expect("a key");
                 let boxes = vec![KeyBox { to: recipient, bytes }];
                 let action = Action::Keys { key: k, epoch: e, id: secret.id(), public: None, boxes, clear: None };
                 let op = self.held(holder).log.draft(holder, &[], action);
-                self.sign(op)
+                self.sign(op)?
+            }
+            Tamper::BrokenClassicalKey { signer, action } => {
+                let op = self.held(to).log.draft(signer, &[], action);
+                let key = self.keys.get_mut(&signer).expect("a signer of the Lab");
+                Signed { sigs: vec![key.sign(op.id(), false)], op }
             }
         };
         let op = signed.verify()?.clone();
         self.held(to).view().step(&op)?;
-        self.deliver(to, vec![signed]);
-        Ok(())
+        self.deliver(to, vec![signed], &Blobs::new());
+        Ok(op.id())
     }
 }
 
-/// Open every box the device can: sealed to one of `mine` (its own key, and what owners lend it), or to a key it
-/// already opened; then every key published in the clear. A box counts only if what opens is the key it names.
+/// Open every box the device can: for one of `mine` (its own key, and what owners lend it), or for a key it already
+/// opened; then every key published in the clear. A box counts only if what opens is the key it names.
 fn open_keys(keyring: &mut BTreeMap<KeyId, Opened>, ix: &KeyIndex, mine: &[(SignerId, Secret)]) {
     loop {
         let mut more = false;
@@ -647,56 +815,52 @@ fn open_keys(keyring: &mut BTreeMap<KeyId, Opened>, ix: &KeyIndex, mine: &[(Sign
 }
 
 /// The `Keys` ops device `d` should make, by its view: for each family it may open, a key made for each epoch from its
-/// oldest to the current one where nobody made one yet; each current key it holds announced, sealed to every target
-/// without a box yet, and published if the family is public; and each older key it holds wrapped under the next
-/// epoch's key if nobody wrapped it yet.
-fn upkeep(d: SignerId, store: &mut Store, ix: &KeyIndex, rng: &mut SeededRng) -> Vec<Action> {
+/// oldest to the current one where nobody made one yet; each current key it holds announced if it is a vault or space
+/// key nobody announced yet, boxed for every target without a box yet, and published if the family is public; and each
+/// older key it holds wrapped under the next epoch's key if nobody wrapped it yet. `mine` are the keys of the signers
+/// it may box for by wrapping: its own, and what owners lend it.
+fn upkeep(d: SignerId, store: &mut Store, ix: &KeyIndex, mine: &[(SignerId, Secret)], rng: &mut SeededRng) -> Vec<Action> {
     let st = store.replay.state.clone();
-    let mut out = vec![];
-    // keys announced in this round, so newer families can be sealed to them right away
-    let mut announced: Vec<(KeyScope, u64, KeyId, PublicKey)> = vec![];
-    for k in st.key_scopes() {
-        if !st.entitled(d, k) {
-            continue;
-        }
-        // a key for every epoch from the oldest it holds to the current one, where nobody made one yet: several
-        // rotations at once leave the epochs between without a key, and the history must stay one chain
+    let families: Vec<KeyScope> = st.key_scopes().into_iter().filter(|&k| st.entitled(d, k)).collect();
+    // a key for every epoch from the oldest it holds to the current one, where nobody made one yet: several rotations at
+    // once leave the epochs between without a key, and the history must stay one chain
+    for &k in &families {
         let e = st.epoch(k);
         let from = store.keys.values().filter(|o| o.key == k).map(|o| o.epoch + 1).min().unwrap_or(e).min(e);
         for x in from..=e {
             if store.held(k, x).next().is_none() && !ix.exists(k, x) {
                 let secret = Secret::generate(rng);
+                // keys are sealed to vault and space keys, never to an entry key, which is only ever wrapped under the
+                // next one: only those carry a public half, announced below, and its McEliece pair takes a while
+                if x == e && !matches!(k, KeyScope::Entry(..)) {
+                    secret.prepare();
+                }
                 store.keys.insert(secret.id(), Opened { key: k, epoch: x, secret });
             }
         }
+    }
+    let mut out = vec![];
+    for &k in &families {
+        let e = st.epoch(k);
         let current: Vec<Secret> = store.held(k, e).map(|o| o.secret.clone()).collect();
         for secret in current {
             let id = secret.id();
-            let new = !ix.made.get(&(k, e)).is_some_and(|m| m.iter().any(|x| x.0 == id));
-            let public = new.then(|| secret.public());
+            let sealed_to = !matches!(k, KeyScope::Entry(..));
+            let new = sealed_to && !ix.made.get(&(k, e)).is_some_and(|m| m.iter().any(|x| x.0 == id));
+            let public = new.then(|| {
+                let public = secret.public();
+                store.blobs.insert(public.mceliece, secret.mceliece_public());
+                public
+            });
             let mut boxes = vec![];
             for t in st.targets(k) {
-                if ix.boxed(k, e, id, t) {
-                    continue;
-                }
-                let sealed = match t {
-                    KeyName::Signer(s) => st.seal_key(s).map(|pk| (Recipient::Signer(s), pk.clone())),
-                    KeyName::Scoped(tk, te) => {
-                        let made = ix.made.get(&(tk, te)).into_iter().flatten().map(|(i, p)| (*i, p));
-                        let now = announced.iter().filter(|a| (a.0, a.1) == (tk, te)).map(|a| (a.2, &a.3));
-                        made.chain(now).min_by_key(|m| m.0).map(|(i, p)| (Recipient::Key { key: tk, epoch: te, id: i }, p.clone()))
-                    }
-                };
-                if let Some((to, pk)) = sealed
-                    && let Some(bytes) = keys::seal(&secret, &pk, &box_info(k, e, id, &to), rng)
+                if !ix.boxed(k, e, id, t)
+                    && let Some(b) = key_box(&secret, (k, e), t, &st, store, ix, mine, rng)
                 {
-                    boxes.push(KeyBox { to, bytes });
+                    boxes.push(b);
                 }
             }
             let clear = (st.public_key(k) && !ix.cleared(id)).then(|| secret.bytes());
-            if let Some(p) = &public {
-                announced.push((k, e, id, p.clone()));
-            }
             if public.is_some() || !boxes.is_empty() || clear.is_some() {
                 out.push(Action::Keys { key: k, epoch: e, id, public, boxes, clear });
             }
@@ -720,10 +884,50 @@ fn upkeep(d: SignerId, store: &mut Store, ix: &KeyIndex, rng: &mut SeededRng) ->
     out
 }
 
+/// A box of `secret`, a key of family `of.0` at epoch `of.1`, for target `t`: wrapped under the target's key where
+/// the device holds it (its own key, a key an owner lends it, or a family's key it opened), and sealed otherwise to the
+/// target's public key, an X-Wing key and the McEliece blob it names, once the blob is checked against that name.
+/// `None` while the device holds neither.
+#[allow(clippy::too_many_arguments)]
+fn key_box(
+    secret: &Secret,
+    of: (KeyScope, u64),
+    t: KeyName,
+    st: &State,
+    store: &Store,
+    ix: &KeyIndex,
+    mine: &[(SignerId, Secret)],
+    rng: &mut SeededRng,
+) -> Option<KeyBox> {
+    let (k, e) = of;
+    let info = |to: &Recipient| box_info(k, e, secret.id(), to);
+    let held = match t {
+        KeyName::Signer(s) => mine.iter().find(|m| m.0 == s).map(|m| (Recipient::Signer(s), m.1.clone())),
+        KeyName::Scoped(tk, te) => {
+            store.held(tk, te).next().map(|o| (Recipient::Key { key: tk, epoch: te, id: o.secret.id() }, o.secret.clone()))
+        }
+    };
+    if let Some((to, under)) = held {
+        let bytes = keys::wrap(secret, &under, &info(&to), rng);
+        return Some(KeyBox { to, bytes });
+    }
+    let (to, pk) = match t {
+        KeyName::Signer(s) => (Recipient::Signer(s), st.seal_key(s)?),
+        KeyName::Scoped(tk, te) => {
+            let made = ix.made.get(&(tk, te))?.iter().filter(|(_, p)| store.blobs.contains_key(&p.mceliece));
+            let (i, p) = made.min_by_key(|m| m.0)?;
+            (Recipient::Key { key: tk, epoch: te, id: *i }, p)
+        }
+    };
+    let blob = store.blobs.get(&pk.mceliece).filter(|b| BlobId::of(b) == pk.mceliece)?;
+    let bytes = keys::seal(secret, pk, blob, &info(&to), rng)?;
+    Some(KeyBox { to, bytes })
+}
+
 /// Rebuild the items device `d` shows: for each entry, the writes of its view it can decrypt, in replay order. A
 /// write opens only under a key of its own entry at its own epoch.
 fn show_items(d: SignerId, store: &mut Store) {
-    let ops: HashMap<OpId, &Op> = store.log.ops().iter().map(|op| (op.id(), op)).collect();
+    let ops: HashMap<OpId, &Op> = store.replay.ids.iter().copied().zip(&store.replay.ops).collect();
     let st = store.view();
     let mut items = BTreeMap::new();
     for space in st.spaces() {

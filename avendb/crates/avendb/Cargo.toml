@@ -8,19 +8,26 @@ license.workspace = true
 publish.workspace = true
 
 # Each phase brings the dependencies it uses (see src/lib.rs): P1 the hashes and signatures of vault logs, P3 the
-# sealing and encryption and the Loro documents the edits carry. iroh arrives with the phase that uses it.
+# sealing and encryption and the Loro documents the edits carry, P4b the post-quantum halves of both. iroh arrives with
+# the phase that uses it.
 [dependencies]
-# op ids: BLAKE3 of the canonical encoding
-blake3.workspace = true
-# device keys (the device's iroh endpoint key) and recovery signers; the version iroh uses
+# every hash of our own (ids, key derivation, commitments): cSHAKE256, SHA-3's customizable XOF (NIST SP 800-185)
+cshake = "0.2.1"
+# device keys: ed25519, the device's iroh endpoint key; the version iroh uses
 ed25519-dalek = "3"
 # passkeys: WebAuthn assertions are ECDSA P-256 over SHA-256
 p256 = { version = "0.14", default-features = false, features = ["ecdsa", "std"] }
 sha2 = "0.11"
+# the hash-based half of every signature but a write's: SLH-DSA-SHA2-128f (FIPS 205); a release candidate, pinned
+slh-dsa = { version = "=0.2.0-rc.5", features = ["zeroize"] }
 # WebAuthn's clientDataJSON
 serde_json.workspace = true
-# P3: keys sealed with HPKE to X-Wing (ML-KEM-768 + X25519) key pairs; edits under XChaCha20-Poly1305
-hpke = { version = "0.14.1", default-features = false, features = ["alloc", "mlkem", "x25519", "chacha"] }
+# sealed boxes: an X-Wing share (ML-KEM-768 + X25519) and a Classic McEliece 6688128f share in every box, edits under
+# XChaCha20-Poly1305
+x-wing = { version = "0.1.1", features = ["zeroize"] }
+classic-mceliece-rust = { version = "3.1.0", default-features = false, features = ["alloc", "zeroize", "mceliece6688128f"] }
+# McEliece takes its randomness through rand 0.8's traits
+rand_core_06 = { package = "rand_core", version = "0.6", default-features = false }
 chacha20poly1305 = { version = "0.11", default-features = false, features = ["alloc"] }
 rand_core = { version = "0.10.1", default-features = false }
 # each item is one Loro document, its updates what gets encrypted and synced; pinned exactly, upgraded on purpose

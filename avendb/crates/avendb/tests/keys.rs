@@ -1,11 +1,14 @@
-//! Keys on the Lab (P3; T5, T6, T7): what each device can open, and what the server holds.
+//! Keys on the Lab (P3; T5, T6, T7): what each device can open, and what the server holds; and since P4b, devices
+//! that lock and unlock with the passkey, and what is left once the curves fall (T18). They share one test binary, as
+//! the Lab's world makes Classic McEliece keys that take a while, and each binary makes its own.
 
 mod common;
 
 use common::*;
 use avendb::id::GrantId;
 use avendb::keys::KeyScope;
-use avendb::policy::{view, Action, Grantee, Op, Principal, Role, Scope};
+use avendb::lab::Tamper;
+use avendb::policy::{view, Action, Grantee, Op, Principal, Refusal, Role, Scope};
 
 #[test]
 fn entry_reader_cannot_open_other_entries() {
@@ -116,4 +119,71 @@ fn every_device_opens_exactly_what_it_may() {
     w.lab.submit(w.mac_s, &[w.passkey_s], Action::RemoveDevice { vault: samuel, device: phone, keep: vec![] }).unwrap();
     w.lab.sync_all(6);
     keys_follow_caps(&w, "the iPhone removed");
+}
+
+/// A person's device derives its keys from the passkey at every unlock (P4b): locked, it holds no key and shows
+/// nothing, though it keeps the ciphertext and still receives; unlocked, it opens again what it did; once the passkey
+/// is lost, nothing unlocks it.
+#[test]
+fn a_locked_device_holds_no_key() {
+    let mut w = world();
+    let h = handbook(&mut w);
+    let welcome = KeyScope::Entry(h.space, h.welcome);
+    assert!(w.lab.opens(w.phone_s, welcome));
+    w.lab.lock(w.phone_s);
+    assert!(w.lab.locked(w.phone_s));
+    assert!(!w.lab.opens(w.phone_s, welcome) && w.lab.item(w.phone_s, h.space, h.welcome).is_none());
+    assert!(!contains(&w.lab.store(w.phone_s), WELCOME_TEXT));
+    // it signs nothing, and still receives the Mac's edit, as ciphertext
+    let edit = w.lab.edit(w.phone_s, h.coop, h.space, h.welcome, |i| i.set_text(2, AFTER_TEXT));
+    assert_eq!(edit, Err(Refusal::Locked));
+    let before = w.lab.fetched(w.phone_s, h.space, h.welcome);
+    w.lab.edit(w.mac_s, h.coop, h.space, h.welcome, |i| i.set_text(2, AFTER_TEXT)).unwrap();
+    w.lab.sync_all(1);
+    assert_eq!(w.lab.fetched(w.phone_s, h.space, h.welcome), before + 1);
+    assert!(!contains(&w.lab.store(w.phone_s), AFTER_TEXT));
+    // unlocked, it derives the same key from the passkey, and reads the edit
+    assert!(w.lab.unlock(w.phone_s));
+    assert_eq!(text(&w.lab, w.phone_s, h.space, h.welcome, 2).as_deref(), Some(AFTER_TEXT));
+    // the server and a stranger derive their keys from no passkey; and with Samuel's passkey lost, the iPhone stays
+    // locked once it locks
+    assert!(!w.lab.unlock(w.server) && !w.lab.unlock(w.stranger));
+    w.lab.lock(w.phone_s);
+    w.lab.lose(w.passkey_s);
+    assert!(!w.lab.unlock(w.phone_s) && w.lab.locked(w.phone_s));
+}
+
+/// Once the curves fall (P4b; T18): whoever broke a device's ed25519 key signs writes as it, as writes carry only
+/// the classical half, but no grant, no governance and no checkpoint, which carry the hash-based half too. A peer
+/// that no longer trusts the curves counts only the writes their own device's checkpoints cover, and the devices'
+/// own edits go on as before, each vouched for at once.
+#[test]
+fn a_broken_curve_writes_nothing_that_counts() {
+    let mut w = world();
+    let h = handbook(&mut w);
+    let (mac_s, mac_b, dave) = (w.mac_s, w.mac_b, w.dave);
+    let broken = |action| Tamper::BrokenClassicalKey { signer: mac_s, action };
+    // no grant to Dave, and no new device for Samuel, with the classical half alone
+    let to_dave = grant(Scope::Entry(h.space, h.welcome), Role::Read, vault(dave), h.coop, None);
+    assert_eq!(w.lab.tamper(mac_b, broken(to_dave)), Err(Refusal::BadSignature));
+    let add = Action::AddDevice { vault: w.samuel, device: w.stranger, seal_to: None };
+    assert_eq!(w.lab.tamper(mac_b, broken(add)), Err(Refusal::BadSignature));
+    // a write as Samuel's Mac passes while Bob's Mac trusts the curves
+    let forged = w.lab.tamper(mac_b, broken(write(h.space, h.welcome, h.coop, 0))).unwrap();
+    let counts = |w: &World, d| w.lab.state(d).all_writes().iter().any(|x| x.op == forged);
+    assert!(counts(&w, mac_b));
+    // the forger can't vouch for it
+    let vouch = Action::Checkpoint { space: h.space, entry: h.welcome, covers: vec![forged] };
+    assert_eq!(w.lab.tamper(mac_b, broken(vouch)), Err(Refusal::BadSignature));
+    // once no device trusts the curves, the forged write doesn't count, and Samuel's own edits, vouched for when his
+    // Mac synced, still do
+    w.lab.set_pq_only(true);
+    assert!(!counts(&w, mac_b) && w.lab.log(mac_b).view().all_writes().iter().any(|x| x.op == forged));
+    assert_eq!(text(&w.lab, mac_b, h.space, h.welcome, 2).as_deref(), Some(WELCOME_TEXT));
+    // an edit made now is vouched for at once, and reaches Bob's Mac
+    w.lab.edit(mac_s, h.coop, h.space, h.welcome, |i| i.set_text(2, AFTER_TEXT)).unwrap();
+    w.lab.sync_all(7);
+    assert_eq!(text(&w.lab, mac_b, h.space, h.welcome, 2).as_deref(), Some(AFTER_TEXT));
+    assert_eq!(text(&w.lab, w.mac_c, h.space, h.welcome, 2), None);
+    keys_follow_caps(&w, "the curves fell");
 }

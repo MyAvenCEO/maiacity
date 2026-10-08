@@ -13,12 +13,12 @@ use avendb::keys::{KeyName, KeyScope};
 use avendb::lab::{Lab, Tamper};
 use avendb::lens::{Status, DOCUMENT_LENS, DOCUMENT_V1, DOCUMENT_V2};
 use avendb::policy::{Action, Grantee, Kind, Principal, Refusal, Role, Scope};
-use avendb::sign::RecoveryCode;
 
 #[test]
 fn scenario_01_samuels_vault() {
     let mut lab = Lab::new();
-    let (passkey, mac, phone) = (lab.passkey("Samuel"), lab.device("Samuel's Mac"), lab.device("Samuel's iPhone"));
+    let passkey = lab.passkey("Samuel");
+    let (mac, phone) = (lab.device_of(passkey, "Samuel's Mac"), lab.device_of(passkey, "Samuel's iPhone"));
     let samuel = human_on(&mut lab, passkey, &[mac, phone]);
     // the vault id is the hash of its genesis
     let genesis = lab.log(mac).ops()[0].clone();
@@ -26,7 +26,7 @@ fn scenario_01_samuels_vault() {
     assert_eq!(VaultId::from(genesis.id()), samuel);
     assert_eq!(lab.log(mac).view().vault(samuel).map(|v| v.devices.clone()), Some(vec![mac, phone]));
     // the Mac can't add a device on its own, even one that countersigns
-    let other = lab.device("another Mac");
+    let other = lab.device_of(passkey, "another Mac");
     let add = Action::AddDevice { vault: samuel, device: other, seal_to: None };
     assert_eq!(lab.submit(mac, &[mac, other], add).err(), Some(Refusal::BelowThreshold));
 }
@@ -36,8 +36,9 @@ fn scenario_01_a_new_device_reaches_every_device() {
     let mut w = world();
     let coop = coop_on(&mut w);
     w.lab.sync_all(1);
-    // Samuel adds an iPad with his passkey on his Mac, and the iPad countersigns
-    let ipad = w.lab.device("Samuel's iPad");
+    // Samuel adds an iPad with his passkey on his Mac, and the iPad, its keys derived from the same passkey,
+    // countersigns
+    let ipad = w.lab.device_of(w.passkey_s, "Samuel's iPad");
     let add = Action::AddDevice { vault: w.samuel, device: ipad, seal_to: None };
     w.lab.submit(w.mac_s, &[w.passkey_s, ipad], add).unwrap();
     w.lab.sync_all(2);
@@ -493,8 +494,9 @@ fn scenario_18_recovery_after_losing_every_device() {
     for s in [w.mac_s, w.phone_s] {
         w.lab.lose(s);
     }
-    // on a new Mac, Bob's Mac, which acts for the coop, hands over his vault's log, and the passkey adds the new Mac
-    let new_mac = w.lab.device("Samuel's new Mac");
+    // a new Mac derives its keys from the passkey; Bob's Mac, which acts for the coop, hands over his vault's log, and
+    // the passkey adds the new Mac
+    let new_mac = w.lab.device_of(w.passkey_s, "Samuel's new Mac");
     w.lab.share_contact(w.mac_b, new_mac, samuel);
     w.lab.submit(new_mac, &[w.passkey_s, new_mac], Action::AddDevice { vault: samuel, device: new_mac, seal_to: None }).unwrap();
     // the new Mac shows Bob his vault's log again, as a contact card, and syncs before the passkey removes the lost
@@ -517,30 +519,28 @@ fn scenario_18_recovery_after_losing_every_device() {
 }
 
 #[test]
-fn scenario_18_a_recovery_code_when_the_passkey_is_lost_too() {
+fn scenario_18_a_a_backup_passkey_when_the_passkey_is_lost_too() {
     let mut w = world();
     let h = handbook(&mut w);
     let (coop, samuel) = (h.coop, w.samuel);
-    // Samuel writes down a recovery code; its signer becomes a second owner of his vault, never its root
-    let code = w.lab.recovery_code();
-    let written = code.to_string();
-    let recovery = code.signer().id();
-    let add = Action::AddOwner { vault: samuel, owner: Principal::Signer(recovery), seal_to: None };
-    w.lab.submit(w.mac_s, &[w.passkey_s, recovery], add).unwrap();
+    // Samuel registers a backup passkey on a security key he keeps in a drawer: a second owner of his vault, never its
+    // root
+    let backup = w.lab.passkey("Samuel's backup passkey");
+    let add = Action::AddOwner { vault: samuel, owner: Principal::Signer(backup), seal_to: None };
+    w.lab.submit(w.mac_s, &[w.passkey_s, backup], add).unwrap();
     w.lab.sync_all(18);
     // he loses his passkey too, with every device
-    for s in [w.passkey_s, w.mac_s, w.phone_s, recovery] {
+    for s in [w.passkey_s, w.mac_s, w.phone_s] {
         w.lab.lose(s);
     }
-    // on a new Mac he types the code in, and Bob's Mac hands over his vault's log
-    let new_mac = w.lab.device("Samuel's new Mac");
-    assert_eq!(w.lab.use_code(&RecoveryCode::parse(&written.to_lowercase()).unwrap()), recovery);
-    w.lab.share_contact(w.mac_b, new_mac, samuel);
-    // the code adds a new passkey and the new Mac, which syncs; then the new passkey removes the lost devices
+    // he makes a new passkey, a new Mac derives its keys from it, and Bob's Mac hands over his vault's log
     let new_passkey = w.lab.passkey("Samuel's new passkey");
+    let new_mac = w.lab.device_of(new_passkey, "Samuel's new Mac");
+    w.lab.share_contact(w.mac_b, new_mac, samuel);
+    // the backup adds the new passkey and the new Mac, which syncs; then the new passkey removes the lost devices
     let steps = [
-        (vec![recovery, new_passkey], Action::AddOwner { vault: samuel, owner: Principal::Signer(new_passkey), seal_to: None }),
-        (vec![recovery, new_mac], Action::AddDevice { vault: samuel, device: new_mac, seal_to: None }),
+        (vec![backup, new_passkey], Action::AddOwner { vault: samuel, owner: Principal::Signer(new_passkey), seal_to: None }),
+        (vec![backup, new_mac], Action::AddDevice { vault: samuel, device: new_mac, seal_to: None }),
     ];
     for (signers, action) in steps {
         w.lab.submit(new_mac, &signers, action).unwrap();
@@ -552,14 +552,14 @@ fn scenario_18_a_recovery_code_when_the_passkey_is_lost_too() {
     }
     // only the root hands the root on, so the lost passkey stays the root
     let hand_on = Action::SetRoot { vault: samuel, root: Some(new_passkey), keep: vec![] };
-    assert_eq!(w.lab.submit(new_mac, &[recovery, new_passkey], hand_on).err(), Some(Refusal::NotRoot));
+    assert_eq!(w.lab.submit(new_mac, &[backup, new_passkey], hand_on).err(), Some(Refusal::NotRoot));
     w.lab.sync_all(20);
     let v = w.lab.log(w.mac_b).view();
     assert!(v.acts_for(new_mac, samuel) && v.acts_for(new_mac, coop));
     assert!(!v.acts_for(w.mac_s, coop) && !v.acts_for(w.phone_s, coop));
-    assert!(v.approves(&[recovery], Principal::Vault(samuel)) && v.approves(&[new_passkey], Principal::Vault(samuel)));
+    assert!(v.approves(&[backup], Principal::Vault(samuel)) && v.approves(&[new_passkey], Principal::Vault(samuel)));
     assert_eq!(v.vault(samuel).and_then(|x| x.root), Some(w.passkey_s));
-    // the code opened the vault key on the new Mac, which reads the coop's Handbook again, history included
+    // the backup passkey opened the vault key on the new Mac, which reads the coop's Handbook again, history included
     for k in [KeyScope::Vault(samuel), KeyScope::Vault(coop), KeyScope::Space(h.space)] {
         assert!(w.lab.opens(new_mac, k), "{k:?}");
     }

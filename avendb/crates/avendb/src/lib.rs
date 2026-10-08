@@ -13,16 +13,18 @@
 //!
 //! | Phase | Modules | Proven in Lean |
 //! |---|---|---|
-//! | P1 vaults | `policy`: vaults, vault logs, chains; `encode`, `sign`: op ids, device and passkey signatures, recovery codes; `lab`: devices; the Lean model's vectors for the vault rules | T2, T3 |
+//! | P1 vaults | `policy`: vaults, vault logs, chains; `encode`, `sign`: op ids, device and passkey signatures; `lab`: devices; the Lean model's vectors for the vault rules | T2, T3 |
 //! | P2 caps | `policy`: spaces, grants, revocation with strong removal, the passkey as root, Public, write checks; `sync`: items by caps | T1, T4, T8, T14, T16 |
 //! | P3 keys | `keys`: X-Wing sealed boxes, committed XChaCha20-Poly1305 edits; `policy`: the key schedule and `Keys` ops; `doc`: Loro items; `lab`: keyrings, encrypted writes, reading, recovery, tampering | T5, T6, T7 |
 //! | P4 documents and schemas | `lens`: schemas and lenses as blobs, projection on read, edits through a view; `doc`: items stored as records, edits tagged with their schema; `policy`: each space's schema lane, published by its owners; `lab`: apps on a schema, read-only fallback | T9, T17 |
+//! | P4b post-quantum | `hash`: SHA-3 for every hash of ours; `sign`: SLH-DSA beside every classical signature but a write's, device keys derived from the passkey; `keys`: a Classic McEliece share beside X-Wing in every sealed box, wraps where the key is held; `policy`: checkpoints and the post-quantum-only replay; `lab`: locked devices, blobs | T18 |
 //! | P5 history and branches | `branch` | T10 |
 //! | P6 sync and convergence | `sync`, `lab` on a controllable network | T11, T12, T13 |
 
 pub mod branch;
 pub mod doc;
 pub mod encode;
+pub mod hash;
 pub mod id;
 pub mod keys;
 pub mod lab;

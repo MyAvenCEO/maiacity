@@ -436,4 +436,31 @@ def handover : List Op := s1 ++ chain 140 [
 #guard ((view handover).vault? samuel).map (fun v => (v.owners, v.root)) == some ([.signer 77], some 77)
 #guard !actsFor (view handover) stranger samuel
 
+/-! ## Once the curves fall: checkpoints
+
+A write carries only the classical half of its device's signature. Whoever breaks the curves can sign a write as
+Samuel's Mac, but not a checkpoint, which carries the hash-based half too: a peer that no longer trusts the curves
+counts only the writes that a checkpoint by their own device covers. -/
+
+-- Samuel's Mac vouches for its edit of the door todo; a forger who broke its classical key then writes as the Mac
+def vouched : List Op := s15 ++ chain 200 [
+  (macS, [], .checkpoint todos door [100]),
+  (macS, [], .write todos door samuel 0 [100])]
+#guard refused vouched == []
+-- every peer counts the forged edit while it trusts the curves; once it doesn't, only the vouched one
+#guard (itemWrites (view vouched) todos door).map (·.op) == [100, 201]
+#guard (itemWrites (view (checkpointed vouched)) todos door).map (·.op) == [100]
+-- no checkpoint covers the other todos' edits, so they don't count either; every op but a write still does
+#guard itemWrites (view (checkpointed vouched)) todos seeds == []
+#guard (view (checkpointed vouched)).grants == (view vouched).grants
+-- a device vouches only for its own accepted writes of the entry, and for at least one
+#guard accepted s15 (attempt macS [] (.checkpoint todos door [100]))
+#guard !accepted s15 (attempt macB [] (.checkpoint todos door [100]))
+#guard !accepted s15 (attempt macS [] (.checkpoint todos seeds [100]))
+#guard !accepted s15 (attempt macS [] (.checkpoint todos door [100, 999]))
+#guard !accepted s15 (attempt macS [] (.checkpoint todos door []))
+-- the checkpoint travels with its item: Carol's Mac gets it with the door todo, a stranger gets no item at all
+#guard (respond vouched macC).any (·.action == .checkpoint todos door [100])
+#guard (respond vouched stranger).all (·.item? == none)
+
 end AvenDB.Examples

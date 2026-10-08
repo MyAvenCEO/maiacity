@@ -1,21 +1,16 @@
 //! The canonical encoding of an op: the bytes its id hashes and its signatures sign (through the id). Every value has
 //! exactly one encoding and none is a prefix of another of the same type, so two different ops never share bytes:
 //! integers are big-endian and fixed-size, sequences carry their length, and every enum starts with a tag. The first
-//! byte is the format's version, so a later format (a hybrid post-quantum signer, say) can live beside this one.
+//! byte is the format's version, so a later format can live beside this one.
 
 use crate::keys::{KeyBox, KeyId, KeyScope, PublicKey, Recipient};
 use crate::policy::{Action, Grant, Grantee, Kind, Op, Principal, Role, Scope};
 
-/// The version byte every op starts with.
-pub const VERSION: u8 = 1;
-
-/// The BLAKE3 context of op ids, which makes them unlike any other hash of the same bytes.
-pub const OP_CONTEXT: &str = "maiacity vault-db 2026-10-08 op id v1";
+/// The version byte every op starts with: 2 since P4b, whose ids are SHA-3 hashes and whose signers sign twice.
+pub const VERSION: u8 = 2;
 
 pub(crate) fn op_id(op: &Op) -> [u8; 32] {
-    let mut h = blake3::Hasher::new_derive_key(OP_CONTEXT);
-    h.update(&bytes(op));
-    *h.finalize().as_bytes()
+    crate::hash::hash("op id", &bytes(op))
 }
 
 /// An op's bytes: the version, then its encoding.
@@ -114,7 +109,14 @@ macro_rules! ids {
     )*};
 }
 
-ids!(crate::id::SignerId, crate::id::VaultId, crate::id::SpaceId, crate::id::EntryId, crate::id::GrantId, crate::id::OpId, KeyId, PublicKey);
+ids!(crate::id::SignerId, crate::id::VaultId, crate::id::SpaceId, crate::id::EntryId, crate::id::GrantId, crate::id::OpId, crate::id::BlobId, KeyId);
+
+impl Encode for PublicKey {
+    fn encode(&self, out: &mut Vec<u8>) {
+        self.xwing.encode(out);
+        self.mceliece.encode(out);
+    }
+}
 
 impl Encode for KeyScope {
     fn encode(&self, out: &mut Vec<u8>) {
@@ -318,6 +320,12 @@ impl Encode for Action {
                 space.encode(out);
                 actor.encode(out);
                 blob.encode(out);
+            }
+            Action::Checkpoint { space, entry, covers } => {
+                out.push(13);
+                space.encode(out);
+                entry.encode(out);
+                covers.encode(out);
             }
         }
     }

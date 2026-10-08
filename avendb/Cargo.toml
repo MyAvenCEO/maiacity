@@ -12,7 +12,6 @@ license = "UNLICENSED"
 publish = false
 
 [workspace.dependencies]
-blake3 = "1.8"
 serde_json = "1"
 
 # Debug builds: line tables for our code (backtraces keep their lines), none for the dependencies; everything
@@ -24,3 +23,7 @@ opt-level = 2
 [profile.dev.package."*"]
 debug = false
 opt-level = 2
+
+# Classic McEliece makes a key pair in about 0.6 s at opt-level 3 and twice that at 2, and the tests make many
+[profile.dev.package.classic-mceliece-rust]
+opt-level = 3

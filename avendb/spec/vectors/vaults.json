@@ -1,5 +1,5 @@
 {"cases": [
-{"name": "a human vault, its devices and a recovery signer",
+{"name": "a human vault, its devices and a backup passkey",
  "ops": [
   {"author": 1, "cosigners": [], "action": {"genesis": {"vault": 100, "kind": "human", "owners": [{"signer": 1}], "threshold": 1, "root": null}}},
   {"author": 1, "cosigners": [2], "action": {"addDevice": {"vault": 100, "device": 2}}},
@@ -299,10 +299,43 @@
  "epochs": [],
  "seals": [{"secret": {"key": {"vault": 100}, "epoch": 0}, "to": {"signer": 1}}, {"secret": {"key": {"vault": 100}, "epoch": 0}, "to": {"signer": 2}}, {"secret": {"key": {"vault": 101}, "epoch": 0}, "to": {"signer": 4}}, {"secret": {"key": {"vault": 101}, "epoch": 0}, "to": {"signer": 5}}, {"secret": {"key": {"vault": 102}, "epoch": 0}, "to": {"signer": 6}}, {"secret": {"key": {"vault": 103}, "epoch": 0}, "to": {"signer": 8}}, {"secret": {"key": {"vault": 200}, "epoch": 0}, "to": {"key": {"vault": 100}, "epoch": 0}}, {"secret": {"key": {"vault": 200}, "epoch": 0}, "to": {"key": {"vault": 101}, "epoch": 0}}, {"secret": {"key": {"space": 10}, "epoch": 0}, "to": {"key": {"vault": 200}, "epoch": 0}}, {"secret": {"key": {"space": 11}, "epoch": 0}, "to": {"key": {"vault": 100}, "epoch": 0}}, {"secret": {"key": {"space": 10}, "epoch": 0}, "to": {"key": {"vault": 102}, "epoch": 0}}, {"secret": {"key": {"space": 10}, "epoch": 0}, "to": {"key": {"vault": 103}, "epoch": 0}}],
  "published": [],
- "lane": [{"space": 10, "blob": 1}, {"space": 10, "blob": 2}, {"space": 11, "blob": 1}, {"space": 10, "blob": 3}, {"space": 10, "blob": 4}]}
+ "lane": [{"space": 10, "blob": 1}, {"space": 10, "blob": 2}, {"space": 11, "blob": 1}, {"space": 10, "blob": 3}, {"space": 10, "blob": 4}]},
+{"name": "a device vouches only for its own writes",
+ "ops": [
+  {"author": 1, "cosigners": [], "action": {"genesis": {"vault": 100, "kind": "human", "owners": [{"signer": 1}], "threshold": 1, "root": null}}},
+  {"author": 1, "cosigners": [2], "action": {"addDevice": {"vault": 100, "device": 2}}},
+  {"author": 4, "cosigners": [], "action": {"genesis": {"vault": 101, "kind": "human", "owners": [{"signer": 4}], "threshold": 1, "root": null}}},
+  {"author": 4, "cosigners": [5], "action": {"addDevice": {"vault": 101, "device": 5}}},
+  {"author": 6, "cosigners": [], "action": {"genesis": {"vault": 102, "kind": "human", "owners": [{"signer": 6}], "threshold": 1, "root": null}}},
+  {"author": 8, "cosigners": [], "action": {"genesis": {"vault": 103, "kind": "human", "owners": [{"signer": 8}], "threshold": 1, "root": null}}},
+  {"author": 2, "cosigners": [], "action": {"foundSpace": {"space": 11, "actor": 100}}},
+  {"author": 1, "cosigners": [3], "action": {"addDevice": {"vault": 100, "device": 3}}},
+  {"author": 2, "cosigners": [], "action": {"write": {"space": 11, "entry": 1, "actor": 100, "epoch": 0, "deps": []}}},
+  {"author": 2, "cosigners": [], "action": {"write": {"space": 11, "entry": 2, "actor": 100, "epoch": 0, "deps": []}}},
+  {"author": 3, "cosigners": [], "action": {"write": {"space": 11, "entry": 1, "actor": 100, "epoch": 0, "deps": [8]}}},
+  {"author": 2, "cosigners": [], "action": {"checkpoint": {"space": 11, "entry": 1, "covers": [8]}}},
+  {"author": 3, "cosigners": [], "action": {"checkpoint": {"space": 11, "entry": 1, "covers": [10]}}},
+  {"author": 2, "cosigners": [], "action": {"checkpoint": {"space": 11, "entry": 1, "covers": [8, 10]}}},
+  {"author": 3, "cosigners": [], "action": {"checkpoint": {"space": 11, "entry": 1, "covers": [8]}}},
+  {"author": 2, "cosigners": [], "action": {"checkpoint": {"space": 11, "entry": 1, "covers": [9]}}},
+  {"author": 2, "cosigners": [], "action": {"checkpoint": {"space": 11, "entry": 2, "covers": [9, 99]}}},
+  {"author": 2, "cosigners": [], "action": {"checkpoint": {"space": 11, "entry": 2, "covers": []}}},
+  {"author": 2, "cosigners": [], "action": {"checkpoint": {"space": 10, "entry": 2, "covers": [9]}}},
+  {"author": 5, "cosigners": [], "action": {"checkpoint": {"space": 11, "entry": 2, "covers": [9]}}},
+  {"author": 2, "cosigners": [], "action": {"checkpoint": {"space": 11, "entry": 2, "covers": [9]}}}],
+ "accepted": [true, true, true, true, true, true, true, true, true, true, true, true, true, false, false, false, false, false, false, false, true],
+ "vaults": [{"id": 100, "kind": "human", "owners": [{"signer": 1}], "threshold": 1, "devices": [2, 3], "root": null}, {"id": 101, "kind": "human", "owners": [{"signer": 4}], "threshold": 1, "devices": [5], "root": null}, {"id": 102, "kind": "human", "owners": [{"signer": 6}], "threshold": 1, "devices": [], "root": null}, {"id": 103, "kind": "human", "owners": [{"signer": 8}], "threshold": 1, "devices": [], "root": null}],
+ "spaces": [{"id": 11, "founder": 100, "entries": [1, 2]}],
+ "grants": [],
+ "writes": [{"op": 8, "author": 2, "actor": 100, "space": 11, "entry": 1, "epoch": 0, "deps": []}, {"op": 9, "author": 2, "actor": 100, "space": 11, "entry": 2, "epoch": 0, "deps": []}, {"op": 10, "author": 3, "actor": 100, "space": 11, "entry": 1, "epoch": 0, "deps": [8]}],
+ "epochs": [],
+ "seals": [{"secret": {"key": {"vault": 100}, "epoch": 0}, "to": {"signer": 1}}, {"secret": {"key": {"vault": 100}, "epoch": 0}, "to": {"signer": 2}}, {"secret": {"key": {"vault": 101}, "epoch": 0}, "to": {"signer": 4}}, {"secret": {"key": {"vault": 101}, "epoch": 0}, "to": {"signer": 5}}, {"secret": {"key": {"vault": 102}, "epoch": 0}, "to": {"signer": 6}}, {"secret": {"key": {"vault": 103}, "epoch": 0}, "to": {"signer": 8}}, {"secret": {"key": {"space": 11}, "epoch": 0}, "to": {"key": {"vault": 100}, "epoch": 0}}, {"secret": {"key": {"vault": 100}, "epoch": 0}, "to": {"signer": 3}}, {"secret": {"key": {"space": 11, "entry": 1}, "epoch": 0}, "to": {"key": {"space": 11}, "epoch": 0}}, {"secret": {"key": {"space": 11, "entry": 2}, "epoch": 0}, "to": {"key": {"space": 11}, "epoch": 0}}],
+ "published": [],
+ "lane": []}
 ],
 "views": [
 {"name": "a removed owner can't back-date governance",
+ "pq": false,
  "ops": [
   {"depth": 0, "author": 1, "cosigners": [], "action": {"genesis": {"vault": 100, "kind": "human", "owners": [{"signer": 1}], "threshold": 1, "root": null}}},
   {"depth": 1, "author": 1, "cosigners": [2], "action": {"addDevice": {"vault": 100, "device": 2}}},
@@ -324,6 +357,7 @@
  "published": [],
  "lane": []},
 {"name": "a removal keeps what it had seen",
+ "pq": false,
  "ops": [
   {"depth": 0, "author": 1, "cosigners": [], "action": {"genesis": {"vault": 100, "kind": "human", "owners": [{"signer": 1}], "threshold": 1, "root": null}}},
   {"depth": 1, "author": 1, "cosigners": [2], "action": {"addDevice": {"vault": 100, "device": 2}}},
@@ -346,6 +380,7 @@
  "published": [],
  "lane": []},
 {"name": "the senior owner wins a clash",
+ "pq": false,
  "ops": [
   {"depth": 0, "author": 1, "cosigners": [], "action": {"genesis": {"vault": 100, "kind": "human", "owners": [{"signer": 1}], "threshold": 1, "root": null}}},
   {"depth": 1, "author": 1, "cosigners": [2], "action": {"addDevice": {"vault": 100, "device": 2}}},
@@ -366,6 +401,7 @@
  "published": [],
  "lane": []},
 {"name": "removals that don't clash both stand",
+ "pq": false,
  "ops": [
   {"depth": 0, "author": 1, "cosigners": [], "action": {"genesis": {"vault": 100, "kind": "human", "owners": [{"signer": 1}], "threshold": 1, "root": null}}},
   {"depth": 1, "author": 1, "cosigners": [2], "action": {"addDevice": {"vault": 100, "device": 2}}},
@@ -387,6 +423,7 @@
  "published": [],
  "lane": []},
 {"name": "the root outranks a stolen second passkey",
+ "pq": false,
  "ops": [
   {"depth": 0, "author": 1, "cosigners": [], "action": {"genesis": {"vault": 100, "kind": "human", "owners": [{"signer": 1}], "threshold": 1, "root": 1}}},
   {"depth": 1, "author": 1, "cosigners": [9], "action": {"addOwner": {"vault": 100, "owner": {"signer": 9}}}},
@@ -403,6 +440,7 @@
  "published": [],
  "lane": []},
 {"name": "a revoked writer's unseen edits are cut, with what builds on them",
+ "pq": false,
  "ops": [
   {"depth": 0, "author": 1, "cosigners": [], "action": {"genesis": {"vault": 100, "kind": "human", "owners": [{"signer": 1}], "threshold": 1, "root": null}}},
   {"depth": 1, "author": 1, "cosigners": [2], "action": {"addDevice": {"vault": 100, "device": 2}}},
@@ -429,6 +467,7 @@
  "published": [],
  "lane": []},
 {"name": "a lost device's back-dated edits are cut",
+ "pq": false,
  "ops": [
   {"depth": 0, "author": 1, "cosigners": [], "action": {"genesis": {"vault": 100, "kind": "human", "owners": [{"signer": 1}], "threshold": 1, "root": null}}},
   {"depth": 1, "author": 1, "cosigners": [2], "action": {"addDevice": {"vault": 100, "device": 2}}},
@@ -451,6 +490,7 @@
  "published": [],
  "lane": []},
 {"name": "handing the root on cuts the old passkey's back-dated ops",
+ "pq": false,
  "ops": [
   {"depth": 0, "author": 1, "cosigners": [], "action": {"genesis": {"vault": 100, "kind": "human", "owners": [{"signer": 1}], "threshold": 1, "root": 1}}},
   {"depth": 1, "author": 1, "cosigners": [9], "action": {"addOwner": {"vault": 100, "owner": {"signer": 9}}}},
@@ -467,6 +507,7 @@
  "published": [],
  "lane": []},
 {"name": "a revoked reader's back-dated keys are cut",
+ "pq": false,
  "ops": [
   {"depth": 0, "author": 1, "cosigners": [], "action": {"genesis": {"vault": 100, "kind": "human", "owners": [{"signer": 1}], "threshold": 1, "root": null}}},
   {"depth": 1, "author": 1, "cosigners": [2], "action": {"addDevice": {"vault": 100, "device": 2}}},
@@ -491,6 +532,7 @@
  "published": [],
  "lane": []},
 {"name": "a removed owner's back-dated publish is cut",
+ "pq": false,
  "ops": [
   {"depth": 0, "author": 1, "cosigners": [], "action": {"genesis": {"vault": 100, "kind": "human", "owners": [{"signer": 1}], "threshold": 1, "root": null}}},
   {"depth": 1, "author": 1, "cosigners": [2], "action": {"addDevice": {"vault": 100, "device": 2}}},
@@ -513,5 +555,34 @@
  "epochs": [{"key": {"vault": 200}, "epoch": 1}, {"key": {"space": 10}, "epoch": 1}],
  "seals": [{"secret": {"key": {"vault": 100}, "epoch": 0}, "to": {"signer": 1}}, {"secret": {"key": {"vault": 100}, "epoch": 0}, "to": {"signer": 2}}, {"secret": {"key": {"vault": 101}, "epoch": 0}, "to": {"signer": 4}}, {"secret": {"key": {"vault": 101}, "epoch": 0}, "to": {"signer": 5}}, {"secret": {"key": {"vault": 102}, "epoch": 0}, "to": {"signer": 6}}, {"secret": {"key": {"vault": 103}, "epoch": 0}, "to": {"signer": 8}}, {"secret": {"key": {"vault": 200}, "epoch": 0}, "to": {"key": {"vault": 100}, "epoch": 0}}, {"secret": {"key": {"vault": 200}, "epoch": 0}, "to": {"key": {"vault": 101}, "epoch": 0}}, {"secret": {"key": {"space": 10}, "epoch": 0}, "to": {"key": {"vault": 200}, "epoch": 0}}, {"secret": {"key": {"vault": 200}, "epoch": 0}, "to": {"key": {"vault": 200}, "epoch": 1}}, {"secret": {"key": {"space": 10}, "epoch": 0}, "to": {"key": {"space": 10}, "epoch": 1}}, {"secret": {"key": {"vault": 200}, "epoch": 1}, "to": {"key": {"vault": 100}, "epoch": 0}}, {"secret": {"key": {"space": 10}, "epoch": 1}, "to": {"key": {"vault": 200}, "epoch": 1}}],
  "published": [],
- "lane": [{"space": 10, "blob": 1}, {"space": 10, "blob": 2}]}
+ "lane": [{"space": 10, "blob": 1}, {"space": 10, "blob": 2}]},
+{"name": "once the curves fall, only vouched writes count",
+ "pq": true,
+ "ops": [
+  {"depth": 0, "author": 1, "cosigners": [], "action": {"genesis": {"vault": 100, "kind": "human", "owners": [{"signer": 1}], "threshold": 1, "root": null}}},
+  {"depth": 1, "author": 1, "cosigners": [2], "action": {"addDevice": {"vault": 100, "device": 2}}},
+  {"depth": 2, "author": 4, "cosigners": [], "action": {"genesis": {"vault": 101, "kind": "human", "owners": [{"signer": 4}], "threshold": 1, "root": null}}},
+  {"depth": 3, "author": 4, "cosigners": [5], "action": {"addDevice": {"vault": 101, "device": 5}}},
+  {"depth": 4, "author": 6, "cosigners": [], "action": {"genesis": {"vault": 102, "kind": "human", "owners": [{"signer": 6}], "threshold": 1, "root": null}}},
+  {"depth": 5, "author": 8, "cosigners": [], "action": {"genesis": {"vault": 103, "kind": "human", "owners": [{"signer": 8}], "threshold": 1, "root": null}}},
+  {"depth": 6, "author": 2, "cosigners": [], "action": {"foundSpace": {"space": 11, "actor": 100}}},
+  {"depth": 7, "author": 1, "cosigners": [3], "action": {"addDevice": {"vault": 100, "device": 3}}},
+  {"depth": 8, "author": 2, "cosigners": [], "action": {"write": {"space": 11, "entry": 1, "actor": 100, "epoch": 0, "deps": []}}},
+  {"depth": 9, "author": 2, "cosigners": [], "action": {"write": {"space": 11, "entry": 2, "actor": 100, "epoch": 0, "deps": []}}},
+  {"depth": 10, "author": 2, "cosigners": [], "action": {"write": {"space": 11, "entry": 2, "actor": 100, "epoch": 0, "deps": [9]}}},
+  {"depth": 11, "author": 2, "cosigners": [], "action": {"checkpoint": {"space": 11, "entry": 1, "covers": [8]}}},
+  {"depth": 12, "author": 2, "cosigners": [], "action": {"checkpoint": {"space": 11, "entry": 2, "covers": [10]}}},
+  {"depth": 13, "author": 3, "cosigners": [], "action": {"write": {"space": 11, "entry": 1, "actor": 100, "epoch": 0, "deps": [8]}}},
+  {"depth": 14, "author": 3, "cosigners": [], "action": {"checkpoint": {"space": 11, "entry": 1, "covers": [13]}}},
+  {"depth": 15, "author": 2, "cosigners": [], "action": {"write": {"space": 11, "entry": 1, "actor": 100, "epoch": 0, "deps": [13]}}},
+  {"depth": 16, "author": 3, "cosigners": [], "action": {"checkpoint": {"space": 11, "entry": 1, "covers": [15]}}}],
+ "standing": [true, true, true, true, true, true, true, true, true, false, false, true, false, true, true, false, false],
+ "vaults": [{"id": 100, "kind": "human", "owners": [{"signer": 1}], "threshold": 1, "devices": [2, 3], "root": null}, {"id": 101, "kind": "human", "owners": [{"signer": 4}], "threshold": 1, "devices": [5], "root": null}, {"id": 102, "kind": "human", "owners": [{"signer": 6}], "threshold": 1, "devices": [], "root": null}, {"id": 103, "kind": "human", "owners": [{"signer": 8}], "threshold": 1, "devices": [], "root": null}],
+ "spaces": [{"id": 11, "founder": 100, "entries": [1]}],
+ "grants": [],
+ "writes": [{"op": 8, "author": 2, "actor": 100, "space": 11, "entry": 1, "epoch": 0, "deps": []}, {"op": 13, "author": 3, "actor": 100, "space": 11, "entry": 1, "epoch": 0, "deps": [8]}],
+ "epochs": [],
+ "seals": [{"secret": {"key": {"vault": 100}, "epoch": 0}, "to": {"signer": 1}}, {"secret": {"key": {"vault": 100}, "epoch": 0}, "to": {"signer": 2}}, {"secret": {"key": {"vault": 101}, "epoch": 0}, "to": {"signer": 4}}, {"secret": {"key": {"vault": 101}, "epoch": 0}, "to": {"signer": 5}}, {"secret": {"key": {"vault": 102}, "epoch": 0}, "to": {"signer": 6}}, {"secret": {"key": {"vault": 103}, "epoch": 0}, "to": {"signer": 8}}, {"secret": {"key": {"space": 11}, "epoch": 0}, "to": {"key": {"vault": 100}, "epoch": 0}}, {"secret": {"key": {"vault": 100}, "epoch": 0}, "to": {"signer": 3}}, {"secret": {"key": {"space": 11, "entry": 1}, "epoch": 0}, "to": {"key": {"space": 11}, "epoch": 0}}],
+ "published": [],
+ "lane": []}
 ]}

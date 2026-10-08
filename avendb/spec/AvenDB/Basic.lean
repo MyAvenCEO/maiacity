@@ -78,8 +78,7 @@ inductive KeyScope where
   | entry (sp : SpaceId) (e : EntryId)
   deriving DecidableEq, Repr
 
-/-- A signer's own encryption key (a device's, or one derived from a passkey or a recovery code), or one epoch of a
-    key family. -/
+/-- A signer's own encryption key (a device's, or one derived from a passkey), or one epoch of a key family. -/
 inductive KeyName where
   | signer (s : SignerId)
   | scoped (k : KeyScope) (epoch : Nat)

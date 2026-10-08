@@ -7,14 +7,14 @@ device syncs exactly the items its vaults hold caps on, so servers and relays on
 avenDB is its own package in the maiacity repo, apart from the media vault in `vault/`: it has its own Cargo workspace
 and lockfile, so the two never build together, and nothing here changes what the media vault, its server or the Studio
 app run. Everything avenDB needs lives here: its encryption and passkeys, schemas and lenses, Loro documents and their
-history and branches, and, from P6, its own iroh networking (its own ALPN, its own iroh versions and TLS crypto).
+history and branches, and, from P8, its own iroh networking (its own ALPN, its own iroh versions and TLS crypto).
 
 ## Layout
 
 | Path | What it holds |
 |---|---|
 | `crates/avendb` | The core: the rules every peer applies (`policy`), keys and encryption (`keys`), signatures and passkeys (`sign`), Loro items (`doc`), schemas and lenses (`lens`), history and branches (`branch`), sync by caps (`sync`), and the Lab the scenario tests run on (`lab`) |
-| `spec/` | The Lean model the core is built against, test-first: the rules, the theorems (T1 to T17) and the test vectors both sides replay (see `spec/README.md`) |
+| `spec/` | The Lean model the core is built against, test-first: the rules, the theorems (T1 to T18) and the test vectors both sides replay (see `spec/README.md`) |
 | `docs/` | The research and the first plan that led here (`VERSIONING-RESEARCH.md`, `DATABASE-PLAN.md`), kept for their reasoning |
 
 ## Build and test
@@ -39,8 +39,8 @@ Each phase is one PR, merged when its Rust tests pass and its theorems are prove
 | Phase | What it builds | State |
 |---|---|---|
 | P0 to P4 | The spec and the API, vaults and signatures, caps and sync by caps, keys and encrypted edits, schemas and lenses | Merged |
-| P4b | Post-quantum hardening: SHA-3 ids, hash-based signatures beside every classical one, a McEliece share in every key box; the passkey as the only way back in, device keys derived from it at every unlock | Next |
-| P5 | History, branches, merge, promote | |
-| P6 | Offline devices, random delivery orders, iroh with X25519MLKEM768 on every connection | |
+| P4b | Post-quantum hardening: SHA-3 ids and hashes, a hash-based signature beside every classical one but a write's, checkpoints that vouch for the writes (T18), a McEliece share beside X-Wing in every key box; the passkey as the only way back in, device keys derived from it at every unlock | Merged |
+| P5 | History, branches, merge, promote | Next |
+| P6 | Offline devices, random delivery orders, Lean ⇄ Rust vectors for the rest | |
 | P7 | The avenDB tile | |
-| P8 | Sync on avenDB's own iroh ALPN, bytes in iroh-blobs, the server peer in its own container beside the media vault's | |
+| P8 | Sync on avenDB's own iroh ALPN with X25519MLKEM768 on every connection, bytes in iroh-blobs, the server peer in its own container beside the media vault's | |
