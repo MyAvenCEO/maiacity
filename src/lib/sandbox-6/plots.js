@@ -165,6 +165,11 @@ export function spoke(g, plan, k, d) {
  * at the nearest) */
 export const RING_R = 7.5;
 
+/** how far a hex's roundabout runs from its middle, round its triangle of domes (Samuel, 2026-10-08): well out from
+ * the domes at their largest, well inside a village center's ring road; and its yard, the triangle and the roundabout
+ * with its verge, where nothing grows once a dome stands in the hex */
+export const HEX_RING = 5.8, YARD_R = HEX_RING + 1.1;
+
 /** how far out from a village center's middle its spur to its ring road starts: at the foot of its tower and the
  * crates at its door */
 export const RING_FOOT = 4.5;
