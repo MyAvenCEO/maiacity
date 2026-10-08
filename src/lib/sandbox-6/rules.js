@@ -327,22 +327,25 @@ export const GROWS = /** @type {Record<string, { levels: Stage[], up: Record<str
 );
 
 /**
- * @typedef {{ label: string, does: string, plant: number, build: Craft, keep: Craft, use: Craft, make: Craft, up: Record<string, number>, gold: number }} CentreStage
+ * @typedef {{ label: string, does: string, plant: number, sun: number, build: Craft, keep: Craft, use: Craft, make: Craft, up: Record<string, number>, gold: number }} CentreStage
  */
 /**
  * The village center grows by the crafting engine's recipes too (Samuel, 2026-10-07): a village starts as a logistics
  * hub, a small store dome; it grows into the great village center, a dome as large as a great dome of 248, its hall,
  * market and storehouse, and its village's one geothermal plant, its wells drilled for gold under it. The plant is not
- * upgraded (Samuel). More stages will come between the hub and the great center. Its build is in tonnes, with its
- * builders' energy and the gold for its plant; its keep, 2% a year of what it is built of, in gold; what it uses, the
- * energy of its hall, storehouse and routes (ENERGY); its make, what its plant makes a week. Its wares come from its stores at once (what
+ * upgraded (Samuel). Its great dome is glazed with solar panels and makes as much power with them as a great dome of
+ * 248 (`sun`, in beds' worth; Samuel, 2026-10-08); the hub is a small dome of glass and makes none. More stages will
+ * come between the hub and the great center. Its build is in tonnes, with its builders' energy and the gold for its
+ * plant; its keep, 2% a year of what it is built of, in gold; what it uses, the energy of its hall, storehouse and
+ * routes (ENERGY); its make, what its plant and its solar panels make a week. Its wares come from its stores at once (what
  * they lack, bought from the world market), and it grows at once.
  * @type {CentreStage[]}
  */
 export const CENTRE = /** @type {any} */ ([
-	{ label: 'Logistics hub', build: { plank: 30, steel: 20, glass: 10 }, gold: 0, plant: 0, does: 'stores and trades its village’s wares; it makes no power' },
-	// its geothermal plant's gold as Samuel set it (2026-10-07; our research says 30 to 45 M € for a plant)
-	{ label: 'Village center', build: { ...DOME_T }, gold: 25000, plant: 1, does: '' }
+	{ label: 'Logistics hub', build: { plank: 30, steel: 20, glass: 10 }, gold: 0, plant: 0, sun: 0, does: 'stores and trades its village’s wares; it makes no power' },
+	// its geothermal plant's gold as Samuel set it (2026-10-07; our research says 30 to 45 M € for a plant); its dome a
+	// great dome's, solar panels and all
+	{ label: 'Village center', build: domeOf(HOUSE_MOST), gold: 25000, plant: 1, sun: HOUSE_MOST, does: '' }
 ]);
 
 /**
@@ -391,7 +394,8 @@ export const ENERGY = {
 		x.build = { in: { ...buildIn(wares), ...(x.gold ? { gold: x.gold } : {}) }, out: {} };
 		x.keep = { in: keepIn(built), out: {} };
 		x.use = { in: { energy: ((x.plant ? ENERGY.centre : ENERGY.hub) / 1000) * WEEK_YEAR }, out: {} };
-		x.make = { in: {}, out: x.plant ? { energy: (x.plant * ENERGY.wellKw * 24 * WEEK * ENERGY.uptime) / 1000 } : {} };
+		const made = x.plant * ENERGY.wellKw * 24 * WEEK * ENERGY.uptime + x.sun * ENERGY.sunBed * WEEK_YEAR;
+		x.make = { in: {}, out: made ? { energy: made / 1000 } : {} };
 	}
 	BUILDINGS.centre.cost = CENTRE[0].up;
 }
