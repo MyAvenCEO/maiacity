@@ -18,10 +18,6 @@ on:
       - 'deploy/**'
       - 'docker-compose*.yml'
       - 'vault/**'
-      # the E2E database and its spec are not part of the media vault's server: their changes never rebuild or
-      # restart it (the database gets its own server, beside this one)
-      - '!vault/spec/**'
-      - '!vault/crates/vault-db/**'
       - '.github/workflows/api.yml'
   workflow_dispatch:
 

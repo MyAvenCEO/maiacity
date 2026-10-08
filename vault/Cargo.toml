@@ -2,7 +2,7 @@
 # See .claude/skills/iroh/ — maiacity.md for the design, gotchas.md for why the iroh versions are pinned exactly.
 [workspace]
 resolver = "3"
-members = ["crates/vault-core", "crates/vault-color", "crates/vault-db", "crates/vault-media", "crates/vault-asr", "crates/vault-render", "crates/vault-server", "crates/vault-cli", "app"]
+members = ["crates/vault-core", "crates/vault-color", "crates/vault-media", "crates/vault-asr", "crates/vault-render", "crates/vault-server", "crates/vault-cli", "app"]
 
 [workspace.package]
 edition = "2024"
@@ -42,9 +42,4 @@ debug = "line-tables-only"
 
 [profile.dev.package."*"]
 debug = false
-opt-level = 2
-
-# The database's property tests replay thousands of histories, each through every rule and the key schedule: its own
-# code optimised in debug builds too, as its dependencies are.
-[profile.dev.package.vault-db]
 opt-level = 2

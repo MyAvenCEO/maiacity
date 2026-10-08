@@ -1,0 +1,26 @@
+# avenDB: the user-owned, end-to-end encrypted database, its own workspace beside the media vault (vault/), so the two
+# never build together: its crates pick their own versions and features, iroh's among them, and nothing here can
+# change what the media vault runs. See README.md.
+[workspace]
+resolver = "3"
+members = ["crates/avendb"]
+
+[workspace.package]
+edition = "2024"
+rust-version = "1.91"
+license = "UNLICENSED"
+publish = false
+
+[workspace.dependencies]
+blake3 = "1.8"
+serde_json = "1"
+
+# Debug builds: line tables for our code (backtraces keep their lines), none for the dependencies; everything
+# optimised, as the property tests replay thousands of histories, each through every rule and the key schedule.
+[profile.dev]
+debug = "line-tables-only"
+opt-level = 2
+
+[profile.dev.package."*"]
+debug = false
+opt-level = 2
