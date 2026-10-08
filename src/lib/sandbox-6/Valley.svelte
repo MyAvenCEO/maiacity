@@ -37,6 +37,8 @@
 	/** what a Buy button at the world market said when it could not */
 	let buyWhy = $state('');
 	let menuOpen = $state(false);
+	/** on a phone: whether the tools are open from the action button */
+	let toolsOpen = $state(false);
 	let group = $state(MENU[0].group);
 	let narrow = $state(false);
 	/** @type {import('./game.js').Selection} */
@@ -66,7 +68,7 @@
 	let linkWhy = $state('');
 	/** what an Enlarge or Upgrade button said when it could not grow */
 	let upWhy = $state('');
-	/** what the Grow button of a village center said when it could not be paid */
+	/** what the Upgrade button of a village center said when it could not be paid */
 	let growWhy = $state('');
 	/** the village of yours the right side shows — the one picked, else your first: each need against its stock */
 	let home = $state(/** @type {ReturnType<import('./sim.js').Sim['village']>} */ (null));
@@ -204,6 +206,7 @@
 	}
 	/** @param {string} m @param {string} [type] */
 	function tool(m, type = '') {
+		toolsOpen = false;
 		if (m === 'build' && !type) {
 			menuOpen = !menuOpen;
 			if (menuOpen) (marketOpen = false), (treeOpen = false);
@@ -216,6 +219,7 @@
 	/** start the simulation (ten years in ten real minutes, autoplay growing the first village full), or stop it and go back */
 	function simulate() {
 		if (!game) return;
+		toolsOpen = false;
 		if (!simulating) {
 			before = speed;
 			game.setSpeed(SIM_SPEED);
@@ -246,6 +250,7 @@
 		refresh();
 	}
 	function newValley() {
+		toolsOpen = false;
 		if (!confirm('Start a new valley? This one will be gone.')) return;
 		game?.restart();
 		seenMsg = -1;
@@ -289,12 +294,11 @@
 </script>
 
 <!-- a building's stage and its recipes, the same for every building that grows (./tree.js stagesOf: a home, a factory,
-     a village center): what it makes, uses and costs to keep a week, and its upgrade with what that takes. `only` shows
-     the upgrade alone -->
-{#snippet stageBlock(/** @type {any[]} */ stages, /** @type {number} */ level, /** @type {{ upgrading?: boolean, lately?: string, up?: Record<string, number> | null, go?: () => void, why?: string, only?: boolean }} */ o)}
+     a village center): what it makes, uses and costs to keep a week, and what it made lately -->
+{#snippet stageInfo(/** @type {any[]} */ stages, /** @type {number} */ level, /** @type {{ upgrading?: boolean, lately?: string }} */ o)}
 	{@const cur = stages[level - 1]}
 	{@const next = stages[level] ?? null}
-	{#if cur && !o.only}
+	{#if cur}
 		<p class="label">{cur.label}{cur.beds ? ` · ${cur.beds} beds` : ''} · stage <b>{level}</b> of {stages.length}{o.upgrading && next ? ` · growing to ${next.label.toLowerCase()}` : ''}</p>
 		<dl class="recipe">
 			<dt title="What it makes a week, in-game, from its land and energy (working all its land gives it)">Makes</dt>
@@ -306,18 +310,19 @@
 			{#if o.lately && Object.keys(cur.make.out).length}<dt title="What it made a week, lately">Lately</dt><dd>{o.lately}</dd>{/if}
 		</dl>
 	{/if}
-	{#if next && o.up && o.go && !o.upgrading}
-		<div class="actions">
-			<button class="go up grow" onclick={o.go} title="Upgrade to {next.label.toLowerCase()}: {makeLine(next)}. Its build: {side(next.build.in, ', ')}, from your stores (what they lack, bought){next.build.in.gold ? ' and its treasury (what it lacks, borrowed)' : ''}">
-				<span>Upgrade → {next.label}</span>
-				<span class="chips">
-					{#each Object.entries(o.up) as [w, n] (w)}<span class="cost"><i style:background={WARES[w].color}></i>{ware(n)}</span>{/each}
-					{#if next.build.in.energy}<span class="cost"><i class="bolt"></i>{fmt(next.build.in.energy)}</span>{/if}
-					{#if next.build.in.gold}<span class="cost"><i class="coin"></i>{fmt(next.build.in.gold)}</span>{/if}
-				</span>
-			</button>
-		</div>
-		{#if o.why}<p class="status">{o.why}</p>{/if}
+{/snippet}
+<!-- its upgrade to the next stage, with what that takes: for the foot of its card, beside its other buttons -->
+{#snippet stageUp(/** @type {any[]} */ stages, /** @type {number} */ level, /** @type {Record<string, number> | null | undefined} */ up, /** @type {() => void} */ go)}
+	{@const next = stages[level] ?? null}
+	{#if next && up}
+		<button class="go up grow" onclick={go} title="Upgrade to {next.label.toLowerCase()}: {makeLine(next)}. Its build: {side(next.build.in, ', ')}, from your stores (what they lack, bought){next.build.in.gold ? ' and its treasury (what it lacks, borrowed)' : ''}">
+			<span>Upgrade → {next.label}</span>
+			<span class="chips">
+				{#each Object.entries(up) as [w, n] (w)}<span class="cost"><i style:background={WARES[w].color}></i>{ware(n)}</span>{/each}
+				{#if next.build.in.energy}<span class="cost"><i class="bolt"></i>{fmt(next.build.in.energy)}</span>{/if}
+				{#if next.build.in.gold}<span class="cost"><i class="coin"></i>{fmt(next.build.in.gold)}</span>{/if}
+			</span>
+		</button>
 	{/if}
 {/snippet}
 
@@ -336,10 +341,10 @@
 				<svg viewBox="0 0 16 16" aria-hidden="true"><ellipse cx="8" cy="4" rx="5.5" ry="2" /><path d="M2.5 4v4c0 1.1 2.5 2 5.5 2s5.5-.9 5.5-2V4" /><path d="M2.5 8v4c0 1.1 2.5 2 5.5 2s5.5-.9 5.5-2V8" /></svg>
 				<b>{goldOf(summary.stock.coin ?? 0)}</b>
 			</span>
-			<span class="stat" title="Settlers: the people living in all your villages, {summary.people} in {summary.beds} beds">
+			<button class="stat" aria-expanded={ownCentre} onclick={() => (ownCentre ? game?.select(null) : home && pickVillage(home.node))} title="Settlers: the people living in all your villages, {summary.people} in {summary.beds} beds. Click for your village">
 				<svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="4.5" r="2.5" /><path d="M2.5 14.5c0-3.2 2.5-5.5 5.5-5.5s5.5 2.3 5.5 5.5" /></svg>
 				<b>{fmt(summary.people)}</b>
-			</span>
+			</button>
 		</div>
 		{#if booksOpen && books}
 			{@const b = books}
@@ -406,15 +411,18 @@
 			</section>
 		{/if}
 	{/if}
-	<TouchStick move={(x, y, hurry) => game?.move(x, y, hurry)} {stage} taps=".tools button, .panel button, .card button" />
+	<TouchStick move={(x, y, hurry) => game?.move(x, y, hurry)} {stage} taps=".tools button, .panel button, .card button, .fab" />
 
-	<!-- the tools, down the left -->
-	<nav class="tools" aria-label="Tools">
+	<!-- the tools, down the left; on a phone, behind one action button at the foot on the right -->
+	<button class="fab" class:on={toolsOpen} aria-expanded={toolsOpen} aria-label="Actions" title="Actions" onclick={() => (toolsOpen = !toolsOpen)}>
+		<svg viewBox="0 0 24 24" aria-hidden="true">{#if toolsOpen}<path d="M6 6l12 12M18 6L6 18" />{:else}<path d="M4 7h16M4 12h16M4 17h16" />{/if}</svg>
+	</button>
+	<nav class="tools" class:open={toolsOpen} aria-label="Tools">
 		<button class:on={mode === 'build' || menuOpen} onclick={() => tool('build')} title="Build (choose a building)"><span class="ic">⌂</span>Build</button>
 		<button class:on={mode === 'road'} onclick={() => tool('road')} title="Road (R)"><span class="ic">⟋</span>Road</button>
 		<button class:on={mode === 'demolish'} onclick={() => tool('demolish')} title="Tear down (X)"><span class="ic">✕</span>Tear down</button>
-		<button class:on={treeOpen} onclick={() => ((treeOpen = !treeOpen), (menuOpen = false), (marketOpen = false), refresh())} title="The building tree: every chain and every stage of its buildings"><span class="ic">⌥</span>Tree</button>
-		<button class:on={marketOpen} onclick={() => ((marketOpen = !marketOpen), (menuOpen = false), (treeOpen = false), (buyWhy = ''))} title="The world market: buy and sell, and what your village trades a week"><span class="ic">⇄</span>Market</button>
+		<button class:on={treeOpen} onclick={() => ((treeOpen = !treeOpen), (menuOpen = false), (marketOpen = false), (toolsOpen = false), refresh())} title="The building tree: every chain and every stage of its buildings"><span class="ic">⌥</span>Tree</button>
+		<button class:on={marketOpen} onclick={() => ((marketOpen = !marketOpen), (menuOpen = false), (treeOpen = false), (toolsOpen = false), (buyWhy = ''))} title="The world market: buy and sell, and what your village trades a week"><span class="ic">⇄</span>Market</button>
 		<div class="speed" role="group" aria-label="Speed: how much of the calendar a real day holds">
 			<button class:on={speed === 0} onclick={() => (game?.setSpeed(0), (speed = 0))} title="Pause (Space)">❚❚</button>
 			{#each SPEEDS as x (x.s)}
@@ -431,6 +439,7 @@
 
 	{#if menuOpen}
 		<section class="panel menu" aria-label="Build menu">
+			<button class="close" onclick={() => tool('build')} aria-label="Close">×</button>
 			<div class="tabs" role="tablist">
 				{#each MENU as m (m.group)}
 					<button role="tab" aria-selected={group === m.group} class:on={group === m.group} onclick={() => (group = m.group)}>{m.group}</button>
@@ -470,10 +479,10 @@
 	{/if}
 
 	<!-- your village, on the right: what it has against what it needs -->
-	{#if home && summary}
+	{#if home && summary && ownCentre}
 		<aside class="side">
 			<section class="panel village" aria-label="{home.name}: what it has, against what it needs">
-				{#if ownCentre}<button class="close" onclick={() => game?.select(null)} aria-label="Close">×</button>{/if}
+				<button class="close" onclick={() => game?.select(null)} aria-label="Close">×</button>
 				<p class="eyebrow">Your village{ownCentre && card ? ` · ${card.label.toLowerCase()}` : ''}</p>
 				<h2>{home.name}</h2>
 				{#if home.villages.length > 1}
@@ -514,14 +523,11 @@
 						</li>
 					{/each}
 				</ul>
-				{#if pw}
-					<!-- its village center: the whole stage block when it is picked, else only its upgrade -->
-					{@render stageBlock(/** @type {any[]} */ (stagesOf('centre')), pw.stage, { only: !ownCentre, up: pw.next?.up ?? null, go: grow, why: growWhy })}
-				{/if}
+				{#if pw}{@render stageInfo(/** @type {any[]} */ (stagesOf('centre')), pw.stage, {})}{/if}
 				{#each home.notes as x, k (k)}
 					<button class="note {x.tone}" onclick={() => game?.focus(x.node)}><i></i>{x.text}</button>
 				{/each}
-				{#if ownCentre && links.length}
+				{#if links.length}
 					<p class="label">Trade routes, under the ground</p>
 					<ul class="routes">
 						{#each links as l (l.id)}
@@ -534,6 +540,8 @@
 					{#if linkWhy}<p class="status">{linkWhy}</p>{/if}
 				{/if}
 				<p class="people small">Year {summary.date.year} · month {summary.date.month} · day {summary.date.day} · {summary.people} people · {summary.villages} {summary.villages === 1 ? 'village' : 'villages'}</p>
+				{#if growWhy}<p class="status">{growWhy}</p>{/if}
+				{#if pw?.next}<div class="actions foot">{@render stageUp(/** @type {any[]} */ (stagesOf('centre')), pw.stage, pw.next.up, grow)}</div>{/if}
 			</section>
 		</aside>
 	{/if}
@@ -609,12 +617,9 @@
 				<p class="label">{card.settlers} settlers live in its village</p>
 			{/if}
 			{#if stagesOf(card.type) && card.level}
-				{@render stageBlock(/** @type {any[]} */ (stagesOf(card.type)), card.level, {
+				{@render stageInfo(/** @type {any[]} */ (stagesOf(card.type)), card.level, {
 					upgrading: card.upgrading,
-					lately: card.out && card.stage === 'live' ? `${ware(card.lately)} ${nameOf(card.out)} a week${card.type === 'ironmine' ? ` · ore for ${num(card.deposit / card.rounds)} years` : ''}` : '',
-					up: card.owner === PLAYER ? card.up : null,
-					go: () => card && ((upWhy = game?.sim.upgrade(card.id)?.why ?? ''), refresh()),
-					why: upWhy
+					lately: card.out && card.stage === 'live' ? `${ware(card.lately)} ${nameOf(card.out)} a week${card.type === 'ironmine' ? ` · ore for ${num(card.deposit / card.rounds)} years` : ''}` : ''
 				})}
 			{/if}
 			{#if card.stage === 'live' && card.worker}
@@ -632,8 +637,10 @@
 				<p class="label">Busy <b>{card.eff}%</b></p>
 				<div class="bar"><span style:width="{card.eff}%"></span></div>
 			{/if}
+			{#if upWhy}<p class="status">{upWhy}</p>{/if}
 			{#if card.owner === PLAYER && card.type !== 'centre'}
-				<div class="actions">
+				<div class="actions foot">
+					{#if stagesOf(card.type) && card.level && !card.upgrading}{@render stageUp(/** @type {any[]} */ (stagesOf(card.type)), card.level, card.up, () => card && ((upWhy = game?.sim.upgrade(card.id)?.why ?? ''), refresh()))}{/if}
 					<button class="danger" onclick={() => (game?.sim.demolish(card?.node ?? -1), game?.select(null))}>Tear down</button>
 				</div>
 			{/if}
@@ -648,7 +655,7 @@
 				{#each flagCard.wares as w, k (k)}<li title={label(w)}><i style:background={WARES[w].color}></i><span>{label(w)}</span></li>{/each}
 			</ul>
 			{#if flagCard.owner === PLAYER}
-				<div class="actions">
+				<div class="actions foot">
 					<button class="danger" onclick={() => (game?.sim.demolish(selected?.node ?? -1), game?.select(null))}>Tear down</button>
 				</div>
 			{/if}
@@ -811,6 +818,9 @@
 		background: #24452f;
 		color: #f4f1e8;
 	}
+	.menu .tabs {
+		padding-right: 1.6rem;
+	}
 	.menu ul {
 		margin: 0;
 		padding: 0;
@@ -916,15 +926,20 @@
 	.card {
 		position: absolute;
 		z-index: 3;
-		right: calc(19rem + env(safe-area-inset-right, 0px));
+		right: calc(1rem + env(safe-area-inset-right, 0px));
 		top: calc(5rem + env(safe-area-inset-top, 0px));
 		width: 17rem;
 		max-height: calc(100vh - 9rem - var(--nav-room, 4rem));
 		overflow: auto;
 	}
+	.valley:has(.side) .card {
+		right: calc(19rem + env(safe-area-inset-right, 0px));
+	}
 	.card .close,
 	.village .close,
-	.books .close {
+	.books .close,
+	.market .close,
+	.menu .close {
 		position: absolute;
 		top: 0.4rem;
 		right: 0.5rem;
@@ -1443,6 +1458,18 @@
 		gap: 0.35rem;
 		margin-top: 0.7rem;
 	}
+	.actions.foot {
+		position: sticky;
+		bottom: 0;
+		z-index: 1;
+		margin: 0.7rem -0.8rem 0;
+		padding: 0.55rem 0.8rem 0.7rem;
+		background: rgb(250 248 242 / 0.97);
+		border-top: 1px solid rgb(31 42 35 / 0.08);
+	}
+	.panel:has(> .actions.foot) {
+		padding-bottom: 0;
+	}
 	.actions button,
 	.go {
 		padding: 0.4rem 0.75rem;
@@ -1514,6 +1541,9 @@
 		white-space: nowrap;
 		pointer-events: none;
 	}
+	.fab {
+		display: none;
+	}
 	.loading {
 		position: absolute;
 		inset: 0;
@@ -1536,32 +1566,54 @@
 		font-weight: 400;
 	}
 
-	/* ── a narrow screen: the tools in a row along the top, the panels as sheets from the foot ── */
+	/* ── a narrow screen: the tools behind one action button at the foot on the right, the cards and panels as sheets
+	   sliding up from the foot, full width, their buttons fixed at their foot above the nav pill ── */
 	@media (max-width: 720px) {
+		.fab {
+			display: flex;
+			align-items: center;
+			justify-content: center;
+			position: absolute;
+			z-index: 6;
+			right: max(8px, env(safe-area-inset-right, 0px));
+			bottom: var(--nav-foot, 8px);
+			width: var(--nav-height, 52px);
+			height: var(--nav-height, 52px);
+			padding: 0;
+			border: 1px solid rgb(255 255 255 / 0.5);
+			border-radius: 999px;
+			background: rgb(250 248 242 / 0.94);
+			box-shadow: 0 10px 30px rgb(38 56 44 / 0.18);
+			-webkit-backdrop-filter: blur(10px);
+			backdrop-filter: blur(10px);
+		}
+		.fab svg {
+			width: 1.35rem;
+			height: 1.35rem;
+			fill: none;
+			stroke: currentColor;
+			stroke-width: 2;
+			stroke-linecap: round;
+		}
+		.fab.on {
+			background: #24452f;
+			color: #f4f1e8;
+		}
 		.tools {
-			top: calc(4.2rem + env(safe-area-inset-top, 0px));
-			left: 0.5rem;
-			right: 0.5rem;
-			width: auto;
-			flex-direction: row;
-			flex-wrap: nowrap;
-			overflow-x: auto;
-			scrollbar-width: none;
-		}
-		.tools > button {
-			flex: none;
-			padding: 0.4rem 0.65rem;
-			font-size: 0.76rem;
-		}
-		.speed {
-			margin: 0;
-			flex: none;
-		}
-		.speed button {
-			width: 2.2rem;
-		}
-		.speednote {
 			display: none;
+		}
+		.tools.open {
+			display: flex;
+			z-index: 6;
+			top: auto;
+			left: auto;
+			right: max(8px, env(safe-area-inset-right, 0px));
+			bottom: calc(var(--nav-room, 4rem) + 0.2rem);
+			width: 10rem;
+			max-height: calc(100dvh - var(--nav-room, 4rem) - 5rem);
+			overflow-y: auto;
+			scrollbar-width: none;
+			animation: in 160ms ease-out;
 		}
 		.buy li {
 			grid-template-columns: repeat(3, 1fr);
@@ -1573,7 +1625,7 @@
 			display: none;
 		}
 		.topstats {
-			top: calc(6.7rem + env(safe-area-inset-top, 0px));
+			top: calc(3.9rem + env(safe-area-inset-top, 0px));
 			left: 0.5rem;
 			right: 0.5rem;
 			transform: none;
@@ -1584,51 +1636,75 @@
 			font-size: 0.8rem;
 		}
 		.books {
-			top: calc(9.4rem + env(safe-area-inset-top, 0px));
+			top: calc(6.7rem + env(safe-area-inset-top, 0px));
 			padding: 0.6rem 0.6rem 0.7rem;
 			font-size: 0.72rem;
 		}
-		.tools .quiet {
-			margin: 0;
-		}
-		.menu {
-			top: calc(9.4rem + env(safe-area-inset-top, 0px));
-			left: 0.5rem;
-			width: calc(100vw - 1rem);
-			max-height: 55vh;
+		/* the sheets: full width from the foot, up to most of the screen, sliding in */
+		.menu,
+		.market,
+		.card,
+		.side {
+			top: auto;
+			left: 0;
+			right: 0;
+			bottom: 0;
+			width: auto;
+			max-height: min(72dvh, calc(100dvh - 7.5rem));
 		}
 		.side {
-			top: calc(9.4rem + env(safe-area-inset-top, 0px));
-			right: 0.5rem;
-			width: 13.5rem;
-			max-height: 40vh;
+			display: flex;
+			z-index: 3;
+		}
+		.menu,
+		.market,
+		.card,
+		.side .village {
+			padding: 0.8rem 1rem var(--nav-room, 4rem);
+			border-radius: 18px 18px 0 0;
+			border-bottom: 0;
+			box-shadow: 0 -8px 28px rgb(0 0 0 / 0.16);
+			overflow: auto;
+			overscroll-behavior: contain;
+			animation: sheet 240ms ease-out;
+		}
+		.valley:has(.side) .card {
+			right: 0;
+		}
+		.card .close,
+		.village .close,
+		.market .close,
+		.menu .close {
+			top: 0.5rem;
+			right: 0.7rem;
+		}
+		.panel:has(> .actions.foot) {
+			padding-bottom: 0;
+		}
+		.actions.foot {
+			margin: 0.7rem -1rem 0;
+			padding: 0.6rem 1rem var(--nav-room, 4rem);
+		}
+		.actions.foot button {
+			padding: 0.55rem 0.9rem;
+			font-size: 0.8rem;
 		}
 		.wares {
 			grid-template-columns: 1fr;
 		}
-		.market {
-			top: calc(9.4rem + env(safe-area-inset-top, 0px));
-			left: 0.5rem;
-			width: calc(100vw - 1rem);
-			max-height: 60vh;
-		}
-		.card {
-			top: auto;
-			right: 0.5rem;
-			left: 0.5rem;
-			bottom: calc(0.5rem + var(--nav-room, 4rem));
-			width: auto;
-			max-height: 45vh;
-		}
 		.news {
-			top: auto;
-			bottom: calc(3.5rem + var(--nav-room, 4rem));
+			top: calc(6.7rem + env(safe-area-inset-top, 0px));
 			width: calc(100vw - 2rem);
 		}
 		.hint {
 			white-space: normal;
 			text-align: center;
 			max-width: calc(100vw - 2rem);
+		}
+	}
+	@keyframes sheet {
+		from {
+			transform: translateY(100%);
 		}
 	}
 </style>
