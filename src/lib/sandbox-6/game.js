@@ -173,7 +173,7 @@ export function mountGame(container, o = {}) {
 			const id = /** @type {number} */ (r.id);
 			setMode('look');
 			select({ k: 'building', id, node: n });
-			hint(r.linked ? '' : 'No road could reach it: draw one from its flag');
+			hint(r.linked ? '' : 'No path could reach it: draw one with the Road tool');
 			return;
 		}
 		if (mode === 'flag') {

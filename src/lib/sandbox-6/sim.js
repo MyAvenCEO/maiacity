@@ -142,6 +142,8 @@ export function createSim(st) {
 	const N = g.N;
 	// a valley saved before it kept the year it was started in counts from this one
 	st.year0 ??= new Date().getFullYear();
+	// nothing pauses any more: a building paused in an older save works again
+	for (const b of Object.values(st.buildings ?? {})) if (b) delete b.paused;
 	const size = `${st.W}x${st.H}`;
 	if (!plans.has(size)) plans.set(size, makePlan(g));
 	const plan = /** @type {ReturnType<typeof makePlan>} */ (plans.get(size));
@@ -381,7 +383,7 @@ export function createSim(st) {
 			id: newId(), type, node, flag: flag.id, owner, stage: live ? 'live' : 'site', since: st.time,
 			cost: { ...t.cost }, used: /** @type {Record<string, number>} */ ({}), got: /** @type {Record<string, number>} */ ({}), inc: /** @type {Record<string, number>} */ ({}),
 			builder: 0, worker: 0, slots: (t.inputs ?? []).map(() => ({ have: 0, inc: 0 })),
-			timer: 0, out: 0, paused: false, status: live ? '' : 'Waiting for a builder', eff: 0,
+			timer: 0, out: 0, status: live ? '' : 'Waiting for a builder', eff: 0,
 			stock: /** @type {Record<string, number>} */ ({}), settlers: 0, deposit: 0, fields: 0, level: 0,
 			/** a village center's: what is on its way to it along the trade routes */
 			coming: /** @type {Record<string, number>} */ ({}),
@@ -598,7 +600,7 @@ export function createSim(st) {
 		if (b.stage === 'site' && b.owner === PLAYER) return [];
 		if (b.stage === 'site') return Object.keys(b.cost).map((w) => ({ types: [w], slot: -1, n: b.cost[w] - b.used[w] - b.got[w] - b.inc[w] }));
 		if (b.stage !== 'live') return [];
-		if (b.paused || !b.worker) return [];
+		if (!b.worker) return [];
 		return (t.inputs ?? []).map((/** @type {string[]} */ types, /** @type {number} */ k) => ({ types, slot: k, n: SLOT_CAP - b.slots[k].have - b.slots[k].inc }));
 	}
 	function claim(/** @type {any} */ w, /** @type {any} */ b, /** @type {number} */ slot) {
@@ -942,7 +944,6 @@ export function createSim(st) {
 			}
 			if (b.out > 0 && !flushOutput(b, /** @type {string} */ (t.out))) b.status = 'Its stop is full';
 			else if (b.timer > 0) b.status = 'Working';
-			else if (b.paused) b.status = 'Paused';
 			else if (t.ore && b.deposit <= 0) b.status = 'The vein is used up';
 			else if (RECIPES[b.type] && !loadsRound(b.type, levelOf(b))) {
 				// a first stage that only gets its land ready (a sand pit): it makes nothing until it is upgraded
@@ -966,7 +967,6 @@ export function createSim(st) {
 			// a gatherer: rest, then out into the land
 			if (b.out > 0 && !flushOutput(b, /** @type {string} */ (t.out))) b.status = 'Its stop is full';
 			else if (b.timer > 0) b.timer -= dt;
-			else if (b.paused) b.status = 'Paused';
 			else if (t.out && stocked(t.out) >= ENOUGH && !exported(t.out) && !(b.type === 'woodcutter' && woodLevel(b) === 1)) {
 				b.status = 'Resting: the storehouses are full of it';
 				b.timer = 3;
@@ -2346,10 +2346,6 @@ export function createSim(st) {
 			st.objV++;
 			return { ok: true };
 		},
-		pause(/** @type {number} */ id, /** @type {boolean} */ paused) {
-			const b = st.buildings[id];
-			if (b && b.owner === PLAYER) b.paused = paused;
-		},
 		/** buy wares from the world market for the village a node lies in: its treasury pays, never into debt, and they
 		 * are in its storehouse at once */
 		buy(/** @type {number} */ node, /** @type {string} */ w, n = 1) {
@@ -2668,7 +2664,6 @@ export function createSim(st) {
 				out: t.out ?? '',
 				worker: t.worker ?? '',
 				hasWorker: !!worker && worker.job !== 'w-go',
-				paused: b.paused,
 				eff: Math.round(b.eff * 100),
 				deposit: b.deposit,
 				kind: t.kind,

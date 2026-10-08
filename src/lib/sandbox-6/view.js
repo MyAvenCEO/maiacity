@@ -625,7 +625,7 @@ export function createView(scene, sim) {
 				recolour(s.model, b.owner);
 				s.owner = b.owner;
 			}
-			const busy = b.stage === 'live' && b.timer > 0 && !b.paused;
+			const busy = b.stage === 'live' && b.timer > 0;
 			for (const sm of s.smoke) {
 				sm.visible = busy;
 				if (busy)

@@ -506,9 +506,6 @@
 					</ul>
 					{#if linkWhy}<p class="status">{linkWhy}</p>{/if}
 				{/if}
-				{#if ownCentre}
-					<div class="actions"><button onclick={() => game?.setMode('road')}>Path from here</button></div>
-				{/if}
 				<p class="people small">Year {summary.date.year} · month {summary.date.month} · day {summary.date.day} · {summary.people} people · {summary.villages} {summary.villages === 1 ? 'village' : 'villages'}</p>
 			</section>
 		</aside>
@@ -630,11 +627,9 @@
 				<p class="label">Busy <b>{card.eff}%</b></p>
 				<div class="bar"><span style:width="{card.eff}%"></span></div>
 			{/if}
-			{#if card.owner === PLAYER}
+			{#if card.owner === PLAYER && card.type !== 'centre'}
 				<div class="actions">
-					{#if card.stage === 'live' && card.worker}<button onclick={() => (game?.sim.pause(card?.id ?? 0, !card?.paused), refresh())}>{card.paused ? 'Resume' : 'Pause'}</button>{/if}
-					<button onclick={() => game?.setMode('road')}>Path from here</button>
-					{#if card.type !== 'centre'}<button class="danger" onclick={() => (game?.sim.demolish(card?.node ?? -1), game?.select(null))}>Tear down</button>{/if}
+					<button class="danger" onclick={() => (game?.sim.demolish(card?.node ?? -1), game?.select(null))}>Tear down</button>
 				</div>
 			{/if}
 		</section>
@@ -649,7 +644,6 @@
 			</ul>
 			{#if flagCard.owner === PLAYER}
 				<div class="actions">
-					<button onclick={() => game?.setMode('road')}>Path from here</button>
 					<button class="danger" onclick={() => (game?.sim.demolish(selected?.node ?? -1), game?.select(null))}>Tear down</button>
 				</div>
 			{/if}
