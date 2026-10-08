@@ -39,6 +39,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 
 use rand_core::Rng as _;
 use serde_json::Value;
+use zeroize::Zeroizing;
 
 use crate::branch::{Commit, Draft, History, MAIN};
 use crate::doc::{Item, Version};
@@ -278,10 +279,12 @@ pub struct Lab {
     server_signers: Option<(SignerId, SignerId)>,
     /// Keys made so far; each key's seed counts on from here.
     made: u64,
-    /// The randomness of new keys, seals and nonces.
+    /// The randomness of new keys, seals and nonces, which keeps nothing that draws again what it drew
+    /// (`keys::SeededRng`).
     rng: SeededRng,
-    /// For a device split off to run on its own (`split`), bytes of its own that every key it makes derives from too.
-    entropy: Option<[u8; 32]>,
+    /// A Lab on a machine of its own (`with_entropy`, `split`): every key it makes draws from its randomness too, so
+    /// that no two machines make the same keys under the same name.
+    on_machine: bool,
     spares: Spares,
     /// No device trusts the curves anymore: each counts only checkpointed writes.
     pq_only: bool,
@@ -302,12 +305,12 @@ impl Lab {
 
     /// A Lab on a machine of its own, for the one device it runs (P8b): its randomness, and every key it makes,
     /// drawn from `seed` too, 32 bytes of the machine's own randomness, so that no two machines make the same keys or
-    /// nonces.
+    /// nonces. It keeps the seed no longer than it takes to seed its randomness.
     pub fn with_entropy(seed: [u8; 32]) -> Lab {
-        Lab::seeded(Some(seed))
+        Lab::seeded(Some(Zeroizing::new(seed)))
     }
 
-    fn seeded(entropy: Option<[u8; 32]>) -> Lab {
+    fn seeded(entropy: Option<Zeroizing<[u8; 32]>>) -> Lab {
         let mut lab = Lab {
             keys: HashMap::new(),
             names: HashMap::new(),
@@ -318,7 +321,7 @@ impl Lab {
             server_signers: None,
             made: 0,
             rng: SeededRng::new("lab randomness", entropy.as_ref().map_or(&[][..], |e| &e[..])),
-            entropy,
+            on_machine: entropy.is_some(),
             spares: Spares::default(),
             pq_only: false,
             offline: HashSet::new(),
@@ -345,13 +348,16 @@ impl Lab {
         &self.devices
     }
 
-    /// The seed of the next key the Lab makes: the Lab is deterministic, so a failing test replays exactly.
+    /// The seed of the next key the Lab makes: the Lab is deterministic, so a failing test replays exactly. On a
+    /// machine of its own, drawn from its randomness too.
     fn seed(&mut self, what: &str, name: &str) -> Reader {
         self.made += 1;
         let mut h = Hasher::new("lab key");
         h.update(&self.made.to_be_bytes()).update(&(what.len() as u32).to_be_bytes()).update(what.as_bytes()).update(name.as_bytes());
-        if let Some(e) = &self.entropy {
-            h.update(e);
+        if self.on_machine {
+            let mut drawn = Zeroizing::new([0u8; 32]);
+            self.rng.fill_bytes(&mut *drawn);
+            h.update(&*drawn);
         }
         h.reader()
     }
@@ -470,13 +476,26 @@ impl Lab {
         (device, owner_id)
     }
 
-    /// Lock device `d`: its keys, and every key and item they opened, leave its memory. Its ops and their ciphertext
-    /// stay, and it still receives and passes on ops.
+    /// Lock device `d`: its keys, and every key and item they opened, leave its memory, each key wiped. So does the
+    /// secret half of each of their McEliece pairs that nothing else here holds (`keys::forget_pairs`): another
+    /// signer's own key, a key another device opened, or a spare. Its ops and their ciphertext stay, and it still
+    /// receives and passes on ops.
     pub fn lock(&mut self, d: SignerId) {
-        self.keys.remove(&d);
+        let mut gone: BTreeSet<KeyId> = self.keys.remove(&d).map(|k| k.seal_secret().id()).into_iter().collect();
         let store = self.stores.get_mut(&d).unwrap_or_else(|| panic!("{d:?} is no device of the Lab"));
+        gone.extend(store.keys.keys());
         store.keys.clear();
         store.shown.clear();
+        for key in self.keys.values() {
+            gone.remove(&key.seal_secret().id());
+        }
+        for id in self.stores.values().flat_map(|store| store.keys.keys()) {
+            gone.remove(id);
+        }
+        for spare in &self.spares.keys {
+            gone.remove(&spare.id());
+        }
+        keys::forget_pairs(gone);
     }
 
     /// Unlock device `d` with the passkey its keys derive from: they derive again, and it opens again what its ops hold
@@ -486,6 +505,9 @@ impl Lab {
         let Some(Key::Passkey(p)) = self.keys.get(&passkey) else { return false };
         let key = p.device(nonce);
         assert_eq!(key.id(), d, "the same passkey and salt derive the same device");
+        // its own key, which only the passkey derives again, reseeds the randomness: a copy of the Lab's memory taken
+        // while the device was locked doesn't foresee what it draws now
+        self.rng.reseed(key.seal_secret().as_bytes());
         self.keys.insert(d, Key::Device(key));
         self.refresh(d, &[]);
         true
@@ -989,6 +1011,14 @@ impl Lab {
         self.held(d).signed.get(&op)
     }
 
+    /// Every secret signer `s` holds here, to search views, logs and stores for secrets that shouldn't be there: its
+    /// own key, the one keys are sealed to for it, then, for a device, each key it opened. None while it is locked.
+    pub fn secrets(&self, s: SignerId) -> Vec<Secret> {
+        let Some(key) = self.keys.get(&s) else { return vec![] };
+        let opened = self.stores.get(&s).into_iter().flat_map(|store| store.keys.values().map(|o| o.secret.clone()));
+        std::iter::once(key.seal_secret()).chain(opened).collect()
+    }
+
     /// Every byte device `d` stores, to search for plaintext that shouldn't be there: its signed ops, the keys it
     /// opened, and the items it shows, as their content reads. The McEliece public keys it holds are left out: public,
     /// and a megabyte each.
@@ -1136,7 +1166,8 @@ impl Lab {
         self.devices.retain(|&x| x != d);
         let keys = [d].iter().chain(with).filter_map(|s| Some((*s, self.keys.remove(s)?))).collect();
         let salts = self.salts.remove(&d).map(|salt| (d, salt)).into_iter().collect();
-        let mut rng = SeededRng::new("lab randomness", &seed);
+        let seed = Zeroizing::new(seed);
+        let mut rng = SeededRng::new("lab randomness", &*seed);
         let mut spares = Spares { keys: VecDeque::new(), keep: self.spares.keep };
         spares.fill(&mut rng);
         Lab {
@@ -1149,7 +1180,7 @@ impl Lab {
             server_signers: self.server_signers,
             made: 0,
             rng,
-            entropy: Some(seed),
+            on_machine: true,
             spares,
             pq_only: self.pq_only,
             offline: HashSet::new(),
@@ -1157,7 +1188,7 @@ impl Lab {
     }
 
     /// The secret of device `d`'s iroh endpoint, its ed25519 key: `None` while it is locked.
-    pub fn endpoint_secret(&self, d: SignerId) -> Option<[u8; 32]> {
+    pub fn endpoint_secret(&self, d: SignerId) -> Option<Zeroizing<[u8; 32]>> {
         match self.keys.get(&d)? {
             Key::Device(k) => Some(k.endpoint_secret()),
             Key::Passkey(_) => None,

@@ -26,6 +26,7 @@ use p256::ecdsa::signature::Verifier as _;
 use sha2::{Digest, Sha256};
 use slh_dsa::Sha2_128f;
 use slh_dsa::signature::Keypair as _;
+use zeroize::{ZeroizeOnDrop, Zeroizing};
 
 use crate::hash::{self, Hasher};
 use crate::id::{OpId, SignerId};
@@ -320,7 +321,7 @@ pub fn base64url(bytes: &[u8]) -> String {
 fn slh_key(purpose: &str, secret: &[u8; 32]) -> slh_dsa::SigningKey<Sha2_128f> {
     let mut h = Hasher::new(purpose);
     h.update(secret);
-    let seeds: [u8; 48] = h.reader().array();
+    let seeds: Zeroizing<[u8; 48]> = Zeroizing::new(h.reader().array());
     slh_dsa::SigningKey::slh_keygen_internal(&seeds[..16], &seeds[16..32], &seeds[32..])
 }
 
@@ -333,19 +334,34 @@ fn slh_public(key: &slh_dsa::SigningKey<Sha2_128f>) -> [u8; 32] {
 }
 
 /// A device's keys: ed25519, the same key as its iroh endpoint, so a connection proves which device is talking; its
-/// SLH-DSA key; and the key keys are sealed to for it. All three derive from 32 secret bytes.
+/// SLH-DSA key; and the key keys are sealed to for it. All three derive from 32 secret bytes, and each wipes itself as
+/// it is dropped.
 pub struct DeviceKey {
     ed25519: ed25519_dalek::SigningKey,
     slh: slh_dsa::SigningKey<Sha2_128f>,
     seal: Secret,
 }
 
+impl ZeroizeOnDrop for DeviceKey {}
+
+/// Compiles only while every key a `DeviceKey` or a `Passkey` holds wipes itself as it is dropped, as their
+/// `ZeroizeOnDrop` says.
+const _: fn() = || {
+    fn wipes<T: ZeroizeOnDrop>() {}
+    wipes::<ed25519_dalek::SigningKey>();
+    wipes::<slh_dsa::SigningKey<Sha2_128f>>();
+    wipes::<p256::ecdsa::SigningKey>();
+    wipes::<Secret>();
+};
+
 impl DeviceKey {
     /// A device's keys from 32 secret bytes: its passkey's PRF output on the device's salt (`Passkey::device`), or, for
     /// the server, bytes of its own.
     pub fn from_secret(secret: [u8; 32]) -> Self {
+        let secret = Zeroizing::new(secret);
+        let ed25519 = Zeroizing::new(hash::keyed(&secret, "device ed25519 key", b""));
         Self {
-            ed25519: ed25519_dalek::SigningKey::from_bytes(&hash::keyed(&secret, "device ed25519 key", b"")),
+            ed25519: ed25519_dalek::SigningKey::from_bytes(&ed25519),
             slh: slh_key("device slh-dsa key", &secret),
             seal: Secret::derive("device seal key", &secret),
         }
@@ -375,8 +391,8 @@ impl DeviceKey {
     }
 
     /// The secret of the device's iroh endpoint: its ed25519 key's, as iroh takes it.
-    pub fn endpoint_secret(&self) -> [u8; 32] {
-        self.ed25519.to_bytes()
+    pub fn endpoint_secret(&self) -> Zeroizing<[u8; 32]> {
+        Zeroizing::new(self.ed25519.to_bytes())
     }
 
     /// The classical half alone, as whoever broke the device's ed25519 key holds it: it signs writes, which carry no
@@ -393,7 +409,7 @@ impl DeviceKey {
 
 /// A passkey as the Lab and the tests hold it: a software authenticator answering `navigator.credentials.get` with
 /// the user present and verified, and the PRF extension. A real one lives in the platform's keychain and signs the
-/// same way.
+/// same way. Its keys wipe themselves as it is dropped.
 pub struct Passkey {
     key: p256::ecdsa::SigningKey,
     counter: u32,
@@ -401,16 +417,18 @@ pub struct Passkey {
     slh: slh_dsa::SigningKey<Sha2_128f>,
 }
 
+impl ZeroizeOnDrop for Passkey {}
+
 impl Passkey {
     /// A passkey whose private key derives from `seed`.
     pub fn from_seed(seed: [u8; 32]) -> Self {
-        let mut bytes = seed;
+        let mut bytes = Zeroizing::new(seed);
         let key = loop {
             // a seed outside the curve's scalar range is about 2^-32 likely; hash on until one fits
-            if let Ok(key) = p256::ecdsa::SigningKey::from_slice(&bytes) {
+            if let Ok(key) = p256::ecdsa::SigningKey::from_slice(&*bytes) {
                 break key;
             }
-            bytes = hash::hash("software passkey seed", &bytes);
+            *bytes = hash::hash("software passkey seed", &*bytes);
         };
         let mut passkey = Self { key, counter: 0, slh: slh_key("passkey slh-dsa key", &[0; 32]) };
         passkey.slh = slh_key("passkey slh-dsa key", &passkey.prf(PRF_SALT));
@@ -465,11 +483,11 @@ impl Passkey {
     /// WebAuthn's PRF extension: 32 bytes the authenticator alone computes from `salt`, in the same ceremony as an
     /// assertion. The browser hashes the salt with the label "WebAuthn PRF" and the authenticator answers with its
     /// `hmac-secret` over that hash; this one uses a keyed SHA-3 hash with a secret of its own instead of HMAC.
-    pub fn prf(&self, salt: &[u8]) -> [u8; 32] {
+    pub fn prf(&self, salt: &[u8]) -> Zeroizing<[u8; 32]> {
         let hashed = sha256(&[&b"WebAuthn PRF\0"[..], salt].concat());
-        let scalar: [u8; 32] = self.key.to_bytes().into();
-        let cred_random = hash::keyed(&scalar, "software passkey credential", b"");
-        hash::keyed(&cred_random, "software passkey prf", &hashed)
+        let scalar: Zeroizing<[u8; 32]> = Zeroizing::new(self.key.to_bytes().into());
+        let cred_random = Zeroizing::new(hash::keyed(&scalar, "software passkey credential", b""));
+        Zeroizing::new(hash::keyed(&cred_random, "software passkey prf", &hashed))
     }
 
     /// The key keys are sealed to for this passkey, derived from its PRF output on `PRF_SALT`: a device that uses the
@@ -481,7 +499,7 @@ impl Passkey {
     /// The keys of the device whose salt ends in `nonce`, derived from the passkey's PRF output on that salt, as the
     /// device derives them at every unlock.
     pub fn device(&self, nonce: [u8; 32]) -> DeviceKey {
-        DeviceKey::from_secret(self.prf(&[DEVICE_SALT, &nonce[..]].concat()))
+        DeviceKey::from_secret(*self.prf(&[DEVICE_SALT, &nonce[..]].concat()))
     }
 }
 

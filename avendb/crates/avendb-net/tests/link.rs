@@ -153,7 +153,7 @@ async fn a_node_hands_its_card_for_a_passkeys_hello_on_that_very_connection_alon
     let (mac_s, mac_b, passkey_s, samuel) = (w.mac_s, w.mac_b, w.passkey_s, w.samuel);
     let mac = node(&mut w, mac_s, &[], 1).await;
     // the new iPhone by hand: its keys and the passkey stay in the Lab
-    let raw = client(w.lab.endpoint_secret(new).expect("its key")).await;
+    let raw = client(*w.lab.endpoint_secret(new).expect("its key")).await;
     let conn = raw.connect(mac.addr(), ALPN).await.expect("it connects");
     let exporter = exporter(&conn).expect("an exporter");
     let (mut send, mut recv) = conn.open_bi().await.expect("a stream");

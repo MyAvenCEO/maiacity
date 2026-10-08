@@ -1,0 +1,105 @@
+// The hello every avenDB connection opens with (P8a; crates/avendb-net/src/session.rs, crates/avendb/src/sign.rs
+// `Hello`). iroh's TLS 1.3 agrees its key by X25519MLKEM768, an X25519 share and an ML-KEM-768 encapsulation, and
+// each end proves its endpoint by its ed25519 key, the device's own. On top of that, each device signs the
+// connection's TLS exporter and which end it is (the dialer or the listener) with its SLH-DSA key, and the other end
+// serves it nothing before that hello checks.
+//
+// Expected: c0c1a0a0
+//
+// The curves fall from the start (`PUBKEY[weak]`): X25519, and ed25519, so the attacker can sign as either endpoint
+// and stand in the middle of the TLS handshake, two connections where the devices think there is one. ML-KEM-768 and
+// SLH-DSA hold. Samuel's Mac answers his iPhone's connection twice: first with what a node would serve on TLS alone
+// (`unchecked`), then, once the iPhone's hello checks, with what avenDB serves (`served`). The attacker reads the
+// first and not the second: the hello is what keeps the connection the devices' own. And each hello the other end
+// takes is the device's own, said on this connection for its own end.
+//
+// Modeling notes. Each device knows the other's keys from its vault's log, whose ops are signed, and the iPhone dials
+// the endpoint the Mac's device id names: guarded transfers. The handshake is TLS 1.3's in outline: its transcript is
+// the four key shares, the CertificateVerify of each end signs it, and the keys and the exporter come from the
+// handshake secret and the transcript. The hello travels in TLS; here it travels in the clear, as the authentication
+// queries ask about values on the wire, and what the attacker learns from a hello is no secret.
+
+attacker[active]
+
+principal Phone[
+	knows public tls, dialer, listener
+	knows private ph_ed, ph_slh
+	ph_ed_pk = PUBKEY[weak](ph_ed)
+	ph_slh_pk = PUBKEY(ph_slh)
+]
+
+principal Macbook[
+	knows public tls, dialer, listener
+	knows private mac_ed, mac_slh
+	mac_ed_pk = PUBKEY[weak](mac_ed)
+	mac_slh_pk = PUBKEY(mac_slh)
+	generates unchecked, served
+]
+
+Phone -> Macbook: [ph_ed_pk], [ph_slh_pk]
+Macbook -> Phone: [mac_ed_pk], [mac_slh_pk]
+
+principal Phone[
+	// ClientHello: a fresh X25519 share and a fresh ML-KEM-768 encapsulation key
+	generates ph_x, ph_kem
+	ph_x_pk = PUBKEY[weak](ph_x)
+	ph_kem_pk = PUBKEY(ph_kem)
+]
+
+Phone -> Macbook: ph_x_pk, ph_kem_pk
+
+principal Macbook[
+	// ServerHello: its X25519 share and the ML-KEM ciphertext; the handshake secret takes both shared secrets
+	generates mac_x, kem_r
+	mac_x_pk = PUBKEY[weak](mac_x)
+	m_ss, m_ct = KEM_ENCAP(ph_kem_pk, kem_r)
+	m_transcript = HASH(ph_x_pk, ph_kem_pk, mac_x_pk, m_ct)
+	m_up, m_down, m_exporter = HKDF(HASH(DH_KEX(ph_x_pk, mac_x), m_ss), m_transcript, tls)
+	m_cv = SIGN(mac_ed, m_transcript)
+]
+
+Macbook -> Phone: mac_x_pk, m_ct, m_cv
+
+principal Phone[
+	p_ss = KEM_DECAP(ph_kem, m_ct)
+	p_transcript = HASH(ph_x_pk, ph_kem_pk, mac_x_pk, m_ct)
+	_ = SIGNVERIF(mac_ed_pk, p_transcript, m_cv)?
+	p_up, p_down, p_exporter = HKDF(HASH(DH_KEX(mac_x_pk, ph_x), p_ss), p_transcript, tls)
+	p_cv = SIGN(ph_ed, p_transcript)
+	// its hello: this connection's exporter, and that it dialed
+	p_hello = SIGN(ph_slh, CONCAT(p_exporter, dialer))
+]
+
+Phone -> Macbook: p_cv, p_hello
+
+principal Macbook[
+	_ = SIGNVERIF(ph_ed_pk, m_transcript, p_cv)?
+	// what a node would serve on TLS alone
+	generates n_unchecked
+	m_unchecked = AEAD_ENC(m_down, n_unchecked, unchecked, nil)
+]
+
+Macbook -> Phone: n_unchecked, m_unchecked
+
+principal Macbook[
+	_ = SIGNVERIF(ph_slh_pk, CONCAT(m_exporter, dialer), p_hello)?
+	// its own hello back, for the listening end, then what it serves the iPhone
+	m_hello = SIGN(mac_slh, CONCAT(m_exporter, listener))
+	generates n_served
+	m_served = AEAD_ENC(m_down, n_served, served, nil)
+]
+
+Macbook -> Phone: m_hello, n_served, m_served
+
+principal Phone[
+	_ = SIGNVERIF(mac_slh_pk, CONCAT(p_exporter, listener), m_hello)?
+	p_unchecked = AEAD_DEC(p_down, n_unchecked, m_unchecked, nil)
+	p_served = AEAD_DEC(p_down, n_served, m_served, nil)?
+]
+
+queries[
+	confidentiality? served
+	confidentiality? unchecked
+	authentication? Phone -> Macbook: p_hello
+	authentication? Macbook -> Phone: m_hello
+]

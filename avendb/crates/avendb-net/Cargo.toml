@@ -22,6 +22,8 @@ tracing = "0.1"
 getrandom = "0.3"
 # an offer's text, for a QR code (iroh's own version)
 data-encoding = "2.11"
+# the server's secrets and a node's endpoint key, wiped as they are dropped (P8c)
+zeroize = "1.8"
 
 [dev-dependencies]
 tokio = { version = "1.44", features = ["rt-multi-thread", "macros", "sync", "time", "test-util"] }

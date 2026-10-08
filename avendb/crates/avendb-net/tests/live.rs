@@ -166,11 +166,11 @@ async fn a_peer_that_offers_classical_key_exchange_alone_doesnt_connect() {
     let secret = w.lab.endpoint_secret(mac_b).expect("Bob's Mac's key");
     let mut classical = rustls::crypto::aws_lc_rs::default_provider();
     classical.kx_groups = vec![rustls::crypto::aws_lc_rs::kx_group::X25519];
-    let old = client(secret, Arc::new(classical)).await;
+    let old = client(*secret, Arc::new(classical)).await;
     let refused = old.connect(mac.addr(), ALPN).await.err().map(|e| format!("{e:?}"));
     let why = refused.expect("Bob's Mac with X25519 alone doesn't connect");
     assert!(why.contains("NoKxGroupsInCommon"), "as they have no key exchange in common: {why}");
-    let new = client(secret, pq_provider()).await;
+    let new = client(*secret, pq_provider()).await;
     let hello = Box::new(|e: &[u8; 32]| w.lab.hello(mac_b, e, true).expect("Bob's Mac's hello").to_wire());
     let (answer, _) = say_hello(&new, &mac, hello).await;
     assert!(answer.is_some(), "with X25519MLKEM768 it does, and is served");
@@ -182,7 +182,7 @@ async fn a_connection_is_served_only_once_its_hello_proves_its_device() {
     let (mac_s, passkey_s, mac_b, mac_c) = (w.mac_s, w.passkey_s, w.mac_b, w.mac_c);
     let mac = node(&mut w, mac_s, &[passkey_s], 1).await;
     // Bob's Mac by hand: its keys stay in the Lab
-    let raw = client(w.lab.endpoint_secret(mac_b).expect("Bob's Mac's key"), pq_provider()).await;
+    let raw = client(*w.lab.endpoint_secret(mac_b).expect("Bob's Mac's key"), pq_provider()).await;
     let lab = &w.lab;
     let hello = |d, dialer| move |e: &[u8; 32]| lab.hello(d, e, dialer).expect("a hello").to_wire();
     let (answer, exporter) = say_hello(&raw, &mac, Box::new(hello(mac_b, true))).await;
