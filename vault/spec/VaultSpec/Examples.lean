@@ -50,7 +50,7 @@ def accepted (ops : List Op) (op : Op) : Bool := (step (view ops) op).isSome
 
 def opens' (ops : List Op) (d : SignerId) (k : KeyScope) : Bool :=
   let st := view ops
-  knows st [.device d] (st.curKey k)
+  knows st [.signer d] (st.curKey k)
 
 /-- The ops of a scenario that don't stand, in the order every peer replays them. Replay skips a refused op without
     a word, so every scenario checks which ones it expects. -/
@@ -74,6 +74,8 @@ def s1 : List Op := chain 1 [
 #guard refused s1 == []
 
 #guard ((view s1).vault? samuel).map (·.devices) == some [macS, phoneS]
+-- the vault key opens on both devices, and with the key derived from the passkey alone
+#guard opens' s1 macS (.vault samuel) && opens' s1 phoneS (.vault samuel) && opens' s1 passkeyS (.vault samuel)
 -- the Mac acts for Samuel's vault but can't add a device on its own
 #guard actsFor (view s1) macS samuel
 #guard !accepted s1 (attempt macS [77] (.addDevice samuel 77))
@@ -247,6 +249,37 @@ def s16 : List Op := s16a ++ chain 120 [
 #guard !opens' s16 macB (.entry todos door) && !opens' s16 macD (.entry todos door)
 #guard opens' s16 macC (.entry todos door) && opens' s16 macS (.entry todos door)
 #guard !accepted s16 (attempt macB [] (.write todos door coop 1))
+
+/-! ## Keys ops carry only the boxes the schedule seals -/
+
+-- Samuel's Mac boxes Welcome's key to the Handbook key; Carol's Mac, which can't open it, can't box it
+#guard accepted s5 (attempt macS [] (.keys (.entry handbook welcome) 0 [.scoped (.space handbook) 0]))
+#guard !accepted s5 (attempt macC [] (.keys (.entry handbook welcome) 0 []))
+-- a box the schedule doesn't seal is refused, and so is a key of an epoch that doesn't exist yet
+#guard !accepted s5 (attempt macS [] (.keys (.entry handbook welcome) 0 [.signer macC]))
+#guard !accepted s5 (attempt macS [] (.keys (.entry handbook welcome) 1 []))
+-- only a public key is published
+#guard !accepted s5 (attempt macS [] (.keys (.entry handbook welcome) 0 [] true))
+#guard accepted s7 (attempt macS [] (.keys (.entry handbook charter) 0 [] true))
+
+/-! ## A coop that stops reading rotates the key, though its members still read
+
+Samuel's second coop reads his Notes, then stops. Samuel still reads Notes as its founder, but the coop's key would
+carry the Notes key to whoever joins the coop later, so the key rotates. Bob joins and opens only the old key: a
+vault's newcomers inherit what it could read. -/
+
+def coop2 := 202
+def gap : List Op := s4 ++ chain 190 [
+  (passkeyS, [], .genesis coop2 .coop [.vault samuel] 1),
+  (macS, [], .grant { id := 20, scope := .space notes, role := .read, grantee := .principal (.vault coop2),
+                       issuer := samuel, parent := none }),
+  (macS, [], .revoke 20 samuel []),
+  (passkeyS, [passkeyB], .addOwner coop2 (.vault bob))]
+#guard refused gap == []
+
+#guard (view gap).epochOf (.space notes) == (view s4).epochOf (.space notes) + 1
+#guard !opens' gap macB (.space notes) && opens' gap macS (.space notes)
+#guard knows (view gap) [.signer macB] (.scoped (.space notes) 0)
 
 /-! ## Scenario 17: each todo syncs on its own -/
 

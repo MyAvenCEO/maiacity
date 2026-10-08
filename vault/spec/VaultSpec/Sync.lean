@@ -33,8 +33,8 @@ def Op.writeTarget? (op : Op) : Option (SpaceId × EntryId) :=
   | .write sp e .. => some (sp, e)
   | _ => none
 
-/-- The scope an auth op is about: a space's founding, a grant's scope, or for a revocation the scope of the grant
-    it revokes, looked up among `ops`. -/
+/-- The scope an auth op is about: a space's founding, a grant's scope, for a revocation the scope of the grant it
+    revokes, looked up among `ops`, or the scope of a space or entry key. -/
 def Op.authScope? (ops : List Op) (op : Op) : Option Scope :=
   match op.action with
   | .foundSpace sp _ => some (.space sp)
@@ -42,13 +42,14 @@ def Op.authScope? (ops : List Op) (op : Op) : Option Scope :=
   | .revoke gid _ _ => ops.findSome? fun o => match o.action with
     | .grant g => if g.id == gid then some g.scope else none
     | _ => none
+  | .keys k .. => k.scope?
   | _ => none
 
-/-- The vault a vault op changes. -/
+/-- The vault a vault op changes, or whose key it carries. -/
 def Op.vaultOf? (op : Op) : Option VaultId :=
   match op.action with
   | .genesis v .. | .addOwner v .. | .removeOwner v .. | .setThreshold v .. | .addDevice v .. | .removeDevice v ..
-  | .setRoot v .. => some v
+  | .setRoot v .. | .keys (.vault v) .. => some v
   | _ => none
 
 /-- The vault an op acts for. -/

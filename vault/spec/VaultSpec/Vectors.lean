@@ -14,9 +14,8 @@ cut what they hadn't seen. The Rust core must give the same answer for every cas
 
 The Rust core names what an op creates (a vault, a space, a grant) by the hash of that op, and orders ops of the same
 depth and rank by that hash, where the model picks numbers: the Rust side maps each number to what its op created, so
-every number is used once per case and no two ops of a view case share a depth and a rank. Keys come in P3: until
-then the Rust core keeps every key at epoch 0, so the cases write under epoch 0 except to show that a later epoch is
-refused.
+every number is used once per case and no two ops of a view case share a depth and a rank. The state includes the
+key schedule: each family's epoch where it isn't 0, every seal, and every published key.
 -/
 
 namespace VaultSpec.Vectors
@@ -213,7 +212,41 @@ def cases : List Case := [
     (1, [], .revoke 12 100 []),
     (5, [], .write 12 21 200 0 [8]),
     (2, [], .revoke 99 100 []),
-    (2, [], .revoke 14 100 [])] }]
+    (2, [], .revoke 14 100 [])] },
+  { name := "keys go only where the schedule seals them", ops := humans ++ [
+    (1, [4], .genesis 200 .coop [.vault 100, .vault 101] 2),
+    (2, [], .foundSpace 10 200),
+    (2, [], .write 10 1 200 0),
+    -- Samuel's Mac boxes each key to what the schedule seals it to: Welcome's to the Handbook's, the Handbook's to
+    -- the coop's, the coop's to its owners', and his vault's to his passkey and his Mac
+    (2, [], .keys (.entry 10 1) 0 [.scoped (.space 10) 0]),
+    (2, [], .keys (.space 10) 0 [.scoped (.vault 200) 0]),
+    (2, [], .keys (.vault 200) 0 [.scoped (.vault 100) 0, .scoped (.vault 101) 0]),
+    (2, [], .keys (.vault 100) 0 [.signer 1, .signer 2]),
+    -- and nowhere else: not to a device directly, not to Bob's Mac
+    (2, [], .keys (.entry 10 1) 0 [.signer 2]),
+    (2, [], .keys (.vault 100) 0 [.signer 5]),
+    -- only a signer that may open a key boxes it
+    (5, [], .keys (.vault 100) 0 []),
+    (6, [], .keys (.entry 10 1) 0 []),
+    -- no key of an epoch or a family that doesn't exist, and nothing published that isn't public
+    (2, [], .keys (.entry 10 1) 1 []),
+    (2, [], .keys (.entry 10 9) 0 []),
+    (2, [], .keys (.entry 10 1) 0 [] true),
+    -- Carol may read Welcome: it is boxed to her vault's key, by Samuel's Mac or by her own passkey
+    (2, [], g 1 (.entry 10 1) .read (toVault 102) 200),
+    (2, [], .keys (.entry 10 1) 0 [.scoped (.vault 102) 0]),
+    (6, [], .keys (.entry 10 1) 0 [.scoped (.vault 102) 0]),
+    -- Welcome goes public: its key is published
+    (2, [], g 2 (.entry 10 1) .read .«public» 200),
+    (2, [], .keys (.entry 10 1) 0 [] true),
+    -- revoking Carol rotates nothing while Welcome is public; making it private again does
+    (2, [], .revoke 1 200 []),
+    (2, [], .revoke 2 200 []),
+    (2, [], .keys (.entry 10 1) 1 [.scoped (.space 10) 0]),
+    (2, [], .keys (.entry 10 1) 0 [.scoped (.entry 10 1) 1]),
+    (6, [], .keys (.entry 10 1) 1 []),
+    (2, [], .keys (.entry 10 1) 1 [.scoped (.vault 102) 0])] }]
 
 /-- Samuel's, Bob's, Carol's and Dave's vaults, one op per depth. -/
 def humansV : List (Nat × SignerId × List SignerId × Action) := humans.zipIdx.map fun ((a, co, act), i) => (i, a, co, act)
@@ -276,7 +309,16 @@ def views : List ViewCase := [
     -- the old passkey, stolen later, adds a device on an old copy
     (2, 1, [555], .addDevice 100 555),
     (3, 1, [9], .setRoot 100 (some 9) [1]),
-    (4, 9, [], .removeOwner 100 (.signer 1) [1])] }]
+    (4, 9, [], .removeOwner 100 (.signer 1) [1])] },
+  { name := "a revoked reader's back-dated keys are cut", ops := humansV ++ [
+    (6, 1, [4], .genesis 200 .coop [.vault 100, .vault 101] 1),
+    (7, 2, [], .foundSpace 10 200),
+    (8, 2, [], .write 10 1 200 0),
+    (9, 2, [], g 1 (.entry 10 1) .read (toVault 102) 200),
+    -- Carol's passkey boxes Welcome's key twice; Samuel revokes her read having seen only the first
+    (10, 6, [], .keys (.entry 10 1) 0 [.scoped (.vault 102) 0]),
+    (11, 6, [], .keys (.entry 10 1) 0 [.scoped (.space 10) 0]),
+    (12, 2, [], .revoke 1 200 [10])] }]
 
 /-! ## JSON -/
 
@@ -318,6 +360,15 @@ def grant (x : Grant) : String :=
 
 def ids (xs : List Nat) : String := arr (xs.map nat)
 
+def keyScope : KeyScope → String
+  | .vault v    => obj [("vault", nat v)]
+  | .space sp   => obj [("space", nat sp)]
+  | .entry sp e => obj [("space", nat sp), ("entry", nat e)]
+
+def keyName : KeyName → String
+  | .signer s   => obj [("signer", nat s)]
+  | .scoped k e => obj [("key", keyScope k), ("epoch", nat e)]
+
 def action : Action → String
   | .genesis v k owners t root => obj [("genesis", obj [("vault", nat v), ("kind", kind k),
       ("owners", arr (owners.map principal)), ("threshold", nat t), ("root", opt nat root)])]
@@ -332,6 +383,8 @@ def action : Action → String
   | .revoke x a keep => obj [("revoke", obj [("grant", nat x), ("actor", nat a), ("keep", ids keep)])]
   | .write sp e a epoch deps => obj [("write", obj [("space", nat sp), ("entry", nat e), ("actor", nat a),
       ("epoch", nat epoch), ("deps", ids deps)])]
+  | .keys k epoch to pub => obj [("keys", obj [("key", keyScope k), ("epoch", nat epoch),
+      ("to", arr (to.map keyName)), ("public", bool pub)])]
 
 def vault (vt : Vault) : String :=
   obj [("id", nat vt.id), ("kind", kind vt.kind), ("owners", arr (vt.owners.map principal)),
@@ -344,10 +397,18 @@ def write (w : Write) : String :=
   obj [("op", nat w.op), ("author", nat w.author), ("actor", nat w.actor), ("space", nat w.space),
        ("entry", nat w.entry), ("epoch", nat w.epoch), ("deps", ids w.deps)]
 
+/-- Each family's epoch, where it isn't 0, in the order the families came to be. -/
+def epochs (st : State) : String :=
+  arr ((keyScopes st).filterMap fun k =>
+    if st.epochOf k == 0 then none else some (obj [("key", keyScope k), ("epoch", nat (st.epochOf k))]))
+
+def sealed (x : Seal) : String := obj [("secret", keyName x.secret), ("to", keyName x.to)]
+
 def state (st : State) : String :=
   str "vaults" ++ ": " ++ arr (st.vaults.map vault) ++ ",\n " ++ str "spaces" ++ ": " ++ arr (st.spaces.map space) ++
     ",\n " ++ str "grants" ++ ": " ++ arr (st.grants.map grant) ++ ",\n " ++ str "writes" ++ ": " ++
-    arr (st.writes.map write)
+    arr (st.writes.map write) ++ ",\n " ++ str "epochs" ++ ": " ++ epochs st ++ ",\n " ++ str "seals" ++ ": " ++
+    arr (st.seals.map sealed) ++ ",\n " ++ str "published" ++ ": " ++ arr (st.published.map keyName)
 
 def case (c : Case) : String :=
   let (accepted, st) := run c.ops

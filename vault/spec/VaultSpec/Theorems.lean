@@ -311,40 +311,75 @@ theorem T16_resolved_removals_stand (ops : List Op) :
 
 /-! ## Keys -/
 
-/-- T5 (confidentiality): after any history, a device can open a key of some epoch only if, at some point of that
-    history, it was entitled to the key's family, or the family was public, while the family's epoch was that one
-    or a later one. -/
-theorem T5_confidentiality (ops : List Op) (d : SignerId) (k : KeyScope) (e : Nat)
-    (h : Knows (replay {} ops) [.device d] (.scoped k e)) :
-    ∃ st ∈ trace {} ops, e ≤ st.epochOf k ∧ (entitled st d k = true ∨ publicKey st k = true) := by
+/-- Over the history `sts`, holder `h` could read key family `k` at some point: it was entitled to `k` then, `k` was
+    public then, or it was then entitled to the key of a vault that could read `k` at some point of the history,
+    before or after. Whoever joins a vault inherits what the vault could read. -/
+inductive EverReads (sts : List State) : Holder → KeyScope → Prop where
+  | entitled {h : Holder} {k : KeyScope} {st : State} : st ∈ sts → h.entitled st k = true → EverReads sts h k
+  | «public» {h : Holder} {k : KeyScope} {st : State} : st ∈ sts → publicKey st k = true → EverReads sts h k
+  | via {h : Holder} {v : VaultId} {k : KeyScope} {st : State} : st ∈ sts → h.entitled st (.vault v) = true →
+      EverReads sts (.vault v) k → EverReads sts h k
+
+/-- T5 (confidentiality): after any history, a holder (a signer, whoever holds a vault's key, or everyone) opens a
+    key of some family, of any epoch, only if over that history it could read the family. -/
+theorem T5_confidentiality (ops : List Op) (h : Holder) (k : KeyScope) (e : Nat)
+    (hk : Knows (replay {} ops) (h.start (replay {} ops)) (.scoped k e)) : EverReads (trace {} ops) h k := by
   sorry -- P3
 
-/-- T6 (forward secrecy): in every reachable state a device can open the current key of a family only while it is
-    entitled to it, or the family is public. New edits use current keys, so nothing written after a removal
-    reaches the removed device. -/
-theorem T6_forward_secrecy {st : State} (hr : Reachable st) (d : SignerId) (k : KeyScope)
-    (h : Knows st [.device d] (st.curKey k)) : entitled st d k = true ∨ publicKey st k = true := by
+/-- T6 (forward secrecy): in every reachable state a holder opens the current key of a family only while it is
+    entitled to it, or the family is public. New edits use current keys, so nothing written after a removal reaches
+    the removed device, nor anyone who joins a vault that lost its read. -/
+theorem T6_forward_secrecy {st : State} (hr : Reachable st) (h : Holder) (k : KeyScope)
+    (hk : Knows st (h.start st) (st.curKey k)) : h.entitled st k = true ∨ publicKey st k = true := by
   sorry -- P3
 
-/-- T7 (blind server): a device whose vaults never hold read anywhere, such as the server with its relay caps,
-    opens no space or entry key unless that key was public at some point. -/
-theorem T7_blind_server (ops : List Op) (srv : SignerId)
-    (hhost : ∀ st ∈ trace {} ops, ∀ v, actsFor st srv v = true → ∀ sc, holds st v sc .read = false)
-    {k : KeyScope} (hk : k.scope?.isSome) {e : Nat} (h : Knows (replay {} ops) [.device srv] (.scoped k e)) :
-    ∃ st ∈ trace {} ops, publicKey st k = true := by
-  obtain ⟨st, hst, _, hent | hpub⟩ := T5_confidentiality ops srv k e h
-  · exfalso
+/-- A holder that never reads anything through its vaults, whatever vault it held at whatever point, reads a space
+    or entry only while it is public. -/
+theorem everReads_blind {sts : List State} {h : Holder} {k : KeyScope} (hr : EverReads sts h k)
+    (hblind : ∀ v, EverReads sts h (.vault v) → ∀ st ∈ sts, ∀ sc, holds st v sc .read = false)
+    (hk : k.scope?.isSome) : ∃ st ∈ sts, publicKey st k = true := by
+  induction hr with
+  | @entitled h k st hst hent =>
     cases k with
     | vault v => simp [KeyScope.scope?] at hk
     | space sp =>
-      simp only [entitled, List.any_eq_true, Bool.and_eq_true] at hent
-      obtain ⟨x, _, hact, hread⟩ := hent
-      simp [hhost st hst x.id hact] at hread
+      cases h with
+      | signer s =>
+        simp only [Holder.entitled, entitled, List.any_eq_true, Bool.and_eq_true] at hent
+        obtain ⟨x, _, hact, hread⟩ := hent
+        have hx := hblind x.id (.entitled hst (by simp [Holder.entitled, entitled, hact])) st hst (.space sp)
+        simp [hx] at hread
+      | vault y =>
+        simp only [Holder.entitled, entitledV, List.any_eq_true, Bool.and_eq_true] at hent
+        obtain ⟨x, _, hown, hread⟩ := hent
+        have hx := hblind x.id (.entitled hst (by simpa [Holder.entitled, entitledV] using hown)) st hst (.space sp)
+        simp [hx] at hread
+      | everyone => exact ⟨st, hst, hent⟩
     | entry sp en =>
-      simp only [entitled, List.any_eq_true, Bool.and_eq_true] at hent
-      obtain ⟨x, _, hact, hread⟩ := hent
-      simp [hhost st hst x.id hact] at hread
-  · exact ⟨st, hst, hpub⟩
+      cases h with
+      | signer s =>
+        simp only [Holder.entitled, entitled, List.any_eq_true, Bool.and_eq_true] at hent
+        obtain ⟨x, _, hact, hread⟩ := hent
+        have hx := hblind x.id (.entitled hst (by simp [Holder.entitled, entitled, hact])) st hst (.entry sp en)
+        simp [hx] at hread
+      | vault y =>
+        simp only [Holder.entitled, entitledV, List.any_eq_true, Bool.and_eq_true] at hent
+        obtain ⟨x, _, hown, hread⟩ := hent
+        have hx := hblind x.id (.entitled hst (by simpa [Holder.entitled, entitledV] using hown)) st hst (.entry sp en)
+        simp [hx] at hread
+      | everyone => exact ⟨st, hst, hent⟩
+  | «public» hst hpub => exact ⟨_, hst, hpub⟩
+  | via hst hent _ ih => exact ih (fun w hw => hblind w (.via hst hent hw)) hk
+
+/-- T7 (blind server): a device that never held, directly or through vaults it held at any point, the key of a
+    vault that ever holds read anywhere, such as the server with its relay caps, opens no space or entry key unless
+    that key was public at some point. -/
+theorem T7_blind_server (ops : List Op) (srv : SignerId)
+    (hblind : ∀ v, EverReads (trace {} ops) (.signer srv) (.vault v) →
+      ∀ st ∈ trace {} ops, ∀ sc, holds st v sc .read = false)
+    {k : KeyScope} (hk : k.scope?.isSome) {e : Nat} (h : Knows (replay {} ops) [.signer srv] (.scoped k e)) :
+    ∃ st ∈ trace {} ops, publicKey st k = true :=
+  everReads_blind (T5_confidentiality ops (.signer srv) k e h) hblind hk
 
 /-! ## Convergence and sync -/
 

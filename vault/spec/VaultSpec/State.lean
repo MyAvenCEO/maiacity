@@ -157,11 +157,18 @@ def publicKey (st : State) (k : KeyScope) : Bool :=
   | some sc => isPublic st sc
   | none    => false
 
-/-- Device `d` should be able to open the current key of `k`. -/
+/-- Signer `d` should be able to open the current key of `k`. -/
 def entitled (st : State) (d : SignerId) : KeyScope → Bool
   | .vault v    => actsFor st d v
   | .space sp   => st.vaults.any fun x => actsFor st d x.id && holds st x.id (.space sp) .read
   | .entry sp e => st.vaults.any fun x => actsFor st d x.id && holds st x.id (.entry sp e) .read
+
+/-- Whoever holds the current key of vault `x` should be able to open the current key of `k`: `x` is that vault or
+    one of its owners, or it reads `k` itself or through a coop it owns. -/
+def entitledV (st : State) (x : VaultId) : KeyScope → Bool
+  | .vault v    => x == v || owns st x v
+  | .space sp   => st.vaults.any fun y => (x == y.id || owns st x y.id) && holds st y.id (.space sp) .read
+  | .entry sp e => st.vaults.any fun y => (x == y.id || owns st x y.id) && holds st y.id (.entry sp e) .read
 
 /-- What an agent holding the keys `start` can open: what is published, and whatever is sealed to a key it can
     open. This is the whole attacker model: no key is learned any other way (sealed and encrypted data reveal
@@ -201,16 +208,42 @@ def signers (st : State) : List SignerId :=
     | .signer s => some s
     | .vault _  => none
 
-/-- The key pairs the current key of `k` is sealed to: a human vault's devices, a coop's owner vaults, the vaults
-    that can read a whole space, and for an entry its space plus the vaults that may read just that entry. Relay
-    caps get no key. -/
+/-- Whoever starts out holding keys: a signer with its own key, whoever holds a vault's current key (its members, and
+    in a coop the members of its owners), and everyone, who holds nothing but what is published. -/
+inductive Holder where
+  | signer (s : SignerId)
+  | vault (v : VaultId)
+  | everyone
+  deriving DecidableEq, Repr
+
+/-- The keys a holder starts out with. -/
+def Holder.start (st : State) : Holder → List KeyName
+  | .signer s => [.signer s]
+  | .vault v  => [st.curKey (.vault v)]
+  | .everyone => []
+
+/-- The holder should be able to open the current key of `k`. -/
+def Holder.entitled (st : State) : Holder → KeyScope → Bool
+  | .signer s => VaultSpec.entitled st s
+  | .vault x  => entitledV st x
+  | .everyone => publicKey st
+
+/-- The holders that matter in `st`: every signer some vault lists, every vault, and everyone. -/
+def holders (st : State) : List Holder :=
+  (signers st).map .signer ++ st.vaults.map (fun v => .vault v.id) ++ [.everyone]
+
+/-- The key pairs the current key of `k` is sealed to: a human vault's devices and owner signers (the passkey and
+    the recovery code, through keys derived from them), a coop's owner vaults, the vaults that can read a whole
+    space, and for an entry its space plus the vaults that may read just that entry. Relay caps get no key. -/
 def targets (st : State) : KeyScope → List KeyName
   | .vault v =>
     match st.vault? v with
     | none => []
     | some vt =>
       match vt.kind with
-      | .human => vt.devices.map .device
+      | .human => (vt.devices ++ vt.owners.filterMap fun
+          | .signer s => some s
+          | .vault _  => none).map .signer
       | .coop  => vt.owners.filterMap fun
         | .vault o  => some (st.curKey (.vault o))
         | .signer _ => none
@@ -222,13 +255,14 @@ def targets (st : State) : KeyScope → List KeyName
       if st.grants.any (fun g => g.grantee == .principal (.vault x.id) && g.scope == .entry sp e && g.role.allows .read)
       then some (st.curKey (.vault x.id)) else none
 
-/-- Key families whose current key some device could open before a change but is no longer entitled to, or that
-    stopped being public. These start a new epoch. -/
+/-- Key families whose current key some holder could open before a change but should no longer open after it, unless
+    the family is public now. These start a new epoch. A family that stops being public is one: everyone held its
+    key. So is a space a coop stops reading while each of its members still reads the space some other way: the
+    coop's key would carry the space key to whoever joins the coop later. -/
 def staleKeys (pre post : State) : List KeyScope :=
-  let opened := (signers pre).map fun d => (d, opens pre [.device d])
+  let opened := (holders pre).map fun h => (h, opens pre (h.start pre))
   (keyScopes post).filter fun k =>
-    (publicKey pre k && !publicKey post k) ||
-    (!publicKey post k && opened.any fun (d, o) => o.contains (pre.curKey k) && !entitled post d k)
+    !publicKey post k && opened.any fun (h, o) => o.contains (pre.curKey k) && !h.entitled post k
 
 /-- Start a new epoch of `k`. The old key is sealed to the new one, so whoever may read now can read the history. -/
 def bump (st : State) (k : KeyScope) : State :=
