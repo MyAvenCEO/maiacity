@@ -216,7 +216,10 @@ export function createAutoplay(sim) {
 			if (b.owner === PLAYER && b.stage === 'site')
 				owe(Object.fromEntries(Object.entries(/** @type {Record<string, number>} */ (b.cost)).map(([w, n]) => [w, Math.max(0, n - (b.got[w] ?? 0) - (b.used[w] ?? 0) - (b.inc?.[w] ?? 0))])));
 		const rows = sim.market().parties.filter((/** @type {any} */ r) => r.owner === PLAYER);
-		const gold = (/** @type {any} */ row) => (row?.eur ?? 0) - (row?.pop ?? 0) * FOOD_KG * KEEP * PRICE.world;
+		const own = (/** @type {any} */ row) => (row?.eur ?? 0) - (row?.pop ?? 0) * FOOD_KG * KEEP * PRICE.world;
+		// filling the valley, a village pays with the gold of all yours, as the treasuries its trade routes join pay together
+		const all = rows.reduce((t, /** @type {any} */ r) => t + own(r), 0);
+		const gold = (/** @type {any} */ row) => (st.autoMap ? all : own(row));
 		const pays = (/** @type {Record<string, number>} */ cost, /** @type {any} */ row = rows[0], eur = 0) =>
 			Object.entries(cost).reduce((e, [w, n]) => e + Math.max(0, n + (owed[w] ?? 0) - (s.stock[w] ?? 0)) * (WORLD[w]?.eur ?? 0), 0) + eur <= gold(row);
 		return { owe, rows, pays };
