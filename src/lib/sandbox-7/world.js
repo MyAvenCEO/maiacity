@@ -5,12 +5,13 @@
  *   look     drag turns and tilts, the wheel zooms, WASD travels (the kit's orbit rig)
  *   pick     click a dome or the tower to see its numbers
  *   focus    the page flies over the whole village, the tower hex or one living hex
- *   labels   from afar one label a hex; closer, the buildings round where the camera looks
+ *   labels   from afar one label a hex; closer, the buildings round where the camera looks, and with the land-use map on
+ *            each patch of outdoor land, its use and size
  */
 import * as THREE from 'three';
 import { createOrbitRig, createSky, createStage, skyTime } from '$lib/sandbox-kit';
 import { buildWorld } from './scene.js';
-import { VILLAGE } from './layout.js';
+import { VILLAGE, USES, landPatches } from './layout.js';
 import { KINDS, capOf } from './specs.js';
 
 /** the hour the sky shows on Auto */
@@ -38,7 +39,7 @@ export function mountWorld(container, labelLayer, o = {}) {
 	const rig = createOrbitRig(camera, renderer.domElement, { minDistance: 15, maxDistance: 5200, target: new THREE.Vector3(...v.target), floorY: 3, moveSpeed: 320 });
 
 	// ── labels ──
-	/** @type {{ el: HTMLElement, at: THREE.Vector3, hex: string, small: boolean, whole: boolean, dims: HTMLElement | null }[]} */
+	/** @type {{ el: HTMLElement, at: THREE.Vector3, hex: string, small: boolean, whole: boolean, dims: HTMLElement | null, land?: boolean }[]} */
 	const labels = [];
 	for (const [key, h] of Object.entries(world.hexes)) {
 		// the hex's own label, for the view from afar
@@ -69,7 +70,21 @@ export function mountWorld(container, labelLayer, o = {}) {
 			labels.push({ el, at: new THREE.Vector3(b.x, b.height + 6, b.z), hex: key, small: b.small, whole: false, dims });
 		}
 	}
-	let showLabels = true, showDims = false;
+	// the land's patches, worked out once a plan (the living hexes share two)
+	/** @type {Map<object, ReturnType<typeof landPatches>>} */
+	const patchesOf = new Map();
+	for (const [key, h] of Object.entries(world.hexes)) {
+		if (!patchesOf.has(h.land)) patchesOf.set(h.land, landPatches(h.land));
+		for (const q of patchesOf.get(h.land) ?? []) {
+			const el = document.createElement('div');
+			el.className = 'lbl land';
+			el.innerHTML = `<b><i style="background:${USES[q.use].map}"></i>${USES[q.use].label}</b><span>${(q.m2 / 1e4).toFixed(1)} ha</span>`;
+			// first in the layer, so the buildings' labels stand over them
+			labelLayer.prepend(el);
+			labels.push({ el, at: new THREE.Vector3(q.x + h.x, 2, q.z + h.z), hex: key, small: false, whole: false, dims: null, land: true });
+		}
+	}
+	let showLabels = true, showDims = false, showLand = false;
 	const p = new THREE.Vector3();
 	function placeLabels() {
 		const w = container.clientWidth, hgt = container.clientHeight;
@@ -79,7 +94,7 @@ export function mountWorld(container, labelLayer, o = {}) {
 		const far = dist > 1600;
 		const reach = Math.max(420, dist * 0.75);
 		for (const l of labels) {
-			const live = showLabels && (far ? l.whole : !l.whole && Math.hypot(l.at.x - t.x, l.at.z - t.z) < reach && !(l.small && dist > 1100));
+			const live = showLabels && (!l.land || showLand) && (far ? l.whole : !l.whole && Math.hypot(l.at.x - t.x, l.at.z - t.z) < reach && !(l.small && dist > 1100));
 			if (!live) {
 				l.el.style.display = 'none';
 				continue;
@@ -102,7 +117,7 @@ export function mountWorld(container, labelLayer, o = {}) {
 	let picked = null;
 	function pick(/** @type {string | null} */ id, /** @type {string | null} */ hex) {
 		picked = id;
-		for (const l of labels) l.el.classList.toggle('on', !l.whole && l.el.dataset.site === id && l.hex === hex);
+		for (const l of labels) l.el.classList.toggle('on', !l.whole && !l.land && l.el.dataset.site === id && l.hex === hex);
 		o.onPick?.(id, hex);
 	}
 	let down = { x: 0, y: 0 };
@@ -165,6 +180,7 @@ export function mountWorld(container, labelLayer, o = {}) {
 			if (name === 'labels') showLabels = on;
 			else {
 				if (name === 'dims') showDims = on;
+				if (name === 'landuse') showLand = on;
 				world.set(name, on);
 			}
 			renderer.shadowMap.needsUpdate = true;
