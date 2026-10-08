@@ -244,7 +244,7 @@
 					{/each}
 				</tbody>
 			</table>
-			<p class="small">Every dome is a geodesic cap a third as high as it is wide (the 150 m dome’s 50 m), struts about 6 m long. Its cold north side ({n0(NORTH * 100)}% of the shell) is closed with solid hemp-fibre triangles in timber cassettes, its edge one smooth line from the foot 70° west of north, over the north side below the crown, down to the foot 70° east of north; the crown, the east, the south and the west are laminated glass, with see-through solar cells in every second pane where it tilts under 45° (the plants need the rest of the light). On the tower the hemp stops where the apartments start and every second pane has cells. Frames, heat and solar follow the engineering thread’s per-size model.</p>
+			<p class="small">Every dome is a geodesic cap a third as high as it is wide (the 150 m dome’s 50 m). Every panel is one of three: a white hemp triangle (solid, insulated) on the cold north side ({n0(NORTH * 100)}% of the shell), its edge one smooth line from the foot 70° west of north, over the north side below the crown, down to the foot 70° east of north; everywhere else glass and solar panels alternate like a chessboard, half each, so the plants keep half the light. The domes are Class I geodesics (frequency 8, 13 and 16: struts ~3–7 m), the towers a diagrid of triangles.</p>
 		</section>
 	{/if}
 
