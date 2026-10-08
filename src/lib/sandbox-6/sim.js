@@ -69,6 +69,8 @@ export function newGame(seed = 7) {
 		time: 0,
 		/** days of the valley's calendar gone by (./food.js) */
 		cal: 0,
+		/** the year it was started in: its calendar begins on 1 January of it */
+		year0: new Date().getFullYear(),
 		rng: (Math.imul(seed, 2654435761) >>> 0) || 1,
 		W: v.W,
 		H: v.H,
@@ -138,6 +140,8 @@ const plans = new Map();
 export function createSim(st) {
 	const g = makeGrid(st.W, st.H);
 	const N = g.N;
+	// a valley saved before it kept the year it was started in counts from this one
+	st.year0 ??= new Date().getFullYear();
 	const size = `${st.W}x${st.H}`;
 	if (!plans.has(size)) plans.set(size, makePlan(g));
 	const plan = /** @type {ReturnType<typeof makePlan>} */ (plans.get(size));
@@ -2476,8 +2480,8 @@ export function createSim(st) {
 				carriers,
 				workers,
 				parties: st.parties.map((/** @type {any} */ p) => ({ name: p.name })),
-				/** the valley's date and hour of day */
-				date: clockOf(st.cal),
+				/** the valley's date and hour of day, its years counted from the one it was started in */
+				date: ((c) => ({ ...c, year: st.year0 + c.year - 1 }))(clockOf(st.cal)),
 				/** your cashflow, € a week lately: what all your villages took in by exports (exp) to the world market and
 				 * paid out for imports (imp) from it; what they trade among themselves cancels out */
 				cash: yourVillages().reduce((t, { p }) => ({ exp: t.exp + (p.flow?.wexp ?? 0), imp: t.imp + (p.flow?.wimp ?? 0), upkeep: t.upkeep + (p.flow?.upkeep ?? 0) }), { exp: 0, imp: 0, upkeep: 0 }),
