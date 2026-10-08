@@ -8,15 +8,37 @@
 //! Vault logs in P1, items by caps in P2, proven in P6 (T12, T13); on the wire (P8) it runs on its own iroh ALPN, with
 //! the bytes in iroh-blobs.
 
-use crate::id::{EntryId, OpId, SignerId, SpaceId, VaultId};
-use crate::policy::{view, Op, Principal, State};
+use crate::id::{EntryId, GrantId, OpId, SignerId, SpaceId, VaultId};
+use crate::policy::{view, Action, Op, Principal, Scope, State};
 
-/// What a peer holding `ops` sends device `d`: the logs of the vaults `d` acts for, and of every vault that owns one
-/// of them, up the chains. (P2 adds the items `d` may receive.)
+/// What a peer holding `ops` sends device `d`: the writes of every item `d` may receive, the auth ops of every scope it
+/// reaches, and the logs of the vaults it acts for, of the vaults those ops act for or name, and of every vault that
+/// owns one of them, up the chains.
 pub fn respond(ops: &[Op], d: SignerId) -> Vec<Op> {
     let st = view(ops);
-    let mine: Vec<VaultId> = st.vaults().iter().map(|x| x.id).filter(|&v| st.acts_for(d, v)).collect();
-    vault_logs(ops, &st, mine)
+    let writes: Vec<&Op> =
+        ops.iter().filter(|op| op.write_target().is_some_and(|(sp, e)| st.may_receive(d, sp, e))).collect();
+    let auth: Vec<&Op> = ops.iter().filter(|op| auth_scope(ops, op).is_some_and(|sc| st.reaches(d, sc))).collect();
+    let mut vs: Vec<VaultId> = st.vaults().iter().map(|x| x.id).filter(|&v| st.acts_for(d, v)).collect();
+    vs.extend(writes.iter().chain(&auth).filter_map(|op| op.actor()));
+    vs.extend(auth.iter().filter_map(|op| op.grantee()));
+    let vaults = close_vaults(&st, vs);
+    let vault_ops = ops.iter().filter(|op| op.vault_of().is_some_and(|v| vaults.contains(&v)));
+    writes.into_iter().chain(auth).chain(vault_ops).cloned().collect()
+}
+
+/// The scope an auth op is about: a space's founding, a grant's scope, or for a revocation the scope of the grant it
+/// revokes, looked up among `ops`.
+fn auth_scope(ops: &[Op], op: &Op) -> Option<Scope> {
+    match &op.action {
+        Action::FoundSpace { .. } => Some(Scope::Space(SpaceId::from(op.id()))),
+        Action::Grant(g) => Some(g.scope),
+        Action::Revoke { grant, .. } => ops.iter().find_map(|o| match &o.action {
+            Action::Grant(g) if GrantId::from(o.id()) == *grant => Some(g.scope),
+            _ => None,
+        }),
+        _ => None,
+    }
 }
 
 /// The ops of the logs of `vs` and of every vault that owns one of them, up the chains, as `st` knows them: what a
@@ -55,8 +77,7 @@ pub fn receive(ops: &[Op], incoming: &[Op]) -> Vec<Op> {
     out
 }
 
-/// The writes one item has in the view of `ops`.
+/// The writes one item has in the view of `ops`, in replay order.
 pub fn item_writes(ops: &[Op], sp: SpaceId, e: EntryId) -> Vec<OpId> {
-    let _ = (ops, sp, e);
-    todo!("P2: caps decide what syncs")
+    view(ops).writes(sp, e)
 }

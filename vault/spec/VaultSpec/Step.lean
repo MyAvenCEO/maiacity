@@ -5,27 +5,33 @@ import VaultSpec.State
 
 Every change is a signed op. A peer checks each op against the state just before it (`apply`), rotates and seals
 keys (`settle`), and replays all the ops it holds in one fixed order (`order`), so peers holding the same ops end
-in the same state.
+in the same state. A removal also cuts what it hadn't seen (`view`): an op it hadn't seen stands only if it stands
+without what the removal takes away, so neither a removed owner nor a thief holding a stolen passkey can sign ops
+that claim to come before the removal.
 -/
 
 namespace VaultSpec
 
 inductive Action where
-  | genesis      (v : VaultId) (kind : Kind) (owners : List Principal) (threshold : Nat)
+  /-- A new vault. A human vault may name a root, its passkey, which signs too. -/
+  | genesis      (v : VaultId) (kind : Kind) (owners : List Principal) (threshold : Nat) (root : Option SignerId := none)
   | addOwner     (v : VaultId) (p : Principal)
   | removeOwner  (v : VaultId) (p : Principal) (keep : List OpId)
   | setThreshold (v : VaultId) (n : Nat)
   | addDevice    (v : VaultId) (d : SignerId)
   | removeDevice (v : VaultId) (d : SignerId) (keep : List OpId)
+  /-- The root hands itself on to a new passkey, which signs too, or steps down. -/
+  | setRoot      (v : VaultId) (r : Option SignerId) (keep : List OpId)
   | foundSpace   (sp : SpaceId) (actor : VaultId)
   | grant        (g : Grant)
   | revoke       (g : GrantId) (actor : VaultId) (keep : List OpId)
-  | write        (sp : SpaceId) (e : EntryId) (actor : VaultId) (epoch : Nat)
+  /-- An encrypted edit of one entry. `deps` are the entry's writes it builds on. -/
+  | write        (sp : SpaceId) (e : EntryId) (actor : VaultId) (epoch : Nat) (deps : List OpId := [])
   deriving DecidableEq, Repr
 
-/-- The writes a removal had seen and keeps; every removal names them. -/
+/-- The ops a removal had seen and keeps; every removal names them. -/
 def Action.keep? : Action → Option (List OpId)
-  | .removeOwner _ _ k | .removeDevice _ _ k | .revoke _ _ k => some k
+  | .removeOwner _ _ k | .removeDevice _ _ k | .setRoot _ _ k | .revoke _ _ k => some k
   | _ => none
 
 structure Op where
@@ -54,12 +60,26 @@ def ownerFits (st : State) : Kind → Principal → Bool
   | .coop,  .vault o  => (st.vault? o).isSome
   | _, _ => false
 
+/-- Only a human vault has a root, and the root signs its genesis. -/
+def rootFits (kind : Kind) (sigs : List SignerId) : Option SignerId → Bool
+  | none   => true
+  | some r => kind == .human && sigs.contains r
+
+/-- Write `w` builds only on writes of its own entry among `ws`. -/
+def depsIn (ws : List Write) (w : Write) : Bool :=
+  w.deps.all fun d => ws.any fun x => x.op == d && x.space == w.space && x.entry == w.entry
+
+/-- Keep, in order, each write whose dependencies were kept. A write comes after the writes it builds on, so one pass
+    leaves the writes causally closed (T14). -/
+def closeDeps (ws : List Write) : List Write :=
+  ws.foldl (fun kept w => if depsIn kept w then kept ++ [w] else kept) []
+
 /-- After a removal from `pre` to `post`: drop every write the removal took the authorization from, unless the
-    remover had seen it. Writes that were already unauthorized (kept by an earlier removal) stay. Revocation wins
-    over what it had not seen. -/
+    remover had seen it, and every write that builds on a dropped one. Writes that were already unauthorized (kept by
+    an earlier removal) stay. Revocation wins over what it had not seen. -/
 def dropUnseen (pre post : State) (keep : List OpId) : State :=
-  { post with writes := post.writes.filter fun w =>
-      keep.contains w.op || !authorized pre w || authorized post w }
+  { post with writes := closeDeps (post.writes.filter fun w =>
+      keep.contains w.op || !authorized pre w || authorized post w) }
 
 /-- Grant `x` rests on grant `g`: it is `g`, or its parent rests on `g`. -/
 def restsOnN (st : State) (g : GrantId) : Nat → GrantId → Bool
@@ -94,13 +114,13 @@ def parentOk (st : State) (g : Grant) : Bool :=
 def apply (st : State) (op : Op) : Option State :=
   let sigs := op.sigs
   match op.action with
-  | .genesis v kind owners threshold =>
+  | .genesis v kind owners threshold root =>
     if (st.vault? v).isSome || owners.isEmpty || !nodup owners then none
-    else if !owners.all (ownerFits st kind) then none
+    else if !owners.all (ownerFits st kind) || !rootFits kind sigs root then none
     else if threshold == 0 || threshold > owners.length then none
     -- every first owner consents
     else if !owners.all (approves st sigs) then none
-    else some { st with vaults := st.vaults ++ [⟨v, kind, owners, threshold, []⟩] }
+    else some { st with vaults := st.vaults ++ [⟨v, kind, owners, threshold, [], root⟩] }
   | .addOwner v p =>
     match st.vault? v with
     | none => none
@@ -143,6 +163,13 @@ def apply (st : State) (op : Op) : Option State :=
       if !vt.devices.contains d then none
       else if !(approves st sigs (.vault v) || sigs.contains d) then none
       else some (dropUnseen st (setVault st { vt with devices := vt.devices.erase d }) keep)
+  | .setRoot v r _ =>
+    match st.vault? v with
+    | none => none
+    | some vt =>
+      -- only the root hands the root on, and the new root signs
+      if !vt.root.any sigs.contains || !r.all sigs.contains then none
+      else some (setVault st { vt with root := r })
   | .foundSpace sp actor =>
     if (st.space? sp).isSome || !actsFor st op.author actor then none
     else some { st with spaces := st.spaces ++ [⟨sp, actor, []⟩] }
@@ -165,17 +192,20 @@ def apply (st : State) (op : Op) : Option State :=
       else if g.role == Role.owner && !approves st sigs (.vault actor) then none
       -- the grant and every grant resting on it end
       else some (dropUnseen st { st with grants := st.grants.filter fun x => !restsOn st gid x.id } keep)
-  | .write sp e actor epoch =>
+  | .write sp e actor epoch deps =>
     match st.space? sp with
     | none => none
     | some s =>
+      let w : Write := ⟨op.id, op.author, actor, sp, e, epoch, deps⟩
       if st.writes.any (·.op == op.id) then none
       else if !actsFor st op.author actor || !holds st actor (.entry sp e) .write then none
       else if epoch > st.epochOf (.entry sp e) then none
+      -- what it builds on was accepted, so the accepted writes stay causally closed (T14)
+      else if !depsIn st.writes w then none
       else
         let st' := if s.entries.contains e then st
           else { st with spaces := st.spaces.map fun x => if x.id == sp then { x with entries := x.entries ++ [e] } else x }
-        some { st' with writes := st'.writes ++ [⟨op.id, op.author, actor, sp, e, epoch⟩] }
+        some { st' with writes := st'.writes ++ [w] }
 
 /-- One op: check it, then rotate and seal keys. -/
 def step (st : State) (op : Op) : Option State := (apply st op).map (settle st)
@@ -193,7 +223,7 @@ def trace (st : State) : List Op → List State
 /-- Removals sort before anything else at the same depth. -/
 def Op.rank (op : Op) : Nat :=
   match op.action with
-  | .removeOwner .. | .removeDevice .. | .revoke .. => 0
+  | .removeOwner .. | .removeDevice .. | .setRoot .. | .revoke .. => 0
   | _ => 1
 
 /-- The one order every peer replays in: causal depth, then removals first, then id. -/
@@ -203,7 +233,113 @@ def Op.before (a b : Op) : Bool :=
 
 def order (ops : List Op) : List Op := ops.mergeSort Op.before
 
+/-! ## Strong removal
+
+A removal names the ops it had seen and keeps (`keep`): removing an owner or a device, revoking a grant, and the root
+handing itself on. Every other op that comes before it in the replay order was made concurrently, or claims to be:
+it stands only if it also stands with what the removal takes away hidden. When removals clash, the senior one
+stands: a vault's root, then its owners in the order they joined, then removals no owner approved (a device
+leaving), then revocations. -/
+
+/-- What a removal takes away. -/
+inductive Fact where
+  | owner  (v : VaultId) (p : Principal)
+  | device (v : VaultId) (d : SignerId)
+  /-- Whatever root the vault had. -/
+  | root   (v : VaultId)
+  | grant  (g : GrantId)
+  deriving DecidableEq, Repr
+
+/-- The state with the facts `fs` taken away. -/
+def hide (st : State) (fs : List Fact) : State :=
+  if fs.isEmpty then st else
+  { st with
+    vaults := st.vaults.map fun vt => { vt with
+      owners  := vt.owners.filter fun p => !fs.contains (.owner vt.id p),
+      devices := vt.devices.filter fun d => !fs.contains (.device vt.id d),
+      root    := if fs.contains (.root vt.id) then none else vt.root },
+    grants := st.grants.filter fun g => !fs.contains (.grant g.id) }
+
+def Op.isRemoval (op : Op) : Bool := op.action.keep?.isSome
+
+/-- The grants the ops `ops` make. -/
+def grantsIn (ops : List Op) : List Grant :=
+  ops.filterMap fun o => match o.action with
+    | .grant g => some g
+    | _ => none
+
+/-- Among the grants `gs`, grant `x` is `g` or rests on it through its parents. -/
+def restsOnIn (gs : List Grant) (g : GrantId) : Nat → GrantId → Bool
+  | 0, _ => false
+  | n + 1, x => x == g ||
+    match (gs.find? (·.id == x)).bind (·.parent) with
+    | some p => restsOnIn gs g n p
+    | none   => false
+
+/-- What removal `r` takes away: the owner, the device, the root, or, among the grants `ops` make, the grant and every
+    grant resting on it. -/
+def removes (ops : List Op) (r : Op) : List Fact :=
+  match r.action with
+  | .removeOwner v p _  => [.owner v p]
+  | .removeDevice v d _ => [.device v d]
+  | .setRoot v _ _      => [.root v]
+  | .revoke g _ _ =>
+    let gs := grantsIn ops
+    (gs.filter fun x => restsOnIn gs g (gs.length + 1) x.id).map fun x => .grant x.id
+  | _ => []
+
+/-- Each removal of `rem`, at its position in `ops`: the ops it keeps, and what it takes away. -/
+def cuts (ops rem : List Op) : List (Nat × List OpId × List Fact) :=
+  ops.zipIdx.filterMap fun (r, j) =>
+    if rem.any (·.id == r.id) then some (j, r.action.keep?.getD [], removes ops r) else none
+
+/-- The facts hidden from `op` at position `i`: what each removal after it takes away, unless that removal had seen
+    it. -/
+def hiddenAt (cs : List (Nat × List OpId × List Fact)) (i : Nat) (op : Op) : List Fact :=
+  (cs.filter fun (j, keep, _) => i < j && !keep.contains op.id).flatMap (·.2.2)
+
+/-- Replay positioned ops from `st` with the removals of `rem` and no others: an op stands if `apply` accepts it on
+    the state before it, and again with its hidden facts taken away. The state at the end, and the ops that stood. -/
+def runFrom (rem : List Op) (cs : List (Nat × List OpId × List Fact)) : State → List (Op × Nat) → State × List Op
+  | st, [] => (st, [])
+  | st, (op, i) :: rest =>
+    if op.isRemoval && !rem.any (·.id == op.id) then runFrom rem cs st rest
+    else match apply (hide st (hiddenAt cs i op)) op, step st op with
+      | some _, some st' => let r := runFrom rem cs st' rest; (r.1, op :: r.2)
+      | _, _ => runFrom rem cs st rest
+
+/-- Replay `ops`, in this order, with the removals of `rem` and no others. -/
+def runWith (ops rem : List Op) : State × List Op := runFrom rem (cuts ops rem) {} ops.zipIdx
+
+/-- Who stands when removals clash, the smallest first: the vault's root; then its owners by seniority, their place
+    among the owners where no removal has happened yet; then removals no owner approved; then revocations. -/
+def priority (base : State) (op : Op) : Nat × Nat :=
+  match op.action with
+  | .removeOwner v _ _ | .removeDevice v _ _ | .setRoot v _ _ =>
+    match base.vault? v with
+    | none => (2, 0)
+    | some vt =>
+      if vt.root.any op.sigs.contains then (0, 0)
+      else match vt.owners.zipIdx.find? fun (p, _) => approves base op.sigs p with
+        | some (_, i) => (1, i)
+        | none => (2, 0)
+  | _ => (3, 0)
+
+def prioLe (a b : Nat × Nat) : Bool := a.1 < b.1 || (a.1 == b.1 && a.2 ≤ b.2)
+
+/-- The removals that stand, chosen one by one by priority: each stands if the ops replayed with it and the ones
+    chosen before it accept it and keep accepting those. -/
+def resolve (ops : List Op) : List Op :=
+  let base := (runWith ops []).1
+  let cands := (ops.filter Op.isRemoval).mergeSort fun a b => prioLe (priority base a) (priority base b)
+  cands.foldl (fun rem r =>
+    let stood := (runWith ops (rem ++ [r])).2
+    if (r :: rem).all fun x => stood.any (·.id == x.id) then rem ++ [r] else rem) []
+
 /-- What a peer holding `ops` knows. -/
-def view (ops : List Op) : State := replay {} (order ops)
+def view (ops : List Op) : State := let o := order ops; (runWith o (resolve o)).1
+
+/-- The ops that stand in what a peer holding `ops` knows, in replay order. -/
+def standing (ops : List Op) : List Op := let o := order ops; (runWith o (resolve o)).2
 
 end VaultSpec

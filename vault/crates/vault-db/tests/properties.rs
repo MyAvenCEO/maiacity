@@ -1,12 +1,15 @@
 //! One property per Lean theorem that the rules alone decide, checked on random histories: random signers trying random
-//! actions on top of scenarios 1 to 4, kept when the rules accept them, then replayed in other orders. Each property
-//! carries its theorem's name; T5 to T7 (keys) and T9, T10, T13 are guarded by the tests the Lean README lists.
+//! actions on top of scenarios 1 to 4, kept when the rules accept them, then replayed in other orders; and forked ones,
+//! where devices that were offline meet with concurrent changes. Each property carries its theorem's name; T5 to T7
+//! (keys) and T9, T10, T13 are guarded by the tests the Lean README lists.
 
 mod common;
 
 use common::*;
 use vault_db::id::{EntryId, GrantId, SignerId, SpaceId, VaultId};
-use vault_db::policy::{order, trace, view, Action, Grantee, Kind, Log, Op, Principal, Refusal, Role, Scope, State};
+use vault_db::policy::{
+    order, removes, replay, trace, view, Action, Fact, Grantee, Kind, Log, Op, Principal, Refusal, Role, Scope, State,
+};
 use vault_db::sync::respond;
 
 /// xorshift64*: small and deterministic, so a failing seed can be replayed.
@@ -44,6 +47,7 @@ const SEEDS: std::ops::Range<u64> = 1..41;
 struct History {
     log: Log,
     vaults: Vec<VaultId>,
+    spaces: Vec<SpaceId>,
 }
 
 /// A random history on top of scenarios 1 to 4: `n` attempts, each kept only if the rules accept it.
@@ -51,46 +55,113 @@ fn history(seed: u64, n: usize) -> History {
     let mut c = cast();
     let coop = with_coop(&mut c);
     let sp = spaces(&mut c, coop);
-    let mut vaults = vec![c.samuel, c.bob, c.carol, c.dave, coop];
-    let spaces: [SpaceId; 3] = [sp.handbook, sp.notes, sp.todos];
+    let vaults = vec![c.samuel, c.bob, c.carol, c.dave, coop];
+    let mut h = History { log: c.log, vaults, spaces: vec![sp.handbook, sp.notes, sp.todos] };
     let mut rng = Rng(seed.wrapping_mul(0x9e37_79b9_7f4a_7c15) | 1);
+    attempts(&mut rng, &mut h, n, false);
+    h
+}
+
+/// `n` random attempts appended to `h`'s log, each kept only if the rules accept it: writes, grants, revocations,
+/// devices, coops and owners. New vaults join `h.vaults`. With `clash`, half of them write with, revoke or remove
+/// what the log holds.
+fn attempts(rng: &mut Rng, h: &mut History, n: usize, clash: bool) {
     for _ in 0..n {
+        if clash && rng.below(2) == 0 {
+            let (author, cosigners) = signers(rng);
+            if let Some(action) = clash_action(rng, h, author) {
+                let _ = h.log.append(author, &cosigners, action);
+            }
+            continue;
+        }
         let author = rng.pick(&SIGNERS);
         let cosigners: Vec<SignerId> = (0..rng.below(4)).map(|_| rng.pick(&SIGNERS)).collect();
-        let grants: Vec<GrantId> = c.log.view().grants().into_iter().map(|(id, _)| id).collect();
+        let grants: Vec<GrantId> = h.log.view().grants().into_iter().map(|(id, _)| id).collect();
         let scope = if rng.below(2) == 0 {
-            Scope::Space(rng.pick(&spaces))
+            Scope::Space(rng.pick(&h.spaces))
         } else {
-            Scope::Entry(rng.pick(&spaces), rng.pick(&ENTRIES))
+            Scope::Entry(rng.pick(&h.spaces), rng.pick(&ENTRIES))
         };
         let action = match rng.below(10) {
-            0..=2 => write(rng.pick(&spaces), rng.pick(&ENTRIES), rng.pick(&vaults), rng.below(3) as u64),
+            0..=2 => write(rng.pick(&h.spaces), rng.pick(&ENTRIES), rng.pick(&h.vaults), rng.below(3) as u64),
             3 | 4 => {
                 let grantee = match rng.below(6) {
                     0 => Grantee::Public,
                     1 => Grantee::Principal(Principal::Signer(rng.pick(&SIGNERS))),
-                    _ => vault(rng.pick(&vaults)),
+                    _ => vault(rng.pick(&h.vaults)),
                 };
                 let parent = if grants.is_empty() || rng.below(2) == 0 { None } else { Some(rng.pick(&grants)) };
-                grant(scope, rng.pick(&ROLES), grantee, rng.pick(&vaults), parent)
+                grant(scope, rng.pick(&ROLES), grantee, rng.pick(&h.vaults), parent)
             }
-            5 if !grants.is_empty() => Action::Revoke { grant: rng.pick(&grants), actor: rng.pick(&vaults), keep: vec![] },
-            6 => Action::AddDevice { vault: rng.pick(&vaults), device: rng.pick(&SIGNERS) },
-            7 => Action::RemoveDevice { vault: rng.pick(&vaults), device: rng.pick(&SIGNERS), keep: vec![] },
+            5 if !grants.is_empty() => Action::Revoke { grant: rng.pick(&grants), actor: rng.pick(&h.vaults), keep: vec![] },
+            6 => Action::AddDevice { vault: rng.pick(&h.vaults), device: rng.pick(&SIGNERS) },
+            7 => Action::RemoveDevice { vault: rng.pick(&h.vaults), device: rng.pick(&SIGNERS), keep: vec![] },
             8 => {
-                let owners = vec![Principal::Vault(rng.pick(&vaults))];
-                Action::Genesis { kind: Kind::Coop, owners, threshold: 1, nonce: rng.next() }
+                let owners = vec![Principal::Vault(rng.pick(&h.vaults))];
+                Action::Genesis { kind: Kind::Coop, owners, threshold: 1, root: None, nonce: rng.next() }
             }
-            _ => Action::AddOwner { vault: rng.pick(&vaults), owner: Principal::Vault(rng.pick(&vaults)) },
+            _ => Action::AddOwner { vault: rng.pick(&h.vaults), owner: Principal::Vault(rng.pick(&h.vaults)) },
         };
         let genesis = matches!(action, Action::Genesis { .. });
-        if let Ok(id) = c.log.append(author, &cosigners, action)
+        if let Ok(id) = h.log.append(author, &cosigners, action)
             && genesis
         {
-            vaults.push(VaultId::from(id));
+            h.vaults.push(VaultId::from(id));
         }
     }
-    History { log: c.log, vaults }
+}
+
+/// A random write by a vault `author` acts for and that holds write, a revocation of a grant in force, or a device
+/// removed: what clashes when made concurrently.
+fn clash_action(rng: &mut Rng, h: &History, author: SignerId) -> Option<Action> {
+    let st = h.log.view();
+    match rng.below(3) {
+        0 => {
+            let mut targets = vec![];
+            for &sp in &h.spaces {
+                for e in ENTRIES {
+                    for &v in &h.vaults {
+                        if st.acts_for(author, v) && st.holds(v, Scope::Entry(sp, e), Role::Write) {
+                            targets.push((sp, e, v));
+                        }
+                    }
+                }
+            }
+            let (sp, e, v) = (!targets.is_empty()).then(|| rng.pick(&targets))?;
+            Some(write(sp, e, v, 0))
+        }
+        1 => {
+            let grants = st.grants();
+            let (id, g) = (!grants.is_empty()).then(|| grants[rng.below(grants.len())].clone())?;
+            Some(Action::Revoke { grant: id, actor: g.issuer, keep: vec![] })
+        }
+        _ => {
+            let devices: Vec<(VaultId, SignerId)> =
+                st.vaults().iter().flat_map(|v| v.devices.iter().map(move |&d| (v.id, d))).collect();
+            let (vault, device) = (!devices.is_empty()).then(|| rng.pick(&devices))?;
+            Some(Action::RemoveDevice { vault, device, keep: vec![] })
+        }
+    }
+}
+
+/// Three devices take one random history offline, each adds its own random attempts, and then all the ops meet:
+/// writes, grants and revocations made concurrently with removals that hadn't seen them.
+fn forked_caps_history(seed: u64, n: usize) -> History {
+    let base = history(seed, n / 2);
+    let mut rng = Rng(seed.wrapping_mul(0x2545_f491_4f6c_dd1d) | 1);
+    let mut all: Vec<Op> = base.log.ops().to_vec();
+    let mut vaults = base.vaults.clone();
+    for _ in 0..3 {
+        let mut fork = History { log: base.log.clone(), vaults, spaces: base.spaces.clone() };
+        attempts(&mut rng, &mut fork, n / 2, true);
+        for op in fork.log.ops() {
+            if !all.contains(op) {
+                all.push(op.clone());
+            }
+        }
+        vaults = fork.vaults;
+    }
+    History { log: Log::from_ops(all), vaults, spaces: base.spaces }
 }
 
 /// Who signs an attempt: half the time every passkey and one random signer, so that approvals pass and the rules'
@@ -116,10 +187,16 @@ fn vault_action(rng: &mut Rng, vaults: &[VaultId]) -> Action {
         4 => Action::SetThreshold { vault: rng.pick(vaults), threshold: rng.below(4) as u32 },
         _ => {
             let kind = if rng.below(3) == 0 { Kind::Human } else { Kind::Coop };
-            let owners = (0..1 + rng.below(3))
+            let owners: Vec<Principal> = (0..1 + rng.below(3))
                 .map(|_| if kind == Kind::Human { Principal::Signer(rng.pick(&SIGNERS)) } else { Principal::Vault(rng.pick(vaults)) })
                 .collect();
-            Action::Genesis { kind, owners, threshold: 1 + rng.below(2) as u32, nonce: rng.next() }
+            let (threshold, nonce) = (1 + rng.below(2) as u32, rng.next());
+            // half the human vaults name their first owner as their root
+            let root = match owners[..] {
+                [Principal::Signer(s), ..] if nonce % 2 == 0 => Some(s),
+                _ => None,
+            };
+            Action::Genesis { kind, owners, threshold, root, nonce }
         }
     }
 }
@@ -160,7 +237,7 @@ fn vault_history(seed: u64, n: usize) -> History {
     let mut vaults = vec![c.samuel, c.bob, c.carol, c.dave, coop];
     let mut rng = Rng(seed.wrapping_mul(0x9e37_79b9_7f4a_7c15) | 1);
     vault_attempts(&mut rng, &mut c.log, &mut vaults, n, false);
-    History { log: c.log, vaults }
+    History { log: c.log, vaults, spaces: vec![] }
 }
 
 /// Three devices take one random history offline, each adds its own random vault ops, and then all the ops meet:
@@ -180,7 +257,7 @@ fn forked_history(seed: u64, n: usize) -> History {
             }
         }
     }
-    History { log: Log::from_ops(all), vaults }
+    History { log: Log::from_ops(all), vaults, spaces: vec![] }
 }
 
 /// Each op in replay order with the states just before and just after it.
@@ -190,15 +267,30 @@ fn steps(ops: &[Op]) -> Vec<(Op, State, State)> {
 }
 
 #[test]
-#[ignore = "P2: caps"]
 fn t1_authorized_writes() {
     for seed in SEEDS {
-        for (op, before, after) in steps(history(seed, 60).log.ops()) {
-            if let Action::Write { space, entry, actor, .. } = op.action {
-                let new = after.writes(space, entry).contains(&op.id()) && !before.writes(space, entry).contains(&op.id());
-                if new {
-                    assert!(before.acts_for(op.author, actor), "seed {seed}");
-                    assert!(before.holds(actor, Scope::Entry(space, entry), Role::Write), "seed {seed}");
+        for h in [history(seed, 60), forked_caps_history(seed, 60)] {
+            for (op, before, after) in steps(h.log.ops()) {
+                if let Action::Write { space, entry, actor, .. } = op.action {
+                    let new = after.writes(space, entry).contains(&op.id()) && !before.writes(space, entry).contains(&op.id());
+                    if new {
+                        assert!(before.acts_for(op.author, actor), "seed {seed}");
+                        assert!(before.holds(actor, Scope::Entry(space, entry), Role::Write), "seed {seed}");
+                    }
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn t1_revocation_wins() {
+    // a write a step takes the authorization from stays only if the step is a removal that had seen it
+    for seed in SEEDS {
+        for (op, before, after) in steps(forked_caps_history(seed, 60).log.ops()) {
+            for w in after.all_writes() {
+                if before.all_writes().contains(w) && before.authorized(w) && !after.authorized(w) {
+                    assert!(op.action.keep().is_some_and(|k| k.contains(&w.op)), "seed {seed}: {w:?} after {op:?}");
                 }
             }
         }
@@ -290,7 +382,6 @@ fn forks_really_clash() {
 }
 
 #[test]
-#[ignore = "P2: caps"]
 fn t4_grants_name_vaults_and_t8_public_read_only() {
     for seed in SEEDS {
         for (_, g) in history(seed, 60).log.view().grants() {
@@ -301,22 +392,73 @@ fn t4_grants_name_vaults_and_t8_public_read_only() {
 }
 
 #[test]
-#[ignore = "P2: caps"]
 fn t11_convergence() {
     for seed in SEEDS {
-        let ops = history(seed, 60).log.ops().to_vec();
-        let st = view(&ops);
-        let mut rng = Rng(seed);
-        for _ in 0..3 {
-            let mut shuffled = ops.clone();
-            rng.shuffle(&mut shuffled);
-            assert!(view(&shuffled) == st, "seed {seed}");
+        for h in [history(seed, 60), forked_caps_history(seed, 60)] {
+            let ops = h.log.ops().to_vec();
+            let st = view(&ops);
+            let mut rng = Rng(seed);
+            for _ in 0..3 {
+                let mut shuffled = ops.clone();
+                rng.shuffle(&mut shuffled);
+                assert!(view(&shuffled) == st, "seed {seed}");
+            }
         }
     }
 }
 
 #[test]
-#[ignore = "P2: caps decide what syncs"]
+fn t14_causally_closed() {
+    // in every state along the way, every accepted write builds only on accepted writes of its own entry
+    for seed in SEEDS {
+        for h in [history(seed, 60), forked_caps_history(seed, 60)] {
+            for st in trace(h.log.ops()) {
+                let ws = st.all_writes();
+                for w in ws {
+                    for d in &w.deps {
+                        let found = ws.iter().any(|x| x.op == *d && x.space == w.space && x.entry == w.entry);
+                        assert!(found, "seed {seed}: {w:?} builds on a write that isn't there");
+                    }
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn t16_strong_removal() {
+    let mut cut = 0;
+    for seed in SEEDS {
+        let ops = forked_caps_history(seed, 60).log.ops().to_vec();
+        let (r, states) = (replay(&ops), trace(&ops));
+        for (i, x) in r.ops.iter().enumerate() {
+            // what each removal that stands after it, and hadn't seen it, takes away
+            let hidden: Vec<Fact> = (i + 1..r.ops.len())
+                .filter(|&j| r.stood[j] && r.ops[j].action.keep().is_some_and(|k| !k.contains(&x.id())))
+                .flat_map(|j| removes(&r.ops, &r.ops[j]))
+                .collect();
+            if r.stood[i] {
+                assert!(states[i].hide(&hidden).step(x).is_ok(), "seed {seed}: {x:?} stands on what a removal took away");
+            } else if !x.is_removal() && states[i].step(x).is_ok() {
+                cut += 1;
+            }
+        }
+    }
+    // and the forks do clash: some ops the state just before them accepts are cut
+    assert!(cut > 0);
+}
+
+#[test]
+fn honest_logs_keep_all_they_accepted() {
+    // every op a device appended stands in its own view: its removals keep everything they had seen
+    for seed in SEEDS {
+        let h = history(seed, 60);
+        let r = replay(h.log.ops());
+        assert!(r.stood.iter().all(|&s| s), "seed {seed}");
+    }
+}
+
+#[test]
 fn t12_sync_shares_only_caps() {
     for seed in SEEDS {
         let h = history(seed, 60);

@@ -26,14 +26,41 @@ def Reachable (st : State) : Prop := ∃ ops, st = replay {} ops
     vault and that vault held write on the entry. -/
 theorem T1_authorized_writes {st st' : State} {op : Op} (h : step st op = some st') {w : Write}
     (hw : w ∈ st'.writes) (hnew : w ∉ st.writes) : authorized st w = true := by
-  sorry -- P2
+  unfold step at h
+  obtain ⟨post, hpost, rfl⟩ := Option.map_eq_some_iff.1 h
+  rw [settle_writes] at hw
+  rcases apply_writes hpost with ⟨hws, -⟩ | ⟨w', hws, hauth, -, -⟩ | ⟨keep, mid, -, rfl, hmid⟩
+  · exact absurd (hws ▸ hw) hnew
+  · rw [hws] at hw
+    rcases List.mem_append.1 hw with hw | hw
+    · exact absurd hw hnew
+    · rw [List.mem_singleton] at hw
+      subst hw
+      exact hauth
+  · -- a removal only drops writes
+    exact absurd (hmid ▸ (List.mem_filter.1 ((closeDeps_sublist _).subset hw)).1) hnew
 
 /-- T1, second half (revocation wins): an older write that a step takes the authorization from survives only if
     the step is a removal that had seen it. -/
 theorem T1_revocation_wins {st st' : State} {op : Op} (h : step st op = some st') {w : Write}
-    (hw : w ∈ st'.writes) (hold : w ∈ st.writes) (hwas : authorized st w = true)
+    (hw : w ∈ st'.writes) (_hold : w ∈ st.writes) (hwas : authorized st w = true)
     (hnow : authorized st' w = false) : ∃ keep, op.action.keep? = some keep ∧ w.op ∈ keep := by
-  sorry -- P2
+  unfold step at h
+  obtain ⟨post, hpost, rfl⟩ := Option.map_eq_some_iff.1 h
+  -- if `post` keeps what `authorized` reads in a state where the write was authorized, it still is after the step
+  have hstill : ∀ s, Keeps s post → authorized s w = true → False := fun s hk ha => by
+    rw [authorized_keeps (hk.trans (Keeps.settle st post)) ha] at hnow
+    cases hnow
+  rcases apply_writes hpost with ⟨-, hk⟩ | ⟨_, -, -, -, hk⟩ | ⟨keep, mid, hkeep, rfl, -⟩
+  · exact (hstill st hk hwas).elim
+  · exact (hstill st hk hwas).elim
+  · -- the write passed `dropUnseen`'s filter, and it isn't authorized after the removal, so the removal kept it
+    refine ⟨keep, hkeep, ?_⟩
+    rw [settle_writes] at hw
+    have hpass := (List.mem_filter.1 ((closeDeps_sublist _).subset hw)).2
+    cases hmid : authorized mid w
+    · simpa [hwas, hmid] using hpass
+    · exact (hstill mid (Keeps.dropUnseen st mid keep) hmid).elim
 
 /-! ## Vaults -/
 
@@ -60,6 +87,7 @@ theorem T2_governance {st st' : State} {op : Op} (h : step st op = some st') {v 
       rcases happ with happ | hd
       · exact .inl happ
       · exact .inr (.inr ⟨d, rfl, hd⟩)
+    | setRoot _ _ _ => simp at hchg
 
 /-- T2, consent: an owner or a device is added only with its own signature. -/
 theorem T2_consent {st st' : State} {op : Op} (h : step st op = some st') {v : VaultId} {vt vt' : Vault}
@@ -84,18 +112,26 @@ theorem T2_consent {st st' : State} {op : Op} (h : step st op = some st') {v : V
       · rw [List.mem_singleton] at hd'
         exact hd' ▸ hd
     | removeDevice _ _ => exact ⟨fun q hq hn => absurd hq hn, fun d hd hn => absurd (List.mem_of_mem_erase hd) hn⟩
+    | setRoot _ _ _ => exact ⟨fun q hq hn => absurd hq hn, fun d hd hn => absurd hd hn⟩
 
-/-- Devices don't govern: signatures that include no owner signer never approve for a human vault. -/
+/-- Devices don't govern: signatures that include neither an owner signer nor the root never approve for a human
+    vault. -/
 theorem device_cannot_govern {st : State} {v : VaultId} {vt : Vault} (h : st.vault? v = some vt)
     (hsig : ∀ p ∈ vt.owners, ∃ s, p = .signer s) (hth : 0 < vt.threshold) (sigs : List SignerId)
-    (hnone : ∀ s ∈ sigs, Principal.signer s ∉ vt.owners) : approves st sigs (.vault v) = false := by
+    (hnone : ∀ s ∈ sigs, Principal.signer s ∉ vt.owners) (hroot : ∀ r, vt.root = some r → r ∉ sigs) :
+    approves st sigs (.vault v) = false := by
   -- no owner approves, so the owners that approve fall short of the threshold
   have hnil : vt.owners.filter (approvesN st sigs st.vaults.length) = [] := by
     refine List.filter_eq_nil_iff.2 fun p hp => ?_
     obtain ⟨s, rfl⟩ := hsig p hp
     simp only [approvesN, List.contains_iff_mem]
     exact fun hs => hnone s hs hp
-  simp only [approves, State.depth, approvesN, h, hnil, List.length_nil, decide_eq_false_iff_not]
+  -- and the root didn't sign
+  have hr : vt.root.any sigs.contains = false := by
+    cases hvr : vt.root with
+    | none => rfl
+    | some r => simpa using hroot r hvr
+  simp only [approves, State.depth, approvesN, h, hnil, hr, List.length_nil, Bool.false_or, decide_eq_false_iff_not]
   omega
 
 /-- `OwnsPlus st a x`: vault `a` owns vault `x`, directly or through a chain. -/
@@ -157,7 +193,18 @@ def GrantsNameVaults (st : State) : Prop := ∀ g ∈ st.grants, ∀ s, g.grante
 /-- T4 (grants name vaults): no step adds a grant that names a signer. -/
 theorem T4_grants_name_vaults {st st' : State} {op : Op} (hinv : GrantsNameVaults st) (h : step st op = some st') :
     GrantsNameVaults st' := by
-  sorry -- P2
+  unfold step at h
+  obtain ⟨post, hpost, rfl⟩ := Option.map_eq_some_iff.1 h
+  intro g hg
+  rw [settle_grants] at hg
+  rcases apply_grants hpost with hsub | ⟨g', hgs, hname, -⟩
+  · exact hinv g (hsub g hg)
+  · rw [hgs] at hg
+    rcases List.mem_append.1 hg with hg | hg
+    · exact hinv g hg
+    · rw [List.mem_singleton] at hg
+      subst hg
+      exact hname
 
 def PublicReadOnly (st : State) : Prop := ∀ g ∈ st.grants, g.grantee = .«public» → g.role = .read
 
@@ -165,7 +212,102 @@ def PublicReadOnly (st : State) : Prop := ∀ g ∈ st.grants, g.grantee = .«pu
     act for a vault. -/
 theorem T8_public_read_only {st st' : State} {op : Op} (hinv : PublicReadOnly st) (h : step st op = some st') :
     PublicReadOnly st' := by
-  sorry -- P2
+  unfold step at h
+  obtain ⟨post, hpost, rfl⟩ := Option.map_eq_some_iff.1 h
+  intro g hg
+  rw [settle_grants] at hg
+  rcases apply_grants hpost with hsub | ⟨g', hgs, -, hpub⟩
+  · exact hinv g (hsub g hg)
+  · rw [hgs] at hg
+    rcases List.mem_append.1 hg with hg | hg
+    · exact hinv g hg
+    · rw [List.mem_singleton] at hg
+      subst hg
+      exact hpub
+
+/-! ## Causal closure -/
+
+/-- Every accepted write's dependencies are accepted writes of its own entry. -/
+def CausallyClosed (st : State) : Prop :=
+  ∀ w ∈ st.writes, ∀ d ∈ w.deps, ∃ x ∈ st.writes, x.op = d ∧ x.space = w.space ∧ x.entry = w.entry
+
+/-- T14 (accepted writes are causally closed): no step accepts a write before what it builds on, and a removal that
+    drops a write drops every write that builds on it. -/
+theorem T14_causally_closed {st st' : State} {op : Op} (hinv : CausallyClosed st) (h : step st op = some st') :
+    CausallyClosed st' := by
+  unfold step at h
+  obtain ⟨post, hpost, rfl⟩ := Option.map_eq_some_iff.1 h
+  have hpre : ∀ w ∈ st.writes, depsIn st.writes w = true := fun w hw => depsIn_iff.2 (hinv w hw)
+  suffices hc : ∀ w ∈ post.writes, depsIn post.writes w = true by
+    intro w hw
+    rw [settle_writes] at hw ⊢
+    exact depsIn_iff.1 (hc w hw)
+  rcases apply_writes hpost with ⟨hws, -⟩ | ⟨w', hws, -, hdeps, -⟩ | ⟨keep, mid, -, rfl, -⟩
+  · rw [hws]
+    exact hpre
+  · -- the new write builds on accepted writes
+    rw [hws]
+    have hsub : ∀ x ∈ st.writes, x ∈ st.writes ++ [w'] := fun x hx => List.mem_append_left _ hx
+    intro w hw
+    rcases List.mem_append.1 hw with hw | hw
+    · exact depsIn_mono (hpre w hw) hsub
+    · rw [List.mem_singleton] at hw
+      subst hw
+      exact depsIn_mono hdeps hsub
+  · -- a removal keeps only writes whose dependencies it keeps
+    exact closeDeps_closed _
+
+/-! ## What a peer knows
+
+A peer's view replays the ops that stand, so everything that holds in every state the ops can reach holds in it. -/
+
+/-- The view is the replay of the ops that stand in it. -/
+theorem view_eq_replay (ops : List Op) : view ops = replay {} (standing ops) := runFrom_fst _ _ _ _
+
+theorem view_reachable (ops : List Op) : Reachable (view ops) := ⟨_, view_eq_replay ops⟩
+
+/-- T3, T4, T8 and T14 in every peer's view. -/
+theorem view_invariants (ops : List Op) :
+    Acyclic (view ops) ∧ GrantsNameVaults (view ops) ∧ PublicReadOnly (view ops) ∧ CausallyClosed (view ops) := by
+  rw [view_eq_replay]
+  -- each holds in the empty state, and every accepted step keeps it
+  have h := replay_inv (fun st => GrantsNameVaults st ∧ PublicReadOnly st ∧ CausallyClosed st)
+    (fun _ _ _ ⟨h₁, h₂, h₃⟩ h => ⟨T4_grants_name_vaults h₁ h, T8_public_read_only h₂ h, T14_causally_closed h₃ h⟩)
+    (standing ops) {} (by simp [GrantsNameVaults, PublicReadOnly, CausallyClosed])
+  exact ⟨T3_no_cycles _, h⟩
+
+/-! ## Strong removal -/
+
+/-- T16 (strong removal), replaying `ops` with the removals `rem`: an op stands only if `apply` accepts it on the
+    state just before it (the replay of the ops that stood before it) with the facts hidden from it taken away; and
+    those facts include everything each removal of `rem` after it takes away, unless that removal had seen it. -/
+theorem T16_strong_removal (ops rem : List Op) (pre post : List (Op × Nat)) (x : Op) (i : Nat)
+    (_hsplit : ops.zipIdx = pre ++ (x, i) :: post)
+    (hstood : (runFrom rem (cuts ops rem) (runFrom rem (cuts ops rem) {} pre).1 [(x, i)]).2 = [x]) :
+    (apply (hide (replay {} (runFrom rem (cuts ops rem) {} pre).2) (hiddenAt (cuts ops rem) i x)) x).isSome ∧
+    ∀ r j, ops[j]? = some r → rem.any (·.id == r.id) → i < j → x.id ∉ r.action.keep?.getD [] →
+      ∀ f ∈ removes ops r, f ∈ hiddenAt (cuts ops rem) i x := by
+  refine ⟨?_, fun r j hr hrem hij hkeep f hf => ?_⟩
+  · -- the op stood after the ops before it, so `apply` accepted it with its hidden facts taken away
+    rw [← runFrom_fst]
+    generalize (runFrom rem (cuts ops rem) {} pre).1 = st at hstood ⊢
+    unfold runFrom at hstood
+    split at hstood
+    · simp [runFrom] at hstood
+    · split at hstood
+      · rename_i hap _
+        rw [hap]
+        rfl
+      · simp [runFrom] at hstood
+  · -- the removal is among the cuts, after the op, and hadn't seen it
+    unfold hiddenAt cuts
+    refine List.mem_flatMap.2 ⟨(j, r.action.keep?.getD [], removes ops r), List.mem_filter.2 ⟨List.mem_filterMap.2
+      ⟨(r, j), List.mem_zipIdx_iff_getElem?.2 hr, by simp [hrem]⟩, by simp [hij, hkeep]⟩, hf⟩
+
+/-- T16, the removals that stand: every removal `resolve` picks stands in the view. -/
+theorem T16_resolved_removals_stand (ops : List Op) :
+    ∀ r ∈ resolve (order ops), (standing ops).any (·.id == r.id) :=
+  resolve_stands (order ops)
 
 /-! ## Keys -/
 

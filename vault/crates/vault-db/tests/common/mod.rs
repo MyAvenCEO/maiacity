@@ -37,8 +37,9 @@ pub fn grant(scope: Scope, role: Role, grantee: Grantee, issuer: VaultId, parent
     Action::Grant(Grant { scope, role, grantee, issuer, parent })
 }
 
+/// A write that builds on its entry's heads: the log fills in `deps` when it drafts the op.
 pub fn write(space: SpaceId, entry: EntryId, actor: VaultId, epoch: u64) -> Action {
-    Action::Write { space, entry, actor, epoch, body: vec![0xc1, 0x9e, 0x47] }
+    Action::Write { space, entry, actor, epoch, deps: vec![], body: vec![0xc1, 0x9e, 0x47] }
 }
 
 /// The rules' log after scenarios 1 and 2: Samuel with his passkey, Mac and iPhone; Bob, Carol and Dave with a passkey
@@ -51,8 +52,9 @@ pub struct Cast {
     pub dave: VaultId,
 }
 
+/// A human vault whose passkey is its only owner and its root, with its devices.
 pub fn human(log: &mut Log, passkey: SignerId, devices: &[SignerId]) -> VaultId {
-    let genesis = Action::Genesis { kind: Kind::Human, owners: vec![Principal::Signer(passkey)], threshold: 1, nonce: 0 };
+    let genesis = Action::Genesis { kind: Kind::Human, owners: vec![Principal::Signer(passkey)], threshold: 1, root: Some(passkey), nonce: 0 };
     let v = VaultId::from(log.append(passkey, &[], genesis).unwrap());
     for &d in devices {
         log.append(passkey, &[d], Action::AddDevice { vault: v, device: d }).unwrap();
@@ -72,7 +74,7 @@ pub fn cast() -> Cast {
 /// Scenario 3: Maia Coop, owned by Samuel and Bob with threshold 2; Bob's passkey consents.
 pub fn with_coop(c: &mut Cast) -> VaultId {
     let owners = vec![Principal::Vault(c.samuel), Principal::Vault(c.bob)];
-    let genesis = Action::Genesis { kind: Kind::Coop, owners, threshold: 2, nonce: 0 };
+    let genesis = Action::Genesis { kind: Kind::Coop, owners, threshold: 2, root: None, nonce: 0 };
     VaultId::from(c.log.append(PASSKEY_S, &[PASSKEY_B], genesis).unwrap())
 }
 
@@ -139,10 +141,10 @@ pub struct World {
     pub dave: VaultId,
 }
 
-/// A human vault on the Lab: the passkey signs the genesis on the first device, then adds each device, which
-/// countersigns.
+/// A human vault on the Lab, its passkey the root: the passkey signs the genesis on the first device, then adds each
+/// device, which countersigns.
 pub fn human_on(lab: &mut Lab, passkey: SignerId, devices: &[SignerId]) -> VaultId {
-    let genesis = Action::Genesis { kind: Kind::Human, owners: vec![Principal::Signer(passkey)], threshold: 1, nonce: 0 };
+    let genesis = Action::Genesis { kind: Kind::Human, owners: vec![Principal::Signer(passkey)], threshold: 1, root: Some(passkey), nonce: 0 };
     let v = VaultId::from(lab.submit(devices[0], &[passkey], genesis).unwrap());
     for &d in devices {
         lab.submit(devices[0], &[passkey, d], Action::AddDevice { vault: v, device: d }).unwrap();
@@ -195,7 +197,7 @@ pub fn world() -> World {
 /// Scenario 3 on the Lab.
 pub fn coop_on(w: &mut World) -> VaultId {
     let owners = vec![Principal::Vault(w.samuel), Principal::Vault(w.bob)];
-    let genesis = Action::Genesis { kind: Kind::Coop, owners, threshold: 2, nonce: 0 };
+    let genesis = Action::Genesis { kind: Kind::Coop, owners, threshold: 2, root: None, nonce: 0 };
     VaultId::from(w.lab.submit(w.mac_s, &[w.passkey_s, w.passkey_b], genesis).unwrap())
 }
 

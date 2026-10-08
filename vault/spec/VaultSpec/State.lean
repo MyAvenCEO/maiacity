@@ -17,6 +17,9 @@ structure Vault where
   threshold : Nat
   /-- Device signers act for a human vault but don't govern it. -/
   devices   : List SignerId
+  /-- A human vault's root: its passkey, named at genesis. It approves anything for its vault on its own, wins every
+      clash with the other owners, and only it hands the root on. -/
+  root      : Option SignerId
   deriving DecidableEq, Repr
 
 structure Grant where
@@ -35,7 +38,9 @@ structure Space where
   entries : List EntryId
   deriving DecidableEq, Repr
 
-/-- An accepted edit: one encrypted Loro update to one entry. -/
+/-- An accepted edit: one encrypted Loro update to one entry. `deps` are the writes of the same entry it builds on
+    (its Loro frontier when it was made): accepted writes stay causally closed (T14), so a write whose dependency
+    is cut is cut too. -/
 structure Write where
   op     : OpId
   author : SignerId
@@ -43,6 +48,7 @@ structure Write where
   space  : SpaceId
   entry  : EntryId
   epoch  : Nat
+  deps   : List OpId
   deriving DecidableEq, Repr
 
 /-- `secret` sealed to the key pair `to`: whoever can open `to` can open `secret`. -/
@@ -98,15 +104,16 @@ def actsForN (st : State) (s : SignerId) : Nat → VaultId → Bool
 
 def actsFor (st : State) (s : SignerId) (v : VaultId) : Bool := actsForN st s st.depth v
 
-/-- The signatures `sigs` approve for `p`: a signer approves by having signed; a vault approves when at least its
-    threshold of owners approve. Devices are not owners, so they never approve. -/
+/-- The signatures `sigs` approve for `p`: a signer approves by having signed; a vault approves when its root
+    signed, or at least its threshold of owners approve. Devices are not owners, so they never approve. -/
 def approvesN (st : State) (sigs : List SignerId) : Nat → Principal → Bool
   | _, .signer s => sigs.contains s
   | 0, .vault _ => false
   | n + 1, .vault v =>
     match st.vault? v with
     | none => false
-    | some vt => decide (vt.threshold ≤ (vt.owners.filter (approvesN st sigs n)).length)
+    | some vt => vt.root.any sigs.contains ||
+      decide (vt.threshold ≤ (vt.owners.filter (approvesN st sigs n)).length)
 
 def approves (st : State) (sigs : List SignerId) (p : Principal) : Bool := approvesN st sigs st.depth p
 
@@ -170,7 +177,10 @@ def openRound (st : State) (known : List KeyName) : List KeyName :=
 
 def openAll (st : State) : Nat → List KeyName → List KeyName
   | 0, known => known
-  | n + 1, known => openAll st n (openRound st known)
+  | n + 1, known =>
+    let next := openRound st known
+    -- a pass that opens nothing new leaves every later pass with nothing new either
+    if next.length == known.length then known else openAll st n next
 
 /-- Everything `start` can open; each pass opens at least one new key or changes nothing, so one pass per seal is
     enough. -/
@@ -215,9 +225,10 @@ def targets (st : State) : KeyScope → List KeyName
 /-- Key families whose current key some device could open before a change but is no longer entitled to, or that
     stopped being public. These start a new epoch. -/
 def staleKeys (pre post : State) : List KeyScope :=
+  let opened := (signers pre).map fun d => (d, opens pre [.device d])
   (keyScopes post).filter fun k =>
     (publicKey pre k && !publicKey post k) ||
-    (!publicKey post k && (signers pre).any fun d => knows pre [.device d] (pre.curKey k) && !entitled post d k)
+    (!publicKey post k && opened.any fun (d, o) => o.contains (pre.curKey k) && !entitled post d k)
 
 /-- Start a new epoch of `k`. The old key is sealed to the new one, so whoever may read now can read the history. -/
 def bump (st : State) (k : KeyScope) : State :=

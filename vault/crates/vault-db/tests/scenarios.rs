@@ -68,7 +68,7 @@ fn scenario_03_a_coop_of_two() {
     let mut w = world();
     // Bob has to consent to becoming an owner
     let owners = vec![Principal::Vault(w.samuel), Principal::Vault(w.bob)];
-    let genesis = Action::Genesis { kind: Kind::Coop, owners, threshold: 2, nonce: 0 };
+    let genesis = Action::Genesis { kind: Kind::Coop, owners, threshold: 2, root: None, nonce: 0 };
     assert_eq!(w.lab.submit(w.mac_s, &[w.passkey_s], genesis).err(), Some(Refusal::NoConsent));
     let coop = coop_on(&mut w);
     w.lab.sync_all(3);
@@ -96,7 +96,6 @@ fn scenario_03_the_coop_key_opens_only_on_owner_devices() {
 }
 
 #[test]
-#[ignore = "P2: caps"]
 fn scenario_04_spaces() {
     let mut w = world();
     let coop = coop_on(&mut w);
@@ -458,29 +457,19 @@ fn scenario_18_recovery_after_losing_every_device() {
     let mut w = world();
     let coop = coop_on(&mut w);
     let samuel = w.samuel;
-    // Samuel writes down a recovery code; its signer becomes a second owner of his vault, beside the passkey
-    let code = w.lab.recovery_code();
-    let written = code.to_string();
-    let recovery = code.signer().id();
-    let add = Action::AddOwner { vault: samuel, owner: Principal::Signer(recovery) };
-    w.lab.submit(w.mac_s, &[w.passkey_s, recovery], add).unwrap();
     w.lab.sync_all(18);
-    // he loses his passkey, his Mac and his iPhone
-    for s in [w.passkey_s, w.mac_s, w.phone_s, recovery] {
+    // Samuel loses his Mac and his iPhone; his passkey, his vault's root, lives on in his iCloud Keychain
+    for s in [w.mac_s, w.phone_s] {
         w.lab.lose(s);
     }
-    // on a new Mac he types the code in, and Bob's Mac, which acts for the coop, hands over his vault's log
+    // on a new Mac, Bob's Mac, which acts for the coop, hands over his vault's log; the passkey adds the new Mac and
+    // removes the lost devices
     let new_mac = w.lab.device("Samuel's new Mac");
-    assert_eq!(w.lab.use_code(&RecoveryCode::parse(&written.to_lowercase()).unwrap()), recovery);
     w.lab.share_contact(w.mac_b, new_mac, samuel);
-    // the code adds a new passkey and the new Mac; the new passkey removes what was lost
-    let new_passkey = w.lab.passkey("Samuel's new passkey");
     let steps = [
-        (vec![recovery, new_passkey], Action::AddOwner { vault: samuel, owner: Principal::Signer(new_passkey) }),
-        (vec![recovery, new_mac], Action::AddDevice { vault: samuel, device: new_mac }),
-        (vec![new_passkey], Action::RemoveDevice { vault: samuel, device: w.mac_s, keep: vec![] }),
-        (vec![new_passkey], Action::RemoveDevice { vault: samuel, device: w.phone_s, keep: vec![] }),
-        (vec![new_passkey], Action::RemoveOwner { vault: samuel, owner: Principal::Signer(w.passkey_s), keep: vec![] }),
+        (vec![w.passkey_s, new_mac], Action::AddDevice { vault: samuel, device: new_mac }),
+        (vec![w.passkey_s], Action::RemoveDevice { vault: samuel, device: w.mac_s, keep: vec![] }),
+        (vec![w.passkey_s], Action::RemoveDevice { vault: samuel, device: w.phone_s, keep: vec![] }),
     ];
     for (signers, action) in steps {
         w.lab.submit(new_mac, &signers, action).unwrap();
@@ -491,7 +480,48 @@ fn scenario_18_recovery_after_losing_every_device() {
     let v = w.lab.log(w.mac_b).view();
     assert!(v.acts_for(new_mac, samuel) && v.acts_for(new_mac, coop));
     assert!(!v.acts_for(w.mac_s, coop) && !v.acts_for(w.phone_s, coop));
-    // the lost passkey governs nothing any more, the code still does, and the new Mac learned the coop
-    assert!(!v.approves(&[w.passkey_s], Principal::Vault(samuel)) && v.approves(&[recovery], Principal::Vault(samuel)));
     assert!(w.lab.log(new_mac).view().vault(coop).is_some());
+}
+
+#[test]
+fn scenario_18_a_recovery_code_when_the_passkey_is_lost_too() {
+    let mut w = world();
+    let coop = coop_on(&mut w);
+    let samuel = w.samuel;
+    // Samuel writes down a recovery code; its signer becomes a second owner of his vault, never its root
+    let code = w.lab.recovery_code();
+    let written = code.to_string();
+    let recovery = code.signer().id();
+    let add = Action::AddOwner { vault: samuel, owner: Principal::Signer(recovery) };
+    w.lab.submit(w.mac_s, &[w.passkey_s, recovery], add).unwrap();
+    w.lab.sync_all(18);
+    // he loses his passkey too, with every device
+    for s in [w.passkey_s, w.mac_s, w.phone_s, recovery] {
+        w.lab.lose(s);
+    }
+    // on a new Mac he types the code in, and Bob's Mac hands over his vault's log
+    let new_mac = w.lab.device("Samuel's new Mac");
+    assert_eq!(w.lab.use_code(&RecoveryCode::parse(&written.to_lowercase()).unwrap()), recovery);
+    w.lab.share_contact(w.mac_b, new_mac, samuel);
+    // the code adds a new passkey and the new Mac; the new passkey removes the lost devices
+    let new_passkey = w.lab.passkey("Samuel's new passkey");
+    let steps = [
+        (vec![recovery, new_passkey], Action::AddOwner { vault: samuel, owner: Principal::Signer(new_passkey) }),
+        (vec![recovery, new_mac], Action::AddDevice { vault: samuel, device: new_mac }),
+        (vec![new_passkey], Action::RemoveDevice { vault: samuel, device: w.mac_s, keep: vec![] }),
+        (vec![new_passkey], Action::RemoveDevice { vault: samuel, device: w.phone_s, keep: vec![] }),
+    ];
+    for (signers, action) in steps {
+        w.lab.submit(new_mac, &signers, action).unwrap();
+    }
+    // only the root hands the root on, so the lost passkey stays the root
+    let hand_on = Action::SetRoot { vault: samuel, root: Some(new_passkey), keep: vec![] };
+    assert_eq!(w.lab.submit(new_mac, &[recovery, new_passkey], hand_on).err(), Some(Refusal::NotRoot));
+    w.lab.share_contact(new_mac, w.mac_b, samuel);
+    w.lab.sync_all(19);
+    let v = w.lab.log(w.mac_b).view();
+    assert!(v.acts_for(new_mac, samuel) && v.acts_for(new_mac, coop));
+    assert!(!v.acts_for(w.mac_s, coop) && !v.acts_for(w.phone_s, coop));
+    assert!(v.approves(&[recovery], Principal::Vault(samuel)) && v.approves(&[new_passkey], Principal::Vault(samuel)));
+    assert_eq!(v.vault(samuel).and_then(|x| x.root), Some(w.passkey_s));
 }

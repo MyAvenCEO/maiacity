@@ -9,7 +9,6 @@ use vault_db::policy::{Action, Log, Op, Refusal, Role, Scope};
 use vault_db::sync::{item_writes, receive, respond};
 
 #[test]
-#[ignore = "P2: caps"]
 fn todo_shared_per_item_roles() {
     let t = social_todo();
     let (c, todos, door) = (&t.c, t.todos, Scope::Entry(t.todos, DOOR));
@@ -47,7 +46,6 @@ fn roles_changed() -> SocialTodo {
 }
 
 #[test]
-#[ignore = "P2: caps"]
 fn access_through_coop_survives_direct_revoke() {
     let t = roles_changed();
     let (c, todos, door) = (&t.c, t.todos, Scope::Entry(t.todos, DOOR));
@@ -63,7 +61,6 @@ fn access_through_coop_survives_direct_revoke() {
 }
 
 #[test]
-#[ignore = "P2: caps"]
 fn cascade_ends_regrants() {
     let mut t = roles_changed();
     let (todos, door, samuel) = (t.todos, Scope::Entry(t.todos, DOOR), t.c.samuel);
@@ -90,7 +87,6 @@ fn writes_on(ops: &[Op]) -> Vec<(SpaceId, EntryId)> {
 }
 
 #[test]
-#[ignore = "P2: caps decide what syncs"]
 fn sync_sends_only_capped_items() {
     let t = social_todo();
     let ops = t.c.log.ops();
@@ -109,7 +105,6 @@ fn sync_sends_only_capped_items() {
 }
 
 #[test]
-#[ignore = "P2: caps decide what syncs"]
 fn item_syncs_peer_to_peer_without_server() {
     let t = social_todo();
     let ops = t.c.log.ops();
