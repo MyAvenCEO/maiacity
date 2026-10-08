@@ -16,6 +16,8 @@ use crate::{ALPN, Peer, Shared, WAIT};
 pub(crate) const REQUEST: u8 = 0;
 /// An announcement, answered by nothing.
 pub(crate) const ANNOUNCE: u8 = 1;
+/// A request for the node's contact card, answered by its vault logs, if it hands its card out (the server).
+pub(crate) const CARD: u8 = 2;
 
 /// The error code a node closes a connection or a stream with when it refuses it.
 pub(crate) const REFUSED: VarInt = VarInt::from_u32(1);
@@ -102,7 +104,7 @@ pub(crate) async fn serve(shared: Arc<Shared>, peer: Peer) {
 }
 
 /// The answer to the message on the stream `recv`: a request gets a reply, and an announcement nothing, but the
-/// node asks the peer if its digests differ.
+/// node asks the peer if its digests differ; a request for its card gets its vault logs, if it hands its card out.
 async fn answer(shared: &Arc<Shared>, peer: &Peer, mut recv: RecvStream) -> Result<Vec<u8>> {
     let message = recv.read_to_end(MESSAGE_LIMIT).await?;
     let (&kind, body) = message.split_first().context("an empty message")?;
@@ -120,6 +122,10 @@ async fn answer(shared: &Arc<Shared>, peer: &Peer, mut recv: RecvStream) -> Resu
                 shared.ask_soon(peer.endpoint);
             }
             Ok(Vec::new())
+        }
+        CARD if shared.opts.card => {
+            let ops = shared.lab(|lab, me| lab.card(me)).await;
+            Ok(Reply { ops, blobs: Vec::new() }.to_wire())
         }
         _ => bail!("no message of kind {kind}"),
     }

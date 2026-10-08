@@ -247,3 +247,19 @@ async fn mceliece_keys_go_over_iroh_blobs_only_within_reach() {
         assert!(fetch(&unproven).await.is_none(), "nor may an endpoint no hello proved");
     }
 }
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn a_peer_out_of_reach_is_tried_less_and_less_often() {
+    let mut w = world();
+    handbook_spaces(&mut w);
+    let (mac_s, passkey_s) = (w.mac_s, w.passkey_s);
+    // Samuel's Mac on its own: every peer it knows is out of reach
+    let opts = Options { retry: Duration::from_millis(100), ..Options::local() };
+    let mac = Node::spawn(w.lab.split(mac_s, &[passkey_s], [1; 32]), mac_s, opts).await.expect("a node");
+    tokio::time::sleep(Duration::from_secs(4)).await;
+    let peers = mac.read(|lab, me| lab.peers(me).len()).await;
+    let dials = mac.dials();
+    // every 100 ms for 4 s would be 40 dials a peer; after 0.1, 0.2, 0.4, 0.8 and 1.6 s of waiting, it is 6
+    assert!(peers > 0 && dials >= peers, "each of its {peers} peers is tried");
+    assert!(dials <= 6 * peers, "{dials} dials to {peers} peers out of reach in 4 s: less and less often");
+}
