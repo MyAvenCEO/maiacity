@@ -22,12 +22,12 @@
 //! `History` is what a device holds of one entry, every accepted write with what it could open; the Lab builds one
 //! for each entry it shows. `Repo` keeps one locally, with no keys and no caps, for the tests and the property checks.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeSet, HashMap, HashSet};
 
 use serde_json::{Map, Value};
 
 use crate::doc::Item;
-use crate::id::{EntryId, OpId, SignerId, SpaceId, VaultId};
+use crate::id::{BlobId, EntryId, OpId, SignerId, SpaceId, VaultId};
 use crate::policy::{self, Branch, Line, Refusal, Write};
 
 /// The main line.
@@ -129,6 +129,22 @@ impl History {
     /// device opens any version read-only, and makes the change a promote carries.
     pub fn item_at(&self, version: &[OpId], signer: SignerId, line: Line) -> Item {
         build(&self.version(version), signer, line).unwrap_or_else(|| Item::new_on(signer, line))
+    }
+
+    /// The schemas the update of write `op` was written under, imported on the version it builds on: none for a write
+    /// the device can't open, a branch's start, a merge, or a promote, a restore or an undo, which name none.
+    pub fn written_under(&self, op: OpId, signer: SignerId) -> BTreeSet<BlobId> {
+        let Some(c) = self.get(op) else { return BTreeSet::new() };
+        let w = &c.write;
+        let Some(update) = c.body.as_ref().filter(|u| w.branch != Branch::New && !u.is_empty()) else {
+            return BTreeSet::new();
+        };
+        let mut item = self.item_at(&w.deps, signer, w.line());
+        let since = item.version();
+        match item.import_on(update, w.author, w.line()) {
+            Ok(()) => item.authored_since(&since),
+            Err(_) => BTreeSet::new(),
+        }
     }
 
     /// The record `signer` shows on `line`: `{}` before any update.

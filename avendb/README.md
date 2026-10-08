@@ -14,6 +14,8 @@ history and branches, and, from P8, its own iroh networking (its own ALPN, its o
 | Path | What it holds |
 |---|---|
 | `crates/avendb` | The core: the rules every peer applies (`policy`), keys and encryption (`keys`), signatures and passkeys (`sign`), Loro items (`doc`), schemas and lenses (`lens`), history and branches (`branch`), sync by caps and by each log's frontier (`sync`), and the Lab the scenario tests run on (`lab`) |
+| `crates/avendb-web` | The core in a web page, as WebAssembly: the tile's world made a step at a time, read through JSON views and changed through JSON actions, on whichever device the page picks |
+| `scripts/build-web.sh` | Builds `avendb-web` into the tile's package, `src/lib/avendb/pkg/` in the app (committed, so the app builds without Rust) |
 | `spec/` | The Lean model the core is built against, test-first: the rules, the theorems (T1 to T19) and the test vectors both sides replay (see `spec/README.md`) |
 | `docs/` | The research and the first plan that led here (`VERSIONING-RESEARCH.md`, `DATABASE-PLAN.md`), kept for their reasoning |
 
@@ -24,6 +26,14 @@ cd avendb
 cargo test                      # every Rust test
 cargo test -- --ignored         # the tests later phases still owe
 cd spec && lake build           # the Lean model: proofs, scenario checks, test vectors
+```
+
+The avenDB tile (`/app/avendb/` in the app, for admins) runs the core in the page. After a change to the core, build its
+package again and walk the tile's screens in a headless Chrome:
+
+```sh
+cd avendb && ./scripts/build-web.sh     # needs the wasm32-unknown-unknown target and wasm-bindgen-cli 0.2.129
+cd .. && node scripts/avendb-smoke.mjs  # starts a dev server, checks every screen, screenshots in build/avendb-smoke
 ```
 
 The Lean build needs [elan](https://github.com/leanprover/elan) (`spec/lean-toolchain` pins the version). After a change
@@ -42,5 +52,5 @@ Each phase is one PR, merged when its Rust tests pass and its theorems are prove
 | P4b | Post-quantum hardening: SHA-3 ids and hashes, a hash-based signature beside every classical one but a write's, checkpoints that vouch for the writes (T18), a McEliece share beside X-Wing in every key box; the passkey as the only way back in, device keys derived from it at every unlock | Merged |
 | P5 | History and branches: every write a commit on a line of its entry's history, branches from any version, merge, promote, revert and restore, undo of an older commit, forks into another space (T10) | Merged |
 | P6 | Sync log by log: every op builds on the frontier of its own log (a vault's, a space's or an entry's), a device asks with its frontier of each log and a few ops further back and is sent only what it lacks (T19), devices gossip one digest per log, a device restored from an old backup is flagged when it signs again (a fork); offline devices, random delivery orders, partial delivery, Lean ⇄ Rust vectors for sync (T11, T12, T13); a device that has seen a revocation writes under the new key (T15) | Merged |
-| P7 | The avenDB tile | Next |
-| P8 | Sync on avenDB's own iroh ALPN with X25519MLKEM768 on every connection, bytes in iroh-blobs, the server peer in its own container beside the media vault's | |
+| P7 | The avenDB tile: the Lab's whole world in one page, as WebAssembly in the page's workers, every device side by side; pick one and act as it: vaults and the passkeys that sign their changes, spaces, entries read and edited as each app version sees them, history, branches, access and why, todos, schemas and lenses, sync, locked and offline devices, and the plan's scenarios played green | Merged |
+| P8 | Sync on avenDB's own iroh ALPN with X25519MLKEM768 on every connection, bytes in iroh-blobs, the server peer in its own container beside the media vault's | Next |

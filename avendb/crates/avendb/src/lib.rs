@@ -20,8 +20,10 @@
 //! | P4b post-quantum | `hash`: SHA-3 for every hash of ours; `sign`: SLH-DSA beside every classical signature but a write's, device keys derived from the passkey; `keys`: a Classic McEliece share beside X-Wing in every sealed box, wraps where the key is held; `policy`: checkpoints and the post-quantum-only replay; `lab`: locked devices, blobs | T18 |
 //! | P5 history and branches | `branch`: every write a commit on a line of its entry's history, branches from any version, merge, promote, restore and undo, versions opened read-only; `policy`: each write's line, writes on a branch build on its start; `doc`: a Loro peer per line, records put back untagged, copies for forks; `lab`: every line of every entry shown, the branch operations | T10 |
 //! | P6 sync and convergence | `sync`: every op in one log (a vault's, a space's or an entry's) building on that log's frontier, devices asking with what they hold of each log, one digest per log to gossip, forks flagged; `policy`: ops drafted on their log's frontier; `lab`: offline devices, gossip in random orders, backups whose restored devices fork, writes under the newest key a device knows | T11, T12, T13, T15, T19 |
+//! | P7 the tile | `cast`: the scenarios' people, devices and vaults, made a step at a time; `scenarios`: the plan's scenarios, each check recorded green or red, for the tests and the tile's Lab; `keys`: McEliece pairs made from a seed anywhere, so a page makes them in its workers; `lab`: names, spare keys made ahead; `branch`: the schemas each write was written under | |
 
 pub mod branch;
+pub mod cast;
 pub mod doc;
 pub mod encode;
 pub mod hash;
@@ -30,5 +32,6 @@ pub mod keys;
 pub mod lab;
 pub mod lens;
 pub mod policy;
+pub mod scenarios;
 pub mod sign;
 pub mod sync;
