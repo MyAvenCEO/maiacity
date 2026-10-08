@@ -1,7 +1,7 @@
 <!--
 	avenCITY Sandbox 6 — one village at its real size (Samuel, 2026-10-08): the tower hex in the middle (Tower180, the
 	village's one factory building and utilities center, with eight Dome120 factories round it and the fields, woods and
-	pits that feed them) and six living hexes round it, layouts A and B in turn (terraced Dome40 and Dome80 homes, two
+	pits that feed them) and six living hexes round it, layouts A and B in turn (Dome40 and Dome80 homes in straight blocks, two
 	Dome120 tropical food forests and a Dome120 of utilities each), with the sun on every dome compared (./light.js). The
 	numbers for the whole village, the tower hex or a layout; every overlay on the world and every panel of numbers can be switched on and off; a click
 	on a building opens its card. The numbers: ./specs.js, ./layout.js, ./stats.js.
@@ -136,7 +136,7 @@
 				people: (k) => {
 					const p = planOf(k);
 					if (!p.layout) return `${TOWER.label}, ${n0(towerStats.people[0].n * 2.2)} residents, ${n0(towerStats.people.slice(2).reduce((/** @type {number} */ a, /** @type {any} */ q) => a + q.n, 0))} desks and jobs`;
-					return `${layoutStats[p.layout].residents} people in ${p.sites.filter((s) => s.kind.startsWith('dome')).length} terraced homes · winter sun ${n0(100 * (sun.hexes[k].homes?.winter ?? 0))}%`;
+					return `${layoutStats[p.layout].residents} people in ${p.sites.filter((s) => s.kind.startsWith('dome')).length} home domes · winter sun ${n0(100 * (sun.hexes[k].homes?.winter ?? 0))}%`;
 				},
 				onProgress: (l) => (loading = l)
 			});
@@ -192,16 +192,32 @@
 				{#each card.facts as [k, v] (k)}<dt>{k}</dt><dd>{v}</dd>{/each}
 				{#if cardSun}<dt>Sun on its south glass</dt><dd>{n0(100 * cardSun.winter)}% of the sunny day on {DAYS.winter.label} ({n1(cardSun.winter * sun.dayHours.winter)} of {n1(sun.dayHours.winter)} h), {n0(100 * cardSun.equinox)}% on {DAYS.equinox.label}</dd>{/if}
 			</dl>
-			{#if card.terraces}
-				<h3>Its terraces</h3>
-				<svg class="section" viewBox="{-card.cap.a - 2} {-card.cap.h - 2} {2 * card.cap.a + 4} {card.cap.h + 4}" role="img" aria-label="A section through the dome from south to north">
-					<path d={`M ${-card.cap.a} 0 ` + Array.from({ length: 49 }, (_, k) => { const x = -card.cap.a + (k / 48) * 2 * card.cap.a; return `L ${x} ${-(Math.sqrt(card.cap.R ** 2 - x * x) - (card.cap.R - card.cap.h))}`; }).join(' ') + ' Z'} class="glass" />
-					<path d={`M ${card.cut} 0 ` + Array.from({ length: 25 }, (_, k) => { const x = card.cut + (k / 24) * (card.cap.a - card.cut); return `L ${x} ${-(Math.sqrt(card.cap.R ** 2 - x * x) - (card.cap.R - card.cap.h))}`; }).join(' ')} class="hemp" />
-					<rect x={card.terraces.pondIn} y="-0.4" width={card.terraces.pondOut - card.terraces.pondIn} height="1.6" fill="#3f86a6" />
-					{#each card.terraces.levels as L (L.k)}<rect x={L.rIn} y={-(L.y + L.h)} width={L.rOut - L.rIn} height={L.h - 0.2} fill={USES.living.map} />{/each}
-					<line x1={-card.cap.a - 2} x2={card.cap.a + 2} y1="0" y2="0" class="ground" />
+			{#if card.block && card.cap}
+				{@const B = card.block}
+				{@const c = /** @type {import("./specs.js").Cap} */ (card.cap)}
+				{@const shell = (/** @type {number} */ off, /** @type {number} */ from, /** @type {number} */ to, /** @type {number} */ n) => Array.from({ length: n + 1 }, (_, k) => { const x = from + (k / n) * (to - from); return `L ${x} ${-(Math.sqrt(Math.max(0, c.R ** 2 - x * x - off * off)) - (c.R - c.h))}`; }).join(' ')}
+				{@const edge = Math.sqrt(c.a ** 2 - B.front ** 2)}
+				<h3>Its block</h3>
+				<svg class="section" viewBox="{-edge - 2} {-c.h - 2} {2 * edge + 4} {c.h + 4}" role="img" aria-label="The block seen from the south">
+					<path d={`M ${-edge} 0 ` + shell(B.front, -edge, edge, 48) + ' Z'} class="glass" />
+					{#each B.levels as L (L.k)}
+						<rect x={-L.half} y={-(L.y + L.h)} width={2 * L.half} height={L.h - 0.2} fill={USES.living.map} />
+						{#if L.k > 0}{#each Array.from({ length: Math.floor((2 * L.half - 4) / 6) + 1 }, (_, i) => i) as i (i)}<rect x={-L.half + 1 + i * 6} y={-L.y - 0.1} width="4" height="1.1" class="balcony" />{/each}{/if}
+					{/each}
+					<line x1={-edge - 2} x2={edge + 2} y1="0" y2="0" class="ground" />
 				</svg>
-				<p class="small">South on the left, north on the right: {card.terraces.levels.length} storeys stepping back {card.terraces.step} m each toward the hemp (white) on the north side, every balcony on the roof below open to the sky through the glass and looking south over the garden; the pond along the north rim.</p>
+				<p class="small">From the south: {B.levels.length} storeys, {B.levels.map((/** @type {any} */ l) => Math.round(2 * l.half)).join(', ')} m long from the ground up, each as long as the shell lets it; a small balcony (green, {B.balcony} m deep) every 6 m on the south face.</p>
+				<svg class="section" viewBox="{-c.a - 2} {-c.h - 2} {2 * c.a + 4} {c.h + 4}" role="img" aria-label="A section through the dome from south to north">
+					<path d={`M ${-c.a} 0 ` + shell(0, -c.a, c.a, 48) + ' Z'} class="glass" />
+					<path d={`M ${card.cut} 0 ` + shell(0, card.cut, c.a, 24)} class="hemp" />
+					<rect x={B.pondIn} y="-0.4" width={B.pondOut - B.pondIn} height="1.6" fill="#3f86a6" />
+					{#each B.levels as L (L.k)}
+						<rect x={B.front} y={-(L.y + L.h)} width={B.depth} height={L.h - 0.2} fill={USES.living.map} />
+						{#if L.k > 0}<rect x={B.front - B.balcony} y={-L.y - 0.1} width={B.balcony} height="1.1" class="balcony" />{/if}
+					{/each}
+					<line x1={-c.a - 2} x2={c.a + 2} y1="0" y2="0" class="ground" />
+				</svg>
+				<p class="small">South on the left, north on the right: the block {B.depth} m deep, its front {B.front} m north of the middle, the whole south of the dome left to the food garden; the pond behind it along the north rim, under the hemp (white).</p>
 			{/if}
 			<h3>{card.kind === 'tower' ? 'Floors' : 'Its floor'}</h3>
 			<table>
@@ -298,7 +314,7 @@
 				</tbody>
 			</table>
 			{#if hex !== 'tower'}
-				<p class="small">Food forest under glass {n1(sum(['indoorFood', 'tropical']))}% · outdoors {n1(sum(['foodForest']))}% · commercial growing {n1(sum(['commercial']))}% · homes {n1(sum(['living']))}% of the land ({n0(stats.buildings.reduce((/** @type {number} */ a, /** @type {any} */ b) => a + (b.gfa ?? 0) * b.count, 0))} m² of floor on terraces of {KINDS.dome40.storeys} and {KINDS.dome80.storeys} storeys) · nature {n1(sum(['nature']))}%.{#if hex === 'village'} Raw-material fields and woods {n1(sum(['hemp', 'bamboo', 'woodland']))}% · open pits {n1(sum(['mine']))}%.{/if}</p>
+				<p class="small">Food forest under glass {n1(sum(['indoorFood', 'tropical']))}% · outdoors {n1(sum(['foodForest']))}% · commercial growing {n1(sum(['commercial']))}% · homes {n1(sum(['living']))}% of the land ({n0(stats.buildings.reduce((/** @type {number} */ a, /** @type {any} */ b) => a + (b.gfa ?? 0) * b.count, 0))} m² of floor in blocks of {KINDS.dome40.storeys} and {KINDS.dome80.storeys} storeys) · nature {n1(sum(['nature']))}%.{#if hex === 'village'} Raw-material fields and woods {n1(sum(['hemp', 'bamboo', 'woodland']))}% · open pits {n1(sum(['mine']))}%.{/if}</p>
 			{:else}
 				<p class="small">Raw-material fields and woods {n1(sum(['hemp', 'bamboo', 'woodland']))}% · open pits {n1(sum(['mine']))}% (no domes over them: only the works are under glass) · nature {n1(sum(['nature']))}%.</p>
 			{/if}
@@ -317,7 +333,7 @@
 					{/each}
 				</tbody>
 			</table>
-			<p class="small">Every dome is a geodesic cap a third as high as it is wide (the 120 m dome’s 40 m). The homes are terraces under the north third: Dome40 {KINDS.dome40.storeys} storeys for {KINDS.dome40.people} people, Dome80 {KINDS.dome80.storeys} for {KINDS.dome80.people}, every balcony on the roof of the storey below, looking south into the dome’s own food garden. Every panel is one of three: a white hemp triangle (solid, insulated) on the cold north side ({n0(NORTH * 100)}% of the shell), its edge one smooth line from the foot 70° west of north, over the north side below the crown, down to the foot 70° east of north; everywhere else glass and solar panels alternate like a chessboard, half each, so the plants keep half the light. The domes are Class I geodesics (frequency 7, 11 and 14: struts ~3–6 m), the tower a diagrid of triangles.</p>
+			<p class="small">Every dome is a geodesic cap a third as high as it is wide (the 120 m dome’s 40 m). The homes are one straight block across the north of each dome, east to west: Dome40 {KINDS.dome40.storeys} storeys for {KINDS.dome40.people} people, Dome80 {KINDS.dome80.storeys} for {KINDS.dome80.people}, small balconies on the south face looking into the dome’s own food garden. Every panel is one of three: a white hemp triangle (solid, insulated) on the cold north side ({n0(NORTH * 100)}% of the shell), its edge one smooth line from the foot 70° west of north, over the north side below the crown, down to the foot 70° east of north; everywhere else glass and solar panels alternate like a chessboard, half each, so the plants keep half the light. The domes are Class I geodesics (frequency 7, 11 and 14: struts ~3–6 m), the tower a diagrid of triangles.</p>
 		</section>
 	{/if}
 
@@ -765,6 +781,9 @@
 		fill: none;
 		stroke: #d8cba8;
 		stroke-width: 2.4;
+	}
+	.section .balcony {
+		fill: #5a9e4b;
 	}
 	.section .ground {
 		stroke: #6b5236;

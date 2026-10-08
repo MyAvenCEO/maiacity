@@ -126,7 +126,7 @@ export function hexStats(plan, land = landOf(plan)) {
 	if (plan.id === 'living') {
 		const homes = (/** @type {string} */ k) => plan.sites.filter((s) => s.kind === k).length;
 		const d40 = KINDS.dome40, d80 = KINDS.dome80;
-		people.push({ label: 'Residents', n: residents, note: `${homes('dome40')} × ${d40.people} in Dome40s (${d40.storeys} terraced storeys), ${homes('dome80')} × ${d80.people} in Dome80s (${d80.storeys}); ${Math.round(gfaHomes / residents)} m² of home each (gross; Germany lives on 49 m² net a head)` });
+		people.push({ label: 'Residents', n: residents, note: `${homes('dome40')} × ${d40.people} in Dome40s (a block of ${d40.storeys} storeys), ${homes('dome80')} × ${d80.people} in Dome80s (${d80.storeys}); ${Math.round(gfaHomes / residents)} m² of home each (gross; Germany lives on 49 m² net a head)` });
 		people.push({ label: 'Desks in the utilities dome', n: 120, note: 'co-working at ~13 m² a desk, on two storeys' });
 	} else {
 		const f = Object.fromEntries(floors.map((x) => [x.id, x]));
@@ -234,7 +234,7 @@ export function villageStats(parts) {
 	const aptPeople = tower ? Math.round(tower.people[0].n * 2.2) : 0;
 	/** @type {{ label: string, n: number, note: string }[]} */
 	const people = [
-		{ label: 'Residents in the living hexes’ domes', n: residents, note: living.map((p) => `${p.n} hexes × ${p.stats.residents}`).join(', ') + ', in terraced Dome40 and Dome80 homes' },
+		{ label: 'Residents in the living hexes’ domes', n: residents, note: living.map((p) => `${p.n} hexes × ${p.stats.residents}`).join(', ') + ', in the blocks of Dome40 and Dome80 homes' },
 		{ label: 'Residents in the tower’s apartments', n: aptPeople, note: `${tower?.people[0].n ?? 0} premium apartments, ~2.2 people each` },
 		{ label: 'Everyone living in the village', n: residents + aptPeople, note: 'plus the hotel’s guests' },
 		{ label: 'Desks in the living hexes’ utilities domes', n: living.reduce((a, p) => a + p.n * (p.stats.people[1]?.n ?? 0), 0), note: `${living.reduce((a, p) => a + p.n, 0)} utilities domes, co-working` },
@@ -328,11 +328,11 @@ export function siteCard(plan, id) {
 			['Panels', `${n(geo.panels.length)}: ${n(geo.count.solar)} solar (${n(geo.m2.solar)} m²), ${n(geo.count.glass)} glass (${n(geo.m2.glass)} m²), ${n(geo.count.hemp)} white hemp to the north (${n(geo.m2.hemp)} m²); a panel ~${(geo.m2.glass / geo.count.glass).toFixed(1)} m²`],
 			['Geodesic grid', `frequency ${c.freq}: ${n(geo.struts)} struts, ${geo.lengths.length} lengths from ${geo.lengths[0].m.toFixed(2)} to ${geo.lengths[geo.lengths.length - 1].m.toFixed(2)} m (${geo.trimmed} trimmed at the foot), ${n(geo.hubs)} steel hubs (${geo.ringHubs} on the foot ring)`],
 			['Air inside', `${Math.round(c.volume).toLocaleString('en-US')} m³`],
-			...(K.people ? [['People', `${K.people}, ${Math.round(K.gfa / K.people)} m² of home each (${n(K.gfa)} m² on ${K.storeys} terraced storeys)`], ['Terraces', `${K.levels.map((/** @type {any} */ l) => `${(l.rOut - l.rIn).toFixed(1)} m`).join(', ')} deep from the ground up, each ${K.step} m behind the one below; ${n(K.balconies)} m² of balconies; ${K.gallery.height} m to the top roof`]] : []),
+			...(K.people ? [['People', `${K.people}, ${Math.round(K.gfa / K.people)} m² of home each (${n(K.gfa)} m² on ${K.storeys} storeys)`], ['The block', `${K.block.depth} m deep, its front ${K.block.front} m north of the middle; ${K.levels.map((/** @type {any} */ l) => `${Math.round(2 * l.half)} m`).join(', ')} long from the ground up; ${n(K.balconies)} m² of small balconies on the south face; ${K.block.height} m to the top roof`]] : []),
 			...(run ? [['Makes', `${run.t.toLocaleString('en-US')} ${run.unit} a year, ${run.kwh} kWh a t (${run.note})`]] : [])
 		],
 		zones: zonesOf(site, plan).map((/** @type {any} */ z) => ({ use: z.use, label: z.label, m2: z.m2 })),
-		terraces: K.levels ? { levels: K.levels, step: K.step, pondIn: K.gallery.pondIn, pondOut: K.gallery.pondOut } : null,
+		block: K.block ? { ...K.block, levels: K.levels } : null,
 		cap: c,
 		cut: hempFoot(c),
 		shell: sh,

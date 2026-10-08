@@ -301,10 +301,10 @@ function insideUse(/** @type {Site} */ s, /** @type {number} */ dx, /** @type {n
 	const K = KINDS[s.kind];
 	const north = dz < 0;
 	if (s.kind === 'dome40' || s.kind === 'dome80') {
-		const g = K.gallery;
-		if (north && r <= g.rOut && r >= g.rIn) return 'living';
-		if (north && r <= g.pondOut && r >= g.pondIn) return 'pond';
-		return Math.abs(dx) < 1.5 || Math.abs(r - (g.rIn - 2)) < 0.8 ? 'commons' : 'indoorFood';
+		const b = K.block;
+		if (-dz >= b.front && -dz <= b.back && Math.abs(dx) <= K.levels[0].half) return 'living';
+		if (-dz >= b.pondIn && r <= b.pondOut) return 'pond';
+		return Math.abs(dx) < 1.5 || Math.abs(-dz - (b.front - b.balcony - 1.5)) < 0.8 ? 'commons' : 'indoorFood';
 	}
 	if (s.kind === 'food120' || s.kind === 'util120') {
 		const a = capOf(120).a;

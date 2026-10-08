@@ -1,7 +1,7 @@
 /**
  * SANDBOX 6 · ONE VILLAGE · THE WORLD — the village's seven hexes in three.js at their real size, a metre a unit: the
  * land painted from its land-use raster (./layout.js), the domes as glazed geodesic caps with their cold north side
- * closed in hemp, the terraced homes, the tower with its floors, and what grows on the land and under the glass. The
+ * closed in hemp, the blocks of homes, the tower with its floors, and what grows on the land and under the glass. The
  * six living hexes are alike: one is built and the other five are copies of it.
  *
  * Everything an overlay can hide sits in its own group (`layers`), so the page toggles them: the land-use colours,
@@ -144,25 +144,37 @@ function domeShell(D) {
 }
 
 /**
- * The homes, the pond and the garden floor of a home dome: the terraces under the north third, a storey a step behind
- * the one below, each with its glass front and a timber slab over it; on each roof the balcony of the storey above,
- * planters along its edge; the top roof a garden. Under the back of the terraces the stores, behind them the pond.
+ * The homes, the pond and the garden floor of a home dome: one straight block across the north, each storey as long as
+ * the shell lets it, with its glass front, a timber slab over it and small balconies on the south face; the roofs where
+ * the block narrows are gardens. North of the block, the pond.
  */
 function homeInside(/** @type {any} */ K, /** @type {THREE.Group} */ inside) {
 	const c = capOf(K.D);
-	const g = K.gallery;
+	const b = K.block;
 	inside.add(part(new THREE.CircleGeometry(c.a - 0.3, 64).rotateX(-Math.PI / 2), mat('#5e8a3e', 1), 0, FLOOR_Y, 0, false));
-	inside.add(sector(g.pondIn, g.pondOut, FLOOR_Y + 0.05, FLOOR_Y + 0.25, -90, 90, mat('#3f86a6', 0.2)));
-	const levels = /** @type {{ k: number, y: number, h: number, rIn: number, rOut: number }[]} */ (K.levels);
+	// the pond: the floor's segment north of the block
+	const pondShape = new THREE.Shape();
+	const t0 = Math.acos(b.pondIn / b.pondOut);
+	pondShape.absarc(0, 0, b.pondOut, Math.PI / 2 - t0, Math.PI / 2 + t0, false);
+	pondShape.closePath();
+	inside.add(part(new THREE.ExtrudeGeometry(pondShape, { depth: 0.2, bevelEnabled: false, curveSegments: 24 }).rotateX(-Math.PI / 2), mat('#3f86a6', 0.2), 0, FLOOR_Y + 0.05, 0, false));
+	const levels = /** @type {{ k: number, y: number, h: number, half: number }[]} */ (K.levels);
+	const zMid = -(b.front + b.back) / 2;
 	for (const L of levels) {
-		const next = levels[L.k + 1], below = levels[L.k - 1];
-		inside.add(sector(L.rIn + 0.3, L.rOut, L.y, L.y + L.h - 0.35, -90, 90, mat(L.k % 2 ? '#ece0c4' : '#f2e8d0')));
-		inside.add(sector(L.rIn, L.rIn + 0.3, L.y, L.y + L.h - 0.35, -90, 90, mat('#6f8f9c', 0.25)));
-		inside.add(sector(L.rIn - 0.25, L.rOut, L.y + L.h - 0.35, L.y + L.h, -90, 90, mat('#9a7650')));
-		if (next) inside.add(sector(L.rIn - 0.2, L.rIn + 0.5, L.y + L.h, L.y + L.h + 0.75, -90, 90, mat('#5f9a45', 1)));
-		else inside.add(sector(L.rIn, L.rOut, L.y + L.h, L.y + L.h + 0.4, -90, 90, mat('#6aa048', 1)));
-		// under where this storey reaches further back than the one below: stores and bikes
-		if (below && L.rOut > below.rOut + 0.2) inside.add(sector(below.rOut, L.rOut, 0, L.y, -90, 90, mat('#b5a88e')));
+		const len = 2 * L.half, next = levels[L.k + 1];
+		inside.add(part(new THREE.BoxGeometry(len, L.h - 0.35, b.depth - 0.3), mat(L.k % 2 ? '#ece0c4' : '#f2e8d0'), 0, L.y + (L.h - 0.35) / 2, zMid - 0.15));
+		inside.add(part(new THREE.BoxGeometry(len - 0.6, L.h - 1.1, 0.3), mat('#6f8f9c', 0.25), 0, L.y + 0.45 + (L.h - 1.1) / 2, -b.front - 0.15));
+		inside.add(part(new THREE.BoxGeometry(len + 0.2, 0.35, b.depth + 0.2), mat('#9a7650'), 0, L.y + L.h - 0.175, zMid));
+		// where the storey above is shorter, its roof ends are gardens; the top roof is one
+		const roofLen = next ? (len - 2 * next.half) / 2 : len;
+		if (roofLen > 0.5)
+			for (const s of next ? [-1, 1] : [0]) inside.add(part(new THREE.BoxGeometry(roofLen, 0.4, b.depth), mat('#6aa048', 1), s * (L.half - roofLen / 2), L.y + L.h + 0.2, zMid));
+		// small balconies on the south face, a 4 m one for every 6 m of front, from the first floor up
+		if (L.k > 0)
+			for (let x = -L.half + 3; x <= L.half - 3; x += 6) {
+				inside.add(part(new THREE.BoxGeometry(4, 0.2, b.balcony), mat('#9a7650'), x, L.y + 0.1, -b.front + b.balcony / 2));
+				inside.add(part(new THREE.BoxGeometry(4, 1, 0.1), mat('#5f9a45', 1), x, L.y + 0.7, -b.front + b.balcony));
+			}
 	}
 }
 
@@ -464,7 +476,7 @@ function sow(land, plants, /** @type {number} */ seed) {
 // ── the world ───────────────────────────────────────────────────────────────────────────────────────────────────
 
 /**
- * Bakes a building's inside into one mesh a material (the terraces alone are dozens of parts a dome, and the village
+ * Bakes a building's inside into one mesh a material (the homes alone are dozens of parts a dome, and the village
  * has ~100 domes): the same picture in a tenth of the draw calls.
  */
 function bake(/** @type {THREE.Group} */ group) {
