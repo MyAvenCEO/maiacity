@@ -429,7 +429,7 @@ export function createView(scene, sim) {
 	}
 	/** ribbons along lines of points on the ground [x, z], bending where they bend (a closed one joins its ends), lying
 	 * on the ground all the way */
-	function ribbon(/** @type {{ pts: number[][], closed?: boolean }[]} */ lines, /** @type {number} */ width, /** @type {number} */ lift) {
+	function strip(/** @type {{ pts: number[][], closed?: boolean }[]} */ lines, /** @type {number} */ width, /** @type {number} */ lift) {
 		/** @type {number[]} */
 		const pos = [], uv = [];
 		for (const { pts: raw, closed } of lines) {
@@ -583,7 +583,7 @@ export function createView(scene, sim) {
 		}
 		for (const [key, lines] of Object.entries(sets)) {
 			const [o, on] = key.split(':').map(Number);
-			const m = new THREE.Mesh(ribbon(lines, TUN_W, 0.12), tunMats[o][on]);
+			const m = new THREE.Mesh(strip(lines, TUN_W, 0.12), tunMats[o][on]);
 			m.renderOrder = 3 + on;
 			root.add(m);
 			tunMeshes.push(m);
