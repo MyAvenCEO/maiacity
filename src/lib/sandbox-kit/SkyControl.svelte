@@ -1,6 +1,6 @@
 <!--
 	The time of a sandbox's sky, the same control in every world: Auto follows the in-game clock (shown as it runs);
-	Manual gives a slider over the day, starting at noon. A world with a clock of its own (one you can speed up) gives it
+	Manual stages the sun by hand, a slider over the day starting at noon, while the clock runs on and stays shown. A world with a clock of its own (one you can speed up) gives it
 	as `worldClock`, and Auto shows that instead. It sets the one state every world's sky reads
 	(./skyTime.svelte.js), so the choice holds from one sandbox to the next; every visit starts on Auto.
 
@@ -84,12 +84,14 @@
 			max="24"
 			step="0.0833"
 			value={skyTime.hour}
-			aria-label="Time of day"
+			title="The sun, set by hand: {label}"
+			aria-label="The sun's hour"
+			aria-valuetext={label}
 			oninput={(e) => manual(Number(e.currentTarget.value))}
 			ontouchstart={own}
 			ontouchmove={own}
 		/>
-		<span class="clock">{label}</span>
+		<span class="clock" title={about}><span class="day">{day}</span> {hour}</span>
 	{/if}
 </div>
 
@@ -167,14 +169,13 @@
 			width: 6.5rem;
 		}
 	}
-	/* upright: the hour without its day, and while the slider is out, the slider alone */
+	/* upright: the hour without its day, and a shorter slider */
 	@media (max-width: 640px) {
-		.day,
-		.sky-control.manual .clock {
+		.day {
 			display: none;
 		}
 		input[type='range'] {
-			width: 5.5rem;
+			width: 4.5rem;
 		}
 	}
 </style>
