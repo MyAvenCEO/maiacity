@@ -77,7 +77,6 @@ fn promote_equals_branch() {
 }
 
 #[test]
-#[ignore = "P4: Loro items"]
 fn same_ops_any_order_same_result() {
     // Samuel and Bob edit the same block at the same moment on their own copies
     let base = document("Welcome", WELCOME_TEXT, MAC_S);
@@ -101,7 +100,6 @@ fn same_ops_any_order_same_result() {
 }
 
 #[test]
-#[ignore = "P4: Loro items"]
 fn an_update_from_the_wrong_peer_is_refused() {
     // Bob's edits carry his Loro peer; the same bytes claimed as Carol's are refused before import
     let base = document("Welcome", WELCOME_TEXT, MAC_S);

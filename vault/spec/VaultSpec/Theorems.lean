@@ -2,13 +2,14 @@ import VaultSpec.Sync
 import VaultSpec.Doc
 import VaultSpec.Lens
 import VaultSpec.Lemmas
+import VaultSpec.KeyLemmas
 
 /-!
 # The theorems
 
 What must always hold, stated over the executable model. T9 (lenses) and T10 (branches) are proven in their own
 files. A `sorry` below marks a theorem whose proof belongs to a later phase (see `README.md`); a phase is merged only
-once its theorems are proven. The proofs' helper lemmas are in `Lemmas.lean`.
+once its theorems are proven. The proofs' helper lemmas are in `Lemmas.lean`, and for the keys in `KeyLemmas.lean`.
 
 The assumptions are part of the model rather than axioms: an op's signers are the keys that signed it (signatures
 can't be forged); keys are learned only through `Knows` (sealed or encrypted data reveals nothing without its key);
@@ -309,42 +310,73 @@ theorem T16_resolved_removals_stand (ops : List Op) :
     ∀ r ∈ resolve (order ops), (standing ops).any (·.id == r.id) :=
   resolve_stands (order ops)
 
-/-! ## Keys -/
+/-! ## Keys
 
-/-- T5 (confidentiality): after any history, a device can open a key of some epoch only if, at some point of that
-    history, it was entitled to the key's family, or the family was public, while the family's epoch was that one
-    or a later one. -/
-theorem T5_confidentiality (ops : List Op) (d : SignerId) (k : KeyScope) (e : Nat)
-    (h : Knows (replay {} ops) [.device d] (.scoped k e)) :
-    ∃ st ∈ trace {} ops, e ≤ st.epochOf k ∧ (entitled st d k = true ∨ publicKey st k = true) := by
-  sorry -- P3
+`EverReads`, what a holder could read over a history, is in `KeyLemmas.lean`. -/
 
-/-- T6 (forward secrecy): in every reachable state a device can open the current key of a family only while it is
-    entitled to it, or the family is public. New edits use current keys, so nothing written after a removal
-    reaches the removed device. -/
-theorem T6_forward_secrecy {st : State} (hr : Reachable st) (d : SignerId) (k : KeyScope)
-    (h : Knows st [.device d] (st.curKey k)) : entitled st d k = true ∨ publicKey st k = true := by
-  sorry -- P3
+/-- T5 (confidentiality): after any history, a holder (a signer, whoever holds a vault's key, or everyone) opens a
+    key of some family, of any epoch, only if over that history it could read the family. -/
+theorem T5_confidentiality (ops : List Op) (h : Holder) (k : KeyScope) (e : Nat)
+    (hk : Knows (replay {} ops) (h.start (replay {} ops)) (.scoped k e)) : EverReads (trace {} ops) h k :=
+  -- every seal along the history is justified, from the empty state on, and opening keys follows seals
+  (knows_everReads (replay_mem_trace {} ops) (sealsRead_replay ops {} (fun _ hx => hx) (sealsRead_empty _)) hk).2
+    k e rfl
 
-/-- T7 (blind server): a device whose vaults never hold read anywhere, such as the server with its relay caps,
-    opens no space or entry key unless that key was public at some point. -/
-theorem T7_blind_server (ops : List Op) (srv : SignerId)
-    (hhost : ∀ st ∈ trace {} ops, ∀ v, actsFor st srv v = true → ∀ sc, holds st v sc .read = false)
-    {k : KeyScope} (hk : k.scope?.isSome) {e : Nat} (h : Knows (replay {} ops) [.device srv] (.scoped k e)) :
-    ∃ st ∈ trace {} ops, publicKey st k = true := by
-  obtain ⟨st, hst, _, hent | hpub⟩ := T5_confidentiality ops srv k e h
-  · exfalso
+/-- T6 (forward secrecy): in every reachable state a holder opens the current key of a family only while it is
+    entitled to it, or the family is public. New edits use current keys, so nothing written after a removal reaches
+    the removed device, nor anyone who joins a vault that lost its read. -/
+theorem T6_forward_secrecy {st : State} (hr : Reachable st) (h : Holder) (k : KeyScope)
+    (hk : Knows st (h.start st) (st.curKey k)) : h.entitled st k = true ∨ publicKey st k = true := by
+  obtain ⟨ops, rfl⟩ := hr
+  exact (keyInv_replay ops).fwd h k hk
+
+/-- A holder that never reads anything through its vaults, whatever vault it held at whatever point, reads a space
+    or entry only while it is public. -/
+theorem everReads_blind {sts : List State} {h : Holder} {k : KeyScope} (hr : EverReads sts h k)
+    (hblind : ∀ v, EverReads sts h (.vault v) → ∀ st ∈ sts, ∀ sc, holds st v sc .read = false)
+    (hk : k.scope?.isSome) : ∃ st ∈ sts, publicKey st k = true := by
+  induction hr with
+  | @entitled h k st hst hent =>
     cases k with
     | vault v => simp [KeyScope.scope?] at hk
     | space sp =>
-      simp only [entitled, List.any_eq_true, Bool.and_eq_true] at hent
-      obtain ⟨x, _, hact, hread⟩ := hent
-      simp [hhost st hst x.id hact] at hread
+      cases h with
+      | signer s =>
+        simp only [Holder.entitled, entitled, List.any_eq_true, Bool.and_eq_true] at hent
+        obtain ⟨x, _, hact, hread⟩ := hent
+        have hx := hblind x.id (.entitled hst (by simp [Holder.entitled, entitled, hact])) st hst (.space sp)
+        simp [hx] at hread
+      | vault y =>
+        simp only [Holder.entitled, entitledV, List.any_eq_true, Bool.and_eq_true] at hent
+        obtain ⟨x, _, hown, hread⟩ := hent
+        have hx := hblind x.id (.entitled hst (by simpa [Holder.entitled, entitledV] using hown)) st hst (.space sp)
+        simp [hx] at hread
+      | everyone => exact ⟨st, hst, hent⟩
     | entry sp en =>
-      simp only [entitled, List.any_eq_true, Bool.and_eq_true] at hent
-      obtain ⟨x, _, hact, hread⟩ := hent
-      simp [hhost st hst x.id hact] at hread
-  · exact ⟨st, hst, hpub⟩
+      cases h with
+      | signer s =>
+        simp only [Holder.entitled, entitled, List.any_eq_true, Bool.and_eq_true] at hent
+        obtain ⟨x, _, hact, hread⟩ := hent
+        have hx := hblind x.id (.entitled hst (by simp [Holder.entitled, entitled, hact])) st hst (.entry sp en)
+        simp [hx] at hread
+      | vault y =>
+        simp only [Holder.entitled, entitledV, List.any_eq_true, Bool.and_eq_true] at hent
+        obtain ⟨x, _, hown, hread⟩ := hent
+        have hx := hblind x.id (.entitled hst (by simpa [Holder.entitled, entitledV] using hown)) st hst (.entry sp en)
+        simp [hx] at hread
+      | everyone => exact ⟨st, hst, hent⟩
+  | «public» hst hpub => exact ⟨_, hst, hpub⟩
+  | via hst hent _ ih => exact ih (fun w hw => hblind w (.via hst hent hw)) hk
+
+/-- T7 (blind server): a device that never held, directly or through vaults it held at any point, the key of a
+    vault that ever holds read anywhere, such as the server with its relay caps, opens no space or entry key unless
+    that key was public at some point. -/
+theorem T7_blind_server (ops : List Op) (srv : SignerId)
+    (hblind : ∀ v, EverReads (trace {} ops) (.signer srv) (.vault v) →
+      ∀ st ∈ trace {} ops, ∀ sc, holds st v sc .read = false)
+    {k : KeyScope} (hk : k.scope?.isSome) {e : Nat} (h : Knows (replay {} ops) [.signer srv] (.scoped k e)) :
+    ∃ st ∈ trace {} ops, publicKey st k = true :=
+  everReads_blind (T5_confidentiality ops (.signer srv) k e h) hblind hk
 
 /-! ## Convergence and sync -/
 
@@ -354,10 +386,11 @@ theorem T11_convergence {ops₁ ops₂ : List Op} (hperm : ops₁.Perm ops₂) (
   sorry -- P6
 
 /-- T12 (sync shares only what caps allow): every write a peer sends a device is on an entry that device may
-    receive by the peer's view, and every auth op it sends is about a scope that device reaches. -/
+    receive by the peer's view, and every auth op it sends is about a scope that device reaches, or is a revocation
+    that took one of its caps away. -/
 theorem T12_sync_shares_only_caps (ops : List Op) (d : SignerId) {op : Op} (h : op ∈ respond ops d) :
     (∀ sp e, op.writeTarget? = some (sp, e) → mayReceive (view ops) d sp e = true) ∧
-    (∀ sc, op.authScope? ops = some sc → reaches (view ops) d sc = true) := by
+    (∀ sc, op.authScope? ops = some sc → reaches (view ops) d sc = true ∨ op.takesFrom (view ops) ops d = true) := by
   sorry -- P6
 
 /-- T13 (sync converges per item): if each of two devices may receive an item by the other peer's view, then after

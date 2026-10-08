@@ -27,6 +27,10 @@ inductive Action where
   | revoke       (g : GrantId) (actor : VaultId) (keep : List OpId)
   /-- An encrypted edit of one entry. `deps` are the entry's writes it builds on. -/
   | write        (sp : SpaceId) (e : EntryId) (actor : VaultId) (epoch : Nat) (deps : List OpId := [])
+  /-- The real boxes of one key: the key of family `k` at `epoch`, sealed to the key pairs `to`, or published (`pub`).
+      The schedule already says who may open what, so this op changes nothing here: a peer accepts it only from a
+      signer that may open the key, and only if every box is one the schedule seals. -/
+  | keys         (k : KeyScope) (epoch : Nat) (to : List KeyName) (pub : Bool := false)
   deriving DecidableEq, Repr
 
 /-- The ops a removal had seen and keeps; every removal names them. -/
@@ -206,6 +210,12 @@ def apply (st : State) (op : Op) : Option State :=
         let st' := if s.entries.contains e then st
           else { st with spaces := st.spaces.map fun x => if x.id == sp then { x with entries := x.entries ++ [e] } else x }
         some { st' with writes := st'.writes ++ [w] }
+  | .keys k epoch to pub =>
+    if !(keyScopes st).contains k || !entitled st op.author k || epoch > st.epochOf k then none
+    -- a box the schedule doesn't seal would hand the key to someone who may not open it
+    else if !to.all (fun t => st.seals.contains ⟨.scoped k epoch, t⟩) then none
+    else if pub && !st.published.contains (.scoped k epoch) then none
+    else some st
 
 /-- One op: check it, then rotate and seal keys. -/
 def step (st : State) (op : Op) : Option State := (apply st op).map (settle st)

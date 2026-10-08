@@ -15,8 +15,8 @@
 //! |---|---|---|
 //! | P1 vaults | `policy`: vaults, vault logs, chains; `encode`, `sign`: op ids, device and passkey signatures, recovery codes; `lab`: devices; the Lean model's vectors for the vault rules | T2, T3 |
 //! | P2 caps | `policy`: spaces, grants, revocation with strong removal, the passkey as root, Public, write checks; `sync`: items by caps | T1, T4, T8, T14, T16 |
-//! | P3 keys | `keys`, `lab`: sealing, encryption of every edit, rotation | T5, T6, T7 |
-//! | P4 documents and schemas | `doc`, `lens` | T9 |
+//! | P3 keys | `keys`: X-Wing sealed boxes, committed XChaCha20-Poly1305 edits; `policy`: the key schedule and `Keys` ops; `doc`: Loro items; `lab`: keyrings, encrypted writes, reading, recovery, tampering | T5, T6, T7 |
+//! | P4 documents and schemas | `doc`: v1 documents and migration; `lens` | T9 |
 //! | P5 history and branches | `branch` | T10 |
 //! | P6 sync and convergence | `sync`, `lab` on a controllable network | T11, T12, T13 |
 

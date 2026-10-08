@@ -234,6 +234,10 @@ theorem apply_vaults {st post : State} {op : Op} (h : apply st op = some post) :
       obtain ⟨-, -, -, -, rfl⟩ := h
       left
       split <;> rfl
+  · -- keys: change nothing
+    simp only [Option.ite_none_left_eq_some, Option.some.injEq] at h
+    obtain ⟨-, -, -, rfl⟩ := h
+    exact .inl rfl
 
 /-- What a step does to the vaults, told by lookups: nothing, a new vault with a free id and existing owners, or
     one existing vault changed as `VaultChange` says. -/
@@ -829,6 +833,10 @@ theorem apply_writes {st post : State} {op : Op} (h : apply st op = some post) :
       · split
         · exact .of_vaults rfl (fun _ _ h => h) (fun _ h => h)
         · exact .mapSpaces rfl rfl rfl (fun _ => by split <;> rfl) (fun _ => by split <;> rfl)
+  · -- keys
+    simp only [Option.ite_none_left_eq_some, Option.some.injEq] at h
+    obtain ⟨-, -, -, rfl⟩ := h
+    exact .inl ⟨rfl, .of_vaults rfl (fun _ _ h => h) (fun _ h => h)⟩
 
 /-- An accepted op only takes grants away, or adds one grant that names a vault or Public, Public only with read. -/
 theorem apply_grants {st post : State} {op : Op} (h : apply st op = some post) :
@@ -905,6 +913,10 @@ theorem apply_grants {st post : State} {op : Op} (h : apply st op = some post) :
       split
       · exact fun _ h => h
       · exact fun _ h => h
+  · -- keys
+    simp only [Option.ite_none_left_eq_some, Option.some.injEq] at h
+    obtain ⟨-, -, -, rfl⟩ := h
+    exact .inl fun _ h => h
 
 /-! ## Replay, runs and resolve -/
 

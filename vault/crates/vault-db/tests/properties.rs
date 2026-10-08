@@ -1,14 +1,16 @@
 //! One property per Lean theorem that the rules alone decide, checked on random histories: random signers trying random
 //! actions on top of scenarios 1 to 4, kept when the rules accept them, then replayed in other orders; and forked ones,
-//! where devices that were offline meet with concurrent changes. Each property carries its theorem's name; T5 to T7
-//! (keys) and T9, T10, T13 are guarded by the tests the Lean README lists.
+//! where devices that were offline meet with concurrent changes. Each property carries its theorem's name; T7 (the
+//! blind server, which follows from T5) and T9, T10, T13 are guarded by the tests the Lean README lists.
 
 mod common;
 
 use common::*;
 use vault_db::id::{EntryId, GrantId, SignerId, SpaceId, VaultId};
+use vault_db::keys::{KeyName, KeyScope};
 use vault_db::policy::{
-    order, removes, replay, trace, view, Action, Fact, Grantee, Kind, Log, Op, Principal, Refusal, Role, Scope, State,
+    order, removes, replay, trace, view, Action, Fact, Grantee, Holder, Kind, Log, Op, Principal, Refusal, Role, Scope,
+    State,
 };
 use vault_db::sync::respond;
 
@@ -94,13 +96,13 @@ fn attempts(rng: &mut Rng, h: &mut History, n: usize, clash: bool) {
                 grant(scope, rng.pick(&ROLES), grantee, rng.pick(&h.vaults), parent)
             }
             5 if !grants.is_empty() => Action::Revoke { grant: rng.pick(&grants), actor: rng.pick(&h.vaults), keep: vec![] },
-            6 => Action::AddDevice { vault: rng.pick(&h.vaults), device: rng.pick(&SIGNERS) },
+            6 => Action::AddDevice { vault: rng.pick(&h.vaults), device: rng.pick(&SIGNERS), seal_to: None },
             7 => Action::RemoveDevice { vault: rng.pick(&h.vaults), device: rng.pick(&SIGNERS), keep: vec![] },
             8 => {
                 let owners = vec![Principal::Vault(rng.pick(&h.vaults))];
-                Action::Genesis { kind: Kind::Coop, owners, threshold: 1, root: None, nonce: rng.next() }
+                Action::Genesis { kind: Kind::Coop, owners, threshold: 1, root: None, nonce: rng.next(), seal_to: vec![] }
             }
-            _ => Action::AddOwner { vault: rng.pick(&h.vaults), owner: Principal::Vault(rng.pick(&h.vaults)) },
+            _ => Action::AddOwner { vault: rng.pick(&h.vaults), owner: Principal::Vault(rng.pick(&h.vaults)), seal_to: None },
         };
         let genesis = matches!(action, Action::Genesis { .. });
         if let Ok(id) = h.log.append(author, &cosigners, action)
@@ -180,9 +182,9 @@ fn vault_action(rng: &mut Rng, vaults: &[VaultId]) -> Action {
         if rng.below(2) == 0 { Principal::Signer(rng.pick(&SIGNERS)) } else { Principal::Vault(rng.pick(vaults)) }
     };
     match rng.below(7) {
-        0 => Action::AddDevice { vault: rng.pick(vaults), device: rng.pick(&SIGNERS) },
+        0 => Action::AddDevice { vault: rng.pick(vaults), device: rng.pick(&SIGNERS), seal_to: None },
         1 => Action::RemoveDevice { vault: rng.pick(vaults), device: rng.pick(&SIGNERS), keep: vec![] },
-        2 => Action::AddOwner { vault: rng.pick(vaults), owner: principal(rng) },
+        2 => Action::AddOwner { vault: rng.pick(vaults), owner: principal(rng), seal_to: None },
         3 => Action::RemoveOwner { vault: rng.pick(vaults), owner: principal(rng), keep: vec![] },
         4 => Action::SetThreshold { vault: rng.pick(vaults), threshold: rng.below(4) as u32 },
         _ => {
@@ -196,7 +198,7 @@ fn vault_action(rng: &mut Rng, vaults: &[VaultId]) -> Action {
                 [Principal::Signer(s), ..] if nonce % 2 == 0 => Some(s),
                 _ => None,
             };
-            Action::Genesis { kind, owners, threshold, root, nonce }
+            Action::Genesis { kind, owners, threshold, root, nonce, seal_to: vec![] }
         }
     }
 }
@@ -208,7 +210,7 @@ fn governance_action(rng: &mut Rng, log: &Log, vaults: &[VaultId]) -> Action {
     let v = rng.pick(&known);
     let owners = st.vault(v).map(|x| x.owners.clone()).unwrap_or_default();
     match rng.below(3) {
-        0 => Action::AddOwner { vault: v, owner: Principal::Vault(rng.pick(&known)) },
+        0 => Action::AddOwner { vault: v, owner: Principal::Vault(rng.pick(&known)), seal_to: None },
         1 => Action::RemoveOwner { vault: v, owner: rng.pick(&owners), keep: vec![] },
         _ => Action::SetThreshold { vault: v, threshold: 1 + rng.below(owners.len()) as u32 },
     }
@@ -473,3 +475,91 @@ fn t12_sync_shares_only_caps() {
     }
 }
 
+
+/// Every holder a history can have: each signer, listed in a vault or not anymore, each vault, and everyone.
+fn every_holder(st: &State) -> Vec<Holder> {
+    let vaults = st.vaults().iter().map(|v| Holder::Vault(v.id));
+    SIGNERS.iter().map(|&s| Holder::Signer(s)).chain(vaults).chain([Holder::Everyone]).collect()
+}
+
+#[test]
+fn t6_forward_secrecy() {
+    // in every state along the way, a holder opens the current key of a family only while entitled to it, or while
+    // the family is public
+    let mut rotated = 0;
+    for seed in SEEDS {
+        for h in [history(seed, 60), forked_caps_history(seed, 60)] {
+            for (op, before, after) in steps(h.log.ops()) {
+                for holder in every_holder(&after) {
+                    let opened = after.opens(&holder.start(&after));
+                    for k in after.key_scopes() {
+                        if opened.contains(&after.current(k)) {
+                            assert!(holder.entitled(&after, k) || after.public_key(k), "seed {seed}: {holder:?} opens {k:?}");
+                        }
+                    }
+                }
+                // which is why the schedule only looks for stale keys after a removal: nothing else makes any
+                let stale = after.stale_keys(&before);
+                assert!(op.is_removal() || stale.is_empty(), "seed {seed}: {op:?} makes {stale:?} stale");
+                rotated += stale.len();
+            }
+        }
+    }
+    assert!(rotated > 0);
+}
+
+/// `EverReads` of the Lean model over the states `sts`: for each holder, the families it could read at some point,
+/// itself, as everyone, or through a vault whose key it held at some point.
+fn ever_reads(sts: &[State], holders: &[Holder], families: &[KeyScope]) -> Vec<(Holder, KeyScope)> {
+    let at_some_point = |h: Holder, k: KeyScope| sts.iter().any(|st| h.entitled(st, k));
+    let mut ever: Vec<(Holder, KeyScope)> = vec![];
+    for &h in holders {
+        for &k in families {
+            if at_some_point(h, k) || sts.iter().any(|st| st.public_key(k)) {
+                ever.push((h, k));
+            }
+        }
+    }
+    loop {
+        let mut more = vec![];
+        for &h in holders {
+            for &k in families {
+                let via = |v: Holder| matches!(v, Holder::Vault(x) if at_some_point(h, KeyScope::Vault(x)));
+                if !ever.contains(&(h, k)) && ever.iter().any(|&(v, j)| j == k && via(v)) {
+                    more.push((h, k));
+                }
+            }
+        }
+        if more.is_empty() {
+            return ever;
+        }
+        ever.extend(more);
+    }
+}
+
+#[test]
+fn t5_confidentiality() {
+    // after any history, a holder opens a key of a family, of any epoch, only if over that history it could read
+    // the family: newcomers to a vault inherit what the vault could read before them
+    let mut inherited = 0;
+    for seed in SEEDS {
+        for h in [history(seed, 60), forked_caps_history(seed, 60)] {
+            let sts = trace(h.log.ops());
+            let st = sts.last().unwrap();
+            let (holders, families) = (every_holder(st), st.key_scopes());
+            let ever = ever_reads(&sts, &holders, &families);
+            for &holder in &holders {
+                for n in st.opens(&holder.start(st)) {
+                    if let KeyName::Scoped(k, e) = n {
+                        assert!(ever.contains(&(holder, k)), "seed {seed}: {holder:?} opens {k:?} at {e}");
+                        if e < st.epoch(k) && !sts.iter().any(|x| holder.entitled(x, k)) {
+                            inherited += 1;
+                        }
+                    }
+                }
+            }
+        }
+    }
+    // and some holder does open history from before it could read: through a vault it joined later
+    assert!(inherited > 0);
+}

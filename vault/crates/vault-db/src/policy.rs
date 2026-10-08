@@ -3,15 +3,20 @@
 //! it hadn't seen.
 //!
 //! Ops reach this module already verified: an op's author and cosigners are the signers whose signatures checked out
-//! (`sign::Signed::verify`). Two differences from the model: what an op creates (a vault, a space, a grant) is named
-//! by that op's id, where the model picks numbers; and a refused op says why, where the model only says no. Keys and
-//! their rotation come in P3: until then every key stays at epoch 0.
+//! (`sign::Signed::verify`). Three differences from the model: what an op creates (a vault, a space, a grant) is named
+//! by that op's id, where the model picks numbers; a refused op says why, where the model only says no; and ops carry
+//! what the model leaves out, the keys signers have keys sealed to, the boxes of a `Keys` op and the ciphertext of a
+//! write, which no rule reads beyond what the model says.
+//!
+//! The key schedule is the model's too: each family's epoch, every seal (which key may open which) and every published
+//! key. Real keys follow it: a `Keys` op carries real boxes, and a peer accepts it only if each box is a seal of the
+//! schedule, so what a device can really open is never more than what the schedule lets it (T5, T6).
 
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
 use crate::id::{EntryId, GrantId, OpId, SignerId, SpaceId, VaultId};
-use crate::keys::KeyScope;
+use crate::keys::{KeyBox, KeyId, KeyName, KeyScope, PublicKey, Seal};
 
 /// A human vault is what one person owns, governed by their signers. A coop vault is owned by other vaults.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -92,15 +97,23 @@ pub struct Grant {
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum Action {
     /// A new vault; its id is this op's id. Every first owner signs, and so does the root, the passkey of a human
-    /// vault, if it names one.
-    Genesis { kind: Kind, owners: Vec<Principal>, threshold: u32, root: Option<SignerId>, nonce: u64 },
-    /// The newcomer signs too.
-    AddOwner { vault: VaultId, owner: Principal },
+    /// vault, if it names one. `seal_to` brings, for signer owners, the key each has keys sealed to (a passkey's
+    /// from its PRF output, a recovery code's from the code), where it has one.
+    Genesis {
+        kind: Kind,
+        owners: Vec<Principal>,
+        threshold: u32,
+        root: Option<SignerId>,
+        nonce: u64,
+        seal_to: Vec<(SignerId, PublicKey)>,
+    },
+    /// The newcomer signs too, and a signer brings the key it has keys sealed to.
+    AddOwner { vault: VaultId, owner: Principal, seal_to: Option<PublicKey> },
     /// By the vault's approval, or an owner leaving on its own.
     RemoveOwner { vault: VaultId, owner: Principal, keep: Vec<OpId> },
     SetThreshold { vault: VaultId, threshold: u32 },
-    /// Human vaults only; the device signs too.
-    AddDevice { vault: VaultId, device: SignerId },
+    /// Human vaults only; the device signs too, and brings the key it has keys sealed to.
+    AddDevice { vault: VaultId, device: SignerId, seal_to: Option<PublicKey> },
     /// By the vault's approval, or the device leaving on its own.
     RemoveDevice { vault: VaultId, device: SignerId, keep: Vec<OpId> },
     /// The root hands itself on to a new passkey, which signs too, or steps down (`None`).
@@ -114,6 +127,11 @@ pub enum Action {
     /// An encrypted edit of one entry under the entry key's `epoch`, building on the entry's writes `deps` (its Loro
     /// frontier). The first write creates the entry.
     Write { space: SpaceId, entry: EntryId, actor: VaultId, epoch: u64, deps: Vec<OpId>, body: Vec<u8> },
+    /// The real boxes of one key of family `key` at `epoch`: its `id`, its `public` half for those who seal to it
+    /// without holding it, the key sealed to each recipient, and for a public family the key itself, in the `clear`.
+    /// The schedule already says who may open what, so this changes nothing in it: a peer accepts it only from a
+    /// signer that may open the key, and only if every box goes where the schedule seals the key.
+    Keys { key: KeyScope, epoch: u64, id: KeyId, public: Option<PublicKey>, boxes: Vec<KeyBox>, clear: Option<[u8; 32]> },
 }
 
 impl Action {
@@ -173,7 +191,8 @@ impl Op {
             | Action::SetThreshold { vault, .. }
             | Action::AddDevice { vault, .. }
             | Action::RemoveDevice { vault, .. }
-            | Action::SetRoot { vault, .. } => Some(*vault),
+            | Action::SetRoot { vault, .. }
+            | Action::Keys { key: KeyScope::Vault(vault), .. } => Some(*vault),
             _ => None,
         }
     }
@@ -287,10 +306,18 @@ pub enum Refusal {
     PublicBeyondRead,
     /// The parent grant doesn't cover the new one, or isn't the issuer's.
     BadParent,
-    /// A write under a key epoch that doesn't exist yet.
+    /// A write or a key under an epoch that doesn't exist yet.
     FutureEpoch,
     /// A write builds on a write its entry doesn't have (T14).
     UnknownDep,
+    /// A key of a family that doesn't exist.
+    UnknownKey,
+    /// The signer boxes a key it may not open.
+    NotEntitled,
+    /// A box goes where the schedule doesn't seal the key.
+    Unsealed,
+    /// A key in the clear of a family that isn't public.
+    NotPublic,
 }
 
 /// What a removal takes away.
@@ -303,8 +330,51 @@ pub enum Fact {
     Grant(GrantId),
 }
 
-/// What a peer knows after replaying its ops: vaults, spaces, grants, accepted writes (and from P3 each key family's
-/// epoch).
+/// Whoever starts out holding keys: a signer with its own key, whoever holds a vault's current key (its members, and
+/// in a coop the members of its owners), and everyone, who holds what is published.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum Holder {
+    Signer(SignerId),
+    Vault(VaultId),
+    Everyone,
+}
+
+impl Holder {
+    /// The keys the holder starts out with.
+    pub fn start(self, st: &State) -> Vec<KeyName> {
+        match self {
+            Holder::Signer(s) => vec![KeyName::Signer(s)],
+            Holder::Vault(v) => vec![st.current(KeyScope::Vault(v))],
+            Holder::Everyone => vec![],
+        }
+    }
+
+    /// The holder should be able to open the current key of `k`.
+    pub fn entitled(self, st: &State, k: KeyScope) -> bool {
+        match self {
+            Holder::Signer(s) => st.entitled(s, k),
+            Holder::Vault(x) => st.entitled_vault(x, k),
+            Holder::Everyone => st.public_key(k),
+        }
+    }
+}
+
+/// The seals made so far, in order, with a set to look them up.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+struct Seals {
+    list: Vec<Seal>,
+    set: HashSet<Seal>,
+}
+
+impl Seals {
+    fn add(&mut self, s: Seal) {
+        if self.set.insert(s) {
+            self.list.push(s);
+        }
+    }
+}
+
+/// What a peer knows after replaying its ops: vaults, spaces, grants, accepted writes, and the key schedule.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct State {
     /// In the order they were created.
@@ -314,6 +384,14 @@ pub struct State {
     grants: Vec<(GrantId, Grant)>,
     /// In the order they were accepted; shared, as replays copy the state often and the writes are most of it.
     writes: Arc<Vec<Write>>,
+    /// Each key family's epoch, where it isn't 0.
+    epochs: HashMap<KeyScope, u64>,
+    /// Shared like the writes: they only grow.
+    seals: Arc<Seals>,
+    /// The keys published to everyone, in the order they were.
+    published: Vec<KeyName>,
+    /// The key each signer has keys sealed to, as it last brought it.
+    seal_keys: Arc<HashMap<SignerId, PublicKey>>,
 }
 
 impl State {
@@ -446,19 +524,222 @@ impl State {
 
     /// The current epoch of a key family; it starts at 0 and grows by one at every rotation.
     pub fn epoch(&self, k: KeyScope) -> u64 {
-        let _ = k;
-        todo!("P3: rotation")
+        self.epochs.get(&k).copied().unwrap_or(0)
     }
 
-    /// An entry key's current epoch, which writes may not run ahead of. Rotation comes in P3; until then it is 0.
-    fn entry_epoch(&self, _sp: SpaceId, _e: EntryId) -> u64 {
-        0
+    /// The current key of a family.
+    pub fn current(&self, k: KeyScope) -> KeyName {
+        KeyName::Scoped(k, self.epoch(k))
     }
 
-    /// Device `d` should be able to open the current key of `k`: it acts for a vault that may read it.
+    /// Every seal of the schedule, in the order made.
+    pub fn seals(&self) -> &[Seal] {
+        &self.seals.list
+    }
+
+    /// Every published key, in the order published.
+    pub fn published(&self) -> &[KeyName] {
+        &self.published
+    }
+
+    /// The key signer `s` has keys sealed to.
+    pub fn seal_key(&self, s: SignerId) -> Option<&PublicKey> {
+        self.seal_keys.get(&s)
+    }
+
+    /// The current key of `k` is published to everyone.
+    pub fn public_key(&self, k: KeyScope) -> bool {
+        k.scope().is_some_and(|sc| self.is_public(sc))
+    }
+
+    /// Signer `d` should be able to open the current key of `k`: it acts for the vault, or for a vault that may read
+    /// the space or entry.
     pub fn entitled(&self, d: SignerId, k: KeyScope) -> bool {
-        let _ = (d, k);
-        todo!("P3: keys")
+        match k {
+            KeyScope::Vault(v) => self.acts_for(d, v),
+            KeyScope::Space(_) | KeyScope::Entry(..) => {
+                let sc = k.scope().expect("a space or entry key");
+                self.vaults.iter().any(|x| self.acts_for(d, x.id) && self.holds(x.id, sc, Role::Read))
+            }
+        }
+    }
+
+    /// Whoever holds the current key of vault `x` should be able to open the current key of `k`: `x` is that vault or
+    /// one of its owners, or it reads `k` itself or through a coop it owns.
+    pub fn entitled_vault(&self, x: VaultId, k: KeyScope) -> bool {
+        let through = |y: VaultId| x == y || self.owns(x, y);
+        match k {
+            KeyScope::Vault(v) => through(v),
+            KeyScope::Space(_) | KeyScope::Entry(..) => {
+                let sc = k.scope().expect("a space or entry key");
+                self.vaults.iter().any(|y| through(y.id) && self.holds(y.id, sc, Role::Read))
+            }
+        }
+    }
+
+    /// Every key family that exists: each vault, then each space followed by its entries.
+    pub fn key_scopes(&self) -> Vec<KeyScope> {
+        let vaults = self.vaults.iter().map(|v| KeyScope::Vault(v.id));
+        let spaces = self.spaces.iter().flat_map(|s| {
+            std::iter::once(KeyScope::Space(s.id)).chain(s.entries.iter().map(move |&e| KeyScope::Entry(s.id, e)))
+        });
+        vaults.chain(spaces).collect()
+    }
+
+    /// The key pairs the current key of `k` is sealed to: a human vault's devices and owner signers, a coop's owner
+    /// vaults, the vaults that can read a whole space, and for an entry its space plus the vaults that may read just
+    /// that entry. Relay caps get no key.
+    pub fn targets(&self, k: KeyScope) -> Vec<KeyName> {
+        self.targets_by(k, &self.read_grantees())
+    }
+
+    /// The vaults a grant in force gives read or more on each scope, worked out in one pass over the grants.
+    fn read_grantees(&self) -> HashMap<Scope, Vec<VaultId>> {
+        let mut by: HashMap<Scope, Vec<VaultId>> = HashMap::new();
+        for (_, g) in &self.grants {
+            if let Grantee::Principal(Principal::Vault(v)) = g.grantee
+                && g.role.allows(Role::Read)
+            {
+                by.entry(g.scope).or_default().push(v);
+            }
+        }
+        by
+    }
+
+    /// `targets`, with the read grants already sorted by scope.
+    fn targets_by(&self, k: KeyScope, read: &HashMap<Scope, Vec<VaultId>>) -> Vec<KeyName> {
+        let vault_key = |v: VaultId| self.current(KeyScope::Vault(v));
+        let granted = |sc: Scope, v: VaultId| read.get(&sc).is_some_and(|vs| vs.contains(&v));
+        match k {
+            KeyScope::Vault(v) => match self.vault(v) {
+                None => vec![],
+                Some(vt) => match vt.kind {
+                    Kind::Human => {
+                        let owners = vt.owners.iter().filter_map(|p| match *p {
+                            Principal::Signer(s) => Some(s),
+                            Principal::Vault(_) => None,
+                        });
+                        vt.devices.iter().copied().chain(owners).map(KeyName::Signer).collect()
+                    }
+                    Kind::Coop => vt
+                        .owners
+                        .iter()
+                        .filter_map(|p| match *p {
+                            Principal::Vault(o) => Some(vault_key(o)),
+                            Principal::Signer(_) => None,
+                        })
+                        .collect(),
+                },
+            },
+            // a grant covers a whole space only when it is on the space itself
+            KeyScope::Space(sp) => {
+                let founder = self.founder(sp);
+                let reads = |x: VaultId| founder == Some(x) || granted(Scope::Space(sp), x);
+                self.vaults.iter().filter(|x| reads(x.id)).map(|x| vault_key(x.id)).collect()
+            }
+            KeyScope::Entry(sp, e) => {
+                let readers = self.vaults.iter().filter(|x| granted(Scope::Entry(sp, e), x.id)).map(|x| vault_key(x.id));
+                std::iter::once(self.current(KeyScope::Space(sp))).chain(readers).collect()
+            }
+        }
+    }
+
+    /// Every seal by the key it is sealed to.
+    fn seal_index(&self) -> HashMap<KeyName, Vec<KeyName>> {
+        let mut by_to: HashMap<KeyName, Vec<KeyName>> = HashMap::new();
+        for s in &self.seals.list {
+            by_to.entry(s.to).or_default().push(s.secret);
+        }
+        by_to
+    }
+
+    fn open_from(&self, index: &HashMap<KeyName, Vec<KeyName>>, start: &[KeyName]) -> HashSet<KeyName> {
+        let mut open: HashSet<KeyName> = start.iter().chain(&self.published).copied().collect();
+        let mut todo: Vec<KeyName> = open.iter().copied().collect();
+        while let Some(k) = todo.pop() {
+            for &s in index.get(&k).into_iter().flatten() {
+                if open.insert(s) {
+                    todo.push(s);
+                }
+            }
+        }
+        open
+    }
+
+    /// What an agent holding the keys `start` can open: what is published, and whatever is sealed to a key it can
+    /// open. No key is learned any other way.
+    pub fn opens(&self, start: &[KeyName]) -> HashSet<KeyName> {
+        self.open_from(&self.seal_index(), start)
+    }
+
+    /// Every signer some vault lists.
+    fn signers(&self) -> Vec<SignerId> {
+        self.vaults
+            .iter()
+            .flat_map(|v| {
+                v.devices.iter().copied().chain(v.owners.iter().filter_map(|p| match *p {
+                    Principal::Signer(s) => Some(s),
+                    Principal::Vault(_) => None,
+                }))
+            })
+            .collect()
+    }
+
+    /// The holders that matter: every signer some vault lists, every vault, and everyone.
+    pub fn holders(&self) -> Vec<Holder> {
+        let signers = self.signers().into_iter().map(Holder::Signer);
+        signers.chain(self.vaults.iter().map(|v| Holder::Vault(v.id))).chain([Holder::Everyone]).collect()
+    }
+
+    /// The families whose current key some holder could open in `pre` but should no longer open now, unless the
+    /// family is public now. They start a new epoch.
+    pub fn stale_keys(&self, pre: &State) -> Vec<KeyScope> {
+        let index = pre.seal_index();
+        let opened: Vec<(Holder, HashSet<KeyName>)> =
+            pre.holders().into_iter().map(|h| (h, pre.open_from(&index, &h.start(pre)))).collect();
+        self.key_scopes()
+            .into_iter()
+            .filter(|&k| {
+                !self.public_key(k) && opened.iter().any(|(h, o)| o.contains(&pre.current(k)) && !h.entitled(self, k))
+            })
+            .collect()
+    }
+
+    /// Start a new epoch of `k`, the old key sealed to the new one: whoever may read now can read the history.
+    fn bump(&mut self, k: KeyScope) {
+        let e = self.epoch(k);
+        self.epochs.insert(k, e + 1);
+        Arc::make_mut(&mut self.seals).add(Seal { secret: KeyName::Scoped(k, e), to: KeyName::Scoped(k, e + 1) });
+    }
+
+    /// Seal every current key to each of its targets, and publish the public ones.
+    fn seal_all(&mut self) {
+        let read = self.read_grantees();
+        for k in self.key_scopes() {
+            let secret = self.current(k);
+            for to in self.targets_by(k, &read) {
+                let s = Seal { secret, to };
+                // the seals are shared with the states before; copy them only to add one
+                if !self.seals.set.contains(&s) {
+                    Arc::make_mut(&mut self.seals).add(s);
+                }
+            }
+            if self.public_key(k) && !self.published.contains(&secret) {
+                self.published.push(secret);
+            }
+        }
+    }
+
+    /// After `op` was accepted in `pre`: rotate what went stale, then seal and publish. Outside removals, devices,
+    /// owners and grants only grow, so does every entitlement, and by T6 no holder opened a current key in `pre` it
+    /// wasn't entitled to: only a removal can make a key stale, and only then is it worth looking.
+    fn settle(&mut self, pre: &State, op: &Op) {
+        if op.is_removal() {
+            for k in self.stale_keys(pre) {
+                self.bump(k);
+            }
+        }
+        self.seal_all();
     }
 
     /// Device `d` may receive the encrypted edits of an entry: it is public, or `d` acts for a vault holding relay or
@@ -549,20 +830,22 @@ impl State {
         st
     }
 
-    /// Apply one op: the new state, or why the op is refused. Each rule is the model's (`apply` in `Step.lean`), checked
-    /// in the same order.
+    /// Apply one op, then rotate and seal keys: the new state, or why the op is refused. Each rule is the model's
+    /// (`step` in `Step.lean`), checked in the same order.
     pub fn step(&self, op: &Op) -> Result<State, Refusal> {
         let mut st = self.clone();
         st.apply(op)?;
+        st.settle(self, op);
         Ok(st)
     }
 
-    /// `step` in place: every check comes before any change, so a refused op leaves the state as it was.
+    /// The rules of `step` in place, without the keys: every check comes before any change, so a refused op leaves the
+    /// state as it was.
     fn apply(&mut self, op: &Op) -> Result<(), Refusal> {
         let sigs: Vec<SignerId> = op.sigs().collect();
         let approves = |st: &State, p| st.approves(&sigs, p);
         match &op.action {
-            Action::Genesis { kind, owners, threshold, root, .. } => {
+            Action::Genesis { kind, owners, threshold, root, seal_to, .. } => {
                 let v = VaultId::from(op.id());
                 if self.vault(v).is_some() {
                     return Err(Refusal::Duplicate);
@@ -597,8 +880,14 @@ impl State {
                     devices: vec![],
                     root: *root,
                 });
+                for (s, key) in seal_to {
+                    if owners.contains(&Principal::Signer(*s)) {
+                        Arc::make_mut(&mut self.seal_keys).insert(*s, key.clone());
+                    }
+                }
             }
-            &Action::AddOwner { vault, owner } => {
+            Action::AddOwner { vault, owner, seal_to } => {
+                let (vault, owner) = (*vault, *owner);
                 let vt = self.vault(vault).ok_or(Refusal::UnknownVault)?;
                 if vt.owners.contains(&owner) {
                     return Err(Refusal::AlreadyMember);
@@ -616,6 +905,9 @@ impl State {
                     return Err(Refusal::NoConsent);
                 }
                 self.vault_mut(vault).owners.push(owner);
+                if let (Principal::Signer(s), Some(key)) = (owner, seal_to) {
+                    Arc::make_mut(&mut self.seal_keys).insert(s, key.clone());
+                }
             }
             Action::RemoveOwner { vault, owner, keep } => {
                 let (vault, owner) = (*vault, *owner);
@@ -647,7 +939,8 @@ impl State {
                 }
                 self.vault_mut(vault).threshold = threshold;
             }
-            &Action::AddDevice { vault, device } => {
+            Action::AddDevice { vault, device, seal_to } => {
+                let (vault, device) = (*vault, *device);
                 let vt = self.vault(vault).ok_or(Refusal::UnknownVault)?;
                 if vt.kind != Kind::Human {
                     return Err(Refusal::NotHuman);
@@ -663,6 +956,9 @@ impl State {
                     return Err(Refusal::NoConsent);
                 }
                 self.vault_mut(vault).devices.push(device);
+                if let Some(key) = seal_to {
+                    Arc::make_mut(&mut self.seal_keys).insert(device, key.clone());
+                }
             }
             Action::RemoveDevice { vault, device, keep } => {
                 let (vault, device) = (*vault, *device);
@@ -761,7 +1057,7 @@ impl State {
                 if !self.holds(actor, Scope::Entry(space, entry), Role::Write) {
                     return Err(Refusal::NoCap);
                 }
-                if epoch > self.entry_epoch(space, entry) {
+                if epoch > self.epoch(KeyScope::Entry(space, entry)) {
                     return Err(Refusal::FutureEpoch);
                 }
                 let w = Write { op: id, author: op.author, actor, space, entry, epoch, deps: deps.clone() };
@@ -773,6 +1069,26 @@ impl State {
                     self.spaces.iter_mut().find(|x| x.id == space).expect("the space").entries.push(entry);
                 }
                 Arc::make_mut(&mut self.writes).push(w);
+            }
+            Action::Keys { key, epoch, boxes, clear, .. } => {
+                let (key, epoch) = (*key, *epoch);
+                if !self.key_scopes().contains(&key) {
+                    return Err(Refusal::UnknownKey);
+                }
+                if !self.entitled(op.author, key) {
+                    return Err(Refusal::NotEntitled);
+                }
+                if epoch > self.epoch(key) {
+                    return Err(Refusal::FutureEpoch);
+                }
+                // a box the schedule doesn't seal would hand the key to someone who may not open it
+                let secret = KeyName::Scoped(key, epoch);
+                if !boxes.iter().all(|b| self.seals.set.contains(&Seal { secret, to: b.to.name() })) {
+                    return Err(Refusal::Unsealed);
+                }
+                if clear.is_some() && !self.published.contains(&secret) {
+                    return Err(Refusal::NotPublic);
+                }
             }
         }
         Ok(())
@@ -883,7 +1199,12 @@ fn run(ops: &[Op], ids: &[OpId], rem: &HashSet<OpId>, states: bool) -> Run {
             if !hidden.is_empty() {
                 stands = out.state.hide(&hidden).apply(op).is_ok();
             }
-            stands = stands && out.state.apply(op).is_ok();
+            if stands {
+                match out.state.step(op) {
+                    Ok(next) => out.state = next,
+                    Err(_) => stands = false,
+                }
+            }
         }
         out.stood.push(stands);
         if states {
@@ -1089,9 +1410,9 @@ mod tests {
         let passkey = SignerId::from_u64(1);
         let mut log = Log::new();
         let genesis =
-            Action::Genesis { kind: Kind::Human, owners: vec![Principal::Signer(passkey)], threshold: 1, root: None, nonce: 0 };
+            Action::Genesis { kind: Kind::Human, owners: vec![Principal::Signer(passkey)], threshold: 1, root: None, nonce: 0, seal_to: vec![] };
         let v = VaultId::from(log.append(passkey, &[], genesis).unwrap());
-        let honest = log.draft(passkey, &[SignerId::from_u64(2)], Action::AddDevice { vault: v, device: SignerId::from_u64(2) });
+        let honest = log.draft(passkey, &[SignerId::from_u64(2)], Action::AddDevice { vault: v, device: SignerId::from_u64(2), seal_to: None });
         assert_eq!(honest.depth, 1);
         // an op claiming to be no deeper than its parent is left out where the parent is held…
         let shallow = Op { depth: 0, ..honest.clone() };
