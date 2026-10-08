@@ -10,7 +10,7 @@ import * as THREE from 'three';
 import { GRASS, MOUNTAIN, SAND, WARES, WATER } from './rules.js';
 import { buildingModel, mat, recolour, scaffold, TEAM } from './models.js';
 import { ROW, SE, STEP } from './hex.js';
-import { K } from './plots.js';
+import { K, onRing, ringWay } from './plots.js';
 
 /** a path's width: two lanes, a bus each way, a dashed line between them */
 const ROAD_W = 0.9;
@@ -427,6 +427,46 @@ export function createView(scene, sim) {
 		for (let k = 0; k < n.count; k++) if (n.getY(k) < 0) n.setXYZ(k, -n.getX(k), -n.getY(k), -n.getZ(k));
 		return geo;
 	}
+	/** ribbons along lines of points on the ground [x, z], bending where they bend (a closed one joins its ends), lying
+	 * on the ground all the way */
+	function ribbon(/** @type {{ pts: number[][], closed?: boolean }[]} */ lines, /** @type {number} */ width, /** @type {number} */ lift) {
+		/** @type {number[]} */
+		const pos = [], uv = [];
+		for (const { pts: raw, closed } of lines) {
+			// a few points a world unit, so no hill hides a stretch
+			const pts = [raw[0]];
+			for (let k = 1; k < raw.length + (closed ? 1 : 0); k++) {
+				const [x0, z0] = pts[pts.length - 1], [x1, z1] = raw[k % raw.length];
+				const n = Math.ceil(Math.hypot(x1 - x0, z1 - z0) * 3);
+				for (let j = 1; j <= n; j++) pts.push([x0 + ((x1 - x0) * j) / n, z0 + ((z1 - z0) * j) / n]);
+			}
+			const m = pts.length;
+			if (m < 2) continue;
+			// each point's sideways: across the way it runs there (round the join, on a closed one)
+			const side = pts.map((_, k) => {
+				const [px, pz] = pts[k > 0 ? k - 1 : closed ? m - 2 : 0], [nx, nz] = pts[k < m - 1 ? k + 1 : closed ? 1 : m - 1];
+				const dx = nx - px, dz = nz - pz, len = Math.hypot(dx, dz) || 1;
+				return [(-dz / len) * (width / 2), (dx / len) * (width / 2)];
+			});
+			let v = 0;
+			for (let k = 0; k < m - 1; k++) {
+				const [x0, z0] = pts[k], [x1, z1] = pts[k + 1], [ax, az] = side[k], [bx, bz] = side[k + 1];
+				const y0 = groundY(x0, z0) + lift, y1 = groundY(x1, z1) + lift;
+				pos.push(x0 + ax, y0, z0 + az, x1 + bx, y1, z1 + bz, x1 - bx, y1, z1 - bz, x0 + ax, y0, z0 + az, x1 - bx, y1, z1 - bz, x0 - ax, y0, z0 - az);
+				// across the ribbon 0…1, along it a repeat every so many world units (for a texture's dots and dashes)
+				const v1 = v + Math.hypot(x1 - x0, z1 - z0) / width;
+				uv.push(1, v, 1, v1, 0, v1, 1, v, 0, v1, 0, v);
+				v = v1;
+			}
+		}
+		const geo = new THREE.BufferGeometry();
+		geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+		geo.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+		geo.computeVertexNormals();
+		const n = /** @type {THREE.BufferAttribute} */ (geo.getAttribute('normal'));
+		for (let k = 0; k < n.count; k++) if (n.getY(k) < 0) n.setXYZ(k, -n.getX(k), -n.getY(k), -n.getZ(k));
+		return geo;
+	}
 	/** @type {THREE.Mesh | null} */
 	let stubMesh = null;
 	let netKey = '';
@@ -475,7 +515,7 @@ export function createView(scene, sim) {
 
 	// the trade routes: two-lane tunnels in their digger's colour from village center to village center, shown (seen
 	// through the ground, dotted at their walls) only while a village center is picked: brighter where they touch it
-	let tunSeen = -1, tunPick = -1, picked = 0;
+	let tunSeen = '', picked = 0;
 	/** @type {THREE.Mesh[]} */
 	let tunMeshes = [];
 	const tunTex = (() => {
@@ -507,22 +547,43 @@ export function createView(scene, sim) {
 	const tunMats = TEAM.map((c) => [tunMat(c, 0.45), tunMat(c, 0.95)]);
 	/** how wide a tunnel is: two lanes, a bus in each */
 	const TUN_W = 1.3;
+	/** how far out from a village center's middle its spur starts: at the foot of its tower and the crates at its door,
+	 * or of a logistics hub's dome */
+	const footOf = (/** @type {any} */ b) => (b.type === 'centre' && (b.level || 1) === 1 ? 2.8 : 4.5);
+	/** the trade routes under the ground: a ring road round each village center they join, a spur from its door out to
+	 * it, and the routes straight across from ring to ring, never through a village center */
 	function syncTunnels() {
-		if (tunSeen === st.tunV && tunPick === picked) return;
-		tunSeen = st.tunV;
-		tunPick = picked;
+		let hubs = 0;
+		for (const t of Object.values(st.tunnels)) for (const id of [t.a, t.b]) if (st.buildings[id]?.level === 1) hubs++;
+		const key = `${st.tunV}:${picked}:${hubs}`;
+		if (tunSeen === key) return;
+		tunSeen = key;
 		for (const m of tunMeshes) {
 			m.geometry.dispose();
 			root.remove(m);
 		}
 		tunMeshes = [];
 		if (!picked) return;
-		/** @type {Record<string, number[][]>} */
+		/** @type {Record<string, { pts: number[][], closed?: boolean }[]>} */
 		const sets = {};
-		for (const t of Object.values(st.tunnels)) (sets[`${t.owner}:${t.a === picked || t.b === picked ? 1 : 0}`] ??= []).push([t.path[0], t.path[t.path.length - 1]]);
-		for (const [key, ends] of Object.entries(sets)) {
+		const add = (/** @type {number} */ owner, /** @type {boolean} */ on, /** @type {{ pts: number[][], closed?: boolean }} */ l) => (sets[`${owner}:${on ? 1 : 0}`] ??= []).push(l);
+		/** @type {Set<number>} */
+		const ringed = new Set();
+		for (const t of Object.values(st.tunnels)) {
+			const a = sim.ring(t.a), b = sim.ring(t.b);
+			if (!a || !b) continue;
+			const out = Math.atan2(b.z - a.z, b.x - a.x);
+			add(t.owner, t.a === picked || t.b === picked, { pts: [onRing(a, out), onRing(b, out + Math.PI)] });
+			ringed.add(t.a).add(t.b);
+		}
+		for (const id of ringed) {
+			const c = /** @type {any} */ (sim.ring(id)), b = st.buildings[id], s = c.door, foot = footOf(b);
+			add(b.owner, id === picked, { pts: Array.from({ length: 72 }, (_, k) => onRing(c, (k / 72) * Math.PI * 2)), closed: true });
+			add(b.owner, id === picked, { pts: [[c.x + foot * Math.cos(s), c.z + foot * Math.sin(s)], onRing(c, s)] });
+		}
+		for (const [key, lines] of Object.entries(sets)) {
 			const [o, on] = key.split(':').map(Number);
-			const m = new THREE.Mesh(line(ends, TUN_W, 0.12), tunMats[o][on]);
+			const m = new THREE.Mesh(ribbon(lines, TUN_W, 0.12), tunMats[o][on]);
 			m.renderOrder = 3 + on;
 			root.add(m);
 			tunMeshes.push(m);
@@ -674,9 +735,43 @@ export function createView(scene, sim) {
 		const b = o?.k === 'flag' ? st.buildings[st.flags[o.id]?.bld] : null;
 		return !!b && big(b.type);
 	};
-	/** a cart goes straight from village center to village center, however its steps were counted */
+	/** @type {WeakMap<object, { pts: number[][], run: number[] } | null>} */
+	const cartWays = new WeakMap();
+	/** a cart's way on the ground round the ring roads (./plots.js ringWay), with how far along each point lies; null for
+	 * a cart of an older save, or one whose village centers are gone */
+	function cartWay(/** @type {any} */ u) {
+		let w = cartWays.get(u);
+		if (w === undefined) {
+			const chain = (u.via ?? []).map((/** @type {number} */ id) => sim.ring(id));
+			w = null;
+			if (chain.length >= 2 && chain.every(Boolean)) {
+				const pts = ringWay(chain, 0.5), run = [0];
+				for (let k = 1; k < pts.length; k++) run.push(run[k - 1] + Math.hypot(pts[k][0] - pts[k - 1][0], pts[k][1] - pts[k - 1][1]));
+				w = { pts, run };
+			}
+			cartWays.set(u, w);
+		}
+		return w;
+	}
+	/** a cart goes round the ring roads and straight across between them, as far along its way as its steps say */
 	function cartPos(/** @type {any} */ u) {
 		const n = u.path.length, p = Math.max(0, Math.min(n - 1, u.p));
+		const w = cartWay(u);
+		if (w) {
+			const { pts, run } = w, d = (p / Math.max(1, n - 1)) * run[run.length - 1];
+			let lo = 0, hi = run.length - 1;
+			while (hi - lo > 1) {
+				const mid = (lo + hi) >> 1;
+				if (run[mid] <= d) lo = mid;
+				else hi = mid;
+			}
+			const [ax, az] = pts[lo], [bx, bz] = pts[hi], len = run[hi] - run[lo] || 1, f = Math.min(1, (d - run[lo]) / len);
+			// it keeps to its own lane: the right-hand one of the way it goes
+			const dx = bx - ax, dz = bz - az, side = ((u.tgt >= u.p ? 1 : -1) * TUN_W) / 4;
+			const x = ax + dx * f - (dz / len) * side, z = az + dz * f + (dx / len) * side;
+			return at.set(x, groundY(x, z), z);
+		}
+		// a cart of an older save goes straight from village center to village center, however its steps were counted
 		let k0 = Math.floor(p), k1 = Math.min(n - 1, k0 + 1);
 		while (k0 > 0 && !isCentre(u.path[k0])) k0--;
 		while (k1 < n - 1 && !isCentre(u.path[k1])) k1++;

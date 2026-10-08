@@ -26,7 +26,7 @@ import { BIOMES, BUILDINGS, BUILD_MWH_T, CENTRE, ENERGY, EUR_GOLD, GROWS, GRASS,
 import { CART, GRID_EUR_KWH, HEARTS, LOAN, LOAN_PAY, NEIGHBOURS, TRADED, WORLD, heartsFor, keepOf, loanMonths, make, newMarket, orderRule, party, priceIn, request, shortIn, spareIn } from './market.js';
 import { SE, STEP, findPath, makeGrid } from './hex.js';
 import { CISTERN, FOOD_KG, FRESH_L, KEEP, MOST, PACE, PRICE, RAIN_L, RAIN_MONTH, TANK, WATER_PRICE, WATER_USE, WEEK, YEAR, DAY, MONTH, clockOf, forestShare } from './food.js';
-import { makePlan, spoke } from './plots.js';
+import { makePlan, ringWay, spoke } from './plots.js';
 import { growValley } from './map.js';
 import { fmt } from './units.js';
 
@@ -1156,7 +1156,8 @@ export function createSim(st) {
 	let tunSeen = -1;
 	/** @type {Map<number, Map<number, number[]>>} */
 	const ways = new Map();
-	/** every village center one reaches along the trade routes, through anyone's, with the way there (nodes) */
+	/** every village center one reaches along the trade routes, through anyone's, with the village centers on the way
+	 * there (itself first, the one reached last) */
 	function reach(/** @type {number} */ from) {
 		if (tunSeen !== st.tunV) {
 			tunSeen = st.tunV;
@@ -1164,8 +1165,7 @@ export function createSim(st) {
 		}
 		let m = ways.get(from);
 		if (m) return m;
-		const a = st.buildings[from];
-		m = new Map([[from, a ? [stopAt(a)] : []]]);
+		m = new Map([[from, [from]]]);
 		const open = [from];
 		while (open.length) {
 			const x = /** @type {number} */ (open.shift());
@@ -1173,8 +1173,7 @@ export function createSim(st) {
 			for (const t of all(st.tunnels)) {
 				const y = t.a === x ? t.b : t.b === x ? t.a : 0;
 				if (!y || m.has(y) || st.buildings[y]?.stage !== 'live') continue;
-				const p = t.a === x ? t.path : [...t.path].reverse();
-				m.set(y, [...here, ...p.slice(1)]);
+				m.set(y, [...here, y]);
 				open.push(y);
 			}
 		}
@@ -1241,9 +1240,33 @@ export function createSim(st) {
 	const stopAt = (/** @type {any} */ c) => st.flags[c.flag]?.node ?? c.node;
 	/** what a trade route between two village centers costs, in loads of fired clay: the real tunnel's 36,000 t a km */
 	const tunnelCost = (/** @type {number} */ a, /** @type {number} */ b) => Math.ceil((((g.dist(a, b) * STEP * UNIT_M) / 1000) * ROUTE_T_KM) / LOAD_T);
+	/** a village center's ring road (./plots.js RING_R) round its stop, the middle of its hex where it stands, and the
+	 * way its door faces (away from its spot, as ./view.js turns it), on the ground */
+	const ringOf = (/** @type {any} */ c) => {
+		const s = stopAt(c);
+		return { x: g.x(s), z: g.z(s), door: Math.atan2(g.z(s) - g.z(c.node), g.x(s) - g.x(c.node)) };
+	};
+	/** @type {Map<string, number[]>} */
+	const ringWays = new Map();
+	/** the way through a chain of village centers (./plots.js ringWay): out along the first one's spur, round each
+	 * one's ring road and straight across between them, in along the last one's spur; as nodes, a step or so apart */
+	function wayOf(/** @type {number[]} */ chain) {
+		const key = chain.join(',');
+		let path = ringWays.get(key);
+		if (!path) {
+			path = [];
+			for (const [x, z] of ringWay(chain.map((id) => ringOf(st.buildings[id])), STEP)) {
+				const j = g.at(x, z);
+				if (j >= 0 && j !== path[path.length - 1]) path.push(j);
+			}
+			ringWays.set(key, path);
+		}
+		return path.slice();
+	}
 	/** dig a trade route between two village centers (paid by the first) */
 	function dig(/** @type {any} */ a, /** @type {any} */ b, pay = true) {
-		// always straight from center to center, under whatever lies between: the nodes along the line, a step apart
+		// its length, straight from stop to stop under whatever lies between, is what it costs: the nodes along the line, a
+		// step apart (the carts on it ring each village center: wayOf)
 		const an = stopAt(a), bn = stopAt(b);
 		const n = Math.max(1, g.dist(an, bn)), ax = g.x(an), az = g.z(an), bx = g.x(bn), bz = g.z(bn);
 		/** @type {number[]} */
@@ -1258,12 +1281,15 @@ export function createSim(st) {
 		st.tunV++;
 		return t;
 	}
-	/** a cart sets out along the trade routes, at twice a walker's pace */
-	function sendCart(/** @type {any} */ from, /** @type {any} */ to, /** @type {Record<string, number>} */ load, /** @type {any} */ deal, /** @type {number[] | null} */ way = null) {
-		const path = way ?? reach(from.id).get(to.id);
-		if (!path || path.length < 2) return null;
+	/** a cart sets out along the trade routes, at twice a walker's pace, round the ring road of each village center on
+	 * its way (`via`, the chain of them, when the routes do not join them yet) */
+	function sendCart(/** @type {any} */ from, /** @type {any} */ to, /** @type {Record<string, number>} */ load, /** @type {any} */ deal, /** @type {number[] | null} */ via = null) {
+		const chain = via ?? reach(from.id).get(to.id);
+		if (!chain || chain.length < 2 || chain.some((id) => !st.buildings[id])) return null;
+		const path = wayOf(chain);
+		if (path.length < 2) return null;
 		for (const [w, n] of Object.entries(load)) comingTo(to)[w] = (comingTo(to)[w] ?? 0) + n;
-		return spawn('cart', from.owner, path, 'cart', { load, deal, to: to.id, speed: CART_SPEED * 2, ware: Object.keys(load)[0] ?? '' });
+		return spawn('cart', from.owner, path, 'cart', { load, deal, to: to.id, via: chain, speed: CART_SPEED * 2, ware: Object.keys(load)[0] ?? '' });
 	}
 	function cartArrive(/** @type {any} */ u) {
 		const to = st.buildings[u.to], d = u.deal;
@@ -2291,11 +2317,11 @@ export function createSim(st) {
 				// founded from the village center next to it: its hub, a trade route and four settlers go by cart
 				const from = /** @type {any} */ (founder(villageAt(n)));
 				payAll(from, b.cost);
-				const t = dig(from, b);
+				dig(from, b);
 				territory();
 				const settlers = Math.min(4, from.settlers);
 				from.settlers -= settlers;
-				sendCart(from, b, {}, { kind: 'found', settlers }, t?.path ?? null);
+				sendCart(from, b, {}, { kind: 'found', settlers }, [from.id, b.id]);
 				b.status = 'Being founded: a cart is on its way';
 				return { ok: true, id: b.id, linked: true };
 			}
@@ -2396,6 +2422,11 @@ export function createSim(st) {
 				sold: m.sold,
 				bought: m.bought
 			};
+		},
+		/** a village center's ring road round its stop, and the way its door faces (./plots.js ringWay), or null */
+		ring(/** @type {number} */ id) {
+			const c = st.buildings[id];
+			return c ? ringOf(c) : null;
 		},
 		/** the village centers one can join by a trade route, and whether it is joined already */
 		links(/** @type {number} */ id) {
