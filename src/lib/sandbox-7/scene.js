@@ -1,6 +1,6 @@
 /**
  * SANDBOX 6 · ONE HEX · THE WORLD — the two hexes in three.js at their real size, a metre a unit: the land painted
- * from its land-use raster (./layout.js), the domes as glazed geodesic caps with their north third closed in hemp, the
+ * from its land-use raster (./layout.js), the domes as glazed geodesic caps with their cold north side closed in hemp, the
  * tower with its floors, and what grows on the land and under the glass.
  *
  * Everything an overlay can hide sits in its own group (`layers`), so the page toggles them: the land-use colours,
@@ -8,7 +8,7 @@
  * draws in HTML (./world.js).
  */
 import * as THREE from 'three';
-import { capOf, CORE_R, FACADE, KINDS, NORTH_HALF, towerLevels, towerProfile, towerRadius } from './specs.js';
+import { capOf, CORE_R, FACADE, KINDS, NORTH_HALF, NORTH_UP, TOWER_NORTH_UP, towerLevels, towerProfile, towerRadius } from './specs.js';
 import { CELL, HEX_S, HEX_W, POND_BAND, POND_HALF, USES, USE_IDS, corners, footR, landOf } from './layout.js';
 
 /** @type {Map<string, THREE.MeshStandardMaterial>} */
@@ -20,7 +20,33 @@ const mat = (/** @type {string} */ color, rough = 0.85, flat = true) => {
 	if (!m) mats.set(k, (m = new THREE.MeshStandardMaterial({ color, roughness: rough, flatShading: flat })));
 	return m;
 };
-const GLASS = new THREE.MeshStandardMaterial({ color: '#d4ecf0', transparent: true, opacity: 0.17, roughness: 0.06, metalness: 0.25, side: THREE.DoubleSide, depthWrite: false });
+/** @type {THREE.CanvasTexture | null} */
+let cells = null;
+/**
+ * The south two thirds: laminated glass with see-through solar cells laid in it, 80% of the pane (PV_SHARE), so the
+ * glazing reads as solar panels: dark blue cells in a clear frame, each tile two by two panels of about 3 m.
+ * @param {number} u how many 6 m tiles round the shell
+ * @param {number} v how many up it
+ */
+function solarGlass(u, v) {
+	if (!cells) {
+		const cv = document.createElement('canvas');
+		cv.width = cv.height = 64;
+		const x = /** @type {CanvasRenderingContext2D} */ (cv.getContext('2d'));
+		x.fillStyle = 'rgba(214,236,240,0.12)';
+		x.fillRect(0, 0, 64, 64);
+		x.fillStyle = 'rgba(28,52,82,0.62)';
+		for (const a of [0, 32]) for (const b of [0, 32]) x.fillRect(a + 2, b + 2, 28, 28);
+		cells = new THREE.CanvasTexture(cv);
+		cells.wrapS = cells.wrapT = THREE.RepeatWrapping;
+		cells.colorSpace = THREE.SRGBColorSpace;
+		cells.anisotropy = 4;
+	}
+	const map = cells.clone();
+	map.repeat.set(Math.max(1, Math.round(u)), Math.max(1, Math.round(v)));
+	map.needsUpdate = true;
+	return new THREE.MeshStandardMaterial({ map, transparent: true, roughness: 0.1, metalness: 0.35, side: THREE.DoubleSide, depthWrite: false });
+}
 const HEMP = new THREE.MeshStandardMaterial({ color: '#c8b38a', roughness: 0.95, flatShading: true, side: THREE.DoubleSide });
 const STRUT = new THREE.LineBasicMaterial({ color: '#6b5236', transparent: true, opacity: 0.55 });
 const DIM = new THREE.LineBasicMaterial({ color: '#ffffff', transparent: true, opacity: 0.9, depthTest: false });
@@ -95,7 +121,7 @@ function siteGroups() {
 }
 
 /**
- * A glazed geodesic cap D across on its stone plinth, the north third closed in hemp.
+ * A geodesic cap D across on its stone plinth: its cold north side closed in hemp up to a level line, the rest solar glass.
  * @param {number} D
  */
 function domeShell(D) {
@@ -105,13 +131,20 @@ function domeShell(D) {
 	g.root.add(part(new THREE.CylinderGeometry(c.a + 0.5, c.a + 0.9, 1.2, 64, 1, true), mat(STONE), 0, 0.6, 0));
 	const theta = Math.acos((c.R - c.h) / c.R);
 	const deg = Math.PI / 180;
-	// three.js spheres run their phi so that bearing b sits at phi = 270° − b: the hemp from 300° to 60° is phi 210°…330°
-	const glass = new THREE.Mesh(new THREE.SphereGeometry(c.R, 72, 24, (270 - (360 - NORTH_HALF)) * deg + 2 * Math.PI, (360 - 2 * NORTH_HALF) * deg, 0, theta), GLASS);
-	glass.position.y = -(c.R - c.h);
-	glass.renderOrder = 2;
-	const hemp = part(new THREE.SphereGeometry(c.R - 0.15, 36, 24, (270 - NORTH_HALF) * deg, 2 * NORTH_HALF * deg, 0, theta), HEMP, 0, -(c.R - c.h), 0);
+	// the hemp runs north-west to north-east from the ground to a level line at NORTH_UP of the height; above it the
+	// crown, and round the east, south and west the whole way down, is solar glass. Three.js spheres run their phi so
+	// that bearing b sits at phi = 270° − b: the hemp from 300° to 60° is phi 210°…330°
+	const tLine = Math.acos((NORTH_UP * c.h + c.R - c.h) / c.R);
+	const sweep = (360 - 2 * NORTH_HALF) * deg;
+	const crown = new THREE.Mesh(new THREE.SphereGeometry(c.R, 72, 12, 0, 2 * Math.PI, 0, tLine), solarGlass((2 * Math.PI * c.R * Math.sin(tLine)) / 6, (c.R * tLine) / 6));
+	const sides = new THREE.Mesh(new THREE.SphereGeometry(c.R, 72, 16, (270 - (360 - NORTH_HALF)) * deg + 2 * Math.PI, sweep, tLine, theta - tLine), solarGlass((c.a * sweep) / 6, (c.R * (theta - tLine)) / 6));
+	for (const m of [crown, sides]) {
+		m.position.y = -(c.R - c.h);
+		m.renderOrder = 2;
+	}
+	const hemp = part(new THREE.SphereGeometry(c.R - 0.15, 36, 16, (270 - NORTH_HALF) * deg, 2 * NORTH_HALF * deg, tLine, theta - tLine), HEMP, 0, -(c.R - c.h), 0);
 	const lines = new THREE.LineSegments(struts(c.R, c.h, c.freq), STRUT);
-	g.shell.add(glass, hemp, lines);
+	g.shell.add(crown, sides, hemp, lines);
 	// the dimension lines: across the foot west to east, and up the middle to the crown
 	const dimGeo = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(-c.a, 1.5, 0), new THREE.Vector3(c.a, 1.5, 0), new THREE.Vector3(0, 0, 0), new THREE.Vector3(0, c.h, 0)]);
 	g.dims.add(new THREE.LineSegments(dimGeo, DIM));
@@ -214,7 +247,7 @@ function diagrid(prof, bays = 64) {
 }
 
 /**
- * The tower: its glass lathe with the north third in hemp, the diagrid, and inside it the factory floor, the garden
+ * The tower: its glass lathe with the cold north side in hemp up to the apartments, the diagrid, and inside it the factory floor, the garden
  * deck on its roof, the core and the stack of floors coloured by use.
  * @param {import('./specs.js').Tower} T
  * @param {(x: number, y: number, z: number, kind: string, s?: number) => void} plant
@@ -224,15 +257,23 @@ function towerModel(T, plant) {
 	g.root.add(g.shell, g.inside, g.dims);
 	const R = T.D / 2;
 	const prof = towerProfile(T, 96);
-	const pts = prof.map(([r, y]) => new THREE.Vector2(r, y));
 	const deg = Math.PI / 180;
 	g.root.add(part(new THREE.CylinderGeometry(R + 0.6, R + 1.0, 1.4, 96, 1, true), mat(STONE), 0, 0.7, 0));
-	// a lathe puts bearing b at phi = 180° − b: the hemp from 300° to 60° is phi 120°…240°
-	const glass = new THREE.Mesh(new THREE.LatheGeometry(pts, 96, (180 + NORTH_HALF) * deg, (360 - 2 * NORTH_HALF) * deg), GLASS);
-	glass.renderOrder = 2;
-	const hempPts = prof.map(([r, y]) => new THREE.Vector2(Math.max(0.01, r - 0.2), y));
-	const hemp = part(new THREE.LatheGeometry(hempPts, 32, (180 - NORTH_HALF) * deg, 2 * NORTH_HALF * deg), HEMP);
-	g.shell.add(glass, hemp, new THREE.LineSegments(diagrid(prof), STRUT));
+	// a lathe puts bearing b at phi = 180° − b: the hemp from 300° to 60° is phi 120°…240°, from the ground to a level
+	// line where the apartments start; the profile splits there
+	const Y = TOWER_NORTH_UP * T.H;
+	const cut = prof.findIndex(([, y]) => y > Y);
+	const [ra, ya] = prof[cut - 1], [rb, yb] = prof[cut];
+	const rY = ra + ((rb - ra) * (Y - ya)) / (yb - ya);
+	const low = [...prof.slice(0, cut), [rY, Y]], high = [[rY, Y], ...prof.slice(cut)];
+	const runOf = (/** @type {number[][]} */ q) => q.reduce((s, p, i) => (i ? s + Math.hypot(p[0] - q[i - 1][0], p[1] - q[i - 1][1]) : 0), 0);
+	const v2 = (/** @type {number[][]} */ q) => q.map(([r, y]) => new THREE.Vector2(r, y));
+	const sweep = (360 - 2 * NORTH_HALF) * deg;
+	const upper = new THREE.Mesh(new THREE.LatheGeometry(v2(high), 96), solarGlass((2 * Math.PI * rY) / 6, runOf(high) / 6));
+	const sides = new THREE.Mesh(new THREE.LatheGeometry(v2(low), 96, (180 + NORTH_HALF) * deg, sweep), solarGlass((R * sweep) / 6, runOf(low) / 6));
+	upper.renderOrder = sides.renderOrder = 2;
+	const hemp = part(new THREE.LatheGeometry(v2(low.map(([r, y]) => [Math.max(0.01, r - 0.2), y])), 32, (180 - NORTH_HALF) * deg, 2 * NORTH_HALF * deg), HEMP);
+	g.shell.add(upper, sides, hemp, new THREE.LineSegments(diagrid(prof), STRUT));
 	// inside: the factory hall, the deck on its roof, the core, the floors
 	const levels = towerLevels(T);
 	const rim0 = towerRadius(T, 12) - FACADE;

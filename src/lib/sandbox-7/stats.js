@@ -101,7 +101,7 @@ export function hexStats(plan, land = landOf(plan)) {
 		add('concrete', 'm³', sc, sc * DENSITY.concrete, sc * PRICES.concrete.eur);
 		fitout += f.m2 * (/** @type {Record<string, number>} */ (FITOUT)[f.use] ?? 2500);
 	}
-	const LABEL = { timber: 'Glulam struts and north cassettes', steel: 'Steel hubs, ring and connectors', glass: 'Laminated double glazing', pv: 'See-through solar cells in it', hemp: 'Hemp-fibre insulation (north third)', lime: 'Lime-pozzolan footings', clt: 'CLT and glulam floors inside', concrete: 'Screed on the floors' };
+	const LABEL = { timber: 'Glulam struts and north cassettes', steel: 'Steel hubs, ring and connectors', glass: 'Laminated double glazing', pv: 'See-through solar cells in it', hemp: 'Hemp-fibre insulation (north side)', lime: 'Lime-pozzolan footings', clt: 'CLT and glulam floors inside', concrete: 'Screed on the floors' };
 	const PRICE_OF = { timber: PRICES.glulam, steel: tower && plan.id === 'tower' ? PRICES.hubs : PRICES.hubs, glass: PRICES.glass, pv: PRICES.pv, hemp: PRICES.hemp, lime: PRICES.lime, clt: PRICES.clt, concrete: PRICES.concrete };
 	const materials = Object.entries(mat).map(([k, m]) => ({ id: k, label: /** @type {any} */ (LABEL)[k], ...m, price: /** @type {any} */ (PRICE_OF)[k] }));
 	const shellEur = materials.filter((m) => m.id !== 'clt' && m.id !== 'concrete').reduce((a, m) => a + m.eur, 0);
@@ -243,7 +243,7 @@ export function siteCard(plan, id) {
 			['Across', `${K.D} m`],
 			['Height', `${c.h.toFixed(1)} m (a cap of a ${c.R.toFixed(1)} m sphere)`],
 			['Floor', `${Math.round(c.floor).toLocaleString('en-US')} m²`],
-			['Shell', `${Math.round(c.shell).toLocaleString('en-US')} m²: ${Math.round(sh.glazed).toLocaleString('en-US')} glass, ${Math.round(sh.north).toLocaleString('en-US')} hemp (north third)`],
+			['Shell', `${Math.round(c.shell).toLocaleString('en-US')} m²: ${Math.round(sh.glazed).toLocaleString('en-US')} glass, ${Math.round(sh.north).toLocaleString('en-US')} hemp (north side)`],
 			['Geodesic grid', `frequency ${c.freq}: ~${struts.toLocaleString('en-US')} struts ~${((1.107 * c.R) / c.freq).toFixed(1)} m long, ~${hubs} steel hubs`],
 			['Air inside', `${Math.round(c.volume).toLocaleString('en-US')} m³`],
 			...(K.people ? [['People', `${K.people}, ${Math.round(K.gfa / K.people)} m² of home each (2 storeys, ${K.gallery.headroom.toFixed(1)} m under the glass at the galleries’ edge)`]] : []),
