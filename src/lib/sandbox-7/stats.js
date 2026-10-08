@@ -52,11 +52,11 @@ export function hexStats(plan, land = landOf(plan)) {
 	const buildings = [...byKind.values()].map((b) => {
 		if (b.kind === 'tower250' && tower) {
 			const sh = towerShell(tower);
-			return { ...b, label: tower.label, D: tower.D, h: tower.H, floor: sh.floor, shell: sh.shell, glazed: sh.glazed, north: sh.north, volume: sh.volume, people: 0 };
+			return { ...b, label: tower.label, D: tower.D, h: tower.H, floor: sh.floor, shell: sh.shell, glazed: sh.glazed, north: sh.north, volume: sh.volume, people: 0, solar: sh.solar, heat: sh.heat, climate: sh.climate };
 		}
 		const K = KINDS[b.kind];
 		const sh = shellOf(K.D);
-		return { ...b, D: K.D, h: sh.cap.h, floor: sh.cap.floor, shell: sh.cap.shell, glazed: sh.glazed, north: sh.north, volume: sh.cap.volume, people: K.people ?? 0, gfa: K.gfa ?? 0, freq: sh.cap.freq };
+		return { ...b, D: K.D, h: sh.cap.h, floor: sh.cap.floor, shell: sh.cap.shell, glazed: sh.glazed, north: sh.north, volume: sh.cap.volume, people: K.people ?? 0, gfa: K.gfa ?? 0, freq: sh.cap.freq, solar: sh.solar, heat: sh.heat, climate: sh.climate };
 	});
 
 	// ── materials and money ──
@@ -162,13 +162,12 @@ export function hexStats(plan, land = landOf(plan)) {
 	// ── energy, kWh a year ──
 	let solar = 0, climate = 0, heat = 0;
 	for (const b of buildings) {
-		const towerish = b.kind === 'tower250';
-		solar += b.count * b.glazed * ENERGY.solarPerGlazed * (towerish ? ENERGY.towerSolarShare : 1);
-		climate += b.count * b.shell * ENERGY.climatePerShell;
-		heat += b.count * b.shell * ENERGY.heatPerShell;
+		solar += b.count * b.solar;
+		climate += b.count * b.climate;
+		heat += b.count * b.heat;
 	}
 	/** @type {{ label: string, kwh: number }[]} */
-	const makes = [{ label: 'See-through solar cells in the glass (70% of the light left for the plants)', kwh: solar }];
+	const makes = [{ label: 'Solar cells in every second pane of the flatter glass (the towers’: of all of it)', kwh: solar }];
 	/** @type {{ label: string, kwh: number }[]} */
 	const uses2 = [{ label: 'The domes’ climate: fans, pumps, vents', kwh: climate }];
 	if (plan.id === 'living') {

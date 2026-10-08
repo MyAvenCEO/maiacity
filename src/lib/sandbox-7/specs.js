@@ -56,7 +56,7 @@ export const DENSITY = {
 	glulam: 0.55, // larch ~590, Douglas ~530 kg/m³ at 12% moisture
 	clt: 0.47, // spruce CLT
 	glass: 0.05, // 8 mm toughened + 12.76 mm laminated ≈ 21 mm × 2.5 t/m³
-	hemp: 0.04, // hemp fibre batts, 35–45 kg/m³
+	hemp: 0.035, // hemp fibre batts, 35–45 kg/m³ (the engineering thread: 97.8 t in the 150 m dome's 8,509 m² at 30–35 cm)
 	lime: 2.2,
 	concrete: 2.3
 };
@@ -70,14 +70,6 @@ export const ASSEMBLY = 0.5;
 
 // ── a dome's shell ──────────────────────────────────────────────────────────────────────────────────────────────
 
-/** The 150 m cap, as the dome engineering research sized it (2026-10-07): the reference every dome scales from. */
-const REF = {
-	D: 150,
-	// glulam struts 240×600 (dry) to 240×700 mm (humid), 2,390 of them: 2,100–2,500 m³
-	timber: 2300,
-	// 826 cast-steel hubs, the steel tension ring at the foot (~60 t), screws and brackets: 280–650 t
-	steel: 450
-};
 /**
  * The cold north side of every shell is closed (Samuel, 2026-10-08): solid triangles of hemp fibre in timber cassettes
  * on a stone plinth instead of glass and solar, holding the heat in. It runs north-west to north-east (120°) from the
@@ -116,28 +108,62 @@ export function capProfile(/** @type {number} */ D, n = 400) {
 }
 /** the share of every dome's shell in hemp: the caps are all alike, so one number (a quarter) */
 export const NORTH = northShare(capProfile(150), NORTH_UP * capOf(150).h);
-/** how thick the hemp is in the north shell, m */
-const HEMP_M = 0.24;
-/** see-through cells lie in most of the glass, leaving ~70% of the light for the plants (village-energy.md) */
-export const PV_SHARE = 0.8;
+/**
+ * Each dome as the engineering thread sized it (/mnt/project-files/dome-research/dome-sizes.json, 2026-10-08), mid
+ * values: the glulam frame, the cast-steel hubs plus the steel ring at the foot, and the heat the dome needs beyond its
+ * fish pond (from the groundwater loop) and its climate power (pumps, fans), kWh a year, both for the north third
+ * closed to the crown.
+ */
+const SIZED = {
+	50: { timber: 80, steel: 19 + 2.2, heat: 0.02e6, climate: 0.013e6 },
+	100: { timber: 565, steel: 128 + 17.5, heat: 0.11e6, climate: 0.057e6 },
+	150: { timber: 2300, steel: 405 + 60, heat: 0.38e6, climate: 0.149e6 }
+};
+/** a size the thread did not size scales from the nearest: the frame with the 2.5th power, heat and climate by shell */
+function sized(/** @type {number} */ D) {
+	const near = /** @type {50 | 100 | 150} */ ([50, 100, 150].reduce((a, b) => (Math.abs(b - D) < Math.abs(a - D) ? b : a)));
+	const r = SIZED[near], k = Math.pow(D / near, 2.5), s = capOf(D).shell / capOf(near).shell;
+	return { timber: r.timber * k, steel: r.steel * k, heat: r.heat * s, climate: r.climate * s };
+}
+/**
+ * Ours close less than the thread's third (a quarter, low on the north): its Dome150 run of that case needs 1.8 GWh of
+ * heat instead of 1.65 and 0.165 GWh of climate power instead of 0.149
+ */
+const BAND = { heat: 1.8 / 1.65, climate: 0.165 / 0.149 };
+/** hemp fibre 30–35 cm thick (U 0.15), in timber cassettes of ~6 cm of timber a m² (the thread: 511 m³ in 8,509 m²) */
+const HEMP_M = 0.325;
+const CASSETTE_M = 0.06;
+/**
+ * Solar cells sit in every second pane of the flatter glass, tilted under 45° (on the towers in every second pane
+ * everywhere): the plants need the rest of the daylight. A m² of cells makes 227 kWh a year on a cap and 194 on a
+ * tower's steeper glass (the thread's hourly Munich year: 0.92 GWh from 4,036 m², 6.63 GWh from 34,133 m²).
+ */
+export const CELLS = { share: 0.5, steepest: 45, capKwh: 227, towerKwh: 194 };
+/** a dome's glass tilted under 45°, m²: the glass crown above the hemp's line, and the south two thirds down to 45° */
+function flatGlass(/** @type {number} */ D) {
+	const c = capOf(D);
+	const zone = (/** @type {number} */ a, /** @type {number} */ b) => 2 * Math.PI * c.R * c.R * (Math.cos(a) - Math.cos(b));
+	const line = Math.acos((NORTH_UP * c.h + c.R - c.h) / c.R), steep = (CELLS.steepest * Math.PI) / 180;
+	return line >= steep ? zone(0, steep) : zone(0, line) + zone(line, steep) * (1 - NORTH_HALF / 180);
+}
 
 /**
- * What a dome's shell is built of. Struts and hubs scale with the 2.5th power of the width (more struts, each a
- * little thicker: the settlers game's beds^1.25), glass and hemp with the shell's area, the footing with its rim.
+ * What a dome's shell is built of: the frame as the engineering thread sized it, glass and hemp by the m², the
+ * footing by its rim; and what it makes and needs a year.
  * @param {number} D
  */
 export function shellOf(D) {
 	const c = capOf(D);
-	const k = Math.pow(D / REF.D, 2.5);
+	const z = sized(D);
 	const glazed = c.shell * (1 - NORTH);
 	const north = c.shell * NORTH;
 	// a ring footing of lime-pozzolan concrete under the plinth, 0.8 m² (50 m) to 1.2 m² (150 m) in section
 	const footing = c.perimeter * (0.6 + 0.004 * D);
 	const m = {
-		timber: REF.timber * k + north * 0.05, // the struts, and the north shell's timber cassettes (~5 cm of timber a m²)
-		steel: REF.steel * k,
+		timber: z.timber + north * CASSETTE_M, // the struts, and the north shell's timber cassettes
+		steel: z.steel,
 		glass: glazed,
-		pv: glazed * PV_SHARE,
+		pv: flatGlass(D) * CELLS.share,
 		hemp: north * HEMP_M,
 		lime: footing
 	};
@@ -146,6 +172,9 @@ export function shellOf(D) {
 		glazed,
 		north,
 		m,
+		solar: m.pv * CELLS.capKwh,
+		heat: z.heat * BAND.heat,
+		climate: z.climate * BAND.climate,
 		t: { timber: m.timber * DENSITY.glulam, steel: m.steel, glass: glazed * DENSITY.glass, hemp: m.hemp * DENSITY.hemp, lime: footing * DENSITY.lime },
 		eur: {
 			timber: m.timber * PRICES.glulam.eur,
@@ -273,14 +302,14 @@ export const FACTORIES = [
  * research (2026-10-08) found it buildable in principle from the same glulam, steel joints and glass: a 20 m drum, a
  * steel tension ring at the knee, a 3 m deep double-layer glulam lattice up to 125 m, then a single-layer diagrid
  * tube. Tower200 (Samuel, 2026-10-08) is the same shape at four fifths: 200 m across, 220 m tall.
- * @typedef {{ id: string, label: string, D: number, H: number, top: number, stack: number, timber: number, steel: number, glass: number }} Tower
+ * @typedef {{ id: string, label: string, D: number, H: number, top: number, stack: number, timber: number, steel: number, heat: number, climate: number }} Tower
  */
 /** @type {Record<string, Tower>} */
 export const TOWERS = {
-	t250: { id: 't250', label: 'Tower250', D: 250, H: 275, top: (125 * 0.3) / 1.6, stack: 30, timber: 11900, steel: 3400, glass: 6000 },
-	// the same shell at 4/5: struts and joints scale as the domes' (2.5th power), glass with the area (until the
-	// dome engineering thread's figures for it come in)
-	t200: { id: 't200', label: 'Tower200', D: 200, H: 220, top: (100 * 0.3) / 1.6, stack: 26, timber: 11900 * 0.8 ** 2.5, steel: 3400 * 0.8 ** 2.5, glass: 6000 * 0.64 }
+	// the engineering thread's mid values (dome-sizes.json): glulam frame, hubs plus ring steel, heat beyond the pond and
+	// climate power a year
+	t250: { id: 't250', label: 'Tower250', D: 250, H: 275, top: (125 * 0.3) / 1.6, stack: 30, timber: 11900, steel: 2950 + 425, heat: 5.19e6, climate: 1.116e6 },
+	t200: { id: 't200', label: 'Tower200', D: 200, H: 220, top: (100 * 0.3) / 1.6, stack: 26, timber: 6350, steel: 1485 + 215, heat: 2.81e6, climate: 0.622e6 }
 };
 
 /** the radius of a tower's shell at a height (the settlers game's profile, at full size) */
@@ -354,8 +383,8 @@ export const towerFloors = (T) =>
 	});
 
 /**
- * A tower's shell, as the dome tower research sized Tower250 (timber 10,200–13,600 m³, steel 2,000–4,800 t, glass
- * ~6,000 t; mid values) with its cold north side closed in hemp: the glass and the hemp by the m².
+ * A tower's shell, as the engineering thread sized it (Tower250: glulam 10,200–13,600 m³, hubs 1,570–4,330 t, ring
+ * 350–500 t; mid values), its cold north side closed in hemp: the glass and the hemp by the m².
  * @param {Tower} T
  */
 export function towerShell(T) {
@@ -369,9 +398,7 @@ export function towerShell(T) {
 	const R = T.D / 2;
 	const north = shell * northShare(p, TOWER_NORTH_UP * T.H);
 	const glazed = shell - north;
-	// the research's ~6,000 t of glass was for the whole shell: a m² of it weighs that over the shell
-	const kgM2 = (TOWERS.t250.glass * 1000) / towerShell250();
-	const m = { timber: T.timber + north * 0.05, steel: T.steel, glass: glazed, pv: glazed * 0.5, hemp: north * HEMP_M, lime: Math.PI * T.D * 4 };
+	const m = { timber: T.timber + north * CASSETTE_M, steel: T.steel, glass: glazed, pv: glazed * CELLS.share, hemp: north * HEMP_M, lime: Math.PI * T.D * 4 };
 	return {
 		shell,
 		volume,
@@ -379,7 +406,10 @@ export function towerShell(T) {
 		glazed,
 		north,
 		m,
-		t: { timber: m.timber * DENSITY.glulam, steel: m.steel, glass: (glazed * kgM2) / 1000, hemp: m.hemp * DENSITY.hemp, lime: m.lime * DENSITY.lime },
+		solar: m.pv * CELLS.towerKwh,
+		heat: T.heat * BAND.heat,
+		climate: T.climate * BAND.climate,
+		t: { timber: m.timber * DENSITY.glulam, steel: m.steel, glass: glazed * DENSITY.glass, hemp: m.hemp * DENSITY.hemp, lime: m.lime * DENSITY.lime },
 		eur: {
 			timber: m.timber * PRICES.glulam.eur,
 			steel: m.steel * PRICES.steel.eur,
@@ -390,14 +420,6 @@ export function towerShell(T) {
 		}
 	};
 }
-/** Tower250's shell area, m² */
-function towerShell250() {
-	const p = towerProfile(TOWERS.t250, 128);
-	let a = 0;
-	for (let k = 1; k < p.length; k++) a += Math.PI * (p[k - 1][0] + p[k][0]) * Math.hypot(p[k][0] - p[k - 1][0], p[k][1] - p[k - 1][1]);
-	return a;
-}
-
 /** fitting out a m² of the tower's floors, € (assumed, inside a shell already glazed): structure in timber and
  * screed, services and finishes; the factory floor and the deck carry more (the deck a metre of soil) */
 export const FITOUT = { utilities: 3000, factory: 1500, park: 900, community: 2800, offices: 2800, hotel: 3000, apartments: 3200, sky: 3500 };
@@ -434,15 +456,6 @@ export const EQUIPMENT = [
 ];
 /** energy, kWh a year (our research unless noted) */
 export const ENERGY = {
-	/** see-through cells leaving 70% of the light: the 150 m cap made ~1.3 GWh a year from ~19,100 m² of glass with a north
-	 * quarter closed, as ours are: a m² of the rest keeps that yield */
-	solarPerGlazed: 1.3e6 / (capOf(150).shell * 0.75),
-	/** the tower's glass is steeper and shaded by its own shoulder: assumed 60% of a dome's yield a m² */
-	towerSolarShare: 0.6,
-	/** a dome's climate (fans, pumps, vents): 0.17 GWh a year for the 150 m cap, by shell area */
-	climatePerShell: 0.17e6 / capOf(150).shell,
-	/** heat beyond the fish pond, from the village's geothermal loop: 0.43 GWh a year for the 150 m cap */
-	heatPerShell: 0.43e6 / capOf(150).shell,
 	/** a person at home in a shared dome */
 	person: 900,
 	/** the AI data center: 300 kW of IT running all year, PUE 1.2 (liquid-cooled); ~85% of it comes back as 45 °C heat */
@@ -464,8 +477,8 @@ export const ENERGY = {
  */
 export const SOURCES = {
 	research: { label: 'Our dome engineering research (2026-10-07/08)', note: '150 m cap: 50 m high, frequency 16, 2,390 glulam struts 240×600–700 mm (2,100–2,500 m³), 826 cast-steel hubs, a steel ring at the foot, laminated glass, a hemp north shell, a 3 m fish pond. Tower: timber 10,200–13,600 m³, steel 2,000–4,800 t, glass ~6,000 t, shell 150–340 M€.' },
-	climate: { label: 'Our dome climate model (24 °C all year, Munich)', note: 'Heat beyond the pond 0.43 GWh/yr, climate power 0.17 GWh/yr, pond 1,550 m², for the 150 m cap.' },
-	energy: { label: 'Our village energy research (energy/village-energy.md)', note: 'Dome solar ~1.3 GWh/yr for the 150 m cap at 70% light; geothermal 3.4 MW net a village center.' },
+	climate: { label: 'The engineering thread’s per-size model (dome-research/dome-sizes.md, 2026-10-08)', note: 'Hourly Munich year at 24 °C. Frame, hubs and ring for Dome50/100/150 and Tower200/250; heat beyond the pond 0.02/0.11/0.38 GWh and 2.81/5.19 GWh, climate power 0.013/0.057/0.149 and 0.62/1.12 GWh, for the north third closed to the crown; a quarter closed low on the north needs ~9% more heat and makes ~34% more solar. Cells in every second pane of glass tilted under 45° (towers: all glass), 227 kWh/m² a year on caps, 194 on towers. People, factories and offices are not counted as heat sources.' },
+	energy: { label: 'Our village energy research (energy/village-energy.md)', note: 'Geothermal 3.4 MW net a village center.' },
 	numbers: { label: 'The settlers game’s numbers (sandbox-6/numbers.md)', note: 'Diet 508 kg a person a year (Germany eats ~450–650 kg); 900 kWh a person at home.' },
 	glulam: { label: 'Glulam', url: 'https://www.holzkurier.com', note: 'Spruce glulam 555–575 €/m³ wholesale, 700–900 from a merchant (Holzkurier, Nov 2025). Larch and Douglas glulam only on request: ~750–1,200 (their logs cost about twice spruce’s). CNC-cut struts with their steel parts ~1,100–2,200 supplied, ~1,800–4,500 put up (estimate).' },
 	steel: { label: 'Steel', url: 'https://gmk.center', note: 'Fabricated and erected structural steel 2,500–4,500 €/t (estimate; plate itself ~770 €/t). Cast nodes 10–25 €/kg, galvanised machined hubs 5–12 (no public lists: estimate). Scrap ~300 €/t (EU 2025).' },
