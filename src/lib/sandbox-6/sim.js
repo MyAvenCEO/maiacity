@@ -2480,7 +2480,8 @@ export function createSim(st) {
 			return { ok: true };
 		},
 		/** grow a village center of yours to its next stage (./rules.js CENTRE): a logistics hub into the great village
-		 * center with its geothermal plant (not upgraded after). Its wares come from the stores joined to it (what they
+		 * center with its geothermal plant (not upgraded after), its ring road taken under the ground and paid in fired
+		 * clay (RING_T). Its wares come from the stores joined to it (what they
 		 * lack, bought from the world market), its plant's gold from their treasuries (what they
 		 * lack, borrowed), and it grows at once */
 		grow(/** @type {number} */ id) {
@@ -2496,7 +2497,7 @@ export function createSim(st) {
 			c.level = levelOf(c) + 1;
 			st.objV++;
 			const name = p?.name ?? 'Your village';
-			say(`${name} has its village center, and its geothermal plant: ${(ENERGY.wellKw / 1000).toLocaleString('en-US')} MW`, c.node, 'good');
+			say(`${name} has its village center, its geothermal plant (${(ENERGY.wellKw / 1000).toLocaleString('en-US')} MW) and its ring road under the ground`, c.node, 'good');
 			return { ok: true };
 		},
 		/** what stands at a node */

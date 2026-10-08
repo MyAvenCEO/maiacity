@@ -38,6 +38,7 @@
  */
 
 import { WEEK, YEAR } from './food.js';
+import { RING_FOOT, RING_R } from './plots.js';
 
 /** @typedef {{ id: string, label: string, color: string }} Ware */
 
@@ -179,6 +180,13 @@ export const holdsLand = (/** @type {string} */ type) => type === 'centre' || ty
  * about 660 m across, neighbouring village centers about 1.75 km apart.
  */
 export const ROUTE_T_KM = 36000, UNIT_M = 32;
+/**
+ * The ring road round a village center (./plots.js RING_R) and the spur from its door out to it (Samuel, 2026-10-08):
+ * on the ground while it is a logistics hub, where it costs nothing; growing into the village center takes it under
+ * the ground, built as a trade route is: about 1.5 km round its tower and 100 m from its door, some 58,000 t of fired
+ * clay voussoirs. As a trade route, it takes its clay and nothing else.
+ */
+export const RING_T = Math.ceil(((((2 * Math.PI * RING_R + RING_R - RING_FOOT) * UNIT_M) / 1000) * ROUTE_T_KM) / 100) * 100;
 
 /** a hex's fields and woods, besides its food forest: 10 ha of hemp and bamboo, about 15 t a hectare a year */
 export const FIELD_HA = 10, FIELD_T = 15;
@@ -327,7 +335,7 @@ export const GROWS = /** @type {Record<string, { levels: Stage[], up: Record<str
 );
 
 /**
- * @typedef {{ label: string, does: string, plant: number, sun: number, build: Craft, keep: Craft, use: Craft, make: Craft, up: Record<string, number>, gold: number }} CentreStage
+ * @typedef {{ label: string, does: string, plant: number, sun: number, ring: number, build: Craft, keep: Craft, use: Craft, make: Craft, up: Record<string, number>, gold: number }} CentreStage
  */
 /**
  * The village center grows by the crafting engine's recipes too (Samuel, 2026-10-07): a village starts as a logistics
@@ -336,16 +344,17 @@ export const GROWS = /** @type {Record<string, { levels: Stage[], up: Record<str
  * upgraded (Samuel). Its great dome is glazed with solar panels and makes as much power with them as a great dome of
  * 248 (`sun`, in beds' worth; Samuel, 2026-10-08); the hub is a small dome of glass and makes none. More stages will
  * come between the hub and the great center. Its build is in tonnes, with its builders' energy and the gold for its
- * plant; its keep, 2% a year of what it is built of, in gold; what it uses, the energy of its hall, storehouse and
+ * plant, and growing from the hub, the fired clay of its ring road, taken under the ground (`ring`, RING_T); its keep,
+ * 2% a year of what it is built of (its ring aside, as a trade route), in gold; what it uses, the energy of its hall, storehouse and
  * routes (ENERGY); its make, what its plant and its solar panels make a week. Its wares come from its stores at once (what
  * they lack, bought from the world market), and it grows at once.
  * @type {CentreStage[]}
  */
 export const CENTRE = /** @type {any} */ ([
-	{ label: 'Logistics hub', build: { plank: 30, steel: 20, glass: 10 }, gold: 0, plant: 0, sun: 0, does: 'stores and trades its village’s wares; it makes no power' },
+	{ label: 'Logistics hub', build: { plank: 30, steel: 20, glass: 10 }, gold: 0, plant: 0, sun: 0, ring: 0, does: 'stores and trades its village’s wares; it makes no power' },
 	// its geothermal plant's gold as Samuel set it (2026-10-07; our research says 30 to 45 M € for a plant); its dome a
 	// great dome's, solar panels and all
-	{ label: 'Village center', build: domeOf(HOUSE_MOST), gold: 25000, plant: 1, sun: HOUSE_MOST, does: '' }
+	{ label: 'Village center', build: domeOf(HOUSE_MOST), gold: 25000, plant: 1, sun: HOUSE_MOST, ring: RING_T, does: '' }
 ]);
 
 /**
@@ -389,9 +398,12 @@ export const ENERGY = {
 	const built = {};
 	for (const x of CENTRE) {
 		const wares = /** @type {Record<string, number>} */ (/** @type {any} */ (x).build);
-		x.up = Object.fromEntries(Object.entries(wares).map(([w, t]) => [w, Math.ceil(t / LOAD_T)]));
+		// its ring road's clay is paid as a trade route's: no builders' energy, no keep
+		/** @type {Record<string, number>} */
+		const ring = x.ring ? { clay: (wares.clay ?? 0) + x.ring } : {};
+		x.up = Object.fromEntries(Object.entries({ ...wares, ...ring }).map(([w, t]) => [w, Math.ceil(t / LOAD_T)]));
 		for (const [w, t] of Object.entries(wares)) built[w] = (built[w] ?? 0) + t;
-		x.build = { in: { ...buildIn(wares), ...(x.gold ? { gold: x.gold } : {}) }, out: {} };
+		x.build = { in: { ...buildIn(wares), ...ring, ...(x.gold ? { gold: x.gold } : {}) }, out: {} };
 		x.keep = { in: keepIn(built), out: {} };
 		x.use = { in: { energy: ((x.plant ? ENERGY.centre : ENERGY.hub) / 1000) * WEEK_YEAR }, out: {} };
 		const made = x.plant * ENERGY.wellKw * 24 * WEEK * ENERGY.uptime + x.sun * ENERGY.sunBed * WEEK_YEAR;

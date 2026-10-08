@@ -10,7 +10,7 @@ import * as THREE from 'three';
 import { GRASS, MOUNTAIN, SAND, WARES, WATER } from './rules.js';
 import { buildingModel, mat, recolour, scaffold, TEAM } from './models.js';
 import { ROW, SE, STEP } from './hex.js';
-import { K, RING_R, onRing, ringWay } from './plots.js';
+import { K, RING_FOOT, RING_R, onRing, ringWay } from './plots.js';
 
 /** a path's width: two lanes, a bus each way, a dashed line between them */
 const ROAD_W = 0.9;
@@ -467,16 +467,19 @@ export function createView(scene, sim) {
 		for (let k = 0; k < n.count; k++) if (n.getY(k) < 0) n.setXYZ(k, -n.getX(k), -n.getY(k), -n.getZ(k));
 		return geo;
 	}
-	/** how far out from a village center's middle its spur starts: at the foot of its tower and the crates at its door,
-	 * or of a logistics hub's dome */
-	const footOf = (/** @type {any} */ b) => (b.type === 'centre' && (b.level || 1) === 1 ? 2.8 : 4.5);
+	/** whether a village center is still a logistics hub: its ring road lies on the ground (./rules.js RING_T) */
+	const isHub = (/** @type {any} */ b) => b.type === 'centre' && (b.level || 1) === 1;
+	/** how far out from a village center's middle its spur starts: at the foot of its tower, or of a logistics hub's dome */
+	const footOf = (/** @type {any} */ b) => (isHub(b) ? 2.8 : RING_FOOT);
 	/**
-	 * A path into a village center joins its ring road (./plots.js RING_R), right above its trade routes' ring, and goes
-	 * round it the short way to the spur at its door: no path runs into it. The way a carrier walks it, from the far end
-	 * [x, z] (pts, with how far along each point lies: run) and whether the path's nodes run the other way (rev); where
-	 * the path is drawn up to (cut: the ring's outer edge); the village center's id. Null for any other path, or one
-	 * that starts inside the ring.
-	 * @param {any} r @returns {{ pts: number[][], run: number[], rev: boolean, far: number, cut: number[][], id: number } | null}
+	 * A path into a village center joins its ring road (./plots.js RING_R), where its trade routes join it too, and goes
+	 * round it the short way to the spur at its door: no path runs into it. A logistics hub's ring lies on the ground; a
+	 * grown village center's runs under it, and its paths go down to it at its outer edge. The way a carrier walks it,
+	 * from the far end [x, z] (pts, with how far along each point lies: run) and whether the path's nodes run the other
+	 * way (rev); where the path is drawn up to (cut: the ring's outer edge), and how far along that lies (down); whether
+	 * the ring is under the ground (under); the village center's id. Null for any other path, or one that starts inside
+	 * the ring.
+	 * @param {any} r @returns {{ pts: number[][], run: number[], rev: boolean, far: number, cut: number[][], down: number, under: boolean, id: number } | null}
 	 */
 	function ringRoad(r) {
 		const n = r.path.length;
@@ -506,6 +509,8 @@ export function createView(scene, sim) {
 		};
 		// drawn up to the ring's outer edge, walked on to its middle
 		const cut = upTo(RING_R + ROAD_W / 2), pts = upTo(RING_R), at = pts[pts.length - 1];
+		let down = 0;
+		for (let j = 1; j < cut.length; j++) down += Math.hypot(cut[j][0] - cut[j - 1][0], cut[j][1] - cut[j - 1][1]);
 		// round the ring the short way to the door, then in along the spur to the stop in the middle
 		const a0 = Math.atan2(at[1] - c.z, at[0] - c.x), d = ((c.door - a0 + 3 * Math.PI) % (2 * Math.PI)) - Math.PI;
 		const steps = Math.ceil((Math.abs(d) * RING_R) / 0.5);
@@ -513,28 +518,33 @@ export function createView(scene, sim) {
 		pts.push([c.x, c.z]);
 		const run = [0];
 		for (let j = 1; j < pts.length; j++) run.push(run[j - 1] + Math.hypot(pts[j][0] - pts[j - 1][0], pts[j][1] - pts[j - 1][1]));
-		return { pts, run, rev, far: nodes[0], cut, id: b.id };
+		return { pts, run, rev, far: nodes[0], cut, down, under: !isHub(b), id: b.id };
 	}
 	/** the paths that join a village center's ring, by id (./view.js ringRoad) @type {Map<number, NonNullable<ReturnType<typeof ringRoad>>>} */
 	const ringRoads = new Map();
 	/** @type {THREE.Mesh | null} */
 	let stubMesh = null;
 	let netKey = '';
+	/** the dark mouth where a path goes down to a grown village center's ring road under the ground */
+	const mouthMat = keep(new THREE.MeshStandardMaterial({ color: '#3a3430', roughness: 1, polygonOffset: true, polygonOffsetFactor: -3, polygonOffsetUnits: -3 }));
+	/** @type {THREE.Mesh | null} */
+	let mouthMesh = null;
 	/** the paths, a square where they meet in the middle of each hex in use, and a short way from it to each door; round
-	 * each village center a path joins, a ring road and a spur from its door out to it */
+	 * each logistics hub a path or a trade route joins, a ring road on the ground and a spur from its door out to it (a
+	 * grown village center's runs under the ground, where its paths go down) */
 	function syncRoads() {
 		const list = sim.buildingList();
 		const key = `${st.netV}:${list.length}:${list.filter((b) => b.type === 'centre' && (b.level || 1) === 1).length}`;
 		if (netKey === key) return;
 		netKey = key;
-		for (const m of [roadMesh, stubMesh]) {
+		for (const m of [roadMesh, stubMesh, mouthMesh]) {
 			if (!m) continue;
 			m.geometry.dispose();
 			root.remove(m);
 		}
 		ringRoads.clear();
 		/** @type {{ pts: number[][], closed?: boolean }[]} */
-		const lanes = [];
+		const lanes = [], mouths = [];
 		/** @type {Set<number>} */
 		const ringed = new Set();
 		for (const r of Object.values(st.roads)) {
@@ -545,8 +555,16 @@ export function createView(scene, sim) {
 			}
 			ringRoads.set(r.id, w);
 			lanes.push({ pts: w.cut });
-			ringed.add(w.id);
+			if (!w.under) {
+				ringed.add(w.id);
+				continue;
+			}
+			// its last stretch, a step long, is the ramp down
+			const [x1, z1] = w.cut[w.cut.length - 1], [x0, z0] = w.cut[0], len = Math.hypot(x1 - x0, z1 - z0) || 1, k = Math.min(1, STEP / len);
+			mouths.push({ pts: [[x1 - (x1 - x0) * k, z1 - (z1 - z0) * k], [x1, z1]] });
 		}
+		// a hub joined only by its trade routes has its ring too, where they come up
+		for (const t of Object.values(st.tunnels)) for (const id of [t.a, t.b]) if (st.buildings[id] && isHub(st.buildings[id])) ringed.add(id);
 		for (const id of ringed) {
 			const c = /** @type {any} */ (sim.ring(id)), foot = footOf(st.buildings[id]);
 			lanes.push({ pts: Array.from({ length: 96 }, (_, k) => onRing(c, (k / 96) * Math.PI * 2)), closed: true });
@@ -556,6 +574,8 @@ export function createView(scene, sim) {
 		roadMat.side = THREE.DoubleSide;
 		roadMesh.receiveShadow = true;
 		root.add(roadMesh);
+		mouthMesh = new THREE.Mesh(strip(mouths, ROAD_W * 1.1, 0.05), mouthMat);
+		root.add(mouthMesh);
 		/** @type {number[][]} */
 		const doors = [];
 		/** @type {Set<number>} */
@@ -618,12 +638,12 @@ export function createView(scene, sim) {
 	const tunMats = TEAM.map((c) => [tunMat(c, 0.45), tunMat(c, 0.95)]);
 	/** how wide a tunnel is: two lanes, a bus in each */
 	const TUN_W = 1.3;
-	/** the trade routes under the ground: a ring road round each village center they join, a spur from its door out to
-	 * it, and the routes straight across from ring to ring, never through a village center */
+	/** what lies under the ground: the trade routes straight across from ring road to ring road, never through a village
+	 * center, and round every grown village center its ring road and the spur from its door out to it (a logistics
+	 * hub's lie on the ground: syncRoads) */
 	function syncTunnels() {
-		let hubs = 0;
-		for (const t of Object.values(st.tunnels)) for (const id of [t.a, t.b]) if (st.buildings[id]?.level === 1) hubs++;
-		const key = `${st.tunV}:${picked}:${hubs}`;
+		const grown = sim.buildingList().filter((b) => big(b.type) && b.stage === 'live' && !isHub(b));
+		const key = `${st.tunV}:${picked}:${grown.map((b) => b.id).join(',')}`;
 		if (tunSeen === key) return;
 		tunSeen = key;
 		for (const m of tunMeshes) {
@@ -635,17 +655,14 @@ export function createView(scene, sim) {
 		/** @type {Record<string, { pts: number[][], closed?: boolean }[]>} */
 		const sets = {};
 		const add = (/** @type {number} */ owner, /** @type {boolean} */ on, /** @type {{ pts: number[][], closed?: boolean }} */ l) => (sets[`${owner}:${on ? 1 : 0}`] ??= []).push(l);
-		/** @type {Set<number>} */
-		const ringed = new Set();
 		for (const t of Object.values(st.tunnels)) {
 			const a = sim.ring(t.a), b = sim.ring(t.b);
 			if (!a || !b) continue;
 			const out = Math.atan2(b.z - a.z, b.x - a.x);
 			add(t.owner, t.a === picked || t.b === picked, { pts: [onRing(a, out), onRing(b, out + Math.PI)] });
-			ringed.add(t.a).add(t.b);
 		}
-		for (const id of ringed) {
-			const c = /** @type {any} */ (sim.ring(id)), b = st.buildings[id], s = c.door, foot = footOf(b);
+		for (const b of grown) {
+			const c = /** @type {any} */ (sim.ring(b.id)), s = c.door, foot = footOf(b), id = b.id;
 			add(b.owner, id === picked, { pts: Array.from({ length: 72 }, (_, k) => onRing(c, (k / 72) * Math.PI * 2)), closed: true });
 			add(b.owner, id === picked, { pts: [[c.x + foot * Math.cos(s), c.z + foot * Math.sin(s)], onRing(c, s)] });
 		}
@@ -773,6 +790,8 @@ export function createView(scene, sim) {
 	const at = new THREE.Vector3();
 	/** where each walker was last frame, to face where it goes @type {Map<number, number[]>} */
 	const last = new Map();
+	/** whether the walker unitPos last placed is under the ground, on a grown village center's ring road */
+	let below = false;
 	/** the carrier of a path that joins a village center's ring, while it walks that path: the path's way (ringRoad) */
 	const ringOf = (/** @type {any} */ u) => {
 		const w = u.kind === 'carrier' ? ringRoads.get(u.road) : undefined, r = w && st.roads[u.road];
@@ -784,11 +803,14 @@ export function createView(scene, sim) {
 		// goes round), from the path it came by to the path it leaves by
 		const i = Math.round(p), m = u.path[i];
 		const w = ringOf(u);
+		below = false;
 		if (w && m !== w.far) {
 			// on a path into a village center: on along it to the ring, round to the door, in along the spur. Its steps are
 			// the path's, spread over the longer way (the first half step as it is, off the island at the far end)
 			const q = w.rev ? n - 1 - p : p, all = (n - 1) * STEP, s = q * STEP, L = w.run[w.run.length - 1];
 			const h = stops.has(w.far) ? STEP / 2 : 0, d = s <= h ? s : h + ((s - h) * (L - h)) / Math.max(1e-6, all - h);
+			// down its ramp, it walks under the ground to a grown village center
+			below = w.under && d > w.down - ROAD_W * 0.6;
 			let lo = 0, hi = w.run.length - 1;
 			while (hi - lo > 1) {
 				const mid = (lo + hi) >> 1;
@@ -877,7 +899,10 @@ export function createView(scene, sim) {
 		for (const u of Object.values(st.units)) {
 			// the buses under the ground show with their tunnels: while a village center is picked
 			if (u.inside || (u.kind === 'cart' && !picked)) continue;
+			below = false;
 			const p = u.kind === 'cart' ? cartPos(u) : unitPos(u);
+			// a carrier on a grown village center's ring road shows, as the carts do, only while a village center is picked
+			if (below && !picked) continue;
 			let x = p.x, y = p.y, z = p.z, bob = 0;
 			const moving = u.p !== u.tgt && !u.wait;
 			if (moving) bob = Math.abs(Math.sin(t * 11 + u.id)) * 0.015;
@@ -1105,6 +1130,7 @@ export function createView(scene, sim) {
 			preview?.geometry.dispose();
 			roadMesh?.geometry.dispose();
 			stubMesh?.geometry.dispose();
+			mouthMesh?.geometry.dispose();
 			tiles.geometry.dispose();
 			borders.geometry.dispose();
 			pickBorder.geometry.dispose();
