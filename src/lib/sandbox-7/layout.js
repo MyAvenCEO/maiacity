@@ -146,7 +146,7 @@ export const USES = {
 	commons: { label: 'Paths and commons under glass', inside: true, map: '#c9b9a0', ground: '#c9bca2', group: 'Ways' },
 	utilities: { label: 'Utilities and workshops', inside: true, map: '#8a6fc0', ground: '#b9b3a8', group: 'Work' },
 	factory: { label: 'Factories under glass', inside: true, map: '#b0563a', ground: '#b3aa9c', group: 'Work' },
-	tower: { label: 'Tower250 (its floor)', inside: true, map: '#5a4fa0', ground: '#bdb6aa', group: 'Work' },
+	tower: { label: 'The tower (its floor)', inside: true, map: '#5a4fa0', ground: '#bdb6aa', group: 'Work' },
 	foodForest: { label: 'Food forest outdoors', map: '#9fd36a', ground: '#6f9446', group: 'Food outdoors' },
 	commercial: { label: 'Orchards and market gardens', map: '#d6c24a', ground: '#8aa04a', group: 'Commercial' },
 	hemp: { label: 'Hemp fields', map: '#c8d860', ground: '#7d9a3e', group: 'Commercial' },
