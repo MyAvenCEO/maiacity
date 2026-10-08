@@ -219,9 +219,9 @@ export const USES = {
 	tower: { label: 'The tower (its floor)', inside: true, map: '#5a4fa0', ground: '#bdb6aa', group: 'Work' },
 	foodForest: { label: 'Food forest outdoors', map: '#9fd36a', ground: '#6f9446', group: 'Food outdoors' },
 	commercial: { label: 'Orchards and market gardens', map: '#d6c24a', ground: '#8aa04a', group: 'Commercial' },
-	hemp: { label: 'Hemp fields', map: '#c8d860', ground: '#7d9a3e', group: 'Commercial' },
-	bamboo: { label: 'Bamboo groves', map: '#53b88a', ground: '#5e8c3a', group: 'Commercial' },
-	woodland: { label: 'Timber woodland (Douglas fir, larch)', map: '#2f6b3a', ground: '#3d6236', group: 'Commercial' },
+	hemp: { label: 'Hemp fields', map: '#c8d860', ground: '#7d9a3e', group: 'Raw materials' },
+	bamboo: { label: 'Bamboo groves', map: '#53b88a', ground: '#5e8c3a', group: 'Raw materials' },
+	woodland: { label: 'Timber woodland (Douglas fir, larch)', map: '#2f6b3a', ground: '#3d6236', group: 'Raw materials' },
 	mine: { label: 'Clay, lime and gravel pits', map: '#a07a5a', ground: '#a68a6a', group: 'Pits' },
 	yard: { label: 'Yards and loading', map: '#9a948a', ground: '#a49d90', group: 'Ways' },
 	nature: { label: 'Nature: hedges, meadow, wild wood', map: '#7fa86a', ground: '#9bb466', group: 'Nature' },
@@ -286,6 +286,64 @@ export function landOf(plan) {
 	const k = (HEX_AREA - inside) / outdoor;
 	for (const u of USE_IDS) if (!USES[u].inside) m2[u] *= k;
 	return { nx, nz, x0, z0, cells, m2, hexCells: hex };
+}
+
+/**
+ * The outdoor land's areas, for the labels on the land-use map: each patch of one use (cells touching side by side),
+ * its size, and the point deepest inside it (farthest from any other use), where its label goes. Roads, and patches
+ * under `minM2` or thinner than `minDepth` (the hedges along the edge), get none.
+ * @param {ReturnType<typeof landOf>} land
+ * @returns {{ use: string, m2: number, x: number, z: number }[]}
+ */
+export function landPatches(land, minM2 = 4000, minDepth = 24) {
+	const { nx, nz, x0, z0, cells } = land;
+	const n = nx * nz;
+	// how far each cell is from a cell of another use, in cells (two passes, city-block)
+	const depth = new Float32Array(n);
+	for (let j = 0; j < nz; j++)
+		for (let i = 0; i < nx; i++) {
+			const k = j * nx + i, c = cells[k];
+			if (c === 255) continue;
+			const up = j > 0 && cells[k - nx] === c ? depth[k - nx] : 0;
+			const left = i > 0 && cells[k - 1] === c ? depth[k - 1] : 0;
+			depth[k] = Math.min(up, left) + 1;
+		}
+	for (let j = nz - 1; j >= 0; j--)
+		for (let i = nx - 1; i >= 0; i--) {
+			const k = j * nx + i, c = cells[k];
+			if (c === 255) continue;
+			const down = j < nz - 1 && cells[k + nx] === c ? depth[k + nx] : 0;
+			const right = i < nx - 1 && cells[k + 1] === c ? depth[k + 1] : 0;
+			depth[k] = Math.min(depth[k], down + 1, right + 1);
+		}
+	// the patches, by flood fill
+	const seen = new Uint8Array(n);
+	const stack = new Int32Array(n);
+	/** @type {{ use: string, m2: number, x: number, z: number }[]} */
+	const out = [];
+	for (let s = 0; s < n; s++) {
+		const c = cells[s];
+		if (seen[s] || c === 255) continue;
+		const use = USE_IDS[c];
+		let top = 0, count = 0, best = s;
+		stack[top++] = s;
+		seen[s] = 1;
+		while (top) {
+			const k = stack[--top];
+			count++;
+			if (depth[k] > depth[best]) best = k;
+			const i = k % nx;
+			for (const q of [i > 0 ? k - 1 : -1, i < nx - 1 ? k + 1 : -1, k - nx, k + nx])
+				if (q >= 0 && q < n && !seen[q] && cells[q] === c) {
+					seen[q] = 1;
+					stack[top++] = q;
+				}
+		}
+		const m2 = count * CELL * CELL;
+		if (USES[use].inside || use === 'road' || m2 < minM2 || depth[best] * CELL < minDepth) continue;
+		out.push({ use, m2, x: x0 + ((best % nx) + 0.5) * CELL, z: z0 + (Math.floor(best / nx) + 0.5) * CELL });
+	}
+	return out;
 }
 
 /** what a dome or the tower's floor is used for, by zone, m² */

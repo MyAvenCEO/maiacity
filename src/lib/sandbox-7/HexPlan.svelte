@@ -545,6 +545,18 @@
 		background: rgb(36 69 47 / 0.88);
 		color: #f4f1e8;
 	}
+	.labels :global(.lbl.land) {
+		background: rgb(250 248 242 / 0.7);
+		pointer-events: none;
+	}
+	.labels :global(.lbl.land i) {
+		display: inline-block;
+		width: 0.6rem;
+		height: 0.6rem;
+		margin-right: 0.3rem;
+		border-radius: 50%;
+		vertical-align: -0.05rem;
+	}
 	.labels :global(.lbl.on) {
 		background: #24452f;
 		color: #f4f1e8;
