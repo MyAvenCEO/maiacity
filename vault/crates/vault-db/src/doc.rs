@@ -1,24 +1,31 @@
-//! The two example items, each one Loro document: a markdown document (a list of blocks, each block a map) and a todo
-//! (a map). An item's Loro updates are what gets encrypted into `Write` ops and synced. Its content depends only on
-//! which updates it holds (Loro converges), so devices holding the same writes show the same item (T11, T13).
+//! The two example items, each one Loro document: a markdown document and a todo. An item's Loro updates are what
+//! gets encrypted into `Write` ops and synced. Its content depends only on which updates it holds (Loro converges), so
+//! devices holding the same writes show the same item (T11, T13).
 //!
-//! An item is one root map, `item`, whose `kind` says what it is. A document has a `title`, its `blocks` (a movable
-//! list of maps, each with an `id`, a `type`, maybe a `level`, `checked` or `lang`, and its `text` as a Loro text) and
-//! its `tags` (a list of strings). A v1 block names a `kind` where a v2 block has a `type`, so a reader tells the two
-//! apart block by block. A todo has a `title`, a `status`, its `notes` (a Loro text) and maybe a `due` date.
+//! An item is one root map, `item`: the stored record, holding the fields of every schema version that wrote it
+//! (`lens`). Free text is a Loro text, so concurrent edits of it merge character by character; a list of records (a
+//! document's blocks) is a movable list of maps, each with its `id`; a list of values (tags) a Loro list; anything else
+//! one value, where concurrent edits keep one of them. A container that appears after the item was made (a document's
+//! first tag, the text of a block that had none) is created mergeable, so two devices creating it at once share it
+//! instead of one hiding the other.
+//!
+//! Every edit goes through an app's view (`lens::View`): the app edits what it sees, the lens turns that into the new
+//! stored record, and the item makes the smallest change that holds it. Each change carries the view's schema as its
+//! Loro commit message, so a reader knows which versions wrote an item (`authored`).
 //!
 //! Each device edits as a Loro peer of its own, derived from its signer, so an import can check that every op of a
 //! write is its signer's. No clock goes into the updates: the same edits export the same bytes.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
 use loro::{
-    Counter, EncodedBlobMode, ExportMode, Frontiers, LoroDoc, LoroList, LoroMap, LoroMapValue, LoroMovableList,
-    LoroResult, LoroText, LoroValue, PeerID, UpdateOptions, ValueOrContainer, VersionVector,
+    CommitOptions, Container, Counter, EncodedBlobMode, ExportMode, Frontiers, ID, LoroDoc, LoroList, LoroMap,
+    LoroMovableList, LoroResult, LoroText, LoroValue, PeerID, ToJson, UpdateOptions, ValueOrContainer, VersionVector,
 };
+use serde_json::Value;
 
-use crate::id::SignerId;
-use crate::lens::{BlockV2, DocV1, DocV2, Status, TodoV2, TypeV2};
+use crate::id::{BlobId, SignerId};
+use crate::lens::{BlockV2, DocV1, DocV2, Record, Status, Stored, TodoV1, TodoV2, View};
 
 /// What a signer's Loro peer derives from.
 const PEER_KEY: &str = "maiacity vault-db 2026-10-08 loro peer v1";
@@ -28,11 +35,6 @@ const RESERVED: u64 = 16;
 
 /// The root map every item lives in.
 const ROOT: &str = "item";
-
-/// Block types and todo statuses as an item names them.
-const TYPES: [(TypeV2, &str); 4] =
-    [(TypeV2::Heading, "heading"), (TypeV2::Paragraph, "paragraph"), (TypeV2::Item, "item"), (TypeV2::Code, "code")];
-const STATUSES: [(Status, &str); 3] = [(Status::Open, "open"), (Status::Doing, "doing"), (Status::Done, "done")];
 
 /// A version of an item (Loro's version vector), to export what came after it: each peer and how many of its ops the
 /// item holds, in peer order (8 + 4 bytes, big-endian), so equal versions are equal bytes. Empty is before any write.
@@ -89,34 +91,34 @@ impl Item {
         Item { doc, peer, parked: BTreeMap::new() }
     }
 
-    /// A new markdown document under the v2 schema, made on `signer`'s device: its edits carry that signer's Loro peer.
+    /// A new item made on `signer`'s device by an app reading through `view`: `value` is its first edit. `None` if
+    /// `value` isn't a view of the app's schema.
+    pub fn made(view: &View, value: &Value, signer: SignerId) -> Option<Item> {
+        let mut item = Item::new(signer);
+        item.write(view, value).then_some(item)
+    }
+
+    /// A new markdown document made by a v2 app on `signer`'s device: its edits carry that signer's Loro peer. Only
+    /// what differs from the schema's defaults is written: its kind and title.
     pub fn document(title: &str, signer: SignerId) -> Item {
-        let item = Item::new(signer);
-        let root = item.root();
-        edit(root.insert("kind", "document"));
-        edit(root.insert("title", title));
-        edit(root.insert_container("blocks", LoroMovableList::new()));
-        edit(root.insert_container("tags", LoroList::new()));
-        item.doc.commit();
-        item
+        let doc = DocV2 { title: title.into(), blocks: vec![], tags: vec![] };
+        Item::made(View::document_v2(), &doc.to_value(), signer).expect("a v2 document")
     }
 
-    /// A new todo under the v2 schema, made on `signer`'s device.
-    pub fn todo(title: &str, signer: SignerId) -> Item {
-        let item = Item::new(signer);
-        let root = item.root();
-        edit(root.insert("kind", "todo"));
-        edit(root.insert("title", title));
-        edit(root.insert("status", name(&STATUSES, Status::Open)));
-        edit(root.insert_container("notes", LoroText::new()));
-        item.doc.commit();
-        item
-    }
-
-    /// A document as an app still on v1 writes it, on `signer`'s device.
+    /// A document as an app still on v1 writes it, on `signer`'s device. Its block ids must differ.
     pub fn written_v1(doc: &DocV1, signer: SignerId) -> Item {
-        let _ = (doc, signer);
-        todo!("P4: v1 documents")
+        Item::made(View::document_v1(), &doc.to_value(), signer).expect("a v1 document, each block id once")
+    }
+
+    /// A new todo made by a v2 app: its status is open by the schema's default, and not written.
+    pub fn todo(title: &str, signer: SignerId) -> Item {
+        let todo = TodoV2 { title: title.into(), status: Status::Open, notes: String::new(), due: None };
+        Item::made(View::todo_v2(), &todo.to_value(), signer).expect("a v2 todo")
+    }
+
+    /// A todo as an app still on v1 writes it.
+    pub fn todo_v1(todo: &TodoV1, signer: SignerId) -> Item {
+        Item::made(View::todo_v1(), &todo.to_value(), signer).expect("a v1 todo")
     }
 
     /// The same item as another device holds it, whose edits from now on are that device's.
@@ -124,80 +126,116 @@ impl Item {
         Item::on(self.doc.fork(), peer(signer))
     }
 
-    /// The migration commit's change: every block rewritten in v2 shape. Running it again changes nothing.
-    pub fn migrate(&mut self) {
-        todo!("P4: migration")
+    /// What the item stores: its root map as JSON, texts as strings; `{}` before any write.
+    pub fn record(&self) -> Value {
+        self.root().get_deep_value().to_json_value()
     }
 
-    /// The item as a v1 app reads it: through the lens backwards; `None` for a todo.
-    pub fn as_document_v1(&self) -> Option<DocV1> {
-        todo!("P4: read through the lens")
+    /// The item as an app reading through `view` sees it: `None` for another kind of item, or before any write.
+    pub fn read(&self, view: &View) -> Option<Value> {
+        view.get(&self.record())
     }
 
-    /// The item as a v2 document, through the lens if it was written under v1; `None` for a todo.
+    /// An edit through `view`: the app's view of the item is now `new`. Only what changed is written, tagged with the
+    /// view's schema; nothing at all if `new` is the view as it was. False, writing nothing, if `new` isn't a view of
+    /// the app's schema.
+    pub fn write(&mut self, view: &View, new: &Value) -> bool {
+        let Some(next) = view.put(&self.record(), new) else { return false };
+        self.set_record(view, &next);
+        true
+    }
+
+    /// Make the item store exactly `record` by the smallest change, tagged with `view`'s schema, whose schemas (and
+    /// the lens's other one) say which fields are texts: how `write` lands an edit once the lens has made it a stored
+    /// record, and how a test sets up records no single app writes.
+    pub fn set_record(&mut self, view: &View, record: &Value) {
+        let want = record.as_object().cloned().unwrap_or_default();
+        sync_map(&self.root(), &want, view, None);
+        self.doc.commit_with(CommitOptions::new().commit_msg(&view.schema().id().to_hex()));
+        debug_assert_eq!(self.record(), Value::Object(want));
+    }
+
+    /// The schemas the item's changes were written under, by their commit messages. A change without one (no app of
+    /// ours writes it) names none.
+    pub fn authored(&self) -> BTreeSet<BlobId> {
+        let mut out = BTreeSet::new();
+        for (&peer, &end) in self.doc.oplog_vv().iter() {
+            let mut at: Counter = 0;
+            while at < end {
+                let Some(change) = self.doc.get_change(ID::new(peer, at)) else { break };
+                out.extend(change.message.as_deref().and_then(BlobId::from_hex));
+                at = change.id.counter + change.len as Counter;
+            }
+        }
+        out
+    }
+
+    /// The item as a v2 app reads it, through the lens where a v1 app wrote it; `None` for a todo.
     pub fn as_document(&self) -> Option<DocV2> {
-        let item = self.content();
-        if str_at(&item, "kind")? != "document" {
-            return None;
-        }
-        Some(DocV2 {
-            title: str_at(&item, "title").unwrap_or_default().into(),
-            blocks: list_at(&item, "blocks").iter().filter_map(|b| block_v2(b.as_map()?)).collect(),
-            tags: list_at(&item, "tags").iter().filter_map(|t| Some(t.as_string()?.as_str().into())).collect(),
-        })
+        DocV2::from_value(&self.read(View::document_v2())?)
     }
 
-    /// The item as a v2 todo, through the lens if it was written under v1; `None` for a document.
+    /// The item as a v1 app that has the lens reads it; `None` for a todo.
+    pub fn as_document_v1(&self) -> Option<DocV1> {
+        DocV1::from_value(&self.read(View::document_v1())?)
+    }
+
+    /// The item as a v2 todo app reads it; `None` for a document.
     pub fn as_todo(&self) -> Option<TodoV2> {
-        let item = self.content();
-        if str_at(&item, "kind")? != "todo" {
-            return None;
-        }
-        Some(TodoV2 {
-            title: str_at(&item, "title").unwrap_or_default().into(),
-            // a v1 todo has `done` instead: the lens reads it
-            status: named(&STATUSES, str_at(&item, "status")?)?,
-            notes: str_at(&item, "notes").unwrap_or_default().into(),
-            due: str_at(&item, "due").map(Into::into),
-        })
+        TodoV2::from_value(&self.read(View::todo_v2())?)
+    }
+
+    /// The item as a v1 todo app that has the lens reads it; `None` for a document.
+    pub fn as_todo_v1(&self) -> Option<TodoV1> {
+        TodoV1::from_value(&self.read(View::todo_v1())?)
+    }
+
+    /// Edit the document as a v2 app sees it. False if it isn't a document, or `change` leaves two blocks with one id.
+    pub fn edit_document(&mut self, change: impl FnOnce(&mut DocV2)) -> bool {
+        let Some(mut d) = self.as_document() else { return false };
+        change(&mut d);
+        self.write(View::document_v2(), &d.to_value())
+    }
+
+    /// Edit the document as a v1 app sees it.
+    pub fn edit_document_v1(&mut self, change: impl FnOnce(&mut DocV1)) -> bool {
+        let Some(mut d) = self.as_document_v1() else { return false };
+        change(&mut d);
+        self.write(View::document_v1(), &d.to_value())
+    }
+
+    /// Edit the todo as a v2 app sees it.
+    pub fn edit_todo(&mut self, change: impl FnOnce(&mut TodoV2)) -> bool {
+        let Some(mut t) = self.as_todo() else { return false };
+        change(&mut t);
+        self.write(View::todo_v2(), &t.to_value())
+    }
+
+    /// Edit the todo as a v1 app sees it.
+    pub fn edit_todo_v1(&mut self, change: impl FnOnce(&mut TodoV1)) -> bool {
+        let Some(mut t) = self.as_todo_v1() else { return false };
+        change(&mut t);
+        self.write(View::todo_v1(), &t.to_value())
     }
 
     /// Append a block to a document (a todo has none).
     pub fn push_block(&mut self, block: BlockV2) {
-        let Some(blocks) = self.blocks() else { return };
-        let b = edit(blocks.push_container(LoroMap::new()));
-        // the id's 64 bits as Loro's integer, an i64
-        edit(b.insert("id", block.id as i64));
-        edit(b.insert("type", name(&TYPES, block.r#type)));
-        if let Some(level) = block.level {
-            edit(b.insert("level", i64::from(level)));
-        }
-        if let Some(checked) = block.checked {
-            edit(b.insert("checked", checked));
-        }
-        if let Some(lang) = &block.lang {
-            edit(b.insert("lang", lang.as_str()));
-        }
-        edit(edit(b.insert_container("text", LoroText::new())).insert(0, &block.text));
-        self.doc.commit();
+        self.edit_document(|d| d.blocks.push(block));
     }
 
     /// Replace the text of block `block` by the smallest character edit, so concurrent edits of it merge character by
     /// character. A block that isn't there (deleted meanwhile) is left alone.
     pub fn set_text(&mut self, block: u64, text: &str) {
-        let Some(t) = self.block(block).and_then(|b| b.get("text")?.into_container().ok()?.into_text().ok()) else {
-            return;
-        };
-        t.update(text, UpdateOptions::default()).expect("without a timeout the diff always finishes");
-        self.doc.commit();
+        self.edit_document(|d| {
+            if let Some(b) = d.blocks.iter_mut().find(|b| b.id == block) {
+                b.text = text.into();
+            }
+        });
     }
 
     /// Set a todo's status (a document has none).
     pub fn set_status(&mut self, status: Status) {
-        if self.kind().as_deref() == Some("todo") {
-            edit(self.root().insert("status", name(&STATUSES, status)));
-            self.doc.commit();
-        }
+        self.edit_todo(|t| t.status = status);
     }
 
     /// Every op the item holds.
@@ -214,7 +252,6 @@ impl Item {
     pub fn bytes(&self) -> Vec<u8> {
         self.doc.export(ExportMode::Snapshot).expect("a snapshot of an attached document")
     }
-
     /// Import an update signed by `signer`, after checking its Loro peer ids belong to that signer.
     ///
     /// Loro decodes the update into a scratch document first (`decode_import_blob_meta`): it must hold updates, not a
@@ -264,26 +301,6 @@ impl Item {
     fn root(&self) -> LoroMap {
         self.doc.get_map(ROOT)
     }
-
-    fn kind(&self) -> Option<String> {
-        Some(self.root().get("kind")?.into_value().ok()?.as_string()?.as_str().to_owned())
-    }
-
-    /// The item as plain values: its root map, texts read as strings.
-    fn content(&self) -> LoroMapValue {
-        self.root().get_deep_value().into_map().unwrap_or_default()
-    }
-
-    fn blocks(&self) -> Option<LoroMovableList> {
-        self.root().get("blocks")?.into_container().ok()?.into_movable_list().ok()
-    }
-
-    fn block(&self, id: u64) -> Option<LoroMap> {
-        let blocks = self.blocks()?;
-        (0..blocks.len())
-            .filter_map(|i| blocks.get(i)?.into_container().ok()?.into_map().ok())
-            .find(|b| matches!(b.get("id"), Some(ValueOrContainer::Value(LoroValue::I64(n))) if n == id as i64))
-    }
 }
 
 /// A deep copy that edits as the same device: only one of the two may edit from then on, or two different ops would
@@ -318,37 +335,212 @@ fn edit<T>(result: LoroResult<T>) -> T {
     result.expect("an edit of an attached document")
 }
 
-fn name<T: PartialEq>(table: &[(T, &'static str)], value: T) -> &'static str {
-    table.iter().find(|(v, _)| *v == value).map(|(_, n)| *n).expect("every value has a name")
+/// A plain value as Loro holds it.
+fn loro(v: &Value) -> LoroValue {
+    match v {
+        Value::Null => LoroValue::Null,
+        Value::Bool(b) => (*b).into(),
+        Value::Number(n) => n.as_i64().map(LoroValue::from).unwrap_or_else(|| n.as_f64().unwrap_or_default().into()),
+        Value::String(s) => s.as_str().into(),
+        Value::Array(xs) => LoroValue::List(xs.iter().map(loro).collect::<Vec<_>>().into()),
+        Value::Object(m) => LoroValue::Map(m.iter().map(|(k, v)| (k.clone(), loro(v))).collect::<HashMap<_, _>>().into()),
+    }
 }
 
-fn named<T: Copy>(table: &[(T, &'static str)], name: &str) -> Option<T> {
-    table.iter().find(|(_, n)| *n == name).map(|(v, _)| *v)
+/// The field `k` of `r`, unless it is absent or `null`.
+fn present<'a>(r: &'a Record, k: &str) -> Option<&'a Value> {
+    r.get(k).filter(|v| !v.is_null())
 }
 
-fn str_at<'a>(map: &'a LoroMapValue, key: &str) -> Option<&'a str> {
-    Some(map.get(key)?.as_string()?.as_str())
+/// Make map `m` hold exactly `want`: each key whose value differs is set, deleted, or for a container brought to its
+/// new content by the smallest change, so concurrent edits of other parts merge. `list` names the list whose record
+/// `m` is.
+fn sync_map(m: &LoroMap, want: &Record, view: &View, list: Option<&str>) {
+    let have = m.get_deep_value().to_json_value();
+    let have = have.as_object().cloned().unwrap_or_default();
+    let keys: BTreeSet<&String> = have.keys().chain(want.keys()).collect();
+    for key in keys {
+        let w = present(want, key);
+        if present(&have, key) == w {
+            continue;
+        }
+        match w {
+            None => edit(m.delete(key)),
+            Some(w) => set_key(m, key, w, view, list),
+        }
+    }
 }
 
-fn list_at<'a>(map: &'a LoroMapValue, key: &str) -> &'a [LoroValue] {
-    map.get(key).and_then(LoroValue::as_list).map(|l| l.as_slice()).unwrap_or_default()
+/// Set `key` of `m` to `w`, a container the way the view's schemas store the field.
+fn set_key(m: &LoroMap, key: &str, w: &Value, view: &View, list: Option<&str>) {
+    let stored = view.stored(list, key).unwrap_or(match w {
+        Value::Array(xs) if list.is_none() && xs.iter().any(Value::is_object) => Stored::Records,
+        Value::Array(_) => Stored::List,
+        _ => Stored::Value,
+    });
+    let now = m.get(key);
+    match (&now, w) {
+        (Some(ValueOrContainer::Container(Container::Text(t))), Value::String(s)) => return update_text(t, s),
+        (Some(ValueOrContainer::Container(Container::MovableList(l))), Value::Array(xs)) => {
+            return sync_records(l, xs, view, key);
+        }
+        (Some(ValueOrContainer::Container(Container::List(l))), Value::Array(xs)) => return sync_values(l, xs),
+        _ => {}
+    }
+    // a new field, or one changing what it holds: a container is made mergeable, so that devices making it at once
+    // share it (Loro makes one only where the key holds no plain value)
+    let replace = |m: &LoroMap| {
+        if now.is_some() {
+            edit(m.delete(key));
+        }
+    };
+    match (stored, w) {
+        (Stored::Text, Value::String(s)) => {
+            replace(m);
+            update_text(&edit(m.ensure_mergeable_text(key)), s);
+        }
+        (Stored::Records, Value::Array(xs)) if list.is_none() => {
+            replace(m);
+            sync_records(&edit(m.ensure_mergeable_movable_list(key)), xs, view, key);
+        }
+        (_, Value::Array(xs)) => {
+            replace(m);
+            sync_values(&edit(m.ensure_mergeable_list(key)), xs);
+        }
+        _ => edit(m.insert(key, loro(w))),
+    }
 }
 
-/// A v2 block, or `None` for any other shape: a v1 block names a `kind` instead of a `type`, and the lens reads it.
-fn block_v2(b: &LoroMapValue) -> Option<BlockV2> {
-    Some(BlockV2 {
-        id: *b.get("id")?.as_i64()? as u64,
-        r#type: named(&TYPES, str_at(b, "type")?)?,
-        level: b.get("level").and_then(LoroValue::as_i64).and_then(|&l| u8::try_from(l).ok()),
-        checked: b.get("checked").and_then(LoroValue::as_bool).copied(),
-        lang: str_at(b, "lang").map(Into::into),
-        text: str_at(b, "text").unwrap_or_default().into(),
-    })
+fn update_text(t: &LoroText, s: &str) {
+    t.update(s, UpdateOptions::default()).expect("without a timeout the diff always finishes");
+}
+
+/// Make list `l` hold `want` by the fewest deletions and insertions: the values both hold in the same order stay.
+fn sync_values(l: &LoroList, want: &[Value]) {
+    let have = l.get_deep_value().to_json_value();
+    let have = have.as_array().cloned().unwrap_or_default();
+    let (n, m) = (have.len(), want.len());
+    // the longest common subsequence from each pair of positions on
+    let mut common = vec![vec![0u32; m + 1]; n + 1];
+    for i in (0..n).rev() {
+        for j in (0..m).rev() {
+            common[i][j] =
+                if have[i] == want[j] { common[i + 1][j + 1] + 1 } else { common[i + 1][j].max(common[i][j + 1]) };
+        }
+    }
+    let (mut i, mut j, mut at) = (0, 0, 0);
+    while i < n || j < m {
+        if i < n && j < m && have[i] == want[j] {
+            (i, j, at) = (i + 1, j + 1, at + 1);
+        } else if j < m && (i == n || common[i][j + 1] >= common[i + 1][j]) {
+            edit(l.insert(at, loro(&want[j])));
+            (j, at) = (j + 1, at + 1);
+        } else {
+            edit(l.delete(at, 1));
+            i += 1;
+        }
+    }
+}
+
+/// A record's key in a list: its id and how many records before it have that id; for one without an id, how many
+/// such come before it.
+type Key = (Option<Value>, usize);
+
+fn keys(list: &[Value]) -> Vec<Key> {
+    let mut seen: HashMap<Option<Value>, usize> = HashMap::new();
+    list.iter()
+        .map(|e| {
+            let id = e.as_object().and_then(|r| present(r, "id")).cloned();
+            let n = seen.entry(id.clone()).or_default();
+            *n += 1;
+            (id, *n - 1)
+        })
+        .collect()
+}
+
+/// Make the movable list of records `l` hold `want`: records it no longer has are deleted; of those it keeps, the
+/// longest run already in the wanted order stays where it is and each other moves next to the record before it; new
+/// records are inserted; each record is then synced field by field. Concurrent edits inside a record that moved still
+/// land in it.
+fn sync_records(l: &LoroMovableList, want: &[Value], view: &View, field: &str) {
+    let have = l.get_deep_value().to_json_value();
+    let have = have.as_array().cloned().unwrap_or_default();
+    let (hk, wk) = (keys(&have), keys(want));
+    let wanted: HashSet<&Key> = wk.iter().collect();
+    for i in (0..hk.len()).rev() {
+        if !wanted.contains(&hk[i]) {
+            edit(l.delete(i, 1));
+        }
+    }
+    let mut now: Vec<Key> = hk.into_iter().filter(|k| wanted.contains(k)).collect();
+    let place: HashMap<&Key, usize> = wk.iter().enumerate().map(|(j, k)| (k, j)).collect();
+    let order: Vec<usize> = now.iter().map(|k| place[k]).collect();
+    let stay: HashSet<usize> = longest_increasing(&order).into_iter().map(|i| order[i]).collect();
+    let mut prev: Option<usize> = None;
+    for (j, k) in wk.iter().enumerate() {
+        let at = match now.iter().position(|x| x == k) {
+            Some(i) if stay.contains(&j) => i,
+            Some(i) => {
+                let to = match prev {
+                    None => 0,
+                    Some(p) if i > p => p + 1,
+                    Some(p) => p,
+                };
+                if i != to {
+                    edit(l.mov(i, to));
+                    let x = now.remove(i);
+                    now.insert(to, x);
+                }
+                to
+            }
+            None => {
+                let to = prev.map_or(0, |p| p + 1);
+                edit(l.insert_container(to, LoroMap::new()));
+                now.insert(to, k.clone());
+                to
+            }
+        };
+        match (l.get(at), want[j].as_object()) {
+            (Some(ValueOrContainer::Container(Container::Map(m))), Some(r)) => sync_map(&m, r, view, Some(field)),
+            // something that isn't a record, which the lens never changes: kept as it is
+            (Some(ValueOrContainer::Value(v)), _) if v.to_json_value() == want[j] => {}
+            _ => edit(l.set(at, loro(&want[j]))),
+        }
+        prev = Some(at);
+    }
+    debug_assert_eq!(now, wk);
+}
+
+/// The positions of a longest strictly increasing run in `xs`, not necessarily contiguous.
+fn longest_increasing(xs: &[usize]) -> Vec<usize> {
+    // tails[k]: the position of the smallest last value of a run of length k + 1
+    let mut tails: Vec<usize> = vec![];
+    let mut back: Vec<Option<usize>> = vec![None; xs.len()];
+    for i in 0..xs.len() {
+        let k = tails.partition_point(|&t| xs[t] < xs[i]);
+        back[i] = k.checked_sub(1).map(|k| tails[k]);
+        if k == tails.len() {
+            tails.push(i);
+        } else {
+            tails[k] = i;
+        }
+    }
+    let mut out = vec![];
+    let mut at = tails.last().copied();
+    while let Some(i) = at {
+        out.push(i);
+        at = back[i];
+    }
+    out.reverse();
+    out
 }
 
 #[cfg(test)]
 mod tests {
+    use serde_json::json;
+
     use super::*;
+    use crate::lens::{BlockV1, KindV1, TypeV2, DOCUMENT_V1, DOCUMENT_V2};
 
     const SAMUEL: SignerId = SignerId::from_u64(2);
     const BOB: SignerId = SignerId::from_u64(5);
@@ -370,6 +562,13 @@ mod tests {
 
     fn text(item: &Item, id: u64) -> Option<String> {
         item.as_document()?.blocks.into_iter().find(|b| b.id == id).map(|b| b.text)
+    }
+
+    /// `a` and `b` after each imports what the other wrote since `start`.
+    fn merge(a: &mut Item, a_signer: SignerId, b: &mut Item, b_signer: SignerId, start: &Version) {
+        let (from_a, from_b) = (a.export(start), b.export(start));
+        a.import(&from_b, b_signer).unwrap();
+        b.import(&from_a, a_signer).unwrap();
     }
 
     #[test]
@@ -403,6 +602,119 @@ mod tests {
         let mut bobs = Item::new(BOB);
         bobs.import(&todo.export(&Version::default()), SAMUEL).unwrap();
         assert_eq!(bobs.as_todo().unwrap().status, Status::Done);
+    }
+
+    #[test]
+    fn reading_writes_nothing_not_even_a_default() {
+        // an app that puts back the view it read changes nothing, through the lens too: no op at all (T9g)
+        let mut doc = welcome(SAMUEL);
+        let mut todo = Item::todo("Order seeds", SAMUEL);
+        let before = (doc.version(), todo.version());
+        for view in [View::document_v1(), View::document_v2()] {
+            let seen = doc.read(view).unwrap();
+            assert!(doc.write(view, &seen));
+        }
+        for view in [View::todo_v1(), View::todo_v2()] {
+            let seen = todo.read(view).unwrap();
+            assert!(todo.write(view, &seen));
+        }
+        assert_eq!((doc.version(), todo.version()), before);
+        // the todo's open status and empty notes, and the document's empty tags, are the schemas' defaults: not stored
+        assert_eq!(todo.record(), json!({"kind": "todo", "title": "Order seeds"}));
+        assert!(doc.record().get("tags").is_none());
+    }
+
+    #[test]
+    fn a_value_that_isnt_a_view_writes_nothing() {
+        let mut doc = welcome(SAMUEL);
+        let before = doc.version();
+        let chapter = json!({"kind": "document", "blocks": [{"id": 1, "type": "chapter"}]});
+        let twice = json!({"kind": "document", "blocks": [{"id": 1, "type": "paragraph"}, {"id": 1, "type": "code"}]});
+        for bad in [chapter, twice, json!({"kind": "todo"}), json!("Welcome")] {
+            assert!(!doc.write(View::document_v2(), &bad), "{bad}");
+        }
+        assert!(!doc.edit_document(|d| d.blocks.push(block(1, TypeV2::Code, "a second block 1"))));
+        assert_eq!(doc.version(), before);
+        assert!(Item::made(View::todo_v2(), &json!({"kind": "document"}), BOB).is_none());
+    }
+
+    #[test]
+    fn each_change_names_the_schema_it_was_written_under() {
+        let heading = BlockV1 { id: 1, kind: KindV1::H1, text: "Welcome".into() };
+        let v1 = DocV1 { title: "Welcome".into(), blocks: vec![heading] };
+        let mut doc = Item::written_v1(&v1, SAMUEL);
+        assert_eq!(doc.authored(), BTreeSet::from([DOCUMENT_V1.id()]));
+        // a v2 app reads it through the lens, and an edit that changes nothing tags nothing
+        let heading = BlockV2 { level: Some(1), ..block(1, TypeV2::Heading, "Welcome") };
+        assert_eq!(doc.as_document().unwrap().blocks[0], heading);
+        assert!(doc.edit_document(|_| {}));
+        assert_eq!(doc.authored(), BTreeSet::from([DOCUMENT_V1.id()]));
+        assert!(doc.edit_document(|d| d.tags.push("coop".into())));
+        assert_eq!(doc.authored(), BTreeSet::from([DOCUMENT_V1.id(), DOCUMENT_V2.id()]));
+        // another device reads the same tags off the updates it imports
+        let mut bobs = Item::new(BOB);
+        bobs.import(&doc.export(&Version::default()), SAMUEL).unwrap();
+        assert_eq!(bobs.authored(), doc.authored());
+        assert!(Item::new(CAROL).authored().is_empty());
+    }
+
+    #[test]
+    fn a_field_two_devices_add_at_once_merges() {
+        // nobody had tagged the document, and block 3 had no text yet: each device makes the container, and the two
+        // are one, so neither edit hides the other
+        let mut base = welcome(SAMUEL);
+        base.push_block(block(3, TypeV2::Paragraph, ""));
+        assert!(base.record()["blocks"][2].get("text").is_none());
+        let start = base.version();
+        let (mut samuels, mut bobs) = (base.fork_as(SAMUEL), base.fork_as(BOB));
+        samuels.edit_document(|d| d.tags.push("coop".into()));
+        samuels.set_text(3, "Seeds");
+        bobs.edit_document(|d| d.tags.push("greenhouse".into()));
+        bobs.set_text(3, "Water");
+        merge(&mut samuels, SAMUEL, &mut bobs, BOB, &start);
+        assert_eq!(samuels.as_document(), bobs.as_document());
+        let mut tags = samuels.as_document().unwrap().tags;
+        tags.sort();
+        assert_eq!(tags, ["coop", "greenhouse"]);
+        let both = text(&samuels, 3).unwrap();
+        assert!(both == "SeedsWater" || both == "WaterSeeds", "{both}");
+    }
+
+    #[test]
+    fn a_text_edit_lands_in_its_block_after_a_concurrent_move() {
+        let base = welcome(SAMUEL);
+        let start = base.version();
+        let (mut samuels, mut bobs) = (base.fork_as(SAMUEL), base.fork_as(BOB));
+        assert!(samuels.edit_document(|d| d.blocks.reverse()));
+        bobs.set_text(2, NINE);
+        merge(&mut samuels, SAMUEL, &mut bobs, BOB, &start);
+        let doc = samuels.as_document().unwrap();
+        assert_eq!(doc.blocks.iter().map(|b| b.id).collect::<Vec<_>>(), [2, 1]);
+        assert_eq!(doc.blocks[0].text, NINE);
+        assert_eq!(samuels.as_document(), bobs.as_document());
+    }
+
+    #[test]
+    fn an_item_stores_exactly_the_record_it_is_given() {
+        // records no single app writes: both versions' fields in one block, a field no schema knows, records moved,
+        // added and dropped, a text where a plain value was and back
+        let mut item = welcome(SAMUEL);
+        let records = [
+            json!({"kind": "document", "title": "Welcome", "x": 3, "tags": ["a", "b"], "blocks": [
+                {"id": 2, "kind": "p", "type": "paragraph", "text": "Two"},
+                {"id": 7, "kind": "h2"},
+                {"id": 1, "type": "heading", "level": 1, "text": "Welcome"}]}),
+            json!({"kind": "document", "title": 5, "tags": ["b"], "blocks": [
+                {"id": 1, "type": "heading", "text": "Welcome back"},
+                {"id": 9, "type": "code", "lang": "sh", "text": "ls"},
+                {"id": 2, "kind": "p", "text": "Two"}]}),
+            json!({"kind": "document", "title": "Welcome", "blocks": []}),
+            json!({"kind": "document"}),
+        ];
+        for record in records {
+            item.set_record(View::document_v2(), &record);
+            assert_eq!(item.record(), record);
+        }
     }
 
     #[test]
@@ -453,9 +765,7 @@ mod tests {
         let (mut samuels, mut bobs) = (base.fork_as(SAMUEL), base.fork_as(BOB));
         samuels.set_text(2, NINE);
         bobs.set_text(2, "Hello from Maia Coop: the greenhouse opens at eight.");
-        let (from_samuel, from_bob) = (samuels.export(&start), bobs.export(&start));
-        samuels.import(&from_bob, BOB).unwrap();
-        bobs.import(&from_samuel, SAMUEL).unwrap();
+        merge(&mut samuels, SAMUEL, &mut bobs, BOB, &start);
         let merged = Some("Hello from Maia Coop: the greenhouse opens at nine.".to_string());
         assert_eq!((text(&samuels, 2), text(&bobs, 2)), (merged.clone(), merged));
     }
@@ -530,5 +840,13 @@ mod tests {
         samuels.put_back(&frontiers);
         assert_eq!((samuels.version(), samuels.as_document()), (start, base.as_document()));
         assert_eq!(samuels.doc.peer_id(), peer(SAMUEL));
+    }
+
+    #[test]
+    fn the_longest_run_already_in_order_stays() {
+        assert_eq!(longest_increasing(&[]), Vec::<usize>::new());
+        assert_eq!(longest_increasing(&[2, 0, 3, 1]), [1, 3]);
+        assert_eq!(longest_increasing(&[0, 1, 2]), [0, 1, 2]);
+        assert_eq!(longest_increasing(&[2, 1, 0]).len(), 1);
     }
 }

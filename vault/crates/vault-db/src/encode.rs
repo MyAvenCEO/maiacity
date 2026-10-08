@@ -313,6 +313,12 @@ impl Encode for Action {
                 boxes.encode(out);
                 clear.encode(out);
             }
+            Action::Publish { space, actor, blob } => {
+                out.push(12);
+                space.encode(out);
+                actor.encode(out);
+                blob.encode(out);
+            }
         }
     }
 }

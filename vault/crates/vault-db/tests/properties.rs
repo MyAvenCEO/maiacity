@@ -1,13 +1,16 @@
 //! One property per Lean theorem that the rules alone decide, checked on random histories: random signers trying random
 //! actions on top of scenarios 1 to 4, kept when the rules accept them, then replayed in other orders; and forked ones,
-//! where devices that were offline meet with concurrent changes. Each property carries its theorem's name; T7 (the
-//! blind server, which follows from T5) and T9, T10, T13 are guarded by the tests the Lean README lists.
+//! where devices that were offline meet with concurrent changes. The lens laws (T9) are checked on random items, as any
+//! mix of apps could have stored them, read and edited through each app's view. Each property carries its theorem's
+//! name; T7 (the blind server, which follows from T5) and T10, T13 are guarded by the tests the Lean README lists.
 
 mod common;
 
 use common::*;
+use serde_json::{json, Value};
 use vault_db::id::{EntryId, GrantId, SignerId, SpaceId, VaultId};
 use vault_db::keys::{KeyName, KeyScope};
+use vault_db::lens::View;
 use vault_db::policy::{
     order, removes, replay, trace, view, Action, Fact, Grantee, Holder, Kind, Log, Op, Principal, Refusal, Role, Scope,
     State,
@@ -562,4 +565,239 @@ fn t5_confidentiality() {
     }
     // and some holder does open history from before it could read: through a vault it joined later
     assert!(inherited > 0);
+}
+
+/// A random document as any mix of apps could have stored it: blocks in v1's representation, v2's, or both after
+/// concurrent edits; values no schema takes; blocks no app can read; ids two blocks share.
+fn stored_document(rng: &mut Rng) -> Value {
+    let blocks: Vec<Value> = (0..rng.below(7))
+        .map(|_| {
+            let mut b = json!({});
+            if rng.below(8) != 0 {
+                b["id"] = json!(1 + rng.below(6));
+            }
+            if rng.below(3) != 0 {
+                b["kind"] = json!(rng.pick(&["h1", "h2", "h3", "p", "li", "code", "chapter"]));
+            }
+            if rng.below(2) == 0 {
+                b["type"] = json!(rng.pick(&["heading", "paragraph", "item", "code", "chapter"]));
+            }
+            if rng.below(3) == 0 {
+                b["level"] = json!(rng.below(4));
+            }
+            if rng.below(4) == 0 {
+                b["checked"] = json!(rng.below(2) == 0);
+            }
+            if rng.below(4) == 0 {
+                b["lang"] = json!(rng.pick(&["sh", "py"]));
+            }
+            if rng.below(5) != 0 {
+                b["text"] = json!(rng.pick(&["Seeds", "Water", ""]));
+            }
+            b
+        })
+        .collect();
+    let mut d = json!({ "kind": "document", "blocks": blocks });
+    if rng.below(4) != 0 {
+        d["title"] = json!(rng.pick(&["Welcome", "Charter"]));
+    }
+    if rng.below(2) == 0 {
+        d["tags"] = json!(["greenhouse"]);
+    }
+    d
+}
+
+/// A new block as an app on v2 (`newer`) or v1 writes it.
+fn new_block(rng: &mut Rng, id: u64, newer: bool) -> Value {
+    let text = rng.pick(&["Seeds", "Water", ""]);
+    if !newer {
+        return json!({ "id": id, "kind": rng.pick(&["h1", "h2", "h3", "p", "li", "code"]), "text": text });
+    }
+    let mut b = json!({ "id": id, "type": rng.pick(&["heading", "paragraph", "item", "code"]), "text": text });
+    if rng.below(2) == 0 {
+        b["level"] = json!(rng.below(5));
+    }
+    if rng.below(2) == 0 {
+        b["checked"] = json!(rng.below(2) == 0);
+    }
+    b
+}
+
+/// One random edit of a document as an app on v2 (`newer`) or v1 sees it: what a user does in its editor.
+fn edit_document(rng: &mut Rng, d: &mut Value, newer: bool) {
+    let what = rng.below(8);
+    if what == 0 {
+        d["title"] = json!(rng.pick(&["Welcome", "Charter", "Notes"]));
+        return;
+    }
+    if what == 1 && newer {
+        d["tags"] = [json!(["greenhouse"]), json!(["greenhouse", "seeds"]), json!([])][rng.below(3)].clone();
+        return;
+    }
+    let blocks = d["blocks"].as_array_mut().expect("a view's blocks");
+    let n = blocks.len();
+    match what {
+        // a new block, under an id the app doesn't show: one a block it can't read may have
+        2 => {
+            let shown: Vec<Value> = blocks.iter().map(|b| b["id"].clone()).collect();
+            let free: Vec<u64> = (1..=8).filter(|&x| !shown.contains(&json!(x))).collect();
+            if !free.is_empty() {
+                let id = free[rng.below(free.len())];
+                blocks.insert(rng.below(n + 1), new_block(rng, id, newer));
+            }
+        }
+        3 if n > 0 => {
+            blocks.remove(rng.below(n));
+        }
+        4 if n > 1 => {
+            let (i, j) = (rng.below(n), rng.below(n));
+            blocks.swap(i, j);
+        }
+        5 if n > 0 => blocks[rng.below(n)]["text"] = json!(rng.pick(&["Seeds", "Water", "", "Seeds and water"])),
+        6 if n > 0 && !newer => blocks[rng.below(n)]["kind"] = json!(rng.pick(&["h1", "h2", "h3", "p", "li", "code"])),
+        6 if n > 0 => {
+            let b = blocks[rng.below(n)].as_object_mut().expect("a view's block");
+            b.insert("type".into(), json!(rng.pick(&["heading", "paragraph", "item", "code"])));
+            match rng.below(3) {
+                0 => b.remove("level"),
+                _ => b.insert("level".into(), json!(rng.below(5))),
+            };
+        }
+        7 if n > 0 && newer => {
+            let b = blocks[rng.below(n)].as_object_mut().expect("a view's block");
+            match rng.below(4) {
+                0 => b.remove("checked"),
+                1 => b.insert("checked".into(), json!(rng.below(2) == 0)),
+                2 => b.remove("lang"),
+                _ => b.insert("lang".into(), json!(rng.pick(&["sh", "py", "rust"]))),
+            };
+        }
+        _ => {}
+    }
+}
+
+fn blocks(d: &Value) -> &[Value] {
+    d["blocks"].as_array().map(Vec::as_slice).unwrap_or(&[])
+}
+
+/// The first block of `d` with id `id`: the one apps see.
+fn first_with<'a>(d: &'a Value, id: &Value) -> Option<&'a Value> {
+    blocks(d).iter().find(|b| b["id"] == *id)
+}
+
+/// The blocks of `stored` an app whose view was `seen` can't see, and doesn't write over in `edited`: those with an id
+/// the view doesn't show and the edit doesn't use, and those without an id.
+fn unseen(stored: &Value, seen: &Value, edited: &Value) -> Vec<Value> {
+    let used: Vec<&Value> = blocks(seen).iter().chain(blocks(edited)).map(|b| &b["id"]).collect();
+    blocks(stored).iter().filter(|b| b["id"].is_null() || !used.contains(&&b["id"])).cloned().collect()
+}
+
+#[test]
+fn t9_put_get() {
+    // on random documents as any mix of apps could have stored them, for both apps: both see the same item (T9c), an
+    // unchanged view writes nothing (T9g), an edit reads back exactly as made (T9f), and what the app can't see is left
+    // as it was; an older app's edit keeps the tags and each block's checked and lang (T9h)
+    let (v1, v2) = (View::document_v1(), View::document_v2());
+    let mut in_place = 0;
+    for seed in SEEDS {
+        let mut rng = Rng(seed);
+        for _ in 0..50 {
+            let stored = stored_document(&mut rng);
+            let as_v2 = v2.get(&stored).expect("every document reads");
+            assert_eq!(v1.get(&stored), v1.get(&as_v2), "seed {seed}: {stored}");
+            for (view, newer) in [(v1, false), (v2, true)] {
+                let seen = view.get(&stored).expect("every document reads");
+                assert_eq!(view.put(&stored, &seen).as_ref(), Some(&stored), "seed {seed}: {stored}");
+                let mut edited = seen.clone();
+                for _ in 0..1 + rng.below(3) {
+                    edit_document(&mut rng, &mut edited, newer);
+                }
+                let put = view.put(&stored, &edited).expect("an edited view is a view");
+                assert_eq!(view.get(&put).as_ref(), Some(&edited), "seed {seed}: {stored} edited into {edited}");
+                let mut missing = unseen(&stored, &seen, &edited);
+                for b in blocks(&put) {
+                    if let Some(i) = missing.iter().position(|m| m == b) {
+                        missing.swap_remove(i);
+                    }
+                }
+                assert!(missing.is_empty(), "seed {seed}: {stored} edited into {edited} loses {missing:?}");
+                for b in blocks(&edited) {
+                    let before = first_with(&stored, &b["id"]);
+                    in_place += usize::from(before.is_some() && first_with(&seen, &b["id"]).is_none());
+                    if let (Some(before), false) = (before, newer) {
+                        let after = first_with(&put, &b["id"]).expect("an edited block is stored");
+                        let (was, is) = ((&before["checked"], &before["lang"]), (&after["checked"], &after["lang"]));
+                        assert_eq!(was, is, "seed {seed}: {stored} edited into {edited}");
+                    }
+                }
+                assert!(newer || put.get("tags") == stored.get("tags"), "seed {seed}: {stored} edited into {edited}");
+            }
+        }
+    }
+    // and apps do write ids of blocks they can't read, which edits those in place
+    assert!(in_place > 0);
+}
+
+/// A random todo as any mix of apps could have stored it: `done`, `status`, both, or neither.
+fn stored_todo(rng: &mut Rng) -> Value {
+    let mut t = json!({ "kind": "todo" });
+    if rng.below(4) != 0 {
+        t["title"] = json!(rng.pick(&["Order seeds", "Water the beds"]));
+    }
+    if rng.below(2) == 0 {
+        t["done"] = json!(rng.below(2) == 0);
+    }
+    if rng.below(2) == 0 {
+        t["status"] = json!(rng.pick(&["open", "doing", "done", "later"]));
+    }
+    if rng.below(3) == 0 {
+        t["notes"] = json!(rng.pick(&["From the coop", ""]));
+    }
+    if rng.below(3) == 0 {
+        t["due"] = json!("2026-10-09");
+    }
+    t
+}
+
+fn edit_todo(rng: &mut Rng, t: &mut Value, newer: bool) {
+    match rng.below(4) {
+        0 => t["title"] = json!(rng.pick(&["Order seeds", "Plant the beans"])),
+        1 if newer => t["status"] = json!(rng.pick(&["open", "doing", "done"])),
+        1 => t["done"] = json!(rng.below(2) == 0),
+        2 => t["notes"] = json!(rng.pick(&["", "Ask Bob"])),
+        _ => match rng.below(2) {
+            0 => drop(t.as_object_mut().expect("a view").remove("due")),
+            _ => t["due"] = json!("2026-10-10"),
+        },
+    }
+}
+
+#[test]
+fn t9_put_get_todos() {
+    // the same laws for todos; and a todo in progress stays in progress when an older app edits anything but done
+    let (v1, v2) = (View::todo_v1(), View::todo_v2());
+    let mut kept = 0;
+    for seed in SEEDS {
+        let mut rng = Rng(seed);
+        for _ in 0..50 {
+            let stored = stored_todo(&mut rng);
+            let as_v2 = v2.get(&stored).expect("every todo reads");
+            assert_eq!(v1.get(&stored), v1.get(&as_v2), "seed {seed}: {stored}");
+            for (view, newer) in [(v1, false), (v2, true)] {
+                let seen = view.get(&stored).expect("every todo reads");
+                assert_eq!(view.put(&stored, &seen).as_ref(), Some(&stored), "seed {seed}: {stored}");
+                let mut edited = seen.clone();
+                for _ in 0..1 + rng.below(3) {
+                    edit_todo(&mut rng, &mut edited, newer);
+                }
+                let put = view.put(&stored, &edited).expect("an edited view is a view");
+                assert_eq!(view.get(&put).as_ref(), Some(&edited), "seed {seed}: {stored} edited into {edited}");
+                if !newer && edited["done"] == seen["done"] {
+                    assert_eq!((&put["status"], &put["done"]), (&stored["status"], &stored["done"]), "seed {seed}");
+                    kept += usize::from(stored["status"] == "doing");
+                }
+            }
+        }
+    }
+    assert!(kept > 0);
 }

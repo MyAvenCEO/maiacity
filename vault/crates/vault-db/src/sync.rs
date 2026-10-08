@@ -32,7 +32,7 @@ pub fn respond(ops: &[Op], d: SignerId) -> Vec<Op> {
 }
 
 /// The scope an auth op is about: a space's founding, a grant's scope, for a revocation the scope of the grant it
-/// revokes, looked up among `ops`, or the scope of a space or entry key.
+/// revokes, looked up among `ops`, the scope of a space or entry key, or the space a schema or lens is published into.
 fn auth_scope(ops: &[Op], op: &Op) -> Option<Scope> {
     match &op.action {
         Action::FoundSpace { .. } => Some(Scope::Space(SpaceId::from(op.id()))),
@@ -42,6 +42,7 @@ fn auth_scope(ops: &[Op], op: &Op) -> Option<Scope> {
             _ => None,
         }),
         Action::Keys { key, .. } => key.scope(),
+        Action::Publish { space, .. } => Some(Scope::Space(*space)),
         _ => None,
     }
 }

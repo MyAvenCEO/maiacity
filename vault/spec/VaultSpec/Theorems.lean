@@ -226,6 +226,26 @@ theorem T8_public_read_only {st st' : State} {op : Op} (hinv : PublicReadOnly st
       subst hg
       exact hpub
 
+/-! ## The schema lane -/
+
+/-- T17: only a space's owners publish its schemas and lenses. A step adds an entry to the lane only if it publishes
+    that blob into that space, and just before it, its author acted for a vault holding owner on the space. -/
+theorem T17_lane_by_owners {st st' : State} {op : Op} (h : step st op = some st') {x : SpaceId × BlobId}
+    (hx : x ∈ st'.lane) (hnew : x ∉ st.lane) :
+    ∃ actor, op.action = .publish x.1 actor x.2 ∧ actsFor st op.author actor = true ∧
+      holds st actor (.space x.1) .owner = true := by
+  unfold step at h
+  obtain ⟨post, hpost, rfl⟩ := Option.map_eq_some_iff.1 h
+  rw [settle_lane] at hx
+  rcases apply_lane hpost with hl | ⟨sp, actor, blob, hact, hacts, hholds, hl⟩
+  · exact absurd (hl ▸ hx) hnew
+  · rw [hl] at hx
+    rcases List.mem_append.1 hx with hx | hx
+    · exact absurd hx hnew
+    · rw [List.mem_singleton] at hx
+      subst hx
+      exact ⟨actor, hact, hacts, hholds⟩
+
 /-! ## Causal closure -/
 
 /-- Every accepted write's dependencies are accepted writes of its own entry. -/

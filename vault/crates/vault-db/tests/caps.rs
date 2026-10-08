@@ -1,10 +1,11 @@
-//! Caps (P2; T1, T4, T8), on the rules alone: spaces, grants per space and per entry, Public, and writes checked on
-//! import.
+//! Caps (P2, P4; T1, T4, T8, T17), on the rules alone: spaces, grants per space and per entry, Public, writes checked
+//! on import, and the schema lane only owners publish into.
 
 mod common;
 
 use common::*;
-use vault_db::policy::{Grantee, Log, Principal, Refusal, Role, Scope};
+use vault_db::lens::{DOCUMENT_LENS, DOCUMENT_V2};
+use vault_db::policy::{Action, Grantee, Log, Principal, Refusal, Role, Scope};
 
 #[test]
 fn grant_to_signer_rejected() {
@@ -57,4 +58,31 @@ fn write_without_cap_rejected_on_import() {
     c.log.receive([forced.clone()]);
     assert!(!c.log.view().writes(handbook, WELCOME).contains(&forced.id()));
     assert_eq!(c.log.view().writes(handbook, WELCOME).len(), 1);
+}
+
+#[test]
+fn only_owners_publish_into_the_lane() {
+    let mut c = cast();
+    let coop = with_coop(&mut c);
+    let handbook = spaces(&mut c, coop).handbook;
+    let (welcome, carol) = (Scope::Entry(handbook, WELCOME), c.carol);
+    c.log.append(MAC_S, &[], write(handbook, WELCOME, coop, 0)).unwrap();
+    // Carol may write Welcome and even owns it, but only an owner of the whole space publishes into its lane (T17)
+    for role in [Role::Write, Role::Owner] {
+        c.log.append(PASSKEY_S, &[PASSKEY_B], grant(welcome, role, vault(carol), coop, None)).unwrap();
+    }
+    let publish = |actor, blob: &[u8]| Action::Publish { space: handbook, actor, blob: blob.to_vec() };
+    assert_eq!(c.log.check(MAC_C, &[], publish(carol, DOCUMENT_V2.bytes())).err(), Some(Refusal::NoCap));
+    // nor can she claim to act for the coop
+    assert_eq!(c.log.check(MAC_C, &[], publish(coop, DOCUMENT_V2.bytes())).err(), Some(Refusal::NotActing));
+    // Samuel's Mac acts for the coop, which founded the Handbook: v2 and the lens go in, each blob once
+    for blob in [DOCUMENT_V2.bytes(), DOCUMENT_LENS.bytes()] {
+        c.log.append(MAC_S, &[], publish(coop, blob)).unwrap();
+    }
+    assert_eq!(c.log.check(MAC_B, &[], publish(coop, DOCUMENT_V2.bytes())).err(), Some(Refusal::AlreadyPublished));
+    let v = c.log.view();
+    assert_eq!(v.lane_of(handbook).collect::<Vec<_>>(), [DOCUMENT_V2.bytes(), DOCUMENT_LENS.bytes()]);
+    // a space that doesn't exist has no lane
+    let nowhere = Action::Publish { space: vault_db::id::SpaceId::from_u64(404), actor: coop, blob: vec![1] };
+    assert_eq!(c.log.check(MAC_S, &[], nowhere).err(), Some(Refusal::UnknownSpace));
 }

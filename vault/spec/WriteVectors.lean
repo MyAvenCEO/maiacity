@@ -4,4 +4,5 @@ import VaultSpec.Vectors
 def main : IO Unit := do
   IO.FS.createDirAll "vectors"
   IO.FS.writeFile "vectors/vaults.json" VaultSpec.Vectors.render
-  IO.println "wrote vectors/vaults.json"
+  IO.FS.writeFile "vectors/lenses.json" VaultSpec.Vectors.renderLenses
+  IO.println "wrote vectors/vaults.json and vectors/lenses.json"

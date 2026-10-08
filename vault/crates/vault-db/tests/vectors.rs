@@ -1,22 +1,30 @@
-//! The Lean model's test vectors (`vault/spec/vectors/vaults.json`, written by `lake exe vectors`, checked by every
-//! `lake build`). A step case's ops, applied one after the other from the empty state, must be accepted or refused
-//! exactly as the model says. A view case's ops, each at the depth it claims, must stand or be cut exactly as in the
-//! model's view: that is where removals cut what they hadn't seen. Both must end with the same vaults, spaces, grants,
-//! writes and key schedule (each family's epoch, every seal, every published key).
+//! The Lean model's test vectors (`vault/spec/vectors/vaults.json` and `lenses.json`, written by `lake exe vectors`,
+//! checked by every `lake build`). A step case's ops, applied one after the other from the empty state, must be
+//! accepted or refused exactly as the model says. A view case's ops, each at the depth it claims, must stand or be cut
+//! exactly as in the model's view: that is where removals cut what they hadn't seen. Both must end with the same vaults,
+//! spaces, grants, writes, key schedule (each family's epoch, every seal, every published key) and schema lanes. The
+//! lens vectors hold each app's view of many stored blocks and todos, and what each edit through a view stores.
 //!
 //! The model names what an op creates (a vault, a space, a grant) by a number, and an op by its place in the case; the
 //! core names them all by hashes, so each number maps to what its op created, and each place to that op's id. A keys
 //! op of the model names only where its boxes go; the core's carries the boxes too, which no rule opens, so here they
-//! are empty.
+//! are empty. A publish names its blob by a number: here the blob is the bytes `blob <number>`.
 
 use std::collections::HashMap;
 
-use serde_json::Value;
-use vault_db::id::{EntryId, GrantId, OpId, SignerId, SpaceId, VaultId};
+use serde_json::{json, Map, Value};
+use vault_db::id::{BlobId, EntryId, GrantId, OpId, SignerId, SpaceId, VaultId};
 use vault_db::keys::{KeyBox, KeyId, KeyName, KeyScope, Recipient, Seal};
+use vault_db::lens::View;
 use vault_db::policy::{replay, Action, Grant, Grantee, Kind, Op, Principal, Role, Scope, Space, State, Vault, Write};
 
 const VECTORS: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../../spec/vectors/vaults.json");
+const LENSES: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../../spec/vectors/lenses.json");
+
+/// The bytes the model's blob number `b` stands for.
+fn blob(v: &Value) -> Vec<u8> {
+    format!("blob {}", num(v)).into_bytes()
+}
 
 fn num(v: &Value) -> u64 {
     v.as_u64().unwrap_or_else(|| panic!("a number, not {v}"))
@@ -184,6 +192,9 @@ impl Names {
                 boxes: list(&x["to"]).iter().map(|t| KeyBox { to: self.recipient(t), bytes: vec![] }).collect(),
                 clear: x["public"].as_bool().unwrap().then_some([0; 32]),
             },
+            "publish" => {
+                Action::Publish { space: self.space(&x["space"]), actor: self.vault(&x["actor"]), blob: blob(&x["blob"]) }
+            }
             other => panic!("no action {other}"),
         }
     }
@@ -262,6 +273,10 @@ impl Names {
         assert_eq!(st.seals(), &seals[..], "{name}: seals");
         let published: Vec<KeyName> = list(&case["published"]).iter().map(|v| self.key_name(v)).collect();
         assert_eq!(st.published(), &published[..], "{name}: published");
+        let lane: Vec<(SpaceId, BlobId)> =
+            list(&case["lane"]).iter().map(|v| (self.space(&v["space"]), BlobId::of(&blob(&v["blob"])))).collect();
+        let ours: Vec<(SpaceId, BlobId)> = st.lane().iter().map(|p| (p.space, p.blob)).collect();
+        assert_eq!(ours, lane, "{name}: lane");
     }
 }
 
@@ -316,5 +331,60 @@ fn each_op_stands_or_is_cut_as_in_the_lean_models_view() {
             assert_eq!(stood.contains(&op.id()), want.as_bool().unwrap(), "{name}, op {i}: {}", ops[i]);
         }
         names.check_state(name, case, &r.state);
+    }
+}
+
+/// `v` without its `null` fields: the model writes every field, and absent ones as `null`.
+fn present(v: &Value) -> Value {
+    let fields = v.as_object().expect("a record").iter().filter(|(_, x)| !x.is_null());
+    Value::Object(fields.map(|(k, x)| (k.clone(), x.clone())).collect())
+}
+
+/// A stored item of `kind` holding `fields`, as an item stores the model's record.
+fn item(kind: &str, fields: &Value) -> Value {
+    let mut r: Map<String, Value> = present(fields).as_object().unwrap().clone();
+    r.insert("kind".into(), json!(kind));
+    Value::Object(r)
+}
+
+/// The model's view of a block, as the app's view of a document holding just that block shows it.
+fn block_view(view: &View, block: &Value) -> Value {
+    let mut doc = view.get(&json!({"kind": "document"})).unwrap();
+    doc["blocks"] = json!([present(block)]);
+    doc
+}
+
+#[test]
+fn the_lens_vectors() {
+    let file = std::fs::read_to_string(LENSES).expect("the vectors: run `lake exe vectors` in vault/spec");
+    let vectors: Value = serde_json::from_str(&file).unwrap();
+    let (blocks, todos) = (list(&vectors["blocks"]), list(&vectors["todos"]));
+    assert!(blocks.len() >= 100 && todos.len() >= 10);
+    let apps = [("v1", "putV1", View::document_v1()), ("v2", "putV2", View::document_v2())];
+    for case in blocks {
+        let stored = json!({"kind": "document", "blocks": [present(&case["stored"])]});
+        for (seen, puts, view) in apps {
+            // the app sees the block as the model does, or not at all
+            let shown = view.get(&stored).unwrap();
+            let want = if case[seen].is_null() { json!([]) } else { json!([present(&case[seen])]) };
+            assert_eq!(shown["blocks"], want, "{seen} of {}", case["stored"]);
+            // and each edit through its view stores what the model stores
+            for p in list(&case[puts]) {
+                let after = view.put(&stored, &block_view(view, &p["view"])).unwrap_or_else(|| panic!("{puts} {p}"));
+                let (from, to) = (&case["stored"], &p["view"]);
+                assert_eq!(after["blocks"], json!([present(&p["stored"])]), "{puts} of {from} to {to}");
+            }
+        }
+    }
+    let apps = [("v1", "putV1", View::todo_v1()), ("v2", "putV2", View::todo_v2())];
+    for case in todos {
+        let stored = item("todo", &case["stored"]);
+        for (seen, puts, view) in apps {
+            assert_eq!(view.get(&stored), Some(item("todo", &case[seen])), "{seen} of {}", case["stored"]);
+            for p in list(&case[puts]) {
+                let after = view.put(&stored, &item("todo", &p["view"]));
+                assert_eq!(after, Some(item("todo", &p["stored"])), "{puts} of {} to {}", case["stored"], p["view"]);
+            }
+        }
     }
 }

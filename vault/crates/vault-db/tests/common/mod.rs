@@ -5,7 +5,7 @@
 use vault_db::doc::Item;
 use vault_db::id::{EntryId, GrantId, SignerId, SpaceId, VaultId};
 use vault_db::lab::Lab;
-use vault_db::lens::{BlockV2, Status, TypeV2};
+use vault_db::lens::{BlockV1, BlockV2, DocV1, KindV1, Status, TypeV2};
 use vault_db::policy::{Action, Grant, Grantee, Kind, Log, Principal, Role, Scope};
 
 // Signers on the rules' log: passkeys and device keys.
@@ -226,6 +226,13 @@ pub fn document(title: &str, body: &str, signer: SignerId) -> Item {
     item
 }
 
+/// The same document as an app still on v1 writes it.
+pub fn document_v1(title: &str, body: &str, signer: SignerId) -> Item {
+    let block = |id, kind, text: &str| BlockV1 { id, kind, text: text.into() };
+    let blocks = vec![block(1, KindV1::H1, title), block(2, KindV1::P, body)];
+    Item::written_v1(&DocV1 { title: title.into(), blocks }, signer)
+}
+
 /// The text of block `id` as device `d` shows it.
 pub fn text(lab: &Lab, d: SignerId, sp: SpaceId, e: EntryId, id: u64) -> Option<String> {
     let doc = lab.item(d, sp, e)?.as_document()?;
@@ -247,7 +254,7 @@ pub const CHARTER_TEXT: &str = "Our charter: one vault per person, and the data 
 pub const AFTER_TEXT: &str = "Edited after the change: the greenhouse opens at nine.";
 
 /// Scenarios 3 to 5 on the Lab: the coop, its Handbook and Samuel's Notes, Welcome and Onboarding written by Samuel
-/// for the coop, and every device synced.
+/// for the coop, and every device synced. Welcome is older: an app still on v1 wrote it (scenario 9).
 pub struct Handbook {
     pub coop: VaultId,
     pub space: SpaceId,
@@ -261,7 +268,7 @@ pub fn handbook(w: &mut World) -> Handbook {
     let space = space_on(w, coop);
     let samuel = w.samuel;
     let notes = space_on(w, samuel);
-    let welcome = w.lab.create(w.mac_s, coop, space, document("Welcome", WELCOME_TEXT, w.mac_s)).unwrap();
+    let welcome = w.lab.create(w.mac_s, coop, space, document_v1("Welcome", WELCOME_TEXT, w.mac_s)).unwrap();
     let onboarding = w.lab.create(w.mac_s, coop, space, document("Onboarding", ONBOARDING_TEXT, w.mac_s)).unwrap();
     w.lab.sync_all(0);
     Handbook { coop, space, notes, welcome, onboarding }

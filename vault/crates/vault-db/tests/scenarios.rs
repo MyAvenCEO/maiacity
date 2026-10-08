@@ -3,13 +3,15 @@
 
 mod common;
 
+use std::collections::BTreeSet;
+
 use common::*;
+use serde_json::{json, Value};
 use vault_db::branch::Repo;
-use vault_db::doc::Item;
 use vault_db::id::{GrantId, VaultId};
 use vault_db::keys::{KeyName, KeyScope};
 use vault_db::lab::{Lab, Tamper};
-use vault_db::lens::{BlockV1, DocV1, KindV1, Status, TypeV2};
+use vault_db::lens::{Status, DOCUMENT_LENS, DOCUMENT_V1, DOCUMENT_V2};
 use vault_db::policy::{Action, Grantee, Kind, Principal, Refusal, Role, Scope};
 use vault_db::sign::RecoveryCode;
 
@@ -195,25 +197,62 @@ fn scenario_08_branches() {
 }
 
 #[test]
-#[ignore = "P4: schemas"]
 fn scenario_09_schema_v2() {
-    let block = |id, kind, text: &str| BlockV1 { id, kind, text: text.into() };
-    let v1 = DocV1 {
-        title: "Welcome".into(),
-        blocks: vec![block(1, KindV1::H1, "Welcome"), block(2, KindV1::P, WELCOME_TEXT), block(3, KindV1::Li, "Water the seedlings")],
+    let mut w = world();
+    let h = handbook(&mut w);
+    let (coop, sp, welcome) = (h.coop, h.space, h.welcome);
+    let publish = |blob: &[u8]| Action::Publish { space: sp, actor: coop, blob: blob.to_vec() };
+    // the Handbook's lane holds the schema its first app wrote Welcome under
+    w.lab.submit(w.mac_s, &[w.mac_s], publish(DOCUMENT_V1.bytes())).unwrap();
+    w.lab.sync_all(9);
+    // an app already on v2 has no lens to v1 yet: it opens Welcome read-only and shows what it can
+    let (seen, read_only) = w.lab.open(w.mac_b, sp, welcome, &DOCUMENT_V2).unwrap();
+    assert!(read_only);
+    assert_eq!((&seen["title"], &seen["blocks"]), (&json!("Welcome"), &json!([])));
+    let tag = |d: &mut Value| d["tags"] = json!(["greenhouse"]);
+    assert_eq!(w.lab.edit_as(w.mac_b, coop, sp, welcome, &DOCUMENT_V2, tag), Err(Refusal::ReadOnly));
+    // Samuel publishes v2 and the lens; Bob's v2 app now reads Welcome through it and edits it: a tag, and a new
+    // checklist item
+    w.lab.submit(w.mac_s, &[w.mac_s], publish(DOCUMENT_V2.bytes())).unwrap();
+    w.lab.submit(w.mac_s, &[w.mac_s], publish(DOCUMENT_LENS.bytes())).unwrap();
+    w.lab.sync_all(9);
+    let (seen, read_only) = w.lab.open(w.mac_b, sp, welcome, &DOCUMENT_V2).unwrap();
+    assert!(!read_only);
+    assert_eq!(seen["blocks"][0], json!({"id": 1, "type": "heading", "level": 1, "text": "Welcome"}));
+    let edit = w.lab.edit_as(w.mac_b, coop, sp, welcome, &DOCUMENT_V2, |d| {
+        d["tags"] = json!(["greenhouse"]);
+        let item = json!({"id": 3, "type": "item", "checked": false, "text": "Water the seedlings"});
+        d["blocks"].as_array_mut().unwrap().push(item);
+    });
+    assert!(matches!(edit, Ok(Some(_))));
+    w.lab.sync_all(9);
+    // a v1 app still reads Welcome through the lens: its own content as it wrote it, Bob's item as a list item
+    let (seen, read_only) = w.lab.open(w.mac_s, sp, welcome, &DOCUMENT_V1).unwrap();
+    assert!(!read_only);
+    let v1 = |text: &str| {
+        json!({"kind": "document", "title": "Welcome", "blocks": [
+            {"id": 1, "kind": "h1", "text": "Welcome"},
+            {"id": 2, "kind": "p", "text": text},
+            {"id": 3, "kind": "li", "text": "Water the seedlings"}]})
     };
-    // Welcome as an app still on v1 wrote it; v2 apps read it through the lens
-    let mut repo = Repo::new(Item::written_v1(&v1, MAC_S));
-    let as_v2 = repo.item("main").as_document().unwrap();
-    assert_eq!((as_v2.blocks[0].r#type, as_v2.blocks[0].level), (TypeV2::Heading, Some(1)));
-    // Samuel migrates Welcome on a branch, checks it and merges
-    repo.branch("v2", "main");
-    repo.item_mut("v2").migrate();
-    repo.commit("v2", "migrate Welcome to v2");
-    assert_eq!(repo.item("v2").as_document(), Some(as_v2));
-    repo.merge("v2", "main");
-    // a v1 app still reads Welcome through the lens, and the round trip leaves the v1 content unchanged
-    assert_eq!(repo.item("main").as_document_v1(), Some(v1));
+    assert_eq!(seen, v1(WELCOME_TEXT));
+    // the round trip leaves it unchanged: the v1 app's view put back writes nothing, and its edit of what it sees
+    // keeps what only v2 says
+    assert_eq!(w.lab.edit_as(w.mac_s, coop, sp, welcome, &DOCUMENT_V1, |_| {}), Ok(None));
+    let edit = w.lab.edit_as(w.mac_s, coop, sp, welcome, &DOCUMENT_V1, |d| d["blocks"][1]["text"] = json!(AFTER_TEXT));
+    assert!(matches!(edit, Ok(Some(_))));
+    w.lab.sync_all(9);
+    assert_eq!(w.lab.open(w.mac_s, sp, welcome, &DOCUMENT_V1).map(|(v, _)| v), Some(v1(AFTER_TEXT)));
+    let (seen, _) = w.lab.open(w.mac_b, sp, welcome, &DOCUMENT_V2).unwrap();
+    assert_eq!((&seen["tags"], &seen["blocks"][2]["checked"]), (&json!(["greenhouse"]), &json!(false)));
+    // and no default was ever written: each field stays as the app that wrote it said it, in its own version's shape
+    let item = w.lab.item(w.mac_b, sp, welcome).unwrap();
+    let record = json!({"kind": "document", "title": "Welcome", "tags": ["greenhouse"], "blocks": [
+        {"id": 1, "kind": "h1", "text": "Welcome"},
+        {"id": 2, "kind": "p", "text": AFTER_TEXT},
+        {"id": 3, "type": "item", "checked": false, "text": "Water the seedlings"}]});
+    assert_eq!(item.record(), record);
+    assert_eq!(item.authored(), BTreeSet::from([DOCUMENT_V1.id(), DOCUMENT_V2.id()]));
 }
 
 #[test]

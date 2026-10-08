@@ -4,11 +4,11 @@ import VaultSpec.Step
 # Sync by caps, item by item
 
 A device asks a peer for what it may receive. The peer answers from its own view and sends the ops of the vaults
-that device acts for, and for each item it may receive, the encrypted edits, the auth ops of the scopes covering it,
-and the ops of every vault those ops act for or name, up their chains of owners. A revocation that took one of the
-device's caps away reaches it too, so it knows what it may no longer do. Nothing else about other items leaves the
-peer. The connection proves which device is asking (iroh's endpoint key is the device key), so the request names the
-device.
+that device acts for, and for each item it may receive, the encrypted edits, the auth ops of the scopes covering it
+(among them the schemas and lenses published into its space's lane), and the ops of every vault those ops act for or
+name, up their chains of owners. A revocation that took one of the device's caps away reaches it too, so it knows what
+it may no longer do. Nothing else about other items leaves the peer. The connection proves which device is asking
+(iroh's endpoint key is the device key), so the request names the device.
 -/
 
 namespace VaultSpec
@@ -35,7 +35,8 @@ def Op.writeTarget? (op : Op) : Option (SpaceId × EntryId) :=
   | _ => none
 
 /-- The scope an auth op is about: a space's founding, a grant's scope, for a revocation the scope of the grant it
-    revokes, looked up among `ops`, or the scope of a space or entry key. -/
+    revokes, looked up among `ops`, the scope of a space or entry key, or the space a schema or lens is published
+    into. -/
 def Op.authScope? (ops : List Op) (op : Op) : Option Scope :=
   match op.action with
   | .foundSpace sp _ => some (.space sp)
@@ -44,6 +45,7 @@ def Op.authScope? (ops : List Op) (op : Op) : Option Scope :=
     | .grant g => if g.id == gid then some g.scope else none
     | _ => none
   | .keys k .. => k.scope?
+  | .publish sp .. => some (.space sp)
   | _ => none
 
 /-- The vault a vault op changes, or whose key it carries. -/
@@ -56,7 +58,7 @@ def Op.vaultOf? (op : Op) : Option VaultId :=
 /-- The vault an op acts for. -/
 def Op.actor? (op : Op) : Option VaultId :=
   match op.action with
-  | .foundSpace _ a | .revoke _ a _ | .write _ _ a .. => some a
+  | .foundSpace _ a | .revoke _ a _ | .write _ _ a .. | .publish _ a _ => some a
   | .grant g => some g.issuer
   | _ => none
 

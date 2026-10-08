@@ -7,8 +7,8 @@ Helpers for the proofs in `Theorems.lean`. Settling keys changes only the keys, 
 through `apply`: it adds a vault or changes one (`VaultChange`). Without cycles, `owns` finds every chain of owners,
 so the check in `addOwner` refuses every owner that would close a cycle. Authorization reads only the vaults, the
 spaces' founders and the grants, so an op that only adds to them keeps every write authorized (`Keeps`), and only a
-removal drops writes. `closeDeps` keeps writes causally closed, and a run with removals ends in the replay of the
-ops that stood.
+removal drops writes. Only a publish by an owner of the space adds to its schema lane. `closeDeps` keeps writes
+causally closed, and a run with removals ends in the replay of the ops that stood.
 -/
 
 namespace VaultSpec
@@ -64,6 +64,9 @@ theorem settle_grants (pre post : State) : (settle pre post).grants = post.grant
 
 theorem settle_writes (pre post : State) : (settle pre post).writes = post.writes :=
   settle_same State.writes (fun _ _ _ => rfl) (fun _ _ => rfl) (fun _ _ => rfl) pre post
+
+theorem settle_lane (pre post : State) : (settle pre post).lane = post.lane :=
+  settle_same State.lane (fun _ _ _ => rfl) (fun _ _ => rfl) (fun _ _ => rfl) pre post
 
 /-! ## Looking up vaults -/
 
@@ -237,6 +240,10 @@ theorem apply_vaults {st post : State} {op : Op} (h : apply st op = some post) :
   · -- keys: change nothing
     simp only [Option.ite_none_left_eq_some, Option.some.injEq] at h
     obtain ⟨-, -, -, rfl⟩ := h
+    exact .inl rfl
+  · -- publish: only the lane
+    simp only [Option.ite_none_left_eq_some, Option.some.injEq] at h
+    obtain ⟨-, -, rfl⟩ := h
     exact .inl rfl
 
 /-- What a step does to the vaults, told by lookups: nothing, a new vault with a free id and existing owners, or
@@ -837,6 +844,10 @@ theorem apply_writes {st post : State} {op : Op} (h : apply st op = some post) :
     simp only [Option.ite_none_left_eq_some, Option.some.injEq] at h
     obtain ⟨-, -, -, rfl⟩ := h
     exact .inl ⟨rfl, .of_vaults rfl (fun _ _ h => h) (fun _ h => h)⟩
+  · -- publish
+    simp only [Option.ite_none_left_eq_some, Option.some.injEq] at h
+    obtain ⟨-, -, rfl⟩ := h
+    exact .inl ⟨rfl, .of_vaults rfl (fun _ _ h => h) (fun _ h => h)⟩
 
 /-- An accepted op only takes grants away, or adds one grant that names a vault or Public, Public only with read. -/
 theorem apply_grants {st post : State} {op : Op} (h : apply st op = some post) :
@@ -917,6 +928,26 @@ theorem apply_grants {st post : State} {op : Op} (h : apply st op = some post) :
     simp only [Option.ite_none_left_eq_some, Option.some.injEq] at h
     obtain ⟨-, -, -, rfl⟩ := h
     exact .inl fun _ h => h
+  · -- publish
+    simp only [Option.ite_none_left_eq_some, Option.some.injEq] at h
+    obtain ⟨-, -, rfl⟩ := h
+    exact .inl fun _ h => h
+
+/-! ## What one step does to the schema lane -/
+
+/-- An accepted op leaves the lane alone, or publishes one blob into a space's lane: its author acts for a vault
+    holding owner on the space. -/
+theorem apply_lane {st post : State} {op : Op} (h : apply st op = some post) :
+    post.lane = st.lane ∨
+    ∃ sp actor blob, op.action = .publish sp actor blob ∧ actsFor st op.author actor = true ∧
+      holds st actor (.space sp) .owner = true ∧ post.lane = st.lane ++ [(sp, blob)] := by
+  unfold apply at h
+  dsimp only at h
+  split at h <;> (repeat' split at h) <;> (try cases h) <;> (try exact .inl rfl)
+  -- only an accepted publish is left
+  rename_i sp actor blob heq _ hok
+  simp only [Bool.or_eq_true, Bool.not_eq_true', not_or, Bool.not_eq_false] at hok
+  exact .inr ⟨sp, actor, blob, heq, hok.1, hok.2, rfl⟩
 
 /-! ## Replay, runs and resolve -/
 
