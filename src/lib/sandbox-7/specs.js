@@ -108,13 +108,13 @@ export const NORTH = (() => {
 /**
  * Each dome as the engineering thread sized it (/mnt/project-files/dome-research/dome-sizes.json, 2026-10-08), mid
  * values: the glulam frame, the cast-steel hubs plus the steel ring at the foot, and the heat the dome needs beyond its
- * fish pond (from the groundwater loop) and its climate power (pumps, fans), kWh a year, both for the north third
- * closed to the crown.
+ * fish pond (from the groundwater loop) and its climate power (pumps, fans), kWh a year. Heat and climate are its
+ * version 2 runs, made for our north band (a quarter of the shell, low on the north), so they are read as they are.
  */
 const SIZED = {
-	50: { timber: 80, steel: 19 + 2.2, heat: 0.02e6, climate: 0.013e6 },
-	100: { timber: 565, steel: 128 + 17.5, heat: 0.11e6, climate: 0.057e6 },
-	150: { timber: 2300, steel: 405 + 60, heat: 0.38e6, climate: 0.149e6 }
+	50: { timber: 80, steel: 19 + 2.2, heat: 0.02e6, climate: 0.014e6 },
+	100: { timber: 565, steel: 128 + 17.5, heat: 0.12e6, climate: 0.062e6 },
+	150: { timber: 2300, steel: 405 + 60, heat: 0.41e6, climate: 0.16e6 }
 };
 /**
  * A size the thread did not size, from the two it did on either side (or the nearest two): each figure follows the
@@ -131,11 +131,6 @@ export function between(table, D) {
 	return /** @type {T} */ (Object.fromEntries(Object.keys(table[lo]).map((k) => [k, table[lo][k] * Math.pow(table[hi][k] / table[lo][k], t)])));
 }
 const sized = (/** @type {number} */ D) => between(SIZED, D);
-/**
- * Ours close less than the thread's third (a quarter, low on the north): its Dome150 run of that case needs 1.8 GWh of
- * heat instead of 1.65 and 0.165 GWh of climate power instead of 0.149
- */
-const BAND = { heat: 1.8 / 1.65, climate: 0.165 / 0.149 };
 /** hemp fibre 30–35 cm thick (U 0.15), in timber cassettes of ~6 cm of timber a m² (the thread: 511 m³ in 8,509 m²) */
 const HEMP_M = 0.325;
 const CASSETTE_M = 0.06;
@@ -203,8 +198,8 @@ export function shellOf(D) {
 		north,
 		m,
 		solar: solarOf(g.panels),
-		heat: z.heat * BAND.heat,
-		climate: z.climate * BAND.climate,
+		heat: z.heat,
+		climate: z.climate,
 		t: { timber: m.timber * DENSITY.glulam, steel: m.steel, glass: glazed * DENSITY.glass, hemp: m.hemp * DENSITY.hemp, lime: footing * DENSITY.lime },
 		eur: {
 			timber: m.timber * PRICES.glulam.eur,
@@ -367,8 +362,8 @@ export const FACTORIES = [
  * heat beyond the pond and climate power, kWh a year
  */
 const TOWER_SIZED = {
-	200: { timber: 6350, steel: 1485 + 215, heat: 2.81e6, climate: 0.622e6 },
-	250: { timber: 11900, steel: 2950 + 425, heat: 5.19e6, climate: 1.116e6 }
+	200: { timber: 6350, steel: 1485 + 215, heat: 3.01e6, climate: 0.671e6 },
+	250: { timber: 11900, steel: 2950 + 425, heat: 5.51e6, climate: 1.195e6 }
 };
 /** @type {Tower} */
 export const TOWER = { id: 't180', label: 'Tower180', D: 180, H: 198, top: (90 * 0.3) / 1.6, stack: 24, ...between(TOWER_SIZED, 180) };
@@ -470,8 +465,8 @@ export function towerShell(T) {
 		m,
 		grid: g,
 		solar: solarOf(g.panels),
-		heat: T.heat * BAND.heat,
-		climate: T.climate * BAND.climate,
+		heat: T.heat,
+		climate: T.climate,
 		t: { timber: m.timber * DENSITY.glulam, steel: m.steel, glass: glazed * DENSITY.glass, hemp: m.hemp * DENSITY.hemp, lime: m.lime * DENSITY.lime },
 		eur: {
 			timber: m.timber * PRICES.glulam.eur,
@@ -540,7 +535,7 @@ export const ENERGY = {
  */
 export const SOURCES = {
 	research: { label: 'Our dome engineering research (2026-10-07/08)', note: '150 m cap: 50 m high, frequency 16, 2,390 glulam struts 240×600–700 mm (2,100–2,500 m³), 826 cast-steel hubs, a steel ring at the foot, laminated glass, a hemp north shell, a 3 m fish pond. Tower: timber 10,200–13,600 m³, steel 2,000–4,800 t, glass ~6,000 t, shell 150–340 M€.' },
-	climate: { label: 'The engineering thread’s per-size model (dome-research/dome-sizes.md, 2026-10-08)', note: 'Hourly Munich year at 24 °C. Frame, hubs and ring for Dome50/100/150 and Tower200/250; heat beyond the pond 0.02/0.11/0.38 GWh and 2.81/5.19 GWh, climate power 0.013/0.057/0.149 and 0.62/1.12 GWh, for the north third closed to the crown; a quarter closed low on the north needs ~9% more heat and makes ~34% more solar. Cells in every second pane of glass tilted under 45° (towers: all glass), 227 kWh/m² a year on caps, 194 on towers. People, factories and offices are not counted as heat sources. Our Dome40, Dome80, Dome120 and Tower180 take each figure along the power law between the two sizes either side (or the nearest two).' },
+	climate: { label: 'The engineering thread’s per-size model (dome-research/dome-sizes.md, 2026-10-08)', note: 'Hourly Munich year at 24 °C. Frame, hubs and ring for Dome50/100/150 and Tower200/250; version 2 (the north band, 2026-10-08 evening): heat beyond the pond 0.02/0.12/0.41 GWh and 3.01/5.51 GWh, climate power 0.014/0.062/0.16 and 0.67/1.2 GWh. Cells in every second pane of glass tilted under 45° (towers: all glass), 227 kWh/m² a year on caps, 194 on towers. People, factories and offices are not counted as heat sources. Our Dome40, Dome80, Dome120 and Tower180 take each figure along the power law between the two sizes either side (or the nearest two).' },
 	energy: { label: 'Our village energy research (energy/village-energy.md)', note: 'Geothermal 3.4 MW net a village center.' },
 	numbers: { label: 'The settlers game’s numbers (sandbox-6/numbers.md)', note: 'Diet 508 kg a person a year (Germany eats ~450–650 kg); 900 kWh a person at home.' },
 	glulam: { label: 'Glulam', url: 'https://www.holzkurier.com', note: 'Spruce glulam 555–575 €/m³ wholesale, 700–900 from a merchant (Holzkurier, Nov 2025). Larch and Douglas glulam only on request: ~750–1,200 (their logs cost about twice spruce’s). CNC-cut struts with their steel parts ~1,100–2,200 supplied, ~1,800–4,500 put up (estimate).' },
