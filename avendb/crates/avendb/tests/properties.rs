@@ -1,17 +1,21 @@
 //! One property per Lean theorem that the rules alone decide, checked on random histories: random signers trying random
 //! actions on top of scenarios 1 to 4, kept when the rules accept them, then replayed in other orders; and forked ones,
 //! where devices that were offline meet with concurrent changes. The lens laws (T9) are checked on random items, as any
-//! mix of apps could have stored them, read and edited through each app's view. Each property carries its theorem's
-//! name; T7 (the blind server, which follows from T5) and T10, T13 are guarded by the tests the Lean README lists.
+//! mix of apps could have stored them, read and edited through each app's view, and the branch laws (T10) on random
+//! histories of one document. Each property carries its theorem's name; T7 (the blind server, which follows from T5)
+//! and T13 are guarded by the tests the Lean README lists.
 
 mod common;
 
 use common::*;
 use serde_json::{json, Value};
-use avendb::id::{EntryId, GrantId, SignerId, SpaceId, VaultId};
+use avendb::branch::{Repo, MAIN};
+use avendb::doc::Item;
+use avendb::id::{EntryId, GrantId, OpId, SignerId, SpaceId, VaultId};
 use avendb::keys::{KeyName, KeyScope};
-use avendb::lens::View;
+use avendb::lens::{DocV2, View};
 use avendb::policy::{
+    Line,
     checkpointed, order, removes, replay, trace, view, Action, Fact, Grantee, Holder, Kind, Log, Op, Principal, Refusal,
     Role, Scope, State,
 };
@@ -833,4 +837,104 @@ fn t9_put_get_todos() {
         }
     }
     assert!(kept > 0);
+}
+
+/// One random edit of a document, as a user makes it in a v2 app; a new one where an undo took the first write back.
+fn edit_item(rng: &mut Rng, item: &mut Item) {
+    let view = View::document_v2();
+    let new = || DocV2 { title: "Welcome".into(), blocks: vec![], tags: vec![] }.to_value();
+    let mut d = item.read(view).unwrap_or_else(new);
+    edit_document(rng, &mut d, true);
+    assert!(item.write(view, &d));
+}
+
+/// What a reader shows on `line`.
+fn shown(repo: &Repo, line: Line) -> Value {
+    repo.item(line, MAC_D).map_or(json!({}), |i| i.record())
+}
+
+/// Each line with its history and what it shows.
+fn lines(repo: &Repo) -> Vec<(Line, Vec<OpId>, Value)> {
+    repo.history().lines().into_iter().map(|l| (l, repo.log(l), shown(repo, l))).collect()
+}
+
+#[test]
+fn t10_branches() {
+    // on random histories of one document, edited on random lines by random devices, branched from random versions,
+    // and merged and promoted between random lines: a write on one line leaves every other line as it was (T10f); a
+    // merge's history is the union of both lines', so merging the other way shows the same and merging again changes
+    // nothing (T10g); a promote shows exactly the branch and keeps both histories (T10h); and undoing a line's latest
+    // commit gives back the version it built on
+    let mut done = [0; 5];
+    for seed in SEEDS {
+        let mut rng = Rng(seed);
+        let mut repo = Repo::new(&document("Welcome", WELCOME_TEXT, MAC_S), MAC_S);
+        for _ in 0..12 {
+            let before = lines(&repo);
+            let ls: Vec<Line> = before.iter().map(|x| x.0).collect();
+            let author = rng.pick(&[MAC_S, MAC_B, MAC_C]);
+            let (from, into) = (rng.pick(&ls), rng.pick(&ls));
+            let what = if from == into { rng.below(3) } else { rng.below(5) };
+            done[what] += 1;
+            let line = match what {
+                0 => {
+                    repo.edit(author, into, |i| edit_item(&mut rng, i));
+                    into
+                }
+                1 => {
+                    let ops: Vec<OpId> = repo.history().commits().iter().map(|c| c.write.op).collect();
+                    let at = rng.pick(&ops);
+                    let b = Some(repo.branch(author, &[at], "a branch").expect("a version the repo holds"));
+                    let start = repo.history().item_at(&[at], MAC_D, MAIN).record();
+                    assert_eq!(shown(&repo, b), start, "seed {seed}");
+                    b
+                }
+                2 => {
+                    let heads = repo.heads(into);
+                    let latest = repo.history().get(heads[0]).expect("a head").write.deps.clone();
+                    repo.undo(author, into, heads[0]).expect("a write the repo holds");
+                    assert_eq!(heads.len(), 1, "seed {seed}");
+                    let back = repo.history().item_at(&latest, MAC_D, MAIN).record();
+                    assert_eq!(shown(&repo, into), back, "seed {seed}");
+                    into
+                }
+                3 => {
+                    let mut other = repo.clone();
+                    let merge = repo.merge(author, from, into);
+                    let union: Vec<OpId> = repo.log(into).into_iter().filter(|&op| op != merge).collect();
+                    let mut both: Vec<OpId> = [repo_log(&before, into), repo_log(&before, from)].concat();
+                    both.sort();
+                    both.dedup();
+                    let mut got = union.clone();
+                    got.sort();
+                    assert_eq!(got, both, "seed {seed}");
+                    other.merge(author, into, from);
+                    assert_eq!(shown(&other, from), shown(&repo, into), "seed {seed}");
+                    let merged = shown(&repo, into);
+                    repo.merge(author, from, into);
+                    assert_eq!(shown(&repo, into), merged, "seed {seed}");
+                    into
+                }
+                _ => {
+                    repo.promote(author, from, into);
+                    assert_eq!(shown(&repo, into), shown(&repo, from), "seed {seed}");
+                    let log = repo.log(into);
+                    let kept = repo_log(&before, into).into_iter().chain(repo_log(&before, from));
+                    assert!(kept.into_iter().all(|op| log.contains(&op)), "seed {seed}");
+                    into
+                }
+            };
+            // every other line is as it was
+            for (l, log, record) in &before {
+                if *l != line {
+                    assert_eq!((&repo.log(*l), &shown(&repo, *l)), (log, record), "seed {seed}");
+                }
+            }
+        }
+    }
+    assert!(done.iter().all(|&n| n > 20), "{done:?}");
+}
+
+fn repo_log(lines: &[(Line, Vec<OpId>, Value)], line: Line) -> Vec<OpId> {
+    lines.iter().find(|x| x.0 == line).map(|x| x.1.clone()).unwrap_or_default()
 }

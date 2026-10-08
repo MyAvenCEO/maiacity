@@ -25,8 +25,11 @@ inductive Action where
   | foundSpace   (sp : SpaceId) (actor : VaultId)
   | grant        (g : Grant)
   | revoke       (g : GrantId) (actor : VaultId) (keep : List OpId)
-  /-- An encrypted edit of one entry. `deps` are the entry's writes it builds on. -/
+  /-- An encrypted edit of one entry, on the line `branch` of its history. `deps` are the entry's writes it builds
+      on: a write that starts a branch builds on the version the branch starts from, and a merge also on the heads of
+      the line it brings in. -/
   | write        (sp : SpaceId) (e : EntryId) (actor : VaultId) (epoch : Nat) (deps : List OpId := [])
+                 (branch : Branch := .main)
   /-- The real boxes of one key: the key of family `k` at `epoch`, sealed to the key pairs `to`, or published (`pub`).
       The schedule already says who may open what, so this op changes nothing here: a peer accepts it only from a
       signer that may open the key, and only if every box is one the schedule seals. -/
@@ -78,6 +81,15 @@ def rootFits (kind : Kind) (sigs : List SignerId) : Option SignerId → Bool
 /-- Write `w` builds only on writes of its own entry among `ws`. -/
 def depsIn (ws : List Write) (w : Write) : Bool :=
   w.deps.all fun d => ws.any fun x => x.op == d && x.space == w.space && x.entry == w.entry
+
+/-- Write `w` extends its line: the main line and a new branch need nothing more; a write on branch `b` builds on the
+    write of its own entry that started `b`, or on another write on `b`, so whatever cuts the start of a branch cuts
+    every write on it. -/
+def onBranch (ws : List Write) (w : Write) : Bool :=
+  match w.branch with
+  | .on b => ws.any (fun x => x.op == b && x.branch == .new && x.space == w.space && x.entry == w.entry) &&
+      w.deps.any fun d => d == b || ws.any fun x => x.op == d && x.branch == .on b
+  | _ => true
 
 /-- Keep, in order, each write whose dependencies were kept. A write comes after the writes it builds on, so one pass
     leaves the writes causally closed (T14). -/
@@ -202,16 +214,18 @@ def apply (st : State) (op : Op) : Option State :=
       else if g.role == Role.owner && !approves st sigs (.vault actor) then none
       -- the grant and every grant resting on it end
       else some (dropUnseen st { st with grants := st.grants.filter fun x => !restsOn st gid x.id } keep)
-  | .write sp e actor epoch deps =>
+  | .write sp e actor epoch deps branch =>
     match st.space? sp with
     | none => none
     | some s =>
-      let w : Write := ⟨op.id, op.author, actor, sp, e, epoch, deps⟩
+      let w : Write := ⟨op.id, op.author, actor, sp, e, epoch, deps, branch⟩
       if st.writes.any (·.op == op.id) then none
       else if !actsFor st op.author actor || !holds st actor (.entry sp e) .write then none
       else if epoch > st.epochOf (.entry sp e) then none
       -- what it builds on was accepted, so the accepted writes stay causally closed (T14)
       else if !depsIn st.writes w then none
+      -- a write on a branch builds on the branch's start
+      else if !onBranch st.writes w then none
       else
         let st' := if s.entries.contains e then st
           else { st with spaces := st.spaces.map fun x => if x.id == sp then { x with entries := x.entries ++ [e] } else x }

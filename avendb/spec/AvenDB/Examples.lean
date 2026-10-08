@@ -1,5 +1,6 @@
 import AvenDB.Sync
 import AvenDB.Lens
+import AvenDB.Branches
 
 /-!
 # The plan's scenarios, run on the model
@@ -173,6 +174,48 @@ def s7 : List Op := s6 ++ chain 60 [
 #guard opens' s7 stranger (.entry handbook charter) && !opens' s7 stranger (.entry handbook welcome)
 #guard !accepted s7 (attempt macS [] (.grant { id := 4, scope := .entry handbook charter, role := .write,
                                                grantee := .«public», issuer := coop, parent := none }))
+
+/-! ## Scenario 8: branches
+
+Welcome's first write (40) is on its main line. Bob starts a branch, draft, from it and edits there; main stays as it
+was until Samuel merges draft with a write on main that builds on both lines' heads. A second branch, rewrite, is
+promoted the same way while main moved on: what the promote's update holds is Loro's (`Branches.lean`, T10h). -/
+
+def ops8 : List (SignerId × List SignerId × Action) := [
+  (macB, [], .write handbook welcome coop 0 [40] .new),         -- 300: Bob starts draft from Welcome's first write
+  (macB, [], .write handbook welcome coop 0 [300] (.on 300)),   -- 301: Bob's edit on draft
+  (macS, [], .write handbook welcome coop 0 [40, 301]),         -- 302: Samuel merges draft into main
+  (macS, [], .write handbook welcome coop 0 [302] .new),        -- 303: Samuel starts rewrite from main
+  (macS, [], .write handbook welcome coop 0 [303] (.on 303)),   -- 304: an edit on rewrite
+  (macB, [], .write handbook welcome coop 0 [302]),             -- 305: main moves on meanwhile
+  (macS, [], .write handbook welcome coop 0 [305, 304])]        -- 306: Samuel promotes rewrite into main
+def s8 (n : Nat := ops8.length) : List Op := s7 ++ chain 300 (ops8.take n)
+#guard refused (s8) == []
+
+def lineOps (ops : List Op) (l : Option OpId) : List OpId :=
+  (history (view ops).writes handbook welcome l).map (·.op)
+def headsOf (ops : List Op) (l : Option OpId) : List OpId := heads (view ops).writes handbook welcome l
+
+-- Bob's draft holds Welcome as it was and his edit; main stays as it was (T10f)
+#guard lineOps (s8 2) (some 300) == [40, 300, 301] && headsOf (s8 2) (some 300) == [301]
+#guard lineOps (s8 2) none == [40] && headsOf (s8 2) none == [40]
+-- the merge brings all of draft into main (T10g)
+#guard lineOps (s8 3) none == [40, 300, 301, 302] && headsOf (s8 3) none == [302]
+-- rewrite starts from the merged main; main moves on without it until the promote
+#guard lineOps (s8 6) (some 303) == [40, 300, 301, 302, 303, 304] && lineOps (s8 6) none == [40, 300, 301, 302, 305]
+#guard lineOps (s8) none == [40, 300, 301, 302, 303, 304, 305, 306] && headsOf (s8) none == [306]
+-- draft is left as it was, and Onboarding has a main line only
+#guard lineOps (s8) (some 300) == [40, 300, 301]
+#guard (history (view (s8)).writes handbook onboarding none).map (·.op) == [41]
+-- Carol reads Welcome, branches included, but can't start a branch
+#guard (respond (s8) macC).any (·.id == 301)
+#guard !accepted (s8) (attempt macC [] (.write handbook welcome carol 0 [40] .new))
+-- a write on a branch builds on its start or on a write on it, of its own entry; merging main into draft is fine
+#guard accepted (s8) (attempt macB [] (.write handbook welcome coop 0 [301, 306] (.on 300)))
+#guard !accepted (s8) (attempt macB [] (.write handbook welcome coop 0 [306] (.on 300)))
+#guard !accepted (s8) (attempt macS [] (.write handbook welcome coop 0 [306] (.on 302)))
+#guard !accepted (s8) (attempt macS [] (.write handbook onboarding coop 0 [41] (.on 300)))
+#guard !accepted (s8) (attempt macS [] (.write handbook welcome coop 0 [] (.on 999)))
 
 /-! ## Scenario 9: schema v2
 
@@ -418,6 +461,13 @@ def revokedWriter : List Op := s16a ++ offline 180 113 [
   (macC, [], .write todos door carol 0 [180])]
 #guard refused revokedWriter == [180, 182]
 #guard (itemWrites (view revokedWriter) todos door).map (·.op) == [100]
+-- a branch Bob starts for himself after the revocation is refused, and so is every write on it, even one he makes
+-- for the coop, which may still write
+def revokedBranch : List Op := s16a ++ offline 190 113 [
+  (macB, [], .write todos door bob 0 [100] .new),
+  (macB, [], .write todos door coop 0 [190] (.on 190))]
+#guard refused revokedBranch == [190, 191]
+#guard accepted s16a (attempt macB [] (.write todos door coop 0 [100] .new))
 -- revoking Bob's write after his edit arrived keeps it: the revocation names it
 def keptWriter : List Op := s15 ++ chain 113 [(macB, [], .write todos door bob 0 [100])] ++ chain 114 [
   (macS, [], .revoke 10 samuel [113]),

@@ -1,5 +1,6 @@
 import AvenDB.Sync
 import AvenDB.Doc
+import AvenDB.Branches
 import AvenDB.Lens
 import AvenDB.Lemmas
 import AvenDB.KeyLemmas
@@ -296,6 +297,60 @@ theorem view_invariants (ops : List Op) :
     (fun _ _ _ ⟨h₁, h₂, h₃⟩ h => ⟨T4_grants_name_vaults h₁ h, T8_public_read_only h₂ h, T14_causally_closed h₃ h⟩)
     (standing ops) {} (by simp [GrantsNameVaults, PublicReadOnly, CausallyClosed])
   exact ⟨T3_no_cycles _, h⟩
+
+/-! ## Branches
+
+Every peer's writes come in an order their dependencies respect, so `Branches.lean`'s T10f to T10h hold of what every
+peer shows on every line. -/
+
+/-- No step breaks the order of the writes: a new write builds only on accepted writes and brings a new id, and a
+    removal keeps some of the writes, in order. -/
+theorem writes_ordered_step {st st' : State} {op : Op} (hc : CausallyClosed st) (ho : Ordered st.writes)
+    (h : step st op = some st') : Ordered st'.writes := by
+  unfold step at h
+  obtain ⟨post, hpost, rfl⟩ := Option.map_eq_some_iff.1 h
+  rw [settle_writes]
+  obtain ⟨hnd, hpw, hself⟩ := ho
+  rcases apply_writes hpost with ⟨hws, -⟩ | ⟨w, hws, -, hdeps, -, -, -, -, hfresh, -⟩ | ⟨keep, mid, -, rfl, hmid⟩
+  · rw [hws]
+    exact ⟨hnd, hpw, hself⟩
+  · rw [hws]
+    -- what the accepted writes build on is accepted already, so none builds on `w`, whose id is new
+    have hnot : ∀ x ∈ st.writes, w.op ∉ x.deps := fun x hx hd => by
+      obtain ⟨y, hy, hyd, -⟩ := hc x hx _ hd
+      exact hfresh y hy hyd
+    refine ⟨?_, ?_, ?_⟩
+    · rw [List.map_append, List.nodup_append]
+      refine ⟨hnd, by simp, ?_⟩
+      intro a ha b hb hab
+      obtain ⟨x, hx, rfl⟩ := List.mem_map.1 ha
+      rw [List.map_singleton, List.mem_singleton] at hb
+      exact hfresh x hx (hab.trans hb)
+    · rw [List.pairwise_append]
+      refine ⟨hpw, List.pairwise_singleton _ _, fun x hx b hb => ?_⟩
+      rw [List.mem_singleton] at hb
+      subst hb
+      exact hnot x hx
+    · intro x hx
+      rcases List.mem_append.1 hx with hx | hx
+      · exact hself x hx
+      · rw [List.mem_singleton] at hx
+        subst hx
+        intro hd
+        obtain ⟨y, hy, hyd, -⟩ := depsIn_iff.1 hdeps _ hd
+        exact hfresh y hy hyd
+  · -- a removal keeps some of the writes, in order
+    have hsub : (dropUnseen st mid keep).writes.Sublist st.writes :=
+      (closeDeps_sublist _).trans (hmid ▸ List.filter_sublist)
+    exact ⟨(hsub.map _).nodup hnd, hpw.sublist hsub, fun x hx => hself x (hsub.subset hx)⟩
+
+/-- Every peer's writes come in an order their dependencies respect, so T10f to T10h hold of what it shows. -/
+theorem writes_ordered (ops : List Op) : Ordered (view ops).writes := by
+  rw [view_eq_replay]
+  have h := replay_inv (fun st => CausallyClosed st ∧ Ordered st.writes)
+    (fun _ _ _ ⟨h₁, h₂⟩ h => ⟨T14_causally_closed h₁ h, writes_ordered_step h₁ h₂ h⟩)
+    (standing ops) {} (by simp [CausallyClosed, Ordered])
+  exact h.2
 
 /-! ## Strong removal -/
 

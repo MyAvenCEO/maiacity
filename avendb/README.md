@@ -40,7 +40,7 @@ Each phase is one PR, merged when its Rust tests pass and its theorems are prove
 |---|---|---|
 | P0 to P4 | The spec and the API, vaults and signatures, caps and sync by caps, keys and encrypted edits, schemas and lenses | Merged |
 | P4b | Post-quantum hardening: SHA-3 ids and hashes, a hash-based signature beside every classical one but a write's, checkpoints that vouch for the writes (T18), a McEliece share beside X-Wing in every key box; the passkey as the only way back in, device keys derived from it at every unlock | Merged |
-| P5 | History, branches, merge, promote | Next |
-| P6 | Offline devices, random delivery orders, Lean ⇄ Rust vectors for the rest | |
+| P5 | History and branches: every write a commit on a line of its entry's history, branches from any version, merge, promote, revert and restore, undo of an older commit, forks into another space (T10) | Merged |
+| P6 | Offline devices, random delivery orders, Lean ⇄ Rust vectors for the rest | Next |
 | P7 | The avenDB tile | |
 | P8 | Sync on avenDB's own iroh ALPN with X25519MLKEM768 on every connection, bytes in iroh-blobs, the server peer in its own container beside the media vault's | |

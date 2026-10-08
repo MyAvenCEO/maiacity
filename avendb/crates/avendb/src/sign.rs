@@ -383,6 +383,7 @@ mod tests {
             actor: VaultId::from_u64(1),
             epoch: 0,
             deps: vec![],
+            branch: crate::policy::Branch::Main,
             body: vec![1, 2, 3],
         };
         Op { parents: vec![], depth: 0, author, cosigners: vec![], action }

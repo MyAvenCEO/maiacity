@@ -30,15 +30,16 @@ lake exe vectors
 |---|---|
 | `Basic.lean` | Ids, principals (signers and vaults), roles relay < read < write < owner, scopes (a space or one entry), grantees, key names |
 | `State.lean` | What a peer knows; acting for a vault, approving for it (its root, or its threshold of owners), holding a cap; symbolic keys (`Knows`), rotation and sealing |
-| `Step.lean` | Every op and the rules that accept or refuse it, publishing into a space's schema lane and checkpoints among them; the one order every peer replays in; strong removal: what a removal cuts, and which removals stand when they clash (`view`); what a peer counts once it no longer trusts the curves (`checkpointed`) |
+| `Step.lean` | Every op and the rules that accept or refuse it, publishing into a space's schema lane, checkpoints, and writes on a branch (which build on its start) among them; the one order every peer replays in; strong removal: what a removal cuts, and which removals stand when they clash (`view`); what a peer counts once it no longer trusts the curves (`checkpointed`) |
 | `Sync.lean` | What a peer sends a device: sync by caps, item by item (each item's writes and checkpoints), and the revocations that took its caps away |
 | `Doc.lean` | Documents as histories: merge and promote, against the laws we rely on from Loro |
+| `Branches.lean` | Branches write by write: each write extends one line of its entry's history, the main line or a branch; a line's history and heads; the order writes come in (`Ordered`); T10f to T10h, which tie `Doc.lean`'s merge and promote to the writes |
 | `Lens.lean` | The markdown document and the todo in two schema versions and the lenses between them; items as stored, projected on read into each app's schema, and edits through each app's view; the lens laws (T9) |
-| `Theorems.lean` | T1 to T8, T11 to T14, and T16 to T18 |
+| `Theorems.lean` | T1 to T8, T11 to T14, and T16 to T18; and `writes_ordered`, the order every peer's writes come in, which T10f to T10h rest on |
 | `Lemmas.lean` | The helper lemmas the proofs use: how a step changes a vault, ownership links and chains, what a step keeps that authorization reads, causal closure, the schema lane, replays, and which op made each write |
 | `KeyLemmas.lean` | The helper lemmas for the keys: what settling seals and publishes, `opens` finding every key `Knows` gives, acting for a vault through chains, the invariants behind T5 and T6, `EverReads` |
-| `Examples.lean` | The plan's scenarios run on the model, including schema v2 (the schema lane, and a v2 app's edit of a document a v1 app wrote), one todo shared with several vaults and synced peer to peer, strong removal (back-dated ops cut, clashes, a stolen passkey, the root handed on), and checkpoints once the curves fall |
-| `Vectors.lean` | Cases for the Rust core: ops applied in order (which the model accepts) and ops at the depths they claim (which stand in the view, or in the post-quantum view), with the state at the end; and lens cases: what each app reads from stored blocks and todos, and what its edits store |
+| `Examples.lean` | The plan's scenarios run on the model, including branches (a draft merged, a rewrite promoted, and a revocation cutting a branch), schema v2 (the schema lane, and a v2 app's edit of a document a v1 app wrote), one todo shared with several vaults and synced peer to peer, strong removal (back-dated ops cut, clashes, a stolen passkey, the root handed on), and checkpoints once the curves fall |
+| `Vectors.lean` | Cases for the Rust core: ops applied in order (which the model accepts) and ops at the depths they claim (which stand in the view, or in the post-quantum view), with the state at the end, each line of each entry's history and its heads among it; and lens cases: what each app reads from stored blocks and todos, and what its edits store |
 | `VectorsCheck.lean`, `WriteVectors.lean` | Check the files in `vectors/` on every build; write them (`lake exe vectors`) |
 | `vectors/vaults.json` | The cases with the model's answers, read by `crates/avendb/tests/vectors.rs` |
 | `vectors/lenses.json` | The lens cases with the model's views and edits, read by `the_lens_vectors` |
@@ -56,7 +57,7 @@ lake exe vectors
 | T7 | Blind server: a device whose vaults hold no read opens only public keys | Proven from T5 | `server_holds_only_ciphertext`, `every_device_opens_exactly_what_it_may` |
 | T8 | Public is read-only | Proven | `public_is_read_only`, `t4_grants_name_vaults_and_t8_public_read_only`, the vectors |
 | T9 | Lens laws: round trips, both apps see the same item, an edit shows exactly as made, an unchanged view writes nothing, and an older app's edit keeps what it can't see | Proven | `lens_round_trip_v1`, `edits_through_a_view_keep_what_it_cant_see`, `t9_put_get`, `t9_put_get_todos`, `the_lens_vectors`, `scenario_09_schema_v2` |
-| T10 | Merge is the union of histories; promote gives the branch's content and keeps both | Proven | `promote_equals_branch` |
+| T10 | Merge is the union of histories; promote gives the branch's content and keeps both; a write on one line leaves every other line as it was | Proven | `promote_equals_branch`, `merge_is_the_union_of_both_lines`, `t10_branches`, `scenario_08_branches`, the vectors |
 | T11 | Same ops in any order, same state | P6 | `same_ops_any_order_same_result`, `t11_convergence` |
 | T12 | A peer sends a device only items it holds a cap on, and of other scopes only the revocations that took its caps away | P6 | `sync_sends_only_capped_items`, `t12_sync_shares_only_caps` |
 | T13 | Two devices that synced both ways hold the same writes for every item they share | P6 | `item_syncs_peer_to_peer_without_server` |
@@ -108,6 +109,16 @@ can't see (T9h). The model covers edits in place; inserting, deleting and moving
 schemas and lenses are blobs named by their hash that hold no data, published into the space's schema lane by an
 owner of the space (T17).
 
+Every write is a commit on one line of its entry's history: the main line, or a branch, which a write starts from any
+version (its `deps`) and names, encrypted. A write on a branch builds on the write that started it or on another write
+on it, so a revocation that cuts a branch's start cuts the whole branch, and the rules check every branch write's caps
+as they check any write's. A line's history is its own writes and everything they build on, and a device shows on a
+line Loro's content of that history. A merge is a write on the target that builds on the heads of both lines, so its
+history is the union of both (T10g) and it shows `Doc.lean`'s merge, for which T10a to T10c hold; a promote's write
+also carries the change that brings the merged document to exactly the branch's content (T10h, from T10d and T10e). A
+write on one line changes no other line (T10f). In Rust, an older commit is undone by a three-way merge of records,
+and versions open read-only on scratch items made from their writes; Loro's own revert and checkout are not used.
+
 ## Assumptions
 
 None are axioms; each is part of the model:
@@ -136,7 +147,7 @@ what is still red.
 | P3 | Keys, sealing, encryption of every edit, rotation | T5, T6, T7 |
 | P4 | Schemas and lenses projected on read, edits through each app's view, the schema lane | T9, T17 |
 | P4b | Post-quantum: SHA-3 ids and hashes, SLH-DSA beside every classical signature but a write's, device keys derived from the passkey, X-Wing plus Classic McEliece in every sealed key box, checkpoints and the post-quantum-only replay | T18 |
-| P5 | History, branches, merge, promote | T10 in Rust |
+| P5 | History and branches: every write on a line of its entry's history, branches from any version, merge, promote, restore and undo, forks | T10 for writes (T10f to T10h) |
 | P6 | Offline devices, random delivery orders, Lean ⇄ Rust vectors for the rest | T11, T12, T13 |
 | P7 | The avenDB tile | |
 | P8 | Sync on its own iroh ALPN with X25519MLKEM768 on every connection and the bytes in iroh-blobs, passkeys from the browser's WebAuthn | |

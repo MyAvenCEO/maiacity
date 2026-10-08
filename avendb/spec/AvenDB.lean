@@ -3,6 +3,7 @@ import AvenDB.State
 import AvenDB.Step
 import AvenDB.Sync
 import AvenDB.Doc
+import AvenDB.Branches
 import AvenDB.Lens
 import AvenDB.Lemmas
 import AvenDB.KeyLemmas

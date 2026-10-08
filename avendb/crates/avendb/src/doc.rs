@@ -11,10 +11,13 @@
 //!
 //! Every edit goes through an app's view (`lens::View`): the app edits what it sees, the lens turns that into the new
 //! stored record, and the item makes the smallest change that holds it. Each change carries the view's schema as its
-//! Loro commit message, so a reader knows which versions wrote an item (`authored`).
+//! Loro commit message, so a reader knows which versions wrote an item (`authored`). A promote, restore or undo puts
+//! back a record those versions wrote (`put_record`), and names none; a copy into a new entry names them all (`copy`).
 //!
-//! Each device edits as a Loro peer of its own, derived from its signer, so an import can check that every op of a
-//! write is its signer's. No clock goes into the updates: the same edits export the same bytes.
+//! Each device edits as a Loro peer of its own on each line of an item's history, derived from its signer and the
+//! line, so an import can check that every op of a write is its signer's, and a device's edits on one line are one run
+//! of ops that the line's history holds whole (`branch`). No clock goes into the updates: the same edits export the
+//! same bytes.
 
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
@@ -26,6 +29,7 @@ use serde_json::Value;
 
 use crate::id::{BlobId, SignerId};
 use crate::lens::{BlockV2, DocV1, DocV2, Record, Status, Stored, TodoV1, TodoV2, View};
+use crate::policy::Line;
 
 /// Peer ids at the very top are Loro's: it refuses `PeerID::MAX` and marks things internally with a few below it.
 const RESERVED: u64 = 16;
@@ -78,7 +82,12 @@ pub struct Item {
 impl Item {
     /// An empty item on `signer`'s device, before it imports any write: it shows nothing until one is there.
     pub fn new(signer: SignerId) -> Item {
-        Item::on(LoroDoc::new(), peer(signer))
+        Item::new_on(signer, None)
+    }
+
+    /// An empty item on `signer`'s device whose edits extend line `line` of its history.
+    pub fn new_on(signer: SignerId, line: Line) -> Item {
+        Item::on(LoroDoc::new(), peer(signer, line))
     }
 
     /// `doc` edited as `peer`, with no timestamps in its changes.
@@ -120,7 +129,12 @@ impl Item {
 
     /// The same item as another device holds it, whose edits from now on are that device's.
     pub fn fork_as(&self, signer: SignerId) -> Item {
-        Item::on(self.doc.fork(), peer(signer))
+        self.fork_on(signer, None)
+    }
+
+    /// The same item as `signer`'s device holds it on line `line`, whose edits from now on extend that line.
+    pub fn fork_on(&self, signer: SignerId, line: Line) -> Item {
+        Item::on(self.doc.fork(), peer(signer, line))
     }
 
     /// What the item stores: its root map as JSON, texts as strings; `{}` before any write.
@@ -152,15 +166,41 @@ impl Item {
         debug_assert_eq!(self.record(), Value::Object(want));
     }
 
-    /// The schemas the item's changes were written under, by their commit messages. A change without one (no app of
-    /// ours writes it) names none.
+    /// Make the item store exactly `record` by the smallest change, as a promote, a restore or an undo does: the record
+    /// is one the item's own changes wrote, so this change names no schema. The built-in views of the record's kind say
+    /// which new fields are texts.
+    pub fn put_record(&mut self, record: &Value) {
+        let want = record.as_object().cloned().unwrap_or_default();
+        sync_map(&self.root(), &want, kind_view(record), None);
+        self.doc.commit();
+        debug_assert_eq!(self.record(), Value::Object(want));
+    }
+
+    /// A new item on `signer`'s device that stores exactly this one's record, and none of its history: one change,
+    /// naming every schema this one was written under, so apps read the copy as they read this one. A fork into another
+    /// entry starts from it.
+    pub fn copy(&self, signer: SignerId) -> Item {
+        let item = Item::new(signer);
+        let record = self.record();
+        sync_map(&item.root(), &record.as_object().cloned().unwrap_or_default(), kind_view(&record), None);
+        let names: Vec<String> = self.authored().iter().map(BlobId::to_hex).collect();
+        if names.is_empty() {
+            item.doc.commit();
+        } else {
+            item.doc.commit_with(CommitOptions::new().commit_msg(&names.join(" ")));
+        }
+        item
+    }
+
+    /// The schemas the item's changes were written under, by their commit messages: each names one, or for a copy
+    /// several, apart by spaces. A change without one (a promote, a restore, an undo) names none.
     pub fn authored(&self) -> BTreeSet<BlobId> {
         let mut out = BTreeSet::new();
         for (&peer, &end) in self.doc.oplog_vv().iter() {
             let mut at: Counter = 0;
             while at < end {
                 let Some(change) = self.doc.get_change(ID::new(peer, at)) else { break };
-                out.extend(change.message.as_deref().and_then(BlobId::from_hex));
+                out.extend(change.message.as_deref().unwrap_or_default().split(' ').filter_map(BlobId::from_hex));
                 at = change.id.counter + change.len as Counter;
             }
         }
@@ -249,7 +289,13 @@ impl Item {
     pub fn bytes(&self) -> Vec<u8> {
         self.doc.export(ExportMode::Snapshot).expect("a snapshot of an attached document")
     }
-    /// Import an update signed by `signer`, after checking its Loro peer ids belong to that signer.
+    /// Import an update `signer` wrote on the main line: `import_on`.
+    pub fn import(&mut self, update: &[u8], signer: SignerId) -> Result<(), DocError> {
+        self.import_on(update, signer, None)
+    }
+
+    /// Import an update signed by `signer` on line `line`, after checking its Loro peer ids are the ones that signer
+    /// edits that line as.
     ///
     /// Loro decodes the update into a scratch document first (`decode_import_blob_meta`): it must hold updates, not a
     /// snapshot (whose state import would take as it is), and every change in it must carry the signer's peer. Import
@@ -260,12 +306,12 @@ impl Item {
     ///
     /// Not caught: a signer sending two different updates for the same ops of its own (a device keeps whichever it
     /// imports first), and ops naming others' ids (deleting or moving their text), which any writer may do.
-    pub fn import(&mut self, update: &[u8], signer: SignerId) -> Result<(), DocError> {
+    pub fn import_on(&mut self, update: &[u8], signer: SignerId, line: Line) -> Result<(), DocError> {
         let meta = LoroDoc::decode_import_blob_meta(update, true).map_err(|_| DocError::Malformed)?;
         if meta.mode != EncodedBlobMode::Updates {
             return Err(DocError::Malformed);
         }
-        let peer = peer(signer);
+        let peer = peer(signer, line);
         if meta.partial_end_vv.keys().any(|&p| p != peer) {
             return Err(DocError::WrongPeer);
         }
@@ -308,11 +354,23 @@ impl Clone for Item {
     }
 }
 
-/// The Loro peer of `signer`'s edits: the first 8 bytes of a hash of the signer. Two signers share a peer only by a
-/// 64-bit collision.
-fn peer(signer: SignerId) -> PeerID {
-    let h = crate::hash::hash("loro peer", &signer.0);
+/// The Loro peer of `signer`'s edits on line `line`: the first 8 bytes of a hash of the signer, and on a branch of the
+/// branch too. Two signers, or two lines, share a peer only by a 64-bit collision.
+fn peer(signer: SignerId, line: Line) -> PeerID {
+    let h = match line {
+        None => crate::hash::hash("loro peer", &signer.0),
+        Some(b) => crate::hash::hash("loro peer on a branch", &[signer.0, b.0].concat()),
+    };
     usable(u64::from_be_bytes(*h.first_chunk().expect("32 bytes")))
+}
+
+/// The built-in view of a record's kind: a todo's, or else a document's. Fields neither knows are stored by what they
+/// hold.
+fn kind_view(record: &Value) -> &'static View {
+    match record.get("kind").and_then(Value::as_str) {
+        Some("todo") => View::todo_v2(),
+        _ => View::document_v2(),
+    }
 }
 
 /// A peer id Loro takes: the reserved ones at the top move down below them.
@@ -655,6 +713,23 @@ mod tests {
     }
 
     #[test]
+    fn a_record_put_back_names_no_schema_and_a_copy_names_them_all() {
+        let heading = BlockV1 { id: 1, kind: KindV1::H1, text: "Welcome".into() };
+        let mut doc = Item::written_v1(&DocV1 { title: "Welcome".into(), blocks: vec![heading] }, SAMUEL);
+        let first = doc.record();
+        assert!(doc.edit_document(|d| d.tags.push("coop".into())));
+        let both = BTreeSet::from([DOCUMENT_V1.id(), DOCUMENT_V2.id()]);
+        // a restore of the first version writes the change back, under no schema of its own
+        let mut bobs = doc.fork_as(BOB);
+        bobs.put_record(&first);
+        assert_eq!((bobs.record(), bobs.authored()), (first, both.clone()));
+        // a copy has one change, naming both schemas
+        let copy = doc.copy(CAROL);
+        assert_eq!((copy.record(), copy.authored()), (doc.record(), both));
+        assert_eq!(copy.doc.oplog_vv().len(), 1);
+    }
+
+    #[test]
     fn a_field_two_devices_add_at_once_merges() {
         // nobody had tagged the document, and block 3 had no text yet: each device makes the container, and the two
         // are one, so neither edit hides the other
@@ -743,12 +818,15 @@ mod tests {
 
     #[test]
     fn each_signer_edits_as_its_own_peer() {
-        assert_eq!(peer(SAMUEL), peer(SAMUEL));
-        assert_ne!(peer(SAMUEL), peer(BOB));
+        assert_eq!(peer(SAMUEL, None), peer(SAMUEL, None));
+        assert_ne!(peer(SAMUEL, None), peer(BOB, None));
+        let b = Some(crate::id::OpId::from_u64(1));
+        assert!(peer(SAMUEL, b) != peer(SAMUEL, None) && peer(SAMUEL, b) != peer(BOB, b));
+        assert_ne!(peer(SAMUEL, b), peer(SAMUEL, Some(crate::id::OpId::from_u64(2))));
         let doc = welcome(SAMUEL);
         let meta = LoroDoc::decode_import_blob_meta(&doc.export(&Version::default()), true).unwrap();
-        assert_eq!(meta.partial_end_vv.keys().collect::<Vec<_>>(), [&peer(SAMUEL)]);
-        assert_eq!(doc.fork_as(BOB).doc.peer_id(), peer(BOB));
+        assert_eq!(meta.partial_end_vv.keys().collect::<Vec<_>>(), [&peer(SAMUEL, None)]);
+        assert_eq!(doc.fork_as(BOB).doc.peer_id(), peer(BOB, None));
         // the ids Loro keeps for itself are never ours
         assert!([PeerID::MAX, PeerID::MAX - 2].iter().all(|&p| usable(p) <= PeerID::MAX - RESERVED));
         assert_eq!(usable(7), 7);
@@ -835,7 +913,30 @@ mod tests {
         samuels.import(&bobs.export(&start), BOB).unwrap();
         samuels.put_back(&frontiers);
         assert_eq!((samuels.version(), samuels.as_document()), (start, base.as_document()));
-        assert_eq!(samuels.doc.peer_id(), peer(SAMUEL));
+        assert_eq!(samuels.doc.peer_id(), peer(SAMUEL, None));
+    }
+
+    #[test]
+    fn a_shallow_snapshot_refuses_a_branch_from_before_it() {
+        // main moves on from Welcome's first version, and a branch starts from that version
+        let base = welcome(SAMUEL);
+        let start = base.version();
+        let mut main = base.clone();
+        main.set_text(2, NINE);
+        let mut branch = base.fork_on(BOB, Some(crate::id::OpId::from_u64(1)));
+        branch.set_text(1, "Welcome, everyone");
+        let update = branch.export(&start);
+        // a device that compacted main into a shallow snapshot can't take the branch's edit
+        let shallow = main.doc.export(ExportMode::shallow_snapshot(&main.doc.oplog_frontiers())).unwrap();
+        let compacted = LoroDoc::new();
+        compacted.import(&shallow).unwrap();
+        assert!(compacted.import(&update).is_err());
+        // the full snapshot every device stores takes it
+        let mut restored = Item::on(LoroDoc::new(), peer(SAMUEL, None));
+        restored.doc.import(&main.bytes()).unwrap();
+        restored.import_on(&update, BOB, Some(crate::id::OpId::from_u64(1))).unwrap();
+        let shown = (text(&restored, 1), text(&restored, 2));
+        assert_eq!((shown.0.as_deref(), shown.1.as_deref()), (Some("Welcome, everyone"), Some(NINE)));
     }
 
     #[test]
