@@ -8,7 +8,7 @@
  * draws in HTML (./world.js).
  */
 import * as THREE from 'three';
-import { capOf, CORE_R, FACADE, KINDS, NORTH_HALF, NORTH_UP, TOWER_NORTH_UP, towerLevels, towerProfile, towerRadius } from './specs.js';
+import { capOf, CELLS, CORE_R, FACADE, KINDS, NORTH_HALF, NORTH_UP, TOWER_NORTH_UP, towerLevels, towerProfile, towerRadius } from './specs.js';
 import { CELL, HEX_S, HEX_W, POND_BAND, POND_HALF, USES, USE_IDS, corners, footR, landOf } from './layout.js';
 
 /** @type {Map<string, THREE.MeshStandardMaterial>} */
@@ -23,8 +23,8 @@ const mat = (/** @type {string} */ color, rough = 0.85, flat = true) => {
 /** @type {THREE.CanvasTexture | null} */
 let cells = null;
 /**
- * The south two thirds: laminated glass with see-through solar cells laid in it, 80% of the pane (PV_SHARE), so the
- * glazing reads as solar panels: dark blue cells in a clear frame, each tile two by two panels of about 3 m.
+ * Glass with see-through solar cells in every second pane (CELLS): dark blue panes beside clear ones, each tile two
+ * by two panes of about 3 m. The domes have it where the glass tilts under 45°, the towers all over.
  * @param {number} u how many 6 m tiles round the shell
  * @param {number} v how many up it
  */
@@ -36,7 +36,7 @@ function solarGlass(u, v) {
 		x.fillStyle = 'rgba(214,236,240,0.12)';
 		x.fillRect(0, 0, 64, 64);
 		x.fillStyle = 'rgba(28,52,82,0.62)';
-		for (const a of [0, 32]) for (const b of [0, 32]) x.fillRect(a + 2, b + 2, 28, 28);
+		for (const [a, b] of [[0, 0], [32, 32]]) x.fillRect(a + 2, b + 2, 28, 28);
 		cells = new THREE.CanvasTexture(cv);
 		cells.wrapS = cells.wrapT = THREE.RepeatWrapping;
 		cells.colorSpace = THREE.SRGBColorSpace;
@@ -47,6 +47,8 @@ function solarGlass(u, v) {
 	map.needsUpdate = true;
 	return new THREE.MeshStandardMaterial({ map, transparent: true, roughness: 0.1, metalness: 0.35, side: THREE.DoubleSide, depthWrite: false });
 }
+/** the steeper glass, with no cells: the plants' daylight */
+const GLASS = new THREE.MeshStandardMaterial({ color: '#d4ecf0', transparent: true, opacity: 0.17, roughness: 0.06, metalness: 0.25, side: THREE.DoubleSide, depthWrite: false });
 const HEMP = new THREE.MeshStandardMaterial({ color: '#c8b38a', roughness: 0.95, flatShading: true, side: THREE.DoubleSide });
 const STRUT = new THREE.LineBasicMaterial({ color: '#6b5236', transparent: true, opacity: 0.55 });
 const DIM = new THREE.LineBasicMaterial({ color: '#ffffff', transparent: true, opacity: 0.9, depthTest: false });
@@ -132,19 +134,21 @@ function domeShell(D) {
 	const theta = Math.acos((c.R - c.h) / c.R);
 	const deg = Math.PI / 180;
 	// the hemp runs north-west to north-east from the ground to a level line at NORTH_UP of the height; above it the
-	// crown, and round the east, south and west the whole way down, is solar glass. Three.js spheres run their phi so
-	// that bearing b sits at phi = 270° − b: the hemp from 300° to 60° is phi 210°…330°
+	// crown, and round the east, south and west the whole way down, is glass, with cells where it tilts under 45°.
+	// Three.js spheres run their phi so that bearing b sits at phi = 270° − b: the hemp from 300° to 60° is phi 210°…330°
 	const tLine = Math.acos((NORTH_UP * c.h + c.R - c.h) / c.R);
-	const sweep = (360 - 2 * NORTH_HALF) * deg;
+	const tCells = Math.max(tLine, CELLS.steepest * deg);
+	const sweep = (360 - 2 * NORTH_HALF) * deg, from = (270 - (360 - NORTH_HALF)) * deg + 2 * Math.PI;
 	const crown = new THREE.Mesh(new THREE.SphereGeometry(c.R, 72, 12, 0, 2 * Math.PI, 0, tLine), solarGlass((2 * Math.PI * c.R * Math.sin(tLine)) / 6, (c.R * tLine) / 6));
-	const sides = new THREE.Mesh(new THREE.SphereGeometry(c.R, 72, 16, (270 - (360 - NORTH_HALF)) * deg + 2 * Math.PI, sweep, tLine, theta - tLine), solarGlass((c.a * sweep) / 6, (c.R * (theta - tLine)) / 6));
-	for (const m of [crown, sides]) {
+	const upper = new THREE.Mesh(new THREE.SphereGeometry(c.R, 72, 6, from, sweep, tLine, tCells - tLine), solarGlass((c.R * Math.sin(tCells) * sweep) / 6, (c.R * (tCells - tLine)) / 6));
+	const lower = new THREE.Mesh(new THREE.SphereGeometry(c.R, 72, 12, from, sweep, tCells, theta - tCells), GLASS);
+	for (const m of [crown, upper, lower]) {
 		m.position.y = -(c.R - c.h);
 		m.renderOrder = 2;
 	}
 	const hemp = part(new THREE.SphereGeometry(c.R - 0.15, 36, 16, (270 - NORTH_HALF) * deg, 2 * NORTH_HALF * deg, tLine, theta - tLine), HEMP, 0, -(c.R - c.h), 0);
 	const lines = new THREE.LineSegments(struts(c.R, c.h, c.freq), STRUT);
-	g.shell.add(crown, sides, hemp, lines);
+	g.shell.add(crown, upper, lower, hemp, lines);
 	// the dimension lines: across the foot west to east, and up the middle to the crown
 	const dimGeo = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(-c.a, 1.5, 0), new THREE.Vector3(c.a, 1.5, 0), new THREE.Vector3(0, 0, 0), new THREE.Vector3(0, c.h, 0)]);
 	g.dims.add(new THREE.LineSegments(dimGeo, DIM));
