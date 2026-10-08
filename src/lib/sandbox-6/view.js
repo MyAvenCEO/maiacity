@@ -10,7 +10,7 @@ import * as THREE from 'three';
 import { GRASS, MOUNTAIN, SAND, WARES, WATER } from './rules.js';
 import { buildingModel, mat, recolour, scaffold, TEAM } from './models.js';
 import { ROW, SE, STEP } from './hex.js';
-import { K, RING_FOOT, RING_R, onRing, ringWay } from './plots.js';
+import { HEX_RING, K, RING_FOOT, RING_R, onRing, ringWay } from './plots.js';
 
 /** a path's width: two lanes, a bus each way, a dashed line between them */
 const ROAD_W = 0.9;
@@ -471,70 +471,109 @@ export function createView(scene, sim) {
 	const isHub = (/** @type {any} */ b) => b.type === 'centre' && (b.level || 1) === 1;
 	/** how far out from a village center's middle its spur starts: at the foot of its tower, or of a logistics hub's dome */
 	const footOf = (/** @type {any} */ b) => (isHub(b) ? 2.8 : RING_FOOT);
+	/** a hex's arched passages between its domes: their half-width, and where they are kept */
+	const ARCH_R = 0.42;
+	const arches = inst(
+		new THREE.CylinderGeometry(ARCH_R, ARCH_R, 1, 12, 1, true, Math.PI, Math.PI).rotateZ(-Math.PI / 2).translate(0.5, 0, 0),
+		keep(new THREE.MeshStandardMaterial({ color: '#efe3c8', roughness: 0.75, flatShading: true, side: THREE.DoubleSide })),
+		P * 3
+	);
+	/** how far a dome reaches from its middle, plinth and all, at its size */
+	const footprint = (/** @type {any} */ b) =>
+		b.type === 'house' ? 0.9 * 1.12 * HOUSE_SCALE[Math.max(1, b.level || 1) - 1] : 0.85 * 1.12 * (grows(b.type) ? grown(b.type, Math.max(1, b.type === 'woodcutter' ? b.level || 2 : b.level || 1)) : 1);
 	/**
-	 * A path into a village center joins its ring road (./plots.js RING_R), where its trade routes join it too, and goes
-	 * round it the short way to the spur at its door: no path runs into it. A logistics hub's ring lies on the ground; a
-	 * grown village center's runs under it, and its paths go down to it at its outer edge. The way a carrier walks it,
-	 * from the far end [x, z] (pts, with how far along each point lies: run) and whether the path's nodes run the other
-	 * way (rev); where the path is drawn up to (cut: the ring's outer edge), and how far along that lies (down); whether
-	 * the ring is under the ground (under); the village center's id. Null for any other path, or one that starts inside
-	 * the ring.
-	 * @param {any} r @returns {{ pts: number[][], run: number[], rev: boolean, far: number, cut: number[][], down: number, under: boolean, id: number } | null}
+	 * @typedef {{ x: number, z: number, R: number, ents: { a: number, px: number, pz: number }[], under: boolean, centre: number, used: boolean }} Hub
+	 * a roundabout where paths meet, by the stop in its middle: a village center's ring road (centre: its id; under the
+	 * ground once it has grown), or the ring round a hex's triangle of domes; where a path's walkers leave it for the
+	 * buildings (ents: the angle, and the door they go in at)
 	 */
-	function ringRoad(r) {
+	/** @type {Map<number, Hub>} */
+	const hubAt = new Map();
+	/** the door of each dome in a hex's triangle, by its spot [x, z] @type {Map<number, number[]>} */
+	const doorAt = new Map();
+	/**
+	 * A path that meets a roundabout (hubAt) stops at its outer edge, and its walkers go round it the short way to the
+	 * nearest door and in: no path runs into a village center or between a hex's domes. The way they walk it, from the
+	 * path's first node to its last [x, z] (pts, with how far along each point lies: run); whether each end meets one
+	 * (h0, h1), how far in from that end its outer edge lies (in0, in1) and whether its ring is under the ground (under0,
+	 * under1); where the path is drawn (cut). Null for a path that meets none, or that lies inside one.
+	 * @param {any} r
+	 */
+	function roadWay(r) {
 		const n = r.path.length;
-		const centreAt = (/** @type {number} */ node) => {
-			const b = st.buildings[st.flags[st.obj[node]?.k === 'flag' ? st.obj[node].id : -1]?.bld];
-			return b && big(b.type) && st.flags[b.flag]?.node === node ? b : null;
+		const h0 = hubAt.get(r.path[0]), h1 = hubAt.get(r.path[n - 1]);
+		if (!h0 && !h1) return null;
+		/** @type {number[][]} */
+		const P = r.path.map((/** @type {number} */ j) => [X(j), Z(j)]);
+		const Q = [...P].reverse();
+		/** where the path, leaving a ring's middle along these points, crosses R: its first point beyond, and the point */
+		const out = (/** @type {Hub} */ h, /** @type {number[][]} */ pts, /** @type {number} */ R) => {
+			for (let k = 1; k < pts.length; k++) {
+				const [bx, bz] = pts[k];
+				if (Math.hypot(bx - h.x, bz - h.z) <= R) continue;
+				const [ax, az] = pts[k - 1], dx = bx - ax, dz = bz - az, fx = ax - h.x, fz = az - h.z;
+				const A = dx * dx + dz * dz, B = 2 * (fx * dx + fz * dz), C = fx * fx + fz * fz - R * R;
+				const t = A > 1e-9 ? Math.min(1, Math.max(0, (-B + Math.sqrt(Math.max(0, B * B - 4 * A * C))) / (2 * A))) : 0;
+				return { k, at: [ax + dx * t, az + dz * t] };
+			}
+			return null;
 		};
-		const b0 = centreAt(r.path[0]), b1 = centreAt(r.path[n - 1]);
-		const b = b1 ?? b0;
-		if (!b || (b0 && b1)) return null;
-		const rev = !b1;
-		const nodes = rev ? [...r.path].reverse() : r.path;
-		const c = /** @type {any} */ (sim.ring(b.id));
-		const out = (/** @type {number} */ j) => Math.hypot(X(j) - c.x, Z(j) - c.z);
-		if (out(nodes[0]) <= RING_R + ROAD_W / 2) return null;
-		/** its nodes from the far end until it comes within R of the middle, and the point where it does */
-		const upTo = (/** @type {number} */ R) => {
-			const pts = [[X(nodes[0]), Z(nodes[0])]];
-			let k = 1;
-			while (k < n - 1 && out(nodes[k]) > R) pts.push([X(nodes[k]), Z(nodes[k])]), k++;
-			const a = nodes[k - 1], e = nodes[k];
-			const ax = X(a) - c.x, az = Z(a) - c.z, dx = X(e) - X(a), dz = Z(e) - Z(a);
-			const A = dx * dx + dz * dz, B = 2 * (ax * dx + az * dz), C = ax * ax + az * az - R * R;
-			const t = A > 1e-9 ? Math.min(1, Math.max(0, (-B - Math.sqrt(Math.max(0, B * B - 4 * A * C))) / (2 * A))) : 0;
-			pts.push([X(a) + dx * t, Z(a) + dz * t]);
+		const c0 = h0 && out(h0, P, h0.R), e0 = h0 && out(h0, P, h0.R + ROAD_W / 2);
+		const c1 = h1 && out(h1, Q, h1.R), e1 = h1 && out(h1, Q, h1.R + ROAD_W / 2);
+		if ((h0 && !(c0 && e0)) || (h1 && !(c1 && e1))) return null;
+		const i0 = c0 ? c0.k : 0, i1 = c1 ? n - 1 - c1.k : n - 1, j0 = e0 ? e0.k : 0, j1 = e1 ? n - 1 - e1.k : n - 1;
+		if (i0 > i1 + 1 || j0 > j1 + 1) return null;
+		/** round a ring from where the path crosses it the short way to the nearest door, and in: the points after the crossing */
+		const into = (/** @type {Hub} */ h, /** @type {number[]} */ at) => {
+			const a0 = Math.atan2(at[1] - h.z, at[0] - h.x);
+			let d = Infinity, e = h.ents[0];
+			for (const x of h.ents) {
+				const dx = ((x.a - a0 + 3 * Math.PI) % (2 * Math.PI)) - Math.PI;
+				if (Math.abs(dx) < Math.abs(d)) (d = dx), (e = x);
+			}
+			/** @type {number[][]} */
+			const pts = [];
+			const steps = Math.ceil((Math.abs(d) * h.R) / 0.5);
+			for (let j = 1; j <= steps; j++) pts.push([h.x + h.R * Math.cos(a0 + (d * j) / steps), h.z + h.R * Math.sin(a0 + (d * j) / steps)]);
+			pts.push([e.px, e.pz]);
 			return pts;
 		};
-		// drawn up to the ring's outer edge, walked on to its middle
-		const cut = upTo(RING_R + ROAD_W / 2), pts = upTo(RING_R), at = pts[pts.length - 1];
-		let down = 0;
-		for (let j = 1; j < cut.length; j++) down += Math.hypot(cut[j][0] - cut[j - 1][0], cut[j][1] - cut[j - 1][1]);
-		// round the ring the short way to the door, then in along the spur to the stop in the middle
-		const a0 = Math.atan2(at[1] - c.z, at[0] - c.x), d = ((c.door - a0 + 3 * Math.PI) % (2 * Math.PI)) - Math.PI;
-		const steps = Math.ceil((Math.abs(d) * RING_R) / 0.5);
-		for (let j = 1; j <= steps; j++) pts.push(onRing(c, a0 + (d * j) / steps));
-		pts.push([c.x, c.z]);
+		/** @type {number[][]} */
+		const pts = [];
+		if (h0 && c0) pts.push(...into(h0, c0.at).reverse(), c0.at);
+		pts.push(...P.slice(i0, i1 + 1));
+		if (h1 && c1) pts.push(c1.at, ...into(h1, c1.at));
 		const run = [0];
 		for (let j = 1; j < pts.length; j++) run.push(run[j - 1] + Math.hypot(pts[j][0] - pts[j - 1][0], pts[j][1] - pts[j - 1][1]));
-		return { pts, run, rev, far: nodes[0], cut, down, under: !isHub(b), id: b.id };
+		const L = run[run.length - 1];
+		// from each end, how far in the ring's outer edge lies: to where the path crosses its middle, and half a path on
+		const k0 = h0 && c0 ? pts.indexOf(c0.at) : -1, k1 = h1 && c1 ? pts.lastIndexOf(c1.at) : -1;
+		/** @type {number[][]} */
+		const cut = [...(e0 ? [e0.at] : []), ...P.slice(j0, j1 + 1), ...(e1 ? [e1.at] : [])];
+		return {
+			pts, run, cut, h0: !!h0, h1: !!h1,
+			in0: k0 >= 0 ? run[k0] + ROAD_W / 2 : 0, in1: k1 >= 0 ? L - run[k1] + ROAD_W / 2 : 0,
+			under0: !!h0?.under, under1: !!h1?.under
+		};
 	}
-	/** the paths that join a village center's ring, by id (./view.js ringRoad) @type {Map<number, NonNullable<ReturnType<typeof ringRoad>>>} */
+	/** the paths that meet a roundabout, by id (roadWay) @type {Map<number, NonNullable<ReturnType<typeof roadWay>>>} */
 	const ringRoads = new Map();
-	/** @type {THREE.Mesh | null} */
-	let stubMesh = null;
-	let netKey = '';
 	/** the dark mouth where a path goes down to a grown village center's ring road under the ground */
 	const mouthMat = keep(new THREE.MeshStandardMaterial({ color: '#3a3430', roughness: 1, polygonOffset: true, polygonOffsetFactor: -3, polygonOffsetUnits: -3 }));
 	/** @type {THREE.Mesh | null} */
 	let mouthMesh = null;
-	/** the paths, a square where they meet in the middle of each hex in use, and a short way from it to each door; round
-	 * each logistics hub a path or a trade route joins, a ring road on the ground and a spur from its door out to it (a
-	 * grown village center's runs under the ground, where its paths go down) */
+	/** @type {THREE.Mesh | null} */
+	let stubMesh = null;
+	let netKey = '';
+	/** the hex middles in use with no roundabout round them: each a small island where its paths meet */
+	const islands = new Set();
+	/** the paths and where they meet: round each hex's triangle of domes a roundabout, and from it a short way to each
+	 * dome's door, the domes joined by arched passages; round each logistics hub a ring road on the ground and a spur from
+	 * its door out to it (a grown village center's runs under the ground, where its paths go down); elsewhere a small
+	 * island */
 	function syncRoads() {
 		const list = sim.buildingList();
-		const key = `${st.netV}:${list.length}:${list.filter((b) => b.type === 'centre' && (b.level || 1) === 1).length}`;
+		const key = `${st.netV}:${list.length}:${list.reduce((s, b) => s + (b.level || 0) + (b.stage === 'live' ? 100 : 0), 0)}`;
 		if (netKey === key) return;
 		netKey = key;
 		for (const m of [roadMesh, stubMesh, mouthMesh]) {
@@ -542,33 +581,66 @@ export function createView(scene, sim) {
 			m.geometry.dispose();
 			root.remove(m);
 		}
+		// the roundabouts: a village center's ring road; a hex's ring round its domes, a door on it for each
+		hubAt.clear();
+		/** @type {Map<number, any[]>} */
+		const domes = new Map();
+		for (const b of list) {
+			const f = st.flags[b.flag];
+			if (!f) continue;
+			if (big(b.type)) {
+				const c = /** @type {any} */ (sim.ring(b.id));
+				hubAt.set(f.node, { x: c.x, z: c.z, R: RING_R, ents: [{ a: c.door, px: c.x, pz: c.z }], under: !isHub(b), centre: b.id, used: false });
+			} else if (clustered(b.type, b.node)) (domes.get(f.node) ?? domes.set(f.node, []).get(f.node))?.push(b);
+		}
+		doorAt.clear();
+		for (const [n, bs] of domes) {
+			if (hubAt.has(n)) continue;
+			const ents = bs.map((b) => {
+				const [x, , z] = stand(b.type, b.node), a = Math.atan2(z - Z(n), x - X(n)), r = footprint(b);
+				doorAt.set(b.node, [x + Math.cos(a) * r, z + Math.sin(a) * r]);
+				return { a, px: x + Math.cos(a) * r, pz: z + Math.sin(a) * r };
+			});
+			hubAt.set(n, { x: X(n), z: Z(n), R: HEX_RING, ents, under: false, centre: 0, used: true });
+		}
 		ringRoads.clear();
 		/** @type {{ pts: number[][], closed?: boolean }[]} */
-		const lanes = [], mouths = [];
-		/** @type {Set<number>} */
-		const ringed = new Set();
+		const lanes = [];
+		/** @type {{ pts: number[][] }[]} */
+		const mouths = [], stubs = [];
+		/** the ramp down at the end of a cut path, a step long, from its last point back towards its first */
+		const ramp = (/** @type {number[]} */ end, /** @type {number[]} */ from) => {
+			const [x1, z1] = end, [x0, z0] = from, len = Math.hypot(x1 - x0, z1 - z0) || 1, k = Math.min(1, STEP / len);
+			mouths.push({ pts: [[x1 - (x1 - x0) * k, z1 - (z1 - z0) * k], [x1, z1]] });
+		};
 		for (const r of Object.values(st.roads)) {
-			const w = ringRoad(r);
+			const w = roadWay(r);
 			if (!w) {
 				for (const [a, b] of runs(r.path)) lanes.push({ pts: [[X(a), Z(a)], [X(b), Z(b)]] });
 				continue;
 			}
 			ringRoads.set(r.id, w);
 			lanes.push({ pts: w.cut });
-			if (!w.under) {
-				ringed.add(w.id);
-				continue;
-			}
-			// its last stretch, a step long, is the ramp down
-			const [x1, z1] = w.cut[w.cut.length - 1], [x0, z0] = w.cut[0], len = Math.hypot(x1 - x0, z1 - z0) || 1, k = Math.min(1, STEP / len);
-			mouths.push({ pts: [[x1 - (x1 - x0) * k, z1 - (z1 - z0) * k], [x1, z1]] });
+			for (const [has, end] of /** @type {[boolean, number][]} */ ([[w.h0, r.path[0]], [w.h1, r.path[r.path.length - 1]]])) if (has) /** @type {Hub} */ (hubAt.get(end)).used = true;
+			if (w.under0) ramp(w.cut[0], w.cut[w.cut.length - 1]);
+			if (w.under1) ramp(w.cut[w.cut.length - 1], w.cut[0]);
 		}
 		// a hub joined only by its trade routes has its ring too, where they come up
-		for (const t of Object.values(st.tunnels)) for (const id of [t.a, t.b]) if (st.buildings[id] && isHub(st.buildings[id])) ringed.add(id);
-		for (const id of ringed) {
-			const c = /** @type {any} */ (sim.ring(id)), foot = footOf(st.buildings[id]);
-			lanes.push({ pts: Array.from({ length: 96 }, (_, k) => onRing(c, (k / 96) * Math.PI * 2)), closed: true });
-			lanes.push({ pts: [[c.x + foot * Math.cos(c.door), c.z + foot * Math.sin(c.door)], onRing(c, c.door).map((v, k) => v - (ROAD_W / 2) * (k ? Math.sin(c.door) : Math.cos(c.door)))] });
+		for (const t of Object.values(st.tunnels))
+			for (const id of [t.a, t.b]) {
+				const b = st.buildings[id], h = b && st.flags[b.flag] ? hubAt.get(st.flags[b.flag].node) : undefined;
+				if (h) h.used = true;
+			}
+		/** the inner edge of a ring at an angle */
+		const inner = (/** @type {Hub} */ h, /** @type {number} */ a) => [h.x + (h.R - ROAD_W / 2) * Math.cos(a), h.z + (h.R - ROAD_W / 2) * Math.sin(a)];
+		for (const h of hubAt.values()) {
+			if (h.under || !h.used) continue;
+			lanes.push({ pts: Array.from({ length: 96 }, (_, k) => [h.x + h.R * Math.cos((k / 96) * Math.PI * 2), h.z + h.R * Math.sin((k / 96) * Math.PI * 2)]), closed: true });
+			// a hub's spur, a path wide, from its door; a short way from each dome's door
+			if (h.centre) {
+				const a = h.ents[0].a, foot = footOf(st.buildings[h.centre]);
+				lanes.push({ pts: [[h.x + foot * Math.cos(a), h.z + foot * Math.sin(a)], inner(h, a)] });
+			} else for (const e of h.ents) stubs.push({ pts: [[e.px, e.pz], inner(h, e.a)] });
 		}
 		roadMesh = new THREE.Mesh(strip(lanes, ROAD_W, 0.04), laneMat);
 		roadMat.side = THREE.DoubleSide;
@@ -576,32 +648,46 @@ export function createView(scene, sim) {
 		root.add(roadMesh);
 		mouthMesh = new THREE.Mesh(strip(mouths, ROAD_W * 1.1, 0.05), mouthMat);
 		root.add(mouthMesh);
-		/** @type {number[][]} */
-		const doors = [];
 		/** @type {Set<number>} */
 		const used = new Set();
 		for (const b of list) {
 			const f = st.flags[b.flag];
 			if (!f) continue;
 			used.add(f.node);
-			if (!big(b.type)) doors.push([f.node, b.node]);
+			// a dome off the plan's spots keeps its short way from its flag
+			if (!big(b.type) && !clustered(b.type, b.node)) stubs.push({ pts: [[X(f.node), Z(f.node)], [X(b.node), Z(b.node)]] });
 		}
 		for (const r of Object.values(st.roads)) used.add(r.path[0]), used.add(r.path[r.path.length - 1]);
-		stubMesh = new THREE.Mesh(line(doors, ROAD_W * 0.5, 0.05), roadMat);
+		stubMesh = new THREE.Mesh(strip(stubs, ROAD_W * 0.5, 0.05), roadMat);
 		stubMesh.receiveShadow = true;
 		root.add(stubMesh);
 		let k = 0;
 		stops.clear();
+		islands.clear();
 		for (const n of used)
 			if (plan.centre[plan.plotOf[n]] === n) {
+				stops.add(n);
+				if (hubAt.has(n)) continue;
 				const y = Math.max(Y(n), SEA);
 				put(squares, k, X(n), y + 0.03, Z(n));
 				put(kerbs, k, X(n), y, Z(n));
 				put(isles, k, X(n), y + 0.02, Z(n));
 				put(bushes, k++, X(n) + 0.12, y + 0.02, Z(n) - 0.1, 1, n);
-				stops.add(n);
+				islands.add(n);
 			}
 		for (const m of [squares, kerbs, isles, bushes]) done(m, k);
+		// the arched passages between a hex's domes, each pair of those that stand
+		let a = 0;
+		for (const bs of domes.values()) {
+			const live = bs.filter((b) => b.stage === 'live');
+			for (let i = 0; i < live.length; i++)
+				for (let j = i + 1; j < live.length; j++) {
+					const [ax, ay, az] = stand(live[i].type, live[i].node), [bx, by, bz] = stand(live[j].type, live[j].node);
+					q.setFromAxisAngle(yAxis, -Math.atan2(bz - az, bx - ax));
+					arches.setMatrixAt(a++, m4.compose(p3.set(ax, Math.max(Math.min(ay, by), SEA) + 0.02, az), q, s3.set(Math.hypot(bx - ax, bz - az), 1, 1)));
+				}
+		}
+		done(arches, a);
 	}
 
 	// the trade routes: two-lane tunnels in their digger's colour from village center to village center, shown (seen
@@ -697,14 +783,27 @@ export function createView(scene, sim) {
 	// ── buildings ──
 	/** @type {Map<number, { group: THREE.Group, model: THREE.Group, scaffold: THREE.Group | null, owner: number, smoke: THREE.Object3D[], look: number }>} */
 	const shown = new Map();
-	/** a building turns its door to its hex's middle */
-	const door = (/** @type {number} */ node) => {
-		const f = plan.centre[plan.plotOf[node]];
-		return Math.atan2(X(f) - X(node), Z(f) - Z(node));
-	};
 	const big = (/** @type {string} */ type) => type === 'centre' || type === 'village';
-	/** where a building stands: a village center in the middle of its hex, which it fills; the rest on their spots */
-	const stand = (/** @type {string} */ type, /** @type {number} */ node) => (big(type) ? plan.centre[plan.plotOf[node]] : node);
+	/** how close a hex's house and two factories stand round its middle (Samuel, 2026-10-08): their spots (./plots.js),
+	 * a third of the way out, pulled in to this share of it, so at their largest they nearly touch */
+	const CLUSTER = 0.45;
+	/** whether a building stands in its hex's triangle of domes: a house or a factory on one of its spots */
+	const clustered = (/** @type {string} */ type, /** @type {number} */ node) => !big(type) && plan.spotOf[node] >= 0;
+	/** where a building stands [x, y, z]: a village center in the middle of its hex, which it fills; a house or a factory
+	 * on its spot, pulled in to its hex's middle; anything else on its node
+	 * @param {string} type @param {number} node @returns {[number, number, number]} */
+	const stand = (type, node) => {
+		const m = plan.centre[plan.plotOf[node]];
+		if (big(type)) return [X(m), Y(m), Z(m)];
+		if (!clustered(type, node)) return [X(node), Y(node), Z(node)];
+		const x = X(m) + (X(node) - X(m)) * CLUSTER, z = Z(m) + (Z(node) - Z(m)) * CLUSTER;
+		return [x, groundY(x, z), z];
+	};
+	/** a building turns its door to its hex's middle; a dome in a hex's triangle, out to its roundabout */
+	const door = (/** @type {string} */ type, /** @type {number} */ node) => {
+		const f = plan.centre[plan.plotOf[node]];
+		return Math.atan2(X(f) - X(node), Z(f) - Z(node)) + (clustered(type, node) ? Math.PI : 0);
+	};
 	/** a house grows with its size, one dome ever larger: from a hut to a great dome of 248 */
 	const HOUSE_SCALE = [0.62, 0.78, 0.94, 1.15, 1.4, 1.7, 2.0, 2.35];
 	const sizeHouse = (/** @type {THREE.Object3D} */ m, /** @type {number} */ level) => m.scale.setScalar(HOUSE_SCALE[level - 1]);
@@ -737,9 +836,8 @@ export function createView(scene, sim) {
 				const group = new THREE.Group();
 				const model = buildingModel(b.type, b.owner, look || undefined);
 				group.add(model);
-				const at = stand(b.type, b.node);
-				group.position.set(X(at), Y(at), Z(at));
-				group.rotation.y = door(b.node);
+				group.position.set(...stand(b.type, b.node));
+				group.rotation.y = door(b.type, b.node);
 				if (big(b.type)) group.scale.set(CENTRE_SCALE, CENTRE_TALL, CENTRE_SCALE);
 				group.userData.building = b.id;
 				const smoke = /** @type {THREE.Object3D[]} */ ([]);
@@ -792,7 +890,7 @@ export function createView(scene, sim) {
 	const last = new Map();
 	/** whether the walker unitPos last placed is under the ground, on a grown village center's ring road */
 	let below = false;
-	/** the carrier of a path that joins a village center's ring, while it walks that path: the path's way (ringRoad) */
+	/** the carrier of a path that meets a roundabout, while it walks that path: the path's way (roadWay) */
 	const ringOf = (/** @type {any} */ u) => {
 		const w = u.kind === 'carrier' ? ringRoads.get(u.road) : undefined, r = w && st.roads[u.road];
 		return r && u.path.length === r.path.length && u.path[0] === r.path[0] && u.path[u.path.length - 1] === r.path[r.path.length - 1] ? w : null;
@@ -804,13 +902,14 @@ export function createView(scene, sim) {
 		const i = Math.round(p), m = u.path[i];
 		const w = ringOf(u);
 		below = false;
-		if (w && m !== w.far) {
-			// on a path into a village center: on along it to the ring, round to the door, in along the spur. Its steps are
-			// the path's, spread over the longer way (the first half step as it is, off the island at the far end)
-			const q = w.rev ? n - 1 - p : p, all = (n - 1) * STEP, s = q * STEP, L = w.run[w.run.length - 1];
-			const h = stops.has(w.far) ? STEP / 2 : 0, d = s <= h ? s : h + ((s - h) * (L - h)) / Math.max(1e-6, all - h);
+		if (w && !((i === 0 && !w.h0 && islands.has(m)) || (i === n - 1 && !w.h1 && islands.has(m)))) {
+			// on a path that meets a roundabout: round it to the nearest door and in. Its steps are the path's, spread over
+			// the longer way (the half step at an island as it is)
+			const T = (n - 1) * STEP, s = p * STEP, L = w.run[w.run.length - 1];
+			const a = !w.h0 && islands.has(u.path[0]) ? STEP / 2 : 0, b = !w.h1 && islands.has(u.path[n - 1]) ? STEP / 2 : 0;
+			const d = s <= a ? s : s >= T - b ? L - (T - s) : a + ((s - a) * (L - a - b)) / Math.max(1e-6, T - a - b);
 			// down its ramp, it walks under the ground to a grown village center
-			below = w.under && d > w.down - ROAD_W * 0.6;
+			below = (w.under0 && d < w.in0 + ROAD_W * 0.6) || (w.under1 && d > L - w.in1 - ROAD_W * 0.6);
 			let lo = 0, hi = w.run.length - 1;
 			while (hi - lo > 1) {
 				const mid = (lo + hi) >> 1;
@@ -818,12 +917,12 @@ export function createView(scene, sim) {
 				else hi = mid;
 			}
 			const [ax, az] = w.pts[lo], [bx, bz] = w.pts[hi], len = w.run[hi] - w.run[lo] || 1, f = Math.min(1, Math.max(0, (d - w.run[lo]) / len));
-			// it keeps to the right-hand lane of the way it goes, easing out of the middle of the road off the island
-			const fwd = w.rev ? -dir : dir, side = ((fwd * LANE) / len) * Math.min(1, Math.max(0, (q - (h ? 0.5 : -1)) * 2));
+			// it keeps to the right-hand lane of the way it goes, easing out of the middle of the road off an island
+			const side = ((dir * LANE) / len) * Math.min(1, Math.max(0, (Math.min(a ? p : 1, b ? n - 1 - p : 1) - 0.5) * 2));
 			const x = ax + (bx - ax) * f - (bz - az) * side, z = az + (bz - az) * f + (bx - ax) * side;
 			return at.set(x, groundY(x, z), z);
 		}
-		if (stops.has(m)) {
+		if (islands.has(m)) {
 			const from = u.path[i - dir], to = u.path[i + dir];
 			const ang = (/** @type {number} */ j) => Math.atan2(Z(j) - Z(m), X(j) - X(m));
 			const ain = from !== undefined ? ang(from) : to !== undefined ? ang(to) : 0, aout = to !== undefined ? ang(to) : ain;
@@ -838,9 +937,11 @@ export function createView(scene, sim) {
 		// it keeps to the right-hand lane of the way it goes, so every path runs both ways at once (easing into the
 		// middle of the road where it meets a roundabout)
 		const a0 = a === b && k > 0 ? u.path[k - 1] : a, b0 = a === b && k > 0 ? a : b;
-		const near = Math.min(stops.has(a) ? f : 1, stops.has(b) ? 1 - f : 1);
-		const dx = X(b0) - X(a0), dz = Z(b0) - Z(a0), len = Math.hypot(dx, dz), side = len > 1e-6 ? ((dir * LANE) / len) * Math.min(1, Math.max(0, (near - 0.5) * 2)) : 0;
-		return at.set(X(a) + (X(b) - X(a)) * f - dz * side, Math.max(Y(a), SEA) + (Math.max(Y(b), SEA) - Math.max(Y(a), SEA)) * f, Z(a) + (Z(b) - Z(a)) * f + dx * side);
+		const near = Math.min(islands.has(a) ? f : 1, islands.has(b) ? 1 - f : 1);
+		// a dome in a hex's triangle is walked into at its door, in from its spot
+		const PX = (/** @type {number} */ j) => doorAt.get(j)?.[0] ?? X(j), PZ = (/** @type {number} */ j) => doorAt.get(j)?.[1] ?? Z(j);
+		const dx = PX(b0) - PX(a0), dz = PZ(b0) - PZ(a0), len = Math.hypot(dx, dz), side = len > 1e-6 ? ((dir * LANE) / len) * Math.min(1, Math.max(0, (near - 0.5) * 2)) : 0;
+		return at.set(PX(a) + (PX(b) - PX(a)) * f - dz * side, Math.max(Y(a), SEA) + (Math.max(Y(b), SEA) - Math.max(Y(a), SEA)) * f, PZ(a) + (PZ(b) - PZ(a)) * f + dx * side);
 	}
 	/** whether a node is a village center's stop: where a cart's straight legs meet */
 	const isCentre = (/** @type {number} */ n) => {
@@ -1035,7 +1136,7 @@ export function createView(scene, sim) {
 			const b = o?.k === 'bld' ? st.buildings[o.id] : null;
 			picked = b && big(b.type) ? b.id : 0;
 			ring.visible = node >= 0;
-			const at = b ? stand(b.type, node) : node;
+			const [ax, ay, az] = b ? stand(b.type, node) : node >= 0 ? [X(node), Y(node), Z(node)] : [0, 0, 0];
 			// round what is picked: a village center, a house of its size, any other dome
 			ring.scale.setScalar(picked ? CENTRE_SCALE * 1.95 : b?.type === 'house' && b.level ? Math.max(1, HOUSE_SCALE[b.level - 1] * 1.15) : grows(b?.type) && b.level ? Math.max(1, grown(b.type, b.level) * 1.1) : 1);
 			// a picked village center shows its own village's border, alone
@@ -1044,7 +1145,7 @@ export function createView(scene, sim) {
 				pickBorder.geometry.dispose();
 				pickBorder.geometry = villageBand([plan.villageOf[plan.plotOf[b.node]]], 0.12);
 			}
-			if (node >= 0) ring.position.set(X(at), Math.max(Y(at), SEA) + 0.08, Z(at));
+			if (node >= 0) ring.position.set(ax, Math.max(ay, SEA) + 0.08, az);
 		},
 		/** show the hexes' outlines and the villages' borders (while placing), or hide them @param {boolean} on */
 		grid(on) {
@@ -1073,9 +1174,8 @@ export function createView(scene, sim) {
 				root.add(ghost);
 			}
 			ghost.visible = true;
-			const at = stand(type, node);
-			ghost.position.set(X(at), Y(at), Z(at));
-			ghost.rotation.y = door(node);
+			ghost.position.set(...stand(type, node));
+			ghost.rotation.y = door(type, node);
 			if (big(type)) ghost.scale.set(CENTRE_SCALE, CENTRE_TALL, CENTRE_SCALE);
 			else ghost.scale.setScalar(1);
 			ghost.traverse((o) => {
@@ -1120,8 +1220,8 @@ export function createView(scene, sim) {
 		place(n) {
 			const o = n >= 0 ? st.obj[n] : null;
 			const b = o?.k === 'bld' ? st.buildings[o.id] : null;
-			const at = b ? stand(b.type, n) : n;
-			return new THREE.Vector3(X(at), Math.max(Y(at), SEA), Z(at));
+			const [x, y, z] = b ? stand(b.type, n) : [X(n), Y(n), Z(n)];
+			return new THREE.Vector3(x, Math.max(y, SEA), z);
 		},
 		dispose() {
 			scene.remove(root);

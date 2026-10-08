@@ -26,7 +26,7 @@ import { BIOMES, BUILDINGS, BUILD_MWH_T, CENTRE, ENERGY, EUR_GOLD, GROWS, GRASS,
 import { CART, GRID_EUR_KWH, HEARTS, LOAN, LOAN_PAY, NEIGHBOURS, TRADED, WORLD, heartsFor, keepOf, loanMonths, make, newMarket, orderRule, party, priceIn, request, shortIn, spareIn } from './market.js';
 import { SE, STEP, findPath, makeGrid } from './hex.js';
 import { CISTERN, FOOD_KG, FRESH_L, KEEP, MOST, PACE, PRICE, RAIN_L, RAIN_MONTH, TANK, WATER_PRICE, WATER_USE, WEEK, YEAR, DAY, MONTH, clockOf, forestShare } from './food.js';
-import { makePlan, ringNodes, ringWay, spoke } from './plots.js';
+import { YARD_R, makePlan, ringNodes, ringWay, spoke } from './plots.js';
 import { growValley } from './map.js';
 import { fmt } from './units.js';
 
@@ -163,9 +163,9 @@ export function createSim(st) {
 	const ringAt = /** @type {number[][]} */ (rings.get(size));
 	const onRing = new Uint8Array(N);
 	for (const v of ringAt) for (const j of v) onRing[j] = 1;
-	/** what grew on a village's ring road is cleared: trees felled, rocks broken, fields ploughed under */
-	function clearRing(/** @type {number} */ v) {
-		for (const j of ringAt[v] ?? []) {
+	/** what grew on these nodes is cleared: trees felled, rocks broken, fields ploughed under */
+	function clearNodes(/** @type {number[]} */ nodes) {
+		for (const j of nodes) {
 			const o = st.obj[j];
 			if (!o || (o.k !== 'tree' && o.k !== 'rock' && o.k !== 'field')) continue;
 			if (o.k === 'field' && st.buildings[o.b]) st.buildings[o.b].fields = Math.max(0, st.buildings[o.b].fields - 1);
@@ -173,8 +173,24 @@ export function createSim(st) {
 			st.objV = (st.objV ?? 0) + 1;
 		}
 	}
-	// a village center in an older save gets its ring road clear
-	for (const b of Object.values(st.buildings ?? {})) if (b && (b.type === 'centre' || b.type === 'village')) clearRing(villageAt(b.node));
+	/** what grew on a village's ring road is cleared */
+	const clearRing = (/** @type {number} */ v) => clearNodes(ringAt[v] ?? []);
+	/** whether a node lies in its hex's yard: its triangle of domes and the roundabout round them (./plots.js YARD_R) */
+	const inYard = (/** @type {number} */ j) => {
+		const c = plan.centre[plan.plotOf[j]];
+		return c >= 0 && Math.hypot(g.x(j) - g.x(c), g.z(j) - g.z(c)) < YARD_R;
+	};
+	/** the hexes with a dome on one of their spots, whose yards stay clear */
+	const yarded = new Uint8Array(plan.centre.length);
+	/** a dome on a hex's spot clears its hex's yard, and nothing grows there after */
+	function clearYard(/** @type {number} */ k) {
+		yarded[k] = 1;
+		clearNodes(g.within(plan.centre[k], Math.ceil(YARD_R / (STEP * 0.85))).filter((j) => plan.plotOf[j] === k && inYard(j)));
+	}
+	// a village center in an older save gets its ring road clear, and a hex with a dome its yard
+	for (const b of Object.values(st.buildings ?? {}))
+		if (b && (b.type === 'centre' || b.type === 'village')) clearRing(villageAt(b.node));
+		else if (b && plan.spotOf[b.node] >= 0 && !yarded[plan.plotOf[b.node]]) clearYard(plan.plotOf[b.node]);
 
 	const rand = () => {
 		st.rng = (st.rng + 0x6d2b79f5) >>> 0;
@@ -422,6 +438,7 @@ export function createSim(st) {
 		// a village center is founded as a logistics hub, its first stage, and clears the ground for its ring road
 		if (type === 'centre') b.level = 1;
 		if (type === 'centre' || type === 'village') clearRing(villageAt(node));
+		else if (plan.spotOf[node] >= 0) clearYard(plan.plotOf[node]);
 		for (const w of Object.keys(b.cost)) (b.used[w] = 0), (b.got[w] = 0), (b.inc[w] = 0);
 		if (t.ore) b.deposit = depositAt(node);
 		flag.bld ||= b.id;
@@ -841,9 +858,9 @@ export function createSim(st) {
 		return b.out === 0;
 	}
 	/** a free spot of grass to plant on (a tree, a field): nothing on it, no path, and not where a hex keeps its ground
-	 * clear (its square, its spots and round them, its village center, its ring road) */
+	 * clear (its square, its spots and round them, its village center, its ring road, its yard once a dome stands there) */
 	function freeSpot(/** @type {number} */ j) {
-		return st.terrain[j] === GRASS && !st.obj[j] && !st.road[j] && st.owner[j] <= PLAYER && !plan.clear[j] && !onRing[j];
+		return st.terrain[j] === GRASS && !st.obj[j] && !st.road[j] && st.owner[j] <= PLAYER && !plan.clear[j] && !onRing[j] && !(yarded[plan.plotOf[j]] && inYard(j));
 	}
 	/** what grew round a node is cleared: trees felled, rocks broken, fields ploughed under */
 	function clearAround(/** @type {number} */ n, /** @type {number} */ r) {
