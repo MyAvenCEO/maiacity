@@ -1,0 +1,25 @@
+# avendb-server: avenDB's server and its relay (crates/avendb-server), built from avendb/ alone, its own workspace:
+# nothing of the media vault (vault/) is compiled here. Build it from avendb/: docker build -f Dockerfile.server .
+# No workflow builds or deploys it yet: that waits on the go README.md asks for, under "Deploying the server".
+# cargo-chef keeps the compiled dependencies in their own layer, so a change to our code rebuilds only our crates.
+FROM lukemathwalker/cargo-chef:latest-rust-1-bookworm AS chef
+WORKDIR /src
+
+FROM chef AS planner
+COPY . ./
+RUN cargo chef prepare --recipe-path recipe.json
+
+FROM chef AS build
+COPY --from=planner /src/recipe.json recipe.json
+RUN cargo chef cook --release --locked --package avendb-server --recipe-path recipe.json
+COPY . ./
+RUN cargo build --release --locked -p avendb-server && cp target/release/avendb-server /avendb-server
+
+FROM debian:bookworm-slim
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates && rm -rf /var/lib/apt/lists/*
+COPY --from=build /avendb-server /usr/local/bin/avendb-server
+ENV AVENDB_DATA=/data
+VOLUME /data
+# 7401/udp: iroh, devices on UDP straight · 3350: the relay's plain HTTP, behind the proxy that ends TLS
+EXPOSE 7401/udp 3350
+ENTRYPOINT ["/usr/local/bin/avendb-server"]

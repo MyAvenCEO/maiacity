@@ -17,6 +17,9 @@ iroh-blobs = { version = "=0.103.1", default-features = false }
 rustls = { version = "0.23.33", default-features = false, features = ["aws_lc_rs", "std"] }
 tokio = { version = "1.44", features = ["rt-multi-thread", "macros", "sync", "time", "io-util"] }
 anyhow = "1"
+tracing = "0.1"
+# the server's own secrets, and the randomness every node's Lab draws on
+getrandom = "0.3"
 
 [dev-dependencies]
 tokio = { version = "1.44", features = ["rt-multi-thread", "macros", "sync", "time", "test-util"] }

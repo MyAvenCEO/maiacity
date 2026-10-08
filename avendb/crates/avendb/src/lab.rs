@@ -244,6 +244,24 @@ pub struct Backup {
     blobs: Blobs,
 }
 
+impl Backup {
+    /// A backup of signed ops, in the order the device took them, and McEliece keys, each under the id it hashes to:
+    /// what a node reads back from its store on disk.
+    pub fn new(signed: Vec<Signed>, blobs: impl IntoIterator<Item = Arc<[u8]>>) -> Backup {
+        Backup { signed, blobs: blobs.into_iter().map(|b| (BlobId::of(&b), b)).collect() }
+    }
+
+    /// Its signed ops, in the order the device took them.
+    pub fn signed(&self) -> &[Signed] {
+        &self.signed
+    }
+
+    /// How many McEliece keys it holds.
+    pub fn blob_count(&self) -> usize {
+        self.blobs.len()
+    }
+}
+
 pub struct Lab {
     /// The keys at hand: passkeys, owner keys, and unlocked devices.
     keys: HashMap<SignerId, Key>,
@@ -278,6 +296,17 @@ impl Default for Lab {
 
 impl Lab {
     pub fn new() -> Lab {
+        Lab::seeded(None)
+    }
+
+    /// A Lab on a machine of its own, for the one device it runs (P8b): its randomness, and every key it makes,
+    /// drawn from `seed` too, 32 bytes of the machine's own randomness, so that no two machines make the same keys or
+    /// nonces.
+    pub fn with_entropy(seed: [u8; 32]) -> Lab {
+        Lab::seeded(Some(seed))
+    }
+
+    fn seeded(entropy: Option<[u8; 32]>) -> Lab {
         let mut lab = Lab {
             keys: HashMap::new(),
             names: HashMap::new(),
@@ -287,8 +316,8 @@ impl Lab {
             server: None,
             server_signers: None,
             made: 0,
-            rng: SeededRng::new("lab randomness", b""),
-            entropy: None,
+            rng: SeededRng::new("lab randomness", entropy.as_ref().map_or(&[][..], |e| &e[..])),
+            entropy,
             spares: Spares::default(),
             pq_only: false,
             offline: HashSet::new(),
@@ -356,6 +385,11 @@ impl Lab {
         id
     }
 
+    /// A device whose keys come from `secret`, 32 bytes the device keeps itself, as the server does on its disk.
+    pub fn device_with(&mut self, name: &str, secret: [u8; 32]) -> SignerId {
+        self.add_device(DeviceKey::from_secret(secret), name)
+    }
+
     fn add_device(&mut self, key: DeviceKey, name: &str) -> SignerId {
         key.seal_secret().prepare();
         let id = key.id();
@@ -373,12 +407,50 @@ impl Lab {
             return s;
         }
         let (device, owner_id) = self.server_signers();
-        let genesis =
-            Action::Genesis { kind: Kind::Human, owners: vec![Principal::Signer(owner_id)], threshold: 1, root: None, nonce: 0, seal_to: vec![] };
-        let vault = VaultId::from(self.submit(device, &[owner_id], genesis).expect("the server's vault"));
-        self.submit(device, &[owner_id, device], Action::AddDevice { vault, device, seal_to: None }).expect("the server's device");
+        let vault = self.found_vault(device, owner_id).expect("the server's vault");
         self.server = Some((device, vault));
         (device, vault)
+    }
+
+    /// A vault owned by the key `owner` alone, founded on `device`, which it admits: the server's.
+    fn found_vault(&mut self, device: SignerId, owner: SignerId) -> Result<VaultId, Refusal> {
+        let (owners, seal_to) = (vec![Principal::Signer(owner)], vec![]);
+        let genesis = Action::Genesis { kind: Kind::Human, owners, threshold: 1, root: None, nonce: 0, seal_to };
+        let vault = VaultId::from(self.submit(device, &[owner], genesis)?);
+        self.submit(device, &[owner, device], Action::AddDevice { vault, device, seal_to: None })?;
+        Ok(vault)
+    }
+
+    /// Found the vault of a server running on a machine of its own, on its device `d` (`device_with`): owned by a key
+    /// made from `owner`, fresh randomness, which signs the vault's genesis, admits `d`, and is then forgotten. So
+    /// nobody changes the server's vault after, not even whoever takes the server's disk; a new server gets a new
+    /// vault, and the spaces it relays grant it relay again. `AlreadyMember` if `d` belongs to a vault already.
+    pub fn found_server(&mut self, d: SignerId, owner: [u8; 32]) -> Result<VaultId, Refusal> {
+        if self.vault_of(d).is_some() {
+            return Err(Refusal::AlreadyMember);
+        }
+        let owner = DeviceKey::from_secret(owner);
+        let owner_id = owner.id();
+        self.keys.insert(owner_id, Key::Device(owner));
+        self.names.insert(owner_id, "the server's owner key".into());
+        let founded = self.found_vault(d, owner_id);
+        self.keys.remove(&owner_id);
+        founded
+    }
+
+    /// The vault device `d` belongs to, by its view.
+    pub fn vault_of(&self, d: SignerId) -> Option<VaultId> {
+        self.held(d).view().vaults().iter().find(|v| v.devices.contains(&d)).map(|v| v.id)
+    }
+
+    /// Device `d`'s contact card: the signed ops of the logs of the vaults it acts for and of every vault that owns
+    /// one of them, up the chains (`sync::vault_logs`), as a device needs them before it grants one of those vaults
+    /// anything. The server hands out its own to whoever asks.
+    pub fn card(&self, d: SignerId) -> Vec<Signed> {
+        let store = self.held(d);
+        let st = store.view();
+        let vs = st.vaults().iter().map(|v| v.id).filter(|&v| st.acts_for(d, v)).collect();
+        vault_logs(store.log.ops(), st, vs).iter().map(|op| store.signed[&op.id()].clone()).collect()
     }
 
     /// The server's device and its owner key, made if they aren't yet, ahead of its vault (`server`): a page making
@@ -1174,6 +1246,13 @@ impl Lab {
         ids.into_iter().collect()
     }
 
+    /// How many ops and how many McEliece keys device `d` holds. Neither ever shrinks but by `restore_backup`, so
+    /// while they stay the same, so does what the device holds.
+    pub fn size(&self, d: SignerId) -> (usize, usize) {
+        let store = self.held(d);
+        (store.log.ids().len(), store.blobs.len())
+    }
+
     /// Device `d` receives ops and McEliece keys from a peer on the network: it keeps each op whose signatures check
     /// out, and each key an op it holds names, by the key's own hash, then brings its keys and items up to date. How
     /// many ops were new.
@@ -1226,9 +1305,26 @@ impl Lab {
 
     /// Restore device `d` from `backup`: it holds what the backup holds and nothing it made or received since. What it
     /// makes next in a log builds on the past the backup kept, so it forks from what it made there since (`forks`).
+    /// It vouches as before for the writes of its own that no checkpoint of its own covers. A node starting again
+    /// from its store on disk restores the same way.
     pub fn restore_backup(&mut self, d: SignerId, backup: &Backup) {
         self.stores.insert(d, Store::default());
         self.keep(d, backup.signed.clone(), &backup.blobs);
+        let store = self.stores.get_mut(&d).expect("restored");
+        let ops = store.log.ops().iter().zip(store.log.ids());
+        let own: Vec<(&Op, &OpId)> = ops.filter(|(op, _)| op.author == d).collect();
+        let covered: HashSet<OpId> = own
+            .iter()
+            .flat_map(|(op, _)| match &op.action {
+                Action::Checkpoint { covers, .. } => covers.clone(),
+                _ => vec![],
+            })
+            .collect();
+        store.unvouched = own
+            .iter()
+            .filter(|(op, id)| matches!(op.action, Action::Write { .. }) && !covered.contains(id))
+            .map(|(_, id)| **id)
+            .collect();
         self.refresh(d, &[]);
     }
 

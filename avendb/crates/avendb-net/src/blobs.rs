@@ -71,7 +71,7 @@ impl Shared {
         if wanted.is_empty() {
             return Vec::new();
         }
-        let dial = self.endpoint.connect(endpoint, iroh_blobs::ALPN);
+        let dial = self.endpoint.connect(self.addr_of(endpoint), iroh_blobs::ALPN);
         let Ok(Ok(conn)) = tokio::time::timeout(WAIT, dial).await else { return Vec::new() };
         let mut keys = Vec::new();
         for (id, hash) in wanted {
