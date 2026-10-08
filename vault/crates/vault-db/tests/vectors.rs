@@ -1,16 +1,19 @@
 //! The Lean model's test vectors (`vault/spec/vectors/vaults.json`, written by `lake exe vectors`, checked by every
 //! `lake build`). A step case's ops, applied one after the other from the empty state, must be accepted or refused
 //! exactly as the model says. A view case's ops, each at the depth it claims, must stand or be cut exactly as in the
-//! model's view: that is where removals cut what they hadn't seen. Both must end with the same vaults, spaces, grants
-//! and writes.
+//! model's view: that is where removals cut what they hadn't seen. Both must end with the same vaults, spaces, grants,
+//! writes and key schedule (each family's epoch, every seal, every published key).
 //!
 //! The model names what an op creates (a vault, a space, a grant) by a number, and an op by its place in the case; the
-//! core names them all by hashes, so each number maps to what its op created, and each place to that op's id.
+//! core names them all by hashes, so each number maps to what its op created, and each place to that op's id. A keys
+//! op of the model names only where its boxes go; the core's carries the boxes too, which no rule opens, so here they
+//! are empty.
 
 use std::collections::HashMap;
 
 use serde_json::Value;
 use vault_db::id::{EntryId, GrantId, OpId, SignerId, SpaceId, VaultId};
+use vault_db::keys::{KeyBox, KeyId, KeyName, KeyScope, Recipient, Seal};
 use vault_db::policy::{replay, Action, Grant, Grantee, Kind, Op, Principal, Role, Scope, Space, State, Vault, Write};
 
 const VECTORS: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../../spec/vectors/vaults.json");
@@ -99,6 +102,30 @@ impl Names {
         }
     }
 
+    fn key_scope(&self, v: &Value) -> KeyScope {
+        match (v.get("vault"), v.get("entry")) {
+            (Some(x), None) => KeyScope::Vault(self.vault(x)),
+            (None, None) => KeyScope::Space(self.space(&v["space"])),
+            (None, Some(e)) => KeyScope::Entry(self.space(&v["space"]), entry(e)),
+            _ => panic!("a key family, not {v}"),
+        }
+    }
+
+    fn key_name(&self, v: &Value) -> KeyName {
+        match v.get("signer") {
+            Some(s) => KeyName::Signer(signer(s)),
+            None => KeyName::Scoped(self.key_scope(&v["key"]), num(&v["epoch"])),
+        }
+    }
+
+    /// Whom a box goes to; which of a family's keys doesn't matter to the rules.
+    fn recipient(&self, v: &Value) -> Recipient {
+        match self.key_name(v) {
+            KeyName::Signer(s) => Recipient::Signer(s),
+            KeyName::Scoped(key, epoch) => Recipient::Key { key, epoch, id: KeyId([0; 32]) },
+        }
+    }
+
     fn grantee(&self, v: &Value) -> Grantee {
         match v.as_str() {
             Some("public") => Grantee::Public,
@@ -128,11 +155,12 @@ impl Names {
                 root: (!x["root"].is_null()).then(|| signer(&x["root"])),
                 // the model's number keeps two geneses with the same owners apart, as a nonce does
                 nonce: num(&x["vault"]),
+                seal_to: vec![],
             },
-            "addOwner" => Action::AddOwner { vault: vault(), owner: self.principal(&x["owner"]) },
+            "addOwner" => Action::AddOwner { vault: vault(), owner: self.principal(&x["owner"]), seal_to: None },
             "removeOwner" => Action::RemoveOwner { vault: vault(), owner: self.principal(&x["owner"]), keep: keep() },
             "setThreshold" => Action::SetThreshold { vault: vault(), threshold: num(&x["threshold"]) as u32 },
-            "addDevice" => Action::AddDevice { vault: vault(), device: signer(&x["device"]) },
+            "addDevice" => Action::AddDevice { vault: vault(), device: signer(&x["device"]), seal_to: None },
             "removeDevice" => Action::RemoveDevice { vault: vault(), device: signer(&x["device"]), keep: keep() },
             "setRoot" => {
                 Action::SetRoot { vault: vault(), root: (!x["root"].is_null()).then(|| signer(&x["root"])), keep: keep() }
@@ -147,6 +175,14 @@ impl Names {
                 epoch: num(&x["epoch"]),
                 deps: self.ops(&x["deps"]),
                 body: vec![],
+            },
+            "keys" => Action::Keys {
+                key: self.key_scope(&x["key"]),
+                epoch: num(&x["epoch"]),
+                id: KeyId([0; 32]),
+                public: None,
+                boxes: list(&x["to"]).iter().map(|t| KeyBox { to: self.recipient(t), bytes: vec![] }).collect(),
+                clear: x["public"].as_bool().unwrap().then_some([0; 32]),
             },
             other => panic!("no action {other}"),
         }
@@ -214,6 +250,18 @@ impl Names {
         assert_eq!(st.grants(), grants, "{name}: grants");
         let writes: Vec<Write> = list(&case["writes"]).iter().map(|v| self.write_of(v)).collect();
         assert_eq!(st.all_writes(), &writes[..], "{name}: writes");
+        let epochs: Vec<(KeyScope, u64)> =
+            list(&case["epochs"]).iter().map(|v| (self.key_scope(&v["key"]), num(&v["epoch"]))).collect();
+        let ours: Vec<(KeyScope, u64)> =
+            st.key_scopes().into_iter().filter(|&k| st.epoch(k) > 0).map(|k| (k, st.epoch(k))).collect();
+        assert_eq!(ours, epochs, "{name}: epochs");
+        let seals: Vec<Seal> = list(&case["seals"])
+            .iter()
+            .map(|v| Seal { secret: self.key_name(&v["secret"]), to: self.key_name(&v["to"]) })
+            .collect();
+        assert_eq!(st.seals(), &seals[..], "{name}: seals");
+        let published: Vec<KeyName> = list(&case["published"]).iter().map(|v| self.key_name(v)).collect();
+        assert_eq!(st.published(), &published[..], "{name}: published");
     }
 }
 

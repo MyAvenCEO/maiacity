@@ -3,6 +3,7 @@
 //! integers are big-endian and fixed-size, sequences carry their length, and every enum starts with a tag. The first
 //! byte is the format's version, so a later format (a hybrid post-quantum signer, say) can live beside this one.
 
+use crate::keys::{KeyBox, KeyId, KeyScope, PublicKey, Recipient};
 use crate::policy::{Action, Grant, Grantee, Kind, Op, Principal, Role, Scope};
 
 /// The version byte every op starts with.
@@ -18,6 +19,29 @@ pub(crate) fn op_id(op: &Op) -> [u8; 32] {
     let mut h = blake3::Hasher::new_derive_key(OP_CONTEXT);
     h.update(&out);
     *h.finalize().as_bytes()
+}
+
+/// What a write's ciphertext is bound to: the op's encoding with an empty body, so the edit can't be moved to another
+/// op, entry or epoch.
+pub fn write_context(op: &Op) -> Vec<u8> {
+    let mut op = op.clone();
+    if let Action::Write { body, .. } = &mut op.action {
+        body.clear();
+    }
+    let mut out = vec![VERSION];
+    op.encode(&mut out);
+    out
+}
+
+/// What a box is bound to: which key it holds, and for whom. A box can't be passed off as another key's, nor moved to
+/// another recipient.
+pub fn box_info(key: KeyScope, epoch: u64, id: KeyId, to: &Recipient) -> Vec<u8> {
+    let mut out = vec![VERSION];
+    key.encode(&mut out);
+    epoch.encode(&mut out);
+    id.encode(&mut out);
+    to.encode(&mut out);
+    out
 }
 
 pub(crate) trait Encode {
@@ -51,6 +75,20 @@ impl<T: Encode> Encode for [T] {
     }
 }
 
+impl<A: Encode, B: Encode> Encode for (A, B) {
+    fn encode(&self, out: &mut Vec<u8>) {
+        self.0.encode(out);
+        self.1.encode(out);
+    }
+}
+
+impl Encode for Vec<u8> {
+    fn encode(&self, out: &mut Vec<u8>) {
+        (self.len() as u32).encode(out);
+        out.extend_from_slice(self);
+    }
+}
+
 impl<T: Encode> Encode for Option<T> {
     fn encode(&self, out: &mut Vec<u8>) {
         match self {
@@ -73,7 +111,51 @@ macro_rules! ids {
     )*};
 }
 
-ids!(crate::id::SignerId, crate::id::VaultId, crate::id::SpaceId, crate::id::EntryId, crate::id::GrantId, crate::id::OpId);
+ids!(crate::id::SignerId, crate::id::VaultId, crate::id::SpaceId, crate::id::EntryId, crate::id::GrantId, crate::id::OpId, KeyId, PublicKey);
+
+impl Encode for KeyScope {
+    fn encode(&self, out: &mut Vec<u8>) {
+        match self {
+            KeyScope::Vault(v) => {
+                out.push(0);
+                v.encode(out);
+            }
+            KeyScope::Space(sp) => {
+                out.push(1);
+                sp.encode(out);
+            }
+            KeyScope::Entry(sp, e) => {
+                out.push(2);
+                sp.encode(out);
+                e.encode(out);
+            }
+        }
+    }
+}
+
+impl Encode for Recipient {
+    fn encode(&self, out: &mut Vec<u8>) {
+        match self {
+            Recipient::Signer(s) => {
+                out.push(0);
+                s.encode(out);
+            }
+            Recipient::Key { key, epoch, id } => {
+                out.push(1);
+                key.encode(out);
+                epoch.encode(out);
+                id.encode(out);
+            }
+        }
+    }
+}
+
+impl Encode for KeyBox {
+    fn encode(&self, out: &mut Vec<u8>) {
+        self.to.encode(out);
+        self.bytes.encode(out);
+    }
+}
 
 impl Encode for Kind {
     fn encode(&self, out: &mut Vec<u8>) {
@@ -151,18 +233,20 @@ impl Encode for Grant {
 impl Encode for Action {
     fn encode(&self, out: &mut Vec<u8>) {
         match self {
-            Action::Genesis { kind, owners, threshold, root, nonce } => {
+            Action::Genesis { kind, owners, threshold, root, nonce, seal_to } => {
                 out.push(0);
                 kind.encode(out);
                 owners.encode(out);
                 threshold.encode(out);
                 root.encode(out);
                 nonce.encode(out);
+                seal_to.encode(out);
             }
-            Action::AddOwner { vault, owner } => {
+            Action::AddOwner { vault, owner, seal_to } => {
                 out.push(1);
                 vault.encode(out);
                 owner.encode(out);
+                seal_to.encode(out);
             }
             Action::RemoveOwner { vault, owner, keep } => {
                 out.push(2);
@@ -175,10 +259,11 @@ impl Encode for Action {
                 vault.encode(out);
                 threshold.encode(out);
             }
-            Action::AddDevice { vault, device } => {
+            Action::AddDevice { vault, device, seal_to } => {
                 out.push(4);
                 vault.encode(out);
                 device.encode(out);
+                seal_to.encode(out);
             }
             Action::RemoveDevice { vault, device, keep } => {
                 out.push(5);
@@ -208,14 +293,22 @@ impl Encode for Action {
                 actor.encode(out);
                 epoch.encode(out);
                 deps.encode(out);
-                (body.len() as u32).encode(out);
-                out.extend_from_slice(body);
+                body.encode(out);
             }
             Action::SetRoot { vault, root, keep } => {
                 out.push(10);
                 vault.encode(out);
                 root.encode(out);
                 keep.encode(out);
+            }
+            Action::Keys { key, epoch, id, public, boxes, clear } => {
+                out.push(11);
+                key.encode(out);
+                epoch.encode(out);
+                id.encode(out);
+                public.encode(out);
+                boxes.encode(out);
+                clear.encode(out);
             }
         }
     }
@@ -238,7 +331,7 @@ mod tests {
 
     fn genesis(nonce: u64) -> Op {
         let owners = vec![Principal::Signer(SignerId::from_u64(1))];
-        let action = Action::Genesis { kind: Kind::Human, owners, threshold: 1, root: None, nonce };
+        let action = Action::Genesis { kind: Kind::Human, owners, threshold: 1, root: None, nonce, seal_to: vec![] };
         Op { parents: vec![], depth: 0, author: SignerId::from_u64(1), cosigners: vec![], action }
     }
 
@@ -259,7 +352,7 @@ mod tests {
         o.depth = 1;
         others.push(o);
         let mut o = base.clone();
-        o.action = Action::AddDevice { vault: VaultId::from_u64(1), device: SignerId::from_u64(1) };
+        o.action = Action::AddDevice { vault: VaultId::from_u64(1), device: SignerId::from_u64(1), seal_to: None };
         others.push(o);
         let mut o = base.clone();
         if let Action::Genesis { root, .. } = &mut o.action {

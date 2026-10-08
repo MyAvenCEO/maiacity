@@ -27,8 +27,8 @@ pub fn respond(ops: &[Op], d: SignerId) -> Vec<Op> {
     writes.into_iter().chain(auth).chain(vault_ops).cloned().collect()
 }
 
-/// The scope an auth op is about: a space's founding, a grant's scope, or for a revocation the scope of the grant it
-/// revokes, looked up among `ops`.
+/// The scope an auth op is about: a space's founding, a grant's scope, for a revocation the scope of the grant it
+/// revokes, looked up among `ops`, or the scope of a space or entry key.
 fn auth_scope(ops: &[Op], op: &Op) -> Option<Scope> {
     match &op.action {
         Action::FoundSpace { .. } => Some(Scope::Space(SpaceId::from(op.id()))),
@@ -37,6 +37,7 @@ fn auth_scope(ops: &[Op], op: &Op) -> Option<Scope> {
             Action::Grant(g) if GrantId::from(o.id()) == *grant => Some(g.scope),
             _ => None,
         }),
+        Action::Keys { key, .. } => key.scope(),
         _ => None,
     }
 }

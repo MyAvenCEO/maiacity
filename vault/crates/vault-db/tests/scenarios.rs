@@ -25,7 +25,7 @@ fn scenario_01_samuels_vault() {
     assert_eq!(lab.log(mac).view().vault(samuel).map(|v| v.devices.clone()), Some(vec![mac, phone]));
     // the Mac can't add a device on its own, even one that countersigns
     let other = lab.device("another Mac");
-    let add = Action::AddDevice { vault: samuel, device: other };
+    let add = Action::AddDevice { vault: samuel, device: other, seal_to: None };
     assert_eq!(lab.submit(mac, &[mac, other], add).err(), Some(Refusal::BelowThreshold));
 }
 
@@ -36,7 +36,7 @@ fn scenario_01_a_new_device_reaches_every_device() {
     w.lab.sync_all(1);
     // Samuel adds an iPad with his passkey on his Mac, and the iPad countersigns
     let ipad = w.lab.device("Samuel's iPad");
-    let add = Action::AddDevice { vault: w.samuel, device: ipad };
+    let add = Action::AddDevice { vault: w.samuel, device: ipad, seal_to: None };
     w.lab.submit(w.mac_s, &[w.passkey_s, ipad], add).unwrap();
     w.lab.sync_all(2);
     // his iPhone, the iPad itself and Bob's Mac (through the coop) all learn of it, and see it act for the coop
@@ -68,7 +68,7 @@ fn scenario_03_a_coop_of_two() {
     let mut w = world();
     // Bob has to consent to becoming an owner
     let owners = vec![Principal::Vault(w.samuel), Principal::Vault(w.bob)];
-    let genesis = Action::Genesis { kind: Kind::Coop, owners, threshold: 2, root: None, nonce: 0 };
+    let genesis = Action::Genesis { kind: Kind::Coop, owners, threshold: 2, root: None, nonce: 0, seal_to: vec![] };
     assert_eq!(w.lab.submit(w.mac_s, &[w.passkey_s], genesis).err(), Some(Refusal::NoConsent));
     let coop = coop_on(&mut w);
     w.lab.sync_all(3);
@@ -334,7 +334,7 @@ fn scenario_14_tampering() {
     let mut w = world();
     let h = handbook(&mut w);
     // a forged signature: Samuel's passkey "adding" the stranger's device to his vault
-    let forged = Tamper::ForgedSignature { claimed: w.passkey_s, action: Action::AddDevice { vault: w.samuel, device: w.stranger } };
+    let forged = Tamper::ForgedSignature { claimed: w.passkey_s, action: Action::AddDevice { vault: w.samuel, device: w.stranger, seal_to: None } };
     assert_eq!(w.lab.tamper(w.mac_b, forged), Err(Refusal::BadSignature));
     // a made-up chain: the stranger's device writing as the coop
     let chain = Tamper::Unchecked { signers: vec![w.stranger], action: write(h.space, h.welcome, h.coop, 0) };
@@ -350,7 +350,7 @@ fn scenario_14_tampering() {
     w.lab.submit(w.mac_s, &[w.mac_s], Action::Revoke { grant: carol_read, actor: h.coop, keep: vec![] }).unwrap();
     w.lab.edit(w.mac_s, h.coop, h.space, h.welcome, |i| i.set_text(2, AFTER_TEXT)).unwrap();
     w.lab.sync_all(14);
-    let old = KeyName { scope: KeyScope::Entry(h.space, h.welcome), epoch: 0 };
+    let old = KeyName::Scoped(KeyScope::Entry(h.space, h.welcome), 0);
     let _ = w.lab.tamper(w.mac_c, Tamper::ReplayedSeal { key: old, to: w.mac_c });
     w.lab.sync_all(14);
     assert!(!w.lab.opens(w.mac_c, KeyScope::Entry(h.space, h.welcome)));
@@ -467,7 +467,7 @@ fn scenario_18_recovery_after_losing_every_device() {
     let new_mac = w.lab.device("Samuel's new Mac");
     w.lab.share_contact(w.mac_b, new_mac, samuel);
     let steps = [
-        (vec![w.passkey_s, new_mac], Action::AddDevice { vault: samuel, device: new_mac }),
+        (vec![w.passkey_s, new_mac], Action::AddDevice { vault: samuel, device: new_mac, seal_to: None }),
         (vec![w.passkey_s], Action::RemoveDevice { vault: samuel, device: w.mac_s, keep: vec![] }),
         (vec![w.passkey_s], Action::RemoveDevice { vault: samuel, device: w.phone_s, keep: vec![] }),
     ];
@@ -492,7 +492,7 @@ fn scenario_18_a_recovery_code_when_the_passkey_is_lost_too() {
     let code = w.lab.recovery_code();
     let written = code.to_string();
     let recovery = code.signer().id();
-    let add = Action::AddOwner { vault: samuel, owner: Principal::Signer(recovery) };
+    let add = Action::AddOwner { vault: samuel, owner: Principal::Signer(recovery), seal_to: None };
     w.lab.submit(w.mac_s, &[w.passkey_s, recovery], add).unwrap();
     w.lab.sync_all(18);
     // he loses his passkey too, with every device
@@ -506,8 +506,8 @@ fn scenario_18_a_recovery_code_when_the_passkey_is_lost_too() {
     // the code adds a new passkey and the new Mac; the new passkey removes the lost devices
     let new_passkey = w.lab.passkey("Samuel's new passkey");
     let steps = [
-        (vec![recovery, new_passkey], Action::AddOwner { vault: samuel, owner: Principal::Signer(new_passkey) }),
-        (vec![recovery, new_mac], Action::AddDevice { vault: samuel, device: new_mac }),
+        (vec![recovery, new_passkey], Action::AddOwner { vault: samuel, owner: Principal::Signer(new_passkey), seal_to: None }),
+        (vec![recovery, new_mac], Action::AddDevice { vault: samuel, device: new_mac, seal_to: None }),
         (vec![new_passkey], Action::RemoveDevice { vault: samuel, device: w.mac_s, keep: vec![] }),
         (vec![new_passkey], Action::RemoveDevice { vault: samuel, device: w.phone_s, keep: vec![] }),
     ];

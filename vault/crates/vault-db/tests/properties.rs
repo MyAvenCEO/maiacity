@@ -94,13 +94,13 @@ fn attempts(rng: &mut Rng, h: &mut History, n: usize, clash: bool) {
                 grant(scope, rng.pick(&ROLES), grantee, rng.pick(&h.vaults), parent)
             }
             5 if !grants.is_empty() => Action::Revoke { grant: rng.pick(&grants), actor: rng.pick(&h.vaults), keep: vec![] },
-            6 => Action::AddDevice { vault: rng.pick(&h.vaults), device: rng.pick(&SIGNERS) },
+            6 => Action::AddDevice { vault: rng.pick(&h.vaults), device: rng.pick(&SIGNERS), seal_to: None },
             7 => Action::RemoveDevice { vault: rng.pick(&h.vaults), device: rng.pick(&SIGNERS), keep: vec![] },
             8 => {
                 let owners = vec![Principal::Vault(rng.pick(&h.vaults))];
-                Action::Genesis { kind: Kind::Coop, owners, threshold: 1, root: None, nonce: rng.next() }
+                Action::Genesis { kind: Kind::Coop, owners, threshold: 1, root: None, nonce: rng.next(), seal_to: vec![] }
             }
-            _ => Action::AddOwner { vault: rng.pick(&h.vaults), owner: Principal::Vault(rng.pick(&h.vaults)) },
+            _ => Action::AddOwner { vault: rng.pick(&h.vaults), owner: Principal::Vault(rng.pick(&h.vaults)), seal_to: None },
         };
         let genesis = matches!(action, Action::Genesis { .. });
         if let Ok(id) = h.log.append(author, &cosigners, action)
@@ -180,9 +180,9 @@ fn vault_action(rng: &mut Rng, vaults: &[VaultId]) -> Action {
         if rng.below(2) == 0 { Principal::Signer(rng.pick(&SIGNERS)) } else { Principal::Vault(rng.pick(vaults)) }
     };
     match rng.below(7) {
-        0 => Action::AddDevice { vault: rng.pick(vaults), device: rng.pick(&SIGNERS) },
+        0 => Action::AddDevice { vault: rng.pick(vaults), device: rng.pick(&SIGNERS), seal_to: None },
         1 => Action::RemoveDevice { vault: rng.pick(vaults), device: rng.pick(&SIGNERS), keep: vec![] },
-        2 => Action::AddOwner { vault: rng.pick(vaults), owner: principal(rng) },
+        2 => Action::AddOwner { vault: rng.pick(vaults), owner: principal(rng), seal_to: None },
         3 => Action::RemoveOwner { vault: rng.pick(vaults), owner: principal(rng), keep: vec![] },
         4 => Action::SetThreshold { vault: rng.pick(vaults), threshold: rng.below(4) as u32 },
         _ => {
@@ -196,7 +196,7 @@ fn vault_action(rng: &mut Rng, vaults: &[VaultId]) -> Action {
                 [Principal::Signer(s), ..] if nonce % 2 == 0 => Some(s),
                 _ => None,
             };
-            Action::Genesis { kind, owners, threshold, root, nonce }
+            Action::Genesis { kind, owners, threshold, root, nonce, seal_to: vec![] }
         }
     }
 }
@@ -208,7 +208,7 @@ fn governance_action(rng: &mut Rng, log: &Log, vaults: &[VaultId]) -> Action {
     let v = rng.pick(&known);
     let owners = st.vault(v).map(|x| x.owners.clone()).unwrap_or_default();
     match rng.below(3) {
-        0 => Action::AddOwner { vault: v, owner: Principal::Vault(rng.pick(&known)) },
+        0 => Action::AddOwner { vault: v, owner: Principal::Vault(rng.pick(&known)), seal_to: None },
         1 => Action::RemoveOwner { vault: v, owner: rng.pick(&owners), keep: vec![] },
         _ => Action::SetThreshold { vault: v, threshold: 1 + rng.below(owners.len()) as u32 },
     }

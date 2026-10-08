@@ -102,9 +102,9 @@ impl Lab {
         let owner_id = owner.id();
         self.keys.insert(owner_id, Key::Ed25519(owner));
         let genesis =
-            Action::Genesis { kind: Kind::Human, owners: vec![Principal::Signer(owner_id)], threshold: 1, root: None, nonce: 0 };
+            Action::Genesis { kind: Kind::Human, owners: vec![Principal::Signer(owner_id)], threshold: 1, root: None, nonce: 0, seal_to: vec![] };
         let vault = VaultId::from(self.submit(device, &[owner_id], genesis).expect("the server's vault"));
-        self.submit(device, &[owner_id, device], Action::AddDevice { vault, device }).expect("the server's device");
+        self.submit(device, &[owner_id, device], Action::AddDevice { vault, device, seal_to: None }).expect("the server's device");
         self.server = Some((device, vault));
         (device, vault)
     }

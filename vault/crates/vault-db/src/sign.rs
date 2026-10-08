@@ -286,7 +286,7 @@ mod tests {
 
     fn op(author: SignerId, cosigners: Vec<SignerId>) -> Op {
         let action =
-            Action::Genesis { kind: Kind::Human, owners: vec![Principal::Signer(author)], threshold: 1, root: Some(author), nonce: 0 };
+            Action::Genesis { kind: Kind::Human, owners: vec![Principal::Signer(author)], threshold: 1, root: Some(author), nonce: 0, seal_to: vec![] };
         Op { parents: vec![], depth: 0, author, cosigners, action }
     }
 
