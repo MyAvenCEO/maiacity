@@ -72,5 +72,10 @@ export const HOMES = HOUSE_BEDS.map((beds, k) => ({
 	make: { in: {}, out: aWeek({ energy: (beds * ENERGY.sunBed) / 1000 }) }
 }));
 
+/** every stage a building of a type grows through, with its recipes, as the tree shows them: a home's sizes, the
+ * village center's stages, a factory's chain; null for one that does not grow. Every building's card reads them too
+ * @param {string} type */
+export const stagesOf = (type) => (type === 'house' ? HOMES : type === 'centre' ? CENTRES : (CHAINS.find((c) => c.type === type)?.stages ?? null));
+
 /** a ware's colour */
 export const colorOf = (/** @type {string} */ w) => WARES[w]?.color ?? '#ccc';
