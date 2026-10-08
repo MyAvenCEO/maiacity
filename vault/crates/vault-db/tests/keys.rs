@@ -5,10 +5,9 @@ mod common;
 use common::*;
 use vault_db::id::GrantId;
 use vault_db::keys::KeyScope;
-use vault_db::policy::{Action, Role, Scope};
+use vault_db::policy::{view, Action, Grantee, Op, Principal, Role, Scope};
 
 #[test]
-#[ignore = "P3: keys"]
 fn entry_reader_cannot_open_other_entries() {
     let mut w = world();
     let h = handbook(&mut w);
@@ -27,7 +26,6 @@ fn entry_reader_cannot_open_other_entries() {
 }
 
 #[test]
-#[ignore = "P3: keys"]
 fn server_holds_only_ciphertext() {
     let mut w = world();
     let h = handbook(&mut w);
@@ -48,7 +46,6 @@ fn server_holds_only_ciphertext() {
 }
 
 #[test]
-#[ignore = "P3: keys"]
 fn revoked_reader_cannot_open_new_edits() {
     let mut w = world();
     let h = handbook(&mut w);
@@ -69,4 +66,54 @@ fn revoked_reader_cannot_open_new_edits() {
     assert_eq!(text(&w.lab, w.mac_b, h.space, h.welcome, 2).as_deref(), Some(AFTER_TEXT));
     // what she had stays readable to her
     assert_eq!(text(&w.lab, w.mac_c, h.space, h.welcome, 2).as_deref(), Some(WELCOME_TEXT));
+}
+
+/// Each device opens the current key of a family exactly when, by every op the Lab holds, it may: it reads the family
+/// or the family is public (T6, and every device that may read gets the key).
+fn keys_follow_caps(w: &World, step: &str) {
+    let devices = [w.mac_s, w.phone_s, w.mac_b, w.mac_c, w.mac_d, w.server, w.stranger];
+    let mut all: Vec<Op> = vec![];
+    for d in devices {
+        for op in w.lab.log(d).ops() {
+            if !all.contains(op) {
+                all.push(op.clone());
+            }
+        }
+    }
+    let st = view(&all);
+    for d in devices {
+        for k in st.key_scopes() {
+            let may = st.entitled(d, k) || st.public_key(k);
+            assert_eq!(w.lab.opens(d, k), may, "{step}: {d:?} and {k:?}");
+        }
+    }
+}
+
+#[test]
+fn every_device_opens_exactly_what_it_may() {
+    let mut w = world();
+    let h = handbook(&mut w);
+    keys_follow_caps(&w, "the Handbook");
+    // a public charter, and Carol reading Welcome
+    let charter = w.lab.create(w.mac_s, h.coop, h.space, document("Charter", CHARTER_TEXT, w.mac_s)).unwrap();
+    w.lab.submit(w.mac_s, &[w.mac_s], grant(Scope::Entry(h.space, charter), Role::Read, Grantee::Public, h.coop, None)).unwrap();
+    let carol = w.carol;
+    let read = grant(Scope::Entry(h.space, h.welcome), Role::Read, vault(carol), h.coop, None);
+    let carol_read = GrantId::from(w.lab.submit(w.mac_s, &[w.mac_s], read).unwrap());
+    w.lab.sync_all(3);
+    keys_follow_caps(&w, "public charter, Carol reads Welcome");
+    // Carol's read revoked, then Welcome edited
+    w.lab.submit(w.mac_s, &[w.mac_s], Action::Revoke { grant: carol_read, actor: h.coop, keep: vec![] }).unwrap();
+    w.lab.edit(w.mac_s, h.coop, h.space, h.welcome, |i| i.set_text(2, AFTER_TEXT)).unwrap();
+    w.lab.sync_all(4);
+    keys_follow_caps(&w, "Carol revoked");
+    // Bob leaves the coop, and Samuel loses his iPhone
+    let bob = w.bob;
+    w.lab.submit(w.mac_b, &[w.passkey_b], Action::RemoveOwner { vault: h.coop, owner: Principal::Vault(bob), keep: vec![] }).unwrap();
+    w.lab.sync_all(5);
+    keys_follow_caps(&w, "Bob left");
+    let (samuel, phone) = (w.samuel, w.phone_s);
+    w.lab.submit(w.mac_s, &[w.passkey_s], Action::RemoveDevice { vault: samuel, device: phone, keep: vec![] }).unwrap();
+    w.lab.sync_all(6);
+    keys_follow_caps(&w, "the iPhone removed");
 }

@@ -7,6 +7,10 @@
 //!   the hash of its public key.
 //! - A recovery code derives an ed25519 signer, kept on paper rather than on a device, that owns the human vault
 //!   beside the passkey.
+//!
+//! Each signer also has a key that keys are sealed to (`keys`): an ed25519 signer derives it from its signing key, a
+//! passkey from its PRF output (WebAuthn's `prf` extension), so whoever can sign as the signer can also open what is
+//! sealed to it, and nothing else can.
 
 use std::fmt;
 
@@ -14,6 +18,7 @@ use p256::ecdsa::signature::Verifier as _;
 use sha2::{Digest, Sha256};
 
 use crate::id::{OpId, SignerId};
+use crate::keys::Secret;
 use crate::policy::{Op, Refusal};
 
 /// What an ed25519 signature signs, followed by the op's id.
@@ -27,6 +32,13 @@ pub const ORIGINS: [&str; 3] = ["https://maia.city", "tauri://localhost", "http:
 
 const PASSKEY_ID: &str = "maiacity vault-db 2026-10-08 passkey id v1";
 const RECOVERY_SIGNER: &str = "maiacity vault-db 2026-10-08 recovery signer v1";
+const ED25519_SEAL: &str = "maiacity vault-db 2026-10-08 ed25519 signer seal key v1";
+const PASSKEY_SEAL: &str = "maiacity vault-db 2026-10-08 passkey seal key v1";
+const PASSKEY_PRF: &str = "maiacity vault-db 2026-10-08 software passkey prf v1";
+
+/// The salt the app asks every passkey's PRF for: the same on every device, so each device that uses the passkey
+/// derives the same key from it.
+pub const PRF_SALT: &[u8] = b"maiacity vault-db 2026-10-08 passkey prf salt v1";
 
 /// Authenticator data flags: the user was present, and verified (PIN or biometrics).
 const UP: u8 = 0x01;
@@ -151,6 +163,11 @@ impl DeviceKey {
         use ed25519_dalek::Signer as _;
         Signature::Ed25519(self.0.sign(&message(op)).to_bytes())
     }
+
+    /// The key keys are sealed to for this signer, derived from its signing key.
+    pub fn seal_secret(&self) -> Secret {
+        Secret::derive(ED25519_SEAL, &self.0.to_bytes())
+    }
 }
 
 /// A passkey as the Lab and the tests hold it: a software authenticator answering `navigator.credentials.get` with
@@ -205,11 +222,26 @@ impl Passkey {
     pub fn sign(&mut self, op: OpId) -> Signature {
         self.sign_at(op, ORIGINS[0])
     }
+
+    /// WebAuthn's PRF extension: 32 bytes the authenticator alone computes from `salt`, in the same ceremony as an
+    /// assertion. The browser hashes the salt with the label "WebAuthn PRF" and the authenticator answers with its
+    /// `hmac-secret` over that hash; this one keys BLAKE3 with a secret of its own instead of HMAC.
+    pub fn prf(&self, salt: &[u8]) -> [u8; 32] {
+        let hashed = sha256(&[&b"WebAuthn PRF\0"[..], salt].concat());
+        let cred_random = blake3::derive_key(PASSKEY_PRF, &self.key.to_bytes());
+        *blake3::keyed_hash(&cred_random, &hashed).as_bytes()
+    }
+
+    /// The key keys are sealed to for this passkey, derived from its PRF output on `PRF_SALT`: a device that uses the
+    /// passkey can open what is sealed to it, during that ceremony.
+    pub fn seal_secret(&self) -> Secret {
+        Secret::derive(PASSKEY_SEAL, &self.prf(PRF_SALT))
+    }
 }
 
 /// A recovery code: 64 characters in 16 groups of 4, from Crockford's base32 (no I, L, O or U), 320 random bits. It
 /// derives an ed25519 signer that owns the human vault beside the passkey, so the code alone can add a new passkey
-/// and new devices after every device is gone. (From P3 it also derives the recipient the vault key is sealed to.)
+/// and new devices after every device is gone. Its signer's key to seal to opens the vault key, so it reads again too.
 #[derive(Clone, PartialEq, Eq)]
 pub struct RecoveryCode([u8; 40]);
 

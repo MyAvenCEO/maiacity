@@ -13,24 +13,27 @@ pub const VERSION: u8 = 1;
 pub const OP_CONTEXT: &str = "maiacity vault-db 2026-10-08 op id v1";
 
 pub(crate) fn op_id(op: &Op) -> [u8; 32] {
-    let mut out = Vec::with_capacity(128);
-    out.push(VERSION);
-    op.encode(&mut out);
     let mut h = blake3::Hasher::new_derive_key(OP_CONTEXT);
-    h.update(&out);
+    h.update(&bytes(op));
     *h.finalize().as_bytes()
 }
 
-/// What a write's ciphertext is bound to: the op's encoding with an empty body, so the edit can't be moved to another
+/// An op's bytes: the version, then its encoding.
+pub fn bytes(op: &Op) -> Vec<u8> {
+    let mut out = Vec::with_capacity(128);
+    out.push(VERSION);
+    op.encode(&mut out);
+    out
+}
+
+/// What a write's ciphertext is bound to: the op's bytes with an empty body, so the edit can't be moved to another
 /// op, entry or epoch.
 pub fn write_context(op: &Op) -> Vec<u8> {
     let mut op = op.clone();
     if let Action::Write { body, .. } = &mut op.action {
         body.clear();
     }
-    let mut out = vec![VERSION];
-    op.encode(&mut out);
-    out
+    bytes(&op)
 }
 
 /// What a box is bound to: which key it holds, and for whom. A box can't be passed off as another key's, nor moved to

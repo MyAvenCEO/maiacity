@@ -288,8 +288,11 @@ def gap : List Op := s4 ++ chain 190 [
 #guard (respond s15 macC).all fun o => o.writeTarget? == none || o.writeTarget? == some (todos, door)
 -- a device with no cap on it gets none of it
 #guard (respond s15 stranger).all (·.writeTarget? == none)
--- after the coop lost the todo, Dave's Mac gets nothing about it
+-- after the coop lost the todo, Dave's Mac gets none of its edits, only the revocation that ended its read, as Bob's
+-- Mac does for the coop's owner cap
 #guard (respond s16 macD).all (·.writeTarget? == none)
+#guard [macD, macB].all fun d => (respond s16 d).any (·.takesFrom (view s16) s16 d)
+#guard !(respond s16 stranger).any (·.takesFrom (view s16) s16 stranger)
 
 -- Each Mac starts with its own vault and what Samuel's Mac sent it. Then the server and Samuel go offline, Bob
 -- edits the door todo, and Bob's Mac and Carol's Mac sync directly.

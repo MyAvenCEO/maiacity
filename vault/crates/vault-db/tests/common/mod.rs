@@ -164,8 +164,9 @@ pub fn world() -> World {
     let bob = human_on(&mut lab, passkey_b, &[mac_b]);
     let carol = human_on(&mut lab, passkey_c, &[mac_c]);
     let dave = human_on(&mut lab, passkey_d, &[mac_d]);
-    // they all know each other's vaults and the server's, as after exchanging contact cards
-    let macs = [(mac_s, samuel), (mac_b, bob), (mac_c, carol), (mac_d, dave), (server, server_vault)];
+    // they all know each other's vaults and the server's, as after exchanging contact cards; Samuel's iPhone holds his
+    // contacts as his Mac does
+    let macs = [(mac_s, samuel), (phone_s, samuel), (mac_b, bob), (mac_c, carol), (mac_d, dave), (server, server_vault)];
     for &(from, v) in &macs {
         for &(to, _) in &macs {
             if from != to {

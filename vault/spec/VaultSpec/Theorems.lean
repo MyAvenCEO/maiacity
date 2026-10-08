@@ -386,10 +386,11 @@ theorem T11_convergence {ops₁ ops₂ : List Op} (hperm : ops₁.Perm ops₂) (
   sorry -- P6
 
 /-- T12 (sync shares only what caps allow): every write a peer sends a device is on an entry that device may
-    receive by the peer's view, and every auth op it sends is about a scope that device reaches. -/
+    receive by the peer's view, and every auth op it sends is about a scope that device reaches, or is a revocation
+    that took one of its caps away. -/
 theorem T12_sync_shares_only_caps (ops : List Op) (d : SignerId) {op : Op} (h : op ∈ respond ops d) :
     (∀ sp e, op.writeTarget? = some (sp, e) → mayReceive (view ops) d sp e = true) ∧
-    (∀ sc, op.authScope? ops = some sc → reaches (view ops) d sc = true) := by
+    (∀ sc, op.authScope? ops = some sc → reaches (view ops) d sc = true ∨ op.takesFrom (view ops) ops d = true) := by
   sorry -- P6
 
 /-- T13 (sync converges per item): if each of two devices may receive an item by the other peer's view, then after

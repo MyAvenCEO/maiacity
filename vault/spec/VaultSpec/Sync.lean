@@ -5,9 +5,10 @@ import VaultSpec.Step
 
 A device asks a peer for what it may receive. The peer answers from its own view and sends the ops of the vaults
 that device acts for, and for each item it may receive, the encrypted edits, the auth ops of the scopes covering it,
-and the ops of every vault those ops act for or name, up their chains of owners. Nothing about other items leaves
-the peer. The connection proves which device is asking (iroh's endpoint key is the device key), so the request names
-the device.
+and the ops of every vault those ops act for or name, up their chains of owners. A revocation that took one of the
+device's caps away reaches it too, so it knows what it may no longer do. Nothing else about other items leaves the
+peer. The connection proves which device is asking (iroh's endpoint key is the device key), so the request names the
+device.
 -/
 
 namespace VaultSpec
@@ -76,15 +77,24 @@ def closeVaults (st : State) : Nat → List VaultId → List VaultId
       | .signer _ => none
     | none => [])
 
+/-- Revocation `op` takes a cap from device `d`: among the grants it takes away is one naming a vault `d` acts for.
+    `d` hears of it, and learns nothing more about the scope. -/
+def Op.takesFrom (st : State) (ops : List Op) (d : SignerId) (op : Op) : Bool :=
+  match op.action with
+  | .revoke .. => (grantsIn ops).any fun x => (removes ops op).contains (.grant x.id) && match x.grantee with
+    | .principal (.vault v) => actsFor st d v
+    | _ => false
+  | _ => false
+
 /-- What a peer holding `ops` sends device `d`. -/
 def respond (ops : List Op) (d : SignerId) : List Op :=
   let st := view ops
   let writes := ops.filter fun op => match op.writeTarget? with
     | some (sp, e) => mayReceive st d sp e
     | none => false
-  let auth := ops.filter fun op => match op.authScope? ops with
+  let auth := ops.filter fun op => (match op.authScope? ops with
     | some sc => reaches st d sc
-    | none => false
+    | none => false) || op.takesFrom st ops d
   let mine := st.vaults.filterMap fun x => if actsFor st d x.id then some x.id else none
   let vaults := closeVaults st st.depth (mine ++ (writes ++ auth).filterMap Op.actor? ++ auth.filterMap Op.grantee?)
   let vaultOps := ops.filter fun op => match op.vaultOf? with

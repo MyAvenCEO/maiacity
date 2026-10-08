@@ -30,7 +30,7 @@ lake exe vectors
 | `Basic.lean` | Ids, principals (signers and vaults), roles relay < read < write < owner, scopes (a space or one entry), grantees, key names |
 | `State.lean` | What a peer knows; acting for a vault, approving for it (its root, or its threshold of owners), holding a cap; symbolic keys (`Knows`), rotation and sealing |
 | `Step.lean` | Every op and the rules that accept or refuse it; the one order every peer replays in; strong removal: what a removal cuts, and which removals stand when they clash (`view`) |
-| `Sync.lean` | What a peer sends a device: sync by caps, item by item |
+| `Sync.lean` | What a peer sends a device: sync by caps, item by item, and the revocations that took its caps away |
 | `Doc.lean` | Documents as histories: merge and promote, against the laws we rely on from Loro |
 | `Lens.lean` | The markdown document and the todo in two schema versions, and the lenses between them |
 | `Theorems.lean` | T1 to T8, T11 to T14 and T16 |
@@ -49,14 +49,14 @@ lake exe vectors
 | T2 | Governance needs the vault's approval (its root, or its threshold of owners) plus the newcomer's consent; devices can't govern | Proven | `add_owner_needs_threshold_and_consent`, `device_cannot_govern`, `the_passkey_is_the_root`, `t2_consent`, the vectors |
 | T3 | No ownership cycles in any state the ops can reach | Proven | `ownership_cycle_rejected`, `t3_no_cycles`, the vectors |
 | T4 | Grants name vaults, never signers | Proven | `grant_to_signer_rejected`, `t4_grants_name_vaults_and_t8_public_read_only`, the vectors |
-| T5 | A device opens a key only if it was entitled to it at that epoch or a later one, or the key was public | Proven | `entry_reader_cannot_open_other_entries` |
-| T6 | Forward secrecy on removal: the current key opens only for devices entitled now | Proven | `revoked_reader_cannot_open_new_edits` |
-| T7 | Blind server: a device whose vaults hold no read opens only public keys | Proven from T5 | `server_holds_only_ciphertext` |
+| T5 | A holder (a signer, whoever holds a vault's key, or everyone) opens a key of a family, of any epoch, only if over the history it could read the family: itself, while it was public, or through a vault whose key it held at some point (whoever joins a vault inherits what the vault could read) | Proven | `t5_confidentiality`, `entry_reader_cannot_open_other_entries`, `every_device_opens_exactly_what_it_may` |
+| T6 | Forward secrecy on removal: in every state the ops can reach, a family's current key opens only for holders entitled to it now, or while it is public | Proven | `t6_forward_secrecy`, `revoked_reader_cannot_open_new_edits`, `every_device_opens_exactly_what_it_may`, the vectors |
+| T7 | Blind server: a device whose vaults hold no read opens only public keys | Proven from T5 | `server_holds_only_ciphertext`, `every_device_opens_exactly_what_it_may` |
 | T8 | Public is read-only | Proven | `public_is_read_only`, `t4_grants_name_vaults_and_t8_public_read_only`, the vectors |
 | T9 | Lens laws: round trips and idempotent migration | Proven | `lens_round_trip_v1`, `migration_is_idempotent` |
 | T10 | Merge is the union of histories; promote gives the branch's content and keeps both | Proven | `promote_equals_branch` |
 | T11 | Same ops in any order, same state | P6 | `same_ops_any_order_same_result`, `t11_convergence` |
-| T12 | A peer sends a device only items it holds a cap on | P6 | `sync_sends_only_capped_items`, `t12_sync_shares_only_caps` |
+| T12 | A peer sends a device only items it holds a cap on, and of other scopes only the revocations that took its caps away | P6 | `sync_sends_only_capped_items`, `t12_sync_shares_only_caps` |
 | T13 | Two devices that synced both ways hold the same writes for every item they share | P6 | `item_syncs_peer_to_peer_without_server` |
 | T14 | Accepted writes are causally closed: a write stands only with every write it builds on | Proven | `a_drop_takes_what_builds_on_it_along`, `t14_causally_closed`, the vectors |
 | T16 | Strong removal: an op stands only if it also stands without what each later removal that hadn't seen it takes away, and every removal chosen stands | Proven | `a_removed_owner_cannot_backdate_governance`, `handing_the_root_on_cuts_the_old_passkeys_backdated_ops`, `t16_strong_removal`, the view vectors |
@@ -70,7 +70,10 @@ T3 is stated for reachable states, the replay of some ops from the empty state: 
 vault that doesn't exist, which no op can produce. Its proof carries that invariant (`OwnersExist`) along. T6 is
 stated for reachable states too, and its proof carries `KeyInv` along: seals hold only keys that exist, what is
 sealed to a space's key lies within the space, and every public family's current key is published. T5 follows the
-whole history instead: every seal is justified by what was readable at some point (`SealsRead`).
+whole history instead: every seal is justified by what was readable at some point (`SealsRead`). Devices encrypt each
+edit under its entry's current key (the rules refuse an epoch that doesn't exist yet), so with T6 nothing written after
+a removal opens for whoever it removed. Outside removals entitlements only grow, so by T6 no key goes stale: the Rust
+key schedule looks for stale keys only after a removal, and `t6_forward_secrecy` checks that nothing else makes any.
 
 Concurrent changes replay in one order (causal depth, removals first, then op hash), so they settle the same way on
 every device. That alone doesn't stop a removed owner, or a thief holding a stolen passkey, from signing ops on an old
