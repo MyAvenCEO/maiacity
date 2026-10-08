@@ -28,13 +28,54 @@ const PLAN = [
  * when short, and exports what it has beyond */
 const ORDERS = /** @type {Record<string, 'sell' | 'buy' | 'both'>} */ ({ plank: 'both', steel: 'both', clay: 'both', glass: 'both' });
 
+/** the hexes round a village's middle with room for a home: open grass on its house spot */
+const roomOf = (/** @type {import('./sim.js').Sim} */ sim, /** @type {number} */ v) =>
+	sim.plan.villages[v].plots.filter((k) => k !== sim.plan.villages[v].centre && sim.plan.spots[k][0] >= 0 && sim.state.terrain[sim.plan.spots[k][0]] === GRASS).length;
+/** whether a free village could be founded one day: open grass in its middle and room for three homes round it */
+const openVillage = (/** @type {import('./sim.js').Sim} */ sim, /** @type {number} */ v) => {
+	const vill = sim.plan.villages[v];
+	return (sim.state.villageOwner[v] ?? -1) === -1 && sim.state.terrain[sim.plan.spots[vill.centre][0]] === GRASS && sim.state.terrain[sim.plan.centre[vill.centre]] === GRASS && roomOf(sim, v) >= 3;
+};
+
 /**
- * Plays a game one decision at a time: call `tick()` now and then (every few seconds of game time).
+ * How full the valley is, for Simulate: your villages, and the villages still to found (free ones that could be,
+ * joined to yours by a chain of such villages), with the people all of them could hold. Full once nothing is left to
+ * found, none is being founded and every village of yours holds all its houses can.
+ * @param {import('./sim.js').Sim} sim
+ * @param {any[]} [parties] the market's rows, when they are at hand
+ */
+export function mapFill(sim, parties = sim.market().parties) {
+	const st = sim.state, vs = sim.plan.villages;
+	const rows = parties.filter((/** @type {any} */ p) => p.owner === PLAYER);
+	const seen = new Set(), queue = [];
+	for (let v = 0; v < vs.length; v++) if (st.villageOwner[v] === PLAYER) seen.add(v), queue.push(v);
+	let cap = 0, toFound = 0;
+	for (const v of seen) cap += HOUSE_MOST * roomOf(sim, v);
+	while (queue.length) {
+		const v = /** @type {number} */ (queue.shift());
+		for (const x of vs[v].near)
+			if (!seen.has(x) && openVillage(sim, x)) {
+				seen.add(x);
+				queue.push(x);
+				toFound++;
+				cap += HOUSE_MOST * roomOf(sim, x);
+			}
+	}
+	const founding = sim.buildingList().some((b) => b.owner === PLAYER && b.type === 'centre' && b.stage === 'site');
+	const pop = rows.reduce((t, /** @type {any} */ r) => t + r.pop, 0);
+	return { villages: rows.length, toFound, pop, cap, full: rows.length > 0 && !toFound && !founding && rows.every((/** @type {any} */ r) => r.cap > 0 && r.pop >= r.cap) };
+}
+
+/**
+ * Plays a game one decision at a time: call `tick()` now and then (every few seconds of game time). With
+ * `state.autoMap` (Simulate) it never stops at a village: it grows every village of yours, founds the next once they
+ * are housed, and goes on until the whole valley is full (see mapFill).
  * @param {import('./sim.js').Sim} sim
  */
 export function createAutoplay(sim) {
 	const st = sim.state, g = sim.grid;
 	st.auto ??= 0;
+	delete st.autoFocus;
 	/** @type {string[][]} the plan as this game follows it (a used-up mine adds its rebuilding) */
 	st.autoPlan ??= PLAN.map((x) => [...x]);
 	const plan = st.autoPlan;
@@ -126,8 +167,8 @@ export function createAutoplay(sim) {
 	/** no spot anywhere in reach: found the village next to the city nearest home where the building would stand */
 	function expand(/** @type {string} */ type) {
 		// three villages hold what the plan builds; the fourth and fifth come once these are housed (see settle)
-		// (growing one village full, up to five: its rocks, trees and iron run out, and new ones are found further out)
-		if (ofType('centre').some((b) => b.stage === 'site') || ofType('centre').length >= (st.autoFocus ? 5 : 3)) return false;
+		// (filling the valley, as many as it takes: its rocks, trees and iron run out, and new ones are found further out)
+		if (ofType('centre').some((b) => b.stage === 'site') || (!st.autoMap && ofType('centre').length >= 3)) return false;
 		const home = hq().node;
 		let best = -1, bd = Infinity;
 		for (const v of sim.plan.villages) {
@@ -138,11 +179,11 @@ export function createAutoplay(sim) {
 		}
 		return best >= 0 && sim.build('centre', best, true).ok;
 	}
-	/** every village has a house in each settlement: found the next, up to five, where most houses fit, nearest home */
+	/** every village has a house in each settlement: found the next (up to five, or filling the valley every one that
+	 * could be), where most houses fit, nearest home */
 	function settle(/** @type {any} */ s) {
-		if (st.autoFocus) return;
 		const cs = ofType('centre');
-		if (cs.length >= 5 || cs.some((b) => b.stage === 'site')) return;
+		if ((!st.autoMap && cs.length >= 5) || cs.some((b) => b.stage === 'site')) return;
 		const rows = sim.market().parties.filter((/** @type {any} */ r) => r.owner === PLAYER);
 		const housed = rows.every((/** @type {any} */ r) => {
 			const v = sim.plan.villageOf[sim.plan.plotOf[r.node]];
@@ -156,7 +197,7 @@ export function createAutoplay(sim) {
 			if (sim.canBuild('centre', n)) continue;
 			const room = v.plots.filter((k) => k !== v.centre && sim.plan.spots[k][0] >= 0 && st.terrain[sim.plan.spots[k][0]] === GRASS).length;
 			const sc = room * 4 - g.dist(home, n);
-			if (room >= 4 && sc > bs) (bs = sc), (best = n);
+			if (room >= (st.autoMap ? 3 : 4) && sc > bs) (bs = sc), (best = n);
 		}
 		if (best >= 0) sim.build('centre', best, true);
 	}
@@ -175,7 +216,10 @@ export function createAutoplay(sim) {
 			if (b.owner === PLAYER && b.stage === 'site')
 				owe(Object.fromEntries(Object.entries(/** @type {Record<string, number>} */ (b.cost)).map(([w, n]) => [w, Math.max(0, n - (b.got[w] ?? 0) - (b.used[w] ?? 0) - (b.inc?.[w] ?? 0))])));
 		const rows = sim.market().parties.filter((/** @type {any} */ r) => r.owner === PLAYER);
-		const gold = (/** @type {any} */ row) => (row?.eur ?? 0) - (row?.pop ?? 0) * FOOD_KG * KEEP * PRICE.world;
+		const own = (/** @type {any} */ row) => (row?.eur ?? 0) - (row?.pop ?? 0) * FOOD_KG * KEEP * PRICE.world;
+		// filling the valley, a village pays with the gold of all yours, as the treasuries its trade routes join pay together
+		const all = rows.reduce((t, /** @type {any} */ r) => t + own(r), 0);
+		const gold = (/** @type {any} */ row) => (st.autoMap ? all : own(row));
 		const pays = (/** @type {Record<string, number>} */ cost, /** @type {any} */ row = rows[0], eur = 0) =>
 			Object.entries(cost).reduce((e, [w, n]) => e + Math.max(0, n + (owed[w] ?? 0) - (s.stock[w] ?? 0)) * (WORLD[w]?.eur ?? 0), 0) + eur <= gold(row);
 		return { owe, rows, pays };
@@ -193,16 +237,13 @@ export function createAutoplay(sim) {
 		// one great house early, once it can pay for it
 		const great = houses.filter((b) => b.stage === 'live' && b.level < 4).sort((a, b) => b.level - a.level)[0];
 		if (!houses.some((b) => b.level >= 4) && great && pays(HOUSE_UP[great.level - 1])) return void sim.upgrade(great.id);
-		const first = sim.plan.villageOf[sim.plan.plotOf[hq().node]];
 		for (const row of rows) {
 			const v = sim.plan.villageOf[sim.plan.plotOf[row.node]];
-			// growing one village full: homes only in the first
-			if (st.autoFocus && v !== first) continue;
 			const mine = houses.filter((b) => sim.plan.villageOf[sim.plan.plotOf[b.node]] === v);
-			// only where everyone has a bed and eats and drinks well: more beds bring more mouths. Growing one village full,
-			// two homes grow at once, and the next starts while the last beds still fill
-			const sites = mine.filter((b) => b.stage === 'site').length, fill = st.autoFocus ? Math.min(row.beds - 2, row.beds * 0.8) : row.beds - 2;
-			if (sites >= (st.autoFocus ? 2 : 1) || row.pop < fill || (row.beds > 0 && row.hungry)) continue;
+			// only where everyone has a bed and eats and drinks well: more beds bring more mouths. Filling the valley, two
+			// homes grow at once in each village, and the next starts while the last beds still fill
+			const sites = mine.filter((b) => b.stage === 'site').length, fill = st.autoMap ? Math.min(row.beds - 2, row.beds * 0.8) : row.beds - 2;
+			if (sites >= (st.autoMap ? 2 : 1) || row.pop < fill || (row.beds > 0 && row.hungry)) continue;
 			// the largest house it can pay to enlarge: a bed costs about as much in any dome, most of it glass
 			const small = mine.filter((b) => b.level < HOUSE_TOP && b.stage === 'live').sort((a, b) => b.level - a.level);
 			const can = small.find((b) => pays(HOUSE_UP[b.level - 1], row));
@@ -264,7 +305,8 @@ export function createAutoplay(sim) {
 			const joined = st.auto >= PLAN.length - 2 && (!sim.links(st.hq).some((l) => !l.mine) || join());
 			// homes before the route only while the city is tiny: it starts with none
 			if (joined || s.beds < 24) homes(s);
-			if (joined && st.auto >= plan.length) settle(s);
+			// filling the valley, the next village does not wait for the plan's last factories
+			if (joined && (st.autoMap || st.auto >= plan.length)) settle(s);
 			if (st.auto < plan.length) {
 				const [type, want] = plan[st.auto];
 				const cost = BUILDINGS[type].cost;
@@ -278,12 +320,13 @@ export function createAutoplay(sim) {
 					}
 				}
 			}
-			// once the plan is built, more wood and steel while they run short
-			if (st.auto >= plan.length && plan.length < PLAN.length + 60 && st.time >= (st.autoMore ?? 0)) {
+			// once the plan is built, more wood and steel (filling the valley, glass too) while they run short
+			if (st.auto >= plan.length && plan.length < PLAN.length + (st.autoMap ? 240 : 60) && st.time >= (st.autoMore ?? 0)) {
 				st.autoMore = st.time + 180;
 				const low = (/** @type {string} */ w) => (s.stock[w] ?? 0) < 20;
 				if (low('plank')) plan.push(['woodcutter', 'trees']);
 				else if (low('steel')) plan.push(['ironmine', 'mine']);
+				else if (st.autoMap && low('glass')) plan.push(['glassworks', 'sand']);
 			}
 			// its orders, and with a trade route to a neighbour every request it can fill
 			for (const [w, o] of Object.entries(ORDERS)) if (!st.orders[w]) sim.order(w, o);
