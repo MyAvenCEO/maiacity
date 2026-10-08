@@ -1,5 +1,5 @@
-//! Vaults and governance (P1; T2, T3), on the rules alone, including changes made concurrently on devices that were
-//! offline and meet later.
+//! Vaults and governance (P1 and P2; T2, T3, T16), on the rules alone, including changes made concurrently on devices
+//! that were offline and meet later.
 
 mod common;
 
@@ -10,7 +10,13 @@ use vault_db::policy::{Action, Kind, Log, Principal, Refusal, State};
 #[test]
 fn vault_id_is_genesis_hash() {
     let mut log = Log::new();
-    let genesis = |nonce| Action::Genesis { kind: Kind::Human, owners: vec![Principal::Signer(PASSKEY_S)], threshold: 1, nonce };
+    let genesis = |nonce| Action::Genesis {
+        kind: Kind::Human,
+        owners: vec![Principal::Signer(PASSKEY_S)],
+        threshold: 1,
+        root: Some(PASSKEY_S),
+        nonce,
+    };
     let op = log.check(PASSKEY_S, &[], genesis(0)).unwrap();
     let id = log.append(PASSKEY_S, &[], genesis(0)).unwrap();
     assert_eq!(id, op.id());
@@ -46,7 +52,7 @@ fn add_owner_needs_threshold_and_consent() {
     let mut c = cast();
     // a coop's genesis needs every first owner's consent
     let owners = vec![Principal::Vault(c.samuel), Principal::Vault(c.bob)];
-    let genesis = Action::Genesis { kind: Kind::Coop, owners, threshold: 2, nonce: 0 };
+    let genesis = Action::Genesis { kind: Kind::Coop, owners, threshold: 2, root: None, nonce: 0 };
     assert_eq!(c.log.check(PASSKEY_S, &[], genesis).err(), Some(Refusal::NoConsent));
     let coop = with_coop(&mut c);
     let add_dave = Action::AddOwner { vault: coop, owner: Principal::Vault(c.dave) };
@@ -70,7 +76,7 @@ fn ownership_cycle_rejected() {
     let itself = Action::AddOwner { vault: coop, owner: Principal::Vault(coop) };
     assert_eq!(c.log.check(PASSKEY_S, &[PASSKEY_B], itself).err(), Some(Refusal::Cycle));
     // …nor a vault it owns: Garden, owned by the coop, can't become the coop's owner
-    let genesis = Action::Genesis { kind: Kind::Coop, owners: vec![Principal::Vault(coop)], threshold: 1, nonce: 0 };
+    let genesis = Action::Genesis { kind: Kind::Coop, owners: vec![Principal::Vault(coop)], threshold: 1, root: None, nonce: 0 };
     let garden = VaultId::from(c.log.append(PASSKEY_S, &[PASSKEY_B], genesis).unwrap());
     let around = Action::AddOwner { vault: coop, owner: Principal::Vault(garden) };
     assert_eq!(c.log.check(PASSKEY_S, &[PASSKEY_B], around).err(), Some(Refusal::Cycle));
@@ -94,7 +100,7 @@ fn concurrent_mutual_removals_leave_one_owner() {
     let mut c = cast();
     // a coop of Samuel and Bob where either may act alone
     let owners = vec![Principal::Vault(c.samuel), Principal::Vault(c.bob)];
-    let genesis = Action::Genesis { kind: Kind::Coop, owners, threshold: 1, nonce: 1 };
+    let genesis = Action::Genesis { kind: Kind::Coop, owners, threshold: 1, root: None, nonce: 1 };
     let pair = VaultId::from(c.log.append(PASSKEY_S, &[PASSKEY_B], genesis).unwrap());
     // offline, each removes the other; each removal is fine alone
     let (mut a, mut b) = (c.log.clone(), c.log.clone());
@@ -109,7 +115,7 @@ fn concurrent_mutual_removals_leave_one_owner() {
 fn concurrent_adds_that_close_a_cycle_keep_only_the_first() {
     let mut c = cast();
     let mut coop_of_samuel = |nonce| {
-        let genesis = Action::Genesis { kind: Kind::Coop, owners: vec![Principal::Vault(c.samuel)], threshold: 1, nonce };
+        let genesis = Action::Genesis { kind: Kind::Coop, owners: vec![Principal::Vault(c.samuel)], threshold: 1, root: None, nonce };
         VaultId::from(c.log.append(PASSKEY_S, &[], genesis).unwrap())
     };
     let (garden, kitchen) = (coop_of_samuel(1), coop_of_samuel(2));
@@ -129,7 +135,7 @@ fn a_removal_wins_over_a_concurrent_add_it_did_not_see() {
     let mut c = cast();
     // a coop of Samuel, Bob and Dave, threshold 2
     let owners = vec![Principal::Vault(c.samuel), Principal::Vault(c.bob), Principal::Vault(c.dave)];
-    let genesis = Action::Genesis { kind: Kind::Coop, owners, threshold: 2, nonce: 1 };
+    let genesis = Action::Genesis { kind: Kind::Coop, owners, threshold: 2, root: None, nonce: 1 };
     let trio = VaultId::from(c.log.append(PASSKEY_S, &[PASSKEY_B, PASSKEY_D], genesis).unwrap());
     // Samuel and Bob remove Dave, while Dave and Samuel add Carol, who consents
     let (mut a, mut b) = (c.log.clone(), c.log.clone());
@@ -140,17 +146,39 @@ fn a_removal_wins_over_a_concurrent_add_it_did_not_see() {
     assert_eq!(st.vault(trio).map(|v| v.owners.clone()), Some(vec![Principal::Vault(c.samuel), Principal::Vault(c.bob)]));
 }
 
-/// A recovery code's signer, and the passkey it brings in after the old one was stolen.
-const RECOVERY: SignerId = SignerId::from_u64(99);
-const NEW_PASSKEY: SignerId = SignerId::from_u64(98);
+/// A second passkey of Samuel's, or a recovery code's signer: an owner, never the root.
+const SECOND: SignerId = SignerId::from_u64(98);
 
 #[test]
-#[ignore = "P2: strong removal"]
+fn the_passkey_is_the_root() {
+    let mut c = cast();
+    // a second passkey joins Samuel's vault and the threshold goes up to 2: the root still approves alone…
+    c.log.append(PASSKEY_S, &[SECOND], Action::AddOwner { vault: c.samuel, owner: Principal::Signer(SECOND) }).unwrap();
+    c.log.append(PASSKEY_S, &[], Action::SetThreshold { vault: c.samuel, threshold: 2 }).unwrap();
+    let add = Action::AddDevice { vault: c.samuel, device: NEW_DEVICE };
+    assert!(c.log.check(PASSKEY_S, &[NEW_DEVICE], add.clone()).is_ok());
+    // …and the second passkey alone is below the threshold
+    assert_eq!(c.log.check(SECOND, &[NEW_DEVICE], add).err(), Some(Refusal::BelowThreshold));
+    // only the root hands the root on, and the new root signs
+    let hand_on = Action::SetRoot { vault: c.samuel, root: Some(SECOND), keep: vec![] };
+    assert_eq!(c.log.check(SECOND, &[], hand_on.clone()).err(), Some(Refusal::NotRoot));
+    assert_eq!(c.log.check(PASSKEY_S, &[], hand_on.clone()).err(), Some(Refusal::NoConsent));
+    assert!(c.log.check(PASSKEY_S, &[SECOND], hand_on).is_ok());
+    // a coop has no root, and a root signs the genesis that names it
+    let owners = vec![Principal::Vault(c.samuel), Principal::Vault(c.bob)];
+    let coop = Action::Genesis { kind: Kind::Coop, owners, threshold: 2, root: Some(PASSKEY_S), nonce: 0 };
+    assert_eq!(c.log.check(PASSKEY_S, &[PASSKEY_B], coop).err(), Some(Refusal::NotHuman));
+    let owners = vec![Principal::Signer(PASSKEY_S)];
+    let unsigned = Action::Genesis { kind: Kind::Human, owners, threshold: 1, root: Some(SECOND), nonce: 1 };
+    assert_eq!(c.log.check(PASSKEY_S, &[], unsigned).err(), Some(Refusal::NoConsent));
+}
+
+#[test]
 fn a_removed_owner_cannot_backdate_governance() {
     let mut c = cast();
     // a coop of Samuel and Bob where either may act alone
     let owners = vec![Principal::Vault(c.samuel), Principal::Vault(c.bob)];
-    let genesis = Action::Genesis { kind: Kind::Coop, owners, threshold: 1, nonce: 1 };
+    let genesis = Action::Genesis { kind: Kind::Coop, owners, threshold: 1, root: None, nonce: 1 };
     let pair = VaultId::from(c.log.append(PASSKEY_S, &[PASSKEY_B], genesis).unwrap());
     let early = c.log.clone();
     // Samuel goes on for a while, then removes Bob
@@ -165,16 +193,38 @@ fn a_removed_owner_cannot_backdate_governance() {
     let st = meet(&c.log, &forged);
     assert_eq!(st.vault(pair).map(|v| v.owners.clone()), Some(vec![Principal::Vault(c.samuel)]));
 
-    // a stolen passkey: the recovery signer brings in a new passkey, which removes the old one
+    // a stolen second passkey: on an early copy the thief removes the root's passkey from the owners and adds a
+    // device of their own; the root, having seen neither, removes the stolen passkey, and outranks it
     let mut c = cast();
-    c.log.append(PASSKEY_S, &[RECOVERY], Action::AddOwner { vault: c.samuel, owner: Principal::Signer(RECOVERY) }).unwrap();
+    c.log.append(PASSKEY_S, &[SECOND], Action::AddOwner { vault: c.samuel, owner: Principal::Signer(SECOND) }).unwrap();
     let early = c.log.clone();
-    c.log.append(RECOVERY, &[NEW_PASSKEY], Action::AddOwner { vault: c.samuel, owner: Principal::Signer(NEW_PASSKEY) }).unwrap();
+    let remove = Action::RemoveOwner { vault: c.samuel, owner: Principal::Signer(SECOND), keep: vec![] };
+    c.log.append(PASSKEY_S, &[], remove).unwrap();
+    let mut stolen = early;
     let remove = Action::RemoveOwner { vault: c.samuel, owner: Principal::Signer(PASSKEY_S), keep: vec![] };
-    c.log.append(NEW_PASSKEY, &[], remove).unwrap();
-    // the thief adds a device of their own on an early copy, so it claims to come before the removal
+    stolen.append(SECOND, &[], remove).unwrap();
+    stolen.append(SECOND, &[STRANGER], Action::AddDevice { vault: c.samuel, device: STRANGER }).unwrap();
+    let st = meet(&c.log, &stolen);
+    assert_eq!(st.vault(c.samuel).map(|v| v.owners.clone()), Some(vec![Principal::Signer(PASSKEY_S)]));
+    assert!(!st.acts_for(STRANGER, c.samuel));
+}
+
+#[test]
+fn handing_the_root_on_cuts_the_old_passkeys_backdated_ops() {
+    let mut c = cast();
+    c.log.append(PASSKEY_S, &[SECOND], Action::AddOwner { vault: c.samuel, owner: Principal::Signer(SECOND) }).unwrap();
+    let early = c.log.clone();
+    // the root goes to the new passkey, which retires the old one
+    c.log.append(PASSKEY_S, &[SECOND], Action::SetRoot { vault: c.samuel, root: Some(SECOND), keep: vec![] }).unwrap();
+    let retire = Action::RemoveOwner { vault: c.samuel, owner: Principal::Signer(PASSKEY_S), keep: vec![] };
+    c.log.append(SECOND, &[], retire).unwrap();
+    // the old passkey, stolen later, adds a device on an early copy
     let mut stolen = early;
     stolen.append(PASSKEY_S, &[STRANGER], Action::AddDevice { vault: c.samuel, device: STRANGER }).unwrap();
     let st = meet(&c.log, &stolen);
+    let vt = st.vault(c.samuel).unwrap();
+    assert_eq!((vt.owners.clone(), vt.root), (vec![Principal::Signer(SECOND)], Some(SECOND)));
     assert!(!st.acts_for(STRANGER, c.samuel));
+    // what the old passkey did before stays: the honest devices that drafted both removals had seen it
+    assert!(st.acts_for(MAC_S, c.samuel) && st.acts_for(PHONE_S, c.samuel));
 }

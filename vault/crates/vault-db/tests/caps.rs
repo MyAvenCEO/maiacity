@@ -7,7 +7,6 @@ use common::*;
 use vault_db::policy::{Grantee, Log, Principal, Refusal, Role, Scope};
 
 #[test]
-#[ignore = "P2: caps"]
 fn grant_to_signer_rejected() {
     let mut c = cast();
     let coop = with_coop(&mut c);
@@ -23,7 +22,6 @@ fn grant_to_signer_rejected() {
 }
 
 #[test]
-#[ignore = "P2: caps"]
 fn public_is_read_only() {
     let mut c = cast();
     let coop = with_coop(&mut c);
@@ -45,7 +43,6 @@ fn public_is_read_only() {
 }
 
 #[test]
-#[ignore = "P2: caps"]
 fn write_without_cap_rejected_on_import() {
     let mut c = cast();
     let coop = with_coop(&mut c);

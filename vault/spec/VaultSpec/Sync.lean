@@ -30,7 +30,7 @@ def reaches (st : State) (d : SignerId) : Scope → Bool
 /-- The entry an op writes to. -/
 def Op.writeTarget? (op : Op) : Option (SpaceId × EntryId) :=
   match op.action with
-  | .write sp e _ _ => some (sp, e)
+  | .write sp e .. => some (sp, e)
   | _ => none
 
 /-- The scope an auth op is about: a space's founding, a grant's scope, or for a revocation the scope of the grant
@@ -47,14 +47,14 @@ def Op.authScope? (ops : List Op) (op : Op) : Option Scope :=
 /-- The vault a vault op changes. -/
 def Op.vaultOf? (op : Op) : Option VaultId :=
   match op.action with
-  | .genesis v .. | .addOwner v .. | .removeOwner v .. | .setThreshold v .. | .addDevice v .. | .removeDevice v .. =>
-    some v
+  | .genesis v .. | .addOwner v .. | .removeOwner v .. | .setThreshold v .. | .addDevice v .. | .removeDevice v ..
+  | .setRoot v .. => some v
   | _ => none
 
 /-- The vault an op acts for. -/
 def Op.actor? (op : Op) : Option VaultId :=
   match op.action with
-  | .foundSpace _ a | .revoke _ a _ | .write _ _ a _ => some a
+  | .foundSpace _ a | .revoke _ a _ | .write _ _ a .. => some a
   | .grant g => some g.issuer
   | _ => none
 

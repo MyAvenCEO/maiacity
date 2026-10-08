@@ -28,15 +28,15 @@ lake exe vectors
 | File | What it holds |
 |---|---|
 | `Basic.lean` | Ids, principals (signers and vaults), roles relay < read < write < owner, scopes (a space or one entry), grantees, key names |
-| `State.lean` | What a peer knows; acting for a vault, approving for it by threshold, holding a cap; symbolic keys (`Knows`), rotation and sealing |
-| `Step.lean` | Every op and the rules that accept or refuse it; the one order every peer replays in |
+| `State.lean` | What a peer knows; acting for a vault, approving for it (its root, or its threshold of owners), holding a cap; symbolic keys (`Knows`), rotation and sealing |
+| `Step.lean` | Every op and the rules that accept or refuse it; the one order every peer replays in; strong removal: what a removal cuts, and which removals stand when they clash (`view`) |
 | `Sync.lean` | What a peer sends a device: sync by caps, item by item |
 | `Doc.lean` | Documents as histories: merge and promote, against the laws we rely on from Loro |
 | `Lens.lean` | The markdown document and the todo in two schema versions, and the lenses between them |
-| `Theorems.lean` | T1 to T8 and T11 to T13 |
-| `Lemmas.lean` | The helper lemmas the proofs use: how a step changes a vault, ownership links and chains |
-| `Examples.lean` | The plan's scenarios run on the model, including one todo shared with several vaults and synced peer to peer |
-| `Vectors.lean` | Cases for the Rust core: ops applied in order, which the model accepts, and the vaults at the end |
+| `Theorems.lean` | T1 to T8, T11 to T14 and T16 |
+| `Lemmas.lean` | The helper lemmas the proofs use: how a step changes a vault, ownership links and chains, what a step keeps that authorization reads, causal closure, replays |
+| `Examples.lean` | The plan's scenarios run on the model, including one todo shared with several vaults and synced peer to peer, and strong removal: back-dated ops cut, clashes, a stolen passkey, the root handed on |
+| `Vectors.lean` | Cases for the Rust core: ops applied in order (which the model accepts) and ops at the depths they claim (which stand in the view), with the state at the end |
 | `VectorsCheck.lean`, `WriteVectors.lean` | Check `vectors/vaults.json` on every build; write it (`lake exe vectors`) |
 | `vectors/vaults.json` | The cases with the model's answers, read by `vault-db/tests/vectors.rs` |
 
@@ -44,32 +44,41 @@ lake exe vectors
 
 | # | What must always hold | Status | Guarded in Rust by |
 |---|---|---|---|
-| T1 | Only authorized writes are accepted, and revocation wins over what it hadn't seen | P2 | `write_without_cap_rejected_on_import`, `t1_authorized_writes` |
-| T2 | Governance needs the vault's threshold plus the newcomer's consent; devices can't govern | Proven | `add_owner_needs_threshold_and_consent`, `device_cannot_govern`, `t2_consent`, the vectors |
+| T1 | Only authorized writes are accepted, and revocation wins over what it hadn't seen | Proven | `write_without_cap_rejected_on_import`, `t1_authorized_writes`, `t1_revocation_wins`, the vectors |
+| T2 | Governance needs the vault's approval (its root, or its threshold of owners) plus the newcomer's consent; devices can't govern | Proven | `add_owner_needs_threshold_and_consent`, `device_cannot_govern`, `the_passkey_is_the_root`, `t2_consent`, the vectors |
 | T3 | No ownership cycles in any state the ops can reach | Proven | `ownership_cycle_rejected`, `t3_no_cycles`, the vectors |
-| T4 | Grants name vaults, never signers | P2 | `grant_to_signer_rejected`, `t4_grants_name_vaults_and_t8_public_read_only` |
+| T4 | Grants name vaults, never signers | Proven | `grant_to_signer_rejected`, `t4_grants_name_vaults_and_t8_public_read_only`, the vectors |
 | T5 | A device opens a key only if it was entitled to it at that epoch or a later one, or the key was public | P3 | `entry_reader_cannot_open_other_entries` |
 | T6 | Forward secrecy on removal: the current key opens only for devices entitled now | P3 | `revoked_reader_cannot_open_new_edits` |
 | T7 | Blind server: a device whose vaults hold no read opens only public keys | Proven from T5 | `server_holds_only_ciphertext` |
-| T8 | Public is read-only | P2 | `public_is_read_only` |
+| T8 | Public is read-only | Proven | `public_is_read_only`, `t4_grants_name_vaults_and_t8_public_read_only`, the vectors |
 | T9 | Lens laws: round trips and idempotent migration | Proven | `lens_round_trip_v1`, `migration_is_idempotent` |
 | T10 | Merge is the union of histories; promote gives the branch's content and keeps both | Proven | `promote_equals_branch` |
 | T11 | Same ops in any order, same state | P6 | `same_ops_any_order_same_result`, `t11_convergence` |
 | T12 | A peer sends a device only items it holds a cap on | P6 | `sync_sends_only_capped_items`, `t12_sync_shares_only_caps` |
 | T13 | Two devices that synced both ways hold the same writes for every item they share | P6 | `item_syncs_peer_to_peer_without_server` |
+| T14 | Accepted writes are causally closed: a write stands only with every write it builds on | Proven | `a_drop_takes_what_builds_on_it_along`, `t14_causally_closed`, the vectors |
+| T16 | Strong removal: an op stands only if it also stands without what each later removal that hadn't seen it takes away, and every removal chosen stands | Proven | `a_removed_owner_cannot_backdate_governance`, `handing_the_root_on_cuts_the_old_passkeys_backdated_ops`, `t16_strong_removal`, the view vectors |
 
 The Rust scenario tests (`vault-db/tests/scenarios.rs`) run the same scenarios as `Examples.lean`, on real devices
-and keys in the Lab. The vectors (`vault-db/tests/vectors.rs`) hold the Rust rules to the model's answers op by op:
-the model names vaults by numbers and the core by the hash of their genesis, so the test maps each number to the vault
-its accepted genesis created.
+and keys in the Lab. The vectors (`vault-db/tests/vectors.rs`) hold the Rust rules to the model's answers op by op, and
+in the view, where each op claims a depth: the model names vaults, spaces and grants by numbers and ops by their place,
+the core by hashes, so the test maps each number to what its op created.
 
 T3 is stated for reachable states, the replay of some ops from the empty state: an arbitrary state could list an owner
 vault that doesn't exist, which no op can produce. Its proof carries that invariant (`OwnersExist`) along.
 
-Concurrent governance replays in one order (causal depth, removals first, then op hash), so it settles the same way
-on every device. That alone doesn't stop a removed owner, or a thief holding a stolen passkey, from signing ops on an
-old copy of the log that claim to come before the removal. P2's strong removal cuts what a removal hadn't seen, for
-governance as for writes; `a_removed_owner_cannot_backdate_governance` waits for it.
+Concurrent changes replay in one order (causal depth, removals first, then op hash), so they settle the same way on
+every device. That alone doesn't stop a removed owner, or a thief holding a stolen passkey, from signing ops on an old
+copy of the log that claim to come before the removal, so a removal cuts what it hadn't seen (T16). Every removal
+(removing an owner or a device, revoking a grant, handing the root on) names the ops it had seen and keeps; every
+other op before it in the replay order stands only if it also stands with what the removal takes away hidden, for
+governance as for writes. When removals clash, the senior one stands: the vault's root, then its owners in the order
+they joined, then removals no owner approved (a device leaving), then revocations.
+
+A human vault's passkey is its root, named at genesis: it approves anything for its vault on its own, wins every
+clash, and only it hands the root on (`setRoot`, which cuts what the old passkey signs on an old copy). A recovery
+code is an optional second owner, never the root.
 
 ## Assumptions
 
@@ -94,7 +103,7 @@ what is still red.
 |---|---|---|
 | P0 | This spec, the `vault-db` API as stubs, every test | Statements compile, scenarios check |
 | P1 | Vaults, vault logs, chains; op ids and signatures (device keys, passkeys through the WebAuthn envelope, recovery codes); vectors for the vault rules | T2, T3 |
-| P2 | Spaces, grants, revocation, Public, write checks, what each device may receive | T1, T4, T8 |
+| P2 | Spaces, grants, revocation with strong removal, the passkey as root, Public, write checks with causal closure, what each device may receive | T1, T4, T8, T14, T16 |
 | P3 | Keys, sealing, encryption of every edit, rotation | T5, T6, T7 |
 | P4 | The Loro document and todo, schemas, lenses | T9 in Rust |
 | P5 | History, branches, merge, promote | T10 in Rust |

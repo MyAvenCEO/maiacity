@@ -52,20 +52,23 @@ def opens' (ops : List Op) (d : SignerId) (k : KeyScope) : Bool :=
   let st := view ops
   knows st [.device d] (st.curKey k)
 
-/-- The ops of a scenario the model refuses, in the order every peer replays them. Replay skips a refused op
-    without a word, so every scenario checks this is empty. -/
+/-- The ops of a scenario that don't stand, in the order every peer replays them. Replay skips a refused op without
+    a word, so every scenario checks which ones it expects. -/
 def refused (ops : List Op) : List OpId :=
-  let rec go (st : State) : List Op → List OpId
-    | [] => []
-    | op :: rest => match step st op with
-      | some st' => go st' rest
-      | none => op.id :: go st rest
-  go {} (order ops)
+  let stood := standing ops
+  (order ops).filterMap fun o => if stood.any (·.id == o.id) then none else some o.id
 
-/-! ## Scenarios 1 and 2: vaults and devices -/
+/-- Ops made on a device that had seen the log only up to depth `d`, each building on the one before, ids counting
+    from `start`: they sort before whatever was made elsewhere since. -/
+def offline (start d : Nat) (steps : List (SignerId × List SignerId × Action)) : List Op :=
+  (steps.zipIdx).map fun ((author, co, a), i) => { id := start + i, depth := d + 1 + i, author, cosigners := co, action := a }
+
+/-! ## Scenarios 1 and 2: vaults and devices
+
+Each person's passkey is their vault's root, as in the app. -/
 
 def s1 : List Op := chain 1 [
-  (passkeyS, [], .genesis samuel .human [.signer passkeyS] 1),
+  (passkeyS, [], .genesis samuel .human [.signer passkeyS] 1 (some passkeyS)),
   (passkeyS, [macS], .addDevice samuel macS),
   (passkeyS, [phoneS], .addDevice samuel phoneS)]
 #guard refused s1 == []
@@ -77,15 +80,31 @@ def s1 : List Op := chain 1 [
 #guard accepted s1 (attempt passkeyS [77] (.addDevice samuel 77))
 -- a device can't be added without its own signature
 #guard !accepted s1 (attempt passkeyS [] (.addDevice samuel 77))
+-- only the root hands the root on, and the new root signs
+#guard accepted s1 (attempt passkeyS [77] (.setRoot samuel (some 77) []))
+#guard !accepted s1 (attempt passkeyS [] (.setRoot samuel (some 77) []))
+#guard !accepted s1 (attempt macS [77] (.setRoot samuel (some 77) []))
+-- the root signs the genesis that names it
+#guard !accepted [] (attempt passkeyS [] (.genesis samuel .human [.signer passkeyS] 1 (some 77)))
 
 def s2 : List Op := s1 ++ chain 10 [
-  (passkeyB, [], .genesis bob .human [.signer passkeyB] 1),
+  (passkeyB, [], .genesis bob .human [.signer passkeyB] 1 (some passkeyB)),
   (passkeyB, [macB], .addDevice bob macB),
-  (passkeyC, [], .genesis carol .human [.signer passkeyC] 1),
+  (passkeyC, [], .genesis carol .human [.signer passkeyC] 1 (some passkeyC)),
   (passkeyC, [macC], .addDevice carol macC),
-  (passkeyD, [], .genesis dave .human [.signer passkeyD] 1),
+  (passkeyD, [], .genesis dave .human [.signer passkeyD] 1 (some passkeyD)),
   (passkeyD, [macD], .addDevice dave macD)]
 #guard refused s2 == []
+
+-- a second passkey joins Samuel's vault at threshold 2; the root still approves alone, the other passkey doesn't
+def twoKeys : List Op := s1 ++ chain 140 [
+  (passkeyS, [77], .addOwner samuel (.signer 77)),
+  (passkeyS, [], .setThreshold samuel 2)]
+#guard refused twoKeys == []
+#guard accepted twoKeys (attempt passkeyS [78] (.addDevice samuel 78))
+#guard !accepted twoKeys (attempt 77 [78] (.addDevice samuel 78))
+-- a coop has no root
+#guard !accepted s2 (attempt passkeyS [passkeyB] (.genesis coop .coop [.vault samuel, .vault bob] 2 (some passkeyS)))
 
 /-! ## Scenario 3: a coop of two vaults, threshold 2 -/
 
@@ -172,7 +191,7 @@ def s11 : List Op := s7 ++ chain 80 [(passkeyS, [], .removeDevice samuel phoneS 
 
 /-! ## Scenario 12: Bob leaves the coop on his own -/
 
-def s12 : List Op := s7 ++ chain 90 [(passkeyB, [], .removeOwner coop (.vault bob) [41, 42, 61])]
+def s12 : List Op := s7 ++ chain 90 [(passkeyB, [], .removeOwner coop (.vault bob) [])]
 #guard refused s12 == []
 
 #guard ((view s12).vault? coop).map (·.threshold) == some 1
@@ -219,8 +238,8 @@ def s16a : List Op := s15 ++ chain 110 [
 #guard opens' s16a macD (.entry todos door) && accepted s16a (attempt macC [] (.write todos door carol 0))
 
 def s16 : List Op := s16a ++ chain 120 [
-  -- taking the coop's owner cap away is governance, and ends the read Bob gave Dave
-  (passkeyS, [], .revoke 12 samuel [100, 101, 102])]
+  -- taking the coop's owner cap away is governance, and ends the read Bob gave Dave, which Samuel had seen
+  (passkeyS, [], .revoke 12 samuel [110])]
 #guard refused s16 == []
 
 #guard !entitled (view s16) macB (.entry todos door) && !entitled (view s16) macD (.entry todos door)
@@ -242,7 +261,7 @@ def s16 : List Op := s16a ++ chain 120 [
 -- Each Mac starts with its own vault and what Samuel's Mac sent it. Then the server and Samuel go offline, Bob
 -- edits the door todo, and Bob's Mac and Carol's Mac sync directly.
 def ownVault (v : VaultId) : List Op := s2.filter (·.vaultOf? == some v)
-def bobMac : List Op := receive (ownVault bob) (respond s15 macB) ++ chain 130 [(macB, [], .write todos door bob 0)]
+def bobMac : List Op := receive (ownVault bob) (respond s15 macB) ++ chain 130 [(macB, [], .write todos door bob 0 [100])]
 def carolMac : List Op := receive (ownVault carol) (respond s15 macC)
 
 #guard refused bobMac == [] && refused carolMac == []
@@ -256,5 +275,69 @@ def carolMac' := receive carolMac (respond bobMac macC)
 #guard itemWrites (view carolMac') todos door == itemWrites (view bobMac') todos door
 -- and neither learned anything about the other todos
 #guard itemWrites (view carolMac') todos seeds == [] && itemWrites (view bobMac') todos solar == []
+
+/-! ## Strong removal: a removal cuts what it hadn't seen
+
+A device that was offline makes ops on its old copy of the log, so they sort before a removal made elsewhere in the
+meantime. Each such op stands only if it stands without what the removal took away. -/
+
+-- a coop of Samuel and Bob where either may act alone
+def pair := 201
+def sPair : List Op := s2 ++ chain 140 [(passkeyS, [passkeyB], .genesis pair .coop [.vault samuel, .vault bob] 1)]
+
+-- Samuel goes on, then removes Bob; Bob, offline since the coop began, adds Dave
+def backdated (keep : List OpId) : List Op := sPair ++ chain 141 [
+  (passkeyS, [], .setThreshold pair 1),
+  (passkeyS, [], .setThreshold pair 1),
+  (passkeyS, [], .removeOwner pair (.vault bob) keep)] ++ offline 150 140 [
+  (passkeyB, [passkeyD], .addOwner pair (.vault dave))]
+
+-- the removal hadn't seen Bob's add, so it is cut; had it seen it, the add would stand
+#guard refused (backdated []) == [150]
+#guard ((view (backdated [])).vault? pair).map (·.owners) == some [.vault samuel]
+#guard refused (backdated [150]) == []
+#guard ((view (backdated [150])).vault? pair).map (·.owners) == some [.vault samuel, .vault dave]
+
+-- the two remove each other at once, and Bob's sorts first: the senior owner stands
+def clash : List Op := sPair ++ [
+  { id := 161, depth := 141, author := passkeyS, cosigners := [], action := .removeOwner pair (.vault bob) [] },
+  { id := 160, depth := 141, author := passkeyB, cosigners := [], action := .removeOwner pair (.vault samuel) [] }]
+#guard ((order clash).map (·.id)).reverse.take 2 == [161, 160]
+#guard refused clash == [160]
+#guard ((view clash).vault? pair).map (·.owners) == some [.vault samuel]
+
+-- a thief holding Samuel's second passkey removes the root's passkey from the owners and adds a device; the root,
+-- having seen neither, removes the second passkey. It keeps the threshold it had set, which counted that passkey.
+def stolen : List Op := twoKeys ++ chain 142 [(passkeyS, [], .removeOwner samuel (.signer 77) [141])] ++ offline 170 141 [
+  (77, [passkeyS], .removeOwner samuel (.signer passkeyS) []),
+  (77, [stranger], .addDevice samuel stranger)]
+#guard refused stolen == [170, 171]
+#guard ((view stolen).vault? samuel).map (·.owners) == some [.signer passkeyS]
+#guard !actsFor (view stolen) stranger samuel
+
+-- Samuel revokes Bob's write on the door todo, keeping the edit he had seen; Bob's other edit, made offline, is cut,
+-- and so is Carol's, which builds on it, though Carol may write
+def revokedWriter : List Op := s16a ++ offline 180 113 [
+  (macB, [], .write todos door bob 0 [100])] ++ offline 182 115 [
+  (macC, [], .write todos door carol 0 [180])]
+#guard refused revokedWriter == [180, 182]
+#guard (itemWrites (view revokedWriter) todos door).map (·.op) == [100]
+-- revoking Bob's write after his edit arrived keeps it: the revocation names it
+def keptWriter : List Op := s15 ++ chain 113 [(macB, [], .write todos door bob 0 [100])] ++ chain 114 [
+  (macS, [], .revoke 10 samuel [113]),
+  (macC, [], .write todos door carol 0 [113])]
+#guard refused keptWriter == [115]
+#guard (itemWrites (view keptWriter) todos door).map (·.op) == [100, 113]
+
+-- handing the root on to a new passkey, then retiring the old one, cuts what the old passkey signs on an old copy;
+-- both keep what the old passkey approved before them, as every honest device's draft does
+def handover : List Op := s1 ++ chain 140 [
+  (passkeyS, [77], .addOwner samuel (.signer 77)),
+  (passkeyS, [77], .setRoot samuel (some 77) [2, 3, 140]),
+  (77, [], .removeOwner samuel (.signer passkeyS) [2, 3, 140])] ++ offline 150 140 [
+  (passkeyS, [stranger], .addDevice samuel stranger)]
+#guard refused handover == [150]
+#guard ((view handover).vault? samuel).map (fun v => (v.owners, v.root)) == some ([.signer 77], some 77)
+#guard !actsFor (view handover) stranger samuel
 
 end VaultSpec.Examples

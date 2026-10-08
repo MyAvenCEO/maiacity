@@ -285,7 +285,8 @@ mod tests {
     use crate::policy::{Action, Kind, Principal};
 
     fn op(author: SignerId, cosigners: Vec<SignerId>) -> Op {
-        let action = Action::Genesis { kind: Kind::Human, owners: vec![Principal::Signer(author)], threshold: 1, nonce: 0 };
+        let action =
+            Action::Genesis { kind: Kind::Human, owners: vec![Principal::Signer(author)], threshold: 1, root: Some(author), nonce: 0 };
         Op { parents: vec![], depth: 0, author, cosigners, action }
     }
 

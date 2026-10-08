@@ -151,11 +151,12 @@ impl Encode for Grant {
 impl Encode for Action {
     fn encode(&self, out: &mut Vec<u8>) {
         match self {
-            Action::Genesis { kind, owners, threshold, nonce } => {
+            Action::Genesis { kind, owners, threshold, root, nonce } => {
                 out.push(0);
                 kind.encode(out);
                 owners.encode(out);
                 threshold.encode(out);
+                root.encode(out);
                 nonce.encode(out);
             }
             Action::AddOwner { vault, owner } => {
@@ -200,14 +201,21 @@ impl Encode for Action {
                 actor.encode(out);
                 keep.encode(out);
             }
-            Action::Write { space, entry, actor, epoch, body } => {
+            Action::Write { space, entry, actor, epoch, deps, body } => {
                 out.push(9);
                 space.encode(out);
                 entry.encode(out);
                 actor.encode(out);
                 epoch.encode(out);
+                deps.encode(out);
                 (body.len() as u32).encode(out);
                 out.extend_from_slice(body);
+            }
+            Action::SetRoot { vault, root, keep } => {
+                out.push(10);
+                vault.encode(out);
+                root.encode(out);
+                keep.encode(out);
             }
         }
     }
@@ -230,7 +238,7 @@ mod tests {
 
     fn genesis(nonce: u64) -> Op {
         let owners = vec![Principal::Signer(SignerId::from_u64(1))];
-        let action = Action::Genesis { kind: Kind::Human, owners, threshold: 1, nonce };
+        let action = Action::Genesis { kind: Kind::Human, owners, threshold: 1, root: None, nonce };
         Op { parents: vec![], depth: 0, author: SignerId::from_u64(1), cosigners: vec![], action }
     }
 
@@ -252,6 +260,11 @@ mod tests {
         others.push(o);
         let mut o = base.clone();
         o.action = Action::AddDevice { vault: VaultId::from_u64(1), device: SignerId::from_u64(1) };
+        others.push(o);
+        let mut o = base.clone();
+        if let Action::Genesis { root, .. } = &mut o.action {
+            *root = Some(SignerId::from_u64(1));
+        }
         others.push(o);
         for o in &others {
             assert_ne!(op_id(o), op_id(&base), "{o:?}");
