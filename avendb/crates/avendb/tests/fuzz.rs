@@ -1,15 +1,21 @@
 //! Mutation fuzzing (P4b): what a device takes from others (key boxes, encrypted edits, signed ops, schemas, lenses,
-//! Loro updates), changed a bit or a byte at a time, cut short, grown or spliced. Nothing panics; a changed box, edit
-//! or signed op is refused, and a changed Loro update that is refused leaves the item as it was. Every mutation is
-//! drawn from a fixed seed, so a failure replays exactly.
+//! Loro updates), changed a bit or a byte at a time, cut short, grown or spliced, and from P8 every message on the wire
+//! (signed ops, hellos, asks, requests, replies, announcements). Nothing panics; a changed box, edit or signed op is
+//! refused, a changed message reads as nothing or as another message whose own bytes these are, and a changed Loro
+//! update that is refused leaves the item as it was. Every mutation is drawn from a fixed seed, so a failure replays
+//! exactly.
+
+use std::fmt::Debug;
 
 use serde_json::{json, Map, Value};
 use avendb::doc::{Item, Version};
-use avendb::id::{EntryId, OpId, SignerId, SpaceId, VaultId};
+use avendb::id::{BlobId, EntryId, OpId, SignerId, SpaceId, VaultId};
 use avendb::keys::{self, SeededRng, Secret};
 use avendb::lens::{blobs, BlockV2, Lane, Lens, Schema, TypeV2, View, DOCUMENT_V1, DOCUMENT_V2, TODO_V1, TODO_V2};
 use avendb::policy::{Action, Branch, Op};
-use avendb::sign::{Classical, DeviceKey, Passkey, Signature, SignerKeys, Signed};
+use avendb::sign::{Classical, DeviceKey, Hello, Passkey, Signature, SignerKeys, Signed};
+use avendb::sync::{Ask, LogId};
+use avendb::wire::{Announce, Reply, Request, Wire};
 
 /// Where and how to mutate: xorshift64*, seeded per test.
 struct Gen(u64);
@@ -176,8 +182,9 @@ fn mutate_op(g: &mut Gen, op: &Op) -> Op {
     o
 }
 
-#[test]
-fn a_changed_signed_op_is_refused() {
+/// Two signed ops: governance, which both halves sign, by a passkey with the new device consenting; and a write on a
+/// branch, which only the classical half signs.
+fn signed_ops() -> (Signed, Signed) {
     let device = DeviceKey::from_secret([7; 32]);
     let mut passkey = Passkey::from_seed([9; 32]);
     let samuel = VaultId::from_u64(100);
@@ -203,6 +210,12 @@ fn a_changed_signed_op_is_refused() {
     };
     let write = Op { parents: vec![OpId::from_u64(2)], depth: 2, author: device.id(), cosigners: vec![], action };
     let write = Signed { sigs: vec![device.sign(write.id(), false)], op: write };
+    (add, write)
+}
+
+#[test]
+fn a_changed_signed_op_is_refused() {
+    let (add, write) = signed_ops();
     let mut g = Gen::new(3);
     for signed in [&add, &write] {
         assert!(signed.verify().is_ok());
@@ -226,6 +239,62 @@ fn a_changed_signed_op_is_refused() {
     let mut classical = add.clone();
     classical.sigs.iter_mut().for_each(|s| s.pq = None);
     assert!(classical.verify().is_err());
+}
+
+/// Mutate the bytes of `value` `n` times: each changed message reads as nothing, or as another value whose own
+/// bytes these are, which `also` checks further. It never panics.
+fn wire_mutations<T: Wire + PartialEq + Debug>(g: &mut Gen, value: &T, n: usize, also: impl Fn(&T)) -> usize {
+    let bytes = value.to_wire();
+    assert_eq!(T::from_wire(&bytes).as_ref(), Ok(value));
+    let mut read = 0;
+    for _ in 0..n {
+        let bad = mutate(g, &bytes);
+        if let Ok(v) = T::from_wire(&bad) {
+            assert_eq!(v.to_wire(), bad, "a message reads back only from its own bytes: {v:?}");
+            also(&v);
+            read += 1;
+        }
+    }
+    read
+}
+
+#[test]
+fn a_changed_message_on_the_wire_reads_as_nothing_or_as_its_own_bytes() {
+    let (add, write) = signed_ops();
+    let mut g = Gen::new(11);
+    // a signed op read from changed bytes is refused, whatever it changed into
+    for signed in [&add, &write] {
+        let read = wire_mutations(&mut g, signed, 1500, |s: &Signed| assert!(s.verify().is_err(), "{s:?}"));
+        assert!(read > 0, "some changes still read as a signed op, to be refused");
+        wire_mutations(&mut g, &signed.op, 1000, |o: &Op| assert_ne!(o, &signed.op));
+    }
+    // a hello read from changed bytes proves no device on the connection
+    let device = DeviceKey::from_secret([7; 32]);
+    let SignerKeys::Device { ed25519: endpoint, .. } = device.keys() else { unreachable!() };
+    let exporter = [4; 32];
+    let hello = device.hello(&exporter, true);
+    assert_eq!(hello.verify(&exporter, true, &endpoint), Some(device.id()));
+    wire_mutations(&mut g, &hello, 1000, |h: &Hello| assert_eq!(h.verify(&exporter, true, &endpoint), None));
+    // what a sync carries: asks, requests, replies and announcements
+    let log = |n: u64| LogId::Entry(SpaceId::from_u64(10), EntryId::from_u64(n));
+    let mut ask = Ask::default();
+    ask.haves.insert(LogId::Vault(VaultId::from_u64(100)), vec![OpId::from_u64(1), OpId::from_u64(2)]);
+    ask.haves.insert(LogId::Space(SpaceId::from_u64(10)), vec![]);
+    ask.haves.insert(log(1), vec![OpId::from_u64(5)]);
+    ask.loose = vec![OpId::from_u64(7), OpId::from_u64(9)];
+    wire_mutations(&mut g, &ask, 3000, |_| {});
+    let request = Request { ask, wants: vec![BlobId::from_u64(3), BlobId::from_u64(4)] };
+    wire_mutations(&mut g, &request, 3000, |_| {});
+    let blobs = vec![(BlobId::from_u64(3), [1; 32]), (BlobId::from_u64(4), [2; 32])];
+    let reply = Reply { ops: vec![add.clone(), write.clone()], blobs };
+    let sent = [add.clone(), write.clone()];
+    wire_mutations(&mut g, &reply, 1500, |r: &Reply| {
+        for op in r.ops.iter().filter(|o| !sent.contains(o)) {
+            assert!(op.verify().is_err(), "{op:?}");
+        }
+    });
+    let announce = Announce { digests: vec![(LogId::Vault(VaultId::from_u64(100)), [3; 32]), (log(1), [4; 32])] };
+    wire_mutations(&mut g, &announce, 3000, |_| {});
 }
 
 /// `v` with one value somewhere inside replaced: by null, a boolean, a number, a string, an empty or deeply nested

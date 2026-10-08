@@ -32,7 +32,7 @@
 //! peers stop trusting the curves (`set_pq_only`), each counts only the writes a checkpoint by their author covers
 //! (`policy::checkpointed`), and checkpoints each write of its own as it makes it.
 
-use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
@@ -47,8 +47,9 @@ use crate::id::{BlobId, EntryId, OpId, SignerId, SpaceId, VaultId};
 use crate::keys::{self, KeyBox, KeyId, KeyName, KeyScope, PublicKey, Recipient, SeededRng, Secret};
 use crate::lens::{Lane, Schema};
 use crate::policy::{checkpointed, replay, Action, Branch, Kind, Line, Log, Op, Principal, Refusal, Replay, State};
-use crate::sign::{self, Classical, DeviceKey, Passkey, Signature, SignerKeys, Signed};
+use crate::sign::{self, Classical, DeviceKey, Hello, Passkey, Signature, SignerKeys, Signed};
 use crate::sync::{answer, asks_ids, beyond, digests_ids, forks_in, logs_of, vault_logs, LogId};
+use crate::wire::Request;
 
 /// A device keeps its keys up to date in a few rounds at most: one to make and seal keys, one to seal newer keys to
 /// the keys it just made, one to find nothing left. More means an op the rules refuse, made again and again.
@@ -260,6 +261,8 @@ pub struct Lab {
     made: u64,
     /// The randomness of new keys, seals and nonces.
     rng: SeededRng,
+    /// For a device split off to run on its own (`split`), bytes of its own that every key it makes derives from too.
+    entropy: Option<[u8; 32]>,
     spares: Spares,
     /// No device trusts the curves anymore: each counts only checkpointed writes.
     pq_only: bool,
@@ -285,6 +288,7 @@ impl Lab {
             server_signers: None,
             made: 0,
             rng: SeededRng::new("lab randomness", b""),
+            entropy: None,
             spares: Spares::default(),
             pq_only: false,
             offline: HashSet::new(),
@@ -316,6 +320,9 @@ impl Lab {
         self.made += 1;
         let mut h = Hasher::new("lab key");
         h.update(&self.made.to_be_bytes()).update(&(what.len() as u32).to_be_bytes()).update(what.as_bytes()).update(name.as_bytes());
+        if let Some(e) = &self.entropy {
+            h.update(e);
+        }
         h.reader()
     }
 
@@ -1045,6 +1052,169 @@ impl Lab {
     pub fn forks(&self, d: SignerId) -> Vec<(OpId, OpId)> {
         let store = self.held(d);
         forks_in(store.log.ops(), store.log.ids(), store.view())
+    }
+
+    /// Device `d` split off to run on its own, as on a machine of its own (`avendb-net` puts it on iroh): a Lab holding
+    /// only `d`'s store, the keys of `d` and of the signers `with` that are used on it (its person's passkey), every
+    /// signer's name, and randomness of its own from `seed`, so that no two devices split off make the same keys or
+    /// nonces. This Lab keeps the rest.
+    pub fn split(&mut self, d: SignerId, with: &[SignerId], seed: [u8; 32]) -> Lab {
+        let store = self.stores.remove(&d).unwrap_or_else(|| panic!("{d:?} is no device of the Lab"));
+        self.devices.retain(|&x| x != d);
+        let keys = [d].iter().chain(with).filter_map(|s| Some((*s, self.keys.remove(s)?))).collect();
+        let salts = self.salts.remove(&d).map(|salt| (d, salt)).into_iter().collect();
+        let mut rng = SeededRng::new("lab randomness", &seed);
+        let mut spares = Spares { keys: VecDeque::new(), keep: self.spares.keep };
+        spares.fill(&mut rng);
+        Lab {
+            keys,
+            names: self.names.clone(),
+            salts,
+            devices: vec![d],
+            stores: HashMap::from([(d, store)]),
+            server: self.server,
+            server_signers: self.server_signers,
+            made: 0,
+            rng,
+            entropy: Some(seed),
+            spares,
+            pq_only: self.pq_only,
+            offline: HashSet::new(),
+        }
+    }
+
+    /// The secret of device `d`'s iroh endpoint, its ed25519 key: `None` while it is locked.
+    pub fn endpoint_secret(&self, d: SignerId) -> Option<[u8; 32]> {
+        match self.keys.get(&d)? {
+            Key::Device(k) => Some(k.endpoint_secret()),
+            Key::Passkey(_) => None,
+        }
+    }
+
+    /// Device `d`'s hello on the connection whose TLS exporter is `exporter`, for the end that dialed if `dialer`
+    /// (`sign::Hello`): `None` while it is locked.
+    pub fn hello(&self, d: SignerId, exporter: &[u8; 32], dialer: bool) -> Option<Hello> {
+        match self.keys.get(&d)? {
+            Key::Device(k) => Some(k.hello(exporter, dialer)),
+            Key::Passkey(_) => None,
+        }
+    }
+
+    /// The devices device `d` knows, other than itself, each with its ed25519 key, its iroh endpoint's: the devices
+    /// of the vaults in its view whose keys it saw in a signature.
+    pub fn peers(&self, d: SignerId) -> Vec<(SignerId, [u8; 32])> {
+        let store = self.held(d);
+        let devices: HashSet<SignerId> = store.view().vaults().iter().flat_map(|v| v.devices.iter().copied()).collect();
+        let mut out = BTreeMap::new();
+        for sig in store.signed.values().flat_map(|s| &s.sigs) {
+            if let SignerKeys::Device { ed25519, .. } = sig.keys {
+                let s = sig.keys.id();
+                if s != d && devices.contains(&s) {
+                    out.insert(s, ed25519);
+                }
+            }
+        }
+        out.into_iter().collect()
+    }
+
+    /// What device `d` asks `peer` when it syncs with it on the network (`wire::Request`): its frontier of each log and
+    /// a few ops further back (`sync::asks`), and the McEliece keys it lacks that the ops of those logs name, but only
+    /// of the logs `peer` may hold by `d`'s view: `d` tells a peer nothing about the rest. A log it names nothing of
+    /// comes whole, if the peer may send it.
+    pub fn request(&self, d: SignerId, peer: SignerId) -> Request {
+        let store = self.held(d);
+        let (ops, ids) = (store.log.ops(), store.log.ids());
+        let places = answer(ops, &self.full_view(d), peer);
+        let logs = logs_of(ops, ids);
+        let shared: HashSet<LogId> = places.iter().filter_map(|&i| logs[i]).collect();
+        let theirs: HashSet<OpId> = places.iter().map(|&i| ids[i]).collect();
+        let mut ask = asks_ids(ops, ids);
+        ask.haves.retain(|l, _| shared.contains(l));
+        ask.loose.retain(|id| theirs.contains(id));
+        let wants: BTreeSet<BlobId> =
+            places.iter().flat_map(|&i| ops[i].blobs()).filter(|b| !store.blobs.contains_key(b)).collect();
+        Request { ask, wants: wants.into_iter().collect() }
+    }
+
+    /// What device `d` answers `asker`'s request: the ops `asker` may receive by `d`'s view beyond those it named, as
+    /// `sync` sends them, and the McEliece keys `d` holds that those ops name or that the request wants and `asker` may
+    /// fetch (`may_fetch`), smallest first. `d` vouches for its new writes first.
+    pub fn reply(&mut self, d: SignerId, asker: SignerId, request: &Request) -> (Vec<Signed>, Vec<BlobId>) {
+        self.checkpoint(d);
+        let store = self.held(d);
+        let (ops, ids) = (store.log.ops(), store.log.ids());
+        let places = answer(ops, &self.full_view(d), asker);
+        let sent: Vec<OpId> =
+            beyond(ops, ids, &logs_of(ops, ids), &places, &request.ask).into_iter().map(|i| ids[i]).collect();
+        let reach: HashSet<BlobId> = places.iter().flat_map(|&i| ops[i].blobs()).collect();
+        let (signed, _) = self.outgoing(d, &sent);
+        let wanted = request.wants.iter().copied().filter(|b| reach.contains(b));
+        let blobs: BTreeSet<BlobId> =
+            signed.iter().flat_map(|s| s.op.blobs()).chain(wanted).filter(|b| store.blobs.contains_key(b)).collect();
+        (signed, blobs.into_iter().collect())
+    }
+
+    /// Device `d` may hand `asker` the McEliece key `blob`: it holds it, and an op `asker` may receive by `d`'s view
+    /// names it.
+    pub fn may_fetch(&self, d: SignerId, asker: SignerId, blob: BlobId) -> bool {
+        let store = self.held(d);
+        let ops = store.log.ops();
+        store.blobs.contains_key(&blob)
+            && answer(ops, &self.full_view(d), asker).into_iter().any(|i| ops[i].blobs().contains(&blob))
+    }
+
+    /// The McEliece key `b` as device `d` holds it.
+    pub fn blob(&self, d: SignerId, b: BlobId) -> Option<Arc<[u8]>> {
+        self.held(d).blobs.get(&b).cloned()
+    }
+
+    /// The ids of the McEliece keys device `d` holds, smallest first.
+    pub fn blob_ids(&self, d: SignerId) -> Vec<BlobId> {
+        let ids: BTreeSet<BlobId> = self.held(d).blobs.keys().copied().collect();
+        ids.into_iter().collect()
+    }
+
+    /// Device `d` receives ops and McEliece keys from a peer on the network: it keeps each op whose signatures check
+    /// out, and each key an op it holds names, by the key's own hash, then brings its keys and items up to date. How
+    /// many ops were new.
+    pub fn receive(&mut self, d: SignerId, ops: Vec<Signed>, blobs: Vec<Arc<[u8]>>) -> usize {
+        let blobs: Blobs = blobs.into_iter().map(|b| (BlobId::of(&b), b)).collect();
+        let before = self.held(d).signed.len();
+        let mut changed = self.keep(d, ops, &blobs);
+        let store = self.stores.get_mut(&d).expect("a device");
+        let named: HashSet<BlobId> = store.log.ops().iter().flat_map(Op::blobs).collect();
+        for (b, bytes) in blobs {
+            if named.contains(&b) && !store.blobs.contains_key(&b) {
+                store.blobs.insert(b, bytes);
+                changed = true;
+            }
+        }
+        let new = self.held(d).signed.len() - before;
+        if changed {
+            self.refresh(d, &[]);
+        }
+        new
+    }
+
+    /// The digest of each log device `d` holds that `peer` may hold too by `d`'s view (`sync::digests`), smallest log
+    /// first: what `d` tells `peer` whenever one changes, so that `peer` asks it where they differ. Nothing about any
+    /// other log.
+    pub fn announce(&mut self, d: SignerId, peer: SignerId) -> Vec<(LogId, [u8; 32])> {
+        self.digests(d);
+        let store = self.held(d);
+        let (ops, ids) = (store.log.ops(), store.log.ids());
+        let logs = logs_of(ops, ids);
+        let shared: BTreeSet<LogId> =
+            answer(ops, &self.full_view(d), peer).into_iter().filter_map(|i| logs[i]).collect();
+        let digests = store.digests.as_ref().expect("worked out");
+        shared.into_iter().filter_map(|l| Some((l, *digests.get(&l)?))).collect()
+    }
+
+    /// A peer that announced `digests` holds a log otherwise than device `d`: one differs from `d`'s digest of the
+    /// log, or names a log `d` doesn't hold. Then `d` asks it.
+    pub fn differs(&mut self, d: SignerId, digests: &[(LogId, [u8; 32])]) -> bool {
+        let mine = self.digests(d);
+        digests.iter().any(|(l, x)| mine.get(l) != Some(x))
     }
 
     /// A backup of device `d`: its signed ops and their blobs, as they are now.

@@ -13,7 +13,8 @@ history and branches, and, from P8, its own iroh networking (its own ALPN, its o
 
 | Path | What it holds |
 |---|---|
-| `crates/avendb` | The core: the rules every peer applies (`policy`), keys and encryption (`keys`), signatures and passkeys (`sign`), Loro items (`doc`), schemas and lenses (`lens`), history and branches (`branch`), sync by caps and by each log's frontier (`sync`), and the Lab the scenario tests run on (`lab`) |
+| `crates/avendb` | The core: the rules every peer applies (`policy`), keys and encryption (`keys`), signatures and passkeys (`sign`), Loro items (`doc`), schemas and lenses (`lens`), history and branches (`branch`), sync by caps and by each log's frontier (`sync`), every message between devices as bytes (`wire`), and the Lab the scenario tests run on (`lab`) |
+| `crates/avendb-net` | avenDB on the network: each device a node on an iroh endpoint of its own ed25519 key, X25519MLKEM768 the only key exchange, a hello that proves the device on every connection, sync by caps, the McEliece keys in iroh-blobs behind a gate, and announcements of changed digests to each peer that may hold the log |
 | `crates/avendb-web` | The core in a web page, as WebAssembly: the tile's world made a step at a time, read through JSON views and changed through JSON actions, on whichever device the page picks |
 | `scripts/build-web.sh` | Builds `avendb-web` into the tile's package, `src/lib/avendb/pkg/` in the app (committed, so the app builds without Rust) |
 | `spec/` | The Lean model the core is built against, test-first: the rules, the theorems (T1 to T19) and the test vectors both sides replay (see `spec/README.md`) |
@@ -23,7 +24,7 @@ history and branches, and, from P8, its own iroh networking (its own ALPN, its o
 
 ```sh
 cd avendb
-cargo test                      # every Rust test
+cargo test                      # every Rust test, the nodes on iroh among them (over loopback, no network needed)
 cargo test -- --ignored         # the tests later phases still owe
 cd spec && lake build           # the Lean model: proofs, scenario checks, test vectors
 ```
@@ -53,4 +54,5 @@ Each phase is one PR, merged when its Rust tests pass and its theorems are prove
 | P5 | History and branches: every write a commit on a line of its entry's history, branches from any version, merge, promote, revert and restore, undo of an older commit, forks into another space (T10) | Merged |
 | P6 | Sync log by log: every op builds on the frontier of its own log (a vault's, a space's or an entry's), a device asks with its frontier of each log and a few ops further back and is sent only what it lacks (T19), devices gossip one digest per log, a device restored from an old backup is flagged when it signs again (a fork); offline devices, random delivery orders, partial delivery, Lean ⇄ Rust vectors for sync (T11, T12, T13); a device that has seen a revocation writes under the new key (T15) | Merged |
 | P7 | The avenDB tile: the Lab's whole world in one page, as WebAssembly in the page's workers, every device side by side; pick one and act as it: vaults and the passkeys that sign their changes, spaces, entries read and edited as each app version sees them, history, branches, access and why, todos, schemas and lenses, sync, locked and offline devices, and the plan's scenarios played green | Merged |
-| P8 | Sync on avenDB's own iroh ALPN with X25519MLKEM768 on every connection, bytes in iroh-blobs, the server peer in its own container beside the media vault's | Next |
+| P8a | Devices on avenDB's own iroh: one encoding for every message between devices, fuzzed; each device a node on an iroh endpoint of its own ed25519 key with X25519MLKEM768 as the only key exchange, and a hello on every connection that proves the device by its SLH-DSA signature over the TLS exporter; sync by caps over avenDB's own ALPN, the McEliece keys in iroh-blobs, handed out only within reach; a node announces each changed digest straight to each peer that may hold the log, not over iroh-gossip, whose topics would tell every member of a log; scenarios 5 and 17 between nodes on one machine | Merged |
+| P8b | The server peer in its own container beside the media vault's, as relay (with access control), mailbox and witness, holding only ciphertext; each node's store on disk; linking a device by QR code; keys in the device's secure boundary; a ProVerif model of the hello; scenarios 5 and 17 between this Mac, a second device and the server | Next |
