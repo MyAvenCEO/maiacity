@@ -311,17 +311,25 @@
 	{/if}
 {/snippet}
 <!-- its upgrade to the next stage, with what that takes: for the foot of its card, beside its other buttons -->
-{#snippet stageUp(/** @type {any[]} */ stages, /** @type {number} */ level, /** @type {Record<string, number> | null | undefined} */ up, /** @type {() => void} */ go)}
-	{@const next = stages[level] ?? null}
-	{#if next && up}
-		<button class="go up grow" onclick={go} title="Upgrade to {next.label.toLowerCase()}: {makeLine(next)}. Its build: {side(next.build.in, ', ')}, from your stores (what they lack, bought){next.build.in.gold ? ' and its treasury (what it lacks, borrowed)' : ''}">
-			<span>Upgrade → {next.label}</span>
-			<span class="chips">
-				{#each Object.entries(up) as [w, n] (w)}<span class="cost"><i style:background={WARES[w].color}></i>{ware(n)}</span>{/each}
-				{#if next.build.in.energy}<span class="cost"><i class="bolt"></i>{fmt(next.build.in.energy)}</span>{/if}
-				{#if next.build.in.gold}<span class="cost"><i class="coin"></i>{fmt(next.build.in.gold)}</span>{/if}
-			</span>
-		</button>
+<!-- a card's foot, fixed while it scrolls: what the next stage takes, named, over its buttons side by side across the
+     card, tearing down on the left and upgrading on the right -->
+{#snippet foot(/** @type {any[] | null} */ stages, /** @type {number} */ level, /** @type {Record<string, number> | null | undefined} */ up, /** @type {(() => void) | null} */ go, /** @type {(() => void) | null} */ tear)}
+	{@const next = stages && go && up ? (stages[level] ?? null) : null}
+	{#if next || tear}
+		<div class="actions foot">
+			{#if next && up}
+				<p class="price" title="Upgrade to {next.label.toLowerCase()}: {makeLine(next)}. Its build: {side(next.build.in, ', ')}, from your stores (what they lack, bought){next.build.in.gold ? ' and its treasury (what it lacks, borrowed)' : ''}">
+					<span class="what">{next.label} takes</span>
+					{#each Object.entries(up) as [w, n] (w)}<span class="chip" class:short={(summary?.stock[w] ?? 0) < n}><i style:background={WARES[w].color}></i>{ware(n)} {nameOf(w)}</span>{/each}
+					{#if next.build.in.energy}<span class="chip"><i class="bolt"></i>{fmt(next.build.in.energy)} energy</span>{/if}
+					{#if next.build.in.gold}<span class="chip"><i class="coin"></i>{fmt(next.build.in.gold)} gold</span>{/if}
+				</p>
+			{/if}
+			<div class="buttons">
+				{#if tear}<button class="danger" onclick={tear}>Tear down</button>{/if}
+				{#if next}<button class="go" onclick={go}>Upgrade to {next.label.toLowerCase()}</button>{/if}
+			</div>
+		</div>
 	{/if}
 {/snippet}
 
@@ -540,7 +548,7 @@
 				{/if}
 				<p class="people small">Year {summary.date.year} · month {summary.date.month} · day {summary.date.day} · {summary.people} people · {summary.villages} {summary.villages === 1 ? 'village' : 'villages'}</p>
 				{#if growWhy}<p class="status">{growWhy}</p>{/if}
-				{#if pw?.next}<div class="actions foot">{@render stageUp(/** @type {any[]} */ (stagesOf('centre')), pw.stage, pw.next.up, grow)}</div>{/if}
+				{#if pw?.next}{@render foot(/** @type {any[]} */ (stagesOf('centre')), pw.stage, pw.next.up, grow, null)}{/if}
 			</section>
 		</aside>
 	{/if}
@@ -638,10 +646,13 @@
 			{/if}
 			{#if upWhy}<p class="status">{upWhy}</p>{/if}
 			{#if card.owner === PLAYER && card.type !== 'centre'}
-				<div class="actions foot">
-					{#if stagesOf(card.type) && card.level && !card.upgrading}{@render stageUp(/** @type {any[]} */ (stagesOf(card.type)), card.level, card.up, () => card && ((upWhy = game?.sim.upgrade(card.id)?.why ?? ''), refresh()))}{/if}
-					<button class="danger" onclick={() => (game?.sim.demolish(card?.node ?? -1), game?.select(null))}>Tear down</button>
-				</div>
+				{@render foot(
+					/** @type {any[] | null} */ (stagesOf(card.type)),
+					card.level,
+					card.up,
+					card.level && !card.upgrading ? () => card && ((upWhy = game?.sim.upgrade(card.id)?.why ?? ''), refresh()) : null,
+					() => (game?.sim.demolish(card?.node ?? -1), game?.select(null))
+				)}
 			{/if}
 		</section>
 	{:else if flagCard}
@@ -654,9 +665,7 @@
 				{#each flagCard.wares as w, k (k)}<li title={label(w)}><i style:background={WARES[w].color}></i><span>{label(w)}</span></li>{/each}
 			</ul>
 			{#if flagCard.owner === PLAYER}
-				<div class="actions foot">
-					<button class="danger" onclick={() => (game?.sim.demolish(selected?.node ?? -1), game?.select(null))}>Tear down</button>
-				</div>
+				{@render foot(null, 0, null, null, () => (game?.sim.demolish(selected?.node ?? -1), game?.select(null)))}
 			{/if}
 		</section>
 	{:else if roadCard}
@@ -1014,24 +1023,6 @@
 	.trend.t-1 {
 		color: #a3322a;
 	}
-	.up {
-		display: inline-flex;
-		align-items: center;
-		gap: 0.45rem;
-		white-space: nowrap;
-	}
-	.up .cost {
-		display: inline-flex;
-		align-items: center;
-		gap: 0.2rem;
-		font-size: 0.8em;
-		opacity: 0.85;
-	}
-	.up .cost i {
-		width: 0.6rem;
-		height: 0.6rem;
-		border-radius: 2px;
-	}
 	.label.stats {
 		display: block;
 		line-height: 1.4;
@@ -1053,19 +1044,6 @@
 	}
 	i.bolt {
 		background: #e8b730;
-	}
-	.grow {
-		display: flex;
-		flex-direction: column;
-		align-items: flex-start;
-		gap: 0.15rem;
-		border-radius: 12px;
-		text-align: left;
-	}
-	.grow .chips {
-		display: flex;
-		flex-wrap: wrap;
-		gap: 0.15rem 0.55rem;
 	}
 	i.coin {
 		background: #d9a520;
@@ -1458,6 +1436,7 @@
 		margin-top: 0.7rem;
 	}
 	.actions.foot {
+		display: block;
 		position: sticky;
 		bottom: 0;
 		z-index: 1;
@@ -1468,6 +1447,33 @@
 	}
 	.panel:has(> .actions.foot) {
 		padding-bottom: 0;
+	}
+	.foot .price {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
+		gap: 0.15rem 0.6rem;
+		margin: 0 0 0.5rem;
+		font-size: 0.74rem;
+	}
+	.foot .price .what {
+		font-weight: 600;
+	}
+	/* the buttons fill the card's width together, the upgrade the more; in a narrow card it takes a line of its own */
+	.foot .buttons {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.4rem;
+	}
+	.foot .buttons button {
+		flex: 1 0 auto;
+		padding: 0.55rem 0.9rem;
+		font-size: 0.8rem;
+		text-align: center;
+		white-space: nowrap;
+	}
+	.foot .buttons .go {
+		flex: 2 0 auto;
 	}
 	.actions button,
 	.go {
@@ -1684,9 +1690,9 @@
 			margin: 0.7rem -1rem 0;
 			padding: 0.6rem 1rem var(--nav-room, 4rem);
 		}
-		.actions.foot button {
-			padding: 0.55rem 0.9rem;
-			font-size: 0.8rem;
+		.foot .buttons button {
+			padding: 0.7rem 0.9rem;
+			font-size: 0.85rem;
 		}
 		.wares {
 			grid-template-columns: 1fr;
