@@ -6,7 +6,7 @@
  * at 1,000 € a gold (the euros never show: they are only how real prices become gold; a HEART is a thousandth of a
  * gold): a village center pays from its treasury and the load is in its storehouse at once. What a treasury lacks it
  * borrows, a loan paid back over fifteen years (LOAN). Food and water a village buys there by itself, and sells what
- * its forests grow beyond two weeks put by (./food.js); planks, steel, fired clay and glass you buy and sell (WORLD),
+ * its forests grow beyond two weeks put by (./food.js); planks, steel, fired clay, glass and solar panels you buy and sell (WORLD),
  * or your orders do.
  *
  * Trade routes. Village centers are joined by trade routes under the ground: carts run along them at twice a walker's
@@ -37,20 +37,22 @@ export const CART = 8;
 /** years of its wants a neighbour likes to have put by: a quarter */
 const PUT_BY = 0.25;
 /** a ware's usual price, in coins */
-export const BASE = { plank: 4, steel: 4, clay: 4, glass: 4 };
+export const BASE = { plank: 4, steel: 4, clay: 4, glass: 4, solar: 4 };
 /** euros in a gold: a HEART is a euro */
 export const EUR_PER_GOLD = EUR_GOLD;
 /**
  * What the world market asks for a ware, in euros (HEARTs) a load of 5 t, and what one tonne of it is: real prices.
  * Building timber is the average of sawn softwood across Europe, about 800 € a tonne (0.8 gold); structural steel,
  * about 1,000 € (1 gold); fired clay voussoirs about 200 € (250 to 450 € a m³ of hollow blocks, by our tunnel research);
- * laminated double glazing with see-through solar cells, about 40 kg and 100 € a m², so 2,500 € a tonne (2.5 gold).
+ * laminated double glazing, about 40 kg and 50 € a m², so 1,250 € a tonne (1.25 gold); and solar panels, the same
+ * glazing with see-through solar cells, about 100 € a m², so 2,500 € a tonne (2.5 gold).
  */
 export const WORLD = /** @type {Record<string, { eur: number, unit: string }>} */ ({
 	plank: { eur: EUR_T.plank * LOAD_T, unit: 'sawn building timber, glulam' },
 	steel: { eur: EUR_T.steel * LOAD_T, unit: 'steel joints: cast hubs, screws, brackets' },
 	clay: { eur: EUR_T.clay * LOAD_T, unit: 'fired clay voussoirs' },
-	glass: { eur: EUR_T.glass * LOAD_T, unit: 'laminated double glazing with see-through solar cells' }
+	glass: { eur: EUR_T.glass * LOAD_T, unit: 'laminated double glazing' },
+	solar: { eur: EUR_T.solar * LOAD_T, unit: 'laminated double glazing with see-through solar cells' }
 });
 /** electricity on the world grid, € a kWh: it buys what your villages make beyond what they use, and sells what they
  * lack, 80 € a MWh */

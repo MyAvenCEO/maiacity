@@ -3,21 +3,22 @@
  *
  * A valley economy in the spirit of the old settler games, without the war, its own names and its own numbers: wares lie at flags and
  * carriers bring them, one carrier to a road, from flag to flag, to whoever needs them. A building is a site until a
- * builder has used up what it is built of; then a worker moves in and it runs its chain. Four wares, short chains,
+ * builder has used up what it is built of; then a worker moves in and it runs its chain. Five wares, short chains,
  * each one building that grows by stages, every stage a recipe of the crafting engine (RECIPES):
  *
  *   forest hex: logs → forester, woodcutter, sawmill, timber works → planks
  *   iron hex: iron ore → iron mine, furnace, steelworks → steel
  *   meadow hex: raw clay → clay pit, kiln, block works → fired clay
- *   sand hex: sand → sand pit, glassworks, solar panel works → glass
+ *   sand hex: sand → sand pit, glassworks → glass; upgraded once more, a solar panel works → solar panels
  *
  * One unit for everything, a real one (UNITS): a tonne of a ware, a tonne of food, a m³ of water, a MWh of energy, and a
  * gold, the world market's real prices read at 1,000 € a gold (the game shows gold only). Planks are the glulam struts
- * of the domes, steel their joints, glass their glazing with its solar cells, fired clay the voussoirs of the trade
- * routes. A dome is built as the real one is (DOME_T), of all three from your stores.
+ * of the domes, steel their joints, glass the glazing of a small dome and solar panels the glazing of one from 16 beds
+ * (SOLAR_BEDS), fired clay the voussoirs of the trade routes. A dome is built as the real one is (DOME_T), of all three
+ * from your stores.
  *
- * Energy is not a ware but a flow (ENERGY): every village center is also a geothermal power plant, every dome makes
- * some with its solar glass, and people and factories use it.
+ * Energy is not a ware but a flow (ENERGY): every village center is also a geothermal power plant, every dome from 16
+ * beds makes some with its solar panels, and people and factories use it.
  *
  * Food and water are not wares: every house's hex grows food and its roof catches rain into the tanks, and what a
  * village lacks it buys from the world market (./food.js).
@@ -45,7 +46,8 @@ export const WARES = {
 	plank: { id: 'plank', label: 'Planks', color: '#e0b46a' },
 	steel: { id: 'steel', label: 'Steel', color: '#8796a6' },
 	clay: { id: 'clay', label: 'Fired clay', color: '#c4734f' },
-	glass: { id: 'glass', label: 'Glass', color: '#9fd3e0' }
+	glass: { id: 'glass', label: 'Glass', color: '#9fd3e0' },
+	solar: { id: 'solar', label: 'Solar panels', color: '#3a5a9e' }
 };
 export const WARE_ORDER = Object.keys(WARES);
 
@@ -95,34 +97,37 @@ export const UNITS = {
 export const LOAD_T = 5;
 /**
  * The real great dome of 248, 150 m across (our engineering research, 2026-10-07), in tonnes: its larch and Douglas
- * glulam struts, its finished steel joints (cast hubs, screws, brackets) and its laminated double glazing with its
- * see-through solar cells.
+ * glulam struts, its finished steel joints (cast hubs, screws, brackets) and its laminated double glazing.
  */
 export const DOME_T = { plank: 1500, steel: 200, glass: 1000 };
+/** the beds from which a dome is glazed with solar panels, laminated double glazing with see-through solar cells that
+ * make its power; a smaller dome with plain glass, and makes none (Samuel, 2026-10-08) */
+export const SOLAR_BEDS = 16;
+/** what glazes a dome of so many beds: glass, or from 16 beds solar panels @param {number} beds */
+export const glazingOf = (beds) => (beds >= SOLAR_BEDS ? 'solar' : 'glass');
 /**
- * What a dome of so many beds is built of, in tonnes. Its floor and roof grow with its beds, and so does its glass; its
- * struts and joints grow a little faster, as a wider dome needs stouter ones (to the 1.25th power of its beds, about
- * 3.6 t of struts for a hut of 2, 13.5 m across).
+ * What a dome of so many beds is built of, in tonnes. Its floor and roof grow with its beds, and so does its glazing;
+ * its struts and joints grow a little faster, as a wider dome needs stouter ones (to the 1.25th power of its beds,
+ * about 3.6 t of struts for a hut of 2, 13.5 m across).
  * @param {number} beds
  */
 export const domeOf = (beds) => {
 	const r = beds / HOUSE_MOST;
-	return { plank: DOME_T.plank * r ** 1.25, steel: DOME_T.steel * r ** 1.25, glass: DOME_T.glass * r };
+	return { plank: DOME_T.plank * r ** 1.25, steel: DOME_T.steel * r ** 1.25, [glazingOf(beds)]: DOME_T.glass * r };
 };
-/** a dome's struts, joints and glass in loads, rounded up @param {number} beds */
-const domeLoads = (beds) => {
-	const t = domeOf(beds);
-	return { plank: Math.ceil(t.plank / LOAD_T), steel: Math.ceil(t.steel / LOAD_T), glass: Math.ceil(t.glass / LOAD_T) };
-};
-/** what of each ware the larger dome takes beyond the smaller (none left out) @param {number} from @param {number} to */
+/** a dome's struts, joints and glazing in loads, rounded up @param {number} beds */
+const domeLoads = (beds) => /** @type {Record<string, number>} */ (Object.fromEntries(Object.entries(domeOf(beds)).map(([w, t]) => [w, Math.ceil(t / LOAD_T)])));
+/** what of each ware the larger dome takes beyond the smaller (none left out); a dome grown to 16 beds is glazed anew,
+ * with solar panels @param {number} from @param {number} to */
 const domeStep = (from, to) => {
-	const a = from ? domeLoads(from) : { plank: 0, steel: 0, glass: 0 }, b = domeLoads(to);
+	const a = from ? domeLoads(from) : {}, b = domeLoads(to);
 	/** @type {Record<string, number>} */
 	const step = {};
-	for (const w of /** @type {const} */ (['plank', 'steel', 'glass'])) if (b[w] > a[w]) step[w] = b[w] - a[w];
+	for (const w of ['plank', 'steel', 'glass', 'solar']) if ((b[w] ?? 0) > (a[w] ?? 0)) step[w] = b[w] - (a[w] ?? 0);
 	return step;
 };
-/** what enlarging a house to its next size costs, in loads of struts, joints and glass from your stores */
+/** what enlarging a house to its next size costs, in loads of struts, joints and glazing (glass, or solar panels from
+ * 16 beds) from your stores */
 export const HOUSE_UP = HOUSE_BEDS.slice(1).map((n, k) => domeStep(HOUSE_BEDS[k], n));
 
 /**
@@ -149,12 +154,12 @@ export const HOUSE_UP = HOUSE_BEDS.slice(1).map((n, k) => domeStep(HOUSE_BEDS[k]
 /** @type {Record<string, BuildingType>} */
 export const BUILDINGS = {
 	centre: { id: 'centre', label: 'Logistics hub', group: 'Homes', about: 'Founds a village in its middle hex: a small store dome, its storehouse and market — nobody lives here. Your first comes with your settlers, anywhere in the valley; every next one in the village next to one of yours, joined to it by a trade route under the ground, laid of fired clay voussoirs (what your stores lack, bought from the world market), and four settlers come to build its houses. It grows into its village’s great village center, the village’s power plant too: a geothermal plant under it, its wells drilled for gold, runs day and night.', cost: {}, kind: 'centre' },
-	house: { id: 'house', label: 'House', group: 'Homes', about: 'Founds a settlement: settlers live here, 2 at first, then twice as many each time you enlarge it, up to 248. A dome of glass on struts and steel joints, all three from your stores. Its two factory spots open once it stands.', cost: domeStep(0, HOUSE_BEDS[0]), kind: 'house' },
+	house: { id: 'house', label: 'House', group: 'Homes', about: 'Founds a settlement: settlers live here, 2 at first, then twice as many each time you enlarge it, up to 248. A dome on struts and steel joints, glazed with glass, and from 16 beds with solar panels that make its power, all from your stores. Its two factory spots open once it stands.', cost: domeStep(0, HOUSE_BEDS[0]), kind: 'house' },
 	woodcutter: { id: 'woodcutter', label: 'Forester', group: 'Basics', about: 'Your wood, in one building that grows: a forester plants young trees round it; upgraded, a woodcutter fells grown trees and plants a young one where each stood, then a sawmill and a timber works cut more planks from every tree. Build it on a forest hex.', cost: { plank: 2 }, kind: 'gather', biome: 'forest', worker: 'Forester', out: 'plank', time: 6, rest: 4, range: 10 },
 	forester: { id: 'forester', label: 'Forester', group: '', about: 'Plants young trees nearby, on a forest hex; they grow in about two minutes. (Now the first level of the wood building.)', cost: { plank: 2 }, kind: 'forester', biome: 'forest', worker: 'Forester', time: 3, rest: 5, range: 8 },
 	ironmine: { id: 'ironmine', label: 'Iron mine', group: 'Basics', about: 'Your steel, in one building that grows: an iron mine digs iron ore and smelts 5 t of steel joints from every 25 t; upgraded, a furnace makes 10 t and a steelworks 15 t from the same ore. Build it on an iron hex, by rust-red rock.', cost: { plank: 4 }, kind: 'mine', biome: 'iron', worker: 'Miner', inputs: [], out: 'steel', time: 8, on: 'any', ore: 'iron' },
 	clayworks: { id: 'clayworks', label: 'Clay pit', group: 'Basics', about: 'Your fired clay, in one building that grows: a clay pit digs the clay under a meadow and fires bricks in a clamp; upgraded, an electric kiln fires twice as much, and a block works presses the hollow, interlocking voussoirs of the trade routes in five moulds and fires three times as much in a tunnel kiln, from the same pit. Build it on a meadow hex.', cost: { plank: 4 }, kind: 'mine', biome: 'meadow', worker: 'Brick maker', inputs: [], out: 'clay', time: 8, on: 'any' },
-	glassworks: { id: 'glassworks', label: 'Sand pit', group: 'Basics', about: 'Your glass, in one building that grows: a sand pit digs and washes the glass sand of a sandy hex; upgraded, a glassworks melts it with soda and lime in an electric furnace and floats it into panes, and a solar panel works lays see-through solar cells into more of it, the glazing every dome makes its power with. Build it on a sand hex.', cost: { plank: 4 }, kind: 'mine', biome: 'sand', worker: 'Glass maker', inputs: [], out: 'glass', time: 8, on: 'any' },
+	glassworks: { id: 'glassworks', label: 'Sand pit', group: 'Basics', about: 'Your glass and solar panels, in one building that grows: a sand pit digs and washes the glass sand of a sandy hex; upgraded, a glassworks melts it with soda and lime in an electric furnace and floats it into panes, the glazing of a small dome; upgraded once more, a solar panel works makes solar panels instead, laying see-through solar cells into its glass, the glazing that domes from 16 beds make their power with. Build it on a sand hex.', cost: { plank: 4 }, kind: 'mine', biome: 'sand', worker: 'Glass maker', inputs: [], out: 'glass', time: 8, on: 'any' },
 	village: { id: 'village', label: 'Village center', group: '', about: 'A neighbour city’s village center.', cost: {}, kind: 'village' }
 };
 
@@ -184,7 +189,7 @@ export const UPKEEP = 0.02;
  * What the world market asks for a tonne of each ware, in € (./market.js WORLD says where the prices come from), and €
  * in a gold: what upkeep costs and what the world market trades at.
  */
-export const EUR_T = /** @type {Record<string, number>} */ ({ plank: 800, steel: 1000, clay: 200, glass: 2500 });
+export const EUR_T = /** @type {Record<string, number>} */ ({ plank: 800, steel: 1000, clay: 200, glass: 1250, solar: 2500 });
 export const EUR_GOLD = 1000;
 
 /** what a factory takes from the land of its hex, a round at a time: in tonnes */
@@ -226,7 +231,8 @@ export const BUILD_MWH_T = 0.1, KEEP_MWH_T = 0.2;
  * clamp of wood waste, a kiln 10 t with electricity, a block works 15 t of voussoirs in a tunnel kiln, about 10 t a day.
  * Glass: a sand hex gives 100 rounds a year; a sand pit digs and washes the sand and melts none yet, a glassworks melts
  * 12 t of sand, soda and lime into 10 t of float glass in an electric furnace (1.3 MWh a tonne), and a solar panel works
- * 18 t into 15 t, laying see-through solar cells into it (about 2 MWh a tonne in all).
+ * 18 t into 15 t of solar panels instead, laying see-through solar cells into its glass (about 2 MWh a tonne in all):
+ * the only maker of solar panels.
  * @type {Record<string, Recipe>}
  */
 export const RECIPES = /** @type {any} */ ({
@@ -268,7 +274,7 @@ export const RECIPES = /** @type {any} */ ({
 		stages: [
 			{ label: 'Sand pit', build: { plank: 20 }, make: {}, does: 'digs and washes glass sand and melts none yet' },
 			{ label: 'Glassworks', build: { plank: 30, steel: 15 }, make: { in: { sand: 12, energy: 13 }, out: { glass: 10 } } },
-			{ label: 'Solar panel works', build: { plank: 40, steel: 25 }, make: { in: { sand: 18, energy: 30 }, out: { glass: 15 } } }
+			{ label: 'Solar panel works', build: { plank: 40, steel: 25 }, make: { in: { sand: 18, energy: 30 }, out: { solar: 15 } } }
 		]
 	}
 });
@@ -345,9 +351,10 @@ export const CENTRE = /** @type {any} */ ([
  *
  * Every village center is also its village's power plant: one enhanced geothermal plant under it (as Fervo drilled
  * for Google: its wells, one injecting and two producing, 5.5 km down), 3.4 MW net, running 94% of the time, about
- * 540 MWh a week; it is not upgraded (Samuel, 2026-10-07). A logistics hub has none yet. Every dome makes some with the see-through solar
- * cells in its glass, which leave 70% of the light: a great dome of 248 about 1.3 GWh a year, so 5,242 kWh a bed (a
- * smaller dome as much as its glass), most in summer and little in winter; and its climate (fans, pumps, heat pumps)
+ * 540 MWh a week; it is not upgraded (Samuel, 2026-10-07). A logistics hub has none yet. Every dome from 16 beds makes some with
+ * the see-through solar cells of its solar panels, which leave 70% of the light: a great dome of 248 about 1.3 GWh a
+ * year, so 5,242 kWh a bed (a smaller one as much as its panels), most in summer and little in winter; a dome of glass
+ * makes none; and its climate (fans, pumps, heat pumps)
  * uses 0.17 GWh a year. A person uses 900 kWh a year at home, as people sharing a dome do, so a dome's sun makes about
  * three times what its people and climate use over a year, but a little less than that in midwinter. A village
  * center uses 0.3 GWh a year for its hall, its storehouse and its trade routes' lights and trains. Factories use
