@@ -7340,6 +7340,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "vault-db"
+version = "0.1.0"
+
+[[package]]
 name = "vault-media"
 version = "0.1.0"
 dependencies = [

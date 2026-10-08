@@ -1,0 +1,6 @@
+name = "vault-spec"
+version = "0.1.0"
+defaultTargets = ["VaultSpec"]
+
+[[lean_lib]]
+name = "VaultSpec"

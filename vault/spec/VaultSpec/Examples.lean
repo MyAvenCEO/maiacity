@@ -1,0 +1,260 @@
+import VaultSpec.Sync
+
+/-!
+# The plan's scenarios, run on the model
+
+Each `#guard` replays part of an acceptance scenario from the plan and checks what the model says. They run on
+every `lake build`, so a change to the model that breaks a scenario fails the build. The Rust scenario tests check
+the same things against the real code.
+-/
+
+namespace VaultSpec.Examples
+
+-- Signers: passkeys and device keys.
+def passkeyS := 1
+def macS := 2
+def phoneS := 3
+def passkeyB := 4
+def macB := 5
+def passkeyC := 6
+def macC := 7
+def passkeyD := 8
+def macD := 9
+def stranger := 555
+
+-- Vaults, spaces and entries.
+def samuel := 100
+def bob := 101
+def carol := 102
+def dave := 103
+def coop := 200
+def handbook := 10
+def notes := 11
+def todos := 12
+def welcome := 1
+def charter := 2
+def onboarding := 3
+def door := 21
+def seeds := 22
+def solar := 23
+
+/-- Ops in sequence: each builds on the one before, ids count from `start`. -/
+def chain (start : Nat) (steps : List (SignerId × List SignerId × Action)) : List Op :=
+  (steps.zipIdx start).map fun ((author, co, a), i) => { id := i, depth := i, author, cosigners := co, action := a }
+
+/-- The op a scenario tries next, to see whether it would be accepted. -/
+def attempt (author : SignerId) (co : List SignerId) (a : Action) : Op :=
+  { id := 9999, depth := 9999, author, cosigners := co, action := a }
+
+def accepted (ops : List Op) (op : Op) : Bool := (step (view ops) op).isSome
+
+def opens' (ops : List Op) (d : SignerId) (k : KeyScope) : Bool :=
+  let st := view ops
+  knows st [.device d] (st.curKey k)
+
+/-- The ops of a scenario the model refuses, in the order every peer replays them. Replay skips a refused op
+    without a word, so every scenario checks this is empty. -/
+def refused (ops : List Op) : List OpId :=
+  let rec go (st : State) : List Op → List OpId
+    | [] => []
+    | op :: rest => match step st op with
+      | some st' => go st' rest
+      | none => op.id :: go st rest
+  go {} (order ops)
+
+/-! ## Scenarios 1 and 2: vaults and devices -/
+
+def s1 : List Op := chain 1 [
+  (passkeyS, [], .genesis samuel .human [.signer passkeyS] 1),
+  (passkeyS, [macS], .addDevice samuel macS),
+  (passkeyS, [phoneS], .addDevice samuel phoneS)]
+#guard refused s1 == []
+
+#guard ((view s1).vault? samuel).map (·.devices) == some [macS, phoneS]
+-- the Mac acts for Samuel's vault but can't add a device on its own
+#guard actsFor (view s1) macS samuel
+#guard !accepted s1 (attempt macS [77] (.addDevice samuel 77))
+#guard accepted s1 (attempt passkeyS [77] (.addDevice samuel 77))
+-- a device can't be added without its own signature
+#guard !accepted s1 (attempt passkeyS [] (.addDevice samuel 77))
+
+def s2 : List Op := s1 ++ chain 10 [
+  (passkeyB, [], .genesis bob .human [.signer passkeyB] 1),
+  (passkeyB, [macB], .addDevice bob macB),
+  (passkeyC, [], .genesis carol .human [.signer passkeyC] 1),
+  (passkeyC, [macC], .addDevice carol macC),
+  (passkeyD, [], .genesis dave .human [.signer passkeyD] 1),
+  (passkeyD, [macD], .addDevice dave macD)]
+#guard refused s2 == []
+
+/-! ## Scenario 3: a coop of two vaults, threshold 2 -/
+
+def s3 : List Op := s2 ++ chain 20 [
+  (passkeyS, [passkeyB], .genesis coop .coop [.vault samuel, .vault bob] 2)]
+#guard refused s3 == []
+
+-- Bob has to consent to becoming an owner
+#guard !accepted s2 (attempt passkeyS [] (.genesis coop .coop [.vault samuel, .vault bob] 2))
+#guard (view s3).vault? coop |>.isSome
+-- the coop key opens on Bob's Mac and on both of Samuel's devices, and nowhere else
+#guard opens' s3 macB (.vault coop) && opens' s3 macS (.vault coop) && opens' s3 phoneS (.vault coop)
+#guard !opens' s3 macC (.vault coop) && !opens' s3 stranger (.vault coop)
+-- a coop can't own itself, and Samuel's vault alone can't add an owner to a threshold-2 coop
+#guard !accepted s3 (attempt passkeyS [passkeyB] (.addOwner coop (.vault coop)))
+#guard !accepted s3 (attempt passkeyS [passkeyD] (.addOwner coop (.vault dave)))
+#guard accepted s3 (attempt passkeyS [passkeyB, passkeyD] (.addOwner coop (.vault dave)))
+-- with nothing shared yet, Samuel's Mac sends Bob's Mac the coop's log, Carol's Mac nothing of it, a stranger nothing
+#guard (respond s3 macB).any (·.vaultOf? == some coop)
+#guard (respond s3 macC).all (·.vaultOf? != some coop) && (respond s3 stranger).isEmpty
+
+/-! ## Scenarios 4 to 7: spaces, writes, one document via caps, public -/
+
+def s4 : List Op := s3 ++ chain 30 [
+  (macS, [], .foundSpace handbook coop),
+  (macS, [], .foundSpace notes samuel),
+  (macS, [], .foundSpace todos samuel)]
+#guard refused s4 == []
+
+-- Bob's Mac learns of the coop's Handbook before anything is written in it, but not of Samuel's Notes
+#guard (respond s4 macB).any (·.authScope? s4 == some (.space handbook))
+#guard !(respond s4 macB).any (·.authScope? s4 == some (.space notes))
+
+def s5 : List Op := s4 ++ chain 40 [
+  (macS, [], .write handbook welcome coop 0),
+  (macS, [], .write handbook onboarding coop 0)]
+#guard refused s5 == []
+
+-- Bob's Mac opens Welcome through the coop; Carol, a stranger and the server can't
+#guard opens' s5 macB (.entry handbook welcome)
+#guard !opens' s5 macC (.entry handbook welcome) && !opens' s5 stranger (.entry handbook welcome)
+
+def s6 : List Op := s5 ++ chain 50 [
+  (macS, [], .grant { id := 1, scope := .entry handbook welcome, role := .read, grantee := .principal (.vault carol),
+                       issuer := coop, parent := none })]
+#guard refused s6 == []
+
+-- Carol reads Welcome only, and can't edit it
+#guard opens' s6 macC (.entry handbook welcome)
+#guard !opens' s6 macC (.entry handbook onboarding) && !opens' s6 macC (.space handbook)
+#guard !accepted s6 (attempt macC [] (.write handbook welcome carol 0))
+-- a grant naming a device is refused (T4)
+#guard !accepted s6 (attempt macS [] (.grant { id := 2, scope := .entry handbook welcome, role := .read,
+                                               grantee := .principal (.signer macC), issuer := coop, parent := none }))
+
+def s7 : List Op := s6 ++ chain 60 [
+  (macS, [], .write handbook charter coop 0),
+  (macS, [], .grant { id := 3, scope := .entry handbook charter, role := .read, grantee := .«public»,
+                       issuer := coop, parent := none })]
+#guard refused s7 == []
+
+-- anyone opens Charter; Public can't be given write (T8)
+#guard opens' s7 stranger (.entry handbook charter) && !opens' s7 stranger (.entry handbook welcome)
+#guard !accepted s7 (attempt macS [] (.grant { id := 4, scope := .entry handbook charter, role := .write,
+                                               grantee := .«public», issuer := coop, parent := none }))
+
+/-! ## Scenario 10: revoking Carol rotates Welcome's key -/
+
+def s10 : List Op := s7 ++ chain 70 [(macS, [], .revoke 1 coop [])]
+#guard refused s10 == []
+
+#guard (view s10).epochOf (.entry handbook welcome) == (view s7).epochOf (.entry handbook welcome) + 1
+#guard !opens' s10 macC (.entry handbook welcome) && opens' s10 macB (.entry handbook welcome)
+
+/-! ## Scenario 11: a lost iPhone rotates everything it could reach -/
+
+def s11 : List Op := s7 ++ chain 80 [(passkeyS, [], .removeDevice samuel phoneS [])]
+#guard refused s11 == []
+
+#guard !opens' s11 phoneS (.vault samuel) && !opens' s11 phoneS (.vault coop)
+#guard !opens' s11 phoneS (.entry handbook welcome) && opens' s11 macS (.entry handbook welcome)
+#guard opens' s11 macB (.entry handbook welcome)
+#guard !accepted s11 (attempt phoneS [] (.write handbook welcome coop 1))
+
+/-! ## Scenario 12: Bob leaves the coop on his own -/
+
+def s12 : List Op := s7 ++ chain 90 [(passkeyB, [], .removeOwner coop (.vault bob) [41, 42, 61])]
+#guard refused s12 == []
+
+#guard ((view s12).vault? coop).map (·.threshold) == some 1
+#guard !opens' s12 macB (.vault coop) && !opens' s12 macB (.entry handbook welcome)
+-- Bob's earlier edits stay: none were his, and Samuel's are untouched
+#guard (view s12).writes.length == (view s7).writes.length
+
+/-! ## Scenarios 15 and 16: one todo, many vaults, changing roles -/
+
+def s15 : List Op := s4 ++ chain 100 [
+  (macS, [], .write todos door samuel 0),
+  (macS, [], .write todos seeds samuel 0),
+  (macS, [], .write todos solar samuel 0),
+  (macS, [], .grant { id := 10, scope := .entry todos door, role := .write, grantee := .principal (.vault bob),
+                       issuer := samuel, parent := none }),
+  (macS, [], .grant { id := 11, scope := .entry todos door, role := .read, grantee := .principal (.vault carol),
+                       issuer := samuel, parent := none }),
+  -- making the coop owner of the todo is governance: Samuel's passkey
+  (passkeyS, [], .grant { id := 12, scope := .entry todos door, role := .owner, grantee := .principal (.vault coop),
+                           issuer := samuel, parent := none })]
+#guard refused s15 == []
+
+-- a device alone can't make anyone owner
+#guard !accepted s4 (attempt macS [] (.grant { id := 13, scope := .entry todos door, role := .owner,
+                                               grantee := .principal (.vault coop), issuer := samuel, parent := none }))
+#guard accepted s15 (attempt macB [] (.write todos door bob 0))
+#guard !accepted s15 (attempt macC [] (.write todos door carol 0))
+#guard opens' s15 macC (.entry todos door) && !opens' s15 macC (.entry todos seeds)
+#guard !opens' s15 macB (.entry todos solar)
+
+def s16a : List Op := s15 ++ chain 110 [
+  -- acting for the coop, Bob gives Dave read
+  (macB, [], .grant { id := 14, scope := .entry todos door, role := .read, grantee := .principal (.vault dave),
+                       issuer := coop, parent := some 12 }),
+  -- Samuel raises Carol to write and takes Bob's own write away
+  (macS, [], .grant { id := 15, scope := .entry todos door, role := .write, grantee := .principal (.vault carol),
+                       issuer := samuel, parent := none }),
+  (macS, [], .revoke 10 samuel [100, 101, 102])]
+#guard refused s16a == []
+
+-- Bob still reaches the todo through the coop, so its key didn't rotate
+#guard entitled (view s16a) macB (.entry todos door)
+#guard (view s16a).epochOf (.entry todos door) == (view s15).epochOf (.entry todos door)
+#guard opens' s16a macD (.entry todos door) && accepted s16a (attempt macC [] (.write todos door carol 0))
+
+def s16 : List Op := s16a ++ chain 120 [
+  -- taking the coop's owner cap away is governance, and ends the read Bob gave Dave
+  (passkeyS, [], .revoke 12 samuel [100, 101, 102])]
+#guard refused s16 == []
+
+#guard !entitled (view s16) macB (.entry todos door) && !entitled (view s16) macD (.entry todos door)
+#guard (view s16).epochOf (.entry todos door) == (view s16a).epochOf (.entry todos door) + 1
+#guard !opens' s16 macB (.entry todos door) && !opens' s16 macD (.entry todos door)
+#guard opens' s16 macC (.entry todos door) && opens' s16 macS (.entry todos door)
+#guard !accepted s16 (attempt macB [] (.write todos door coop 1))
+
+/-! ## Scenario 17: each todo syncs on its own -/
+
+-- Samuel's Mac answers Carol's Mac with the door todo only
+#guard (respond s15 macC).any (·.writeTarget? == some (todos, door))
+#guard (respond s15 macC).all fun o => o.writeTarget? == none || o.writeTarget? == some (todos, door)
+-- a device with no cap on it gets none of it
+#guard (respond s15 stranger).all (·.writeTarget? == none)
+-- after the coop lost the todo, Dave's Mac gets nothing about it
+#guard (respond s16 macD).all (·.writeTarget? == none)
+
+-- Each Mac starts with its own vault and what Samuel's Mac sent it. Then the server and Samuel go offline, Bob
+-- edits the door todo, and Bob's Mac and Carol's Mac sync directly.
+def ownVault (v : VaultId) : List Op := s2.filter (·.vaultOf? == some v)
+def bobMac : List Op := receive (ownVault bob) (respond s15 macB) ++ chain 130 [(macB, [], .write todos door bob 0)]
+def carolMac : List Op := receive (ownVault carol) (respond s15 macC)
+
+#guard refused bobMac == [] && refused carolMac == []
+#guard (itemWrites (view carolMac) todos door).length == 1
+-- each answers the other once
+def bobMac' := receive bobMac (respond carolMac macB)
+def carolMac' := receive carolMac (respond bobMac macC)
+
+-- both now hold Samuel's and Bob's edits of the door todo, and Carol's Mac accepts Bob's
+#guard (itemWrites (view carolMac') todos door).length == 2
+#guard itemWrites (view carolMac') todos door == itemWrites (view bobMac') todos door
+-- and neither learned anything about the other todos
+#guard itemWrites (view carolMac') todos seeds == [] && itemWrites (view bobMac') todos solar == []
+
+end VaultSpec.Examples
