@@ -494,8 +494,7 @@ export const DIET_T = 0.508;
 export const YIELD = {
 	indoorFood: { t: 40, label: 'Food garden under glass at 24 °C: vegetables, greens, herbs and dwarf fruit all year (soil-grown greenhouse vegetables give 50–150 t/ha, tomatoes 120–300); a garden with trees in it, so about 40', src: 'yields' },
 	tropical: { t: 25, label: 'Tropical food forest under glass: mixed tropical food forests give 10–40 t/ha, bananas under cover 35–72, papaya 30–80', src: 'yields' },
-	foodForest: { t: 8, label: 'Temperate food forest outdoors, grown: 1–15 t/ha (young Dutch food forests ~1 t/ha; the settlers game’s year 15 is 7.3)', src: 'yields' },
-	commercial: { t: 30, label: 'Commercial orchards and market gardens outdoors: German apples averaged 26–35 t/ha in 2024–25, intensive 40–60', src: 'yields' }
+	foodForest: { t: 8, label: 'Temperate food forest outdoors, grown: 1–15 t/ha (young Dutch food forests ~1 t/ha; the settlers game’s year 15 is 7.3)', src: 'yields' }
 };
 /** raw materials the tower hex grows, a hectare a year */
 export const RAW = {
