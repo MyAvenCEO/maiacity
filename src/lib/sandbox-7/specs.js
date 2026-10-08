@@ -10,11 +10,18 @@
  * The domes are glazed geodesic caps, all of one shape: a cap a third as high as it is wide, as the 150 m dome the
  * dome engineering research settled on (50 m high, sphere radius 81.25 m, frequency 16, ~6 m glulam struts, steel
  * hubs, laminated glass, a hemp-fibre north shell, a 3 m fish pond at ground level along the north). The smaller
- * domes are the same cap scaled down, their struts kept about 6 m long.
+ * domes are the same cap scaled down, with shorter struts (src/lib/sandbox-7/geodesic.js builds every panel).
  */
+import { geodesicCap, towerGrid } from './geodesic.js';
 
 /** @typedef {{ D: number, a: number, h: number, R: number, floor: number, shell: number, volume: number, perimeter: number, freq: number }} Cap */
 
+/**
+ * The geodesic's frequency (struts along an icosahedron edge) of each dome, as the engineering thread sized them: the
+ * 150 m cap is frequency 16 with ~6 m struts (2,390 struts, 826 hubs), Dome100 13 (1,570, 520) and Dome50 8 (610,
+ * 200), smaller domes with shorter struts
+ */
+const GEO_FREQ = { 50: 8, 100: 13, 150: 16 };
 /** A glazed cap `D` across, a third as high (the 150 m dome's 50 m): its sphere, floor, shell and air. @returns {Cap} */
 export function capOf(/** @type {number} */ D) {
 	const a = D / 2, h = D / 3;
@@ -25,8 +32,7 @@ export function capOf(/** @type {number} */ D) {
 		shell: 2 * Math.PI * R * h,
 		volume: (Math.PI * h * h * (3 * R - h)) / 3,
 		perimeter: Math.PI * D,
-		// struts about 6 m long: the 150 m cap is frequency 16 (2,390 struts, 826 hubs)
-		freq: Math.max(4, Math.round((16 * D) / 150))
+		freq: GEO_FREQ[/** @type {50 | 100 | 150} */ (D)] ?? Math.max(4, Math.round((16 * D) / 150))
 	};
 }
 /** the height of a cap's shell over the floor, `r` from its middle */
@@ -91,35 +97,12 @@ export function northArc(/** @type {number} */ r, /** @type {number} */ y, /** @
 }
 /** where the cut stands at the ground for a shell `foot` m in radius */
 export const northCut = (/** @type {number} */ foot) => foot * Math.cos(NORTH_FOOT * DEG);
-/**
- * A shell of revolution (profile [radius, height]) split by the north cut: all of it, the hemp, and the glass tilted
- * under `steep` degrees, m².
- * @param {[number, number][]} p
- * @param {number} k
- */
-export function shellSplit(p, k, tilt = NORTH_TILT, steep = 90) {
-	let all = 0, north = 0, flat = 0;
-	for (let i = 1; i < p.length; i++) {
-		const [r0, y0] = p[i - 1], [r1, y1] = p[i];
-		const r = (r0 + r1) / 2, ds = Math.hypot(r1 - r0, y1 - y0), b = northArc(r, (y0 + y1) / 2, k, tilt);
-		all += 2 * Math.PI * r * ds;
-		north += 2 * b * r * ds;
-		if (Math.atan2(Math.abs(y1 - y0), Math.abs(r1 - r0)) < steep * DEG) flat += (2 * Math.PI - 2 * b) * r * ds;
-	}
-	return { all, north, flat };
-}
-/** a dome's cap as a profile from its crown to its foot */
-export function capProfile(/** @type {number} */ D, n = 400) {
-	const c = capOf(D);
-	const theta = Math.acos((c.R - c.h) / c.R);
-	/** @type {[number, number][]} */
-	const p = [];
-	for (let k = 0; k <= n; k++) p.push([c.R * Math.sin((theta * k) / n), c.R * Math.cos((theta * k) / n) - (c.R - c.h)]);
-	return p;
-}
-const split150 = shellSplit(capProfile(150), northCut(75));
-/** the share of every dome's shell in hemp: the caps are all alike, so one number (about a quarter) */
-export const NORTH = split150.north / split150.all;
+/** the share of every dome's shell in hemp: the caps are all alike, so one number (about a quarter), counted on the 150 m dome's panels */
+export const NORTH = (() => {
+	const c = capOf(150);
+	const g = geodesicCap({ R: c.R, h: c.h, freq: c.freq, k: northCut(c.a), tilt: NORTH_TILT });
+	return g.m2.hemp / (g.m2.hemp + g.m2.glass + g.m2.solar);
+})();
 /**
  * Each dome as the engineering thread sized it (/mnt/project-files/dome-research/dome-sizes.json, 2026-10-08), mid
  * values: the glulam frame, the cast-steel hubs plus the steel ring at the foot, and the heat the dome needs beyond its
@@ -146,40 +129,70 @@ const BAND = { heat: 1.8 / 1.65, climate: 0.165 / 0.149 };
 const HEMP_M = 0.325;
 const CASSETTE_M = 0.06;
 /**
- * Solar cells sit in every second pane of the flatter glass, tilted under 45° (on the towers in every second pane
- * everywhere): the plants need the rest of the daylight. A m² of cells makes 227 kWh a year on a cap and 194 on a
- * tower's steeper glass (the thread's hourly Munich year: 0.92 GWh from 4,036 m², 6.63 GWh from 34,133 m²).
+ * Every panel is hemp, glass or solar (Samuel, 2026-10-08): glass and solar alternate, so half the glazing is solar
+ * panels (see-through cells) and half clear glass for the plants' light. A m² of solar panel makes 227 kWh a year
+ * where it tilts under 45° and 194 where it is steeper (the engineering thread's hourly Munich year: 0.92 GWh from
+ * 4,036 m² on the 150 m cap's flatter glass, 6.63 GWh from 34,133 m² on Tower250's steep glass).
  */
-export const CELLS = { share: 0.5, steepest: 45, capKwh: 227, towerKwh: 194 };
-/** a dome's glass tilted under 45°, m² */
-const flatGlass = (/** @type {number} */ D) => shellSplit(capProfile(D, 200), northCut(D / 2), NORTH_TILT, CELLS.steepest).flat;
+export const CELLS = { steepest: 45, flatKwh: 227, steepKwh: 194 };
+/** what a set of solar panels makes a year, kWh */
+const solarOf = (/** @type {{ kind: string, area: number, tilt: number }[]} */ panels) =>
+	panels.reduce((s, p) => s + (p.kind === 'solar' ? p.area * (p.tilt < CELLS.steepest ? CELLS.flatKwh : CELLS.steepKwh) : 0), 0);
+/** @type {Map<number, import('./geodesic.js').Geodesic>} */
+const domes = new Map();
+/** a dome's geodesic: its panels (hemp, glass, solar), struts and hubs */
+export function geodesicOf(/** @type {number} */ D) {
+	let g = domes.get(D);
+	if (!g) {
+		const c = capOf(D);
+		domes.set(D, (g = geodesicCap({ R: c.R, h: c.h, freq: c.freq, k: northCut(c.a), tilt: NORTH_TILT })));
+	}
+	return g;
+}
+/**
+ * The rings of a tower's grid: every second point of its profile (a ring every ~5 m), 96 bays round, so the panels
+ * are 8 m wide at the foot (~24 m², the biggest) and narrow up the shaft; ~5,100 hubs, inside the engineering thread's
+ * 3,550–6,170 for Tower250
+ */
+export const towerRows = (/** @type {Tower} */ T) => towerProfile(T, 96).filter((_, k, all) => k % 2 === 0 || k === all.length - 1);
+export const TOWER_BAYS = 96;
+/** @type {Map<string, ReturnType<typeof towerGrid>>} */
+const towerGrids = new Map();
+/** a tower's panels (hemp, glass, solar), struts and hubs */
+export function towerGridOf(/** @type {Tower} */ T) {
+	let g = towerGrids.get(T.id);
+	if (!g) towerGrids.set(T.id, (g = towerGrid({ rows: towerRows(T), bays: TOWER_BAYS, k: northCut(T.D / 2), tilt: TOWER_NORTH_TILT })));
+	return g;
+}
 
 /**
- * What a dome's shell is built of: the frame as the engineering thread sized it, glass and hemp by the m², the
- * footing by its rim; and what it makes and needs a year.
+ * What a dome's shell is built of: the frame as the engineering thread sized it, its panels counted one by one
+ * (hemp, glass, solar), the footing by its rim; and what it makes and needs a year.
  * @param {number} D
  */
 export function shellOf(D) {
 	const c = capOf(D);
 	const z = sized(D);
-	const glazed = c.shell * (1 - NORTH);
-	const north = c.shell * NORTH;
+	const g = geodesicOf(D);
+	const glazed = g.m2.glass + g.m2.solar;
+	const north = g.m2.hemp;
 	// a ring footing of lime-pozzolan concrete under the plinth, 0.8 m² (50 m) to 1.2 m² (150 m) in section
 	const footing = c.perimeter * (0.6 + 0.004 * D);
 	const m = {
 		timber: z.timber + north * CASSETTE_M, // the struts, and the north shell's timber cassettes
 		steel: z.steel,
 		glass: glazed,
-		pv: flatGlass(D) * CELLS.share,
+		pv: g.m2.solar,
 		hemp: north * HEMP_M,
 		lime: footing
 	};
 	return {
 		cap: c,
+		geodesic: g,
 		glazed,
 		north,
 		m,
-		solar: m.pv * CELLS.capKwh,
+		solar: solarOf(g.panels),
 		heat: z.heat * BAND.heat,
 		climate: z.climate * BAND.climate,
 		t: { timber: m.timber * DENSITY.glulam, steel: m.steel, glass: glazed * DENSITY.glass, hemp: m.hemp * DENSITY.hemp, lime: footing * DENSITY.lime },
@@ -403,10 +416,10 @@ export function towerShell(T) {
 		volume += (Math.PI * (y1 - y0) * (r0 * r0 + r0 * r1 + r1 * r1)) / 3;
 	}
 	const R = T.D / 2;
-	const sp = shellSplit(p, northCut(T.D / 2), TOWER_NORTH_TILT);
-	const north = shell * (sp.north / sp.all);
-	const glazed = shell - north;
-	const m = { timber: T.timber + north * CASSETTE_M, steel: T.steel, glass: glazed, pv: glazed * CELLS.share, hemp: north * HEMP_M, lime: Math.PI * T.D * 4 };
+	const g = towerGridOf(T);
+	const north = g.m2.hemp;
+	const glazed = g.m2.glass + g.m2.solar;
+	const m = { timber: T.timber + north * CASSETTE_M, steel: T.steel, glass: glazed, pv: g.m2.solar, hemp: north * HEMP_M, lime: Math.PI * T.D * 4 };
 	return {
 		shell,
 		volume,
@@ -414,7 +427,8 @@ export function towerShell(T) {
 		glazed,
 		north,
 		m,
-		solar: m.pv * CELLS.towerKwh,
+		grid: g,
+		solar: solarOf(g.panels),
 		heat: T.heat * BAND.heat,
 		climate: T.climate * BAND.climate,
 		t: { timber: m.timber * DENSITY.glulam, steel: m.steel, glass: glazed * DENSITY.glass, hemp: m.hemp * DENSITY.hemp, lime: m.lime * DENSITY.lime },

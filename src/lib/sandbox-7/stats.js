@@ -167,7 +167,7 @@ export function hexStats(plan, land = landOf(plan)) {
 		heat += b.count * b.heat;
 	}
 	/** @type {{ label: string, kwh: number }[]} */
-	const makes = [{ label: 'Solar cells in every second pane of the flatter glass (the towers’: of all of it)', kwh: solar }];
+	const makes = [{ label: 'Solar panels, every second glass panel (see-through cells)', kwh: solar }];
 	/** @type {{ label: string, kwh: number }[]} */
 	const uses2 = [{ label: 'The domes’ climate: fans, pumps, vents', kwh: climate }];
 	if (plan.id === 'living') {
@@ -218,7 +218,8 @@ export function siteCard(plan, id) {
 				['Across the foot', `${T.D} m`],
 				['Height', `${T.H} m`],
 				['Floor at the foot', `${(sh.floor / 1e4).toFixed(2)} ha`],
-				['Shell', `${Math.round(sh.shell).toLocaleString('en-US')} m² (${Math.round(sh.glazed).toLocaleString('en-US')} glass, ${Math.round(sh.north).toLocaleString('en-US')} hemp to the north)`],
+				['Shell', `${Math.round(sh.shell).toLocaleString('en-US')} m²`],
+				['Panels', `${sh.grid.panels.length.toLocaleString('en-US')} on a diagrid of ${sh.grid.struts.toLocaleString('en-US')} struts and ${sh.grid.hubs.toLocaleString('en-US')} hubs: ${sh.grid.count.solar.toLocaleString('en-US')} solar (${Math.round(sh.grid.m2.solar).toLocaleString('en-US')} m²), ${sh.grid.count.glass.toLocaleString('en-US')} glass (${Math.round(sh.grid.m2.glass).toLocaleString('en-US')} m²), ${sh.grid.count.hemp} white hemp to the north (${Math.round(sh.grid.m2.hemp).toLocaleString('en-US')} m²)`],
 				['Air inside', `${(sh.volume / 1e6).toFixed(2)} million m³`],
 				['Floors', `${floors.reduce((a, f) => a + (f.id === 'deck' ? 0 : f.n), 0)} storeys, ${Math.round(floors.reduce((a, f) => a + f.m2, 0)).toLocaleString('en-US')} m² with the deck`]
 			],
@@ -230,8 +231,8 @@ export function siteCard(plan, id) {
 	}
 	const sh = shellOf(K.D);
 	const c = sh.cap;
-	const struts = Math.round(30 * c.freq * c.freq * (c.h / (2 * c.R)));
-	const hubs = Math.round(10 * c.freq * c.freq * (c.h / (2 * c.R)));
+	const geo = sh.geodesic;
+	const n = (/** @type {number} */ x) => Math.round(x).toLocaleString('en-US');
 	const fa = FACTORIES.find((f) => f.id === site.factory);
 	const run = fa ? /** @type {Record<string, any>} */ (FACTORY_RUN)[fa.id] : null;
 	return {
@@ -242,8 +243,9 @@ export function siteCard(plan, id) {
 			['Across', `${K.D} m`],
 			['Height', `${c.h.toFixed(1)} m (a cap of a ${c.R.toFixed(1)} m sphere)`],
 			['Floor', `${Math.round(c.floor).toLocaleString('en-US')} m²`],
-			['Shell', `${Math.round(c.shell).toLocaleString('en-US')} m²: ${Math.round(sh.glazed).toLocaleString('en-US')} glass, ${Math.round(sh.north).toLocaleString('en-US')} hemp (north side)`],
-			['Geodesic grid', `frequency ${c.freq}: ~${struts.toLocaleString('en-US')} struts ~${((1.107 * c.R) / c.freq).toFixed(1)} m long, ~${hubs} steel hubs`],
+			['Shell', `${n(c.shell)} m²`],
+			['Panels', `${n(geo.panels.length)}: ${n(geo.count.solar)} solar (${n(geo.m2.solar)} m²), ${n(geo.count.glass)} glass (${n(geo.m2.glass)} m²), ${n(geo.count.hemp)} white hemp to the north (${n(geo.m2.hemp)} m²); a panel ~${(geo.m2.glass / geo.count.glass).toFixed(1)} m²`],
+			['Geodesic grid', `frequency ${c.freq}: ${n(geo.struts)} struts, ${geo.lengths.length} lengths from ${geo.lengths[0].m.toFixed(2)} to ${geo.lengths[geo.lengths.length - 1].m.toFixed(2)} m (${geo.trimmed} trimmed at the foot), ${n(geo.hubs)} steel hubs (${geo.ringHubs} on the foot ring)`],
 			['Air inside', `${Math.round(c.volume).toLocaleString('en-US')} m³`],
 			...(K.people ? [['People', `${K.people}, ${Math.round(K.gfa / K.people)} m² of home each (2 storeys, ${K.gallery.headroom.toFixed(1)} m under the glass at the galleries’ edge)`]] : []),
 			...(run ? [['Makes', `${run.t.toLocaleString('en-US')} ${run.unit} a year, ${run.kwh} kWh a t (${run.note})`]] : [])
