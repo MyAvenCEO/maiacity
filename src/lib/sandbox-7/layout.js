@@ -218,7 +218,6 @@ export const USES = {
 	factory: { label: 'Factories under glass', inside: true, map: '#b0563a', ground: '#b3aa9c', group: 'Work' },
 	tower: { label: 'The tower (its floor)', inside: true, map: '#5a4fa0', ground: '#bdb6aa', group: 'Work' },
 	foodForest: { label: 'Food forest outdoors', map: '#9fd36a', ground: '#6f9446', group: 'Food outdoors' },
-	commercial: { label: 'Orchards and market gardens', map: '#d6c24a', ground: '#8aa04a', group: 'Commercial' },
 	hemp: { label: 'Hemp fields', map: '#c8d860', ground: '#7d9a3e', group: 'Raw materials' },
 	bamboo: { label: 'Bamboo groves', map: '#53b88a', ground: '#5e8c3a', group: 'Raw materials' },
 	woodland: { label: 'Timber woodland (Douglas fir, larch)', map: '#2f6b3a', ground: '#3d6236', group: 'Raw materials' },

@@ -309,7 +309,6 @@ function towerModel(T, plant) {
 /** the plant kinds: a crown, a trunk, their size in metres and colours */
 const PLANTS = {
 	broad: { crown: () => new THREE.IcosahedronGeometry(1, 0), trunk: true, h: 7, w: 2.8, colors: ['#4f8a3a', '#5e9a42', '#6aa048', '#7aa84e', '#8bb35a'] },
-	orchard: { crown: () => new THREE.IcosahedronGeometry(1, 0), trunk: true, h: 4.5, w: 2.2, colors: ['#6aa048', '#7aa84e', '#9cb04a'] },
 	conifer: { crown: () => new THREE.ConeGeometry(1, 1, 7), trunk: true, h: 24, w: 3.4, colors: ['#2f5a33', '#355f38', '#3d6a3c'] },
 	palm: { crown: () => new THREE.IcosahedronGeometry(1, 0), trunk: true, h: 9, w: 3.6, colors: ['#3f8f3a', '#4b9a3c', '#2f7d36'] },
 	bamboo: { crown: () => new THREE.CylinderGeometry(0.55, 1, 1, 6), trunk: false, h: 10, w: 2.4, colors: ['#7fae4a', '#8fbb52', '#6f9f44'] },
@@ -393,9 +392,8 @@ function paint(land, /** @type {boolean} */ asMap) {
 			if (!asMap) {
 				const u = USE_IDS[c];
 				k = 0.94 + r() * 0.12;
-				// rows: hemp and the market gardens are sown in strips, the orchards in lines
+				// rows: hemp is sown in strips
 				if (u === 'hemp' && i % 3 === 0) k *= 0.86;
-				if (u === 'commercial' && j % 4 === 0) k *= 0.85;
 				if (u === 'mine') k *= 0.8 + 0.2 * Math.abs(Math.sin(i * 0.35 + j * 0.2));
 			}
 			img.data[o] = Math.min(255, col.r * 255 * k);
@@ -451,15 +449,14 @@ function outline(/** @type {number} */ cx, /** @type {number} */ cz, /** @type {
 function sow(land, plants, /** @type {number} */ seed) {
 	const r = rng(seed);
 	/** @type {Record<string, [number, string, number][]>} spacing, kind, chance */
-	const SOW = { foodForest: [[8, 'broad', 0.75], [5, 'shrub', 0.3]], commercial: [[6, 'orchard', 0.9]], woodland: [[5.5, 'conifer', 0.95]], bamboo: [[4, 'bamboo', 0.9]], nature: [[14, 'broad', 0.35], [9, 'shrub', 0.2]], yard: [[30, 'broad', 0.3]], indoorFood: [[5, 'shrub', 0.8], [9, 'broad', 0.35]], tropical: [[7, 'palm', 0.9], [5, 'shrub', 0.4]] };
+	const SOW = { foodForest: [[8, 'broad', 0.75], [5, 'shrub', 0.3]], woodland: [[5.5, 'conifer', 0.95]], bamboo: [[4, 'bamboo', 0.9]], nature: [[14, 'broad', 0.35], [9, 'shrub', 0.2]], yard: [[30, 'broad', 0.3]], indoorFood: [[5, 'shrub', 0.8], [9, 'broad', 0.35]], tropical: [[7, 'palm', 0.9], [5, 'shrub', 0.4]] };
 	const id = Object.fromEntries(USE_IDS.map((u, k) => [k, u]));
 	const W = land.nx * CELL, H = land.nz * CELL;
 	for (const [use, list] of Object.entries(SOW))
 		for (const [sp, kind, chance] of list) {
-			const rows = use === 'commercial';
 			for (let z = land.z0; z < land.z0 + H; z += sp)
 				for (let x = land.x0; x < land.x0 + W; x += sp) {
-					const px = x + (rows ? 0 : (r() - 0.5) * sp * 0.8), pz = z + (rows ? 0 : (r() - 0.5) * sp * 0.8);
+					const px = x + (r() - 0.5) * sp * 0.8, pz = z + (r() - 0.5) * sp * 0.8;
 					const i = Math.floor((px - land.x0) / CELL), j = Math.floor((pz - land.z0) / CELL);
 					if (i < 0 || j < 0 || i >= land.nx || j >= land.nz) continue;
 					const c = land.cells[j * land.nx + i];
