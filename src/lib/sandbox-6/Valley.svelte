@@ -259,7 +259,7 @@
 
 	let timer = 0;
 	onMount(() => {
-		narrow = matchMedia('(max-width: 720px)').matches;
+		narrow = matchMedia('(max-width: 720px), (max-height: 500px)').matches;
 		requestAnimationFrame(async () => {
 			const { mountGame } = await import('./game.js');
 			if (!stage) return;
@@ -1575,9 +1575,9 @@
 		font-weight: 400;
 	}
 
-	/* ── a narrow screen: the tools behind one action button at the foot on the right, the cards and panels as sheets
-	   sliding up from the foot, full width, their buttons fixed at their foot above the nav pill ── */
-	@media (max-width: 720px) {
+	/* ── a phone, upright or on its side: the tools behind one action button, the cards and panels sliding in, each
+	   card's buttons fixed at its foot ── */
+	@media (max-width: 720px), (max-height: 500px) {
 		.fab {
 			display: flex;
 			align-items: center;
@@ -1633,33 +1633,13 @@
 		.buy em {
 			display: none;
 		}
-		.topstats {
-			top: calc(3.9rem + env(safe-area-inset-top, 0px));
-			left: 0.5rem;
-			right: 0.5rem;
-			transform: none;
-			justify-content: space-around;
-		}
 		.stat {
 			padding: 0.35rem 0.6rem;
 			font-size: 0.8rem;
 		}
 		.books {
-			top: calc(6.7rem + env(safe-area-inset-top, 0px));
 			padding: 0.6rem 0.6rem 0.7rem;
 			font-size: 0.72rem;
-		}
-		/* the sheets: full width from the foot, up to most of the screen, sliding in */
-		.menu,
-		.market,
-		.card,
-		.side {
-			top: auto;
-			left: 0;
-			right: 0;
-			bottom: 0;
-			width: auto;
-			max-height: min(72dvh, calc(100dvh - 7.5rem));
 		}
 		.side {
 			display: flex;
@@ -1669,16 +1649,8 @@
 		.market,
 		.card,
 		.side .village {
-			padding: 0.8rem 1rem var(--nav-room, 4rem);
-			border-radius: 18px 18px 0 0;
-			border-bottom: 0;
-			box-shadow: 0 -8px 28px rgb(0 0 0 / 0.16);
 			overflow: auto;
 			overscroll-behavior: contain;
-			animation: sheet 240ms ease-out;
-		}
-		.valley:has(.side) .card {
-			right: 0;
 		}
 		.card .close,
 		.village .close,
@@ -1690,9 +1662,9 @@
 		.panel:has(> .actions.foot) {
 			padding-bottom: 0;
 		}
+		/* solid, so what scrolls under it never shows through */
 		.actions.foot {
-			margin: 0.7rem -1rem 0;
-			padding: 0.6rem 1rem var(--nav-room, 4rem);
+			background: rgb(250 248 242);
 		}
 		.foot .buttons button {
 			padding: 0.7rem 0.9rem;
@@ -1701,19 +1673,150 @@
 		.wares {
 			grid-template-columns: 1fr;
 		}
-		.news {
-			top: calc(6.7rem + env(safe-area-inset-top, 0px));
-			width: calc(100vw - 2rem);
-		}
 		.hint {
 			white-space: normal;
 			text-align: center;
 			max-width: calc(100vw - 2rem);
 		}
 	}
+
+	/* ── upright: the numbers across under the top bar, the cards and panels as sheets sliding up from the foot, full
+	   width and at most half the screen, their buttons above the nav pill ── */
+	@media (max-width: 720px) and (min-height: 501px) {
+		.topstats {
+			top: calc(3.9rem + env(safe-area-inset-top, 0px));
+			left: 0.5rem;
+			right: 0.5rem;
+			transform: none;
+			justify-content: space-around;
+		}
+		.books,
+		.news {
+			top: calc(6.7rem + env(safe-area-inset-top, 0px));
+		}
+		.news {
+			width: calc(100vw - 2rem);
+		}
+		.menu,
+		.market,
+		.card,
+		.side {
+			top: auto;
+			left: 0;
+			right: 0;
+			bottom: 0;
+			width: auto;
+			max-height: 50dvh;
+		}
+		.menu,
+		.market,
+		.card,
+		.side .village {
+			padding: 0.8rem 1rem var(--nav-room, 4rem);
+			border-radius: 18px 18px 0 0;
+			border-bottom: 0;
+			box-shadow: 0 -8px 28px rgb(0 0 0 / 0.16);
+			animation: sheet 240ms ease-out;
+		}
+		.valley:has(.side) .card {
+			right: 0;
+		}
+		.actions.foot {
+			margin: 0.7rem -1rem 0;
+			padding: 0.6rem 1rem var(--nav-room, 4rem);
+		}
+	}
+
+	/* ── on its side, as the Plants and Assets views: the cards and panels as an aside down the right, from under the
+	   top bar to the foot, sliding in from the right; the numbers under the top bar on the left, and the action button
+	   on the left too, its tools opening up from it ── */
+	@media (max-height: 500px) {
+		.fab {
+			right: auto;
+			left: max(8px, env(safe-area-inset-left, 0px));
+		}
+		.tools.open {
+			right: auto;
+			left: max(8px, env(safe-area-inset-left, 0px));
+			max-height: calc(100dvh - var(--nav-room, 4rem) - 5.6rem - env(safe-area-inset-top, 0px));
+		}
+		.topstats {
+			top: calc(2.9rem + env(safe-area-inset-top, 0px));
+			left: calc(0.5rem + env(safe-area-inset-left, 0px));
+			transform: none;
+		}
+		.books {
+			top: calc(5.4rem + env(safe-area-inset-top, 0px));
+			left: calc(0.5rem + env(safe-area-inset-left, 0px));
+			transform: none;
+			width: min(30rem, calc(100vw - 1rem - env(safe-area-inset-left, 0px) - env(safe-area-inset-right, 0px)));
+			max-height: calc(100dvh - 5.9rem - env(safe-area-inset-top, 0px) - var(--nav-room, 4rem));
+		}
+		.news {
+			top: calc(5.4rem + env(safe-area-inset-top, 0px));
+			left: calc(0.5rem + env(safe-area-inset-left, 0px));
+			transform: none;
+			align-items: flex-start;
+			width: min(24rem, calc(100vw - 20rem));
+		}
+		/* never wider than leaves the nav pill in the middle of the foot clear */
+		.menu,
+		.market,
+		.card,
+		.side {
+			top: calc(2.9rem + env(safe-area-inset-top, 0px));
+			left: auto;
+			right: 0;
+			bottom: 0;
+			width: calc(min(17rem, 50vw - 5.5rem - env(safe-area-inset-right, 0px)) + env(safe-area-inset-right, 0px));
+			max-height: none;
+		}
+		.side .village {
+			flex: 1 1 auto;
+			min-height: 0;
+		}
+		.menu,
+		.market,
+		.card,
+		.side .village {
+			padding: 0.7rem calc(0.8rem + env(safe-area-inset-right, 0px)) calc(0.7rem + env(safe-area-inset-bottom, 0px)) 0.8rem;
+			border-radius: 16px 0 0 0;
+			border-right: 0;
+			border-bottom: 0;
+			box-shadow: -8px 0 28px rgb(0 0 0 / 0.16);
+			animation: aside 240ms ease-out;
+		}
+		.valley:has(.side) .card {
+			right: 0;
+		}
+		.card .close,
+		.village .close,
+		.market .close,
+		.menu .close {
+			right: calc(0.6rem + env(safe-area-inset-right, 0px));
+		}
+		.actions.foot {
+			margin: 0.7rem calc(-0.8rem - env(safe-area-inset-right, 0px)) 0 -0.8rem;
+			padding: 0.6rem calc(0.8rem + env(safe-area-inset-right, 0px)) calc(0.6rem + env(safe-area-inset-bottom, 0px)) 0.8rem;
+		}
+		/* the foot kept low, so most of the aside's height is the card */
+		.foot .price {
+			gap: 0.05rem 0.5rem;
+			margin-bottom: 0.4rem;
+			font-size: 0.7rem;
+		}
+		.foot .buttons button {
+			padding: 0.5rem 0.8rem;
+		}
+	}
 	@keyframes sheet {
 		from {
 			transform: translateY(100%);
+		}
+	}
+	@keyframes aside {
+		from {
+			transform: translateX(100%);
 		}
 	}
 </style>
