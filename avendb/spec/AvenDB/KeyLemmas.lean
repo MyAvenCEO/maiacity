@@ -1478,6 +1478,25 @@ theorem replay_mem_trace : ∀ (st : State) (ops : List Op), replay st ops ∈ t
   | _, [] => List.mem_singleton_self _
   | st, op :: ops => List.mem_cons_of_mem _ (replay_mem_trace ((step st op).getD st) ops)
 
+/-- A step never lowers an epoch. -/
+theorem epochOf_le_step (st : State) (op : Op) (k : KeyScope) : st.epochOf k ≤ ((step st op).getD st).epochOf k := by
+  unfold step
+  cases hp : apply st op with
+  | none => exact Nat.le_refl _
+  | some post =>
+    show st.epochOf k ≤ (settle st post).epochOf k
+    rw [epochOf_step hp]
+    exact Nat.le_add_right _ _
+
+/-- Epochs only grow along a replay: no state of its trace has an epoch beyond the one where the replay ends. -/
+theorem epochOf_le_replay (k : KeyScope) : ∀ (st : State) (ops : List Op), ∀ x ∈ trace st ops,
+    x.epochOf k ≤ (replay st ops).epochOf k
+  | _, [], _, hx => by rw [List.mem_singleton.1 hx]; exact Nat.le_refl _
+  | st, op :: ops, x, hx => by
+    rcases List.mem_cons.1 hx with rfl | hx
+    · exact Nat.le_trans (epochOf_le_step x op k) (epochOf_le_replay k _ ops _ (mem_trace_self _ ops))
+    · exact epochOf_le_replay k _ ops x hx
+
 /-- Along a replay whose states are all part of the history, every seal stays justified. -/
 theorem sealsRead_replay {sts : List State} : ∀ (ops : List Op) (st : State), (∀ x ∈ trace st ops, x ∈ sts) →
     SealsRead sts st → SealsRead sts (replay st ops)

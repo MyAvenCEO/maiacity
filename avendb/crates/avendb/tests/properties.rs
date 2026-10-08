@@ -2,8 +2,9 @@
 //! actions on top of scenarios 1 to 4, kept when the rules accept them, then replayed in other orders; and forked ones,
 //! where devices that were offline meet with concurrent changes. The lens laws (T9) are checked on random items, as any
 //! mix of apps could have stored them, read and edited through each app's view, and the branch laws (T10) on random
-//! histories of one document. Each property carries its theorem's name; T7 (the blind server, which follows from T5)
-//! and T13 are guarded by the tests the Lean README lists.
+//! histories of one document. Sync (T12, T13, T19) is checked between devices holding random parts of random histories,
+//! gaps and all. Each property carries its theorem's name; T7 (the blind server, which follows from T5) is guarded by
+//! the tests the Lean README lists.
 
 mod common;
 
@@ -19,7 +20,7 @@ use avendb::policy::{
     checkpointed, order, removes, replay, trace, view, Action, Fact, Grantee, Holder, Kind, Log, Op, Principal, Refusal,
     Role, Scope, State,
 };
-use avendb::sync::respond;
+use avendb::sync::{asks, digests, frontiers, log_of, receive, respond, respond_since, Ask};
 
 /// xorshift64*: small and deterministic, so a failing seed can be replayed.
 struct Rng(u64);
@@ -498,6 +499,133 @@ fn honest_logs_keep_all_they_accepted() {
         let r = replay(h.log.ops());
         assert!(r.stood.iter().all(|&s| s), "seed {seed}");
     }
+}
+
+/// A random part of `ops`: each op with even odds.
+fn part(rng: &mut Rng, ops: &[Op]) -> Vec<Op> {
+    ops.iter().filter(|_| rng.below(2) == 0).cloned().collect()
+}
+
+/// The ops of scenarios 1 to 4 that every random history starts with, and a random part of the rest.
+fn part_after_cast(rng: &mut Rng, ops: &[Op]) -> Vec<Op> {
+    let mut c = cast();
+    let coop = with_coop(&mut c);
+    spaces(&mut c, coop);
+    let n = c.log.ops().len();
+    ops[..n].iter().cloned().chain(part(rng, &ops[n..])).collect()
+}
+
+fn ids(ops: &[Op]) -> std::collections::HashSet<OpId> {
+    ops.iter().map(Op::id).collect()
+}
+
+#[test]
+fn t19_frontier_sync_loses_nothing() {
+    // a device holding any part of the ops, gaps and all, asks a peer holding all of them or another part: it is sent
+    // whatever of the peer's whole answer it lacks, nothing beyond that answer (T12), and no more than if it had named
+    // only its frontiers
+    let mut cut = 0;
+    for seed in SEEDS {
+        let ops = forked_caps_history(seed, 60).log.ops().to_vec();
+        let mut rng = Rng(seed);
+        for _ in 0..3 {
+            let a = part(&mut rng, &ops);
+            let r = if rng.below(2) == 0 { ops.clone() } else { part(&mut rng, &ops) };
+            let (held, asked) = (ids(&a), asks(&a));
+            let alone = Ask { haves: frontiers(&a), loose: asked.loose.clone() };
+            for d in SIGNERS {
+                let whole = respond(&r, d);
+                let sent = respond_since(&r, d, &asked);
+                let lacks = whole.iter().find(|op| !held.contains(&op.id()) && !sent.contains(op));
+                assert!(lacks.is_none(), "seed {seed}: {d:?} lacks {lacks:?}");
+                assert!(sent.iter().all(|op| whole.contains(op)), "seed {seed}: {d:?} was sent beyond its answer");
+                let more = respond_since(&r, d, &alone).len();
+                assert!(sent.len() <= more, "seed {seed}: {d:?}");
+                cut += more - sent.len();
+            }
+        }
+    }
+    // naming ops further back saves something
+    assert!(cut > 0);
+}
+
+#[test]
+fn t19_partial_delivery() {
+    // a device sent only part of each answer, any part in any order, asks again until nothing is left: it ends
+    // holding everything it may receive, though it held gaps along the way
+    for seed in SEEDS {
+        let ops = forked_caps_history(seed, 60).log.ops().to_vec();
+        let mut rng = Rng(seed);
+        let d = rng.pick(&[MAC_S, PHONE_S, MAC_B, MAC_C, MAC_D]);
+        let mut held: Vec<Op> = vec![];
+        for round in 0.. {
+            let sent = respond_since(&ops, d, &asks(&held));
+            if sent.is_empty() {
+                break;
+            }
+            assert!(round < 200, "seed {seed}: the answers never run out");
+            let mut got = part(&mut rng, &sent);
+            rng.shuffle(&mut got);
+            held = receive(&held, &got);
+        }
+        let held = ids(&held);
+        assert!(respond(&ops, d).iter().all(|op| held.contains(&op.id())), "seed {seed}");
+    }
+}
+
+#[test]
+fn t13_sync_converges() {
+    // two devices holding parts of the ops each ask the other once: for every item each may receive by the other's
+    // view, both then hold the same writes and checkpoints of it
+    let mut checked = 0;
+    for seed in SEEDS {
+        let ops = forked_caps_history(seed, 60).log.ops().to_vec();
+        let mut rng = Rng(seed);
+        for _ in 0..3 {
+            let (p, q) = (part_after_cast(&mut rng, &ops), part_after_cast(&mut rng, &ops));
+            let (vp, vq) = (view(&p), view(&q));
+            let devices = [MAC_S, PHONE_S, MAC_B, MAC_C];
+            let pairs = devices.iter().flat_map(|&a| devices.iter().filter(move |&&b| b != a).map(move |&b| (a, b)));
+            for (dp, dq) in pairs {
+                let p2 = ids(&receive(&p, &respond_since(&q, dp, &asks(&p))));
+                let q2 = ids(&receive(&q, &respond_since(&p, dq, &asks(&q))));
+                for op in &ops {
+                    let Some((sp, e)) = op.item() else { continue };
+                    if vq.may_receive(dp, sp, e) && vp.may_receive(dq, sp, e) {
+                        assert_eq!(p2.contains(&op.id()), q2.contains(&op.id()), "seed {seed}: {dp:?} and {dq:?}");
+                        checked += 1;
+                    }
+                }
+            }
+        }
+    }
+    assert!(checked > 100, "only {checked} items checked");
+}
+
+#[test]
+fn t19_one_digest_per_log() {
+    // two devices hold the same ops of a log exactly when their digests of it are equal
+    let (mut same, mut differ) = (0, 0);
+    for seed in SEEDS {
+        let ops = forked_caps_history(seed, 60).log.ops().to_vec();
+        let mut rng = Rng(seed);
+        let a = part(&mut rng, &ops);
+        // and the same ops with about a quarter more: many logs untouched, some grown
+        let more = part(&mut rng, &ops);
+        let b = receive(&a, &part(&mut rng, &more));
+        let (da, db) = (digests(&a), digests(&b));
+        for l in da.keys().chain(db.keys()) {
+            let of = |x: &[Op]| -> Vec<OpId> {
+                let mut v: Vec<OpId> = x.iter().filter(|o| log_of(x, o) == Some(*l)).map(Op::id).collect();
+                v.sort();
+                v
+            };
+            let equal = da.get(l) == db.get(l);
+            assert_eq!(equal, of(&a) == of(&b), "seed {seed}: {l:?}");
+            if equal { same += 1 } else { differ += 1 }
+        }
+    }
+    assert!(same > 0 && differ > 0);
 }
 
 #[test]

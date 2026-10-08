@@ -6,6 +6,11 @@
 //! writes, key schedule (each family's epoch, every seal, every published key) and schema lanes. The lens vectors hold
 //! each app's view of many stored blocks and todos, and what each edit through a view stores.
 //!
+//! A sync case's ops, each with the parents and depth the model gives it, must stand as in the model, fall into the
+//! same logs with the same closed parts and frontiers, and fork where the model says; and each device that asks a peer
+//! must name the same ops of each log and the same loose ops, and be sent the same ops in the same order, whole
+//! (`respond`) and given what it named (`respond_since`).
+//!
 //! The model names what an op creates (a vault, a space, a grant) by a number, and an op by its place in the case; the
 //! core names them all by hashes, so each number maps to what its op created, and each place to that op's id. A keys
 //! op of the model names only where its boxes go; the core's carries the boxes too, which no rule opens, so here they
@@ -21,6 +26,7 @@ use avendb::policy::{
     checkpointed, replay, Action, Branch, Grant, Grantee, Kind, Line, Op, Principal, Role, Scope, Space, State, Vault,
     Write,
 };
+use avendb::sync::{asks, closed_part, forks, frontiers, respond, respond_since, LogId};
 
 const VECTORS: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../../spec/vectors/vaults.json");
 const LENSES: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../../spec/vectors/lenses.json");
@@ -128,6 +134,21 @@ impl Names {
             Some(s) => KeyName::Signer(signer(s)),
             None => KeyName::Scoped(self.key_scope(&v["key"]), num(&v["epoch"])),
         }
+    }
+
+    fn log(&self, v: &Value) -> LogId {
+        match self.key_scope(v) {
+            KeyScope::Vault(x) => LogId::Vault(x),
+            KeyScope::Space(sp) => LogId::Space(sp),
+            KeyScope::Entry(sp, e) => LogId::Entry(sp, e),
+        }
+    }
+
+    /// Ops by place, smallest id first: the model sorts by place, the core by id.
+    fn op_set(&self, v: &Value) -> Vec<OpId> {
+        let mut ids = self.ops(v);
+        ids.sort();
+        ids
     }
 
     /// Whom a box goes to; which of a family's keys doesn't matter to the rules.
@@ -370,6 +391,73 @@ fn each_op_stands_or_is_cut_as_in_the_lean_models_view() {
             assert_eq!(stood.contains(&op.id()), want.as_bool().unwrap(), "{name}, op {i}: {}", ops[i]);
         }
         names.check_state(name, case, &r.state);
+    }
+}
+
+#[test]
+fn each_device_is_sent_what_the_lean_model_sends_it_by_what_it_holds() {
+    let vectors = vectors();
+    let cases = list(&vectors["syncs"]);
+    assert!(cases.len() >= 4);
+    for case in cases {
+        let name = case["name"].as_str().unwrap();
+        let mut names = Names::default();
+        let mut all = vec![];
+        for v in list(&case["ops"]) {
+            let mut op = names.op_of(v, num(&v["depth"]));
+            op.parents = names.ops(&v["parents"]);
+            names.created(v, &op, true);
+            all.push(op);
+        }
+        let stood = replay(&all).standing();
+        for (i, want) in list(&case["standing"]).iter().enumerate() {
+            assert_eq!(stood.contains(&names.ops[i]), want.as_bool().unwrap(), "{name}: op {i} stands");
+        }
+        // every log, its closed part and its frontier
+        let fronts = frontiers(&all);
+        let logs: Vec<LogId> = list(&case["logs"]).iter().map(|l| names.log(&l["log"])).collect();
+        let mut sorted = logs.clone();
+        sorted.sort();
+        assert_eq!(fronts.keys().copied().collect::<Vec<_>>(), sorted, "{name}: logs");
+        for (l, v) in logs.iter().zip(list(&case["logs"])) {
+            let mut closed: Vec<OpId> = closed_part(&all, *l).into_iter().collect();
+            closed.sort();
+            assert_eq!(closed, names.op_set(&v["closed"]), "{name}: closed part of {l:?}");
+            assert_eq!(fronts[l], names.op_set(&v["frontier"]), "{name}: frontier of {l:?}");
+        }
+        let mut want: Vec<(OpId, OpId)> = list(&case["forks"])
+            .iter()
+            .map(|p| {
+                let (a, b) = (names.op(&p[0]), names.op(&p[1]));
+                (a.min(b), a.max(b))
+            })
+            .collect();
+        want.sort();
+        assert_eq!(forks(&all), want, "{name}: forks");
+        // each device that asks: what it names, and what it is sent
+        let at = |places: &Value| -> Vec<Op> {
+            let ids = names.ops(places);
+            all.iter().filter(|op| ids.contains(&op.id())).cloned().collect()
+        };
+        for a in list(&case["asks"]) {
+            let (d, held) = (signer(&a["device"]), at(&a["held"]));
+            let peer = if a["peer"].is_null() { all.clone() } else { at(&a["peer"]) };
+            let what = format!("{name}: device {} holding {}", a["device"], a["held"]);
+            let asked = asks(&held);
+            let fronts = frontiers(&held);
+            let sent: Vec<LogId> = list(&a["logs"]).iter().map(|l| names.log(&l["log"])).collect();
+            let mut sorted = sent.clone();
+            sorted.sort();
+            assert_eq!(asked.haves.keys().copied().collect::<Vec<_>>(), sorted, "{what}: logs");
+            for (l, v) in sent.iter().zip(list(&a["logs"])) {
+                assert_eq!(fronts[l], names.op_set(&v["frontier"]), "{what}: frontier of {l:?}");
+                assert_eq!(asked.haves[l], names.op_set(&v["haves"]), "{what}: what it names of {l:?}");
+            }
+            assert_eq!(asked.loose, names.op_set(&a["loose"]), "{what}: loose");
+            let ids = |ops: Vec<Op>| ops.iter().map(Op::id).collect::<Vec<_>>();
+            assert_eq!(ids(respond(&peer, d)), names.ops(&a["respond"]), "{what}: sent whole");
+            assert_eq!(ids(respond_since(&peer, d, &asked)), names.ops(&a["since"]), "{what}: sent");
+        }
     }
 }
 

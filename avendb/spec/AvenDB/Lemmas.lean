@@ -1012,7 +1012,7 @@ theorem runFrom_snd_mem (rem : List Op) (cs : List (Nat × List OpId × List Fac
 theorem standing_mem (ops : List Op) : ∀ o ∈ standing ops, o ∈ ops := fun o ho => by
   have h := runFrom_snd_mem _ _ _ _ o ho
   rw [List.zipIdx_map_fst] at h
-  exact List.mem_mergeSort.1 h
+  exact (List.mem_filter.1 (List.mem_mergeSort.1 h)).1
 
 /-- Every write a replay holds was there at the start, or a write op it replayed made it, with the op's id and
     author. -/

@@ -189,12 +189,15 @@ impl Action {
     }
 }
 
-/// A verified op: what it does, who signed it, and the ops it builds on (its causal past).
+/// A verified op: what it does, who signed it, and the ops of its own log it builds on.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Op {
+    /// The frontier of its own log (`sync::LogId`) as its device held it: what it builds on there. An op that starts a
+    /// log, a genesis or a space's founding, builds on nothing.
     pub parents: Vec<OpId>,
-    /// Causal depth: one more than the deepest parent, 0 without parents. It travels with the op because a peer
-    /// often holds only part of an op's past (a vault's log without the ops around it), and every peer must still
+    /// Causal depth: one more than the deepest op its device held when it made it, in any log, 0 for the first. It
+    /// only orders ops: whatever a device had seen sorts before what it makes next. It travels with the op because a
+    /// peer often holds only part of an op's past (a vault's log without the ops around it), and every peer must still
     /// order the op the same way.
     pub depth: u64,
     pub author: SignerId,
@@ -1580,7 +1583,8 @@ pub fn trace(ops: &[Op]) -> Vec<State> {
     run(&ops, &ids, &rem, true).states
 }
 
-/// A peer's ops. Each op appended builds on everything the log holds; ops from other peers are added as they arrive.
+/// A peer's ops. Each op appended builds on the frontier of its own log and sorts after everything the peer holds; ops
+/// from other peers are added as they arrive.
 #[derive(Clone, Debug, Default)]
 pub struct Log {
     ops: Vec<Op>,
@@ -1595,6 +1599,11 @@ impl Log {
 
     pub fn ops(&self) -> &[Op] {
         &self.ops
+    }
+
+    /// Each op's id, `ids()[i]` being `ops()[i]`'s.
+    pub fn ids(&self) -> &[OpId] {
+        &self.ids
     }
 
     pub fn view(&self) -> State {
@@ -1612,14 +1621,20 @@ impl Log {
         Self { ops, ids }
     }
 
-    /// The op `author` and `cosigners` would sign here, building on the log's heads, unchecked: what a peer that
-    /// skips the rules would send. A write with no `deps` on the main line or a branch builds on that line's heads. A
-    /// removal keeps, beside what its `keep` names, every op of the log that stands now and that it would cut
-    /// otherwise: an honest device keeps all it had seen.
+    /// The op `author` and `cosigners` would sign here, unchecked: what a peer that skips the rules would send. It
+    /// builds on the frontier of its own log (one that starts a log, a genesis or a space's founding, on nothing) and
+    /// is one deeper than the deepest op the log holds, so it sorts after everything this peer had seen. A write with
+    /// no `deps` on the main line or a branch builds on that line's heads. A removal keeps, beside what its `keep`
+    /// names, every op of the log that stands now and that it would cut otherwise: an honest device keeps all it had
+    /// seen.
     pub fn draft(&self, author: SignerId, cosigners: &[SignerId], action: Action) -> Op {
-        let parents = self.heads();
-        let depth = self.ops.iter().zip(&self.ids).filter(|(_, id)| parents.contains(id)).map(|(o, _)| o.depth + 1).max().unwrap_or(0);
-        let mut op = Op { parents, depth, author, cosigners: cosigners.to_vec(), action };
+        let depth = self.ops.iter().map(|o| o.depth.saturating_add(1)).max().unwrap_or(0);
+        let mut op = Op { parents: vec![], depth, author, cosigners: cosigners.to_vec(), action };
+        if !matches!(op.action, Action::Genesis { .. } | Action::FoundSpace { .. })
+            && let Some(l) = crate::sync::log_of_new(&self.ops, &self.ids, &op)
+        {
+            op.parents = crate::sync::frontier_of(&self.ops, &self.ids, l);
+        }
         if let Action::Write { space, entry, deps, branch, .. } = &mut op.action
             && deps.is_empty()
             && *branch != Branch::New
@@ -1664,13 +1679,9 @@ impl Log {
         op
     }
 
-    /// The ops no other op of the log builds on, sorted.
-    pub fn heads(&self) -> Vec<OpId> {
-        let built_on: HashSet<OpId> = self.ops.iter().flat_map(|o| o.parents.iter().copied()).collect();
-        let mut heads: Vec<OpId> = self.ids.iter().copied().filter(|id| !built_on.contains(id)).collect();
-        heads.sort();
-        heads.dedup();
-        heads
+    /// The frontier of log `l`: what an op of that log made here builds on.
+    pub fn frontier(&self, l: crate::sync::LogId) -> Vec<OpId> {
+        crate::sync::frontier_of(&self.ops, &self.ids, l)
     }
 
     /// The op `append` would add, if the view accepts it.

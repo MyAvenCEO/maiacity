@@ -1,5 +1,5 @@
 //! avenDB: the user-owned, end-to-end encrypted database behind the avenDB tile: vaults, caps, keys, Loro documents and
-//! sync by caps, item by item.
+//! sync by caps, item by item and log by log.
 //!
 //! Signers (a passkey, each device's key) own human vaults, the passkey as the vault's root; human vaults own coop
 //! vaults, and any vault founds spaces. Every right is a cap held by a vault, never by a signer: relay < read < write <
@@ -19,7 +19,7 @@
 //! | P4 documents and schemas | `lens`: schemas and lenses as blobs, projection on read, edits through a view; `doc`: items stored as records, edits tagged with their schema; `policy`: each space's schema lane, published by its owners; `lab`: apps on a schema, read-only fallback | T9, T17 |
 //! | P4b post-quantum | `hash`: SHA-3 for every hash of ours; `sign`: SLH-DSA beside every classical signature but a write's, device keys derived from the passkey; `keys`: a Classic McEliece share beside X-Wing in every sealed box, wraps where the key is held; `policy`: checkpoints and the post-quantum-only replay; `lab`: locked devices, blobs | T18 |
 //! | P5 history and branches | `branch`: every write a commit on a line of its entry's history, branches from any version, merge, promote, restore and undo, versions opened read-only; `policy`: each write's line, writes on a branch build on its start; `doc`: a Loro peer per line, records put back untagged, copies for forks; `lab`: every line of every entry shown, the branch operations | T10 |
-//! | P6 sync and convergence | `sync`, `lab` on a controllable network | T11, T12, T13 |
+//! | P6 sync and convergence | `sync`: every op in one log (a vault's, a space's or an entry's) building on that log's frontier, devices asking with what they hold of each log, one digest per log to gossip, forks flagged; `policy`: ops drafted on their log's frontier; `lab`: offline devices, gossip in random orders, backups whose restored devices fork, writes under the newest key a device knows | T11, T12, T13, T15, T19 |
 
 pub mod branch;
 pub mod doc;
