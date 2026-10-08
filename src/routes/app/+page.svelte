@@ -46,7 +46,7 @@
 	<div class="games">
 		{#each games as g (g.href)}
 			<a class="game" href={g.href}>
-				<img src={asset(g.cover)} alt="" loading="lazy" />
+				{#if g.cover}<img src={asset(g.cover)} alt="" loading="lazy" />{:else}<span class="nocover"></span>{/if}
 				{#if g.release === 'draft'}<span class="draft">Draft</span>{/if}
 				<span class="label"><b>{g.label}</b><span>{g.note}</span></span>
 			</a>
@@ -134,6 +134,14 @@
 
 	.game:hover img {
 		transform: scale(1.03);
+	}
+
+	/* a game with no cover yet: a quiet gradient */
+	.nocover {
+		display: block;
+		width: 100%;
+		height: 100%;
+		background: linear-gradient(160deg, #4f7a5a, #24452f);
 	}
 
 	/* a game only the admins see yet */
