@@ -35,6 +35,7 @@ lake exe vectors
 | `Lens.lean` | The markdown document and the todo in two schema versions, and the lenses between them |
 | `Theorems.lean` | T1 to T8, T11 to T14 and T16 |
 | `Lemmas.lean` | The helper lemmas the proofs use: how a step changes a vault, ownership links and chains, what a step keeps that authorization reads, causal closure, replays |
+| `KeyLemmas.lean` | The helper lemmas for the keys: what settling seals and publishes, `opens` finding every key `Knows` gives, acting for a vault through chains, the invariants behind T5 and T6, `EverReads` |
 | `Examples.lean` | The plan's scenarios run on the model, including one todo shared with several vaults and synced peer to peer, and strong removal: back-dated ops cut, clashes, a stolen passkey, the root handed on |
 | `Vectors.lean` | Cases for the Rust core: ops applied in order (which the model accepts) and ops at the depths they claim (which stand in the view), with the state at the end |
 | `VectorsCheck.lean`, `WriteVectors.lean` | Check `vectors/vaults.json` on every build; write it (`lake exe vectors`) |
@@ -48,8 +49,8 @@ lake exe vectors
 | T2 | Governance needs the vault's approval (its root, or its threshold of owners) plus the newcomer's consent; devices can't govern | Proven | `add_owner_needs_threshold_and_consent`, `device_cannot_govern`, `the_passkey_is_the_root`, `t2_consent`, the vectors |
 | T3 | No ownership cycles in any state the ops can reach | Proven | `ownership_cycle_rejected`, `t3_no_cycles`, the vectors |
 | T4 | Grants name vaults, never signers | Proven | `grant_to_signer_rejected`, `t4_grants_name_vaults_and_t8_public_read_only`, the vectors |
-| T5 | A device opens a key only if it was entitled to it at that epoch or a later one, or the key was public | P3 | `entry_reader_cannot_open_other_entries` |
-| T6 | Forward secrecy on removal: the current key opens only for devices entitled now | P3 | `revoked_reader_cannot_open_new_edits` |
+| T5 | A device opens a key only if it was entitled to it at that epoch or a later one, or the key was public | Proven | `entry_reader_cannot_open_other_entries` |
+| T6 | Forward secrecy on removal: the current key opens only for devices entitled now | Proven | `revoked_reader_cannot_open_new_edits` |
 | T7 | Blind server: a device whose vaults hold no read opens only public keys | Proven from T5 | `server_holds_only_ciphertext` |
 | T8 | Public is read-only | Proven | `public_is_read_only`, `t4_grants_name_vaults_and_t8_public_read_only`, the vectors |
 | T9 | Lens laws: round trips and idempotent migration | Proven | `lens_round_trip_v1`, `migration_is_idempotent` |
@@ -66,7 +67,10 @@ in the view, where each op claims a depth: the model names vaults, spaces and gr
 the core by hashes, so the test maps each number to what its op created.
 
 T3 is stated for reachable states, the replay of some ops from the empty state: an arbitrary state could list an owner
-vault that doesn't exist, which no op can produce. Its proof carries that invariant (`OwnersExist`) along.
+vault that doesn't exist, which no op can produce. Its proof carries that invariant (`OwnersExist`) along. T6 is
+stated for reachable states too, and its proof carries `KeyInv` along: seals hold only keys that exist, what is
+sealed to a space's key lies within the space, and every public family's current key is published. T5 follows the
+whole history instead: every seal is justified by what was readable at some point (`SealsRead`).
 
 Concurrent changes replay in one order (causal depth, removals first, then op hash), so they settle the same way on
 every device. That alone doesn't stop a removed owner, or a thief holding a stolen passkey, from signing ops on an old

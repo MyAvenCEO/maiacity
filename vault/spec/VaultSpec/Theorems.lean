@@ -2,13 +2,14 @@ import VaultSpec.Sync
 import VaultSpec.Doc
 import VaultSpec.Lens
 import VaultSpec.Lemmas
+import VaultSpec.KeyLemmas
 
 /-!
 # The theorems
 
 What must always hold, stated over the executable model. T9 (lenses) and T10 (branches) are proven in their own
 files. A `sorry` below marks a theorem whose proof belongs to a later phase (see `README.md`); a phase is merged only
-once its theorems are proven. The proofs' helper lemmas are in `Lemmas.lean`.
+once its theorems are proven. The proofs' helper lemmas are in `Lemmas.lean`, and for the keys in `KeyLemmas.lean`.
 
 The assumptions are part of the model rather than axioms: an op's signers are the keys that signed it (signatures
 can't be forged); keys are learned only through `Knows` (sealed or encrypted data reveals nothing without its key);
@@ -309,29 +310,25 @@ theorem T16_resolved_removals_stand (ops : List Op) :
     ∀ r ∈ resolve (order ops), (standing ops).any (·.id == r.id) :=
   resolve_stands (order ops)
 
-/-! ## Keys -/
+/-! ## Keys
 
-/-- Over the history `sts`, holder `h` could read key family `k` at some point: it was entitled to `k` then, `k` was
-    public then, or it was then entitled to the key of a vault that could read `k` at some point of the history,
-    before or after. Whoever joins a vault inherits what the vault could read. -/
-inductive EverReads (sts : List State) : Holder → KeyScope → Prop where
-  | entitled {h : Holder} {k : KeyScope} {st : State} : st ∈ sts → h.entitled st k = true → EverReads sts h k
-  | «public» {h : Holder} {k : KeyScope} {st : State} : st ∈ sts → publicKey st k = true → EverReads sts h k
-  | via {h : Holder} {v : VaultId} {k : KeyScope} {st : State} : st ∈ sts → h.entitled st (.vault v) = true →
-      EverReads sts (.vault v) k → EverReads sts h k
+`EverReads`, what a holder could read over a history, is in `KeyLemmas.lean`. -/
 
 /-- T5 (confidentiality): after any history, a holder (a signer, whoever holds a vault's key, or everyone) opens a
     key of some family, of any epoch, only if over that history it could read the family. -/
 theorem T5_confidentiality (ops : List Op) (h : Holder) (k : KeyScope) (e : Nat)
-    (hk : Knows (replay {} ops) (h.start (replay {} ops)) (.scoped k e)) : EverReads (trace {} ops) h k := by
-  sorry -- P3
+    (hk : Knows (replay {} ops) (h.start (replay {} ops)) (.scoped k e)) : EverReads (trace {} ops) h k :=
+  -- every seal along the history is justified, from the empty state on, and opening keys follows seals
+  (knows_everReads (replay_mem_trace {} ops) (sealsRead_replay ops {} (fun _ hx => hx) (sealsRead_empty _)) hk).2
+    k e rfl
 
 /-- T6 (forward secrecy): in every reachable state a holder opens the current key of a family only while it is
     entitled to it, or the family is public. New edits use current keys, so nothing written after a removal reaches
     the removed device, nor anyone who joins a vault that lost its read. -/
 theorem T6_forward_secrecy {st : State} (hr : Reachable st) (h : Holder) (k : KeyScope)
     (hk : Knows st (h.start st) (st.curKey k)) : h.entitled st k = true ∨ publicKey st k = true := by
-  sorry -- P3
+  obtain ⟨ops, rfl⟩ := hr
+  exact (keyInv_replay ops).fwd h k hk
 
 /-- A holder that never reads anything through its vaults, whatever vault it held at whatever point, reads a space
     or entry only while it is public. -/
