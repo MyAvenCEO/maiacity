@@ -1,7 +1,7 @@
 /**
  * SANDBOX 6 · AUTOPLAY — a player that builds the whole economy by itself, step by step, the way a person would:
  * its logistics hub, then homes and wood, steel and glass, then houses until its villages are full (their roofs catch their water),
- * trading planks, steel, fired clay and glass with the world market. Its domes cost real tonnes, so it enlarges a house
+ * trading planks, steel, fired clay, glass and solar panels with the world market. Its domes cost real tonnes, so it enlarges a house
  * once its treasury can pay for what its stores lack (it never borrows by choice). The film camera grows its valley with it (a settlement that is
  * already busy), and it plays a whole game headless to prove every chain runs end to end.
  */
@@ -24,9 +24,9 @@ const PLAN = [
 	['clayworks', 'meadow']
 ];
 
-/** what it trades with the world market (and a neighbour a trade route runs to): it buys planks, steel, clay and glass
- * when short, and exports what it has beyond */
-const ORDERS = /** @type {Record<string, 'sell' | 'buy' | 'both'>} */ ({ plank: 'both', steel: 'both', clay: 'both', glass: 'both' });
+/** what it trades with the world market (and a neighbour a trade route runs to): it buys planks, steel, clay, glass and
+ * solar panels when short, and exports what it has beyond */
+const ORDERS = /** @type {Record<string, 'sell' | 'buy' | 'both'>} */ ({ plank: 'both', steel: 'both', clay: 'both', glass: 'both', solar: 'both' });
 
 /** the hexes round a village's middle with room for a home: open grass on its house spot */
 const roomOf = (/** @type {import('./sim.js').Sim} */ sim, /** @type {number} */ v) =>
@@ -244,7 +244,7 @@ export function createAutoplay(sim) {
 			// homes grow at once in each village, and the next starts while the last beds still fill
 			const sites = mine.filter((b) => b.stage === 'site').length, fill = st.autoMap ? Math.min(row.beds - 2, row.beds * 0.8) : row.beds - 2;
 			if (sites >= (st.autoMap ? 2 : 1) || row.pop < fill || (row.beds > 0 && row.hungry)) continue;
-			// the largest house it can pay to enlarge: a bed costs about as much in any dome, most of it glass
+			// the largest house it can pay to enlarge: a bed costs about as much in any dome, most of it its glazing
 			const small = mine.filter((b) => b.level < HOUSE_TOP && b.stage === 'live').sort((a, b) => b.level - a.level);
 			const can = small.find((b) => pays(HOUSE_UP[b.level - 1], row));
 			if (can) return void sim.upgrade(can.id);
@@ -320,13 +320,14 @@ export function createAutoplay(sim) {
 					}
 				}
 			}
-			// once the plan is built, more wood and steel (filling the valley, glass too) while they run short
+			// once the plan is built, more wood and steel (filling the valley, glass and solar panels too: a sand pit
+			// grows into a solar panel works) while they run short
 			if (st.auto >= plan.length && plan.length < PLAN.length + (st.autoMap ? 240 : 60) && st.time >= (st.autoMore ?? 0)) {
 				st.autoMore = st.time + 180;
 				const low = (/** @type {string} */ w) => (s.stock[w] ?? 0) < 20;
 				if (low('plank')) plan.push(['woodcutter', 'trees']);
 				else if (low('steel')) plan.push(['ironmine', 'mine']);
-				else if (st.autoMap && low('glass')) plan.push(['glassworks', 'sand']);
+				else if (st.autoMap && (low('glass') || low('solar'))) plan.push(['glassworks', 'sand']);
 			}
 			// its orders, and with a trade route to a neighbour every request it can fill
 			for (const [w, o] of Object.entries(ORDERS)) if (!st.orders[w]) sim.order(w, o);

@@ -287,7 +287,11 @@
 	const sitesCost = (/** @type {Record<string, number>} */ cost) => Object.entries(cost);
 	const chainOf = (/** @type {any} */ t) => {
 		const r = RECIPES[t.id];
-		if (r) return `On a ${BIOMES[/** @type {keyof typeof BIOMES} */ (r.biome)].label.toLowerCase()} hex: ${LAND[/** @type {keyof typeof LAND} */ (r.land)].label} → ${label(t.out).toLowerCase()}, grows in ${r.stages.length} stages`;
+		if (r) {
+			// every ware its stages make, in turn: a sand pit's glass, then solar panels
+			const outs = [...new Set(r.stages.flatMap((x) => Object.keys(x.make.out)))];
+			return `On a ${BIOMES[/** @type {keyof typeof BIOMES} */ (r.biome)].label.toLowerCase()} hex: ${LAND[/** @type {keyof typeof LAND} */ (r.land)].label} → ${(outs.length ? outs : [t.out]).map((w) => label(w).toLowerCase()).join(', then ')}, grows in ${r.stages.length} stages`;
+		}
 		return t.kind === 'centre' ? 'A small store dome in a village’s middle hex; grows into its village center and geothermal power plant' : t.kind === 'house' ? 'Beds for 2, doubling each time it is enlarged, up to 248; plants its hex’s food forest' : '';
 	};
 </script>
@@ -372,7 +376,7 @@
 							<dt title="Food the world market sold your villages">Food bought</dt><dd>{gold(b.imports.food)}</dd>
 							<dt title="Water the world market sold your villages">Water bought</dt><dd>{gold(b.imports.water)}</dd>
 							<dt title="Energy the world grid sold your villages">Energy bought</dt><dd>{gold(b.imports.energy)}</dd>
-							<dt title="Planks, steel, fired clay and glass the world market sold your villages">Wares bought</dt><dd>{gold(b.imports.wares)}</dd>
+							<dt title="Planks, steel, fired clay, glass and solar panels the world market sold your villages">Wares bought</dt><dd>{gold(b.imports.wares)}</dd>
 							<dt title="Keeping your homes, factories and village centers up: 2% a year of what they are built of">Upkeep</dt><dd>{gold(b.upkeep)}</dd>
 							<dt title="Interest and repayment together; {gold(b.interest)} of it interest">Loan payments</dt><dd>{gold(b.repaid)}</dd>
 							<dt title="What the treasuries hold loses 7% a year">Demurrage</dt><dd>{gold(b.demurrage)}</dd>
@@ -581,7 +585,7 @@
 					{#if fd && fd.exported >= 1}<dt title="What its forests grow beyond what its people eat">Food exported</dt><dd class="gain">{food(fd.exported)} food · +{gold(fd.exported * PRICE.world)} gold</dd>{/if}
 					{#if wt && wt.bought >= 1}<dt title="What its rain does not give while its tanks are dry">Water bought</dt><dd class="debt">{water(wt.bought)} water · −{gold(wt.spent)} gold</dd>{/if}
 					{#if pw}<dt title="What it has over goes to the world grid, and what it lacks the grid sells it, after your villages joined to it share theirs; lately">Energy to the grid</dt><dd class:gain={pwGrid > 0.5} class:debt={pwGrid < -0.5}>{pwGrid > 0.5 ? '+' : ''}{energy(pwGrid)} energy · {pwEur > 0.5 ? '+' : ''}{gold(pwEur)} gold</dd>{/if}
-					{#if home.wares >= 1}<dt title="Planks, steel, fired clay and glass bought from the world market, lately">Spent on wares</dt><dd class="debt">−{gold(home.wares)} gold</dd>{/if}
+					{#if home.wares >= 1}<dt title="Planks, steel, fired clay, glass and solar panels bought from the world market, lately">Spent on wares</dt><dd class="debt">−{gold(home.wares)} gold</dd>{/if}
 					{#if home.upkeep >= 1}<dt title="What keeping its homes, factories and village center up takes, always in gold: 2% a year of what they are built of, at world prices">Upkeep</dt><dd class="debt">−{gold(home.upkeep)} gold</dd>{/if}
 					{#if home.interest >= 1}<dt title="1% a month on what it owes">Loan interest</dt><dd class="debt">−{gold(home.interest)} gold</dd>{/if}
 					{#if home.repaid >= 1}<dt title="Its loan's payments, interest and repayment together">Loan payments</dt><dd class="debt">−{gold(home.repaid)} gold</dd>{/if}

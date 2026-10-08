@@ -16,13 +16,13 @@
  *     the cities trade by the orders you set and by what the neighbours have spare and lack (./market.js);
  *   · every village eats and drinks, in kg and litres (./food.js): its hexes' food forests grow a share of it, more
  *     each year, it buys the rest by itself, and its roofs fill its tanks with rain;
- *   · every village makes and uses energy, in kWh (./rules.js ENERGY): its center's geothermal plant and its domes'
- *     solar glass make it, its people and factories use it, and the world grid buys what is left over;
+ *   · every village makes and uses energy, in kWh (./rules.js ENERGY): its center's geothermal plant and the solar
+ *     panels of its domes from 16 beds make it, its people and factories use it, and the world grid buys what is left over;
  *   · every factory works by its recipe (./rules.js RECIPES, `craft` here): a round of its land and energy in, its ware
  *     out;
  *   · what a treasury lacks it borrows, an annuity loan over fifteen years (./market.js LOAN). There is no goal to win.
  */
-import { BIOMES, BUILDINGS, BUILD_MWH_T, CENTRE, ENERGY, EUR_GOLD, GROWS, GRASS, HOUSE_BEDS, HOUSE_KEEP, HOUSE_MOST, HOUSE_TOP, HOUSE_UP, IRON, LAND, LOAD_T, MOUNTAIN, RECIPES, ROUNDS_YEAR, ROUTE_T_KM, START, UNIT_M, UPKEEP, WARES, WATER, WEEK_YEAR, centreStage, holdsLand, loadsRound, recipe, sunBedDay } from './rules.js';
+import { BIOMES, BUILDINGS, BUILD_MWH_T, CENTRE, ENERGY, EUR_GOLD, GROWS, GRASS, HOUSE_BEDS, HOUSE_KEEP, HOUSE_MOST, HOUSE_TOP, HOUSE_UP, IRON, LAND, LOAD_T, MOUNTAIN, RECIPES, ROUNDS_YEAR, ROUTE_T_KM, SOLAR_BEDS, START, UNIT_M, UPKEEP, WARES, WATER, WEEK_YEAR, centreStage, holdsLand, loadsRound, recipe, sunBedDay } from './rules.js';
 import { CART, GRID_EUR_KWH, HEARTS, LOAN, LOAN_PAY, NEIGHBOURS, TRADED, WORLD, heartsFor, keepOf, loanMonths, make, newMarket, orderRule, party, priceIn, request, shortIn, spareIn } from './market.js';
 import { SE, STEP, findPath, makeGrid } from './hex.js';
 import { CISTERN, FOOD_KG, FRESH_L, KEEP, MOST, PACE, PRICE, RAIN_L, RAIN_MONTH, TANK, WATER_PRICE, WATER_USE, WEEK, YEAR, DAY, MONTH, clockOf, forestShare } from './food.js';
@@ -147,6 +147,8 @@ export function createSim(st) {
 	delete st.year0;
 	// nothing pauses any more: a building paused in an older save works again
 	for (const b of Object.values(st.buildings ?? {})) if (b) delete b.paused;
+	// a ware the market came to trade after the valley was saved (solar panels) gets its price history
+	if (st.market?.hist) for (const w of TRADED) st.market.hist[w] ??= [4];
 	const size = `${st.W}x${st.H}`;
 	if (!plans.has(size)) plans.set(size, makePlan(g));
 	const plan = /** @type {ReturnType<typeof makePlan>} */ (plans.get(size));
@@ -168,6 +170,9 @@ export function createSim(st) {
 		if (st.msgs.length > 40) st.msgs.shift();
 	};
 	const T = (/** @type {any} */ b) => BUILDINGS[b.type];
+	/** the ware a building makes at its stage: its recipe's (a glassworks glass, upgraded to a solar panel works solar
+	 * panels), else its kind's */
+	const outOf = (/** @type {any} */ b) => /** @type {string} */ ((RECIPES[b.type] && Object.keys(recipe(b.type, levelOf(b))?.make.out ?? {})[0]) || T(b).out);
 	const isWarehouse = (/** @type {any} */ b) => b.type === 'centre';
 	const all = (/** @type {Record<string, any>} */ o) => Object.values(o);
 	// the buildings and the people as lists, kept until one comes or goes (never saved: st is what is saved). Frozen,
@@ -894,7 +899,7 @@ export function createSim(st) {
 		const n = Math.round(loadsRound(b.type, levelOf(b)));
 		for (let k = 0; k < n; k++) {
 			b.out++;
-			made(/** @type {string} */ (t.out));
+			made(outOf(b));
 		}
 		b.lately = (b.lately ?? 0) + n;
 		book(b, 'kwhWork', (r.make.in.energy ?? 0) * 1000);
@@ -942,7 +947,7 @@ export function createSim(st) {
 					if (t.ore) b.deposit--;
 				}
 			}
-			if (b.out > 0 && !flushOutput(b, /** @type {string} */ (t.out))) b.status = 'Its stop is full';
+			if (b.out > 0 && !flushOutput(b, outOf(b))) b.status = 'Its stop is full';
 			else if (b.timer > 0) b.status = 'Working';
 			else if (t.ore && b.deposit <= 0) b.status = 'The vein is used up';
 			else if (RECIPES[b.type] && !loadsRound(b.type, levelOf(b))) {
@@ -950,7 +955,7 @@ export function createSim(st) {
 				const next = recipe(b.type, levelOf(b) + 1);
 				b.status = `It ${recipe(b.type, levelOf(b))?.does ?? 'makes nothing yet'}${next ? `: upgrade it to a ${next.label.toLowerCase()}` : ''}`;
 			}
-			else if (stocked(/** @type {string} */ (t.out)) >= ENOUGH && !exported(/** @type {string} */ (t.out))) b.status = 'Resting: the storehouses are full of it';
+			else if (stocked(outOf(b)) >= ENOUGH && !exported(outOf(b))) b.status = 'Resting: the storehouses are full of it';
 			else if (ROUNDS_YEAR[b.type] && quotaOf(b) < 1) b.status = waits(b);
 			else {
 				const missing = b.slots.findIndex((/** @type {any} */ s) => s.have < 1);
@@ -1630,8 +1635,10 @@ export function createSim(st) {
 	/** whether a village's tanks run dry within so many days: its roofs catch less than it uses, and they hold less
 	 * than that many days of it */
 	const runsDry = (/** @type {number} */ v, /** @type {any} */ p, /** @type {number} */ days) => p.pop > 0 && (p.litres ?? 0) < p.pop * FRESH_L * days && rainIn(v) < p.pop * FRESH_L;
-	/** kWh a day its domes' solar glass makes now: each bed's share, as much as the sun gives this month */
-	const sunIn = (/** @type {number} */ v) => bedsIn(v) * sunBedDay(monthNow());
+	/** kWh a day the solar panels of its domes from 16 beds make now: each of their beds' share, as much as the sun
+	 * gives this month (a dome of glass makes none) */
+	const sunIn = (/** @type {number} */ v) =>
+		mineIn(v).reduce((s, b) => s + (b.type === 'house' && b.level && HOUSE_BEDS[b.level - 1] >= SOLAR_BEDS ? HOUSE_BEDS[b.level - 1] : 0), 0) * sunBedDay(monthNow());
 	/** kWh a day a village center's geothermal plant makes, day and night, as much of the time as it runs */
 	const wellsDay = (/** @type {any} */ c) => plantOf(c) * ENERGY.wellKw * 24 * ENERGY.uptime;
 	/** kWh a day so many people use at home */
@@ -2539,7 +2546,8 @@ export function createSim(st) {
 				row('plank', 'Planks', ['plank'], false),
 				row('steel', 'Steel', ['steel'], false),
 				row('clay', 'Fired clay', ['clay'], false),
-				row('glass', 'Glass', ['glass'], false)
+				row('glass', 'Glass', ['glass'], false),
+				row('solar', 'Solar panels', ['solar'], false)
 			].filter((r) => r.need > 0 || r.have > 0);
 			/** @type {{ tone: string, text: string, node: number }[]} */
 			const notes = [];
@@ -2651,7 +2659,7 @@ export function createSim(st) {
 				progress: b.stage === 'site' ? Object.keys(b.cost).reduce((s, w) => s + b.used[w], 0) / Math.max(1, Object.values(b.cost).reduce((/** @type {number} */ s, /** @type {any} */ n) => s + n, 0)) : 1,
 				cost: Object.keys(b.cost).map((w) => ({ ware: w, need: b.cost[w], have: b.used[w] + b.got[w], coming: b.inc[w] })),
 				inputs: (t.inputs ?? []).map((/** @type {string[]} */ types, /** @type {number} */ k) => ({ types, have: b.slots[k].have, coming: b.slots[k].inc, cap: SLOT_CAP })),
-				out: t.out ?? '',
+				out: outOf(b) ?? '',
 				worker: t.worker ?? '',
 				hasWorker: !!worker && worker.job !== 'w-go',
 				eff: Math.round(b.eff * 100),

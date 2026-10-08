@@ -3,7 +3,7 @@
 	the hex a chain stands on and the land it works, every stage its building grows through with its recipes of the
 	crafting engine (what building it or growing to it takes, its upkeep a week in gold, the energy standing uses a
 	week, and what it makes a week), the ware it makes and what that is for; then energy, the village center's stages (a logistics hub that grows into the
-	village center and its geothermal plant) and every dome's solar cells; then the homes, one dome through its eight sizes. All in units: a tonne, a MWh, a gold. A stage you have
+	village center and its geothermal plant) and the solar panels of every dome from 16 beds; then the homes, one dome through its eight sizes. All in units: a tonne, a MWh, a gold. A stage you have
 	is marked; click a first stage to build it (later stages grow on the building's card).
 -->
 <script>
@@ -53,7 +53,7 @@
 						<div class="gap"></div>
 					{/if}
 				{/each}
-				<div class="node w"><strong><i style:background={WARES[c.ware].color}></i>{label(c.ware)}<em>{ware(stock[c.ware] ?? 0)}</em></strong><span>in your stores</span></div>
+				<div class="node w">{#each c.wares as w (w)}<strong><i style:background={WARES[w].color}></i>{label(w)}<em>{ware(stock[w] ?? 0)}</em></strong>{/each}<span>in your stores</span></div>
 				<div class="node use"><strong>{c.use}</strong><span>{c.useNote}</span></div>
 			{/each}
 
@@ -72,8 +72,8 @@
 			<div class="node w e"><strong><i class="bolt"></i>Energy</strong><span>a flow, never stored</span></div>
 			<div class="node use"><strong>People, domes, factories</strong><span>the rest to the grid, {fmt((GRID_EUR_KWH * 1000) / EUR_PER_GOLD)} gold an energy</span></div>
 
-			<div class="node land"><strong>Every dome</strong><span><b>sun</b>: through its glass</span></div>
-			<div class="node b e wide"><strong>Its solar cells</strong><span class="r make"><b>make</b>{fmt(SUN.make)} energy a bed a week over the year, most in summer</span><span class="r"><b>use</b>its climate, {fmt(SUN.climate)} energy a bed a week</span></div>
+			<div class="node land"><strong>Every dome from 16 beds</strong><span><b>sun</b>: on its solar panels</span></div>
+			<div class="node b e wide"><strong>Its solar panels</strong><span class="r make"><b>make</b>{fmt(SUN.make)} energy a bed a week over the year, most in summer</span><span class="r"><b>use</b>its climate, {fmt(SUN.climate)} energy a bed a week</span></div>
 			<div class="gap"></div>
 			<div class="gap"></div>
 			<div class="node w e"><strong><i class="bolt"></i>Energy</strong><span>a flow, never stored</span></div>
