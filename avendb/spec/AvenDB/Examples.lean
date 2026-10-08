@@ -486,6 +486,44 @@ def handover : List Op := s1 ++ chain 140 [
 #guard ((view handover).vault? samuel).map (fun v => (v.owners, v.root)) == some ([.signer 77], some 77)
 #guard !actsFor (view handover) stranger samuel
 
+/-! ## Removals settle from the top down
+
+A removal is only ever kept out by one that ranks above it, so what ranks above a removal must never rest on what it
+takes away: a vault's removals come before those of the coops it owns, and a senior revoker's before those of whoever
+holds a grant beneath the one revoked. -/
+
+-- Samuel gives Dave owner on his Notes, and Dave gives Carol read beneath it. Dave revokes Carol's read on a copy that
+-- hadn't seen Samuel, the founder, revoke Dave's grant, so Dave's revocation sorts first. The founder ranks first all
+-- the same: Dave's grant goes, Carol's with it, and Dave's revocation falls with the grant it rested on.
+def seniorRevoke : List Op := s2 ++ chain 700 [
+  (macS, [], .foundSpace notes samuel),
+  (passkeyS, [], .grant ⟨701, .space notes, .owner, .principal (.vault dave), samuel, none⟩),
+  (macD, [], .grant ⟨702, .space notes, .read, .principal (.vault carol), dave, some 701⟩),
+  (macS, [], .write notes welcome samuel 0),
+  (macS, [], .write notes charter samuel 0),
+  (passkeyS, [], .revoke 701 samuel [700, 701, 702, 703, 704])] ++ offline 720 702 [
+  (macD, [], .revoke 702 dave [])]
+#guard (((order seniorRevoke).map (·.id)).drop (s2.length + 3)).take 1 == [720]
+#guard refused seniorRevoke == [720]
+#guard ((view seniorRevoke).grant? 701).isNone && ((view seniorRevoke).grant? 702).isNone
+
+-- Samuel's vault gains two more passkeys, either of which approves for it alone, and Samuel and Bob found a coop
+-- where either acts alone. One passkey removes Bob from the coop on a copy that hadn't seen the other passkey remove it
+-- from Samuel's vault. Samuel's vault settles first, so the coop's removal falls, exactly as on a peer that never held
+-- the coop's log.
+def tiers : List Op := s2 ++ chain 740 [
+  (passkeyS, [77], .addOwner samuel (.signer 77)),
+  (passkeyS, [78], .addOwner samuel (.signer 78)),
+  (passkeyS, [passkeyB], .genesis pair .coop [.vault samuel, .vault bob] 1),
+  (passkeyS, [], .setThreshold pair 1),
+  (78, [], .removeOwner samuel (.signer 77) [740, 741, 742, 743])] ++ offline 760 742 [
+  (77, [], .removeOwner pair (.vault bob) [])]
+#guard refused tiers == [760]
+#guard ((view tiers).vault? samuel).map (·.owners) == some [.signer passkeyS, .signer 78]
+#guard ((view tiers).vault? pair).map (·.owners) == some [.vault samuel, .vault bob]
+#guard ((view (tiers.filter fun o => o.id != 742 && o.id != 760)).vault? samuel).map (·.owners) ==
+  ((view tiers).vault? samuel).map (·.owners)
+
 /-! ## Once the curves fall: checkpoints
 
 A write carries only the classical half of its device's signature. Whoever breaks the curves can sign a write as

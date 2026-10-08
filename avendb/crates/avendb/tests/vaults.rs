@@ -229,3 +229,34 @@ fn handing_the_root_on_cuts_the_old_passkeys_backdated_ops() {
     // what the old passkey did before stays: the honest devices that drafted both removals had seen it
     assert!(st.acts_for(MAC_S, c.samuel) && st.acts_for(PHONE_S, c.samuel));
 }
+
+#[test]
+fn a_vault_settles_before_the_coops_it_owns() {
+    let mut c = cast();
+    let (samuel, bob) = (c.samuel, c.bob);
+    // Samuel's vault gains two more passkeys, either of which approves for it alone
+    let (second, third) = (SignerId::from_u64(90), SignerId::from_u64(91));
+    for p in [second, third] {
+        c.log.append(PASSKEY_S, &[p], Action::AddOwner { vault: samuel, owner: Principal::Signer(p), seal_to: None }).unwrap();
+    }
+    // Samuel and Bob found a coop where either acts alone
+    let owners = vec![Principal::Vault(samuel), Principal::Vault(bob)];
+    let genesis = Action::Genesis { kind: Kind::Coop, owners, threshold: 1, root: None, nonce: 1, seal_to: vec![] };
+    let pair = VaultId::from(c.log.append(PASSKEY_S, &[PASSKEY_B], genesis).unwrap());
+    // offline, the second passkey removes Bob from the coop; the third, having gone on a step, removes the second
+    // passkey from Samuel's vault, so the coop's removal sorts first
+    let (mut a, mut b) = (c.log.clone(), c.log.clone());
+    a.append(second, &[], Action::RemoveOwner { vault: pair, owner: Principal::Vault(bob), keep: vec![] }).unwrap();
+    b.append(PASSKEY_S, &[], Action::SetThreshold { vault: samuel, threshold: 1 }).unwrap();
+    b.append(third, &[], Action::RemoveOwner { vault: samuel, owner: Principal::Signer(second), keep: vec![] }).unwrap();
+    // Samuel's vault settles first: the second passkey goes, and the removal it approved for the coop with it
+    let st = meet(&a, &b);
+    assert_eq!(st.vault(samuel).map(|v| v.owners.clone()), Some(vec![Principal::Signer(PASSKEY_S), Principal::Signer(third)]));
+    assert_eq!(st.vault(pair).map(|v| v.owners.len()), Some(2));
+    // exactly as on a device that never held the coop's log
+    let mut all = a.ops().to_vec();
+    all.extend(b.ops().iter().filter(|o| !a.ops().contains(o)).cloned());
+    let without: Vec<_> = all.into_iter().filter(|o| o.vault_of() != Some(pair)).collect();
+    assert_eq!(Log::from_ops(without).view().vault(samuel), st.vault(samuel));
+}
+
