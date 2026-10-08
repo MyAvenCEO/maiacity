@@ -1,75 +1,85 @@
 /**
- * SANDBOX 6 · ONE HEX · ON THE PAGE — the stage, the sky and the map camera of the sandbox kit round the two hexes
- * (./scene.js), the labels over the buildings drawn in HTML, and a click to pick a building.
+ * SANDBOX 6 · ONE VILLAGE · ON THE PAGE — the stage, the sky and the map camera of the sandbox kit round the village's
+ * seven hexes (./scene.js), the labels over the hexes and buildings drawn in HTML, and a click to pick a building.
  *
  *   look     drag turns and tilts, the wheel zooms, WASD travels (the kit's orbit rig)
  *   pick     click a dome or the tower to see its numbers
- *   focus    the page switches between the living hex and the tower hex: the camera flies over
+ *   focus    the page flies over the whole village, the tower hex or one living hex
+ *   labels   from afar one label a hex; closer, the buildings round where the camera looks
  */
 import * as THREE from 'three';
 import { createOrbitRig, createSky, createStage, skyTime } from '$lib/sandbox-kit';
 import { buildWorld } from './scene.js';
-import { LIVING, TOWER_HEXES } from './layout.js';
+import { VILLAGE } from './layout.js';
 import { KINDS, capOf } from './specs.js';
 
 /** the hour the sky shows on Auto */
 export const MORNING = 11.5;
 
-/** where the camera looks from, over each hex */
-const VIEWS = {
-	living: { target: [0, 0, 20], from: [260, 420, 640] },
-	tower: { target: [665.6, 60, 0], from: [665.6 + 330, 380, 620] }
-};
+/** where the camera looks from: over the village, or over a hex (from the south-east, as high as it is far) */
+const VILLAGE_VIEW = { target: [0, 0, 60], from: [700, 1350, 1750] };
+const hexView = (/** @type {number} */ x, /** @type {number} */ z, tower = false) => ({ target: [x, tower ? 50 : 0, z + 20], from: [x + 280, tower ? 400 : 420, z + 620] });
 
 /**
  * @param {HTMLElement} container
  * @param {HTMLElement} labelLayer where the labels go
- * @param {{ onPick?: (id: string | null, hex: string | null) => void, onProgress?: (label: string) => void }} [o]
+ * @param {{ onPick?: (id: string | null, hex: string | null) => void, onProgress?: (label: string) => void, people?: (hex: string) => string }} [o]
  */
 export function mountWorld(container, labelLayer, o = {}) {
-	const stage = createStage(container, { fov: 42, near: 1, far: 9000, maxPixelRatio: 1.5 });
+	const stage = createStage(container, { fov: 42, near: 1, far: 12000, maxPixelRatio: 1.5 });
 	const { renderer, scene, camera } = stage;
-	// the hex has no clock of its own: on Auto the sky stands at late morning, Manual sets the hour by hand
-	const sky = createSky(renderer, scene, { clock: () => (skyTime.auto ? MORNING : skyTime.hour), shadowReach: 520, shadowMap: 4096, shadowFar: 3200, lightDistance: 1500, shadowGrid: 32, fog: { near: 2200, far: 7500 } });
-	o.onProgress?.('Laying out the hexes');
-	const world = buildWorld(scene, { living: LIVING, towers: TOWER_HEXES }, o.onProgress);
-	let towerId = 't250';
-	world.setTower(towerId);
+	// the village has no clock of its own: on Auto the sky stands at late morning, Manual sets the hour by hand
+	const sky = createSky(renderer, scene, { clock: () => (skyTime.auto ? MORNING : skyTime.hour), shadowReach: 560, shadowMap: 4096, shadowFar: 3600, lightDistance: 1700, shadowGrid: 32, fog: { near: 3200, far: 11000 } });
+	o.onProgress?.('Laying out the village');
+	const world = buildWorld(scene, VILLAGE, o.onProgress);
 
-	const v = VIEWS.living;
+	const v = VILLAGE_VIEW;
 	camera.position.set(v.from[0], v.from[1], v.from[2]);
-	const rig = createOrbitRig(camera, renderer.domElement, { minDistance: 15, maxDistance: 3200, target: new THREE.Vector3(...v.target), floorY: 3, moveSpeed: 260 });
+	const rig = createOrbitRig(camera, renderer.domElement, { minDistance: 15, maxDistance: 5200, target: new THREE.Vector3(...v.target), floorY: 3, moveSpeed: 320 });
 
 	// ── labels ──
-	/** @type {{ el: HTMLElement, at: THREE.Vector3, hex: string, small: boolean, dims: HTMLElement }[]} */
+	/** @type {{ el: HTMLElement, at: THREE.Vector3, hex: string, small: boolean, whole: boolean, dims: HTMLElement | null }[]} */
 	const labels = [];
-	for (const [key, h] of Object.entries(world.hexes))
+	for (const [key, h] of Object.entries(world.hexes)) {
+		// the hex's own label, for the view from afar
+		const el = document.createElement('div');
+		el.className = 'lbl hex';
+		el.innerHTML = `<b>${h.label}</b><span>${o.people?.(key) ?? ''}</span>`;
+		el.addEventListener('click', () => focusHex(key));
+		labelLayer.appendChild(el);
+		labels.push({ el, at: new THREE.Vector3(h.x, h.plan.tower ? h.plan.tower.H + 20 : 60, h.z), hex: key, small: false, whole: true, dims: null });
 		for (const b of h.built) {
 			const el = document.createElement('div');
 			el.className = 'lbl';
 			const K = KINDS[b.site.kind];
-			const title = b.site.kind === 'tower250' ? (h.plan.tower?.label ?? 'Tower') : b.site.kind === 'factory100' ? b.site.name : K.label;
-			const sub = b.site.kind === 'factory100' ? 'Dome100 factory' : b.site.kind === 'dome50' || b.site.kind === 'dome100' ? `${K.people} people` : b.site.kind === 'food150' ? 'Tropical food forest' : b.site.kind === 'util150' ? 'Utilities' : 'Factory, utilities, offices, homes';
+			const title = b.site.kind === 'tower' ? (h.plan.tower?.label ?? 'Tower') : b.site.kind === 'factory120' ? b.site.name : K.label;
+			const sub = b.site.kind === 'factory120' ? 'Dome120 factory' : b.site.kind === 'dome40' || b.site.kind === 'dome80' ? `${K.people} people, ${K.storeys} storeys` : b.site.kind === 'food120' ? 'Tropical food forest' : b.site.kind === 'util120' ? 'Utilities' : 'Factory, utilities, offices, homes';
 			el.innerHTML = `<b>${title}</b><span>${sub}</span>`;
 			const dims = document.createElement('em');
-			if (b.site.kind === 'tower250' && h.plan.tower) dims.textContent = `Ø${h.plan.tower.D} m · ${h.plan.tower.H} m high`;
+			if (b.site.kind === 'tower' && h.plan.tower) dims.textContent = `Ø${h.plan.tower.D} m · ${h.plan.tower.H} m high`;
 			else {
 				const c = capOf(K.D);
 				dims.textContent = `Ø${K.D} m · ${c.h.toFixed(1)} m high · ${Math.round(c.floor).toLocaleString('en-US')} m²`;
 			}
 			el.appendChild(dims);
 			el.dataset.site = b.id;
+			el.dataset.hex = key;
 			el.addEventListener('click', () => pick(b.id, key));
 			labelLayer.appendChild(el);
-			labels.push({ el, at: new THREE.Vector3(b.x, b.height + 6, b.z), hex: key, small: b.small, dims });
+			labels.push({ el, at: new THREE.Vector3(b.x, b.height + 6, b.z), hex: key, small: b.small, whole: false, dims });
 		}
+	}
 	let showLabels = true, showDims = false;
 	const p = new THREE.Vector3();
 	function placeLabels() {
 		const w = container.clientWidth, hgt = container.clientHeight;
-		const dist = camera.position.distanceTo(rig.controls.target);
+		const t = rig.controls.target;
+		const dist = camera.position.distanceTo(t);
+		// from afar a label a hex; closer, the buildings within reach of where the camera looks
+		const far = dist > 1600;
+		const reach = Math.max(420, dist * 0.75);
 		for (const l of labels) {
-			const live = showLabels && (l.hex === 'living' || l.hex === towerId) && !(l.small && dist > 1300);
+			const live = showLabels && (far ? l.whole : !l.whole && Math.hypot(l.at.x - t.x, l.at.z - t.z) < reach && !(l.small && dist > 1100));
 			if (!live) {
 				l.el.style.display = 'none';
 				continue;
@@ -81,7 +91,7 @@ export function mountWorld(container, labelLayer, o = {}) {
 			}
 			l.el.style.display = '';
 			l.el.style.transform = `translate(${((p.x + 1) / 2) * w}px, ${((1 - p.y) / 2) * hgt}px) translate(-50%, -100%)`;
-			l.dims.style.display = showDims ? '' : 'none';
+			if (l.dims) l.dims.style.display = showDims ? '' : 'none';
 		}
 	}
 
@@ -92,7 +102,7 @@ export function mountWorld(container, labelLayer, o = {}) {
 	let picked = null;
 	function pick(/** @type {string | null} */ id, /** @type {string | null} */ hex) {
 		picked = id;
-		for (const l of labels) l.el.classList.toggle('on', l.el.dataset.site === id && l.hex === hex);
+		for (const l of labels) l.el.classList.toggle('on', !l.whole && l.el.dataset.site === id && l.hex === hex);
 		o.onPick?.(id, hex);
 	}
 	let down = { x: 0, y: 0 };
@@ -103,7 +113,7 @@ export function mountWorld(container, labelLayer, o = {}) {
 		const r = canvas.getBoundingClientRect();
 		ndc.set(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
 		ray.setFromCamera(ndc, camera);
-		const keys = ['living', towerId];
+		const keys = Object.keys(world.hexes);
 		const hits = keys.flatMap((k) => world.hexes[k].built.map((b) => ({ b, k }))).map(({ b, k }) => ({ b, k, hit: ray.intersectObject(b.hit, false)[0] })).filter((x) => x.hit).sort((a, c) => a.hit.distance - c.hit.distance);
 		if (hits[0]) pick(hits[0].b.id, hits[0].k);
 		else pick(null, null);
@@ -111,14 +121,19 @@ export function mountWorld(container, labelLayer, o = {}) {
 	canvas.addEventListener('pointerdown', onDown);
 	canvas.addEventListener('pointerup', onUp);
 
-	// ── flying between the hexes ──
+	// ── flying over the village ──
 	/** @type {{ from: THREE.Vector3, to: THREE.Vector3, tFrom: THREE.Vector3, tTo: THREE.Vector3, t: number, start: number } | null} */
 	let flight = null;
-	function focus(/** @type {'living' | 'tower'} */ hex, /** @type {{ x: number, z: number, r: number, h: number } | null} */ on = null) {
-		const vv = VIEWS[hex];
+	/** fly to a view, or to a building (its middle, radius and height) */
+	function fly(/** @type {{ target: number[], from: number[] }} */ vv, /** @type {{ x: number, z: number, r: number, h: number } | null} */ on = null) {
 		const tTo = on ? new THREE.Vector3(on.x, on.h * 0.35, on.z) : new THREE.Vector3(...vv.target);
 		const to = on ? tTo.clone().add(new THREE.Vector3(on.r * 1.4, on.r * 1.2 + on.h * 0.6, on.r * 2.6 + on.h * 0.4)) : new THREE.Vector3(...vv.from);
 		flight = { from: camera.position.clone(), to, tFrom: rig.controls.target.clone(), tTo, t: 0, start: performance.now() };
+	}
+	/** fly over the whole village, or a hex by its key */
+	function focusHex(/** @type {string} */ key) {
+		const h = world.hexes[key];
+		fly(h ? hexView(h.x, h.z, !!h.plan.tower) : VILLAGE_VIEW);
 	}
 
 	let frame = 0, last = performance.now();
@@ -154,18 +169,11 @@ export function mountWorld(container, labelLayer, o = {}) {
 			}
 			renderer.shadowMap.needsUpdate = true;
 		},
-		/** Tower250 or Tower200 */
-		setTower(/** @type {string} */ id) {
-			towerId = id;
-			world.setTower(id);
-			if (picked) pick(null, null);
-			renderer.shadowMap.needsUpdate = true;
-		},
-		focus,
+		focusHex,
 		/** fly to a building */
 		focusSite(/** @type {string} */ id, /** @type {string} */ hex) {
 			const b = world.hexes[hex]?.built.find((x) => x.id === id);
-			if (b) focus(hex === 'living' ? 'living' : 'tower', { x: b.x, z: b.z, r: b.r, h: b.height });
+			if (b) fly(VILLAGE_VIEW, { x: b.x, z: b.z, r: b.r, h: b.height });
 		},
 		pick,
 		move: rig.move,

@@ -39,7 +39,7 @@ export const PLAY: Place[] = withVersions([
 	{ href: `${base}/app/games/sandbox-4/`, label: 'Sandbox 3', icon: 'play', release: 'draft', note: 'A whole dome cell', cover: '1427db9edf3652e5354bb645e1c8155930dd53bf7cb17e39a4019efe33c6c2d6.jpg' },
 	{ href: `${base}/app/games/sandbox-5/`, label: 'Sandbox 4', icon: 'play', release: 'draft', note: 'The dome cell, its food forest grown from our plants', cover: '5ddd7dc657e28a84e7ef48b8064dafe5698791950dea387e7059b1c41e5d2fc1.jpg', anchors: 'the Plants, each at the version its forest was planted with' },
 	{ href: `${base}/app/games/sandbox-6/`, label: 'Sandbox 5', icon: 'play', release: 'draft', note: 'A valley of settlers: production chains, an open market, abundance for all', cover: 'a36f799daadadb75a3d845776dc8ee9730f8fd92fb1458edff5d9819c155a7c8.jpg' },
-	{ href: `${base}/app/games/sandbox-7/`, label: 'Sandbox 6', icon: 'play', release: 'draft', note: 'One hex at its real size: Dome50, Dome100, Dome150 and the Tower250, in tonnes, euros and hectares' }
+	{ href: `${base}/app/games/sandbox-7/`, label: 'Sandbox 6', icon: 'play', release: 'draft', note: 'One village at its real size: six living hexes of terraced Dome40 and Dome80 homes and Dome120s round the Tower180 hex, in tonnes, euros and hectares' }
 ]);
 
 // the 3D worlds made from real places, to walk and to film (an admin's: drafts, opened from the Worlds tile)

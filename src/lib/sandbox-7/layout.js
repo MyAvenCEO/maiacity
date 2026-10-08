@@ -1,29 +1,30 @@
 /**
- * SANDBOX 6 · ONE HEX · THE PLAN — where everything stands in the two hexes, and what every square metre of their
- * land is used for.
+ * SANDBOX 6 · ONE VILLAGE · THE PLAN — where everything stands in the village's seven hexes, and what every square
+ * metre of their land is used for.
  *
  * A hex is the settlers game's hex at its real size: 665.6 m across its flats (13 steps of 1.6 units, 32 m a unit),
  * 768.6 m corner to corner, 38.4 ha. Pointy at north and south, as Samuel drew it. x runs east, z south (north is
- * −z), in metres; the living hex is centred on 0, the tower hex is its neighbour to the east.
+ * −z), in metres. The village (Samuel, 2026-10-08) is the tower hex in the middle and six living hexes round it, all
+ * alike; each plan is laid out round its own middle and `VILLAGE` says where each hex stands.
  *
- *   living hex (Samuel's first sketch): three Dome150s in a triangle in the middle, the utilities dome at the top and
- *     the two tropical food domes below it, a ring road round them; five Dome100 homes in an arc along the south of
- *     the ring, their doors on it; eight Dome50 homes round the edge of the hex.
- *   tower hex (his second sketch): Tower250 in the middle, a ring road round it, eight Dome100 factories round that;
+ *   living hex, layout A (Samuel's first sketch): three Dome120s in a triangle in the middle, the utilities dome at the
+ *     top and the two tropical food domes below it, a ring road round them; five Dome80 homes in an arc along the
+ *     south of the ring, their doors on it; eight Dome40 homes round the edge of the hex.
+ *   living hex, layout B (his sketch for the light): the Dome120s and Dome80s round a green in the north half, the
+ *     tall ones north; nine Dome40s over the south half. A and B take turns round the tower hex.
+ *   tower hex (his second sketch): Tower180 in the middle, a ring road round it, eight Dome120 factories round that;
  *     outside, the fields, woods and pits that feed them.
  *
  * The land is painted on a raster of 2 m cells (`landOf`): domes, roads, then what the outdoor land is used for. The
  * areas the page shows come from counting the cells outdoors and from each dome's floor plan (./specs.js) indoors,
  * so the map and the numbers always agree.
  */
-import { capOf, FACTORIES, KINDS, TOWERS } from './specs.js';
+import { capOf, FACTORIES, KINDS, POND_BAND, POND_HALF, POND_IN, TOWER } from './specs.js';
 
 /** the hex: across its flats, its side (centre to corner) and its area */
 export const HEX_W = 13 * 1.6 * 32;
 export const HEX_S = HEX_W / Math.sqrt(3);
 export const HEX_AREA = (Math.sqrt(3) / 2) * HEX_W * HEX_W;
-/** the tower hex's middle: the living hex's neighbour to the east */
-export const TOWER_AT = { x: HEX_W, z: 0 };
 
 /** how far a point (relative to a hex's middle) is inside its edge, m (negative outside) */
 export function edgeDistance(/** @type {number} */ x, /** @type {number} */ z) {
@@ -46,7 +47,7 @@ export const bearing = (/** @type {number} */ deg, /** @type {number} */ r, cx =
  * @typedef {{ id: string, kind: string, x: number, z: number, name: string, factory?: string, door: number }} Site
  *   door: the bearing its door faces (toward its road)
  * @typedef {{ pts: [number, number][], w: number, kind: 'road' | 'path', ring?: boolean }} Way
- * @typedef {{ id: 'living' | 'tower', label: string, cx: number, cz: number, sites: Site[], ways: Way[], ring: { x: number, z: number, r: number, w: number }, tower?: import('./specs.js').Tower }} HexPlan
+ * @typedef {{ id: 'living' | 'tower', layout?: 'A' | 'B', label: string, cx: number, cz: number, sites: Site[], ways: Way[], ring: { x: number, z: number, r: number, w: number }, tower?: import('./specs.js').Tower }} HexPlan
  */
 
 /** a circle as a polyline @returns {[number, number][]} */
@@ -56,23 +57,25 @@ const edgeMid = (/** @type {number} */ deg, cx = 0, cz = 0) => bearing(deg, HEX_
 /** the bearing from one point to another */
 const towards = (/** @type {{ x: number, z: number }} */ a, /** @type {{ x: number, z: number }} */ b) => ((Math.atan2(b.x - a.x, -(b.z - a.z)) * 180) / Math.PI + 360) % 360;
 
-/** @returns {HexPlan} */
-function livingHex() {
+/** Layout A, Samuel's first sketch: the Dome120s in the middle, the Dome80s south of them, the Dome40s round the edge
+ * @returns {HexPlan} */
+function livingA() {
 	const O = { x: 0, z: -20 };
-	const RING = 180;
+	const RING = 150;
 	/** @type {Site[]} */
 	const sites = [];
-	// the three Dome150s in a triangle round the ring's middle, 12 m apart: the utilities to the north, food below
-	const tri = 162 / Math.sqrt(3);
-	sites.push({ id: 'util', kind: 'util150', ...bearing(0, tri, O.x, O.z), name: 'Utilities', door: 0 });
-	sites.push({ id: 'foodW', kind: 'food150', ...bearing(240, tri, O.x, O.z), name: 'Food forest west', door: 240 });
-	sites.push({ id: 'foodE', kind: 'food150', ...bearing(120, tri, O.x, O.z), name: 'Food forest east', door: 120 });
-	// five Dome100 homes in an arc along the south of the ring, doors on it
-	[120, 150, 180, 210, 240].forEach((b, k) => sites.push({ id: `h100-${k}`, kind: 'dome100', ...bearing(b, 245, O.x, O.z), name: `Home of 36 · ${k + 1}`, door: (b + 180) % 360 }));
-	// eight Dome50 homes round the edge, in pairs as the sketch has them
+	// the three Dome120s in a triangle round the ring's middle, 12 m apart: the utilities to the north, food below
+	const tri = (120 + 12) / Math.sqrt(3);
+	sites.push({ id: 'util', kind: 'util120', ...bearing(0, tri, O.x, O.z), name: 'Utilities', door: 0 });
+	sites.push({ id: 'foodW', kind: 'food120', ...bearing(240, tri, O.x, O.z), name: 'Food forest west', door: 240 });
+	sites.push({ id: 'foodE', kind: 'food120', ...bearing(120, tri, O.x, O.z), name: 'Food forest east', door: 120 });
+	// five Dome80 homes in an arc along the south of the ring, 10 m off the road, doors on it
+	const big = KINDS.dome80, small = KINDS.dome40;
+	[120, 150, 180, 210, 240].forEach((b, k) => sites.push({ id: `h80-${k}`, kind: 'dome80', ...bearing(b, RING + 4 + 6 + capOf(80).a, O.x, O.z), name: `Home of ${big.people} · ${k + 1}`, door: (b + 180) % 360 }));
+	// eight Dome40 homes round the edge, in pairs as the sketch has them
 	/** @type {[number, number][]} */
 	const smalls = [[-42, -272], [42, -272], [-215, -188], [215, -188], [-292, -78], [292, -78], [-298, 52], [298, 52]];
-	smalls.forEach(([x, z], k) => sites.push({ id: `h50-${k}`, kind: 'dome50', x, z, name: `Home of 12 · ${k + 1}`, door: towards({ x, z }, O) }));
+	smalls.forEach(([x, z], k) => sites.push({ id: `h40-${k}`, kind: 'dome40', x, z, name: `Home of ${small.people} · ${k + 1}`, door: towards({ x, z }, O) }));
 	/** @type {Way[]} */
 	const ways = [{ pts: circle(O.x, O.z, RING), w: 8, kind: 'road', ring: true }];
 	// roads out to the six neighbours, middle to middle (as in the settlers game), leaving the ring between the domes
@@ -80,31 +83,82 @@ function livingHex() {
 		const a = bearing(via, RING, O.x, O.z), m = edgeMid(b);
 		const pts = /** @type {[number, number][]} */ ([[a.x, a.z]]);
 		if (via !== b) {
-			const v = bearing(via, 312, O.x, O.z);
+			const v = bearing(via, RING + 120, O.x, O.z);
 			pts.push([v.x, v.z]);
 		}
 		pts.push([m.x, m.z]);
 		ways.push({ pts, w: 6, kind: 'road' });
 	}
-	// a footpath from the ring to each Dome50's door
-	for (const s of sites.filter((s) => s.kind === 'dome50')) {
+	// a footpath from the ring to each Dome40's door
+	for (const s of sites.filter((s) => s.kind === 'dome40')) {
 		const b = towards(O, s);
-		const a = bearing(b, RING, O.x, O.z), d = bearing(s.door, capOf(50).a, s.x, s.z);
+		const a = bearing(b, RING, O.x, O.z), d = bearing(s.door, capOf(40).a, s.x, s.z);
 		ways.push({ pts: [[a.x, a.z], [d.x, d.z]], w: 3, kind: 'path' });
 	}
-	return { id: 'living', label: 'Living hex', cx: 0, cz: 0, sites, ways, ring: { ...O, r: RING, w: 8 } };
+	return { id: 'living', layout: 'A', label: 'Living hex, layout A', cx: 0, cz: 0, sites, ways, ring: { ...O, r: RING, w: 8 } };
 }
 
-/** the tower hex round a tower (Tower250 or Tower200): its ring road 12 m off the glass, the factories just outside it
+/**
+ * Layout B, Samuel's sketch of 2026-10-08 (every second living hex, for the light): the tall domes to the north and the
+ * low ones to the south, so nothing stands in the homes' winter sun. A round green with its ring road in the north half;
+ * round it the three Dome120s on its north side (utilities at the top) and three Dome80s on its south, two more Dome80s
+ * out to the west and east; nine Dome40s spread over the sunny south half. The roads leave the green between the domes.
+ * @returns {HexPlan}
+ */
+function livingB() {
+	const O = { x: 0, z: -120 };
+	const RING = 64;
+	const d120 = 132, d80 = 112;
+	/** @type {Site[]} */
+	const sites = [];
+	sites.push({ id: 'util', kind: 'util120', ...bearing(0, d120, O.x, O.z), name: 'Utilities', door: 180 });
+	sites.push({ id: 'foodW', kind: 'food120', ...bearing(300, d120, O.x, O.z), name: 'Food forest west', door: 120 });
+	sites.push({ id: 'foodE', kind: 'food120', ...bearing(60, d120, O.x, O.z), name: 'Food forest east', door: 240 });
+	const big = KINDS.dome80, small = KINDS.dome40;
+	/** @type {{ x: number, z: number }[]} */
+	const bigs = [bearing(240, d80, O.x, O.z), bearing(180, d80, O.x, O.z), bearing(120, d80, O.x, O.z), { x: -205, z: -60 }, { x: 205, z: -60 }];
+	bigs.forEach((p, k) => sites.push({ id: `h80-${k}`, kind: 'dome80', ...p, name: `Home of ${big.people} · ${k + 1}`, door: towards(p, O) }));
+	/** @type {[number, number][]} */
+	const smalls = [[-268, 47], [-150, 80], [135, 62], [236, 66], [-30, 128], [-175, 175], [86, 176], [190, 150], [24, 252]];
+	smalls.forEach(([x, z], k) => sites.push({ id: `h40-${k}`, kind: 'dome40', x, z, name: `Home of ${small.people} · ${k + 1}`, door: 180 }));
+	/** @type {Way[]} */
+	const ways = [{ pts: circle(O.x, O.z, RING), w: 8, kind: 'road', ring: true }];
+	// roads out to the six neighbours, leaving the green between the domes, then on to the middle of each edge
+	/** @type {Record<number, number>} how far out from the green each road runs before it turns for the edge */
+	const OUT = { 30: 150, 90: 260, 150: 120, 210: 120, 270: 260, 330: 150 };
+	for (const b of [30, 90, 150, 210, 270, 330]) {
+		const a = bearing(b, RING, O.x, O.z), v = bearing(b, OUT[b], O.x, O.z), m = edgeMid(b);
+		ways.push({ pts: [[a.x, a.z], [v.x, v.z], [m.x, m.z]], w: 6, kind: 'road' });
+	}
+	// a footpath from each Dome40's door to the nearest road
+	const roads = ways.filter((w) => !w.ring);
+	for (const s of sites.filter((s) => s.kind === 'dome40')) {
+		let best = { d: Infinity, x: 0, z: 0 };
+		for (const w of roads)
+			for (let k = 1; k < w.pts.length; k++) {
+				const [ax, az] = w.pts[k - 1], [bx, bz] = w.pts[k];
+				const dx = bx - ax, dz = bz - az;
+				const t = Math.max(0, Math.min(1, ((s.x - ax) * dx + (s.z - az) * dz) / (dx * dx + dz * dz)));
+				const x = ax + t * dx, z = az + t * dz, d = Math.hypot(s.x - x, s.z - z);
+				if (d < best.d) best = { d, x, z };
+			}
+		s.door = towards(s, best);
+		const d = bearing(s.door, capOf(40).a, s.x, s.z);
+		ways.push({ pts: [[best.x, best.z], [d.x, d.z]], w: 3, kind: 'path' });
+	}
+	return { id: 'living', layout: 'B', label: 'Living hex, layout B', cx: 0, cz: 0, sites, ways, ring: { ...O, r: RING, w: 8 } };
+}
+
+/** the tower hex round the tower: its ring road 12 m off the glass, the factories 12 m outside it
  * @param {import('./specs.js').Tower} T @returns {HexPlan} */
 function towerHex(T) {
-	const { x: cx, z: cz } = TOWER_AT;
+	const cx = 0, cz = 0;
 	const RING = T.D / 2 + 12;
 	/** @type {Site[]} */
-	const sites = [{ id: 'tower', kind: 'tower250', x: cx, z: cz, name: T.label, door: 180 }];
+	const sites = [{ id: 'tower', kind: 'tower', x: cx, z: cz, name: T.label, door: 180 }];
 	[...Array(8)].forEach((_, k) => {
 		const b = 22.5 + k * 45;
-		sites.push({ id: `f-${k}`, kind: 'factory100', ...bearing(b, RING + 63, cx, cz), name: FACTORIES.find((f) => f.id === FACTORY_ORDER[k])?.label ?? '', factory: FACTORY_ORDER[k], door: (b + 180) % 360 });
+		sites.push({ id: `f-${k}`, kind: 'factory120', ...bearing(b, RING + 4 + 12 + capOf(120).a, cx, cz), name: FACTORIES.find((f) => f.id === FACTORY_ORDER[k])?.label ?? '', factory: FACTORY_ORDER[k], door: (b + 180) % 360 });
 	});
 	/** @type {Way[]} */
 	const ways = [{ pts: circle(cx, cz, RING), w: 8, kind: 'road', ring: true }];
@@ -112,7 +166,7 @@ function towerHex(T) {
 		const a = bearing(via, RING, cx, cz), m = edgeMid(b, cx, cz);
 		const pts = /** @type {[number, number][]} */ ([[a.x, a.z]]);
 		if (via !== b) {
-			const v = bearing(via, RING + 131, cx, cz);
+			const v = bearing(via, RING + 16 + 2 * capOf(120).a + 10, cx, cz);
 			pts.push([v.x, v.z]);
 		}
 		pts.push([m.x, m.z]);
@@ -124,12 +178,28 @@ function towerHex(T) {
 /** the factories, round the tower clockwise from the north-north-east; the works nearest its fields */
 const FACTORY_ORDER = ['timber', 'bamboo', 'hemp', 'recycling', 'glass', 'clay', 'lime', 'steel'];
 
-export const LIVING = livingHex();
-/** the tower hex, for each tower */
-export const TOWER_HEXES = Object.fromEntries(Object.entries(TOWERS).map(([k, T]) => [k, towerHex(T)]));
+export const LIVING_A = livingA();
+export const LIVING_B = livingB();
+/** the living layouts, by letter */
+export const LIVINGS = { A: LIVING_A, B: LIVING_B };
+export const TOWER_HEX = towerHex(TOWER);
+
+/**
+ * The village: the tower hex in the middle, the six living hexes round it at their neighbours' places (centre to
+ * centre one hex across the flats), named by the way they lie from the tower; layouts A and B take turns (Samuel,
+ * 2026-10-08), so the two can be compared side by side.
+ * @type {{ key: string, label: string, plan: HexPlan, x: number, z: number }[]}
+ */
+export const VILLAGE = [
+	{ key: 'tower', label: 'Tower hex', plan: TOWER_HEX, x: 0, z: 0 },
+	...[['ne', 30, 'North-east'], ['e', 90, 'East'], ['se', 150, 'South-east'], ['sw', 210, 'South-west'], ['w', 270, 'West'], ['nw', 330, 'North-west']].map(([key, b, name], k) => {
+		const plan = k % 2 ? LIVING_B : LIVING_A;
+		return { key: `living-${key}`, label: `${name} hex · ${plan.layout}`, plan, ...bearing(/** @type {number} */ (b), HEX_W) };
+	})
+];
 
 /** a dome's or the tower's radius on the ground @param {Site} s @param {HexPlan} [plan] */
-export const footR = (s, plan) => (s.kind === 'tower250' ? (plan?.tower?.D ?? 250) / 2 : capOf(KINDS[s.kind].D).a);
+export const footR = (s, plan) => (s.kind === 'tower' ? (plan?.tower?.D ?? TOWER.D) / 2 : capOf(KINDS[s.kind].D).a);
 
 // ── the land, cell by cell ──────────────────────────────────────────────────────────────────────────────────────
 
@@ -181,7 +251,7 @@ export function landOf(plan) {
 			const t = Math.max(0, Math.min(1, ((x - ax) * dx + (z - az) * dz) / (dx * dx + dz * dz)));
 			return Math.hypot(x - ax - t * dx, z - az - t * dz) <= w / 2;
 		});
-	const homes = plan.sites.filter((s) => s.kind === 'dome50' || s.kind === 'dome100');
+	const homes = plan.sites.filter((s) => s.kind === 'dome40' || s.kind === 'dome80');
 	for (let j = 0; j < nz; j++)
 		for (let i = 0; i < nx; i++) {
 			const x = x0 + (i + 0.5) * CELL, z = z0 + (j + 0.5) * CELL;
@@ -223,30 +293,28 @@ export function zonesOf(/** @type {Site} */ s, /** @type {HexPlan} */ plan) {
 	const K = KINDS[s.kind];
 	if (K.zones) return K.zones;
 	const floor = Math.PI * footR(s, plan) ** 2;
-	return [{ use: s.kind === 'tower250' ? 'tower' : 'factory', label: K.label, m2: floor }];
+	return [{ use: s.kind === 'tower' ? 'tower' : 'factory', label: K.label, m2: floor }];
 }
 
 /** under the glass: a home's crescent of galleries and its pond along the north, the food domes' pond, the rest */
 function insideUse(/** @type {Site} */ s, /** @type {number} */ dx, /** @type {number} */ dz, /** @type {number} */ r) {
 	const K = KINDS[s.kind];
 	const north = dz < 0;
-	if (s.kind === 'dome50' || s.kind === 'dome100') {
+	if (s.kind === 'dome40' || s.kind === 'dome80') {
 		const g = K.gallery;
 		if (north && r <= g.rOut && r >= g.rIn) return 'living';
-		if (north && r < g.rIn && r >= g.pondIn) return 'pond';
-		return Math.abs(dx) < 2 || Math.abs(r - (g.pondIn - 3)) < 1.2 ? 'commons' : 'indoorFood';
+		if (north && r <= g.pondOut && r >= g.pondIn) return 'pond';
+		return Math.abs(dx) < 1.5 || Math.abs(r - (g.rIn - 2)) < 0.8 ? 'commons' : 'indoorFood';
 	}
-	if (s.kind === 'food150' || s.kind === 'util150') {
-		const a = capOf(150).a;
-		// the pond: a band along the north, 1,550 m²
-		if (north && r < a - 6 && r > a - 6 - POND_BAND && Math.atan2(Math.abs(dx), -dz) < POND_HALF) return 'pond';
-		if (s.kind === 'food150') return Math.abs(dx) < 2.5 || Math.abs(dz) < 2.5 ? 'commons' : 'tropical';
-		return dz > 20 ? 'indoorFood' : 'utilities';
+	if (s.kind === 'food120' || s.kind === 'util120') {
+		const a = capOf(120).a;
+		// the pond: a band along the north, ~970 m²
+		if (north && r < a - POND_IN && r > a - POND_IN - POND_BAND && Math.atan2(Math.abs(dx), -dz) < POND_HALF) return 'pond';
+		if (s.kind === 'food120') return Math.abs(dx) < 2.5 || Math.abs(dz) < 2.5 ? 'commons' : 'tropical';
+		return dz > 16 ? 'indoorFood' : 'utilities';
 	}
-	return s.kind === 'tower250' ? 'tower' : 'factory';
+	return s.kind === 'tower' ? 'tower' : 'factory';
 }
-/** the 150 m domes' pond: a band 23 m wide, 6 m in from the glass, 33.5° either side of north: ~1,550 m² */
-export const POND_BAND = 23, POND_HALF = 0.585;
 
 /** the living hex's outdoor land: a hedge along the edge, food forest round the homes, wild land to the north, and
  * orchards and market gardens on the sunny rest @param {HexPlan} plan @param {Site[]} homes */
@@ -265,7 +333,7 @@ function towerLand(/** @type {HexPlan} */ plan, /** @type {number} */ x, /** @ty
 	const dx = x - plan.cx, dz = z - plan.cz;
 	const r = Math.hypot(dx, dz);
 	if (r < plan.ring.r + 10) return 'yard';
-	for (const s of plan.sites) if (s.kind === 'factory100' && Math.hypot(x - s.x, z - s.z) < 50 + 16) return 'yard';
+	for (const s of plan.sites) if (s.kind === 'factory120' && Math.hypot(x - s.x, z - s.z) < capOf(120).a + 16) return 'yard';
 	if (r < plan.ring.r + 130) return 'nature';
 	const b = ((Math.atan2(dx, -dz) * 180) / Math.PI + 360) % 360;
 	if (b >= 315 || b < 40) return 'woodland';

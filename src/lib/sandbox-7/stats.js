@@ -1,10 +1,11 @@
 /**
- * SANDBOX 6 · ONE HEX · THE STATS — everything the page shows about a hex, worked out from its plan (./layout.js)
+ * SANDBOX 6 · ONE VILLAGE · THE STATS — everything the page shows about a hex, worked out from its plan (./layout.js)
  * and the numbers (./specs.js): its land in hectares and percent, its buildings, the people it houses and employs,
  * what it is built of in tonnes and what that costs at real prices, the food it grows against what its people eat,
- * and the energy it makes and uses. Pure functions: the same plan gives the same numbers, in the browser or in node.
+ * and the energy it makes and uses; and the whole village's, its seven hexes added up (`villageStats`). Pure
+ * functions: the same plan gives the same numbers, in the browser or in node.
  */
-import { capOf, ENERGY, EQUIPMENT, FACTORIES, FITOUT, FITOUT_HOME, FLOOR_MATERIALS, DENSITY, DIET_T, KINDS, PRICES, RAW, YIELD, ASSEMBLY, shellOf, towerFloors, towerShell } from './specs.js';
+import { capHeight, capOf, northCut, NORTH_TILT, ENERGY, EQUIPMENT, FACTORIES, FITOUT, FITOUT_HOME, FLOOR_MATERIALS, DENSITY, DIET_T, KINDS, PRICES, RAW, YIELD, ASSEMBLY, shellOf, towerFloors, towerShell } from './specs.js';
 import { HEX_AREA, USES, USE_IDS, landOf, zonesOf } from './layout.js';
 
 /** what each factory makes in a year and the power it takes (estimates: sized to build out a village of ~2,000
@@ -25,7 +26,7 @@ export const GEOTHERMAL = 3.4e3 * 8760 * 0.94;
 export const TOWER_EQUIPMENT = [
 	{ label: 'AI data center, 1 MW of IT', eur: 10.5e6, note: '~10.5 M€ a MW of IT (Frankfurt, Turner & Townsend 2025–26)' },
 	{ label: 'Batteries, 40 MWh LFP', eur: 40000 * 160, note: 'utility-scale 160 €/kWh (BNEF 2025)' },
-	{ label: 'Water works for 2,500 people', eur: 2500 * 1000, note: 'membrane bioreactor and planted wetland, 150–3,000 € a person' },
+	{ label: 'Water works for the tower’s 2,500 guests, workers and residents', eur: 2500 * 1000, note: 'membrane bioreactor and planted wetland, 150–3,000 € a person' },
 	{ label: 'Geothermal plant: a well triplet and a 4 MW ORC', eur: 37.5e6, note: '30–45 M€ today (our village energy research)' }
 ];
 
@@ -50,7 +51,7 @@ export function hexStats(plan, land = landOf(plan)) {
 		byKind.set(s.kind, row);
 	}
 	const buildings = [...byKind.values()].map((b) => {
-		if (b.kind === 'tower250' && tower) {
+		if (b.kind === 'tower' && tower) {
 			const sh = towerShell(tower);
 			return { ...b, label: tower.label, D: tower.D, h: tower.H, floor: sh.floor, shell: sh.shell, glazed: sh.glazed, north: sh.north, volume: sh.volume, people: 0, solar: sh.solar, heat: sh.heat, climate: sh.climate };
 		}
@@ -70,7 +71,7 @@ export function hexStats(plan, land = landOf(plan)) {
 	};
 	let fitout = 0, gfaHomes = 0;
 	for (const s of plan.sites) {
-		const sh = s.kind === 'tower250' && tower ? towerShell(tower) : shellOf(KINDS[s.kind].D);
+		const sh = s.kind === 'tower' && tower ? towerShell(tower) : shellOf(KINDS[s.kind].D);
 		add('timber', 'm³', sh.m.timber, sh.t.timber, sh.eur.timber);
 		add('steel', 't', sh.m.steel, sh.t.steel, sh.eur.steel);
 		add('glass', 'm²', sh.m.glass, sh.t.glass, sh.eur.glass);
@@ -84,13 +85,13 @@ export function hexStats(plan, land = landOf(plan)) {
 			add('clt', 'm³', v, v * DENSITY.clt, v * PRICES.clt.eur);
 			fitout += K.gfa * FITOUT_HOME;
 		}
-		if (s.kind === 'util150') {
+		if (s.kind === 'util120') {
 			const built = K.zones.filter((/** @type {any} */ z) => z.block && z.block !== 'water').reduce((/** @type {number} */ a, /** @type {any} */ z) => a + z.m2, 0);
 			const v = built * 0.25;
 			add('clt', 'm³', v, v * DENSITY.clt, v * PRICES.clt.eur);
 			fitout += built * FITOUT.utilities;
 		}
-		if (s.kind === 'factory100') fitout += capOf(100).floor * FITOUT.factory;
+		if (s.kind === 'factory120') fitout += capOf(120).floor * FITOUT.factory;
 	}
 	const floors = tower ? towerFloors(tower) : [];
 	for (const f of floors) {
@@ -123,8 +124,10 @@ export function hexStats(plan, land = landOf(plan)) {
 	/** @type {{ label: string, n: number, note: string }[]} */
 	const people = [];
 	if (plan.id === 'living') {
-		people.push({ label: 'Residents', n: residents, note: `8 × 12 in Dome50s, 5 × 36 in Dome100s; ${Math.round(gfaHomes / residents)} m² of home each (gross; Germany lives on 49 m² net a head)` });
-		people.push({ label: 'Desks in the utilities dome', n: 150, note: 'co-working at ~13 m² a desk' });
+		const homes = (/** @type {string} */ k) => plan.sites.filter((s) => s.kind === k).length;
+		const d40 = KINDS.dome40, d80 = KINDS.dome80;
+		people.push({ label: 'Residents', n: residents, note: `${homes('dome40')} × ${d40.people} in Dome40s (${d40.storeys} terraced storeys), ${homes('dome80')} × ${d80.people} in Dome80s (${d80.storeys}); ${Math.round(gfaHomes / residents)} m² of home each (gross; Germany lives on 49 m² net a head)` });
+		people.push({ label: 'Desks in the utilities dome', n: 120, note: 'co-working at ~13 m² a desk, on two storeys' });
 	} else {
 		const f = Object.fromEntries(floors.map((x) => [x.id, x]));
 		// a premium apartment ~250 m² gross (with its share of the core and halls): six to eight a floor low down, fewer
@@ -173,7 +176,8 @@ export function hexStats(plan, land = landOf(plan)) {
 	if (plan.id === 'living') {
 		uses2.push({ label: `${residents} people at home (900 kWh each, sharing a dome)`, kwh: residents * ENERGY.person });
 		uses2.push({ label: 'AI data center, 300 kW of IT (PUE 1.2)', kwh: ENERGY.datacenter });
-		uses2.push({ label: 'Workshops, workspaces, stores', kwh: (2400 + 1100 + 900) * ENERGY.workshop });
+		const blocks = KINDS.util120.zones.filter((/** @type {any} */ z) => z.block === 'workshop' || z.block === 'office' || z.block === 'store').reduce((/** @type {number} */ a, /** @type {any} */ z) => a + z.m2, 0);
+		uses2.push({ label: 'Workshops, workspaces, stores', kwh: blocks * ENERGY.workshop });
 		uses2.push({ label: 'Cleaning the water', kwh: residents * ENERGY.water });
 	} else {
 		makes.push({ label: 'The village’s geothermal plant: 3.4 MW net, 94% of the year', kwh: GEOTHERMAL });
@@ -198,6 +202,83 @@ export function hexStats(plan, land = landOf(plan)) {
 }
 
 /**
+ * The whole village: its hexes' numbers added up, each hex counted as often as it stands (the six living hexes are
+ * alike). Rows with the same label add up; the hexes' own rows (`hexes`) say what each brings.
+ * @param {{ key: string, label: string, n: number, stats: ReturnType<typeof hexStats> }[]} parts
+ */
+export function villageStats(parts) {
+	const n1 = (/** @type {number} */ x) => (Math.round(x * 10) / 10).toLocaleString('en-US');
+	/** add up rows of a list by a key, summing the number fields @template {Record<string, any>} R @param {(s: ReturnType<typeof hexStats>) => R[]} rows @param {string} key @param {string[]} fields @returns {R[]} */
+	const merge = (rows, key, fields) => {
+		/** @type {Map<string, any>} */
+		const m = new Map();
+		for (const p of parts)
+			for (const r of rows(p.stats)) {
+				const row = m.get(r[key]) ?? { ...r, ...Object.fromEntries(fields.map((f) => [f, 0])) };
+				for (const f of fields) row[f] += (r[f] ?? 0) * p.n;
+				m.set(r[key], row);
+			}
+		return [...m.values()];
+	};
+	const hexHa = parts.reduce((a, p) => a + p.n * p.stats.hexHa, 0);
+	const uses = merge((s) => s.uses, 'id', ['ha']).map((u) => ({ ...u, pct: (100 * u.ha) / hexHa }));
+	const order = Object.keys(USES);
+	uses.sort((a, b) => order.indexOf(a.id) - order.indexOf(b.id));
+	// the hexes' costs come in the same five rows
+	const cost = ['Shell materials (glulam, steel, glass, solar cells, hemp, footings)', parts[0].stats.cost[1].label, 'Building inside: floors, homes, halls, workshops (fit-out, its timber included)', 'Machines: data centers, batteries, hydrogen, water, geothermal', `The land, ${n1(hexHa)} ha of farmland`].map((label, k) => ({ label, eur: parts.reduce((a, p) => a + p.n * p.stats.cost[k].eur, 0) }));
+	const total = cost.reduce((a, c) => a + c.eur, 0);
+	const tower = parts.find((p) => p.stats.tower)?.stats;
+	const living = parts.filter((p) => !p.stats.tower);
+	const residents = parts.reduce((a, p) => a + p.n * p.stats.residents, 0);
+	const towerPeople = tower ? tower.people : [];
+	const aptPeople = tower ? Math.round(tower.people[0].n * 2.2) : 0;
+	/** @type {{ label: string, n: number, note: string }[]} */
+	const people = [
+		{ label: 'Residents in the living hexes’ domes', n: residents, note: living.map((p) => `${p.n} hexes × ${p.stats.residents}`).join(', ') + ', in terraced Dome40 and Dome80 homes' },
+		{ label: 'Residents in the tower’s apartments', n: aptPeople, note: `${tower?.people[0].n ?? 0} premium apartments, ~2.2 people each` },
+		{ label: 'Everyone living in the village', n: residents + aptPeople, note: 'plus the hotel’s guests' },
+		{ label: 'Desks in the living hexes’ utilities domes', n: living.reduce((a, p) => a + p.n * (p.stats.people[1]?.n ?? 0), 0), note: `${living.reduce((a, p) => a + p.n, 0)} utilities domes, co-working` },
+		...towerPeople.slice(1)
+	];
+	const foodRows = merge((s) => s.food.rows, 'label', ['ha', 't']);
+	const need = parts.reduce((a, p) => a + p.n * p.stats.food.need, 0);
+	const food = { rows: foodRows, need, eaters: parts.reduce((a, p) => a + p.n * p.stats.food.eaters, 0), grown: foodRows.reduce((a, r) => a + r.t, 0) };
+	const makes = merge((s) => s.energy.makes, 'label', ['kwh']), used = merge((s) => s.energy.uses, 'label', ['kwh']);
+	const made = makes.reduce((a, m) => a + m.kwh, 0), usedKwh = used.reduce((a, m) => a + m.kwh, 0);
+	return {
+		hexHa,
+		uses,
+		glassHa: uses.filter((u) => u.inside).reduce((a, u) => a + u.ha, 0),
+		buildings: merge((s) => s.buildings, 'kind', ['count']),
+		materials: merge((s) => s.materials, 'id', ['qty', 't', 'eur']),
+		cost,
+		total,
+		equipment: merge((s) => s.equipment.map((e) => ({ ...e, n: 1 })), 'label', ['eur', 'n']).map((e) => ({ ...e, label: e.n > 1 ? `${e.n} × ${e.label}` : e.label })),
+		people,
+		residents: residents + aptPeople,
+		food,
+		raw: tower?.raw ?? [],
+		energy: { makes, uses: used, made, used: usedKwh, net: made - usedKwh, heat: parts.reduce((a, p) => a + p.n * p.stats.energy.heat, 0), heatFrom: merge((s) => s.energy.heatFrom, 'label', ['kwh']) },
+		floors: tower?.floors ?? [],
+		tower: tower?.tower,
+		factoryRun: FACTORY_RUN,
+		hexes: parts.map((p) => ({ key: p.key, label: p.label, n: p.n, residents: p.stats.residents, total: p.stats.total, grown: p.stats.food.grown, need: p.stats.food.need, net: p.stats.energy.net }))
+	};
+}
+
+/** where the hemp starts on the shell due north of a dome's middle (the flat cut, leaning north, meets the shell), m */
+function hempFoot(/** @type {import('./specs.js').Cap} */ c) {
+	const k = northCut(c.a), tan = Math.tan((NORTH_TILT * Math.PI) / 180);
+	let lo = 0, hi = c.a;
+	for (let i = 0; i < 40; i++) {
+		const x = (lo + hi) / 2;
+		if (x < k + capHeight(c, x) * tan) lo = x;
+		else hi = x;
+	}
+	return lo;
+}
+
+/**
  * One building's card: its size, its geodesic grid, what its floor is used for, what it is built of and costs.
  * @param {import('./layout.js').HexPlan} plan @param {string} id
  */
@@ -205,7 +286,7 @@ export function siteCard(plan, id) {
 	const site = plan.sites.find((s) => s.id === id);
 	if (!site) return null;
 	const K = KINDS[site.kind];
-	if (site.kind === 'tower250' && plan.tower) {
+	if (site.kind === 'tower' && plan.tower) {
 		const T = plan.tower;
 		const sh = towerShell(T);
 		const floors = towerFloors(T);
@@ -247,10 +328,13 @@ export function siteCard(plan, id) {
 			['Panels', `${n(geo.panels.length)}: ${n(geo.count.solar)} solar (${n(geo.m2.solar)} m²), ${n(geo.count.glass)} glass (${n(geo.m2.glass)} m²), ${n(geo.count.hemp)} white hemp to the north (${n(geo.m2.hemp)} m²); a panel ~${(geo.m2.glass / geo.count.glass).toFixed(1)} m²`],
 			['Geodesic grid', `frequency ${c.freq}: ${n(geo.struts)} struts, ${geo.lengths.length} lengths from ${geo.lengths[0].m.toFixed(2)} to ${geo.lengths[geo.lengths.length - 1].m.toFixed(2)} m (${geo.trimmed} trimmed at the foot), ${n(geo.hubs)} steel hubs (${geo.ringHubs} on the foot ring)`],
 			['Air inside', `${Math.round(c.volume).toLocaleString('en-US')} m³`],
-			...(K.people ? [['People', `${K.people}, ${Math.round(K.gfa / K.people)} m² of home each (2 storeys, ${K.gallery.headroom.toFixed(1)} m under the glass at the galleries’ edge)`]] : []),
+			...(K.people ? [['People', `${K.people}, ${Math.round(K.gfa / K.people)} m² of home each (${n(K.gfa)} m² on ${K.storeys} terraced storeys)`], ['Terraces', `${K.levels.map((/** @type {any} */ l) => `${(l.rOut - l.rIn).toFixed(1)} m`).join(', ')} deep from the ground up, each ${K.step} m behind the one below; ${n(K.balconies)} m² of balconies; ${K.gallery.height} m to the top roof`]] : []),
 			...(run ? [['Makes', `${run.t.toLocaleString('en-US')} ${run.unit} a year, ${run.kwh} kWh a t (${run.note})`]] : [])
 		],
 		zones: zonesOf(site, plan).map((/** @type {any} */ z) => ({ use: z.use, label: z.label, m2: z.m2 })),
+		terraces: K.levels ? { levels: K.levels, step: K.step, pondIn: K.gallery.pondIn, pondOut: K.gallery.pondOut } : null,
+		cap: c,
+		cut: hempFoot(c),
 		shell: sh,
 		eur: Object.values(sh.eur).reduce((a, b) => a + b, 0)
 	};
