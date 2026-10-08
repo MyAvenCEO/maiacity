@@ -13,6 +13,7 @@
 	import { UNIT_OF, costLine, craftLine, energy, fmt, food, gold, nameOf, side, ware, water } from './units.js';
 	import { MONTHS, PRICE, SIM_SPEED, SPEEDS, WATER_PRICE } from './food.js';
 	import { PLAYER, levelOf } from './sim.js';
+	import { mapFill } from './autoplay.js';
 	import Tree from './Tree.svelte';
 	import { stagesOf } from './tree.js';
 
@@ -32,7 +33,7 @@
 	let simulating = $state(false);
 	/** @type {number | null} */
 	let before = null;
-	/** @type {{ name: string, pop: number, cap: number, date: { year: number, month: number, day: number }, done: boolean } | null} */
+	/** @type {{ villages: number, toFound: number, pop: number, cap: number, date: { year: number, month: number, day: number }, done: boolean } | null} */
 	let simNote = $state(null);
 	/** what a Buy button at the world market said when it could not */
 	let buyWhy = $state('');
@@ -138,16 +139,14 @@
 			owned = n;
 		}
 		speed = game.speed;
-		// the simulation's first village, and its end once every house holds 248
+		// the simulation over the whole valley, and its end once every village that could be is founded and full
 		if (simulating || simNote?.done) {
-			const hq = sim.state.buildings[sim.state.hq];
-			const row = market?.parties.find((/** @type {any} */ p) => p.owner === PLAYER && p.node === hq?.node);
-			if (row) simNote = { name: row.name, pop: row.pop, cap: row.cap, date: summary.date, done: simNote?.done ?? false };
-			if (simulating && row && row.cap > 0 && row.pop >= row.cap) {
+			const f = mapFill(sim, market.parties);
+			simNote = { villages: f.villages, toFound: f.toFound, pop: f.pop, cap: f.cap, date: summary.date, done: f.full };
+			if (simulating && f.full) {
 				stopSim();
 				game.setSpeed(0);
 				speed = 0;
-				simNote = { name: row.name, pop: row.pop, cap: row.cap, date: summary.date, done: true };
 			}
 		}
 		const s = selected;
@@ -216,7 +215,7 @@
 		menuOpen = false;
 		game?.setMode(mode === m && !type ? 'look' : /** @type {import('./game.js').Mode} */ (m), type);
 	}
-	/** start the simulation (ten years in ten real minutes, autoplay growing the first village full), or stop it and go back */
+	/** start the simulation (ten years in ten real minutes, autoplay founding and growing villages until the valley is full), or stop it and go back */
 	function simulate() {
 		if (!game) return;
 		toolsOpen = false;
@@ -430,9 +429,9 @@
 			{/each}
 		</div>
 		<p class="speednote">{speed === SIM_SPEED ? 'ten years in ten real minutes' : speed ? `${SPEEDS.find((x) => x.s === speed)?.about ?? `${speed}×`}` : 'Paused'}</p>
-		<button class="sim" class:on={simulating} onclick={simulate} title={simulating ? 'Stop the simulation and play on yourself' : 'Simulate: autoplay builds at ten years in ten real minutes, growing your first village until all six houses hold 248 people'}>{simulating ? '■ Stop' : '▶ Simulate'}</button>
+		<button class="sim" class:on={simulating} onclick={simulate} title={simulating ? 'Stop the simulation and play on yourself' : 'Simulate: autoplay builds at ten years in ten real minutes, founding and growing village after village until every village of the valley is full'}>{simulating ? '■ Stop' : '▶ Simulate'}</button>
 		{#if simNote && (simulating || simNote.done)}
-			<p class="simnote">{simNote.done ? `${simNote.name} is full: ${num(simNote.pop)} people, on ${when(simNote.date)}` : `${simNote.name}: ${num(simNote.pop)} of ${num(simNote.cap)} people · ${when(simNote.date)}`}</p>
+			<p class="simnote">{simNote.done ? `The valley is full: ${num(simNote.villages)} villages, ${num(simNote.pop)} people, on ${when(simNote.date)}` : `${num(simNote.villages)} ${simNote.villages === 1 ? 'village' : 'villages'}${simNote.toFound ? `, ${num(simNote.toFound)} to found` : ''} · ${num(simNote.pop)} of ${num(simNote.cap)} people · ${when(simNote.date)}`}</p>
 		{/if}
 		<button class="quiet" onclick={newValley} title="Start a new valley">New valley</button>
 	</nav>

@@ -287,7 +287,7 @@ export function mountGame(container, o = {}) {
 	 * a quick frame, up to 50 ms of a slow one */
 	const BIG_STEP = 30, BUDGET_MS = 12, MOST_MS = 50;
 	let acc = 0;
-	/** the simulation: ./autoplay.js plays, growing your first village full; it decides every few seconds of play */
+	/** the simulation: ./autoplay.js plays, filling the whole valley village by village; it decides every few seconds of play */
 	let simulating = false, autoAt = 0;
 	/** bring the valley on to a time (a film's shot clock: from its start, the same valley every time) */
 	function simTo(/** @type {number} */ t) {
@@ -374,10 +374,10 @@ export function mountGame(container, o = {}) {
 		},
 		select,
 		focus,
-		/** let autoplay play your valley, growing its first village full (or stop it) */
+		/** let autoplay play your valley until it is full, founding and growing village after village (or stop it) */
 		simulate(/** @type {boolean} */ on) {
 			simulating = on;
-			sim.state.autoFocus = on;
+			sim.state.autoMap = on;
 			autoAt = 0;
 		},
 		get simulating() {
@@ -398,7 +398,7 @@ export function mountGame(container, o = {}) {
 		restart() {
 			view.dispose();
 			sim = newGame(Math.floor(Math.random() * 1e6));
-			sim.state.autoFocus = simulating;
+			sim.state.autoMap = simulating;
 			view = createView(scene, sim);
 			select(null);
 			setMode('look');
