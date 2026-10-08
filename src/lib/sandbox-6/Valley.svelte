@@ -104,7 +104,7 @@
 		if (!d) return null;
 		const pad = (/** @type {number} */ n) => String(n).padStart(2, '0');
 		const h = Math.floor(d.hour), m = Math.floor((d.hour - h) * 60);
-		return { day: `${pad(d.day)}.${pad(d.month)}.${pad(d.year % 100)}`, hour: `${pad(h)}:${pad(m)}`, about: "The valley's clock: it began on 1 January of the year you started it, and runs at the speed you play" };
+		return { day: `${pad(d.day)}.${pad(d.month)}.${pad(d.year % 100)}`, hour: `${pad(h)}:${pad(m)}`, about: "The valley's clock: it began at the real date and time you started it, and runs at the speed you play" };
 	});
 	/** the valley's date */
 	const when = (/** @type {{ year: number, month: number, day: number }} */ d) => `year ${d.year}, month ${d.month}, day ${d.day}`;
