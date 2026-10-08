@@ -391,7 +391,7 @@ pub struct State {
     /// The keys published to everyone, in the order they were.
     published: Vec<KeyName>,
     /// The key each signer has keys sealed to, as it last brought it.
-    seal_keys: HashMap<SignerId, PublicKey>,
+    seal_keys: Arc<HashMap<SignerId, PublicKey>>,
 }
 
 impl State {
@@ -590,7 +590,26 @@ impl State {
     /// vaults, the vaults that can read a whole space, and for an entry its space plus the vaults that may read just
     /// that entry. Relay caps get no key.
     pub fn targets(&self, k: KeyScope) -> Vec<KeyName> {
+        self.targets_by(k, &self.read_grantees())
+    }
+
+    /// The vaults a grant in force gives read or more on each scope, worked out in one pass over the grants.
+    fn read_grantees(&self) -> HashMap<Scope, Vec<VaultId>> {
+        let mut by: HashMap<Scope, Vec<VaultId>> = HashMap::new();
+        for (_, g) in &self.grants {
+            if let Grantee::Principal(Principal::Vault(v)) = g.grantee
+                && g.role.allows(Role::Read)
+            {
+                by.entry(g.scope).or_default().push(v);
+            }
+        }
+        by
+    }
+
+    /// `targets`, with the read grants already sorted by scope.
+    fn targets_by(&self, k: KeyScope, read: &HashMap<Scope, Vec<VaultId>>) -> Vec<KeyName> {
         let vault_key = |v: VaultId| self.current(KeyScope::Vault(v));
+        let granted = |sc: Scope, v: VaultId| read.get(&sc).is_some_and(|vs| vs.contains(&v));
         match k {
             KeyScope::Vault(v) => match self.vault(v) {
                 None => vec![],
@@ -612,18 +631,15 @@ impl State {
                         .collect(),
                 },
             },
+            // a grant covers a whole space only when it is on the space itself
             KeyScope::Space(sp) => {
-                self.vaults.iter().filter(|x| self.holds(x.id, Scope::Space(sp), Role::Read)).map(|x| vault_key(x.id)).collect()
+                let founder = self.founder(sp);
+                let reads = |x: VaultId| founder == Some(x) || granted(Scope::Space(sp), x);
+                self.vaults.iter().filter(|x| reads(x.id)).map(|x| vault_key(x.id)).collect()
             }
             KeyScope::Entry(sp, e) => {
-                let readers = self.vaults.iter().filter(|x| {
-                    self.grants.iter().any(|(_, g)| {
-                        g.grantee == Grantee::Principal(Principal::Vault(x.id))
-                            && g.scope == Scope::Entry(sp, e)
-                            && g.role.allows(Role::Read)
-                    })
-                });
-                std::iter::once(self.current(KeyScope::Space(sp))).chain(readers.map(|x| vault_key(x.id))).collect()
+                let readers = self.vaults.iter().filter(|x| granted(Scope::Entry(sp, e), x.id)).map(|x| vault_key(x.id));
+                std::iter::once(self.current(KeyScope::Space(sp))).chain(readers).collect()
             }
         }
     }
@@ -677,7 +693,7 @@ impl State {
 
     /// The families whose current key some holder could open in `pre` but should no longer open now, unless the
     /// family is public now. They start a new epoch.
-    fn stale_keys(&self, pre: &State) -> Vec<KeyScope> {
+    pub fn stale_keys(&self, pre: &State) -> Vec<KeyScope> {
         let index = pre.seal_index();
         let opened: Vec<(Holder, HashSet<KeyName>)> =
             pre.holders().into_iter().map(|h| (h, pre.open_from(&index, &h.start(pre)))).collect();
@@ -698,10 +714,15 @@ impl State {
 
     /// Seal every current key to each of its targets, and publish the public ones.
     fn seal_all(&mut self) {
+        let read = self.read_grantees();
         for k in self.key_scopes() {
             let secret = self.current(k);
-            for to in self.targets(k) {
-                Arc::make_mut(&mut self.seals).add(Seal { secret, to });
+            for to in self.targets_by(k, &read) {
+                let s = Seal { secret, to };
+                // the seals are shared with the states before; copy them only to add one
+                if !self.seals.set.contains(&s) {
+                    Arc::make_mut(&mut self.seals).add(s);
+                }
             }
             if self.public_key(k) && !self.published.contains(&secret) {
                 self.published.push(secret);
@@ -709,10 +730,14 @@ impl State {
         }
     }
 
-    /// After an accepted change from `pre`: rotate what went stale, then seal and publish.
-    fn settle(&mut self, pre: &State) {
-        for k in self.stale_keys(pre) {
-            self.bump(k);
+    /// After `op` was accepted in `pre`: rotate what went stale, then seal and publish. Outside removals, devices,
+    /// owners and grants only grow, so does every entitlement, and by T6 no holder opened a current key in `pre` it
+    /// wasn't entitled to: only a removal can make a key stale, and only then is it worth looking.
+    fn settle(&mut self, pre: &State, op: &Op) {
+        if op.is_removal() {
+            for k in self.stale_keys(pre) {
+                self.bump(k);
+            }
         }
         self.seal_all();
     }
@@ -810,7 +835,7 @@ impl State {
     pub fn step(&self, op: &Op) -> Result<State, Refusal> {
         let mut st = self.clone();
         st.apply(op)?;
-        st.settle(self);
+        st.settle(self, op);
         Ok(st)
     }
 
@@ -857,7 +882,7 @@ impl State {
                 });
                 for (s, key) in seal_to {
                     if owners.contains(&Principal::Signer(*s)) {
-                        self.seal_keys.insert(*s, key.clone());
+                        Arc::make_mut(&mut self.seal_keys).insert(*s, key.clone());
                     }
                 }
             }
@@ -881,7 +906,7 @@ impl State {
                 }
                 self.vault_mut(vault).owners.push(owner);
                 if let (Principal::Signer(s), Some(key)) = (owner, seal_to) {
-                    self.seal_keys.insert(s, key.clone());
+                    Arc::make_mut(&mut self.seal_keys).insert(s, key.clone());
                 }
             }
             Action::RemoveOwner { vault, owner, keep } => {
@@ -932,7 +957,7 @@ impl State {
                 }
                 self.vault_mut(vault).devices.push(device);
                 if let Some(key) = seal_to {
-                    self.seal_keys.insert(device, key.clone());
+                    Arc::make_mut(&mut self.seal_keys).insert(device, key.clone());
                 }
             }
             Action::RemoveDevice { vault, device, keep } => {
