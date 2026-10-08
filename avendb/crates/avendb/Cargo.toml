@@ -1,0 +1,27 @@
+[package]
+name = "avendb"
+version = "0.1.0"
+description = "avenDB, the user-owned, end-to-end encrypted database: vaults, caps, keys, Loro documents and sync by caps, built test-first against the Lean spec in avendb/spec"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+# Each phase brings the dependencies it uses (see src/lib.rs): P1 the hashes and signatures of vault logs, P3 the
+# sealing and encryption and the Loro documents the edits carry. iroh arrives with the phase that uses it.
+[dependencies]
+# op ids: BLAKE3 of the canonical encoding
+blake3.workspace = true
+# device keys (the device's iroh endpoint key) and recovery signers; the version iroh uses
+ed25519-dalek = "3"
+# passkeys: WebAuthn assertions are ECDSA P-256 over SHA-256
+p256 = { version = "0.14", default-features = false, features = ["ecdsa", "std"] }
+sha2 = "0.11"
+# WebAuthn's clientDataJSON
+serde_json.workspace = true
+# P3: keys sealed with HPKE to X-Wing (ML-KEM-768 + X25519) key pairs; edits under XChaCha20-Poly1305
+hpke = { version = "0.14.1", default-features = false, features = ["alloc", "mlkem", "x25519", "chacha"] }
+chacha20poly1305 = { version = "0.11", default-features = false, features = ["alloc"] }
+rand_core = { version = "0.10.1", default-features = false }
+# each item is one Loro document, its updates what gets encrypted and synced; pinned exactly, upgraded on purpose
+loro = "=1.16.2"
