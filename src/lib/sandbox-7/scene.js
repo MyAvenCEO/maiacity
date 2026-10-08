@@ -1,15 +1,17 @@
 /**
- * SANDBOX 6 · ONE HEX · THE WORLD — the two hexes in three.js at their real size, a metre a unit: the land painted
- * from its land-use raster (./layout.js), the domes as glazed geodesic caps with their cold north side closed in hemp, the
- * tower with its floors, and what grows on the land and under the glass.
+ * SANDBOX 6 · ONE VILLAGE · THE WORLD — the village's seven hexes in three.js at their real size, a metre a unit: the
+ * land painted from its land-use raster (./layout.js), the domes as glazed geodesic caps with their cold north side
+ * closed in hemp, the terraced homes, the tower with its floors, and what grows on the land and under the glass. The
+ * six living hexes are alike: one is built and the other five are copies of it.
  *
  * Everything an overlay can hide sits in its own group (`layers`), so the page toggles them: the land-use colours,
  * the glass shells, what is inside, the plants, the hex outlines, the dimension lines. Labels are anchors the page
  * draws in HTML (./world.js).
  */
 import * as THREE from 'three';
-import { capOf, CORE_R, FACADE, KINDS, geodesicOf, towerGridOf, towerLevels, towerRadius } from './specs.js';
-import { CELL, HEX_S, HEX_W, POND_BAND, POND_HALF, USES, USE_IDS, corners, footR, landOf } from './layout.js';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
+import { capOf, CORE_R, FACADE, KINDS, POND_BAND, POND_HALF, POND_IN, geodesicOf, towerGridOf, towerLevels, towerRadius } from './specs.js';
+import { CELL, HEX_S, HEX_W, USES, USE_IDS, corners, landOf } from './layout.js';
 
 /** @type {Map<string, THREE.MeshStandardMaterial>} */
 const mats = new Map();
@@ -135,28 +137,43 @@ function domeShell(D) {
 	return { ...g, hit, height: c.h, r: c.a };
 }
 
-/** the homes, the pond and the garden floor of a home dome */
+/**
+ * The homes, the pond and the garden floor of a home dome: the terraces under the north third, a storey a step behind
+ * the one below, each with its glass front and a timber slab over it; on each roof the balcony of the storey above,
+ * planters along its edge; the top roof a garden. Under the back of the terraces the stores, behind them the pond.
+ */
 function homeInside(/** @type {any} */ K, /** @type {THREE.Group} */ inside) {
 	const c = capOf(K.D);
 	const g = K.gallery;
 	inside.add(part(new THREE.CircleGeometry(c.a - 0.3, 64).rotateX(-Math.PI / 2), mat('#5e8a3e', 1), 0, 0.08, 0, false));
-	inside.add(sector(g.pondIn, g.rIn, 0.06, 0.14, -90, 90, mat('#3f86a6', 0.2)));
-	// two storeys of homes in a crescent along the north, a darker band between them
-	inside.add(sector(g.rIn, g.rOut, 0, 3.1, -90, 90, mat('#efe3c8')));
-	inside.add(sector(g.rIn - 0.2, g.rOut + 0.2, 3.1, 3.4, -90, 90, mat('#8a6a48')));
-	inside.add(sector(g.rIn, g.rOut, 3.4, 6.4, -90, 90, mat('#e8dcc0')));
-	inside.add(sector(g.rIn - 1.6, g.rOut, 6.4, 6.7, -90, 90, mat('#6e9a4a')));
+	inside.add(sector(g.pondIn, g.pondOut, 0.06, 0.14, -90, 90, mat('#3f86a6', 0.2)));
+	const levels = /** @type {{ k: number, y: number, h: number, rIn: number, rOut: number }[]} */ (K.levels);
+	for (const L of levels) {
+		const next = levels[L.k + 1], below = levels[L.k - 1];
+		inside.add(sector(L.rIn + 0.3, L.rOut, L.y, L.y + L.h - 0.35, -90, 90, mat(L.k % 2 ? '#ece0c4' : '#f2e8d0')));
+		inside.add(sector(L.rIn, L.rIn + 0.3, L.y, L.y + L.h - 0.35, -90, 90, mat('#6f8f9c', 0.25)));
+		inside.add(sector(L.rIn - 0.25, L.rOut, L.y + L.h - 0.35, L.y + L.h, -90, 90, mat('#9a7650')));
+		if (next) inside.add(sector(L.rIn - 0.2, L.rIn + 0.5, L.y + L.h, L.y + L.h + 0.75, -90, 90, mat('#5f9a45', 1)));
+		else inside.add(sector(L.rIn, L.rOut, L.y + L.h, L.y + L.h + 0.4, -90, 90, mat('#6aa048', 1)));
+		// under where this storey reaches further back than the one below: stores and bikes
+		if (below && L.rOut > below.rOut + 0.2) inside.add(sector(below.rOut, L.rOut, 0, L.y, -90, 90, mat('#b5a88e')));
+	}
 }
 
 /** a box on the floor of a dome */
 const box = (/** @type {number} */ w, /** @type {number} */ h, /** @type {number} */ d, /** @type {string} */ color, /** @type {number} */ x, /** @type {number} */ z, rough = 0.8) => part(new THREE.BoxGeometry(w, h, d), mat(color, rough), x, h / 2, z);
 
 /** the utilities dome: pond, data center, batteries, hydrogen, water works, workshops, the office crescent, stores */
-function utilInside(/** @type {THREE.Group} */ inside) {
+function utilInside(/** @type {THREE.Group} */ outer) {
+	const c120 = capOf(120);
+	outer.add(part(new THREE.CircleGeometry(c120.a - 0.3, 72).rotateX(-Math.PI / 2), mat('#b9b3a8', 1), 0, 0.08, 0, false));
+	outer.add(part(new THREE.CircleGeometry(c120.a - 5, 72, Math.PI * 1.1, Math.PI * 0.8).rotateX(-Math.PI / 2), mat('#5e8a3e', 1), 0, 0.1, 0, false));
+	outer.add(sector(c120.a - POND_IN - POND_BAND, c120.a - POND_IN, 0.06, 0.16, (-POND_HALF * 180) / Math.PI, (POND_HALF * 180) / Math.PI, mat('#3f86a6', 0.2)));
+	// the machines laid out for a dome 150 m across, set in at four fifths
+	const inside = new THREE.Group();
+	inside.scale.set(0.8, 1, 0.8);
+	outer.add(inside);
 	const c = capOf(150);
-	inside.add(part(new THREE.CircleGeometry(c.a - 0.3, 72).rotateX(-Math.PI / 2), mat('#b9b3a8', 1), 0, 0.08, 0, false));
-	inside.add(part(new THREE.CircleGeometry(c.a - 6, 72, Math.PI * 1.1, Math.PI * 0.8).rotateX(-Math.PI / 2), mat('#5e8a3e', 1), 0, 0.1, 0, false));
-	inside.add(sector(c.a - 6 - POND_BAND, c.a - 6, 0.06, 0.16, (-POND_HALF * 180) / Math.PI, (POND_HALF * 180) / Math.PI, mat('#3f86a6', 0.2)));
 	// the office crescent either side of the pond, two storeys
 	for (const s of [-1, 1]) inside.add(sector(c.a - 22, c.a - 8, 0, 7, s > 0 ? 36 : -72, s > 0 ? 72 : -36, mat('#e8dcc0')));
 	// the data center: a hall of racks, its dry coolers on the roof
@@ -181,7 +198,7 @@ function utilInside(/** @type {THREE.Group} */ inside) {
 
 /** the machines of a factory dome, in the colours of what it makes */
 function factoryInside(/** @type {string} */ id, /** @type {THREE.Group} */ inside) {
-	const c = capOf(100);
+	const c = capOf(120);
 	inside.add(part(new THREE.CircleGeometry(c.a - 0.3, 64).rotateX(-Math.PI / 2), mat('#a49d90', 1), 0, 0.08, 0, false));
 	/** @type {Record<string, string>} */
 	const COL = { timber: '#c8955a', hemp: '#b8b06a', bamboo: '#8fb05a', steel: '#6d7782', lime: '#e6e2d6', clay: '#c4734f', glass: '#9fd0dc', recycling: '#7e8f6a' };
@@ -195,10 +212,11 @@ function factoryInside(/** @type {string} */ id, /** @type {THREE.Group} */ insi
 
 /** the tropical food domes' pond and floor */
 function foodInside(/** @type {THREE.Group} */ inside) {
-	const c = capOf(150);
+	const c = capOf(120);
 	inside.add(part(new THREE.CircleGeometry(c.a - 0.3, 72).rotateX(-Math.PI / 2), mat('#4a7a33', 1), 0, 0.08, 0, false));
-	inside.add(sector(c.a - 6 - POND_BAND, c.a - 6, 0.06, 0.16, (-POND_HALF * 180) / Math.PI, (POND_HALF * 180) / Math.PI, mat('#3f86a6', 0.2)));
-	inside.add(box(30, 6, 14, '#e8dcc0', 0, -c.a + 14).translateZ(0));
+	inside.add(sector(c.a - POND_IN - POND_BAND, c.a - POND_IN, 0.06, 0.16, (-POND_HALF * 180) / Math.PI, (POND_HALF * 180) / Math.PI, mat('#3f86a6', 0.2)));
+	// packing, the cold store and the nursery, under the north shell west of the pond
+	inside.add(box(22, 6, 12, '#e8dcc0', -36, -32));
 }
 
 /**
@@ -440,84 +458,135 @@ function sow(land, plants, /** @type {number} */ seed) {
 // ── the world ───────────────────────────────────────────────────────────────────────────────────────────────────
 
 /**
+ * Bakes a building's inside into one mesh a material (the terraces alone are dozens of parts a dome, and the village
+ * has ~100 domes): the same picture in a tenth of the draw calls.
+ */
+function bake(/** @type {THREE.Group} */ group) {
+	group.updateMatrixWorld(true);
+	const inv = new THREE.Matrix4().copy(group.matrixWorld).invert();
+	/** @type {Map<THREE.Material, THREE.BufferGeometry[]>} */
+	const by = new Map();
+	/** @type {THREE.Object3D[]} */
+	const done = [];
+	group.traverse((o) => {
+		if (!(o instanceof THREE.Mesh) || o instanceof THREE.InstancedMesh || Array.isArray(o.material)) return;
+		const geo = o.geometry.index ? o.geometry.toNonIndexed() : o.geometry.clone();
+		for (const k of Object.keys(geo.attributes)) if (k !== 'position' && k !== 'normal') geo.deleteAttribute(k);
+		geo.clearGroups();
+		geo.applyMatrix4(new THREE.Matrix4().multiplyMatrices(inv, o.matrixWorld));
+		const list = by.get(o.material) ?? [];
+		list.push(geo);
+		by.set(o.material, list);
+		done.push(o);
+	});
+	for (const o of done) o.removeFromParent();
+	for (const [m, geos] of by) {
+		const merged = mergeGeometries(geos);
+		if (!merged) continue;
+		group.add(part(merged, m));
+	}
+}
+
+/**
  * @typedef {{ id: string, plan: import('./layout.js').HexPlan, site: import('./layout.js').Site, x: number, z: number, height: number, r: number, hit: THREE.Object3D, small: boolean }} Built
  */
 
 /**
- * Builds both hexes into the scene (the tower hex once for each tower; one shows at a time).
+ * One hex: its ground, its buildings, its plants, laid out round its own middle.
+ * @param {import('./layout.js').HexPlan} plan
+ */
+function buildHex(plan, /** @type {number} */ seed) {
+	const group = new THREE.Group();
+	const land = landOf(plan);
+	const ground = hexGround(plan, land);
+	group.add(ground.mesh);
+	const line = outline(plan.cx, plan.cz, '#fff6d8', 0.9);
+	line.userData.layer = 'outline';
+	group.add(line);
+	const plants = createPlants();
+	/** @type {Built[]} */
+	const built = [];
+	for (const site of plan.sites) {
+		const K = KINDS[site.kind];
+		const b = site.kind === 'tower' && plan.tower ? towerModel(plan.tower, (x, y, z, kind, s) => plants.add(x + site.x, y, z + site.z, kind, s)) : domeShell(K.D);
+		b.root.position.set(site.x, 0, site.z);
+		if (site.kind === 'dome40' || site.kind === 'dome80') homeInside(K, b.inside);
+		else if (site.kind === 'util120') utilInside(b.inside);
+		else if (site.kind === 'food120') foodInside(b.inside);
+		else if (site.kind === 'factory120') factoryInside(site.factory ?? '', b.inside);
+		if (site.kind !== 'tower') bake(b.inside);
+		group.add(b.root);
+		b.hit.userData.site = site.id;
+		b.shell.userData.layer = 'shell';
+		b.inside.userData.layer = 'inside';
+		b.dims.userData.layer = 'dims';
+		built.push({ id: site.id, plan, site, x: site.x, z: site.z, height: b.height, r: b.r, hit: b.hit, small: site.kind === 'dome40' });
+	}
+	sow(land, plants, seed);
+	const pg = plants.build();
+	pg.userData.layer = 'plants';
+	group.add(pg);
+	return { group, land, ground, built };
+}
+
+/**
+ * Builds the village into the scene: each plan once, the living hex then copied to its six places round the tower hex.
  * @param {THREE.Scene} scene
- * @param {{ living: import('./layout.js').HexPlan, towers: Record<string, import('./layout.js').HexPlan> }} plans
+ * @param {typeof import('./layout.js').VILLAGE} village
  * @param {(label: string) => void} [progress]
  */
-export function buildWorld(scene, plans, progress) {
-	const layers = { land: [], shell: [], inside: [], plants: [], outline: [], dims: [] };
-	/** @type {Record<string, { group: THREE.Group, land: ReturnType<typeof landOf>, ground: ReturnType<typeof hexGround>, plan: import('./layout.js').HexPlan, built: Built[], plants: THREE.Group }>} */
+export function buildWorld(scene, village, progress) {
+	/** @type {Record<string, THREE.Object3D[]>} */
+	const layers = { shell: [], inside: [], plants: [], outline: [], dims: [] };
+	/** @type {Record<string, { group: THREE.Group, land: ReturnType<typeof landOf>, ground: ReturnType<typeof hexGround>, plan: import('./layout.js').HexPlan, label: string, x: number, z: number, built: Built[] }>} */
 	const hexes = {};
-	// the valley round the two hexes
-	const valley = new THREE.Mesh(new THREE.CircleGeometry(5200, 64).rotateX(-Math.PI / 2), mat('#83a05e', 1));
+	// the valley round the village, and the hexes beyond it
+	const valley = new THREE.Mesh(new THREE.CircleGeometry(7000, 64).rotateX(-Math.PI / 2), mat('#83a05e', 1));
 	valley.receiveShadow = true;
 	scene.add(valley);
 	const around = new THREE.Group();
-	for (let q = -3; q <= 4; q++)
-		for (let rr = -3; rr <= 3; rr++) {
+	for (let q = -6; q <= 6; q++)
+		for (let rr = -6; rr <= 6; rr++) {
 			const cx = q * HEX_W + (Math.abs(rr) % 2 ? HEX_W / 2 : 0), cz = rr * HEX_S * 1.5;
-			if (Math.hypot(cx - HEX_W / 2, cz) > 2600) continue;
+			if (Math.hypot(cx, cz) > 3400 || Math.hypot(cx, cz) < HEX_W * 1.2) continue;
 			around.add(outline(cx, cz, '#ffffff', 0.18));
 		}
 	scene.add(around);
+	layers.outline.push(around);
 
-	/** @type {[string, import('./layout.js').HexPlan][]} */
-	const all = [['living', plans.living], ...Object.entries(plans.towers)];
-	for (const [key, plan] of all) {
-		progress?.(key === 'living' ? 'Laying out the living hex' : `Raising ${plan.tower?.label}`);
-		const group = new THREE.Group();
-		const land = landOf(plan);
-		const ground = hexGround(plan, land);
-		group.add(ground.mesh);
-		const line = outline(plan.cx, plan.cz, '#fff6d8', 0.9);
-		group.add(line);
-		const plants = createPlants();
-		/** @type {Built[]} */
-		const built = [];
-		for (const site of plan.sites) {
-			const K = KINDS[site.kind];
-			const b = site.kind === 'tower250' && plan.tower ? towerModel(plan.tower, (x, y, z, kind, s) => plants.add(x + site.x, y, z + site.z, kind, s)) : domeShell(K.D);
-			b.root.position.set(site.x, 0, site.z);
-			if (site.kind === 'dome50' || site.kind === 'dome100') homeInside(K, b.inside);
-			else if (site.kind === 'util150') utilInside(b.inside);
-			else if (site.kind === 'food150') foodInside(b.inside);
-			else if (site.kind === 'factory100') factoryInside(site.factory ?? '', b.inside);
-			group.add(b.root);
-			b.hit.userData.site = site.id;
-			layers.shell.push(/** @type {never} */ (b.shell));
-			layers.inside.push(/** @type {never} */ (b.inside));
-			layers.dims.push(/** @type {never} */ (b.dims));
-			built.push({ id: site.id, plan, site, x: site.x, z: site.z, height: b.height, r: b.r, hit: b.hit, small: site.kind === 'dome50' });
-		}
-		sow(land, plants, key === 'living' ? 11 : 23);
-		const pg = plants.build();
-		group.add(pg);
-		layers.plants.push(/** @type {never} */ (pg));
-		layers.outline.push(/** @type {never} */ (line));
+	/** @type {Map<import('./layout.js').HexPlan, ReturnType<typeof buildHex>>} */
+	const once = new Map();
+	for (const h of village) {
+		let base = once.get(h.plan);
+		let group;
+		if (!base) {
+			progress?.(h.plan.tower ? `Raising ${h.plan.tower.label}` : 'Laying out the living hexes');
+			base = buildHex(h.plan, h.plan.tower ? 23 : 11);
+			once.set(h.plan, base);
+			group = base.group;
+		} else group = base.group.clone();
+		group.position.set(h.x, 0, h.z);
 		scene.add(group);
-		hexes[key] = { group, land, ground, plan, built, plants: pg };
+		/** @type {Map<string, THREE.Object3D>} */
+		const hits = new Map();
+		group.traverse((o) => {
+			if (o.userData.layer) layers[o.userData.layer]?.push(o);
+			if (o.userData.site) hits.set(o.userData.site, o);
+		});
+		hexes[h.key] = { group, land: base.land, ground: base.ground, plan: h.plan, label: h.label, x: h.x, z: h.z, built: base.built.map((b) => ({ ...b, x: b.x + h.x, z: b.z + h.z, hit: hits.get(b.id) ?? b.hit })) };
 	}
-	layers.outline.push(/** @type {never} */ (around));
 
 	return {
 		hexes,
-		/** show one tower hex (the other is hidden) */
-		setTower(/** @type {string} */ id) {
-			for (const k of Object.keys(plans.towers)) hexes[k].group.visible = k === id;
-		},
 		/** switch an overlay */
 		set(/** @type {string} */ name, /** @type {boolean} */ on) {
-			if (name === 'landuse') for (const h of Object.values(hexes)) {
-				const m = /** @type {THREE.MeshStandardMaterial} */ (h.ground.mesh.material);
-				m.map = on ? h.ground.map : h.ground.natural;
-				m.needsUpdate = true;
-			}
-			const list = /** @type {Record<string, THREE.Object3D[]>} */ (layers)[name];
+			if (name === 'landuse')
+				for (const h of Object.values(hexes)) {
+					const m = /** @type {THREE.MeshStandardMaterial} */ (h.ground.mesh.material);
+					m.map = on ? h.ground.map : h.ground.natural;
+					m.needsUpdate = true;
+				}
+			const list = layers[name];
 			if (list) for (const o of list) o.visible = on;
 		}
 	};

@@ -1,17 +1,19 @@
 <!--
-	avenCITY Sandbox 6 — one hex at its real size: the living hex (eight Dome50 homes of 12, five Dome100 homes of 36, two
-	Dome150 tropical food forests and a Dome150 of utilities) and the tower hex next to it (Tower250 or Tower200, the
-	village's one factory building and utilities center, with eight Dome100 factories round it and the fields, woods
-	and pits that feed them). Every overlay on the world and every panel of numbers can be switched on and off; a
-	click on a building opens its card. The numbers: ./specs.js, ./layout.js, ./stats.js.
+	avenCITY Sandbox 6 — one village at its real size (Samuel, 2026-10-08): the tower hex in the middle (Tower180, the
+	village's one factory building and utilities center, with eight Dome120 factories round it and the fields, woods and
+	pits that feed them) and six living hexes round it, layouts A and B in turn (terraced Dome40 and Dome80 homes, two
+	Dome120 tropical food forests and a Dome120 of utilities each), with the sun on every dome compared (./light.js). The
+	numbers for the whole village, the tower hex or a layout; every overlay on the world and every panel of numbers can be switched on and off; a click
+	on a building opens its card. The numbers: ./specs.js, ./layout.js, ./stats.js.
 -->
 <script>
 	import { onDestroy, onMount } from 'svelte';
 	import TouchStick from '$lib/touch/TouchStick.svelte';
 	import { WorldBar } from '$lib/sandbox-kit';
-	import { LIVING, TOWER_HEXES, USES, landOf } from './layout.js';
-	import { hexStats, siteCard } from './stats.js';
-	import { ENERGY, NORTH, PRICES, SOURCES, TOWERS } from './specs.js';
+	import { LIVINGS, TOWER_HEX, USES, VILLAGE, landOf } from './layout.js';
+	import { hexStats, siteCard, villageStats } from './stats.js';
+	import { DAYS, placeAll, sunShares } from './light.js';
+	import { ENERGY, KINDS, NORTH, PRICES, SOURCES, TOWER } from './specs.js';
 	import { FLOOR_COLOURS } from './scene.js';
 
 	/** @type {HTMLDivElement | undefined} */
@@ -22,18 +24,27 @@
 	let world = null;
 	let loading = $state('Laying out the hexes');
 
-	/** which hex the numbers are about, and which tower stands in the tower hex */
-	let hex = $state(/** @type {'living' | 'tower'} */ ('living'));
-	let tower = $state('t250');
-	const plan = $derived(hex === 'living' ? LIVING : TOWER_HEXES[tower]);
-	// the land is counted once a plan
-	/** @type {Map<string, any>} */
-	const statsCache = new Map();
-	const stats = $derived.by(() => {
-		const k = hex === 'living' ? 'living' : tower;
-		if (!statsCache.has(k)) statsCache.set(k, hexStats(plan, landOf(plan)));
-		return statsCache.get(k);
-	});
+	/** what the numbers are about: the whole village, the tower hex or a living layout (A or B, three hexes of each) */
+	let hex = $state(/** @type {'village' | 'tower' | 'A' | 'B'} */ ('village'));
+	/** the living hex of each layout the camera last flew to */
+	const lastHex = { A: 'living-sw', B: 'living-e' };
+	// the land is counted once a plan, the village from the three
+	const towerStats = hexStats(TOWER_HEX, landOf(TOWER_HEX));
+	const layoutStats = { A: hexStats(LIVINGS.A, landOf(LIVINGS.A)), B: hexStats(LIVINGS.B, landOf(LIVINGS.B)) };
+	const count = (/** @type {'A' | 'B'} */ L) => VILLAGE.filter((h) => h.plan === LIVINGS[L]).length;
+	const village = villageStats([
+		{ key: 'tower', label: 'Tower hex', n: 1, stats: towerStats },
+		{ key: 'A', label: 'Living hexes, layout A', n: count('A'), stats: layoutStats.A },
+		{ key: 'B', label: 'Living hexes, layout B', n: count('B'), stats: layoutStats.B }
+	]);
+	// the sun on every dome: in the village (with its neighbours and the tower), and each layout alone
+	const sun = sunShares(placeAll(VILLAGE));
+	const sunAlone = { A: sunShares(placeAll([{ key: 'A', plan: LIVINGS.A, x: 0, z: 0 }])).hexes.A, B: sunShares(placeAll([{ key: 'B', plan: LIVINGS.B, x: 0, z: 0 }])).hexes.B };
+	/** @type {any} */
+	const stats = $derived(hex === 'village' ? village : hex === 'tower' ? towerStats : layoutStats[hex]);
+	const plan = $derived(hex === 'tower' ? TOWER_HEX : LIVINGS[hex === 'B' ? 'B' : 'A']);
+	/** the plan a hex of the village has */
+	const planOf = (/** @type {string} */ key) => VILLAGE.find((h) => h.key === key)?.plan ?? TOWER_HEX;
 
 	/** the overlays on the world */
 	const OVERLAYS = [
@@ -54,16 +65,19 @@
 		{ id: 'people', label: 'People' },
 		{ id: 'food', label: 'Food' },
 		{ id: 'energy', label: 'Energy' },
+		{ id: 'hexes', label: 'Hexes', village: true },
+		{ id: 'compare', label: 'A vs B' },
 		{ id: 'floors', label: 'Tower floors', tower: true },
 		{ id: 'raw', label: 'Raw materials', tower: true },
 		{ id: 'sources', label: 'Sources' }
 	];
-	let panel = $state(/** @type {Record<string, boolean>} */ ({ land: true, buildings: false, cost: true, people: false, food: false, energy: false, floors: true, raw: false, sources: false }));
-	const panels = $derived(PANELS.filter((p) => !p.tower || hex === 'tower'));
+	let panel = $state(/** @type {Record<string, boolean>} */ ({ hexes: true, compare: true, land: true, buildings: false, cost: true, people: false, food: false, energy: false, floors: true, raw: false, sources: false }));
+	const panels = $derived(PANELS.filter((p) => (!p.tower || hex === 'village' || hex === 'tower') && (!p.village || hex === 'village')));
 
 	/** the building picked, and its card */
 	let picked = $state(/** @type {{ id: string, hex: string } | null} */ (null));
-	const card = $derived(picked ? siteCard(picked.hex === 'living' ? LIVING : TOWER_HEXES[tower], picked.id) : null);
+	const card = $derived(picked ? siteCard(planOf(picked.hex), picked.id) : null);
+	const cardSun = $derived(picked ? sun.sites[`${picked.hex}/${picked.id}`] : null);
 
 	let narrow = $state(false);
 	let sheetOpen = $state(false);
@@ -75,6 +89,7 @@
 	const eur = (/** @type {number} */ e) => (Math.abs(e) >= 1e6 ? `${n1(e / 1e6)} M€` : Math.abs(e) >= 1e3 ? `${n0(e / 1e3)} k€` : `${n0(e)} €`);
 	const gwh = (/** @type {number} */ kwh) => (Math.abs(kwh) >= 1e6 ? `${(kwh / 1e6).toFixed(2)} GWh` : `${n0(kwh / 1e3)} MWh`);
 	const tonnes = (/** @type {number} */ t) => (t >= 100 ? n0(t) : n1(t));
+	const hexArea = $derived(hex === 'village' ? `${n1(stats.hexHa)} ha, seven hexes 666 m across` : `${n1(stats.hexHa)} ha, 666 m across`);
 
 	/** the land by group, for the bar and the summary */
 	const groups = $derived.by(() => {
@@ -95,16 +110,11 @@
 		overlay[id] = !overlay[id];
 		world?.set(id, overlay[id]);
 	}
-	function setHex(/** @type {'living' | 'tower'} */ h) {
+	function setHex(/** @type {'village' | 'tower' | 'A' | 'B'} */ h) {
 		hex = h;
 		picked = null;
 		world?.pick(null, null);
-		world?.focus(h);
-	}
-	function setTower(/** @type {string} */ id) {
-		tower = id;
-		picked = null;
-		world?.setTower(id);
+		world?.focusHex(h === 'A' || h === 'B' ? lastHex[h] : h);
 	}
 
 	onMount(() => {
@@ -117,7 +127,16 @@
 			world = mountWorld(stage, labelLayer, {
 				onPick: (id, h) => {
 					picked = id && h ? { id, hex: h } : null;
-					if (h) hex = h === 'living' ? 'living' : 'tower';
+					if (h) {
+						const L = planOf(h).layout;
+						hex = L ?? 'tower';
+						if (L) lastHex[L] = h;
+					}
+				},
+				people: (k) => {
+					const p = planOf(k);
+					if (!p.layout) return `${TOWER.label}, ${n0(towerStats.people[0].n * 2.2)} residents, ${n0(towerStats.people.slice(2).reduce((/** @type {number} */ a, /** @type {any} */ q) => a + q.n, 0))} desks and jobs`;
+					return `${layoutStats[p.layout].residents} people in ${p.sites.filter((s) => s.kind.startsWith('dome')).length} terraced homes · winter sun ${n0(100 * (sun.hexes[k].homes?.winter ?? 0))}%`;
 				},
 				onProgress: (l) => (loading = l)
 			});
@@ -131,18 +150,13 @@
 
 {#snippet toggles()}
 	<div class="group">
-		<p class="head">Hex</p>
+		<p class="head">Numbers for</p>
 		<div class="seg">
-			<button class:on={hex === 'living'} onclick={() => setHex('living')}>Living hex</button>
+			<button class:on={hex === 'village'} onclick={() => setHex('village')}>Village</button>
 			<button class:on={hex === 'tower'} onclick={() => setHex('tower')}>Tower hex</button>
+			<button class:on={hex === 'A'} onclick={() => setHex('A')}>Layout A</button>
+			<button class:on={hex === 'B'} onclick={() => setHex('B')}>Layout B</button>
 		</div>
-		{#if hex === 'tower'}
-			<div class="seg">
-				{#each Object.values(TOWERS) as T (T.id)}
-					<button class:on={tower === T.id} onclick={() => setTower(T.id)}>{T.label}</button>
-				{/each}
-			</div>
-		{/if}
 	</div>
 	<div class="group">
 		<p class="head">On the world</p>
@@ -176,13 +190,25 @@
 			<p class="note">{card.note}</p>
 			<dl>
 				{#each card.facts as [k, v] (k)}<dt>{k}</dt><dd>{v}</dd>{/each}
+				{#if cardSun}<dt>Sun on its south glass</dt><dd>{n0(100 * cardSun.winter)}% of the sunny day on {DAYS.winter.label} ({n1(cardSun.winter * sun.dayHours.winter)} of {n1(sun.dayHours.winter)} h), {n0(100 * cardSun.equinox)}% on {DAYS.equinox.label}</dd>{/if}
 			</dl>
-			<h3>{card.kind === 'tower250' ? 'Floors' : 'Its floor'}</h3>
+			{#if card.terraces}
+				<h3>Its terraces</h3>
+				<svg class="section" viewBox="{-card.cap.a - 2} {-card.cap.h - 2} {2 * card.cap.a + 4} {card.cap.h + 4}" role="img" aria-label="A section through the dome from south to north">
+					<path d={`M ${-card.cap.a} 0 ` + Array.from({ length: 49 }, (_, k) => { const x = -card.cap.a + (k / 48) * 2 * card.cap.a; return `L ${x} ${-(Math.sqrt(card.cap.R ** 2 - x * x) - (card.cap.R - card.cap.h))}`; }).join(' ') + ' Z'} class="glass" />
+					<path d={`M ${card.cut} 0 ` + Array.from({ length: 25 }, (_, k) => { const x = card.cut + (k / 24) * (card.cap.a - card.cut); return `L ${x} ${-(Math.sqrt(card.cap.R ** 2 - x * x) - (card.cap.R - card.cap.h))}`; }).join(' ')} class="hemp" />
+					<rect x={card.terraces.pondIn} y="-0.4" width={card.terraces.pondOut - card.terraces.pondIn} height="1.6" fill="#3f86a6" />
+					{#each card.terraces.levels as L (L.k)}<rect x={L.rIn} y={-(L.y + L.h)} width={L.rOut - L.rIn} height={L.h - 0.2} fill={USES.living.map} />{/each}
+					<line x1={-card.cap.a - 2} x2={card.cap.a + 2} y1="0" y2="0" class="ground" />
+				</svg>
+				<p class="small">South on the left, north on the right: {card.terraces.levels.length} storeys stepping back {card.terraces.step} m each toward the hemp (white) on the north side, every balcony on the roof below open to the sky through the glass and looking south over the garden; the pond along the north rim.</p>
+			{/if}
+			<h3>{card.kind === 'tower' ? 'Floors' : 'Its floor'}</h3>
 			<table>
 				<tbody>
 					{#each card.zones.filter((/** @type {any} */ z) => z.m2 > 0) as z, k (k)}
 						<tr>
-							<td><i style:background={card.kind === 'tower250' ? FLOOR_COLOURS[/** @type {keyof typeof FLOOR_COLOURS} */ (z.use)] : USES[z.use]?.map}></i>{z.label}{#if z.note}<small>{z.note}</small>{/if}</td>
+							<td><i style:background={card.kind === 'tower' ? FLOOR_COLOURS[/** @type {keyof typeof FLOOR_COLOURS} */ (z.use)] : USES[z.use]?.map}></i>{z.label}{#if z.note}<small>{z.note}</small>{/if}</td>
 							<td class="num">{n0(z.m2)} m²</td>
 						</tr>
 					{/each}
@@ -203,9 +229,56 @@
 		</section>
 	{/if}
 
+	{#if hex === 'village' && panel.hexes}
+		<section class="panel">
+			<h2>The village <span class="sub">the tower hex and six living hexes round it</span></h2>
+			<table>
+				<thead><tr><th></th><th class="num">people</th><th class="num">food</th><th class="num">GWh</th><th class="num">sun</th><th class="num">cost</th></tr></thead>
+				<tbody>
+					{#each VILLAGE as h (h.key)}
+						{@const s = h.plan.layout ? layoutStats[h.plan.layout] : towerStats}
+						{@const hs = sun.hexes[h.key]}
+						<tr><td><button class="row" onclick={() => world?.focusHex(h.key)}>{h.label.replace(' hex', '')}</button></td><td class="num">{n0(h.plan.layout ? s.residents : village.people[1].n)}</td><td class="num">{n0((100 * s.food.grown) / Math.max(1, s.food.need))}%</td><td class="num">{s.energy.net >= 0 ? '+' : '−'}{n1(Math.abs(s.energy.net) / 1e6)}</td><td class="num">{n0(100 * ((hs.homes ?? hs.domes)?.winter ?? 0))}%</td><td class="num">{eur(s.total)}</td></tr>
+					{/each}
+					<tr class="total"><td>The village</td><td class="num">{n0(village.residents)}</td><td class="num">{n0((100 * village.food.grown) / village.food.need)}%</td><td class="num">{village.energy.net >= 0 ? '+' : '−'}{n1(Math.abs(village.energy.net) / 1e6)}</td><td></td><td class="num">{eur(village.total)}</td></tr>
+					<tr><td colspan="5">A resident’s share</td><td class="num">{eur(village.total / village.residents)}</td></tr>
+				</tbody>
+			</table>
+			<p class="small">People: who lives there. Food: what the hex grows against what its people eat (the tower hex grows little; the living hexes feed it). GWh: the power it makes less what it uses, a year. Sun: the share of the sunny day on {DAYS.winter.label} that reaches the homes’ south glass (the tower hex: its factory domes), with the neighbours’ domes and the tower’s long winter shadow counted. Click a hex to fly to it.</p>
+		</section>
+	{/if}
+
+	{#if panel.compare}
+		{@const A = layoutStats.A}
+		{@const B = layoutStats.B}
+		{@const pct = (/** @type {any} */ st, /** @type {string[]} */ ids) => st.uses.filter((/** @type {any} */ u) => ids.includes(u.id)).reduce((/** @type {number} */ a, /** @type {any} */ u) => a + u.pct, 0)}
+		<section class="panel">
+			<h2>Layout A vs B <span class="sub">one living hex each, alone</span></h2>
+			<table>
+				<thead><tr><th></th><th class="num">A</th><th class="num">B</th></tr></thead>
+				<tbody>
+					<tr><td>Homes<small>Dome40 and Dome80</small></td><td class="num">{LIVINGS.A.sites.filter((s) => s.kind === 'dome40').length} + {LIVINGS.A.sites.filter((s) => s.kind === 'dome80').length}</td><td class="num">{LIVINGS.B.sites.filter((s) => s.kind === 'dome40').length} + {LIVINGS.B.sites.filter((s) => s.kind === 'dome80').length}</td></tr>
+					<tr><td>People</td><td class="num">{A.residents}</td><td class="num">{B.residents}</td></tr>
+					<tr><td>Homes’ sun, {DAYS.winter.label}<small>share of the sunny day ({n1(sun.dayHours.winter)} h) on their south glass</small></td><td class="num">{n1(100 * (sunAlone.A.homes?.winter ?? 0))}%</td><td class="num">{n1(100 * (sunAlone.B.homes?.winter ?? 0))}%</td></tr>
+					<tr><td>Homes’ sun, {DAYS.equinox.label}<small>{n1(sun.dayHours.equinox)} h of sun</small></td><td class="num">{n1(100 * (sunAlone.A.homes?.equinox ?? 0))}%</td><td class="num">{n1(100 * (sunAlone.B.homes?.equinox ?? 0))}%</td></tr>
+					<tr><td>Food and utility domes’ sun, {DAYS.winter.label}</td><td class="num">{n1(100 * (sunAlone.A.domes?.winter ?? 0))}%</td><td class="num">{n1(100 * (sunAlone.B.domes?.winter ?? 0))}%</td></tr>
+					<tr><td>Food and utility domes’ sun, {DAYS.equinox.label}</td><td class="num">{n1(100 * (sunAlone.A.domes?.equinox ?? 0))}%</td><td class="num">{n1(100 * (sunAlone.B.domes?.equinox ?? 0))}%</td></tr>
+					<tr><td>Food forest outdoors</td><td class="num">{n1(pct(A, ['foodForest']))}%</td><td class="num">{n1(pct(B, ['foodForest']))}%</td></tr>
+					<tr><td>Orchards and market gardens</td><td class="num">{n1(pct(A, ['commercial']))}%</td><td class="num">{n1(pct(B, ['commercial']))}%</td></tr>
+					<tr><td>Nature</td><td class="num">{n1(pct(A, ['nature']))}%</td><td class="num">{n1(pct(B, ['nature']))}%</td></tr>
+					<tr><td>Roads and paths</td><td class="num">{n1(pct(A, ['road']))}%</td><td class="num">{n1(pct(B, ['road']))}%</td></tr>
+					<tr><td>Food grown, of what its people eat</td><td class="num">{n0((100 * A.food.grown) / A.food.need)}%</td><td class="num">{n0((100 * B.food.grown) / B.food.need)}%</td></tr>
+					<tr><td>Cost</td><td class="num">{eur(A.total)}</td><td class="num">{eur(B.total)}</td></tr>
+					<tr><td>A resident’s share</td><td class="num">{eur(A.total / A.residents)}</td><td class="num">{eur(B.total / B.residents)}</td></tr>
+				</tbody>
+			</table>
+			<p class="small">B stands the tall domes to the north and the homes to the south of them, so in winter, when the sun is lowest (18° at noon), almost nothing shades the homes; in A the food domes stand in the utilities dome’s winter sun and the Dome80s shade some Dome40s. Around the equinox the sun rises and sets due east and west, and B’s row of domes side by side shades a little more in the early morning and late afternoon. Trees and hedges are not counted.</p>
+		</section>
+	{/if}
+
 	{#if panel.land}
 		<section class="panel">
-			<h2>Land <span class="sub">{n1(stats.hexHa)} ha, 666 m across</span></h2>
+			<h2>Land <span class="sub">{hexArea}</span></h2>
 			{@render bar(groups)}
 			<ul class="keys">
 				{#each groups as g (g.label)}<li><i style:background={g.color}></i>{g.label} <b>{n1(g.pct)}%</b></li>{/each}
@@ -224,8 +297,8 @@
 					{/each}
 				</tbody>
 			</table>
-			{#if hex === 'living'}
-				<p class="small">Food forest under glass {n1(sum(['indoorFood', 'tropical']))}% · outdoors {n1(sum(['foodForest']))}% · commercial growing {n1(sum(['commercial']))}% · homes {n1(sum(['living']))}% of the land ({n0(stats.buildings.reduce((/** @type {number} */ a, /** @type {any} */ b) => a + (b.gfa ?? 0) * b.count, 0))} m² of floor on two storeys) · nature {n1(sum(['nature']))}%.</p>
+			{#if hex !== 'tower'}
+				<p class="small">Food forest under glass {n1(sum(['indoorFood', 'tropical']))}% · outdoors {n1(sum(['foodForest']))}% · commercial growing {n1(sum(['commercial']))}% · homes {n1(sum(['living']))}% of the land ({n0(stats.buildings.reduce((/** @type {number} */ a, /** @type {any} */ b) => a + (b.gfa ?? 0) * b.count, 0))} m² of floor on terraces of {KINDS.dome40.storeys} and {KINDS.dome80.storeys} storeys) · nature {n1(sum(['nature']))}%.{#if hex === 'village'} Raw-material fields and woods {n1(sum(['hemp', 'bamboo', 'woodland']))}% · open pits {n1(sum(['mine']))}%.{/if}</p>
 			{:else}
 				<p class="small">Raw-material fields and woods {n1(sum(['hemp', 'bamboo', 'woodland']))}% · open pits {n1(sum(['mine']))}% (no domes over them: only the works are under glass) · nature {n1(sum(['nature']))}%.</p>
 			{/if}
@@ -244,7 +317,7 @@
 					{/each}
 				</tbody>
 			</table>
-			<p class="small">Every dome is a geodesic cap a third as high as it is wide (the 150 m dome’s 50 m). Every panel is one of three: a white hemp triangle (solid, insulated) on the cold north side ({n0(NORTH * 100)}% of the shell), its edge one smooth line from the foot 70° west of north, over the north side below the crown, down to the foot 70° east of north; everywhere else glass and solar panels alternate like a chessboard, half each, so the plants keep half the light. The domes are Class I geodesics (frequency 8, 13 and 16: struts ~3–7 m), the towers a diagrid of triangles.</p>
+			<p class="small">Every dome is a geodesic cap a third as high as it is wide (the 120 m dome’s 40 m). The homes are terraces under the north third: Dome40 {KINDS.dome40.storeys} storeys for {KINDS.dome40.people} people, Dome80 {KINDS.dome80.storeys} for {KINDS.dome80.people}, every balcony on the roof of the storey below, looking south into the dome’s own food garden. Every panel is one of three: a white hemp triangle (solid, insulated) on the cold north side ({n0(NORTH * 100)}% of the shell), its edge one smooth line from the foot 70° west of north, over the north side below the crown, down to the foot 70° east of north; everywhere else glass and solar panels alternate like a chessboard, half each, so the plants keep half the light. The domes are Class I geodesics (frequency 7, 11 and 14: struts ~3–6 m), the tower a diagrid of triangles.</p>
 		</section>
 	{/if}
 
@@ -265,7 +338,7 @@
 				<tbody>
 					{#each stats.cost as c (c.label)}<tr><td>{c.label}</td><td class="num">{eur(c.eur)}</td></tr>{/each}
 					<tr class="total"><td>All told</td><td class="num">{eur(stats.total)}</td></tr>
-					{#if hex === 'living'}<tr><td>A resident’s share</td><td class="num">{eur(stats.total / stats.residents)}</td></tr>{/if}
+					{#if hex !== 'tower'}<tr><td>A resident’s share</td><td class="num">{eur(stats.total / stats.residents)}</td></tr>{/if}
 				</tbody>
 			</table>
 			<details>
@@ -320,9 +393,9 @@
 		</section>
 	{/if}
 
-	{#if hex === 'tower' && panel.floors}
+	{#if (hex === 'village' || hex === 'tower') && panel.floors}
 		{@const floors = stats.floors}
-		{@const T = TOWERS[tower]}
+		{@const T = TOWER}
 		<section class="panel">
 			<h2>{T.label} floors <span class="sub">{T.D} m across, {T.H} m high</span></h2>
 			<svg class="section" viewBox="{-T.D / 2 - 6} {-T.H - 6} {T.D + 12} {T.H + 18}" role="img" aria-label="A section through the tower">
@@ -350,7 +423,7 @@
 		</section>
 	{/if}
 
-	{#if hex === 'tower' && panel.raw}
+	{#if (hex === 'village' || hex === 'tower') && panel.raw}
 		<section class="panel">
 			<h2>Raw materials <span class="sub">from the hex, a year</span></h2>
 			<table>
@@ -360,7 +433,7 @@
 			</table>
 			<h3>The eight factory domes</h3>
 			<ul class="plain">
-				{#each plan.sites.filter((s) => s.kind === 'factory100') as s (s.id)}
+				{#each TOWER_HEX.sites.filter((s) => s.kind === 'factory120') as s (s.id)}
 					{@const run = stats.factoryRun[s.factory ?? '']}
 					<li><b>{s.name}</b>: {run.t.toLocaleString('en-US')} {run.unit} a year <small>{run.note}</small></li>
 				{/each}
@@ -392,7 +465,7 @@
 <div class="hexplan">
 	<div class="stage" bind:this={stage}></div>
 	<div class="labels" bind:this={labelLayer}></div>
-	<WorldBar title="avenCITY #S6" subtitle="One hex at its real size" clock={{ day: 'A day in June', hour: '11:30', about: 'On Auto the sky stands at late morning; Manual sets the hour' }} />
+	<WorldBar title="avenCITY #S6" subtitle="One village at its real size" clock={{ day: 'A day in June', hour: '11:30', about: 'On Auto the sky stands at late morning; Manual sets the hour' }} />
 
 	{#if loading}<div class="loading">{loading}…</div>{/if}
 
@@ -451,6 +524,12 @@
 		opacity: 0.7;
 		font-style: normal;
 	}
+	.labels :global(.lbl.hex) {
+		padding: 0.35rem 0.75rem;
+		font-size: 0.8rem;
+		background: rgb(36 69 47 / 0.88);
+		color: #f4f1e8;
+	}
 	.labels :global(.lbl.on) {
 		background: #24452f;
 		color: #f4f1e8;
@@ -503,16 +582,14 @@
 	}
 	.seg {
 		display: flex;
+		flex-wrap: wrap;
 		gap: 0.2rem;
 		padding: 0.2rem;
-		border-radius: 999px;
+		border-radius: 16px;
 		background: rgb(31 42 35 / 0.07);
 	}
-	.seg + .seg {
-		margin-top: 0.35rem;
-	}
 	.seg button {
-		flex: 1;
+		flex: 1 1 40%;
 		padding: 0.35rem 0.5rem;
 		border: 0;
 		border-radius: 999px;
@@ -655,6 +732,13 @@
 		font-size: 1.2rem;
 		opacity: 0.6;
 	}
+	button.row {
+		padding: 0;
+		border: 0;
+		background: none;
+		text-align: left;
+		text-decoration: underline dotted rgb(31 42 35 / 0.35);
+	}
 	.link {
 		margin-top: 0.5rem;
 		padding: 0.3rem 0.7rem;
@@ -676,6 +760,11 @@
 		fill: rgb(170 214 226 / 0.35);
 		stroke: #6b5236;
 		stroke-width: 0.8;
+	}
+	.section .hemp {
+		fill: none;
+		stroke: #d8cba8;
+		stroke-width: 2.4;
 	}
 	.section .ground {
 		stroke: #6b5236;

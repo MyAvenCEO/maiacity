@@ -7,21 +7,23 @@
  * where it comes from: our own research (the project files: sandbox-6/numbers.md, energy/village-energy.md, the dome
  * engineering thread) or a market source, or "assumed" with the reasoning. ./SOURCES lists them for the page.
  *
- * The domes are glazed geodesic caps, all of one shape: a cap a third as high as it is wide, as the 150 m dome the
- * dome engineering research settled on (50 m high, sphere radius 81.25 m, frequency 16, ~6 m glulam struts, steel
- * hubs, laminated glass, a hemp-fibre north shell, a 3 m fish pond at ground level along the north). The smaller
- * domes are the same cap scaled down, with shorter struts (src/lib/sandbox-7/geodesic.js builds every panel).
+ * The domes are glazed geodesic caps, all of one shape: a cap a third as high as it is wide, as the dome engineering
+ * research settled on (glulam struts, steel hubs, laminated glass, a hemp-fibre north shell, a 3 m fish pond at ground
+ * level along the north). Since Samuel's change of 2026-10-08 the village has three sizes: Dome40 and Dome80 homes, and
+ * Dome120 for the food forests, the utilities and the factories, round one Tower180 (src/lib/sandbox-7/geodesic.js
+ * builds every panel). The engineering thread sized Dome50/100/150 and Tower200/250; the sizes between and below scale
+ * from those along the curve they make (`between`).
  */
 import { geodesicCap, towerGrid } from './geodesic.js';
 
 /** @typedef {{ D: number, a: number, h: number, R: number, floor: number, shell: number, volume: number, perimeter: number, freq: number }} Cap */
 
 /**
- * The geodesic's frequency (struts along an icosahedron edge) of each dome, as the engineering thread sized them: the
- * 150 m cap is frequency 16 with ~6 m struts (2,390 struts, 826 hubs), Dome100 13 (1,570, 520) and Dome50 8 (610,
- * 200), smaller domes with shorter struts
+ * The geodesic's frequency (struts along an icosahedron edge) of each dome. The engineering thread sized the 150 m cap at
+ * frequency 16 (~5–6 m struts), Dome100 at 13 and Dome50 at 8; ours keep their struts in the same 3–6 m range: Dome120
+ * 14 (4.4–6.2 m), Dome80 11 (3.7–5.3 m), Dome40 7 (2.9–4.1 m)
  */
-const GEO_FREQ = { 50: 8, 100: 13, 150: 16 };
+const GEO_FREQ = { 40: 7, 80: 11, 120: 14, 50: 8, 100: 13, 150: 16 };
 /** A glazed cap `D` across, a third as high (the 150 m dome's 50 m): its sphere, floor, shell and air. @returns {Cap} */
 export function capOf(/** @type {number} */ D) {
 	const a = D / 2, h = D / 3;
@@ -32,7 +34,7 @@ export function capOf(/** @type {number} */ D) {
 		shell: 2 * Math.PI * R * h,
 		volume: (Math.PI * h * h * (3 * R - h)) / 3,
 		perimeter: Math.PI * D,
-		freq: GEO_FREQ[/** @type {50 | 100 | 150} */ (D)] ?? Math.max(4, Math.round((16 * D) / 150))
+		freq: GEO_FREQ[/** @type {40 | 80 | 120} */ (D)] ?? Math.max(4, Math.round((16 * D) / 150))
 	};
 }
 /** the height of a cap's shell over the floor, `r` from its middle */
@@ -97,9 +99,9 @@ export function northArc(/** @type {number} */ r, /** @type {number} */ y, /** @
 }
 /** where the cut stands at the ground for a shell `foot` m in radius */
 export const northCut = (/** @type {number} */ foot) => foot * Math.cos(NORTH_FOOT * DEG);
-/** the share of every dome's shell in hemp: the caps are all alike, so one number (about a quarter), counted on the 150 m dome's panels */
+/** the share of every dome's shell in hemp: the caps are all alike, so one number (about a quarter), counted on the 120 m dome's panels */
 export const NORTH = (() => {
-	const c = capOf(150);
+	const c = capOf(120);
 	const g = geodesicCap({ R: c.R, h: c.h, freq: c.freq, k: northCut(c.a), tilt: NORTH_TILT });
 	return g.m2.hemp / (g.m2.hemp + g.m2.glass + g.m2.solar);
 })();
@@ -114,12 +116,21 @@ const SIZED = {
 	100: { timber: 565, steel: 128 + 17.5, heat: 0.11e6, climate: 0.057e6 },
 	150: { timber: 2300, steel: 405 + 60, heat: 0.38e6, climate: 0.149e6 }
 };
-/** a size the thread did not size scales from the nearest: the frame with the 2.5th power, heat and climate by shell */
-function sized(/** @type {number} */ D) {
-	const near = /** @type {50 | 100 | 150} */ ([50, 100, 150].reduce((a, b) => (Math.abs(b - D) < Math.abs(a - D) ? b : a)));
-	const r = SIZED[near], k = Math.pow(D / near, 2.5), s = capOf(D).shell / capOf(near).shell;
-	return { timber: r.timber * k, steel: r.steel * k, heat: r.heat * s, climate: r.climate * s };
+/**
+ * A size the thread did not size, from the two it did on either side (or the nearest two): each figure follows the
+ * power law the two make (frame timber grows with about the 2.8th–3.5th power of the size, heat with the 2.5th–3rd),
+ * so Dome120 sits between Dome100 and Dome150 and Dome40 carries on the curve below Dome50.
+ * @template {Record<string, number>} T @param {Record<number, T>} table @param {number} D @returns {T}
+ */
+export function between(table, D) {
+	const sizes = Object.keys(table).map(Number).sort((a, b) => a - b);
+	let i = sizes.findIndex((x) => x >= D);
+	if (i <= 0) i = 1;
+	const lo = sizes[i - 1], hi = sizes[Math.min(i, sizes.length - 1)];
+	const t = Math.log(D / lo) / Math.log(hi / lo);
+	return /** @type {T} */ (Object.fromEntries(Object.keys(table[lo]).map((k) => [k, table[lo][k] * Math.pow(table[hi][k] / table[lo][k], t)])));
 }
+const sized = (/** @type {number} */ D) => between(SIZED, D);
 /**
  * Ours close less than the thread's third (a quarter, low on the north): its Dome150 run of that case needs 1.8 GWh of
  * heat instead of 1.65 and 0.165 GWh of climate power instead of 0.149
@@ -150,9 +161,8 @@ export function geodesicOf(/** @type {number} */ D) {
 	return g;
 }
 /**
- * The rings of a tower's grid: every second point of its profile (a ring every ~5 m), 96 bays round, so the panels
- * are 8 m wide at the foot (~24 m², the biggest) and narrow up the shaft; ~5,100 hubs, inside the engineering thread's
- * 3,550–6,170 for Tower250
+ * The rings of a tower's grid: every second point of its profile (a ring every ~5 m), 96 bays round, so the panels are
+ * ~6 m wide at the foot of Tower180 and narrow up the shaft (the engineering thread put Tower200 at 2,350–4,250 hubs)
  */
 export const towerRows = (/** @type {Tower} */ T) => towerProfile(T, 96).filter((_, k, all) => k % 2 === 0 || k === all.length - 1);
 export const TOWER_BAYS = 96;
@@ -218,84 +228,112 @@ const TIMBER_GFA = 0.28;
 export const FITOUT_HOME = 1800;
 
 /**
- * A home dome: the homes in a crescent of galleries along the north, under the hemp shell (two storeys, their windows
- * looking south into the garden); in front of them the fish pond (the heat store), and the rest of the floor a food
- * garden under the glass, with its paths.
- * @param {number} D @param {number} people @param {{ depth: number, edge: number, pond: number }} o
- *   depth: how deep the galleries are; edge: how far in from the glass they stand (so the upper storey has headroom);
- *   pond: how wide the pond is
+ * A home dome (Samuel, 2026-10-08): the homes are terraces in the north of the dome, a half ring of storeys stepping
+ * back toward the hemp like a stand, every storey's balcony on the roof of the one below. All of them look south over
+ * the dome's own food garden and are open to the sky through the glass, so every balcony gets the sun. The ground
+ * floor's front stands `front` from the middle; each storey is `depth` deep (daylight comes from the front only, the
+ * hemp shell is behind them) and sits `step` behind the one below; a storey ends where the shell comes within `clear` of its
+ * ceiling and is left out when that leaves it under 5 m deep. Under the back of the terraces, where the shell comes down
+ * to the ground, the fish pond (the heat store) runs along the north rim.
+ * @param {number} D @param {number} people
+ * @param {{ front: number, depth: number, step?: number, storey?: number, clear?: number }} o
  */
 function homeDome(D, people, o) {
 	const c = capOf(D);
-	const rOut = c.a - o.edge, rIn = rOut - o.depth;
-	const living = (Math.PI * (rOut * rOut - rIn * rIn)) / 2;
-	const pondIn = rIn - o.pond;
-	const pond = (Math.PI * (rIn * rIn - pondIn * pondIn)) / 2;
-	const paths = c.floor * 0.1;
-	const storeys = 2;
+	const step = o.step ?? 2.5, storey = o.storey ?? 3.2, clear = o.clear ?? 0.8;
+	/** @type {{ k: number, y: number, h: number, rIn: number, rOut: number, m2: number }[]} */
+	const levels = [];
+	for (let k = 0; k < 20; k++) {
+		const f = o.front + k * step, y = k * storey;
+		// how far out the shell is still `clear` over this storey's ceiling
+		const q = c.R * c.R - (y + storey + clear + c.R - c.h) ** 2;
+		const b = Math.min(f + o.depth, q > 0 ? Math.sqrt(q) : 0);
+		if (b - f < 5) break;
+		levels.push({ k, y, h: storey, rIn: f, rOut: b, m2: (Math.PI * (b * b - f * f)) / 2 });
+	}
+	const half = (/** @type {number} */ r0, /** @type {number} */ r1) => (Math.PI * (r1 * r1 - r0 * r0)) / 2;
+	const back = Math.max(...levels.map((l) => l.rOut));
+	const pondIn = back + 1, pondOut = c.a - 1.5;
+	const footprint = half(o.front, back), pond = half(pondIn, pondOut), paths = c.floor * 0.08;
+	const top = levels[levels.length - 1];
 	return {
 		people,
-		storeys,
-		gallery: { rOut, rIn, pondIn, headroom: capHeight(c, rOut) },
-		gfa: living * storeys,
+		storeys: levels.length,
+		levels,
+		step,
+		gallery: { rIn: o.front, rOut: back, pondIn, pondOut, height: top.y + top.h },
+		gfa: levels.reduce((a, l) => a + l.m2, 0),
+		/** the balconies: each storey's on the roof of the one below, `step` deep */
+		balconies: levels.slice(1).reduce((a, l) => a + half(l.rIn - step, l.rIn), 0),
 		zones: [
-			{ use: 'living', label: 'Homes (a crescent of galleries, 2 storeys)', m2: living },
-			{ use: 'pond', label: 'Fish pond, the heat store', m2: pond },
-			{ use: 'indoorFood', label: 'Food garden under the glass', m2: c.floor - living - pond - paths },
-			{ use: 'commons', label: 'Paths, terraces and commons', m2: paths }
+			{ use: 'living', label: `Homes: ${levels.length} terraced storeys in the north half (their footprint)`, m2: footprint },
+			{ use: 'pond', label: 'Fish pond along the north rim, the heat store', m2: pond },
+			{ use: 'indoorFood', label: 'Food garden under the glass, in front of the terraces', m2: c.floor - footprint - pond - paths },
+			{ use: 'commons', label: 'Paths and the garden’s commons', m2: paths }
 		]
 	};
 }
 
-/** the 150 m dome's pond, from the climate model: 105 m long, up to 21 m in, ~1,550 m², 4,700 m³ */
-const POND_150 = 1550;
+/**
+ * The 120 m domes' pond: a band along the north, 6 m in from the glass, 18.4 m wide, 33.5° either side of north
+ * (the 150 m dome's 23 m band of ~1,550 m² and 4,700 m³ from the climate model, at four fifths): ~970 m²
+ */
+export const POND_BAND = 18.4, POND_HALF = 0.585, POND_IN = 6;
+const POND_120 = POND_HALF * ((60 - POND_IN) ** 2 - (60 - POND_IN - POND_BAND) ** 2);
+
+/** a home kind: its card's note from its terraces */
+const home = (/** @type {number} */ D, /** @type {number} */ people, /** @type {Parameters<typeof homeDome>[2]} */ o) => {
+	const h = homeDome(D, people, o);
+	return { label: `Dome${D}`, D, role: 'home', note: `Home of ${people} on ${h.storeys} terraced storeys, with its own food garden`, ...h };
+};
 
 /**
  * The domes and the tower, by kind. `role` says what the land-use map paints them as; `zones` split their floor.
  * @type {Record<string, any>}
  */
 export const KINDS = {
-	dome50: { label: 'Dome50', D: 50, role: 'home', note: 'Home of 12, with its own food garden', ...homeDome(50, 12, { depth: 7, edge: 4, pond: 4 }) },
-	dome100: { label: 'Dome100', D: 100, role: 'home', note: 'Home of 36, with its own food garden', ...homeDome(100, 36, { depth: 9, edge: 6, pond: 6 }) },
-	food150: {
-		label: 'Dome150 · Food',
-		D: 150,
+	// Dome40: three storeys of 3 m (the cap is only 13.3 m high), 593 m², 10 people; Dome80: five of 3.2 m, 2,347 m², 36
+	dome40: home(40, 10, { front: 2, depth: 9, storey: 3, clear: 0.6 }),
+	dome80: home(80, 36, { front: 10, depth: 8 }),
+	food120: {
+		label: 'Dome120 · Food',
+		D: 120,
 		role: 'food',
 		note: 'A tropical food forest at 24 °C, no one lives here',
 		people: 0,
 		zones: [
-			{ use: 'tropical', label: 'Tropical food forest (banana, papaya, jackfruit, citrus, cacao, coffee below)', m2: capOf(150).floor - POND_150 - 1400 - 450 },
-			{ use: 'pond', label: 'Fish pond, the heat store', m2: POND_150 },
-			{ use: 'commons', label: 'Paths and the visitors’ walk', m2: 1400 },
-			{ use: 'utilities', label: 'Packing, cold store and nursery (under the north shell)', m2: 450 }
+			{ use: 'tropical', label: 'Tropical food forest (banana, papaya, jackfruit, citrus, cacao, coffee below)', m2: capOf(120).floor - POND_120 - 900 - 300 },
+			{ use: 'pond', label: 'Fish pond, the heat store', m2: POND_120 },
+			{ use: 'commons', label: 'Paths and the visitors’ walk', m2: 900 },
+			{ use: 'utilities', label: 'Packing, cold store and nursery (under the north shell)', m2: 300 }
 		]
 	},
-	util150: {
-		label: 'Dome150 · Utilities',
-		D: 150,
+	util120: {
+		label: 'Dome120 · Utilities',
+		D: 120,
 		role: 'utilities',
-		note: 'The settlement’s utilities, workshops and workspaces',
+		note: 'The hex’s utilities, workshops and workspaces',
 		people: 0,
 		zones: [
 			{ use: 'utilities', label: 'AI data center, 300 kW of computers (its heat warms the domes)', m2: 700, block: 'datacenter' },
 			{ use: 'utilities', label: 'Batteries, 10 MWh LFP in 3 containers', m2: 250, block: 'battery' },
 			{ use: 'utilities', label: 'Hydrogen: electrolyser, tanks and a 500 kW fuel cell', m2: 450, block: 'hydrogen' },
-			{ use: 'utilities', label: 'Water: membrane bioreactor and a planted wetland that cleans it', m2: 1800, block: 'water' },
-			{ use: 'utilities', label: 'Prototyping workshops: fab lab, CNC, 3D printers', m2: 2400, block: 'workshop' },
-			{ use: 'utilities', label: 'Workspaces and co-working (a 2-storey crescent, 150 desks)', m2: 1100, block: 'office' },
-			{ use: 'utilities', label: 'Stores and the parcel hub', m2: 900, block: 'store' },
-			{ use: 'pond', label: 'Fish pond, the heat store', m2: POND_150 },
+			{ use: 'utilities', label: 'Water: membrane bioreactor and a planted wetland that cleans it', m2: 1200, block: 'water' },
+			{ use: 'utilities', label: 'Prototyping workshops: fab lab, CNC, 3D printers', m2: 1600, block: 'workshop' },
+			{ use: 'utilities', label: 'Workspaces and co-working (a 2-storey crescent, 120 desks)', m2: 800, block: 'office' },
+			{ use: 'utilities', label: 'Stores and the parcel hub', m2: 600, block: 'store' },
+			{ use: 'pond', label: 'Fish pond, the heat store', m2: POND_120 },
 			{ use: 'indoorFood', label: 'Gardens between them', m2: 0 },
-			{ use: 'commons', label: 'Paths, plaza and loading', m2: 2200 }
+			{ use: 'commons', label: 'Paths, plaza and loading', m2: 1400 }
 		]
 	},
-	factory100: { label: 'Dome100 · Factory', D: 100, role: 'factory', note: 'Turns the hex’s raw materials into building materials', people: 0 },
-	tower250: { label: 'Tower250', D: 250, role: 'tower', note: 'The village’s one factory building, its utilities, offices, homes and halls', people: 0 }
+	factory120: { label: 'Dome120 · Factory', D: 120, role: 'factory', note: 'Turns the hex’s raw materials into building materials', people: 0 },
+	tower: { label: 'Tower180', D: 180, role: 'tower', note: 'The village’s one factory building, its utilities, offices, homes and halls', people: 0 }
 };
 // the utilities dome's gardens: what is left of its floor
 {
-	const z = KINDS.util150.zones;
-	z.find((/** @type {any} */ q) => q.use === 'indoorFood').m2 = capOf(150).floor - z.reduce((/** @type {number} */ s, /** @type {any} */ q) => s + q.m2, 0);
+	const z = KINDS.util120.zones;
+	z.find((/** @type {any} */ q) => q.use === 'indoorFood').m2 = capOf(120).floor - z.reduce((/** @type {number} */ s, /** @type {any} */ q) => s + q.m2, 0);
 }
 
 /**
@@ -318,19 +356,22 @@ export const FACTORIES = [
 
 /**
  * The tower: the shell of the settlers game's village center at its real size (models.js spire(): a dome's shoulder
- * that sweeps in to a slender tower, rounded at the top). Tower250 is 250 m across and 275 m tall; the dome tower
- * research (2026-10-08) found it buildable in principle from the same glulam, steel joints and glass: a 20 m drum, a
- * steel tension ring at the knee, a 3 m deep double-layer glulam lattice up to 125 m, then a single-layer diagrid
- * tube. Tower200 (Samuel, 2026-10-08) is the same shape at four fifths: 200 m across, 220 m tall.
+ * that sweeps in to a slender tower, rounded at the top). The dome tower research (2026-10-08) found it buildable in
+ * principle from the same glulam, steel joints and glass: a 20 m drum, a steel tension ring at the knee, a 3 m deep
+ * double-layer glulam lattice up the shoulder, then a single-layer diagrid tube. Since Samuel's change of 2026-10-08
+ * every plan has one tower, Tower180: 180 m across and 198 m tall (the shape of Tower200 at nine tenths).
  * @typedef {{ id: string, label: string, D: number, H: number, top: number, stack: number, timber: number, steel: number, heat: number, climate: number }} Tower
  */
-/** @type {Record<string, Tower>} */
-export const TOWERS = {
-	// the engineering thread's mid values (dome-sizes.json): glulam frame, hubs plus ring steel, heat beyond the pond and
-	// climate power a year
-	t250: { id: 't250', label: 'Tower250', D: 250, H: 275, top: (125 * 0.3) / 1.6, stack: 30, timber: 11900, steel: 2950 + 425, heat: 5.19e6, climate: 1.116e6 },
-	t200: { id: 't200', label: 'Tower200', D: 200, H: 220, top: (100 * 0.3) / 1.6, stack: 26, timber: 6350, steel: 1485 + 215, heat: 2.81e6, climate: 0.622e6 }
+/**
+ * The two towers the engineering thread sized (dome-sizes.json, mid values): glulam frame m³, hubs plus ring steel t,
+ * heat beyond the pond and climate power, kWh a year
+ */
+const TOWER_SIZED = {
+	200: { timber: 6350, steel: 1485 + 215, heat: 2.81e6, climate: 0.622e6 },
+	250: { timber: 11900, steel: 2950 + 425, heat: 5.19e6, climate: 1.116e6 }
 };
+/** @type {Tower} */
+export const TOWER = { id: 't180', label: 'Tower180', D: 180, H: 198, top: (90 * 0.3) / 1.6, stack: 24, ...between(TOWER_SIZED, 180) };
 
 /** the radius of a tower's shell at a height (the settlers game's profile, at full size) */
 export function towerRadius(/** @type {Tower} */ T, /** @type {number} */ y) {
@@ -403,8 +444,8 @@ export const towerFloors = (T) =>
 	});
 
 /**
- * A tower's shell, as the engineering thread sized it (Tower250: glulam 10,200–13,600 m³, hubs 1,570–4,330 t, ring
- * 350–500 t; mid values), its cold north side closed in hemp: the glass and the hemp by the m².
+ * A tower's shell, its frame as the engineering thread's Tower200 and Tower250 put it for Tower180 (mid values), its
+ * cold north side closed in hemp: the glass and the hemp by the m².
  * @param {Tower} T
  */
 export function towerShell(T) {
@@ -499,7 +540,7 @@ export const ENERGY = {
  */
 export const SOURCES = {
 	research: { label: 'Our dome engineering research (2026-10-07/08)', note: '150 m cap: 50 m high, frequency 16, 2,390 glulam struts 240×600–700 mm (2,100–2,500 m³), 826 cast-steel hubs, a steel ring at the foot, laminated glass, a hemp north shell, a 3 m fish pond. Tower: timber 10,200–13,600 m³, steel 2,000–4,800 t, glass ~6,000 t, shell 150–340 M€.' },
-	climate: { label: 'The engineering thread’s per-size model (dome-research/dome-sizes.md, 2026-10-08)', note: 'Hourly Munich year at 24 °C. Frame, hubs and ring for Dome50/100/150 and Tower200/250; heat beyond the pond 0.02/0.11/0.38 GWh and 2.81/5.19 GWh, climate power 0.013/0.057/0.149 and 0.62/1.12 GWh, for the north third closed to the crown; a quarter closed low on the north needs ~9% more heat and makes ~34% more solar. Cells in every second pane of glass tilted under 45° (towers: all glass), 227 kWh/m² a year on caps, 194 on towers. People, factories and offices are not counted as heat sources.' },
+	climate: { label: 'The engineering thread’s per-size model (dome-research/dome-sizes.md, 2026-10-08)', note: 'Hourly Munich year at 24 °C. Frame, hubs and ring for Dome50/100/150 and Tower200/250; heat beyond the pond 0.02/0.11/0.38 GWh and 2.81/5.19 GWh, climate power 0.013/0.057/0.149 and 0.62/1.12 GWh, for the north third closed to the crown; a quarter closed low on the north needs ~9% more heat and makes ~34% more solar. Cells in every second pane of glass tilted under 45° (towers: all glass), 227 kWh/m² a year on caps, 194 on towers. People, factories and offices are not counted as heat sources. Our Dome40, Dome80, Dome120 and Tower180 take each figure along the power law between the two sizes either side (or the nearest two).' },
 	energy: { label: 'Our village energy research (energy/village-energy.md)', note: 'Geothermal 3.4 MW net a village center.' },
 	numbers: { label: 'The settlers game’s numbers (sandbox-6/numbers.md)', note: 'Diet 508 kg a person a year (Germany eats ~450–650 kg); 900 kWh a person at home.' },
 	glulam: { label: 'Glulam', url: 'https://www.holzkurier.com', note: 'Spruce glulam 555–575 €/m³ wholesale, 700–900 from a merchant (Holzkurier, Nov 2025). Larch and Douglas glulam only on request: ~750–1,200 (their logs cost about twice spruce’s). CNC-cut struts with their steel parts ~1,100–2,200 supplied, ~1,800–4,500 put up (estimate).' },
