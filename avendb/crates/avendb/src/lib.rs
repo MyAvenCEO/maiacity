@@ -21,6 +21,7 @@
 //! | P5 history and branches | `branch`: every write a commit on a line of its entry's history, branches from any version, merge, promote, restore and undo, versions opened read-only; `policy`: each write's line, writes on a branch build on its start; `doc`: a Loro peer per line, records put back untagged, copies for forks; `lab`: every line of every entry shown, the branch operations | T10 |
 //! | P6 sync and convergence | `sync`: every op in one log (a vault's, a space's or an entry's) building on that log's frontier, devices asking with what they hold of each log, one digest per log to gossip, forks flagged; `policy`: ops drafted on their log's frontier; `lab`: offline devices, gossip in random orders, backups whose restored devices fork, writes under the newest key a device knows | T11, T12, T13, T15, T19 |
 //! | P7 the tile | `cast`: the scenarios' people, devices and vaults, made a step at a time; `scenarios`: the plan's scenarios, each check recorded green or red, for the tests and the tile's Lab; `keys`: McEliece pairs made from a seed anywhere, so a page makes them in its workers; `lab`: names, spare keys made ahead; `branch`: the schemas each write was written under | |
+//! | P8a devices on iroh | `wire`: every message between devices as bytes and back, one encoding each: signed ops, hellos, requests, replies, announcements; `sign`: a device's hello, its SLH-DSA signature on a connection; `lab`: a device split off to run on its own (`avendb-net` puts it on iroh), what it asks a peer, answers it and tells it, McEliece keys handed out only within a peer's reach | |
 
 pub mod branch;
 pub mod cast;
@@ -35,3 +36,4 @@ pub mod policy;
 pub mod scenarios;
 pub mod sign;
 pub mod sync;
+pub mod wire;

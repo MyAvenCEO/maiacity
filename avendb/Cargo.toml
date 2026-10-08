@@ -3,7 +3,7 @@
 # change what the media vault runs. See README.md.
 [workspace]
 resolver = "3"
-members = ["crates/avendb", "crates/avendb-web"]
+members = ["crates/avendb", "crates/avendb-net", "crates/avendb-web"]
 
 [workspace.package]
 edition = "2024"

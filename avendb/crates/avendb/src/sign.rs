@@ -36,6 +36,11 @@ use crate::policy::{Action, Op, Refusal};
 /// context string.
 pub const SIG_CONTEXT: &[u8] = b"avenDB 2026-10-08 op signature";
 
+/// What a device's hello signs on a connection (`Hello`): SLH-DSA, with this as its context string, over which end of
+/// the connection the device speaks for and the connection's TLS exporter. Never an op's id: the context keeps them
+/// apart.
+pub const HELLO_CONTEXT: &[u8] = b"avenDB 2026-10-08 hello";
+
 /// The suite of every signer and signature: ed25519 or P-256, each beside SLH-DSA-SHA2-128f. A signer's id hashes it,
 /// so a later suite names other signers.
 pub const SUITE: u8 = 1;
@@ -140,6 +145,48 @@ impl Signed {
         let all = signers.len() == self.sigs.len() && signers.iter().zip(&self.sigs).all(|(&s, sig)| verify(s, id, sig, pq));
         if all { Ok(&self.op) } else { Err(Refusal::BadSignature) }
     }
+}
+
+/// A device's hello on a connection (P8): its keys, and its SLH-DSA signature over the connection's TLS exporter and
+/// the end it speaks for. The TLS handshake proves the classical half, as the device's iroh endpoint key is its ed25519
+/// key, and the hello the hash-based half: a connection proves which device is talking even once the curves fall, and
+/// a hello can't be replayed on another connection, nor sent back by the other end.
+#[derive(Clone, PartialEq, Eq)]
+pub struct Hello {
+    pub keys: SignerKeys,
+    /// SLH-DSA-SHA2-128f, `PQ_SIGNATURE_BYTES` long.
+    pub sig: Vec<u8>,
+}
+
+/// The signature shows only its size.
+impl fmt::Debug for Hello {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Hello").field("keys", &self.keys).field("sig", &format!("{} bytes", self.sig.len())).finish()
+    }
+}
+
+impl Hello {
+    /// The device this hello proves on the connection whose TLS exporter is `exporter`, from the end that dialed if
+    /// `dialer`, `endpoint` being the ed25519 key the handshake proved: `None` unless the keys are a device's, their
+    /// ed25519 half is `endpoint`, and the SLH-DSA signature checks out.
+    pub fn verify(&self, exporter: &[u8; 32], dialer: bool, endpoint: &[u8; 32]) -> Option<SignerId> {
+        let SignerKeys::Device { ed25519, slh } = &self.keys else { return None };
+        if ed25519 != endpoint {
+            return None;
+        }
+        let key = slh_dsa::VerifyingKey::<Sha2_128f>::try_from(&slh[..]).ok()?;
+        let sig = slh_dsa::Signature::<Sha2_128f>::try_from(&self.sig[..]).ok()?;
+        key.try_verify_with_context(&hello_message(exporter, dialer), HELLO_CONTEXT, &sig).ok()?;
+        Some(self.keys.id())
+    }
+}
+
+/// What a hello signs: the end it speaks for, then the exporter.
+fn hello_message(exporter: &[u8; 32], dialer: bool) -> [u8; 33] {
+    let mut m = [0; 33];
+    m[0] = u8::from(dialer);
+    m[1..].copy_from_slice(exporter);
+    m
 }
 
 /// Every op but a write carries the hash-based half of each of its signatures.
@@ -267,6 +314,19 @@ impl DeviceKey {
         use ed25519_dalek::Signer as _;
         let classical = Classical::Ed25519(self.ed25519.sign(&message(op)).to_bytes());
         Signature { keys: self.keys(), classical, pq: pq.then(|| sign_pq(&self.slh, op)) }
+    }
+
+    /// The device's hello on the connection whose TLS exporter is `exporter`, speaking for the end that dialed if
+    /// `dialer`.
+    pub fn hello(&self, exporter: &[u8; 32], dialer: bool) -> Hello {
+        let message = hello_message(exporter, dialer);
+        let sig = self.slh.try_sign_with_context(&message, HELLO_CONTEXT, None).expect("a short context").to_vec();
+        Hello { keys: self.keys(), sig }
+    }
+
+    /// The secret of the device's iroh endpoint: its ed25519 key's, as iroh takes it.
+    pub fn endpoint_secret(&self) -> [u8; 32] {
+        self.ed25519.to_bytes()
     }
 
     /// The classical half alone, as whoever broke the device's ed25519 key holds it: it signs writes, which carry no
@@ -495,6 +555,30 @@ mod tests {
         let last = changed.signature.len() - 1;
         changed.signature[last] ^= 1;
         assert!(!changed.verify(&key, op.id()));
+    }
+
+    #[test]
+    fn a_hello_proves_its_device_on_its_connection_alone() {
+        let key = DeviceKey::from_secret([7; 32]);
+        let endpoint = key.ed25519.verifying_key().to_bytes();
+        let (exporter, other) = ([1; 32], [2; 32]);
+        let hello = key.hello(&exporter, true);
+        assert_eq!(hello.verify(&exporter, true, &endpoint), Some(key.id()));
+        assert_eq!(hello.sig.len(), PQ_SIGNATURE_BYTES);
+        // another connection, sent back by the other end, or under another endpoint key: refused
+        assert_eq!(hello.verify(&other, true, &endpoint), None);
+        assert_eq!(hello.verify(&exporter, false, &endpoint), None);
+        assert_eq!(hello.verify(&exporter, true, &DeviceKey::from_secret([8; 32]).endpoint_secret()), None);
+        // whoever broke the device's ed25519 key and signs with an SLH-DSA key of their own proves another device
+        let thief = DeviceKey::from_secret([9; 32]);
+        let mut stolen = thief.hello(&exporter, true);
+        stolen.keys = SignerKeys::Device { ed25519: endpoint, slh: *thief.keys().slh() };
+        assert!(stolen.verify(&exporter, true, &endpoint).is_some_and(|s| s != key.id()));
+        // an op's signature is no hello, and a passkey says no hello
+        let op = Hello { keys: key.keys(), sig: sign_pq(&key.slh, OpId(exporter)) };
+        assert_eq!(op.verify(&exporter, true, &endpoint), None);
+        let passkey = Passkey::from_seed([1; 32]);
+        assert_eq!(Hello { keys: passkey.keys(), sig: hello.sig.clone() }.verify(&exporter, true, &endpoint), None);
     }
 
     #[test]

@@ -59,7 +59,7 @@ impl Encode for u64 {
     }
 }
 
-impl Encode for [u8; 32] {
+impl<const N: usize> Encode for [u8; N] {
     fn encode(&self, out: &mut Vec<u8>) {
         out.extend_from_slice(self);
     }

@@ -243,6 +243,17 @@ pub const ONBOARDING_TEXT: &str = "Onboarding: your first week, step by step.";
 pub const CHARTER_TEXT: &str = "Our charter: one vault per person, and the data stays theirs.";
 pub const AFTER_TEXT: &str = "Edited after the change: the greenhouse opens at nine.";
 
+/// Scenarios 3 and 4 on the Lab: the coop, its Handbook and Samuel's Notes, every device synced, and nothing written
+/// yet: where devices split off to run on their own (`Lab::split`) before Samuel writes over the network (P8).
+pub fn handbook_spaces(w: &mut World) -> (VaultId, SpaceId, SpaceId) {
+    let coop = coop_on(w);
+    let space = space_on(w, coop);
+    let samuel = w.samuel;
+    let notes = space_on(w, samuel);
+    w.lab.sync_all(0);
+    (coop, space, notes)
+}
+
 /// Scenarios 3 to 5 on the Lab: the coop, its Handbook and Samuel's Notes, Welcome and Onboarding written by Samuel
 /// for the coop, and every device synced. Welcome is older: an app still on v1 wrote it (scenario 9).
 pub struct Handbook {
