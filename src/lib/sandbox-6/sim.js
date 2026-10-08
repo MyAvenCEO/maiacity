@@ -28,6 +28,7 @@ import { SE, STEP, findPath, makeGrid } from './hex.js';
 import { CISTERN, FOOD_KG, FRESH_L, KEEP, MOST, PACE, PRICE, RAIN_L, RAIN_MONTH, TANK, WATER_PRICE, WATER_USE, WEEK, YEAR, DAY, MONTH, calendar, clockOf, forestShare } from './food.js';
 import { makePlan, spoke } from './plots.js';
 import { growValley } from './map.js';
+import { fmt } from './units.js';
 
 /** seconds of game time a step moves on */
 export const TICK = 0.1;
@@ -873,13 +874,12 @@ export function createSim(st) {
 	/** how many rounds a building's land gives it yet (trees to fell, loads of ore to dig): it gathers with the
 	 * calendar, up to a quarter year's, and a new building starts with one */
 	const quotaOf = (/** @type {any} */ b) => b.quota ?? 1;
-	/** what a building that waits on its land says: how much its land gives a year, and when the next round is ready */
+	/** what a building that waits on its land says, as its recipe reads: what its land gives a week, and when the next
+	 * round of it is ready */
 	const waits = (/** @type {any} */ b) => {
 		const r = RECIPES[b.type], days = Math.ceil(((1 - quotaOf(b)) * YEAR) / r.rounds), land = r.stages[levelOf(b) - 1].make.in[r.land] ?? 0;
 		const when = `${days} ${days === 1 ? 'day' : 'days'}`;
-		return b.type === 'woodcutter'
-			? `Its land grows ${r.rounds} trees a year: the next is ready in ${when}`
-			: `Its land gives ${r.rounds} rounds a year of ${land} t of ${LAND[/** @type {keyof typeof LAND} */ (r.land)].label}: the next in ${when}`;
+		return `Land → ${fmt(land * r.rounds * WEEK_YEAR)} ${LAND[/** @type {keyof typeof LAND} */ (r.land)].label} a week · the next ${b.type === 'woodcutter' ? `tree (${land} t)` : `${land} t`} in ${when}`;
 	};
 	/**
 	 * The crafting engine at work: a factory's round by its make recipe at its stage (./rules.js RECIPES). Its land gave
