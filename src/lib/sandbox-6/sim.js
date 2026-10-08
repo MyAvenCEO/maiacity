@@ -1635,10 +1635,16 @@ export function createSim(st) {
 	/** whether a village's tanks run dry within so many days: its roofs catch less than it uses, and they hold less
 	 * than that many days of it */
 	const runsDry = (/** @type {number} */ v, /** @type {any} */ p, /** @type {number} */ days) => p.pop > 0 && (p.litres ?? 0) < p.pop * FRESH_L * days && rainIn(v) < p.pop * FRESH_L;
-	/** kWh a day the solar panels of its domes from 16 beds make now: each of their beds' share, as much as the sun
-	 * gives this month (a dome of glass makes none) */
+	/** kWh a day the solar panels of its domes from 16 beds and of its great village center make now: each of their
+	 * beds' share, as much as the sun gives this month (a dome of glass makes none) */
 	const sunIn = (/** @type {number} */ v) =>
-		mineIn(v).reduce((s, b) => s + (b.type === 'house' && b.level && HOUSE_BEDS[b.level - 1] >= SOLAR_BEDS ? HOUSE_BEDS[b.level - 1] : 0), 0) * sunBedDay(monthNow());
+		mineIn(v).reduce(
+			(s, b) =>
+				s +
+				(b.type === 'house' && b.level && HOUSE_BEDS[b.level - 1] >= SOLAR_BEDS ? HOUSE_BEDS[b.level - 1] : 0) +
+				(b.type === 'centre' && b.stage === 'live' ? centreStage(levelOf(b)).sun : 0),
+			0
+		) * sunBedDay(monthNow());
 	/** kWh a day a village center's geothermal plant makes, day and night, as much of the time as it runs */
 	const wellsDay = (/** @type {any} */ c) => plantOf(c) * ENERGY.wellKw * 24 * ENERGY.uptime;
 	/** kWh a day so many people use at home */

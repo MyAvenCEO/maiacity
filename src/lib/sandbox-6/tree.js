@@ -58,9 +58,9 @@ export const CHAINS = /** @type {Chain[]} */ (
 );
 
 /** the village center's stages (./rules.js CENTRE): a logistics hub, then the great village center with its
- * geothermal plant; each with its build, its upkeep a week in gold, the energy its hall, storehouse and routes use a
- * week, and what its plant makes a week */
-export const CENTRES = CENTRE.map((x, k) => ({ label: x.label, level: k + 1, does: x.does, mw: (x.plant * ENERGY.wellKw) / 1000, build: x.build, keep: x.keep, use: x.use, make: x.make }));
+ * geothermal plant and its great dome's solar panels; each with its build, its upkeep a week in gold, the energy its
+ * hall, storehouse and routes use a week, and what its plant and panels make a week */
+export const CENTRES = CENTRE.map((x, k) => ({ label: x.label, level: k + 1, does: x.does, mw: (x.plant * ENERGY.wellKw) / 1000, sun: x.sun > 0, build: x.build, keep: x.keep, use: x.use, make: x.make }));
 /** the solar panels of every dome from 16 beds, a bed's share a week over the year, and every dome's climate's */
 export const SUN = aWeek({ make: ENERGY.sunBed / 1000, climate: ENERGY.climateBed / 1000 });
 

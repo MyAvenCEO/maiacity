@@ -61,7 +61,7 @@
 			{#each CENTRES as s, k (s.level)}
 				<button class="node b e" class:have={owned[`centre:${s.level}`]} class:first={k === 0} onclick={() => k === 0 && onBuild('centre')} title={titleOf(s, k > 0)}>
 					<strong>{s.label}{#if owned[`centre:${s.level}`]}<em>×{owned[`centre:${s.level}`]}</em>{/if}</strong>
-					{#if s.mw}<span>with its geothermal plant, {fmt(s.mw)} MW</span>{/if}
+					{#if s.mw}<span>with its geothermal plant, {fmt(s.mw)} MW{s.sun ? ', and solar panels on its great dome' : ''}</span>{/if}
 					<span class="r make"><b>make</b>{Object.keys(s.make.out).length ? list(s.make.out) : s.does}</span>
 					<span class="r"><b>keep</b>{list(s.keep.in)}</span>
 					<span class="r"><b>use</b>{list(s.use.in)}</span>
