@@ -90,6 +90,21 @@ pub struct Grant {
     pub parent: Option<GrantId>,
 }
 
+/// The line of an entry's history a write extends (`Branches.lean`).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+pub enum Branch {
+    #[default]
+    Main,
+    /// A new branch, which this write starts: its id names the branch, its `deps` are the version the branch starts
+    /// from, and its body holds the branch's name, encrypted.
+    New,
+    /// The branch that write started.
+    On(OpId),
+}
+
+/// A line of an entry's history: `None` is the main line, `Some(b)` the branch write `b` started.
+pub type Line = Option<OpId>;
+
 /// Every change is one of these, signed. Governance (owners, threshold, devices, the root, owner grants) needs the
 /// vault's approval: its root, or its threshold of owners; everything else needs one device acting for the vault.
 /// Every removal names the ops it had seen and keeps (`keep`); what it hadn't seen and relied on what it takes away is
@@ -124,9 +139,19 @@ pub enum Action {
     Grant(Grant),
     /// Ends `grant` and every grant resting on it.
     Revoke { grant: GrantId, actor: VaultId, keep: Vec<OpId> },
-    /// An encrypted edit of one entry under the entry key's `epoch`, building on the entry's writes `deps` (its Loro
-    /// frontier). The first write creates the entry.
-    Write { space: SpaceId, entry: EntryId, actor: VaultId, epoch: u64, deps: Vec<OpId>, body: Vec<u8> },
+    /// An encrypted edit of one entry under the entry key's `epoch`, on the line `branch` of its history, building on
+    /// the entry's writes `deps` (its Loro frontier). The first write creates the entry. A write that starts a branch
+    /// builds on the version the branch starts from and holds the branch's name; a merge builds on the heads of both
+    /// lines.
+    Write {
+        space: SpaceId,
+        entry: EntryId,
+        actor: VaultId,
+        epoch: u64,
+        deps: Vec<OpId>,
+        branch: Branch,
+        body: Vec<u8>,
+    },
     /// The real boxes of one key of family `key` at `epoch`: its `id`, its `public` half for those who seal to it
     /// without holding it, the key sealed to each recipient, and for a public family the key itself, in the `clear`.
     /// The schedule already says who may open what, so this changes nothing in it: a peer accepts it only from a
@@ -280,7 +305,7 @@ pub struct Space {
     pub entries: Vec<EntryId>,
 }
 
-/// An accepted write: one encrypted edit of one entry.
+/// An accepted write: one encrypted edit of one entry, on one line of its history.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Write {
     pub op: OpId,
@@ -291,6 +316,24 @@ pub struct Write {
     pub epoch: u64,
     /// The writes of the same entry it builds on.
     pub deps: Vec<OpId>,
+    pub branch: Branch,
+}
+
+impl AsRef<Write> for Write {
+    fn as_ref(&self) -> &Write {
+        self
+    }
+}
+
+impl Write {
+    /// The line it extends.
+    pub fn line(&self) -> Line {
+        match self.branch {
+            Branch::Main => None,
+            Branch::New => Some(self.op),
+            Branch::On(b) => Some(b),
+        }
+    }
 }
 
 /// Why a peer refused an op.
@@ -339,6 +382,9 @@ pub enum Refusal {
     FutureEpoch,
     /// A write builds on a write its entry doesn't have (T14).
     UnknownDep,
+    /// A write on a branch builds on neither the write that started it nor another write on it, or names a branch its
+    /// entry doesn't have.
+    NotOnBranch,
     /// A key of a family that doesn't exist.
     UnknownKey,
     /// The signer boxes a key it may not open.
@@ -506,10 +552,22 @@ impl State {
         &self.writes
     }
 
-    /// The writes of one entry that no other accepted write of it builds on: what the next edit builds on.
-    pub fn heads(&self, sp: SpaceId, e: EntryId) -> Vec<OpId> {
-        let ws: Vec<&Write> = self.writes.iter().filter(|w| w.space == sp && w.entry == e).collect();
-        ws.iter().filter(|w| !ws.iter().any(|x| x.deps.contains(&w.op))).map(|w| w.op).collect()
+    /// The lines of one entry's history: the main line, then each branch in the order it started.
+    pub fn lines(&self, sp: SpaceId, e: EntryId) -> Vec<Line> {
+        let starts = self.writes.iter().filter(|w| w.space == sp && w.entry == e && w.branch == Branch::New);
+        std::iter::once(None).chain(starts.map(|w| Some(w.op))).collect()
+    }
+
+    /// The history of line `line` of one entry: the line's own accepted writes and every write they build on, in replay
+    /// order.
+    pub fn history(&self, sp: SpaceId, e: EntryId, line: Line) -> Vec<&Write> {
+        history(self.writes.iter().filter(|w| w.space == sp && w.entry == e), line)
+    }
+
+    /// The writes of line `line` of one entry that no other write of its history builds on: what the next edit on the
+    /// line builds on.
+    pub fn heads(&self, sp: SpaceId, e: EntryId, line: Line) -> Vec<OpId> {
+        tips(&self.history(sp, e, line))
     }
 
     /// Signer `s` acts for vault `v`: a device or owner signer of a human vault, or anyone acting for an owner of a
@@ -1110,8 +1168,8 @@ impl State {
                 self.grants.retain(|(x, _)| !pre.rests_on(grant, *x));
                 self.drop_unseen(&pre, keep);
             }
-            Action::Write { space, entry, actor, epoch, deps, .. } => {
-                let (space, entry, actor, epoch) = (*space, *entry, *actor, *epoch);
+            Action::Write { space, entry, actor, epoch, deps, branch, .. } => {
+                let (space, entry, actor, epoch, branch) = (*space, *entry, *actor, *epoch, *branch);
                 let s = self.space(space).ok_or(Refusal::UnknownSpace)?;
                 if self.writes.iter().any(|w| w.op == id) {
                     return Err(Refusal::Duplicate);
@@ -1125,11 +1183,10 @@ impl State {
                 if epoch > self.epoch(KeyScope::Entry(space, entry)) {
                     return Err(Refusal::FutureEpoch);
                 }
-                let w = Write { op: id, author: op.author, actor, space, entry, epoch, deps: deps.clone() };
-                // what it builds on was accepted, so the accepted writes stay causally closed (T14)
-                if !deps_in(&self.writes, &w) {
-                    return Err(Refusal::UnknownDep);
-                }
+                let w = Write { op: id, author: op.author, actor, space, entry, epoch, deps: deps.clone(), branch };
+                // what it builds on was accepted, so the accepted writes stay causally closed (T14); a write on a
+                // branch builds on the branch's start, so whatever cuts the start cuts the whole branch
+                builds_on(&self.writes, &w)?;
                 if !s.entries.contains(&entry) {
                     self.spaces.iter_mut().find(|x| x.id == space).expect("the space").entries.push(entry);
                 }
@@ -1203,8 +1260,56 @@ pub fn checkpointed(ops: &[Op]) -> Vec<Op> {
 }
 
 /// Write `w` builds only on writes of its own entry among `ws`.
-fn deps_in(ws: &[Write], w: &Write) -> bool {
-    w.deps.iter().all(|d| ws.iter().any(|x| x.op == *d && x.space == w.space && x.entry == w.entry))
+fn deps_in<W: AsRef<Write>>(ws: &[W], w: &Write) -> bool {
+    w.deps.iter().all(|d| ws.iter().map(AsRef::as_ref).any(|x| x.op == *d && x.space == w.space && x.entry == w.entry))
+}
+
+/// Write `w` may follow the writes `ws`: it builds only on writes of its own entry among them (`UnknownDep`), and a
+/// write on a branch on the write that started it or another write on it (`NotOnBranch`).
+pub fn builds_on<W: AsRef<Write>>(ws: &[W], w: &Write) -> Result<(), Refusal> {
+    if !deps_in(ws, w) {
+        return Err(Refusal::UnknownDep);
+    }
+    if !on_branch(ws, w) {
+        return Err(Refusal::NotOnBranch);
+    }
+    Ok(())
+}
+
+/// Write `w` extends its line: the main line and a new branch need nothing more; a write on branch `b` builds on the
+/// write of its own entry that started `b`, or on another write on `b`.
+fn on_branch<W: AsRef<Write>>(ws: &[W], w: &Write) -> bool {
+    let ws = || ws.iter().map(AsRef::as_ref);
+    match w.branch {
+        Branch::On(b) => {
+            ws().any(|x| x.op == b && x.branch == Branch::New && x.space == w.space && x.entry == w.entry)
+                && w.deps.iter().any(|&d| d == b || ws().any(|x| x.op == d && x.branch == Branch::On(b)))
+        }
+        Branch::Main | Branch::New => true,
+    }
+}
+
+/// The history of line `line` among one entry's writes `ws`, in their order: the line's own writes and every write
+/// they build on (`Branches.lean`'s `history`). Each write comes after what it builds on, so one pass from the end
+/// collects them.
+pub fn history<'a, W: AsRef<Write> + 'a>(ws: impl DoubleEndedIterator<Item = &'a W>, line: Line) -> Vec<&'a W> {
+    let mut needed: HashSet<OpId> = HashSet::new();
+    let mut out = vec![];
+    for x in ws.rev() {
+        let w = x.as_ref();
+        if w.line() == line || needed.contains(&w.op) {
+            needed.extend(w.deps.iter().copied());
+            out.push(x);
+        }
+    }
+    out.reverse();
+    out
+}
+
+/// The writes of `h` that no write of `h` builds on.
+pub fn tips<W: AsRef<Write>>(h: &[&W]) -> Vec<OpId> {
+    let built_on: HashSet<OpId> = h.iter().flat_map(|w| w.as_ref().deps.iter().copied()).collect();
+    h.iter().map(|w| w.as_ref().op).filter(|op| !built_on.contains(op)).collect()
 }
 
 /// Keep, in order, each write whose dependencies were kept. A write comes after the writes it builds on, so one pass
@@ -1459,17 +1564,19 @@ impl Log {
     }
 
     /// The op `author` and `cosigners` would sign here, building on the log's heads, unchecked: what a peer that
-    /// skips the rules would send. A write with no `deps` builds on its entry's heads. A removal keeps, beside what
-    /// its `keep` names, every op of the log that stands now and that it would cut otherwise: an honest device keeps
-    /// all it had seen.
+    /// skips the rules would send. A write with no `deps` on the main line or a branch builds on that line's heads. A
+    /// removal keeps, beside what its `keep` names, every op of the log that stands now and that it would cut
+    /// otherwise: an honest device keeps all it had seen.
     pub fn draft(&self, author: SignerId, cosigners: &[SignerId], action: Action) -> Op {
         let parents = self.heads();
         let depth = self.ops.iter().zip(&self.ids).filter(|(_, id)| parents.contains(id)).map(|(o, _)| o.depth + 1).max().unwrap_or(0);
         let mut op = Op { parents, depth, author, cosigners: cosigners.to_vec(), action };
-        if let Action::Write { space, entry, deps, .. } = &mut op.action
+        if let Action::Write { space, entry, deps, branch, .. } = &mut op.action
             && deps.is_empty()
+            && *branch != Branch::New
         {
-            *deps = self.view().heads(*space, *entry);
+            let line = if let Branch::On(b) = *branch { Some(b) } else { None };
+            *deps = self.view().heads(*space, *entry, line);
         }
         if op.is_removal() {
             // replayed with the removals that stand now and this one, everything that stands now must still stand
@@ -1593,6 +1700,7 @@ mod tests {
             entry: EntryId::from_u64(1),
             epoch: 0,
             deps: deps.iter().map(|&d| OpId::from_u64(d)).collect(),
+            branch: Branch::Main,
         };
         // 2 builds on 1, 3 on 2, 4 on 1: without 2, 3 goes too
         let kept = close_deps(vec![w(1, &[]), w(3, &[2]), w(4, &[1])]);

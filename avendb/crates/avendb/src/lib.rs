@@ -18,7 +18,7 @@
 //! | P3 keys | `keys`: X-Wing sealed boxes, committed XChaCha20-Poly1305 edits; `policy`: the key schedule and `Keys` ops; `doc`: Loro items; `lab`: keyrings, encrypted writes, reading, recovery, tampering | T5, T6, T7 |
 //! | P4 documents and schemas | `lens`: schemas and lenses as blobs, projection on read, edits through a view; `doc`: items stored as records, edits tagged with their schema; `policy`: each space's schema lane, published by its owners; `lab`: apps on a schema, read-only fallback | T9, T17 |
 //! | P4b post-quantum | `hash`: SHA-3 for every hash of ours; `sign`: SLH-DSA beside every classical signature but a write's, device keys derived from the passkey; `keys`: a Classic McEliece share beside X-Wing in every sealed box, wraps where the key is held; `policy`: checkpoints and the post-quantum-only replay; `lab`: locked devices, blobs | T18 |
-//! | P5 history and branches | `branch` | T10 |
+//! | P5 history and branches | `branch`: every write a commit on a line of its entry's history, branches from any version, merge, promote, restore and undo, versions opened read-only; `policy`: each write's line, writes on a branch build on its start; `doc`: a Loro peer per line, records put back untagged, copies for forks; `lab`: every line of every entry shown, the branch operations | T10 |
 //! | P6 sync and convergence | `sync`, `lab` on a controllable network | T11, T12, T13 |
 
 pub mod branch;

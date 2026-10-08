@@ -78,6 +78,14 @@ inductive KeyScope where
   | entry (sp : SpaceId) (e : EntryId)
   deriving DecidableEq, Repr
 
+/-- The line of an entry's history a write extends: the main line, a new branch that the write starts (the write's id
+    names the branch, and its body holds the branch's name, encrypted), or the branch another write started. -/
+inductive Branch where
+  | main
+  | new
+  | on (b : OpId)
+  deriving DecidableEq, Repr
+
 /-- A signer's own encryption key (a device's, or one derived from a passkey), or one epoch of a key family. -/
 inductive KeyName where
   | signer (s : SignerId)

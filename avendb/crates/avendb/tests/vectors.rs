@@ -18,7 +18,8 @@ use avendb::id::{BlobId, EntryId, GrantId, OpId, SignerId, SpaceId, VaultId};
 use avendb::keys::{KeyBox, KeyId, KeyName, KeyScope, Recipient, Seal};
 use avendb::lens::View;
 use avendb::policy::{
-    checkpointed, replay, Action, Grant, Grantee, Kind, Op, Principal, Role, Scope, Space, State, Vault, Write,
+    checkpointed, replay, Action, Branch, Grant, Grantee, Kind, Line, Op, Principal, Role, Scope, Space, State, Vault,
+    Write,
 };
 
 const VECTORS: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../../spec/vectors/vaults.json");
@@ -144,6 +145,15 @@ impl Names {
         }
     }
 
+    /// A write's line: "main", "new", or the branch the model's op number started.
+    fn branch(&self, v: &Value) -> Branch {
+        match v.as_str() {
+            Some("main") => Branch::Main,
+            Some("new") => Branch::New,
+            _ => Branch::On(self.op(&v["on"])),
+        }
+    }
+
     fn grant_of(&self, v: &Value) -> Grant {
         Grant {
             scope: self.scope(&v["scope"]),
@@ -185,6 +195,7 @@ impl Names {
                 actor: self.vault(&x["actor"]),
                 epoch: num(&x["epoch"]),
                 deps: self.ops(&x["deps"]),
+                branch: self.branch(&x["branch"]),
                 body: vec![],
             },
             "keys" => Action::Keys {
@@ -254,6 +265,7 @@ impl Names {
             entry: entry(&v["entry"]),
             epoch: num(&v["epoch"]),
             deps: self.ops(&v["deps"]),
+            branch: self.branch(&v["branch"]),
         }
     }
 
@@ -283,6 +295,27 @@ impl Names {
             list(&case["lane"]).iter().map(|v| (self.space(&v["space"]), BlobId::of(&blob(&v["blob"])))).collect();
         let ours: Vec<(SpaceId, BlobId)> = st.lane().iter().map(|p| (p.space, p.blob)).collect();
         assert_eq!(ours, lane, "{name}: lane");
+        // each line of each entry, the main line first: its history and its heads
+        type Lines = Vec<(SpaceId, EntryId, Line, Vec<OpId>, Vec<OpId>)>;
+        let lines: Lines = list(&case["lines"])
+            .iter()
+            .map(|v| {
+                let line = (!v["line"].is_null()).then(|| self.op(&v["line"]));
+                (self.space(&v["space"]), entry(&v["entry"]), line, self.ops(&v["history"]), self.ops(&v["heads"]))
+            })
+            .collect();
+        let ours: Lines = st
+            .spaces()
+            .iter()
+            .flat_map(|x| x.entries.iter().map(move |&e| (x.id, e)))
+            .flat_map(|(sp, e)| {
+                st.lines(sp, e).into_iter().map(move |l| {
+                    let history = st.history(sp, e, l).iter().map(|w| w.op).collect();
+                    (sp, e, l, history, st.heads(sp, e, l))
+                })
+            })
+            .collect();
+        assert_eq!(ours, lines, "{name}: lines");
     }
 }
 

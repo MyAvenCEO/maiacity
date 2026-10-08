@@ -8,7 +8,7 @@ use avendb::doc::{Item, Version};
 use avendb::id::{EntryId, OpId, SignerId, SpaceId, VaultId};
 use avendb::keys::{self, SeededRng, Secret};
 use avendb::lens::{blobs, BlockV2, Lane, Lens, Schema, TypeV2, View, DOCUMENT_V1, DOCUMENT_V2, TODO_V1, TODO_V2};
-use avendb::policy::{Action, Op};
+use avendb::policy::{Action, Branch, Op};
 use avendb::sign::{Classical, DeviceKey, Passkey, Signature, SignerKeys, Signed};
 
 /// Where and how to mutate: xorshift64*, seeded per test.
@@ -166,7 +166,10 @@ fn mutate_op(g: &mut Gen, op: &Op) -> Op {
         3 => o.cosigners.push(SignerId::from_u64(g.next())),
         _ => match &mut o.action {
             Action::AddDevice { device, .. } => *device = SignerId::from_u64(g.next()),
-            Action::Write { body, .. } => *body = mutate(g, body),
+            Action::Write { body, branch, .. } => match g.below(3) {
+                0 => *branch = [Branch::Main, Branch::New, Branch::On(OpId::from_u64(g.next()))][g.below(3)],
+                _ => *body = mutate(g, body),
+            },
             other => unreachable!("{other:?}"),
         },
     }
@@ -188,13 +191,14 @@ fn a_changed_signed_op_is_refused() {
     };
     let sigs = vec![passkey.sign(add.id(), true), device.sign(add.id(), true)];
     let add = Signed { op: add, sigs };
-    // and a write, which only the classical half signs
+    // and a write on a branch, which only the classical half signs
     let action = Action::Write {
         space: SpaceId::from_u64(10),
         entry: EntryId::from_u64(1),
         actor: samuel,
         epoch: 0,
-        deps: vec![],
+        deps: vec![OpId::from_u64(5)],
+        branch: Branch::On(OpId::from_u64(5)),
         body: vec![1, 2, 3],
     };
     let write = Op { parents: vec![OpId::from_u64(2)], depth: 2, author: device.id(), cosigners: vec![], action };

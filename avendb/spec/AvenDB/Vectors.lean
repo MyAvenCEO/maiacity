@@ -1,5 +1,6 @@
 import AvenDB.Step
 import AvenDB.Lens
+import AvenDB.Branches
 
 /-!
 # Test vectors for the Rust core
@@ -17,7 +18,8 @@ The Rust core names what an op creates (a vault, a space, a grant) by the hash o
 depth and rank by that hash, where the model picks numbers: the Rust side maps each number to what its op created, so
 every number is used once per case and no two ops of a view case share a depth and a rank. A blob is named by the hash
 of its bytes: the Rust side maps blob number `b` to the bytes `blob b`. The state includes the key schedule (each
-family's epoch where it isn't 0, every seal, and every published key) and the schema lane.
+family's epoch where it isn't 0, every seal, and every published key), the schema lane, and each line of each entry's history: its writes and its
+heads, the main line first and then each branch in the order it started.
 
 `vectors/lenses.json` holds the lens cases: stored blocks and todos in every shape the lens tells apart, what each app
 reads from them (`v1`, `v2`), and what each of a few edits through each app's view stores (`putV1`, `putV2`). The Rust
@@ -295,7 +297,33 @@ def cases : List Case := [
     (2, [], .checkpoint 10 2 [9]),
     -- Bob's Mac, a stranger to Notes, can't vouch for Samuel's edits
     (5, [], .checkpoint 11 2 [9]),
-    (2, [], .checkpoint 11 2 [9])] }]
+    (2, [], .checkpoint 11 2 [9])] },
+  { name := "branches of an entry", ops := humans ++ [
+    (2, [], .foundSpace 10 100),
+    (2, [], .write 10 1 100 0),
+    (2, [], g 1 (.entry 10 1) .write (toVault 101) 100),
+    (2, [], g 2 (.entry 10 1) .read (toVault 102) 100),
+    -- Bob's Mac starts a draft of Welcome from its first version and writes on it
+    (5, [], .write 10 1 101 0 [7] .new),
+    (5, [], .write 10 1 101 0 [10] (.on 10)),
+    -- a reader can't start a branch, nor can a stranger
+    (6, [], .write 10 1 102 0 [7] .new),
+    (555, [], .write 10 1 101 0 [7] .new),
+    -- a write on a branch builds on it: not on main alone, not on a write that didn't start one, not on a branch that
+    -- doesn't exist or is another entry's
+    (2, [], .write 10 1 100 0 [7] (.on 10)),
+    (2, [], .write 10 1 100 0 [11] (.on 11)),
+    (2, [], .write 10 1 100 0 [7] (.on 99)),
+    (2, [], .write 10 2 100 0),
+    (2, [], .write 10 2 100 0 [17] (.on 10)),
+    -- Samuel merges the draft: a write on main that builds on both heads
+    (2, [], .write 10 1 100 0 [7, 11]),
+    -- Bob carries on with the draft and brings main into it
+    (5, [], .write 10 1 101 0 [11] (.on 10)),
+    (5, [], .write 10 1 101 0 [19, 20] (.on 10)),
+    -- Samuel's Mac starts a branch of its own from the merge, and Bob writes on it
+    (2, [], .write 10 1 100 0 [19] .new),
+    (5, [], .write 10 1 101 0 [22] (.on 22))] }]
 
 /-- Samuel's, Bob's, Carol's and Dave's vaults, one op per depth. -/
 def humansV : List (Nat × SignerId × List SignerId × Action) := humans.zipIdx.map fun ((a, co, act), i) => (i, a, co, act)
@@ -345,6 +373,20 @@ def views : List ViewCase := [
     (12, 6, [], .write 12 21 102 0 [11]),
     (13, 2, [], .revoke 10 100 [10]),
     (14, 6, [], .write 12 21 102 0 [10])] },
+  { name := "a revocation cuts a branch it hadn't seen, with every write on it", ops := humansV ++ [
+    (6, 2, [], .foundSpace 12 100),
+    (7, 2, [], .write 12 21 100 0),
+    (8, 2, [], g 10 (.entry 12 21) .write (toVault 101) 100),
+    (9, 2, [], g 11 (.entry 12 21) .write (toVault 102) 100),
+    -- Bob's Mac starts a draft Samuel sees, and another on an old copy, which he doesn't; Carol writes on the second
+    (10, 5, [], .write 12 21 101 0 [7] .new),
+    (11, 5, [], .write 12 21 101 0 [10] (.on 10)),
+    (12, 5, [], .write 12 21 101 0 [7] .new),
+    (13, 6, [], .write 12 21 102 0 [12] (.on 12)),
+    (14, 2, [], .revoke 10 100 [10, 11]),
+    -- Samuel merges the draft he saw; Carol's merge of the other goes with it
+    (15, 2, [], .write 12 21 100 0 [7, 11]),
+    (16, 6, [], .write 12 21 102 0 [15, 13])] },
   { name := "a lost device's back-dated edits are cut", ops := humansV ++ [
     (6, 1, [3], .addDevice 100 3),
     (7, 2, [], .foundSpace 11 100),
@@ -444,6 +486,11 @@ def keyName : KeyName → String
   | .signer s   => obj [("signer", nat s)]
   | .scoped k e => obj [("key", keyScope k), ("epoch", nat e)]
 
+def branch : Branch → String
+  | .main => str "main"
+  | .new  => str "new"
+  | .on b => obj [("on", nat b)]
+
 def action : Action → String
   | .genesis v k owners t root => obj [("genesis", obj [("vault", nat v), ("kind", kind k),
       ("owners", arr (owners.map principal)), ("threshold", nat t), ("root", opt nat root)])]
@@ -456,8 +503,8 @@ def action : Action → String
   | .foundSpace sp a => obj [("foundSpace", obj [("space", nat sp), ("actor", nat a)])]
   | .grant x => obj [("grant", grant x)]
   | .revoke x a keep => obj [("revoke", obj [("grant", nat x), ("actor", nat a), ("keep", ids keep)])]
-  | .write sp e a epoch deps => obj [("write", obj [("space", nat sp), ("entry", nat e), ("actor", nat a),
-      ("epoch", nat epoch), ("deps", ids deps)])]
+  | .write sp e a epoch deps b => obj [("write", obj [("space", nat sp), ("entry", nat e), ("actor", nat a),
+      ("epoch", nat epoch), ("deps", ids deps), ("branch", branch b)])]
   | .keys k epoch to pub => obj [("keys", obj [("key", keyScope k), ("epoch", nat epoch),
       ("to", arr (to.map keyName)), ("public", bool pub)])]
   | .publish sp a b => obj [("publish", obj [("space", nat sp), ("actor", nat a), ("blob", nat b)])]
@@ -472,7 +519,7 @@ def space (x : Space) : String :=
 
 def write (w : Write) : String :=
   obj [("op", nat w.op), ("author", nat w.author), ("actor", nat w.actor), ("space", nat w.space),
-       ("entry", nat w.entry), ("epoch", nat w.epoch), ("deps", ids w.deps)]
+       ("entry", nat w.entry), ("epoch", nat w.epoch), ("deps", ids w.deps), ("branch", branch w.branch)]
 
 /-- Each family's epoch, where it isn't 0, in the order the families came to be. -/
 def epochs (st : State) : String :=
@@ -481,12 +528,23 @@ def epochs (st : State) : String :=
 
 def sealed (x : Seal) : String := obj [("secret", keyName x.secret), ("to", keyName x.to)]
 
+/-- Each line of each entry, the main line first and then each branch in the order it started: its history and its
+    heads. -/
+def lines (st : State) : String :=
+  arr (st.spaces.flatMap fun x => x.entries.flatMap fun e =>
+    let starts := st.writes.filterMap fun w =>
+      if w.space == x.id && w.entry == e && w.branch == .new then some w.op else none
+    (none :: starts.map some).map fun l =>
+      obj [("space", nat x.id), ("entry", nat e), ("line", opt nat l),
+           ("history", ids ((history st.writes x.id e l).map (·.op))), ("heads", ids (heads st.writes x.id e l))])
+
 def state (st : State) : String :=
   str "vaults" ++ ": " ++ arr (st.vaults.map vault) ++ ",\n " ++ str "spaces" ++ ": " ++ arr (st.spaces.map space) ++
     ",\n " ++ str "grants" ++ ": " ++ arr (st.grants.map grant) ++ ",\n " ++ str "writes" ++ ": " ++
     arr (st.writes.map write) ++ ",\n " ++ str "epochs" ++ ": " ++ epochs st ++ ",\n " ++ str "seals" ++ ": " ++
     arr (st.seals.map sealed) ++ ",\n " ++ str "published" ++ ": " ++ arr (st.published.map keyName) ++ ",\n " ++
-    str "lane" ++ ": " ++ arr (st.lane.map fun (sp, b) => obj [("space", nat sp), ("blob", nat b)])
+    str "lane" ++ ": " ++ arr (st.lane.map fun (sp, b) => obj [("space", nat sp), ("blob", nat b)]) ++ ",\n " ++
+    str "lines" ++ ": " ++ lines st
 
 def case (c : Case) : String :=
   let (accepted, st) := run c.ops

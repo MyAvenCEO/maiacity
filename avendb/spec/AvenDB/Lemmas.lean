@@ -234,7 +234,7 @@ theorem apply_vaults {st post : State} {op : Op} (h : apply st op = some post) :
     split at h
     · simp at h
     · simp at h
-      obtain ⟨-, -, -, -, rfl⟩ := h
+      obtain ⟨-, -, -, -, -, rfl⟩ := h
       left
       split <;> rfl
   · -- keys: change nothing
@@ -764,14 +764,15 @@ theorem closeDeps_closed (ws : List Write) : ∀ w ∈ closeDeps ws, depsIn (clo
 
 /-! ## What one step does to the writes and the grants -/
 
-/-- An accepted op leaves the writes alone, or is a write op adding its own write, which was authorized and whose
-    dependencies were accepted, and either way keeps what `authorized` reads; or it is a removal that drops writes
-    (`dropUnseen`). -/
+/-- An accepted op leaves the writes alone, or is a write op adding its own write, which was authorized, whose
+    dependencies were accepted, whose id is new and which extends its line, and either way keeps what `authorized`
+    reads; or it is a removal that drops writes (`dropUnseen`). -/
 theorem apply_writes {st post : State} {op : Op} (h : apply st op = some post) :
     (post.writes = st.writes ∧ Keeps st post) ∨
     (∃ w, post.writes = st.writes ++ [w] ∧ authorized st w = true ∧ depsIn st.writes w = true ∧
       Keeps st post ∧ w.op = op.id ∧ w.author = op.author ∧
-      op.action = .write w.space w.entry w.actor w.epoch w.deps) ∨
+      op.action = .write w.space w.entry w.actor w.epoch w.deps w.branch ∧
+      (∀ x ∈ st.writes, x.op ≠ w.op) ∧ onBranch st.writes w = true) ∨
     (∃ keep mid, op.action.keep? = some keep ∧ post = dropUnseen st mid keep ∧ mid.writes = st.writes) := by
   unfold apply at h
   split at h
@@ -841,8 +842,8 @@ theorem apply_writes {st post : State} {op : Op} (h : apply st op = some post) :
     split at h
     · simp at h
     · simp at h
-      obtain ⟨-, ⟨hact, hhold⟩, -, hdeps, rfl⟩ := h
-      refine .inr (.inl ⟨_, ?_, by simp [authorized, hact, hhold], hdeps, ?_, rfl, rfl, heq⟩)
+      obtain ⟨hfresh, ⟨hact, hhold⟩, -, hdeps, hbr, rfl⟩ := h
+      refine .inr (.inl ⟨_, ?_, by simp [authorized, hact, hhold], hdeps, ?_, rfl, rfl, heq, hfresh, hbr⟩)
       · split <;> rfl
       · split
         · exact .of_vaults rfl (fun _ _ h => h) (fun _ h => h)
@@ -930,7 +931,7 @@ theorem apply_grants {st post : State} {op : Op} (h : apply st op = some post) :
     split at h
     · simp at h
     · simp at h
-      obtain ⟨-, -, -, -, rfl⟩ := h
+      obtain ⟨-, -, -, -, -, rfl⟩ := h
       left
       split
       · exact fun _ h => h
@@ -1017,7 +1018,7 @@ theorem standing_mem (ops : List Op) : ∀ o ∈ standing ops, o ∈ ops := fun 
     author. -/
 theorem replay_writes_from :
     ∀ (l : List Op) (st : State) (w : Write), w ∈ (replay st l).writes → w ∈ st.writes ∨
-      ∃ o ∈ l, o.id = w.op ∧ o.author = w.author ∧ o.action = .write w.space w.entry w.actor w.epoch w.deps
+      ∃ o ∈ l, o.id = w.op ∧ o.author = w.author ∧ o.action = .write w.space w.entry w.actor w.epoch w.deps w.branch
   | [], _, _, h => .inl h
   | op :: ops, st, w, h => by
     change w ∈ (replay ((step st op).getD st) ops).writes at h
@@ -1030,7 +1031,7 @@ theorem replay_writes_from :
         obtain ⟨post, hpost, rfl⟩ := Option.map_eq_some_iff.1 hs
         change w ∈ (settle st post).writes at h
         rw [settle_writes] at h
-        rcases apply_writes hpost with ⟨hws, -⟩ | ⟨w', hws, -, -, -, hid, hauth, hact⟩ | ⟨keep, mid, -, rfl, hmid⟩
+        rcases apply_writes hpost with ⟨hws, -⟩ | ⟨w', hws, -, -, -, hid, hauth, hact, -⟩ | ⟨keep, mid, -, rfl, hmid⟩
         · exact .inl (hws ▸ h)
         · rw [hws] at h
           rcases List.mem_append.1 h with h | h

@@ -4,7 +4,11 @@
 //!
 //! It grows with the phases: devices and their ops in P1, caps and sync by caps in P2, keys, reading and the blind
 //! server in P3, apps on a schema reading and editing items through their space's lane in P4, locked devices, blobs and
-//! checkpoints in P4b, branches in P5, and in P6 offline devices and random delivery orders.
+//! checkpoints in P4b, history and branches in P5, and in P6 offline devices and random delivery orders.
+//!
+//! A device shows each entry on every line of its history (`branch`): it opens each write it can, and builds the item
+//! of each line from the updates of that line's history. Branching, merging, promoting, restoring, undoing and
+//! forking are writes like any edit, encrypted under the entry's key and checked against the writer's caps.
 //!
 //! A person's device derives its keys from their passkey at every unlock (`sign::Passkey::device`) and holds them only
 //! while it is unlocked: a locked device keeps its ops and their ciphertext, and no key, nor anything a key opened. The
@@ -31,13 +35,14 @@ use std::sync::Arc;
 use rand_core::Rng as _;
 use serde_json::Value;
 
+use crate::branch::{Commit, Draft, History, MAIN};
 use crate::doc::{Item, Version};
 use crate::encode::{self, box_info, write_context};
 use crate::hash::{Hasher, Reader};
 use crate::id::{BlobId, EntryId, OpId, SignerId, SpaceId, VaultId};
 use crate::keys::{self, KeyBox, KeyId, KeyName, KeyScope, PublicKey, Recipient, SeededRng, Secret};
 use crate::lens::{Lane, Schema};
-use crate::policy::{checkpointed, replay, Action, Kind, Log, Op, Principal, Refusal, Replay, State};
+use crate::policy::{checkpointed, replay, Action, Branch, Kind, Line, Log, Op, Principal, Refusal, Replay, State};
 use crate::sign::{self, Classical, DeviceKey, Passkey, Signature, SignerKeys, Signed};
 use crate::sync::{respond, vault_logs};
 
@@ -97,7 +102,7 @@ struct Opened {
 }
 
 /// What one device holds: its ops, each with its signatures, to pass on, and the blobs they name; what it makes of
-/// them; the keys it opened; and the items it shows.
+/// them; the keys it opened; and the entries it shows.
 struct Store {
     log: Log,
     signed: HashMap<OpId, Signed>,
@@ -107,7 +112,7 @@ struct Store {
     replay: Replay,
     /// By id, so the first of a family's keys at an epoch is the one with the smallest id. Empty while it is locked.
     keys: BTreeMap<KeyId, Opened>,
-    items: BTreeMap<(SpaceId, EntryId), Item>,
+    shown: BTreeMap<(SpaceId, EntryId), Shown>,
     /// The writes it made itself that no checkpoint of its own covers yet.
     unvouched: Vec<OpId>,
 }
@@ -120,7 +125,7 @@ impl Default for Store {
             blobs: HashMap::new(),
             replay: replay(&[]),
             keys: BTreeMap::new(),
-            items: BTreeMap::new(),
+            shown: BTreeMap::new(),
             unvouched: vec![],
         }
     }
@@ -135,6 +140,14 @@ impl Store {
     fn held(&self, k: KeyScope, e: u64) -> impl Iterator<Item = &Opened> {
         self.keys.values().filter(move |o| o.key == k && o.epoch == e)
     }
+}
+
+/// What a device shows of one entry: its history, every accepted write with what the device could open, and the item
+/// of each line where it opens any update.
+#[derive(Default)]
+struct Shown {
+    history: History,
+    items: BTreeMap<Line, Item>,
 }
 
 /// What a device's standing `Keys` ops say: the keys announced, the boxes, and what is published.
@@ -287,7 +300,7 @@ impl Lab {
         self.keys.remove(&d);
         let store = self.stores.get_mut(&d).unwrap_or_else(|| panic!("{d:?} is no device of the Lab"));
         store.keys.clear();
-        store.items.clear();
+        store.shown.clear();
     }
 
     /// Unlock device `d` with the passkey its keys derive from: they derive again, and it opens again what its ops hold
@@ -472,14 +485,13 @@ impl Lab {
         let mut id = [0u8; 32];
         self.rng.fill_bytes(&mut id);
         let entry = EntryId(id);
-        let draft = Action::Write { space, entry, actor, epoch: 0, deps: vec![], body: vec![] };
+        let draft = Action::Write { space, entry, actor, epoch: 0, deps: vec![], branch: Branch::Main, body: vec![] };
         let op = self.held(on).log.check(on, &[], draft)?;
         self.write(on, op, &item.export(&Version::default()))?;
         Ok(entry)
     }
 
-    /// Edit an item on device `on`, acting for `actor`: the change becomes one encrypted write under the entry's
-    /// current key, building on the entry's writes the device counts.
+    /// Edit an item on device `on`, acting for `actor`, on its main line: `edit_on`.
     pub fn edit(
         &mut self,
         on: SignerId,
@@ -488,17 +500,136 @@ impl Lab {
         entry: EntryId,
         change: impl FnOnce(&mut Item),
     ) -> Result<OpId, Refusal> {
+        self.edit_on(on, actor, space, entry, MAIN, change)
+    }
+
+    /// Edit an item on line `line` of its history, on device `on`, acting for `actor`: `change` edits the item as the
+    /// device shows it there, and what changed becomes one encrypted write under the entry's current key, building on
+    /// the line's heads.
+    pub fn edit_on(
+        &mut self,
+        on: SignerId,
+        actor: VaultId,
+        space: SpaceId,
+        entry: EntryId,
+        line: Line,
+        change: impl FnOnce(&mut Item),
+    ) -> Result<OpId, Refusal> {
         self.unlocked(on)?;
+        let draft = self.shown(on, space, entry).edit(line, on, change);
+        self.make(on, actor, (space, entry), draft)
+    }
+
+    /// Start a branch named `name` of an entry, from the version `from` (any of its writes, with what they build on),
+    /// on device `on`, acting for `actor`. The branch is named by the write's id; the name travels encrypted.
+    pub fn branch(
+        &mut self,
+        on: SignerId,
+        actor: VaultId,
+        (space, entry): (SpaceId, EntryId),
+        from: &[OpId],
+        name: &str,
+    ) -> Result<OpId, Refusal> {
+        self.unlocked(on)?;
+        let draft = self.shown(on, space, entry).branch(from, name);
+        self.make(on, actor, (space, entry), draft)
+    }
+
+    /// Merge line `from` of an entry into line `into`: a write on `into` building on the heads of both.
+    pub fn merge(
+        &mut self,
+        on: SignerId,
+        actor: VaultId,
+        (space, entry): (SpaceId, EntryId),
+        from: Line,
+        into: Line,
+    ) -> Result<OpId, Refusal> {
+        self.unlocked(on)?;
+        let draft = self.shown(on, space, entry).merge(from, into);
+        self.make(on, actor, (space, entry), draft)
+    }
+
+    /// Promote line `from` of an entry into line `into`: a merge whose write brings `into` to exactly what `from`
+    /// shows, keeping both histories.
+    pub fn promote(
+        &mut self,
+        on: SignerId,
+        actor: VaultId,
+        (space, entry): (SpaceId, EntryId),
+        from: Line,
+        into: Line,
+    ) -> Result<OpId, Refusal> {
+        self.unlocked(on)?;
+        let draft = self.shown(on, space, entry).promote(from, into, on);
+        self.make(on, actor, (space, entry), draft)
+    }
+
+    /// Put the record of `version` back on line `line` of an entry: restore an earlier version, or revert the
+    /// line's latest commit by restoring the version it built on.
+    pub fn restore(
+        &mut self,
+        on: SignerId,
+        actor: VaultId,
+        (space, entry): (SpaceId, EntryId),
+        line: Line,
+        version: &[OpId],
+    ) -> Result<OpId, Refusal> {
+        self.unlocked(on)?;
+        let draft = self.shown(on, space, entry).restore(line, version, on);
+        self.make(on, actor, (space, entry), draft)
+    }
+
+    /// Undo the commit `op` on line `line` of an entry, keeping every change made since (`branch::undo`). `UnknownDep`
+    /// if the device holds no such write.
+    pub fn undo(
+        &mut self,
+        on: SignerId,
+        actor: VaultId,
+        (space, entry): (SpaceId, EntryId),
+        line: Line,
+        op: OpId,
+    ) -> Result<OpId, Refusal> {
+        self.unlocked(on)?;
+        let draft = self.shown(on, space, entry).undo(line, op, on).ok_or(Refusal::UnknownDep)?;
+        self.make(on, actor, (space, entry), draft)
+    }
+
+    /// Fork what device `on` shows on line `line` of an entry into a new entry of space `into`: its record, and none
+    /// of its history, as `on`'s first write of the new entry, acting for `actor`. `ReadOnly` if it shows nothing
+    /// there.
+    pub fn fork(
+        &mut self,
+        on: SignerId,
+        actor: VaultId,
+        (space, entry): (SpaceId, EntryId),
+        line: Line,
+        into: SpaceId,
+    ) -> Result<EntryId, Refusal> {
+        self.unlocked(on)?;
+        let copy = self.item_on(on, space, entry, line).ok_or(Refusal::ReadOnly)?.copy(on);
+        self.create(on, actor, into, copy)
+    }
+
+    /// What device `d` shows of an entry: its history, empty if it holds no write of it.
+    fn shown(&self, d: SignerId, space: SpaceId, entry: EntryId) -> &History {
+        static NONE: std::sync::LazyLock<History> = std::sync::LazyLock::new(History::default);
+        self.held(d).shown.get(&(space, entry)).map_or(&NONE, |s| &s.history)
+    }
+
+    /// Make the write `draft` describes on device `on`, acting for `actor`, under the entry's current key.
+    fn make(
+        &mut self,
+        on: SignerId,
+        actor: VaultId,
+        (space, entry): (SpaceId, EntryId),
+        draft: Draft,
+    ) -> Result<OpId, Refusal> {
         let store = self.held(on);
         let epoch = store.view().epoch(KeyScope::Entry(space, entry));
-        let deps = store.view().heads(space, entry);
-        let draft = Action::Write { space, entry, actor, epoch, deps, body: vec![] };
-        let op = store.log.check(on, &[], draft)?;
-        // the item as this device shows it; a copy edits as this device, and the change is what came after
-        let mut item = store.items.get(&(space, entry)).cloned().unwrap_or_else(|| Item::new(on));
-        let since = item.version();
-        change(&mut item);
-        self.write(on, op, &item.export(&since))
+        let Draft { branch, deps, body } = draft;
+        let action = Action::Write { space, entry, actor, epoch, deps, branch, body: vec![] };
+        let op = store.log.check(on, &[], action)?;
+        self.write(on, op, &body)
     }
 
     /// Encrypt `update` into the write `op` under its entry's key at the write's epoch (the first the device holds,
@@ -622,9 +753,22 @@ impl Lab {
         .map(Some)
     }
 
-    /// The item as device `d` shows it: the writes it counts and can decrypt. `None` if it counts or opens none.
+    /// The item as device `d` shows it on its main line: the writes of the line's history it counts and can decrypt.
+    /// `None` if it counts or opens none.
     pub fn item(&self, d: SignerId, space: SpaceId, entry: EntryId) -> Option<&Item> {
-        self.held(d).items.get(&(space, entry))
+        self.item_on(d, space, entry, MAIN)
+    }
+
+    /// The item as device `d` shows it on line `line`.
+    pub fn item_on(&self, d: SignerId, space: SpaceId, entry: EntryId, line: Line) -> Option<&Item> {
+        self.held(d).shown.get(&(space, entry))?.items.get(&line)
+    }
+
+    /// An entry's history as device `d` holds it: every write it counts, with what it could open, its lines and their
+    /// heads, the branches' names, and any version to open read-only (`History::item_at`). `None` if it counts no write
+    /// of the entry.
+    pub fn history(&self, d: SignerId, space: SpaceId, entry: EntryId) -> Option<&History> {
+        self.held(d).shown.get(&(space, entry)).map(|s| &s.history)
     }
 
     /// How many writes of the entry device `d` holds, whether it can decrypt them or not.
@@ -681,8 +825,13 @@ impl Lab {
         for o in store.keys.values() {
             out.extend(o.secret.bytes());
         }
-        for item in store.items.values() {
-            out.extend(item.record().to_string().into_bytes());
+        for shown in store.shown.values() {
+            for item in shown.items.values() {
+                out.extend(item.record().to_string().into_bytes());
+            }
+            for c in shown.history.commits().iter().filter(|c| c.write.branch == Branch::New) {
+                out.extend(c.body.iter().flatten());
+            }
         }
         out
     }
@@ -924,31 +1073,26 @@ fn key_box(
     Some(KeyBox { to, bytes })
 }
 
-/// Rebuild the items device `d` shows: for each entry, the writes of its view it can decrypt, in replay order. A
-/// write opens only under a key of its own entry at its own epoch.
+/// Rebuild what device `d` shows of each entry: its history, each write of its view with what the device can decrypt,
+/// in replay order, and the item of each line. A write opens only under a key of its own entry at its own epoch.
 fn show_items(d: SignerId, store: &mut Store) {
     let ops: HashMap<OpId, &Op> = store.replay.ids.iter().copied().zip(&store.replay.ops).collect();
     let st = store.view();
-    let mut items = BTreeMap::new();
+    let mut shown = BTreeMap::new();
     for space in st.spaces() {
         for &entry in &space.entries {
-            let mut item = Item::new(d);
-            let mut shown = false;
-            for w in st.writes(space.id, entry) {
-                let op = ops[&w];
+            let mut history = History::default();
+            for w in st.all_writes().iter().filter(|w| w.space == space.id && w.entry == entry) {
+                let op = ops[&w.op];
                 let Action::Write { epoch, body, .. } = &op.action else { continue };
                 let key = keys::edit_key(body).and_then(|id| store.keys.get(&id));
-                let Some(key) = key.filter(|o| o.key == KeyScope::Entry(space.id, entry) && o.epoch == *epoch) else {
-                    continue;
-                };
-                if let Some(update) = keys::open_edit(&key.secret, body, &write_context(op)) {
-                    shown |= item.import(&update, op.author).is_ok();
-                }
+                let key = key.filter(|o| o.key == KeyScope::Entry(space.id, entry) && o.epoch == *epoch);
+                let opened = key.and_then(|key| keys::open_edit(&key.secret, body, &write_context(op)));
+                history.push(Commit { write: w.clone(), body: opened }).expect("the view's writes are causally closed");
             }
-            if shown {
-                items.insert((space.id, entry), item);
-            }
+            let items = history.lines().into_iter().filter_map(|l| Some((l, history.item(l, d)?))).collect();
+            shown.insert((space.id, entry), Shown { history, items });
         }
     }
-    store.items = items;
+    store.shown = shown;
 }

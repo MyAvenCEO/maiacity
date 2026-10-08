@@ -38,9 +38,9 @@ structure Space where
   entries : List EntryId
   deriving DecidableEq, Repr
 
-/-- An accepted edit: one encrypted Loro update to one entry. `deps` are the writes of the same entry it builds on
-    (its Loro frontier when it was made): accepted writes stay causally closed (T14), so a write whose dependency
-    is cut is cut too. -/
+/-- An accepted edit: one encrypted Loro update to one entry, on one line of its history (`branch`). `deps` are the
+    writes of the same entry it builds on (its Loro frontier when it was made): accepted writes stay causally closed
+    (T14), so a write whose dependency is cut is cut too. -/
 structure Write where
   op     : OpId
   author : SignerId
@@ -49,7 +49,15 @@ structure Write where
   entry  : EntryId
   epoch  : Nat
   deps   : List OpId
+  branch : Branch
   deriving DecidableEq, Repr
+
+/-- The line a write is on: `none` for the main line, else the write that started its branch. -/
+def Write.line (w : Write) : Option OpId :=
+  match w.branch with
+  | .main => none
+  | .new  => some w.op
+  | .on b => some b
 
 /-- `secret` sealed to the key pair `to`: whoever can open `to` can open `secret`. -/
 structure Seal where

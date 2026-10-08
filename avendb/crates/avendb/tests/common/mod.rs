@@ -6,7 +6,7 @@ use avendb::doc::Item;
 use avendb::id::{EntryId, GrantId, SignerId, SpaceId, VaultId};
 use avendb::lab::Lab;
 use avendb::lens::{BlockV1, BlockV2, DocV1, KindV1, Status, TypeV2};
-use avendb::policy::{Action, Grant, Grantee, Kind, Log, Principal, Role, Scope};
+use avendb::policy::{Action, Branch, Grant, Grantee, Kind, Log, Principal, Role, Scope};
 
 // Signers on the rules' log: passkeys and device keys.
 pub const PASSKEY_S: SignerId = SignerId::from_u64(1);
@@ -39,7 +39,7 @@ pub fn grant(scope: Scope, role: Role, grantee: Grantee, issuer: VaultId, parent
 
 /// A write that builds on its entry's heads: the log fills in `deps` when it drafts the op.
 pub fn write(space: SpaceId, entry: EntryId, actor: VaultId, epoch: u64) -> Action {
-    Action::Write { space, entry, actor, epoch, deps: vec![], body: vec![0xc1, 0x9e, 0x47] }
+    Action::Write { space, entry, actor, epoch, deps: vec![], branch: Branch::Main, body: vec![0xc1, 0x9e, 0x47] }
 }
 
 /// The rules' log after scenarios 1 and 2: Samuel with his passkey, Mac and iPhone; Bob, Carol and Dave with a passkey

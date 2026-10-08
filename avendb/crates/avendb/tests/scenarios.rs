@@ -7,8 +7,8 @@ use std::collections::BTreeSet;
 
 use common::*;
 use serde_json::{json, Value};
-use avendb::branch::Repo;
-use avendb::id::{GrantId, VaultId};
+use avendb::branch::MAIN;
+use avendb::id::{GrantId, SpaceId, VaultId};
 use avendb::keys::{KeyName, KeyScope};
 use avendb::lab::{Lab, Tamper};
 use avendb::lens::{Status, DOCUMENT_LENS, DOCUMENT_V1, DOCUMENT_V2};
@@ -165,36 +165,78 @@ fn scenario_07_public() {
 }
 
 #[test]
-#[ignore = "P5: branches"]
 fn scenario_08_branches() {
-    let mut repo = Repo::new(document("Welcome", WELCOME_TEXT, MAC_S));
-    repo.commit("main", "Welcome");
-    // Bob edits on a branch; main stays unchanged until Samuel merges it
-    repo.branch("draft", "main");
-    repo.item_mut("draft").set_text(2, "Hello, Bob here");
-    repo.commit("draft", "Bob's draft");
-    assert_eq!(repo.item("main").as_document().map(|d| d.blocks[1].text.clone()).as_deref(), Some(WELCOME_TEXT));
-    repo.merge("draft", "main");
-    assert_eq!(repo.item("main").as_document(), repo.item("draft").as_document());
-    // a second branch is promoted: main ends with exactly its content
-    repo.branch("rewrite", "main");
-    repo.item_mut("rewrite").set_text(2, "Welcome to the coop");
-    repo.commit("rewrite", "rewrite");
-    repo.item_mut("main").push_block(paragraph(3, "an edit on main meanwhile"));
-    repo.commit("main", "meanwhile");
-    repo.promote("rewrite", "main");
-    assert_eq!(repo.item("main").as_document(), repo.item("rewrite").as_document());
-    // a bad commit is reverted
-    let good = repo.item("main").as_document();
-    repo.item_mut("main").set_text(2, "oops");
-    let bad = repo.commit("main", "bad");
-    repo.revert("main", &bad);
-    assert_eq!(repo.item("main").as_document(), good);
-    // no version is lost from history
-    let log: Vec<String> = repo.log("main").into_iter().map(|c| c.message).collect();
-    for m in ["Welcome", "Bob's draft", "rewrite", "meanwhile", "bad"] {
-        assert!(log.iter().any(|l| l == m), "{m} missing from {log:?}");
+    let mut w = world();
+    let h = handbook(&mut w);
+    let (coop, item) = (h.coop, (h.space, h.welcome));
+    let main_text = |lab: &Lab, d| text(lab, d, h.space, h.welcome, 2);
+    let heads = |lab: &Lab, line| lab.state(w.mac_s).heads(h.space, h.welcome, line);
+    // Bob starts a draft of Welcome and edits it there; main stays unchanged on every device until Samuel merges it
+    let first = heads(&w.lab, MAIN);
+    let draft = w.lab.branch(w.mac_b, coop, item, &first, "Bob's greenhouse draft").unwrap();
+    w.lab.edit_on(w.mac_b, coop, h.space, h.welcome, Some(draft), |i| i.set_text(2, "Hello, Bob here")).unwrap();
+    w.lab.sync_all(8);
+    for d in [w.mac_s, w.phone_s, w.mac_b] {
+        assert_eq!(main_text(&w.lab, d).as_deref(), Some(WELCOME_TEXT), "{d:?}");
+        let on_draft = w.lab.item_on(d, h.space, h.welcome, Some(draft)).and_then(|i| i.as_document());
+        assert_eq!(on_draft.map(|d| d.blocks[1].text.clone()).as_deref(), Some("Hello, Bob here"));
     }
+    // the branch's name and edits travel encrypted: Samuel's Mac reads them, the server stores them and reads nothing
+    let name = w.lab.history(w.mac_s, h.space, h.welcome).unwrap().name(draft);
+    assert_eq!(name.as_deref(), Some("Bob's greenhouse draft"));
+    let server = w.lab.store(w.server);
+    assert!(!contains(&server, "Bob's greenhouse draft") && !contains(&server, "Hello, Bob here"));
+    let before_merge = heads(&w.lab, MAIN);
+    w.lab.merge(w.mac_s, coop, item, Some(draft), MAIN).unwrap();
+    w.lab.sync_all(8);
+    assert_eq!(main_text(&w.lab, w.mac_b).as_deref(), Some("Hello, Bob here"));
+    // a second branch is promoted: main ends with exactly its content, though main moved on meanwhile
+    let rewrite = Some(w.lab.branch(w.mac_s, coop, item, &heads(&w.lab, MAIN), "rewrite").unwrap());
+    w.lab.edit_on(w.mac_s, coop, h.space, h.welcome, rewrite, |i| i.set_text(2, "Welcome to the coop")).unwrap();
+    w.lab.edit(w.mac_b, coop, h.space, h.welcome, |i| i.push_block(paragraph(3, "an edit on main meanwhile"))).unwrap();
+    w.lab.sync_all(8);
+    w.lab.promote(w.mac_s, coop, item, rewrite, MAIN).unwrap();
+    w.lab.sync_all(8);
+    for d in [w.phone_s, w.mac_b] {
+        let shown = |line| w.lab.item_on(d, h.space, h.welcome, line).map(|i| i.record());
+        assert_eq!(shown(MAIN), shown(rewrite), "{d:?}");
+    }
+    let record = w.lab.item(w.mac_b, h.space, h.welcome).unwrap().record().to_string();
+    assert!(!record.contains("meanwhile"));
+    // the latest commit is reverted: main goes back to the version it built on
+    let good = w.lab.item(w.mac_s, h.space, h.welcome).unwrap().as_document();
+    let bad = w.lab.edit(w.mac_b, coop, h.space, h.welcome, |i| i.set_text(2, "oops")).unwrap();
+    w.lab.sync_all(8);
+    let built_on = w.lab.state(w.mac_s).history(h.space, h.welcome, MAIN).last().unwrap().deps.clone();
+    w.lab.restore(w.mac_s, coop, item, MAIN, &built_on).unwrap();
+    assert_eq!(w.lab.item(w.mac_s, h.space, h.welcome).unwrap().as_document(), good);
+    // an older bad commit is undone by a diff-based restore, which keeps what came after
+    let older = w.lab.edit(w.mac_b, coop, h.space, h.welcome, |i| i.set_text(1, "Welcome!!!")).unwrap();
+    w.lab.edit(w.mac_b, coop, h.space, h.welcome, |i| i.push_block(paragraph(4, "a later, good edit"))).unwrap();
+    w.lab.sync_all(8);
+    w.lab.undo(w.mac_s, coop, item, MAIN, older).unwrap();
+    w.lab.sync_all(8);
+    let doc = w.lab.item(w.mac_b, h.space, h.welcome).unwrap().as_document().unwrap();
+    let texts: Vec<&str> = doc.blocks.iter().map(|b| b.text.as_str()).collect();
+    assert_eq!(texts, ["Welcome", "Welcome to the coop", "a later, good edit"]);
+    // no version is lost from history: every write of Welcome is in main's, and any version opens read-only
+    let history = w.lab.history(w.mac_b, h.space, h.welcome).unwrap();
+    assert_eq!(history.history(MAIN).len(), history.commits().len());
+    assert!(history.commits().iter().any(|c| c.write.op == bad));
+    let old = history.item_at(&before_merge, w.mac_b, MAIN).as_document().unwrap();
+    assert_eq!(old.blocks[1].text, WELCOME_TEXT);
+    // Carol, who may only read Welcome, can't start a branch of it
+    let carol = w.carol;
+    let read = grant(Scope::Entry(h.space, h.welcome), Role::Read, vault(carol), coop, None);
+    w.lab.submit(w.mac_s, &[w.mac_s], read).unwrap();
+    w.lab.sync_all(8);
+    assert_eq!(w.lab.branch(w.mac_c, carol, item, &first, "mine").err(), Some(Refusal::NoCap));
+    // but she can fork what she reads into a space of her own: the record, with none of its history
+    let mine = SpaceId::from(w.lab.submit(w.mac_c, &[w.mac_c], Action::FoundSpace { actor: carol, nonce: 8 }).unwrap());
+    let copy = w.lab.fork(w.mac_c, carol, item, MAIN, mine).unwrap();
+    let record = |sp, e| w.lab.item(w.mac_c, sp, e).map(|i| i.record());
+    assert_eq!(record(mine, copy), record(h.space, h.welcome));
+    assert_eq!(w.lab.history(w.mac_c, mine, copy).unwrap().commits().len(), 1);
 }
 
 #[test]
