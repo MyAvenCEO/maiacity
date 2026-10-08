@@ -38,7 +38,7 @@ lake exe vectors
 | `Theorems.lean` | T1 to T8, T11 to T14, and T16 to T18; and `writes_ordered`, the order every peer's writes come in, which T10f to T10h rest on |
 | `Lemmas.lean` | The helper lemmas the proofs use: how a step changes a vault, ownership links and chains, what a step keeps that authorization reads, causal closure, the schema lane, replays, and which op made each write |
 | `KeyLemmas.lean` | The helper lemmas for the keys: what settling seals and publishes, `opens` finding every key `Knows` gives, acting for a vault through chains, the invariants behind T5 and T6, `EverReads` |
-| `Examples.lean` | The plan's scenarios run on the model, including branches (a draft merged, a rewrite promoted, and a revocation cutting a branch), schema v2 (the schema lane, and a v2 app's edit of a document a v1 app wrote), one todo shared with several vaults and synced peer to peer, strong removal (back-dated ops cut, clashes, a stolen passkey, the root handed on), and checkpoints once the curves fall |
+| `Examples.lean` | The plan's scenarios run on the model, including branches (a draft merged, a rewrite promoted, and a revocation cutting a branch), schema v2 (the schema lane, and a v2 app's edit of a document a v1 app wrote), one todo shared with several vaults and synced peer to peer, strong removal (back-dated ops cut, clashes settled from the top down, a senior revoker, a stolen passkey, the root handed on), and checkpoints once the curves fall |
 | `Vectors.lean` | Cases for the Rust core: ops applied in order (which the model accepts) and ops at the depths they claim (which stand in the view, or in the post-quantum view), with the state at the end, each line of each entry's history and its heads among it; and lens cases: what each app reads from stored blocks and todos, and what its edits store |
 | `VectorsCheck.lean`, `WriteVectors.lean` | Check the files in `vectors/` on every build; write them (`lake exe vectors`) |
 | `vectors/vaults.json` | The cases with the model's answers, read by `crates/avendb/tests/vectors.rs` |
@@ -85,8 +85,12 @@ every device. That alone doesn't stop a removed owner, or a thief holding a stol
 copy of the log that claim to come before the removal, so a removal cuts what it hadn't seen (T16). Every removal
 (removing an owner or a device, revoking a grant, handing the root on) names the ops it had seen and keeps; every
 other op before it in the replay order stands only if it also stands with what the removal takes away hidden, for
-governance as for writes. When removals clash, the senior one stands: the vault's root, then its owners in the order
-they joined, then removals no owner approved (a device leaving), then revocations.
+governance as for writes. When removals clash, the senior one stands. Removals settle from the top down: a vault's
+before those of the coops it owns, since a coop's removals rest on its owners' approval, and within a vault its root,
+then its owners in the order they joined, then removals no owner approved (a device leaving). Revocations follow, the
+most senior revoker first: the space's founder, then whoever issued a grant higher up the revoked grant's chain. So a
+revoked owner can't keep his grant by revoking, on an old copy, a grant he gave beneath it, and a peer that never held
+a coop's log settles its owners' vaults as everyone else does (a finding of P6).
 
 A human vault's passkey is its root, named at genesis: it approves anything for its vault on its own, wins every
 clash, and only it hands the root on (`setRoot`, which cuts what the old passkey signs on an old copy). Passkeys are

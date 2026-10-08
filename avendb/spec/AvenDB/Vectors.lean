@@ -18,8 +18,8 @@ The Rust core names what an op creates (a vault, a space, a grant) by the hash o
 depth and rank by that hash, where the model picks numbers: the Rust side maps each number to what its op created, so
 every number is used once per case and no two ops of a view case share a depth and a rank. A blob is named by the hash
 of its bytes: the Rust side maps blob number `b` to the bytes `blob b`. The state includes the key schedule (each
-family's epoch where it isn't 0, every seal, and every published key), the schema lane, and each line of each entry's history: its writes and its
-heads, the main line first and then each branch in the order it started.
+family's epoch where it isn't 0, every seal, and every published key), the schema lane, and each line of each entry's
+history: its writes and its heads, the main line first and then each branch in the order it started.
 
 `vectors/lenses.json` holds the lens cases: stored blocks and todos in every shape the lens tells apart, what each app
 reads from them (`v1`, `v2`), and what each of a few edits through each app's view stores (`putV1`, `putV2`). The Rust
@@ -62,7 +62,7 @@ def runView (c : ViewCase) : List Bool × State :=
 /-! ## The cases
 
 Signers: Samuel's passkey 1, his Mac 2, his iPhone 3, Bob's passkey 4 and Mac 5, Carol's passkey 6 and Mac 7, Dave's
-passkey 8, a second passkey 9 (Samuel's backup), a new device 77, a stranger 555. Vaults: Samuel 100, Bob
+passkey 8, a second passkey 9 (Samuel's backup) and a third 10, a new device 77, a stranger 555. Vaults: Samuel 100, Bob
 101, Carol 102, Dave 103, coops from 200. Spaces: Handbook 10, Notes 11, Todos 12. Entries: Welcome 1, Charter 2,
 the door todo 21. Blobs (schemas and lenses): from 1. -/
 
@@ -435,7 +435,23 @@ def views : List ViewCase := [
     (13, 3, [], .write 11 1 100 0 [8]),
     (14, 3, [], .checkpoint 11 1 [13]),
     (15, 2, [], .write 11 1 100 0 [13]),
-    (16, 3, [], .checkpoint 11 1 [15])] }]
+    (16, 3, [], .checkpoint 11 1 [15])] },
+  { name := "the senior revoker ranks first", ops := humansV ++ [
+    (6, 2, [], .foundSpace 11 100),
+    (7, 1, [], g 30 (.space 11) .owner (toVault 103) 100),
+    (8, 8, [], g 31 (.space 11) .read (toVault 102) 103 (some 30)),
+    (9, 2, [], .write 11 1 100 0),
+    -- Samuel revokes Dave's owner grant; Dave revokes the read he gave Carol on a copy that hadn't seen it, so his
+    -- revocation sorts first, and falls with the grant it rested on
+    (11, 1, [], .revoke 30 100 [6, 7, 8, 9]),
+    (10, 8, [], .revoke 31 103 [])] },
+  { name := "a vault settles before the coops it owns", ops := humansV ++ [
+    (6, 1, [9], .addOwner 100 (.signer 9)),
+    (7, 1, [10], .addOwner 100 (.signer 10)),
+    (8, 1, [4], .genesis 200 .coop [.vault 100, .vault 101] 1),
+    -- the second passkey removes Bob from the coop on a copy that hadn't seen the third remove it from Samuel's vault
+    (9, 9, [], .removeOwner 200 (.vault 101) []),
+    (10, 10, [], .removeOwner 100 (.signer 9) [6, 7, 8])] }]
 
 /-! ## JSON -/
 

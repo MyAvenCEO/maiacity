@@ -911,6 +911,48 @@ impl State {
         false
     }
 
+    /// How far below the people vault `v` sits: a human vault at 0, a coop one below its lowest owner (`tier`).
+    fn tier(&self, v: VaultId) -> usize {
+        self.tier_n(v, self.depth())
+    }
+
+    fn tier_n(&self, v: VaultId, n: usize) -> usize {
+        match (n, self.vault(v)) {
+            (0, _) | (_, None) => 0,
+            (_, Some(vt)) => vt.owners.iter().fold(0, |t, p| match *p {
+                Principal::Vault(o) => t.max(self.tier_n(o, n - 1) + 1),
+                Principal::Signer(_) => t,
+            }),
+        }
+    }
+
+    /// Grant `g` and the grants it rests on, from the one its space's founder issued down to `g` (`chain`).
+    fn chain<'a>(&'a self, g: &'a Grant) -> Vec<&'a Grant> {
+        let mut out = vec![g];
+        let mut g = g;
+        for _ in 0..=self.grants.len() {
+            match g.parent.and_then(|p| self.grant(p)) {
+                Some(p) => {
+                    out.push(p);
+                    g = p;
+                }
+                None => break,
+            }
+        }
+        out.reverse();
+        out
+    }
+
+    /// How senior vault `a` is in revoking grant `g`: 0 for the space's founder, else the place in `g`'s chain of the
+    /// highest grant `a` issued, the founder's grant at 0.
+    fn seniority(&self, a: VaultId, g: &Grant) -> usize {
+        if self.founder(g.scope.space()) == Some(a) {
+            return 0;
+        }
+        let chain = self.chain(g);
+        chain.iter().position(|x| x.issuer == a).unwrap_or(chain.len())
+    }
+
     /// The issuer founded the space, or relies on an owner grant to it that covers the new grant's scope.
     fn parent_ok(&self, g: &Grant) -> bool {
         match g.parent {
@@ -1446,26 +1488,33 @@ fn run(ops: &[Op], ids: &[OpId], rem: &HashSet<OpId>, states: bool) -> Run {
     out
 }
 
-/// Who stands when removals clash, the smallest first: the vault's root; then its owners by seniority, their place
-/// among the owners where no removal has happened yet; then removals no owner approved; then revocations.
-fn priority(base: &State, op: &Op) -> (u8, usize) {
+/// Who stands when removals clash, the smallest first. Vault removals come before revocations, and a vault's removals
+/// before those of the coops it owns (`tier`), since a coop's removals rest on its owners' approval and never the other
+/// way round. Within a vault: its root, then its owners by seniority, their place among the owners where no removal has
+/// happened yet, then removals no owner approved. Revocations follow, the most senior revoker first: the space's
+/// founder, then whoever issued a grant higher up the chain of the grant revoked, since a grant falls with the grant it
+/// rests on. So a removal is only ever kept out by one that ranks above it, and what ranks above it never rests on what
+/// it takes away.
+fn priority(base: &State, op: &Op) -> (u8, usize, u8, usize) {
     match &op.action {
         Action::RemoveOwner { vault, .. } | Action::RemoveDevice { vault, .. } | Action::SetRoot { vault, .. } => {
+            let tier = base.tier(*vault);
             match base.vault(*vault) {
-                None => (2, 0),
+                None => (0, tier, 2, 0),
                 Some(vt) => {
                     let sigs: Vec<SignerId> = op.sigs().collect();
                     if vt.root.is_some_and(|r| sigs.contains(&r)) {
-                        (0, 0)
+                        (0, tier, 0, 0)
                     } else if let Some(i) = vt.owners.iter().position(|&p| base.approves(&sigs, p)) {
-                        (1, i)
+                        (0, tier, 1, i)
                     } else {
-                        (2, 0)
+                        (0, tier, 2, 0)
                     }
                 }
             }
         }
-        _ => (3, 0),
+        Action::Revoke { grant, actor, .. } => (1, base.grant(*grant).map_or(0, |g| base.seniority(*actor, g)), 0, 0),
+        _ => (2, 0, 0, 0),
     }
 }
 

@@ -278,8 +278,9 @@ def order (ops : List Op) : List Op := ops.mergeSort Op.before
 A removal names the ops it had seen and keeps (`keep`): removing an owner or a device, revoking a grant, and the root
 handing itself on. Every other op that comes before it in the replay order was made concurrently, or claims to be:
 it stands only if it also stands with what the removal takes away hidden. When removals clash, the senior one
-stands: a vault's root, then its owners in the order they joined, then removals no owner approved (a device
-leaving), then revocations. -/
+stands: removals settle from the top down, a vault's before those of the coops it owns, and within a vault its root,
+then its owners in the order they joined, then removals no owner approved (a device leaving); revocations follow,
+the most senior revoker first (`priority`). -/
 
 /-- What a removal takes away. -/
 inductive Fact where
@@ -351,21 +352,59 @@ def runFrom (rem : List Op) (cs : List (Nat × List OpId × List Fact)) : State 
 /-- Replay `ops`, in this order, with the removals of `rem` and no others. -/
 def runWith (ops rem : List Op) : State × List Op := runFrom rem (cuts ops rem) {} ops.zipIdx
 
-/-- Who stands when removals clash, the smallest first: the vault's root; then its owners by seniority, their place
-    among the owners where no removal has happened yet; then removals no owner approved; then revocations. -/
-def priority (base : State) (op : Op) : Nat × Nat :=
+/-- How far below the people vault `v` sits: a human vault at 0, a coop one below its lowest owner. -/
+def tierN (st : State) : Nat → VaultId → Nat
+  | 0, _ => 0
+  | n + 1, v =>
+    match st.vault? v with
+    | none => 0
+    | some vt => vt.owners.foldl (fun t p => match p with
+        | .vault o  => max t (tierN st n o + 1)
+        | .signer _ => t) 0
+
+def tier (st : State) (v : VaultId) : Nat := tierN st st.depth v
+
+/-- Grant `g` and the grants it rests on, from the one its space's founder issued down to `g`. -/
+def chainN (st : State) : Nat → Grant → List Grant
+  | 0, g => [g]
+  | n + 1, g => (match g.parent.bind st.grant? with
+    | some p => chainN st n p
+    | none   => []) ++ [g]
+
+def chain (st : State) (g : Grant) : List Grant := chainN st (st.grants.length + 1) g
+
+/-- How senior vault `a` is in revoking grant `g`: 0 for the space's founder, else the place in `g`'s chain of the
+    highest grant `a` issued, the founder's grant at 0. -/
+def seniority (st : State) (a : VaultId) (g : Grant) : Nat :=
+  if st.founder? g.scope.spaceOf == some a then 0
+  else let c := chain st g; (c.findIdx? (·.issuer == a)).getD c.length
+
+/-- Who stands when removals clash, the smallest first. Vault removals come before revocations, and a vault's
+    removals before those of the coops it owns (`tier`), since a coop's removals rest on its owners' approval and
+    never the other way round. Within a vault: its root, then its owners by seniority, their place among the owners
+    where no removal has happened yet, then removals no owner approved. Revocations follow, the most senior revoker
+    first: the space's founder, then whoever issued a grant higher up the chain of the grant revoked, since a grant
+    falls with the grant it rests on. So a removal is only ever kept out by one that ranks above it, and what ranks
+    above it never rests on what it takes away. -/
+def priority (base : State) (op : Op) : List Nat :=
   match op.action with
   | .removeOwner v _ _ | .removeDevice v _ _ | .setRoot v _ _ =>
+    let t := tier base v
     match base.vault? v with
-    | none => (2, 0)
+    | none => [0, t, 2, 0]
     | some vt =>
-      if vt.root.any op.sigs.contains then (0, 0)
+      if vt.root.any op.sigs.contains then [0, t, 0, 0]
       else match vt.owners.zipIdx.find? fun (p, _) => approves base op.sigs p with
-        | some (_, i) => (1, i)
-        | none => (2, 0)
-  | _ => (3, 0)
+        | some (_, i) => [0, t, 1, i]
+        | none => [0, t, 2, 0]
+  | .revoke g a _ => [1, (base.grant? g).elim 0 (seniority base a), 0, 0]
+  | _ => [2, 0, 0, 0]
 
-def prioLe (a b : Nat × Nat) : Bool := a.1 < b.1 || (a.1 == b.1 && a.2 ≤ b.2)
+/-- Priorities compare place by place. -/
+def prioLe : List Nat → List Nat → Bool
+  | [], _ => true
+  | _ :: _, [] => false
+  | a :: as, b :: bs => a < b || (a == b && prioLe as bs)
 
 /-- The removals that stand, chosen one by one by priority: each stands if the ops replayed with it and the ones
     chosen before it accept it and keep accepting those. -/
