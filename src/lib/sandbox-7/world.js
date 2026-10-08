@@ -26,7 +26,7 @@ const hexView = (/** @type {number} */ x, /** @type {number} */ z, tower = false
  * @param {{ onPick?: (id: string | null, hex: string | null) => void, onProgress?: (label: string) => void, people?: (hex: string) => string }} [o]
  */
 export function mountWorld(container, labelLayer, o = {}) {
-	const stage = createStage(container, { fov: 42, near: 1, far: 12000, maxPixelRatio: 1.5 });
+	const stage = createStage(container, { fov: 42, near: 2, far: 12000, maxPixelRatio: 1.5 });
 	const { renderer, scene, camera } = stage;
 	// the village has no clock of its own: on Auto the sky stands at late morning, Manual sets the hour by hand
 	const sky = createSky(renderer, scene, { clock: () => (skyTime.auto ? MORNING : skyTime.hour), shadowReach: 560, shadowMap: 4096, shadowFar: 3600, lightDistance: 1700, shadowGrid: 32, fog: { near: 3200, far: 11000 } });
