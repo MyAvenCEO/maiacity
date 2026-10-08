@@ -1,4 +1,5 @@
 import VaultSpec.Sync
+import VaultSpec.Lens
 
 /-!
 # The plan's scenarios, run on the model
@@ -172,6 +173,65 @@ def s7 : List Op := s6 ++ chain 60 [
 #guard opens' s7 stranger (.entry handbook charter) && !opens' s7 stranger (.entry handbook welcome)
 #guard !accepted s7 (attempt macS [] (.grant { id := 4, scope := .entry handbook charter, role := .write,
                                                grantee := .«public», issuer := coop, parent := none }))
+
+/-! ## Scenario 9: schema v2
+
+The coop moves the Handbook to schema v2. Samuel's Mac, acting for the coop that founded it, publishes the v2 schema
+and the lens from v1 into the Handbook's schema lane. Carol may write in the Handbook but not publish there. -/
+
+def schemaV2 : BlobId := 1
+def lensV1V2 : BlobId := 2
+
+def s9 : List Op := s7 ++ chain 65 [
+  (macS, [], .grant { id := 5, scope := .space handbook, role := .write, grantee := .principal (.vault carol),
+                       issuer := coop, parent := none }),
+  (macS, [], .publish handbook coop schemaV2),
+  (macS, [], .publish handbook coop lensV1V2),
+  -- Samuel's Notes move to v2 too: the same blob, in another space's lane
+  (macS, [], .publish notes samuel schemaV2)]
+#guard refused s9 == []
+
+#guard (view s9).lane == [(handbook, schemaV2), (handbook, lensV1V2), (notes, schemaV2)]
+-- the same blob again is refused; Bob's Mac acts for the coop too, and may publish another
+#guard !accepted s9 (attempt macS [] (.publish handbook coop schemaV2))
+#guard accepted s9 (attempt macB [] (.publish handbook coop 3))
+-- Carol writes in the Handbook, but publishes into its lane neither for herself nor for the coop; nor does a stranger
+#guard accepted s9 (attempt macC [] (.write handbook onboarding carol 0))
+#guard !accepted s9 (attempt macC [] (.publish handbook carol 3))
+#guard !accepted s9 (attempt macC [] (.publish handbook coop 3))
+#guard !accepted s9 (attempt stranger [] (.publish handbook coop 3))
+-- whoever may receive an item of a space receives its schemas and lenses: Carol's Mac those of the Handbook, and so
+-- does anyone, through the public Charter; Bob's Mac doesn't receive those of Samuel's Notes
+#guard [macC, stranger].all fun d => (respond s9 d).any (·.action == .publish handbook coop schemaV2)
+#guard (respond s9 phoneS).any (·.action == .publish notes samuel schemaV2)
+#guard !(respond s9 macB).any (·.action == .publish notes samuel schemaV2)
+
+/-- Welcome as an app still on v1 wrote it: v1's fields only. -/
+def welcomeV1 : Lens.StoredDoc := { title := "Welcome", blocks := [
+  { id := 1, text := "Welcome", kind := some .h1 },
+  { id := 2, text := "The greenhouse opens at eight.", kind := some .p },
+  { id := 3, text := "Water the seedlings", kind := some .li }] }
+
+/-- A v2 app makes the second block a heading and tags the document. -/
+def welcomeV2 : Lens.StoredDoc :=
+  let v := welcomeV1.v2
+  welcomeV1.putV2 { v with
+    blocks := v.blocks.map fun b => if b.id == 2 then { b with type := .heading, level := some 2 } else b,
+    tags := ["greenhouse"] }
+
+-- a v1 app reads every other block exactly as before, and the heading through the lens
+#guard welcomeV2.v1.blocks.filter (·.id != 2) == welcomeV1.v1.blocks.filter (·.id != 2)
+#guard welcomeV2.v1.blocks.find? (·.id == 2) ==
+  some { id := 2, kind := .h2, text := "The greenhouse opens at eight." }
+-- nothing was written to the other blocks: none of them gained `checked`, `lang`, `type` or `level`
+#guard welcomeV2.blocks.filter (·.id != 2) == welcomeV1.blocks.filter (·.id != 2)
+#guard (welcomeV2.blocks.filter (·.id != 2)).all fun b =>
+  b.checked.isNone && b.lang.isNone && b.type.isNone && b.level.isNone
+-- the heading holds v2's representation now, and the document its tag, which a v1 app's edit keeps
+#guard (welcomeV2.blocks.find? (·.id == 2)).map (fun b => (b.kind, b.type, b.level)) ==
+  some (none, some .heading, some 2)
+#guard welcomeV2.v2.tags == ["greenhouse"]
+#guard (welcomeV2.putV1 { welcomeV2.v1 with title := "Welcome!" }).tags == ["greenhouse"]
 
 /-! ## Scenario 10: revoking Carol rotates Welcome's key -/
 

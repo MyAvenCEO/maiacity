@@ -31,6 +31,8 @@ inductive Action where
       The schedule already says who may open what, so this op changes nothing here: a peer accepts it only from a
       signer that may open the key, and only if every box is one the schedule seals. -/
   | keys         (k : KeyScope) (epoch : Nat) (to : List KeyName) (pub : Bool := false)
+  /-- A schema or a lens, published into the space's schema lane: blobs that hold no data, named by their hash. -/
+  | publish      (sp : SpaceId) (actor : VaultId) (blob : BlobId)
   deriving DecidableEq, Repr
 
 /-- The ops a removal had seen and keeps; every removal names them. -/
@@ -216,6 +218,11 @@ def apply (st : State) (op : Op) : Option State :=
     else if !to.all (fun t => st.seals.contains ⟨.scoped k epoch, t⟩) then none
     else if pub && !st.published.contains (.scoped k epoch) then none
     else some st
+  | .publish sp actor blob =>
+    if (st.space? sp).isNone || st.lane.contains (sp, blob) then none
+    -- only an owner of the space publishes into its lane
+    else if !actsFor st op.author actor || !holds st actor (.space sp) .owner then none
+    else some { st with lane := st.lane ++ [(sp, blob)] }
 
 /-- One op: check it, then rotate and seal keys. -/
 def step (st : State) (op : Op) : Option State := (apply st op).map (settle st)

@@ -1,4 +1,5 @@
 import VaultSpec.Step
+import VaultSpec.Lens
 
 /-!
 # Test vectors for the Rust core
@@ -14,8 +15,13 @@ cut what they hadn't seen. The Rust core must give the same answer for every cas
 
 The Rust core names what an op creates (a vault, a space, a grant) by the hash of that op, and orders ops of the same
 depth and rank by that hash, where the model picks numbers: the Rust side maps each number to what its op created, so
-every number is used once per case and no two ops of a view case share a depth and a rank. The state includes the
-key schedule: each family's epoch where it isn't 0, every seal, and every published key.
+every number is used once per case and no two ops of a view case share a depth and a rank. A blob is named by the hash
+of its bytes: the Rust side maps blob number `b` to the bytes `blob b`. The state includes the key schedule (each
+family's epoch where it isn't 0, every seal, and every published key) and the schema lane.
+
+`vectors/lenses.json` holds the lens cases: stored blocks and todos in every shape the lens tells apart, what each app
+reads from them (`v1`, `v2`), and what each of a few edits through each app's view stores (`putV1`, `putV2`). The Rust
+core must read and write exactly the same.
 -/
 
 namespace VaultSpec.Vectors
@@ -53,7 +59,7 @@ def runView (c : ViewCase) : List Bool × State :=
 Signers: Samuel's passkey 1, his Mac 2, his iPhone 3, Bob's passkey 4 and Mac 5, Carol's passkey 6 and Mac 7, Dave's
 passkey 8, a second passkey or recovery code's signer 9, a new device 77, a stranger 555. Vaults: Samuel 100, Bob
 101, Carol 102, Dave 103, coops from 200. Spaces: Handbook 10, Notes 11, Todos 12. Entries: Welcome 1, Charter 2,
-the door todo 21. -/
+the door todo 21. Blobs (schemas and lenses): from 1. -/
 
 def humans : List (SignerId × List SignerId × Action) := [
   (1, [], .genesis 100 .human [.signer 1] 1),
@@ -246,7 +252,28 @@ def cases : List Case := [
     (2, [], .keys (.entry 10 1) 1 [.scoped (.space 10) 0]),
     (2, [], .keys (.entry 10 1) 0 [.scoped (.entry 10 1) 1]),
     (6, [], .keys (.entry 10 1) 1 []),
-    (2, [], .keys (.entry 10 1) 1 [.scoped (.vault 102) 0])] }]
+    (2, [], .keys (.entry 10 1) 1 [.scoped (.vault 102) 0])] },
+  { name := "the schema lane", ops := humans ++ [
+    (1, [4], .genesis 200 .coop [.vault 100, .vault 101] 2),
+    (2, [], .foundSpace 10 200),
+    (2, [], .foundSpace 11 100),
+    (2, [], g 1 (.space 10) .write (toVault 102) 200),
+    -- Samuel's Mac, acting for the coop that founded the Handbook, publishes a schema and a lens into its lane
+    (2, [], .publish 10 200 1),
+    (2, [], .publish 10 200 2),
+    -- the same blob again is refused; in another space's lane it is that space's own
+    (5, [], .publish 10 200 1),
+    (2, [], .publish 11 100 1),
+    -- Carol may write in the Handbook but not publish into its lane, for herself or for the coop; nor may a stranger,
+    -- and nothing goes into the lane of a space that doesn't exist
+    (6, [], .publish 10 102 3),
+    (6, [], .publish 10 200 3),
+    (555, [], .publish 10 200 3),
+    (2, [], .publish 12 200 3),
+    -- Dave, made owner of the Handbook by both passkeys of the coop, publishes; so does Bob's Mac, for the coop
+    (1, [4], g 2 (.space 10) .owner (toVault 103) 200),
+    (8, [], .publish 10 103 3),
+    (5, [], .publish 10 200 4)] }]
 
 /-- Samuel's, Bob's, Carol's and Dave's vaults, one op per depth. -/
 def humansV : List (Nat × SignerId × List SignerId × Action) := humans.zipIdx.map fun ((a, co, act), i) => (i, a, co, act)
@@ -318,7 +345,17 @@ def views : List ViewCase := [
     -- Carol's passkey boxes Welcome's key twice; Samuel revokes her read having seen only the first
     (10, 6, [], .keys (.entry 10 1) 0 [.scoped (.vault 102) 0]),
     (11, 6, [], .keys (.entry 10 1) 0 [.scoped (.space 10) 0]),
-    (12, 2, [], .revoke 1 200 [10])] }]
+    (12, 2, [], .revoke 1 200 [10])] },
+  { name := "a removed owner's back-dated publish is cut", ops := humansV ++ [
+    (6, 1, [4], .genesis 200 .coop [.vault 100, .vault 101] 1),
+    (7, 2, [], .foundSpace 10 200),
+    -- Bob's Mac publishes a schema for the coop, which Samuel sees, and a lens on an old copy, which he doesn't
+    (8, 5, [], .publish 10 200 1),
+    (9, 5, [], .publish 10 200 2),
+    (10, 1, [], .removeOwner 200 (.vault 101) [8]),
+    -- Samuel's Mac publishes the lens itself; Bob's Mac no longer can
+    (11, 2, [], .publish 10 200 2),
+    (12, 5, [], .publish 10 200 3)] }]
 
 /-! ## JSON -/
 
@@ -385,6 +422,7 @@ def action : Action → String
       ("epoch", nat epoch), ("deps", ids deps)])]
   | .keys k epoch to pub => obj [("keys", obj [("key", keyScope k), ("epoch", nat epoch),
       ("to", arr (to.map keyName)), ("public", bool pub)])]
+  | .publish sp a b => obj [("publish", obj [("space", nat sp), ("actor", nat a), ("blob", nat b)])]
 
 def vault (vt : Vault) : String :=
   obj [("id", nat vt.id), ("kind", kind vt.kind), ("owners", arr (vt.owners.map principal)),
@@ -408,7 +446,8 @@ def state (st : State) : String :=
   str "vaults" ++ ": " ++ arr (st.vaults.map vault) ++ ",\n " ++ str "spaces" ++ ": " ++ arr (st.spaces.map space) ++
     ",\n " ++ str "grants" ++ ": " ++ arr (st.grants.map grant) ++ ",\n " ++ str "writes" ++ ": " ++
     arr (st.writes.map write) ++ ",\n " ++ str "epochs" ++ ": " ++ epochs st ++ ",\n " ++ str "seals" ++ ": " ++
-    arr (st.seals.map sealed) ++ ",\n " ++ str "published" ++ ": " ++ arr (st.published.map keyName)
+    arr (st.seals.map sealed) ++ ",\n " ++ str "published" ++ ": " ++ arr (st.published.map keyName) ++ ",\n " ++
+    str "lane" ++ ": " ++ arr (st.lane.map fun (sp, b) => obj [("space", nat sp), ("blob", nat b)])
 
 def case (c : Case) : String :=
   let (accepted, st) := run c.ops
@@ -443,5 +482,124 @@ def created : Action → Option (Nat × Nat)
 #guard views.all fun c => nodup (c.toOps.map fun o => (o.depth, o.rank))
 -- in a step case, spaces and grants too
 #guard cases.all fun c => nodup (c.ops.filterMap fun (_, _, a) => (created a).filter (·.1 != 0))
+
+/-! ## The lens cases
+
+Stored blocks in every shape the lens tells apart: v1's kind or none; v2's type and level or none, among them a
+heading of a level v1 can't say and a level without a type, which neither app can read; checked or not; a language or
+not. A v1 app edits each to every kind and to a new text, keeping the kind it reads (a paragraph when it reads none).
+A v2 app edits each to every type, keeping the `checked` and `lang` it reads (none when it reads no block), and flips
+`checked` and sets a new language, keeping the type it reads (a paragraph when it reads none). Todos have `done`,
+`status` and a due date, each stored or not; a v1 app sets `done` either way and edits the notes, a v2 app sets each
+status and edits the title. -/
+
+open Lens
+
+def kindV1 : KindV1 → String
+  | .h1 => str "h1"
+  | .h2 => str "h2"
+  | .h3 => str "h3"
+  | .p => str "p"
+  | .li => str "li"
+  | .code => str "code"
+
+def typeV2 : TypeV2 → String
+  | .heading => str "heading"
+  | .paragraph => str "paragraph"
+  | .item => str "item"
+  | .code => str "code"
+
+def status : Status → String
+  | .«open» => str "open"
+  | .doing => str "doing"
+  | .done => str "done"
+
+def storedBlock (b : StoredBlock) : String :=
+  obj [("id", nat b.id), ("text", str b.text), ("kind", opt kindV1 b.kind), ("type", opt typeV2 b.type),
+       ("level", opt nat b.level), ("checked", opt bool b.checked), ("lang", opt str b.lang)]
+
+def blockV1 (b : BlockV1) : String := obj [("id", nat b.id), ("kind", kindV1 b.kind), ("text", str b.text)]
+
+def blockV2 (b : BlockV2) : String :=
+  obj [("id", nat b.id), ("type", typeV2 b.type), ("level", opt nat b.level), ("checked", opt bool b.checked),
+       ("lang", opt str b.lang), ("text", str b.text)]
+
+def storedTodo (t : StoredTodo) : String :=
+  obj [("title", str t.title), ("notes", str t.notes), ("due", opt str t.due), ("done", opt bool t.done),
+       ("status", opt status t.status)]
+
+def todoV1 (t : TodoV1) : String :=
+  obj [("title", str t.title), ("done", bool t.done), ("notes", str t.notes), ("due", opt str t.due)]
+
+def todoV2 (t : TodoV2) : String :=
+  obj [("title", str t.title), ("status", status t.status), ("notes", str t.notes), ("due", opt str t.due)]
+
+def kinds : List KindV1 := [.h1, .h2, .h3, .p, .li, .code]
+
+/-- Each type with the level v1's kinds give it. -/
+def types : List (TypeV2 × Option Nat) :=
+  [(.heading, some 1), (.heading, some 2), (.heading, some 3), (.paragraph, none), (.item, none), (.code, none)]
+
+def storedBlocks : List StoredBlock :=
+  let reps : List (Option TypeV2 × Option Nat) := [(none, none), (some .heading, some 1), (some .heading, some 2),
+    (some .heading, some 3), (some .heading, some 4), (some .paragraph, none), (some .item, none),
+    (some .code, none), (none, some 2)]
+  let shapes := (none :: kinds.map some).flatMap fun k => reps.flatMap fun (t, l) =>
+    [none, some true].flatMap fun c => [none, some "sh"].map fun lang => (k, t, l, c, lang)
+  (shapes.zipIdx 1).map fun ((k, t, l, c, lang), i) =>
+    { id := i, text := "Seeds", kind := k, type := t, level := l, checked := c, lang := lang }
+
+def v1Views (b : StoredBlock) : List BlockV1 :=
+  kinds.map (fun k => ⟨b.id, k, b.text⟩) ++ [⟨b.id, (b.v1.map (·.kind)).getD .p, "Seeds, sown"⟩]
+
+def v2Views (b : StoredBlock) : List BlockV2 :=
+  let old := b.v2.getD ⟨b.id, .paragraph, none, none, none, b.text⟩
+  types.map (fun (t, l) => { old with type := t, level := l }) ++
+    [{ old with checked := some !(old.checked.getD false), lang := some "py" }]
+
+def storedTodos : List StoredTodo :=
+  [none, some false, some true].flatMap fun done =>
+    [none, some .«open», some .doing, some .done].flatMap fun status =>
+      [none, some "2026-10-10"].map fun due =>
+        { title := "Fix the door", notes := "The hinge squeaks", due, done, status }
+
+def todoV1Views (t : StoredTodo) : List TodoV1 :=
+  [{ t.v1 with done := false }, { t.v1 with done := true }, { t.v1 with notes := "Oil the hinge" }]
+
+def todoV2Views (t : StoredTodo) : List TodoV2 :=
+  [Status.«open», .doing, .done].map (fun s => { t.v2 with status := s }) ++
+    [{ t.v2 with title := "Fix the shed door" }]
+
+def puts (views : List String) : String := "[\n  " ++ ",\n  ".intercalate views ++ "]"
+
+def blockCase (b : StoredBlock) : String :=
+  let p1 := (v1Views b).map fun v => obj [("view", blockV1 v), ("stored", storedBlock (b.putV1 v))]
+  let p2 := (v2Views b).map fun v => obj [("view", blockV2 v), ("stored", storedBlock (b.putV2 v))]
+  "{" ++ str "stored" ++ ": " ++ storedBlock b ++ ",\n " ++ str "v1" ++ ": " ++ opt blockV1 b.v1 ++ ", " ++
+    str "v2" ++ ": " ++ opt blockV2 b.v2 ++ ",\n " ++ str "putV1" ++ ": " ++ puts p1 ++ ",\n " ++ str "putV2" ++
+    ": " ++ puts p2 ++ "}"
+
+def todoCase (t : StoredTodo) : String :=
+  let p1 := (todoV1Views t).map fun v => obj [("view", todoV1 v), ("stored", storedTodo (t.putV1 v))]
+  let p2 := (todoV2Views t).map fun v => obj [("view", todoV2 v), ("stored", storedTodo (t.putV2 v))]
+  "{" ++ str "stored" ++ ": " ++ storedTodo t ++ ",\n " ++ str "v1" ++ ": " ++ todoV1 t.v1 ++ ", " ++ str "v2" ++
+    ": " ++ todoV2 t.v2 ++ ",\n " ++ str "putV1" ++ ": " ++ puts p1 ++ ",\n " ++ str "putV2" ++ ": " ++ puts p2 ++
+    "}"
+
+def renderLenses : String :=
+  "{\"blocks\": [\n" ++ ",\n".intercalate (storedBlocks.map blockCase) ++ "\n],\n\"todos\": [\n" ++
+    ",\n".intercalate (storedTodos.map todoCase) ++ "\n]}\n"
+
+-- every way a put writes is taken by some case, so neither side can pass while skipping one: a v1 edit's new kind as
+-- v2's fields and as `kind`, a v2 edit's new type dropping `kind`, a v1 edit's `done` as the status and as `done`, a
+-- v2 edit's status dropping `done`; and some edits write nothing at all
+#guard storedBlocks.any fun b => (v1Views b).any fun v => (b.putV1 v).type != b.type && (b.putV1 v).kind == b.kind
+#guard storedBlocks.any fun b => (v1Views b).any fun v => (b.putV1 v).kind != b.kind
+#guard storedBlocks.any fun b => (v2Views b).any fun v => (b.putV2 v).kind != b.kind
+#guard storedTodos.any fun t => (todoV1Views t).any fun v => (t.putV1 v).status != t.status
+#guard storedTodos.any fun t => (todoV1Views t).any fun v => (t.putV1 v).done != t.done
+#guard storedTodos.any fun t => (todoV2Views t).any fun v => (t.putV2 v).done != t.done
+#guard storedBlocks.any (fun b => (v1Views b).any (b.putV1 · == b) && (v2Views b).any (b.putV2 · == b)) &&
+  storedTodos.any fun t => (todoV1Views t).any (t.putV1 · == t) && (todoV2Views t).any (t.putV2 · == t)
 
 end VaultSpec.Vectors

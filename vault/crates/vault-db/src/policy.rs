@@ -15,7 +15,7 @@
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
-use crate::id::{EntryId, GrantId, OpId, SignerId, SpaceId, VaultId};
+use crate::id::{BlobId, EntryId, GrantId, OpId, SignerId, SpaceId, VaultId};
 use crate::keys::{KeyBox, KeyId, KeyName, KeyScope, PublicKey, Seal};
 
 /// A human vault is what one person owns, governed by their signers. A coop vault is owned by other vaults.
@@ -132,6 +132,9 @@ pub enum Action {
     /// The schedule already says who may open what, so this changes nothing in it: a peer accepts it only from a
     /// signer that may open the key, and only if every box goes where the schedule seals the key.
     Keys { key: KeyScope, epoch: u64, id: KeyId, public: Option<PublicKey>, boxes: Vec<KeyBox>, clear: Option<[u8; 32]> },
+    /// A schema or a lens, published into the space's schema lane by an owner of the space (T17): a blob that holds no
+    /// data, named by its hash (`BlobId::of`), and readable by whoever holds the space's ops.
+    Publish { space: SpaceId, actor: VaultId, blob: Vec<u8> },
 }
 
 impl Action {
@@ -208,7 +211,10 @@ impl Op {
     /// The vault an op acts for: a space's founder, a grant's issuer, a revoker, a writer.
     pub fn actor(&self) -> Option<VaultId> {
         match &self.action {
-            Action::FoundSpace { actor, .. } | Action::Revoke { actor, .. } | Action::Write { actor, .. } => Some(*actor),
+            Action::FoundSpace { actor, .. }
+            | Action::Revoke { actor, .. }
+            | Action::Write { actor, .. }
+            | Action::Publish { actor, .. } => Some(*actor),
             Action::Grant(g) => Some(g.issuer),
             _ => None,
         }
@@ -318,6 +324,13 @@ pub enum Refusal {
     Unsealed,
     /// A key in the clear of a family that isn't public.
     NotPublic,
+    /// The blob is in the space's lane already.
+    AlreadyPublished,
+    /// Not a rule of the ops but of an app: it opened the item read-only, as no lens it holds reaches every schema the
+    /// item was written under (`lens::Lane::view`), so it may not edit it.
+    ReadOnly,
+    /// Not a rule of the ops but of an app: its edit doesn't fit its own schema (`lens::View::put`).
+    NotAView,
 }
 
 /// What a removal takes away.
@@ -392,6 +405,16 @@ pub struct State {
     published: Vec<KeyName>,
     /// The key each signer has keys sealed to, as it last brought it.
     seal_keys: Arc<HashMap<SignerId, PublicKey>>,
+    /// Each space's schema lane: the schemas and lenses published into it, in the order they came.
+    lane: Vec<Published>,
+}
+
+/// A blob in a space's schema lane.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Published {
+    pub space: SpaceId,
+    pub blob: BlobId,
+    pub bytes: Arc<[u8]>,
 }
 
 impl State {
@@ -433,6 +456,16 @@ impl State {
     /// The grants in force, each with its id.
     pub fn grants(&self) -> Vec<(GrantId, Grant)> {
         self.grants.clone()
+    }
+
+    /// What was published into every space's schema lane, in the order it came.
+    pub fn lane(&self) -> &[Published] {
+        &self.lane
+    }
+
+    /// The blobs of space `sp`'s schema lane, in the order they came.
+    pub fn lane_of(&self, sp: SpaceId) -> impl Iterator<Item = &[u8]> {
+        self.lane.iter().filter(move |p| p.space == sp).map(|p| &p.bytes[..])
     }
 
     /// The accepted writes of one entry, in replay order.
@@ -1089,6 +1122,23 @@ impl State {
                 if clear.is_some() && !self.published.contains(&secret) {
                     return Err(Refusal::NotPublic);
                 }
+            }
+            Action::Publish { space, actor, blob } => {
+                let (space, actor, id) = (*space, *actor, BlobId::of(blob));
+                if self.space(space).is_none() {
+                    return Err(Refusal::UnknownSpace);
+                }
+                if self.lane.iter().any(|p| p.space == space && p.blob == id) {
+                    return Err(Refusal::AlreadyPublished);
+                }
+                // only an owner of the space publishes into its lane
+                if !self.acts_for(op.author, actor) {
+                    return Err(Refusal::NotActing);
+                }
+                if !self.holds(actor, Scope::Space(space), Role::Owner) {
+                    return Err(Refusal::NoCap);
+                }
+                self.lane.push(Published { space, blob: id, bytes: blob.as_slice().into() });
             }
         }
         Ok(())

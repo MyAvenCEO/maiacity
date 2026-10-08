@@ -3,9 +3,9 @@ import VaultSpec.Basic
 /-!
 # State
 
-What a peer knows after replaying the ops it holds: vaults, spaces, grants, accepted writes, and the key schedule
-(current epochs, seals, published keys). Everything here is executable, so the same definitions that the theorems
-talk about also produce the test vectors the Rust core must match.
+What a peer knows after replaying the ops it holds: vaults, spaces, grants, accepted writes, the key schedule
+(current epochs, seals, published keys), and each space's schema lane. Everything here is executable, so the same
+definitions that the theorems talk about also produce the test vectors the Rust core must match.
 -/
 
 namespace VaultSpec
@@ -65,6 +65,8 @@ structure State where
   epochs    : List (KeyScope × Nat) := []
   seals     : List Seal := []
   published : List KeyName := []
+  /-- The schema lane: the schemas and lenses published into each space, by their hash, in the order they came. -/
+  lane      : List (SpaceId × BlobId) := []
   deriving Repr
 
 namespace State

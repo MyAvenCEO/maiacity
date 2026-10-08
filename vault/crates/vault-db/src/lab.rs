@@ -3,7 +3,8 @@
 //! read, and any number of strangers. The scenario tests run on it, and so will the Database tile's Lab screen.
 //!
 //! It grows with the phases: devices and their ops in P1, caps and sync by caps in P2, keys, reading and the blind
-//! server in P3, items in P4 and P5, and in P6 offline devices and random delivery orders.
+//! server in P3, apps on a schema reading and editing items through their space's lane in P4, branches in P5, and in
+//! P6 offline devices and random delivery orders.
 //!
 //! Every device keeps its keys up to date as an honest app would, each time its ops change: it opens every box its
 //! standing `Keys` ops hold for a key it has, and for each family it may open, it makes the key of each epoch from its
@@ -19,7 +20,9 @@ use crate::doc::{Item, Version};
 use crate::encode::{self, box_info, write_context};
 use crate::id::{EntryId, OpId, SignerId, SpaceId, VaultId};
 use crate::keys::{self, KeyBox, KeyId, KeyName, KeyScope, PublicKey, Recipient, SeededRng, Secret};
+use crate::lens::{Lane, Schema};
 use rand_core::Rng as _;
+use serde_json::Value;
 use crate::policy::{replay, Action, Kind, Log, Op, Principal, Refusal, Replay, State};
 use crate::sign::{DeviceKey, Passkey, RecoveryCode, Signature, Signed};
 use crate::sync::{respond, vault_logs};
@@ -427,6 +430,50 @@ impl Lab {
         id
     }
 
+    /// The schemas and lenses published into `space`'s lane, as device `d` holds them.
+    pub fn lane(&self, d: SignerId, space: SpaceId) -> Lane {
+        Lane::new(self.held(d).view().lane_of(space))
+    }
+
+    /// The item as an app on schema `app` shows it on device `d`, through a lens from the space's lane where another
+    /// version wrote it, and whether the app opens it read-only (`Lane::view`). `None` if the device shows no such item
+    /// or the app reads nothing of it.
+    pub fn open(&self, d: SignerId, space: SpaceId, entry: EntryId, app: &Schema) -> Option<(Value, bool)> {
+        let item = self.item(d, space, entry)?;
+        let (view, read_only) = self.lane(d, space).view(app, &item.authored());
+        Some((item.read(&view)?, read_only))
+    }
+
+    /// Edit an item as an app on schema `app` on device `on`, acting for `actor`: `change` edits the app's view of the
+    /// item, and only what changed becomes one encrypted write, tagged with `app`. `Ok(None)`, writing nothing, if the
+    /// view is unchanged; `ReadOnly` if the app opens the item read-only or reads nothing of it; `NotAView` if the
+    /// edited view doesn't fit the app's schema.
+    pub fn edit_as(
+        &mut self,
+        on: SignerId,
+        actor: VaultId,
+        space: SpaceId,
+        entry: EntryId,
+        app: &Schema,
+        change: impl FnOnce(&mut Value),
+    ) -> Result<Option<OpId>, Refusal> {
+        let item = self.item(on, space, entry).ok_or(Refusal::ReadOnly)?;
+        let (view, read_only) = self.lane(on, space).view(app, &item.authored());
+        let seen = item.read(&view).filter(|_| !read_only).ok_or(Refusal::ReadOnly)?;
+        let mut value = seen.clone();
+        change(&mut value);
+        if view.put(&item.record(), &value).is_none() {
+            return Err(Refusal::NotAView);
+        }
+        if value == seen {
+            return Ok(None);
+        }
+        self.edit(on, actor, space, entry, |item| {
+            item.write(&view, &value);
+        })
+        .map(Some)
+    }
+
     /// The item as device `d` shows it: the writes it holds and can decrypt. `None` if it holds or opens none.
     pub fn item(&self, d: SignerId, space: SpaceId, entry: EntryId) -> Option<&Item> {
         self.held(d).items.get(&(space, entry))
@@ -475,7 +522,7 @@ impl Lab {
             out.extend(o.secret.bytes());
         }
         for item in store.items.values() {
-            out.extend(format!("{:?} {:?}", item.as_document(), item.as_todo()).into_bytes());
+            out.extend(item.record().to_string().into_bytes());
         }
         out
     }

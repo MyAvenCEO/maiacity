@@ -2,8 +2,9 @@
 # Basic notions
 
 Every id stands for a hash or a public key: a signer's id is its public key, a vault's id is the hash of its
-genesis, an op's id is the hash of its bytes. The model uses `Nat` for all of them. That they never collide is the
-"hashes don't collide" assumption; the theorems that need it say so in a hypothesis.
+genesis, an op's id is the hash of its bytes, a blob's (a schema's or a lens's) the hash of its bytes. The model uses
+`Nat` for all of them. That they never collide is the "hashes don't collide" assumption; the theorems that need it say
+so in a hypothesis.
 -/
 
 namespace VaultSpec
@@ -14,6 +15,7 @@ abbrev SpaceId  := Nat
 abbrev EntryId  := Nat
 abbrev GrantId  := Nat
 abbrev OpId     := Nat
+abbrev BlobId   := Nat
 
 /-- A human vault is owned by signers, a coop vault by other vaults. -/
 inductive Kind where

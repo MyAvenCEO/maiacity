@@ -1,11 +1,13 @@
-//! Documents, schemas and branches (P4, P5; T9, T10, T11): the lenses, migration, promote, and convergence of items.
+//! Documents, schemas and branches (P4, P5; T9, T10, T11): the lenses, edits through a view, promote, and convergence
+//! of items.
 
 mod common;
 
 use common::*;
 use vault_db::branch::Repo;
 use vault_db::doc::Item;
-use vault_db::lens::{migrate, AnyBlock, BlockV1, DocV1, KindV1, Status, TodoV1, TodoV2};
+use serde_json::json;
+use vault_db::lens::{BlockV1, DocV1, KindV1, Status, TodoV1, TodoV2, TypeV2};
 
 fn welcome_v1() -> DocV1 {
     let block = |id, kind, text: &str| BlockV1 { id, kind, text: text.into() };
@@ -22,7 +24,6 @@ fn welcome_v1() -> DocV1 {
 }
 
 #[test]
-#[ignore = "P4: lenses"]
 fn lens_round_trip_v1() {
     // v1 → v2 → v1 returns the same document and the same todo (T9a, T9d)
     let doc = welcome_v1();
@@ -39,21 +40,38 @@ fn lens_round_trip_v1() {
 }
 
 #[test]
-#[ignore = "P4: migration"]
-fn migration_is_idempotent() {
-    // after concurrent edits a document can hold blocks in both shapes; migrating twice equals migrating once (T9c)
-    let v1 = welcome_v1();
-    let mut blocks: Vec<AnyBlock> = v1.blocks.iter().cloned().map(AnyBlock::V1).collect();
-    blocks.insert(2, AnyBlock::V2(paragraph(9, "written by a v2 app")));
-    let once = migrate(&blocks);
-    assert!(once.iter().all(|b| matches!(b, AnyBlock::V2(_))));
-    assert_eq!(migrate(&once), once);
-    // and on an item: the migration commit run a second time changes nothing
-    let mut item = Item::written_v1(&v1, MAC_S);
-    item.migrate();
-    let after = item.version();
-    item.migrate();
-    assert_eq!(item.version(), after);
+fn edits_through_a_view_keep_what_it_cant_see() {
+    // Welcome as a v1 app wrote it; a v2 app checks the list item, names the code's language and tags it
+    let mut item = Item::written_v1(&welcome_v1(), MAC_S);
+    assert!(item.edit_document(|d| {
+        d.blocks[3].checked = Some(true);
+        d.blocks[4].lang = Some("sh".into());
+        d.tags.push("greenhouse".into());
+    }));
+    // a v1 app edits all it sees: the title, a text, a kind, the order, and a new block
+    assert!(item.edit_document_v1(|d| {
+        d.title = "Welcome to Maia Coop".into();
+        d.blocks[1].text = AFTER_TEXT.into();
+        d.blocks[2].kind = KindV1::H3;
+        d.blocks.swap(3, 4);
+        d.blocks.push(BlockV1 { id: 6, kind: KindV1::P, text: "See you there".into() });
+    }));
+    // what only v2 says survives (T9h)
+    let after = item.as_document().unwrap();
+    let block = |id| after.blocks.iter().find(|b| b.id == id).unwrap().clone();
+    assert_eq!(after.tags, ["greenhouse"]);
+    assert_eq!((block(4).checked, block(5).lang.as_deref()), (Some(true), Some("sh")));
+    // and the v1 app's edit shows as made, in v1 and through the lens in v2 (T9f)
+    assert_eq!(item.as_document_v1().unwrap().blocks[1].text, AFTER_TEXT);
+    assert_eq!(after.title, "Welcome to Maia Coop");
+    assert_eq!((block(3).r#type, block(3).level), (TypeV2::Heading, Some(3)));
+    assert_eq!(after.blocks.iter().map(|b| b.id).collect::<Vec<_>>(), [1, 2, 3, 5, 4, 6]);
+    // its new block is stored as v1 wrote it, with no default filled in
+    assert_eq!(item.record()["blocks"][5], json!({"id": 6, "kind": "p", "text": "See you there"}));
+    // and either app's view put back unchanged writes nothing (T9g)
+    let v = item.version();
+    assert!(item.edit_document_v1(|_| {}) && item.edit_document(|_| {}));
+    assert_eq!(item.version(), v);
 }
 
 #[test]
