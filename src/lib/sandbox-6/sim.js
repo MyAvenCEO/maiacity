@@ -25,7 +25,7 @@
 import { BIOMES, BUILDINGS, BUILD_MWH_T, CENTRE, ENERGY, EUR_GOLD, GROWS, GRASS, HOUSE_BEDS, HOUSE_KEEP, HOUSE_MOST, HOUSE_TOP, HOUSE_UP, IRON, LAND, LOAD_T, MOUNTAIN, RECIPES, ROUNDS_YEAR, ROUTE_T_KM, START, UNIT_M, UPKEEP, WARES, WATER, WEEK_YEAR, centreStage, holdsLand, loadsRound, recipe, sunBedDay, weekOf } from './rules.js';
 import { CART, GRID_EUR_KWH, HEARTS, LOAN, LOAN_PAY, NEIGHBOURS, TRADED, WORLD, heartsFor, keepOf, loanMonths, make, newMarket, orderRule, party, priceIn, request, shortIn, spareIn } from './market.js';
 import { SE, STEP, findPath, makeGrid } from './hex.js';
-import { CISTERN, FOOD_KG, FRESH_L, KEEP, MOST, PACE, PRICE, RAIN_L, RAIN_MONTH, TANK, WATER_PRICE, WATER_USE, WEEK, YEAR, DAY, MONTH, calendar, clockOf, forestShare } from './food.js';
+import { CISTERN, FOOD_KG, FRESH_L, KEEP, MOST, PACE, PRICE, RAIN_L, RAIN_MONTH, TANK, WATER_PRICE, WATER_USE, WEEK, YEAR, DAY, MONTH, clockOf, forestShare } from './food.js';
 import { makePlan, spoke } from './plots.js';
 import { growValley } from './map.js';
 import { fmt } from './units.js';
@@ -60,8 +60,9 @@ const CITY_VILLAGES = 5;
 /** a building rests while the storehouses hold this much of what it makes */
 const ENOUGH = 40;
 
-/** a new valley, grown from a seed; its calendar runs at the master clock's pace @param {number} [seed] */
-export function newGame(seed = 7) {
+/** a new valley, grown from a seed; its calendar runs at the master clock's pace from when it is started (the real
+ * date and time now, or `start`, ms) @param {number} [seed] @param {number} [start] */
+export function newGame(seed = 7, start = Date.now()) {
 	const v = growValley(seed);
 	const N = v.W * v.H;
 	const st = {
@@ -70,8 +71,8 @@ export function newGame(seed = 7) {
 		time: 0,
 		/** days of the valley's calendar gone by (./food.js) */
 		cal: 0,
-		/** the year it was started in: its calendar begins on 1 January of it */
-		year0: new Date().getFullYear(),
+		/** when it was started, ms: its clock and its seasons begin at that real date and time (./food.js clockOf) */
+		start,
 		rng: (Math.imul(seed, 2654435761) >>> 0) || 1,
 		W: v.W,
 		H: v.H,
@@ -141,8 +142,9 @@ const plans = new Map();
 export function createSim(st) {
 	const g = makeGrid(st.W, st.H);
 	const N = g.N;
-	// a valley saved before it kept the year it was started in counts from this one
-	st.year0 ??= new Date().getFullYear();
+	// a valley saved before it kept when it was started began on 1 January at eight (of the year it kept, or this one)
+	st.start ??= new Date(st.year0 ?? new Date().getFullYear(), 0, 1, 8).getTime();
+	delete st.year0;
 	// nothing pauses any more: a building paused in an older save works again
 	for (const b of Object.values(st.buildings ?? {})) if (b) delete b.paused;
 	const size = `${st.W}x${st.H}`;
@@ -1621,7 +1623,9 @@ export function createSim(st) {
 		return beds ? grown / beds : 0;
 	}
 	/** litres a day its houses' roofs catch now: each bed's share of its dome's roof, as much as falls this month */
-	const rainIn = (/** @type {number} */ v) => bedsIn(v) * RAIN_L * RAIN_MONTH[calendar(st.cal).month - 1];
+	/** the valley's month now, 1 to 12: its seasons' */
+	const monthNow = () => clockOf(st.cal, st.start).month;
+	const rainIn = (/** @type {number} */ v) => bedsIn(v) * RAIN_L * RAIN_MONTH[monthNow() - 1];
 	/** litres its tanks hold: four weeks of fresh water for each bed (or each person, if more), at least the cistern a
 	 * village starts with */
 	const tankOf = (/** @type {number} */ v, /** @type {number} */ pop) => Math.max(CISTERN, Math.max(pop, bedsIn(v)) * FRESH_L * 7 * TANK);
@@ -1629,7 +1633,7 @@ export function createSim(st) {
 	 * than that many days of it */
 	const runsDry = (/** @type {number} */ v, /** @type {any} */ p, /** @type {number} */ days) => p.pop > 0 && (p.litres ?? 0) < p.pop * FRESH_L * days && rainIn(v) < p.pop * FRESH_L;
 	/** kWh a day its domes' solar glass makes now: each bed's share, as much as the sun gives this month */
-	const sunIn = (/** @type {number} */ v) => bedsIn(v) * sunBedDay(calendar(st.cal).month);
+	const sunIn = (/** @type {number} */ v) => bedsIn(v) * sunBedDay(monthNow());
 	/** kWh a day a village center's geothermal plant makes, day and night, as much of the time as it runs */
 	const wellsDay = (/** @type {any} */ c) => plantOf(c) * ENERGY.wellKw * 24 * ENERGY.uptime;
 	/** kWh a day so many people use at home */
@@ -2224,7 +2228,7 @@ export function createSim(st) {
 		if (b.type === 'centre') return { made: wellsDay(b) * 7, used: centreDay(b) * 7, next: null };
 		if (b.type === 'house' && b.level) {
 			const beds = HOUSE_BEDS[b.level - 1];
-			return { made: beds * sunBedDay(calendar(st.cal).month) * 7, used: homeDay(beds) * 7 + ((beds * ENERGY.climateBed) / YEAR) * 7, next: null };
+			return { made: beds * sunBedDay(monthNow()) * 7, used: homeDay(beds) * 7 + ((beds * ENERGY.climateBed) / YEAR) * 7, next: null };
 		}
 		if (!RECIPES[b.type]) return null;
 		const k = levelOf(b), use = (/** @type {number} */ l) => ((weekOf(b.type, l).in.energy ?? 0) + (recipe(b.type, l)?.use.in.energy ?? 0)) * 1000;
@@ -2476,8 +2480,8 @@ export function createSim(st) {
 				carriers,
 				workers,
 				parties: st.parties.map((/** @type {any} */ p) => ({ name: p.name })),
-				/** the valley's date and hour of day, its years counted from the one it was started in */
-				date: ((c) => ({ ...c, year: st.year0 + c.year - 1 }))(clockOf(st.cal)),
+				/** the valley's date and hour of day: real ones, from when it was started */
+				date: clockOf(st.cal, st.start),
 				/** your cashflow, € a week lately: what all your villages took in by exports (exp) to the world market and
 				 * paid out for imports (imp) from it; what they trade among themselves cancels out */
 				cash: yourVillages().reduce((t, { p }) => ({ exp: t.exp + (p.flow?.wexp ?? 0), imp: t.imp + (p.flow?.wimp ?? 0), upkeep: t.upkeep + (p.flow?.upkeep ?? 0) }), { exp: 0, imp: 0, upkeep: 0 }),
@@ -2611,7 +2615,7 @@ export function createSim(st) {
 					week: pop * FRESH_L * 7,
 					grey: pop * WATER_USE.crops * 7,
 					rain: rainIn(v) * 7,
-					month: calendar(st.cal).month,
+					month: monthNow(),
 					bought: dry,
 					spent: dry * WATER_PRICE,
 					short: hungry
@@ -2631,7 +2635,7 @@ export function createSim(st) {
 					bought: f.kwhBought ?? 0,
 					earned: f.gridEarned ?? 0,
 					spent: f.gridSpent ?? 0,
-					month: calendar(st.cal).month,
+					month: monthNow(),
 					/** its center's stage and the stage it grows to next, or null at its last */
 					stage: levelOf(c),
 					next: CENTRE[levelOf(c)] ?? null,

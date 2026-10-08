@@ -24,6 +24,8 @@ import { PACE, clockOf } from './food.js';
 const SAVE = 'maiacity:sandbox-6:game';
 /** the film's valley, and how long it has been played before a shot starts */
 const FILM_SEED = 7, FILM_START = 1200;
+/** the date a film's valley is started on: 1 January 2026, eight in the morning */
+const FILM_DATE = new Date(2026, 0, 1, 8).getTime();
 
 /** @typedef {'look' | 'build' | 'road' | 'flag' | 'demolish'} Mode */
 /** @typedef {{ k: 'building' | 'flag' | 'road', id: number, node: number } | null} Selection */
@@ -53,7 +55,7 @@ export function mountGame(container, o = {}) {
 		shadowReach: 110,
 		shadowMap: 2048,
 		fog: { near: 240, far: 760 },
-		clock: () => (!skyTime.auto ? skyTime.hour : !paused && speed * PACE * 60 > 1 ? 12 : clockOf(sim.state.cal).hour)
+		clock: () => (!skyTime.auto ? skyTime.hour : !paused && speed * PACE * 60 > 1 ? 12 : clockOf(sim.state.cal, sim.state.start).hour)
 	});
 	let view = createView(scene, sim);
 	const home = () => view.place(sim.homeNode());
@@ -63,7 +65,8 @@ export function mountGame(container, o = {}) {
 
 	/** a valley played by the autoplayer up to `t` seconds: the same valley every time */
 	function filmGame(/** @type {number} */ t) {
-		const s = newGame(FILM_SEED);
+		// on a fixed date, so the film's seasons are the same whenever it is shot
+		const s = newGame(FILM_SEED, FILM_DATE);
 		const auto = createAutoplay(s);
 		for (let k = 0; s.state.time < t; k++) {
 			if (k % 30 === 0) auto.tick();

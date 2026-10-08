@@ -9,7 +9,8 @@ import { loadGame, newGame } from './sim.js';
 import { createAutoplay } from './autoplay.js';
 
 const seed = Number(process.argv[2] ?? 7), end = Number(process.argv[3] ?? 5400);
-let sim = newGame(seed);
+// on a fixed date (1 January, eight in the morning), so runs on different days compare
+let sim = newGame(seed, new Date(2026, 0, 1, 8).getTime());
 let seen = 0;
 for (let k = 0; sim.state.time < end; k++) {
 	sim.step(0.1);
