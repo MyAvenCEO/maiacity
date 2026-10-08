@@ -8,12 +8,13 @@
 	import { onDestroy, onMount } from 'svelte';
 	import TouchStick from '$lib/touch/TouchStick.svelte';
 	import { WorldBar } from '$lib/sandbox-kit';
-	import { BIOMES, BUILDINGS, ENERGY, HOUSE_BEDS, HOUSE_KEEP, HOUSE_SIZE, LAND, LOAD_T, MENU, RECIPES, START, WARES, buildIn } from './rules.js';
+	import { BIOMES, BUILDINGS, LAND, LOAD_T, MENU, RECIPES, START, WARES, buildIn } from './rules.js';
 	import { EUR_PER_GOLD, GRID_EUR_KWH } from './market.js';
 	import { UNIT_OF, costLine, craftLine, energy, fmt, food, gold, nameOf, side, ware, water } from './units.js';
 	import { MONTHS, PRICE, SIM_SPEED, SPEEDS, WATER_PRICE } from './food.js';
 	import { PLAYER, levelOf } from './sim.js';
 	import Tree from './Tree.svelte';
+	import { stagesOf } from './tree.js';
 
 	/** @type {HTMLDivElement | undefined} */
 	let stage = $state();
@@ -108,15 +109,9 @@
 	});
 	/** the valley's date */
 	const when = (/** @type {{ year: number, month: number, day: number }} */ d) => `year ${d.year}, month ${d.month}, day ${d.day}`;
-	/** what a building's card says of its energy, a week */
-	const powerLine = (/** @type {{ made: number, used: number, next: number | null }} */ p, /** @type {string} */ type) =>
-		[
-			p.made ? `makes ${energy(p.made)}${type === 'house' ? ' of solar this month' : ' of geothermal'}` : '',
-			p.used ? `uses ${energy(p.used)}${type === 'house' ? ' for its climate and its people, every bed taken' : type === 'centre' ? ' for its hall, storehouse and routes' : ', working all its land gives it and standing'}` : '',
-			p.next !== null ? `${p.next > p.used ? 'more' : 'less'} at its next stage: ${energy(p.next)}` : ''
-		]
-			.filter(Boolean)
-			.join(' · ') || 'none';
+	/** what a stage makes a week, as its recipe reads: land and energy in, a ware or energy out (or what it does) */
+	const makeLine = (/** @type {{ make: { in: Record<string, number>, out: Record<string, number> }, does?: string }} */ s) =>
+		Object.keys(s.make.out).length ? `${Object.keys(s.make.in).length ? craftLine(s.make) : side(s.make.out)} a week` : `It ${s.does || 'makes nothing'}`;
 	/** a cost on a button: its wares, in units, and its builders' energy */
 	const buildOf = (/** @type {Record<string, number>} */ loads) => buildIn(Object.fromEntries(Object.entries(loads).map(([w, n]) => [w, n * LOAD_T])));
 	/** years and months, short */
@@ -292,6 +287,39 @@
 		return t.kind === 'centre' ? 'A small store dome in a village’s middle hex; grows into its village center and geothermal power plant' : t.kind === 'house' ? 'Beds for 2, doubling each time it is enlarged, up to 248; plants its hex’s food forest' : '';
 	};
 </script>
+
+<!-- a building's stage and its recipes, the same for every building that grows (./tree.js stagesOf: a home, a factory,
+     a village center): what it makes, uses and costs to keep a week, and its upgrade with what that takes. `only` shows
+     the upgrade alone -->
+{#snippet stageBlock(/** @type {any[]} */ stages, /** @type {number} */ level, /** @type {{ upgrading?: boolean, lately?: string, up?: Record<string, number> | null, go?: () => void, why?: string, only?: boolean }} */ o)}
+	{@const cur = stages[level - 1]}
+	{@const next = stages[level] ?? null}
+	{#if cur && !o.only}
+		<p class="label">{cur.label}{cur.beds ? ` · ${cur.beds} beds` : ''} · stage <b>{level}</b> of {stages.length}{o.upgrading && next ? ` · growing to ${next.label.toLowerCase()}` : ''}</p>
+		<dl class="recipe">
+			<dt title="What it makes a week, in-game, from its land and energy (working all its land gives it)">Makes</dt>
+			<dd>{makeLine(cur)}</dd>
+			<dt title="The energy it uses a week to stand">Uses</dt>
+			<dd>{side(cur.use.in)} a week</dd>
+			<dt title="Its upkeep a week, always in gold: 2% a year of what it is built of, at world prices">Upkeep</dt>
+			<dd>{side(cur.keep.in)} a week</dd>
+			{#if o.lately && Object.keys(cur.make.out).length}<dt title="What it made a week, lately">Lately</dt><dd>{o.lately}</dd>{/if}
+		</dl>
+	{/if}
+	{#if next && o.up && o.go && !o.upgrading}
+		<div class="actions">
+			<button class="go up grow" onclick={o.go} title="Upgrade to {next.label.toLowerCase()}: {makeLine(next)}. Its build: {side(next.build.in, ', ')}, from your stores (what they lack, bought){next.build.in.gold ? ' and its treasury (what it lacks, borrowed)' : ''}">
+				<span>Upgrade → {next.label}</span>
+				<span class="chips">
+					{#each Object.entries(o.up) as [w, n] (w)}<span class="cost"><i style:background={WARES[w].color}></i>{ware(n)}</span>{/each}
+					{#if next.build.in.energy}<span class="cost"><i class="bolt"></i>{fmt(next.build.in.energy)}</span>{/if}
+					{#if next.build.in.gold}<span class="cost"><i class="coin"></i>{fmt(next.build.in.gold)}</span>{/if}
+				</span>
+			</button>
+		</div>
+		{#if o.why}<p class="status">{o.why}</p>{/if}
+	{/if}
+{/snippet}
 
 <div class="valley">
 	<div class="stage" bind:this={stage} role="application" aria-label="Sandbox 5: the valley. Drag to turn the map, scroll to zoom, click to select or build"></div>
@@ -486,10 +514,9 @@
 						</li>
 					{/each}
 				</ul>
-				{#if pw?.next}
-					{@const nx = pw.next}
-					<div class="actions"><button class="go up grow" onclick={grow} title="Grow its logistics hub into its village center, a dome as large as a great dome of 248, with its geothermal plant under it: {fmt(ENERGY.wellKw / 1000)} MW, {energy(ENERGY.wellKw * 168 * ENERGY.uptime)} energy a week. Its build: {side(nx.build.in, ', ')}, from your stores (what they lack, bought) and its treasury (what it lacks, borrowed). It grows at once."><span>Grow → {nx.label}</span><span class="chips">{#each Object.entries(nx.up) as [w, n] (w)}<span class="cost"><i style:background={WARES[w].color}></i>{ware(n)}</span>{/each}{#if nx.build.in.energy}<span class="cost"><i class="bolt"></i>{fmt(nx.build.in.energy)}</span>{/if}<span class="cost"><i class="coin"></i>{fmt(nx.gold)}</span></span></button></div>
-					{#if growWhy}<p class="status">{growWhy}</p>{/if}
+				{#if pw}
+					<!-- its village center: the whole stage block when it is picked, else only its upgrade -->
+					{@render stageBlock(/** @type {any[]} */ (stagesOf('centre')), pw.stage, { only: !ownCentre, up: pw.next?.up ?? null, go: grow, why: growWhy })}
 				{/if}
 				{#each home.notes as x, k (k)}
 					<button class="note {x.tone}" onclick={() => game?.focus(x.node)}><i></i>{x.text}</button>
@@ -581,35 +608,14 @@
 			{#if card.stock && card.owner === PLAYER && card.stage === 'live'}
 				<p class="label">{card.settlers} settlers live in its village</p>
 			{/if}
-			{#if card.type === 'house' && card.level}
-				<p class="label">{HOUSE_SIZE[card.level - 1]} · home of <b>{card.beds}</b> settlers{card.upgrading ? ` · growing to ${HOUSE_BEDS[card.level]}` : ''}</p>
-				<p class="small" title="Its upkeep, always in gold: 2% a year of what its dome is built of, at world prices, from its village's treasury">Upkeep {fmt(HOUSE_KEEP[card.level - 1])} gold a week</p>
-				{#if card.owner === PLAYER && card.up && !card.upgrading}
-					<div class="actions">
-						<button class="go up" title="Enlarge to {HOUSE_BEDS[card.level]} settlers. Its build: {side(buildOf(card.up), ', ')}, from your stores (what they lack, bought)" onclick={() => card && ((upWhy = game?.sim.upgrade(card.id)?.why ?? ''), refresh())}>Enlarge → {HOUSE_BEDS[card.level]}{#each Object.entries(card.up) as [w, n] (w)}<span class="cost"><i style:background={WARES[w].color}></i>{ware(n)}</span>{/each}<span class="cost"><i class="bolt"></i>{fmt(buildOf(card.up).energy)}</span></button>
-					</div>
-					{#if upWhy}<p class="status">{upWhy}</p>{/if}
-				{/if}
-			{/if}
-			{#if card.recipe && card.level}
-				<!-- a factory: its stage, and its three recipes (./rules.js RECIPES), in units -->
-				<p class="label">{card.recipe.label} · stage <b>{card.level}</b> of {card.stages}{card.upgrading && card.next ? ` · growing to a ${card.next.label.toLowerCase()}` : ''}</p>
-				<dl class="recipe">
-					<dt title="Its work a week, working all its land gives it ({card.rounds} rounds a year, each {craftLine(card.recipe.make)}): what it takes from its hex's land and the grid, and what it makes">Makes</dt>
-					<dd>{Object.keys(card.recipe.make.out).length && card.week ? `${craftLine(card.week)} a week` : `It ${card.recipe.does}`}</dd>
-					<dt title="Its upkeep a week, always in gold: 2% a year of what it is built of, at world prices">Upkeep</dt>
-					<dd>{side(card.recipe.keep.in)} a week</dd>
-					{#if Object.keys(card.recipe.make.out).length}<dt title="What it made a week, lately">Lately</dt><dd>{ware(card.lately)} {nameOf(card.out)} a week{card.type === 'ironmine' ? ` · ore for ${num(card.deposit / card.rounds)} years` : ''}</dd>{/if}
-				</dl>
-				{#if card.owner === PLAYER && card.up && !card.upgrading && card.next}
-					<div class="actions">
-						<button class="go up" title="Upgrade to a {card.next.label.toLowerCase()}: {Object.keys(card.next.make.out).length && card.nextWeek ? `${craftLine(card.nextWeek)} a week` : card.next.does}. Its build: {side(card.next.build.in, ', ')}" onclick={() => card && ((upWhy = game?.sim.upgrade(card.id)?.why ?? ''), refresh())}>Upgrade → {card.next.label}{#each Object.entries(card.up) as [w, n] (w)}<span class="cost"><i style:background={WARES[w].color}></i>{ware(n)}</span>{/each}<span class="cost"><i class="bolt"></i>{fmt(card.next.build.in.energy ?? 0)}</span></button>
-					</div>
-					{#if upWhy}<p class="status">{upWhy}</p>{/if}
-				{/if}
-			{/if}
-			{#if card.power && card.owner === PLAYER}
-				<p class="small" title="Energy a week, an energy being a MWh: a house's solar glass and what its people use at home, a factory's work and what its dome uses to stand">Energy a week: {powerLine(card.power, card.type)}</p>
+			{#if stagesOf(card.type) && card.level}
+				{@render stageBlock(/** @type {any[]} */ (stagesOf(card.type)), card.level, {
+					upgrading: card.upgrading,
+					lately: card.out && card.stage === 'live' ? `${ware(card.lately)} ${nameOf(card.out)} a week${card.type === 'ironmine' ? ` · ore for ${num(card.deposit / card.rounds)} years` : ''}` : '',
+					up: card.owner === PLAYER ? card.up : null,
+					go: () => card && ((upWhy = game?.sim.upgrade(card.id)?.why ?? ''), refresh()),
+					why: upWhy
+				})}
 			{/if}
 			{#if card.stage === 'live' && card.worker}
 				{#if card.inputs.length}
@@ -623,7 +629,6 @@
 						{/each}
 					</ul>
 				{/if}
-				{#if card.out}<p class="label">Makes <i class="dot" style:background={WARES[card.out].color}></i>{label(card.out)}</p>{/if}
 				<p class="label">Busy <b>{card.eff}%</b></p>
 				<div class="bar"><span style:width="{card.eff}%"></span></div>
 			{/if}

@@ -349,7 +349,12 @@ export function mountGame(container, o = {}) {
 	window.addEventListener('pagehide', save);
 
 	// the studio can shoot it
-	const filmHold = connectFilm({ sandbox: 'sandbox-6', renderer, scene, camera, hold: rig, sky, animate: (t) => (simTo(FILM_START + t), view.update(t)), extra: { game: () => sim } });
+	const filmHold = connectFilm({ sandbox: 'sandbox-6', renderer, scene, camera, hold: rig, sky, animate: (t) => (simTo(FILM_START + t), view.update(t)), extra: {
+			game: () => sim,
+			/** open a building's card, as a click on it would (shots and debugging) */
+			pick: (/** @type {number} */ id) => sim.state.buildings[id] && select({ k: 'building', id, node: sim.state.buildings[id].node })
+		}
+	});
 
 	/** fly the map to a node, keeping the angle it looks from */
 	function focus(/** @type {number} */ n) {
