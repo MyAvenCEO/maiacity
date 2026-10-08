@@ -1,0 +1,12 @@
+[package]
+name = "vault-db"
+version = "0.1.0"
+description = "The user-owned, end-to-end encrypted database: vaults, caps, keys, Loro documents and sync by caps, built test-first against the Lean spec in vault/spec"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+# P0 is the API and the tests, nothing else: no dependencies yet. Loro, the crypto and iroh arrive with the phases
+# that use them (see src/lib.rs).
+[dependencies]
