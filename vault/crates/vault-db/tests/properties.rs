@@ -6,7 +6,7 @@ mod common;
 
 use common::*;
 use vault_db::id::{EntryId, GrantId, SignerId, SpaceId, VaultId};
-use vault_db::policy::{order, trace, view, Action, Grantee, Kind, Log, Op, Principal, Role, Scope, State};
+use vault_db::policy::{order, trace, view, Action, Grantee, Kind, Log, Op, Principal, Refusal, Role, Scope, State};
 use vault_db::sync::respond;
 
 /// xorshift64*: small and deterministic, so a failing seed can be replayed.
@@ -84,13 +84,103 @@ fn history(seed: u64, n: usize) -> History {
             _ => Action::AddOwner { vault: rng.pick(&vaults), owner: Principal::Vault(rng.pick(&vaults)) },
         };
         let genesis = matches!(action, Action::Genesis { .. });
-        if let Ok(id) = c.log.append(author, &cosigners, action) {
-            if genesis {
-                vaults.push(VaultId::from(id));
-            }
+        if let Ok(id) = c.log.append(author, &cosigners, action)
+            && genesis
+        {
+            vaults.push(VaultId::from(id));
         }
     }
     History { log: c.log, vaults }
+}
+
+/// Who signs an attempt: half the time every passkey and one random signer, so that approvals pass and the rules'
+/// other checks decide; otherwise up to four random signers.
+fn signers(rng: &mut Rng) -> (SignerId, Vec<SignerId>) {
+    if rng.below(2) == 0 {
+        (PASSKEY_S, vec![PASSKEY_B, PASSKEY_C, PASSKEY_D, rng.pick(&SIGNERS)])
+    } else {
+        (rng.pick(&SIGNERS), (0..rng.below(4)).map(|_| rng.pick(&SIGNERS)).collect())
+    }
+}
+
+/// A random vault op on `vaults`.
+fn vault_action(rng: &mut Rng, vaults: &[VaultId]) -> Action {
+    let principal = |rng: &mut Rng| {
+        if rng.below(2) == 0 { Principal::Signer(rng.pick(&SIGNERS)) } else { Principal::Vault(rng.pick(vaults)) }
+    };
+    match rng.below(7) {
+        0 => Action::AddDevice { vault: rng.pick(vaults), device: rng.pick(&SIGNERS) },
+        1 => Action::RemoveDevice { vault: rng.pick(vaults), device: rng.pick(&SIGNERS), keep: vec![] },
+        2 => Action::AddOwner { vault: rng.pick(vaults), owner: principal(rng) },
+        3 => Action::RemoveOwner { vault: rng.pick(vaults), owner: principal(rng), keep: vec![] },
+        4 => Action::SetThreshold { vault: rng.pick(vaults), threshold: rng.below(4) as u32 },
+        _ => {
+            let kind = if rng.below(3) == 0 { Kind::Human } else { Kind::Coop };
+            let owners = (0..1 + rng.below(3))
+                .map(|_| if kind == Kind::Human { Principal::Signer(rng.pick(&SIGNERS)) } else { Principal::Vault(rng.pick(vaults)) })
+                .collect();
+            Action::Genesis { kind, owners, threshold: 1 + rng.below(2) as u32, nonce: rng.next() }
+        }
+    }
+}
+
+/// A random change to the owners or threshold of a vault `log` knows: what clashes when made concurrently.
+fn governance_action(rng: &mut Rng, log: &Log, vaults: &[VaultId]) -> Action {
+    let st = log.view();
+    let known: Vec<VaultId> = vaults.iter().copied().filter(|&v| st.vault(v).is_some()).collect();
+    let v = rng.pick(&known);
+    let owners = st.vault(v).map(|x| x.owners.clone()).unwrap_or_default();
+    match rng.below(3) {
+        0 => Action::AddOwner { vault: v, owner: Principal::Vault(rng.pick(&known)) },
+        1 => Action::RemoveOwner { vault: v, owner: rng.pick(&owners), keep: vec![] },
+        _ => Action::SetThreshold { vault: v, threshold: 1 + rng.below(owners.len()) as u32 },
+    }
+}
+
+/// `n` random vault attempts appended to `log`, each kept only if the rules accept it; new vaults join `vaults`.
+/// With `clash`, half of them change owners and thresholds of vaults that exist.
+fn vault_attempts(rng: &mut Rng, log: &mut Log, vaults: &mut Vec<VaultId>, n: usize, clash: bool) {
+    for _ in 0..n {
+        let (author, cosigners) = signers(rng);
+        let action = if clash && rng.below(2) == 0 { governance_action(rng, log, vaults) } else { vault_action(rng, vaults) };
+        let genesis = matches!(action, Action::Genesis { .. });
+        if let Ok(id) = log.append(author, &cosigners, action)
+            && genesis
+        {
+            vaults.push(VaultId::from(id));
+        }
+    }
+}
+
+/// A random history of vault ops on top of scenarios 1 to 3, all on one device: what P1's rules decide. (From P2 the
+/// properties also run on `history`, where caps and writes mix with governance.)
+fn vault_history(seed: u64, n: usize) -> History {
+    let mut c = cast();
+    let coop = with_coop(&mut c);
+    let mut vaults = vec![c.samuel, c.bob, c.carol, c.dave, coop];
+    let mut rng = Rng(seed.wrapping_mul(0x9e37_79b9_7f4a_7c15) | 1);
+    vault_attempts(&mut rng, &mut c.log, &mut vaults, n, false);
+    History { log: c.log, vaults }
+}
+
+/// Three devices take one random history offline, each adds its own random vault ops, and then all the ops meet:
+/// concurrent governance, where two changes each fine alone may clash (two adds that close a cycle together, two
+/// owners removing each other, an add signed by an owner that a concurrent removal takes out).
+fn forked_history(seed: u64, n: usize) -> History {
+    let base = vault_history(seed, n / 2);
+    let mut rng = Rng(seed.wrapping_mul(0x2545_f491_4f6c_dd1d) | 1);
+    let mut vaults = base.vaults.clone();
+    let mut all: Vec<Op> = base.log.ops().to_vec();
+    for _ in 0..3 {
+        let mut log = base.log.clone();
+        vault_attempts(&mut rng, &mut log, &mut vaults, n / 2, true);
+        for op in log.ops() {
+            if !all.contains(op) {
+                all.push(op.clone());
+            }
+        }
+    }
+    History { log: Log::from_ops(all), vaults }
 }
 
 /// Each op in replay order with the states just before and just after it.
@@ -116,10 +206,8 @@ fn t1_authorized_writes() {
 }
 
 #[test]
-#[ignore = "P1: vaults"]
 fn t2_consent() {
-    for seed in SEEDS {
-        let h = history(seed, 60);
+    for (seed, h) in SEEDS.flat_map(|seed| [(seed, vault_history(seed, 60)), (seed, forked_history(seed, 60))]) {
         for (op, before, after) in steps(h.log.ops()) {
             let sigs: Vec<SignerId> = op.sigs().collect();
             for &v in &h.vaults {
@@ -155,12 +243,49 @@ fn owns_itself(st: &State, x: VaultId) -> bool {
 }
 
 #[test]
-#[ignore = "P1: vaults"]
 fn t3_no_cycles() {
     for seed in SEEDS {
-        let h = history(seed, 80);
-        let st = h.log.view();
-        assert!(h.vaults.iter().all(|&v| !owns_itself(&st, v)), "seed {seed}");
+        for h in [vault_history(seed, 80), forked_history(seed, 80)] {
+            // in every state along the way, not only the last
+            for st in trace(h.log.ops()) {
+                assert!(h.vaults.iter().all(|&v| !owns_itself(&st, v)), "seed {seed}");
+            }
+        }
+    }
+}
+
+#[test]
+fn t11_vault_logs_converge() {
+    // the same vault ops, received in any order, give the same vaults (T11 for P1)
+    for seed in SEEDS {
+        let ops = forked_history(seed, 60).log.ops().to_vec();
+        let st = view(&ops);
+        let mut rng = Rng(seed);
+        for _ in 0..3 {
+            let mut shuffled = ops.clone();
+            rng.shuffle(&mut shuffled);
+            assert!(view(&shuffled) == st, "seed {seed}");
+            assert_eq!(order(&shuffled), order(&ops), "seed {seed}");
+        }
+    }
+}
+
+#[test]
+fn forks_really_clash() {
+    // the forked histories exercise concurrency: across the seeds, ops that each fork accepted are refused once all
+    // the ops meet, among them adds that would close a cycle and removals of an owner already removed elsewhere
+    let mut refused = vec![];
+    for seed in SEEDS {
+        let mut st = State::default();
+        for op in order(forked_history(seed, 60).log.ops()) {
+            match st.step(&op) {
+                Ok(next) => st = next,
+                Err(why) => refused.push(why),
+            }
+        }
+    }
+    for why in [Refusal::Cycle, Refusal::LastOwner, Refusal::BelowThreshold] {
+        assert!(refused.contains(&why), "no {why:?} among {refused:?}");
     }
 }
 
@@ -205,3 +330,4 @@ fn t12_sync_shares_only_caps() {
         }
     }
 }
+

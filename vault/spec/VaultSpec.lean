@@ -4,5 +4,7 @@ import VaultSpec.Step
 import VaultSpec.Sync
 import VaultSpec.Doc
 import VaultSpec.Lens
+import VaultSpec.Lemmas
 import VaultSpec.Theorems
 import VaultSpec.Examples
+import VaultSpec.Vectors

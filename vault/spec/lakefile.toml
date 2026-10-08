@@ -1,6 +1,21 @@
 name = "vault-spec"
 version = "0.1.0"
-defaultTargets = ["VaultSpec"]
+defaultTargets = ["VaultSpec", "VectorsCheck"]
 
 [[lean_lib]]
 name = "VaultSpec"
+
+# `lake exe vectors` writes vectors/vaults.json, the cases the Rust core replays (vault-db/tests/vectors.rs)
+[[lean_exe]]
+name = "vectors"
+root = "WriteVectors"
+
+# `lake build` checks the file against the model, again whenever the file or the rules change
+[[lean_lib]]
+name = "VectorsCheck"
+needs = ["vaults-json"]
+
+[[input_file]]
+name = "vaults-json"
+path = "vectors/vaults.json"
+text = true
