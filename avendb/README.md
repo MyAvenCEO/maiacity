@@ -75,8 +75,9 @@ plain HTTP on port 3350. Its environment:
 The server isn't deployed: each of these steps changes production, so each waits on an explicit go. It runs beside the
 media vault's server and changes nothing of it.
 
-1. **DNS**: `avendb.maia.city` pointing at the server, as `api.maia.city` does. The relay needs a host name of its own,
-   as iroh's relay path is `/relay`, and `api.maia.city/relay` is the media vault's relay.
+1. **DNS** (Hetzner DNS): an A record `avendb.maia.city` for the server, as `api.yml`'s `dns` job keeps
+   `api.maia.city`'s, or set by hand in the Hetzner DNS console. The relay needs a host name of its own: iroh's relay
+   path is `/relay`, and `api.maia.city/relay` is the media vault's relay.
 2. **Caddy** (`deploy/Caddyfile`): a site `avendb.maia.city` with `reverse_proxy avendb:3350`. Caddy 2.10 and later
    (`caddy:2-alpine`) offers X25519MLKEM768, the only key exchange a device offers.
 3. **Firewall** (`infra/index.ts`): UDP 7401 open, as UDP 7400 is for the media vault.
