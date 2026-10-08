@@ -165,6 +165,10 @@ export function spoke(g, plan, k, d) {
  * at the nearest) */
 export const RING_R = 7.5;
 
+/** how far out from a village center's middle its spur to its ring road starts: at the foot of its tower and the
+ * crates at its door */
+export const RING_FOOT = 4.5;
+
 /** a point on a village center's ring road, at an angle @param {{ x: number, z: number }} c @param {number} a */
 export const onRing = (c, a) => [c.x + RING_R * Math.cos(a), c.z + RING_R * Math.sin(a)];
 
