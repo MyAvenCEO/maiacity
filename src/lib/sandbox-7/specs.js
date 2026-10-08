@@ -72,30 +72,41 @@ export const ASSEMBLY = 0.5;
 
 /**
  * The cold north side of every shell is closed (Samuel, 2026-10-08): solid triangles of hemp fibre in timber cassettes
- * on a stone plinth instead of glass and solar, holding the heat in. It runs north-west to north-east (120°) from the
- * ground up to a level line at three quarters of a dome's height, so the crown, the east, the south and the west stay
- * glass and take the sun all day; on the tower it stops where the apartments start, at about a third of its height.
+ * on a stone plinth instead of glass and solar, holding the heat in. Its edge is one smooth line, as a flat cut
+ * through the shell makes it: from the foot 70° west of north up over the north side and down to the foot 70° east
+ * of north, the cut leaning north 20° from upright on a dome (so it stops below the crown) and 10° on a tower (where
+ * it stops about where the apartments start). The crown, the east, the south and the west are glass.
  */
-export const NORTH_HALF = 60;
-/** how high the hemp reaches: a dome's level line, as a share of its height */
-export const NORTH_UP = 0.75;
-/** and the tower's */
-export const TOWER_NORTH_UP = 0.35;
+export const NORTH_FOOT = 70;
+export const NORTH_TILT = 20;
+export const TOWER_NORTH_TILT = 10;
+const DEG = Math.PI / 180;
 /**
- * The share of a shell of revolution (profile [radius, height] from the foot up or the crown down) that the north
- * band covers, up to height Y.
- * @param {[number, number][]} p
- * @param {number} Y
+ * How far either side of north the hemp reaches on a ring of radius r at height y, radians: the cut stands k north of
+ * the middle at the ground and leans north at `tilt` degrees.
  */
-export function northShare(p, Y) {
-	let all = 0, north = 0;
-	for (let k = 1; k < p.length; k++) {
-		const [r0, y0] = p[k - 1], [r1, y1] = p[k];
-		const a = (r0 + r1) * Math.hypot(r1 - r0, y1 - y0);
-		all += a;
-		if ((y0 + y1) / 2 <= Y) north += (a * NORTH_HALF) / 180;
+export function northArc(/** @type {number} */ r, /** @type {number} */ y, /** @type {number} */ k, tilt = NORTH_TILT) {
+	const q = (k + y * Math.tan(tilt * DEG)) / Math.max(r, 1e-6);
+	return q >= 1 ? 0 : q <= -1 ? Math.PI : Math.acos(q);
+}
+/** where the cut stands at the ground for a shell `foot` m in radius */
+export const northCut = (/** @type {number} */ foot) => foot * Math.cos(NORTH_FOOT * DEG);
+/**
+ * A shell of revolution (profile [radius, height]) split by the north cut: all of it, the hemp, and the glass tilted
+ * under `steep` degrees, m².
+ * @param {[number, number][]} p
+ * @param {number} k
+ */
+export function shellSplit(p, k, tilt = NORTH_TILT, steep = 90) {
+	let all = 0, north = 0, flat = 0;
+	for (let i = 1; i < p.length; i++) {
+		const [r0, y0] = p[i - 1], [r1, y1] = p[i];
+		const r = (r0 + r1) / 2, ds = Math.hypot(r1 - r0, y1 - y0), b = northArc(r, (y0 + y1) / 2, k, tilt);
+		all += 2 * Math.PI * r * ds;
+		north += 2 * b * r * ds;
+		if (Math.atan2(Math.abs(y1 - y0), Math.abs(r1 - r0)) < steep * DEG) flat += (2 * Math.PI - 2 * b) * r * ds;
 	}
-	return north / all;
+	return { all, north, flat };
 }
 /** a dome's cap as a profile from its crown to its foot */
 export function capProfile(/** @type {number} */ D, n = 400) {
@@ -106,8 +117,9 @@ export function capProfile(/** @type {number} */ D, n = 400) {
 	for (let k = 0; k <= n; k++) p.push([c.R * Math.sin((theta * k) / n), c.R * Math.cos((theta * k) / n) - (c.R - c.h)]);
 	return p;
 }
-/** the share of every dome's shell in hemp: the caps are all alike, so one number (a quarter) */
-export const NORTH = northShare(capProfile(150), NORTH_UP * capOf(150).h);
+const split150 = shellSplit(capProfile(150), northCut(75));
+/** the share of every dome's shell in hemp: the caps are all alike, so one number (about a quarter) */
+export const NORTH = split150.north / split150.all;
 /**
  * Each dome as the engineering thread sized it (/mnt/project-files/dome-research/dome-sizes.json, 2026-10-08), mid
  * values: the glulam frame, the cast-steel hubs plus the steel ring at the foot, and the heat the dome needs beyond its
@@ -139,13 +151,8 @@ const CASSETTE_M = 0.06;
  * tower's steeper glass (the thread's hourly Munich year: 0.92 GWh from 4,036 m², 6.63 GWh from 34,133 m²).
  */
 export const CELLS = { share: 0.5, steepest: 45, capKwh: 227, towerKwh: 194 };
-/** a dome's glass tilted under 45°, m²: the glass crown above the hemp's line, and the south two thirds down to 45° */
-function flatGlass(/** @type {number} */ D) {
-	const c = capOf(D);
-	const zone = (/** @type {number} */ a, /** @type {number} */ b) => 2 * Math.PI * c.R * c.R * (Math.cos(a) - Math.cos(b));
-	const line = Math.acos((NORTH_UP * c.h + c.R - c.h) / c.R), steep = (CELLS.steepest * Math.PI) / 180;
-	return line >= steep ? zone(0, steep) : zone(0, line) + zone(line, steep) * (1 - NORTH_HALF / 180);
-}
+/** a dome's glass tilted under 45°, m² */
+const flatGlass = (/** @type {number} */ D) => shellSplit(capProfile(D, 200), northCut(D / 2), NORTH_TILT, CELLS.steepest).flat;
 
 /**
  * What a dome's shell is built of: the frame as the engineering thread sized it, glass and hemp by the m², the
@@ -396,7 +403,8 @@ export function towerShell(T) {
 		volume += (Math.PI * (y1 - y0) * (r0 * r0 + r0 * r1 + r1 * r1)) / 3;
 	}
 	const R = T.D / 2;
-	const north = shell * northShare(p, TOWER_NORTH_UP * T.H);
+	const sp = shellSplit(p, northCut(T.D / 2), TOWER_NORTH_TILT);
+	const north = shell * (sp.north / sp.all);
 	const glazed = shell - north;
 	const m = { timber: T.timber + north * CASSETTE_M, steel: T.steel, glass: glazed, pv: glazed * CELLS.share, hemp: north * HEMP_M, lime: Math.PI * T.D * 4 };
 	return {
