@@ -223,47 +223,46 @@ const TIMBER_GFA = 0.28;
 export const FITOUT_HOME = 1800;
 
 /**
- * A home dome (Samuel, 2026-10-08): the homes are terraces in the north of the dome, a half ring of storeys stepping
- * back toward the hemp like a stand, every storey's balcony on the roof of the one below. All of them look south over
- * the dome's own food garden and are open to the sky through the glass, so every balcony gets the sun. The ground
- * floor's front stands `front` from the middle; each storey is `depth` deep (daylight comes from the front only, the
- * hemp shell is behind them) and sits `step` behind the one below; a storey ends where the shell comes within `clear` of its
- * ceiling and is left out when that leaves it under 5 m deep. Under the back of the terraces, where the shell comes down
- * to the ground, the fish pond (the heat store) runs along the north rim.
- * @param {number} D @param {number} people
- * @param {{ front: number, depth: number, step?: number, storey?: number, clear?: number }} o
+ * A home dome (Samuel, 2026-10-08): the homes are one straight block across the north of the dome, east to west, its
+ * long face to the south with small balconies, looking over the dome's own food garden; it saves far more floor than a
+ * ring of terraces. Its front stands `front` north of the middle and it is `depth` deep (daylight from the south face;
+ * the north face looks onto the pond and the hemp). Each storey runs as far east and west as the shell lets it at its
+ * back corners (with `clear` over its ceiling), so the block narrows storey by storey up under the shell; a storey under
+ * 6 m long is left out. The fish pond (the heat store) fills the low ground between the block and the north rim.
+ * @param {number} D @param {{ front: number, depth: number, storey?: number, clear?: number, balcony?: number }} o
  */
-function homeDome(D, people, o) {
+function homeDome(D, o) {
 	const c = capOf(D);
-	const step = o.step ?? 2.5, storey = o.storey ?? 3.2, clear = o.clear ?? 0.8;
-	/** @type {{ k: number, y: number, h: number, rIn: number, rOut: number, m2: number }[]} */
+	const storey = o.storey ?? 3.2, clear = o.clear ?? 0.8, balcony = o.balcony ?? 1.5;
+	const back = o.front + o.depth;
+	/** @type {{ k: number, y: number, h: number, half: number, m2: number }[]} */
 	const levels = [];
 	for (let k = 0; k < 20; k++) {
-		const f = o.front + k * step, y = k * storey;
-		// how far out the shell is still `clear` over this storey's ceiling
-		const q = c.R * c.R - (y + storey + clear + c.R - c.h) ** 2;
-		const b = Math.min(f + o.depth, q > 0 ? Math.sqrt(q) : 0);
-		if (b - f < 5) break;
-		levels.push({ k, y, h: storey, rIn: f, rOut: b, m2: (Math.PI * (b * b - f * f)) / 2 });
+		const y = k * storey;
+		// how far out the shell is still `clear` over this storey's ceiling, and so how far east and west its back corners go
+		const r2 = c.R * c.R - (y + storey + clear + c.R - c.h) ** 2;
+		const half = Math.sqrt(Math.max(0, r2 - back * back));
+		if (2 * half < 6) break;
+		levels.push({ k, y, h: storey, half, m2: 2 * half * o.depth });
 	}
-	const half = (/** @type {number} */ r0, /** @type {number} */ r1) => (Math.PI * (r1 * r1 - r0 * r0)) / 2;
-	const back = Math.max(...levels.map((l) => l.rOut));
-	const pondIn = back + 1, pondOut = c.a - 1.5;
-	const footprint = half(o.front, back), pond = half(pondIn, pondOut), paths = c.floor * 0.08;
 	const top = levels[levels.length - 1];
+	const gfa = levels.reduce((a, l) => a + l.m2, 0);
+	// the pond: the segment of the floor north of the block, a metre off it and a metre and a half in from the glass
+	const pr = c.a - 1.5, ph = back + 1;
+	const pond = pr * pr * Math.acos(ph / pr) - ph * Math.sqrt(pr * pr - ph * ph);
+	const footprint = 2 * levels[0].half * o.depth, paths = c.floor * 0.08;
 	return {
-		people,
+		people: Math.floor(gfa / GFA_PERSON),
 		storeys: levels.length,
 		levels,
-		step,
-		gallery: { rIn: o.front, rOut: back, pondIn, pondOut, height: top.y + top.h },
-		gfa: levels.reduce((a, l) => a + l.m2, 0),
-		/** the balconies: each storey's on the roof of the one below, `step` deep */
-		balconies: levels.slice(1).reduce((a, l) => a + half(l.rIn - step, l.rIn), 0),
+		block: { front: o.front, back, depth: o.depth, balcony, pondIn: ph, pondOut: pr, height: top.y + top.h },
+		gfa,
+		/** small balconies on the south face of every storey above the ground, two thirds of its length */
+		balconies: levels.slice(1).reduce((a, l) => a + 2 * l.half * (2 / 3) * balcony, 0),
 		zones: [
-			{ use: 'living', label: `Homes: ${levels.length} terraced storeys in the north half (their footprint)`, m2: footprint },
-			{ use: 'pond', label: 'Fish pond along the north rim, the heat store', m2: pond },
-			{ use: 'indoorFood', label: 'Food garden under the glass, in front of the terraces', m2: c.floor - footprint - pond - paths },
+			{ use: 'living', label: `Homes: a straight block of ${levels.length} storeys across the north (its footprint)`, m2: footprint },
+			{ use: 'pond', label: 'Fish pond between the block and the north rim, the heat store', m2: pond },
+			{ use: 'indoorFood', label: 'Food garden under the glass, south of the block', m2: c.floor - footprint - pond - paths },
 			{ use: 'commons', label: 'Paths and the garden’s commons', m2: paths }
 		]
 	};
@@ -276,10 +275,10 @@ function homeDome(D, people, o) {
 export const POND_BAND = 18.4, POND_HALF = 0.585, POND_IN = 6;
 const POND_120 = POND_HALF * ((60 - POND_IN) ** 2 - (60 - POND_IN - POND_BAND) ** 2);
 
-/** a home kind: its card's note from its terraces */
-const home = (/** @type {number} */ D, /** @type {number} */ people, /** @type {Parameters<typeof homeDome>[2]} */ o) => {
-	const h = homeDome(D, people, o);
-	return { label: `Dome${D}`, D, role: 'home', note: `Home of ${people} on ${h.storeys} terraced storeys, with its own food garden`, ...h };
+/** a home kind: as many people as its block holds at 62 m² each */
+const home = (/** @type {number} */ D, /** @type {Parameters<typeof homeDome>[1]} */ o) => {
+	const h = homeDome(D, o);
+	return { label: `Dome${D}`, D, role: 'home', note: `Home of ${h.people} in a straight block of ${h.storeys} storeys, with its own food garden`, ...h };
 };
 
 /**
@@ -287,9 +286,9 @@ const home = (/** @type {number} */ D, /** @type {number} */ people, /** @type {
  * @type {Record<string, any>}
  */
 export const KINDS = {
-	// Dome40: three storeys of 3 m (the cap is only 13.3 m high), 593 m², 10 people; Dome80: five of 3.2 m, 2,347 m², 36
-	dome40: home(40, 10, { front: 2, depth: 9, storey: 3, clear: 0.6 }),
-	dome80: home(80, 36, { front: 10, depth: 8 }),
+	// Dome40: storeys of 3 m (the cap is only 13.3 m high), the block's front on the east-west middle line; Dome80: 3.2 m
+	dome40: home(40, { front: 0, depth: 10, storey: 3, clear: 0.6 }),
+	dome80: home(80, { front: 12, depth: 9 }),
 	food120: {
 		label: 'Dome120 · Food',
 		D: 120,
