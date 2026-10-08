@@ -91,6 +91,26 @@ pub fn vault_logs(ops: &[Op], st: &State, vs: Vec<VaultId>) -> Vec<Op> {
     ops.iter().filter(|op| op.vault_of().is_some_and(|v| vaults.contains(&v))).cloned().collect()
 }
 
+/// The vaults passkey `p` owns in `st`: those it is an owner or the root of.
+pub fn owned_by(st: &State, p: SignerId) -> Vec<VaultId> {
+    let owns = |v: &&crate::policy::Vault| v.owners.contains(&Principal::Signer(p)) || v.root == Some(p);
+    st.vaults().iter().filter(owns).map(|v| v.id).collect()
+}
+
+/// What a peer holding `ops` hands a device whose passkey `p` proved itself on their connection (P8c): the logs of
+/// the vaults `p` owns, and of every vault that owns one of them, up the chains, as a new device of `p`'s person needs
+/// them to add itself to its vault. Nothing about any space or entry (T20): the device asks for the rest once it acts
+/// for the vault.
+pub fn link_card(ops: &[Op], p: SignerId) -> Vec<Op> {
+    link_places(ops, &view(ops), p).into_iter().map(|i| ops[i].clone()).collect()
+}
+
+/// `link_card`, by the view `st` of `ops`: the places in `ops` of what it hands over.
+pub(crate) fn link_places(ops: &[Op], st: &State, p: SignerId) -> Vec<usize> {
+    let vaults = close_vaults(st, owned_by(st, p));
+    (0..ops.len()).filter(|&i| ops[i].vault_of().is_some_and(|v| vaults.contains(&v))).collect()
+}
+
 /// `vs` and every vault that owns one of them, directly or further up.
 pub fn close_vaults(st: &State, mut vs: Vec<VaultId>) -> Vec<VaultId> {
     let mut i = 0;

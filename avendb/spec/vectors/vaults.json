@@ -764,7 +764,8 @@
   {"device": 7, "held": [4, 6, 13], "peer": null, "logs": [{"log": {"vault": 102}, "frontier": [6], "haves": [4, 6]}, {"log": {"space": 10, "entry": 1}, "frontier": [], "haves": []}], "loose": [13], "respond": [10, 13, 14, 9, 12, 16, 0, 1, 2, 3, 4, 6, 7, 8], "since": [10, 14, 9, 12, 16, 0, 1, 2, 3, 7, 8]},
   {"device": 5, "held": [0, 1, 2, 3, 4, 5, 8, 9, 10], "peer": null, "logs": [{"log": {"vault": 100}, "frontier": [1], "haves": [0, 1]}, {"log": {"vault": 101}, "frontier": [3], "haves": [2, 3]}, {"log": {"vault": 102}, "frontier": [4], "haves": [4]}, {"log": {"vault": 103}, "frontier": [5], "haves": [5]}, {"log": {"vault": 200}, "frontier": [8], "haves": [8]}, {"log": {"space": 10}, "frontier": [9], "haves": [9]}, {"log": {"space": 10, "entry": 1}, "frontier": [10], "haves": [10]}], "loose": [], "respond": [10, 11, 13, 14, 15, 9, 12, 16, 0, 1, 2, 3, 4, 6, 7, 8], "since": [11, 13, 14, 15, 12, 16, 6, 7]},
   {"device": 555, "held": [], "peer": null, "logs": [], "loose": [], "respond": [], "since": []},
-  {"device": 3, "held": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18], "peer": null, "logs": [{"log": {"vault": 100}, "frontier": [7], "haves": [0, 1, 7]}, {"log": {"vault": 101}, "frontier": [3], "haves": [2, 3]}, {"log": {"vault": 102}, "frontier": [6], "haves": [4, 6]}, {"log": {"vault": 103}, "frontier": [5], "haves": [5]}, {"log": {"vault": 200}, "frontier": [8], "haves": [8]}, {"log": {"space": 10}, "frontier": [16], "haves": [9, 16]}, {"log": {"space": 10, "entry": 1}, "frontier": [14], "haves": [10, 12, 13, 14]}, {"log": {"space": 10, "entry": 2}, "frontier": [15], "haves": [11, 15]}, {"log": {"space": 11}, "frontier": [17], "haves": [17]}, {"log": {"space": 11, "entry": 1}, "frontier": [18], "haves": [18]}], "loose": [], "respond": [10, 11, 13, 14, 15, 18, 9, 12, 16, 17, 0, 1, 2, 3, 4, 6, 7, 8], "since": []}]},
+  {"device": 3, "held": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18], "peer": null, "logs": [{"log": {"vault": 100}, "frontier": [7], "haves": [0, 1, 7]}, {"log": {"vault": 101}, "frontier": [3], "haves": [2, 3]}, {"log": {"vault": 102}, "frontier": [6], "haves": [4, 6]}, {"log": {"vault": 103}, "frontier": [5], "haves": [5]}, {"log": {"vault": 200}, "frontier": [8], "haves": [8]}, {"log": {"space": 10}, "frontier": [16], "haves": [9, 16]}, {"log": {"space": 10, "entry": 1}, "frontier": [14], "haves": [10, 12, 13, 14]}, {"log": {"space": 10, "entry": 2}, "frontier": [15], "haves": [11, 15]}, {"log": {"space": 11}, "frontier": [17], "haves": [17]}, {"log": {"space": 11, "entry": 1}, "frontier": [18], "haves": [18]}], "loose": [], "respond": [10, 11, 13, 14, 15, 18, 9, 12, 16, 17, 0, 1, 2, 3, 4, 6, 7, 8], "since": []}],
+ "links": []},
 {"name": "forks",
  "ops": [
   {"depth": 0, "author": 1, "cosigners": [], "action": {"genesis": {"vault": 100, "kind": "human", "owners": [{"signer": 1}], "threshold": 1, "root": null}}, "parents": []},
@@ -794,7 +795,8 @@
  "forks": [[9, 10]],
  "asks": [
   {"device": 3, "held": [0, 1, 2, 3, 4, 5, 6, 7, 8, 11], "peer": null, "logs": [{"log": {"vault": 100}, "frontier": [6], "haves": [0, 1, 6]}, {"log": {"vault": 101}, "frontier": [3], "haves": [2, 3]}, {"log": {"vault": 102}, "frontier": [4], "haves": [4]}, {"log": {"vault": 103}, "frontier": [5], "haves": [5]}, {"log": {"space": 11}, "frontier": [7], "haves": [7]}, {"log": {"space": 11, "entry": 1}, "frontier": [11], "haves": [8, 11]}], "loose": [], "respond": [8, 9, 10, 11, 14, 15, 7, 0, 1, 6, 12, 13], "since": [9, 10, 14, 15, 12, 13]},
-  {"device": 2, "held": [], "peer": null, "logs": [], "loose": [], "respond": [8, 9, 10, 11, 14, 15, 7, 0, 1, 6, 12, 13], "since": [8, 9, 10, 11, 14, 15, 7, 0, 1, 6, 12, 13]}]},
+  {"device": 2, "held": [], "peer": null, "logs": [], "loose": [], "respond": [8, 9, 10, 11, 14, 15, 7, 0, 1, 6, 12, 13], "since": [8, 9, 10, 11, 14, 15, 7, 0, 1, 6, 12, 13]}],
+ "links": []},
 {"name": "a revocation joins its grant's log",
  "ops": [
   {"depth": 0, "author": 1, "cosigners": [], "action": {"genesis": {"vault": 100, "kind": "human", "owners": [{"signer": 1}], "threshold": 1, "root": null}}, "parents": []},
@@ -824,7 +826,8 @@
   {"device": 7, "held": [0, 1, 4, 6, 7, 8, 9], "peer": null, "logs": [{"log": {"vault": 100}, "frontier": [1], "haves": [0, 1]}, {"log": {"vault": 102}, "frontier": [6], "haves": [4, 6]}, {"log": {"space": 12}, "frontier": [7], "haves": [7]}, {"log": {"space": 12, "entry": 21}, "frontier": [9], "haves": [8, 9]}], "loose": [], "respond": [11, 0, 1, 4, 6], "since": [11]},
   {"device": 7, "held": [], "peer": null, "logs": [], "loose": [], "respond": [11, 0, 1, 4, 6], "since": [11, 0, 1, 4, 6]},
   {"device": 5, "held": [2, 3], "peer": null, "logs": [{"log": {"vault": 101}, "frontier": [3], "haves": [2, 3]}], "loose": [], "respond": [2, 3], "since": []},
-  {"device": 7, "held": [0, 1, 4, 6, 7, 8, 11], "peer": null, "logs": [{"log": {"vault": 100}, "frontier": [1], "haves": [0, 1]}, {"log": {"vault": 102}, "frontier": [6], "haves": [4, 6]}, {"log": {"space": 12}, "frontier": [7], "haves": [7]}, {"log": {"space": 12, "entry": 21}, "frontier": [8], "haves": [8]}], "loose": [11], "respond": [11, 0, 1, 4, 6], "since": []}]},
+  {"device": 7, "held": [0, 1, 4, 6, 7, 8, 11], "peer": null, "logs": [{"log": {"vault": 100}, "frontier": [1], "haves": [0, 1]}, {"log": {"vault": 102}, "frontier": [6], "haves": [4, 6]}, {"log": {"space": 12}, "frontier": [7], "haves": [7]}, {"log": {"space": 12, "entry": 21}, "frontier": [8], "haves": [8]}], "loose": [11], "respond": [11, 0, 1, 4, 6], "since": []}],
+ "links": []},
 {"name": "a device ahead of its peer",
  "ops": [
   {"depth": 0, "author": 1, "cosigners": [], "action": {"genesis": {"vault": 100, "kind": "human", "owners": [{"signer": 1}], "threshold": 1, "root": null}}, "parents": []},
@@ -865,5 +868,33 @@
  "asks": [
   {"device": 2, "held": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24], "peer": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 25], "logs": [{"log": {"vault": 100}, "frontier": [6], "haves": [0, 1, 6]}, {"log": {"vault": 101}, "frontier": [3], "haves": [2, 3]}, {"log": {"vault": 102}, "frontier": [4], "haves": [4]}, {"log": {"vault": 103}, "frontier": [5], "haves": [5]}, {"log": {"space": 11}, "frontier": [7], "haves": [7]}, {"log": {"space": 11, "entry": 1}, "frontier": [24], "haves": [8, 16, 20, 22, 23, 24]}], "loose": [], "respond": [8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 25, 7, 0, 1, 6], "since": [17, 18, 19, 25]},
   {"device": 2, "held": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24], "peer": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19], "logs": [{"log": {"vault": 100}, "frontier": [6], "haves": [0, 1, 6]}, {"log": {"vault": 101}, "frontier": [3], "haves": [2, 3]}, {"log": {"vault": 102}, "frontier": [4], "haves": [4]}, {"log": {"vault": 103}, "frontier": [5], "haves": [5]}, {"log": {"space": 11}, "frontier": [7], "haves": [7]}, {"log": {"space": 11, "entry": 1}, "frontier": [24], "haves": [8, 16, 20, 22, 23, 24]}], "loose": [], "respond": [8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 7, 0, 1, 6], "since": [17, 18, 19]},
-  {"device": 3, "held": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12], "peer": null, "logs": [{"log": {"vault": 100}, "frontier": [6], "haves": [0, 1, 6]}, {"log": {"vault": 101}, "frontier": [3], "haves": [2, 3]}, {"log": {"vault": 102}, "frontier": [4], "haves": [4]}, {"log": {"vault": 103}, "frontier": [5], "haves": [5]}, {"log": {"space": 11}, "frontier": [7], "haves": [7]}, {"log": {"space": 11, "entry": 1}, "frontier": [12], "haves": [8, 10, 11, 12]}], "loose": [], "respond": [8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 7, 0, 1, 6], "since": [13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25]}]}
+  {"device": 3, "held": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12], "peer": null, "logs": [{"log": {"vault": 100}, "frontier": [6], "haves": [0, 1, 6]}, {"log": {"vault": 101}, "frontier": [3], "haves": [2, 3]}, {"log": {"vault": 102}, "frontier": [4], "haves": [4]}, {"log": {"vault": 103}, "frontier": [5], "haves": [5]}, {"log": {"space": 11}, "frontier": [7], "haves": [7]}, {"log": {"space": 11, "entry": 1}, "frontier": [12], "haves": [8, 10, 11, 12]}], "loose": [], "respond": [8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 7, 0, 1, 6], "since": [13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25]}],
+ "links": []},
+{"name": "linking a device by its passkey",
+ "ops": [
+  {"depth": 0, "author": 1, "cosigners": [], "action": {"genesis": {"vault": 100, "kind": "human", "owners": [{"signer": 1}], "threshold": 1, "root": null}}, "parents": []},
+  {"depth": 1, "author": 1, "cosigners": [2], "action": {"addDevice": {"vault": 100, "device": 2}}, "parents": [0]},
+  {"depth": 2, "author": 4, "cosigners": [], "action": {"genesis": {"vault": 101, "kind": "human", "owners": [{"signer": 4}], "threshold": 1, "root": null}}, "parents": []},
+  {"depth": 3, "author": 4, "cosigners": [5], "action": {"addDevice": {"vault": 101, "device": 5}}, "parents": [2]},
+  {"depth": 4, "author": 6, "cosigners": [], "action": {"genesis": {"vault": 102, "kind": "human", "owners": [{"signer": 6}], "threshold": 1, "root": null}}, "parents": []},
+  {"depth": 5, "author": 8, "cosigners": [], "action": {"genesis": {"vault": 103, "kind": "human", "owners": [{"signer": 8}], "threshold": 1, "root": null}}, "parents": []},
+  {"depth": 6, "author": 1, "cosigners": [3], "action": {"addDevice": {"vault": 100, "device": 3}}, "parents": [1]},
+  {"depth": 7, "author": 1, "cosigners": [9], "action": {"addOwner": {"vault": 100, "owner": {"signer": 9}}}, "parents": [6]},
+  {"depth": 8, "author": 1, "cosigners": [4], "action": {"genesis": {"vault": 200, "kind": "coop", "owners": [{"vault": 100}, {"vault": 101}], "threshold": 1, "root": null}}, "parents": []},
+  {"depth": 9, "author": 2, "cosigners": [], "action": {"foundSpace": {"space": 10, "actor": 200}}, "parents": []},
+  {"depth": 10, "author": 2, "cosigners": [], "action": {"write": {"space": 10, "entry": 1, "actor": 200, "epoch": 0, "deps": [], "branch": "main"}}, "parents": []},
+  {"depth": 11, "author": 2, "cosigners": [], "action": {"grant": {"id": 30, "scope": {"space": 10}, "role": "read", "grantee": {"vault": 102}, "issuer": 200, "parent": null}}, "parents": [9]}],
+ "standing": [true, true, true, true, true, true, true, true, true, true, true, true],
+ "logs": [
+  {"log": {"vault": 100}, "closed": [0, 1, 6, 7], "frontier": [7]},
+  {"log": {"vault": 101}, "closed": [2, 3], "frontier": [3]},
+  {"log": {"vault": 102}, "closed": [4], "frontier": [4]},
+  {"log": {"vault": 103}, "closed": [5], "frontier": [5]},
+  {"log": {"vault": 200}, "closed": [8], "frontier": [8]},
+  {"log": {"space": 10}, "closed": [9, 11], "frontier": [11]},
+  {"log": {"space": 10, "entry": 1}, "closed": [10], "frontier": [10]}],
+ "forks": [],
+ "asks": [
+  {"device": 3, "held": [], "peer": null, "logs": [], "loose": [], "respond": [10, 9, 11, 0, 1, 2, 3, 4, 6, 7, 8], "since": [10, 9, 11, 0, 1, 2, 3, 4, 6, 7, 8]}],
+ "links": [{"passkey": 1, "card": [0, 1, 6, 7]}, {"passkey": 9, "card": [0, 1, 6, 7]}, {"passkey": 4, "card": [2, 3]}, {"passkey": 6, "card": [4]}, {"passkey": 2, "card": []}, {"passkey": 555, "card": []}]}
 ]}

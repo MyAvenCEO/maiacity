@@ -1,7 +1,7 @@
 //! The server's relay (P8b): devices with no UDP of their own sync through it alone, as a device behind a strict
 //! firewall would; it lets in only the devices the server knows, those of the vaults acting in the spaces it relays,
 //! and lets go of a device taken out of its vault; and a new server, started as its binary starts it, learns its
-//! devices from what it relays.
+//! devices from what it relays. From P8c, a new device that linked through the server is let in too.
 
 #[path = "../../avendb-net/tests/common/mod.rs"]
 mod common;
@@ -17,7 +17,7 @@ use avendb::id::{SignerId, SpaceId};
 use avendb::keys::KeyScope;
 use avendb::lab::Lab;
 use avendb::policy::{Action, Refusal, Role, Scope};
-use avendb_net::{Admission, Node, Options, server};
+use avendb_net::{Admission, Node, Offer, Options, server};
 use avendb_server::{Config, Relay};
 use common::Folder;
 use iroh::{EndpointId, RelayUrl, SecretKey};
@@ -108,7 +108,8 @@ async fn scenario_5_through_the_relay_alone() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn a_new_server_lets_in_the_devices_of_the_spaces_it_relays() {
     let dir = Folder::new("relay");
-    let config = Config { data: dir.path().to_path_buf(), bind: LOOPBACK, relay_bind: LOOPBACK, relay_url: None };
+    let data = dir.path().to_path_buf();
+    let config = Config { data, bind: LOOPBACK, relay_bind: LOOPBACK, relay_url: None, public_addr: None };
     let started = avendb_server::start(&config).await.expect("the server and its relay");
     let (server, relay) = (&started.node, &started.relay);
     let (url, v) = (relay.url(), server::vault(server).await.expect("its vault"));
@@ -174,6 +175,57 @@ async fn a_device_taken_out_of_its_vault_is_let_go_by_the_relay() {
     }
 }
 
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn a_new_device_linked_through_the_server_is_let_in_by_its_relay() {
+    let admission = Admission::default();
+    let relay = Relay::spawn(LOOPBACK, admission.clone()).await.expect("a relay");
+    let url = relay.url();
+    let mut w = world();
+    let h = handbook(&mut w);
+    // Samuel loses his Mac and his iPhone; his passkey is on his new Mac
+    w.lab.lose(w.mac_s);
+    w.lab.lose(w.phone_s);
+    let new = w.lab.device_of(w.passkey_s, "Samuel's new Mac");
+    let (passkey_s, server_d) = (w.passkey_s, w.server);
+    let opts = Options { relay: Some(url.clone()), admission: Some(admission.clone()), ..Options::local() };
+    let server = node(&mut w, server_d, &[], 2, opts).await;
+    let mac = node(&mut w, new, &[passkey_s], 7, Options { relay: Some(url.clone()), ..Options::local() }).await;
+    assert!(!admission.admits(&mac.id()), "the server doesn't know the new Mac");
+    // the new Mac, on UDP, makes its first contact straight, by the server's offer
+    let offer = Offer::from_text(&server.offer().to_text()).expect("the server's offer");
+    mac.link(&offer, passkey_s).await.expect("the new Mac links through the server");
+    until("once it joined, the server lets it in", || async { admission.admits(&mac.id()) }).await;
+    let (space, welcome) = (h.space, h.welcome);
+    let reads = || mac.read(move |lab, me| text(lab, me, space, welcome, 2).as_deref() == Some(WELCOME_TEXT));
+    until("the new Mac reads Welcome", reads).await;
+    until("and the relay serves it", || async { relay.serves(&mac.id()) }).await;
+    quiet(&[&mac, &server]).await;
+    for n in [mac, server] {
+        n.shutdown().await.expect("the node shuts down");
+    }
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn the_servers_offer_names_its_public_address_and_its_relay() {
+    let dir = Folder::new("offer");
+    let public: SocketAddr = "203.0.113.7:7401".parse().expect("a socket");
+    let relay_url: RelayUrl = "https://avendb.maia.city".parse().expect("a URL");
+    let config = Config {
+        data: dir.path().to_path_buf(),
+        bind: LOOPBACK,
+        relay_bind: LOOPBACK,
+        relay_url: Some(relay_url.clone()),
+        public_addr: Some(public),
+    };
+    let started = avendb_server::start(&config).await.expect("the server and its relay");
+    let offer = Offer::from_text(&started.offer.to_text()).expect("its offer reads back");
+    assert_eq!(offer.device, started.node.device(), "its device");
+    assert_eq!(offer.addr.id, started.node.id(), "its endpoint");
+    assert_eq!(offer.addr.ip_addrs().collect::<Vec<_>>(), [&public], "where devices on UDP reach it, alone");
+    assert_eq!(offer.addr.relay_urls().collect::<Vec<_>>(), [&relay_url], "and its relay");
+    started.shutdown().await.expect("the server stops");
+}
+
 #[test]
 fn the_server_is_configured_by_its_environment() {
     let defaults = Config::from_vars(|_| None).expect("the defaults");
@@ -181,17 +233,20 @@ fn the_server_is_configured_by_its_environment() {
     assert_eq!(defaults.bind, "0.0.0.0:7401".parse::<SocketAddr>().expect("a socket"), "iroh's UDP");
     assert_eq!(defaults.relay_bind, "0.0.0.0:3350".parse::<SocketAddr>().expect("a socket"), "the relay's HTTP");
     assert_eq!(defaults.relay_url, None, "the relay's own socket, unless it is said where devices reach it");
+    assert_eq!(defaults.public_addr, None, "its own interfaces' addresses, unless it is said where it is reached");
     let vars = HashMap::from([
         ("AVENDB_DATA", "/srv/avendb"),
         ("AVENDB_BIND", "[::]:7402"),
         ("AVENDB_RELAY_BIND", "127.0.0.1:3351"),
         ("AVENDB_RELAY_URL", "https://avendb.maia.city"),
+        ("AVENDB_PUBLIC_ADDR", "203.0.113.7:7401"),
     ]);
     let set = Config::from_vars(|k| vars.get(k).map(|v| v.to_string())).expect("what the environment says");
     assert_eq!(set.data, PathBuf::from("/srv/avendb"));
     assert_eq!(set.bind, "[::]:7402".parse::<SocketAddr>().expect("a socket"));
     assert_eq!(set.relay_bind, "127.0.0.1:3351".parse::<SocketAddr>().expect("a socket"));
     assert_eq!(set.relay_url, Some("https://avendb.maia.city".parse().expect("a URL")));
+    assert_eq!(set.public_addr, Some("203.0.113.7:7401".parse().expect("a socket")));
     let wrong = Config::from_vars(|k| (k == "AVENDB_BIND").then(|| "the server's port".to_string()));
     assert!(wrong.is_err(), "a socket that isn't one is said so, not taken for the default");
 }

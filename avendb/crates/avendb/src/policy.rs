@@ -408,6 +408,9 @@ pub enum Refusal {
     ReadOnly,
     /// Not a rule of the ops but of an app: its edit doesn't fit its own schema (`lens::View::put`).
     NotAView,
+    /// Not a rule of the ops but of a device: what a device on a connection sent to join a vault (`Lab::accept_join`)
+    /// adds no device, or another device than itself.
+    NotJoining,
 }
 
 /// What a removal takes away.

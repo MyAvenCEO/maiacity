@@ -478,6 +478,8 @@ structure SyncCase where
   ops  : List SyncOp
   /-- Who asks: a device, the places of the ops it holds, and those of the ops the peer holds (`none`: all). -/
   asks : List (SignerId × List Nat × Option (List Nat))
+  /-- The passkeys that prove themselves to a peer holding every op, to link a new device (`linkCard`). -/
+  links : List SignerId := []
 
 def SyncCase.toOps (c : SyncCase) : List Op :=
   c.ops.zipIdx.foldl (fun acc (o, i) =>
@@ -566,7 +568,18 @@ def syncs : List SyncCase := [
       (2, List.range 25, some (List.range 20 ++ [25])),
       (2, List.range 25, some (List.range 20)),
       -- the iPhone, behind, asks a peer holding all of them
-      (3, List.range 13, none)] }]
+      (3, List.range 13, none)] },
+  { name := "linking a device by its passkey", ops := plain (humans ++ [
+      (1, [3], .addDevice 100 3),
+      -- Samuel's backup passkey, a second owner of his vault
+      (1, [9], .addOwner 100 (.signer 9)),
+      (1, [4], .genesis 200 .coop [.vault 100, .vault 101] 1),
+      (2, [], .foundSpace 10 200),
+      (2, [], .write 10 1 200 0),
+      (2, [], g 30 (.space 10) .read (toVault 102) 200)]),
+    asks := [(3, [], none)],
+    -- Samuel's passkey, his backup passkey, Bob's and Carol's, Samuel's Mac (a device, no passkey), and a stranger's
+    links := [1, 9, 4, 6, 2, 555] }]
 
 /-! ## JSON -/
 
@@ -708,11 +721,12 @@ def syncCase (c : SyncCase) : String :=
       ("haves", ids ((asks h).haves l))]
     obj [("device", nat d), ("held", ids held), ("peer", opt ids peer), ("logs", arr sent), ("loose", ids (loose h)),
          ("respond", ids ((respond p d).map (·.id))), ("since", ids ((respondSince p d (asks h)).map (·.id)))]
+  let links := c.links.map fun p => obj [("passkey", nat p), ("card", ids ((linkCard ops p).map (·.id)))]
   "{" ++ str "name" ++ ": " ++ str c.name ++ ",\n " ++ str "ops" ++ ": [\n  " ++ ",\n  ".intercalate opJson ++
     "],\n " ++ str "standing" ++ ": " ++ arr (ops.map fun o => bool (stood.any (·.id == o.id))) ++ ",\n " ++
     str "logs" ++ ": [\n  " ++ ",\n  ".intercalate logs ++ "],\n " ++ str "forks" ++ ": " ++
     arr ((allForks ops).map fun (a, b) => ids [a, b]) ++ ",\n " ++ str "asks" ++ ": [\n  " ++
-    ",\n  ".intercalate asks ++ "]}"
+    ",\n  ".intercalate asks ++ "],\n " ++ str "links" ++ ": " ++ arr links ++ "}"
 
 def render : String :=
   "{\"cases\": [\n" ++ ",\n".intercalate (cases.map case) ++ "\n],\n\"views\": [\n" ++
@@ -767,6 +781,10 @@ def created : Action → Option (Nat × Nat)
   (closedPart (Op.log? ops) ops l).length < (inLog (Op.log? ops) ops l).length
 #guard syncs.any fun c => (order c.toOps).length < c.ops.length
 #guard syncs.any fun c => !(allForks c.toOps).isEmpty
+-- a passkey that owns a vault is handed its log, one that owns none nothing, and the card holds no write (T20)
+#guard syncs.any fun c => c.links.any fun p => !(linkCard c.toOps p).isEmpty
+#guard syncs.any fun c => c.links.any fun p => (linkCard c.toOps p).isEmpty
+#guard syncs.all fun c => c.links.all fun p => (linkCard c.toOps p).all fun o => o.item?.isNone
 
 /-! ## The lens cases
 

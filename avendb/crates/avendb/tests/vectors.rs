@@ -9,7 +9,8 @@
 //! A sync case's ops, each with the parents and depth the model gives it, must stand as in the model, fall into the
 //! same logs with the same closed parts and frontiers, and fork where the model says; and each device that asks a peer
 //! must name the same ops of each log and the same loose ops, and be sent the same ops in the same order, whole
-//! (`respond`) and given what it named (`respond_since`).
+//! (`respond`) and given what it named (`respond_since`); and each passkey that proves itself to link a new device
+//! must be handed the same vault logs (`link_card`).
 //!
 //! The model names what an op creates (a vault, a space, a grant) by a number, and an op by its place in the case; the
 //! core names them all by hashes, so each number maps to what its op created, and each place to that op's id. A keys
@@ -26,7 +27,7 @@ use avendb::policy::{
     checkpointed, replay, Action, Branch, Grant, Grantee, Kind, Line, Op, Principal, Role, Scope, Space, State, Vault,
     Write,
 };
-use avendb::sync::{asks, closed_part, forks, frontiers, respond, respond_since, LogId};
+use avendb::sync::{asks, closed_part, forks, frontiers, link_card, respond, respond_since, LogId};
 
 const VECTORS: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../../spec/vectors/vaults.json");
 const LENSES: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../../spec/vectors/lenses.json");
@@ -399,6 +400,7 @@ fn each_device_is_sent_what_the_lean_model_sends_it_by_what_it_holds() {
     let vectors = vectors();
     let cases = list(&vectors["syncs"]);
     assert!(cases.len() >= 4);
+    let mut linked = 0;
     for case in cases {
         let name = case["name"].as_str().unwrap();
         let mut names = Names::default();
@@ -458,7 +460,14 @@ fn each_device_is_sent_what_the_lean_model_sends_it_by_what_it_holds() {
             assert_eq!(ids(respond(&peer, d)), names.ops(&a["respond"]), "{what}: sent whole");
             assert_eq!(ids(respond_since(&peer, d, &asked)), names.ops(&a["since"]), "{what}: sent");
         }
+        // each passkey that proves itself to a peer holding every op, to link a new device: the card it is handed
+        for l in list(&case["links"]) {
+            let card: Vec<OpId> = link_card(&all, signer(&l["passkey"])).iter().map(Op::id).collect();
+            assert_eq!(card, names.ops(&l["card"]), "{name}: the card for passkey {}", l["passkey"]);
+            linked += 1;
+        }
     }
+    assert!(linked >= 5, "the model links passkeys that own vaults and passkeys that own none: {linked}");
 }
 
 /// `v` without its `null` fields: the model writes every field, and absent ones as `null`.

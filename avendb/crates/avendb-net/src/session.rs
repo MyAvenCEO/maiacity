@@ -1,12 +1,13 @@
 //! A connection between two nodes: the hellos first, on the first stream, then one message on a stream of its own,
-//! its kind in its first byte, and the answer back on the same stream.
+//! its kind in its first byte, and the answer back on the same stream. A message the node refuses gets its stream
+//! reset.
 
 use std::sync::Arc;
 
 use anyhow::{Context as _, Result, anyhow, bail};
 use avendb::id::SignerId;
-use avendb::sign::Hello;
-use avendb::wire::{Announce, Reply, Request, Wire};
+use avendb::sign::{Hello, PasskeyHello};
+use avendb::wire::{Announce, Join, Reply, Request, Wire};
 use iroh::endpoint::{Connection, RecvStream, VarInt};
 use iroh::protocol::{AcceptError, ProtocolHandler};
 
@@ -18,6 +19,11 @@ pub(crate) const REQUEST: u8 = 0;
 pub(crate) const ANNOUNCE: u8 = 1;
 /// A request for the node's contact card, answered by its vault logs, if it hands its card out (the server).
 pub(crate) const CARD: u8 = 2;
+/// A passkey's hello (P8c), said for the peer's device on this connection, answered by the passkey's link card: the
+/// logs of the vaults it owns (`Lab::link_card`).
+pub(crate) const LINK: u8 = 3;
+/// A new device's join (P8c), answered by nothing once the node accepts it (`Lab::accept_join`).
+pub(crate) const JOIN: u8 = 4;
 
 /// The error code a node closes a connection or a stream with when it refuses it.
 pub(crate) const REFUSED: VarInt = VarInt::from_u32(1);
@@ -104,7 +110,9 @@ pub(crate) async fn serve(shared: Arc<Shared>, peer: Peer) {
 }
 
 /// The answer to the message on the stream `recv`: a request gets a reply, and an announcement nothing, but the
-/// node asks the peer if its digests differ; a request for its card gets its vault logs, if it hands its card out.
+/// node asks the peer if its digests differ; a request for its card gets its vault logs, if it hands its card out. A
+/// passkey's hello that proves the passkey for the peer's device on this connection gets the passkey's link card, and
+/// a join the node accepts gets nothing, and the node tells the new device what it holds.
 async fn answer(shared: &Arc<Shared>, peer: &Peer, mut recv: RecvStream) -> Result<Vec<u8>> {
     let message = recv.read_to_end(MESSAGE_LIMIT).await?;
     let (&kind, body) = message.split_first().context("an empty message")?;
@@ -127,6 +135,21 @@ async fn answer(shared: &Arc<Shared>, peer: &Peer, mut recv: RecvStream) -> Resu
             let ops = shared.lab(|lab, me| lab.card(me)).await;
             Ok(Reply { ops, blobs: Vec::new() }.to_wire())
         }
+        LINK => {
+            let hello = PasskeyHello::from_wire(body)?;
+            // the peer said it for its own end of this connection: the dialer's if this node listened
+            let proven = hello.verify(&exporter(&peer.conn)?, !peer.dialed, device);
+            let passkey = proven.context("the passkey's hello proves no passkey for this device on this connection")?;
+            let ops = shared.lab(move |lab, me| lab.link_card(me, passkey)).await;
+            Ok(Reply { ops, blobs: Vec::new() }.to_wire())
+        }
+        JOIN => {
+            let join = Join::from_wire(body)?;
+            let accepted = shared.lab(move |lab, me| lab.accept_join(me, device, join)).await;
+            accepted.map_err(|why| anyhow!("the join is refused: {why:?}"))?;
+            shared.changed.notify_one();
+            Ok(Vec::new())
+        }
         _ => bail!("no message of kind {kind}"),
     }
 }
@@ -147,7 +170,7 @@ impl ProtocolHandler for Protocol {
         let shared = self.0.clone();
         match tokio::time::timeout(WAIT, listen_hello(&shared, &conn)).await {
             Ok(Ok(device)) => {
-                let peer = shared.connected(conn, device);
+                let peer = shared.connected(conn, device, false);
                 serve(shared, peer).await;
             }
             _ => conn.close(REFUSED, b"no hello"),

@@ -17,6 +17,7 @@ async fn main() -> Result<()> {
     let (device, vault) = (node.device(), avendb_net::server::vault(node).await);
     let vault = vault.map_or_else(|| "none".to_string(), |v| format!("{v:?}"));
     tracing::info!("avenDB server: device {device:?}, vault {vault}, endpoint {}", node.id());
+    tracing::info!("avenDB server: offer {}", running.offer.to_text());
     let (data, bind, relay) = (config.data.display(), config.bind, config.relay_bind);
     tracing::info!("avenDB server: data in {data}, iroh on {bind}, relay on {relay}");
     stopped().await?;

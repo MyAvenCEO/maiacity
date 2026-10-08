@@ -7,7 +7,8 @@
 //! checkpoints in P4b, history and branches in P5, in P6 offline devices, sync by what each device holds of each log,
 //! gossip of one digest per log in random orders, and backups, whose restored devices fork, and in P7 what the tile
 //! shows and needs: each signer's name, and spare keys made ahead, so that a page making McEliece pairs in its
-//! workers never waits for one.
+//! workers never waits for one. In P8 a device splits off to run on a machine of its own (`split`), and in P8c a new
+//! device links to its person's vault by its passkey alone (`link_card`, `join`, `accept_join`).
 //!
 //! A device shows each entry on every line of its history (`branch`): it opens each write it can, and builds the item
 //! of each line from the updates of that line's history. Branching, merging, promoting, restoring, undoing and
@@ -47,9 +48,9 @@ use crate::id::{BlobId, EntryId, OpId, SignerId, SpaceId, VaultId};
 use crate::keys::{self, KeyBox, KeyId, KeyName, KeyScope, PublicKey, Recipient, SeededRng, Secret};
 use crate::lens::{Lane, Schema};
 use crate::policy::{checkpointed, replay, Action, Branch, Kind, Line, Log, Op, Principal, Refusal, Replay, State};
-use crate::sign::{self, Classical, DeviceKey, Hello, Passkey, Signature, SignerKeys, Signed};
-use crate::sync::{answer, asks_ids, beyond, digests_ids, forks_in, logs_of, vault_logs, LogId};
-use crate::wire::Request;
+use crate::sign::{self, Classical, DeviceKey, Hello, Passkey, PasskeyHello, Signature, SignerKeys, Signed};
+use crate::sync::{answer, asks_ids, beyond, digests_ids, forks_in, link_places, logs_of, vault_logs, LogId};
+use crate::wire::{Join, Request};
 
 /// A device keeps its keys up to date in a few rounds at most: one to make and seal keys, one to seal newer keys to
 /// the keys it just made, one to find nothing left. More means an op the rules refuse, made again and again.
@@ -1172,6 +1173,73 @@ impl Lab {
         }
     }
 
+    /// What passkey `passkey`, used on device `d`, says on `d`'s connection whose TLS exporter is `exporter`, for the
+    /// end that dialed if `dialer`, after `d`'s own hello (`sign::PasskeyHello`): `None` unless the passkey is at hand,
+    /// as it is on a device only while its person uses it there.
+    pub fn passkey_hello(
+        &mut self,
+        d: SignerId,
+        passkey: SignerId,
+        exporter: &[u8; 32],
+        dialer: bool,
+    ) -> Option<PasskeyHello> {
+        match self.keys.get_mut(&passkey)? {
+            Key::Passkey(p) => Some(p.hello(exporter, dialer, d)),
+            Key::Device(_) => None,
+        }
+    }
+
+    /// What device `d` hands a device whose passkey `passkey` proved itself on their connection (`sync::link_card`):
+    /// the signed ops of the logs of the vaults the passkey owns, and of every vault that owns one of them, up the
+    /// chains, so that the device can add itself to its person's vault (`join`). Nothing about any space or entry
+    /// (T20); a passkey that owns no vault gets nothing.
+    pub fn link_card(&self, d: SignerId, passkey: SignerId) -> Vec<Signed> {
+        let store = self.held(d);
+        let places = link_places(store.log.ops(), &self.full_view(d), passkey);
+        places.into_iter().map(|i| store.signed[&store.log.ids()[i]].clone()).collect()
+    }
+
+    /// Device `d` adds itself to the vault whose root is its person's passkey `passkey`, by its view, as a new device
+    /// does once it holds the passkey's link card (`link_card`): the op, signed by the passkey and by `d`, sealing to
+    /// `d`'s own key, and the McEliece key it names, for the peer to accept (`accept_join`). As the passkey signs on
+    /// `d`, it lends `d` what is sealed to it: `d` opens the vault's key and boxes it for itself. If `d` is in that
+    /// vault already, as when a link is tried again, the op that added it. `UnknownVault` if no vault in `d`'s view
+    /// has the passkey as its root, `Locked` if the passkey isn't at hand.
+    pub fn join(&mut self, d: SignerId, passkey: SignerId) -> Result<Join, Refusal> {
+        let store = self.held(d);
+        let st = store.view();
+        let vault = st.vaults().iter().find(|v| v.root == Some(passkey)).ok_or(Refusal::UnknownVault)?;
+        let adds =
+            |op: &Op| matches!(op.action, Action::AddDevice { vault: v, device, .. } if v == vault.id && device == d);
+        let ops = store.log.ops().iter().zip(store.log.ids());
+        let added = vault.devices.contains(&d).then(|| ops.rev().find(|(op, _)| adds(op)).map(|(_, id)| *id)).flatten();
+        let id = match (added, vault.id) {
+            (Some(id), _) => id,
+            (None, vault) => self.submit(d, &[passkey, d], Action::AddDevice { vault, device: d, seal_to: None })?,
+        };
+        let (mut signed, blobs) = self.outgoing(d, &[id]);
+        Ok(Join { op: signed.remove(0), blobs: blobs.into_values().map(|b| b.to_vec()).collect() })
+    }
+
+    /// Device `d` accepts the join a device on the other end of a connection, `from`, sent it (`join`): an op adding
+    /// `from` itself to a vault of `d`'s view, every signature checking out, and which `d`'s view accepts: the vault
+    /// approves (its root signed, or its threshold of owners) and `from` cosigned. `d` keeps it, with the McEliece key
+    /// it names, and from then on answers `from` as a device of that vault. `NotJoining` if the op adds no device or
+    /// another one than `from`, `BadSignature` if a signature doesn't verify, and otherwise why `d`'s view refuses it.
+    /// The same join sent again is accepted again.
+    pub fn accept_join(&mut self, d: SignerId, from: SignerId, join: Join) -> Result<OpId, Refusal> {
+        if !matches!(join.op.op.action, Action::AddDevice { device, .. } if device == from) {
+            return Err(Refusal::NotJoining);
+        }
+        let id = join.op.verify()?.id();
+        if self.held(d).signed.contains_key(&id) {
+            return Ok(id);
+        }
+        self.held(d).view().step(&join.op.op)?;
+        self.receive(d, vec![join.op], join.blobs.into_iter().map(Arc::from).collect());
+        Ok(id)
+    }
+
     /// The devices device `d` knows, other than itself, each with its ed25519 key, its iroh endpoint's: the devices
     /// of the vaults in its view whose keys it saw in a signature.
     pub fn peers(&self, d: SignerId) -> Vec<(SignerId, [u8; 32])> {
@@ -1328,15 +1396,21 @@ impl Lab {
         self.refresh(d, &[]);
     }
 
+    /// `action` signed by `signers`, drafted on device `on` and building on what it holds, unchecked and kept nowhere:
+    /// what a device that ignores the rules sends. `Locked` if a signer's key isn't at hand.
+    pub fn sign_unchecked(&mut self, on: SignerId, signers: &[SignerId], action: Action) -> Result<Signed, Refusal> {
+        let (&author, cosigners) = signers.split_first().expect("an op has an author");
+        let op = self.held(on).log.draft(author, cosigners, action);
+        self.sign(op)
+    }
+
     /// Deliver a tampering attempt to device `to`: `Err` with why it rejects it, or the op's id if it keeps it.
     pub fn tamper(&mut self, to: SignerId, how: Tamper) -> Result<OpId, Refusal> {
         let signed = match how {
             Tamper::Unchecked { signers, action } => {
-                let (&author, cosigners) = signers.split_first().expect("an op has an author");
                 // drafted on the author's own device when it is one, building on what that device holds
-                let on = if self.stores.contains_key(&author) { author } else { to };
-                let op = self.held(on).log.draft(author, cosigners, action);
-                self.sign(op)?
+                let on = if self.stores.contains_key(&signers[0]) { signers[0] } else { to };
+                self.sign_unchecked(on, &signers, action)?
             }
             Tamper::ForgedSignature { claimed, action } => {
                 let op = self.held(to).log.draft(claimed, &[], action);

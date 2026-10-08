@@ -1,9 +1,9 @@
 //! Mutation fuzzing (P4b): what a device takes from others (key boxes, encrypted edits, signed ops, schemas, lenses,
 //! Loro updates), changed a bit or a byte at a time, cut short, grown or spliced, and from P8 every message on the wire
-//! (signed ops, hellos, asks, requests, replies, announcements). Nothing panics; a changed box, edit or signed op is
-//! refused, a changed message reads as nothing or as another message whose own bytes these are, and a changed Loro
-//! update that is refused leaves the item as it was. Every mutation is drawn from a fixed seed, so a failure replays
-//! exactly.
+//! (signed ops, hellos, asks, requests, replies, announcements, and from P8c passkeys' hellos and joins). Nothing
+//! panics; a changed box, edit or signed op is refused, a changed message reads as nothing or as another message whose
+//! own bytes these are, and a changed Loro update that is refused leaves the item as it was. Every mutation is drawn
+//! from a fixed seed, so a failure replays exactly.
 
 use std::fmt::Debug;
 
@@ -13,9 +13,9 @@ use avendb::id::{BlobId, EntryId, OpId, SignerId, SpaceId, VaultId};
 use avendb::keys::{self, SeededRng, Secret};
 use avendb::lens::{blobs, BlockV2, Lane, Lens, Schema, TypeV2, View, DOCUMENT_V1, DOCUMENT_V2, TODO_V1, TODO_V2};
 use avendb::policy::{Action, Branch, Op};
-use avendb::sign::{Classical, DeviceKey, Hello, Passkey, Signature, SignerKeys, Signed};
+use avendb::sign::{Classical, DeviceKey, Hello, Passkey, PasskeyHello, Signature, SignerKeys, Signed};
 use avendb::sync::{Ask, LogId};
-use avendb::wire::{Announce, Reply, Request, Wire};
+use avendb::wire::{Announce, Join, Reply, Request, Wire};
 
 /// Where and how to mutate: xorshift64*, seeded per test.
 struct Gen(u64);
@@ -275,6 +275,16 @@ fn a_changed_message_on_the_wire_reads_as_nothing_or_as_its_own_bytes() {
     let hello = device.hello(&exporter, true);
     assert_eq!(hello.verify(&exporter, true, &endpoint), Some(device.id()));
     wire_mutations(&mut g, &hello, 1000, |h: &Hello| assert_eq!(h.verify(&exporter, true, &endpoint), None));
+    // a passkey's hello read from changed bytes proves no passkey for that device on the connection
+    let mut passkey = Passkey::from_seed([6; 32]);
+    let new = passkey.device([1; 32]).id();
+    let hello = passkey.hello(&exporter, true, new);
+    assert_eq!(hello.verify(&exporter, true, new), Some(passkey.id()));
+    wire_mutations(&mut g, &hello, 1500, |h: &PasskeyHello| assert_eq!(h.verify(&exporter, true, new), None));
+    // a join read from changed bytes carries a refused op, or the same op beside other bytes, which the device checks
+    // against the ids its op names
+    let join = Join { op: add.clone(), blobs: vec![vec![1; 40], vec![2; 3]] };
+    wire_mutations(&mut g, &join, 1500, |j: &Join| assert!(j.op == add || j.op.verify().is_err(), "{j:?}"));
     // what a sync carries: asks, requests, replies and announcements
     let log = |n: u64| LogId::Entry(SpaceId::from_u64(10), EntryId::from_u64(n));
     let mut ask = Ask::default();

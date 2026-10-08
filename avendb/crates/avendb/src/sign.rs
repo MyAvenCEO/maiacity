@@ -41,6 +41,10 @@ pub const SIG_CONTEXT: &[u8] = b"avenDB 2026-10-08 op signature";
 /// apart.
 pub const HELLO_CONTEXT: &[u8] = b"avenDB 2026-10-08 hello";
 
+/// What a passkey's hello signs with SLH-DSA (`PasskeyHello`), as its context string: never an op's id, nor a
+/// device's hello.
+pub const PASSKEY_HELLO_CONTEXT: &[u8] = b"avenDB 2026-10-08 passkey hello";
+
 /// The suite of every signer and signature: ed25519 or P-256, each beside SLH-DSA-SHA2-128f. A signer's id hashes it,
 /// so a later suite names other signers.
 pub const SUITE: u8 = 1;
@@ -187,6 +191,52 @@ fn hello_message(exporter: &[u8; 32], dialer: bool) -> [u8; 33] {
     m[0] = u8::from(dialer);
     m[1..].copy_from_slice(exporter);
     m
+}
+
+/// A passkey's hello on a connection (P8c): its keys, its WebAuthn assertion, and its SLH-DSA signature, both over a
+/// hash of the connection's TLS exporter, the end it speaks for, and the device whose hello proved that end. A new
+/// device says it to a peer to link to its person's vault, and the peer hands it the logs of the vaults the passkey
+/// owns (`Lab::link_card`). Bound to the connection and to the device, it can't be replayed on another connection, sent
+/// back by the other end, nor said for another device.
+#[derive(Clone, PartialEq, Eq)]
+pub struct PasskeyHello {
+    pub keys: SignerKeys,
+    pub assertion: Assertion,
+    /// SLH-DSA-SHA2-128f, `PQ_SIGNATURE_BYTES` long.
+    pub sig: Vec<u8>,
+}
+
+/// The hash-based half shows only its size.
+impl fmt::Debug for PasskeyHello {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let (keys, assertion, sig) = (&self.keys, &self.assertion, format!("{} bytes", self.sig.len()));
+        f.debug_struct("PasskeyHello").field("keys", keys).field("assertion", assertion).field("sig", &sig).finish()
+    }
+}
+
+impl PasskeyHello {
+    /// The passkey this hello proves on the connection whose TLS exporter is `exporter`, from the end that dialed if
+    /// `dialer`, for `device`, the device whose hello proved that end: `None` unless the keys are a passkey's and both
+    /// halves check out.
+    pub fn verify(&self, exporter: &[u8; 32], dialer: bool, device: SignerId) -> Option<SignerId> {
+        let SignerKeys::Passkey { p256, slh } = &self.keys else { return None };
+        let challenge = passkey_challenge(exporter, dialer, device);
+        if !self.assertion.verify(p256, OpId(challenge)) {
+            return None;
+        }
+        let key = slh_dsa::VerifyingKey::<Sha2_128f>::try_from(&slh[..]).ok()?;
+        let sig = slh_dsa::Signature::<Sha2_128f>::try_from(&self.sig[..]).ok()?;
+        key.try_verify_with_context(&challenge, PASSKEY_HELLO_CONTEXT, &sig).ok()?;
+        Some(self.keys.id())
+    }
+}
+
+/// What both halves of a passkey's hello sign: a hash of the end it speaks for, the exporter and the device. Its own
+/// hash, so no op's id is ever one.
+fn passkey_challenge(exporter: &[u8; 32], dialer: bool, device: SignerId) -> [u8; 32] {
+    let mut h = Hasher::new("passkey hello");
+    h.update(&[u8::from(dialer)]).update(exporter).update(&device.0);
+    h.finalize()
 }
 
 /// Every op but a write carries the hash-based half of each of its signatures.
@@ -401,6 +451,17 @@ impl Passkey {
         self.sign_at(op, ORIGINS[0], pq)
     }
 
+    /// The passkey's hello on the connection whose TLS exporter is `exporter`, for the end that dialed if `dialer`,
+    /// whose hello proved `device` (`PasskeyHello`): an assertion and the hash-based half, in one ceremony.
+    pub fn hello(&mut self, exporter: &[u8; 32], dialer: bool, device: SignerId) -> PasskeyHello {
+        let challenge = passkey_challenge(exporter, dialer, device);
+        let Classical::Passkey(assertion) = self.sign(OpId(challenge), false).classical else {
+            unreachable!("a passkey signs by assertion")
+        };
+        let sig = self.slh.try_sign_with_context(&challenge, PASSKEY_HELLO_CONTEXT, None).expect("a short context");
+        PasskeyHello { keys: self.keys(), assertion, sig: sig.to_vec() }
+    }
+
     /// WebAuthn's PRF extension: 32 bytes the authenticator alone computes from `salt`, in the same ceremony as an
     /// assertion. The browser hashes the salt with the label "WebAuthn PRF" and the authenticator answers with its
     /// `hmac-secret` over that hash; this one uses a keyed SHA-3 hash with a secret of its own instead of HMAC.
@@ -579,6 +640,35 @@ mod tests {
         assert_eq!(op.verify(&exporter, true, &endpoint), None);
         let passkey = Passkey::from_seed([1; 32]);
         assert_eq!(Hello { keys: passkey.keys(), sig: hello.sig.clone() }.verify(&exporter, true, &endpoint), None);
+    }
+
+    #[test]
+    fn a_passkeys_hello_proves_it_for_one_device_on_one_connection() {
+        let mut passkey = Passkey::from_seed([1; 32]);
+        let device = passkey.device([5; 32]).id();
+        let (exporter, other) = ([1; 32], [2; 32]);
+        let hello = passkey.hello(&exporter, true, device);
+        assert_eq!(hello.verify(&exporter, true, device), Some(passkey.id()));
+        assert_eq!(hello.sig.len(), PQ_SIGNATURE_BYTES);
+        // another connection, said by the other end, or for another device: refused
+        assert_eq!(hello.verify(&other, true, device), None);
+        assert_eq!(hello.verify(&exporter, false, device), None);
+        assert_eq!(hello.verify(&exporter, true, DeviceKey::from_secret([8; 32]).id()), None);
+        // whoever broke the passkey's P-256 key and signs with an SLH-DSA key of their own proves another passkey
+        let mut thief = Passkey::from_seed([2; 32]);
+        let theirs = thief.hello(&exporter, true, device);
+        let keys = SignerKeys::Passkey { p256: passkey.public(), slh: *thief.keys().slh() };
+        let stolen = PasskeyHello { keys, assertion: hello.assertion.clone(), sig: theirs.sig };
+        assert!(stolen.verify(&exporter, true, device).is_some_and(|p| p != passkey.id()));
+        // an op's signature over the same challenge is no hello: its hash-based half signs under the op's context
+        let challenge = OpId(passkey_challenge(&exporter, true, device));
+        let op = passkey.sign(challenge, true);
+        let Classical::Passkey(assertion) = op.classical.clone() else { unreachable!() };
+        let replayed = PasskeyHello { keys: passkey.keys(), assertion, sig: op.pq.clone().expect("both halves") };
+        assert_eq!(replayed.verify(&exporter, true, device), None);
+        // and a device's keys say no passkey's hello
+        let key = DeviceKey::from_secret([7; 32]);
+        assert_eq!(PasskeyHello { keys: key.keys(), ..hello.clone() }.verify(&exporter, true, device), None);
     }
 
     #[test]

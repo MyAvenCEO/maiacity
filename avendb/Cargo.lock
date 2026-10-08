@@ -288,6 +288,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "avendb",
+ "data-encoding",
  "getrandom 0.3.4",
  "iroh",
  "iroh-blobs",
