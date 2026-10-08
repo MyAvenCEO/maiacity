@@ -7,6 +7,15 @@ rust-version.workspace = true
 license.workspace = true
 publish.workspace = true
 
-# P0 is the API and the tests, nothing else: no dependencies yet. Loro, the crypto and iroh arrive with the phases
-# that use them (see src/lib.rs).
+# Each phase brings the dependencies it uses (see src/lib.rs): P1 the hashes and signatures of vault logs. Loro, the
+# sealing and iroh arrive with the phases that use them.
 [dependencies]
+# op ids: BLAKE3 of the canonical encoding
+blake3.workspace = true
+# device keys (the device's iroh endpoint key) and recovery signers; the version iroh uses
+ed25519-dalek = "3"
+# passkeys: WebAuthn assertions are ECDSA P-256 over SHA-256
+p256 = { version = "0.14", default-features = false, features = ["ecdsa", "std"] }
+sha2 = "0.11"
+# WebAuthn's clientDataJSON
+serde_json.workspace = true

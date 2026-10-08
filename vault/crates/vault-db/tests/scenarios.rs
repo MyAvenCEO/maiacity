@@ -11,9 +11,9 @@ use vault_db::keys::{KeyName, KeyScope};
 use vault_db::lab::{Lab, Tamper};
 use vault_db::lens::{BlockV1, DocV1, KindV1, Status, TypeV2};
 use vault_db::policy::{Action, Grantee, Kind, Principal, Refusal, Role, Scope};
+use vault_db::sign::RecoveryCode;
 
 #[test]
-#[ignore = "P1: vaults"]
 fn scenario_01_samuels_vault() {
     let mut lab = Lab::new();
     let (passkey, mac, phone) = (lab.passkey("Samuel"), lab.device("Samuel's Mac"), lab.device("Samuel's iPhone"));
@@ -30,7 +30,27 @@ fn scenario_01_samuels_vault() {
 }
 
 #[test]
-#[ignore = "P1: vaults"]
+fn scenario_01_a_new_device_reaches_every_device() {
+    let mut w = world();
+    let coop = coop_on(&mut w);
+    w.lab.sync_all(1);
+    // Samuel adds an iPad with his passkey on his Mac, and the iPad countersigns
+    let ipad = w.lab.device("Samuel's iPad");
+    let add = Action::AddDevice { vault: w.samuel, device: ipad };
+    w.lab.submit(w.mac_s, &[w.passkey_s, ipad], add).unwrap();
+    w.lab.sync_all(2);
+    // his iPhone, the iPad itself and Bob's Mac (through the coop) all learn of it, and see it act for the coop
+    for d in [w.phone_s, ipad, w.mac_b] {
+        let v = w.lab.log(d).view();
+        assert!(v.vault(w.samuel).is_some_and(|x| x.devices.contains(&ipad)), "{d:?}");
+        assert!(v.acts_for(ipad, coop), "{d:?}");
+    }
+    // Carol, who shares nothing with Samuel yet, keeps the contact card she had
+    let carol_knows = w.lab.log(w.mac_c).view().vault(w.samuel).map(|x| x.devices.clone());
+    assert_eq!(carol_knows, Some(vec![w.mac_s, w.phone_s]));
+}
+
+#[test]
 fn scenario_02_bob_carol_and_dave() {
     let w = world();
     for (d, v) in [(w.mac_b, w.bob), (w.mac_c, w.carol), (w.mac_d, w.dave)] {
@@ -44,7 +64,6 @@ fn scenario_02_bob_carol_and_dave() {
 }
 
 #[test]
-#[ignore = "P1: vaults"]
 fn scenario_03_a_coop_of_two() {
     let mut w = world();
     // Bob has to consent to becoming an owner
@@ -432,4 +451,47 @@ fn scenario_17_peer_to_peer() {
     let todo = |d| w.lab.item(d, t.space, t.door).and_then(|i| i.as_todo());
     assert_eq!(todo(w.mac_c), todo(w.mac_b));
     assert_eq!(w.lab.fetched(w.server, t.space, t.door), 0);
+}
+
+#[test]
+fn scenario_18_recovery_after_losing_every_device() {
+    let mut w = world();
+    let coop = coop_on(&mut w);
+    let samuel = w.samuel;
+    // Samuel writes down a recovery code; its signer becomes a second owner of his vault, beside the passkey
+    let code = w.lab.recovery_code();
+    let written = code.to_string();
+    let recovery = code.signer().id();
+    let add = Action::AddOwner { vault: samuel, owner: Principal::Signer(recovery) };
+    w.lab.submit(w.mac_s, &[w.passkey_s, recovery], add).unwrap();
+    w.lab.sync_all(18);
+    // he loses his passkey, his Mac and his iPhone
+    for s in [w.passkey_s, w.mac_s, w.phone_s, recovery] {
+        w.lab.lose(s);
+    }
+    // on a new Mac he types the code in, and Bob's Mac, which acts for the coop, hands over his vault's log
+    let new_mac = w.lab.device("Samuel's new Mac");
+    assert_eq!(w.lab.use_code(&RecoveryCode::parse(&written.to_lowercase()).unwrap()), recovery);
+    w.lab.share_contact(w.mac_b, new_mac, samuel);
+    // the code adds a new passkey and the new Mac; the new passkey removes what was lost
+    let new_passkey = w.lab.passkey("Samuel's new passkey");
+    let steps = [
+        (vec![recovery, new_passkey], Action::AddOwner { vault: samuel, owner: Principal::Signer(new_passkey) }),
+        (vec![recovery, new_mac], Action::AddDevice { vault: samuel, device: new_mac }),
+        (vec![new_passkey], Action::RemoveDevice { vault: samuel, device: w.mac_s, keep: vec![] }),
+        (vec![new_passkey], Action::RemoveDevice { vault: samuel, device: w.phone_s, keep: vec![] }),
+        (vec![new_passkey], Action::RemoveOwner { vault: samuel, owner: Principal::Signer(w.passkey_s), keep: vec![] }),
+    ];
+    for (signers, action) in steps {
+        w.lab.submit(new_mac, &signers, action).unwrap();
+    }
+    // the new Mac shows Bob his vault's log again, as a contact card; from then on they sync as before
+    w.lab.share_contact(new_mac, w.mac_b, samuel);
+    w.lab.sync_all(19);
+    let v = w.lab.log(w.mac_b).view();
+    assert!(v.acts_for(new_mac, samuel) && v.acts_for(new_mac, coop));
+    assert!(!v.acts_for(w.mac_s, coop) && !v.acts_for(w.phone_s, coop));
+    // the lost passkey governs nothing any more, the code still does, and the new Mac learned the coop
+    assert!(!v.approves(&[w.passkey_s], Principal::Vault(samuel)) && v.approves(&[recovery], Principal::Vault(samuel)));
+    assert!(w.lab.log(new_mac).view().vault(coop).is_some());
 }

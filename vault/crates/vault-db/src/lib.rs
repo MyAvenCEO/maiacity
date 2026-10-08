@@ -13,7 +13,7 @@
 //!
 //! | Phase | Modules | Proven in Lean |
 //! |---|---|---|
-//! | P1 vaults | `policy`: signers, vaults, vault logs, chains | T2, T3 |
+//! | P1 vaults | `policy`: vaults, vault logs, chains; `encode`, `sign`: op ids, device and passkey signatures, recovery codes; `lab`: devices; the Lean model's vectors for the vault rules | T2, T3 |
 //! | P2 caps | `policy`: spaces, grants, revocation, Public, write checks | T1, T4, T8 |
 //! | P3 keys | `keys`, `lab`: sealing, encryption of every edit, rotation | T5, T6, T7 |
 //! | P4 documents and schemas | `doc`, `lens` | T9 |
@@ -22,9 +22,11 @@
 
 pub mod branch;
 pub mod doc;
+pub mod encode;
 pub mod id;
 pub mod keys;
 pub mod lab;
 pub mod lens;
 pub mod policy;
+pub mod sign;
 pub mod sync;

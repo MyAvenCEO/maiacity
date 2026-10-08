@@ -13,8 +13,15 @@ lake build
 ```
 
 It needs [elan](https://github.com/leanprover/elan); `lean-toolchain` pins Lean 4.34.0, and a build takes seconds. It
-fails when a proof breaks or when a scenario check in `Examples.lean` (`#guard`) doesn't hold. Each
-`declaration uses 'sorry'` warning is a theorem whose proof belongs to a later phase.
+fails when a proof breaks, when a scenario check in `Examples.lean` (`#guard`) doesn't hold, or when
+`vectors/vaults.json` no longer holds what the model answers. Each `declaration uses 'sorry'` warning is a theorem
+whose proof belongs to a later phase.
+
+After a change to the rules, write the test vectors again and commit them with the change:
+
+```sh
+lake exe vectors
+```
 
 ## Files
 
@@ -27,15 +34,19 @@ fails when a proof breaks or when a scenario check in `Examples.lean` (`#guard`)
 | `Doc.lean` | Documents as histories: merge and promote, against the laws we rely on from Loro |
 | `Lens.lean` | The markdown document and the todo in two schema versions, and the lenses between them |
 | `Theorems.lean` | T1 to T8 and T11 to T13 |
+| `Lemmas.lean` | The helper lemmas the proofs use: how a step changes a vault, ownership links and chains |
 | `Examples.lean` | The plan's scenarios run on the model, including one todo shared with several vaults and synced peer to peer |
+| `Vectors.lean` | Cases for the Rust core: ops applied in order, which the model accepts, and the vaults at the end |
+| `VectorsCheck.lean`, `WriteVectors.lean` | Check `vectors/vaults.json` on every build; write it (`lake exe vectors`) |
+| `vectors/vaults.json` | The cases with the model's answers, read by `vault-db/tests/vectors.rs` |
 
 ## Theorems
 
 | # | What must always hold | Status | Guarded in Rust by |
 |---|---|---|---|
 | T1 | Only authorized writes are accepted, and revocation wins over what it hadn't seen | P2 | `write_without_cap_rejected_on_import`, `t1_authorized_writes` |
-| T2 | Governance needs the vault's threshold plus the newcomer's consent; devices can't govern | P1 | `add_owner_needs_threshold_and_consent`, `device_cannot_govern`, `t2_consent` |
-| T3 | No ownership cycles | P1 | `ownership_cycle_rejected`, `t3_no_cycles` |
+| T2 | Governance needs the vault's threshold plus the newcomer's consent; devices can't govern | Proven | `add_owner_needs_threshold_and_consent`, `device_cannot_govern`, `t2_consent`, the vectors |
+| T3 | No ownership cycles in any state the ops can reach | Proven | `ownership_cycle_rejected`, `t3_no_cycles`, the vectors |
 | T4 | Grants name vaults, never signers | P2 | `grant_to_signer_rejected`, `t4_grants_name_vaults_and_t8_public_read_only` |
 | T5 | A device opens a key only if it was entitled to it at that epoch or a later one, or the key was public | P3 | `entry_reader_cannot_open_other_entries` |
 | T6 | Forward secrecy on removal: the current key opens only for devices entitled now | P3 | `revoked_reader_cannot_open_new_edits` |
@@ -48,7 +59,17 @@ fails when a proof breaks or when a scenario check in `Examples.lean` (`#guard`)
 | T13 | Two devices that synced both ways hold the same writes for every item they share | P6 | `item_syncs_peer_to_peer_without_server` |
 
 The Rust scenario tests (`vault-db/tests/scenarios.rs`) run the same scenarios as `Examples.lean`, on real devices
-and keys in the Lab.
+and keys in the Lab. The vectors (`vault-db/tests/vectors.rs`) hold the Rust rules to the model's answers op by op:
+the model names vaults by numbers and the core by the hash of their genesis, so the test maps each number to the vault
+its accepted genesis created.
+
+T3 is stated for reachable states, the replay of some ops from the empty state: an arbitrary state could list an owner
+vault that doesn't exist, which no op can produce. Its proof carries that invariant (`OwnersExist`) along.
+
+Concurrent governance replays in one order (causal depth, removals first, then op hash), so it settles the same way
+on every device. That alone doesn't stop a removed owner, or a thief holding a stolen passkey, from signing ops on an
+old copy of the log that claim to come before the removal. P2's strong removal cuts what a removal hadn't seen, for
+governance as for writes; `a_removed_owner_cannot_backdate_governance` waits for it.
 
 ## Assumptions
 
@@ -59,8 +80,9 @@ None are axioms; each is part of the model:
 - Ids don't collide: a `Nodup` hypothesis where a theorem needs it.
 - Loro converges, and can revert a document to any version it contains: fields of the `Loro` structure.
 
-What the proofs don't cover: the Rust and Loro code itself (the tests and, from P6, shared Lean ⇄ Rust test vectors
-do), timing and traffic analysis, and a device compromised while it still holds its keys.
+What the proofs don't cover: the Rust and Loro code itself (the tests and the shared Lean ⇄ Rust test vectors do, for
+the vault rules from P1 and for the rest by P6), timing and traffic analysis, and a device compromised while it still
+holds its keys.
 
 ## Phases
 
@@ -71,11 +93,11 @@ what is still red.
 | Phase | Builds | Proves |
 |---|---|---|
 | P0 | This spec, the `vault-db` API as stubs, every test | Statements compile, scenarios check |
-| P1 | Vaults, vault logs, chains | T2, T3 |
+| P1 | Vaults, vault logs, chains; op ids and signatures (device keys, passkeys through the WebAuthn envelope, recovery codes); vectors for the vault rules | T2, T3 |
 | P2 | Spaces, grants, revocation, Public, write checks, what each device may receive | T1, T4, T8 |
 | P3 | Keys, sealing, encryption of every edit, rotation | T5, T6, T7 |
 | P4 | The Loro document and todo, schemas, lenses | T9 in Rust |
 | P5 | History, branches, merge, promote | T10 in Rust |
-| P6 | Offline devices, random delivery orders, Lean ⇄ Rust vectors | T11, T12, T13 |
+| P6 | Offline devices, random delivery orders, Lean ⇄ Rust vectors for the rest | T11, T12, T13 |
 | P7 | The Database tile | |
-| P8 | Sync on its own iroh ALPN with the bytes in iroh-blobs, passkeys through WebAuthn | |
+| P8 | Sync on its own iroh ALPN with the bytes in iroh-blobs, passkeys from the browser's WebAuthn | |

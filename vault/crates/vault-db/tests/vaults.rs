@@ -1,13 +1,13 @@
-//! Vaults and governance (P1; T2, T3), on the rules alone.
+//! Vaults and governance (P1; T2, T3), on the rules alone, including changes made concurrently on devices that were
+//! offline and meet later.
 
 mod common;
 
 use common::*;
-use vault_db::id::VaultId;
-use vault_db::policy::{Action, Kind, Log, Principal, Refusal};
+use vault_db::id::{SignerId, VaultId};
+use vault_db::policy::{Action, Kind, Log, Principal, Refusal, State};
 
 #[test]
-#[ignore = "P1: vaults"]
 fn vault_id_is_genesis_hash() {
     let mut log = Log::new();
     let genesis = |nonce| Action::Genesis { kind: Kind::Human, owners: vec![Principal::Signer(PASSKEY_S)], threshold: 1, nonce };
@@ -22,7 +22,6 @@ fn vault_id_is_genesis_hash() {
 }
 
 #[test]
-#[ignore = "P1: vaults"]
 fn device_cannot_govern() {
     let c = cast();
     // Samuel's Mac acts for his vault…
@@ -43,7 +42,6 @@ fn device_cannot_govern() {
 }
 
 #[test]
-#[ignore = "P1: vaults"]
 fn add_owner_needs_threshold_and_consent() {
     let mut c = cast();
     // a coop's genesis needs every first owner's consent
@@ -65,7 +63,6 @@ fn add_owner_needs_threshold_and_consent() {
 }
 
 #[test]
-#[ignore = "P1: vaults"]
 fn ownership_cycle_rejected() {
     let mut c = cast();
     let coop = with_coop(&mut c);
@@ -80,4 +77,104 @@ fn ownership_cycle_rejected() {
     // and a human vault can't be owned by a vault at all: its owners are signers
     let human = Action::AddOwner { vault: c.samuel, owner: Principal::Vault(coop) };
     assert_eq!(c.log.check(PASSKEY_S, &[PASSKEY_B], human).err(), Some(Refusal::WrongOwnerKind));
+}
+
+/// What every device ends up with once the ops of two offline copies of a log meet, in either order.
+fn meet(a: &Log, b: &Log) -> State {
+    let (mut ab, mut ba) = (a.clone(), b.clone());
+    ab.receive(b.ops().to_vec());
+    ba.receive(a.ops().to_vec());
+    let st = ab.view();
+    assert!(ba.view() == st, "the order the ops arrived in changed the result");
+    st
+}
+
+#[test]
+fn concurrent_mutual_removals_leave_one_owner() {
+    let mut c = cast();
+    // a coop of Samuel and Bob where either may act alone
+    let owners = vec![Principal::Vault(c.samuel), Principal::Vault(c.bob)];
+    let genesis = Action::Genesis { kind: Kind::Coop, owners, threshold: 1, nonce: 1 };
+    let pair = VaultId::from(c.log.append(PASSKEY_S, &[PASSKEY_B], genesis).unwrap());
+    // offline, each removes the other; each removal is fine alone
+    let (mut a, mut b) = (c.log.clone(), c.log.clone());
+    a.append(PASSKEY_S, &[], Action::RemoveOwner { vault: pair, owner: Principal::Vault(c.bob), keep: vec![] }).unwrap();
+    b.append(PASSKEY_B, &[], Action::RemoveOwner { vault: pair, owner: Principal::Vault(c.samuel), keep: vec![] }).unwrap();
+    // together, the first in the replay order stands and the other would remove the last owner
+    let st = meet(&a, &b);
+    assert_eq!(st.vault(pair).map(|v| v.owners.len()), Some(1));
+}
+
+#[test]
+fn concurrent_adds_that_close_a_cycle_keep_only_the_first() {
+    let mut c = cast();
+    let mut coop_of_samuel = |nonce| {
+        let genesis = Action::Genesis { kind: Kind::Coop, owners: vec![Principal::Vault(c.samuel)], threshold: 1, nonce };
+        VaultId::from(c.log.append(PASSKEY_S, &[], genesis).unwrap())
+    };
+    let (garden, kitchen) = (coop_of_samuel(1), coop_of_samuel(2));
+    // offline, Garden takes Kitchen as an owner on one device, and Kitchen takes Garden on another
+    let (mut a, mut b) = (c.log.clone(), c.log.clone());
+    a.append(PASSKEY_S, &[], Action::AddOwner { vault: garden, owner: Principal::Vault(kitchen) }).unwrap();
+    b.append(PASSKEY_S, &[], Action::AddOwner { vault: kitchen, owner: Principal::Vault(garden) }).unwrap();
+    // together they would close a cycle, so exactly one of them stands (T3)
+    let st = meet(&a, &b);
+    let owned_by = |x: VaultId, y: VaultId| st.vault(x).unwrap().owners.contains(&Principal::Vault(y));
+    assert!(owned_by(garden, kitchen) != owned_by(kitchen, garden));
+    assert!(!st.owns(garden, garden) && !st.owns(kitchen, kitchen));
+}
+
+#[test]
+fn a_removal_wins_over_a_concurrent_add_it_did_not_see() {
+    let mut c = cast();
+    // a coop of Samuel, Bob and Dave, threshold 2
+    let owners = vec![Principal::Vault(c.samuel), Principal::Vault(c.bob), Principal::Vault(c.dave)];
+    let genesis = Action::Genesis { kind: Kind::Coop, owners, threshold: 2, nonce: 1 };
+    let trio = VaultId::from(c.log.append(PASSKEY_S, &[PASSKEY_B, PASSKEY_D], genesis).unwrap());
+    // Samuel and Bob remove Dave, while Dave and Samuel add Carol, who consents
+    let (mut a, mut b) = (c.log.clone(), c.log.clone());
+    a.append(PASSKEY_S, &[PASSKEY_B], Action::RemoveOwner { vault: trio, owner: Principal::Vault(c.dave), keep: vec![] }).unwrap();
+    b.append(PASSKEY_D, &[PASSKEY_S, PASSKEY_C], Action::AddOwner { vault: trio, owner: Principal::Vault(c.carol) }).unwrap();
+    // removals replay first: without Dave, the add has only Samuel's approval, below the threshold
+    let st = meet(&a, &b);
+    assert_eq!(st.vault(trio).map(|v| v.owners.clone()), Some(vec![Principal::Vault(c.samuel), Principal::Vault(c.bob)]));
+}
+
+/// A recovery code's signer, and the passkey it brings in after the old one was stolen.
+const RECOVERY: SignerId = SignerId::from_u64(99);
+const NEW_PASSKEY: SignerId = SignerId::from_u64(98);
+
+#[test]
+#[ignore = "P2: strong removal"]
+fn a_removed_owner_cannot_backdate_governance() {
+    let mut c = cast();
+    // a coop of Samuel and Bob where either may act alone
+    let owners = vec![Principal::Vault(c.samuel), Principal::Vault(c.bob)];
+    let genesis = Action::Genesis { kind: Kind::Coop, owners, threshold: 1, nonce: 1 };
+    let pair = VaultId::from(c.log.append(PASSKEY_S, &[PASSKEY_B], genesis).unwrap());
+    let early = c.log.clone();
+    // Samuel goes on for a while, then removes Bob
+    for _ in 0..3 {
+        c.log.append(PASSKEY_S, &[], Action::SetThreshold { vault: pair, threshold: 1 }).unwrap();
+    }
+    c.log.append(PASSKEY_S, &[], Action::RemoveOwner { vault: pair, owner: Principal::Vault(c.bob), keep: vec![] }).unwrap();
+    // Bob, removed, signs an add on his early copy, where he still owned the coop, so it claims to come first
+    let mut forged = early;
+    forged.append(PASSKEY_B, &[PASSKEY_D], Action::AddOwner { vault: pair, owner: Principal::Vault(c.dave) }).unwrap();
+    // the removal hadn't seen it, so it is cut
+    let st = meet(&c.log, &forged);
+    assert_eq!(st.vault(pair).map(|v| v.owners.clone()), Some(vec![Principal::Vault(c.samuel)]));
+
+    // a stolen passkey: the recovery signer brings in a new passkey, which removes the old one
+    let mut c = cast();
+    c.log.append(PASSKEY_S, &[RECOVERY], Action::AddOwner { vault: c.samuel, owner: Principal::Signer(RECOVERY) }).unwrap();
+    let early = c.log.clone();
+    c.log.append(RECOVERY, &[NEW_PASSKEY], Action::AddOwner { vault: c.samuel, owner: Principal::Signer(NEW_PASSKEY) }).unwrap();
+    let remove = Action::RemoveOwner { vault: c.samuel, owner: Principal::Signer(PASSKEY_S), keep: vec![] };
+    c.log.append(NEW_PASSKEY, &[], remove).unwrap();
+    // the thief adds a device of their own on an early copy, so it claims to come before the removal
+    let mut stolen = early;
+    stolen.append(PASSKEY_S, &[STRANGER], Action::AddDevice { vault: c.samuel, device: STRANGER }).unwrap();
+    let st = meet(&c.log, &stolen);
+    assert!(!st.acts_for(STRANGER, c.samuel));
 }

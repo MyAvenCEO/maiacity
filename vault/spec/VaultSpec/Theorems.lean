@@ -1,13 +1,14 @@
 import VaultSpec.Sync
 import VaultSpec.Doc
 import VaultSpec.Lens
+import VaultSpec.Lemmas
 
 /-!
 # The theorems
 
 What must always hold, stated over the executable model. T9 (lenses) and T10 (branches) are proven in their own
 files. A `sorry` below marks a theorem whose proof belongs to a later phase (see `README.md`); a phase is merged only
-once its theorems are proven.
+once its theorems are proven. The proofs' helper lemmas are in `Lemmas.lean`.
 
 The assumptions are part of the model rather than axioms: an op's signers are the keys that signed it (signatures
 can't be forged); keys are learned only through `Knows` (sealed or encrypted data reveals nothing without its key);
@@ -45,20 +46,57 @@ theorem T2_governance {st st' : State} {op : Op} (h : step st op = some st') {v 
     approves st op.sigs (.vault v) = true ∨
     (∃ p, vt'.owners = vt.owners.erase p ∧ approves st op.sigs p = true) ∨
     (∃ d, vt'.devices = vt.devices.erase d ∧ d ∈ op.sigs) := by
-  sorry -- P1
+  rcases step_vault?_old h h₁ h₂ with rfl | hch
+  · simp at hchg
+  · cases hch with
+    | addOwner _ _ _ _ happ _ => exact .inl happ
+    | removeOwner p happ =>
+      rcases happ with happ | happ
+      · exact .inl happ
+      · exact .inr (.inl ⟨p, rfl, happ⟩)
+    | setThreshold _ happ => exact .inl happ
+    | addDevice _ happ _ => exact .inl happ
+    | removeDevice d happ =>
+      rcases happ with happ | hd
+      · exact .inl happ
+      · exact .inr (.inr ⟨d, rfl, hd⟩)
 
 /-- T2, consent: an owner or a device is added only with its own signature. -/
 theorem T2_consent {st st' : State} {op : Op} (h : step st op = some st') {v : VaultId} {vt vt' : Vault}
     (h₁ : st.vault? v = some vt) (h₂ : st'.vault? v = some vt') :
     (∀ p ∈ vt'.owners, p ∉ vt.owners → approves st op.sigs p = true) ∧
     (∀ d ∈ vt'.devices, d ∉ vt.devices → d ∈ op.sigs) := by
-  sorry -- P1
+  rcases step_vault?_old h h₁ h₂ with rfl | hch
+  · exact ⟨fun p hp hn => absurd hp hn, fun d hd hn => absurd hd hn⟩
+  · cases hch with
+    | addOwner p _ _ _ _ happ =>
+      refine ⟨fun q hq hn => ?_, fun d hd hn => absurd hd hn⟩
+      rcases List.mem_append.1 hq with hq | hq
+      · exact absurd hq hn
+      · rw [List.mem_singleton] at hq
+        exact hq ▸ happ
+    | removeOwner _ _ => exact ⟨fun q hq hn => absurd (List.mem_of_mem_erase hq) hn, fun d hd hn => absurd hd hn⟩
+    | setThreshold _ _ => exact ⟨fun q hq hn => absurd hq hn, fun d hd hn => absurd hd hn⟩
+    | addDevice d _ hd =>
+      refine ⟨fun q hq hn => absurd hq hn, fun d' hd' hn => ?_⟩
+      rcases List.mem_append.1 hd' with hd' | hd'
+      · exact absurd hd' hn
+      · rw [List.mem_singleton] at hd'
+        exact hd' ▸ hd
+    | removeDevice _ _ => exact ⟨fun q hq hn => absurd hq hn, fun d hd hn => absurd (List.mem_of_mem_erase hd) hn⟩
 
 /-- Devices don't govern: signatures that include no owner signer never approve for a human vault. -/
 theorem device_cannot_govern {st : State} {v : VaultId} {vt : Vault} (h : st.vault? v = some vt)
     (hsig : ∀ p ∈ vt.owners, ∃ s, p = .signer s) (hth : 0 < vt.threshold) (sigs : List SignerId)
     (hnone : ∀ s ∈ sigs, Principal.signer s ∉ vt.owners) : approves st sigs (.vault v) = false := by
-  sorry -- P1
+  -- no owner approves, so the owners that approve fall short of the threshold
+  have hnil : vt.owners.filter (approvesN st sigs st.vaults.length) = [] := by
+    refine List.filter_eq_nil_iff.2 fun p hp => ?_
+    obtain ⟨s, rfl⟩ := hsig p hp
+    simp only [approvesN, List.contains_iff_mem]
+    exact fun hs => hnone s hs hp
+  simp only [approves, State.depth, approvesN, h, hnil, List.length_nil, decide_eq_false_iff_not]
+  omega
 
 /-- `OwnsPlus st a x`: vault `a` owns vault `x`, directly or through a chain. -/
 inductive OwnsPlus (st : State) : VaultId → VaultId → Prop where
@@ -67,9 +105,50 @@ inductive OwnsPlus (st : State) : VaultId → VaultId → Prop where
 
 def Acyclic (st : State) : Prop := ∀ v, ¬ OwnsPlus st v v
 
-/-- T3 (no ownership cycles): every step keeps the vault graph acyclic, so every chain ends in signers. -/
-theorem T3_no_cycles {st st' : State} {op : Op} (hacyc : Acyclic st) (h : step st op = some st') : Acyclic st' := by
-  sorry -- P1
+/-- Every vault some vault lists as an owner exists. Genesis and addOwner only ever name existing vaults, and no op
+    removes a vault, so this holds in every reachable state. -/
+def OwnersExist (st : State) : Prop :=
+  ∀ x vt, st.vault? x = some vt → ∀ o, Principal.vault o ∈ vt.owners → (st.vault? o).isSome
+
+/-- `OwnsPlus` is a chain of `OwnerOf` links, the form `Lemmas.lean` works with. -/
+theorem ownsPlus_iff {st : State} {a x : VaultId} : OwnsPlus st a x ↔ Relation.TransGen (OwnerOf st) a x := by
+  constructor
+  · intro h
+    induction h with
+    | direct hx ha => exact .single ⟨_, hx, ha⟩
+    | trans _ _ ih₁ ih₂ => exact ih₁.trans ih₂
+  · intro h
+    induction h with
+    | single hax =>
+      obtain ⟨_, hx, ha⟩ := hax
+      exact .direct hx ha
+    | tail _ hbc ih =>
+      obtain ⟨_, hx, hb⟩ := hbc
+      exact .trans ih (.direct hx hb)
+
+/-- One step keeps the vault graph acyclic and every named owner existing. -/
+theorem T3_step {st st' : State} {op : Op} (hacyc : Acyclic st) (hex : OwnersExist st) (h : step st op = some st') :
+    Acyclic st' ∧ OwnersExist st' := by
+  obtain ⟨hacyc', hex'⟩ := step_owners (fun y hy => hacyc y (ownsPlus_iff.2 hy)) hex h
+  exact ⟨fun y hy => hacyc' y (ownsPlus_iff.1 hy), hex'⟩
+
+/-- T3 (no ownership cycles): in every reachable state the vault graph is acyclic, so every chain ends in signers. -/
+theorem T3_no_cycles (ops : List Op) : Acyclic (replay {} ops) := by
+  suffices h : ∀ st, Acyclic st → OwnersExist st → Acyclic (replay st ops) ∧ OwnersExist (replay st ops) by
+    refine (h {} (fun v hv => ?_) (fun x vt hx => ?_)).1
+    · obtain ⟨_, _, hx, _⟩ := transGen_head (ownsPlus_iff.1 hv)
+      simp [State.vault?] at hx
+    · simp [State.vault?] at hx
+  induction ops with
+  | nil => exact fun _ h₁ h₂ => ⟨h₁, h₂⟩
+  | cons op ops ih =>
+    intro st h₁ h₂
+    show Acyclic (replay ((step st op).getD st) ops) ∧ OwnersExist (replay ((step st op).getD st) ops)
+    cases hs : step st op with
+    | none => exact ih st h₁ h₂
+    | some st' =>
+      obtain ⟨h₁', h₂'⟩ := T3_step h₁ h₂ hs
+      exact ih st' h₁' h₂'
 
 /-! ## Caps -/
 

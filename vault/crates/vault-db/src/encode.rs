@@ -1,0 +1,272 @@
+//! The canonical encoding of an op: the bytes its id hashes and its signatures sign (through the id). Every value has
+//! exactly one encoding and none is a prefix of another of the same type, so two different ops never share bytes:
+//! integers are big-endian and fixed-size, sequences carry their length, and every enum starts with a tag. The first
+//! byte is the format's version, so a later format (a hybrid post-quantum signer, say) can live beside this one.
+
+use crate::policy::{Action, Grant, Grantee, Kind, Op, Principal, Role, Scope};
+
+/// The version byte every op starts with.
+pub const VERSION: u8 = 1;
+
+/// The BLAKE3 context of op ids, which makes them unlike any other hash of the same bytes.
+pub const OP_CONTEXT: &str = "maiacity vault-db 2026-10-08 op id v1";
+
+pub(crate) fn op_id(op: &Op) -> [u8; 32] {
+    let mut out = Vec::with_capacity(128);
+    out.push(VERSION);
+    op.encode(&mut out);
+    let mut h = blake3::Hasher::new_derive_key(OP_CONTEXT);
+    h.update(&out);
+    *h.finalize().as_bytes()
+}
+
+pub(crate) trait Encode {
+    fn encode(&self, out: &mut Vec<u8>);
+}
+
+impl Encode for u32 {
+    fn encode(&self, out: &mut Vec<u8>) {
+        out.extend_from_slice(&self.to_be_bytes());
+    }
+}
+
+impl Encode for u64 {
+    fn encode(&self, out: &mut Vec<u8>) {
+        out.extend_from_slice(&self.to_be_bytes());
+    }
+}
+
+impl Encode for [u8; 32] {
+    fn encode(&self, out: &mut Vec<u8>) {
+        out.extend_from_slice(self);
+    }
+}
+
+impl<T: Encode> Encode for [T] {
+    fn encode(&self, out: &mut Vec<u8>) {
+        (self.len() as u32).encode(out);
+        for x in self {
+            x.encode(out);
+        }
+    }
+}
+
+impl<T: Encode> Encode for Option<T> {
+    fn encode(&self, out: &mut Vec<u8>) {
+        match self {
+            None => out.push(0),
+            Some(x) => {
+                out.push(1);
+                x.encode(out);
+            }
+        }
+    }
+}
+
+macro_rules! ids {
+    ($($t:ty),*) => {$(
+        impl Encode for $t {
+            fn encode(&self, out: &mut Vec<u8>) {
+                self.0.encode(out);
+            }
+        }
+    )*};
+}
+
+ids!(crate::id::SignerId, crate::id::VaultId, crate::id::SpaceId, crate::id::EntryId, crate::id::GrantId, crate::id::OpId);
+
+impl Encode for Kind {
+    fn encode(&self, out: &mut Vec<u8>) {
+        out.push(match self {
+            Kind::Human => 0,
+            Kind::Coop => 1,
+        });
+    }
+}
+
+impl Encode for Principal {
+    fn encode(&self, out: &mut Vec<u8>) {
+        match self {
+            Principal::Signer(s) => {
+                out.push(0);
+                s.encode(out);
+            }
+            Principal::Vault(v) => {
+                out.push(1);
+                v.encode(out);
+            }
+        }
+    }
+}
+
+impl Encode for Role {
+    fn encode(&self, out: &mut Vec<u8>) {
+        out.push(match self {
+            Role::Relay => 0,
+            Role::Read => 1,
+            Role::Write => 2,
+            Role::Owner => 3,
+        });
+    }
+}
+
+impl Encode for Scope {
+    fn encode(&self, out: &mut Vec<u8>) {
+        match self {
+            Scope::Space(sp) => {
+                out.push(0);
+                sp.encode(out);
+            }
+            Scope::Entry(sp, e) => {
+                out.push(1);
+                sp.encode(out);
+                e.encode(out);
+            }
+        }
+    }
+}
+
+impl Encode for Grantee {
+    fn encode(&self, out: &mut Vec<u8>) {
+        match self {
+            Grantee::Principal(p) => {
+                out.push(0);
+                p.encode(out);
+            }
+            Grantee::Public => out.push(1),
+        }
+    }
+}
+
+impl Encode for Grant {
+    fn encode(&self, out: &mut Vec<u8>) {
+        self.scope.encode(out);
+        self.role.encode(out);
+        self.grantee.encode(out);
+        self.issuer.encode(out);
+        self.parent.encode(out);
+    }
+}
+
+impl Encode for Action {
+    fn encode(&self, out: &mut Vec<u8>) {
+        match self {
+            Action::Genesis { kind, owners, threshold, nonce } => {
+                out.push(0);
+                kind.encode(out);
+                owners.encode(out);
+                threshold.encode(out);
+                nonce.encode(out);
+            }
+            Action::AddOwner { vault, owner } => {
+                out.push(1);
+                vault.encode(out);
+                owner.encode(out);
+            }
+            Action::RemoveOwner { vault, owner, keep } => {
+                out.push(2);
+                vault.encode(out);
+                owner.encode(out);
+                keep.encode(out);
+            }
+            Action::SetThreshold { vault, threshold } => {
+                out.push(3);
+                vault.encode(out);
+                threshold.encode(out);
+            }
+            Action::AddDevice { vault, device } => {
+                out.push(4);
+                vault.encode(out);
+                device.encode(out);
+            }
+            Action::RemoveDevice { vault, device, keep } => {
+                out.push(5);
+                vault.encode(out);
+                device.encode(out);
+                keep.encode(out);
+            }
+            Action::FoundSpace { actor, nonce } => {
+                out.push(6);
+                actor.encode(out);
+                nonce.encode(out);
+            }
+            Action::Grant(g) => {
+                out.push(7);
+                g.encode(out);
+            }
+            Action::Revoke { grant, actor, keep } => {
+                out.push(8);
+                grant.encode(out);
+                actor.encode(out);
+                keep.encode(out);
+            }
+            Action::Write { space, entry, actor, epoch, body } => {
+                out.push(9);
+                space.encode(out);
+                entry.encode(out);
+                actor.encode(out);
+                epoch.encode(out);
+                (body.len() as u32).encode(out);
+                out.extend_from_slice(body);
+            }
+        }
+    }
+}
+
+impl Encode for Op {
+    fn encode(&self, out: &mut Vec<u8>) {
+        self.parents.encode(out);
+        self.depth.encode(out);
+        self.author.encode(out);
+        self.cosigners.encode(out);
+        self.action.encode(out);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::id::{SignerId, VaultId};
+
+    fn genesis(nonce: u64) -> Op {
+        let owners = vec![Principal::Signer(SignerId::from_u64(1))];
+        let action = Action::Genesis { kind: Kind::Human, owners, threshold: 1, nonce };
+        Op { parents: vec![], depth: 0, author: SignerId::from_u64(1), cosigners: vec![], action }
+    }
+
+    #[test]
+    fn every_field_changes_the_id() {
+        let base = genesis(0);
+        let mut others = vec![genesis(1)];
+        let mut o = base.clone();
+        o.author = SignerId::from_u64(2);
+        others.push(o);
+        let mut o = base.clone();
+        o.cosigners = vec![SignerId::from_u64(3)];
+        others.push(o);
+        let mut o = base.clone();
+        o.parents = vec![crate::id::OpId::from_u64(9)];
+        others.push(o);
+        let mut o = base.clone();
+        o.depth = 1;
+        others.push(o);
+        let mut o = base.clone();
+        o.action = Action::AddDevice { vault: VaultId::from_u64(1), device: SignerId::from_u64(1) };
+        others.push(o);
+        for o in &others {
+            assert_ne!(op_id(o), op_id(&base), "{o:?}");
+        }
+        assert_eq!(op_id(&base), op_id(&genesis(0)));
+    }
+
+    #[test]
+    fn lengths_keep_neighbouring_fields_apart() {
+        // the same bytes split differently between the cosigners and the action must not collide
+        let a = Op { cosigners: vec![SignerId::from_u64(5)], ..genesis(0) };
+        let b = Op { cosigners: vec![], ..genesis(0) };
+        let (mut ea, mut eb) = (vec![], vec![]);
+        a.encode(&mut ea);
+        b.encode(&mut eb);
+        assert!(!ea.starts_with(&eb) && !eb.starts_with(&ea));
+    }
+}

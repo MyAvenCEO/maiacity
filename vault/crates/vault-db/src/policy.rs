@@ -1,9 +1,11 @@
 //! The rules every peer applies, op for op the Lean model (`vault/spec/VaultSpec/State.lean` and `Step.lean`): who
 //! acts for which vault, who governs it, which caps a vault holds, and which ops are accepted.
 //!
-//! Ops reach this module already verified: an op's author and cosigners are the signers whose signatures checked out.
-//! The one difference from the model is naming: what an op creates (a vault, a space, a grant) is named by that op's
-//! id, where the model picks numbers.
+//! Ops reach this module already verified: an op's author and cosigners are the signers whose signatures checked out
+//! (`sign::Signed::verify`). Two differences from the model: what an op creates (a vault, a space, a grant) is named
+//! by that op's id, where the model picks numbers; and a refused op says why, where the model only says no.
+
+use std::collections::{HashMap, HashSet};
 
 use crate::id::{EntryId, GrantId, OpId, SignerId, SpaceId, VaultId};
 use crate::keys::KeyScope;
@@ -122,20 +124,46 @@ impl Action {
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Op {
     pub parents: Vec<OpId>,
+    /// Causal depth: one more than the deepest parent, 0 without parents. It travels with the op because a peer
+    /// often holds only part of an op's past (a vault's log without the ops around it), and every peer must still
+    /// order the op the same way.
+    pub depth: u64,
     pub author: SignerId,
     pub cosigners: Vec<SignerId>,
     pub action: Action,
 }
 
 impl Op {
-    /// The hash of the signed op.
+    /// BLAKE3 of the op's canonical encoding (`encode`): everything the op says, its signers included. Each signer
+    /// signs this id.
     pub fn id(&self) -> OpId {
-        todo!("P1: BLAKE3 of the op's canonical encoding with its signatures")
+        OpId(crate::encode::op_id(self))
     }
 
     /// Everyone who signed: the author first.
     pub fn sigs(&self) -> impl Iterator<Item = SignerId> + '_ {
         std::iter::once(self.author).chain(self.cosigners.iter().copied())
+    }
+
+    /// The vault a vault op changes; a genesis changes the vault it creates.
+    pub fn vault_of(&self) -> Option<VaultId> {
+        match &self.action {
+            Action::Genesis { .. } => Some(VaultId::from(self.id())),
+            Action::AddOwner { vault, .. }
+            | Action::RemoveOwner { vault, .. }
+            | Action::SetThreshold { vault, .. }
+            | Action::AddDevice { vault, .. }
+            | Action::RemoveDevice { vault, .. } => Some(*vault),
+            _ => None,
+        }
+    }
+
+    /// Removals sort before anything else at the same depth.
+    fn rank(&self) -> u8 {
+        match self.action {
+            Action::RemoveOwner { .. } | Action::RemoveDevice { .. } | Action::Revoke { .. } => 0,
+            _ => 1,
+        }
     }
 }
 
@@ -165,6 +193,12 @@ pub enum Refusal {
     UnknownVault,
     UnknownSpace,
     UnknownGrant,
+    /// A genesis names no owner, or one owner twice.
+    BadOwners,
+    /// The owner or device is already there.
+    AlreadyMember,
+    /// The owner or device to remove isn't there.
+    NotMember,
     /// A new owner or device, or a first owner at genesis, didn't sign.
     NoConsent,
     /// Too few owners approved a governance change.
@@ -196,13 +230,28 @@ pub enum Refusal {
 /// What a peer knows after replaying its ops: vaults, spaces, grants, accepted writes and each key family's epoch.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct State {
-    _filled_in_p1_to_p3: (),
+    /// In the order they were created.
+    vaults: Vec<Vault>,
+    // P2: spaces, grants and writes; P3: key epochs
 }
 
 impl State {
     pub fn vault(&self, v: VaultId) -> Option<&Vault> {
-        let _ = v;
-        todo!("P1: vaults")
+        self.vaults.iter().find(|x| x.id == v)
+    }
+
+    /// Every vault, in the order they were created.
+    pub fn vaults(&self) -> &[Vault] {
+        &self.vaults
+    }
+
+    fn vault_mut(&mut self, v: VaultId) -> &mut Vault {
+        self.vaults.iter_mut().find(|x| x.id == v).expect("a vault the step just looked up")
+    }
+
+    /// A bound on chain length: without ownership cycles (T3) a chain never visits more vaults than exist.
+    fn depth(&self) -> usize {
+        self.vaults.len() + 1
     }
 
     pub fn space(&self, sp: SpaceId) -> Option<&Space> {
@@ -224,14 +273,51 @@ impl State {
     /// Signer `s` acts for vault `v`: a device or owner signer of a human vault, or anyone acting for an owner of a
     /// coop, up the chain.
     pub fn acts_for(&self, s: SignerId, v: VaultId) -> bool {
-        let _ = (s, v);
-        todo!("P1: chains")
+        self.acts_for_n(s, self.depth(), v)
+    }
+
+    fn acts_for_n(&self, s: SignerId, n: usize, v: VaultId) -> bool {
+        let Some(vt) = self.vault(v).filter(|_| n > 0) else { return false };
+        match vt.kind {
+            Kind::Human => vt.devices.contains(&s) || vt.owners.contains(&Principal::Signer(s)),
+            Kind::Coop => vt.owners.iter().any(|p| matches!(*p, Principal::Vault(o) if self.acts_for_n(s, n - 1, o))),
+        }
     }
 
     /// The signers `sigs` approve for `p`: a signer by signing, a vault by the approval of its threshold of owners.
+    /// Devices are not owners, so they never approve.
     pub fn approves(&self, sigs: &[SignerId], p: Principal) -> bool {
-        let _ = (sigs, p);
-        todo!("P1: governance")
+        self.approves_n(sigs, self.depth(), p)
+    }
+
+    fn approves_n(&self, sigs: &[SignerId], n: usize, p: Principal) -> bool {
+        match p {
+            Principal::Signer(s) => sigs.contains(&s),
+            Principal::Vault(v) => match self.vault(v).filter(|_| n > 0) {
+                None => false,
+                Some(vt) => vt.owners.iter().filter(|&&o| self.approves_n(sigs, n - 1, o)).count() >= vt.threshold as usize,
+            },
+        }
+    }
+
+    /// Vault `a` owns vault `x`, directly or through owners of owners.
+    pub fn owns(&self, a: VaultId, x: VaultId) -> bool {
+        self.owns_n(a, self.depth(), x)
+    }
+
+    fn owns_n(&self, a: VaultId, n: usize, x: VaultId) -> bool {
+        let Some(vt) = self.vault(x).filter(|_| n > 0) else { return false };
+        vt.owners.iter().any(|p| matches!(*p, Principal::Vault(o) if o == a || self.owns_n(a, n - 1, o)))
+    }
+
+    /// Human vaults are owned by signers, coops by existing vaults.
+    fn owner_fits(&self, kind: Kind, p: Principal) -> Result<(), Refusal> {
+        match (kind, p) {
+            (Kind::Human, Principal::Signer(_)) => Ok(()),
+            (Kind::Coop, Principal::Vault(o)) if self.vault(o).is_some() => Ok(()),
+            (Kind::Coop, Principal::Vault(_)) => Err(Refusal::UnknownVault),
+            _ => Err(Refusal::WrongOwnerKind),
+        }
     }
 
     /// Vault `v` holds `need` or more on `sc`: it founded the space, or a grant in force covering `sc` gives it.
@@ -264,29 +350,148 @@ impl State {
         todo!("P2: caps as sync rules")
     }
 
-    /// Apply one op: the new state, or why the op is refused.
+    /// Apply one op: the new state, or why the op is refused. Each rule is the model's (`apply` in `Step.lean`), checked
+    /// in the same order.
     pub fn step(&self, op: &Op) -> Result<State, Refusal> {
-        let _ = op;
-        todo!("P1 vaults, P2 caps and writes, P3 key rotation")
+        let sigs: Vec<SignerId> = op.sigs().collect();
+        let approves = |p| self.approves(&sigs, p);
+        let mut st = self.clone();
+        match &op.action {
+            Action::Genesis { kind, owners, threshold, .. } => {
+                let v = VaultId::from(op.id());
+                if self.vault(v).is_some() {
+                    return Err(Refusal::Duplicate);
+                }
+                if owners.is_empty() || owners.iter().enumerate().any(|(i, p)| owners[..i].contains(p)) {
+                    return Err(Refusal::BadOwners);
+                }
+                for &p in owners {
+                    self.owner_fits(*kind, p)?;
+                }
+                if *threshold == 0 || *threshold as usize > owners.len() {
+                    return Err(Refusal::BadThreshold);
+                }
+                // every first owner consents
+                if !owners.iter().all(|&p| approves(p)) {
+                    return Err(Refusal::NoConsent);
+                }
+                st.vaults.push(Vault { id: v, kind: *kind, owners: owners.clone(), threshold: *threshold, devices: vec![] });
+            }
+            &Action::AddOwner { vault, owner } => {
+                let vt = self.vault(vault).ok_or(Refusal::UnknownVault)?;
+                if vt.owners.contains(&owner) {
+                    return Err(Refusal::AlreadyMember);
+                }
+                self.owner_fits(vt.kind, owner)?;
+                // no cycles: the newcomer must not be the vault itself or something the vault owns
+                if matches!(owner, Principal::Vault(x) if x == vault || self.owns(vault, x)) {
+                    return Err(Refusal::Cycle);
+                }
+                // the vault's threshold, plus the newcomer's consent
+                if !approves(Principal::Vault(vault)) {
+                    return Err(Refusal::BelowThreshold);
+                }
+                if !approves(owner) {
+                    return Err(Refusal::NoConsent);
+                }
+                st.vault_mut(vault).owners.push(owner);
+            }
+            &Action::RemoveOwner { vault, owner, .. } => {
+                let vt = self.vault(vault).ok_or(Refusal::UnknownVault)?;
+                if !vt.owners.contains(&owner) {
+                    return Err(Refusal::NotMember);
+                }
+                if vt.owners.len() <= 1 {
+                    return Err(Refusal::LastOwner);
+                }
+                // the vault's threshold, or the owner leaving on its own
+                if !(approves(Principal::Vault(vault)) || approves(owner)) {
+                    return Err(Refusal::BelowThreshold);
+                }
+                let x = st.vault_mut(vault);
+                let i = x.owners.iter().position(|&p| p == owner).expect("an owner");
+                x.owners.remove(i);
+                x.threshold = x.threshold.min(x.owners.len() as u32);
+                // P2: writes the removal took the authorization from and hadn't seen are dropped (`keep`)
+            }
+            &Action::SetThreshold { vault, threshold } => {
+                let vt = self.vault(vault).ok_or(Refusal::UnknownVault)?;
+                if threshold == 0 || threshold as usize > vt.owners.len() {
+                    return Err(Refusal::BadThreshold);
+                }
+                if !approves(Principal::Vault(vault)) {
+                    return Err(Refusal::BelowThreshold);
+                }
+                st.vault_mut(vault).threshold = threshold;
+            }
+            &Action::AddDevice { vault, device } => {
+                let vt = self.vault(vault).ok_or(Refusal::UnknownVault)?;
+                if vt.kind != Kind::Human {
+                    return Err(Refusal::NotHuman);
+                }
+                if vt.devices.contains(&device) {
+                    return Err(Refusal::AlreadyMember);
+                }
+                // the vault's threshold, plus the device's own signature
+                if !approves(Principal::Vault(vault)) {
+                    return Err(Refusal::BelowThreshold);
+                }
+                if !sigs.contains(&device) {
+                    return Err(Refusal::NoConsent);
+                }
+                st.vault_mut(vault).devices.push(device);
+            }
+            &Action::RemoveDevice { vault, device, .. } => {
+                let vt = self.vault(vault).ok_or(Refusal::UnknownVault)?;
+                if !vt.devices.contains(&device) {
+                    return Err(Refusal::NotMember);
+                }
+                // the vault's threshold, or the device leaving on its own
+                if !(approves(Principal::Vault(vault)) || sigs.contains(&device)) {
+                    return Err(Refusal::BelowThreshold);
+                }
+                st.vault_mut(vault).devices.retain(|&d| d != device);
+                // P2: writes the removal took the authorization from and hadn't seen are dropped (`keep`)
+            }
+            Action::FoundSpace { .. } | Action::Grant(_) | Action::Revoke { .. } | Action::Write { .. } => {
+                todo!("P2: spaces, grants, revocation and writes")
+            }
+        }
+        Ok(st)
     }
 }
 
-/// The one order every peer replays in: causal depth, then removals first, then id.
+/// The one order every peer replays in: causal depth, then removals first, then id. Each op appears once. An op that
+/// claims to be no deeper than a parent the peer holds is malformed and left out, so no op sorts ahead of its own
+/// past.
 pub fn order(ops: &[Op]) -> Vec<Op> {
-    let _ = ops;
-    todo!("P1: causal order")
+    let mut by_id: HashMap<OpId, &Op> = HashMap::with_capacity(ops.len());
+    for op in ops {
+        by_id.entry(op.id()).or_insert(op);
+    }
+    let mut out: Vec<(u64, u8, OpId, &Op)> = by_id
+        .iter()
+        .filter(|(_, op)| op.parents.iter().all(|p| by_id.get(p).is_none_or(|parent| parent.depth < op.depth)))
+        .map(|(&id, &op)| (op.depth, op.rank(), id, op))
+        .collect();
+    out.sort_by_key(|a| (a.0, a.1, a.2));
+    out.into_iter().map(|(.., op)| op.clone()).collect()
 }
 
 /// What a peer holding `ops` knows: their replay in `order` from the empty state, refused ops skipped.
 pub fn view(ops: &[Op]) -> State {
-    let _ = ops;
-    todo!("P1: replay")
+    order(ops).iter().fold(State::default(), |st, op| st.step(op).unwrap_or(st))
 }
 
 /// Every state along the replay of `ops` in `order`, the empty state first and the view last.
 pub fn trace(ops: &[Op]) -> Vec<State> {
-    let _ = ops;
-    todo!("P1: replay")
+    let mut states = vec![State::default()];
+    for op in order(ops) {
+        let last = states.last().expect("the empty state");
+        let next = last.step(&op).unwrap_or_else(|_| last.clone());
+        states.push(next);
+    }
+    states
 }
 
 /// A peer's ops. Each op appended builds on everything the log holds; ops from other peers are added as they arrive.
@@ -316,8 +521,18 @@ impl Log {
     /// The op `author` and `cosigners` would sign here, building on the log's heads, unchecked: what a peer that
     /// skips the rules would send.
     pub fn draft(&self, author: SignerId, cosigners: &[SignerId], action: Action) -> Op {
-        let _ = (author, cosigners, action);
-        todo!("P1: parents are the log's heads")
+        let parents = self.heads();
+        let depth = self.ops.iter().filter(|o| parents.contains(&o.id())).map(|o| o.depth + 1).max().unwrap_or(0);
+        Op { parents, depth, author, cosigners: cosigners.to_vec(), action }
+    }
+
+    /// The ops no other op of the log builds on, sorted.
+    pub fn heads(&self) -> Vec<OpId> {
+        let built_on: HashSet<OpId> = self.ops.iter().flat_map(|o| o.parents.iter().copied()).collect();
+        let mut heads: Vec<OpId> = self.ops.iter().map(Op::id).filter(|id| !built_on.contains(id)).collect();
+        heads.sort();
+        heads.dedup();
+        heads
     }
 
     /// The op `append` would add, if the view accepts it.
@@ -353,6 +568,23 @@ mod tests {
     fn each_role_includes_the_ones_before_it() {
         assert!(Role::Owner.allows(Role::Read) && Role::Write.allows(Role::Write) && Role::Read.allows(Role::Relay));
         assert!(!Role::Relay.allows(Role::Read) && !Role::Read.allows(Role::Write));
+    }
+
+    #[test]
+    fn an_op_never_sorts_ahead_of_a_parent_it_holds() {
+        let passkey = SignerId::from_u64(1);
+        let mut log = Log::new();
+        let genesis = Action::Genesis { kind: Kind::Human, owners: vec![Principal::Signer(passkey)], threshold: 1, nonce: 0 };
+        let v = VaultId::from(log.append(passkey, &[], genesis).unwrap());
+        let honest = log.draft(passkey, &[SignerId::from_u64(2)], Action::AddDevice { vault: v, device: SignerId::from_u64(2) });
+        assert_eq!(honest.depth, 1);
+        // an op claiming to be no deeper than its parent is left out where the parent is held…
+        let shallow = Op { depth: 0, ..honest.clone() };
+        let with_parent = [log.ops()[0].clone(), shallow.clone(), honest.clone()];
+        assert_eq!(order(&with_parent).iter().filter(|o| **o == shallow).count(), 0);
+        assert_eq!(order(&with_parent).last(), Some(&honest));
+        // …and orders by what it claims where it isn't, as it does on every peer missing that parent
+        assert_eq!(order(std::slice::from_ref(&shallow)), vec![shallow]);
     }
 
     #[test]
