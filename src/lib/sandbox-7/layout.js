@@ -316,15 +316,14 @@ function insideUse(/** @type {Site} */ s, /** @type {number} */ dx, /** @type {n
 	return s.kind === 'tower' ? 'tower' : 'factory';
 }
 
-/** the living hex's outdoor land: a hedge along the edge, food forest round the homes, wild land to the north, and
- * orchards and market gardens on the sunny rest @param {HexPlan} plan @param {Site[]} homes */
+/** the living hex's outdoor land: a hedge along the edge, wild land inside the roundabout, food forest everywhere
+ * else @param {HexPlan} plan @param {Site[]} homes */
 function livingLand(plan, /** @type {number} */ x, /** @type {number} */ z, /** @type {number} */ edge, homes) {
 	if (edge < 18) return 'nature';
 	for (const s of homes) if (Math.hypot(x - s.x, z - s.z) < footR(s, plan) + 38) return 'foodForest';
-	const inRing = Math.hypot(x - plan.ring.x, z - plan.ring.z) < plan.ring.r;
-	if (inRing) return 'nature';
-	if (z < plan.ring.z - 120) return 'nature';
-	return 'commercial';
+	if (Math.hypot(x - plan.ring.x, z - plan.ring.z) < plan.ring.r) return 'nature';
+	// a settlement grows no commercial crops (Samuel, 2026-10-08): the rest is all food forest
+	return 'foodForest';
 }
 
 /** the tower hex's outdoor land: yards by the factories, then the fields, woods and pits by direction */

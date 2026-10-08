@@ -280,7 +280,6 @@
 					<tr><td>Food and utility domes’ sun, {DAYS.winter.label}</td><td class="num">{n1(100 * (sunAlone.A.domes?.winter ?? 0))}%</td><td class="num">{n1(100 * (sunAlone.B.domes?.winter ?? 0))}%</td></tr>
 					<tr><td>Food and utility domes’ sun, {DAYS.equinox.label}</td><td class="num">{n1(100 * (sunAlone.A.domes?.equinox ?? 0))}%</td><td class="num">{n1(100 * (sunAlone.B.domes?.equinox ?? 0))}%</td></tr>
 					<tr><td>Food forest outdoors</td><td class="num">{n1(pct(A, ['foodForest']))}%</td><td class="num">{n1(pct(B, ['foodForest']))}%</td></tr>
-					<tr><td>Orchards and market gardens</td><td class="num">{n1(pct(A, ['commercial']))}%</td><td class="num">{n1(pct(B, ['commercial']))}%</td></tr>
 					<tr><td>Nature</td><td class="num">{n1(pct(A, ['nature']))}%</td><td class="num">{n1(pct(B, ['nature']))}%</td></tr>
 					<tr><td>Roads and paths</td><td class="num">{n1(pct(A, ['road']))}%</td><td class="num">{n1(pct(B, ['road']))}%</td></tr>
 					<tr><td>Food grown, of what its people eat</td><td class="num">{n0((100 * A.food.grown) / A.food.need)}%</td><td class="num">{n0((100 * B.food.grown) / B.food.need)}%</td></tr>
@@ -314,7 +313,7 @@
 				</tbody>
 			</table>
 			{#if hex !== 'tower'}
-				<p class="small">Food forest under glass {n1(sum(['indoorFood', 'tropical']))}% · outdoors {n1(sum(['foodForest']))}% · commercial growing {n1(sum(['commercial']))}% · homes {n1(sum(['living']))}% of the land ({n0(stats.buildings.reduce((/** @type {number} */ a, /** @type {any} */ b) => a + (b.gfa ?? 0) * b.count, 0))} m² of floor in blocks of {KINDS.dome40.storeys} and {KINDS.dome80.storeys} storeys) · nature {n1(sum(['nature']))}%.{#if hex === 'village'} Raw-material fields and woods {n1(sum(['hemp', 'bamboo', 'woodland']))}% · open pits {n1(sum(['mine']))}%.{/if}</p>
+				<p class="small">Food forest under glass {n1(sum(['indoorFood', 'tropical']))}% · outdoors {n1(sum(['foodForest']))}% · homes {n1(sum(['living']))}% of the land ({n0(stats.buildings.reduce((/** @type {number} */ a, /** @type {any} */ b) => a + (b.gfa ?? 0) * b.count, 0))} m² of floor in blocks of {KINDS.dome40.storeys} and {KINDS.dome80.storeys} storeys) · nature {n1(sum(['nature']))}%.{#if hex === 'village'} Raw-material fields and woods {n1(sum(['hemp', 'bamboo', 'woodland']))}% · open pits {n1(sum(['mine']))}%.{/if}</p>
 			{:else}
 				<p class="small">Raw-material fields and woods {n1(sum(['hemp', 'bamboo', 'woodland']))}% · open pits {n1(sum(['mine']))}% (no domes over them: only the works are under glass) · nature {n1(sum(['nature']))}%.</p>
 			{/if}
